@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+
+# Сборки и мусор
+dist/
+build/
+*.log
+
+# Редакторы и системы
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Временные файлы сборки комикса
+comic/_preview_*.jpg
