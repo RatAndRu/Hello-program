@@ -1,0 +1,27 @@
+name: Шахматы — проверка правил
+
+# Автозапуск: при каждом push и pull request.
+# Так GitHub «компилирует» ваш Python сам: запускает тесты и показывает ✔ или ✘.
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  perft:
+    name: Генератор ходов (perft)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Синтаксис и тесты
+        working-directory: chess
+        run: |
+          python -m py_compile chess.py
+          python chess.py --perft
