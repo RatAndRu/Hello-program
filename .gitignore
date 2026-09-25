@@ -21,3 +21,6 @@ desktop.ini
 
 # Временные файлы сборки комикса
 comic/_preview_*.jpg
+
+# Временные кадры сборки видео
+animation/seq/
