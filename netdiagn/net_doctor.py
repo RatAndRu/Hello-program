@@ -1004,6 +1004,13 @@ $rows
 Get-CimInstance Win32_Process -Filter "Name LIKE '%python%' OR Name LIKE '%py.exe%'" |
   Select-Object ProcessId, Name, ExecutablePath, CommandLine
 """),
+    ("py_versions", r"""
+$out = @()
+try { $out = @(& py -0p 2>$null) } catch {}
+if ($out.Count -eq 0) { try { $out = @(& py --list-paths 2>$null) } catch {} }
+if ($out.Count -eq 0) { $out = @('py launcher не найден — список версий недоступен') }
+$out
+"""),
     ("vpn_procs", r"""
 Get-Process | Where-Object {
     $_.ProcessName -match 'warp|cloudflare|wireguard|openvpn|proton|nord|surfshark|expressvpn|windscribe|mullvad|tunnelbear|anyconnect|globalprotect|forticlient|zscaler|v2ray|xray|sing-box|nekoray|clash|hiddify|shadowsocks|outline|amnezia|softether|tapctl'
@@ -1131,7 +1138,7 @@ def collect_windows_facts(diag: Diag, verbose: bool = True) -> None:
     for key in ("os", "adapters", "ipaddresses", "ipv6", "profiles", "ifaces",
                 "routes", "listeners", "python_procs", "vpn_procs", "vpn_services",
                 "av_products", "av_services", "neighbors", "dns", "metered",
-                "warp_hidden", "ics_service", "warp_cli"):
+                "warp_hidden", "ics_service", "warp_cli", "py_versions"):
         facts[key] = sec(key)
 
     fw = ps_collect(PS_SECTIONS_FIREWALL, timeout=180.0)
@@ -2072,6 +2079,107 @@ def check_listeners(diag: Diag, watch_port: Optional[int] = None) -> None:
                          "иначе телефон физически не сможет подключиться.")
 
 
+def norm_exe_path(path: str) -> str:
+    """Приводит путь к .exe к сравнимому виду: регистр, слэши, кавычки, .. и т.п."""
+    text = str(path or "").strip().strip('"').strip("'").strip()
+    if not text:
+        return ""
+    text = text.replace("/", "\\")
+    return os.path.normpath(text).lower()
+
+
+def rule_covers_exe(program: Any, exe_path: str) -> bool:
+    """Покрывает ли одно правило (поле Program) указанный исполняемый файл."""
+    prog = norm_exe_path(str(program or ""))
+    if not prog or prog in ("any", "*", "любая программа"):
+        return True          # правило «для всех программ»
+    exe = norm_exe_path(exe_path)
+    if not exe:
+        return False
+    if "\\" not in prog:
+        return os.path.basename(exe) == prog      # правило задано именем файла
+    return prog == exe
+
+
+def check_python_paths(diag: Diag) -> None:
+    """
+    Сопоставляет РЕАЛЬНЫЕ пути python-процессов, слушающих порты, с путями в
+    разрешающих правилах брандмауэра.
+
+    Зачем: «16 разрешающих правил для python.exe» ничего не гарантируют, если они
+    указывают на C:\...\Python312-32\python.exe, а порт слушает совсем другой
+    интерпретатор (например, ...\pythoncore-3.14-64\pythonw.exe). Брандмауэр Windows
+    разрешает входящие по конкретному файлу, поэтому такие правила «не про этот» python.
+    """
+    listeners = [l for l in (diag.facts.get("listeners") or []) if isinstance(l, dict)]
+    procs: Dict[int, Dict[str, Any]] = {}
+    for item in (diag.facts.get("python_procs") or []):
+        if isinstance(item, dict):
+            try:
+                procs[int(item.get("ProcessId"))] = item
+            except (TypeError, ValueError):
+                continue
+    py_listeners = [
+        l for l in listeners
+        if str(l.get("name") or "").lower().startswith("python")
+        or str(l.get("path") or "").lower().endswith(("python.exe", "pythonw.exe"))
+    ]
+    rules = [r for r in (diag.facts.get("fw_python_allow_in") or []) if isinstance(r, dict)]
+
+    rows: List[Dict[str, Any]] = []
+    for l in py_listeners:
+        try:
+            pid = int(l.get("pid") or 0)
+        except (TypeError, ValueError):
+            pid = 0
+        path = str(l.get("path") or "")
+        if not path and pid and procs.get(pid):
+            path = str(procs[pid].get("ExecutablePath") or "")
+        covered = (any(rule_covers_exe(r.get("Program"), path) for r in rules)
+                   if path else False)
+        rows.append({"pid": pid, "port": l.get("port"), "name": str(l.get("name") or ""),
+                     "address": str(l.get("address") or ""), "path": path,
+                     "covered": covered})
+    diag.facts["py_listener_paths"] = rows
+
+    if not rows:
+        diag.add("python_paths", "Python-процессы и правила брандмауэра", "info",
+                 "слушающих python-процессов не найдено")
+        return
+
+    shown = []
+    for r in rows[:5]:
+        mark = "правило есть" if r["covered"] else "правила нет"
+        shown.append(f"{r['address']}:{r['port']} (PID {r['pid']}) — {mark}: "
+                     f"{r['path'] or 'путь не определён'}")
+    detail = " · ".join(shown)
+
+    if not any(r["path"] for r in rows):
+        diag.add("python_paths", "Python-процессы и правила брандмауэра", "info", detail,
+                 "Пути процессов не удалось прочитать (это проверка Windows).")
+        return
+
+    uncovered = [r for r in rows if r["path"] and not r["covered"]]
+    rule_paths = sorted({str(r.get("Program")) for r in rules if r.get("Program")})
+
+    if uncovered and rules:
+        diag.add("python_paths", "Python-процессы и правила брандмауэра", "bad", detail,
+                 "Разрешающие правила есть, но ни одно не покрывает именно тот файл, "
+                 "который слушает порты. Windows разрешает входящие по конкретному пути "
+                 "к .exe — «чужое» правило не спасает. Правила созданы для: "
+                 + ("; ".join(rule_paths[:4]) or "?")
+                 + ". Починка: python net_doctor.py --fix — он добавит правило для "
+                 "обнаруженных интерпретаторов (или добавьте путь вручную в wf.msc).")
+    elif uncovered:
+        diag.add("python_paths", "Python-процессы и правила брандмауэра", "warn", detail,
+                 "Разрешающих входящих правил для python нет вовсе — Windows может резать "
+                 "входящие. Запустите --fix (или нажмите «Разрешить доступ», когда Windows "
+                 "спросит при первом запуске сервера).")
+    else:
+        diag.add("python_paths", "Python-процессы и правила брандмауэра", "ok", detail,
+                 "Все слушающие python-процессы покрыты разрешающими правилами.")
+
+
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
@@ -2313,6 +2421,7 @@ def build_verdict(diag: Diag, port: int, external_hit: bool,
     fw_scope = diag.get("firewall_python_scope")
     fw_log = diag.get("firewall_log")
     ics_chk = diag.get("ics")
+    py_paths_chk = diag.get("python_paths")
     loopback_only = diag.get("listeners_loopback")
     sp = diag.get("watch_port")
     phone_sub = diag.get("phone_subnet")
@@ -2337,6 +2446,10 @@ def build_verdict(diag: Diag, port: int, external_hit: bool,
     if fw_log is not None and fw_log.status == "bad":
         reasons.append(("В журнале брандмауэра есть блокировки с адресом телефона: "
                         "пакеты доходят, блокирует ноутбук", 82))
+    if py_paths_chk is not None and py_paths_chk.status == "bad":
+        reasons.append(("Разрешающие правила брандмауэра не покрывают именно тот python, "
+                        "который слушает порты (правила созданы для другого интерпретатора)",
+                        76))
     if fw_scope is not None and fw_scope.status == "bad":
         reasons.append(("Разрешающие правила для python.exe не покрывают вашу подсеть "
                         "(например, ограничены подсетью хот-спота)", 78))
@@ -2439,6 +2552,12 @@ def build_verdict(diag: Diag, port: int, external_hit: bool,
         "(команды есть в отчёте netdoctor_report.txt) и посмотрите, появился ли в нём адрес "
         "телефона.",
     ]
+    if py_paths_chk is not None and py_paths_chk.status == "bad":
+        worst = next((r for r in (facts.get("py_listener_paths") or []) if r.get("path")), None)
+        if worst:
+            steps.append("7. Правило брандмауэра нужно ровно для этого файла: "
+                         f"{worst['path']} — сейчас правила ссылаются на другой python "
+                         "(проверьте в отчёте раздел «PYTHON: кто слушает»).")
     return {"status": "bad", "headline": headline, "steps": steps,
             "reasons": reasons}
 
@@ -2482,7 +2601,7 @@ def unique_ports(ports: Sequence[int]) -> List[int]:
 
 
 def build_fix_ps(port: int, extra_ports: Sequence[int], iface: Optional[str],
-                 allow_program: bool) -> str:
+                 allow_program: bool, py_paths: Sequence[str] = ()) -> str:
     ports = unique_ports([port] + list(extra_ports))
     ports_txt = ", ".join(str(p) for p in ports)
     profile_cmd = ""
@@ -2517,6 +2636,25 @@ def build_fix_ps(port: int, extra_ports: Sequence[int], iface: Optional[str],
             "-RemoteAddress LocalSubnet -Protocol TCP | Out-Null\n"
             "  Write-Host \"OK: разрешён python.exe по адресу $py\"\n"
             "} else { Write-Host 'python.exe не найден в PATH — пропускаю' }\n"
+        )
+
+    listener_rules = ""
+    listen_paths = [str(x) for x in (py_paths or []) if str(x).strip()]
+    if listen_paths:
+        quoted = ",\n  ".join("'" + x.replace("'", "''") + "'" for x in listen_paths)
+        listener_rules = (
+            "\n# 4) Разрешить именно те интерпретаторы, которые СЛУШАЮТ ПОРТЫ сейчас.\n"
+            "#    Windows разрешает входящие по конкретному файлу: правило для другого\n"
+            "#    python.exe (например, из старой версии) не помогает.\n"
+            "$listenExes = @(\n  " + quoted + "\n)\n"
+            "foreach ($exe in $listenExes) {\n"
+            "  if (-not (Test-Path $exe)) { Write-Host \"пропуск (нет файла): $exe\"; continue }\n"
+            "  $ruleName = \"netdoctor: python слушает $exe (LAN)\"\n"
+            "  Remove-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue\n"
+            "  New-NetFirewallRule -DisplayName $ruleName -Direction Inbound -Action Allow `\n"
+            "      -Program $exe -Profile Any -RemoteAddress LocalSubnet -Protocol TCP | Out-Null\n"
+            "  Write-Host \"OK: разрешён $exe\"\n"
+            "}\n"
         )
 
     return f"""# =============================================================================
@@ -2560,7 +2698,7 @@ New-NetFirewallRule `
     -Direction Inbound -Action Allow -Protocol TCP -LocalPort {ports_txt.replace(', ', ',')} `
     -Profile Any -RemoteAddress LocalSubnet | Out-Null
 Write-Host "OK: правило брандмауэра добавлено: $ruleName" -ForegroundColor Green
-{program_rule}
+{program_rule}{listener_rules}
 # --- проверка -----------------------------------------------------------------
 Write-Host ''
 Write-Host '--- Проверка ---' -ForegroundColor Cyan
@@ -2647,6 +2785,22 @@ def build_report_text(diag: Diag, verdict: Dict[str, Any], port: int,
                                   "LocalPort", "Protocol")}, ensure_ascii=False))
     if not (diag.facts.get("fw_python_allow_in") or []):
         lines.append("(разрешающих входящих правил не найдено)")
+    lines.append("")
+    lines.append("--- PYTHON: КТО СЛУШАЕТ ПОРТЫ И ПОКРЫТ ЛИ ПРАВИЛАМИ ---")
+    for row in (diag.facts.get("py_listener_paths") or []):
+        lines.append(
+            f"порт {row.get('port')} · PID {row.get('pid')} · {row.get('name')} → "
+            f"{row.get('path') or 'путь не определён'} · "
+            + ("покрыт разрешающим правилом" if row.get("covered")
+               else "НЕ покрыт ни одним разрешающим правилом"))
+    if not (diag.facts.get("py_listener_paths") or []):
+        lines.append("(слушающих python-процессов не найдено)")
+    lines.append("Установленные версии Python (py -0p):")
+    for line in (diag.facts.get("py_versions") or [])[:40]:
+        lines.append("    " + str(line).strip())
+    lines.append("Полные пути из правил брандмауэра (Program):")
+    for r in (diag.facts.get("fw_python_allow_in") or []):
+        lines.append("    " + str(r.get("Program") or "(любая программа)"))
     lines.append("")
     lines.append("--- ЖУРНАЛ БЛОКИРОВОК БРАНДМАУЭРА ---")
     for line in (diag.facts.get("fwlog_drops") or []):
@@ -3202,6 +3356,7 @@ def run_checks_without_server(diag: Diag, args: argparse.Namespace) -> None:
     check_ics(diag)
     check_python_procs(diag)
     check_listeners(diag, watch_port=args.check_port)
+    check_python_paths(diag)
     check_firewall_log(diag, args.phone)
 
 
@@ -3337,7 +3492,9 @@ def write_fix_files(args: argparse.Namespace, diag: Diag) -> List[str]:
     fix_path = os.path.join(outdir, "netdoctor_fix.ps1")
     undo_path = os.path.join(outdir, "netdoctor_undo.ps1")
     with open(fix_path, "w", encoding="utf-8-sig", newline="\r\n") as fh:
-        fh.write(build_fix_ps(args.port, extra, iface, args.program_rule))
+        py_paths = [str(r.get("path")) for r in (diag.facts.get("py_listener_paths") or [])
+                    if r.get("path")]
+        fh.write(build_fix_ps(args.port, extra, iface, args.program_rule, py_paths=py_paths))
     with open(undo_path, "w", encoding="utf-8-sig", newline="\r\n") as fh:
         fh.write(build_undo_ps())
     return [fix_path, undo_path]
@@ -3413,8 +3570,8 @@ def run_diagnostics(args: argparse.Namespace) -> int:
     for key in ("ps_collect", "adapters_vpn", "net_profile", "firewall_state",
                 "firewall_python", "firewall_python_scope", "routes", "proxy", "warp",
                 "av", "hosts", "ics", "neighbors", "neighbor_phone", "phone_subnet",
-                "phone_ping", "ssid", "py_procs", "listeners_loopback", "watch_port",
-                "firewall_log"):
+                "phone_ping", "ssid", "py_procs", "listeners_loopback", "python_paths",
+                "watch_port", "firewall_log"):
         if diag.get(key):
             diag.show(key)
 
@@ -3864,6 +4021,53 @@ def run_selftest() -> int:
           str(d6.facts.get("ip_ranking")))
     check("рекомендация для телефона никогда не содержит APIPA",
           all(not r["apipa"] for r in recommended_ips(d6.facts)))
+
+    # --- Пути python и правила брандмауэра (важно при нескольких версиях Python) ---
+    check("пути .exe сравниваются без учёта регистра и слэшей",
+          norm_exe_path(r"C:\Py\python.exe") == norm_exe_path("c:/py/PYTHON.EXE"))
+    check("правило для всех программ покрывает любой exe",
+          rule_covers_exe("Any", r"C:\x\pythonw.exe") is True)
+    check("правило для одного python не покрывает другой",
+          rule_covers_exe(r"C:\Users\u\AppData\Local\Programs\Python\Python312-32\python.exe",
+                          r"C:\Users\u\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe")
+          is False)
+
+    d7 = Diag()
+    d7.facts.update({
+        "listeners": [{"address": "0.0.0.0", "port": 5000, "pid": 42776, "name": "pythonw",
+                       "path": r"C:\Users\u\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe"}],
+        "python_procs": [],
+        "fw_python_allow_in": [
+            {"Program": r"C:\Users\u\AppData\Local\Programs\Python\Python312-32\python.exe",
+             "DisplayName": "Python 3.12", "RemoteAddress": "LocalSubnet"}],
+    })
+    check_python_paths(d7)
+    pp_bad = d7.get("python_paths")
+    check("«правила для другого python» — это проблема, а не «правило есть»",
+          pp_bad is not None and pp_bad.status == "bad",
+          pp_bad.status if pp_bad else "нет")
+
+    d8 = Diag()
+    d8.facts.update({
+        "listeners": [{"address": "0.0.0.0", "port": 5000, "pid": 42776, "name": "pythonw",
+                       "path": r"C:\Users\u\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe"}],
+        "python_procs": [],
+        "fw_python_allow_in": [
+            {"Program": r"C:\Users\u\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe",
+             "DisplayName": "pythonw", "RemoteAddress": "LocalSubnet"}],
+    })
+    check_python_paths(d8)
+    pp_ok = d8.get("python_paths")
+    check("совпадающий путь — правило действительно покрывает процесс",
+          pp_ok is not None and pp_ok.status == "ok",
+          pp_ok.status if pp_ok else "нет")
+    check("отчёт по путям попадает в факты",
+          d8.facts.get("py_listener_paths") and d8.facts["py_listener_paths"][0]["covered"] is True)
+
+    fix_txt = build_fix_ps(8770, [], "Wi-Fi", False,
+                           py_paths=[r"C:\Users\u\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe"])
+    check("--fix добавляет правило для реально слушающего интерпретатора",
+          "pythoncore-3.14-64" in fix_txt and "listenExes" in fix_txt)
 
     # --- 12. Гигиена лаунчеров Windows --------------------------------------------
     here = os.path.dirname(os.path.abspath(__file__))
