@@ -74,7 +74,7 @@ import webbrowser
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-VERSION = "1.3.0"
+VERSION = "1.4.0"
 DEFAULT_PORT = 8770          # порт тестового сервера (специально не 5000/8000/8080)
 IS_WINDOWS = (os.name == "nt")
 
@@ -1546,7 +1546,11 @@ def check_firewall(diag: Diag) -> None:
                 prefix = 24
     primary_net = subnet_of(primary, prefix) if primary else None
 
+    active_profiles = active_profile_names(diag.facts)
+
     def rule_covers_primary(r: Dict[str, Any]) -> bool:
+        if not rule_matches_active_profile(r, active_profiles):
+            return False
         remote = str(r.get("RemoteAddress") or "").strip().lower()
         if not remote or "any" in remote or "localsubnet" in remote:
             return True
@@ -1584,11 +1588,15 @@ def check_firewall(diag: Diag) -> None:
     if primary and covering == [] and allow_in:
         diag.add("firewall_python_scope", "Покрытие вашей подсети правилами", "bad",
                  f"разрешающих правил: {len(allow_in)}, из них покрывают "
-                 f"{primary}/{prefix}: 0 · примеры чужих подсетей: "
+                 f"{primary}/{prefix}: 0 · активные профили: "
+                 + (", ".join(active_profiles) or "неизвестны") + " · примеры чужих подсетей: "
                  + ", ".join(str(r.get("RemoteAddress")) or "?"
                              for r in not_covering[:3]),
                  "Правила для python.exe есть, но ни одно не разрешает подключения "
-                 f"из вашей сети ({primary}/{prefix}). Так бывает, если правило создавалось "
+                 f"из вашей сети ({primary}/{prefix})"
+                 + (" — причина в профиле сети (см. строку выше)."
+                    if (diag.facts.get("fw_python_profile_mismatch") or []) else ". ")
+                 + "Так бывает, если правило создавалось "
                  "в другой сети (например, в подсети мобильного хот-спота 192.168.137.0/24). "
                  "Быстрая починка: python net_doctor.py --fix — он создаёт правило с "
                  "RemoteAddress LocalSubnet, которое покрывает любую домашнюю сеть.")
@@ -2158,6 +2166,65 @@ def interpreter_paths(diag: Diag) -> List[str]:
     return result
 
 
+PROFILE_LABELS = {0: "Public", 1: "Private", 2: "Domain",
+                  "0": "Public", "1": "Private", "2": "Domain"}
+
+
+def active_profile_names(facts: Dict[str, Any]) -> List[str]:
+    """Профили брандмауэра, которые СЕЙЧАС активны на интерфейсах (Private/Public/Domain).
+
+    Именно они решают, какие правила применяются: правило с Profile=Public на сети,
+    помеченной как «частная», Windows молча игнорирует.
+    """
+    names: List[str] = []
+    for row in (facts.get("profiles") or []):
+        if not isinstance(row, dict):
+            continue
+        label = PROFILE_LABELS.get(row.get("Category"))
+        if not label:
+            text = str(row.get("CategoryText") or "").lower()
+            if text.startswith("public"):
+                label = "Public"
+            elif text.startswith("private"):
+                label = "Private"
+            elif "domain" in text:
+                label = "Domain"
+        if label and label not in names:
+            names.append(label)
+    return names
+
+
+def rule_profile_names(rule: Dict[str, Any]) -> List[str]:
+    """Профили из строки правила: 'Public' / 'Private, Public' / 'Any'."""
+    raw = str(rule.get("Profile") or "").strip().lower()
+    if not raw or "any" in raw:
+        return ["Any"]
+    names: List[str] = []
+    for token in re.split(r"[,\s]+", raw):
+        if not token:
+            continue
+        if token.startswith("pub"):
+            names.append("Public")
+        elif token.startswith("pri"):
+            names.append("Private")
+        elif "domain" in token:
+            names.append("Domain")
+    return names or ["Any"]
+
+
+def rule_matches_active_profile(rule: Dict[str, Any], active: Sequence[str]) -> bool:
+    """Применяется ли правило на текущих сетях.
+
+    Если профили неизвестны — считаем, что применяется (лучше не пугать зря).
+    """
+    if not active:
+        return True
+    rule_profiles = rule_profile_names(rule)
+    if "Any" in rule_profiles:
+        return True
+    return any(name in active for name in rule_profiles)
+
+
 def check_python_paths(diag: Diag) -> None:
     """
     Сопоставляет РЕАЛЬНЫЕ пути python-процессов, слушающих порты, с путями в
@@ -2182,6 +2249,8 @@ def check_python_paths(diag: Diag) -> None:
         or str(l.get("path") or "").lower().endswith(("python.exe", "pythonw.exe"))
     ]
     rules = [r for r in (diag.facts.get("fw_python_allow_in") or []) if isinstance(r, dict)]
+    active = active_profile_names(diag.facts)
+    diag.facts["fw_active_profiles"] = active
 
     rows: List[Dict[str, Any]] = []
     for l in py_listeners:
@@ -2192,11 +2261,17 @@ def check_python_paths(diag: Diag) -> None:
         path = str(l.get("path") or "")
         if not path and pid and procs.get(pid):
             path = str(procs[pid].get("ExecutablePath") or "")
-        covered = (any(rule_covers_exe(r.get("Program"), path) for r in rules)
-                   if path else False)
+        matching = ([r for r in rules if rule_covers_exe(r.get("Program"), path)]
+                    if path else [])
+        profile_ok = [r for r in matching if rule_matches_active_profile(r, active)]
+        covered = bool(profile_ok)
+        mismatched = [r for r in matching if r not in profile_ok]
         rows.append({"pid": pid, "port": l.get("port"), "name": str(l.get("name") or ""),
                      "address": str(l.get("address") or ""), "path": path,
-                     "covered": covered})
+                     "covered": covered,
+                     "profile_mismatch": bool(mismatched) and not covered,
+                     "rule_profiles": sorted({p for r in matching
+                                              for p in rule_profile_names(r)})})
     diag.facts["py_listener_paths"] = rows
 
     if not rows:
@@ -2206,7 +2281,12 @@ def check_python_paths(diag: Diag) -> None:
 
     shown = []
     for r in rows[:5]:
-        mark = "правило есть" if r["covered"] else "правила нет"
+        if r["covered"]:
+            mark = "правило есть"
+        elif r.get("profile_mismatch"):
+            mark = "правило есть, но не для текущего профиля сети"
+        else:
+            mark = "правила нет"
         shown.append(f"{r['address']}:{r['port']} (PID {r['pid']}) — {mark}: "
                      f"{r['path'] or 'путь не определён'}")
     detail = " · ".join(shown)
@@ -2216,10 +2296,25 @@ def check_python_paths(diag: Diag) -> None:
                  "Пути процессов не удалось прочитать (это проверка Windows).")
         return
 
+    profile_bad = [r for r in rows if r.get("profile_mismatch")]
+    diag.facts["fw_python_profile_mismatch"] = [
+        {"port": r["port"], "path": r["path"], "rule_profiles": r.get("rule_profiles"),
+         "active": active} for r in profile_bad
+    ]
     uncovered = [r for r in rows if r["path"] and not r["covered"]]
     rule_paths = sorted({str(r.get("Program")) for r in rules if r.get("Program")})
 
-    if uncovered and rules:
+    if profile_bad and active:
+        active_txt = ", ".join(active)
+        bad_profiles = sorted({p for r in profile_bad for p in (r.get("rule_profiles") or [])})
+        diag.add("python_paths", "Python-процессы и правила брандмауэра", "bad", detail,
+                 "Правила для этого python есть, но созданы только для профиля "
+                 f"«{', '.join(bad_profiles)}», а сеть сейчас «{active_txt}» — Windows такие "
+                 "правила НЕ применяет, входящие блокируются молча. Именно так выглядит "
+                 "поломка «после отпуска»: сеть пересоздалась с другим профилем, а правила "
+                 "остались от старого. Починка: python net_doctor.py --fix — он создаст "
+                 "правила для ВСЕХ профилей (-Profile Any) только для своей подсети.")
+    elif uncovered and rules:
         diag.add("python_paths", "Python-процессы и правила брандмауэра", "bad", detail,
                  "Разрешающие правила есть, но ни одно не покрывает именно тот файл, "
                  "который слушает порты. Windows разрешает входящие по конкретному пути "
@@ -2457,7 +2552,7 @@ def check_phone(diag: Diag, phone: Optional[str]) -> None:
 # =========================================================================================
 
 def build_verdict(diag: Diag, port: int, external_hit: bool,
-                  raw_external_hit: bool = False) -> Dict[str, Any]:
+                  raw_external_hit: bool = False, test_ran: bool = True) -> Dict[str, Any]:
     """
     Возвращает {"status": "ok|warn|bad", "headline": str, "steps": [str, ...],
                 "probability": [(причина, «очки»), ...]}
@@ -2503,11 +2598,20 @@ def build_verdict(diag: Diag, port: int, external_hit: bool,
     if fw_log is not None and fw_log.status == "bad":
         reasons.append(("В журнале брандмауэра есть блокировки с адресом телефона: "
                         "пакеты доходят, блокирует ноутбук", 82))
-    if py_paths_chk is not None and py_paths_chk.status == "bad":
+    mismatch = facts.get("fw_python_profile_mismatch") or []
+    if mismatch:
+        active_txt = ", ".join(mismatch[0].get("active") or []) or "текущая"
+        bad_txt = ", ".join(sorted({p for m in mismatch
+                                    for p in (m.get("rule_profiles") or [])})) or "Public"
+        reasons.append((f"Правила брандмауэра созданы для профиля «{bad_txt}», а сеть сейчас "
+                        f"«{active_txt}» — Windows их не применяет, входящие режутся молча",
+                        86))
+    if py_paths_chk is not None and py_paths_chk.status == "bad" and not mismatch:
         reasons.append(("Разрешающие правила брандмауэра не покрывают именно тот python, "
                         "который слушает порты (правила созданы для другого интерпретатора)",
                         76))
-    if fw_scope is not None and fw_scope.status == "bad":
+    if fw_scope is not None and fw_scope.status == "bad" \
+            and not (facts.get("fw_python_profile_mismatch") or []):
         reasons.append(("Разрешающие правила для python.exe не покрывают вашу подсеть "
                         "(например, ограничены подсетью хот-спота)", 78))
     if facts.get("av_firewall_strong") == "ESET":
@@ -2572,9 +2676,16 @@ def build_verdict(diag: Diag, port: int, external_hit: bool,
     if not reasons:
         reasons.append(("Явных проблем в конфигурации не найдено", 10))
 
-    headline = "Телефон за время проверки НЕ достучался. Наиболее вероятные причины:"
+    if not test_ran and reasons and reasons[0][1] < 80:
+        headline = ("Тест с телефоном в этом запуске НЕ выполнялся (не было тестового "
+                    "сервера). Ниже — что проверить; подтвердить причину можно только "
+                    "запуском с сервером:")
+    else:
+        headline = "Телефон за время проверки НЕ достучался. Наиболее вероятные причины:"
     if reasons[0][1] >= 80:
-        headline = f"Телефон не достучался. Главный подозреваемый: {reasons[0][0].lower()}."
+        top = reasons[0][0]
+        top = (top[0].lower() + top[1:]) if top else top   # «Правила …» -> «правила …»
+        headline = f"Телефон не достучался. Главный подозреваемый: {top}."
 
     shown_ip = ""
     for r in recommended_ips(facts):
@@ -2848,6 +2959,7 @@ def build_report_text(diag: Diag, verdict: Dict[str, Any], port: int,
     lines.append("")
     lines.append("--- ФАКТЫ О СЕТИ ---")
     for key in ("hostname", "os_version", "ips", "primary_ip", "profile_public",
+                "fw_active_profiles", "fw_python_profile_mismatch",
                 "firewall_all_inbound_blocked", "ssid", "interface_metrics",
                 "default_routes", "proxy_enabled", "warp_traces", "warp_tunnel_active",
                 "warp_background", "av_third_party", "av_firewall_strong",
@@ -2869,8 +2981,13 @@ def build_report_text(diag: Diag, verdict: Dict[str, Any], port: int,
             lines.append(json.dumps(row, ensure_ascii=False, default=str))
     lines.append("")
     lines.append("--- ПОЧЕМУ ТАКОЙ АДРЕС РЕКОМЕНДОВАН ТЕЛЕФОНУ ---")
-    for row in (diag.facts.get("ip_ranking") or []):
+    ranking = diag.facts.get("ip_ranking")
+    if not ranking:
+        ranking = rank_local_ips(diag.facts)   # отчёт может строиться без ожидания телефона
+    for row in ranking:
         lines.append(json.dumps(row, ensure_ascii=False))
+    if not ranking:
+        lines.append("(адреса определить не удалось)")
     lines.append("")
     lines.append("--- ПРАВИЛА БРАНДМАУЭРА ДЛЯ PYTHON (адреса и порты) ---")
     for row in (diag.facts.get("fw_python_allow_in") or []):
@@ -2880,6 +2997,12 @@ def build_report_text(diag: Diag, verdict: Dict[str, Any], port: int,
     if not (diag.facts.get("fw_python_allow_in") or []):
         lines.append("(разрешающих входящих правил не найдено)")
     lines.append("")
+    lines.append("Активные профили брандмауэра: "
+                 + (", ".join(diag.facts.get("fw_active_profiles") or []) or "неизвестны"))
+    for row in (diag.facts.get("fw_python_profile_mismatch") or []):
+        lines.append("ВНИМАНИЕ: правила для " + str(row.get("path"))
+                     + " созданы для профилей " + str(row.get("rule_profiles"))
+                     + ", а активны " + str(row.get("active")) + " — правила не применяются")
     lines.append("--- PYTHON: КТО СЛУШАЕТ ПОРТЫ И ПОКРЫТ ЛИ ПРАВИЛАМИ ---")
     for row in (diag.facts.get("py_listener_paths") or []):
         lines.append(
@@ -3747,7 +3870,8 @@ def run_diagnostics(args: argparse.Namespace) -> int:
     # ---- 6/6 вердикт --------------------------------------------------------------
     step("6/6", "Собираю вердикт и отчёт…")
     verdict = build_verdict(diag, args.port, external_hit,
-                            raw_external_hit=raw_external_hit)
+                            raw_external_hit=raw_external_hit,
+                            test_ran=(server is not None))
     print_stages(diag, external_hit)
     print_verdict(diag, verdict)
 
@@ -4162,6 +4286,65 @@ def run_selftest() -> int:
     _fix2 = build_fix_ps(8770, [5000], "Wi-Fi", False)
     check("--fix включает брандмауэр обратно (а не оставляет его выключенным)",
           "Set-NetFirewallProfile" in _fix2 and "Enabled True" in _fix2)
+
+    # --- Профиль брандмауэра в правилах (реальная ошибка из отчёта пользователя) ---
+    # Факты из настоящего отчёта 1.2.0: сеть «Беспроводная сеть» = Private,
+    # а все 16 правил для python созданы только для профиля Public. Windows такие
+    # правила НЕ применяет, хотя путь к .exe в них совпадает → раньше инструмент
+    # показывал ложное «покрыт разрешающим правилом».
+    d10 = Diag()
+    d10.facts.update({
+        "profiles": [{"InterfaceAlias": "Беспроводная сеть", "Category": 1,
+                      "CategoryText": "Private"}],
+        "listeners": [{"address": "0.0.0.0", "port": 5000, "pid": 42776, "name": "pythonw",
+                       "path": r"C:\Users\user\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe"}],
+        "python_procs": [],
+        "fw_python_allow_in": [
+            {"Program": r"C:\Users\user\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe",
+             "DisplayName": "pythonw.exe", "Profile": "Public",
+             "RemoteAddress": "Any", "LocalPort": "Any"}],
+    })
+    check_python_paths(d10)
+    chk10 = d10.get("python_paths")
+    check("правило только для Public на сети Private = НЕ покрывает (ложное ОК исправлено)",
+          chk10 is not None and chk10.status == "bad",
+          (chk10.detail if chk10 else "нет"))
+    check("факт о несовпадении профилей сохранён",
+          bool(d10.facts.get("fw_python_profile_mismatch")))
+    v10 = build_verdict(d10, 8770, external_hit=False)
+    joined = " | ".join(r for r, _ in (v10.get("reasons") or []))
+    check("вердикт называет профиль главной причиной",
+          "профиля" in joined and "Public" in joined and "Private" in joined, joined)
+
+    # А если правило для всех профилей — всё честно покрыто:
+    d11 = Diag()
+    d11.facts.update(dict(d10.facts))
+    d11.facts["fw_python_allow_in"] = [dict(d10.facts["fw_python_allow_in"][0],
+                                            Profile="Any")]
+    d11.checks = [c for c in d11.checks if c.key != "python_paths"]
+    check_python_paths(d11)
+    chk11 = d11.get("python_paths")
+    check("правило -Profile Any работает на любой сети", chk11.status == "ok")
+    check("названия профилей в вердикте не портятся регистром",
+          "Public" in v10["headline"] and "Private" in v10["headline"], v10["headline"])
+
+    # Вердикт не должен утверждать «телефон не достучался», если теста не было.
+    d12 = Diag()
+    d12.facts.update({"ips": ["192.168.0.60"], "primary_ip": "192.168.0.60",
+                      "ipaddresses": real_facts["ipaddresses"],
+                      "adapters": real_facts["adapters"],
+                      "default_routes": real_facts["default_routes"]})
+    v12 = build_verdict(d12, 8770, external_hit=False, test_ran=False)
+    check("без запущенного сервера вердикт говорит «тест не выполнялся»",
+          "НЕ выполнялся" in v12["headline"], v12["headline"])
+
+    # Отчёт строит рекомендацию адреса, даже если телефон не ждали (--no-server).
+    d13 = Diag()
+    d13.facts.update(real_facts)
+    report13 = build_report_text(d13, build_verdict(d13, 8770, False), 8770, {})
+    check("в отчёте без ожидания телефона всё равно есть разбор адресов",
+          "ПОЧЕМУ ТАКОЙ АДРЕС РЕКОМЕНДОВАН" in report13
+          and "192.168.0.60" in report13)
 
     # --- Пути python и правила брандмауэра (важно при нескольких версиях Python) ---
     check("пути .exe сравниваются без учёта регистра и слэшей",
