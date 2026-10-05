@@ -2491,7 +2491,9 @@ def parse_args(argv: Optional[Sequence[str]]) -> argparse.Namespace:
         description="NET DOCTOR — пошаговая диагностика доступа к Python-серверам "
                     "из локальной сети (телефон не видит http://192.168.x.x:порт).",
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Примеры:\n"
+        epilog="Коды возврата: 0 — проблем не найдено (или телефон достучался),\n"
+               "               2 — найдены проблемы, 1 — внутренняя ошибка, 130 — прервано.\n\n"
+               "Примеры:\n"
                "  python net_doctor.py\n"
                "  python net_doctor.py --check-port 5000 --phone 192.168.0.61\n"
                "  python net_doctor.py --port 8770 --wait 180\n"

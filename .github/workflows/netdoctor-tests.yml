@@ -36,4 +36,16 @@ jobs:
 
       - name: Проверка «холодного» запуска без сервера
         working-directory: netdiagn
-        run: python net_doctor.py --no-server --wait 0 --no-color --report /tmp/report.txt
+        # Коды возврата инструмента: 0 — проблем нет, 2 — проблемы найдены,
+        # 1 — внутренняя ошибка. На «чужой» машине без локальной сети код 2 — это
+        # нормальный результат диагностики, а вот код 1 пропускать нельзя.
+        run: |
+          set +e
+          python net_doctor.py --no-server --wait 0 --no-color --report /tmp/report.txt
+          rc=$?
+          set -e
+          echo "код возврата: $rc"
+          if [ "$rc" -eq 1 ]; then echo "внутренняя ошибка инструмента"; exit 1; fi
+          test -s /tmp/report.txt
+          echo "отчёт создан, строк: $(wc -l < /tmp/report.txt)"
+          head -5 /tmp/report.txt
