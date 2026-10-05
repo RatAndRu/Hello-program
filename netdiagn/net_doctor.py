@@ -2697,7 +2697,8 @@ def build_fix_ps(port: int, extra_ports: Sequence[int], iface: Optional[str],
 
     listener_rules = ""
     listen_paths = [str(x) for x in (py_paths or []) if str(x).strip()]
-    if listen_paths:
+    # Блок нужен всегда: если пути неизвестны, PowerShell найдёт интерпретаторы сам.
+    if True:
         quoted = ",\n  ".join("'" + x.replace("'", "''") + "'" for x in listen_paths)
         listener_rules = (
             "\n# 4) Разрешить сами ИНТЕРПРЕТАТОРЫ — все TCP-порты, только локальная сеть.\n"
@@ -2706,6 +2707,31 @@ def build_fix_ps(port: int, extra_ports: Sequence[int], iface: Optional[str],
             "#    Порты здесь не ограничиваем: любой НОВЫЙ порт на этом интерпретаторе\n"
             "#    заработает без повторной починки.\n"
             "$listenExes = @(\n  " + quoted + "\n)\n"
+            "# Если пути не подсказали сверху — ищем интерпретаторы сами.\n"
+            "if ($listenExes.Count -eq 0) {\n"
+            "  $found = @()\n"
+            "  foreach ($n in 'python.exe', 'pythonw.exe') {\n"
+            "    $c = Get-Command $n -ErrorAction SilentlyContinue\n"
+            "    if ($c -and $c.Source) { $found += $c.Source }\n"
+            "  }\n"
+            "  $found += (Get-Process python, pythonw -ErrorAction SilentlyContinue |\n"
+            "             Select-Object -ExpandProperty Path -ErrorAction SilentlyContinue)\n"
+            "  $listenExes = @($found | Where-Object { $_ } | Sort-Object -Unique)\n"
+            "  if ($listenExes.Count -eq 0) {\n"
+            "    Write-Host 'Интерпретаторы Python не найдены — правила по программам пропущены.'\n"
+            "  }\n"
+            "}\n"
+            "# Рядом с python.exe лежит pythonw.exe (и наоборот): для брандмауэра это\n"
+            "# РАЗНЫЕ файлы, поэтому добавляем пару.\n"
+            "$expanded = @()\n"
+            "foreach ($exe in $listenExes) {\n"
+            "  $expanded += $exe\n"
+            "  $dir = Split-Path $exe -Parent\n"
+            "  $leaf = [IO.Path]::GetFileName($exe).ToLower()\n"
+            "  if ($leaf -eq 'python.exe')  { $expanded += (Join-Path $dir 'pythonw.exe') }\n"
+            "  if ($leaf -eq 'pythonw.exe') { $expanded += (Join-Path $dir 'python.exe') }\n"
+            "}\n"
+            "$listenExes = @($expanded | Where-Object { $_ } | Sort-Object -Unique)\n"
             "foreach ($exe in $listenExes) {\n"
             "  if (-not (Test-Path $exe)) { Write-Host \"пропуск (нет файла): $exe\"; continue }\n"
             "  $ruleName = \"netdoctor: python слушает $exe (LAN)\"\n"
@@ -4120,6 +4146,18 @@ def run_selftest() -> int:
           any(p.lower().endswith("python312-32\\pythonw.exe") for p in _all), str(_all))
     check("дубликатов путей нет",
           len(_all) == len({norm_exe_path(x) for x in _all}))
+
+    _fix3 = build_fix_ps(8770, [5000], "Wi-Fi", False, py_paths=_all)
+    check("fix-скрипт разрешает интерпретаторы на все порты (без -LocalPort у программ)",
+          "listenExes" in _fix3 and "-Program $exe" in _fix3)
+    _fix4 = build_fix_ps(8770, [5000], "Wi-Fi", False)
+    check("fix сам ищет интерпретаторы, если список пуст",
+          "Get-Command $n -ErrorAction SilentlyContinue" in _fix4)
+    check("в пару к python.exe добавляется pythonw.exe прямо в PowerShell",
+          "(Join-Path $dir 'pythonw.exe')" in _fix4)
+    check("каждое создаваемое правило ограничено своей подсетью",
+          _fix4.count("New-NetFirewallRule") == 2
+          and _fix4.count("-RemoteAddress LocalSubnet") >= 2)
 
     _fix2 = build_fix_ps(8770, [5000], "Wi-Fi", False)
     check("--fix включает брандмауэр обратно (а не оставляет его выключенным)",
