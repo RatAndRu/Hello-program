@@ -73,7 +73,7 @@ import webbrowser
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 DEFAULT_PORT = 8770          # порт тестового сервера (специально не 5000/8000/8080)
 IS_WINDOWS = (os.name == "nt")
 
@@ -2688,6 +2688,11 @@ if (-not ([Security.Principal.WindowsPrincipal]`
 
 Write-Host '=== NETDOCTOR: починка доступа из локальной сети ===' -ForegroundColor Cyan
 
+# 0) Брандмауэр Windows должен быть ВКЛЮЧЁН. Выключенный брандмауэр — это дыра,
+#    а точные правила ниже его не заменяют.
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True
+Write-Host 'OK: брандмауэр Windows включён для всех профилей' -ForegroundColor Green
+
 {profile_cmd}
 # 2) Разрешить входящие на нужные порты — только из локальной подсети.
 $ruleName = 'netdoctor: разрешить LAN (TCP {ports_txt})'
@@ -4021,6 +4026,10 @@ def run_selftest() -> int:
           str(d6.facts.get("ip_ranking")))
     check("рекомендация для телефона никогда не содержит APIPA",
           all(not r["apipa"] for r in recommended_ips(d6.facts)))
+
+    _fix2 = build_fix_ps(8770, [5000], "Wi-Fi", False)
+    check("--fix включает брандмауэр обратно (а не оставляет его выключенным)",
+          "Set-NetFirewallProfile" in _fix2 and "Enabled True" in _fix2)
 
     # --- Пути python и правила брандмауэра (важно при нескольких версиях Python) ---
     check("пути .exe сравниваются без учёта регистра и слэшей",

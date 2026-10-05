@@ -151,6 +151,50 @@ Python-процессы и правила брандмауэра   0.0.0.0:5000 
    SSID и первые три числа IP на телефоне и ноутбуке; временно отключить «Guest
    network» / «AP isolation» в роутере.
 
+## Если помогло выключение брандмауэра — верните его и сделайте правила
+
+Выключенный брандмауэр действительно «лечит» проблему, но оставлять его выключенным нельзя:
+на всех сетях открыт весь входящий трафик. Правильное решение — включить брандмауэр и
+разрешить **конкретным файлам** то, что нужно, **только для своей локальной подсети**:
+
+```powershell
+# 1) вернуть брандмауэр (нужны права администратора)
+Set-NetFirewallProfile -Profile Domain,Public,Private -Enabled True
+
+# 2) узнать, какие файлы реально слушают ваши порты
+Get-NetTCPConnection -State Listen | Where-Object LocalPort -in 5000,5001 |
+  ForEach-Object { $p = Get-Process -Id $_.OwningProcess
+    [pscustomobject]@{ Порт=$_.LocalPort; Процесс=$p.ProcessName; Файл=$p.Path } }
+
+# 3) разрешить эти файлы и порты только своей локальной сети
+Get-Process python,pythonw -ErrorAction SilentlyContinue |
+  Select-Object -ExpandProperty Path -Unique | ForEach-Object {
+    New-NetFirewallRule -DisplayName "Разрешить Python (LAN): $_" -Direction Inbound `
+      -Action Allow -Program $_ -Protocol TCP -RemoteAddress LocalSubnet -Profile Any }
+New-NetFirewallRule -DisplayName 'Разрешить порты 5000,5001 (LAN)' -Direction Inbound `
+  -Action Allow -Protocol TCP -LocalPort 5000,5001 -RemoteAddress LocalSubnet -Profile Any
+```
+
+`-RemoteAddress LocalSubnet` означает «только устройства своей сети» — из интернета доступ
+не открывается.
+
+Автоматически то же самое делает инструмент:
+
+```bash
+python net_doctor.py --fix          # создаст netdoctor_fix.ps1
+# затем запустить netdoctor_fix.ps1 от имени администратора (или --apply-fix)
+```
+
+Скрипт починки сам включает брандмауэр для всех профилей, переводит сеть в «частную»,
+добавляет правило на порты и **отдельные правила для тех самых `python.exe`/`pythonw.exe`,
+которые слушают порты** (важно, когда установлено несколько версий Python или сервер
+запущен как `pythonw.exe`, а правило сделано для `python.exe` — для брандмауэра это
+разные файлы).
+
+Если после включения брандмауэра сервер снова пропал — запустите инструмент и посмотрите
+раздел «Python-процессы и правила брандмауэра» и журнал блокировок: он покажет, какое
+именно правило/профиль режет, и добавит подходящее.
+
 ## Ключи
 
 ```
@@ -193,7 +237,7 @@ Python-процессы и правила брандмауэра   0.0.0.0:5000 
 ```bash
 cd netdiagn
 python -m py_compile net_doctor.py
-python net_doctor.py --selftest        # 76 проверок (с установленной qrcode — 78)
+python net_doctor.py --selftest        # 77 проверок (с установленной qrcode — 79)
 ```
 
 Самотесты гоняются в GitHub Actions: [`.github/workflows/netdoctor-tests.yml`](../.github/workflows/netdoctor-tests.yml).
