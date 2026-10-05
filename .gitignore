@@ -21,3 +21,9 @@ desktop.ini
 
 # Временные файлы сборки комикса
 comic/_preview_*.jpg
+
+# NET DOCTOR: создаются при запуске (отчёт и файлы-починка)
+netdoctor_report.txt
+netdoctor_fix.ps1
+netdoctor_undo.ps1
+netdoctor_error.txt
