@@ -1,0 +1,71 @@
+name: NET DOCTOR — самотесты
+
+# Автопроверка диагностического инструмента: синтаксис + 40 встроенных тестов.
+# Тесты должны проходить и без установленной библиотеки qrcode (она необязательна).
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    name: Диагностика сети (net doctor)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Синтаксис
+        working-directory: netdiagn
+        run: python -m py_compile net_doctor.py
+
+      - name: Лаунчеры Windows на месте (и с CRLF)
+        working-directory: netdiagn
+        run: |
+          for f in start_netdoctor.vbs start_netdoctor.bat; do
+            test -f "$f" || { echo "не найден $f"; exit 1; }
+            if grep -q $'\r' "$f"; then echo "$f: CRLF на месте"; else echo "$f: нет CRLF"; exit 1; fi
+          done
+          python - <<'EOF'
+          import sys
+          sys.path.insert(0, ".")
+          import net_doctor as nd
+          bad = {name: nd.launcher_problems(name)
+                 for name in ("start_netdoctor.vbs", "start_netdoctor.bat")}
+          bad = {k: v for k, v in bad.items() if v}
+          if bad:
+              print("проблемы в лаунчерах:", bad)
+              raise SystemExit(1)
+          print("гигиена лаунчеров: ок")
+          EOF
+
+      - name: Самотесты (без необязательных библиотек)
+        working-directory: netdiagn
+        run: python net_doctor.py --selftest --no-color
+
+      - name: Самотесты с QR-кодом (необязательная зависимость)
+        working-directory: netdiagn
+        run: |
+          python -m pip install --quiet qrcode
+          python net_doctor.py --selftest --no-color
+
+      - name: Проверка «холодного» запуска без сервера
+        working-directory: netdiagn
+        # Коды возврата инструмента: 0 — проблем нет, 2 — проблемы найдены,
+        # 1 — внутренняя ошибка. На «чужой» машине без локальной сети код 2 — это
+        # нормальный результат диагностики, а вот код 1 пропускать нельзя.
+        run: |
+          set +e
+          python net_doctor.py --no-server --wait 0 --no-color --report /tmp/report.txt
+          rc=$?
+          set -e
+          echo "код возврата: $rc"
+          if [ "$rc" -eq 1 ]; then echo "внутренняя ошибка инструмента"; exit 1; fi
+          test -s /tmp/report.txt
+          echo "отчёт создан, строк: $(wc -l < /tmp/report.txt)"
+          head -5 /tmp/report.txt

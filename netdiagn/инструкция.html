@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NET DOCTOR — телефон не видит мои Python-серверы: как найти причину</title>
+<style>
+  :root {
+    --ink: #17202e; --muted: #64748b; --line: #e2e8f0; --bg: #f6f8fb;
+    --card: #ffffff; --accent: #4f46e5; --ok: #0f8a4e; --warn: #b45309;
+    --bad: #b91c1c; --code: #f0f3f9;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.62 -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 28px 20px 80px; }
+  header.hero {
+    background: linear-gradient(135deg, #4f46e5 0%, #0ea5e9 100%);
+    color: #fff; border-radius: 20px; padding: 30px 30px 26px; margin-bottom: 26px;
+    box-shadow: 0 10px 30px rgba(79, 70, 229, .25);
+  }
+  header.hero h1 { margin: 0 0 10px; font-size: 30px; line-height: 1.25; }
+  header.hero p { margin: 0; opacity: .95; font-size: 17px; }
+  .badge {
+    display: inline-block; background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.35);
+    padding: 3px 12px; border-radius: 999px; font-size: 13px; margin-bottom: 12px; letter-spacing: .3px;
+  }
+  h2 { font-size: 23px; margin: 38px 0 14px; }
+  h2 .n {
+    display: inline-flex; width: 34px; height: 34px; border-radius: 10px; background: var(--accent);
+    color: #fff; align-items: center; justify-content: center; font-size: 17px; margin-right: 10px;
+    vertical-align: middle;
+  }
+  h3 { font-size: 18px; margin: 24px 0 8px; }
+  p, li { color: #26303f; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 18px 20px; margin: 14px 0; box-shadow: 0 1px 2px rgba(16,24,40,.04);
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
+  .grid .card { margin: 0; }
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 27px; height: 27px; border-radius: 50%; background: #eef2ff; color: var(--accent);
+    font-weight: 700; margin-right: 8px; font-size: 15px;
+  }
+  code, pre { font-family: Consolas, "Cascadia Mono", Menlo, monospace; }
+  code { background: var(--code); padding: 2px 7px; border-radius: 6px; font-size: 14.5px; }
+  pre {
+    background: #0f172a; color: #e6edf7; padding: 14px 16px; border-radius: 12px; overflow-x: auto;
+    font-size: 14.5px; line-height: 1.5;
+  }
+  pre .c { color: #8b9dc3; }
+  table { width: 100%; border-collapse: collapse; font-size: 15px; margin: 12px 0; background: #fff;
+          border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+  th { background: #f1f5f9; font-weight: 600; font-size: 14px; color: #334155; }
+  tr:last-child td { border-bottom: 0; }
+  .s-ok  { color: var(--ok); font-weight: 700; }
+  .s-warn{ color: var(--warn); font-weight: 700; }
+  .s-bad { color: var(--bad); font-weight: 700; }
+  .pill { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+  .pill.ok { background: #dcfce7; color: #166534; }
+  .pill.warn { background: #fef3c7; color: #92400e; }
+  .pill.bad { background: #fee2e2; color: #991b1b; }
+  .callout { border-left: 5px solid var(--accent); background: #f5f7ff; border-radius: 0 12px 12px 0;
+             padding: 13px 16px; margin: 14px 0; }
+  .callout.warn { border-color: #f59e0b; background: #fffbeb; }
+  .callout.bad { border-color: #ef4444; background: #fef2f2; }
+  .callout.ok { border-color: #10b981; background: #ecfdf5; }
+  .callout p:first-child { margin-top: 0; }
+  .callout p:last-child { margin-bottom: 0; }
+  .chain { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: center;
+           margin: 18px 0; font-weight: 600; }
+  .chain .box { background: #fff; border: 2px solid var(--line); border-radius: 12px; padding: 10px 14px; }
+  .chain .arrow { color: var(--muted); }
+  footer { margin-top: 46px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted);
+           font-size: 14.5px; }
+  a { color: var(--accent); }
+  @media print {
+    body { background: #fff; } .wrap { max-width: 100%; padding: 0; }
+    header.hero { background: #4f46e5 !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .card, table, pre { box-shadow: none; break-inside: avoid; }
+    h2 { break-after: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="badge">NET DOCTOR · инструкция</div>
+  <h1>Телефон не видит мои Python-серверы:<br>как найти причину за 10 минут</h1>
+  <p>Ситуация: на ноутбуке свой сервер открывается по <code style="background:rgba(255,255,255,.2);color:#fff">http://192.168.0.60:5000/</code>,
+     а с телефона в той же Wi-Fi — нет. Ниже — как запустить диагностику, как читать результат и что делать на каждом шаге.</p>
+</header>
+
+<h2><span class="n">1</span>Если коротко</h2>
+<div class="grid">
+  <div class="card">
+    <div><span class="step-num">1</span><b>Запустите инструмент</b></div>
+    <p>Двойной клик по <code>start_netdoctor.vbs</code> в папке <code>netdiagn</code>.<br>
+       Окно консоли должно остаться открытым — не закрывайте его.</p>
+  </div>
+  <div class="card">
+    <div><span class="step-num">2</span><b>Откройте адрес с телефона</b></div>
+    <p>На экране появятся адреса и QR-код. Наведите камеру телефона на QR — откроется
+       тестовая страница. <b>Появилась страница — канал жив.</b></p>
+  </div>
+  <div class="card">
+    <div><span class="step-num">3</span><b>Прочитайте «где провал»</b></div>
+    <p>В конце — таблица из 8 этапов и вердикт с процентами: что именно виновато.
+       Отчёт сохранится в <code>netdoctor_report.txt</code>.</p>
+  </div>
+</div>
+
+<div class="chain">
+  <span class="box">🐍 Python-сервер</span><span class="arrow">→</span>
+  <span class="box">💻 ноутбук (адрес + брандмауэр)</span><span class="arrow">→</span>
+  <span class="box">📶 Wi-Fi / роутер</span><span class="arrow">→</span>
+  <span class="box">📱 телефон</span>
+</div>
+
+<h2><span class="n">2</span>Как запустить</h2>
+<div class="card">
+  <p><b>Самый простой способ (Windows):</b> откройте папку <code>netdiagn</code> и дважды щёлкните
+     по <code>start_netdoctor.vbs</code> — скрипт сам найдёт Python и запустит диагностику.
+     Рядом лежит <code>start_netdoctor.bat</code> — резервный запуск, если <code>.vbs</code>
+     запрещён политикой безопасности.</p>
+  <p><b>Вручную</b> (если хочется задать ключи):</p>
+<pre><span class="c">:: проверить свой сервер на порту 5000 и указать адрес телефона</span>
+python net_doctor.py --check-port 5000 --phone 192.168.0.61
+
+<span class="c">:: подготовить починку (создаст netdoctor_fix.ps1, он сам попросит права)</span>
+python net_doctor.py --fix
+
+<span class="c">:: только проверки, без тестового сервера</span>
+python net_doctor.py --no-server</pre>
+  <div class="callout">
+    <p><b>Что произойдёт:</b> инструмент соберёт конфигурацию Windows, проверит сеть и брандмауэр,
+       поднимет тестовый сервер на порту <b>8770</b> и будет ждать запрос с телефона (по умолчанию 2 минуты).
+       Затем напечатает вердикт.</p>
+  </div>
+  <p style="color:var(--muted);margin-bottom:0">Ничего в системе не меняется. Файлы-починка создаются только с ключом <code>--fix</code>.</p>
+</div>
+
+<h2><span class="n">3</span>Что вы увидите и как это читать</h2>
+<p>Инструмент проходит ровно ту же цепочку, что и ваш телефон, и отмечает каждый этап
+   значком <span class="s-ok">✔</span> (ок), <span class="s-warn">!</span> (внимание) или
+   <span class="s-bad">✖</span> (проблема). В конце — таблица:</p>
+
+<table>
+  <tr><th style="width:34px">#</th><th style="width:250px">Этап</th><th>Если ✖ или ! — что это значит и что делать</th></tr>
+  <tr>
+    <td>1</td><td>Сеть ноутбука (получены адреса)</td>
+    <td>Адрес вида <code>169.254.*</code> — ноутбук <b>не получил IP от роутера</b>. «Забудьте» Wi-Fi на ноутбуке
+        и подключитесь заново; перезагрузите роутер.</td>
+  </tr>
+  <tr>
+    <td>2</td><td>Профиль сети (Public / Private)</td>
+    <td>«Общедоступный» (Public) — Windows режет входящие подключения. <b>Это причина №1 после поездок.</b>
+        Лечение: <code>--fix</code> (переведёт в Private) или вручную: Параметры → Сеть и Интернет → Wi-Fi →
+        свойства сети → «Частная».</td>
+  </tr>
+  <tr>
+    <td>3</td><td>Брандмауэр (входящие)</td>
+    <td>Если включено «Блокировать все входящие подключения» — <b>не помогают даже разрешающие правила</b>.
+        Снимите галочку в «Брандмауэр Защитника Windows» → «Дополнительные параметры» (<code>wf.msc</code>) →
+        Свойства.</td>
+  </tr>
+  <tr>
+    <td>4</td><td>Разрешение для <code>python.exe</code></td>
+    <td>Когда Python впервые слушает порт, Windows спрашивает «Разрешить доступ?». Если когда-то нажали
+        «Отмена» (или правило было только для Private, а сеть стала Public) — входящие молча блокируются.
+        Лечение: <code>--fix</code>.</td>
+  </tr>
+  <tr>
+    <td>5</td><td>Порт свободен и слушается</td>
+    <td>Порт занят другим процессом (двойной запуск, остался старый сервер).
+        Посмотрите, кто: <code>python net_doctor.py --check-port 5000</code>.</td>
+  </tr>
+  <tr>
+    <td>6</td><td>Ответ по <code>127.0.0.1</code></td>
+    <td>Даже локально нет ответа — проблема в <b>самом приложении</b> (ошибка в коде, не тот порт),
+        а не в сети.</td>
+  </tr>
+  <tr>
+    <td>7</td><td>Ответ по <code>192.168.x.x</code> (с ноутбука)</td>
+    <td>Ноутбук не отвечает сам себе по своему сетевому адресу: адрес/адаптер в порядке? При
+        <code>169.254.*</code> телефон его всё равно не найдёт.</td>
+  </tr>
+  <tr>
+    <td>8</td><td><b>Запрос с другого устройства</b></td>
+    <td>Если запрос не пришёл — обрыв на участке «телефон → роутер → ноутбук». Смотрите топ-5 причин ниже
+        (WARP/VPN, профиль сети, брандмауэр, гостевая сеть/изоляция клиентов).</td>
+  </tr>
+</table>
+
+<div class="callout warn">
+  <p><b>Три подсказки, которые появились после настоящего разбора:</b></p>
+  <ol>
+    <li><b>Адрес для телефона выбирается с умом.</b> На ноутбуке бывает 5–7 адресов
+        (Wi-Fi, мобильный хот-спот <code>192.168.137.1</code>, VMware, Bluetooth).
+        Инструмент пишет, какой адрес подходит телефону, а какие — служебные и заведомо
+        бесполезные. QR-код теперь ведёт только на рабочий адрес Wi-Fi.</li>
+    <li><b>Контрольный тест закрытого порта.</b> Рядом печатается ссылка на закрытый порт.
+        «Отказано в подключении» = пакеты <b>доходят</b> до ноутбука (режет сам ноутбук:
+        брандмауэр или антивирус). «Время ожидания истекло» = пакеты <b>не доходят</b>
+        (роутер, гостевая сеть / изоляция клиентов, VPN на телефоне).</li>
+    <li><b>Открытие <code>https://</code> больше не выглядит как «не достучался».</b>
+        Если телефон заходил по https, сервер получает TLS-приветствие. Теперь оно
+        распознаётся прямо в журнале: <code>TLS ClientHello — открывали https://,
+        а сервер ждёт http://</code> — и вердикт объясняет: сеть работает, дело в адресе.</li>
+  </ol>
+</div>
+
+<div class="callout ok">
+  <p><b>Как понять, что всё хорошо:</b> откройте тестовую страницу с телефона. Если она открылась —
+     в журнале появится строка <code>📱 запрос … [ДРУГОЕ УСТРОЙСТВО]</code>, а вердикт скажет:
+     «канал “телефон → ноутбук” работает». Значит дело в вашем приложении — почти всегда в том,
+     что оно слушает только <code>127.0.0.1</code>.</p>
+</div>
+
+<h2><span class="n">4</span>Топ-5 причин именно «после отпуска»</h2>
+
+<h3>1. Остатки Cloudflare WARP (1.1.1.1) или другого VPN</h3>
+<div class="card">
+  <p>WARP любят включать в поездке. Даже если «VPN выключен», WARP оставляет службу, виртуальный
+     адаптер и локальный прокси <code>127.0.0.1:40000</code>. Особенность WARP: <b>на самом ноутбуке
+     всё открывается, а входящие из локальной сети не доходят</b> — ровно ваши симптомы.</p>
+  <p><b>Как проверить:</b> инструмент отдельной строкой «Cloudflare WARP / VPN». Вручную:<br>
+     • трей (правый нижний угол) → значок Cloudflare → выход;<br>
+     • <code>ncpa.cpl</code> → есть ли адаптер «Cloudflare WARP»;<br>
+     • <code>services.msc</code> → служба <code>CloudflareWARP</code>.</p>
+  <p><b>Что делать:</b> выключить/выйти из WARP, а лучше — «Забыть сеть» в клиенте и перезагрузиться.
+     Если WARP больше не нужен — удалить приложение. Тест: остановить службу и сразу проверить с телефона.</p>
+</div>
+
+<h3>2. Сеть снова помечена как «Общедоступная» (Public)</h3>
+<div class="card">
+  <p>Когда вы подключились к чужому Wi-Fi (в отеле), Windows пометила профиль как Public.
+     При возвращении домой профиль может остаться «общедоступным» — и тогда входящие режутся.</p>
+  <p><b>Лечение:</b> Параметры → Сеть и Интернет → Wi-Fi → свойства сети → «Частная».
+     Или просто: <code>python net_doctor.py --fix</code>.</p>
+</div>
+
+<h3>3. Нет правила брандмауэра для Python</h3>
+<div class="card">
+  <p>Правило могло быть создано только для профиля Private, а сейчас сеть Public — тогда оно не работает.
+     Или вы когда-то отказались от окна «Разрешить доступ?».</p>
+  <p><b>Лечение:</b> <code>--fix</code> добавит входящее TCP-правило <b>только для локальной подсети</b>.
+     Откат — <code>netdoctor_undo.ps1</code>.</p>
+</div>
+
+<h3>4. Приложение слушает только <code>127.0.0.1</code></h3>
+<div class="card">
+  <p>Тогда его видит только сам ноутбук — и по <code>127.0.0.1</code> всё прекрасно, а по <code>192.168…</code>
+     с телефона нет. В коде должно быть:</p>
+<pre><span class="c"># Flask</span>
+app.run(host="0.0.0.0", port=5000)
+
+<span class="c"># стандартная библиотека</span>
+from http.server import HTTPServer
+HTTPServer(("0.0.0.0", 5000), Handler).serve_forever()</pre>
+  <p style="margin-bottom:0">Инструмент покажет это в строке «Адрес прослушивания» и подскажет порты.</p>
+</div>
+
+<h3>5. Роутер: гостевая сеть или изоляция клиентов</h3>
+<div class="card">
+  <p>Если телефон подключён к «гостевому» SSID или на роутере включена изоляция клиентов (AP isolation),
+     устройства физически не видят друг друга, даже находясь «в одной сети».</p>
+  <p><b>Как проверить:</b> сравните SSID и первые три числа IP на телефоне и ноутбуке
+     (например, <code>192.168.0.</code> и там, и там). В настройках роутера отключите
+     «Guest network» / «AP isolation» / «Изоляция клиентов».</p>
+</div>
+
+<h2><span class="n">5</span>Проверки вручную (если хочется своими глазами)</h2>
+<div class="card">
+  <p><b>Кто слушает порт и на каком адресе</b> (ищите <code>0.0.0.0:5000</code> — хорошо, <code>127.0.0.1:5000</code> — плохо):</p>
+  <pre>netstat -ano | findstr :5000</pre>
+  <p><b>Профиль сети:</b></p>
+  <pre>powershell -NoProfile -Command "Get-NetConnectionProfile | Format-Table InterfaceAlias, NetworkCategory"</pre>
+  <p><b>Состояние брандмауэра по профилям:</b></p>
+  <pre>netsh advfirewall show allprofiles</pre>
+  <p><b>Правила для Python:</b></p>
+  <pre>powershell -NoProfile -Command "Get-NetFirewallRule -DisplayName '*python*' |
+  Select-Object DisplayName, Enabled, Direction, Action, Profile"</pre>
+  <p><b>Видит ли ноутбук телефон (ARP/ping):</b></p>
+  <pre>ping 192.168.0.61
+arp -a | findstr 192.168.0.</pre>
+  <p style="margin-bottom:0"><b>Проверка «в лоб» на 1 минуту</b> (потом обязательно вернуть!):</p>
+  <pre>netsh advfirewall set allprofiles state off   <span class="c">:: выключить</span>
+<span class="c">:: ... проверьте с телефона ...</span>
+netsh advfirewall set allprofiles state on    <span class="c">:: включить обратно</span></pre>
+</div>
+
+<h2><span class="n">6</span>Если в консоли мелькают ошибки «'on' is not recognized…»</h2>
+<div class="callout warn">
+  <p>Первая версия лаунчера была <code>.bat</code>-файлом, и на Windows он мог выдать:</p>
+  <pre>'on' is not recognized as an internal or external command,
+'taйте' is not recognized as an internal or external command,
+'*' is not recognized as an internal or external command,</pre>
+  <p>Это <b>не</b> вирус и не поломка Python: <code>cmd.exe</code> выполнял <b>обрывки строк</b>
+     внутри <code>.bat</code>. Так бывает, когда в файле вместе встречаются кириллица,
+     юниксовые переводы строк (LF) и команда <code>chcp</code>: после смены кодовой страницы
+     консоль перечитывает файл по неверному смещению и запускает куски соседних строк
+     как команды.</p>
+  <p><b>Что сделано:</b> основной запуск теперь <code>start_netdoctor.vbs</code> — VBScript
+     не зависит от кодировок и переводов строк. Резервный <code>.bat</code> переписан на
+     чистый ASCII без <code>chcp</code>, файлы хранятся с CRLF (следит <code>.gitattributes</code>),
+     а сам <code>net_doctor.py</code> включает UTF-8 в консоли программно. Гигиена лаунчеров
+     проверяется автотестами.</p>
+  <p><b>Что делать вам:</b> обновить файлы из репозитория и запускать
+     <code>start_netdoctor.vbs</code>. Если совсем ничего не обновляется — откройте консоль
+     в папке <code>netdiagn</code> и выполните <code>python net_doctor.py</code>: результат
+     будет тот же.</p>
+</div>
+
+<h2><span class="n">7</span>Почему на ноутбуке открывается, а с телефона — нет?</h2>
+<div class="callout">
+  <p>Когда ноутбук обращается сам к себе по <code>192.168.0.60</code>, трафик не выходит в сеть —
+     он идёт «внутри» системы, и его <b>не проверяет фильтр входящих подключений</b>.
+     А запрос с телефона приходит извне — и проходит через брандмауэр, профиль сети, VPN-адаптеры
+     и роутер. Поэтому «у меня всё открывается» ничего не говорит о доступности с телефона.
+     Именно этот зазор и закрывает NET DOCTOR.</p>
+</div>
+
+<h2><span class="n">8</span>Безопасность</h2>
+<div class="card">
+  <p>Инструмент <b>не открывает ваш сервер в интернет</b>. Правило брандмауэра создаётся только для
+     локальной подсети (<code>-RemoteAddress LocalSubnet</code>) — это значит «домашние устройства»
+     (телефон, планшет, второй ноутбук) и ничего больше. Откат всех изменений — один файл
+     <code>netdoctor_undo.ps1</code>.</p>
+  <p style="margin-bottom:0">Инструмент ничего не отправляет в интернет, не собирает личные данные
+     и работает только на вашем компьютере. Отчёт <code>netdoctor_report.txt</code> — обычный текстовый
+     файл, который вы можете прочитать сами, прежде чем кому-то показывать.</p>
+</div>
+
+<h2><span class="n">9</span>Если не помогло</h2>
+<div class="card">
+  <p>1. Убедитесь, что тест прошёл до конца: телефон открыл тестовую страницу, и в журнале появилась строка
+     со словом <b>ДРУГОЕ УСТРОЙСТВО</b>.</p>
+  <p>2. Сохраните <code>netdoctor_report.txt</code> — он лежит рядом со скриптом.</p>
+  <p>3. Запустите ещё раз с адресом телефона и своим портом и пришлите отчёт:</p>
+  <pre>python net_doctor.py --check-port 5000 --phone 192.168.0.61</pre>
+  <p style="margin-bottom:0">В отчёте есть всё: адаптеры, адреса, профили, правила брандмауэра, слушающие
+     порты, соседи в сети и список всех запросов с IP — по нему видно, где именно застряло.</p>
+</div>
+
+<footer>
+  <p><b>NET DOCTOR</b> · <code>netdiagn/net_doctor.py</code> · один файл, только стандартная библиотека Python 3 ·
+     подробности — в <a href="README.md">netdiagn/README.md</a></p>
+  <p>Подсказка: эту страницу можно распечатать (Ctrl+P) — она специально сделана для печати.</p>
+</footer>
+
+</div>
+</body>
+</html>
