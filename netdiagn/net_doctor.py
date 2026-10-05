@@ -54,6 +54,7 @@ import argparse
 import datetime as _dt
 import html as _html
 import http.server
+import inspect
 import ipaddress
 import json
 import os
@@ -72,7 +73,7 @@ import webbrowser
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 DEFAULT_PORT = 8770          # порт тестового сервера (специально не 5000/8000/8080)
 IS_WINDOWS = (os.name == "nt")
 
@@ -691,7 +692,58 @@ LAN_KEYWORDS = [
     ("realtek", "Ethernet", 0),
     ("intel(r)", "сетевой адаптер", 0),
     ("bluetooth", "Bluetooth PAN", 1),
+    # Точка доступа Windows (мобильный хот-спот) живёт на Wi-Fi Direct адаптере
+    # с адресом 192.168.137.x — для телефона в обычной Wi-Fi сети он бесполезен.
+    ("wi-fi direct", "точка доступа Windows (мобильный хот-спот)", 2),
+    ("wifi direct", "точка доступа Windows (мобильный хот-спот)", 2),
 ]
+
+# Подсеть, которую Windows ICS (общий доступ/мобильный хот-спот) использует по
+# умолчанию: 192.168.137.0/24. Адреса оттуда телефон в обычной сети не найдёт.
+ICS_SUBNET = ipaddress.ip_network("192.168.137.0/24")
+
+# Статусы служб Windows (ServiceControllerStatus), чтобы в отчёте не было «4» и «1».
+SERVICE_STATUS = {
+    1: "Stopped/остановлена", 2: "StartPending/запускается",
+    3: "StopPending/останавливается", 4: "Running/работает",
+    5: "ContinuePending/продолжается", 6: "PausePending/пауза", 7: "Paused/на паузе",
+}
+
+
+def service_status_word(value: Any) -> str:
+    """Числовой статус службы -> понятная строка (в отчёте были «4», «1»)."""
+    try:
+        num = int(str(value).strip())
+    except (TypeError, ValueError):
+        return str(value)
+    return SERVICE_STATUS.get(num, str(value))
+
+
+def is_ics_ip(ip: str) -> bool:
+    """Адрес из подсети общего доступа Windows (мобильный хот-спот/ICS)."""
+    try:
+        return ipaddress.ip_address(ip) in ICS_SUBNET
+    except ValueError:
+        return False
+
+
+def describe_raw_request(raw: bytes) -> str:
+    """
+    Описывает «сырой» запрос, который не удалось разобрать как HTTP.
+
+    Зачем: если открыть адрес как https://, браузер пришлёт TLS-приветствие
+    (ClientHello). Обычный HTTP-сервер отвечает ошибкой 400 и НЕ попадает в журнал
+    запросов — и кажется, что «телефон не достучался», хотя пакеты дошли.
+    """
+    if not raw:
+        return "подключение без данных"
+    head = raw[:8]
+    if head.startswith(b"\x16\x03"):
+        return "TLS ClientHello — открывали https://, а сервер ждёт http://"
+    if head.startswith((b"GET ", b"POST", b"HEAD", b"PUT ", b"OPTI")):
+        return "HTTP-запрос с ошибкой формата (битые заголовки/строка запроса)"
+    printable = "".join(chr(b) if 32 <= b < 127 else "." for b in head)
+    return f"не HTTP (первые байты: {head.hex()}, как текст: {printable!r})"
 
 
 def classify_adapter(*names: str) -> Tuple[str, int]:
@@ -789,6 +841,90 @@ def all_local_ips() -> List[str]:
         if candidate and not candidate.startswith("127.") and candidate not in ips:
             ips.append(candidate)
     return ips
+
+
+def rank_local_ips(diag_or_facts: Any) -> List[Dict[str, Any]]:
+    """
+    Сортирует адреса ноутбука по «пригодности для телефона».
+
+    Почему это важно: на ноутбуке легко оказывается 5–7 адресов (Wi-Fi, точка доступа
+    Windows 192.168.137.1, VMware, Bluetooth, APIPA). Первый из них может не иметь
+    никакого отношения к вашей Wi-Fi сети — на реальном запуске QR-код и подсказка
+    показали 192.168.137.1 (мобильный хот-спот), и телефон туда не попал.
+
+    Порядок (score меньше — лучше):
+      0 — адрес на интерфейсе с маршрутом по умолчанию (это ваша сеть);
+      1 — другой адрес из той же подсети, что и основной;
+      2 — служебные адреса (точка доступа Windows, VMware, Bluetooth);
+      3 — APIPA 169.254.* (роутер не выдал адрес).
+    """
+    facts = (diag_or_facts.facts if isinstance(diag_or_facts, Diag) else diag_or_facts) or {}
+    rows = [r for r in (facts.get("ipaddresses") or []) if isinstance(r, dict)]
+    adapters: Dict[str, Dict[str, Any]] = {}
+    for a in (facts.get("adapters") or []):
+        if isinstance(a, dict):
+            adapters[str(a.get("Name") or "")] = a
+
+    defaults = [r for r in (facts.get("default_routes") or []) if isinstance(r, dict)]
+    default_alias = str(defaults[0].get("InterfaceAlias") or "") if defaults else ""
+    primary = str(facts.get("primary_ip") or "")
+    primary_net = subnet_of(primary, 24) if primary else None
+
+    result: List[Dict[str, Any]] = []
+    for row in rows:
+        ip = str(row.get("IPAddress") or "").strip()
+        if not ip or ip.startswith("127."):
+            continue
+        alias = str(row.get("InterfaceAlias") or "")
+        adapter = adapters.get(alias, {})
+        desc = str(adapter.get("InterfaceDescription") or "")
+        kind, risk = classify_adapter(alias, desc)
+        if "wi-fi direct" in (alias + " " + desc).lower() or is_ics_ip(ip):
+            kind, risk = "точка доступа Windows (мобильный хот-спот)", 2
+        try:
+            state_ok = int(row.get("AddressState")) == 4 if row.get("AddressState") is not None else True
+        except (TypeError, ValueError):
+            state_ok = True
+
+        if is_apipa(ip):
+            score, reason = 3, "адрес-заглушка 169.254.* (DHCP не сработал)"
+        elif alias and alias == default_alias:
+            score, reason = 0, "ваша основная сеть (через неё идёт интернет)"
+        else:
+            try:
+                in_primary = (primary_net is not None and
+                              ipaddress.ip_address(ip) in primary_net)
+            except ValueError:
+                in_primary = False
+            if in_primary:
+                score, reason = 1, "та же подсеть, что и основная сеть"
+            elif not defaults and risk < 2:
+                score, reason = 1, "обычный адрес ноутбука (данных о маршрутах нет)"
+            elif risk >= 2:
+                score, reason = 2, f"служебный адаптер: {kind}"
+            else:
+                score, reason = 2, f"другой интерфейс: {kind}"
+
+        if not state_ok:
+            score += 1
+            reason += "; адрес не в состоянии Preferred"
+        result.append({"ip": ip, "alias": alias, "kind": kind, "score": score,
+                       "reason": reason, "apipa": is_apipa(ip), "ics": is_ics_ip(ip)})
+
+    result.sort(key=lambda r: (r["score"], r["ip"]))
+    return result
+
+
+def recommended_ips(facts: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Адреса, которые имеет смысл показывать телефону (без APIPA и служебных)."""
+    ranking = rank_local_ips(facts)
+    best = [r for r in ranking
+            if r["score"] <= 1 and not r["apipa"] and not r["ics"]]
+    if best:
+        return best
+    # Данных мало или всё служебное: лучше честно ничего не советовать
+    # (раньше здесь возвращался APIPA-адрес, и телефон получал заведомо мёртвую ссылку).
+    return [r for r in ranking if not r["apipa"] and not r["ics"] and r["score"] <= 2]
 
 
 # «Мировые» факты о сети, собранные один раз (просто кэш, чтобы не спрашивать Windows повторно).
@@ -896,6 +1032,29 @@ Get-NetNeighbor -AddressFamily IPv4 |
 Get-DnsClientServerAddress -AddressFamily IPv4 |
   Select-Object InterfaceAlias, InterfaceIndex, ServerAddresses
 """),
+    ("warp_hidden", r"""
+Get-NetAdapter -IncludeHidden | Where-Object {
+    $_.Name -match 'warp|wireguard|cloudflare' -or
+    $_.InterfaceDescription -match 'warp|wireguard|cloudflare'
+} | Select-Object Name, InterfaceDescription, Status, AdminStatus
+"""),
+    ("ics_service", r"""
+Get-Service SharedAccess, icssvc -ErrorAction SilentlyContinue |
+  Select-Object Name, DisplayName, Status, StartType
+"""),
+    ("warp_cli", r"""
+$candidates = @(
+  "$env:ProgramFiles\Cloudflare\Cloudflare WARP\warp-cli.exe",
+  "$env:LOCALAPPDATA\Programs\Cloudflare\Cloudflare WARP\warp-cli.exe"
+)
+$exe = $candidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($exe) {
+    $out = & $exe --no-ansi status 2>&1 | Out-String
+    [ordered]@{ exe = $exe; output = $out.Trim() }
+} else {
+    [ordered]@{ exe = ""; output = "warp-cli.exe не найден" }
+}
+"""),
     ("metered", r"""
 $c = Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\NetworkList\DefaultMediaCost'
 if ($c) { [ordered]@{ wifi = $c.WiFi; ethernet = $c.Ethernet; mobile = $c.Mobile } }
@@ -916,18 +1075,28 @@ Get-NetFirewallProfile | Select-Object Name,
   @{n='LogFile';e={$_.LogFileName}}
 """),
     ("fw_python_rules", r"""
-$names = @{}
 Get-NetFirewallApplicationFilter | Where-Object {
     $_.Program -and ($_.Program -match 'python|py\.exe')
 } | ForEach-Object {
     $flt = $_
     Get-NetFirewallRule -Name $flt.InstanceID -ErrorAction SilentlyContinue |
-      Select-Object @{n='Program';e={$flt.Program}}, DisplayName, Enabled,
-          @{n='Direction';e={"$($_.Direction)"}},
-          @{n='Action';e={"$($_.Action)"}},
-          @{n='Profile';e={"$($_.Profile)"}},
-          @{n='ProfileInt';e={[int]$_.Profile}},
-          @{n='Name';e={$_.Name}}
+      ForEach-Object {
+        $r = $_
+        $af = $r | Get-NetFirewallAddressFilter -ErrorAction SilentlyContinue
+        $pf = $r | Get-NetFirewallPortFilter -ErrorAction SilentlyContinue
+        [pscustomobject]@{
+          Program       = $flt.Program
+          DisplayName   = $r.DisplayName
+          Enabled       = "$($r.Enabled)"
+          Direction     = "$($r.Direction)"
+          Action        = "$($r.Action)"
+          Profile       = "$($r.Profile)"
+          RemoteAddress = (@($af.RemoteAddress) -join ', ')
+          LocalPort     = (@($pf.LocalPort) -join ', ')
+          Protocol      = "$($pf.Protocol)"
+          Name          = "$($r.Name)"
+        }
+      }
 }
 """),
     ("fw_netdoctor_rules", r"""
@@ -961,7 +1130,8 @@ def collect_windows_facts(diag: Diag, verbose: bool = True) -> None:
 
     for key in ("os", "adapters", "ipaddresses", "ipv6", "profiles", "ifaces",
                 "routes", "listeners", "python_procs", "vpn_procs", "vpn_services",
-                "av_products", "av_services", "neighbors", "dns", "metered"):
+                "av_products", "av_services", "neighbors", "dns", "metered",
+                "warp_hidden", "ics_service", "warp_cli"):
         facts[key] = sec(key)
 
     fw = ps_collect(PS_SECTIONS_FIREWALL, timeout=180.0)
@@ -1296,7 +1466,8 @@ def check_profiles(diag: Diag) -> None:
         diag.add("net_profile", "Профиль сети Windows", "ok", detail)
 
 
-FIREWALL_ACTION = {0: "NotConfigured", 1: "Allow", 2: "Block"}
+FIREWALL_ACTION = {0: "NotConfigured (по факту = блокировать, нужны разрешающие правила)",
+                   1: "Allow (разрешать)", 2: "Block (блокировать)"}
 FIREWALL_ENABLED = {0: "False", 1: "True"}
 
 
@@ -1353,6 +1524,69 @@ def check_firewall(diag: Diag) -> None:
             if str(r.get("Enabled")) in ("1", "True"):
                 allow_in.append(r)
     diag.facts["fw_python_allow_in"] = allow_in
+
+    # Важно: правило может быть разрешающим, но ограниченным другим адресом
+    # (например, подсетью мобильного хот-спота 192.168.137.0/24). Тогда внешне
+    # «16 разрешающих правил», а из вашей Wi-Fi сети доступ закрыт.
+    primary = str(diag.facts.get("primary_ip") or "")
+    prefix = 24
+    for row in (diag.facts.get("ipaddresses") or []):
+        if isinstance(row, dict) and str(row.get("IPAddress")) == primary:
+            try:
+                prefix = int(row.get("PrefixLength") or 24)
+            except (TypeError, ValueError):
+                prefix = 24
+    primary_net = subnet_of(primary, prefix) if primary else None
+
+    def rule_covers_primary(r: Dict[str, Any]) -> bool:
+        remote = str(r.get("RemoteAddress") or "").strip().lower()
+        if not remote or "any" in remote or "localsubnet" in remote:
+            return True
+        if primary_net is None:
+            return True
+        for token in re.split(r"[,\s]+", remote):
+            token = token.strip()
+            if not token:
+                continue
+            try:
+                if "/" in token:
+                    if ipaddress.ip_network(token, strict=False).overlaps(primary_net):
+                        return True
+                elif ipaddress.ip_address(token) in primary_net:
+                    return True
+            except ValueError:
+                # ключевые слова Windows: LocalSubnet, DNS, DefaultGateway, DHCP, WSL ...
+                if token in ("localsubnet", "wlan", "wireless"):
+                    return True
+                continue
+        return False
+
+    covering = [r for r in allow_in if rule_covers_primary(r)]
+    not_covering = [r for r in allow_in if rules and not rule_covers_primary(r)]
+    diag.facts["fw_python_covering"] = [
+        {"DisplayName": r.get("DisplayName"), "RemoteAddress": r.get("RemoteAddress"),
+         "LocalPort": r.get("LocalPort"), "Profile": r.get("Profile")}
+        for r in covering
+    ]
+    diag.facts["fw_python_scoped_other"] = [
+        {"DisplayName": r.get("DisplayName"), "RemoteAddress": r.get("RemoteAddress"),
+         "LocalPort": r.get("LocalPort"), "Profile": r.get("Profile")}
+        for r in not_covering
+    ]
+    if primary and covering == [] and allow_in:
+        diag.add("firewall_python_scope", "Покрытие вашей подсети правилами", "bad",
+                 f"разрешающих правил: {len(allow_in)}, из них покрывают "
+                 f"{primary}/{prefix}: 0 · примеры чужих подсетей: "
+                 + ", ".join(str(r.get("RemoteAddress")) or "?"
+                             for r in not_covering[:3]),
+                 "Правила для python.exe есть, но ни одно не разрешает подключения "
+                 f"из вашей сети ({primary}/{prefix}). Так бывает, если правило создавалось "
+                 "в другой сети (например, в подсети мобильного хот-спота 192.168.137.0/24). "
+                 "Быстрая починка: python net_doctor.py --fix — он создаёт правило с "
+                 "RemoteAddress LocalSubnet, которое покрывает любую домашнюю сеть.")
+    elif covering:
+        diag.add("firewall_python_scope", "Покрытие вашей подсети правилами", "ok",
+                 f"покрывают {primary}/{prefix}: {len(covering)} правил(о)")
 
     if allow_in:
         names = {str(r.get("Program") or "") for r in allow_in}
@@ -1440,9 +1674,29 @@ def check_proxy(diag: Diag) -> None:
 
 
 def check_warp(diag: Diag) -> None:
-    """Следы Cloudflare WARP: адаптеры, службы, процессы, файлы, DNS."""
+    """
+    Cloudflare WARP: отдельно туннель и отдельно «фоновые» следы.
+
+    Тонкость, на которой инструмент ошибался раньше: служба CloudflareWARP всегда
+    работает в фоне, даже когда туннель отключён. Наличие службы и процессов —
+    это НЕ признак активного VPN. Туннель подключён, только если есть его виртуальный
+    адаптер (WireGuard/WARP) в состоянии Up, warp-cli сообщает Connected,
+    или DNS/маршруты уведены на локальный адрес WARP.
+    """
     facts = diag.facts
-    traces: List[str] = []
+    tunnel: List[str] = []
+    background: List[str] = []
+
+    for row in (facts.get("warp_hidden") or []):
+        if not isinstance(row, dict):
+            continue
+        status = str(row.get("Status") or "").lower()
+        admin = str(row.get("AdminStatus") or "").lower()
+        line = f"адаптер «{row.get('Name')}» ({row.get('InterfaceDescription')}) — {row.get('Status')}"
+        if status.startswith("up"):
+            tunnel.append(line)
+        elif admin.startswith("up") or status:
+            background.append(line)
 
     for row in (facts.get("adapters") or []):
         if not isinstance(row, dict):
@@ -1450,77 +1704,122 @@ def check_warp(diag: Diag) -> None:
         kind, risk = classify_adapter(str(row.get("Name") or ""),
                                       str(row.get("InterfaceDescription") or ""))
         if risk >= 3 and str(row.get("Status") or "").lower().startswith("up"):
-            traces.append(f"адаптер «{row.get('Name')}» ({kind}) — Up")
+            tunnel.append(f"адаптер «{row.get('Name')}» ({kind}) — Up")
 
-    for row in (facts.get("vpn_services") or []):
-        if isinstance(row, dict) and re.search(r"warp|cloudflare", str(row.get("Name") or ""),
-                                               re.I):
-            traces.append(f"служба {row.get('Name')} — {row.get('Status')}")
-
-    for row in (facts.get("vpn_procs") or []):
-        if isinstance(row, dict) and re.search(r"warp|cloudflare", str(row.get("ProcessName") or ""),
-                                               re.I):
-            traces.append(f"процесс {row.get('ProcessName')} (PID {row.get('Id')})")
-
-    warp = facts.get("warp") or {}
-    if warp.get("found"):
-        traces.append("найдены файлы Cloudflare WARP")
-    if warp.get("conf"):
-        traces.append("конфиг Cloudflare WARP")
+    for row in (facts.get("routes") or []):
+        if isinstance(row, dict) and re.search(r"warp|wireguard|cloudflare",
+                                               str(row.get("InterfaceAlias") or ""), re.I):
+            tunnel.append(f"маршрут через «{row.get('InterfaceAlias')}»")
 
     for row in (facts.get("dns") or []):
         if isinstance(row, dict):
             servers = row.get("ServerAddresses") or []
             if isinstance(servers, str):
                 servers = [servers]
-            if any(str(s).startswith("127.") for s in servers):
-                traces.append(f"DNS 127.0.0.1 на «{row.get('InterfaceAlias')}» "
-                              "(так делает локальный DoH-прокси WARP)")
+            if any(str(x).startswith("127.") for x in servers):
+                tunnel.append(f"DNS 127.0.0.1 на «{row.get('InterfaceAlias')}» "
+                              "(локальный DoH-прокси WARP)")
 
-    facts["warp_traces"] = traces
+    cli = facts.get("warp_cli")
+    cli_output = ""
+    if isinstance(cli, list) and cli and isinstance(cli[0], dict):
+        cli_output = str(cli[0].get("output") or "")
+    elif isinstance(cli, dict):
+        cli_output = str(cli.get("output") or "")
+    cli_low = cli_output.lower()
+    if cli_output and re.search(r"connected|подключ", cli_low) and not re.search(
+            r"disconnected|not connected|отключ", cli_low):
+        tunnel.append(f"warp-cli: {cli_output.splitlines()[0][:120]}")
+    elif cli_output:
+        first = cli_output.splitlines()[0][:120] if cli_output.splitlines() else cli_output[:120]
+        background.append(f"warp-cli: {first}")
 
-    if traces:
-        diag.add("warp", "Cloudflare WARP / VPN", "bad", "; ".join(dict.fromkeys(traces)),
-                 "Это самый подозрительный пункт: после отпуска вы включали WARP (1.1.1.1). "
-                 "WARP оставляет свои службы, адаптер и фильтры, и входящие подключения "
-                 "из локальной сети к ноутбуку перестают доходить — при этом на самом "
-                 "ноутбуке всё открывается. Полностью выйдите из WARP (правый клик по "
-                 "значку в трее → Quit/Disconnect), а лучше временно остановите службу "
-                 "и повторите тест.",
+    for row in (facts.get("vpn_services") or []):
+        if isinstance(row, dict) and re.search(r"warp|cloudflare", str(row.get("Name") or ""), re.I):
+            background.append(f"служба {row.get('Name')} — "
+                              f"{service_status_word(row.get('Status'))}")
+
+    for row in (facts.get("vpn_procs") or []):
+        if isinstance(row, dict) and re.search(r"warp|cloudflare",
+                                               str(row.get("ProcessName") or ""), re.I):
+            background.append(f"процесс {row.get('ProcessName')} (PID {row.get('Id')})")
+
+    warp = facts.get("warp") or {}
+    if warp.get("found") or warp.get("conf"):
+        background.append("файлы/конфиг Cloudflare WARP на диске")
+
+    facts["warp_tunnel_active"] = bool(tunnel)
+    facts["warp_traces"] = list(dict.fromkeys(tunnel))
+    facts["warp_background"] = list(dict.fromkeys(background))
+
+    if tunnel:
+        diag.add("warp", "Cloudflare WARP / VPN", "bad",
+                 "; ".join(dict.fromkeys(tunnel)),
+                 "Похоже, туннель WARP/VPN ПОДКЛЮЧЁН: есть его адаптер/маршрут/DNS. "
+                 "В таком режиме входящие подключения из локальной сети часто не доходят. "
+                 "Выйдите из WARP (трей → Disconnect/Quit), а лучше временно остановите "
+                 "службу и повторите тест с телефоном.",
                  fix_ps=[
                      "Get-Service | Where-Object { $_.Name -match 'warp|cloudflare' } | "
                      "Select-Object Name,Status,StartType",
-                     "# временно (понадобятся права администратора), тестовая остановка:",
+                     "# временная остановка для проверки (нужны права администратора):",
                      "Stop-Service -Name 'CloudflareWARP' -Force -ErrorAction SilentlyContinue",
                  ])
+    elif background:
+        diag.add("warp", "Cloudflare WARP / VPN", "info",
+                 "; ".join(dict.fromkeys(background)),
+                 "WARP установлен, его служба и процессы работают в фоне — это НОРМАЛЬНО "
+                 "даже при отключённом туннеле, и само по себе входящие не блокирует. "
+                 "Признаков подключённого туннеля нет (нет адаптера WARP в состоянии Up, "
+                 "нет маршрута/DNS WARP). Если позже окажется, что блокировка осталась, "
+                 "проверьте ещё так: остановите службу CloudflareWARP на 1 минуту "
+                 "(нужны права администратора) и повторите тест с телефона.")
     else:
         diag.add("warp", "Cloudflare WARP / VPN", "ok",
-                 "активных следов WARP/VPN не найдено")
+                 "следов WARP/VPN не найдено")
 
 
 def check_av(diag: Diag) -> None:
     """Сторонние антивирусы/фаерволы — частая причина «локально работает, снаружи нет»."""
     products = [p for p in (diag.facts.get("av_products") or []) if isinstance(p, dict)]
     services = [s for s in (diag.facts.get("av_services") or []) if isinstance(s, dict)]
+    # Без дублей: SecurityCenter2 на реальных машинах отдаёт один и тот же
+    # антивирус по 2–3 раза (в отчёте было «ESET Security, ESET Security, ESET Security»).
     names = []
     for p in products:
         name = str(p.get("displayName") or "").strip()
-        if name:
+        if name and name not in names:
             names.append(name)
-    third_party = [n for n in names if not re.search(r"windows defender|microsoft",
-                                                    n, re.I)]
-    svc_names = [str(s.get("Name")) for s in services
-                 if not re.search(r"windefend|wscsvc|securityhealth|mdm|sense", str(s.get("Name")), re.I)]
+    third_party = [n for n in names if not re.search(r"windows defender|microsoft", n, re.I)]
+    skip_re = r"windefend|wscsvc|securityhealth|mdm|sense"
+    svc_names = sorted({str(s.get("Name")) for s in services
+                        if not re.search(skip_re, str(s.get("Name")), re.I)})
     parts = []
     if names:
         parts.append("антивирусы: " + ", ".join(names))
     if svc_names:
-        parts.append("службы: " + ", ".join(sorted(set(svc_names))[:10]))
+        parts.append("службы: " + ", ".join(svc_names[:10]))
 
     facts = diag.facts
     facts["av_third_party"] = third_party
 
-    if third_party or svc_names:
+    # ESET (ekrn/ekrnEpfw) и Malwarebytes (MBAM*) держат СВОЙ сетевой фильтр,
+    # который режет входящие раньше брандмауэра Windows и не виден в wf.msc.
+    eset = bool([n for n in third_party if "eset" in n.lower()]) or         any(x.lower() in ("ekrn", "ekrnepfw", "eset") for x in svc_names) or         any("eset" in n.lower() for n in svc_names)
+    mbytes = any("mbam" in n.lower() for n in svc_names)
+    facts["av_firewall_strong"] = "ESET" if eset else (
+        "Malwarebytes" if mbytes else "")
+
+    if eset:
+        diag.add("av", "Сторонняя защита (ESET)", "warn", " · ".join(parts),
+                 "У ESET (службы ekrn/ekrnEpfw) СВОЙ сетевой экран, независимый от "
+                 "брандмауэра Windows: правила Windows могут быть идеальными, а ESET "
+                 "всё равно не пустит телефон. Проверка за 2 минуты: ESET → «Настройки» "
+                 "→ «Защита сети» (Firewall) → временно выключить фильтрацию трафика, "
+                 "проверить с телефона, включить обратно. Если дело в нём — добавьте "
+                 "разрешение для python.exe/pythonw.exe и переведите свою Wi-Fi сеть в "
+                 "зону «Домашняя/Доверенная» (в ESET есть свои зоны сетей).")
+    elif third_party or svc_names:
         diag.add("av", "Сторонняя защита", "warn", " · ".join(parts),
                  "Встроенный фильтр антивируса/фаервола может резать входящие раньше, чем "
                  "брандмауэр Windows. Отключите в нём «сетевой экран» на 2 минуты и "
@@ -1533,13 +1832,33 @@ def check_av(diag: Diag) -> None:
 def check_hosts(diag: Diag) -> None:
     lines = diag.facts.get("hosts") or []
     interesting = [ln for ln in lines if not re.match(r"^\s*#", ln)]
-    if interesting:
-        diag.add("hosts", "Файл hosts", "info",
-                 f"непустых строк: {len(interesting)}",
-                 "Записи в hosts могут направлять домены мимо нужного адреса. "
-                 "Если там есть что-то про ваш локальный сервер — проверьте.")
-    else:
+    if not interesting:
         diag.add("hosts", "Файл hosts", "ok", "лишних записей нет")
+        return
+
+    blockers = sum(1 for ln in interesting
+                   if ln.startswith("0.0.0.0") or ln.startswith("127.0.0.1")
+                   or ln.startswith("::1"))
+    local = [ip for ip in (diag.facts.get("ips") or []) if ip]
+    mentions = [ln for ln in interesting if any(ip in ln for ip in local)]
+    detail = f"непустых строк: {len(interesting)} · блокировок (0.0.0.0/127.0.0.1): {blockers}"
+    if mentions:
+        detail += f" · упоминаний ваших адресов: {len(mentions)}"
+    diag.facts["hosts_mentions"] = mentions[:20]
+    diag.facts["hosts_lines"] = len(interesting)
+
+    if mentions:
+        diag.add("hosts", "Файл hosts", "warn", detail,
+                 "В hosts есть строки с вашими локальными адресами — они могут направлять "
+                 "трафик мимо нужного сервера: " + "; ".join(mentions[:3]))
+    elif len(interesting) > 50:
+        diag.add("hosts", "Файл hosts", "info", detail,
+                 f"Похоже на список блокировки рекламы/телеметрии ({blockers} записей на "
+                 "0.0.0.0/127.0.0.1). Для локальной сети это не помеха, но если что-то "
+                 "странное — временно переименуйте файл и перезагрузитесь.")
+    else:
+        diag.add("hosts", "Файл hosts", "info", detail,
+                 "Записи в hosts могут направлять домены мимо нужного адреса.")
 
 
 def check_neighbors(diag: Diag, phone: Optional[str]) -> None:
@@ -1581,6 +1900,110 @@ def check_neighbors(diag: Diag, phone: Optional[str]) -> None:
                  f"{phone} в таблице не найден",
                  "Либо адрес телефона введён неточно, либо ноутбук с ним не общался. "
                  "Пинг/ARP-проверка ниже уточнит.")
+
+
+def check_ics(diag: Diag) -> None:
+    """
+    Точка доступа Windows (мобильный хот-спот) и её адрес 192.168.137.1.
+
+    Это не «поломка», но именно из-за неё на ноутбуке появляется лишний адрес,
+    который так удобно принять за «свой»: на реальном запуске QR-код вёл на
+    192.168.137.1, куда телефон в обычной Wi-Fi сети попасть не может.
+    """
+    facts = diag.facts
+    ranking = rank_local_ips(facts)
+    hotspot = [r for r in ranking if r.get("ics")]
+    shared = [s for s in (facts.get("ics_service") or []) if isinstance(s, dict)
+              and str(s.get("Name") or "").lower() in ("sharedaccess", "icssvc")]
+    running = [s for s in shared if str(s.get("Status")) in ("4", "Running")]
+    wifi_direct = [a for a in (facts.get("adapters") or []) if isinstance(a, dict)
+                   and "wi-fi direct" in str(a.get("InterfaceDescription") or "").lower()
+                   and str(a.get("Status") or "").lower().startswith("up")]
+
+    facts["ics_detected"] = bool(hotspot or running or wifi_direct)
+    if not facts["ics_detected"]:
+        diag.add("ics", "Точка доступа Windows (мобильный хот-спот)", "ok", "не обнаружена")
+        return
+
+    parts = []
+    if wifi_direct:
+        parts.append("адаптер «" + str(wifi_direct[0].get("Name")) + "» (Wi-Fi Direct) включён")
+    if hotspot:
+        parts.append("адрес " + ", ".join(r["ip"] for r in hotspot) + " в подсети точки доступа")
+    if shared:
+        parts.append("служба SharedAccess: " + service_status_word(shared[0].get("Status")))
+    diag.add("ics", "Точка доступа Windows (мобильный хот-спот)", "warn",
+             " · ".join(parts),
+             "У ноутбука есть своя точка доступа (мобильный хот-спот) с адресом "
+             "192.168.137.1 — это НЕ ваша домашняя Wi-Fi сеть, телефон в неё не попадёт, "
+             "если он подключён к роутеру. Если хот-спот вам не нужен, выключите его: "
+             "Параметры → Сеть и Интернет → Мобильный хот-спот → Выкл. Это уберёт лишний "
+             "виртуальный адаптер и путаницу с адресами.")
+
+
+def firewall_log_path() -> Optional[str]:
+    """Путь к журналу брандмауэра Windows (если он вообще создан)."""
+    base = os.environ.get("SystemRoot", r"C:\Windows")
+    path = os.path.join(base, "System32", "LogFiles", "Firewall", "pfirewall.log")
+    return path
+
+
+FWLOG_ENABLE_HINT = (
+    "Точный тест «доходят ли пакеты»: включите журнал блокировок брандмауэра "
+    "(в консоли от имени администратора):\n"
+    "      netsh advfirewall set allprofiles logging droppedconnections enable\n"
+    "      netsh advfirewall set allprofiles logging maxfilesize 16384\n"
+    "    затем повторите запуск NET DOCTOR и попробуйте зайти с телефона. "
+    "Если в журнале появятся строки с адресом телефона — пакеты ДОХОДЯТ до ноутбука, "
+    "и блокирует их сам ноутбук (фаервол/антивирус). Если журнал пуст — пакеты не "
+    "доходят (роутер, гостевая сеть, VPN на телефоне)."
+)
+
+
+def read_firewall_log(tail_lines: int = 400) -> List[str]:
+    """Последние строки журнала брандмауэра (пусто, если файла/прав нет)."""
+    path = firewall_log_path()
+    if not path or not os.path.isfile(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8", errors="replace") as fh:
+            lines = fh.readlines()
+    except OSError:
+        try:
+            with open(path, "r", encoding="cp1251", errors="replace") as fh:
+                lines = fh.readlines()
+        except OSError:
+            return []
+    return [ln.rstrip("\n") for ln in lines[-tail_lines:]]
+
+
+def check_firewall_log(diag: Diag, phone: Optional[str]) -> None:
+    """Смотрим журнал блокировок: есть ли там пакеты от телефона."""
+    if not IS_WINDOWS:
+        return
+    lines = read_firewall_log()
+    if not lines:
+        diag.add("firewall_log", "Журнал блокировок брандмауэра", "info",
+                 "журнал пуст или ещё не включён",
+                 FWLOG_ENABLE_HINT)
+        return
+
+    local = [ip for ip in (diag.facts.get("ips") or []) if ip and not is_apipa(ip)]
+    blocked = [ln for ln in lines if " DROP " in ln.upper()]
+    interesting = [ln for ln in blocked
+                   if (phone and phone in ln) or any(ip in ln for ip in local)]
+    diag.facts["fwlog_drops"] = interesting[-10:]
+    if interesting:
+        diag.add("firewall_log", "Журнал блокировок брандмауэра", "bad",
+                 f"строк DROP: {len(blocked)}, с адресом телефона/ноутбука: {len(interesting)}",
+                 "Пакеты ДОХОДЯТ до ноутбука, но брандмауэр их блокирует — вот доказательство "
+                 "(последние строки): " + " | ".join(interesting[-3:]))
+    else:
+        diag.add("firewall_log", "Журнал блокировок брандмауэра", "info",
+                 f"строк DROP: {len(blocked)}, с адресами телефона/ноутбука нет",
+                 "Если телефон в момент проверки точно пытался подключиться, а строк нет — "
+                 "пакеты до ноутбука не доходят: проблема на роутере (гостевая сеть, "
+                 "изоляция клиентов) или на телефоне (VPN). " + FWLOG_ENABLE_HINT)
 
 
 def check_python_procs(diag: Diag) -> None:
@@ -1868,7 +2291,8 @@ def check_phone(diag: Diag, phone: Optional[str]) -> None:
 #  8. ВЕРДИКТ
 # =========================================================================================
 
-def build_verdict(diag: Diag, port: int, external_hit: bool) -> Dict[str, Any]:
+def build_verdict(diag: Diag, port: int, external_hit: bool,
+                  raw_external_hit: bool = False) -> Dict[str, Any]:
     """
     Возвращает {"status": "ok|warn|bad", "headline": str, "steps": [str, ...],
                 "probability": [(причина, «очки»), ...]}
@@ -1884,6 +2308,11 @@ def build_verdict(diag: Diag, port: int, external_hit: bool) -> Dict[str, Any]:
     warp_traces = facts.get("warp_traces") or []
     defaults = facts.get("default_routes") or []
     apipa = [ip for ip in (facts.get("ips") or []) if is_apipa(ip)]
+    real_ips = [ip for ip in (facts.get("ips") or [])
+                if not is_apipa(ip) and not is_ics_ip(ip)]
+    fw_scope = diag.get("firewall_python_scope")
+    fw_log = diag.get("firewall_log")
+    ics_chk = diag.get("ics")
     loopback_only = diag.get("listeners_loopback")
     sp = diag.get("watch_port")
     phone_sub = diag.get("phone_subnet")
@@ -1903,7 +2332,22 @@ def build_verdict(diag: Diag, port: int, external_hit: bool) -> Dict[str, Any]:
         reasons.append((f"Сеть помечена как «Общедоступная» ({', '.join(profile_public)}), "
                         "а разрешения для python.exe нет", 80))
     if warp_traces:
-        reasons.append(("Активен Cloudflare WARP/VPN — входящие из LAN не доходят", 75))
+        reasons.append(("Подключён туннель Cloudflare WARP/VPN — входящие из LAN "
+                        "не доходят", 75))
+    if fw_log is not None and fw_log.status == "bad":
+        reasons.append(("В журнале брандмауэра есть блокировки с адресом телефона: "
+                        "пакеты доходят, блокирует ноутбук", 82))
+    if fw_scope is not None and fw_scope.status == "bad":
+        reasons.append(("Разрешающие правила для python.exe не покрывают вашу подсеть "
+                        "(например, ограничены подсетью хот-спота)", 78))
+    if facts.get("av_firewall_strong") == "ESET":
+        reasons.append(("Свой сетевой экран ESET (ekrnEpfw) режет входящие независимо "
+                        "от брандмауэра Windows", 70))
+    if facts.get("hosts_mentions"):
+        reasons.append(("В файле hosts есть записи с вашими локальными адресами", 25))
+    if (ics_chk is not None and ics_chk.status == "warn") or facts.get("ics_detected"):
+        reasons.append(("Включена точка доступа Windows (мобильный хот-спот): адрес "
+                        "192.168.137.1 — это НЕ ваша Wi-Fi сеть, легко перепутать", 20))
     if phone_sub and phone_sub.status == "bad":
         reasons.append(("Телефон в другой подсети/сети (гостевая сеть, другой роутер)", 88))
     if arp_bad and arp_bad.status == "bad":
@@ -1912,9 +2356,12 @@ def build_verdict(diag: Diag, port: int, external_hit: bool) -> Dict[str, Any]:
     if len(defaults) > 1:
         reasons.append(("Несколько маршрутов по умолчанию (VPN/Hyper-V) — ответы уходят "
                         "не в ту дверь", 40))
-    if apipa:
-        reasons.append((f"Адрес вида 169.254.* ({', '.join(apipa)}) — DHCP не сработал", 60))
-    if facts.get("av_third_party"):
+    # APIPA-адреса на служебных адаптерах (VMware/Bluetooth/Wi-Fi Direct) — это шум,
+    # а не поломка: на реальном запуске четыре таких адреса дали ложные 60 %.
+    if apipa and not real_ips:
+        reasons.append((f"Адрес вида 169.254.* ({', '.join(apipa)}) — DHCP не сработал, "
+                        "телефон такой ноутбук не найдёт", 60))
+    if (facts.get("av_third_party") and facts.get("av_firewall_strong") != "ESET"):
         reasons.append(("Сторонний антивирус/фаервол фильтрует входящие", 45))
     if facts.get("proxy_enabled"):
         reasons.append(("Включён системный прокси — браузеру ноутбука может мешать, "
@@ -1925,6 +2372,18 @@ def build_verdict(diag: Diag, port: int, external_hit: bool) -> Dict[str, Any]:
     reasons.sort(key=lambda item: item[1], reverse=True)
 
     steps: List[str] = []
+    if raw_external_hit:
+        return {"status": "warn",
+                "headline": "Пакеты от телефона ДОШЛИ, но это не HTTP-запрос "
+                            "(похоже, открывали https://). Сеть работает — дело в адресе.",
+                "steps": [
+                    "Откройте адрес ровно как http://<IP>:<порт>/ — со схемой http.",
+                    "В Chrome/Edge на телефоне отключите «Всегда использовать защищённые "
+                    "подключения» (HTTPS-First), если он включён.",
+                    "Самое надёжное — наведите камеру телефона на QR-код: в нём уже зашит "
+                    "правильный http-адрес.",
+                    "После этого проверьте своё приложение на 5000/5001 том же способом.",
+                ]}
     if external_hit:
         verdict = {"status": "ok",
                    "headline": f"Телефон достучался до тестового сервера на порту {port} — "
@@ -1947,16 +2406,38 @@ def build_verdict(diag: Diag, port: int, external_hit: bool) -> Dict[str, Any]:
     if reasons[0][1] >= 80:
         headline = f"Телефон не достучался. Главный подозреваемый: {reasons[0][0].lower()}."
 
+    shown_ip = ""
+    for r in recommended_ips(facts):
+        shown_ip = r["ip"]
+        break
+    if not shown_ip:
+        for r in rank_local_ips(facts):
+            if not r["apipa"] and not r["ics"]:
+                shown_ip = r["ip"]
+                break
+    av_note = ""
+    if facts.get("av_firewall_strong") == "ESET":
+        av_note = " (у вас это ESET)"
+    elif facts.get("av_third_party"):
+        av_note = " (у вас: " + ", ".join(facts["av_third_party"][:3]) + ")"
+    closed = facts.get("closed_port")
     steps = [
-        "1. Прочитайте список причин ниже — они отсортированы от самой вероятной.",
-        "2. Выполните: python net_doctor.py --fix  (создаст netdoctor_fix.ps1 и предложит "
-        "запустить от администратора).",
-        "3. После починки снова откройте адрес с телефона: "
-        f"http://{facts.get('primary_ip') or '<IP ноутбука>'}:{port}/",
-        "4. Если не помогло — временно выключите сторонний антивирус и полностью выйдите из "
-        "WARP/VPN, повторите тест.",
-        "5. Совсем для проверки «кто виноват»: выключить брандмауэр на 1 минуту "
-        "(netsh advfirewall set allprofiles state off + state on — не забудьте вернуть!).",
+        "1. Самая частая причина при «всё настроено» — сетевой экран стороннего антивируса"
+        + av_note + ": выключите его фильтрацию на 2 минуты и сразу проверьте с телефона.",
+        "2. На телефоне: выключите любые VPN (в том числе 1.1.1.1/WARP), отключите мобильный "
+        "интернет и откройте ровно http://" + (shown_ip or "<IP ноутбука>") +
+        f":{port}/ (со схемой http, не https).",
+        "3. Контрольный тест закрытого порта: откройте с телефона "
+        + (f"http://{shown_ip or '<IP>'}:{closed}/" if closed else "адрес закрытого порта") +
+        " — «отказано в подключении» значит пакеты доходят (блокирует ноутбук), "
+        "«время ожидания» — пакеты не доходят (роутер или VPN на телефоне).",
+        "4. Проверьте роутер: «гостевая сеть» и «изоляция клиентов» (AP isolation) должны "
+        "быть выключены; телефон — в той же сети, что и ноутбук.",
+        "5. Починка на ноутбуке: python net_doctor.py --fix (правило брандмауэра только для "
+        "локальной подсети + профиль сети Private).",
+        "6. Точное доказательство «кто виноват»: включите журнал блокировок брандмауэра "
+        "(команды есть в отчёте netdoctor_report.txt) и посмотрите, появился ли в нём адрес "
+        "телефона.",
     ]
     return {"status": "bad", "headline": headline, "steps": steps,
             "reasons": reasons}
@@ -1967,7 +2448,12 @@ def print_verdict(diag: Diag, verdict: Dict[str, Any]) -> None:
     status = verdict["status"]
     color = {"ok": C.GREEN, "warn": C.YELLOW, "bad": C.RED}.get(status, C.CYAN)
     print(col(verdict["headline"], color, C.BOLD))
-    for reason, score in (verdict.get("reasons") or [])[:8]:
+    reasons_list = (verdict.get("reasons") or [])[:8]
+    lonely = len(reasons_list) == 1 and reasons_list[0][1] <= 10
+    for reason, score in reasons_list:
+        if lonely:
+            print("   " + col(reason, C.GREY))
+            continue
         bar = "#" * max(1, min(20, score // 5))
         print("   " + col(f"{score:>3}%", color, C.BOLD) + " " +
               col(bar, C.GREY) + "  " + reason)
@@ -2131,8 +2617,9 @@ def build_report_text(diag: Diag, verdict: Dict[str, Any], port: int,
     lines.append("--- ФАКТЫ О СЕТИ ---")
     for key in ("hostname", "os_version", "ips", "primary_ip", "profile_public",
                 "firewall_all_inbound_blocked", "ssid", "interface_metrics",
-                "default_routes", "proxy_enabled", "warp_traces", "av_third_party",
-                "phone"):
+                "default_routes", "proxy_enabled", "warp_traces", "warp_tunnel_active",
+                "warp_background", "av_third_party", "av_firewall_strong",
+                "ics_detected", "closed_port", "hosts_mentions", "arp_diff", "phone"):
         if key in diag.facts:
             lines.append(f"{key}: {json.dumps(diag.facts.get(key), ensure_ascii=False)[:600]}")
     lines.append("")
@@ -2148,6 +2635,28 @@ def build_report_text(diag: Diag, verdict: Dict[str, Any], port: int,
     for row in (diag.facts.get("listeners_clean") or []):
         if str(row.get("name", "")).lower().startswith("python"):
             lines.append(json.dumps(row, ensure_ascii=False, default=str))
+    lines.append("")
+    lines.append("--- ПОЧЕМУ ТАКОЙ АДРЕС РЕКОМЕНДОВАН ТЕЛЕФОНУ ---")
+    for row in (diag.facts.get("ip_ranking") or []):
+        lines.append(json.dumps(row, ensure_ascii=False))
+    lines.append("")
+    lines.append("--- ПРАВИЛА БРАНДМАУЭРА ДЛЯ PYTHON (адреса и порты) ---")
+    for row in (diag.facts.get("fw_python_allow_in") or []):
+        lines.append(json.dumps({k: row.get(k) for k in
+                                 ("Program", "DisplayName", "Profile", "RemoteAddress",
+                                  "LocalPort", "Protocol")}, ensure_ascii=False))
+    if not (diag.facts.get("fw_python_allow_in") or []):
+        lines.append("(разрешающих входящих правил не найдено)")
+    lines.append("")
+    lines.append("--- ЖУРНАЛ БЛОКИРОВОК БРАНДМАУЭРА ---")
+    for line in (diag.facts.get("fwlog_drops") or []):
+        lines.append(line)
+    if not (diag.facts.get("fwlog_drops") or []):
+        lines.append("(строк с адресами телефона/ноутбука нет)")
+    lines.append("")
+    lines.append("Если журнал нужно включить (консоль администратора):")
+    lines.append("    netsh advfirewall set allprofiles logging droppedconnections enable")
+    lines.append("    netsh advfirewall set allprofiles logging maxfilesize 16384")
     lines.append("")
     lines.append("--- СОСЕДИ (ARP) ---")
     for row in (diag.facts.get("neighbors_clean") or []):
@@ -2315,6 +2824,37 @@ def make_handler(diag: Diag, port: int, started: float,
 
         def log_message(self, *args: Any) -> None:   # печатаем сами
             pass
+
+        def parse_request(self) -> bool:   # noqa: N802
+            """
+            Ловим «сырые» запросы: TLS-приветствие (открытие https://) и вообще всё,
+            что не разбирается как HTTP.
+
+            Зачем: обычный HTTP-сервер в этом случае отвечает ошибкой 400 и НЕ попадает
+            в журнал. Из-за этого казалось, что «телефон не достучался», хотя пакеты
+            доходили до ноутбука — на реальном запуске это была одна из слепых зон.
+            """
+            ok = super().parse_request()
+            if not ok:
+                try:
+                    raw = getattr(self, "raw_requestline", b"") or b""
+                    self._record_raw(raw)
+                except Exception:
+                    pass
+            return ok
+
+        def _record_raw(self, raw: bytes) -> None:
+            """Пишем в журнал подключение, которое не удалось разобрать как HTTP."""
+            note = describe_raw_request(raw)
+            hit = diag.add_hit(self.client_address[0], "<не HTTP>", "(сырые данные)",
+                               port, headers={})
+            hit["raw"] = True
+            hit["note"] = note
+            if on_hit:
+                try:
+                    on_hit(hit)
+                except Exception:
+                    pass
 
         # ---- утилиты ---------------------------------------------------------
         def _send(self, code: int, body: bytes, ctype: str, head_only: bool = False) -> None:
@@ -2503,6 +3043,10 @@ def print_qr(url: str, legend: str = "") -> bool:
 
 def _fmt_hit(hit: Dict[str, Any]) -> str:
     kind = "локально" if hit["local"] else "ДРУГОЕ УСТРОЙСТВО"
+    if hit.get("raw"):
+        return (col(SYM["phone"] + " ", C.MAGENTA) +
+                col(f"попытка {hit['time']} от {hit['ip']}", C.BOLD) +
+                col(f" [{kind}] запрос не распознан: {hit.get('note', '')}", C.YELLOW))
     return (col(SYM["phone"] + " ", C.MAGENTA) +
             col(f"запрос {hit['time']} от {hit['ip']}", C.BOLD) +
             col(f" [{kind}] {hit['path']} · {hit['ua'][:70]}", C.GREY))
@@ -2642,7 +3186,8 @@ def collect_facts(diag: Diag) -> None:
 
 
 def run_checks_without_server(diag: Diag, args: argparse.Namespace) -> None:
-    check_env(diag)
+    # check_env здесь НЕ вызываем: он уже вызван в run_diagnostics, иначе проверка
+    # «Система и права» попадала в отчёт дважды.
     check_adapters(diag)
     check_profiles(diag)
     check_firewall(diag)
@@ -2654,40 +3199,65 @@ def run_checks_without_server(diag: Diag, args: argparse.Namespace) -> None:
     check_neighbors(diag, args.phone)
     check_phone(diag, args.phone)
     check_ssid(diag)
+    check_ics(diag)
     check_python_procs(diag)
     check_listeners(diag, watch_port=args.check_port)
+    check_firewall_log(diag, args.phone)
 
 
 def wait_for_phone(diag: Diag, seconds: float, port: int,
-                   no_qr: bool = False) -> bool:
-    """Ждёт первый запрос «извне» (не с ноутбука). Возвращает True, если дождались."""
+                   no_qr: bool = False) -> Dict[str, Any]:
+    """
+    Ждёт запрос «извне» и рассказывает, что именно показать на телефоне.
+
+    Возвращает словарь:
+      {"external_hit": bool, "raw_hit": bool, "closed_port": int|None,
+       "arp_diff": {"new": {...}, "changed": {...}}}
+    """
+    result: Dict[str, Any] = {"external_hit": False, "raw_hit": False,
+                              "closed_port": None, "arp_diff": {}}
     if seconds <= 0:
-        return False
-    ui = _ui.lang
+        return result
+
+    facts = diag.facts
+    ranked = rank_local_ips(facts)
+    primary_rows = [r for r in ranked
+                    if r["score"] <= 1 and not r["apipa"] and not r["ics"]]
+    other_rows = [r for r in ranked if r not in primary_rows]
+    top_ip = primary_rows[0]["ip"] if primary_rows else (facts.get("primary_ip") or "")
+    closed_port = pick_closed_port(port)
+    result["closed_port"] = closed_port
+    facts["closed_port"] = closed_port
+    facts["ip_ranking"] = ranked
+
     print()
     print(col("=" * 86, C.BLUE))
-    if ui == "ru":
-        print(col("  ТЕПЕРЬ ВОЗЬМИТЕ ТЕЛЕФОН (он должен быть в ТОЙ ЖЕ Wi-Fi сети):", C.BOLD))
-        for i, ip in enumerate(diag.facts.get("ips") or []):
-            urls = f"http://{ip}:{port}/"
-            extra = ""
-            if is_apipa(ip):
-                extra = col("   (это адрес-заглушка, скорее всего бесполезен)", C.YELLOW)
-            print(f"    {SYM['arrow']}  " + col(urls, C.BOLD, C.GREEN) + extra)
-        print(col(f"  Жду до {seconds:.0f} с. Первый же запрос ДОКАЖЕТ, что канал жив.",
-                  C.GREY))
-        print(col("  Если Windows спросит «Разрешить доступ к сети?» — нажмите "
-                  "«Разрешить доступ».", C.YELLOW))
-        if not no_qr:
-            first = next((ip for ip in (diag.facts.get("ips") or [])
-                          if not is_apipa(ip)), None)
-            if first:
-                print()
-                if print_qr(f"http://{first}:{port}/", "наведите камеру телефона"):
-                    print(col("  (QR-код: наведите камеру телефона — адрес набирать не нужно)",
-                              C.GREY))
+    print(col("  ТЕПЕРЬ ВОЗЬМИТЕ ТЕЛЕФОН (он должен быть в ТОЙ ЖЕ Wi-Fi сети):", C.BOLD))
+    for r in primary_rows:
+        print(f"    {SYM['arrow']}  " + col(f"http://{r['ip']}:{port}/", C.BOLD, C.GREEN)
+              + col(f"   — {r['reason']}", C.GREY))
+    if other_rows:
+        print(col("  Эти адреса телефону НЕ подойдут (служебные адаптеры/заглушки):", C.GREY))
+        for r in other_rows[:6]:
+            print(col(f"    · http://{r['ip']}:{port}/ — {r['reason']}", C.GREY))
+    print(col("  Памятка: открывайте адрес ровно с http:// (не https); VPN и мобильный", C.YELLOW))
+    print(col("  интернет на телефоне на время проверки выключены; SSID — тот же.", C.YELLOW))
+    if closed_port and top_ip:
+        print()
+        print(col(f"  КОНТРОЛЬНЫЙ ТЕСТ (закрытый порт): http://{top_ip}:{closed_port}/", C.CYAN, C.BOLD))
+        print(col("    «Отказано в подключении» = пакеты ДОХОДЯТ до ноутбука (значит блокирует "
+                  "сам ноутбук: фаервол/антивирус).", C.GREY))
+        print(col("    «Время ожидания истекло» = пакеты, скорее всего, НЕ доходят "
+                  "(роутер/гостевая сеть/VPN на телефоне).", C.GREY))
+    print(col("  Если Windows спросит «Разрешить доступ к сети?» — нажмите «Разрешить доступ».",
+              C.YELLOW))
+    if not no_qr and top_ip:
+        print()
+        if print_qr(f"http://{top_ip}:{port}/", "наведите камеру телефона"):
+            print(col("  (QR-код ведёт на правильный адрес: " + top_ip + ")", C.GREY))
     print(col("=" * 86, C.BLUE))
 
+    arp_before = arp_snapshot()
     deadline = time.time() + seconds
     printed = 0
     last_beat = time.time()
@@ -2700,10 +3270,24 @@ def wait_for_phone(diag: Diag, seconds: float, port: int,
             printed += 1
             if hit["local"]:
                 hit_local = True
-        if diag.external_hits():
-            print()
-            good("ЗАПРОС ДОШЁЛ С ДРУГОГО УСТРОЙСТВА — канал «телефон → ноутбук» РАБОТАЕТ!")
-            return True
+        external = diag.external_hits()
+        if external:
+            raw_external = [h for h in external if h.get("raw")]
+            if raw_external:
+                print()
+                bad("С ТЕЛЕФОНА ПРИШЛИ ПАКЕТЫ, но запрос не похож на обычный HTTP:")
+                for h in raw_external[:3]:
+                    print(col(f"    от {h['ip']}: {h.get('note', '')}", C.YELLOW))
+                info("Значит сеть «телефон ↔ ноутбук» РАБОТАЕТ. Откройте адрес ровно как "
+                     "http://" + (top_ip or "<IP>") + f":{port}/ — без https — "
+                     "или просто наведите камеру на QR-код.")
+                result["external_hit"] = True
+                result["raw_hit"] = True
+            else:
+                print()
+                good("ЗАПРОС ДОШЁЛ С ДРУГОГО УСТРОЙСТВА — канал «телефон → ноутбук» РАБОТАЕТ!")
+                result["external_hit"] = True
+            break
         if time.time() - last_beat >= 15:
             last_beat = time.time()
             left = max(0.0, deadline - time.time())
@@ -2711,13 +3295,33 @@ def wait_for_phone(diag: Diag, seconds: float, port: int,
             if hit_local:
                 tail = col("  (локальные заходы были — сервер точно отвечает)", C.GREY)
             print(col(f"    … жду запроса с телефона, осталось {left:.0f} с{tail}", C.GREY))
-    print()
-    warn(f"Запросов с телефона не было за {seconds:.0f} с.")
-    if hit_local:
-        info("Зато были локальные заходы — сам сервер и порт работают.")
-    return False
+
+    arp_after = arp_snapshot()
+    arp_diff = diff_arp(arp_before, arp_after)
+    result["arp_diff"] = arp_diff
+    diag.facts["arp_diff"] = arp_diff
+
+    if arp_diff.get("new") or arp_diff.get("changed"):
+        print()
+        info("В таблице соседей произошли изменения (значит, обмен пакетами с кем-то шёл):")
+        for ip, state in list(arp_diff.get("new", {}).items())[:5]:
+            print(col(f"    появился {ip}: {state} — возможно, это ваш телефон", C.CYAN))
+        for ip, (was, now) in list(arp_diff.get("changed", {}).items())[:5]:
+            print(col(f"    {ip}: было {was}, стало {now}", C.GREY))
+
+    if not result["external_hit"]:
+        print()
+        warn(f"Запросов с телефона не было за {seconds:.0f} с.")
+        if hit_local:
+            info("Зато были локальные заходы — сам сервер и порт работают.")
+        if arp_diff.get("new"):
+            info("Но появились новые соседи в ARP — пакеты от телефона, скорее всего, "
+                 "доходят до ноутбука, а соединение блокируется уже на нём "
+                 "(фаервол Windows/антивирус).")
+    return result
 
 
+# =========================================================================================
 def write_fix_files(args: argparse.Namespace, diag: Diag) -> List[str]:
     outdir = args.fixdir or os.getcwd()
     try:
@@ -2807,15 +3411,18 @@ def run_diagnostics(args: argparse.Namespace) -> int:
     step("2/6", "Проверяю сеть, профиль, брандмауэр, VPN, прокси…")
     run_checks_without_server(diag, args)
     for key in ("ps_collect", "adapters_vpn", "net_profile", "firewall_state",
-                "firewall_python", "routes", "proxy", "warp", "av", "hosts",
-                "neighbors", "neighbor_phone", "phone_subnet", "phone_ping", "ssid",
-                "py_procs", "listeners_loopback", "watch_port"):
+                "firewall_python", "firewall_python_scope", "routes", "proxy", "warp",
+                "av", "hosts", "ics", "neighbors", "neighbor_phone", "phone_subnet",
+                "phone_ping", "ssid", "py_procs", "listeners_loopback", "watch_port",
+                "firewall_log"):
         if diag.get(key):
             diag.show(key)
 
     # ---- 3/6 тестовый сервер ------------------------------------------------------
     external_hit = False
+    raw_external_hit = False
     server: Optional[_TestServer] = None
+    arp_before_server = arp_snapshot()
     log = lambda line: print(line)  # noqa: E731
 
     if args.no_server:
@@ -2840,6 +3447,14 @@ def run_diagnostics(args: argparse.Namespace) -> int:
             check_local_reach(diag, args.port, diag.facts.get("ips") or [])
             diag.show("local_http")
             diag.show("lan_http")
+            rec = recommended_ips(diag.facts)
+            if rec:
+                info("Адрес для телефона: " + col(f"http://{rec[0]['ip']}:{args.port}/",
+                                                  C.BOLD, C.GREEN)
+                     + col(f"  ({rec[0]['reason']})", C.GREY))
+                diag.add("recommended_ip", "Рекомендованный адрес для телефона", "info",
+                         f"http://{rec[0]['ip']}:{args.port}/ — {rec[0]['reason']}")
+                diag.show("recommended_ip")
             if args.open:
                 url = f"http://127.0.0.1:{args.port}/"
                 info(f"открываю в браузере ноутбука: {url}")
@@ -2853,13 +3468,33 @@ def run_diagnostics(args: argparse.Namespace) -> int:
     # ---- 5/6 ждём телефон ---------------------------------------------------------
     if server is not None:
         step("5/6", "Жду запрос с телефона…")
-        external_hit = wait_for_phone(diag, args.wait, args.port, no_qr=args.no_qr)
+        wait_result = wait_for_phone(diag, args.wait, args.port, no_qr=args.no_qr)
+        external_hit = bool(wait_result.get("external_hit"))
+        raw_external_hit = bool(wait_result.get("raw_hit"))
     else:
         step("5/6", "Ожидание телефона пропущено (нет тестового сервера).")
 
+    # ---- 5b/6: журнал брандмауэра — читаем ЗАНОВО, уже после попыток с телефона -----
+    if IS_WINDOWS and (external_hit or not args.no_server):
+        before = list(diag.checks)
+        diag.checks = [c for c in diag.checks if c.key not in ("firewall_log", "arp_after")]
+        check_firewall_log(diag, args.phone)
+        after = [c for c in diag.checks if c.key == "firewall_log"
+                 and c not in before]
+        if after:
+            print()
+            info("Журнал брандмауэра — перечитан после попыток с телефона:")
+            diag.show("firewall_log")
+        changed = diff_arp(arp_before_server, arp_snapshot())
+        if changed.get("new"):
+            diag.facts["arp_after_server"] = changed
+            info("С момента старта в сети появились новые устройства: "
+                 + ", ".join(f"{ip} ({st})" for ip, st in list(changed["new"].items())[:5]))
+
     # ---- 6/6 вердикт --------------------------------------------------------------
     step("6/6", "Собираю вердикт и отчёт…")
-    verdict = build_verdict(diag, args.port, external_hit)
+    verdict = build_verdict(diag, args.port, external_hit,
+                            raw_external_hit=raw_external_hit)
     print_stages(diag, external_hit)
     print_verdict(diag, verdict)
 
@@ -3111,6 +3746,125 @@ def run_selftest() -> int:
         check("QR: тихая зона слева/справа",
               all(x[0] == " " and x[-1] == " " for x in qr))
 
+    # --- 12. РЕГРЕССИЯ на реальном логе -------------------------------------------
+    # Этот набор повторяет факты с настоящего запуска на ноутбуке (LAPTOP-ANDRU):
+    # там инструмент ошибочно рекомендовал 192.168.137.1 (мобильный хот-спот),
+    # считал 169.254.* на служебных адаптерах причиной «DHCP сломался» на 60 %
+    # и называл фоновую службу WARP активным туннелем.
+    real_facts = {
+        "ipaddresses": [
+            {"IPAddress": "192.168.137.1", "InterfaceAlias": "Подключение по локальной сети* 2",
+             "AddressState": 4, "PrefixLength": 24},
+            {"IPAddress": "169.254.47.125", "InterfaceAlias": "VMware Network Adapter VMnet1",
+             "AddressState": 4, "PrefixLength": 16},
+            {"IPAddress": "169.254.187.104", "InterfaceAlias": "Сетевое подключение Bluetooth",
+             "AddressState": 1, "PrefixLength": 16},
+            {"IPAddress": "192.168.0.60", "InterfaceAlias": "Беспроводная сеть",
+             "AddressState": 4, "PrefixLength": 24},
+            {"IPAddress": "169.254.197.107", "InterfaceAlias": "VMware Network Adapter VMnet8",
+             "AddressState": 4, "PrefixLength": 16},
+            {"IPAddress": "169.254.191.189", "InterfaceAlias": "Подключение по локальной сети* 1",
+             "AddressState": 1, "PrefixLength": 16},
+        ],
+        "adapters": [
+            {"Name": "Беспроводная сеть",
+             "InterfaceDescription": "Realtek 8822CE Wireless LAN 802.11ac PCI-E NIC",
+             "Status": "Up"},
+            {"Name": "Подключение по локальной сети* 2",
+             "InterfaceDescription": "Microsoft Wi-Fi Direct Virtual Adapter #2", "Status": "Up"},
+            {"Name": "VMware Network Adapter VMnet1",
+             "InterfaceDescription": "VMware Virtual Ethernet Adapter for VMnet1", "Status": "Up"},
+            {"Name": "VMware Network Adapter VMnet8",
+             "InterfaceDescription": "VMware Virtual Ethernet Adapter for VMnet8", "Status": "Up"},
+        ],
+        "default_routes": [{"DestinationPrefix": "0.0.0.0/0", "NextHop": "192.168.0.1",
+                            "InterfaceAlias": "Беспроводная сеть", "InterfaceIndex": 3,
+                            "RouteMetric": 0}],
+        "primary_ip": "192.168.0.60",
+        "ips": ["192.168.137.1", "169.254.197.107", "169.254.47.125", "192.168.0.60",
+                "169.254.187.104", "169.254.191.189"],
+    }
+    ranking = rank_local_ips(real_facts)
+    check("рейтинг адресов: первым идёт адрес основной сети",
+          bool(ranking) and ranking[0]["ip"] == "192.168.0.60",
+          str([r["ip"] for r in ranking]))
+    check("рейтинг адресов: 192.168.137.1 помечен как точка доступа",
+          any(r["ip"] == "192.168.137.1" and r["ics"] for r in ranking))
+    check("рейтинг адресов: телефону рекомендуем только 192.168.0.60",
+          [r["ip"] for r in recommended_ips(real_facts)] == ["192.168.0.60"],
+          str([r["ip"] for r in recommended_ips(real_facts)]))
+    check("рейтинг адресов: APIPA-адреса в самом конце",
+          ranking[-1]["apipa"] is True)
+
+    d4 = Diag()
+    d4.facts.update(real_facts)
+    d4.facts.update({"firewall_all_inbound_blocked": [], "profile_public": [],
+                     "fw_python_allow_in": [{"Program": "python.exe"}],
+                     "warp_traces": [], "av_third_party": ["ESET Security"],
+                     "av_firewall_strong": "ESET", "ics_detected": True})
+    verdict = build_verdict(d4, 8770, external_hit=False)
+    reasons_text = " | ".join(r for r, _ in (verdict.get("reasons") or []))
+    check("вердикт: APIPA-шум больше не главная причина",
+          "169.254" not in (reasons_text.split("|")[0] if reasons_text else ""),
+          reasons_text)
+    check("вердикт: сетевой экран ESET назван причиной", "ESET" in reasons_text, reasons_text)
+    check("вердикт: упомянута точка доступа/137.1",
+          ("хот-спот" in reasons_text) or ("192.168.137" in reasons_text), reasons_text)
+
+    d5 = Diag()
+    d5.facts.update({"vpn_services": [{"Name": "CloudflareWARP", "Status": 4},
+                                      {"Name": "CloudflareWARPUpdater", "Status": 4}],
+                     "vpn_procs": [{"ProcessName": "warp-svc", "Id": 8196}],
+                     "warp": {"found": True}, "warp_hidden": [], "routes": [], "dns": [],
+                     "adapters": []})
+    check_warp(d5)
+    warp_check = d5.get("warp")
+    check("WARP: фоновая служба не выдаётся за активный туннель",
+          warp_check is not None and warp_check.status in ("info", "ok"),
+          warp_check.status if warp_check else "нет проверки")
+    check("WARP: туннель признан НЕ активным",
+          d5.facts.get("warp_tunnel_active") is False)
+    check("WARP: статус службы расшифрован по-человечески",
+          "работает" in (warp_check.detail if warp_check else ""),
+          warp_check.detail if warp_check else "")
+
+    v_raw = build_verdict(d4, 8770, external_hit=True, raw_external_hit=True)
+    check("вердикт: https-попытка с телефона объясняется как «сеть работает»",
+          v_raw["status"] == "warn" and "https" in v_raw["headline"], v_raw["headline"])
+
+    diff = diff_arp({"192.168.0.1": "Reachable (aa)"},
+                    {"192.168.0.1": "Reachable (aa)", "192.168.0.27": "Stale (bb)"})
+    check("diff_arp: новый сосед (возможный телефон) найден", "192.168.0.27" in diff["new"])
+    closed = pick_closed_port(8799)
+    check("pick_closed_port: выбранный порт действительно закрыт",
+          closed is not None and precheck_port_free(closed) is None, str(closed))
+    check("дубль проверки «Система и права» устранён",
+          "check_env(diag)" not in inspect.getsource(run_checks_without_server))
+
+    # wait_for_phone целиком: без этого теста однажды проскочила ошибка
+    # «'list' object is not callable» — список адресов перекрыл функцию печати.
+    d6 = Diag()
+    d6.facts.update(real_facts)
+    d6.facts["local_ips"] = list(d6.facts["ips"])
+    import threading as _th
+
+    def _fake_phone() -> None:
+        time.sleep(0.4)
+        d6.add_hit("192.168.0.27", "/", "Mozilla/5.0 (Linux; Android 14)", 8770, {})
+
+    _t = _th.Thread(target=_fake_phone, daemon=True)
+    _t.start()
+    _wr = wait_for_phone(d6, 5, 8770, no_qr=True)
+    _t.join(timeout=2)
+    check("wait_for_phone: внешний запрос поймали, рекомендован адрес Wi-Fi, функция не упала",
+          _wr.get("external_hit") is True and _wr.get("raw_hit") is False)
+    check("wait_for_phone: подсказан именно 192.168.0.60",
+          "192.168.0.60" in (d6.facts.get("ip_ranking") and
+                             str([r["ip"] for r in d6.facts["ip_ranking"] if r["score"] == 0])),
+          str(d6.facts.get("ip_ranking")))
+    check("рекомендация для телефона никогда не содержит APIPA",
+          all(not r["apipa"] for r in recommended_ips(d6.facts)))
+
     # --- 12. Гигиена лаунчеров Windows --------------------------------------------
     here = os.path.dirname(os.path.abspath(__file__))
     launchers = ("start_netdoctor.vbs", "start_netdoctor.bat")
@@ -3155,6 +3909,44 @@ def run_selftest() -> int:
         return 1
     good(f"ВСЁ ХОРОШО: пройдено {passed} проверок из {passed}.")
     return 0
+
+
+def pick_closed_port(port: int) -> Optional[int]:
+    """Порт рядом с нашим, где точно никто не слушает (для контрольного теста)."""
+    for candidate in range(port + 11, port + 60):
+        if precheck_port_free(candidate) is None:
+            return candidate
+    return None
+
+
+def arp_snapshot() -> Dict[str, str]:
+    """Снимок соседей (ARP): ip -> "состояние (MAC)". Пусто, если не удалось."""
+    result: Dict[str, str] = {}
+    if IS_WINDOWS:
+        out = ps_one(
+            "Get-NetNeighbor -AddressFamily IPv4 | Where-Object { $_.State -ne 'Permanent' } | "
+            "Select-Object IPAddress, LinkLayerAddress, @{n='St';e={\"$($_.State)\"}} | "
+            "ConvertTo-Json -Compress", timeout=45)
+        data = extract_json(out or "")
+        if isinstance(data, dict):
+            data = [data]
+        for row in (data or []):
+            if isinstance(row, dict) and row.get("IPAddress"):
+                result[str(row["IPAddress"])] = (f"{row.get('St') or '?'} "
+                                                 f"({row.get('LinkLayerAddress') or '?'})")
+        return result
+    for row in parse_ip_neigh_output():
+        result[str(row.get("IPAddress"))] = (f"{row.get('State')} "
+                                            f"({row.get('LinkLayerAddress') or '?'})")
+    return result
+
+
+def diff_arp(before: Dict[str, str], after: Dict[str, str]) -> Dict[str, Any]:
+    """Что изменилось в таблице соседей (появились ли новые устройства)."""
+    new = {ip: st for ip, st in after.items() if ip not in before}
+    changed = {ip: (before[ip], after[ip]) for ip in after
+               if ip in before and before[ip] != after[ip]}
+    return {"new": new, "changed": changed}
 
 
 def free_port() -> int:
