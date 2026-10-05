@@ -56,6 +56,7 @@ import html as _html
 import http.server
 import inspect
 import ipaddress
+import ntpath
 import json
 import os
 import platform
@@ -73,7 +74,7 @@ import webbrowser
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 DEFAULT_PORT = 8770          # порт тестового сервера (специально не 5000/8000/8080)
 IS_WINDOWS = (os.name == "nt")
 
@@ -2085,7 +2086,7 @@ def norm_exe_path(path: str) -> str:
     if not text:
         return ""
     text = text.replace("/", "\\")
-    return os.path.normpath(text).lower()
+    return ntpath.normpath(text).lower()
 
 
 def rule_covers_exe(program: Any, exe_path: str) -> bool:
@@ -2097,8 +2098,64 @@ def rule_covers_exe(program: Any, exe_path: str) -> bool:
     if not exe:
         return False
     if "\\" not in prog:
-        return os.path.basename(exe) == prog      # правило задано именем файла
+        return ntpath.basename(exe) == prog       # правило задано именем файла
     return prog == exe
+
+
+def parse_py_launcher_paths(rows: Any) -> List[str]:
+    """
+    Достаёт пути к python.exe из вывода «py -0p» (список установленных версий).
+
+    Примеры строк:
+      " -V:3.14 *        C:\\Users\\u\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe"
+      " -V:3.12          C:\\Program Files\\Python312\\python.exe"
+    """
+    paths: List[str] = []
+    for row in (rows or []):
+        text = str(row)
+        for match in re.finditer(r"[A-Za-z]:\\[^\r\n]*?python(?:w)?\.exe", text):
+            paths.append(match.group(0).strip().rstrip("."))
+    seen = set()
+    result: List[str] = []
+    for item in paths:
+        key = norm_exe_path(item)
+        if key and key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
+
+
+def interpreter_paths(diag: Diag) -> List[str]:
+    """Все интерпретаторы, которым стоит разрешить входящие: слушающие + установленные.
+
+    Дополнительно добавляем pythonw.exe рядом с найденным python.exe: для брандмауэра
+    Windows это ДРУГОЙ файл, и правило на python.exe не покрывает pythonw.exe
+    (ровно на этом ломаются «безоконные» серверы).
+    """
+    candidates: List[str] = []
+    for row in (diag.facts.get("py_listener_paths") or []):
+        if isinstance(row, dict) and row.get("path"):
+            candidates.append(str(row["path"]))
+    candidates += parse_py_launcher_paths(diag.facts.get("py_versions") or [])
+
+    extra: List[str] = []
+    for path in list(candidates):
+        base = ntpath.basename(path.strip()).lower()
+        folder = ntpath.dirname(path.strip())
+        if base == "python.exe":
+            extra.append(ntpath.join(folder, "pythonw.exe"))
+        elif base == "pythonw.exe":
+            extra.append(ntpath.join(folder, "python.exe"))
+    candidates += extra
+
+    seen = set()
+    result: List[str] = []
+    for item in candidates:
+        key = norm_exe_path(item)
+        if key and key not in seen:
+            seen.add(key)
+            result.append(item)
+    return result
 
 
 def check_python_paths(diag: Diag) -> None:
@@ -2643,9 +2700,11 @@ def build_fix_ps(port: int, extra_ports: Sequence[int], iface: Optional[str],
     if listen_paths:
         quoted = ",\n  ".join("'" + x.replace("'", "''") + "'" for x in listen_paths)
         listener_rules = (
-            "\n# 4) Разрешить именно те интерпретаторы, которые СЛУШАЮТ ПОРТЫ сейчас.\n"
-            "#    Windows разрешает входящие по конкретному файлу: правило для другого\n"
-            "#    python.exe (например, из старой версии) не помогает.\n"
+            "\n# 4) Разрешить сами ИНТЕРПРЕТАТОРЫ — все TCP-порты, только локальная сеть.\n"
+            "#    Windows разрешает входящие по конкретному файлу, поэтому правило для\n"
+            "#    другого python.exe/pythonw.exe (другая версия или другой файл) не помогает.\n"
+            "#    Порты здесь не ограничиваем: любой НОВЫЙ порт на этом интерпретаторе\n"
+            "#    заработает без повторной починки.\n"
             "$listenExes = @(\n  " + quoted + "\n)\n"
             "foreach ($exe in $listenExes) {\n"
             "  if (-not (Test-Path $exe)) { Write-Host \"пропуск (нет файла): $exe\"; continue }\n"
@@ -2665,7 +2724,11 @@ def build_fix_ps(port: int, extra_ports: Sequence[int], iface: Optional[str],
 #    2. добавляет разрешающее правило брандмауэра ТОЛЬКО для локальной подсети
 #       (RemoteAddress LocalSubnet) на порты: {ports_txt};
 #       Из интернета доступ НЕ открывается.
-#    3. (необязательно) разрешает python.exe целиком для локальной подсети.
+#    3. (необязательно) разрешает python.exe целиком для локальной подсети;
+#    4. разрешает САМИ ИНТЕРПРЕТАТОРЫ (все найденные python.exe/pythonw.exe — и те,
+#       что слушают порты сейчас, и все установленные версии) на ВСЕ TCP-порты,
+#       но только для локальной подсети. После этого любой новый порт на этом
+#       интерпретаторе работает без повторной починки.
 #
 #  Запуск: правый клик по файлу -> «Выполнить с помощью PowerShell»
 #          либо в консоли администратора:
@@ -2800,6 +2863,9 @@ def build_report_text(diag: Diag, verdict: Dict[str, Any], port: int,
                else "НЕ покрыт ни одним разрешающим правилом"))
     if not (diag.facts.get("py_listener_paths") or []):
         lines.append("(слушающих python-процессов не найдено)")
+    lines.append("Интерпретаторы, которым --fix выдаст разрешение (все TCP-порты, LAN):")
+    for path in interpreter_paths(diag):
+        lines.append("    " + path)
     lines.append("Установленные версии Python (py -0p):")
     for line in (diag.facts.get("py_versions") or [])[:40]:
         lines.append("    " + str(line).strip())
@@ -3497,8 +3563,7 @@ def write_fix_files(args: argparse.Namespace, diag: Diag) -> List[str]:
     fix_path = os.path.join(outdir, "netdoctor_fix.ps1")
     undo_path = os.path.join(outdir, "netdoctor_undo.ps1")
     with open(fix_path, "w", encoding="utf-8-sig", newline="\r\n") as fh:
-        py_paths = [str(r.get("path")) for r in (diag.facts.get("py_listener_paths") or [])
-                    if r.get("path")]
+        py_paths = interpreter_paths(diag)
         fh.write(build_fix_ps(args.port, extra, iface, args.program_rule, py_paths=py_paths))
     with open(undo_path, "w", encoding="utf-8-sig", newline="\r\n") as fh:
         fh.write(build_undo_ps())
@@ -3676,6 +3741,9 @@ def run_diagnostics(args: argparse.Namespace) -> int:
         print(col(f'     powershell -NoProfile -ExecutionPolicy Bypass -File "{files[0]}"',
                   C.GREY))
         info("Откат всех изменений — " + os.path.basename(files[1]))
+        info("Правила для интерпретаторов выданы на ВСЕ TCP-порты (только своя сеть): "
+             "новые серверы на новых портах заработают без повторной починки. "
+             "Если поставите ещё одну версию Python — просто запустите --fix снова.")
         if args.apply_fix and IS_WINDOWS:
             if sys.stdin.isatty():
                 try:
@@ -4026,6 +4094,32 @@ def run_selftest() -> int:
           str(d6.facts.get("ip_ranking")))
     check("рекомендация для телефона никогда не содержит APIPA",
           all(not r["apipa"] for r in recommended_ips(d6.facts)))
+
+    _py0p = [
+        " -V:3.14 *        C:\\Users\\u\\AppData\\Local\\Python\\pythoncore-3.14-64\\python.exe",
+        " -V:3.12          C:\\Program Files\\Python312-32\\python.exe",
+        "py launcher не найден — список версий недоступен",
+    ]
+    _paths = parse_py_launcher_paths(_py0p)
+    check("список установленных Python разобран из вывода py -0p",
+          len(_paths) == 2 and _paths[1].lower().endswith("python312-32\\python.exe"),
+          str(_paths))
+
+    d9 = Diag()
+    d9.facts.update({
+        "py_versions": _py0p,
+        "py_listener_paths": [
+            {"path": r"C:\Users\u\AppData\Local\Python\pythoncore-3.14-64\pythonw.exe"}],
+    })
+    _all = interpreter_paths(d9)
+    check("в правила попадают и слушающий pythonw.exe, и все установленные версии",
+          any(p.lower().endswith("python312-32\\python.exe") for p in _all)
+          and any(p.lower().endswith("pythoncore-3.14-64\\pythonw.exe") for p in _all),
+          str(_all))
+    check("рядом с python.exe добавлен pythonw.exe (это разные файлы для брандмауэра)",
+          any(p.lower().endswith("python312-32\\pythonw.exe") for p in _all), str(_all))
+    check("дубликатов путей нет",
+          len(_all) == len({norm_exe_path(x) for x in _all}))
 
     _fix2 = build_fix_ps(8770, [5000], "Wi-Fi", False)
     check("--fix включает брандмауэр обратно (а не оставляет его выключенным)",
