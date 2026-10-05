@@ -74,7 +74,7 @@ import webbrowser
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-VERSION = "1.4.0"
+VERSION = "1.4.1"
 DEFAULT_PORT = 8770          # порт тестового сервера (специально не 5000/8000/8080)
 IS_WINDOWS = (os.name == "nt")
 
@@ -753,7 +753,10 @@ def classify_adapter(*names: str) -> Tuple[str, int]:
     best_kind, best_risk = "сетевой адаптер", 1
     for needle, kind, risk in LAN_KEYWORDS:
         if needle in hay:
-            if risk >= best_risk or best_kind == "сетевой адаптер":
+            # Уточняем тип только если он «мешательнее» или прежний был общим.
+            # Иначе «Realtek 8822CE Wireless LAN» определялся как Ethernet просто
+            # потому, что слово realtek идёт в списке позже слова wireless.
+            if best_kind == "сетевой адаптер" or risk > best_risk:
                 best_kind, best_risk = kind, risk
             if risk == 3:
                 break
@@ -2225,6 +2228,40 @@ def rule_matches_active_profile(rule: Dict[str, Any], active: Sequence[str]) -> 
     return any(name in active for name in rule_profiles)
 
 
+def check_python_rules_hygiene(diag: Diag) -> None:
+    """
+    Сообщает о «широких» правилах для python, оставшихся от старых диалогов
+    «Разрешить доступ к сети?»: RemoteAddress = Any.
+
+    Само по себе это не ломает доступ, но на общедоступных сетях такие правила
+    открывают порты python для любого адреса. Если есть правило netdoctor
+    (LocalSubnet), старые широкие можно удалить без последствий.
+    """
+    rules = [r for r in (diag.facts.get("fw_python_allow_in") or []) if isinstance(r, dict)]
+    wide = [r for r in rules
+            if str(r.get("RemoteAddress") or "").strip().lower() in ("", "any", "*")]
+    if not wide:
+        return
+    profiles = sorted({str(r.get("Profile") or "?") for r in wide})
+    ours = [r for r in rules if "netdoctor" in str(r.get("DisplayName") or "").lower()]
+    diag.facts["fw_python_wide_rules"] = len(wide)
+    hint = ("Эти правила создавались диалогом «Разрешить доступ к сети?» и разрешают "
+            "входящие с ЛЮБОГО адреса (RemoteAddress=Any) на указанных профилях. "
+            "Если телефон уже работает через правило netdoctor (только своя подсеть), "
+            "широкие можно удалить: Get-NetFirewallRule -DisplayName 'python.exe',"
+            "'pythonw.exe' | Remove-NetFirewallRule. Для интерпретаторов без правила "
+            "netdoctor Windows при первом запуске спросит заново — нажмите «Разрешить» "
+            "или (надёжнее) выполните --fix: он выдаст правило только для своей сети.")
+    if ours:
+        diag.add("python_rules_wide", "Широкие правила для Python (RemoteAddress=Any)",
+                 "info", f"правил: {len(wide)} · профили: {', '.join(profiles)}", hint)
+    else:
+        diag.add("python_rules_wide", "Широкие правила для Python (RemoteAddress=Any)",
+                 "warn", f"правил: {len(wide)} · профили: {', '.join(profiles)}",
+                 hint + " Правила netdoctor не найдены, поэтому сначала выполните --fix, "
+                        "а потом удаляйте старые.")
+
+
 def check_python_paths(diag: Diag) -> None:
     """
     Сопоставляет РЕАЛЬНЫЕ пути python-процессов, слушающих порты, с путями в
@@ -2261,6 +2298,10 @@ def check_python_paths(diag: Diag) -> None:
         path = str(l.get("path") or "")
         if not path and pid and procs.get(pid):
             path = str(procs[pid].get("ExecutablePath") or "")
+        if not path and pid and pid == os.getpid():
+            # Свой тестовый сервер: Windows не показывает путь процесса из него самого,
+            # берём путь текущего интерпретатора — так отчёт остаётся полным.
+            path = sys.executable or ""
         matching = ([r for r in rules if rule_covers_exe(r.get("Program"), path)]
                     if path else [])
         profile_ok = [r for r in matching if rule_matches_active_profile(r, active)]
@@ -3577,6 +3618,7 @@ def run_checks_without_server(diag: Diag, args: argparse.Namespace) -> None:
     check_python_procs(diag)
     check_listeners(diag, watch_port=args.check_port)
     check_python_paths(diag)
+    check_python_rules_hygiene(diag)
     check_firewall_log(diag, args.phone)
 
 
@@ -3790,7 +3832,7 @@ def run_diagnostics(args: argparse.Namespace) -> int:
                 "firewall_python", "firewall_python_scope", "routes", "proxy", "warp",
                 "av", "hosts", "ics", "neighbors", "neighbor_phone", "phone_subnet",
                 "phone_ping", "ssid", "py_procs", "listeners_loopback", "python_paths",
-                "watch_port", "firewall_log"):
+                "python_rules_wide", "watch_port", "firewall_log"):
         if diag.get(key):
             diag.show(key)
 
@@ -4286,6 +4328,43 @@ def run_selftest() -> int:
     _fix2 = build_fix_ps(8770, [5000], "Wi-Fi", False)
     check("--fix включает брандмауэр обратно (а не оставляет его выключенным)",
           "Set-NetFirewallProfile" in _fix2 and "Enabled True" in _fix2)
+
+    # --- Мелкие правки по реальному отчёту 1.4.0 ---
+    check("Wi-Fi (Realtek Wireless LAN) определяется как Wi-Fi, а не Ethernet",
+          classify_adapter("Беспроводная сеть",
+                           "Realtek 8822CE Wireless LAN 802.11ac PCI-E NIC")[0] == "Wi-Fi",
+          str(classify_adapter("Беспроводная сеть",
+                               "Realtek 8822CE Wireless LAN 802.11ac PCI-E NIC")))
+    check("точка доступа Wi-Fi Direct остаётся точкой доступа",
+          classify_adapter("Подключение по локальной сети* 2",
+                           "Microsoft Wi-Fi Direct Virtual Adapter #2")[1] >= 2)
+
+    d14 = Diag()
+    d14.facts.update({
+        "listeners": [{"address": "0.0.0.0", "port": 8770, "pid": os.getpid(),
+                       "name": "python (netdoctor)", "path": ""}],
+        "python_procs": [], "fw_python_allow_in": [],
+    })
+    check_python_paths(d14)
+    check("у собственного тестового сервера тоже показывается путь",
+          any(r.get("path") for r in (d14.facts.get("py_listener_paths") or [])),
+          str(d14.facts.get("py_listener_paths")))
+
+    d15 = Diag()
+    d15.facts.update({
+        "fw_python_allow_in": [
+            {"Program": "C:\\x\\pythonw.exe", "DisplayName": "pythonw.exe",
+             "Profile": "Public", "RemoteAddress": "Any", "LocalPort": "Any"},
+            {"Program": "C:\\x\\pythonw.exe",
+             "DisplayName": "netdoctor: python слушает C:\\x\\pythonw.exe (LAN)",
+             "Profile": "Any", "RemoteAddress": "LocalSubnet", "LocalPort": "Any"},
+        ],
+    })
+    check_python_rules_hygiene(d15)
+    wide = d15.get("python_rules_wide")
+    check("широкие правила (RemoteAddress=Any) замечаются с подсказкой, как их убрать",
+          wide is not None and "Remove-NetFirewallRule" in (wide.hint or ""),
+          wide.detail if wide else "нет")
 
     # --- Профиль брандмауэра в правилах (реальная ошибка из отчёта пользователя) ---
     # Факты из настоящего отчёта 1.2.0: сеть «Беспроводная сеть» = Private,

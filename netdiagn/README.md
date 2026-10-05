@@ -237,7 +237,7 @@ python net_doctor.py --fix          # создаст netdoctor_fix.ps1
 ```bash
 cd netdiagn
 python -m py_compile net_doctor.py
-python net_doctor.py --selftest        # 92 проверки (с установленной qrcode — 94)
+python net_doctor.py --selftest        # 96 проверок (с установленной qrcode — 98)
 ```
 
 Самотесты гоняются в GitHub Actions: [`.github/workflows/netdoctor-tests.yml`](../.github/workflows/netdoctor-tests.yml).
