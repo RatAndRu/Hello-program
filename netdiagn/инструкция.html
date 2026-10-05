@@ -101,8 +101,8 @@
 <div class="grid">
   <div class="card">
     <div><span class="step-num">1</span><b>Запустите инструмент</b></div>
-    <p>Двойной клик по <code>start_netdoctor.bat</code> в папке <code>netdiagn</code>.<br>
-       Окно должно остаться открытым — не закрывайте его.</p>
+    <p>Двойной клик по <code>start_netdoctor.vbs</code> в папке <code>netdiagn</code>.<br>
+       Окно консоли должно остаться открытым — не закрывайте его.</p>
   </div>
   <div class="card">
     <div><span class="step-num">2</span><b>Откройте адрес с телефона</b></div>
@@ -126,7 +126,9 @@
 <h2><span class="n">2</span>Как запустить</h2>
 <div class="card">
   <p><b>Самый простой способ (Windows):</b> откройте папку <code>netdiagn</code> и дважды щёлкните
-     по <code>start_netdoctor.bat</code>. Скрипт сам найдёт Python и всё сделает.</p>
+     по <code>start_netdoctor.vbs</code> — скрипт сам найдёт Python и запустит диагностику.
+     Рядом лежит <code>start_netdoctor.bat</code> — резервный запуск, если <code>.vbs</code>
+     запрещён политикой безопасности.</p>
   <p><b>Вручную</b> (если хочется задать ключи):</p>
 <pre><span class="c">:: проверить свой сервер на порту 5000 и указать адрес телефона</span>
 python net_doctor.py --check-port 5000 --phone 192.168.0.61
@@ -276,7 +278,29 @@ arp -a | findstr 192.168.0.</pre>
 netsh advfirewall set allprofiles state on    <span class="c">:: включить обратно</span></pre>
 </div>
 
-<h2><span class="n">6</span>Почему на ноутбуке открывается, а с телефона — нет?</h2>
+<h2><span class="n">6</span>Если в консоли мелькают ошибки «'on' is not recognized…»</h2>
+<div class="callout warn">
+  <p>Первая версия лаунчера была <code>.bat</code>-файлом, и на Windows он мог выдать:</p>
+  <pre>'on' is not recognized as an internal or external command,
+'taйте' is not recognized as an internal or external command,
+'*' is not recognized as an internal or external command,</pre>
+  <p>Это <b>не</b> вирус и не поломка Python: <code>cmd.exe</code> выполнял <b>обрывки строк</b>
+     внутри <code>.bat</code>. Так бывает, когда в файле вместе встречаются кириллица,
+     юниксовые переводы строк (LF) и команда <code>chcp</code>: после смены кодовой страницы
+     консоль перечитывает файл по неверному смещению и запускает куски соседних строк
+     как команды.</p>
+  <p><b>Что сделано:</b> основной запуск теперь <code>start_netdoctor.vbs</code> — VBScript
+     не зависит от кодировок и переводов строк. Резервный <code>.bat</code> переписан на
+     чистый ASCII без <code>chcp</code>, файлы хранятся с CRLF (следит <code>.gitattributes</code>),
+     а сам <code>net_doctor.py</code> включает UTF-8 в консоли программно. Гигиена лаунчеров
+     проверяется автотестами.</p>
+  <p><b>Что делать вам:</b> обновить файлы из репозитория и запускать
+     <code>start_netdoctor.vbs</code>. Если совсем ничего не обновляется — откройте консоль
+     в папке <code>netdiagn</code> и выполните <code>python net_doctor.py</code>: результат
+     будет тот же.</p>
+</div>
+
+<h2><span class="n">7</span>Почему на ноутбуке открывается, а с телефона — нет?</h2>
 <div class="callout">
   <p>Когда ноутбук обращается сам к себе по <code>192.168.0.60</code>, трафик не выходит в сеть —
      он идёт «внутри» системы, и его <b>не проверяет фильтр входящих подключений</b>.
@@ -285,7 +309,7 @@ netsh advfirewall set allprofiles state on    <span class="c">:: включит�
      Именно этот зазор и закрывает NET DOCTOR.</p>
 </div>
 
-<h2><span class="n">7</span>Безопасность</h2>
+<h2><span class="n">8</span>Безопасность</h2>
 <div class="card">
   <p>Инструмент <b>не открывает ваш сервер в интернет</b>. Правило брандмауэра создаётся только для
      локальной подсети (<code>-RemoteAddress LocalSubnet</code>) — это значит «домашние устройства»
@@ -296,7 +320,7 @@ netsh advfirewall set allprofiles state on    <span class="c">:: включит�
      файл, который вы можете прочитать сами, прежде чем кому-то показывать.</p>
 </div>
 
-<h2><span class="n">8</span>Если не помогло</h2>
+<h2><span class="n">9</span>Если не помогло</h2>
 <div class="card">
   <p>1. Убедитесь, что тест прошёл до конца: телефон открыл тестовую страницу, и в журнале появилась строка
      со словом <b>ДРУГОЕ УСТРОЙСТВО</b>.</p>

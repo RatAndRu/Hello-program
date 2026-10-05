@@ -86,8 +86,8 @@ python chess/chess.py --level=4   # сразу сложный уровень
 для `python.exe`, сервер слушает только `127.0.0.1`, остатки Cloudflare WARP / VPN
 после поездки, гостевая сеть или изоляция клиентов на роутере.
 
-Запуск на Windows — двойной клик по [`netdiagn/start_netdoctor.bat`](netdiagn/start_netdoctor.bat)
-(вручную: `python netdiagn/net_doctor.py`). В конце — понятный вердикт, а по ключу
+Запуск на Windows — двойной клик по [`netdiagn/start_netdoctor.vbs`](netdiagn/start_netdoctor.vbs)
+(резерв: `start_netdoctor.bat`; вручную: `python netdiagn/net_doctor.py`). В конце — понятный вердикт, а по ключу
 `--fix` инструмент подготовит `netdoctor_fix.ps1` (правило брандмауэра **только для
 своей локальной сети** + профиль сети Private) и `netdoctor_undo.ps1` для полного отката.
 
@@ -105,10 +105,11 @@ python chess/chess.py --level=4   # сразу сложный уровень
 | `chess/chess.py` | шахматы (движок + интерфейс) |
 | `chess/start_chess.bat` | резервный запуск шахмат на Windows |
 | `start.vbs` | **запуск программы одной двойной кнопкой мыши** |
-| `netdiagn/` | **NET DOCTOR** — диагностика «телефон не видит мой сервер» |
+| `netdiagn/` | **NET DOCTOR** — диагностика «телефон не видит мой сервер» (запуск: `start_netdoctor.vbs`) |
 | `tools/build_comic_pdf.py` | сборка PDF-комикса |
 | `.github/workflows/chess-tests.yml` | автотесты шахмат на GitHub |
 | `.github/workflows/netdoctor-tests.yml` | автотесты NET DOCTOR на GitHub |
+| `.gitattributes` | переводы строк: лаунчеры Windows всегда с CRLF |
 
 ## ❓ Частые вопросы
 

@@ -109,6 +109,36 @@ class C(metaclass=_ColorMeta):
 _COLOR = False
 
 
+def setup_console() -> None:
+    """
+    Готовит консоль и потоки вывода.
+
+    Зачем: раньше кодовая страница переключалась командой `chcp 65001` в .bat-файле.
+    На Windows это опасно: если .bat сохранён с юниксовыми переводами строк (LF),
+    cmd.exe после смены кодовой страницы теряет позицию чтения файла и начинает
+    выполнять ОБРЫВКИ строк как команды ("'on' is not recognized...",
+    "'тайте' is not recognized..."). Поэтому chcp убран, а всё, что нужно, делаем здесь:
+      * Windows: кодовая страница вывода -> UTF-8 (для дочерних утилит и перенаправленного
+        вывода), заголовок окна -> «NET DOCTOR»;
+      * везде: переводим stdout/stderr в UTF-8, если поток это позволяет
+        (безопасно: ошибки кодирования заменяются, а не роняют программу).
+    """
+    if IS_WINDOWS:
+        try:
+            import ctypes
+
+            kernel32 = ctypes.windll.kernel32
+            kernel32.SetConsoleOutputCP(65001)
+            kernel32.SetConsoleTitleW("NET DOCTOR — диагностика доступа к серверам")
+        except Exception:
+            pass
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")  # type: ignore[attr-defined]
+        except Exception:
+            pass
+
+
 def _enable_vt_on_windows() -> None:
     """Включает поддержку ANSI-цветов в классической консоли Windows."""
     try:
@@ -1622,6 +1652,59 @@ def check_listeners(diag: Diag, watch_port: Optional[int] = None) -> None:
 _OPENER = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
+def launcher_problems(path: str) -> List[str]:
+    """
+    Проверяет файл-лаунчер (.bat/.cmd/.vbs) на «гигиену» Windows.
+
+    Из-за нарушения этих правил cmd.exe однажды уже выполнил обрывки строк
+    (ошибки вида «'on' is not recognized as an internal or external command»),
+    поэтому теперь они проверяются автоматически:
+      * только CRLF — одиночные LF заставляют cmd.exe путать смещения в файле;
+      * .bat/.cmd — только ASCII, без BOM и без вызова chcp (смена кодовой
+        страницы внутри файла ломает его чтение);
+      * .vbs — BOM UTF-8 (иначе WSH прочитает кириллицу как мусор) и парные
+        кавычки в каждой строке кода.
+    Возвращает список проблем; пустой список — файл в порядке.
+    """
+    problems: List[str] = []
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+    except OSError as exc:
+        return [f"не удалось прочитать: {exc}"]
+
+    ext = os.path.splitext(path)[1].lower()
+    lone_lf = raw.count(b"\n") - raw.count(b"\r\n")
+    if lone_lf:
+        problems.append(f"одиночных переводов строк LF: {lone_lf} (нужны только CRLF)")
+    has_bom = raw[:3] == b"\xef\xbb\xbf"
+
+    if ext in (".bat", ".cmd"):
+        bad_bytes = sum(1 for b in raw if b >= 128)
+        if bad_bytes:
+            problems.append(f"не-ASCII байтов: {bad_bytes} (cmd.exe прочитает их "
+                            "в чужой кодировке)")
+        if has_bom:
+            problems.append("BOM в .bat (cmd.exe может включить его в первую команду)")
+        for num, line in enumerate(raw.decode("ascii", "replace").splitlines(), 1):
+            stripped = line.strip().lower()
+            if stripped.startswith("chcp"):
+                problems.append(f"строка {num}: вызов chcp внутри .bat — "
+                                "именно он вызывает выполнение обрывков строк")
+    elif ext == ".vbs":
+        if not has_bom:
+            problems.append("нет BOM UTF-8 (WSH может прочитать кириллицу как мусор)")
+        text = raw.decode("utf-8-sig", "replace")
+        if "net_doctor.py" not in text:
+            problems.append("в файле нет ссылки на net_doctor.py")
+        for num, line in enumerate(text.splitlines(), 1):
+            if line.strip().startswith("'"):
+                continue
+            if line.split("'")[0].count('"') % 2:
+                problems.append(f"строка {num}: непарное число кавычек")
+    return problems
+
+
 def http_probe(url: str, timeout: float = 3.0) -> Tuple[bool, str]:
     """
     Простой GET БЕЗ системного прокси (иначе WARP-прокси 127.0.0.1:40000
@@ -3028,6 +3111,42 @@ def run_selftest() -> int:
         check("QR: тихая зона слева/справа",
               all(x[0] == " " and x[-1] == " " for x in qr))
 
+    # --- 12. Гигиена лаунчеров Windows --------------------------------------------
+    here = os.path.dirname(os.path.abspath(__file__))
+    launchers = ("start_netdoctor.vbs", "start_netdoctor.bat")
+    checked_launchers = 0
+    for name in launchers:
+        path = os.path.join(here, name)
+        if not os.path.isfile(path):
+            print("  " + col(SYM["skip"], C.GREY) +
+                  f" лаунчер {name}: файла рядом нет — пропущено")
+            continue
+        checked_launchers += 1
+        problems = launcher_problems(path)
+        check(f"лаунчер {name}: гигиена (CRLF/кодировка/без chcp)",
+              not problems, "; ".join(problems))
+
+    # сама проверка тоже должна ловить плохой файл
+    with tempfile.TemporaryDirectory() as tmp:
+        bad_bat = os.path.join(tmp, "bad.bat")
+        with open(bad_bat, "wb") as fh:
+            fh.write("chcp 65001\n".encode("utf-8"))       # LF + chcp + BOM-less
+        bad_problems = launcher_problems(bad_bat)
+        check("проверка лаунчеров ловит плохой .bat", len(bad_problems) >= 2,
+              "; ".join(bad_problems))
+
+        good_vbs = os.path.join(tmp, "good.vbs")
+        with open(good_vbs, "wb") as fh:
+            fh.write(b"\xef\xbb\xbf" +
+                     "cmd = Chr(34) & \"net_doctor.py\"\r\n".encode("utf-8"))
+        check("проверка лаунчеров принимает хороший .vbs",
+              launcher_problems(good_vbs) == [],
+              "; ".join(launcher_problems(good_vbs)))
+
+    if checked_launchers == 0:
+        print("  " + col(SYM["skip"], C.GREY) +
+              " лаунчеры не найдены рядом с net_doctor.py — проверка пропущена")
+
     # --- итог ---------------------------------------------------------------------
     print()
     if failures:
@@ -3062,6 +3181,7 @@ def fetch_url_text(url: str, timeout: float = 3.0) -> str:
 # =========================================================================================
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    setup_console()
     args = parse_args(argv)
     if args.selftest:
         enable_colors(force=True if args.color else (False if args.no_color else None))

@@ -24,6 +24,26 @@ jobs:
         working-directory: netdiagn
         run: python -m py_compile net_doctor.py
 
+      - name: Лаунчеры Windows на месте (и с CRLF)
+        working-directory: netdiagn
+        run: |
+          for f in start_netdoctor.vbs start_netdoctor.bat; do
+            test -f "$f" || { echo "не найден $f"; exit 1; }
+            if grep -q $'\r' "$f"; then echo "$f: CRLF на месте"; else echo "$f: нет CRLF"; exit 1; fi
+          done
+          python - <<'EOF'
+          import sys
+          sys.path.insert(0, ".")
+          import net_doctor as nd
+          bad = {name: nd.launcher_problems(name)
+                 for name in ("start_netdoctor.vbs", "start_netdoctor.bat")}
+          bad = {k: v for k, v in bad.items() if v}
+          if bad:
+              print("проблемы в лаунчерах:", bad)
+              raise SystemExit(1)
+          print("гигиена лаунчеров: ок")
+          EOF
+
       - name: Самотесты (без необязательных библиотек)
         working-directory: netdiagn
         run: python net_doctor.py --selftest --no-color
