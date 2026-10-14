@@ -1,13 +1,34 @@
-// ЗакрепФото: офлайн-PWA. Фото хранятся копиями в IndexedDB (браузер не даёт сканировать галерею напрямую).
+// ЗакрепФото: в браузере фото хранятся в IndexedDB, а в Android-приложении —
+// в нативных файлах приложения через мост PinPhotosNative (надёжнее для WebView).
 const DB = 'pinphotos-db', STORE = 'photos';
+const nativeMode = !!(window.PinPhotosNative && PinPhotosNative.listPhotos);
 let photos = [], current = null, urls = new Map(), deferredInstall = null;
 const $ = id => document.getElementById(id);
+const metaOf = p => ({id: p.id, name: p.name, album: p.album, tags: p.tags || [], note: p.note || '', pinned: !!p.pinned, widget: !!p.widget, createdAt: p.createdAt});
 
 function db() { return new Promise((res, rej) => { const r = indexedDB.open(DB, 1); r.onupgradeneeded = () => r.result.createObjectStore(STORE, {keyPath: 'id'}); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); }
 async function tx(mode, fn) { const d = await db(); return new Promise((res, rej) => { const t = d.transaction(STORE, mode); const out = fn(t.objectStore(STORE)); t.oncomplete = () => res(out && out.result); t.onerror = () => rej(t.error); }); }
-const loadAll = () => tx('readonly', s => s.getAll());
-const put = p => tx('readwrite', s => s.put(p));
-const del = id => tx('readwrite', s => s.delete(id));
+const loadAll = async () => {
+  if (nativeMode) {
+    const list = JSON.parse(PinPhotosNative.listPhotos() || '[]');
+    for (const p of list) { p.blob = await (await fetch(p.dataUrl)).blob(); p._stored = true; }
+    return list;
+  }
+  return tx('readonly', s => s.getAll());
+};
+const put = async p => {
+  if (nativeMode) {
+    if (!p._stored) {
+      const saved = JSON.parse(PinPhotosNative.savePhoto(p.dataUrl || await blobToB64(p.blob), p.name));
+      Object.assign(p, saved); p._stored = true;
+    } else {
+      PinPhotosNative.updatePhoto(JSON.stringify(metaOf(p)));
+    }
+    return;
+  }
+  const clean = metaOf(p); clean.blob = p.blob; return tx('readwrite', s => s.put(clean));
+};
+const del = async id => { if (nativeMode) { PinPhotosNative.deletePhoto(id); return; } return tx('readwrite', s => s.delete(id)); };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 function urlFor(p) { if (!urls.has(p.id)) urls.set(p.id, URL.createObjectURL(p.blob)); return urls.get(p.id); }
 
@@ -57,7 +78,12 @@ async function saveCurrent() {
 }
 ['editName', 'editAlbum', 'editTags', 'editNote'].forEach(id => $(id).addEventListener('change', saveCurrent));
 
-$('fileInput').addEventListener('change', async e => { await addFiles(e.target.files); e.target.value = ''; });
+$('fileInput').addEventListener('change', async e => {
+  const count = e.target.files.length;
+  try { await addFiles(e.target.files); if (count) alert(`Сохранено фото: ${count}. Режим хранения: ${nativeMode ? 'файлы Android-приложения' : 'IndexedDB браузера'}`); }
+  catch (err) { alert('Не удалось сохранить фото: ' + err); }
+  e.target.value = '';
+});
 $('search').addEventListener('input', render); $('albumFilter').addEventListener('change', render);
 $('closeViewer').onclick = () => { saveCurrent(); $('viewer').classList.add('hidden'); };
 $('pinBtn').onclick = async () => { await saveCurrent(); current.pinned = !current.pinned; await put(current); render(); openViewer(current); };
@@ -77,6 +103,10 @@ document.querySelectorAll('.icon-state').forEach(btn => btn.addEventListener('cl
 }));
 $('deleteBtn').onclick = async () => { if (!confirm('Удалить копию фото из приложения? Оригинал в галерее не тронем.')) return; await del(current.id); URL.revokeObjectURL(urlFor(current)); urls.delete(current.id); photos = photos.filter(p => p !== current); $('viewer').classList.add('hidden'); render(); };
 $('shareBtn').onclick = async () => { try { const f = new File([current.blob], current.name + '.jpg', {type: current.blob.type || 'image/jpeg'}); if (navigator.canShare && navigator.canShare({files: [f]})) await navigator.share({files: [f], title: current.name}); else alert('Браузер не умеет делиться файлами'); } catch (e) {} };
+$('addWidgetBtn').onclick = () => {
+  if (window.PinPhotosNative && PinPhotosNative.requestPinWidget) PinPhotosNative.requestPinWidget();
+  else alert('Кнопка работает в установленном Android-приложении «ЗакрепФото». В браузере виджет добавить нельзя.');
+};
 $('widgetCard').onclick = () => { const w = photos.find(p => p.widget) || photos.find(p => p.pinned) || photos[0]; if (w) openViewer(w); };
 
 const blobToB64 = b => new Promise(r => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(b); });

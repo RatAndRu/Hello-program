@@ -13,8 +13,14 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
+import android.os.Build
+import org.json.JSONArray
+import org.json.JSONObject
 import java.io.File
 import java.io.FileOutputStream
+import java.util.UUID
 import kotlin.math.max
 
 /**
@@ -98,7 +104,89 @@ class MainActivity : Activity() {
                 Toast.makeText(this@MainActivity, "Иконка переключена", Toast.LENGTH_SHORT).show()
             }
         }
+
+        // ---------- Нативное хранилище фото (надёжная замена IndexedDB в WebView) ----------
+
+        @JavascriptInterface
+        fun listPhotos(): String = synchronized(storeLock) {
+            val out = JSONArray()
+            val meta = readMeta()
+            for (i in 0 until meta.length()) {
+                val item = JSONObject(meta.getJSONObject(i).toString())
+                val file = File(photoDir(), item.getString("file"))
+                if (!file.exists()) continue
+                val dataUrl = "data:" + item.optString("mime", "image/jpeg") + ";base64," +
+                    Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                item.put("dataUrl", dataUrl)
+                out.put(item)
+            }
+            out.toString()
+        }
+
+        @JavascriptInterface
+        fun savePhoto(dataUrl: String, name: String): String = synchronized(storeLock) {
+            photoDir().mkdirs()
+            val mime = dataUrl.substringAfter("data:", "image/jpeg").substringBefore(";")
+            val ext = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
+            val id = System.currentTimeMillis().toString(36) + UUID.randomUUID().toString().take(6)
+            val fileName = "$id.$ext"
+            File(photoDir(), fileName).writeBytes(Base64.decode(dataUrl.substringAfter(",", dataUrl), Base64.DEFAULT))
+            val item = JSONObject()
+                .put("id", id).put("name", name.ifBlank { "Фото" }).put("album", "Разное")
+                .put("tags", JSONArray()).put("note", "").put("pinned", false).put("widget", false)
+                .put("createdAt", System.currentTimeMillis()).put("file", fileName).put("mime", mime)
+            val meta = readMeta(); meta.put(item); writeMeta(meta)
+            JSONObject(item.toString()).put("dataUrl", dataUrl).toString()
+        }
+
+        @JavascriptInterface
+        fun updatePhoto(json: String) = synchronized(storeLock) {
+            val upd = JSONObject(json); val meta = readMeta()
+            for (i in 0 until meta.length()) {
+                val item = meta.getJSONObject(i)
+                if (item.getString("id") == upd.getString("id")) {
+                    listOf("name", "album", "note").forEach { item.put(it, upd.optString(it)) }
+                    item.put("tags", upd.optJSONArray("tags") ?: JSONArray())
+                    item.put("pinned", upd.optBoolean("pinned")); item.put("widget", upd.optBoolean("widget"))
+                }
+            }
+            writeMeta(meta)
+        }
+
+        @JavascriptInterface
+        fun deletePhoto(id: String) = synchronized(storeLock) {
+            val meta = readMeta(); val kept = JSONArray()
+            for (i in 0 until meta.length()) {
+                val item = meta.getJSONObject(i)
+                if (item.getString("id") == id) File(photoDir(), item.getString("file")).delete() else kept.put(item)
+            }
+            writeMeta(kept)
+        }
+
+        @JavascriptInterface
+        fun requestPinWidget() {
+            runOnUiThread {
+                val manager = AppWidgetManager.getInstance(this@MainActivity)
+                val provider = ComponentName(this@MainActivity, PinnedPhotoWidget::class.java)
+                val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.isRequestPinAppWidgetSupported
+                if (supported && manager.requestPinAppWidget(provider, null, null)) {
+                    Toast.makeText(this@MainActivity, "Подтверди добавление виджета", Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(this@MainActivity,
+                        "Этот лаунчер не умеет добавлять виджет из приложения. Долгое нажатие по рабочему столу → Виджеты → «Закреплённое фото»",
+                        Toast.LENGTH_LONG).show()
+                }
+            }
+        }
     }
+
+    private val storeLock = Any()
+    private fun photoDir() = File(filesDir, "photos")
+    private fun readMeta(): JSONArray {
+        val f = File(photoDir(), "meta.json")
+        return if (f.exists()) try { JSONArray(f.readText()) } catch (e: Exception) { JSONArray() } else JSONArray()
+    }
+    private fun writeMeta(meta: JSONArray) { photoDir().mkdirs(); File(photoDir(), "meta.json").writeText(meta.toString()) }
 
     @Deprecated("нужен для file chooser")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
