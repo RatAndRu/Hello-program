@@ -13,6 +13,8 @@ jobs:
   build-apk:
     name: Debug APK (Android)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Получить код
         uses: actions/checkout@v4
@@ -47,6 +49,9 @@ jobs:
 
       # Главное для человека: тот же APK кладём в GitHub Releases,
       # где он виден сразу и скачивается одним кликом без ZIP-обёртки.
+      - name: Подготовить APK с понятным именем
+        run: cp pinphotos/android-widget/app/build/outputs/apk/debug/app-debug.apk PinPhotos-debug.apk
+
       - name: Опубликовать APK в GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
@@ -55,4 +60,4 @@ jobs:
           body: Debug APK приложения «ЗакрепФото» (одно приложение + виджет 3×2). Скачай файл PinPhotos-debug.apk ниже и установи на телефон.
           prerelease: true
           fail_on_unmatched_files: true
-          files: pinphotos/android-widget/app/build/outputs/apk/debug/app-debug.apk
+          files: PinPhotos-debug.apk
