@@ -1,362 +1,236 @@
 package com.example.pinphotoswidget
 
 import android.app.Activity
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
-import android.util.Base64
-import android.util.Log
 import android.provider.OpenableColumns
-import android.webkit.JavascriptInterface
-import android.webkit.ValueCallback
-import android.webkit.WebChromeClient
-import android.webkit.WebView
-import android.webkit.WebViewClient
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.Button
+import android.widget.ImageView
+import android.widget.PopupMenu
+import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import android.appwidget.AppWidgetManager
-import android.content.ComponentName
-import android.os.Build
-import org.json.JSONArray
+import androidx.recyclerview.widget.GridLayoutManager
+import androidx.recyclerview.widget.RecyclerView
 import org.json.JSONObject
 import java.io.File
-import java.io.FileOutputStream
-import java.util.UUID
-import kotlin.math.max
+import java.util.concurrent.Executors
 
-/**
- * ЕДИНОЕ приложение «ЗакрепФото»: интерфейс PWA внутри WebView + нативные возможности Android.
- * Одна иконка в лаунчере (переключаемая алиасами), один APK, плюс виджет рабочего стола.
- *
- * Веб-файлы (../index.html, app.js, ...) Gradle копирует в assets при сборке — см. app/build.gradle.
- */
+/** Полностью нативное приложение «ЗакрепФото» (без WebView): сетка фото, импорт, виджет, иконки. */
 class MainActivity : Activity() {
-    private lateinit var web: WebView
-    private var fileCallback: ValueCallback<Array<Uri>>? = null
+    private lateinit var grid: RecyclerView
+    private lateinit var emptyView: View
+    private lateinit var widgetStatus: TextView
+    private lateinit var countText: TextView
+    private var photos: MutableList<Photo> = mutableListOf()
+    private val io = Executors.newFixedThreadPool(3)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        web = WebView(this)
-        setContentView(web)
-
-        with(web.settings) {
-            javaScriptEnabled = true
-            domStorageEnabled = true
-            @Suppress("DEPRECATION") databaseEnabled = true
-            allowFileAccess = true
-            allowContentAccess = true
-            useWideViewPort = true
-            loadWithOverviewMode = true
-        }
-        web.webViewClient = WebViewClient()
-        // Открытие системной галереи из <input type="file"> внутри WebView
-        web.webChromeClient = object : WebChromeClient() {
-            override fun onShowFileChooser(
-                webView: WebView, callback: ValueCallback<Array<Uri>>,
-                params: FileChooserParams
-            ): Boolean {
-                fileCallback?.onReceiveValue(null)
-                fileCallback = callback
-                val intent = params.createIntent().apply {
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                    if (params.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
-                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                    }
-                }
-                Log.d(TAG, "onShowFileChooser: mode=${params.mode}, intent=$intent")
-                return try { startActivityForResult(intent, FILE_CHOOSER); true }
-                catch (e: Exception) { fileCallback = null; false }
-            }
-        }
-        web.addJavascriptInterface(NativeBridge(), "PinPhotosNative")
-        web.loadUrl("file:///android_asset/index.html")
+        setContentView(R.layout.activity_main)
+        grid = findViewById(R.id.grid)
+        emptyView = findViewById(R.id.emptyView)
+        widgetStatus = findViewById(R.id.widgetStatus)
+        countText = findViewById(R.id.countText)
+        grid.layoutManager = GridLayoutManager(this, 3)
+        findViewById<Button>(R.id.importBtn).setOnClickListener { pickPhotos() }
+        findViewById<Button>(R.id.emptyImportBtn).setOnClickListener { pickPhotos() }
+        findViewById<Button>(R.id.addWidgetBtn).setOnClickListener { chooseWidgetSize() }
+        findViewById<View>(R.id.menuBtn).setOnClickListener { showMenu(it) }
     }
 
-    /** Мост PWA -> Android: виджет и динамическая иконка. Вызывается из app.js. */
-    inner class NativeBridge {
-        @JavascriptInterface
-        fun setWidgetPhoto(dataUrl: String, caption: String) {
-            try {
-                val bytes = Base64.decode(dataUrl.substringAfter(",", dataUrl), Base64.DEFAULT)
-                val bmp = BitmapFactory.decodeByteArray(bytes, 0, bytes.size) ?: return
-                // Виджетам нельзя слать огромные Bitmap (лимит Binder ~1MB) — ужимаем
-                val scale = 880f / max(bmp.width, bmp.height)
-                val small = if (scale < 1) Bitmap.createScaledBitmap(
-                    bmp, (bmp.width * scale).toInt().coerceAtLeast(1),
-                    (bmp.height * scale).toInt().coerceAtLeast(1), true
-                ) else bmp
-                FileOutputStream(File(filesDir, PinnedPhotoWidget.FILE_NAME)).use {
-                    small.compress(Bitmap.CompressFormat.JPEG, 88, it)
+    override fun onResume() { super.onResume(); refresh() }
+
+    private fun refresh() {
+        photos = PhotoStore.list(this)
+        val pinnedCount = photos.count { it.pinned }
+        countText.text = if (photos.isEmpty()) "" else "${photos.size}"
+        widgetStatus.text = when {
+            photos.isEmpty() -> "Нет фотографий"
+            pinnedCount == 0 -> "Нет закреплённых — откройте фото и нажмите «Закрепить»"
+            pinnedCount == 1 -> "В виджете: 1 фото"
+            else -> "В виджете: $pinnedCount фото · листаются каждые ~30 мин"
+        }
+        emptyView.visibility = if (photos.isEmpty()) View.VISIBLE else View.GONE
+        grid.visibility = if (photos.isEmpty()) View.GONE else View.VISIBLE
+        grid.adapter = PhotoAdapter(photos) { photo ->
+            startActivity(Intent(this, PhotoActivity::class.java).putExtra("id", photo.id))
+        }
+        PinnedPhotoWidgetBase.updateAll(this)
+    }
+
+    private fun showMenu(anchor: View) {
+        val menu = PopupMenu(this, anchor)
+        menu.menu.add(0, 1, 0, "Добавить фото")
+        menu.menu.add(0, 2, 0, "Добавить виджет…")
+        menu.menu.add(0, 3, 0, "Бэкап: сохранить JSON")
+        menu.menu.add(0, 4, 0, "Восстановить из JSON")
+        menu.menu.add(0, 5, 0, "Иконка: обычная 📌")
+        menu.menu.add(0, 6, 0, "Иконка: огненная 🔥")
+        menu.menu.add(0, 7, 0, "Иконка: сонная 😴")
+        menu.setOnMenuItemClickListener { item ->
+            when (item.itemId) {
+                1 -> pickPhotos()
+                2 -> chooseWidgetSize()
+                3 -> startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"
+                    putExtra(Intent.EXTRA_TITLE, "pinphotos-backup.json")
+                }, EXPORT_JSON)
+                4 -> startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
+                }, IMPORT_JSON)
+                5 -> IconSwitcher.setIcon(this, IconSwitcher.NORMAL)
+                6 -> IconSwitcher.setIcon(this, IconSwitcher.FIRE)
+                7 -> IconSwitcher.setIcon(this, IconSwitcher.SLEEPY)
+            }
+            true
+        }
+        menu.show()
+    }
+
+    private fun pickPhotos() {
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+            addCategory(Intent.CATEGORY_OPENABLE); type = "image/*"
+            putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        startActivityForResult(intent, PICK_PHOTOS)
+    }
+
+    private fun chooseWidgetSize() {
+        val labels = arrayOf("2 × 2", "3 × 2", "4 × 2", "4 × 3")
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Размер виджета")
+            .setItems(labels) { _, which -> requestPin(PinnedPhotoWidgetBase.PROVIDERS[which]) }
+            .show()
+    }
+
+    private fun requestPin(cls: Class<out PinnedPhotoWidgetBase>) {
+        val manager = AppWidgetManager.getInstance(this)
+        val provider = ComponentName(this, cls)
+        val ok = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O &&
+            manager.isRequestPinAppWidgetSupported &&
+            manager.requestPinAppWidget(provider, null, null)
+        if (!ok) toast("Лаунчер не поддерживает добавление из приложения: долгое нажатие по рабочему столу → Виджеты → ЗакрепФото")
+    }
+
+    @Deprecated("startActivityForResult — осознанно, без лишних зависимостей")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (resultCode != RESULT_OK || data == null) return
+        when (requestCode) {
+            PICK_PHOTOS -> io.execute {
+                var saved = 0
+                val uris = mutableListOf<Uri>()
+                data.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
+                if (uris.isEmpty()) data.data?.let { uris.add(it) }
+                for (uri in uris) {
+                    try {
+                        val bytes = contentResolver.openInputStream(uri)?.readBytes() ?: continue
+                        if (bytes.isEmpty()) continue
+                        PhotoStore.importBytes(this, bytes, contentResolver.getType(uri) ?: "image/jpeg", displayName(uri))
+                        saved++
+                    } catch (e: Exception) { /* одно битое фото не должно валить остальные */ }
                 }
-                getSharedPreferences(PinnedPhotoWidget.PREFS, MODE_PRIVATE)
-                    .edit().putString("caption", caption.ifBlank { "ЗакрепФото" }).apply()
-                runOnUiThread {
-                    PinnedPhotoWidget.updateAll(this@MainActivity)
-                    Toast.makeText(this@MainActivity, "Фото установлено в виджет", Toast.LENGTH_SHORT).show()
-                }
-            } catch (e: Exception) {
-                runOnUiThread { Toast.makeText(this@MainActivity, "Не удалось обновить виджет", Toast.LENGTH_SHORT).show() }
+                runOnUiThread { toast("Добавлено: $saved"); refresh() }
             }
-        }
-
-        @JavascriptInterface
-        fun setIcon(state: String) {
-            val alias = when (state) {
-                "FIRE" -> IconSwitcher.FIRE
-                "SLEEPY" -> IconSwitcher.SLEEPY
-                else -> IconSwitcher.NORMAL
-            }
-            runOnUiThread {
-                IconSwitcher.setIcon(this@MainActivity, alias)
-                Toast.makeText(this@MainActivity, "Иконка переключена", Toast.LENGTH_SHORT).show()
-            }
-        }
-
-        // ---------- Нативное хранилище фото (надёжная замена IndexedDB в WebView) ----------
-
-        @JavascriptInterface
-        fun listPhotos(): String {
-            return try { synchronized(storeLock) {
-                lastError = ""
-                val out = JSONArray()
-                val meta = readMeta()
-                for (i in 0 until meta.length()) {
-                    val item = JSONObject(meta.getJSONObject(i).toString())
-                    val file = File(photoDir(), item.getString("file"))
-                    if (!file.exists()) { lastError = "В meta.json есть запись, но файл не найден: ${file.name}"; continue }
-                    val dataUrl = "data:" + item.optString("mime", "image/jpeg") + ";base64," +
-                        Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
-                    item.put("dataUrl", dataUrl)
-                    out.put(item)
-                }
-                Log.d(TAG, "listPhotos -> ${out.length()} photos")
-                out.toString()
-            } } catch (e: Exception) {
-                lastError = "listPhotos: ${e.javaClass.simpleName}: ${e.message}"
-                Log.e(TAG, "listPhotos failed", e)
-                "[]"
-            }
-        }
-
-        @JavascriptInterface
-        fun savePhoto(dataUrl: String, name: String): String {
-            return try { synchronized(storeLock) {
-                Log.d(TAG, "savePhoto start: name=$name, dataUrlLength=${dataUrl.length}")
-                val mime = dataUrl.substringAfter("data:", "image/jpeg").substringBefore(";")
-                val bytes = Base64.decode(dataUrl.substringAfter(",", dataUrl), Base64.DEFAULT)
-                if (bytes.isEmpty()) throw IllegalStateException("Получено пустое изображение (0 байт)")
-                val item = savePhotoBytes(bytes, mime, name)
-                JSONObject(item.toString()).put("ok", true).put("dataUrl", dataUrl).toString()
-            } } catch (e: Exception) {
-                lastError = "savePhoto: ${e.javaClass.simpleName}: ${e.message}"
-                Log.e(TAG, "savePhoto failed", e)
-                JSONObject().put("ok", false).put("error", lastError).toString()
-            }
-        }
-
-        @JavascriptInterface
-        fun updatePhoto(json: String): String {
-            return try { synchronized(storeLock) {
-                val upd = JSONObject(json); val meta = readMeta(); var found = false
-                for (i in 0 until meta.length()) {
-                    val item = meta.getJSONObject(i)
-                    if (item.getString("id") == upd.getString("id")) {
-                        found = true
-                        listOf("name", "album", "note").forEach { item.put(it, upd.optString(it)) }
-                        item.put("tags", upd.optJSONArray("tags") ?: JSONArray())
-                        item.put("pinned", upd.optBoolean("pinned")); item.put("widget", upd.optBoolean("widget"))
+            EXPORT_JSON -> io.execute {
+                try {
+                    val arr = org.json.JSONArray()
+                    for (p in photos) {
+                        val bytes = p.fileIn(PhotoStore.dir(this)).readBytes()
+                        arr.put(JSONObject()
+                            .put("name", p.name).put("album", p.album).put("tags", org.json.JSONArray(p.tags))
+                            .put("note", p.note).put("pinned", p.pinned).put("createdAt", p.createdAt)
+                            .put("mime", p.mime)
+                            .put("data", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)))
                     }
-                }
-                if (!found) throw IllegalStateException("updatePhoto: фото не найдено в meta.json")
-                writeMeta(meta)
-                "OK"
-            } } catch (e: Exception) {
-                lastError = "updatePhoto: ${e.javaClass.simpleName}: ${e.message}"
-                Log.e(TAG, "updatePhoto failed", e)
-                "ERROR: $lastError"
+                    val root = JSONObject().put("app", "pinphotos").put("version", 2).put("photos", arr)
+                    data.data?.let { uri -> contentResolver.openOutputStream(uri)?.use { it.write(root.toString().toByteArray()) } }
+                    runOnUiThread { toast("Бэкап сохранён") }
+                } catch (e: Exception) { runOnUiThread { toast("Ошибка бэкапа: ${e.message}") } }
             }
-        }
-
-        @JavascriptInterface
-        fun deletePhoto(id: String): String {
-            return try { synchronized(storeLock) {
-                val meta = readMeta(); val kept = JSONArray()
-                for (i in 0 until meta.length()) {
-                    val item = meta.getJSONObject(i)
-                    if (item.getString("id") == id) File(photoDir(), item.getString("file")).delete() else kept.put(item)
-                }
-                writeMeta(kept)
-                "OK"
-            } } catch (e: Exception) {
-                lastError = "deletePhoto: ${e.javaClass.simpleName}: ${e.message}"
-                Log.e(TAG, "deletePhoto failed", e)
-                "ERROR: $lastError"
-            }
-        }
-
-        @JavascriptInterface
-        fun getLastError(): String = lastError
-
-        @JavascriptInterface
-        fun getStorageInfo(): String = synchronized(storeLock) {
-            val meta = readMeta(); var bytes = 0L; val ids = JSONArray()
-            for (i in 0 until meta.length()) {
-                val item = meta.getJSONObject(i); ids.put(item.optString("id"))
-                bytes += File(photoDir(), item.optString("file")).length()
-            }
-            JSONObject().put("native", true).put("sdk", Build.VERSION.SDK_INT)
-                .put("count", meta.length()).put("bytes", bytes).put("ids", ids)
-                .put("lastError", lastError).put("dir", photoDir().absolutePath).toString()
-        }
-
-        /** Полностью нативный выбор фото: читаем файл через ContentResolver, минуя Blob в WebView. */
-        @JavascriptInterface
-        fun pickPhotosNative() {
-            runOnUiThread {
-                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-                    addCategory(Intent.CATEGORY_OPENABLE)
-                    type = "image/*"
-                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                try { startActivityForResult(intent, NATIVE_PICK) }
-                catch (e: Exception) { Toast.makeText(this@MainActivity, "Не удалось открыть галерею: ${e.message}", Toast.LENGTH_LONG).show() }
-            }
-        }
-
-        @JavascriptInterface
-        fun sharePhoto(dataUrl: String, name: String): String {
-            return try {
-                val mime = dataUrl.substringAfter("data:", "image/jpeg").substringBefore(";")
-                val bytes = Base64.decode(dataUrl.substringAfter(",", dataUrl), Base64.DEFAULT)
-                if (bytes.isEmpty()) throw IllegalStateException("Пустое изображение")
-                val ext = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
-                val safeName = name.ifBlank { "photo" }.replace(Regex("[^A-Za-z0-9А-Яа-яЁё _-]"), "_").take(60)
-                val dir = File(cacheDir, "shared").apply { mkdirs() }
-                val file = File(dir, "$safeName.$ext")
-                file.writeBytes(bytes)
-                val uri = FileProvider.getUriForFile(this@MainActivity, packageName + ".fileprovider", file)
-                runOnUiThread {
-                    val send = Intent(Intent.ACTION_SEND).apply {
-                        type = mime.ifBlank { "image/jpeg" }
-                        putExtra(Intent.EXTRA_STREAM, uri)
-                        putExtra(Intent.EXTRA_TEXT, name)
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            IMPORT_JSON -> io.execute {
+                try {
+                    val text = data.data?.let { uri -> contentResolver.openInputStream(uri)?.readBytes()?.toString(Charsets.UTF_8) } ?: ""
+                    val arr = JSONObject(text).getJSONArray("photos"); var added = 0
+                    for (i in 0 until arr.length()) {
+                        val o = arr.getJSONObject(i)
+                        val encoded = if (o.has("data")) o.getString("data")
+                            else o.optString("dataUrl").substringAfter(",", "")
+                        if (encoded.isEmpty()) continue
+                        val p = PhotoStore.importBytes(this, android.util.Base64.decode(encoded, android.util.Base64.DEFAULT),
+                            o.optString("mime", "image/jpeg"), o.optString("name", "Фото"))
+                        p.album = o.optString("album", "Разное"); p.note = o.optString("note")
+                        p.pinned = o.optBoolean("pinned")
+                        o.optJSONArray("tags")?.let { t -> for (j in 0 until t.length()) p.tags.add(t.optString(j)) }
+                        PhotoStore.update(this, p); added++
                     }
-                    startActivity(Intent.createChooser(send, "Поделиться фото"))
-                }
-                "OK bytes=${bytes.size} mime=$mime"
-            } catch (e: Exception) {
-                lastError = "sharePhoto: ${e.javaClass.simpleName}: ${e.message}"
-                Log.e(TAG, "sharePhoto failed", e)
-                "ERROR: $lastError"
-            }
-        }
-
-        @JavascriptInterface
-        fun requestPinWidget() {
-            runOnUiThread {
-                val manager = AppWidgetManager.getInstance(this@MainActivity)
-                val provider = ComponentName(this@MainActivity, PinnedPhotoWidget::class.java)
-                val supported = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && manager.isRequestPinAppWidgetSupported
-                if (supported && manager.requestPinAppWidget(provider, null, null)) {
-                    Toast.makeText(this@MainActivity, "Подтверди добавление виджета", Toast.LENGTH_LONG).show()
-                } else {
-                    Toast.makeText(this@MainActivity,
-                        "Этот лаунчер не умеет добавлять виджет из приложения. Долгое нажатие по рабочему столу → Виджеты → «Закреплённое фото»",
-                        Toast.LENGTH_LONG).show()
-                }
+                    runOnUiThread { toast("Восстановлено: $added"); refresh() }
+                } catch (e: Exception) { runOnUiThread { toast("Ошибка восстановления: ${e.message}") } }
             }
         }
     }
 
-    private val storeLock = Any()
-    @Volatile private var lastError: String = ""
-    private fun photoDir() = File(filesDir, "photos")
-    private fun savePhotoBytes(bytes: ByteArray, mime: String, name: String): JSONObject {
-        photoDir().mkdirs()
-        val ext = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
-        val id = System.currentTimeMillis().toString(36) + UUID.randomUUID().toString().take(6)
-        val fileName = "$id.$ext"
-        File(photoDir(), fileName).writeBytes(bytes)
-        val item = JSONObject()
-            .put("id", id).put("name", name.ifBlank { "Фото" }).put("album", "Разное")
-            .put("tags", JSONArray()).put("note", "").put("pinned", false).put("widget", false)
-            .put("createdAt", System.currentTimeMillis()).put("file", fileName).put("mime", mime.ifBlank { "image/jpeg" })
-        val meta = readMeta(); meta.put(item); writeMeta(meta)
-        Log.d(TAG, "saved photo id=$id file=$fileName bytes=${bytes.size} mime=$mime")
-        return item
-    }
     private fun displayName(uri: Uri): String {
         var name = "Фото"
         try {
             contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
                 if (c.moveToFirst()) name = c.getString(0) ?: name
             }
-        } catch (e: Exception) { Log.w(TAG, "displayName failed for $uri", e) }
+        } catch (e: Exception) { }
         return name.substringBeforeLast('.').ifBlank { "Фото" }
     }
-    private fun readMeta(): JSONArray {
-        val f = File(photoDir(), "meta.json")
-        return if (f.exists()) try { JSONArray(f.readText()) } catch (e: Exception) { JSONArray() } else JSONArray()
-    }
-    private fun writeMeta(meta: JSONArray) { photoDir().mkdirs(); File(photoDir(), "meta.json").writeText(meta.toString()) }
 
-    @Deprecated("нужен для file chooser")
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == FILE_CHOOSER) {
-            val result = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
-            Log.d(TAG, "FILE_CHOOSER resultCode=$resultCode, uris=${result?.toList()}")
-            fileCallback?.onReceiveValue(result)
-            fileCallback = null
+    private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
+
+    companion object { const val PICK_PHOTOS = 2001; const val EXPORT_JSON = 2002; const val IMPORT_JSON = 2003 }
+}
+
+class PhotoAdapter(
+    private val items: List<Photo>,
+    private val onClick: (Photo) -> Unit
+) : RecyclerView.Adapter<PhotoAdapter.Holder>() {
+    private val io = Executors.newFixedThreadPool(3)
+
+    class Holder(view: View) : RecyclerView.ViewHolder(view) {
+        val thumb: ImageView = view.findViewById(R.id.thumb)
+        val badge: TextView = view.findViewById(R.id.badge)
+    }
+
+    override fun onCreateViewHolder(parent: ViewGroup, type: Int): Holder =
+        Holder(LayoutInflater.from(parent.context).inflate(R.layout.item_photo, parent, false))
+
+    override fun getItemCount() = items.size
+
+    override fun onBindViewHolder(holder: Holder, position: Int) {
+        val photo = items[position]
+        holder.badge.visibility = if (photo.pinned) View.VISIBLE else View.GONE
+        holder.thumb.setImageResource(R.drawable.widget_placeholder)
+        holder.thumb.tag = photo.id
+        val path = photo.fileIn(PhotoStore.dir(holder.thumb.context)).absolutePath
+        io.execute {
+            val bmp = decodeSampled(path, 360)
+            holder.thumb.post { if (holder.thumb.tag == photo.id && bmp != null) holder.thumb.setImageBitmap(bmp) }
         }
-        if (requestCode == NATIVE_PICK) {
-            var saved = 0; val errors = mutableListOf<String>()
-            Log.d(TAG, "NATIVE_PICK resultCode=$resultCode, data=${data?.data}, clip=${data?.clipData?.itemCount}")
-            if (resultCode == RESULT_OK && data != null) {
-                val uris = mutableListOf<Uri>()
-                data.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
-                if (uris.isEmpty()) data.data?.let { uris.add(it) }
-                synchronized(storeLock) {
-                    for (uri in uris) {
-                        try {
-                            val bytes = contentResolver.openInputStream(uri)?.readBytes()
-                                ?: throw IllegalStateException("openInputStream вернул null")
-                            if (bytes.isEmpty()) throw IllegalStateException("Файл пустой (0 байт)")
-                            savePhotoBytes(bytes, contentResolver.getType(uri) ?: "image/jpeg", displayName(uri))
-                            saved++
-                        } catch (e: Exception) {
-                            lastError = "native import $uri: ${e.javaClass.simpleName}: ${e.message}"
-                            errors.add(lastError); Log.e(TAG, "native import failed: $uri", e)
-                        }
-                    }
-                }
-            }
-            val msg = when {
-                saved > 0 && errors.isEmpty() -> "Нативно сохранено фото: $saved"
-                saved > 0 -> "Сохранено: $saved, ошибок: ${errors.size}. ${errors.first()}"
-                resultCode != RESULT_OK -> "Выбор фото отменён"
-                else -> "Не удалось сохранить фото. ${errors.firstOrNull() ?: "Нет данных от галереи"}"
-            }
-            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
-            val jsMsg = JSONObject.quote(msg)
-            web.evaluateJavascript(
-                "window.onNativePhotosImported && window.onNativePhotosImported($saved, $jsMsg)", null
-            )
-        }
+        holder.itemView.setOnClickListener { onClick(photo) }
     }
 
-    @Deprecated("назад внутри приложения")
-    override fun onBackPressed() {
-        if (web.canGoBack()) web.goBack() else super.onBackPressed()
-    }
-
-    companion object {
-        const val FILE_CHOOSER = 1001
-        const val NATIVE_PICK = 1002
-        const val TAG = "PinPhotos"
+    private fun decodeSampled(path: String, target: Int): Bitmap? {
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeFile(path, bounds)
+        if (bounds.outWidth <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > target * 2) sample *= 2
+        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
     }
 }
