@@ -129,6 +129,16 @@ $('fileInput').addEventListener('change', async e => {
   e.target.value = '';
 });
 $('fileInput').addEventListener('click', () => dbg('fileInput click', 'открываю системный выбор фото'));
+if (nativeMode) {
+  // На этом устройстве WebView-галерея не возвращает файл в JS (в логе нет fileInput change),
+  // поэтому главная кнопка в APK сразу использует надёжный нативный импорт.
+  $('nativeAddBtn').style.display = 'none';
+  $('addLabel').addEventListener('click', e => {
+    e.preventDefault(); e.stopPropagation();
+    dbg('main add button -> native picker');
+    if (PinPhotosNative.pickPhotosNative) PinPhotosNative.pickPhotosNative();
+  }, true);
+}
 $('nativeAddBtn').onclick = () => {
   dbg('nativeAdd click', `bridge=${typeof window.PinPhotosNative}, pickPhotosNative=${typeof (window.PinPhotosNative || {}).pickPhotosNative}`);
   if (nativeMode && PinPhotosNative.pickPhotosNative) PinPhotosNative.pickPhotosNative();
@@ -168,7 +178,20 @@ document.querySelectorAll('.icon-state').forEach(btn => btn.addEventListener('cl
   else alert('Смена иконки работает в установленном Android-приложении «ЗакрепФото», а не в браузере.');
 }));
 $('deleteBtn').onclick = async () => { if (!confirm('Удалить копию фото из приложения? Оригинал в галерее не тронем.')) return; await del(current.id); URL.revokeObjectURL(urlFor(current)); urls.delete(current.id); photos = photos.filter(p => p !== current); $('viewer').classList.add('hidden'); render(); };
-$('shareBtn').onclick = async () => { try { const f = new File([current.blob], current.name + '.jpg', {type: current.blob.type || 'image/jpeg'}); if (navigator.canShare && navigator.canShare({files: [f]})) await navigator.share({files: [f], title: current.name}); else alert('Браузер не умеет делиться файлами'); } catch (e) {} };
+$('shareBtn').onclick = async () => {
+  try {
+    dbg('share click', `nativeMode=${nativeMode}, name=${current && current.name}`);
+    if (nativeMode && PinPhotosNative.sharePhoto) {
+      const result = PinPhotosNative.sharePhoto(await blobToB64(current.blob), current.name);
+      dbg('sharePhoto native', String(result));
+      if (String(result).startsWith('ERROR')) alert('Не удалось поделиться: ' + result);
+      return;
+    }
+    const f = new File([current.blob], current.name + '.jpg', {type: current.blob.type || 'image/jpeg'});
+    if (navigator.canShare && navigator.canShare({files: [f]})) await navigator.share({files: [f], title: current.name});
+    else alert('Этот браузер не умеет делиться файлами. В Android-приложении кнопка работает через системное меню Android.');
+  } catch (e) { dbgErr('share failed', e); }
+};
 $('addWidgetBtn').onclick = () => {
   if (window.PinPhotosNative && PinPhotosNative.requestPinWidget) PinPhotosNative.requestPinWidget();
   else alert('Кнопка работает в установленном Android-приложении «ЗакрепФото». В браузере виджет добавить нельзя.');

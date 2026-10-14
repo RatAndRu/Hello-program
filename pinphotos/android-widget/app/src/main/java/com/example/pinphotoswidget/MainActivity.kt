@@ -15,6 +15,7 @@ import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.os.Build
@@ -222,6 +223,35 @@ class MainActivity : Activity() {
                 }
                 try { startActivityForResult(intent, NATIVE_PICK) }
                 catch (e: Exception) { Toast.makeText(this@MainActivity, "Не удалось открыть галерею: ${e.message}", Toast.LENGTH_LONG).show() }
+            }
+        }
+
+        @JavascriptInterface
+        fun sharePhoto(dataUrl: String, name: String): String {
+            return try {
+                val mime = dataUrl.substringAfter("data:", "image/jpeg").substringBefore(";")
+                val bytes = Base64.decode(dataUrl.substringAfter(",", dataUrl), Base64.DEFAULT)
+                if (bytes.isEmpty()) throw IllegalStateException("Пустое изображение")
+                val ext = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
+                val safeName = name.ifBlank { "photo" }.replace(Regex("[^A-Za-z0-9А-Яа-яЁё _-]"), "_").take(60)
+                val dir = File(cacheDir, "shared").apply { mkdirs() }
+                val file = File(dir, "$safeName.$ext")
+                file.writeBytes(bytes)
+                val uri = FileProvider.getUriForFile(this@MainActivity, packageName + ".fileprovider", file)
+                runOnUiThread {
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = mime.ifBlank { "image/jpeg" }
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        putExtra(Intent.EXTRA_TEXT, name)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    startActivity(Intent.createChooser(send, "Поделиться фото"))
+                }
+                "OK bytes=${bytes.size} mime=$mime"
+            } catch (e: Exception) {
+                lastError = "sharePhoto: ${e.javaClass.simpleName}: ${e.message}"
+                Log.e(TAG, "sharePhoto failed", e)
+                "ERROR: $lastError"
             }
         }
 
