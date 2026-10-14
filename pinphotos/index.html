@@ -36,6 +36,7 @@
     <label class="add-btn">＋ Добавить фото из галереи
       <input id="fileInput" type="file" accept="image/*" multiple hidden>
     </label>
+    <button id="nativeAddBtn">🛠 Добавить фото (нативный способ)</button>
     <button id="exportBtn" class="ghost">💾 Бэкап</button>
     <label class="ghost as-btn">♻️ Восстановить
       <input id="importInput" type="file" accept="application/json,.json" hidden>
@@ -48,6 +49,17 @@
       <option value="">Все альбомы</option><option>Работа</option><option>Документы</option><option>Чеки</option><option>Личное</option><option>Разное</option>
     </select>
   </section>
+
+  <details id="debugPanel" class="note" open>
+    <summary><strong>🧪 Отладка добавления фото</strong> — нажми, чтобы свернуть</summary>
+    <p class="hint">Добавь фото обычным или нативным способом и посмотри журнал ниже: видно каждый этап и точную ошибку. Затем нажми «Скопировать журнал» и пришли его мне.</p>
+    <div class="row wrap">
+      <button id="debugStorageBtn" class="ghost">Состояние хранилища</button>
+      <button id="debugCopyBtn" class="ghost">📋 Скопировать журнал</button>
+      <button id="debugClearBtn" class="ghost">Очистить журнал</button>
+    </div>
+    <pre id="debugLog" class="debug-log">Журнал пуст.</pre>
+  </details>
 
   <section>
     <h2>📌 Закреплённые</h2>

@@ -7,6 +7,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.util.Base64
+import android.util.Log
+import android.provider.OpenableColumns
 import android.webkit.JavascriptInterface
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -56,7 +58,13 @@ class MainActivity : Activity() {
             ): Boolean {
                 fileCallback?.onReceiveValue(null)
                 fileCallback = callback
-                val intent = params.createIntent()
+                val intent = params.createIntent().apply {
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    if (params.mode == WebChromeClient.FileChooserParams.MODE_OPEN_MULTIPLE) {
+                        putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    }
+                }
+                Log.d(TAG, "onShowFileChooser: mode=${params.mode}, intent=$intent")
                 return try { startActivityForResult(intent, FILE_CHOOSER); true }
                 catch (e: Exception) { fileCallback = null; false }
             }
@@ -108,59 +116,113 @@ class MainActivity : Activity() {
         // ---------- Нативное хранилище фото (надёжная замена IndexedDB в WebView) ----------
 
         @JavascriptInterface
-        fun listPhotos(): String = synchronized(storeLock) {
-            val out = JSONArray()
-            val meta = readMeta()
-            for (i in 0 until meta.length()) {
-                val item = JSONObject(meta.getJSONObject(i).toString())
-                val file = File(photoDir(), item.getString("file"))
-                if (!file.exists()) continue
-                val dataUrl = "data:" + item.optString("mime", "image/jpeg") + ";base64," +
-                    Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
-                item.put("dataUrl", dataUrl)
-                out.put(item)
-            }
-            out.toString()
-        }
-
-        @JavascriptInterface
-        fun savePhoto(dataUrl: String, name: String): String = synchronized(storeLock) {
-            photoDir().mkdirs()
-            val mime = dataUrl.substringAfter("data:", "image/jpeg").substringBefore(";")
-            val ext = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; else -> "jpg" }
-            val id = System.currentTimeMillis().toString(36) + UUID.randomUUID().toString().take(6)
-            val fileName = "$id.$ext"
-            File(photoDir(), fileName).writeBytes(Base64.decode(dataUrl.substringAfter(",", dataUrl), Base64.DEFAULT))
-            val item = JSONObject()
-                .put("id", id).put("name", name.ifBlank { "Фото" }).put("album", "Разное")
-                .put("tags", JSONArray()).put("note", "").put("pinned", false).put("widget", false)
-                .put("createdAt", System.currentTimeMillis()).put("file", fileName).put("mime", mime)
-            val meta = readMeta(); meta.put(item); writeMeta(meta)
-            JSONObject(item.toString()).put("dataUrl", dataUrl).toString()
-        }
-
-        @JavascriptInterface
-        fun updatePhoto(json: String) = synchronized(storeLock) {
-            val upd = JSONObject(json); val meta = readMeta()
-            for (i in 0 until meta.length()) {
-                val item = meta.getJSONObject(i)
-                if (item.getString("id") == upd.getString("id")) {
-                    listOf("name", "album", "note").forEach { item.put(it, upd.optString(it)) }
-                    item.put("tags", upd.optJSONArray("tags") ?: JSONArray())
-                    item.put("pinned", upd.optBoolean("pinned")); item.put("widget", upd.optBoolean("widget"))
+        fun listPhotos(): String {
+            return try { synchronized(storeLock) {
+                lastError = ""
+                val out = JSONArray()
+                val meta = readMeta()
+                for (i in 0 until meta.length()) {
+                    val item = JSONObject(meta.getJSONObject(i).toString())
+                    val file = File(photoDir(), item.getString("file"))
+                    if (!file.exists()) { lastError = "В meta.json есть запись, но файл не найден: ${file.name}"; continue }
+                    val dataUrl = "data:" + item.optString("mime", "image/jpeg") + ";base64," +
+                        Base64.encodeToString(file.readBytes(), Base64.NO_WRAP)
+                    item.put("dataUrl", dataUrl)
+                    out.put(item)
                 }
+                Log.d(TAG, "listPhotos -> ${out.length()} photos")
+                out.toString()
+            } } catch (e: Exception) {
+                lastError = "listPhotos: ${e.javaClass.simpleName}: ${e.message}"
+                Log.e(TAG, "listPhotos failed", e)
+                "[]"
             }
-            writeMeta(meta)
         }
 
         @JavascriptInterface
-        fun deletePhoto(id: String) = synchronized(storeLock) {
-            val meta = readMeta(); val kept = JSONArray()
-            for (i in 0 until meta.length()) {
-                val item = meta.getJSONObject(i)
-                if (item.getString("id") == id) File(photoDir(), item.getString("file")).delete() else kept.put(item)
+        fun savePhoto(dataUrl: String, name: String): String {
+            return try { synchronized(storeLock) {
+                Log.d(TAG, "savePhoto start: name=$name, dataUrlLength=${dataUrl.length}")
+                val mime = dataUrl.substringAfter("data:", "image/jpeg").substringBefore(";")
+                val bytes = Base64.decode(dataUrl.substringAfter(",", dataUrl), Base64.DEFAULT)
+                if (bytes.isEmpty()) throw IllegalStateException("Получено пустое изображение (0 байт)")
+                val item = savePhotoBytes(bytes, mime, name)
+                JSONObject(item.toString()).put("ok", true).put("dataUrl", dataUrl).toString()
+            } } catch (e: Exception) {
+                lastError = "savePhoto: ${e.javaClass.simpleName}: ${e.message}"
+                Log.e(TAG, "savePhoto failed", e)
+                JSONObject().put("ok", false).put("error", lastError).toString()
             }
-            writeMeta(kept)
+        }
+
+        @JavascriptInterface
+        fun updatePhoto(json: String): String {
+            return try { synchronized(storeLock) {
+                val upd = JSONObject(json); val meta = readMeta(); var found = false
+                for (i in 0 until meta.length()) {
+                    val item = meta.getJSONObject(i)
+                    if (item.getString("id") == upd.getString("id")) {
+                        found = true
+                        listOf("name", "album", "note").forEach { item.put(it, upd.optString(it)) }
+                        item.put("tags", upd.optJSONArray("tags") ?: JSONArray())
+                        item.put("pinned", upd.optBoolean("pinned")); item.put("widget", upd.optBoolean("widget"))
+                    }
+                }
+                if (!found) throw IllegalStateException("updatePhoto: фото не найдено в meta.json")
+                writeMeta(meta)
+                "OK"
+            } } catch (e: Exception) {
+                lastError = "updatePhoto: ${e.javaClass.simpleName}: ${e.message}"
+                Log.e(TAG, "updatePhoto failed", e)
+                "ERROR: $lastError"
+            }
+        }
+
+        @JavascriptInterface
+        fun deletePhoto(id: String): String {
+            return try { synchronized(storeLock) {
+                val meta = readMeta(); val kept = JSONArray()
+                for (i in 0 until meta.length()) {
+                    val item = meta.getJSONObject(i)
+                    if (item.getString("id") == id) File(photoDir(), item.getString("file")).delete() else kept.put(item)
+                }
+                writeMeta(kept)
+                "OK"
+            } } catch (e: Exception) {
+                lastError = "deletePhoto: ${e.javaClass.simpleName}: ${e.message}"
+                Log.e(TAG, "deletePhoto failed", e)
+                "ERROR: $lastError"
+            }
+        }
+
+        @JavascriptInterface
+        fun getLastError(): String = lastError
+
+        @JavascriptInterface
+        fun getStorageInfo(): String = synchronized(storeLock) {
+            val meta = readMeta(); var bytes = 0L; val ids = JSONArray()
+            for (i in 0 until meta.length()) {
+                val item = meta.getJSONObject(i); ids.put(item.optString("id"))
+                bytes += File(photoDir(), item.optString("file")).length()
+            }
+            JSONObject().put("native", true).put("sdk", Build.VERSION.SDK_INT)
+                .put("count", meta.length()).put("bytes", bytes).put("ids", ids)
+                .put("lastError", lastError).put("dir", photoDir().absolutePath).toString()
+        }
+
+        /** Полностью нативный выбор фото: читаем файл через ContentResolver, минуя Blob в WebView. */
+        @JavascriptInterface
+        fun pickPhotosNative() {
+            runOnUiThread {
+                val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "image/*"
+                    putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+                try { startActivityForResult(intent, NATIVE_PICK) }
+                catch (e: Exception) { Toast.makeText(this@MainActivity, "Не удалось открыть галерею: ${e.message}", Toast.LENGTH_LONG).show() }
+            }
         }
 
         @JavascriptInterface
@@ -181,7 +243,31 @@ class MainActivity : Activity() {
     }
 
     private val storeLock = Any()
+    @Volatile private var lastError: String = ""
     private fun photoDir() = File(filesDir, "photos")
+    private fun savePhotoBytes(bytes: ByteArray, mime: String, name: String): JSONObject {
+        photoDir().mkdirs()
+        val ext = when (mime) { "image/png" -> "png"; "image/webp" -> "webp"; "image/gif" -> "gif"; else -> "jpg" }
+        val id = System.currentTimeMillis().toString(36) + UUID.randomUUID().toString().take(6)
+        val fileName = "$id.$ext"
+        File(photoDir(), fileName).writeBytes(bytes)
+        val item = JSONObject()
+            .put("id", id).put("name", name.ifBlank { "Фото" }).put("album", "Разное")
+            .put("tags", JSONArray()).put("note", "").put("pinned", false).put("widget", false)
+            .put("createdAt", System.currentTimeMillis()).put("file", fileName).put("mime", mime.ifBlank { "image/jpeg" })
+        val meta = readMeta(); meta.put(item); writeMeta(meta)
+        Log.d(TAG, "saved photo id=$id file=$fileName bytes=${bytes.size} mime=$mime")
+        return item
+    }
+    private fun displayName(uri: Uri): String {
+        var name = "Фото"
+        try {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) name = c.getString(0) ?: name
+            }
+        } catch (e: Exception) { Log.w(TAG, "displayName failed for $uri", e) }
+        return name.substringBeforeLast('.').ifBlank { "Фото" }
+    }
     private fun readMeta(): JSONArray {
         val f = File(photoDir(), "meta.json")
         return if (f.exists()) try { JSONArray(f.readText()) } catch (e: Exception) { JSONArray() } else JSONArray()
@@ -193,8 +279,43 @@ class MainActivity : Activity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == FILE_CHOOSER) {
             val result = WebChromeClient.FileChooserParams.parseResult(resultCode, data)
+            Log.d(TAG, "FILE_CHOOSER resultCode=$resultCode, uris=${result?.toList()}")
             fileCallback?.onReceiveValue(result)
             fileCallback = null
+        }
+        if (requestCode == NATIVE_PICK) {
+            var saved = 0; val errors = mutableListOf<String>()
+            Log.d(TAG, "NATIVE_PICK resultCode=$resultCode, data=${data?.data}, clip=${data?.clipData?.itemCount}")
+            if (resultCode == RESULT_OK && data != null) {
+                val uris = mutableListOf<Uri>()
+                data.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
+                if (uris.isEmpty()) data.data?.let { uris.add(it) }
+                synchronized(storeLock) {
+                    for (uri in uris) {
+                        try {
+                            val bytes = contentResolver.openInputStream(uri)?.readBytes()
+                                ?: throw IllegalStateException("openInputStream вернул null")
+                            if (bytes.isEmpty()) throw IllegalStateException("Файл пустой (0 байт)")
+                            savePhotoBytes(bytes, contentResolver.getType(uri) ?: "image/jpeg", displayName(uri))
+                            saved++
+                        } catch (e: Exception) {
+                            lastError = "native import $uri: ${e.javaClass.simpleName}: ${e.message}"
+                            errors.add(lastError); Log.e(TAG, "native import failed: $uri", e)
+                        }
+                    }
+                }
+            }
+            val msg = when {
+                saved > 0 && errors.isEmpty() -> "Нативно сохранено фото: $saved"
+                saved > 0 -> "Сохранено: $saved, ошибок: ${errors.size}. ${errors.first()}"
+                resultCode != RESULT_OK -> "Выбор фото отменён"
+                else -> "Не удалось сохранить фото. ${errors.firstOrNull() ?: "Нет данных от галереи"}"
+            }
+            Toast.makeText(this, msg, Toast.LENGTH_LONG).show()
+            val jsMsg = JSONObject.quote(msg)
+            web.evaluateJavascript(
+                "window.onNativePhotosImported && window.onNativePhotosImported($saved, $jsMsg)", null
+            )
         }
     }
 
@@ -203,5 +324,9 @@ class MainActivity : Activity() {
         if (web.canGoBack()) web.goBack() else super.onBackPressed()
     }
 
-    companion object { const val FILE_CHOOSER = 1001 }
+    companion object {
+        const val FILE_CHOOSER = 1001
+        const val NATIVE_PICK = 1002
+        const val TAG = "PinPhotos"
+    }
 }

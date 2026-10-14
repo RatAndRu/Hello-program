@@ -2,7 +2,7 @@ plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
 android {
     namespace 'com.example.pinphotoswidget'
     compileSdk 34
-    defaultConfig { applicationId 'com.example.pinphotoswidget'; minSdk 26; targetSdk 34; versionCode 3; versionName '0.3' }
+    defaultConfig { applicationId 'com.example.pinphotoswidget'; minSdk 26; targetSdk 34; versionCode 4; versionName '0.4-debug' }
     // Веб-интерфейс единого приложения: Gradle копирует PWA из ../../ (папка pinphotos/)
     // в assets APK. Никакого второго приложения и второй иконки.
     sourceSets { main { assets.srcDirs += "$buildDir/generated/pinphotosAssets" } }
