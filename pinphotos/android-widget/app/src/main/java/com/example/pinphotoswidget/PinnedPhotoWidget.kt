@@ -17,11 +17,24 @@ import kotlin.math.max
  * Нет закреплённых / нет фото — аккуратная заглушка.
  */
 open class PinnedPhotoWidgetBase : AppWidgetProvider() {
+    // Периодический апдейт от системы (~30 мин): листаем на следующее фото
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        ids.forEach { render(context, manager, it) }
+        shift(context, +1)
+        ids.forEach { render(context, manager, it, javaClass) }
+    }
+
+    // Тапы по стрелкам ‹ › на самом виджете: ручное листание
+    override fun onReceive(context: Context, intent: Intent) {
+        super.onReceive(context, intent)
+        when (intent.action) {
+            ACTION_PREV -> { shift(context, -1); updateAll(context) }
+            ACTION_NEXT -> { shift(context, +1); updateAll(context) }
+        }
     }
 
     companion object {
+        const val ACTION_PREV = "com.example.pinphotoswidget.WIDGET_PREV"
+        const val ACTION_NEXT = "com.example.pinphotoswidget.WIDGET_NEXT"
         private const val PREFS = "pinphotos_widget"
         private const val KEY_INDEX = "rotation_index"
 
@@ -32,15 +45,23 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
             PinnedPhotoWidget4x3::class.java
         )
 
+        private fun shift(context: Context, delta: Int) {
+            val size = PhotoStore.list(context).count { it.pinned }
+            if (size == 0) return
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val cur = prefs.getInt(KEY_INDEX, 0)
+            prefs.edit().putInt(KEY_INDEX, ((cur + delta) % size + size) % size).apply()
+        }
+
         fun updateAll(context: Context) {
             val manager = AppWidgetManager.getInstance(context)
             PROVIDERS.forEach { cls ->
                 val ids = manager.getAppWidgetIds(ComponentName(context, cls))
-                ids.forEach { render(context, manager, it) }
+                ids.forEach { render(context, manager, it, cls) }
             }
         }
 
-        private fun render(context: Context, manager: AppWidgetManager, widgetId: Int) {
+        private fun render(context: Context, manager: AppWidgetManager, widgetId: Int, cls: Class<out PinnedPhotoWidgetBase>) {
             val views = RemoteViews(context.packageName, R.layout.widget_pinned_photo)
             val all = PhotoStore.list(context)
             val pinned = all.filter { it.pinned }
@@ -48,15 +69,13 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
 
             when {
                 pinned.isNotEmpty() -> {
-                    // Ротация: каждый апдейт — следующее закреплённое фото
-                    val idx = prefs.getInt(KEY_INDEX, 0)
-                    val photo = pinned[idx % pinned.size]
-                    prefs.edit().putInt(KEY_INDEX, (idx + 1) % pinned.size).apply()
-                    decodeScaled(photo.fileIn(PhotoStore.dir(context)).absolutePath)?.let {
+                    val idx = prefs.getInt(KEY_INDEX, 0) % pinned.size
+                    val photo = pinned[idx]
+                    decodeSquare(photo.fileIn(PhotoStore.dir(context)).absolutePath)?.let {
                         views.setImageViewBitmap(R.id.widget_image, it)
                     } ?: views.setImageViewResource(R.id.widget_image, R.drawable.widget_placeholder)
                     views.setTextViewText(R.id.widget_caption,
-                        if (pinned.size > 1) "📌 ${photo.name}  ·  ${idx % pinned.size + 1}/${pinned.size}" else "📌 ${photo.name}")
+                        if (pinned.size > 1) "📌 ${photo.name} · ${idx + 1}/${pinned.size}" else "📌 ${photo.name}")
                 }
                 all.isNotEmpty() -> {
                     views.setImageViewResource(R.id.widget_image, R.drawable.widget_placeholder)
@@ -72,17 +91,30 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
                 context, 0, Intent(context, MainActivity::class.java),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            views.setOnClickPendingIntent(R.id.widget_root, open)
+            views.setOnClickPendingIntent(R.id.widget_image, open)
+            views.setOnClickPendingIntent(R.id.widget_caption, open)
+            // Стрелки: отдельные зоны тапа, листание без открытия приложения
+            views.setOnClickPendingIntent(R.id.widget_prev, navIntent(context, cls, ACTION_PREV, 1))
+            views.setOnClickPendingIntent(R.id.widget_next, navIntent(context, cls, ACTION_NEXT, 2))
             manager.updateAppWidget(widgetId, views)
         }
 
-        private fun decodeScaled(path: String): Bitmap? {
+        private fun navIntent(context: Context, cls: Class<out PinnedPhotoWidgetBase>, action: String, code: Int): PendingIntent {
+            val intent = Intent(context, cls).setAction(action)
+            return PendingIntent.getBroadcast(context, code, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+        }
+
+        /** Квадрат: центральный кроп в квадрат — фото не растягивается под прямоугольный виджет. */
+        private fun decodeSquare(path: String): Bitmap? {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(path, bounds)
             if (bounds.outWidth <= 0) return null
             var sample = 1
             while (max(bounds.outWidth, bounds.outHeight) / sample > 880) sample *= 2
-            return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+            val bmp = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+            val side = minOf(bmp.width, bmp.height)
+            return Bitmap.createBitmap(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side)
         }
     }
 }
