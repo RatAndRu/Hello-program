@@ -1,0 +1,50 @@
+name: Релиз Android APK — ЗакрепФото
+
+# Только ручной запуск: Actions -> "Релиз Android APK — ЗакрепФото" -> Run workflow.
+# Собирает debug APK и прикрепляет его к GitHub Release: файл виден на странице
+# Releases и скачивается одним кликом (в отличие от спрятанных Actions Artifacts).
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release-apk:
+    name: Собрать и опубликовать APK
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Установить Android SDK (API 34)
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+
+      - name: Установить Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Собрать debug APK
+        working-directory: pinphotos/android-widget
+        run: gradle assembleDebug --stacktrace
+
+      - name: Опубликовать APK в GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp pinphotos/android-widget/app/build/outputs/apk/debug/app-debug.apk PinPhotos-debug.apk
+          TAG="pinphotos-apk-${{ github.run_number }}"
+          gh release create "$TAG" PinPhotos-debug.apk \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "ЗакрепФото — APK (сборка ${{ github.run_number }})" \
+            --notes "Debug APK приложения «ЗакрепФото» (единое приложение + виджет 3×2). Скачай файл PinPhotos-debug.apk и установи на телефон. Собирается автоматически GitHub Actions, см. .github/workflows/release-pinphotos-android.yml"
