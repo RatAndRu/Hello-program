@@ -60,6 +60,17 @@
   </section>
 
   <section class="note">
+    <h3>🎨 Иконка приложения (как у Duolingo)</h3>
+    <p>В установленном Android-приложении эти кнопки переключают единственную иконку «ЗакрепФото» на рабочем столе. Все варианты заранее встроены в APK:</p>
+    <div class="row wrap">
+      <button class="ghost icon-state" data-icon="NORMAL">📌 Обычная</button>
+      <button class="ghost icon-state" data-icon="FIRE">🔥 Огненная</button>
+      <button class="ghost icon-state" data-icon="SLEEPY">😴 Сонная</button>
+    </div>
+    <p class="hint">В обычном браузере/PWA смена системной иконки недоступна — кнопки покажут это честно, а в APK сработают через Android activity-alias.</p>
+  </section>
+
+  <section class="note">
     <h3>Как это работает</h3>
     <ul>
       <li>Браузер не сканирует галерею сам: ты выбираешь фото через системный диалог — это правило безопасности Android.</li>
@@ -85,7 +96,7 @@
       <button id="shareBtn" class="ghost">↗ Поделиться</button>
       <button id="deleteBtn" class="danger">🗑 Удалить</button>
     </div>
-    <p class="hint">«На виджет» в PWA ставит фото в превью выше. В нативной Android-версии та же кнопка через плагин обновит настоящий виджет рабочего стола.</p>
+    <p class="hint">«На виджет» в PWA ставит фото в превью выше. В установленном Android-приложении «ЗакрепФото» та же кнопка обновит настоящий виджет рабочего стола 3×2.</p>
   </div>
 </div>
 

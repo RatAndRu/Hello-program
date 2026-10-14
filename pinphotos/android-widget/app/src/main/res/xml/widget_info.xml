@@ -1,5 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Размер по умолчанию: 3 ячейки в ширину × 2 в высоту (как просили). -->
+<!-- minWidth/minHeight: формула Android (70dp * n - 30dp): 3 -> 180dp, 2 -> 110dp. -->
+<!-- resizeMode оставляет виджет растягиваемым: пользователь сможет сделать 2x2, 4x2 и т.д. -->
 <appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
-    android:minWidth="180dp" android:minHeight="180dp" android:targetCellWidth="3" android:targetCellHeight="3"
+    android:minWidth="180dp" android:minHeight="110dp" android:targetCellWidth="3" android:targetCellHeight="2"
     android:updatePeriodMillis="1800000" android:initialLayout="@layout/widget_pinned_photo"
     android:resizeMode="horizontal|vertical" android:widgetCategory="home_screen" />

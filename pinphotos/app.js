@@ -61,7 +61,20 @@ $('fileInput').addEventListener('change', async e => { await addFiles(e.target.f
 $('search').addEventListener('input', render); $('albumFilter').addEventListener('change', render);
 $('closeViewer').onclick = () => { saveCurrent(); $('viewer').classList.add('hidden'); };
 $('pinBtn').onclick = async () => { await saveCurrent(); current.pinned = !current.pinned; await put(current); render(); openViewer(current); };
-$('widgetBtn').onclick = async () => { await saveCurrent(); photos.forEach(p => p.widget = false); current.widget = true; current.pinned = true; await Promise.all(photos.map(put)); render(); alert('Фото поставлено на виджет (превью вверху). В нативной Android-версии оно обновит виджет рабочего стола.'); };
+$('widgetBtn').onclick = async () => {
+  await saveCurrent(); photos.forEach(p => p.widget = false); current.widget = true; current.pinned = true; await Promise.all(photos.map(put)); render();
+  if (window.PinPhotosNative && PinPhotosNative.setWidgetPhoto) {
+    // Единое Android-приложение: передаём фото через JS-мост, Kotlin обновит настоящий виджет 3×2.
+    PinPhotosNative.setWidgetPhoto(await blobToB64(current.blob), current.name);
+    alert('Готово: фото отправлено в виджет рабочего стола (3×2).');
+  } else {
+    alert('Фото поставлено на виджет (превью вверху). В Android-приложении оно обновит настоящий виджет рабочего стола.');
+  }
+};
+document.querySelectorAll('.icon-state').forEach(btn => btn.addEventListener('click', () => {
+  if (window.PinPhotosNative && PinPhotosNative.setIcon) PinPhotosNative.setIcon(btn.dataset.icon);
+  else alert('Смена иконки работает в установленном Android-приложении «ЗакрепФото», а не в браузере.');
+}));
 $('deleteBtn').onclick = async () => { if (!confirm('Удалить копию фото из приложения? Оригинал в галерее не тронем.')) return; await del(current.id); URL.revokeObjectURL(urlFor(current)); urls.delete(current.id); photos = photos.filter(p => p !== current); $('viewer').classList.add('hidden'); render(); };
 $('shareBtn').onclick = async () => { try { const f = new File([current.blob], current.name + '.jpg', {type: current.blob.type || 'image/jpeg'}); if (navigator.canShare && navigator.canShare({files: [f]})) await navigator.share({files: [f], title: current.name}); else alert('Браузер не умеет делиться файлами'); } catch (e) {} };
 $('widgetCard').onclick = () => { const w = photos.find(p => p.widget) || photos.find(p => p.pinned) || photos[0]; if (w) openViewer(w); };
