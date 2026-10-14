@@ -48,14 +48,11 @@ jobs:
       # Главное для человека: тот же APK кладём в GitHub Releases,
       # где он виден сразу и скачивается одним кликом без ZIP-обёртки.
       - name: Опубликовать APK в GitHub Releases
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          cp pinphotos/android-widget/app/build/outputs/apk/debug/app-debug.apk PinPhotos-debug.apk
-          TAG="pinphotos-apk-${{ github.run_number }}-${{ github.run_attempt }}"
-          gh release create "$TAG" PinPhotos-debug.apk \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "ЗакрепФото — APK (сборка ${{ github.run_number }})" \
-            --notes "Debug APK приложения «ЗакрепФото» (одно приложение + виджет 3×2). Скачай файл PinPhotos-debug.apk ниже и установи на телефон." \
-            --prerelease
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: pinphotos-apk-${{ github.run_number }}-${{ github.run_attempt }}
+          name: ЗакрепФото — APK (сборка ${{ github.run_number }})
+          body: Debug APK приложения «ЗакрепФото» (одно приложение + виджет 3×2). Скачай файл PinPhotos-debug.apk ниже и установи на телефон.
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: pinphotos/android-widget/app/build/outputs/apk/debug/app-debug.apk
