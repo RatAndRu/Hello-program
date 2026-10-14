@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#17142b">
+<title>ЗакрепФото — офлайн-фото на главном экране</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="hero">
+  <div>
+    <div class="logo">📌 ЗакрепФото</div>
+    <p>Важные фотки из галереи — в одном месте, офлайн и без копания в тысяче скриншотов.</p>
+  </div>
+  <button id="installBtn" class="ghost hidden">⬇️ Установить</button>
+</header>
+
+<main>
+  <!-- Мокап / превью будущего нативного виджета -->
+  <section class="widget-preview" id="widgetPreview">
+    <div class="widget-card" id="widgetCard" title="Так будет выглядеть Android-виджет">
+      <div class="widget-img-wrap"><img id="widgetImg" alt="Закреплённое фото для виджета"></div>
+      <div class="widget-meta"><strong id="widgetTitle">Виджет телефона</strong><span id="widgetSub">Закрепи фото — оно появится здесь и в Android-виджете</span></div>
+      <span class="widget-pin">📌</span>
+    </div>
+    <p class="hint">👆 Это превью прямо в приложении. Настоящий виджет на рабочем столе Android делается нативной частью — код лежит в <code>android-widget/</code>.</p>
+  </section>
+
+  <section class="toolbar">
+    <label class="add-btn">＋ Добавить фото из галереи
+      <input id="fileInput" type="file" accept="image/*" multiple hidden>
+    </label>
+    <button id="exportBtn" class="ghost">💾 Бэкап</button>
+    <label class="ghost as-btn">♻️ Восстановить
+      <input id="importInput" type="file" accept="application/json,.json" hidden>
+    </label>
+  </section>
+
+  <section class="filters">
+    <input id="search" type="search" placeholder="🔎 Поиск по названию и тегам: расписание, чеки, склад…">
+    <select id="albumFilter">
+      <option value="">Все альбомы</option><option>Работа</option><option>Документы</option><option>Чеки</option><option>Личное</option><option>Разное</option>
+    </select>
+  </section>
+
+  <section>
+    <h2>📌 Закреплённые</h2>
+    <div id="pinnedGrid" class="grid"></div>
+    <p id="pinnedEmpty" class="empty">Пока пусто. Добавь фото и нажми 📌 — например расписание смен или схему склада.</p>
+  </section>
+
+  <section>
+    <h2>🖼️ Все фото</h2>
+    <div id="grid" class="grid"></div>
+    <p id="empty" class="empty">Нет фото. Нажми «Добавить фото из галереи» — приложение сохранит копии локально, и они будут доступны без интернета.</p>
+  </section>
+
+  <section class="note">
+    <h3>Как это работает</h3>
+    <ul>
+      <li>Браузер не сканирует галерею сам: ты выбираешь фото через системный диалог — это правило безопасности Android.</li>
+      <li>Копии хранятся в IndexedDB на телефоне. Оригиналы в галерее не трогаются.</li>
+      <li>Работает офлайн после первой загрузки. Периодически делай «Бэкап» — браузер может почистить данные при нехватке места.</li>
+    </ul>
+  </section>
+</main>
+
+<div id="viewer" class="viewer hidden" role="dialog" aria-modal="true">
+  <button id="closeViewer" class="close">✕</button>
+  <img id="viewerImg" alt="Фото на весь экран">
+  <div class="viewer-panel">
+    <input id="editName" placeholder="Название">
+    <div class="row">
+      <select id="editAlbum"><option>Работа</option><option>Документы</option><option>Чеки</option><option>Личное</option><option>Разное</option></select>
+      <input id="editTags" placeholder="Теги через запятую: расписание, смены">
+    </div>
+    <textarea id="editNote" rows="2" placeholder="Заметка к фото…"></textarea>
+    <div class="row wrap">
+      <button id="pinBtn">📌 Закрепить / открепить</button>
+      <button id="widgetBtn">📱 На виджет</button>
+      <button id="shareBtn" class="ghost">↗ Поделиться</button>
+      <button id="deleteBtn" class="danger">🗑 Удалить</button>
+    </div>
+    <p class="hint">«На виджет» в PWA ставит фото в превью выше. В нативной Android-версии та же кнопка через плагин обновит настоящий виджет рабочего стола.</p>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
