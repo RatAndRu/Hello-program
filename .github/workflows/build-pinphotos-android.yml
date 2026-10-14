@@ -1,0 +1,46 @@
+name: Собрать Android APK — ЗакрепФото
+
+# Ручной запуск: Actions -> "Собрать Android APK — ЗакрепФото" -> Run workflow.
+# Плюс автозапуск при изменениях Android/PWA-части на этой ветке.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'pinphotos/**'
+      - '.github/workflows/build-pinphotos-android.yml'
+
+jobs:
+  build-apk:
+    name: Debug APK (Android)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Установить Android SDK (API 34)
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+
+      - name: Установить Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Собрать debug APK
+        working-directory: pinphotos/android-widget
+        run: gradle assembleDebug --stacktrace
+
+      - name: Загрузить готовый APK в Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinphotos-debug-apk
+          path: pinphotos/android-widget/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
