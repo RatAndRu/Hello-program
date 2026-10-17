@@ -49,18 +49,20 @@ class PhotoActivity : Activity() {
         val videoView = findViewById<android.widget.VideoView>(R.id.videoPlayer)
         videoView.setOnTouchListener { _, event ->
             if (event.action == android.view.MotionEvent.ACTION_UP) {
+                val controllerShowing = mediaController?.isShowing == true
                 when {
-                    // Обычный режим: тап только показывает контролы видео, сами прячутся через 3 сек.
+                    // 1-й тап в обычном режиме: показать контролы на 3 секунды.
+                    // 2-й тап, пока контролы ещё видны: перейти в полный экран.
+                    !fullscreen && controllerShowing -> setFullscreen(true)
                     !fullscreen -> mediaController?.show(3000)
-                    // Полный экран: тап по скрытому интерфейсу — показать; по видимому — выйти из полного экрана.
+                    // Полный экран: скрытый интерфейс показать, видимый — по тапу выходим.
                     !fullscreenChromeVisible -> showFullscreenChrome()
                     else -> setFullscreen(false)
                 }
             }
-            false
+            // true: не даём VideoView самому тут же переключить/спрятать контроллер своим обработчиком тапа.
+            true
         }
-        findViewById<TextView>(R.id.videoFullscreenBtn).setOnClickListener { setFullscreen(!fullscreen) }
-
         findViewById<Button>(R.id.pinBtn).setOnClickListener {
             val current = photo ?: return@setOnClickListener
             if (current.widgetId > 0) {
@@ -112,8 +114,6 @@ class PhotoActivity : Activity() {
             if (video.isPlaying) video.stopPlayback(); video.visibility = android.view.View.GONE; image.visibility = android.view.View.VISIBLE
             image.setImageBitmap(PhotoStore.decodeBitmap(this, current, 1400))
         }
-        findViewById<TextView>(R.id.videoFullscreenBtn).visibility =
-            if (current.mime.startsWith("video/")) android.view.View.VISIBLE else android.view.View.GONE
         // У видео подпись в полном экране — сверху, чтобы не накладывалась на перемотку/паузу снизу.
         val caption = findViewById<android.view.View>(R.id.fullscreenCaption)
         (caption.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
@@ -136,20 +136,14 @@ class PhotoActivity : Activity() {
 
     private fun chromeViews(): List<android.view.View> = listOf(
         findViewById(R.id.prevBtn), findViewById(R.id.nextBtn),
-        findViewById(R.id.positionText), findViewById(R.id.fullscreenCaption),
-        findViewById(R.id.videoFullscreenBtn)
-    )
+        findViewById(R.id.positionText), findViewById(R.id.fullscreenCaption)    )
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     private fun showFullscreenChrome() {
         if (!fullscreen) return
         fullscreenChromeVisible = true
-        chromeViews().forEach {
-            // Кнопка полного экрана нужна только у видео
-            if (it.id == R.id.videoFullscreenBtn && photo?.mime?.startsWith("video/") != true) it.visibility = android.view.View.GONE
-            else it.visibility = android.view.View.VISIBLE
-        }
+        chromeViews().forEach { it.visibility = android.view.View.VISIBLE }
         autoHideHandler.removeCallbacks(autoHideRunnable)
         autoHideHandler.postDelayed(autoHideRunnable, 2000)
         val current = photo
@@ -184,8 +178,6 @@ class PhotoActivity : Activity() {
             autoHideHandler.removeCallbacks(autoHideRunnable)
             chromeViews().forEach { it.visibility = android.view.View.VISIBLE }
             findViewById<android.view.View>(R.id.fullscreenCaption).visibility = android.view.View.GONE
-            findViewById<android.view.View>(R.id.videoFullscreenBtn).visibility =
-                if (photo?.mime?.startsWith("video/") == true) android.view.View.VISIBLE else android.view.View.GONE
             if (photo?.mime?.startsWith("video/") == true) mediaController?.show(3000)
         }
         if (enabled) {
