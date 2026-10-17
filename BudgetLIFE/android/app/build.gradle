@@ -1,0 +1,27 @@
+plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
+android {
+    namespace 'com.example.budgetlife'
+    compileSdk 34
+    defaultConfig { applicationId 'com.example.budgetlife'; minSdk 26; targetSdk 34; versionCode 1; versionName '1.0' }
+    signingConfigs {
+        release {
+            def ks = System.getenv('BUDGETLIFE_KEYSTORE_FILE') ?: System.getenv('PINPHOTOS_KEYSTORE_FILE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('BUDGETLIFE_STORE_PASSWORD') ?: System.getenv('PINPHOTOS_STORE_PASSWORD')
+                keyAlias System.getenv('BUDGETLIFE_KEY_ALIAS') ?: System.getenv('PINPHOTOS_KEY_ALIAS') ?: 'pinphotos'
+                keyPassword System.getenv('BUDGETLIFE_KEY_PASSWORD') ?: System.getenv('PINPHOTOS_KEY_PASSWORD') ?: System.getenv('BUDGETLIFE_STORE_PASSWORD') ?: System.getenv('PINPHOTOS_STORE_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (System.getenv('BUDGETLIFE_KEYSTORE_FILE') || System.getenv('PINPHOTOS_KEYSTORE_FILE')) signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+kotlin { jvmToolchain(17) }
+dependencies { }

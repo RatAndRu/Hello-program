@@ -1,0 +1,75 @@
+name: Собрать Android APK — BudgetLIFE
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'BudgetLIFE/**'
+      - '.github/workflows/build-budgetlife-android.yml'
+jobs:
+  build-apk:
+    name: APK (Android)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Подготовить постоянный ключ подписи
+        env:
+          BUDGETLIFE_KEYSTORE_BASE64: ${{ secrets.BUDGETLIFE_KEYSTORE_BASE64 }}
+          PINPHOTOS_KEYSTORE_BASE64: ${{ secrets.PINPHOTOS_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$BUDGETLIFE_KEYSTORE_BASE64" ]; then
+            echo "$BUDGETLIFE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/budgetlife-release.p12"
+            echo "BUDGETLIFE_KEYSTORE_FILE=$RUNNER_TEMP/budgetlife-release.p12" >> "$GITHUB_ENV"
+            echo "Постоянная подпись Shadow Morse: отдельный ключ"
+          elif [ -n "$PINPHOTOS_KEYSTORE_BASE64" ]; then
+            echo "$PINPHOTOS_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/budgetlife-release.p12"
+            echo "BUDGETLIFE_KEYSTORE_FILE=$RUNNER_TEMP/budgetlife-release.p12" >> "$GITHUB_ENV"
+            echo "PINPHOTOS_KEYSTORE_FILE=$RUNNER_TEMP/budgetlife-release.p12" >> "$GITHUB_ENV"
+            echo "Постоянная подпись Shadow Morse: общий издательский ключ репозитория"
+          else
+            echo "Постоянная подпись не задана: будет debug-подпись"
+          fi
+      - name: Собрать APK
+        working-directory: BudgetLIFE/android
+        env:
+          BUDGETLIFE_STORE_PASSWORD: ${{ secrets.BUDGETLIFE_STORE_PASSWORD }}
+          BUDGETLIFE_KEY_PASSWORD: ${{ secrets.BUDGETLIFE_KEY_PASSWORD }}
+          BUDGETLIFE_KEY_ALIAS: ${{ secrets.BUDGETLIFE_KEY_ALIAS }}
+          PINPHOTOS_STORE_PASSWORD: ${{ secrets.PINPHOTOS_STORE_PASSWORD }}
+          PINPHOTOS_KEY_PASSWORD: ${{ secrets.PINPHOTOS_KEY_PASSWORD }}
+          PINPHOTOS_KEY_ALIAS: ${{ secrets.PINPHOTOS_KEY_ALIAS }}
+        run: |
+          set +e
+          if [ -n "$BUDGETLIFE_KEYSTORE_FILE" ]; then gradle assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/budget-build.log"; else gradle assembleDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/budget-build.log"; fi
+          code=${PIPESTATUS[0]}
+          { echo '## Shadow Morse build log (tail)'; echo '```text'; tail -n 220 "$RUNNER_TEMP/budget-build.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          if [ "$code" -ne 0 ]; then grep -E '^(e: |FAILED|FAILURE:|.*error:|.*Error:|Execution failed|Caused by:)' "$RUNNER_TEMP/budget-build.log" | head -n 30 | tr -d '\r' | while IFS= read -r line; do echo "::error title=BudgetLIFEBuild::$line"; done; fi
+          exit $code
+      - uses: actions/upload-artifact@v4
+        with:
+          name: budgetlife-android-apk
+          path: BudgetLIFE/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Подготовить APK с понятным именем
+        run: |
+          if [ -f BudgetLIFE/android/app/build/outputs/apk/release/app-release.apk ]; then cp BudgetLIFE/android/app/build/outputs/apk/release/app-release.apk BudgetLIFE.apk; else cp BudgetLIFE/android/app/build/outputs/apk/debug/app-debug.apk BudgetLIFE.apk; fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: budgetlife-apk-${{ github.run_number }}-${{ github.run_attempt }}
+          name: BudgetLIFE — APK (сборка ${{ github.run_number }})
+          body: Нативная Android-версия BudgetLIFE. Скачай BudgetLIFE.apk и установи на телефон. Для обновлений поверх не меняй ключ подписи после первой установки.
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: BudgetLIFE.apk
