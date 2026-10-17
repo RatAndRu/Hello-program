@@ -32,7 +32,6 @@ import java.util.concurrent.Executors
 class MainActivity : FragmentActivity() {
     private lateinit var grid: RecyclerView
     private lateinit var emptyView: View
-    private lateinit var widgetStatus: TextView
     private lateinit var countText: TextView
     private var photos: MutableList<Photo> = mutableListOf()
     private var selectedAlbum: String = ALL_ALBUMS
@@ -53,17 +52,12 @@ class MainActivity : FragmentActivity() {
         setContentView(R.layout.activity_main)
         grid = findViewById(R.id.grid)
         emptyView = findViewById(R.id.emptyView)
-        widgetStatus = findViewById(R.id.widgetStatus)
         countText = findViewById(R.id.countText)
         grid.layoutManager = GridLayoutManager(this, 3)
         findViewById<Button>(R.id.importBtn).setOnClickListener { importPressed() }
         findViewById<Button>(R.id.emptyImportBtn).setOnClickListener { importPressed() }
-        findViewById<Button>(R.id.addWidgetBtn).setOnClickListener { chooseWidgetSize() }
         findViewById<View>(R.id.menuBtn).setOnClickListener { showMenu(it) }
         findViewById<View>(R.id.exitBtn).setOnClickListener { finishAndRemoveTask() }
-        val themeBtn = findViewById<TextView>(R.id.themeBtn)
-        themeBtn.text = if (UiTheme.isDark(this)) "☀️" else "🌙"
-        themeBtn.setOnClickListener { UiTheme.toggle(this) }
         findViewById<Button>(R.id.moveSelectedBtn).setOnClickListener { chooseMoveAlbum() }
         findViewById<Button>(R.id.clearSelectionBtn).setOnClickListener { selectedIds.clear(); refresh() }
         findViewById<Button>(R.id.widgetSelectedBtn).setOnClickListener { chooseWidgetsForPhotos(selectedIds.toList()) }
@@ -75,7 +69,7 @@ class MainActivity : FragmentActivity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) { searchQuery = s?.toString().orEmpty().trim(); refresh() }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
-        findViewById<Button>(R.id.filterBtn).setOnClickListener { showFilters() }
+        findViewById<View>(R.id.filterBtn).setOnClickListener { showFilters() }
         findViewById<View>(R.id.searchBtn).setOnClickListener { setSearchExpanded(!searchExpanded) }
         findViewById<Button>(R.id.albumsModeBtn).setOnClickListener {
             albumsModeWidgets = !albumsModeWidgets
@@ -132,12 +126,6 @@ class MainActivity : FragmentActivity() {
         val widgetIdsNow = PinnedPhotoWidgetBase.installedWidgetIds(this)
         val widgetPhotosCount = widgetIdsNow.sumOf { PinnedPhotoWidgetBase.getWidgetPhotoIds(this, it).size }
         val pinnedCount = if (widgetPhotosCount > 0) widgetPhotosCount else visiblePhotos.count { it.pinned }
-        widgetStatus.text = when {
-            PinnedPhotoWidgetBase.installedWidgetIds(this).isEmpty() -> "Виджет не добавлен на рабочий стол"
-            pinnedCount == 0 -> "В виджетах пусто — выберите фото и нажмите «В виджет»"
-            pinnedCount == 1 -> "В виджетах: 1 фото (зависимая ссылка на оригинал)"
-            else -> "В виджетах: $pinnedCount ссылок · у каждого виджета свой набор"
-        }
         renderAlbums()
         val baseDisplayed = when {
             selectedAlbum.startsWith(WIDGET_PREFIX) -> PinnedPhotoWidgetBase.photosForWidget(this, selectedWidgetId())
@@ -196,7 +184,7 @@ class MainActivity : FragmentActivity() {
     private fun renderAlbums() {
         findViewById<TextView>(R.id.currentAlbumText).text = when {
             selectedAlbum == ALL_ALBUMS -> PhotoStore.MISC_ALBUM
-            selectedAlbum.startsWith(WIDGET_PREFIX) -> "Виджет №${selectedWidgetId()}"
+            selectedAlbum.startsWith(WIDGET_PREFIX) -> PinnedPhotoWidgetBase.widgetName(this, selectedWidgetId())
             else -> selectedAlbum
         }
         val row = findViewById<android.widget.LinearLayout>(R.id.albumsTiles)
@@ -212,6 +200,13 @@ class MainActivity : FragmentActivity() {
                 row.addView(hint, 0)
             }
             for (widgetId in widgetIds) row.addView(widgetAlbumTile(widgetId))
+            val createWidget = TextView(this).apply {
+                text = "＋\nВиджет"; textSize = 15f; gravity = android.view.Gravity.CENTER
+                setTextColor(UiTheme.color(this@MainActivity, R.attr.appAccent))
+                setBackgroundResource(R.drawable.btn_soft)
+                setOnClickListener { showCreateWidgetDialog() }
+            }
+            row.addView(createWidget, android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) })
             return
         }
         val all = photos
@@ -260,7 +255,7 @@ class MainActivity : FragmentActivity() {
             cover.post { if (bmp != null) cover.setImageBitmap(bmp) }
         }
         val label = TextView(this).apply {
-            text = "🧩 Виджет №$widgetId · ${refs.size}"
+            text = "🧩 ${PinnedPhotoWidgetBase.widgetName(this@MainActivity, widgetId)} · ${refs.size}"
             textSize = 12f; gravity = android.view.Gravity.CENTER
             setTextColor(if (selectedAlbum == key) 0xFFFFFFFF.toInt() else UiTheme.color(this@MainActivity, R.attr.appText))
             setPadding(dp(4), dp(5), dp(4), dp(5))
@@ -272,15 +267,40 @@ class MainActivity : FragmentActivity() {
         return tile
     }
 
+    private fun showRenameWidgetDialog(widgetId: Int) {
+        val input = themedInput("Название виджета").apply { setText(PinnedPhotoWidgetBase.widgetName(this@MainActivity, widgetId)) }
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(10), dp(22), dp(4)); addView(input)
+        }
+        android.app.AlertDialog.Builder(this).setTitle("Название виджета").setView(box)
+            .setPositiveButton("Сохранить") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isEmpty()) toast("Введите название") else { PinnedPhotoWidgetBase.setWidgetName(this, widgetId, name); refresh() }
+            }.setNegativeButton("Отмена", null).show()
+    }
+
+    private fun showCreateWidgetDialog() {
+        val input = themedInput("Например: Семья, Работа, Котики")
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(10), dp(22), dp(4)); addView(input)
+        }
+        android.app.AlertDialog.Builder(this).setTitle("Новый виджет").setView(box)
+            .setPositiveButton("Далее: размер") { _, _ ->
+                val name = input.text.toString().trim()
+                if (name.isEmpty()) toast("Введите название виджета") else chooseWidgetSize(name)
+            }.setNegativeButton("Отмена", null).show()
+    }
+
     private fun showWidgetAlbumActions(widgetId: Int) {
         data class Action(val label: String, val run: () -> Unit)
         val auto = PinnedPhotoWidgetBase.autoEnabled(this, widgetId)
         val actions = mutableListOf<Action>()
+        actions.add(Action("Переименовать виджет") { showRenameWidgetDialog(widgetId) })
         actions.add(Action("Слияние в другой виджет…") {
             val others = PinnedPhotoWidgetBase.installedWidgetIds(this).filterNot { it == widgetId }
             if (others.isEmpty()) toast("Нет другого виджета") else {
-                android.app.AlertDialog.Builder(this).setTitle("Слить виджет №$widgetId в…")
-                    .setItems(others.map { "Виджет №$it" }.toTypedArray()) { _, which ->
+                android.app.AlertDialog.Builder(this).setTitle("Слить «${PinnedPhotoWidgetBase.widgetName(this, widgetId)}» в…")
+                    .setItems(others.map { PinnedPhotoWidgetBase.widgetName(this, it) }.toTypedArray()) { _, which ->
                         val ids = PinnedPhotoWidgetBase.getWidgetPhotoIds(this, widgetId)
                         val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, ids, listOf(others[which]))
                         toast("Добавлено ссылок: $added. Исходный виджет не очищен"); refresh()
@@ -288,7 +308,7 @@ class MainActivity : FragmentActivity() {
             }
         })
         actions.add(Action("Очистить альбом виджета…") {
-            android.app.AlertDialog.Builder(this).setTitle("Очистить виджет №$widgetId?")
+            android.app.AlertDialog.Builder(this).setTitle("Очистить «${PinnedPhotoWidgetBase.widgetName(this, widgetId)}»?")
                 .setMessage("Сам виджет Android удалить из приложения нельзя — это делает лаунчер долгим нажатием по виджету. Здесь можно только убрать все фото, виджет останется пустым. Оригиналы фото не удаляются.")
                 .setPositiveButton("Очистить") { _, _ ->
                     PinnedPhotoWidgetBase.clearWidget(this, widgetId)
@@ -302,11 +322,11 @@ class MainActivity : FragmentActivity() {
         actions.add(Action("Время автопереключения: ${PinnedPhotoWidgetBase.intervalMinutes(this, widgetId)} мин") {
             val labels = arrayOf("30 минут", "1 час", "3 часа", "6 часов", "12 часов")
             val values = listOf(30, 60, 180, 360, 720)
-            android.app.AlertDialog.Builder(this).setTitle("Автопереключение виджета №$widgetId")
+            android.app.AlertDialog.Builder(this).setTitle("Автопереключение: ${PinnedPhotoWidgetBase.widgetName(this, widgetId)}")
                 .setItems(labels) { _, which -> PinnedPhotoWidgetBase.setIntervalMinutes(this, widgetId, values[which]); toast("Интервал: ${labels[which]}. Android может округлять обновления."); refresh() }
                 .setNegativeButton("Отмена", null).show()
         })
-        android.app.AlertDialog.Builder(this).setTitle("Виджет №$widgetId")
+        android.app.AlertDialog.Builder(this).setTitle(PinnedPhotoWidgetBase.widgetName(this, widgetId))
             .setItems(actions.map { it.label }.toTypedArray()) { _, which -> actions[which].run() }
             .setNegativeButton("Отмена", null).show()
     }
@@ -376,7 +396,7 @@ class MainActivity : FragmentActivity() {
         }
         val labels = widgetIds.map { widgetId ->
             val already = sourceIds.all { it in PinnedPhotoWidgetBase.getWidgetPhotoIds(this, widgetId) }
-            if (already) "Виджет №$widgetId · уже там ✓" else "Виджет №$widgetId"
+            if (already) "${PinnedPhotoWidgetBase.widgetName(this, widgetId)} · уже там ✓" else PinnedPhotoWidgetBase.widgetName(this, widgetId)
         }.toTypedArray()
         val checked = BooleanArray(widgetIds.size)
         android.app.AlertDialog.Builder(this)
@@ -605,6 +625,7 @@ class MainActivity : FragmentActivity() {
         menu.menu.add(0, 4, 0, "Иконка: огненная 🔥")
         menu.menu.add(0, 5, 0, "Иконка: сонная 😴")
         menu.menu.add(0, 6, 0, "Иконка: форменная 🖼")
+        menu.menu.add(0, 7, 0, if (UiTheme.isDark(this)) "Тема: тёмная 🌙 — сменить на светлую" else "Тема: светлая ☀️ — сменить на тёмную")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
@@ -618,6 +639,7 @@ class MainActivity : FragmentActivity() {
                 4 -> IconSwitcher.setIcon(this, IconSwitcher.FIRE)
                 5 -> IconSwitcher.setIcon(this, IconSwitcher.SLEEPY)
                 6 -> IconSwitcher.setIcon(this, IconSwitcher.SHAPED)
+                7 -> UiTheme.toggle(this)
             }
             true
         }
@@ -715,11 +737,15 @@ class MainActivity : FragmentActivity() {
         startActivityForResult(intent, PICK_PHOTOS)
     }
 
-    private fun chooseWidgetSize() {
+    private fun chooseWidgetSize(widgetName: String) {
         val labels = arrayOf("2 × 2", "3 × 2", "4 × 2", "4 × 3")
         android.app.AlertDialog.Builder(this)
-            .setTitle("Размер виджета")
-            .setItems(labels) { _, which -> requestPin(PinnedPhotoWidgetBase.PROVIDERS[which]) }
+            .setTitle("Размер виджета «$widgetName»")
+            .setItems(labels) { _, which ->
+                // ID виджета появится только после размещения на рабочем столе; имя ждёт в очереди.
+                PinnedPhotoWidgetBase.queuePendingWidgetName(this, widgetName)
+                requestPin(PinnedPhotoWidgetBase.PROVIDERS[which])
+            }
             .show()
     }
 

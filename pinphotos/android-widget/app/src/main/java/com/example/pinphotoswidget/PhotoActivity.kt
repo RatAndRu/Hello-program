@@ -132,7 +132,7 @@ class PhotoActivity : Activity() {
             Toast.makeText(this, if (added > 0) "Фото добавлено в единственный виджет" else "Это фото уже есть в виджете", Toast.LENGTH_LONG).show(); renderText(); return
         }
         val containing = PinnedPhotoWidgetBase.widgetsContaining(this, current.id)
-        val labels = widgetIds.map { if (it in containing) "Виджет №$it · уже там ✓" else "Виджет №$it" }.toTypedArray()
+        val labels = widgetIds.map { if (it in containing) "${PinnedPhotoWidgetBase.widgetName(this, it)} · уже там ✓" else PinnedPhotoWidgetBase.widgetName(this, it) }.toTypedArray()
         val checked = BooleanArray(widgetIds.size) { widgetIds[it] in containing }
         AlertDialog.Builder(this).setTitle("Добавить копию в виджеты")
             .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }

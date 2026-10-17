@@ -19,6 +19,7 @@ import kotlin.math.max
 open class PinnedPhotoWidgetBase : AppWidgetProvider() {
     // Периодический апдейт от системы (~30 мин): листаем на следующее фото
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+        claimPendingNames(context)
         ids.forEach { widgetId ->
             if (autoEnabled(context, widgetId)) {
                 val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
@@ -37,6 +38,7 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         // Независимые копии удалённого виджета больше не нужны.
         appWidgetIds.forEach { widgetId ->
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().remove("name_$widgetId").apply()
             setWidgetPhotoIds(context, widgetId, emptyList())
             // Старые независимые копии из v1.6, если остались, чистим; обычные оригиналы не трогаем.
             PhotoStore.list(context).filter { it.widgetId == widgetId }.forEach { PhotoStore.delete(context, it) }
@@ -105,6 +107,38 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
         fun clearWidget(context: Context, widgetId: Int) {
             setWidgetPhotoIds(context, widgetId, emptyList())
             PhotoStore.list(context).filter { it.widgetId == widgetId }.forEach { PhotoStore.delete(context, it) }
+        }
+
+        fun widgetName(context: Context, widgetId: Int): String {
+            val name = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString("name_$widgetId", "")?.trim().orEmpty()
+            return name.ifBlank { "Виджет №$widgetId" }
+        }
+        fun setWidgetName(context: Context, widgetId: Int, name: String) {
+            val clean = name.trim().take(40)
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString("name_$widgetId", clean).apply()
+            updateAll(context)
+        }
+        /** Имя вводится до установки виджета, когда ID ещё не существует. Присваиваем первому новому ID. */
+        fun queuePendingWidgetName(context: Context, name: String) {
+            val clean = name.trim().take(40)
+            if (clean.isEmpty()) return
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val current = prefs.getString("pending_names", "") ?: ""
+            val queue = (current.split('\n').filter { it.isNotBlank() } + clean)
+            prefs.edit().putString("pending_names", queue.joinToString("\n")).apply()
+        }
+        fun claimPendingNames(context: Context) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            var queue = (prefs.getString("pending_names", "") ?: "").split('\n').filter { it.isNotBlank() }.toMutableList()
+            if (queue.isEmpty()) return
+            val editor = prefs.edit()
+            installedWidgetIds(context).forEach { widgetId ->
+                val hasName = !prefs.getString("name_$widgetId", "").isNullOrBlank()
+                if (!hasName && queue.isNotEmpty()) editor.putString("name_$widgetId", queue.removeAt(0))
+            }
+            editor.putString("pending_names", queue.joinToString("\n")).apply()
         }
 
         fun installedWidgetIds(context: Context): List<Int> {
