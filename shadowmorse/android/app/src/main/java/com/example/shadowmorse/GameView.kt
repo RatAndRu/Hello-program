@@ -224,11 +224,12 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     }
 
     private fun updateMonsters(dt: Float) {
-        val flashPoint = detections.flashActive.takeIf { it }?.let {
-            screenPoint(detections.flashU, detections.flashV)
-        }
-        val laserSegment = if (detections.laserActive && detections.laserPrevU != null && detections.laserPrevV != null) {
-            screenPoint(detections.laserPrevU, detections.laserPrevV) to screenPoint(detections.laserU, detections.laserV)
+        val det = detections
+        val flashPoint = if (det.flashActive) screenPoint(det.flashU, det.flashV) else null
+        val laserPrevU = det.laserPrevU
+        val laserPrevV = det.laserPrevV
+        val laserSegment = if (det.laserActive && laserPrevU != null && laserPrevV != null) {
+            screenPoint(laserPrevU, laserPrevV) to screenPoint(det.laserU, det.laserV)
         } else null
 
         val iterator = monsters.iterator()
@@ -526,7 +527,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         paint.color = Color.argb(105, 120, 230, 255)
         val path = Path()
         path.moveTo(cx, cy)
-        path.arcTo(cx - rr, cy - rr, cx + rr, cy + rr, -170f, 160f)
+        path.arcTo(android.graphics.RectF(cx - rr, cy - rr, cx + rr, cy + rr), -170f, 160f)
         path.close()
         canvas.drawPath(path, paint)
         for (m in monsters) {
