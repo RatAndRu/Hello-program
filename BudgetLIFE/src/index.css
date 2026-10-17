@@ -1,0 +1,208 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+    --ring: 56 195 245;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    @apply bg-ink-950 text-slate-100 antialiased;
+    background-image: theme('backgroundImage.aurora');
+    background-attachment: fixed;
+    background-repeat: no-repeat;
+    background-size: cover;
+    font-feature-settings: 'cv02', 'cv03', 'cv04', 'ss01';
+  }
+
+  /* тонкая сетка на фоне */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    background-image: theme('backgroundImage.grid-fade');
+    background-size: 48px 48px;
+    mask-image: radial-gradient(120% 80% at 50% 0%, black, transparent 70%);
+    opacity: 0.6;
+    z-index: 0;
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(148, 163, 184, 0.28) transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: rgba(148, 163, 184, 0.24);
+    border-radius: 999px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-thumb:hover {
+    background: rgba(148, 163, 184, 0.4);
+    background-clip: content-box;
+  }
+  *::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  :focus-visible {
+    outline: 2px solid rgba(56, 195, 245, 0.75);
+    outline-offset: 2px;
+    border-radius: 8px;
+  }
+
+  input[type='date']::-webkit-calendar-picker-indicator {
+    filter: invert(0.8);
+    cursor: pointer;
+  }
+
+  .num {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+}
+
+@layer components {
+  /* ------------------------------- карточки ------------------------------- */
+  .card {
+    @apply relative rounded-2xl border border-white/[0.07] bg-white/[0.035] backdrop-blur-xl shadow-card;
+  }
+  .card-hover {
+    @apply transition duration-200 hover:border-white/15 hover:bg-white/[0.055] hover:-translate-y-[1px];
+  }
+  .card-pad {
+    @apply p-4 sm:p-5;
+  }
+  .glass-bar {
+    @apply sticky top-0 z-30 border-b border-white/[0.06] bg-ink-950/70 backdrop-blur-xl;
+  }
+
+  /* -------------------------------- кнопки -------------------------------- */
+  .btn {
+    @apply inline-flex select-none items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-sm font-medium
+           transition duration-150 disabled:cursor-not-allowed disabled:opacity-45 active:scale-[0.98];
+  }
+  .btn-primary {
+    @apply btn text-ink-950 shadow-lg shadow-brand-500/20
+           bg-gradient-to-br from-brand-300 via-brand-400 to-brand-500
+           hover:from-brand-200 hover:to-brand-400;
+  }
+  .btn-mint {
+    @apply btn text-ink-950 bg-gradient-to-br from-mint-400 to-mint-600 hover:brightness-110;
+  }
+  .btn-ghost {
+    @apply btn border border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.09] hover:border-white/20;
+  }
+  .btn-soft {
+    @apply btn bg-white/[0.06] text-slate-100 hover:bg-white/[0.12];
+  }
+  .btn-danger {
+    @apply btn border border-rose-500/30 bg-rose-500/10 text-rose-300 hover:bg-rose-500/20;
+  }
+  .btn-sm {
+    @apply px-2.5 py-1.5 text-[13px] rounded-lg;
+  }
+  .btn-icon {
+    @apply btn h-9 w-9 p-0 rounded-xl;
+  }
+
+  /* ------------------------------- полей ввода ----------------------------- */
+  .label {
+    @apply mb-1.5 block text-[12px] font-medium uppercase tracking-wide text-slate-400;
+  }
+  .input {
+    @apply w-full rounded-xl border border-white/10 bg-ink-900/70 px-3 py-2 text-sm text-slate-100
+           placeholder:text-slate-500 transition
+           focus:border-brand-400/60 focus:bg-ink-900 focus:outline-none focus:ring-2 focus:ring-brand-400/25;
+  }
+  .input-mono {
+    @apply input font-mono num;
+  }
+  .select {
+    @apply input cursor-pointer appearance-none bg-[length:16px] bg-[right_0.65rem_center] bg-no-repeat pr-9;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2394a3b8' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  }
+  .textarea {
+    @apply input min-h-[80px] resize-y;
+  }
+  .hint {
+    @apply mt-1 text-xs text-slate-500;
+  }
+  .field-error {
+    @apply mt-1 text-xs text-rose-400;
+  }
+
+  /* -------------------------------- чипы ---------------------------------- */
+  .chip {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1
+           text-xs font-medium text-slate-300;
+  }
+  .chip-active {
+    @apply border-brand-400/50 bg-brand-400/15 text-brand-200;
+  }
+  .badge-soft {
+    @apply inline-flex items-center gap-1 rounded-lg px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide;
+  }
+
+  /* ------------------------------- таблицы -------------------------------- */
+  .table {
+    @apply w-full border-separate border-spacing-0 text-sm;
+  }
+  .table thead th {
+    @apply sticky top-0 z-10 border-b border-white/[0.08] bg-ink-900/85 px-3 py-2.5 text-left
+           text-[11px] font-semibold uppercase tracking-wider text-slate-400 backdrop-blur;
+  }
+  .table tbody td {
+    @apply border-b border-white/[0.05] px-3 py-2.5 align-middle;
+  }
+  .table tbody tr {
+    @apply transition-colors;
+  }
+  .table tbody tr:hover td {
+    @apply bg-white/[0.035];
+  }
+
+  /* -------------------------------- прочее -------------------------------- */
+  .divider {
+    @apply my-4 h-px bg-gradient-to-r from-transparent via-white/10 to-transparent;
+  }
+  .skeleton {
+    @apply animate-pulse-soft rounded-lg bg-white/[0.06];
+  }
+  .scroll-thin {
+    @apply overflow-auto;
+    scrollbar-width: thin;
+  }
+  .grad-text {
+    @apply bg-gradient-to-r from-brand-200 via-brand-300 to-mint-400 bg-clip-text text-transparent;
+  }
+  .ring-glass {
+    box-shadow:
+      inset 0 1px 0 0 rgba(255, 255, 255, 0.06),
+      0 20px 50px -20px rgba(0, 0, 0, 0.8);
+  }
+}
+
+@layer utilities {
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  .text-balance {
+    text-wrap: balance;
+  }
+}

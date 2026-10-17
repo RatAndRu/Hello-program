@@ -1,0 +1,16 @@
+{
+  "_comment": "Свой блок портов BudgetLIFE. Формат и правила — SPECIALS/ports.json и SPECIALS/docs/PORTS.md: порт берётся только из своего блока, основной порт фиксирован (от него зависит origin установленного PWA), при занятости — следующий порт этого же блока. Файл читают server.js (блок), start.vbs и stop.vbs (основной порт), а также tools/tray.py через appcore.ports.",
+  "version": 1,
+  "app_id": "budgetlife",
+  "name": "BudgetLIFE",
+  "blocks": [
+    {
+      "app_id": "budgetlife",
+      "name": "BudgetLIFE",
+      "base": 5130,
+      "size": 10,
+      "current_file": "server.js",
+      "note": "5130 — основной (продакшн-сборка), 5131 — Vite dev, 5132 — vite preview, 5133-5139 — резерв блока"
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "name": "budgetlife",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "BudgetLIFE — PWA для планирования бюджета, доходов, расходов, счетов, подписок и кредитов",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "start": "node server.js",
+    "serve": "node server.js",
+    "preview": "vite preview --host 0.0.0.0",
+    "icons": "node scripts/gen-icons.mjs",
+    "typecheck": "tsc -b",
+    "test": "npm run test:core && npm run test:ui",
+    "test:core": "esbuild scripts/smoke.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/smoke.mjs --log-level=warning && node node_modules/.cache/smoke.mjs",
+    "test:ui": "esbuild scripts/dom-smoke.tsx --bundle --platform=node --format=esm --target=node20 --jsx=automatic --external:jsdom --outfile=node_modules/.cache/dom-smoke.mjs --log-level=warning && node node_modules/.cache/dom-smoke.mjs",
+    "tray": "python tools/tray.py"
+  },
+  "dependencies": {
+    "clsx": "^2.1.1",
+    "date-fns": "^4.1.0",
+    "dexie": "^4.0.10",
+    "lucide-react": "^0.462.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-router-dom": "^6.28.0",
+    "recharts": "^2.13.3",
+    "zustand": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.4",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "autoprefixer": "^10.4.20",
+    "jsdom": "^30.1.2",
+    "postcss": "^8.4.49",
+    "sharp": "^0.33.5",
+    "tailwindcss": "^3.4.15",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-pwa": "^0.21.1"
+  }
+}
