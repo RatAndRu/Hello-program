@@ -40,12 +40,17 @@ class PhotoActivity : Activity() {
         UiTheme.apply(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_photo)
-        ids = intent.getStringArrayListExtra("ids") ?: arrayListOf()
+        ids = savedInstanceState?.getStringArrayList("ids") ?: intent.getStringArrayListExtra("ids") ?: arrayListOf()
         if (ids.isEmpty()) intent.getStringExtra("id")?.let { ids = listOf(it) }
         if (ids.isEmpty()) return finish()
-        index = intent.getIntExtra("index", 0).coerceIn(0, ids.lastIndex)
+        index = (savedInstanceState?.getInt("index") ?: intent.getIntExtra("index", 0)).coerceIn(0, ids.lastIndex)
+        fullscreen = savedInstanceState?.getBoolean("fullscreen") ?: false
         slideshowSeconds = getSharedPreferences("slideshow", Context.MODE_PRIVATE).getInt("seconds", 0)
-        loadCurrent()
+        try { loadCurrent() } catch (e: Throwable) { showLoadError(e) }
+        if (fullscreen) {
+            findViewById<android.view.View>(R.id.bottomPanel).visibility = android.view.View.GONE
+            applyFullscreenSystemUi()
+        }
 
         val zoom = findViewById<ZoomImageView>(R.id.fullImage)
         zoom.onHorizontalSwipe = { delta -> move(delta) }
@@ -120,6 +125,14 @@ class PhotoActivity : Activity() {
                     video.start()
                     if (fullscreen) showFullscreenChrome() else mediaController?.show(3000)
                 }
+                video.setOnErrorListener { _, what, extra ->
+                    try { java.io.File(cacheDir, "video_error.txt").writeText("what=$what extra=$extra file=${current.file}") } catch (ignored: Exception) { }
+                    Toast.makeText(this, "Не удалось воспроизвести это видео", Toast.LENGTH_SHORT).show()
+                    if (fullscreen && slideshowSeconds > 0) {
+                        slideshowHandler.postDelayed({ if (fullscreen && !isFinishing) move(1) }, 600)
+                    }
+                    true
+                }
                 video.setOnCompletionListener {
                     // По просьбе: в слайд-шоу переключаемся СРАЗУ по окончании видео, без периода.
                     // Перемотка пользователем ничего не ломает: completion придёт по фактическому концу.
@@ -141,6 +154,14 @@ class PhotoActivity : Activity() {
             caption.layoutParams = lp
         }
         findViewById<TextView>(R.id.positionText).text = "${index + 1} / ${ids.size}"
+        // Слайд-шоу не должно сбрасывать полный экран при переходе фото -> видео.
+        findViewById<android.view.View>(R.id.bottomPanel).visibility =
+            if (fullscreen) android.view.View.GONE else android.view.View.VISIBLE
+        if (fullscreen) {
+            applyFullscreenSystemUi()
+            // VideoView/MediaController на ряде оболочек сбрасывают immersive-флаги после старта.
+            window.decorView.postDelayed({ if (fullscreen && !isFinishing) applyFullscreenSystemUi() }, 300)
+        }
         renderText(); schedulePhotoSlideshow()
     }
 
@@ -179,7 +200,9 @@ class PhotoActivity : Activity() {
     private fun move(delta: Int) {
         if (ids.size <= 1) return
         index = ((index + delta) % ids.size + ids.size) % ids.size
-        loadCurrent(); showFullscreenChrome()
+        try { loadCurrent() } catch (e: Throwable) { showLoadError(e); return }
+        if (fullscreen) applyFullscreenSystemUi()
+        showFullscreenChrome()
     }
 
     private fun chromeViews(): List<android.view.View> = listOf(
@@ -205,6 +228,29 @@ class PhotoActivity : Activity() {
         fullscreenChromeVisible = false
         chromeViews().forEach { it.visibility = android.view.View.GONE }
         mediaController?.hide()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putStringArrayList("ids", ArrayList(ids))
+        outState.putInt("index", index)
+        outState.putBoolean("fullscreen", fullscreen)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun showLoadError(error: Throwable) {
+        try { java.io.File(filesDir, "last_crash.txt").writeText(android.util.Log.getStackTraceString(error)) } catch (ignored: Exception) { }
+        Toast.makeText(this, "Не удалось открыть файл: ${error.message ?: "ошибка"}", Toast.LENGTH_LONG).show()
+    }
+
+    private fun applyFullscreenSystemUi() {
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = (
+            android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+            android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+            android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+            android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+            android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+        )
     }
 
     override fun onPause() {
@@ -237,14 +283,7 @@ class PhotoActivity : Activity() {
             if (photo?.mime?.startsWith("video/") == true) mediaController?.show(3000)
         }
         if (enabled) {
-            @Suppress("DEPRECATION")
-            window.decorView.systemUiVisibility = (
-                android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
-                android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-            )
+            applyFullscreenSystemUi()
         } else {
             @Suppress("DEPRECATION") window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_VISIBLE
         }

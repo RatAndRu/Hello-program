@@ -3,7 +3,7 @@
     <application android:label="ЗакрепФото" android:theme="@style/AppTheme" android:icon="@drawable/ic_pin_foreground">
 
         <!-- Реальная Activity одна, иконки переключаются алиасами -->
-        <activity android:name=".MainActivity" android:exported="false" />
+        <activity android:name=".MainActivity" android:exported="false" android:configChanges="keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout|density" />
 
         <activity-alias android:name=".IconNormal" android:enabled="true" android:exported="true"
             android:icon="@drawable/ic_pin_foreground" android:label="ЗакрепФото" android:targetActivity=".MainActivity">
@@ -47,7 +47,7 @@
             <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info_4x3" />
         </receiver>
 
-        <activity android:name=".PhotoActivity" android:exported="false" />
+        <activity android:name=".PhotoActivity" android:exported="false" android:configChanges="keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout|density" />
 
         <!-- Появляется в системном меню «Поделиться» у фотографий -->
         <activity android:name=".ShareImportActivity" android:exported="true"
