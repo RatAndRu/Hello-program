@@ -54,7 +54,7 @@ class PhotoActivity : Activity() {
         }
 
         findViewById<Button>(R.id.pinBtn).setOnClickListener {
-            val current = photo ?: run { finish(); return }@setOnClickListener
+            val current = photo ?: return@setOnClickListener
             if (current.widgetId > 0) {
                 // Старые независимые копии v1.6: удаление такой записи не трогает оригинал.
                 AlertDialog.Builder(this).setTitle("Убрать старую копию из виджета №${current.widgetId}?")
@@ -67,7 +67,7 @@ class PhotoActivity : Activity() {
         findViewById<Button>(R.id.copyBtn).setOnClickListener { photo?.let { copy(it) } }
         findViewById<Button>(R.id.editBtn).setOnClickListener { photo?.let { edit(it) } }
         findViewById<Button>(R.id.deleteBtn).setOnClickListener {
-            val current = photo ?: run { finish(); return }@setOnClickListener
+            val current = photo ?: return@setOnClickListener
             AlertDialog.Builder(this).setTitle("Удалить фото?")
                 .setMessage("Копия в приложении будет удалена. Оригинал в галерее не тронем.")
                 .setPositiveButton("Удалить") { _, _ ->
