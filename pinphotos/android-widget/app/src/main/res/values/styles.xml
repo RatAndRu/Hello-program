@@ -83,10 +83,30 @@
     <style name="AppPopupMenu" parent="AppPopupMenuLight" />
     <style name="AppPopupMenuLight" parent="android:style/Widget.Material.PopupMenu">
         <item name="android:popupBackground">@drawable/dialog_bg_light</item>
+        <item name="android:itemTextAppearance">@style/PopupItemTextLight</item>
         <item name="android:textColor">#24313A</item>
     </style>
     <style name="AppPopupMenuDark" parent="android:style/Widget.Material.PopupMenu">
         <item name="android:popupBackground">@drawable/dialog_bg_dark</item>
+        <item name="android:itemTextAppearance">@style/PopupItemTextDark</item>
         <item name="android:textColor">#F2F5F7</item>
+    </style>
+    <style name="PopupItemTextLight" parent="android:style/TextAppearance.Material">
+        <item name="android:textColor">#24313A</item><item name="android:textSize">15sp</item>
+    </style>
+    <style name="PopupItemTextDark" parent="android:style/TextAppearance.Material">
+        <item name="android:textColor">#F2F5F7</item><item name="android:textSize">15sp</item>
+    </style>
+    <style name="PopupOverlayLight" parent="android:style/Theme.Material">
+        <item name="android:popupMenuStyle">@style/AppPopupMenuLight</item>
+        <item name="android:textAppearanceLargePopupMenu">@style/PopupItemTextLight</item>
+        <item name="android:textAppearanceSmallPopupMenu">@style/PopupItemTextLight</item>
+        <item name="appBackground">#FFF7ED</item><item name="appSurface">#FFFFFF</item><item name="appSurfaceAlt">#FFE8D6</item><item name="appBorder">#F2DEC8</item><item name="appText">#24313A</item><item name="appMuted">#66727E</item><item name="appAccent">#0F766E</item>
+    </style>
+    <style name="PopupOverlayDark" parent="android:style/Theme.Material">
+        <item name="android:popupMenuStyle">@style/AppPopupMenuDark</item>
+        <item name="android:textAppearanceLargePopupMenu">@style/PopupItemTextDark</item>
+        <item name="android:textAppearanceSmallPopupMenu">@style/PopupItemTextDark</item>
+        <item name="appBackground">#12161C</item><item name="appSurface">#1E242E</item><item name="appSurfaceAlt">#28313D</item><item name="appBorder">#3A4656</item><item name="appText">#F2F5F7</item><item name="appMuted">#A8B2BF</item><item name="appAccent">#5EEAD4</item>
     </style>
 </resources>

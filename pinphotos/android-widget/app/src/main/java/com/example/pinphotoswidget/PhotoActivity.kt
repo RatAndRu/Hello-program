@@ -24,6 +24,7 @@ class PhotoActivity : Activity() {
     private var photo: Photo? = null
     private var ids: List<String> = emptyList()
     private var index: Int = 0
+    private var fullscreen: Boolean = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         UiTheme.apply(this)
@@ -37,6 +38,8 @@ class PhotoActivity : Activity() {
 
         val zoom = findViewById<ZoomImageView>(R.id.fullImage)
         zoom.onHorizontalSwipe = { delta -> move(delta) }
+        zoom.onSingleTap = { setFullscreen(!fullscreen) }
+        zoom.onLongPressPhoto = { showPhotoActions() }
         findViewById<TextView>(R.id.prevBtn).setOnClickListener { move(-1) }
         findViewById<TextView>(R.id.nextBtn).setOnClickListener { move(1) }
 
@@ -82,12 +85,61 @@ class PhotoActivity : Activity() {
         loadCurrent()
     }
 
+    private fun setFullscreen(enabled: Boolean) {
+        fullscreen = enabled
+        findViewById<android.view.View>(R.id.bottomPanel).visibility = if (enabled) android.view.View.GONE else android.view.View.VISIBLE
+        findViewById<android.view.View>(R.id.fullscreenCaption).visibility = if (enabled) android.view.View.VISIBLE else android.view.View.GONE
+        if (enabled) {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                android.view.View.SYSTEM_UI_FLAG_FULLSCREEN or
+                android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+            )
+        } else {
+            @Suppress("DEPRECATION") window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_VISIBLE
+        }
+        renderText()
+    }
+
+    private fun showPhotoActions() {
+        val p = photo ?: return
+        val labels = arrayOf(
+            if (p.pinned) "📌 Открепить" else "📌 Закрепить",
+            "Поделиться", "Копировать", "Изменить", "Удалить"
+        )
+        AlertDialog.Builder(this)
+            .setTitle(p.name)
+            .setItems(labels) { _, which ->
+                when (which) {
+                    0 -> findViewById<Button>(R.id.pinBtn).performClick()
+                    1 -> findViewById<Button>(R.id.shareBtn).performClick()
+                    2 -> findViewById<Button>(R.id.copyBtn).performClick()
+                    3 -> findViewById<Button>(R.id.editBtn).performClick()
+                    4 -> findViewById<Button>(R.id.deleteBtn).performClick()
+                }
+            }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    @Deprecated("назад сначала выходит из полного экрана")
+    override fun onBackPressed() {
+        if (fullscreen) setFullscreen(false) else super.onBackPressed()
+    }
+
     private fun renderText() {
         val p = photo ?: return
         findViewById<TextView>(R.id.photoName).text = p.name
-        val meta = listOf(p.album, p.tags.joinToString(" ") { "#$it" }, p.note).filter { it.isNotBlank() }.joinToString(" · ")
+        val saved = java.text.SimpleDateFormat("dd.MM.yyyy · HH:mm", java.util.Locale.getDefault()).format(java.util.Date(p.createdAt))
+        val meta = listOf("Сохранено: $saved", p.albums.joinToString(", "), p.tags.joinToString(" ") { "#$it" }, p.note)
+            .filter { it.isNotBlank() }.joinToString(" · ")
         findViewById<TextView>(R.id.photoMeta).text = meta
         findViewById<Button>(R.id.pinBtn).text = if (p.pinned) "📌 В виджете" else "Закрепить"
+        findViewById<TextView>(R.id.fullName).text = p.name
+        findViewById<TextView>(R.id.fullMeta).text = meta
     }
 
     private fun sharedUri(p: Photo): Uri {
@@ -170,7 +222,7 @@ class PhotoActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Изменить фото").setView(box)
             .setPositiveButton("Сохранить") { _, _ ->
                 p.name = name.text.toString().ifBlank { p.name }
-                p.album = album.selectedItem?.toString().orEmpty().takeUnless { it == "Без альбома" } ?: ""
+                p.albums = album.selectedItem?.toString().orEmpty().takeUnless { it == "Без альбома" }?.let { mutableListOf(it) } ?: mutableListOf()
                 p.tags = tags.text.toString().split(",").map { it.trim().trimStart('#') }.filter { it.isNotEmpty() }.toMutableList()
                 p.note = note.text.toString()
                 PhotoStore.update(this, p); renderText()

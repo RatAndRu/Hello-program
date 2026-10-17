@@ -11,7 +11,7 @@ import java.util.UUID
 data class Photo(
     val id: String,
     var name: String,
-    var album: String = "",
+    var albums: MutableList<String> = mutableListOf(),
     var tags: MutableList<String> = mutableListOf(),
     var note: String = "",
     var pinned: Boolean = false,
@@ -19,6 +19,8 @@ data class Photo(
     val file: String,
     val mime: String = "image/jpeg"
 ) {
+    /** Первый альбом для старых мест интерфейса; фото может состоять в нескольких альбомах. */
+    val album: String get() = albums.firstOrNull().orEmpty()
     fun fileIn(dir: File) = File(dir, file)
 }
 
@@ -28,7 +30,8 @@ data class AlbumSecurity(
     val salt: String = "",
     val biometric: Boolean = false
 ) {
-    val locked: Boolean get() = pinHash.isNotEmpty() || biometric
+    // Закрыть альбом можно только паролем. Отпечаток — способ открытия, но не самостоятельная защита.
+    val locked: Boolean get() = pinHash.isNotEmpty()
 }
 
 object PhotoStore {
@@ -49,9 +52,12 @@ object PhotoStore {
                 val o = arr.getJSONObject(i)
                 val tags = mutableListOf<String>()
                 o.optJSONArray("tags")?.let { t -> for (j in 0 until t.length()) tags.add(t.optString(j)) }
+                val memberships = mutableListOf<String>()
+                o.optJSONArray("albums")?.let { a -> for (j in 0 until a.length()) a.optString(j).takeIf { it.isNotBlank() && it != "Разное" }?.let { memberships.add(it) } }
+                if (memberships.isEmpty()) o.optString("album").takeIf { it.isNotBlank() && it != "Разное" }?.let { memberships.add(it) }
                 val photo = Photo(
                     id = o.getString("id"), name = o.optString("name", "Фото"),
-                    album = o.optString("album").takeUnless { it == "Разное" } ?: "", tags = tags,
+                    albums = memberships, tags = tags,
                     note = o.optString("note"), pinned = o.optBoolean("pinned"),
                     createdAt = o.optLong("createdAt", System.currentTimeMillis()),
                     file = o.getString("file"), mime = o.optString("mime", "image/jpeg")
@@ -77,7 +83,7 @@ object PhotoStore {
                 for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { result.add(it) }
             }
         } catch (e: Exception) { }
-        list(context).map { it.album }.filter { it.isNotBlank() && it != "Разное" }.forEach { result.add(it) }
+        list(context).flatMap { it.albums }.filter { it.isNotBlank() && it != "Разное" }.forEach { result.add(it) }
         return result.toList()
     }
 
@@ -166,20 +172,23 @@ object PhotoStore {
     }
 
     @Synchronized
+    /** Слияние = фотографии получают членство ещё и в целевом альбоме. Из исходного ничего не удаляется. */
     fun mergeAlbums(context: Context, source: String, destination: String): Int {
         if (source == destination) return 0
-        val all = list(context); var moved = 0
-        all.forEach { if (it.album == source) { it.album = destination; moved++ } }
-        if (moved > 0) saveAll(context, all)
-        return moved
+        val all = list(context); var added = 0
+        all.forEach { p ->
+            if (source in p.albums && destination !in p.albums) { p.albums.add(destination); added++ }
+        }
+        if (added > 0) saveAll(context, all)
+        return added
     }
 
     @Synchronized
     fun deleteAlbumWithPhotos(context: Context, album: String): Int {
         val all = list(context)
-        val victims = all.filter { it.album == album }
+        val victims = all.filter { album in it.albums }
         victims.forEach { it.fileIn(dir(context)).delete() }
-        saveAll(context, all.filterNot { it.album == album })
+        saveAll(context, all.filterNot { album in it.albums })
         // Убрать альбом из реестра и его защиту
         try {
             val names = albums(context).filterNot { it == album }
@@ -197,7 +206,7 @@ object PhotoStore {
         val arr = JSONArray()
         for (p in photos.sortedBy { it.createdAt }) {
             arr.put(JSONObject()
-                .put("id", p.id).put("name", p.name).put("album", p.album)
+                .put("id", p.id).put("name", p.name).put("album", p.album).put("albums", JSONArray(p.albums))
                 .put("tags", JSONArray(p.tags)).put("note", p.note).put("pinned", p.pinned)
                 .put("createdAt", p.createdAt).put("file", p.file).put("mime", p.mime))
         }

@@ -21,6 +21,8 @@ class ZoomImageView @JvmOverloads constructor(
     private var mode = 0 // 0 none, 1 drag
 
     var onHorizontalSwipe: ((Int) -> Unit)? = null
+    var onSingleTap: (() -> Unit)? = null
+    var onLongPressPhoto: (() -> Unit)? = null
 
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
@@ -33,6 +35,14 @@ class ZoomImageView @JvmOverloads constructor(
         }
     })
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+            onSingleTap?.invoke(); return true
+        }
+
+        override fun onLongPress(e: MotionEvent) {
+            onLongPressPhoto?.invoke()
+        }
+
         override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
             if (scaleFactor <= 1.05f && kotlin.math.abs(velocityX) > kotlin.math.abs(velocityY) && kotlin.math.abs(velocityX) > 450f) {
                 onHorizontalSwipe?.invoke(if (velocityX < 0) 1 else -1)

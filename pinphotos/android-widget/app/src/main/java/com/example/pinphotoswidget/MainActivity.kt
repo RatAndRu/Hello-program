@@ -67,8 +67,8 @@ class MainActivity : FragmentActivity() {
     private fun refresh() {
         photos = PhotoStore.list(this)
         val lockedNames = PhotoStore.lockedAlbumNames(this)
-        val visiblePhotos = photos.filterNot { it.album in lockedNames && it.album != selectedAlbum }
-        val pinnedCount = photos.count { it.pinned && it.album !in lockedNames }
+        val visiblePhotos = photos.filter { photo -> photo.albums.none { it in lockedNames } }
+        val pinnedCount = photos.count { photo -> photo.pinned && photo.albums.none { it in lockedNames } }
         countText.text = if (visiblePhotos.isEmpty()) "" else "${visiblePhotos.size}"
         widgetStatus.text = when {
             visiblePhotos.isEmpty() -> "Нет фотографий"
@@ -77,7 +77,7 @@ class MainActivity : FragmentActivity() {
             else -> "В виджете: $pinnedCount фото · листаются каждые ~30 мин"
         }
         renderAlbums()
-        val displayed = if (selectedAlbum == ALL_ALBUMS) visiblePhotos else photos.filter { it.album == selectedAlbum }
+        val displayed = if (selectedAlbum == ALL_ALBUMS) visiblePhotos else photos.filter { selectedAlbum in it.albums }
         selectedIds.retainAll(photos.map { it.id }.toSet())
         emptyView.visibility = if (displayed.isEmpty()) View.VISIBLE else View.GONE
         grid.visibility = if (displayed.isEmpty()) View.GONE else View.VISIBLE
@@ -114,7 +114,7 @@ class MainActivity : FragmentActivity() {
         row.removeAllViews()
         val all = photos
         for (album in PhotoStore.albums(this)) {
-            val albumPhotos = all.filter { it.album == album }
+            val albumPhotos = all.filter { album in it.albums }
             row.addView(albumTile(album, albumPhotos))
         }
         // Плитка создания нового альбома
@@ -224,12 +224,18 @@ class MainActivity : FragmentActivity() {
                 } else toast("Неверный пароль")
             }
         }
-        if (security.biometric) {
+        // Пароль обязателен, а отпечаток всегда доступен как второй способ открытия,
+        // если он есть и добавлен на самом телефоне.
+        if (biometricAvailable()) {
             builder.setNeutralButton("По отпечатку") { _, _ -> authenticateBiometric(album, onSuccess) }
-            if (security.pinHash.isEmpty()) builder.setMessage("Откройте альбом отпечатком пальца")
         }
         builder.show()
-        if (security.biometric && security.pinHash.isEmpty()) authenticateBiometric(album, onSuccess)
+    }
+
+    private fun biometricAvailable(): Boolean {
+        val manager = BiometricManager.from(this)
+        val auth = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+        return manager.canAuthenticate(auth) == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     private fun authenticateBiometric(album: String, onSuccess: () -> Unit) {
@@ -272,16 +278,11 @@ class MainActivity : FragmentActivity() {
                 toast("Пароль снят"); refresh()
             })
         }
-        actions.add(Action(if (security.biometric) "Отключить вход по отпечатку" else "Вход по отпечатку: включить") {
-            val manager = BiometricManager.from(this)
-            val auth = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
-            if (!security.biometric && manager.canAuthenticate(auth) != BiometricManager.BIOMETRIC_SUCCESS) {
-                toast("На устройстве нет доступного отпечатка")
-            } else {
-                PhotoStore.setAlbumBiometric(this, album, !security.biometric)
-                toast(if (!security.biometric) "Отпечаток включён" else "Отпечаток отключён"); refresh()
-            }
-        })
+        if (security.pinHash.isNotEmpty()) {
+            actions.add(Action(if (biometricAvailable()) "Открытие: пароль или отпечаток" else "Открытие: только пароль (нет отпечатка)") {
+                toast(if (biometricAvailable()) "Этот альбом можно открыть паролем или отпечатком пальца" else "На телефоне нет добавленного отпечатка")
+            })
+        }
         if (album in unlockedAlbums) actions.add(Action("Закрыть альбом сейчас") {
             unlockedAlbums.remove(album); if (selectedAlbum == album) selectedAlbum = ALL_ALBUMS; refresh()
         })
@@ -310,7 +311,7 @@ class MainActivity : FragmentActivity() {
                     else -> {
                         PhotoStore.setAlbumPin(this, album, a)
                         unlockedAlbums.add(album)
-                        toast("Пароль установлен"); refresh()
+                        toast("Пароль установлен. Открыть можно паролем или отпечатком"); refresh()
                     }
                 }
             }
@@ -324,7 +325,7 @@ class MainActivity : FragmentActivity() {
             .setTitle("Слить «$source» в…")
             .setItems(destinations.toTypedArray()) { _, which ->
                 val moved = PhotoStore.mergeAlbums(this, source, destinations[which])
-                toast("Перемещено фото: $moved. Альбом «$source» сохранён")
+                toast("Добавлено в «${destinations[which]}»: $moved фото. В «$source» всё осталось")
                 if (selectedAlbum == source) selectedAlbum = destinations[which]
                 refresh()
             }
@@ -332,7 +333,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun confirmDeleteAlbum(album: String) {
-        val count = photos.count { it.album == album }
+        val count = photos.count { album in it.albums }
         android.app.AlertDialog.Builder(this)
             .setTitle("Удалить альбом?")
             .setMessage("Альбом «$album» и все его фотографии ($count шт.) будут удалены из приложения. Оригиналы в галерее телефона не тронем.")
@@ -349,7 +350,8 @@ class MainActivity : FragmentActivity() {
     private fun showMenu(anchor: View) {
         // Оставлены только редкие служебные действия: бэкап и иконка.
         // Добавление фото/виджета, альбомы и тема живут своими кнопками на экране.
-        val menu = PopupMenu(this, anchor)
+        val popupContext = android.view.ContextThemeWrapper(this, if (UiTheme.isDark(this)) R.style.PopupOverlayDark else R.style.PopupOverlayLight)
+        val menu = PopupMenu(popupContext, anchor)
         menu.menu.add(0, 1, 0, "Бэкап: сохранить JSON")
         menu.menu.add(0, 2, 0, "Восстановить из JSON")
         menu.menu.add(0, 3, 0, "Иконка: обычная 📌")
@@ -439,7 +441,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun moveSelectedTo(album: String) {
-        photos.filter { it.id in selectedIds }.forEach { p -> p.album = album; PhotoStore.update(this, p) }
+        photos.filter { it.id in selectedIds }.forEach { p -> p.albums = mutableListOf(album); PhotoStore.update(this, p) }
         val count = selectedIds.size
         selectedIds.clear(); selectedAlbum = album
         toast("Перемещено: $count"); refresh()
@@ -486,7 +488,7 @@ class MainActivity : FragmentActivity() {
                         val bytes = contentResolver.openInputStream(uri)?.readBytes() ?: continue
                         if (bytes.isEmpty()) continue
                         val imported = PhotoStore.importBytes(this, bytes, contentResolver.getType(uri) ?: "image/jpeg", displayName(uri))
-                        imported.album = pendingImportAlbum; PhotoStore.update(this, imported)
+                        imported.albums = if (pendingImportAlbum.isBlank()) mutableListOf() else mutableListOf(pendingImportAlbum); PhotoStore.update(this, imported)
                         saved++
                     } catch (e: Exception) { /* одно битое фото не должно валить остальные */ }
                 }
@@ -498,7 +500,7 @@ class MainActivity : FragmentActivity() {
                     for (p in photos) {
                         val bytes = p.fileIn(PhotoStore.dir(this)).readBytes()
                         arr.put(JSONObject()
-                            .put("name", p.name).put("album", p.album).put("tags", org.json.JSONArray(p.tags))
+                            .put("name", p.name).put("album", p.album).put("albums", org.json.JSONArray(p.albums)).put("tags", org.json.JSONArray(p.tags))
                             .put("note", p.note).put("pinned", p.pinned).put("createdAt", p.createdAt)
                             .put("mime", p.mime)
                             .put("data", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)))
@@ -519,7 +521,10 @@ class MainActivity : FragmentActivity() {
                         if (encoded.isEmpty()) continue
                         val p = PhotoStore.importBytes(this, android.util.Base64.decode(encoded, android.util.Base64.DEFAULT),
                             o.optString("mime", "image/jpeg"), o.optString("name", "Фото"))
-                        p.album = o.optString("album").takeUnless { it == "Разное" } ?: ""; p.note = o.optString("note")
+                        p.albums = mutableListOf<String>().apply {
+                            o.optJSONArray("albums")?.let { a -> for (j in 0 until a.length()) a.optString(j).takeIf { it.isNotBlank() }?.let { add(it) } }
+                            if (isEmpty()) o.optString("album").takeIf { it.isNotBlank() && it != "Разное" }?.let { add(it) }
+                        }; p.note = o.optString("note")
                         p.pinned = o.optBoolean("pinned")
                         o.optJSONArray("tags")?.let { t -> for (j in 0 until t.length()) p.tags.add(t.optString(j)) }
                         PhotoStore.update(this, p); added++
