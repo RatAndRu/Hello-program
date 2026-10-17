@@ -30,6 +30,7 @@ class PhotoActivity : Activity() {
     private val autoHideHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val autoHideRunnable = Runnable { hideFullscreenChrome() }
     private var slideshowSeconds: Int = 0
+    private var currentMediaPlayer: android.media.MediaPlayer? = null
     private val slideshowHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val slideshowRunnable = Runnable {
         if (fullscreen && slideshowSeconds > 0) move(1)
@@ -113,17 +114,16 @@ class PhotoActivity : Activity() {
                 mediaController = android.widget.MediaController(this).apply { setAnchorView(video) }
                 video.setMediaController(mediaController)
                 video.setOnPreparedListener {
-                    // В слайд-шоу видео не зацикливаем: после конца ждём выбранный период и листаем дальше.
-                    it.isLooping = slideshowSeconds <= 0
+                    currentMediaPlayer = it
+                    // В полном экране при включённом слайд-шоу видео не зацикливаем.
+                    applyVideoLooping()
                     video.start()
                     if (fullscreen) showFullscreenChrome() else mediaController?.show(3000)
                 }
                 video.setOnCompletionListener {
-                    if (fullscreen && slideshowSeconds > 0) {
-                        showFullscreenChrome()
-                        slideshowHandler.removeCallbacks(slideshowRunnable)
-                        slideshowHandler.postDelayed(slideshowRunnable, slideshowSeconds * 1000L)
-                    }
+                    // По просьбе: в слайд-шоу переключаемся СРАЗУ по окончании видео, без периода.
+                    // Перемотка пользователем ничего не ломает: completion придёт по фактическому концу.
+                    if (fullscreen && slideshowSeconds > 0) move(1)
                 }
             }
         } else {
@@ -144,6 +144,11 @@ class PhotoActivity : Activity() {
         renderText(); schedulePhotoSlideshow()
     }
 
+    private fun applyVideoLooping() {
+        // Loop допустим только когда слайд-шоу выключено или мы не в полном экране.
+        currentMediaPlayer?.isLooping = !(fullscreen && slideshowSeconds > 0)
+    }
+
     private fun schedulePhotoSlideshow() {
         slideshowHandler.removeCallbacks(slideshowRunnable)
         val current = photo ?: return
@@ -160,9 +165,12 @@ class PhotoActivity : Activity() {
             .setSingleChoiceItems(labels, checked) { dialog, which ->
                 slideshowSeconds = options[which]
                 getSharedPreferences("slideshow", Context.MODE_PRIVATE).edit().putInt("seconds", slideshowSeconds).apply()
-                dialog.dismiss(); renderText(); showFullscreenChrome(); schedulePhotoSlideshow()
+                dialog.dismiss(); renderText(); showFullscreenChrome(); applyVideoLooping(); schedulePhotoSlideshow()
                 val video = findViewById<android.widget.VideoView>(R.id.videoPlayer)
-                if (photo?.mime?.startsWith("video/") == true && !video.isPlaying) video.start()
+                if (photo?.mime?.startsWith("video/") == true && slideshowSeconds > 0 && fullscreen &&
+                    video.duration > 0 && video.currentPosition >= video.duration - 500) {
+                    move(1)
+                } else if (photo?.mime?.startsWith("video/") == true && !video.isPlaying) video.start()
                 Toast.makeText(this, if (slideshowSeconds == 0) "Слайд-шоу выключено" else "Слайд-шоу: ${labels[which]}", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Отмена", null).show()
@@ -215,6 +223,7 @@ class PhotoActivity : Activity() {
 
     private fun setFullscreen(enabled: Boolean) {
         fullscreen = enabled
+        applyVideoLooping()
         if (!enabled) slideshowHandler.removeCallbacks(slideshowRunnable)
         findViewById<android.view.View>(R.id.slideshowBtn).visibility = if (enabled) android.view.View.VISIBLE else android.view.View.GONE
         findViewById<android.view.View>(R.id.bottomPanel).visibility = if (enabled) android.view.View.GONE else android.view.View.VISIBLE
