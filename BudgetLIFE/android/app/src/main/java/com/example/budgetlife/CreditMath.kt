@@ -34,11 +34,12 @@ object CreditMath {
     }
 
     fun statementDate(ym: String, day: Int): String { val m = java.time.YearMonth.parse(ym); return m.atDay(minOf(day, m.lengthOfMonth())).toString() }
-    fun graceEndDate(credit: Credit, statement: String): String { if (credit.gracePaymentDay != null) { val d = Dates.parse(statement); return d.withDayOfMonth(minOf(credit.gracePaymentDay, d.lengthOfMonth())).toString() }; return Dates.parse(statement).plusDays((credit.graceDays ?: 0).toLong()).toString() }
+    fun graceEndDate(credit: Credit, statement: String): String { val graceDay = credit.gracePaymentDay; if (graceDay != null) { val d = Dates.parse(statement); return d.withDayOfMonth(minOf(graceDay, d.lengthOfMonth())).toString() }; return Dates.parse(statement).plusDays((credit.graceDays ?: 0).toLong()).toString() }
     fun cardPaymentDate(credit: Credit, ym: String): String {
         val m = java.time.YearMonth.parse(ym)
-        if (credit.gracePaymentDay != null) { val date = m.atDay(minOf(credit.gracePaymentDay, m.lengthOfMonth())); return if (credit.statementDay != null && credit.gracePaymentDay <= credit.statementDay) date.plusMonths(1).toString() else date.toString() }
-        if (credit.statementDay != null) return graceEndDate(credit, statementDate(ym, credit.statementDay))
+        val graceDay = credit.gracePaymentDay; val statementDay = credit.statementDay
+        if (graceDay != null) { val date = m.atDay(minOf(graceDay, m.lengthOfMonth())); return if (statementDay != null && graceDay <= statementDay) date.plusMonths(1).toString() else date.toString() }
+        if (statementDay != null) return graceEndDate(credit, statementDate(ym, statementDay))
         return Dates.resolvePayDay(ym, 15, "prevWorkday")
     }
     fun minPayment(credit: Credit, debt: Double = credit.used ?: 0.0): Double = maxOf(credit.minPaymentFixed ?: 0.0, debt * (credit.minPaymentPercent ?: 5.0) / 100.0)
