@@ -32,6 +32,7 @@ class MainActivity : Activity(), SensorEventListener {
     private lateinit var timeText: TextView
     private lateinit var livesText: TextView
     private lateinit var scoreText: TextView
+    private lateinit var shardsText: TextView
     private lateinit var endTitle: TextView
     private lateinit var endStats: TextView
     private lateinit var toastText: TextView
@@ -65,6 +66,7 @@ class MainActivity : Activity(), SensorEventListener {
         timeText = findViewById(R.id.timeText)
         livesText = findViewById(R.id.livesText)
         scoreText = findViewById(R.id.scoreText)
+        shardsText = findViewById(R.id.shardsText)
         endTitle = findViewById(R.id.endTitle)
         endStats = findViewById(R.id.endStats)
         toastText = findViewById(R.id.toastText)
@@ -81,6 +83,7 @@ class MainActivity : Activity(), SensorEventListener {
             override fun onGameEnd(win: Boolean, score: Int, elapsedSec: Int) {
                 runOnUiThread {
                     gameRunning = false
+                    gameView.stopGame()
                     topHud.visibility = View.GONE
                     findViewById<View>(R.id.consumablesPanel).visibility = View.GONE
                     endPanel.visibility = View.VISIBLE
@@ -115,6 +118,8 @@ class MainActivity : Activity(), SensorEventListener {
             calibrateOrientation()
         }
         findViewById<Button>(R.id.restartBtn).setOnClickListener { startGame() }
+        findViewById<Button>(R.id.exitGameBtn).setOnClickListener { exitToMainMenu() }
+        findViewById<Button>(R.id.endMenuBtn).setOnClickListener { exitToMainMenu() }
     }
 
     override fun onResume() {
@@ -133,13 +138,7 @@ class MainActivity : Activity(), SensorEventListener {
         sensorManager?.unregisterListener(this)
         cameraController?.stop()
         cameraController = null
-        if (gameRunning) {
-            gameRunning = false
-            gameView.stopGame()
-            topHud.visibility = View.GONE
-            findViewById<View>(R.id.consumablesPanel).visibility = View.GONE
-            startPanel.visibility = View.VISIBLE
-        }
+        if (gameRunning) showMainMenu()
         super.onPause()
     }
 
@@ -189,6 +188,22 @@ class MainActivity : Activity(), SensorEventListener {
         showToast(if (debug) "Отладка: призраки — тапом, пауки — свайпом" else "Поворачивайся вокруг себя. Удачи!")
     }
 
+    /** Выход в главное меню: матч прекращается и не сохраняется. */
+    private fun exitToMainMenu() {
+        if (!gameRunning && startPanel.visibility == View.VISIBLE) return
+        showMainMenu()
+        showToast("Игра остановлена — матч не сохранён")
+    }
+
+    private fun showMainMenu() {
+        gameRunning = false
+        gameView.stopGame()
+        topHud.visibility = View.GONE
+        findViewById<View>(R.id.consumablesPanel).visibility = View.GONE
+        endPanel.visibility = View.GONE
+        startPanel.visibility = View.VISIBLE
+    }
+
     private fun setupSettings() {
         val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
         val flash = findViewById<SeekBar>(R.id.flashSensitivity)
@@ -229,7 +244,14 @@ class MainActivity : Activity(), SensorEventListener {
         bar.removeAllViews()
         GameView.Consumable.values().forEach { type ->
             val button = Button(this).apply {
-                text = type.label; textSize = 12f; setPadding(18, 8, 18, 8)
+                textSize = 12f
+                setPadding(8, 8, 8, 8)
+                setLineSpacing(0f, 0.92f)
+                setTextColor(0xFFEEF4FF.toInt())
+                setBackgroundResource(R.drawable.consumable_bg)
+                layoutParams = android.widget.LinearLayout.LayoutParams((76 * resources.displayMetrics.density).toInt(), (78 * resources.displayMetrics.density).toInt()).apply {
+                    marginEnd = (7 * resources.displayMetrics.density).toInt()
+                }
                 setOnClickListener { gameView.useConsumable(type) }
             }
             button.tag = type
@@ -238,15 +260,19 @@ class MainActivity : Activity(), SensorEventListener {
     }
 
     private fun renderInventory(state: GameView.InventoryState) {
-        findViewById<TextView>(R.id.inventoryText).text = "Осколки тьмы: ${state.shards} · ❤ ${state.lives} · ☠ ${state.score}" + if (state.shieldActive) " · 🛡 щит" else ""
+        // Осколки живут в единственном месте — верхнем HUD. Здесь не повторяем жизни и счёт.
+        shardsText.text = "◆ ${state.shards}"
+        findViewById<TextView>(R.id.shieldStateText).visibility = if (state.shieldActive) View.VISIBLE else View.GONE
         val bar = findViewById<android.widget.LinearLayout>(R.id.consumablesBar)
         for (i in 0 until bar.childCount) {
             val button = bar.getChildAt(i) as Button
             val type = button.tag as GameView.Consumable
             val count = state.counts[type] ?: 0
-            button.text = "${type.label} ×$count"
-            button.isEnabled = count > 0 || type == GameView.Consumable.MEDKIT
-            button.alpha = if (count > 0) 1f else 0.48f
+            // Три короткие строки: иконка, название, количество. Без повторного текста здоровья/счёта.
+            button.text = "${type.icon}\n${type.title}\n×$count"
+            button.isEnabled = count > 0
+            button.alpha = if (count > 0) 1f else 0.52f
+            button.setBackgroundResource(if (count > 0) R.drawable.consumable_bg else R.drawable.consumable_empty_bg)
         }
     }
 

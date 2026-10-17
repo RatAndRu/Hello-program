@@ -17,23 +17,24 @@ import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.tan
 import kotlin.random.Random
 
 /** Игровой оверлей поверх камеры: монстры, эффекты света/лазера, радар, прицел и частицы. */
 class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? = null) : View(context, attrs) {
     enum class MonsterType { FLASH, LASER, MORSE, SHIELD_SPIDER, SLIME, SLIME_SMALL, INVISIBLE, STALKER, HEALER, MIRROR, BOSS_REAPER, BOSS_MOTHER }
 
-    enum class Consumable(val label: String) {
-        GRENADE("💣 Граната"), SHIELD("🛡 Щит"), SLOW("🐌 Замедление"), RADAR("📡 Радар"),
-        LURE("🎯 Приманка"), MEDKIT("✚ Аптечка"), BOOSTER("🔦 Усилитель"), HOLY("💧 Святая вода"), SALT("🧂 Соль")
+    enum class Consumable(val icon: String, val title: String) {
+        GRENADE("💣", "Граната"), SHIELD("🛡", "Щит"), SLOW("🐌", "Замедление"), RADAR("📡", "Радар"),
+        LURE("🎯", "Приманка"), MEDKIT("✚", "Аптечка"), BOOSTER("🔦", "Усилитель"), HOLY("💧", "Св. вода"), SALT("🧂", "Соль");
+        val label: String get() = "$icon $title"
     }
 
+    // Только то, чего НЕТ в верхнем HUD: осколки и активный щит. Жизни/счёт там не дублируем.
     data class InventoryState(
         val shards: Int,
         val counts: Map<Consumable, Int>,
-        val shieldActive: Boolean,
-        val lives: Int,
-        val score: Int
+        val shieldActive: Boolean
     )
 
     data class HudState(val timeLeftSec: Int, val lives: Int, val score: Int)
@@ -102,7 +103,6 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     var use3DModels = true
     var modelView: Monster3DView? = null
     private val sound = SoundEngine()
-    private var proximityTimer = 0f
     private var orientationSmoothingScale = 1f
     private var lastFlashCompletedId = 0L
 
@@ -189,6 +189,10 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
     fun stopGame() {
         running = false
+        monsters.clear()
+        particles.clear()
+        pendingSpawns.clear()
+        modelView?.submit(emptyList(), smoothYaw, smoothPitch, elapsed)
         invalidate()
     }
 
@@ -310,7 +314,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             if (m.type == MonsterType.MIRROR && !m.mirrorBroken) {
                 val rune = screenForAngle(m.yaw + 20f, m.pitch, m.dist)
                 if (rune != null && distancePointSegment(rune.x, rune.y, x1, y1, x2, y2) < 38f * density()) {
-                    debugSwipeHitIds += m.id; m.mirrorBroken = true; m.hitFlash = 0.25f; sound.hitLaser()
+                    debugSwipeHitIds += m.id; m.mirrorBroken = true; m.hitFlash = 0.25f; sound.runeBreak()
                     listener?.onToast("Зеркальная руна разбита! Теперь — вспышкой")
                 }
                 continue
@@ -320,7 +324,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             if (d < radius * 0.82f) {
                 debugSwipeHitIds += m.id
                 if (m.type == MonsterType.SHIELD_SPIDER && m.shieldHp > 0) {
-                    m.shieldHp--; m.lastHitAt = elapsed; m.hitFlash = 0.2f; sound.hitLaser()
+                    m.shieldHp--; m.lastHitAt = elapsed; m.hitFlash = 0.2f; if (m.shieldHp > 0) sound.shieldHit() else sound.shieldBreak()
                     listener?.onToast(if (m.shieldHp > 0) "Щит паука: осталось ${m.shieldHp}" else "Щит паука разрушен!")
                 } else {
                     hitMonster(m, s.x, s.y, radius, DamageSource.LASER)
@@ -350,12 +354,6 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         updateSpawning(dt)
         updateMonsters(dt)
         updateParticles(dt)
-        proximityTimer -= dt
-        if (proximityTimer <= 0f) {
-            proximityTimer = 0.65f
-            val closest = monsters.minByOrNull { it.dist }
-            if (closest != null && closest.dist < 0.52f) sound.proximity(closest.dist)
-        }
         hudTick -= dt
         if (hudTick <= 0f) { hudTick = 0.12f; pushHud() }
         if (elapsed >= DURATION_SEC) endGame(true)
@@ -531,12 +529,12 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                             val rune = screenForAngle(m.yaw + 20f, m.pitch, m.dist)
                             if (rune != null && distancePointSegment(rune.x, rune.y, a.first, a.second, b.first, b.second) < 38f * density() && m.lastLaserTrack != detections.laserTrackId) {
                                 m.lastLaserTrack = detections.laserTrackId; m.mirrorBroken = true; m.hitFlash = 0.25f
-                                spawnParticles(rune.x, rune.y, 38f * density(), Color.rgb(170, 220, 255), 22); sound.hitLaser(); listener?.onToast("Зеркальная руна разбита! Теперь — вспышкой")
+                                spawnParticles(rune.x, rune.y, 38f * density(), Color.rgb(170, 220, 255), 22); sound.runeBreak(); listener?.onToast("Зеркальная руна разбита! Теперь — вспышкой")
                             }
                         } else if (inside && isLaserVulnerable(m) && isMonsterHittable(m) && m.lastLaserTrack != detections.laserTrackId) {
                             m.lastLaserTrack = detections.laserTrackId
                             if (m.type == MonsterType.SHIELD_SPIDER && m.shieldHp > 0) {
-                                m.shieldHp--; m.lastHitAt = elapsed; m.hitFlash = 0.2f; sound.hitLaser()
+                                m.shieldHp--; m.lastHitAt = elapsed; m.hitFlash = 0.2f; if (m.shieldHp > 0) sound.shieldHit() else sound.shieldBreak()
                                 spawnParticles(s.x, s.y, radius, Color.rgb(120, 210, 255), 14)
                                 listener?.onToast(if (m.shieldHp > 0) "Щит паука: осталось ${m.shieldHp}" else "Щит паука разрушен!")
                             } else hitMonster(m, s.x, s.y, radius, DamageSource.LASER)
@@ -553,7 +551,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             if (m.dist <= 0.02f) {
                 iterator.remove()
                 if (shieldActive) {
-                    shieldActive = false; hurtFlash = 0.55f; sound.power(); listener?.onToast("Щит заблокировал атаку!"); pushInventory()
+                    shieldActive = false; hurtFlash = 0.55f; sound.shieldBlock(); listener?.onToast("Щит заблокировал атаку!"); pushInventory()
                 } else {
                     lives--; hurtFlash = 1f; sound.hurt(); listener?.onToast("Монстр добрался! -1 жизнь")
                 }
@@ -601,7 +599,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     }
 
     private fun pushInventory() {
-        listener?.onInventory(InventoryState(shards, consumableCounts.toMap(), shieldActive, lives, score))
+        listener?.onInventory(InventoryState(shards, consumableCounts.toMap(), shieldActive))
     }
 
     private fun addConsumable(type: Consumable, amount: Int = 1) {
@@ -628,7 +626,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             4 -> addConsumable(Consumable.MEDKIT)
             else -> addConsumable(Consumable.HOLY)
         }
-        sound.power()
+        sound.upgrade()
         upgradePending = false
         setPaused(false)
         pushInventory()
@@ -645,7 +643,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             if ((consumableCounts[type] ?: 0) <= 0) { listener?.onToast("Нет аптечек"); return }
             if (lives >= 5) { listener?.onToast("Жизни полные"); return }
             consumableCounts[type] = (consumableCounts[type] ?: 0) - 1
-            lives++; sound.power(); listener?.onToast("+1 жизнь"); pushHud(); pushInventory(); return
+            lives++; sound.heal(); listener?.onToast("+1 жизнь"); pushHud(); pushInventory(); return
         }
         if (type == Consumable.SHIELD && shieldActive) { listener?.onToast("Щит уже активен"); return }
         if ((consumableCounts[type] ?: 0) <= 0) { listener?.onToast("Нет расходника: ${type.label}"); return }
@@ -681,7 +679,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             Consumable.SALT -> { saltUntil = elapsed + 10f; listener?.onToast("Соль держит монстров на дистанции") }
             else -> Unit
         }
-        sound.power(); pushInventory(); invalidate()
+        sound.consumable(type); pushInventory(); invalidate()
     }
 
     private enum class DamageSource { FLASH, LASER, GRENADE, HOLY, MORSE, DEBUG }
@@ -774,14 +772,14 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         if (m.morseSequence.isEmpty()) return
         val expected = m.morseSequence[m.morseIndex]
         if (expected == isLong) {
-            m.morseIndex++; m.hitFlash = 0.12f; sound.hitFlash()
+            m.morseIndex++; m.hitFlash = 0.12f; sound.morseProgress()
             if (m.morseIndex >= m.morseSequence.size) {
                 m.hp = 1; hitMonster(m, screen.x, screen.y, monsterRadius(m, screen.scale), DamageSource.MORSE)
                 monsters.remove(m)
                 listener?.onToast("Морзе-код разгадан!")
             } else listener?.onToast("Морзе: ${m.morseIndex}/${m.morseSequence.size}")
         } else {
-            m.morseIndex = 0
+            m.morseIndex = 0; sound.morseError()
             listener?.onToast("Неверный сигнал — последовательность сброшена")
         }
     }
@@ -789,7 +787,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     private fun endGame(win: Boolean) {
         if (!running) return
         running = false
-        if (win) sound.power() else sound.hurt()
+        if (win) sound.victory() else sound.defeat()
         pushHud()
         listener?.onGameEnd(win, score, elapsed.toInt())
     }
@@ -926,7 +924,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
     private fun drawMonster(canvas: Canvas, m: Monster) {
         val s = monsterScreen(m) ?: return
-        val base = (if (m.type == MonsterType.FLASH) 76f else 66f) * s.scale * density()
+        val base = if (use3DModels && s.visualRadius > 1f) s.visualRadius else (if (m.type == MonsterType.FLASH) 76f else 66f) * s.scale * density()
         canvas.save()
         canvas.translate(s.x, s.y)
         val alpha = (s.alpha * visibilityAlpha(m) * 255).toInt().coerceIn(0, 255)
@@ -938,33 +936,56 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             }
             paint.clearShadowLayer()
         }
-        drawHp(canvas, -base * 1.08f, base, m, alpha)
+        drawMonsterStatus(canvas, base, m, alpha)
         if (use3DModels) drawTypeLabel(canvas, base, m, alpha)
         canvas.restore()
         drawMonsterExtras(canvas, m, s)
     }
 
+    /** Только особая механика под моделью. Обычное HP не дублируем текстом: его показывает сегментная полоска выше. */
     private fun drawTypeLabel(canvas: Canvas, base: Float, m: Monster, alpha: Int) {
-        textPaint.alpha = (alpha * 0.88f).toInt()
-        textPaint.textSize = max(12f * density(), base * 0.16f)
         val label = when (m.type) {
-            MonsterType.FLASH -> "вспышек: ${m.hp}"
-            MonsterType.LASER -> "разрезов: ${m.hp}"
             MonsterType.MORSE -> m.morseSequence.joinToString(" ") { if (it) "—" else "●" } + "  ${m.morseIndex}/${m.morseSequence.size}"
-            MonsterType.SHIELD_SPIDER -> if (m.shieldHp > 0) "щит: ${m.shieldHp} · разрезов: ${m.hp}" else "разрезов: ${m.hp}"
-            MonsterType.SLIME -> "разрезать лазером: ${m.hp}"
-            MonsterType.SLIME_SMALL -> "вспышкой: ${m.hp}"
-            MonsterType.INVISIBLE -> "невидимка: ${m.hp}"
-            MonsterType.STALKER -> "крадётся: ${m.hp}"
-            MonsterType.HEALER -> "лекарь: ${m.hp}"
-            MonsterType.MIRROR -> if (m.mirrorBroken) "зеркало разбито: ${m.hp}" else "разбей руну лазером"
-            MonsterType.BOSS_REAPER -> if (m.bossLaserPhase) "ЖНЕЦ · лазер/морзе: ${m.hp}" else "ЖНЕЦ · вспышки: ${m.hp}"
-            MonsterType.BOSS_MOTHER -> "МАТЬ ПАУКОВ: ${m.hp}"
+            MonsterType.SHIELD_SPIDER -> if (m.shieldHp > 0) "🛡 щит ${m.shieldHp}" else ""
+            MonsterType.MIRROR -> if (m.mirrorBroken) "руна разбита" else "лазером по руне"
+            MonsterType.BOSS_REAPER -> if (m.bossLaserPhase) "ЖНЕЦ · фаза лазера/Морзе" else "ЖНЕЦ · фаза вспышек"
+            MonsterType.BOSS_MOTHER -> "МАТЬ ПАУКОВ"
+            else -> ""
         }
-        canvas.drawText(label, 0f, base * 0.92f, textPaint)
-        if (m.type == MonsterType.MORSE || m.type == MonsterType.BOSS_REAPER) {
-            textPaint.textSize = max(11f * density(), base * 0.13f)
-            canvas.drawText("● короткая вспышка · — длинная", 0f, base * 1.12f, textPaint)
+        if (label.isBlank()) return
+        textPaint.alpha = (alpha * 0.92f).toInt()
+        textPaint.textSize = max(11f * density(), base * 0.15f)
+        canvas.drawText(label, 0f, base * 1.12f, textPaint)
+        if (m.type == MonsterType.MORSE) {
+            textPaint.textSize = max(10f * density(), base * 0.12f)
+            canvas.drawText("● короткая · — длинная", 0f, base * 1.30f, textPaint)
+        }
+    }
+
+    /** Компактная сегментная полоска HP строго над проекцией модели; количество сегментов = max HP. */
+    private fun drawMonsterStatus(canvas: Canvas, base: Float, m: Monster, alpha: Int) {
+        val total = (m.maxHp + if (m.type == MonsterType.SHIELD_SPIDER) m.shieldHp else 0).coerceAtLeast(1)
+        val filled = (m.hp + if (m.type == MonsterType.SHIELD_SPIDER) m.shieldHp else 0).coerceAtMost(total)
+        val w = max(34f * density(), base * 1.05f)
+        val segW = w / total
+        val h = max(4f * density(), base * 0.065f)
+        val y = -base * 1.12f
+        paint.style = Paint.Style.FILL
+        for (i in 0 until total) {
+            val shieldSegment = m.type == MonsterType.SHIELD_SPIDER && i >= m.hp
+            paint.color = when {
+                i >= filled -> Color.argb((alpha * 0.30f).toInt(), 25, 30, 45)
+                shieldSegment -> Color.argb(alpha, 105, 205, 255)
+                m.type == MonsterType.FLASH || m.type == MonsterType.MORSE -> Color.argb(alpha, 255, 220, 110)
+                else -> Color.argb(alpha, 255, 72, 88)
+            }
+            val left = -w / 2f + i * segW + 1f
+            canvas.drawRect(left, y, left + segW - 2f, y + h, paint)
+        }
+        // Боссам — тонкая рамка, чтобы полоска читалась как boss-bar.
+        if (m.isBoss) {
+            paint.style = Paint.Style.STROKE; paint.strokeWidth = 1.2f * density(); paint.color = Color.argb(alpha, 255, 205, 100)
+            canvas.drawRect(-w / 2f, y - 2f, w / 2f, y + h + 2f, paint)
         }
     }
 
@@ -997,7 +1018,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         if (elapsed < lureUntil) notes += "🎯 Приманка: ${(lureUntil - elapsed).toInt()}с"
         if (elapsed < boostUntil) notes += "🔦 Усилитель: ${(boostUntil - elapsed).toInt()}с"
         if (elapsed < saltUntil) notes += "🧂 Соль: ${(saltUntil - elapsed).toInt()}с"
-        notes.forEachIndexed { i, note -> canvas.drawText(note, width / 2f, height - (86f + i * 20f) * density(), textPaint) }
+        notes.forEachIndexed { i, note -> canvas.drawText(note, width / 2f, height - (142f + i * 20f) * density(), textPaint) }
         if (elapsed < saltUntil) {
             paint.style = Paint.Style.STROKE; paint.color = Color.argb(150, 255, 255, 230); paint.strokeWidth = 2f * density()
             canvas.drawCircle(width / 2f, height / 2f, min(width, height) * 0.34f, paint)
@@ -1057,9 +1078,6 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         paint.color = Color.argb((alpha * 0.62f).toInt(), 255, 244, 190)
         paint.strokeWidth = max(1.5f, r * 0.025f)
         canvas.drawArc(-r * 0.30f, -r * 0.18f, r * 0.30f, r * 0.28f, 15f, 150f, false, paint)
-        textPaint.textSize = max(12f * density(), r * 0.18f)
-        textPaint.alpha = (alpha * 0.78f).toInt()
-        canvas.drawText("вспышек: ${m.hp}", 0f, r * 0.82f, textPaint)
     }
 
     private fun drawSpider(canvas: Canvas, r: Float, m: Monster, alpha: Int) {
@@ -1094,19 +1112,6 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         canvas.drawPath(fang, paint)
         fang.reset(); fang.moveTo(r * 0.03f, -r * 0.34f); fang.lineTo(r * 0.08f, -r * 0.16f); fang.lineTo(r * 0.16f, -r * 0.34f); fang.close()
         canvas.drawPath(fang, paint)
-        textPaint.textSize = max(12f * density(), r * 0.18f)
-        textPaint.alpha = (alpha * 0.78f).toInt()
-        canvas.drawText("разрезов: ${m.hp}", 0f, r * 0.88f, textPaint)
-    }
-
-    private fun drawHp(canvas: Canvas, y: Float, base: Float, m: Monster, alpha: Int) {
-        val w = base * 1.25f
-        val h = 7f * density()
-        paint.style = Paint.Style.FILL
-        paint.color = Color.argb((alpha * 0.58f).toInt(), 0, 0, 0)
-        canvas.drawRect(-w / 2, y, w / 2, y + h, paint)
-        paint.color = if (m.type == MonsterType.FLASH) Color.argb(alpha, 255, 225, 120) else Color.argb(alpha, 255, 70, 85)
-        canvas.drawRect(-w / 2, y, -w / 2 + w * (m.hp.toFloat() / m.maxHp), y + h, paint)
     }
 
     private fun drawParticles(canvas: Canvas) {
@@ -1158,7 +1163,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         canvas.drawCircle(cx, cy, 2.5f * density(), paint)
     }
 
-    private data class ScreenPos(val x: Float, val y: Float, val scale: Float, val alpha: Float)
+    private data class ScreenPos(val x: Float, val y: Float, val scale: Float, val alpha: Float, val visualRadius: Float = 0f)
 
     private fun visibilityAlpha(m: Monster): Float {
         if (m.type != MonsterType.INVISIBLE) return 1f
@@ -1167,35 +1172,43 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         return if (cycle < 2.3f) 1f else 0.10f
     }
 
+    /** Единая с OpenGL перспективная проекция: x=tan(yaw)/tan(80°), y=tan(pitch)/tan(45°). */
+    private fun projected(nxTan: Float, nyTan: Float, dist: Float, boss: Boolean, spawnFade: Float = 1f): ScreenPos? {
+        if (abs(nxTan) > 1f || abs(nyTan) > 1f) return null
+        // Те же depth/scale, что в Monster3DView: интерфейс буквально приклеен к центру и размеру модели.
+        val depth = lerp(7.2f, 2.4f, 1f - dist)
+        val worldScale = lerp(0.55f, 1.55f, 1f - dist) * if (boss) 1.9f else 1f
+        val visualRadius = height * (1.02f * worldScale) / (2f * depth * tan(Math.toRadians(45.0)).toFloat())
+        return ScreenPos(
+            x = width / 2f + nxTan * width / 2f,
+            y = height / 2f - nyTan * height / 2f,
+            scale = lerp(0.45f, 1.85f, 1f - dist) * (0.75f + 0.25f * spawnFade),
+            alpha = lerp(0.30f, 0.96f, 1f - dist) * spawnFade,
+            visualRadius = visualRadius * (0.75f + 0.25f * spawnFade)
+        )
+    }
+
+    private fun tangentProjection(dy: Float, dp: Float): Pair<Float, Float> =
+        (tan(Math.toRadians(dy.toDouble())) / tan(Math.toRadians(80.0))).toFloat() to
+            (tan(Math.toRadians(dp.toDouble())) / tan(Math.toRadians(45.0))).toFloat()
+
     private fun screenForAngle(yaw: Float, pitch: Float, dist: Float): ScreenPos? {
         val dy = deltaAngle(yaw, smoothYaw)
         val dp = pitch - smoothPitch
         if (abs(dy) > H_FOV / 2f || abs(dp) > V_FOV / 2f) return null
-        val nx = dy / (H_FOV / 2f)
-        val ny = dp / (V_FOV / 2f)
-        return ScreenPos(
-            x = width / 2f + nx * width / 2f,
-            y = height / 2f - ny * height / 2f,
-            scale = lerp(0.45f, 1.85f, 1f - dist),
-            alpha = lerp(0.30f, 0.96f, 1f - dist)
-        )
+        val (nx, ny) = tangentProjection(dy, dp)
+        return projected(nx, ny, dist, boss = false)
     }
 
     private fun monsterScreen(m: Monster): ScreenPos? {
         val dy = deltaAngle(m.yaw, smoothYaw)
         val dp = m.pitch - smoothPitch
         if (abs(dy) > H_FOV / 2f || abs(dp) > V_FOV / 2f) return null
-        val nx = dy / (H_FOV / 2f)
-        val ny = dp / (V_FOV / 2f)
-        val wobX = sin(elapsed * m.wobble * 2f + m.phase) * 10f * density() * (1f - m.dist)
-        val wobY = cos(elapsed * m.wobble * 1.7f + m.phase) * 7f * density() * (1f - m.dist)
+        val (nx, ny) = tangentProjection(dy, dp)
+        // Никакого отдельного wobble у интерфейса: покачивание рисует сама 3D-модель,
+        // а HP/статус обязаны оставаться на её projected-центре.
         val spawnFade = min(1f, m.age / 0.55f)
-        return ScreenPos(
-            x = width / 2f + nx * width / 2f + wobX,
-            y = height / 2f - ny * height / 2f + wobY,
-            scale = lerp(0.45f, 1.85f, 1f - m.dist) * (0.75f + 0.25f * spawnFade),
-            alpha = lerp(0.30f, 0.96f, 1f - m.dist) * spawnFade
-        )
+        return projected(nx, ny, m.dist, m.isBoss, spawnFade)
     }
 
     /** Точка детектора -> экран с учётом center-crop вертикального кадра камеры. */

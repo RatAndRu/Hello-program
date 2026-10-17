@@ -97,16 +97,21 @@ class Monster3DView @JvmOverloads constructor(context: Context, attrs: Attribute
             modelHandle = GLES20.glGetUniformLocation(program, "uModel")
             colorHandle = GLES20.glGetUniformLocation(program, "uColor")
             alphaHandle = GLES20.glGetUniformLocation(program, "uAlpha")
-            sphere = createSphere(14, 10)
-            cone = createCone(14)
+            sphere = createSphere(20, 14)
+            cone = createCone(20)
             box = createBox()
         }
 
         override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
             GLES20.glViewport(0, 0, width, height)
             val aspect = if (height == 0) 1f else width.toFloat() / height.toFloat()
-            // Вертикальный FOV 90°, горизонтальный при портретном экране получается уже — как в игровой модели.
-            Matrix.perspectiveM(projection, 0, 90f, aspect, 0.1f, 30f)
+            // ТА ЖЕ проекция, что у 2D-интерфейса GameView: горизонтальный FOV 160°, вертикальный 90°.
+            // Раньше здесь был перспективный FOV 90° только по вертикали, поэтому HP/подписи
+            // (линейная проекция GameView) уезжали от моделей тем сильнее, чем дальше от центра.
+            val near = 0.1f
+            val right = kotlin.math.tan(Math.toRadians(80.0)).toFloat() * near
+            val top = kotlin.math.tan(Math.toRadians(45.0)).toFloat() * near
+            Matrix.frustumM(projection, 0, -right, right, -top, top, near, 30f)
         }
 
         override fun onDrawFrame(gl: GL10?) {
@@ -120,7 +125,7 @@ class Monster3DView @JvmOverloads constructor(context: Context, attrs: Attribute
         private fun drawMonster(m: MonsterModelSnapshot) {
             val dy = deltaAngle(m.yaw, viewYaw)
             val dp = m.pitch - viewPitch
-            if (kotlin.math.abs(dy) > 88f || kotlin.math.abs(dp) > 52f) return
+            if (kotlin.math.abs(dy) > 80f || kotlin.math.abs(dp) > 45f) return
             val dyRad = Math.toRadians(dy.toDouble()).toFloat()
             val dpRad = Math.toRadians(dp.toDouble()).toFloat()
             val depth = lerp(7.2f, 2.4f, 1f - m.dist)
@@ -147,11 +152,32 @@ class Monster3DView @JvmOverloads constructor(context: Context, attrs: Attribute
         private fun drawWraith(x: Float, y: Float, z: Float, s: Float, m: MonsterModelSnapshot, darkBlue: Boolean) {
             val body = if (darkBlue) floatArrayOf(0.10f, 0.13f, 0.30f) else floatArrayOf(0.23f, 0.28f, 0.48f)
             // Голова-сфера и юбка-конус дают узнаваемый призрачный силуэт.
-            drawMesh(sphere, x, y + 0.28f * s, z, s * 0.52f, s * 0.62f, s * 0.45f, 0f, body, m.alpha)
-            drawMesh(cone, x, y - 0.28f * s, z, s * 0.72f, s * 0.95f, s * 0.58f, 180f, body, m.alpha * 0.92f)
+            val sway = sin(elapsed * 2.6f + m.phase) * 0.05f * s
+            val breathe = 1f + sin(elapsed * 3.1f + m.phase) * 0.035f
+            // Многослойный силуэт: капюшон, голова, плечи и рваный подол из отдельных лоскутов.
+            drawMesh(cone, x, y + 0.34f * s, z - 0.03f * s, s * 0.66f * breathe, s * 0.78f, s * 0.52f, 180f, body, m.alpha * 0.96f)
+            drawMesh(sphere, x, y + 0.28f * s, z, s * 0.50f * breathe, s * 0.60f, s * 0.44f, 0f, body, m.alpha)
+            drawMesh(cone, x, y - 0.30f * s, z, s * 0.74f, s * 0.98f, s * 0.58f, 180f, body, m.alpha * 0.90f)
+            drawMesh(sphere, x, y + 0.05f * s, z + 0.05f * s, s * 0.42f, s * 0.52f, s * 0.36f, 0f, floatArrayOf(body[0]*1.25f, body[1]*1.25f, body[2]*1.25f), m.alpha * 0.85f)
+            for (i in -2..2) {
+                val flap = sin(elapsed * 4.2f + m.phase + i * 1.35f) * 0.09f * s
+                drawMesh(cone, x + i * 0.19f * s, y - 0.72f * s + flap, z, s * 0.13f, s * (0.32f + (i + 2) * 0.025f), s * 0.10f, 180f + i * 5f, body, m.alpha * 0.82f)
+            }
+            // Руки с когтями медленно тянутся к игроку.
+            for (side in listOf(-1f, 1f)) {
+                val reach = sin(elapsed * 2.1f + m.phase + side) * 0.06f * s
+                drawMesh(box, x + side * 0.55f * s, y + 0.02f * s, z + 0.16f * s, s * 0.10f, s * 0.62f, s * 0.10f, side * (22f + reach * 30f), body, m.alpha)
+                for (claw in -1..1) drawMesh(cone, x + side * (0.68f + claw * 0.065f) * s, y - 0.34f * s, z + 0.28f * s + reach, s * 0.035f, s * 0.22f, s * 0.035f, 118f, floatArrayOf(.82f,.86f,.95f), m.alpha)
+            }
+            // Тёмный провал лица, светящиеся глаза с бликом и рот.
+            drawMesh(sphere, x, y + 0.30f * s, z + 0.39f * s, s * 0.34f, s * 0.40f, s * 0.10f, 0f, floatArrayOf(0.005f, 0.005f, 0.02f), m.alpha * 0.92f)
             val eye = floatArrayOf(1f, 0.88f, 0.45f)
-            drawMesh(sphere, x - 0.18f * s, y + 0.36f * s, z + 0.38f * s, s * 0.075f, s * 0.045f, s * 0.04f, 0f, eye, m.alpha)
-            drawMesh(sphere, x + 0.18f * s, y + 0.36f * s, z + 0.38f * s, s * 0.075f, s * 0.045f, s * 0.04f, 0f, eye, m.alpha)
+            val blink = if (sin(elapsed * 0.75f + m.phase * 3f) > -0.96f) 1f else 0.18f
+            for (side in listOf(-1f, 1f)) {
+                drawMesh(sphere, x + side * 0.16f * s + sway * .2f, y + 0.37f * s, z + 0.46f * s, s * 0.075f, s * 0.05f * blink, s * 0.04f, 0f, eye, m.alpha)
+                drawMesh(sphere, x + side * 0.16f * s, y + 0.39f * s, z + 0.50f * s, s * 0.022f, s * 0.018f, s * 0.016f, 0f, floatArrayOf(1f,1f,1f), m.alpha)
+            }
+            drawMesh(sphere, x, y + 0.13f * s, z + 0.47f * s, s * 0.11f, s * (0.16f + sin(elapsed*2.4f+m.phase)*0.025f), s * 0.04f, 0f, floatArrayOf(0f,0f,0.01f), m.alpha)
         }
 
         private fun drawSpider(x: Float, y: Float, z: Float, s: Float, m: MonsterModelSnapshot, body: FloatArray) {
@@ -170,6 +196,14 @@ class Monster3DView @JvmOverloads constructor(context: Context, attrs: Attribute
             val eye = floatArrayOf(1f, 0.12f, 0.16f)
             drawMesh(sphere, x - 0.12f * s, y + 0.46f * s, z + 0.28f * s, s * 0.045f, s * 0.045f, s * 0.035f, 0f, eye, m.alpha)
             drawMesh(sphere, x + 0.12f * s, y + 0.46f * s, z + 0.28f * s, s * 0.045f, s * 0.045f, s * 0.035f, 0f, eye, m.alpha)
+            // Шесть дополнительных глаз, клыки-хелицеры и предупреждающий узор на брюшке.
+            for (i in -1..1) drawMesh(sphere, x + i * 0.13f * s, y + 0.34f * s, z + 0.28f * s, s * 0.032f, s * 0.032f, s * 0.026f, 0f, eye, m.alpha)
+            for (side in listOf(-1f, 1f)) {
+                val bite = sin(elapsed * 5.2f + m.phase) * 4f
+                drawMesh(cone, x + side * 0.13f * s, y + 0.23f * s, z + 0.30f * s, s * 0.045f, s * 0.24f, s * 0.045f, 155f + side * bite, floatArrayOf(.78f,.82f,.9f), m.alpha)
+                drawMesh(sphere, x + side * 0.22f * s, y - 0.10f * s, z - 0.22f * s, s * 0.10f, s * 0.055f, s * 0.06f, 0f, floatArrayOf(.65f,.08f,.12f), m.alpha * .75f)
+            }
+            drawMesh(sphere, x, y + 0.10f * s, z - 0.30f * s, s * 0.22f, s * 0.30f, s * 0.10f, 0f, floatArrayOf(.45f,.03f,.08f), m.alpha * .70f)
             if (m.type == GameView.MonsterType.BOSS_MOTHER) {
                 drawMesh(sphere, x, y - 0.28f * s, z - 0.35f * s, s * 0.55f, s * 0.48f, s * 0.52f, 0f, floatArrayOf(0.22f, 0.03f, 0.08f), m.alpha)
             }
@@ -179,6 +213,12 @@ class Monster3DView @JvmOverloads constructor(context: Context, attrs: Attribute
             val pulse = 1f + sin(elapsed * 4.5f + m.phase) * 0.10f
             drawMesh(sphere, x, y, z, s * 0.62f * pulse, s * 0.48f / pulse, s * 0.55f, 0f, floatArrayOf(0.05f, 0.65f, 0.25f), m.alpha * 0.88f)
             drawMesh(sphere, x, y + 0.03f * s, z + 0.08f * s, s * 0.25f, s * 0.20f, s * 0.20f, 0f, floatArrayOf(0.55f, 1f, 0.65f), m.alpha)
+            // Ядро и всплывающие пузырьки внутри тела.
+            drawMesh(sphere, x + sin(elapsed*.9f+m.phase)*.08f*s, y, z+.12f*s, s*.16f, s*.13f, s*.13f, 0f, floatArrayOf(.75f,1f,.55f), m.alpha*.9f)
+            for (i in 0 until 4) {
+                val rise = ((elapsed*.22f + i*.27f + m.phase*.03f) % 1f)
+                drawMesh(sphere, x + sin(i*2.2f+m.phase)*.28f*s, y + (-.22f+rise*.45f)*s, z+.30f*s, s*(.025f+rise*.025f), s*(.025f+rise*.025f), s*.02f, 0f, floatArrayOf(.8f,1f,.85f), m.alpha*.65f)
+            }
             drawMesh(sphere, x - 0.18f * s, y + 0.18f * s, z + 0.42f * s, s * 0.05f, s * 0.07f, s * 0.04f, 0f, floatArrayOf(0f, 0.08f, 0.02f), m.alpha)
             drawMesh(sphere, x + 0.18f * s, y + 0.18f * s, z + 0.42f * s, s * 0.05f, s * 0.07f, s * 0.04f, 0f, floatArrayOf(0f, 0.08f, 0.02f), m.alpha)
         }
@@ -257,7 +297,8 @@ class Monster3DView @JvmOverloads constructor(context: Context, attrs: Attribute
                 void main() {
                     vec3 n = normalize(mat3(uModel) * aNormal);
                     vec3 lightDir = normalize(vec3(0.35, 0.8, 0.65));
-                    vLight = 0.38 + 0.62 * max(dot(n, lightDir), 0.0);
+                    float rim = pow(1.0 - abs(n.z), 2.0);
+                    vLight = 0.34 + 0.58 * max(dot(n, lightDir), 0.0) + rim * 0.38;
                     vNormal = n;
                     gl_Position = uMvp * vec4(aPosition, 1.0);
                 }

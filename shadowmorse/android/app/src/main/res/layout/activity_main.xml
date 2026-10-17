@@ -8,8 +8,9 @@
         <TextView android:id="@+id/timeText" style="@style/HudPill" android:text="⏱ 05:00" />
         <TextView android:id="@+id/livesText" style="@style/HudPill" android:layout_marginStart="8dp" android:text="❤ 3" />
         <TextView android:id="@+id/scoreText" style="@style/HudPill" android:layout_marginStart="8dp" android:text="☠ 0" />
+        <TextView android:id="@+id/shardsText" style="@style/HudPill" android:layout_marginStart="8dp" android:text="◆ 0" android:textColor="#BFE3FF" />
         <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
-        <TextView style="@style/HudPill" android:text="FOV 160°×90°" android:textSize="12sp" />
+        <Button android:id="@+id/exitGameBtn" style="@style/HudPill" android:background="@drawable/button_menu_secondary" android:text="✕ МЕНЮ" android:textColor="#FFD7DE" android:textSize="13sp" />
     </LinearLayout>
 
     <ScrollView android:id="@+id/startPanel" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/menu_bg" android:fillViewport="true" android:paddingLeft="16dp" android:paddingTop="22dp" android:paddingRight="16dp" android:paddingBottom="22dp">
@@ -45,7 +46,7 @@
                 <CheckBox android:id="@+id/debugTouchCheck" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:background="@drawable/menu_rule_bg" android:buttonTint="#FFB25E" android:padding="13dp" android:text="  👆 Сенсорный режим: тапы и свайпы, без детектора света" android:textColor="#D8E2F3" android:textSize="14sp" />
             </LinearLayout>
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:gravity="center" android:text="SHADOW Morse AR · v2.1" android:textColor="#66758D" android:textSize="12sp" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:gravity="center" android:text="SHADOW Morse AR · v2.2" android:textColor="#66758D" android:textSize="12sp" />
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:gravity="center" android:text="Не играй рядом с лестницами и дорогой" android:textColor="#4E5B70" android:textSize="11sp" />
         </LinearLayout>
     </ScrollView>
@@ -53,11 +54,17 @@
     <LinearLayout android:id="@+id/endPanel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center" android:layout_margin="14dp" android:background="@drawable/panel_bg" android:orientation="vertical" android:padding="26dp" android:visibility="gone">
         <TextView android:id="@+id/endTitle" android:layout_width="match_parent" android:layout_height="wrap_content" android:text="Конец игры" android:textColor="#EEF2FF" android:textSize="36sp" android:textStyle="bold" />
         <TextView android:id="@+id/endStats" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="12dp" android:lineSpacingMultiplier="1.35" android:textColor="#CBD5E1" android:textSize="17sp" />
+        <Button android:id="@+id/endMenuBtn" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="14dp" android:background="@drawable/button_secondary" android:padding="13dp" android:text="В главное меню" android:textColor="#E8EFFF" android:textSize="15sp" android:textStyle="bold" />
         <Button android:id="@+id/restartBtn" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="20dp" android:background="@drawable/button_primary" android:padding="14dp" android:text="Играть снова" android:textColor="#06101B" android:textSize="17sp" android:textStyle="bold" />
     </LinearLayout>
 
     <LinearLayout android:id="@+id/consumablesPanel" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="bottom" android:layout_marginLeft="10dp" android:layout_marginRight="10dp" android:layout_marginBottom="64dp" android:orientation="vertical" android:visibility="gone">
-        <TextView android:id="@+id/inventoryText" android:layout_width="match_parent" android:layout_height="wrap_content" android:background="@drawable/hud_pill" android:gravity="center" android:padding="7dp" android:text="Осколки: 0" android:textColor="#EEF2FF" android:textSize="13sp" android:textStyle="bold" />
+        <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:gravity="center_vertical" android:orientation="horizontal">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:background="@drawable/hud_pill" android:paddingLeft="11dp" android:paddingTop="6dp" android:paddingRight="11dp" android:paddingBottom="6dp" android:text="🎒 РАСХОДНИКИ" android:textColor="#DCEAFF" android:textSize="12sp" android:textStyle="bold" />
+            <TextView android:id="@+id/shieldStateText" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="7dp" android:background="@drawable/hud_pill" android:paddingLeft="11dp" android:paddingTop="6dp" android:paddingRight="11dp" android:paddingBottom="6dp" android:text="🛡 щит активен" android:textColor="#9FE8FF" android:textSize="12sp" android:textStyle="bold" android:visibility="gone" />
+            <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content" android:text="нажми, чтобы применить" android:textColor="#99A9C7" android:textSize="11sp" />
+        </LinearLayout>
         <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="6dp" android:scrollbars="none">
             <LinearLayout android:id="@+id/consumablesBar" android:layout_width="wrap_content" android:layout_height="wrap_content" android:orientation="horizontal" />
         </HorizontalScrollView>

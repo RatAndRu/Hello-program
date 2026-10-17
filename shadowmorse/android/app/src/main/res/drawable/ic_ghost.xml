@@ -1,7 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
-    <path android:fillColor="#0B0E1E" android:pathData="M0,0h108v108h-108z" />
-    <path android:fillColor="#89F7FE" android:pathData="M54,14c-17,0 -28,13 -28,31v43l9,-7 8,7 8,-7 7,7 8,-7 9,7V45c0,-18 -11,-31 -21,-31z" />
-    <path android:fillColor="#050711" android:pathData="M43,43a6,6 0,1 1,0.1 0M65,43a6,6 0,1 1,0.1 0" />
-    <path android:strokeColor="#050711" android:strokeWidth="4" android:strokeLineCap="round" android:pathData="M42,65c4,5 8,7 12,7s8,-2 12,-7" />
+    <!-- Неоновый призрак, красный лазерный разрез и код Морзе: три главные механики игры в одной иконке. -->
+    <path android:fillColor="#253BFF" android:fillAlpha="0.30" android:pathData="M54,13c-18,0 -31,14 -31,33v43l9,-8 7,8 8,-8 7,8 7,-8 8,8 9,-8V46c0,-19 -10,-33 -24,-33z" />
+    <path android:fillColor="#7DD7FF" android:pathData="M54,17c-16,0 -27,12 -27,30v39l8,-7 7,7 6,-7 6,7 7,-7 7,7 8,-7V47c0,-18 -9,-30 -22,-30z" />
+    <path android:fillColor="#EAF7FF" android:pathData="M54,22c-12,0 -21,10 -21,24v31l6,-5 5,5 5,-5 5,5 5,-5 5,5 6,-5V46c0,-14 -7,-24 -16,-24z" />
+    <path android:fillColor="#070A1A" android:pathData="M43,45a5.5,7 0,1 1,0.1 0M65,45a5.5,7 0,1 1,0.1 0" />
+    <path android:fillColor="#FF4057" android:pathData="M42,63c3,-5 7,-7 12,-7s9,2 12,7c-4,3 -8,4 -12,4s-8,-1 -12,-4z" />
+    <path android:strokeColor="#FF263D" android:strokeWidth="4" android:strokeLineCap="round" android:pathData="M18,84L91,27" />
+    <path android:strokeColor="#FFD7DC" android:strokeWidth="1.4" android:strokeLineCap="round" android:pathData="M18,84L91,27" />
+    <path android:fillColor="#FFD76A" android:pathData="M30,95a4,4 0,1 1,0.1 0M77,95a4,4 0,1 1,0.1 0" />
+    <path android:fillColor="#FFD76A" android:pathData="M45,92h18a3,3 0,0 1,0 6h-18a3,3 0,0 1,0 -6z" />
 </vector>
