@@ -20,6 +20,8 @@ class ZoomImageView @JvmOverloads constructor(
     private var lastFocus = PointF()
     private var mode = 0 // 0 none, 1 drag
 
+    var onHorizontalSwipe: ((Int) -> Unit)? = null
+
     private val scaleDetector = ScaleGestureDetector(context, object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
         override fun onScale(detector: ScaleGestureDetector): Boolean {
             val old = scaleFactor
@@ -31,6 +33,14 @@ class ZoomImageView @JvmOverloads constructor(
         }
     })
     private val gestureDetector = GestureDetector(context, object : GestureDetector.SimpleOnGestureListener() {
+        override fun onFling(e1: MotionEvent?, e2: MotionEvent, velocityX: Float, velocityY: Float): Boolean {
+            if (scaleFactor <= 1.05f && kotlin.math.abs(velocityX) > kotlin.math.abs(velocityY) && kotlin.math.abs(velocityX) > 450f) {
+                onHorizontalSwipe?.invoke(if (velocityX < 0) 1 else -1)
+                return true
+            }
+            return false
+        }
+
         override fun onDoubleTap(e: MotionEvent): Boolean {
             if (scaleFactor > 1.05f) reset() else {
                 drawMatrix2.postScale(2.2f, 2.2f, e.x, e.y); scaleFactor = 2.2f; clamp(); imageMatrix = drawMatrix2

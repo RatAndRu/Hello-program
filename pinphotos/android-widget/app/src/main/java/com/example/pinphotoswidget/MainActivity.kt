@@ -1,6 +1,5 @@
 package com.example.pinphotoswidget
 
-import android.app.Activity
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
@@ -19,6 +18,10 @@ import android.widget.PopupMenu
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
+import androidx.fragment.app.FragmentActivity
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import org.json.JSONObject
@@ -26,7 +29,7 @@ import java.io.File
 import java.util.concurrent.Executors
 
 /** Полностью нативное приложение «ЗакрепФото» (без WebView): сетка фото, импорт, виджет, иконки. */
-class MainActivity : Activity() {
+class MainActivity : FragmentActivity() {
     private lateinit var grid: RecyclerView
     private lateinit var emptyView: View
     private lateinit var widgetStatus: TextView
@@ -35,6 +38,7 @@ class MainActivity : Activity() {
     private var selectedAlbum: String = ALL_ALBUMS
     private var pendingImportAlbum: String = ""
     private val selectedIds = linkedSetOf<String>()
+    private val unlockedAlbums = mutableSetOf<String>()
     private val io = Executors.newFixedThreadPool(3)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -46,8 +50,8 @@ class MainActivity : Activity() {
         widgetStatus = findViewById(R.id.widgetStatus)
         countText = findViewById(R.id.countText)
         grid.layoutManager = GridLayoutManager(this, 3)
-        findViewById<Button>(R.id.importBtn).setOnClickListener { chooseImportAlbum() }
-        findViewById<Button>(R.id.emptyImportBtn).setOnClickListener { chooseImportAlbum() }
+        findViewById<Button>(R.id.importBtn).setOnClickListener { importPressed() }
+        findViewById<Button>(R.id.emptyImportBtn).setOnClickListener { importPressed() }
         findViewById<Button>(R.id.addWidgetBtn).setOnClickListener { chooseWidgetSize() }
         findViewById<View>(R.id.menuBtn).setOnClickListener { showMenu(it) }
         findViewById<View>(R.id.exitBtn).setOnClickListener { finishAndRemoveTask() }
@@ -62,21 +66,23 @@ class MainActivity : Activity() {
 
     private fun refresh() {
         photos = PhotoStore.list(this)
-        val pinnedCount = photos.count { it.pinned }
-        countText.text = if (photos.isEmpty()) "" else "${photos.size}"
+        val lockedNames = PhotoStore.lockedAlbumNames(this)
+        val visiblePhotos = photos.filterNot { it.album in lockedNames && it.album != selectedAlbum }
+        val pinnedCount = photos.count { it.pinned && it.album !in lockedNames }
+        countText.text = if (visiblePhotos.isEmpty()) "" else "${visiblePhotos.size}"
         widgetStatus.text = when {
-            photos.isEmpty() -> "Нет фотографий"
+            visiblePhotos.isEmpty() -> "Нет фотографий"
             pinnedCount == 0 -> "Нет закреплённых — откройте фото и нажмите «Закрепить»"
             pinnedCount == 1 -> "В виджете: 1 фото"
             else -> "В виджете: $pinnedCount фото · листаются каждые ~30 мин"
         }
         renderAlbums()
-        val displayed = if (selectedAlbum == ALL_ALBUMS) photos else photos.filter { it.album == selectedAlbum }
+        val displayed = if (selectedAlbum == ALL_ALBUMS) visiblePhotos else photos.filter { it.album == selectedAlbum }
         selectedIds.retainAll(photos.map { it.id }.toSet())
         emptyView.visibility = if (displayed.isEmpty()) View.VISIBLE else View.GONE
         grid.visibility = if (displayed.isEmpty()) View.GONE else View.VISIBLE
         findViewById<TextView>(R.id.emptyText).text = when {
-            photos.isEmpty() -> "Пока нет фотографий"
+            displayed.isEmpty() && photos.isEmpty() -> "Пока нет фотографий"
             else -> "В этом альбоме пока пусто"
         }
         val bar = findViewById<View>(R.id.selectionBar)
@@ -85,7 +91,10 @@ class MainActivity : Activity() {
         grid.adapter = PhotoAdapter(displayed, selectedIds,
             onClick = { photo ->
                 if (selectedIds.isNotEmpty()) toggleSelected(photo) else {
-                    startActivity(Intent(this, PhotoActivity::class.java).putExtra("id", photo.id))
+                    val ids = ArrayList(displayed.map { it.id })
+                    startActivity(Intent(this, PhotoActivity::class.java)
+                        .putStringArrayListExtra("ids", ids)
+                        .putExtra("index", displayed.indexOf(photo)))
                 }
             },
             onLongClick = { photo -> toggleSelected(photo) }
@@ -128,12 +137,22 @@ class MainActivity : Activity() {
     }
 
     private fun albumTile(album: String, albumPhotos: List<Photo>): View {
+        val security = PhotoStore.securityFor(this, album)
+        val isLocked = security.locked && album !in unlockedAlbums
         val tile = android.widget.FrameLayout(this).apply {
             setBackgroundResource(if (album == selectedAlbum) R.drawable.btn_primary else R.drawable.card_bg)
             clipToOutline = true
             setOnClickListener {
-                selectedAlbum = if (selectedAlbum == album) ALL_ALBUMS else album
-                refresh()
+                if (selectedAlbum == album) {
+                    selectedAlbum = ALL_ALBUMS; unlockedAlbums.remove(album); refresh()
+                } else if (isLocked) {
+                    showUnlockDialog(album) { selectedAlbum = album; refresh() }
+                } else { selectedAlbum = album; refresh() }
+            }
+            setOnLongClickListener {
+                if (isLocked) showUnlockDialog(album) { showAlbumActions(album) }
+                else showAlbumActions(album)
+                true
             }
         }
         val cover = ImageView(this).apply {
@@ -142,7 +161,7 @@ class MainActivity : Activity() {
         }
         tile.addView(cover, android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(72)))
-        val newest = albumPhotos.maxByOrNull { it.createdAt }
+        val newest = if (isLocked) null else albumPhotos.maxByOrNull { it.createdAt }
         if (newest != null) {
             val path = newest.fileIn(PhotoStore.dir(this)).absolutePath
             cover.tag = album
@@ -156,7 +175,7 @@ class MainActivity : Activity() {
             }
         }
         val label = TextView(this).apply {
-            text = "$album · ${albumPhotos.size}"
+            text = if (isLocked) "🔒 $album" else "$album · ${albumPhotos.size}"
             textSize = 12f; gravity = android.view.Gravity.CENTER
             setTextColor(if (album == selectedAlbum) 0xFFFFFFFF.toInt() else UiTheme.color(this@MainActivity, R.attr.appText))
             setPadding(dp(4), dp(5), dp(4), dp(5))
@@ -172,37 +191,206 @@ class MainActivity : Activity() {
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
+    // ---------- Защита альбомов и действия по долгому нажатию ----------
+
+    private fun themedInput(hintText: String, numericPin: Boolean = false): android.widget.EditText {
+        return android.widget.EditText(this).apply {
+            hint = hintText; setSingleLine(true); setBackgroundResource(R.drawable.input_bg)
+            setTextColor(UiTheme.color(this@MainActivity, R.attr.appText))
+            setHintTextColor(UiTheme.color(this@MainActivity, R.attr.appMuted))
+            if (numericPin) {
+                inputType = android.text.InputType.TYPE_CLASS_NUMBER or android.text.InputType.TYPE_NUMBER_VARIATION_PASSWORD
+                filters = arrayOf(android.text.InputFilter.LengthFilter(4))
+            }
+        }
+    }
+
+    private fun showUnlockDialog(album: String, onSuccess: () -> Unit) {
+        val security = PhotoStore.securityFor(this, album)
+        val input = themedInput("4-значный пароль", numericPin = true)
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(22), dp(10), dp(22), dp(4)); addView(input)
+        }
+        val builder = android.app.AlertDialog.Builder(this)
+            .setTitle("🔒 $album")
+            .setView(box)
+            .setNegativeButton("Отмена", null)
+        if (security.pinHash.isNotEmpty()) {
+            builder.setPositiveButton("Открыть") { _, _ ->
+                val pin = input.text.toString()
+                if (PhotoStore.verifyAlbumPin(this, album, pin)) {
+                    unlockedAlbums.add(album); onSuccess()
+                } else toast("Неверный пароль")
+            }
+        }
+        if (security.biometric) {
+            builder.setNeutralButton("По отпечатку") { _, _ -> authenticateBiometric(album, onSuccess) }
+            if (security.pinHash.isEmpty()) builder.setMessage("Откройте альбом отпечатком пальца")
+        }
+        builder.show()
+        if (security.biometric && security.pinHash.isEmpty()) authenticateBiometric(album, onSuccess)
+    }
+
+    private fun authenticateBiometric(album: String, onSuccess: () -> Unit) {
+        val manager = BiometricManager.from(this)
+        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+        if (manager.canAuthenticate(authenticators) != BiometricManager.BIOMETRIC_SUCCESS) {
+            toast("Отпечаток недоступен на этом устройстве"); return
+        }
+        val prompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this), object : BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                unlockedAlbums.add(album); onSuccess()
+            }
+            override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
+                if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
+                    toast("Отпечаток не подтверждён: $errString")
+                }
+            }
+        })
+        val info = BiometricPrompt.PromptInfo.Builder()
+            .setTitle("Открыть альбом")
+            .setSubtitle(album)
+            .setNegativeButtonText("Отмена")
+            .build()
+        prompt.authenticate(info)
+    }
+
+    private fun showAlbumActions(album: String) {
+        val security = PhotoStore.securityFor(this, album)
+        data class Action(val label: String, val run: () -> Unit)
+        val actions = mutableListOf<Action>()
+        actions.add(Action("Слияние в другой альбом…") { chooseMergeDestination(album) })
+        actions.add(Action("Удалить альбом и его фото…") { confirmDeleteAlbum(album) })
+        if (security.pinHash.isEmpty()) {
+            actions.add(Action("Установить 4-значный пароль") { showSetPinDialog(album) })
+        } else {
+            actions.add(Action("Изменить пароль") { showSetPinDialog(album) })
+            actions.add(Action("Снять пароль") {
+                PhotoStore.clearAlbumPin(this, album)
+                if (!PhotoStore.securityFor(this, album).locked) unlockedAlbums.remove(album)
+                toast("Пароль снят"); refresh()
+            })
+        }
+        actions.add(Action(if (security.biometric) "Отключить вход по отпечатку" else "Вход по отпечатку: включить") {
+            val manager = BiometricManager.from(this)
+            val auth = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+            if (!security.biometric && manager.canAuthenticate(auth) != BiometricManager.BIOMETRIC_SUCCESS) {
+                toast("На устройстве нет доступного отпечатка")
+            } else {
+                PhotoStore.setAlbumBiometric(this, album, !security.biometric)
+                toast(if (!security.biometric) "Отпечаток включён" else "Отпечаток отключён"); refresh()
+            }
+        })
+        if (album in unlockedAlbums) actions.add(Action("Закрыть альбом сейчас") {
+            unlockedAlbums.remove(album); if (selectedAlbum == album) selectedAlbum = ALL_ALBUMS; refresh()
+        })
+        android.app.AlertDialog.Builder(this)
+            .setTitle(album)
+            .setItems(actions.map { it.label }.toTypedArray()) { _, which -> actions[which].run() }
+            .setNegativeButton("Отмена", null)
+            .show()
+    }
+
+    private fun showSetPinDialog(album: String) {
+        val first = themedInput("Новый пароль: 4 цифры", numericPin = true)
+        val second = themedInput("Повторите пароль", numericPin = true)
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL
+            setPadding(dp(22), dp(10), dp(22), dp(4)); addView(first); addView(second)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Пароль альбома")
+            .setView(box)
+            .setPositiveButton("Сохранить") { _, _ ->
+                val a = first.text.toString(); val b = second.text.toString()
+                when {
+                    !a.matches(Regex("\\d{4}")) -> toast("Пароль должен состоять ровно из 4 цифр")
+                    a != b -> toast("Пароли не совпадают")
+                    else -> {
+                        PhotoStore.setAlbumPin(this, album, a)
+                        unlockedAlbums.add(album)
+                        toast("Пароль установлен"); refresh()
+                    }
+                }
+            }
+            .setNegativeButton("Отмена", null).show()
+    }
+
+    private fun chooseMergeDestination(source: String) {
+        val destinations = PhotoStore.albums(this).filterNot { it == source }
+        if (destinations.isEmpty()) { toast("Нет другого альбома для слияния"); return }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Слить «$source» в…")
+            .setItems(destinations.toTypedArray()) { _, which ->
+                val moved = PhotoStore.mergeAlbums(this, source, destinations[which])
+                toast("Перемещено фото: $moved. Альбом «$source» сохранён")
+                if (selectedAlbum == source) selectedAlbum = destinations[which]
+                refresh()
+            }
+            .setNegativeButton("Отмена", null).show()
+    }
+
+    private fun confirmDeleteAlbum(album: String) {
+        val count = photos.count { it.album == album }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Удалить альбом?")
+            .setMessage("Альбом «$album» и все его фотографии ($count шт.) будут удалены из приложения. Оригиналы в галерее телефона не тронем.")
+            .setPositiveButton("Удалить всё") { _, _ ->
+                val removed = PhotoStore.deleteAlbumWithPhotos(this, album)
+                unlockedAlbums.remove(album)
+                if (selectedAlbum == album) selectedAlbum = ALL_ALBUMS
+                toast("Удалено фото: $removed"); refresh()
+            }
+            .setNegativeButton("Отмена", null).show()
+    }
+
+
     private fun showMenu(anchor: View) {
+        // Оставлены только редкие служебные действия: бэкап и иконка.
+        // Добавление фото/виджета, альбомы и тема живут своими кнопками на экране.
         val menu = PopupMenu(this, anchor)
-        menu.menu.add(0, 1, 0, "Добавить фото")
-        menu.menu.add(0, 2, 0, "Добавить виджет…")
-        menu.menu.add(0, 3, 0, "Бэкап: сохранить JSON")
-        menu.menu.add(0, 4, 0, "Восстановить из JSON")
-        menu.menu.add(0, 5, 0, "Иконка: обычная 📌")
-        menu.menu.add(0, 6, 0, "Иконка: огненная 🔥")
-        menu.menu.add(0, 7, 0, "Иконка: сонная 😴")
-        menu.menu.add(0, 8, 0, "Создать альбом")
-        menu.menu.add(0, 9, 0, if (UiTheme.isDark(this)) "Светлая тема ☀️" else "Тёмная тема 🌙")
+        menu.menu.add(0, 1, 0, "Бэкап: сохранить JSON")
+        menu.menu.add(0, 2, 0, "Восстановить из JSON")
+        menu.menu.add(0, 3, 0, "Иконка: обычная 📌")
+        menu.menu.add(0, 4, 0, "Иконка: огненная 🔥")
+        menu.menu.add(0, 5, 0, "Иконка: сонная 😴")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
-                1 -> chooseImportAlbum()
-                2 -> chooseWidgetSize()
-                3 -> startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                1 -> startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"
                     putExtra(Intent.EXTRA_TITLE, "pinphotos-backup.json")
                 }, EXPORT_JSON)
-                4 -> startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+                2 -> startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
                 }, IMPORT_JSON)
-                5 -> IconSwitcher.setIcon(this, IconSwitcher.NORMAL)
-                6 -> IconSwitcher.setIcon(this, IconSwitcher.FIRE)
-                7 -> IconSwitcher.setIcon(this, IconSwitcher.SLEEPY)
-                8 -> showCreateAlbumDialog { album -> selectedAlbum = album; refresh() }
-                9 -> UiTheme.toggle(this)
+                3 -> IconSwitcher.setIcon(this, IconSwitcher.NORMAL)
+                4 -> IconSwitcher.setIcon(this, IconSwitcher.FIRE)
+                5 -> IconSwitcher.setIcon(this, IconSwitcher.SLEEPY)
             }
             true
         }
         menu.show()
+    }
+
+    private fun importPressed() {
+        if (selectedAlbum != ALL_ALBUMS) {
+            pendingImportAlbum = selectedAlbum
+            pickPhotos()
+        } else chooseImportAlbum()
+    }
+
+    @Deprecated("системная кнопка/жест назад")
+    override fun onBackPressed() {
+        when {
+            selectedIds.isNotEmpty() -> { selectedIds.clear(); refresh() }
+            selectedAlbum != ALL_ALBUMS -> {
+                selectedAlbum = ALL_ALBUMS
+                unlockedAlbums.clear()
+                refresh()
+            }
+            else -> finish()
+        }
     }
 
     private fun showCreateAlbumDialog(onCreated: (String) -> Unit) {
@@ -331,7 +519,7 @@ class MainActivity : Activity() {
                         if (encoded.isEmpty()) continue
                         val p = PhotoStore.importBytes(this, android.util.Base64.decode(encoded, android.util.Base64.DEFAULT),
                             o.optString("mime", "image/jpeg"), o.optString("name", "Фото"))
-                        p.album = o.optString("album", "Разное"); p.note = o.optString("note")
+                        p.album = o.optString("album").takeUnless { it == "Разное" } ?: ""; p.note = o.optString("note")
                         p.pinned = o.optBoolean("pinned")
                         o.optJSONArray("tags")?.let { t -> for (j in 0 until t.length()) p.tags.add(t.optString(j)) }
                         PhotoStore.update(this, p); added++

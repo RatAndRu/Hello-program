@@ -53,7 +53,8 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
         )
 
         private fun shift(context: Context, delta: Int) {
-            val size = PhotoStore.list(context).count { it.pinned }
+            val lockedNames = PhotoStore.lockedAlbumNames(context)
+            val size = PhotoStore.list(context).count { it.pinned && it.album !in lockedNames }
             if (size == 0) return
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val cur = prefs.getInt(KEY_INDEX, 0)
@@ -71,7 +72,8 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
         private fun render(context: Context, manager: AppWidgetManager, widgetId: Int, cls: Class<out PinnedPhotoWidgetBase>) {
             val views = RemoteViews(context.packageName, R.layout.widget_pinned_photo)
             val all = PhotoStore.list(context)
-            val pinned = all.filter { it.pinned }
+            val lockedNames = PhotoStore.lockedAlbumNames(context)
+            val pinned = all.filter { it.pinned && it.album !in lockedNames }
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
             when {

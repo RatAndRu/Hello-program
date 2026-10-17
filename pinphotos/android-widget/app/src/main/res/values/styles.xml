@@ -42,18 +42,22 @@
 
     <style name="AppDialogTheme" parent="AppDialogThemeLight" />
     <style name="AppDialogThemeLight" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="appBackground">#FFF7ED</item><item name="appSurface">#FFFFFF</item><item name="appSurfaceAlt">#FFE8D6</item><item name="appBorder">#F2DEC8</item><item name="appText">#24313A</item><item name="appMuted">#66727E</item><item name="appAccent">#0F766E</item>
         <item name="android:windowBackground">@drawable/dialog_bg_light</item>
         <item name="android:colorAccent">#0F766E</item>
         <item name="android:textColorPrimary">#24313A</item>
         <item name="android:textColorSecondary">#66727E</item>
+        <item name="android:textColorAlertDialogListItem">#24313A</item>
         <item name="android:buttonBarPositiveButtonStyle">@style/DialogPositiveButtonLight</item>
         <item name="android:buttonBarNegativeButtonStyle">@style/DialogNegativeButtonLight</item>
     </style>
     <style name="AppDialogThemeDark" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="appBackground">#12161C</item><item name="appSurface">#1E242E</item><item name="appSurfaceAlt">#28313D</item><item name="appBorder">#3A4656</item><item name="appText">#F2F5F7</item><item name="appMuted">#A8B2BF</item><item name="appAccent">#5EEAD4</item>
         <item name="android:windowBackground">@drawable/dialog_bg_dark</item>
         <item name="android:colorAccent">#5EEAD4</item>
         <item name="android:textColorPrimary">#F2F5F7</item>
         <item name="android:textColorSecondary">#A8B2BF</item>
+        <item name="android:textColorAlertDialogListItem">#F2F5F7</item>
         <item name="android:buttonBarPositiveButtonStyle">@style/DialogPositiveButtonDark</item>
         <item name="android:buttonBarNegativeButtonStyle">@style/DialogNegativeButtonDark</item>
     </style>

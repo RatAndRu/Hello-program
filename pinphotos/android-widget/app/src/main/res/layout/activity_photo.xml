@@ -3,9 +3,24 @@
     android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
     android:background="?attr/appBackground" android:fitsSystemWindows="true">
 
-    <com.example.pinphotoswidget.ZoomImageView android:id="@+id/fullImage"
-        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
-        android:background="#111827" android:contentDescription="Фото. Зум щипком или двойным нажатием"/>
+    <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:background="#111827">
+        <com.example.pinphotoswidget.ZoomImageView android:id="@+id/fullImage"
+            android:layout_width="match_parent" android:layout_height="match_parent"
+            android:contentDescription="Фото. Зум щипком или двойным нажатием"/>
+        <TextView android:id="@+id/prevBtn" android:text="‹" android:textColor="#FFFFFF" android:textSize="38sp"
+            android:background="@drawable/nav_arrow_bg" android:gravity="center"
+            android:layout_width="46dp" android:layout_height="64dp" android:layout_gravity="center_vertical|start"
+            android:layout_marginStart="8dp" android:contentDescription="Предыдущее фото"/>
+        <TextView android:id="@+id/nextBtn" android:text="›" android:textColor="#FFFFFF" android:textSize="38sp"
+            android:background="@drawable/nav_arrow_bg" android:gravity="center"
+            android:layout_width="46dp" android:layout_height="64dp" android:layout_gravity="center_vertical|end"
+            android:layout_marginEnd="8dp" android:contentDescription="Следующее фото"/>
+        <TextView android:id="@+id/positionText" android:textColor="#FFFFFF" android:textSize="12sp"
+            android:background="@drawable/nav_arrow_bg" android:paddingHorizontal="9dp" android:paddingVertical="4dp"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:layout_gravity="top|center_horizontal" android:layout_marginTop="10dp"/>
+    </FrameLayout>
 
     <LinearLayout android:orientation="vertical" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:background="@drawable/card_bg" android:layout_margin="12dp" android:padding="12dp">

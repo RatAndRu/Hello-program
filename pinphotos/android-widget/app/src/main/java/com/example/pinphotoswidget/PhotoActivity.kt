@@ -22,37 +22,64 @@ import java.io.File
 
 class PhotoActivity : Activity() {
     private var photo: Photo? = null
+    private var ids: List<String> = emptyList()
+    private var index: Int = 0
 
     override fun onCreate(savedInstanceState: Bundle?) {
         UiTheme.apply(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_photo)
-        val id = intent.getStringExtra("id") ?: return finish()
-        photo = PhotoStore.list(this).firstOrNull { it.id == id } ?: return finish()
-        val p = photo!!
+        ids = intent.getStringArrayListExtra("ids") ?: arrayListOf()
+        if (ids.isEmpty()) intent.getStringExtra("id")?.let { ids = listOf(it) }
+        if (ids.isEmpty()) return finish()
+        index = intent.getIntExtra("index", 0).coerceIn(0, ids.lastIndex)
+        loadCurrent()
 
-        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-        findViewById<ImageView>(R.id.fullImage).setImageBitmap(
-            BitmapFactory.decodeFile(p.fileIn(PhotoStore.dir(this)).absolutePath, opts)
-        )
-        renderText()
+        val zoom = findViewById<ZoomImageView>(R.id.fullImage)
+        zoom.onHorizontalSwipe = { delta -> move(delta) }
+        findViewById<TextView>(R.id.prevBtn).setOnClickListener { move(-1) }
+        findViewById<TextView>(R.id.nextBtn).setOnClickListener { move(1) }
 
         findViewById<Button>(R.id.pinBtn).setOnClickListener {
-            p.pinned = !p.pinned; PhotoStore.update(this, p); renderText()
+            val current = photo ?: return@setOnClickListener
+            current.pinned = !current.pinned; PhotoStore.update(this, current); renderText()
             PinnedPhotoWidgetBase.updateAll(this)
-            Toast.makeText(this, if (p.pinned) "Закреплено — фото в виджете" else "Откреплено", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, if (current.pinned) "Закреплено — фото в виджете" else "Откреплено", Toast.LENGTH_SHORT).show()
         }
-        findViewById<Button>(R.id.shareBtn).setOnClickListener { share(p) }
-        findViewById<Button>(R.id.copyBtn).setOnClickListener { copy(p) }
-        findViewById<Button>(R.id.editBtn).setOnClickListener { edit(p) }
+        findViewById<Button>(R.id.shareBtn).setOnClickListener { photo?.let { share(it) } }
+        findViewById<Button>(R.id.copyBtn).setOnClickListener { photo?.let { copy(it) } }
+        findViewById<Button>(R.id.editBtn).setOnClickListener { photo?.let { edit(it) } }
         findViewById<Button>(R.id.deleteBtn).setOnClickListener {
+            val current = photo ?: return@setOnClickListener
             AlertDialog.Builder(this).setTitle("Удалить фото?")
                 .setMessage("Копия в приложении будет удалена. Оригинал в галерее не тронем.")
                 .setPositiveButton("Удалить") { _, _ ->
-                    PhotoStore.delete(this, p); PinnedPhotoWidgetBase.updateAll(this); finish()
+                    PhotoStore.delete(this, current); PinnedPhotoWidgetBase.updateAll(this)
+                    val remaining = ids.toMutableList().apply { remove(current.id) }
+                    if (remaining.isEmpty()) finish() else {
+                        ids = remaining; index = index.coerceAtMost(ids.lastIndex); loadCurrent()
+                    }
                 }
                 .setNegativeButton("Отмена", null).show()
         }
+    }
+
+    private fun loadCurrent() {
+        val all = PhotoStore.list(this)
+        photo = all.firstOrNull { it.id == ids[index] }
+        val current = photo ?: return
+        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
+        findViewById<ImageView>(R.id.fullImage).setImageBitmap(
+            BitmapFactory.decodeFile(current.fileIn(PhotoStore.dir(this)).absolutePath, opts)
+        )
+        findViewById<TextView>(R.id.positionText).text = "${index + 1} / ${ids.size}"
+        renderText()
+    }
+
+    private fun move(delta: Int) {
+        if (ids.size <= 1) return
+        index = ((index + delta) % ids.size + ids.size) % ids.size
+        loadCurrent()
     }
 
     private fun renderText() {

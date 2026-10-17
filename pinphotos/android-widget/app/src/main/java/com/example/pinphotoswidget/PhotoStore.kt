@@ -3,6 +3,8 @@ package com.example.pinphotoswidget
 import android.content.Context
 import org.json.JSONArray
 import org.json.JSONObject
+import android.util.Base64
+import java.security.MessageDigest
 import java.io.File
 import java.util.UUID
 
@@ -20,7 +22,15 @@ data class Photo(
     fun fileIn(dir: File) = File(dir, file)
 }
 
-/** Нативное хранилище: files/photos/<файл> + meta.json. Совместимо с данными гибридной версии. */
+data class AlbumSecurity(
+    val name: String,
+    val pinHash: String = "",
+    val salt: String = "",
+    val biometric: Boolean = false
+) {
+    val locked: Boolean get() = pinHash.isNotEmpty() || biometric
+}
+
 object PhotoStore {
     private const val DIR = "photos"
     private const val META = "meta.json"
@@ -81,6 +91,105 @@ object PhotoStore {
             albumsFile(context).writeText(JSONArray(all).toString())
         }
         return all.first { it.equals(clean, ignoreCase = true) }
+    }
+
+    // ---------- Альбомы: пароли, отпечаток, слияние, удаление ----------
+
+    private fun securityFile(context: Context) = File(dir(context), "albums_security.json")
+
+    @Synchronized
+    fun albumSecurity(context: Context): List<AlbumSecurity> {
+        val byName = linkedMapOf<String, AlbumSecurity>()
+        albums(context).forEach { byName[it] = AlbumSecurity(it) }
+        try {
+            val f = securityFile(context)
+            if (f.exists()) {
+                val arr = JSONArray(f.readText())
+                for (i in 0 until arr.length()) {
+                    val o = arr.getJSONObject(i)
+                    val name = o.optString("name")
+                    if (name.isNotBlank()) byName[name] = AlbumSecurity(
+                        name = name,
+                        pinHash = o.optString("pinHash"),
+                        salt = o.optString("salt"),
+                        biometric = o.optBoolean("biometric")
+                    )
+                }
+            }
+        } catch (e: Exception) { }
+        return byName.values.toList()
+    }
+
+    fun securityFor(context: Context, album: String): AlbumSecurity =
+        albumSecurity(context).firstOrNull { it.name == album } ?: AlbumSecurity(album)
+
+    fun lockedAlbumNames(context: Context): Set<String> =
+        albumSecurity(context).filter { it.locked }.map { it.name }.toSet()
+
+    @Synchronized
+    private fun saveSecurity(context: Context, item: AlbumSecurity) {
+        val all = albumSecurity(context).toMutableList()
+        val idx = all.indexOfFirst { it.name == item.name }
+        if (idx >= 0) all[idx] = item else all.add(item)
+        val arr = JSONArray()
+        all.forEach { s -> arr.put(JSONObject().put("name", s.name).put("pinHash", s.pinHash).put("salt", s.salt).put("biometric", s.biometric)) }
+        securityFile(context).writeText(arr.toString())
+    }
+
+    private fun hashPin(salt: String, pin: String): String {
+        val digest = MessageDigest.getInstance("SHA-256").digest("$salt:$pin".toByteArray(Charsets.UTF_8))
+        return Base64.encodeToString(digest, Base64.NO_WRAP)
+    }
+
+    @Synchronized
+    fun setAlbumPin(context: Context, album: String, pin: String) {
+        require(pin.matches(Regex("\\d{4}"))) { "Пароль должен состоять из 4 цифр" }
+        val salt = UUID.randomUUID().toString()
+        val current = securityFor(context, album)
+        saveSecurity(context, current.copy(pinHash = hashPin(salt, pin), salt = salt))
+    }
+
+    @Synchronized
+    fun clearAlbumPin(context: Context, album: String) {
+        val current = securityFor(context, album)
+        saveSecurity(context, current.copy(pinHash = "", salt = ""))
+    }
+
+    fun verifyAlbumPin(context: Context, album: String, pin: String): Boolean {
+        val s = securityFor(context, album)
+        return s.pinHash.isNotEmpty() && hashPin(s.salt, pin) == s.pinHash
+    }
+
+    @Synchronized
+    fun setAlbumBiometric(context: Context, album: String, enabled: Boolean) {
+        saveSecurity(context, securityFor(context, album).copy(biometric = enabled))
+    }
+
+    @Synchronized
+    fun mergeAlbums(context: Context, source: String, destination: String): Int {
+        if (source == destination) return 0
+        val all = list(context); var moved = 0
+        all.forEach { if (it.album == source) { it.album = destination; moved++ } }
+        if (moved > 0) saveAll(context, all)
+        return moved
+    }
+
+    @Synchronized
+    fun deleteAlbumWithPhotos(context: Context, album: String): Int {
+        val all = list(context)
+        val victims = all.filter { it.album == album }
+        victims.forEach { it.fileIn(dir(context)).delete() }
+        saveAll(context, all.filterNot { it.album == album })
+        // Убрать альбом из реестра и его защиту
+        try {
+            val names = albums(context).filterNot { it == album }
+            albumsFile(context).writeText(JSONArray(names).toString())
+        } catch (e: Exception) { }
+        val remaining = albumSecurity(context).filterNot { it.name == album }
+        val arr = JSONArray()
+        remaining.forEach { s -> arr.put(JSONObject().put("name", s.name).put("pinHash", s.pinHash).put("salt", s.salt).put("biometric", s.biometric)) }
+        securityFile(context).writeText(arr.toString())
+        return victims.size
     }
 
     @Synchronized
