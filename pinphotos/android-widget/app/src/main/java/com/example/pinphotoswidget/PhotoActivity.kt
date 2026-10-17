@@ -24,6 +24,7 @@ class PhotoActivity : Activity() {
     private var photo: Photo? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        UiTheme.apply(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_photo)
         val id = intent.getStringExtra("id") ?: return finish()
@@ -99,17 +100,27 @@ class PhotoActivity : Activity() {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(52, 28, 52, 10) }
         fun styledEdit(value: String, hintText: String) = EditText(this).apply {
             setText(value); hint = hintText; setSingleLine(true)
-            setBackgroundResource(R.drawable.input_bg); setTextColor(0xFF24313A.toInt()); setHintTextColor(0xFF98A2AE.toInt())
+            setBackgroundResource(R.drawable.input_bg); setTextColor(UiTheme.color(this@PhotoActivity, R.attr.appText)); setHintTextColor(UiTheme.color(this@PhotoActivity, R.attr.appMuted))
         }
         val name = styledEdit(p.name, "Название")
-        val albums = PhotoStore.albums(this).toMutableList()
+        val albumNames = PhotoStore.albums(this).toMutableList()
+        val displayAlbums = mutableListOf("Без альбома").apply { addAll(albumNames) }
+        val albumAdapter = object : ArrayAdapter<String>(this@PhotoActivity, R.layout.spinner_item, displayAlbums) {
+            override fun getDropDownView(position: Int, convertView: android.view.View?, parent: android.view.ViewGroup): android.view.View {
+                val view = super.getDropDownView(position, convertView, parent) as TextView
+                view.setBackgroundColor(UiTheme.color(this@PhotoActivity, R.attr.appSurface))
+                view.setTextColor(UiTheme.color(this@PhotoActivity, R.attr.appText))
+                return view
+            }
+        }.also { it.setDropDownViewResource(R.layout.spinner_dropdown_item) }
         val album = Spinner(this).apply {
-            adapter = ArrayAdapter(this@PhotoActivity, android.R.layout.simple_spinner_dropdown_item, albums)
-            setSelection(albums.indexOf(p.album).coerceAtLeast(0))
+            adapter = albumAdapter
+            setSelection(if (p.album.isBlank()) 0 else displayAlbums.indexOf(p.album).coerceAtLeast(0))
             setBackgroundResource(R.drawable.input_bg)
+            setPopupBackgroundResource(if (UiTheme.isDark(this@PhotoActivity)) R.drawable.dialog_bg_dark else R.drawable.dialog_bg_light)
         }
         val newAlbum = Button(this).apply {
-            text = "＋ Новый альбом"; setTextColor(0xFFB45309.toInt()); setBackgroundResource(R.drawable.btn_soft)
+            text = "＋ Новый альбом"; setTextColor(UiTheme.color(this@PhotoActivity, R.attr.appAccent)); setBackgroundResource(R.drawable.btn_soft)
             setOnClickListener {
                 val input = styledEdit("", "Название альбома")
                 AlertDialog.Builder(this@PhotoActivity).setTitle("Новый альбом")
@@ -117,9 +128,9 @@ class PhotoActivity : Activity() {
                     .setPositiveButton("Создать") { _, _ ->
                         try {
                             val created = PhotoStore.createAlbum(this@PhotoActivity, input.text.toString())
-                            albums.clear(); albums.addAll(PhotoStore.albums(this@PhotoActivity))
-                            (album.adapter as ArrayAdapter<*>).notifyDataSetChanged()
-                            album.setSelection(albums.indexOf(created))
+                            displayAlbums.clear(); displayAlbums.add("Без альбома"); displayAlbums.addAll(PhotoStore.albums(this@PhotoActivity))
+                            albumAdapter.notifyDataSetChanged()
+                            album.setSelection(displayAlbums.indexOf(created))
                         } catch (e: Exception) { Toast.makeText(this@PhotoActivity, "Введите название", Toast.LENGTH_SHORT).show() }
                     }
                     .setNegativeButton("Отмена", null).show()
@@ -127,11 +138,12 @@ class PhotoActivity : Activity() {
         }
         val tags = styledEdit(p.tags.joinToString(", "), "Теги через запятую")
         val note = styledEdit(p.note, "Заметка")
-        box.addView(name); box.addView(album); box.addView(newAlbum); box.addView(tags); box.addView(note)
+        val lp = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { topMargin = 10 }
+            box.addView(name); box.addView(album, lp); box.addView(newAlbum, lp); box.addView(tags, lp); box.addView(note, lp)
         AlertDialog.Builder(this).setTitle("Изменить фото").setView(box)
             .setPositiveButton("Сохранить") { _, _ ->
                 p.name = name.text.toString().ifBlank { p.name }
-                p.album = album.selectedItem?.toString().orEmpty().ifBlank { "Разное" }
+                p.album = album.selectedItem?.toString().orEmpty().takeUnless { it == "Без альбома" } ?: ""
                 p.tags = tags.text.toString().split(",").map { it.trim().trimStart('#') }.filter { it.isNotEmpty() }.toMutableList()
                 p.note = note.text.toString()
                 PhotoStore.update(this, p); renderText()

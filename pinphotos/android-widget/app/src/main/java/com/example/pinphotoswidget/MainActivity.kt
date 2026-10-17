@@ -33,11 +33,12 @@ class MainActivity : Activity() {
     private lateinit var countText: TextView
     private var photos: MutableList<Photo> = mutableListOf()
     private var selectedAlbum: String = ALL_ALBUMS
-    private var pendingImportAlbum: String = "Разное"
+    private var pendingImportAlbum: String = ""
     private val selectedIds = linkedSetOf<String>()
     private val io = Executors.newFixedThreadPool(3)
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        UiTheme.apply(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
         grid = findViewById(R.id.grid)
@@ -50,6 +51,9 @@ class MainActivity : Activity() {
         findViewById<Button>(R.id.addWidgetBtn).setOnClickListener { chooseWidgetSize() }
         findViewById<View>(R.id.menuBtn).setOnClickListener { showMenu(it) }
         findViewById<View>(R.id.exitBtn).setOnClickListener { finishAndRemoveTask() }
+        val themeBtn = findViewById<TextView>(R.id.themeBtn)
+        themeBtn.text = if (UiTheme.isDark(this)) "☀️" else "🌙"
+        themeBtn.setOnClickListener { UiTheme.toggle(this) }
         findViewById<Button>(R.id.moveSelectedBtn).setOnClickListener { chooseMoveAlbum() }
         findViewById<Button>(R.id.clearSelectionBtn).setOnClickListener { selectedIds.clear(); refresh() }
     }
@@ -95,31 +99,75 @@ class MainActivity : Activity() {
     }
 
     private fun renderAlbums() {
-        val row = findViewById<android.widget.LinearLayout>(R.id.albumsRow)
+        findViewById<TextView>(R.id.currentAlbumText).text =
+            if (selectedAlbum == ALL_ALBUMS) "Все фото" else selectedAlbum
+        val row = findViewById<android.widget.LinearLayout>(R.id.albumsTiles)
         row.removeAllViews()
-        val labels = listOf(ALL_ALBUMS) + PhotoStore.albums(this)
-        labels.forEach { album ->
-            val chip = TextView(this).apply {
-                text = if (album == ALL_ALBUMS) "Все" else album
-                textSize = 13f
-                setPadding(dp(14), dp(7), dp(14), dp(7))
-                val active = album == selectedAlbum
-                setBackgroundResource(if (active) R.drawable.btn_primary else R.drawable.btn_soft)
-                setTextColor(if (active) 0xFFFFFFFF.toInt() else 0xFF0F766E.toInt())
-                setOnClickListener { selectedAlbum = album; refresh() }
-            }
-            row.addView(chip, android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply { marginEnd = dp(8) })
+        val all = photos
+        for (album in PhotoStore.albums(this)) {
+            val albumPhotos = all.filter { it.album == album }
+            row.addView(albumTile(album, albumPhotos))
         }
+        // Плитка создания нового альбома
         val create = TextView(this).apply {
-            text = "＋ Альбом"; textSize = 13f
-            setPadding(dp(14), dp(7), dp(14), dp(7))
-            setBackgroundResource(R.drawable.btn_soft); setTextColor(0xFFB45309.toInt())
+            text = "＋\nАльбом"; textSize = 15f; gravity = android.view.Gravity.CENTER
+            setTextColor(UiTheme.color(this@MainActivity, R.attr.appAccent))
+            setBackgroundResource(R.drawable.btn_soft)
             setOnClickListener { showCreateAlbumDialog { album -> selectedAlbum = album; refresh() } }
         }
-        row.addView(create)
+        row.addView(create, android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) })
+        if (PhotoStore.albums(this).isEmpty()) {
+            val hint = TextView(this).apply {
+                text = "Альбомов пока нет"; textSize = 13f
+                setTextColor(UiTheme.color(this@MainActivity, R.attr.appMuted))
+                gravity = android.view.Gravity.CENTER_VERTICAL
+                setPadding(dp(6), 0, dp(8), 0)
+            }
+            row.addView(hint, 0)
+        }
+    }
+
+    private fun albumTile(album: String, albumPhotos: List<Photo>): View {
+        val tile = android.widget.FrameLayout(this).apply {
+            setBackgroundResource(if (album == selectedAlbum) R.drawable.btn_primary else R.drawable.card_bg)
+            clipToOutline = true
+            setOnClickListener {
+                selectedAlbum = if (selectedAlbum == album) ALL_ALBUMS else album
+                refresh()
+            }
+        }
+        val cover = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            setImageResource(R.drawable.widget_placeholder)
+        }
+        tile.addView(cover, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(72)))
+        val newest = albumPhotos.maxByOrNull { it.createdAt }
+        if (newest != null) {
+            val path = newest.fileIn(PhotoStore.dir(this)).absolutePath
+            cover.tag = album
+            io.execute {
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeFile(path, bounds)
+                var sample = 1
+                while (bounds.outWidth / sample > 360) sample *= 2
+                val bmp = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
+                cover.post { if (cover.tag == album && bmp != null) cover.setImageBitmap(bmp) }
+            }
+        }
+        val label = TextView(this).apply {
+            text = "$album · ${albumPhotos.size}"
+            textSize = 12f; gravity = android.view.Gravity.CENTER
+            setTextColor(if (album == selectedAlbum) 0xFFFFFFFF.toInt() else UiTheme.color(this@MainActivity, R.attr.appText))
+            setPadding(dp(4), dp(5), dp(4), dp(5))
+        }
+        val labelParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
+            android.view.Gravity.BOTTOM)
+        tile.addView(label, labelParams)
+        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) }
+        return tile
     }
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
@@ -134,6 +182,7 @@ class MainActivity : Activity() {
         menu.menu.add(0, 6, 0, "Иконка: огненная 🔥")
         menu.menu.add(0, 7, 0, "Иконка: сонная 😴")
         menu.menu.add(0, 8, 0, "Создать альбом")
+        menu.menu.add(0, 9, 0, if (UiTheme.isDark(this)) "Светлая тема ☀️" else "Тёмная тема 🌙")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 1 -> chooseImportAlbum()
@@ -149,6 +198,7 @@ class MainActivity : Activity() {
                 6 -> IconSwitcher.setIcon(this, IconSwitcher.FIRE)
                 7 -> IconSwitcher.setIcon(this, IconSwitcher.SLEEPY)
                 8 -> showCreateAlbumDialog { album -> selectedAlbum = album; refresh() }
+                9 -> UiTheme.toggle(this)
             }
             true
         }
@@ -158,7 +208,7 @@ class MainActivity : Activity() {
     private fun showCreateAlbumDialog(onCreated: (String) -> Unit) {
         val input = android.widget.EditText(this).apply {
             hint = "Название альбома"; setSingleLine(true); setBackgroundResource(R.drawable.input_bg)
-            setTextColor(0xFF24313A.toInt()); setHintTextColor(0xFF98A2AE.toInt())
+            setTextColor(UiTheme.color(this@MainActivity, R.attr.appText)); setHintTextColor(UiTheme.color(this@MainActivity, R.attr.appMuted))
         }
         val box = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(10), dp(22), dp(4)); addView(input)
@@ -173,8 +223,8 @@ class MainActivity : Activity() {
     }
 
     private fun chooseImportAlbum() {
-        val albums = PhotoStore.albums(this)
-        val labels = albums.toTypedArray() + "＋ Новый альбом"
+        val albums = listOf("") + PhotoStore.albums(this) // "" = без альбома
+        val labels = albums.map { if (it.isEmpty()) "Без альбома" else it }.toTypedArray() + "＋ Новый альбом"
         android.app.AlertDialog.Builder(this)
             .setTitle("Добавить фото в альбом")
             .setItems(labels) { _, which ->
@@ -196,6 +246,7 @@ class MainActivity : Activity() {
                     showCreateAlbumDialog { album -> moveSelectedTo(album) }
                 } else moveSelectedTo(albums[which])
             }
+            .setNegativeButton("Отмена", null)
             .show()
     }
 

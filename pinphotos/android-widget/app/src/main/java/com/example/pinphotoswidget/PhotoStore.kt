@@ -9,7 +9,7 @@ import java.util.UUID
 data class Photo(
     val id: String,
     var name: String,
-    var album: String = "Разное",
+    var album: String = "",
     var tags: MutableList<String> = mutableListOf(),
     var note: String = "",
     var pinned: Boolean = false,
@@ -41,7 +41,7 @@ object PhotoStore {
                 o.optJSONArray("tags")?.let { t -> for (j in 0 until t.length()) tags.add(t.optString(j)) }
                 val photo = Photo(
                     id = o.getString("id"), name = o.optString("name", "Фото"),
-                    album = o.optString("album", "Разное"), tags = tags,
+                    album = o.optString("album").takeUnless { it == "Разное" } ?: "", tags = tags,
                     note = o.optString("note"), pinned = o.optBoolean("pinned"),
                     createdAt = o.optLong("createdAt", System.currentTimeMillis()),
                     file = o.getString("file"), mime = o.optString("mime", "image/jpeg")
@@ -58,7 +58,8 @@ object PhotoStore {
 
     @Synchronized
     fun albums(context: Context): List<String> {
-        val result = linkedSetOf("Разное")
+        // Никаких альбомов по умолчанию: только созданные пользователем.
+        val result = linkedSetOf<String>()
         try {
             val f = albumsFile(context)
             if (f.exists()) {
@@ -66,7 +67,7 @@ object PhotoStore {
                 for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { result.add(it) }
             }
         } catch (e: Exception) { }
-        list(context).map { it.album }.filter { it.isNotBlank() }.forEach { result.add(it) }
+        list(context).map { it.album }.filter { it.isNotBlank() && it != "Разное" }.forEach { result.add(it) }
         return result.toList()
     }
 
