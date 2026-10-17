@@ -179,27 +179,30 @@ object PhotoStore {
         saveSecurity(context, updated)
         // Все копии этого альбома на диске превращаются в AES-GCM шифртекст.
         list(context).filter { album in it.albums }.forEach { photo ->
-            val plain = plainBytes(context, photo)
-            if (plain != null) writeStored(context, photo, plain)
+            if (isLargeOrVideo(context, photo)) rewritePhotoStorage(context, photo)
+            else plainBytes(context, photo)?.let { plain -> writeStored(context, photo, plain) }
         }
     }
 
     @Synchronized
     fun clearAlbumPin(context: Context, album: String) {
-        val affected = list(context).filter { album in it.albums }
-        val plains = affected.mapNotNull { photo -> plainBytes(context, photo)?.let { photo.id to it } }.toMap()
+        val affectedBefore = list(context).filter { album in it.albums }
+        val affectedIds = affectedBefore.map { it.id }.toSet()
+        // До стирания ключей: маленькие фото расшифровываем в память, большие/видео — потоково в кэш-файл.
+        val smallPlains = affectedBefore.filterNot { isLargeOrVideo(context, it) }
+            .mapNotNull { photo -> plainBytes(context, photo)?.let { photo.id to it } }.toMap()
+        affectedBefore.filter { isLargeOrVideo(context, it) }.forEach { playableFile(context, it) }
         val current = securityFor(context, album)
         saveSecurity(context, current.copy(pinHash = "", salt = "", keyWrap = "", pinKeyWrap = ""))
-        affected.forEach { photo ->
-            plains[photo.id]?.let { plain ->
-                photo.encrypted = false
-                photo.fileIn(dir(context)).writeBytes(plain)
+        val all = list(context)
+        all.forEach { photo ->
+            if (photo.id in affectedIds) {
+                if (isLargeOrVideo(context, photo)) rewritePhotoStorage(context, photo)
+                else smallPlains[photo.id]?.let { plain ->
+                    photo.encrypted = false; photo.fileIn(dir(context)).writeBytes(plain)
+                }
             }
         }
-        // saveAll ниже в update не нужен: encrypted-флаг пересохранит ближайшая операция,
-        // но сохраняем сразу корректный флаг.
-        val all = list(context)
-        all.forEach { if (it.id in plains.keys) it.encrypted = false }
         saveAll(context, all)
     }
 
@@ -381,6 +384,41 @@ object PhotoStore {
         }
     }
 
+    private fun copyEncryptedTo(sourcePlain: File, key: ByteArray, outFile: File) {
+        val iv = ByteArray(12).also { java.security.SecureRandom().nextBytes(it) }
+        val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+        cipher.init(javax.crypto.Cipher.ENCRYPT_MODE, javax.crypto.spec.SecretKeySpec(key, "AES"), javax.crypto.spec.GCMParameterSpec(128, iv))
+        sourcePlain.inputStream().use { input ->
+            outFile.outputStream().use { rawOut ->
+                rawOut.write("PFENC1".toByteArray(Charsets.US_ASCII)); rawOut.write(iv)
+                javax.crypto.CipherOutputStream(rawOut, cipher).use { encrypted -> input.copyTo(encrypted, 64 * 1024) }
+            }
+        }
+    }
+
+    /** Перезапись хранилища фото потоково: большие файлы и видео не загружаются в RAM целиком. */
+    fun rewritePhotoStorage(context: Context, photo: Photo) {
+        val target = photo.fileIn(dir(context))
+        val lockedAlbum = photo.albums.firstOrNull { securityFor(context, it).locked }
+        val shouldEncrypt = lockedAlbum != null && albumKey(context, lockedAlbum) != null
+        if (photo.encrypted == shouldEncrypt && target.exists()) return
+        val plainSource = playableFile(context, photo) ?: return
+        val temp = File(dir(context), photo.file + ".tmp")
+        try {
+            if (shouldEncrypt) {
+                val key = albumKey(context, lockedAlbum!!) ?: return
+                copyEncryptedTo(plainSource, key, temp); photo.encrypted = true
+            } else {
+                plainSource.copyTo(temp, overwrite = true); photo.encrypted = false
+            }
+            if (target.exists()) target.delete()
+            if (!temp.renameTo(target)) { temp.copyTo(target, overwrite = true); temp.delete() }
+        } catch (e: Exception) { temp.delete() }
+    }
+
+    private fun isLargeOrVideo(context: Context, photo: Photo): Boolean =
+        photo.mime.startsWith("video/") || photo.fileIn(dir(context)).length() > 16L * 1024L * 1024L
+
     /** Открытые байты фото. Для закрытых альбомов расшифровывает AES-GCM в память, файл не трогает. */
     fun plainBytes(context: Context, photo: Photo): ByteArray? {
         val file = photo.fileIn(dir(context))
@@ -533,7 +571,17 @@ object PhotoStore {
         val all = list(context)
         val idx = all.indexOfFirst { it.id == photo.id }
         if (idx >= 0) {
-            plainBytes(context, all[idx])?.let { plain -> writeStored(context, photo, plain) }
+            if (isLargeOrVideo(context, all[idx])) {
+                // Критично для видео: нельзя читать весь файл в ByteArray ради смены альбома.
+                photo.encrypted = all[idx].encrypted
+                if (photo.hash.isEmpty()) photo.hash = all[idx].hash
+                rewritePhotoStorage(context, photo)
+            } else {
+                plainBytes(context, all[idx])?.let { plain -> writeStored(context, photo, plain) }
+            }
+            // rewritePhotoStorage мог работать со старой записью из списка; синхронизируем флаг актуальной записи
+            val stored = list(context).firstOrNull { it.id == photo.id }
+            if (isLargeOrVideo(context, photo) && stored != null) photo.encrypted = stored.encrypted
             all[idx] = photo; saveAll(context, all)
         }
     }

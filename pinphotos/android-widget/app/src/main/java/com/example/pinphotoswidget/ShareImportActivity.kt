@@ -25,7 +25,9 @@ class ShareImportActivity : Activity() {
             var saved = 0
             for (uri in uris) {
                 try {
-                    val mime = contentResolver.getType(uri) ?: "image/jpeg"
+                    val mime = contentResolver.getType(uri)?.takeIf { it.startsWith("image/") || it.startsWith("video/") }
+                        ?: intent.type?.takeIf { it.startsWith("image/") || it.startsWith("video/") }
+                        ?: "image/jpeg"
                     if (!mime.startsWith("image/") && !mime.startsWith("video/")) continue
                     // Потоково: большое видео нельзя читать целиком в ByteArray — это роняет приложение по памяти.
                     val input = contentResolver.openInputStream(uri) ?: continue

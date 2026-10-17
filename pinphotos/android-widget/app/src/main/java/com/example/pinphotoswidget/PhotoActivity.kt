@@ -67,7 +67,7 @@ class PhotoActivity : Activity() {
                     // 1-й тап в обычном режиме: показать контролы на 3 секунды.
                     // 2-й тап, пока контролы ещё видны: перейти в полный экран.
                     !fullscreen && controllerShowing -> setFullscreen(true)
-                    !fullscreen -> mediaController?.show(3000)
+                    !fullscreen -> showVideoControllerSafely(3000)
                     // Полный экран: скрытый интерфейс показать, видимый — по тапу выходим.
                     !fullscreenChromeVisible -> showFullscreenChrome()
                     else -> setFullscreen(false)
@@ -123,7 +123,7 @@ class PhotoActivity : Activity() {
                     // В полном экране при включённом слайд-шоу видео не зацикливаем.
                     applyVideoLooping()
                     video.start()
-                    if (fullscreen) showFullscreenChrome() else mediaController?.show(3000)
+                    if (fullscreen) showFullscreenChrome() else showVideoControllerSafely(3000)
                 }
                 video.setOnErrorListener { _, what, extra ->
                     try { java.io.File(cacheDir, "video_error.txt").writeText("what=$what extra=$extra file=${current.file}") } catch (ignored: Exception) { }
@@ -220,7 +220,20 @@ class PhotoActivity : Activity() {
         autoHideHandler.removeCallbacks(autoHideRunnable)
         autoHideHandler.postDelayed(autoHideRunnable, 2000)
         val current = photo
-        if (current?.mime?.startsWith("video/") == true) mediaController?.show(2000)
+        if (current?.mime?.startsWith("video/") == true) showVideoControllerSafely(2000)
+    }
+
+    private fun showVideoControllerSafely(timeoutMs: Int) {
+        val video = findViewById<android.widget.VideoView>(R.id.videoPlayer)
+        // Первый показ MediaController при переходе фото -> видео в immersive может бросить BadToken,
+        // если поверхность ещё не прикреплена к окну. Откладываем и не даём этому уронить просмотр.
+        video.postDelayed({
+            try {
+                if (!isFinishing && !isDestroyed && video.visibility == android.view.View.VISIBLE) {
+                    mediaController?.show(timeoutMs)
+                }
+            } catch (ignored: Throwable) { }
+        }, 300)
     }
 
     private fun hideFullscreenChrome() {
@@ -280,7 +293,7 @@ class PhotoActivity : Activity() {
             chromeViews().forEach { it.visibility = android.view.View.VISIBLE }
             findViewById<android.view.View>(R.id.slideshowBtn).visibility = android.view.View.GONE
             findViewById<android.view.View>(R.id.fullscreenCaption).visibility = android.view.View.GONE
-            if (photo?.mime?.startsWith("video/") == true) mediaController?.show(3000)
+            if (photo?.mime?.startsWith("video/") == true) showVideoControllerSafely(3000)
         }
         if (enabled) {
             applyFullscreenSystemUi()
