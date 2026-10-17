@@ -1,0 +1,37 @@
+@echo off
+rem ===========================================================================
+rem  start_debug.bat — запуск С КОНСОЛЬЮ (для отладки).
+rem  Отличия от start.vbs: видно все ошибки и traceback, консоль остаётся
+rem  открытой после завершения, поэтому окно не «пропадает».
+rem  В релизе используйте start.vbs (без консоли).
+rem ===========================================================================
+chcp 65001 >nul
+cd /d "%~dp0"
+title Отладка — %~nx0
+
+echo [1/3] Проверяю Python...
+python --version 2>nul
+if errorlevel 1 (
+    echo.
+    echo Python не найден в PATH. Установите его с python.org
+    echo и включите галочку "Add python.exe to PATH".
+    pause
+    exit /b 1
+)
+
+echo [2/3] Проверяю зависимости...
+python -c "import flask" 2>nul
+if errorlevel 1 (
+    echo Flask не установлен — ставлю зависимости...
+    python -m pip install -r requirements.txt
+)
+
+echo [3/3] Запускаю app.py (Ctrl+C — остановить)...
+echo ---------------------------------------------------------------
+python app.py
+set EXITCODE=%ERRORLEVEL%
+echo ---------------------------------------------------------------
+echo Приложение завершилось. Код выхода: %EXITCODE%
+echo Лог: logs\log.txt
+pause
+exit /b %EXITCODE%

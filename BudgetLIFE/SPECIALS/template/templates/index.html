@@ -1,0 +1,469 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <!--
+    index.html эталонного проекта.
+    В <head> — обязательный набор для PWA: theme-color, manifest, apple-touch-icon,
+    регистрация service worker с версией (сбрасывает старый кэш после правок).
+    Правило проекта: HTML отдаётся с no-store (см. appcore/flask_integration.py),
+    поэтому изменения интерфейса видны сразу, а не «через день».
+  -->
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#0f1628">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="{{ app_name }}">
+  <link rel="manifest" href="/manifest.json">
+  <link rel="icon" href="/static/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <title>{{ app_name }}</title>
+  <style>
+    /* Цвета и скругления — как в bridge/LanguageYOI: тёмная тема, крупные кнопки
+       (палец на телефоне), безопасные отступы под «бровь» iPhone. */
+    :root{
+      --bg:#0f1626; --card:#131c33; --line:#223055; --text:#eaeefb; --muted:#9fb0d6;
+      --accent:#2f6fed; --ok:#39c07d; --warn:#ffb454; --err:#ff6b6b;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100dvh;background:var(--bg);color:var(--text);
+         font:16px/1.55 system-ui,"Segoe UI",sans-serif;
+         padding:max(16px,env(safe-area-inset-top)) 16px max(24px,env(safe-area-inset-bottom))}
+    .wrap{max-width:760px;margin:0 auto;display:grid;gap:14px}
+    header{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+    .logo{width:44px;height:44px;border-radius:12px;background:var(--accent);
+          display:grid;place-items:center;font-weight:700;font-size:20px}
+    h1{font-size:19px;margin:0}
+    .ver{color:var(--muted);font-size:13px}
+    .badge{margin-left:auto;font-size:13px;padding:5px 10px;border-radius:999px;
+           border:1px solid var(--line);color:var(--muted)}
+    .badge.on{color:var(--ok);border-color:#1f5a3c}
+    .badge.off{color:var(--warn);border-color:#5a4a1f}
+    .card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px}
+    .card h2{font-size:15px;margin:0 0 10px;color:var(--muted);font-weight:600;
+             text-transform:uppercase;letter-spacing:.04em}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+    .kv{background:#0e1730;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+    .kv b{display:block;font-size:16px;margin-top:2px;word-break:break-all}
+    .kv span{font-size:12px;color:var(--muted)}
+    .row{display:flex;gap:8px;flex-wrap:wrap}
+    button{font:inherit;cursor:pointer;border-radius:12px;padding:11px 15px;border:1px solid var(--line);
+           background:#18233f;color:var(--text)}
+    button:hover{border-color:#39508c}
+    button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+    button.danger{color:var(--err)}
+    ul.notes{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+    ul.notes li{display:flex;gap:10px;align-items:center;background:#0e1730;
+                border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+    ul.notes li small{color:var(--muted);display:block;font-size:12px}
+    ul.notes li .text{flex:1;word-break:break-word}
+    input[type=text]{flex:1;min-width:180px;font:inherit;color:var(--text);background:#0e1730;
+                     border:1px solid var(--line);border-radius:12px;padding:11px 13px}
+    .hint{color:var(--muted);font-size:13px;margin:8px 0 0}
+    .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:24px;background:#18233f;
+           border:1px solid var(--line);border-radius:12px;padding:10px 16px;opacity:0;
+           transition:opacity .2s;pointer-events:none}
+    .toast.show{opacity:1}
+  </style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="logo">{{ app_name[:1] }}</div>
+    <div>
+      <h1>{{ app_name }}</h1>
+      <div class="ver">эталонный проект SPECIALS · v{{ version }}</div>
+    </div>
+    <div id="netBadge" class="badge on">на связи</div>
+  </header>
+
+  <!-- Статус: /api/status — то, что должно уметь каждое приложение -->
+  <section class="card">
+    <h2>Состояние</h2>
+    <div class="grid" id="statusGrid">
+      <div class="kv"><span>Порт</span><b id="stPort">—</b></div>
+      <div class="kv"><span>Процесс</span><b id="stPid">—</b></div>
+      <div class="kv"><span>Время работы</span><b id="stUptime">—</b></div>
+      <div class="kv"><span>Адрес для телефона</span><b id="stLan">—</b></div>
+    </div>
+    <p class="hint">
+      Порт берётся из своего блока (ports.json), поэтому приложения можно запускать
+      одновременно — они не перекрывают друг друга.
+    </p>
+  </section>
+
+  <!-- Демонстрация данных: JsonStore (атомарная запись + бэкап .bak) -->
+  <section class="card">
+    <h2>Заметки (надёжное хранилище)</h2>
+    <div class="row">
+      <input type="text" id="noteInput" placeholder="Текст заметки" maxlength="500">
+      <button class="primary" onclick="addNote()">Добавить</button>
+    </div>
+    <ul class="notes" id="notesList" style="margin-top:12px"></ul>
+    <p class="hint">Данные пишутся в data/notes.json атомарно: даже выключение ПК
+      в момент записи не испортит файл (останется .bak для восстановления).</p>
+  </section>
+
+  <!-- «Кнопка поделиться» — из bridge и словаря LanguageYOI -->
+  <section class="card">
+    <h2>Поделиться и установка</h2>
+    <div class="row">
+      <button class="primary" onclick="shareNow()">Поделиться</button>
+      <button onclick="copyLink()">Копировать адрес</button>
+      <button onclick="showQr()">QR-код</button>
+      <button onclick="installPwa()">Установить как приложение</button>
+      <button onclick="notifyTest()">Проверить уведомление</button>
+    </div>
+    <p class="hint" id="installHint">
+      Android: меню ⋮ → «Установить приложение». iPhone: «Поделиться» → «На экран Домой».
+      На компьютере: иконка ⊕ в адресной строке. После установки приложение
+      открывается без браузерной строки и получает пункт в системном меню «Поделиться».
+    </p>
+  </section>
+
+  <!--
+    Инструменты из других проектов (appcore.textutil / clipboard / gui / keyinput).
+    В интерфейсе показана лишь часть: то, что удобно попробовать руками.
+    Логика живёт в appcore — в новом проекте берётся как есть.
+  -->
+  <section class="card">
+    <h2>Инструменты (фишки из проектов)</h2>
+    <div class="row">
+      <input type="text" id="toolInput" placeholder="Текст: ghbdtn? rfr ltkf& / 2+2*2 / #3fa9f5 / https://site.ru/a?b=1" maxlength="200">
+      <button class="primary" onclick="runTools()">Разобрать</button>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <div class="kv"><span>Другая раскладка</span><b id="toolLayout">—</b></div>
+      <div class="kv"><span>Регистр</span><b id="toolCase">—</b></div>
+      <div class="kv"><span>Посчитать</span><b id="toolMath">—</b></div>
+      <div class="kv"><span>Цвет HEX → RGB</span><b id="toolHex">—</b></div>
+      <div class="kv"><span>Чистая ссылка</span><b id="toolUrl">—</b></div>
+      <div class="kv"><span>Безопасное имя файла</span><b id="toolFile">—</b></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <button onclick="clipRead()">Показать буфер обмена</button>
+      <button onclick="clipWrite()">Положить текст в буфер</button>
+      <button onclick="showOverlay()">Подсказка поверх окон</button>
+      <button onclick="showReport()">Отчёт-список</button>
+      <button onclick="mediaKey('play_pause')">Пауза/играть</button>
+      <button onclick="mediaKey('volume_down')">Тише</button>
+      <button onclick="mediaKey('volume_up')">Громче</button>
+    </div>
+    <p class="hint">
+      Раскладка, регистр, калькулятор (без <code>eval</code>), HEX и чистая ссылка —
+      из DeployAgent. Буфер обмена (в т.ч. «вставить, не затерев буфер») — из bridge.
+      Медиа-клавиши и мышь — из Телепульта. Подсказки поверх окон — из DeployAgent
+      (под <code>pythonw</code> консоли нет, поэтому результат показывается так).
+    </p>
+  </section>
+
+  <!-- Бэкапы, URI-команды и SM-2: фишки LanguageYOI, Трекера и DnD's -->
+  <section class="card">
+    <h2>Надёжность и команды (фишки из проектов)</h2>
+    <div class="row">
+      <button class="primary" onclick="makeBackup()">Сделать бэкап данных</button>
+      <button onclick="refreshBackups()">Показать бэкапы</button>
+      <button onclick="checkUri()">Проверить URI-команду</button>
+    </div>
+    <div class="grid" style="margin-top:12px">
+      <div class="kv"><span>Файлов в data/</span><b id="bkFiles">—</b></div>
+      <div class="kv"><span>Объём данных</span><b id="bkSize">—</b></div>
+      <div class="kv"><span>Последний бэкап</span><b id="bkLast">—</b></div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <span class="hint" style="flex:1">URI-команда приложения:</span>
+      <code id="uriExample">…</code>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <span class="hint" style="flex:1">Карточка SM-2 (что покажет следующая попытка):</span>
+      <b id="cardNext">—</b>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <button onclick="gradeCard('забыл')">Забыл</button>
+      <button onclick="gradeCard('трудно')">Трудно</button>
+      <button onclick="gradeCard('хорошо')">Хорошо</button>
+      <button onclick="gradeCard('легко')">Легко</button>
+    </div>
+    <p class="hint">
+      Бэкап — ZIP со всем содержимым <code>data/</code> и манифестом внутри
+      (восстановление сохраняет текущие данные как <code>before_restore_*</code>) — из
+      LanguageYOI и Cooker. URI-команды (<code id="uriScheme">myapp://</code>) и передача
+      их работающему экземпляру — из Трекера и BLIND_PC (включаются пунктом трея).
+      Интервалы повторений и <code>ease</code> — алгоритм SM-2 из LanguageYOI.
+    </p>
+  </section>
+
+  <!-- Автозапуск и доступ с телефона: реестр и брандмауэр -->
+  <section class="card">
+    <h2>Системная интеграция</h2>
+    <div class="row">
+      <button id="autostartBtn" onclick="toggleAutostart()">Автозапуск: …</button>
+      <button id="lanBtn" onclick="toggleLan()">Доступ с телефона</button>
+    </div>
+    <p class="hint">
+      Автозапуск — запись в HKCU\...\Run командой <code>wscript.exe start.vbs</code>
+      (без прав администратора и без привязки к версии Python).
+      «Доступ с телефона» открывает порт в брандмауэре только для домашней подсети.
+    </p>
+  </section>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* =======================  помощники интерфейса  ======================= */
+const $ = (id) => document.getElementById(id);
+function toast(message) {
+  const el = $("toast"); el.textContent = message; el.classList.add("show");
+  clearTimeout(el._t); el._t = setTimeout(() => el.classList.remove("show"), 2200);
+}
+async function api(url, options) {
+  const response = await fetch(url, Object.assign({ headers: { "Content-Type": "application/json" } }, options));
+  try { return await response.json(); } catch (e) { return { ok: false, error: "Плохой ответ сервера" }; }
+}
+
+/* =======================  состояние  ======================= */
+async function refreshStatus() {
+  const s = await api("/api/status");
+  if (!s || !s.app_id) return;
+  $("stPort").textContent = s.port || "—";
+  $("stPid").textContent = s.pid || "—";
+  const min = Math.floor((s.uptime_sec || 0) / 60), sec = (s.uptime_sec || 0) % 60;
+  $("stUptime").textContent = min ? `${min} мин ${sec} с` : `${sec} с`;
+  $("stLan").textContent = s.lan_url || "—";
+  settingsCache = s;
+}
+let settingsCache = {};
+
+/* Индикатор «нет связи с ПК»: service worker отдаст кэш, но данные не придут. */
+function setOnline(online) {
+  const badge = $("netBadge");
+  badge.className = "badge " + (online ? "on" : "off");
+  badge.textContent = online ? "на связи" : "нет связи с ПК";
+}
+window.addEventListener("online", () => setOnline(true));
+window.addEventListener("offline", () => setOnline(false));
+
+/* ========  бэкапы, URI-команды и SM-2 (фишки LanguageYOI/Трекера)  ======== */
+async function refreshBackups() {
+  const data = await api("/api/backups");
+  if (!data.ok) return toast(data.error || "Не получилось");
+  const stats = data.stats || {};
+  $("bkFiles").textContent = stats.files ?? 0;
+  $("bkSize").textContent = humanSize(stats.bytes || 0);
+  const last = (data.backups || [])[0];
+  $("bkLast").textContent = last ? `${last.created_at} (${last.size}, файлов ${last.files})` : "пока нет";
+}
+function humanSize(bytes) {
+  if (bytes < 1024) return bytes + " Б";
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " КБ";
+  return (bytes / 1024 / 1024).toFixed(1) + " МБ";
+}
+async function makeBackup() {
+  const data = await api("/api/backups", { method: "POST", body: "{}" });
+  if (!data.ok) return toast(data.error || "Бэкап не получился");
+  toast(`Бэкап готов: ${data.backup.name} (${data.backup.size})`);
+  refreshBackups();
+}
+async function loadUriHelp() {
+  const data = await api("/api/uri/help");
+  if (!data.ok) return;
+  $("uriScheme").textContent = data.scheme + "://";
+  $("uriExample").textContent = data.commands.includes("notes/add")
+    ? `${data.scheme}://notes/add?text=привет` : (data.commands[0] || "—");
+}
+async function checkUri() {
+  const scheme = $("uriScheme").textContent.replace("://", "") || "specials_demo";
+  const command = $("uriExample").textContent.trim();
+  if (!command || command === "—") return toast("Нет зарегистрированных команд");
+  const answer = await api("/api/uri", { method: "POST", body: JSON.stringify({ uri: command }) });
+  toast(answer.ok ? `Команда выполнена: ${command}` : `Ошибка: ${answer.error}`);
+  if (answer.ok && command.includes("notes/add")) { loadNotes(); }
+}
+async function gradeCard(grade) {
+  const data = await api("/api/tools/card", { method: "POST", body: JSON.stringify({ grade }) });
+  if (!data.ok) return toast(data.error || "Не получилось");
+  const hints = Object.entries(data.schedule || {})
+    .map(([name, info]) => `${name}: ${info.interval_days} дн`).join(" · ");
+  $("cardNext").textContent = `повторов ${data.state.repetitions}, показать через ${data.due_in_days} дн`;
+  toast("SM-2 → " + hints);
+}
+
+/* =======================  живые события (SSE)  ======================= */
+/* Демонстрация: заметка, добавленная с телефона, сразу появляется на ПК. */
+let eventsCount = 0;
+function connectEvents() {
+  try {
+    const source = new EventSource("/api/events");
+    source.onmessage = (e) => {
+      let msg = {};
+      try { msg = JSON.parse(e.data); } catch (err) { return; }
+      eventsCount += 1;
+      if (msg.type === "notes" && Array.isArray(msg.notes)) renderNotes(msg.notes);
+      if (msg.type === "toast") toast(msg.text || "событие");
+      if (msg.type === "clients") toast(`подключено устройств: ${msg.clients}`);
+    };
+    source.onerror = () => setOnline(navigator.onLine);
+  } catch (err) { /* браузер без EventSource — интерфейс работает как обычно */ }
+}
+
+/* =======================  заметки  ======================= */
+function renderNotes(notes) {
+  const list = $("notesList");
+  list.innerHTML = "";
+  (notes || []).forEach((note) => {
+    const li = document.createElement("li");
+    const box = document.createElement("div");
+    box.className = "text";
+    box.innerHTML = `<span></span><small></small>`;
+    box.querySelector("span").textContent = note.text;      // без innerHTML — защита от XSS
+    box.querySelector("small").textContent = note.created_at || "";
+    const del = document.createElement("button");
+    del.className = "danger"; del.textContent = "Удалить";
+    del.onclick = async () => {
+      await api("/api/notes", { method: "DELETE", body: JSON.stringify({ id: note.id }) });
+      loadNotes();
+    };
+    li.append(box, del); list.appendChild(li);
+  });
+}
+async function loadNotes() {
+  const data = await api("/api/notes");
+  renderNotes(data.notes || []);
+}
+async function addNote() {
+  const input = $("noteInput");
+  if (!input.value.trim()) return toast("Введите текст");
+  await api("/api/notes", { method: "POST", body: JSON.stringify({ text: input.value }) });
+  input.value = "";
+  loadNotes();
+  toast("Сохранено");
+}
+
+/* =======================  инструменты  ======================= */
+function fill(id, value) {
+  const el = $(id);
+  el.textContent = (value === null || value === undefined || value === "") ? "—" : value;
+}
+async function runTools() {
+  const text = $("toolInput").value;
+  if (!text.trim()) return toast("Введите текст");
+  const t = await api("/api/tools/text", { method: "POST", body: JSON.stringify({ text }) });
+  fill("toolLayout", t.layout);
+  fill("toolCase", t.broken_case ? (t.case_variants || []).map((v) => v[1]).join(" / ") : "нормальный");
+  fill("toolMath", t.math);
+  fill("toolHex", t.hex ? `rgb(${t.hex.join(", ")})` : null);
+  fill("toolUrl", t.url);
+  fill("toolFile", t.filename);
+}
+async function clipRead() {
+  const data = await api("/api/tools/clipboard");
+  const parts = [];
+  if (data.text) parts.push(`текст: ${data.text.slice(0, 80)}`);
+  if (data.files && data.files.length) parts.push(`файлов: ${data.files.length}`);
+  toast(parts.length ? parts.join(" | ") : "Буфер пуст (или недоступен)");
+}
+async function clipWrite() {
+  const text = $("toolInput").value || "Текст из Specials Demo";
+  const data = await api("/api/tools/clipboard", { method: "POST", body: JSON.stringify({ text }) });
+  toast(data.ok ? "Текст в буфере обмена" : "Буфер обмена недоступен");
+}
+async function showOverlay() {
+  const text = $("toolInput").value || "Подсказка из приложения";
+  const data = await api("/api/tools/overlay", { method: "POST", body: JSON.stringify({ text }) });
+  toast(data.ok ? "Показано поверх окон" : (data.hint || "Окна недоступны"));
+}
+async function showReport() {
+  const data = await api("/api/tools/overlay", {
+    method: "POST",
+    body: JSON.stringify({ text: "✓ Файл записан  ✕ Файл не найден", mode: "report", duration: 4 }),
+  });
+  toast(data.ok ? "Отчёт показан" : (data.hint || "Окна недоступны"));
+}
+async function mediaKey(key) {
+  const data = await api("/api/tools/keys", { method: "POST", body: JSON.stringify({ action: "media", value: key }) });
+  toast(data.ok ? `Нажато: ${key}` : (data.hint || "Недоступно"));
+}
+
+/* =======================  «Поделиться»  ======================= */
+async function shareNow() {
+  const url = (settingsCache.lan_url || location.href);
+  try {
+    if (navigator.share) { await navigator.share({ title: document.title, url }); return; }
+  } catch (e) { /* пользователь закрыл меню — это нормально */ }
+  try {
+    await navigator.clipboard.writeText(url);
+    toast("Ссылка скопирована");
+  } catch (e) {
+    // Фолбэк для http:// на телефоне: clipboard API там недоступен.
+    const area = document.createElement("textarea");
+    area.value = url; document.body.appendChild(area); area.select();
+    document.execCommand("copy"); area.remove(); toast("Ссылка скопирована");
+  }
+}
+async function copyLink() { await shareNow(); }
+function showQr() {
+  const url = (settingsCache.lan_url || location.href);
+  window.open("/api/qr?url=" + encodeURIComponent(url), "_blank");
+}
+
+/* =======================  установка PWA  ======================= */
+let installEvent = null;
+window.addEventListener("beforeinstallprompt", (event) => {
+  event.preventDefault();          // не показываем баннер сами — управляем вручную
+  installEvent = event;
+});
+async function installPwa() {
+  if (installEvent) {
+    installEvent.prompt();
+    const choice = await installEvent.userChoice;
+    installEvent = null;
+    return toast(choice.outcome === "accepted" ? "Приложение установлено" : "Установка отложена");
+  }
+  const ua = navigator.userAgent.toLowerCase();
+  if (/iphone|ipad|ipod/.test(ua)) {
+    return toast("iPhone: «Поделиться» → «На экран Домой»");
+  }
+  toast("Меню браузера → «Установить приложение»");
+}
+
+/* =======================  системная интеграция  ======================= */
+async function refreshAutostart() {
+  const data = await api("/api/autostart");
+  $("autostartBtn").textContent = "Автозапуск: " + (data.enabled ? "включён" : "выключен");
+}
+async function toggleAutostart() {
+  const current = await api("/api/autostart");
+  const data = await api("/api/autostart", { method: "POST", body: JSON.stringify({ enabled: !current.enabled }) });
+  if (!data.ok) toast("Не удалось изменить автозапуск (см. лог)");
+  refreshAutostart();
+}
+async function toggleLan() {
+  const enabled = !!settingsCache.lan_access;
+  const data = await api("/api/lan-access", { method: "POST", body: JSON.stringify({ enabled: !enabled }) });
+  toast(data.detail || (data.ok ? "Готово" : "Ошибка"));
+  refreshStatus();
+}
+async function notifyTest() {
+  const data = await api("/api/notify", { method: "POST", body: JSON.stringify({ text: "Уведомление из веб-интерфейса" }) });
+  toast(data.ok ? "Уведомление показано" : "Трей недоступен — смотрите лог");
+}
+
+/* =======================  старт  ======================= */
+refreshStatus(); loadNotes(); connectEvents(); refreshAutostart();
+refreshBackups(); loadUriHelp();
+gradeCardPreview();
+async function gradeCardPreview() {
+  const data = await api("/api/tools/card");
+  if (data.ok) $("cardNext").textContent = `повторов ${data.state.repetitions}, показать через ${data.due_in_days} дн`;
+}
+setInterval(refreshStatus, 5000);
+if ("serviceWorker" in navigator) {
+  // Версия в URL сбрасывает старый sw.js после обновления приложения.
+  navigator.serviceWorker.register("/sw.js?v=" + Date.now(), { scope: "/" }).catch(() => {});
+}
+</script>
+</body>
+</html>

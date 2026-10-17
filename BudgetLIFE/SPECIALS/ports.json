@@ -1,0 +1,132 @@
+{
+  "_comment": "Реестр портов: у каждого проекта СВОЙ блок. Приложение берёт основной порт, при занятости — следующий порт ЭТОГО ЖЕ блока (appcore.ports). Блоки не пересекаются — приложения можно запускать одновременно. Подробный разбор конфликтов и план переезда — в docs/PORTS.md.",
+  "version": 1,
+  "policy": {
+    "block_size_default": 10,
+    "bind_default": "127.0.0.1",
+    "lan_requires": "firewall.ensure_rule(port, ...) + правило remoteip=localsubnet",
+    "lock_ports": "18900-18999 (служебные локи, вне блоков приложений)"
+  },
+  "blocks": [
+    {
+      "app_id": "swipe_review",
+      "name": "Swipe Review",
+      "base": 5000,
+      "size": 10,
+      "current_file": "swipe_review/app.py",
+      "note": "сейчас 5000: конфликт с shedevrum_bot и Телепультом"
+    },
+    {
+      "app_id": "shedevrum_bot",
+      "name": "Shedevrum Bot",
+      "base": 5010,
+      "size": 10,
+      "current_file": "shedevrum_bot/app.py",
+      "note": "переехать с 5000"
+    },
+    {
+      "app_id": "bridge",
+      "name": "Bridge",
+      "base": 5020,
+      "size": 10,
+      "current_file": "bridge/app.py",
+      "note": "переехать с 5001 (конфликт с Cooker)"
+    },
+    {
+      "app_id": "cooker",
+      "name": "Recipe Box / Cooker",
+      "base": 5030,
+      "size": 10,
+      "current_file": "Cooker/app.py",
+      "note": "сейчас динамика от 5001 — залезает в чужие порты"
+    },
+    {
+      "app_id": "blind_pc",
+      "name": "BlindPC",
+      "base": 5040,
+      "size": 10,
+      "current_file": "BLIND_PC/app.py",
+      "note": "переехать с 5002; остаётся 0.0.0.0 для телефона"
+    },
+    {
+      "app_id": "tracker",
+      "name": "Tracker",
+      "base": 5100,
+      "size": 10,
+      "current_file": "Трекер/app.py",
+      "note": "как есть"
+    },
+    {
+      "app_id": "telepult",
+      "name": "Телепульт",
+      "base": 5110,
+      "size": 10,
+      "current_file": "Телепульт/app.py",
+      "note": "переехать с 5000 (третий владелец порта!)"
+    },
+    {
+      "app_id": "languageyoi_dict",
+      "name": "LanguageYOI Dictionary",
+      "base": 5660,
+      "size": 20,
+      "current_file": "LanguageYOI/app.py",
+      "note": "основной 5678 как сейчас, фолбэки 5660-5677 (не занимать 5679!)"
+    },
+    {
+      "app_id": "languageyoi_ocr",
+      "name": "LanguageYOI Translator",
+      "base": 5680,
+      "size": 20,
+      "current_file": "LanguageYOI/OCRapp.py",
+      "note": "основной 5680, фолбэк 5681+ (было 5679/5680 — пересечение со словарём)"
+    },
+    {
+      "app_id": "plotmaker",
+      "name": "PlotMaker",
+      "base": 5700,
+      "size": 20,
+      "current_file": "PlotMaker/app.py",
+      "note": "сейчас сканер 5678-5777 залезает в блок LanguageYOI"
+    },
+    {
+      "app_id": "rpg_table",
+      "name": "DnD's / RPG Table",
+      "base": 8000,
+      "size": 10,
+      "current_file": "DnD's/backend/main.py",
+      "note": "как есть; сузить динамику 8000-8100 до 8000-8009"
+    },
+    {
+      "app_id": "shadow_game",
+      "name": "SHADOW GAME",
+      "base": 8010,
+      "size": 10,
+      "current_file": "SHADOW GAME/tray_server.py",
+      "note": "переехать с 8080 (в динамике DnD's)"
+    },
+    {
+      "app_id": "deploy_agent",
+      "name": "DeployAgent",
+      "base": 18520,
+      "size": 3,
+      "current_file": "DeployAgent/app.py",
+      "note": "18523 — порт-лок, оставить"
+    },
+    {
+      "app_id": "specials_demo",
+      "name": "Specials Demo",
+      "base": 5120,
+      "size": 10,
+      "current_file": "SPECIALS/template/app.py",
+      "note": "эталонный проект"
+    },
+    {
+      "app_id": "budgetlife",
+      "name": "BudgetLIFE",
+      "base": 5130,
+      "size": 10,
+      "current_file": "server.js",
+      "note": "новый проект: 5130 основной, 5131 dev, 5132 preview, 5133-5139 резерв"
+    }
+  ]
+}

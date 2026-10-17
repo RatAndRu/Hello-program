@@ -1,0 +1,9 @@
+[06.10.2026 22:07:10] === BudgetLIFE === запуск, режим=build, сервер=auto, аргументы=[]
+[06.10.2026 22:07:30] Node.js: не найден
+[06.10.2026 22:07:30] PowerShell: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe
+[06.10.2026 22:07:30] Старт (powershell): "C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "C:\AI_Projects\BudgetLIFE\server.ps1" -Port 5130 -Address 127.0.0.1
+[06.10.2026 22:07:31] Готово, порт 5130 — открываю окно
+[06.10.2026 22:07:32] Открыто окно приложения: C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
+[09.10.2026 14:52:33] === BudgetLIFE === запуск, режим=build, сервер=auto, аргументы=[]
+[09.10.2026 14:52:33] Уже запущено на порту 5130 — поднимаю открытое окно
+[09.10.2026 14:52:35] Открыто окно приложения: C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe
