@@ -259,9 +259,18 @@ class PhotoActivity : Activity() {
             Toast.makeText(this, "Виджет не добавлен на рабочий стол — кнопка пока не работает", Toast.LENGTH_LONG).show(); return
         }
         if (widgetIds.size == 1) {
-            val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, listOf(current.id), widgetIds)
-            PinnedPhotoWidgetBase.updateAll(this)
-            Toast.makeText(this, if (added > 0) "Фото добавлено в единственный виджет" else "Это фото уже есть в виджете", Toast.LENGTH_LONG).show(); renderText(); return
+            val onlyWidget = widgetIds.first()
+            if (current.id in PinnedPhotoWidgetBase.getWidgetPhotoIds(this, onlyWidget)) {
+                // Повторное нажатие при единственном виджете — убрать фото из него.
+                PinnedPhotoWidgetBase.setPhotoWidgets(this, current.id, emptyList())
+                PinnedPhotoWidgetBase.updateAll(this)
+                Toast.makeText(this, "Фото убрано из виджета", Toast.LENGTH_SHORT).show()
+            } else {
+                PinnedPhotoWidgetBase.addCopiesToWidgets(this, listOf(current.id), widgetIds)
+                PinnedPhotoWidgetBase.updateAll(this)
+                Toast.makeText(this, "Фото добавлено в единственный виджет", Toast.LENGTH_SHORT).show()
+            }
+            renderText(); return
         }
         val containing = PinnedPhotoWidgetBase.widgetsContaining(this, current.id)
         val labels = widgetIds.map { if (it in containing) "${PinnedPhotoWidgetBase.widgetName(this, it)} · уже там ✓" else PinnedPhotoWidgetBase.widgetName(this, it) }.toTypedArray()
