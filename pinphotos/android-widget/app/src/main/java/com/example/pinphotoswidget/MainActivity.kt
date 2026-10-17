@@ -40,6 +40,9 @@ class MainActivity : FragmentActivity() {
     private var pendingImportWidget: Int = 0
     private var searchQuery: String = ""
     private var sortMode: Int = 0
+    private var albumsModeWidgets: Boolean = false
+    private var albumsCollapsed: Boolean = false
+    private var searchExpanded: Boolean = false
     private val selectedIds = linkedSetOf<String>()
     private val unlockedAlbums = mutableSetOf<String>()
     private val io = Executors.newFixedThreadPool(3)
@@ -72,40 +75,70 @@ class MainActivity : FragmentActivity() {
             override fun onTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) { searchQuery = s?.toString().orEmpty().trim(); refresh() }
             override fun afterTextChanged(s: android.text.Editable?) {}
         })
-        val sortLabels = listOf("Сначала новые", "Сначала старые", "По алфавиту А–Я", "По алфавиту Я–А")
-        val sortSpinner = findViewById<android.widget.Spinner>(R.id.sortSpinner)
-        sortSpinner.adapter = object : android.widget.ArrayAdapter<String>(this, R.layout.spinner_item, sortLabels) {
-            override fun getDropDownView(position: Int, convertView: View?, parent: ViewGroup): View {
-                val view = super.getDropDownView(position, convertView, parent) as TextView
-                view.setBackgroundColor(UiTheme.color(this@MainActivity, R.attr.appSurface)); view.setTextColor(UiTheme.color(this@MainActivity, R.attr.appText)); return view
-            }
-        }.apply { setDropDownViewResource(R.layout.spinner_dropdown_item) }
-        sortSpinner.setPopupBackgroundResource(if (UiTheme.isDark(this)) R.drawable.dialog_bg_dark else R.drawable.dialog_bg_light)
-        sortSpinner.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
-            override fun onItemSelected(parent: android.widget.AdapterView<*>?, view: View?, position: Int, id: Long) { if (sortMode != position) { sortMode = position; refresh() } }
-            override fun onNothingSelected(parent: android.widget.AdapterView<*>?) {}
+        findViewById<Button>(R.id.filterBtn).setOnClickListener { showFilters() }
+        findViewById<View>(R.id.searchBtn).setOnClickListener { setSearchExpanded(!searchExpanded) }
+        findViewById<Button>(R.id.albumsModeBtn).setOnClickListener {
+            albumsModeWidgets = !albumsModeWidgets
+            // Переключение режима не меняет текущую открытую выборку резко: возвращаемся во «Все фото».
+            selectedAlbum = ALL_ALBUMS; refresh()
+        }
+        findViewById<Button>(R.id.albumsCollapseBtn).setOnClickListener {
+            albumsCollapsed = !albumsCollapsed; applyAlbumsCollapsed()
         }
     }
 
     override fun onResume() { super.onResume(); refresh() }
+
+    private fun setSearchExpanded(expanded: Boolean) {
+        searchExpanded = expanded
+        findViewById<View>(R.id.appTitle).visibility = if (expanded) View.GONE else View.VISIBLE
+        val input = findViewById<android.widget.EditText>(R.id.searchInput)
+        input.visibility = if (expanded) View.VISIBLE else View.GONE
+        if (expanded) {
+            input.requestFocus()
+            val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
+            imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
+        } else if (searchQuery.isNotEmpty()) {
+            input.text.clear()
+        }
+        refresh()
+    }
+
+    private fun showFilters() {
+        val labels = arrayOf("Сначала новые", "Сначала старые", "По алфавиту А–Я", "По алфавиту Я–А")
+        val dialog = android.app.AlertDialog.Builder(this)
+            .setTitle("Сортировка")
+            .setSingleChoiceItems(labels, sortMode) { d, which -> sortMode = which; d.dismiss(); refresh() }
+            .setNegativeButton("Отмена", null)
+            .create()
+        dialog.show()
+        // Скруглённое окно выпадающего списка фильтров, а не квадратный системный прямоугольник.
+        dialog.window?.setBackgroundDrawableResource(if (UiTheme.isDark(this)) R.drawable.dialog_bg_dark else R.drawable.dialog_bg_light)
+    }
+
+    private fun applyAlbumsCollapsed() {
+        findViewById<View>(R.id.albumsContent).visibility = if (albumsCollapsed) View.GONE else View.VISIBLE
+        findViewById<Button>(R.id.albumsCollapseBtn).text = if (albumsCollapsed) "▸  Альбомы" else "▾  Альбомы"
+    }
+
 
     private fun refresh() {
         photos = PhotoStore.list(this)
         val lockedNames = PhotoStore.lockedAlbumNames(this)
         val ordinaryPhotos = photos.filter { it.widgetId == 0 }
         val visiblePhotos = ordinaryPhotos.filter { photo -> photo.albums.none { it in lockedNames } }
-        val widgetPhotosCount = photos.count { it.widgetId > 0 }
+        val widgetIdsNow = PinnedPhotoWidgetBase.installedWidgetIds(this)
+        val widgetPhotosCount = widgetIdsNow.sumOf { PinnedPhotoWidgetBase.getWidgetPhotoIds(this, it).size }
         val pinnedCount = if (widgetPhotosCount > 0) widgetPhotosCount else visiblePhotos.count { it.pinned }
-        countText.text = if (visiblePhotos.isEmpty()) "" else "${visiblePhotos.size}"
         widgetStatus.text = when {
             PinnedPhotoWidgetBase.installedWidgetIds(this).isEmpty() -> "Виджет не добавлен на рабочий стол"
             pinnedCount == 0 -> "В виджетах пусто — выберите фото и нажмите «В виджет»"
-            pinnedCount == 1 -> "В виджетах: 1 отдельная копия фото"
-            else -> "В виджетах: $pinnedCount отдельных копий · каждый виджет свой"
+            pinnedCount == 1 -> "В виджетах: 1 фото (зависимая ссылка на оригинал)"
+            else -> "В виджетах: $pinnedCount ссылок · у каждого виджета свой набор"
         }
-        renderAlbums(); renderWidgetAlbums()
+        renderAlbums()
         val baseDisplayed = when {
-            selectedAlbum.startsWith(WIDGET_PREFIX) -> photos.filter { it.widgetId == selectedWidgetId() }
+            selectedAlbum.startsWith(WIDGET_PREFIX) -> PinnedPhotoWidgetBase.photosForWidget(this, selectedWidgetId())
             selectedAlbum == ALL_ALBUMS -> visiblePhotos
             else -> ordinaryPhotos.filter { selectedAlbum in it.albums }
         }
@@ -120,6 +153,8 @@ class MainActivity : FragmentActivity() {
             3 -> displayedDeduped.sortedByDescending { it.name.lowercase() }
             else -> displayedDeduped.sortedByDescending { it.createdAt }
         }
+        // В шапке — количество именно найденных/показанных фото.
+        countText.text = if (displayed.isEmpty()) "" else "${displayed.size}"
         selectedIds.retainAll(photos.map { it.id }.toSet())
         emptyView.visibility = if (displayed.isEmpty()) View.VISIBLE else View.GONE
         grid.visibility = if (displayed.isEmpty()) View.GONE else View.VISIBLE
@@ -132,7 +167,9 @@ class MainActivity : FragmentActivity() {
         bar.visibility = if (selectedIds.isEmpty()) View.GONE else View.VISIBLE
         findViewById<View>(R.id.selectionActions2).visibility = bar.visibility
         if (selectedIds.isNotEmpty()) findViewById<TextView>(R.id.selectionText).text = "Выбрано: ${selectedIds.size}"
-        grid.adapter = PhotoAdapter(displayed, selectedIds,
+        val widgetPhotoIds = PinnedPhotoWidgetBase.installedWidgetIds(this)
+            .flatMap { PinnedPhotoWidgetBase.getWidgetPhotoIds(this, it) }.toSet()
+        grid.adapter = PhotoAdapter(displayed, selectedIds, widgetPhotoIds,
             onClick = { photo ->
                 if (selectedIds.isNotEmpty()) toggleSelected(photo) else {
                     val ids = ArrayList(displayed.map { it.id })
@@ -143,6 +180,9 @@ class MainActivity : FragmentActivity() {
             },
             onLongClick = { photo -> toggleSelected(photo) }
         )
+        findViewById<TextView>(R.id.albumsTitle).text = if (albumsModeWidgets) "Альбомы виджетов" else "Альбомы"
+        findViewById<Button>(R.id.albumsModeBtn).text = if (albumsModeWidgets) "Обычные 📁" else "Виджеты 🧩"
+        applyAlbumsCollapsed()
         PinnedPhotoWidgetBase.updateAll(this)
     }
 
@@ -159,6 +199,19 @@ class MainActivity : FragmentActivity() {
         }
         val row = findViewById<android.widget.LinearLayout>(R.id.albumsTiles)
         row.removeAllViews()
+        if (albumsModeWidgets) {
+            val widgetIds = PinnedPhotoWidgetBase.installedWidgetIds(this)
+            if (widgetIds.isEmpty()) {
+                val hint = TextView(this).apply {
+                    text = "Виджетов пока нет"; textSize = 13f
+                    setTextColor(UiTheme.color(this@MainActivity, R.attr.appMuted)); gravity = android.view.Gravity.CENTER_VERTICAL
+                    setPadding(dp(6), 0, dp(8), 0)
+                }
+                row.addView(hint, 0)
+            }
+            for (widgetId in widgetIds) row.addView(widgetAlbumTile(widgetId))
+            return
+        }
         val all = photos
         for (album in PhotoStore.albums(this)) {
             val albumPhotos = all.filter { it.widgetId == 0 && album in it.albums }
@@ -181,6 +234,79 @@ class MainActivity : FragmentActivity() {
             }
             row.addView(hint, 0)
         }
+    }
+
+    private fun widgetAlbumTile(widgetId: Int): View {
+        val key = WIDGET_PREFIX + widgetId
+        val refs = PinnedPhotoWidgetBase.photosForWidget(this, widgetId)
+        val newest = refs.maxByOrNull { it.createdAt }
+        val tile = android.widget.FrameLayout(this).apply {
+            setBackgroundResource(if (selectedAlbum == key) R.drawable.btn_primary else R.drawable.card_bg)
+            clipToOutline = true
+            setOnClickListener {
+                selectedAlbum = if (selectedAlbum == key) ALL_ALBUMS else key
+                refresh()
+            }
+            setOnLongClickListener { showWidgetAlbumActions(widgetId); true }
+        }
+        val cover = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP; setImageResource(R.drawable.widget_placeholder)
+        }
+        tile.addView(cover, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(72)))
+        if (newest != null) io.execute {
+            val bmp = PhotoStore.decodeBitmap(this, newest, 360)
+            cover.post { if (bmp != null) cover.setImageBitmap(bmp) }
+        }
+        val label = TextView(this).apply {
+            text = "🧩 Виджет №$widgetId · ${refs.size}"
+            textSize = 12f; gravity = android.view.Gravity.CENTER
+            setTextColor(if (selectedAlbum == key) 0xFFFFFFFF.toInt() else UiTheme.color(this@MainActivity, R.attr.appText))
+            setPadding(dp(4), dp(5), dp(4), dp(5))
+        }
+        tile.addView(label, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM))
+        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) }
+        return tile
+    }
+
+    private fun showWidgetAlbumActions(widgetId: Int) {
+        data class Action(val label: String, val run: () -> Unit)
+        val auto = PinnedPhotoWidgetBase.autoEnabled(this, widgetId)
+        val actions = mutableListOf<Action>()
+        actions.add(Action("Слияние в другой виджет…") {
+            val others = PinnedPhotoWidgetBase.installedWidgetIds(this).filterNot { it == widgetId }
+            if (others.isEmpty()) toast("Нет другого виджета") else {
+                android.app.AlertDialog.Builder(this).setTitle("Слить виджет №$widgetId в…")
+                    .setItems(others.map { "Виджет №$it" }.toTypedArray()) { _, which ->
+                        val ids = PinnedPhotoWidgetBase.getWidgetPhotoIds(this, widgetId)
+                        val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, ids, listOf(others[which]))
+                        toast("Добавлено ссылок: $added. Исходный виджет не очищен"); refresh()
+                    }.setNegativeButton("Отмена", null).show()
+            }
+        })
+        actions.add(Action("Очистить альбом виджета…") {
+            android.app.AlertDialog.Builder(this).setTitle("Очистить виджет №$widgetId?")
+                .setMessage("Сам виджет Android удалить из приложения нельзя — это делает лаунчер долгим нажатием по виджету. Здесь можно только убрать все фото, виджет останется пустым. Оригиналы фото не удаляются.")
+                .setPositiveButton("Очистить") { _, _ ->
+                    PinnedPhotoWidgetBase.clearWidget(this, widgetId)
+                    if (selectedAlbum == WIDGET_PREFIX + widgetId) selectedAlbum = ALL_ALBUMS
+                    toast("Альбом виджета очищен"); refresh()
+                }.setNegativeButton("Отмена", null).show()
+        })
+        actions.add(Action(if (auto) "Отключить автопереключение" else "Включить автопереключение") {
+            PinnedPhotoWidgetBase.setAutoEnabled(this, widgetId, !auto); PinnedPhotoWidgetBase.updateAll(this); toast("Автопереключение: ${if (!auto) "включено" else "выключено"}"); refresh()
+        })
+        actions.add(Action("Время автопереключения: ${PinnedPhotoWidgetBase.intervalMinutes(this, widgetId)} мин") {
+            val labels = arrayOf("30 минут", "1 час", "3 часа", "6 часов", "12 часов")
+            val values = listOf(30, 60, 180, 360, 720)
+            android.app.AlertDialog.Builder(this).setTitle("Автопереключение виджета №$widgetId")
+                .setItems(labels) { _, which -> PinnedPhotoWidgetBase.setIntervalMinutes(this, widgetId, values[which]); toast("Интервал: ${labels[which]}. Android может округлять обновления."); refresh() }
+                .setNegativeButton("Отмена", null).show()
+        })
+        android.app.AlertDialog.Builder(this).setTitle("Виджет №$widgetId")
+            .setItems(actions.map { it.label }.toTypedArray()) { _, which -> actions[which].run() }
+            .setNegativeButton("Отмена", null).show()
     }
 
     private fun albumTile(album: String, albumPhotos: List<Photo>): View {
@@ -234,36 +360,18 @@ class MainActivity : FragmentActivity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun selectedWidgetId(): Int = selectedAlbum.removePrefix(WIDGET_PREFIX).toIntOrNull() ?: 0
 
-    private fun renderWidgetAlbums() {
-        val section = findViewById<View>(R.id.widgetAlbumsSection)
-        val row = findViewById<android.widget.LinearLayout>(R.id.widgetAlbumsTiles)
-        val widgetIds = PinnedPhotoWidgetBase.installedWidgetIds(this)
-        section.visibility = if (widgetIds.isEmpty()) View.GONE else View.VISIBLE
-        row.removeAllViews()
-        for (widgetId in widgetIds) {
-            val copies = photos.filter { it.widgetId == widgetId }
-            val key = WIDGET_PREFIX + widgetId
-            val tile = TextView(this).apply {
-                text = "🧩 Виджет №$widgetId\n${copies.size} фото"; textSize = 13f; gravity = android.view.Gravity.CENTER
-                setPadding(dp(8), dp(8), dp(8), dp(8))
-                setTextColor(if (selectedAlbum == key) 0xFFFFFFFF.toInt() else UiTheme.color(this@MainActivity, R.attr.appText))
-                setBackgroundResource(if (selectedAlbum == key) R.drawable.btn_primary else R.drawable.card_bg)
-                setOnClickListener { selectedAlbum = if (selectedAlbum == key) ALL_ALBUMS else key; refresh() }
-            }
-            row.addView(tile, android.widget.LinearLayout.LayoutParams(dp(118), dp(76)).apply { marginEnd = dp(10) })
-        }
-        if (selectedAlbum.startsWith(WIDGET_PREFIX) && selectedWidgetId() !in widgetIds) selectedAlbum = ALL_ALBUMS
-    }
-
     private fun chooseWidgetsForPhotos(sourceIds: List<String>) {
         if (sourceIds.isEmpty()) { toast("Сначала выберите фото"); return }
         val widgetIds = PinnedPhotoWidgetBase.installedWidgetIds(this)
         if (widgetIds.isEmpty()) { toast("Сначала добавьте виджет на рабочий стол — пока назначать некуда"); return }
         if (widgetIds.size == 1) {
             val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, sourceIds, widgetIds)
-            selectedIds.clear(); toast(if (added > 0) "Добавлено копий в виджет: $added" else "Эти фото уже есть в виджете"); refresh(); return
+            selectedIds.clear(); toast(if (added > 0) "Добавлено в виджет: $added" else "Эти фото уже есть в виджете"); refresh(); return
         }
-        val labels = widgetIds.map { "Виджет №$it" }.toTypedArray()
+        val labels = widgetIds.map { widgetId ->
+            val already = sourceIds.all { it in PinnedPhotoWidgetBase.getWidgetPhotoIds(this, widgetId) }
+            if (already) "Виджет №$widgetId · уже там ✓" else "Виджет №$widgetId"
+        }.toTypedArray()
         val checked = BooleanArray(widgetIds.size)
         android.app.AlertDialog.Builder(this)
             .setTitle("Добавить копии в виджеты")
@@ -272,12 +380,12 @@ class MainActivity : FragmentActivity() {
                 val chosen = widgetIds.filterIndexed { index, _ -> checked[index] }
                 if (chosen.isEmpty()) toast("Ни один виджет не выбран") else {
                     val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, sourceIds, chosen)
-                    selectedIds.clear(); toast("Добавлено копий: $added"); refresh()
+                    selectedIds.clear(); toast("Добавлено ссылок: $added"); refresh()
                 }
             }
             .setNeutralButton("Во все") { _, _ ->
                 val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, sourceIds, widgetIds)
-                selectedIds.clear(); toast("Добавлено копий: $added"); refresh()
+                selectedIds.clear(); toast("Добавлено ссылок: $added"); refresh()
             }
             .setNegativeButton("Отмена", null).show()
     }
@@ -627,15 +735,18 @@ class MainActivity : FragmentActivity() {
                         if (!mime.startsWith("image/") && !mime.startsWith("video/")) continue
                         val imported = PhotoStore.importBytes(this, bytes, mime, displayName(uri))
                         val hash = PhotoStore.sha256(bytes)
-                        val duplicate = when {
-                            pendingImportWidget > 0 -> PhotoStore.findDuplicate(this, hash, null, pendingImportWidget)
-                            pendingImportAlbum.isNotBlank() -> PhotoStore.findDuplicate(this, hash, pendingImportAlbum)
-                            else -> PhotoStore.list(this).firstOrNull { it.widgetId == 0 && it.albums.isEmpty() && it.hash == hash }
+                        // ВАЖНО: imported уже сохранён в PhotoStore, поэтому ищем дубликат среди ДРУГИХ записей.
+                        val duplicate = PhotoStore.list(this).firstOrNull { other ->
+                            other.id != imported.id && other.widgetId == 0 && other.hash == hash && when {
+                                pendingImportWidget > 0 -> true
+                                pendingImportAlbum.isNotBlank() -> pendingImportAlbum in other.albums
+                                else -> other.albums.isEmpty()
+                            }
                         }
-                        if (duplicate != null) { PhotoStore.delete(this, imported); continue }
+                        if (duplicate != null && pendingImportWidget == 0) { PhotoStore.delete(this, imported); continue }
                         if (pendingImportWidget > 0) {
+                            imported.albums = mutableListOf(); PhotoStore.update(this, imported)
                             PinnedPhotoWidgetBase.addCopiesToWidgets(this, listOf(imported.id), listOf(pendingImportWidget))
-                            PhotoStore.delete(this, imported)
                         } else {
                             imported.albums = if (pendingImportAlbum.isBlank()) mutableListOf() else mutableListOf(pendingImportAlbum); PhotoStore.update(this, imported)
                         }
@@ -707,6 +818,7 @@ class MainActivity : FragmentActivity() {
 class PhotoAdapter(
     private val items: List<Photo>,
     private val selectedIds: Set<String>,
+    private val widgetPhotoIds: Set<String> = emptySet(),
     private val onClick: (Photo) -> Unit,
     private val onLongClick: (Photo) -> Unit
 ) : RecyclerView.Adapter<PhotoAdapter.Holder>() {
@@ -728,8 +840,8 @@ class PhotoAdapter(
         holder.badge.text = if (selected) "✓" else "📌"
         holder.badge.setBackgroundResource(if (selected) R.drawable.selection_badge else R.drawable.badge_bg)
         holder.badge.setTextColor(if (selected) 0xFFFFFFFF.toInt() else 0xFF111827.toInt())
-        holder.badge.visibility = if (selected || photo.pinned || photo.widgetId > 0) View.VISIBLE else View.GONE
-        if (photo.widgetId > 0 && !selected) holder.badge.text = "🧩"
+        holder.badge.visibility = if (selected || photo.pinned || photo.widgetId > 0 || photo.id in widgetPhotoIds) View.VISIBLE else View.GONE
+        if (!selected && (photo.widgetId > 0 || photo.id in widgetPhotoIds)) holder.badge.text = "🧩"
         holder.thumb.alpha = if (selected) 0.78f else 1f
         holder.itemView.setBackgroundResource(if (selected) R.drawable.selection_frame else R.drawable.card_bg)
         holder.thumb.setImageResource(R.drawable.widget_placeholder)

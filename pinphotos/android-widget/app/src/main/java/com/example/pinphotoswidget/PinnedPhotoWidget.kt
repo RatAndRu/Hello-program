@@ -19,12 +19,26 @@ import kotlin.math.max
 open class PinnedPhotoWidgetBase : AppWidgetProvider() {
     // Периодический апдейт от системы (~30 мин): листаем на следующее фото
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        ids.forEach { widgetId -> shift(context, +1, widgetId); render(context, manager, widgetId, javaClass) }
+        ids.forEach { widgetId ->
+            if (autoEnabled(context, widgetId)) {
+                val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                val now = System.currentTimeMillis()
+                val last = prefs.getLong("lastshift_$widgetId", 0L)
+                val intervalMs = intervalMinutes(context, widgetId).toLong() * 60_000L
+                if (now - last >= intervalMs) {
+                    shift(context, +1, widgetId)
+                    prefs.edit().putLong("lastshift_$widgetId", now).apply()
+                }
+            }
+            render(context, manager, widgetId, javaClass)
+        }
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         // Независимые копии удалённого виджета больше не нужны.
         appWidgetIds.forEach { widgetId ->
+            setWidgetPhotoIds(context, widgetId, emptyList())
+            // Старые независимые копии из v1.6, если остались, чистим; обычные оригиналы не трогаем.
             PhotoStore.list(context).filter { it.widgetId == widgetId }.forEach { PhotoStore.delete(context, it) }
         }
         super.onDeleted(context, appWidgetIds)
@@ -61,12 +75,54 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
             PinnedPhotoWidget4x3::class.java
         )
 
+        fun getWidgetPhotoIds(context: Context, widgetId: Int): MutableList<String> {
+            val raw = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString("refs_$widgetId", "") ?: ""
+            return raw.split(',').filter { it.isNotBlank() }.toMutableList()
+        }
+        fun setWidgetPhotoIds(context: Context, widgetId: Int, ids: Collection<String>) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString("refs_$widgetId", ids.distinct().joinToString(",")).apply()
+        }
+        fun widgetsContaining(context: Context, photoId: String): Set<Int> =
+            installedWidgetIds(context).filter { photoId in getWidgetPhotoIds(context, it) }.toSet()
+        fun setPhotoWidgets(context: Context, photoId: String, chosen: Collection<Int>) {
+            installedWidgetIds(context).forEach { widgetId ->
+                val ids = getWidgetPhotoIds(context, widgetId)
+                if (widgetId in chosen) { if (photoId !in ids) ids.add(photoId) } else ids.remove(photoId)
+                setWidgetPhotoIds(context, widgetId, ids)
+            }
+        }
+        fun autoEnabled(context: Context, widgetId: Int): Boolean =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("auto_$widgetId", true)
+        fun setAutoEnabled(context: Context, widgetId: Int, enabled: Boolean) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("auto_$widgetId", enabled).apply()
+        }
+        fun intervalMinutes(context: Context, widgetId: Int): Int =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getInt("interval_$widgetId", 30)
+        fun setIntervalMinutes(context: Context, widgetId: Int, minutes: Int) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt("interval_$widgetId", minutes).apply()
+        }
+        fun clearWidget(context: Context, widgetId: Int) {
+            setWidgetPhotoIds(context, widgetId, emptyList())
+            PhotoStore.list(context).filter { it.widgetId == widgetId }.forEach { PhotoStore.delete(context, it) }
+        }
+
         fun installedWidgetIds(context: Context): List<Int> {
             val manager = AppWidgetManager.getInstance(context)
             return PROVIDERS.flatMap { cls -> manager.getAppWidgetIds(ComponentName(context, cls)).toList() }.distinct().sorted()
         }
 
         fun photosForWidget(context: Context, widgetId: Int): List<Photo> {
+            val refs = getWidgetPhotoIds(context, widgetId)
+            if (refs.isNotEmpty()) {
+                val all = PhotoStore.list(context)
+                val lockedNames = PhotoStore.lockedAlbumNames(context)
+                val result = refs.mapNotNull { id -> all.firstOrNull { it.id == id && it.widgetId == 0 } }
+                    .filter { photo -> photo.albums.none { it in lockedNames } }
+                // Удаление оригинала автоматически убирает его из всех виджетов: битые ссылки подчищаем.
+                if (result.size != refs.size) setWidgetPhotoIds(context, widgetId, result.map { it.id })
+                return PhotoStore.dedupeForDisplay(result)
+            }
             val own = PhotoStore.list(context).filter { it.widgetId == widgetId }
             if (own.isNotEmpty()) return PhotoStore.dedupeForDisplay(own)
             // Миграция со старых версий: прежде виджеты жили на общем списке закреплённых.
@@ -74,18 +130,17 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
             return PhotoStore.list(context).filter { photo -> photo.widgetId == 0 && photo.pinned && photo.albums.none { it in lockedNames } }
         }
 
-        /** Добавляет независимые копии в выбранные виджеты. Внутри одного виджета дубликаты не создаём. */
+        /** ЗАВИСИМАЯ модель: в виджет добавляется ссылка на оригинал, а не копия файла.
+         *  Удаление оригинала автоматически убирает фото из всех виджетов. */
         fun addCopiesToWidgets(context: Context, sourceIds: Collection<String>, widgetIds: Collection<Int>): Int {
             var added = 0
-            val all = PhotoStore.list(context)
+            val valid = PhotoStore.list(context).filter { it.widgetId == 0 }.map { it.id }.toSet()
             for (widgetId in widgetIds) {
-                for (id in sourceIds) {
-                    val source = all.firstOrNull { it.id == id } ?: continue
-                    val hash = PhotoStore.plainBytes(context, source)?.let { PhotoStore.sha256(it) } ?: source.hash
-                    val exists = PhotoStore.list(context).any { it.widgetId == widgetId && it.hash == hash && hash.isNotEmpty() }
-                    if (!exists && PhotoStore.duplicatePhoto(context, source, widgetId = widgetId) != null) added++
-                }
+                val ids = getWidgetPhotoIds(context, widgetId)
+                for (id in sourceIds) if (id in valid && id !in ids) { ids.add(id); added++ }
+                setWidgetPhotoIds(context, widgetId, ids)
             }
+            if (added > 0) updateAll(context)
             return added
         }
 
@@ -108,7 +163,9 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
         }
 
         private fun render(context: Context, manager: AppWidgetManager, widgetId: Int, cls: Class<out PinnedPhotoWidgetBase>) {
-            val views = RemoteViews(context.packageName, R.layout.widget_pinned_photo)
+            // Виджет следует теме приложения (светлая/тёмная), а не только системе.
+            val layout = if (UiTheme.isDark(context)) R.layout.widget_pinned_photo_dark else R.layout.widget_pinned_photo
+            val views = RemoteViews(context.packageName, layout)
             val all = PhotoStore.list(context).filter { it.widgetId == 0 }
             val pinned = photosForWidget(context, widgetId)
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)

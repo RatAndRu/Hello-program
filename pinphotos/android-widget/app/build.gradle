@@ -2,7 +2,7 @@ plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
 android {
     namespace 'com.example.pinphotoswidget'
     compileSdk 34
-    defaultConfig { applicationId 'com.example.pinphotoswidget'; minSdk 26; targetSdk 34; versionCode 12; versionName '1.6' }
+    defaultConfig { applicationId 'com.example.pinphotoswidget'; minSdk 26; targetSdk 34; versionCode 13; versionName '1.7' }
     signingConfigs {
         release {
             def ks = System.getenv('PINPHOTOS_KEYSTORE_FILE')

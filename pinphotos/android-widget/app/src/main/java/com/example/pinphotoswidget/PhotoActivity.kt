@@ -46,7 +46,8 @@ class PhotoActivity : Activity() {
         findViewById<Button>(R.id.pinBtn).setOnClickListener {
             val current = photo ?: return@setOnClickListener
             if (current.widgetId > 0) {
-                AlertDialog.Builder(this).setTitle("Убрать копию из виджета №${current.widgetId}?")
+                // Старые независимые копии v1.6: удаление такой записи не трогает оригинал.
+                AlertDialog.Builder(this).setTitle("Убрать старую копию из виджета №${current.widgetId}?")
                     .setPositiveButton("Убрать") { _, _ ->
                         PhotoStore.delete(this, current); PinnedPhotoWidgetBase.updateAll(this); finish()
                     }.setNegativeButton("Отмена", null).show()
@@ -128,21 +129,22 @@ class PhotoActivity : Activity() {
         if (widgetIds.size == 1) {
             val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, listOf(current.id), widgetIds)
             PinnedPhotoWidgetBase.updateAll(this)
-            Toast.makeText(this, if (added > 0) "Отдельная копия добавлена в единственный виджет" else "Это фото уже есть в виджете", Toast.LENGTH_LONG).show(); return
+            Toast.makeText(this, if (added > 0) "Фото добавлено в единственный виджет" else "Это фото уже есть в виджете", Toast.LENGTH_LONG).show(); renderText(); return
         }
-        val labels = widgetIds.map { "Виджет №$it" }.toTypedArray(); val checked = BooleanArray(widgetIds.size)
+        val containing = PinnedPhotoWidgetBase.widgetsContaining(this, current.id)
+        val labels = widgetIds.map { if (it in containing) "Виджет №$it · уже там ✓" else "Виджет №$it" }.toTypedArray()
+        val checked = BooleanArray(widgetIds.size) { widgetIds[it] in containing }
         AlertDialog.Builder(this).setTitle("Добавить копию в виджеты")
             .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
             .setPositiveButton("Добавить") { _, _ ->
                 val chosen = widgetIds.filterIndexed { index, _ -> checked[index] }
-                if (chosen.isEmpty()) Toast.makeText(this, "Ни один виджет не выбран", Toast.LENGTH_SHORT).show() else {
-                    val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, listOf(current.id), chosen)
-                    PinnedPhotoWidgetBase.updateAll(this); Toast.makeText(this, "Добавлено копий: $added", Toast.LENGTH_SHORT).show()
-                }
+                PinnedPhotoWidgetBase.setPhotoWidgets(this, current.id, chosen)
+                PinnedPhotoWidgetBase.updateAll(this); renderText()
+                Toast.makeText(this, if (chosen.isEmpty()) "Фото убрано из всех виджетов" else "Виджеты обновлены: ${chosen.size}", Toast.LENGTH_SHORT).show()
             }
             .setNeutralButton("Во все") { _, _ ->
-                val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, listOf(current.id), widgetIds)
-                PinnedPhotoWidgetBase.updateAll(this); Toast.makeText(this, "Добавлено копий: $added", Toast.LENGTH_SHORT).show()
+                PinnedPhotoWidgetBase.setPhotoWidgets(this, current.id, widgetIds)
+                PinnedPhotoWidgetBase.updateAll(this); renderText(); Toast.makeText(this, "Фото добавлено во все виджеты", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Отмена", null).show()
     }
@@ -181,8 +183,9 @@ class PhotoActivity : Activity() {
             .filter { it.isNotBlank() }.joinToString(" · ")
         findViewById<TextView>(R.id.photoMeta).text = meta
         findViewById<Button>(R.id.pinBtn).text = when {
-            p.widgetId > 0 -> "🧩 Копия виджета №${p.widgetId}"
+            p.widgetId > 0 -> "🧩 Старая копия виджета №${p.widgetId}"
             PinnedPhotoWidgetBase.installedWidgetIds(this).isEmpty() -> "В виджет (нет виджета)"
+            p.id in PinnedPhotoWidgetBase.installedWidgetIds(this).flatMap { PinnedPhotoWidgetBase.getWidgetPhotoIds(this, it) } -> "В виджете ✓"
             else -> "В виджет"
         }
         findViewById<TextView>(R.id.fullName).text = p.name
