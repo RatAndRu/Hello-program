@@ -7,7 +7,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.widget.RemoteViews
 import kotlin.math.max
 
@@ -173,11 +172,12 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
                 if (result.size != refs.size) setWidgetPhotoIds(context, widgetId, result.map { it.id })
                 return PhotoStore.dedupeForDisplay(result)
             }
-            val own = PhotoStore.list(context).filter { it.widgetId == widgetId }
+            val all = PhotoStore.list(context)
+            val own = all.filter { it.widgetId == widgetId }
             if (own.isNotEmpty()) return PhotoStore.dedupeForDisplay(own)
             // Миграция со старых версий: прежде виджеты жили на общем списке закреплённых.
             val lockedNames = PhotoStore.lockedAlbumNames(context)
-            return PhotoStore.list(context).filter { photo -> photo.widgetId == 0 && photo.pinned && photo.albums.none { it in lockedNames } }
+            return all.filter { photo -> photo.widgetId == 0 && photo.pinned && photo.albums.none { it in lockedNames } }
         }
 
         /** ЗАВИСИМАЯ модель: в виджет добавляется ссылка на оригинал, а не копия файла.

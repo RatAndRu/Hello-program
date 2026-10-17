@@ -224,7 +224,7 @@ object PhotoStore {
         var added = 0
         val sources = list(context).filter { source in it.albums && it.widgetId == 0 }
         for (photo in sources) {
-            val hash = plainBytes(context, photo)?.let { sha256(it) } ?: photo.hash
+            val hash = contentHash(context, photo)
             if (findDuplicate(context, hash, destination) == null) {
                 if (duplicatePhoto(context, photo, destinationAlbum = destination) != null) added++
             }
@@ -272,34 +272,31 @@ object PhotoStore {
             if (videoLabel != null) durationCache[photo.id] = videoLabel
             return videoLabel
         }
-        val plain = plainBytes(context, photo) ?: return if (isGif) "GIF" else null
-        val label: String = if (isGif) {
-            val ms = gifDurationMs(plain)
-            if (ms > 0) "GIF · ${formatDuration(ms)}" else "GIF"
-        } else {
-            val ms = try {
-                val temp = File(context.cacheDir, "duration_${photo.id}.mp4")
-                temp.writeBytes(plain)
-                val retriever = android.media.MediaMetadataRetriever()
-                retriever.setDataSource(temp.absolutePath)
-                val value = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
-                retriever.release(); temp.delete(); value
-            } catch (e: Exception) { 0L }
-            if (ms > 0) "▶ ${formatDuration(ms)}" else "▶ Видео"
-        }
+        // GIF сканируем потоково по файлу: не нужно держать весь файл в памяти ради суммы задержек кадров.
+        val playable = playableFile(context, photo) ?: return "GIF"
+        val ms = try { playable.inputStream().buffered().use { gifDurationMs(it) } } catch (e: Exception) { 0L }
+        val label = if (ms > 0) "GIF · ${formatDuration(ms)}" else "GIF"
         durationCache[photo.id] = label
         return label
     }
 
-    private fun gifDurationMs(bytes: ByteArray): Long {
+    private fun gifDurationMs(input: java.io.InputStream): Long {
         var totalHundredths = 0L
-        var i = 0
-        while (i + 7 < bytes.size) {
-            if (bytes[i] == 0x21.toByte() && bytes[i + 1] == 0xF9.toByte() && bytes[i + 2] == 4.toByte()) {
-                val delay = (bytes[i + 4].toInt() and 0xFF) or ((bytes[i + 5].toInt() and 0xFF) shl 8)
-                totalHundredths += delay
-                i += 8
-            } else i++
+        var tail = ByteArray(0)
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val read = input.read(buffer)
+            if (read <= 0) break
+            val chunk = tail + buffer.copyOf(read)
+            var i = 0
+            while (i + 7 < chunk.size) {
+                if (chunk[i] == 0x21.toByte() && chunk[i + 1] == 0xF9.toByte() && chunk[i + 2] == 4.toByte()) {
+                    val delay = (chunk[i + 4].toInt() and 0xFF) or ((chunk[i + 5].toInt() and 0xFF) shl 8)
+                    totalHundredths += delay
+                    i += 8
+                } else i++
+            }
+            tail = chunk.copyOfRange((chunk.size - 7).coerceAtLeast(0), chunk.size)
         }
         return totalHundredths * 10L
     }
@@ -312,6 +309,25 @@ object PhotoStore {
 
     fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
+
+    private fun sha256(file: File): String {
+        val digest = MessageDigest.getInstance("SHA-256")
+        file.inputStream().use { input ->
+            val buffer = ByteArray(64 * 1024)
+            while (true) {
+                val read = input.read(buffer)
+                if (read <= 0) break
+                digest.update(buffer, 0, read)
+            }
+        }
+        return digest.digest().joinToString("") { "%02x".format(it) }
+    }
+
+    private fun contentHash(context: Context, photo: Photo): String {
+        if (photo.hash.isNotEmpty()) return photo.hash
+        playableFile(context, photo)?.let { return sha256(it) }
+        return plainBytes(context, photo)?.let { sha256(it) }.orEmpty()
+    }
 
     fun albumKey(context: Context, album: String): ByteArray? {
         val security = securityFor(context, album)
@@ -451,11 +467,35 @@ object PhotoStore {
         }
     }
 
+    private fun decodeSampledFile(file: File, target: Int): android.graphics.Bitmap? {
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+        var sample = 1
+        while (bounds.outWidth / sample > target * 2 || bounds.outHeight / sample > target * 2) sample *= 2
+        return android.graphics.BitmapFactory.decodeFile(
+            file.absolutePath,
+            android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+        )
+    }
+
     fun decodeBitmap(context: Context, photo: Photo, target: Int = 900): android.graphics.Bitmap? {
-        // Видео: статичный кадр-превью. В виджете видео и GIF всегда статичны (RemoteViews не анимирует).
-        if (photo.mime.startsWith("video/")) return videoFrame(context, photo)
         val cacheKey = "${photo.id}:$target:${photo.file}"
         synchronized(bitmapCache) { bitmapCache.get(cacheKey)?.let { return it } }
+        // Видео: статичный кадр-превью. В виджете видео и GIF всегда статичны (RemoteViews не анимирует).
+        if (photo.mime.startsWith("video/")) {
+            val frame = videoFrame(context, photo, target)
+            if (frame != null) synchronized(bitmapCache) { bitmapCache.put(cacheKey, frame) }
+            return frame
+        }
+        // Открытые изображения декодируем сэмплированно прямо из файла, не создавая ByteArray всего файла.
+        if (!photo.encrypted) {
+            val decoded = decodeSampledFile(photo.fileIn(dir(context)), target)
+            if (decoded != null) {
+                synchronized(bitmapCache) { bitmapCache.put(cacheKey, decoded) }
+                return decoded
+            }
+        }
         val plain = plainBytes(context, photo) ?: return null
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeByteArray(plain, 0, plain.size, bounds)
@@ -468,30 +508,60 @@ object PhotoStore {
         return decoded
     }
 
-    fun videoFrame(context: Context, photo: Photo): android.graphics.Bitmap? {
+    fun videoFrame(context: Context, photo: Photo, target: Int = 1100): android.graphics.Bitmap? {
         return try {
             val playable = playableFile(context, photo) ?: return null
             val retriever = android.media.MediaMetadataRetriever()
             retriever.setDataSource(playable.absolutePath)
             val frame = retriever.getFrameAtTime(0)
-            retriever.release(); frame
+            retriever.release()
+            if (frame == null || target <= 0) frame
+            else {
+                val largest = maxOf(frame.width, frame.height)
+                if (largest <= target) frame else {
+                    val scale = target.toFloat() / largest.toFloat()
+                    val scaled = android.graphics.Bitmap.createScaledBitmap(
+                        frame,
+                        (frame.width * scale).toInt().coerceAtLeast(1),
+                        (frame.height * scale).toInt().coerceAtLeast(1),
+                        true
+                    )
+                    if (scaled !== frame) frame.recycle()
+                    scaled
+                }
+            }
         } catch (e: Exception) { null }
     }
 
     /** Создаёт действительно независимую копию: новый id и отдельный файл. Удаление одной не трогает другую. */
     @Synchronized
     fun duplicatePhoto(context: Context, source: Photo, destinationAlbum: String? = null, widgetId: Int = 0): Photo? {
-        val plain = plainBytes(context, source) ?: return null
         val ext = source.file.substringAfterLast('.', "jpg")
         val id = System.currentTimeMillis().toString(36) + UUID.randomUUID().toString().take(6)
         val copy = Photo(
             id = id, name = source.name,
             albums = destinationAlbum?.let { mutableListOf(it) } ?: mutableListOf(),
             tags = source.tags.toMutableList(), note = source.note,
-            pinned = false, widgetId = widgetId, hash = sha256(plain),
+            pinned = false, widgetId = widgetId,
             createdAt = System.currentTimeMillis(), file = "$id.$ext", mime = source.mime
         )
-        writeStored(context, copy, plain)
+        if (isLargeOrVideo(context, source)) {
+            // Независимая копия большого файла создаётся потоково, без ByteArray всего видео/фото.
+            val plain = playableFile(context, source) ?: return null
+            copy.hash = source.hash.ifEmpty { sha256(plain) }
+            val target = copy.fileIn(dir(context))
+            val lockedAlbum = copy.albums.firstOrNull { securityFor(context, it).locked }
+            val key = lockedAlbum?.let { albumKey(context, it) }
+            if (lockedAlbum != null && key != null) {
+                copyEncryptedTo(plain, key, target); copy.encrypted = true
+            } else {
+                plain.copyTo(target, overwrite = true); copy.encrypted = false
+            }
+        } else {
+            val plain = plainBytes(context, source) ?: return null
+            copy.hash = sha256(plain)
+            writeStored(context, copy, plain)
+        }
         val all = list(context); all.add(0, copy); saveAll(context, all)
         return copy
     }
@@ -579,26 +649,8 @@ object PhotoStore {
             } else {
                 plainBytes(context, all[idx])?.let { plain -> writeStored(context, photo, plain) }
             }
-            // rewritePhotoStorage мог работать со старой записью из списка; синхронизируем флаг актуальной записи
-            val stored = list(context).firstOrNull { it.id == photo.id }
-            if (isLargeOrVideo(context, photo) && stored != null) photo.encrypted = stored.encrypted
             all[idx] = photo; saveAll(context, all)
         }
-    }
-
-    @Synchronized
-    fun importBytes(context: Context, bytes: ByteArray, mime: String, name: String): Photo {
-        val ext = when {
-            mime == "image/png" -> "png"; mime == "image/webp" -> "webp"; mime == "image/gif" -> "gif"
-            mime.startsWith("video/") -> if (mime.contains("webm")) "webm" else "mp4"
-            else -> "jpg"
-        }
-        val id = System.currentTimeMillis().toString(36) + UUID.randomUUID().toString().take(6)
-        val fileName = "$id.$ext"
-        File(dir(context), fileName).writeBytes(bytes)
-        val photo = Photo(id = id, name = name.ifBlank { "Фото" }, file = fileName, mime = mime.ifBlank { "image/jpeg" }, hash = sha256(bytes))
-        val all = list(context); all.add(0, photo); saveAll(context, all)
-        return photo
     }
 
     @Synchronized

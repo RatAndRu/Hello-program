@@ -2,7 +2,7 @@ plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
 android {
     namespace 'com.example.pinphotoswidget'
     compileSdk 34
-    defaultConfig { applicationId 'com.example.pinphotoswidget'; minSdk 26; targetSdk 34; versionCode 26; versionName '1.20' }
+    defaultConfig { applicationId 'com.example.pinphotoswidget'; minSdk 26; targetSdk 34; versionCode 27; versionName '1.21' }
     signingConfigs {
         release {
             def ks = System.getenv('PINPHOTOS_KEYSTORE_FILE')
@@ -17,7 +17,10 @@ android {
     buildTypes {
         release {
             if (System.getenv('PINPHOTOS_KEYSTORE_FILE')) signingConfig signingConfigs.release
-            minifyEnabled false
+            // Только оптимизация готовой сборки: R8 и сжатие ресурсов не меняют интерфейс и функции.
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }

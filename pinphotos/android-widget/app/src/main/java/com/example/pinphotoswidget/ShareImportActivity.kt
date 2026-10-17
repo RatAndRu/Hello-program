@@ -43,6 +43,11 @@ class ShareImportActivity : Activity() {
         }
     }
 
+    override fun onDestroy() {
+        io.shutdown()
+        super.onDestroy()
+    }
+
     private fun collectUris(source: Intent?): List<Uri> {
         if (source == null) return emptyList()
         val result = mutableListOf<Uri>()

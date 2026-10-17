@@ -3,8 +3,6 @@ package com.example.pinphotoswidget
 import android.appwidget.AppWidgetManager
 import android.content.ComponentName
 import android.content.Intent
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -143,6 +141,11 @@ class MainActivity : FragmentActivity() {
         findViewById<Button>(R.id.albumsCollapseBtn).setOnClickListener {
             albumsCollapsed = !albumsCollapsed; applyAlbumsCollapsed()
         }
+    }
+
+    override fun onDestroy() {
+        io.shutdown()
+        super.onDestroy()
     }
 
     override fun onResume() {
@@ -306,7 +309,8 @@ class MainActivity : FragmentActivity() {
             return
         }
         val all = photos
-        for (album in PhotoStore.albums(this)) {
+        val albumNames = PhotoStore.albums(this)
+        for (album in albumNames) {
             val albumPhotos = all.filter { it.widgetId == 0 && album in it.albums }
             row.addView(albumTile(album, albumPhotos))
         }
@@ -318,7 +322,7 @@ class MainActivity : FragmentActivity() {
             setOnClickListener { showCreateAlbumDialog { album -> selectedAlbum = album; refresh() } }
         }
         row.addView(create, android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) })
-        if (PhotoStore.albums(this).isEmpty()) {
+        if (albumNames.isEmpty()) {
             val hint = TextView(this).apply {
                 text = "Альбомов пока нет"; textSize = 13f
                 setTextColor(UiTheme.color(this@MainActivity, R.attr.appMuted))
@@ -941,7 +945,11 @@ class MainActivity : FragmentActivity() {
                         val encoded = if (o.has("data")) o.getString("data")
                             else o.optString("dataUrl").substringAfter(",", "")
                         if (encoded.isEmpty()) continue
-                        val p = PhotoStore.importBytes(this, android.util.Base64.decode(encoded, android.util.Base64.DEFAULT),
+                        val base64Input = android.util.Base64InputStream(
+                            java.io.ByteArrayInputStream(encoded.toByteArray(Charsets.US_ASCII)),
+                            android.util.Base64.DEFAULT
+                        )
+                        val p = PhotoStore.importStream(this, base64Input,
                             o.optString("mime", "image/jpeg"), o.optString("name", "Фото"))
                         p.albums = mutableListOf<String>().apply {
                             o.optJSONArray("albums")?.let { a -> for (j in 0 until a.length()) a.optString(j).takeIf { it.isNotBlank() }?.let { add(it) } }
@@ -1025,7 +1033,6 @@ class PhotoAdapter(
                 if (holder.thumb.tag == photo.id && label != null) holder.durationBadge.text = label
             }
         }
-        val path = photo.fileIn(PhotoStore.dir(holder.thumb.context)).absolutePath
         IO.execute {
             val bmp = PhotoStore.decodeBitmap(holder.thumb.context, photo, 360)
             holder.thumb.post { if (holder.thumb.tag == photo.id && bmp != null) holder.thumb.setImageBitmap(bmp) }
@@ -1034,12 +1041,4 @@ class PhotoAdapter(
         holder.itemView.setOnLongClickListener { onLongClick(photo); true }
     }
 
-    private fun decodeSampled(path: String, target: Int): Bitmap? {
-        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-        BitmapFactory.decodeFile(path, bounds)
-        if (bounds.outWidth <= 0) return null
-        var sample = 1
-        while (bounds.outWidth / sample > target * 2) sample *= 2
-        return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample })
-    }
 }

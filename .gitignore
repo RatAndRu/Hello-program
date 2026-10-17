@@ -1,16 +1,9 @@
-# Python
-__pycache__/
-*.py[cod]
-*.egg-info/
-.venv/
-venv/
-.pytest_cache/
-.mypy_cache/
-
-# Сборки и мусор
-dist/
-build/
-*.log
+# Android / Gradle
+.gradle/
+**/build/
+local.properties
+*.iml
+.cxx/
 
 # Редакторы и системы
 .vscode/
@@ -19,5 +12,5 @@ build/
 Thumbs.db
 desktop.ini
 
-# Временные файлы сборки комикса
-comic/_preview_*.jpg
+# Служебные файлы
+*.log
