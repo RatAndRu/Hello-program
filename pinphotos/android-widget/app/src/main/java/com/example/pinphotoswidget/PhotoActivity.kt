@@ -234,7 +234,7 @@ class PhotoActivity : Activity() {
         }
         val name = styledEdit(p.name, "Название")
         val albumNames = PhotoStore.albums(this).toMutableList()
-        val displayAlbums = mutableListOf("Без альбома").apply { addAll(albumNames) }
+        val displayAlbums = albumNames.toMutableList() // «Разное» уже есть первым и заменяет «Без альбома»
         val albumAdapter = object : ArrayAdapter<String>(this@PhotoActivity, R.layout.spinner_item, displayAlbums) {
             override fun getDropDownView(position: Int, convertView: android.view.View?, parent: android.view.ViewGroup): android.view.View {
                 val view = super.getDropDownView(position, convertView, parent) as TextView
@@ -245,7 +245,7 @@ class PhotoActivity : Activity() {
         }.also { it.setDropDownViewResource(R.layout.spinner_dropdown_item) }
         val album = Spinner(this).apply {
             adapter = albumAdapter
-            setSelection(if (p.album.isBlank()) 0 else displayAlbums.indexOf(p.album).coerceAtLeast(0))
+            setSelection(if (p.album.isBlank()) displayAlbums.indexOf(PhotoStore.MISC_ALBUM).coerceAtLeast(0) else displayAlbums.indexOf(p.album).coerceAtLeast(0))
             setBackgroundResource(R.drawable.input_bg)
             setPopupBackgroundResource(if (UiTheme.isDark(this@PhotoActivity)) R.drawable.dialog_bg_dark else R.drawable.dialog_bg_light)
         }
@@ -258,7 +258,7 @@ class PhotoActivity : Activity() {
                     .setPositiveButton("Создать") { _, _ ->
                         try {
                             val created = PhotoStore.createAlbum(this@PhotoActivity, input.text.toString())
-                            displayAlbums.clear(); displayAlbums.add("Без альбома"); displayAlbums.addAll(PhotoStore.albums(this@PhotoActivity))
+                            displayAlbums.clear(); displayAlbums.addAll(PhotoStore.albums(this@PhotoActivity))
                             albumAdapter.notifyDataSetChanged()
                             album.setSelection(displayAlbums.indexOf(created))
                         } catch (e: Exception) { Toast.makeText(this@PhotoActivity, "Введите название", Toast.LENGTH_SHORT).show() }
@@ -273,7 +273,7 @@ class PhotoActivity : Activity() {
         AlertDialog.Builder(this).setTitle("Изменить фото").setView(box)
             .setPositiveButton("Сохранить") { _, _ ->
                 p.name = name.text.toString().ifBlank { p.name }
-                p.albums = album.selectedItem?.toString().orEmpty().takeUnless { it == "Без альбома" }?.let { mutableListOf(it) } ?: mutableListOf()
+                p.albums = mutableListOf(album.selectedItem?.toString()?.takeIf { it.isNotBlank() } ?: PhotoStore.MISC_ALBUM)
                 p.tags = tags.text.toString().split(",").map { it.trim().trimStart('#') }.filter { it.isNotEmpty() }.toMutableList()
                 p.note = note.text.toString()
                 PhotoStore.update(this, p); renderText()

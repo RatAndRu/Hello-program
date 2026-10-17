@@ -43,6 +43,7 @@ data class AlbumSecurity(
 }
 
 object PhotoStore {
+    const val MISC_ALBUM = "Разное"
     private const val DIR = "photos"
     private const val META = "meta.json"
 
@@ -61,8 +62,10 @@ object PhotoStore {
                 val tags = mutableListOf<String>()
                 o.optJSONArray("tags")?.let { t -> for (j in 0 until t.length()) tags.add(t.optString(j)) }
                 val memberships = mutableListOf<String>()
-                o.optJSONArray("albums")?.let { a -> for (j in 0 until a.length()) a.optString(j).takeIf { it.isNotBlank() && it != "Разное" }?.let { memberships.add(it) } }
-                if (memberships.isEmpty()) o.optString("album").takeIf { it.isNotBlank() && it != "Разное" }?.let { memberships.add(it) }
+                o.optJSONArray("albums")?.let { a -> for (j in 0 until a.length()) a.optString(j).takeIf { it.isNotBlank() }?.let { memberships.add(it) } }
+                if (memberships.isEmpty()) o.optString("album").takeIf { it.isNotBlank() }?.let { memberships.add(it) }
+                // «Разное» — предустановленный домашний альбом. Старые фото «без альбома» переезжают в него.
+                if (memberships.isEmpty() && o.optInt("widgetId", 0) == 0) memberships.add(MISC_ALBUM)
                 val photo = Photo(
                     id = o.getString("id"), name = o.optString("name", "Фото"),
                     albums = memberships, tags = tags,
@@ -84,8 +87,8 @@ object PhotoStore {
 
     @Synchronized
     fun albums(context: Context): List<String> {
-        // Никаких альбомов по умолчанию: только созданные пользователем.
-        val result = linkedSetOf<String>()
+        // Единственный предустановленный альбом — «Разное». Остальные создаёт пользователь.
+        val result = linkedSetOf<String>(MISC_ALBUM)
         try {
             val f = albumsFile(context)
             if (f.exists()) {
@@ -93,7 +96,7 @@ object PhotoStore {
                 for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { result.add(it) }
             }
         } catch (e: Exception) { }
-        list(context).flatMap { it.albums }.filter { it.isNotBlank() && it != "Разное" }.forEach { result.add(it) }
+        list(context).flatMap { it.albums }.filter { it.isNotBlank() }.forEach { result.add(it) }
         return result.toList()
     }
 
@@ -224,6 +227,7 @@ object PhotoStore {
 
     @Synchronized
     fun deleteAlbumWithPhotos(context: Context, album: String): Int {
+        if (album == MISC_ALBUM) return 0 // «Разное» удалить нельзя
         val all = list(context)
         val victims = all.filter { album in it.albums }
         victims.forEach { it.fileIn(dir(context)).delete() }

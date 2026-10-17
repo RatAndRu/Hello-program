@@ -126,7 +126,9 @@ class MainActivity : FragmentActivity() {
         photos = PhotoStore.list(this)
         val lockedNames = PhotoStore.lockedAlbumNames(this)
         val ordinaryPhotos = photos.filter { it.widgetId == 0 }
-        val visiblePhotos = ordinaryPhotos.filter { photo -> photo.albums.none { it in lockedNames } }
+        val visiblePhotos = ordinaryPhotos.filter { photo ->
+            PhotoStore.MISC_ALBUM in photo.albums && photo.albums.none { it in lockedNames }
+        }
         val widgetIdsNow = PinnedPhotoWidgetBase.installedWidgetIds(this)
         val widgetPhotosCount = widgetIdsNow.sumOf { PinnedPhotoWidgetBase.getWidgetPhotoIds(this, it).size }
         val pinnedCount = if (widgetPhotosCount > 0) widgetPhotosCount else visiblePhotos.count { it.pinned }
@@ -193,7 +195,7 @@ class MainActivity : FragmentActivity() {
 
     private fun renderAlbums() {
         findViewById<TextView>(R.id.currentAlbumText).text = when {
-            selectedAlbum == ALL_ALBUMS -> "Все фото"
+            selectedAlbum == ALL_ALBUMS -> PhotoStore.MISC_ALBUM
             selectedAlbum.startsWith(WIDGET_PREFIX) -> "Виджет №${selectedWidgetId()}"
             else -> selectedAlbum
         }
@@ -316,7 +318,11 @@ class MainActivity : FragmentActivity() {
             setBackgroundResource(if (album == selectedAlbum) R.drawable.btn_primary else R.drawable.card_bg)
             clipToOutline = true
             setOnClickListener {
-                if (selectedAlbum == album) {
+                if (isLocked) {
+                    showUnlockDialog(album) { selectedAlbum = album; refresh() }
+                } else if (album == PhotoStore.MISC_ALBUM && selectedAlbum == album) {
+                    // Уже в «Разное»: повторные нажатия ничего не меняют.
+                } else if (selectedAlbum == album) {
                     selectedAlbum = ALL_ALBUMS; unlockedAlbums.remove(album); refresh()
                 } else if (isLocked) {
                     showUnlockDialog(album) { selectedAlbum = album; refresh() }
@@ -509,7 +515,11 @@ class MainActivity : FragmentActivity() {
         data class Action(val label: String, val run: () -> Unit)
         val actions = mutableListOf<Action>()
         actions.add(Action("Слияние в другой альбом…") { chooseMergeDestination(album) })
-        actions.add(Action("Удалить альбом и его фото…") { confirmDeleteAlbum(album) })
+        if (album != PhotoStore.MISC_ALBUM) {
+            actions.add(Action("Удалить альбом и его фото…") { confirmDeleteAlbum(album) })
+        } else {
+            actions.add(Action("Альбом «Разное» удалить нельзя") { toast("«Разное» — постоянный альбом приложения") })
+        }
         if (security.pinHash.isEmpty()) {
             actions.add(Action("Установить 4-значный пароль") { showSetPinDialog(album) })
         } else {
@@ -618,10 +628,15 @@ class MainActivity : FragmentActivity() {
         if (selectedAlbum.startsWith(WIDGET_PREFIX)) {
             pendingImportWidget = selectedWidgetId(); pendingImportAlbum = ""
             pickPhotos()
-        } else if (selectedAlbum != ALL_ALBUMS) {
+            return
+        }
+        // «Разное» теперь тоже конкретный альбом: внутри любого открытого альбома добавляем сразу в него.
+        if (PhotoStore.securityFor(this, selectedAlbum).locked && selectedAlbum !in unlockedAlbums) {
+            showUnlockDialog(selectedAlbum) { pendingImportAlbum = selectedAlbum; pickPhotos() }
+        } else {
             pendingImportAlbum = selectedAlbum
             pickPhotos()
-        } else chooseImportAlbum()
+        }
     }
 
     @Deprecated("системная кнопка/жест назад")
@@ -656,8 +671,8 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun chooseImportAlbum() {
-        val albums = listOf("") + PhotoStore.albums(this) // "" = без альбома
-        val labels = albums.map { if (it.isEmpty()) "Без альбома" else it }.toTypedArray() + "＋ Новый альбом"
+        val albums = PhotoStore.albums(this) // первый — всегда «Разное»
+        val labels = albums.toTypedArray() + "＋ Новый альбом"
         android.app.AlertDialog.Builder(this)
             .setTitle("Добавить фото в альбом")
             .setItems(labels) { _, which ->
@@ -810,7 +825,7 @@ class MainActivity : FragmentActivity() {
 
     companion object {
         const val PICK_PHOTOS = 2001; const val EXPORT_JSON = 2002; const val IMPORT_JSON = 2003
-        const val ALL_ALBUMS = "__all__"
+        const val ALL_ALBUMS = PhotoStore.MISC_ALBUM
         const val WIDGET_PREFIX = "__widget__:"
     }
 }
