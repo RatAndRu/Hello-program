@@ -256,6 +256,19 @@ object PhotoStore {
         val isGif = photo.mime == "image/gif" || photo.file.endsWith(".gif", ignoreCase = true)
         if (!isVideo && !isGif) return null
         durationCache[photo.id]?.let { return it }
+        if (isVideo) {
+            val videoLabel = try {
+                val playable = playableFile(context, photo)
+                if (playable == null) null else {
+                    val retriever = android.media.MediaMetadataRetriever()
+                    retriever.setDataSource(playable.absolutePath)
+                    val ms = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                    retriever.release(); if (ms > 0) "▶ ${formatDuration(ms)}" else "▶ Видео"
+                }
+            } catch (e: Exception) { "▶ Видео" }
+            if (videoLabel != null) durationCache[photo.id] = videoLabel
+            return videoLabel
+        }
         val plain = plainBytes(context, photo) ?: return if (isGif) "GIF" else null
         val label: String = if (isGif) {
             val ms = gifDurationMs(plain)
@@ -300,6 +313,72 @@ object PhotoStore {
     fun albumKey(context: Context, album: String): ByteArray? {
         val security = securityFor(context, album)
         return security.keyWrap.takeIf { it.isNotEmpty() }?.let { VaultCrypto.unwrapWithMaster(it) }
+    }
+
+    /** Потоковый импорт: видео не загружается целиком в оперативную память. */
+    @Synchronized
+    fun importStream(context: Context, input: java.io.InputStream, mime: String, name: String): Photo {
+        val ext = when {
+            mime == "image/png" -> "png"; mime == "image/webp" -> "webp"; mime == "image/gif" -> "gif"
+            mime.startsWith("video/") -> if (mime.contains("webm")) "webm" else if (mime.contains("quicktime")) "mov" else "mp4"
+            else -> "jpg"
+        }
+        val id = System.currentTimeMillis().toString(36) + UUID.randomUUID().toString().take(6)
+        val fileName = "$id.$ext"
+        val outFile = File(dir(context), fileName)
+        val digest = MessageDigest.getInstance("SHA-256")
+        input.use { stream ->
+            outFile.outputStream().use { out ->
+                val buffer = ByteArray(64 * 1024)
+                while (true) {
+                    val read = stream.read(buffer)
+                    if (read <= 0) break
+                    digest.update(buffer, 0, read); out.write(buffer, 0, read)
+                }
+            }
+        }
+        val hash = digest.digest().joinToString("") { "%02x".format(it) }
+        val photo = Photo(id = id, name = name.ifBlank { "Фото" }, file = fileName, mime = mime.ifBlank { "image/jpeg" }, hash = hash)
+        val all = list(context); all.add(0, photo); saveAll(context, all)
+        return photo
+    }
+
+    /** Файл, который можно отдать плееру/превью. Обычное видео не копируем и не грузим в RAM. */
+    fun playableFile(context: Context, photo: Photo): File? {
+        val source = photo.fileIn(dir(context))
+        if (!source.exists()) return null
+        if (!photo.encrypted) return source
+        val cached = File(context.cacheDir, "decrypted_${photo.id}.${source.extension.ifBlank { "mp4" }}")
+        if (cached.exists() && cached.length() > 0) return cached
+        return try {
+            val key = photo.albums.firstNotNullOfOrNull { albumKey(context, it) } ?: return null
+            copyDecryptedTo(source, key, cached); cached
+        } catch (e: Exception) { cached.delete(); null }
+    }
+
+    /** Потоковое копирование открытых байтов без загрузки всего видео в память. */
+    fun copyPlainTo(context: Context, photo: Photo, outFile: File): Boolean {
+        val source = photo.fileIn(dir(context))
+        if (!source.exists()) return false
+        return try {
+            if (!photo.encrypted) { source.copyTo(outFile, overwrite = true); true }
+            else {
+                val key = photo.albums.firstNotNullOfOrNull { albumKey(context, it) } ?: return false
+                copyDecryptedTo(source, key, outFile); true
+            }
+        } catch (e: Exception) { false }
+    }
+
+    private fun copyDecryptedTo(source: File, key: ByteArray, outFile: File) {
+        source.inputStream().use { raw ->
+            val magic = ByteArray(6); raw.read(magic)
+            val iv = ByteArray(12); raw.read(iv)
+            val cipher = javax.crypto.Cipher.getInstance("AES/GCM/NoPadding")
+            cipher.init(javax.crypto.Cipher.DECRYPT_MODE, javax.crypto.spec.SecretKeySpec(key, "AES"), javax.crypto.spec.GCMParameterSpec(128, iv))
+            javax.crypto.CipherInputStream(raw, cipher).use { decrypted ->
+                outFile.outputStream().use { out -> decrypted.copyTo(out, 64 * 1024) }
+            }
+        }
     }
 
     /** Открытые байты фото. Для закрытых альбомов расшифровывает AES-GCM в память, файл не трогает. */
@@ -353,13 +432,11 @@ object PhotoStore {
 
     fun videoFrame(context: Context, photo: Photo): android.graphics.Bitmap? {
         return try {
-            val plain = plainBytes(context, photo) ?: return null
-            val temp = File(context.cacheDir, "preview_${photo.id}.mp4")
-            temp.writeBytes(plain)
+            val playable = playableFile(context, photo) ?: return null
             val retriever = android.media.MediaMetadataRetriever()
-            retriever.setDataSource(temp.absolutePath)
+            retriever.setDataSource(playable.absolutePath)
             val frame = retriever.getFrameAtTime(0)
-            retriever.release(); temp.delete(); frame
+            retriever.release(); frame
         } catch (e: Exception) { null }
     }
 

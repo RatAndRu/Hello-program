@@ -525,9 +525,9 @@ class MainActivity : FragmentActivity() {
                 val uris = arrayListOf<Uri>()
                 val dir = File(cacheDir, "shared").apply { mkdirs() }
                 chosen.forEachIndexed { index, photo ->
-                    val plain = PhotoStore.plainBytes(this, photo) ?: return@forEachIndexed
                     val ext = photo.file.substringAfterLast('.', "jpg")
-                    val out = File(dir, "share_${photo.id}_$index.$ext"); out.writeBytes(plain)
+                    val out = File(dir, "share_${photo.id}_$index.$ext")
+                    if (!PhotoStore.copyPlainTo(this, photo, out)) return@forEachIndexed
                     uris.add(FileProvider.getUriForFile(this, packageName + ".fileprovider", out))
                 }
                 runOnUiThread {
@@ -890,12 +890,12 @@ class MainActivity : FragmentActivity() {
                 if (uris.isEmpty()) data.data?.let { uris.add(it) }
                 for (uri in uris) {
                     try {
-                        val bytes = contentResolver.openInputStream(uri)?.readBytes() ?: continue
-                        if (bytes.isEmpty()) continue
                         val mime = contentResolver.getType(uri) ?: "image/jpeg"
                         if (!mime.startsWith("image/") && !mime.startsWith("video/")) continue
-                        val imported = PhotoStore.importBytes(this, bytes, mime, displayName(uri))
-                        val hash = PhotoStore.sha256(bytes)
+                        // Потоковый импорт без загрузки всего видео в память.
+                        val input = contentResolver.openInputStream(uri) ?: continue
+                        val imported = PhotoStore.importStream(this, input, mime, displayName(uri))
+                        val hash = imported.hash
                         // ВАЖНО: imported уже сохранён в PhotoStore, поэтому ищем дубликат среди ДРУГИХ записей.
                         val duplicate = PhotoStore.list(this).firstOrNull { other ->
                             other.id != imported.id && other.widgetId == 0 && other.hash == hash && when {

@@ -29,6 +29,11 @@ class PhotoActivity : Activity() {
     private var fullscreenChromeVisible: Boolean = false
     private val autoHideHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val autoHideRunnable = Runnable { hideFullscreenChrome() }
+    private var slideshowSeconds: Int = 0
+    private val slideshowHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val slideshowRunnable = Runnable {
+        if (fullscreen && slideshowSeconds > 0) move(1)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         UiTheme.apply(this)
@@ -38,12 +43,14 @@ class PhotoActivity : Activity() {
         if (ids.isEmpty()) intent.getStringExtra("id")?.let { ids = listOf(it) }
         if (ids.isEmpty()) return finish()
         index = intent.getIntExtra("index", 0).coerceIn(0, ids.lastIndex)
+        slideshowSeconds = getSharedPreferences("slideshow", Context.MODE_PRIVATE).getInt("seconds", 0)
         loadCurrent()
 
         val zoom = findViewById<ZoomImageView>(R.id.fullImage)
         zoom.onHorizontalSwipe = { delta -> move(delta) }
         zoom.onSingleTap = { setFullscreen(!fullscreen) }
         zoom.onLongPressPhoto = { showPhotoActions() }
+        findViewById<TextView>(R.id.slideshowBtn).setOnClickListener { showSlideshowDialog() }
         findViewById<TextView>(R.id.prevBtn).setOnClickListener { move(-1) }
         findViewById<TextView>(R.id.nextBtn).setOnClickListener { move(1) }
         val videoView = findViewById<android.widget.VideoView>(R.id.videoPlayer)
@@ -92,6 +99,7 @@ class PhotoActivity : Activity() {
     }
 
     private fun loadCurrent() {
+        slideshowHandler.removeCallbacks(slideshowRunnable)
         val all = PhotoStore.list(this)
         photo = all.firstOrNull { it.id == ids[index] }
         val current = photo ?: run { finish(); return }
@@ -99,15 +107,23 @@ class PhotoActivity : Activity() {
         val image = findViewById<ZoomImageView>(R.id.fullImage)
         if (current.mime.startsWith("video/")) {
             image.visibility = android.view.View.GONE; video.visibility = android.view.View.VISIBLE
-            val plain = PhotoStore.plainBytes(this, current)
-            if (plain != null) {
-                val temp = java.io.File(cacheDir, "play_${current.id}.mp4").apply { writeBytes(plain) }
-                video.setVideoPath(temp.absolutePath)
+            val playable = PhotoStore.playableFile(this, current)
+            if (playable != null) {
+                video.setVideoPath(playable.absolutePath)
                 mediaController = android.widget.MediaController(this).apply { setAnchorView(video) }
                 video.setMediaController(mediaController)
                 video.setOnPreparedListener {
-                    it.isLooping = true; video.start()
+                    // В слайд-шоу видео не зацикливаем: после конца ждём выбранный период и листаем дальше.
+                    it.isLooping = slideshowSeconds <= 0
+                    video.start()
                     if (fullscreen) showFullscreenChrome() else mediaController?.show(3000)
+                }
+                video.setOnCompletionListener {
+                    if (fullscreen && slideshowSeconds > 0) {
+                        showFullscreenChrome()
+                        slideshowHandler.removeCallbacks(slideshowRunnable)
+                        slideshowHandler.postDelayed(slideshowRunnable, slideshowSeconds * 1000L)
+                    }
                 }
             }
         } else {
@@ -125,7 +141,31 @@ class PhotoActivity : Activity() {
             caption.layoutParams = lp
         }
         findViewById<TextView>(R.id.positionText).text = "${index + 1} / ${ids.size}"
-        renderText()
+        renderText(); schedulePhotoSlideshow()
+    }
+
+    private fun schedulePhotoSlideshow() {
+        slideshowHandler.removeCallbacks(slideshowRunnable)
+        val current = photo ?: return
+        if (fullscreen && slideshowSeconds > 0 && !current.mime.startsWith("video/")) {
+            slideshowHandler.postDelayed(slideshowRunnable, slideshowSeconds * 1000L)
+        }
+    }
+
+    private fun showSlideshowDialog() {
+        val options = listOf(0, 3, 5, 10, 30, 60)
+        val labels = arrayOf("Выключено", "Каждые 3 секунды", "Каждые 5 секунд", "Каждые 10 секунд", "Каждые 30 секунд", "Каждую минуту")
+        val checked = options.indexOf(slideshowSeconds).coerceAtLeast(0)
+        AlertDialog.Builder(this).setTitle("Слайд-шоу в полном экране")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                slideshowSeconds = options[which]
+                getSharedPreferences("slideshow", Context.MODE_PRIVATE).edit().putInt("seconds", slideshowSeconds).apply()
+                dialog.dismiss(); renderText(); showFullscreenChrome(); schedulePhotoSlideshow()
+                val video = findViewById<android.widget.VideoView>(R.id.videoPlayer)
+                if (photo?.mime?.startsWith("video/") == true && !video.isPlaying) video.start()
+                Toast.makeText(this, if (slideshowSeconds == 0) "Слайд-шоу выключено" else "Слайд-шоу: ${labels[which]}", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Отмена", null).show()
     }
 
     private fun move(delta: Int) {
@@ -136,7 +176,9 @@ class PhotoActivity : Activity() {
 
     private fun chromeViews(): List<android.view.View> = listOf(
         findViewById(R.id.prevBtn), findViewById(R.id.nextBtn),
-        findViewById(R.id.positionText), findViewById(R.id.fullscreenCaption)    )
+        findViewById(R.id.positionText), findViewById(R.id.fullscreenCaption),
+        findViewById(R.id.slideshowBtn)
+    )
 
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
@@ -158,6 +200,7 @@ class PhotoActivity : Activity() {
     }
 
     override fun onPause() {
+        slideshowHandler.removeCallbacks(slideshowRunnable)
         autoHideHandler.removeCallbacks(autoHideRunnable)
         val video = findViewById<android.widget.VideoView>(R.id.videoPlayer)
         if (video.isPlaying) video.pause()
@@ -165,18 +208,22 @@ class PhotoActivity : Activity() {
     }
 
     override fun onDestroy() {
+        slideshowHandler.removeCallbacks(slideshowRunnable)
         autoHideHandler.removeCallbacks(autoHideRunnable)
         super.onDestroy()
     }
 
     private fun setFullscreen(enabled: Boolean) {
         fullscreen = enabled
+        if (!enabled) slideshowHandler.removeCallbacks(slideshowRunnable)
+        findViewById<android.view.View>(R.id.slideshowBtn).visibility = if (enabled) android.view.View.VISIBLE else android.view.View.GONE
         findViewById<android.view.View>(R.id.bottomPanel).visibility = if (enabled) android.view.View.GONE else android.view.View.VISIBLE
         findViewById<android.view.View>(R.id.fullscreenCaption).visibility = if (enabled) android.view.View.VISIBLE else android.view.View.GONE
         if (enabled) showFullscreenChrome() else {
             fullscreenChromeVisible = false
             autoHideHandler.removeCallbacks(autoHideRunnable)
             chromeViews().forEach { it.visibility = android.view.View.VISIBLE }
+            findViewById<android.view.View>(R.id.slideshowBtn).visibility = android.view.View.GONE
             findViewById<android.view.View>(R.id.fullscreenCaption).visibility = android.view.View.GONE
             if (photo?.mime?.startsWith("video/") == true) mediaController?.show(3000)
         }
@@ -194,7 +241,7 @@ class PhotoActivity : Activity() {
         }
         findViewById<ZoomImageView>(R.id.fullImage).refreshForResize()
         window.decorView.post { findViewById<ZoomImageView>(R.id.fullImage).refreshForResize() }
-        renderText()
+        renderText(); schedulePhotoSlideshow()
     }
 
     private fun chooseWidgetsForCurrent(current: Photo) {
@@ -264,6 +311,8 @@ class PhotoActivity : Activity() {
             p.id in PinnedPhotoWidgetBase.installedWidgetIds(this).flatMap { PinnedPhotoWidgetBase.getWidgetPhotoIds(this, it) } -> "В виджете ✓"
             else -> "В виджет"
         }
+        findViewById<TextView>(R.id.slideshowBtn).text = if (slideshowSeconds > 0) "↻ ${slideshowSeconds}с" else "↻"
+        findViewById<TextView>(R.id.slideshowBtn).textSize = if (slideshowSeconds > 0) 13f else 22f
         findViewById<TextView>(R.id.fullName).text = p.name
         findViewById<TextView>(R.id.fullMeta).text = meta
     }
@@ -273,8 +322,7 @@ class PhotoActivity : Activity() {
         val dir = File(cacheDir, "shared").apply { mkdirs() }
         val ext = src.extension.ifBlank { "jpg" }
         val out = File(dir, "${p.name.replace(Regex("[^A-Za-z0-9А-Яа-яЁё _-]"), "_")}.$ext")
-        val plain = PhotoStore.plainBytes(this, p) ?: throw IllegalStateException("Не удалось прочитать фото")
-        out.writeBytes(plain)
+        if (!PhotoStore.copyPlainTo(this, p, out)) throw IllegalStateException("Не удалось прочитать фото")
         return FileProvider.getUriForFile(this, packageName + ".fileprovider", out)
     }
 

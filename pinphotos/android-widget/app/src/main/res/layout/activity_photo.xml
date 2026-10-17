@@ -19,6 +19,10 @@
             android:background="@drawable/nav_arrow_bg" android:gravity="center"
             android:layout_width="46dp" android:layout_height="64dp" android:layout_gravity="center_vertical|end"
             android:layout_marginEnd="8dp" android:contentDescription="Следующее фото"/>
+        <TextView android:id="@+id/slideshowBtn" android:text="↻" android:textColor="#FFFFFF" android:textSize="22sp"
+            android:background="@drawable/nav_arrow_bg" android:gravity="center" android:visibility="gone"
+            android:layout_width="46dp" android:layout_height="46dp" android:layout_gravity="top|end"
+            android:layout_marginTop="10dp" android:layout_marginEnd="8dp" android:contentDescription="Слайд-шоу: автопереключение"/>
         <TextView android:id="@+id/positionText" android:textColor="#FFFFFF" android:textSize="12sp"
             android:background="@drawable/nav_arrow_bg" android:paddingHorizontal="9dp" android:paddingVertical="4dp"
             android:layout_width="wrap_content" android:layout_height="wrap_content"

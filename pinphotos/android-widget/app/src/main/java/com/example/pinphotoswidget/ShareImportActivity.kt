@@ -25,9 +25,11 @@ class ShareImportActivity : Activity() {
             var saved = 0
             for (uri in uris) {
                 try {
-                    val bytes = contentResolver.openInputStream(uri)?.readBytes() ?: continue
-                    if (bytes.isEmpty()) continue
-                    PhotoStore.importBytes(this, bytes, contentResolver.getType(uri) ?: "image/jpeg", displayName(uri))
+                    val mime = contentResolver.getType(uri) ?: "image/jpeg"
+                    if (!mime.startsWith("image/") && !mime.startsWith("video/")) continue
+                    // Потоково: большое видео нельзя читать целиком в ByteArray — это роняет приложение по памяти.
+                    val input = contentResolver.openInputStream(uri) ?: continue
+                    PhotoStore.importStream(this, input, mime, displayName(uri))
                     saved++
                 } catch (e: Exception) { }
             }
