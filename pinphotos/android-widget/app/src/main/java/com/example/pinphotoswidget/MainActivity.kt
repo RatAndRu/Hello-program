@@ -908,6 +908,7 @@ class PhotoAdapter(
     class Holder(view: View) : RecyclerView.ViewHolder(view) {
         val thumb: ImageView = view.findViewById(R.id.thumb)
         val badge: TextView = view.findViewById(R.id.badge)
+        val durationBadge: TextView = view.findViewById(R.id.durationBadge)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, type: Int): Holder =
@@ -936,6 +937,15 @@ class PhotoAdapter(
         holder.itemView.setBackgroundResource(if (selected) R.drawable.selection_frame else R.drawable.card_bg)
         holder.thumb.setImageResource(R.drawable.widget_placeholder)
         holder.thumb.tag = photo.id
+        val isMedia = photo.mime.startsWith("video/") || photo.mime == "image/gif"
+        holder.durationBadge.visibility = if (isMedia) View.VISIBLE else View.GONE
+        holder.durationBadge.text = if (photo.mime == "image/gif") "GIF" else "▶ …"
+        if (isMedia) IO.execute {
+            val label = PhotoStore.mediaDurationLabel(holder.thumb.context, photo)
+            holder.durationBadge.post {
+                if (holder.thumb.tag == photo.id && label != null) holder.durationBadge.text = label
+            }
+        }
         val path = photo.fileIn(PhotoStore.dir(holder.thumb.context)).absolutePath
         IO.execute {
             val bmp = PhotoStore.decodeBitmap(holder.thumb.context, photo, 360)

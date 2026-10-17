@@ -9,4 +9,10 @@
         android:textSize="14sp" android:paddingStart="1dp" android:paddingEnd="0dp"
         android:layout_width="28dp" android:layout_height="28dp"
         android:layout_gravity="top|end" android:layout_margin="6dp" android:visibility="gone"/>
+    <TextView android:id="@+id/durationBadge" android:background="@drawable/media_duration_bg"
+        android:textColor="#FFFFFF" android:textSize="11sp" android:textStyle="bold"
+        android:gravity="center" android:includeFontPadding="false"
+        android:paddingHorizontal="7dp" android:paddingVertical="3dp"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_gravity="bottom|end" android:layout_margin="6dp" android:visibility="gone"/>
 </FrameLayout>

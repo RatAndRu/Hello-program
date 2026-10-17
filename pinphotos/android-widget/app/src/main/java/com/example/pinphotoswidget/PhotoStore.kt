@@ -248,6 +248,52 @@ object PhotoStore {
         return victims.size
     }
 
+    private val durationCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+
+    /** Плашка длительности для главного экрана: видео — METADATA, GIF — сумма задержек кадров. */
+    fun mediaDurationLabel(context: Context, photo: Photo): String? {
+        val isVideo = photo.mime.startsWith("video/")
+        val isGif = photo.mime == "image/gif" || photo.file.endsWith(".gif", ignoreCase = true)
+        if (!isVideo && !isGif) return null
+        durationCache[photo.id]?.let { return it }
+        val plain = plainBytes(context, photo) ?: return if (isGif) "GIF" else null
+        val label: String = if (isGif) {
+            val ms = gifDurationMs(plain)
+            if (ms > 0) "GIF · ${formatDuration(ms)}" else "GIF"
+        } else {
+            val ms = try {
+                val temp = File(context.cacheDir, "duration_${photo.id}.mp4")
+                temp.writeBytes(plain)
+                val retriever = android.media.MediaMetadataRetriever()
+                retriever.setDataSource(temp.absolutePath)
+                val value = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L
+                retriever.release(); temp.delete(); value
+            } catch (e: Exception) { 0L }
+            if (ms > 0) "▶ ${formatDuration(ms)}" else "▶ Видео"
+        }
+        durationCache[photo.id] = label
+        return label
+    }
+
+    private fun gifDurationMs(bytes: ByteArray): Long {
+        var totalHundredths = 0L
+        var i = 0
+        while (i + 7 < bytes.size) {
+            if (bytes[i] == 0x21.toByte() && bytes[i + 1] == 0xF9.toByte() && bytes[i + 2] == 4.toByte()) {
+                val delay = (bytes[i + 4].toInt() and 0xFF) or ((bytes[i + 5].toInt() and 0xFF) shl 8)
+                totalHundredths += delay
+                i += 8
+            } else i++
+        }
+        return totalHundredths * 10L
+    }
+
+    private fun formatDuration(ms: Long): String {
+        val totalSeconds = (ms / 1000L).coerceAtLeast(0L)
+        val h = totalSeconds / 3600; val m = (totalSeconds % 3600) / 60; val sec = totalSeconds % 60
+        return if (h > 0) "%d:%02d:%02d".format(h, m, sec) else "%d:%02d".format(m, sec)
+    }
+
     fun sha256(bytes: ByteArray): String =
         MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) }
 
