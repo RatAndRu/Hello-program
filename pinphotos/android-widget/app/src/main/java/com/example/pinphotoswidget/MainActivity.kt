@@ -44,6 +44,68 @@ class MainActivity : FragmentActivity() {
     private var searchExpanded: Boolean = false
     private var selectionForcedAlbumsCollapse: Boolean = false
     private var lastWidgetSignature: String? = null
+
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(newBase)
+        // Пишем падения в файл, чтобы следующее открытие показало причину, а не просто закрывалось.
+        try {
+            val previous = Thread.getDefaultUncaughtExceptionHandler()
+            Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+                try {
+                    val trace = android.util.Log.getStackTraceString(error)
+                    java.io.File(newBase.filesDir, "last_crash.txt").writeText(trace)
+                } catch (ignored: Exception) { }
+                previous?.uncaughtException(thread, error)
+            }
+        } catch (ignored: Exception) { }
+        // Хотфикс после сборки 24: у части пользователей была выбрана форменная иконка.
+        // Один раз возвращаем обычную иконку, чтобы исключить сломанный alias/launcher как причину незапуска.
+        try {
+            val prefs = newBase.getSharedPreferences("hotfix", android.content.Context.MODE_PRIVATE)
+            if (!prefs.getBoolean("icon_reset_v24", false)) {
+                prefs.edit().putBoolean("icon_reset_v24", true).apply()
+                val pm = newBase.packageManager
+                val shaped = android.content.ComponentName(newBase.packageName, newBase.packageName + IconSwitcher.SHAPED)
+                val state = pm.getComponentEnabledSetting(shaped)
+                if (state == android.content.pm.PackageManager.COMPONENT_ENABLED_STATE_ENABLED) {
+                    IconSwitcher.setIcon(newBase, IconSwitcher.NORMAL)
+                }
+            }
+        } catch (ignored: Exception) { }
+    }
+
+    private fun showEmergency(error: Throwable) {
+        try {
+            val trace = android.util.Log.getStackTraceString(error)
+            try { java.io.File(filesDir, "last_crash.txt").writeText(trace) } catch (ignored: Exception) { }
+            val root = android.widget.LinearLayout(this).apply {
+                orientation = android.widget.LinearLayout.VERTICAL; setPadding(48, 64, 48, 48)
+            }
+            root.addView(TextView(this).apply {
+                text = "ЗакрепФото не смогло открыть главный экран"; textSize = 20f
+            })
+            root.addView(TextView(this).apply {
+                text = "Данные фото не удалены. Ниже техническая причина — пришли её скрин, если хотфикс не поможет."; textSize = 14f
+            })
+            val resetIcon = Button(this).apply {
+                text = "Сбросить иконку на обычную и повторить"
+                setOnClickListener {
+                    try { IconSwitcher.setIcon(this@MainActivity, IconSwitcher.NORMAL) } catch (ignored: Exception) { }
+                    recreate()
+                }
+            }
+            root.addView(resetIcon)
+            val safe = Button(this).apply {
+                text = "Открыть в безопасном режиме (без обновления виджетов)"
+                setOnClickListener { SAFE_MODE = true; recreate() }
+            }
+            root.addView(safe)
+            root.addView(android.widget.ScrollView(this).apply {
+                addView(TextView(this@MainActivity).apply { text = trace; textSize = 11f; setTextIsSelectable(true) })
+            })
+            setContentView(root)
+        } catch (ignored: Exception) { }
+    }
     private val selectedIds = linkedSetOf<String>()
     private val unlockedAlbums = mutableSetOf<String>()
     private val io = Executors.newFixedThreadPool(3)
@@ -83,7 +145,15 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    override fun onResume() { super.onResume(); refresh() }
+    override fun onResume() {
+        super.onResume()
+        if (!SAFE_MODE) {
+            try { refresh() } catch (e: Throwable) { showEmergency(e) }
+        } else {
+            // Безопасный режим: только базовая сетка без виджетных обновлений и тяжёлых действий.
+            try { refresh() } catch (e: Throwable) { showEmergency(e) }
+        }
+    }
 
     private fun setSearchExpanded(expanded: Boolean) {
         searchExpanded = expanded
@@ -191,11 +261,14 @@ class MainActivity : FragmentActivity() {
             append('|').append(photos.filter { it.pinned }.joinToString(".") { it.id })
             append('|').append(PhotoStore.lockedAlbumNames(this@MainActivity).joinToString("."))
         }
-        if (widgetSignature != lastWidgetSignature) {
+        if (!SAFE_MODE && widgetSignature != lastWidgetSignature) {
             lastWidgetSignature = widgetSignature
-            try { PinnedPhotoWidgetBase.updateAll(this) } catch (e: Exception) {
-                // Виджет — не повод ронять главное окно (например, при быстрой смене темы).
-            }
+            // Не обновляем виджеты синхронно при запуске: откладываем, чтобы старт окна не зависел от виджетов.
+            grid.postDelayed({
+                try { PinnedPhotoWidgetBase.updateAll(this) } catch (e: Throwable) {
+                    // Виджет — не повод ронять главное окно.
+                }
+            }, 1200)
         }
     }
 
@@ -897,6 +970,7 @@ class MainActivity : FragmentActivity() {
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
 
     companion object {
+        @Volatile var SAFE_MODE: Boolean = false
         const val PICK_PHOTOS = 2001; const val EXPORT_JSON = 2002; const val IMPORT_JSON = 2003
         const val ALL_ALBUMS = PhotoStore.MISC_ALBUM
         const val WIDGET_PREFIX = "__widget__:"

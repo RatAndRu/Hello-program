@@ -19,6 +19,7 @@ import kotlin.math.max
 open class PinnedPhotoWidgetBase : AppWidgetProvider() {
     // Периодический апдейт от системы (~30 мин): листаем на следующее фото
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
+      try {
         claimPendingNames(context)
         ids.forEach { widgetId ->
             if (autoEnabled(context, widgetId)) {
@@ -33,6 +34,10 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
             }
             render(context, manager, widgetId, javaClass)
         }
+      } catch (e: Throwable) {
+        // Виджетный broadcast не должен убивать процесс приложения.
+        try { java.io.File(context.filesDir, "last_crash.txt").writeText(android.util.Log.getStackTraceString(e)) } catch (ignored: Exception) { }
+      }
     }
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
@@ -48,6 +53,7 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
 
     // Тапы по стрелкам ‹ › на самом виджете: ручное листание
     override fun onReceive(context: Context, intent: Intent) {
+      try {
         super.onReceive(context, intent)
         val widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
         when (intent.action) {
@@ -60,6 +66,9 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
                 updateAll(context)
             }
         }
+      } catch (e: Throwable) {
+        try { java.io.File(context.filesDir, "last_crash.txt").writeText(android.util.Log.getStackTraceString(e)) } catch (ignored: Exception) { }
+      }
     }
 
     companion object {
@@ -196,11 +205,17 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
         }
 
         fun updateAll(context: Context) {
-            val manager = AppWidgetManager.getInstance(context)
-            PROVIDERS.forEach { cls ->
-                val ids = manager.getAppWidgetIds(ComponentName(context, cls))
-                ids.forEach { render(context, manager, it, cls) }
-            }
+            try {
+                val manager = AppWidgetManager.getInstance(context)
+                PROVIDERS.forEach { cls ->
+                    val ids = manager.getAppWidgetIds(ComponentName(context, cls))
+                    ids.forEach { widgetId ->
+                        try { render(context, manager, widgetId, cls) } catch (e: Throwable) {
+                            try { java.io.File(context.filesDir, "last_crash.txt").writeText(android.util.Log.getStackTraceString(e)) } catch (ignored: Exception) { }
+                        }
+                    }
+                }
+            } catch (e: Throwable) { }
         }
 
         private fun render(context: Context, manager: AppWidgetManager, widgetId: Int, cls: Class<out PinnedPhotoWidgetBase>) {
