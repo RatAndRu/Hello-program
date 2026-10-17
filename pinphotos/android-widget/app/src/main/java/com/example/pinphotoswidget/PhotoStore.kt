@@ -354,6 +354,44 @@ object PhotoStore {
         return result
     }
 
+    /** Переименование обычного альбома: реестр, членство фото и защита переезжают на новое имя. */
+    @Synchronized
+    fun renameAlbum(context: Context, oldName: String, newNameRaw: String): String {
+        require(oldName != MISC_ALBUM) { "Альбом «Разное» переименовать нельзя" }
+        val clean = newNameRaw.trim().take(50)
+        require(clean.isNotEmpty()) { "Название альбома пустое" }
+        require(clean != MISC_ALBUM) { "Название «Разное» занято системным альбомом" }
+        val existing = albums(context)
+        require(existing.none { it.equals(clean, ignoreCase = true) && !it.equals(oldName, ignoreCase = true) }) {
+            "Альбом с таким названием уже есть"
+        }
+        val canonical = existing.firstOrNull { it.equals(oldName, ignoreCase = true) } ?: oldName
+        // Реестр альбомов
+        try {
+            val renamed = existing.map { if (it == canonical) clean else it }
+            albumsFile(context).writeText(JSONArray(renamed).toString())
+        } catch (e: Exception) { }
+        // Членство фотографий
+        val all = list(context); var changed = false
+        all.forEach { photo ->
+            val idx = photo.albums.indexOf(canonical)
+            if (idx >= 0) { photo.albums[idx] = clean; changed = true }
+        }
+        if (changed) saveAll(context, all)
+        // Защита (PIN/ключи шифрования) переезжает следом
+        val security = albumSecurity(context)
+        if (security.any { it.name == canonical }) {
+            val arr = JSONArray()
+            security.forEach { item ->
+                val moved = if (item.name == canonical) item.copy(name = clean) else item
+                arr.put(JSONObject().put("name", moved.name).put("pinHash", moved.pinHash).put("salt", moved.salt)
+                    .put("biometric", moved.biometric).put("keyWrap", moved.keyWrap).put("pinKeyWrap", moved.pinKeyWrap))
+            }
+            securityFile(context).writeText(arr.toString())
+        }
+        return clean
+    }
+
     @Synchronized
     fun saveAll(context: Context, photos: List<Photo>) {
         val arr = JSONArray()

@@ -6,7 +6,12 @@
     <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
         android:background="#111827">
         <VideoView android:id="@+id/videoPlayer" android:visibility="gone"
+            android:layout_gravity="center"
             android:layout_width="match_parent" android:layout_height="match_parent"/>
+        <TextView android:id="@+id/videoFullscreenBtn" android:text="⛶" android:textColor="#FFFFFF" android:textSize="20sp"
+            android:background="@drawable/nav_arrow_bg" android:gravity="center" android:visibility="gone"
+            android:layout_width="46dp" android:layout_height="46dp" android:layout_gravity="top|end"
+            android:layout_marginTop="52dp" android:layout_marginEnd="8dp" android:contentDescription="Полный экран видео"/>
         <com.example.pinphotoswidget.ZoomImageView android:id="@+id/fullImage"
             android:layout_width="match_parent" android:layout_height="match_parent"
             android:contentDescription="Фото. Зум щипком или двойным нажатием"/>

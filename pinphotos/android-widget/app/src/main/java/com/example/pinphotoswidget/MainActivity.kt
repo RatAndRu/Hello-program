@@ -193,7 +193,9 @@ class MainActivity : FragmentActivity() {
         }
         if (widgetSignature != lastWidgetSignature) {
             lastWidgetSignature = widgetSignature
-            PinnedPhotoWidgetBase.updateAll(this)
+            try { PinnedPhotoWidgetBase.updateAll(this) } catch (e: Exception) {
+                // Виджет — не повод ронять главное окно (например, при быстрой смене темы).
+            }
         }
     }
 
@@ -555,6 +557,9 @@ class MainActivity : FragmentActivity() {
         val security = PhotoStore.securityFor(this, album)
         data class Action(val label: String, val run: () -> Unit)
         val actions = mutableListOf<Action>()
+        if (album != PhotoStore.MISC_ALBUM) {
+            actions.add(Action("Переименовать альбом") { showRenameAlbumDialog(album) })
+        }
         actions.add(Action("Слияние в другой альбом…") { chooseMergeDestination(album) })
         if (album != PhotoStore.MISC_ALBUM) {
             actions.add(Action("Удалить альбом и его фото…") { confirmDeleteAlbum(album) })
@@ -579,6 +584,22 @@ class MainActivity : FragmentActivity() {
             .setItems(actions.map { it.label }.toTypedArray()) { _, which -> actions[which].run() }
             .setNegativeButton("Отмена", null)
             .show()
+    }
+
+    private fun showRenameAlbumDialog(album: String) {
+        val input = themedInput("Новое название альбома").apply { setText(album); setSelection(text.length) }
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(10), dp(22), dp(4)); addView(input)
+        }
+        android.app.AlertDialog.Builder(this).setTitle("Переименовать альбом").setView(box)
+            .setPositiveButton("Сохранить") { _, _ ->
+                try {
+                    val renamed = PhotoStore.renameAlbum(this, album, input.text.toString())
+                    if (selectedAlbum == album) selectedAlbum = renamed
+                    toast("Альбом переименован в «$renamed»"); refresh()
+                } catch (e: Exception) { toast(e.message ?: "Не удалось переименовать") }
+            }
+            .setNegativeButton("Отмена", null).show()
     }
 
     private fun showSetPinDialog(album: String) {
@@ -660,7 +681,7 @@ class MainActivity : FragmentActivity() {
                 4 -> IconSwitcher.setIcon(this, IconSwitcher.FIRE)
                 5 -> IconSwitcher.setIcon(this, IconSwitcher.SLEEPY)
                 6 -> IconSwitcher.setIcon(this, IconSwitcher.SHAPED)
-                7 -> UiTheme.toggle(this)
+                7 -> { menu.dismiss(); UiTheme.toggle(this) }
             }
             true
         }

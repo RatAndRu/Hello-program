@@ -26,6 +26,7 @@ class PhotoActivity : Activity() {
     private var index: Int = 0
     private var fullscreen: Boolean = false
     private var mediaController: android.widget.MediaController? = null
+    private var fullscreenChromeVisible: Boolean = false
     private val autoHideHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val autoHideRunnable = Runnable { hideFullscreenChrome() }
 
@@ -48,10 +49,17 @@ class PhotoActivity : Activity() {
         val videoView = findViewById<android.widget.VideoView>(R.id.videoPlayer)
         videoView.setOnTouchListener { _, event ->
             if (event.action == android.view.MotionEvent.ACTION_UP) {
-                if (!fullscreen) setFullscreen(true) else { showFullscreenChrome(); mediaController?.show(2000) }
+                when {
+                    // Обычный режим: тап только показывает контролы видео, сами прячутся через 3 сек.
+                    !fullscreen -> mediaController?.show(3000)
+                    // Полный экран: тап по скрытому интерфейсу — показать; по видимому — выйти из полного экрана.
+                    !fullscreenChromeVisible -> showFullscreenChrome()
+                    else -> setFullscreen(false)
+                }
             }
             false
         }
+        findViewById<TextView>(R.id.videoFullscreenBtn).setOnClickListener { setFullscreen(!fullscreen) }
 
         findViewById<Button>(R.id.pinBtn).setOnClickListener {
             val current = photo ?: return@setOnClickListener
@@ -95,11 +103,26 @@ class PhotoActivity : Activity() {
                 video.setVideoPath(temp.absolutePath)
                 mediaController = android.widget.MediaController(this).apply { setAnchorView(video) }
                 video.setMediaController(mediaController)
-                video.setOnPreparedListener { it.isLooping = true; video.start() }
+                video.setOnPreparedListener {
+                    it.isLooping = true; video.start()
+                    if (fullscreen) showFullscreenChrome() else mediaController?.show(3000)
+                }
             }
         } else {
             if (video.isPlaying) video.stopPlayback(); video.visibility = android.view.View.GONE; image.visibility = android.view.View.VISIBLE
             image.setImageBitmap(PhotoStore.decodeBitmap(this, current, 1400))
+        }
+        findViewById<TextView>(R.id.videoFullscreenBtn).visibility =
+            if (current.mime.startsWith("video/")) android.view.View.VISIBLE else android.view.View.GONE
+        // У видео подпись в полном экране — сверху, чтобы не накладывалась на перемотку/паузу снизу.
+        val caption = findViewById<android.view.View>(R.id.fullscreenCaption)
+        (caption.layoutParams as? android.widget.FrameLayout.LayoutParams)?.let { lp ->
+            if (current.mime.startsWith("video/")) {
+                lp.gravity = android.view.Gravity.TOP; lp.topMargin = dp(56); lp.bottomMargin = 0
+            } else {
+                lp.gravity = android.view.Gravity.BOTTOM; lp.topMargin = 0; lp.bottomMargin = dp(10)
+            }
+            caption.layoutParams = lp
         }
         findViewById<TextView>(R.id.positionText).text = "${index + 1} / ${ids.size}"
         renderText()
@@ -113,12 +136,20 @@ class PhotoActivity : Activity() {
 
     private fun chromeViews(): List<android.view.View> = listOf(
         findViewById(R.id.prevBtn), findViewById(R.id.nextBtn),
-        findViewById(R.id.positionText), findViewById(R.id.fullscreenCaption)
+        findViewById(R.id.positionText), findViewById(R.id.fullscreenCaption),
+        findViewById(R.id.videoFullscreenBtn)
     )
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     private fun showFullscreenChrome() {
         if (!fullscreen) return
-        chromeViews().forEach { it.visibility = android.view.View.VISIBLE }
+        fullscreenChromeVisible = true
+        chromeViews().forEach {
+            // Кнопка полного экрана нужна только у видео
+            if (it.id == R.id.videoFullscreenBtn && photo?.mime?.startsWith("video/") != true) it.visibility = android.view.View.GONE
+            else it.visibility = android.view.View.VISIBLE
+        }
         autoHideHandler.removeCallbacks(autoHideRunnable)
         autoHideHandler.postDelayed(autoHideRunnable, 2000)
         val current = photo
@@ -127,6 +158,7 @@ class PhotoActivity : Activity() {
 
     private fun hideFullscreenChrome() {
         if (!fullscreen) return
+        fullscreenChromeVisible = false
         chromeViews().forEach { it.visibility = android.view.View.GONE }
         mediaController?.hide()
     }
@@ -148,9 +180,13 @@ class PhotoActivity : Activity() {
         findViewById<android.view.View>(R.id.bottomPanel).visibility = if (enabled) android.view.View.GONE else android.view.View.VISIBLE
         findViewById<android.view.View>(R.id.fullscreenCaption).visibility = if (enabled) android.view.View.VISIBLE else android.view.View.GONE
         if (enabled) showFullscreenChrome() else {
+            fullscreenChromeVisible = false
             autoHideHandler.removeCallbacks(autoHideRunnable)
             chromeViews().forEach { it.visibility = android.view.View.VISIBLE }
             findViewById<android.view.View>(R.id.fullscreenCaption).visibility = android.view.View.GONE
+            findViewById<android.view.View>(R.id.videoFullscreenBtn).visibility =
+                if (photo?.mime?.startsWith("video/") == true) android.view.View.VISIBLE else android.view.View.GONE
+            if (photo?.mime?.startsWith("video/") == true) mediaController?.show(3000)
         }
         if (enabled) {
             @Suppress("DEPRECATION")

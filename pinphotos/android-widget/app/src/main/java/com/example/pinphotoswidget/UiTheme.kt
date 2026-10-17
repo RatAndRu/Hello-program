@@ -18,7 +18,20 @@ object UiTheme {
     fun toggle(activity: Activity) {
         val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         prefs.edit().putBoolean(KEY_DARK, !isDark(activity)).apply()
-        activity.recreate()
+        // НЕ recreate() прямо из обработчика PopupMenu: меню ещё держит старое окно/anchor,
+        // на ряде оболочек (HONOR) это роняет Activity при пересоздании.
+        // Даём меню закрыться и только потом спокойно пересоздаём экран.
+        activity.window?.decorView?.postDelayed({
+            if (!activity.isFinishing && !activity.isDestroyed) {
+                try { activity.recreate() } catch (e: Exception) {
+                    // Запасной путь: обычный перезапуск главного экрана.
+                    try {
+                        val intent = activity.intent.addFlags(android.content.Intent.FLAG_ACTIVITY_CLEAR_TOP)
+                        activity.startActivity(intent); activity.finish()
+                    } catch (ignored: Exception) { }
+                }
+            }
+        }, 250)
     }
 
     fun color(context: Context, attr: Int): Int {
