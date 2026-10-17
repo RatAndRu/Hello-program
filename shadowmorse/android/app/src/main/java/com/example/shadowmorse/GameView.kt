@@ -96,6 +96,10 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     private var debugDownX = 0f
     private var debugDownY = 0f
     private var debugMoved = false
+    private var debugTrailExpiresAt = 0L
+    private var touchFlashX = 0f
+    private var touchFlashY = 0f
+    private var touchFlashExpiresAt = 0L
     private var dragging = false
     private var dragX = 0f
     private var dragY = 0f
@@ -118,6 +122,8 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         nextMonsterId = 1
         hurtFlash = 0f
         previousFlashActive = false
+        if (debugTouchMode) detections = FrameDetections()
+        debugTrail.clear(); debugTrailExpiresAt = 0L; touchFlashExpiresAt = 0L
         lastFrameMs = 0L
         pushHud()
         invalidate()
@@ -168,7 +174,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 debugDownAt = System.currentTimeMillis()
                 debugDownX = event.x; debugDownY = event.y
                 debugMoved = false
-                debugTrail.clear()
+                debugTrail.clear(); debugTrailExpiresAt = 0L
                 debugSwipeHitIds.clear()
                 debugTrail += event.x to event.y
                 parent?.requestDisallowInterceptTouchEvent(true)
@@ -178,6 +184,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                 val prev = debugTrail.lastOrNull()
                 debugTrail += event.x to event.y
                 if (debugTrail.size > 80) debugTrail.removeAt(0)
+                debugTrailExpiresAt = System.currentTimeMillis() + 400L
                 if (prev != null) debugSwipeDamage(prev.first, prev.second, event.x, event.y)
             }
             MotionEvent.ACTION_UP -> {
@@ -189,31 +196,29 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                         debugSwipeDamage(a.first, a.second, b.first, b.second)
                     }
                 }
-                debugTrail.clear()
+                debugTrailExpiresAt = System.currentTimeMillis() + 250L
             }
-            MotionEvent.ACTION_CANCEL -> debugTrail.clear()
+            MotionEvent.ACTION_CANCEL -> { debugTrail.clear(); debugTrailExpiresAt = 0L }
         }
         invalidate()
     }
 
-    /** Тап в отладке имитирует вспышку: бьёт ближайшего видимого призрака рядом с точкой. */
+    /** Тап в отладке = стандартная вспышка фонаря в точке тапа: световой круг и урон призракам в радиусе. */
     private fun debugTapDamage(x: Float, y: Float) {
-        var best: Monster? = null
-        var bestScreen: ScreenPos? = null
-        var bestDist = Float.MAX_VALUE
-        for (m in monsters) {
+        touchFlashX = x; touchFlashY = y
+        touchFlashExpiresAt = System.currentTimeMillis() + 220L
+        val lightRadius = 0.16f * min(width, height)
+        val iterator = monsters.iterator()
+        while (iterator.hasNext()) {
+            val m = iterator.next()
             if (m.type != MonsterType.FLASH) continue
             val s = monsterScreen(m) ?: continue
             val radius = 62f * s.scale * density()
-            val d = hypot((s.x - x).toDouble(), (s.y - y).toDouble()).toFloat()
-            if (d < radius + 74f * density() && d < bestDist) { best = m; bestScreen = s; bestDist = d }
-        }
-        val m = best ?: return
-        val s = bestScreen ?: return
-        if (elapsed - m.lastHitAt > 0.18f) {
-            val radius = 62f * s.scale * density()
-            hitMonster(m, s.x, s.y, radius)
-            if (m.hp <= 0) monsters.remove(m)
+            val d = hypot((s.x - x).toDouble(), (s.y - y).toDouble())
+            if (d < radius + lightRadius * 0.65f && elapsed - m.lastHitAt > 0.18f) {
+                hitMonster(m, s.x, s.y, radius)
+                if (m.hp <= 0) iterator.remove()
+            }
         }
     }
 
@@ -265,6 +270,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     }
 
     private fun updateFlashEdge() {
+        if (debugTouchMode) { flashRising = false; previousFlashActive = false; return }
         val d = detections
         flashRising = false
         if (d.flashActive && !previousFlashActive) {
@@ -445,6 +451,20 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     }
 
     private fun drawDetections(canvas: Canvas) {
+        if (debugTouchMode) {
+            if (System.currentTimeMillis() < touchFlashExpiresAt) {
+                val r = 0.16f * min(width, height) * 1.55f
+                paint.style = Paint.Style.FILL
+                paint.shader = RadialGradient(touchFlashX, touchFlashY, r, intArrayOf(Color.argb(110, 255, 246, 180), Color.argb(48, 255, 220, 110), Color.TRANSPARENT), floatArrayOf(0f, 0.45f, 1f), Shader.TileMode.CLAMP)
+                canvas.drawCircle(touchFlashX, touchFlashY, r, paint)
+                paint.shader = null
+                paint.style = Paint.Style.STROKE
+                paint.strokeWidth = 2f * density()
+                paint.color = Color.argb(245, 255, 255, 220)
+                canvas.drawCircle(touchFlashX, touchFlashY, r * 0.62f, paint)
+            }
+            return
+        }
         val d = detections
         if (d.flashActive) {
             val (x, y) = screenPoint(d.flashU, d.flashV)
@@ -482,6 +502,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
 
     private fun drawDebugTrail(canvas: Canvas) {
         if (!debugTouchMode || debugTrail.size < 2) return
+        if (debugTrailExpiresAt > 0L && System.currentTimeMillis() > debugTrailExpiresAt) { debugTrail.clear(); debugTrailExpiresAt = 0L; return }
         paint.style = Paint.Style.STROKE
         paint.strokeCap = Paint.Cap.ROUND
         paint.strokeJoin = Paint.Join.ROUND

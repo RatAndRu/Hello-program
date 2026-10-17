@@ -37,6 +37,12 @@ class CameraController(
     private var previewSize = Size(1280, 720)
     private var sensorOrientation = 0
     private var frameCounter = 0
+    @Volatile private var analysisEnabled = true
+
+    /** В отладочном режиме без фонарей детектор света полностью отключается. */
+    fun setLightAnalysisEnabled(enabled: Boolean) {
+        analysisEnabled = enabled
+    }
 
     fun start() {
         if (context.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
@@ -95,7 +101,7 @@ class CameraController(
                     if (image != null) {
                         try {
                             // Анализируем каждый второй кадр: для вспышек/лазера достаточно, а телефон меньше греется.
-                            if (++frameCounter % 2 == 0) onDetections(detector.process(image, sensorOrientation))
+                            if (analysisEnabled && ++frameCounter % 2 == 0) onDetections(detector.process(image, sensorOrientation))
                         } catch (_: Exception) { }
                         image.close()
                     }
@@ -144,28 +150,20 @@ class CameraController(
 
     private fun configureTransform(viewWidth: Int, viewHeight: Int) {
         if (viewWidth <= 0 || viewHeight <= 0) return
-        // Приложение зафиксировано в портрете. Для задней камеры HONOR sensorOrientation обычно 90:
-        // сенсорный кадр надо повернуть ПО часовой стрелке на 90°, а не против.
-        // Предыдущий знак давал картину «потолок слева, пол справа».
-        val rotationToApply = when (sensorOrientation) {
-            90 -> 90f
-            180 -> 180f
-            270 -> 270f
-            else -> 0f
-        }
+        // Официальное поведение TextureView: буфер сенсора УЖЕ поворачивается платформой
+        // под естественную ориентацию устройства. В портрете при display rotation 0
+        // ручной postRotate даёт второй поворот и кладёт картинку набок.
+        // Здесь делаем только center-crop без поворота и без растягивания.
         val swapped = sensorOrientation == 90 || sensorOrientation == 270
-        val bufferWidth = if (swapped) previewSize.height.toFloat() else previewSize.width.toFloat()
-        val bufferHeight = if (swapped) previewSize.width.toFloat() else previewSize.height.toFloat()
-        val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        val bufferRect = RectF(0f, 0f, bufferWidth, bufferHeight)
-        val centerX = viewRect.centerX()
-        val centerY = viewRect.centerY()
-        bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+        val uprightWidth = if (swapped) previewSize.height.toFloat() else previewSize.width.toFloat()
+        val uprightHeight = if (swapped) previewSize.width.toFloat() else previewSize.height.toFloat()
+        val centerX = viewWidth / 2f
+        val centerY = viewHeight / 2f
+        val fillScale = max(viewWidth.toFloat() / uprightWidth, viewHeight.toFloat() / uprightHeight)
+        val scaleX = fillScale * uprightWidth / viewWidth.toFloat()
+        val scaleY = fillScale * uprightHeight / viewHeight.toFloat()
         val matrix = Matrix()
-        matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
-        val scale = max(viewHeight.toFloat() / bufferHeight, viewWidth.toFloat() / bufferWidth)
-        matrix.postScale(scale, scale, centerX, centerY)
-        if (rotationToApply != 0f) matrix.postRotate(rotationToApply, centerX, centerY)
+        matrix.postScale(scaleX, scaleY, centerX, centerY)
         textureView.setTransform(matrix)
     }
 }

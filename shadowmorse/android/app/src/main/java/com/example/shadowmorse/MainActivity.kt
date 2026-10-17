@@ -38,7 +38,6 @@ class MainActivity : Activity(), SensorEventListener {
     private var sensorManager: SensorManager? = null
     private var rotationSensor: Sensor? = null
     private val rotationMatrix = FloatArray(9)
-    private val orientationAngles = FloatArray(3)
     private var baseYaw: Float? = null
     private var basePitch: Float? = null
     private var latestYaw = 0f
@@ -148,13 +147,15 @@ class MainActivity : Activity(), SensorEventListener {
     }
 
     private fun startGame() {
+        val debug = findViewById<CheckBox>(R.id.debugTouchCheck).isChecked
         startCamera()
+        // В режиме без фонарей детектор света не работает вообще: ни урона от света, ни анализа кадров.
+        cameraController?.setLightAnalysisEnabled(!debug)
         calibrateOrientation(silent = true)
         startPanel.visibility = View.GONE
         endPanel.visibility = View.GONE
         topHud.visibility = View.VISIBLE
         gameRunning = true
-        val debug = findViewById<CheckBox>(R.id.debugTouchCheck).isChecked
         gameView.debugTouchMode = debug
         gameView.startGame()
         showToast(if (debug) "Отладка: призраки — тапом, пауки — свайпом" else "Поворачивайся вокруг себя. Удачи!")
@@ -174,10 +175,19 @@ class MainActivity : Activity(), SensorEventListener {
     override fun onSensorChanged(event: SensorEvent) {
         if (event.sensor.type != Sensor.TYPE_ROTATION_VECTOR && event.sensor.type != Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR) return
         SensorManager.getRotationMatrixFromVector(rotationMatrix, event.values)
-        SensorManager.getOrientation(rotationMatrix, orientationAngles)
-        // azimuth вокруг вертикали; pitch телефона. Знаки подобраны под портретный хват и движение «вправо = плюс».
-        latestYaw = -(orientationAngles[0] * 180f / PI.toFloat())
-        latestPitch = (orientationAngles[1] * 180f / PI.toFloat() + 65f).coerceIn(-80f, 80f)
+        // Не используем Euler-углы getOrientation(): в портрете они легко дают перепутанные оси
+        // (вертикальный наклон телефона начинал двигать монстров по горизонтали).
+        // Берём напрямую оптическую ось камеры: камера смотрит вдоль -Z устройства.
+        // Матрица rotation vector переводит координаты устройства в мировые (X=восток, Y=север, Z=вверх),
+        // поэтому направление взгляда = минус третий столбец матрицы.
+        val forwardX = -rotationMatrix[2]
+        val forwardY = -rotationMatrix[5]
+        val forwardZ = -rotationMatrix[8]
+        // Азимут взгляда: по часовой стрелке от севера. Поворот игрока направо увеличивает азимут,
+        // поэтому неподвижный монстр на экране уходит влево — как и должно быть.
+        latestYaw = Math.toDegrees(kotlin.math.atan2(forwardX.toDouble(), forwardY.toDouble())).toFloat()
+        // Тангаж взгляда: вверх положителен. Поднял телефон — монстр на экране уходит вниз.
+        latestPitch = Math.toDegrees(kotlin.math.asin(forwardZ.coerceIn(-1f, 1f).toDouble())).toFloat()
         hasOrientation = true
         val baseY = baseYaw
         val baseP = basePitch
