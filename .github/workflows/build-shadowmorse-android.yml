@@ -54,8 +54,7 @@ jobs:
           if [ -n "$SHADOWMORSE_KEYSTORE_FILE" ]; then gradle assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/shadow-build.log"; else gradle assembleDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/shadow-build.log"; fi
           code=${PIPESTATUS[0]}
           { echo '## Shadow Morse build log (tail)'; echo '```text'; tail -n 220 "$RUNNER_TEMP/shadow-build.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-          if [ "$code" -ne 0 ]; then grep -E '^(e: |FAILED|FAILURE:|.*error:|.*Error:|Execution failed|Caused by:)' "$RUNNER_TEMP/shadow-build.log" | head -n 30 | sed 's/%/%25/g; s//%0D/g; s/
-/%0A/g' | while IFS= read -r line; do echo "::error title=ShadowMorseBuild::$line"; done; fi
+          if [ "$code" -ne 0 ]; then grep -E '^(e: |FAILED|FAILURE:|.*error:|.*Error:|Execution failed|Caused by:)' "$RUNNER_TEMP/shadow-build.log" | head -n 30 | tr -d '\r' | while IFS= read -r line; do echo "::error title=ShadowMorseBuild::$line"; done; fi
           exit $code
       - uses: actions/upload-artifact@v4
         with:
