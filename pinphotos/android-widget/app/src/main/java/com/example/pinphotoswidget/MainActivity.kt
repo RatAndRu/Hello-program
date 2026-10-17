@@ -32,6 +32,9 @@ class MainActivity : Activity() {
     private lateinit var widgetStatus: TextView
     private lateinit var countText: TextView
     private var photos: MutableList<Photo> = mutableListOf()
+    private var selectedAlbum: String = ALL_ALBUMS
+    private var pendingImportAlbum: String = "Разное"
+    private val selectedIds = linkedSetOf<String>()
     private val io = Executors.newFixedThreadPool(3)
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,10 +45,13 @@ class MainActivity : Activity() {
         widgetStatus = findViewById(R.id.widgetStatus)
         countText = findViewById(R.id.countText)
         grid.layoutManager = GridLayoutManager(this, 3)
-        findViewById<Button>(R.id.importBtn).setOnClickListener { pickPhotos() }
-        findViewById<Button>(R.id.emptyImportBtn).setOnClickListener { pickPhotos() }
+        findViewById<Button>(R.id.importBtn).setOnClickListener { chooseImportAlbum() }
+        findViewById<Button>(R.id.emptyImportBtn).setOnClickListener { chooseImportAlbum() }
         findViewById<Button>(R.id.addWidgetBtn).setOnClickListener { chooseWidgetSize() }
         findViewById<View>(R.id.menuBtn).setOnClickListener { showMenu(it) }
+        findViewById<View>(R.id.exitBtn).setOnClickListener { finishAndRemoveTask() }
+        findViewById<Button>(R.id.moveSelectedBtn).setOnClickListener { chooseMoveAlbum() }
+        findViewById<Button>(R.id.clearSelectionBtn).setOnClickListener { selectedIds.clear(); refresh() }
     }
 
     override fun onResume() { super.onResume(); refresh() }
@@ -60,13 +66,63 @@ class MainActivity : Activity() {
             pinnedCount == 1 -> "В виджете: 1 фото"
             else -> "В виджете: $pinnedCount фото · листаются каждые ~30 мин"
         }
-        emptyView.visibility = if (photos.isEmpty()) View.VISIBLE else View.GONE
-        grid.visibility = if (photos.isEmpty()) View.GONE else View.VISIBLE
-        grid.adapter = PhotoAdapter(photos) { photo ->
-            startActivity(Intent(this, PhotoActivity::class.java).putExtra("id", photo.id))
+        renderAlbums()
+        val displayed = if (selectedAlbum == ALL_ALBUMS) photos else photos.filter { it.album == selectedAlbum }
+        selectedIds.retainAll(photos.map { it.id }.toSet())
+        emptyView.visibility = if (displayed.isEmpty()) View.VISIBLE else View.GONE
+        grid.visibility = if (displayed.isEmpty()) View.GONE else View.VISIBLE
+        findViewById<TextView>(R.id.emptyText).text = when {
+            photos.isEmpty() -> "Пока нет фотографий"
+            else -> "В этом альбоме пока пусто"
         }
+        val bar = findViewById<View>(R.id.selectionBar)
+        bar.visibility = if (selectedIds.isEmpty()) View.GONE else View.VISIBLE
+        if (selectedIds.isNotEmpty()) findViewById<TextView>(R.id.selectionText).text = "Выбрано: ${selectedIds.size}"
+        grid.adapter = PhotoAdapter(displayed, selectedIds,
+            onClick = { photo ->
+                if (selectedIds.isNotEmpty()) toggleSelected(photo) else {
+                    startActivity(Intent(this, PhotoActivity::class.java).putExtra("id", photo.id))
+                }
+            },
+            onLongClick = { photo -> toggleSelected(photo) }
+        )
         PinnedPhotoWidgetBase.updateAll(this)
     }
+
+    private fun toggleSelected(photo: Photo) {
+        if (!selectedIds.add(photo.id)) selectedIds.remove(photo.id)
+        refresh()
+    }
+
+    private fun renderAlbums() {
+        val row = findViewById<android.widget.LinearLayout>(R.id.albumsRow)
+        row.removeAllViews()
+        val labels = listOf(ALL_ALBUMS) + PhotoStore.albums(this)
+        labels.forEach { album ->
+            val chip = TextView(this).apply {
+                text = if (album == ALL_ALBUMS) "Все" else album
+                textSize = 13f
+                setPadding(dp(14), dp(7), dp(14), dp(7))
+                val active = album == selectedAlbum
+                setBackgroundResource(if (active) R.drawable.btn_primary else R.drawable.btn_soft)
+                setTextColor(if (active) 0xFFFFFFFF.toInt() else 0xFF0F766E.toInt())
+                setOnClickListener { selectedAlbum = album; refresh() }
+            }
+            row.addView(chip, android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT,
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginEnd = dp(8) })
+        }
+        val create = TextView(this).apply {
+            text = "＋ Альбом"; textSize = 13f
+            setPadding(dp(14), dp(7), dp(14), dp(7))
+            setBackgroundResource(R.drawable.btn_soft); setTextColor(0xFFB45309.toInt())
+            setOnClickListener { showCreateAlbumDialog { album -> selectedAlbum = album; refresh() } }
+        }
+        row.addView(create)
+    }
+
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
 
     private fun showMenu(anchor: View) {
         val menu = PopupMenu(this, anchor)
@@ -77,9 +133,10 @@ class MainActivity : Activity() {
         menu.menu.add(0, 5, 0, "Иконка: обычная 📌")
         menu.menu.add(0, 6, 0, "Иконка: огненная 🔥")
         menu.menu.add(0, 7, 0, "Иконка: сонная 😴")
+        menu.menu.add(0, 8, 0, "Создать альбом")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
-                1 -> pickPhotos()
+                1 -> chooseImportAlbum()
                 2 -> chooseWidgetSize()
                 3 -> startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"
@@ -91,10 +148,62 @@ class MainActivity : Activity() {
                 5 -> IconSwitcher.setIcon(this, IconSwitcher.NORMAL)
                 6 -> IconSwitcher.setIcon(this, IconSwitcher.FIRE)
                 7 -> IconSwitcher.setIcon(this, IconSwitcher.SLEEPY)
+                8 -> showCreateAlbumDialog { album -> selectedAlbum = album; refresh() }
             }
             true
         }
         menu.show()
+    }
+
+    private fun showCreateAlbumDialog(onCreated: (String) -> Unit) {
+        val input = android.widget.EditText(this).apply {
+            hint = "Название альбома"; setSingleLine(true); setBackgroundResource(R.drawable.input_bg)
+            setTextColor(0xFF24313A.toInt()); setHintTextColor(0xFF98A2AE.toInt())
+        }
+        val box = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(10), dp(22), dp(4)); addView(input)
+        }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Новый альбом").setView(box)
+            .setPositiveButton("Создать") { _, _ ->
+                try { onCreated(PhotoStore.createAlbum(this, input.text.toString())); toast("Альбом создан") }
+                catch (e: Exception) { toast("Введите название альбома") }
+            }
+            .setNegativeButton("Отмена", null).show()
+    }
+
+    private fun chooseImportAlbum() {
+        val albums = PhotoStore.albums(this)
+        val labels = albums.toTypedArray() + "＋ Новый альбом"
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Добавить фото в альбом")
+            .setItems(labels) { _, which ->
+                if (which == albums.size) {
+                    showCreateAlbumDialog { album -> pendingImportAlbum = album; pickPhotos() }
+                } else { pendingImportAlbum = albums[which]; pickPhotos() }
+            }
+            .show()
+    }
+
+    private fun chooseMoveAlbum() {
+        if (selectedIds.isEmpty()) return
+        val albums = PhotoStore.albums(this)
+        val labels = albums.toTypedArray() + "＋ Новый альбом"
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Переместить ${selectedIds.size} фото")
+            .setItems(labels) { _, which ->
+                if (which == albums.size) {
+                    showCreateAlbumDialog { album -> moveSelectedTo(album) }
+                } else moveSelectedTo(albums[which])
+            }
+            .show()
+    }
+
+    private fun moveSelectedTo(album: String) {
+        photos.filter { it.id in selectedIds }.forEach { p -> p.album = album; PhotoStore.update(this, p) }
+        val count = selectedIds.size
+        selectedIds.clear(); selectedAlbum = album
+        toast("Перемещено: $count"); refresh()
     }
 
     private fun pickPhotos() {
@@ -137,7 +246,8 @@ class MainActivity : Activity() {
                     try {
                         val bytes = contentResolver.openInputStream(uri)?.readBytes() ?: continue
                         if (bytes.isEmpty()) continue
-                        PhotoStore.importBytes(this, bytes, contentResolver.getType(uri) ?: "image/jpeg", displayName(uri))
+                        val imported = PhotoStore.importBytes(this, bytes, contentResolver.getType(uri) ?: "image/jpeg", displayName(uri))
+                        imported.album = pendingImportAlbum; PhotoStore.update(this, imported)
                         saved++
                     } catch (e: Exception) { /* одно битое фото не должно валить остальные */ }
                 }
@@ -193,12 +303,17 @@ class MainActivity : Activity() {
 
     private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_LONG).show()
 
-    companion object { const val PICK_PHOTOS = 2001; const val EXPORT_JSON = 2002; const val IMPORT_JSON = 2003 }
+    companion object {
+        const val PICK_PHOTOS = 2001; const val EXPORT_JSON = 2002; const val IMPORT_JSON = 2003
+        const val ALL_ALBUMS = "__all__"
+    }
 }
 
 class PhotoAdapter(
     private val items: List<Photo>,
-    private val onClick: (Photo) -> Unit
+    private val selectedIds: Set<String>,
+    private val onClick: (Photo) -> Unit,
+    private val onLongClick: (Photo) -> Unit
 ) : RecyclerView.Adapter<PhotoAdapter.Holder>() {
     private val io = Executors.newFixedThreadPool(3)
 
@@ -214,7 +329,10 @@ class PhotoAdapter(
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val photo = items[position]
-        holder.badge.visibility = if (photo.pinned) View.VISIBLE else View.GONE
+        val selected = photo.id in selectedIds
+        holder.badge.text = if (selected) "✓" else "📌"
+        holder.badge.visibility = if (selected || photo.pinned) View.VISIBLE else View.GONE
+        holder.thumb.alpha = if (selected) 0.55f else 1f
         holder.thumb.setImageResource(R.drawable.widget_placeholder)
         holder.thumb.tag = photo.id
         val path = photo.fileIn(PhotoStore.dir(holder.thumb.context)).absolutePath
@@ -223,6 +341,7 @@ class PhotoAdapter(
             holder.thumb.post { if (holder.thumb.tag == photo.id && bmp != null) holder.thumb.setImageBitmap(bmp) }
         }
         holder.itemView.setOnClickListener { onClick(photo) }
+        holder.itemView.setOnLongClickListener { onLongClick(photo); true }
     }
 
     private fun decodeSampled(path: String, target: Int): Bitmap? {

@@ -54,6 +54,34 @@ object PhotoStore {
 
     fun pinned(context: Context) = list(context).filter { it.pinned }
 
+    private fun albumsFile(context: Context) = File(dir(context), "albums.json")
+
+    @Synchronized
+    fun albums(context: Context): List<String> {
+        val result = linkedSetOf("Разное")
+        try {
+            val f = albumsFile(context)
+            if (f.exists()) {
+                val arr = JSONArray(f.readText())
+                for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { result.add(it) }
+            }
+        } catch (e: Exception) { }
+        list(context).map { it.album }.filter { it.isNotBlank() }.forEach { result.add(it) }
+        return result.toList()
+    }
+
+    @Synchronized
+    fun createAlbum(context: Context, name: String): String {
+        val clean = name.trim().take(50)
+        require(clean.isNotEmpty()) { "Название альбома пустое" }
+        val all = albums(context).toMutableList()
+        if (all.none { it.equals(clean, ignoreCase = true) }) {
+            all.add(clean)
+            albumsFile(context).writeText(JSONArray(all).toString())
+        }
+        return all.first { it.equals(clean, ignoreCase = true) }
+    }
+
     @Synchronized
     fun saveAll(context: Context, photos: List<Photo>) {
         val arr = JSONArray()

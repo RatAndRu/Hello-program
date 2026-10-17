@@ -10,7 +10,16 @@
             android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         <TextView android:id="@+id/menuBtn" android:text="⋮" android:textColor="#24313A" android:textSize="22sp"
             android:paddingHorizontal="10dp" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        <TextView android:id="@+id/exitBtn" android:text="⏻" android:textColor="#B45309" android:textSize="20sp"
+            android:background="@drawable/btn_soft" android:paddingHorizontal="12dp" android:paddingVertical="5dp"
+            android:layout_width="wrap_content" android:layout_height="wrap_content" android:contentDescription="Закрыть приложение"/>
     </LinearLayout>
+
+    <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:scrollbars="none" android:paddingHorizontal="12dp" android:paddingBottom="8dp">
+        <LinearLayout android:id="@+id/albumsRow" android:orientation="horizontal"
+            android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    </HorizontalScrollView>
 
     <LinearLayout android:id="@+id/widgetCard" android:orientation="horizontal" android:gravity="center_vertical"
         android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -41,6 +50,18 @@
                 android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginTop="12dp"/>
         </LinearLayout>
     </FrameLayout>
+
+    <LinearLayout android:id="@+id/selectionBar" android:orientation="horizontal" android:gravity="center_vertical"
+        android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp" android:layout_marginTop="10dp" android:padding="10dp"
+        android:background="@drawable/card_bg">
+        <TextView android:id="@+id/selectionText" android:textColor="#24313A" android:textSize="14sp"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
+        <Button android:id="@+id/moveSelectedBtn" android:text="В альбом" android:textColor="#FFFFFF"
+            android:background="@drawable/btn_primary" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        <Button android:id="@+id/clearSelectionBtn" android:text="Отмена" android:textColor="#0F766E"
+            android:background="@drawable/btn_soft" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    </LinearLayout>
 
     <Button android:id="@+id/importBtn" android:text="＋  Добавить фото" android:textColor="#FFFFFF" android:background="@drawable/btn_primary"
         android:layout_width="match_parent" android:layout_height="wrap_content"

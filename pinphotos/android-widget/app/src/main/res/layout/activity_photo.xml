@@ -1,16 +1,29 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent" android:background="#FFF7ED">
-    <ImageView android:id="@+id/fullImage" android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
-        android:scaleType="fitCenter" android:contentDescription="Фото"/>
-    <TextView android:id="@+id/photoName" android:textColor="#24313A" android:textSize="17sp"
-        android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingHorizontal="16dp" android:paddingTop="12dp"/>
-    <TextView android:id="@+id/photoMeta" android:textColor="#7A8694" android:textSize="13sp"
-        android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingHorizontal="16dp" android:paddingBottom="8dp"/>
-    <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="wrap_content" android:padding="12dp">
-        <Button android:id="@+id/pinBtn" android:textColor="#0F766E" android:background="@drawable/btn_soft" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
-        <Button android:id="@+id/shareBtn" android:textColor="#0F766E" android:background="@drawable/btn_soft" android:text="Поделиться" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
-        <Button android:id="@+id/editBtn" android:textColor="#0F766E" android:background="@drawable/btn_soft" android:text="Изменить" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
-        <Button android:id="@+id/deleteBtn" android:textColor="#0F766E" android:background="@drawable/btn_soft" android:text="Удалить" android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
+    android:orientation="vertical" android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="#FFF7ED" android:fitsSystemWindows="true">
+
+    <com.example.pinphotoswidget.ZoomImageView android:id="@+id/fullImage"
+        android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:background="#111827" android:contentDescription="Фото. Зум щипком или двойным нажатием"/>
+
+    <LinearLayout android:orientation="vertical" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:background="@drawable/card_bg" android:layout_margin="12dp" android:padding="12dp">
+        <TextView android:id="@+id/photoName" android:textColor="#24313A" android:textSize="17sp" android:textStyle="bold"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        <TextView android:id="@+id/photoMeta" android:textColor="#7A8694" android:textSize="13sp"
+            android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="3dp"/>
+
+        <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="56dp" android:paddingTop="8dp">
+            <Button android:id="@+id/pinBtn" android:textColor="#FFFFFF" android:background="@drawable/btn_primary" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"/>
+            <Button android:id="@+id/shareBtn" android:textColor="#0F766E" android:background="@drawable/btn_soft" android:text="Поделиться" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="8dp"/>
+            <Button android:id="@+id/copyBtn" android:textColor="#0F766E" android:background="@drawable/btn_soft" android:text="Копировать" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="8dp"/>
+        </LinearLayout>
+        <LinearLayout android:orientation="horizontal" android:layout_width="match_parent" android:layout_height="56dp" android:paddingTop="8dp">
+            <Button android:id="@+id/editBtn" android:textColor="#0F766E" android:background="@drawable/btn_soft" android:text="Изменить" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"/>
+            <Button android:id="@+id/deleteBtn" android:textColor="#B91C1C" android:background="@drawable/btn_soft" android:text="Удалить" android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1" android:layout_marginStart="8dp"/>
+        </LinearLayout>
+        <TextView android:text="Зум: щипок или двойное нажатие" android:textColor="#98A2AE" android:textSize="12sp"
+            android:gravity="center" android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="7dp"/>
     </LinearLayout>
 </LinearLayout>

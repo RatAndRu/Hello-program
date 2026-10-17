@@ -1,14 +1,21 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/widget_root" android:orientation="vertical" android:padding="10dp"
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root" android:padding="8dp"
     android:background="@drawable/widget_bg" android:layout_width="match_parent" android:layout_height="match_parent">
 
-    <!-- Фото всегда КВАДРАТНОЕ по центру: bitmap обрезается в квадрат в коде, здесь не тянется под виджет -->
-    <ImageView android:id="@+id/widget_image" android:layout_width="match_parent" android:layout_height="0dp"
-        android:layout_weight="1" android:scaleType="centerInside" android:contentDescription="Закреплённое фото"/>
+    <!-- Обычный режим: фото на весь виджет, centerCrop. Лупа включает увеличенный центральный фрагмент. -->
+    <ImageView android:id="@+id/widget_image" android:layout_width="match_parent" android:layout_height="match_parent"
+        android:scaleType="centerCrop" android:contentDescription="Закреплённое фото"/>
+
+    <TextView android:id="@+id/widget_zoom" android:text="🔍" android:textSize="15sp"
+        android:padding="7dp" android:background="@drawable/widget_zoom_bg"
+        android:layout_width="wrap_content" android:layout_height="wrap_content"
+        android:layout_gravity="top|end" android:contentDescription="Масштаб фото"/>
 
     <LinearLayout android:orientation="horizontal" android:gravity="center_vertical"
-        android:layout_width="match_parent" android:layout_height="wrap_content" android:paddingTop="6dp">
+        android:background="@drawable/widget_caption_bg"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_gravity="bottom" android:padding="4dp">
         <TextView android:id="@+id/widget_prev" android:text="‹" android:textColor="#0F766E" android:textSize="24sp"
             android:paddingHorizontal="10dp" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         <TextView android:id="@+id/widget_caption" android:text="📌 ЗакрепФото" android:textColor="#24313A"
@@ -17,4 +24,4 @@
         <TextView android:id="@+id/widget_next" android:text="›" android:textColor="#0F766E" android:textSize="24sp"
             android:paddingHorizontal="10dp" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
     </LinearLayout>
-</LinearLayout>
+</FrameLayout>

@@ -29,14 +29,21 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
         when (intent.action) {
             ACTION_PREV -> { shift(context, -1); updateAll(context) }
             ACTION_NEXT -> { shift(context, +1); updateAll(context) }
+            ACTION_ZOOM -> {
+                val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                prefs.edit().putBoolean(KEY_ZOOM, !prefs.getBoolean(KEY_ZOOM, false)).apply()
+                updateAll(context)
+            }
         }
     }
 
     companion object {
         const val ACTION_PREV = "com.example.pinphotoswidget.WIDGET_PREV"
         const val ACTION_NEXT = "com.example.pinphotoswidget.WIDGET_NEXT"
+        const val ACTION_ZOOM = "com.example.pinphotoswidget.WIDGET_ZOOM"
         private const val PREFS = "pinphotos_widget"
         private const val KEY_INDEX = "rotation_index"
+        private const val KEY_ZOOM = "zoomed"
 
         val PROVIDERS: List<Class<out PinnedPhotoWidgetBase>> = listOf(
             PinnedPhotoWidget2x2::class.java,
@@ -71,7 +78,7 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
                 pinned.isNotEmpty() -> {
                     val idx = prefs.getInt(KEY_INDEX, 0) % pinned.size
                     val photo = pinned[idx]
-                    decodeSquare(photo.fileIn(PhotoStore.dir(context)).absolutePath)?.let {
+                    decodeForWidget(photo.fileIn(PhotoStore.dir(context)).absolutePath, prefs.getBoolean(KEY_ZOOM, false))?.let {
                         views.setImageViewBitmap(R.id.widget_image, it)
                     } ?: views.setImageViewResource(R.id.widget_image, R.drawable.widget_placeholder)
                     views.setTextViewText(R.id.widget_caption,
@@ -96,6 +103,7 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
             // Стрелки: отдельные зоны тапа, листание без открытия приложения
             views.setOnClickPendingIntent(R.id.widget_prev, navIntent(context, cls, ACTION_PREV, 1))
             views.setOnClickPendingIntent(R.id.widget_next, navIntent(context, cls, ACTION_NEXT, 2))
+            views.setOnClickPendingIntent(R.id.widget_zoom, navIntent(context, cls, ACTION_ZOOM, 3))
             manager.updateAppWidget(widgetId, views)
         }
 
@@ -105,16 +113,18 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
-        /** Квадрат: центральный кроп в квадрат — фото не растягивается под прямоугольный виджет. */
-        private fun decodeSquare(path: String): Bitmap? {
+        /** Обычный режим — фото целиком под виджет; зум — увеличенный центральный фрагмент. */
+        private fun decodeForWidget(path: String, zoomed: Boolean): Bitmap? {
             val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
             BitmapFactory.decodeFile(path, bounds)
             if (bounds.outWidth <= 0) return null
             var sample = 1
-            while (max(bounds.outWidth, bounds.outHeight) / sample > 880) sample *= 2
+            while (max(bounds.outWidth, bounds.outHeight) / sample > 1100) sample *= 2
             val bmp = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
-            val side = minOf(bmp.width, bmp.height)
-            return Bitmap.createBitmap(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side)
+            if (!zoomed) return bmp
+            val w = (bmp.width * 0.55f).toInt().coerceAtLeast(1)
+            val h = (bmp.height * 0.55f).toInt().coerceAtLeast(1)
+            return Bitmap.createBitmap(bmp, (bmp.width - w) / 2, (bmp.height - h) / 2, w, h)
         }
     }
 }
