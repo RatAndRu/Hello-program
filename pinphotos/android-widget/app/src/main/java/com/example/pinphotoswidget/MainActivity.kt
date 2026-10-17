@@ -339,6 +339,11 @@ class MainActivity : FragmentActivity() {
                     toast("Альбом виджета очищен"); refresh()
                 }.setNegativeButton("Отмена", null).show()
         })
+        val uiHidden = PinnedPhotoWidgetBase.hideUi(this, widgetId)
+        actions.add(Action(if (uiHidden) "Показать интерфейс виджета" else "Скрыть интерфейс виджета") {
+            PinnedPhotoWidgetBase.setHideUi(this, widgetId, !uiHidden)
+            toast(if (!uiHidden) "Интерфейс виджета скрыт: осталось только фото" else "Интерфейс виджета показан"); refresh()
+        })
         actions.add(Action(if (auto) "Отключить автопереключение" else "Включить автопереключение") {
             PinnedPhotoWidgetBase.setAutoEnabled(this, widgetId, !auto); PinnedPhotoWidgetBase.updateAll(this); toast("Автопереключение: ${if (!auto) "включено" else "выключено"}"); refresh()
         })

@@ -94,6 +94,13 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
                 setWidgetPhotoIds(context, widgetId, ids)
             }
         }
+        fun hideUi(context: Context, widgetId: Int): Boolean =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("hideui_$widgetId", false)
+        fun setHideUi(context: Context, widgetId: Int, hidden: Boolean) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putBoolean("hideui_$widgetId", hidden).apply()
+            updateAll(context)
+        }
+
         fun autoEnabled(context: Context, widgetId: Int): Boolean =
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("auto_$widgetId", true)
         fun setAutoEnabled(context: Context, widgetId: Int, enabled: Boolean) {
@@ -222,6 +229,22 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
                     views.setImageViewResource(R.id.widget_image, R.drawable.widget_placeholder)
                     views.setTextViewText(R.id.widget_caption, "Добавьте фото в «ЗакрепФото»")
                 }
+            }
+
+            val cleanMode = hideUi(context, widgetId)
+            if (cleanMode) {
+                // Чистый режим: только фото. Никаких стрелок, лупы, подписи и рамки-подложки.
+                views.setViewVisibility(R.id.widget_controls, android.view.View.GONE)
+                views.setViewVisibility(R.id.widget_zoom, android.view.View.GONE)
+                views.setViewPadding(R.id.widget_root, 0, 0, 0, 0)
+                views.setInt(R.id.widget_root, "setBackgroundResource", R.drawable.widget_clean_bg)
+            } else {
+                views.setViewVisibility(R.id.widget_controls, android.view.View.VISIBLE)
+                views.setViewVisibility(R.id.widget_zoom, android.view.View.VISIBLE)
+                val pad = (8 * context.resources.displayMetrics.density).toInt()
+                views.setViewPadding(R.id.widget_root, pad, pad, pad, pad)
+                views.setInt(R.id.widget_root, "setBackgroundResource",
+                    if (UiTheme.isDark(context)) R.drawable.widget_bg_dark else R.drawable.widget_bg)
             }
 
             val open = PendingIntent.getActivity(
