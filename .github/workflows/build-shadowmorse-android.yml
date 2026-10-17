@@ -50,7 +50,11 @@ jobs:
           PINPHOTOS_KEY_PASSWORD: ${{ secrets.PINPHOTOS_KEY_PASSWORD }}
           PINPHOTOS_KEY_ALIAS: ${{ secrets.PINPHOTOS_KEY_ALIAS }}
         run: |
-          if [ -n "$SHADOWMORSE_KEYSTORE_FILE" ]; then gradle assembleRelease --stacktrace; else gradle assembleDebug --stacktrace; fi
+          set +e
+          if [ -n "$SHADOWMORSE_KEYSTORE_FILE" ]; then gradle assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/shadow-build.log"; else gradle assembleDebug --stacktrace 2>&1 | tee "$RUNNER_TEMP/shadow-build.log"; fi
+          code=${PIPESTATUS[0]}
+          { echo '## Shadow Morse build log (tail)'; echo '```text'; tail -n 220 "$RUNNER_TEMP/shadow-build.log"; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit $code
       - uses: actions/upload-artifact@v4
         with:
           name: shadowmorse-android-apk
