@@ -12,6 +12,7 @@ import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
 import kotlin.math.sin
 
@@ -25,7 +26,14 @@ data class MonsterModelSnapshot(
     val age: Float,
     val alpha: Float,
     val shieldActive: Boolean,
-    val boss: Boolean
+    val boss: Boolean,
+    /** Нормализованная экранная точка GameView (-1..1), куда ставится центр модели. */
+    val screenNx: Float = 3f,
+    val screenNy: Float = 0f,
+    /** Желаемый радиус модели как доля высоты экрана: высота модели сохраняется прежней. */
+    val radiusFraction: Float = 0.12f,
+    /** Небольшой доворот силуэта к краям экрана, чтобы поворот был визуально понятен. */
+    val turnDeg: Float = 0f
 )
 
 /**
@@ -72,6 +80,10 @@ class Monster3DView @JvmOverloads constructor(context: Context, attrs: Attribute
         private lateinit var cone: Mesh
         private lateinit var box: Mesh
 
+        private var surfaceWidth = 1
+        private var surfaceHeight = 1
+        private var currentTurnDeg = 0f
+
         private val projection = FloatArray(16)
         private val view = FloatArray(16)
         private val model = FloatArray(16)
@@ -104,14 +116,12 @@ class Monster3DView @JvmOverloads constructor(context: Context, attrs: Attribute
 
         override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
             GLES20.glViewport(0, 0, width, height)
-            val aspect = if (height == 0) 1f else width.toFloat() / height.toFloat()
-            // ТА ЖЕ проекция, что у 2D-интерфейса GameView: горизонтальный FOV 160°, вертикальный 90°.
-            // Раньше здесь был перспективный FOV 90° только по вертикали, поэтому HP/подписи
-            // (линейная проекция GameView) уезжали от моделей тем сильнее, чем дальше от центра.
-            val near = 0.1f
-            val right = kotlin.math.tan(Math.toRadians(80.0)).toFloat() * near
-            val top = kotlin.math.tan(Math.toRadians(45.0)).toFloat() * near
-            Matrix.frustumM(projection, 0, -right, right, -top, top, near, 30f)
+            surfaceWidth = width.coerceAtLeast(1)
+            surfaceHeight = height.coerceAtLeast(1)
+            val aspect = surfaceWidth.toFloat() / surfaceHeight.toFloat()
+            // ОБЫЧНАЯ перспектива с реальным aspect экрана: ширина моделей больше не сплющивается
+            // сверхшироким frustum 160°. Позицию на экране задаёт GameView нормализованными координатами.
+            Matrix.perspectiveM(projection, 0, 62f, aspect, 0.1f, 30f)
         }
 
         override fun onDrawFrame(gl: GL10?) {
@@ -123,30 +133,36 @@ class Monster3DView @JvmOverloads constructor(context: Context, attrs: Attribute
         }
 
         private fun drawMonster(m: MonsterModelSnapshot) {
-            val dy = deltaAngle(m.yaw, viewYaw)
-            val dp = m.pitch - viewPitch
-            if (kotlin.math.abs(dy) > 80f || kotlin.math.abs(dp) > 45f) return
-            val dyRad = Math.toRadians(dy.toDouble()).toFloat()
-            val dpRad = Math.toRadians(dp.toDouble()).toFloat()
-            val depth = lerp(7.2f, 2.4f, 1f - m.dist)
-            val x = sin(dyRad) * cos(dpRad) * depth
-            val y = sin(dpRad) * depth
-            val z = -cos(dyRad) * cos(dpRad) * depth
-            val baseScale = lerp(0.55f, 1.55f, 1f - m.dist) * if (m.boss) 1.9f else 1f
-            val bob = sin(elapsed * 2.2f + m.phase) * 0.08f
+            // Модель ставится в ту же экранную точку, что и 2D-интерфейс, но обычной перспективной
+            // камерой с реальным aspect: пропорции тела сохраняются, а при повороте игрока точка
+            // заметно едет по экрану (как в подтверждённой v1.2).
+            if (abs(m.screenNx) > 1.18f || abs(m.screenNy) > 1.18f) return
+            val depth = 5.0f
+            val tanV = kotlin.math.tan(Math.toRadians(31.0)).toFloat()
+            val aspect = surfaceWidth.toFloat() / surfaceHeight.toFloat()
+            val x = m.screenNx * tanV * aspect * depth
+            val y = m.screenNy * tanV * depth
+            val z = -depth
+            // Высота силуэта: рост модели примерно 1.9*s; подбираем s под радиус GameView.
+            val baseScale = (m.radiusFraction.coerceIn(0.02f, 0.42f) * 4f * depth * tanV / 1.9f)
+                .coerceAtLeast(0.05f)
+            currentTurnDeg = m.turnDeg
+            val bob = sin(elapsed * 2.2f + m.phase) * 0.08f * baseScale
+            val yy = y + bob
             when (m.type) {
-                GameView.MonsterType.FLASH -> drawWraith(x, y + bob, z, baseScale, m, darkBlue = false)
-                GameView.MonsterType.MORSE -> { drawWraith(x, y + bob, z, baseScale, m, darkBlue = true); drawMorseAntenna(x, y + bob, z, baseScale, m) }
-                GameView.MonsterType.INVISIBLE -> drawWraith(x, y + bob, z, baseScale, m, darkBlue = true)
+                GameView.MonsterType.FLASH -> drawWraith(x, yy, z, baseScale, m, darkBlue = false)
+                GameView.MonsterType.MORSE -> { drawWraith(x, yy, z, baseScale, m, darkBlue = true); drawMorseAntenna(x, yy, z, baseScale, m) }
+                GameView.MonsterType.INVISIBLE -> drawWraith(x, yy, z, baseScale, m, darkBlue = true)
                 GameView.MonsterType.LASER -> drawSpider(x, y, z, baseScale, m, body = floatArrayOf(0.05f, 0.01f, 0.04f))
                 GameView.MonsterType.SHIELD_SPIDER -> { drawSpider(x, y, z, baseScale, m, body = floatArrayOf(0.08f, 0.02f, 0.10f)); if (m.shieldActive) drawShield(x, y, z, baseScale, m) }
-                GameView.MonsterType.SLIME, GameView.MonsterType.SLIME_SMALL -> drawSlime(x, y + bob * 0.5f, z, baseScale * if (m.type == GameView.MonsterType.SLIME_SMALL) 0.55f else 1f, m)
+                GameView.MonsterType.SLIME, GameView.MonsterType.SLIME_SMALL -> drawSlime(x, y + bob * 0.5f, z, baseScale * if (m.type == GameView.MonsterType.SLIME_SMALL) 0.62f else 1f, m)
                 GameView.MonsterType.STALKER -> drawStalker(x, y, z, baseScale, m)
                 GameView.MonsterType.HEALER -> { drawSpider(x, y, z, baseScale, m, body = floatArrayOf(0.02f, 0.10f, 0.08f)); drawHealerCross(x, y, z, baseScale, m) }
-                GameView.MonsterType.MIRROR -> { drawWraith(x, y + bob, z, baseScale, m, darkBlue = true); drawMirrorDisc(x, y + bob, z, baseScale, m) }
-                GameView.MonsterType.BOSS_REAPER -> drawReaper(x, y + bob, z, baseScale, m)
+                GameView.MonsterType.MIRROR -> { drawWraith(x, yy, z, baseScale, m, darkBlue = true); drawMirrorDisc(x, yy, z, baseScale, m) }
+                GameView.MonsterType.BOSS_REAPER -> drawReaper(x, yy, z, baseScale, m)
                 GameView.MonsterType.BOSS_MOTHER -> drawSpider(x, y, z, baseScale, m, body = floatArrayOf(0.10f, 0.01f, 0.05f))
             }
+            currentTurnDeg = 0f
         }
 
         private fun drawWraith(x: Float, y: Float, z: Float, s: Float, m: MonsterModelSnapshot, darkBlue: Boolean) {
@@ -265,8 +281,9 @@ class Monster3DView @JvmOverloads constructor(context: Context, attrs: Attribute
         private fun drawMesh(mesh: Mesh, x: Float, y: Float, z: Float, sx: Float, sy: Float, sz: Float, rotZ: Float, color: FloatArray, alpha: Float) {
             Matrix.setIdentityM(model, 0)
             Matrix.translateM(model, 0, x, y, z)
-            // Модель всегда лицом к игроку: силуэт не теряется при обходе по углу.
-            Matrix.rotateM(model, 0, -deltaAngle(0f, 0f), 0f, 1f, 0f)
+            // К центру экрана модель смотрит на игрока; к краям слегка доворачивается боком:
+            // поворот мира визуально читается не только по сдвигу, но и по силуэту.
+            if (currentTurnDeg != 0f) Matrix.rotateM(model, 0, currentTurnDeg, 0f, 1f, 0f)
             if (rotZ != 0f) Matrix.rotateM(model, 0, rotZ, 0f, 0f, 1f)
             Matrix.scaleM(model, 0, sx, sy, sz)
             Matrix.multiplyMM(mvp, 0, projection, 0, view, 0)

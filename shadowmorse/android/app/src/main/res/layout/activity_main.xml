@@ -10,8 +10,9 @@
         <TextView android:id="@+id/scoreText" style="@style/HudPill" android:layout_marginStart="8dp" android:text="☠ 0" />
         <TextView android:id="@+id/shardsText" style="@style/HudPill" android:layout_marginStart="8dp" android:text="◆ 0" android:textColor="#BFE3FF" />
         <Space android:layout_width="0dp" android:layout_height="1dp" android:layout_weight="1" />
-        <Button android:id="@+id/exitGameBtn" style="@style/HudPill" android:background="@drawable/button_menu_secondary" android:text="✕ МЕНЮ" android:textColor="#FFD7DE" android:textSize="13sp" />
     </LinearLayout>
+
+    <Button android:id="@+id/exitGameBtn" android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_gravity="top|end" android:layout_marginTop="58dp" android:layout_marginRight="12dp" android:background="@drawable/button_menu_secondary" android:paddingLeft="14dp" android:paddingTop="9dp" android:paddingRight="14dp" android:paddingBottom="9dp" android:text="✕ В меню" android:textColor="#FFD7DE" android:textSize="13sp" android:textStyle="bold" android:visibility="gone" />
 
     <ScrollView android:id="@+id/startPanel" android:layout_width="match_parent" android:layout_height="match_parent" android:background="@drawable/menu_bg" android:fillViewport="true" android:paddingLeft="16dp" android:paddingTop="22dp" android:paddingRight="16dp" android:paddingBottom="22dp">
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_gravity="center_horizontal" android:orientation="vertical">
@@ -46,7 +47,7 @@
                 <CheckBox android:id="@+id/debugTouchCheck" android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="8dp" android:background="@drawable/menu_rule_bg" android:buttonTint="#FFB25E" android:padding="13dp" android:text="  👆 Сенсорный режим: тапы и свайпы, без детектора света" android:textColor="#D8E2F3" android:textSize="14sp" />
             </LinearLayout>
 
-            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:gravity="center" android:text="SHADOW Morse AR · v2.2" android:textColor="#66758D" android:textSize="12sp" />
+            <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="18dp" android:gravity="center" android:text="SHADOW Morse AR · v2.3" android:textColor="#66758D" android:textSize="12sp" />
             <TextView android:layout_width="match_parent" android:layout_height="wrap_content" android:layout_marginTop="3dp" android:gravity="center" android:text="Не играй рядом с лестницами и дорогой" android:textColor="#4E5B70" android:textSize="11sp" />
         </LinearLayout>
     </ScrollView>

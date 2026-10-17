@@ -826,7 +826,13 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
                     type = m.type, yaw = m.yaw, pitch = m.pitch, dist = m.dist, phase = m.phase, age = m.age,
                     alpha = (screen?.alpha ?: 0.75f) * visibilityAlpha(m),
                     shieldActive = m.shieldHp > 0 || (m.type == MonsterType.MIRROR && !m.mirrorBroken),
-                    boss = m.isBoss
+                    boss = m.isBoss,
+                    // Экранная привязка в нормализованных координатах OpenGL: та же точка,
+                    // куда GameView ставит HP. Поэтому модель и интерфейс не могут разъехаться.
+                    screenNx = if (screen != null) ((screen.x / width.coerceAtLeast(1)) * 2f - 1f) else 3f,
+                    screenNy = if (screen != null) (1f - (screen.y / height.coerceAtLeast(1)) * 2f) else 0f,
+                    radiusFraction = if (screen != null && height > 0) screen.visualRadius / height else 0.12f,
+                    turnDeg = screen?.let { ((it.x / width.coerceAtLeast(1)) - 0.5f) * -38f } ?: 0f
                 )
             }, smoothYaw, smoothPitch, elapsed)
         } else modelView?.submit(emptyList(), smoothYaw, smoothPitch, elapsed)
@@ -1135,7 +1141,8 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     private fun drawRadar(canvas: Canvas) {
         val size = 126f * density()
         val cx = width - size / 2f - 12f * density()
-        val cy = height - size / 2f - 12f * density()
+        // Радар поднят над панелью расходников, чтобы карточки не перекрывали его.
+        val cy = height - size / 2f - 132f * density()
         val rr = size / 2f - 6f * density()
         paint.style = Paint.Style.FILL
         paint.color = Color.argb(92, 2, 5, 13)
@@ -1172,7 +1179,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         return if (cycle < 2.3f) 1f else 0.10f
     }
 
-    /** Единая с OpenGL перспективная проекция: x=tan(yaw)/tan(80°), y=tan(pitch)/tan(45°). */
+    /** Экранная привязка v1.2, подтверждённая на телефоне: линейно по полю 160°×90°. */
     private fun projected(nxTan: Float, nyTan: Float, dist: Float, boss: Boolean, spawnFade: Float = 1f): ScreenPos? {
         if (abs(nxTan) > 1f || abs(nyTan) > 1f) return null
         // Те же depth/scale, что в Monster3DView: интерфейс буквально приклеен к центру и размеру модели.
@@ -1189,8 +1196,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     }
 
     private fun tangentProjection(dy: Float, dp: Float): Pair<Float, Float> =
-        (tan(Math.toRadians(dy.toDouble())) / tan(Math.toRadians(80.0))).toFloat() to
-            (tan(Math.toRadians(dp.toDouble())) / tan(Math.toRadians(45.0))).toFloat()
+        (dy / (H_FOV / 2f)) to (dp / (V_FOV / 2f))
 
     private fun screenForAngle(yaw: Float, pitch: Float, dist: Float): ScreenPos? {
         val dy = deltaAngle(yaw, smoothYaw)

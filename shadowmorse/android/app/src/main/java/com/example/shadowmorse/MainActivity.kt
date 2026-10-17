@@ -85,6 +85,7 @@ class MainActivity : Activity(), SensorEventListener {
                     gameRunning = false
                     gameView.stopGame()
                     topHud.visibility = View.GONE
+                    findViewById<View>(R.id.exitGameBtn).visibility = View.GONE
                     findViewById<View>(R.id.consumablesPanel).visibility = View.GONE
                     endPanel.visibility = View.VISIBLE
                     endTitle.text = if (win) "Ты выжил!" else "Тьма добралась до тебя"
@@ -178,6 +179,7 @@ class MainActivity : Activity(), SensorEventListener {
         startPanel.visibility = View.GONE
         endPanel.visibility = View.GONE
         topHud.visibility = View.VISIBLE
+        findViewById<View>(R.id.exitGameBtn).visibility = View.VISIBLE
         findViewById<View>(R.id.consumablesPanel).visibility = View.VISIBLE
         gameRunning = true
         gameView.debugTouchMode = debug
@@ -199,6 +201,7 @@ class MainActivity : Activity(), SensorEventListener {
         gameRunning = false
         gameView.stopGame()
         topHud.visibility = View.GONE
+        findViewById<View>(R.id.exitGameBtn).visibility = View.GONE
         findViewById<View>(R.id.consumablesPanel).visibility = View.GONE
         endPanel.visibility = View.GONE
         startPanel.visibility = View.VISIBLE
