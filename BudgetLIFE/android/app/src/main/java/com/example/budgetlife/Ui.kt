@@ -17,6 +17,7 @@ data class Palette(val bg: Int, val card: Int, val card2: Int, val text: Int, va
 fun palette(state: AppState): Palette = if (state.settings.theme == "light") Palette(Color.rgb(244, 247, 251), Color.WHITE, Color.rgb(232, 238, 246), Color.rgb(15, 23, 42), Color.rgb(100, 116, 139), Color.rgb(203, 213, 225), Color.rgb(2, 132, 199), Color.rgb(5, 150, 105), Color.rgb(225, 29, 72), Color.rgb(217, 119, 6)) else Palette(Color.rgb(5, 9, 20), Color.rgb(13, 20, 38), Color.rgb(18, 28, 52), Color.rgb(238, 242, 255), Color.rgb(148, 163, 184), Color.rgb(38, 52, 82), Color.rgb(56, 195, 245), Color.rgb(16, 209, 154), Color.rgb(251, 113, 133), Color.rgb(251, 191, 92))
 
 fun Context.dp(v: Int): Int = (v * resources.displayMetrics.density).toInt()
+fun Context.dp(v: Float): Int = (v * resources.displayMetrics.density).toInt()
 fun rounded(color: Int, radiusDp: Int, ctx: Context, stroke: Int? = null): GradientDrawable = GradientDrawable().apply { setColor(color); cornerRadius = ctx.dp(radiusDp).toFloat(); if (stroke != null) setStroke(ctx.dp(1), stroke) }
 fun gradient(ctx: Context, start: Int, end: Int): GradientDrawable = GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, intArrayOf(start, end)).apply { cornerRadius = ctx.dp(18).toFloat() }
 

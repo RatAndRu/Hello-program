@@ -13,7 +13,7 @@ object CurrencyInfo {
 }
 
 object Money {
-    fun parse(input: String?): Double = input?.replace("\u00A0", "").replace(" ", "").replace(",", ".")?.toDoubleOrNull() ?: 0.0
+    fun parse(input: String?): Double = input?.replace("\u00A0", "")?.replace(" ", "")?.replace(",", ".")?.toDoubleOrNull() ?: 0.0
     fun input(v: Double?): String = if (v == null || v == 0.0) "" else round2(v).toString().replace('.', ',').trimEnd('0').trimEnd(',')
     fun fmt(amount: Double, currency: String, state: AppState? = null, signed: Boolean = false, compact: Boolean = false): String {
         if (state?.settings?.hideBalances == true) return "••••••"
