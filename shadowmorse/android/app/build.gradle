@@ -2,7 +2,7 @@ plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
 android {
     namespace 'com.example.shadowmorse'
     compileSdk 34
-    defaultConfig { applicationId 'com.example.shadowmorse'; minSdk 26; targetSdk 34; versionCode 4; versionName '2.0' }
+    defaultConfig { applicationId 'com.example.shadowmorse'; minSdk 26; targetSdk 34; versionCode 5; versionName '2.1' }
     signingConfigs {
         release {
             def ks = System.getenv('SHADOWMORSE_KEYSTORE_FILE') ?: System.getenv('PINPHOTOS_KEYSTORE_FILE')
