@@ -19,7 +19,12 @@ data class FrameDetections(
     val laserPrevV: Float? = null,
     val laserGreen: Boolean = false,
     val laserTrackId: Long = 0L,
-    val timestampMs: Long = 0L
+    val timestampMs: Long = 0L,
+    /** Завершённая вспышка для Морзе: id растёт, long=true если свет держали >= 280 мс. */
+    val flashCompletedId: Long = 0L,
+    val flashCompletedLong: Boolean = false,
+    val flashUAtCompletion: Float = 0f,
+    val flashVAtCompletion: Float = 0f
 )
 
 /**
@@ -38,6 +43,17 @@ class LightDetector {
     private var activeTrackId = 0L
     private var nextTrackId = 1L
     private var lastLaserSeenMs = 0L
+    private var flashWasActive = false
+    private var flashStartedMs = 0L
+    private var flashCompletedId = 0L
+    private var flashCompletedLong = false
+    private var flashCompletedU = 0f
+    private var flashCompletedV = 0f
+    private var lastFlashU = 0f
+    private var lastFlashV = 0f
+    // Настройки чувствительности из главного экрана: 1.0 = стандарт.
+    @Volatile var flashSensitivity = 1f
+    @Volatile var laserSensitivity = 1f
 
     private data class Candidate(val u: Float, val v: Float, val green: Boolean, val area: Int)
 
@@ -90,12 +106,15 @@ class LightDetector {
                         val saturation = mx - mn
                         val idx = gy * gw + gx
 
-                        val flashThreshold = max(205f, min(242f, ambient + 82f))
+                        val sensitivityOffset = (flashSensitivity.coerceIn(0.35f, 2f) - 1f) * 34f
+                        val flashThreshold = max(175f, min(248f, max(205f, min(242f, ambient + 82f)) - sensitivityOffset))
                         val neutralBright = yv > flashThreshold && saturation < 118
                         if (neutralBright) brightMask[idx] = true
 
-                        val redLaser = r > 205 && saturation > 100 && r > g * 1.70f && r > b * 1.70f && g < 180 && b < 180
-                        val greenLaser = g > 205 && saturation > 100 && g > r * 1.52f && g > b * 1.52f && r < 195 && b < 195
+                        val laserValue = (205f - (laserSensitivity.coerceIn(0.35f, 2f) - 1f) * 28f).toInt().coerceIn(165, 240)
+                        val laserSat = (100f - (laserSensitivity.coerceIn(0.35f, 2f) - 1f) * 32f).toInt().coerceIn(55, 145)
+                        val redLaser = r > laserValue && saturation > laserSat && r > g * 1.70f && r > b * 1.70f && g < 180 && b < 180
+                        val greenLaser = g > laserValue && saturation > laserSat && g > r * 1.52f && g > b * 1.52f && r < 195 && b < 195
                         if (redLaser) laserMask[idx] = 1 else if (greenLaser) laserMask[idx] = 2
                     }
                 }
@@ -154,6 +173,16 @@ class LightDetector {
             if (now - lastLaserSeenMs > 180L) activeTrackId = 0L
         }
 
+        if (flashDetection != null) {
+            lastFlashU = flashDetection.first; lastFlashV = flashDetection.second
+            if (!flashWasActive) flashStartedMs = now
+        } else if (flashWasActive) {
+            flashCompletedId++
+            flashCompletedLong = now - flashStartedMs >= 280L
+            flashCompletedU = lastFlashU; flashCompletedV = lastFlashV
+        }
+        flashWasActive = flashDetection != null
+
         return FrameDetections(
             flashActive = flashDetection != null,
             flashU = flashDetection?.first ?: 0f,
@@ -166,7 +195,11 @@ class LightDetector {
             laserPrevV = laserPrevV,
             laserGreen = laserGreen,
             laserTrackId = activeTrackId,
-            timestampMs = now
+            timestampMs = now,
+            flashCompletedId = flashCompletedId,
+            flashCompletedLong = flashCompletedLong,
+            flashUAtCompletion = flashCompletedU,
+            flashVAtCompletion = flashCompletedV
         )
     }
 

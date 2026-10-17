@@ -44,6 +44,11 @@ class CameraController(
         analysisEnabled = enabled
     }
 
+    fun setSensitivity(flash: Float, laser: Float) {
+        detector.flashSensitivity = flash
+        detector.laserSensitivity = laser
+    }
+
     fun start() {
         if (context.checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) return
         startBackgroundThread()

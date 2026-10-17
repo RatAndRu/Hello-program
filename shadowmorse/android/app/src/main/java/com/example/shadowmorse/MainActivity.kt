@@ -16,6 +16,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.Button
 import android.widget.CheckBox
+import android.widget.SeekBar
 import android.widget.TextView
 import android.widget.Toast
 import kotlin.math.PI
@@ -23,6 +24,7 @@ import kotlin.math.abs
 
 class MainActivity : Activity(), SensorEventListener {
     private lateinit var gameView: GameView
+    private lateinit var monster3DView: Monster3DView
     private lateinit var cameraPreview: TextureView
     private lateinit var topHud: View
     private lateinit var startPanel: View
@@ -54,6 +56,8 @@ class MainActivity : Activity(), SensorEventListener {
         applyImmersive()
 
         gameView = findViewById(R.id.gameView)
+        monster3DView = findViewById(R.id.monster3DView)
+        gameView.modelView = monster3DView
         cameraPreview = findViewById(R.id.cameraPreview)
         topHud = findViewById(R.id.topHud)
         startPanel = findViewById(R.id.startPanel)
@@ -78,6 +82,7 @@ class MainActivity : Activity(), SensorEventListener {
                 runOnUiThread {
                     gameRunning = false
                     topHud.visibility = View.GONE
+                    findViewById<View>(R.id.consumablesPanel).visibility = View.GONE
                     endPanel.visibility = View.VISIBLE
                     endTitle.text = if (win) "Ты выжил!" else "Тьма добралась до тебя"
                     endStats.text = "Уничтожено монстров: $score. Время: $elapsedSec сек."
@@ -85,12 +90,22 @@ class MainActivity : Activity(), SensorEventListener {
             }
 
             override fun onToast(text: String) = runOnUiThread { showToast(text) }
+
+            override fun onInventory(state: GameView.InventoryState) {
+                runOnUiThread { renderInventory(state) }
+            }
+
+            override fun onUpgradeChoices(choices: List<String>) {
+                runOnUiThread { showUpgradeDialog(choices) }
+            }
         }
 
         sensorManager = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         rotationSensor = sensorManager?.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
             ?: sensorManager?.getDefaultSensor(Sensor.TYPE_GEOMAGNETIC_ROTATION_VECTOR)
 
+        setupSettings()
+        buildConsumablesBar()
         findViewById<Button>(R.id.startBtn).setOnClickListener {
             if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
                 requestPermissions(arrayOf(Manifest.permission.CAMERA), REQ_CAMERA_START)
@@ -109,10 +124,12 @@ class MainActivity : Activity(), SensorEventListener {
             sensorManager?.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME)
         }
         if (checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) startCamera()
+        if (gameView.use3DModels) monster3DView.onResume()
         gameView.invalidate()
     }
 
     override fun onPause() {
+        monster3DView.onPause()
         sensorManager?.unregisterListener(this)
         cameraController?.stop()
         cameraController = null
@@ -120,6 +137,7 @@ class MainActivity : Activity(), SensorEventListener {
             gameRunning = false
             gameView.stopGame()
             topHud.visibility = View.GONE
+            findViewById<View>(R.id.consumablesPanel).visibility = View.GONE
             startPanel.visibility = View.VISIBLE
         }
         super.onPause()
@@ -151,14 +169,94 @@ class MainActivity : Activity(), SensorEventListener {
         startCamera()
         // В режиме без фонарей детектор света не работает вообще: ни урона от света, ни анализа кадров.
         cameraController?.setLightAnalysisEnabled(!debug)
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        cameraController?.setSensitivity(
+            0.35f + prefs.getInt("flashSensitivity", 50) / 100f * 1.65f,
+            0.35f + prefs.getInt("laserSensitivity", 50) / 100f * 1.65f
+        )
+        gameView.setOrientationSmoothing(0.45f + prefs.getInt("smoothingSensitivity", 50) / 100f * 1.55f)
         calibrateOrientation(silent = true)
         startPanel.visibility = View.GONE
         endPanel.visibility = View.GONE
         topHud.visibility = View.VISIBLE
+        findViewById<View>(R.id.consumablesPanel).visibility = View.VISIBLE
         gameRunning = true
         gameView.debugTouchMode = debug
+        val use3D = findViewById<CheckBox>(R.id.models3DCheck).isChecked
+        gameView.use3DModels = use3D
+        monster3DView.setModelsEnabled(use3D)
         gameView.startGame()
         showToast(if (debug) "Отладка: призраки — тапом, пауки — свайпом" else "Поворачивайся вокруг себя. Удачи!")
+    }
+
+    private fun setupSettings() {
+        val prefs = getSharedPreferences("settings", Context.MODE_PRIVATE)
+        val flash = findViewById<SeekBar>(R.id.flashSensitivity)
+        val laser = findViewById<SeekBar>(R.id.laserSensitivity)
+        val smoothing = findViewById<SeekBar>(R.id.smoothingSensitivity)
+        flash.progress = prefs.getInt("flashSensitivity", 50)
+        laser.progress = prefs.getInt("laserSensitivity", 50)
+        smoothing.progress = prefs.getInt("smoothingSensitivity", 50)
+        findViewById<CheckBox>(R.id.models3DCheck).isChecked = prefs.getBoolean("models3D", true)
+        findViewById<CheckBox>(R.id.debugTouchCheck).isChecked = prefs.getBoolean("touchMode", false)
+        fun apply() {
+            prefs.edit()
+                .putInt("flashSensitivity", flash.progress)
+                .putInt("laserSensitivity", laser.progress)
+                .putInt("smoothingSensitivity", smoothing.progress)
+                .putBoolean("models3D", findViewById<CheckBox>(R.id.models3DCheck).isChecked)
+                .putBoolean("touchMode", findViewById<CheckBox>(R.id.debugTouchCheck).isChecked)
+                .apply()
+            val flashLevel = 0.35f + flash.progress / 100f * 1.65f
+            val laserLevel = 0.35f + laser.progress / 100f * 1.65f
+            cameraController?.setSensitivity(flashLevel, laserLevel)
+            gameView.setOrientationSmoothing(0.45f + smoothing.progress / 100f * 1.55f)
+        }
+        val listener = object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) { if (fromUser) apply() }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        }
+        flash.setOnSeekBarChangeListener(listener); laser.setOnSeekBarChangeListener(listener); smoothing.setOnSeekBarChangeListener(listener)
+        findViewById<CheckBox>(R.id.models3DCheck).setOnCheckedChangeListener { _, _ -> apply() }
+        findViewById<CheckBox>(R.id.debugTouchCheck).setOnCheckedChangeListener { _, _ -> apply() }
+        // Применить после создания cameraController в onResume: значения продублируются при старте игры.
+        mainHandler.postDelayed({ apply() }, 350L)
+    }
+
+    private fun buildConsumablesBar() {
+        val bar = findViewById<android.widget.LinearLayout>(R.id.consumablesBar)
+        bar.removeAllViews()
+        GameView.Consumable.values().forEach { type ->
+            val button = Button(this).apply {
+                text = type.label; textSize = 12f; setPadding(18, 8, 18, 8)
+                setOnClickListener { gameView.useConsumable(type) }
+            }
+            button.tag = type
+            bar.addView(button)
+        }
+    }
+
+    private fun renderInventory(state: GameView.InventoryState) {
+        findViewById<TextView>(R.id.inventoryText).text = "Осколки тьмы: ${state.shards} · ❤ ${state.lives} · ☠ ${state.score}" + if (state.shieldActive) " · 🛡 щит" else ""
+        val bar = findViewById<android.widget.LinearLayout>(R.id.consumablesBar)
+        for (i in 0 until bar.childCount) {
+            val button = bar.getChildAt(i) as Button
+            val type = button.tag as GameView.Consumable
+            val count = state.counts[type] ?: 0
+            button.text = "${type.label} ×$count"
+            button.isEnabled = count > 0 || type == GameView.Consumable.MEDKIT
+            button.alpha = if (count > 0) 1f else 0.48f
+        }
+    }
+
+    private fun showUpgradeDialog(choices: List<String>) {
+        if (isFinishing || isDestroyed) { gameView.cancelUpgradeChoice(); return }
+        android.app.AlertDialog.Builder(this)
+            .setTitle("Усиление за осколки тьмы")
+            .setItems(choices.toTypedArray()) { _, which -> gameView.applyUpgradeChoice(which) }
+            .setOnCancelListener { gameView.cancelUpgradeChoice() }
+            .show()
     }
 
     private fun calibrateOrientation(silent: Boolean = false) {
