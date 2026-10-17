@@ -1,0 +1,70 @@
+name: Собрать Android APK — Shadow Morse AR
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'shadowmorse/**'
+      - '.github/workflows/build-shadowmorse-android.yml'
+jobs:
+  build-apk:
+    name: APK (Android)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Подготовить постоянный ключ подписи
+        env:
+          SHADOWMORSE_KEYSTORE_BASE64: ${{ secrets.SHADOWMORSE_KEYSTORE_BASE64 }}
+          PINPHOTOS_KEYSTORE_BASE64: ${{ secrets.PINPHOTOS_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$SHADOWMORSE_KEYSTORE_BASE64" ]; then
+            echo "$SHADOWMORSE_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/shadowmorse-release.p12"
+            echo "SHADOWMORSE_KEYSTORE_FILE=$RUNNER_TEMP/shadowmorse-release.p12" >> "$GITHUB_ENV"
+            echo "Постоянная подпись Shadow Morse: отдельный ключ"
+          elif [ -n "$PINPHOTOS_KEYSTORE_BASE64" ]; then
+            echo "$PINPHOTOS_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/shadowmorse-release.p12"
+            echo "SHADOWMORSE_KEYSTORE_FILE=$RUNNER_TEMP/shadowmorse-release.p12" >> "$GITHUB_ENV"
+            echo "PINPHOTOS_KEYSTORE_FILE=$RUNNER_TEMP/shadowmorse-release.p12" >> "$GITHUB_ENV"
+            echo "Постоянная подпись Shadow Morse: общий издательский ключ репозитория"
+          else
+            echo "Постоянная подпись не задана: будет debug-подпись"
+          fi
+      - name: Собрать APK
+        working-directory: shadowmorse/android
+        env:
+          SHADOWMORSE_STORE_PASSWORD: ${{ secrets.SHADOWMORSE_STORE_PASSWORD }}
+          SHADOWMORSE_KEY_PASSWORD: ${{ secrets.SHADOWMORSE_KEY_PASSWORD }}
+          SHADOWMORSE_KEY_ALIAS: ${{ secrets.SHADOWMORSE_KEY_ALIAS }}
+          PINPHOTOS_STORE_PASSWORD: ${{ secrets.PINPHOTOS_STORE_PASSWORD }}
+          PINPHOTOS_KEY_PASSWORD: ${{ secrets.PINPHOTOS_KEY_PASSWORD }}
+          PINPHOTOS_KEY_ALIAS: ${{ secrets.PINPHOTOS_KEY_ALIAS }}
+        run: |
+          if [ -n "$SHADOWMORSE_KEYSTORE_FILE" ]; then gradle assembleRelease --stacktrace; else gradle assembleDebug --stacktrace; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: shadowmorse-android-apk
+          path: shadowmorse/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 30
+      - name: Подготовить APK с понятным именем
+        run: |
+          if [ -f shadowmorse/android/app/build/outputs/apk/release/app-release.apk ]; then cp shadowmorse/android/app/build/outputs/apk/release/app-release.apk ShadowMorseAR.apk; else cp shadowmorse/android/app/build/outputs/apk/debug/app-debug.apk ShadowMorseAR.apk; fi
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: shadowmorse-apk-${{ github.run_number }}-${{ github.run_attempt }}
+          name: Shadow Morse AR — APK (сборка ${{ github.run_number }})
+          body: Нативная Android-версия Shadow Morse AR. Скачай ShadowMorseAR.apk и установи на телефон. Для обновлений поверх не меняй ключ подписи после первой установки.
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: ShadowMorseAR.apk
