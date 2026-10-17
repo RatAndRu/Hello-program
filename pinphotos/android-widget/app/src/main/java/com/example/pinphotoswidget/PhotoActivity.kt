@@ -45,9 +45,12 @@ class PhotoActivity : Activity() {
 
         findViewById<Button>(R.id.pinBtn).setOnClickListener {
             val current = photo ?: return@setOnClickListener
-            current.pinned = !current.pinned; PhotoStore.update(this, current); renderText()
-            PinnedPhotoWidgetBase.updateAll(this)
-            Toast.makeText(this, if (current.pinned) "Закреплено — фото в виджете" else "Откреплено", Toast.LENGTH_SHORT).show()
+            if (current.widgetId > 0) {
+                AlertDialog.Builder(this).setTitle("Убрать копию из виджета №${current.widgetId}?")
+                    .setPositiveButton("Убрать") { _, _ ->
+                        PhotoStore.delete(this, current); PinnedPhotoWidgetBase.updateAll(this); finish()
+                    }.setNegativeButton("Отмена", null).show()
+            } else chooseWidgetsForCurrent(current)
         }
         findViewById<Button>(R.id.shareBtn).setOnClickListener { photo?.let { share(it) } }
         findViewById<Button>(R.id.copyBtn).setOnClickListener { photo?.let { copy(it) } }
@@ -71,10 +74,21 @@ class PhotoActivity : Activity() {
         val all = PhotoStore.list(this)
         photo = all.firstOrNull { it.id == ids[index] }
         val current = photo ?: return
-        val opts = BitmapFactory.Options().apply { inSampleSize = 2 }
-        findViewById<ImageView>(R.id.fullImage).setImageBitmap(
-            BitmapFactory.decodeFile(current.fileIn(PhotoStore.dir(this)).absolutePath, opts)
-        )
+        val video = findViewById<android.widget.VideoView>(R.id.videoPlayer)
+        val image = findViewById<ZoomImageView>(R.id.fullImage)
+        if (current.mime.startsWith("video/")) {
+            image.visibility = android.view.View.GONE; video.visibility = android.view.View.VISIBLE
+            val plain = PhotoStore.plainBytes(this, current)
+            if (plain != null) {
+                val temp = java.io.File(cacheDir, "play_${current.id}.mp4").apply { writeBytes(plain) }
+                video.setVideoPath(temp.absolutePath)
+                video.setMediaController(android.widget.MediaController(this).apply { setAnchorView(video) })
+                video.setOnPreparedListener { it.isLooping = true; video.start() }
+            }
+        } else {
+            video.stopPlayback(); video.visibility = android.view.View.GONE; image.visibility = android.view.View.VISIBLE
+            image.setImageBitmap(PhotoStore.decodeBitmap(this, current, 1400))
+        }
         findViewById<TextView>(R.id.positionText).text = "${index + 1} / ${ids.size}"
         renderText()
     }
@@ -101,7 +115,36 @@ class PhotoActivity : Activity() {
         } else {
             @Suppress("DEPRECATION") window.decorView.systemUiVisibility = android.view.View.SYSTEM_UI_FLAG_VISIBLE
         }
+        findViewById<ZoomImageView>(R.id.fullImage).refreshForResize()
+        window.decorView.post { findViewById<ZoomImageView>(R.id.fullImage).refreshForResize() }
         renderText()
+    }
+
+    private fun chooseWidgetsForCurrent(current: Photo) {
+        val widgetIds = PinnedPhotoWidgetBase.installedWidgetIds(this)
+        if (widgetIds.isEmpty()) {
+            Toast.makeText(this, "Виджет не добавлен на рабочий стол — кнопка пока не работает", Toast.LENGTH_LONG).show(); return
+        }
+        if (widgetIds.size == 1) {
+            val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, listOf(current.id), widgetIds)
+            PinnedPhotoWidgetBase.updateAll(this)
+            Toast.makeText(this, if (added > 0) "Отдельная копия добавлена в единственный виджет" else "Это фото уже есть в виджете", Toast.LENGTH_LONG).show(); return
+        }
+        val labels = widgetIds.map { "Виджет №$it" }.toTypedArray(); val checked = BooleanArray(widgetIds.size)
+        AlertDialog.Builder(this).setTitle("Добавить копию в виджеты")
+            .setMultiChoiceItems(labels, checked) { _, which, isChecked -> checked[which] = isChecked }
+            .setPositiveButton("Добавить") { _, _ ->
+                val chosen = widgetIds.filterIndexed { index, _ -> checked[index] }
+                if (chosen.isEmpty()) Toast.makeText(this, "Ни один виджет не выбран", Toast.LENGTH_SHORT).show() else {
+                    val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, listOf(current.id), chosen)
+                    PinnedPhotoWidgetBase.updateAll(this); Toast.makeText(this, "Добавлено копий: $added", Toast.LENGTH_SHORT).show()
+                }
+            }
+            .setNeutralButton("Во все") { _, _ ->
+                val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, listOf(current.id), widgetIds)
+                PinnedPhotoWidgetBase.updateAll(this); Toast.makeText(this, "Добавлено копий: $added", Toast.LENGTH_SHORT).show()
+            }
+            .setNegativeButton("Отмена", null).show()
     }
 
     private fun showPhotoActions() {
@@ -137,7 +180,11 @@ class PhotoActivity : Activity() {
         val meta = listOf("Сохранено: $saved", p.albums.joinToString(", "), p.tags.joinToString(" ") { "#$it" }, p.note)
             .filter { it.isNotBlank() }.joinToString(" · ")
         findViewById<TextView>(R.id.photoMeta).text = meta
-        findViewById<Button>(R.id.pinBtn).text = if (p.pinned) "📌 В виджете" else "Закрепить"
+        findViewById<Button>(R.id.pinBtn).text = when {
+            p.widgetId > 0 -> "🧩 Копия виджета №${p.widgetId}"
+            PinnedPhotoWidgetBase.installedWidgetIds(this).isEmpty() -> "В виджет (нет виджета)"
+            else -> "В виджет"
+        }
         findViewById<TextView>(R.id.fullName).text = p.name
         findViewById<TextView>(R.id.fullMeta).text = meta
     }
@@ -147,7 +194,8 @@ class PhotoActivity : Activity() {
         val dir = File(cacheDir, "shared").apply { mkdirs() }
         val ext = src.extension.ifBlank { "jpg" }
         val out = File(dir, "${p.name.replace(Regex("[^A-Za-z0-9А-Яа-яЁё _-]"), "_")}.$ext")
-        src.copyTo(out, overwrite = true)
+        val plain = PhotoStore.plainBytes(this, p) ?: throw IllegalStateException("Не удалось прочитать фото")
+        out.writeBytes(plain)
         return FileProvider.getUriForFile(this, packageName + ".fileprovider", out)
     }
 

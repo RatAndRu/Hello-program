@@ -5,6 +5,8 @@
 
     <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
         android:background="#111827">
+        <VideoView android:id="@+id/videoPlayer" android:visibility="gone"
+            android:layout_width="match_parent" android:layout_height="match_parent"/>
         <com.example.pinphotoswidget.ZoomImageView android:id="@+id/fullImage"
             android:layout_width="match_parent" android:layout_height="match_parent"
             android:contentDescription="Фото. Зум щипком или двойным нажатием"/>

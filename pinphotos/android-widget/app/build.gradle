@@ -2,7 +2,24 @@ plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
 android {
     namespace 'com.example.pinphotoswidget'
     compileSdk 34
-    defaultConfig { applicationId 'com.example.pinphotoswidget'; minSdk 26; targetSdk 34; versionCode 11; versionName '1.5' }
+    defaultConfig { applicationId 'com.example.pinphotoswidget'; minSdk 26; targetSdk 34; versionCode 12; versionName '1.6' }
+    signingConfigs {
+        release {
+            def ks = System.getenv('PINPHOTOS_KEYSTORE_FILE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('PINPHOTOS_STORE_PASSWORD')
+                keyAlias System.getenv('PINPHOTOS_KEY_ALIAS') ?: 'pinphotos'
+                keyPassword System.getenv('PINPHOTOS_KEY_PASSWORD') ?: System.getenv('PINPHOTOS_STORE_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (System.getenv('PINPHOTOS_KEYSTORE_FILE')) signingConfig signingConfigs.release
+            minifyEnabled false
+        }
+    }
 }
 kotlin { jvmToolchain(17) }
 dependencies {

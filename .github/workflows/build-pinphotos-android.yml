@@ -35,22 +35,48 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Собрать debug APK
+      - name: Подготовить постоянный ключ подписи (если секрет задан)
+        env:
+          PINPHOTOS_KEYSTORE_BASE64: ${{ secrets.PINPHOTOS_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$PINPHOTOS_KEYSTORE_BASE64" ]; then
+            echo "$PINPHOTOS_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/pinphotos-release.p12"
+            echo "PINPHOTOS_KEYSTORE_FILE=$RUNNER_TEMP/pinphotos-release.p12" >> "$GITHUB_ENV"
+            echo "Постоянная подпись: включена"
+          else
+            echo "Постоянная подпись: секрет не задан, будет временная debug-подпись"
+          fi
+
+      - name: Собрать APK
         working-directory: pinphotos/android-widget
-        run: gradle assembleDebug --stacktrace
+        env:
+          PINPHOTOS_STORE_PASSWORD: ${{ secrets.PINPHOTOS_STORE_PASSWORD }}
+          PINPHOTOS_KEY_PASSWORD: ${{ secrets.PINPHOTOS_KEY_PASSWORD }}
+          PINPHOTOS_KEY_ALIAS: ${{ secrets.PINPHOTOS_KEY_ALIAS }}
+        run: |
+          if [ -n "$PINPHOTOS_KEYSTORE_FILE" ]; then
+            gradle assembleRelease --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
 
       - name: Загрузить готовый APK в Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: pinphotos-debug-apk
-          path: pinphotos/android-widget/app/build/outputs/apk/debug/*.apk
+          path: pinphotos/android-widget/app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 30
 
       # Главное для человека: тот же APK кладём в GitHub Releases,
       # где он виден сразу и скачивается одним кликом без ZIP-обёртки.
       - name: Подготовить APK с понятным именем
-        run: cp pinphotos/android-widget/app/build/outputs/apk/debug/app-debug.apk PinPhotos-debug.apk
+        run: |
+          if [ -f pinphotos/android-widget/app/build/outputs/apk/release/app-release.apk ]; then
+            cp pinphotos/android-widget/app/build/outputs/apk/release/app-release.apk PinPhotos-debug.apk
+          else
+            cp pinphotos/android-widget/app/build/outputs/apk/debug/app-debug.apk PinPhotos-debug.apk
+          fi
 
       - name: Опубликовать APK в GitHub Releases
         uses: softprops/action-gh-release@v2

@@ -65,6 +65,16 @@ class ZoomImageView @JvmOverloads constructor(
         super.setImageBitmap(bm); post { fitBase(); reset() }
     }
 
+    /** При смене размера экрана (полный экран <-> обычный) матрицу надо пересчитать сразу, а не на следующем фото. */
+    fun refreshForResize() {
+        post { fitBase(); reset(); invalidate() }
+    }
+
+    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
+        super.onSizeChanged(w, h, oldw, oldh)
+        if (w > 0 && h > 0 && (w != oldw || h != oldh)) post { fitBase(); reset(); invalidate() }
+    }
+
     private fun fitBase() {
         val d = drawable ?: return
         baseMatrix.reset()

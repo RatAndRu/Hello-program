@@ -12,7 +12,8 @@ object IconSwitcher {
     const val NORMAL = ".IconNormal"
     const val FIRE = ".IconFire"
     const val SLEEPY = ".IconSleepy"
-    private val ALL = listOf(NORMAL, FIRE, SLEEPY)
+    const val SHAPED = ".IconShaped"
+    private val ALL = listOf(NORMAL, FIRE, SLEEPY, SHAPED)
 
     fun setIcon(context: Context, active: String) {
         val pm = context.packageManager

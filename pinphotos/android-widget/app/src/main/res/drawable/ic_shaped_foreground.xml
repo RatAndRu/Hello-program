@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 4-я иконка: форменная, БЕЗ фоновой подложки. Вокруг фотокарточки — прозрачность,
+     поэтому на рабочем столе видна сама карточка с пином, а не квадрат. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+  <group android:rotation="-6" android:pivotX="50" android:pivotY="58">
+    <path android:fillColor="#E5E7EB" android:pathData="M18,24h64v66H18z"/>
+    <path android:fillColor="#FFFFFF" android:pathData="M21,21h64v66H21z"/>
+    <path android:fillColor="#BDEBFF" android:pathData="M27,28h52v38H27z"/>
+    <path android:fillColor="#38BDF8" android:pathData="M27,57 L45,39 L58,52 L67,43 L79,55 L79,66 L27,66 Z"/>
+    <path android:fillColor="#0F766E" android:pathData="M27,62 L50,45 L63,57 L71,50 L79,57 L79,66 L27,66 Z"/>
+    <path android:fillColor="#FFD166" android:pathData="M68,33m-5,0a5,5 0,1 1,10 0a5,5 0,1 1,-10 0"/>
+    <path android:fillColor="#CBD5E1" android:pathData="M27,72h52v4H27zM27,79h34v3H27z"/>
+  </group>
+  <path android:fillColor="#FF5964" android:pathData="M80,12c-9,0 -16,7 -16,16c0,12 16,28 16,28s16,-16 16,-28c0,-9 -7,-16 -16,-16z"/>
+  <path android:fillColor="#FFFFFF" android:pathData="M80,20m-5.5,0a5.5,5.5 0,1 1,11 0a5.5,5.5 0,1 1,-11 0"/>
+</vector>

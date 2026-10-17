@@ -18,6 +18,11 @@
             <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
         </activity-alias>
 
+        <activity-alias android:name=".IconShaped" android:enabled="false" android:exported="true"
+            android:icon="@mipmap/ic_shaped_launcher" android:label="ЗакрепФото" android:targetActivity=".MainActivity">
+            <intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter>
+        </activity-alias>
+
         <provider android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider" android:exported="false"
             android:grantUriPermissions="true">

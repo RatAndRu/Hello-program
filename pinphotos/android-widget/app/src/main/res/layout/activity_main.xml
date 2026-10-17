@@ -32,6 +32,19 @@
             android:layout_width="wrap_content" android:layout_height="wrap_content"/>
     </LinearLayout>
 
+    <LinearLayout android:orientation="horizontal" android:gravity="center_vertical"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp" android:layout_marginBottom="10dp">
+        <EditText android:id="@+id/searchInput" android:hint="🔍 Поиск по названию и #тегам"
+            android:singleLine="true" android:background="@drawable/input_bg"
+            android:textColor="?attr/appText" android:textColorHint="?attr/appMuted" android:textSize="14sp"
+            android:paddingHorizontal="12dp" android:paddingVertical="10dp"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
+        <Spinner android:id="@+id/sortSpinner"
+            android:background="@drawable/input_bg" android:paddingHorizontal="8dp"
+            android:layout_width="142dp" android:layout_height="wrap_content" android:layout_marginStart="8dp"/>
+    </LinearLayout>
+
     <FrameLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1">
         <androidx.recyclerview.widget.RecyclerView android:id="@+id/grid"
             android:layout_width="match_parent" android:layout_height="match_parent"
@@ -64,6 +77,16 @@
         </HorizontalScrollView>
     </LinearLayout>
 
+    <LinearLayout android:id="@+id/widgetAlbumsSection" android:orientation="vertical" android:visibility="gone"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp" android:layout_marginTop="10dp">
+        <TextView android:text="Альбомы виджетов (отдельно от обычных)" android:textColor="?attr/appText" android:textSize="16sp" android:textStyle="bold"
+            android:layout_width="match_parent" android:layout_height="wrap_content"/>
+        <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content" android:scrollbars="none" android:paddingTop="8dp">
+            <LinearLayout android:id="@+id/widgetAlbumsTiles" android:orientation="horizontal" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+        </HorizontalScrollView>
+    </LinearLayout>
+
     <LinearLayout android:id="@+id/selectionBar" android:orientation="horizontal" android:gravity="center_vertical"
         android:visibility="gone" android:layout_width="match_parent" android:layout_height="wrap_content"
         android:layout_marginHorizontal="16dp" android:layout_marginTop="10dp" android:padding="10dp"
@@ -74,6 +97,16 @@
             android:background="@drawable/btn_primary" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         <Button android:id="@+id/clearSelectionBtn" android:text="Отмена" android:textColor="?attr/appAccent"
             android:background="@drawable/btn_soft" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+    </LinearLayout>
+    <LinearLayout android:id="@+id/selectionActions2" android:orientation="horizontal" android:gravity="center_vertical" android:visibility="gone"
+        android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_marginHorizontal="16dp" android:layout_marginTop="8dp" android:padding="10dp" android:background="@drawable/card_bg">
+        <Button android:id="@+id/widgetSelectedBtn" android:text="В виджет" android:textColor="#FFFFFF" android:background="@drawable/btn_primary"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
+        <Button android:id="@+id/shareSelectedBtn" android:text="Поделиться" android:textColor="?attr/appAccent" android:background="@drawable/btn_soft"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="8dp"/>
+        <Button android:id="@+id/deleteSelectedBtn" android:text="Удалить" android:textColor="#EF4444" android:background="@drawable/btn_soft"
+            android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1" android:layout_marginStart="8dp"/>
     </LinearLayout>
 
     <Button android:id="@+id/importBtn" android:text="＋  Добавить фото" android:textColor="#FFFFFF" android:background="@drawable/btn_primary"

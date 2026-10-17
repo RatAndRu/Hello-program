@@ -19,19 +19,28 @@ import kotlin.math.max
 open class PinnedPhotoWidgetBase : AppWidgetProvider() {
     // Периодический апдейт от системы (~30 мин): листаем на следующее фото
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
-        shift(context, +1)
-        ids.forEach { render(context, manager, it, javaClass) }
+        ids.forEach { widgetId -> shift(context, +1, widgetId); render(context, manager, widgetId, javaClass) }
+    }
+
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        // Независимые копии удалённого виджета больше не нужны.
+        appWidgetIds.forEach { widgetId ->
+            PhotoStore.list(context).filter { it.widgetId == widgetId }.forEach { PhotoStore.delete(context, it) }
+        }
+        super.onDeleted(context, appWidgetIds)
     }
 
     // Тапы по стрелкам ‹ › на самом виджете: ручное листание
     override fun onReceive(context: Context, intent: Intent) {
         super.onReceive(context, intent)
+        val widgetId = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
         when (intent.action) {
-            ACTION_PREV -> { shift(context, -1); updateAll(context) }
-            ACTION_NEXT -> { shift(context, +1); updateAll(context) }
+            ACTION_PREV -> { shift(context, -1, widgetId); updateAll(context) }
+            ACTION_NEXT -> { shift(context, +1, widgetId); updateAll(context) }
             ACTION_ZOOM -> {
                 val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                prefs.edit().putBoolean(KEY_ZOOM, !prefs.getBoolean(KEY_ZOOM, false)).apply()
+                val key = "zoom_$widgetId"
+                prefs.edit().putBoolean(key, !prefs.getBoolean(key, false)).apply()
                 updateAll(context)
             }
         }
@@ -52,13 +61,42 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
             PinnedPhotoWidget4x3::class.java
         )
 
-        private fun shift(context: Context, delta: Int) {
+        fun installedWidgetIds(context: Context): List<Int> {
+            val manager = AppWidgetManager.getInstance(context)
+            return PROVIDERS.flatMap { cls -> manager.getAppWidgetIds(ComponentName(context, cls)).toList() }.distinct().sorted()
+        }
+
+        fun photosForWidget(context: Context, widgetId: Int): List<Photo> {
+            val own = PhotoStore.list(context).filter { it.widgetId == widgetId }
+            if (own.isNotEmpty()) return PhotoStore.dedupeForDisplay(own)
+            // Миграция со старых версий: прежде виджеты жили на общем списке закреплённых.
             val lockedNames = PhotoStore.lockedAlbumNames(context)
-            val size = PhotoStore.list(context).count { photo -> photo.pinned && photo.albums.none { it in lockedNames } }
+            return PhotoStore.list(context).filter { photo -> photo.widgetId == 0 && photo.pinned && photo.albums.none { it in lockedNames } }
+        }
+
+        /** Добавляет независимые копии в выбранные виджеты. Внутри одного виджета дубликаты не создаём. */
+        fun addCopiesToWidgets(context: Context, sourceIds: Collection<String>, widgetIds: Collection<Int>): Int {
+            var added = 0
+            val all = PhotoStore.list(context)
+            for (widgetId in widgetIds) {
+                for (id in sourceIds) {
+                    val source = all.firstOrNull { it.id == id } ?: continue
+                    val hash = PhotoStore.plainBytes(context, source)?.let { PhotoStore.sha256(it) } ?: source.hash
+                    val exists = PhotoStore.list(context).any { it.widgetId == widgetId && it.hash == hash && hash.isNotEmpty() }
+                    if (!exists && PhotoStore.duplicatePhoto(context, source, widgetId = widgetId) != null) added++
+                }
+            }
+            return added
+        }
+
+        private fun shift(context: Context, delta: Int, widgetId: Int) {
+            if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return
+            val size = photosForWidget(context, widgetId).size
             if (size == 0) return
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val cur = prefs.getInt(KEY_INDEX, 0)
-            prefs.edit().putInt(KEY_INDEX, ((cur + delta) % size + size) % size).apply()
+            val key = "index_$widgetId"
+            val cur = prefs.getInt(key, 0)
+            prefs.edit().putInt(key, ((cur + delta) % size + size) % size).apply()
         }
 
         fun updateAll(context: Context) {
@@ -71,16 +109,15 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
 
         private fun render(context: Context, manager: AppWidgetManager, widgetId: Int, cls: Class<out PinnedPhotoWidgetBase>) {
             val views = RemoteViews(context.packageName, R.layout.widget_pinned_photo)
-            val all = PhotoStore.list(context)
-            val lockedNames = PhotoStore.lockedAlbumNames(context)
-            val pinned = all.filter { photo -> photo.pinned && photo.albums.none { it in lockedNames } }
+            val all = PhotoStore.list(context).filter { it.widgetId == 0 }
+            val pinned = photosForWidget(context, widgetId)
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
             when {
                 pinned.isNotEmpty() -> {
-                    val idx = prefs.getInt(KEY_INDEX, 0) % pinned.size
+                    val idx = prefs.getInt("index_$widgetId", 0) % pinned.size
                     val photo = pinned[idx]
-                    decodeForWidget(photo.fileIn(PhotoStore.dir(context)).absolutePath, prefs.getBoolean(KEY_ZOOM, false))?.let {
+                    decodeForWidget(context, photo, prefs.getBoolean("zoom_$widgetId", false))?.let {
                         views.setImageViewBitmap(R.id.widget_image, it)
                     } ?: views.setImageViewResource(R.id.widget_image, R.drawable.widget_placeholder)
                     views.setTextViewText(R.id.widget_caption,
@@ -103,26 +140,22 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
             views.setOnClickPendingIntent(R.id.widget_image, open)
             views.setOnClickPendingIntent(R.id.widget_caption, open)
             // Стрелки: отдельные зоны тапа, листание без открытия приложения
-            views.setOnClickPendingIntent(R.id.widget_prev, navIntent(context, cls, ACTION_PREV, 1))
-            views.setOnClickPendingIntent(R.id.widget_next, navIntent(context, cls, ACTION_NEXT, 2))
-            views.setOnClickPendingIntent(R.id.widget_zoom, navIntent(context, cls, ACTION_ZOOM, 3))
+            views.setOnClickPendingIntent(R.id.widget_prev, navIntent(context, cls, ACTION_PREV, widgetId * 10 + 1, widgetId))
+            views.setOnClickPendingIntent(R.id.widget_next, navIntent(context, cls, ACTION_NEXT, widgetId * 10 + 2, widgetId))
+            views.setOnClickPendingIntent(R.id.widget_zoom, navIntent(context, cls, ACTION_ZOOM, widgetId * 10 + 3, widgetId))
             manager.updateAppWidget(widgetId, views)
         }
 
-        private fun navIntent(context: Context, cls: Class<out PinnedPhotoWidgetBase>, action: String, code: Int): PendingIntent {
-            val intent = Intent(context, cls).setAction(action)
+        private fun navIntent(context: Context, cls: Class<out PinnedPhotoWidgetBase>, action: String, code: Int, widgetId: Int): PendingIntent {
+            val intent = Intent(context, cls).setAction(action).putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
             return PendingIntent.getBroadcast(context, code, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
 
         /** Обычный режим — фото целиком под виджет; зум — увеличенный центральный фрагмент. */
-        private fun decodeForWidget(path: String, zoomed: Boolean): Bitmap? {
-            val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-            BitmapFactory.decodeFile(path, bounds)
-            if (bounds.outWidth <= 0) return null
-            var sample = 1
-            while (max(bounds.outWidth, bounds.outHeight) / sample > 1100) sample *= 2
-            val bmp = BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+        private fun decodeForWidget(context: Context, photo: Photo, zoomed: Boolean): Bitmap? {
+            // RemoteViews: видео и GIF здесь всегда статичный кадр, анимацию виджеты Android не показывают.
+            val bmp = PhotoStore.decodeBitmap(context, photo, 1100) ?: return null
             if (!zoomed) return bmp
             val w = (bmp.width * 0.55f).toInt().coerceAtLeast(1)
             val h = (bmp.height * 0.55f).toInt().coerceAtLeast(1)
