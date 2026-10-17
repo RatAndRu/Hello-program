@@ -103,6 +103,21 @@ class PhotoActivity : Activity() {
         }
     }
 
+    /** Полностью отвязывает VideoView от предыдущего ролика перед сменой файла или выходом. */
+    private fun releaseVideoPlayer(video: android.widget.VideoView) {
+        try { mediaController?.hide() } catch (ignored: Throwable) { }
+        mediaController = null
+        // ВАЖНО: ссылку на MediaPlayer очищаем ДО/ВМЕСТЕ со stopPlayback. Иначе после перехода
+        // видео -> фото currentMediaPlayer указывал на освобождённый плеер, и выход из полного
+        // экрана на фото падал при applyVideoLooping().
+        currentMediaPlayer = null
+        try { video.setOnPreparedListener(null) } catch (ignored: Throwable) { }
+        try { video.setOnCompletionListener(null) } catch (ignored: Throwable) { }
+        try { video.setOnErrorListener(null) } catch (ignored: Throwable) { }
+        try { video.setMediaController(null) } catch (ignored: Throwable) { }
+        try { video.stopPlayback() } catch (ignored: Throwable) { }
+    }
+
     private fun loadCurrent() {
         slideshowHandler.removeCallbacks(slideshowRunnable)
         val all = PhotoStore.list(this)
@@ -114,6 +129,7 @@ class PhotoActivity : Activity() {
             image.visibility = android.view.View.GONE; video.visibility = android.view.View.VISIBLE
             val playable = PhotoStore.playableFile(this, current)
             if (playable != null) {
+                releaseVideoPlayer(video)
                 video.setVideoPath(playable.absolutePath)
                 mediaController = android.widget.MediaController(this).apply { setAnchorView(video) }
                 video.setMediaController(mediaController)
@@ -139,7 +155,7 @@ class PhotoActivity : Activity() {
                 }
             }
         } else {
-            if (video.isPlaying) video.stopPlayback(); video.visibility = android.view.View.GONE; image.visibility = android.view.View.VISIBLE
+            releaseVideoPlayer(video); video.visibility = android.view.View.GONE; image.visibility = android.view.View.VISIBLE
             image.setImageBitmap(PhotoStore.decodeBitmap(this, current, 1400))
         }
         // У видео подпись в полном экране — сверху, чтобы не накладывалась на перемотку/паузу снизу.
@@ -166,7 +182,9 @@ class PhotoActivity : Activity() {
 
     private fun applyVideoLooping() {
         // Loop допустим только когда слайд-шоу выключено или мы не в полном экране.
-        currentMediaPlayer?.isLooping = !(fullscreen && slideshowSeconds > 0)
+        val player = currentMediaPlayer ?: return
+        try { player.isLooping = !(fullscreen && slideshowSeconds > 0) }
+        catch (ignored: Throwable) { currentMediaPlayer = null }
     }
 
     private fun schedulePhotoSlideshow() {
@@ -276,6 +294,7 @@ class PhotoActivity : Activity() {
     override fun onDestroy() {
         slideshowHandler.removeCallbacks(slideshowRunnable)
         autoHideHandler.removeCallbacks(autoHideRunnable)
+        try { releaseVideoPlayer(findViewById(R.id.videoPlayer)) } catch (ignored: Throwable) { }
         super.onDestroy()
     }
 
