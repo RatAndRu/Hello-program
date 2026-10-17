@@ -87,6 +87,15 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     private var manualYaw = 0f
     private var manualPitch = 0f
     private var hasSensorOrientation = false
+    /** Отладочный режим без внешнего света: тап = вспышка по призраку, свайп = лазер по пауку. */
+    var debugTouchMode: Boolean = false
+    private var videoAspect: Float = 9f / 16f // ширина/высота уже повёрнутого вертикального кадра
+    private val debugTrail = mutableListOf<Pair<Float, Float>>()
+    private val debugSwipeHitIds = mutableSetOf<Int>()
+    private var debugDownAt = 0L
+    private var debugDownX = 0f
+    private var debugDownY = 0f
+    private var debugMoved = false
     private var dragging = false
     private var dragX = 0f
     private var dragY = 0f
@@ -123,6 +132,10 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         detections = value
     }
 
+    fun setVideoAspect(aspectWidthOverHeight: Float) {
+        if (aspectWidthOverHeight > 0f) videoAspect = aspectWidthOverHeight
+    }
+
     /** Относительные углы от калиброванной точки, градусы. */
     fun setOrientation(yawDeg: Float, pitchDeg: Float, fromSensor: Boolean) {
         targetYaw = yawDeg
@@ -131,6 +144,10 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
+        if (debugTouchMode && running) {
+            handleDebugTouch(event)
+            return true
+        }
         if (hasSensorOrientation && running) return true
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> { dragging = true; dragX = event.x; dragY = event.y; parent?.requestDisallowInterceptTouchEvent(true) }
@@ -143,6 +160,79 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> dragging = false
         }
         return true
+    }
+
+    private fun handleDebugTouch(event: MotionEvent) {
+        when (event.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                debugDownAt = System.currentTimeMillis()
+                debugDownX = event.x; debugDownY = event.y
+                debugMoved = false
+                debugTrail.clear()
+                debugSwipeHitIds.clear()
+                debugTrail += event.x to event.y
+                parent?.requestDisallowInterceptTouchEvent(true)
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (hypot((event.x - debugDownX).toDouble(), (event.y - debugDownY).toDouble()) > 14f * density()) debugMoved = true
+                val prev = debugTrail.lastOrNull()
+                debugTrail += event.x to event.y
+                if (debugTrail.size > 80) debugTrail.removeAt(0)
+                if (prev != null) debugSwipeDamage(prev.first, prev.second, event.x, event.y)
+            }
+            MotionEvent.ACTION_UP -> {
+                val quick = System.currentTimeMillis() - debugDownAt < 350L
+                if (quick && !debugMoved) debugTapDamage(event.x, event.y)
+                else if (debugTrail.size >= 2) {
+                    for (i in 1 until debugTrail.size) {
+                        val a = debugTrail[i - 1]; val b = debugTrail[i]
+                        debugSwipeDamage(a.first, a.second, b.first, b.second)
+                    }
+                }
+                debugTrail.clear()
+            }
+            MotionEvent.ACTION_CANCEL -> debugTrail.clear()
+        }
+        invalidate()
+    }
+
+    /** Тап в отладке имитирует вспышку: бьёт ближайшего видимого призрака рядом с точкой. */
+    private fun debugTapDamage(x: Float, y: Float) {
+        var best: Monster? = null
+        var bestScreen: ScreenPos? = null
+        var bestDist = Float.MAX_VALUE
+        for (m in monsters) {
+            if (m.type != MonsterType.FLASH) continue
+            val s = monsterScreen(m) ?: continue
+            val radius = 62f * s.scale * density()
+            val d = hypot((s.x - x).toDouble(), (s.y - y).toDouble()).toFloat()
+            if (d < radius + 74f * density() && d < bestDist) { best = m; bestScreen = s; bestDist = d }
+        }
+        val m = best ?: return
+        val s = bestScreen ?: return
+        if (elapsed - m.lastHitAt > 0.18f) {
+            val radius = 62f * s.scale * density()
+            hitMonster(m, s.x, s.y, radius)
+            if (m.hp <= 0) monsters.remove(m)
+        }
+    }
+
+    /** Свайп в отладке имитирует лазерную линию: каждый паук получает не более одного разреза за свайп. */
+    private fun debugSwipeDamage(x1: Float, y1: Float, x2: Float, y2: Float) {
+        if (hypot((x2 - x1).toDouble(), (y2 - y1).toDouble()) < 8f * density()) return
+        val iterator = monsters.iterator()
+        while (iterator.hasNext()) {
+            val m = iterator.next()
+            if (m.type != MonsterType.LASER || m.id in debugSwipeHitIds) continue
+            val s = monsterScreen(m) ?: continue
+            val radius = 52f * s.scale * density()
+            val d = distancePointSegment(s.x, s.y, x1, y1, x2, y2)
+            if (d < radius * 0.82f) {
+                debugSwipeHitIds += m.id
+                hitMonster(m, s.x, s.y, radius)
+                if (m.hp <= 0) iterator.remove()
+            }
+        }
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -332,6 +422,7 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         for (m in sorted) drawMonster(canvas, m)
         drawParticles(canvas)
         drawDetections(canvas)
+        drawDebugTrail(canvas)
         drawReticle(canvas)
         drawRadar(canvas)
         if (hurtFlash > 0f) {
@@ -387,6 +478,19 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
             paint.color = Color.WHITE
             canvas.drawCircle(x, y, 1.8f * density(), paint)
         }
+    }
+
+    private fun drawDebugTrail(canvas: Canvas) {
+        if (!debugTouchMode || debugTrail.size < 2) return
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeJoin = Paint.Join.ROUND
+        paint.color = Color.argb(190, 150, 235, 255)
+        paint.strokeWidth = 3f * density()
+        val path = Path()
+        path.moveTo(debugTrail.first().first, debugTrail.first().second)
+        for (i in 1 until debugTrail.size) path.lineTo(debugTrail[i].first, debugTrail[i].second)
+        canvas.drawPath(path, paint)
     }
 
     private fun drawMonster(canvas: Canvas, m: Monster) {
@@ -561,7 +665,21 @@ class GameView @JvmOverloads constructor(context: Context, attrs: AttributeSet? 
         )
     }
 
-    private fun screenPoint(u: Float, v: Float): Pair<Float, Float> = (u.coerceIn(0f, 1f) * width) to (v.coerceIn(0f, 1f) * height)
+    /** Точка детектора -> экран с учётом center-crop вертикального кадра камеры. */
+    private fun screenPoint(u: Float, v: Float): Pair<Float, Float> {
+        if (width <= 0 || height <= 0) return 0f to 0f
+        val viewAspect = width.toFloat() / height.toFloat()
+        val displayedWidth: Float
+        val displayedHeight: Float
+        if (videoAspect > viewAspect) {
+            displayedHeight = height.toFloat(); displayedWidth = displayedHeight * videoAspect
+        } else {
+            displayedWidth = width.toFloat(); displayedHeight = displayedWidth / videoAspect
+        }
+        val offsetX = (width - displayedWidth) / 2f
+        val offsetY = (height - displayedHeight) / 2f
+        return (offsetX + u.coerceIn(0f, 1f) * displayedWidth) to (offsetY + v.coerceIn(0f, 1f) * displayedHeight)
+    }
 
     private fun distancePointSegment(px: Float, py: Float, x1: Float, y1: Float, x2: Float, y2: Float): Float {
         val vx = x2 - x1; val vy = y2 - y1; val wx = px - x1; val wy = py - y1

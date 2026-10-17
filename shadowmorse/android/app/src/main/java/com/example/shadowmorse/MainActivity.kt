@@ -15,6 +15,7 @@ import android.view.TextureView
 import android.view.View
 import android.view.WindowManager
 import android.widget.Button
+import android.widget.CheckBox
 import android.widget.TextView
 import android.widget.Toast
 import kotlin.math.PI
@@ -141,7 +142,8 @@ class MainActivity : Activity(), SensorEventListener {
             context = this,
             textureView = cameraPreview,
             onDetections = { detections -> gameView.setDetections(detections) },
-            onError = { message -> runOnUiThread { showToast(message) } }
+            onError = { message -> runOnUiThread { showToast(message) } },
+            onVideoAspect = { aspect -> gameView.setVideoAspect(aspect) }
         ).also { it.start() }
     }
 
@@ -152,8 +154,10 @@ class MainActivity : Activity(), SensorEventListener {
         endPanel.visibility = View.GONE
         topHud.visibility = View.VISIBLE
         gameRunning = true
+        val debug = findViewById<CheckBox>(R.id.debugTouchCheck).isChecked
+        gameView.debugTouchMode = debug
         gameView.startGame()
-        showToast("Поворачивайся вокруг себя. Удачи!")
+        showToast(if (debug) "Отладка: призраки — тапом, пауки — свайпом" else "Поворачивайся вокруг себя. Удачи!")
     }
 
     private fun calibrateOrientation(silent: Boolean = false) {

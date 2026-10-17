@@ -25,7 +25,8 @@ class CameraController(
     private val context: Context,
     private val textureView: TextureView,
     private val onDetections: (FrameDetections) -> Unit,
-    private val onError: (String) -> Unit
+    private val onError: (String) -> Unit,
+    private val onVideoAspect: (Float) -> Unit = {}
 ) {
     private val detector = LightDetector()
     private var backgroundThread: HandlerThread? = null
@@ -79,6 +80,9 @@ class CameraController(
             val map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP)
             val previewChoices = map?.getOutputSizes(SurfaceTexture::class.java)?.toList().orEmpty()
             previewSize = chooseSize(previewChoices, 1280, 720)
+            // Вертикальный кадр: при sensorOrientation 90/270 ширина и высота меняются местами.
+            if (sensorOrientation == 90 || sensorOrientation == 270) onVideoAspect(previewSize.height.toFloat() / previewSize.width.toFloat())
+            else onVideoAspect(previewSize.width.toFloat() / previewSize.height.toFloat())
             val analysisSize = chooseSize(map?.getOutputSizes(android.graphics.ImageFormat.YUV_420_888)?.toList().orEmpty(), 640, 480)
 
             configureTransform(viewWidth, viewHeight)
@@ -140,19 +144,28 @@ class CameraController(
 
     private fun configureTransform(viewWidth: Int, viewHeight: Int) {
         if (viewWidth <= 0 || viewHeight <= 0) return
-        val matrix = Matrix()
+        // Приложение зафиксировано в портрете. Для задней камеры HONOR sensorOrientation обычно 90:
+        // сенсорный кадр надо повернуть ПО часовой стрелке на 90°, а не против.
+        // Предыдущий знак давал картину «потолок слева, пол справа».
+        val rotationToApply = when (sensorOrientation) {
+            90 -> 90f
+            180 -> 180f
+            270 -> 270f
+            else -> 0f
+        }
+        val swapped = sensorOrientation == 90 || sensorOrientation == 270
+        val bufferWidth = if (swapped) previewSize.height.toFloat() else previewSize.width.toFloat()
+        val bufferHeight = if (swapped) previewSize.width.toFloat() else previewSize.height.toFloat()
         val viewRect = RectF(0f, 0f, viewWidth.toFloat(), viewHeight.toFloat())
-        val bufferRect = RectF(0f, 0f, previewSize.height.toFloat(), previewSize.width.toFloat())
+        val bufferRect = RectF(0f, 0f, bufferWidth, bufferHeight)
         val centerX = viewRect.centerX()
         val centerY = viewRect.centerY()
-        // Для портретного телефона задняя камера обычно имеет sensorOrientation=90.
-        if (sensorOrientation == 90 || sensorOrientation == 270) {
-            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
-            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
-            val scale = max(viewHeight.toFloat() / previewSize.height.toFloat(), viewWidth.toFloat() / previewSize.width.toFloat())
-            matrix.postScale(scale, scale, centerX, centerY)
-            matrix.postRotate((90 * (sensorOrientation / 90 - 2)).toFloat(), centerX, centerY)
-        }
+        bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY())
+        val matrix = Matrix()
+        matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL)
+        val scale = max(viewHeight.toFloat() / bufferHeight, viewWidth.toFloat() / bufferWidth)
+        matrix.postScale(scale, scale, centerX, centerY)
+        if (rotationToApply != 0f) matrix.postRotate(rotationToApply, centerX, centerY)
         textureView.setTransform(matrix)
     }
 }
