@@ -25,6 +25,9 @@ class PhotoActivity : Activity() {
     private var ids: List<String> = emptyList()
     private var index: Int = 0
     private var fullscreen: Boolean = false
+    private var mediaController: android.widget.MediaController? = null
+    private val autoHideHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val autoHideRunnable = Runnable { hideFullscreenChrome() }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         UiTheme.apply(this)
@@ -42,9 +45,16 @@ class PhotoActivity : Activity() {
         zoom.onLongPressPhoto = { showPhotoActions() }
         findViewById<TextView>(R.id.prevBtn).setOnClickListener { move(-1) }
         findViewById<TextView>(R.id.nextBtn).setOnClickListener { move(1) }
+        val videoView = findViewById<android.widget.VideoView>(R.id.videoPlayer)
+        videoView.setOnTouchListener { _, event ->
+            if (event.action == android.view.MotionEvent.ACTION_UP) {
+                if (!fullscreen) setFullscreen(true) else { showFullscreenChrome(); mediaController?.show(2000) }
+            }
+            false
+        }
 
         findViewById<Button>(R.id.pinBtn).setOnClickListener {
-            val current = photo ?: return@setOnClickListener
+            val current = photo ?: run { finish(); return }@setOnClickListener
             if (current.widgetId > 0) {
                 // Старые независимые копии v1.6: удаление такой записи не трогает оригинал.
                 AlertDialog.Builder(this).setTitle("Убрать старую копию из виджета №${current.widgetId}?")
@@ -57,7 +67,7 @@ class PhotoActivity : Activity() {
         findViewById<Button>(R.id.copyBtn).setOnClickListener { photo?.let { copy(it) } }
         findViewById<Button>(R.id.editBtn).setOnClickListener { photo?.let { edit(it) } }
         findViewById<Button>(R.id.deleteBtn).setOnClickListener {
-            val current = photo ?: return@setOnClickListener
+            val current = photo ?: run { finish(); return }@setOnClickListener
             AlertDialog.Builder(this).setTitle("Удалить фото?")
                 .setMessage("Копия в приложении будет удалена. Оригинал в галерее не тронем.")
                 .setPositiveButton("Удалить") { _, _ ->
@@ -74,7 +84,7 @@ class PhotoActivity : Activity() {
     private fun loadCurrent() {
         val all = PhotoStore.list(this)
         photo = all.firstOrNull { it.id == ids[index] }
-        val current = photo ?: return
+        val current = photo ?: run { finish(); return }
         val video = findViewById<android.widget.VideoView>(R.id.videoPlayer)
         val image = findViewById<ZoomImageView>(R.id.fullImage)
         if (current.mime.startsWith("video/")) {
@@ -83,11 +93,12 @@ class PhotoActivity : Activity() {
             if (plain != null) {
                 val temp = java.io.File(cacheDir, "play_${current.id}.mp4").apply { writeBytes(plain) }
                 video.setVideoPath(temp.absolutePath)
-                video.setMediaController(android.widget.MediaController(this).apply { setAnchorView(video) })
+                mediaController = android.widget.MediaController(this).apply { setAnchorView(video) }
+                video.setMediaController(mediaController)
                 video.setOnPreparedListener { it.isLooping = true; video.start() }
             }
         } else {
-            video.stopPlayback(); video.visibility = android.view.View.GONE; image.visibility = android.view.View.VISIBLE
+            if (video.isPlaying) video.stopPlayback(); video.visibility = android.view.View.GONE; image.visibility = android.view.View.VISIBLE
             image.setImageBitmap(PhotoStore.decodeBitmap(this, current, 1400))
         }
         findViewById<TextView>(R.id.positionText).text = "${index + 1} / ${ids.size}"
@@ -97,13 +108,50 @@ class PhotoActivity : Activity() {
     private fun move(delta: Int) {
         if (ids.size <= 1) return
         index = ((index + delta) % ids.size + ids.size) % ids.size
-        loadCurrent()
+        loadCurrent(); showFullscreenChrome()
+    }
+
+    private fun chromeViews(): List<android.view.View> = listOf(
+        findViewById(R.id.prevBtn), findViewById(R.id.nextBtn),
+        findViewById(R.id.positionText), findViewById(R.id.fullscreenCaption)
+    )
+
+    private fun showFullscreenChrome() {
+        if (!fullscreen) return
+        chromeViews().forEach { it.visibility = android.view.View.VISIBLE }
+        autoHideHandler.removeCallbacks(autoHideRunnable)
+        autoHideHandler.postDelayed(autoHideRunnable, 2000)
+        val current = photo
+        if (current?.mime?.startsWith("video/") == true) mediaController?.show(2000)
+    }
+
+    private fun hideFullscreenChrome() {
+        if (!fullscreen) return
+        chromeViews().forEach { it.visibility = android.view.View.GONE }
+        mediaController?.hide()
+    }
+
+    override fun onPause() {
+        autoHideHandler.removeCallbacks(autoHideRunnable)
+        val video = findViewById<android.widget.VideoView>(R.id.videoPlayer)
+        if (video.isPlaying) video.pause()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
+        autoHideHandler.removeCallbacks(autoHideRunnable)
+        super.onDestroy()
     }
 
     private fun setFullscreen(enabled: Boolean) {
         fullscreen = enabled
         findViewById<android.view.View>(R.id.bottomPanel).visibility = if (enabled) android.view.View.GONE else android.view.View.VISIBLE
         findViewById<android.view.View>(R.id.fullscreenCaption).visibility = if (enabled) android.view.View.VISIBLE else android.view.View.GONE
+        if (enabled) showFullscreenChrome() else {
+            autoHideHandler.removeCallbacks(autoHideRunnable)
+            chromeViews().forEach { it.visibility = android.view.View.VISIBLE }
+            findViewById<android.view.View>(R.id.fullscreenCaption).visibility = android.view.View.GONE
+        }
         if (enabled) {
             @Suppress("DEPRECATION")
             window.decorView.systemUiVisibility = (

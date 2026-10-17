@@ -42,6 +42,8 @@ class MainActivity : FragmentActivity() {
     private var albumsModeWidgets: Boolean = false
     private var albumsCollapsed: Boolean = false
     private var searchExpanded: Boolean = false
+    private var selectionForcedAlbumsCollapse: Boolean = false
+    private var lastWidgetSignature: String? = null
     private val selectedIds = linkedSetOf<String>()
     private val unlockedAlbums = mutableSetOf<String>()
     private val io = Executors.newFixedThreadPool(3)
@@ -172,8 +174,27 @@ class MainActivity : FragmentActivity() {
         )
         findViewById<TextView>(R.id.albumsTitle).text = if (albumsModeWidgets) "Альбомы виджетов" else "Альбомы"
         findViewById<Button>(R.id.albumsModeBtn).text = if (albumsModeWidgets) "Обычные 📁" else "Виджеты 🧩"
+        // При выделении фото панель альбомов временно сворачиваем; после снятия выделения
+        // возвращаем её только если до выделения она была развёрнута.
+        if (selectedIds.isNotEmpty() && !albumsCollapsed) {
+            selectionForcedAlbumsCollapse = true; albumsCollapsed = true
+        } else if (selectedIds.isEmpty() && selectionForcedAlbumsCollapse) {
+            selectionForcedAlbumsCollapse = false; albumsCollapsed = false
+        }
         applyAlbumsCollapsed()
-        PinnedPhotoWidgetBase.updateAll(this)
+        val widgetSignature = buildString {
+            append(UiTheme.isDark(this@MainActivity)).append('|')
+            append(PinnedPhotoWidgetBase.installedWidgetIds(this@MainActivity).joinToString(",") { id ->
+                id.toString() + ":" + PinnedPhotoWidgetBase.widgetName(this@MainActivity, id) + ":" +
+                    PinnedPhotoWidgetBase.getWidgetPhotoIds(this@MainActivity, id).joinToString(".")
+            })
+            append('|').append(photos.filter { it.pinned }.joinToString(".") { it.id })
+            append('|').append(PhotoStore.lockedAlbumNames(this@MainActivity).joinToString("."))
+        }
+        if (widgetSignature != lastWidgetSignature) {
+            lastWidgetSignature = widgetSignature
+            PinnedPhotoWidgetBase.updateAll(this)
+        }
     }
 
     private fun toggleSelected(photo: Photo) {
@@ -863,8 +884,6 @@ class PhotoAdapter(
     private val onClick: (Photo) -> Unit,
     private val onLongClick: (Photo) -> Unit
 ) : RecyclerView.Adapter<PhotoAdapter.Holder>() {
-    private val io = Executors.newFixedThreadPool(3)
-
     class Holder(view: View) : RecyclerView.ViewHolder(view) {
         val thumb: ImageView = view.findViewById(R.id.thumb)
         val badge: TextView = view.findViewById(R.id.badge)
@@ -875,10 +894,19 @@ class PhotoAdapter(
 
     override fun getItemCount() = items.size
 
+    companion object {
+        // Один общий executor на все адаптеры. Раньше каждый refresh создавал новый пул потоков.
+        private val IO = Executors.newFixedThreadPool(2)
+    }
+
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val photo = items[position]
         val selected = photo.id in selectedIds
         holder.badge.text = if (selected) "✓" else "📌"
+        holder.badge.gravity = android.view.Gravity.CENTER
+        holder.badge.includeFontPadding = false
+        // У глифа ✓ есть левый боковой зазор шрифта: небольшой сдвиг вправо ставит его визуально по центру круга.
+        holder.badge.translationX = if (selected) 2f else 0f
         holder.badge.setBackgroundResource(if (selected) R.drawable.selection_badge else R.drawable.badge_bg)
         holder.badge.setTextColor(if (selected) 0xFFFFFFFF.toInt() else 0xFF111827.toInt())
         holder.badge.visibility = if (selected || photo.pinned || photo.widgetId > 0 || photo.id in widgetPhotoIds) View.VISIBLE else View.GONE
@@ -888,7 +916,7 @@ class PhotoAdapter(
         holder.thumb.setImageResource(R.drawable.widget_placeholder)
         holder.thumb.tag = photo.id
         val path = photo.fileIn(PhotoStore.dir(holder.thumb.context)).absolutePath
-        io.execute {
+        IO.execute {
             val bmp = PhotoStore.decodeBitmap(holder.thumb.context, photo, 360)
             holder.thumb.post { if (holder.thumb.tag == photo.id && bmp != null) holder.thumb.setImageBitmap(bmp) }
         }

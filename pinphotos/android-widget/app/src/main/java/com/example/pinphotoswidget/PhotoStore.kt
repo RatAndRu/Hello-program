@@ -44,6 +44,10 @@ data class AlbumSecurity(
 
 object PhotoStore {
     const val MISC_ALBUM = "Разное"
+    // Небольшой общий кэш превью: без него каждый refresh заново декодировал все миниатюры и мог перегружать память.
+    private val bitmapCache = object : android.util.LruCache<String, android.graphics.Bitmap>(18 * 1024) {
+        override fun sizeOf(key: String, value: android.graphics.Bitmap): Int = (value.byteCount / 1024).coerceAtLeast(1)
+    }
     private const val DIR = "photos"
     private const val META = "meta.json"
 
@@ -287,14 +291,18 @@ object PhotoStore {
     fun decodeBitmap(context: Context, photo: Photo, target: Int = 900): android.graphics.Bitmap? {
         // Видео: статичный кадр-превью. В виджете видео и GIF всегда статичны (RemoteViews не анимирует).
         if (photo.mime.startsWith("video/")) return videoFrame(context, photo)
+        val cacheKey = "${photo.id}:$target:${photo.file}"
+        synchronized(bitmapCache) { bitmapCache.get(cacheKey)?.let { return it } }
         val plain = plainBytes(context, photo) ?: return null
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeByteArray(plain, 0, plain.size, bounds)
         if (bounds.outWidth <= 0) return null
         var sample = 1
         while (bounds.outWidth / sample > target * 2 || bounds.outHeight / sample > target * 2) sample *= 2
-        return android.graphics.BitmapFactory.decodeByteArray(plain, 0, plain.size,
+        val decoded = android.graphics.BitmapFactory.decodeByteArray(plain, 0, plain.size,
             android.graphics.BitmapFactory.Options().apply { inSampleSize = sample })
+        if (decoded != null) synchronized(bitmapCache) { bitmapCache.put(cacheKey, decoded) }
+        return decoded
     }
 
     fun videoFrame(context: Context, photo: Photo): android.graphics.Bitmap? {
