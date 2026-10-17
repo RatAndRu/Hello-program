@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Очистка PWA-кэша</title>
+<body style="font-family:system-ui;background:#080a14;color:#eef;padding:24px;line-height:1.5">
+<h1>Очистка PWA-кэша</h1>
+<p>Нажми кнопку, чтобы удалить service worker и кэши этого сайта. Потом закрой вкладку и открой сайт заново.</p>
+<button id="clear" style="font-size:18px;padding:12px 18px;border-radius:12px">Очистить кэш PWA</button>
+<pre id="log" style="white-space:pre-wrap;background:#11182a;padding:16px;border-radius:12px"></pre>
+<script>
+const log = s => document.getElementById('log').textContent += s + '\n';
+document.getElementById('clear').onclick = async () => {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) { await r.unregister(); log('Service worker удалён'); }
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      for (const k of keys) { await caches.delete(k); log('Cache удалён: ' + k); }
+    }
+    log('Готово. Закрой вкладку и открой сайт заново.');
+  } catch (e) { log('Ошибка: ' + e); }
+};
+</script>
+</body>
+</html>

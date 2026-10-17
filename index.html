@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#050711" />
+  <title>Shadow Morse AR — PWA Prototype</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <video id="camera" autoplay playsinline muted></video>
+  <canvas id="game"></canvas>
+
+  <div id="topHud" class="hud hidden">
+    <div class="pill"><span>⏱</span><b id="timeText">05:00</b></div>
+    <div class="pill"><span>❤</span><b id="livesText">3</b></div>
+    <div class="pill"><span>☠</span><b id="scoreText">0</b></div>
+    <div class="pill small"><span>FOV</span><b>160°×90°</b></div>
+  </div>
+
+  <div id="radar" class="hidden"><canvas id="radarCanvas"></canvas></div>
+
+  <section id="startPanel" class="panel">
+    <h1>Shadow Morse AR</h1>
+    <p class="lead">PWA-прототип AR-игры: камера как фон, монстры вокруг игрока на 160°×90°, внешний фонарик/лазер как оружие.</p>
+
+    <div class="rules">
+      <div><b>Фонарные тени</b><br>Свети по ним <u>включениями</u> фонаря. Каждая вспышка рядом снимает 1 жизнь.</div>
+      <div><b>Лазерные пауки</b><br>Проведи лазерной точкой сквозь монстра, как разрезом. Каждая линия снимает 1 жизнь.</div>
+      <div><b>Выжить 5 минут</b><br>У тебя 3 жизни. Если монстр добрался вплотную — минус жизнь, монстр исчезает.</div>
+    </div>
+
+    <div class="buttons">
+      <button id="startBtn">Начать игру</button>
+      <button id="permissionBtn" class="secondary">Разрешить датчики</button>
+    </div>
+    <p class="hint"><b>Версия прототипа: v4 cache-fix.</b></p>
+    <p class="hint">Важно: для камеры на телефоне обычно нужен HTTPS. На GitHub Pages будет нормально. По локальному Wi‑Fi через http камера может блокироваться браузером.</p>
+  </section>
+
+  <section id="endPanel" class="panel hidden">
+    <h2 id="endTitle">Конец игры</h2>
+    <p id="endStats"></p>
+    <button id="restartBtn">Играть снова</button>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+
+  <script src="app.js"></script>
+</body>
+</html>
