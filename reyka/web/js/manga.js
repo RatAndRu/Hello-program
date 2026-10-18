@@ -4,6 +4,7 @@
 // Никакого ИИ: простая 3D-геометрия (поворот + ортографическая проекция).
 
 import { add, sub, mulS, dist, norm, perp, lerpP, len, dot } from './geom.js';
+import { drawHair, HAIR_PRESETS, HAIR_DEFAULTS, HAIR_OPTIONS } from './hair.js';
 
 const TAU = Math.PI * 2, D2R = Math.PI / 180;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
@@ -79,7 +80,10 @@ export const HEAD_PRESETS = {
   shoujo: { chin: 1.25, jaw: 'v', jawW: 0.75, eyeT: 0.32, eyeW: 0.42, eyeH: 0.9, eyeGap: 0.41, eyeTilt: 0, eyeShape: 'round', iris: 1.2, irisTall: 1.35, shine: true, lashes: true, crease: true, brows: true, browH: 0.16, noseStyle: 'tick', noseT: 0.64, noseSize: 0.55, mouthStyle: 'smile', mouthT: 0.82, mouthW: 0.13, earShape: 'normal', earSize: 0.85 },
   shonen: { chin: 1.35, jaw: 'soft', jawW: 0.9, eyeT: 0.28, eyeW: 0.34, eyeH: 0.55, eyeGap: 0.42, eyeTilt: 8, eyeShape: 'sharp', iris: 1.0, irisTall: 1.15, shine: true, lashes: false, crease: false, brows: true, browH: 0.08, noseStyle: 'tri', noseT: 0.6, noseSize: 0.8, mouthStyle: 'line', mouthT: 0.78, mouthW: 0.17, earShape: 'normal', earSize: 0.95 },
   seinen: { chin: 1.45, jaw: 'soft', jawW: 0.92, eyeT: 0.2, eyeW: 0.29, eyeH: 0.48, eyeGap: 0.42, eyeTilt: 2, eyeShape: 'almond', iris: 1.0, irisTall: 1.05, shine: false, lashes: false, crease: true, brows: true, browH: 0.08, noseStyle: 'tri', noseT: 0.55, noseSize: 1.0, mouthStyle: 'lips', mouthT: 0.72, mouthW: 0.19, earShape: 'normal', earSize: 1.0 },
-  real: { chin: 1.55, jaw: 'square', jawW: 1.0, eyeT: 0.18, eyeW: 0.27, eyeH: 0.42, eyeGap: 0.42, eyeTilt: 0, eyeShape: 'almond', iris: 1.0, irisTall: 1.0, shine: false, lashes: false, crease: true, brows: true, browH: 0.07, noseStyle: 'real', noseT: 0.5, noseSize: 1.0, mouthStyle: 'lips', mouthT: 0.68, mouthW: 0.2, earShape: 'normal', earSize: 1.0 },
+  // реализм: скулы ≈ 0.9 ширины черепа, углы челюсти ≈ 0.7, подбородок узкий
+  real: { chin: 1.5, jaw: 'soft', jawW: 0.96, eyeT: 0.18, eyeW: 0.27, eyeH: 0.42, eyeGap: 0.42, eyeTilt: 0, eyeShape: 'almond', iris: 1.0, irisTall: 1.0, shine: false, lashes: false, crease: true, brows: true, browH: 0.07, noseStyle: 'real', noseT: 0.5, noseSize: 1.0, mouthStyle: 'lips', mouthT: 0.68, mouthW: 0.2, earShape: 'normal', earSize: 1.0 },
+  realF: { chin: 1.42, jaw: 'soft', jawW: 0.84, eyeT: 0.2, eyeW: 0.29, eyeH: 0.52, eyeGap: 0.42, eyeTilt: 3, eyeShape: 'almond', iris: 1.05, irisTall: 1.0, shine: false, lashes: true, crease: true, brows: true, browH: 0.1, browTilt: -0.1, noseStyle: 'real', noseT: 0.53, noseSize: 0.82, mouthStyle: 'lips', mouthT: 0.7, mouthW: 0.18, earShape: 'normal', earSize: 0.92 },
+  realHard: { chin: 1.58, jaw: 'square', jawW: 0.9, eyeT: 0.17, eyeW: 0.26, eyeH: 0.38, eyeGap: 0.42, eyeTilt: -2, eyeShape: 'almond', iris: 1.0, irisTall: 1.0, shine: false, lashes: false, crease: true, brows: true, browH: 0.05, browTilt: 0.25, noseStyle: 'real', noseT: 0.5, noseSize: 1.08, mouthStyle: 'lips', mouthT: 0.68, mouthW: 0.21, earShape: 'normal', earSize: 1.0 },
   chibi: { chin: 1.0, jaw: 'round', jawW: 0.95, eyeT: 0.42, eyeW: 0.46, eyeH: 1.0, eyeGap: 0.44, eyeTilt: 0, eyeShape: 'round', iris: 1.2, irisTall: 1.25, shine: true, lashes: false, crease: false, brows: true, browH: 0.1, noseStyle: 'none', noseT: 0.65, noseSize: 0.5, mouthStyle: 'smile', mouthT: 0.8, mouthW: 0.1, earShape: 'normal', earSize: 0.75 },
 };
 const JAWS = { v: [0.5, 0.62, 0.05], soft: [0.66, 0.74, 0.12], square: [0.8, 0.82, 0.2], round: [0.6, 0.86, 0.22] }; // [tA, ширина угла, ширина подбородка]
@@ -296,7 +300,7 @@ const presetSet = (presets) => (g, v) => { const p = presets[v]; if (p) Object.a
 
 const sec = (label) => ({ key: '_' + label, type: 'section', label });
 const headProps = [
-  { key: 'preset', label: 'Стиль', type: 'select', options: [['anime', 'Аниме'], ['shoujo', 'Сёдзё'], ['shonen', 'Сёнэн'], ['seinen', 'Сэйнэн'], ['real', 'Реализм'], ['chibi', 'Чиби']], def: 'anime', onSet: presetSet(HEAD_PRESETS) },
+  { key: 'preset', label: 'Стиль', type: 'select', options: [['anime', 'Аниме'], ['shoujo', 'Сёдзё'], ['shonen', 'Сёнэн'], ['seinen', 'Сэйнэн'], ['real', 'Реализм ♂'], ['realF', 'Реализм ♀'], ['realHard', 'Реализм ♂ брутальный'], ['chibi', 'Чиби']], def: 'anime', onSet: presetSet(HEAD_PRESETS) },
   sec('Поворот головы'),
   { key: 'yaw', label: 'Влево ↔ вправо, °', type: 'range', min: -180, max: 180, step: 1, def: 25 },
   { key: 'pitch', label: 'Вниз ↔ вверх, °', type: 'range', min: -90, max: 90, step: 1, def: -10 },
@@ -338,17 +342,20 @@ const headProps = [
   { key: 'grid', label: 'Линии глаз, носа и рта', type: 'toggle', def: true },
   { key: 'neck', label: 'Шея', type: 'toggle', def: true },
   { key: 'hair', label: 'Линия волос и объём причёски', type: 'toggle', def: false },
+  { key: 'hairStyle', label: 'Причёска', type: 'select', options: [['none', 'Нет'], ...HAIR_OPTIONS], def: 'none' },
   { key: 'r', label: 'Размер черепа (радиус), мм', type: 'range', min: 5, max: 150, step: 1, def: 30 },
 ];
 
+const headPad = (C, r) => ({ c: { x: C.x + r * 2.05, y: C.y }, r: Math.max(6, r * 0.6) });
 const head = {
   name: 'Голова 3D', icon: '🗿', group: 'manga',
-  desc: 'Объёмная голова по методу Лумиса. Крути за ручку ● перед лицом (куда смотрит), размер и наклон — за верхнюю ручку. Глаза, нос, рот и уши настраиваются отдельно',
+  desc: 'Объёмная голова по методу Лумиса. Поворот — ручка в круглом «тачпаде» справа от головы (вбок — влево/вправо, вверх-вниз — наклон); размер и наклон к плечу — верхняя ручка; двигать — центр. Глаза, нос, рот и уши настраиваются отдельно',
   create: (c, s) => [{ x: c.x, y: c.y - s * 0.25 }],
   props: headProps,
   actions: [
     ['↕ Вверх ногами', (g) => { const r = +P(g, 'roll') || 0; g.props.roll = Math.abs(r) > 90 ? 0 : 180; }],
     ['⇋ Отразить поворот', (g) => { g.props.yaw = -(+P(g, 'yaw') || 0); g.props.roll = -(+P(g, 'roll') || 0); }],
+    ['🎲 Пряди причёски', (g) => { g.props.hairSeed = 1 + Math.floor(Math.random() * 99999); }],
   ],
   init: (g, s) => { g.props.r = Math.round(s * 0.55); Object.assign(g.props, JSON.parse(JSON.stringify(HEAD_PRESETS.anime))); },
   moveIdx: 0,
@@ -356,15 +363,22 @@ const head = {
   draw(pen, g, ctx) {
     const { C, r, yaw, pitch, roll } = this.geo(g);
     drawHead(pen, headOpts(g), C, r, yaw, pitch, roll);
+    const hs = P(g, 'hairStyle');
+    if (hs && hs !== 'none' && HAIR_PRESETS[hs]) drawHair(pen, HAIR_PRESETS[hs], C, r, yaw, pitch, roll, +P(g, 'hairSeed') || 1, { chin: +P(g, 'chin') || 1.3 });
+    // «тачпад» поворота — отдельно от головы, чтобы не сливался с ручкой перемещения
+    const T = headPad(C, r);
+    pen.circle(T.c, T.r, 'ghost'); pen.seg({ x: T.c.x - T.r, y: T.c.y }, { x: T.c.x + T.r, y: T.c.y }, 'ghost'); pen.seg({ x: T.c.x, y: T.c.y - T.r }, { x: T.c.x, y: T.c.y + T.r }, 'ghost');
     if (ctx.labels) pen.label({ x: C.x, y: C.y - r * 1.35 }, `голова ${Math.round(r * (1 + (+P(g, 'chin') || 1)))} мм · ${Math.round(P(g, 'yaw'))}° / ${Math.round(P(g, 'pitch'))}°`);
   },
   handles(g) {
     const { C, r, yaw, pitch, roll } = this.geo(g);
-    const V = view3(C, r, yaw, pitch, roll);
     const crown = { x: C.x + Math.sin(roll) * r * 1.25, y: C.y - Math.cos(roll) * r * 1.25 };
-    const face = V.pr([0, -0.2, 1.45]);
-    return [C, { x: crown.x, y: crown.y }, { x: face.x, y: face.y }];
+    const T = headPad(C, r);
+    // вперёд/назад: при |поворот| > 90° точка остаётся на краю круга (затылок к зрителю)
+    const sx = Math.abs(yaw) > Math.PI / 2 ? Math.sign(yaw) : Math.sin(yaw);
+    return [C, { x: crown.x, y: crown.y }, { x: T.c.x + T.r * sx, y: T.c.y - T.r * Math.sin(pitch) }];
   },
+  handleLabel: (g, i) => (i === 0 ? 'двигать' : i === 1 ? 'размер · наклон' : 'поворот'),
   drag(g, i, p) {
     const { C, r, roll } = this.geo(g);
     if (i === 0) { g.pts[0] = p; return; }
@@ -372,15 +386,13 @@ const head = {
       const d = sub(p, C);
       g.props.r = Math.max(4, Math.round(len(d) / 1.25 * 10) / 10);
       // верхняя ручка задаёт наклон к плечу, только если поворот небольшой (иначе — неоднозначно)
-      g.props.roll = Math.round(clamp(Math.atan2(d.x, -d.y) / D2R, -60, 60));
+      g.props.roll = Math.round(clamp(Math.atan2(d.x, -d.y) / D2R, -180, 180));
       return;
     }
-    // ручка «куда смотрит лицо»: смещение от центра → поворот и наклон
-    const d = sub(p, C), cr = Math.cos(-roll), sr = Math.sin(-roll);
-    const X = (d.x * cr - d.y * sr) / r / 1.45, Y = -(d.x * sr + d.y * cr) / r / 1.45 + 0.2 / 1.45;
-    const yaw = Math.asin(clamp(X, -0.995, 0.995));
-    const pitch = Math.asin(clamp(Y / Math.max(0.2, Math.cos(yaw)), -0.94, 0.94));
-    g.props.yaw = Math.round(yaw / D2R); g.props.pitch = Math.round(pitch / D2R);
+    // «тачпад»: вбок — поворот влево/вправо, вверх/вниз — наклон головы
+    void roll;
+    const T = headPad(C, r), X = (p.x - T.c.x) / T.r, Y = -(p.y - T.c.y) / T.r;
+    g.props.yaw = Math.round(Math.asin(clamp(X, -1, 1)) / D2R); g.props.pitch = Math.round(Math.asin(clamp(Y, -1, 1)) / D2R);
   },
 };
 
@@ -434,21 +446,56 @@ export function poseFromTemplate(T) {
   }
   return { rel: rel.map(x => Math.round(x / D2R * 10) / 10), f: f.map(x => Math.round(x * 100) / 100) };
 }
-// прямая кинематика: позиции суставов в мм
+// Позы, нарисованные в профиль (идёт, бежит, сидит): горизонталь шаблона — это глубина.
+// Строим 3D (ширину плеч и бёдер берём из стоячей позы) и переводим в углы/укорочения/глубину.
+const PROFILE_POSES = new Set(['walk', 'run', 'sit']);
+export function poseFromProfile(T) {
+  const St = BODY_POSES.stand, px = T.pelvis[0];
+  const P3 = BJ.map(n => [/^(sh|el|wr|ha|hip|kn|an|to)/.test(n) ? St[n][0] * (/^(sh|hip)/.test(n) ? 1 : 0.9) : 0, T[n][1], T[n][0] - px]);
+  const abs = [], rel = [], f = [], z = [];
+  for (let i = 0; i < BJ.length; i++) {
+    const p = BPAR[i]; if (p < 0) { abs.push(-Math.PI / 2); rel.push(0); f.push(1); z.push(1); continue; }
+    const d = [P3[i][0] - P3[p][0], P3[i][1] - P3[p][1], P3[i][2] - P3[p][2]], a = Math.atan2(d[1], d[0]);
+    abs.push(a);
+    let r = a - abs[p]; while (r > Math.PI) r -= TAU; while (r < -Math.PI) r += TAU;
+    rel.push(Math.round(r / D2R * 10) / 10);
+    f.push(Math.round(clamp(Math.hypot(d[0], d[1]) / (Math.hypot(d[0], d[1], d[2]) || 1), 0.12, 1) * 100) / 100);
+    z.push(d[2] < 0 ? -1 : 1);
+  }
+  return { rel, f, z };
+}
+const poseByName = (v) => (PROFILE_POSES.has(v) ? poseFromProfile(BODY_POSES[v]) : poseFromTemplate(BODY_POSES[v] || BODY_POSES.stand));
+
+// Поворот всей фигуры: вокруг вертикали (анфас → профиль → спина), к себе/от себя, наклон в листе.
+// Координаты тела: x вправо, y вниз, z к зрителю.
+function bodyRot(g) {
+  const ya = (+P(g, 'yaw') || 0) * D2R, pi = (+P(g, 'pitch') || 0) * D2R, le = (+P(g, 'lean') || 0) * D2R;
+  const [cy, sy, cp, sp, cl, sl] = [Math.cos(ya), Math.sin(ya), Math.cos(pi), Math.sin(pi), Math.cos(le), Math.sin(le)];
+  const fwd = (v) => { let [x, y, z] = v; [x, z] = [x * cy + z * sy, -x * sy + z * cy]; [y, z] = [y * cp - z * sp, y * sp + z * cp]; [x, y] = [x * cl - y * sl, x * sl + y * cl]; return [x, y, z]; };
+  const inv = (v) => { let [x, y, z] = v; [x, y] = [x * cl + y * sl, -x * sl + y * cl]; [y, z] = [y * cp + z * sp, -y * sp + z * cp]; [x, z] = [x * cy - z * sy, x * sy + z * cy]; return [x, y, z]; };
+  return { fwd, inv, ya, pi };
+}
+// Прямая кинематика. Поза — относительные углы костей в «плоскости тела» + укорочение f и
+// сторона глубины z (±1: кость идёт к зрителю или от него). Отсюда — 3D-точки, которые
+// поворачиваем целиком и проецируем на лист.
 function bodyFK(g) {
   const N = +P(g, 'heads') || 7.5, u = (+P(g, 'h') || 150) / N, Ls = boneLens(N, P(g, 'build'));
   const pose = (g.props && g.props.pose) || poseFromTemplate(BODY_POSES.stand);
-  const rootA = -Math.PI / 2 + (+P(g, 'lean') || 0) * D2R;
-  const pos = [], abs = [];
+  const zs = pose.z || [], Rb = bodyRot(g);
+  const B = [], abs = [];
   for (let i = 0; i < BJ.length; i++) {
     const p = BPAR[i];
-    if (p < 0) { pos.push({ ...g.pts[0] }); abs.push(rootA); continue; }
+    if (p < 0) { B.push([0, 0, 0]); abs.push(-Math.PI / 2); continue; }
     const a = abs[p] + (pose.rel[i] || 0) * D2R;
     abs.push(a);
-    const l = Ls[i] * u * (pose.f[i] ?? 1);
-    pos.push({ x: pos[p].x + Math.cos(a) * l, y: pos[p].y + Math.sin(a) * l });
+    const l = Ls[i] * u, f = clamp(pose.f[i] ?? 1, 0, 1), dz = (zs[i] || 1) * l * Math.sqrt(Math.max(0, 1 - f * f));
+    B.push([B[p][0] + Math.cos(a) * l * f, B[p][1] + Math.sin(a) * l * f, B[p][2] + dz]);
   }
-  return { pos, abs, u, Ls, N, pose };
+  const W = B.map(Rb.fwd), O = g.pts[0];
+  const pos = W.map(q => ({ x: O.x + q[0], y: O.y + q[1] }));
+  // видимое укорочение кости (для эллипсов-сечений)
+  const fe = BJ.map((_, i) => { const p = BPAR[i]; if (p < 0) return 1; const l = Ls[i] * u || 1; return clamp(Math.hypot(W[i][0] - W[p][0], W[i][1] - W[p][1]) / l, 0, 1); });
+  return { pos, abs, u, Ls, N, pose, B, W, fe, Rb };
 }
 // контур «капсулы» между двумя кругами
 function capsule(a, b, ra, rb) {
@@ -480,14 +527,18 @@ export function drawMannequin(pen, pos, u, opt = {}) {
     const nh = sub(J('head'), J('neck')), a = Math.atan2(nh.y, nh.x) + Math.PI / 2;
     pen.ellipse(J('head'), 0.37 * u, 0.5 * u, a, main);
     const ax = { x: Math.cos(a), y: Math.sin(a) }, ay = { x: -Math.sin(a), y: Math.cos(a) };
-    pen.seg(add(J('head'), mulS(ay, -0.5 * u)), add(J('head'), mulS(ay, 0.5 * u)), 'aux');
-    pen.seg(add(J('head'), add(mulS(ax, -0.37 * u), mulS(ay, 0.05 * u))), add(J('head'), add(mulS(ax, 0.37 * u), mulS(ay, 0.05 * u))), 'aux');
+    // центральная линия лица — дуга по «яйцу» головы: в повороте уходит вбок, со спины не видна
+    const hy = opt.headYaw || 0, hp = opt.headPitch || 0;
+    if (Math.cos(hy) > -0.05) { const cl = []; for (let k2 = 0; k2 <= 16; k2++) { const ph = -Math.PI / 2 + Math.PI * k2 / 16; cl.push(add(J('head'), add(mulS(ax, 0.37 * u * Math.sin(hy) * Math.cos(ph)), mulS(ay, 0.5 * u * Math.sin(ph))))); } pen.poly(cl, false, 'aux'); }
+    // линия глаз — экватор, при наклоне к себе/от себя становится дугой
+    { const el = []; for (let k2 = 0; k2 <= 16; k2++) { const t = -Math.PI / 2 + Math.PI * k2 / 16; el.push(add(J('head'), add(mulS(ax, 0.37 * u * Math.sin(t)), mulS(ay, 0.05 * u + 0.5 * u * Math.sin(hp) * Math.cos(t) * 0.6)))); } pen.poly(el, false, 'aux'); }
   }
   // шея
   { const hb = lerpP(J('neck'), J('head'), 0.45); pen.poly(capsule(J('neck'), hb, 0.15 * u, 0.13 * u), true, main); }
   // грудная клетка — «яйцо» между шеей и грудью; ширина — по плечам (поворот корпуса виден сразу)
   const spU = sub(J('neck'), J('chest')), spL = len(spU) || 1, ua = mulS(spU, 1 / spL), na = perp(ua);
   const shW = opt.chestW != null ? opt.chestW : Math.max(0.35 * u, dist(J('shL'), J('shR')) * 0.42);
+  opt._shW = shW;
   { const c = lerpP(J('chest'), J('neck'), 0.42); pen.ellipse(c, Math.max(0.6 * u, spL * 0.72), shW, Math.atan2(ua.y, ua.x), main); }
   // таз — трапеция по тазовым точкам
   const pv = J('pelvis'), up2 = norm(sub(J('chest'), pv)), np = perp(up2);
@@ -499,6 +550,7 @@ export function drawMannequin(pen, pos, u, opt = {}) {
   pen.poly([J('pelvis'), J('chest'), J('neck')], false, 'aux');
   { const c = lerpP(J('chest'), J('neck'), 0.42), bottomRib = add(c, mulS(ua, -Math.max(0.6 * u, spL * 0.72) * 0.85)), top = add(pv, mulS(up2, 0.42 * u));
     for (const s of [-1, 1]) pen.seg(add(bottomRib, mulS(na, s * shW * 0.55)), add(top, mulS(np, s * hpW * 0.85)), 'aux'); }
+  if (opt.extra) opt.extra(pen, J, shW, hpW);
   // руки и ноги
   for (const s of ['R', 'L']) {
     joint('sh' + s, 0.16);
@@ -515,27 +567,101 @@ export function drawMannequin(pen, pos, u, opt = {}) {
   }
 }
 
+// Параметры отрисовки манекена в 3D: ширина груди/таза с учётом поворота, голова, грудь, анатомия.
+function bodyDrawOpts(g, FK) {
+  const { B, Rb, u, fe } = FK, idx = (n) => BJ.indexOf(n);
+  const sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]], n3 = v3n, crs = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+  const dt3 = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+  const O = g.pts[0], P2 = (q) => { const w = Rb.fwd(q); return { x: O.x + w[0], y: O.y + w[1], z: w[2] }; };
+  // рамка корпуса в теле: верх (к шее), право-лево (по плечам), вперёд
+  const up = n3(sub3(B[idx('neck')], B[idx('chest')])), side = n3(sub3(B[idx('shL')], B[idx('shR')]));
+  let fw = n3(crs(side, up)); if (fw[2] < 0 && Math.abs(fw[2]) > 0.2) fw = fw.map(x => -x);
+  const hipSide = n3(sub3(B[idx('hipL')], B[idx('hipR')])), upP = n3(sub3(B[idx('chest')], B[idx('pelvis')]));
+  let fwP = n3(crs(hipSide, upP)); if (dt3(fwP, fw) < 0) fwP = fwP.map(x => -x);
+  // полуширина сечения на экране поперёк оси: эллипс с полуосями W (вбок) и D (вперёд)
+  const halfOn = (axis, sideV, fwdV, Wd, Dd) => {
+    const a = Rb.fwd(axis), n2 = norm({ x: -a[1], y: a[0] }), s2 = Rb.fwd(sideV), f2 = Rb.fwd(fwdV);
+    return Math.hypot(Wd * (s2[0] * n2.x + s2[1] * n2.y), Dd * (f2[0] * n2.x + f2[1] * n2.y));
+  };
+  const shD = Math.hypot(...sub3(B[idx('shL')], B[idx('shR')])), hpD = Math.hypot(...sub3(B[idx('hipL')], B[idx('hipR')]));
+  const build = P(g, 'build');
+  const chestW = Math.max(0.3 * u, halfOn(up, side, fw, shD * 0.42, 0.5 * u));
+  const pelvisW = Math.max(0.28 * u, halfOn(upP, hipSide, fwP, hpD * 0.75, 0.45 * u));
+  let bust = P(g, 'bust'); if (bust === 'auto') bust = build === 'female' ? 'm' : build === 'hero' ? 'pecs' : 'none';
+  const view = Rb.inv([0, 0, 1]); // направление на зрителя в координатах тела
+  const yawH = Math.atan2(dt3(view, side.map(x => -x)), dt3(view, fw)), pitchH = Math.asin(clamp(dt3(view, up), -1, 1));
+  const anat = P(g, 'anat');
+  const extra = (pen, J) => {
+    const C0 = B[idx('chest')], Nk = B[idx('neck')];
+    const at = (k, s2, f2, base = C0) => [base[0] + up[0] * k + side[0] * s2 + fw[0] * f2, base[1] + up[1] * k + side[1] * s2 + fw[1] * f2, base[2] + up[2] * k + side[2] * s2 + fw[2] * f2];
+    const vis = (n) => dt3(n, view) > 0.02;
+    const spl = (L3, layer, fromBase) => { const pts = spline(L3, 6).map(P2); pen.poly(pts, false, layer); void fromBase; };
+    const spL = Math.hypot(...sub3(Nk, C0)) || u, half = shD * 0.42;
+    if (anat && vis(fw)) {
+      // ключицы: от ямки шеи к плечам, лёгкая «V»
+      const notch = at(spL * 0.86, 0, 0.32 * u);
+      for (const sg of [-1, 1]) spl([notch, at(spL * 0.9, sg * half * 0.45, 0.36 * u), at(spL * 0.96, sg * half * 0.92, 0.18 * u)], 'aux');
+      // грудина и нижний край рёбер (арка)
+      spl([notch, at(spL * 0.35, 0, 0.5 * u), at(spL * 0.05, 0, 0.48 * u)], 'aux');
+      const arch = []; for (let k = -6; k <= 6; k++) { const t = k / 6; arch.push(at(-spL * 0.1 + spL * 0.22 * (1 - Math.abs(t)), t * half * 0.8, 0.46 * u * Math.sqrt(1 - 0.5 * t * t))); }
+      pen.poly(spline(arch, 3).map(P2), false, 'aux');
+      // пупок
+      const nav = [lerp(C0[0], B[idx('pelvis')][0], 0.55) + fwP[0] * 0.42 * u, lerp(C0[1], B[idx('pelvis')][1], 0.55) + fwP[1] * 0.42 * u, lerp(C0[2], B[idx('pelvis')][2], 0.55) + fwP[2] * 0.42 * u];
+      pen.circle(P2(nav), 0.035 * u, 'aux');
+    }
+    if (bust === 'pecs' && vis(fw)) {
+      for (const sg of [-1, 1]) spl([at(spL * 0.72, sg * 0.04 * u, 0.5 * u), at(spL * 0.34, sg * half * 0.3, 0.56 * u), at(spL * 0.3, sg * half * 0.72, 0.42 * u), at(spL * 0.62, sg * half * 0.9, 0.3 * u)], 'aux');
+    } else if ((bust === 's' || bust === 'm' || bust === 'l') && dt3(fw, view) > -0.35) {
+      // грудь — два шара, чуть разведённые в стороны и опущенные; нижний контур — основная линия
+      const rb = u * (bust === 's' ? 0.17 : bust === 'm' ? 0.22 : 0.28), lift = bust === 'l' ? 0.08 : 0.0;
+      for (const sg of [-1, 1]) {
+        const ctr = at(spL * (0.32 - lift), sg * half * 0.44, 0.42 * u + rb * 0.35);
+        const out = n3([fw[0] + side[0] * sg * 0.35 - up[0] * 0.15, fw[1] + side[1] * sg * 0.35 - up[1] * 0.15, fw[2] + side[2] * sg * 0.35 - up[2] * 0.15]);
+        const c2 = P2(ctr);
+        pen.circle(c2, rb, 'aux');
+        // нижний контур груди (складка) — дуга по сфере снизу, видимая часть
+        const low = []; for (let k = 0; k <= 18; k++) { const t = Math.PI * (0.05 + 0.9 * k / 18); const d = [-up[0] * Math.sin(t) + side[0] * Math.cos(t), -up[1] * Math.sin(t) + side[1] * Math.cos(t), -up[2] * Math.sin(t) + side[2] * Math.cos(t)]; const q = [ctr[0] + d[0] * rb, ctr[1] + d[1] * rb, ctr[2] + d[2] * rb]; low.push(P2(q)); }
+        pen.poly(low, false, 'main');
+        // верхний скат — от подмышки/ключицы к шару
+        spl([at(spL * 0.82, sg * half * 0.55, 0.3 * u), at(spL * 0.55, sg * half * 0.5, 0.45 * u + rb * 0.25), [ctr[0] + up[0] * rb * 0.6 + fw[0] * rb * 0.75, ctr[1] + up[1] * rb * 0.6 + fw[1] * rb * 0.75, ctr[2] + up[2] * rb * 0.6 + fw[2] * rb * 0.75]], 'aux');
+        // сосок — по направлению «out», если смотрит к нам
+        if (vis(out)) pen.circle(P2([ctr[0] + out[0] * rb, ctr[1] + out[1] * rb, ctr[2] + out[2] * rb]), 0.03 * u, 'aux');
+      }
+    }
+  };
+  return { f: fe, chestW, pelvisW, headYaw: yawH, headPitch: pitchH, extra };
+}
+
 const body = {
   name: 'Манекен', icon: '🕺', group: 'manga',
   desc: 'Шарнирный манекен: тяни за суставы — кости поворачиваются, дочерние части идут следом. Если тянуть ближе — кость «укорачивается» (уходит на тебя или от тебя). Рост — за ручку над головой',
   create: (c, s) => [{ x: c.x, y: c.y + s * 0.35 }],
   init: (g, s, dims) => { g.props.h = Math.round(Math.min(dims.H * 0.82, s * 3.2)); g.props.pose = poseFromTemplate(BODY_POSES.stand); g.pts[0] = { x: dims.W / 2, y: dims.H / 2 + g.props.h * (3.9 / 7.5 - 0.5) }; },
   props: [
-    { key: 'posePreset', label: 'Поза', type: 'select', options: [['stand', 'Стоит'], ['contra', 'Контрапост'], ['walk', 'Идёт'], ['run', 'Бежит'], ['sit', 'Сидит'], ['jump', 'Прыжок'], ['fight', 'Стойка']], def: 'stand', onSet: (g, v) => { g.props.pose = poseFromTemplate(BODY_POSES[v] || BODY_POSES.stand); } },
+    { key: 'posePreset', label: 'Поза', type: 'select', options: [['stand', 'Стоит'], ['contra', 'Контрапост'], ['walk', 'Идёт'], ['run', 'Бежит'], ['sit', 'Сидит'], ['jump', 'Прыжок'], ['fight', 'Стойка']], def: 'stand', onSet: (g, v) => { g.props.pose = poseByName(v); g.props.yaw = PROFILE_POSES.has(v) ? 90 : 0; g.props.pitch = 0; } },
     { key: 'heads', label: 'Рост в головах', type: 'range', min: 2, max: 9, step: 0.5, def: 7.5 },
     { key: 'build', label: 'Телосложение', type: 'select', options: [['neutral', 'Обычное'], ['female', 'Женское'], ['hero', 'Атлет'], ['child', 'Ребёнок']], def: 'neutral' },
-    { key: 'lean', label: 'Наклон всей фигуры, °', type: 'range', min: -180, max: 180, step: 1, def: 0 },
+    sec('Поворот фигуры'),
+    { key: 'yaw', label: 'Вокруг себя: анфас → профиль → спина, °', type: 'range', min: -180, max: 180, step: 5, def: 0 },
+    { key: 'pitch', label: 'Наклон к себе / от себя, °', type: 'range', min: -90, max: 90, step: 5, def: 0 },
+    { key: 'lean', label: 'Наклон в листе, °', type: 'range', min: -180, max: 180, step: 1, def: 0 },
+    sec('Тело'),
+    { key: 'bust', label: 'Грудь', type: 'select', options: [['auto', 'По телосложению'], ['none', 'Не показывать'], ['pecs', 'Грудные мышцы'], ['s', 'Маленькая'], ['m', 'Средняя'], ['l', 'Большая']], def: 'auto' },
+    { key: 'anat', label: 'Анатомия торса (ключицы, рёбра, пупок)', type: 'toggle', def: true },
     { key: 'ruler', label: 'Линейка «в головах» сбоку', type: 'toggle', def: true },
     { key: 'plumb', label: 'Линия равновесия (отвес от шеи)', type: 'toggle', def: false },
     { key: 'h', label: 'Рост, мм', type: 'range', min: 20, max: 420, step: 1, def: 150 },
   ],
   moveIdx: 0,
   actions: [
-    ['⇋ Отразить позу', (g) => { const pose = g.props.pose || poseFromTemplate(BODY_POSES.stand); const rel = pose.rel.slice(), f = pose.f.slice(); const sw = [[4, 8], [5, 9], [6, 10], [7, 11], [12, 16], [13, 17], [14, 18], [15, 19]]; for (const [a, b] of sw) { [rel[a], rel[b]] = [rel[b], rel[a]]; [f[a], f[b]] = [f[b], f[a]]; } g.props.pose = { rel: rel.map(x => -x), f }; g.props.lean = -(+P(g, 'lean') || 0); }],
+    ['⇋ Отразить позу', (g) => { const pose = g.props.pose || poseFromTemplate(BODY_POSES.stand); const rel = pose.rel.slice(), f = pose.f.slice(), z = (pose.z || []).slice(); while (z.length < BJ.length) z.push(1); const sw = [[4, 8], [5, 9], [6, 10], [7, 11], [12, 16], [13, 17], [14, 18], [15, 19]]; for (const [a, b] of sw) { [rel[a], rel[b]] = [rel[b], rel[a]]; [f[a], f[b]] = [f[b], f[a]]; [z[a], z[b]] = [z[b], z[a]]; } g.props.pose = { rel: rel.map(x => -x), f, z }; g.props.lean = -(+P(g, 'lean') || 0); g.props.yaw = -(+P(g, 'yaw') || 0); }],
+    ['↻ Профиль', (g) => { const y = +P(g, 'yaw') || 0; g.props.yaw = Math.abs(y - 90) < 5 ? 0 : 90; }],
+    ['⟲ Со спины', (g) => { const y = +P(g, 'yaw') || 0; g.props.yaw = Math.abs(Math.abs(y) - 180) < 5 ? 0 : 180; }],
+    ['◩ 3/4', (g) => { g.props.yaw = 35; }],
   ],
   draw(pen, g, ctx) {
-    const { pos, u, N, pose } = bodyFK(g);
-    drawMannequin(pen, pos, u, { f: pose.f });
+    const FK = bodyFK(g), { pos, u, N } = FK;
+    drawMannequin(pen, pos, u, bodyDrawOpts(g, FK));
     const top = this.handles(g)[20];
     if (P(g, 'ruler')) {
       const xs = Math.min(...pos.map(p => p.x)) - 0.9 * u, yTop = top.y + 0.0, ys = [];
@@ -550,24 +676,30 @@ const body = {
     if (ctx.labels) pen.label({ x: pos[0].x, y: Math.max(...pos.map(p => p.y)) + 0.6 * u }, `${N} голов · голова ${Math.round(u)} мм`);
   },
   handles(g) {
-    const { pos, abs, u } = bodyFK(g);
-    const a = abs[3];
-    const top = { x: pos[3].x + Math.cos(a) * 0.95 * u, y: pos[3].y + Math.sin(a) * 0.95 * u };
+    const { pos, B, Rb, u, abs } = bodyFK(g);
+    const a = abs[3], t3 = Rb.fwd([B[3][0] + Math.cos(a) * 0.95 * u, B[3][1] + Math.sin(a) * 0.95 * u, B[3][2]]);
+    const top = { x: g.pts[0].x + t3[0], y: g.pts[0].y + t3[1] };
     return [...pos.map(p => ({ x: p.x, y: p.y })), top];
   },
   drag(g, i, p) {
     if (i === 0) { g.pts[0] = p; return; }
-    const { pos, abs, u, Ls } = bodyFK(g);
+    const { pos, abs, u, Ls, W, Rb } = bodyFK(g);
     if (i === 20) { // рост
       const top0 = this.handles(g)[20], d0 = dist(top0, pos[0]) || 1;
       g.props.h = clamp(Math.round((+P(g, 'h')) * dist(p, pos[0]) / d0), 15, 600);
       return;
     }
-    const par = BPAR[i], v = sub(p, pos[par]);
+    // экранное смещение → 3D-кость (глубину сохраняем с той же стороны) → обратно в «плоскость тела»
+    const par = BPAR[i], L = Ls[i] * u || 1;
+    let v = sub(p, pos[par]); const lv = len(v); if (lv > L) v = mulS(v, L / lv);
+    const w0z = W[i][2] - W[par][2], wz = (w0z < 0 ? -1 : 1) * Math.sqrt(Math.max(0, L * L - v.x * v.x - v.y * v.y));
+    const b = Rb.inv([v.x, v.y, wz]);
     const pose = g.props.pose = g.props.pose || poseFromTemplate(BODY_POSES.stand);
-    let r = Math.atan2(v.y, v.x) - abs[par]; while (r > Math.PI) r -= TAU; while (r < -Math.PI) r += TAU;
-    pose.rel[i] = Math.round(r / D2R * 10) / 10;
-    pose.f[i] = Math.round(clamp(len(v) / (Ls[i] * u), 0.12, 1) * 100) / 100;
+    if (!pose.z) pose.z = BJ.map(() => 1);
+    let r = Math.atan2(b[1], b[0]) - abs[par]; while (r > Math.PI) r -= TAU; while (r < -Math.PI) r += TAU;
+    pose.rel[i] = Math.round(r / D2R * 100) / 100;
+    pose.f[i] = Math.round(clamp(Math.hypot(b[0], b[1]) / L, 0.12, 1) * 10000) / 10000;
+    pose.z[i] = b[2] < 0 ? -1 : 1;
   },
   handleLabel: (g, i) => (i === 20 ? 'рост' : BJ_RU[i]),
 };
@@ -588,8 +720,9 @@ const FING = [ // [x, y основания, длины фаланг, радиу�
 ];
 export const HAND_POSES = {
   open: [0, 0, 0, 0, 0], relaxed: [0.25, 0.3, 0.4, 0.5, 0.6], fist: [1.0, 1.55, 1.55, 1.55, 1.55], point: [0.9, 0, 1.5, 1.5, 1.5],
-  peace: [0.9, 0, 0, 1.5, 1.5], ok: [0.78, 0.82, 0.1, 0.15, 0.2], grab: [0.45, 0.8, 0.8, 0.8, 0.8], thumbs: [-0.1, 1.55, 1.55, 1.55, 1.55],
+  peace: [0.9, 0, 0, 1.5, 1.5], ok: [0.58, 1.06, 0.15, 0.2, 0.25], grab: [0.45, 0.8, 0.8, 0.8, 0.8], thumbs: [-0.1, 1.55, 1.55, 1.55, 1.55],
 };
+const THUMB_PRON = 70;
 const rodr = (v, k, a) => { // поворот v вокруг оси k (единичной) на угол a
   const c = Math.cos(a), s = Math.sin(a), d = v[0] * k[0] + v[1] * k[1] + v[2] * k[2];
   const cr = [k[1] * v[2] - k[2] * v[1], k[2] * v[0] - k[0] * v[2], k[0] * v[1] - k[1] * v[0]];
@@ -605,11 +738,22 @@ function handModel(curl, spread, mirror) {
       // большой палец: угол в плоскости ладони уменьшается со сгибом (палец идёт поперёк
       // ладони), одновременно он приподнимается к зрителю; дальние фаланги сгибаются к ладони
       const cc = clamp(c, -0.3, 1.3);
-      const b = (40 - 68 * Math.max(0, cc) - 20 * Math.min(0, cc)) * D2R * sx, o = (15 + 22 * Math.max(0, cc) - 30 * Math.min(0, cc)) * D2R;
+      // две фазы: сначала противопоставление (палец уходит вперёд, к зрителю), потом
+      // приведение — ложится поперёк согнутых пальцев (кулак)
+      const knot = (u) => { const K = [[-0.3, 46, 6], [0, 40, 15], [0.7, 14, 52], [1.0, -20, 52], [1.3, -38, 44]]; for (let q = 1; q < K.length; q++) if (u <= K[q][0]) { const t = (u - K[q - 1][0]) / (K[q][0] - K[q - 1][0]); return [lerp(K[q - 1][1], K[q][1], t), lerp(K[q - 1][2], K[q][2], t)]; } return [K[4][1], K[4][2]]; };
+      const [bd, od] = knot(cc), b = bd * D2R * sx, o = od * D2R;
       let dir = v3n([Math.sin(b) * Math.cos(o), Math.cos(b) * Math.cos(o), Math.sin(o)]);
-      const angs = [0, 0.3 * c, 0.45 * c];
+      // Подушечка большого пальца в покое смотрит поперёк ладони (к мизинцу и чуть вперёд);
+      // при противопоставлении пястная кость проворачивается вокруг своей оси, и подушечка
+      // разворачивается к остальным пальцам. Суставы сгибаются в сторону подушечки —
+      // поэтому в «OK» палец выгибается навстречу указательному, а не в ладонь.
+      const pr0 = [-sx * 0.75, 0.05, 0.65], dp = pr0[0] * dir[0] + pr0[1] * dir[1] + pr0[2] * dir[2];
+      let pad = v3n([pr0[0] - dp * dir[0], pr0[1] - dp * dir[1], pr0[2] - dp * dir[2]]);
+      pad = rodr(pad, dir, -sx * THUMB_PRON * D2R * clamp(cc, 0, 1));
+      const k = v3n([dir[1] * pad[2] - dir[2] * pad[1], dir[2] * pad[0] - dir[0] * pad[2], dir[0] * pad[1] - dir[1] * pad[0]]);
+      const angs = [0, 0.42 * c, 0.6 * c];
       let p = base;
-      F.len.forEach((l, j) => { if (j) dir = rodr(dir, v3n([dir[1], -dir[0], 0.0001]), angs[j]); p = [p[0] + dir[0] * l, p[1] + dir[1] * l, p[2] + dir[2] * l]; pts.push(p); });
+      F.len.forEach((l, j) => { if (j) dir = rodr(dir, k, angs[j]); p = [p[0] + dir[0] * l, p[1] + dir[1] * l, p[2] + dir[2] * l]; pts.push(p); });
     } else {
       const spl = (F.splay || 0) * (1 + 1.6 * spread) * D2R * sx;
       let dir = v3n([Math.sin(spl), Math.cos(spl), 0]);
@@ -891,14 +1035,15 @@ function panelPolys(g) {
       const oL = L.sep ? gV / 2 : 0, oR = R.sep ? -gV / 2 : 0, oT = top.sep ? gH / 2 : 0, oB = bot.sep ? -gH / 2 : 0;
       cells.push([inter(L, top, oL, oT), inter(R, top, oR, oT), inter(R, bot, oR, oB), inter(L, bot, oL, oB)]);
     }
-    if (P(g, 'rtl')) cells.reverse();
     polys.push(...cells);
   });
+  // японская манга: зеркалим всю страницу (большой кадр уходит вправо, нумерация — справа налево)
+  if (P(g, 'rtl')) for (let i = 0; i < polys.length; i++) { const q = polys[i].map(v => ({ x: 2 * xc - v.x, y: v.y })); polys[i] = [q[1], q[0], q[3], q[2]]; }
   return { polys, A };
 }
 const panels = {
-  name: 'Раскадровка', icon: '🗔', group: 'manga',
-  desc: 'Шаблоны страниц манги: кадры с промежутками, наклонные кадры для экшена, порядок чтения справа налево, места для реплик. Углы области — за ручки',
+  name: 'Раскадровка', icon: '📖', group: 'manga',
+  desc: 'Шаблоны страниц манги: кадры с промежутками, наклонные кадры для экшена. «Справа налево» зеркалит страницу, как в японской манге. Внутри кадров — композиция (трети, центр), безопасная зона для текста, стрелка порядка чтения. Углы области — за ручки',
   create: (c, s, d) => [{ x: 14, y: 16 }, { x: d.W - 14, y: d.H - 20 }],
   props: [
     { key: 'layout', label: 'Шаблон', type: 'select', options: [['classic', 'Классика'], ['g2x3', '2×3'], ['g3x3', '3×3'], ['yonkoma', '4-кома'], ['splash', 'Большой кадр'], ['wide', 'Широкие'], ['action', 'Экшен'], ['talk', 'Диалог'], ['custom', 'Своя сетка']], def: 'classic' },
@@ -907,9 +1052,10 @@ const panels = {
     { key: 'gutH', label: 'Промежуток между рядами, мм', type: 'range', min: 0, max: 15, step: 0.5, def: 6 },
     { key: 'gutV', label: 'Промежуток между кадрами, мм', type: 'range', min: 0, max: 12, step: 0.5, def: 3 },
     { key: 'slant', label: 'Наклон границ (экшен), °', type: 'range', min: 0, max: 15, step: 0.5, def: 0 },
-    { key: 'rtl', label: 'Читать справа налево (японская манга)', type: 'toggle', def: true },
+    { key: 'rtl', label: 'Справа налево (зеркалит страницу)', type: 'toggle', def: true },
     { key: 'nums', label: 'Номера кадров', type: 'toggle', def: true },
-    { key: 'bubbles', label: 'Места для реплик (овалы)', type: 'toggle', def: false },
+    { key: 'order', label: 'Стрелка порядка чтения', type: 'toggle', def: false },
+    { key: 'inner', label: 'Внутри кадров', type: 'select', options: [['none', 'Ничего'], ['thirds', 'Трети (композиция)'], ['center', 'Центр и диагонали'], ['horizon', 'Линия горизонта (на трети)'], ['safe', 'Поле для текста (отступ)']], def: 'none' },
     { key: 'bleed', label: 'Поля: обрез и безопасная зона', type: 'toggle', def: false },
   ],
   draw(pen, g, ctx) {
@@ -918,13 +1064,23 @@ const panels = {
       pen.poly(q, true, 'main');
       const c = { x: (q[0].x + q[1].x + q[2].x + q[3].x) / 4, y: (q[0].y + q[1].y + q[2].y + q[3].y) / 4 };
       if (P(g, 'nums') && ctx.labels) pen.label(c, String(i + 1));
-      if (P(g, 'bubbles')) {
-        const w = dist(q[0], q[1]), h = dist(q[0], q[3]), rtl = P(g, 'rtl');
-        const corner = rtl ? q[1] : q[0], inward = rtl ? -1 : 1;
-        const rx = clamp(w * 0.17, 4, 30), ry = clamp(h * 0.12, 3, 18);
-        pen.ellipse({ x: corner.x + inward * (rx + Math.min(4, w * 0.05)), y: corner.y + ry + Math.min(4, h * 0.06) }, rx, ry, 0, 'aux');
-      }
+      const inner = P(g, 'inner') || 'none';
+      // точка внутри четырёхугольника кадра по долям (u — слева направо, v — сверху вниз)
+      const at = (u, v) => { const t = lerpP(q[0], q[1], u), b = lerpP(q[3], q[2], u); return lerpP(t, b, v); };
+      if (inner === 'thirds') for (const k of [1 / 3, 2 / 3]) { pen.seg(at(k, 0), at(k, 1), 'aux'); pen.seg(at(0, k), at(1, k), 'aux'); }
+      else if (inner === 'center') { pen.seg(q[0], q[2], 'aux'); pen.seg(q[1], q[3], 'aux'); pen.seg(at(0.5, 0), at(0.5, 1), 'aux'); pen.seg(at(0, 0.5), at(1, 0.5), 'aux'); }
+      else if (inner === 'horizon') { pen.seg(at(0, 1 / 3), at(1, 1 / 3), 'aux'); pen.seg(at(0, 2 / 3), at(1, 2 / 3), 'ghost'); }
+      else if (inner === 'safe') { const m = Math.min(0.12, 4 / Math.max(8, dist(q[0], q[1]))), mv = Math.min(0.12, 4 / Math.max(8, dist(q[0], q[3]))); pen.poly([at(m, mv), at(1 - m, mv), at(1 - m, 1 - mv), at(m, 1 - mv)], true, 'ghost'); }
     });
+    // порядок чтения: зигзаг по центрам кадров со стрелками
+    if (P(g, 'order') && polys.length > 1) {
+      const cs = polys.map(q => ({ x: (q[0].x + q[1].x + q[2].x + q[3].x) / 4, y: (q[0].y + q[1].y + q[2].y + q[3].y) / 4 }));
+      for (let i = 0; i < cs.length - 1; i++) {
+        const a = cs[i], b = cs[i + 1], d = sub(b, a), L = len(d) || 1, u = mulS(d, 1 / L), n = perp(u), a2 = add(a, mulS(u, Math.min(6, L * 0.2))), b2 = add(a, mulS(u, L - Math.min(6, L * 0.2)));
+        pen.seg(a2, b2, 'ghost');
+        pen.poly([add(b2, add(mulS(u, -3), mulS(n, 1.6))), b2, add(b2, add(mulS(u, -3), mulS(n, -1.6)))], false, 'ghost');
+      }
+    }
     if (P(g, 'bleed')) {
       const e = 5;
       pen.poly([{ x: A.x0 - e, y: A.y0 - e }, { x: A.x1 + e, y: A.y0 - e }, { x: A.x1 + e, y: A.y1 + e }, { x: A.x0 - e, y: A.y1 + e }], true, 'ghost');
@@ -1066,7 +1222,7 @@ const turn = {
     { key: 'views', label: 'Видов', type: 'select', options: [['3', '3'], ['4', '4'], ['5', '5']], def: '4' },
     { key: 'heads', label: 'Рост в головах', type: 'range', min: 2, max: 9, step: 0.5, def: 7 },
     { key: 'build', label: 'Телосложение', type: 'select', options: [['neutral', 'Обычное'], ['female', 'Женское'], ['hero', 'Атлет'], ['child', 'Ребёнок']], def: 'neutral' },
-    { key: 'headStyle', label: 'Голова', type: 'select', options: [['anime', 'Аниме'], ['shonen', 'Сёнэн'], ['real', 'Реализм'], ['chibi', 'Чиби'], ['none', 'Простой овал']], def: 'anime' },
+    { key: 'headStyle', label: 'Голова', type: 'select', options: [['anime', 'Аниме'], ['shonen', 'Сёнэн'], ['real', 'Реализм ♂'], ['realF', 'Реализм ♀'], ['chibi', 'Чиби'], ['none', 'Простой овал']], def: 'anime' },
     { key: 'lines', label: 'Линии высот', type: 'toggle', def: true },
     { key: 'figs', label: 'Манекены', type: 'toggle', def: true },
   ],
@@ -1109,8 +1265,78 @@ const turn = {
   moveIdx: 2,
 };
 
-export const MANGA_ORDER = ['head', 'eye', 'body', 'hand', 'turn', 'panels', 'speed', 'focus'];
+// ======================================================================
+// 8. ПРИЧЁСКИ — манекен волос (пряди в 3D поверх черепа)
+// ======================================================================
+const hairPreset = (v) => { const p = { ...HAIR_DEFAULTS, ...(HAIR_PRESETS[v] || {}) }; delete p.name; return p; };
+const HAIR_KEYS = Object.keys(HAIR_DEFAULTS);
+function randomHair(g, gender) {
+  const keys = Object.keys(HAIR_PRESETS).filter(k => k.startsWith(gender + '_'));
+  const k = keys[Math.floor(Math.random() * keys.length)], R = Math.random, p = hairPreset(k);
+  p.len = clamp(p.len * (0.8 + 0.45 * R()), 0.6, 6); p.vol = clamp(p.vol + (R() - 0.5) * 0.15, 0, 0.6);
+  p.wave = clamp(p.wave + (R() - 0.4) * 0.35, 0, 1); p.messy = clamp(R() * 0.8, 0, 1);
+  if (R() < 0.4) p.bangs = ['none', 'straight', 'side', 'curtain', 'spiky', 'wispy'][Math.floor(R() * 6)];
+  if (R() < 0.3) p.ends = ['straight', 'in', 'out'][Math.floor(R() * 3)];
+  if (gender === 'f' && R() < 0.25) p.ahoge = !p.ahoge;
+  Object.assign(g.props, p, { style: k, seed: 1 + Math.floor(R() * 99999) });
+}
+const hairT = {
+  name: 'Причёски', icon: '💇', group: 'manga',
+  desc: 'Манекен причёсок: готовые мужские и женские, всё настраивается — длина, объём, пробор, чёлка, хвосты, волна и кудри, шипы. «🎲» — перемешать пряди или собрать случайную причёску. Крутится как голова: тачпад справа',
+  create: (c, s) => [{ x: c.x, y: c.y - s * 0.2 }],
+  init: (g, s) => { g.props.r = Math.round(s * 0.5); Object.assign(g.props, hairPreset('f_long')); g.props.seed = 1 + Math.floor(Math.random() * 99999); },
+  props: [
+    { key: 'style', label: 'Причёска', type: 'select', options: HAIR_OPTIONS, def: 'f_long', onSet: (g, v) => { Object.assign(g.props, hairPreset(v)); } },
+    { key: 'face', label: 'Под причёской', type: 'select', options: [['anime', 'Лицо аниме'], ['realF', 'Лицо реализм ♀'], ['real', 'Лицо реализм ♂'], ['skull', 'Только череп'], ['none', 'Ничего']], def: 'anime' },
+    sec('Поворот головы'),
+    { key: 'yaw', label: 'Влево ↔ вправо, °', type: 'range', min: -180, max: 180, step: 1, def: 20 },
+    { key: 'pitch', label: 'Вниз ↔ вверх, °', type: 'range', min: -90, max: 90, step: 1, def: -5 },
+    { key: 'roll', label: 'Наклон к плечу, °', type: 'range', min: -180, max: 180, step: 1, def: 0 },
+    sec('Форма'),
+    { key: 'len', label: 'Длина', type: 'range', min: 0.6, max: 6, step: 0.1, def: HAIR_DEFAULTS.len, fmt: (v) => v < 0.8 ? 'ёжик' : v < 1.4 ? 'короткие' : v < 2.4 ? 'до подбородка' : v < 3.5 ? 'до плеч' : v < 5 ? 'до груди' : 'до пояса' },
+    { key: 'vol', label: 'Объём', type: 'range', min: 0, max: 0.6, step: 0.02, def: HAIR_DEFAULTS.vol },
+    { key: 'part', label: 'Пробор', type: 'select', options: [['center', 'По центру'], ['side', 'Сбоку'], ['none', 'Зачёс назад']], def: 'center' },
+    { key: 'bangs', label: 'Чёлка', type: 'select', options: [['none', 'Нет (лоб открыт)'], ['straight', 'Прямая'], ['side', 'Набок'], ['curtain', 'Шторка (на две стороны)'], ['spiky', 'Острые пряди (аниме)'], ['wispy', 'Рваная, тонкая']], def: 'side' },
+    { key: 'bangLen', label: 'Длина чёлки', type: 'range', min: 0.1, max: 1.3, step: 0.05, def: 0.6, show: (g) => P(g, 'bangs') !== 'none', fmt: (v) => v < 0.45 ? 'короткая' : v < 0.8 ? 'до бровей' : v < 1.05 ? 'до глаз' : 'ниже глаз' },
+    { key: 'tie', label: 'Собраны', type: 'select', options: [['none', 'Распущены'], ['pony', 'Хвост'], ['twin', 'Два хвоста'], ['bun', 'Пучок']], def: 'none' },
+    { key: 'tailLen', label: 'Длина хвоста', type: 'range', min: 0.8, max: 6, step: 0.1, def: 3, show: (g) => ['pony', 'twin'].includes(P(g, 'tie')) },
+    { key: 'locks', label: 'Пряди у лица', type: 'toggle', def: false },
+    { key: 'ahoge', label: 'Ахогэ («антенна»)', type: 'toggle', def: false },
+    sec('Характер'),
+    { key: 'wave', label: 'Прямые → волна → кудри', type: 'range', min: 0, max: 1, step: 0.05, def: 0.1 },
+    { key: 'spiky', label: 'Шипы (сёнэн)', type: 'range', min: 0, max: 1, step: 0.05, def: 0 },
+    { key: 'ends', label: 'Кончики', type: 'select', options: [['straight', 'Прямые'], ['in', 'Внутрь'], ['out', 'Наружу']], def: 'straight' },
+    { key: 'messy', label: 'Аккуратно ↔ небрежно', type: 'range', min: 0, max: 1, step: 0.05, def: 0.25 },
+    sec('Штрихи'),
+    { key: 'clumps', label: 'Прядей: мало ↔ много', type: 'range', min: 0, max: 1, step: 0.05, def: 0.5 },
+    { key: 'detail', label: 'Штрихи внутри прядей', type: 'range', min: 0, max: 1, step: 0.05, def: 0.4, fmt: (v) => v < 0.3 ? 'минимум' : v < 0.7 ? 'немного' : 'подробно' },
+    { key: 'r', label: 'Размер черепа (радиус), мм', type: 'range', min: 5, max: 150, step: 1, def: 30 },
+  ],
+  actions: [
+    ['🎲 Перемешать пряди', (g) => { g.props.seed = 1 + Math.floor(Math.random() * 99999); }],
+    ['🎲 Случайная ♀', (g) => randomHair(g, 'f')],
+    ['🎲 Случайная ♂', (g) => randomHair(g, 'm')],
+  ],
+  moveIdx: 0,
+  geo: (g) => head.geo(g),
+  draw(pen, g, ctx) {
+    const { C, r, yaw, pitch, roll } = this.geo(g), face = P(g, 'face');
+    const o = {}; for (const k of HAIR_KEYS) o[k] = P(g, k);
+    let chin = 1.3;
+    if (face === 'skull') pen.circle(C, r, 'aux');
+    else if (face !== 'none') { const ho = { ...(HEAD_PRESETS[face] || HEAD_PRESETS.anime), loomis: false, grid: false, neck: true, hair: false, brows: true }; chin = ho.chin; drawHead(pen, ho, C, r, yaw, pitch, roll, { layer: 'aux' }); }
+    drawHair(pen, o, C, r, yaw, pitch, roll, +P(g, 'seed') || 1, { chin });
+    const T = headPad(C, r);
+    pen.circle(T.c, T.r, 'ghost'); pen.seg({ x: T.c.x - T.r, y: T.c.y }, { x: T.c.x + T.r, y: T.c.y }, 'ghost'); pen.seg({ x: T.c.x, y: T.c.y - T.r }, { x: T.c.x, y: T.c.y + T.r }, 'ghost');
+    if (ctx.labels) pen.label({ x: C.x, y: C.y - r * (1.45 + (+P(g, 'vol') || 0)) }, (HAIR_PRESETS[P(g, 'style')] || {}).name || 'причёска');
+  },
+  handles(g) { return head.handles.call(this, g); },
+  drag(g, i, p) { return head.drag.call(this, g, i, p); },
+  handleLabel: (g, i) => (i === 0 ? 'двигать' : i === 1 ? 'размер · наклон' : 'поворот'),
+};
+
+export const MANGA_ORDER = ['head', 'hair', 'eye', 'body', 'hand', 'turn', 'panels', 'speed', 'focus'];
 export function registerManga(TYPES) {
   TYPES_REF = TYPES;
-  Object.assign(TYPES, { head, body, hand, eye, panels, speed, focus, turn });
+  Object.assign(TYPES, { head, hair: hairT, body, hand, eye, panels, speed, focus, turn });
 }

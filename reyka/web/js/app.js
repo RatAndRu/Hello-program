@@ -10,7 +10,7 @@ import { estimateRect, cameraTilt, assumedFocal, manualCorners, fitFocal, comple
 import { detectSegments, findVanishingPoints } from './vanish.js';
 import * as scan from './scan.js';
 
-const VERSION = '1.5';
+const VERSION = '1.6';
 const $ = (id) => document.getElementById(id);
 const video = $('video'), glCanvas = $('gl'), overlay = $('overlay');
 const octx = overlay.getContext('2d');
@@ -227,8 +227,8 @@ function setTrack(state, reason = '') {
     tracking: 'Лист: слежу',
     locked: 'Лист закреплён',
     lost: 'Лист потерян',
-    calib: 'Углы листа: перетащи',
-    occl: 'Лист ✋ достраиваю',
+    calib: 'Тяни углы',
+    occl: '✋ Достраиваю',
   };
   $('statusText').textContent = map[state] || state;
   if (R.panel === 'sheet') refreshPanel();
@@ -1114,7 +1114,7 @@ function panelGuide() {
     const v = getProp(g, p.key);
     const set = (val) => { pushUndo(); g.props[p.key] = val; if (p.onSet) p.onSet(g, val); persist(); if (p.onSet || T.props.some(q => q.show)) refreshPanel(); };
     if (p.type === 'toggle') panelBody.append(toggleRow(p.label, v, set));
-    else if (p.type === 'range') panelBody.append(rangeRow(p.label, p.min, p.max, p.step, v, (val) => { g.props[p.key] = val; persist(); }, (x) => (p.step < 1 ? x.toFixed(2) : x)));
+    else if (p.type === 'range') panelBody.append(rangeRow(p.label, p.min, p.max, p.step, v, (val) => { g.props[p.key] = val; persist(); }, p.fmt || ((x) => (p.step < 1 ? x.toFixed(2) : x))));
     else if (p.type === 'select') panelBody.append(segRow(p.label, p.options, v, set));
   }
   if (T.actions) panelBody.append(el('div', { class: 'btns' }, ...T.actions.map(([label, fn]) => btn(label, () => { pushUndo(); fn(g); persist(); refreshPanel(); }))));

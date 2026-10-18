@@ -33,8 +33,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .icon { width: 44px; height: 44px; border-radius: 14px; border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 20px; display: grid; place-items: center; }
 .icon.small { width: 36px; height: 36px; font-size: 16px; border-radius: 12px; }
 .icon:active, #bottombar button:active { transform: scale(0.96); }
-.pill { height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 14px; max-width: 62vw; }
-.pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pill { height: 44px; display: inline-flex; align-items: center; gap: 8px; padding: 0 14px; border-radius: 22px; border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); font-size: 14px; flex: 0 1 auto; min-width: 0; max-width: 62vw; }
+.pill span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+#topbar .icon { flex: none; }
+#topbar .spacer { min-width: 0; }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06); }
 .pill[data-state="tracking"] .dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
 .pill[data-state="locked"] .dot { background: var(--info); }
