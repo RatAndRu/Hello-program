@@ -492,7 +492,7 @@ class MainActivity : FragmentActivity() {
                 setBackgroundResource(R.drawable.btn_soft)
                 setOnClickListener { showCreateWidgetDialog() }
             }
-            row.addView(createWidget, android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) })
+            row.addView(createWidget, android.widget.LinearLayout.LayoutParams(dp(92), dp(92)).apply { marginEnd = dp(22) })
             return
         }
         val all = photos
@@ -508,7 +508,7 @@ class MainActivity : FragmentActivity() {
             setBackgroundResource(R.drawable.btn_soft)
             setOnClickListener { showCreateAlbumDialog { album -> selectedAlbum = album; refresh() } }
         }
-        row.addView(create, android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) })
+        row.addView(create, android.widget.LinearLayout.LayoutParams(dp(92), dp(92)).apply { marginEnd = dp(22) })
         if (albumNames.isEmpty()) {
             val hint = TextView(this).apply {
                 text = "Альбомов пока нет"; textSize = 13f
@@ -520,6 +520,31 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /** Подпись плитки: название обрезается многоточием, а количество всегда остаётся видимым. */
+    private fun albumLabel(name: String, count: Int?, selected: Boolean): View {
+        val row = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(dp(5), dp(4), dp(5), dp(4))
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(28), android.view.Gravity.BOTTOM)
+        }
+        val color = if (selected) 0xFFFFFFFF.toInt() else UiTheme.color(this, R.attr.appText)
+        row.addView(TextView(this).apply {
+            text = name; textSize = 12f; gravity = android.view.Gravity.CENTER_VERTICAL
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+            setTextColor(color)
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        })
+        if (count != null) row.addView(TextView(this).apply {
+            text = " · $count"; textSize = 12f; gravity = android.view.Gravity.CENTER_VERTICAL
+            maxLines = 1; setTextColor(color)
+            layoutParams = android.widget.LinearLayout.LayoutParams(
+                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT)
+        })
+        return row
+    }
+
     /**
      * Полупрозрачные стрелки по бокам плитки, чуть выступающие за её края.
      * Отсутствующая стрелка — часть интерфейса: у «Разное» их нет совсем, у крайнего
@@ -527,14 +552,17 @@ class MainActivity : FragmentActivity() {
      */
     private fun addAlbumSideArrows(tile: android.widget.FrameLayout, showLeft: Boolean, showRight: Boolean, onLeft: () -> Unit, onRight: () -> Unit) {
         fun arrow(text: String, left: Boolean, action: () -> Unit) = TextView(this).apply {
-            this.text = text; textSize = 15f; gravity = android.view.Gravity.CENTER
+            this.text = text; textSize = 12f; gravity = android.view.Gravity.CENTER
             setTextColor(android.graphics.Color.WHITE)
-            setBackgroundResource(R.drawable.media_duration_bg)
-            alpha = 0.78f
+            setBackgroundResource(R.drawable.album_arrow_bg)
+            alpha = 0.82f
             elevation = dp(3).toFloat()
-            layoutParams = android.widget.FrameLayout.LayoutParams(dp(25), dp(36),
+            // Плоская полоса на всю высоту: визуально узкая и аккуратная, но палец попадает
+            // по всей высоте плитки, а не только по маленькой иконке стрелки.
+            layoutParams = android.widget.FrameLayout.LayoutParams(dp(22),
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
                 android.view.Gravity.CENTER_VERTICAL or if (left) android.view.Gravity.START else android.view.Gravity.END).apply {
-                if (left) marginStart = -dp(9) else marginEnd = -dp(9)
+                if (left) marginStart = -dp(7) else marginEnd = -dp(7)
             }
             setOnClickListener { action() }
             contentDescription = if (left) "Переместить альбом влево" else "Переместить альбом вправо"
@@ -546,7 +574,7 @@ class MainActivity : FragmentActivity() {
     private fun albumDotsButton(onClick: () -> Unit): TextView = TextView(this).apply {
         text = "⋮"; textSize = 19f; gravity = android.view.Gravity.CENTER
         setTextColor(android.graphics.Color.WHITE); setBackgroundResource(R.drawable.media_duration_bg)
-        layoutParams = android.widget.FrameLayout.LayoutParams(dp(30), dp(30), android.view.Gravity.TOP or android.view.Gravity.END).apply { topMargin = dp(5); rightMargin = dp(5) }
+        layoutParams = android.widget.FrameLayout.LayoutParams(dp(28), dp(28), android.view.Gravity.TOP or android.view.Gravity.END).apply { topMargin = dp(2); rightMargin = dp(2) }
         setOnClickListener { onClick() }
         contentDescription = "Действия с альбомом"
     }
@@ -571,26 +599,19 @@ class MainActivity : FragmentActivity() {
                 postDelayed({ if (drawable == null) setImageResource(R.drawable.widget_placeholder) }, 400)
             }
         }
-        tile.addView(cover, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(72)))
+        tile.addView(cover, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(64)))
         if (newest != null) io.execute {
             val bmp = PhotoStore.decodeBitmap(this, newest, 360)
             cover.post { if (bmp != null) cover.setImageBitmap(bmp) }
         }
-        val label = TextView(this).apply {
-            text = "🧩 ${PinnedPhotoWidgetBase.widgetName(this@MainActivity, widgetId)} · ${refs.size}"
-            textSize = 12f; gravity = android.view.Gravity.CENTER
-            maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(if (selectedAlbum == key) 0xFFFFFFFF.toInt() else UiTheme.color(this@MainActivity, R.attr.appText))
-            setPadding(dp(4), dp(5), dp(4), dp(5))
-        }
-        tile.addView(label, android.widget.FrameLayout.LayoutParams(
-            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM))
+        val widgetLabel = albumLabel("🧩 ${PinnedPhotoWidgetBase.widgetName(this@MainActivity, widgetId)}", refs.size, selectedAlbum == key)
+        widgetLabel.setPadding(dp(if (index > 0) 20 else 5), dp(4), dp(if (index < total - 1) 20 else 5), dp(4))
+        tile.addView(widgetLabel)
         addAlbumSideArrows(tile, index > 0, index < total - 1,
             { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, -1)) refresh() },
             { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, 1)) refresh() })
         tile.addView(albumDotsButton { showWidgetAlbumActions(widgetId) })
-        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) }
+        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(92), dp(92)).apply { marginEnd = dp(22) }
         return tile
     }
 
@@ -696,7 +717,7 @@ class MainActivity : FragmentActivity() {
             } else setImageResource(R.drawable.widget_placeholder)
         }
         tile.addView(cover, android.widget.FrameLayout.LayoutParams(
-            android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(72)))
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(64)))
         val newest = if (isLocked) null else albumPhotos.maxByOrNull { it.createdAt }
         if (newest != null) {
             cover.tag = album
@@ -705,28 +726,19 @@ class MainActivity : FragmentActivity() {
                 cover.post { if (cover.tag == album && bmp != null) cover.setImageBitmap(bmp) }
             }
         }
-        val label = TextView(this).apply {
-            text = if (isLocked) "🔒 $album" else "$album · ${albumPhotos.size}"
-            textSize = 12f; gravity = android.view.Gravity.CENTER
-            maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(if (album == selectedAlbum) 0xFFFFFFFF.toInt() else UiTheme.color(this@MainActivity, R.attr.appText))
-            setPadding(dp(4), dp(5), dp(4), dp(5))
-        }
-        val labelParams = android.widget.FrameLayout.LayoutParams(
-            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
-            android.view.Gravity.BOTTOM)
-        tile.addView(label, labelParams)
-        addAlbumSideArrows(tile,
-            album != PhotoStore.MISC_ALBUM && index > 1,
-            album != PhotoStore.MISC_ALBUM && index > 0 && index < total - 1,
+        val canMoveLeft = album != PhotoStore.MISC_ALBUM && index > 1
+        val canMoveRight = album != PhotoStore.MISC_ALBUM && index > 0 && index < total - 1
+        val albumLabelView = albumLabel(if (isLocked) "🔒 $album" else album, if (isLocked) null else albumPhotos.size, album == selectedAlbum)
+        albumLabelView.setPadding(dp(if (canMoveLeft) 20 else 5), dp(4), dp(if (canMoveRight) 20 else 5), dp(4))
+        tile.addView(albumLabelView)
+        addAlbumSideArrows(tile, canMoveLeft, canMoveRight,
             { if (PhotoStore.moveAlbum(this, album, -1)) refresh() },
             { if (PhotoStore.moveAlbum(this, album, 1)) refresh() })
         tile.addView(albumDotsButton {
             if (isLocked) showUnlockDialog(album) { showAlbumActions(album) }
             else showAlbumActions(album)
         })
-        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) }
+        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(92), dp(92)).apply { marginEnd = dp(22) }
         return tile
     }
 
