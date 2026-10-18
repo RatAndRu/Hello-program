@@ -38,6 +38,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06); }
 .pill[data-state="tracking"] .dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
 .pill[data-state="locked"] .dot { background: var(--info); }
+.pill[data-state="occl"] .dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); outline: 2px dashed rgba(255,255,255,0.7); outline-offset: 2px; }
 .pill[data-state="lost"] .dot { background: var(--warn); }
 .pill[data-state="calib"] .dot { background: #ff2fd6; }
 

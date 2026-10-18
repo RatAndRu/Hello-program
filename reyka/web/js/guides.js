@@ -4,7 +4,7 @@
 import { convexHull } from './geom.js';
 import {
   apply, add, sub, mulS, dot, len, dist, norm, perp, lerpP, reflect, clipSegment,
-  circleFrom3, homography,
+  circleFrom3, homography, mul, inv,
 } from './geom.js';
 
 const TAU = Math.PI * 2;
@@ -19,8 +19,12 @@ export class Pen {
     this.M = P2S; this.clip = clip;
     this.paths = []; this.labels = []; this.points = [];
     this.mirror = null; this.layerOverride = null; this.guideId = null;
+    this.L = null; // поворот/наклон фигуры (гомография в мм листа), см. planeH
   }
-  tf(p) { return this.mirror ? reflect(p, this.mirror.a, this.mirror.b) : p; }
+  tf(p) {
+    if (this.L) { const r = apply(this.L, p.x, p.y); p = r.w > 1e-3 ? { x: r.x, y: r.y } : { x: NaN, y: NaN }; }
+    return this.mirror ? reflect(p, this.mirror.a, this.mirror.b) : p;
+  }
   mapRaw(p) { const r = apply(this.M, p.x, p.y); return r.w > 0 && isFinite(r.x) && isFinite(r.y) ? r : null; }
   pushPath(pts, closed, layer) {
     if (pts.length < 2) return;
@@ -618,4 +622,69 @@ function drawLight(pen, g, ctx) {
   }
   for (const [p, t] of lbl) pen.label(p, t);
   void lerpP;
+}
+
+// ---------- Поворот и наклон плоских фигур ----------
+// Фигура живёт на своей «плоскости»: её можно повернуть вокруг центра (spin) и наклонить
+// в 3D (tiltX — вперёд/назад, tiltY — влево/вправо) с перспективой (depth). Всё это — одна
+// гомография H, через которую проходят ВСЕ линии фигуры, включая внутренние (крест, оси,
+// диагонали, лучи). Центр фигуры остаётся на месте.
+export const ROT_PROPS = [
+  { key: 'spin', label: 'Поворот вокруг центра, °', type: 'range', min: -180, max: 180, step: 1, def: 0, rot: true },
+  { key: 'tiltX', label: 'Наклон вперёд/назад (перспектива), °', type: 'range', min: -80, max: 80, step: 1, def: 0, rot: true },
+  { key: 'tiltY', label: 'Наклон влево/вправо (перспектива), °', type: 'range', min: -80, max: 80, step: 1, def: 0, rot: true },
+  { key: 'depth', label: 'Сила перспективы', type: 'range', min: 0, max: 1, step: 0.05, def: 0.4, rot: true },
+];
+const ROT_FRAME = {
+  circle: (g) => ({ C: g.pts[0], sz: dist(g.pts[0], g.pts[1]) }),
+  polygon: (g) => ({ C: g.pts[0], sz: dist(g.pts[0], g.pts[1]) }),
+  radial: (g) => ({ C: g.pts[0], sz: dist(g.pts[0], g.pts[1]) }),
+  ellipse: (g) => { const e = TYPES.ellipse.geo(g); return { C: e.c, sz: e.A }; },
+  rect: (g) => { const r = TYPES.rect.geo(g); return { C: r.center, sz: Math.max(r.L, Math.abs(r.h)) / 2 }; },
+};
+for (const t of Object.keys(ROT_FRAME)) TYPES[t].props.push(...ROT_PROPS.map(p => ({ ...p })));
+export const canRotate = (g) => !!ROT_FRAME[g.type];
+
+function planeParts(g) {
+  const fr = ROT_FRAME[g.type]; if (!fr) return null;
+  const { C, sz } = fr(g);
+  const spin = (+pDefault(g, 'spin') || 0) * Math.PI / 180;
+  const tx = (+pDefault(g, 'tiltX') || 0) * Math.PI / 180, ty = (+pDefault(g, 'tiltY') || 0) * Math.PI / 180;
+  const depth = +pDefault(g, 'depth');
+  const D = Math.max(1, sz) * (1.8 + 8 * (1 - (isFinite(depth) ? depth : 0.4)));
+  // R3 = Rx(tiltX)·Ry(tiltY); точка плоскости (x, y, 0) → (X, Y, Z) → проекция X·D/(D+Z)
+  const cx = Math.cos(tx), sx = Math.sin(tx), cy = Math.cos(ty), sy = Math.sin(ty);
+  const a11 = cy, a12 = 0, a21 = sx * sy, a22 = cx, a31 = -cx * sy, a32 = sx;
+  const P = [a11, a12, 0, a21, a22, 0, a31 / D, a32 / D, 1];
+  const T1 = [1, 0, C.x, 0, 1, C.y, 0, 0, 1], T0 = [1, 0, -C.x, 0, 1, -C.y, 0, 0, 1];
+  const Rs = [Math.cos(spin), -Math.sin(spin), 0, Math.sin(spin), Math.cos(spin), 0, 0, 0, 1];
+  return { C, sz, spin, tilted: tx !== 0 || ty !== 0, Hn: mul(T1, mul(P, T0)), H: mul(T1, mul(P, mul(Rs, T0))) };
+}
+// Гомография фигуры или null, если фигура не повёрнута.
+export function planeH(g) {
+  const p = planeParts(g);
+  if (!p || (p.spin === 0 && !p.tilted)) return null;
+  return p.H;
+}
+const applyP = (M, p) => { const r = apply(M, p.x, p.y); return { x: r.x, y: r.y }; };
+// Ручки на экране: собственные ручки фигуры, пропущенные через H, + ручка поворота (последняя).
+export function viewHandles(g) {
+  const T = TYPES[g.type], raw = T.handles(g);
+  const pp = planeParts(g);
+  if (!pp) return raw;
+  const H = planeH(g);
+  const hs = H ? raw.map(q => applyP(H, q)) : raw.map(q => ({ x: q.x, y: q.y }));
+  hs.push(applyP(pp.H, { x: pp.C.x, y: pp.C.y - Math.max(8, pp.sz) * 1.3 - 16 }));
+  return hs;
+}
+export const rotHandleIndex = (g) => (ROT_FRAME[g.type] ? TYPES[g.type].handles(g).length : -1);
+// Точка листа → точка на плоскости фигуры (для перетаскивания ручек повёрнутой фигуры).
+export function toFigure(g, p) { const H = planeH(g); return H ? applyP(inv(H), p) : p; }
+// Угол поворота по положению ручки поворота (с учётом наклона).
+export function spinFromPoint(g, p) {
+  const pp = planeParts(g);
+  const q = applyP(inv(pp.Hn), p);
+  let a = Math.atan2(q.y - pp.C.y, q.x - pp.C.x) * 180 / Math.PI + 90;
+  while (a > 180) a -= 360; while (a < -180) a += 360;
+  return a;
 }

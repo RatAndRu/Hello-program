@@ -1,24 +1,28 @@
 // Поиск листа бумаги в кадре без ИИ — классическое компьютерное зрение:
 // 1) уменьшаем кадр и считаем яркость; 2) порог Оцу отделяет светлый лист от фона;
 // 3) берём самую большую светлую область; 4) выпуклая оболочка → 4 угла;
-// 5) уточняем стороны подгонкой прямых по краю и пересекаем их.
-// Благодаря шагу 5 угол, закрытый пальцем, всё равно восстанавливается.
+// 5) каждая сторона ищется отдельно (RANSAC по краевым точкам): рука на краю — это
+//    «выбросы», прямая находится по открытой части стороны; углы — пересечения сторон.
+// Для каждого угла сообщаем, виден ли он. Закрытый угол достраивает app.js
+// (по прошлому положению листа или по трём другим углам с учётом перспективы).
 
 import { convexHull, polygonArea, isConvexQuad, dist, sub, cross } from './geom.js';
 
 const ANALYSIS_LONG_SIDE = 320;
 
 export class PaperTracker {
-  constructor() {
+  constructor(opts = {}) {
+    this.longSide = opts.longSide || ANALYSIS_LONG_SIDE; // для полноразмерного фото — точнее
     this.canvas = document.createElement('canvas');
     this.ctx = this.canvas.getContext('2d', { willReadFrequently: true });
     this.lastReason = '';
   }
 
   // source — <video> или canvas; vw/vh — его размеры в пикселях.
-  detect(source, vw, vh) {
+  // prior — прошлые углы (в пикселях кадра): помогает, когда рука закрывает угол или край.
+  detect(source, vw, vh, prior = null) {
     if (!vw || !vh) return this.fail('нет кадра');
-    const s = Math.min(1, ANALYSIS_LONG_SIDE / Math.max(vw, vh));
+    const s = Math.min(1, this.longSide / Math.max(vw, vh));
     const w = Math.max(16, Math.round(vw * s)), h = Math.max(16, Math.round(vh * s));
     if (this.canvas.width !== w || this.canvas.height !== h) { this.canvas.width = w; this.canvas.height = h; }
     try { this.ctx.drawImage(source, 0, 0, w, h); } catch { return this.fail('нет кадра'); }
@@ -61,40 +65,70 @@ export class PaperTracker {
     if (area < n * 0.04) return this.fail('лист слишком маленький или не виден');
     if (area > n * 0.97) return this.fail('лист занимает весь кадр — подними телефон выше');
 
-    // Граница: крайние пиксели по строкам и столбцам.
+    // Граница: крайние пиксели по строкам и столбцам (для первой оценки) и все краевые пиксели (для подгонки сторон).
     const rowMin = new Int32Array(h).fill(w), rowMax = new Int32Array(h).fill(-1);
     const colMin = new Int32Array(w).fill(h), colMax = new Int32Array(w).fill(-1);
+    const inC = new Uint8Array(n);
+    for (let k = 0; k < pixels.length; k++) inC[pixels[k]] = 1;
     let borderTouch = 0;
+    const bpts = [];
     for (let k = 0; k < pixels.length; k++) {
       const idx = pixels[k], y = (idx / w) | 0, x = idx - y * w;
       if (x < rowMin[y]) rowMin[y] = x; if (x > rowMax[y]) rowMax[y] = x;
       if (y < colMin[x]) colMin[x] = y; if (y > colMax[x]) colMax[x] = y;
-      if (x === 0 || y === 0 || x === w - 1 || y === h - 1) borderTouch++;
+      const edge = x === 0 || y === 0 || x === w - 1 || y === h - 1;
+      if (edge) borderTouch++;
+      if (!edge && (!inC[idx - 1] || !inC[idx + 1] || !inC[idx - w] || !inC[idx + w])) bpts.push({ x: x + 0.5, y: y + 0.5 });
     }
     if (borderTouch > (w + h) * 0.12) return this.fail('лист не целиком в кадре');
 
-    const edgePts = [];
-    for (let y = 0; y < h; y++) if (rowMax[y] >= 0) { edgePts.push({ x: rowMin[y] + 0.5, y: y + 0.5 }); edgePts.push({ x: rowMax[y] + 0.5, y: y + 0.5 }); }
-    for (let x = 0; x < w; x++) if (colMax[x] >= 0) { edgePts.push({ x: x + 0.5, y: colMin[x] + 0.5 }); edgePts.push({ x: x + 0.5, y: colMax[x] + 0.5 }); }
-
-    const hull = convexHull(edgePts);
-    if (hull.length < 4) return this.fail('лист не найден');
-    let quad = maxAreaQuad(hull);
-    if (!quad) return this.fail('лист не найден');
-
-    const qa = Math.abs(polygonArea(quad));
-    // Закрашенные места рисунка — «дырки» в маске бумаги; считаем их частью листа.
-    const filled = filledArea(pixels, w, h);
-    if (filled / qa < 0.72) return this.fail('форма не похожа на лист (рука или тень?)');
-
-    const refined = refineQuad(quad, edgePts);
-    const minSide = Math.min(...quad.map((p, i) => dist(p, quad[(i + 1) % 4])));
-    const maxShift = Math.max(8, minSide * 0.18);
-    if (refined && isConvexQuad(refined) && refined.every((p, i) => dist(p, quad[i]) < maxShift)) quad = refined;
-    if (!isConvexQuad(quad)) return this.fail('лист не найден');
+    // Два кандидата: от прошлого положения листа (если есть) и «с нуля» — от оболочки области.
+    // Каждый проверяем по маске бумаги и берём лучший; прошлому положению — небольшой бонус
+    // (стабильность), но если лист переложили или наклонили камеру — победит поиск с нуля.
+    const cands = [];
+    if (prior) {
+      const init = prior.map(p => ({ x: p.x * s, y: p.y * s }));
+      if (isConvexQuad(init)) { const f = fitQuadRobust(init, bpts, 0.07); f.init = init; f.fromPrior = true; cands.push(f); }
+    }
+    if (!cands.length || cands[0].nVis < 4) {
+      const edgePts = [];
+      for (let y = 0; y < h; y++) if (rowMax[y] >= 0) { edgePts.push({ x: rowMin[y] + 0.5, y: y + 0.5 }); edgePts.push({ x: rowMax[y] + 0.5, y: y + 0.5 }); }
+      for (let x = 0; x < w; x++) if (colMax[x] >= 0) { edgePts.push({ x: x + 0.5, y: colMin[x] + 0.5 }); edgePts.push({ x: x + 0.5, y: colMax[x] + 0.5 }); }
+      const hull = convexHull(edgePts);
+      const quad0 = hull.length >= 4 ? maxAreaQuad(hull) : null;
+      if (quad0) { const f = fitQuadRobust(quad0, bpts, 0.06); f.init = quad0; cands.push(f); }
+    }
+    let filled = -1, best = null, bestScore = -Infinity, reason = 'лист не найден';
+    for (const fit of cands) {
+      if (fit.okSides < 2 || fit.nComputed < 2) { reason = 'лист закрыт — не видно краёв'; continue; }
+      if (!prior && fit.nComputed < 3) { reason = 'лист закрыт рукой'; continue; }
+      const quad = fit.corners;
+      if (!isConvexQuad(quad)) { reason = 'форма не похожа на лист'; continue; }
+      const qa = Math.abs(polygonArea(quad));
+      if (qa < n * 0.03) { reason = 'лист слишком маленький или не виден'; continue; }
+      // Закрашенные места рисунка — «дырки» в маске бумаги; считаем их частью листа.
+      if (filled < 0) filled = filledArea(pixels, w, h);
+      // Рука может закрыть часть листа, но бумаги в найденном четырёхугольнике должно быть много,
+      // и вне его — мало (иначе мы нашли не те края).
+      let outside = 0;
+      for (let k = 0; k < pixels.length; k += 2) { const idx = pixels[k], y = (idx / w) | 0, x = idx - y * w; if (!insideQuad(quad, x + 0.5, y + 0.5, 2.5)) outside += 2; }
+      const cover = (filled - outside) / qa;
+      const outLim = fit.nComputed === 4 ? 0.12 : 0.2;
+      if (cover < 0.5) { reason = 'форма не похожа на лист (рука или тень?)'; continue; }
+      if (outside > qa * outLim) { reason = 'форма не похожа на лист'; continue; }
+      const score = fit.nComputed * 4 + fit.nVis * 2 + fit.okSides - (outside / qa) * 20 + (fit.fromPrior ? 1.5 : 0);
+      if (score > bestScore) { bestScore = score; best = fit; best.quality = Math.min(1, cover); }
+    }
+    if (!best) return this.fail(reason);
+    const fit = best, quad = fit.corners;
+    this.lastQuality = fit.quality;
 
     this.lastReason = '';
-    return { corners: quad.map(p => ({ x: p.x / s, y: p.y / s })), quality: Math.min(1, filled / qa) };
+    return {
+      corners: quad.map((p, i) => ({ x: p.x / s, y: p.y / s, vis: fit.visible[i], ok: fit.computed[i] })),
+      visible: fit.visible.slice(), computed: fit.computed.slice(),
+      quality: this.lastQuality || 0.8,
+    };
   }
 
   fail(reason) { this.lastReason = reason; return null; }
@@ -202,51 +236,6 @@ function maxAreaQuad(hull) {
   return ids.map(i => ({ x: hull[i].x, y: hull[i].y }));
 }
 
-// Уточнение: подгоняем прямую к краевым точкам каждой стороны и пересекаем.
-function refineQuad(quad, pts) {
-  const lines = [];
-  for (let k = 0; k < 4; k++) {
-    const a = quad[k], b = quad[(k + 1) % 4];
-    let line = fitSide(a, b, pts, 4.0);
-    for (const tol of [3.0, 2.0, 1.6]) if (line) line = fitSide(a, b, pts, tol, line) || line;
-    if (!line) line = { p: a, d: sub(b, a) };
-    lines.push(line);
-  }
-  const out = [];
-  for (let k = 0; k < 4; k++) {
-    const L1 = lines[(k + 3) % 4], L2 = lines[k];
-    const den = cross(L1.d, L2.d);
-    if (Math.abs(den) < 1e-9) return null;
-    const t = cross(sub(L2.p, L1.p), L2.d) / den;
-    out.push({ x: L1.p.x + L1.d.x * t, y: L1.p.y + L1.d.y * t });
-  }
-  return out;
-}
-
-function fitSide(a, b, pts, tol, ref) {
-  const lp = ref ? ref.p : a;
-  const ld = ref ? ref.d : sub(b, a);
-  const L = Math.hypot(ld.x, ld.y) || 1;
-  const ux = ld.x / L, uy = ld.y / L;
-  const ab = sub(b, a), abL2 = ab.x * ab.x + ab.y * ab.y || 1;
-  let sx = 0, sy = 0, c = 0;
-  const sel = [];
-  for (const p of pts) {
-    const t = ((p.x - a.x) * ab.x + (p.y - a.y) * ab.y) / abL2;
-    if (t < 0.08 || t > 0.92) continue;
-    const dpx = p.x - lp.x, dpy = p.y - lp.y;
-    const d = Math.abs(dpx * uy - dpy * ux);
-    if (d > tol) continue;
-    sel.push(p); sx += p.x; sy += p.y; c++;
-  }
-  if (c < 8) return null;
-  const mx = sx / c, my = sy / c;
-  let xx = 0, xy = 0, yy = 0;
-  for (const p of sel) { const dx = p.x - mx, dy = p.y - my; xx += dx * dx; xy += dx * dy; yy += dy * dy; }
-  const ang = 0.5 * Math.atan2(2 * xy, xx - yy);
-  return { p: { x: mx, y: my }, d: { x: Math.cos(ang), y: Math.sin(ang) } };
-}
-
 // Площадь области вместе с внутренними дырками: заливаем «снаружи» от краёв кадра.
 function filledArea(pixels, w, h) {
   const m = new Uint8Array(w * h);
@@ -263,4 +252,138 @@ function filledArea(pixels, w, h) {
     if (y > 0) push(i - w); if (y < h - 1) push(i + w);
   }
   return w * h - outside;
+}
+
+function insideQuad(q, x, y, tol) {
+  const sg = polygonArea(q) >= 0 ? 1 : -1;
+  for (let i = 0; i < 4; i++) {
+    const a = q[i], b = q[(i + 1) % 4];
+    const c = sg * ((b.x - a.x) * (y - a.y) - (b.y - a.y) * (x - a.x));
+    const L = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    if (c / L < -tol) return false; // порядок по часовой в координатах экрана (y вниз)
+  }
+  return true;
+}
+
+// Устойчивая подгонка 4 сторон: для каждой стороны RANSAC по краевым точкам рядом с ней.
+// Рука на краю листа даёт «выбросы» — они отбрасываются, прямая находится по открытой части.
+// Угол = пересечение соседних сторон; угол «виден», если обе стороны подходят к нему вплотную.
+function fitQuadRobust(init, pts, bandK) {
+  // приводим к обходу по часовой (на экране), чтобы insideQuad работал
+  let q = init;
+  if (polygonArea(q) < 0) q = [q[0], q[3], q[2], q[1]];
+  const flipped = q !== init;
+  const sides = [];
+  for (let k = 0; k < 4; k++) sides.push(fitSideRobust(q[k], q[(k + 1) % 4], pts, bandK));
+  const corners = [], visible = [], computed = [];
+  for (let k = 0; k < 4; k++) {
+    const A = sides[(k + 3) % 4], B = sides[k];
+    let c = null;
+    if (A && B) {
+      const den = cross(A.d, B.d);
+      if (Math.abs(den) > 0.15) { // стороны не почти параллельны
+        const t = cross(sub(B.p, A.p), B.d) / den;
+        c = { x: A.p.x + A.d.x * t, y: A.p.y + A.d.y * t };
+        if (dist(c, q[k]) > Math.max(12, dist(q[k], q[(k + 2) % 4]) * 0.25)) c = null; // улетело — не верим
+      }
+    }
+    computed.push(!!c);
+    corners.push(c || { x: q[k].x, y: q[k].y });
+    visible.push(!!c && A.endCov >= 0.45 && B.startCov >= 0.45);
+  }
+  let res = { corners, visible, computed, sides };
+  if (flipped) {
+    const m = [0, 3, 2, 1];
+    res = { corners: m.map(i => corners[i]), visible: m.map(i => visible[i]), computed: m.map(i => computed[i]), sides };
+  }
+  res.okSides = sides.filter(Boolean).length;
+  res.nVis = res.visible.filter(Boolean).length;
+  res.nComputed = res.computed.filter(Boolean).length;
+  return res;
+}
+
+function fitSideRobust(a, b, pts, bandK) {
+  const ab = sub(b, a), L = Math.hypot(ab.x, ab.y);
+  if (L < 8) return null;
+  const ux = ab.x / L, uy = ab.y / L;
+  const band = Math.max(4, L * bandK);
+  // Обход по часовой: снаружи листа знаковое расстояние s > 0.
+  // Наружу полосу расширяем до самой дальней краевой точки в пролёте стороны:
+  // если угол срезан рукой, начальная сторона может пройти по хорде между ладонями,
+  // а настоящий край листа виден дальше — его нельзя потерять.
+  let outBand = band;
+  const span = [];
+  for (const p of pts) {
+    const dx = p.x - a.x, dy = p.y - a.y;
+    const t = (dx * ux + dy * uy) / L, sd = dx * uy - dy * ux;
+    if (t < 0.08 || t > 0.92 || sd < -L * 0.5) continue;
+    span.push(p);
+    if (sd > outBand) outBand = sd;
+  }
+  outBand = Math.min(outBand + 3, Math.max(band, L * 0.35));
+  const cand = [];
+  for (const p of pts) {
+    const dx = p.x - a.x, dy = p.y - a.y;
+    const t = (dx * ux + dy * uy) / L, sd = dx * uy - dy * ux;
+    if (t < -0.12 || t > 1.12) continue;
+    if (sd < -band || sd > outBand) continue;
+    cand.push(p);
+  }
+  if (cand.length < 10) return null;
+  // RANSAC (детерминированный генератор — без «дрожания» между кадрами).
+  // Край листа — «опорная» прямая: снаружи от него листа нет. Прямая, за которой
+  // остаётся кусок листа (например, хорда по краям ладоней), штрафуется.
+  let seed = 12345;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; };
+  let best = null, bestN = 0;
+  const thr = 1.3;
+  for (let it = 0; it < 90; it++) {
+    const p = cand[Math.floor(rnd() * cand.length)], q2 = cand[Math.floor(rnd() * cand.length)];
+    const dx = q2.x - p.x, dy = q2.y - p.y, dl = Math.hypot(dx, dy);
+    if (dl < L * 0.15) continue;
+    let nx = -dy / dl, ny = dx / dl;
+    if (Math.abs(nx * ux + ny * uy) > 0.35) continue; // направление сильно отличается от стороны
+    if (nx * uy - ny * ux < 0) { nx = -nx; ny = -ny; } // нормаль — наружу
+    let c = 0, out = 0;
+    for (const r of cand) if (Math.abs((r.x - p.x) * nx + (r.y - p.y) * ny) < thr) c++;
+    for (const r of span) if ((r.x - p.x) * nx + (r.y - p.y) * ny > 2.5) out++;
+    const sc = c - 2 * out;
+    if (sc > bestN) { bestN = sc; best = { p, nx, ny }; }
+  }
+  if (!best || bestN < 8) return null;
+  let line = lsq(cand.filter(r => Math.abs((r.x - best.p.x) * best.nx + (r.y - best.p.y) * best.ny) < thr));
+  for (let rep = 0; rep < 2 && line; rep++) {
+    const nx = -line.d.y, ny = line.d.x;
+    const inl = cand.filter(r => Math.abs((r.x - line.p.x) * nx + (r.y - line.p.y) * ny) < 1.1);
+    if (inl.length < 8) break;
+    line = lsq(inl);
+  }
+  if (!line) return null;
+  // покрытие стороны найденными точками (по 40 корзинам) и у каждого конца
+  const nx = -line.d.y, ny = line.d.x;
+  const bins = new Uint8Array(40);
+  let n = 0;
+  for (const r of cand) {
+    if (Math.abs((r.x - line.p.x) * nx + (r.y - line.p.y) * ny) > 1.3) continue;
+    const t = ((r.x - a.x) * ux + (r.y - a.y) * uy) / L;
+    if (t < 0 || t >= 1) continue;
+    bins[Math.min(39, Math.floor(t * 40))] = 1; n++;
+  }
+  let cov = 0, s0 = 0, s1 = 0;
+  for (let i = 0; i < 40; i++) { cov += bins[i]; if (i < 6) s0 += bins[i]; if (i >= 34) s1 += bins[i]; }
+  cov /= 40;
+  if (cov < 0.2 || n < 10) return null;
+  if (line.d.x * ux + line.d.y * uy < 0) line.d = { x: -line.d.x, y: -line.d.y };
+  return { p: line.p, d: line.d, cov, startCov: s0 / 6, endCov: s1 / 6, n };
+}
+
+function lsq(sel) {
+  if (sel.length < 2) return null;
+  let mx = 0, my = 0;
+  for (const p of sel) { mx += p.x; my += p.y; }
+  mx /= sel.length; my /= sel.length;
+  let xx = 0, xy = 0, yy = 0;
+  for (const p of sel) { const dx = p.x - mx, dy = p.y - my; xx += dx * dx; xy += dx * dy; yy += dy * dy; }
+  const ang = 0.5 * Math.atan2(2 * xy, xx - yy);
+  return { p: { x: mx, y: my }, d: { x: Math.cos(ang), y: Math.sin(ang) } };
 }

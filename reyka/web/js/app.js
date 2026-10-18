@@ -2,14 +2,14 @@
 import * as G from './geom.js';
 import { PaperTracker } from './tracker.js';
 import { startCamera, createDemoStream, listCameras, trackCaps, setTorch, setZoom } from './camera.js';
-import { TYPES, TYPE_ORDER, Pen, getProp, defaultProps } from './guides.js';
+import { TYPES, TYPE_ORDER, Pen, getProp, defaultProps, planeH, viewHandles, rotHandleIndex, toFigure, spinFromPoint, canRotate } from './guides.js';
 import { KalkaLayer, imageToCanvas, edgesCanvas, tonesCanvas, grayCanvas } from './tracing.js';
 import * as store from './store.js';
-import { estimateRect, cameraTilt, assumedFocal, manualCorners, fitFocal } from './perspective.js';
+import { estimateRect, cameraTilt, assumedFocal, manualCorners, fitFocal, completeRectangle, rigidPredict, planeNormal } from './perspective.js';
 import { detectSegments, findVanishingPoints } from './vanish.js';
 import * as scan from './scan.js';
 
-const VERSION = '1.1';
+const VERSION = '1.2';
 const $ = (id) => document.getElementById(id);
 const video = $('video'), glCanvas = $('gl'), overlay = $('overlay');
 const octx = overlay.getContext('2d');
@@ -219,6 +219,7 @@ function setTrack(state, reason = '') {
     locked: 'Лист закреплён',
     lost: 'Лист потерян',
     calib: 'Углы листа: перетащи',
+    occl: 'Лист ✋ достраиваю',
   };
   $('statusText').textContent = map[state] || state;
   if (R.panel === 'sheet') refreshPanel();
@@ -229,13 +230,17 @@ function trackStep(now) {
   if (!S.paper.tracking) { setTrack(S.corners ? 'locked' : 'none'); return; }
   if (now - R.lastDetect < 85) return;
   R.lastDetect = now;
-  const res = tracker.detect(video, R.vw, R.vh);
+  const prior = S.corners && !R.forceCalib ? S.corners : null;
+  const res0 = tracker.detect(video, R.vw, R.vh, prior);
+  const res = res0 && completeCorners(res0, prior);
   if (!res) {
     R.lostFrames++;
     if (R.lostFrames > 8) setTrack(S.corners ? 'lost' : 'none', tracker.lastReason);
     return;
   }
   let c = res.corners;
+  R.occluded = res.how !== 'all';
+  if (!R.occluded) learnCamera(c);
   if (!S.corners || R.forceCalib) {
     c = orderCornersScreen(c);
     updateLandscape(c);
@@ -264,7 +269,60 @@ function trackStep(now) {
   S.cornersFor = { w: R.vw, h: R.vh };
   persist();
   R.lostFrames = 0;
-  setTrack('tracking');
+  setTrack(R.occluded ? 'occl' : 'tracking');
+}
+
+// ---------- Закрытый угол: достраиваем ----------
+// Порядок: (1) телефон неподвижен → лист мог только сдвинуться/повернуться по столу,
+// подгоняем это движение по видимым углам (хватает двух); (2) пересечение видимых
+// частей сторон; (3) по трём углам с честной перспективой; (4) иначе лист не трогаем.
+function paperRect() { const [pw, ph] = paperDims(); return [{ x: 0, y: 0 }, { x: pw, y: 0 }, { x: pw, y: ph }, { x: 0, y: ph }]; }
+function completeCorners(res, prev) {
+  let c = res.corners;
+  const vis = c.map(p => !!p.vis), nv = vis.filter(Boolean).length;
+  if (nv === 4) return { corners: c, how: 'all' };
+  const diag = Math.hypot(R.vw, R.vh);
+  if (prev) {
+    // порядок углов приводим к прошлому, флажки едут вместе с углами
+    c = matchOrder(c, prev);
+    const v2 = c.map(p => !!p.vis), idx = [0, 1, 2, 3].filter(i => v2[i]);
+    if (idx.length >= 2) {
+      const H = G.homography(paperRect(), prev);
+      if (H) {
+        const r = rigidPredict(H, paperRect(), c, idx);
+        if (r.rms < Math.max(2.5, diag * 0.004)) return { corners: c.map((p, i) => (v2[i] ? p : { ...r.pred[i], vis: false, ok: true })), how: 'rigid' };
+      }
+    }
+  }
+  const ok = c.map(p => !!p.ok), nok = ok.filter(Boolean).length;
+  if (nok === 4) return { corners: c, how: 'lines' };
+  if (nok === 3) {
+    const k = ok.indexOf(false), [pw, ph] = paperDims();
+    const A = c[(k + 2) % 4], B = c[(k + 1) % 4], D = c[(k + 3) % 4];
+    let lenAB = (k + 1) % 2 === 0 ? pw : ph, lenAD = (k + 2) % 2 === 0 ? pw : ph;
+    if (!prev) { // порядок углов ещё неизвестен: длинная сторона листа — там, где длиннее в кадре
+      const lo = Math.min(pw, ph), hi = Math.max(pw, ph);
+      if (G.dist(A, B) >= G.dist(A, D)) { lenAB = hi; lenAD = lo; } else { lenAB = lo; lenAD = hi; }
+    }
+    const f = R.fFit || assumedFocal(R.vw, R.vh);
+    const C = completeRectangle(A, B, D, lenAB / lenAD, f, R.vw, R.vh, R.planeN || [0, 0, 1], prev ? prev[k] : null);
+    const out = c.slice(); out[k] = { x: C.x, y: C.y, vis: false, ok: true };
+    return { corners: out, how: 'persp3' };
+  }
+  if (prev) return { corners: prev.map(p => ({ ...p })), how: 'hold' };
+  return null;
+}
+
+// Пока все 4 угла видны — запоминаем фокус камеры и наклон плоскости стола (для достройки).
+function learnCamera(c) {
+  const now = performance.now();
+  if (now - (R.learnT || 0) < 1000) return;
+  R.learnT = now;
+  const [pw, ph] = paperDims();
+  const fit = fitFocal(c, R.vw, R.vh, pw / ph);
+  R.fFit = R.fFit ? R.fFit * 0.7 + fit.f * 0.3 : fit.f;
+  const H = G.homography(paperRect(), c);
+  if (H) R.planeN = planeNormal(H, R.fFit, R.vw, R.vh);
 }
 
 // ---------- Калька: геометрия ----------
@@ -427,14 +485,19 @@ function drawHandle(p, color, kind = 'pt') {
   octx.beginPath();
   if (kind === 'move') { roundRect(p.x - 12, p.y - 12, 24, 24, 6); } else octx.arc(p.x, p.y, 12, 0, Math.PI * 2);
   octx.fill(); octx.stroke();
+  if (kind === 'rot') { // круговая стрелка
+    octx.strokeStyle = color; octx.lineWidth = 2.2;
+    octx.beginPath(); octx.arc(p.x, p.y, 7, -2.6, 1.6); octx.stroke();
+    const ax = p.x + 7 * Math.cos(1.6), ay = p.y + 7 * Math.sin(1.6);
+    octx.fillStyle = color; octx.beginPath(); octx.moveTo(ax - 4.5, ay + 1); octx.lineTo(ax + 2, ay - 4); octx.lineTo(ax + 2.5, ay + 3.5); octx.closePath(); octx.fill();
+    return;
+  }
   octx.fillStyle = color;
   octx.beginPath(); octx.arc(p.x, p.y, 4.5, 0, Math.PI * 2); octx.fill();
 }
 
-function guideHandles(g) {
-  const T = TYPES[g.type];
-  return T.handles(g);
-}
+// Ручки так, как они видны (у повёрнутой/наклонённой фигуры — уже повёрнуты) + ручка поворота.
+function guideHandles(g) { return viewHandles(g); }
 function isMoveHandle(g, i) {
   return ((g.type === 'circle' || g.type === 'ellipse' || g.type === 'polygon' || g.type === 'grid' || g.type === 'radial') && i === 0) ||
     (g.type === 'rect' && i === 3) || (g.type === 'pellipse' && i === 4);
@@ -471,7 +534,9 @@ function render() {
   for (const g of S.guides) {
     if (g.hidden) continue;
     pen.guideId = g.id;
+    pen.L = planeH(g);
     try { TYPES[g.type].draw(pen, g, ctx); } catch (e) { console.warn(e); }
+    pen.L = null;
   }
   // Зеркальные копии от осей симметрии
   for (const sym of S.guides) {
@@ -481,7 +546,9 @@ function render() {
       if (g === sym || g.type === 'symmetry' || g.hidden) continue;
       pen.guideId = g.id;
       const before = pen.paths.length;
-      TYPES[g.type].draw(pen, g, { ...ctx, labels: false });
+      pen.L = planeH(g);
+      try { TYPES[g.type].draw(pen, g, { ...ctx, labels: false }); } catch (e) { console.warn(e); }
+      pen.L = null;
       for (let i = before; i < pen.paths.length; i++) { pen.paths[i].ghostOf = g.id; pen.paths[i].id = null; pen.paths[i].color = colorOf(g); }
     }
     pen.mirror = null; pen.layerOverride = null;
@@ -527,7 +594,15 @@ function render() {
 
   // Ручки выбранной направляющей
   const sel = S.guides.find(g => g.id === R.selected);
-  if (sel) guideHandles(sel).forEach((p, i) => drawHandle(toScreen(p), colorOf(sel), isMoveHandle(sel, i) ? 'move' : 'pt'));
+  if (sel) {
+    const hs = guideHandles(sel), ri = rotHandleIndex(sel);
+    if (ri >= 0) { // пунктир от центра к ручке поворота
+      const c = toScreen(hs[TYPES[sel.type].handles(sel).findIndex((_, i) => isMoveHandle(sel, i))] || hs[0]), r = toScreen(hs[ri]);
+      octx.strokeStyle = 'rgba(255,255,255,0.6)'; octx.lineWidth = 1.2; octx.setLineDash([4, 4]);
+      octx.beginPath(); octx.moveTo(c.x, c.y); octx.lineTo(r.x, r.y); octx.stroke(); octx.setLineDash([]);
+    }
+    hs.forEach((p, i) => drawHandle(toScreen(p), colorOf(sel), i === ri ? 'rot' : isMoveHandle(sel, i) ? 'move' : 'pt'));
+  }
 
   // Ручки кальки
   if (R.kalkaEdit && k.has) {
@@ -576,6 +651,8 @@ function frame(now) {
     frame._t = now;
     const lab = document.getElementById('tiltVal');
     if (lab) lab.textContent = tiltText();
+    const sl = document.getElementById('sensorVal');
+    if (sl) sl.textContent = sensorText();
   }
 }
 
@@ -675,13 +752,14 @@ function snapPoint(p, g, i) {
   ];
   for (const o of S.guides) {
     if (o.hidden) continue;
-    guideHandles(o).forEach((h, j) => { if (!(o.id === g.id && j === i)) cands.push(h); });
+    const ri = rotHandleIndex(o);
+    guideHandles(o).forEach((h, j) => { if (j !== ri && !(o.id === g.id && j === i)) cands.push(h); });
   }
   let best = null, bd = 16;
   for (const c of cands) { const d = G.dist(toScreen(c), sp); if (d < bd) { bd = d; best = c; } }
   if (best) { R.snapPt = toScreen(best); return { x: best.x, y: best.y }; }
   const T = TYPES[g.type];
-  if (T.dirPair && T.dirPair.includes(i)) {
+  if (T.dirPair && T.dirPair.includes(i) && !planeH(g)) {
     const other = guideHandles(g)[T.dirPair[0] === i ? T.dirPair[1] : T.dirPair[0]];
     const d = G.sub(p, other), L = G.len(d);
     let a = Math.atan2(d.y, d.x) * 180 / Math.PI;
@@ -761,8 +839,18 @@ overlay.addEventListener('pointermove', (e) => {
     if (t.kind === 'body') R.selected = g.id;
     if (t.kind === 'handle') {
       let q = toPaper({ x: p.x + D.offset.x, y: p.y + D.offset.y });
-      q = snapPoint(q, g, t.i);
-      TYPES[g.type].drag(g, t.i, q);
+      if (t.i === rotHandleIndex(g)) {
+        // ручка поворота: угол вокруг центра (с магнитом — по 15°)
+        let a = spinFromPoint(g, q);
+        R.snapPt = null;
+        if (S.settings.magnet) { const ra = Math.round(a / 15) * 15; if (Math.abs(a - ra) < 4) a = ra; }
+        g.props = g.props || {};
+        g.props.spin = Math.round(a);
+      } else {
+        q = snapPoint(q, g, t.i);
+        if (!isMoveHandle(g, t.i)) q = toFigure(g, q); // центр стоит на месте, остальное — в плоскости фигуры
+        TYPES[g.type].drag(g, t.i, q);
+      }
     } else {
       const q = toPaper(p), d = G.sub(q, D.paper0);
       g.pts = D.pts0.map(x => G.add(x, d));
@@ -868,7 +956,7 @@ function centerGuide(id) {
   const g = S.guides.find(x => x.id === id);
   if (!g) return;
   pushUndo();
-  const hs = guideHandles(g);
+  const hs = TYPES[g.type].handles(g);
   const c = hs.reduce((a, p) => ({ x: a.x + p.x / hs.length, y: a.y + p.y / hs.length }), { x: 0, y: 0 });
   const d = { x: R.pw / 2 - c.x, y: R.ph / 2 - c.y };
   g.pts = g.pts.map(p => G.add(p, d));
@@ -990,8 +1078,14 @@ function panelGuide() {
   panelTitle.textContent = `${T.icon} ${T.name}`;
   panelBody.append(el('p', { class: 'note' }, T.desc));
   panelBody.append(swatchRow('Цвет', g.color, (c) => { g.color = c; persist(); }, true));
+  let rotTitle = false;
   for (const p of T.props) {
     if (p.show && !p.show(g)) continue;
+    if (p.rot && !rotTitle) {
+      rotTitle = true;
+      panelBody.append(el('div', { class: 'section-title' }, 'Поворот и перспектива'));
+      panelBody.append(el('p', { class: 'note' }, 'Вместе с фигурой поворачиваются и все её внутренние линии. Крутить можно и пальцем — за ручку со стрелкой. Наклон кладёт фигуру «на плоскость» под углом, например колесо или тарелку в перспективе.'));
+    }
     const v = getProp(g, p.key);
     const set = (val) => { pushUndo(); g.props[p.key] = val; persist(); if (T.props.some(q => q.show)) refreshPanel(); };
     if (p.type === 'toggle') panelBody.append(toggleRow(p.label, v, set));
@@ -1001,6 +1095,7 @@ function panelGuide() {
   panelBody.append(el('div', { class: 'btns' },
     btn('⧉ Копия', () => { duplicateGuide(g.id); refreshPanel(); }),
     btn('◎ В центр', () => centerGuide(g.id)),
+    ...(canRotate(g) ? [btn('↺ Без поворота', () => { pushUndo(); g.props = g.props || {}; g.props.spin = 0; g.props.tiltX = 0; g.props.tiltY = 0; persist(); refreshPanel(); })] : []),
     btn(g.hidden ? '👁 Показать' : '🙈 Скрыть', () => { g.hidden = !g.hidden; persist(); refreshPanel(); }),
     btn('🗑 Удалить', () => { removeGuide(g.id); closePanel(); }, 'danger')));
   panelBody.append(el('p', { class: 'note' }, 'Совет: включи 👁 «чистый экран» сверху, чтобы панели не мешали рисовать.'));
@@ -1079,6 +1174,7 @@ function panelSheet() {
   panelTitle.textContent = '📄 Лист';
   const st = {
     tracking: '✅ Слежу за листом — направляющие двигаются вместе с ним.',
+    occl: '✋ Часть листа закрыта рукой — закрытые углы достраиваю по видимым (лист при этом не «прыгает»).',
     locked: '🔒 Лист закреплён: углы не меняются (удобно, если лист приклеен).',
     lost: '⚠️ Лист потерян' + (R.trackReason ? `: ${R.trackReason}` : '') + '. Направляющие остались на последнем месте.',
     none: '🔍 Лист ещё не найден' + (R.trackReason ? `: ${R.trackReason}` : '') + '.',
@@ -1105,12 +1201,17 @@ function panelSheet() {
 
   panelBody.append(el('div', { class: 'section-title' }, 'Камера под углом'));
   panelBody.append(el('div', { class: 'status-line', id: 'tiltVal' }, tiltText()));
+  panelBody.append(el('div', { class: 'status-line', id: 'sensorVal' }, sensorText()));
   panelBody.append(el('p', { class: 'note' }, 'Ставить телефон строго сверху не обязательно: по 4 углам листа программа сама считает перспективу, и направляющие с калькой ложатся на лист с правильным искажением. ',
     'Если лист не находится, задай наклон вручную, а потом при желании поправь углы.'));
   panelBody.append(toggleRow('Задать наклон вручную', S.manual.on, (v) => { S.manual.on = v; if (v) { S.paper.tracking = false; R.mode = 'normal'; applyManual(); } persist(); refreshPanel(); }));
   if (S.manual.on) {
     const m = S.manual;
     panelBody.append(rangeRow('Наклон камеры', 0, 75, 1, m.tilt, (v) => { m.tilt = v; applyManual(); }, (v) => v + '°'));
+    panelBody.append(el('div', { class: 'btns' }, btn('📱 Взять наклон с датчика (если лист лежит на ровном столе)', () => {
+      if (R.sensorTilt == null) { toast('Датчик наклона недоступен'); return; }
+      m.tilt = Math.max(0, Math.min(75, Math.round(R.sensorTilt))); applyManual(); persist(); refreshPanel();
+    })));
     panelBody.append(segRow('Дальний край листа', [[0, '↑ Сверху'], [90, '→ Справа'], [180, '↓ Снизу'], [270, '← Слева']], m.far, (v) => { m.far = +v; applyManual(); }));
     panelBody.append(rangeRow('Поворот листа', -45, 45, 1, m.yaw, (v) => { m.yaw = v; applyManual(); }, (v) => v + '°'));
     panelBody.append(rangeRow('Размер на экране', 0.4, 1.6, 0.02, m.size, (v) => { m.size = v; applyManual(); }, (v) => Math.round(v * 100) + '%'));
@@ -1119,6 +1220,26 @@ function panelSheet() {
   panelBody.append(el('p', { class: 'note' },
     'Размер листа нужен, чтобы сантиметры и круги были настоящими. ',
     el('b', {}, 'Для лучшего распознавания: '), 'тёмный стол, ровный свет без бликов, весь лист в кадре. Если лист приклеен к столу — выключи слежение, так стабильнее.'));
+}
+
+// ---------- Датчик наклона телефона (акселерометр) ----------
+// Гравитация показывает, насколько камера отклонена от вертикали «вниз». Это не заменяет
+// расчёт по листу (стол может быть наклонным, а лист — лежать на мольберте), поэтому
+// используется как подсказка и для ручного режима.
+R.sensorTilt = null;
+if (typeof window !== 'undefined' && 'DeviceMotionEvent' in window) {
+  window.addEventListener('devicemotion', (e) => {
+    const a = e.accelerationIncludingGravity;
+    if (!a || a.x == null || a.z == null) return;
+    const n = Math.hypot(a.x, a.y, a.z);
+    if (n < 5 || n > 15) return; // телефон трясут — не верим
+    const t = Math.acos(Math.min(1, Math.abs(a.z) / n)) * 180 / Math.PI;
+    R.sensorTilt = R.sensorTilt == null ? t : R.sensorTilt * 0.85 + t * 0.15;
+  });
+}
+function sensorText() {
+  if (R.sensorTilt == null) return '📱 Датчик телефона: нет данных (на этом устройстве датчик недоступен)';
+  return `📱 Датчик телефона: камера отклонена от вертикали на ${Math.round(R.sensorTilt)}°`;
 }
 
 function tiltText() {
@@ -1187,6 +1308,7 @@ function panelScan() {
   if (!S.corners) panelBody.append(el('div', { class: 'status-line' }, '⚠️ Сначала нужно найти лист (📄 Лист).'));
   panelBody.append(el('p', { class: 'note' }, el('b', {}, 'Перед снимком: '), 'убери руки и карандаш с листа, свет ровный, без бликов. Камера под углом — можно, но сверху чётче.'));
   panelBody.append(toggleRow('Таймер 3 с (успеть убрать руки)', sc.timer !== false, (v) => { sc.timer = v; persist(); }));
+  panelBody.append(toggleRow('Фото в полном разрешении (чётче; если камера умеет)', sc.hires !== false, (v) => { sc.hires = v; persist(); }));
   panelBody.append(rangeRow('Цветов краски', 0, 12, 1, sc.colors, (v) => { sc.colors = v; persist(); }, (v) => v ? v : 'только линии'));
   panelBody.append(el('div', { class: 'btns' }, btn('📥 Оцифровать', () => runScan(), 'primary'),
     R.scan ? btn('Открыть последний', () => openScanView()) : null));
@@ -1202,15 +1324,22 @@ async function runScan() {
     if (S.scan.timer !== false) for (let i = 3; i > 0; i--) { toast(`Убери руки… ${i}`, 1100); if (R.cam && R.cam.setHand) R.cam.setHand(false); await sleep(1000); }
     if (R.cam && R.cam.setHand) { R.cam.setHand(false); await sleep(600); }
     toast('Снимаю…', 4000);
-    const frame = await scan.captureFrames(video, R.vw, R.vh, 6, 60);
-    if (R.cam && R.cam.setHand) R.cam.setHand(true);
     const [pw, ph] = paperDims();
-    const c = getCorners();
+    // 1) пробуем настоящее фото в полном разрешении (в 2–4 раза больше пикселей, чем видео)
+    let frame = null, c = null, hires = false;
+    if (S.scan.hires !== false) {
+      const ph0 = await takeFullPhoto();
+      if (ph0) { const r = locateInPhoto(ph0, getCorners()); if (r) { frame = r.frame; c = r.corners; hires = true; } }
+    }
+    // 2) иначе — несколько видеокадров, усреднённых
+    if (!frame) { frame = await scan.captureFrames(video, R.vw, R.vh, 6, 60); c = getCorners(); }
+    if (R.cam && R.cam.setHand) R.cam.setHand(true);
     const H = G.homography([{ x: 0, y: 0 }, { x: pw, y: 0 }, { x: pw, y: ph }, { x: 0, y: ph }], c);
     if (!H) throw new Error('Нет листа');
     const area = Math.abs(G.polygonArea ? G.polygonArea(c) : shoelace(c));
     const density = Math.sqrt(area / (pw * ph));
-    const ppm = G.clamp(Math.round(density * 1.3 * 2) / 2, 3, 6);
+    const ppm = G.clamp(Math.round(density * 1.15 * 2) / 2, 3, hires ? 8 : 6);
+    R.scanInfo = hires ? `фото ${frame.w}×${frame.h}` : 'кадры видео';
     toast('Выпрямляю лист…', 4000); await sleep(20);
     const rect = scan.rectify(frame, H, pw, ph, ppm);
     toast('Убираю тени и фон…', 4000); await sleep(20);
@@ -1221,6 +1350,49 @@ async function runScan() {
     toast('Готово ✓ Можно подправить настройки и сохранить', 3000);
   } catch (e) { console.error(e); toast('Не получилось: ' + (e.message || e)); }
   finally { R.scanBusy = false; if (R.cam && R.cam.setHand) R.cam.setHand(true); }
+}
+
+// Полноразмерное фото через ImageCapture (есть в Chrome/WebView на Android).
+async function takeFullPhoto() {
+  const track = R.cam && R.cam.track;
+  if (!track || R.cam.demo || typeof ImageCapture === 'undefined' || track.readyState !== 'live') return null;
+  try {
+    const ic = new ImageCapture(track);
+    const opts = {};
+    try { const caps = await ic.getPhotoCapabilities(); if (caps && caps.imageWidth && caps.imageWidth.max) opts.imageWidth = Math.min(caps.imageWidth.max, 4096); } catch { /* без настроек */ }
+    const blob = await Promise.race([ic.takePhoto(opts), sleep(7000).then(() => null)]);
+    if (!blob) return null;
+    const bmp = await createImageBitmap(blob);
+    if (Math.max(bmp.width, bmp.height) < Math.max(R.vw, R.vh) * 1.25) { bmp.close && bmp.close(); return null; } // не больше видео — смысла нет
+    return bmp;
+  } catch (e) { console.warn('takePhoto:', e); return null; }
+}
+
+// Находим лист на фото заново (поворот и кадрирование фото могут отличаться от видео)
+// и сопоставляем углы с углами из видео, чтобы верх рисунка остался верхом.
+function locateInPhoto(bmp, vc) {
+  const W = bmp.width, Hh = bmp.height;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = Hh;
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  g.drawImage(bmp, 0, 0); bmp.close && bmp.close();
+  const det = new PaperTracker({ longSide: 900 }).detect(cv, W, Hh, null);
+  if (!det || det.computed.filter(Boolean).length < 4) return null;
+  const pc = det.corners.map(p => ({ x: p.x, y: p.y }));
+  let best = null, bestE = Infinity;
+  for (const rot of [0, 1, 2, 3]) for (const mode of ['min', 'max']) {
+    const rw = rot % 2 ? R.vh : R.vw, rh = rot % 2 ? R.vw : R.vh;
+    const sc = mode === 'min' ? Math.min(W / rw, Hh / rh) : Math.max(W / rw, Hh / rh);
+    const ox = (W - rw * sc) / 2, oy = (Hh - rh * sc) / 2;
+    const map = (p) => { let x = p.x, y = p.y, cw = R.vw, ch = R.vh; for (let k = 0; k < rot; k++) { const t = x; x = ch - y; y = t; const tw = cw; cw = ch; ch = tw; } return { x: ox + x * sc, y: oy + y * sc }; }; // поворот на 90°·rot по часовой
+    const mc = vc.map(map);
+    for (let sh = 0; sh < 4; sh++) for (const dir of [1, -1]) {
+      let e = 0; const ord = [];
+      for (let i = 0; i < 4; i++) { const q = pc[((sh + dir * i) % 4 + 4) % 4]; ord.push(q); e = Math.max(e, Math.hypot(q.x - mc[i].x, q.y - mc[i].y)); }
+      if (e < bestE) { bestE = e; best = ord; }
+    }
+  }
+  if (!best || bestE > Math.hypot(W, Hh) * 0.15) return null;
+  return { frame: { data: g.getImageData(0, 0, W, Hh).data, w: W, h: Hh }, corners: best };
 }
 
 function shoelace(c) { let a = 0; for (let i = 0; i < c.length; i++) { const p = c[i], q = c[(i + 1) % c.length]; a += p.x * q.y - q.x * p.y; } return a / 2; }
@@ -1257,7 +1429,7 @@ function openScanView() {
     const c = scanCanvasFor(d.tab, d.tab === 'photo' ? 1 : Math.min(2, 1400 / Math.max(d.vec.w, d.vec.h)) * 1);
     img.src = c.toDataURL('image/png');
     const nC = d.vec.colors.length, kb = Math.round(scan.toSVG(d.vec, d.pw, d.ph).length / 1024);
-    info.textContent = `${d.pw}×${d.ph} мм · цветов: ${nC} · линии ✓ · SVG ≈ ${kb} КБ`;
+    info.textContent = `${d.pw}×${d.ph} мм · ${d.ppm} пикс/мм (${R.scanInfo || "кадры видео"}) · цветов: ${nC} · SVG ≈ ${kb} КБ`;
   };
   let t = 0;
   const redo = () => { clearTimeout(t); t = setTimeout(async () => { await processScan(); showPreview(); }, 250); };
@@ -1375,4 +1547,4 @@ if ('serviceWorker' in navigator && !IS_APP && location.protocol === 'https:') {
 }
 
 // Для отладки/тестов
-window.__reyka = { S: () => S, R, addGuide, startSource, openPanel, setClean, measureTilt, findKalkaPerspective, runScan: () => runScan() };
+window.__reyka = { S: () => S, R, addGuide, completeCorners, tracker, locateInPhoto, startSource, openPanel, setClean, measureTilt, findKalkaPerspective, runScan: () => runScan() };

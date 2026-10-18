@@ -99,3 +99,101 @@ export function fitFocal(c, vw, vh, target) {
   }
   return { f: best, cost: bc };
 }
+
+// ---------- Достройка закрытого угла ----------
+
+// По трём углам прямоугольника (A — между B и D) и известным пропорциям |AB|/|AD|
+// восстанавливаем 4-й угол с честной перспективой: лучи камеры → точки в 3D,
+// условия «угол 90°» и «пропорции сторон» → 4-й угол C = B + D − A → проекция.
+// nPrior — ожидаемая нормаль плоскости листа в координатах камеры (из прошлых кадров или датчика);
+// задача по трём углам допускает до 4 решений, нормаль выбирает правильное.
+export function completeRectangle(A, B, D, ratio, f, vw, vh, nPrior = [0, 0, 1], hint = null) {
+  const u0 = vw / 2, v0 = vh / 2;
+  const ray = (p) => [(p.x - u0) / f, (p.y - v0) / f, 1];
+  const a = ray(A), b = ray(B), d = ray(D);
+  const aa = dot3(a, a), ab = dot3(a, b), ad = dot3(a, d), bd = dot3(b, d), bb = dot3(b, b), dd = dot3(d, d);
+  // Глубина A = 1. Условие 90°: (sb·b − a)·(sd·d − a) = 0 → sd выражается через sb.
+  const sdOf = (sb) => { const den = sb * bd - ad; return Math.abs(den) < 1e-12 ? NaN : (sb * ab - aa) / den; };
+  // Условие пропорций: |AB|² − r²|AD|² = 0 — одно уравнение по sb.
+  const g = (sb) => { const sd = sdOf(sb); if (!(sd > 0.05)) return NaN; return (sb * sb * bb - 2 * sb * ab + aa) - ratio * ratio * (sd * sd * dd - 2 * sd * ad + aa); };
+  const roots = [];
+  let prevS = null, prevG = NaN;
+  for (let i = 0; i <= 400; i++) {
+    const sb = 0.1 * Math.pow(100, i / 400), gv = g(sb);
+    if (isFinite(gv) && isFinite(prevG) && Math.sign(gv) !== Math.sign(prevG)) {
+      let lo = prevS, hi = sb, glo = prevG;
+      for (let k = 0; k < 60; k++) { const m = (lo + hi) / 2, gm = g(m); if (!isFinite(gm)) break; if (Math.sign(gm) === Math.sign(glo)) { lo = m; glo = gm; } else hi = m; }
+      const r = (lo + hi) / 2, sd = sdOf(r);
+      if (sd > 0.05) roots.push([r, sd]);
+    }
+    prevS = sb; prevG = gv;
+  }
+  if (!roots.length) return { x: B.x + D.x - A.x, y: B.y + D.y - A.y, approx: true }; // параллелограмм
+  // из нескольких решений берём то, где плоскость листа ближе к ожидаемой
+  const normalOf = ([sb, sd]) => {
+    const AB = [sb * b[0] - a[0], sb * b[1] - a[1], sb * b[2] - a[2]], AD = [sd * d[0] - a[0], sd * d[1] - a[1], sd * d[2] - a[2]];
+    const n = cross3(AB, AD), l = Math.hypot(...n) || 1; return n.map(v => v / l);
+  };
+  const np = Math.hypot(...nPrior) || 1;
+  const pointOf = ([sb, sd]) => { const C = [sb * b[0] + sd * d[0] - a[0], sb * b[1] + sd * d[1] - a[1], sb * b[2] + sd * d[2] - a[2]]; return C[2] > 1e-6 ? { x: u0 + f * C[0] / C[2], y: v0 + f * C[1] / C[2] } : null; };
+  const score = (r) => {
+    if (hint) { const q = pointOf(r); return q ? Math.hypot(q.x - hint.x, q.y - hint.y) : Infinity; }
+    return -Math.abs(dot3(normalOf(r), nPrior) / np);
+  };
+  roots.sort((p, q) => score(p) - score(q));
+  const [sb, sd] = roots[0];
+  const C = [sb * b[0] + sd * d[0] - a[0], sb * b[1] + sd * d[1] - a[1], sb * b[2] + sd * d[2] - a[2]];
+  if (C[2] <= 1e-6) return { x: B.x + D.x - A.x, y: B.y + D.y - A.y, approx: true };
+  return { x: u0 + f * C[0] / C[2], y: v0 + f * C[1] / C[2], nRoots: roots.length, normal: normalOf(roots[0]) };
+}
+
+// Телефон в держателе неподвижен, значит лист может только сдвинуться/повернуться по столу:
+// 3 параметра (угол, сдвиг x, y) в миллиметрах листа. Подгоняем их по видимым углам
+// и предсказываем закрытые. Hprev — гомография «мм листа → кадр» для прошлого положения.
+export function rigidPredict(Hprev, paperPts, obs, visIdx) {
+  const cx = paperPts.reduce((s, p) => s + p.x, 0) / 4, cy = paperPts.reduce((s, p) => s + p.y, 0) / 4;
+  const proj = (prm, P) => {
+    const [th, tx, ty] = prm, c = Math.cos(th), s = Math.sin(th);
+    const x = cx + (P.x - cx) * c - (P.y - cy) * s + tx, y = cy + (P.x - cx) * s + (P.y - cy) * c + ty;
+    const w = Hprev[6] * x + Hprev[7] * y + Hprev[8];
+    return { x: (Hprev[0] * x + Hprev[1] * y + Hprev[2]) / w, y: (Hprev[3] * x + Hprev[4] * y + Hprev[5]) / w };
+  };
+  const resid = (prm) => { const r = []; for (const i of visIdx) { const q = proj(prm, paperPts[i]); r.push(q.x - obs[i].x, q.y - obs[i].y); } return r; };
+  let prm = [0, 0, 0];
+  const nP = visIdx.length >= 2 ? 3 : 2; // по одному углу поворот не определить
+  for (let it = 0; it < 15; it++) {
+    const r0 = resid(prm);
+    const J = [];
+    for (let k = 0; k < nP; k++) { const e = k === 0 ? 1e-5 : 1e-3; const p2 = prm.slice(); p2[k] += e; const r1 = resid(p2); J.push(r1.map((v, i) => (v - r0[i]) / e)); }
+    // нормальные уравнения (JᵀJ) Δ = −Jᵀ r
+    const A = [], g = [];
+    for (let i = 0; i < nP; i++) { A.push([]); g.push(-J[i].reduce((s, v, k) => s + v * r0[k], 0)); for (let j = 0; j < nP; j++) A[i].push(J[i].reduce((s, v, k) => s + v * J[j][k], 0) + (i === j ? 1e-9 : 0)); }
+    const dlt = solveSmall(A, g);
+    if (!dlt) break;
+    for (let k = 0; k < nP; k++) prm[k] += dlt[k];
+    if (Math.hypot(...dlt) < 1e-7) break;
+  }
+  const r = resid(prm);
+  const rms = Math.sqrt(r.reduce((s, v) => s + v * v, 0) / Math.max(1, r.length / 2));
+  return { pred: paperPts.map(P => proj(prm, P)), rms, prm };
+}
+
+function solveSmall(A, b) {
+  const n = b.length, M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c; for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-15) return null;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) if (r !== c) { const k = M[r][c] / M[c][c]; for (let j = c; j <= n; j++) M[r][j] -= k * M[c][j]; }
+  }
+  return M.map((r, i) => r[n] / r[i]);
+}
+
+// Нормаль плоскости листа в координатах камеры по гомографии «мм → кадр» и фокусу.
+export function planeNormal(H, f, vw, vh) {
+  const Kinv = [1 / f, 0, -vw / 2 / f, 0, 1 / f, -vh / 2 / f, 0, 0, 1];
+  const B = mul(Kinv, H);
+  const r1 = [B[0], B[3], B[6]], r2 = [B[1], B[4], B[7]];
+  const n = cross3(r1, r2), l = Math.hypot(...n) || 1;
+  return n.map(v => v / l);
+}

@@ -58,7 +58,7 @@ export function rectify(frame, H, pw, ph, ppm, marginMm = 2) {
 // ---------- 3. Выравнивание фона ----------
 export function flatten(img, ppm, clean = 0.5) {
   const { data, w, h } = img;
-  const cell = Math.max(12, Math.round(ppm * 12));
+  const cell = Math.max(10, Math.round(ppm * 7));
   const gx = Math.ceil(w / cell), gy = Math.ceil(h / cell);
   const bg = new Float32Array(gx * gy * 3), has = new Uint8Array(gx * gy);
   const buf = [];
@@ -85,7 +85,19 @@ export function flatten(img, ppm, clean = 0.5) {
     const lv = []; for (let k = 0; k < gx * gy; k++) if (has[k]) lv.push(bg[k * 3] + bg[k * 3 + 1] + bg[k * 3 + 2]);
     lv.sort((a, b) => a - b);
     const ref = lv.length ? lv[Math.floor(lv.length * 0.75)] : 0;
-    for (let k = 0; k < gx * gy; k++) if (has[k] && bg[k * 3] + bg[k * 3 + 1] + bg[k * 3 + 2] < ref * 0.72) has[k] = 0;
+    // сравниваем с соседями (а не со всем листом): плавная виньетка/тень в углу — это бумага,
+    // а клетка, резко темнее соседей, — закрашенное место
+    const lum = (k) => bg[k * 3] + bg[k * 3 + 1] + bg[k * 3 + 2];
+    const drop = [];
+    for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) {
+      const k = cy * gx + cx; if (!has[k]) continue;
+      const nb = [];
+      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { if (!dx && !dy) continue; const x = cx + dx, y = cy + dy; if (x < 0 || y < 0 || x >= gx || y >= gy || !has[y * gx + x]) continue; nb.push(lum(y * gx + x)); }
+      nb.sort((a, b) => a - b);
+      const loc = nb.length >= 3 ? nb[Math.floor(nb.length * 0.6)] : ref;
+      if (lum(k) < loc * 0.8 || lum(k) < ref * 0.4) drop.push(k);
+    }
+    for (const k of drop) has[k] = 0;
   }
   // пустые клетки (закрыты краской) — заполняем соседями
   if (!has.some(Boolean)) { bg.fill(235); has.fill(1); }
@@ -109,25 +121,49 @@ export function flatten(img, ppm, clean = 0.5) {
     for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = cx + dx, y = cy + dy; if (x < 0 || y < 0 || x >= gx || y >= gy) continue; s += bg[(y * gx + x) * 3 + ch]; c++; }
     sm[(cy * gx + cx) * 3 + ch] = s / c;
   }
-  const out = new Uint8ClampedArray(w * h * 4);
-  const cut = 255 - 45 * clean;
+  // Делим на цвет бумаги → «доля чернил» ink = 1 − пиксель/бумага (0 — бумага, 1 — чёрное).
+  const ratio = new Float32Array(w * h * 3);
   for (let y = 0; y < h; y++) {
-    const fy = Math.min(gy - 1, Math.max(0, (y + 0.5) / cell - 0.5)), y0 = Math.floor(fy), y1 = Math.min(gy - 1, y0 + 1), ty = fy - y0;
+    // у краёв продолжаем наклон крайних клеток (виньетка и тени в углах растут к краю)
+    const fyR = (y + 0.5) / cell - 0.5, y0 = Math.max(0, Math.min(gy - 2, Math.floor(fyR))), y1 = Math.min(gy - 1, y0 + 1);
+    const ty = gy > 1 ? Math.max(-0.6, Math.min(1.6, fyR - y0)) : 0;
     for (let x = 0; x < w; x++) {
-      const fx = Math.min(gx - 1, Math.max(0, (x + 0.5) / cell - 0.5)), x0 = Math.floor(fx), x1 = Math.min(gx - 1, x0 + 1), tx = fx - x0;
-      const i = (y * w + x) * 4;
+      const fxR = (x + 0.5) / cell - 0.5, x0 = Math.max(0, Math.min(gx - 2, Math.floor(fxR))), x1 = Math.min(gx - 1, x0 + 1);
+      const tx = gx > 1 ? Math.max(-0.6, Math.min(1.6, fxR - x0)) : 0;
+      const i = (y * w + x) * 4, o = (y * w + x) * 3;
       for (let ch = 0; ch < 3; ch++) {
         const a = sm[(y0 * gx + x0) * 3 + ch] * (1 - tx) + sm[(y0 * gx + x1) * 3 + ch] * tx;
         const b = sm[(y1 * gx + x0) * 3 + ch] * (1 - tx) + sm[(y1 * gx + x1) * 3 + ch] * tx;
-        const bgv = Math.max(30, a * (1 - ty) + b * ty);
-        let v = data[i + ch] / bgv * 255;
-        v = v >= cut ? 255 : v * 255 / cut; // всё, что близко к бумаге, — чисто белое
-        out[i + ch] = v;
+        ratio[o + ch] = Math.max(0, 1 - data[i + ch] / Math.max(30, a * (1 - ty) + b * ty));
       }
-      out[i + 3] = 255;
     }
   }
-  return { data: out, w, h };
+  // Автоусиление, как у сканеров документов: светлый карандаш на фото с телефона даёт
+  // всего 10–30% «чернил». Шум бумаги срезаем порогом, остальное растягиваем так,
+  // чтобы самые тёмные штрихи стали почти чёрными. У яркой краски усиление само ≈ 1.
+  const floor = 0.035 + 0.05 * clean;
+  const hist = new Uint32Array(101);
+  let cnt = 0;
+  for (let o = 0; o < ratio.length; o += 9) {
+    const v = (ratio[o] + ratio[o + 1] + ratio[o + 2]) / 3, cr = Math.max(ratio[o], ratio[o + 1], ratio[o + 2]) - Math.min(ratio[o], ratio[o + 1], ratio[o + 2]);
+    if (v > floor + 0.03 && cr < 0.08) { hist[Math.min(100, Math.round(v * 100))]++; cnt++; } // только бесцветное — карандаш, тушь
+  }
+  let p95 = 0.5;
+  if (cnt > 50) { let acc = 0; for (let k = 0; k <= 100; k++) { acc += hist[k]; if (acc >= cnt * 0.95) { p95 = k / 100; break; } } }
+  const gain = Math.min(5, Math.max(1, 0.9 / Math.max(0.05, p95 - floor)));
+  const out = new Uint8ClampedArray(w * h * 4);
+  for (let k = 0, i = 0, o = 0; k < w * h; k++, i += 4, o += 3) {
+    // цветную краску не «пережигаем»: усиление плавно сходит к 1 по мере роста цветности
+    const cr = Math.max(ratio[o], ratio[o + 1], ratio[o + 2]) - Math.min(ratio[o], ratio[o + 1], ratio[o + 2]);
+    const gk = 1 + (gain - 1) * Math.max(0, Math.min(1, 1 - (cr - 0.05) / 0.12));
+    for (let ch = 0; ch < 3; ch++) {
+      const v = ratio[o + ch];
+      const ink = v <= floor ? 0 : Math.min(1, (v - floor) * gk);
+      out[i + ch] = 255 * (1 - ink);
+    }
+    out[i + 3] = 255;
+  }
+  return { data: out, w, h, gain };
 }
 
 // ---------- 4–5. Разделение на линии и цвета ----------
@@ -145,6 +181,25 @@ export function segment(img, ppm, { lineLevel = 0.5, colors = 6, minSpot = 2, pa
     const C = Math.max(r, g, b) - Math.min(r, g, b);
     if (L < 60 || (L < lineThr && C < 55 + (lineThr - L) * 0.4)) kind[i] = 1;
     else if (paint && colors > 0 && (C > 28 || L < 225)) { kind[i] = 2; colored.push(i); }
+  }
+  // Гистерезис: светлые продолжения штриха присоединяем к уверенным линиям
+  // (по связности), а одиночные светлые пятна — шум — не берём.
+  clearBorderJunk(kind, w, h, Math.ceil(2 * ppm)); // сначала убираем кусочки стола у края
+  {
+    const weakThr = Math.min(242, lineThr + 50);
+    const band = Math.ceil(2 * ppm) + Math.ceil(3 * ppm); // в полосу у края не растём
+    const stack = new Int32Array(n); let sp = 0;
+    for (let i = 0; i < n; i++) if (kind[i] === 1) stack[sp++] = i;
+    while (sp) {
+      const i = stack[--sp], y = (i / w) | 0, x = i - y * w;
+      for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+        if (j < 0 || kind[j] === 1) continue;
+        { const jy = (j / w) | 0, jx = j - jy * w; if (jx < band || jy < band || jx >= w - band || jy >= h - band) continue; }
+        const q = j * 4, r = data[q], g = data[q + 1], b = data[q + 2];
+        const L = 0.299 * r + 0.587 * g + 0.114 * b, C = Math.max(r, g, b) - Math.min(r, g, b);
+        if (L < weakThr && C < 40) { kind[j] = 1; stack[sp++] = j; }
+      }
+    }
   }
   // тонкие полосы у самого края (кусочек стола из-за неточного угла) — убираем
   clearBorderJunk(kind, w, h, Math.ceil(2 * ppm));
@@ -245,7 +300,7 @@ function clearBorderJunk(kind, w, h, mpx = 0) {
   // mpx — белое поле по краю (отступ при выпрямлении): «край» начинается за ним.
   const B = mpx + 2;
   // 1) короткие «заходы» от края внутрь в каждой строке/столбце (клин стола)
-  const lim0 = Math.max(3, Math.round(Math.min(w, h) * 0.025));
+  const lim0 = Math.max(3, Math.round(Math.min(w, h) * 0.025), Math.round(mpx * 2.5)); // клин до ~5 мм
   const run = (get, n) => {
     let a = 0; while (a < Math.min(n, B) && !kind[get(a)]) a++;
     if (a >= B || a >= n) return;
@@ -257,10 +312,12 @@ function clearBorderJunk(kind, w, h, mpx = 0) {
   // 2) тонкие компоненты, прилипшие к краю
   const seen = new Uint8Array(w * h), stack = new Int32Array(w * h), comp = [];
   const lim = Math.min(w, h) * 0.04;
+  // тени/виньетка в углах дают полоски чуть поодаль от края — ищем в полосе ~5 мм
+  const B2 = B + Math.round(mpx * 1.5);
   for (let s = 0; s < w * h; s++) {
     if (!kind[s] || seen[s]) continue;
     const sy = (s / w) | 0, sx = s - sy * w;
-    if (sx >= B && sy >= B && sx < w - B && sy < h - B) continue;
+    if (sx >= B2 && sy >= B2 && sx < w - B2 && sy < h - B2) continue;
     let sp = 0; comp.length = 0; stack[sp++] = s; seen[s] = 1;
     let x0 = w, x1 = 0, y0 = h, y1 = 0;
     while (sp) {
@@ -270,7 +327,7 @@ function clearBorderJunk(kind, w, h, mpx = 0) {
       for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) if (j >= 0 && !seen[j] && kind[j]) { seen[j] = 1; stack[sp++] = j; }
     }
     // «прилип к краю и тонкий вдоль него» — значит, это не рисунок
-    const touchL = x0 < B, touchR = x1 >= w - B, touchT = y0 < B, touchB = y1 >= h - B;
+    const touchL = x0 < B2, touchR = x1 >= w - B2, touchT = y0 < B2, touchB = y1 >= h - B2;
     const thin = ((touchL || touchR) && x1 - x0 < lim) || ((touchT || touchB) && y1 - y0 < lim);
     if (thin) for (const i of comp) kind[i] = 0;
   }
