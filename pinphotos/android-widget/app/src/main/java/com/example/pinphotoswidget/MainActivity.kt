@@ -589,14 +589,24 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /** Скругление именно превью: плитку целиком не клиппуем, иначе обрежутся стрелки по углам. */
+    private fun roundAlbumCover(cover: ImageView) {
+        cover.outlineProvider = object : android.view.ViewOutlineProvider() {
+            override fun getOutline(view: android.view.View, outline: android.graphics.Outline) {
+                outline.setRoundRect(0, 0, view.width, view.height, dp(16).toFloat())
+            }
+        }
+        cover.clipToOutline = true
+    }
+
     /**
      * Название альбома: многострочная плашка поверх превью. Она может занять почти всю
-     * плитку, но сверху оставлена полоса под счётчик и ⋮, а по бокам — место под стрелки
-     * (отступы выставляет вызывающий код), поэтому на чужие элементы название не залезает.
+     * плитку, но сверху оставлена полоса под счётчик и ⋮, а снизу — под круглые стрелки
+     * в углах. Зона одинаковая у всех альбомов, независимо от наличия стрелок.
      */
     private fun albumLabel(name: String): View = TextView(this).apply {
         text = name; textSize = 11.5f; gravity = android.view.Gravity.CENTER
-        maxLines = 6; ellipsize = android.text.TextUtils.TruncateAt.END
+        maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END
         setLineSpacing(0f, 0.95f)
         setTextColor(android.graphics.Color.WHITE)
         setBackgroundResource(R.drawable.album_name_bg)
@@ -604,7 +614,8 @@ class MainActivity : FragmentActivity() {
         layoutParams = android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT).apply {
-            topMargin = dp(25); bottomMargin = dp(3); leftMargin = dp(4); rightMargin = dp(4)
+            // Одинаковая зона у всех альбомов: не зависит от наличия стрелок.
+            topMargin = dp(25); bottomMargin = dp(27); leftMargin = dp(5); rightMargin = dp(5)
         }
     }
 
@@ -630,13 +641,14 @@ class MainActivity : FragmentActivity() {
             this.text = text; textSize = 12f; gravity = android.view.Gravity.CENTER
             setTextColor(android.graphics.Color.WHITE)
             setBackgroundResource(R.drawable.album_arrow_bg)
-            alpha = 0.82f
-            elevation = dp(3).toFloat()
-            // Плоская полоса по центру плитки: короче плитки, поэтому не залезает
-            // на ⋮ сверху и подпись снизу, но палец всё равно попадает уверенно.
-            layoutParams = android.widget.FrameLayout.LayoutParams(dp(22), dp(48),
-                android.view.Gravity.CENTER_VERTICAL or if (left) android.view.Gravity.START else android.view.Gravity.END).apply {
-                if (left) marginStart = -dp(7) else marginEnd = -dp(7)
+            alpha = 0.85f
+            elevation = dp(4).toFloat()
+            // Круг прямо на нижнем углу плитки и чуть наружу: не залезает ни на ⋮ сверху,
+            // ни на название, у которого снизу специально оставлена эта угловая зона.
+            layoutParams = android.widget.FrameLayout.LayoutParams(dp(30), dp(30),
+                android.view.Gravity.BOTTOM or if (left) android.view.Gravity.START else android.view.Gravity.END).apply {
+                if (left) { marginStart = -dp(6); bottomMargin = -dp(6) }
+                else { marginEnd = -dp(6); bottomMargin = -dp(6) }
             }
             setOnClickListener { action() }
             contentDescription = if (left) "Переместить альбом влево" else "Переместить альбом вправо"
@@ -669,13 +681,15 @@ class MainActivity : FragmentActivity() {
         val cover = ImageView(this).apply {
             // Без превью векторная заглушка 3:2 показывается целиком (FIT_CENTER на её же фоне),
             // а не обрезанным куском на верхней половине плитки.
-            scaleType = if (newest == null) ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.CENTER_CROP
-            if (newest == null) { setBackgroundColor(0xFFFFE8D6.toInt()); setImageResource(R.drawable.widget_placeholder) }
+            // Единый стандарт с обычными превью: квадратная плитка и CENTER_CROP.
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            if (newest == null) setImageResource(R.drawable.album_placeholder)
             val cached = newest?.let { PhotoStore.cachedBitmap(it, 360) }
             if (cached != null) setImageBitmap(cached) else if (newest != null) {
-                postDelayed({ if (drawable == null) setImageResource(R.drawable.widget_placeholder) }, 400)
+                postDelayed({ if (drawable == null) setImageResource(R.drawable.album_placeholder) }, 400)
             }
         }
+        roundAlbumCover(cover)
         tile.addView(cover, android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
         if (newest != null) io.execute {
@@ -683,11 +697,7 @@ class MainActivity : FragmentActivity() {
             cover.post { if (bmp != null) cover.setImageBitmap(bmp) }
         }
         tile.addView(albumCountBadge(refs.size))
-        val widgetLabel = albumLabel("🧩 ${PinnedPhotoWidgetBase.widgetName(this@MainActivity, widgetId)}")
-        (widgetLabel.layoutParams as android.widget.FrameLayout.LayoutParams).apply {
-            leftMargin = dp(if (index > 0) 25 else 4); rightMargin = dp(if (index < total - 1) 25 else 4)
-        }
-        tile.addView(widgetLabel)
+        tile.addView(albumLabel("🧩 ${PinnedPhotoWidgetBase.widgetName(this@MainActivity, widgetId)}"))
         addAlbumSideArrows(tile, index > 0, index < total - 1,
             { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, -1)) refresh() },
             { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, 1)) refresh() })
@@ -791,14 +801,14 @@ class MainActivity : FragmentActivity() {
         val cover = ImageView(this).apply {
             val lockedNow = PhotoStore.securityFor(this@MainActivity, album).locked && album !in unlockedAlbums
             val newestNow = if (lockedNow) null else albumPhotos.maxByOrNull { it.createdAt }
-            // Заглушка без превью — целиком и по центру на собственном фоне, без обрезки.
-            scaleType = if (newestNow == null) ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.CENTER_CROP
-            if (newestNow == null) setBackgroundColor(0xFFFFE8D6.toInt())
+            // Единый стандарт: и фото, и квадратная заглушка заполняют плитку через CENTER_CROP.
+            scaleType = ImageView.ScaleType.CENTER_CROP
             val cached = newestNow?.let { PhotoStore.cachedBitmap(it, 360) }
             if (cached != null) setImageBitmap(cached) else if (newestNow != null) {
-                postDelayed({ if (drawable == null) setImageResource(R.drawable.widget_placeholder) }, 400)
-            } else setImageResource(R.drawable.widget_placeholder)
+                postDelayed({ if (drawable == null) setImageResource(R.drawable.album_placeholder) }, 400)
+            } else setImageResource(R.drawable.album_placeholder)
         }
+        roundAlbumCover(cover)
         tile.addView(cover, android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
         val newest = if (isLocked) null else albumPhotos.maxByOrNull { it.createdAt }
@@ -812,11 +822,7 @@ class MainActivity : FragmentActivity() {
         val canMoveLeft = album != PhotoStore.MISC_ALBUM && index > 1
         val canMoveRight = album != PhotoStore.MISC_ALBUM && index > 0 && index < total - 1
         tile.addView(albumCountBadge(albumPhotos.size))
-        val albumLabelView = albumLabel(if (isLocked) "🔒 $album" else album)
-        (albumLabelView.layoutParams as android.widget.FrameLayout.LayoutParams).apply {
-            leftMargin = dp(if (canMoveLeft) 25 else 4); rightMargin = dp(if (canMoveRight) 25 else 4)
-        }
-        tile.addView(albumLabelView)
+        tile.addView(albumLabel(if (isLocked) "🔒 $album" else album))
         addAlbumSideArrows(tile, canMoveLeft, canMoveRight,
             { if (PhotoStore.moveAlbum(this, album, -1)) refresh() },
             { if (PhotoStore.moveAlbum(this, album, 1)) refresh() })
