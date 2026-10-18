@@ -116,6 +116,7 @@ class MainActivity : FragmentActivity() {
     }
     private var lastWidgetSignature: String? = null
     private var currentDisplayedIds: List<String> = emptyList()
+    private val collapsedGroupKeys = mutableSetOf<String>()
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(newBase)
@@ -216,6 +217,8 @@ class MainActivity : FragmentActivity() {
         getSharedPreferences("display", MODE_PRIVATE).let { displayPrefs ->
             showSeparators = displayPrefs.getBoolean("showSeparators", true)
             squareTiles = displayPrefs.getBoolean("squareTiles", false)
+            collapsedGroupKeys.clear()
+            collapsedGroupKeys.addAll(displayPrefs.getStringSet("collapsedGroups", emptySet()) ?: emptySet())
         }
         grid = findViewById(R.id.grid)
         emptyView = findViewById(R.id.emptyView)
@@ -350,8 +353,10 @@ class MainActivity : FragmentActivity() {
         val result = mutableListOf<GridEntry>()
         groups.forEach { group ->
             val ids = group.photos.map { it.id }
-            result.add(GridEntry.Header(group.key, group.title, ids, ids.isNotEmpty() && ids.all { it in selectedIds }))
-            group.photos.forEach { result.add(GridEntry.PhotoItem(it)) }
+            val collapsed = group.key in collapsedGroupKeys
+            result.add(GridEntry.Header(group.key, group.title, ids,
+                ids.isNotEmpty() && ids.all { it in selectedIds }, collapsed))
+            if (!collapsed) group.photos.forEach { result.add(GridEntry.PhotoItem(it)) }
         }
         return result
     }
@@ -489,6 +494,12 @@ class MainActivity : FragmentActivity() {
             onLongClick = { photo -> toggleSelected(photo) },
             onHeaderToggle = { header, shouldSelect ->
                 if (shouldSelect) selectedIds.addAll(header.photoIds) else selectedIds.removeAll(header.photoIds.toSet())
+                refresh()
+            },
+            onHeaderCollapse = { header ->
+                if (!collapsedGroupKeys.add(header.key)) collapsedGroupKeys.remove(header.key)
+                getSharedPreferences("display", MODE_PRIVATE).edit()
+                    .putStringSet("collapsedGroups", collapsedGroupKeys.toSet()).apply()
                 refresh()
             }
         )
@@ -1371,7 +1382,8 @@ sealed class GridEntry {
         val key: String,
         val title: String,
         val photoIds: List<String> = emptyList(),
-        val allSelected: Boolean = false
+        val allSelected: Boolean = false,
+        val collapsed: Boolean = false
     ) : GridEntry()
     data class PhotoItem(val photo: Photo) : GridEntry()
 }
@@ -1383,7 +1395,8 @@ class PhotoAdapter(
     private val squareTiles: Boolean = false,
     private val onClick: (Photo) -> Unit,
     private val onLongClick: (Photo) -> Unit,
-    private val onHeaderToggle: (GridEntry.Header, Boolean) -> Unit = { _, _ -> }
+    private val onHeaderToggle: (GridEntry.Header, Boolean) -> Unit = { _, _ -> },
+    private val onHeaderCollapse: (GridEntry.Header) -> Unit = {}
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     class Holder(view: View) : RecyclerView.ViewHolder(view) {
         val thumb: ImageView = view.findViewById(R.id.thumb)
@@ -1394,6 +1407,7 @@ class PhotoAdapter(
     class HeaderHolder(view: View) : RecyclerView.ViewHolder(view) {
         val title: TextView = view.findViewById(R.id.headerTitle)
         val check: android.widget.CheckBox = view.findViewById(R.id.headerCheck)
+        val collapse: TextView = view.findViewById(R.id.headerCollapse)
     }
 
     fun spanSize(position: Int): Int = if (items.getOrNull(position) is GridEntry.Header) 3 else 1
@@ -1433,7 +1447,11 @@ class PhotoAdapter(
             // группы, она появится сама; снятие одного фото при следующем refresh её уберёт.
             headerHolder.check.isChecked = entry.allSelected
             headerHolder.check.setOnCheckedChangeListener { _, isChecked -> onHeaderToggle(entry, isChecked) }
-            headerHolder.itemView.setOnClickListener { headerHolder.check.performClick() }
+            headerHolder.collapse.text = if (entry.collapsed) "▸" else "▾"
+            headerHolder.collapse.setOnClickListener { onHeaderCollapse(entry) }
+            // Нажатие на сам заголовок сворачивает/разворачивает группу; галочка справа — выделение.
+            headerHolder.title.setOnClickListener { onHeaderCollapse(entry) }
+            headerHolder.itemView.setOnClickListener { onHeaderCollapse(entry) }
             return
         }
         val holder = rawHolder as Holder
