@@ -605,17 +605,18 @@ class MainActivity : FragmentActivity() {
      * в углах. Зона одинаковая у всех альбомов, независимо от наличия стрелок.
      */
     private fun albumLabel(name: String): View = TextView(this).apply {
-        text = name; textSize = 11.5f; gravity = android.view.Gravity.CENTER
+        text = name; textSize = 10.5f; gravity = android.view.Gravity.CENTER
         maxLines = 3; ellipsize = android.text.TextUtils.TruncateAt.END
-        setLineSpacing(0f, 0.95f)
+        setLineSpacing(0f, 0.88f)
         setTextColor(android.graphics.Color.WHITE)
         setBackgroundResource(R.drawable.album_name_bg)
-        setPadding(dp(5), dp(4), dp(5), dp(4))
+        setPadding(dp(5), dp(2), dp(5), dp(2))
         layoutParams = android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT).apply {
-            // Одинаковая зона у всех альбомов: не зависит от наличия стрелок.
-            topMargin = dp(25); bottomMargin = dp(27); leftMargin = dp(5); rightMargin = dp(5)
+            // Одинаковая зона у всех альбомов: 44dp высоты хватает ровно на три строки
+            // (10.5sp с уменьшенным межстрочным интервалом), стрелки для этого уехали ниже.
+            topMargin = dp(24); bottomMargin = dp(24); leftMargin = dp(5); rightMargin = dp(5)
         }
     }
 
@@ -647,8 +648,8 @@ class MainActivity : FragmentActivity() {
             // ни на название, у которого снизу специально оставлена эта угловая зона.
             layoutParams = android.widget.FrameLayout.LayoutParams(dp(30), dp(30),
                 android.view.Gravity.BOTTOM or if (left) android.view.Gravity.START else android.view.Gravity.END).apply {
-                if (left) { marginStart = -dp(6); bottomMargin = -dp(6) }
-                else { marginEnd = -dp(6); bottomMargin = -dp(6) }
+                if (left) { marginStart = -dp(6); bottomMargin = -dp(10) }
+                else { marginEnd = -dp(6); bottomMargin = -dp(10) }
             }
             setOnClickListener { action() }
             contentDescription = if (left) "Переместить альбом влево" else "Переместить альбом вправо"
