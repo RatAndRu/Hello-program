@@ -113,7 +113,7 @@ class PhotoActivity : Activity() {
         findViewById<Button>(R.id.deleteBtn).setOnClickListener {
             val current = photo ?: return@setOnClickListener
             AlertDialog.Builder(this).setTitle("Удалить фото?")
-                .setMessage("Запись и её файл внутри приложения будут удалены. Если это фото видно в нескольких альбомах, оно пропадёт из всех. Виджеты хранят ссылку на эту запись, а не копию, поэтому тоже перестанут его показывать. Отдельные независимые копии, если есть, останутся. Оригинал в галерее не тронем.")
+                .setMessage("Будет удалено записей: 1. Это удалит записи из этого альбома и из всех альбомов виджетов, если они там присутствуют. Копии в обычных альбомах не затронет. Оригиналы из галереи телефона не удаляем.")
                 .setPositiveButton("Удалить") { _, _ ->
                     PhotoStore.delete(this, current); PinnedPhotoWidgetBase.updateAll(this)
                     val remaining = ids.toMutableList().apply { remove(current.id) }
