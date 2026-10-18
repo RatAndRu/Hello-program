@@ -32,10 +32,18 @@ object VaultCrypto {
     fun newAlbumKey(): ByteArray = ByteArray(32).also { random.nextBytes(it) }
 
     fun wrapWithMaster(key: ByteArray): String {
-        val iv = ByteArray(12).also { random.nextBytes(it) }
+        // ВАЖНО (официальное правило Android Keystore): при шифровании ключом из Keystore
+        // НЕЛЬЗЯ передавать свой IV — иначе InvalidAlgorithmParameterException:
+        // «Caller-provided IV not permitted». Keystore по умолчанию требует randomized
+        // encryption и сам генерирует случайный IV. Поэтому Cipher инициализируем БЕЗ IV,
+        // а сгенерированный забираем через cipher.iv и храним рядом с шифртекстом.
+        // Формат на диске прежний: Base64(IV[12] + ciphertext), расшифровка не меняется.
         val cipher = Cipher.getInstance(TRANSFORMATION)
-        cipher.init(Cipher.ENCRYPT_MODE, masterKey(), GCMParameterSpec(128, iv))
-        return pack(iv, cipher.doFinal(key))
+        cipher.init(Cipher.ENCRYPT_MODE, masterKey())
+        val encrypted = cipher.doFinal(key)
+        val iv = cipher.iv?.takeIf { it.size == 12 }
+            ?: throw IllegalStateException("Android Keystore не вернул IV шифрования")
+        return pack(iv, encrypted)
     }
 
     fun unwrapWithMaster(wrapped: String): ByteArray? = try {
