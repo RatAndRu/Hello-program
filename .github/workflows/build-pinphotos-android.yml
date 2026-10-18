@@ -65,7 +65,7 @@ jobs:
             {
               echo '### Ошибки сборки PinPhotos'
               echo '```text'
-              grep -E '^(e: |.*error:|.*FAILED|.*Exception)' "$RUNNER_TEMP/pinphotos-gradle.log" | head -80 || true
+              grep -E '^(e: |.*error:|.*FAILED|.*Exception)' "$RUNNER_TEMP/pinphotos-gradle.log" | head -80 | while IFS= read -r line; do echo "::error::$line"; done || true
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
           fi
