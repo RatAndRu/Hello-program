@@ -226,17 +226,19 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
 
         fun photosForWidget(context: Context, widgetId: Int): List<Photo> {
             val refs = getWidgetPhotoIds(context, widgetId)
+            val all = PhotoStore.list(context)
+            // Собственные записи виджета (widgetId > 0) — это фото, загруженные прямо
+            // через альбом виджета. Они должны показываться вместе со ссылками на обычные
+            // альбомы, а не только когда ссылок нет вообще.
+            val own = all.filter { it.widgetId == widgetId }
             if (refs.isNotEmpty()) {
-                val all = PhotoStore.list(context)
                 val lockedNames = PhotoStore.lockedAlbumNames(context)
                 val result = refs.mapNotNull { id -> all.firstOrNull { it.id == id && it.widgetId == 0 } }
                     .filter { photo -> photo.albums.none { it in lockedNames } }
                 // Удаление оригинала автоматически убирает его из всех виджетов: битые ссылки подчищаем.
                 if (result.size != refs.size) setWidgetPhotoIds(context, widgetId, result.map { it.id })
-                return PhotoStore.dedupeForDisplay(result)
+                return PhotoStore.dedupeForDisplay(result + own)
             }
-            val all = PhotoStore.list(context)
-            val own = all.filter { it.widgetId == widgetId }
             if (own.isNotEmpty()) return PhotoStore.dedupeForDisplay(own)
             // Миграция со старых версий: прежде виджеты жили на общем списке закреплённых.
             val lockedNames = PhotoStore.lockedAlbumNames(context)

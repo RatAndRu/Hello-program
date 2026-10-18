@@ -779,9 +779,14 @@ class MainActivity : FragmentActivity() {
             if (others.isEmpty()) toast("Нет другого виджета") else {
                 android.app.AlertDialog.Builder(this).setTitle("Слить «${PinnedPhotoWidgetBase.widgetName(this, widgetId)}» в…")
                     .setItems(others.map { PinnedPhotoWidgetBase.widgetName(this, it) }.toTypedArray()) { _, which ->
-                        val ids = PinnedPhotoWidgetBase.getWidgetPhotoIds(this, widgetId)
-                        val added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, ids, listOf(others[which]))
-                        toast("Добавлено ссылок: $added. Исходный виджет не очищен"); refresh()
+                        val ids = PinnedPhotoWidgetBase.photosForWidget(this, widgetId).map { it.id }
+                        var added = PinnedPhotoWidgetBase.addCopiesToWidgets(this, ids, listOf(others[which]))
+                        // Собственные записи исходного виджета ссылками не переносятся:
+                        // просто помечаем их принадлежность целевому виджету.
+                        PhotoStore.list(this).filter { it.widgetId == widgetId }.forEach { own ->
+                            own.widgetId = others[which]; PhotoStore.update(this, own); added++
+                        }
+                        toast("Добавлено: $added. Исходный виджет не очищен"); refresh()
                     }.setNegativeButton("Отмена", null).show()
             }
         })
@@ -1337,6 +1342,9 @@ class MainActivity : FragmentActivity() {
         when (requestCode) {
             PICK_PHOTOS -> io.execute {
                 var saved = 0
+                var alreadyInWidget = 0
+                val targetWidget = pendingImportWidget
+                val targetAlbum = pendingImportAlbum
                 val uris = mutableListOf<Uri>()
                 data.clipData?.let { clip -> for (i in 0 until clip.itemCount) uris.add(clip.getItemAt(i).uri) }
                 if (uris.isEmpty()) data.data?.let { uris.add(it) }
@@ -1348,25 +1356,57 @@ class MainActivity : FragmentActivity() {
                         val input = contentResolver.openInputStream(uri) ?: continue
                         val imported = PhotoStore.importStream(this, input, mime, displayName(uri))
                         val hash = imported.hash
-                        // ВАЖНО: imported уже сохранён в PhotoStore, поэтому ищем дубликат среди ДРУГИХ записей.
+                        if (targetWidget > 0) {
+                            // Загрузка ЧЕРЕЗ альбом виджета. Если точно такое же содержимое
+                            // уже лежит в обычном альбоме, вторую физическую копию не плодим:
+                            // в виджет кладём ссылку на существующую запись — она и будет
+                            // отдельной фотографией именно этого виджета. Раньше созданная
+                            // при импорте копия терялась в общей проверке дублей, а тост
+                            // при этом всё равно говорил «Добавлено: 1».
+                            val lockedNames = PhotoStore.lockedAlbumNames(this)
+                            val existing = PhotoStore.list(this).firstOrNull { other ->
+                                other.id != imported.id && other.widgetId == 0 && other.hash == hash &&
+                                    other.albums.none { it in lockedNames }
+                            }
+                            if (existing != null) {
+                                val addedRefs = PinnedPhotoWidgetBase.addCopiesToWidgets(
+                                    this, listOf(existing.id), listOf(targetWidget))
+                                // Временная физическая копия импорта больше не нужна:
+                                // в виджете живёт ссылка на существующую запись.
+                                PhotoStore.delete(this, imported)
+                                if (addedRefs > 0) saved++ else alreadyInWidget++
+                            } else {
+                                // Такого содержимого в открытых обычных альбомах нет (или оно
+                                // только в закрытом альбоме, откуда виджет показывать не вправе):
+                                // оставляем загруженный файл отдельной записью этого виджета.
+                                imported.widgetId = targetWidget
+                                imported.albums = mutableListOf()
+                                PhotoStore.update(this, imported)
+                                saved++
+                            }
+                            continue
+                        }
+                        // Обычный импорт: дубликат внутри целевого альбома не сохраняем.
                         val duplicate = PhotoStore.list(this).firstOrNull { other ->
                             other.id != imported.id && other.widgetId == 0 && other.hash == hash && when {
-                                pendingImportWidget > 0 -> true
-                                pendingImportAlbum.isNotBlank() -> pendingImportAlbum in other.albums
+                                targetAlbum.isNotBlank() -> targetAlbum in other.albums
                                 else -> other.albums.isEmpty()
                             }
                         }
-                        if (duplicate != null && pendingImportWidget == 0) { PhotoStore.delete(this, imported); continue }
-                        if (pendingImportWidget > 0) {
-                            imported.albums = mutableListOf(); PhotoStore.update(this, imported)
-                            PinnedPhotoWidgetBase.addCopiesToWidgets(this, listOf(imported.id), listOf(pendingImportWidget))
-                        } else {
-                            imported.albums = if (pendingImportAlbum.isBlank()) mutableListOf() else mutableListOf(pendingImportAlbum); PhotoStore.update(this, imported)
-                        }
+                        if (duplicate != null) { PhotoStore.delete(this, imported); continue }
+                        imported.albums = if (targetAlbum.isBlank()) mutableListOf() else mutableListOf(targetAlbum)
+                        PhotoStore.update(this, imported)
                         saved++
                     } catch (e: Exception) { /* одно битое фото не должно валить остальные */ }
                 }
-                runOnUiThread { toast("Добавлено: $saved"); pendingImportWidget = 0; refresh() }
+                runOnUiThread {
+                    toast(when {
+                        saved > 0 && alreadyInWidget > 0 -> "Добавлено: $saved; уже было в виджете: $alreadyInWidget"
+                        alreadyInWidget > 0 -> "Это фото уже есть в альбоме виджета"
+                        else -> "Добавлено: $saved"
+                    })
+                    pendingImportWidget = 0; refresh()
+                }
             }
             EXPORT_JSON -> io.execute { exportBackup(data.data) }
             IMPORT_JSON -> io.execute { importBackup(data.data) }
