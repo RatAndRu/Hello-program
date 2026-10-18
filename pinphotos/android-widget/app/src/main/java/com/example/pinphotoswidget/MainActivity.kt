@@ -44,6 +44,9 @@ class MainActivity : FragmentActivity() {
     private var searchExpanded: Boolean = false
     private var selectionForcedAlbumsCollapse: Boolean = false
     private var searchForcedAlbumsCollapse: Boolean = false
+    private var albumsContentShown: Boolean? = null
+    private var albumsAnimator: android.animation.ValueAnimator? = null
+    private var albumsAnimationTarget: Boolean? = null
     private var lastWidgetSignature: String? = null
     private var currentDisplayedIds: List<String> = emptyList()
 
@@ -299,8 +302,60 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun applyAlbumsCollapsed() {
-        findViewById<View>(R.id.albumsContent).visibility = if (albumsCollapsed) View.GONE else View.VISIBLE
         findViewById<Button>(R.id.albumsCollapseBtn).text = if (albumsCollapsed) "▸  Альбомы" else "▾  Альбомы"
+        val content = findViewById<View>(R.id.albumsContent)
+        val wantShown = !albumsCollapsed
+        // Повторные refresh с тем же состоянием ничего не трогают: именно мгновенные
+        // повторные visibility/relayout и давали заметное мерцание при поиске и выделении.
+        if (albumsContentShown == wantShown && albumsAnimator == null) return
+        // Та же анимация уже идёт (например, refresh во время ввода поиска): не перезапускаем.
+        if (albumsAnimator != null && albumsAnimationTarget == wantShown) return
+        val initialApply = albumsContentShown == null
+        albumsContentShown = wantShown
+        albumsAnimator?.cancel()
+        albumsAnimationTarget = wantShown
+        if (initialApply) {
+            albumsAnimationTarget = null
+            content.visibility = if (wantShown) View.VISIBLE else View.GONE
+            content.alpha = if (wantShown) 1f else 0f
+            content.layoutParams.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            return
+        }
+        val startHeight = if (content.visibility == View.VISIBLE) content.height.coerceAtLeast(0) else 0
+        val targetHeight: Int
+        if (wantShown) {
+            content.visibility = View.VISIBLE
+            val widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(
+                (content.parent as? View)?.width?.takeIf { it > 0 } ?: content.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels,
+                android.view.View.MeasureSpec.EXACTLY)
+            content.measure(widthSpec, android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED))
+            targetHeight = content.measuredHeight.coerceAtLeast(1)
+        } else targetHeight = 0
+        val startAlpha = if (content.visibility == View.VISIBLE) content.alpha else 0f
+        val animator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 240
+            interpolator = android.view.animation.DecelerateInterpolator()
+            addUpdateListener { anim ->
+                val fraction = anim.animatedValue as Float
+                content.alpha = startAlpha + ((if (wantShown) 1f else 0f) - startAlpha) * fraction
+                content.layoutParams.height = (startHeight + (targetHeight - startHeight) * fraction).toInt()
+                content.requestLayout()
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    albumsAnimator = null; albumsAnimationTarget = null
+                    content.alpha = if (wantShown) 1f else 0f
+                    content.visibility = if (wantShown) View.VISIBLE else View.GONE
+                    content.layoutParams.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+                    content.requestLayout()
+                }
+                override fun onAnimationCancel(animation: android.animation.Animator) {
+                    if (albumsAnimator === this@apply) { albumsAnimator = null; albumsAnimationTarget = null }
+                }
+            })
+        }
+        albumsAnimator = animator
+        animator.start()
     }
 
 
@@ -416,6 +471,9 @@ class MainActivity : FragmentActivity() {
             else -> selectedAlbum
         }
         val row = findViewById<android.widget.LinearLayout>(R.id.albumsTiles)
+        // Стрелки по бокам плиток чуть выходят за саму плитку: предки не должны их обрезать.
+        row.clipChildren = false; row.clipToPadding = false
+        (row.parent as? android.view.ViewGroup)?.apply { clipChildren = false; clipToPadding = false }
         row.removeAllViews()
         if (albumsModeWidgets) {
             val widgetIds = PinnedPhotoWidgetBase.orderedWidgetIds(this)
@@ -434,7 +492,7 @@ class MainActivity : FragmentActivity() {
                 setBackgroundResource(R.drawable.btn_soft)
                 setOnClickListener { showCreateWidgetDialog() }
             }
-            row.addView(createWidget, android.widget.LinearLayout.LayoutParams(dp(104), dp(128)).apply { marginEnd = dp(10) })
+            row.addView(createWidget, android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) })
             return
         }
         val all = photos
@@ -450,7 +508,7 @@ class MainActivity : FragmentActivity() {
             setBackgroundResource(R.drawable.btn_soft)
             setOnClickListener { showCreateAlbumDialog { album -> selectedAlbum = album; refresh() } }
         }
-        row.addView(create, android.widget.LinearLayout.LayoutParams(dp(104), dp(128)).apply { marginEnd = dp(10) })
+        row.addView(create, android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) })
         if (albumNames.isEmpty()) {
             val hint = TextView(this).apply {
                 text = "Альбомов пока нет"; textSize = 13f
@@ -462,26 +520,27 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    /** Нижняя полоса плитки альбома: соседние альбомы меняются местами. */
-    private fun albumMoveArrows(leftEnabled: Boolean, rightEnabled: Boolean, onLeft: () -> Unit, onRight: () -> Unit): View {
-        val row = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER
-            layoutParams = android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(24), android.view.Gravity.BOTTOM)
+    /**
+     * Полупрозрачные стрелки по бокам плитки, чуть выступающие за её края.
+     * Отсутствующая стрелка — часть интерфейса: у «Разное» их нет совсем, у крайнего
+     * альбома нет стрелки наружу, а у следующего за «Разное» нет стрелки влево.
+     */
+    private fun addAlbumSideArrows(tile: android.widget.FrameLayout, showLeft: Boolean, showRight: Boolean, onLeft: () -> Unit, onRight: () -> Unit) {
+        fun arrow(text: String, left: Boolean, action: () -> Unit) = TextView(this).apply {
+            this.text = text; textSize = 15f; gravity = android.view.Gravity.CENTER
+            setTextColor(android.graphics.Color.WHITE)
+            setBackgroundResource(R.drawable.media_duration_bg)
+            alpha = 0.78f
+            elevation = dp(3).toFloat()
+            layoutParams = android.widget.FrameLayout.LayoutParams(dp(25), dp(36),
+                android.view.Gravity.CENTER_VERTICAL or if (left) android.view.Gravity.START else android.view.Gravity.END).apply {
+                if (left) marginStart = -dp(9) else marginEnd = -dp(9)
+            }
+            setOnClickListener { action() }
+            contentDescription = if (left) "Переместить альбом влево" else "Переместить альбом вправо"
         }
-        fun arrow(text: String, enabled: Boolean, action: () -> Unit) = TextView(this).apply {
-            this.text = text; textSize = 13f; gravity = android.view.Gravity.CENTER
-            setTextColor(UiTheme.color(this@MainActivity, R.attr.appText))
-            alpha = if (enabled) 1f else 0.22f
-            setBackgroundResource(R.drawable.btn_soft)
-            layoutParams = android.widget.LinearLayout.LayoutParams(0, dp(24), 1f)
-            if (enabled) setOnClickListener { action() }
-            contentDescription = if (text == "◀") "Переместить альбом влево" else "Переместить альбом вправо"
-        }
-        row.addView(arrow("◀", leftEnabled, onLeft))
-        row.addView(arrow("▶", rightEnabled, onRight))
-        return row
+        if (showLeft) tile.addView(arrow("◀", true, onLeft))
+        if (showRight) tile.addView(arrow("▶", false, onRight))
     }
 
     private fun albumDotsButton(onClick: () -> Unit): TextView = TextView(this).apply {
@@ -498,7 +557,7 @@ class MainActivity : FragmentActivity() {
         val newest = refs.maxByOrNull { it.createdAt }
         val tile = android.widget.FrameLayout(this).apply {
             setBackgroundResource(if (selectedAlbum == key) R.drawable.btn_primary else R.drawable.card_bg)
-            clipToOutline = true
+            clipToOutline = false; clipChildren = false
             setOnClickListener {
                 selectedAlbum = if (selectedAlbum == key) ALL_ALBUMS else key
                 refresh()
@@ -525,12 +584,12 @@ class MainActivity : FragmentActivity() {
         }
         tile.addView(label, android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM).apply { bottomMargin = dp(24) })
-        tile.addView(albumMoveArrows(index > 0, index < total - 1,
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM))
+        addAlbumSideArrows(tile, index > 0, index < total - 1,
             { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, -1)) refresh() },
-            { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, 1)) refresh() }))
+            { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, 1)) refresh() })
         tile.addView(albumDotsButton { showWidgetAlbumActions(widgetId) })
-        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(128)).apply { marginEnd = dp(10) }
+        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) }
         return tile
     }
 
@@ -608,7 +667,7 @@ class MainActivity : FragmentActivity() {
         val isLocked = security.locked && album !in unlockedAlbums
         val tile = android.widget.FrameLayout(this).apply {
             setBackgroundResource(if (album == selectedAlbum) R.drawable.btn_primary else R.drawable.card_bg)
-            clipToOutline = true
+            clipToOutline = false; clipChildren = false
             setOnClickListener {
                 if (isLocked) {
                     showUnlockDialog(album) { selectedAlbum = album; refresh() }
@@ -654,18 +713,18 @@ class MainActivity : FragmentActivity() {
         val labelParams = android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
             android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
-            android.view.Gravity.BOTTOM).apply { bottomMargin = dp(24) }
+            android.view.Gravity.BOTTOM)
         tile.addView(label, labelParams)
-        tile.addView(albumMoveArrows(
+        addAlbumSideArrows(tile,
             album != PhotoStore.MISC_ALBUM && index > 1,
             album != PhotoStore.MISC_ALBUM && index > 0 && index < total - 1,
             { if (PhotoStore.moveAlbum(this, album, -1)) refresh() },
-            { if (PhotoStore.moveAlbum(this, album, 1)) refresh() }))
+            { if (PhotoStore.moveAlbum(this, album, 1)) refresh() })
         tile.addView(albumDotsButton {
             if (isLocked) showUnlockDialog(album) { showAlbumActions(album) }
             else showAlbumActions(album)
         })
-        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(128)).apply { marginEnd = dp(10) }
+        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) }
         return tile
     }
 
@@ -925,15 +984,17 @@ class MainActivity : FragmentActivity() {
         // Добавление фото/виджета, альбомы и тема живут своими кнопками на экране.
         val popupContext = android.view.ContextThemeWrapper(this, if (UiTheme.isDark(this)) R.style.PopupOverlayDark else R.style.PopupOverlayLight)
         val menu = PopupMenu(popupContext, anchor)
+        // Порядок задаём только вторым параметром add(..., order): сначала разделители,
+        // затем форма фото, стили иконок, тема, и только в самом конце — бэкапы.
         menu.menu.add(0, 10, 0, if (showSeparators) "Группы-разделители: включены ✓" else "Группы-разделители: выключены")
         menu.menu.add(0, 11, 1, if (squareTiles) "Форма фото: квадратики ✓" else "Форма фото: прямоугольники ✓")
-        menu.menu.add(0, 1, 2, "Бэкап: сохранить JSON")
-        menu.menu.add(0, 2, 3, "Восстановить из JSON")
-        menu.menu.add(0, 3, 0, "Иконка: обычная 📌")
-        menu.menu.add(0, 4, 0, "Иконка: огненная 🔥")
-        menu.menu.add(0, 5, 0, "Иконка: сонная 😴")
-        menu.menu.add(0, 6, 0, "Иконка: форменная 🖼")
-        menu.menu.add(0, 7, 0, if (UiTheme.isDark(this)) "Тема: тёмная 🌙 — сменить на светлую" else "Тема: светлая ☀️ — сменить на тёмную")
+        menu.menu.add(0, 3, 2, "Иконка: обычная 📌")
+        menu.menu.add(0, 4, 3, "Иконка: огненная 🔥")
+        menu.menu.add(0, 5, 4, "Иконка: сонная 😴")
+        menu.menu.add(0, 6, 5, "Иконка: форменная 🖼")
+        menu.menu.add(0, 7, 6, if (UiTheme.isDark(this)) "Тема: тёмная 🌙 — сменить на светлую" else "Тема: светлая ☀️ — сменить на тёмную")
+        menu.menu.add(0, 1, 7, "Бэкап: сохранить JSON")
+        menu.menu.add(0, 2, 8, "Восстановить из JSON")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
                 10 -> {
