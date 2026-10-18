@@ -974,23 +974,25 @@ class MainActivity : FragmentActivity() {
         }
         // Отпечаток предлагаем СРАЗУ поверх окна пароля. Успех закрывает оба окна
         // и открывает альбом на эту сессию (пока приложение не закрыто / альбом не закрыт вручную).
-        val dialog = builder.create(); dialog.show()
-        if (biometricAvailable()) {
+        // Слушатель ставим ДО show(): после показа он на части устройств уже не срабатывал.
+        val dialog = builder.create()
+        if (security.biometric && biometricAvailable()) {
             dialog.setOnShowListener {
                 authenticateBiometric(album) { dialog.dismiss(); onSuccess() }
             }
         }
+        dialog.show()
     }
 
     private fun biometricAvailable(): Boolean {
         val manager = BiometricManager.from(this)
-        val auth = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+        val auth = BiometricManager.Authenticators.BIOMETRIC_STRONG
         return manager.canAuthenticate(auth) == BiometricManager.BIOMETRIC_SUCCESS
     }
 
     private fun authenticateBiometric(album: String, onSuccess: () -> Unit) {
         val manager = BiometricManager.from(this)
-        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG or BiometricManager.Authenticators.BIOMETRIC_WEAK
+        val authenticators = BiometricManager.Authenticators.BIOMETRIC_STRONG
         if (manager.canAuthenticate(authenticators) != BiometricManager.BIOMETRIC_SUCCESS) {
             toast("Отпечаток недоступен на этом устройстве"); return
         }
@@ -1009,7 +1011,10 @@ class MainActivity : FragmentActivity() {
             .setSubtitle(album)
             .setNegativeButtonText("Отмена")
             .build()
-        prompt.authenticate(info)
+        try { prompt.authenticate(info) } catch (e: Exception) {
+            try { java.io.File(filesDir, "security_error.txt").writeText(android.util.Log.getStackTraceString(e)) } catch (ignored: Exception) { }
+            toast("Не удалось запустить отпечаток: ${e.message ?: "ошибка"}")
+        }
     }
 
     private fun showAlbumActions(album: String) {
@@ -1033,6 +1038,11 @@ class MainActivity : FragmentActivity() {
                 PhotoStore.clearAlbumPin(this, album)
                 if (!PhotoStore.securityFor(this, album).locked) unlockedAlbums.remove(album)
                 toast("Пароль снят"); refresh()
+            })
+            actions.add(Action(if (security.biometric) "Отпечаток: включён ✓" else "Отпечаток: выключен") {
+                PhotoStore.setAlbumBiometric(this, album, !security.biometric)
+                toast(if (!security.biometric) "Отпечаток включён: он будет предлагаться при открытии альбома" else "Отпечаток выключен: открывается только паролем")
+                refresh()
             })
         }
         if (album in unlockedAlbums) actions.add(Action("Закрыть альбом сейчас") {
@@ -1077,9 +1087,19 @@ class MainActivity : FragmentActivity() {
                     !a.matches(Regex("\\d{4}")) -> toast("Пароль должен состоять ровно из 4 цифр")
                     a != b -> toast("Пароли не совпадают")
                     else -> {
-                        PhotoStore.setAlbumPin(this, album, a)
-                        unlockedAlbums.add(album)
-                        toast("Пароль установлен. Открыть можно паролем или отпечатком"); refresh()
+                        try {
+                            PhotoStore.setAlbumPin(this, album, a)
+                            // Проверяем фактическую запись, а не только отсутствие исключения.
+                            val saved = PhotoStore.securityFor(this, album)
+                            if (!saved.locked || !PhotoStore.verifyAlbumPin(this, album, a)) {
+                                throw IllegalStateException("Пароль не записался")
+                            }
+                            unlockedAlbums.add(album)
+                            toast("Пароль установлен и проверен. Открыть можно паролем или отпечатком"); refresh()
+                        } catch (e: Exception) {
+                            try { java.io.File(filesDir, "security_error.txt").writeText(android.util.Log.getStackTraceString(e)) } catch (ignored: Exception) { }
+                            toast("Не удалось установить пароль: ${e.message ?: "ошибка шифрования"}. Альбом не изменён")
+                        }
                     }
                 }
             }

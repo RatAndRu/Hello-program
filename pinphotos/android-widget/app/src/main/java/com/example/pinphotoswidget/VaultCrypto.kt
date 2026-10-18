@@ -87,23 +87,53 @@ object VaultCrypto {
 
     private fun pinKey(pin: String, saltB64: String): SecretKey {
         val salt = Base64.decode(saltB64, Base64.DEFAULT)
-        val spec = PBEKeySpec(pin.toCharArray(), salt, 120_000, 256)
-        val bytes = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded
-        return SecretKeySpec(bytes, "AES")
+        // PBKDF2WithHmacSHA256 есть на Android 8+, но на отдельных прошивках фабрика может
+        // отсутствовать/падать. Тогда не роняем приложение, а используем совместимый PBKDF2.
+        val algorithms = listOf("PBKDF2WithHmacSHA256" to 120_000, "PBKDF2WithHmacSHA1" to 120_000)
+        var lastError: Exception? = null
+        for ((algorithm, iterations) in algorithms) {
+            try {
+                val spec = PBEKeySpec(pin.toCharArray(), salt, iterations, 256)
+                val bytes = SecretKeyFactory.getInstance(algorithm).generateSecret(spec).encoded
+                if (bytes != null && bytes.isNotEmpty()) return SecretKeySpec(bytes, "AES")
+            } catch (e: Exception) { lastError = e }
+        }
+        throw IllegalStateException("Устройство не поддерживает вывод ключа из PIN", lastError)
     }
 
     private fun masterKey(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
-        (store.getEntry(MASTER_ALIAS, null) as? KeyStore.SecretKeyEntry)?.let { return it.secretKey }
-        val generator = javax.crypto.KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
-        generator.init(
-            KeyGenParameterSpec.Builder(MASTER_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
-                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
-                .setKeySize(256)
-                .build()
-        )
-        return generator.generateKey()
+        try {
+            (store.getKey(MASTER_ALIAS, null) as? SecretKey)?.let { return it }
+        } catch (e: Exception) {
+            // Повреждённый/недействительный ключ нельзя использовать. Удаляем только запись
+            // Keystore и создаём заново; файлы при этом защищает второй wrap из PIN.
+            try { store.deleteEntry(MASTER_ALIAS) } catch (ignored: Exception) { }
+        }
+        fun generate(): SecretKey {
+            val generator = javax.crypto.KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore")
+            generator.init(
+                KeyGenParameterSpec.Builder(MASTER_ALIAS, KeyProperties.PURPOSE_ENCRYPT or KeyProperties.PURPOSE_DECRYPT)
+                    .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                    .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                    .setKeySize(256)
+                    .build()
+            )
+            return generator.generateKey()
+        }
+        return try { generate() } catch (first: Exception) {
+            try { store.deleteEntry(MASTER_ALIAS) } catch (ignored: Exception) { }
+            try { generate() } catch (second: Exception) {
+                throw IllegalStateException("Android Keystore недоступен для шифрования альбома", second)
+            }
+        }
+    }
+
+    /** Быстрая проверка, что ключ реально шифрует и расшифровывает на этом устройстве. */
+    fun selfTest(key: ByteArray): Boolean {
+        val sample = "pinphotos-key-test".toByteArray(Charsets.UTF_8)
+        val decrypted = decrypt(key, encrypt(key, sample))
+        return decrypted?.contentEquals(sample) == true
     }
 
     private fun pack(iv: ByteArray, bytes: ByteArray): String =

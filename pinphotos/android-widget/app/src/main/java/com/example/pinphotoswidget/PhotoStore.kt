@@ -186,17 +186,35 @@ object PhotoStore {
         val current = securityFor(context, album)
         val saltBytes = ByteArray(16).also { java.security.SecureRandom().nextBytes(it) }
         val salt = Base64.encodeToString(saltBytes, Base64.NO_WRAP)
-        val key = current.keyWrap.takeIf { it.isNotEmpty() }?.let { VaultCrypto.unwrapWithMaster(it) } ?: VaultCrypto.newAlbumKey()
+        val existingKey = current.keyWrap.takeIf { it.isNotEmpty() }?.let { VaultCrypto.unwrapWithMaster(it) }
+            ?: current.pinKeyWrap.takeIf { it.isNotEmpty() && current.salt.isNotEmpty() }
+                ?.let { VaultCrypto.unwrapWithPin(it, pin, current.salt) }
+        val key = existingKey ?: VaultCrypto.newAlbumKey()
+        // До записи в диск проверяем обе обёртки и само AES-GCM шифрование. Если устройство
+        // не смогло выполнить криптографию, выбрасываем понятную ошибку, а альбом не трогаем.
+        val masterWrap = VaultCrypto.wrapWithMaster(key)
+        val pinWrap = VaultCrypto.wrapWithPin(key, pin, salt)
+        val masterOk = VaultCrypto.unwrapWithMaster(masterWrap)?.contentEquals(key) == true
+        val pinOk = VaultCrypto.unwrapWithPin(pinWrap, pin, salt)?.contentEquals(key) == true
+        check(masterOk && pinOk && VaultCrypto.selfTest(key)) { "Проверка шифрования на устройстве не пройдена" }
         val updated = current.copy(
-            pinHash = hashPin(salt, pin), salt = salt,
-            keyWrap = VaultCrypto.wrapWithMaster(key),
-            pinKeyWrap = VaultCrypto.wrapWithPin(key, pin, salt)
+            pinHash = hashPin(salt, pin), salt = salt, biometric = true,
+            keyWrap = masterWrap, pinKeyWrap = pinWrap
         )
         saveSecurity(context, updated)
-        // Все копии этого альбома на диске превращаются в AES-GCM шифртекст.
+        sessionAlbumKeys[album] = key
+        // Все копии этого альбома на диске превращаются в AES-GCM шифртекст. Ошибка одного
+        // файла не должна ронять приложение: фиксируем её, но остальные фото продолжаем.
+        val failures = mutableListOf<String>()
         list(context).filter { album in it.albums }.forEach { photo ->
-            if (isLargeOrVideo(context, photo)) rewritePhotoStorage(context, photo)
-            else plainBytes(context, photo)?.let { plain -> writeStored(context, photo, plain) }
+            try {
+                if (isLargeOrVideo(context, photo)) rewritePhotoStorage(context, photo)
+                else plainBytes(context, photo)?.let { plain -> writeStored(context, photo, plain) }
+                    ?: failures.add(photo.name)
+            } catch (e: Exception) { failures.add(photo.name) }
+        }
+        if (failures.isNotEmpty()) {
+            try { java.io.File(dir(context), "security_error.txt").writeText("Не зашифровано: " + failures.joinToString(", ")) } catch (ignored: Exception) { }
         }
     }
 
@@ -219,12 +237,18 @@ object PhotoStore {
                 }
             }
         }
+        sessionAlbumKeys.remove(album)
         saveAll(context, all)
     }
 
     fun verifyAlbumPin(context: Context, album: String, pin: String): Boolean {
         val s = securityFor(context, album)
-        return s.pinHash.isNotEmpty() && hashPin(s.salt, pin) == s.pinHash
+        val ok = s.pinHash.isNotEmpty() && hashPin(s.salt, pin) == s.pinHash
+        if (ok) {
+            // Сразу восстанавливаем ключ альбома из PIN-wrap и держим только в памяти.
+            VaultCrypto.unwrapWithPin(s.pinKeyWrap, pin, s.salt)?.let { sessionAlbumKeys[album] = it }
+        }
+        return ok
     }
 
     @Synchronized
@@ -345,9 +369,16 @@ object PhotoStore {
         return plainBytes(context, photo)?.let { sha256(it) }.orEmpty()
     }
 
+    // Ключи, восстановленные в текущей сессии вводом PIN. Это запасной путь, если
+    // Android Keystore потерял/отозвал master-key: PIN-wrap при этом остаётся рабочим.
+    private val sessionAlbumKeys = java.util.concurrent.ConcurrentHashMap<String, ByteArray>()
+
     fun albumKey(context: Context, album: String): ByteArray? {
+        sessionAlbumKeys[album]?.let { return it }
         val security = securityFor(context, album)
-        return security.keyWrap.takeIf { it.isNotEmpty() }?.let { VaultCrypto.unwrapWithMaster(it) }
+        val key = security.keyWrap.takeIf { it.isNotEmpty() }?.let { VaultCrypto.unwrapWithMaster(it) }
+        if (key != null) sessionAlbumKeys[album] = key
+        return key
     }
 
     /** Потоковый импорт: видео не загружается целиком в оперативную память. */
