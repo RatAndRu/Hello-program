@@ -1,6 +1,7 @@
 // Типы AR-направляющих. Все точки — в миллиметрах листа (0,0 — левый верхний угол).
 // Каждый тип описывает: создание, параметры (для автопанели), отрисовку и ручки.
 
+import { convexHull } from './geom.js';
 import {
   apply, add, sub, mulS, dot, len, dist, norm, perp, lerpP, reflect, clipSegment,
   circleFrom3, homography,
@@ -57,6 +58,13 @@ export class Pen {
       pts.push({ x: c.x + x * cs - y * sn, y: c.y + x * sn + y * cs });
     }
     this.poly(pts, true, layer);
+  }
+  // Заливка (тени). holes — области, которые не закрашивать (например, сам предмет).
+  fill(pts, holes = [], layer = 'shade') {
+    const map = (arr) => { const o = []; for (const p of arr) { const m = this.mapRaw(this.tf(p)); if (!m) return null; o.push(m); } return o; };
+    const P = map(pts); if (!P || P.length < 3) return;
+    const H = holes.map(map).filter(Boolean);
+    this.paths.push({ pts: P, closed: true, fill: true, holes: H, layer: this.layerOverride || layer, id: this.guideId });
   }
   label(p, text) { const m = this.mapRaw(this.tf(p)); if (m && !this.mirror) this.labels.push({ x: m.x, y: m.y, text }); }
   dot(p, layer = 'main') { const m = this.mapRaw(this.tf(p)); if (m) this.points.push({ x: m.x, y: m.y, layer: this.layerOverride || layer, id: this.guideId }); }
@@ -439,9 +447,25 @@ export const TYPES = {
     handles: (g) => g.pts,
     drag(g, i, p) { if (i === 0) translateAll(g, i, p); else g.pts[1] = p; },
   },
+  light: {
+    name: 'Свет и тень', icon: '☀', desc: 'Фигура и лампа: где блик, где граница света, своя и падающая тень. Тяни ☀, чтобы двигать свет',
+    create: (c, s) => [{ x: c.x, y: c.y + s * 0.6 }, { x: c.x + s * 0.7, y: c.y + s * 0.6 }, { x: c.x - s * 1.3, y: c.y - s * 1.5 }],
+    props: [
+      { key: 'shape', label: 'Фигура', type: 'select', options: [['sphere', 'Шар'], ['cube', 'Куб'], ['cyl', 'Цилиндр'], ['cone', 'Конус']], def: 'sphere' },
+      { key: 'depth', label: 'Свет: сзади ↔ спереди, °', type: 'range', min: -75, max: 75, step: 5, def: 30 },
+      { key: 'view', label: 'Взгляд сверху, °', type: 'range', min: 0, max: 60, step: 5, def: 25 },
+      { key: 'height', label: 'Высота', type: 'range', min: 0.5, max: 3, step: 0.1, def: 1.5, show: (g) => ['cyl', 'cone'].includes(pDefault(g, 'shape')) },
+      { key: 'yaw', label: 'Поворот куба, °', type: 'range', min: 0, max: 90, step: 5, def: 30, show: (g) => pDefault(g, 'shape') === 'cube' },
+      { key: 'cast', label: 'Падающая тень', type: 'toggle', def: true },
+      { key: 'shade', label: 'Заливка тени', type: 'toggle', def: true },
+    ],
+    draw(pen, g, ctx) { drawLight(pen, g, ctx); },
+    handles: (g) => g.pts,
+    drag(g, i, p) { if (i === 0) translateAll(g, i, p); else g.pts[i] = p; },
+  },
 };
 
-export const TYPE_ORDER = ['line', 'parallel', 'circle', 'ellipse', 'rect', 'polygon', 'arc', 'grid', 'persp', 'pellipse', 'symmetry', 'radial'];
+export const TYPE_ORDER = ['line', 'parallel', 'circle', 'ellipse', 'rect', 'polygon', 'arc', 'grid', 'persp', 'pellipse', 'symmetry', 'radial', 'light'];
 
 export function getProp(g, k) { return pDefault(g, k); }
 
@@ -449,4 +473,149 @@ export function defaultProps(type) {
   const o = {};
   for (const p of TYPES[type].props) o[p.key] = p.def;
   return o;
+}
+
+// ---------- «Свет и тень»: мини-3D ----------
+// Мир: x вправо, y вверх, z к зрителю. Земля — плоскость y=0. Ортографический вид
+// со взглядом сверху под углом e. Свет — направленный (как солнце или далёкая лампа).
+const v3 = { add: (a, b) => [a[0] + b[0], a[1] + b[1], a[2] + b[2]], sc: (a, k) => [a[0] * k, a[1] * k, a[2] * k], dot: (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2], cross: (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]], norm: (a) => { const l = Math.hypot(a[0], a[1], a[2]) || 1; return [a[0] / l, a[1] / l, a[2] / l]; } };
+
+// Непрерывный участок по кругу, где cond=true (самый длинный). Возвращает индексы по порядку.
+function runs(n, cond) {
+  const ok = []; for (let i = 0; i < n; i++) ok.push(!!cond(i));
+  if (ok.every(Boolean)) return [[...Array(n).keys()]];
+  const start = ok.indexOf(false);
+  const out = []; let cur = [];
+  for (let k = 1; k <= n; k++) { const i = (start + k) % n; if (ok[i]) cur.push(i); else if (cur.length) { out.push(cur); cur = []; } }
+  if (cur.length) out.push(cur);
+  return out;
+}
+
+function drawLight(pen, g, ctx) {
+  const [c, sz, lp] = g.pts;
+  const r = Math.max(3, dist(c, sz));
+  const e = pDefault(g, 'view') * Math.PI / 180;
+  const right = [1, 0, 0], up = [0, Math.cos(e), -Math.sin(e)], toV = [0, Math.sin(e), Math.cos(e)];
+  const P = (q) => ({ x: c.x + v3.dot(q, right), y: c.y - v3.dot(q, up) });
+  // направление на свет: куда на картинке + спереди/сзади
+  const a = norm(sub(lp, c)), dl = pDefault(g, 'depth') * Math.PI / 180;
+  const L = v3.norm(v3.add(v3.add(v3.sc(right, a.x * Math.cos(dl)), v3.sc(up, -a.y * Math.cos(dl))), v3.sc(toV, Math.sin(dl))));
+  const shape = pDefault(g, 'shape'), shadeOn = pDefault(g, 'shade'), labels = ctx.labels;
+  const castOn = pDefault(g, 'cast') && L[1] > 0.04;
+  const toGround = (q) => { const t = q[1] / L[1]; return [q[0] - L[0] * t, 0, q[2] - L[2] * t]; };
+  const N = 96;
+
+  // солнце-ручка и луч к предмету
+  pen.circle(lp, 3.2, 'aux');
+  for (let i = 0; i < 8; i++) { const an = i * Math.PI / 4, d = { x: Math.cos(an), y: Math.sin(an) }; pen.seg(add(lp, mulS(d, 4.5)), add(lp, mulS(d, 7)), 'aux'); }
+  pen.seg(add(lp, mulS(norm(sub(c, lp)), 9)), add(c, mulS(norm(sub(lp, c)), r * 1.4)), 'ghost');
+
+  let silhouette = [], cast = null;
+  const lbl = [];
+
+  if (shape === 'sphere') {
+    const C = [0, r, 0];
+    const sil = [], silN = [];
+    for (let i = 0; i < N; i++) { const t = i / N * TAU, n = v3.add(v3.sc(right, Math.cos(t)), v3.sc(up, Math.sin(t))); silN.push(n); sil.push(P(v3.add(C, v3.sc(n, r)))); }
+    silhouette = sil;
+    // граница света (терминатор)
+    const e1 = v3.norm(v3.cross(L, Math.abs(L[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0])), e2 = v3.cross(L, e1);
+    const term = [], termVis = [];
+    for (let i = 0; i < N; i++) { const t = i / N * TAU, n = v3.add(v3.sc(e1, Math.cos(t)), v3.sc(e2, Math.sin(t))); term.push(P(v3.add(C, v3.sc(n, r)))); termVis.push(v3.dot(n, toV) >= 0); }
+    const darkRuns = runs(N, i => v3.dot(silN[i], L) < 0);
+    const visRuns = runs(N, i => termVis[i]);
+    const tv = visRuns.sort((p, q) => q.length - p.length)[0] || [];
+    if (shadeOn && darkRuns.length) {
+      const ds = darkRuns.sort((p, q) => q.length - p.length)[0];
+      if (ds.length === N && !tv.length) pen.fill(sil);
+      else if (tv.length > 1) {
+        const arc = ds.map(i => sil[i]);
+        let tpts = tv.map(i => term[i]);
+        if (dist(tpts[0], arc[arc.length - 1]) > dist(tpts[tpts.length - 1], arc[arc.length - 1])) tpts = tpts.reverse();
+        const poly = arc.concat(tpts);
+        pen.fill(poly);
+        if (labels) { const m = poly.reduce((s2, p) => ({ x: s2.x + p.x / poly.length, y: s2.y + p.y / poly.length }), { x: 0, y: 0 }); lbl.push([m, 'своя тень']); }
+      }
+    }
+    if (tv.length > 1) pen.poly(tv.map(i => term[i]), false, 'aux');
+    pen.poly(sil, true, 'main');
+    const Hh = v3.norm(v3.add(L, toV));
+    if (v3.dot(Hh, toV) > 0) { const hp = P(v3.add(C, v3.sc(Hh, r))); pen.circle(hp, Math.max(1.2, r * 0.1), 'main'); pen.dot(hp); if (labels) lbl.push([add(hp, { x: 0, y: -r * 0.18 - 3 }), 'блик']); }
+    if (castOn) {
+      const pts = [];
+      for (let i = 0; i < 24; i++) for (let j = 0; j <= 12; j++) { const th = i / 24 * TAU, ph = j / 12 * Math.PI; pts.push(toGround([r * Math.sin(ph) * Math.cos(th), r + r * Math.cos(ph), r * Math.sin(ph) * Math.sin(th)])); }
+      cast = convexHull(pts.map(P));
+    }
+    // тень касания
+    pen.ellipse(P([0, 0, 0]), r * 0.35, r * 0.35 * Math.sin(e) + 0.4, 0, 'aux');
+  } else if (shape === 'cube') {
+    const yaw = pDefault(g, 'yaw') * Math.PI / 180, cy = Math.cos(yaw), sy = Math.sin(yaw);
+    const rot = (x, y, z) => [x * cy + z * sy, y, -x * sy + z * cy];
+    const V = []; for (const y of [0, 2 * r]) for (const [x, z] of [[-r, -r], [r, -r], [r, r], [-r, r]]) V.push(rot(x, y, z));
+    const faces = [
+      { i: [4, 5, 6, 7], n: [0, 1, 0] }, { i: [0, 3, 2, 1], n: [0, -1, 0] },
+      { i: [3, 7, 6, 2], n: rot(0, 0, 1) }, { i: [1, 5, 4, 0], n: rot(0, 0, -1) },
+      { i: [2, 6, 5, 1], n: rot(1, 0, 0) }, { i: [0, 4, 7, 3], n: rot(-1, 0, 0) },
+    ];
+    const PV = V.map(P);
+    silhouette = convexHull(PV);
+    for (const f of faces) {
+      if (v3.dot(f.n, toV) <= 1e-6) continue;
+      const poly = f.i.map(k => PV[k]);
+      if (shadeOn && v3.dot(f.n, L) < 0) { pen.fill(poly); if (labels) { const m = poly.reduce((s2, p) => ({ x: s2.x + p.x / 4, y: s2.y + p.y / 4 }), { x: 0, y: 0 }); lbl.push([m, 'тень']); } }
+      pen.poly(poly, true, 'main');
+    }
+    if (castOn) cast = convexHull(V.map(toGround).map(P));
+  } else {
+    const isCone = shape === 'cone';
+    const Hc = 2 * r * pDefault(g, 'height');
+    const base = [], top = [], nrm = [];
+    for (let i = 0; i < N; i++) {
+      const t = i / N * TAU, x = Math.cos(t) * r, z = Math.sin(t) * r;
+      base.push([x, 0, z]); top.push(isCone ? [0, Hc, 0] : [x, Hc, z]);
+      nrm.push(isCone ? v3.norm([Math.cos(t) * Hc, r, Math.sin(t) * Hc]) : [Math.cos(t), 0, Math.sin(t)]);
+    }
+    const PB = base.map(P), PT = top.map(P);
+    silhouette = convexHull(PB.concat(isCone ? [PT[0]] : PT));
+    const vis = (i) => v3.dot(nrm[i], toV) > 0;
+    // своя тень на боку
+    if (shadeOn) {
+      for (const run of runs(N, i => vis(i) && v3.dot(nrm[i], L) < 0)) {
+        if (run.length < 2) continue;
+        const poly = run.map(i => PB[i]).concat(isCone ? [PT[0]] : run.slice().reverse().map(i => PT[i]));
+        pen.fill(poly);
+        if (labels && run.length > 6) { const m = poly.reduce((s2, p) => ({ x: s2.x + p.x / poly.length, y: s2.y + p.y / poly.length }), { x: 0, y: 0 }); lbl.push([m, 'своя тень']); }
+      }
+    }
+    // граница света на боку: переходы освещённость/тень на видимой стороне
+    for (let i = 0; i < N; i++) {
+      const j = (i + 1) % N;
+      if (!vis(i)) continue;
+      if ((v3.dot(nrm[i], L) < 0) !== (v3.dot(nrm[j], L) < 0)) pen.seg(PB[i], PT[i], 'aux');
+    }
+    // контур
+    const frontRun = runs(N, i => base[i][2] >= 0 || e < 0.02)[0] || [];
+    pen.poly(frontRun.map(i => PB[i]), false, 'main');
+    if (!isCone) {
+      pen.poly(PT, true, 'main');
+      if (shadeOn && L[1] < 0) pen.fill(PT);
+      const iR = 0, iL = N / 2;
+      pen.seg(PB[iR], PT[iR]); pen.seg(PB[iL], PT[iL]);
+    } else {
+      // образующие силуэта: касательные из вершины к эллипсу основания
+      const hull = silhouette; pen.poly(hull, true, 'main');
+    }
+    if (castOn) cast = convexHull(base.concat(isCone ? [top[0]] : top).map(toGround).map(P));
+  }
+
+  if (cast && cast.length > 2) {
+    if (shadeOn) pen.fill(cast, [silhouette]);
+    pen.poly(cast, true, 'aux');
+    if (labels) {
+      const m = cast.reduce((s2, p) => ({ x: s2.x + p.x / cast.length, y: s2.y + p.y / cast.length }), { x: 0, y: 0 });
+      const away = norm(sub(m, c)); lbl.push([add(m, mulS(away, r * 0.4)), 'падающая тень']);
+    }
+  }
+  for (const [p, t] of lbl) pen.label(p, t);
+  void lerpP;
 }

@@ -42,7 +42,7 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pill[data-state="calib"] .dot { background: #ff2fd6; }
 
 /* --- нижняя панель --- */
-#bottombar { position: fixed; left: 8px; right: 8px; bottom: calc(8px + var(--safe-bottom)); display: grid; grid-template-columns: 1.35fr 1fr 1fr 1fr; gap: 8px; z-index: 5; }
+#bottombar { position: fixed; left: 8px; right: 8px; bottom: calc(8px + var(--safe-bottom)); display: grid; grid-template-columns: 1.3fr 1fr 0.9fr 1.25fr; gap: 8px; z-index: 5; }
 #bottombar button { height: 58px; border-radius: 16px; border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0 4px; }
 #bottombar b { font-size: 20px; line-height: 1; font-weight: 600; }
 #bottombar span { font-size: 12px; color: var(--muted); white-space: nowrap; }
@@ -133,3 +133,24 @@ select { height: 40px; border-radius: 10px; border: 1px solid var(--line); backg
 .clean-hint { position: fixed; left: 50%; bottom: calc(18px + var(--safe-bottom)); transform: translateX(-50%); z-index: 30; padding: 8px 14px; border-radius: 12px; background: rgba(0, 0, 0, 0.6); font-size: 13px; color: #dfe5ee; pointer-events: none; }
 
 body.clean .ui { display: none !important; }
+
+/* v1.1: магнит в верхней панели */
+.icon.toggle { opacity: 0.55; }
+.icon.toggle.on { opacity: 1; border-color: rgba(57, 255, 20, 0.65); background: rgba(57, 255, 20, 0.16); }
+
+/* v1.1: экран оцифровки */
+.scanview { position: fixed; inset: 0; z-index: 20; background: #0b0d12; display: flex; flex-direction: column; padding: calc(8px + var(--safe-top)) 10px calc(10px + var(--safe-bottom)); gap: 8px; }
+.scanview.hidden { display: none; }
+.scan-head { display: flex; align-items: center; justify-content: space-between; }
+.scan-head h2 { margin: 0; font-size: 18px; }
+.scan-stage { position: relative; flex: 1 1 auto; min-height: 120px; overflow: hidden; background: repeating-conic-gradient(#1b1f29 0 25%, #151821 0 50%) 0 0 / 24px 24px; border-radius: 14px; border: 1px solid var(--line); }
+.scan-img { position: absolute; inset: 6px; width: calc(100% - 12px); height: calc(100% - 12px); object-fit: contain; filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.5)); }
+.scan-info { font-size: 12px; color: var(--muted); text-align: center; }
+.scan-ctl { flex: 0 0 auto; max-height: 40vh; overflow: auto; display: flex; flex-direction: column; gap: 8px; }
+@media (orientation: landscape) and (min-width: 700px) {
+  .scanview { flex-direction: row; flex-wrap: wrap; }
+  .scan-head { width: 100%; }
+  .scan-stage { height: calc(100% - 60px); flex: 1 1 60%; }
+  .scan-info { position: absolute; left: 20px; bottom: 16px; }
+  .scan-ctl { flex: 0 0 340px; max-height: calc(100% - 60px); }
+}

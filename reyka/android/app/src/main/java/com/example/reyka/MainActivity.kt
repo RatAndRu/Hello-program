@@ -12,7 +12,14 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
 import android.view.WindowManager
+import android.content.ContentValues
+import android.media.MediaScannerConnection
+import android.os.Environment
+import android.provider.MediaStore
+import android.util.Base64
+import android.webkit.JavascriptInterface
 import android.webkit.MimeTypeMap
+import java.io.File
 import android.webkit.PermissionRequest
 import android.webkit.ValueCallback
 import android.webkit.WebChromeClient
@@ -49,8 +56,10 @@ class MainActivity : Activity() {
             mediaPlaybackRequiresUserGesture = false
             allowFileAccess = false
             allowContentAccess = false
-            userAgentString = "$userAgentString ReykaAndroid/1.0"
+            userAgentString = "$userAgentString ReykaAndroid/1.1"
         }
+
+        web.addJavascriptInterface(NativeBridge(), "ReykaNative")
 
         web.webViewClient = object : WebViewClient() {
             override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
@@ -113,6 +122,68 @@ class MainActivity : Activity() {
 
         if (savedInstanceState != null) web.restoreState(savedInstanceState)
         else web.loadUrl("https://$HOST/index.html")
+    }
+
+    /** Мост для веб-части: сохранить файл в галерею / поделиться им. */
+    inner class NativeBridge {
+        @JavascriptInterface
+        fun saveFile(b64: String, name: String, mime: String): String =
+            try { val r = save(b64, name, mime); r.second } catch (e: Exception) { "Не удалось сохранить: ${e.message}" }
+
+        @JavascriptInterface
+        fun shareFile(b64: String, name: String, mime: String): String = try {
+            val (uri, msg) = save(b64, name, mime)
+            if (uri != null) {
+                runOnUiThread {
+                    val send = Intent(Intent.ACTION_SEND).apply {
+                        type = mime
+                        putExtra(Intent.EXTRA_STREAM, uri)
+                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                    }
+                    runCatching { startActivity(Intent.createChooser(send, "Поделиться рисунком")) }
+                }
+                ""
+            } else msg
+        } catch (e: Exception) { "Не удалось поделиться: ${e.message}" }
+
+        @JavascriptInterface
+        fun version(): String = "1.1"
+    }
+
+    /** Возвращает (uri для отправки или null, сообщение пользователю). */
+    private fun save(b64: String, name: String, mime: String): Pair<Uri?, String> {
+        val bytes = Base64.decode(b64, Base64.DEFAULT)
+        val isImage = mime.startsWith("image/") && mime != "image/svg+xml"
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(MediaStore.MediaColumns.MIME_TYPE, mime)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, (if (isImage) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS) + "/Рейка AR")
+                put(MediaStore.MediaColumns.IS_PENDING, 1)
+            }
+            val collection = if (isImage) MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+                else MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+            val uri = contentResolver.insert(collection, values) ?: return null to "Не удалось создать файл"
+            contentResolver.openOutputStream(uri)?.use { it.write(bytes) }
+            values.clear(); values.put(MediaStore.MediaColumns.IS_PENDING, 0)
+            contentResolver.update(uri, values, null, null)
+            return uri to (if (isImage) "Сохранено в Галерею → Pictures/Рейка AR" else "Сохранено в Загрузки → Рейка AR")
+        }
+        // Android 8–9: нужно разрешение на запись в память
+        if (checkSelfPermission(Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
+            runOnUiThread { requestPermissions(arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), REQ_STORAGE) }
+            return null to "Разреши доступ к памяти и нажми ещё раз"
+        }
+        @Suppress("DEPRECATION")
+        val dir = File(Environment.getExternalStoragePublicDirectory(if (isImage) Environment.DIRECTORY_PICTURES else Environment.DIRECTORY_DOWNLOADS), "Рейка AR")
+        dir.mkdirs()
+        val file = File(dir, name)
+        file.writeBytes(bytes)
+        var uri: Uri? = null
+        val lock = Object()
+        MediaScannerConnection.scanFile(this, arrayOf(file.absolutePath), arrayOf(mime)) { _, u -> synchronized(lock) { uri = u; lock.notifyAll() } }
+        synchronized(lock) { if (uri == null) lock.wait(3000) }
+        return uri to "Сохранено: ${file.absolutePath}"
     }
 
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
@@ -190,5 +261,6 @@ class MainActivity : Activity() {
         private const val HOST = "appassets.androidplatform.net"
         private const val REQ_CAMERA = 1
         private const val REQ_FILE = 2
+        private const val REQ_STORAGE = 3
     }
 }

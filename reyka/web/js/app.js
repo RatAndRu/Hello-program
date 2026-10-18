@@ -5,8 +5,11 @@ import { startCamera, createDemoStream, listCameras, trackCaps, setTorch, setZoo
 import { TYPES, TYPE_ORDER, Pen, getProp, defaultProps } from './guides.js';
 import { KalkaLayer, imageToCanvas, edgesCanvas, tonesCanvas, grayCanvas } from './tracing.js';
 import * as store from './store.js';
+import { estimateRect, cameraTilt, assumedFocal, manualCorners, fitFocal } from './perspective.js';
+import { detectSegments, findVanishingPoints } from './vanish.js';
+import * as scan from './scan.js';
 
-const VERSION = '1.0';
+const VERSION = '1.1';
 const $ = (id) => document.getElementById(id);
 const video = $('video'), glCanvas = $('gl'), overlay = $('overlay');
 const octx = overlay.getContext('2d');
@@ -20,11 +23,13 @@ const IS_APP = /ReykaAndroid/.test(navigator.userAgent);
 // ---------- Состояние (сохраняется) ----------
 const DEFAULT = () => ({
   v: 1,
-  settings: { color: '#39ff14', width: 3, halo: true, alpha: 1, labels: true, magnet: true, rot: 0, mirror: false, wake: true, cameraId: null },
+  settings: { color: '#39ff14', width: 3, halo: true, alpha: 1, labels: true, magnet: true, rot: 0, mirror: false, wake: true, cameraId: null, demoTilt: 0 },
+  manual: { on: false, tilt: 45, far: 0, yaw: 0, size: 1 },
+  scan: { lines: 0.5, colors: 6, smooth: 1, clean: 0.5, minSpot: 2, lineBlack: false, paint: true, fmt: 'png' },
   paper: { format: 'A4', orient: 'auto', customW: 200, customH: 200, tracking: true },
   corners: null, cornersFor: null, landscape: false,
   guides: [], nextId: 1,
-  kalka: { has: false, show: true, mode: 'orig', opacity: 0.6, detail: 0.45, thick: 2, levels: 3, color: '#ff2fd6', grid: false, cols: 4, part: false, cell: 0, cx: 0, cy: 0, scale: 1, rot: 0, flip: false, imgW: 0, imgH: 0 },
+  kalka: { has: false, show: true, mode: 'orig', opacity: 0.6, detail: 0.45, thick: 2, levels: 3, color: '#ff2fd6', grid: false, cols: 4, part: false, cell: 0, cx: 0, cy: 0, scale: 1, rot: 0, flip: false, imgW: 0, imgH: 0, blink: false, blinkPeriod: 0.8, vpShow: false },
 });
 
 let S = mergeDeep(DEFAULT(), store.loadState() || {});
@@ -47,7 +52,7 @@ const R = {
   track: 'none', trackReason: '', lastDetect: 0, lostFrames: 0, pending: null, pendingCount: 0, forceCalib: false,
   paths: [], dots: [], undo: [], panel: null,
   pointers: new Map(), down: null, pinch: null, lastTap: 0, snapPt: null,
-  kalkaSrc: null, kalkaReady: false, dirty: false, wake: null,
+  kalkaSrc: null, kalkaReady: false, dirty: false, wake: null, vp: null, tiltInfo: null, scan: null,
 };
 
 // ---------- Утилиты ----------
@@ -136,10 +141,28 @@ function orderCornersScreen(cv) {
   return idx.map(k => ({ ...cv[k] }));
 }
 
+// Ориентация листа: по НАСТОЯЩИМ пропорциям (с учётом перспективы), а не по длинам в кадре —
+// иначе при камере под 45–60° книжный лист выглядит «альбомным».
 function updateLandscape(c) {
-  const e01 = G.dist(c[0], c[1]) + G.dist(c[2], c[3]);
-  const e12 = G.dist(c[1], c[2]) + G.dist(c[3], c[0]);
-  S.landscape = e01 > e12;
+  let w, h;
+  if (S.paper.format === 'custom') { w = +S.paper.customW || 200; h = +S.paper.customH || 200; }
+  else [w, h] = FORMATS[S.paper.format] || FORMATS.A4;
+  const r = Math.max(w, h) / Math.min(w, h);
+  if (r < 1.05) { S.landscape = false; return; }
+  // какая ориентация лучше объясняет то, что видит камера
+  const land = fitFocal(c, R.vw, R.vh, r), port = fitFocal(c, R.vw, R.vh, 1 / r);
+  S.landscape = land.cost < port.cost;
+}
+
+// Наклон камеры относительно листа (для информации и подсказок).
+function measureTilt() {
+  if (!R.vw) return null;
+  const c = getCorners();
+  const [pw, ph] = paperDims();
+  const H = G.homography([{ x: 0, y: 0 }, { x: pw, y: 0 }, { x: pw, y: ph }, { x: 0, y: ph }], c);
+  const fit = fitFocal(c, R.vw, R.vh, pw / ph);
+  const tilt = cameraTilt(H, fit.f, R.vw, R.vh);
+  return { tilt, f: fit.f, measuredF: fit.cost < 0.03, fitCost: fit.cost };
 }
 
 // Совместить порядок новых углов с предыдущими (4 сдвига × 2 направления).
@@ -329,6 +352,21 @@ function strokePaths(paths, dots) {
   const byId = new Map(S.guides.map(g => [g.id, g]));
   const trace = (p) => { octx.beginPath(); p.pts.forEach((q, i) => i ? octx.lineTo(q.x, q.y) : octx.moveTo(q.x, q.y)); if (p.closed) octx.closePath(); };
   octx.lineJoin = 'round'; octx.lineCap = 'round';
+  // заливки (тени помощника света) — под линиями
+  for (const p of paths) {
+    if (!p.fill) continue;
+    octx.save();
+    if (p.holes && p.holes.length) {
+      octx.beginPath(); octx.rect(-1e4, -1e4, 3e4, 3e4);
+      for (const h of p.holes) { h.forEach((q, i) => i ? octx.lineTo(q.x, q.y) : octx.moveTo(q.x, q.y)); octx.closePath(); }
+      octx.clip('evenodd');
+    }
+    octx.globalAlpha = 1;
+    octx.fillStyle = 'rgba(15,20,45,0.42)';
+    trace(p); octx.fill();
+    octx.restore();
+  }
+  paths = paths.filter(p => !p.fill);
   if (S.settings.halo) {
     for (const p of paths) {
       const st = style(p.layer, p.id === R.selected);
@@ -415,7 +453,9 @@ function render() {
     const inv = G.inv(F);
     let crop = [0, 0, 1, 1];
     if (k.part) { const c = kalkaCellRect(); crop = [c.x0 / k.imgW, c.y0 / k.imgH, c.x1 / k.imgW, c.y1 / k.imgH]; }
-    kalkaLayer.draw(inv, k.opacity, crop);
+    let op = k.opacity;
+    if (k.blink) op = (performance.now() / 1000 / Math.max(0.2, k.blinkPeriod)) % 2 < 1 ? k.opacity : 0;
+    kalkaLayer.draw(inv, op, crop);
   } else kalkaLayer.clear();
 
   // Контур листа
@@ -466,6 +506,17 @@ function render() {
       }
       if (lbl.length <= 80) pen.labels.push(...lbl.map(l => ({ ...l, small: true })));
     }
+  }
+
+  if (k.has && k.show && k.vpShow && R.vp && R.vp.src === R.kalkaSrc) {
+    const kp = new Pen(G.mul(R.P2S, kalkaA()), { x0: -1e6, y0: -1e6, x1: 1e6, y1: 1e6 });
+    const cols = ['#ff3b30', '#00e5ff', '#ffe600', '#888888'];
+    R.vp.segs.forEach((sg, i) => {
+      const before = kp.paths.length;
+      kp.seg({ x: sg.x1, y: sg.y1 }, { x: sg.x2, y: sg.y2 }, 'aux');
+      for (let j = before; j < kp.paths.length; j++) kp.paths[j].color = cols[R.vp.cls[i]];
+    });
+    pen.paths.push(...kp.paths);
   }
 
   R.paths = pen.paths; R.dots = pen.points;
@@ -521,6 +572,11 @@ function frame(now) {
   trackStep(now);
   updateMatrices();
   render();
+  if (now - (frame._t || 0) > 600) {
+    frame._t = now;
+    const lab = document.getElementById('tiltVal');
+    if (lab) lab.textContent = tiltText();
+  }
 }
 
 function onVideoSize() {
@@ -537,7 +593,7 @@ async function startSource(demo) {
   $('startError').classList.add('hidden');
   try {
     if (R.cam) { R.cam.stop(); R.cam = null; }
-    R.cam = demo ? createDemoStream(R.H > R.W) : await startCamera(S.settings.cameraId);
+    R.cam = demo ? createDemoStream(R.H > R.W, S.settings.demoTilt || 0) : await startCamera(S.settings.cameraId);
     video.srcObject = R.cam.stream;
     await video.play().catch(() => { });
     await new Promise((res) => { if (video.videoWidth) res(); else video.onloadedmetadata = () => res(); setTimeout(res, 3000); });
@@ -842,12 +898,14 @@ function updateBarState() {
   $('btnKalka').classList.toggle('active', R.panel === 'kalka');
   $('btnSheet').classList.toggle('active', R.panel === 'sheet');
   $('btnMagnet').classList.toggle('on', !!S.settings.magnet);
+  $('btnScan').classList.toggle('active', R.panel === 'scan');
 }
 
 function togglePanel(kind) { if (R.panel === kind) closePanel(); else openPanel(kind); }
 $('btnAdd').onclick = () => togglePanel('add');
 $('btnKalka').onclick = () => togglePanel('kalka');
 $('btnSheet').onclick = () => togglePanel('sheet');
+$('btnScan').onclick = () => togglePanel('scan');
 $('btnSettings').onclick = () => togglePanel('settings');
 $('statusPill').onclick = () => togglePanel('sheet');
 $('btnMagnet').onclick = () => { S.settings.magnet = !S.settings.magnet; persist(); updateBarState(); toast(S.settings.magnet ? 'Магнит включён: прилипание к точкам и углам 15°' : 'Магнит выключен'); };
@@ -894,7 +952,7 @@ function refreshPanel(soft) {
   if (soft && R.panel !== 'guide') return;
   const scroll = panelBody.scrollTop;
   panelBody.innerHTML = '';
-  const f = { add: panelAdd, guide: panelGuide, kalka: panelKalka, sheet: panelSheet, settings: panelSettings }[R.panel];
+  const f = { add: panelAdd, guide: panelGuide, kalka: panelKalka, sheet: panelSheet, settings: panelSettings, scan: panelScan }[R.panel];
   if (f) f();
   panelBody.scrollTop = scroll;
 }
@@ -966,6 +1024,17 @@ function panelKalka() {
   }
   if (k.mode === 'tones') panelBody.append(rangeRow('Уровней тона', 2, 6, 1, k.levels, (v) => { k.levels = v; persist(); rebuildKalka(); }));
 
+  panelBody.append(el('div', { class: 'section-title' }, 'Проверка пропорций'));
+  panelBody.append(toggleRow('Мигать (вкл/выкл)', k.blink, (v) => { k.blink = v; persist(); if (v) toast('Смотри, что «прыгает» при мигании — там пропорции расходятся'); }));
+  panelBody.append(rangeRow('Период мигания', 0.3, 2, 0.1, k.blinkPeriod, (v) => { k.blinkPeriod = v; persist(); }, (v) => v.toFixed(1) + ' с'));
+
+  panelBody.append(el('div', { class: 'section-title' }, 'Перспектива с фото'));
+  panelBody.append(el('div', { class: 'btns' }, btn('📐 Найти точки схода', findKalkaPerspective, 'primary')));
+  if (R.vp && R.vp.src === R.kalkaSrc) {
+    panelBody.append(el('p', { class: 'note' }, R.vp.text));
+    panelBody.append(toggleRow('Показать найденные линии', k.vpShow, (v) => { k.vpShow = v; persist(); }));
+  } else panelBody.append(el('p', { class: 'note' }, 'Ищет на картинке прямые края (здания, комнаты, мебель) и точки, где они сходятся. Ставит на лист сетку перспективы как на фото.'));
+
   panelBody.append(el('div', { class: 'section-title' }, 'Сетка и клетки'));
   panelBody.append(toggleRow('Сетка поверх картинки', k.grid, (v) => { k.grid = v; persist(); }));
   panelBody.append(rangeRow('Клеток по ширине', 2, 12, 1, k.cols, (v) => { k.cols = v; k.cell = 0; persist(); refreshPanelPart(); }));
@@ -1020,10 +1089,10 @@ function panelSheet() {
     panelBody.append(el('div', { class: 'btns' }, btn('✓ Готово', () => { finishCalib(); }, 'primary')));
   } else {
     panelBody.append(el('div', { class: 'btns' },
-      btn('🔍 Найти лист', () => { S.paper.tracking = true; R.forceCalib = true; persist(); toast('Ищу лист…'); refreshPanel(); }, 'primary'),
+      btn('🔍 Найти лист', () => { S.paper.tracking = true; S.manual.on = false; R.forceCalib = true; persist(); toast('Ищу лист…'); refreshPanel(); }, 'primary'),
       btn('✋ Углы вручную', startCalib)));
   }
-  panelBody.append(toggleRow('Следить за листом (если он сдвинется)', S.paper.tracking, (v) => { S.paper.tracking = v; if (v) R.mode = 'normal'; persist(); refreshPanel(); }));
+  panelBody.append(toggleRow('Следить за листом (если он сдвинется)', S.paper.tracking, (v) => { S.paper.tracking = v; if (v) { R.mode = 'normal'; S.manual.on = false; } persist(); refreshPanel(); }));
   panelBody.append(segRow('Формат листа', [['A6', 'A6'], ['A5', 'A5'], ['A4', 'A4'], ['A3', 'A3'], ['Letter', 'Letter'], ['custom', 'Свой']], S.paper.format, (v) => { S.paper.format = v; persist(); refreshPanel(); }));
   if (S.paper.format === 'custom') {
     const wI = el('input', { type: 'number', min: 20, max: 2000, value: S.paper.customW });
@@ -1033,9 +1102,216 @@ function panelSheet() {
     panelBody.append(el('div', { class: 'row' }, el('span', { class: 'lbl' }, 'Размер, мм'), wI, el('span', {}, '×'), hI));
   }
   panelBody.append(segRow('Ориентация', [['auto', 'Авто'], ['port', 'Книжная'], ['land', 'Альбомная']], S.paper.orient, (v) => { S.paper.orient = v; persist(); }));
+
+  panelBody.append(el('div', { class: 'section-title' }, 'Камера под углом'));
+  panelBody.append(el('div', { class: 'status-line', id: 'tiltVal' }, tiltText()));
+  panelBody.append(el('p', { class: 'note' }, 'Ставить телефон строго сверху не обязательно: по 4 углам листа программа сама считает перспективу, и направляющие с калькой ложатся на лист с правильным искажением. ',
+    'Если лист не находится, задай наклон вручную, а потом при желании поправь углы.'));
+  panelBody.append(toggleRow('Задать наклон вручную', S.manual.on, (v) => { S.manual.on = v; if (v) { S.paper.tracking = false; R.mode = 'normal'; applyManual(); } persist(); refreshPanel(); }));
+  if (S.manual.on) {
+    const m = S.manual;
+    panelBody.append(rangeRow('Наклон камеры', 0, 75, 1, m.tilt, (v) => { m.tilt = v; applyManual(); }, (v) => v + '°'));
+    panelBody.append(segRow('Дальний край листа', [[0, '↑ Сверху'], [90, '→ Справа'], [180, '↓ Снизу'], [270, '← Слева']], m.far, (v) => { m.far = +v; applyManual(); }));
+    panelBody.append(rangeRow('Поворот листа', -45, 45, 1, m.yaw, (v) => { m.yaw = v; applyManual(); }, (v) => v + '°'));
+    panelBody.append(rangeRow('Размер на экране', 0.4, 1.6, 0.02, m.size, (v) => { m.size = v; applyManual(); }, (v) => Math.round(v * 100) + '%'));
+    panelBody.append(el('div', { class: 'btns' }, btn('✋ Подогнать углы точно', startCalib)));
+  }
   panelBody.append(el('p', { class: 'note' },
     'Размер листа нужен, чтобы сантиметры и круги были настоящими. ',
     el('b', {}, 'Для лучшего распознавания: '), 'тёмный стол, ровный свет без бликов, весь лист в кадре. Если лист приклеен к столу — выключи слежение, так стабильнее.'));
+}
+
+function tiltText() {
+  if (!S.corners) return '📐 Наклон камеры: лист ещё не задан';
+  const t = measureTilt();
+  if (!t || t.tilt == null) return '📐 Наклон камеры: не удалось оценить';
+  const deg = Math.round(t.tilt);
+  const how = deg <= 8 ? 'почти сверху' : deg <= 30 ? 'небольшой наклон' : deg <= 55 ? 'заметный наклон — перспектива учтена' : 'сильный наклон — дальний край мельче, точность ниже';
+  return `📐 Наклон камеры ≈ ${deg}° (${how})${t.measuredF ? '' : ' · оценка'}`;
+}
+
+function applyManual() {
+  if (!R.vw) return;
+  const m = S.manual, [pw, ph] = paperDims();
+  const vs = Math.hypot(R.M[0], R.M[3]);
+  const f = assumedFocal(R.vw, R.vh) * vs;
+  const rot = Math.abs(Math.sin(m.yaw * Math.PI / 180)) > 0.7 || m.far % 180 ? [ph, pw] : [pw, ph];
+  const k0 = Math.min(R.W * 0.8 / rot[0], R.H * 0.7 / rot[1]) * m.size;
+  const sc = manualCorners({ pw, ph, f, size: k0, tilt: m.tilt, yaw: m.yaw, far: m.far, cx: R.W / 2, cy: R.H / 2 });
+  setCorners(sc.map(sToV));
+  persist();
+}
+
+async function findKalkaPerspective() {
+  if (!R.kalkaSrc) return;
+  toast('Ищу прямые и точки схода…', 8000);
+  await new Promise(r => setTimeout(r, 30));
+  const segs = detectSegments(R.kalkaSrc);
+  const W = R.kalkaSrc.width, H = R.kalkaSrc.height;
+  const vps = findVanishingPoints(segs, W, H, 3);
+  const cls = segs.map(() => 3);
+  vps.forEach((v, i) => v.inliers.forEach(q => { cls[q] = i; }));
+  const vert = vps.find(v => v.vertical);
+  const hor = vps.filter(v => v !== vert && !v.inf).sort((a, b) => a.x - b.x);
+  let text;
+  if (!hor.length) {
+    R.vp = { src: R.kalkaSrc, segs, cls, text: `Прямых найдено: ${segs.length}. Точек схода не нашлось — на фото мало сходящихся прямых (лучше всего работают здания, интерьеры, столы).` };
+    toast('Точки схода не найдены'); S.kalka.vpShow = true; persist(); refreshPanel(); return;
+  }
+  const A = kalkaA();
+  const toP = (v) => { const r = G.apply(A, v.x, v.y); return { x: r.x, y: r.y }; };
+  pushUndo();
+  const g = { id: S.nextId++, type: 'persp', props: defaultProps('persp'), color: null, hidden: false };
+  const p1 = toP(hor[0]);
+  if (hor.length >= 2) {
+    const p2 = toP(hor[1]);
+    if (vert && !vert.inf) { g.props.vps = 3; g.pts = [p1, p2, toP(vert)]; }
+    else { g.props.vps = 2; g.pts = [p1, p2, { x: (p1.x + p2.x) / 2, y: R.ph * 2 }]; }
+  } else {
+    g.props.vps = 1; g.pts = [p1, { x: p1.x + R.pw, y: p1.y }, { x: p1.x, y: R.ph * 2 }];
+  }
+  S.guides.push(g); R.selected = g.id;
+  const names = ['красные', 'голубые', 'жёлтые'];
+  text = `Найдено точек схода: ${g.props.vps} (из ${segs.length} прямых). Цвета линий: ${vps.map((v, i) => names[i] + (v === vert ? ' — вертикали' : '')).join(', ')}. Сетка перспективы добавлена — её можно поправить как обычную направляющую.`;
+  R.vp = { src: R.kalkaSrc, segs, cls, text };
+  S.kalka.vpShow = true; persist();
+  toast('Перспектива с фото добавлена ✓');
+  refreshPanel();
+}
+
+// ---------- Оцифровка ----------
+function panelScan() {
+  panelTitle.textContent = '📥 Оцифровать рисунок';
+  const sc = S.scan;
+  panelBody.append(el('p', { class: 'note' }, 'Снимает лист, выпрямляет его, убирает тени и фон бумаги, распознаёт ', el('b', {}, 'линии'), ' и ', el('b', {}, 'краски'), ' и заново собирает рисунок в вектор. Сохраняется в PNG, JPG или SVG. Без ИИ — только обработка изображения.'));
+  if (!S.corners) panelBody.append(el('div', { class: 'status-line' }, '⚠️ Сначала нужно найти лист (📄 Лист).'));
+  panelBody.append(el('p', { class: 'note' }, el('b', {}, 'Перед снимком: '), 'убери руки и карандаш с листа, свет ровный, без бликов. Камера под углом — можно, но сверху чётче.'));
+  panelBody.append(toggleRow('Таймер 3 с (успеть убрать руки)', sc.timer !== false, (v) => { sc.timer = v; persist(); }));
+  panelBody.append(rangeRow('Цветов краски', 0, 12, 1, sc.colors, (v) => { sc.colors = v; persist(); }, (v) => v ? v : 'только линии'));
+  panelBody.append(el('div', { class: 'btns' }, btn('📥 Оцифровать', () => runScan(), 'primary'),
+    R.scan ? btn('Открыть последний', () => openScanView()) : null));
+}
+
+const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+async function runScan() {
+  if (R.scanBusy) return;
+  if (!S.corners || !R.vw) { toast('Сначала найди лист'); return; }
+  R.scanBusy = true;
+  try {
+    if (S.scan.timer !== false) for (let i = 3; i > 0; i--) { toast(`Убери руки… ${i}`, 1100); if (R.cam && R.cam.setHand) R.cam.setHand(false); await sleep(1000); }
+    if (R.cam && R.cam.setHand) { R.cam.setHand(false); await sleep(600); }
+    toast('Снимаю…', 4000);
+    const frame = await scan.captureFrames(video, R.vw, R.vh, 6, 60);
+    if (R.cam && R.cam.setHand) R.cam.setHand(true);
+    const [pw, ph] = paperDims();
+    const c = getCorners();
+    const H = G.homography([{ x: 0, y: 0 }, { x: pw, y: 0 }, { x: pw, y: ph }, { x: 0, y: ph }], c);
+    if (!H) throw new Error('Нет листа');
+    const area = Math.abs(G.polygonArea ? G.polygonArea(c) : shoelace(c));
+    const density = Math.sqrt(area / (pw * ph));
+    const ppm = G.clamp(Math.round(density * 1.3 * 2) / 2, 3, 6);
+    toast('Выпрямляю лист…', 4000); await sleep(20);
+    const rect = scan.rectify(frame, H, pw, ph, ppm);
+    toast('Убираю тени и фон…', 4000); await sleep(20);
+    const flat = scan.flatten(rect, ppm, S.scan.clean);
+    R.scan = { pw, ph, ppm, flat, tab: 'vec' };
+    await processScan();
+    openScanView();
+    toast('Готово ✓ Можно подправить настройки и сохранить', 3000);
+  } catch (e) { console.error(e); toast('Не получилось: ' + (e.message || e)); }
+  finally { R.scanBusy = false; if (R.cam && R.cam.setHand) R.cam.setHand(true); }
+}
+
+function shoelace(c) { let a = 0; for (let i = 0; i < c.length; i++) { const p = c[i], q = c[(i + 1) % c.length]; a += p.x * q.y - q.x * p.y; } return a / 2; }
+
+async function processScan() {
+  const sc = S.scan, d = R.scan;
+  toast('Распознаю линии и цвета…', 4000); await sleep(20);
+  d.seg = scan.segment(d.flat, d.ppm, { lineLevel: sc.lines, colors: sc.paint ? sc.colors : 0, minSpot: sc.minSpot, paint: sc.paint });
+  toast('Перевожу в вектор…', 4000); await sleep(20);
+  d.vec = scan.vectorize(d.seg, d.ppm, { smooth: sc.smooth, lineBlack: sc.lineBlack, withColors: sc.paint && sc.colors > 0 });
+  d.preview = null;
+}
+
+function scanCanvasFor(tab, scale) {
+  const d = R.scan;
+  if (tab === 'photo') {
+    const c = scan.imageDataCanvas(d.flat);
+    if (scale === 1) return c;
+    const o = document.createElement('canvas'); o.width = Math.round(c.width * scale); o.height = Math.round(c.height * scale);
+    o.getContext('2d').drawImage(c, 0, 0, o.width, o.height); return o;
+  }
+  return scan.renderVector(d.vec, scale, { colors: tab === 'vec' });
+}
+
+function openScanView() {
+  if (!R.scan) return;
+  closePanel();
+  const v = $('scanView'); v.innerHTML = ''; v.classList.remove('hidden');
+  const d = R.scan, sc = S.scan;
+  const img = el('img', { class: 'scan-img', alt: 'Результат' });
+  const stage = el('div', { class: 'scan-stage' }, img);
+  const info = el('div', { class: 'scan-info' });
+  const showPreview = () => {
+    const c = scanCanvasFor(d.tab, d.tab === 'photo' ? 1 : Math.min(2, 1400 / Math.max(d.vec.w, d.vec.h)) * 1);
+    img.src = c.toDataURL('image/png');
+    const nC = d.vec.colors.length, kb = Math.round(scan.toSVG(d.vec, d.pw, d.ph).length / 1024);
+    info.textContent = `${d.pw}×${d.ph} мм · цветов: ${nC} · линии ✓ · SVG ≈ ${kb} КБ`;
+  };
+  let t = 0;
+  const redo = () => { clearTimeout(t); t = setTimeout(async () => { await processScan(); showPreview(); }, 250); };
+  const tabs = segRow('', [['vec', 'Рисунок'], ['lines', 'Только линии'], ['photo', 'Скан']], d.tab, (x) => { d.tab = x; showPreview(); });
+  const ctl = el('div', { class: 'scan-ctl' },
+    tabs,
+    rangeRow('Цветов краски', 0, 12, 1, sc.colors, (x) => { sc.colors = x; sc.paint = x > 0; persist(); redo(); }, (x) => x || 'нет'),
+    rangeRow('Чувствительность линий', 0, 1, 0.05, sc.lines, (x) => { sc.lines = x; persist(); redo(); }, (x) => Math.round(x * 100) + '%'),
+    rangeRow('Сглаживание', 0, 3, 0.25, sc.smooth, (x) => { sc.smooth = x; persist(); redo(); }),
+    rangeRow('Убрать пятна меньше', 0, 20, 1, sc.minSpot, (x) => { sc.minSpot = x; persist(); redo(); }, (x) => x + ' мм²'),
+    toggleRow('Линии чёрным', sc.lineBlack, (x) => { sc.lineBlack = x; persist(); redo(); }),
+    segRow('Формат', [['png', 'PNG'], ['jpg', 'JPG'], ['svg', 'SVG (вектор)']], sc.fmt, (x) => { sc.fmt = x; persist(); }),
+    el('div', { class: 'btns' },
+      btn('💾 Сохранить', () => exportScan(false), 'primary'),
+      btn('📤 Поделиться', () => exportScan(true)),
+      btn('↻ Переснять', () => { closeScanView(); runScan(); })));
+  v.append(el('div', { class: 'scan-head' }, el('h2', {}, '📥 Оцифровка'), el('button', { class: 'icon small', onclick: closeScanView, 'aria-label': 'Закрыть' }, '✕')), stage, info, ctl);
+  showPreview();
+}
+function closeScanView() { $('scanView').classList.add('hidden'); $('scanView').innerHTML = ''; }
+
+async function exportScan(share) {
+  const d = R.scan, sc = S.scan;
+  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+  let blob, name;
+  if (sc.fmt === 'svg') {
+    if (d.tab === 'photo') toast('SVG — это вектор: сохраняю рисунок, а не скан');
+    const vec = d.tab === 'lines' ? { ...d.vec, colors: [] } : d.vec;
+    blob = new Blob([scan.toSVG(vec, d.pw, d.ph)], { type: 'image/svg+xml' }); name = `reyka-${stamp}.svg`;
+  } else {
+    const scale = d.tab === 'photo' ? 1 : 8 / d.ppm * (d.vec.w / d.vec.w);
+    const c = scanCanvasFor(d.tab, scale);
+    const type = sc.fmt === 'jpg' ? 'image/jpeg' : 'image/png';
+    blob = await new Promise(r => c.toBlob(r, type, 0.93)); name = `reyka-${stamp}.${sc.fmt}`;
+  }
+  await saveBlob(blob, name, share);
+}
+
+async function saveBlob(blob, name, share) {
+  const N = window.ReykaNative;
+  if (N && N.saveFile) {
+    const b64 = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+    const msg = share ? N.shareFile(b64, name, blob.type) : N.saveFile(b64, name, blob.type);
+    if (msg) toast(msg, 3500);
+    return;
+  }
+  const file = new File([blob], name, { type: blob.type });
+  if (share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: 'Рисунок' }); return; } catch (e) { if (e && e.name === 'AbortError') return; }
+  }
+  const a = el('a', { href: URL.createObjectURL(blob), download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  toast('Сохранено: ' + name);
 }
 
 async function panelSettings() {
@@ -1076,6 +1352,7 @@ async function panelSettings() {
     }
   } else if (R.cam && R.cam.demo) {
     panelBody.append(el('div', { class: 'btns' }, btn('📷 Включить настоящую камеру', () => startSource(false), 'primary')));
+    panelBody.append(segRow('Наклон камеры в демо', [[0, '0°'], [30, '30°'], [45, '45°'], [60, '60°']], s.demoTilt || 0, (v) => { s.demoTilt = +v; S.corners = null; R.forceCalib = true; S.paper.tracking = true; S.manual.on = false; persist(); startSource(true); }));
   }
 
   panelBody.append(el('div', { class: 'section-title' }, 'Прочее'));
@@ -1098,4 +1375,4 @@ if ('serviceWorker' in navigator && !IS_APP && location.protocol === 'https:') {
 }
 
 // Для отладки/тестов
-window.__reyka = { S: () => S, R, addGuide, startSource, openPanel, setClean };
+window.__reyka = { S: () => S, R, addGuide, startSource, openPanel, setClean, measureTilt, findKalkaPerspective, runScan: () => runScan() };

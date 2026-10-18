@@ -21,6 +21,7 @@
   <header id="topbar" class="ui">
     <button id="statusPill" class="pill" title="Лист"><i class="dot"></i><span id="statusText">Лист не задан</span></button>
     <div class="spacer"></div>
+    <button id="btnMagnet" class="icon toggle" title="Магнит: прилипание к точкам" aria-label="Магнит">🧲</button>
     <button id="btnUndo" class="icon" title="Отменить" aria-label="Отменить">↶</button>
     <button id="btnClean" class="icon" title="Чистый экран" aria-label="Чистый экран">👁</button>
     <button id="btnSettings" class="icon" title="Настройки" aria-label="Настройки">⚙</button>
@@ -30,7 +31,7 @@
     <button id="btnAdd"><b>＋</b><span>Направляющая</span></button>
     <button id="btnKalka"><b>🖼</b><span>Калька</span></button>
     <button id="btnSheet"><b>📄</b><span>Лист</span></button>
-    <button id="btnMagnet" class="toggle"><b>🧲</b><span>Магнит</span></button>
+    <button id="btnScan"><b>📥</b><span>Оцифровать</span></button>
   </nav>
 
   <section id="panel" class="ui panel hidden" aria-live="polite">
@@ -57,6 +58,8 @@
       <p class="hint">Камера работает только по HTTPS или в приложении. Изображение никуда не отправляется — всё считается на телефоне.</p>
     </div>
   </section>
+
+  <section id="scanView" class="scanview hidden"></section>
 
   <div id="toast" class="toast hidden"></div>
   <div id="cleanHint" class="clean-hint hidden">Двойной тап — вернуть панели</div>

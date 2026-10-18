@@ -83,7 +83,9 @@ export class PaperTracker {
     if (!quad) return this.fail('лист не найден');
 
     const qa = Math.abs(polygonArea(quad));
-    if (area / qa < 0.72) return this.fail('форма не похожа на лист (рука или тень?)');
+    // Закрашенные места рисунка — «дырки» в маске бумаги; считаем их частью листа.
+    const filled = filledArea(pixels, w, h);
+    if (filled / qa < 0.72) return this.fail('форма не похожа на лист (рука или тень?)');
 
     const refined = refineQuad(quad, edgePts);
     const minSide = Math.min(...quad.map((p, i) => dist(p, quad[(i + 1) % 4])));
@@ -92,7 +94,7 @@ export class PaperTracker {
     if (!isConvexQuad(quad)) return this.fail('лист не найден');
 
     this.lastReason = '';
-    return { corners: quad.map(p => ({ x: p.x / s, y: p.y / s })), quality: Math.min(1, area / qa) };
+    return { corners: quad.map(p => ({ x: p.x / s, y: p.y / s })), quality: Math.min(1, filled / qa) };
   }
 
   fail(reason) { this.lastReason = reason; return null; }
@@ -243,4 +245,22 @@ function fitSide(a, b, pts, tol, ref) {
   for (const p of sel) { const dx = p.x - mx, dy = p.y - my; xx += dx * dx; xy += dx * dy; yy += dy * dy; }
   const ang = 0.5 * Math.atan2(2 * xy, xx - yy);
   return { p: { x: mx, y: my }, d: { x: Math.cos(ang), y: Math.sin(ang) } };
+}
+
+// Площадь области вместе с внутренними дырками: заливаем «снаружи» от краёв кадра.
+function filledArea(pixels, w, h) {
+  const m = new Uint8Array(w * h);
+  for (let k = 0; k < pixels.length; k++) m[pixels[k]] = 1;
+  const stack = new Int32Array(w * h);
+  let sp = 0, outside = 0;
+  const push = (i) => { if (!m[i]) { m[i] = 2; stack[sp++] = i; } };
+  for (let x = 0; x < w; x++) { push(x); push((h - 1) * w + x); }
+  for (let y = 0; y < h; y++) { push(y * w); push(y * w + w - 1); }
+  while (sp) {
+    const i = stack[--sp]; outside++;
+    const y = (i / w) | 0, x = i - y * w;
+    if (x > 0) push(i - 1); if (x < w - 1) push(i + 1);
+    if (y > 0) push(i - w); if (y < h - 1) push(i + w);
+  }
+  return w * h - outside;
 }

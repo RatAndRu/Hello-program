@@ -15,7 +15,7 @@ export function imageToCanvas(img) {
   return c;
 }
 
-function grayOf(src) {
+export function grayOf(src) {
   const w = src.width, h = src.height;
   const d = src.getContext('2d').getImageData(0, 0, w, h).data;
   const g = new Float32Array(w * h), a = new Uint8Array(w * h);
@@ -28,7 +28,7 @@ function grayOf(src) {
   return { g, a, w, h };
 }
 
-function gaussian(src, w, h, sigma) {
+export function gaussian(src, w, h, sigma) {
   if (sigma < 0.3) return src.slice();
   const r = Math.ceil(sigma * 2.5), k = [];
   let s = 0;
@@ -53,20 +53,20 @@ function hexToRgb(hex) {
   return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
 }
 
-// detail 0..1 — сколько линий оставить; thick 1..4 — толщина; smooth — сглаживание.
-export function edgesCanvas(src, { detail = 0.5, thick = 2, smooth = 1.4, color = '#ff2fd6' } = {}) {
-  const { g, w, h } = grayOf(src);
+// Ядро детектора Кэнни: возвращает маску границ и угол градиента для каждого пикселя.
+export function cannyCore(g, w, h, { detail = 0.5, smooth = 1.4 } = {}) {
   const b = gaussian(g, w, h, smooth);
-  const mag = new Float32Array(w * h), dir = new Uint8Array(w * h);
+  const mag = new Float32Array(w * h), ang = new Float32Array(w * h), dir = new Uint8Array(w * h);
   for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
     const i = y * w + x;
     const gx = -b[i - w - 1] - 2 * b[i - 1] - b[i + w - 1] + b[i - w + 1] + 2 * b[i + 1] + b[i + w + 1];
     const gy = -b[i - w - 1] - 2 * b[i - w] - b[i - w + 1] + b[i + w - 1] + 2 * b[i + w] + b[i + w + 1];
     mag[i] = Math.hypot(gx, gy);
-    let a = Math.atan2(gy, gx) * 180 / Math.PI; if (a < 0) a += 180;
+    const at = Math.atan2(gy, gx);
+    ang[i] = at;
+    let a = at * 180 / Math.PI; if (a < 0) a += 180;
     dir[i] = a < 22.5 || a >= 157.5 ? 0 : a < 67.5 ? 1 : a < 112.5 ? 2 : 3;
   }
-  // утончение (non-maximum suppression)
   const nms = new Float32Array(w * h);
   const vals = [];
   for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
@@ -81,15 +81,13 @@ export function edgesCanvas(src, { detail = 0.5, thick = 2, smooth = 1.4, color 
     }
     if (m >= a && m >= c) { nms[i] = m; vals.push(m); }
   }
-  const out = document.createElement('canvas');
-  out.width = w; out.height = h;
-  if (!vals.length) return out;
+  const edge = new Uint8Array(w * h);
+  if (!vals.length) return { edge, ang, mag };
   vals.sort((p, q) => p - q);
   const keep = 0.04 + 0.42 * Math.max(0, Math.min(1, detail));
   const hi = vals[Math.min(vals.length - 1, Math.floor(vals.length * (1 - keep)))];
   const lo = hi * 0.45;
-  // гистерезис
-  const edge = new Uint8Array(w * h), stack = [];
+  const stack = [];
   for (let i = 0; i < w * h; i++) if (nms[i] >= hi) { edge[i] = 1; stack.push(i); }
   while (stack.length) {
     const i = stack.pop(), y = (i / w) | 0, x = i - y * w;
@@ -101,6 +99,15 @@ export function edgesCanvas(src, { detail = 0.5, thick = 2, smooth = 1.4, color 
       if (!edge[j] && nms[j] >= lo) { edge[j] = 1; stack.push(j); }
     }
   }
+  return { edge, ang, mag };
+}
+
+// detail 0..1 — сколько линий оставить; thick 1..4 — толщина; smooth — сглаживание.
+export function edgesCanvas(src, { detail = 0.5, thick = 2, smooth = 1.4, color = '#ff2fd6' } = {}) {
+  const { g, w, h } = grayOf(src);
+  const { edge } = cannyCore(g, w, h, { detail, smooth });
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
   // толщина
   const r = Math.max(0, Math.round(thick) - 1);
   const ctx = out.getContext('2d');
