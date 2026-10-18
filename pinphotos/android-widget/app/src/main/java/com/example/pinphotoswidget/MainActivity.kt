@@ -433,7 +433,7 @@ class MainActivity : FragmentActivity() {
 
     private fun refresh() {
         photos = PhotoStore.list(this)
-        val lockedNames = PhotoStore.lockedAlbumNames(this)
+        val lockedNames = PhotoStore.lockedAlbumNames(this) - unlockedAlbums
         val ordinaryPhotos = photos.filter { it.widgetId == 0 }
         val visiblePhotos = ordinaryPhotos.filter { photo ->
             PhotoStore.MISC_ALBUM in photo.albums && photo.albums.none { it in lockedNames }
@@ -1004,7 +1004,13 @@ class MainActivity : FragmentActivity() {
         }
         val prompt = BiometricPrompt(this, ContextCompat.getMainExecutor(this), object : BiometricPrompt.AuthenticationCallback() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
-                unlockedAlbums.add(album); onSuccess()
+                // Как и после PIN, сначала реально получаем ключ альбома в сессию.
+                // Если Keystore-ключ недоступен, честно просим пароль, а не показываем пустой альбом.
+                if (PhotoStore.albumKey(this@MainActivity, album) != null) {
+                    unlockedAlbums.add(album); onSuccess()
+                } else {
+                    toast("Отпечаток подтверждён, но ключ альбома недоступен. Откройте альбом паролем")
+                }
             }
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) {

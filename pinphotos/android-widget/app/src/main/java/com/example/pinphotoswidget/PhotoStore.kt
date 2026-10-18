@@ -205,14 +205,20 @@ object PhotoStore {
         sessionAlbumKeys[album] = key
         // Все копии этого альбома на диске превращаются в AES-GCM шифртекст. Ошибка одного
         // файла не должна ронять приложение: фиксируем её, но остальные фото продолжаем.
+        // ВАЖНО: после конвертации сохраняем метаданные. Раньше encrypted=true оставался
+        // только у объектов в памяти, а meta.json по-прежнему говорил encrypted=false.
+        // Из-за этого после перезапуска видео считалось открытым и плеер/превью пытались
+        // читать AES-шифртекст как обычный MP4/JPEG.
         val failures = mutableListOf<String>()
-        list(context).filter { album in it.albums }.forEach { photo ->
+        val allAfterPin = list(context)
+        allAfterPin.filter { album in it.albums }.forEach { photo ->
             try {
                 if (isLargeOrVideo(context, photo)) rewritePhotoStorage(context, photo)
                 else plainBytes(context, photo)?.let { plain -> writeStored(context, photo, plain) }
                     ?: failures.add(photo.name)
             } catch (e: Exception) { failures.add(photo.name) }
         }
+        saveAll(context, allAfterPin)
         if (failures.isNotEmpty()) {
             try { java.io.File(dir(context), "security_error.txt").writeText("Не зашифровано: " + failures.joinToString(", ")) } catch (ignored: Exception) { }
         }
@@ -409,11 +415,24 @@ object PhotoStore {
         return photo
     }
 
+    /** Фактическая проверка файла по магической подписи, даже если в старых метаданных encrypted=false. */
+    fun storedIsEncrypted(context: Context, photo: Photo): Boolean {
+        if (photo.encrypted) return true
+        return try {
+            val file = photo.fileIn(dir(context))
+            if (!file.exists() || file.length() < 6) false else file.inputStream().use { input ->
+                val magic = ByteArray(6); var offset = 0
+                while (offset < magic.size) { val n = input.read(magic, offset, magic.size - offset); if (n <= 0) break; offset += n }
+                offset == magic.size && magic.toString(Charsets.US_ASCII) == "PFENC1"
+            }
+        } catch (e: Exception) { false }
+    }
+
     /** Файл, который можно отдать плееру/превью. Обычное видео не копируем и не грузим в RAM. */
     fun playableFile(context: Context, photo: Photo): File? {
         val source = photo.fileIn(dir(context))
         if (!source.exists()) return null
-        if (!photo.encrypted) return source
+        if (!storedIsEncrypted(context, photo)) return source
         val cached = File(context.cacheDir, "decrypted_${photo.id}.${source.extension.ifBlank { "mp4" }}")
         if (cached.exists() && cached.length() > 0) return cached
         return try {
@@ -541,8 +560,20 @@ object PhotoStore {
             if (frame != null) synchronized(bitmapCache) { bitmapCache.put(cacheKey, frame) }
             return frame
         }
+        // Зашифрованные изображения: сначала потоково расшифровываем во временный файл,
+        // затем сэмплированно декодируем его. Нельзя читать весь шифртекст в ByteArray:
+        // на больших фото это и была дорога к нехватке памяти при открытии закрытого альбома.
+        if (storedIsEncrypted(context, photo)) {
+            val plainFile = playableFile(context, photo) ?: return null
+            val decodedEncrypted = decodeSampledFile(plainFile, target)
+            if (decodedEncrypted != null) {
+                synchronized(bitmapCache) { bitmapCache.put(cacheKey, decodedEncrypted) }
+                return decodedEncrypted
+            }
+            return null
+        }
         // Открытые изображения декодируем сэмплированно прямо из файла, не создавая ByteArray всего файла.
-        if (!photo.encrypted) {
+        if (!photo.encrypted) {        if (!photo.encrypted) {
             val decoded = decodeSampledFile(photo.fileIn(dir(context)), target)
             if (decoded != null) {
                 synchronized(bitmapCache) { bitmapCache.put(cacheKey, decoded) }
