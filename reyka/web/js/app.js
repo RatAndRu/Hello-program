@@ -234,8 +234,9 @@ function trackStep(now) {
     return;
   }
   R.pending = null;
-  const dead = diag * 0.004;
-  const a = maxD < dead ? 0.12 : maxD < dead * 4 ? 0.35 : 0.75;
+  // Мелкое дрожание гасим сильно, заметное движение догоняем быстро.
+  const dead = diag * 0.0025;
+  const a = maxD < dead ? 0.2 : maxD < dead * 4 ? 0.45 : 0.8;
   S.corners = prev.map((p, i) => ({ x: p.x + (c[i].x - p.x) * a, y: p.y + (c[i].y - p.y) * a }));
   S.cornersFor = { w: R.vw, h: R.vh };
   persist();
