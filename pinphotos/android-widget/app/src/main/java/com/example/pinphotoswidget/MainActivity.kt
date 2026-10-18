@@ -1332,48 +1332,137 @@ class MainActivity : FragmentActivity() {
                 }
                 runOnUiThread { toast("Добавлено: $saved"); pendingImportWidget = 0; refresh() }
             }
-            EXPORT_JSON -> io.execute {
-                try {
-                    val arr = org.json.JSONArray()
-                    for (p in photos) {
-                        val bytes = PhotoStore.plainBytes(this, p) ?: continue
-                        arr.put(JSONObject()
-                            .put("name", p.name).put("album", p.album).put("albums", org.json.JSONArray(p.albums)).put("tags", org.json.JSONArray(p.tags))
-                            .put("note", p.note).put("pinned", p.pinned).put("createdAt", p.createdAt)
-                            .put("mime", p.mime)
-                            .put("data", android.util.Base64.encodeToString(bytes, android.util.Base64.NO_WRAP)))
+            EXPORT_JSON -> io.execute { exportBackup(data.data) }
+            IMPORT_JSON -> io.execute { importBackup(data.data) }
+        }
+    }
+
+    /**
+     * Бэкап v3 пишется ПОТОКОВО: JSON и Base64 идут кусками прямо в выходной поток.
+     * Старый способ собирал весь бэкап одной строкой в памяти (все фото и видео сразу),
+     * из-за чего на больших библиотеках процесс умирал от нехватки памяти, а выбранный
+     * файл оставался пустым — отсюда потом «End of input at character 0» при восстановлении.
+     */
+    private fun exportBackup(uri: Uri?) {
+        try {
+            val target = uri ?: throw IllegalStateException("Файл для бэкапа не выбран")
+            val out = contentResolver.openOutputStream(target, "wt")
+                ?: throw IllegalStateException("Не удалось открыть выбранный файл для записи")
+            var exported = 0; var skipped = 0
+            java.io.BufferedWriter(java.io.OutputStreamWriter(out, Charsets.UTF_8), 64 * 1024).use { writer ->
+                writer.write("{\"app\":\"pinphotos\",\"version\":3,\"photos\":[")
+                var firstPhoto = true
+                for (p in PhotoStore.list(this)) {
+                    val plain = try { PhotoStore.playableFile(this, p) } catch (e: Exception) { null }
+                    if (plain == null || !plain.exists()) { skipped++; continue }
+                    if (!firstPhoto) writer.write(",")
+                    firstPhoto = false
+                    val meta = JSONObject()
+                        .put("name", p.name).put("album", p.album).put("albums", org.json.JSONArray(p.albums))
+                        .put("tags", org.json.JSONArray(p.tags)).put("note", p.note).put("pinned", p.pinned)
+                        .put("createdAt", p.createdAt).put("mime", p.mime)
+                    val metaText = meta.toString()
+                    writer.write(metaText.dropLast(1))
+                    writer.write(",\"dataChunks\":[")
+                    var firstChunk = true
+                    plain.inputStream().buffered().use { input ->
+                        val buffer = ByteArray(48 * 1024)
+                        while (true) {
+                            val read = input.read(buffer)
+                            if (read <= 0) break
+                            if (!firstChunk) writer.write(",")
+                            firstChunk = false
+                            writer.write(JSONObject.quote(android.util.Base64.encodeToString(buffer, 0, read, android.util.Base64.NO_WRAP)))
+                        }
                     }
-                    val root = JSONObject().put("app", "pinphotos").put("version", 2).put("photos", arr)
-                    data.data?.let { uri -> contentResolver.openOutputStream(uri)?.use { it.write(root.toString().toByteArray()) } }
-                    runOnUiThread { toast("Бэкап сохранён") }
-                } catch (e: Exception) { runOnUiThread { toast("Ошибка бэкапа: ${e.message}") } }
+                    writer.write("]}")
+                    exported++
+                }
+                writer.write("]}")
+                writer.flush()
             }
-            IMPORT_JSON -> io.execute {
-                try {
-                    val text = data.data?.let { uri -> contentResolver.openInputStream(uri)?.readBytes()?.toString(Charsets.UTF_8) } ?: ""
-                    val arr = JSONObject(text).getJSONArray("photos"); var added = 0
-                    for (i in 0 until arr.length()) {
-                        val o = arr.getJSONObject(i)
-                        val encoded = if (o.has("data")) o.getString("data")
-                            else o.optString("dataUrl").substringAfter(",", "")
-                        if (encoded.isEmpty()) continue
-                        val base64Input = android.util.Base64InputStream(
-                            java.io.ByteArrayInputStream(encoded.toByteArray(Charsets.US_ASCII)),
-                            android.util.Base64.DEFAULT
-                        )
-                        val p = PhotoStore.importStream(this, base64Input,
-                            o.optString("mime", "image/jpeg"), o.optString("name", "Фото"))
-                        p.albums = mutableListOf<String>().apply {
-                            o.optJSONArray("albums")?.let { a -> for (j in 0 until a.length()) a.optString(j).takeIf { it.isNotBlank() }?.let { add(it) } }
-                            if (isEmpty()) o.optString("album").takeIf { it.isNotBlank() && it != "Разное" }?.let { add(it) }
-                        }; p.note = o.optString("note")
-                        p.pinned = o.optBoolean("pinned")
-                        o.optJSONArray("tags")?.let { t -> for (j in 0 until t.length()) p.tags.add(t.optString(j)) }
-                        PhotoStore.update(this, p); added++
+            runOnUiThread {
+                toast(if (skipped == 0) "Бэкап сохранён: $exported фото и видео"
+                    else "Бэкап сохранён: $exported. Пропущено недоступных: $skipped")
+            }
+        } catch (e: Exception) {
+            try { java.io.File(filesDir, "backup_error.txt").writeText(android.util.Log.getStackTraceString(e)) } catch (ignored: Exception) { }
+            runOnUiThread { toast("Ошибка бэкапа: ${e.message ?: "не удалось записать файл"}") }
+        }
+    }
+
+    /**
+     * Восстановление тоже потоковое: JsonReader идёт по файлу, а Base64-куски каждого фото
+     * сразу декодируются во временный файл, а не собираются строками в памяти.
+     * Старые бэкапы v2 (поле data одной строкой) по-прежнему читаются.
+     */
+    private fun importBackup(uri: Uri?) {
+        try {
+            val source = uri ?: throw IllegalStateException("Файл бэкапа не выбран")
+            val input = contentResolver.openInputStream(source)
+                ?: throw IllegalStateException("Не удалось открыть выбранный файл")
+            var added = 0
+            input.buffered().use { raw ->
+                val reader = android.util.JsonReader(java.io.InputStreamReader(raw, Charsets.UTF_8))
+                reader.beginObject()
+                while (reader.hasNext()) {
+                    if (reader.nextName() != "photos") { reader.skipValue(); continue }
+                    reader.beginArray()
+                    while (reader.hasNext()) {
+                        var name = "Фото"; var mime = "image/jpeg"; var note = ""; var pinned = false
+                        var album = ""; val albums = mutableListOf<String>(); val tags = mutableListOf<String>()
+                        var legacyEncoded = ""
+                        val temp = java.io.File(cacheDir, "restore_${System.nanoTime()}.bin")
+                        try {
+                            reader.beginObject()
+                            while (reader.hasNext()) {
+                                when (reader.nextName()) {
+                                    "name" -> name = reader.nextString()
+                                    "mime" -> mime = reader.nextString()
+                                    "note" -> note = reader.nextString()
+                                    "album" -> album = reader.nextString()
+                                    "pinned" -> pinned = reader.nextBoolean()
+                                    "albums" -> { reader.beginArray(); while (reader.hasNext()) reader.nextString().takeIf { it.isNotBlank() }?.let { albums.add(it) }; reader.endArray() }
+                                    "tags" -> { reader.beginArray(); while (reader.hasNext()) reader.nextString().takeIf { it.isNotBlank() }?.let { tags.add(it) }; reader.endArray() }
+                                    "dataChunks" -> {
+                                        reader.beginArray()
+                                        temp.outputStream().buffered().use { out ->
+                                            while (reader.hasNext()) {
+                                                val chunk = reader.nextString()
+                                                out.write(android.util.Base64.decode(chunk, android.util.Base64.DEFAULT))
+                                            }
+                                        }
+                                        reader.endArray()
+                                    }
+                                    "data" -> legacyEncoded = reader.nextString()
+                                    "dataUrl" -> legacyEncoded = reader.nextString().substringAfter(",", "")
+                                    else -> reader.skipValue()
+                                }
+                            }
+                            reader.endObject()
+                            if (legacyEncoded.isNotEmpty() && temp.length() == 0L) {
+                                temp.writeBytes(android.util.Base64.decode(legacyEncoded, android.util.Base64.DEFAULT))
+                            }
+                            if (temp.length() > 0L) {
+                                val p = temp.inputStream().use { stream -> PhotoStore.importStream(this, stream, mime, name) }
+                                p.albums = albums
+                                if (p.albums.isEmpty() && album.isNotBlank() && album != PhotoStore.MISC_ALBUM) p.albums = mutableListOf(album)
+                                p.note = note; p.pinned = pinned; p.tags = tags
+                                PhotoStore.update(this, p); added++
+                            }
+                        } finally { temp.delete() }
                     }
-                    runOnUiThread { toast("Восстановлено: $added"); refresh() }
-                } catch (e: Exception) { runOnUiThread { toast("Ошибка восстановления: ${e.message}") } }
+                    reader.endArray()
+                }
+                reader.endObject()
             }
+            runOnUiThread { toast("Восстановлено: $added"); refresh() }
+        } catch (e: Exception) {
+            try { java.io.File(filesDir, "backup_error.txt").writeText(android.util.Log.getStackTraceString(e)) } catch (ignored: Exception) { }
+            val reason = if (e.message?.contains("End of input") == true)
+                "файл бэкапа пустой или обрезанный — создайте бэкап заново этой версией"
+                else (e.message ?: "не удалось прочитать файл")
+            runOnUiThread { toast("Ошибка восстановления: $reason") }
         }
     }
 
