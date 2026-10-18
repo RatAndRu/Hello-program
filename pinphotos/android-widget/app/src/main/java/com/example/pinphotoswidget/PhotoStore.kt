@@ -203,6 +203,7 @@ object PhotoStore {
         )
         saveSecurity(context, updated)
         sessionAlbumKeys[album] = key
+        sessionUnlockedAlbums.add(album)
         // Все копии этого альбома на диске превращаются в AES-GCM шифртекст. Ошибка одного
         // файла не должна ронять приложение: фиксируем её, но остальные фото продолжаем.
         // ВАЖНО: после конвертации сохраняем метаданные. Раньше encrypted=true оставался
@@ -243,7 +244,7 @@ object PhotoStore {
                 }
             }
         }
-        sessionAlbumKeys.remove(album)
+        lockAlbumSession(context, album)
         saveAll(context, all)
     }
 
@@ -252,7 +253,15 @@ object PhotoStore {
         val ok = s.pinHash.isNotEmpty() && hashPin(s.salt, pin) == s.pinHash
         if (ok) {
             // Сразу восстанавливаем ключ альбома из PIN-wrap и держим только в памяти.
-            VaultCrypto.unwrapWithPin(s.pinKeyWrap, pin, s.salt)?.let { sessionAlbumKeys[album] = it }
+            // Альбом считается открытым только если ключ реально получен: одного совпадения
+            // хэша недостаточно, иначе интерфейс мог показать «открыто» без доступа к фото.
+            val pinKey = VaultCrypto.unwrapWithPin(s.pinKeyWrap, pin, s.salt)
+            if (pinKey != null) {
+                sessionAlbumKeys[album] = pinKey
+                sessionUnlockedAlbums.add(album)
+            } else if (albumKey(context, album) != null) {
+                sessionUnlockedAlbums.add(album)
+            }
         }
         return ok
     }
@@ -294,6 +303,7 @@ object PhotoStore {
         val arr = JSONArray()
         remaining.forEach { s -> arr.put(JSONObject().put("name", s.name).put("pinHash", s.pinHash).put("salt", s.salt).put("biometric", s.biometric).put("keyWrap", s.keyWrap).put("pinKeyWrap", s.pinKeyWrap)) }
         securityFile(context).writeText(arr.toString())
+        lockAlbumSession(context, album)
         return victims.size
     }
 
@@ -385,6 +395,40 @@ object PhotoStore {
         val key = security.keyWrap.takeIf { it.isNotEmpty() }?.let { VaultCrypto.unwrapWithMaster(it) }
         if (key != null) sessionAlbumKeys[album] = key
         return key
+    }
+
+    // Открытость альбома — часть сессии процесса, а не одной Activity. Поэтому смена темы
+    // (recreate), поворот и пересоздание главного экрана не должны «терять» разблокировку.
+    // При завершении приложения MainActivity явно вызывает lockAllAlbumSessions().
+    private val sessionUnlockedAlbums = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    fun isAlbumUnlocked(album: String): Boolean = album in sessionUnlockedAlbums
+
+    fun unlockedAlbumNames(): Set<String> = sessionUnlockedAlbums.toSet()
+
+    /** Единая точка успешной разблокировки для PIN и отпечатка. */
+    fun unlockAlbumSession(context: Context, album: String): Boolean {
+        if (albumKey(context, album) == null) return false
+        sessionUnlockedAlbums.add(album)
+        return true
+    }
+
+    fun lockAlbumSession(context: Context, album: String) {
+        sessionUnlockedAlbums.remove(album)
+        sessionAlbumKeys.remove(album)
+        // Расшифрованные временные копии закрытого альбома в cacheDir больше не держим.
+        try {
+            list(context).filter { album in it.albums }.forEach { photo ->
+                val source = photo.fileIn(dir(context))
+                java.io.File(context.cacheDir, "decrypted_${photo.id}.${source.extension.ifBlank { "mp4" }}").delete()
+            }
+        } catch (e: Exception) { }
+    }
+
+    fun lockAllAlbumSessions(context: Context) {
+        unlockedAlbumNames().forEach { lockAlbumSession(context, it) }
+        sessionUnlockedAlbums.clear()
+        sessionAlbumKeys.clear()
     }
 
     /** Потоковый импорт: видео не загружается целиком в оперативную память. */
@@ -704,6 +748,10 @@ object PhotoStore {
             }
             securityFile(context).writeText(arr.toString())
         }
+        // Сессия разблокировки и ключ должны переехать под новое имя, иначе после
+        // переименования открытого альбома он визуально снова станет закрытым.
+        sessionAlbumKeys.remove(canonical)?.let { sessionAlbumKeys[clean] = it }
+        if (sessionUnlockedAlbums.remove(canonical)) sessionUnlockedAlbums.add(clean)
         return clean
     }
 

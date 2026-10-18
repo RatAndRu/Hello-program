@@ -180,7 +180,6 @@ class MainActivity : FragmentActivity() {
         } catch (ignored: Exception) { }
     }
     private val selectedIds = linkedSetOf<String>()
-    private val unlockedAlbums = mutableSetOf<String>()
     private val io = Executors.newFixedThreadPool(3)
 
     /** В «Недавних» показываем именно выбранную пользователем иконку, а не android:icon приложения. */
@@ -209,9 +208,15 @@ class MainActivity : FragmentActivity() {
         grid.postDelayed({ try { PinnedPhotoWidgetBase.updateAll(this) } catch (ignored: Throwable) { } }, 250)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("selectedAlbum", selectedAlbum)
+        super.onSaveInstanceState(outState)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         UiTheme.apply(this)
         super.onCreate(savedInstanceState)
+        savedInstanceState?.getString("selectedAlbum")?.let { selectedAlbum = it }
         setContentView(R.layout.activity_main)
         applyCurrentTaskDescription()
         getSharedPreferences("display", MODE_PRIVATE).let { displayPrefs ->
@@ -265,6 +270,12 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onDestroy() {
+        // recreate() при смене темы — не выход из приложения: сессию открытых альбомов
+        // сохраняем. Реальное завершение (крестик, Back на корневом экране, удаление задачи)
+        // закрывает все альбомы и стирает ключи из памяти процесса.
+        if (isFinishing) {
+            try { PhotoStore.lockAllAlbumSessions(this) } catch (e: Exception) { }
+        }
         io.shutdown()
         super.onDestroy()
     }
@@ -433,7 +444,7 @@ class MainActivity : FragmentActivity() {
 
     private fun refresh() {
         photos = PhotoStore.list(this)
-        val lockedNames = PhotoStore.lockedAlbumNames(this) - unlockedAlbums
+        val lockedNames = PhotoStore.lockedAlbumNames(this) - PhotoStore.unlockedAlbumNames()
         val ordinaryPhotos = photos.filter { it.widgetId == 0 }
         val visiblePhotos = ordinaryPhotos.filter { photo ->
             PhotoStore.MISC_ALBUM in photo.albums && photo.albums.none { it in lockedNames }
@@ -811,7 +822,7 @@ class MainActivity : FragmentActivity() {
 
     private fun albumTile(album: String, albumPhotos: List<Photo>, index: Int = 0, total: Int = 1): View {
         val security = PhotoStore.securityFor(this, album)
-        val isLocked = security.locked && album !in unlockedAlbums
+        val isLocked = security.locked && !PhotoStore.isAlbumUnlocked(album)
         val tile = android.widget.FrameLayout(this).apply {
             setBackgroundResource(if (album == selectedAlbum) R.drawable.btn_primary else R.drawable.card_bg)
             clipToOutline = false; clipChildren = false
@@ -821,7 +832,7 @@ class MainActivity : FragmentActivity() {
                 } else if (album == PhotoStore.MISC_ALBUM && selectedAlbum == album) {
                     // Уже в «Разное»: повторные нажатия ничего не меняют.
                 } else if (selectedAlbum == album) {
-                    selectedAlbum = ALL_ALBUMS; unlockedAlbums.remove(album); refresh()
+                    selectedAlbum = ALL_ALBUMS; PhotoStore.lockAlbumSession(this, album); refresh()
                 } else if (isLocked) {
                     showUnlockDialog(album) { selectedAlbum = album; refresh() }
                 } else { selectedAlbum = album; refresh() }
@@ -833,7 +844,7 @@ class MainActivity : FragmentActivity() {
             }
         }
         val cover = ImageView(this).apply {
-            val lockedNow = PhotoStore.securityFor(this@MainActivity, album).locked && album !in unlockedAlbums
+            val lockedNow = PhotoStore.securityFor(this@MainActivity, album).locked && !PhotoStore.isAlbumUnlocked(album)
             val newestNow = if (lockedNow) null else albumPhotos.maxByOrNull { it.createdAt }
             // Единый стандарт: и фото, и квадратная заглушка заполняют плитку через CENTER_CROP.
             scaleType = ImageView.ScaleType.CENTER_CROP
@@ -959,6 +970,21 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /** Общий финал для PIN и отпечатка: ключ уже в PhotoStore, сессия помечена открытой,
+     *  главный экран перерисован, и только после этого выполняется действие пользователя
+     *  (открыть альбом или показать его настройки). Раньше при открытии через ⋮/долгое
+     *  нажатие refresh() не вызывался, поэтому действия показывались, а плитка и фото
+     *  оставались визуально закрытыми. */
+    private fun completeAlbumUnlock(album: String, onSuccess: () -> Unit): Boolean {
+        if (!PhotoStore.unlockAlbumSession(this, album)) {
+            toast("Ключ альбома недоступен. Откройте альбом паролем")
+            return false
+        }
+        refresh()
+        onSuccess()
+        return true
+    }
+
     private fun showUnlockDialog(album: String, onSuccess: () -> Unit) {
         val security = PhotoStore.securityFor(this, album)
         val input = themedInput("4-значный пароль", numericPin = true)
@@ -974,7 +1000,7 @@ class MainActivity : FragmentActivity() {
             builder.setPositiveButton("Открыть") { _, _ ->
                 val pin = input.text.toString()
                 if (PhotoStore.verifyAlbumPin(this, album, pin)) {
-                    unlockedAlbums.add(album); onSuccess()
+                    completeAlbumUnlock(album, onSuccess)
                 } else toast("Неверный пароль")
             }
         }
@@ -1006,11 +1032,9 @@ class MainActivity : FragmentActivity() {
             override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                 // Как и после PIN, сначала реально получаем ключ альбома в сессию.
                 // Если Keystore-ключ недоступен, честно просим пароль, а не показываем пустой альбом.
-                if (PhotoStore.albumKey(this@MainActivity, album) != null) {
-                    unlockedAlbums.add(album); onSuccess()
-                } else {
-                    toast("Отпечаток подтверждён, но ключ альбома недоступен. Откройте альбом паролем")
-                }
+                // Тот же общий путь, что и у PIN: unlockAlbumSession() получает ключ,
+                // помечает альбом открытым в сессии процесса и перерисовывает экран.
+                completeAlbumUnlock(album, onSuccess)
             }
             override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                 if (errorCode != BiometricPrompt.ERROR_USER_CANCELED && errorCode != BiometricPrompt.ERROR_NEGATIVE_BUTTON) {
@@ -1048,7 +1072,7 @@ class MainActivity : FragmentActivity() {
             actions.add(Action("Изменить пароль") { showSetPinDialog(album) })
             actions.add(Action("Снять пароль") {
                 PhotoStore.clearAlbumPin(this, album)
-                if (!PhotoStore.securityFor(this, album).locked) unlockedAlbums.remove(album)
+                if (!PhotoStore.securityFor(this, album).locked) PhotoStore.lockAlbumSession(this, album)
                 toast("Пароль снят"); refresh()
             })
             actions.add(Action(if (security.biometric) "Отпечаток: включён ✓" else "Отпечаток: выключен") {
@@ -1057,8 +1081,8 @@ class MainActivity : FragmentActivity() {
                 refresh()
             })
         }
-        if (album in unlockedAlbums) actions.add(Action("Закрыть альбом сейчас") {
-            unlockedAlbums.remove(album); if (selectedAlbum == album) selectedAlbum = ALL_ALBUMS; refresh()
+        if (PhotoStore.isAlbumUnlocked(album)) actions.add(Action("Закрыть альбом сейчас") {
+            PhotoStore.lockAlbumSession(this, album); if (selectedAlbum == album) selectedAlbum = ALL_ALBUMS; refresh()
         })
         android.app.AlertDialog.Builder(this)
             .setTitle(album)
@@ -1106,7 +1130,7 @@ class MainActivity : FragmentActivity() {
                             if (!saved.locked || !PhotoStore.verifyAlbumPin(this, album, a)) {
                                 throw IllegalStateException("Пароль не записался")
                             }
-                            unlockedAlbums.add(album)
+                            PhotoStore.unlockAlbumSession(this, album)
                             toast("Пароль установлен и проверен. Открыть можно паролем или отпечатком"); refresh()
                         } catch (e: Exception) {
                             try { java.io.File(filesDir, "security_error.txt").writeText(android.util.Log.getStackTraceString(e)) } catch (ignored: Exception) { }
@@ -1139,7 +1163,7 @@ class MainActivity : FragmentActivity() {
             .setMessage("Альбом «$album» и его записи ($count шт.) будут удалены из приложения вместе с файлами. Если та же запись видна ещё в другом альбоме, она пропадёт и оттуда. Виджеты хранят ссылки, а не копии, поэтому удалённые записи перестанут в них показываться. Отдельные независимые копии с другими записями не удалятся. Оригиналы в галерее телефона не тронем.")
             .setPositiveButton("Удалить всё") { _, _ ->
                 val removed = PhotoStore.deleteAlbumWithPhotos(this, album)
-                unlockedAlbums.remove(album)
+                PhotoStore.lockAlbumSession(this, album)
                 if (selectedAlbum == album) selectedAlbum = ALL_ALBUMS
                 toast("Удалено фото: $removed"); refresh()
             }
@@ -1200,7 +1224,7 @@ class MainActivity : FragmentActivity() {
             return
         }
         // «Разное» теперь тоже конкретный альбом: внутри любого открытого альбома добавляем сразу в него.
-        if (PhotoStore.securityFor(this, selectedAlbum).locked && selectedAlbum !in unlockedAlbums) {
+        if (PhotoStore.securityFor(this, selectedAlbum).locked && !PhotoStore.isAlbumUnlocked(selectedAlbum)) {
             showUnlockDialog(selectedAlbum) { pendingImportAlbum = selectedAlbum; pickPhotos() }
         } else {
             pendingImportAlbum = selectedAlbum
@@ -1215,7 +1239,7 @@ class MainActivity : FragmentActivity() {
             selectedAlbum != ALL_ALBUMS -> {
                 val wasWidget = selectedAlbum.startsWith(WIDGET_PREFIX)
                 selectedAlbum = ALL_ALBUMS
-                if (!wasWidget) unlockedAlbums.clear()
+                if (!wasWidget) PhotoStore.lockAllAlbumSessions(this)
                 refresh()
             }
             else -> finish()
