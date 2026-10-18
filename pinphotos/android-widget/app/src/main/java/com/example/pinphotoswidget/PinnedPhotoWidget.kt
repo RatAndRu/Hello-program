@@ -119,6 +119,47 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
         fun setIntervalMinutes(context: Context, widgetId: Int, minutes: Int) {
             context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putInt("interval_$widgetId", minutes).apply()
         }
+        fun randomOrder(context: Context, widgetId: Int): Boolean =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getBoolean("random_$widgetId", false)
+
+        fun setRandomOrder(context: Context, widgetId: Int, enabled: Boolean) {
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            prefs.edit().putBoolean("random_$widgetId", enabled).apply()
+            if (enabled) {
+                // Сразу перемешиваем текущий альбом и начинаем показ с начала случайной очереди.
+                val ids = photosForWidget(context, widgetId).map { it.id }.shuffled()
+                prefs.edit().putString("shuffle_$widgetId", ids.joinToString(",")).putInt("index_$widgetId", 0).apply()
+            } else {
+                prefs.edit().putInt("index_$widgetId", 0).apply()
+            }
+            updateAll(context)
+        }
+
+        /**
+         * Порядок именно для показа на виджете. В обычном режиме — как загружены.
+         * В случайном — сохранённая перемешанная очередь: автопереключение и стрелки идут
+         * по ней, поэтому фото не повторяются, пока очередь не закончится. Новые фото
+         * вставляются в случайные места очереди, удалённые из неё выпадают сами.
+         */
+        fun effectiveWidgetPhotos(context: Context, widgetId: Int): List<Photo> {
+            val base = photosForWidget(context, widgetId)
+            if (!randomOrder(context, widgetId) || base.size <= 1) return base
+            val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            val baseIds = base.map { it.id }
+            val order = (prefs.getString("shuffle_$widgetId", "") ?: "")
+                .split(',').filter { it in baseIds }.toMutableList()
+            baseIds.filter { it !in order }.forEach { id ->
+                order.add((0..order.size).random(), id)
+            }
+            if (order.isEmpty()) order.addAll(baseIds.shuffled())
+            val saved = order.joinToString(",")
+            if (prefs.getString("shuffle_$widgetId", "") != saved) {
+                prefs.edit().putString("shuffle_$widgetId", saved).apply()
+            }
+            val byId = base.associateBy { it.id }
+            return order.mapNotNull { byId[it] }
+        }
+
         fun clearWidget(context: Context, widgetId: Int) {
             setWidgetPhotoIds(context, widgetId, emptyList())
             PhotoStore.list(context).filter { it.widgetId == widgetId }.forEach { PhotoStore.delete(context, it) }
@@ -218,7 +259,7 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
 
         private fun shift(context: Context, delta: Int, widgetId: Int) {
             if (widgetId == AppWidgetManager.INVALID_APPWIDGET_ID) return
-            val size = photosForWidget(context, widgetId).size
+            val size = effectiveWidgetPhotos(context, widgetId).size
             if (size == 0) return
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             val key = "index_$widgetId"
@@ -245,7 +286,7 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
             val layout = if (UiTheme.isDark(context)) R.layout.widget_pinned_photo_dark else R.layout.widget_pinned_photo
             val views = RemoteViews(context.packageName, layout)
             val all = PhotoStore.list(context).filter { it.widgetId == 0 }
-            val pinned = photosForWidget(context, widgetId)
+            val pinned = effectiveWidgetPhotos(context, widgetId)
             val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
             when {

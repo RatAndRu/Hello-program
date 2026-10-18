@@ -791,6 +791,12 @@ class MainActivity : FragmentActivity() {
         actions.add(Action(if (auto) "Отключить автопереключение" else "Включить автопереключение") {
             PinnedPhotoWidgetBase.setAutoEnabled(this, widgetId, !auto); PinnedPhotoWidgetBase.updateAll(this); toast("Автопереключение: ${if (!auto) "включено" else "выключено"}"); refresh()
         })
+        val randomOrder = PinnedPhotoWidgetBase.randomOrder(this, widgetId)
+        actions.add(Action(if (randomOrder) "Порядок показа: случайный ✓" else "Порядок показа: по порядку") {
+            PinnedPhotoWidgetBase.setRandomOrder(this, widgetId, !randomOrder)
+            toast(if (!randomOrder) "Случайный порядок: фото перемешаны, повторов не будет, пока не покажутся все" else "Порядок показа: как загружены")
+            refresh()
+        })
         actions.add(Action("Время автопереключения: ${PinnedPhotoWidgetBase.intervalMinutes(this, widgetId)} мин") {
             val labels = arrayOf("30 минут", "1 час", "3 часа", "6 часов", "12 часов")
             val values = listOf(30, 60, 180, 360, 720)
