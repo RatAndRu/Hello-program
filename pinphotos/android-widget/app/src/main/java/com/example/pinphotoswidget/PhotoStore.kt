@@ -573,7 +573,7 @@ object PhotoStore {
             return null
         }
         // Открытые изображения декодируем сэмплированно прямо из файла, не создавая ByteArray всего файла.
-        if (!photo.encrypted) {        if (!photo.encrypted) {
+        if (!photo.encrypted) {
             val decoded = decodeSampledFile(photo.fileIn(dir(context)), target)
             if (decoded != null) {
                 synchronized(bitmapCache) { bitmapCache.put(cacheKey, decoded) }
