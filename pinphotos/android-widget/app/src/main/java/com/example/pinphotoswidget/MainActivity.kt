@@ -579,6 +579,7 @@ class MainActivity : FragmentActivity() {
         val label = TextView(this).apply {
             text = "🧩 ${PinnedPhotoWidgetBase.widgetName(this@MainActivity, widgetId)} · ${refs.size}"
             textSize = 12f; gravity = android.view.Gravity.CENTER
+            maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(if (selectedAlbum == key) 0xFFFFFFFF.toInt() else UiTheme.color(this@MainActivity, R.attr.appText))
             setPadding(dp(4), dp(5), dp(4), dp(5))
         }
@@ -594,7 +595,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun showRenameWidgetDialog(widgetId: Int) {
-        val input = themedInput("Название виджета").apply { setText(PinnedPhotoWidgetBase.widgetName(this@MainActivity, widgetId)) }
+        val input = themedInput("Название виджета", maxLength = 40).apply { setText(PinnedPhotoWidgetBase.widgetName(this@MainActivity, widgetId)) }
         val box = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(10), dp(22), dp(4)); addView(input)
         }
@@ -606,7 +607,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun showCreateWidgetDialog() {
-        val input = themedInput("Например: Семья, Работа, Котики")
+        val input = themedInput("Например: Семья, Работа, Котики", maxLength = 40)
         val box = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(10), dp(22), dp(4)); addView(input)
         }
@@ -707,6 +708,7 @@ class MainActivity : FragmentActivity() {
         val label = TextView(this).apply {
             text = if (isLocked) "🔒 $album" else "$album · ${albumPhotos.size}"
             textSize = 12f; gravity = android.view.Gravity.CENTER
+            maxLines = 2; ellipsize = android.text.TextUtils.TruncateAt.END
             setTextColor(if (album == selectedAlbum) 0xFFFFFFFF.toInt() else UiTheme.color(this@MainActivity, R.attr.appText))
             setPadding(dp(4), dp(5), dp(4), dp(5))
         }
@@ -805,9 +807,10 @@ class MainActivity : FragmentActivity() {
 
     // ---------- Защита альбомов и действия по долгому нажатию ----------
 
-    private fun themedInput(hintText: String, numericPin: Boolean = false): android.widget.EditText {
+    private fun themedInput(hintText: String, numericPin: Boolean = false, maxLength: Int = 0): android.widget.EditText {
         return android.widget.EditText(this).apply {
             hint = hintText; setSingleLine(true); setBackgroundResource(R.drawable.input_bg)
+            if (maxLength > 0) filters = arrayOf(android.text.InputFilter.LengthFilter(maxLength))
             setTextColor(UiTheme.color(this@MainActivity, R.attr.appText))
             setHintTextColor(UiTheme.color(this@MainActivity, R.attr.appMuted))
             if (numericPin) {
@@ -910,7 +913,7 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun showRenameAlbumDialog(album: String) {
-        val input = themedInput("Новое название альбома").apply { setText(album); setSelection(text.length) }
+        val input = themedInput("Новое название альбома", maxLength = 40).apply { setText(album); setSelection(text.length) }
         val box = android.widget.LinearLayout(this).apply {
             orientation = android.widget.LinearLayout.VERTICAL; setPadding(dp(22), dp(10), dp(22), dp(4)); addView(input)
         }
@@ -1057,6 +1060,7 @@ class MainActivity : FragmentActivity() {
     private fun showCreateAlbumDialog(onCreated: (String) -> Unit) {
         val input = android.widget.EditText(this).apply {
             hint = "Название альбома"; setSingleLine(true); setBackgroundResource(R.drawable.input_bg)
+            filters = arrayOf(android.text.InputFilter.LengthFilter(40))
             setTextColor(UiTheme.color(this@MainActivity, R.attr.appText)); setHintTextColor(UiTheme.color(this@MainActivity, R.attr.appMuted))
         }
         val box = android.widget.LinearLayout(this).apply {

@@ -55,9 +55,11 @@
         <LinearLayout android:orientation="horizontal" android:gravity="center_vertical"
             android:layout_width="match_parent" android:layout_height="wrap_content">
             <TextView android:id="@+id/albumsTitle" android:text="Альбомы" android:textColor="?attr/appText" android:textSize="16sp" android:textStyle="bold"
-                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"/>
-            <TextView android:id="@+id/currentAlbumText" android:text="Разное" android:textColor="?attr/appMuted" android:textSize="12sp"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"/>
+            <TextView android:id="@+id/currentAlbumText" android:text="Разное" android:textColor="?attr/appMuted" android:textSize="12sp"
+                android:gravity="end" android:maxLines="1" android:ellipsize="end"
+                android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+                android:layout_marginStart="8dp"/>
             <Button android:id="@+id/albumsModeBtn" android:text="Виджеты 🧩" android:textColor="?attr/appAccent" android:background="@drawable/btn_soft"
                 android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp"/>
         </LinearLayout>

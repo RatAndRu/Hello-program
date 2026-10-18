@@ -466,11 +466,12 @@ class PhotoActivity : Activity() {
 
     private fun edit(p: Photo) {
         val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; setPadding(52, 28, 52, 10) }
-        fun styledEdit(value: String, hintText: String) = EditText(this).apply {
+        fun styledEdit(value: String, hintText: String, maxLength: Int = 0) = EditText(this).apply {
             setText(value); hint = hintText; setSingleLine(true)
+            if (maxLength > 0) filters = arrayOf(android.text.InputFilter.LengthFilter(maxLength))
             setBackgroundResource(R.drawable.input_bg); setTextColor(UiTheme.color(this@PhotoActivity, R.attr.appText)); setHintTextColor(UiTheme.color(this@PhotoActivity, R.attr.appMuted))
         }
-        val name = styledEdit(p.name, "Название")
+        val name = styledEdit(p.name, "Название", maxLength = 40)
         val albumNames = PhotoStore.albums(this).toMutableList()
         val displayAlbums = albumNames.toMutableList() // «Разное» уже есть первым и заменяет «Без альбома»
         val albumAdapter = object : ArrayAdapter<String>(this@PhotoActivity, R.layout.spinner_item, displayAlbums) {
@@ -490,7 +491,7 @@ class PhotoActivity : Activity() {
         val newAlbum = Button(this).apply {
             text = "＋ Новый альбом"; setTextColor(UiTheme.color(this@PhotoActivity, R.attr.appAccent)); setBackgroundResource(R.drawable.btn_soft)
             setOnClickListener {
-                val input = styledEdit("", "Название альбома")
+                val input = styledEdit("", "Название альбома", maxLength = 40)
                 AlertDialog.Builder(this@PhotoActivity).setTitle("Новый альбом")
                     .setView(LinearLayout(this@PhotoActivity).apply { setPadding(52, 20, 52, 8); addView(input) })
                     .setPositiveButton("Создать") { _, _ ->
@@ -510,7 +511,7 @@ class PhotoActivity : Activity() {
             box.addView(name); box.addView(album, lp); box.addView(newAlbum, lp); box.addView(tags, lp); box.addView(note, lp)
         AlertDialog.Builder(this).setTitle("Изменить фото").setView(box)
             .setPositiveButton("Сохранить") { _, _ ->
-                p.name = name.text.toString().ifBlank { p.name }
+                p.name = name.text.toString().trim().take(40).ifBlank { p.name }
                 p.albums = mutableListOf(album.selectedItem?.toString()?.takeIf { it.isNotBlank() } ?: PhotoStore.MISC_ALBUM)
                 p.tags = tags.text.toString().split(",").map { it.trim().trimStart('#') }.filter { it.isNotEmpty() }.toMutableList()
                 p.note = note.text.toString()

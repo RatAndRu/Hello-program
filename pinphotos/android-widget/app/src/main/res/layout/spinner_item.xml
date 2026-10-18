@@ -3,4 +3,4 @@
     android:layout_width="match_parent" android:layout_height="wrap_content"
     android:minHeight="44dp" android:gravity="center_vertical"
     android:paddingHorizontal="12dp" android:paddingVertical="8dp"
-    android:textColor="?attr/appText" android:textSize="15sp" />
+    android:textColor="?attr/appText" android:textSize="15sp" android:maxLines="1" android:ellipsize="end" />

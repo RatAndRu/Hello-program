@@ -20,7 +20,7 @@
             android:paddingHorizontal="10dp" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         <TextView android:id="@+id/widget_caption" android:text="📌 ЗакрепФото" android:textColor="#24313A"
             android:textSize="13sp" android:gravity="center" android:layout_width="0dp"
-            android:layout_height="wrap_content" android:layout_weight="1"/>
+            android:layout_height="wrap_content" android:layout_weight="1" android:maxLines="1" android:ellipsize="end"/>
         <TextView android:id="@+id/widget_next" android:text="›" android:textColor="#0F766E" android:textSize="24sp"
             android:paddingHorizontal="10dp" android:layout_width="wrap_content" android:layout_height="wrap_content"/>
     </LinearLayout>

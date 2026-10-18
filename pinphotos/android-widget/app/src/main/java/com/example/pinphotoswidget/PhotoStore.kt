@@ -106,7 +106,7 @@ object PhotoStore {
 
     @Synchronized
     fun createAlbum(context: Context, name: String): String {
-        val clean = name.trim().take(50)
+        val clean = name.trim().take(40)
         require(clean.isNotEmpty()) { "Название альбома пустое" }
         val all = albums(context).toMutableList()
         if (all.none { it.equals(clean, ignoreCase = true) }) {
@@ -373,7 +373,7 @@ object PhotoStore {
             }
         }
         val hash = digest.digest().joinToString("") { "%02x".format(it) }
-        val photo = Photo(id = id, name = name.ifBlank { "Фото" }, file = fileName, mime = mime.ifBlank { "image/jpeg" }, hash = hash)
+        val photo = Photo(id = id, name = name.trim().take(40).ifBlank { "Фото" }, file = fileName, mime = mime.ifBlank { "image/jpeg" }, hash = hash)
         val all = list(context); all.add(0, photo); saveAll(context, all)
         return photo
     }
@@ -561,7 +561,7 @@ object PhotoStore {
         val ext = source.file.substringAfterLast('.', "jpg")
         val id = System.currentTimeMillis().toString(36) + UUID.randomUUID().toString().take(6)
         val copy = Photo(
-            id = id, name = source.name,
+            id = id, name = source.name.trim().take(40).ifBlank { "Фото" },
             albums = destinationAlbum?.let { mutableListOf(it) } ?: mutableListOf(),
             tags = source.tags.toMutableList(), note = source.note,
             pinned = false, widgetId = widgetId,
@@ -611,7 +611,7 @@ object PhotoStore {
     @Synchronized
     fun renameAlbum(context: Context, oldName: String, newNameRaw: String): String {
         require(oldName != MISC_ALBUM) { "Альбом «Разное» переименовать нельзя" }
-        val clean = newNameRaw.trim().take(50)
+        val clean = newNameRaw.trim().take(40)
         require(clean.isNotEmpty()) { "Название альбома пустое" }
         require(clean != MISC_ALBUM) { "Название «Разное» занято системным альбомом" }
         val existing = albums(context)
@@ -660,6 +660,7 @@ object PhotoStore {
 
     @Synchronized
     fun update(context: Context, photo: Photo) {
+        photo.name = photo.name.trim().take(40).ifBlank { "Фото" }
         val all = list(context)
         val idx = all.indexOfFirst { it.id == photo.id }
         if (idx >= 0) {
