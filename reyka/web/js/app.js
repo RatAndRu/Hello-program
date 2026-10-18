@@ -9,8 +9,9 @@ import * as store from './store.js';
 import { estimateRect, cameraTilt, assumedFocal, manualCorners, fitFocal, completeRectangle, rigidPredict, planeNormal } from './perspective.js';
 import { detectSegments, findVanishingPoints } from './vanish.js';
 import * as scan from './scan.js';
+import { ScanClient } from './scanclient.js';
 
-const VERSION = '1.6';
+const VERSION = '1.7';
 const $ = (id) => document.getElementById(id);
 const video = $('video'), glCanvas = $('gl'), overlay = $('overlay');
 const octx = overlay.getContext('2d');
@@ -26,7 +27,7 @@ const DEFAULT = () => ({
   v: 1,
   settings: { color: '#39ff14', width: 3, halo: true, alpha: 1, labels: true, magnet: true, rot: 0, mirror: false, wake: true, cameraId: null, demoTilt: 0 },
   manual: { on: false, tilt: 45, far: 0, yaw: 0, size: 1 },
-  scan: { lines: 0.5, colors: 6, smooth: 1, clean: 0.5, minSpot: 2, lineBlack: false, paint: true, fmt: 'png', mode: 'color', sharpen: 0.6, grad: true, gap: 0, pal: 'auto' },
+  scan: { lines: 0.5, colors: 6, smooth: 1, clean: 0.5, minSpot: 2, lineBlack: false, paint: true, fmt: 'png', mode: 'color', sharpen: 0.6, grad: true, gap: 0, pal: 'auto', method: 'clean', thick: 1, fill: 'src', fillSeed: 1, washK: 1.2, washSoft: 0.5 },
   paints: [], nextPaint: 1,
   colorUI: { cur: '#3b6fd4', mix: [], max2: false, water: false },
   paper: { format: 'A4', orient: 'auto', customW: 200, customH: 200, tracking: true },
@@ -392,6 +393,7 @@ async function loadKalkaBlob(blob, isNew) {
   } finally { URL.revokeObjectURL(url); }
 }
 
+$('colorPhotoInput').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) openPhotoPicker(f); });
 $('fileInput').addEventListener('change', async (e) => {
   const f = e.target.files && e.target.files[0];
   e.target.value = '';
@@ -1182,68 +1184,138 @@ function addPaint(hex, name) {
   persist();
 }
 let recipeCache = { key: '', list: [] };
+// Карта цветов: по горизонтали — оттенок, по вертикали — светлота; справа — серые.
+function colorMap(sat, onPick) {
+  const cv = el('canvas', { class: 'cmap' }), W = 360, H = 150, GW = 22;
+  cv.width = W; cv.height = H;
+  const g = cv.getContext('2d'), im = g.createImageData(W, H);
+  const at = (x, y) => {
+    const l = 0.96 - (y / (H - 1)) * 0.92;
+    if (x >= W - GW) { const v = Math.round(l * 255); return [v, v, v]; }
+    const h = x / (W - GW) * 360, c = (1 - Math.abs(2 * l - 1)) * sat, hp = h / 60, xx = c * (1 - Math.abs(hp % 2 - 1)), m = l - c / 2;
+    const [r, gg, b] = hp < 1 ? [c, xx, 0] : hp < 2 ? [xx, c, 0] : hp < 3 ? [0, c, xx] : hp < 4 ? [0, xx, c] : hp < 5 ? [xx, 0, c] : [c, 0, xx];
+    return [r + m, gg + m, b + m].map(v => Math.round(v * 255));
+  };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const c = at(x, y), o = (y * W + x) * 4; im.data[o] = c[0]; im.data[o + 1] = c[1]; im.data[o + 2] = c[2]; im.data[o + 3] = 255; }
+  g.putImageData(im, 0, 0);
+  const pick = (e, done) => { const r = cv.getBoundingClientRect(), x = Math.max(0, Math.min(W - 1, (e.clientX - r.left) / r.width * W)), y = Math.max(0, Math.min(H - 1, (e.clientY - r.top) / r.height * H)); onPick(CL.rgbToHex(at(Math.round(x), Math.round(y))), done); };
+  let down = false;
+  cv.addEventListener('pointerdown', (e) => { down = true; cv.setPointerCapture(e.pointerId); pick(e, false); });
+  cv.addEventListener('pointermove', (e) => { if (down) pick(e, false); });
+  cv.addEventListener('pointerup', (e) => { if (down) { down = false; pick(e, true); } });
+  return cv;
+}
 function panelColors() {
-  panelTitle.textContent = '🎨 Цвета и краски';
+  panelTitle.textContent = '🎨 Цвета';
   const U = S.colorUI, cur = U.cur || '#3b6fd4';
-  panelBody.append(el('p', { class: 'note' }, 'Узнай цвет пипеткой (поправка на освещение — по белой бумаге рядом), посмотри, как смешать его из своих красок, или что получится из смеси. Смешивание считается как у настоящих пигментов (модель Кубелки — Мунка), но приблизительно.'));
-  // — текущий цвет
-  panelBody.append(el('div', { class: 'section-title' }, 'Цвет'));
-  const picker = el('input', { type: 'color', value: cur, class: 'color-input', title: 'Выбрать вручную' });
+  U.tab = U.tab || 'pal';
+  // — выбранный цвет (эталон) и откуда его взять
+  const picker = el('input', { type: 'color', value: cur, class: 'hidden-input' });
   picker.onchange = () => { U.cur = picker.value; persist(); refreshPanel(); };
-  const rgb = CL.hexToRgb(cur);
-  panelBody.append(el('div', { class: 'color-cur' }, el('div', { class: 'big-sw', style: `background:${cur}` }),
-    el('div', { class: 'grow' }, el('b', {}, CL.colorName(cur)), el('div', { class: 'muted' }, `${cur.toUpperCase()} · RGB ${rgb.join(', ')}`)), picker));
-  panelBody.append(el('div', { class: 'btns' }, btn('🎯 Пипетка: тапни по листу', startPick, 'primary'), btn('➕ В мои краски', () => { addPaint(cur); refreshPanel(); toast('Добавлено в «Мои краски»'); })));
-  // — подбор смеси
-  panelBody.append(el('div', { class: 'section-title' }, 'Как смешать этот цвет'));
-  if (!S.paints.length) panelBody.append(el('p', { class: 'note' }, 'Сначала добавь свои краски (ниже — пипеткой с выкраски или готовым набором).'));
-  else {
-    panelBody.append(toggleRow('Не больше двух красок', U.max2, (v) => { U.max2 = v; persist(); refreshPanel(); }));
-    panelBody.append(toggleRow('Акварель: светлее = больше воды', U.water, (v) => { U.water = v; persist(); refreshPanel(); }));
-    const list = S.paints.map(p => ({ name: p.name, hex: p.hex, strength: p.strength || 1 }));
-    if (U.water) list.push({ name: 'вода', hex: '#fbfbf8', strength: 1 });
-    const key = cur + '|' + U.max2 + '|' + list.map(p => p.hex + p.strength).join(',');
-    if (recipeCache.key !== key) recipeCache = { key, list: CL.findRecipes(cur, list, { maxPaints: U.max2 ? 2 : 3 }) };
-    for (const r of recipeCache.list) {
-      panelBody.append(el('div', { class: 'recipe' },
-        el('div', { class: 'pair' }, el('i', { style: `background:${cur}`, title: 'нужно' }), el('i', { style: `background:${r.hex}`, title: 'получится' })),
-        el('div', { class: 'grow' }, el('div', {}, CL.recipeText(r)), el('div', { class: 'muted' }, `${CL.closeness(r.dE)} · ΔE ${r.dE.toFixed(1)}`)),
-        btn('В смесь', () => { U.mix = r.items.map(it => { const pp = S.paints.find(q => q.hex === it.hex && q.name === it.name); return pp ? { id: pp.id, parts: it.parts } : null; }).filter(Boolean); persist(); refreshPanel(); toast('Рецепт — в «Смешать»'); }, 'small')));
-    }
-    if (recipeCache.list[0] && recipeCache.list[0].dE > 10) panelBody.append(el('p', { class: 'note' }, 'Точно не получается — такого оттенка нет в твоих красках. Добавь краску ближе к нему (или белила для светлых тонов).'));
-  }
-  // — смешать
-  panelBody.append(el('div', { class: 'section-title' }, 'Смешать'));
-  U.mix = (U.mix || []).filter(m => S.paints.some(p => p.id === m.id));
-  if (!U.mix.length) panelBody.append(el('p', { class: 'note' }, 'Нажми «🧪» у красок ниже, чтобы добавить их в смесь, и задай части.'));
-  for (const m of U.mix) {
-    const pnt = S.paints.find(p => p.id === m.id);
-    const val = el('span', { class: 'parts' }, String(m.parts));
-    panelBody.append(el('div', { class: 'paint-row' }, el('i', { class: 'sw', style: `background:${pnt.hex}` }), el('span', { class: 'grow' }, pnt.name),
-      btn('−', () => { m.parts = Math.max(1, m.parts - 1); persist(); refreshPanel(); }, 'small'), val,
-      btn('+', () => { m.parts = Math.min(99, m.parts + 1); persist(); refreshPanel(); }, 'small'),
-      btn('✕', () => { U.mix = U.mix.filter(q => q !== m); persist(); refreshPanel(); }, 'small')));
-  }
-  if (U.mix.length) {
-    const res = CL.mixHex(U.mix.map(m => { const pnt = S.paints.find(p => p.id === m.id); return { hex: pnt.hex, parts: m.parts, strength: pnt.strength || 1 }; }));
-    panelBody.append(el('div', { class: 'color-cur' }, el('div', { class: 'big-sw', style: `background:${res}` }),
-      el('div', { class: 'grow' }, el('b', {}, 'Получится: ' + CL.colorName(res)), el('div', { class: 'muted' }, res.toUpperCase() + (U.cur ? ` · до цели ΔE ${CL.deltaEHex(res, U.cur).toFixed(1)}` : '')))));
-    panelBody.append(el('div', { class: 'btns' }, btn('➕ Смесь в мои краски', () => { addPaint(res, 'Смесь ' + CL.colorName(res)); refreshPanel(); }), btn('Сделать целью', () => { U.cur = res; persist(); refreshPanel(); }), btn('Очистить', () => { U.mix = []; persist(); refreshPanel(); })));
-  }
-  // — мои краски
-  panelBody.append(el('div', { class: 'section-title' }, `Мои краски (${S.paints.length})`));
-  panelBody.append(el('p', { class: 'note' }, 'Лучше всего — сделать выкраску (мазок каждой краски на белой бумаге) и снять каждую пипеткой: так учтётся именно твоя краска. 🖌 — использовать краску в оцифровке («Рисунок (вектор)» → палитра «Мои краски»).'));
-  for (const pnt of S.paints) {
-    const name = el('input', { type: 'text', value: pnt.name, class: 'name-input' }); name.onchange = () => { pnt.name = name.value.trim() || pnt.name; persist(); };
-    const col = el('input', { type: 'color', value: pnt.hex, class: 'sw-input' }); col.onchange = () => { pnt.hex = col.value; persist(); refreshPanel(); };
-    panelBody.append(el('div', { class: 'paint-row' }, col, name,
-      el('button', { class: 'btn small' + (pnt.scan !== false ? ' on' : ''), title: 'Использовать в оцифровке', onclick: () => { pnt.scan = pnt.scan === false; persist(); refreshPanel(); } }, '🖌'),
-      btn('🧪', () => { const m = U.mix.find(q => q.id === pnt.id); if (m) m.parts++; else U.mix.push({ id: pnt.id, parts: 1 }); persist(); refreshPanel(); }, 'small'),
-      btn('✕', () => { S.paints = S.paints.filter(q => q !== pnt); persist(); refreshPanel(); }, 'small')));
-  }
+  const bigSw = el('button', { class: 'big-sw', style: `background:${cur}`, title: 'Выбрать вручную', onclick: () => picker.click() });
+  const curName = el('b', {}, CL.colorName(cur)), curHex = el('div', { class: 'muted' }, cur.toUpperCase());
+  panelBody.append(el('div', { class: 'color-cur' }, bigSw, picker, el('div', { class: 'grow' }, curName, curHex)));
   panelBody.append(el('div', { class: 'btns' },
-    ...Object.entries(CL.PRESET_SETS).map(([k, set]) => btn('+ Набор: ' + set.name, () => { for (const [nm, hx] of set.paints) if (!S.paints.some(p => p.name === nm)) addPaint(hx, nm); refreshPanel(); toast('Цвета набора примерные — лучше переснять пипеткой свои'); })),
-    S.paints.length ? btn('Удалить все', () => { if (confirm('Удалить все свои краски?')) { S.paints = []; U.mix = []; persist(); refreshPanel(); } }, 'danger') : null));
+    btn('🎯 С листа', startPick, 'primary'),
+    btn('🖼 Из фото', () => $('colorPhotoInput').click()),
+    btn('➕ В палитру', () => { addPaint(cur); U.tab = 'pal'; refreshPanel(); toast('Добавлено в палитру'); })));
+  panelBody.append(segRow('', [['pal', `Палитра (${S.paints.length})`], ['find', 'Подобрать'], ['mix', 'Смешать']], U.tab, (v) => { U.tab = v; persist(); refreshPanel(); }));
+
+  if (U.tab === 'pal') {
+    if (!S.paints.length) panelBody.append(el('p', { class: 'note' }, 'Палитра пуста. Сними пипеткой мазки своих красок (выкраску на белой бумаге) и нажми «➕ В палитру». Палитра сохраняется.'));
+    const grid = el('div', { class: 'pal-grid' });
+    for (const p of S.paints) {
+      grid.append(el('button', { class: 'pal-tile' + (U.selPaint === p.id ? ' sel' : '') + (p.scan === false ? ' dim' : ''), onclick: () => { U.selPaint = U.selPaint === p.id ? null : p.id; U.cur = p.hex; persist(); refreshPanel(); } },
+        el('i', { style: `background:${p.hex}` }), el('span', {}, p.name)));
+    }
+    panelBody.append(grid);
+    const sp = S.paints.find(p => p.id === U.selPaint);
+    if (sp) {
+      const name = el('input', { type: 'text', value: sp.name, class: 'name-input' }); name.onchange = () => { sp.name = name.value.trim() || sp.name; persist(); refreshPanel(); };
+      panelBody.append(el('div', { class: 'paint-row' }, el('i', { class: 'sw', style: `background:${sp.hex}` }), name,
+        btn('🗑', () => { S.paints = S.paints.filter(q => q !== sp); U.mix = (U.mix || []).filter(m => m.id !== sp.id); U.selPaint = null; persist(); refreshPanel(); }, 'small')));
+      panelBody.append(el('div', { class: 'btns' },
+        btn('🧮 Подобрать смесь под него', () => { U.cur = sp.hex; U.tab = 'find'; persist(); refreshPanel(); }),
+        btn(sp.scan === false ? '🖌 Не в оцифровке' : '🖌 В оцифровке ✓', () => { sp.scan = sp.scan === false; persist(); refreshPanel(); }, sp.scan === false ? '' : 'on')));
+    } else if (S.paints.length) panelBody.append(el('p', { class: 'note' }, 'Тапни по цвету — он станет выбранным; там же переименовать или удалить.'));
+    const more = el('details', { class: 'more' }, el('summary', {}, 'Готовые наборы и очистка'));
+    more.append(el('div', { class: 'btns' },
+      ...Object.entries(CL.PRESET_SETS).map(([, set]) => btn('+ ' + set.name, () => { for (const [nm, hx] of set.paints) if (!S.paints.some(p => p.name === nm)) addPaint(hx, nm); refreshPanel(); toast('Цвета набора примерные — лучше переснять свои пипеткой'); })),
+      S.paints.length ? btn('Удалить все', () => { if (confirm('Удалить все цвета палитры?')) { S.paints = []; U.mix = []; persist(); refreshPanel(); } }, 'danger') : null));
+    panelBody.append(more);
+  } else if (U.tab === 'find') {
+    panelBody.append(el('p', { class: 'note' }, 'Выбери цвет-эталон на карте (или пипеткой, или из палитры) — покажу, какие твои краски и в каких частях смешать.'));
+    U.sat = U.sat ?? 0.8;
+    panelBody.append(colorMap(U.sat, (hex, done) => { U.cur = hex; bigSw.style.background = hex; curName.textContent = CL.colorName(hex); curHex.textContent = hex.toUpperCase(); if (done) { persist(); refreshPanel(); } }));
+    panelBody.append(rangeRow('Насыщенность карты', 0.1, 1, 0.05, U.sat, (v) => { U.sat = v; persist(); refreshPanel(); }, (v) => Math.round(v * 100) + '%'));
+    if (S.paints.length) panelBody.append(el('div', { class: 'swatches mini tap' }, ...S.paints.map(p => el('i', { style: `background:${p.hex}`, title: p.name, onclick: () => { U.cur = p.hex; persist(); refreshPanel(); } }))));
+    if (S.paints.length < 2) panelBody.append(el('p', { class: 'note' }, 'Для подбора нужны хотя бы 2 цвета в палитре.'));
+    else {
+      panelBody.append(segRow('', [['2', 'До 2 красок'], ['3', 'До 3 красок']], U.max2 ? '2' : '3', (v) => { U.max2 = v === '2'; persist(); refreshPanel(); }));
+      const list = S.paints.map(p => ({ name: p.name, hex: p.hex, strength: p.strength || 1 }));
+      const key = cur + '|' + U.max2 + '|' + list.map(p => p.hex + p.strength).join(',');
+      if (recipeCache.key !== key) recipeCache = { key, list: CL.findRecipes(cur, list, { maxPaints: U.max2 ? 2 : 3 }) };
+      for (const r of recipeCache.list) {
+        panelBody.append(el('div', { class: 'recipe' },
+          el('div', { class: 'pair' }, el('i', { style: `background:${cur}`, title: 'нужно' }), el('i', { style: `background:${r.hex}`, title: 'получится' })),
+          el('div', { class: 'grow' }, el('div', {}, CL.recipeText(r)), el('div', { class: 'muted' }, CL.closeness(r.dE))),
+          btn('Смешать', () => { U.mix = r.items.map(it => { const pp = S.paints.find(q => q.hex === it.hex && q.name === it.name); return pp ? { id: pp.id, parts: it.parts } : null; }).filter(Boolean); U.tab = 'mix'; persist(); refreshPanel(); }, 'small')));
+      }
+      if (recipeCache.list[0] && recipeCache.list[0].dE > 10) panelBody.append(el('p', { class: 'note' }, 'Точно не выходит — такого оттенка нет среди твоих красок. Добавь краску ближе к нему (или белила для светлых тонов).'));
+    }
+  } else {
+    U.mix = (U.mix || []).filter(m => S.paints.some(p => p.id === m.id));
+    if (!S.paints.length) panelBody.append(el('p', { class: 'note' }, 'Сначала добавь цвета в палитру.'));
+    else panelBody.append(el('p', { class: 'note' }, 'Тапни по цветам палитры, чтобы добавить их в смесь (сколько угодно), и задай части.'));
+    const grid = el('div', { class: 'pal-grid small' });
+    for (const p of S.paints) {
+      const m = U.mix.find(q => q.id === p.id);
+      grid.append(el('button', { class: 'pal-tile' + (m ? ' sel' : ''), onclick: () => { if (m) U.mix = U.mix.filter(q => q !== m); else U.mix.push({ id: p.id, parts: 1 }); persist(); refreshPanel(); } },
+        el('i', { style: `background:${p.hex}` }, m ? el('b', {}, String(m.parts)) : null), el('span', {}, p.name)));
+    }
+    panelBody.append(grid);
+    for (const m of U.mix) {
+      const pnt = S.paints.find(p => p.id === m.id);
+      panelBody.append(el('div', { class: 'paint-row' }, el('i', { class: 'sw', style: `background:${pnt.hex}` }), el('span', { class: 'grow' }, pnt.name),
+        btn('−', () => { m.parts = Math.max(1, m.parts - 1); persist(); refreshPanel(); }, 'small'), el('span', { class: 'parts' }, String(m.parts)),
+        btn('+', () => { m.parts = Math.min(99, m.parts + 1); persist(); refreshPanel(); }, 'small')));
+    }
+    if (U.mix.length) {
+      const res = CL.mixHex(U.mix.map(m => { const pnt = S.paints.find(p => p.id === m.id); return { hex: pnt.hex, parts: m.parts, strength: pnt.strength || 1 }; }));
+      panelBody.append(el('div', { class: 'color-cur' }, el('div', { class: 'big-sw', style: `background:${res}` }),
+        el('div', { class: 'grow' }, el('b', {}, 'Получится: ' + CL.colorName(res)), el('div', { class: 'muted' }, res.toUpperCase() + ` · до выбранного цвета: ${CL.closeness(CL.deltaEHex(res, cur)).toLowerCase()}`))));
+      panelBody.append(el('div', { class: 'btns' }, btn('➕ В палитру', () => { addPaint(res, 'Смесь ' + CL.colorName(res)); toast('Смесь добавлена в палитру'); refreshPanel(); }), btn('🎯 Сделать выбранным', () => { U.cur = res; persist(); refreshPanel(); }), btn('Очистить', () => { U.mix = []; persist(); refreshPanel(); })));
+    }
+  }
+  panelBody.append(el('p', { class: 'note' }, 'Смешивание считается как у настоящих пигментов (модель Кубелки — Мунка), но приблизительно. Пипетка с листа делает поправку на свет по белой бумаге рядом.'));
+}
+
+// Пипетка по фото из галереи (например, по образцу, с которого рисуешь)
+function openPhotoPicker(file) {
+  const url = URL.createObjectURL(file), img = new Image();
+  img.onload = () => {
+    const max = 2400, k = Math.min(1, max / Math.max(img.width, img.height));
+    const c = document.createElement('canvas'); c.width = Math.round(img.width * k); c.height = Math.round(img.height * k);
+    const g = c.getContext('2d', { willReadFrequently: true }); g.drawImage(img, 0, 0, c.width, c.height); URL.revokeObjectURL(url);
+    const data = g.getImageData(0, 0, c.width, c.height), fr = { data: data.data, w: c.width, h: c.height };
+    closePanel();
+    const v = $('scanView'); v.innerHTML = ''; v.classList.remove('hidden');
+    const stage = el('div', { class: 'scan-stage' }), bar = el('div', { class: 'pick-bar' }, el('span', { class: 'grow muted' }, 'Тапни по цвету на фото. Щипок — приблизить.'));
+    const close = () => { v.classList.add('hidden'); v.innerHTML = ''; };
+    const zv = zoomViewer(stage, (x, y) => {
+      const col = avgAt(fr, x, y, Math.max(1, Math.round(Math.min(fr.w, fr.h) / 300)));
+      const hex = CL.rgbToHex(col); S.colorUI.cur = hex; persist();
+      bar.innerHTML = '';
+      bar.append(el('i', { class: 'sw', style: `background:${hex}` }), el('span', { class: 'grow' }, `${CL.colorName(hex)} ${hex}`),
+        btn('➕ В палитру', () => { addPaint(hex); toast('Добавлено в палитру'); }, 'small'),
+        btn('🧮 Как смешать', () => { close(); S.colorUI.tab = 'find'; openPanel('colors'); }, 'small'));
+      return true;
+    });
+    v.append(el('div', { class: 'scan-head' }, el('h2', {}, '🖼 Цвет с фото'), el('button', { class: 'icon small', onclick: () => { close(); openPanel('colors'); }, 'aria-label': 'Закрыть' }, '✕')), stage, bar);
+    zv.set({ bmp: c, w: c.width, h: c.height, hi: null, bmpScale: 1 });
+  };
+  img.onerror = () => toast('Не удалось открыть картинку');
+  img.src = url;
 }
 
 function panelKalka() {
@@ -1454,7 +1526,8 @@ function panelScan() {
   panelBody.append(el('p', { class: 'note' }, el('b', {}, 'Перед снимком: '), 'убери руки и карандаш с листа, свет ровный, без бликов. Камера под углом — можно, но сверху чётче.'));
   panelBody.append(toggleRow('Таймер 3 с (успеть убрать руки)', sc.timer !== false, (v) => { sc.timer = v; persist(); }));
   panelBody.append(toggleRow('Фото в полном разрешении (чётче; если камера умеет)', sc.hires !== false, (v) => { sc.hires = v; persist(); }));
-  panelBody.append(rangeRow('Цветов краски', 0, 16, 1, sc.colors, (v) => { sc.colors = v; sc.paint = v > 0; persist(); }, (v) => v ? v : 'только линии'));
+  panelBody.append(segRow('Метод фона', [['clean', 'Чистый (ровный белый)'], ['v13', 'Обскура (как в v1.3)']], sc.method || 'clean', (v) => { sc.method = v; persist(); refreshPanel(); }));
+  if (sc.method === 'v13') panelBody.append(el('p', { class: 'note' }, 'Старый метод из версии 1.3: свет листа приближается одной гладкой поверхностью — края темнеют, центр светлеет, карандаш контрастнее. Сильнее всего проявляется при неровном свете от лампы. Переключить можно и потом, в результате.'));
   panelBody.append(el('div', { class: 'btns' }, btn('📥 Оцифровать', () => runScan(), 'primary'),
     R.scan ? btn('Открыть последний', () => openScanView()) : null));
 }
@@ -1492,10 +1565,9 @@ async function runScan() {
       rect = r.rect; R.scanInfo = `кадры видео: ${r.used} из ${r.total}`;
     }
     if (R.cam && R.cam.setHand) R.cam.setHand(true);
-    toast('Убираю тени и фон…', 4000); await sleep(20);
-    const flat = scan.flatten(rect, ppm, S.scan.clean);
-    R.scan = { pw, ph, ppm, rect, flat, tab: 'photo' };
-    openScanView(); // вектор считается только когда откроют его вкладку
+    await getClient().setRect(rect, ppm);
+    R.scan = { pw, ph, ppm, rect, tab: (R.scan && R.scan.tab) || 'photo', hidden: new Set() };
+    openScanView(); // считается в фоне: сначала черновик, потом полное качество
     toast('Готово ✓ Можно подправить настройки и сохранить', 3000);
   } catch (e) { console.error(e); toast('Не получилось: ' + (e.message || e)); }
   finally { R.scanBusy = false; if (R.cam && R.cam.setHand) R.cam.setHand(true); }
@@ -1579,39 +1651,51 @@ function locateInPhoto(bmp, vc) {
 
 function shoelace(c) { let a = 0; for (let i = 0; i < c.length; i++) { const p = c[i], q = c[(i + 1) % c.length]; a += p.x * q.y - q.x * p.y; } return a / 2; }
 
-async function processScan() {
-  const sc = S.scan, d = R.scan;
-  const mine = sc.pal === 'mine' ? S.paints.filter(p => p.scan !== false) : [];
-  const useMine = mine.length > 0;
-  const key = `${sc.lines}|${sc.paint}|${sc.colors}|${sc.minSpot}|${sc.smooth}|${sc.lineBlack}|${sc.grad}|${sc.gap || 0}|${useMine ? mine.map(p => p.hex).join(',') : 'auto'}|${d.flatKey || 0}`;
-  if (d.vec && d.vecKey === key) return;
-  toast('Распознаю линии и цвета…', 4000); await sleep(20);
-  const nCol = useMine ? mine.length : (sc.paint ? sc.colors : 0);
-  d.seg = scan.segment(d.flat, d.ppm, { lineLevel: sc.lines, colors: nCol, minSpot: sc.minSpot, paint: nCol > 0, fixed: useMine ? mine.map(p => CL.hexToRgb(p.hex)) : null });
-  if (useMine) d.seg.names = mine.map(p => p.name);
-  toast('Перевожу в вектор…', 4000); await sleep(20);
-  // своими красками — ровной заливкой (градиент дал бы оттенки, которых у тебя нет)
-  d.vec = scan.vectorize(d.seg, d.ppm, { smooth: sc.smooth, lineBlack: sc.lineBlack, withColors: nCol > 0, gradients: sc.grad !== false && !useMine, img: d.flat, gap: sc.gap || 0 });
-  d.vecKey = key; d.svgKB = null;
+// ---------- Движок оцифровки (фоновый поток, кэш по этапам, черновик → полное качество) ----------
+let scanClient = null;
+const getClient = () => scanClient || (scanClient = new ScanClient());
+const PASTEL = ['#f6c1c1', '#fbd9a8', '#f7f0a6', '#c7e8bf', '#bfe0f0', '#c9cdf5', '#e5c8f0', '#f3d1e3'];
+function fillPalette() {
+  const mine = S.paints.filter(p => p.scan !== false).map(p => p.hex);
+  return mine.length >= 3 ? mine : PASTEL;
 }
-
-// ключ «что сейчас на экране» — по нему кэшируются превью и готовый файл
-function scanKey(tab) {
-  const sc = S.scan, d = R.scan;
-  return tab === 'photo' ? `p|${sc.mode}|${sc.sharpen}|${sc.obscura || 0}|${sc.tone || 'none'}|${sc.lpi || 45}|${d.flatKey || 0}` : `${tab}|${d.vecKey}`;
-}
-
-function scanCanvasFor(tab, scale) {
-  const d = R.scan;
-  if (tab === 'photo') {
-    const sc = S.scan, key = scanKey('photo');
-    if (d.encKey !== key) { d.enc = scan.enhance(d.flat, { mode: sc.mode || 'color', sharpen: sc.sharpen ?? 0.6, clean: sc.clean, obscura: sc.obscura || 0, tone: sc.tone || 'none', ppm: d.ppm, lpi: sc.lpi || 45 }); d.encKey = key; d.encCanvas = null; }
-    const c = d.encCanvas || (d.encCanvas = scan.imageDataCanvas(d.enc));
-    if (scale === 1) return c;
-    const o = document.createElement('canvas'); o.width = Math.round(c.width * scale); o.height = Math.round(c.height * scale);
-    o.getContext('2d').drawImage(c, 0, 0, o.width, o.height); return o;
+// что нужно посчитать для вкладки
+function scanReq(tab, level) {
+  const sc = S.scan, req = { method: sc.method || 'clean', clean: sc.clean, level };
+  if (tab === 'photo') { req.enh = { mode: sc.mode || 'color', sharpen: sc.sharpen ?? 0.6, tone: sc.tone || 'none', lpi: sc.lpi || 45 }; return req; }
+  const v = req.vec = { lineLevel: sc.lines, thick: sc.thick || 1, smooth: sc.smooth, gap: sc.gap || 0 };
+  if (tab === 'clean') v.wash = { strength: sc.washK ?? 1.2, soft: sc.washSoft ?? 0.5 };
+  if (tab === 'vec') {
+    const fill = sc.fill || 'src';
+    if (fill === 'src') {
+      const mine = sc.pal === 'mine' ? S.paints.filter(p => p.scan !== false) : [];
+      if (mine.length) v.colors = { n: mine.length, minSpot: sc.minSpot, grad: false, fixed: mine.map(p => CL.hexToRgb(p.hex)), names: mine.map(p => p.name) };
+      else if (sc.colors > 0) v.colors = { n: sc.colors, minSpot: sc.minSpot, grad: sc.grad !== false };
+    } else if (fill === 'auto') v.fill = { palette: fillPalette(), seed: sc.fillSeed || 1 };
   }
-  return scan.renderVector(d.vec, scale, { colors: tab === 'vec' });
+  return req;
+}
+// результат движка → то, что рисуем
+function scanView(tab, r) {
+  const d = R.scan;
+  if (tab === 'photo') return { tab, img: r.enh };
+  const vec = { w: d.rect.w, h: d.rect.h, k: r.k, ppm: r.ppm, lines: r.lines, colors: tab === 'vec' ? [...(r.colors || []), ...(r.fills || [])] : [] };
+  return { tab, vec, wash: r.wash || null };
+}
+function scanDrawOpts(v) {
+  const d = R.scan, sc = S.scan;
+  if (v.wash && !v.washCanvas) v.washCanvas = scan.imageDataCanvas(v.wash);
+  return { style: sc.style || { mode: 'auto' }, hidden: d.hidden, wash: v.washCanvas || null, colors: v.tab === 'vec' };
+}
+function scanCanvasOf(v, scale) {
+  if (v.tab === 'photo') {
+    const c = v.canvas || (v.canvas = scan.imageDataCanvas(v.img));
+    const d = R.scan, k = scale * d.rect.w / v.img.w;
+    if (Math.abs(k - 1) < 1e-3) return c;
+    const o = document.createElement('canvas'); o.width = Math.round(d.rect.w * scale); o.height = Math.round(d.rect.h * scale);
+    const g = o.getContext('2d'); g.imageSmoothingQuality = 'high'; g.drawImage(c, 0, 0, o.width, o.height); return o;
+  }
+  return scan.renderVector(v.vec, scale, scanDrawOpts(v));
 }
 
 // Поворот результата на 90° и смена пропорций листа (если ориентация угадана неверно:
@@ -1718,119 +1802,185 @@ function openScanView() {
   closePanel();
   const v = $('scanView'); v.innerHTML = ''; v.classList.remove('hidden');
   const d = R.scan, sc = S.scan;
+  if (!d.hidden) d.hidden = new Set();
+  if (!['photo', 'clean', 'vec', 'lines'].includes(d.tab)) d.tab = 'photo';
   const stage = el('div', { class: 'scan-stage' });
   const info = el('div', { class: 'scan-info' });
+  const busy = el('div', { class: 'scan-busy hidden' });
   const pickBar = el('div', { class: 'pick-bar hidden' });
   // зум: щипок двумя пальцами, двойной тап, колёсико, кнопки; пипетка — тап в режиме 🎯
   const zv = zoomViewer(stage, (x, y) => {
     if (!d.pick) return false;
-    const src = d.flat, xi = Math.round(x * src.w / d.vw), yi = Math.round(y * src.h / d.vh);
+    if (!d.flat) { toast('Секунду, готовлю пипетку…'); return true; }
+    const src = d.flat, xi = Math.round(x * src.w / d.rect.w), yi = Math.round(y * src.h / d.rect.h);
     const c = avgAt(src, xi, yi, Math.max(1, Math.round(d.ppm * 0.6)));
     const hex = CL.rgbToHex(c); S.colorUI.cur = hex; persist();
     pickBar.innerHTML = ''; pickBar.classList.remove('hidden');
     pickBar.append(el('i', { class: 'sw', style: `background:${hex}` }), el('span', { class: 'grow' }, `${CL.colorName(hex)} ${hex}`),
-      btn('➕ В мои краски', () => { addPaint(hex); toast('Добавлено в «Мои краски»'); }, 'small'),
-      btn('🎨 Как смешать', () => { closeScanView(); openPanel('colors'); }, 'small'));
+      btn('➕ В палитру', () => { addPaint(hex); toast('Добавлено в палитру'); }, 'small'),
+      btn('🎨 Как смешать', () => { closeScanView(); S.colorUI.tab = 'find'; openPanel('colors'); }, 'small'));
     return true;
   });
-  const pickBtn = el('button', { class: 'zbtn', title: 'Пипетка: узнать цвет', onclick: () => { d.pick = !d.pick; pickBtn.classList.toggle('on', d.pick); toast(d.pick ? '🎯 Тапни по цвету на рисунке' : 'Пипетка выключена', 1800); } }, '🎯');
+  const fetchFlat = async () => { const r = await getClient().run({ method: sc.method || 'clean', clean: sc.clean, level: 'full', flat: true }); if (r) d.flat = r.flat; };
+  const pickBtn = el('button', { class: 'zbtn', title: 'Пипетка: узнать цвет', onclick: () => { d.pick = !d.pick; pickBtn.classList.toggle('on', d.pick); if (d.pick) { d.flat = null; fetchFlat(); } toast(d.pick ? '🎯 Тапни по цвету на рисунке' : 'Пипетка выключена', 1800); } }, '🎯');
   zv.ctl.prepend(pickBtn);
   let idle = 0;
-  const showPreview = async () => {
-    if (d.tab !== 'photo') await processScan();
-    // превью — холст с зумом, без кодирования в PNG; вектор при приближении перерисовывается чётко
-    const base = d.tab === 'photo' ? 1 : Math.min(2, 1400 / Math.max(d.vec.w, d.vec.h));
-    const c = scanCanvasFor(d.tab, base);
-    const cw = d.tab === 'photo' ? d.flat.w : d.vec.w, ch = d.tab === 'photo' ? d.flat.h : d.vec.h;
-    d.vw = cw; d.vh = ch;
-    const vec = d.tab !== 'photo' ? d.vec : null, colors = d.tab === 'vec';
-    zv.set({ bmp: c, w: cw, h: ch, hi: vec ? (g) => { g.fillStyle = '#fff'; g.fillRect(0, 0, cw, ch); scan.drawVector(g, vec, { colors }); } : null, bmpScale: d.tab === 'photo' ? (c.width / cw) : base });
+  // показ уже посчитанного (без пересчёта): смена оформления, скрытие цветов
+  const render = () => {
+    const cur = d.view; if (!cur) return;
+    const isVec = cur.tab !== 'photo';
+    const base = isVec ? Math.min(2, 1400 / Math.max(d.rect.w, d.rect.h)) : 1;
+    const c = scanCanvasOf(cur, base);
+    zv.set({ bmp: c, w: d.rect.w, h: d.rect.h, hi: isVec ? (g) => scan.drawVector(g, cur.vec, { ...scanDrawOpts(cur), background: true }) : null, bmpScale: isVec ? base : c.width / d.rect.w });
     let txt = `${d.pw}×${d.ph} мм · ${d.ppm} пикс/мм (${R.scanInfo || 'кадры видео'})`;
-    if (d.tab !== 'photo') {
-      if (d.svgKB == null) d.svgKB = Math.round(scan.toSVG(d.vec, d.pw, d.ph).length / 1024);
-      const nC = d.vec.colors.length;
-      if (sc.pal === 'mine' && S.paints.some(p => p.scan !== false)) txt += ` · своими красками: ${nC}`;
-      else txt += sc.paint && sc.colors > 0 ? ` · оттенков найдено ${nC} из ${sc.colors}` : '';
-      txt += ` · SVG ≈ ${d.svgKB} КБ`;
-    }
+    if (cur.tab === 'vec') txt += ` · цветов: ${cur.vec.colors.length - cur.vec.colors.filter(l => d.hidden.has(l.color)).length}/${cur.vec.colors.length}`;
+    if (cur.draft) txt += ' · черновик, уточняю…';
     info.textContent = txt;
-    // пока человек смотрит на результат — заранее готовим файл, чтобы «Поделиться» сработало сразу
-    clearTimeout(idle); idle = setTimeout(() => prepareExport().catch(() => {}), 700);
+    if (cur.tab === 'vec') buildChips();
+    d.exp = null;
+    if (!cur.draft) { clearTimeout(idle); idle = setTimeout(() => prepareExport().catch(() => {}), 900); }
+  };
+  const setBusy = (t) => { busy.textContent = t || ''; busy.classList.toggle('hidden', !t); };
+  // пересчёт: сначала быстрый черновик (если полного в кэше нет), потом полное качество
+  const compute = async () => {
+    const seq = d.seq = (d.seq || 0) + 1, tab = d.tab, cl = getClient();
+    try {
+      const full = scanReq(tab, 'full');
+      if (!(await cl.cached(full))) {
+        setBusy('⏳ Черновик…');
+        const r = await cl.run(scanReq(tab, 'draft'));
+        if (seq !== d.seq) return;
+        if (r) { d.view = { ...scanView(tab, r), draft: r.level === 'draft' && r.k > 1 }; render(); }
+        setBusy(r && r.k > 1 ? '⏳ Полное качество…' : '⏳ …');
+      }
+      const r2 = await cl.run(full);
+      if (seq !== d.seq || !r2) return;
+      d.view = scanView(tab, r2); render();
+    } catch (e) { console.error(e); toast('Не получилось: ' + (e.message || e)); }
+    finally { if (seq === d.seq) setBusy(null); }
   };
   let t = 0;
-  const redo = () => { clearTimeout(t); t = setTimeout(() => showPreview(), 250); };
-  const refresh = () => { d.flatKey = (d.flatKey || 0) + 1; d.vec = null; d.exp = null; };
-  // «Очистка фона» пересчитывает выравнивание фона из выпрямленного снимка
-  const reflat = () => { clearTimeout(t); t = setTimeout(async () => { toast('Пересчитываю фон…', 3000); await sleep(20); d.flat = scan.flatten(d.rect, d.ppm, sc.clean); refresh(); await showPreview(); }, 300); };
-  const geomChange = async (fn) => { toast('Поворачиваю…', 2500); await sleep(20); fn(); d.flat = scan.flatten(d.rect, d.ppm, sc.clean); refresh(); await showPreview(); };
+  const redo = (ms = 200) => { clearTimeout(t); t = setTimeout(compute, ms); };
+  const geomChange = async (fn) => { fn(); d.flat = null; await getClient().setRect(d.rect, d.ppm); compute(); };
   const ctl = el('div', { class: 'scan-ctl' });
+  const chips = el('div', { class: 'chips' });
+  const buildChips = () => {
+    chips.innerHTML = '';
+    const cur = d.view; if (!cur || cur.tab !== 'vec' || !cur.vec.colors.length) return;
+    for (const l of cur.vec.colors) {
+      const off = d.hidden.has(l.color);
+      chips.append(el('button', { class: 'chip' + (off ? ' off' : ''), title: off ? 'Показать' : 'Скрыть', onclick: () => { if (off) d.hidden.delete(l.color); else d.hidden.add(l.color); render(); } },
+        el('i', { style: `background:${l.color}` }), el('span', {}, l.name.replace(/^Цвет /, '') + (off ? ' · скрыт' : ''))));
+    }
+    if (d.hidden.size) chips.append(btn('👁 Показать все', () => { d.hidden.clear(); render(); }, 'small'));
+  };
+  const style = () => (sc.style = sc.style || { mode: sc.lineBlack ? 'black' : 'auto', c1: '#ff2d95', c2: '#2d9bff' });
+  const lineControls = (withSpots) => {
+    ctl.append(rangeRow('Чувствительность линий', 0, 1, 0.05, sc.lines, (x) => { sc.lines = x; persist(); redo(); }, (x) => Math.round(x * 100) + '%'));
+    ctl.append(rangeRow('Толщина линий', 0.4, 1.8, 0.1, sc.thick || 1, (x) => { sc.thick = x; persist(); redo(); }, (x) => (x < 0.95 ? 'тоньше ' : x > 1.05 ? 'толще ' : 'как есть ') + '×' + (+x).toFixed(1)));
+    const det = el('details', { class: 'more' }, el('summary', {}, 'Тонкая настройка линий'));
+    det.append(rangeRow('Сглаживание краёв', 0, 3, 0.25, sc.smooth, (x) => { sc.smooth = x; persist(); redo(); }));
+    det.append(rangeRow('Заполнить пробелы до', 0, 2, 0.1, sc.gap || 0, (x) => { sc.gap = x; persist(); redo(); }, (x) => x ? (+x).toFixed(1) + ' мм' : 'нет'));
+    if (withSpots) det.append(rangeRow('Убрать пятна меньше', 0, 20, 1, sc.minSpot, (x) => { sc.minSpot = x; persist(); redo(); }, (x) => x + ' мм²'));
+    ctl.append(det);
+    // оформление — только отрисовка, мгновенно
+    const st = style();
+    ctl.append(el('div', { class: 'section-title' }, 'Оформление линий'));
+    ctl.append(segRow('', [['auto', 'Карандаш'], ['black', 'Тушь'], ['color', 'Цветные'], ['grad', 'Переход'], ['rainbow', 'Радуга'], ['neon', 'Неон'], ['neg', 'Негатив']], st.mode, (x) => { st.mode = x; persist(); buildCtl(); render(); }));
+    if (st.mode === 'color' || st.mode === 'neon' || st.mode === 'grad') {
+      const c1 = el('input', { type: 'color', value: st.c1 || '#ff2d95', class: 'sw-input' }); c1.oninput = () => { st.c1 = c1.value; persist(); render(); };
+      const row = el('div', { class: 'row' }, el('span', { class: 'lbl' }, st.mode === 'grad' ? 'Цвета перехода' : 'Цвет линий'), c1);
+      if (st.mode === 'grad') { const c2 = el('input', { type: 'color', value: st.c2 || '#2d9bff', class: 'sw-input' }); c2.oninput = () => { st.c2 = c2.value; persist(); render(); }; row.append(c2); }
+      ctl.append(row);
+    }
+  };
+  const bgControls = () => {
+    ctl.append(segRow('Фон снимка', [['clean', 'Чистый'], ['v13', 'Обскура (как в v1.3)']], sc.method || 'clean', (x) => { sc.method = x; persist(); d.flat = null; redo(0); }));
+    ctl.append(rangeRow('Очистка фона', 0, 1, 0.05, sc.clean, (x) => { sc.clean = x; persist(); d.flat = null; redo(300); }, (x) => x < 0.3 ? 'мягко' : x <= 0.6 ? 'обычно' : 'сильно'));
+  };
   const buildCtl = () => {
     ctl.innerHTML = '';
-    ctl.append(segRow('', [['photo', 'Скан'], ['vec', 'Рисунок (вектор)'], ['lines', 'Только линии']], d.tab, (x) => { d.tab = x; buildCtl(); showPreview(); }));
+    ctl.append(segRow('', [['photo', 'Скан'], ['clean', 'Чистовик'], ['vec', 'Рисунок'], ['lines', 'Линии']], d.tab, (x) => { d.tab = x; buildCtl(); compute(); }));
     if (d.tab === 'photo') {
       ctl.append(el('p', { class: 'note' }, 'Настоящий скан: лист выпрямлен, фон выровнен, ничего не перерисовано — штриховка и тени рисунка остаются.'));
-      ctl.append(segRow('Цвет', [['color', 'Цветной'], ['gray', 'Серый'], ['bw', 'Ч/Б'], ['manga', 'Манга']], sc.mode || 'color', (x) => { sc.mode = x; persist(); buildCtl(); showPreview(); }));
-      if (sc.mode === 'manga') ctl.append(el('p', { class: 'note' }, 'Манга: чистая тушь + серые тона переведены в точечный растр (скринтон), как в печатной манге. Только чёрное и белое — печатается без серой «грязи».'),
-        rangeRow('Растр (LPI)', 25, 85, 5, sc.lpi || 45, (x) => { sc.lpi = x; persist(); clearTimeout(t); t = setTimeout(showPreview, 250); }, (x) => x + ' · ' + (x < 40 ? 'крупный' : x < 60 ? 'средний' : 'мелкий')));
-      ctl.append(rangeRow('Резкость', 0, 1.5, 0.1, sc.sharpen ?? 0.6, (x) => { sc.sharpen = x; persist(); clearTimeout(t); t = setTimeout(showPreview, 200); }, (x) => Math.round(x * 100) + '%'));
-      if (sc.mode !== 'bw' && sc.mode !== 'manga') {
-        ctl.append(rangeRow('Старое фото (абскура)', 0, 1, 0.05, sc.obscura || 0, (x) => { sc.obscura = x; persist(); clearTimeout(t); t = setTimeout(showPreview, 250); }, (x) => x ? Math.round(x * 100) + '%' : 'нет'));
-        ctl.append(segRow('Тон', [['none', 'Обычный'], ['sepia', 'Сепия'], ['cold', 'Холодный']], sc.tone || 'none', (x) => { sc.tone = x; persist(); showPreview(); }));
-      }
-    } else {
-      ctl.append(el('p', { class: 'note' }, d.tab === 'vec' ? 'Рисунок заново собран из контуров (вектор): линии + пятна краски, можно с плавными переходами.' : 'Только линии рисунка — для раскраски или обводки.'));
-      if (d.tab === 'vec') {
+      bgControls();
+      ctl.append(segRow('Цвет', [['color', 'Цветной'], ['gray', 'Серый'], ['bw', 'Ч/Б'], ['manga', 'Манга']], sc.mode || 'color', (x) => { sc.mode = x; persist(); buildCtl(); redo(0); }));
+      if (sc.mode === 'manga') ctl.append(el('p', { class: 'note' }, 'Манга: тушь + серые тона переведены в точечный растр (скринтон), как в печатной манге.'),
+        rangeRow('Растр (LPI)', 25, 85, 5, sc.lpi || 45, (x) => { sc.lpi = x; persist(); redo(); }, (x) => x + ' · ' + (x < 40 ? 'крупный' : x < 60 ? 'средний' : 'мелкий')));
+      ctl.append(rangeRow('Резкость', 0, 1.5, 0.1, sc.sharpen ?? 0.6, (x) => { sc.sharpen = x; persist(); redo(); }, (x) => Math.round(x * 100) + '%'));
+      if (sc.mode !== 'bw' && sc.mode !== 'manga') ctl.append(segRow('Тон', [['none', 'Обычный'], ['sepia', 'Сепия'], ['cold', 'Холодный']], sc.tone || 'none', (x) => { sc.tone = x; persist(); redo(0); }));
+    } else if (d.tab === 'clean') {
+      ctl.append(el('p', { class: 'note' }, 'Чистовик — как цифровой скетч: чёткие ровные линии (вектор) + мягкие тени с рисунка, без грязи и шума бумаги.'));
+      ctl.append(rangeRow('Тени', 0, 2.5, 0.1, sc.washK ?? 1.2, (x) => { sc.washK = x; persist(); redo(); }, (x) => x < 0.05 ? 'без теней' : Math.round(x * 100) + '%'));
+      ctl.append(rangeRow('Мягкость теней', 0, 1, 0.05, sc.washSoft ?? 0.5, (x) => { sc.washSoft = x; persist(); redo(); }, (x) => Math.round(x * 100) + '%'));
+      lineControls(false);
+      bgControls();
+    } else if (d.tab === 'vec') {
+      ctl.append(el('p', { class: 'note' }, 'Рисунок заново собран из контуров (вектор): линии + заливка.'));
+      const fill = sc.fill || 'src';
+      ctl.append(segRow('Заливка', [['src', 'Цвета с рисунка'], ['auto', 'Раскрасить сама'], ['none', 'Без заливки']], fill, (x) => { sc.fill = x; persist(); d.hidden.clear(); buildCtl(); redo(0); }));
+      if (fill === 'src') {
         const mineN = S.paints.filter(p => p.scan !== false).length;
-        ctl.append(segRow('Палитра', [['auto', 'Подобрать самой'], ['mine', `Мои краски (${mineN})`]], sc.pal || 'auto', (x) => {
-          if (x === 'mine' && !mineN) { toast('Сначала добавь свои краски в 🎨 Цвета'); buildCtl(); return; }
-          sc.pal = x; persist(); buildCtl(); redo();
+        ctl.append(segRow('Палитра', [['auto', 'Подобрать самой'], ['mine', `Моя палитра (${mineN})`]], sc.pal || 'auto', (x) => {
+          if (x === 'mine' && !mineN) { toast('Сначала добавь цвета в палитру (🎨 Цвета)'); buildCtl(); return; }
+          sc.pal = x; persist(); d.hidden.clear(); buildCtl(); redo(0);
         }));
-        if (sc.pal === 'mine' && mineN) ctl.append(el('div', { class: 'swatches mini' }, ...S.paints.filter(p => p.scan !== false).map(p => el('i', { style: `background:${p.hex}`, title: p.name }))),
-          el('p', { class: 'note' }, 'Каждое пятно краски рисуется ближайшей из твоих красок (🖌 в «Цвета» — какие участвуют).'));
-        else {
-          ctl.append(rangeRow('Цветов краски', 0, 16, 1, sc.colors, (x) => { sc.colors = x; sc.paint = x > 0; persist(); redo(); }, (x) => x || 'нет'));
-          ctl.append(toggleRow('Плавные переходы (градиенты)', sc.grad !== false, (x) => { sc.grad = x; persist(); redo(); }));
+        if (!(sc.pal === 'mine' && mineN)) {
+          ctl.append(rangeRow('Цветов краски', 1, 16, 1, Math.max(1, sc.colors), (x) => { sc.colors = x; sc.paint = true; persist(); d.hidden.clear(); redo(); }));
+          ctl.append(toggleRow('Плавные переходы (градиенты)', sc.grad !== false, (x) => { sc.grad = x; persist(); redo(0); }));
         }
+        ctl.append(el('p', { class: 'note' }, 'Тапни по цвету ниже, чтобы скрыть его (и снова — чтобы вернуть):'), chips);
+      } else if (fill === 'auto') {
+        ctl.append(el('p', { class: 'note' }, 'Замкнутые области между линиями заливаются цветами, соседние — разными. ' + (S.paints.filter(p => p.scan !== false).length >= 3 ? 'Цвета — из твоей палитры.' : 'Цвета — пастель (добавь 3+ цвета в палитру, чтобы красить своими).') + ' Если области «протекают» — увеличь «Заполнить пробелы».'),
+          el('div', { class: 'btns' }, btn('🎲 Другие цвета', () => { sc.fillSeed = (sc.fillSeed || 1) + 1; persist(); redo(0); })), chips);
       }
-      ctl.append(rangeRow('Чувствительность линий', 0, 1, 0.05, sc.lines, (x) => { sc.lines = x; persist(); redo(); }, (x) => Math.round(x * 100) + '%'));
-      ctl.append(rangeRow('Сглаживание краёв', 0, 3, 0.25, sc.smooth, (x) => { sc.smooth = x; persist(); redo(); }));
-      ctl.append(rangeRow('Заполнить пробелы до', 0, 2, 0.1, sc.gap || 0, (x) => { sc.gap = x; persist(); redo(); }, (x) => x ? x.toFixed(1) + ' мм' : 'нет'));
-      ctl.append(rangeRow('Убрать пятна меньше', 0, 20, 1, sc.minSpot, (x) => { sc.minSpot = x; persist(); redo(); }, (x) => x + ' мм²'));
-      ctl.append(toggleRow('Линии чёрным', sc.lineBlack, (x) => { sc.lineBlack = x; persist(); redo(); }));
+      lineControls(fill === 'src');
+      bgControls();
+    } else {
+      ctl.append(el('p', { class: 'note' }, 'Только линии рисунка — для раскраски, обводки или эффектов.'));
+      lineControls(false);
+      bgControls();
     }
-    ctl.append(rangeRow('Очистка фона', 0, 1, 0.05, sc.clean, (x) => { sc.clean = x; persist(); reflat(); }, (x) => x < 0.3 ? 'мягко' : x <= 0.6 ? 'обычно' : 'сильно'));
     ctl.append(el('div', { class: 'btns' },
       btn('↻ 90°', () => geomChange(() => { d.rect = rotateImg(d.rect, true); [d.pw, d.ph] = [d.ph, d.pw]; })),
       btn(d.pw > d.ph ? '⇄ Это книжный лист' : '⇄ Это альбомный лист', () => geomChange(() => { d.rect = swapAspect(d.rect, d.ppm, d.pw, d.ph); [d.pw, d.ph] = [d.ph, d.pw]; buildCtl(); }))));
-    ctl.append(segRow('Формат', d.tab === 'photo' ? [['png', 'PNG'], ['jpg', 'JPG']] : [['png', 'PNG'], ['jpg', 'JPG'], ['svg', 'SVG (вектор)']], d.tab === 'photo' && sc.fmt === 'svg' ? 'png' : sc.fmt, (x) => { sc.fmt = x; persist(); clearTimeout(idle); idle = setTimeout(() => prepareExport().catch(() => {}), 300); }));
+    const fmts = d.tab === 'photo' ? [['png', 'PNG'], ['jpg', 'JPG']] : [['png', 'PNG'], ['jpg', 'JPG'], ['svg', 'SVG (вектор)']];
+    ctl.append(segRow('Формат', fmts, d.tab === 'photo' && sc.fmt === 'svg' ? 'png' : sc.fmt, (x) => { sc.fmt = x; persist(); d.exp = null; clearTimeout(idle); idle = setTimeout(() => prepareExport().catch(() => {}), 300); }));
     ctl.append(el('div', { class: 'btns' },
       btn('💾 Сохранить', () => exportScan(false), 'primary'),
       btn('📤 Поделиться', () => exportScan(true)),
       btn('↻ Переснять', () => { closeScanView(); runScan(); })));
   };
   buildCtl();
+  stage.append(busy);
   v.append(el('div', { class: 'scan-head' }, el('h2', {}, '📥 Оцифровка'), el('button', { class: 'icon small', onclick: closeScanView, 'aria-label': 'Закрыть' }, '✕')), stage, pickBar, info, ctl);
-  showPreview();
+  if (d.view && d.view.tab === d.tab) render();
+  compute();
 }
+
 function closeScanView() { $('scanView').classList.add('hidden'); $('scanView').innerHTML = ''; if (R.scan) R.scan.pick = false; }
 
 // Готовый файл кэшируется по ключу (вкладка + настройки + формат): повторное «Сохранить» /
 // «Поделиться» ничего не пересчитывает. Готовится заранее, пока открыт результат.
-async function prepareExport() {
+async function prepareExport(user = false) {
   const d = R.scan, sc = S.scan;
   if (!d) return null;
-  const fmt = d.tab !== 'photo' && sc.fmt === 'svg' ? 'svg' : sc.fmt === 'jpg' ? 'jpg' : 'png';
-  if (d.tab !== 'photo') await processScan();
-  const key = scanKey(d.tab) + '|' + fmt + '|' + d.pw + 'x' + d.ph;
+  const tab = d.tab, fmt = tab !== 'photo' && sc.fmt === 'svg' ? 'svg' : sc.fmt === 'jpg' ? 'jpg' : 'png';
+  // только полное качество (черновик не сохраняем)
+  let view = d.view && d.view.tab === tab && !d.view.draft ? d.view : null;
+  if (!view && !user) return null; // фоновая подготовка — только когда всё уже посчитано
+  if (!view) { toast('Готовлю полное качество…', 4000); const r = await getClient().run(scanReq(tab, 'full')); if (!r) return null; view = scanView(tab, r); }
+  const key = JSON.stringify([scanReq(tab, 'full'), fmt, d.pw, d.ph, sc.style, [...(d.hidden || [])], view === d.view]);
   if (d.exp && d.exp.key === key) return d.exp.p;
   const p = (async () => {
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
     let blob;
     if (fmt === 'svg') {
-      const vec = d.tab === 'lines' ? { ...d.vec, colors: [] } : d.vec;
-      blob = new Blob([scan.toSVG(vec, d.pw, d.ph)], { type: 'image/svg+xml' });
+      const o = scanDrawOpts(view);
+      const washHref = o.wash ? o.wash.toDataURL('image/png') : null;
+      blob = new Blob([scan.toSVG(view.vec, d.pw, d.ph, { style: o.style, hidden: o.hidden, colors: o.colors, washHref })], { type: 'image/svg+xml' });
     } else {
-      const c = scanCanvasFor(d.tab, d.tab === 'photo' ? 1 : 8 / d.ppm);
+      const c = scanCanvasOf(view, tab === 'photo' ? 1 : Math.max(1, 8 / d.ppm));
       blob = await new Promise(r => c.toBlob(r, fmt === 'jpg' ? 'image/jpeg' : 'image/png', 0.93));
     }
     const out = { blob, name: `reyka-${stamp}.${fmt}`, b64: null };
@@ -1840,13 +1990,14 @@ async function prepareExport() {
   d.exp = { key, p };
   return p;
 }
+
 function blobB64(blob) { return new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); }); }
 
 async function exportScan(share) {
   toast(share ? 'Открываю «Поделиться»…' : 'Сохраняю…', 2500);
   await sleep(10);
   try {
-    const r = await prepareExport();
+    const r = await prepareExport(true);
     if (r) await saveBlob(r.blob, r.name, share, r.b64);
   } catch (e) { console.error(e); toast('Не получилось: ' + (e.message || e)); }
 }
@@ -1930,4 +2081,4 @@ if ('serviceWorker' in navigator && !IS_APP && location.protocol === 'https:') {
 }
 
 // Для отладки/тестов
-window.__reyka = { S: () => S, R, addGuide, completeCorners, tracker, locateInPhoto, startSource, openPanel, setClean, measureTilt, findKalkaPerspective, runScan: () => runScan() };
+window.__reyka = { S: () => S, R, addGuide, completeCorners, tracker, locateInPhoto, startSource, openPanel, setClean, measureTilt, findKalkaPerspective, runScan: () => runScan(), testScan: async (rect, ppm, pw, ph) => { await getClient().setRect(rect, ppm); R.scan = { pw, ph, ppm, rect, tab: 'photo', hidden: new Set() }; openScanView(); } };

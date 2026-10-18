@@ -243,28 +243,28 @@ function solveSym(A0, b0) {
 // lineLevel 0..1 — чувствительность к линиям; colors — сколько цветов (0 — только линии);
 // minSpot — минимальный размер пятна в мм².
 export function segment(img, ppm, { lineLevel = 0.5, colors = 6, minSpot = 2, paint = true, fixed = null } = {}) {
+  const L = segLines(img, ppm, lineLevel);
+  return segColors(img, ppm, L, { colors: paint ? colors : 0, minSpot, fixed });
+}
+
+// Линии: то, что темнее своего окружения. Зависят только от чувствительности.
+export function segLines(img, ppm, lineLevel = 0.5) {
   const { data, w, h } = img;
   const n = w * h;
-  const kind = new Uint8Array(n); // 0 бумага, 1 линия, 2 краска
+  const kind = new Uint8Array(n); // 0 — не линия, 1 — линия
   const lineThr = 90 + 110 * lineLevel; // яркость, ниже которой бесцветное — линия
-  // Линия — это то, что темнее своего окружения. Ровная штриховка/тень темна, но не темнее
-  // соседей — она уходит в «краску» (серые тона), а не в линии.
+  // Ровная штриховка/тень темна, но не темнее соседей — она уходит в «краску», а не в линии.
   const Lum = new Float32Array(n);
   for (let i = 0, j = 0; i < n; i++, j += 4) Lum[i] = 0.299 * data[j] + 0.587 * data[j + 1] + 0.114 * data[j + 2];
   const loc = boxBlur(Lum, w, h, Math.max(3, Math.round(1.6 * ppm)));
   const dLine = 18 + 22 * (1 - lineLevel);
-  const colored = [];
   for (let i = 0, j = 0; i < n; i++, j += 4) {
-    const r = data[j], g = data[j + 1], b = data[j + 2];
-    const L = Lum[i];
+    const r = data[j], g = data[j + 1], b = data[j + 2], Lv = Lum[i];
     const C = Math.max(r, g, b) - Math.min(r, g, b);
-    const contrast = loc[i] - L;
-    if (L < 45 || (L < lineThr && C < 55 + (lineThr - L) * 0.4 && contrast > dLine)) kind[i] = 1;
-    else if (paint && colors > 0 && (C > 28 || L < 225)) { kind[i] = 2; colored.push(i); }
+    if (Lv < 45 || (Lv < lineThr && C < 55 + (lineThr - Lv) * 0.4 && loc[i] - Lv > dLine)) kind[i] = 1;
   }
-  // Гистерезис: светлые продолжения штриха присоединяем к уверенным линиям
-  // (по связности), а одиночные светлые пятна — шум — не берём.
   clearBorderJunk(kind, w, h, Math.ceil(2 * ppm)); // сначала убираем кусочки стола у края
+  // Гистерезис: светлые продолжения штриха присоединяем к уверенным линиям (по связности)
   {
     const weakThr = Math.min(242, lineThr + 50);
     const band = Math.ceil(2 * ppm) + Math.ceil(3 * ppm); // в полосу у края не растём
@@ -276,17 +276,36 @@ export function segment(img, ppm, { lineLevel = 0.5, colors = 6, minSpot = 2, pa
         if (j < 0 || kind[j] === 1) continue;
         { const jy = (j / w) | 0, jx = j - jy * w; if (jx < band || jy < band || jx >= w - band || jy >= h - band) continue; }
         const q = j * 4, r = data[q], g = data[q + 1], b = data[q + 2];
-        const L = Lum[j], C = Math.max(r, g, b) - Math.min(r, g, b);
-        if (L < weakThr && C < 40 && loc[j] - L > dLine * 0.45) { kind[j] = 1; stack[sp++] = j; }
+        const Lv = Lum[j], C = Math.max(r, g, b) - Math.min(r, g, b);
+        if (Lv < weakThr && C < 40 && loc[j] - Lv > dLine * 0.45) { kind[j] = 1; stack[sp++] = j; }
       }
     }
   }
-  // тонкие полосы у самого края (кусочек стола из-за неточного угла) — убираем
   clearBorderJunk(kind, w, h, Math.ceil(2 * ppm));
-  // убираем мелкий мусор из линий
   const minLine = Math.max(4, Math.round(0.35 * ppm * ppm));
   removeSmall(kind, w, h, 1, minLine, 0);
+  // цвет линий — средний цвет линейных пикселей (затемнённый)
+  let lr = 0, lg = 0, lb = 0, lc = 0;
+  for (let i = 0; i < n; i += 3) if (kind[i] === 1) { const j = i * 4; lr += data[j]; lg += data[j + 1]; lb += data[j + 2]; lc++; }
+  const lineColor = lc ? [lr / lc * 0.6, lg / lc * 0.6, lb / lc * 0.6].map(Math.round) : [30, 30, 30];
+  return { w, h, kind, lineColor };
+}
 
+// Цвета краски поверх уже найденных линий.
+export function segColors(img, ppm, lines, { colors = 6, minSpot = 2, fixed = null } = {}) {
+  const { data, w, h } = img, n = w * h;
+  const kind = lines.kind.slice();
+  const colored = [];
+  if (colors > 0) {
+    const pm = new Uint8Array(n);
+    for (let i = 0, j = 0; i < n; i++, j += 4) {
+      if (kind[i]) continue;
+      const r = data[j], g = data[j + 1], b = data[j + 2], Lv = 0.299 * r + 0.587 * g + 0.114 * b, C = Math.max(r, g, b) - Math.min(r, g, b);
+      if (C > 28 || Lv < 225) pm[i] = 1;
+    }
+    clearBorderJunk(pm, w, h, Math.ceil(2 * ppm));
+    for (let i = 0; i < n; i++) if (pm[i]) { kind[i] = 2; colored.push(i); }
+  }
   // k-средних по цветам краски
   let palette = [];
   const label = new Uint8Array(n); // 0 — нет цвета, 1..K
@@ -330,11 +349,7 @@ export function segment(img, ppm, { lineLevel = 0.5, colors = 6, minSpot = 2, pa
     // удаляем почти-белые «цвета» (остатки бумаги)
     palette = palette.map(p => p.map(v => Math.round(v)));
   }
-  // цвет линий — средний цвет линейных пикселей (затемнённый)
-  let lr = 0, lg = 0, lb = 0, lc = 0;
-  for (let i = 0; i < n; i += 3) if (kind[i] === 1) { const j = i * 4; lr += data[j]; lg += data[j + 1]; lb += data[j + 2]; lc++; }
-  const lineColor = lc ? [lr / lc * 0.6, lg / lc * 0.6, lb / lc * 0.6].map(Math.round) : [30, 30, 30];
-  return { w, h, kind, label, palette, lineColor };
+  return { w, h, kind, label, palette, lineColor: lines.lineColor };
 }
 
 function lab3(r, g, b) {
@@ -725,7 +740,20 @@ function smoothPath(p, cornerCos = 0.64) {
 // ---------- Сборка результата ----------
 const hex = (c) => '#' + c.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
 
-export function vectorize(seg, ppm, { smooth = 1, lineBlack = false, withColors = true, gradients = false, img = null, gap = 0 } = {}) {
+export function vectorize(seg, ppm, opts = {}) {
+  const colors = opts.withColors === false ? [] : vecColors(seg, ppm, opts);
+  const lm = new Uint8Array(seg.w * seg.h);
+  for (let i = 0; i < lm.length; i++) if (seg.kind[i] === 1) lm[i] = 1;
+  const lines = vecLines(lm, seg.w, seg.h, ppm, opts);
+  lines.color = opts.lineBlack ? '#1a1a1a' : hex(seg.lineColor);
+  return { w: seg.w, h: seg.h, colors, lines };
+}
+export function vecLines(lm, w, h, ppm, { smooth = 1, gap = 0 } = {}) {
+  const eps = 0.6 + smooth * 0.9, sigma = 0.55 + 0.3 * smooth;
+  const m = gap > 0 ? closeFill(lm, w, h, gap / 2 * ppm, Math.round((2 * gap * ppm) ** 2)) : lm;
+  return { name: 'Линии', color: '#1a1a1a', d: traceMask(m, w, h, { simplify: Math.max(0.6, eps * 0.75), minArea: 2, sigma: Math.min(sigma, 1.1) }) };
+}
+export function vecColors(seg, ppm, { smooth = 1, gradients = false, img = null, gap = 0 } = {}) {
   const { w, h, kind, label, palette } = seg;
   const eps = 0.6 + smooth * 0.9;
   // гладкость края: размытие маски перед обводкой (в пикселях); пробелы — в миллиметрах
@@ -734,7 +762,7 @@ export function vectorize(seg, ppm, { smooth = 1, lineBlack = false, withColors 
   const prep = (m) => (gap > 0 ? closeFill(m, w, h, closeR, holeA) : m);
   const lname = (c) => (seg.names && seg.names[c - 1]) || 'Цвет ' + c;
   const layers = [];
-  if (withColors) {
+  {
     for (let c = 1; c <= palette.length; c++) {
       const pc = palette[c - 1], chroma = Math.max(...pc) - Math.min(...pc), lum = 0.299 * pc[0] + 0.587 * pc[1] + 0.114 * pc[2];
       // блёклый серый ореол вокруг линий — это бумага; но если просили много оттенков,
@@ -762,11 +790,128 @@ export function vectorize(seg, ppm, { smooth = 1, lineBlack = false, withColors 
       }
     }
   }
-  const lm = new Uint8Array(w * h);
-  for (let i = 0; i < w * h; i++) if (kind[i] === 1) lm[i] = 1;
-  const ld = traceMask(prep(lm), w, h, { simplify: Math.max(0.6, eps * 0.75), minArea: 2, sigma: Math.min(sigma, 1.1) });
-  const lines = { name: 'Линии', color: lineBlack ? '#1a1a1a' : hex(seg.lineColor), d: ld };
-  return { w, h, colors: layers, lines };
+  return layers;
+}
+
+// ---------- Толщина линий без потери деталей ----------
+// Срединная ось штриха (гребень карты расстояний до фона) + круги радиусом k·(полуширина):
+// каждый штрих становится тоньше/толще пропорционально, тонкие линии не исчезают (минимальный
+// радиус), сужения на концах сохраняются.
+export function scaleLines(lm, w, h, k) {
+  if (Math.abs(k - 1) < 0.02) return lm;
+  const D2 = edt2(lm, w, h, 0), out = new Uint8Array(w * h);
+  const D = new Float32Array(w * h); for (let i = 0; i < w * h; i++) D[i] = lm[i] ? Math.sqrt(D2[i]) : 0;
+  const rMin = 0.75;
+  for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+    const i = y * w + x, d = D[i]; if (!d) continue;
+    // гребень: локальный максимум хотя бы в одном из 4 направлений
+    const ridge = (d >= D[i - 1] && d >= D[i + 1]) || (d >= D[i - w] && d >= D[i + w]) || (d >= D[i - w - 1] && d >= D[i + w + 1]) || (d >= D[i - w + 1] && d >= D[i + w - 1]);
+    if (!ridge) continue;
+    const r = Math.max(rMin, (d - 0.5) * k + 0.5), R = Math.ceil(r), r2 = r * r;
+    for (let dy = -R; dy <= R; dy++) { const yy = y + dy; if (yy < 0 || yy >= h) continue; for (let dx = -R; dx <= R; dx++) { const xx = x + dx; if (xx < 0 || xx >= w || dx * dx + dy * dy > r2) continue; out[yy * w + xx] = 1; } }
+  }
+  return out;
+}
+
+// ---------- Авто-раскраска: замкнутые области между линиями ----------
+// Области = связные куски «не линии», не касающиеся края листа (это фон). Соседние области —
+// разными цветами (жадно, порядок — от seed). Цвет продлевается под линии — без белых щелей.
+export function regionFill(lm, w, h, ppm, { palette = [], seed = 1, gap = 0, smooth = 1, minMm2 = 2 } = {}) {
+  if (!palette.length) return [];
+  const closeR = Math.max(gap, 0.6) / 2 * ppm;
+  const L = closeFill(lm, w, h, closeR, 0);
+  const lab = new Int32Array(w * h), st = new Int32Array(w * h), sizes = [0], border = [false];
+  let nl = 0;
+  const mb = Math.ceil(2 * ppm) + 1;
+  for (let s = 0; s < w * h; s++) {
+    if (L[s] || lab[s]) continue;
+    nl++; let sp = 0, cnt = 0, b = false; st[sp++] = s; lab[s] = nl;
+    while (sp) {
+      const i = st[--sp]; cnt++;
+      const y = (i / w) | 0, x = i - y * w;
+      if (x < mb || y < mb || x >= w - mb || y >= h - mb) b = true;
+      if (x > 0 && !L[i - 1] && !lab[i - 1]) { lab[i - 1] = nl; st[sp++] = i - 1; }
+      if (x < w - 1 && !L[i + 1] && !lab[i + 1]) { lab[i + 1] = nl; st[sp++] = i + 1; }
+      if (y > 0 && !L[i - w] && !lab[i - w]) { lab[i - w] = nl; st[sp++] = i - w; }
+      if (y < h - 1 && !L[i + w] && !lab[i + w]) { lab[i + w] = nl; st[sp++] = i + w; }
+    }
+    sizes.push(cnt); border.push(b);
+  }
+  const minA = minMm2 * ppm * ppm, ok = (r) => r > 0 && !border[r] && sizes[r] >= minA;
+  // соседи: области по разные стороны короткого (≤ 2 мм) отрезка линии — по строкам и столбцам
+  const adj = new Map(), addAdj = (a, b) => { if (a === b || !ok(a) || !ok(b)) return; (adj.get(a) || adj.set(a, new Set()).get(a)).add(b); (adj.get(b) || adj.set(b, new Set()).get(b)).add(a); };
+  const maxRun = 2 * ppm;
+  for (let y = 0; y < h; y += 2) { let prev = 0, run = 0; for (let x = 0; x < w; x++) { const r = lab[y * w + x]; if (r) { if (prev && run <= maxRun) addAdj(prev, r); prev = r; run = 0; } else run++; } }
+  for (let x = 0; x < w; x += 2) { let prev = 0, run = 0; for (let y = 0; y < h; y++) { const r = lab[y * w + x]; if (r) { if (prev && run <= maxRun) addAdj(prev, r); prev = r; run = 0; } else run++; } }
+  let sd = (seed * 2654435761) >>> 0; const rnd = () => ((sd = (sd * 1103515245 + 12345) >>> 0) / 4294967296);
+  const order = []; for (let r = 1; r <= nl; r++) if (ok(r)) order.push(r);
+  order.sort((a, b) => sizes[b] - sizes[a]);
+  const col = new Int32Array(nl + 1).fill(-1);
+  for (const r of order) {
+    const used = new Set(); for (const q of (adj.get(r) || [])) if (col[q] >= 0) used.add(col[q]);
+    const free = palette.map((_, k) => k).filter(k => !used.has(k));
+    const pool = free.length ? free : palette.map((_, k) => k);
+    col[r] = pool[Math.floor(rnd() * pool.length)];
+  }
+  // цвет каждого пикселя области + продление под линии (BFS из областей на ≤ ~0.8 мм)
+  const pc = new Int16Array(w * h).fill(-1), q = new Int32Array(w * h), dd = new Uint8Array(w * h);
+  let qh = 0, qt = 0;
+  for (let i = 0; i < w * h; i++) { const r = lab[i]; if (r && col[r] >= 0) { pc[i] = col[r]; q[qt++] = i; } }
+  const ext = Math.ceil(0.8 * ppm) + 1;
+  while (qh < qt) {
+    const i = q[qh++]; if (dd[i] >= ext) continue;
+    const y = (i / w) | 0, x = i - y * w;
+    for (const j of [x > 0 ? i - 1 : -1, x < w - 1 ? i + 1 : -1, y > 0 ? i - w : -1, y < h - 1 ? i + w : -1]) {
+      if (j < 0 || pc[j] >= 0 || !L[j]) continue;
+      pc[j] = pc[i]; dd[j] = dd[i] + 1; q[qt++] = j;
+    }
+  }
+  const eps = 0.6 + smooth * 0.9, sigma = 0.55 + 0.3 * smooth, layers = [];
+  for (let k = 0; k < palette.length; k++) {
+    const m = new Uint8Array(w * h); let any = 0;
+    for (let i = 0; i < w * h; i++) if (pc[i] === k) { m[i] = 1; any = 1; }
+    if (!any) continue;
+    const d = traceMask(m, w, h, { simplify: eps, minArea: ppm * ppm, sigma });
+    if (d) layers.push({ name: 'Область ' + (k + 1), color: palette[k], d });
+  }
+  return layers;
+}
+
+// ---------- «Чистовик»: мягкие тени без линий (как заливка маркером в цифровом скетче) ----------
+// Линии вырезаем и закрашиваем окружающим тоном, тон слегка размываем и осветляем. Сверху
+// потом ложатся чёткие векторные линии.
+export function washLayer(img, lm, ppm, { strength = 1, soft = 0.5 } = {}) {
+  const { data, w, h } = img, n = w * h;
+  // линии + 1 пиксель вокруг (ореол) не участвуют в тоне
+  const ex = new Uint8Array(n);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x; if (!lm[i]) continue; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < w && yy < h) ex[yy * w + xx] = 1; } }
+  const mk = new Float32Array(n); for (let i = 0; i < n; i++) mk[i] = ex[i] ? 0 : 1;
+  const rFill = Math.max(2, Math.round(1.0 * ppm)), rSoft = Math.max(1, Math.round((0.15 + 0.6 * soft) * ppm));
+  const bmF = boxBlur(mk, w, h, rFill), bmS = boxBlur(mk, w, h, rSoft);
+  const out = new Uint8ClampedArray(n * 4);
+  const ch = new Float32Array(n);
+  for (let c = 0; c < 3; c++) {
+    for (let i = 0; i < n; i++) ch[i] = ex[i] ? 0 : (255 - data[i * 4 + c]);   // «темнота»
+    const bf = boxBlur(ch, w, h, rFill), bs = boxBlur(ch, w, h, rSoft);
+    for (let i = 0; i < n; i++) {
+      const fillV = bmF[i] > 0.02 ? bf[i] / bmF[i] : 0;
+      let v = bmS[i] > 0.25 ? bs[i] / bmS[i] : fillV;
+      v = Math.max(0, v - 6) * strength;                 // шум бумаги — прочь
+      out[i * 4 + c] = 255 - Math.min(235, v);
+    }
+  }
+  for (let i = 0; i < n; i++) out[i * 4 + 3] = 255;
+  return { data: out, w, h };
+}
+
+// уменьшение в 2 раза (для быстрого черновика)
+export function half(img) {
+  const { data, w, h } = img, W = w >> 1, H = h >> 1, out = new Uint8ClampedArray(W * H * 4);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = ((2 * y) * w + 2 * x) * 4, o = (y * W + x) * 4, r = w * 4;
+    for (let c = 0; c < 4; c++) out[o + c] = (data[i + c] + data[i + 4 + c] + data[i + r + c] + data[i + r + 4 + c] + 2) >> 2;
+  }
+  return { data: out, w: W, h: H };
 }
 
 // Каждое пятно краски — отдельный контур; цвет по его пикселям: линейный градиент
@@ -865,55 +1010,105 @@ function radialFit(S, mx, my, mr, mg, mb, size) {
   return { radial: true, cx: +X.toFixed(1), cy: +Y.toFixed(1), r: +rmax.toFixed(1), o1: +(rmin / rmax).toFixed(3), c1: hex(col(rmin)), c2: hex(col(rmax)) };
 }
 
-export function toSVG(vec, pwMm, phMm, { background = true } = {}) {
-  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${pwMm}mm" height="${phMm}mm" viewBox="0 0 ${vec.w} ${vec.h}">`,
+// ---------- Оформление линий (без ИИ — это просто способ отрисовки) ----------
+// style.mode: 'auto' (цвет карандаша) | 'black' | 'color' (свой цвет) | 'grad' (переход двух
+// цветов) | 'rainbow' (переливы) | 'neon' (свечение на тёмном) | 'neg' (негатив: светлое на чёрном)
+const RAINBOW = ['#e53935', '#f57c00', '#c9a000', '#2e9e4f', '#0091c2', '#3949ab', '#8e24aa'];
+function invHex(h) { const n = parseInt(h.slice(1), 16); return '#' + (0xffffff ^ n).toString(16).padStart(6, '0'); }
+function mixHexK(h, k, to = [0, 0, 0]) { const n = parseInt(h.slice(1), 16), c = [n >> 16 & 255, n >> 8 & 255, n & 255].map((v, i) => Math.round(v * (1 - k) + to[i] * k)); return '#' + c.map(v => v.toString(16).padStart(2, '0')).join(''); }
+export function styleBg(style) { const m = style && style.mode; return m === 'neon' ? '#07070f' : m === 'neg' ? '#000000' : '#ffffff'; }
+function fillFor(style, color) { const m = style && style.mode; return m === 'neg' ? invHex(color) : m === 'neon' ? mixHexK(color, 0.55) : color; }
+function lineColorFor(style, vec) {
+  const m = (style && style.mode) || 'auto';
+  if (m === 'black') return '#1a1a1a';
+  if (m === 'color' || m === 'neon') return style.c1 || '#39ff14';
+  if (m === 'neg') return '#f4f4f4';
+  return vec.lines.auto || vec.lines.color || '#1a1a1a';
+}
+const visibleColors = (vec, hidden) => (vec.colors || []).filter(l => !(hidden && hidden.has(l.color)));
+
+export function toSVG(vec, pwMm, phMm, { background = true, style = null, hidden = null, colors = true, washHref = null } = {}) {
+  const k = vec.k || 1, W = vec.w, H = vec.h;
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${pwMm}mm" height="${phMm}mm" viewBox="0 0 ${W} ${H}">`,
     `<title>Рейка AR — оцифрованный рисунок</title>`];
-  if (background) parts.push(`<rect width="${vec.w}" height="${vec.h}" fill="#ffffff"/>`);
-  if (vec.colors.length) {
+  const defs = [];
+  if (background) parts.push(`<rect width="${W}" height="${H}" fill="${styleBg(style)}"/>`);
+  parts.push(`<g transform="scale(${k})">`);
+  if (washHref) parts.push(`<image href="${washHref}" width="${W / k}" height="${H / k}" preserveAspectRatio="none"/>`);
+  const cl = colors ? visibleColors(vec, hidden) : [];
+  if (cl.length) {
     parts.push('<g id="colors">');
-    let gi = 0; const defs = [];
-    for (const l of vec.colors) {
-      if (!l.parts) { parts.push(`<path id="${l.name.replace(/\s/g, '_')}" fill="${l.color}" stroke="${l.color}" stroke-width="0.8" stroke-linejoin="round" fill-rule="evenodd" d="${l.d}"/>`); continue; }
+    let gi = 0;
+    for (const l of cl) {
+      if (!l.parts) { const f = fillFor(style, l.color); parts.push(`<path id="${l.name.replace(/\s/g, '_')}" fill="${f}" stroke="${f}" stroke-width="0.8" stroke-linejoin="round" fill-rule="evenodd" d="${l.d}"/>`); continue; }
       parts.push(`<g id="${l.name.replace(/\s/g, '_')}">`);
       for (const q of l.parts) {
         let f = q.fill;
-        if (typeof f !== 'string' && f.radial) { const id = 'g' + (gi++); defs.push(`<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${f.cx}" cy="${f.cy}" r="${f.r}"><stop offset="${f.o1}" stop-color="${f.c1}"/><stop offset="1" stop-color="${f.c2}"/></radialGradient>`); f = `url(#${id})`; }
-        else if (typeof f !== 'string') { const id = 'g' + (gi++); defs.push(`<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${f.x1}" y1="${f.y1}" x2="${f.x2}" y2="${f.y2}"><stop offset="0" stop-color="${f.c1}"/><stop offset="1" stop-color="${f.c2}"/></linearGradient>`); f = `url(#${id})`; }
+        if (typeof f !== 'string' && f.radial) { const id = 'g' + (gi++); defs.push(`<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${f.cx}" cy="${f.cy}" r="${f.r}"><stop offset="${f.o1}" stop-color="${fillFor(style, f.c1)}"/><stop offset="1" stop-color="${fillFor(style, f.c2)}"/></radialGradient>`); f = `url(#${id})`; }
+        else if (typeof f !== 'string') { const id = 'g' + (gi++); defs.push(`<linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${f.x1}" y1="${f.y1}" x2="${f.x2}" y2="${f.y2}"><stop offset="0" stop-color="${fillFor(style, f.c1)}"/><stop offset="1" stop-color="${fillFor(style, f.c2)}"/></linearGradient>`); f = `url(#${id})`; }
+        else f = fillFor(style, f);
         parts.push(`<path fill="${f}" stroke="${f}" stroke-width="0.8" stroke-linejoin="round" fill-rule="evenodd" d="${q.d}"/>`);
       }
       parts.push('</g>');
     }
-    if (defs.length) parts.splice(2, 0, '<defs>' + defs.join('') + '</defs>');
     parts.push('</g>');
   }
-  if (vec.lines.d) parts.push(`<g id="lines"><path fill="${vec.lines.color}" fill-rule="evenodd" d="${vec.lines.d}"/></g>`);
+  if (vec.lines.d) {
+    const m = (style && style.mode) || 'auto', w = W / k, h = H / k;
+    let fill = lineColorFor(style, vec), attr = '';
+    if (m === 'grad') { defs.push(`<linearGradient id="lg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="${w}" y2="${h}"><stop offset="0" stop-color="${style.c1 || '#ff2d95'}"/><stop offset="1" stop-color="${style.c2 || '#2d9bff'}"/></linearGradient>`); fill = 'url(#lg)'; }
+    if (m === 'rainbow') { defs.push(`<linearGradient id="lg" gradientUnits="userSpaceOnUse" x1="0" y1="0" x2="${w}" y2="${h * 0.6}">${RAINBOW.map((c, i) => `<stop offset="${(i / (RAINBOW.length - 1)).toFixed(3)}" stop-color="${c}"/>`).join('')}</linearGradient>`); fill = 'url(#lg)'; }
+    if (m === 'neon') { const sd = Math.max(1.5, (vec.ppm || 6) * 0.5 / k); defs.push(`<filter id="glow" x="-5%" y="-5%" width="110%" height="110%"><feGaussianBlur stdDeviation="${sd.toFixed(2)}" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>`); attr = ' filter="url(#glow)"'; }
+    parts.push(`<g id="lines"${attr}><path fill="${fill}" fill-rule="evenodd" d="${vec.lines.d}"/></g>`);
+  }
+  parts.push('</g>');
+  if (defs.length) parts.splice(2, 0, '<defs>' + defs.join('') + '</defs>');
   parts.push('</svg>');
   return parts.join('\n');
 }
 
 // Рисуем вектор в canvas (для предпросмотра и PNG/JPG).
-export function renderVector(vec, scale, { background = true, colors = true } = {}) {
+export function renderVector(vec, scale, opts = {}) {
   const c = document.createElement('canvas');
   c.width = Math.max(1, Math.round(vec.w * scale)); c.height = Math.max(1, Math.round(vec.h * scale));
   const g = c.getContext('2d');
-  if (background) { g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); }
   g.scale(scale, scale);
-  drawVector(g, vec, { colors });
+  drawVector(g, vec, { background: opts.background !== false, ...opts });
   return c;
 }
 // Рисуем вектор в любой контекст с уже заданным масштабом (для зума — чётко при любом приближении).
 // Path2D кэшируются в самом векторе: повторная отрисовка дешёвая.
-export function drawVector(g, vec, { colors = true } = {}) {
+export function drawVector(g, vec, { colors = true, style = null, hidden = null, background = false, wash = null } = {}) {
+  const k = vec.k || 1, m = (style && style.mode) || 'auto';
+  if (background) { g.fillStyle = styleBg(style); g.fillRect(0, 0, vec.w, vec.h); }
+  g.save(); g.scale(k, k);
   g.lineJoin = 'round';
-  if (colors) for (const l of vec.colors) {
+  if (wash) {
+    if (m === 'neg') { g.save(); g.filter = 'invert(1)'; g.drawImage(wash, 0, 0, vec.w / k, vec.h / k); g.restore(); }
+    else g.drawImage(wash, 0, 0, vec.w / k, vec.h / k);
+  }
+  if (colors) for (const l of visibleColors(vec, hidden)) {
     for (const q of (l.parts || (l._parts || (l._parts = [{ d: l.d, fill: l.color }])))) {
       const p = q._p || (q._p = new Path2D(q.d)); let f = q.fill;
-      if (typeof f !== 'string' && f.radial) { const gr = g.createRadialGradient(f.cx, f.cy, 0, f.cx, f.cy, f.r); gr.addColorStop(f.o1, f.c1); gr.addColorStop(1, f.c2); f = gr; }
-      else if (typeof f !== 'string') { const gr = g.createLinearGradient(f.x1, f.y1, f.x2, f.y2); gr.addColorStop(0, f.c1); gr.addColorStop(1, f.c2); f = gr; }
+      if (typeof f !== 'string' && f.radial) { const gr = g.createRadialGradient(f.cx, f.cy, 0, f.cx, f.cy, f.r); gr.addColorStop(f.o1, fillFor(style, f.c1)); gr.addColorStop(1, fillFor(style, f.c2)); f = gr; }
+      else if (typeof f !== 'string') { const gr = g.createLinearGradient(f.x1, f.y1, f.x2, f.y2); gr.addColorStop(0, fillFor(style, f.c1)); gr.addColorStop(1, fillFor(style, f.c2)); f = gr; }
+      else f = fillFor(style, f);
       g.fillStyle = f; g.strokeStyle = f; g.lineWidth = 0.8; g.fill(p, 'evenodd'); g.stroke(p);
     }
   }
-  if (vec.lines.d) { g.fillStyle = vec.lines.color; g.fill(vec.lines._p || (vec.lines._p = new Path2D(vec.lines.d)), 'evenodd'); }
+  if (vec.lines.d) {
+    const p = vec.lines._p || (vec.lines._p = new Path2D(vec.lines.d)), w = vec.w / k, h = vec.h / k;
+    let f = lineColorFor(style, vec);
+    if (m === 'grad') { const gr = g.createLinearGradient(0, 0, w, h); gr.addColorStop(0, style.c1 || '#ff2d95'); gr.addColorStop(1, style.c2 || '#2d9bff'); f = gr; }
+    if (m === 'rainbow') { const gr = g.createLinearGradient(0, 0, w, h * 0.6); RAINBOW.forEach((c, i) => gr.addColorStop(i / (RAINBOW.length - 1), c)); f = gr; }
+    if (m === 'neon') {
+      // свечение: размытая копия линий (размер — в пикселях экрана, поэтому от масштаба)
+      const t = g.getTransform(), sc = Math.hypot(t.a, t.b) || 1, blur = Math.max(2, (vec.ppm || 6) * 0.9 / k * sc);
+      g.save(); g.shadowColor = f; g.shadowBlur = blur; g.fillStyle = f; g.fill(p, 'evenodd'); g.shadowBlur = blur * 0.4; g.fill(p, 'evenodd'); g.restore();
+      g.fillStyle = mixHexK(f, 0.55, [255, 255, 255]); g.fill(p, 'evenodd');
+    } else { g.fillStyle = f; g.fill(p, 'evenodd'); }
+  }
+  g.restore();
 }
 
 export function imageDataCanvas(img) {

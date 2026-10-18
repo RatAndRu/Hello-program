@@ -415,7 +415,7 @@ export const BODY_POSES = {
   stand: sym({ pelvis: [0, 3.85], chest: [0, 2.3], neck: [0, 1.3], head: [0, 0.5], shR: [-0.95, 1.48], elR: [-1.12, 2.95], wrR: [-1.2, 3.95], haR: [-1.25, 4.7], hipR: [-0.48, 3.95], knR: [-0.5, 5.85], anR: [-0.5, 7.7], toR: [-0.66, 8.02] }),
   contra: { pelvis: [0.1, 3.85], chest: [0.02, 2.3], neck: [-0.05, 1.3], head: [-0.05, 0.5], shR: [-0.95, 1.56], elR: [-1.12, 3.02], wrR: [-1.05, 4.0], haR: [-1.0, 4.72], shL: [0.9, 1.42], elL: [1.45, 2.75], wrL: [0.78, 3.62], haL: [0.42, 3.8], hipR: [-0.36, 3.84], knR: [-0.2, 5.8], anR: [-0.06, 7.7], toR: [-0.18, 8.02], hipL: [0.56, 4.06], knL: [0.78, 5.86], anL: [0.86, 7.62], toL: [1.08, 7.88] },
   walk: { pelvis: [0, 3.85], chest: [0.06, 2.3], neck: [0.12, 1.3], head: [0.18, 0.5], shR: [0.06, 1.5], elR: [-0.34, 2.9], wrR: [-0.55, 3.86], haR: [-0.62, 4.56], shL: [0.14, 1.5], elL: [0.46, 2.92], wrL: [0.86, 3.7], haL: [1.02, 4.36], hipR: [-0.02, 3.95], knR: [0.56, 5.76], anR: [0.6, 7.7], toR: [1.0, 7.96], hipL: [0.02, 3.95], knL: [-0.36, 5.8], anL: [-0.96, 7.46], toL: [-0.78, 7.96] },
-  run: { pelvis: [0, 3.9], chest: [0.36, 2.44], neck: [0.56, 1.5], head: [0.78, 0.76], shR: [0.46, 1.66], elR: [0.86, 2.62], wrR: [1.46, 2.16], haR: [1.82, 2.0], shL: [0.52, 1.66], elL: [-0.14, 2.56], wrL: [-0.42, 2.0], haL: [-0.68, 1.72], hipR: [-0.02, 4.0], knR: [-0.62, 5.5], anR: [-1.66, 6.42], toR: [-1.96, 6.16], hipL: [0.02, 4.0], knL: [1.22, 4.76], anL: [0.86, 6.42], toL: [1.26, 6.62] },
+  run: { pelvis: [0, 3.9], chest: [0.36, 2.44], neck: [0.56, 1.5], head: [0.78, 0.76], shR: [0.46, 1.66], elR: [0.86, 2.62], wrR: [1.46, 2.16], haR: [1.82, 2.0], shL: [0.52, 1.66], elL: [-0.56, 2.66], wrL: [0.08, 3.36], haL: [0.46, 3.86], hipR: [-0.02, 4.0], knR: [-0.62, 5.5], anR: [-1.66, 6.42], toR: [-1.96, 6.16], hipL: [0.02, 4.0], knL: [1.22, 4.76], anL: [0.86, 6.42], toL: [1.26, 6.62] },
   sit: { pelvis: [0, 5.7], chest: [0.05, 4.15], neck: [0.08, 3.15], head: [0.12, 2.35], shR: [0.06, 3.35], elR: [0.06, 4.8], wrR: [0.76, 5.2], haR: [1.42, 5.3], shL: [0.11, 3.35], elL: [0.12, 4.8], wrL: [0.82, 5.25], haL: [1.48, 5.36], hipR: [-0.02, 5.75], knR: [1.86, 5.66], anR: [1.86, 7.65], toR: [2.26, 7.95], hipL: [0.02, 5.75], knL: [1.92, 5.7], anL: [1.96, 7.65], toL: [2.36, 7.95] },
   jump: sym({ pelvis: [0, 3.85], chest: [0, 2.3], neck: [0, 1.3], head: [0, 0.5], shR: [-0.95, 1.45], elR: [-1.6, 0.56], wrR: [-2.05, -0.34], haR: [-2.25, -1.0], hipR: [-0.48, 3.95], knR: [-1.06, 5.6], anR: [-1.76, 7.0], toR: [-2.1, 7.12] }),
   fight: { pelvis: [-0.05, 3.95], chest: [0, 2.4], neck: [0.05, 1.42], head: [0.1, 0.64], shR: [-0.8, 1.6], elR: [-1.06, 2.5], wrR: [-0.46, 2.0], haR: [-0.2, 1.66], shL: [0.86, 1.55], elL: [1.36, 2.26], wrL: [1.56, 1.46], haL: [1.6, 0.96], hipR: [-0.5, 4.0], knR: [-1.1, 5.7], anR: [-1.4, 7.6], toR: [-1.76, 7.86], hipL: [0.4, 4.0], knL: [0.96, 5.8], anL: [1.2, 7.7], toL: [1.6, 7.9] },
@@ -464,7 +464,37 @@ export function poseFromProfile(T) {
   }
   return { rel, f, z };
 }
-const poseByName = (v) => (PROFILE_POSES.has(v) ? poseFromProfile(BODY_POSES[v]) : poseFromTemplate(BODY_POSES[v] || BODY_POSES.stand));
+// Позы, заданные сразу в 3D: [x, y, z] в головах; x — вправо от зрителя (правая рука фигуры
+// при виде анфас — слева, x < 0), y — вниз, z — к зрителю (вперёд для фигуры).
+// prop — что в руках (меч, пистолет): рисуется от кистей и идёт за ними, когда тянешь руки.
+export const BODY_POSES_3D = {
+  squat: { yaw: 35, pose: { pelvis: [0, 6.65, -0.6], chest: [0, 5.2, 0], neck: [0, 4.25, 0.3], head: [0, 3.5, 0.45], shR: [-0.95, 4.4, 0.25], elR: [-0.95, 5.62, 1.1], wrR: [-0.42, 5.92, 1.9], haR: [-0.12, 6.3, 2.4], shL: [0.95, 4.4, 0.25], elL: [0.95, 5.62, 1.1], wrL: [0.42, 5.92, 1.9], haL: [0.12, 6.3, 2.4], hipR: [-0.48, 6.75, -0.6], knR: [-0.82, 6.3, 1.12], anR: [-0.56, 7.7, 0], toR: [-0.66, 8.02, 0.45], hipL: [0.48, 6.75, -0.6], knL: [0.82, 6.3, 1.12], anL: [0.56, 7.7, 0], toL: [0.66, 8.02, 0.45] } },
+  cross: { yaw: 20, pitch: 15, pose: { pelvis: [0, 7.2, 0], chest: [0, 5.65, 0], neck: [0, 4.65, 0], head: [0, 3.85, 0.05], shR: [-0.95, 4.83, 0], elR: [-1.35, 6.2, 0.35], wrR: [-1.75, 7.05, 0.9], haR: [-1.85, 7.45, 1.25], shL: [0.95, 4.83, 0], elL: [1.35, 6.2, 0.35], wrL: [1.75, 7.05, 0.9], haL: [1.85, 7.45, 1.25], hipR: [-0.48, 7.3, 0], knR: [-1.85, 7.55, 1.2], anR: [0.35, 7.72, 1.0], toR: [0.62, 7.82, 0.86], hipL: [0.48, 7.3, 0], knL: [1.85, 7.55, 1.2], anL: [-0.35, 7.62, 1.5], toL: [-0.62, 7.72, 1.5] } },
+  hug: { yaw: 70, pose: { pelvis: [0, 7.25, 0], chest: [0, 5.8, 0.35], neck: [0, 4.9, 0.75], head: [0, 4.3, 1.15], shR: [-0.9, 5.0, 0.6], elR: [-1.0, 5.9, 1.6], wrR: [-0.2, 6.3, 2.0], haR: [0.3, 6.4, 1.9], shL: [0.9, 5.0, 0.6], elL: [1.0, 5.9, 1.6], wrL: [0.2, 6.35, 2.05], haL: [-0.3, 6.45, 1.95], hipR: [-0.48, 7.3, 0], knR: [-0.45, 5.7, 1.1], anR: [-0.45, 7.6, 1.5], toR: [-0.5, 7.9, 1.9], hipL: [0.48, 7.3, 0], knL: [0.45, 5.7, 1.1], anL: [0.45, 7.6, 1.5], toL: [0.5, 7.9, 1.9] } },
+  fall: { yaw: 25, pose: { pelvis: [0, 3.85, 0], chest: [0, 2.4, -0.6], neck: [0, 1.5, -1.0], head: [0, 0.8, -1.25], shR: [-0.95, 1.65, -0.85], elR: [-1.9, 0.65, -0.4], wrR: [-2.3, -0.25, 0.0], haR: [-2.4, -0.9, 0.2], shL: [0.95, 1.65, -0.85], elL: [1.75, 2.2, 0.3], wrL: [2.3, 1.6, 0.9], haL: [2.6, 1.1, 1.1], hipR: [-0.48, 3.95, 0], knR: [-0.7, 4.8, 1.6], anR: [-0.9, 6.4, 2.2], toR: [-1.0, 6.5, 2.6], hipL: [0.48, 3.95, 0], knL: [0.9, 5.6, 0.8], anL: [1.1, 7.2, 0.2], toL: [1.2, 7.4, 0.5] } },
+  shoot: { yaw: 55, prop: 'gun', dir: [0, 0, 1], pose: { pelvis: [0, 3.9, 0], chest: [0, 2.35, 0.25], neck: [0, 1.38, 0.4], head: [0, 0.6, 0.55], shR: [-0.9, 1.55, 0.35], elR: [-0.5, 1.8, 1.7], wrR: [-0.08, 1.85, 2.6], haR: [0, 1.88, 3.2], shL: [0.9, 1.55, 0.35], elL: [0.5, 1.85, 1.7], wrL: [0.08, 1.9, 2.6], haL: [0.02, 1.95, 3.1], hipR: [-0.48, 4.0, 0], knR: [-0.75, 5.85, 0.35], anR: [-0.8, 7.7, -0.1], toR: [-0.95, 8.02, 0.25], hipL: [0.48, 4.0, 0], knL: [0.7, 5.85, 0.5], anL: [0.8, 7.7, 0.6], toL: [0.95, 8.02, 0.95] } },
+  shoot1: { yaw: 0, prop: 'gun', dir: [-0.7, 0, 0.71], pose: { pelvis: [0, 3.85, 0], chest: [0, 2.3, 0], neck: [0, 1.3, 0], head: [-0.15, 0.5, 0.05], shR: [-0.95, 1.45, 0], elR: [-2.0, 1.4, 1.05], wrR: [-2.7, 1.38, 1.75], haR: [-3.2, 1.37, 2.25], shL: [0.95, 1.48, 0], elL: [1.12, 2.95, 0.1], wrL: [1.2, 3.95, 0.1], haL: [1.25, 4.7, 0.1], hipR: [-0.55, 3.95, 0], knR: [-0.75, 5.85, 0], anR: [-0.85, 7.7, 0], toR: [-1.05, 8.02, 0.1], hipL: [0.48, 3.95, 0], knL: [0.6, 5.85, 0], anL: [0.7, 7.7, 0], toL: [0.9, 8.02, 0.1] } },
+  sword: { yaw: 50, prop: 'sword', dir: [0, -0.55, 0.84], pose: { pelvis: [0, 3.95, 0], chest: [0, 2.4, 0.05], neck: [0, 1.4, 0.1], head: [0, 0.6, 0.15], shR: [-0.9, 1.6, 0.15], elR: [-0.75, 2.95, 0.7], wrR: [-0.25, 3.05, 1.75], haR: [0, 2.95, 2.3], shL: [0.9, 1.6, 0.15], elL: [0.75, 3.0, 0.55], wrL: [0.2, 3.4, 1.3], haL: [0.04, 3.32, 1.78], hipR: [-0.45, 4.05, 0], knR: [-0.5, 5.9, 0.6], anR: [-0.5, 7.7, 0.7], toR: [-0.5, 8.02, 1.1], hipL: [0.45, 4.05, 0], knL: [0.5, 5.9, -0.3], anL: [0.5, 7.6, -0.9], toL: [0.5, 8.02, -0.6] } },
+  swordUp: { yaw: 40, prop: 'sword', dir: [0.05, -0.72, -0.69], pose: { pelvis: [0, 3.95, 0], chest: [0, 2.4, 0], neck: [0, 1.4, 0.05], head: [0, 0.6, 0.12], shR: [-0.9, 1.55, 0.05], elR: [-0.7, 0.4, 0.75], wrR: [-0.15, -0.2, 0.3], haR: [0, -0.45, -0.25], shL: [0.9, 1.55, 0.05], elL: [0.75, 0.45, 0.65], wrL: [0.15, -0.1, 0.2], haL: [0.02, -0.25, -0.1], hipR: [-0.45, 4.05, 0], knR: [-0.55, 5.85, 0.8], anR: [-0.55, 7.7, 0.95], toR: [-0.55, 8.02, 1.35], hipL: [0.45, 4.05, 0], knL: [0.5, 5.9, -0.4], anL: [0.5, 7.6, -1.0], toL: [0.5, 8.02, -0.7] } },
+};
+export function poseFrom3D(T) {
+  const P3 = BJ.map(n => T[n]);
+  const abs = [], rel = [], f = [], z = [];
+  for (let i = 0; i < BJ.length; i++) {
+    const p = BPAR[i]; if (p < 0) { abs.push(-Math.PI / 2); rel.push(0); f.push(1); z.push(1); continue; }
+    const d = [P3[i][0] - P3[p][0], P3[i][1] - P3[p][1], P3[i][2] - P3[p][2]], a = Math.atan2(d[1], d[0]);
+    abs.push(a);
+    let r = a - abs[p]; while (r > Math.PI) r -= TAU; while (r < -Math.PI) r += TAU;
+    rel.push(Math.round(r / D2R * 10) / 10);
+    f.push(Math.round(clamp(Math.hypot(d[0], d[1]) / (Math.hypot(d[0], d[1], d[2]) || 1), 0.05, 1) * 1000) / 1000);
+    z.push(d[2] < 0 ? -1 : 1);
+  }
+  return { rel, f, z };
+}
+const poseByName = (v) => {
+  if (BODY_POSES_3D[v]) { const q = poseFrom3D(BODY_POSES_3D[v].pose); if (BODY_POSES_3D[v].prop) { q.prop = BODY_POSES_3D[v].prop; q.propDir = BODY_POSES_3D[v].dir; } return q; }
+  return PROFILE_POSES.has(v) ? poseFromProfile(BODY_POSES[v]) : poseFromTemplate(BODY_POSES[v] || BODY_POSES.stand);
+};
 
 // Поворот всей фигуры: вокруг вертикали (анфас → профиль → спина), к себе/от себя, наклон в листе.
 // Координаты тела: x вправо, y вниз, z к зрителю.
@@ -632,13 +662,51 @@ function bodyDrawOpts(g, FK) {
   return { f: fe, chestW, pelvisW, headYaw: yawH, headPitch: pitchH, extra };
 }
 
+// Предмет в руках. Меч: рукоять между кистями (если они рядом) — клинок продолжает её от
+// передней руки; иначе — по направлению кисти. Пистолет — по кисти. Всё в 3D, крутится с фигурой.
+function drawProp(pen, g, FK) {
+  const sel = P(g, 'prop') || 'pose', kind = sel === 'pose' ? (FK.pose.prop || 'none') : sel;
+  if (kind === 'none') return;
+  const { W, u } = FK, O = g.pts[0], P2 = (q) => ({ x: O.x + q[0], y: O.y + q[1] });
+  const iR = BJ.indexOf('haR'), iL = BJ.indexOf('haL'), wR = W[BJ.indexOf('wrR')];
+  const hR = W[iR], hL = W[iL], sub3 = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+  const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+  const at = (b, d, k) => [b[0] + d[0] * k, b[1] + d[1] * k, b[2] + d[2] * k];
+  const twoHands = Math.hypot(...sub3(hR, hL)) < 0.9 * u;
+  // направление: от задней кисти к передней (обе на рукояти) или по кисти правой руки
+  // направление предмета задано позой (в осях тела — крутится вместе с фигурой); если предмет
+  // выбран вручную — продолжаем кисть
+  let dir = FK.pose.propDir ? nrm(FK.Rb.fwd(FK.pose.propDir)) : nrm(sub3(hR, wR));
+  const grip = twoHands && kind !== 'gun' ? [(hR[0] + hL[0]) / 2, (hR[1] + hL[1]) / 2, (hR[2] + hL[2]) / 2] : hR;
+  // поперечное направление (для ширины клинка/гарды): перпендикуляр к dir в плоскости экрана
+  const sd = Math.hypot(dir[0], dir[1]) > 0.05 ? [-dir[1], dir[0], 0] : [1, 0, 0], sn = nrm(sd);
+  if (kind === 'sword' || kind === 'staff') {
+    const back = kind === 'staff' ? 2.2 : 0.45, fwd = kind === 'staff' ? 2.6 : 0.25;
+    const pommel = at(grip, dir, -back * u), guard = at(grip, dir, fwd * u);
+    pen.seg(P2(pommel), P2(guard), 'main');
+    if (kind === 'sword') {
+      const tip = at(guard, dir, 3.1 * u), wb = 0.06 * u;
+      pen.seg(P2(at(guard, sn, -0.28 * u)), P2(at(guard, sn, 0.28 * u)), 'main');           // гарда
+      pen.poly([P2(at(guard, sn, -wb)), P2(at(at(tip, dir, -0.35 * u), sn, -wb)), P2(tip), P2(at(at(tip, dir, -0.35 * u), sn, wb)), P2(at(guard, sn, wb))], false, 'main');
+      pen.seg(P2(guard), P2(at(tip, dir, -0.3 * u)), 'aux');                                 // дол
+    } else pen.seg(P2(guard), P2(at(guard, dir, 2.0 * u)), 'main');
+  } else if (kind === 'gun') {
+    // ствол вперёд по кисти, рукоять вниз от кисти (вниз — перпендикуляр к стволу к «низу» мира)
+    const down0 = [0, 1, 0], dd = dir[1], dn = nrm([down0[0] - dir[0] * dd, down0[1] - dir[1] * dd, down0[2] - dir[2] * dd]);
+    const b0 = at(hR, dir, -0.1 * u), b1 = at(hR, dir, 0.75 * u), hh = 0.16 * u;
+    pen.poly([P2(b0), P2(b1), P2(at(b1, dn, hh)), P2(at(b0, dn, hh))], true, 'main');
+    pen.poly([P2(at(b0, dn, hh)), P2(at(at(b0, dn, 0.55 * u), dir, -0.12 * u)), P2(at(at(b0, dn, 0.55 * u), dir, 0.14 * u)), P2(at(at(b0, dir, 0.25 * u), dn, hh))], false, 'main');
+  }
+}
+
 const body = {
   name: 'Манекен', icon: '🕺', group: 'manga',
-  desc: 'Шарнирный манекен: тяни за суставы — кости поворачиваются, дочерние части идут следом. Если тянуть ближе — кость «укорачивается» (уходит на тебя или от тебя). Рост — за ручку над головой',
+  desc: 'Шарнирный манекен в 3D: тяни за суставы — кости поворачиваются, дочерние части идут следом; ближе — кость уходит на тебя/от тебя. Позы: стоит, идёт, бежит, сидит, на корточках, по-турецки, обняв колени, прыжок, падение, стойка, с мечом, стрельба. «В руках» — меч, пистолет или шест: идут за кистями. Поверни всю фигуру (вокруг себя, к себе, в листе) — например, «обняв колени» + наклон 90° = свернулся калачиком лёжа. Рост — за ручку над головой',
   create: (c, s) => [{ x: c.x, y: c.y + s * 0.35 }],
   init: (g, s, dims) => { g.props.h = Math.round(Math.min(dims.H * 0.82, s * 3.2)); g.props.pose = poseFromTemplate(BODY_POSES.stand); g.pts[0] = { x: dims.W / 2, y: dims.H / 2 + g.props.h * (3.9 / 7.5 - 0.5) }; },
   props: [
-    { key: 'posePreset', label: 'Поза', type: 'select', options: [['stand', 'Стоит'], ['contra', 'Контрапост'], ['walk', 'Идёт'], ['run', 'Бежит'], ['sit', 'Сидит'], ['jump', 'Прыжок'], ['fight', 'Стойка']], def: 'stand', onSet: (g, v) => { g.props.pose = poseByName(v); g.props.yaw = PROFILE_POSES.has(v) ? 90 : 0; g.props.pitch = 0; } },
+    { key: 'posePreset', label: 'Поза', type: 'select', options: [['stand', 'Стоит'], ['contra', 'Контрапост'], ['walk', 'Идёт'], ['run', 'Бежит'], ['sit', 'Сидит на стуле'], ['squat', 'На корточках'], ['cross', 'Сидит по-турецки (калачиком)'], ['hug', 'Сидит, обняв колени'], ['jump', 'Прыжок'], ['fall', 'Падает'], ['fight', 'Стойка (кулаки)'], ['sword', 'С мечом (стойка)'], ['swordUp', 'Меч над головой'], ['shoot', 'Стреляет (двумя руками)'], ['shoot1', 'Стреляет (одной рукой)']], def: 'stand', onSet: (g, v) => { const m = BODY_POSES_3D[v]; g.props.pose = poseByName(v); g.props.yaw = m ? (m.yaw || 0) : PROFILE_POSES.has(v) ? 90 : 0; g.props.pitch = m ? (m.pitch || 0) : 0; g.props.lean = 0; } },
+    { key: 'prop', label: 'В руках', type: 'select', options: [['pose', 'По позе'], ['none', 'Ничего'], ['sword', 'Меч'], ['gun', 'Пистолет'], ['staff', 'Шест / копьё']], def: 'pose' },
     { key: 'heads', label: 'Рост в головах', type: 'range', min: 2, max: 9, step: 0.5, def: 7.5 },
     { key: 'build', label: 'Телосложение', type: 'select', options: [['neutral', 'Обычное'], ['female', 'Женское'], ['hero', 'Атлет'], ['child', 'Ребёнок']], def: 'neutral' },
     sec('Поворот фигуры'),
@@ -654,7 +722,7 @@ const body = {
   ],
   moveIdx: 0,
   actions: [
-    ['⇋ Отразить позу', (g) => { const pose = g.props.pose || poseFromTemplate(BODY_POSES.stand); const rel = pose.rel.slice(), f = pose.f.slice(), z = (pose.z || []).slice(); while (z.length < BJ.length) z.push(1); const sw = [[4, 8], [5, 9], [6, 10], [7, 11], [12, 16], [13, 17], [14, 18], [15, 19]]; for (const [a, b] of sw) { [rel[a], rel[b]] = [rel[b], rel[a]]; [f[a], f[b]] = [f[b], f[a]]; [z[a], z[b]] = [z[b], z[a]]; } g.props.pose = { rel: rel.map(x => -x), f, z }; g.props.lean = -(+P(g, 'lean') || 0); g.props.yaw = -(+P(g, 'yaw') || 0); }],
+    ['⇋ Отразить позу', (g) => { const pose = g.props.pose || poseFromTemplate(BODY_POSES.stand); const rel = pose.rel.slice(), f = pose.f.slice(), z = (pose.z || []).slice(); while (z.length < BJ.length) z.push(1); const sw = [[4, 8], [5, 9], [6, 10], [7, 11], [12, 16], [13, 17], [14, 18], [15, 19]]; for (const [a, b] of sw) { [rel[a], rel[b]] = [rel[b], rel[a]]; [f[a], f[b]] = [f[b], f[a]]; [z[a], z[b]] = [z[b], z[a]]; } g.props.pose = { rel: rel.map(x => -x), f, z, prop: pose.prop, propDir: pose.propDir ? [-pose.propDir[0], pose.propDir[1], pose.propDir[2]] : undefined }; g.props.lean = -(+P(g, 'lean') || 0); g.props.yaw = -(+P(g, 'yaw') || 0); }],
     ['↻ Профиль', (g) => { const y = +P(g, 'yaw') || 0; g.props.yaw = Math.abs(y - 90) < 5 ? 0 : 90; }],
     ['⟲ Со спины', (g) => { const y = +P(g, 'yaw') || 0; g.props.yaw = Math.abs(Math.abs(y) - 180) < 5 ? 0 : 180; }],
     ['◩ 3/4', (g) => { g.props.yaw = 35; }],
@@ -662,6 +730,7 @@ const body = {
   draw(pen, g, ctx) {
     const FK = bodyFK(g), { pos, u, N } = FK;
     drawMannequin(pen, pos, u, bodyDrawOpts(g, FK));
+    drawProp(pen, g, FK);
     const top = this.handles(g)[20];
     if (P(g, 'ruler')) {
       const xs = Math.min(...pos.map(p => p.x)) - 0.9 * u, yTop = top.y + 0.0, ys = [];
