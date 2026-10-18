@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="theme-color" content="#0b0d12" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Рейка AR — направляющие для рисования</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="stage">
+    <video id="video" playsinline muted autoplay></video>
+    <canvas id="gl"></canvas>
+    <canvas id="overlay"></canvas>
+  </div>
+
+  <header id="topbar" class="ui">
+    <button id="statusPill" class="pill" title="Лист"><i class="dot"></i><span id="statusText">Лист не задан</span></button>
+    <div class="spacer"></div>
+    <button id="btnUndo" class="icon" title="Отменить" aria-label="Отменить">↶</button>
+    <button id="btnClean" class="icon" title="Чистый экран" aria-label="Чистый экран">👁</button>
+    <button id="btnSettings" class="icon" title="Настройки" aria-label="Настройки">⚙</button>
+  </header>
+
+  <nav id="bottombar" class="ui">
+    <button id="btnAdd"><b>＋</b><span>Направляющая</span></button>
+    <button id="btnKalka"><b>🖼</b><span>Калька</span></button>
+    <button id="btnSheet"><b>📄</b><span>Лист</span></button>
+    <button id="btnMagnet" class="toggle"><b>🧲</b><span>Магнит</span></button>
+  </nav>
+
+  <section id="panel" class="ui panel hidden" aria-live="polite">
+    <div class="panel-head">
+      <h2 id="panelTitle"></h2>
+      <button id="panelClose" class="icon small" aria-label="Закрыть">✕</button>
+    </div>
+    <div id="panelBody"></div>
+  </section>
+
+  <section id="start" class="start">
+    <div class="start-card">
+      <div class="logo">📐</div>
+      <h1>Рейка AR</h1>
+      <p class="lead">Ровные линии, круги, перспектива и калька — прямо поверх твоего листа через камеру.</p>
+      <ol class="steps">
+        <li>Закрепи телефон в держателе <b>камерой вниз</b>, над листом.</li>
+        <li>Лист должен быть <b>целиком в кадре</b>, лучше на тёмном столе.</li>
+        <li>Добавь направляющую и рисуй, глядя на экран.</li>
+      </ol>
+      <button id="btnStartCam" class="primary">📷 Включить камеру</button>
+      <button id="btnStartDemo" class="secondary">Демо без камеры</button>
+      <p id="startError" class="error hidden"></p>
+      <p class="hint">Камера работает только по HTTPS или в приложении. Изображение никуда не отправляется — всё считается на телефоне.</p>
+    </div>
+  </section>
+
+  <div id="toast" class="toast hidden"></div>
+  <div id="cleanHint" class="clean-hint hidden">Двойной тап — вернуть панели</div>
+  <input type="file" id="fileInput" accept="image/*" hidden />
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

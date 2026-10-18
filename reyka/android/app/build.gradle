@@ -1,0 +1,29 @@
+plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
+android {
+    namespace 'com.example.reyka'
+    compileSdk 34
+    defaultConfig { applicationId 'com.example.reyka'; minSdk 26; targetSdk 34; versionCode 1; versionName '1.0' }
+    // Веб-часть (reyka/web) целиком кладётся в assets APK — приложение работает без интернета.
+    sourceSets { main { assets.srcDirs = ['../../web'] } }
+    signingConfigs {
+        release {
+            def ks = System.getenv('REYKA_KEYSTORE_FILE') ?: System.getenv('PINPHOTOS_KEYSTORE_FILE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('REYKA_STORE_PASSWORD') ?: System.getenv('PINPHOTOS_STORE_PASSWORD')
+                keyAlias System.getenv('REYKA_KEY_ALIAS') ?: System.getenv('PINPHOTOS_KEY_ALIAS') ?: 'pinphotos'
+                keyPassword System.getenv('REYKA_KEY_PASSWORD') ?: System.getenv('PINPHOTOS_KEY_PASSWORD') ?: System.getenv('REYKA_STORE_PASSWORD') ?: System.getenv('PINPHOTOS_STORE_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (System.getenv('REYKA_KEYSTORE_FILE') || System.getenv('PINPHOTOS_KEYSTORE_FILE')) signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+kotlin { jvmToolchain(17) }
+dependencies { }
