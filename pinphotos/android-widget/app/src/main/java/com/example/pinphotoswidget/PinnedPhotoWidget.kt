@@ -247,10 +247,20 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
          *  Удаление оригинала автоматически убирает фото из всех виджетов. */
         fun addCopiesToWidgets(context: Context, sourceIds: Collection<String>, widgetIds: Collection<Int>): Int {
             var added = 0
-            val valid = PhotoStore.list(context).filter { it.widgetId == 0 }.map { it.id }.toSet()
+            val ordinary = PhotoStore.list(context).filter { it.widgetId == 0 }
+            val byId = ordinary.associateBy { it.id }
+            val valid = byId.keys
             for (widgetId in widgetIds) {
                 val ids = getWidgetPhotoIds(context, widgetId)
-                for (id in sourceIds) if (id in valid && id !in ids) { ids.add(id); added++ }
+                // Виджет — тоже одна коллекция: одинаковое содержимое второй ссылкой не добавляем,
+                // даже если это другая запись того же фото из другого обычного альбома.
+                val existingHashes = ids.mapNotNull { byId[it]?.hash }.filter { it.isNotEmpty() }.toMutableSet()
+                for (id in sourceIds) {
+                    val hash = byId[id]?.hash.orEmpty()
+                    if (id in valid && id !in ids && (hash.isEmpty() || hash !in existingHashes)) {
+                        ids.add(id); if (hash.isNotEmpty()) existingHashes.add(hash); added++
+                    }
+                }
                 setWidgetPhotoIds(context, widgetId, ids)
             }
             if (added > 0) updateAll(context)

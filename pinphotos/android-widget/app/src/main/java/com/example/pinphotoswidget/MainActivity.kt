@@ -855,7 +855,7 @@ class MainActivity : FragmentActivity() {
         }
         val canMoveLeft = album != PhotoStore.MISC_ALBUM && index > 1
         val canMoveRight = album != PhotoStore.MISC_ALBUM && index > 0 && index < total - 1
-        tile.addView(albumCountBadge(albumPhotos.size))
+        tile.addView(albumCountBadge(PhotoStore.dedupeForDisplay(albumPhotos).size))
         tile.addView(albumLabel(if (isLocked) "🔒 $album" else album))
         addAlbumSideArrows(tile, canMoveLeft, canMoveRight,
             { if (PhotoStore.moveAlbum(this, album, -1)) refresh() },
@@ -1407,7 +1407,7 @@ class MainActivity : FragmentActivity() {
             val source = uri ?: throw IllegalStateException("Файл бэкапа не выбран")
             val input = contentResolver.openInputStream(source)
                 ?: throw IllegalStateException("Не удалось открыть выбранный файл")
-            var added = 0
+            var added = 0; var duplicatesSkipped = 0
             input.buffered().use { raw ->
                 val reader = android.util.JsonReader(java.io.InputStreamReader(raw, Charsets.UTF_8))
                 reader.beginObject()
@@ -1450,11 +1450,40 @@ class MainActivity : FragmentActivity() {
                                 temp.writeBytes(android.util.Base64.decode(legacyEncoded, android.util.Base64.DEFAULT))
                             }
                             if (temp.length() > 0L) {
-                                val p = temp.inputStream().use { stream -> PhotoStore.importStream(this, stream, mime, name) }
-                                p.albums = albums
-                                if (p.albums.isEmpty() && album.isNotBlank() && album != PhotoStore.MISC_ALBUM) p.albums = mutableListOf(album)
-                                p.note = note; p.pinned = pinned; p.tags = tags
-                                PhotoStore.update(this, p); added++
+                                // Дубли по содержимому внутри одного альбома не сохраняем вообще —
+                                // даже в «Разное» и даже при повторном восстановлении того же бэкапа.
+                                // Та же фотография в ДРУГОМ альбоме дублем не считается и импортируется.
+                                val digest = java.security.MessageDigest.getInstance("SHA-256")
+                                temp.inputStream().use { stream ->
+                                    val buf = ByteArray(64 * 1024)
+                                    while (true) { val n = stream.read(buf); if (n <= 0) break; digest.update(buf, 0, n) }
+                                }
+                                val hash = digest.digest().joinToString("") { "%02x".format(it) }
+                                val targetAlbums = when {
+                                    albums.isNotEmpty() -> albums.toList()
+                                    album.isNotBlank() -> listOf(album)
+                                    else -> listOf(PhotoStore.MISC_ALBUM)
+                                }
+                                val sameAlbumExisting = PhotoStore.list(this).firstOrNull { other ->
+                                    other.widgetId == 0 && other.hash == hash && other.albums.any { it in targetAlbums }
+                                }
+                                if (sameAlbumExisting != null) {
+                                    // Запись уже есть в этом альбоме: новой не создаём. Если бэкап
+                                    // относил то же фото ещё и к другому альбому — добавим это
+                                    // членство существующей записи, а не копию файла.
+                                    val merged = (sameAlbumExisting.albums + targetAlbums).distinct().toMutableList()
+                                    if (merged != sameAlbumExisting.albums) {
+                                        sameAlbumExisting.albums = merged
+                                        PhotoStore.update(this, sameAlbumExisting)
+                                    }
+                                    duplicatesSkipped++
+                                } else {
+                                    val p = temp.inputStream().use { stream -> PhotoStore.importStream(this, stream, mime, name) }
+                                    p.albums = albums
+                                    if (p.albums.isEmpty() && album.isNotBlank() && album != PhotoStore.MISC_ALBUM) p.albums = mutableListOf(album)
+                                    p.note = note; p.pinned = pinned; p.tags = tags
+                                    PhotoStore.update(this, p); added++
+                                }
                             }
                         } finally { temp.delete() }
                     }
@@ -1462,7 +1491,11 @@ class MainActivity : FragmentActivity() {
                 }
                 reader.endObject()
             }
-            runOnUiThread { toast("Восстановлено: $added"); refresh() }
+            runOnUiThread {
+                toast(if (duplicatesSkipped == 0) "Восстановлено: $added"
+                    else "Восстановлено: $added. Дублей в тех же альбомах пропущено: $duplicatesSkipped")
+                refresh()
+            }
         } catch (e: Exception) {
             try { java.io.File(filesDir, "backup_error.txt").writeText(android.util.Log.getStackTraceString(e)) } catch (ignored: Exception) { }
             val reason = if (e.message?.contains("End of input") == true)
