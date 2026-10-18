@@ -1,5 +1,6 @@
 // Рейка AR — главный модуль.
 import * as G from './geom.js';
+import * as CL from './colors.js';
 import { PaperTracker } from './tracker.js';
 import { startCamera, createDemoStream, listCameras, trackCaps, setTorch, setZoom } from './camera.js';
 import { TYPES, TYPE_ORDER, MANGA_ORDER, Pen, getProp, defaultProps, planeH, viewHandles, rotHandleIndex, toFigure, spinFromPoint, canRotate } from './guides.js';
@@ -9,7 +10,7 @@ import { estimateRect, cameraTilt, assumedFocal, manualCorners, fitFocal, comple
 import { detectSegments, findVanishingPoints } from './vanish.js';
 import * as scan from './scan.js';
 
-const VERSION = '1.4';
+const VERSION = '1.5';
 const $ = (id) => document.getElementById(id);
 const video = $('video'), glCanvas = $('gl'), overlay = $('overlay');
 const octx = overlay.getContext('2d');
@@ -25,7 +26,9 @@ const DEFAULT = () => ({
   v: 1,
   settings: { color: '#39ff14', width: 3, halo: true, alpha: 1, labels: true, magnet: true, rot: 0, mirror: false, wake: true, cameraId: null, demoTilt: 0 },
   manual: { on: false, tilt: 45, far: 0, yaw: 0, size: 1 },
-  scan: { lines: 0.5, colors: 6, smooth: 1, clean: 0.5, minSpot: 2, lineBlack: false, paint: true, fmt: 'png', mode: 'color', sharpen: 0.6, grad: true },
+  scan: { lines: 0.5, colors: 6, smooth: 1, clean: 0.5, minSpot: 2, lineBlack: false, paint: true, fmt: 'png', mode: 'color', sharpen: 0.6, grad: true, gap: 0, pal: 'auto' },
+  paints: [], nextPaint: 1,
+  colorUI: { cur: '#3b6fd4', mix: [], max2: false, water: false },
   paper: { format: 'A4', orient: 'auto', customW: 200, customH: 200, tracking: true },
   corners: null, cornersFor: null, landscape: false,
   guides: [], nextId: 1,
@@ -798,7 +801,7 @@ overlay.addEventListener('pointerdown', (e) => {
   }
   if (R.pointers.size > 2) return;
   if (!R.P2S) return;
-  const target = R.clean ? { kind: 'empty' } : hitTarget(p);
+  const target = R.pick ? { kind: 'pick' } : R.clean ? { kind: 'empty' } : hitTarget(p);
   R.down = { p0: p, t: performance.now(), moved: false, target, undoPushed: false };
   const t = target;
   if (t.kind === 'handle') {
@@ -837,6 +840,7 @@ overlay.addEventListener('pointermove', (e) => {
   }
   const D = R.down;
   if (!D) return;
+  if (D.target.kind === 'pick') return; // пипетка: дрожание пальца — не движение
   if (!D.moved && G.dist(p, D.p0) < 6) return;
   D.moved = true;
   const t = D.target;
@@ -905,8 +909,9 @@ function onTap(D) {
   const now = performance.now();
   const dbl = now - R.lastTap < 320;
   R.lastTap = now;
-  if (R.clean) { if (dbl) setClean(false); else showCleanHint(); return; }
   const t = D.target;
+  if (t.kind === 'pick') { pickAt(D.p0); return; }
+  if (R.clean) { if (dbl) setClean(false); else showCleanHint(); return; }
   if (t.kind === 'body' || t.kind === 'handle') {
     if (R.selected !== t.id) { R.selected = t.id; openPanel('guide'); }
     else if (R.panel !== 'guide') openPanel('guide');
@@ -996,6 +1001,7 @@ function updateBarState() {
   $('btnSheet').classList.toggle('active', R.panel === 'sheet');
   $('btnMagnet').classList.toggle('on', !!S.settings.magnet);
   $('btnScan').classList.toggle('active', R.panel === 'scan');
+  $('btnColors').classList.toggle('active', R.panel === 'colors');
 }
 
 function togglePanel(kind) { if (R.panel === kind) closePanel(); else openPanel(kind); }
@@ -1003,6 +1009,7 @@ $('btnAdd').onclick = () => togglePanel('add');
 $('btnKalka').onclick = () => togglePanel('kalka');
 $('btnSheet').onclick = () => togglePanel('sheet');
 $('btnScan').onclick = () => togglePanel('scan');
+$('btnColors').onclick = () => togglePanel('colors');
 $('btnSettings').onclick = () => togglePanel('settings');
 $('statusPill').onclick = () => togglePanel('sheet');
 $('btnMagnet').onclick = () => { S.settings.magnet = !S.settings.magnet; persist(); updateBarState(); toast(S.settings.magnet ? 'Магнит включён: прилипание к точкам и углам 15°' : 'Магнит выключен'); };
@@ -1049,7 +1056,7 @@ function refreshPanel(soft) {
   if (soft && R.panel !== 'guide') return;
   const scroll = panelBody.scrollTop;
   panelBody.innerHTML = '';
-  const f = { add: panelAdd, guide: panelGuide, kalka: panelKalka, sheet: panelSheet, settings: panelSettings, scan: panelScan }[R.panel];
+  const f = { add: panelAdd, guide: panelGuide, kalka: panelKalka, sheet: panelSheet, settings: panelSettings, scan: panelScan, colors: panelColors }[R.panel];
   if (f) f();
   panelBody.scrollTop = scroll;
 }
@@ -1118,6 +1125,125 @@ function panelGuide() {
     btn(g.hidden ? '👁 Показать' : '🙈 Скрыть', () => { g.hidden = !g.hidden; persist(); refreshPanel(); }),
     btn('🗑 Удалить', () => { removeGuide(g.id); closePanel(); }, 'danger')));
   panelBody.append(el('p', { class: 'note' }, 'Совет: включи 👁 «чистый экран» сверху, чтобы панели не мешали рисовать.'));
+}
+
+// ---------- 🎨 Цвета: пипетка, смешивание, подбор смеси ----------
+function grabFrame() {
+  if (!R.vw || !video) return null;
+  const cv = R._grab || (R._grab = document.createElement('canvas'));
+  if (cv.width !== R.vw || cv.height !== R.vh) { cv.width = R.vw; cv.height = R.vh; }
+  const g = cv.getContext('2d', { willReadFrequently: true });
+  try { g.drawImage(video, 0, 0, R.vw, R.vh); return { data: g.getImageData(0, 0, R.vw, R.vh).data, w: R.vw, h: R.vh }; } catch (e) { return null; }
+}
+function avgAt(fr, x, y, r) {
+  let a = 0, b = 0, c = 0, n = 0;
+  for (let dy = -r; dy <= r; dy++) for (let dx = -r; dx <= r; dx++) {
+    const xx = Math.round(x + dx), yy = Math.round(y + dy);
+    if (xx < 0 || yy < 0 || xx >= fr.w || yy >= fr.h) continue;
+    const i = (yy * fr.w + xx) * 4; a += fr.data[i]; b += fr.data[i + 1]; c += fr.data[i + 2]; n++;
+  }
+  return n ? [a / n, b / n, c / n] : [255, 255, 255];
+}
+// Белый бумаги рядом с точкой: точки листа поблизости, берём самые светлые (это бумага)
+function paperWhiteNear(fr, pp) {
+  if (!R.P2S || !S.corners) return null;
+  const smp = [];
+  for (let y = R.ph * 0.04; y < R.ph * 0.97; y += 5) for (let x = R.pw * 0.04; x < R.pw * 0.97; x += 5) {
+    const v = sToV(toScreen({ x, y }));
+    if (v.x < 0 || v.y < 0 || v.x >= fr.w || v.y >= fr.h) continue;
+    const c = avgAt(fr, v.x, v.y, 1);
+    smp.push({ d: Math.hypot(x - pp.x, y - pp.y), c, L: c[0] + c[1] + c[2] });
+  }
+  if (smp.length < 12) return null;
+  smp.sort((a, b) => a.d - b.d);
+  const near = smp.slice(0, Math.max(30, Math.round(smp.length * 0.15))).sort((a, b) => b.L - a.L).slice(0, 0 | Math.max(6, smp.length * 0.04));
+  const w = [0, 1, 2].map(k => near.reduce((s2, q) => s2 + q.c[k], 0) / near.length);
+  return w[0] + w[1] + w[2] > 150 ? w : null;
+}
+function startPick() {
+  R.pick = true; closePanel();
+  toast('🎯 Тапни по цвету на листе', 5000);
+}
+function pickAt(p) {
+  R.pick = false;
+  const fr = grabFrame(); if (!fr) { toast('Нет кадра с камеры'); return; }
+  const v = sToV(p);
+  const c = avgAt(fr, v.x, v.y, Math.max(2, Math.round(Math.min(fr.w, fr.h) / 150)));
+  let rgb = c, note = '';
+  const W = R.P2S ? paperWhiteNear(fr, toPaper(p)) : null;
+  if (W) { const wl = CL.rgbToLin(W); rgb = CL.linToRgb(CL.rgbToLin(c).map((x, i) => x / Math.max(0.02, wl[i]) * 0.9)); note = ' · с поправкой на свет по бумаге'; }
+  S.colorUI.cur = CL.rgbToHex(rgb); persist();
+  openPanel('colors');
+  toast(`Цвет: ${CL.colorName(S.colorUI.cur)} ${S.colorUI.cur}${note}`, 3500);
+}
+function addPaint(hex, name) {
+  const n = S.paints.length + 1;
+  S.paints.push({ id: S.nextPaint++, name: name || `${CL.colorName(hex)} ${n}`, hex, scan: true });
+  persist();
+}
+let recipeCache = { key: '', list: [] };
+function panelColors() {
+  panelTitle.textContent = '🎨 Цвета и краски';
+  const U = S.colorUI, cur = U.cur || '#3b6fd4';
+  panelBody.append(el('p', { class: 'note' }, 'Узнай цвет пипеткой (поправка на освещение — по белой бумаге рядом), посмотри, как смешать его из своих красок, или что получится из смеси. Смешивание считается как у настоящих пигментов (модель Кубелки — Мунка), но приблизительно.'));
+  // — текущий цвет
+  panelBody.append(el('div', { class: 'section-title' }, 'Цвет'));
+  const picker = el('input', { type: 'color', value: cur, class: 'color-input', title: 'Выбрать вручную' });
+  picker.onchange = () => { U.cur = picker.value; persist(); refreshPanel(); };
+  const rgb = CL.hexToRgb(cur);
+  panelBody.append(el('div', { class: 'color-cur' }, el('div', { class: 'big-sw', style: `background:${cur}` }),
+    el('div', { class: 'grow' }, el('b', {}, CL.colorName(cur)), el('div', { class: 'muted' }, `${cur.toUpperCase()} · RGB ${rgb.join(', ')}`)), picker));
+  panelBody.append(el('div', { class: 'btns' }, btn('🎯 Пипетка: тапни по листу', startPick, 'primary'), btn('➕ В мои краски', () => { addPaint(cur); refreshPanel(); toast('Добавлено в «Мои краски»'); })));
+  // — подбор смеси
+  panelBody.append(el('div', { class: 'section-title' }, 'Как смешать этот цвет'));
+  if (!S.paints.length) panelBody.append(el('p', { class: 'note' }, 'Сначала добавь свои краски (ниже — пипеткой с выкраски или готовым набором).'));
+  else {
+    panelBody.append(toggleRow('Не больше двух красок', U.max2, (v) => { U.max2 = v; persist(); refreshPanel(); }));
+    panelBody.append(toggleRow('Акварель: светлее = больше воды', U.water, (v) => { U.water = v; persist(); refreshPanel(); }));
+    const list = S.paints.map(p => ({ name: p.name, hex: p.hex, strength: p.strength || 1 }));
+    if (U.water) list.push({ name: 'вода', hex: '#fbfbf8', strength: 1 });
+    const key = cur + '|' + U.max2 + '|' + list.map(p => p.hex + p.strength).join(',');
+    if (recipeCache.key !== key) recipeCache = { key, list: CL.findRecipes(cur, list, { maxPaints: U.max2 ? 2 : 3 }) };
+    for (const r of recipeCache.list) {
+      panelBody.append(el('div', { class: 'recipe' },
+        el('div', { class: 'pair' }, el('i', { style: `background:${cur}`, title: 'нужно' }), el('i', { style: `background:${r.hex}`, title: 'получится' })),
+        el('div', { class: 'grow' }, el('div', {}, CL.recipeText(r)), el('div', { class: 'muted' }, `${CL.closeness(r.dE)} · ΔE ${r.dE.toFixed(1)}`)),
+        btn('В смесь', () => { U.mix = r.items.map(it => { const pp = S.paints.find(q => q.hex === it.hex && q.name === it.name); return pp ? { id: pp.id, parts: it.parts } : null; }).filter(Boolean); persist(); refreshPanel(); toast('Рецепт — в «Смешать»'); }, 'small')));
+    }
+    if (recipeCache.list[0] && recipeCache.list[0].dE > 10) panelBody.append(el('p', { class: 'note' }, 'Точно не получается — такого оттенка нет в твоих красках. Добавь краску ближе к нему (или белила для светлых тонов).'));
+  }
+  // — смешать
+  panelBody.append(el('div', { class: 'section-title' }, 'Смешать'));
+  U.mix = (U.mix || []).filter(m => S.paints.some(p => p.id === m.id));
+  if (!U.mix.length) panelBody.append(el('p', { class: 'note' }, 'Нажми «🧪» у красок ниже, чтобы добавить их в смесь, и задай части.'));
+  for (const m of U.mix) {
+    const pnt = S.paints.find(p => p.id === m.id);
+    const val = el('span', { class: 'parts' }, String(m.parts));
+    panelBody.append(el('div', { class: 'paint-row' }, el('i', { class: 'sw', style: `background:${pnt.hex}` }), el('span', { class: 'grow' }, pnt.name),
+      btn('−', () => { m.parts = Math.max(1, m.parts - 1); persist(); refreshPanel(); }, 'small'), val,
+      btn('+', () => { m.parts = Math.min(99, m.parts + 1); persist(); refreshPanel(); }, 'small'),
+      btn('✕', () => { U.mix = U.mix.filter(q => q !== m); persist(); refreshPanel(); }, 'small')));
+  }
+  if (U.mix.length) {
+    const res = CL.mixHex(U.mix.map(m => { const pnt = S.paints.find(p => p.id === m.id); return { hex: pnt.hex, parts: m.parts, strength: pnt.strength || 1 }; }));
+    panelBody.append(el('div', { class: 'color-cur' }, el('div', { class: 'big-sw', style: `background:${res}` }),
+      el('div', { class: 'grow' }, el('b', {}, 'Получится: ' + CL.colorName(res)), el('div', { class: 'muted' }, res.toUpperCase() + (U.cur ? ` · до цели ΔE ${CL.deltaEHex(res, U.cur).toFixed(1)}` : '')))));
+    panelBody.append(el('div', { class: 'btns' }, btn('➕ Смесь в мои краски', () => { addPaint(res, 'Смесь ' + CL.colorName(res)); refreshPanel(); }), btn('Сделать целью', () => { U.cur = res; persist(); refreshPanel(); }), btn('Очистить', () => { U.mix = []; persist(); refreshPanel(); })));
+  }
+  // — мои краски
+  panelBody.append(el('div', { class: 'section-title' }, `Мои краски (${S.paints.length})`));
+  panelBody.append(el('p', { class: 'note' }, 'Лучше всего — сделать выкраску (мазок каждой краски на белой бумаге) и снять каждую пипеткой: так учтётся именно твоя краска. 🖌 — использовать краску в оцифровке («Рисунок (вектор)» → палитра «Мои краски»).'));
+  for (const pnt of S.paints) {
+    const name = el('input', { type: 'text', value: pnt.name, class: 'name-input' }); name.onchange = () => { pnt.name = name.value.trim() || pnt.name; persist(); };
+    const col = el('input', { type: 'color', value: pnt.hex, class: 'sw-input' }); col.onchange = () => { pnt.hex = col.value; persist(); refreshPanel(); };
+    panelBody.append(el('div', { class: 'paint-row' }, col, name,
+      el('button', { class: 'btn small' + (pnt.scan !== false ? ' on' : ''), title: 'Использовать в оцифровке', onclick: () => { pnt.scan = pnt.scan === false; persist(); refreshPanel(); } }, '🖌'),
+      btn('🧪', () => { const m = U.mix.find(q => q.id === pnt.id); if (m) m.parts++; else U.mix.push({ id: pnt.id, parts: 1 }); persist(); refreshPanel(); }, 'small'),
+      btn('✕', () => { S.paints = S.paints.filter(q => q !== pnt); persist(); refreshPanel(); }, 'small')));
+  }
+  panelBody.append(el('div', { class: 'btns' },
+    ...Object.entries(CL.PRESET_SETS).map(([k, set]) => btn('+ Набор: ' + set.name, () => { for (const [nm, hx] of set.paints) if (!S.paints.some(p => p.name === nm)) addPaint(hx, nm); refreshPanel(); toast('Цвета набора примерные — лучше переснять пипеткой свои'); })),
+    S.paints.length ? btn('Удалить все', () => { if (confirm('Удалить все свои краски?')) { S.paints = []; U.mix = []; persist(); refreshPanel(); } }, 'danger') : null));
 }
 
 function panelKalka() {
@@ -1328,7 +1454,7 @@ function panelScan() {
   panelBody.append(el('p', { class: 'note' }, el('b', {}, 'Перед снимком: '), 'убери руки и карандаш с листа, свет ровный, без бликов. Камера под углом — можно, но сверху чётче.'));
   panelBody.append(toggleRow('Таймер 3 с (успеть убрать руки)', sc.timer !== false, (v) => { sc.timer = v; persist(); }));
   panelBody.append(toggleRow('Фото в полном разрешении (чётче; если камера умеет)', sc.hires !== false, (v) => { sc.hires = v; persist(); }));
-  panelBody.append(rangeRow('Цветов краски', 0, 12, 1, sc.colors, (v) => { sc.colors = v; persist(); }, (v) => v ? v : 'только линии'));
+  panelBody.append(rangeRow('Цветов краски', 0, 16, 1, sc.colors, (v) => { sc.colors = v; sc.paint = v > 0; persist(); }, (v) => v ? v : 'только линии'));
   panelBody.append(el('div', { class: 'btns' }, btn('📥 Оцифровать', () => runScan(), 'primary'),
     R.scan ? btn('Открыть последний', () => openScanView()) : null));
 }
@@ -1455,12 +1581,17 @@ function shoelace(c) { let a = 0; for (let i = 0; i < c.length; i++) { const p =
 
 async function processScan() {
   const sc = S.scan, d = R.scan;
-  const key = `${sc.lines}|${sc.paint}|${sc.colors}|${sc.minSpot}|${sc.smooth}|${sc.lineBlack}|${sc.grad}|${d.flatKey || 0}`;
+  const mine = sc.pal === 'mine' ? S.paints.filter(p => p.scan !== false) : [];
+  const useMine = mine.length > 0;
+  const key = `${sc.lines}|${sc.paint}|${sc.colors}|${sc.minSpot}|${sc.smooth}|${sc.lineBlack}|${sc.grad}|${sc.gap || 0}|${useMine ? mine.map(p => p.hex).join(',') : 'auto'}|${d.flatKey || 0}`;
   if (d.vec && d.vecKey === key) return;
   toast('Распознаю линии и цвета…', 4000); await sleep(20);
-  d.seg = scan.segment(d.flat, d.ppm, { lineLevel: sc.lines, colors: sc.paint ? sc.colors : 0, minSpot: sc.minSpot, paint: sc.paint });
+  const nCol = useMine ? mine.length : (sc.paint ? sc.colors : 0);
+  d.seg = scan.segment(d.flat, d.ppm, { lineLevel: sc.lines, colors: nCol, minSpot: sc.minSpot, paint: nCol > 0, fixed: useMine ? mine.map(p => CL.hexToRgb(p.hex)) : null });
+  if (useMine) d.seg.names = mine.map(p => p.name);
   toast('Перевожу в вектор…', 4000); await sleep(20);
-  d.vec = scan.vectorize(d.seg, d.ppm, { smooth: sc.smooth, lineBlack: sc.lineBlack, withColors: sc.paint && sc.colors > 0, gradients: sc.grad !== false, img: d.flat });
+  // своими красками — ровной заливкой (градиент дал бы оттенки, которых у тебя нет)
+  d.vec = scan.vectorize(d.seg, d.ppm, { smooth: sc.smooth, lineBlack: sc.lineBlack, withColors: nCol > 0, gradients: sc.grad !== false && !useMine, img: d.flat, gap: sc.gap || 0 });
   d.vecKey = key; d.svgKB = null;
 }
 
@@ -1510,6 +1641,78 @@ function swapAspect(img, ppm, pw, ph, margin = 2) {
   return { data: out, w: W, h: H };
 }
 
+// Просмотр с зумом: щипок, двойной тап (×3 / вписать), колёсико, кнопки − ＋ ⤢.
+// Во время жеста рисуется готовая картинка, после — вектор перерисовывается чётко под масштаб.
+function zoomViewer(stage, onTap) {
+  const cv = el('canvas', { class: 'zoom-canvas' }), g = cv.getContext('2d');
+  const lbl = el('span', { class: 'zlbl' }, '100%');
+  const ctl = el('div', { class: 'zoom-ctl' });
+  stage.append(cv, ctl);
+  let src = null, z = 1, cx = 0.5, cy = 0.5, hiT = 0;
+  const pts = new Map(); let pinch = null, drag = null, lastTap = 0;
+  const dims = () => { const r = stage.getBoundingClientRect(); return { W: r.width, H: r.height, r }; };
+  const fit = () => { const { W, H } = dims(); return src ? Math.min((W - 12) / src.w, (H - 12) / src.h) : 1; };
+  const clampC = () => { z = Math.max(1, Math.min(12, z)); const k = 0.5 / z; cx = z <= 1 ? 0.5 : Math.max(k, Math.min(1 - k, cx)); cy = z <= 1 ? 0.5 : Math.max(k, Math.min(1 - k, cy)); };
+  const draw = (hq) => {
+    if (!src) return;
+    const { W, H } = dims(), dpr = window.devicePixelRatio || 1;
+    if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+    const k = fit() * z, tx = W / 2 - cx * src.w * k, ty = H / 2 - cy * src.h * k;
+    g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, cv.width, cv.height);
+    g.setTransform(k * dpr, 0, 0, k * dpr, tx * dpr, ty * dpr);
+    g.imageSmoothingEnabled = true; g.imageSmoothingQuality = 'high';
+    if (hq && src.hi && k * dpr > (src.bmpScale || 1) * 1.15) { g.save(); g.beginPath(); g.rect(0, 0, src.w, src.h); g.clip(); src.hi(g); g.restore(); }
+    else g.drawImage(src.bmp, 0, 0, src.w, src.h);
+    lbl.textContent = Math.round(z * 100) + '%';
+  };
+  const redraw = () => { draw(false); clearTimeout(hiT); hiT = setTimeout(() => draw(true), 160); };
+  const toContent = (px, py) => { const { W, H, r } = dims(), k = fit() * z; return { x: cx * src.w + (px - r.left - W / 2) / k, y: cy * src.h + (py - r.top - H / 2) / k }; };
+  const zoomAt = (f, px, py) => {
+    if (!src) return;
+    const a = toContent(px, py); z *= f; clampC();
+    const { W, H, r } = dims(), k = fit() * z;
+    cx = (a.x - (px - r.left - W / 2) / k) / src.w; cy = (a.y - (py - r.top - H / 2) / k) / src.h; clampC(); redraw();
+  };
+  cv.addEventListener('pointerdown', (e) => {
+    cv.setPointerCapture(e.pointerId); pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, m: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } }; drag = null; }
+    else if (pts.size === 1) drag = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, moved: false };
+  });
+  cv.addEventListener('pointermove', (e) => {
+    if (!pts.has(e.pointerId) || !src) return;
+    pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch && pts.size >= 2) {
+      const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y) || 1, m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+      const k = fit() * z; cx -= (m.x - pinch.m.x) / k / src.w; cy -= (m.y - pinch.m.y) / k / src.h;
+      zoomAt(d / pinch.d, m.x, m.y); pinch = { d, m };
+    } else if (drag) {
+      if (Math.hypot(e.clientX - drag.x0, e.clientY - drag.y0) > 6) drag.moved = true;
+      if (drag.moved && z > 1) { const k = fit() * z; cx -= (e.clientX - drag.x) / k / src.w; cy -= (e.clientY - drag.y) / k / src.h; clampC(); redraw(); }
+      drag.x = e.clientX; drag.y = e.clientY;
+    }
+  });
+  const up = (e) => {
+    if (!pts.has(e.pointerId)) return;
+    pts.delete(e.pointerId);
+    if (pinch) { if (pts.size < 2) pinch = null; drag = null; return; }
+    if (drag && !drag.moved && src) {
+      const now = performance.now();
+      const c = toContent(e.clientX, e.clientY);
+      if (c.x >= 0 && c.y >= 0 && c.x < src.w && c.y < src.h && onTap && onTap(c.x, c.y)) { lastTap = 0; drag = null; return; }
+      if (now - lastTap < 320) { if (z > 1.2) { z = 1; clampC(); redraw(); } else zoomAt(3, e.clientX, e.clientY); lastTap = 0; }
+      else lastTap = now;
+    }
+    drag = null;
+  };
+  cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', up);
+  cv.addEventListener('wheel', (e) => { e.preventDefault(); zoomAt(Math.exp(-e.deltaY * 0.0015), e.clientX, e.clientY); }, { passive: false });
+  const center = (f) => { const { r } = dims(); zoomAt(f, r.left + r.width / 2, r.top + r.height / 2); };
+  ctl.append(el('button', { class: 'zbtn', onclick: () => center(1 / 1.6) }, '−'), lbl, el('button', { class: 'zbtn', onclick: () => center(1.6) }, '+'),
+    el('button', { class: 'zbtn', title: 'Вписать', onclick: () => { z = 1; clampC(); redraw(); } }, '⤢'));
+  const ro = new ResizeObserver(() => redraw()); ro.observe(stage);
+  return { ctl, set(s2) { const same = src && src.w === s2.w && src.h === s2.h; src = s2; if (!same) { z = 1; cx = cy = 0.5; } redraw(); } };
+}
+
 function openScanView() {
   if (!R.scan) return;
   closePanel();
@@ -1517,17 +1720,37 @@ function openScanView() {
   const d = R.scan, sc = S.scan;
   const stage = el('div', { class: 'scan-stage' });
   const info = el('div', { class: 'scan-info' });
+  const pickBar = el('div', { class: 'pick-bar hidden' });
+  // зум: щипок двумя пальцами, двойной тап, колёсико, кнопки; пипетка — тап в режиме 🎯
+  const zv = zoomViewer(stage, (x, y) => {
+    if (!d.pick) return false;
+    const src = d.flat, xi = Math.round(x * src.w / d.vw), yi = Math.round(y * src.h / d.vh);
+    const c = avgAt(src, xi, yi, Math.max(1, Math.round(d.ppm * 0.6)));
+    const hex = CL.rgbToHex(c); S.colorUI.cur = hex; persist();
+    pickBar.innerHTML = ''; pickBar.classList.remove('hidden');
+    pickBar.append(el('i', { class: 'sw', style: `background:${hex}` }), el('span', { class: 'grow' }, `${CL.colorName(hex)} ${hex}`),
+      btn('➕ В мои краски', () => { addPaint(hex); toast('Добавлено в «Мои краски»'); }, 'small'),
+      btn('🎨 Как смешать', () => { closeScanView(); openPanel('colors'); }, 'small'));
+    return true;
+  });
+  const pickBtn = el('button', { class: 'zbtn', title: 'Пипетка: узнать цвет', onclick: () => { d.pick = !d.pick; pickBtn.classList.toggle('on', d.pick); toast(d.pick ? '🎯 Тапни по цвету на рисунке' : 'Пипетка выключена', 1800); } }, '🎯');
+  zv.ctl.prepend(pickBtn);
   let idle = 0;
   const showPreview = async () => {
     if (d.tab !== 'photo') await processScan();
-    // превью — сам холст, без кодирования в PNG (раньше это занимало секунды)
-    const c = scanCanvasFor(d.tab, d.tab === 'photo' ? 1 : Math.min(2, 1400 / Math.max(d.vec.w, d.vec.h)));
-    c.classList.add('scan-img'); stage.innerHTML = ''; stage.append(c);
+    // превью — холст с зумом, без кодирования в PNG; вектор при приближении перерисовывается чётко
+    const base = d.tab === 'photo' ? 1 : Math.min(2, 1400 / Math.max(d.vec.w, d.vec.h));
+    const c = scanCanvasFor(d.tab, base);
+    const cw = d.tab === 'photo' ? d.flat.w : d.vec.w, ch = d.tab === 'photo' ? d.flat.h : d.vec.h;
+    d.vw = cw; d.vh = ch;
+    const vec = d.tab !== 'photo' ? d.vec : null, colors = d.tab === 'vec';
+    zv.set({ bmp: c, w: cw, h: ch, hi: vec ? (g) => { g.fillStyle = '#fff'; g.fillRect(0, 0, cw, ch); scan.drawVector(g, vec, { colors }); } : null, bmpScale: d.tab === 'photo' ? (c.width / cw) : base });
     let txt = `${d.pw}×${d.ph} мм · ${d.ppm} пикс/мм (${R.scanInfo || 'кадры видео'})`;
     if (d.tab !== 'photo') {
       if (d.svgKB == null) d.svgKB = Math.round(scan.toSVG(d.vec, d.pw, d.ph).length / 1024);
       const nC = d.vec.colors.length;
-      txt += sc.paint && sc.colors > 0 ? ` · оттенков найдено ${nC} из ${sc.colors}` : '';
+      if (sc.pal === 'mine' && S.paints.some(p => p.scan !== false)) txt += ` · своими красками: ${nC}`;
+      else txt += sc.paint && sc.colors > 0 ? ` · оттенков найдено ${nC} из ${sc.colors}` : '';
       txt += ` · SVG ≈ ${d.svgKB} КБ`;
     }
     info.textContent = txt;
@@ -1557,11 +1780,21 @@ function openScanView() {
     } else {
       ctl.append(el('p', { class: 'note' }, d.tab === 'vec' ? 'Рисунок заново собран из контуров (вектор): линии + пятна краски, можно с плавными переходами.' : 'Только линии рисунка — для раскраски или обводки.'));
       if (d.tab === 'vec') {
-        ctl.append(rangeRow('Цветов краски', 0, 16, 1, sc.colors, (x) => { sc.colors = x; sc.paint = x > 0; persist(); redo(); }, (x) => x || 'нет'));
-        ctl.append(toggleRow('Плавные переходы (градиенты)', sc.grad !== false, (x) => { sc.grad = x; persist(); redo(); }));
+        const mineN = S.paints.filter(p => p.scan !== false).length;
+        ctl.append(segRow('Палитра', [['auto', 'Подобрать самой'], ['mine', `Мои краски (${mineN})`]], sc.pal || 'auto', (x) => {
+          if (x === 'mine' && !mineN) { toast('Сначала добавь свои краски в 🎨 Цвета'); buildCtl(); return; }
+          sc.pal = x; persist(); buildCtl(); redo();
+        }));
+        if (sc.pal === 'mine' && mineN) ctl.append(el('div', { class: 'swatches mini' }, ...S.paints.filter(p => p.scan !== false).map(p => el('i', { style: `background:${p.hex}`, title: p.name }))),
+          el('p', { class: 'note' }, 'Каждое пятно краски рисуется ближайшей из твоих красок (🖌 в «Цвета» — какие участвуют).'));
+        else {
+          ctl.append(rangeRow('Цветов краски', 0, 16, 1, sc.colors, (x) => { sc.colors = x; sc.paint = x > 0; persist(); redo(); }, (x) => x || 'нет'));
+          ctl.append(toggleRow('Плавные переходы (градиенты)', sc.grad !== false, (x) => { sc.grad = x; persist(); redo(); }));
+        }
       }
       ctl.append(rangeRow('Чувствительность линий', 0, 1, 0.05, sc.lines, (x) => { sc.lines = x; persist(); redo(); }, (x) => Math.round(x * 100) + '%'));
-      ctl.append(rangeRow('Сглаживание', 0, 3, 0.25, sc.smooth, (x) => { sc.smooth = x; persist(); redo(); }));
+      ctl.append(rangeRow('Сглаживание краёв', 0, 3, 0.25, sc.smooth, (x) => { sc.smooth = x; persist(); redo(); }));
+      ctl.append(rangeRow('Заполнить пробелы до', 0, 2, 0.1, sc.gap || 0, (x) => { sc.gap = x; persist(); redo(); }, (x) => x ? x.toFixed(1) + ' мм' : 'нет'));
       ctl.append(rangeRow('Убрать пятна меньше', 0, 20, 1, sc.minSpot, (x) => { sc.minSpot = x; persist(); redo(); }, (x) => x + ' мм²'));
       ctl.append(toggleRow('Линии чёрным', sc.lineBlack, (x) => { sc.lineBlack = x; persist(); redo(); }));
     }
@@ -1576,10 +1809,10 @@ function openScanView() {
       btn('↻ Переснять', () => { closeScanView(); runScan(); })));
   };
   buildCtl();
-  v.append(el('div', { class: 'scan-head' }, el('h2', {}, '📥 Оцифровка'), el('button', { class: 'icon small', onclick: closeScanView, 'aria-label': 'Закрыть' }, '✕')), stage, info, ctl);
+  v.append(el('div', { class: 'scan-head' }, el('h2', {}, '📥 Оцифровка'), el('button', { class: 'icon small', onclick: closeScanView, 'aria-label': 'Закрыть' }, '✕')), stage, pickBar, info, ctl);
   showPreview();
 }
-function closeScanView() { $('scanView').classList.add('hidden'); $('scanView').innerHTML = ''; }
+function closeScanView() { $('scanView').classList.add('hidden'); $('scanView').innerHTML = ''; if (R.scan) R.scan.pick = false; }
 
 // Готовый файл кэшируется по ключу (вкладка + настройки + формат): повторное «Сохранить» /
 // «Поделиться» ничего не пересчитывает. Готовится заранее, пока открыт результат.

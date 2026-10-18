@@ -458,11 +458,18 @@ export const TYPES = {
     props: [
       { key: 'shape', label: 'Фигура', type: 'select', options: [['sphere', 'Шар'], ['cube', 'Куб'], ['cyl', 'Цилиндр'], ['cone', 'Конус']], def: 'sphere' },
       { key: 'depth', label: 'Свет: сзади ↔ спереди, °', type: 'range', min: -75, max: 75, step: 5, def: 30 },
-      { key: 'view', label: 'Взгляд сверху, °', type: 'range', min: 0, max: 60, step: 5, def: 25 },
+      { key: 'view', label: 'Взгляд сверху, °', type: 'range', min: 0, max: 90, step: 5, def: 25 },
       { key: 'height', label: 'Высота', type: 'range', min: 0.5, max: 3, step: 0.1, def: 1.5, show: (g) => ['cyl', 'cone'].includes(pDefault(g, 'shape')) },
-      { key: 'yaw', label: 'Поворот куба, °', type: 'range', min: 0, max: 90, step: 5, def: 30, show: (g) => pDefault(g, 'shape') === 'cube' },
+      { key: 'yaw', label: 'Поворот вокруг вертикали, °', type: 'range', min: -180, max: 180, step: 5, def: 30, show: (g) => pDefault(g, 'shape') !== 'sphere' },
+      { key: 'tilt', label: 'Наклон вперёд/назад, °', type: 'range', min: -180, max: 180, step: 5, def: 0, show: (g) => pDefault(g, 'shape') !== 'sphere' },
+      { key: 'roll', label: 'Наклон вбок, °', type: 'range', min: -180, max: 180, step: 5, def: 0, show: (g) => pDefault(g, 'shape') !== 'sphere' },
       { key: 'cast', label: 'Падающая тень', type: 'toggle', def: true },
       { key: 'shade', label: 'Заливка тени', type: 'toggle', def: true },
+    ],
+    actions: [
+      ['↕ Перевернуть', (g) => { const t = (+pDefault(g, 'tilt') || 0) + 180; g.props.tilt = t > 180 ? t - 360 : t; }],
+      ['⟂ Положить на бок', (g) => { g.props.roll = Math.abs(+pDefault(g, 'roll') || 0) === 90 ? 0 : 90; }],
+      ['↺ Поставить прямо', (g) => { g.props.tilt = 0; g.props.roll = 0; }],
     ],
     draw(pen, g, ctx) { drawLight(pen, g, ctx); },
     handles: (g) => g.pts,
@@ -511,6 +518,12 @@ function drawLight(pen, g, ctx) {
   const castOn = pDefault(g, 'cast') && L[1] > 0.04;
   const toGround = (q) => { const t = q[1] / L[1]; return [q[0] - L[0] * t, 0, q[2] - L[2] * t]; };
   const N = 96;
+  // Ориентация фигуры: наклон вбок (roll) → вперёд/назад (tilt) → поворот вокруг вертикали (yaw).
+  // Вращаем вокруг центра фигуры, потом ставим на стол самой нижней точкой.
+  const D2 = Math.PI / 180, oy = (+pDefault(g, 'yaw') || 0) * D2, ot = (+pDefault(g, 'tilt') || 0) * D2, orl = (+pDefault(g, 'roll') || 0) * D2;
+  const [cyw, syw, ctl, stl, crl, srl] = [Math.cos(oy), Math.sin(oy), Math.cos(ot), Math.sin(ot), Math.cos(orl), Math.sin(orl)];
+  const orient = (v) => { let [x, y, z] = v; [x, y] = [x * crl - y * srl, x * srl + y * crl]; [y, z] = [y * ctl - z * stl, y * stl + z * ctl]; [x, z] = [x * cyw + z * syw, -x * syw + z * cyw]; return [x, y, z]; };
+  const place = (pts) => { const mn = Math.min(...pts.map(q => q[1])); return pts.map(q => [q[0], q[1] - mn, q[2]]); };
 
   // солнце-ручка и луч к предмету
   pen.circle(lp, 3.2, 'aux');
@@ -556,9 +569,9 @@ function drawLight(pen, g, ctx) {
     // тень касания
     pen.ellipse(P([0, 0, 0]), r * 0.35, r * 0.35 * Math.sin(e) + 0.4, 0, 'aux');
   } else if (shape === 'cube') {
-    const yaw = pDefault(g, 'yaw') * Math.PI / 180, cy = Math.cos(yaw), sy = Math.sin(yaw);
-    const rot = (x, y, z) => [x * cy + z * sy, y, -x * sy + z * cy];
-    const V = []; for (const y of [0, 2 * r]) for (const [x, z] of [[-r, -r], [r, -r], [r, r], [-r, r]]) V.push(rot(x, y, z));
+    const rot = (x, y, z) => orient([x, y, z]);
+    const V0 = []; for (const y of [-r, r]) for (const [x, z] of [[-r, -r], [r, -r], [r, r], [-r, r]]) V0.push(rot(x, y, z));
+    const V = place(V0);
     const faces = [
       { i: [4, 5, 6, 7], n: [0, 1, 0] }, { i: [0, 3, 2, 1], n: [0, -1, 0] },
       { i: [3, 7, 6, 2], n: rot(0, 0, 1) }, { i: [1, 5, 4, 0], n: rot(0, 0, -1) },
@@ -576,12 +589,13 @@ function drawLight(pen, g, ctx) {
   } else {
     const isCone = shape === 'cone';
     const Hc = 2 * r * pDefault(g, 'height');
-    const base = [], top = [], nrm = [];
+    const b0 = [], t0 = [], nrm = [];
     for (let i = 0; i < N; i++) {
       const t = i / N * TAU, x = Math.cos(t) * r, z = Math.sin(t) * r;
-      base.push([x, 0, z]); top.push(isCone ? [0, Hc, 0] : [x, Hc, z]);
-      nrm.push(isCone ? v3.norm([Math.cos(t) * Hc, r, Math.sin(t) * Hc]) : [Math.cos(t), 0, Math.sin(t)]);
+      b0.push(orient([x, -Hc / 2, z])); t0.push(orient(isCone ? [0, Hc / 2, 0] : [x, Hc / 2, z]));
+      nrm.push(orient(isCone ? v3.norm([Math.cos(t) * Hc, r, Math.sin(t) * Hc]) : [Math.cos(t), 0, Math.sin(t)]));
     }
+    const all = place(b0.concat(t0)), base = all.slice(0, N), top = all.slice(N);
     const PB = base.map(P), PT = top.map(P);
     silhouette = convexHull(PB.concat(isCone ? [PT[0]] : PT));
     const vis = (i) => v3.dot(nrm[i], toV) > 0;
@@ -600,17 +614,14 @@ function drawLight(pen, g, ctx) {
       if (!vis(i)) continue;
       if ((v3.dot(nrm[i], L) < 0) !== (v3.dot(nrm[j], L) < 0)) pen.seg(PB[i], PT[i], 'aux');
     }
-    // контур
-    const frontRun = runs(N, i => base[i][2] >= 0 || e < 0.02)[0] || [];
-    pen.poly(frontRun.map(i => PB[i]), false, 'main');
-    if (!isCone) {
-      pen.poly(PT, true, 'main');
-      if (shadeOn && L[1] < 0) pen.fill(PT);
-      const iR = 0, iL = N / 2;
-      pen.seg(PB[iR], PT[iR]); pen.seg(PB[iL], PT[iL]);
-    } else {
-      // образующие силуэта: касательные из вершины к эллипсу основания
-      const hull = silhouette; pen.poly(hull, true, 'main');
+    // контур — выпуклая оболочка; видимые донышки (крышки) — целиком
+    pen.poly(silhouette, true, 'main');
+    const caps = [[orient([0, -1, 0]), PB]];
+    if (!isCone) caps.push([orient([0, 1, 0]), PT]);
+    for (const [cn, pts] of caps) {
+      if (v3.dot(cn, toV) <= 0.01) continue;
+      if (shadeOn && v3.dot(cn, L) < 0) pen.fill(pts);
+      pen.poly(pts, true, 'main');
     }
     if (castOn) cast = convexHull(base.concat(isCone ? [top[0]] : top).map(toGround).map(P));
   }

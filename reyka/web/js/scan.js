@@ -242,7 +242,7 @@ function solveSym(A0, b0) {
 // ---------- 4–5. Разделение на линии и цвета ----------
 // lineLevel 0..1 — чувствительность к линиям; colors — сколько цветов (0 — только линии);
 // minSpot — минимальный размер пятна в мм².
-export function segment(img, ppm, { lineLevel = 0.5, colors = 6, minSpot = 2, paint = true } = {}) {
+export function segment(img, ppm, { lineLevel = 0.5, colors = 6, minSpot = 2, paint = true, fixed = null } = {}) {
   const { data, w, h } = img;
   const n = w * h;
   const kind = new Uint8Array(n); // 0 бумага, 1 линия, 2 краска
@@ -297,12 +297,31 @@ export function segment(img, ppm, { lineLevel = 0.5, colors = 6, minSpot = 2, pa
     // порог слияния зависит от того, сколько оттенков просили: при 16 различаем и близкие
     // тона карандаша (раньше всё серое сливалось в 2–4 цвета)
     const mergeThr = colors <= 4 ? 22 : colors <= 8 ? 14 : 7;
-    palette = mergeClose(bestKmeans(sample, Math.min(colors, sample.length)), sample, mergeThr);
+    // свои краски: рисуем ТОЛЬКО ими — каждый пиксель краски получает ближайшую из них
+    palette = fixed && fixed.length ? fixed.map(c => c.slice()) : mergeClose(bestKmeans(sample, Math.min(colors, sample.length)), sample, mergeThr);
+    // со своими красками сравниваем в Lab и почти не учитываем светлоту: светло-голубое
+    // пятно — это синяя краска с водой/белилами, а не «ближайшая по яркости» зелёная
+    const fixLab = fixed && fixed.length ? palette.map(p => lab3(p[0], p[1], p[2])) : null, labCache = fixLab ? new Map() : null;
     for (const i of colored) {
       if (kind[i] !== 2) continue;
       const j = i * 4;
       let best = 0, bd = Infinity;
-      for (let c = 0; c < palette.length; c++) { const p = palette[c], d = (p[0] - data[j]) ** 2 * 0.3 + (p[1] - data[j + 1]) ** 2 * 0.59 + (p[2] - data[j + 2]) ** 2 * 0.11; if (d < bd) { bd = d; best = c; } }
+      if (fixLab) {
+        const key = (data[j] >> 2) << 12 | (data[j + 1] >> 2) << 6 | (data[j + 2] >> 2);
+        let b2 = labCache.get(key);
+        if (b2 === undefined) {
+          const q = lab3(data[j], data[j + 1], data[j + 2]), ch = Math.hypot(q[1], q[2]);
+          for (let c = 0; c < fixLab.length; c++) {
+            const p = fixLab[c], pc = Math.hypot(p[1], p[2]);
+            // цвет пятна бледнее краски (разбавлена) — насыщенность сравниваем мягче
+            const da = ch < pc ? (q[1] - p[1] * ch / (pc || 1)) : q[1] - p[1], db = ch < pc ? (q[2] - p[2] * ch / (pc || 1)) : q[2] - p[2];
+            const d = (0.3 * (q[0] - p[0])) ** 2 + da * da + db * db + (ch < pc ? (0.25 * (pc - ch)) ** 2 : 0);
+            if (d < bd) { bd = d; best = c; }
+          }
+          labCache.set(key, best); b2 = best;
+        }
+        best = b2;
+      } else for (let c = 0; c < palette.length; c++) { const p = palette[c], d = (p[0] - data[j]) ** 2 * 0.3 + (p[1] - data[j + 1]) ** 2 * 0.59 + (p[2] - data[j + 2]) ** 2 * 0.11; if (d < bd) { bd = d; best = c; } }
       label[i] = best + 1;
     }
     majority(label, kind, w, h);
@@ -316,6 +335,14 @@ export function segment(img, ppm, { lineLevel = 0.5, colors = 6, minSpot = 2, pa
   for (let i = 0; i < n; i += 3) if (kind[i] === 1) { const j = i * 4; lr += data[j]; lg += data[j + 1]; lb += data[j + 2]; lc++; }
   const lineColor = lc ? [lr / lc * 0.6, lg / lc * 0.6, lb / lc * 0.6].map(Math.round) : [30, 30, 30];
   return { w, h, kind, label, palette, lineColor };
+}
+
+function lab3(r, g, b) {
+  const L = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  const R = L(r), G = L(g), B = L(b);
+  const f = (t) => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  const X = f((0.4124 * R + 0.3576 * G + 0.1805 * B) / 0.95047), Y = f(0.2126 * R + 0.7152 * G + 0.0722 * B), Z = f((0.0193 * R + 0.1192 * G + 0.9505 * B) / 1.08883);
+  return [116 * Y - 16, 500 * (X - Y), 200 * (Y - Z)];
 }
 
 // Среднее по квадрату (2r+1)² через интегральное изображение.
@@ -481,61 +508,176 @@ function removeSmallLabel(label, w, h, c, minArea) {
 
 // ---------- 6. Вектор ----------
 // Обводка маски по границам пикселей → упрощение → сглаживание. Возвращает SVG path «d».
-export function traceMask(mask, w, h, { simplify = 0.9, minArea = 4, smooth = true, ox = 0, oy = 0 } = {}) {
-  const W1 = w + 1;
-  // рёбра: от вершины к вершине, «внутри» справа (обход по часовой)
-  const next = new Map(); // ключ вершины → список рёбер
-  const edges = [];
-  const add = (x1, y1, x2, y2) => {
-    const k = y1 * W1 + x1, id = edges.length;
-    edges.push([x1, y1, x2, y2]);
-    const l = next.get(k); if (l) l.push(id); else next.set(k, [id]);
-  };
-  const at = (x, y) => x >= 0 && y >= 0 && x < w && y < h && mask[y * w + x];
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
-    if (!mask[y * w + x]) continue;
-    if (!at(x, y - 1)) add(x, y, x + 1, y);
-    if (!at(x + 1, y)) add(x + 1, y, x + 1, y + 1);
-    if (!at(x, y + 1)) add(x + 1, y + 1, x, y + 1);
-    if (!at(x - 1, y)) add(x, y + 1, x, y);
-  }
-  const used = new Uint8Array(edges.length);
+// Контур маски → SVG-путь. Раньше контур шёл по границам пикселей (лесенка, «мозаика» при
+// приближении). Теперь: маска → (по желанию) заполнение пробелов → мягкое поле (размытие,
+// нормированное на местный максимум, чтобы тонкие линии не пропадали) → изолиния 0.5
+// «марширующими квадратами» с точностью до долей пикселя → упрощение → гладкие кривые.
+export function traceMask(mask, w, h, { simplify = 0.9, minArea = 4, smooth = true, ox = 0, oy = 0, sigma = 0.75, close = 0, holes = 0 } = {}) {
+  // рамка маски
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) { const r = y * w; for (let x = 0; x < w; x++) if (mask[r + x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+  if (x1 < 0) return '';
+  const pad = Math.ceil(close + 3 * sigma) + 3;
+  const cx0 = x0 - pad, cy0 = y0 - pad, W = x1 - x0 + 1 + 2 * pad, H = y1 - y0 + 1 + 2 * pad;
+  let m = new Uint8Array(W * H);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (mask[y * w + x]) m[(y - cy0) * W + (x - cx0)] = 1;
+  if (close > 0.5) m = closeMask(m, W, H, close);
+  if (holes > 0) fillHoles(m, W, H, holes);
+  const F = softField(m, W, H, sigma);
+  const loops = marchLoops(F, W, H, 0.5);
   let d = '';
-  for (let s = 0; s < edges.length; s++) {
-    if (used[s]) continue;
-    const loop = [];
-    let e = s, guard = 0;
-    while (!used[e] && guard++ < 4e6) {
-      used[e] = 1;
-      const [x1, y1, x2, y2] = edges[e];
-      loop.push([x1, y1]);
-      const cand = (next.get(y2 * W1 + x2) || []).filter(id => !used[id]);
-      if (!cand.length) break;
-      if (cand.length === 1) e = cand[0];
-      else {
-        // развилка (пиксели касаются углами): поворачиваем направо
-        const dx = x2 - x1, dy = y2 - y1;
-        let best = cand[0], bs = -Infinity;
-        for (const id of cand) { const [a1, b1, a2, b2] = edges[id]; const ex = a2 - a1, ey = b2 - b1; const crs = dx * ey - dy * ex; if (crs > bs) { bs = crs; best = id; } }
-        e = best;
-      }
-    }
-    if (loop.length < 4) continue;
-    // убираем точки на прямых
-    const pts = [];
-    for (let i = 0; i < loop.length; i++) {
-      const a = loop[(i - 1 + loop.length) % loop.length], b = loop[i], c = loop[(i + 1) % loop.length];
-      if ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]) !== 0) pts.push(b);
-    }
-    if (pts.length < 3) continue;
+  for (let pts of loops) {
     let area = 0; for (let i = 0; i < pts.length; i++) { const a = pts[i], b = pts[(i + 1) % pts.length]; area += a[0] * b[1] - b[0] * a[1]; }
     if (Math.abs(area / 2) < minArea) continue;
-    let simp = simplifyClosed(pts, simplify);
+    let simp = simplifyClosed(pts, Math.max(0.2, simplify * 0.55));
     if (simp.length < 3) continue;
-    if (ox || oy) simp = simp.map(q => [q[0] + ox, q[1] + oy]);
-    d += smooth ? smoothPath(simp) : 'M' + simp.map(p => p[0] + ' ' + p[1]).join('L') + 'Z';
+    const dx = cx0 + ox, dy = cy0 + oy;
+    simp = simp.map(q => [q[0] + dx, q[1] + dy]);
+    d += smooth ? smoothPath(simp, 0.05) : 'M' + simp.map(p => f1(p[0]) + ' ' + f1(p[1])).join('L') + 'Z';
   }
   return d;
+}
+
+// Точное евклидово расстояние до ближайшего «1» (Felzenszwalb–Huttenlocher), в квадратах пикселей
+function edt2(m, W, H, target) {
+  const INF = 1e12, D = new Float64Array(W * H);
+  for (let i = 0; i < W * H; i++) D[i] = m[i] === target ? 0 : INF;
+  const n = Math.max(W, H), f = new Float64Array(n), dd = new Float64Array(n), v = new Int32Array(n), z = new Float64Array(n + 1);
+  const pass = (len, get, set) => {
+    for (let q = 0; q < len; q++) f[q] = get(q);
+    let k = 0; v[0] = 0; z[0] = -INF; z[1] = INF;
+    for (let q = 1; q < len; q++) {
+      let s;
+      for (;;) { const p = v[k]; s = ((f[q] + q * q) - (f[p] + p * p)) / (2 * q - 2 * p); if (s <= z[k] && k > 0) k--; else break; }
+      if (s <= z[k]) { v[0] = q; z[0] = -INF; z[1] = INF; k = 0; continue; }
+      k++; v[k] = q; z[k] = s; z[k + 1] = INF;
+    }
+    k = 0;
+    for (let q = 0; q < len; q++) { while (z[k + 1] < q) k++; const p = v[k]; dd[q] = (q - p) * (q - p) + f[p]; }
+    for (let q = 0; q < len; q++) set(q, dd[q]);
+  };
+  for (let x = 0; x < W; x++) pass(H, (q) => D[q * W + x], (q, val) => { D[q * W + x] = val; });
+  for (let y = 0; y < H; y++) pass(W, (q) => D[y * W + q], (q, val) => { D[y * W + q] = val; });
+  return D;
+}
+// Закрытие кругом радиуса r: заполняет щели между пятнами/штрихами уже 2r, не раздувая их
+// Заполнение пробелов на всём слое (рамка по маске, чтобы не считать пустое поле)
+function closeFill(mask, w, h, r, holeA) {
+  let x0 = w, y0 = h, x1 = -1, y1 = -1;
+  for (let y = 0; y < h; y++) { const row = y * w; for (let x = 0; x < w; x++) if (mask[row + x]) { if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; } }
+  if (x1 < 0) return mask;
+  const pad = Math.ceil(r) + 2, cx0 = x0 - pad, cy0 = y0 - pad, W = x1 - x0 + 1 + 2 * pad, H = y1 - y0 + 1 + 2 * pad;
+  let m = new Uint8Array(W * H);
+  for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) if (mask[y * w + x]) m[(y - cy0) * W + (x - cx0)] = 1;
+  if (r > 0.5) m = closeMask(m, W, H, r);
+  if (holeA > 0) fillHoles(m, W, H, holeA);
+  const out = new Uint8Array(w * h);
+  for (let y = 0; y < H; y++) { const yy = y + cy0; if (yy < 0 || yy >= h) continue; for (let x = 0; x < W; x++) { const xx = x + cx0; if (xx < 0 || xx >= w) continue; if (m[y * W + x]) out[yy * w + xx] = 1; } }
+  return out;
+}
+function closeMask(m, W, H, r) {
+  const r2 = r * r, d1 = edt2(m, W, H, 1), dil = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) dil[i] = d1[i] <= r2 ? 1 : 0;
+  const d2 = edt2(dil, W, H, 0), out = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) out[i] = d2[i] > r2 ? 1 : 0;
+  for (let i = 0; i < W * H; i++) if (m[i]) out[i] = 1;
+  return out;
+}
+// Заливаем замкнутые дырки площадью до maxArea пикселей
+function fillHoles(m, W, H, maxArea) {
+  const seen = new Uint8Array(W * H), st = new Int32Array(W * H), comp = [];
+  for (let s = 0; s < W * H; s++) {
+    if (m[s] || seen[s]) continue;
+    let sp = 0, border = false; comp.length = 0; st[sp++] = s; seen[s] = 1;
+    while (sp) {
+      const i = st[--sp]; comp.push(i);
+      const y = (i / W) | 0, x = i - y * W;
+      if (x === 0 || y === 0 || x === W - 1 || y === H - 1) border = true;
+      if (x > 0 && !m[i - 1] && !seen[i - 1]) { seen[i - 1] = 1; st[sp++] = i - 1; }
+      if (x < W - 1 && !m[i + 1] && !seen[i + 1]) { seen[i + 1] = 1; st[sp++] = i + 1; }
+      if (y > 0 && !m[i - W] && !seen[i - W]) { seen[i - W] = 1; st[sp++] = i - W; }
+      if (y < H - 1 && !m[i + W] && !seen[i + W]) { seen[i + W] = 1; st[sp++] = i + W; }
+    }
+    if (!border && comp.length <= maxArea) for (const i of comp) m[i] = 1;
+  }
+}
+// Мягкое поле: гауссово размытие маски, нормированное на местный максимум
+// (у тонкой линии после размытия пик ниже 0.5 — без нормировки она бы исчезла).
+function softField(m, W, H, sigma) {
+  const r = Math.max(1, Math.ceil(sigma * 2.5)), ker = [];
+  let ks = 0; for (let k = -r; k <= r; k++) { const v = Math.exp(-(k * k) / (2 * sigma * sigma)); ker.push(v); ks += v; }
+  for (let k = 0; k < ker.length; k++) ker[k] /= ks;
+  const N = W * H, A = new Float32Array(N), B = new Float32Array(N);
+  // по строкам (быстрый пропуск однородных окон через префиксные суммы)
+  const pre = new Int32Array(W + 1);
+  for (let y = 0; y < H; y++) {
+    const row = y * W;
+    for (let x = 0; x < W; x++) pre[x + 1] = pre[x] + m[row + x];
+    for (let x = 0; x < W; x++) {
+      const a = Math.max(0, x - r), b = Math.min(W, x + r + 1), cnt = pre[b] - pre[a];
+      if (cnt === 0) continue;
+      if (cnt === b - a && a === x - r && b === x + r + 1) { A[row + x] = 1; continue; }
+      let s = 0; for (let k = -r; k <= r; k++) { const xx = x + k; if (xx >= 0 && xx < W && m[row + xx]) s += ker[k + r]; }
+      A[row + x] = s;
+    }
+  }
+  // по столбцам
+  const preC = new Float64Array(H + 1);
+  for (let x = 0; x < W; x++) {
+    for (let y = 0; y < H; y++) preC[y + 1] = preC[y] + A[y * W + x];
+    for (let y = 0; y < H; y++) {
+      const a = Math.max(0, y - r), b = Math.min(H, y + r + 1), sm = preC[b] - preC[a];
+      if (sm < 1e-7) continue;
+      if (sm > (b - a) - 1e-6 && a === y - r && b === y + r + 1) { B[y * W + x] = 1; continue; }
+      let s = 0; for (let k = -r; k <= r; k++) { const yy = y + k; if (yy >= 0 && yy < H) s += ker[k + r] * A[yy * W + x]; }
+      B[y * W + x] = s;
+    }
+  }
+  // нормировка на местный максимум (окно ±(r+1)), только где поле не 0 и не 1
+  const R2 = r + 1, T = new Float32Array(N);
+  for (let y = 0; y < H; y++) { const row = y * W; for (let x = 0; x < W; x++) { let mx = 0; for (let k = Math.max(0, x - R2); k <= Math.min(W - 1, x + R2); k++) if (B[row + k] > mx) mx = B[row + k]; T[row + x] = mx; } }
+  for (let x = 0; x < W; x++) for (let y = 0; y < H; y++) {
+    const i = y * W + x, v = B[i]; if (v <= 0 || v >= 1) continue;
+    let mx = 0; for (let k = Math.max(0, y - R2); k <= Math.min(H - 1, y + R2); k++) if (T[k * W + x] > mx) mx = T[k * W + x];
+    if (mx < 0.999) B[i] = Math.min(1, v / Math.max(0.2, mx));
+  }
+  return B;
+}
+// Изолинии поля F на уровне t: замкнутые контуры с точностью до долей пикселя.
+// Отсчёты — в центрах пикселей (x + 0.5, y + 0.5). Обход согласованный: внутри — слева.
+function marchLoops(F, W, H, t) {
+  const EH = W * H; // id рёбер: горизонтальные j*W+i, вертикальные EH + j*W+i
+  const nxt = new Int32Array(2 * EH).fill(-1), px = new Float32Array(2 * EH), py = new Float32Array(2 * EH);
+  const ptH = (i, j) => { const id = j * W + i, a = F[id], b = F[id + 1]; px[id] = i + 0.5 + (t - a) / (b - a); py[id] = j + 0.5; return id; };
+  const ptV = (i, j) => { const id = EH + j * W + i, a = F[j * W + i], b = F[(j + 1) * W + i]; px[id] = i + 0.5; py[id] = j + 0.5 + (t - a) / (b - a); return id; };
+  const starts = [];
+  for (let j = 0; j < H - 1; j++) for (let i = 0; i < W - 1; i++) {
+    const a = F[j * W + i] >= t, b = F[j * W + i + 1] >= t, c = F[(j + 1) * W + i + 1] >= t, d = F[(j + 1) * W + i] >= t;
+    if (a === b && b === c && c === d) continue;
+    // рёбра по часовой: верх (a→b), право (b→c), низ (c→d), лево (d→a)
+    const cr = [];
+    if (a !== b) cr.push({ k: 0, out: a && !b, id: ptH(i, j) });
+    if (b !== c) cr.push({ k: 1, out: b && !c, id: ptV(i + 1, j) });
+    if (c !== d) cr.push({ k: 2, out: c && !d, id: ptH(i, j + 1) });
+    if (d !== a) cr.push({ k: 3, out: d && !a, id: ptV(i, j) });
+    const link = (from, to) => { nxt[from] = to; starts.push(from); };
+    if (cr.length === 2) { const [p, q] = cr; if (p.out) link(q.id, p.id); else link(p.id, q.id); }
+    else if (cr.length === 4) {
+      const centre = (F[j * W + i] + F[j * W + i + 1] + F[(j + 1) * W + i + 1] + F[(j + 1) * W + i]) / 4 >= t;
+      for (let k = 0; k < 4; k++) if (!cr[k].out) { // вход (снаружи → внутрь)
+        const to = centre ? cr[(k + 3) % 4] : cr[(k + 1) % 4];
+        link(cr[k].id, to.id);
+      }
+    }
+  }
+  const used = new Uint8Array(2 * EH), loops = [];
+  for (const s of starts) {
+    if (used[s]) continue;
+    const pts = []; let e = s, guard = 0;
+    while (e >= 0 && !used[e] && guard++ < 4e6) { used[e] = 1; pts.push([px[e], py[e]]); e = nxt[e]; }
+    if (pts.length >= 3) loops.push(pts);
+  }
+  return loops;
 }
 
 function simplifyClosed(pts, eps) {
@@ -563,7 +705,7 @@ function dp(pts, eps) {
 }
 
 const f1 = (v) => Math.round(v * 10) / 10;
-function smoothPath(p) {
+function smoothPath(p, cornerCos = 0.64) {
   const n = p.length;
   const mid = (a, b) => [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
   const m0 = mid(p[n - 1], p[0]);
@@ -574,7 +716,7 @@ function smoothPath(p) {
     // острые углы оставляем острыми
     const v1x = b[0] - a[0], v1y = b[1] - a[1], v2x = c[0] - b[0], v2y = c[1] - b[1];
     const cos = (v1x * v2x + v1y * v2y) / ((Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y)) || 1);
-    if (cos < 0.64) s += `L${f1(b[0])} ${f1(b[1])}L${f1(m[0])} ${f1(m[1])}`;
+    if (cos < cornerCos) s += `L${f1(b[0])} ${f1(b[1])}L${f1(m[0])} ${f1(m[1])}`;
     else s += `Q${f1(b[0])} ${f1(b[1])} ${f1(m[0])} ${f1(m[1])}`;
   }
   return s + 'Z';
@@ -583,9 +725,14 @@ function smoothPath(p) {
 // ---------- Сборка результата ----------
 const hex = (c) => '#' + c.map(v => Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0')).join('');
 
-export function vectorize(seg, ppm, { smooth = 1, lineBlack = false, withColors = true, gradients = false, img = null } = {}) {
+export function vectorize(seg, ppm, { smooth = 1, lineBlack = false, withColors = true, gradients = false, img = null, gap = 0 } = {}) {
   const { w, h, kind, label, palette } = seg;
   const eps = 0.6 + smooth * 0.9;
+  // гладкость края: размытие маски перед обводкой (в пикселях); пробелы — в миллиметрах
+  const sigma = 0.55 + 0.3 * smooth;
+  const closeR = gap > 0 ? gap / 2 * ppm : 0, holeA = gap > 0 ? Math.round((2 * gap * ppm) ** 2) : 0;
+  const prep = (m) => (gap > 0 ? closeFill(m, w, h, closeR, holeA) : m);
+  const lname = (c) => (seg.names && seg.names[c - 1]) || 'Цвет ' + c;
   const layers = [];
   if (withColors) {
     for (let c = 1; c <= palette.length; c++) {
@@ -604,19 +751,20 @@ export function vectorize(seg, ppm, { smooth = 1, lineBlack = false, withColors 
           for (let dy = -2; dy <= 2 && !near; dy++) for (let dx = -2; dx <= 2; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < w && yy < h && label[yy * w + xx] === c && kind[yy * w + xx] !== 1) { near = 1; break; } }
           if (near) m[i] = 1;
         }
+        const mm = prep(m);
         if (gradients && img) {
-          const parts = gradientParts(m, w, h, img, kind, { simplify: eps, minArea: ppm * ppm * 1.0 });
-          if (parts.length) layers.push({ name: 'Цвет ' + c, color: hex(palette[c - 1]), d: parts.map(q => q.d).join(''), parts });
+          const parts = gradientParts(mm, w, h, img, kind, { simplify: eps, minArea: ppm * ppm * 1.0, sigma });
+          if (parts.length) layers.push({ name: lname(c), color: hex(palette[c - 1]), d: parts.map(q => q.d).join(''), parts });
         } else {
-          const d = traceMask(m, w, h, { simplify: eps, minArea: ppm * ppm * 1.0 });
-          if (d) layers.push({ name: 'Цвет ' + c, color: hex(palette[c - 1]), d });
+          const d = traceMask(mm, w, h, { simplify: eps, minArea: ppm * ppm * 1.0, sigma });
+          if (d) layers.push({ name: lname(c), color: hex(palette[c - 1]), d });
         }
       }
     }
   }
   const lm = new Uint8Array(w * h);
   for (let i = 0; i < w * h; i++) if (kind[i] === 1) lm[i] = 1;
-  const ld = traceMask(lm, w, h, { simplify: Math.max(0.6, eps * 0.75), minArea: 2 });
+  const ld = traceMask(prep(lm), w, h, { simplify: Math.max(0.6, eps * 0.75), minArea: 2, sigma: Math.min(sigma, 1.1) });
   const lines = { name: 'Линии', color: lineBlack ? '#1a1a1a' : hex(seg.lineColor), d: ld };
   return { w, h, colors: layers, lines };
 }
@@ -643,7 +791,7 @@ function gradientParts(m, w, h, img, kind, opts) {
     // контур только этого пятна
     const bw = x1 - x0 + 1, bh = y1 - y0 + 1, crop = new Uint8Array(bw * bh);
     for (const i of comp) { const y = (i / w) | 0, x = i - y * w; crop[(y - y0) * bw + (x - x0)] = 1; }
-    const d = traceMask(crop, bw, bh, { simplify: opts.simplify, minArea: opts.minArea, ox: x0, oy: y0 });
+    const d = traceMask(crop, bw, bh, { simplify: opts.simplify, minArea: opts.minArea, ox: x0, oy: y0, sigma: opts.sigma || 0.75 });
     if (!d) continue;
     // цвет: выборка пикселей пятна (без линий)
     const step = Math.max(1, Math.floor(comp.length / 4000));
@@ -750,17 +898,22 @@ export function renderVector(vec, scale, { background = true, colors = true } = 
   const g = c.getContext('2d');
   if (background) { g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); }
   g.scale(scale, scale);
+  drawVector(g, vec, { colors });
+  return c;
+}
+// Рисуем вектор в любой контекст с уже заданным масштабом (для зума — чётко при любом приближении).
+// Path2D кэшируются в самом векторе: повторная отрисовка дешёвая.
+export function drawVector(g, vec, { colors = true } = {}) {
   g.lineJoin = 'round';
   if (colors) for (const l of vec.colors) {
-    for (const q of (l.parts || [{ d: l.d, fill: l.color }])) {
-      const p = new Path2D(q.d); let f = q.fill;
+    for (const q of (l.parts || (l._parts || (l._parts = [{ d: l.d, fill: l.color }])))) {
+      const p = q._p || (q._p = new Path2D(q.d)); let f = q.fill;
       if (typeof f !== 'string' && f.radial) { const gr = g.createRadialGradient(f.cx, f.cy, 0, f.cx, f.cy, f.r); gr.addColorStop(f.o1, f.c1); gr.addColorStop(1, f.c2); f = gr; }
       else if (typeof f !== 'string') { const gr = g.createLinearGradient(f.x1, f.y1, f.x2, f.y2); gr.addColorStop(0, f.c1); gr.addColorStop(1, f.c2); f = gr; }
       g.fillStyle = f; g.strokeStyle = f; g.lineWidth = 0.8; g.fill(p, 'evenodd'); g.stroke(p);
     }
   }
-  if (vec.lines.d) { g.fillStyle = vec.lines.color; g.fill(new Path2D(vec.lines.d), 'evenodd'); }
-  return c;
+  if (vec.lines.d) { g.fillStyle = vec.lines.color; g.fill(vec.lines._p || (vec.lines._p = new Path2D(vec.lines.d)), 'evenodd'); }
 }
 
 export function imageDataCanvas(img) {

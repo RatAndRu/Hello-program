@@ -2,7 +2,7 @@ plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
 android {
     namespace 'com.example.reyka'
     compileSdk 34
-    defaultConfig { applicationId 'com.example.reyka'; minSdk 26; targetSdk 34; versionCode 5; versionName '1.4' }
+    defaultConfig { applicationId 'com.example.reyka'; minSdk 26; targetSdk 34; versionCode 6; versionName '1.5' }
     // Веб-часть (reyka/web) целиком кладётся в assets APK — приложение работает без интернета.
     sourceSets { main { assets.srcDirs = ['../../web'] } }
     signingConfigs {

@@ -43,10 +43,10 @@ button { font: inherit; color: inherit; cursor: pointer; }
 .pill[data-state="calib"] .dot { background: #ff2fd6; }
 
 /* --- нижняя панель --- */
-#bottombar { position: fixed; left: 8px; right: 8px; bottom: calc(8px + var(--safe-bottom)); display: grid; grid-template-columns: 1.3fr 1fr 0.9fr 1.25fr; gap: 8px; z-index: 5; }
+#bottombar { position: fixed; left: 6px; right: 6px; bottom: calc(8px + var(--safe-bottom)); display: grid; grid-template-columns: 1.4fr 1fr 0.85fr 0.95fr 1.3fr; gap: 5px; z-index: 5; }
 #bottombar button { height: 58px; border-radius: 16px; border: 1px solid var(--line); background: var(--glass); backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 0 4px; }
 #bottombar b { font-size: 20px; line-height: 1; font-weight: 600; }
-#bottombar span { font-size: 12px; color: var(--muted); white-space: nowrap; }
+#bottombar span { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
 #bottombar button.active, #bottombar button.on { border-color: rgba(57, 255, 20, 0.6); background: rgba(57, 255, 20, 0.14); }
 #bottombar button.on span, #bottombar button.active span { color: var(--accent); }
 #btnAdd { background: rgba(57, 255, 20, 0.18) !important; border-color: rgba(57, 255, 20, 0.55) !important; }
@@ -155,3 +155,29 @@ body.clean .ui { display: none !important; }
   .scan-info { position: absolute; left: 20px; bottom: 16px; }
   .scan-ctl { flex: 0 0 340px; max-height: calc(100% - 60px); }
 }
+
+/* зум результата */
+.zoom-canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: grab; }
+.zoom-ctl { position: absolute; right: 8px; bottom: 8px; display: flex; align-items: center; gap: 6px; background: rgba(11, 13, 18, 0.72); border: 1px solid var(--line); border-radius: 14px; padding: 4px; }
+.zbtn { width: 38px; height: 38px; border-radius: 10px; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.08); font-size: 18px; }
+.zbtn.on { background: rgba(57, 255, 20, 0.25); border-color: var(--accent); }
+.zlbl { min-width: 46px; text-align: center; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pick-bar { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 2px; }
+/* цвета */
+.grow { flex: 1 1 auto; min-width: 0; }
+.muted { color: var(--muted); font-size: 12.5px; }
+.color-cur { display: flex; align-items: center; gap: 12px; padding: 8px 0; }
+.big-sw { width: 64px; height: 64px; border-radius: 14px; border: 2px solid rgba(255, 255, 255, 0.25); flex: none; }
+.color-input { width: 48px; height: 48px; border: none; background: none; padding: 0; flex: none; }
+.recipe { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 13.5px; }
+.recipe .pair { display: flex; flex: none; border-radius: 10px; overflow: hidden; border: 2px solid rgba(255, 255, 255, 0.2); }
+.recipe .pair i { width: 26px; height: 40px; display: block; }
+.paint-row { display: flex; align-items: center; gap: 6px; padding: 5px 0; border-bottom: 1px solid rgba(255, 255, 255, 0.06); font-size: 14px; }
+.paint-row .sw, .pick-bar .sw { width: 30px; height: 30px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); flex: none; display: block; }
+.sw-input { width: 36px; height: 36px; border: none; background: none; padding: 0; flex: none; }
+.name-input { flex: 1 1 auto; min-width: 0; background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); border-radius: 10px; color: inherit; padding: 8px; font-size: 14px; }
+.parts { min-width: 26px; text-align: center; font-variant-numeric: tabular-nums; }
+.btn.small { flex: none; min-height: 36px; padding: 4px 10px; font-size: 14px; }
+.btn.on { border-color: var(--accent); background: rgba(57, 255, 20, 0.18); }
+.swatches.mini { gap: 6px; padding: 4px 0; }
+.swatches.mini i { width: 22px; height: 22px; border-radius: 50%; border: 2px solid rgba(255, 255, 255, 0.25); display: block; }
