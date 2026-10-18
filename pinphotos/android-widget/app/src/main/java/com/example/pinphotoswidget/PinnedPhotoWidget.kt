@@ -284,17 +284,31 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
                     if (UiTheme.isDark(context)) R.drawable.widget_bg_dark else R.drawable.widget_bg)
             }
 
-            // Открываем приложение ЧЕРЕЗ ТЕКУЩИЙ лаунчер-алиас, а не напрямую через
-            // MainActivity. Иначе Android брал android:icon приложения (обычную иконку)
-            // для стартового окна и «Недавних», даже если пользователь выбрал другую иконку.
-            // updateAll пересоздаёт этот PendingIntent после каждой смены иконки.
-            val openIntent = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_LAUNCHER)
-                component = IconSwitcher.currentComponent(context)
-                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+            // Тап по виджету открывает ИМЕННО то фото, которое сейчас показано на виджете,
+            // сразу в просмотрщике (а не главный экран). Список альбома виджета передаём
+            // целиком, чтобы из открытого фото можно было листать остальные фото виджета.
+            // Пустой виджет (заглушка) по-прежнему ведёт на главный экран через текущий
+            // лаунчер-алиас — там пользователь добавляет фото.
+            val currentIndex = if (pinned.isNotEmpty())
+                prefs.getInt("index_$widgetId", 0) % pinned.size else -1
+            val openIntent = if (currentIndex >= 0) {
+                Intent(context, PhotoActivity::class.java).apply {
+                    putStringArrayListExtra("ids", ArrayList(pinned.map { it.id }))
+                    putExtra("index", currentIndex)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TOP
+                }
+            } else {
+                Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_LAUNCHER)
+                    component = IconSwitcher.currentComponent(context)
+                    flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+                }
             }
+            // requestCode = widgetId: у каждого виджета свой PendingIntent со своим фото.
+            // С общим кодом 0 Android считал интент одним и тем же и подменял extras
+            // последним отрисованным виджетом.
             val open = PendingIntent.getActivity(
-                context, 0, openIntent,
+                context, widgetId, openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widget_image, open)
