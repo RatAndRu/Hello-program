@@ -56,110 +56,96 @@ export function rectify(frame, H, pw, ph, ppm, marginMm = 2) {
 }
 
 // ---------- 3. Выравнивание фона ----------
-export function flatten(img, ppm, clean = 0.5) {
+export function flatten(img, ppm, clean = 0.5, marginMm = 2) {
   const { data, w, h } = img;
-  const cell = Math.max(10, Math.round(ppm * 7));
-  const gx = Math.ceil(w / cell), gy = Math.ceil(h / cell);
-  const bg = new Float32Array(gx * gy * 3), has = new Uint8Array(gx * gy);
-  const buf = [];
+  // Свет на бумаге оцениваем по клеткам ~5 мм: в каждой берём светлые пиксели (бумагу).
+  // ВАЖНО: белое поле, которое добавляет выпрямление по краю, — не бумага, его пропускаем
+  // (раньше оно делало край «светлее», и по краям скана появлялась тёмная рамка).
+  const cell = Math.max(8, Math.round(ppm * 5));
+  const gx = Math.ceil(w / cell), gy = Math.ceil(h / cell), GN = gx * gy;
+  const m0 = Math.ceil((marginMm + 0.7) * ppm);
+  const val = new Float32Array(GN * 3), ok = new Uint8Array(GN);
+  const lum = [], idx = [];
   for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) {
-    buf.length = 0;
-    let total = 0;
-    for (let y = cy * cell; y < Math.min(h, (cy + 1) * cell); y += 2) for (let x = cx * cell; x < Math.min(w, (cx + 1) * cell); x += 2) {
-      const i = (y * w + x) * 4, r = data[i], g = data[i + 1], b = data[i + 2];
-      total++;
-      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-      if (mx - mn < 48) buf.push(r + g + b, r, g, b);
-    }
-    const n = buf.length / 4;
-    if (n < total * 0.12 || n < 6) continue;
-    // берём самые светлые 35% бесцветных пикселей — это бумага
-    const idx = [...Array(n).keys()].sort((a, b) => buf[b * 4] - buf[a * 4]).slice(0, Math.max(3, Math.round(n * 0.35)));
-    let r = 0, g = 0, b = 0;
-    for (const k of idx) { r += buf[k * 4 + 1]; g += buf[k * 4 + 2]; b += buf[k * 4 + 3]; }
-    const o = (cy * gx + cx) * 3;
-    bg[o] = r / idx.length; bg[o + 1] = g / idx.length; bg[o + 2] = b / idx.length; has[cy * gx + cx] = 1;
+    const xa = Math.max(m0, cx * cell), xb = Math.min(w - m0, (cx + 1) * cell), ya = Math.max(m0, cy * cell), yb = Math.min(h - m0, (cy + 1) * cell);
+    if (xb - xa < 2 || yb - ya < 2) continue;
+    lum.length = 0; idx.length = 0;
+    const st = cell > 16 ? 2 : 1;
+    for (let y = ya; y < yb; y += st) for (let x = xa; x < xb; x += st) { const i = (y * w + x) * 4, L = data[i] + data[i + 1] + data[i + 2]; if (L >= 762) continue; lum.push(L); idx.push(i); }
+    const n = lum.length; if (n < 6) continue;
+    const srt = Float32Array.from(lum).sort();
+    const lo = srt[Math.floor(n * 0.92)], hi = srt[Math.min(n - 1, Math.floor(n * 0.99))];
+    let r = 0, g = 0, bb = 0, c = 0;
+    for (let k = 0; k < n; k++) if (lum[k] >= lo && lum[k] <= hi) { const i = idx[k]; r += data[i]; g += data[i + 1]; bb += data[i + 2]; c++; }
+    if (!c) continue;
+    const o = (cy * gx + cx) * 3; val[o] = r / c; val[o + 1] = g / c; val[o + 2] = bb / c; ok[cy * gx + cx] = 1;
   }
-  // клетки, где «бумагой» оказалась тёмная линия (вся клетка закрашена), — отбрасываем
+  if (!ok.some(Boolean)) { val.fill(235); ok.fill(1); }
+  const Lv = (A, k) => A[k * 3] + A[k * 3 + 1] + A[k * 3 + 2];
+  // Отбор «это бумага»: клетка не сильно темнее сглаженного света вокруг и не цветная.
+  // Тень/штриховка рисунка темнее окружающей бумаги больше чем на τ — её не трогаем,
+  // свет под ней достраивается от соседей (pull-push). Плавное падение света к краям
+  // (виньетка камеры, лампа сбоку) — это бумага: его модель повторяет и убирает.
+  const tau = 0.05 + 0.13 * clean, delta = 0.025 + 0.05 * clean, dSlow = 0.012 + 0.02 * clean;
+  const wt = new Float32Array(GN);
+  // 1) «Заливка» бумаги от самых светлых клеток: шаг на соседа разрешён, если он темнее
+  //    не больше чем на δ и того же оттенка. Плавная виньетка проходится целиком (≈2%/клетку),
+  //    а край штриховки — это скачок, через него заливка не идёт, даже если пятно огромное.
   {
-    const lv = []; for (let k = 0; k < gx * gy; k++) if (has[k]) lv.push(bg[k * 3] + bg[k * 3 + 1] + bg[k * 3 + 2]);
-    lv.sort((a, b) => a - b);
-    const ref = lv.length ? lv[Math.floor(lv.length * 0.75)] : 0;
-    // сравниваем с соседями (а не со всем листом): плавная виньетка/тень в углу — это бумага,
-    // а клетка, резко темнее соседей, — закрашенное место
-    const lum = (k) => bg[k * 3] + bg[k * 3 + 1] + bg[k * 3 + 2];
-    const drop = [];
-    for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) {
-      const k = cy * gx + cx; if (!has[k]) continue;
-      const nb = [];
-      for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) { if (!dx && !dy) continue; const x = cx + dx, y = cy + dy; if (x < 0 || y < 0 || x >= gx || y >= gy || !has[y * gx + x]) continue; nb.push(lum(y * gx + x)); }
-      nb.sort((a, b) => a - b);
-      const loc = nb.length >= 3 ? nb[Math.floor(nb.length * 0.6)] : ref;
-      if (lum(k) < loc * 0.8 || lum(k) < ref * 0.4) drop.push(k);
-    }
-    for (const k of drop) has[k] = 0;
-  }
-  const meas = has.slice(), measBg = bg.slice(); // реально измеренные клетки — для гладкой модели
-  // пустые клетки (закрыты краской) — заполняем соседями
-  if (!has.some(Boolean)) { bg.fill(235); has.fill(1); }
-  for (let iter = 0; iter < gx + gy && has.some(v => !v); iter++) {
-    const nh = has.slice();
-    for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) {
-      const k = cy * gx + cx; if (has[k]) continue;
-      let r = 0, g = 0, b = 0, c = 0;
-      for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) {
-        const x = cx + dx, y = cy + dy; if (x < 0 || y < 0 || x >= gx || y >= gy || !has[y * gx + x]) continue;
-        const o = (y * gx + x) * 3; r += bg[o]; g += bg[o + 1]; b += bg[o + 2]; c++;
+    const P = new Float32Array(GN), chr = new Float32Array(GN * 3);
+    const okL = []; for (let k = 0; k < GN; k++) if (ok[k]) { P[k] = Lv(val, k); okL.push(P[k]); for (let ch = 0; ch < 3; ch++) chr[k * 3 + ch] = val[k * 3 + ch] / (P[k] / 3 + 1e-3); }
+    okL.sort((p, q) => p - q);
+    const seedT = okL[Math.floor(okL.length * 0.9)] * 0.97;
+    const acc = new Uint8Array(GN), heap = [], ref = new Float32Array(GN);
+    const DBG = globalThis.__flDebug ? (globalThis.__flDebug = { par: {}, acc, P, ref, gx, gy, cell }) : null;
+    const push = k => { heap.push(k); let i = heap.length - 1; while (i > 0) { const pa = (i - 1) >> 1; if (P[heap[pa]] >= P[heap[i]]) break; [heap[pa], heap[i]] = [heap[i], heap[pa]]; i = pa; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, r = l + 1; let m = i; if (l < heap.length && P[heap[l]] > P[heap[m]]) m = l; if (r < heap.length && P[heap[r]] > P[heap[m]]) m = r; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    for (let k = 0; k < GN; k++) if (ok[k] && P[k] >= seedT) { acc[k] = 1; ref[k] = P[k]; push(k); }
+    while (heap.length) {
+      const k = pop(), cx = k % gx, cy = (k - cx) / gx;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue;
+        const x = cx + dx, y = cy + dy; if (x < 0 || y < 0 || x >= gx || y >= gy) continue;
+        const n = y * gx + x; if (acc[n] || !ok[n]) continue;
+        const st = dx && dy ? 1.25 : 1;
+        if (P[n] < ref[k] * (1 - delta * st)) continue; // опора «помнит» яркость: лесенкой по краю тени не спуститься
+        let cd = 0; for (let ch = 0; ch < 3; ch++) cd = Math.max(cd, Math.abs(chr[n * 3 + ch] - chr[k * 3 + ch]));
+        if (cd > 0.06) continue;
+        if (DBG) DBG.par[n] = k;
+        acc[n] = 1; ref[n] = Math.max(P[n], ref[k] * (1 - dSlow * st)); push(n);
       }
-      if (c) { const o = k * 3; bg[o] = r / c; bg[o + 1] = g / c; bg[o + 2] = b / c; nh[k] = 1; }
     }
-    has.set(nh);
+    for (let k = 0; k < GN; k++) wt[k] = acc[k];
   }
-  // лёгкое сглаживание сетки
-  const sm = bg.slice();
-  for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) for (let ch = 0; ch < 3; ch++) {
-    let s = 0, c = 0;
-    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const x = cx + dx, y = cy + dy; if (x < 0 || y < 0 || x >= gx || y >= gy) continue; s += bg[(y * gx + x) * 3 + ch]; c++; }
-    sm[(cy * gx + cx) * 3 + ch] = s / c;
+  let S = smoothGrid(pullPush(val, wt, gx, gy), gx, gy, 2);
+  // 2) уточнение: из принятых убираем клетки, заметно темнее модели (мелкие тени, пятна)
+  for (let it = 0; it < 2; it++) {
+    for (let k = 0; k < GN; k++) {
+      if (!ok[k] || !wt[k]) continue;
+      const d = 1 - Lv(val, k) / Math.max(1, Lv(S, k));
+      wt[k] = Math.max(0, Math.min(1, (tau + 0.03 - d) / 0.06));
+    }
+    S = smoothGrid(pullPush(val, wt, gx, gy), gx, gy, it < 1 ? 2 : 1);
   }
-  // Освещение бумаги — гладкая поверхность (полином 3-й степени по x, y), подогнанная по клеткам
-  // с асимметричным отбором: бумага — самое светлое, поэтому клетки темнее модели (штриховка,
-  // тень на рисунке) постепенно теряют вес. Плавные тени лампы и виньетку модель повторяет,
-  // а крупную штриховку «съесть» не может — она остаётся на скане.
-  const poly = fitLightSurface(measBg, meas, gx, gy);
-  // «Очистка фона» выше 0.6 добавляет локальную сетку: уходят и резкие тени (от руки, телефона),
-  // но может посветлеть крупная штриховка.
-  const alpha = Math.max(0, Math.min(1, (clean - 0.6) / 0.4));
   const ratio = new Float32Array(w * h * 3);
-  const basis = new Float32Array(10), PB = [0, 0, 0], LB = [0, 0, 0];
   for (let y = 0; y < h; y++) {
     const fyR = (y + 0.5) / cell - 0.5, y0 = Math.max(0, Math.min(gy - 2, Math.floor(fyR))), y1 = Math.min(gy - 1, y0 + 1);
-    const ty = gy > 1 ? Math.max(-0.6, Math.min(1.6, fyR - y0)) : 0;
-    const v = ((y + 0.5) / cell) / gy * 2 - 1;
+    const ty = gy > 1 ? Math.max(-0.5, Math.min(1.5, fyR - y0)) : 0;
     for (let x = 0; x < w; x++) {
       const fxR = (x + 0.5) / cell - 0.5, x0 = Math.max(0, Math.min(gx - 2, Math.floor(fxR))), x1 = Math.min(gx - 1, x0 + 1);
-      const tx = gx > 1 ? Math.max(-0.6, Math.min(1.6, fxR - x0)) : 0;
-      const u = ((x + 0.5) / cell) / gx * 2 - 1;
-      polyBasis(u, v, basis);
+      const tx = gx > 1 ? Math.max(-0.5, Math.min(1.5, fxR - x0)) : 0;
       const i = (y * w + x) * 4, o = (y * w + x) * 3;
-      let pl = 0, ll = 0;
       for (let ch = 0; ch < 3; ch++) {
-        let pb = 0; const cf = poly[ch]; for (let k = 0; k < 10; k++) pb += cf[k] * basis[k];
-        const a = sm[(y0 * gx + x0) * 3 + ch] * (1 - tx) + sm[(y0 * gx + x1) * 3 + ch] * tx;
-        const b = sm[(y1 * gx + x0) * 3 + ch] * (1 - tx) + sm[(y1 * gx + x1) * 3 + ch] * tx;
-        PB[ch] = pb; LB[ch] = a * (1 - ty) + b * ty; pl += pb; ll += LB[ch];
-      }
-      // Локальная оценка близка к гладкой (±5–12%) — это бумага, гладкая модель там просто
-      // неточна (края, места без «чистой» бумаги): берём локальную. Намного темнее — это
-      // штриховка/тень рисунка: оставляем гладкую, чтобы не стереть.
-      const rr = Math.abs(ll / Math.max(1, pl) - 1);
-      const wl = Math.max(alpha, Math.max(0, Math.min(1, 1 - (rr - 0.05) / 0.07)));
-      for (let ch = 0; ch < 3; ch++) {
-        const bgv = PB[ch] * (1 - wl) + LB[ch] * wl;
+        const a = S[(y0 * gx + x0) * 3 + ch] * (1 - tx) + S[(y0 * gx + x1) * 3 + ch] * tx;
+        const b2 = S[(y1 * gx + x0) * 3 + ch] * (1 - tx) + S[(y1 * gx + x1) * 3 + ch] * tx;
+        const bgv = a * (1 - ty) + b2 * ty;
         ratio[o + ch] = Math.max(0, 1 - data[i + ch] / Math.max(30, bgv));
       }
     }
   }
+  // карта света (для эффекта «старое фото»): яркость бумаги, 1 — самое светлое место
+  const light = new Float32Array(GN);
+  { const ls = []; for (let k = 0; k < GN; k++) ls.push(Lv(S, k)); const ref = ls.slice().sort((p, q) => p - q)[Math.floor(GN * 0.97)] || 1; for (let k = 0; k < GN; k++) light[k] = Math.min(1, ls[k] / ref); }
   // Тоновая кривая как у сканеров документов: шум бумаги срезаем, слабый карандаш усиливаем
   // плавной кривой (без обрезки — полутона и штриховка сохраняются). Цветную краску не трогаем.
   const floor = 0.015 + 0.06 * clean;
@@ -190,46 +176,58 @@ export function flatten(img, ppm, clean = 0.5) {
     }
     out[i + 3] = 255;
   }
-  return { data: out, w, h, gain: kk };
+  return { data: out, w, h, gain: kk, light: { g: light, gx, gy, cell } };
 }
 
-function polyBasis(u, v, b) {
-  b[0] = 1; b[1] = u; b[2] = v; b[3] = u * u; b[4] = u * v; b[5] = v * v; b[6] = u * u * u; b[7] = u * u * v; b[8] = u * v * v; b[9] = v * v * v;
-}
-// Взвешенный МНК с асимметричным перевзвешиванием (клетки темнее модели теряют вес).
-function fitLightSurface(bg, has, gx, gy) {
-  const pts = [];
-  for (let cy = 0; cy < gy; cy++) for (let cx = 0; cx < gx; cx++) {
-    const k = cy * gx + cx; if (!has[k]) continue;
-    pts.push({ u: (cx + 0.5) / gx * 2 - 1, v: (cy + 0.5) / gy * 2 - 1, c: [bg[k * 3], bg[k * 3 + 1], bg[k * 3 + 2]], wt: 1 });
-  }
-  const flat = (val) => [[val, 0, 0, 0, 0, 0, 0, 0, 0, 0], [val, 0, 0, 0, 0, 0, 0, 0, 0, 0], [val, 0, 0, 0, 0, 0, 0, 0, 0, 0]];
-  if (pts.length < 4) return flat(pts.length ? (pts[0].c[0] + pts[0].c[1] + pts[0].c[2]) / 3 : 235);
-  const nb = pts.length >= 24 ? 10 : pts.length >= 8 ? 6 : 3; // мало клеток — проще модель
-  const b = new Float32Array(10);
-  let coef = null;
-  for (let it = 0; it < 10; it++) {
-    const A = Array.from({ length: nb }, () => new Float64Array(nb)), R = [new Float64Array(nb), new Float64Array(nb), new Float64Array(nb)];
-    for (const p of pts) {
-      if (p.wt < 1e-3) continue;
-      polyBasis(p.u, p.v, b);
-      for (let i = 0; i < nb; i++) { const bi = b[i] * p.wt; for (let j = 0; j < nb; j++) A[i][j] += bi * b[j]; for (let ch = 0; ch < 3; ch++) R[ch][i] += bi * p.c[ch]; }
+// Pull-push: заполняем клетки без данных (вес 0) гладко от соседей любой удалённости.
+function pullPush(v, wt, gx, gy) {
+  const levels = [{ v: v.slice(), w: wt.slice(), gx, gy }];
+  while (levels[levels.length - 1].gx > 1 || levels[levels.length - 1].gy > 1) {
+    const F = levels[levels.length - 1], nx = Math.ceil(F.gx / 2), ny = Math.ceil(F.gy / 2);
+    const nv = new Float32Array(nx * ny * 3), nw = new Float32Array(nx * ny);
+    for (let Y = 0; Y < ny; Y++) for (let X = 0; X < nx; X++) {
+      let W = 0, r = 0, g = 0, b = 0;
+      for (let dy = 0; dy < 2; dy++) for (let dx = 0; dx < 2; dx++) {
+        const x = 2 * X + dx, y = 2 * Y + dy; if (x >= F.gx || y >= F.gy) continue;
+        const k = y * F.gx + x, ww = F.w[k]; if (ww <= 0) continue;
+        W += ww; r += ww * F.v[k * 3]; g += ww * F.v[k * 3 + 1]; b += ww * F.v[k * 3 + 2];
+      }
+      const K = Y * nx + X;
+      nw[K] = Math.min(1, W);
+      if (W > 1e-6) { nv[K * 3] = r / W; nv[K * 3 + 1] = g / W; nv[K * 3 + 2] = b / W; }
     }
-    for (let i = 0; i < nb; i++) A[i][i] += 1e-6 * (A[0][0] || 1);
-    const sol = [0, 1, 2].map(ch => solveSym(A, R[ch]));
-    if (sol.some(x => !x)) break;
-    coef = sol.map(x => { const c = new Array(10).fill(0); for (let i = 0; i < nb; i++) c[i] = x[i]; return c; });
-    // перевзвешивание по яркости
-    for (const p of pts) {
-      polyBasis(p.u, p.v, b);
-      let m = 0, val = 0;
-      for (let ch = 0; ch < 3; ch++) { let s = 0; for (let i = 0; i < 10; i++) s += coef[ch][i] * b[i]; m += s; val += p.c[ch]; }
-      const r = (val - m) / Math.max(1, m);
-      p.wt = r >= -0.03 ? 1 : Math.exp(-(((r + 0.03) / 0.04) ** 2));
+    levels.push({ v: nv, w: nw, gx: nx, gy: ny });
+  }
+  for (let l = levels.length - 2; l >= 0; l--) {
+    const F = levels[l], C = levels[l + 1];
+    for (let y = 0; y < F.gy; y++) for (let x = 0; x < F.gx; x++) {
+      const k = y * F.gx + x, ww = Math.min(1, F.w[k]);
+      if (ww >= 1) continue;
+      const fx = Math.max(0, Math.min(C.gx - 1, (x + 0.5) / 2 - 0.5)), fy = Math.max(0, Math.min(C.gy - 1, (y + 0.5) / 2 - 0.5));
+      const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(C.gx - 1, x0 + 1), y1 = Math.min(C.gy - 1, y0 + 1), tx = fx - x0, ty = fy - y0;
+      for (let ch = 0; ch < 3; ch++) {
+        const up = (C.v[(y0 * C.gx + x0) * 3 + ch] * (1 - tx) + C.v[(y0 * C.gx + x1) * 3 + ch] * tx) * (1 - ty) + (C.v[(y1 * C.gx + x0) * 3 + ch] * (1 - tx) + C.v[(y1 * C.gx + x1) * 3 + ch] * tx) * ty;
+        F.v[k * 3 + ch] = ww * F.v[k * 3 + ch] + (1 - ww) * up;
+      }
+      F.w[k] = 1;
     }
   }
-  return coef || flat(235);
+  return levels[0].v;
 }
+function smoothGrid(v, gx, gy, passes) {
+  let a = v;
+  for (let p = 0; p < passes; p++) {
+    const o = new Float32Array(a.length);
+    for (let y = 0; y < gy; y++) for (let x = 0; x < gx; x++) for (let ch = 0; ch < 3; ch++) {
+      let s = 0, c = 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const xx = x + dx, yy = y + dy; if (xx < 0 || yy < 0 || xx >= gx || yy >= gy) continue; s += a[(yy * gx + xx) * 3 + ch]; c++; }
+      o[(y * gx + x) * 3 + ch] = s / c;
+    }
+    a = o;
+  }
+  return a;
+}
+
 function solveSym(A0, b0) {
   const n = b0.length, M = A0.map((r, i) => [...r, b0[i]]);
   for (let c = 0; c < n; c++) {
@@ -296,7 +294,10 @@ export function segment(img, ppm, { lineLevel = 0.5, colors = 6, minSpot = 2, pa
     const sample = [];
     const step = Math.max(1, Math.floor(colored.length / 25000));
     for (let k = 0; k < colored.length; k += step) { if (kind[colored[k]] !== 2) continue; const j = colored[k] * 4; sample.push([data[j], data[j + 1], data[j + 2]]); }
-    palette = mergeClose(kmeans(sample, Math.min(colors, sample.length)), sample);
+    // порог слияния зависит от того, сколько оттенков просили: при 16 различаем и близкие
+    // тона карандаша (раньше всё серое сливалось в 2–4 цвета)
+    const mergeThr = colors <= 4 ? 22 : colors <= 8 ? 14 : 7;
+    palette = mergeClose(bestKmeans(sample, Math.min(colors, sample.length)), sample, mergeThr);
     for (const i of colored) {
       if (kind[i] !== 2) continue;
       const j = i * 4;
@@ -332,6 +333,16 @@ function boxBlur(src, w, h, r) {
   return out;
 }
 
+// k-средних несколько раз с разной стартовой точкой — берём лучший по ошибке
+function bestKmeans(pts, k) {
+  let best = null, bestE = Infinity;
+  for (let t = 0; t < 3; t++) {
+    const C = kmeans(pts, k);
+    let e = 0; for (let i = 0; i < pts.length; i += 3) { const p = pts[i]; let bd = Infinity; for (const c of C) { const d = (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 + (p[2] - c[2]) ** 2; if (d < bd) bd = d; } e += bd; }
+    if (e < bestE) { bestE = e; best = C; }
+  }
+  return best;
+}
 function kmeans(pts, k) {
   // k-means++ инициализация
   const C = [pts[Math.floor(Math.random() * pts.length)].slice()];
@@ -360,7 +371,7 @@ function kmeans(pts, k) {
 }
 
 // Сливаем почти одинаковые цвета (k-средних иногда делит одну краску на два оттенка).
-function mergeClose(C, pts) {
+function mergeClose(C, pts, thr = 26) {
   const cnt = C.map(() => 0);
   for (const p of pts) { let b = 0, bd = Infinity; C.forEach((c, i) => { const d = (p[0] - c[0]) ** 2 + (p[1] - c[1]) ** 2 + (p[2] - c[2]) ** 2; if (d < bd) { bd = d; b = i; } }); cnt[b]++; }
   let list = C.map((c, i) => ({ c, n: cnt[i] })).filter(x => x.n > 0);
@@ -369,7 +380,7 @@ function mergeClose(C, pts) {
     outer: for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
       const a = list[i], b = list[j];
       const d = Math.sqrt((a.c[0] - b.c[0]) ** 2 * 0.3 + (a.c[1] - b.c[1]) ** 2 * 0.59 + (a.c[2] - b.c[2]) ** 2 * 0.11);
-      if (d < 26) {
+      if (d < thr) {
         const n = a.n + b.n;
         list[i] = { c: [0, 1, 2].map(k => (a.c[k] * a.n + b.c[k] * b.n) / n), n };
         list.splice(j, 1); changed = true; break outer;
@@ -579,7 +590,9 @@ export function vectorize(seg, ppm, { smooth = 1, lineBlack = false, withColors 
   if (withColors) {
     for (let c = 1; c <= palette.length; c++) {
       const pc = palette[c - 1], chroma = Math.max(...pc) - Math.min(...pc), lum = 0.299 * pc[0] + 0.587 * pc[1] + 0.114 * pc[2];
-      if (chroma < 22 && lum > 175) continue; // блёклый серый ореол вокруг линий — это бумага
+      // блёклый серый ореол вокруг линий — это бумага; но если просили много оттенков,
+      // светлые серые тона карандаша нужны — порог выше
+      if (chroma < 22 && lum > (palette.length > 8 ? 232 : palette.length > 4 ? 205 : 175)) continue;
       const m = new Uint8Array(w * h);
       let any = 0;
       for (let i = 0; i < w * h; i++) if (label[i] === c && kind[i] !== 1) { m[i] = 1; any++; }
@@ -760,7 +773,7 @@ export function imageDataCanvas(img) {
 // ---------- Скан «как у сканера документов» ----------
 // mode: 'color' | 'gray' | 'bw'; sharpen 0..1.5 — нерезкое маскирование (возвращает чёткость
 // после выпрямления и сглаживания кадров).
-export function enhance(img, { mode = 'color', sharpen = 0.6, clean = 0.5 } = {}) {
+export function enhance(img, { mode = 'color', sharpen = 0.6, clean = 0.5, obscura = 0, tone = 'none', ppm = 6, lpi = 45 } = {}) {
   const { data, w, h } = img, n = w * h;
   const out = new Uint8ClampedArray(n * 4);
   const ch3 = mode === 'color' ? 3 : 1;
@@ -773,6 +786,7 @@ export function enhance(img, { mode = 'color', sharpen = 0.6, clean = 0.5 } = {}
       for (let i = 0; i < n; i++) p[i] = p[i] + sharpen * (p[i] - bl[i]);
     }
   }
+  if (mode === 'manga') return mangaTone(planes[0], w, h, ppm, lpi, clean);
   if (mode === 'bw') {
     // Ч/Б с мягким краем (без «лесенки»)
     const T = 205 - 45 * clean, soft = 14;
@@ -785,7 +799,81 @@ export function enhance(img, { mode = 'color', sharpen = 0.6, clean = 0.5 } = {}
     else out[i * 4] = out[i * 4 + 1] = out[i * 4 + 2] = planes[0][i];
     out[i * 4 + 3] = 255;
   }
+  if (obscura > 0 || tone !== 'none') oldPhoto(out, w, h, img.light, obscura, tone);
   return { data: out, w, h };
+}
+
+// Манга: тушь — сплошным чёрным, полутона — точечным растром (AM-скринтон, 45°), как в печати.
+// Результат строго чёрно-белый, в 2× разрешении, чтобы точки были круглыми, а не «лесенкой».
+function mangaTone(L, w, h, ppm, lpi, clean) {
+  const up = 2, W = w * up, H = h * up, out = new Uint8ClampedArray(W * H * 4);
+  const loc = boxBlur(L, w, h, Math.max(2, Math.round(1.2 * ppm)));
+  const per = ppm * up * 25.4 / lpi;                    // период растра в пикселях выхода
+  const inkT = 60 + 30 * (1 - clean), paperT = 238 - 10 * (1 - clean), dLine = 22;
+  // тон считаем БЕЗ линий (усреднение только по не-линиям), иначе вокруг штриха — ореол из точек
+  const n = w * h, mk = new Float32Array(n), lm = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const isL = L[i] < inkT || (loc[i] - L[i] > dLine && L[i] < 205); mk[i] = isL ? 0 : 1; lm[i] = isL ? 0 : L[i]; }
+  const rT = Math.max(1, Math.round(per / up / 2)), bm = boxBlur(mk, w, h, rT + 1), bl = boxBlur(lm, w, h, rT + 1);
+  const tone = new Float32Array(n);
+  for (let i = 0; i < n; i++) tone[i] = bm[i] > 0.05 ? bl[i] / bm[i] : 255;
+  const c45 = Math.SQRT1_2;
+  const at = (A, x, y) => { // билинейно из исходного разрешения
+    const fx = Math.min(w - 1.001, Math.max(0, x / up - 0.25)), fy = Math.min(h - 1.001, Math.max(0, y / up - 0.25));
+    const x0 = fx | 0, y0 = fy | 0, tx = fx - x0, ty = fy - y0, i = y0 * w + x0;
+    return (A[i] * (1 - tx) + A[i + 1] * tx) * (1 - ty) + (A[i + w] * (1 - tx) + A[i + w + 1] * tx) * ty;
+  };
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const l = at(L, x, y), lc = at(loc, x, y);
+    let black;
+    if (l < inkT || (lc - l > dLine && l < 205)) black = true;           // тушь и линии
+    else {
+      const t = Math.max(0, Math.min(1, (paperT - at(tone, x, y)) / (paperT - inkT)));
+      if (t < 0.04) black = false;
+      else if (t > 0.96) black = true;
+      else {
+        const u = (x * c45 + y * c45) / per, v = (-x * c45 + y * c45) / per;
+        let fu = u - Math.floor(u) - 0.5, fv = v - Math.floor(v) - 0.5;
+        if (t <= 0.5) black = fu * fu + fv * fv < t / Math.PI;           // чёрные точки
+        else { fu = fu < 0 ? fu + 0.5 : fu - 0.5; fv = fv < 0 ? fv + 0.5 : fv - 0.5; black = !(fu * fu + fv * fv < (1 - t) / Math.PI); } // белые точки
+      }
+    }
+    const o = (y * W + x) * 4, val = black ? 0 : 255;
+    out[o] = out[o + 1] = out[o + 2] = val; out[o + 3] = 255;
+  }
+  return { data: out, w: W, h: H };
+}
+
+// «Старое фото / камера-обскура»: светлый центр и тёмные края — по НАСТОЯЩЕЙ карте света
+// этого снимка (как было на бумаге) плюс мягкая виньетка объектива, тон и зерно.
+function oldPhoto(out, w, h, light, a, tone) {
+  const tint = tone === 'sepia' ? [1.07, 0.95, 0.8] : tone === 'cold' ? [0.92, 0.98, 1.08] : [1, 1, 1];
+  const ta = tone === 'none' ? 0 : Math.max(0.6, a);
+  const mul = tint.map(t => 1 + (t - 1) * ta);
+  let seed = 12345; const rnd = () => ((seed = (seed * 1103515245 + 12345) >>> 0) / 4294967296);
+  const lightAt = (x, y) => {
+    if (!light) return 1;
+    const { g, gx, gy, cell } = light;
+    const fx = Math.max(0, Math.min(gx - 1, (x + 0.5) / cell - 0.5)), fy = Math.max(0, Math.min(gy - 1, (y + 0.5) / cell - 0.5));
+    const x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(gx - 1, x0 + 1), y1 = Math.min(gy - 1, y0 + 1), tx = fx - x0, ty = fy - y0;
+    return (g[y0 * gx + x0] * (1 - tx) + g[y0 * gx + x1] * tx) * (1 - ty) + (g[y1 * gx + x0] * (1 - tx) + g[y1 * gx + x1] * tx) * ty;
+  };
+  const step = 4; // карту считаем по сетке 4 px и интерполируем — быстро
+  const gw = Math.ceil(w / step) + 1, gh = Math.ceil(h / step) + 1, F = new Float32Array(gw * gh);
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) {
+    const x = Math.min(w - 1, i * step), y = Math.min(h - 1, j * step);
+    const u = (x / w - 0.5) * 2, v = (y / h - 0.5) * 2, r2 = (u * u + v * v) / 2;
+    const syn = 1 - 0.55 * r2 * r2 - 0.25 * r2;
+    F[j * gw + i] = 1 + (Math.pow(lightAt(x, y), 1.5) * syn - 1) * a;
+  }
+  for (let y = 0; y < h; y++) {
+    const fj = y / step, j0 = Math.floor(fj), tj = fj - j0;
+    for (let x = 0; x < w; x++) {
+      const fi = x / step, i0 = Math.floor(fi), ti = fi - i0;
+      const f = (F[j0 * gw + i0] * (1 - ti) + F[j0 * gw + i0 + 1] * ti) * (1 - tj) + (F[(j0 + 1) * gw + i0] * (1 - ti) + F[(j0 + 1) * gw + i0 + 1] * ti) * tj;
+      const gr = a > 0 ? (rnd() - 0.5) * 12 * a : 0, o = (y * w + x) * 4;
+      for (let c = 0; c < 3; c++) out[o + c] = out[o + c] * f * mul[c] + gr;
+    }
+  }
 }
 
 // Резкость кадра: дисперсия лапласиана по яркости (смазанный кадр — маленькая).

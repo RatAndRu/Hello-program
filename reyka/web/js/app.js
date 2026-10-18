@@ -2,14 +2,14 @@
 import * as G from './geom.js';
 import { PaperTracker } from './tracker.js';
 import { startCamera, createDemoStream, listCameras, trackCaps, setTorch, setZoom } from './camera.js';
-import { TYPES, TYPE_ORDER, Pen, getProp, defaultProps, planeH, viewHandles, rotHandleIndex, toFigure, spinFromPoint, canRotate } from './guides.js';
+import { TYPES, TYPE_ORDER, MANGA_ORDER, Pen, getProp, defaultProps, planeH, viewHandles, rotHandleIndex, toFigure, spinFromPoint, canRotate } from './guides.js';
 import { KalkaLayer, imageToCanvas, edgesCanvas, tonesCanvas, grayCanvas } from './tracing.js';
 import * as store from './store.js';
 import { estimateRect, cameraTilt, assumedFocal, manualCorners, fitFocal, completeRectangle, rigidPredict, planeNormal } from './perspective.js';
 import { detectSegments, findVanishingPoints } from './vanish.js';
 import * as scan from './scan.js';
 
-const VERSION = '1.3';
+const VERSION = '1.4';
 const $ = (id) => document.getElementById(id);
 const video = $('video'), glCanvas = $('gl'), overlay = $('overlay');
 const octx = overlay.getContext('2d');
@@ -151,7 +151,13 @@ function updateLandscape(c) {
   if (r < 1.05) { S.landscape = false; return; }
   // какая ориентация лучше объясняет то, что видит камера
   const land = fitFocal(c, R.vw, R.vh, r), port = fitFocal(c, R.vw, R.vh, 1 / r);
-  S.landscape = land.cost < port.cost;
+  // Если перспектива не даёт уверенного ответа (неровный край — оторванная спираль,
+  // камера почти сверху), решают длины сторон в кадре: верх/низ против боков.
+  const lo = Math.min(land.cost, port.cost), hi = Math.max(land.cost, port.cost);
+  if (hi < lo * 1.6 + 0.004) {
+    const ed = (i) => G.dist(c[i], c[(i + 1) % 4]);
+    S.landscape = ed(0) + ed(2) > ed(1) + ed(3);
+  } else S.landscape = land.cost < port.cost;
 }
 
 // Наклон камеры относительно листа (для информации и подсказок).
@@ -499,6 +505,8 @@ function drawHandle(p, color, kind = 'pt') {
 // Ручки так, как они видны (у повёрнутой/наклонённой фигуры — уже повёрнуты) + ручка поворота.
 function guideHandles(g) { return viewHandles(g); }
 function isMoveHandle(g, i) {
+  const T = TYPES[g.type];
+  if (T && T.moveIdx !== undefined) return i === T.moveIdx;
   return ((g.type === 'circle' || g.type === 'ellipse' || g.type === 'polygon' || g.type === 'grid' || g.type === 'radial') && i === 0) ||
     (g.type === 'rect' && i === 3) || (g.type === 'pellipse' && i === 4);
 }
@@ -926,6 +934,7 @@ function addGuide(type) {
   const T = TYPES[type];
   const c = { x: R.pw / 2, y: R.ph / 2 }, s = Math.min(R.pw, R.ph) * 0.28;
   const g = { id: S.nextId++, type, pts: T.create(c, s, { W: R.pw, H: R.ph }), props: defaultProps(type), color: null };
+  if (T.init) T.init(g, s, { W: R.pw, H: R.ph });
   S.guides.push(g);
   R.selected = g.id;
   persist();
@@ -1053,6 +1062,13 @@ function panelAdd() {
     tools.append(el('button', { class: 'tool', title: T.desc, onclick: () => addGuide(t) }, el('b', {}, T.icon), el('span', {}, T.name)));
   }
   panelBody.append(tools);
+  panelBody.append(el('div', { class: 'section-title' }, 'Манга и аниме'));
+  const mt = el('div', { class: 'tools' });
+  for (const t of MANGA_ORDER) {
+    const T = TYPES[t];
+    mt.append(el('button', { class: 'tool', title: T.desc, onclick: () => addGuide(t) }, el('b', {}, T.icon), el('span', {}, T.name)));
+  }
+  panelBody.append(mt);
   if (S.guides.length) {
     panelBody.append(el('div', { class: 'section-title' }, 'На листе'));
     const chips = el('div', { class: 'chips' });
@@ -1081,17 +1097,20 @@ function panelGuide() {
   let rotTitle = false;
   for (const p of T.props) {
     if (p.show && !p.show(g)) continue;
+    if (p.type === 'hidden') continue;
+    if (p.type === 'section') { panelBody.append(el('div', { class: 'section-title' }, p.label)); continue; }
     if (p.rot && !rotTitle) {
       rotTitle = true;
       panelBody.append(el('div', { class: 'section-title' }, 'Поворот и перспектива'));
       panelBody.append(el('p', { class: 'note' }, 'Вместе с фигурой поворачиваются и все её внутренние линии. Крутить можно и пальцем — за ручку со стрелкой. Наклон кладёт фигуру «на плоскость» под углом, например колесо или тарелку в перспективе.'));
     }
     const v = getProp(g, p.key);
-    const set = (val) => { pushUndo(); g.props[p.key] = val; persist(); if (T.props.some(q => q.show)) refreshPanel(); };
+    const set = (val) => { pushUndo(); g.props[p.key] = val; if (p.onSet) p.onSet(g, val); persist(); if (p.onSet || T.props.some(q => q.show)) refreshPanel(); };
     if (p.type === 'toggle') panelBody.append(toggleRow(p.label, v, set));
     else if (p.type === 'range') panelBody.append(rangeRow(p.label, p.min, p.max, p.step, v, (val) => { g.props[p.key] = val; persist(); }, (x) => (p.step < 1 ? x.toFixed(2) : x)));
     else if (p.type === 'select') panelBody.append(segRow(p.label, p.options, v, set));
   }
+  if (T.actions) panelBody.append(el('div', { class: 'btns' }, ...T.actions.map(([label, fn]) => btn(label, () => { pushUndo(); fn(g); persist(); refreshPanel(); }))));
   panelBody.append(el('div', { class: 'btns' },
     btn('⧉ Копия', () => { duplicateGuide(g.id); refreshPanel(); }),
     btn('◎ В центр', () => centerGuide(g.id)),
@@ -1350,8 +1369,7 @@ async function runScan() {
     toast('Убираю тени и фон…', 4000); await sleep(20);
     const flat = scan.flatten(rect, ppm, S.scan.clean);
     R.scan = { pw, ph, ppm, rect, flat, tab: 'photo' };
-    await processScan();
-    openScanView();
+    openScanView(); // вектор считается только когда откроют его вкладку
     toast('Готово ✓ Можно подправить настройки и сохранить', 3000);
   } catch (e) { console.error(e); toast('Не получилось: ' + (e.message || e)); }
   finally { R.scanBusy = false; if (R.cam && R.cam.setHand) R.cam.setHand(true); }
@@ -1437,19 +1455,27 @@ function shoelace(c) { let a = 0; for (let i = 0; i < c.length; i++) { const p =
 
 async function processScan() {
   const sc = S.scan, d = R.scan;
+  const key = `${sc.lines}|${sc.paint}|${sc.colors}|${sc.minSpot}|${sc.smooth}|${sc.lineBlack}|${sc.grad}|${d.flatKey || 0}`;
+  if (d.vec && d.vecKey === key) return;
   toast('Распознаю линии и цвета…', 4000); await sleep(20);
   d.seg = scan.segment(d.flat, d.ppm, { lineLevel: sc.lines, colors: sc.paint ? sc.colors : 0, minSpot: sc.minSpot, paint: sc.paint });
   toast('Перевожу в вектор…', 4000); await sleep(20);
   d.vec = scan.vectorize(d.seg, d.ppm, { smooth: sc.smooth, lineBlack: sc.lineBlack, withColors: sc.paint && sc.colors > 0, gradients: sc.grad !== false, img: d.flat });
-  d.preview = null;
+  d.vecKey = key; d.svgKB = null;
+}
+
+// ключ «что сейчас на экране» — по нему кэшируются превью и готовый файл
+function scanKey(tab) {
+  const sc = S.scan, d = R.scan;
+  return tab === 'photo' ? `p|${sc.mode}|${sc.sharpen}|${sc.obscura || 0}|${sc.tone || 'none'}|${sc.lpi || 45}|${d.flatKey || 0}` : `${tab}|${d.vecKey}`;
 }
 
 function scanCanvasFor(tab, scale) {
   const d = R.scan;
   if (tab === 'photo') {
-    const sc = S.scan, key = `${sc.mode}|${sc.sharpen}|${sc.clean}|${d.flatKey || 0}`;
-    if (d.encKey !== key) { d.enc = scan.enhance(d.flat, { mode: sc.mode || 'color', sharpen: sc.sharpen ?? 0.6, clean: sc.clean }); d.encKey = key; }
-    const c = scan.imageDataCanvas(d.enc);
+    const sc = S.scan, key = scanKey('photo');
+    if (d.encKey !== key) { d.enc = scan.enhance(d.flat, { mode: sc.mode || 'color', sharpen: sc.sharpen ?? 0.6, clean: sc.clean, obscura: sc.obscura || 0, tone: sc.tone || 'none', ppm: d.ppm, lpi: sc.lpi || 45 }); d.encKey = key; d.encCanvas = null; }
+    const c = d.encCanvas || (d.encCanvas = scan.imageDataCanvas(d.enc));
     if (scale === 1) return c;
     const o = document.createElement('canvas'); o.width = Math.round(c.width * scale); o.height = Math.round(c.height * scale);
     o.getContext('2d').drawImage(c, 0, 0, o.width, o.height); return o;
@@ -1457,32 +1483,77 @@ function scanCanvasFor(tab, scale) {
   return scan.renderVector(d.vec, scale, { colors: tab === 'vec' });
 }
 
+// Поворот результата на 90° и смена пропорций листа (если ориентация угадана неверно:
+// например, у края оторвана спираль или телефон повернут относительно листа).
+function rotateImg(img, cw) {
+  const { data, w, h } = img, out = new Uint8ClampedArray(w * h * 4);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const nx = cw ? h - 1 - y : y, ny = cw ? x : w - 1 - x, i = (y * w + x) * 4, o = (ny * h + nx) * 4;
+    out[o] = data[i]; out[o + 1] = data[i + 1]; out[o + 2] = data[i + 2]; out[o + 3] = data[i + 3];
+  }
+  return { data: out, w: h, h: w };
+}
+function swapAspect(img, ppm, pw, ph, margin = 2) {
+  // лист выпрямлен с пропорцией pw×ph, а на самом деле он ph×pw: растягиваем внутреннюю
+  // часть (поле по краю не трогаем) — это ровно то же, что выпрямить заново с другими размерами
+  const m = Math.round(margin * ppm), W = Math.round(ph * ppm) + 2 * m, H = Math.round(pw * ppm) + 2 * m;
+  const out = new Uint8ClampedArray(W * H * 4).fill(255);
+  const iw = img.w - 2 * m, ih = img.h - 2 * m, ow = W - 2 * m, oh = H - 2 * m, src = img.data;
+  for (let y = 0; y < oh; y++) {
+    const fy = Math.min(ih - 1.001, (y + 0.5) * ih / oh - 0.5), y0 = Math.max(0, Math.floor(fy)), ty = Math.max(0, fy - y0);
+    for (let x = 0; x < ow; x++) {
+      const fx = Math.min(iw - 1.001, (x + 0.5) * iw / ow - 0.5), x0 = Math.max(0, Math.floor(fx)), tx = Math.max(0, fx - x0);
+      const i00 = ((y0 + m) * img.w + x0 + m) * 4, i10 = i00 + 4, i01 = i00 + img.w * 4, i11 = i01 + 4, o = ((y + m) * W + x + m) * 4;
+      for (let c = 0; c < 3; c++) out[o + c] = (src[i00 + c] * (1 - tx) + src[i10 + c] * tx) * (1 - ty) + (src[i01 + c] * (1 - tx) + src[i11 + c] * tx) * ty;
+    }
+  }
+  return { data: out, w: W, h: H };
+}
+
 function openScanView() {
   if (!R.scan) return;
   closePanel();
   const v = $('scanView'); v.innerHTML = ''; v.classList.remove('hidden');
   const d = R.scan, sc = S.scan;
-  const img = el('img', { class: 'scan-img', alt: 'Результат' });
-  const stage = el('div', { class: 'scan-stage' }, img);
+  const stage = el('div', { class: 'scan-stage' });
   const info = el('div', { class: 'scan-info' });
-  const showPreview = () => {
-    const c = scanCanvasFor(d.tab, d.tab === 'photo' ? 1 : Math.min(2, 1400 / Math.max(d.vec.w, d.vec.h)) * 1);
-    img.src = c.toDataURL('image/png');
-    const nC = d.vec.colors.length, kb = Math.round(scan.toSVG(d.vec, d.pw, d.ph).length / 1024);
-    info.textContent = `${d.pw}×${d.ph} мм · ${d.ppm} пикс/мм (${R.scanInfo || "кадры видео"}) · цветов: ${nC} · SVG ≈ ${kb} КБ`;
+  let idle = 0;
+  const showPreview = async () => {
+    if (d.tab !== 'photo') await processScan();
+    // превью — сам холст, без кодирования в PNG (раньше это занимало секунды)
+    const c = scanCanvasFor(d.tab, d.tab === 'photo' ? 1 : Math.min(2, 1400 / Math.max(d.vec.w, d.vec.h)));
+    c.classList.add('scan-img'); stage.innerHTML = ''; stage.append(c);
+    let txt = `${d.pw}×${d.ph} мм · ${d.ppm} пикс/мм (${R.scanInfo || 'кадры видео'})`;
+    if (d.tab !== 'photo') {
+      if (d.svgKB == null) d.svgKB = Math.round(scan.toSVG(d.vec, d.pw, d.ph).length / 1024);
+      const nC = d.vec.colors.length;
+      txt += sc.paint && sc.colors > 0 ? ` · оттенков найдено ${nC} из ${sc.colors}` : '';
+      txt += ` · SVG ≈ ${d.svgKB} КБ`;
+    }
+    info.textContent = txt;
+    // пока человек смотрит на результат — заранее готовим файл, чтобы «Поделиться» сработало сразу
+    clearTimeout(idle); idle = setTimeout(() => prepareExport().catch(() => {}), 700);
   };
   let t = 0;
-  const redo = () => { clearTimeout(t); t = setTimeout(async () => { await processScan(); showPreview(); }, 250); };
+  const redo = () => { clearTimeout(t); t = setTimeout(() => showPreview(), 250); };
+  const refresh = () => { d.flatKey = (d.flatKey || 0) + 1; d.vec = null; d.exp = null; };
   // «Очистка фона» пересчитывает выравнивание фона из выпрямленного снимка
-  const reflat = () => { clearTimeout(t); t = setTimeout(async () => { toast('Пересчитываю фон…', 3000); await sleep(20); d.flat = scan.flatten(d.rect, d.ppm, sc.clean); d.flatKey = (d.flatKey || 0) + 1; await processScan(); showPreview(); }, 300); };
+  const reflat = () => { clearTimeout(t); t = setTimeout(async () => { toast('Пересчитываю фон…', 3000); await sleep(20); d.flat = scan.flatten(d.rect, d.ppm, sc.clean); refresh(); await showPreview(); }, 300); };
+  const geomChange = async (fn) => { toast('Поворачиваю…', 2500); await sleep(20); fn(); d.flat = scan.flatten(d.rect, d.ppm, sc.clean); refresh(); await showPreview(); };
   const ctl = el('div', { class: 'scan-ctl' });
   const buildCtl = () => {
     ctl.innerHTML = '';
     ctl.append(segRow('', [['photo', 'Скан'], ['vec', 'Рисунок (вектор)'], ['lines', 'Только линии']], d.tab, (x) => { d.tab = x; buildCtl(); showPreview(); }));
     if (d.tab === 'photo') {
       ctl.append(el('p', { class: 'note' }, 'Настоящий скан: лист выпрямлен, фон выровнен, ничего не перерисовано — штриховка и тени рисунка остаются.'));
-      ctl.append(segRow('Цвет', [['color', 'Цветной'], ['gray', 'Серый'], ['bw', 'Ч/Б']], sc.mode || 'color', (x) => { sc.mode = x; persist(); showPreview(); }));
+      ctl.append(segRow('Цвет', [['color', 'Цветной'], ['gray', 'Серый'], ['bw', 'Ч/Б'], ['manga', 'Манга']], sc.mode || 'color', (x) => { sc.mode = x; persist(); buildCtl(); showPreview(); }));
+      if (sc.mode === 'manga') ctl.append(el('p', { class: 'note' }, 'Манга: чистая тушь + серые тона переведены в точечный растр (скринтон), как в печатной манге. Только чёрное и белое — печатается без серой «грязи».'),
+        rangeRow('Растр (LPI)', 25, 85, 5, sc.lpi || 45, (x) => { sc.lpi = x; persist(); clearTimeout(t); t = setTimeout(showPreview, 250); }, (x) => x + ' · ' + (x < 40 ? 'крупный' : x < 60 ? 'средний' : 'мелкий')));
       ctl.append(rangeRow('Резкость', 0, 1.5, 0.1, sc.sharpen ?? 0.6, (x) => { sc.sharpen = x; persist(); clearTimeout(t); t = setTimeout(showPreview, 200); }, (x) => Math.round(x * 100) + '%'));
+      if (sc.mode !== 'bw' && sc.mode !== 'manga') {
+        ctl.append(rangeRow('Старое фото (абскура)', 0, 1, 0.05, sc.obscura || 0, (x) => { sc.obscura = x; persist(); clearTimeout(t); t = setTimeout(showPreview, 250); }, (x) => x ? Math.round(x * 100) + '%' : 'нет'));
+        ctl.append(segRow('Тон', [['none', 'Обычный'], ['sepia', 'Сепия'], ['cold', 'Холодный']], sc.tone || 'none', (x) => { sc.tone = x; persist(); showPreview(); }));
+      }
     } else {
       ctl.append(el('p', { class: 'note' }, d.tab === 'vec' ? 'Рисунок заново собран из контуров (вектор): линии + пятна краски, можно с плавными переходами.' : 'Только линии рисунка — для раскраски или обводки.'));
       if (d.tab === 'vec') {
@@ -1495,7 +1566,10 @@ function openScanView() {
       ctl.append(toggleRow('Линии чёрным', sc.lineBlack, (x) => { sc.lineBlack = x; persist(); redo(); }));
     }
     ctl.append(rangeRow('Очистка фона', 0, 1, 0.05, sc.clean, (x) => { sc.clean = x; persist(); reflat(); }, (x) => x < 0.3 ? 'мягко' : x <= 0.6 ? 'обычно' : 'сильно'));
-    ctl.append(segRow('Формат', d.tab === 'photo' ? [['png', 'PNG'], ['jpg', 'JPG']] : [['png', 'PNG'], ['jpg', 'JPG'], ['svg', 'SVG (вектор)']], d.tab === 'photo' && sc.fmt === 'svg' ? 'png' : sc.fmt, (x) => { sc.fmt = x; persist(); }));
+    ctl.append(el('div', { class: 'btns' },
+      btn('↻ 90°', () => geomChange(() => { d.rect = rotateImg(d.rect, true); [d.pw, d.ph] = [d.ph, d.pw]; })),
+      btn(d.pw > d.ph ? '⇄ Это книжный лист' : '⇄ Это альбомный лист', () => geomChange(() => { d.rect = swapAspect(d.rect, d.ppm, d.pw, d.ph); [d.pw, d.ph] = [d.ph, d.pw]; buildCtl(); }))));
+    ctl.append(segRow('Формат', d.tab === 'photo' ? [['png', 'PNG'], ['jpg', 'JPG']] : [['png', 'PNG'], ['jpg', 'JPG'], ['svg', 'SVG (вектор)']], d.tab === 'photo' && sc.fmt === 'svg' ? 'png' : sc.fmt, (x) => { sc.fmt = x; persist(); clearTimeout(idle); idle = setTimeout(() => prepareExport().catch(() => {}), 300); }));
     ctl.append(el('div', { class: 'btns' },
       btn('💾 Сохранить', () => exportScan(false), 'primary'),
       btn('📤 Поделиться', () => exportScan(true)),
@@ -1507,26 +1581,47 @@ function openScanView() {
 }
 function closeScanView() { $('scanView').classList.add('hidden'); $('scanView').innerHTML = ''; }
 
-async function exportScan(share) {
+// Готовый файл кэшируется по ключу (вкладка + настройки + формат): повторное «Сохранить» /
+// «Поделиться» ничего не пересчитывает. Готовится заранее, пока открыт результат.
+async function prepareExport() {
   const d = R.scan, sc = S.scan;
-  const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-  let blob, name;
-  if (sc.fmt === 'svg' && d.tab !== 'photo') {
-    const vec = d.tab === 'lines' ? { ...d.vec, colors: [] } : d.vec;
-    blob = new Blob([scan.toSVG(vec, d.pw, d.ph)], { type: 'image/svg+xml' }); name = `reyka-${stamp}.svg`;
-  } else {
-    const scale = d.tab === 'photo' ? 1 : 8 / d.ppm * (d.vec.w / d.vec.w);
-    const c = scanCanvasFor(d.tab, scale);
-    const fmt = sc.fmt === 'jpg' ? 'jpg' : 'png';
-    blob = await new Promise(r => c.toBlob(r, fmt === 'jpg' ? 'image/jpeg' : 'image/png', 0.93)); name = `reyka-${stamp}.${fmt}`;
-  }
-  await saveBlob(blob, name, share);
+  if (!d) return null;
+  const fmt = d.tab !== 'photo' && sc.fmt === 'svg' ? 'svg' : sc.fmt === 'jpg' ? 'jpg' : 'png';
+  if (d.tab !== 'photo') await processScan();
+  const key = scanKey(d.tab) + '|' + fmt + '|' + d.pw + 'x' + d.ph;
+  if (d.exp && d.exp.key === key) return d.exp.p;
+  const p = (async () => {
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+    let blob;
+    if (fmt === 'svg') {
+      const vec = d.tab === 'lines' ? { ...d.vec, colors: [] } : d.vec;
+      blob = new Blob([scan.toSVG(vec, d.pw, d.ph)], { type: 'image/svg+xml' });
+    } else {
+      const c = scanCanvasFor(d.tab, d.tab === 'photo' ? 1 : 8 / d.ppm);
+      blob = await new Promise(r => c.toBlob(r, fmt === 'jpg' ? 'image/jpeg' : 'image/png', 0.93));
+    }
+    const out = { blob, name: `reyka-${stamp}.${fmt}`, b64: null };
+    if (window.ReykaNative && window.ReykaNative.saveFile) out.b64 = await blobB64(blob);
+    return out;
+  })();
+  d.exp = { key, p };
+  return p;
+}
+function blobB64(blob) { return new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); }); }
+
+async function exportScan(share) {
+  toast(share ? 'Открываю «Поделиться»…' : 'Сохраняю…', 2500);
+  await sleep(10);
+  try {
+    const r = await prepareExport();
+    if (r) await saveBlob(r.blob, r.name, share, r.b64);
+  } catch (e) { console.error(e); toast('Не получилось: ' + (e.message || e)); }
 }
 
-async function saveBlob(blob, name, share) {
+async function saveBlob(blob, name, share, b64pre) {
   const N = window.ReykaNative;
   if (N && N.saveFile) {
-    const b64 = await new Promise((res) => { const fr = new FileReader(); fr.onload = () => res(String(fr.result).split(',')[1]); fr.readAsDataURL(blob); });
+    const b64 = b64pre || await blobB64(blob);
     const msg = share ? N.shareFile(b64, name, blob.type) : N.saveFile(b64, name, blob.type);
     if (msg) toast(msg, 3500);
     return;

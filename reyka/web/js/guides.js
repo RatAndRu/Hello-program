@@ -2,6 +2,7 @@
 // Каждый тип описывает: создание, параметры (для автопанели), отрисовку и ручки.
 
 import { convexHull } from './geom.js';
+import { registerManga, MANGA_ORDER } from './manga.js';
 import {
   apply, add, sub, mulS, dot, len, dist, norm, perp, lerpP, reflect, clipSegment,
   circleFrom3, homography, mul, inv,
@@ -469,13 +470,15 @@ export const TYPES = {
   },
 };
 
+registerManga(TYPES);
+export { MANGA_ORDER };
 export const TYPE_ORDER = ['line', 'parallel', 'circle', 'ellipse', 'rect', 'polygon', 'arc', 'grid', 'persp', 'pellipse', 'symmetry', 'radial', 'light'];
 
 export function getProp(g, k) { return pDefault(g, k); }
 
 export function defaultProps(type) {
   const o = {};
-  for (const p of TYPES[type].props) o[p.key] = p.def;
+  for (const p of TYPES[type].props) if (p.type !== 'section') o[p.key] = p.def;
   return o;
 }
 

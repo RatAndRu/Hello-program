@@ -1,8 +1,8 @@
 // Сеть в первую очередь (обновления не застревают), кэш — когда нет интернета.
-const CACHE = 'reyka-ar-v4';
+const CACHE = 'reyka-ar-v5';
 const ASSETS = ['./', './index.html', './styles.css', './manifest.webmanifest',
   './js/app.js', './js/geom.js', './js/tracker.js', './js/camera.js', './js/guides.js', './js/tracing.js', './js/store.js',
-  './js/perspective.js', './js/vanish.js', './js/scan.js',
+  './js/perspective.js', './js/vanish.js', './js/scan.js', './js/manga.js',
   './icons/icon-192.png', './icons/icon-512.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(ASSETS)).catch(() => {})); self.skipWaiting(); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== CACHE).map((k) => caches.delete(k))))); self.clients.claim(); });
