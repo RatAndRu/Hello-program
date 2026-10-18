@@ -378,7 +378,7 @@ class MainActivity : FragmentActivity() {
 
     private fun albumDotsButton(onClick: () -> Unit): TextView = TextView(this).apply {
         text = "⋮"; textSize = 19f; gravity = android.view.Gravity.CENTER
-        setTextColor(android.graphics.Color.WHITE); setBackgroundResource(R.drawable.duration_badge_bg)
+        setTextColor(android.graphics.Color.WHITE); setBackgroundResource(R.drawable.media_duration_bg)
         layoutParams = android.widget.FrameLayout.LayoutParams(dp(30), dp(30), android.view.Gravity.TOP or android.view.Gravity.END).apply { topMargin = dp(5); rightMargin = dp(5) }
         setOnClickListener { onClick() }
         contentDescription = "Действия с альбомом"
