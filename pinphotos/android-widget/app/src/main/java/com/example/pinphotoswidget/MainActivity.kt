@@ -43,6 +43,7 @@ class MainActivity : FragmentActivity() {
     private var albumsCollapsed: Boolean = false
     private var searchExpanded: Boolean = false
     private var selectionForcedAlbumsCollapse: Boolean = false
+    private var searchForcedAlbumsCollapse: Boolean = false
     private var lastWidgetSignature: String? = null
     private var currentDisplayedIds: List<String> = emptyList()
 
@@ -184,6 +185,8 @@ class MainActivity : FragmentActivity() {
             selectedAlbum = ALL_ALBUMS; refresh()
         }
         findViewById<Button>(R.id.albumsCollapseBtn).setOnClickListener {
+            // Ручное действие пользователя отменяет «временность» сворачивания от поиска.
+            if (searchExpanded) searchForcedAlbumsCollapse = false
             albumsCollapsed = !albumsCollapsed; applyAlbumsCollapsed()
         }
     }
@@ -209,12 +212,35 @@ class MainActivity : FragmentActivity() {
         findViewById<View>(R.id.appTitle).visibility = if (expanded) View.GONE else View.VISIBLE
         val input = findViewById<android.widget.EditText>(R.id.searchInput)
         input.visibility = if (expanded) View.VISIBLE else View.GONE
+        val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
         if (expanded) {
+            // Открытие поиска временно сворачивает альбомы, если они были раскрыты.
+            // Запоминаем именно этот случай, чтобы после закрытия вернуть как было.
+            if (!albumsCollapsed) {
+                searchForcedAlbumsCollapse = true
+                albumsCollapsed = true
+                applyAlbumsCollapsed()
+            }
             input.requestFocus()
-            val imm = getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
             imm.showSoftInput(input, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT)
-        } else if (searchQuery.isNotEmpty()) {
-            input.text.clear()
+        } else {
+            // Повторное нажатие на лупу не только прячет строку, но и убирает клавиатуру.
+            imm.hideSoftInputFromWindow(input.windowToken, 0)
+            input.clearFocus()
+            if (searchForcedAlbumsCollapse) {
+                searchForcedAlbumsCollapse = false
+                if (selectedIds.isEmpty()) {
+                    albumsCollapsed = false
+                    applyAlbumsCollapsed()
+                } else {
+                    // Пока идёт выделение, альбомы остаются свёрнуты уже по правилу выделения;
+                    // после снятия выделения refresh вернёт их обратно.
+                    selectionForcedAlbumsCollapse = true
+                }
+            }
+            if (searchQuery.isNotEmpty()) {
+                input.text.clear()
+            }
         }
         refresh()
     }
@@ -349,7 +375,13 @@ class MainActivity : FragmentActivity() {
         if (selectedIds.isNotEmpty() && !albumsCollapsed) {
             selectionForcedAlbumsCollapse = true; albumsCollapsed = true
         } else if (selectedIds.isEmpty() && selectionForcedAlbumsCollapse) {
-            selectionForcedAlbumsCollapse = false; albumsCollapsed = false
+            selectionForcedAlbumsCollapse = false
+            if (searchExpanded) {
+                // Выделение закончилось, но поиск ещё открыт: альбомы возвращает закрытие поиска.
+                searchForcedAlbumsCollapse = true
+            } else {
+                albumsCollapsed = false
+            }
         }
         applyAlbumsCollapsed()
         val widgetSignature = buildString {
@@ -702,7 +734,7 @@ class MainActivity : FragmentActivity() {
         val count = selectedIds.size
         android.app.AlertDialog.Builder(this)
             .setTitle("Удалить выбранные фото и видео?")
-            .setMessage("Будет удалено записей: $count. Это удаление самой записи и её файла, а не только ярлыка: если фото видно сразу в нескольких альбомах, оно пропадёт из всех. Виджеты хранят не копию, а ссылку на эту запись, поэтому удалённое фото перестанет показываться и в виджетах. Отдельные независимые копии, созданные раньше как другие записи, останутся. Оригиналы в галерее не трогаем.")
+            .setMessage("Будет удалено записей: $count. Это удалит записи из этого альбома и из всех альбомов виджетов, если они там присутствуют. Копии в обычных альбомах не затронет. Оригиналы из галереи телефона не удаляем.")
             .setPositiveButton("Удалить") { _, _ ->
                 photos.filter { it.id in selectedIds }.forEach { PhotoStore.delete(this, it) }
                 PinnedPhotoWidgetBase.updateAll(this)
