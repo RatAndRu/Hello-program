@@ -832,7 +832,7 @@ class MainActivity : FragmentActivity() {
                 } else if (album == PhotoStore.MISC_ALBUM && selectedAlbum == album) {
                     // Уже в «Разное»: повторные нажатия ничего не меняют.
                 } else if (selectedAlbum == album) {
-                    selectedAlbum = ALL_ALBUMS; PhotoStore.lockAlbumSession(this, album); refresh()
+                    selectedAlbum = ALL_ALBUMS; PhotoStore.lockAlbumSession(this@MainActivity, album); refresh()
                 } else if (isLocked) {
                     showUnlockDialog(album) { selectedAlbum = album; refresh() }
                 } else { selectedAlbum = album; refresh() }
