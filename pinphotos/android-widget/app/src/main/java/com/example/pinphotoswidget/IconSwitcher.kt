@@ -16,6 +16,7 @@ object IconSwitcher {
     private val ALL = listOf(NORMAL, FIRE, SLEEPY, SHAPED)
 
     fun setIcon(context: Context, active: String) {
+        context.getSharedPreferences("app_icon", Context.MODE_PRIVATE).edit().putString("alias", active).apply()
         val pm = context.packageManager
         ALL.forEach { alias ->
             pm.setComponentEnabledSetting(
@@ -23,6 +24,29 @@ object IconSwitcher {
                 if (alias == active) PackageManager.COMPONENT_ENABLED_STATE_ENABLED else PackageManager.COMPONENT_ENABLED_STATE_DISABLED,
                 PackageManager.DONT_KILL_APP
             )
+        }
+    }
+
+    /** Текущий включённый алиас: сначала сохранённый выбор, затем фактическое состояние компонентов. */
+    fun currentAlias(context: Context): String {
+        val saved = context.getSharedPreferences("app_icon", Context.MODE_PRIVATE).getString("alias", null)
+        if (saved in ALL) return saved!!
+        val pm = context.packageManager
+        return ALL.firstOrNull { alias ->
+            pm.getComponentEnabledSetting(ComponentName(context.packageName, context.packageName + alias)) ==
+                PackageManager.COMPONENT_ENABLED_STATE_ENABLED
+        } ?: NORMAL
+    }
+
+    fun currentComponent(context: Context): ComponentName =
+        ComponentName(context.packageName, context.packageName + currentAlias(context))
+
+    fun currentIconResource(context: Context): Int {
+        return try {
+            val info = context.packageManager.getActivityInfo(currentComponent(context), 0)
+            if (info.iconResource != 0) info.iconResource else info.applicationInfo.icon
+        } catch (e: Exception) {
+            try { context.packageManager.getApplicationInfo(context.packageName, 0).icon } catch (ignored: Exception) { 0 }
         }
     }
 }

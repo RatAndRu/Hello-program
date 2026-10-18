@@ -116,6 +116,22 @@ object PhotoStore {
         return all.first { it.equals(clean, ignoreCase = true) }
     }
 
+    /**
+     * Ручной порядок обычных альбомов. «Разное» навсегда первое: его нельзя сдвинуть,
+     * и никакой другой альбом нельзя поставить перед ним.
+     */
+    @Synchronized
+    fun moveAlbum(context: Context, album: String, delta: Int): Boolean {
+        if (album == MISC_ALBUM || delta == 0) return false
+        val all = albums(context).toMutableList()
+        val index = all.indexOf(album)
+        val target = index + delta
+        if (index <= 0 || target <= 0 || target !in all.indices) return false
+        val moved = all.removeAt(index); all.add(target, moved)
+        albumsFile(context).writeText(JSONArray(all).toString())
+        return true
+    }
+
     // ---------- Альбомы: пароли, отпечаток, слияние, удаление ----------
 
     private fun securityFile(context: Context) = File(dir(context), "albums_security.json")

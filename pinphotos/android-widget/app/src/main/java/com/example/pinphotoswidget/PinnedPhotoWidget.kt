@@ -156,6 +156,28 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
             editor.putString("pending_names", queue.joinToString("\n")).apply()
         }
 
+        /** Пользовательский порядок альбомов виджетов в горизонтальном списке приложения. */
+        fun orderedWidgetIds(context: Context): List<Int> {
+            val installed = installedWidgetIds(context)
+            val saved = (context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getString("album_order", "") ?: "").split(',').mapNotNull { it.toIntOrNull() }
+            val result = mutableListOf<Int>()
+            saved.forEach { if (it in installed && it !in result) result.add(it) }
+            installed.forEach { if (it !in result) result.add(it) }
+            return result
+        }
+
+        fun moveWidgetAlbum(context: Context, widgetId: Int, delta: Int): Boolean {
+            if (delta == 0) return false
+            val ordered = orderedWidgetIds(context).toMutableList()
+            val index = ordered.indexOf(widgetId); val target = index + delta
+            if (index < 0 || target !in ordered.indices) return false
+            val moved = ordered.removeAt(index); ordered.add(target, moved)
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+                .putString("album_order", ordered.joinToString(",")).apply()
+            return true
+        }
+
         fun installedWidgetIds(context: Context): List<Int> {
             val manager = AppWidgetManager.getInstance(context)
             return PROVIDERS.flatMap { cls -> manager.getAppWidgetIds(ComponentName(context, cls)).toList() }.distinct().sorted()
@@ -262,8 +284,17 @@ open class PinnedPhotoWidgetBase : AppWidgetProvider() {
                     if (UiTheme.isDark(context)) R.drawable.widget_bg_dark else R.drawable.widget_bg)
             }
 
+            // Открываем приложение ЧЕРЕЗ ТЕКУЩИЙ лаунчер-алиас, а не напрямую через
+            // MainActivity. Иначе Android брал android:icon приложения (обычную иконку)
+            // для стартового окна и «Недавних», даже если пользователь выбрал другую иконку.
+            // updateAll пересоздаёт этот PendingIntent после каждой смены иконки.
+            val openIntent = Intent(Intent.ACTION_MAIN).apply {
+                addCategory(Intent.CATEGORY_LAUNCHER)
+                component = IconSwitcher.currentComponent(context)
+                flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED
+            }
             val open = PendingIntent.getActivity(
-                context, 0, Intent(context, MainActivity::class.java),
+                context, 0, openIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             views.setOnClickPendingIntent(R.id.widget_image, open)

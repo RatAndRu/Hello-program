@@ -44,6 +44,7 @@ class MainActivity : FragmentActivity() {
     private var searchExpanded: Boolean = false
     private var selectionForcedAlbumsCollapse: Boolean = false
     private var lastWidgetSignature: String? = null
+    private var currentDisplayedIds: List<String> = emptyList()
 
     override fun attachBaseContext(newBase: android.content.Context) {
         super.attachBaseContext(newBase)
@@ -110,10 +111,37 @@ class MainActivity : FragmentActivity() {
     private val unlockedAlbums = mutableSetOf<String>()
     private val io = Executors.newFixedThreadPool(3)
 
+    /** В «Недавних» показываем именно выбранную пользователем иконку, а не android:icon приложения. */
+    private fun applyCurrentTaskDescription() {
+        try {
+            val iconRes = IconSwitcher.currentIconResource(this)
+            if (iconRes != 0) {
+                val drawable = androidx.core.content.ContextCompat.getDrawable(this, iconRes)?.mutate()
+                if (drawable != null) {
+                    val size = 192
+                    val bitmap = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+                    val canvas = android.graphics.Canvas(bitmap)
+                    drawable.setBounds(0, 0, size, size); drawable.draw(canvas)
+                    @Suppress("DEPRECATION")
+                    setTaskDescription(android.app.ActivityManager.TaskDescription("ЗакрепФото", bitmap))
+                }
+            }
+        } catch (ignored: Exception) { }
+    }
+
+    private fun changeAppIcon(alias: String) {
+        IconSwitcher.setIcon(this, alias)
+        applyCurrentTaskDescription()
+        // Пересобираем клики всех виджетов под новый алиас, чтобы стартовое окно и «Недавние»
+        // при следующем запуске с виджета не показывали иконку, актуальную при создании виджета.
+        grid.postDelayed({ try { PinnedPhotoWidgetBase.updateAll(this) } catch (ignored: Throwable) { } }, 250)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         UiTheme.apply(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        applyCurrentTaskDescription()
         getSharedPreferences("display", MODE_PRIVATE).let { displayPrefs ->
             showSeparators = displayPrefs.getBoolean("showSeparators", true)
             squareTiles = displayPrefs.getBoolean("squareTiles", false)
@@ -136,6 +164,12 @@ class MainActivity : FragmentActivity() {
         findViewById<Button>(R.id.widgetSelectedBtn).setOnClickListener { chooseWidgetsForPhotos(selectedIds.toList()) }
         findViewById<Button>(R.id.shareSelectedBtn).setOnClickListener { shareSelected() }
         findViewById<Button>(R.id.deleteSelectedBtn).setOnClickListener { confirmDeleteSelected() }
+        findViewById<Button>(R.id.selectAllAlbumBtn).setOnClickListener {
+            if (currentDisplayedIds.isEmpty()) return@setOnClickListener
+            if (currentDisplayedIds.all { it in selectedIds }) selectedIds.removeAll(currentDisplayedIds.toSet())
+            else selectedIds.addAll(currentDisplayedIds)
+            refresh()
+        }
         val search = findViewById<android.widget.EditText>(R.id.searchInput)
         search.addTextChangedListener(object : android.text.TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, a: Int, b: Int, c: Int) {}
@@ -161,6 +195,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyCurrentTaskDescription()
         if (!SAFE_MODE) {
             try { refresh() } catch (e: Throwable) { showEmergency(e) }
         } else {
@@ -185,8 +220,10 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun buildGridEntries(photos: List<Photo>): List<GridEntry> {
-        if (!showSeparators || photos.isEmpty()) return photos.map { GridEntry.PhotoItem(it) }
-        val result = mutableListOf<GridEntry>(); var lastKey: String? = null
+        if (photos.isEmpty()) return emptyList()
+        if (!showSeparators) return photos.map { GridEntry.PhotoItem(it) }
+        data class Group(val key: String, val title: String, val photos: MutableList<Photo> = mutableListOf())
+        val groups = mutableListOf<Group>()
         photos.forEach { photo ->
             val (key, title) = when (sortMode) {
                 2, 3 -> {
@@ -210,8 +247,15 @@ class MainActivity : FragmentActivity() {
                     key to when { sameDay -> "Сегодня · $formatted"; wasYesterday -> "Вчера · $formatted"; else -> formatted }
                 }
             }
-            if (key != lastKey) { result.add(GridEntry.Header(key, title)); lastKey = key }
-            result.add(GridEntry.PhotoItem(photo))
+            val group = groups.lastOrNull()?.takeIf { it.key == key }
+                ?: Group(key, title).also { groups.add(it) }
+            group.photos.add(photo)
+        }
+        val result = mutableListOf<GridEntry>()
+        groups.forEach { group ->
+            val ids = group.photos.map { it.id }
+            result.add(GridEntry.Header(group.key, group.title, ids, ids.isNotEmpty() && ids.all { it in selectedIds }))
+            group.photos.forEach { result.add(GridEntry.PhotoItem(it)) }
         }
         return result
     }
@@ -275,6 +319,12 @@ class MainActivity : FragmentActivity() {
         bar.visibility = if (selectedIds.isEmpty()) View.GONE else View.VISIBLE
         findViewById<View>(R.id.selectionActions2).visibility = bar.visibility
         if (selectedIds.isNotEmpty()) findViewById<TextView>(R.id.selectionText).text = "Выбрано: ${selectedIds.size}"
+        currentDisplayedIds = displayed.map { it.id }
+        val selectAllBtn = findViewById<Button>(R.id.selectAllAlbumBtn)
+        val allDisplayedSelected = currentDisplayedIds.isNotEmpty() && currentDisplayedIds.all { it in selectedIds }
+        selectAllBtn.visibility = if (selectedIds.isNotEmpty() && currentDisplayedIds.isNotEmpty()) View.VISIBLE else View.GONE
+        selectAllBtn.text = if (allDisplayedSelected) "☑  Снять выделение со всех в текущем альбоме (${currentDisplayedIds.size})"
+            else "☐  Выделить все в текущем альбоме (${currentDisplayedIds.size})"
         val widgetPhotoIds = PinnedPhotoWidgetBase.installedWidgetIds(this)
             .flatMap { PinnedPhotoWidgetBase.getWidgetPhotoIds(this, it) }.toSet()
         grid.adapter = PhotoAdapter(buildGridEntries(displayed), selectedIds, widgetPhotoIds, squareTiles,
@@ -286,7 +336,11 @@ class MainActivity : FragmentActivity() {
                         .putExtra("index", displayed.indexOf(photo)))
                 }
             },
-            onLongClick = { photo -> toggleSelected(photo) }
+            onLongClick = { photo -> toggleSelected(photo) },
+            onHeaderToggle = { header, shouldSelect ->
+                if (shouldSelect) selectedIds.addAll(header.photoIds) else selectedIds.removeAll(header.photoIds.toSet())
+                refresh()
+            }
         )
         findViewById<TextView>(R.id.albumsTitle).text = if (albumsModeWidgets) "Альбомы виджетов" else "Альбомы"
         findViewById<Button>(R.id.albumsModeBtn).text = if (albumsModeWidgets) "Обычные 📁" else "Виджеты 🧩"
@@ -299,7 +353,7 @@ class MainActivity : FragmentActivity() {
         }
         applyAlbumsCollapsed()
         val widgetSignature = buildString {
-            append(UiTheme.isDark(this@MainActivity)).append('|')
+            append(UiTheme.isDark(this@MainActivity)).append('|').append(IconSwitcher.currentAlias(this@MainActivity)).append('|')
             append(PinnedPhotoWidgetBase.installedWidgetIds(this@MainActivity).joinToString(",") { id ->
                 id.toString() + ":" + PinnedPhotoWidgetBase.widgetName(this@MainActivity, id) + ":" +
                     PinnedPhotoWidgetBase.getWidgetPhotoIds(this@MainActivity, id).joinToString(".")
@@ -332,7 +386,7 @@ class MainActivity : FragmentActivity() {
         val row = findViewById<android.widget.LinearLayout>(R.id.albumsTiles)
         row.removeAllViews()
         if (albumsModeWidgets) {
-            val widgetIds = PinnedPhotoWidgetBase.installedWidgetIds(this)
+            val widgetIds = PinnedPhotoWidgetBase.orderedWidgetIds(this)
             if (widgetIds.isEmpty()) {
                 val hint = TextView(this).apply {
                     text = "Виджетов пока нет"; textSize = 13f
@@ -341,21 +395,21 @@ class MainActivity : FragmentActivity() {
                 }
                 row.addView(hint, 0)
             }
-            for (widgetId in widgetIds) row.addView(widgetAlbumTile(widgetId))
+            widgetIds.forEachIndexed { index, widgetId -> row.addView(widgetAlbumTile(widgetId, index, widgetIds.size)) }
             val createWidget = TextView(this).apply {
                 text = "＋\nВиджет"; textSize = 15f; gravity = android.view.Gravity.CENTER
                 setTextColor(UiTheme.color(this@MainActivity, R.attr.appAccent))
                 setBackgroundResource(R.drawable.btn_soft)
                 setOnClickListener { showCreateWidgetDialog() }
             }
-            row.addView(createWidget, android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) })
+            row.addView(createWidget, android.widget.LinearLayout.LayoutParams(dp(104), dp(128)).apply { marginEnd = dp(10) })
             return
         }
         val all = photos
         val albumNames = PhotoStore.albums(this)
-        for (album in albumNames) {
+        albumNames.forEachIndexed { index, album ->
             val albumPhotos = all.filter { it.widgetId == 0 && album in it.albums }
-            row.addView(albumTile(album, albumPhotos))
+            row.addView(albumTile(album, albumPhotos, index, albumNames.size))
         }
         // Плитка создания нового альбома
         val create = TextView(this).apply {
@@ -364,7 +418,7 @@ class MainActivity : FragmentActivity() {
             setBackgroundResource(R.drawable.btn_soft)
             setOnClickListener { showCreateAlbumDialog { album -> selectedAlbum = album; refresh() } }
         }
-        row.addView(create, android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) })
+        row.addView(create, android.widget.LinearLayout.LayoutParams(dp(104), dp(128)).apply { marginEnd = dp(10) })
         if (albumNames.isEmpty()) {
             val hint = TextView(this).apply {
                 text = "Альбомов пока нет"; textSize = 13f
@@ -376,6 +430,28 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    /** Нижняя полоса плитки альбома: соседние альбомы меняются местами. */
+    private fun albumMoveArrows(leftEnabled: Boolean, rightEnabled: Boolean, onLeft: () -> Unit, onRight: () -> Unit): View {
+        val row = android.widget.LinearLayout(this).apply {
+            orientation = android.widget.LinearLayout.HORIZONTAL
+            gravity = android.view.Gravity.CENTER
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(24), android.view.Gravity.BOTTOM)
+        }
+        fun arrow(text: String, enabled: Boolean, action: () -> Unit) = TextView(this).apply {
+            this.text = text; textSize = 13f; gravity = android.view.Gravity.CENTER
+            setTextColor(UiTheme.color(this@MainActivity, R.attr.appText))
+            alpha = if (enabled) 1f else 0.22f
+            setBackgroundResource(R.drawable.btn_soft)
+            layoutParams = android.widget.LinearLayout.LayoutParams(0, dp(24), 1f)
+            if (enabled) setOnClickListener { action() }
+            contentDescription = if (text == "◀") "Переместить альбом влево" else "Переместить альбом вправо"
+        }
+        row.addView(arrow("◀", leftEnabled, onLeft))
+        row.addView(arrow("▶", rightEnabled, onRight))
+        return row
+    }
+
     private fun albumDotsButton(onClick: () -> Unit): TextView = TextView(this).apply {
         text = "⋮"; textSize = 19f; gravity = android.view.Gravity.CENTER
         setTextColor(android.graphics.Color.WHITE); setBackgroundResource(R.drawable.media_duration_bg)
@@ -384,7 +460,7 @@ class MainActivity : FragmentActivity() {
         contentDescription = "Действия с альбомом"
     }
 
-    private fun widgetAlbumTile(widgetId: Int): View {
+    private fun widgetAlbumTile(widgetId: Int, index: Int = 0, total: Int = 1): View {
         val key = WIDGET_PREFIX + widgetId
         val refs = PinnedPhotoWidgetBase.photosForWidget(this, widgetId)
         val newest = refs.maxByOrNull { it.createdAt }
@@ -417,9 +493,12 @@ class MainActivity : FragmentActivity() {
         }
         tile.addView(label, android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
-            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM))
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM).apply { bottomMargin = dp(24) })
+        tile.addView(albumMoveArrows(index > 0, index < total - 1,
+            { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, -1)) refresh() },
+            { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, 1)) refresh() }))
         tile.addView(albumDotsButton { showWidgetAlbumActions(widgetId) })
-        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) }
+        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(128)).apply { marginEnd = dp(10) }
         return tile
     }
 
@@ -492,7 +571,7 @@ class MainActivity : FragmentActivity() {
             .setNegativeButton("Отмена", null).show()
     }
 
-    private fun albumTile(album: String, albumPhotos: List<Photo>): View {
+    private fun albumTile(album: String, albumPhotos: List<Photo>, index: Int = 0, total: Int = 1): View {
         val security = PhotoStore.securityFor(this, album)
         val isLocked = security.locked && album !in unlockedAlbums
         val tile = android.widget.FrameLayout(this).apply {
@@ -543,13 +622,18 @@ class MainActivity : FragmentActivity() {
         val labelParams = android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
             android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
-            android.view.Gravity.BOTTOM)
+            android.view.Gravity.BOTTOM).apply { bottomMargin = dp(24) }
         tile.addView(label, labelParams)
+        tile.addView(albumMoveArrows(
+            album != PhotoStore.MISC_ALBUM && index > 1,
+            album != PhotoStore.MISC_ALBUM && index > 0 && index < total - 1,
+            { if (PhotoStore.moveAlbum(this, album, -1)) refresh() },
+            { if (PhotoStore.moveAlbum(this, album, 1)) refresh() }))
         tile.addView(albumDotsButton {
             if (isLocked) showUnlockDialog(album) { showAlbumActions(album) }
             else showAlbumActions(album)
         })
-        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) }
+        tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(128)).apply { marginEnd = dp(10) }
         return tile
     }
 
@@ -837,10 +921,10 @@ class MainActivity : FragmentActivity() {
                 2 -> startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE); type = "*/*"
                 }, IMPORT_JSON)
-                3 -> IconSwitcher.setIcon(this, IconSwitcher.NORMAL)
-                4 -> IconSwitcher.setIcon(this, IconSwitcher.FIRE)
-                5 -> IconSwitcher.setIcon(this, IconSwitcher.SLEEPY)
-                6 -> IconSwitcher.setIcon(this, IconSwitcher.SHAPED)
+                3 -> changeAppIcon(IconSwitcher.NORMAL)
+                4 -> changeAppIcon(IconSwitcher.FIRE)
+                5 -> changeAppIcon(IconSwitcher.SLEEPY)
+                6 -> changeAppIcon(IconSwitcher.SHAPED)
                 7 -> { menu.dismiss(); UiTheme.toggle(this) }
             }
             true
@@ -1064,7 +1148,12 @@ class MainActivity : FragmentActivity() {
 }
 
 sealed class GridEntry {
-    data class Header(val key: String, val title: String) : GridEntry()
+    data class Header(
+        val key: String,
+        val title: String,
+        val photoIds: List<String> = emptyList(),
+        val allSelected: Boolean = false
+    ) : GridEntry()
     data class PhotoItem(val photo: Photo) : GridEntry()
 }
 
@@ -1074,7 +1163,8 @@ class PhotoAdapter(
     private val widgetPhotoIds: Set<String> = emptySet(),
     private val squareTiles: Boolean = false,
     private val onClick: (Photo) -> Unit,
-    private val onLongClick: (Photo) -> Unit
+    private val onLongClick: (Photo) -> Unit,
+    private val onHeaderToggle: (GridEntry.Header, Boolean) -> Unit = { _, _ -> }
 ) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     class Holder(view: View) : RecyclerView.ViewHolder(view) {
         val thumb: ImageView = view.findViewById(R.id.thumb)
@@ -1084,6 +1174,7 @@ class PhotoAdapter(
     }
     class HeaderHolder(view: View) : RecyclerView.ViewHolder(view) {
         val title: TextView = view.findViewById(R.id.headerTitle)
+        val check: android.widget.CheckBox = view.findViewById(R.id.headerCheck)
     }
 
     fun spanSize(position: Int): Int = if (items.getOrNull(position) is GridEntry.Header) 3 else 1
@@ -1116,7 +1207,14 @@ class PhotoAdapter(
     override fun onBindViewHolder(rawHolder: RecyclerView.ViewHolder, position: Int) {
         val entry = items[position]
         if (entry is GridEntry.Header) {
-            (rawHolder as HeaderHolder).title.text = entry.title
+            val headerHolder = rawHolder as HeaderHolder
+            headerHolder.title.text = entry.title
+            headerHolder.check.setOnCheckedChangeListener(null)
+            // Галочка производная от фактического выделения: если вручную выбраны все фото
+            // группы, она появится сама; снятие одного фото при следующем refresh её уберёт.
+            headerHolder.check.isChecked = entry.allSelected
+            headerHolder.check.setOnCheckedChangeListener { _, isChecked -> onHeaderToggle(entry, isChecked) }
+            headerHolder.itemView.setOnClickListener { headerHolder.check.performClick() }
             return
         }
         val holder = rawHolder as Holder
