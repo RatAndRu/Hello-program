@@ -51,6 +51,7 @@
         android:background="@drawable/btn_soft" android:gravity="start|center_vertical" android:paddingHorizontal="16dp"
         android:layout_width="match_parent" android:layout_height="42dp" android:layout_marginHorizontal="16dp" android:layout_marginTop="10dp"/>
     <LinearLayout android:id="@+id/albumsContent" android:orientation="vertical" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:clipChildren="false" android:clipToPadding="false"
         android:layout_marginHorizontal="16dp" android:layout_marginTop="8dp">
         <LinearLayout android:orientation="horizontal" android:gravity="center_vertical"
             android:layout_width="match_parent" android:layout_height="wrap_content">
@@ -64,8 +65,11 @@
                 android:layout_width="wrap_content" android:layout_height="wrap_content" android:layout_marginStart="8dp"/>
         </LinearLayout>
         <HorizontalScrollView android:layout_width="match_parent" android:layout_height="wrap_content"
-            android:scrollbars="none" android:paddingTop="8dp">
+            android:scrollbars="none" android:paddingTop="8dp" android:paddingBottom="14dp"
+            android:clipChildren="false" android:clipToPadding="false">
             <LinearLayout android:id="@+id/albumsTiles" android:orientation="horizontal"
+                android:clipChildren="false" android:clipToPadding="false"
+                android:paddingBottom="2dp"
                 android:layout_width="wrap_content" android:layout_height="wrap_content"/>
         </HorizontalScrollView>
     </LinearLayout>

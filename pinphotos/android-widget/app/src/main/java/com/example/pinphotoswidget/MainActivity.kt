@@ -616,7 +616,7 @@ class MainActivity : FragmentActivity() {
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT).apply {
             // Одинаковая зона у всех альбомов: 44dp высоты хватает ровно на три строки
             // (10.5sp с уменьшенным межстрочным интервалом), стрелки для этого уехали ниже.
-            topMargin = dp(24); bottomMargin = dp(24); leftMargin = dp(5); rightMargin = dp(5)
+            topMargin = dp(24); bottomMargin = dp(24); leftMargin = -dp(4); rightMargin = -dp(4)
         }
     }
 
@@ -666,6 +666,21 @@ class MainActivity : FragmentActivity() {
         contentDescription = "Действия с альбомом"
     }
 
+    /** Толстая выступающая рамка вокруг выбранного альбома: поверх превью и чуть наружу. */
+    private fun addSelectedAlbumFrame(tile: android.widget.FrameLayout, selected: Boolean) {
+        if (!selected) return
+        tile.addView(View(this).apply {
+            setBackgroundResource(R.drawable.album_selected_frame)
+            elevation = dp(5).toFloat()
+            isClickable = false; isFocusable = false
+            layoutParams = android.widget.FrameLayout.LayoutParams(
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+                android.widget.FrameLayout.LayoutParams.MATCH_PARENT).apply {
+                leftMargin = -dp(3); topMargin = -dp(3); rightMargin = -dp(3); bottomMargin = -dp(3)
+            }
+        })
+    }
+
     private fun widgetAlbumTile(widgetId: Int, index: Int = 0, total: Int = 1): View {
         val key = WIDGET_PREFIX + widgetId
         val refs = PinnedPhotoWidgetBase.photosForWidget(this, widgetId)
@@ -703,6 +718,7 @@ class MainActivity : FragmentActivity() {
             { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, -1)) refresh() },
             { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, 1)) refresh() })
         tile.addView(albumDotsButton { showWidgetAlbumActions(widgetId) })
+        addSelectedAlbumFrame(tile, selectedAlbum == key)
         tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(92), dp(92)).apply { marginEnd = dp(22) }
         return tile
     }
@@ -831,6 +847,7 @@ class MainActivity : FragmentActivity() {
             if (isLocked) showUnlockDialog(album) { showAlbumActions(album) }
             else showAlbumActions(album)
         })
+        addSelectedAlbumFrame(tile, album == selectedAlbum)
         tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(92), dp(92)).apply { marginEnd = dp(22) }
         return tile
     }
