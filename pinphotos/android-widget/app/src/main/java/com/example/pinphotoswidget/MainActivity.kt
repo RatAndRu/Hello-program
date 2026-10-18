@@ -47,6 +47,73 @@ class MainActivity : FragmentActivity() {
     private var albumsContentShown: Boolean? = null
     private var albumsAnimator: android.animation.ValueAnimator? = null
     private var albumsAnimationTarget: Boolean? = null
+
+    private class PanelAnimState {
+        var shown: Boolean? = null
+        var animator: android.animation.ValueAnimator? = null
+        var target: Boolean? = null
+        var topMargin: Int? = null
+        var bottomMargin: Int? = null
+    }
+    private val panelAnimStates = java.util.HashMap<View, PanelAnimState>()
+
+    /** Плавный показ/скрытие служебных панелей тем же движением, что и у альбомов. */
+    private fun animatePanel(view: View, wantShown: Boolean) {
+        val state = panelAnimStates.getOrPut(view) { PanelAnimState() }
+        val lp = view.layoutParams as? android.view.ViewGroup.MarginLayoutParams
+        if (state.topMargin == null && lp != null) { state.topMargin = lp.topMargin; state.bottomMargin = lp.bottomMargin }
+        if (state.shown == wantShown && state.animator == null) return
+        if (state.animator != null && state.target == wantShown) return
+        val initial = state.shown == null
+        state.shown = wantShown; state.target = wantShown
+        state.animator?.cancel()
+        val originalTop = state.topMargin ?: 0; val originalBottom = state.bottomMargin ?: 0
+        if (initial) {
+            state.animator = null; state.target = null
+            view.visibility = if (wantShown) View.VISIBLE else View.GONE
+            view.alpha = if (wantShown) 1f else 0f
+            view.layoutParams.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+            if (lp != null) { lp.topMargin = if (wantShown) originalTop else 0; lp.bottomMargin = if (wantShown) originalBottom else 0 }
+            return
+        }
+        val startHeight = if (view.visibility == View.VISIBLE) view.height.coerceAtLeast(0) else 0
+        val startTop = lp?.topMargin ?: 0; val startBottom = lp?.bottomMargin ?: 0
+        val targetHeight: Int; val targetTop: Int; val targetBottom: Int
+        if (wantShown) {
+            view.visibility = View.VISIBLE
+            val widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(
+                (view.parent as? View)?.width?.takeIf { it > 0 } ?: view.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels,
+                android.view.View.MeasureSpec.EXACTLY)
+            view.measure(widthSpec, android.view.View.MeasureSpec.makeMeasureSpec(0, android.view.View.MeasureSpec.UNSPECIFIED))
+            targetHeight = view.measuredHeight.coerceAtLeast(1); targetTop = originalTop; targetBottom = originalBottom
+        } else { targetHeight = 0; targetTop = 0; targetBottom = 0 }
+        val startAlpha = if (view.visibility == View.VISIBLE) view.alpha else 0f
+        val animator = android.animation.ValueAnimator.ofFloat(0f, 1f).apply {
+            duration = 240
+            interpolator = android.view.animation.DecelerateInterpolator()
+            addUpdateListener { anim ->
+                val f = anim.animatedValue as Float
+                view.alpha = startAlpha + ((if (wantShown) 1f else 0f) - startAlpha) * f
+                view.layoutParams.height = (startHeight + (targetHeight - startHeight) * f).toInt()
+                if (lp != null) {
+                    lp.topMargin = (startTop + (targetTop - startTop) * f).toInt()
+                    lp.bottomMargin = (startBottom + (targetBottom - startBottom) * f).toInt()
+                }
+                view.requestLayout()
+            }
+            addListener(object : android.animation.AnimatorListenerAdapter() {
+                override fun onAnimationEnd(animation: android.animation.Animator) {
+                    if (state.animator === this@apply) { state.animator = null; state.target = null }
+                    view.alpha = if (wantShown) 1f else 0f
+                    view.visibility = if (wantShown) View.VISIBLE else View.GONE
+                    view.layoutParams.height = android.view.ViewGroup.LayoutParams.WRAP_CONTENT
+                    if (lp != null) { lp.topMargin = if (wantShown) originalTop else 0; lp.bottomMargin = if (wantShown) originalBottom else 0 }
+                    view.requestLayout()
+                }
+            })
+        }
+        state.animator = animator; animator.start()
+    }
     private var lastWidgetSignature: String? = null
     private var currentDisplayedIds: List<String> = emptyList()
 
@@ -396,16 +463,18 @@ class MainActivity : FragmentActivity() {
             displayed.isEmpty() && photos.isEmpty() -> "Пока нет фотографий"
             else -> "В этой выборке пока пусто"
         }
-        val bar = findViewById<View>(R.id.selectionBar)
-        bar.visibility = if (selectedIds.isEmpty()) View.GONE else View.VISIBLE
-        findViewById<View>(R.id.selectionActions2).visibility = bar.visibility
-        if (selectedIds.isNotEmpty()) findViewById<TextView>(R.id.selectionText).text = "Выбрано: ${selectedIds.size}"
+        val hasSelection = selectedIds.isNotEmpty()
+        if (hasSelection) findViewById<TextView>(R.id.selectionText).text = "Выбрано: ${selectedIds.size}"
         currentDisplayedIds = displayed.map { it.id }
         val selectAllBtn = findViewById<Button>(R.id.selectAllAlbumBtn)
         val allDisplayedSelected = currentDisplayedIds.isNotEmpty() && currentDisplayedIds.all { it in selectedIds }
-        selectAllBtn.visibility = if (selectedIds.isNotEmpty() && currentDisplayedIds.isNotEmpty()) View.VISIBLE else View.GONE
         selectAllBtn.text = if (allDisplayedSelected) "☑  Снять выделение со всех в текущем альбоме (${currentDisplayedIds.size})"
             else "☐  Выделить все в текущем альбоме (${currentDisplayedIds.size})"
+        // Панели действий и кнопка «выделить все» движутся синхронно с альбомами ниже:
+        // одинаковые 240 мс и один интерполятор, стартуют в одном кадре обновления.
+        animatePanel(findViewById(R.id.selectionBar), hasSelection)
+        animatePanel(findViewById(R.id.selectionActions2), hasSelection)
+        animatePanel(selectAllBtn, hasSelection && currentDisplayedIds.isNotEmpty())
         val widgetPhotoIds = PinnedPhotoWidgetBase.installedWidgetIds(this)
             .flatMap { PinnedPhotoWidgetBase.getWidgetPhotoIds(this, it) }.toSet()
         grid.adapter = PhotoAdapter(buildGridEntries(displayed), selectedIds, widgetPhotoIds, squareTiles,
@@ -520,29 +589,35 @@ class MainActivity : FragmentActivity() {
         }
     }
 
-    /** Подпись плитки: название обрезается многоточием, а количество всегда остаётся видимым. */
-    private fun albumLabel(name: String, count: Int?, selected: Boolean): View {
-        val row = android.widget.LinearLayout(this).apply {
-            orientation = android.widget.LinearLayout.HORIZONTAL
-            gravity = android.view.Gravity.CENTER_VERTICAL
-            setPadding(dp(5), dp(4), dp(5), dp(4))
-            layoutParams = android.widget.FrameLayout.LayoutParams(
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(28), android.view.Gravity.BOTTOM)
+    /**
+     * Название альбома: многострочная плашка поверх превью. Она может занять почти всю
+     * плитку, но сверху оставлена полоса под счётчик и ⋮, а по бокам — место под стрелки
+     * (отступы выставляет вызывающий код), поэтому на чужие элементы название не залезает.
+     */
+    private fun albumLabel(name: String): View = TextView(this).apply {
+        text = name; textSize = 11.5f; gravity = android.view.Gravity.CENTER
+        maxLines = 6; ellipsize = android.text.TextUtils.TruncateAt.END
+        setLineSpacing(0f, 0.95f)
+        setTextColor(android.graphics.Color.WHITE)
+        setBackgroundResource(R.drawable.album_name_bg)
+        setPadding(dp(5), dp(4), dp(5), dp(4))
+        layoutParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT).apply {
+            topMargin = dp(25); bottomMargin = dp(3); leftMargin = dp(4); rightMargin = dp(4)
         }
-        val color = if (selected) 0xFFFFFFFF.toInt() else UiTheme.color(this, R.attr.appText)
-        row.addView(TextView(this).apply {
-            text = name; textSize = 12f; gravity = android.view.Gravity.CENTER_VERTICAL
-            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
-            setTextColor(color)
-            layoutParams = android.widget.LinearLayout.LayoutParams(0, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
-        })
-        if (count != null) row.addView(TextView(this).apply {
-            text = " · $count"; textSize = 12f; gravity = android.view.Gravity.CENTER_VERTICAL
-            maxLines = 1; setTextColor(color)
-            layoutParams = android.widget.LinearLayout.LayoutParams(
-                android.widget.LinearLayout.LayoutParams.WRAP_CONTENT, android.widget.LinearLayout.LayoutParams.WRAP_CONTENT)
-        })
-        return row
+    }
+
+    /** Количество фото: заметный полупрозрачный красный бейдж в левом верхнем углу. */
+    private fun albumCountBadge(count: Int): View = TextView(this).apply {
+        text = count.toString(); textSize = 10.5f; gravity = android.view.Gravity.CENTER
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        setTextColor(android.graphics.Color.WHITE)
+        setBackgroundResource(R.drawable.album_count_bg)
+        minWidth = dp(22); setPadding(dp(5), 0, dp(5), 0)
+        layoutParams = android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, dp(20),
+            android.view.Gravity.TOP or android.view.Gravity.START).apply { topMargin = dp(3); leftMargin = dp(3) }
     }
 
     /**
@@ -557,10 +632,9 @@ class MainActivity : FragmentActivity() {
             setBackgroundResource(R.drawable.album_arrow_bg)
             alpha = 0.82f
             elevation = dp(3).toFloat()
-            // Плоская полоса на всю высоту: визуально узкая и аккуратная, но палец попадает
-            // по всей высоте плитки, а не только по маленькой иконке стрелки.
-            layoutParams = android.widget.FrameLayout.LayoutParams(dp(22),
-                android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
+            // Плоская полоса по центру плитки: короче плитки, поэтому не залезает
+            // на ⋮ сверху и подпись снизу, но палец всё равно попадает уверенно.
+            layoutParams = android.widget.FrameLayout.LayoutParams(dp(22), dp(48),
                 android.view.Gravity.CENTER_VERTICAL or if (left) android.view.Gravity.START else android.view.Gravity.END).apply {
                 if (left) marginStart = -dp(7) else marginEnd = -dp(7)
             }
@@ -572,9 +646,9 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun albumDotsButton(onClick: () -> Unit): TextView = TextView(this).apply {
-        text = "⋮"; textSize = 19f; gravity = android.view.Gravity.CENTER
+        text = "⋮"; textSize = 15f; gravity = android.view.Gravity.CENTER
         setTextColor(android.graphics.Color.WHITE); setBackgroundResource(R.drawable.media_duration_bg)
-        layoutParams = android.widget.FrameLayout.LayoutParams(dp(28), dp(28), android.view.Gravity.TOP or android.view.Gravity.END).apply { topMargin = dp(2); rightMargin = dp(2) }
+        layoutParams = android.widget.FrameLayout.LayoutParams(dp(22), dp(22), android.view.Gravity.TOP or android.view.Gravity.END).apply { topMargin = dp(1); rightMargin = dp(1) }
         setOnClickListener { onClick() }
         contentDescription = "Действия с альбомом"
     }
@@ -593,19 +667,26 @@ class MainActivity : FragmentActivity() {
             setOnLongClickListener { showWidgetAlbumActions(widgetId); true }
         }
         val cover = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
+            // Без превью векторная заглушка 3:2 показывается целиком (FIT_CENTER на её же фоне),
+            // а не обрезанным куском на верхней половине плитки.
+            scaleType = if (newest == null) ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.CENTER_CROP
+            if (newest == null) { setBackgroundColor(0xFFFFE8D6.toInt()); setImageResource(R.drawable.widget_placeholder) }
             val cached = newest?.let { PhotoStore.cachedBitmap(it, 360) }
-            if (cached != null) setImageBitmap(cached) else {
+            if (cached != null) setImageBitmap(cached) else if (newest != null) {
                 postDelayed({ if (drawable == null) setImageResource(R.drawable.widget_placeholder) }, 400)
             }
         }
-        tile.addView(cover, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(64)))
+        tile.addView(cover, android.widget.FrameLayout.LayoutParams(
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
         if (newest != null) io.execute {
             val bmp = PhotoStore.decodeBitmap(this, newest, 360)
             cover.post { if (bmp != null) cover.setImageBitmap(bmp) }
         }
-        val widgetLabel = albumLabel("🧩 ${PinnedPhotoWidgetBase.widgetName(this@MainActivity, widgetId)}", refs.size, selectedAlbum == key)
-        widgetLabel.setPadding(dp(if (index > 0) 20 else 5), dp(4), dp(if (index < total - 1) 20 else 5), dp(4))
+        tile.addView(albumCountBadge(refs.size))
+        val widgetLabel = albumLabel("🧩 ${PinnedPhotoWidgetBase.widgetName(this@MainActivity, widgetId)}")
+        (widgetLabel.layoutParams as android.widget.FrameLayout.LayoutParams).apply {
+            leftMargin = dp(if (index > 0) 25 else 4); rightMargin = dp(if (index < total - 1) 25 else 4)
+        }
         tile.addView(widgetLabel)
         addAlbumSideArrows(tile, index > 0, index < total - 1,
             { if (PinnedPhotoWidgetBase.moveWidgetAlbum(this, widgetId, -1)) refresh() },
@@ -708,16 +789,18 @@ class MainActivity : FragmentActivity() {
             }
         }
         val cover = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
             val lockedNow = PhotoStore.securityFor(this@MainActivity, album).locked && album !in unlockedAlbums
             val newestNow = if (lockedNow) null else albumPhotos.maxByOrNull { it.createdAt }
+            // Заглушка без превью — целиком и по центру на собственном фоне, без обрезки.
+            scaleType = if (newestNow == null) ImageView.ScaleType.FIT_CENTER else ImageView.ScaleType.CENTER_CROP
+            if (newestNow == null) setBackgroundColor(0xFFFFE8D6.toInt())
             val cached = newestNow?.let { PhotoStore.cachedBitmap(it, 360) }
             if (cached != null) setImageBitmap(cached) else if (newestNow != null) {
                 postDelayed({ if (drawable == null) setImageResource(R.drawable.widget_placeholder) }, 400)
             } else setImageResource(R.drawable.widget_placeholder)
         }
         tile.addView(cover, android.widget.FrameLayout.LayoutParams(
-            android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(64)))
+            android.widget.FrameLayout.LayoutParams.MATCH_PARENT, android.widget.FrameLayout.LayoutParams.MATCH_PARENT))
         val newest = if (isLocked) null else albumPhotos.maxByOrNull { it.createdAt }
         if (newest != null) {
             cover.tag = album
@@ -728,8 +811,11 @@ class MainActivity : FragmentActivity() {
         }
         val canMoveLeft = album != PhotoStore.MISC_ALBUM && index > 1
         val canMoveRight = album != PhotoStore.MISC_ALBUM && index > 0 && index < total - 1
-        val albumLabelView = albumLabel(if (isLocked) "🔒 $album" else album, if (isLocked) null else albumPhotos.size, album == selectedAlbum)
-        albumLabelView.setPadding(dp(if (canMoveLeft) 20 else 5), dp(4), dp(if (canMoveRight) 20 else 5), dp(4))
+        tile.addView(albumCountBadge(albumPhotos.size))
+        val albumLabelView = albumLabel(if (isLocked) "🔒 $album" else album)
+        (albumLabelView.layoutParams as android.widget.FrameLayout.LayoutParams).apply {
+            leftMargin = dp(if (canMoveLeft) 25 else 4); rightMargin = dp(if (canMoveRight) 25 else 4)
+        }
         tile.addView(albumLabelView)
         addAlbumSideArrows(tile, canMoveLeft, canMoveRight,
             { if (PhotoStore.moveAlbum(this, album, -1)) refresh() },
