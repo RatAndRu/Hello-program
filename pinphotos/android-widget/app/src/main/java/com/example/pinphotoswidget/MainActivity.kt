@@ -210,6 +210,9 @@ class MainActivity : FragmentActivity() {
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString("selectedAlbum", selectedAlbum)
+        outState.putBoolean("albumsModeWidgets", albumsModeWidgets)
+        outState.putInt("pendingImportWidget", pendingImportWidget)
+        outState.putString("pendingImportAlbum", pendingImportAlbum)
         super.onSaveInstanceState(outState)
     }
 
@@ -217,6 +220,11 @@ class MainActivity : FragmentActivity() {
         UiTheme.apply(this)
         super.onCreate(savedInstanceState)
         savedInstanceState?.getString("selectedAlbum")?.let { selectedAlbum = it }
+        savedInstanceState?.let {
+            albumsModeWidgets = it.getBoolean("albumsModeWidgets", false)
+            pendingImportWidget = it.getInt("pendingImportWidget", 0)
+            pendingImportAlbum = it.getString("pendingImportAlbum") ?: ""
+        }
         setContentView(R.layout.activity_main)
         applyCurrentTaskDescription()
         getSharedPreferences("display", MODE_PRIVATE).let { displayPrefs ->
@@ -259,8 +267,14 @@ class MainActivity : FragmentActivity() {
         findViewById<View>(R.id.searchBtn).setOnClickListener { setSearchExpanded(!searchExpanded) }
         findViewById<Button>(R.id.albumsModeBtn).setOnClickListener {
             albumsModeWidgets = !albumsModeWidgets
-            // Переключение режима не меняет текущую открытую выборку резко: возвращаемся во «Все фото».
-            selectedAlbum = ALL_ALBUMS; refresh()
+            if (albumsModeWidgets) {
+                // Сразу открываем именно первый альбом виджета, а не «Разное».
+                selectedAlbum = PinnedPhotoWidgetBase.orderedWidgetIds(this).firstOrNull()
+                    ?.let { WIDGET_PREFIX + it } ?: NO_WIDGET_ALBUM
+            } else {
+                selectedAlbum = ALL_ALBUMS
+            }
+            refresh()
         }
         findViewById<Button>(R.id.albumsCollapseBtn).setOnClickListener {
             // Ручное действие пользователя отменяет «временность» сворачивания от поиска.
@@ -443,6 +457,20 @@ class MainActivity : FragmentActivity() {
 
 
     private fun refresh() {
+        // В режиме виджетов выборка обязана быть альбомом виджета. Если виджетов нет —
+        // специальное пустое состояние, а не «Разное». Если первый виджет только что
+        // создали и вернулись в приложение, он сам станет текущей выборкой.
+        if (albumsModeWidgets) {
+            val orderedWidgets = PinnedPhotoWidgetBase.orderedWidgetIds(this)
+            val selectedWidget = selectedWidgetId()
+            selectedAlbum = when {
+                orderedWidgets.isEmpty() -> NO_WIDGET_ALBUM
+                selectedWidget !in orderedWidgets -> WIDGET_PREFIX + orderedWidgets.first()
+                else -> selectedAlbum
+            }
+        } else if (selectedAlbum.startsWith(WIDGET_PREFIX) || selectedAlbum == NO_WIDGET_ALBUM) {
+            selectedAlbum = ALL_ALBUMS
+        }
         photos = PhotoStore.list(this)
         val lockedNames = PhotoStore.lockedAlbumNames(this) - PhotoStore.unlockedAlbumNames()
         val ordinaryPhotos = photos.filter { it.widgetId == 0 }
@@ -454,6 +482,7 @@ class MainActivity : FragmentActivity() {
         val pinnedCount = if (widgetPhotosCount > 0) widgetPhotosCount else visiblePhotos.count { it.pinned }
         renderAlbums()
         val baseDisplayed = when {
+            selectedAlbum == NO_WIDGET_ALBUM -> emptyList()
             selectedAlbum.startsWith(WIDGET_PREFIX) -> PinnedPhotoWidgetBase.photosForWidget(this, selectedWidgetId())
             selectedAlbum == ALL_ALBUMS -> visiblePhotos
             else -> ordinaryPhotos.filter { selectedAlbum in it.albums }
@@ -476,7 +505,7 @@ class MainActivity : FragmentActivity() {
         grid.visibility = if (displayed.isEmpty()) View.GONE else View.VISIBLE
         findViewById<TextView>(R.id.emptyText).text = when {
             displayed.isEmpty() && searchQuery.isNotBlank() -> "По запросу «$searchQuery» ничего не нашлось"
-            displayed.isEmpty() && photos.isEmpty() -> "Пока нет фотографий"
+            displayed.isEmpty() && photos.isEmpty() && selectedAlbum != NO_WIDGET_ALBUM -> "Пока нет фотографий"
             else -> "В этой выборке пока пусто"
         }
         val hasSelection = selectedIds.isNotEmpty()
@@ -557,6 +586,7 @@ class MainActivity : FragmentActivity() {
 
     private fun renderAlbums() {
         findViewById<TextView>(R.id.currentAlbumText).text = when {
+            selectedAlbum == NO_WIDGET_ALBUM -> "Виджетов пока нет"
             selectedAlbum == ALL_ALBUMS -> PhotoStore.MISC_ALBUM
             selectedAlbum.startsWith(WIDGET_PREFIX) -> PinnedPhotoWidgetBase.widgetName(this, selectedWidgetId())
             else -> selectedAlbum
@@ -711,7 +741,8 @@ class MainActivity : FragmentActivity() {
             setBackgroundResource(if (selectedAlbum == key) R.drawable.btn_primary else R.drawable.card_bg)
             clipToOutline = false; clipChildren = false
             setOnClickListener {
-                selectedAlbum = if (selectedAlbum == key) ALL_ALBUMS else key
+                // В режиме виджетов повторное нажатие не должно уводить в «Разное».
+                selectedAlbum = key
                 refresh()
             }
             setOnLongClickListener { showWidgetAlbumActions(widgetId); true }
@@ -795,7 +826,7 @@ class MainActivity : FragmentActivity() {
                 .setMessage("Сам виджет Android удалить из приложения нельзя — это делает лаунчер долгим нажатием по виджету. Здесь можно только убрать все фото, виджет останется пустым. Оригиналы фото не удаляются.")
                 .setPositiveButton("Очистить") { _, _ ->
                     PinnedPhotoWidgetBase.clearWidget(this, widgetId)
-                    if (selectedAlbum == WIDGET_PREFIX + widgetId) selectedAlbum = ALL_ALBUMS
+                    // Виджет остался на рабочем столе — его пустой альбом и остаётся текущим.
                     toast("Альбом виджета очищен"); refresh()
                 }.setNegativeButton("Отмена", null).show()
         })
@@ -1223,6 +1254,10 @@ class MainActivity : FragmentActivity() {
     }
 
     private fun importPressed() {
+        if (albumsModeWidgets && (selectedAlbum == NO_WIDGET_ALBUM || selectedWidgetId() !in PinnedPhotoWidgetBase.installedWidgetIds(this))) {
+            toast("Сначала создайте новый виджет")
+            return
+        }
         if (selectedAlbum.startsWith(WIDGET_PREFIX)) {
             pendingImportWidget = selectedWidgetId(); pendingImportAlbum = ""
             pickPhotos()
@@ -1241,10 +1276,14 @@ class MainActivity : FragmentActivity() {
     override fun onBackPressed() {
         when {
             selectedIds.isNotEmpty() -> { selectedIds.clear(); refresh() }
-            selectedAlbum != ALL_ALBUMS -> {
-                val wasWidget = selectedAlbum.startsWith(WIDGET_PREFIX)
+            albumsModeWidgets -> {
+                albumsModeWidgets = false
                 selectedAlbum = ALL_ALBUMS
-                if (!wasWidget) PhotoStore.lockAllAlbumSessions(this)
+                refresh()
+            }
+            selectedAlbum != ALL_ALBUMS -> {
+                selectedAlbum = ALL_ALBUMS
+                PhotoStore.lockAllAlbumSessions(this)
                 refresh()
             }
             else -> finish()
@@ -1592,6 +1631,7 @@ class MainActivity : FragmentActivity() {
         const val PICK_PHOTOS = 2001; const val EXPORT_JSON = 2002; const val IMPORT_JSON = 2003
         const val ALL_ALBUMS = PhotoStore.MISC_ALBUM
         const val WIDGET_PREFIX = "__widget__:"
+        const val NO_WIDGET_ALBUM = "__widget__:none"
     }
 }
 
