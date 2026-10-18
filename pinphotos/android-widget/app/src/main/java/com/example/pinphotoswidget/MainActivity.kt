@@ -37,6 +37,8 @@ class MainActivity : FragmentActivity() {
     private var pendingImportWidget: Int = 0
     private var searchQuery: String = ""
     private var sortMode: Int = 0
+    private var showSeparators: Boolean = true
+    private var squareTiles: Boolean = false
     private var albumsModeWidgets: Boolean = false
     private var albumsCollapsed: Boolean = false
     private var searchExpanded: Boolean = false
@@ -112,10 +114,19 @@ class MainActivity : FragmentActivity() {
         UiTheme.apply(this)
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_main)
+        getSharedPreferences("display", MODE_PRIVATE).let { displayPrefs ->
+            showSeparators = displayPrefs.getBoolean("showSeparators", true)
+            squareTiles = displayPrefs.getBoolean("squareTiles", false)
+        }
         grid = findViewById(R.id.grid)
         emptyView = findViewById(R.id.emptyView)
         countText = findViewById(R.id.countText)
-        grid.layoutManager = GridLayoutManager(this, 3)
+        grid.layoutManager = GridLayoutManager(this, 3).apply {
+            spanSizeLookup = object : GridLayoutManager.SpanSizeLookup() {
+                override fun getSpanSize(position: Int): Int =
+                    (grid.adapter as? PhotoAdapter)?.spanSize(position) ?: 1
+            }
+        }
         findViewById<Button>(R.id.importBtn).setOnClickListener { importPressed() }
         findViewById<Button>(R.id.emptyImportBtn).setOnClickListener { importPressed() }
         findViewById<View>(R.id.menuBtn).setOnClickListener { showMenu(it) }
@@ -171,6 +182,38 @@ class MainActivity : FragmentActivity() {
             input.text.clear()
         }
         refresh()
+    }
+
+    private fun buildGridEntries(photos: List<Photo>): List<GridEntry> {
+        if (!showSeparators || photos.isEmpty()) return photos.map { GridEntry.PhotoItem(it) }
+        val result = mutableListOf<GridEntry>(); var lastKey: String? = null
+        photos.forEach { photo ->
+            val (key, title) = when (sortMode) {
+                2, 3 -> {
+                    val first = photo.name.trim().firstOrNull()
+                    val label = when {
+                        first == null -> "#"
+                        first.isDigit() -> "0–9"
+                        first.isLetter() -> first.uppercaseChar().toString()
+                        else -> "#"
+                    }
+                    label to label
+                }
+                else -> {
+                    val date = java.util.Calendar.getInstance().apply { timeInMillis = photo.createdAt }
+                    val key = "${date.get(java.util.Calendar.YEAR)}-${date.get(java.util.Calendar.DAY_OF_YEAR)}"
+                    val today = java.util.Calendar.getInstance()
+                    val yesterday = (today.clone() as java.util.Calendar).apply { add(java.util.Calendar.DAY_OF_YEAR, -1) }
+                    val sameDay = date.get(java.util.Calendar.YEAR) == today.get(java.util.Calendar.YEAR) && date.get(java.util.Calendar.DAY_OF_YEAR) == today.get(java.util.Calendar.DAY_OF_YEAR)
+                    val wasYesterday = date.get(java.util.Calendar.YEAR) == yesterday.get(java.util.Calendar.YEAR) && date.get(java.util.Calendar.DAY_OF_YEAR) == yesterday.get(java.util.Calendar.DAY_OF_YEAR)
+                    val formatted = java.text.SimpleDateFormat("d MMMM yyyy", java.util.Locale("ru")).format(java.util.Date(photo.createdAt))
+                    key to when { sameDay -> "Сегодня · $formatted"; wasYesterday -> "Вчера · $formatted"; else -> formatted }
+                }
+            }
+            if (key != lastKey) { result.add(GridEntry.Header(key, title)); lastKey = key }
+            result.add(GridEntry.PhotoItem(photo))
+        }
+        return result
     }
 
     private fun showFilters() {
@@ -234,7 +277,7 @@ class MainActivity : FragmentActivity() {
         if (selectedIds.isNotEmpty()) findViewById<TextView>(R.id.selectionText).text = "Выбрано: ${selectedIds.size}"
         val widgetPhotoIds = PinnedPhotoWidgetBase.installedWidgetIds(this)
             .flatMap { PinnedPhotoWidgetBase.getWidgetPhotoIds(this, it) }.toSet()
-        grid.adapter = PhotoAdapter(displayed, selectedIds, widgetPhotoIds,
+        grid.adapter = PhotoAdapter(buildGridEntries(displayed), selectedIds, widgetPhotoIds, squareTiles,
             onClick = { photo ->
                 if (selectedIds.isNotEmpty()) toggleSelected(photo) else {
                     val ids = ArrayList(displayed.map { it.id })
@@ -333,6 +376,14 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    private fun albumDotsButton(onClick: () -> Unit): TextView = TextView(this).apply {
+        text = "⋮"; textSize = 19f; gravity = android.view.Gravity.CENTER
+        setTextColor(android.graphics.Color.WHITE); setBackgroundResource(R.drawable.duration_badge_bg)
+        layoutParams = android.widget.FrameLayout.LayoutParams(dp(30), dp(30), android.view.Gravity.TOP or android.view.Gravity.END).apply { topMargin = dp(5); rightMargin = dp(5) }
+        setOnClickListener { onClick() }
+        contentDescription = "Действия с альбомом"
+    }
+
     private fun widgetAlbumTile(widgetId: Int): View {
         val key = WIDGET_PREFIX + widgetId
         val refs = PinnedPhotoWidgetBase.photosForWidget(this, widgetId)
@@ -347,7 +398,11 @@ class MainActivity : FragmentActivity() {
             setOnLongClickListener { showWidgetAlbumActions(widgetId); true }
         }
         val cover = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP; setImageResource(R.drawable.widget_placeholder)
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            val cached = newest?.let { PhotoStore.cachedBitmap(it, 360) }
+            if (cached != null) setImageBitmap(cached) else {
+                postDelayed({ if (drawable == null) setImageResource(R.drawable.widget_placeholder) }, 400)
+            }
         }
         tile.addView(cover, android.widget.FrameLayout.LayoutParams(android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(72)))
         if (newest != null) io.execute {
@@ -363,6 +418,7 @@ class MainActivity : FragmentActivity() {
         tile.addView(label, android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT,
             android.widget.FrameLayout.LayoutParams.WRAP_CONTENT, android.view.Gravity.BOTTOM))
+        tile.addView(albumDotsButton { showWidgetAlbumActions(widgetId) })
         tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) }
         return tile
     }
@@ -461,7 +517,12 @@ class MainActivity : FragmentActivity() {
         }
         val cover = ImageView(this).apply {
             scaleType = ImageView.ScaleType.CENTER_CROP
-            setImageResource(R.drawable.widget_placeholder)
+            val lockedNow = PhotoStore.securityFor(this@MainActivity, album).locked && album !in unlockedAlbums
+            val newestNow = if (lockedNow) null else albumPhotos.maxByOrNull { it.createdAt }
+            val cached = newestNow?.let { PhotoStore.cachedBitmap(it, 360) }
+            if (cached != null) setImageBitmap(cached) else if (newestNow != null) {
+                postDelayed({ if (drawable == null) setImageResource(R.drawable.widget_placeholder) }, 400)
+            } else setImageResource(R.drawable.widget_placeholder)
         }
         tile.addView(cover, android.widget.FrameLayout.LayoutParams(
             android.widget.FrameLayout.LayoutParams.MATCH_PARENT, dp(72)))
@@ -484,6 +545,10 @@ class MainActivity : FragmentActivity() {
             android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
             android.view.Gravity.BOTTOM)
         tile.addView(label, labelParams)
+        tile.addView(albumDotsButton {
+            if (isLocked) showUnlockDialog(album) { showAlbumActions(album) }
+            else showAlbumActions(album)
+        })
         tile.layoutParams = android.widget.LinearLayout.LayoutParams(dp(104), dp(104)).apply { marginEnd = dp(10) }
         return tile
     }
@@ -552,11 +617,12 @@ class MainActivity : FragmentActivity() {
         if (selectedIds.isEmpty()) return
         val count = selectedIds.size
         android.app.AlertDialog.Builder(this)
-            .setTitle("Удалить выбранные копии?")
-            .setMessage("Будет удалено копий: $count. Копии того же фото в других альбомах и виджетах не тронем. Оригиналы в галерее не трогаем.")
+            .setTitle("Удалить выбранные фото и видео?")
+            .setMessage("Будет удалено записей: $count. Это удаление самой записи и её файла, а не только ярлыка: если фото видно сразу в нескольких альбомах, оно пропадёт из всех. Виджеты хранят не копию, а ссылку на эту запись, поэтому удалённое фото перестанет показываться и в виджетах. Отдельные независимые копии, созданные раньше как другие записи, останутся. Оригиналы в галерее не трогаем.")
             .setPositiveButton("Удалить") { _, _ ->
                 photos.filter { it.id in selectedIds }.forEach { PhotoStore.delete(this, it) }
-                selectedIds.clear(); toast("Удалено копий: $count"); refresh()
+                PinnedPhotoWidgetBase.updateAll(this)
+                selectedIds.clear(); toast("Удалено записей: $count"); refresh()
             }
             .setNegativeButton("Отмена", null).show()
     }
@@ -727,7 +793,7 @@ class MainActivity : FragmentActivity() {
         val count = photos.count { album in it.albums }
         android.app.AlertDialog.Builder(this)
             .setTitle("Удалить альбом?")
-            .setMessage("Альбом «$album» и все его фотографии ($count шт.) будут удалены из приложения. Оригиналы в галерее телефона не тронем.")
+            .setMessage("Альбом «$album» и его записи ($count шт.) будут удалены из приложения вместе с файлами. Если та же запись видна ещё в другом альбоме, она пропадёт и оттуда. Виджеты хранят ссылки, а не копии, поэтому удалённые записи перестанут в них показываться. Отдельные независимые копии с другими записями не удалятся. Оригиналы в галерее телефона не тронем.")
             .setPositiveButton("Удалить всё") { _, _ ->
                 val removed = PhotoStore.deleteAlbumWithPhotos(this, album)
                 unlockedAlbums.remove(album)
@@ -743,8 +809,10 @@ class MainActivity : FragmentActivity() {
         // Добавление фото/виджета, альбомы и тема живут своими кнопками на экране.
         val popupContext = android.view.ContextThemeWrapper(this, if (UiTheme.isDark(this)) R.style.PopupOverlayDark else R.style.PopupOverlayLight)
         val menu = PopupMenu(popupContext, anchor)
-        menu.menu.add(0, 1, 0, "Бэкап: сохранить JSON")
-        menu.menu.add(0, 2, 0, "Восстановить из JSON")
+        menu.menu.add(0, 10, 0, if (showSeparators) "Группы-разделители: включены ✓" else "Группы-разделители: выключены")
+        menu.menu.add(0, 11, 1, if (squareTiles) "Форма фото: квадратики ✓" else "Форма фото: прямоугольники ✓")
+        menu.menu.add(0, 1, 2, "Бэкап: сохранить JSON")
+        menu.menu.add(0, 2, 3, "Восстановить из JSON")
         menu.menu.add(0, 3, 0, "Иконка: обычная 📌")
         menu.menu.add(0, 4, 0, "Иконка: огненная 🔥")
         menu.menu.add(0, 5, 0, "Иконка: сонная 😴")
@@ -752,6 +820,16 @@ class MainActivity : FragmentActivity() {
         menu.menu.add(0, 7, 0, if (UiTheme.isDark(this)) "Тема: тёмная 🌙 — сменить на светлую" else "Тема: светлая ☀️ — сменить на тёмную")
         menu.setOnMenuItemClickListener { item ->
             when (item.itemId) {
+                10 -> {
+                    showSeparators = !showSeparators
+                    getSharedPreferences("display", MODE_PRIVATE).edit().putBoolean("showSeparators", showSeparators).apply()
+                    refresh(); Toast.makeText(this, if (showSeparators) "Разделители включены: дата или буква — по сортировке" else "Разделители выключены: фото идут слитно", Toast.LENGTH_LONG).show(); true
+                }
+                11 -> {
+                    squareTiles = !squareTiles
+                    getSharedPreferences("display", MODE_PRIVATE).edit().putBoolean("squareTiles", squareTiles).apply()
+                    refresh(); Toast.makeText(this, if (squareTiles) "Плитки фото: квадратики. Кэш миниатюр тот же, копии не создаются" else "Плитки фото: прямоугольники. Кэш миниатюр тот же", Toast.LENGTH_LONG).show(); true
+                }
                 1 -> startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
                     addCategory(Intent.CATEGORY_OPENABLE); type = "application/json"
                     putExtra(Intent.EXTRA_TITLE, "pinphotos-backup.json")
@@ -985,21 +1063,48 @@ class MainActivity : FragmentActivity() {
     }
 }
 
+sealed class GridEntry {
+    data class Header(val key: String, val title: String) : GridEntry()
+    data class PhotoItem(val photo: Photo) : GridEntry()
+}
+
 class PhotoAdapter(
-    private val items: List<Photo>,
+    private val items: List<GridEntry>,
     private val selectedIds: Set<String>,
     private val widgetPhotoIds: Set<String> = emptySet(),
+    private val squareTiles: Boolean = false,
     private val onClick: (Photo) -> Unit,
     private val onLongClick: (Photo) -> Unit
-) : RecyclerView.Adapter<PhotoAdapter.Holder>() {
+) : RecyclerView.Adapter<RecyclerView.ViewHolder>() {
     class Holder(view: View) : RecyclerView.ViewHolder(view) {
         val thumb: ImageView = view.findViewById(R.id.thumb)
         val badge: TextView = view.findViewById(R.id.badge)
         val durationBadge: TextView = view.findViewById(R.id.durationBadge)
+        var imageLoaded: Boolean = false
+    }
+    class HeaderHolder(view: View) : RecyclerView.ViewHolder(view) {
+        val title: TextView = view.findViewById(R.id.headerTitle)
     }
 
-    override fun onCreateViewHolder(parent: ViewGroup, type: Int): Holder =
-        Holder(LayoutInflater.from(parent.context).inflate(R.layout.item_photo, parent, false))
+    fun spanSize(position: Int): Int = if (items.getOrNull(position) is GridEntry.Header) 3 else 1
+    override fun getItemViewType(position: Int): Int = if (items[position] is GridEntry.Header) 1 else 0
+
+    override fun onCreateViewHolder(parent: ViewGroup, type: Int): RecyclerView.ViewHolder {
+        val inflater = LayoutInflater.from(parent.context)
+        if (type == 1) return HeaderHolder(inflater.inflate(R.layout.item_grid_header, parent, false))
+        val view = inflater.inflate(R.layout.item_photo, parent, false)
+        if (squareTiles && parent.measuredWidth > 0) {
+            // Плотный квадрат по ширине одной из трёх колонок. Bitmap при этом тот же 360 px
+            // и тот же один кэш: форма меняется только обрезкой ImageView (centerCrop).
+            val cell = parent.measuredWidth / 3 - (10 * parent.resources.displayMetrics.density).toInt()
+            view.layoutParams = (view.layoutParams ?: RecyclerView.LayoutParams(
+                RecyclerView.LayoutParams.MATCH_PARENT, RecyclerView.LayoutParams.WRAP_CONTENT)).apply {
+                width = RecyclerView.LayoutParams.MATCH_PARENT; height = cell
+            }
+            view.findViewById<ImageView>(R.id.thumb)?.layoutParams?.height = cell
+        }
+        return Holder(view)
+    }
 
     override fun getItemCount() = items.size
 
@@ -1008,13 +1113,18 @@ class PhotoAdapter(
         private val IO = Executors.newFixedThreadPool(2)
     }
 
-    override fun onBindViewHolder(holder: Holder, position: Int) {
-        val photo = items[position]
+    override fun onBindViewHolder(rawHolder: RecyclerView.ViewHolder, position: Int) {
+        val entry = items[position]
+        if (entry is GridEntry.Header) {
+            (rawHolder as HeaderHolder).title.text = entry.title
+            return
+        }
+        val holder = rawHolder as Holder
+        val photo = (entry as GridEntry.PhotoItem).photo
         val selected = photo.id in selectedIds
         holder.badge.text = if (selected) "✓" else "📌"
         holder.badge.gravity = android.view.Gravity.CENTER
         holder.badge.includeFontPadding = false
-        // У глифа ✓ есть левый боковой зазор шрифта: небольшой сдвиг вправо ставит его визуально по центру круга.
         holder.badge.translationX = if (selected) 2f else 0f
         holder.badge.setBackgroundResource(if (selected) R.drawable.selection_badge else R.drawable.badge_bg)
         holder.badge.setTextColor(if (selected) 0xFFFFFFFF.toInt() else 0xFF111827.toInt())
@@ -1022,23 +1132,41 @@ class PhotoAdapter(
         if (!selected && (photo.widgetId > 0 || photo.id in widgetPhotoIds)) holder.badge.text = "🧩"
         holder.thumb.alpha = if (selected) 0.78f else 1f
         holder.itemView.setBackgroundResource(if (selected) R.drawable.selection_frame else R.drawable.card_bg)
-        holder.thumb.setImageResource(R.drawable.widget_placeholder)
         holder.thumb.tag = photo.id
+        holder.imageLoaded = false
+        // Не показываем заглушку мгновенно: сначала синхронно пробуем готовый bitmap из памяти.
+        // Если фото уже декодировалось, оно появится без вспышки серого прямоугольника.
+        val cached = PhotoStore.cachedBitmap(photo, 360)
+        if (cached != null) {
+            holder.thumb.setImageBitmap(cached); holder.imageLoaded = true
+        } else {
+            holder.thumb.setImageDrawable(null)
+            // Заглушка — только если загрузка действительно затянулась.
+            holder.thumb.postDelayed({
+                if (holder.thumb.tag == photo.id && !holder.imageLoaded) {
+                    holder.thumb.setImageResource(R.drawable.widget_placeholder)
+                }
+            }, 300)
+        }
         val isMedia = photo.mime.startsWith("video/") || photo.mime == "image/gif"
         holder.durationBadge.visibility = if (isMedia) View.VISIBLE else View.GONE
         holder.durationBadge.text = if (photo.mime == "image/gif") "GIF" else "▶ …"
+        // Сначала сама картинка (это то, что видит пользователь), длительность — после неё.
+        IO.execute {
+            val bmp = PhotoStore.decodeBitmap(holder.thumb.context, photo, 360)
+            holder.thumb.post {
+                if (holder.thumb.tag == photo.id && bmp != null) {
+                    holder.imageLoaded = true; holder.thumb.setImageBitmap(bmp)
+                }
+            }
+        }
         if (isMedia) IO.execute {
             val label = PhotoStore.mediaDurationLabel(holder.thumb.context, photo)
             holder.durationBadge.post {
                 if (holder.thumb.tag == photo.id && label != null) holder.durationBadge.text = label
             }
         }
-        IO.execute {
-            val bmp = PhotoStore.decodeBitmap(holder.thumb.context, photo, 360)
-            holder.thumb.post { if (holder.thumb.tag == photo.id && bmp != null) holder.thumb.setImageBitmap(bmp) }
-        }
         holder.itemView.setOnClickListener { onClick(photo) }
         holder.itemView.setOnLongClickListener { onLongClick(photo); true }
     }
-
 }

@@ -29,6 +29,9 @@ class PhotoActivity : Activity() {
     private val autoHideHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val autoHideRunnable = Runnable { hideFullscreenChrome() }
     private var slideshowSeconds: Int = 0
+    private var videoTouchDownX: Float = 0f
+    private var videoTouchDownY: Float = 0f
+    private var videoTouchDownAt: Long = 0L
     private var currentMediaPlayer: android.media.MediaPlayer? = null
     private val slideshowHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val slideshowRunnable = Runnable {
@@ -60,16 +63,35 @@ class PhotoActivity : Activity() {
         findViewById<TextView>(R.id.nextBtn).setOnClickListener { move(1) }
         val videoView = findViewById<android.widget.VideoView>(R.id.videoPlayer)
         videoView.setOnTouchListener { _, event ->
-            if (event.action == android.view.MotionEvent.ACTION_UP) {
-                val controllerShowing = mediaController?.isShowing == true
-                when {
-                    // 1-й тап в обычном режиме: показать контролы на 3 секунды.
-                    // 2-й тап, пока контролы ещё видны: перейти в полный экран.
-                    !fullscreen && controllerShowing -> setFullscreen(true)
-                    !fullscreen -> showVideoControllerSafely(3000)
-                    // Полный экран: скрытый интерфейс показать, видимый — по тапу выходим.
-                    !fullscreenChromeVisible -> showFullscreenChrome()
-                    else -> setFullscreen(false)
+            when (event.actionMasked) {
+                android.view.MotionEvent.ACTION_DOWN -> {
+                    videoTouchDownX = event.x; videoTouchDownY = event.y
+                    videoTouchDownAt = android.os.SystemClock.uptimeMillis()
+                }
+                android.view.MotionEvent.ACTION_UP -> {
+                    val dx = event.x - videoTouchDownX
+                    val dy = event.y - videoTouchDownY
+                    val swipeDistance = (56 * resources.displayMetrics.density)
+                    // Горизонтальный свайп по видео листает и в обычном, и в полном экране.
+                    // Раньше здесь обрабатывался только тап на ACTION_UP, поэтому VideoView
+                    // «съедал» жест и свайп в обычном режиме не работал вовсе.
+                    if (kotlin.math.abs(dx) >= swipeDistance && kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.4f) {
+                        move(if (dx < 0) 1 else -1)
+                        return@setOnTouchListener true
+                    }
+                    // Короткий жест без свайпа считаем тапом только если палец не «гулял».
+                    if (kotlin.math.abs(dx) < swipeDistance && kotlin.math.abs(dy) < swipeDistance) {
+                        val controllerShowing = mediaController?.isShowing == true
+                        when {
+                            // 1-й тап в обычном режиме: показать контролы на 3 секунды.
+                            // 2-й тап, пока контролы ещё видны: перейти в полный экран.
+                            !fullscreen && controllerShowing -> setFullscreen(true)
+                            !fullscreen -> showVideoControllerSafely(3000)
+                            // Полный экран: скрытый интерфейс показать, видимый — по тапу выходим.
+                            !fullscreenChromeVisible -> showFullscreenChrome()
+                            else -> setFullscreen(false)
+                        }
+                    }
                 }
             }
             // true: не даём VideoView самому тут же переключить/спрятать контроллер своим обработчиком тапа.
@@ -91,7 +113,7 @@ class PhotoActivity : Activity() {
         findViewById<Button>(R.id.deleteBtn).setOnClickListener {
             val current = photo ?: return@setOnClickListener
             AlertDialog.Builder(this).setTitle("Удалить фото?")
-                .setMessage("Копия в приложении будет удалена. Оригинал в галерее не тронем.")
+                .setMessage("Запись и её файл внутри приложения будут удалены. Если это фото видно в нескольких альбомах, оно пропадёт из всех. Виджеты хранят ссылку на эту запись, а не копию, поэтому тоже перестанут его показывать. Отдельные независимые копии, если есть, останутся. Оригинал в галерее не тронем.")
                 .setPositiveButton("Удалить") { _, _ ->
                     PhotoStore.delete(this, current); PinnedPhotoWidgetBase.updateAll(this)
                     val remaining = ids.toMutableList().apply { remove(current.id) }
@@ -237,20 +259,24 @@ class PhotoActivity : Activity() {
         autoHideHandler.removeCallbacks(autoHideRunnable)
         autoHideHandler.postDelayed(autoHideRunnable, 2000)
         val current = photo
-        if (current?.mime?.startsWith("video/") == true) showVideoControllerSafely(2000)
+        if (current?.mime?.startsWith("video/") == true) showVideoControllerSafely(0)
     }
 
     private fun showVideoControllerSafely(timeoutMs: Int) {
         val video = findViewById<android.widget.VideoView>(R.id.videoPlayer)
-        // Первый показ MediaController при переходе фото -> видео в immersive может бросить BadToken,
-        // если поверхность ещё не прикреплена к окну. Откладываем и не даём этому уронить просмотр.
-        video.postDelayed({
+        // В полном экране контроллер — часть общего интерфейса: показываем его сразу (без
+        // отдельной задержки в 300 мс) и БЕЗ собственного таймера MediaController (show(0)).
+        // Так он не появляется позже стрелок/подписи и не исчезает раньше них: прячет и
+        // показывает всю группу один и тот же autoHideRunnable.
+        val delayMs = if (fullscreen) 0L else 300L
+        val showAction = Runnable {
             try {
                 if (!isFinishing && !isDestroyed && video.visibility == android.view.View.VISIBLE) {
-                    mediaController?.show(timeoutMs)
+                    if (fullscreen) mediaController?.show(0) else mediaController?.show(timeoutMs)
                 }
             } catch (ignored: Throwable) { }
-        }, 300)
+        }
+        if (delayMs == 0L) video.post(showAction) else video.postDelayed(showAction, delayMs)
     }
 
     private fun hideFullscreenChrome() {

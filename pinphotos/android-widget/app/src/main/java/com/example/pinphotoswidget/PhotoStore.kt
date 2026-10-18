@@ -479,6 +479,12 @@ object PhotoStore {
         )
     }
 
+    /** Уже готовая миниатюра из памяти: без декодирования и без ожидания потока. */
+    fun cachedBitmap(photo: Photo, target: Int = 360): android.graphics.Bitmap? {
+        val cacheKey = "${photo.id}:$target:${photo.file}"
+        return synchronized(bitmapCache) { bitmapCache.get(cacheKey) }
+    }
+
     fun decodeBitmap(context: Context, photo: Photo, target: Int = 900): android.graphics.Bitmap? {
         val cacheKey = "${photo.id}:$target:${photo.file}"
         synchronized(bitmapCache) { bitmapCache.get(cacheKey)?.let { return it } }
