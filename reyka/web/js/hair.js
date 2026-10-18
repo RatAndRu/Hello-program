@@ -248,6 +248,7 @@ export function drawHair(pen, o, C, r, yaw, pitch, roll, seed = 1, opt = {}) {
     for (let i = 0; i < pts.length; i++) { if (vs[i]) run.push(pts[i]); else { if (run.length > 1) pen.poly(run, false, layer); run = []; } }
     if (run.length > 1) { if (closed && vs.every(Boolean)) pen.poly(run, true, layer); else pen.poly(run, false, layer); }
   };
+  if (opt.wind && opt.wind.amt > 0.01) blowHair(H, R, opt.wind);
   const det = H.o.detail;
   for (const cl of H.clumps) {
     const P3 = cl.pts, n = P3.length; if (n < 2) continue;
@@ -301,4 +302,34 @@ export function drawHair(pen, o, C, r, yaw, pitch, roll, seed = 1, opt = {}) {
   }
   // линия роста волос — пунктиром, когда лоб открыт
   if (H.o.bangs === 'none' || opt.hairline) runs(H.hairline.map(pr), H.hairline.map(p => R(p)[2] > 0.02), 'aux');
+}
+
+// Ветер: свободная часть каждой пряди изгибается по ветру (длина сегментов сохраняется),
+// чем дальше от корня — тем сильнее; пряди трепещут каждая со своей фазой.
+// w: { amt 0…1, dir — куда дует на листе (0 → вправо, 90 → вверх), t — фаза 0…1 }
+function blowHair(H, R, w) {
+  const ex = R([1, 0, 0]), ey = R([0, 1, 0]), ez = R([0, 0, 1]);
+  const toModel = (q) => [q[0] * ex[0] + q[1] * ex[1] + q[2] * ex[2], q[0] * ey[0] + q[1] * ey[1] + q[2] * ey[2], q[0] * ez[0] + q[1] * ez[1] + q[2] * ez[2]];
+  const d = (w.dir || 0) * D2R, wv = toModel([Math.cos(d), Math.sin(d), 0]), sv = toModel([-Math.sin(d), Math.cos(d), 0]), zv = toModel([0, 0, 1]);
+  const amt = clamp(w.amt, 0, 1), t = w.t || 0;
+  H.clumps.forEach((cl, ci) => {
+    const P0 = cl.pts, n = P0.length; if (n < 3) return;
+    let k0 = cl.kind === 'ahoge' ? 1 : cl.kind === 'bang' ? Math.floor(n * 0.35) : cl.kind === 'tail' ? 2 : P0.findIndex(p => p[1] < 0.3);
+    if (k0 < 1) k0 = cl.kind === 'mass' ? n - 2 : 1;
+    const stiff = cl.tip === 'sharp' && cl.kind === 'mass' ? 0.35 : 1, ph = ci * 1.7;
+    const out = P0.slice(0, k0 + 1).map(p => p.slice());
+    for (let i = k0 + 1; i < n; i++) {
+      const a = P0[i - 1], b = P0[i], l = Math.hypot(b[0] - a[0], b[1] - a[1], b[2] - a[2]) || 1e-6;
+      const dir = [(b[0] - a[0]) / l, (b[1] - a[1]) / l, (b[2] - a[2]) / l];
+      const f = Math.sin(TAU * 2 * t + ph + i * 0.4), f2 = Math.cos(TAU * 3 * t + ph * 1.3 + i * 0.3);
+      const tw = nrm([wv[0] + sv[0] * 0.32 * f + zv[0] * 0.25 * f2, wv[1] + sv[1] * 0.32 * f + zv[1] * 0.25 * f2, wv[2] + sv[2] * 0.32 * f + zv[2] * 0.25 * f2]);
+      const k = amt * stiff * 0.9 * Math.pow(clamp((i - k0) / Math.max(1, n - 1 - k0), 0, 1), 0.7);
+      const nd = nrm([dir[0] * (1 - k) + tw[0] * k, dir[1] * (1 - k) + tw[1] * k, dir[2] * (1 - k) + tw[2] * k]);
+      const pv = out[i - 1];
+      let q = [pv[0] + nd[0] * l, pv[1] + nd[1] * l, pv[2] + nd[2] * l];
+      const r = Math.hypot(q[0], q[1], q[2]); if (r < 1.02) q = scl(q, 1.02 / r); // не сквозь голову
+      out.push(q);
+    }
+    cl.pts = out;
+  });
 }

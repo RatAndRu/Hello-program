@@ -10,13 +10,16 @@ import { estimateRect, cameraTilt, assumedFocal, manualCorners, fitFocal, comple
 import { detectSegments, findVanishingPoints } from './vanish.js';
 import * as scan from './scan.js';
 import { ScanClient } from './scanclient.js';
+import { ANIMS, animList, startAnim, applyAnimFrame, stepAnim, restoreBase, rebaseIfEdited } from './anim.js';
+import { HAIR_PRESETS } from './hair.js';
 
-const VERSION = '1.7';
+const VERSION = '1.8';
 const $ = (id) => document.getElementById(id);
 const video = $('video'), glCanvas = $('gl'), overlay = $('overlay');
 const octx = overlay.getContext('2d');
 const tracker = new PaperTracker();
 const kalkaLayer = new KalkaLayer(glCanvas);
+const mirrorCanvas = $('mirrorGl'), mirrorLayer = new KalkaLayer(mirrorCanvas);
 
 const FORMATS = { A6: [105, 148], A5: [148, 210], A4: [210, 297], A3: [297, 420], Letter: [216, 279] };
 const COLORS = ['#39ff14', '#ff2fd6', '#00e5ff', '#ffe600', '#ff3b30', '#ffffff', '#111111'];
@@ -32,7 +35,7 @@ const DEFAULT = () => ({
   colorUI: { cur: '#3b6fd4', mix: [], max2: false, water: false },
   paper: { format: 'A4', orient: 'auto', customW: 200, customH: 200, tracking: true },
   corners: null, cornersFor: null, landscape: false,
-  guides: [], nextId: 1,
+  guides: [], nextId: 1, characters: [], nextChar: 1,
   kalka: { has: false, show: true, mode: 'orig', opacity: 0.6, detail: 0.45, thick: 2, levels: 3, color: '#ff2fd6', grid: false, cols: 4, part: false, cell: 0, cx: 0, cy: 0, scale: 1, rot: 0, flip: false, imgW: 0, imgH: 0, blink: false, blinkPeriod: 0.8, vpShow: false },
 });
 
@@ -57,6 +60,7 @@ const R = {
   paths: [], dots: [], undo: [], panel: null,
   pointers: new Map(), down: null, pinch: null, lastTap: 0, snapPt: null,
   kalkaSrc: null, kalkaReady: false, dirty: false, wake: null, vp: null, tiltInfo: null, scan: null,
+  anims: new Map(), animPick: {}, animSpeed: 1, mirror: null, mirrorShown: false, charPart: null, charNew: false, charEdit: null,
 };
 
 // ---------- Утилиты ----------
@@ -101,7 +105,7 @@ function el(tag, attrs = {}, ...kids) {
 function resize() {
   R.DPR = Math.min(window.devicePixelRatio || 1, 2.5);
   R.W = window.innerWidth; R.H = window.innerHeight;
-  for (const c of [overlay, glCanvas]) { c.width = Math.round(R.W * R.DPR); c.height = Math.round(R.H * R.DPR); }
+  for (const c of [overlay, glCanvas, mirrorCanvas]) { c.width = Math.round(R.W * R.DPR); c.height = Math.round(R.H * R.DPR); }
   computeView();
 }
 window.addEventListener('resize', resize);
@@ -519,7 +523,7 @@ function isMoveHandle(g, i) {
 function render() {
   octx.setTransform(R.DPR, 0, 0, R.DPR, 0, 0);
   octx.clearRect(0, 0, R.W, R.H);
-  if (!R.P2S || !R.S2P) { kalkaLayer.clear(); return; }
+  if (!R.P2S || !R.S2P) { kalkaLayer.clear(); if (R.mirrorShown) { mirrorLayer.clear(); R.mirrorShown = false; } return; }
 
   // Калька (WebGL)
   const k = S.kalka;
@@ -533,6 +537,7 @@ function render() {
     if (k.blink) op = (performance.now() / 1000 / Math.max(0.2, k.blinkPeriod)) % 2 < 1 ? k.opacity : 0;
     kalkaLayer.draw(inv, op, crop);
   } else kalkaLayer.clear();
+  drawMirrorLayer();
 
   // Контур листа
   const sheet = [{ x: 0, y: 0 }, { x: R.pw, y: 0 }, { x: R.pw, y: R.ph }, { x: 0, y: R.ph }].map(toScreen);
@@ -553,10 +558,10 @@ function render() {
   }
   // Зеркальные копии от осей симметрии
   for (const sym of S.guides) {
-    if (sym.type !== 'symmetry' || sym.hidden || !getProp(sym, 'mirror')) continue;
+    if (sym.hidden || !((sym.type === 'symmetry' && getProp(sym, 'mirror')) || (sym.type === 'reflect' && getProp(sym, 'mirrorGuides')))) continue;
     pen.mirror = { a: sym.pts[0], b: sym.pts[1] }; pen.layerOverride = 'ghost';
     for (const g of S.guides) {
-      if (g === sym || g.type === 'symmetry' || g.hidden) continue;
+      if (g === sym || g.type === 'symmetry' || g.type === 'reflect' || g.hidden) continue;
       pen.guideId = g.id;
       const before = pen.paths.length;
       pen.L = planeH(g);
@@ -659,6 +664,13 @@ function frame(now) {
   if (video.videoWidth && (video.videoWidth !== R.vw || video.videoHeight !== R.vh)) onVideoSize();
   trackStep(now);
   updateMatrices();
+  const dt = Math.min(0.1, (now - (frame._a || now)) / 1000); frame._a = now;
+  for (const [id, st] of R.anims) {
+    if (!st.playing) continue;
+    const g = S.guides.find(x => x.id === id);
+    if (!g) { R.anims.delete(id); continue; }
+    stepAnim(g, st, dt);
+  }
   render();
   if (now - (frame._t || 0) > 600) {
     frame._t = now;
@@ -806,6 +818,7 @@ overlay.addEventListener('pointerdown', (e) => {
   const target = R.pick ? { kind: 'pick' } : R.clean ? { kind: 'empty' } : hitTarget(p);
   R.down = { p0: p, t: performance.now(), moved: false, target, undoPushed: false };
   const t = target;
+  if ((t.kind === 'handle' || t.kind === 'body') && R.anims.get(t.id) && R.anims.get(t.id).playing) { R.anims.get(t.id).playing = false; persist(); toast('⏸ Анимация на паузе — поза сохранена, можно поправить'); refreshPanel(true); }
   if (t.kind === 'handle') {
     const g = S.guides.find(x => x.id === t.id);
     const h = toScreen(guideHandles(g)[t.i]);
@@ -950,6 +963,7 @@ function addGuide(type) {
 
 function removeGuide(id) {
   pushUndo();
+  R.anims.delete(id);
   S.guides = S.guides.filter(g => g.id !== id);
   if (R.selected === id) R.selected = null;
   persist();
@@ -1078,6 +1092,7 @@ function panelAdd() {
     mt.append(el('button', { class: 'tool', title: T.desc, onclick: () => addGuide(t) }, el('b', {}, T.icon), el('span', {}, T.name)));
   }
   panelBody.append(mt);
+  charManager();
   if (S.guides.length) {
     panelBody.append(el('div', { class: 'section-title' }, 'На листе'));
     const chips = el('div', { class: 'chips' });
@@ -1120,6 +1135,9 @@ function panelGuide() {
     else if (p.type === 'select') panelBody.append(segRow(p.label, p.options, v, set));
   }
   if (T.actions) panelBody.append(el('div', { class: 'btns' }, ...T.actions.map(([label, fn]) => btn(label, () => { pushUndo(); fn(g); persist(); refreshPanel(); }))));
+  if (g.type === 'reflect') mirrorSection(g);
+  if (ANIMS[g.type]) animSection(g);
+  if (CHAR_SRC[g.type]) charSection(g);
   panelBody.append(el('div', { class: 'btns' },
     btn('⧉ Копия', () => { duplicateGuide(g.id); refreshPanel(); }),
     btn('◎ В центр', () => centerGuide(g.id)),
@@ -1127,6 +1145,221 @@ function panelGuide() {
     btn(g.hidden ? '👁 Показать' : '🙈 Скрыть', () => { g.hidden = !g.hidden; persist(); refreshPanel(); }),
     btn('🗑 Удалить', () => { removeGuide(g.id); closePanel(); }, 'danger')));
   panelBody.append(el('p', { class: 'note' }, 'Совет: включи 👁 «чистый экран» сверху, чтобы панели не мешали рисовать.'));
+}
+
+// ---------- ▶ Анимация фигур ----------
+// Кадр анимации пишется прямо в настройки фигуры: пауза = поза, которую можно править.
+function animSection(g) {
+  const list = animList(g.type, g.props);
+  if (!list.length) return;
+  let st = R.anims.get(g.id);
+  const sel = st ? st.name : (R.animPick[g.type] && list.some(([k]) => k === R.animPick[g.type]) ? R.animPick[g.type] : list[0][0]);
+  const playing = !!(st && st.playing);
+  const play = (name) => {
+    if (!st) pushUndo(); else rebaseIfEdited(g, st);
+    st = startAnim(g, name, st);
+    if (st) R.anims.set(g.id, st);
+    refreshPanel();
+  };
+  panelBody.append(el('div', { class: 'section-title' }, '▶ Анимация'));
+  panelBody.append(segRow('Движение', list, sel, (v) => { R.animPick[g.type] = v; if (st) play(v); else refreshPanel(); }));
+  panelBody.append(el('div', { class: 'btns' },
+    playing ? btn('⏸ Пауза — оставить эту позу', () => { st.playing = false; persist(); refreshPanel(); }, 'primary')
+      : btn(st ? '▶ Дальше' : '▶ Играть', () => play(sel), 'primary'),
+    ...(st ? [btn('⏮ Сначала', () => { rebaseIfEdited(g, st); applyAnimFrame(g, st, 0); persist(); refreshPanel(); }),
+      btn('↩ Как было', () => { restoreBase(g, st); R.anims.delete(g.id); persist(); refreshPanel(); })] : [])));
+  panelBody.append(segRow('Скорость', [[0.25, '×¼'], [0.5, '×½'], [1, '×1'], [2, '×2']], st ? st.speed : (R.animSpeed || 1), (v) => { R.animSpeed = v; if (st) st.speed = v; refreshPanel(); }));
+  if (st && !playing) {
+    panelBody.append(rangeRow('Кадр (поймать момент)', 0, 100, 1, Math.round(st.phase * 100), (v) => { rebaseIfEdited(g, st); applyAnimFrame(g, st, v / 100); persist(); }, (v) => v + '%'));
+  }
+  if (st && R.animSpeed && st.speed !== R.animSpeed) st.speed = R.animSpeed;
+  panelBody.append(el('p', { class: 'note' }, playing
+    ? 'Нажми «Пауза» в нужный момент — фигура замрёт в этой позе. Можно и просто схватить сустав пальцем: анимация остановится сама.'
+    : st ? 'Поза на паузе — её можно поправить пальцем, выбрать точный кадр ползунком или продолжить.' : 'Короткая анимация по кругу. Останови в движении — получишь позу «на ходу».'));
+}
+
+// ---------- 👤 Персонажи ----------
+// У персонажа по одной части: лицо, глаза, причёска, телосложение. Сохраняешь из фигуры —
+// старая часть заменяется. Персонажей сколько угодно.
+const CHAR_PARTS = { face: ['Лицо', '🙂', 'head'], eyes: ['Глаза', '👁', 'eye'], hair: ['Причёска', '💇', 'hair'], body: ['Телосложение', '🕺', 'body'] };
+const CHAR_SRC = { head: ['face', 'hair'], eye: ['eyes'], hair: ['hair'], body: ['body'] };
+const CHAR_SKIP = {
+  head: ['yaw', 'pitch', 'roll', 'r', 'gazeX', 'gazeY', 'blink', 'mouthOpen', 'mouthWk', 'wrinkle', 'loomis', 'grid', 'neck', 'hair', 'hairStyle', 'hairSeed', 'hairCustom', 'windAmt', 'windDir', 'windT'],
+  eye: ['side', 'yaw', 'pitch', 'roll', 'gazeX', 'gazeY', 'open', 'pupil', 'build'],
+  hair: ['face', 'yaw', 'pitch', 'roll', 'r', 'windAmt', 'windDir', 'windT'],
+};
+const cloneJ = (o) => JSON.parse(JSON.stringify(o));
+function partsOf(g) { // какие части можно взять из этой фигуры сейчас
+  const list = CHAR_SRC[g.type] || [];
+  return list.filter(k => !(g.type === 'head' && k === 'hair' && (getProp(g, 'hairStyle') || 'none') === 'none'));
+}
+function extractPart(g, part) {
+  const all = { ...defaultProps(g.type), ...g.props };
+  if (part === 'body') return { heads: all.heads, build: all.build, bust: all.bust, anat: all.anat };
+  if (part === 'hair' && g.type === 'head') {
+    const hs = all.hairStyle;
+    if (hs === 'custom' && all.hairCustom) return cloneJ(all.hairCustom);
+    const pr = { ...(HAIR_PRESETS[hs] || {}) }; delete pr.name;
+    return { ...pr, style: hs, seed: all.hairSeed || 1 };
+  }
+  const o = {};
+  for (const [k, v] of Object.entries(all)) if (!(CHAR_SKIP[g.type] || []).includes(k) && !k.startsWith('_')) o[k] = v;
+  return cloneJ(o);
+}
+function applyPart(g, part, data) {
+  if (!data) return;
+  if (part === 'hair' && g.type === 'head') { g.props.hairStyle = 'custom'; g.props.hairCustom = cloneJ(data); return; }
+  Object.assign(g.props, cloneJ(data));
+}
+function saveToChar(c, g, part) {
+  const had = !!(c.parts && c.parts[part]);
+  c.parts = c.parts || {}; c.parts[part] = extractPart(g, part);
+  persist();
+  toast(`${CHAR_PARTS[part][1]} ${CHAR_PARTS[part][0]} → «${c.name}»${had ? ' (старое заменено)' : ''}`);
+}
+function newCharRow(onCreate) {
+  const inp = el('input', { type: 'text', class: 'text-input', placeholder: 'Имя персонажа', maxlength: '40' });
+  const ok = () => { const name = inp.value.trim(); if (!name) { inp.focus(); return; } const c = { id: S.nextChar++, name, parts: {} }; S.characters.push(c); R.charNew = false; onCreate(c); persist(); refreshPanel(); };
+  inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); });
+  setTimeout(() => inp.focus(), 50);
+  return el('div', { class: 'row char-new' }, inp, btn('Создать', ok, 'primary'), btn('✕', () => { R.charNew = false; refreshPanel(); }));
+}
+const partIcons = (c) => Object.keys(CHAR_PARTS).filter(k => c.parts && c.parts[k]).map(k => CHAR_PARTS[k][1]).join('') || '—';
+function charSection(g) {
+  const parts = partsOf(g);
+  panelBody.append(el('div', { class: 'section-title' }, '👤 Персонаж'));
+  const can = CHAR_SRC[g.type] || [];
+  if (parts.length) {
+    let part = R.charPart && parts.includes(R.charPart) ? R.charPart : parts[0];
+    if (parts.length > 1) panelBody.append(segRow('Сохранить', parts.map(k => [k, `${CHAR_PARTS[k][1]} ${CHAR_PARTS[k][0]}`]), part, (v) => { R.charPart = v; refreshPanel(); }));
+    else panelBody.append(el('p', { class: 'note' }, `Сохранить ${CHAR_PARTS[part][0].toLowerCase()} этой фигуры персонажу — у него будет только одно, старое заменится:`));
+    const chips = el('div', { class: 'chips' });
+    for (const c of S.characters) chips.append(el('button', { class: 'chip', onclick: () => saveToChar(c, g, part) }, el('span', {}, `${c.name} ${partIcons(c)}`)));
+    chips.append(el('button', { class: 'chip add', onclick: () => { R.charNew = true; refreshPanel(); } }, el('span', {}, '＋ Новый персонаж')));
+    panelBody.append(chips);
+    if (R.charNew) panelBody.append(newCharRow((c) => saveToChar(c, g, part)));
+  }
+  const donors = S.characters.filter(c => can.some(k => c.parts && c.parts[k]));
+  if (donors.length) {
+    panelBody.append(el('p', { class: 'note' }, 'Взять у персонажа:'));
+    const chips = el('div', { class: 'chips' });
+    for (const c of donors) for (const k of can) if (c.parts[k]) chips.append(el('button', { class: 'chip', onclick: () => { pushUndo(); applyPart(g, k, c.parts[k]); persist(); refreshPanel(); toast(`«${c.name}»: ${CHAR_PARTS[k][0].toLowerCase()} ✓`); } }, el('span', {}, `${CHAR_PARTS[k][1]} ${c.name}`)));
+    panelBody.append(chips);
+  }
+}
+// список персонажей в «Добавить»: тап по части — фигура с этой частью на лист
+function charManager() {
+  panelBody.append(el('div', { class: 'section-title' }, '👤 Мои персонажи'));
+  if (!S.characters.length) {
+    panelBody.append(el('p', { class: 'note' }, 'Настрой лицо, глаза, причёску или телосложение и в настройках фигуры нажми «＋ Новый персонаж» — части сохранятся под его именем.'));
+    return;
+  }
+  for (const c of S.characters) {
+    const row = el('div', { class: 'char-row' });
+    if (R.charEdit === c.id) {
+      const inp = el('input', { type: 'text', class: 'text-input', value: c.name, maxlength: '40' });
+      const ok = () => { const v = inp.value.trim(); if (v) c.name = v; R.charEdit = null; persist(); refreshPanel(); };
+      inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') ok(); });
+      setTimeout(() => inp.focus(), 50);
+      row.append(inp, btn('OK', ok, 'primary'));
+    } else {
+      row.append(el('b', {}, c.name));
+      const parts = el('span', { class: 'char-parts' });
+      for (const [k, [label, icon, type]] of Object.entries(CHAR_PARTS)) {
+        if (!(c.parts && c.parts[k])) continue;
+        parts.append(btn(`${icon} ${label}`, () => { addGuide(type); const g = S.guides.find(x => x.id === R.selected); if (g) { applyPart(g, k, c.parts[k]); if (k === 'face' && c.parts.hair) applyPart(g, 'hair', c.parts.hair); persist(); refreshPanel(); } }));
+      }
+      row.append(parts,
+        el('button', { class: 'x', title: 'Переименовать', onclick: () => { R.charEdit = c.id; refreshPanel(); } }, '✎'),
+        el('button', { class: 'x', title: 'Удалить', onclick: () => { if (confirm(`Удалить персонажа «${c.name}»?`)) { S.characters = S.characters.filter(x => x !== c); persist(); refreshPanel(); } } }, '🗑'));
+    }
+    panelBody.append(row);
+  }
+}
+
+// ---------- 🪞 Зеркало: отражение нарисованного ----------
+// Снимок листа (как в оцифровке, но быстро и в малом разрешении) → «чернила» без бумаги →
+// отражение относительно оси в координатах листа → полупрозрачный слой поверх камеры (WebGL,
+// как калька). Лист двигается — отражение остаётся на месте рисунка.
+function mirrorSection(g) {
+  const has = R.mirror && R.mirror.id === g.id && R.mirror.snap;
+  panelBody.append(el('div', { class: 'btns' },
+    btn(has ? '🔄 Переснять рисунок' : '📸 Снять рисунок', () => snapMirror(g), 'primary'),
+    ...(has ? [btn('🧹 Убрать отражение', () => { R.mirror = null; refreshPanel(); })] : [])));
+  panelBody.append(el('p', { class: 'note' }, has ? 'Отражение показано. Дорисовал — нажми «Переснять». Ось и настройки можно менять — отражение обновится сразу.' : 'Убери руки с листа и нажми «Снять рисунок». Снимок живёт до закрытия приложения.'));
+}
+async function snapMirror(g) {
+  if (!getCorners() || !R.vw) { toast('Сначала найди лист'); return; }
+  for (let i = 2; i > 0; i--) { toast(`Убери руки… ${i}`, 1000); await sleep(800); }
+  toast('Снимаю…', 2000);
+  const [pw, ph] = paperDims(), P4 = [{ x: 0, y: 0 }, { x: pw, y: 0 }, { x: pw, y: ph }, { x: 0, y: ph }];
+  const ppm = G.clamp(Math.round(1600 / Math.max(pw, ph) * 2) / 2, 2, 6);
+  try {
+    const r = await captureAligned(pw, ph, ppm, P4, 3);
+    R.mirror = { id: g.id, snap: inkOf(r.rect), ppm, pw, ph, key: '', out: null, n: (R.mirror ? R.mirror.n || 0 : 0) + 1 };
+    toast('Готово ✓ Отражение на листе');
+  } catch (e) { console.error(e); toast('Не получилось снять: ' + (e.message || e)); }
+  refreshPanel();
+}
+// чернила: тёмное относительно местной белизны бумаги (фон — максимум по блокам, сглаженный)
+function inkOf(rect) {
+  const { data, w, h } = rect, B = 24, bw = Math.ceil(w / B), bh = Math.ceil(h / B), bg = new Float32Array(bw * bh);
+  const lum = new Float32Array(w * h);
+  for (let i = 0, j = 0; j < w * h; i += 4, j++) lum[j] = 0.3 * data[i] + 0.59 * data[i + 1] + 0.11 * data[i + 2];
+  for (let by = 0; by < bh; by++) for (let bx = 0; bx < bw; bx++) {
+    const v = []; for (let y = by * B; y < Math.min(h, by * B + B); y += 2) for (let x = bx * B; x < Math.min(w, bx * B + B); x += 2) v.push(lum[y * w + x]);
+    v.sort((a, b) => a - b); bg[by * bw + bx] = v[Math.floor(v.length * 0.9)] || 255;
+  }
+  const bg2 = new Float32Array(bw * bh);
+  for (let by = 0; by < bh; by++) for (let bx = 0; bx < bw; bx++) { let s = 0, n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const X = bx + dx, Y = by + dy; if (X >= 0 && Y >= 0 && X < bw && Y < bh) { s += bg[Y * bw + X]; n++; } } bg2[by * bw + bx] = s / n; }
+  const a = new Uint8ClampedArray(w * h), rgb = new Uint8ClampedArray(w * h * 3);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const fx = G.clamp(x / B - 0.5, 0, bw - 1), fy = G.clamp(y / B - 0.5, 0, bh - 1), x0 = Math.floor(fx), y0 = Math.floor(fy), x1 = Math.min(bw - 1, x0 + 1), y1 = Math.min(bh - 1, y0 + 1), tx = fx - x0, ty = fy - y0;
+    const b = (bg2[y0 * bw + x0] * (1 - tx) + bg2[y0 * bw + x1] * tx) * (1 - ty) + (bg2[y1 * bw + x0] * (1 - tx) + bg2[y1 * bw + x1] * tx) * ty;
+    const j = y * w + x, ink = 1 - lum[j] / Math.max(30, b);
+    a[j] = G.clamp((ink - 0.07) * 3.2, 0, 1) * 255;
+    rgb[j * 3] = data[j * 4]; rgb[j * 3 + 1] = data[j * 4 + 1]; rgb[j * 3 + 2] = data[j * 4 + 2];
+  }
+  return { a, rgb, w, h };
+}
+function buildMirror(g) {
+  const M = R.mirror, { snap, ppm } = M, { w, h } = snap;
+  const side = getProp(g, 'side'), fade = +getProp(g, 'fade') || 0, rip = +getProp(g, 'ripple') || 0, tint = getProp(g, 'tint');
+  const [cr, cg, cb] = CL.hexToRgb(colorOf(g)), [a, b] = g.pts;
+  const d = G.sub(b, a), L = G.len(d) || 1, u = { x: d.x / L, y: d.y / L }, n = { x: -u.y, y: u.x };
+  const cv = M.out || (M.out = document.createElement('canvas')); cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d'), img = cx.createImageData(w, h), o = img.data;
+  for (let y = 0; y < h; y++) {
+    const py = (y + 0.5) / ppm;
+    for (let x = 0; x < w; x++) {
+      const px = (x + 0.5) / ppm, rx = px - a.x, ry = py - a.y, sd = rx * n.x + ry * n.y;
+      if ((side === 'ab' && sd <= 0) || (side === 'ba' && sd >= 0)) continue;
+      let qx = px - 2 * sd * n.x, qy = py - 2 * sd * n.y;
+      const ad = Math.abs(sd);
+      if (rip > 0) { const sh = rip * (0.6 + 0.035 * ad) * Math.sin(ad * 1.4) + rip * 0.4 * Math.sin(ad * 0.37 + 1); qx += u.x * sh; qy += u.y * sh; }
+      const sx = Math.round(qx * ppm - 0.5), sy = Math.round(qy * ppm - 0.5);
+      if (sx < 0 || sy < 0 || sx >= w || sy >= h) continue;
+      const j = sy * w + sx;
+      let al = snap.a[j]; if (!al) continue;
+      if (fade > 0) al *= Math.exp(-ad / fade);
+      if (rip > 0) al *= 1 - 0.35 * rip * (0.5 + 0.5 * Math.sin(ad * 2.1));
+      const k = (y * w + x) * 4;
+      if (tint === 'ink') { o[k] = snap.rgb[j * 3]; o[k + 1] = snap.rgb[j * 3 + 1]; o[k + 2] = snap.rgb[j * 3 + 2]; } else { o[k] = cr; o[k + 1] = cg; o[k + 2] = cb; }
+      o[k + 3] = al;
+    }
+  }
+  cx.putImageData(img, 0, 0);
+  mirrorLayer.setImage(cv);
+}
+function drawMirrorLayer() {
+  const M = R.mirror, g = M && S.guides.find(x => x.id === M.id && !x.hidden);
+  if (!M || !g || !M.snap || !R.P2S) { if (R.mirrorShown) { mirrorLayer.clear(); R.mirrorShown = false; } return; }
+  const key = JSON.stringify([g.pts, getProp(g, 'side'), getProp(g, 'fade'), getProp(g, 'ripple'), getProp(g, 'tint'), colorOf(g), M.n]);
+  if (key !== M.key) { M.key = key; buildMirror(g); }
+  const { w, h } = M.snap;
+  const F = G.mulAll([1, 0, 0, 0, -1, mirrorCanvas.height, 0, 0, 1], G.scale(R.DPR), R.P2S, G.scale(1 / M.ppm), G.scale(w, h));
+  mirrorLayer.draw(G.inv(F), +getProp(g, 'opacity') || 0.6);
+  R.mirrorShown = true;
 }
 
 // ---------- 🎨 Цвета: пипетка, смешивание, подбор смеси ----------

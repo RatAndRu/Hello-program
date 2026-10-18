@@ -399,6 +399,32 @@ export const TYPES = {
     drag(g, i, p) { if (i === 4) translateAll(g, i, p, 4); else g.pts[i] = p; },
   },
 
+  reflect: {
+    name: 'Зеркало', icon: '🪞',
+    desc: 'Отражение уже нарисованного: сфотографируй лист (кнопка ниже) — рисунок появится зеркально относительно оси, полупрозрачно, как калька. Для зеркал, воды и симметричных предметов. Ось — тяни за концы; стороны подписаны А и Б',
+    create: (c, s) => [{ x: c.x - s, y: c.y }, { x: c.x + s, y: c.y }],
+    props: [
+      { key: 'side', label: 'Что отражать', type: 'select', options: [['ab', 'А → на сторону Б'], ['ba', 'Б → на сторону А'], ['both', 'Обе стороны']], def: 'ab' },
+      { key: 'opacity', label: 'Видимость отражения', type: 'range', min: 0.1, max: 1, step: 0.05, def: 0.6 },
+      { key: 'tint', label: 'Цвет', type: 'select', options: [['color', 'Цветом направляющей'], ['ink', 'Как на рисунке']], def: 'color' },
+      { key: 'fade', label: 'Затухание вдаль, мм (0 — нет)', type: 'range', min: 0, max: 200, step: 5, def: 0 },
+      { key: 'ripple', label: 'Рябь (отражение в воде)', type: 'range', min: 0, max: 1, step: 0.05, def: 0 },
+      { key: 'mirrorGuides', label: 'Отражать и направляющие', type: 'toggle', def: false },
+    ],
+    draw(pen, g, ctx) {
+      const [a, b] = g.pts, d = sub(b, a), u = norm(d), n = perp(u), m = lerpP(a, b, 0.5), L = Math.max(6, len(d) * 0.12);
+      pen.inf(a, d, 'main');
+      // стрелки «куда отражается»
+      const side = pDefault(g, 'side');
+      const arrow = (sg) => { const p0 = add(m, mulS(n, -sg * L * 0.4)), p1 = add(m, mulS(n, sg * L * 1.2)); pen.seg(p0, p1, 'aux'); pen.seg(p1, add(p1, add(mulS(n, -sg * L * 0.35), mulS(u, L * 0.25))), 'aux'); pen.seg(p1, add(p1, add(mulS(n, -sg * L * 0.35), mulS(u, -L * 0.25))), 'aux'); };
+      if (side === 'ab' || side === 'both') arrow(1);
+      if (side === 'ba' || side === 'both') arrow(-1);
+      if (ctx.labels) { pen.label(add(add(m, mulS(u, L * 1.6)), mulS(n, -L)), 'А'); pen.label(add(add(m, mulS(u, L * 1.6)), mulS(n, L)), 'Б'); }
+    },
+    handles: (g) => g.pts,
+    drag(g, i, p) { g.pts[i] = p; },
+  },
+
   symmetry: {
     name: 'Ось симметрии', icon: '⫼', desc: 'Ось, поперечные метки и зеркальные копии других направляющих',
     create: (c, s) => [{ x: c.x, y: c.y - s }, { x: c.x, y: c.y + s }],
@@ -479,7 +505,7 @@ export const TYPES = {
 
 registerManga(TYPES);
 export { MANGA_ORDER };
-export const TYPE_ORDER = ['line', 'parallel', 'circle', 'ellipse', 'rect', 'polygon', 'arc', 'grid', 'persp', 'pellipse', 'symmetry', 'radial', 'light'];
+export const TYPE_ORDER = ['line', 'parallel', 'circle', 'ellipse', 'rect', 'polygon', 'arc', 'grid', 'persp', 'pellipse', 'symmetry', 'reflect', 'radial', 'light'];
 
 export function getProp(g, k) { return pDefault(g, k); }
 
