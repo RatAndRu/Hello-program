@@ -103,6 +103,12 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var heyGlassError = -1
     private var heyVideoOn = false
     private var heyAudioOn = false
+    private var heyPhotos = -1
+    private var heyVideos = -1
+    private var heyRecords = -1
+    private var heyExpectPhoto = false
+    private var heyPhotoBaseline = -1
+    private var heyLastEventAt = 0L
     private var heyPhotoStatus = ""
     private var heyThumbTotal = -1
     private var heyThumbBuffer = java.io.ByteArrayOutputStream()
@@ -564,6 +570,14 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             heyAutoDone = true
             ui.postDelayed({ heySubscribeProtocol() }, 300)
             ui.postDelayed({ heyReadIdentity() }, 2600)
+            // Прошлая сессия могла оставить очки в режиме передачи файлов — в нём камера
+            // занята, и команды съёмки формально принимаются, но ничего не происходит.
+            ui.postDelayed({
+                heySend(
+                    HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.TRANSFER_STOP),
+                    "Проверка режима: выхожу из передачи"
+                )
+            }, 5200)
         }
         rebuild()
     }
@@ -2209,6 +2223,30 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         state.addView(stateRow)
         c.addView(state)
 
+        // Тревожная плашка: камера занята режимом передачи — съёмка не сработает.
+        if (HeyCyan.cameraBusy(heyGlassWork)) {
+            val warn = card()
+            warn.addView(
+                txt(
+                    "Камера занята: очки в режиме «${HeyCyan.workName(heyGlassWork)}»",
+                    13,
+                    Pal.AMBER,
+                    bold = true
+                )
+            )
+            warn.addView(
+                txt(
+                    "Пока очки в этом режиме, команды съёмки формально принимаются, но кадр не снимается. " +
+                        "Выйдите из режима и повторите.",
+                    11,
+                    Pal.MUTED
+                )
+            )
+            warn.addView(spacer(8))
+            warn.addView(actionButton("Выйти из режима передачи", primary = true) { heyExitTransfer() })
+            c.addView(warn)
+        }
+
         // Действия
         val acts = card()
         acts.addView(txt("Что сделать", 12, Pal.MUTED, bold = true))
@@ -2352,18 +2390,21 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         box.addView(spacer(6))
         box.addView(
             txt(
-                "Фотографии и видео очки отдают не по Bluetooth, а по своей Wi-Fi-сети: " +
-                    "включают точку доступа, а приложение скачивает файл по HTTP. " +
-                    "Сначала снимите кадр, потом подключитесь к сети очков.",
+                "Видео, звук и полноразмерные фото очки отдают только по своей Wi-Fi-сети. " +
+                    "Для этого они переходят в режим передачи файлов — и пока они в нём, камера не работает: " +
+                    "команды съёмки формально принимаются, но кадр не снимается. " +
+                    "Поэтому режим включается отдельной кнопкой, и его нужно явно выключать.",
                 11,
                 Pal.MUTED
             )
         )
         box.addView(spacer(8))
         val b1 = row()
-        b1.addView(actionButton("Снять и запросить", primary = true) { heyFilesGrab() })
-        b1.addView(actionButton("Найти сеть очков", primary = false) { heyScanWifi() })
+        b1.addView(actionButton("Включить Wi-Fi очков", primary = true) { heyFilesGrab() })
+        b1.addView(actionButton("Выйти из передачи", primary = false) { heyExitTransfer() })
         box.addView(b1)
+        box.addView(spacer(6))
+        box.addView(actionButton("Найти сеть очков", primary = false) { heyScanWifi() })
         if (heyWifi.isNotEmpty()) {
             box.addView(spacer(8))
             box.addView(txt("Сети рядом:", 11, Pal.MUTED))
@@ -2393,10 +2434,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 HeyTx(HeyCyan.CH_SERIAL, 0x41, byteArrayOf(0x02, 0x04)),
                 HeyTx(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.TRANSFER))
             ),
-            "Забрать файлы"
+            "Режим передачи"
         )
-        heyActionStatus = "Очки переключаются в режим передачи: включают свою Wi-Fi-сеть. " +
-            "Миниатюру последнего кадра можно забрать по Bluetooth кнопкой «Фото»."
+        heyActionStatus = "Очки переходят в режим передачи и поднимают свою Wi-Fi-сеть. " +
+            "Пока они в нём, камера занята: после передачи обязательно нажмите «Выйти из передачи»."
     }
 
     private fun heyScanWifi() {
@@ -2438,48 +2479,123 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
      * Доказательство съёмки — ответ очков с кодом ошибки 0, а сам кадр забираем
      * миниатюрой (BC FD) — она приходит по Bluetooth целиком.
      */
+    /**
+     * Снять фото.
+     *
+     * Главная причина прошлых «фиктивных» команд: очки могут стоять в режиме
+     * передачи файлов (workType 4). В нём камера занята, и любая команда
+     * съёмки формально принимается (errorCode 0), но физически не выполняется.
+     * Поэтому сначала выходим из этого режима штатной командой TransferStop (0x09),
+     * синхронизируем время (очки именуют файлы по своим часам) и только потом снимаем.
+     * А проверяем результат не по коду ответа, а по счётчику файлов на очках.
+     */
     private fun heyTakePhoto() {
         heySubscribeProtocol()
         heyThumbBuffer = java.io.ByteArrayOutputStream()
         heyThumbTotal = -1
         heyThumbAsked = -1
-        heyPhotoStatus = "Отправляю команду съёмки. Индикатор очков должен мигнуть."
-        heyActionStatus = "Фото: команда отправлена, ждём ответ очков…"
+        heyPhotoStatus = "Готовлю съёмку…"
+        heyActionStatus = ""
         rebuild()
-        // Как официальное приложение: сначала качество кадра, затем затвор.
-        heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.photoQuality(2), "Фото: качество")
-        ui.postDelayed({
-            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.PHOTO), "Фото: снять")
-            // Даже без ответа просим миниатюру: кадр мог сняться, а подтверждение потеряться.
+
+        val shutter = Runnable {
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.photoQuality(2), "Фото: качество")
             ui.postDelayed({
-                if (heyThumbTotal < 0 && heyThumbAsked < 0) heyRequestThumb(0)
-            }, 4000)
-        }, 400)
+                heyExpectPhoto = true
+                heyPhotoBaseline = heyPhotos
+                heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.PHOTO), "Фото: снять")
+                heyActionStatus = "Фото: команда ушла в очки. Проверяю счётчик файлов — он и покажет, снят ли кадр."
+                ui.postDelayed({ heyRequestCounts() }, 4000)
+                ui.postDelayed({
+                    if (heyThumbTotal < 0 && heyThumbAsked < 0) heyRequestThumb(0)
+                }, 6000)
+            }, 600)
+        }
+
+        if (HeyCyan.cameraBusy(heyGlassWork)) {
+            heyActionStatus = "Очки в режиме «${HeyCyan.workName(heyGlassWork)}» — камера занята. " +
+                "Выхожу из него и снимаю."
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.TRANSFER_STOP), "Выход из режима передачи")
+            ui.postDelayed(shutter, 1500)
+        } else {
+            shutter.run()
+        }
     }
 
+    /** Выйти из режима передачи файлов: именно он блокирует камеру. */
+    private fun heyExitTransfer() {
+        heySubscribeProtocol()
+        heyActionStatus = "Отправляю «выйти из режима передачи»…"
+        rebuild()
+        heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.TRANSFER_STOP), "Выход из режима передачи")
+        ui.postDelayed({
+            if (HeyCyan.cameraBusy(heyGlassWork)) {
+                // Штатный выход не сработал — тогда сброс Wi-Fi, как делает сам SDK.
+                addLog("Режим передачи не снялся — отправляю сброс Wi-Fi (0x0F)")
+                heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.NO_POWER_P2P), "Сброс Wi-Fi")
+            }
+        }, 2500)
+    }
+
+    /** Спросить у очков, сколько файлов лежит в памяти. */
+    private fun heyRequestCounts() {
+        heySend(HeyCyan.CH_SERIAL, 0x41, byteArrayOf(0x02, 0x04), "Счётчик файлов")
+    }
+
+    /**
+     * Видео — переключатель. Остановка: сначала штатный VideoStop (0x03),
+     * а если очки его проигнорировали — повторная команда «старт», которой
+     * официальное приложение тоже останавливает запись.
+     */
     private fun heyToggleVideo() {
         heySubscribeProtocol()
         val start = !heyVideoOn
-        val work = if (start) HeyCyan.Work.VIDEO_START else HeyCyan.Work.VIDEO_STOP
-        heyActionStatus = "Видео: команда «${if (start) "начать запись" else "остановить"}» отправлена, " +
-            "ждём подтверждения очков…"
         rebuild()
-        heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(work), if (start) "Видео: старт" else "Видео: стоп")
-        ui.postDelayed({
-            if (start && !heyVideoOn) {
-                heyActionStatus = "Видео: очки не подтвердили запись — ответа нет или он с ошибкой."
-                if (tab == TAB_HEY) rebuild()
+        if (start) {
+            if (HeyCyan.cameraBusy(heyGlassWork)) {
+                heyActionStatus = "Очки в режиме «${HeyCyan.workName(heyGlassWork)}» — сначала выхожу из него."
+                heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.TRANSFER_STOP), "Выход из режима передачи")
+                ui.postDelayed({
+                    heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.VIDEO_START), "Видео: старт")
+                }, 1500)
+                return
             }
-        }, 4000)
+            heyActionStatus = "Видео: команда «начать запись» отправлена, ждём подтверждения очков…"
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.VIDEO_START), "Видео: старт")
+            ui.postDelayed({
+                if (!heyVideoOn) {
+                    heyActionStatus = "Видео: очки не подтвердили запись — ответа нет или он с ошибкой."
+                    if (tab == TAB_HEY) rebuild()
+                }
+            }, 4000)
+        } else {
+            heyActionStatus = "Видео: отправляю «остановить запись»…"
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.VIDEO_STOP), "Видео: стоп")
+            ui.postDelayed({
+                if (heyVideoOn) {
+                    // Прошивка не поняла отдельный стоп — шлём тот же «старт» (переключатель).
+                    heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.VIDEO_START), "Видео: стоп (переключатель)")
+                }
+            }, 2500)
+        }
     }
 
     private fun heyToggleAudio() {
         heySubscribeProtocol()
         val start = !heyAudioOn
-        val work = if (start) HeyCyan.Work.AUDIO_START else HeyCyan.Work.AUDIO_STOP
-        heyActionStatus = "Запись звука: команда отправлена, ждём подтверждения очков…"
         rebuild()
-        heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(work), if (start) "Звук: старт" else "Звук: стоп")
+        if (start) {
+            heyActionStatus = "Запись звука: команда отправлена, ждём подтверждения очков…"
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.AUDIO_START), "Звук: старт")
+        } else {
+            heyActionStatus = "Запись звука: отправляю «остановить»…"
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.AUDIO_STOP), "Звук: стоп")
+            ui.postDelayed({
+                if (heyAudioOn) {
+                    heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.AUDIO_START), "Звук: стоп (переключатель)")
+                }
+            }, 2500)
+        }
     }
 
     private fun heyToggleAssistant() {
@@ -2574,7 +2690,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         heyLastTx = frame
         heyLastTxAt = System.currentTimeMillis()
         if (ok) {
-            addLog("→ Очки · $title")
+            addLog("→ Очки · $title · ${HeyCyan.hex(frame)}")
         } else if (attempt < 2) {
             // GATT занят предыдущей операцией — повторяем, это обычное дело на Android.
             ui.postDelayed({ heySendRaw(channel, frame, title, attempt + 1) }, 400)
@@ -2613,21 +2729,60 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             }
             return
         }
+
+        // События очков (тип 0x73). Самое важное — 09 FF: Wi-Fi у очков не поднялся,
+        // SDK в этом случае шлёт «сброс Wi-Fi» (0x0F), иначе очки залипают.
+        HeyCyan.deviceEvent(value)?.let { ev ->
+            if (HeyCyan.wifiFailed(value)) {
+                addLog("Очки: Wi-Fi не поднялся (73 09 FF) — отправляю сброс Wi-Fi")
+                heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.NO_POWER_P2P), "Сброс Wi-Fi")
+            } else if (ev.type != 0x0B) {
+                val now = System.currentTimeMillis()
+                if (now - heyLastEventAt > 1500) {
+                    heyLastEventAt = now
+                    addLog("Событие очков: ${HeyCyan.eventName(ev.type)} (${ev.value})")
+                }
+            }
+            if (tab == TAB_HEY) rebuildThrottled()
+            return
+        }
         // Ответ очков на команду управления: что просили, ошибка, что сейчас.
-        HeyCyan.glassState(value)?.let { st -> heyOnGlassState(st) }
+        // Сырые байты в журнале — чтобы любую странность можно было проверить глазами.
+        HeyCyan.glassState(value)?.let { st ->
+            addLog("Ответ 0x41: ${HeyCyan.hex(value)}")
+            heyOnGlassState(st)
+        }
 
         // Миниатюра снимка: серия кадров, в каждом — кусок JPEG.
         HeyCyan.thumbChunk(value)?.let { chunk ->
-            heyFilesRaw = HeyCyan.hex(value.copyOfRange(6, minOf(value.size, 22)))
             heyOnThumbChunk(chunk)
             if (tab == TAB_HEY) rebuildThrottled()
             return
         }
 
-        // Счётчики файлов в памяти очков.
+        // Счётчики файлов в памяти очков. Это и есть проверка съёмки:
+        // очки сами говорят, стало ли файлов больше.
         HeyCyan.mediaCounts(value)?.let { counts ->
+            val previousPhotos = heyPhotos
+            heyPhotos = counts.photos
+            heyVideos = counts.videos
+            heyRecords = counts.records
             heyFiles = counts.photos + counts.videos + counts.records
             heyFilesRaw = "${counts.photos} фото · ${counts.videos} видео · ${counts.records} записей"
+            val baseline = if (heyPhotoBaseline >= 0) heyPhotoBaseline else previousPhotos
+            if (heyExpectPhoto && baseline >= 0) {
+                heyExpectPhoto = false
+                heyPhotoBaseline = -1
+                if (counts.photos > baseline) {
+                    heyPhotoStatus = "Фото реально снято: очки сообщили, что файлов стало больше " +
+                        "($baseline → ${counts.photos})."
+                    addLog("Счётчик фото вырос: $baseline → ${counts.photos}")
+                } else {
+                    heyPhotoStatus = "Счётчик фото не изменился (${counts.photos}). Кадр не снят — " +
+                        "очки, скорее всего, были заняты другим режимом."
+                    addLog("Счётчик фото не вырос: ${counts.photos}")
+                }
+            }
         }
 
         val echo = heyLastTx?.let { it.contentEquals(value) } == true &&
@@ -2643,32 +2798,40 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     /** Очки ответили на команду: только этот ответ и считается подтверждением. */
     private fun heyOnGlassState(st: HeyCyan.GlassState) {
+        val previous = heyGlassWork
         heyGlassWork = st.running
         heyGlassError = st.error
-        addLog("Очки: просили ${HeyCyan.workName(st.work)}, ошибка ${st.error}, сейчас ${HeyCyan.workName(st.running)}")
+        // Текущее состояние берём из ответа очков, а не из наших надежд.
+        heyVideoOn = st.running == HeyCyan.Work.VIDEO_START
+        heyAudioOn = st.running == HeyCyan.Work.AUDIO_START
+        addLog(
+            "Очки: просили ${HeyCyan.workName(st.work)}, код ${st.error}, " +
+                "сейчас ${HeyCyan.workName(st.running)}"
+        )
+        if (previous != st.running) addLog("Режим очков: ${HeyCyan.workName(st.running)}")
         if (st.error != 0) {
-            heyActionStatus = "Очки отказали: «${HeyCyan.workName(st.work)}» недоступно (код ${st.error})" +
+            heyActionStatus = "Очки отказали: «${HeyCyan.workName(st.work)}» (код ${st.error})" +
                 " · сейчас: ${HeyCyan.workName(st.running)}"
-            if (st.work == HeyCyan.Work.VIDEO_START) heyVideoOn = false
-            if (st.work == HeyCyan.Work.AUDIO_START) heyAudioOn = false
             return
         }
-        heyActionStatus = "Очки подтвердили: ${HeyCyan.workName(st.work)}"
+        heyActionStatus = "Очки подтвердили: ${HeyCyan.workName(st.work)}" +
+            if (st.running != st.work) " · сейчас: ${HeyCyan.workName(st.running)}" else ""
         when (st.work) {
             HeyCyan.Work.PHOTO, HeyCyan.Work.PHOTO_AI -> {
-                heyPhotoStatus = "Очки сняли кадр. Забираю миниатюру по Bluetooth…"
-                ui.postDelayed({ if (heyThumbTotal < 0) heyRequestThumb(0) }, 1200)
+                if (HeyCyan.cameraBusy(st.running)) {
+                    // Камера занята чужим режимом: команда «принята», но кадра не будет.
+                    heyPhotoStatus = "Очки приняли команду, но остались в режиме «" +
+                        HeyCyan.workName(st.running) + "» — кадр не снят. " +
+                        "Нажмите «Выйти из режима передачи» и повторите."
+                } else {
+                    heyPhotoStatus = "Очки приняли команду съёмки. Проверяю счётчик файлов…"
+                    ui.postDelayed({ if (heyThumbTotal < 0) heyRequestThumb(0) }, 1500)
+                }
             }
-            HeyCyan.Work.VIDEO_START -> {
-                heyVideoOn = true
-                heyAudioOn = false
+            HeyCyan.Work.TRANSFER_STOP -> {
+                heyPhotoStatus = "Очки вышли из режима передачи — камера свободна."
             }
-            HeyCyan.Work.VIDEO_STOP -> heyVideoOn = false
-            HeyCyan.Work.AUDIO_START -> {
-                heyAudioOn = true
-                heyVideoOn = false
-            }
-            HeyCyan.Work.AUDIO_STOP, HeyCyan.Work.STOP_AI -> heyAudioOn = false
+            else -> {}
         }
     }
 

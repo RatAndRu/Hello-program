@@ -121,6 +121,8 @@ object HeyCyan {
     // Код ошибки 0 = принято и работает. Именно этот байт — доказательство,
     // а не факт того, что наша запись ушла в GATT.
 
+    // Полный перечень из вендорского enum QCOperatorDeviceMode (0x00–0x13).
+    // Всё, что ≥ 0x14, прошивка не понимает.
     object Work {
         const val PHOTO = 0x01
         const val VIDEO_START = 0x02
@@ -130,18 +132,30 @@ object HeyCyan {
         const val PHOTO_AI = 0x06
         const val ASSISTANT = 0x07
         const val AUDIO_START = 0x08
+        /** TransferStop — единственный штатный выход из режима передачи файлов. */
+        const val TRANSFER_STOP = 0x09
+        const val FACTORY_RESET = 0x0A
         const val STOP_AI = 0x0B
         const val AUDIO_STOP = 0x0C
+        const val FIND_DEVICE = 0x0D
+        const val RESTART = 0x0E
         const val NO_POWER_P2P = 0x0F
+        const val SPEAK_START = 0x10
+        const val SPEAK_STOP = 0x11
+        const val TRANSLATE_START = 0x12
+        const val TRANSLATE_STOP = 0x13
     }
 
     /** «Сделай то-то» для очков. */
     fun control(work: Int, extra: ByteArray = ByteArray(0)): ByteArray =
         byteArrayOf(0x02, 0x01, work.toByte()) + extra
 
-    /** Качество кадра для ИИ-съёмки: SDK шлёт значение дважды. */
+    /**
+     * Качество кадра для ИИ-съёмки. Официальный сэмпл шлёт [02 01 06 q q 02],
+     * то есть значение дважды и завершающий байт 02.
+     */
     fun photoQuality(q: Int): ByteArray =
-        byteArrayOf(0x02, 0x01, Work.PHOTO_AI.toByte(), q.toByte(), q.toByte())
+        byteArrayOf(0x02, 0x01, Work.PHOTO_AI.toByte(), q.toByte(), q.toByte(), 0x02)
 
     /** Ответ очков на команду 0x41: что просили, код ошибки и что сейчас происходит. */
     data class GlassState(val work: Int, val error: Int, val running: Int)
@@ -193,18 +207,61 @@ object HeyCyan {
 
     /** Человеческое имя рабочего режима очков. */
     fun workName(code: Int): String = when (code) {
+        0x00 -> "ожидание"
         0x01 -> "фото"
         0x02 -> "видеозапись идёт"
         0x03 -> "видеозапись остановлена"
         0x04 -> "передача файлов по Wi-Fi"
         0x05 -> "обновление прошивки"
         0x06 -> "фото (ИИ)"
-        0x07 -> "ИИ-собеседник"
+        0x07 -> "распознавание речи"
         0x08 -> "запись звука"
-        0x0B -> "ИИ-режим остановлен"
+        0x09 -> "выход из режима передачи"
+        0x0A -> "сброс настроек"
+        0x0B -> "распознавание речи остановлено"
         0x0C -> "запись звука остановлена"
-        0x0F -> "Wi-Fi без питания"
-        else -> "режим $code"
+        0x0D -> "поиск очков"
+        0x0E -> "перезапуск"
+        0x0F -> "сброс Wi-Fi (без питания)"
+        0x10 -> "голос: начало"
+        0x11 -> "голос: стоп"
+        0x12 -> "перевод: старт"
+        0x13 -> "перевод: стоп"
+        else -> "неизвестный режим $code"
+    }
+
+    /** Режимы, в которых камера занята и команды съёмки не выполняются. */
+    fun cameraBusy(work: Int): Boolean = work == Work.TRANSFER || work == Work.OTA
+
+    // ---------- События очков (тип 0x73) ----------
+
+    data class DeviceEvent(val type: Int, val value: Int)
+
+    fun deviceEvent(value: ByteArray): DeviceEvent? {
+        if (!isBigFrame(value)) return null
+        if ((value[1].toInt() and 0xFF) != 0x73) return null
+        if (value.size < 8) return null
+        return DeviceEvent(
+            type = value[6].toInt() and 0xFF,
+            value = value[7].toInt() and 0xFF
+        )
+    }
+
+    /** 73 09 FF — очки не смогли поднять Wi-Fi; SDK в ответ шлёт «сброс Wi-Fi». */
+    fun wifiFailed(value: ByteArray): Boolean {
+        val e = deviceEvent(value) ?: return false
+        return e.type == 0x09 && e.value == 0xFF
+    }
+
+    fun eventName(type: Int): String = when (type) {
+        0x01 -> "состояние устройства"
+        0x02 -> "результат ИИ-снимка"
+        0x03 -> "микрофон включён"
+        0x09 -> "Wi-Fi очков"
+        0x0B -> "отсчёт состояния"
+        0x0F -> "перевод: пауза"
+        0x10 -> "перевод: продолжение"
+        else -> "событие 0x" + String.format("%02X", type)
     }
 
     /**
