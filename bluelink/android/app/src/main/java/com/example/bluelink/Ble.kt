@@ -451,6 +451,8 @@ class BleCentral(private val ctx: Context) {
         gatt = null
         main.removeCallbacks(subscribeWatchdog)
         deniedSubscriptions.clear()
+        subscribeTimeouts = 0
+        synchronized(subscribeQueue) { subscribedKeys.clear() }
         synchronized(subscribeQueue) {
             subscribeQueue.clear()
             subscribeBusy = false
@@ -787,7 +789,17 @@ class BleCentral(private val ctx: Context) {
             }
             if (Build.VERSION.SDK_INT >= 33) {
                 // На API 33+ метод возвращает int-код (0 = SUCCESS), а не boolean.
-                g.writeCharacteristic(c, payload, type) == android.bluetooth.BluetoothStatusCodes.SUCCESS
+                val first = g.writeCharacteristic(c, payload, type) == android.bluetooth.BluetoothStatusCodes.SUCCESS
+                if (first) return true
+                // Часть прошивок принимает только запись с подтверждением — пробуем её.
+                if (type != BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT && supportsResponse) {
+                    val second = g.writeCharacteristic(
+                        c, payload, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                    ) == android.bluetooth.BluetoothStatusCodes.SUCCESS
+                    if (second) emit { it.onLog("Запись: принята только с подтверждением") }
+                    return second
+                }
+                false
             } else {
                 c.writeType = type
                 c.value = payload
@@ -800,14 +812,29 @@ class BleCentral(private val ctx: Context) {
         }
     }
 
-    /** Идёт запись дескриптора подписки — писать в характеристику сейчас нельзя. */
+    private var subscribeStartedAt = 0L
+    private val subscribedKeys = HashSet<String>()
+
+    /**
+     * Идёт запись дескриптора подписки — писать в характеристику сейчас нельзя.
+     * Но только пока операция действительно свежая: если обратного вызова нет,
+     * ждать вечно нельзя, иначе все команды очкам блокируются навсегда.
+     */
     val busySubscribing: Boolean
-        get() = subscribeBusy
+        get() = subscribeBusy && System.currentTimeMillis() - subscribeStartedAt < 1200
 
     /** Ставит подписку в очередь: GATT выполняет операции строго по одной. */
     fun subscribe(service: UUID?, char: UUID, enable: Boolean = true, index: Int = 0): Boolean {
         if (!enable) return doSubscribe(service, char, false, index)
-        synchronized(subscribeQueue) { subscribeQueue.addLast(Triple(service, char, index)) }
+        val key = "$service|$char|$index"
+        val already = synchronized(subscribeQueue) {
+            if (!subscribedKeys.add(key)) true
+            else {
+                subscribeQueue.addLast(Triple(service, char, index))
+                false
+            }
+        }
+        if (already) return true
         pumpSubscribe()
         return true
     }
@@ -819,6 +846,7 @@ class BleCentral(private val ctx: Context) {
             next = subscribeQueue.removeFirstOrNull() ?: return
             subscribeBusy = true
         }
+        subscribeStartedAt = System.currentTimeMillis()
         val started = doSubscribe(next.first, next.second, true, next.third)
         if (!started) {
             synchronized(subscribeQueue) { subscribeBusy = false }
@@ -830,16 +858,29 @@ class BleCentral(private val ctx: Context) {
         main.postDelayed(subscribeWatchdog, 3000)
     }
 
+    private var subscribeTimeouts = 0
+
     private val subscribeWatchdog = Runnable {
         val wasBusy = synchronized(subscribeQueue) {
             val was = subscribeBusy
             subscribeBusy = false
             was
         }
-        if (wasBusy) {
-            emit { it.onLog("Подписка: устройство не ответило на запись — продолжаю") }
-            main.postDelayed({ pumpSubscribe() }, 120)
+        if (!wasBusy) return@Runnable
+        subscribeTimeouts += 1
+        if (subscribeTimeouts >= 3) {
+            // Устройство молчит на записи дескрипторов. Продолжать бессмысленно:
+            // очередь только блокирует команды. Оставляем то, что уже подписано.
+            val dropped = synchronized(subscribeQueue) {
+                val n = subscribeQueue.size
+                subscribeQueue.clear()
+                n
+            }
+            emit { it.onLog("Подписка: устройство не отвечает — очередь сброшена (пропущено $dropped)") }
+            return@Runnable
         }
+        emit { it.onLog("Подписка: устройство не ответило на запись — пробую следующий пункт") }
+        main.postDelayed({ pumpSubscribe() }, 150)
     }
 
     /** Характеристики, на которые система не даёт подписаться: второй раз не пробуем. */
@@ -850,6 +891,7 @@ class BleCentral(private val ctx: Context) {
 
     private fun subscribeDone() {
         main.removeCallbacks(subscribeWatchdog)
+        subscribeTimeouts = 0
         synchronized(subscribeQueue) { subscribeBusy = false }
         main.postDelayed({ pumpSubscribe() }, 150)
     }

@@ -142,6 +142,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     // Кольцо: своя сессия и свои данные.
     private var ring: RingSession? = null
     private var ringStartedFor = ""
+    private var ringStartedAt = 0L
     private var ringHaptic = false
 
     // Очки держат только одно подключение: нативное приложение и мы не можем
@@ -156,6 +157,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var lastRingPress: String = ""
     private var lastRingPressAt = 0L
 
+    private var lastHeyRefreshAt = 0L
     private var heySelfTestSeen = 0
     private var heySelfTestUntil = 0L
     private var heySelfTestWrites = 0
@@ -3085,6 +3087,11 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     /** Опросить заряд и сведения об очках. */
     private fun heyRefresh() {
+        // Этот запрос зовут из нескольких мест сразу; без паузы очередь GATT
+        // наполняется одинаковыми командами и всё начинает отваливаться.
+        val now = System.currentTimeMillis()
+        if (now - lastHeyRefreshAt < 2500) return
+        lastHeyRefreshAt = now
         if (connState != ConnState.CONNECTED) {
             toast("Сначала подключитесь к очкам")
             return
@@ -3112,8 +3119,18 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         )) {
             if (subscribed.add("$service|$char")) ble.subscribe(service, char, true)
         }
+        // Подписываемся только там, где есть смысл. Слепая подписка на все
+        // уведомления сервисов приводила к двум бедам: часть характеристик
+        // требует системного BLUETOOTH_PRIVILEGED, а очередь подписок
+        // застревала и блокировала все команды очкам.
+        val skip = setOf(0x2A05, 0x2A4D, 0x2A4B, 0x2A22, 0x2A32, 0x2A33, 0x2A4E, 0x2A4C)
+        val wanted = setOf(0xAE30, 0x3802, 0xFEE1, 0xA00A)
         for (service in gattServices) {
+            val short = GattNames.shortCode(service.uuid)
+            if (short !in wanted) continue
             for (char in service.chars) {
+                val code = GattNames.shortCode(char.uuid)
+                if (code in skip) continue
                 if (char.notifiable && subscribed.add("${service.uuid}|${char.uuid}")) {
                     ble.subscribe(service.uuid, char.uuid, true)
                 }
@@ -3144,14 +3161,13 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (ble.busySubscribing) {
             // Ещё пишется дескриптор подписки: подождём, иначе GATT отклонит запись.
             // Но не бесконечно: иначе команды молча копились бы в очереди и «терялись».
-            if (busyWaits < 20) {
+            if (busyWaits < 6) {
                 ui.postDelayed({ heySendRaw(channel, frame, title, attempt, quiet, busyWaits + 1) }, 250)
-            } else {
-                addLog("Очки · $title: связь занята подпиской, команда не отправлена")
-                heyActionStatus = "$title: очки не приняли команду (связь занята)"
-                if (tab == TAB_HEY) rebuildThrottled()
+                return
             }
-            return
+            // Ждать дольше нельзя: подписка могла зависнуть. Пробуем писать —
+            // если GATT занят, попытка просто не пройдёт и мы это увидим.
+            addLog("Очки · $title: подписка задерживает связь, пробую писать всё равно")
         }
         // Канал A у SDK — обычная запись с ответом, канал B — без ответа.
         val ok = ble.write(service, char, frame, withResponse = if (channel == HeyCyan.CH_CTRL) null else false)
@@ -3735,12 +3751,16 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         // Очкам кольцо не мешает: у них другие сервисы, и detect() это учитывает.
         if (heyAvailable()) return
         if (ringStartedFor == connAddress && ring != null) {
+            // Список сервисов может прийти дважды подряд (после MTU). Второй раз
+            // не перезапускаем сеанс: иначе кольцо получает двойную инициализацию.
+            if (System.currentTimeMillis() - ringStartedAt < 4000) return
             // Переподключение: подписки прежние уже не действуют. Восстанавливаем,
             // иначе кольцо измеряет, а данные в приложение не приходят.
             ring?.ensureSubscriptions(services)
             return
         }
         ringStartedFor = connAddress
+        ringStartedAt = System.currentTimeMillis()
         // Кольцо найдено впервые — сразу включаем перехват, чтобы не заставлять
         // пользователя искать переключатель. Отключить можно в любой момент.
         if (!prefs.getBoolean("ring_pult_asked", false)) {
@@ -3976,7 +3996,24 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             c.addView(card0)
             // Пульт работает и без подключения по BLE: кольцо общается с телефоном
             // само, поэтому перехват полезен до всякой настройки.
-            c.addView(ringPultCard())
+            if (session.readingsLog.isNotEmpty()) {
+            val log = card()
+            log.addView(txt("Измерения, которые кольцо сообщило", 12, Pal.MUTED, bold = true))
+            log.addView(spacer(6))
+            log.addView(txt(
+                session.readingsLog.take(10).joinToString("\n"),
+                11, Pal.TEXT, mono = true
+            ))
+            log.addView(spacer(6))
+            log.addView(txt(
+                "Это реальные ответы кольца (кадры 05 03 / 05 09 / 05 0A / 05 0D), а не расчёт " +
+                    "по пульсу. Значения сохраняются при переподключении — кольцо отдаёт их нечасто.",
+                11, Pal.MUTED
+            ))
+            c.addView(log)
+        }
+
+        c.addView(ringPultCard())
             return c
         }
 

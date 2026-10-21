@@ -64,8 +64,11 @@ class RingSession(
     private var hidMap: HidMap.Map? = null
     /** Что уже попробовали и что из этого получило ответ — для честного отчёта. */
     val probeLog = ArrayList<String>()
+    /** Всё, что кольцо реально сообщило, с временем — не пропадает при переподключении. */
+    val readingsLog = ArrayList<String>()
     private var replies = 0
     private var readsAsked = 0
+    private var subscribedOnce = false
     /** Сырые чтения характеристик кольца: что удалось прочитать без команд. */
     val rawReads = LinkedHashMap<String, String>()
     private var lastGestureAt = 0L
@@ -92,11 +95,9 @@ class RingSession(
         framing = null
         detection = null
         status = "Кольцо не подключено"
-        battery = null
-        firmware = null
-        heartRate = null
-        spo2 = null
-        stress = null
+        // Заряд, версию и последние измерения НЕ обнуляем: кольцо отдаёт их редко,
+        // и после переподключения они бы исчезали с экрана.
+        if (readingsLog.isEmpty() && lastReading.isNotBlank()) readingsLog.add(lastReading)
         capabilitiesText = ""
         menuText = ""
         menu = null
@@ -112,6 +113,7 @@ class RingSession(
         rawReads.clear()
         replies = 0
         readsAsked = 0
+        subscribedOnce = false
     }
 
     fun stop() {
@@ -141,6 +143,9 @@ class RingSession(
         later(700) { readReportMap() }
         later(1100) { firstProbes() }
         later(6200) { if (!framingConfirmed) probeOtherChannels() }
+        // Даже когда кольцо уже отвечало, история измерений — самый надёжный
+        // источник цифр: live-кадры приходят далеко не у всех прошивок.
+        later(7500) { if (framingConfirmed) history() }
         later(4200) { fallbackProbe() }
         later(6500) { probeOtherChannels() }
         later(11000) {
@@ -159,6 +164,8 @@ class RingSession(
     }
 
     private fun subscribeAll() {
+        if (subscribedOnce) return
+        subscribedOnce = true
         val services = currentServices
         for (svc in services) {
             if (svc.uuid == Ring.SVC_DATA && svc.chars.any { it.uuid == Ring.CH_NOTIFY }) {
@@ -327,9 +334,17 @@ class RingSession(
     fun ensureSubscriptions(services: List<GattServiceInfo>) {
         currentServices = services
         active = true
+        subscribedOnce = false
         subscribeAll()
         later(600) { readReportMap() }
-        if (!framingConfirmed) later(900) { firstProbes() }
+        if (!framingConfirmed) {
+            later(900) { firstProbes() }
+        } else {
+            // Протокол уже подтверждён — просто напоминаем кольцу, кто мы,
+            // и просим последние измерения.
+            later(400) { sendJl(Ring.jlSessionInit()) }
+            later(1500) { history() }
+        }
         log("Кольцо: восстановил подписки после подключения")
     }
 
@@ -343,6 +358,7 @@ class RingSession(
         sendJl(Ring.jlHistory(Ring.Measure.HEART_RATE))
         later(1200) { sendJl(Ring.jlHistory(Ring.Measure.SPO2)) }
         later(2400) { sendJl(Ring.jlHistory(Ring.Measure.HRV)) }
+        later(3600) { sendJl(Ring.jlHistory(Ring.Measure.STRESS)) }
         status = "Прошу у кольца последние измерения из памяти."
         measureState = "запрос истории отправлен"
         log("Кольцо: запрос истории 05 03 10 / 05 09 10 / 05 0A 10")
@@ -363,6 +379,15 @@ class RingSession(
         }
         sendJl(Ring.jlRealtime(type, true))
         measureState = "команда отправлена, жду ответ кольца"
+        // У этой прошивки live-кадры могут не приходить вовсе (в 2.3 так и было).
+        // Через 12 секунд молчания сами забираем последнее измерение из памяти.
+        later(12_000) {
+            if (framingConfirmed) {
+                measureState = "live-кадры не пришли — забираю измерение из памяти кольца"
+                log("Кольцо: ответа на измерение нет, запрашиваю историю")
+                history()
+            }
+        }
         status = "Прошу кольцо измерить: " + when (type) {
             Ring.Measure.SPO2 -> "кислород"
             Ring.Measure.STRESS -> "стресс"
@@ -435,6 +460,12 @@ class RingSession(
         return false
     }
 
+    private fun remember(text: String) {
+        lastReading = text
+        readingsLog.add(0, text)
+        while (readingsLog.size > 20) readingsLog.removeAt(readingsLog.size - 1)
+    }
+
     private fun applyJl(frame: Ring.JlFrame) {
         log(
             "Кольцо → " + String.format("%02X %02X %02X", frame.cmd, frame.key, frame.keyFlag) +
@@ -456,6 +487,9 @@ class RingSession(
         Ring.measureStatus(frame)?.let { st ->
             measureState = Ring.measureStatusText(st)
             log("Кольцо: измерение — $measureState")
+            // Как только кольцо говорит «готово», забираем измерение из памяти:
+            // live-кадры приходят не у всех прошивок, история — почти у всех.
+            if (st.status == 0x01) later(1500) { history() }
             changed()
         }
         for (r in Ring.readJl(frame)) {
@@ -467,16 +501,17 @@ class RingSession(
                 Ring.Metric.FIRMWARE -> firmware = r.extra
                 Ring.Metric.HEART_RATE -> {
                     heartRate = r.value
-                    lastReading = timeStamp() + "  пульс $r.value"
+                    remember(timeStamp() + "  пульс $r.value уд/мин")
                 }
                 Ring.Metric.SPO2 -> {
                     spo2 = r.value
-                    lastReading = timeStamp() + "  кислород $r.value%"
+                    remember(timeStamp() + "  кислород $r.value%")
                 }
                 Ring.Metric.STRESS -> {
                     stress = r.value
-                    lastReading = timeStamp() + "  стресс $r.value"
+                    remember(timeStamp() + "  стресс $r.value")
                 }
+                Ring.Metric.HRV -> remember(timeStamp() + "  HRV $r.value")
                 else -> {}
             }
         }

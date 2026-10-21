@@ -6,8 +6,8 @@ android {
         applicationId 'com.example.bluelink'
         minSdk 26
         targetSdk 34
-        versionCode 15
-        versionName '2.3'
+        versionCode 16
+        versionName '2.3.1'
     }
     signingConfigs {
         // Постоянный ключ разработчика лежит в репозитории (это НЕ секрет: приложение личное).
