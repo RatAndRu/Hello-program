@@ -56,23 +56,26 @@ jobs:
           BLUELINK_STORE_PASSWORD: ${{ secrets.BLUELINK_STORE_PASSWORD }}
           BLUELINK_KEY_PASSWORD: ${{ secrets.BLUELINK_KEY_PASSWORD }}
           BLUELINK_KEY_ALIAS: ${{ secrets.BLUELINK_KEY_ALIAS }}
-        run: |
-          set -o pipefail
-          gradle assembleRelease --stacktrace 2>&1 | tee /tmp/build.log
+        run: gradle assembleRelease --stacktrace
 
-      - name: Лог при ошибке
-        if: failure()
-        run: |
-          cd "$RUNNER_TEMP" && mkdir -p logrepo && cd logrepo
-          git init -q && git config user.name ci-bot && git config user.email ci@example.com
-          tail -c 60000 /tmp/build.log > build.log || true
-          git add build.log && git commit -q -m log || true
-          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:refs/heads/bluelink-build-log || true
-
+      # Отпечаток постоянного ключа. Если он изменится, Android перестанет ставить
+      # обновления поверх установленной версии — поэтому сборка падает сразу.
       - name: Проверить подпись APK
         run: |
           APK=bluelink/android/app/build/outputs/apk/release/app-release.apk
+          EXPECTED="94:59:A5:7F:EA:9E:41:D0:C8:7E:B9:02:FB:DF:AB:6E:AF:63:17:B2:9F:1A:35:55:3F:8A:F0:C9:25:33:1B:A9"
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK" | head -5
+          ACTUAL=$("$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK" \
+            | sed -n 's/.*SHA-256 digest: //p' | head -1 | tr 'a-f' 'A-F')
+          echo "Отпечаток: $ACTUAL"
+          if [ -n "$BLUELINK_KEYSTORE_FILE" ]; then
+            echo "Используется ключ из секрета — сверка с эталоном пропущена"
+          elif [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::Отпечаток подписи изменился — обновление APK сломается"
+            exit 1
+          else
+            echo "Подпись постоянная: обновления установятся поверх старой версии"
+          fi
 
       - name: Загрузить APK в Artifacts
         uses: actions/upload-artifact@v4
