@@ -37,7 +37,11 @@ data class DeviceProfile(
     val batteryChar: UUID? = null,
     val camera: CameraSpec? = null,
     val notes: List<String> = emptyList(),
-    val builtIn: Boolean = false
+    val builtIn: Boolean = false,
+    /** Профиль создан автоматически по данным GATT, а не выбран вручную. */
+    val auto: Boolean = false,
+    /** Варианты камеры, угаданные по GATT (запись + уведомления в одном сервисе). */
+    val cameraCandidates: List<CameraSpec> = emptyList()
 ) {
     val hasCamera: Boolean get() = camera != null
     val cameraModeText: String
@@ -96,8 +100,25 @@ data class DeviceProfile(
             })
         }
         if (notes.isNotEmpty()) o.put("notes", JSONArray(notes))
+        if (auto) o.put("auto", true)
+        if (cameraCandidates.isNotEmpty()) {
+            o.put("cameraCandidates", JSONArray(cameraCandidates.map { cameraToJson(it) }))
+        }
         return o
     }
+}
+
+private fun cameraToJson(c: CameraSpec): JSONObject = JSONObject().apply {
+    put("mode", c.mode)
+    put("label", c.label)
+    c.service?.let { put("service", shortOrFull(it)) }
+    c.triggerChar?.let { put("triggerCharacteristic", shortOrFull(it)) }
+    c.dataChar?.let { put("dataCharacteristic", shortOrFull(it)) }
+    put("trigger", bytesToHex(c.trigger))
+    put("framing", c.framing)
+    if (c.httpUrl.isNotBlank()) put("httpUrl", c.httpUrl)
+    if (c.wifiSsid.isNotBlank()) put("wifiSsid", c.wifiSsid)
+    put("waitMs", c.waitMs)
 }
 
 private fun shortOrFull(uuid: UUID): String {
@@ -132,6 +153,28 @@ object ProfileParser {
         o.optJSONArray("notes")?.let { arr ->
             for (i in 0 until arr.length()) arr.optString(i).takeIf { it.isNotBlank() }?.let { notes.add(it) }
         }
+        val candidates = ArrayList<CameraSpec>()
+        o.optJSONArray("cameraCandidates")?.let { arr ->
+            for (i in 0 until arr.length()) {
+                val c = arr.optJSONObject(i) ?: continue
+                candidates.add(
+                    CameraSpec(
+                        mode = c.optString("mode", "ble"),
+                        label = c.optString("label", "Проверить камеру"),
+                        service = parseUuid(c.optString("service")),
+                        triggerChar = parseUuid(c.optString("triggerCharacteristic")),
+                        dataChar = parseUuid(c.optString("dataCharacteristic")),
+                        trigger = try {
+                            if (c.optString("trigger").isBlank()) byteArrayOf(0x01) else parsePayload(c.optString("trigger"))
+                        } catch (e: Exception) {
+                            byteArrayOf(0x01)
+                        },
+                        framing = c.optString("framing", "jpeg"),
+                        waitMs = c.optInt("waitMs", 1200)
+                    )
+                )
+            }
+        }
         val camera = cameraObj?.let {
             CameraSpec(
                 mode = it.optString("mode", "demo"),
@@ -165,7 +208,9 @@ object ProfileParser {
             batteryChar = parseUuid(battery?.optString("characteristic") ?: ""),
             camera = camera,
             notes = notes,
-            builtIn = builtIn
+            builtIn = builtIn,
+            auto = o.optBoolean("auto", false),
+            cameraCandidates = candidates
         )
     }
 }

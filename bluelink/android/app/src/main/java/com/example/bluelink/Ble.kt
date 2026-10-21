@@ -28,6 +28,7 @@ data class ScanItem(
     val rssi: Int,
     val device: BluetoothDevice?,
     val demo: Boolean = false,
+    /** Устройство классического Bluetooth (наушники/колонка/автомагнитола) из списка сопряжённых. */
     val classic: Boolean = false,
     val serviceUuids: List<UUID> = emptyList()
 ) {
@@ -48,13 +49,15 @@ interface BleListener {
 
 /**
  * Центральное устройство BLE: скан, подключение, чтение/запись/подписка на характеристики.
- * Один общий движок, через который работают и обзор GATT, и профили устройств.
+ *
+ * Важно: колбэки Android Bluetooth приходят в служебных потоках, поэтому все события наружу
+ * отдаются через главный поток — иначе интерфейс может «развалиться» или остаться пустым.
  */
 class BleCentral(private val ctx: Context) {
 
     var listener: BleListener? = null
 
-    private val handler = Handler(Looper.getMainLooper())
+    private val main = Handler(Looper.getMainLooper())
     private var scanner: android.bluetooth.le.BluetoothLeScanner? = null
 
     private val found = LinkedHashMap<String, ScanItem>()
@@ -75,6 +78,35 @@ class BleCentral(private val ctx: Context) {
     var mtu: Int = 23
         private set
 
+    /** Транспорт текущего/последнего соединения: LE, BREDR, AUTO. */
+    var transportLabel: String = ""
+        private set
+
+    /** Последняя причина неудачи — показывается в интерфейсе, а не только в журнале. */
+    var lastError: String = ""
+        private set
+
+    private var connectItem: ScanItem? = null
+    private var attemptIndex = 0
+    private var connectedOnce = false
+    private var servicesReceived = false
+
+    private val connectTimeout = Runnable {
+        if (!connectedOnce) {
+            lastError = "Устройство не отвечает: соединение не установилось за 15 секунд."
+            emit { it.onLog("Таймаут подключения (${transportLabel})") }
+            tryNextTransportOrFail("таймаут")
+        }
+    }
+
+    private val discoveryTimeout = Runnable {
+        if (connectedOnce && !servicesReceived) {
+            lastError = "Соединение есть, но устройство не отдало список сервисов."
+            emit { it.onLog("Сервисы не пришли за 12 секунд — попробуйте «Переподключиться»") }
+            emit { it.onServices(emptyList()) }
+        }
+    }
+
     val adapter: BluetoothAdapter?
         get() = (ctx.getSystemService(Context.BLUETOOTH_SERVICE) as? BluetoothManager)?.adapter
 
@@ -84,6 +116,14 @@ class BleCentral(private val ctx: Context) {
         adapter?.isEnabled == true
     } catch (e: SecurityException) {
         false
+    }
+
+    private fun emit(block: (BleListener) -> Unit) {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            listener?.let(block)
+        } else {
+            main.post { listener?.let(block) }
+        }
     }
 
     // ---------- Разрешения ----------
@@ -114,25 +154,25 @@ class BleCentral(private val ctx: Context) {
     @SuppressLint("MissingPermission")
     fun startScan() {
         if (!isSupported()) {
-            listener?.onScanState(false, "На этом телефоне нет Bluetooth")
+            emit { it.onScanState(false, "На этом телефоне нет Bluetooth") }
             return
         }
         if (!hasPermissions()) {
-            listener?.onScanState(false, "Нужны разрешения Bluetooth")
+            emit { it.onScanState(false, "Нужны разрешения Bluetooth") }
             return
         }
         if (!isEnabled()) {
-            listener?.onScanState(false, "Bluetooth выключен")
+            emit { it.onScanState(false, "Bluetooth выключен") }
             return
         }
         val a = adapter ?: return
         scanner = a.bluetoothLeScanner
         if (scanner == null) {
-            listener?.onScanState(false, "Сканер BLE недоступен")
+            emit { it.onScanState(false, "Сканер BLE недоступен") }
             return
         }
         found.clear()
-        listener?.onScanState(true, null)
+        emit { it.onScanState(true, null) }
 
         // Пары из системных настроек: часть устройств (наушники, часы) видна только так.
         try {
@@ -156,22 +196,22 @@ class BleCentral(private val ctx: Context) {
         try {
             scanner?.startScan(null, settings, callback)
         } catch (e: Exception) {
-            listener?.onScanState(false, "Не удалось запустить скан: ${e.message}")
+            emit { it.onScanState(false, "Не удалось запустить скан: ${e.message}") }
         }
-        handler.postDelayed(stopScanRunnable, 20_000)
+        main.postDelayed(stopScanRunnable, 20_000)
     }
 
     private val stopScanRunnable = Runnable { stopScan() }
 
     @SuppressLint("MissingPermission")
     fun stopScan() {
-        handler.removeCallbacks(stopScanRunnable)
+        main.removeCallbacks(stopScanRunnable)
         try {
             scanner?.stopScan(callback)
         } catch (ignored: Exception) {
         }
         scanner = null
-        listener?.onScanState(false, null)
+        emit { it.onScanState(false, null) }
     }
 
     private val callback = object : ScanCallback() {
@@ -194,7 +234,7 @@ class BleCentral(private val ctx: Context) {
         }
 
         override fun onScanFailed(errorCode: Int) {
-            listener?.onScanState(false, "Скан прерван (код $errorCode)")
+            emit { it.onScanState(false, "Скан прерван (код $errorCode)") }
         }
     }
 
@@ -206,6 +246,8 @@ class BleCentral(private val ctx: Context) {
                 name = item.name.ifBlank { existing.name },
                 rssi = if (item.rssi != 0) item.rssi else existing.rssi,
                 device = item.device ?: existing.device,
+                // Устройство реально ответило по BLE — значит, оно не только «классическое».
+                classic = existing.classic && item.rssi == 0 && item.serviceUuids.isEmpty(),
                 serviceUuids = if (item.serviceUuids.isNotEmpty()) item.serviceUuids else existing.serviceUuids
             )
         scheduleUiPush()
@@ -217,14 +259,14 @@ class BleCentral(private val ctx: Context) {
         if (pushScheduled) return
         val delay = (400 - (now - lastUiPush)).coerceAtLeast(0)
         pushScheduled = true
-        handler.postDelayed({
+        main.postDelayed({
             pushScheduled = false
             lastUiPush = System.currentTimeMillis()
             val list = found.values.sortedWith(
                 compareByDescending<ScanItem> { it.rssi }
                     .thenBy { it.label.lowercase() }
             )
-            listener?.onScan(list)
+            emit { it.onScan(list) }
         }, delay)
     }
 
@@ -237,57 +279,148 @@ class BleCentral(private val ctx: Context) {
 
     // ---------- Подключение ----------
 
+    /**
+     * Порядок попыток: сначала Low Energy, затем автоопределение (часто единственный способ
+     * для наушников и колонок, которые уже сопряжены через классический Bluetooth).
+     */
+    private val transports: List<Pair<Int, String>> = buildList {
+        add(BluetoothDevice.TRANSPORT_LE to "LE")
+        if (Build.VERSION.SDK_INT >= 23) add(BluetoothDevice.TRANSPORT_AUTO to "AUTO")
+        if (Build.VERSION.SDK_INT >= 23) add(BluetoothDevice.TRANSPORT_BREDR to "BREDR")
+    }
+
     @SuppressLint("MissingPermission")
     fun connect(item: ScanItem) {
         if (!hasPermissions()) {
-            listener?.onLog("Нет разрешения BLUETOOTH_CONNECT")
+            emit { it.onLog("Нет разрешения BLUETOOTH_CONNECT") }
             return
         }
-        disconnect()
         val device = item.device
         if (device == null) {
-            listener?.onLog("Устройство не найдено — запустите скан заново")
+            lastError = "Устройство не найдено — запустите скан заново."
+            emit { it.onLog(lastError) }
+            emit { it.onConnection(ConnState.DISCONNECTED, item.label, item.address) }
             return
         }
+        closeGatt()
+        connectItem = item
+        attemptIndex = 0
+        connectedOnce = false
+        servicesReceived = false
+        lastError = ""
+        values.clear()
         connectedName = item.label
         connectedAddress = item.address
         connectedDevice = device
-        values.clear()
-        listener?.onConnection(ConnState.CONNECTING, item.label, item.address)
-        listener?.onLog("Подключаюсь к ${item.label} (${item.address})…")
+        transportLabel = ""
+        startAttempt()
+    }
+
+    /** Переподключение к тому же устройству — лечит «залипший» GATT. */
+    fun reconnect() {
+        val item = connectItem
+        if (item == null) {
+            emit { it.onLog("Нет устройства для переподключения") }
+            return
+        }
+        emit { it.onLog("Переподключение к ${item.label}…") }
+        connect(item)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun startAttempt() {
+        val item = connectItem ?: return
+        val device = item.device ?: return
+        if (attemptIndex >= transports.size) {
+            fail("Не удалось установить соединение")
+            return
+        }
+        val (mode, name) = transports[attemptIndex]
+        transportLabel = name
+        services = emptyList()
+        emit { it.onConnection(ConnState.CONNECTING, item.label, item.address) }
+        emit {
+            it.onLog(
+                "Подключаюсь к ${item.label} (${item.address}), транспорт $name" +
+                    if (attemptIndex > 0) " — попытка ${attemptIndex + 1}" else ""
+            )
+        }
         try {
-            gatt = if (Build.VERSION.SDK_INT >= 23) {
-                device.connectGatt(ctx, false, gattCallback, BluetoothDevice.TRANSPORT_LE)
-            } else {
-                device.connectGatt(ctx, false, gattCallback)
-            }
+            gatt = device.connectGatt(ctx, false, gattCallback, mode)
         } catch (e: Exception) {
-            listener?.onLog("Ошибка подключения: ${e.message}")
-            listener?.onConnection(ConnState.DISCONNECTED, connectedName, connectedAddress)
+            emit { it.onLog("Ошибка подключения ($name): ${e.message}") }
+            gatt = null
+        }
+        if (gatt == null) {
+            attemptIndex += 1
+            main.postDelayed({ startAttempt() }, 300)
+            return
+        }
+        main.removeCallbacks(connectTimeout)
+        main.postDelayed(connectTimeout, 15_000)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun tryNextTransportOrFail(reason: String) {
+        main.removeCallbacks(connectTimeout)
+        closeGatt()
+        if (!connectedOnce && attemptIndex + 1 < transports.size) {
+            attemptIndex += 1
+            emit { it.onLog("Не вышло ($reason), пробую другой транспорт…") }
+            main.postDelayed({ startAttempt() }, 500)
+        } else {
+            fail(reason)
+        }
+    }
+
+    private fun fail(reason: String) {
+        main.removeCallbacks(connectTimeout)
+        main.removeCallbacks(discoveryTimeout)
+        closeGatt()
+        if (lastError.isEmpty()) lastError = reason
+        emit { it.onLog("Подключение не удалось: $reason") }
+        emit { it.onConnection(ConnState.DISCONNECTED, connectedName, connectedAddress) }
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun closeGatt() {
+        val g = gatt
+        gatt = null
+        try {
+            g?.disconnect()
+            g?.close()
+        } catch (ignored: Exception) {
         }
     }
 
     @SuppressLint("MissingPermission")
     fun disconnect() {
-        val g = gatt ?: return
-        gatt = null
-        try {
-            g.disconnect()
-            g.close()
-        } catch (ignored: Exception) {
-        }
-        listener?.onLog("Отключено")
-        listener?.onConnection(ConnState.DISCONNECTED, connectedName, connectedAddress)
+        main.removeCallbacks(connectTimeout)
+        main.removeCallbacks(discoveryTimeout)
+        val had = gatt != null
+        connectItem = null
+        closeGatt()
+        if (had) emit { it.onLog("Отключено") }
+        emit { it.onConnection(ConnState.DISCONNECTED, connectedName, connectedAddress) }
     }
 
     /** Перечитать список сервисов (после смены профиля или «зависшего» GATT). */
     @SuppressLint("MissingPermission")
     fun refreshServices() {
-        val g = gatt ?: return
+        val g = gatt
+        if (g == null) {
+            emit { it.onLog("Нет соединения — нужно подключиться заново") }
+            return
+        }
+        servicesReceived = false
+        main.removeCallbacks(discoveryTimeout)
+        main.postDelayed(discoveryTimeout, 12_000)
         try {
-            g.discoverServices()
+            if (!g.discoverServices()) {
+                emit { it.onLog("Устройство отказало в чтении сервисов") }
+            }
         } catch (e: Exception) {
-            listener?.onLog("Не удалось перечитать сервисы: ${e.message}")
+            emit { it.onLog("Не удалось перечитать сервисы: ${e.message}") }
         }
     }
 
@@ -311,32 +444,76 @@ class BleCentral(private val ctx: Context) {
         @SuppressLint("MissingPermission")
         override fun onConnectionStateChange(g: BluetoothGatt, status: Int, newState: Int) {
             if (newState == BluetoothProfile.STATE_CONNECTED) {
-                listener?.onLog("Соединение установлено, читаю сервисы…")
-                listener?.onConnection(ConnState.CONNECTED, connectedName, connectedAddress)
+                if (gatt !== g) {
+                    // пришёл колбэк от старого соединения после переподключения — игнорируем
+                    try {
+                        g.close()
+                    } catch (ignored: Exception) {
+                    }
+                    return
+                }
+                connectedOnce = true
+                servicesReceived = false
+                main.removeCallbacks(connectTimeout)
+                emit { it.onLog("Соединение установлено ($transportLabel), читаю сервисы…") }
+                emit { it.onConnection(ConnState.CONNECTED, connectedName, connectedAddress) }
+                main.removeCallbacks(discoveryTimeout)
+                main.postDelayed(discoveryTimeout, 12_000)
                 try {
-                    g.discoverServices()
+                    if (!g.discoverServices()) {
+                        emit { it.onLog("Устройство не ответило на запрос сервисов") }
+                    }
                 } catch (e: Exception) {
-                    listener?.onLog("discoverServices: ${e.message}")
+                    emit { it.onLog("discoverServices: ${e.message}") }
                 }
             } else if (newState == BluetoothProfile.STATE_DISCONNECTED) {
-                listener?.onLog("Устройство отключилось (status=$status)")
-                listener?.onConnection(ConnState.DISCONNECTED, connectedName, connectedAddress)
-                try {
-                    g.close()
-                } catch (ignored: Exception) {
+                main.removeCallbacks(connectTimeout)
+                main.removeCallbacks(discoveryTimeout)
+                if (!connectedOnce) {
+                    emit { it.onLog("Соединение отклонено (status=$status, транспорт $transportLabel)") }
+                    if (gatt === g) {
+                        gatt = null
+                        try {
+                            g.close()
+                        } catch (ignored: Exception) {
+                        }
+                    }
+                    attemptIndex += 1
+                    if (attemptIndex < transports.size) {
+                        main.postDelayed({ startAttempt() }, 500)
+                    } else {
+                        val hint = when (status) {
+                            133 -> "Устройство отклонило подключение (133)."
+                            8 -> "Устройство вне зоны или уже занято."
+                            257 -> "Устройство не поддерживает такой тип соединения."
+                            else -> "Соединение не установлено (status=$status)."
+                        }
+                        fail(hint)
+                    }
+                    return
                 }
-                if (gatt === g) gatt = null
+                emit { it.onLog("Устройство отключилось (status=$status)") }
+                emit { it.onConnection(ConnState.DISCONNECTED, connectedName, connectedAddress) }
+                if (gatt === g) {
+                    gatt = null
+                    try {
+                        g.close()
+                    } catch (ignored: Exception) {
+                    }
+                }
             }
         }
 
         override fun onServicesDiscovered(g: BluetoothGatt, status: Int) {
             if (status != BluetoothGatt.GATT_SUCCESS) {
-                listener?.onLog("Сервисы не прочитаны (status=$status)")
+                emit { it.onLog("Сервисы не прочитаны (status=$status)") }
                 return
             }
+            main.removeCallbacks(discoveryTimeout)
+            servicesReceived = true
             services = buildServices(g)
-            listener?.onServices(services)
-            listener?.onLog("Сервисов найдено: ${services.size}")
+            emit { it.onServices(services) }
+            emit { it.onLog("Сервисов найдено: ${services.size}") }
             try {
                 g.requestMtu(247)
             } catch (ignored: Exception) {
@@ -345,7 +522,7 @@ class BleCentral(private val ctx: Context) {
 
         override fun onMtuChanged(g: BluetoothGatt, newMtu: Int, status: Int) {
             mtu = newMtu
-            listener?.onLog("MTU: $newMtu байт")
+            emit { it.onLog("MTU: $newMtu байт") }
         }
 
         // --- API 33+ ---
@@ -392,9 +569,13 @@ class BleCentral(private val ctx: Context) {
         ) {
             val ok = status == BluetoothGatt.GATT_SUCCESS
             val svc = characteristic.service?.uuid ?: UUID(0L, 0L)
-            listener?.onCharWritten(svc, characteristic.uuid, ok)
-            listener?.onLog(if (ok) "Записано в ${GattNames.uuidLabel(characteristic.uuid)}"
-            else "Ошибка записи (status=$status)")
+            emit { it.onCharWritten(svc, characteristic.uuid, ok) }
+            emit {
+                it.onLog(
+                    if (ok) "Записано в ${GattNames.uuidLabel(characteristic.uuid)}"
+                    else "Ошибка записи (status=$status)"
+                )
+            }
         }
     }
 
@@ -408,20 +589,20 @@ class BleCentral(private val ctx: Context) {
         status: Int
     ) {
         if (status != BluetoothGatt.GATT_SUCCESS) {
-            listener?.onLog("Чтение не удалось (status=$status)")
+            emit { it.onLog("Чтение не удалось (status=$status)") }
             return
         }
         val svc = serviceOf(characteristic)
         values[key(svc, characteristic.uuid)] = value
         services = buildServices(g)
-        listener?.onServices(services)
-        listener?.onCharValue(svc, characteristic.uuid, value)
+        emit { it.onServices(services) }
+        emit { it.onCharValue(svc, characteristic.uuid, value) }
     }
 
     private fun handleNotify(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
         val svc = serviceOf(characteristic)
         values[key(svc, characteristic.uuid)] = value
-        listener?.onCharValue(svc, characteristic.uuid, value)
+        emit { it.onCharValue(svc, characteristic.uuid, value) }
     }
 
     // ---------- Операции с характеристиками ----------
@@ -441,17 +622,17 @@ class BleCentral(private val ctx: Context) {
     @SuppressLint("MissingPermission")
     fun read(service: UUID?, char: UUID): Boolean {
         val g = gatt ?: run {
-            listener?.onLog("Нет соединения")
+            emit { it.onLog("Нет соединения") }
             return false
         }
         val c = characteristic(service, char) ?: run {
-            listener?.onLog("Нет характеристики ${GattNames.uuidLabel(char)}")
+            emit { it.onLog("Нет характеристики ${GattNames.uuidLabel(char)}") }
             return false
         }
         return try {
             g.readCharacteristic(c)
         } catch (e: Exception) {
-            listener?.onLog("Чтение: ${e.message}")
+            emit { it.onLog("Чтение: ${e.message}") }
             false
         }
     }
@@ -459,11 +640,11 @@ class BleCentral(private val ctx: Context) {
     @SuppressLint("MissingPermission")
     fun write(service: UUID?, char: UUID, payload: ByteArray, withResponse: Boolean? = null): Boolean {
         val g = gatt ?: run {
-            listener?.onLog("Нет соединения")
+            emit { it.onLog("Нет соединения") }
             return false
         }
         val c = characteristic(service, char) ?: run {
-            listener?.onLog("Нет характеристики ${GattNames.uuidLabel(char)}")
+            emit { it.onLog("Нет характеристики ${GattNames.uuidLabel(char)}") }
             return false
         }
         return try {
@@ -484,7 +665,7 @@ class BleCentral(private val ctx: Context) {
                 g.writeCharacteristic(c)
             }
         } catch (e: Exception) {
-            listener?.onLog("Запись: ${e.message}")
+            emit { it.onLog("Запись: ${e.message}") }
             false
         }
     }
@@ -492,11 +673,11 @@ class BleCentral(private val ctx: Context) {
     @SuppressLint("MissingPermission")
     fun subscribe(service: UUID?, char: UUID, enable: Boolean = true): Boolean {
         val g = gatt ?: run {
-            listener?.onLog("Нет соединения")
+            emit { it.onLog("Нет соединения") }
             return false
         }
         val c = characteristic(service, char) ?: run {
-            listener?.onLog("Нет характеристики ${GattNames.uuidLabel(char)}")
+            emit { it.onLog("Нет характеристики ${GattNames.uuidLabel(char)}") }
             return false
         }
         return try {
@@ -518,7 +699,7 @@ class BleCentral(private val ctx: Context) {
             }
             true
         } catch (e: Exception) {
-            listener?.onLog("Подписка: ${e.message}")
+            emit { it.onLog("Подписка: ${e.message}") }
             false
         }
     }

@@ -61,6 +61,11 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var lastBuiltTab = ""
     private var lastThrottledRebuild = 0L
     private var batteryAttempted = false
+    private var batteryUnavailable = false
+    private var lastConnItem: ScanItem? = null
+    private var autoProfileFor = ""
+    private var connError = ""
+    private var cameraProfile: DeviceProfile? = null
 
     private var tab = TAB_SCAN
     private val scanItems = ArrayList<ScanItem>()
@@ -183,7 +188,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private fun rebuild() {
         if (isFinishing || isDestroyed) return
         // Список устройств обновляется каждые 400 мс во время скана — не сбрасываем прокрутку.
-        val keepScroll = lastBuiltTab == tab
+        val keepScroll = lastBuiltTab == tab && tab == TAB_SCAN
         val scrollY = if (keepScroll && ::mainScroll.isInitialized) mainScroll.scrollY else 0
         consoleLogView = null
         consoleScroll = null
@@ -355,8 +360,15 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             return
         }
         ensureBle {
-            activeProfile = profiles.bestFor(item)
-            saveActiveProfile()
+            lastConnItem = item
+            connError = ""
+            autoProfileFor = ""
+            cameraProfile = null
+            val matched = profiles.bestFor(item)
+            if (matched != null) {
+                activeProfile = matched
+                saveActiveProfile()
+            }
             captureStatus = "Готов к съёмке"
             captureDetail = ""
             ble.connect(item)
@@ -368,6 +380,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private fun connectDemo() {
         ble.stopScan()
         ble.disconnect()
+        lastConnItem = DemoDevice.scanItem()
+        connError = ""
+        cameraProfile = null
         connState = ConnState.CONNECTED
         connName = "Демо: умные очки RayX"
         connAddress = DemoDevice.ADDRESS
@@ -419,6 +434,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     override fun onConnection(state: ConnState, name: String, address: String) {
         connState = state
+        if (state == ConnState.DISCONNECTED) connError = ble.lastError
         if (name.isNotEmpty()) connName = name
         if (address.isNotEmpty() && state != ConnState.DISCONNECTED) connAddress = address
         if (state == ConnState.CONNECTING) {
@@ -438,21 +454,164 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     override fun onServices(services: List<GattServiceInfo>) {
         gattServices = services
-        if (activeProfile == null) {
-            val item = scanItems.firstOrNull { it.address == connAddress }
-            if (item != null) {
-                activeProfile = profiles.bestFor(item)
+        batteryUnavailable = false
+        if (services.isNotEmpty()) ensureProfileMatchesDevice()
+        syncBattery()
+        rebuild()
+    }
+
+    /**
+     * Если подходящего профиля нет — собираем его из того, что реально отдаёт устройство:
+     * батарея, Device Information, а также кандидаты на камеру (запись + уведомления в сервисе).
+     */
+    private fun ensureProfileMatchesDevice() {
+        val item = scanItems.firstOrNull { it.address == connAddress } ?: lastConnItem
+        val matched = item?.let { profiles.bestFor(it) }
+            ?: profiles.ensureLoaded().firstOrNull {
+                it.namePrefixes.any { p -> p.isNotBlank() && connName.lowercase().contains(p.lowercase()) }
+            }
+        if (matched != null) {
+            if (activeProfile == null || activeProfile?.auto == true) {
+                activeProfile = matched
                 saveActiveProfile()
+                addLog("Профиль найден: ${matched.name}")
+            }
+            return
+        }
+        if (autoProfileFor == connAddress) return
+        val auto = buildAutoProfile() ?: return
+        autoProfileFor = connAddress
+        profiles.saveUser(auto)
+        activeProfile = auto
+        saveActiveProfile()
+        addLog("Создан авто-профиль: ${auto.name}")
+        toast("Профиль создан автоматически по данным GATT")
+    }
+
+    private fun buildAutoProfile(): DeviceProfile? {
+        if (gattServices.isEmpty()) return null
+        var batteryService: UUID? = null
+        var batteryChar: UUID? = null
+        val caps = LinkedHashSet<String>()
+        caps.add("device_info")
+
+        for (svc in gattServices) {
+            for (ch in svc.chars) {
+                if (GattNames.shortCode(ch.uuid) == 0x2A19 && batteryChar == null) {
+                    batteryChar = ch.uuid
+                    batteryService = svc.uuid
+                }
             }
         }
-        readBatteryIfPresent()
-        rebuild()
+        if (batteryChar != null) caps.add("battery")
+
+        // Кандидаты на камеру: сервис производителя, где есть и запись, и уведомления.
+        val candidates = ArrayList<CameraSpec>()
+        for (svc in gattServices) {
+            val vendor = GattNames.shortCode(svc.uuid) == null ||
+                (GattNames.shortCode(svc.uuid) ?: 0) >= 0xFF00
+            if (!vendor) continue
+            val writeChar = svc.chars.firstOrNull { it.writable }
+            val notifyChar = svc.chars.firstOrNull { it.notifiable && it.uuid != writeChar?.uuid }
+            if (writeChar != null && notifyChar != null) {
+                candidates.add(
+                    CameraSpec(
+                        mode = "ble",
+                        label = "Проверить камеру",
+                        service = svc.uuid,
+                        triggerChar = writeChar.uuid,
+                        dataChar = notifyChar.uuid,
+                        trigger = byteArrayOf(0x01),
+                        framing = "jpeg"
+                    )
+                )
+                caps.add("camera")
+            }
+        }
+
+        val deviceName = connName.ifBlank { "Устройство ${connAddress.takeLast(5)}" }
+        val prefix = deviceName.substringBefore(" (").trim()
+        val notes = ArrayList<String>()
+        if (batteryChar != null) {
+            notes.add("Батарея: ${GattNames.uuidLabel(batteryChar)} (найдена автоматически)")
+        } else {
+            notes.add("Устройство не сообщает уровень заряда по стандартной характеристике.")
+        }
+        if (candidates.isNotEmpty()) {
+            notes.add("Возможная камера найдена в GATT — нажмите «Проверить камеру» в карточке устройства.")
+        } else {
+            notes.add("Явной камеры в GATT нет: возможно, устройство отдаёт фото только через своё приложение.")
+        }
+        notes.add("Сервисов: ${gattServices.size}, характеристик: ${gattServices.sumOf { it.chars.size }}")
+
+        return DeviceProfile(
+            id = "auto_" + connAddress.replace(Regex("[^a-zA-Z0-9]"), "").ifBlank { System.currentTimeMillis().toString(16) },
+            name = "$deviceName (авто)",
+            vendor = "определено автоматически",
+            description = "Профиль собран по данным GATT этого устройства. Его можно поправить в редакторе.",
+            namePrefixes = if (prefix.isNotBlank()) listOf(prefix) else emptyList(),
+            serviceUuids = gattServices.map { it.uuid }.take(6),
+            capabilities = caps.toList(),
+            batteryService = batteryService,
+            batteryChar = batteryChar,
+            camera = null,
+            notes = notes,
+            auto = true,
+            cameraCandidates = candidates
+        )
+    }
+
+    /**
+     * Ищет характеристику заряда: сначала в профиле, потом стандартную 0x2A19 в любом сервисе.
+     * Если она поддерживает уведомления — подписывается, чтобы процент обновлялся сам.
+     */
+    private fun batteryRef(): Pair<GattServiceInfo, GattCharInfo>? {
+        val profile = activeProfile
+        val wanted = profile?.batteryChar
+        if (wanted != null) {
+            for (svc in gattServices) {
+                svc.chars.firstOrNull { it.uuid == wanted }?.let { return svc to it }
+            }
+        }
+        for (svc in gattServices) {
+            for (ch in svc.chars) {
+                if (GattNames.shortCode(ch.uuid) == 0x2A19) return svc to ch
+            }
+        }
+        return null
+    }
+
+    private fun syncBattery(force: Boolean = false) {
+        if (DemoDevice.isDemo(connAddress)) {
+            batteryPercent = 78
+            return
+        }
+        if (!force && batteryAttempted) return
+        val ref = batteryRef()
+        if (ref == null) {
+            batteryUnavailable = true
+            return
+        }
+        batteryUnavailable = false
+        batteryAttempted = true
+        val (svc, ch) = ref
+        if (ch.notifiable) {
+            val key = "${svc.uuid}|${ch.uuid}"
+            if (subscribed.add(key)) ble.subscribe(svc.uuid, ch.uuid, true)
+        }
+        if (ch.readable) {
+            ble.read(svc.uuid, ch.uuid)
+        } else if (!ch.notifiable) {
+            batteryUnavailable = true
+        }
     }
 
     override fun onCharValue(service: UUID, char: UUID, value: ByteArray) {
         camera.feed(service, char, value)
-        if (GattNames.shortCode(char) == 0x2A19 && value.isNotEmpty()) {
+        val isBatteryChar = GattNames.shortCode(char) == 0x2A19 || activeProfile?.batteryChar == char
+        if (isBatteryChar && value.isNotEmpty()) {
             batteryPercent = value[0].toInt() and 0xFF
+            batteryUnavailable = false
         }
         // Во время передачи снимка уведомления идут потоком: журнал не засоряем и экран не дёргаем.
         if (camera.isCapturing()) return
@@ -503,7 +662,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         ui.post { addLog(line) }
     }
 
-    private fun captureWith(profile: DeviceProfile?) {
+    private fun captureWith(profile: DeviceProfile?, persist: Boolean = true) {
         if (profile == null || profile.camera == null) {
             toast("Нет профиля с камерой")
             return
@@ -529,8 +688,11 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 return
             }
         }
-        activeProfile = profile
-        saveActiveProfile()
+        cameraProfile = profile
+        if (persist) {
+            activeProfile = profile
+            saveActiveProfile()
+        }
         camera.capture(profile)
         tab = TAB_CAMERA
         rebuild()
@@ -595,7 +757,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
         val tags = row()
         if (item.demo) tags.addView(badge("демо", Pal.ACCENT))
-        if (item.classic) tags.addView(badge("сопряжено", Pal.AMBER))
+        if (item.classic) tags.addView(badge("сопряжено · классический BT", Pal.AMBER))
         if (item.serviceUuids.isNotEmpty()) tags.addView(badge("реклама: ${item.serviceUuids.size} серв.", Pal.MUTED))
         val profile = profiles.bestFor(item)
         if (profile != null) tags.addView(badge(profile.name, Pal.VIOLET))
@@ -648,54 +810,174 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         }
 
         val connected = connState == ConnState.CONNECTED
+        val demo = DemoDevice.isDemo(connAddress)
         val info = card()
         val head = row()
         head.addView(txt(connName, 16, Pal.TEXT, bold = true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-        head.addView(badge(if (connected) "на связи" else "нет связи", if (connected) Pal.GREEN else Pal.RED))
+        head.addView(
+            badge(
+                when (connState) {
+                    ConnState.CONNECTED -> "на связи"
+                    ConnState.CONNECTING -> "соединение…"
+                    else -> "нет связи"
+                },
+                when (connState) {
+                    ConnState.CONNECTED -> Pal.GREEN
+                    ConnState.CONNECTING -> Pal.AMBER
+                    else -> Pal.RED
+                }
+            )
+        )
         info.addView(head)
         info.addView(txt(connAddress, 11, Pal.MUTED, mono = true))
         info.addView(spacer(8))
         val meta = row()
         meta.addView(badge("сервисов: ${gattServices.size}", Pal.ACCENT))
-        meta.addView(badge("MTU ${ble.mtu}", Pal.MUTED))
-        if (DemoDevice.isDemo(connAddress)) meta.addView(badge("демо", Pal.VIOLET))
+        if (ble.transportLabel.isNotBlank()) meta.addView(badge("транспорт ${ble.transportLabel}", Pal.MUTED))
+        if (connected) meta.addView(badge("MTU ${ble.mtu}", Pal.MUTED))
+        if (demo) meta.addView(badge("демо", Pal.VIOLET))
         info.addView(meta)
+
+        if (connError.isNotBlank() && !connected) {
+            info.addView(spacer(8))
+            info.addView(txt(connError, 12, Pal.AMBER))
+        }
+
         info.addView(spacer(10))
         val buttons = row()
-        buttons.addView(actionButton("Отключить", primary = false) { doDisconnect() })
-        if (connected && !DemoDevice.isDemo(connAddress)) {
-            buttons.addView(actionButton("Перечитать GATT") { ble.refreshServices() })
+        if (connected) {
+            buttons.addView(actionButton("Отключить", primary = false) { doDisconnect() })
+            if (!demo) buttons.addView(actionButton("Переподключиться", primary = false) {
+                connError = ""
+                batteryAttempted = false
+                batteryUnavailable = false
+                subscribed.clear()
+                ble.reconnect()
+                rebuild()
+            })
+        } else {
+            buttons.addView(actionButton("Подключиться снова", primary = true) {
+                val item = lastConnItem
+                if (item != null) connectTo(item) else {
+                    tab = TAB_SCAN
+                    rebuild()
+                }
+            })
         }
-        buttons.addView(actionButton("Все сервисы") {
+        buttons.addView(actionButton("Все сервисы", primary = connected && gattServices.isEmpty()) {
             tab = TAB_GATT
             rebuild()
         })
         info.addView(buttons)
         c.addView(info)
 
-        // Батарея
-        if (batteryPercent != null || batteryCharAvailable()) {
-            val battery = card()
-            val rowB = row()
-            rowB.addView(txt("🔋", 22))
-            rowB.addView(hspace(10))
-            rowB.addView(txt(batteryPercent?.let { "$it%" } ?: "—", 24, Pal.GREEN, bold = true))
-            rowB.addView(hspace(10))
-            val box = column()
-            box.addView(txt("Батарея устройства", 13, Pal.TEXT))
-            box.addView(txt("стандартная характеристика Battery Level", 11, Pal.MUTED))
-            rowB.addView(box, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            rowB.addView(pill("Обновить", false) { readBattery() })
-            battery.addView(rowB)
-            c.addView(battery)
+        // Почему не подключается: отдельная понятная карточка для классических устройств.
+        if (!connected && lastConnItem?.classic == true) {
+            val classicCard = card()
+            classicCard.addView(txt("Похоже, это классический Bluetooth", 14, Pal.TEXT, bold = true))
+            classicCard.addView(spacer(6))
+            classicCard.addView(
+                txt(
+                    "Наушники, колонки и гарнитуры часто работают только по классическому профилю " +
+                        "(A2DP/HFP) и не отдают данные через GATT — тот канал, с которым работает BlueLink. " +
+                        "Соединение при этом уже есть на уровне системы: звук идёт, а характеристик для чтения нет. " +
+                        "Заряд таких наушников Android показывает в своих настройках Bluetooth.",
+                    12,
+                    Pal.MUTED
+                )
+            )
+            classicCard.addView(spacer(10))
+            classicCard.addView(actionButton("Настройки Bluetooth", primary = false) {
+                openBluetoothSettings()
+            })
+            c.addView(classicCard)
         }
 
-        // Профиль
+        // Батарея: показываем честно — есть характеристика или нет.
+        val battery = card()
+        val rowB = row()
+        rowB.addView(txt("🔋", 22))
+        rowB.addView(hspace(10))
+        val percent = batteryPercent
+        rowB.addView(
+            txt(
+                when {
+                    percent != null -> "$percent%"
+                    batteryUnavailable || (connected && gattServices.isNotEmpty()) -> "—"
+                    else -> "…"
+                },
+                24,
+                if (percent != null) Pal.GREEN else Pal.MUTED,
+                bold = true
+            )
+        )
+        rowB.addView(hspace(10))
+        val box = column()
+        box.addView(txt("Батарея устройства", 13, Pal.TEXT))
+        box.addView(
+            txt(
+                when {
+                    demo -> "демо-значение"
+                    batteryRef() != null -> "характеристика Battery Level найдена"
+                    connected -> "устройство не сообщает заряд"
+                    else -> "появится после подключения"
+                },
+                11,
+                Pal.MUTED
+            )
+        )
+        rowB.addView(box, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        rowB.addView(pill("Обновить", false) { readBattery() })
+        battery.addView(rowB)
+        if (connected && batteryRef() == null && !demo) {
+            battery.addView(spacer(8))
+            battery.addView(
+                txt(
+                    "Здесь нет стандартной характеристики 0x2A19. У наушников заряд обычно виден в настройках Bluetooth, у остальных устройств его может не быть вовсе.",
+                    11,
+                    Pal.MUTED
+                )
+            )
+        }
+        c.addView(battery)
+
+        if (connected && gattServices.isEmpty() && !demo) {
+            val emptyCard = card()
+            emptyCard.addView(txt("Устройство не отдало сервисы", 14, Pal.TEXT, bold = true))
+            emptyCard.addView(spacer(6))
+            emptyCard.addView(
+                txt(
+                    "Соединение установлено, но список характеристик пуст. У классических наушников и колонок " +
+                        "GATT-данных обычно нет совсем — это не ошибка приложения. Если устройство всё-таки BLE, " +
+                        "попробуйте переподключиться: часть устройств отдаёт таблицу только со второй попытки.",
+                    12,
+                    Pal.MUTED
+                )
+            )
+            emptyCard.addView(spacer(10))
+            val emptyActions = row()
+            emptyActions.addView(actionButton("Переподключиться", primary = true) {
+                connError = ""
+                batteryAttempted = false
+                batteryUnavailable = false
+                subscribed.clear()
+                ble.reconnect()
+                rebuild()
+            })
+            emptyActions.addView(actionButton("Настройки Bluetooth", primary = false) {
+                openBluetoothSettings()
+            })
+            emptyCard.addView(emptyActions)
+            c.addView(emptyCard)
+        }
+
+        // Профиль (в т.ч. автоматически собранный)
         val profile = activeProfile
         if (profile != null) {
             val p = card()
             val ph = row()
             ph.addView(txt("Профиль устройства", 12, Pal.MUTED, bold = true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+            if (profile.auto) ph.addView(badge("авто", Pal.AMBER))
             ph.addView(badge(profile.cameraModeText, if (profile.hasCamera) Pal.GREEN else Pal.MUTED))
             p.addView(ph)
             p.addView(txt(profile.name, 16, Pal.TEXT, bold = true))
@@ -714,74 +996,85 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                     captureWith(profile)
                 })
             }
+            if (profile.cameraCandidates.isNotEmpty()) {
+                p.addView(spacer(10))
+                p.addView(txt("Камера в GATT: найдено ${profile.cameraCandidates.size} вариант(а) — можно проверить, не настраивая профиль вручную.", 11, Pal.MUTED))
+                for (cand in profile.cameraCandidates.take(3)) {
+                    p.addView(spacer(6))
+                    val candText = "${GattNames.uuidLabel(cand.triggerChar ?: UUID(0L, 0L))} → ${GattNames.uuidLabel(cand.dataChar ?: UUID(0L, 0L))}"
+                    p.addView(txt(candText, 10, Pal.MUTED, mono = true))
+                    val rowC = row()
+                    rowC.addView(actionButton("Проверить камеру", primary = true) {
+                        val testProfile = profile.copy(
+                            id = profile.id + "_test",
+                            camera = cand.copy(label = "Проверить камеру")
+                        )
+                        captureWith(testProfile, persist = false)
+                    })
+                    rowC.addView(pill("В профиль", false) {
+                        openEditor(profile, cand)
+                    })
+                    p.addView(rowC)
+                }
+            }
             if (profile.notes.isNotEmpty()) {
                 p.addView(spacer(8))
                 for (note in profile.notes) p.addView(txt("· $note", 11, Pal.MUTED))
             }
+            p.addView(spacer(10))
+            val pActions = row()
+            pActions.addView(pill("Изменить", false) { openEditor(profile) })
+            pActions.addView(pill("Все профили", false) {
+                tab = TAB_PROFILES
+                rebuild()
+            })
+            p.addView(pActions)
             c.addView(p)
-        } else {
-            c.addView(hintCard("Профиль не подобран", "Устройство подключено, но приложение не знает его возможностей. Можно посмотреть все характеристики вручную или создать свой профиль.") )
-            c.addView(actionButton("Создать профиль", primary = false) { openEditor(null) })
+        } else if (connected && gattServices.isNotEmpty()) {
+            c.addView(hintCard("Профиль не собран", "Сервисы получены, но профиль создать не удалось. Откройте «GATT» и посмотрите характеристики вручную."))
         }
 
         c.addView(
             hintCard(
                 "Что дальше",
-                "Вкладка «GATT» показывает всё, что умеет устройство: батарею, датчики, кнопки, камеру. Любую характеристику можно прочитать или записать."
+                "Вкладка «GATT» показывает всё, что умеет устройство: батарею, датчики, кнопки, камеру. " +
+                    "Рядом с характеристикой есть кнопки «Читать», «Писать», «Слушать» и «→ Камера»."
             )
         )
         return c
     }
 
-    private fun batteryCharAvailable(): Boolean {
-        if (activeProfile?.batteryChar != null) return true
-        return gattServices.any { svc ->
-            GattNames.shortCode(svc.uuid) == 0x180F || svc.chars.any { GattNames.shortCode(it.uuid) == 0x2A19 }
+    private fun openBluetoothSettings() {
+        try {
+            startActivity(Intent(Settings.ACTION_BLUETOOTH_SETTINGS))
+        } catch (e: Exception) {
+            toast("Не удалось открыть настройки Bluetooth")
         }
-    }
-
-    private fun readBatteryIfPresent() {
-        if (batteryAttempted || batteryPercent != null) return
-        if (!batteryCharAvailable()) return
-        batteryAttempted = true
-        val profile = activeProfile
-        val char = profile?.batteryChar ?: gattServices
-            .firstOrNull { GattNames.shortCode(it.uuid) == 0x180F }
-            ?.chars?.firstOrNull { GattNames.shortCode(it.uuid) == 0x2A19 }?.uuid
-            ?: gattServices.flatMap { it.chars }.firstOrNull { GattNames.shortCode(it.uuid) == 0x2A19 }?.uuid
-            ?: return
-        val service = profile?.batteryService
-            ?: gattServices.firstOrNull { s -> s.chars.any { it.uuid == char } }?.uuid
-        if (DemoDevice.isDemo(connAddress)) {
-            batteryPercent = 78
-            return
-        }
-        ble.read(service, char)
     }
 
     private fun readBattery() {
-        val profile = activeProfile
-        val char = profile?.batteryChar
-            ?: gattServices.flatMap { it.chars }.firstOrNull { GattNames.shortCode(it.uuid) == 0x2A19 }?.uuid
-        if (char == null) {
-            toast("Это устройство не сообщает уровень батареи")
-            return
-        }
-        val service = profile?.batteryService
-            ?: gattServices.firstOrNull { s -> s.chars.any { it.uuid == char } }?.uuid
         if (DemoDevice.isDemo(connAddress)) {
             batteryPercent = 78
             rebuild()
             return
         }
-        ble.read(service, char)
+        val ref = batteryRef()
+        if (ref == null) {
+            batteryUnavailable = true
+            toast("Это устройство не сообщает уровень батареи")
+            rebuild()
+            return
+        }
+        val (svc, ch) = ref
+        if (ch.notifiable) ble.subscribe(svc.uuid, ch.uuid, true)
+        if (ch.readable) ble.read(svc.uuid, ch.uuid) else toast("Заряд можно только слушать (без чтения)")
     }
 
     // ---------- Вкладка «Камера» ----------
 
     private fun buildCameraTab(): View {
         val c = column()
-        val profile = activeProfile ?: profiles.byId("demo_glasses")
+        val profile = cameraProfile ?: activeProfile ?: profiles.byId("demo_glasses")
 
         if (profile == null || profile.camera == null) {
             c.addView(hintCard("Камера не настроена", "У активного профиля нет камеры. Подключите очки или выберите профиль с камерой — например, встроенный демо-профиль."))
@@ -874,7 +1167,33 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         c.addView(head)
 
         if (gattServices.isEmpty()) {
-            c.addView(hintCard("Список пуст", "Подключитесь к устройству — сервисы появятся здесь автоматически. У стандартных устройств видно батарею, датчики и служебную информацию.") )
+            val connected = connState == ConnState.CONNECTED
+            c.addView(
+                hintCard(
+                    if (connected) "Устройство не отдало сервисы" else "Список пуст",
+                    when {
+                        connected -> "Соединение есть, но GATT-таблица не пришла. Обычно помогает переподключение: часть устройств отдаёт сервисы только со второй попытки."
+                        connError.isNotBlank() -> connError
+                        lastConnItem?.classic == true -> "Похоже, это устройство классического Bluetooth (наушники, колонка). Такие устройства обычно не отдают GATT-данные — только звук через систему."
+                        else -> "Подключитесь к устройству — сервисы появятся здесь автоматически."
+                    }
+                )
+            )
+            if (connected && !DemoDevice.isDemo(connAddress)) {
+                c.addView(actionButton("Переподключиться", primary = true) {
+                    connError = ""
+                    batteryAttempted = false
+                    batteryUnavailable = false
+                    subscribed.clear()
+                    ble.reconnect()
+                    rebuild()
+                })
+            }
+            c.addView(spacer(6))
+            c.addView(actionButton("К поиску устройств", primary = false) {
+                tab = TAB_SCAN
+                rebuild()
+            })
             return c
         }
 
@@ -928,6 +1247,41 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             tab = TAB_CONSOLE
             rebuild()
         })
+        val vendorService = GattNames.shortCode(service) == null || (GattNames.shortCode(service) ?: 0) >= 0xFF00
+        if (vendorService && ch.writable) {
+            actions.addView(pill("→ Команда камеры", false) {
+                val notifyChar = gattServices.firstOrNull { it.uuid == service }
+                    ?.chars?.firstOrNull { it.notifiable && it.uuid != ch.uuid }?.uuid
+                openEditor(
+                    activeProfile,
+                    CameraSpec(
+                        mode = "ble",
+                        label = "Снять фото",
+                        service = service,
+                        triggerChar = ch.uuid,
+                        dataChar = notifyChar,
+                        trigger = byteArrayOf(0x01),
+                        framing = "jpeg"
+                    )
+                )
+            })
+        }
+        if (vendorService && ch.notifiable) {
+            actions.addView(pill("→ Данные камеры", false) {
+                openEditor(
+                    activeProfile,
+                    CameraSpec(
+                        mode = "ble",
+                        label = "Снять фото",
+                        service = service,
+                        triggerChar = null,
+                        dataChar = ch.uuid,
+                        trigger = byteArrayOf(0x01),
+                        framing = "jpeg"
+                    )
+                )
+            })
+        }
         val strip = HorizontalScrollView(this)
         strip.isHorizontalScrollBarEnabled = false
         strip.addView(actions)
@@ -1133,11 +1487,12 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     // ---------- Редактор профиля ----------
 
-    private fun openEditor(existing: DeviceProfile?) {
+    private fun openEditor(existing: DeviceProfile?, seed: CameraSpec? = null) {
         val isCopy = existing?.builtIn == true
         val base = existing
+        val preset = seed ?: base?.camera
         val body = column()
-        var mode = base?.camera?.mode ?: "none"
+        var mode = preset?.mode ?: "none"
 
         body.addView(label("Название профиля"))
         val name = input("Мои умные очки", base?.name ?: "")
@@ -1188,43 +1543,43 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         body.addView(spacer(8))
 
         body.addView(label("Название кнопки съёмки"))
-        val cameraLabel = input("Снять фото", base?.camera?.label ?: "Снять фото")
+        val cameraLabel = input("Снять фото", preset?.label ?: "Снять фото")
         body.addView(cameraLabel)
 
         body.addView(label("Камера: UUID сервиса"))
-        val cameraService = input("ffe0", base?.camera?.service?.let { shortOrFullUuid(it) } ?: "")
+        val cameraService = input("ffe0", preset?.service?.let { shortOrFullUuid(it) } ?: "")
         body.addView(cameraService)
 
         body.addView(label("Камера: характеристика-триггер (для BLE)"))
-        val triggerChar = input("ffe1", base?.camera?.triggerChar?.let { shortOrFullUuid(it) } ?: "")
+        val triggerChar = input("ffe1", preset?.triggerChar?.let { shortOrFullUuid(it) } ?: "")
         body.addView(triggerChar)
 
         body.addView(label("Камера: характеристика данных (для BLE)"))
-        val dataChar = input("ffe2", base?.camera?.dataChar?.let { shortOrFullUuid(it) } ?: "")
+        val dataChar = input("ffe2", preset?.dataChar?.let { shortOrFullUuid(it) } ?: "")
         body.addView(dataChar)
 
         body.addView(label("Команда съёмки, hex"))
-        val trigger = input("01", base?.camera?.let { bytesToHex(it.trigger) } ?: "01")
+        val trigger = input("01", preset?.let { bytesToHex(it.trigger) } ?: "01")
         body.addView(trigger)
 
         body.addView(label("Формат потока: jpeg или sizeHeader"))
-        val framing = input("jpeg", base?.camera?.framing ?: "jpeg")
+        val framing = input("jpeg", preset?.framing ?: "jpeg")
         body.addView(framing)
 
         body.addView(label("Wi-Fi: адрес снимка (для HTTP)"))
-        val httpUrl = input("http://192.168.4.1/photo.jpg", base?.camera?.httpUrl ?: "")
+        val httpUrl = input("http://192.168.4.1/photo.jpg", preset?.httpUrl ?: "")
         body.addView(httpUrl)
 
         body.addView(label("Wi-Fi: имя сети очков"))
-        val wifiSsid = input("GlassCam", base?.camera?.wifiSsid ?: "")
+        val wifiSsid = input("GlassCam", preset?.wifiSsid ?: "")
         body.addView(wifiSsid)
 
         body.addView(label("Wi-Fi: пароль"))
-        val wifiPass = input("12345678", base?.camera?.wifiPassword ?: "")
+        val wifiPass = input("12345678", preset?.wifiPassword ?: "")
         body.addView(wifiPass)
 
         body.addView(label("Пауза перед скачиванием, мс"))
-        val waitMs = input("1200", (base?.camera?.waitMs ?: 1200).toString())
+        val waitMs = input("1200", (preset?.waitMs ?: 1200).toString())
         body.addView(waitMs)
 
         val scroll = ScrollView(this)
@@ -1236,7 +1591,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 toast("Нужно название профиля")
                 return@showSheet
             }
-            val id = if (existing == null || isCopy) profiles.nextUserId() else existing.id
+            val id = if (existing == null || isCopy || existing.builtIn) profiles.nextUserId() else existing.id
             val camSpec = if (mode == "none") null else CameraSpec(
                 mode = mode,
                 label = cameraLabel.text.toString().trim().ifBlank { "Снять фото" },
@@ -1271,7 +1626,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 batteryChar = parseUuid(batteryChar.text.toString()),
                 camera = camSpec,
                 notes = existing?.notes ?: emptyList(),
-                builtIn = false
+                builtIn = false,
+                auto = false,
+                cameraCandidates = emptyList()
             )
             profiles.saveUser(profile)
             activeProfile = profile
