@@ -154,6 +154,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var ringPressLog = ArrayList<String>()
     private var ringPressCount = 0
     private var lastRingPress: String = ""
+    private var lastRingPressAt = 0L
 
     private var releaseInBackground = true
     private var autoReconnectPending = false
@@ -3585,6 +3586,15 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (heyAvailable()) return
         if (ringStartedFor == connAddress && ring != null) return
         ringStartedFor = connAddress
+        // Кольцо найдено впервые — сразу включаем перехват, чтобы не заставлять
+        // пользователя искать переключатель. Отключить можно в любой момент.
+        if (!prefs.getBoolean("ring_pult_asked", false)) {
+            prefs.edit().putBoolean("ring_pult_asked", true).apply()
+            if (!ringPultOn) {
+                addLog("Кольцо найдено — включаю перехват нажатий автоматически")
+                ringSetPult(true)
+            }
+        }
         val session = ring ?: RingSession(
             ble, ui,
             { line -> addLog(line) },
@@ -3595,6 +3605,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         ).also { ring = it }
         session.onGesture = { name ->
             ringStatusShown = "Взмах: $name"
+            // Если тот же жест уже пришёл как клавиша телефона, второй раз
+            // действие не запускаем — иначе на один взмах было бы два снимка.
+            if (System.currentTimeMillis() - lastRingPressAt > 1200) runRingAction()
             if (ringHaptic) {
                 try {
                     val vib = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
@@ -3641,6 +3654,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             return
         }
         ringPressCount += 1
+        lastRingPressAt = System.currentTimeMillis()
         lastRingPress = press.describe()
         ringPressLog.add(0, "${nowClock()} ${press.describe()}")
         while (ringPressLog.size > 30) ringPressLog.removeAt(ringPressLog.size - 1)
