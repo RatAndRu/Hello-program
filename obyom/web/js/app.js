@@ -9,7 +9,7 @@ import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '1.2';
+export const VERSION = '1.3';
 const $ = (id) => document.getElementById(id);
 const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
@@ -103,6 +103,7 @@ async function startCapture() {
   if (+S.delay > 0) { cap.paused = true; $('capPause').textContent = '▶'; } else { cap.arm(0); $('capPause').textContent = '⏸'; }
   lastCount = null;
   window.__obyomCap = cap; // для отладки и тестов
+  showH();
   try { await cap.start(); } catch (e) { toast('Нет доступа к камере: ' + e.message, 4000); history.back(); }
 }
 let lastCount = null;
@@ -127,6 +128,11 @@ function capState(st) {
 }
 function cancelCapture() { if (cap) cap.stop(); cap = null; go('home'); }
 $('capCancel').onclick = () => { if (!cap || cap.shots.length < 3 || confirm('Выбросить снятые кадры?')) history.back(); };
+// Верх рамки: подгони верхнее кольцо AR-цилиндра к верху предмета (чуть выше). Всё, что выше, не попадёт в модель.
+// Над предметом пространство видно только на фоне стены/стола — по коврику там не понять, где кончается предмет.
+function showH() { if (cap) $('hVal').textContent = `${(cap.opt.Hb / 10).toFixed(1).replace('.0', '')} см`; }
+function adjH(d) { if (!cap) return; cap.opt.Hb = Math.max(20, Math.min(400, Math.round((cap.opt.Hb + d) / 5) * 5)); showH(); }
+$('hUp').onclick = () => adjH(+5); $('hDn').onclick = () => adjH(-5);
 $('capShot').onclick = () => { if (!cap) return; cap.shootNow(); if (!cap.state || !cap.state.found) toast('Сниму, как только увижу коврик'); };
 $('capPause').onclick = () => {
   if (!cap) return;
@@ -135,9 +141,9 @@ $('capPause').onclick = () => {
 };
 $('capDone').onclick = async () => {
   if (!cap) return;
-  const shots = cap.shots.map((s) => s.blob); cap.stop(); cap = null;
+  const shots = cap.shots.map((s) => s.blob), Hb = cap.opt.Hb; cap.stop(); cap = null;
   const id = 'scan-' + Date.now(), d = new Date();
-  const scan = { id, name: `Скан ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`, date: Date.now(), settings: { ...S } };
+  const scan = { id, name: `Скан ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`, date: Date.now(), settings: { ...S, height: String(Hb) } };
   try { await store.putFrames(id, shots); } catch (e) { toast('Не удалось сохранить кадры: ' + e.message); }
   runProcessing(scan, shots);
 };
@@ -248,6 +254,8 @@ async function moreSheet(scan) {
     ${scan.stats ? `<p>Кадров использовано: ${scan.stats.used} из ${scan.stats.frames}. Объём: ${(scan.stats.volume / 1000).toFixed(1)} см³. Обработка: ${fmtT(scan.stats.t)}.</p>` : ''}
     ${nf ? `<p>Пересчитать из сохранённых кадров (${nf} шт.) с другими настройками:</p>
     <div class="grid2"><button data-r="mesh">Полигоны</button><button data-r="splat">Сплэты</button><button data-r="both">Оба</button><button data-r="best">Оба, качество «Лучше»</button></div>
+    <label class="lbl">Высота предмета при пересчёте, см (чуть больше настоящей — лишний верх не достроится)</label>
+    <input id="rH" class="inp" type="number" inputmode="decimal" step="0.5" min="2" max="40">
     <p>Форма предмета при пересчёте:</p>
     <div class="seg" id="rShape"><button data-v="normal">Обычная</button><button data-v="revolve">Тело вращения</button><button data-v="smooth">Гладкая</button></div>
     <button data-a="dropframes">Удалить кадры (освободить место)</button>` : '<p>Кадров съёмки нет — пересчёт невозможен.</p>'}
@@ -257,8 +265,11 @@ async function moreSheet(scan) {
     const rs = box.querySelector('#rShape');
     const syncShape = () => rs && rs.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === shape));
     if (rs) { rs.onclick = (e) => { const b = e.target.closest('button'); if (b) { shape = b.dataset.v; syncShape(); } }; syncShape(); }
+    const rh = box.querySelector('#rH'); if (rh) rh.value = (+((scan.settings && scan.settings.height) || S.height) / 10).toString();
     box.querySelectorAll('[data-r]').forEach((b) => b.onclick = () => {
+      const hv = rh ? parseFloat(String(rh.value).replace(',', '.')) : NaN;
       closeSheet(); const st = { ...(scan.settings || S), shape };
+      if (hv >= 2 && hv <= 40) st.height = String(Math.round(hv * 10));
       if (b.dataset.r === 'best') { st.mode = 'both'; st.quality = 'best'; } else st.mode = b.dataset.r;
       const ns = { id: scan.id, name: scan.name, date: scan.date, settings: st };
       if (cur !== 'home') history.back(); setTimeout(() => runProcessing(ns, frames), 50);
@@ -334,7 +345,7 @@ function showHelp() {
   <li><b>С рук:</b> то же правило — новый кадр через каждые ~10° сдвига ракурса.</li>
   <li>Количество кадров не ограничено. Строка <b>«Не снимаю: …»</b> объясняет, почему кадр не взят; «слежение N к/с» — как быстро телефон успевает искать метки. Кнопка 📷 снимает кадр сразу.</li>
   <li>Когда купол заполнен — «Готово». Форма считается за полминуты, сплэты — несколько минут; можно остановить раньше.</li></ol>
-  <p><b>Высота предмета</b> — выбери с запасом: всё, что выше, обрежется. <b>Ширина</b>: A4 — до 12 см, A3 — до 17 см, A2 — до 24 см.</p>
+  <p><b>Высота предмета</b> — выбери ближайшую большую. Перед съёмкой подгони верх AR-рамки кнопками ▲▼ справа так, чтобы верхнее кольцо было чуть выше предмета: всё, что выше, обрежется, а пустоту между предметом и верхом рамки программа может принять за предмет (её видно только на фоне стены). Для готового скана высоту можно поправить в «Пересчитать». <b>Ширина</b>: A4 — до 12 см, A3 — до 17 см, A2 — до 24 см.</p>
   <p><b>Форма предмета:</b> «Тело вращения» — для бутылок, дезодорантов, ваз, банок: каждое сечение делается кругом, бока выходят ровными. «Гладкая» — сильнее сглаживает, мелкие детали пропадут. Её можно сменить и потом: ⋯ → Пересчитать.</p>
   <p><b>Дно</b> не снимается: предмет стоит на нём. Снизу модель ровно срезана по столу.</p>
   <p><b>Что не получится:</b> прозрачные и зеркальные предметы; глубокие впадины (внутренность чашки) — метод видит силуэты. Блестящий бок даёт блики — лучше «Тело вращения» или матовый свет.</p>

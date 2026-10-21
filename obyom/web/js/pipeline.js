@@ -70,6 +70,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   await tick();
   let vox = 0; for (const v of G.occ) vox += v;
   if (vox < 50) throw new Error('Предмет не найден над ковриком. Он стоит в центре круга? Метки видны со всех сторон?');
+  if (G.capTrim) log(`срезан пустой «колпак рамки»: ${(G.capTrim / 10).toFixed(1)} см сверху (его не видно на фоне листа). Верх рамки лучше ставить чуть выше предмета — кнопки ▲▼ при съёмке`);
   const shape = job.shape || 'normal';
   const GS = shape === 'revolve' ? revolveGrid(G) : G;
   const M = meshFromGrid(GS, shape === 'smooth' ? 5 : 3); taubin(M, shape === 'smooth' ? 60 : 30); computeNormals(M);

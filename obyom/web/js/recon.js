@@ -383,12 +383,47 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   const zf = Math.min(nz - 1, Math.ceil(2 / vs));
   for (let z = 0; z < zf; z++) for (let i = 0; i < nx * ny; i++) occ[z * nx * ny + i] = occ[zf * nx * ny + i];
   // оставляем самую большую связную часть (убирает мусор)
-  keepLargest(occ, nx, ny, nz);
+  const zg = Math.max(1, Math.ceil(3 / vs));
+  keepLargest(occ, nx, ny, nz, zg);
+  // «Колпак рамки»: пространство над предметом, которое ни один кадр не видел на фоне листа, остаётся целым
+  // цилиндром рамки. Его признак — слои, заполненные вплотную к стенке рамки по всему кругу, начиная от верха.
+  // Настоящий предмет стенки рамки по кругу не касается (если он не шире рамки — тогда ничего не трогаем).
+  const capTrim = opt.capTrim === false ? 0 : trimCap(occ, nx, ny, nz, vs, box.Rb, ox, oy, zg);
+  if (capTrim) keepLargest(occ, nx, ny, nz, zg);
   // закрытие: заполняет мелкие ямки и щели от бликов; затем заливаем пустоты внутри
   const cr = opt.close ?? Math.max(1, Math.round(1.2 / vs));
   if (cr > 0) closeGrid(occ, nx, ny, nz, cr);
   fillVoids(occ, nx, ny, nz);
-  return { occ, nx, ny, nz, vs, origin: [ox, oy, oz] };
+  return { occ, nx, ny, nz, vs, origin: [ox, oy, oz], capTrim: capTrim * vs };
+}
+function trimCap(occ, nx, ny, nz, vs, Rb, ox, oy, zg) {
+  const ring = [], r0 = (Rb - 2.2 * vs) ** 2, r1 = Rb * Rb;
+  for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { const X = ox + x * vs, Y = oy + y * vs, d = X * X + Y * Y; if (d > r0 && d <= r1) ring.push(y * nx + x); }
+  if (!ring.length) return 0;
+  const rf = (z) => { let o = 0; for (const i of ring) if (occ[z * nx * ny + i] > 0.5) o++; return o / ring.length; };
+  // верхний слой с заполненным кольцом; всё над ним — его рваная «крышка»
+  let zr = nz - 1; while (zr >= 0 && rf(zr) < 0.5) zr--;
+  if (zr < 0) return 0;
+  let z = zr; while (z >= 0 && rf(z) >= 0.5) z--;
+  if (z < zg + 2) return 0; // «предмет шире рамки» до самого низа — не трогаем
+  let zt = nz - 1;
+  for (; zt > z; zt--) { let any = false; for (let i = 0; i < nx * ny && !any; i++) any = occ[zt * nx * ny + i] > 0.5; if (any) break; }
+  for (let q = z + 1; q <= zt; q++) occ.fill(0, q * nx * ny, (q + 1) * nx * ny);
+  // Под колпаком — переходная полоса (~25 мм), которую тоже никто не видел на фоне листа: там форма расползается
+  // «шляпкой гриба». В этой полосе слой может быть шире нижнего не больше чем на 1 воксель за 3 слоя (почти отвесно).
+  const band = Math.round(25 / vs), S = nx * ny, prev = new Uint8Array(S), dil = new Uint8Array(S);
+  const q0 = Math.max(zg + 1, z - band + 1);
+  for (let q = q0; q <= z; q++) {
+    for (let i = 0; i < S; i++) prev[i] = occ[(q - 1) * S + i] > 0.5 ? 1 : 0;
+    if ((q - q0) % 3) { for (let i = 0; i < S; i++) if (!prev[i]) occ[q * S + i] = 0; continue; }
+    for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+      let v = 0;
+      for (let dy = -1; dy <= 1 && !v; dy++) for (let dx = -1; dx <= 1 && !v; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < nx && yy < ny && prev[yy * nx + xx]) v = 1; }
+      dil[y * nx + x] = v;
+    }
+    for (let i = 0; i < S; i++) if (!dil[i]) occ[q * S + i] = 0;
+  }
+  return zt - z;
 }
 // морфология кубом радиуса r (разделимые проходы по осям)
 function morph(occ, nx, ny, nz, r, dilate) {
@@ -420,21 +455,26 @@ function fillVoids(occ, nx, ny, nz) {
   }
   for (let j = 0; j < occ.length; j++) if (!out[j]) occ[j] = 1;
 }
-function keepLargest(occ, nx, ny, nz) {
-  const lab = new Int32Array(occ.length), sizes = [0];
+// Оставляем самую большую часть, СТОЯЩУЮ НА СТОЛЕ (касается нижних ~3 мм). Висящие в воздухе куски — это
+// «неизвестное» пространство над предметом (его ни один кадр не видел на фоне листа), а не предмет.
+// Раньше бралась просто самая большая часть — и при большой выбранной высоте мог остаться столб, а предмет исчезал.
+function keepLargest(occ, nx, ny, nz, zg = 2) {
+  const lab = new Int32Array(occ.length), sizes = [0], grounded = [false];
   const stack = new Int32Array(occ.length);
   for (let i = 0; i < occ.length; i++) {
     if (occ[i] < 0.5 || lab[i]) continue;
-    const L = sizes.length; let sp = 0, cnt = 0; stack[sp++] = i; lab[i] = L;
+    const L = sizes.length; let sp = 0, cnt = 0, gr = false; stack[sp++] = i; lab[i] = L;
     while (sp) {
       const j = stack[--sp]; cnt++;
       const x = j % nx, y = ((j / nx) | 0) % ny, z = (j / (nx * ny)) | 0;
+      if (z < zg) gr = true;
       const nb = [x > 0 ? j - 1 : -1, x < nx - 1 ? j + 1 : -1, y > 0 ? j - nx : -1, y < ny - 1 ? j + nx : -1, z > 0 ? j - nx * ny : -1, z < nz - 1 ? j + nx * ny : -1];
       for (const q of nb) if (q >= 0 && occ[q] >= 0.5 && !lab[q]) { lab[q] = L; stack[sp++] = q; }
     }
-    sizes.push(cnt);
+    sizes.push(cnt); grounded.push(gr);
   }
-  let best = 0; for (let l = 1; l < sizes.length; l++) if (sizes[l] > sizes[best]) best = l;
+  let best = 0; for (let l = 1; l < sizes.length; l++) if (grounded[l] && sizes[l] > sizes[best]) best = l;
+  if (!best) for (let l = 1; l < sizes.length; l++) if (sizes[l] > sizes[best]) best = l;
   for (let i = 0; i < occ.length; i++) if (occ[i] >= 0.5 && lab[i] !== best) occ[i] = 0;
 }
 

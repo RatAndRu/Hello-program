@@ -81,3 +81,7 @@ button.primary { background: var(--acc); color: #06210f; border-color: transpare
 .sheetBox .lbl { display: block; }
 #btnCal { width: 100%; margin: 8px 0; }
 #btnCal small { display: block; color: var(--mute); font-size: 12px; margin-top: 2px; }
+
+.hAdj { position: absolute; right: 10px; top: calc(env(safe-area-inset-top) + 200px); width: 120px; display: flex; flex-direction: column; align-items: center; gap: 6px; color: #fff; text-shadow: 0 1px 3px #000; font-size: 15px; }
+.hAdj small { color: #cfd6e0; font-size: 11px; }
+.round.sm { width: 44px; height: 44px; font-size: 18px; }
