@@ -92,6 +92,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var heyAutoDone = false
     private var heyCharging = false
     private var heyFiles = -1
+    private var heyFilesRaw = ""
     private var heyStreamCount = 0
     private var heyStreamBytes = 0
     private var heyStreamLogged = 0
@@ -2148,6 +2149,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                     appendLine("Модель: " + (heyModel ?: "не определена"))
                     appendLine("Прошивка: " + (heyFirmware ?: "нет данных"))
                     if (heyFiles >= 0) appendLine("Файлов на очках: $heyFiles")
+                    if (heyFilesRaw.isNotBlank()) appendLine("Ответ по файлам: $heyFilesRaw")
                     if (heyStreamCount > 0) {
                         appendLine("Поток от очков: $heyStreamCount пакетов · ${heyStreamBytes / 1024} КБ")
                     }
@@ -2312,7 +2314,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         heySendSequence(
             listOf(
                 HeyTx(HeyCyan.CH_CTRL, 0x02, byteArrayOf(0x05)),
-                HeyTx(HeyCyan.CH_SERIAL, 0xFD, byteArrayOf(0x01))
+                // SDK шлёт три байта: 01 + номер снимка (младший, старший). 0 — «дай список».
+                HeyTx(HeyCyan.CH_SERIAL, 0xFD, byteArrayOf(0x01, 0x00, 0x00))
             ),
             "Забрать файлы"
         )
@@ -2494,8 +2497,16 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             return
         }
         if (HeyCyan.isBigFrame(value) && (value[1].toInt() and 0xFF) == 0xFD) {
-            val payload = if (value.size > 6) value[6].toInt() and 0xFF else -1
-            if (payload >= 0) heyFiles = payload
+            val payload = if (value.size > 6) value.copyOfRange(6, value.size) else ByteArray(0)
+            heyFilesRaw = HeyCyan.hex(payload)
+            if (payload.isNotEmpty()) {
+                // Ответ SDK: 01 | количество (2 байта) | служебное.
+                heyFiles = if (payload.size >= 3) {
+                    (payload[1].toInt() and 0xFF) or ((payload[2].toInt() and 0xFF) shl 8)
+                } else {
+                    payload[0].toInt() and 0xFF
+                }
+            }
         }
         val echo = heyLastTx?.let { it.contentEquals(value) } == true &&
             System.currentTimeMillis() - heyLastTxAt < 8000
