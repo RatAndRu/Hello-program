@@ -3996,24 +3996,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             c.addView(card0)
             // Пульт работает и без подключения по BLE: кольцо общается с телефоном
             // само, поэтому перехват полезен до всякой настройки.
-            if (session.readingsLog.isNotEmpty()) {
-            val log = card()
-            log.addView(txt("Измерения, которые кольцо сообщило", 12, Pal.MUTED, bold = true))
-            log.addView(spacer(6))
-            log.addView(txt(
-                session.readingsLog.take(10).joinToString("\n"),
-                11, Pal.TEXT, mono = true
-            ))
-            log.addView(spacer(6))
-            log.addView(txt(
-                "Это реальные ответы кольца (кадры 05 03 / 05 09 / 05 0A / 05 0D), а не расчёт " +
-                    "по пульсу. Значения сохраняются при переподключении — кольцо отдаёт их нечасто.",
-                11, Pal.MUTED
-            ))
-            c.addView(log)
-        }
-
-        c.addView(ringPultCard())
+            c.addView(ringPultCard())
             return c
         }
 
@@ -4100,6 +4083,23 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             11, Pal.MUTED
         ))
         c.addView(metrics)
+
+        if (session.readingsLog.isNotEmpty()) {
+            val readCard = card()
+            readCard.addView(txt("Измерения, которые кольцо сообщило", 12, Pal.MUTED, bold = true))
+            readCard.addView(spacer(6))
+            readCard.addView(txt(
+                session.readingsLog.take(10).joinToString("\n"),
+                11, Pal.TEXT, mono = true
+            ))
+            readCard.addView(spacer(6))
+            readCard.addView(txt(
+                "Это реальные ответы кольца (кадры 05 03 / 05 09 / 05 0A / 05 0D), а не расчёт " +
+                    "по пульсу. Значения сохраняются при переподключении — кольцо отдаёт их нечасто.",
+                11, Pal.MUTED
+            ))
+            c.addView(readCard)
+        }
 
         c.addView(ringPultCard())
 
