@@ -88,6 +88,22 @@ object HeyCyan {
         return out
     }
 
+    /** Достаёт заряд из ответа любого канала, если он там есть. */
+    fun batteryFrom(value: ByteArray): Int? {
+        if (value.size == FRAME_LEN && (value[0].toInt() and 0x7F) == 0x03) {
+            val level = value[1].toInt() and 0xFF
+            if (level in 1..100) return level
+        }
+        if (isBigFrame(value)) {
+            val type = value[1].toInt() and 0xFF
+            if (type == 0x42 && value.size > 7) {
+                val level = value[6].toInt() and 0xFF
+                if (level in 1..100) return level
+            }
+        }
+        return null
+    }
+
     fun isBigFrame(value: ByteArray): Boolean =
         value.size >= 6 && (value[0].toInt() and 0xFF) == 0xBC
 
@@ -108,7 +124,20 @@ object HeyCyan {
         val sb = StringBuilder()
         sb.append("команда 0x").append(String.format("%02X", key))
         if (name.isNotEmpty()) sb.append(" (").append(name).append(")")
-        sb.append(if (err) " · ответ" else " · флаг 0x80 нет")
+        if (key == 0x02 && frame.size > 1) {
+            sb.append(" · ").append(
+                when (frame[1].toInt()) {
+                    4 -> "войти в режим съёмки"
+                    5 -> "снять кадр"
+                    6 -> "выйти из режима"
+                    else -> "действие ${frame[1].toInt()}"
+                }
+            )
+        }
+        if (key == 0x3E && frame.size > 2) {
+            sb.append(" · тип режима ").append(frame[2].toInt() and 0xFF)
+        }
+        sb.append(if (err) " · ответ очков" else " · подтверждение")
         sb.append(" · данные ").append(body)
         return sb.toString()
     }

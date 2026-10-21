@@ -75,10 +75,21 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var auditor: DeviceAuditor? = null
     private var extraNotes = ArrayList<String>()
 
-    // Протокол очков HeyCyan: выбранный канал, состояние опроса, черновик HEX.
+    // Очки: состояние панели, данные от устройства и служебные поля протокола.
     private var heyChannel = HeyCyan.CH_CTRL
-    private var heyStatus = ""
     private var heyTypeText = "41"
+    private var heyBattery: Int? = null
+    private var heyModel: String? = null
+    private var heyFirmware: String? = null
+    private var heyLastResponse = ""
+    private var heyActionStatus = ""
+    private var heySendTitle = ""
+    private var heyLastTx: ByteArray? = null
+    private var heyLastTxAt = 0L
+    private var heyAdvanced = false
+    private var heyFilesOpen = false
+    private var heyWifi: List<Pair<String, Int>> = emptyList()
+    private var heyAutoDone = false
 
     private var tab = TAB_SCAN
     private val scanItems = ArrayList<ScanItem>()
@@ -502,6 +513,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             gattServices = emptyList()
             batteryPercent = null
             batteryAttempted = false
+            heyAutoDone = false
+            heyLastResponse = ""
+            heyActionStatus = ""
         }
         if (state == ConnState.DISCONNECTED) {
             gattServices = emptyList()
@@ -518,7 +532,25 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         batteryUnavailable = false
         if (services.isNotEmpty()) ensureProfileMatchesDevice()
         syncBattery()
+        if (heyAvailable() && connState == ConnState.CONNECTED && !heyAutoDone) {
+            // Очки HeyCyan: сразу подписываемся на их каналы и читаем паспорт устройства,
+            // иначе интерфейс остаётся без данных до первого нажатия.
+            heyAutoDone = true
+            ui.postDelayed({ heySubscribeProtocol() }, 300)
+            ui.postDelayed({ heyReadIdentity() }, 2600)
+        }
         rebuild()
+    }
+
+    private fun heyReadIdentity() {
+        if (connState != ConnState.CONNECTED) return
+        val info = UUID.fromString("0000180a-0000-1000-8000-00805f9b34fb")
+        for (code in listOf(0x2A26, 0x2A27, 0x2A25)) {
+            val char = gattServices.firstOrNull { it.uuid == info }
+                ?.chars?.firstOrNull { GattNames.shortCode(it.uuid) == code }
+            if (char != null && char.readable) ble.read(info, char.uuid)
+        }
+        heyRefresh()
     }
 
     /**
@@ -683,11 +715,16 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         }
         // Во время передачи снимка уведомления идут потоком: журнал не засоряем и экран не дёргаем.
         if (camera.isCapturing()) return
-        val text = HeyCyan.describe(value)
-            ?: GattNames.describe(char, value)
-            ?: bytesToHex(value.take(24).toByteArray())
+        val short = GattNames.shortCode(char)
+        if (short == 0x2A26) heyFirmware = String(value, Charsets.UTF_8).trim().ifBlank { null }
+        if (short == 0x2A27) heyModel = String(value, Charsets.UTF_8).trim().ifBlank { null }
+        if (short == 0x2A00 && heyModel.isNullOrBlank()) heyModel = String(value, Charsets.UTF_8).trim()
+        heyObserve(value)
+        val text = heyLastResponse.ifBlank {
+            GattNames.describe(char, value) ?: bytesToHex(value.take(24).toByteArray())
+        }
         addLog("→ ${GattNames.charName(char)}: $text")
-        if (tab == TAB_GATT || tab == TAB_DEVICE) rebuildThrottled()
+        if (tab == TAB_GATT || tab == TAB_DEVICE || tab == TAB_HEY) rebuildThrottled()
     }
 
     override fun onCharWritten(service: UUID, char: UUID, ok: Boolean) {
@@ -940,6 +977,30 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         })
         info.addView(buttons)
         c.addView(info)
+
+        if (heyAvailable()) {
+            val heyCard = card()
+            heyCard.addView(txt("🕶 Это очки с готовыми действиями", 13, Pal.TEXT, bold = true))
+            heyCard.addView(
+                txt(
+                    "Фото, видео, голос, помощник и файлы — на вкладке «Очки». Там же заряд и данные устройства.",
+                    11,
+                    Pal.MUTED
+                )
+            )
+            heyCard.addView(spacer(8))
+            val heyRow = row()
+            heyRow.addView(actionButton("Открыть панель очков", primary = true) {
+                tab = TAB_HEY
+                rebuild()
+            })
+            heyCard.addView(heyRow)
+            if (heyBattery == null) {
+                heyCard.addView(spacer(6))
+                heyCard.addView(txt("Заряд: очки пока не сообщают его по Bluetooth", 11, Pal.AMBER))
+            }
+            c.addView(heyCard)
+        }
 
         // Почему не подключается: отдельная понятная карточка для классических устройств.
         if (!connected && lastConnItem?.classic == true) {
@@ -2016,173 +2077,324 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     // ---------- Вкладка «Консоль» ----------
 
-    // ---------- Очки HeyCyan: протокол из официального SDK ----------
+    // ---------- Очки: понятная панель действий ----------
+
+    private fun heyAvailable(): Boolean =
+        gattServices.any { it.uuid == HeyCyan.CTRL_SERVICE || it.uuid == HeyCyan.SERIAL_SERVICE }
+
+    private fun heyTile(icon: String, title: String, hint: String, onClick: () -> Unit): View {
+        val box = column()
+        box.background = tappable(Pal.SURFACE_2, 14, Pal.STROKE)
+        box.setPadding(dp(12), dp(12), dp(12), dp(12))
+        box.isClickable = true
+        box.isFocusable = true
+        box.addView(txt("$icon  $title", 14, Pal.TEXT, bold = true))
+        box.addView(txt(hint, 11, Pal.MUTED))
+        box.setOnClickListener { onClick() }
+        val lp = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        lp.rightMargin = dp(8)
+        lp.bottomMargin = dp(8)
+        box.layoutParams = lp
+        return box
+    }
 
     private fun buildHeyTab(): View {
         val c = column()
+        val connected = connState == ConnState.CONNECTED
 
         val head = row()
         head.addView(
-            txt("Протокол очков HeyCyan", 16, Pal.TEXT, bold = true),
+            txt(if (isHeyCyanDevice()) "🕶 Очки ${connName.ifBlank { "" }}".trim() else "🕶 Очки", 16, Pal.TEXT, bold = true),
             LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
         )
-        head.addView(pill("Обновить", false) { rebuild() })
+        head.addView(
+            badge(
+                if (connected) "на связи" else "нет связи",
+                if (connected) Pal.GREEN else Pal.RED
+            )
+        )
         c.addView(head)
         c.addView(
             txt(
-                "Кадры собраны из официального SDK очков (glasses_sdk). Канал A — сервис 6E40FFF0: " +
-                    "16 байт, последний = сумма предыдущих. Канал B — DE5BF728: BC, тип, длина, CRC16. " +
-                    "Всё, что отправлено и принято, пишется в журнал целиком.",
+                "Готовые действия — без байтов и команд. Просто нажмите, что нужно сделать.",
                 12,
                 Pal.MUTED
             )
         )
         c.addView(spacer(10))
 
-        val stateCard = card()
-        stateCard.addView(txt("Состояние", 12, Pal.MUTED, bold = true))
-        stateCard.addView(spacer(6))
-        stateCard.addView(
+        // Что известно об очках
+        val state = card()
+        state.addView(txt("Очки", 12, Pal.MUTED, bold = true))
+        state.addView(spacer(6))
+        state.addView(
             txt(
                 buildString {
-                    appendLine("Устройство: ${connName.ifBlank { "—" }}")
-                    appendLine("Связь: ${when (connState) { ConnState.CONNECTED -> "есть"; ConnState.CONNECTING -> "подключается"; else -> "нет" }} · MTU ${ble.mtu}")
-                    appendLine(
-                        "Канал: " + if (heyChannel == HeyCyan.CH_CTRL)
-                            "A · 6E400002 (команды)" else "B · DE5BF72A (большие данные)"
-                    )
-                    appendLine("Пакетов от устройства: ${notifStats.values.sumOf { it.count }}")
-                    append(if (heyStatus.isBlank()) "Опрос ещё не запускался" else heyStatus)
+                    appendLine("Заряд: " + (heyBattery?.let { "$it%" } ?: "очки пока не сообщают"))
+                    appendLine("Модель: " + (heyModel ?: "не определена"))
+                    appendLine("Прошивка: " + (heyFirmware ?: "нет данных"))
+                    append("Последний ответ: " + (heyLastResponse.ifBlank { "пока ничего не приходило" }))
                 },
                 11,
                 Pal.TEXT,
-                mono = true
+                mono = false
             )
         )
-        stateCard.addView(spacer(10))
-        stateCard.addView(actionButton("Опросить очки", primary = true) { runHeyProbe() })
-        stateCard.addView(spacer(8))
-        stateCard.addView(txt("Канал для команд ниже:", 11, Pal.MUTED))
-        stateCard.addView(spacer(6))
-        val chanRow = row()
-        chanRow.addView(pill("A · команды", heyChannel == HeyCyan.CH_CTRL) {
-            heyChannel = HeyCyan.CH_CTRL
+        state.addView(spacer(10))
+        val stateRow = row()
+        stateRow.addView(actionButton("Обновить данные", primary = true) { heyRefresh() })
+        if (!connected) {
+            stateRow.addView(actionButton("Подключиться", primary = false) {
+                val item = lastConnItem
+                if (item != null) connectTo(item) else { tab = TAB_SCAN; rebuild() }
+            })
+        }
+        state.addView(stateRow)
+        c.addView(state)
+
+        // Действия
+        val acts = card()
+        acts.addView(txt("Что сделать", 12, Pal.MUTED, bold = true))
+        acts.addView(spacer(6))
+        val r1 = row()
+        r1.addView(heyTile("📷", "Фото", "снять кадр камерой очков") { heyAction("photo") })
+        r1.addView(heyTile("🎬", "Видео", "режим записи видео") { heyAction("video") })
+        acts.addView(r1)
+        val r2 = row()
+        r2.addView(heyTile("🎤", "Голос", "запись звука / диктофон") { heyAction("voice") })
+        r2.addView(heyTile("🤖", "Помощник", "включить голосового ассистента") { heyAction("assistant") })
+        acts.addView(r2)
+        val r3 = row()
+        r3.addView(heyTile("📥", "Забрать файлы", "фото и видео с очков") { heyAction("files") })
+        r3.addView(heyTile("🔋", "Заряд и связь", "опросить состояние") { heyAction("battery") })
+        acts.addView(r3)
+        c.addView(acts)
+
+        if (heyActionStatus.isNotBlank()) {
+            val st = card()
+            st.addView(txt(heyActionStatus, 12, Pal.AMBER))
+            c.addView(st)
+        }
+
+        if (heyFilesOpen) c.addView(heyFilesCard())
+
+        // Спец-инструменты спрятаны: обычному пользователю они не нужны.
+        val adv = card()
+        val advHead = row()
+        advHead.addView(
+            txt("Для специалиста", 12, Pal.MUTED, bold = true),
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        advHead.addView(pill(if (heyAdvanced) "скрыть" else "показать", false) {
+            heyAdvanced = !heyAdvanced
             rebuild()
         })
-        chanRow.addView(hspace(6))
-        chanRow.addView(pill("B · BC-кадры", heyChannel == HeyCyan.CH_SERIAL) {
-            heyChannel = HeyCyan.CH_SERIAL
-            rebuild()
-        })
-        chanRow.addView(hspace(6))
-        chanRow.addView(pill("Пробудить", false) {
-            heySend(HeyCyan.CH_SERIAL, 0x41, byteArrayOf(0x02, 0x01, 0x07), "пробуждение очков")
-        })
-        stateCard.addView(chanRow)
-        c.addView(stateCard)
-        c.addView(spacer(10))
-
-        val camCard = card()
-        camCard.addView(txt("Камера", 12, Pal.MUTED, bold = true))
-        camCard.addView(spacer(6))
-        camCard.addView(
-            txt(
-                "Команда камере — 0x02 с действием: 4 войти в режим съёмки, 5 снять кадр, 6 выйти. " +
-                    "Ответ придёт уведомлением на 6E400003 или DE5BF729.",
-                11,
-                Pal.MUTED
+        adv.addView(advHead)
+        if (!heyAdvanced) {
+            adv.addView(txt("Ручная отправка кадров, опрос протокола и HEX-журнал.", 11, Pal.MUTED))
+        } else {
+            adv.addView(spacer(8))
+            adv.addView(
+                txt(
+                    "Канал A — сервис 6E40FFF0 (16 байт, последний = сумма). Канал B — DE5BF728 " +
+                        "(BC, тип, длина, CRC16). Каждый кадр виден в журнале.",
+                    11,
+                    Pal.MUTED
+                )
             )
-        )
-        camCard.addView(spacer(8))
-        val camRow = row()
-        camRow.addView(actionButton("Войти (4)", primary = false) {
-            heySend(heyChannel, 0x02, byteArrayOf(0x04), "камера: войти")
-        })
-        camRow.addView(actionButton("Снять (5)", primary = true) {
-            heySend(heyChannel, 0x02, byteArrayOf(0x05), "камера: снять")
-        })
-        camCard.addView(camRow)
-        val camRow2 = row()
-        camRow2.addView(actionButton("Выйти (6)", primary = false) {
-            heySend(heyChannel, 0x02, byteArrayOf(0x06), "камера: выйти")
-        })
-        camRow2.addView(actionButton("Режим фото 0x3E", primary = false) {
-            heySend(heyChannel, 0x3E, byteArrayOf(0x02, 0x01, 0x00), "режим очков: фото")
-        })
-        camCard.addView(camRow2)
-        c.addView(camCard)
-        c.addView(spacer(10))
-
-        val rawCard = card()
-        rawCard.addView(txt("Свои байты", 12, Pal.MUTED, bold = true))
-        rawCard.addView(spacer(6))
-        rawCard.addView(
-            txt(
-                "Полезно, когда нужен произвольный кадр: введите HEX и отправьте как есть в выбранный канал " +
-                    "или оберните в BC-кадр с нужным типом.",
-                11,
-                Pal.MUTED
-            )
-        )
-        rawCard.addView(spacer(8))
-        val hexInput = input("HEX, например 02 05")
-        rawCard.addView(hexInput)
-        val typeInput = input("Тип для BC-кадра (HEX)", heyTypeText)
-        rawCard.addView(typeInput)
-        val rawRow = row()
-        rawRow.addView(actionButton("Отправить как есть", primary = false) {
-            val bytes = HeyCyan.parseHex(hexInput.text.toString())
-            if (bytes == null || bytes.isEmpty()) {
-                toast("Нужны целые байты в HEX")
-            } else {
-                heySendRaw(heyChannel, bytes, "свои байты")
-            }
-        })
-        rawRow.addView(actionButton("Обернуть в BC", primary = true) {
-            heyTypeText = typeInput.text.toString().ifBlank { "41" }
-            val bytes = HeyCyan.parseHex(hexInput.text.toString()) ?: ByteArray(0)
-            val type = HeyCyan.parseHex(heyTypeText)?.firstOrNull()?.toInt()?.and(0xFF) ?: 0x41
-            heySend(HeyCyan.CH_SERIAL, type, bytes, "BC-кадр 0x" + String.format("%02X", type))
-        })
-        rawCard.addView(rawRow)
-        c.addView(rawCard)
-        c.addView(spacer(10))
-
-        val logCard = card()
-        logCard.addView(txt("Последние кадры", 12, Pal.MUTED, bold = true))
-        logCard.addView(spacer(6))
-        val tail = logs.takeLast(14).joinToString("\n").ifBlank { "Пока пусто" }
-        logCard.addView(txt(tail, 10, Pal.TEXT, mono = true))
-        logCard.addView(spacer(8))
-        logCard.addView(actionButton("Копировать журнал", primary = true) { copyHeyLog() })
-        c.addView(logCard)
+            adv.addView(spacer(8))
+            adv.addView(actionButton("Опросить протокол", primary = false) { runHeyProbe() })
+            adv.addView(spacer(8))
+            val chanRow = row()
+            chanRow.addView(pill("A · команды", heyChannel == HeyCyan.CH_CTRL) {
+                heyChannel = HeyCyan.CH_CTRL
+                rebuild()
+            })
+            chanRow.addView(pill("B · BC-кадры", heyChannel == HeyCyan.CH_SERIAL) {
+                heyChannel = HeyCyan.CH_SERIAL
+                rebuild()
+            })
+            adv.addView(chanRow)
+            adv.addView(spacer(8))
+            val hexInput = input("HEX, например 02 05")
+            adv.addView(hexInput)
+            val typeInput = input("Тип для BC-кадра (HEX)", heyTypeText)
+            adv.addView(typeInput)
+            val rawRow = row()
+            rawRow.addView(actionButton("Отправить как есть", primary = false) {
+                val bytes = HeyCyan.parseHex(hexInput.text.toString())
+                if (bytes == null || bytes.isEmpty()) {
+                    toast("Нужны целые байты в HEX")
+                } else {
+                    heySendRaw(heyChannel, bytes, "свои байты")
+                }
+            })
+            rawRow.addView(actionButton("Обернуть в BC", primary = true) {
+                heyTypeText = typeInput.text.toString().ifBlank { "41" }
+                val bytes = HeyCyan.parseHex(hexInput.text.toString()) ?: ByteArray(0)
+                val type = HeyCyan.parseHex(heyTypeText)?.firstOrNull()?.toInt()?.and(0xFF) ?: 0x41
+                heySend(HeyCyan.CH_SERIAL, type, bytes, "BC-кадр 0x" + String.format("%02X", type))
+            })
+            adv.addView(rawRow)
+            adv.addView(spacer(8))
+            adv.addView(actionButton("Копировать журнал", primary = false) { copyHeyLog() })
+            adv.addView(spacer(6))
+            val tail = logs.takeLast(10).joinToString("\n").ifBlank { "Пока пусто" }
+            adv.addView(txt(tail, 10, Pal.MUTED, mono = true))
+        }
+        c.addView(adv)
         return c
     }
 
-    private fun heySend(channel: String, type: Int, payload: ByteArray, title: String) {
-        val frame = HeyCyan.frameFor(channel, type, payload)
-        heySendRaw(channel, frame, title)
+    /** Карточка «забрать файлы»: честно объясняет, что медиа идут по Wi-Fi очков. */
+    private fun heyFilesCard(): View {
+        val box = card()
+        box.addView(txt("Файлы с очков", 12, Pal.MUTED, bold = true))
+        box.addView(spacer(6))
+        box.addView(
+            txt(
+                "Фотографии и видео очки отдают не по Bluetooth, а по своей Wi-Fi-сети: " +
+                    "включают точку доступа, а приложение скачивает файл по HTTP. " +
+                    "Сначала снимите кадр, потом подключитесь к сети очков.",
+                11,
+                Pal.MUTED
+            )
+        )
+        box.addView(spacer(8))
+        val b1 = row()
+        b1.addView(actionButton("Снять и запросить", primary = true) { heyFilesGrab() })
+        b1.addView(actionButton("Найти сеть очков", primary = false) { heyScanWifi() })
+        box.addView(b1)
+        if (heyWifi.isNotEmpty()) {
+            box.addView(spacer(8))
+            box.addView(txt("Сети рядом:", 11, Pal.MUTED))
+            box.addView(spacer(4))
+            box.addView(
+                txt(
+                    heyWifi.take(10).joinToString("\n") { (ssid, level) -> "$ssid   $level dBm" },
+                    11,
+                    Pal.TEXT,
+                    mono = true
+                )
+            )
+        }
+        box.addView(spacer(8))
+        box.addView(actionButton("Открыть Wi-Fi настройки", primary = false) {
+            wifi.openWifiSettings()
+        })
+        return box
     }
 
-    private fun heySendRaw(channel: String, frame: ByteArray, title: String) {
-        if (connState != ConnState.CONNECTED) {
-            toast("Сначала подключитесь к устройству")
-            return
-        }
-        val service = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_SERVICE else HeyCyan.SERIAL_SERVICE
-        val char = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_WRITE else HeyCyan.SERIAL_WRITE
-        val ok = ble.write(service, char, frame, withResponse = false)
-        addLog("TX $channel · $title · ${HeyCyan.hex(frame)}" + if (ok) "" else " · запись не принята")
-        heyStatus = "Отправлено: $title"
-        if (tab == TAB_HEY) rebuild()
+    private fun heyFilesGrab() {
+        heyFilesOpen = true
+        heySendSequence(
+            listOf(
+                HeyTx(HeyCyan.CH_CTRL, 0x02, byteArrayOf(0x05)),
+                HeyTx(HeyCyan.CH_SERIAL, 0xFD, byteArrayOf(0x01))
+            ),
+            "Забрать файлы"
+        )
+        heyActionStatus = "Снимок запрошен. Теперь найдите сеть очков и подключитесь к ней — файл придёт по Wi-Fi."
     }
 
-    private fun runHeyProbe() {
+    private fun heyScanWifi() {
+        heyFilesOpen = true
+        heyWifi = wifi.scanNetworks()
+        heyActionStatus = if (heyWifi.isEmpty()) {
+            "Сети не найдены. Проверьте, что очки включены и режим Wi-Fi активирован."
+        } else {
+            "Найдено сетей: ${heyWifi.size}. Обычно сеть очков называется W630, AM01, HeyCyan или GLASSES."
+        }
+        rebuild()
+    }
+
+    private fun isHeyCyanDevice(): Boolean = heyAvailable()
+
+    private fun heyAction(id: String) {
         if (connState != ConnState.CONNECTED) {
-            toast("Сначала подключитесь к устройству")
+            toast("Сначала подключитесь к очкам")
             return
         }
-        // Слушаем все уведомления устройства и оба канала протокола.
+        when (id) {
+            "photo" -> heySendSequence(
+                listOf(
+                    HeyTx(HeyCyan.CH_CTRL, 0x02, byteArrayOf(0x04)),
+                    HeyTx(HeyCyan.CH_CTRL, 0x02, byteArrayOf(0x05))
+                ),
+                "Фото"
+            )
+            "video" -> heySendSequence(
+                listOf(
+                    HeyTx(HeyCyan.CH_CTRL, 0x3E, byteArrayOf(0x02, 0x02, 0x00)),
+                    HeyTx(HeyCyan.CH_CTRL, 0x02, byteArrayOf(0x04))
+                ),
+                "Видео"
+            )
+            "voice" -> heySendSequence(
+                listOf(HeyTx(HeyCyan.CH_CTRL, 0x3E, byteArrayOf(0x02, 0x04, 0x00))),
+                "Голос"
+            )
+            "assistant" -> heySendSequence(
+                listOf(HeyTx(HeyCyan.CH_SERIAL, 0x41, byteArrayOf(0x02, 0x01, 0x07))),
+                "Помощник"
+            )
+            "files" -> {
+                heyFilesOpen = !heyFilesOpen
+                heyActionStatus = if (heyFilesOpen)
+                    "Файлы очки отдают по своей Wi-Fi-сети — инструкция ниже."
+                else ""
+                rebuild()
+            }
+            "battery" -> heyRefresh()
+        }
+    }
+
+    data class HeyTx(val channel: String, val cmd: Int, val payload: ByteArray)
+
+    /** Отправляет последовательность кадров с паузами: GATT не любит очередь из записей. */
+    private fun heySendSequence(frames: List<HeyTx>, title: String) {
+        heyActionStatus = "$title: отправляю…"
+        heySendTitle = title
+        var index = 0
+        val step = object : Runnable {
+            override fun run() {
+                if (index >= frames.size) {
+                    heyActionStatus = "$title: команда отправлена. " +
+                        if (heyLastResponse.isBlank()) "Ответа от очков пока нет."
+                        else "Ответ: $heyLastResponse"
+                    rebuild()
+                    return
+                }
+                val f = frames[index]
+                index += 1
+                heySend(f.channel, f.cmd, f.payload, title)
+                ui.postDelayed(this, 350)
+            }
+        }
+        ui.postDelayed(step, 60)
+    }
+
+    /** Опросить заряд и сведения об очках. */
+    private fun heyRefresh() {
+        if (connState != ConnState.CONNECTED) {
+            toast("Сначала подключитесь к очкам")
+            return
+        }
+        heySubscribeProtocol()
+        heyActionStatus = "Обновляю данные очков…"
+        heySendSequence(
+            listOf(
+                HeyTx(HeyCyan.CH_SERIAL, 0x42, byteArrayOf(0x00, 0x00)),
+                HeyTx(HeyCyan.CH_CTRL, 0x03, ByteArray(0)),
+                HeyTx(HeyCyan.CH_CTRL, 0x3C, ByteArray(0)),
+                HeyTx(HeyCyan.CH_CTRL, 0xA1, byteArrayOf(0x01)),
+                HeyTx(HeyCyan.CH_SERIAL, 0x43, byteArrayOf(0x00, 0x00))
+            ),
+            "Заряд и сведения"
+        )
+    }
+
+    private fun heySubscribeProtocol() {
         for ((service, char) in listOf(
             HeyCyan.CTRL_SERVICE to HeyCyan.CTRL_NOTIFY,
             HeyCyan.SERIAL_SERVICE to HeyCyan.SERIAL_NOTIFY
@@ -2196,14 +2408,66 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 }
             }
         }
+    }
+
+    private fun heySend(channel: String, type: Int, payload: ByteArray, title: String) {
+        heySendTitle = title
+        val frame = HeyCyan.frameFor(channel, type, payload)
+        heySendRaw(channel, frame, title)
+    }
+
+    private fun heySendRaw(channel: String, frame: ByteArray, title: String) {
+        if (connState != ConnState.CONNECTED) {
+            toast("Сначала подключитесь к устройству")
+            return
+        }
+        val service = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_SERVICE else HeyCyan.SERIAL_SERVICE
+        val char = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_WRITE else HeyCyan.SERIAL_WRITE
+        if (ble.busySubscribing) {
+            // Ещё пишется дескриптор подписки: подождём, иначе GATT отклонит запись.
+            ui.postDelayed({ heySendRaw(channel, frame, title) }, 250)
+            return
+        }
+        // Канал A у SDK — обычная запись с ответом, канал B — без ответа.
+        val ok = ble.write(service, char, frame, withResponse = if (channel == HeyCyan.CH_CTRL) null else false)
+        heyLastTx = frame
+        heyLastTxAt = System.currentTimeMillis()
+        if (ok) {
+            addLog("→ Очки · $title")
+        } else {
+            addLog("Очки · $title: запись не принята")
+            heyActionStatus = "$title: очки не приняли команду"
+        }
+        if (tab == TAB_HEY) rebuildThrottled()
+    }
+
+    /** Разбор всего, что прилетает в уведомления, в человеческий текст. */
+    private fun heyObserve(value: ByteArray) {
+        HeyCyan.batteryFrom(value)?.let { heyBattery = it }
+        val echo = heyLastTx?.let { it.contentEquals(value) } == true &&
+            System.currentTimeMillis() - heyLastTxAt < 8000
+        heyLastResponse = if (echo) {
+            "очки подтвердили команду «${heySendTitle.ifBlank { "…" }}»"
+        } else {
+            HeyCyan.describe(value) ?: HeyCyan.hex(value.take(24).toByteArray())
+        }
+        if (tab == TAB_HEY) rebuildThrottled()
+    }
+
+    private fun runHeyProbe() {
+        if (connState != ConnState.CONNECTED) {
+            toast("Сначала подключитесь к устройству")
+            return
+        }
+        heySubscribeProtocol()
         val list = HeyCyan.probes()
-        heyStatus = "Опрос: 0/${list.size}"
+        heyActionStatus = "Опрос: 0/${list.size}"
         rebuild()
         var index = 0
         val step = object : Runnable {
             override fun run() {
                 if (index >= list.size) {
-                    heyStatus = "Опрос отправлен: ${list.size} кадров. Ответы — в журнале."
+                    heyActionStatus = "Опрос отправлен: ${list.size} кадров. Подробности — в журнале."
                     addLog("Опрос очков завершён: кадров ${list.size}")
                     rebuild()
                     return
@@ -2211,7 +2475,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 val probe = list[index]
                 index += 1
                 heySend(probe.channel, probe.type, probe.payload, probe.title)
-                heyStatus = "Опрос: ${index}/${list.size} — ${probe.title}"
+                heyActionStatus = "Опрос: ${index}/${list.size} — ${probe.title}"
                 ui.postDelayed(this, 450)
             }
         }
@@ -2223,8 +2487,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             appendLine("BlueLink · журнал протокола очков")
             appendLine("Устройство: ${connName.ifBlank { "—" }} (${connAddress.ifBlank { "—" }})")
             appendLine("Версия: ${appVersion()} (${appVersionCode()})")
-            appendLine("Канал: ${if (heyChannel == HeyCyan.CH_CTRL) "A" else "B"}")
-            appendLine("Состояние: $heyStatus")
+            appendLine("Заряд: ${heyBattery?.let { "$it%" } ?: "нет данных"}")
+            appendLine("Последний ответ: ${heyLastResponse.ifBlank { "—" }}")
             appendLine()
             logs.forEach { appendLine(it) }
         }

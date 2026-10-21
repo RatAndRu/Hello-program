@@ -75,6 +75,11 @@ class BleCentral(private val ctx: Context) {
     private var gatt: BluetoothGatt? = null
     private val values = HashMap<String, ByteArray>()
 
+    // Android разрешает только одну GATT-операцию за раз: подписки ставим в очередь,
+    // иначе вторая подряд запись дескриптора молча теряется (и канал остаётся немым).
+    private val subscribeQueue = ArrayDeque<Pair<UUID?, UUID>>()
+    private var subscribeBusy = false
+
     var services: List<GattServiceInfo> = emptyList()
         private set
     var connectedName: String = ""
@@ -442,6 +447,10 @@ class BleCentral(private val ctx: Context) {
     private fun closeGatt() {
         val g = gatt
         gatt = null
+        synchronized(subscribeQueue) {
+            subscribeQueue.clear()
+            subscribeBusy = false
+        }
         try {
             g?.disconnect()
             g?.close()
@@ -618,6 +627,7 @@ class BleCentral(private val ctx: Context) {
                     else "Подписка не удалась: статус ${GattNames.gattStatusText(status)}"
                 )
             }
+            subscribeDone()
         }
 
         override fun onMtuChanged(g: BluetoothGatt, newMtu: Int, status: Int) {
@@ -783,8 +793,39 @@ class BleCentral(private val ctx: Context) {
         }
     }
 
-    @SuppressLint("MissingPermission")
+    /** Идёт запись дескриптора подписки — писать в характеристику сейчас нельзя. */
+    val busySubscribing: Boolean
+        get() = subscribeBusy
+
+    /** Ставит подписку в очередь: GATT выполняет операции строго по одной. */
     fun subscribe(service: UUID?, char: UUID, enable: Boolean = true): Boolean {
+        if (!enable) return doSubscribe(service, char, false)
+        synchronized(subscribeQueue) { subscribeQueue.addLast(service to char) }
+        pumpSubscribe()
+        return true
+    }
+
+    private fun pumpSubscribe() {
+        val next: Pair<UUID?, UUID>
+        synchronized(subscribeQueue) {
+            if (subscribeBusy) return
+            next = subscribeQueue.removeFirstOrNull() ?: return
+            subscribeBusy = true
+        }
+        val started = doSubscribe(next.first, next.second, true)
+        if (!started) {
+            synchronized(subscribeQueue) { subscribeBusy = false }
+            main.postDelayed({ pumpSubscribe() }, 120)
+        }
+    }
+
+    private fun subscribeDone() {
+        synchronized(subscribeQueue) { subscribeBusy = false }
+        main.postDelayed({ pumpSubscribe() }, 150)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun doSubscribe(service: UUID?, char: UUID, enable: Boolean = true): Boolean {
         val g = gatt ?: run {
             emit { it.onLog("Нет соединения") }
             return false
@@ -796,7 +837,10 @@ class BleCentral(private val ctx: Context) {
         return try {
             g.setCharacteristicNotification(c, enable)
             val descriptor = c.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
-                ?: return enable
+                ?: run {
+                    if (enable) main.postDelayed({ subscribeDone() }, 80)
+                    return enable
+                }
             val value = when {
                 !enable -> BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
                 (c.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0 ->
