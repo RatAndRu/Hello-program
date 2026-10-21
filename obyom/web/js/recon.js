@@ -394,8 +394,10 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   const cr = opt.close ?? Math.max(1, Math.round(1.2 / vs));
   if (cr > 0) closeGrid(occ, nx, ny, nz, cr);
   fillVoids(occ, nx, ny, nz);
-  return { occ, nx, ny, nz, vs, origin: [ox, oy, oz], capTrim: capTrim * vs };
+  return { occ, nx, ny, nz, vs, origin: [ox, oy, oz], capTrim: capTrim * vs, Rb: box.Rb, Hb: box.Hb };
 }
+// после пересечения с «низом»: убрать обрывки (оставить стоящее на столе) и залить пустоты
+export function cleanGrid(G) { const zg = Math.max(1, Math.ceil(3 / G.vs)); keepLargest(G.occ, G.nx, G.ny, G.nz, zg); fillVoids(G.occ, G.nx, G.ny, G.nz); return G; }
 function trimCap(occ, nx, ny, nz, vs, Rb, ox, oy, zg) {
   const ring = [], r0 = (Rb - 2.2 * vs) ** 2, r1 = Rb * Rb;
   for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { const X = ox + x * vs, Y = oy + y * vs, d = X * X + Y * Y; if (d > r0 && d <= r1) ring.push(y * nx + x); }

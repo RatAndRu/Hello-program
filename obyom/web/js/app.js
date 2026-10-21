@@ -9,7 +9,7 @@ import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '1.3';
+export const VERSION = '1.4';
 const $ = (id) => document.getElementById(id);
 const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
@@ -88,14 +88,16 @@ function renderSetup() {
   $('setupHint').textContent = how + tall + ' Форма считается за 20–60 секунд.' + sp;
 }
 document.querySelectorAll('#setup .seg').forEach((seg) => seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S[seg.dataset.key] = b.dataset.v; saveSettings(); renderSetup(); }));
-$('btnStart').onclick = startCapture;
+$('btnStart').onclick = () => startCapture();
 
 // ---------- съёмка ----------
-let cap = null;
-async function startCapture() {
+let cap = null, capCtx = null; // capCtx.bottomOf — досъёмка низа для этого скана
+async function startCapture(ctx) {
+  capCtx = ctx && ctx.bottomOf ? ctx : null;
   go('capture');
+  const bo = capCtx && capCtx.bottomOf;
   cap = new Capture($('video'), $('overlay'), {
-    size: S.size, method: S.method, Hb: +S.height, step: +S.step || 8,
+    size: bo ? (bo.settings && bo.settings.size) || S.size : S.size, method: S.method, Hb: bo ? +((bo.bottom && bo.bottom.Hb) || (bo.settings && bo.settings.height) || S.height) : +S.height, step: +S.step || 8,
     onState: capState,
     onShot: (n, a, manual) => { beep(manual ? 1318 : 1046, 0.05); if (navigator.vibrate) navigator.vibrate(15); },
   });
@@ -104,6 +106,7 @@ async function startCapture() {
   lastCount = null;
   window.__obyomCap = cap; // для отладки и тестов
   showH();
+  if (bo) toast('Доснять низ: положи предмет на бок или вверх дном в центр круга (целиком внутри рамки) и сними так же, со всех сторон', 6000);
   try { await cap.start(); } catch (e) { toast('Нет доступа к камере: ' + e.message, 4000); history.back(); }
 }
 let lastCount = null;
@@ -122,7 +125,7 @@ function capState(st) {
   else if (mid < 0.6) { text = turn ? 'Подними держатель выше (~55°) и ещё оборот' : 'Теперь ещё круг повыше (~55°)'; }
   else if (high < 0.4) { text = turn ? 'Ещё выше (~75°) — последний оборот' : 'И круг почти сверху (~75°)'; }
   else { text = 'Отлично! Можно нажимать «Готово»'; cls = 'good'; }
-  msg.textContent = text; msg.className = 'capMsg ' + cls;
+  msg.textContent = text; msg.className = 'capMsg ' + cls + (capCtx ? ' bottomTag' : '');
   const info = st.found ? `высота ${st.el.toFixed(0)}° · азимут ${st.az.toFixed(0)}° · ${Math.round(st.dist / 10)} см · меток ${st.n} · ${st.speed.toFixed(0)}°/с${cap.f ? '' : ' · калибровка…'}` : `слежение ${st.fps.toFixed(0)} к/с`;
   $('capInfo').textContent = [info, st.why ? 'Не снимаю: ' + st.why : (st.found ? 'Снимаю' : ''), inkLabel(st.ink)].filter(Boolean).join('\n');
 }
@@ -142,6 +145,15 @@ $('capPause').onclick = () => {
 $('capDone').onclick = async () => {
   if (!cap) return;
   const shots = cap.shots.map((s) => s.blob), Hb = cap.opt.Hb; cap.stop(); cap = null;
+  if (capCtx) { // досъёмка низа: кадры — отдельно, обработка — обе съёмки вместе
+    const base = capCtx.bottomOf; capCtx = null;
+    const fa = await store.getFrames(base.id).catch(() => null);
+    if (!fa || !fa.length) { toast('Кадры основной съёмки удалены — низ не к чему добавить', 4000); history.back(); return; }
+    try { await store.putFrames(base.id + ':bottom', shots); } catch (e) { toast('Не удалось сохранить кадры: ' + e.message); }
+    const ns = { id: base.id, name: base.name, date: base.date, settings: { ...(base.settings || S) }, bottom: { n: shots.length, Hb: String(Hb), method: S.method } };
+    runProcessing(ns, fa, shots);
+    return;
+  }
   const id = 'scan-' + Date.now(), d = new Date();
   const scan = { id, name: `Скан ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`, date: Date.now(), settings: { ...S, height: String(Hb) } };
   try { await store.putFrames(id, shots); } catch (e) { toast('Не удалось сохранить кадры: ' + e.message); }
@@ -150,7 +162,7 @@ $('capDone').onclick = async () => {
 
 // ---------- обработка ----------
 let proc = null, procViewer = null;
-function runProcessing(scan, blobs) {
+function runProcessing(scan, blobs, bottomBlobs) {
   go('process');
   const st = scan.settings;
   $('procLog').textContent = ''; $('procBar').style.width = '0%'; $('procStage').textContent = 'Подготовка…'; $('procText').textContent = '';
@@ -158,6 +170,7 @@ function runProcessing(scan, blobs) {
   const log = (t) => { $('procLog').textContent += t + '\n'; };
   log(`кадров: ${blobs.length}; режим: ${{ mesh: 'полигоны', splat: 'сплэты', both: 'полигоны + сплэты' }[st.mode]}`);
   const job = { blobs, mode: st.mode, quality: st.quality, size: st.size, theme: 'light', Hb: +st.height, method: st.method || 'walk', shape: st.shape || 'normal', scale: calFor(st.size) };
+  if (bottomBlobs && bottomBlobs.length && scan.bottom) { job.bottom = { blobs: bottomBlobs, Hb: +scan.bottom.Hb, method: scan.bottom.method }; log(`+ досъёмка низа: ${bottomBlobs.length} кадров`); }
   let splatting = false;
   proc = startProcessing(job, {
     progress: (stage, p, text) => {
@@ -250,14 +263,19 @@ $('vMore').onclick = () => curScan && moreSheet(curScan);
 async function moreSheet(scan) {
   const frames = await store.getFrames(scan.id).catch(() => null);
   const nf = frames ? frames.length : 0;
+  const bframes = scan.bottom ? await store.getFrames(scan.id + ':bottom').catch(() => null) : null;
+  const nb = bframes ? bframes.length : 0;
+  const bInfo = nb ? `<p>Досъёмка низа: ${nb} кадров${scan.stats && 'bottom' in scan.stats ? (scan.stats.bottom ? ' — учтена ✓' : ' — <span style="color:var(--warn)">не совместилась</span>') : ''}.</p>` : '';
   sheet(`<h3>${scan.name.replace(/</g, '&lt;')}</h3>${scan.failed ? `<p style="color:var(--warn)">${scan.failed}</p>` : ''}
     ${scan.stats ? `<p>Кадров использовано: ${scan.stats.used} из ${scan.stats.frames}. Объём: ${(scan.stats.volume / 1000).toFixed(1)} см³. Обработка: ${fmtT(scan.stats.t)}.</p>` : ''}
-    ${nf ? `<p>Пересчитать из сохранённых кадров (${nf} шт.) с другими настройками:</p>
+    ${nf ? `<button data-a="bottom" class="mid">↻ ${nb ? 'Переснять низ' : 'Доснять низ'}<small>положить предмет на бок / вверх дном и снять ещё раз — появится дно, уточнится верх</small></button>${bInfo}
+    <p>Пересчитать из сохранённых кадров (${nf} шт.${nb ? ` + низ ${nb}` : ''}) с другими настройками:</p>
     <div class="grid2"><button data-r="mesh">Полигоны</button><button data-r="splat">Сплэты</button><button data-r="both">Оба</button><button data-r="best">Оба, качество «Лучше»</button></div>
     <label class="lbl">Высота предмета при пересчёте, см (чуть больше настоящей — лишний верх не достроится)</label>
     <input id="rH" class="inp" type="number" inputmode="decimal" step="0.5" min="2" max="40">
     <p>Форма предмета при пересчёте:</p>
-    <div class="seg" id="rShape"><button data-v="normal">Обычная</button><button data-v="revolve">Тело вращения</button><button data-v="smooth">Гладкая</button></div>
+    <div class="seg wrap3" id="rShape"><button data-v="normal">Обычная</button><button data-v="revolve">Тело вращения</button><button data-v="smooth">Гладкая</button><button data-v="box">Коробка</button><button data-v="prism">Призма</button><button data-v="planes">Плоские грани</button></div>
+    ${nb ? '<label class="lbl"><input type="checkbox" id="rNoB"> пересчитать без досъёмки низа</label><button data-a="dropbottom">Удалить досъёмку низа</button>' : ''}
     <button data-a="dropframes">Удалить кадры (освободить место)</button>` : '<p>Кадров съёмки нет — пересчёт невозможен.</p>'}
     <button data-a="delete" style="color:var(--bad)">Удалить модель</button>`,
   (box) => {
@@ -271,10 +289,13 @@ async function moreSheet(scan) {
       closeSheet(); const st = { ...(scan.settings || S), shape };
       if (hv >= 2 && hv <= 40) st.height = String(Math.round(hv * 10));
       if (b.dataset.r === 'best') { st.mode = 'both'; st.quality = 'best'; } else st.mode = b.dataset.r;
-      const ns = { id: scan.id, name: scan.name, date: scan.date, settings: st };
-      if (cur !== 'home') history.back(); setTimeout(() => runProcessing(ns, frames), 50);
+      const noB = box.querySelector('#rNoB') && box.querySelector('#rNoB').checked;
+      const ns = { id: scan.id, name: scan.name, date: scan.date, settings: st, bottom: scan.bottom };
+      if (cur !== 'home') history.back(); setTimeout(() => runProcessing(ns, frames, noB ? null : bframes), 50);
     });
-    const dz = box.querySelector('[data-a="dropframes"]'); if (dz) dz.onclick = async () => { await store.delFrames(scan.id); closeSheet(); toast('Кадры удалены'); };
+    const bb = box.querySelector('[data-a="bottom"]'); if (bb) bb.onclick = () => { closeSheet(); const go2 = () => startCapture({ bottomOf: scan }); if (cur !== 'home') { history.back(); setTimeout(go2, 80); } else go2(); };
+    const db = box.querySelector('[data-a="dropbottom"]'); if (db) db.onclick = async () => { await store.delFrames(scan.id + ':bottom'); delete scan.bottom; await store.putScan(scan).catch(() => {}); closeSheet(); toast('Досъёмка низа удалена (модель останется, пока не пересчитаешь)'); };
+    const dz = box.querySelector('[data-a="dropframes"]'); if (dz) dz.onclick = async () => { await store.delFrames(scan.id); await store.delFrames(scan.id + ':bottom'); closeSheet(); toast('Кадры удалены'); };
     box.querySelector('[data-a="delete"]').onclick = async () => { if (!confirm('Удалить модель «' + scan.name + '»?')) return; await store.delScan(scan.id); closeSheet(); if (cur === 'view') history.back(); else renderList(); };
   });
 }
@@ -346,8 +367,14 @@ function showHelp() {
   <li>Количество кадров не ограничено. Строка <b>«Не снимаю: …»</b> объясняет, почему кадр не взят; «слежение N к/с» — как быстро телефон успевает искать метки. Кнопка 📷 снимает кадр сразу.</li>
   <li>Когда купол заполнен — «Готово». Форма считается за полминуты, сплэты — несколько минут; можно остановить раньше.</li></ol>
   <p><b>Высота предмета</b> — выбери ближайшую большую. Перед съёмкой подгони верх AR-рамки кнопками ▲▼ справа так, чтобы верхнее кольцо было чуть выше предмета: всё, что выше, обрежется, а пустоту между предметом и верхом рамки программа может принять за предмет (её видно только на фоне стены). Для готового скана высоту можно поправить в «Пересчитать». <b>Ширина</b>: A4 — до 12 см, A3 — до 17 см, A2 — до 24 см.</p>
-  <p><b>Форма предмета:</b> «Тело вращения» — для бутылок, дезодорантов, ваз, банок: каждое сечение делается кругом, бока выходят ровными. «Гладкая» — сильнее сглаживает, мелкие детали пропадут. Её можно сменить и потом: ⋯ → Пересчитать.</p>
-  <p><b>Дно</b> не снимается: предмет стоит на нём. Снизу модель ровно срезана по столу.</p>
+  <p><b>Форма предмета</b> (можно сменить и потом: ⋯ → Пересчитать):</p>
+  <ul><li><b>Обычная</b> — как получилось по силуэтам, любой предмет.</li>
+  <li><b>Тело вращения</b> — бутылки, банки, шары, вазы, конусы: каждое сечение — круг.</li>
+  <li><b>Гладкая</b> — сильное сглаживание: камни, фрукты, мыло, мягкие игрушки. Мелкие детали и острые рёбра пропадут.</li>
+  <li><b>Коробка</b> — точный прямоугольный брусок с острыми рёбрами: упаковки, книги, бруски. Размеры подбираются по сечению.</li>
+  <li><b>Призма</b> — одно и то же сечение по всей высоте (любой формы): флакон-брусок, мыло, деталь. Прямые стороны сечения выпрямляются, углы — острые.</li>
+  <li><b>Плоские грани</b> — обычная форма, но найденные плоскости становятся ровными, а рёбра между ними — острыми: предметы из граней.</li></ul>
+  <p><b>Дно:</b> в обычной съёмке предмет стоит на нём, и снизу модель срезана по столу. Чтобы получить дно — открой модель → ⋯ → <b>«Доснять низ»</b>: положи предмет на бок или вверх дном в центр круга и сними ещё раз. Приложение само найдёт, как он лежал (совместит две формы), и вырежет то, что видно только во второй съёмке: появится настоящее дно, а «колпак» сверху уточнится. Кадры второй съёмки дают и цвет дна.</p>
   <p><b>Что не получится:</b> прозрачные и зеркальные предметы; глубокие впадины (внутренность чашки) — метод видит силуэты. Блестящий бок даёт блики — лучше «Тело вращения» или матовый свет.</p>
   <p>Всё считается на телефоне, без интернета и без нейросетей. Версия ${VERSION}.</p>`);
 }

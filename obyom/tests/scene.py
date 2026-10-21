@@ -9,9 +9,18 @@ mat = np.asarray(Image.open(f'/tmp/t/mat_{theme}.pgm')).astype(np.float32) / 255
 PPM = 6.0; MW, MH = 210.0, 297.0
 W, H = 1280, 720; f = 0.78 * W; cx, cy = W / 2, H / 2
 rng = np.random.default_rng(1)
+# положение предмета: OBJPOSE="rx,ry,rz,tx,ty,tz" (градусы, мм; повороты по осям X, затем Y, затем Z) — для «доснять низ»
+QR = np.eye(3); QT = np.zeros(3)
+if os.environ.get('OBJPOSE'):
+    v = [float(x) for x in os.environ['OBJPOSE'].split(',')]
+    def rot(ax, a):
+        a = np.radians(a); c, s_ = np.cos(a), np.sin(a)
+        return {0: np.array([[1, 0, 0], [0, c, -s_], [0, s_, c]]), 1: np.array([[c, 0, s_], [0, 1, 0], [-s_, 0, c]]), 2: np.array([[c, -s_, 0], [s_, c, 0], [0, 0, 1]])}[ax]
+    QR = rot(2, v[2]) @ rot(1, v[1]) @ rot(0, v[0]); QT = np.array(v[3:6])
 # предмет: цилиндр r=24 h=0..42 (полоски) + шар r=17 центр z=58 (шахматка) + «ручка»-кубик сбоку
 def shade_obj(P, Nrm, kind):
     L = np.array([0.4, -0.5, 0.75]); L /= np.linalg.norm(L)
+    Nrm = Nrm @ QR.T
     lam = 0.35 + 0.65 * np.clip((Nrm * L).sum(-1), 0, 1)
     col = np.zeros(P.shape, np.float32)
     ang = np.arctan2(P[..., 1], P[..., 0])
@@ -22,6 +31,9 @@ def shade_obj(P, Nrm, kind):
         q = P - np.array([0, 0, 58.0]); th = np.arctan2(q[..., 1], q[..., 0]); ph = np.arccos(np.clip(q[..., 2] / 17, -1, 1))
         ch = ((np.floor(th / (np.pi / 5)) + np.floor(ph / (np.pi / 6))) % 2).astype(bool)
         col[:] = [0.2, 0.45, 0.9]; col[ch] = [0.9, 0.9, 0.95]
+    elif kind == 'poly':
+        ch = ((np.floor(P[..., 0] / 8) + np.floor(P[..., 1] / 8) + np.floor(P[..., 2] / 8)) % 2).astype(bool)
+        col[:] = [0.85, 0.45, 0.15]; col[ch] = [0.95, 0.9, 0.8]
     else:
         col[:] = [0.25, 0.75, 0.35]
     if os.environ.get('OBJWHITE'):  # однотонный светлый матовый предмет (как дезодорант)
@@ -52,12 +64,33 @@ def render(Rm, t):
     best[m] = tz[m]; img[m] = pl[m]
     # фон-стена далеко (если луч не попал на стол)
     img[~m] = [float(v) for v in os.environ['TABLE'].split(',')] if os.environ.get('TABLE') else [0.6, 0.62, 0.65]
+    ow, dw_ = o, d
+    o = QR.T @ (ow - QT); d = d @ QR  # луч в систему предмета
     def hit(tt, Pn, Nn, kind, ok):
         nonlocal best, img
         ok = ok & (tt > 0) & (tt < best)
         if ok.any():
             c = shade_obj(Pn, Nn, kind)
             img[ok] = c[ok]; best[ok] = tt[ok]
+    if os.environ.get('OBJ') in ('box', 'hex'):  # выпуклый многогранник (коробка 60×40×45, повёрнута на 20°; шестигранник r=30 h=50)
+        if os.environ['OBJ'] == 'box':
+            th = np.radians(20); u = np.array([np.cos(th), np.sin(th), 0]); v = np.array([-np.sin(th), np.cos(th), 0])
+            PL = [(u, 30), (-u, 30), (v, 20), (-v, 20), (np.array([0, 0, 1.0]), 45), (np.array([0, 0, -1.0]), 0)]
+        else:
+            PL = [(np.array([np.cos(a_), np.sin(a_), 0]), 30 * np.cos(np.pi / 6)) for a_ in np.arange(6) * np.pi / 3 + 0.2] + [(np.array([0, 0, 1.0]), 50), (np.array([0, 0, -1.0]), 0)]
+        tn = np.full(d.shape[:2], -np.inf); tf = np.full(d.shape[:2], np.inf); nn = np.zeros(d.shape); ok = np.ones(d.shape[:2], bool)
+        for k_, (n_, h_) in enumerate(PL):
+            dn = d @ n_; on = o @ n_ - h_
+            t_ = -on / np.where(np.abs(dn) < 1e-9, 1e-9, dn)
+            ent = dn < 0
+            upd = ent & (t_ > tn); tn = np.where(upd, t_, tn); nn[upd] = n_
+            tf = np.where(~ent & (t_ < tf), t_, tf)
+            ok &= ~((np.abs(dn) < 1e-9) & (on > 0))
+        Pp = o + d * tn[..., None]
+        hit(tn, Pp, nn, 'poly', ok & (tn < tf))
+        objm = best < np.where(m, tz, np.inf) - 1e-3
+        img = np.clip(img + rng.normal(0, noise / 255, img.shape), 0, 1)
+        return (img * 255).astype(np.uint8), objm
     # цилиндр (бок)
     a = d[..., 0]**2 + d[..., 1]**2; b = 2 * (o[0] * d[..., 0] + o[1] * d[..., 1]); c = o[0]**2 + o[1]**2 - 24**2
     disc = b * b - 4 * a * c; sq = np.sqrt(np.maximum(disc, 0))
@@ -67,6 +100,9 @@ def render(Rm, t):
     # верх цилиндра
     tt = (42 - o[2]) / np.where(np.abs(d[..., 2]) < 1e-9, 1e-9, d[..., 2]); Pt = o + d * tt[..., None]
     hit(tt, Pt, np.broadcast_to(np.array([0, 0, 1.0]), Pt.shape), 'cyl', np.hypot(Pt[..., 0], Pt[..., 1]) <= 24)
+    # дно цилиндра (видно, когда предмет лежит на боку — OBJPOSE)
+    tb = (0 - o[2]) / np.where(np.abs(d[..., 2]) < 1e-9, 1e-9, d[..., 2]); Pb0 = o + d * tb[..., None]
+    hit(tb, Pb0, np.broadcast_to(np.array([0, 0, -1.0]), Pb0.shape), 'cyl', np.hypot(Pb0[..., 0], Pb0[..., 1]) <= 24)
     # шар
     oc = o - np.array([0, 0, 58.0]); b2 = (d * oc).sum(-1); c2 = (oc**2).sum() - 17**2; dd = b2 * b2 - c2
     ts = -b2 - np.sqrt(np.maximum(dd, 0)); Ps = o + d * ts[..., None]
