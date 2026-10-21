@@ -841,8 +841,24 @@ function runCommand() {
   setScript((script ? script + '\n' : '') + raw);
 }
 
+function sendToAssistant() {
+  const text = $('cmd-input').value.trim();
+  $('cmd-input').value = '';
+  document.querySelector('.tab[data-tab="assist"]')?.click();
+  if (text) {
+    $('goal').value = text;
+    toast('Задача перенесена в «Помощник» — нажмите «Сформировать запрос»');
+  }
+  $('goal')?.focus();
+}
+
 $('cmd-run')?.addEventListener('click', runCommand);
 $('cmd-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault();
+    sendToAssistant();
+    return;
+  }
   if (e.key === 'Enter') { e.preventDefault(); runCommand(); return; }
   if (e.key === 'ArrowUp' && state.cmdHistory.length) {
     state.cmdIndex = Math.max(0, state.cmdIndex - 1);
