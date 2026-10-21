@@ -9,6 +9,7 @@ import { boxMesh, prismMesh, snapPlanes } from './shapes.js';
 import { bakeTexture, subdivideLong } from './texture.js';
 import { analyzeSurface, computeTangents } from './surface.js';
 import { initFromMesh, Trainer, splatViews, allowedRegion, packSplats, scalePacked } from './splat.js';
+import { createPool, poolSize } from './splatpool.js';
 
 export const PROC_W = 640;
 // рабочая ширина кадра по качеству: «Лучше» — 960 px (мельче деталь силуэта, мельче воксели)
@@ -128,7 +129,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
       // 5г) свет, рельеф, материал, текстура без теней — фотометрия по тем же кадрам
       if (r.tex && job.surface !== false) {
         try {
-          const Sf = await analyzeSurface(r.mesh, texFrames, r.faceFrame, r.faceChart, r.atlas, r.T, { G, turn, onProgress: (p, t) => cb.progress('Рельеф и материал', p, t), tick });
+          const Sf = await analyzeSurface(r.mesh, texFrames, r.faceFrame, r.faceChart, r.atlas, r.T, { G, turn, torch: !!job.torch, onProgress: (p, t) => cb.progress('Рельеф и материал', p, t), tick });
           const [albedo, normal, orm, height] = await Promise.all([encodeJPEG(Sf.albedo, r.T), encodePNG(Sf.normal, Sf.Wr), encodePNG(Sf.orm, Sf.Wr), encodePNG(Sf.height, Sf.Wr)]);
           M.tan = computeTangents(M);
           pbr = { albedo, normal, orm, height, Wr: Sf.Wr, info: Sf.info };
@@ -142,35 +143,52 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   if (elMax < (turn ? 62 : 50) && !bottomOk && !(turn && A.withPlate > 0.5 * good.length)) result.stats.warn = `Самый высокий кадр — ${elMax.toFixed(0)}°: верх модели может выйти «шапкой». В следующий раз ${turn ? 'сними «Фон» (пустой коврик с того же места) или ' : ''}добавь оборот почти сверху (65–75°), или «Доснять низ» (предмет на боку).`;
   result.stats.plate = A.withPlate || 0;
   // 6) сплэты
+  // поправка масштаба печати (принтер мог чуть растянуть лист): X, Y — по калибровке, высота — по среднему.
+  // Сетка (результат) масштабируется сразу — у сплэтов своя копия формы (M0) и свой масштаб в конце
+  const sc = job.scale || [1, 1], sx = +sc[0] || 1, sy = +sc[1] || 1, sz = (sx + sy) / 2, scaled = Math.abs(sx - 1) > 1e-4 || Math.abs(sy - 1) > 1e-4;
+  if (scaled) {
+    const RM = result.mesh;
+    if (RM.pos === M0.pos) RM.pos = Float32Array.from(RM.pos); // сплэтам нужна форма в мм коврика (позы кадров)
+    if (RM.nrm === M0.nrm) RM.nrm = Float32Array.from(RM.nrm);
+    const P = RM.pos; for (let i = 0; i < P.length; i += 3) { P[i] *= sx; P[i + 1] *= sy; P[i + 2] *= sz; }
+    computeNormals(RM);
+    result.stats.hullVol *= sx * sy * sz;
+    log(`масштаб печати: ×${sx.toFixed(3)} по ширине, ×${sy.toFixed(3)} по длине`);
+  }
   if (job.mode === 'splat' || job.mode === 'both') {
+    if (job.mode === 'both' && cb.partial) cb.partial(result); // сетка готова — пусть сохранится до долгого обучения сплэтов
     const S = initFromMesh(M0, Q.n0, Q.deg || 1); // цвет зависит от угла взгляда: гармоники 1-й степени, у «Лучше» — 2-й
     const sf = frAll.map((f) => shrinkFrame(f, 640)); // сплэтам хватает 640 px — учатся вдвое быстрее, чем на 960
     const views = splatViews(M0, sf, depthMap);
-    const tr = new Trainer(S, views, { iters: Q.iters, extent: 2 * Rb, maxN: Q.nmax, inside: allowedRegion(G, sf, 2) });
+    // виды скопировали всё нужное — полноразмерные кадры больше не нужны: меньше пик памяти («Лучше» на телефоне)
+    for (const v of views) v.src = null;
+    for (const f of frAll) { f.rgba = null; f.bgMed = null; f.refOut = null; }
+    // несколько потоков (v2.1): кадр шага считают все потоки по частям — тот же результат, быстрее
+    const inside = allowedRegion(G, sf, 2);
+    let pool = null;
+    if (job.pool !== false) { try { pool = await createPool(job.poolSize || poolSize()); } catch (e) { pool = null; log('потоки для сплэтов не запустились: ' + e.message); } }
+    const steps = Q.iters;
+    const tr = new Trainer(S, views, { iters: steps, extent: 2 * Rb, maxN: Q.nmax, inside, batch: 1 });
+    if (pool) log(`сплэты учатся в ${pool.size} потоках`);
     const ts = Date.now();
-    for (let i = 1; i <= Q.iters; i++) {
-      if (shouldStop()) break; // остановка — оставляем то, что успело выучиться
-      tr.step();
-      if (i % 10 === 0) {
-        const el = (Date.now() - ts) / 1000, left = el / i * (Q.iters - i);
-        cb.progress('Учу сплэты', i / Q.iters, `шаг ${i} из ${Q.iters} · капель ${S.n} · осталось ~${fmtT(left)}`);
-        await tick();
+    try {
+      for (let i = 1; i <= steps; i++) {
+        if (shouldStop()) break; // остановка — оставляем то, что успело выучиться
+        if (pool) { try { await pool.step(tr); } catch (e) { log('✗ поток сплэтов упал: ' + e.message + ' — оставляю то, что успело выучиться'); break; } }
+        else tr.step();
+        if (i % 10 === 0) {
+          const el = (Date.now() - ts) / 1000, left = el / i * (steps - i);
+          cb.progress('Учу сплэты', i / steps, `шаг ${i} из ${steps} · капель ${S.n} · осталось ~${fmtT(left)}`);
+          await tick();
+        }
+        if (cb.preview && i % 100 === 0) cb.preview(packSplats(S));
       }
-      if (cb.preview && i % 100 === 0) cb.preview(packSplats(S));
-    }
+    } finally { if (pool) await pool.close(); }
     tr.finalize();
     result.splats = packSplats(S);
     log(`сплэты: ${S.n} капель, ${tr.it} шагов`);
   }
-  // поправка масштаба печати (принтер мог чуть растянуть лист): X, Y — по калибровке, высота — по среднему
-  const sc = job.scale || [1, 1], sx = +sc[0] || 1, sy = +sc[1] || 1, sz = (sx + sy) / 2;
-  if (Math.abs(sx - 1) > 1e-4 || Math.abs(sy - 1) > 1e-4) {
-    const P = result.mesh.pos; for (let i = 0; i < P.length; i += 3) { P[i] *= sx; P[i + 1] *= sy; P[i + 2] *= sz; }
-    computeNormals(result.mesh);
-    if (result.splats) scalePacked(result.splats, sx, sy, sz);
-    result.stats.hullVol *= sx * sy * sz;
-    log(`масштаб печати: ×${sx.toFixed(3)} по ширине, ×${sy.toFixed(3)} по длине`);
-  }
+  if (result.splats && scaled) scalePacked(result.splats, sx, sy, sz);
   result.stats.t = (Date.now() - t0) / 1000;
   return result;
 }
@@ -289,7 +307,7 @@ function surfaceLog(I) {
   const L = I.light, el = L ? Math.asin(Math.max(-1, Math.min(1, L.dir[2]))) * 180 / Math.PI : 0;
   const kinds = new Map(); for (const m of I.materials || []) { const k = m.metal >= 1 ? 'металл' : m.metal > 0 ? 'похоже на металл' : m.rough < 0.3 ? 'глянец' : m.rough < 0.75 ? 'полуглянец' : 'мат'; kinds.set(k, (kinds.get(k) || 0) + m.share); }
   const mats = [...kinds].filter(([, v]) => v > 0.04).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${Math.round(v * 100)}%`);
-  const rm = I.relief && I.relief.mode;
-  return (L ? `свет: лампа ${el.toFixed(0)}° над горизонтом${L.rotates ? ' (стоит в комнате, предмет вертится)' : ''}, рассеянного ${Math.round(L.ambient * 100)}%; ` : '') +
-    `рельеф ${rm === 'none' ? 'выключен' : rm === 'photo' ? 'по смене света' : 'по светотени снимков (приблизительный)'}${rm === 'none' ? '' : `, перепад ±${I.heightRange} мм`}; материал (авто): ${mats.join(', ') || 'мат'} — можно поменять кнопками; текстура без бликов и теней`;
+  const rm = I.relief && I.relief.mode, rf = Array.isArray(I.refine) ? I.refine[0] : null;
+  return (rf && rf.found ? `поверхность уточнена по ${rf.found} точкам (в среднем на ${rf.meanMM} мм внутрь оболочки); ` : '') + (L ? `свет: лампа ${el.toFixed(0)}° над горизонтом${L.rotates ? ' (стоит в комнате, предмет вертится)' : ''}, рассеянного ${Math.round(L.ambient * 100)}%; ` : '') +
+    `рельеф ${rm === 'none' ? 'выключен' : rm === 'photo' ? 'по смене света' : rm === 'torch' ? `по фонарику (фотометрия${I.torch ? `, комнатного света ${Math.round(I.torch.alpha / (1 + I.torch.alpha) * 100)}%` : ''})` : 'по светотени снимков (приблизительный)'}${rm === 'none' ? '' : `, перепад ±${I.heightRange} мм`}; материал (авто): ${mats.join(', ') || 'мат'} — можно поменять кнопками; текстура без бликов и теней`;
 }

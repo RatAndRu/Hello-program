@@ -35,6 +35,10 @@ def shade_obj(P, Nrm, kind):
         Nrm = Nrm / np.linalg.norm(Nrm, axis=-1, keepdims=True)
     Nrm = Nrm @ QR.T
     lam = 0.35 + 0.65 * np.clip((Nrm * L).sum(-1), 0, 1)
+    if TORCH:  # фонарик телефона у объектива: точечный свет из камеры, спад 1/d²; комната — слабая доля TORCH
+        Pw = P @ QR.T + QT; Lv = CAMW[0] + TOFF[0] - Pw; dd = np.linalg.norm(Lv, axis=-1); Lv = Lv / dd[..., None]
+        lam = TORCH * lam + 1.25 * (1 - TORCH) * np.clip((Nrm * Lv).sum(-1), 0, 1) * (TD0 / dd) ** 2
+        L = Lv
     spec = 0
     if SPEC or MATS:  # блик (Блинн — Фонг): белый, зависит от направления взгляда
         Pw = P @ QR.T + QT; V = CAMW[0] - Pw; V = V / np.linalg.norm(V, axis=-1, keepdims=True)
@@ -66,11 +70,14 @@ AZ = [0.0]; NOOBJ = [False]; CAMW = [np.zeros(3)]
 BUMP = int(os.environ.get('BUMP', 0) or 0); MATS = bool(os.environ.get('MATS'))  # рельеф и разные материалы (v2.0)
 LIGHTCAM = bool(os.environ.get('LIGHTCAM')); SPEC = float(os.environ.get('SPEC', 0))  # свет в комнате; сила блика
 EXPO = float(os.environ.get('EXPO', 0))  # разброс автоэкспозиции между кадрами (σ лог-усиления), напр. 0.1
+TORCH = float(os.environ.get('TORCH', 0) or 0)  # фонарик (v2.1): доля комнатного света, напр. 0.25; 0 — без фонарика
+TD0 = float(os.environ.get('TD0', 360)); TOFF = [np.zeros(3)]  # TD0 — расстояние, на котором фонарик даёт яркость 1
 STATIC = bool(os.environ.get('STATIC'))  # вертушка у неподвижной камеры: стол и стена неподвижны относительно камеры
 def render(Rm, t):
     ys, xs = np.mgrid[0:H, 0:W].astype(np.float32)
     d_cam = np.stack([(xs - cx) / f, (ys - cy) / f, np.ones_like(xs)], -1)
     Rt = Rm.T; o = -Rt @ t; CAMW[0] = o.copy()
+    TOFF[0] = Rm.T @ np.array([12.0, -8.0, 0])  # светодиод в ~1.4 см от объектива
     d = d_cam @ Rt.T; d /= np.linalg.norm(d, axis=-1, keepdims=True)
     best = np.full((H, W), np.inf, np.float32); img = np.zeros((H, W, 3), np.float32)
     # плоскость z=0
@@ -97,6 +104,9 @@ def render(Rm, t):
         onwall = (dfy < 0) & (tw > 0) & ((tz <= 0) | (Pfy < -260))
         base = np.where(onwall[..., None], wall, base)
     pl = np.where(onmat[..., None], paper, base)
+    if TORCH:  # пятно фонарика на коврике и столе
+        Lm = o + TOFF[0] - P; dm = np.linalg.norm(Lm, axis=-1); cz = np.clip(Lm[..., 2] / dm, 0, 1)
+        pl = pl * (TORCH + 1.25 * (1 - TORCH) * cz * (TD0 / np.maximum(dm, 1)) ** 2)[..., None]
     # тень от предмета (простая: круг под предметом, смещённый от света)
     shx, shy = 10.0, -12.0
     if LIGHTCAM: a_ = np.radians(AZ[0]); shx, shy = 10 * np.cos(a_) - 12 * np.sin(a_), -10 * np.sin(a_) - 12 * np.cos(a_)

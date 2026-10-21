@@ -12,6 +12,7 @@ function tryWorker() {
   });
   return probe;
 }
+function retire(w) { w.onmessage = null; setTimeout(() => { try { w.terminate(); } catch (e) {} }, 3000); }
 // cb: {progress, preview, log}; возвращает {promise, stop()}
 export function startProcessing(job, cb) {
   let stopFn = () => {}, stopped = false;
@@ -26,8 +27,10 @@ export function startProcessing(job, cb) {
           if (m.type === 'progress') cb.progress(m.stage, m.p, m.text);
           else if (m.type === 'preview') cb.preview && cb.preview(m.packed);
           else if (m.type === 'log') cb.log && cb.log(m.text);
-          else if (m.type === 'done') { probe = null; w.terminate(); res(m.result); } // новый поток на следующий раз — память освобождается
-          else if (m.type === 'error') { probe = null; w.terminate(); rej(new Error(m.message)); }
+          else if (m.type === 'partial') cb.partial && cb.partial(m.result);
+          // новый поток на следующий раз — память освобождается; гасим с паузой, чтобы вложенные потоки сплэтов успели закрыться
+          else if (m.type === 'done') { probe = null; retire(w); res(m.result); }
+          else if (m.type === 'error') { probe = null; retire(w); rej(new Error(m.message)); }
         };
         w.onerror = (e) => { probe = null; rej(new Error('Ошибка фонового потока: ' + (e.message || ''))); };
         w.postMessage({ type: 'run', job });

@@ -6,7 +6,7 @@ const fs = require('fs');
 const SH = process.env.SH || '/home/user/shots/';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 (async () => {
-  const browser = await puppeteer.launch({ executablePath: await chromium.executablePath(), headless: true, userDataDir: '/tmp/t/profP',
+  const browser = await puppeteer.launch({ executablePath: await chromium.executablePath(), headless: true, protocolTimeout: 1200000, userDataDir: '/tmp/t/profP',
     args: [...chromium.args.filter((a) => !a.startsWith('--user-data-dir') && a !== '--single-process'), '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-video-capture=${process.env.CAM}`, '--autoplay-policy=no-user-gesture-required', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage(); await page.setViewport({ width: 400, height: 800, deviceScaleFactor: 1 });
   // NATIVE=1 (или угол 0/90/180/270): подставная «своя камера» APK (ObyomNative.camStart/camFrame/camStop) —
@@ -29,7 +29,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   }, +process.env.NATIVE === 1 ? 90 : +process.env.NATIVE, !!process.env.PORTRAIT);
   const errs = []; page.on('pageerror', (e) => errs.push('PAGEERR ' + e.message)); page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
   await page.goto('http://127.0.0.1:8765/index.html', { waitUntil: 'networkidle0' });
-  await page.evaluate((o) => { localStorage.setItem('obyom.settings', JSON.stringify({ mode: o.mode, method: 'turn', size: 'A4', height: '90', quality: o.q, shape: 'normal', delay: '3', step: '8' })); }, { q: process.env.Q || 'normal', mode: process.env.MODE || 'mesh' });
+  await page.evaluate((o) => { localStorage.setItem('obyom.settings', JSON.stringify({ mode: o.mode, method: 'turn', size: 'A4', height: '90', quality: o.q, shape: 'normal', delay: '3', step: '8' })); if (o.pool) localStorage.setItem('obyom.pool', o.pool); else localStorage.removeItem('obyom.pool'); }, { q: process.env.Q || 'normal', mode: process.env.MODE || 'mesh', pool: process.env.POOL || '' });
   await page.reload({ waitUntil: 'networkidle0' });
   await page.click('#btnNew'); await sleep(300); await page.click('#btnStart');
   await sleep(1500);

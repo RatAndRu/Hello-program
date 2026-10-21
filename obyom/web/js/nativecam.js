@@ -49,6 +49,11 @@ export class NativeCam {
     try { const N = window.ObyomNative; if (N && typeof N.camLock === 'function') { N.camLock(!!on); return true; } } catch (e) {}
     return false;
   }
+  // фонарик (APK 2.1+): false — нет вспышки или старый APK
+  torch(on) {
+    try { const N = window.ObyomNative; if (N && typeof N.camTorch === 'function') return N.camTorch(!!on) === 'ok'; } catch (e) {}
+    return false;
+  }
   close() {
     this.alive = false;
     try { window.ObyomNative.camStop(); } catch (e) {}

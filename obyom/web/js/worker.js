@@ -12,6 +12,7 @@ self.onmessage = async (e) => {
         progress: (stage, p, text) => self.postMessage({ type: 'progress', stage, p, text }),
         preview: (packed) => self.postMessage({ type: 'preview', packed }, [packed.buffer]),
         log: (text) => self.postMessage({ type: 'log', text }),
+        partial: (r) => self.postMessage({ type: 'partial', result: r }),
       }, () => stop);
       const tr = [r.mesh.pos.buffer, r.mesh.nrm.buffer, r.mesh.col.buffer, r.mesh.idx.buffer]; if (r.splats) tr.push(r.splats.buffer);
       self.postMessage({ type: 'done', result: r }, tr);

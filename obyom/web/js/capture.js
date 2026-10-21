@@ -27,6 +27,7 @@ export class Capture {
     if (hasNativeCam()) {
       this.src = new NativeCam(this.view); await this.src.open(); this.native = true;
       // перезапуск камеры посреди съёмки — экспозиция снова фиксируется; новая съёмка — сначала свободная
+      if (this.opt.torch) { this.torchOn = this.src.torch(true); if (!this.torchOn) this.opt.onTorchFail && this.opt.onTorchFail(); }
       this.src.lock(this.shots.length > 0 || (this.plates && this.plates.length > 0));
       this.video.style.display = 'none'; if (this.view) this.view.style.display = '';
       this.freshT = performance.now(); this.prevSig = null; this.woke = false;
@@ -56,7 +57,7 @@ export class Capture {
   // ручной затвор: снимет ближайший кадр, где виден коврик (даже если эта ячейка купола уже есть)
   shootNow() { this.manual = true; }
   closeCam() { if (this.native && this.src) this.src.close(); if (this.stream) this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
-  stop() { this.running = false; if (this.native && this.src) this.src.lock(false); this.closeCam(); }
+  stop() { this.running = false; if (this.native && this.src) { if (this.torchOn) this.src.torch(false); this.src.lock(false); } this.closeCam(); }
   // С первого снимка экспозиция и баланс белого зафиксированы (своя камера APK): все кадры одной яркости и цвета —
   // иначе телефон подкручивает их при каждом повороте, и сплэты/текстура «запоминают» пятна яркости.
   lockExposure() { if (this.native && this.src && !this.src.locked) this.expLocked = this.src.lock(true); }

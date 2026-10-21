@@ -9,9 +9,9 @@ import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '2.0';
+export const VERSION = '2.1';
 const $ = (id) => document.getElementById(id);
-const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
+const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8', torch: 'off' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
 // калибровка печати: { A4: {sx, sy}, ... } — во сколько раз принтер растянул лист по ширине и длине
 const loadCal = () => { try { return JSON.parse(localStorage.getItem('obyom.cal') || '{}'); } catch (e) { return {}; } };
@@ -86,7 +86,8 @@ function renderSetup() {
     ? 'Обходи предмет по кругу 2–3 раза на разной высоте: низко (~30°), выше (~55°) и почти сверху (~75°). Кадры снимаются сами.'
     : 'Телефон в держателе смотрит на коврик сверху-сбоку. Нажми ▶, раскрути столик и убери руку — после таймера кадры пойдут сами, каждые несколько градусов поворота (замедлился — кадры реже, остановился — пауза). Потом подними держатель выше, ⏸ → ▶ и ещё оборот. Пока коврик пустой — нажми «Фон»; после «Готово» убери предмет и сними фон ещё раз: верх выйдет без «шапки».';
   const tall = +S.height >= 200 ? ' Для высокого предмета отойди дальше, чтобы в кадр влезал и весь круг меток, и верх предмета.' : '';
-  $('setupHint').textContent = how + tall + ' Форма считается за 20–60 секунд.' + sp;
+  const tor = S.torch === 'on' ? ' Фонарик горит всю съёмку: рельеф считается по тому, как свет из камеры ложится на поверхность при повороте. Верхний свет в комнате лучше погасить или приглушить' + (S.method === 'walk' ? ', снимать без резких рывков.' : ', держатель не трогать.') : '';
+  $('setupHint').textContent = how + tall + tor + ' Форма считается за 20–60 секунд.' + sp;
 }
 document.querySelectorAll('#setup .seg').forEach((seg) => seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S[seg.dataset.key] = b.dataset.v; saveSettings(); renderSetup(); }));
 $('btnStart').onclick = () => startCapture();
@@ -99,9 +100,10 @@ async function startCapture(ctx) {
   const bo = capCtx && capCtx.bottomOf, co = capCtx && capCtx.closeOf;
   const base = bo || co;
   cap = new Capture($('video'), $('overlay'), { view: $('camView'),
-    size: base ? (base.settings && base.settings.size) || S.size : S.size, method: co ? (co.settings && co.settings.method) || S.method : S.method, close: !!co, hiRes: (base ? (base.settings && base.settings.quality) : S.quality) === 'best',
+    size: base ? (base.settings && base.settings.size) || S.size : S.size, method: co ? (co.settings && co.settings.method) || S.method : S.method, close: !!co, torch: (base ? (base.settings && base.settings.torch) : S.torch) === 'on', hiRes: (base ? (base.settings && base.settings.quality) : S.quality) === 'best',
     Hb: bo ? +((bo.bottom && bo.bottom.Hb) || (bo.settings && bo.settings.height) || S.height) : co ? +((co.settings && co.settings.height) || S.height) : +S.height, step: co ? 5 : +S.step || 8,
     onState: capState,
+    onTorchFail: () => toast('Фонарик недоступен (нет вспышки или старая версия приложения) — рельеф будет приблизительным', 4000),
     onShot: (n, a, manual) => { beep(manual ? 1318 : 1046, 0.05); if (navigator.vibrate) navigator.vibrate(15); },
   });
   // с таймером — ждём «▶»; без таймера — снимаем сразу
@@ -186,7 +188,7 @@ $('capDone').onclick = async () => {
 async function finishCapture() {
   plateSheet = false;
   if (!cap) return;
-  const shots = cap.shots.map((s) => s.blob), Hb = cap.opt.Hb, plates = cap.plates || []; cap.stop(); cap = null;
+  const shots = cap.shots.map((s) => s.blob), Hb = cap.opt.Hb, plates = cap.plates || [], torchUsed = !!cap.torchOn; cap.stop(); cap = null;
   if (capCtx && capCtx.closeOf) { // крупные планы: только для текстуры, пересчёт со всеми кадрами
     const base = capCtx.closeOf; capCtx = null;
     const fa = await store.getFrames(base.id).catch(() => null);
@@ -210,27 +212,36 @@ async function finishCapture() {
     return;
   }
   const id = 'scan-' + Date.now(), d = new Date();
-  const scan = { id, name: `Скан ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`, date: Date.now(), settings: { ...S, height: String(Hb) } };
+  const scan = { id, name: `Скан ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`, date: Date.now(), settings: { ...S, height: String(Hb), torch: torchUsed ? 'on' : 'off' } };
   try { await store.putFrames(id, shots); if (plates.length) await store.putFrames(id + ':plate', plates); } catch (e) { toast('Не удалось сохранить кадры: ' + e.message); }
   runProcessing(scan, shots, null, { plates });
 }
 
 // ---------- обработка ----------
 let proc = null, procViewer = null;
+// обработка в фоне: APK держит службу с уведомлением; пометка «идёт обработка» переживает падение/выгрузку приложения
+const NAT = () => window.ObyomNative || null;
+const natCall = (fn, ...a) => { const N = NAT(); try { if (N && N[fn]) return N[fn](...a); } catch (e) {} return null; };
+const PENDING = 'obyom.pending';
 function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
   go('process');
+  try { localStorage.setItem(PENDING, JSON.stringify({ id: scan.id, name: scan.name, settings: scan.settings, noB: !bottomBlobs, t: Date.now() })); } catch (e) {}
+  // новая съёмка ещё без записи в списке — заводим её сразу: если приложение закроется, скан не потеряется
+  store.getScan(scan.id).then((old) => { if (!old) return store.putScan({ ...scan, failed: 'Обработка не закончилась (приложение закрылось). Кадры сохранены — нажми «Пересчитать».', hasMesh: false, hasSplats: false }); }).catch(() => {});
+  natCall('procStart', `«${scan.name}»: подготовка…`);
   const st = scan.settings;
   $('procLog').textContent = ''; $('procBar').style.width = '0%'; $('procStage').textContent = 'Подготовка…'; $('procText').textContent = '';
   $('procStop').textContent = 'Остановить'; $('procView').classList.remove('on');
   const log = (t) => { $('procLog').textContent += t + '\n'; };
   log(`кадров: ${blobs.length}; режим: ${{ mesh: 'полигоны', splat: 'сплэты', both: 'полигоны + сплэты' }[st.mode]}`);
-  const job = { blobs, mode: st.mode, quality: st.quality, size: st.size, theme: 'light', Hb: +st.height, method: st.method || 'walk', shape: st.shape || 'normal', scale: calFor(st.size) };
+  const job = { poolSize: +localStorage.getItem('obyom.pool') || undefined, torch: st.torch === 'on', blobs, mode: st.mode, quality: st.quality, size: st.size, theme: 'light', Hb: +st.height, method: st.method || 'walk', shape: st.shape || 'normal', scale: calFor(st.size) };
   if (extra.close && extra.close.length && st.mode !== 'splat') { job.close = extra.close; log(`+ крупные планы: ${extra.close.length}`); }
   if (extra.plates && extra.plates.length) { job.plates = extra.plates; log(`+ кадр фона: ${extra.plates.length}`); }
   if (bottomBlobs && bottomBlobs.length && scan.bottom) { job.bottom = { blobs: bottomBlobs, Hb: +scan.bottom.Hb, method: scan.bottom.method, plates: extra.bottomPlates || null }; log(`+ досъёмка низа: ${bottomBlobs.length} кадров`); }
   let splatting = false;
   proc = startProcessing(job, {
     progress: (stage, p, text) => {
+      natCall('procUpdate', `${stage}${text ? ' · ' + text : ''}`, Math.round(p * 100));
       $('procStage').textContent = stage; $('procBar').style.width = (p * 100).toFixed(1) + '%'; $('procText').textContent = text;
       if (stage === 'Учу сплэты' && !splatting) { splatting = true; $('procStop').textContent = 'Хватит — сохранить как есть'; }
     },
@@ -241,6 +252,16 @@ function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
       if (!procViewer.home) { const b = boundsPacked(packed); procViewer.fit(b.mn, b.mx); procViewer.auto = true; }
     },
     log,
+    // сетка готова, сплэты ещё учатся — сохраняем сетку сразу (если дальше что-то случится, модель останется)
+    partial: async (r) => {
+      try {
+        const M = r.mesh, b = bounds(M), old = await store.getScan(scan.id).catch(() => null);
+        if (old && old.hasMesh && !old.failed && old.date !== scan.date) return;
+        await store.putScan({ ...(old || {}), ...scan, mode: st.mode, mesh: M, splats: (old && old.splats) || null, hasMesh: true, hasSplats: !!(old && old.splats), failed: undefined,
+          stats: { ...r.stats, size: b.size, volume: meshVolume(M) }, note: 'сплэты не доучились — сетка сохранена' });
+        log('сетка сохранена — сплэты учатся дальше');
+      } catch (e) {}
+    },
   });
   $('procStop').onclick = () => { if (splatting) { proc.stop(); toast('Сохраняю то, что успело выучиться…'); } else if (confirm('Остановить обработку? Кадры сохранены — можно пересчитать позже.')) { proc.stop(); } };
   proc.promise.then(async (r) => {
@@ -252,13 +273,17 @@ function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
     scan.thumb = viewer.snapshot(320);
     try { await store.putScan(scan); } catch (e) { toast('Не хватает места для сохранения: ' + e.message, 4000); }
     toast(`Готово за ${fmtT(r.stats.t)}`);
+    try { localStorage.removeItem(PENDING); } catch (e) {}
+    natCall('procEnd', `«${scan.name}» готов за ${fmtT(r.stats.t)}`);
   }).catch((e) => {
+    try { localStorage.removeItem(PENDING); } catch (e2) {}
+    natCall('procEnd', e.message === 'stopped' ? '' : `«${scan.name}»: не получилось — ${e.message}`);
     if (procViewer) { procViewer.destroy(); procViewer = null; }
     const m = e.message === 'stopped' ? 'Обработка остановлена. Кадры сохранены — их можно пересчитать из списка (⋯ → Пересчитать).' : e.message;
     log('✗ ' + m); $('procStage').textContent = 'Не получилось'; $('procStop').textContent = 'На главную';
     $('procStop').onclick = () => { history.back(); };
     // сохраним пустую запись, чтобы можно было пересчитать
-    store.putScan({ ...scan, failed: m, hasMesh: false, hasSplats: false }).catch(() => {});
+    store.getScan(scan.id).then((old) => { if (!(old && old.hasMesh && !old.failed)) return store.putScan({ ...scan, failed: m, hasMesh: false, hasSplats: false }); }).catch(() => {});
   });
 }
 function boundsPacked(p) { const I = splatInfo(p), mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9]; for (let k = 0; k < I.n; k++) { const i = I.off + k * I.stride; for (let c = 0; c < 3; c++) { mn[c] = Math.min(mn[c], p[i + c]); mx[c] = Math.max(mx[c], p[i + c]); } } return { mn, mx }; }
@@ -353,6 +378,33 @@ $('vBottom').onclick = async () => {
   if (!fr || !fr.length) { toast('Кадры этой съёмки удалены — низ не к чему добавить. Сними предмет заново.', 4000); return; }
   history.back(); setTimeout(() => startCapture({ bottomOf: scan }), 80);
 };
+// пересчёт из сохранённых кадров (⋯ → Пересчитать и продолжение прерванной обработки)
+async function rerun(scan, st, noB) {
+  const frames = await store.getFrames(scan.id).catch(() => null);
+  if (!frames || !frames.length) { toast('Кадров съёмки нет — пересчёт невозможен', 3500); return; }
+  const bframes = scan.bottom && !noB ? await store.getFrames(scan.id + ':bottom').catch(() => null) : null;
+  const close = await store.getFrames(scan.id + ':close').catch(() => null);
+  const plates = await store.getFrames(scan.id + ':plate').catch(() => null), bplates = scan.bottom ? await store.getFrames(scan.id + ':bplate').catch(() => null) : null;
+  const ns = { id: scan.id, name: scan.name, date: scan.date, settings: st, bottom: scan.bottom, close: scan.close };
+  runProcessing(ns, frames, bframes, { plates, bottomPlates: bplates, close });
+}
+// при запуске: обработка в прошлый раз не закончилась (приложение закрыли, система выгрузила, не хватило памяти)
+async function checkInterrupted() {
+  let p = null; try { p = JSON.parse(localStorage.getItem(PENDING) || 'null'); } catch (e) {}
+  if (!p) return;
+  localStorage.removeItem(PENDING);
+  const why = { memory: 'системе не хватило памяти', crash: 'сбой браузерной части' }[natCall('lastCrash') || ''] || 'приложение закрылось';
+  const scan = await store.getScan(p.id).catch(() => null);
+  if (!scan) return;
+  const fr = await store.getFrames(p.id).catch(() => null);
+  if (!fr || !fr.length) { toast(`Обработка «${scan.name}» прервалась, а кадров не осталось — сними заново`, 4000); return; }
+  sheet(`<h3>Обработка прервалась</h3><p>«${scan.name.replace(/</g, '&lt;')}» не досчитался: ${why}. Кадры сохранены${scan.hasMesh && !scan.failed ? ', сетка тоже' : ''}.</p>
+    <p><small>Во время обработки приложение можно сворачивать и гасить экран — обработка идёт дальше (уведомление «Объём — обработка»). Закрывать его из списка недавних нельзя.</small></p>
+    <button data-a="go" class="mid">▶ Продолжить обработку<small>заново с теми же настройками</small></button><button data-a="later">Позже (⋯ → Пересчитать)</button>`, (box) => {
+    box.querySelector('[data-a="go"]').onclick = () => { closeSheet(); rerun(scan, p.settings || scan.settings || S, p.noB); };
+    box.querySelector('[data-a="later"]').onclick = () => closeSheet();
+  });
+}
 async function moreSheet(scan) {
   const frames = await store.getFrames(scan.id).catch(() => null);
   const nf = frames ? frames.length : 0;
@@ -387,8 +439,7 @@ async function moreSheet(scan) {
       if (hv >= 2 && hv <= 40) st.height = String(Math.round(hv * 10));
       if (b.dataset.r === 'best') { st.mode = 'both'; st.quality = 'best'; } else st.mode = b.dataset.r;
       const noB = box.querySelector('#rNoB') && box.querySelector('#rNoB').checked;
-      const ns = { id: scan.id, name: scan.name, date: scan.date, settings: st, bottom: scan.bottom };
-      if (cur !== 'home') history.back(); ns.close = scan.close; setTimeout(() => runProcessing(ns, frames, noB ? null : bframes, { plates, bottomPlates: bplates, close }), 50);
+      if (cur !== 'home') history.back(); setTimeout(() => rerun(scan, st, noB), 50);
     });
     const bb = box.querySelector('[data-a="bottom"]'); if (bb) bb.onclick = () => { closeSheet(); const go2 = () => startCapture({ bottomOf: scan }); if (cur !== 'home') { history.back(); setTimeout(go2, 80); } else go2(); };
     const cb2 = box.querySelector('[data-a="close"]'); if (cb2) cb2.onclick = () => { closeSheet(); const go2 = () => startCapture({ closeOf: scan }); if (cur !== 'home') { history.back(); setTimeout(go2, 80); } else go2(); };
@@ -482,3 +533,4 @@ function showHelp() {
 
 if ('serviceWorker' in navigator && location.protocol === 'https:' && !/ObyomAndroid/.test(navigator.userAgent)) navigator.serviceWorker.register('sw.js').catch(() => {});
 renderList();
+checkInterrupted();

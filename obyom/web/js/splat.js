@@ -96,7 +96,7 @@ function preprocess(S, view, P) {
 
 
 const PK = 10; // упаковка капли в списке тайла: u v A B C opa c0 c1 c2 z
-function binTiles(S, view, P, opa, col) {
+function binTiles(S, view, P, opa, col, part) {
   const n = S.n, tw = Math.ceil(view.cw / TILE), th = Math.ceil(view.ch / TILE), nt = tw * th;
   const idx = []; for (let i = 0; i < n; i++) if (P.ok[i]) idx.push(i);
   idx.sort((a, b) => P.z[a] - P.z[b]);
@@ -107,7 +107,7 @@ function binTiles(S, view, P, opa, col) {
     const tx0 = Math.max(0, Math.floor((u - r) / TILE)), tx1 = Math.min(tw - 1, Math.floor((u + r) / TILE));
     const ty0 = Math.max(0, Math.floor((v - r) / TILE)), ty1 = Math.min(th - 1, Math.floor((v + r) / TILE));
     const A = P.A[i], B = P.B[i], C = P.C[i], lim = 2 * Math.log(255 * opa[i]);
-    for (let ty = ty0; ty <= ty1; ty++) for (let tx = tx0; tx <= tx1; tx++) {
+    for (let ty = ty0; ty <= ty1; ty++) { if (part && ty % part.K !== part.k) continue; for (let tx = tx0; tx <= tx1; tx++) {
       // ближайшая к центру точка тайла: если там вклад < 1/255 — тайл не задет (точно для круга, осторожно для эллипса)
       if (tx1 - tx0 > 1 || ty1 - ty0 > 1) {
         const qx = Math.min(Math.max(u, tx * TILE), tx * TILE + TILE), qy = Math.min(Math.max(v, ty * TILE), ty * TILE + TILE);
@@ -115,7 +115,7 @@ function binTiles(S, view, P, opa, col) {
         if (A * dx * dx + C * dy * dy + 2 * B * dx * dy > lim * 1.6) continue;
       }
       fn(ty * tw + tx);
-    }
+    } }
   };
   for (const i of idx) each(i, (t) => cnt[t + 1]++);
   for (let t = 0; t < nt; t++) cnt[t + 1] += cnt[t];
@@ -161,12 +161,14 @@ export function renderView(S, view, opt = {}) {
   const n = S.n, nb = S.nb, col = new Float32Array(n * 3), opa = new Float32Array(n), basis = new Float32Array(n * nb);
   for (let i = 0; i < n; i++) opa[i] = sig(S.op[i]);
   const inRange = viewColors(S, view, P, col, basis);
-  const { start, list, pk, tw } = binTiles(S, view, P, opa, col);
+  const { start, list, pk, tw } = binTiles(S, view, P, opa, col, opt.part);
   const { cw, ch } = view, npx = cw * ch, gain = view.gain || [1, 1, 1];
   const out = opt.out || new Float32Array(npx * 3), Tf = new Float32Array(npx), last = new Int32Array(npx);
   const grad = opt.grad, sc = grad ? new Float32Array(npx * 3) : null, Wd = grad ? new Float32Array(npx) : null, Zd = grad ? new Float32Array(npx) : null;
   const bg = view.bg;
-  for (let py = 0; py < ch; py++) for (let px = 0; px < cw; px++) {
+  // часть кадра (v2.1, потоки): только ряды тайлов с номером ≡ part.k (mod part.K) — остальные считают другие потоки
+  const part = opt.part, rowOn = part ? (py) => ((py / TILE) | 0) % part.K === part.k : null;
+  for (let py = 0; py < ch; py++) { if (rowOn && !rowOn(py)) continue; for (let px = 0; px < cw; px++) {
     const tile = ((py / TILE) | 0) * tw + ((px / TILE) | 0), k0 = start[tile], k1 = start[tile + 1];
     const gx = view.x0 + px + 0.5, gy = view.y0 + py + 0.5;
     let T = 1, r = 0, g = 0, b = 0, lastK = k0, ws = 0, zs = 0;
@@ -186,17 +188,17 @@ export function renderView(S, view, opt = {}) {
     Tf[j] = T; last[j] = lastK;
     out[j * 3] = gain[0] * r + T * bg[j * 3]; out[j * 3 + 1] = gain[1] * g + T * bg[j * 3 + 1]; out[j * 3 + 2] = gain[2] * b + T * bg[j * 3 + 2];
     if (grad) { sc[j * 3] = r; sc[j * 3 + 1] = g; sc[j * 3 + 2] = b; Wd[j] = ws; Zd[j] = zs; }
-  }
+  } }
   if (!grad) return { out, T: Tf };
   // ---------- обратный проход ----------
   const G = grad; // {mu, ls, q, op, sh, m2d(накопление |∂L/∂uv|), cnt, gain[3]}
   const tgt = view.img, wt = view.wt, at = view.at, eps = 0.03, aW = opt.alphaW || 0, dW = opt.depthW || 0;
   let loss = 0, wsum = 0;
   const dU = new Float32Array(n), dV = new Float32Array(n), dA = new Float32Array(n), dB = new Float32Array(n), dC = new Float32Array(n), dOp = new Float32Array(n), dCol = new Float32Array(n * 3), dZ = dW ? new Float32Array(n) : null;
-  for (let j = 0; j < npx; j++) wsum += wt[j];
+  if (opt.wsum != null) wsum = opt.wsum; else for (let j = 0; j < npx; j++) wsum += wt[j];
   const norm = 1 / Math.max(1, wsum), dL = [0, 0, 0], dLs = [0, 0, 0];
   if (!G.gain) G.gain = [0, 0, 0];
-  for (let py = 0; py < ch; py++) for (let px = 0; px < cw; px++) {
+  for (let py = 0; py < ch; py++) { if (rowOn && !rowOn(py)) continue; for (let px = 0; px < cw; px++) {
     const j = py * cw + px, w = wt[j];
     const tA = at && aW ? at[j] : -1;
     if (!w && tA < 0) continue;
@@ -240,8 +242,24 @@ export function renderView(S, view, opt = {}) {
       dU[i] += dP * (qa * dx + qb * dy); dV[i] += dP * (qc * dy + qb * dx);
       dA[i] += -0.5 * dx * dx * dP; dB[i] += -dx * dy * dP; dC[i] += -0.5 * dy * dy * dP;
     }
-  }
-  // ---------- от 2D к параметрам капли ----------
+  } }
+  const d2 = { dU, dV, dA, dB, dC, dOp, dCol, dZ };
+  if (opt.only2d) return { loss: loss * norm, d2 }; // поток: только градиенты на картинке, остальное — chain2d в одном месте
+  chain2d(S, view, P, d2, G, inRange, basis, opa);
+  return { out, loss: loss * norm };
+}
+
+// градиенты на картинке (по центру, конике, непрозрачности, цвету капли в этом виде) → по параметрам капли.
+// P, inRange, basis, opa — от preprocess/viewColors этого вида (у главного потока — свои, совпадают с потоками)
+export function prepView(S, view, P) {
+  preprocess(S, view, P);
+  const n = S.n, nb = S.nb, col = new Float32Array(n * 3), opa = new Float32Array(n), basis = new Float32Array(n * nb);
+  for (let i = 0; i < n; i++) opa[i] = sig(S.op[i]);
+  const inRange = viewColors(S, view, P, col, basis);
+  return { inRange, basis, opa };
+}
+export function chain2d(S, view, P, d2, G, inRange, basis, opa) {
+  const { dU, dV, dA, dB, dC, dOp, dCol, dZ } = d2, n = S.n, nb = S.nb;
   const { K, R } = view, nb3 = 3 * nb;
   for (let i = 0; i < n; i++) {
     if (!P.ok[i]) continue;
@@ -299,7 +317,6 @@ export function renderView(S, view, opt = {}) {
     const dot = w * gw + qx * gx + qy * gy + qz * gz;
     G.q[i * 4] += (gw - w * dot) / ql; G.q[i * 4 + 1] += (gx - qx * dot) / ql; G.q[i * 4 + 2] += (gy - qy * dot) / ql; G.q[i * 4 + 3] += (gz - qz * dot) / ql;
   }
-  return { out, loss: loss * norm };
 }
 
 
@@ -321,7 +338,7 @@ export class Trainer {
     this.lr = { mu: 0.0016 * this.ext, ls: 0.005, q: 0.001, op: 0.05 };
     this.maxLs = Math.log(0.05 * this.ext); // капля не крупнее ~5% предмета
     this.flatL = this.o.flat < 1 ? Math.log(this.o.flat) : 0;
-    this.resetAdam(); this.P = {}; this.seed = 7;
+    this.resetAdam(); this.P = {}; this.seed = 7; this.seen = 0;
     this.losses = [];
     // поправки яркости кадров (лог-усиление по каналам) и их Adam
     const V = views.length; this.lg = new Float32Array(V * 3); this.mg = new Float32Array(V * 3); this.vg = new Float32Array(V * 3); this.tg = new Int32Array(V);
@@ -332,33 +349,60 @@ export class Trainer {
     this.m = makeGrad(n, nb); this.v = makeGrad(n, nb); this.acc = { m2d: new Float32Array(n), cnt: new Float32Array(n) };
   }
   rnd() { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296; }
+  // один шаг: B кадров (по умолчанию 1) → сумма градиентов → Adam. B > 1 — те же кадры можно считать в нескольких
+  // потоках одновременно (SplatPool): шаг с пачкой из B кадров ≈ B обычных шагов по качеству, а по времени — один
   step() {
-    const S = this.S, n = S.n, nb = S.nb, vi = (this.rnd() * this.views.length) | 0, view = this.views[vi];
+    const B = Math.min(this.o.batch || 1, this.views.length), picks = this.pick(B), G = this.gradBuf();
+    const res = [];
+    for (const vi of picks) {
+      G.gain = [0, 0, 0];
+      const r = renderView(this.S, this.views[vi], { grad: G, P: this.P, alphaW: this.o.alphaW, depthW: this.o.depthW });
+      res.push({ vi, loss: r.loss, gain: G.gain });
+    }
+    return this.apply(G, res);
+  }
+  // B разных случайных кадров
+  pick(B) {
+    const V = this.views.length, out = [];
+    while (out.length < B) { const vi = (this.rnd() * V) | 0; if (!out.includes(vi) || B > V) out.push(vi); }
+    return out;
+  }
+  // буфер градиентов (обнуляется, а не создаётся заново каждый шаг — меньше работы сборщику мусора)
+  gradBuf() {
+    const S = this.S;
+    if (!this.G || this.G.mu.length < S.cap * 3 || this.G.sh.length !== S.cap * 3 * S.nb) this.G = makeGrad(S.cap, S.nb);
+    else { const n = S.n, G = this.G; G.mu.fill(0, 0, n * 3); G.ls.fill(0, 0, n * 3); G.q.fill(0, 0, n * 4); G.op.fill(0, 0, n); G.sh.fill(0, 0, n * 3 * S.nb); G.m2d.fill(0, 0, n); G.cnt.fill(0, 0, n); }
+    return this.G;
+  }
+  // G — сумма градиентов по кадрам res = [{vi, loss, gain:[3]}]
+  apply(G, res) {
+    const S = this.S, n = S.n, nb = S.nb, B = res.length;
     if (this.m.mu.length < S.cap * 3) this.growAdam();
-    const G = makeGrad(n, nb);
-    const r = renderView(S, view, { grad: G, P: this.P, alphaW: this.o.alphaW, depthW: this.o.depthW });
-    this.losses.push(r.loss);
+    let loss = 0; for (const r of res) loss += r.loss; loss /= B;
+    this.losses.push(loss);
     const t = this.it / this.iters, lrMu = this.lr.mu * Math.pow(0.01, t); // позиция: экспоненциальное затухание
-    const b1 = 0.9, b2 = 0.999, bc1 = 1 - Math.pow(b1, this.it + 1), bc2 = 1 - Math.pow(b2, this.it + 1);
-    const upd = (name, lr, lrRest, stride) => {
+    const b1 = 0.9, b2 = 0.999, bc1 = 1 - Math.pow(b1, this.it + 1), bc2 = 1 - Math.pow(b2, this.it + 1), inv = 1 / B;
+    const upd = (name, lr, lrRest, stride, k1) => {
       const p = S[name], g = G[name], m = this.m[name], v = this.v[name];
-      for (let k = 0; k < g.length; k++) {
-        const gk = g[k]; if (!gk) continue;
+      for (let k = 0; k < k1; k++) {
+        const gk = g[k] * inv; if (!gk) continue;
         m[k] = b1 * m[k] + (1 - b1) * gk; v[k] = b2 * v[k] + (1 - b2) * gk * gk;
         const l = stride && (k % stride) >= 3 ? lrRest : lr; // гармоники: «средний» цвет учится быстрее, чем зависимость от угла
         p[k] -= l * (m[k] / bc1) / (Math.sqrt(v[k] / bc2) + 1e-8);
       }
     };
-    upd('mu', lrMu); upd('ls', this.lr.ls); upd('q', this.lr.q); upd('op', this.lr.op); upd('sh', this.o.lrDC, this.o.lrRest, 3 * nb);
-    // поправка яркости этого кадра (Adam по лог-усилению); первые 10% шагов — без неё, пока цвет не сложился
+    upd('mu', lrMu, 0, 0, n * 3); upd('ls', this.lr.ls, 0, 0, n * 3); upd('q', this.lr.q, 0, 0, n * 4); upd('op', this.lr.op, 0, 0, n); upd('sh', this.o.lrDC, this.o.lrRest, 3 * nb, n * 3 * nb);
+    // поправка яркости кадров (Adam по лог-усилению); первые 10% шагов — без неё, пока цвет не сложился
     if (this.o.expo && this.it > this.iters * 0.1) {
-      const tg = ++this.tg[vi], c1 = 1 - Math.pow(b1, tg), c2 = 1 - Math.pow(b2, tg);
-      for (let c = 0; c < 3; c++) {
-        const k = vi * 3 + c, g = G.gain[c] * view.gain[c] + 0.002 * this.lg[k]; // + слабая тяга к 1
-        this.mg[k] = b1 * this.mg[k] + (1 - b1) * g; this.vg[k] = b2 * this.vg[k] + (1 - b2) * g * g;
-        this.lg[k] = Math.max(-0.5, Math.min(0.5, this.lg[k] - this.o.lrGain * (this.mg[k] / c1) / (Math.sqrt(this.vg[k] / c2) + 1e-8)));
+      for (const { vi, gain } of res) {
+        const view = this.views[vi], tg = ++this.tg[vi], c1 = 1 - Math.pow(b1, tg), c2 = 1 - Math.pow(b2, tg);
+        for (let c = 0; c < 3; c++) {
+          const k = vi * 3 + c, g = gain[c] * view.gain[c] + 0.002 * this.lg[k]; // + слабая тяга к 1
+          this.mg[k] = b1 * this.mg[k] + (1 - b1) * g; this.vg[k] = b2 * this.vg[k] + (1 - b2) * g * g;
+          this.lg[k] = Math.max(-0.5, Math.min(0.5, this.lg[k] - this.o.lrGain * (this.mg[k] / c1) / (Math.sqrt(this.vg[k] / c2) + 1e-8)));
+        }
       }
-      if (this.it % 25 === 0) { // общий множитель — у цветов капель, а не у кадров: среднее лог-усиление = 0
+      if (((this.seen + B) / 25 | 0) > (this.seen / 25 | 0)) { // общий множитель — у цветов капель, а не у кадров: среднее лог-усиление = 0
         for (let c = 0; c < 3; c++) { let s = 0; for (let k = 0; k < this.views.length; k++) s += this.lg[k * 3 + c]; s /= this.views.length; for (let k = 0; k < this.views.length; k++) this.lg[k * 3 + c] -= s; }
       }
       for (let k = 0; k < this.views.length; k++) for (let c = 0; c < 3; c++) this.views[k].gain[c] = Math.exp(this.lg[k * 3 + c]);
@@ -370,9 +414,11 @@ export class Trainer {
       if (this.flatL) { const lim = Math.min(S.ls[i * 3], S.ls[i * 3 + 1]) + this.flatL; if (S.ls[i * 3 + 2] > lim) S.ls[i * 3 + 2] = lim; }
     }
     this.it++;
-    if (this.it % 100 === 0 && this.it >= 200 && this.it <= this.iters * 0.65) this.densify();
-    if (this.it % 100 === 0) this.prune();
-    return r.loss;
+    // уплотнение и чистка — по числу просмотренных кадров (каждые 100), а не шагов: с пачкой кадров расписание то же
+    const s0 = this.seen, s1 = (this.seen += B), cross = (P) => ((s1 / P) | 0) > ((s0 / P) | 0);
+    if (cross(100) && s1 >= 200 && this.it <= this.iters * 0.65) this.densify();
+    if (cross(100)) this.prune();
+    return loss;
   }
   // в конце: строгая чистка (fn — более жёсткое правило «где можно жить») и выкидываем почти прозрачные
   finalize(fn) { if (fn) this.inside = fn; this.prune(); }

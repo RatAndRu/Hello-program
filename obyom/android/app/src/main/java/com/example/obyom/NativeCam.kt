@@ -56,6 +56,11 @@ class NativeCam(private val ctx: Context) {
     @Volatile var lockWanted = false
         private set
     private var builder: CaptureRequest.Builder? = null
+    /** Фонарик (v2.1): горит всю съёмку — свет из точки у объектива для рельефа (фотометрия по кадрам). */
+    @Volatile var torchWanted = false
+        private set
+    var hasFlash = false
+        private set
 
     @SuppressLint("MissingPermission")
     @Synchronized
@@ -71,6 +76,7 @@ class NativeCam(private val ctx: Context) {
         val map = ch.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP) ?: return "камера не отдаёт кадры"
         val size = pickSize(map.getOutputSizes(ImageFormat.YUV_420_888) ?: return "камера не отдаёт кадры YUV", w, h)
         sensorOrientation = ch.get(CameraCharacteristics.SENSOR_ORIENTATION) ?: 90
+        hasFlash = ch.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
         width = size.width; height = size.height
         val afModes = ch.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES) ?: IntArray(0)
         val af = when {
@@ -114,6 +120,8 @@ class NativeCam(private val ctx: Context) {
                     rb.addTarget(surf)
                     rb.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
                     if (af >= 0) rb.set(CaptureRequest.CONTROL_AF_MODE, af)
+                    rb.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                    if (torchWanted && hasFlash) rb.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH)
                     builder = rb
                     s.setRepeatingRequest(rb.build(), null, hd)
                     // камеру перезапустили посреди съёмки: даём автоэкспозиции сойтись и снова фиксируем
@@ -122,6 +130,23 @@ class NativeCam(private val ctx: Context) {
             }
             override fun onConfigureFailed(s: CameraCaptureSession) { lastError = "не удалось настроить камеру" }
         }, hd)
+    }
+
+    /** Фонарик: "ok", "noflash" — у камеры нет вспышки. Включать до фиксации экспозиции (до первого снимка). */
+    fun torch(on: Boolean): String {
+        torchWanted = on
+        if (on && !hasFlash && running) return "noflash"
+        val hd = handler ?: return "ok"
+        hd.post {
+            val rb = builder; val s = session
+            if (rb != null && s != null && hasFlash) {
+                try {
+                    rb.set(CaptureRequest.FLASH_MODE, if (torchWanted) CaptureRequest.FLASH_MODE_TORCH else CaptureRequest.FLASH_MODE_OFF)
+                    s.setRepeatingRequest(rb.build(), null, handler)
+                } catch (e: Exception) { lastError = "фонарик: ${e.message}" }
+            }
+        }
+        return "ok"
     }
 
     /** Зафиксировать (true) или отпустить (false) экспозицию и баланс белого. */

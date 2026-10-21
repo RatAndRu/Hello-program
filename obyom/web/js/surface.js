@@ -7,6 +7,11 @@
 //     по мелкой светотени одного кадра. Высота — интегрирование нормалей по каждому лоскуту.
 //  3) Материал: всё, что ярче рассеянного света, — блики. По зонам одного цвета: ширина пика по углу «полувектора» →
 //     шероховатость, цвет блика как у самой поверхности при тёмном диффузном → металл.
+//  2а) Фонарик (v2.1): съёмка с включённым фонариком телефона. Свет — точка у объектива, положение известно по позе кадра,
+//     яркость точки I = ρ·(α·AO + max(0, n·l)·(D0/d)²): l — направление на камеру, α — доля комнатного света (общая).
+//     Предмет поворачивается относительно фонарика → кривая яркости по кадрам даёт нормаль (наклоны в обе стороны:
+//     α известна, значит и «вверх-вниз» различим), ρ — цвет без светотени. Без ИИ: классическое фотометрическое стерео
+//     с ближним точечным светом.
 //  4) Текстура без теней: пиксель атласа / рассчитанное освещение в его кадре; блики заменяются цветом по всем кадрам.
 // Результат — карты в пространстве той же развёртки (UV) атласа: альбедо T×T, нормали, ORM (затенённость, шероховатость,
 // металл) и высота — Wr×Wr (Wr = T·рабочий/полный кадр, ≤ 1024: столько и даёт кадр рабочего размера).
@@ -152,12 +157,90 @@ export async function analyzeSurface(M, frames, faceFrame, faceChart, atlas, T, 
     if ((dx * N0[j * 3] + dy * N0[j * 3 + 1] + dz * N0[j * 3 + 2]) / dl < o.minCos) return null;
     const ui = u | 0, vi = v | 0; let zm = 1e9;
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) zm = Math.min(zm, zb[(vi + b) * f.w + ui + a]);
-    if (cz > zm * 1.004 + 1.5) return null;
+    if (cz > zm * 1.004 + 1.5 + DL[j]) return null;
     if (f.mask) { const m = f.mask[vi * f.w + ui]; if (m === 0 || m === 3) return null; }
     return [u, v];
   };
+  // ---------- 3а) уточнение поверхности (v2.1): оболочка по силуэтам шире предмета — точка в разных кадрах попадает
+  // в разные места, и фотометрия по кадрам разваливается. Для части точек ищем сдвиг внутрь вдоль нормали, при котором
+  // окрестность 5×5 текселей одинакова во всех кадрах (нормированная корреляция — не зависит от яркости и света),
+  // затем сглаживаем по поверхности. Многовидовое стерео с оболочкой как начальным приближением, без ИИ.
+  const DL = new Float32Array(NT); // насколько точка ушла внутрь (мм) — допуск для проверки заслонения
+  if (o.refine ?? !!o.torch) {
+    const passes = [[-(o.refineOut ?? 1), o.refineIn ?? 5, 0.5], [-1, 1, 0.25]].slice(0, o.refinePasses ?? 2), infos = [];
+    for (const [dMin, dMax, dStep] of passes) {
+    const nD = Math.round((dMax - dMin) / dStep) + 1, R = 2, stride = 3;
+    const Dsum = new Float32Array(NT), Wsum = new Float32Array(NT), rgb = [0, 0, 0];
+    const sampleL = (f, x, y) => lum(...sampleRGB(f, x, y, rgb));
+    const projP = (k, X, Y, Z, out) => { const { f } = fr[k], R_ = f.R, t = f.t, K = f.K, cz = R_[6] * X + R_[7] * Y + R_[8] * Z + t[2]; if (cz <= 1) return false;
+      out[0] = K.fx * (R_[0] * X + R_[1] * Y + R_[2] * Z + t[0]) / cz + K.cx; out[1] = K.fy * (R_[3] * X + R_[4] * Y + R_[5] * Z + t[1]) / cz + K.cy; return out[0] >= 1 && out[1] >= 1 && out[0] <= f.w - 2 && out[1] <= f.h - 2; };
+    let tried = 0, found = 0; const rej = [0, 0, 0, 0, 0, 0], q2 = [0, 0], dirs = fr.map((q) => q.C);
+    // окно 5×5 — в касательной плоскости поверхности (не в развёртке: лоскуты мелкие), шаг ≈ пиксель кадра
+    const pxMM = (() => { const v = []; for (let i = 0; i < texels.length; i += 50) { const jj = texels[i], k = faceFrame[tri[jj]]; if (k < 0) continue; const f = fr[k].f, R_ = f.R, cz = R_[6] * Xp[jj * 3] + R_[7] * Xp[jj * 3 + 1] + R_[8] * Xp[jj * 3 + 2] + f.t[2]; v.push(cz / f.K.fx); } v.sort((a, b) => a - b); return v.length ? v[v.length >> 1] : 0.6; })();
+    const NP = (2 * R + 1) ** 2, PX = new Float32Array(NP * 3);
+    for (let ti = 0; ti < texels.length; ti += stride * stride) {
+      { const j = texels[ti], n0 = [N0[j * 3], N0[j * 3 + 1], N0[j * 3 + 2]], a = Math.abs(n0[2]) < 0.9 ? [0, 0, 1] : [1, 0, 0];
+        let t1 = [a[1] * n0[2] - a[2] * n0[1], a[2] * n0[0] - a[0] * n0[2], a[0] * n0[1] - a[1] * n0[0]]; const l = Math.hypot(...t1); t1 = t1.map((v) => v / l);
+        const t2 = [n0[1] * t1[2] - n0[2] * t1[1], n0[2] * t1[0] - n0[0] * t1[2], n0[0] * t1[1] - n0[1] * t1[0]];
+        let p = 0; for (let dy = -R; dy <= R; dy++) for (let dx = -R; dx <= R; dx++, p++) for (let c = 0; c < 3; c++) PX[p * 3 + c] = Xp[j * 3 + c] + (dx * t1[c] + dy * t2[c]) * pxMM; }
+      {
+        const j = texels[ti];
+        const kr = faceFrame[tri[j]]; if (!proj(kr, j)) { rej[1]++; continue; }
+        // другие кадры: где точку видно, под углом 8–45° к опорному (меньше — нет параллакса, больше — окно искажается)
+        const cr = dirs[kr], vr = [cr[0] - Xp[j * 3], cr[1] - Xp[j * 3 + 1], cr[2] - Xp[j * 3 + 2]], lr = Math.hypot(...vr), cand = [];
+        for (let k = 0; k < F; k++) { if (k === kr || !proj(k, j)) continue; const c = dirs[k], v = [c[0] - Xp[j * 3], c[1] - Xp[j * 3 + 1], c[2] - Xp[j * 3 + 2]], ang = Math.acos(clamp((v[0] * vr[0] + v[1] * vr[1] + v[2] * vr[2]) / (lr * Math.hypot(...v)), -1, 1)) * 57.3; if (ang >= 8 && ang <= 45) cand.push([ang, k]); }
+        if (cand.length < 2) { rej[2]++; continue; }
+        cand.sort((a, b) => a[0] - b[0]); const use = []; for (let i = 0; i < cand.length && use.length < 6; i += Math.max(1, Math.floor(cand.length / 6))) use.push(cand[i][1]);
+        tried++;
+        const ref = new Float32Array(NP), oth = new Float32Array(NP), score = new Float32Array(nD);
+        let refVar = 0;
+        for (let di = 0; di < nD; di++) {
+          const d = dMin + di * dStep; let ok = true;
+          const nx = d * N0[j * 3], ny = d * N0[j * 3 + 1], nz = d * N0[j * 3 + 2];
+          for (let p = 0; p < NP && ok; p++) { if (!projP(kr, PX[p * 3] - nx, PX[p * 3 + 1] - ny, PX[p * 3 + 2] - nz, q2)) ok = false; else ref[p] = sampleL(fr[kr].f, q2[0], q2[1]); }
+          if (!ok) { score[di] = -2; continue; }
+          let ma = 0; for (let p = 0; p < NP; p++) ma += ref[p]; ma /= NP; let va = 0; for (let p = 0; p < NP; p++) { ref[p] -= ma; va += ref[p] * ref[p]; }
+          if (di === 0) refVar = va / NP;
+          let sc = 0, nv = 0;
+          for (const k of use) {
+            let ok2 = true; for (let p = 0; p < NP && ok2; p++) { if (!projP(k, PX[p * 3] - nx, PX[p * 3 + 1] - ny, PX[p * 3 + 2] - nz, q2)) ok2 = false; else oth[p] = sampleL(fr[k].f, q2[0], q2[1]); }
+            if (!ok2) continue;
+            let mb = 0; for (let p = 0; p < NP; p++) mb += oth[p]; mb /= NP; let vb = 0, ab = 0; for (let p = 0; p < NP; p++) { const b = oth[p] - mb; vb += b * b; ab += ref[p] * b; }
+            if (va > 0 && vb > 0) { sc += ab / Math.sqrt(va * vb); nv++; }
+          }
+          score[di] = nv ? sc / nv : -2;
+        }
+        if (refVar < (o.refineVar ?? 9)) { rej[3]++; continue; } // гладкое место без рисунка — сдвиг не определить
+        let bi = 0; for (let di = 1; di < nD; di++) if (score[di] > score[bi]) bi = di;
+        const best = score[bi]; if (best < (o.refineNcc ?? 0.6)) { rej[4]++; continue; }
+        // чёткость пика: насколько он выше уровня в стороне (±1.5 мм) — иначе сдвиг ненадёжен
+        let side = -2; for (let di = 0; di < nD; di++) if (Math.abs(di - bi) * dStep >= Math.min(1.5, 0.4 * (dMax - dMin))) side = Math.max(side, score[di]);
+        const sharp = best - side; if (sharp < 0.05 * dStep / 0.5) { rej[5]++; continue; }
+        // параболическая доводка между соседними шагами
+        let d = dMin + bi * dStep; if (bi > 0 && bi < nD - 1) { const a = score[bi - 1], b = score[bi + 1], den = a - 2 * best + b; if (den < 0) d += clamp(0.5 * (a - b) / den, -0.5, 0.5) * dStep; }
+        const w = clamp(sharp / 0.2, 0.1, 1) * best;
+        Dsum[j] += d * w; Wsum[j] += w; found++;
+      }
+      if (ti % 3000 < stride * stride) { prog(0.1 + 0.05 * ti / texels.length, 'уточняю поверхность'); await tick(); }
+    }
+    // плотное поле сдвигов: взвешенное сглаживание по поверхности (граф соседних точек), без опоры — 0 (как у оболочки)
+    if (found > 20) {
+      const gr = buildGraph({ texels, Xp, N0, texMM: estTexMM() });
+      const it = o.refineSmooth ?? 40, Ds = graphSmooth(gr, Dsum, texels, it), Ws = graphSmooth(gr, Wsum, texels, it);
+      const wRef = []; for (const jj of texels) if (Ws[jj] > 0) wRef.push(Ws[jj]); wRef.sort((a, b) => a - b); const w50 = wRef.length ? wRef[wRef.length >> 1] : 1;
+      let moved = 0, sum = 0;
+      for (const jj of texels) {
+        if (!(Ws[jj] > 0)) continue; const conf = Ws[jj] / (Ws[jj] + 0.3 * w50), d = clamp(Ds[jj] / Ws[jj], dMin, dMax) * conf;
+        DL[jj] = Math.max(0, DL[jj] + d); for (let c = 0; c < 3; c++) Xp[jj * 3 + c] -= d * N0[jj * 3 + c]; moved++; sum += d;
+      }
+      infos.push({ rej, tried, found, meanMM: +(sum / Math.max(1, moved)).toFixed(2) });
+    } else infos.push({ tried, found });
+    }
+    info.refine = infos;
+  }
   // ---------- 4) уточнение совмещения: сдвиг каждого лоскута в каждом кадре (оболочка шире предмета → проекции «плывут») ----------
-  const nCh = faceChart ? Math.max(0, ...faceChart) + 1 : 0, shift = new Map();
+  let nCh = 0; if (faceChart) for (let i = 0; i < faceChart.length; i++) if (faceChart[i] + 1 > nCh) nCh = faceChart[i] + 1; // без «...»: при «Лучше» граней сотни тысяч — переполнение стека
+  const shift = new Map();
   if (o.align > 0 && nCh) {
     const byCh = Array.from({ length: nCh }, () => []);
     for (const j of texels) { const c = faceChart[tri[j]]; if (c >= 0 && byCh[c].length < 4000) byCh[c].push(j); }
@@ -261,9 +344,10 @@ export async function analyzeSurface(M, frames, faceFrame, faceChart, atlas, T, 
   };
   // начальные направления: 6 азимутов на высоте 45° — и поворот лампы с камерой (m=1) или без (m=0)
   // модель света нужна только опытным режимам (рельеф по свету, текстура по модели) — по умолчанию не считаем (быстрее)
-  const needLight = o.relief === 'photo' || o.delight === 'model' || o.fitLight;
+  const torch = !!o.torch && o.relief !== 'none';
+  const needLight = !torch && (o.relief === 'photo' || o.delight === 'model' || o.fitLight);
   let LF = { a: 0.35, l0: [0, 0, 0.65], g: new Float64Array(F).fill(1), m: o.turn === false ? 0 : 1, err: 0 }, vis = null;
-  if (!needLight && o.gains !== false) {
+  if (!needLight && o.gains !== false && !torch) { // с фонариком экспозиция зафиксирована, а яркость кадра честно меняется со светом
     // усиление кадров (автоэкспозиция) без модели света: медиана отношений «выборка / медиана точки по кадрам»
     const R = Array.from({ length: F }, () => []);
     for (let i = 0; i < texels.length; i += 3) { const j = texels[i], s0 = off[j], e = off[j + 1]; if (e - s0 < 5) continue;
@@ -290,6 +374,37 @@ export async function analyzeSurface(M, frames, faceFrame, faceChart, atlas, T, 
   if (needLight) info.light = { dir: l0.map((v) => +(v / Math.hypot(...l0)).toFixed(3)), direct: +Math.hypot(...l0).toFixed(3), ambient: +amb.toFixed(3), rotates: lm === 1, err: +Math.sqrt(LF.err).toFixed(2) };
   prog(0.5, 'свет найден');
   await tick();
+  // ---------- 6а) фонарик: свет из камеры кадра, спад 1/d²; общая доля комнатного света α — по нормалям сетки ----------
+  let D0 = 1, alphaT = 0;
+  const ltv = (j, k, out) => { const C = fr[k].C, dx = C[0] - Xp[j * 3], dy = C[1] - Xp[j * 3 + 1], dz = C[2] - Xp[j * 3 + 2], d2 = dx * dx + dy * dy + dz * dz, d = Math.sqrt(d2), w = D0 * D0 / d2 / d; out[0] = dx * w; out[1] = dy * w; out[2] = dz * w; return out; };
+  if (torch) {
+    const ds = []; for (let i = 0; i < sub.length; i += 3) { const j = sub[i]; for (let q = off[j]; q < off[j + 1]; q++) { const C = fr[sK[q]].C; ds.push(Math.hypot(C[0] - Xp[j * 3], C[1] - Xp[j * 3 + 1], C[2] - Xp[j * 3 + 2])); } }
+    ds.sort((a, b) => a - b); D0 = ds.length ? ds[ds.length >> 1] : 300;
+    const al = [], L = [0, 0, 0];
+    for (const j of sub) {
+      if (off[j + 1] - off[j] < 6) continue; const n = nrmAt(j);
+      // I = x0·AO + x1·(n·l): x0 = ρα, x1 = ρ (робастно: второй проход без выбросов)
+      let x0 = 0, x1 = 0, thr = Infinity;
+      for (let pass = 0; pass < 2; pass++) {
+        let a00 = 0, a01 = 0, a11 = 0, b0 = 0, b1 = 0;
+        for (let q = off[j]; q < off[j + 1]; q++) { const I = lum(sC[q * 3], sC[q * 3 + 1], sC[q * 3 + 2]); if (I > 250) continue; ltv(j, sK[q], L); const sh = Math.max(0, n[0] * L[0] + n[1] * L[1] + n[2] * L[2]);
+          if (pass && Math.abs(I - x0 * AO[j] - x1 * sh) > thr) continue; a00 += AO[j] * AO[j]; a01 += AO[j] * sh; a11 += sh * sh; b0 += AO[j] * I; b1 += sh * I; }
+        const det = a00 * a11 - a01 * a01; if (det <= 1e-9 * (a00 * a11 + 1e-12)) { x1 = 0; break; }
+        x0 = (b0 * a11 - b1 * a01) / det; x1 = (a00 * b1 - a01 * b0) / det;
+        const res = []; for (let q = off[j]; q < off[j + 1]; q++) { ltv(j, sK[q], L); res.push(Math.abs(lum(sC[q * 3], sC[q * 3 + 1], sC[q * 3 + 2]) - x0 * AO[j] - x1 * Math.max(0, n[0] * L[0] + n[1] * L[1] + n[2] * L[2]))); }
+        res.sort((a, b) => a - b); thr = 3 * Math.max(1.5, res[res.length >> 1]);
+      }
+      if (x1 > 8) al.push(x0 / x1);
+    }
+    al.sort((a, b) => a - b); alphaT = clamp(al.length ? al[al.length >> 1] : 0.3, 0, 3);
+    if (o.torchAlpha != null) alphaT = o.torchAlpha;
+    info.torch = { D0: +D0.toFixed(1), alpha: +alphaT.toFixed(3), pts: al.length };
+  }
+  // свет выборки: оттенение, вектор света (с весом), видимость — для лампы и для фонарика
+  const LT = [0, 0, 0];
+  const SH = torch ? (j, k, nn) => { ltv(j, k, LT); return alphaT * AO[j] + Math.max(0, nn[0] * LT[0] + nn[1] * LT[1] + nn[2] * LT[2]); } : (j, k, nn) => shadeAt(j, k, nn);
+  const LV = torch ? (j, k) => ltv(j, k, [0, 0, 0]) : (j, k) => Lk[k];
+  const VV = torch ? () => 1 : (j, k) => visAt(vis, k, j);
   if (o.debug) o.debug({ off, sK, sC, Lk, gain, amb, AO, vis, visAt, fr, Xp, N0, tri, texels, Wr });
   // ---------- 7) нормали и альбедо по текселю ----------
   const Nw = new Float32Array(N0), rhoC = new Float32Array(NT * 3), conf = new Float32Array(NT);
@@ -317,7 +432,7 @@ export async function analyzeSurface(M, frames, faceFrame, faceChart, atlas, T, 
   }
   const tiltN = (j, p, q) => { const n = [0, 0, 0]; for (let c = 0; c < 3; c++) n[c] = N0[j * 3 + c] + p * T1[j * 3 + c] + q * T2[j * 3 + c]; const l = Math.hypot(...n); return n.map((v) => v / l); };
   const shadeAt = (j, k, nn) => { const L = Lk[k]; return amb * AO[j] + visAt(vis, k, j) * Math.max(0, nn[0] * L[0] + nn[1] * L[1] + nn[2] * L[2]); };
-  const albedoAt = (j, nn, outRGB) => { const su = [0, 0, 0]; let ss = 0; for (let q = off[j]; q < off[j + 1]; q++) { const k = sK[q], sh = gain[k] * shadeAt(j, k, nn); if (lum(sC[q * 3], sC[q * 3 + 1], sC[q * 3 + 2]) > 250) continue; for (let c = 0; c < 3; c++) su[c] += sC[q * 3 + c] * sh; ss += sh * sh; } for (let c = 0; c < 3; c++) outRGB[c] = ss > 0 ? su[c] / ss : 0; return ss; };
+  const albedoAt = (j, nn, outRGB) => { const su = [0, 0, 0]; let ss = 0; for (let q = off[j]; q < off[j + 1]; q++) { const k = sK[q], sh = gain[k] * SH(j, k, nn); if (lum(sC[q * 3], sC[q * 3 + 1], sC[q * 3 + 2]) > 250) continue; for (let c = 0; c < 3; c++) su[c] += sC[q * 3 + c] * sh; ss += sh * sh; } for (let c = 0; c < 3; c++) outRGB[c] = ss > 0 ? su[c] / ss : 0; return ss; };
   // 7а) по каждой точке: наклоны (p, q) и их достоверность. Модель I = g·(ρ·shade(n) + c): смещение c поглощает
   // ошибку рассеянного света и затенённости — тогда наклон «вверх-вниз» (на вертушке он почти не меняет яркость
   // по кадрам) честно получает малый вес, и его восстанавливает уже общее поле высот (из уклонов вбок).
@@ -329,15 +444,15 @@ export async function analyzeSurface(M, frames, faceFrame, faceChart, atlas, T, 
     let p = Pc[j], q = Qc[j], used = 0, S = null; const rgb = [0, 0, 0];
     for (let it = 0; it < inner; it++) {
       const n = tiltN(j, p, q); albedoAt(j, n, rgb); const rho = lum(...rgb); if (rho < 6) { S = null; break; }
-      const rs = []; for (let qq = s0; qq < e; qq++) { const k = sK[qq]; rs.push(Math.abs(lum(sC[qq * 3], sC[qq * 3 + 1], sC[qq * 3 + 2]) / gain[k] - rho * shadeAt(j, k, n))); }
+      const rs = []; for (let qq = s0; qq < e; qq++) { const k = sK[qq]; rs.push(Math.abs(lum(sC[qq * 3], sC[qq * 3 + 1], sC[qq * 3 + 2]) / gain[k] - rho * SH(j, k, n))); }
       const srt = [...rs].sort((x, y) => x - y), sig = Math.max(2, 1.25 * srt[srt.length >> 1]), thr = Math.max(3 * sig, 0.04 * rho + 3);
       // неизвестные: ρ, c, u = ρ·Δp, w = ρ·Δq (линейно)
       const A = new Float64Array(16), B = new Float64Array(4); used = 0;
       const t1 = [T1[j * 3], T1[j * 3 + 1], T1[j * 3 + 2]], t2 = [T2[j * 3], T2[j * 3 + 1], T2[j * 3 + 2]];
       for (let qq = s0, i = 0; qq < e; qq++, i++) {
         if (rs[i] > thr) continue; const k = sK[qq], I = lum(sC[qq * 3], sC[qq * 3 + 1], sC[qq * 3 + 2]); if (I > 250) continue;
-        const L = Lk[k], vv = visAt(vis, k, j), nl = n[0] * L[0] + n[1] * L[1] + n[2] * L[2], lit = nl > 0.03 && vv > 0.5;
-        const row = [shadeAt(j, k, n), 1, lit ? vv * (t1[0] * L[0] + t1[1] * L[1] + t1[2] * L[2]) : 0, lit ? vv * (t2[0] * L[0] + t2[1] * L[1] + t2[2] * L[2]) : 0], y = I / gain[k];
+        const L = LV(j, k), vv = VV(j, k), nl = n[0] * L[0] + n[1] * L[1] + n[2] * L[2], lit = nl > 0.03 * Math.hypot(L[0], L[1], L[2]) && vv > 0.5;
+        const row = [SH(j, k, n), 1, lit ? vv * (t1[0] * L[0] + t1[1] * L[1] + t1[2] * L[2]) : 0, lit ? vv * (t2[0] * L[0] + t2[1] * L[1] + t2[2] * L[2]) : 0], y = I / gain[k];
         for (let r = 0; r < 4; r++) { B[r] += row[r] * y; for (let c = 0; c < 4; c++) A[r * 4 + c] += row[r] * row[c]; }
         used++;
       }
@@ -368,20 +483,20 @@ export async function analyzeSurface(M, frames, faceFrame, faceChart, atlas, T, 
   const graph = buildGraph({ texels, Xp, N0, texMM });
   // режим рельефа: 'texture' (по умолчанию) — по мелкой светотени фото-текстуры, как в программах «нормаль из фото»;
   // 'photo' — фотометрия по кадрам вертушки (опыт: нужна точная форма, по силуэтам ненадёжно); 'none' — без рельефа
-  const reliefMode = o.relief ?? 'texture';
+  const reliefMode = torch ? 'torch' : o.relief ?? 'texture';
   info.relief = { mode: reliefMode === 'photo' && !photometric ? 'texture' : reliefMode };
-  if (reliefMode === 'photo' && photometric) {
+  if ((reliefMode === 'photo' && photometric) || reliefMode === 'torch') {
     // внешние проходы: точка линеаризуется у нормали из общего поля высот (совместный Гаусс — Ньютон)
     const Pc = new Float32Array(NT), Qc = new Float32Array(NT); let RS = null, ne = 0;
     const rounds = o.reliefRounds ?? 3;
     for (let round = 0; round < rounds; round++) {
       measure(Pc, Qc, round === 0 ? (o.firstInner ?? 1) : 1);
       if (o.debugPQ) for (const j of texels) { const r = o.debugPQ(j, Xp, N0, T1, T2); if (r) { Pm[j] = r[0]; Qm[j] = r[1]; if (!o.keepInfo) { Iaa[j] = Ibb[j] = 1000; Iab[j] = 0; } } }
-      if (o.horizOnly ?? true) for (const j of texels) { Ibb[j] = 0; Iab[j] = 0; }
+      if (o.horizOnly ?? !torch) for (const j of texels) { Ibb[j] = 0; Iab[j] = 0; }
       RS = await solveRelief({ texels, Xp, N0, T1, T2, Pm, Qm, Iaa, Iab, Ibb, NT, texMM, o, tick, tiltN, graph }); ne = RS.ne;
       for (const j of texels) { const N = [RS.N[j * 3], RS.N[j * 3 + 1], RS.N[j * 3 + 2]], dn = N[0] * N0[j * 3] + N[1] * N0[j * 3 + 1] + N[2] * N0[j * 3 + 2]; if (dn < 0.3) continue;
         Pc[j] = (N[0] * T1[j * 3] + N[1] * T1[j * 3 + 1] + N[2] * T1[j * 3 + 2]) / dn; Qc[j] = (N[0] * T2[j * 3] + N[1] * T2[j * 3 + 1] + N[2] * T2[j * 3 + 2]) / dn; }
-      prog(0.5 + 0.15 * (round + 1) / rounds, 'рельеф по свету'); await tick();
+      prog(0.5 + 0.15 * (round + 1) / rounds, torch ? 'рельеф по фонарику' : 'рельеф по свету'); await tick();
     }
     Hh = RS.h; for (const j of texels) { Nw[j * 3] = RS.N[j * 3]; Nw[j * 3 + 1] = RS.N[j * 3 + 1]; Nw[j * 3 + 2] = RS.N[j * 3 + 2]; }
     info.relief.edges = ne;
@@ -404,6 +519,7 @@ export async function analyzeSurface(M, frames, faceFrame, faceChart, atlas, T, 
   for (const j of texels) { const n = [Nw[j * 3], Nw[j * 3 + 1], Nw[j * 3 + 2]], rgb = [0, 0, 0]; albedoAt(j, n, rgb); rhoC[j * 3] = rgb[0]; rhoC[j * 3 + 1] = rgb[1]; rhoC[j * 3 + 2] = rgb[2]; }
   prog(0.65, 'рельеф');
   await tick();
+  function estTexMM() { const sz = []; for (let i = 0; i < texels.length; i += 7) { const t = tangentAt(texels[i]); if (t) sz.push(Math.sqrt(t[2] * t[3])); } sz.sort((a, b) => a - b); return sz.length ? sz[sz.length >> 1] : 0.3; }
   // касательный базис текселя: T (вдоль +u), Bup (вверх по картинке = −v) — по грани
   function tangentAt(j) {
     const f = tri[j]; if (f < 0) return null; const a = idx[f * 3], b = idx[f * 3 + 1], c = idx[f * 3 + 2];
@@ -510,7 +626,22 @@ export async function analyzeSurface(M, frames, faceFrame, faceChart, atlas, T, 
   const nW = (x, y) => { const j = Math.min(Wr - 1, (y / sc) | 0) * Wr + Math.min(Wr - 1, (x / sc) | 0); return j; };
   // по умолчанию — по «обычному виду»: чёткая фото-текстура × сглаженное отношение (медиана / фото) — убирает тени
   // и блики кадра лоскута, не размывая рисунок
-  if ((o.delight ?? 'views') === 'views') {
+  if (torch && o.delight === 'torch') { // опыт: на синтетике медиана по кадрам («обычный вид») точнее
+    // фонарик: фото-текстура / (свет фонарика в её кадре) — убирает спад к краям, 1/d², затенённость; блики → ρ по всем кадрам.
+    // Масштаб: типичная освещённость лицевой точки → яркость как на фото там, где свет «в лоб»
+    const sJ = new Float32Array(NT), sv = [];
+    for (const j of texels) { const k = faceFrame[tri[j]]; if (k < 0) continue; sJ[j] = SH(j, k, [Nw[j * 3], Nw[j * 3 + 1], Nw[j * 3 + 2]]); sv.push(sJ[j]); }
+    sv.sort((a, b) => a - b); const sRef = sv.length ? sv[Math.floor(sv.length * 0.7)] : 1, sMin = 0.25 * sRef;
+    for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) {
+      const i = (y * T + x) * 4, j = nW(x, y); alb[i + 3] = 255;
+      if (tri[j] < 0 || faceFrame[tri[j]] < 0 || !sJ[j]) { alb[i] = atlas[i]; alb[i + 1] = atlas[i + 1]; alb[i + 2] = atlas[i + 2]; continue; }
+      const kk = sRef / Math.max(sMin, sJ[j]);
+      const sp = specMax[j] / Math.max(20, lum(rhoC[j * 3], rhoC[j * 3 + 1], rhoC[j * 3 + 2]));
+      const wB = clamp((sp - 0.12) / 0.15, 0, 1);
+      for (let c = 0; c < 3; c++) alb[i + c] = clamp(Math.round(atlas[i + c] * kk * (1 - wB) + rhoC[j * 3 + c] * sRef * wB), 0, 255);
+    }
+    info.torch.sRef = +sRef.toFixed(3);
+  } else if ((o.delight ?? 'views') === 'views') {
     const ph = new Float32Array(NT), cntW = new Float32Array(NT);
     for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) { const j = nW(x, y), i = (y * T + x) * 4; if (tri[j] < 0) continue; ph[j] += lum(atlas[i], atlas[i + 1], atlas[i + 2]); cntW[j]++; }
     const lr = new Float32Array(NT), wHi = new Float32Array(NT);

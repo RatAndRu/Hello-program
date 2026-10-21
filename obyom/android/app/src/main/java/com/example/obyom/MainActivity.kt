@@ -29,6 +29,9 @@ import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.RenderProcessGoneDetail
+import android.view.ViewGroup
+import android.widget.Toast
 
 /**
  * Объём: тонкая обёртка над веб-частью (obyom/web), которая лежит в assets.
@@ -48,6 +51,14 @@ class MainActivity : Activity() {
     @Volatile private var camDenied = false
     private var camResume = false
     private var keepAlive = false
+    // идёт обработка скана: служба держит процесс, WebView не ставится на паузу, «Назад» сворачивает, а не закрывает
+    @Volatile private var processing = false
+    private var resumed = false
+    // процесс страницы падал (обычно — нехватка памяти): веб-часть узнаёт об этом и предлагает продолжить обработку
+    @Volatile private var crashInfo = ""
+    private var lastPct = -1
+    private var notifAsked = false
+    private var lastUpd = 0L
     // пока идёт съёмка — просим WebView перерисовываться каждый кадр экрана (вторая известная ошибка: «не рисует без касания»)
     private val frameCb = object : Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
@@ -71,10 +82,15 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
+        setupWeb(savedInstanceState)
+        goImmersive()
+    }
+
+    @SuppressLint("SetJavaScriptEnabled")
+    private fun setupWeb(savedInstanceState: Bundle?) {
         web = WebView(this)
         web.setBackgroundColor(0xFF0B0D12.toInt())
         setContentView(web)
-        goImmersive()
 
         with(web.settings) {
             javaScriptEnabled = true
@@ -109,6 +125,20 @@ class MainActivity : Activity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 if (request.url.host == HOST) return false
                 runCatching { startActivity(Intent(Intent.ACTION_VIEW, request.url)) }
+                return true
+            }
+
+            // Процесс страницы упал (чаще всего системе не хватило памяти во время обработки). По умолчанию Android
+            // закрыл бы всё приложение — вместо этого создаём WebView заново; кадры уже сохранены, обработку можно продолжить.
+            override fun onRenderProcessGone(view: WebView, detail: RenderProcessGoneDetail): Boolean {
+                crashInfo = if (detail.didCrash()) "crash" else "memory"
+                val wasProc = processing
+                processing = false
+                if (wasProc) ProcService.stop(this@MainActivity, null, false)
+                runOnUiThread {
+                    runCatching { (view.parent as? ViewGroup)?.removeView(view); view.destroy() }
+                    setupWeb(null)
+                }
                 return true
             }
         }
@@ -212,7 +242,40 @@ class MainActivity : Activity() {
         } catch (e: Exception) { "Не удалось сохранить: ${e.message}" }
 
         @JavascriptInterface
-        fun version(): String = "2.0"
+        fun version(): String = "2.1"
+
+        /** Началась обработка: служба переднего плана (уведомление) — процесс не выгрузят, процессор не уснёт. */
+        @JavascriptInterface
+        fun procStart(text: String) {
+            processing = true; lastPct = -1
+            // Android 13+: без разрешения уведомление не покажется (служба всё равно работает) — спросим один раз
+            if (Build.VERSION.SDK_INT >= 33 && !notifAsked && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
+                notifAsked = true; runOnUiThread { requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), REQ_NOTIF) }
+            }
+            ProcService.start(this@MainActivity, text)
+        }
+
+        /** Прогресс в уведомление (не чаще раза в 1.5 с). */
+        @JavascriptInterface
+        fun procUpdate(text: String, pct: Int) {
+            if (!processing) return
+            val now = System.currentTimeMillis()
+            if (pct == lastPct && now - lastUpd < 5000) return
+            if (now - lastUpd < 1500) return
+            lastPct = pct; lastUpd = now
+            ProcService.update(this@MainActivity, text, pct)
+        }
+
+        /** Обработка закончилась (готово / ошибка / остановлена). Если приложение свёрнуто — уведомление. */
+        @JavascriptInterface
+        fun procEnd(text: String) {
+            processing = false
+            ProcService.stop(this@MainActivity, text, !resumed)
+        }
+
+        /** Падал ли процесс страницы до этой загрузки: "" — нет, "memory" — выгружен из-за памяти, "crash" — сбой. */
+        @JavascriptInterface
+        fun lastCrash(): String { val c = crashInfo; crashInfo = ""; return c }
 
         /** Включить свою камеру: "ok", "perm" (ждём разрешения — спросить ещё раз позже) или текст ошибки. */
         @JavascriptInterface
@@ -238,6 +301,10 @@ class MainActivity : Activity() {
         /** Зафиксировать/отпустить экспозицию и баланс белого (съёмка: все кадры одной яркости и цвета). */
         @JavascriptInterface
         fun camLock(on: Boolean): String = cam.lock(on)
+        @JavascriptInterface
+        fun camTorch(on: Boolean): String = cam.torch(on)
+        @JavascriptInterface
+        fun camHasFlash(): Boolean = cam.hasFlash
 
         @JavascriptInterface
         fun camStop() {
@@ -335,22 +402,34 @@ class MainActivity : Activity() {
     }
 
     override fun onPause() {
+        resumed = false
         if (cam.running) { camResume = true; cam.stop() }
         keepAlive = false
-        web.onPause(); super.onPause()
+        // во время обработки WebView не ставим на паузу — пусть считает и в свёрнутом приложении
+        if (!processing) web.onPause()
+        super.onPause()
     }
     override fun onResume() {
-        super.onResume(); web.onResume()
+        super.onResume(); web.onResume(); resumed = true
         if (camResume && camWanted && checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
             camResume = false
             if (cam.start(cam.reqW, cam.reqH) == "ok") startKeepAlive()
         }
     }
-    override fun onDestroy() { cam.stop(); web.destroy(); super.onDestroy() }
+    override fun onDestroy() {
+        cam.stop()
+        if (processing) { processing = false; ProcService.stop(this, null, false) }
+        web.destroy(); super.onDestroy()
+    }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {
-        if (web.canGoBack()) web.goBack() else super.onBackPressed()
+        if (web.canGoBack()) web.goBack()
+        else if (processing) {
+            // закрыть приложение = потерять обработку; сворачиваем — она продолжится, по готовности придёт уведомление
+            moveTaskToBack(true)
+            Toast.makeText(this, "Обработка продолжается в фоне — придёт уведомление", Toast.LENGTH_LONG).show()
+        } else super.onBackPressed()
     }
 
     private fun mimeOf(path: String): String {
@@ -373,5 +452,6 @@ class MainActivity : Activity() {
         private const val REQ_CAMERA = 1
         private const val REQ_FILE = 2
         private const val REQ_STORAGE = 3
+        private const val REQ_NOTIF = 4
     }
 }

@@ -1,7 +1,7 @@
 // Подбор параметров сплэтов на синтетике: та же подготовка, что в приложении (метки → фокус → позы → маски → оболочка → сетка),
 // каждый 6-й кадр — проверочный (в обучении не участвует).
 // node tsplat2.mjs /tmp/t/spT        (WALK=1 — съёмка с рук, лист целиком)
-// env: MEDW=1 (вес фона-медианы за листом, 0 — выкл.) ITERS=1200 N0=8000 NMAX=20000 DEG=1 AW=0.5 DW=0.02 FLAT=0.1 EXPO=1 LRDC=0.012 LRREST=0.0012 STEP=1 HB=90 PLY=путь PPM=путь
+// env: BATCH=1 (кадров на шаг) MEDW=1 (вес фона-медианы за листом, 0 — выкл.) ITERS=1200 N0=8000 NMAX=20000 DEG=1 AW=0.5 DW=0.02 FLAT=0.1 EXPO=1 LRDC=0.012 LRREST=0.0012 STEP=1 HB=90 PLY=путь PPM=путь
 // Метрики на проверочных кадрах (яркость кадра подбирается МНК — у отложенного кадра своя экспозиция):
 //   PSNR — внутри точной маски предмета; облачка — средняя непрозрачность капель на точном фоне (в рамке предмета);
 //   дыры — средняя прозрачность T на точном предмете; мс/шаг.
@@ -43,6 +43,7 @@ const test = good.filter((_, k) => k % 6 === 3), train = good.filter((_, k) => k
 const num = (k, d) => (E[k] !== undefined ? +E[k] : d);
 const opt = {
   deg: num('DEG', SPLAT_DEFAULTS.deg), alphaW: num('AW', SPLAT_DEFAULTS.alphaW), depthW: num('DW', SPLAT_DEFAULTS.depthW), flat: num('FLAT', SPLAT_DEFAULTS.flat),
+  batch: num('BATCH', 1), // кадров на шаг (v2.1: в приложении — по потоку на кадр)
   expo: E.EXPO !== undefined ? E.EXPO !== '0' : SPLAT_DEFAULTS.expo, lrDC: num('LRDC', SPLAT_DEFAULTS.lrDC), lrRest: num('LRREST', SPLAT_DEFAULTS.lrRest),
 };
 const ITERS = num('ITERS', 1200);
