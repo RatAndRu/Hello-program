@@ -75,6 +75,11 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var auditor: DeviceAuditor? = null
     private var extraNotes = ArrayList<String>()
 
+    // Протокол очков HeyCyan: выбранный канал, состояние опроса, черновик HEX.
+    private var heyChannel = HeyCyan.CH_CTRL
+    private var heyStatus = ""
+    private var heyTypeText = "41"
+
     private var tab = TAB_SCAN
     private val scanItems = ArrayList<ScanItem>()
     private var scanning = false
@@ -255,6 +260,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             TAB_PROFILES -> buildProfilesTab()
             TAB_PHOTOS -> buildPhotosTab()
             TAB_REPORT -> buildReportTab()
+            TAB_HEY -> buildHeyTab()
             else -> buildConsoleTab()
         }
         contentSlot.addView(view)
@@ -677,7 +683,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         }
         // Во время передачи снимка уведомления идут потоком: журнал не засоряем и экран не дёргаем.
         if (camera.isCapturing()) return
-        val text = GattNames.describe(char, value) ?: bytesToHex(value.take(24).toByteArray())
+        val text = HeyCyan.describe(value)
+            ?: GattNames.describe(char, value)
+            ?: bytesToHex(value.take(24).toByteArray())
         addLog("→ ${GattNames.charName(char)}: $text")
         if (tab == TAB_GATT || tab == TAB_DEVICE) rebuildThrottled()
     }
@@ -2008,6 +2016,223 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     // ---------- Вкладка «Консоль» ----------
 
+    // ---------- Очки HeyCyan: протокол из официального SDK ----------
+
+    private fun buildHeyTab(): View {
+        val c = column()
+
+        val head = row()
+        head.addView(
+            txt("Протокол очков HeyCyan", 16, Pal.TEXT, bold = true),
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        )
+        head.addView(pill("Обновить", false) { rebuild() })
+        c.addView(head)
+        c.addView(
+            txt(
+                "Кадры собраны из официального SDK очков (glasses_sdk). Канал A — сервис 6E40FFF0: " +
+                    "16 байт, последний = сумма предыдущих. Канал B — DE5BF728: BC, тип, длина, CRC16. " +
+                    "Всё, что отправлено и принято, пишется в журнал целиком.",
+                12,
+                Pal.MUTED
+            )
+        )
+        c.addView(spacer(10))
+
+        val stateCard = card()
+        stateCard.addView(txt("Состояние", 12, Pal.MUTED, bold = true))
+        stateCard.addView(spacer(6))
+        stateCard.addView(
+            txt(
+                buildString {
+                    appendLine("Устройство: ${connName.ifBlank { "—" }}")
+                    appendLine("Связь: ${when (connState) { ConnState.CONNECTED -> "есть"; ConnState.CONNECTING -> "подключается"; else -> "нет" }} · MTU ${ble.mtu}")
+                    appendLine(
+                        "Канал: " + if (heyChannel == HeyCyan.CH_CTRL)
+                            "A · 6E400002 (команды)" else "B · DE5BF72A (большие данные)"
+                    )
+                    appendLine("Пакетов от устройства: ${notifStats.values.sumOf { it.count }}")
+                    append(if (heyStatus.isBlank()) "Опрос ещё не запускался" else heyStatus)
+                },
+                11,
+                Pal.TEXT,
+                mono = true
+            )
+        )
+        stateCard.addView(spacer(10))
+        stateCard.addView(actionButton("Опросить очки", primary = true) { runHeyProbe() })
+        stateCard.addView(spacer(8))
+        stateCard.addView(txt("Канал для команд ниже:", 11, Pal.MUTED))
+        stateCard.addView(spacer(6))
+        val chanRow = row()
+        chanRow.addView(pill("A · команды", heyChannel == HeyCyan.CH_CTRL) {
+            heyChannel = HeyCyan.CH_CTRL
+            rebuild()
+        })
+        chanRow.addView(hspace(6))
+        chanRow.addView(pill("B · BC-кадры", heyChannel == HeyCyan.CH_SERIAL) {
+            heyChannel = HeyCyan.CH_SERIAL
+            rebuild()
+        })
+        chanRow.addView(hspace(6))
+        chanRow.addView(pill("Пробудить", false) {
+            heySend(HeyCyan.CH_SERIAL, 0x41, byteArrayOf(0x02, 0x01, 0x07), "пробуждение очков")
+        })
+        stateCard.addView(chanRow)
+        c.addView(stateCard)
+        c.addView(spacer(10))
+
+        val camCard = card()
+        camCard.addView(txt("Камера", 12, Pal.MUTED, bold = true))
+        camCard.addView(spacer(6))
+        camCard.addView(
+            txt(
+                "Команда камере — 0x02 с действием: 4 войти в режим съёмки, 5 снять кадр, 6 выйти. " +
+                    "Ответ придёт уведомлением на 6E400003 или DE5BF729.",
+                11,
+                Pal.MUTED
+            )
+        )
+        camCard.addView(spacer(8))
+        val camRow = row()
+        camRow.addView(actionButton("Войти (4)", primary = false) {
+            heySend(heyChannel, 0x02, byteArrayOf(0x04), "камера: войти")
+        })
+        camRow.addView(actionButton("Снять (5)", primary = true) {
+            heySend(heyChannel, 0x02, byteArrayOf(0x05), "камера: снять")
+        })
+        camCard.addView(camRow)
+        val camRow2 = row()
+        camRow2.addView(actionButton("Выйти (6)", primary = false) {
+            heySend(heyChannel, 0x02, byteArrayOf(0x06), "камера: выйти")
+        })
+        camRow2.addView(actionButton("Режим фото 0x3E", primary = false) {
+            heySend(heyChannel, 0x3E, byteArrayOf(0x02, 0x01, 0x00), "режим очков: фото")
+        })
+        camCard.addView(camRow2)
+        c.addView(camCard)
+        c.addView(spacer(10))
+
+        val rawCard = card()
+        rawCard.addView(txt("Свои байты", 12, Pal.MUTED, bold = true))
+        rawCard.addView(spacer(6))
+        rawCard.addView(
+            txt(
+                "Полезно, когда нужен произвольный кадр: введите HEX и отправьте как есть в выбранный канал " +
+                    "или оберните в BC-кадр с нужным типом.",
+                11,
+                Pal.MUTED
+            )
+        )
+        rawCard.addView(spacer(8))
+        val hexInput = input("HEX, например 02 05")
+        rawCard.addView(hexInput)
+        val typeInput = input("Тип для BC-кадра (HEX)", heyTypeText)
+        rawCard.addView(typeInput)
+        val rawRow = row()
+        rawRow.addView(actionButton("Отправить как есть", primary = false) {
+            val bytes = HeyCyan.parseHex(hexInput.text.toString())
+            if (bytes == null || bytes.isEmpty()) {
+                toast("Нужны целые байты в HEX")
+            } else {
+                heySendRaw(heyChannel, bytes, "свои байты")
+            }
+        })
+        rawRow.addView(actionButton("Обернуть в BC", primary = true) {
+            heyTypeText = typeInput.text.toString().ifBlank { "41" }
+            val bytes = HeyCyan.parseHex(hexInput.text.toString()) ?: ByteArray(0)
+            val type = HeyCyan.parseHex(heyTypeText)?.firstOrNull()?.toInt()?.and(0xFF) ?: 0x41
+            heySend(HeyCyan.CH_SERIAL, type, bytes, "BC-кадр 0x" + String.format("%02X", type))
+        })
+        rawCard.addView(rawRow)
+        c.addView(rawCard)
+        c.addView(spacer(10))
+
+        val logCard = card()
+        logCard.addView(txt("Последние кадры", 12, Pal.MUTED, bold = true))
+        logCard.addView(spacer(6))
+        val tail = logs.takeLast(14).joinToString("\n").ifBlank { "Пока пусто" }
+        logCard.addView(txt(tail, 10, Pal.TEXT, mono = true))
+        logCard.addView(spacer(8))
+        logCard.addView(actionButton("Копировать журнал", primary = true) { copyHeyLog() })
+        c.addView(logCard)
+        return c
+    }
+
+    private fun heySend(channel: String, type: Int, payload: ByteArray, title: String) {
+        val frame = HeyCyan.frameFor(channel, type, payload)
+        heySendRaw(channel, frame, title)
+    }
+
+    private fun heySendRaw(channel: String, frame: ByteArray, title: String) {
+        if (connState != ConnState.CONNECTED) {
+            toast("Сначала подключитесь к устройству")
+            return
+        }
+        val service = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_SERVICE else HeyCyan.SERIAL_SERVICE
+        val char = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_WRITE else HeyCyan.SERIAL_WRITE
+        val ok = ble.write(service, char, frame, withResponse = false)
+        addLog("TX $channel · $title · ${HeyCyan.hex(frame)}" + if (ok) "" else " · запись не принята")
+        heyStatus = "Отправлено: $title"
+        if (tab == TAB_HEY) rebuild()
+    }
+
+    private fun runHeyProbe() {
+        if (connState != ConnState.CONNECTED) {
+            toast("Сначала подключитесь к устройству")
+            return
+        }
+        // Слушаем все уведомления устройства и оба канала протокола.
+        for ((service, char) in listOf(
+            HeyCyan.CTRL_SERVICE to HeyCyan.CTRL_NOTIFY,
+            HeyCyan.SERIAL_SERVICE to HeyCyan.SERIAL_NOTIFY
+        )) {
+            if (subscribed.add("$service|$char")) ble.subscribe(service, char, true)
+        }
+        for (service in gattServices) {
+            for (char in service.chars) {
+                if (char.notifiable && subscribed.add("${service.uuid}|${char.uuid}")) {
+                    ble.subscribe(service.uuid, char.uuid, true)
+                }
+            }
+        }
+        val list = HeyCyan.probes()
+        heyStatus = "Опрос: 0/${list.size}"
+        rebuild()
+        var index = 0
+        val step = object : Runnable {
+            override fun run() {
+                if (index >= list.size) {
+                    heyStatus = "Опрос отправлен: ${list.size} кадров. Ответы — в журнале."
+                    addLog("Опрос очков завершён: кадров ${list.size}")
+                    rebuild()
+                    return
+                }
+                val probe = list[index]
+                index += 1
+                heySend(probe.channel, probe.type, probe.payload, probe.title)
+                heyStatus = "Опрос: ${index}/${list.size} — ${probe.title}"
+                ui.postDelayed(this, 450)
+            }
+        }
+        ui.postDelayed(step, 150)
+    }
+
+    private fun copyHeyLog() {
+        val text = buildString {
+            appendLine("BlueLink · журнал протокола очков")
+            appendLine("Устройство: ${connName.ifBlank { "—" }} (${connAddress.ifBlank { "—" }})")
+            appendLine("Версия: ${appVersion()} (${appVersionCode()})")
+            appendLine("Канал: ${if (heyChannel == HeyCyan.CH_CTRL) "A" else "B"}")
+            appendLine("Состояние: $heyStatus")
+            appendLine()
+            logs.forEach { appendLine(it) }
+        }
+        val cm = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+        cm.setPrimaryClip(ClipData.newPlainText("BlueLink", text))
+        toast("Журнал скопирован — вставьте его в чат")
+    }
+
     private fun buildConsoleTab(): View {
         val c = column()
         val cardTop = card()
@@ -2253,6 +2478,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         const val TAB_PHOTOS = "photos"
         const val TAB_CONSOLE = "console"
         const val TAB_REPORT = "report"
+        const val TAB_HEY = "hey"
 
         private const val REQ_BLE = 100
         private const val REQ_ENABLE_BT = 101
@@ -2266,7 +2492,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             TAB_GATT to "🧩 GATT",
             TAB_PROFILES to "⚙️ Профили",
             TAB_PHOTOS to "🖼 Фото",
-            TAB_CONSOLE to "⌨️ Консоль"
+            TAB_CONSOLE to "⌨️ Консоль",
+            TAB_HEY to "🕶 Очки"
         )
     }
 }
