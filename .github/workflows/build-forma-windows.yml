@@ -1,0 +1,126 @@
+name: Собрать Windows EXE — Форма 3D
+
+# Ручной запуск: Actions -> "Собрать Windows EXE — Форма 3D" -> Run workflow.
+# Плюс автозапуск при изменениях в папке forma/.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'forma/**'
+      - '.github/workflows/build-forma-windows.yml'
+
+jobs:
+  build-exe:
+    name: EXE + ZIP (Windows)
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+          cache-dependency-path: forma/requirements.txt
+
+      - name: Установить зависимости
+        working-directory: forma
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pyinstaller
+
+      - name: Прогнать тесты ядра
+        working-directory: forma
+        run: python -m unittest discover -s tests -v
+
+      - name: Подготовить иконку и версию
+        working-directory: forma
+        run: |
+          python tools/make_icon.py
+          python tools/write_version_info.py
+
+      - name: Собрать EXE
+        working-directory: forma
+        run: |
+          pyinstaller packaging/forma.spec --noconfirm --clean --distpath dist --workpath build/pyi
+          ls -la dist
+
+      - name: Проверить собранный EXE (самопроверка моделей)
+        working-directory: forma
+        run: |
+          rm -f selftest.txt
+          ./dist/Forma3D.exe --selftest --report selftest.txt || true
+          for i in $(seq 1 90); do
+            if [ -s selftest.txt ]; then break; fi
+            sleep 1
+          done
+          if [ ! -s selftest.txt ]; then
+            echo "EXE не отчитался о самопроверке"
+            exit 1
+          fi
+          cat selftest.txt
+
+      - name: Подготовить ZIP с понятным именем
+        working-directory: forma
+        run: |
+          mkdir -p release
+          cp dist/Forma3D.exe release/
+          cp packaging/README_FIRST.txt release/ЧИТАЙ_МЕНЯ.txt
+          cp packaging/icon_256.png release/icon.png
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile, sys
+          sys.path.insert(0, '.')
+          from forma.agent import command_reference_md
+          from forma.version import __version__
+          root = Path('release')
+          (root / 'СПРАВКА_КОМАНДЫ.md').write_text(command_reference_md(), encoding='utf-8')
+          examples = Path('release/examples')
+          examples.mkdir(exist_ok=True)
+          for p in Path('examples').glob('*.forma'):
+              (examples / p.name).write_text(p.read_text(encoding='utf-8'), encoding='utf-8')
+          zip_path = Path(f'Forma3D-{__version__}-windows.zip')
+          with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+              for p in sorted(root.rglob('*')):
+                  if p.is_file():
+                      zf.write(p, p.relative_to(root))
+          print('ZIP:', zip_path, zip_path.stat().st_size, 'байт')
+          PY
+
+      - name: Загрузить в Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: Forma3D-windows
+          path: |
+            forma/Forma3D-*-windows.zip
+            forma/dist/Forma3D.exe
+            forma/selftest.txt
+          if-no-files-found: error
+          retention-days: 60
+
+      - name: Опубликовать EXE и ZIP в Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: forma3d-exe-${{ github.run_number }}-${{ github.run_attempt }}
+          name: Форма 3D — Windows EXE (сборка ${{ github.run_number }})
+          body: |
+            **Форма 3D** — параметрический 3D-редактор, которым управляют текстом.
+
+            * `Forma3D-…-windows.zip` — распакуй и запусти `Forma3D.exe` (рекомендуется).
+            * `Forma3D.exe` — то же приложение одним файлом.
+
+            Внутри ZIP: сама программа, справка по командам и примеры моделей (кружка, ваза,
+            бутылка, шестерня, кузов машины, манекен человека).
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: |
+            forma/Forma3D-*-windows.zip
+            forma/dist/Forma3D.exe

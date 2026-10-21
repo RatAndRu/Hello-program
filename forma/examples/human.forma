@@ -1,0 +1,45 @@
+# Манекен человека 170 см: капсулы и сферы, слитые в одно тело.
+# Ось Z — вверх, все размеры в миллиметрах.
+
+# голова и шея
+голова = sphere radius=105 at=[0, 0, 1595]
+шея = capsule radius=45 height=150 at=[0, 0, 1400]
+
+# корпус
+грудь = blob spheres=[[0, 0, 1300, 152], [0, 0, 1180, 140]] blend=70
+живот = capsule radius=100 height=250 at=[0, 0, 1000]
+таз = blob spheres=[[0, 0, 985, 125], [0, 0, 900, 108]] blend=60
+
+# руки
+плечо_л = capsule radius=48 height=320 at=[-190, 0, 1040]
+плечо_п = capsule radius=48 height=320 at=[190, 0, 1040]
+локоть_л = sphere radius=48 at=[-190, 0, 1050]
+локоть_п = sphere radius=48 at=[190, 0, 1050]
+предплечье_л = capsule radius=38 height=290 at=[-190, 0, 775]
+предплечье_п = capsule radius=38 height=290 at=[190, 0, 775]
+кисть_л = sphere radius=48 at=[-190, 0, 762]
+кисть_п = sphere radius=48 at=[190, 0, 762]
+
+# ноги
+бедро_л = capsule radius=72 height=440 at=[-105, 0, 470]
+бедро_п = capsule radius=72 height=440 at=[105, 0, 470]
+колено_л = sphere radius=68 at=[-105, 0, 480]
+колено_п = sphere radius=68 at=[105, 0, 480]
+голень_л = capsule radius=50 height=430 at=[-105, 0, 55]
+голень_п = capsule radius=50 height=430 at=[105, 0, 55]
+стопа_л = box size=[95, 240, 90] round=25 at=[-105, 45, 0]
+стопа_п = box size=[95, 240, 90] round=25 at=[105, 45, 0]
+
+тело = union [
+  голова, шея, грудь, живот, таз,
+  плечо_л, плечо_п, локоть_л, локоть_п, предплечье_л, предплечье_п, кисть_л, кисть_п,
+  бедро_л, бедро_п, колено_л, колено_п, голень_л, голень_п, стопа_л, стопа_п
+]
+color тело #d8b48c material=plastic
+
+check тело watertight
+check тело parts 1
+check тело height 1650..1750
+check тело symmetric y 3
+check тело volume 40000..90000
+check тело flat_bottom 1..

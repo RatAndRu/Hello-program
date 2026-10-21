@@ -17,3 +17,13 @@ desktop.ini
 
 # Временные скриншоты тестов
 .cache/
+
+# Форма 3D: артефакты сборки и локальные результаты
+forma/build/
+forma/dist/
+forma/release/
+forma/*.spec.bak
+forma/renders/
+forma/selftest.txt
+forma/packaging/version_info.txt
+**/__pycache__/

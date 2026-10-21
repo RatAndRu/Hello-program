@@ -1,0 +1,39 @@
+# Бутылка 0.5 л: корпус, плавное плечо, горлышко и резьба.
+
+корпус = lathe points=[
+    [0, 0],
+    [38, 0],
+    [38, 8],
+    [35, 12],
+    [35, 150],
+    [34, 170],
+    [24, 200],
+    [14, 215],
+    [14, 255],
+    [16, 258],
+    [16, 268],
+    [0, 268]
+  ] segments=144 smooth=2
+
+полость = lathe points=[
+    [0, 8],
+    [31, 8],
+    [31, 148],
+    [30, 168],
+    [20, 198],
+    [10, 214],
+    [10, 275],
+    [0, 275]
+  ] segments=144 smooth=2
+
+бутылка = difference [корпус, полость]
+
+крышка = cylinder radius=18 height=22 round=2 at=[0,0,264] segments=96
+color крышка #3f7fe0 material=plastic
+
+color бутылка #bfe6d8 material=glass
+check бутылка watertight
+check бутылка height 265..272
+check бутылка wall 3..5
+check крышка parts 1
+check бутылка mass 480..600

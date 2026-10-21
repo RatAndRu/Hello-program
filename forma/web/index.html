@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ФОРМА 3D — параметрический редактор</title>
+  <link rel="stylesheet" href="/css/app.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "/vendor/three.module.js",
+        "three/addons/": "/vendor/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo">Ф</div>
+      <div class="brand-text">
+        <strong>ФОРМА 3D</strong>
+        <span>параметрический редактор, управляемый текстом</span>
+      </div>
+    </div>
+    <div class="actions">
+      <button id="btn-build" class="primary" title="Построить модель (Ctrl+Enter)">
+        <span class="icon">▶</span> Собрать
+      </button>
+      <button id="btn-render" title="Сделать PNG-снимки четырёх видов для проверки">
+        <span class="icon">◉</span> Снимки
+      </button>
+      <div class="menu-wrap">
+        <button id="btn-export" title="Экспорт модели">
+          <span class="icon">⇩</span> Экспорт
+        </button>
+        <div class="menu" id="export-menu">
+          <button data-format="glb">GLB — для 3D-программ</button>
+          <button data-format="stl">STL — для 3D-печати</button>
+          <button data-format="obj">OBJ — обмен геометрией</button>
+          <button data-format="png">PNG — снимки видов</button>
+          <button data-format="forma">.forma — сценарий</button>
+          <button data-format="zip">ZIP — всё сразу</button>
+        </div>
+      </div>
+      <div class="menu-wrap">
+        <button id="btn-open" title="Проекты и примеры">
+          <span class="icon">☰</span> Проекты
+        </button>
+        <div class="menu wide" id="open-menu">
+          <div class="menu-title">Примеры</div>
+          <div id="example-list"></div>
+          <div class="menu-title">Мои проекты</div>
+          <div id="project-list" class="project-list"></div>
+        </div>
+      </div>
+      <button id="btn-save" title="Сохранить проект (Ctrl+S)">
+        <span class="icon">✎</span> Сохранить
+      </button>
+      <button id="btn-help" title="Справочник команд">
+        <span class="icon">?</span> Справка
+      </button>
+    </div>
+  </header>
+
+  <main class="layout">
+    <section class="panel editor-panel">
+      <div class="panel-head">
+        <div class="panel-title">Сценарий</div>
+        <div class="panel-tools">
+          <label class="switch" title="Перестраивать автоматически после паузы">
+            <input type="checkbox" id="autobuild" checked />
+            <span>авто</span>
+          </label>
+          <button id="btn-format" class="mini" title="Выровнять отступы">⤢</button>
+        </div>
+      </div>
+      <div class="editor-wrap">
+        <div class="gutter" id="gutter"></div>
+        <textarea id="code" spellcheck="false" autocomplete="off" autocapitalize="off"
+                  placeholder="корпус = lathe points=[[0,0],[40,0],[42,90],[38,90],[38,4],[0,4]] segments=128"></textarea>
+      </div>
+      <div class="error-bar" id="error-bar" hidden>
+        <span class="error-icon">!</span>
+        <div class="error-text">
+          <div id="error-msg"></div>
+          <div id="error-hint" class="error-hint"></div>
+        </div>
+      </div>
+      <div class="editor-foot">
+        <span id="cursor-pos">стр. 1, кол. 1</span>
+        <span id="script-stats"></span>
+      </div>
+    </section>
+
+    <section class="panel viewer-panel">
+      <div class="panel-head">
+        <div class="panel-title">Модель</div>
+        <div class="view-tools">
+          <button class="mini view-btn active" data-view="iso" title="Изометрия">изо</button>
+          <button class="mini view-btn" data-view="front" title="Спереди">спереди</button>
+          <button class="mini view-btn" data-view="right" title="Справа">справа</button>
+          <button class="mini view-btn" data-view="top" title="Сверху">сверху</button>
+          <button class="mini" id="btn-grid" title="Сетка">сетка</button>
+          <button class="mini" id="btn-wire" title="Каркас">каркас</button>
+          <button class="mini" id="btn-spin" title="Автоповорот">⟳</button>
+          <button class="mini" id="btn-shot" title="Сохранить картинку">⤓</button>
+        </div>
+      </div>
+      <div id="viewer" class="viewer">
+        <div class="viewer-empty" id="viewer-empty">
+          <div class="big-logo">Ф</div>
+          <p>Нажмите «Собрать», чтобы увидеть модель</p>
+        </div>
+        <div class="dim-overlay" id="dim-overlay" hidden></div>
+        <div class="viewer-badge" id="viewer-badge" hidden></div>
+        <div class="loader" id="loader" hidden><div class="spinner"></div><span>Строим…</span></div>
+      </div>
+      <div class="render-strip" id="render-strip" hidden></div>
+    </section>
+
+    <section class="panel report-panel">
+      <div class="tabs" id="tabs">
+        <button class="tab active" data-tab="report">Отчёт</button>
+        <button class="tab" data-tab="checks">Проверки</button>
+        <button class="tab" data-tab="objects">Объекты</button>
+        <button class="tab" data-tab="assist">Помощник</button>
+      </div>
+      <div class="tab-body">
+        <div class="tab-page active" id="page-report">
+          <div class="verdict" id="verdict" hidden></div>
+          <pre class="report-text" id="report-text">Здесь появится словесный отчёт: габариты, объём, масса, толщина стенок, симметрия, замечания.</pre>
+        </div>
+        <div class="tab-page" id="page-checks">
+          <div class="checks-head">
+            <span id="checks-summary">Проверки не заданы</span>
+          </div>
+          <div id="checks-list" class="checks-list"></div>
+          <div class="hint-box">
+            Добавьте в сценарий строки проверок — и приложение само скажет, что не так:
+            <code>check кружка height 90..110</code>,
+            <code>check кружка wall 3..5</code>,
+            <code>check кружка watertight</code>.
+          </div>
+        </div>
+        <div class="tab-page" id="page-objects">
+          <div id="objects-list" class="objects-list"></div>
+          <div class="hint-box" id="objects-summary"></div>
+        </div>
+        <div class="tab-page" id="page-assist">
+          <p class="assist-intro">
+            Опишите словами, что нужно изменить. Приложение соберёт готовый запрос
+            для нейросети: текущий сценарий, отчёт о результате и справочник команд.
+          </p>
+          <textarea id="goal" class="goal" placeholder="Например: сделай ручку толще и добавь сужение книзу, чтобы кружка была устойчивее"></textarea>
+          <div class="assist-actions">
+            <button id="btn-prompt" class="primary small">Сформировать запрос</button>
+            <button id="btn-copy" class="small">Копировать</button>
+            <button id="btn-prompt-save" class="small">Сохранить .md</button>
+          </div>
+          <textarea id="prompt-out" class="prompt-out" readonly placeholder="Здесь появится текст запроса"></textarea>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="statusbar">
+    <span class="status-item" id="status-state">готово</span>
+    <span class="status-item" id="status-time"></span>
+    <span class="status-item" id="status-tris"></span>
+    <span class="status-item" id="status-size"></span>
+    <span class="status-item" id="status-parts"></span>
+    <span class="status-spacer"></span>
+    <span class="status-item muted" id="status-version"></span>
+  </footer>
+
+  <div class="modal" id="help-modal" hidden>
+    <div class="modal-card">
+      <div class="modal-head">
+        <strong>Справочник команд</strong>
+        <button class="mini" id="help-close">✕</button>
+      </div>
+      <input type="search" id="help-search" placeholder="Поиск команды или параметра…" />
+      <div class="modal-body" id="help-body"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast" hidden></div>
+
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>

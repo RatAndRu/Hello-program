@@ -62,3 +62,25 @@ start_tray_server.vbs
 - `tray_server.py`.
 
 Он не должен закрывать все Python-приложения подряд.
+
+---
+
+## ФОРМА 3D — параметрический 3D-редактор (папка `forma/`)
+
+Приложение для Windows на Python: модели задаются текстовым сценарием, строятся
+надёжным геометрическим ядром (замкнутые тела, булевы операции), показываются
+в 3D, **проверяются словами** (габариты, объём, масса, толщина стенок,
+симметрия, герметичность) и экспортируются в GLB/STL/OBJ.
+
+```forma
+корпус = lathe points=[[0,0],[42,0],[42,95],[0,95]] segments=144 thickness=4 open=top
+ручка  = sweep path=[[40,0,28],[58,0,28],[67,0,42],[67,0,62],[58,0,76],[40,0,76]] width=9 height=13 smooth=10
+кружка = union [корпус, ручка]
+check кружка watertight
+check кружка wall 3..5
+```
+
+* Исходники и справка: [`forma/README.md`](forma/README.md)
+* EXE и ZIP собираются в GitHub Actions: **Actions → «Собрать Windows EXE — Форма 3D»**,
+  файлы появляются в **Releases** (`Forma3D-<версия>-windows.zip` и `Forma3D.exe`).
+* Запуск из исходников: `cd forma && pip install -r requirements.txt && python run_forma.py`

@@ -1,0 +1,23 @@
+# Шестерня: диск, 16 зубьев по кругу, отверстие под вал и облегчающие окна.
+
+зубьев = 16
+радиус = 60
+толщина = 12
+
+диск = cylinder radius=радиус height=толщина segments=128
+зуб = box size=[22,16,толщина] at=[радиус + 5, 0, 0]
+зубья = array [зуб] count=зубьев mode=radial around=z center=[0,0,0]
+заготовка = union [диск, зубья]
+
+вал = cylinder radius=10 height=толщина*4 at=[0,0,-толщина]
+окно = cylinder radius=13 height=толщина*4 at=[36,0,-толщина]
+окна = array [окно] count=6 mode=radial around=z center=[0,0,0]
+
+шестерня = difference [заготовка, вал, окна]
+color шестерня #c9873c material=steel
+
+check шестерня watertight
+check шестерня parts 1
+check шестерня height 11..13
+check шестерня width 145..160
+check шестерня genus 7

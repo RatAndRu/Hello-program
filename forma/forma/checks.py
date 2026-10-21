@@ -1,0 +1,325 @@
+"""Проверки модели, записанные прямо в сценарии.
+
+    check кружка watertight
+    check кружка height 90..110
+    check кружка wall 3..5
+    check кружка symmetric y
+    check ручка gap корпус 0.5..2
+
+Результат — набор понятных вердиктов с фактическими значениями.
+"""
+
+from __future__ import annotations
+
+from .errors import FormaError
+from .values import Range, fmt, parse_value
+
+RULE_ALIASES = {
+    "герметичность": "watertight", "замкнутость": "watertight", "замкнутая": "watertight",
+    "род": "genus", "отверстия": "genus",
+    "части": "parts", "частей": "parts",
+    "размер": "size", "размеры": "size",
+    "высота": "height", "ширина": "width", "глубина": "depth",
+    "объём": "volume", "объем": "volume",
+    "масса": "mass", "вес": "mass",
+    "стенка": "wall", "стенки": "wall", "толщина": "wall", "толщина_стенок": "wall",
+    "дно": "flat_bottom", "плоское_дно": "flat_bottom",
+    "нависания": "overhang", "нависание": "overhang",
+    "симметрия": "symmetric", "симметричность": "symmetric",
+    "зазор": "gap", "расстояние": "gap",
+    "внутри": "inside",
+    "треугольники": "tris", "трис": "tris",
+}
+
+RULE_LABELS = {
+    "watertight": "герметичность",
+    "genus": "сквозные отверстия",
+    "parts": "число частей",
+    "size": "габариты",
+    "height": "высота",
+    "width": "ширина",
+    "depth": "глубина",
+    "volume": "объём",
+    "mass": "масса",
+    "wall": "толщина стенок",
+    "flat_bottom": "плоское дно",
+    "overhang": "нависания",
+    "symmetric": "симметрия",
+    "gap": "зазор",
+    "inside": "вложенность",
+    "tris": "треугольники",
+}
+
+UNITS = {
+    "size": "мм", "height": "мм", "width": "мм", "depth": "мм",
+    "volume": "см³", "mass": "г", "wall": "мм", "gap": "мм",
+    "flat_bottom": "%", "overhang": "%", "symmetric": "%",
+    "tris": "трис", "genus": "шт", "parts": "шт",
+}
+
+AXES = {"x": 0, "y": 1, "z": 2, "ширина": 0, "глубина": 1, "высота": 2,
+        "width": 0, "depth": 1, "height": 2}
+AXIS_LABEL = {0: "ширина (X)", 1: "глубина (Y)", 2: "высота (Z)"}
+
+
+def _result(ok: bool, rule: str, text: str, target: str, line: int,
+            actual=None, expected: str = "", label: str | None = None) -> dict:
+    return {
+        "ok": bool(ok),
+        "rule": rule,
+        "label": label or RULE_LABELS.get(rule, rule),
+        "text": text,
+        "target": target,
+        "line": line,
+        "actual": actual,
+        "expected": expected,
+    }
+
+
+class _ValueScope(dict):
+    """Параметры сцены плюс доступ к наборам значений (словарям, спискам)."""
+
+    def __init__(self, scene):
+        super().__init__(getattr(scene, "params", {}) or {})
+        self.variables = getattr(scene, "vars", {}) or {}
+
+
+def _parse_value(raw, scope):
+    if isinstance(scope, _ValueScope):
+        return parse_value(raw, dict(scope), scope.variables)
+    return parse_value(raw, scope or {}, None)
+
+
+def _parse_range(raw: str, params) -> Range:
+    if hasattr(params, "params"):
+        params = params.params
+    value = _parse_value(raw, params)
+    if isinstance(value, Range):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return Range(float(value), float(value))
+    if isinstance(value, (list, tuple)) and len(value) == 2:
+        lo = float(value[0]) if value[0] is not None else None
+        hi = float(value[1]) if value[1] is not None else None
+        return Range(lo, hi)
+    raise FormaError(f"«{raw}» — не диапазон. Пример: 3..5, ..10 или 90.")
+
+
+def _range_verdict(value: float, rng: Range, unit: str) -> tuple[bool, str]:
+    ok = rng.contains(value)
+    if ok:
+        return True, "в норме"
+    if rng.lo is not None and value < rng.lo:
+        return False, "меньше нормы"
+    if rng.hi is not None and value > rng.hi:
+        return False, "больше нормы"
+    return False, "вне диапазона"
+
+
+def _fmt_range(rng: Range, unit: str) -> str:
+    text = rng.describe()
+    if unit == "%":
+        return f"{text}%"
+    return f"{text} {unit}".strip()
+
+
+def _num(value, unit: str, digits: int = 2) -> str:
+    if isinstance(value, int):
+        s = f"{value:,}".replace(",", " ")
+    else:
+        s = fmt(value, digits)
+    if unit == "%":
+        return f"{s}%"
+    return f"{s} {unit}".strip()
+
+
+RULES = {"watertight", "genus", "parts", "size", "height", "width", "depth", "volume",
+         "mass", "wall", "flat_bottom", "overhang", "symmetric", "gap", "inside", "tris"}
+
+
+def evaluate_checks(scene, cache) -> list[dict]:
+    results: list[dict] = []
+    for spec in scene.checks:
+        target_name = spec["target"]
+        rule_raw = (spec["rule"] or "").lower()
+        rule = RULE_ALIASES.get(rule_raw, rule_raw)
+        line = spec.get("line", 0)
+        args = spec.get("args", [])
+        if rule not in RULES:
+            results.append(_result(False, rule_raw or "?", 
+                                   f"неизвестное правило «{spec['rule']}» "
+                                   f"(доступно: {', '.join(sorted(RULES))})",
+                                   target_name, line))
+            continue
+        try:
+            solid = scene.resolve(target_name)
+        except FormaError as exc:
+            results.append(_result(False, rule, exc.message + (f" {exc.hint}" if exc.hint else ""),
+                                   target_name, line))
+            continue
+        try:
+            results.append(_evaluate_one(solid, rule, args, line, cache))
+        except FormaError as exc:
+            text = exc.message + (f" {exc.hint}" if exc.hint else "")
+            results.append(_result(False, rule, text, target_name, line))
+        except Exception as exc:  # pragma: no cover
+            results.append(_result(False, rule, f"ошибка проверки: {exc}", target_name, line))
+    return results
+
+
+def _evaluate_one(solid, rule: str, args: list[str], line: int, cache) -> dict:
+    name = solid.name
+    data = cache.get(solid)
+    unit = UNITS.get(rule, "")
+    label = RULE_LABELS.get(rule, rule)
+
+    if rule == "watertight":
+        ok = data["status"] == "NoError"
+        text = "оболочка замкнута (герметична)" if ok else f"оболочка не замкнута ({data['status']})"
+        return _result(ok, rule, text, name, line, ok, label=label)
+
+    if rule == "genus":
+        if not args:
+            raise FormaError("Укажите ожидаемый род: check объект genus 1")
+        rng = _parse_range(args[0], cache_scene(cache))
+        value = data["genus"]
+        ok, verdict = _range_verdict(value, rng, "")
+        return _result(ok, rule, f"{label}: {value} — {verdict} ({_fmt_range(rng, '')})",
+                       name, line, value, _fmt_range(rng, ""), label)
+
+    if rule == "parts":
+        rng = _parse_range(args[0], cache_scene(cache)) if args else Range(1, 1)
+        value = data["parts"]
+        ok, verdict = _range_verdict(value, rng, "")
+        return _result(ok, rule, f"{label}: {value} — {verdict} ({_fmt_range(rng, '')})",
+                       name, line, value, _fmt_range(rng, ""), label)
+
+    if rule in ("size", "height", "width", "depth"):
+        size = data["size"]
+        scene = cache_scene(cache)
+        if rule == "size":
+            if not args:
+                raise FormaError("Укажите диапазоны: check объект size 80..100 80..100 90..110")
+            if len(args) == 1:
+                rng = _parse_range(args[0], scene)
+                ok = all(rng.contains(v) for v in size)
+                actual_text = f"{fmt(size[0])} × {fmt(size[1])} × {fmt(size[2])} мм"
+                exp = _fmt_range(rng, "мм") + " по каждой оси"
+                verdict = "в норме" if ok else "вне диапазона"
+                return _result(ok, rule, f"{label}: {actual_text} — {verdict} ({exp})",
+                               name, line, list(size), exp, label)
+            if len(args) == 3:
+                ranges = [_parse_range(a, scene) for a in args]
+                oks = [r.contains(v) for r, v in zip(ranges, size)]
+                ok = all(oks)
+                actual_text = f"{fmt(size[0])} × {fmt(size[1])} × {fmt(size[2])} мм"
+                exp = " × ".join(_fmt_range(r, "мм") for r in ranges)
+                verdict = "в норме" if ok else "не совпадает"
+                return _result(ok, rule, f"{label}: {actual_text} — {verdict} ({exp})",
+                               name, line, list(size), exp, label)
+            raise FormaError("Для size нужен 1 диапазон (все оси) или 3 (X, Y, Z).")
+        idx = {"height": 2, "width": 0, "depth": 1}[rule]
+        if not args:
+            raise FormaError(f"Укажите диапазон: check объект {rule} 90..110")
+        rng = _parse_range(args[0], scene)
+        value = size[idx]
+        ok, verdict = _range_verdict(value, rng, "мм")
+        return _result(ok, rule, f"{label}: {_num(value, 'мм')} — {verdict} ({_fmt_range(rng, 'мм')})",
+                       name, line, value, _fmt_range(rng, "мм"), label)
+
+    if rule in ("volume", "mass", "wall", "flat_bottom", "overhang", "tris"):
+        if not args:
+            raise FormaError(f"Укажите диапазон: check объект {rule} 3..5")
+        rng = _parse_range(args[0], cache_scene(cache))
+        if rule == "wall":
+            wall = data.get("wall")
+            if not wall:
+                return _result(False, rule,
+                               f"{label}: полости не найдено — объект сплошной "
+                               f"(проверка толщины применима к полым телам)",
+                               name, line, None, _fmt_range(rng, "мм"), label)
+            value = wall["median"]
+        elif rule == "volume":
+            value = data["volume_cm3"]
+        elif rule == "mass":
+            value = data["mass_g"]
+        elif rule == "tris":
+            value = data["tris"]
+        else:
+            value = data[f"{rule}_pct"]
+        ok, verdict = _range_verdict(value, rng, unit)
+        digits = 0 if rule in ("tris", "mass") else 2
+        actual_text = _num(int(value) if rule == "tris" else value, unit, digits)
+        return _result(ok, rule, f"{label}: {actual_text} — {verdict} ({_fmt_range(rng, unit)})",
+                       name, line, value, _fmt_range(rng, unit), label)
+
+    if rule == "symmetric":
+        if not args:
+            raise FormaError("Укажите ось симметрии: check объект symmetric y")
+        axis = args[0].lower().strip()
+        axis = {"ширина": "x", "глубина": "y", "высота": "z"}.get(axis, axis)
+        if axis not in ("x", "y", "z"):
+            raise FormaError("Ось симметрии должна быть x, y или z.")
+        tol = 1.0
+        if len(args) > 1:
+            tol_val = _parse_value(args[1], cache_scene(cache))
+            if isinstance(tol_val, (int, float)):
+                tol = float(tol_val)
+        plane = 0.0
+        if len(args) > 2:
+            plane_val = _parse_value(args[2], cache_scene(cache))
+            if isinstance(plane_val, (int, float)):
+                plane = float(plane_val)
+        err = cache.symmetry(solid, axis, plane)
+        if err is None:
+            return _result(True, rule, f"{label} по {axis.upper()}: слишком тяжёлая сетка — пропущено",
+                           name, line, None, f"≤ {fmt(tol)}%", label)
+        ok = err <= tol
+        return _result(ok, rule,
+                       f"{label} по {axis.upper()}: отклонение {fmt(err, 3)}% "
+                       f"({'в норме' if ok else 'нарушена'}, допуск {fmt(tol)}%)",
+                       name, line, err, f"≤ {fmt(tol)}%", label)
+
+    if rule == "gap":
+        if not args:
+            raise FormaError("Укажите второй объект: check ручка gap корпус 0.5..2")
+        scene = _scene(cache)
+        other = scene.resolve(args[0], "объект")
+        rng = _parse_range(args[1], scene) if len(args) > 1 else Range(0.0, None)
+        search = max(rng.hi if rng.hi is not None else 50.0, 10.0) * 1.2
+        try:
+            gap = solid.manifold.min_gap(other.manifold, search)
+        except Exception:
+            gap = 0.0
+        capped = gap >= search * 0.999
+        ok = rng.contains(gap)
+        actual_text = f">{fmt(search)} мм" if capped else _num(gap, "мм")
+        return _result(ok, rule, f"{label} до «{other.name}»: {actual_text} "
+                                 f"({'в норме' if ok else 'не в норме'}, нужно {_fmt_range(rng, 'мм')})",
+                       name, line, gap, _fmt_range(rng, "мм"), label)
+
+    if rule == "inside":
+        if not args:
+            raise FormaError("Укажите объект: check полость inside корпус")
+        scene = _scene(cache)
+        other = scene.resolve(args[0], "объект")
+        diff = (solid.manifold - other.manifold).volume()
+        ok = diff <= max(solid.manifold.volume() * 1e-4, 0.05)
+        return _result(ok, rule,
+                       f"«{name}» {'целиком внутри' if ok else 'выходит за пределы'} «{other.name}»"
+                       + ("" if ok else f" (лишний объём {fmt(diff / 1000)} см³)"),
+                       name, line, diff, "внутри", label)
+
+    raise FormaError(f"Правило «{rule}» не поддерживается.")
+
+
+def _scene(cache):
+    return getattr(cache, "scene", None)
+
+
+def cache_scene(cache):
+    """Параметры сцены для разбора выражений в проверках."""
+    scene = getattr(cache, "scene", None)
+    if scene is None:
+        return {}
+    return _ValueScope(scene)
