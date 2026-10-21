@@ -180,7 +180,7 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
     if (shouldStop()) throw new Error('stopped');
     const d = await decodeBlob(blobs[i], PROC_W);
     const ms = detectMarkers(toGray(d.rgba, d.w, d.h), d.w, d.h);
-    const K0 = { fx: 0.7 * d.w, fy: 0.7 * d.w, cx: d.w / 2, cy: d.h / 2 };
+    const f00 = 0.75 * Math.max(d.w, d.h), K0 = { fx: f00, fy: f00, cx: d.w / 2, cy: d.h / 2 };
     const p = poseOf(ms, K0, 1e9);
     if (p && p.n >= 2) { eqs.push(...focalEqs(p.H, d.w / 2, d.h / 2)); frames.push({ ...d, ms, p, idx: i, blob: blobs[i] }); }
     cb.progress(tag + 'Метки на кадрах', (i + 1) / blobs.length, `${frames.length} из ${i + 1} кадров с метками`);
@@ -189,7 +189,8 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   if (frames.length < 8) throw new Error(`${tag}коврик найден только на ${frames.length} кадрах — нужно хотя бы 8. Сними ещё раз: все метки по кругу должны быть видны, без бликов.`);
   // 2) фокус камеры (по всем кадрам) и точные позы
   const w = frames[0].w, h = frames[0].h;
-  let f0 = focalFromEqs(eqs); if (!(f0 > 0.4 * w && f0 < 1.6 * w)) f0 = 0.75 * w;
+  const L0 = Math.max(w, h); // вертикальный кадр: фокус считаем от длинной стороны
+  let f0 = focalFromEqs(eqs); if (!(f0 > 0.35 * L0 && f0 < 2 * L0)) f0 = 0.75 * L0;
   const rf = refineFocal(frames.map((f) => f.p), { fx: f0, fy: f0, cx: w / 2, cy: h / 2 });
   const K = { fx: rf.f, fy: rf.f, cx: w / 2, cy: h / 2 };
   log(`${tag}фокус ${rf.f.toFixed(0)} px (угол обзора ${(2 * Math.atan(w / 2 / rf.f) * 180 / Math.PI).toFixed(0)}°), ошибка ${rf.rms.toFixed(2)} px`);
@@ -212,15 +213,19 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
     }
   }
   // 3) маски «где предмет»
-  let withPlate = 0;
+  let withPlate = 0, nTrust = 0;
   for (let i = 0; i < good.length; i++) {
     if (shouldStop()) throw new Error('stopped');
-    const m = computeMask(good[i], { layout: L, mr, Rb, Hb, cutOnly: turn, offMat: !turn, clean: clean.length ? clean : null });
-    good[i].mask = m.mask; if (m.stats.plate) withPlate++;
+    // enclose: кадр, где предмет целиком на листе (силуэт замкнут фоном коврика), — «доверенный»: за листом в нём
+    // только фон, и его «фон» срезает шапку, даже если низкие ракурсы там видят лишь «неизвестно»
+    const m = computeMask(good[i], { layout: L, mr, Rb, Hb, cutOnly: turn, offMat: !turn, clean: clean.length ? clean : null, enclose: true });
+    good[i].mask = m.mask; good[i].trusted = !!m.stats.enclosed; if (good[i].trusted) nTrust++; if (m.stats.plate) withPlate++;
     cb.progress(tag + 'Отделяю предмет от коврика', (i + 1) / good.length, `кадр ${i + 1} из ${good.length}`);
     if (i % 2) await tick();
   }
   if (clean.length) log(`${tag}кадр фона: ${clean.length} шт., совпал с ${withPlate} кадрами из ${good.length} — пространство над предметом вырезано и по фону за кругом`);
+  if (nTrust) log(`${tag}предмет целиком на листе в ${nTrust} кадрах из ${good.length} — по ним срезано лишнее над предметом`);
+  else if (!withPlate) log(`${tag}ни в одном кадре предмет не лежит целиком на листе — «шапку» над ним срезать нечем: оборот повыше (от ~50°), коврик A3 или «Фон»`);
   const els = good.map((f) => f.ang.el);
   return { withPlate, good, rf, L, Rb, Hb, turn, elMax: Math.max(...els), elMin: Math.min(...els) };
 }

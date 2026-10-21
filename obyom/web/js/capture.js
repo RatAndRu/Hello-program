@@ -101,8 +101,19 @@ export class Capture {
       return;
     }
     const ms = detectMarkers(g, w, h);
-    const f = this.f || 0.75 * w, K = { fx: f, fy: f, cx: w / 2, cy: h / 2 };
+    // Фокус. Догадка — по ДЛИННОЙ стороне кадра (телефон в держателе стоит вертикально: кадр 720×1280,
+    // а «0.75 × ширина» занижала фокус в 1.7 раза → поза не сходилась никогда: «поза неточная» на любом ракурсе).
+    // Уточнение — по гомографиям коврика: они от фокуса не зависят, поэтому уравнения копятся с любого кадра
+    // с ≥3 метками, а не только с уже «сошедшейся» позой (иначе замкнутый круг).
+    if (this.fDims !== w + 'x' + h) { this.fDims = w + 'x' + h; this.eqs = []; this.f = null; }
+    const L0 = Math.max(w, h);
+    let f = this.f || 0.75 * L0, K = { fx: f, fy: f, cx: w / 2, cy: h / 2 };
     let p = ms.length ? poseFromMarkers(ms, this.L, K) : null;
+    if (p && p.n >= 3 && p.H && this.eqs.length < 600) {
+      this.eqs.push(...focalEqs(p.H, w / 2, h / 2));
+      if (this.eqs.length >= 6) { const nf = focalFromEqs(this.eqs); if (nf > 0.4 * L0 && nf < 2 * L0) this.f = nf; }
+    }
+    if (p && p.rms >= 3 && this.f && Math.abs(this.f - f) > 0.02 * f) { f = this.f; K = { fx: f, fy: f, cx: w / 2, cy: h / 2 }; p = poseFromMarkers(ms, this.L, K); }
     const ringN = ms.filter((m) => m.id < 16).length;
     // вертушка: по кольцу не вышло — пробуем весь лист (если он крутится целиком, угловые метки тоже годятся;
     // если лист свисает/гнётся — поза не сойдётся и будет отброшена)
@@ -113,7 +124,6 @@ export class Capture {
     const st = { native: !!this.native, camFps: this.native ? this.src.fps : null, found: false, markers: ms.length, ring: ringN, poseRms: p ? p.rms : null, poseN: p ? p.n : 0, w, h, ms, count: this.shots.length, fps: this.fps || 0, step, restarts: this.restarts || 0 };
     let a = null, sh;
     if (p && p.n >= 2 && p.rms < 3) {
-      if (this.eqs.length < 400 && p.n >= 3) { this.eqs.push(...focalEqs(p.H, w / 2, h / 2)); if (this.eqs.length >= 12) { const nf = focalFromEqs(this.eqs); if (nf > 0.45 * w && nf < 1.6 * w) this.f = nf; } }
       a = camAngles(p.R, p.t);
       // скорость: угол между направлениями на камеру (в системе коврика) за секунду
       let speed = 0;

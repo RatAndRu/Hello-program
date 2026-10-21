@@ -212,7 +212,7 @@ class MainActivity : Activity() {
         } catch (e: Exception) { "Не удалось сохранить: ${e.message}" }
 
         @JavascriptInterface
-        fun version(): String = "1.7"
+        fun version(): String = "1.8"
 
         /** Включить свою камеру: "ok", "perm" (ждём разрешения — спросить ещё раз позже) или текст ошибки. */
         @JavascriptInterface

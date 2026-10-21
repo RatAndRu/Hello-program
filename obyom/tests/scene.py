@@ -141,7 +141,7 @@ def look(cam, target):
 frames = []
 for i in range(N):
     if mode == 'spin':  # вертушка, раскрученная рукой: 10 к/с, ω0 = 120°/с, затухание τ = 5 с, держатель на 35°
-        tt = i / 10.0; az = 120 * 5 * (1 - np.exp(-tt / 5)); el = 35; dist = 380
+        tt = i / 10.0; az = 120 * 5 * (1 - np.exp(-tt / 5)); el = float(os.environ.get('EL', 35)); dist = 380  # EL — высота держателя
         frames_w = 120 * np.exp(-tt / 5)
     elif mode == 'turn':
         az = i * 360 / N; el = [32, 52][i % 2]; dist = 380

@@ -258,6 +258,29 @@ export function computeMask(fr, ctx) {
       for (let q = 0; q < n; q++) if (mask[q] === 3 && near2[q]) mask[q] = 1;
     }
   }
+  // «Предмет целиком на листе»: если силуэт со всех сторон окружён фоном коврика, за краем листа предмета быть
+  // не может — тогда всё за листом в этом кадре (стол, стена) — фон, и по нему вырезается пространство над предметом
+  // («шапка»). Проверка: заливка от «за листом» по всему, что не подтверждённый фон (0). Если она заходит на лист
+  // дальше узкой кромки у края — что-то (предмет, в т. ч. неуверенно распознанный белый) тянется с листа за край:
+  // высокий предмет под низким углом. Такой кадр не трогаем, иначе срежется настоящий верх.
+  let enclosed = false;
+  if (ctx.enclose) {
+    const off = new Uint8Array(n); let offN = 0;
+    for (let i = 0; i < n; i++) if (inCyl[i] && des[i] < 0) { off[i] = 1; offN++; }
+    if (offN > 0) {
+      const band = dilate(off, w, h, ctx.encBand ?? 6);
+      const vis = new Uint8Array(n), st = new Int32Array(n); let sp = 0, touch = 0;
+      const tmax = ctx.encTol ?? 15;
+      for (let i = 0; i < n; i++) if (off[i] && mask[i] !== 0) { vis[i] = 1; st[sp++] = i; }
+      while (sp && touch <= tmax) {
+        const j = st[--sp], x = j % w, y = (j / w) | 0;
+        if (des[j] >= 0 && !band[j]) touch++;
+        const nb4 = [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1];
+        for (const k of nb4) if (k >= 0 && !vis[k] && mask[k] !== 0) { vis[k] = 1; st[sp++] = k; }
+      }
+      if (touch <= tmax) { enclosed = true; for (let i = 0; i < n; i++) if (off[i]) mask[i] = 0; }
+    }
+  }
   // осторожность у границ: фон рядом с «не фоном» — в неизвестное
   const notBg = new Uint8Array(n); for (let i = 0; i < n; i++) notBg[i] = mask[i] === 1 || mask[i] === 2 ? 1 : 0;
   const grown = dilate(notBg, w, h, 1);
@@ -265,7 +288,7 @@ export function computeMask(fr, ctx) {
   // 4 — «нет сведений»: за листом, ничем не подтверждено (ни фоном, ни отличием от кадра фона).
   // Такие кадры не считаются «видевшими» воксель: иначе они раздувают порог доли и над предметом остаётся шапка.
   if (ctx.mark4) for (let i = 0; i < n; i++) if (mask[i] === 1 && des[i] < 0 && inCyl[i]) mask[i] = 4;
-  return { mask, stats: { ok: true, rho, bgFrac: nb / n, plate: PL ? { shift: PL.shift, agree: PL.agree } : null } };
+  return { mask, stats: { ok: true, rho, bgFrac: nb / n, enclosed, plate: PL ? { shift: PL.shift, agree: PL.agree } : null } };
 }
 // Кадр фона (clean plate): телефон в держателе неподвижен, всё за листом (стол, стена) от кадра к кадру не меняется,
 // а предмет на вертушке закрывает часть этого фона. Пиксель за листом, совпавший с фоном, — «здесь пусто»:
@@ -394,7 +417,7 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   const F = order.map(i => frames[i]);
   // Сколько кадров должны сказать «здесь фон», чтобы вырезать воксель. Не «любые два», а доля от видевших:
   // блики на блестящем предмете дают ложный «фон» в отдельных кадрах — они больше не прорезают дыры.
-  const frac = opt.frac ?? 0.08, few = frames.length < 8;
+  const frac = opt.frac ?? 0.08, few = frames.length < 8, tfrac = opt.trustFrac ?? 0.1;
   for (let z = 0; z < nz; z++) {
     const Z = oz + z * vs;
     for (let y = 0; y < ny; y++) {
@@ -402,7 +425,7 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
       for (let x = 0; x < nx; x++) {
         const X = ox + x * vs;
         if (X * X + Y * Y > box.Rb * box.Rb) continue;
-        let bg = 0, weak = 0, seen = 0, left = F.length;
+        let bg = 0, weak = 0, seen = 0, left = F.length, tbg = 0, tseen = 0;
         for (let k = 0; k < F.length; k++, left--) {
           const f = F[k], R = f.R, t = f.t, K = f.K;
           const cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
@@ -411,11 +434,15 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
           const mv = f.mask[v * f.w + u]; if (mv === 4) continue;
           seen++;
           if (mv === 0) bg++; else if (mv === 3) weak++;
+          if (f.trusted) { tseen++; if (mv === 0) tbg++; }
           // досрочно: уже точно вырезан (даже если все оставшиеся кадры увидят точку)
           if (!few && bg >= 2 && bg >= frac * (seen + left - 1)) break;
         }
         const need = few ? 1 : Math.max(2, Math.ceil(frac * seen));
-        occ[(z * ny + y) * nx + x] = carveVote(bg, weak, seen, frac, few, opt.weakMaj) ? 0 : 1;
+        // «Доверенные» кадры (предмет целиком на листе, силуэт замкнут фоном коврика) голосуют ещё и между собой:
+        // их «фон» не перевешивается «неизвестно» из низких ракурсов (тень, край листа) — так срезается шапка.
+        const trustCut = tseen >= 3 && tbg >= Math.max(2, Math.ceil(tfrac * tseen));
+        occ[(z * ny + y) * nx + x] = trustCut || carveVote(bg, weak, seen, frac, few, opt.weakMaj) ? 0 : 1;
       }
     }
     if (onProgress && (z & 3) === 0) onProgress(z / nz);

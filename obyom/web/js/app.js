@@ -9,7 +9,7 @@ import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '1.7';
+export const VERSION = '1.8';
 const $ = (id) => document.getElementById(id);
 const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
