@@ -1,0 +1,41 @@
+name: BlueLink — диагностика сборки
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Собрать и сохранить лог
+        working-directory: bluelink/android
+        run: |
+          set +e
+          gradle assembleDebug --stacktrace > /tmp/build.log 2>&1
+          echo "EXIT=$?" >> /tmp/build.log
+          tail -c 60000 /tmp/build.log > /tmp/build-tail.log
+      - name: Положить лог в ветку bluelink-build-log
+        if: always()
+        run: |
+          cd "$RUNNER_TEMP"
+          mkdir logrepo && cd logrepo
+          git init -q
+          git config user.name "ci-bot"
+          git config user.email "ci@example.com"
+          cp /tmp/build-tail.log ./build.log
+          git add build.log
+          git commit -q -m "build log"
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:refs/heads/bluelink-build-log
