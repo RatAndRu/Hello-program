@@ -871,8 +871,33 @@ class BleCentral(private val ctx: Context) {
                         else -> BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
                     }
                     if (Build.VERSION.SDK_INT >= 33) {
-                        g.writeCharacteristic(c, payload, type) ==
-                            android.bluetooth.BluetoothStatusCodes.SUCCESS
+                        val code = g.writeCharacteristic(c, payload, type)
+                        val ok = code == android.bluetooth.BluetoothStatusCodes.SUCCESS
+                        if (!ok) {
+                            // Часть прошивок принимает только запись с подтверждением:
+                            // пробуем её, прежде чем считать команду потерянной.
+                            val supportsResponse =
+                                (c.properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0
+                            if (type == BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE &&
+                                supportsResponse
+                            ) {
+                                val second = g.writeCharacteristic(
+                                    c, payload, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                                )
+                                if (second == android.bluetooth.BluetoothStatusCodes.SUCCESS) {
+                                    emit {
+                                        it.onLog(
+                                            "Запись: принята только с подтверждением " +
+                                                "(${GattNames.uuidLabel(c.uuid)})"
+                                        )
+                                    }
+                                    // Ждём onCharacteristicWrite — он и закроет операцию.
+                                    return true
+                                }
+                            }
+                            emit { it.onLog("Запись отклонена стеком: код $code") }
+                        }
+                        ok
                     } else {
                         c.writeType = type
                         c.value = payload

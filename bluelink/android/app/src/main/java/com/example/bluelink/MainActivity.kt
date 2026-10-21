@@ -159,6 +159,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     private var lastHeyRefreshAt = 0L
     private var writeFails = 0
+    private var userDisconnected = false
+    private var lastWasRing = false
+    private var ringReconnects = 0
     private var heySelfTestSeen = 0
     private var heySelfTestUntil = 0L
     private var heySelfTestWrites = 0
@@ -554,6 +557,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         }
         ensureBle {
             lastConnItem = item
+            // Тип нового устройства выяснится после чтения сервисов; до этого
+            // считаем, что это не кольцо, иначе переподключение сработает не туда.
+            lastWasRing = false
+            ringReconnects = 0
             connError = ""
             autoProfileFor = ""
             cameraProfile = null
@@ -592,6 +599,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     }
 
     private fun doDisconnect() {
+        userDisconnected = true
         connState = ConnState.DISCONNECTED
         gattServices = emptyList()
         batteryPercent = null
@@ -631,6 +639,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (name.isNotEmpty()) connName = name
         if (address.isNotEmpty() && state != ConnState.DISCONNECTED) connAddress = address
         if (state == ConnState.CONNECTING) {
+            userDisconnected = false
             gattServices = emptyList()
             batteryPercent = null
             batteryAttempted = false
@@ -639,6 +648,18 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             heyActionStatus = ""
         }
         if (state == ConnState.DISCONNECTED) {
+            // Кольцо иногда обрывает связь само (например, после потока измерений).
+            // Молча возвращаемся: пользователю не нужно жать «Подключить» заново.
+            if (lastWasRing && !userDisconnected && ringReconnects < 2 && connAddress.isNotEmpty()) {
+                val item = lastConnItem
+                if (item != null) {
+                    ringReconnects += 1
+                    addLog("Кольцо оборвало связь — переподключаюсь (попытка $ringReconnects)")
+                    ui.postDelayed({
+                        if (connState != ConnState.CONNECTED) connectTo(item)
+                    }, 1500)
+                }
+            }
             gattServices = emptyList()
             batteryPercent = null
             batteryAttempted = false
