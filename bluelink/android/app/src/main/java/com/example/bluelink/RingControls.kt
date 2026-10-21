@@ -163,6 +163,9 @@ object RingControls {
             Press(event.keyCode, event.scanCode, event.action, "окно приложения")
     }
 
+    /** Профиль HID Host в Android не имеет публичной константы — это номер 4. */
+    private const val HID_HOST_PROFILE = 4
+
     /** Что система думает про кольцо как про устройство ввода. */
     data class InputState(val devices: List<String>, val hidHost: Int, val hidHostText: String)
 
@@ -183,9 +186,9 @@ object RingControls {
             -1
         }
         val text = when (state) {
-            BluetoothProfile.STATE_CONNECTED -> "подключено как пульт"
-            BluetoothProfile.STATE_CONNECTING -> "подключается как пульт"
-            BluetoothProfile.STATE_DISCONNECTED -> "не подключено как пульт"
+            2 -> "подключено как пульт"
+            1 -> "подключается как пульт"
+            0 -> "не подключено как пульт"
             else -> "неизвестно"
         }
         return InputState(names, state, text)
@@ -194,7 +197,7 @@ object RingControls {
     private fun rawHidState(adapter: BluetoothAdapter): Int {
         return try {
             val m = BluetoothAdapter::class.java.getMethod("getProfileConnectionState", Int::class.javaPrimitiveType)
-            (m.invoke(adapter, BluetoothProfile.HID_HOST) as? Int) ?: -1
+            (m.invoke(adapter, HID_HOST_PROFILE) as? Int) ?: -1
         } catch (e: Exception) {
             -1
         }
