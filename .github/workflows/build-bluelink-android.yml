@@ -65,17 +65,28 @@ jobs:
           APK=bluelink/android/app/build/outputs/apk/release/app-release.apk
           EXPECTED="94:59:A5:7F:EA:9E:41:D0:C8:7E:B9:02:FB:DF:AB:6E:AF:63:17:B2:9F:1A:35:55:3F:8A:F0:C9:25:33:1B:A9"
           "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK" | head -5
-          ACTUAL=$("$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK" \
-            | sed -n 's/.*SHA-256 digest: //p' | head -1 | tr 'a-f' 'A-F')
-          echo "Отпечаток: $ACTUAL"
+          ACTUAL_RAW=$("$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK" \
+            | sed -n 's/.*SHA-256 digest: //p' | head -1)
+          ACTUAL=$(echo "$ACTUAL_RAW" | tr -d ':' | tr 'a-f' 'A-F')
+          echo "Отпечаток: $ACTUAL_RAW"
           if [ -n "$BLUELINK_KEYSTORE_FILE" ]; then
             echo "Используется ключ из секрета — сверка с эталоном пропущена"
-          elif [ "$ACTUAL" != "$EXPECTED" ]; then
+          elif [ "$ACTUAL" != "$(echo "$EXPECTED" | tr -d ':')" ]; then
             echo "::error::Отпечаток подписи изменился — обновление APK сломается"
             exit 1
           else
             echo "Подпись постоянная: обновления установятся поверх старой версии"
           fi
+
+      - name: Лог при ошибке (временный)
+        if: failure()
+        run: |
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs bluelink/android/app/build/outputs/apk/release/app-release.apk > /tmp/sig.txt 2>&1 || true
+          cd "$RUNNER_TEMP" && mkdir -p logrepo && cd logrepo
+          git init -q && git config user.name ci-bot && git config user.email ci@example.com
+          cp /tmp/sig.txt build.log
+          git add build.log && git commit -q -m sig || true
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:refs/heads/bluelink-build-log || true
 
       - name: Загрузить APK в Artifacts
         uses: actions/upload-artifact@v4
