@@ -67,7 +67,16 @@ def _run_selftest(report_path: str | None) -> int:
     return 0 if result["ok"] else 1
 
 
+def _utf8_stdout() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def main(argv=None) -> int:
+    _utf8_stdout()
     parser = argparse.ArgumentParser(description=f"{APP_NAME} {__version__}")
     parser.add_argument("--port", type=int, default=0, help="порт (0 — свободный)")
     parser.add_argument("--host", default="127.0.0.1", help="адрес прослушивания")

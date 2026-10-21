@@ -47,7 +47,10 @@ def main() -> int:
     text = TEMPLATE.format(nums=nums, title=APP_TITLE, version=__version__)
     out = ROOT / "packaging" / "version_info.txt"
     out.write_text(text, encoding="utf-8")
-    print(out)
+    try:
+        print(out)
+    except Exception:
+        print(str(out).encode("ascii", "replace").decode("ascii"))
     return 0
 
 

@@ -13,6 +13,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from forma.geometry import write_png  # noqa: E402
+
+
+def say(text: str) -> None:
+    try:
+        print(text, flush=True)
+    except Exception:
+        print(text.encode("ascii", "replace").decode("ascii"), flush=True)
 from forma.model import Solid  # noqa: E402
 from forma.render import _prepare, _render_view, _to_bytes  # noqa: E402
 
@@ -120,7 +127,7 @@ def main() -> int:
             write_png(ROOT / "packaging" / "icon_256.png", arr)
     write_ico(ROOT / "packaging" / "icon.ico", images)
     write_png(ROOT / "packaging" / "icon_128.png", images[sizes.index(128)][1])
-    print("Иконка создана:", ROOT / "packaging" / "icon.ico")
+    say("Иконка создана: packaging/icon.ico")
     return 0
 
 

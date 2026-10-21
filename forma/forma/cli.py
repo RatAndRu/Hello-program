@@ -133,7 +133,16 @@ def cmd_serve(args) -> int:
                     (["--no-open"] if args.no_open else []))
 
 
+def _utf8_stdout() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
+
 def main(argv=None) -> int:
+    _utf8_stdout()
     parser = argparse.ArgumentParser(prog="forma", description=f"{APP_NAME} {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
