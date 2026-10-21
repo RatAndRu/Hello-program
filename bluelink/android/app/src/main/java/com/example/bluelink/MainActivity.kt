@@ -90,6 +90,11 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var heyFilesOpen = false
     private var heyWifi: List<Pair<String, Int>> = emptyList()
     private var heyAutoDone = false
+    private var heyCharging = false
+    private var heyFiles = -1
+    private var heyStreamCount = 0
+    private var heyStreamBytes = 0
+    private var heyStreamLogged = 0
 
     private var tab = TAB_SCAN
     private val scanItems = ArrayList<ScanItem>()
@@ -719,6 +724,12 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (short == 0x2A26) heyFirmware = String(value, Charsets.UTF_8).trim().ifBlank { null }
         if (short == 0x2A27) heyModel = String(value, Charsets.UTF_8).trim().ifBlank { null }
         if (short == 0x2A00 && heyModel.isNullOrBlank()) heyModel = String(value, Charsets.UTF_8).trim()
+        if (HeyCyan.isStreamFrame(value)) {
+            // Поток служебных пакетов: считаем и молчим, иначе журнал превращается в кашу.
+            heyObserve(value)
+            if (tab == TAB_HEY) rebuildThrottled()
+            return
+        }
         heyObserve(value)
         val text = heyLastResponse.ifBlank {
             GattNames.describe(char, value) ?: bytesToHex(value.take(24).toByteArray())
@@ -752,7 +763,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         ui.post {
             captureStatus = status
             captureDetail = detail
-            if (tab == TAB_CAMERA || tab == TAB_DEVICE) rebuild()
+            if (tab == TAB_CAMERA || tab == TAB_DEVICE || tab == TAB_HEY) rebuild()
         }
     }
 
@@ -761,7 +772,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             lastPhoto = file
             lastPhotoBitmap = thumb(file, 320)
             addLog("Снимок сохранён: ${file.name} (${bytes.size / 1024} КБ)")
-            if (tab == TAB_CAMERA || tab == TAB_PHOTOS || tab == TAB_DEVICE) rebuild()
+            if (tab == TAB_CAMERA || tab == TAB_PHOTOS || tab == TAB_DEVICE || tab == TAB_HEY) rebuild()
         }
     }
 
@@ -2130,9 +2141,16 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         state.addView(
             txt(
                 buildString {
-                    appendLine("Заряд: " + (heyBattery?.let { "$it%" } ?: "очки пока не сообщают"))
+                    appendLine(
+                        "Заряд: " + (heyBattery?.let { "$it%" + if (heyCharging) " · заряжается" else "" }
+                            ?: "очки пока не сообщают")
+                    )
                     appendLine("Модель: " + (heyModel ?: "не определена"))
                     appendLine("Прошивка: " + (heyFirmware ?: "нет данных"))
+                    if (heyFiles >= 0) appendLine("Файлов на очках: $heyFiles")
+                    if (heyStreamCount > 0) {
+                        appendLine("Поток от очков: $heyStreamCount пакетов · ${heyStreamBytes / 1024} КБ")
+                    }
                     append("Последний ответ: " + (heyLastResponse.ifBlank { "пока ничего не приходило" }))
                 },
                 11,
@@ -2140,6 +2158,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 mono = false
             )
         )
+        if (camera.isCapturing()) {
+            state.addView(spacer(6))
+            state.addView(txt("📷 $captureStatus ${if (captureDetail.isBlank()) "" else "· $captureDetail"}", 11, Pal.ACCENT))
+        }
         state.addView(spacer(10))
         val stateRow = row()
         stateRow.addView(actionButton("Обновить данные", primary = true) { heyRefresh() })
@@ -2316,13 +2338,20 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             return
         }
         when (id) {
-            "photo" -> heySendSequence(
-                listOf(
-                    HeyTx(HeyCyan.CH_CTRL, 0x02, byteArrayOf(0x04)),
-                    HeyTx(HeyCyan.CH_CTRL, 0x02, byteArrayOf(0x05))
-                ),
-                "Фото"
-            )
+            "photo" -> {
+                // Параллельно с командой слушаем канал больших данных: если очки пришлют JPEG, он сохранится.
+                if (!camera.isCapturing()) {
+                    camera.listenForJpeg(HeyCyan.SERIAL_SERVICE, HeyCyan.SERIAL_NOTIFY, 20)
+                }
+                heySendSequence(
+                    listOf(
+                        HeyTx(HeyCyan.CH_CTRL, 0x02, byteArrayOf(0x04)),
+                        HeyTx(HeyCyan.CH_CTRL, 0x02, byteArrayOf(0x05)),
+                        HeyTx(HeyCyan.CH_SERIAL, 0x41, byteArrayOf(0x02, 0x01, 0x04))
+                    ),
+                    "Фото"
+                )
+            }
             "video" -> heySendSequence(
                 listOf(
                     HeyTx(HeyCyan.CH_CTRL, 0x3E, byteArrayOf(0x02, 0x02, 0x00)),
@@ -2368,7 +2397,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 val f = frames[index]
                 index += 1
                 heySend(f.channel, f.cmd, f.payload, title)
-                ui.postDelayed(this, 350)
+                ui.postDelayed(this, 500)
             }
         }
         ui.postDelayed(step, 60)
@@ -2416,7 +2445,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         heySendRaw(channel, frame, title)
     }
 
-    private fun heySendRaw(channel: String, frame: ByteArray, title: String) {
+    private fun heySendRaw(channel: String, frame: ByteArray, title: String, attempt: Int = 0) {
         if (connState != ConnState.CONNECTED) {
             toast("Сначала подключитесь к устройству")
             return
@@ -2425,7 +2454,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         val char = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_WRITE else HeyCyan.SERIAL_WRITE
         if (ble.busySubscribing) {
             // Ещё пишется дескриптор подписки: подождём, иначе GATT отклонит запись.
-            ui.postDelayed({ heySendRaw(channel, frame, title) }, 250)
+            ui.postDelayed({ heySendRaw(channel, frame, title, attempt) }, 250)
             return
         }
         // Канал A у SDK — обычная запись с ответом, канал B — без ответа.
@@ -2434,6 +2463,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         heyLastTxAt = System.currentTimeMillis()
         if (ok) {
             addLog("→ Очки · $title")
+        } else if (attempt < 2) {
+            // GATT занят предыдущей операцией — повторяем, это обычное дело на Android.
+            ui.postDelayed({ heySendRaw(channel, frame, title, attempt + 1) }, 400)
         } else {
             addLog("Очки · $title: запись не принята")
             heyActionStatus = "$title: очки не приняли команду"
@@ -2443,13 +2475,34 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     /** Разбор всего, что прилетает в уведомления, в человеческий текст. */
     private fun heyObserve(value: ByteArray) {
-        HeyCyan.batteryFrom(value)?.let { heyBattery = it }
+        // Разбираем только кадры протокола: ASCII-ответы вроде версии прошивки сюда не относятся.
+        if (!HeyCyan.isBigFrame(value) && value.size != HeyCyan.FRAME_LEN) return
+        HeyCyan.batteryInfo(value)?.let {
+            heyBattery = it.level
+            heyCharging = it.charging
+        }
+        if (HeyCyan.isStreamFrame(value)) {
+            // Служебный поток очков идёт десятками пакетов в секунду: считаем, но не засоряем журнал.
+            heyStreamCount += 1
+            heyStreamBytes += value.size
+            if (heyStreamCount == 1) {
+                addLog("Очки начали поток данных: ${HeyCyan.hex(value.take(16).toByteArray())}")
+            } else if (heyStreamCount - heyStreamLogged >= 200) {
+                heyStreamLogged = heyStreamCount
+                addLog("Поток данных: $heyStreamCount пакетов, ${heyStreamBytes / 1024} КБ")
+            }
+            return
+        }
+        if (HeyCyan.isBigFrame(value) && (value[1].toInt() and 0xFF) == 0xFD) {
+            val payload = if (value.size > 6) value[6].toInt() and 0xFF else -1
+            if (payload >= 0) heyFiles = payload
+        }
         val echo = heyLastTx?.let { it.contentEquals(value) } == true &&
             System.currentTimeMillis() - heyLastTxAt < 8000
         heyLastResponse = if (echo) {
             "очки подтвердили команду «${heySendTitle.ifBlank { "…" }}»"
         } else {
-            HeyCyan.describe(value) ?: HeyCyan.hex(value.take(24).toByteArray())
+            HeyCyan.friendly(value) ?: HeyCyan.describe(value) ?: HeyCyan.hex(value.take(24).toByteArray())
         }
         if (tab == TAB_HEY) rebuildThrottled()
     }

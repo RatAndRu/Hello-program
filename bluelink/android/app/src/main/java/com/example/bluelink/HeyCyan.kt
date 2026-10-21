@@ -88,6 +88,73 @@ object HeyCyan {
         return out
     }
 
+    /** Поток служебных пакетов, который очки льют постоянно (тип 0x59). */
+    fun isStreamFrame(value: ByteArray): Boolean =
+        isBigFrame(value) && (value[1].toInt() and 0xFF) == 0x59
+
+    data class Battery(val level: Int, val charging: Boolean)
+
+    fun batteryInfo(value: ByteArray): Battery? {
+        if (isBigFrame(value) && (value[1].toInt() and 0xFF) == 0x42 && value.size > 7) {
+            val level = value[6].toInt() and 0xFF
+            if (level in 1..100) return Battery(level, (value[7].toInt() and 0xFF) == 1)
+        }
+        if (value.size == FRAME_LEN && (value[0].toInt() and 0x7F) == 0x03) {
+            val level = value[1].toInt() and 0xFF
+            if (level in 1..100) return Battery(level, (value[2].toInt() and 0xFF) == 1)
+        }
+        return null
+    }
+
+    /** Названия режимов работы очков (из GlassModelControlResponse SDK). */
+    fun modeName(code: Int): String = when (code) {
+        1 -> "фото"
+        2 -> "видео"
+        4 -> "запись голоса"
+        5 -> "обновление"
+        6 -> "запись разговора"
+        7, 8 -> "ожидание"
+        11, 12 -> "передача файлов"
+        18 -> "ИИ-режим"
+        else -> "режим $code"
+    }
+
+    /** Человеческое описание ответа — то, что показываем пользователю. */
+    fun friendly(value: ByteArray): String? {
+        if (isBigFrame(value)) {
+            val type = value[1].toInt() and 0xFF
+            val payload = if (value.size > 6) value.copyOfRange(6, value.size) else ByteArray(0)
+            return when (type) {
+                0x42 -> batteryInfo(value)?.let {
+                    "заряд ${it.level}%" + if (it.charging) ", заряжается" else ""
+                }
+                0xFD -> if (payload.isNotEmpty()) "готово файлов: ${payload[0].toInt() and 0xFF}" else "список файлов получен"
+                0x41 -> if (payload.size >= 2 && (payload[0].toInt() and 0xFF) == 0x02) {
+                    if (payload.size >= 3 && (payload[2].toInt() and 0xFF) == 0x07) "голосовой помощник включён"
+                    else "очки приняли команду"
+                } else "очки ответили: " + hex(payload.take(8).toByteArray())
+                0x43 -> "сведения об устройстве получены"
+                0x3E -> "режим подтверждён"
+                else -> describeBig(value)
+            }
+        }
+        if (value.size == FRAME_LEN) {
+            val key = value[0].toInt() and 0x7F
+            return when (key) {
+                0x3E -> if (value.size > 3) {
+                    val mode = value[2].toInt() and 0xFF
+                    "очки перешли в режим «${modeName(mode)}»" +
+                        if (value[3].toInt() != 0) " (статус ${value[3].toInt() and 0xFF})" else ""
+                } else "режим подтверждён"
+                0x02 -> "камера: команда принята"
+                0x03 -> batteryInfo(value)?.let { "заряд ${it.level}%" }
+                0x3C -> "поддержка функций получена"
+                else -> describeCmd(value)
+            }
+        }
+        return null
+    }
+
     /** Достаёт заряд из ответа любого канала, если он там есть. */
     fun batteryFrom(value: ByteArray): Int? {
         if (value.size == FRAME_LEN && (value[0].toInt() and 0x7F) == 0x03) {

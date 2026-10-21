@@ -174,6 +174,38 @@ class GlassesCamera(
         }
     }
 
+    /**
+     * Слушает произвольный канал и ждёт JPEG: так ловим кадр у устройств,
+     * которые не описаны профилем (например, очки HeyCyan шлют данные на DE5BF729).
+     */
+    fun listenForJpeg(service: UUID, char: UUID, seconds: Int = 20) {
+        if (capturing) {
+            listener?.onCaptureStatus("Уже снимаю…", "Подождите, идёт передача снимка.")
+            return
+        }
+        capturing = true
+        currentProfile = null
+        framing = "jpeg"
+        expectedSize = -1
+        lastProgressAt = 0
+        tail = ByteArray(0)
+        collect = ByteArrayOutputStream()
+        collectChar = char
+        listener?.onCaptureStatus("Жду кадр от очков…", "Слушаю ${GattNames.uuidLabel(char)}")
+        listener?.onCameraLog("Слушаю поток с ${GattNames.uuidLabel(char)} — ищу JPEG")
+        timeoutRunnable = Runnable {
+            if (capturing) {
+                val got = collect?.size() ?: 0
+                if (got > 500) {
+                    finishBle("По таймауту, но данные получены")
+                } else {
+                    fail("Кадр не пришёл", "За ${seconds} с получено $got байт. Похоже, фото отдаётся по Wi-Fi.")
+                }
+            }
+        }.also { handler.postDelayed(it, seconds * 1000L) }
+        ble.subscribe(service, char, true)
+    }
+
     fun cancel() {
         finishInternal(null, "Съёмка отменена")
     }
