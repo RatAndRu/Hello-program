@@ -212,7 +212,7 @@ class MainActivity : Activity() {
         } catch (e: Exception) { "Не удалось сохранить: ${e.message}" }
 
         @JavascriptInterface
-        fun version(): String = "1.8"
+        fun version(): String = "1.9"
 
         /** Включить свою камеру: "ok", "perm" (ждём разрешения — спросить ещё раз позже) или текст ошибки. */
         @JavascriptInterface
@@ -234,6 +234,10 @@ class MainActivity : Activity() {
             val f = cam.frame(last)
             return if (f.isEmpty() || f.startsWith("E:")) f else "${camRotation()}|$f"
         }
+
+        /** Зафиксировать/отпустить экспозицию и баланс белого (съёмка: все кадры одной яркости и цвета). */
+        @JavascriptInterface
+        fun camLock(on: Boolean): String = cam.lock(on)
 
         @JavascriptInterface
         fun camStop() {

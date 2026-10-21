@@ -4,12 +4,12 @@ import { matLayout } from './mat.js';
 import { startProcessing } from './procclient.js';
 import { Viewer3D } from './viewer.js';
 import { toGLB, toOBJ, toMeshPLY, toSTL, bounds, meshVolume } from './export.js';
-import { toPLY as splatPLY } from './splat.js';
+import { plyFromPacked, splatInfo } from './splat.js';
 import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '1.8';
+export const VERSION = '1.9';
 const $ = (id) => document.getElementById(id);
 const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
@@ -164,7 +164,7 @@ async function takePlate(btn) {
   plateBusy = true; const wasPaused = cap.paused; cap.paused = true;
   try {
     for (let s = 3; s > 0; s--) { if (btn) btn.textContent = `Через ${s}…`; $('capMsg').textContent = `Фон через ${s} с — руки и предмет из кадра, телефон не трогать`; beep(660, 0.08); await new Promise((r) => setTimeout(r, 1000)); if (!cap) return false; }
-    const blob = await cap.grab(); cap.plates.push(blob); beep(1318, 0.08); if (navigator.vibrate) navigator.vibrate(30);
+    cap.lockExposure(); const blob = await cap.grab(); cap.plates.push(blob); beep(1318, 0.08); if (navigator.vibrate) navigator.vibrate(30);
     $('capPlate').textContent = cap.plates.length > 1 ? `Фон✓${cap.plates.length}` : 'Фон✓';
     return true;
   } finally { plateBusy = false; if (cap) cap.paused = wasPaused; if (btn) btn.textContent = 'Фон'; }
@@ -261,7 +261,7 @@ function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
     store.putScan({ ...scan, failed: m, hasMesh: false, hasSplats: false }).catch(() => {});
   });
 }
-function boundsPacked(p) { const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9]; for (let i = 0; i < p.length; i += 14) for (let c = 0; c < 3; c++) { mn[c] = Math.min(mn[c], p[i + c]); mx[c] = Math.max(mx[c], p[i + c]); } return { mn, mx }; }
+function boundsPacked(p) { const I = splatInfo(p), mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9]; for (let k = 0; k < I.n; k++) { const i = I.off + k * I.stride; for (let c = 0; c < 3; c++) { mn[c] = Math.min(mn[c], p[i + c]); mx[c] = Math.max(mx[c], p[i + c]); } } return { mn, mx }; }
 
 // ---------- просмотр ----------
 let viewer = null, curScan = null;
@@ -309,17 +309,10 @@ $('vExp').onclick = () => {
     ['obj', 'OBJ', s.mesh.tex ? 'три файла: .obj + .mtl + текстура .jpg' : 'с цветами вершин, любые 3D-программы', async () => { const o = toOBJ(s.mesh, base); await saveFile(o.obj, base + '.obj', 'text/plain'); if (o.mtl) { await saveFile(o.mtl, base + '.mtl', 'text/plain'); await saveFile(o.jpg, base + '.jpg', 'image/jpeg'); } }],
     ['ply', 'PLY', 'сетка с цветом (MeshLab, Blender)', () => saveFile(toMeshPLY(s.mesh), base + '.ply', 'application/octet-stream')],
     ['stl', 'STL', '3D-печать, миллиметры', () => saveFile(toSTL(s.mesh), base + '.stl', 'model/stl')]);
-  if (s.splats) items.push(['splat', 'Сплэты PLY', 'SuperSplat, Brush, Blender-аддоны', () => saveFile(new Uint8Array(splatPLY(unpackSplats(s.splats))), base + '_splats.ply', 'application/octet-stream')]);
+  if (s.splats) items.push(['splat', 'Сплэты PLY', 'SuperSplat, Brush, Blender-аддоны', () => saveFile(new Uint8Array(plyFromPacked(s.splats)), base + '_splats.ply', 'application/octet-stream')]);
   sheet(`<h3>Экспорт «${s.name.replace(/</g, '&lt;')}»</h3><p>Файлы попадут в «Загрузки → Объём». Размер модели настоящий (${(s.stats.size || [0, 0, 0]).map((v) => Math.round(v)).join('×')} мм).</p><div class="grid2">${items.map(([k, t, d]) => `<button data-k="${k}">${t}<small>${d}</small></button>`).join('')}</div>`,
     (box) => box.querySelectorAll('button[data-k]').forEach((b) => b.onclick = async () => { const it = items.find((x) => x[0] === b.dataset.k); b.disabled = true; try { await it[3](); } catch (e) { toast('Ошибка: ' + e.message); } b.disabled = false; }));
 };
-// упакованные капли → объект для toPLY
-function unpackSplats(p) {
-  const n = p.length / 14, logit = (x) => Math.log(Math.max(1e-4, Math.min(0.9999, x)) / (1 - Math.max(1e-4, Math.min(0.9999, x))));
-  const o = { n, mu: new Float32Array(n * 3), ls: new Float32Array(n * 3), q: new Float32Array(n * 4), op: new Float32Array(n), col: new Float32Array(n * 3) };
-  for (let i = 0; i < n; i++) { o.mu.set(p.subarray(i * 14, i * 14 + 3), i * 3); o.ls.set(p.subarray(i * 14 + 3, i * 14 + 6), i * 3); o.q.set(p.subarray(i * 14 + 6, i * 14 + 10), i * 4); o.op[i] = logit(p[i * 14 + 10]); for (let c = 0; c < 3; c++) o.col[i * 3 + c] = logit(p[i * 14 + 11 + c]); }
-  return o;
-}
 $('vMore').onclick = () => curScan && moreSheet(curScan);
 // «Доснять низ» прямо с экрана модели (раньше — только в ⋯)
 $('vBottom').onclick = async () => {

@@ -1,4 +1,5 @@
 // Объём — просмотр 3D: сетка и сплэты (WebGL2). Мир: миллиметры, Z вверх.
+import { splatInfo } from './splat.js';
 
 const MESH_VS = `#version 300 es
 layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec3 aCol; layout(location=3) in vec2 aUV;
@@ -17,9 +18,24 @@ void main(){
 const SPLAT_VS = `#version 300 es
 precision highp float; precision highp usampler2D;
 layout(location=0) in vec2 aQuad; layout(location=1) in uint aIdx;
-uniform highp sampler2D uData; uniform mat4 uV; uniform mat4 uP; uniform vec2 uFocal; uniform vec2 uView;
+uniform highp sampler2D uData; uniform highp sampler2D uSH; uniform mat4 uV; uniform mat4 uP; uniform vec2 uFocal; uniform vec2 uView; uniform vec3 uEye; uniform int uDeg;
 out vec4 vCol; out vec2 vPos;
 vec4 fetch(int i){ return texelFetch(uData, ivec2(i%1024, i/1024), 0); }
+vec4 fsh(int i){ return texelFetch(uSH, ivec2(i%1024, i/1024), 0); }
+// цвет с учётом направления взгляда: сферические гармоники 1–2 степени (как в 3DGS), коэффициенты [k][канал] по 4 в текселе
+vec3 shColor(int idx, vec3 base, vec3 p){
+  if(uDeg<1) return base;
+  vec3 d=normalize(p-uEye); float x=d.x, y=d.y, z=d.z;
+  int b=idx*(uDeg>1?6:3); vec4 a0=fsh(b), a1=fsh(b+1), a2=fsh(b+2);
+  vec3 s1=a0.xyz, s2=vec3(a0.w,a1.x,a1.y), s3=vec3(a1.z,a1.w,a2.x);
+  vec3 c=base - 0.48860251*y*s1 + 0.48860251*z*s2 - 0.48860251*x*s3;
+  if(uDeg>1){
+    vec4 a3=fsh(b+3), a4=fsh(b+4), a5=fsh(b+5);
+    vec3 s4=a2.yzw, s5=a3.xyz, s6=vec3(a3.w,a4.x,a4.y), s7=vec3(a4.z,a4.w,a5.x), s8=a5.yzw;
+    c += 1.09254843*x*y*s4 - 1.09254843*y*z*s5 + 0.31539157*(2.0*z*z-x*x-y*y)*s6 - 1.09254843*x*z*s7 + 0.54627422*(x*x-y*y)*s8;
+  }
+  return max(c, vec3(0.0));
+}
 void main(){
   int b=int(aIdx)*4; vec4 t0=fetch(b), t1=fetch(b+1), t2=fetch(b+2), t3=fetch(b+3);
   vec4 cam=uV*vec4(t0.xyz,1.0);
@@ -35,7 +51,7 @@ void main(){
   float l1=mid+rad, l2=max(mid-rad,0.1);
   vec2 dv=normalize(vec2(bb,l1-a)); if(abs(bb)<1e-6) dv = a>=c ? vec2(1.0,0.0) : vec2(0.0,1.0);
   vec2 ax1=min(3.0*sqrt(l1),1024.0)*dv, ax2=min(3.0*sqrt(l2),1024.0)*vec2(dv.y,-dv.x);
-  vCol=t1; vPos=aQuad*3.0;
+  vCol=vec4(shColor(int(aIdx), t1.rgb, t0.xyz), t1.a); vPos=aQuad*3.0;
   vec2 ndc=clip.xy/clip.w;
   gl_Position=vec4(ndc + aQuad.x*ax1*2.0/uView + aQuad.y*ax2*2.0/uView, clip.z/clip.w, 1.0);
 }`;
@@ -101,14 +117,17 @@ export class Viewer3D {
     }).catch((e) => console.warn('текстура', e));
     this.dirty = true;
   }
-  // packed: Float32Array, 14 чисел на каплю: центр(3) logScale(3) quat(4) opacity color(3)
+  // packed: см. splat.js (splatInfo) — v2 с гармониками или старый формат по 14 чисел на каплю
   setSplats(packed) {
-    const gl = this.gl, n = packed.length / 14;
+    const gl = this.gl, I = splatInfo(packed), n = I.n;
     if (!n) { this.splats = null; return; }
     const rows = Math.ceil(n * 4 / 1024), tex = new Float32Array(1024 * rows * 4);
     const cen = new Float32Array(n * 3);
+    const deg = Math.min(2, I.deg), tpS = deg > 1 ? 6 : deg ? 3 : 0, nr = Math.min(I.nb, 9) - 1;
+    const shRows = Math.max(1, Math.ceil(n * tpS / 1024)), sh = new Float32Array(1024 * shRows * 4);
     for (let i = 0; i < n; i++) {
-      const p = packed.subarray(i * 14, i * 14 + 14), o = i * 16;
+      const p = packed.subarray(I.off + i * I.stride, I.off + (i + 1) * I.stride), o = i * 16;
+      for (let k = 0; k < 3 * nr; k++) sh[i * tpS * 4 + k] = p[14 + k];
       tex[o] = p[0]; tex[o + 1] = p[1]; tex[o + 2] = p[2]; cen.set(p.subarray(0, 3), i * 3);
       tex[o + 4] = p[11]; tex[o + 5] = p[12]; tex[o + 6] = p[13]; tex[o + 7] = p[10];
       const s = [Math.exp(p[3]), Math.exp(p[4]), Math.exp(p[5])], [w, x, y, z] = [p[6], p[7], p[8], p[9]];
@@ -123,12 +142,16 @@ export class Viewer3D {
       gl.enableVertexAttribArray(0); gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
       const ib = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, ib); gl.enableVertexAttribArray(1); gl.vertexAttribIPointer(1, 1, gl.UNSIGNED_INT, 0, 0); gl.vertexAttribDivisor(1, 1);
       gl.bindVertexArray(null);
-      this.splats = { vao, ib, tex: gl.createTexture() };
+      this.splats = { vao, ib, tex: gl.createTexture(), shTex: gl.createTexture() };
     }
     const S = this.splats;
     gl.bindTexture(gl.TEXTURE_2D, S.tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1024, rows, 0, gl.RGBA, gl.FLOAT, tex);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.bindTexture(gl.TEXTURE_2D, S.shTex);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, 1024, shRows, 0, gl.RGBA, gl.FLOAT, sh);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    S.deg = tpS ? deg : 0;
     S.n = n; S.cen = cen; S.order = new Uint32Array(n); this._lastSortKey = ''; this.dirty = true;
   }
   sortSplats(V) {
@@ -170,6 +193,8 @@ export class Viewer3D {
       gl.uniformMatrix4fv(gl.getUniformLocation(this.ps, 'uV'), false, V); gl.uniformMatrix4fv(gl.getUniformLocation(this.ps, 'uP'), false, P);
       gl.uniform2f(gl.getUniformLocation(this.ps, 'uFocal'), f, f); gl.uniform2f(gl.getUniformLocation(this.ps, 'uView'), W, H);
       gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.splats.tex); gl.uniform1i(gl.getUniformLocation(this.ps, 'uData'), 0);
+      gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.splats.shTex); gl.uniform1i(gl.getUniformLocation(this.ps, 'uSH'), 1); gl.activeTexture(gl.TEXTURE0);
+      gl.uniform3fv(gl.getUniformLocation(this.ps, 'uEye'), e); gl.uniform1i(gl.getUniformLocation(this.ps, 'uDeg'), this.splats.deg);
       gl.bindVertexArray(this.splats.vao); gl.drawArraysInstanced(gl.TRIANGLE_FAN, 0, 4, this.splats.n);
     }
     gl.bindVertexArray(null);

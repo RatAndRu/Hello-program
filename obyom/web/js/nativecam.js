@@ -43,6 +43,12 @@ export class NativeCam {
     while (!this.bm && performance.now() - t1 < 8000) await sleep(50);
     if (!this.bm) { const e = this.err; this.close(); throw new Error('камера не прислала ни одного кадра' + (e ? ': ' + e : '')); }
   }
+  // фиксация экспозиции и баланса белого (в APK начиная с 1.9); false — если телефон/APK не умеет
+  lock(on) {
+    this.locked = on;
+    try { const N = window.ObyomNative; if (N && typeof N.camLock === 'function') { N.camLock(!!on); return true; } } catch (e) {}
+    return false;
+  }
   close() {
     this.alive = false;
     try { window.ObyomNative.camStop(); } catch (e) {}

@@ -26,6 +26,8 @@ export class Capture {
     // APK: своя камера (Camera2). Камера WebView на части телефонов «замирает», пока не коснёшься экрана.
     if (hasNativeCam()) {
       this.src = new NativeCam(this.view); await this.src.open(); this.native = true;
+      // перезапуск камеры посреди съёмки — экспозиция снова фиксируется; новая съёмка — сначала свободная
+      this.src.lock(this.shots.length > 0 || (this.plates && this.plates.length > 0));
       this.video.style.display = 'none'; if (this.view) this.view.style.display = '';
       this.freshT = performance.now(); this.prevSig = null; this.woke = false;
       return;
@@ -54,7 +56,10 @@ export class Capture {
   // ручной затвор: снимет ближайший кадр, где виден коврик (даже если эта ячейка купола уже есть)
   shootNow() { this.manual = true; }
   closeCam() { if (this.native && this.src) this.src.close(); if (this.stream) this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
-  stop() { this.running = false; this.closeCam(); }
+  stop() { this.running = false; if (this.native && this.src) this.src.lock(false); this.closeCam(); }
+  // С первого снимка экспозиция и баланс белого зафиксированы (своя камера APK): все кадры одной яркости и цвета —
+  // иначе телефон подкручивает их при каждом повороте, и сплэты/текстура «запоминают» пятна яркости.
+  lockExposure() { if (this.native && this.src && !this.src.locked) this.expLocked = this.src.lock(true); }
   // кадр источника (своя камера или <video>) в холст w×h
   drawSrc(c, w, h) { if (this.native) this.src.drawTo(c, w, h); else c.drawImage(this.video, 0, 0, w, h); }
   get srcEl() { return this.native ? this.src : this.video; }
@@ -169,6 +174,7 @@ export class Capture {
       this.lastShot = now;
       if (a) { this.lastDir = a; this.theta = 0; } else { this.theta = 0; this.blind++; }
       if (st.cell && !this.cells.has(st.cell)) this.cells.set(st.cell, this.shots.length);
+      this.lockExposure();
       const blob = await this.grab();
       this.shots.push({ blob, az: a ? a.az : null, el: a ? a.el : null, manual, blind: blindShot });
       st.count = this.shots.length; st.shot = true; why = '';

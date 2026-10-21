@@ -1,26 +1,47 @@
 import { carveVote } from './recon.js';
 // Объём — гауссовы сплэты на процессоре (без видеокарты и без нейросетей).
-// Каждая «капля»: центр, 3 радиуса, поворот, непрозрачность, цвет. Подгоняем их градиентным спуском (Adam)
-// так, чтобы картинка совпала с кадрами. Рендер — тайлами 16×16, как в оригинальном методе 3DGS.
+// Каждая «капля»: центр, 3 радиуса, поворот, непрозрачность и цвет, зависящий от направления взгляда
+// (сферические гармоники, как в оригинальном 3DGS: блик живёт на поверхности и смещается при повороте).
+// Подгоняем их градиентным спуском (Adam) так, чтобы картинка совпала с кадрами. Рендер — тайлами, как в 3DGS.
+// С 1.9: у каждого кадра своя поправка яркости (автоэкспозиция), маска требует прозрачности на фоне и
+// непрозрачности на предмете, капли — плоские диски, стянутые вдоль луча к одной поверхности.
 
 const TILE = 8;
 const _D = new Float64Array(9), _dM = new Float64Array(9), _dR = new Float64Array(9), _S3 = new Float64Array(9), _TS = new Float64Array(6), _dT = new Float64Array(6);
 const sig = (x) => 1 / (1 + Math.exp(-x));
+export const SH_C0 = 0.28209479177387814;
+const SH_C1 = 0.4886025119029199, SH_C2 = [1.0925484305920792, -1.0925484305920792, 0.31539156525252005, -1.0925484305920792, 0.5462742152960396];
+// базис сферических гармоник степени deg (0..2) для направления (x,y,z) — порядок и знаки как в 3DGS
+export function shBasis(deg, x, y, z, out) {
+  out[0] = SH_C0;
+  if (deg < 1) return out;
+  out[1] = -SH_C1 * y; out[2] = SH_C1 * z; out[3] = -SH_C1 * x;
+  if (deg < 2) return out;
+  const xx = x * x, yy = y * y, zz = z * z;
+  out[4] = SH_C2[0] * x * y; out[5] = SH_C2[1] * y * z; out[6] = SH_C2[2] * (2 * zz - xx - yy); out[7] = SH_C2[3] * x * z; out[8] = SH_C2[4] * (xx - yy);
+  return out;
+}
 
 export class Splats {
-  constructor(n) { this.alloc(n); this.n = 0; }
+  // deg — степень гармоник цвета: 0 — один цвет, 1 — 4 коэффициента на канал, 2 — 9
+  constructor(n, deg = 1) { this.deg = deg; this.nb = (deg + 1) * (deg + 1); this.alloc(n); this.n = 0; }
   alloc(cap) {
     const old = this.cap ? this : null; this.cap = cap;
     const next = {};
-    for (const [name, k] of Object.entries({ mu: 3, ls: 3, q: 4, op: 1, col: 3 })) { next[name] = new Float32Array(cap * k); if (old) next[name].set(old[name].subarray(0, old.n * k)); }
+    for (const [name, k] of Object.entries({ mu: 3, ls: 3, q: 4, op: 1, sh: 3 * this.nb })) { next[name] = new Float32Array(cap * k); if (old) next[name].set(old[name].subarray(0, old.n * k)); }
     Object.assign(this, next);
   }
-  push(mu, ls, q, op, col) {
+  // sh: 3 числа — цвет 0..1 (остальные гармоники нули) или 3·nb коэффициентов [k][канал]
+  push(mu, ls, q, op, sh) {
     if (this.n >= this.cap) this.alloc(Math.ceil(this.cap * 1.5) + 16);
-    const i = this.n++;
-    this.mu.set(mu, i * 3); this.ls.set(ls, i * 3); this.q.set(q, i * 4); this.op[i] = op; this.col.set(col, i * 3);
+    const i = this.n++, nb3 = 3 * this.nb;
+    this.mu.set(mu, i * 3); this.ls.set(ls, i * 3); this.q.set(q, i * 4); this.op[i] = op;
+    if (sh.length === nb3) this.sh.set(sh, i * nb3);
+    else { this.sh.fill(0, i * nb3, (i + 1) * nb3); for (let c = 0; c < 3; c++) this.sh[i * nb3 + c] = (sh[c] - 0.5) / SH_C0; }
     return i;
   }
+  // «средний» цвет капли (без зависимости от угла), 0..1
+  baseColor(i, c) { return Math.min(1, Math.max(0, 0.5 + SH_C0 * this.sh[i * 3 * this.nb + c])); }
 }
 
 function quatToR(qw, qx, qy, qz, R) {
@@ -73,6 +94,8 @@ function preprocess(S, view, P) {
   }
 }
 
+
+const PK = 10; // упаковка капли в списке тайла: u v A B C opa c0 c1 c2 z
 function binTiles(S, view, P, opa, col) {
   const n = S.n, tw = Math.ceil(view.cw / TILE), th = Math.ceil(view.ch / TILE), nt = tw * th;
   const idx = []; for (let i = 0; i < n; i++) if (P.ok[i]) idx.push(i);
@@ -98,32 +121,57 @@ function binTiles(S, view, P, opa, col) {
   for (let t = 0; t < nt; t++) cnt[t + 1] += cnt[t];
   const total = cnt[nt], list = new Int32Array(total), fill = cnt.slice(0, nt);
   for (const i of idx) each(i, (t) => { list[fill[t]++] = i; });
-  // упакованные данные капель подряд: u v A B C opa c0 c1 c2
-  const pk = new Float32Array(total * 9);
+  const pk = new Float32Array(total * PK);
   for (let k = 0; k < total; k++) {
-    const i = list[k], o = k * 9;
+    const i = list[k], o = k * PK;
     pk[o] = P.u[i]; pk[o + 1] = P.v[i]; pk[o + 2] = P.A[i]; pk[o + 3] = P.B[i]; pk[o + 4] = P.C[i]; pk[o + 5] = opa[i];
-    pk[o + 6] = col[i * 3]; pk[o + 7] = col[i * 3 + 1]; pk[o + 8] = col[i * 3 + 2];
+    pk[o + 6] = col[i * 3]; pk[o + 7] = col[i * 3 + 1]; pk[o + 8] = col[i * 3 + 2]; pk[o + 9] = P.z[i];
   }
   return { start: cnt, list, pk, tw, th };
 }
 
-// рендер окна; если grad — считаем градиенты по loss относительно target (Charbonnier), возвращаем loss
+// центр камеры в координатах коврика: C = −Rᵀt
+function camCenter(view) {
+  if (!view.C) { const R = view.R, t = view.t; view.C = [-(R[0] * t[0] + R[3] * t[1] + R[6] * t[2]), -(R[1] * t[0] + R[4] * t[1] + R[7] * t[2]), -(R[2] * t[0] + R[5] * t[1] + R[8] * t[2])]; }
+  return view.C;
+}
+// цвет каждой капли для этого вида (гармоники по направлению камера → капля); basis — для обратного прохода
+function viewColors(S, view, P, col, basis) {
+  const nb = S.nb, nb3 = 3 * nb, deg = S.deg, C = camCenter(view), b = new Float64Array(9), raw = new Uint8Array(S.n * 3);
+  for (let i = 0; i < S.n; i++) {
+    if (!P.ok[i]) continue;
+    let dx = S.mu[i * 3] - C[0], dy = S.mu[i * 3 + 1] - C[1], dz = S.mu[i * 3 + 2] - C[2]; const l = Math.hypot(dx, dy, dz) || 1;
+    shBasis(deg, dx / l, dy / l, dz / l, b);
+    for (let k = 0; k < nb; k++) basis[i * nb + k] = b[k];
+    for (let c = 0; c < 3; c++) {
+      let v = 0.5; for (let k = 0; k < nb; k++) v += b[k] * S.sh[i * nb3 + k * 3 + c];
+      if (v < 0) v = 0; else if (v > 1) v = 1; else raw[i * 3 + c] = 1; // 1 — внутри [0,1], градиент проходит
+      col[i * 3 + c] = v;
+    }
+  }
+  return raw;
+}
+
+// Рендер окна; если opt.grad — градиенты loss по параметрам капель, возвращаем loss.
+// loss = Charbonnier(цвет) · wt  +  alphaW·(α − цель)² по маске  +  depthW·½Σ wᵢ(zᵢ − z̄)² (капли — к одной поверхности).
+// view.gain [r,g,b] — поправка яркости кадра: на картинке капли = gain·цвет (фон за ними — сам кадр, без поправки).
 export function renderView(S, view, opt = {}) {
   const P = opt.P || {};
   preprocess(S, view, P);
-  const col = new Float32Array(S.n * 3), opa = new Float32Array(S.n);
-  for (let i = 0; i < S.n; i++) { opa[i] = sig(S.op[i]); col[i * 3] = sig(S.col[i * 3]); col[i * 3 + 1] = sig(S.col[i * 3 + 1]); col[i * 3 + 2] = sig(S.col[i * 3 + 2]); }
+  const n = S.n, nb = S.nb, col = new Float32Array(n * 3), opa = new Float32Array(n), basis = new Float32Array(n * nb);
+  for (let i = 0; i < n; i++) opa[i] = sig(S.op[i]);
+  const inRange = viewColors(S, view, P, col, basis);
   const { start, list, pk, tw } = binTiles(S, view, P, opa, col);
-  const { cw, ch } = view, npx = cw * ch;
+  const { cw, ch } = view, npx = cw * ch, gain = view.gain || [1, 1, 1];
   const out = opt.out || new Float32Array(npx * 3), Tf = new Float32Array(npx), last = new Int32Array(npx);
+  const grad = opt.grad, sc = grad ? new Float32Array(npx * 3) : null, Wd = grad ? new Float32Array(npx) : null, Zd = grad ? new Float32Array(npx) : null;
   const bg = view.bg;
   for (let py = 0; py < ch; py++) for (let px = 0; px < cw; px++) {
     const tile = ((py / TILE) | 0) * tw + ((px / TILE) | 0), k0 = start[tile], k1 = start[tile + 1];
     const gx = view.x0 + px + 0.5, gy = view.y0 + py + 0.5;
-    let T = 1, r = 0, g = 0, b = 0, lastK = k0;
+    let T = 1, r = 0, g = 0, b = 0, lastK = k0, ws = 0, zs = 0;
     for (let k = k0; k < k1; k++) {
-      const o = k * 9, dx = gx - pk[o], dy = gy - pk[o + 1];
+      const o = k * PK, dx = gx - pk[o], dy = gy - pk[o + 1];
       const power = -0.5 * (pk[o + 2] * dx * dx + pk[o + 4] * dy * dy) - pk[o + 3] * dx * dy;
       if (power > 0 || power < -5.55) continue;
       const al = Math.min(0.99, pk[o + 5] * Math.exp(power));
@@ -131,32 +179,43 @@ export function renderView(S, view, opt = {}) {
       const nT = T * (1 - al);
       if (nT < 1e-4) break;
       const aT = al * T;
-      r += pk[o + 6] * aT; g += pk[o + 7] * aT; b += pk[o + 8] * aT;
+      r += pk[o + 6] * aT; g += pk[o + 7] * aT; b += pk[o + 8] * aT; ws += aT; zs += aT * pk[o + 9];
       T = nT; lastK = k + 1;
     }
     const j = py * cw + px;
     Tf[j] = T; last[j] = lastK;
-    out[j * 3] = r + T * bg[j * 3]; out[j * 3 + 1] = g + T * bg[j * 3 + 1]; out[j * 3 + 2] = b + T * bg[j * 3 + 2];
+    out[j * 3] = gain[0] * r + T * bg[j * 3]; out[j * 3 + 1] = gain[1] * g + T * bg[j * 3 + 1]; out[j * 3 + 2] = gain[2] * b + T * bg[j * 3 + 2];
+    if (grad) { sc[j * 3] = r; sc[j * 3 + 1] = g; sc[j * 3 + 2] = b; Wd[j] = ws; Zd[j] = zs; }
   }
-  if (!opt.grad) return { out };
+  if (!grad) return { out, T: Tf };
   // ---------- обратный проход ----------
-  const G = opt.grad; // {mu, ls, q, op, col, m2d(накопление |∂L/∂uv|), cnt}
-  const tgt = view.img, wt = view.wt, eps = 0.03;
+  const G = grad; // {mu, ls, q, op, sh, m2d(накопление |∂L/∂uv|), cnt, gain[3]}
+  const tgt = view.img, wt = view.wt, at = view.at, eps = 0.03, aW = opt.alphaW || 0, dW = opt.depthW || 0;
   let loss = 0, wsum = 0;
-  const dU = new Float32Array(S.n), dV = new Float32Array(S.n), dA = new Float32Array(S.n), dB = new Float32Array(S.n), dC = new Float32Array(S.n), dOp = new Float32Array(S.n), dCol = new Float32Array(S.n * 3);
+  const dU = new Float32Array(n), dV = new Float32Array(n), dA = new Float32Array(n), dB = new Float32Array(n), dC = new Float32Array(n), dOp = new Float32Array(n), dCol = new Float32Array(n * 3), dZ = dW ? new Float32Array(n) : null;
   for (let j = 0; j < npx; j++) wsum += wt[j];
-  const norm = 1 / Math.max(1, wsum);
+  const norm = 1 / Math.max(1, wsum), dL = [0, 0, 0], dLs = [0, 0, 0];
+  if (!G.gain) G.gain = [0, 0, 0];
   for (let py = 0; py < ch; py++) for (let px = 0; px < cw; px++) {
-    const j = py * cw + px, w = wt[j]; if (!w) continue;
-    const dL = [0, 0, 0];
-    for (let c = 0; c < 3; c++) { const rr = out[j * 3 + c] - tgt[j * 3 + c], s = Math.sqrt(rr * rr + eps * eps); loss += w * (s - eps); dL[c] = w * rr / s * norm; }
+    const j = py * cw + px, w = wt[j];
+    const tA = at && aW ? at[j] : -1;
+    if (!w && tA < 0) continue;
+    for (let c = 0; c < 3; c++) {
+      if (!w) { dL[c] = 0; continue; }
+      const rr = out[j * 3 + c] - tgt[j * 3 + c], s = Math.sqrt(rr * rr + eps * eps); loss += w * (s - eps); dL[c] = w * rr / s * norm;
+      G.gain[c] += dL[c] * sc[j * 3 + c]; dLs[c] = dL[c] * gain[c];
+    }
+    if (!w) { dLs[0] = dLs[1] = dLs[2] = 0; }
+    const TF = Tf[j];
+    let bgDot = bg[j * 3] * dL[0] + bg[j * 3 + 1] * dL[1] + bg[j * 3 + 2] * dL[2];
+    if (tA >= 0) { const e = 1 - TF - tA; loss += aW * e * e; bgDot += -2 * aW * e * norm; } // ∂/∂TF от (1−TF−цель)²
+    const zbar = dW && Wd[j] > 0.3 ? Zd[j] / Wd[j] : NaN;
     const tile = ((py / TILE) | 0) * tw + ((px / TILE) | 0), k0 = start[tile];
     const gx = view.x0 + px + 0.5, gy = view.y0 + py + 0.5;
-    const TF = Tf[j]; let T = TF;
-    const bgDot = bg[j * 3] * dL[0] + bg[j * 3 + 1] * dL[1] + bg[j * 3 + 2] * dL[2];
-    let acc0 = 0, acc1 = 0, acc2 = 0, lastA = 0, lc0 = 0, lc1 = 0, lc2 = 0;
+    let T = TF;
+    let acc0 = 0, acc1 = 0, acc2 = 0, lastA = 0, lc0 = 0, lc1 = 0, lc2 = 0, accE = 0;
     for (let k = last[j] - 1; k >= k0; k--) {
-      const o = k * 9, dx = gx - pk[o], dy = gy - pk[o + 1];
+      const o = k * PK, dx = gx - pk[o], dy = gy - pk[o + 1];
       const qa = pk[o + 2], qb = pk[o + 3], qc = pk[o + 4];
       const power = -0.5 * (qa * dx * dx + qc * dy * dy) - qb * dx * dy;
       if (power > 0 || power < -5.55) continue;
@@ -168,8 +227,13 @@ export function renderView(S, view, opt = {}) {
       acc0 = lastA * lc0 + (1 - lastA) * acc0; acc1 = lastA * lc1 + (1 - lastA) * acc1; acc2 = lastA * lc2 + (1 - lastA) * acc2;
       lc0 = c0; lc1 = c1; lc2 = c2; lastA = al;
       const wct = al * T;
-      dCol[i * 3] += wct * dL[0]; dCol[i * 3 + 1] += wct * dL[1]; dCol[i * 3 + 2] += wct * dL[2];
-      const dAl = T * ((c0 - acc0) * dL[0] + (c1 - acc1) * dL[1] + (c2 - acc2) * dL[2]) - TF / (1 - al) * bgDot;
+      dCol[i * 3] += wct * dLs[0]; dCol[i * 3 + 1] += wct * dLs[1]; dCol[i * 3 + 2] += wct * dLs[2];
+      let dAl = T * ((c0 - acc0) * dLs[0] + (c1 - acc1) * dLs[1] + (c2 - acc2) * dLs[2]) - TF / (1 - al) * bgDot;
+      if (zbar === zbar) {
+        // ½·Σ wₖ(zₖ − z̄)²: по глубине капли и по её весу wᵢ = αᵢTᵢ (вес тех, кто за ней, делится на (1 − αᵢ))
+        const e = pk[o + 9] - zbar, h = 0.5 * e * e; dZ[i] += dW * wct * e * norm; loss += dW * wct * h;
+        dAl += dW * norm * (T * h - accE / (1 - al)); accE += wct * h;
+      }
       if (al0 >= 0.99) continue; // в насыщении градиента нет
       dOp[i] += Gv * dAl;
       const dP = op * Gv * dAl;
@@ -178,13 +242,14 @@ export function renderView(S, view, opt = {}) {
     }
   }
   // ---------- от 2D к параметрам капли ----------
-  const { K, R } = view;
-  for (let i = 0; i < S.n; i++) {
+  const { K, R } = view, nb3 = 3 * nb;
+  for (let i = 0; i < n; i++) {
     if (!P.ok[i]) continue;
+    if (dZ && dZ[i]) { G.mu[i * 3] += dZ[i] * R[6]; G.mu[i * 3 + 1] += dZ[i] * R[7]; G.mu[i * 3 + 2] += dZ[i] * R[8]; }
     if (!(dU[i] || dV[i] || dA[i] || dB[i] || dC[i] || dOp[i] || dCol[i * 3] || dCol[i * 3 + 1] || dCol[i * 3 + 2])) continue;
     G.cnt[i]++; G.m2d[i] += Math.hypot(dU[i], dV[i]);
-    // цвет и непрозрачность (через сигмоиду)
-    for (let c = 0; c < 3; c++) { const cv = col[i * 3 + c]; G.col[i * 3 + c] += dCol[i * 3 + c] * cv * (1 - cv); }
+    // цвет: линейные гармоники (обрезка до [0,1] — без градиента)
+    for (let c = 0; c < 3; c++) { if (!inRange[i * 3 + c]) continue; const g = dCol[i * 3 + c]; for (let k = 0; k < nb; k++) G.sh[i * nb3 + k * 3 + c] += g * basis[i * nb + k]; }
     G.op[i] += dOp[i] * opa[i] * (1 - opa[i]);
     // центр: u = fx·x/z + cx
     const X = S.mu[i * 3], Y = S.mu[i * 3 + 1], Z = S.mu[i * 3 + 2];
@@ -237,42 +302,73 @@ export function renderView(S, view, opt = {}) {
   return { out, loss: loss * norm };
 }
 
+
 // ---------- обучение ----------
-export function makeGrad(n) { return { mu: new Float32Array(n * 3), ls: new Float32Array(n * 3), q: new Float32Array(n * 4), op: new Float32Array(n), col: new Float32Array(n * 3), m2d: new Float32Array(n), cnt: new Float32Array(n) }; }
+export function makeGrad(n, nb = 4) { return { mu: new Float32Array(n * 3), ls: new Float32Array(n * 3), q: new Float32Array(n * 4), op: new Float32Array(n), sh: new Float32Array(n * 3 * nb), m2d: new Float32Array(n), cnt: new Float32Array(n), gain: [0, 0, 0] }; }
+
+// Настройки по умолчанию подобраны на синтетических сценах (tests/tsplat.mjs, см. README)
+// Подобрано на синтетике (tests/tsplat2.mjs, вертушка 72 кадра и обход с рук 36 кадров, PSNR на отложенных кадрах):
+// глубинный регуляризатор в мм² почти бесполезен и при 0.02 стоил 2–3 дБ; гармоники 1-й степени +1 дБ к «одному цвету»;
+// 2-я степень +0.6 дБ только при плотной съёмке (для «Лучше»); фон-медиана за листом на вертушке +2 дБ и втрое меньше облачков.
+export const SPLAT_DEFAULTS = { deg: 1, alphaW: 0.2, depthW: 0.0003, flat: 0.1, expo: true, lrDC: 0.006, lrRest: 0.0012, lrGain: 0.004 };
 
 export class Trainer {
-  // views: [{K,R,t,x0,y0,cw,ch,img,bg,wt}]; inside(x,y,z) → можно ли капле быть здесь (рядом с оболочкой)
+  // views: [{K,R,t,x0,y0,cw,ch,img,bg,wt,at}]; inside(x,y,z) → можно ли капле быть здесь (рядом с оболочкой)
   constructor(S, views, opt = {}) {
     this.S = S; this.views = views; this.it = 0; this.iters = opt.iters || 1500; this.ext = opt.extent || 100;
     this.maxN = opt.maxN || 60000; this.inside = opt.inside || null;
-    this.lr = { mu: 0.0016 * this.ext, ls: 0.005, q: 0.001, op: 0.05, col: 0.02 };
+    this.o = { ...SPLAT_DEFAULTS, ...opt };
+    this.lr = { mu: 0.0016 * this.ext, ls: 0.005, q: 0.001, op: 0.05 };
     this.maxLs = Math.log(0.05 * this.ext); // капля не крупнее ~5% предмета
+    this.flatL = this.o.flat < 1 ? Math.log(this.o.flat) : 0;
     this.resetAdam(); this.P = {}; this.seed = 7;
     this.losses = [];
+    // поправки яркости кадров (лог-усиление по каналам) и их Adam
+    const V = views.length; this.lg = new Float32Array(V * 3); this.mg = new Float32Array(V * 3); this.vg = new Float32Array(V * 3); this.tg = new Int32Array(V);
+    for (const v of views) v.gain = [1, 1, 1];
   }
   resetAdam() {
-    const n = this.S.cap;
-    this.m = makeGrad(n); this.v = makeGrad(n); this.acc = { m2d: new Float32Array(n), cnt: new Float32Array(n) };
+    const n = this.S.cap, nb = this.S.nb;
+    this.m = makeGrad(n, nb); this.v = makeGrad(n, nb); this.acc = { m2d: new Float32Array(n), cnt: new Float32Array(n) };
   }
   rnd() { this.seed = (this.seed * 1664525 + 1013904223) >>> 0; return this.seed / 4294967296; }
   step() {
-    const S = this.S, n = S.n, view = this.views[(this.rnd() * this.views.length) | 0];
+    const S = this.S, n = S.n, nb = S.nb, vi = (this.rnd() * this.views.length) | 0, view = this.views[vi];
     if (this.m.mu.length < S.cap * 3) this.growAdam();
-    const G = makeGrad(n);
-    const r = renderView(S, view, { grad: G, P: this.P });
+    const G = makeGrad(n, nb);
+    const r = renderView(S, view, { grad: G, P: this.P, alphaW: this.o.alphaW, depthW: this.o.depthW });
     this.losses.push(r.loss);
     const t = this.it / this.iters, lrMu = this.lr.mu * Math.pow(0.01, t); // позиция: экспоненциальное затухание
     const b1 = 0.9, b2 = 0.999, bc1 = 1 - Math.pow(b1, this.it + 1), bc2 = 1 - Math.pow(b2, this.it + 1);
-    const upd = (name, lr) => {
+    const upd = (name, lr, lrRest, stride) => {
       const p = S[name], g = G[name], m = this.m[name], v = this.v[name];
       for (let k = 0; k < g.length; k++) {
         const gk = g[k]; if (!gk) continue;
         m[k] = b1 * m[k] + (1 - b1) * gk; v[k] = b2 * v[k] + (1 - b2) * gk * gk;
-        p[k] -= lr * (m[k] / bc1) / (Math.sqrt(v[k] / bc2) + 1e-8);
+        const l = stride && (k % stride) >= 3 ? lrRest : lr; // гармоники: «средний» цвет учится быстрее, чем зависимость от угла
+        p[k] -= l * (m[k] / bc1) / (Math.sqrt(v[k] / bc2) + 1e-8);
       }
     };
-    upd('mu', lrMu); upd('ls', this.lr.ls); upd('q', this.lr.q); upd('op', this.lr.op); upd('col', this.lr.col);
-    for (let i = 0; i < n; i++) { this.acc.m2d[i] += G.m2d[i]; this.acc.cnt[i] += G.cnt[i]; for (let c = 0; c < 3; c++) if (S.ls[i * 3 + c] > this.maxLs) S.ls[i * 3 + c] = this.maxLs; }
+    upd('mu', lrMu); upd('ls', this.lr.ls); upd('q', this.lr.q); upd('op', this.lr.op); upd('sh', this.o.lrDC, this.o.lrRest, 3 * nb);
+    // поправка яркости этого кадра (Adam по лог-усилению); первые 10% шагов — без неё, пока цвет не сложился
+    if (this.o.expo && this.it > this.iters * 0.1) {
+      const tg = ++this.tg[vi], c1 = 1 - Math.pow(b1, tg), c2 = 1 - Math.pow(b2, tg);
+      for (let c = 0; c < 3; c++) {
+        const k = vi * 3 + c, g = G.gain[c] * view.gain[c] + 0.002 * this.lg[k]; // + слабая тяга к 1
+        this.mg[k] = b1 * this.mg[k] + (1 - b1) * g; this.vg[k] = b2 * this.vg[k] + (1 - b2) * g * g;
+        this.lg[k] = Math.max(-0.5, Math.min(0.5, this.lg[k] - this.o.lrGain * (this.mg[k] / c1) / (Math.sqrt(this.vg[k] / c2) + 1e-8)));
+      }
+      if (this.it % 25 === 0) { // общий множитель — у цветов капель, а не у кадров: среднее лог-усиление = 0
+        for (let c = 0; c < 3; c++) { let s = 0; for (let k = 0; k < this.views.length; k++) s += this.lg[k * 3 + c]; s /= this.views.length; for (let k = 0; k < this.views.length; k++) this.lg[k * 3 + c] -= s; }
+      }
+      for (let k = 0; k < this.views.length; k++) for (let c = 0; c < 3; c++) this.views[k].gain[c] = Math.exp(this.lg[k * 3 + c]);
+    }
+    for (let i = 0; i < n; i++) {
+      this.acc.m2d[i] += G.m2d[i]; this.acc.cnt[i] += G.cnt[i];
+      for (let c = 0; c < 3; c++) if (S.ls[i * 3 + c] > this.maxLs) S.ls[i * 3 + c] = this.maxLs;
+      // плоская капля (диск): третья ось — нормаль, не толще flat × меньшего из двух радиусов
+      if (this.flatL) { const lim = Math.min(S.ls[i * 3], S.ls[i * 3 + 1]) + this.flatL; if (S.ls[i * 3 + 2] > lim) S.ls[i * 3 + 2] = lim; }
+    }
     this.it++;
     if (this.it % 100 === 0 && this.it >= 200 && this.it <= this.iters * 0.65) this.densify();
     if (this.it % 100 === 0) this.prune();
@@ -281,12 +377,12 @@ export class Trainer {
   // в конце: строгая чистка (fn — более жёсткое правило «где можно жить») и выкидываем почти прозрачные
   finalize(fn) { if (fn) this.inside = fn; this.prune(); }
   growAdam() {
-    const n = this.S.cap, grow = (o, k) => { const a = new Float32Array(n * k); a.set(o.subarray(0, Math.min(o.length, n * k))); return a; };
-    for (const X of [this.m, this.v]) { X.mu = grow(X.mu, 3); X.ls = grow(X.ls, 3); X.q = grow(X.q, 4); X.op = grow(X.op, 1); X.col = grow(X.col, 3); }
+    const n = this.S.cap, nb = this.S.nb, grow = (o, k) => { const a = new Float32Array(n * k); a.set(o.subarray(0, Math.min(o.length, n * k))); return a; };
+    for (const X of [this.m, this.v]) { X.mu = grow(X.mu, 3); X.ls = grow(X.ls, 3); X.q = grow(X.q, 4); X.op = grow(X.op, 1); X.sh = grow(X.sh, 3 * nb); }
     this.acc.m2d = grow(this.acc.m2d, 1); this.acc.cnt = grow(this.acc.cnt, 1);
   }
   densify() {
-    const S = this.S, n = S.n;
+    const S = this.S, n = S.n, nb3 = 3 * S.nb;
     if (n >= this.maxN) { this.acc.m2d.fill(0); this.acc.cnt.fill(0); return; }
     const avg = []; for (let i = 0; i < n; i++) if (this.acc.cnt[i] > 0) avg.push([this.acc.m2d[i] / this.acc.cnt[i], i]);
     avg.sort((a, b) => b[0] - a[0]);
@@ -295,20 +391,20 @@ export class Trainer {
     for (let k = 0; k < take; k++) {
       const i = avg[k][1];
       const mu = [S.mu[i * 3], S.mu[i * 3 + 1], S.mu[i * 3 + 2]], ls = [S.ls[i * 3], S.ls[i * 3 + 1], S.ls[i * 3 + 2]], q = [...S.q.subarray(i * 4, i * 4 + 4)];
-      const col = [...S.col.subarray(i * 3, i * 3 + 3)], op = S.op[i];
+      const sh = S.sh.slice(i * nb3, (i + 1) * nb3), op = S.op[i];
       if (Math.max(...ls) > big) { // крупная — делим на две
         const R = new Float32Array(9); quatToR(q[0], q[1], q[2], q[3], R);
         const ax = ls.indexOf(Math.max(...ls)), s = Math.exp(ls[ax]) * 0.6;
         const d = [R[ax] * s, R[3 + ax] * s, R[6 + ax] * s];
         const nl = ls.map(v => v - Math.log(1.6));
         S.mu.set([mu[0] + d[0], mu[1] + d[1], mu[2] + d[2]], i * 3); S.ls.set(nl, i * 3);
-        S.push([mu[0] - d[0], mu[1] - d[1], mu[2] - d[2]], nl, q, op, col);
-      } else S.push(mu, ls, q, op, col); // мелкая — клон
+        S.push([mu[0] - d[0], mu[1] - d[1], mu[2] - d[2]], nl, q, op, sh);
+      } else S.push(mu, ls, q, op, sh); // мелкая — клон
     }
     this.acc.m2d.fill(0); this.acc.cnt.fill(0);
   }
   prune() {
-    const S = this.S; let w = 0;
+    const S = this.S, nb3 = 3 * S.nb;
     const keepIdx = [];
     for (let i = 0; i < S.n; i++) {
       const o = sig(S.op[i]);
@@ -318,62 +414,87 @@ export class Trainer {
     }
     if (keepIdx.length === S.n) return;
     const mv = (arr, k) => { for (let j = 0; j < keepIdx.length; j++) { const i = keepIdx[j]; if (i !== j) for (let c = 0; c < k; c++) arr[j * k + c] = arr[i * k + c]; } };
-    for (const [name, k] of [['mu', 3], ['ls', 3], ['q', 4], ['op', 1], ['col', 3]]) { mv(S[name], k); mv(this.m[name], k); mv(this.v[name], k); }
+    for (const [name, k] of [['mu', 3], ['ls', 3], ['q', 4], ['op', 1], ['sh', nb3]]) { mv(S[name], k); mv(this.m[name], k); mv(this.v[name], k); }
     mv(this.acc.m2d, 1); mv(this.acc.cnt, 1);
-    w = keepIdx.length;
-    for (let j = w; j < S.n; j++) for (const X of [this.m, this.v]) { X.mu.fill(0, j * 3, j * 3 + 3); X.ls.fill(0, j * 3, j * 3 + 3); X.q.fill(0, j * 4, j * 4 + 4); X.op[j] = 0; X.col.fill(0, j * 3, j * 3 + 3); }
+    const w = keepIdx.length;
+    for (const X of [this.m, this.v]) { X.mu.fill(0, w * 3, S.n * 3); X.ls.fill(0, w * 3, S.n * 3); X.q.fill(0, w * 4, S.n * 4); X.op.fill(0, w, S.n); X.sh.fill(0, w * nb3, S.n * nb3); }
     S.n = w;
   }
 }
 
-// начальные капли — точки на поверхности сетки, плоские вдоль поверхности
-export function initFromMesh(M, maxN = 8000) {
+// начальные капли — точки на поверхности сетки, плоские вдоль поверхности (третья ось — по нормали)
+export function initFromMesh(M, maxN = 8000, deg = SPLAT_DEFAULTS.deg) {
   const nv = M.pos.length / 3, step = Math.max(1, Math.floor(nv / maxN));
   // средняя длина ребра — для начального размера
   let el = 0, ec = 0; for (let i = 0; i < Math.min(M.idx.length, 30000); i += 3) { const a = M.idx[i] * 3, b = M.idx[i + 1] * 3; el += Math.hypot(M.pos[a] - M.pos[b], M.pos[a + 1] - M.pos[b + 1], M.pos[a + 2] - M.pos[b + 2]); ec++; }
   el /= Math.max(1, ec);
-  const S = new Splats(Math.ceil(nv / step) + 16);
-  const r = Math.log(Math.max(0.3, el * Math.sqrt(step) * 0.75)), rn = r + Math.log(0.35);
+  const S = new Splats(Math.ceil(nv / step) + 16, deg);
+  const r = Math.log(Math.max(0.3, el * Math.sqrt(step) * 0.75)), rn = r + Math.log(0.1);
   const logit = (p) => Math.log(p / (1 - p));
   for (let v = 0; v < nv; v += step) {
     const n = [M.nrm[v * 3], M.nrm[v * 3 + 1], M.nrm[v * 3 + 2]];
     // поворот (0,0,1) → n
     const dz = n[2], cx = -n[1], cy = n[0]; // ось = z × n
     let q = [1 + dz, cx, cy, 0]; const ql = Math.hypot(...q); q = ql < 1e-6 ? [0, 1, 0, 0] : q.map(x => x / ql);
-    const c = [0, 1, 2].map(k => logit(Math.min(0.97, Math.max(0.03, M.col[v * 3 + k] / 255))));
+    const c = [0, 1, 2].map(k => Math.min(0.97, Math.max(0.03, M.col[v * 3 + k] / 255)));
     S.push([M.pos[v * 3], M.pos[v * 3 + 1], M.pos[v * 3 + 2]], [r, r, rn], q, logit(0.6), c);
   }
   return S;
 }
 
-// экспорт в стандартный PLY 3DGS (читают SuperSplat, Brush, аддоны Blender). Единицы — метры, Z вверх.
-export function toPLY(S) {
-  const props = ['x', 'y', 'z', 'nx', 'ny', 'nz', 'f_dc_0', 'f_dc_1', 'f_dc_2', 'opacity', 'scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3'];
-  const head = `ply\nformat binary_little_endian 1.0\ncomment Obyom 3D scanner\nelement vertex ${S.n}\n` + props.map(p => `property float ${p}`).join('\n') + '\nend_header\n';
-  const hb = new TextEncoder().encode(head), buf = new ArrayBuffer(hb.length + S.n * props.length * 4), dv = new DataView(buf);
-  new Uint8Array(buf).set(hb);
-  let o = hb.length; const C0 = 0.28209479177387814, mm = 0.001;
-  const f = (v) => { dv.setFloat32(o, v, true); o += 4; };
-  for (let i = 0; i < S.n; i++) {
-    f(S.mu[i * 3] * mm); f(S.mu[i * 3 + 1] * mm); f(S.mu[i * 3 + 2] * mm); f(0); f(0); f(0);
-    for (let c = 0; c < 3; c++) f((sig(S.col[i * 3 + c]) - 0.5) / C0);
-    f(S.op[i]);
-    for (let c = 0; c < 3; c++) f(S.ls[i * 3 + c] + Math.log(mm));
-    const q = S.q.subarray(i * 4, i * 4 + 4), l = Math.hypot(...q) || 1;
-    for (let c = 0; c < 4; c++) f(q[c] / l);
-  }
-  return buf;
+// ---------- упаковка для хранения и просмотра ----------
+// v2: заголовок [PACK_MAGIC, 2, deg, n], затем на каплю: центр(3) logScale(3) quat(4) opacity цвет(3) + гармоники 1..nb−1 [k][канал].
+// Старый формат (до 1.9): 14 чисел на каплю без заголовка.
+const PACK_MAGIC = -77777;
+export function splatInfo(p) {
+  if (p && p.length >= 4 && p[0] === PACK_MAGIC) { const deg = p[2], nb = (deg + 1) * (deg + 1), stride = 14 + 3 * (nb - 1); return { off: 4, deg, nb, stride, n: p[3] }; }
+  return { off: 0, deg: 0, nb: 1, stride: 14, n: p ? p.length / 14 : 0 };
 }
-// компактная упаковка для хранения/просмотра: 14 float на каплю (мм)
 export function packSplats(S) {
-  const out = new Float32Array(S.n * 14);
+  const nb = S.nb, nb3 = 3 * nb, stride = 14 + 3 * (nb - 1), out = new Float32Array(4 + S.n * stride);
+  out[0] = PACK_MAGIC; out[1] = 2; out[2] = S.deg; out[3] = S.n;
   for (let i = 0; i < S.n; i++) {
-    out.set(S.mu.subarray(i * 3, i * 3 + 3), i * 14); out.set(S.ls.subarray(i * 3, i * 3 + 3), i * 14 + 3);
-    const q = S.q.subarray(i * 4, i * 4 + 4), l = Math.hypot(...q) || 1; for (let c = 0; c < 4; c++) out[i * 14 + 6 + c] = q[c] / l;
-    out[i * 14 + 10] = sig(S.op[i]); for (let c = 0; c < 3; c++) out[i * 14 + 11 + c] = sig(S.col[i * 3 + c]);
+    const o = 4 + i * stride;
+    out.set(S.mu.subarray(i * 3, i * 3 + 3), o); out.set(S.ls.subarray(i * 3, i * 3 + 3), o + 3);
+    const q = S.q.subarray(i * 4, i * 4 + 4), l = Math.hypot(...q) || 1; for (let c = 0; c < 4; c++) out[o + 6 + c] = q[c] / l;
+    out[o + 10] = sig(S.op[i]); for (let c = 0; c < 3; c++) out[o + 11 + c] = S.baseColor(i, c);
+    for (let k = 1; k < nb; k++) for (let c = 0; c < 3; c++) out[o + 14 + (k - 1) * 3 + c] = S.sh[i * nb3 + k * 3 + c];
   }
   return out;
 }
+// масштаб (поправка печати коврика): центры × (sx,sy,sz), радиусы × среднее
+export function scalePacked(p, sx, sy, sz) {
+  const I = splatInfo(p), ls = Math.log(Math.cbrt(sx * sy * sz));
+  for (let i = 0; i < I.n; i++) { const o = I.off + i * I.stride; p[o] *= sx; p[o + 1] *= sy; p[o + 2] *= sz; p[o + 3] += ls; p[o + 4] += ls; p[o + 5] += ls; }
+}
+
+// экспорт в стандартный PLY 3DGS (читают SuperSplat, Brush, аддоны Blender). Единицы — метры, Z вверх.
+// Нормали — ось диска (плоские капли); гармоники — f_rest_* по каналам, как в 3DGS.
+export function plyFromPacked(p) {
+  const I = splatInfo(p), nr = I.nb - 1;
+  const props = ['x', 'y', 'z', 'nx', 'ny', 'nz', 'f_dc_0', 'f_dc_1', 'f_dc_2'];
+  for (let k = 0; k < 3 * nr; k++) props.push(`f_rest_${k}`);
+  props.push('opacity', 'scale_0', 'scale_1', 'scale_2', 'rot_0', 'rot_1', 'rot_2', 'rot_3');
+  const head = `ply\nformat binary_little_endian 1.0\ncomment Obyom 3D scanner\nelement vertex ${I.n}\n` + props.map(q => `property float ${q}`).join('\n') + '\nend_header\n';
+  const hb = new TextEncoder().encode(head), buf = new ArrayBuffer(hb.length + I.n * props.length * 4), dv = new DataView(buf);
+  new Uint8Array(buf).set(hb);
+  let o = hb.length; const mm = 0.001, logit = (x) => { const v = Math.max(1e-4, Math.min(0.9999, x)); return Math.log(v / (1 - v)); };
+  const f = (v) => { dv.setFloat32(o, v, true); o += 4; };
+  for (let i = 0; i < I.n; i++) {
+    const b = I.off + i * I.stride;
+    const [w, x, y, z] = [p[b + 6], p[b + 7], p[b + 8], p[b + 9]];
+    f(p[b] * mm); f(p[b + 1] * mm); f(p[b + 2] * mm);
+    f(2 * (x * z + w * y)); f(2 * (y * z - w * x)); f(1 - 2 * (x * x + y * y)); // третий столбец поворота
+    for (let c = 0; c < 3; c++) f((p[b + 11 + c] - 0.5) / SH_C0);
+    for (let c = 0; c < 3; c++) for (let k = 0; k < nr; k++) f(p[b + 14 + k * 3 + c]);
+    f(logit(p[b + 10]));
+    for (let c = 0; c < 3; c++) f(p[b + 3 + c] + Math.log(mm));
+    for (let c = 0; c < 4; c++) f(p[b + 6 + c]);
+  }
+  return buf;
+}
+// для тестов: прямо из капель
+export function toPLY(S) { return plyFromPacked(packSplats(S)); }
 
 // ---------- подготовка кадров для обучения ----------
 // frames: [{w,h,rgba,K,R,t,mask}], M — сетка оболочки, G — воксели (для «можно ли капле быть здесь»)
@@ -386,16 +507,20 @@ export function splatViews(M, frames, depthMap, opt = {}) {
     if (x1 < 0) continue;
     const m = opt.margin ?? 6; x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(w - 1, x1 + m); y1 = Math.min(h - 1, y1 + m);
     const cw = x1 - x0 + 1, ch = y1 - y0 + 1, n = cw * ch;
-    const img = new Float32Array(n * 3), bg = new Float32Array(n * 3), wt = new Float32Array(n);
+    const img = new Float32Array(n * 3), bg = new Float32Array(n * 3), wt = new Float32Array(n), at = new Int8Array(n).fill(-1);
     for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
       const j = y * cw + x, gi = (y + y0) * w + x + x0;
       for (let c = 0; c < 3; c++) img[j * 3 + c] = f.rgba[gi * 4 + c] / 255;
-      const isBg = f.mask ? f.mask[gi] === 0 : zb[gi] > 1e8;
+      const isBg = f.mask ? f.mask[gi] === 0 : zb[gi] > 1e8, unk = f.mask && (f.mask[gi] === 1 || f.mask[gi] === 3);
       for (let c = 0; c < 3; c++) bg[j * 3 + c] = isBg ? img[j * 3 + c] : 0.5;
       // неуверенные пиксели (тень, блики коврика) почти не учитываем — иначе капли «рисуют» тень вокруг предмета
-      wt[j] = f.mask && (f.mask[gi] === 1 || f.mask[gi] === 3) ? (opt.unkW ?? 0.15) : 1; // 3 — слабый фон за листом
+      wt[j] = unk ? (opt.unkW ?? 0.15) : 1; // 3 — слабый фон за листом
+      // вертушка: за листом известен фон — медиана кадров с этого места (предмет крутится, стена стоит)
+      if (unk && f.bgMed && opt.medW !== 0) { const gn = f.bgGain || 1; for (let c = 0; c < 3; c++) bg[j * 3 + c] = Math.min(1, gn * f.bgMed[gi * 3 + c] / 255); wt[j] = opt.medW ?? 1; }
+      // цель прозрачности: уверенный фон — капель нет (0); уверенный предмет внутри оболочки — сплошь (1); прочее — без цели
+      if (f.mask) at[j] = f.mask[gi] === 0 ? 0 : f.mask[gi] === 2 && zb[gi] < 1e8 ? 1 : -1;
     }
-    views.push({ K: f.K, R: f.R, t: f.t, x0, y0, cw, ch, img, bg, wt, src: f });
+    views.push({ K: f.K, R: f.R, t: f.t, x0, y0, cw, ch, img, bg, wt, at, src: f });
   }
   return views;
 }

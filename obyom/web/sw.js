@@ -1,5 +1,5 @@
 // Сеть в первую очередь (обновления не застревают), кэш — когда нет интернета.
-const CACHE = 'obyom-v9';
+const CACHE = 'obyom-v10';
 const ASSETS = ['./', './index.html', './styles.css', './manifest.webmanifest',
   './js/app.js', './js/mat.js', './js/detect.js', './js/pose.js', './js/recon.js', './js/splat.js', './js/pipeline.js', './js/worker.js', './js/procclient.js',
   './js/capture.js', './js/viewer.js', './js/export.js', './js/store.js', './js/matprint.js', './js/align.js', './js/shapes.js', './js/texture.js', './js/nativecam.js',

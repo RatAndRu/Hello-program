@@ -52,6 +52,10 @@ class NativeCam(private val ctx: Context) {
         private set
     var reqH = 720
         private set
+    /** Экспозиция и баланс белого зафиксированы (для съёмки: все кадры одной яркости и цвета). */
+    @Volatile var lockWanted = false
+        private set
+    private var builder: CaptureRequest.Builder? = null
 
     @SuppressLint("MissingPermission")
     @Synchronized
@@ -110,11 +114,33 @@ class NativeCam(private val ctx: Context) {
                     rb.addTarget(surf)
                     rb.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
                     if (af >= 0) rb.set(CaptureRequest.CONTROL_AF_MODE, af)
+                    builder = rb
                     s.setRepeatingRequest(rb.build(), null, hd)
+                    // камеру перезапустили посреди съёмки: даём автоэкспозиции сойтись и снова фиксируем
+                    if (lockWanted) hd.postDelayed({ applyLock(true) }, 900)
                 } catch (e: Exception) { lastError = "камера: ${e.message}" }
             }
             override fun onConfigureFailed(s: CameraCaptureSession) { lastError = "не удалось настроить камеру" }
         }, hd)
+    }
+
+    /** Зафиксировать (true) или отпустить (false) экспозицию и баланс белого. */
+    fun lock(on: Boolean): String {
+        lockWanted = on
+        val hd = handler ?: return "ok"
+        hd.post { applyLock(on) }
+        return "ok"
+    }
+
+    private fun applyLock(on: Boolean) {
+        val rb = builder ?: return
+        val s = session ?: return
+        if (on != lockWanted) return
+        try {
+            rb.set(CaptureRequest.CONTROL_AE_LOCK, on)
+            rb.set(CaptureRequest.CONTROL_AWB_LOCK, on)
+            s.setRepeatingRequest(rb.build(), null, handler)
+        } catch (e: Exception) { lastError = "фиксация экспозиции: ${e.message}" }
     }
 
     private fun onImage(r: ImageReader) {
@@ -156,7 +182,7 @@ class NativeCam(private val ctx: Context) {
         running = false
         val hd = handler; val th = thread
         val s = session; val d = device; val rd = reader
-        session = null; device = null; reader = null; handler = null; thread = null
+        session = null; device = null; reader = null; handler = null; thread = null; builder = null
         val close = Runnable {
             try { s?.close() } catch (e: Exception) {}
             try { d?.close() } catch (e: Exception) {}

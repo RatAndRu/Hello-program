@@ -20,8 +20,15 @@ if os.environ.get('OBJPOSE'):
 # предмет: цилиндр r=24 h=0..42 (полоски) + шар r=17 центр z=58 (шахматка) + «ручка»-кубик сбоку
 def shade_obj(P, Nrm, kind):
     L = np.array([0.4, -0.5, 0.75]); L /= np.linalg.norm(L)
+    if LIGHTCAM:  # лампа стоит в комнате: на вертушке она поворачивается относительно предмета вместе с камерой
+        a_ = np.radians(AZ[0]); L = np.array([L[0] * np.cos(a_) + L[1] * np.sin(a_), -L[0] * np.sin(a_) + L[1] * np.cos(a_), L[2]])
     Nrm = Nrm @ QR.T
     lam = 0.35 + 0.65 * np.clip((Nrm * L).sum(-1), 0, 1)
+    spec = 0
+    if SPEC:  # блик (Блинн — Фонг): белый, зависит от направления взгляда
+        Pw = P @ QR.T + QT; V = CAMW[0] - Pw; V = V / np.linalg.norm(V, axis=-1, keepdims=True)
+        Hh = V + L; Hh = Hh / np.linalg.norm(Hh, axis=-1, keepdims=True)
+        spec = SPEC * np.clip((Nrm * Hh).sum(-1), 0, 1) ** 40
     col = np.zeros(P.shape, np.float32)
     ang = np.arctan2(P[..., 1], P[..., 0])
     if kind == 'cyl':
@@ -38,13 +45,15 @@ def shade_obj(P, Nrm, kind):
         col[:] = [0.25, 0.75, 0.35]
     if os.environ.get('OBJWHITE'):  # однотонный светлый матовый предмет (как дезодорант)
         col[:] = [0.88, 0.88, 0.9]
-    return col * lam[..., None]
-AZ = [0.0]; NOOBJ = [False]
+    return np.clip(col * lam[..., None] + (spec[..., None] if SPEC else 0), 0, 1)
+AZ = [0.0]; NOOBJ = [False]; CAMW = [np.zeros(3)]
+LIGHTCAM = bool(os.environ.get('LIGHTCAM')); SPEC = float(os.environ.get('SPEC', 0))  # свет в комнате; сила блика
+EXPO = float(os.environ.get('EXPO', 0))  # разброс автоэкспозиции между кадрами (σ лог-усиления), напр. 0.1
 STATIC = bool(os.environ.get('STATIC'))  # вертушка у неподвижной камеры: стол и стена неподвижны относительно камеры
 def render(Rm, t):
     ys, xs = np.mgrid[0:H, 0:W].astype(np.float32)
     d_cam = np.stack([(xs - cx) / f, (ys - cy) / f, np.ones_like(xs)], -1)
-    Rt = Rm.T; o = -Rt @ t
+    Rt = Rm.T; o = -Rt @ t; CAMW[0] = o.copy()
     d = d_cam @ Rt.T; d /= np.linalg.norm(d, axis=-1, keepdims=True)
     best = np.full((H, W), np.inf, np.float32); img = np.zeros((H, W, 3), np.float32)
     # плоскость z=0
@@ -72,11 +81,14 @@ def render(Rm, t):
         base = np.where(onwall[..., None], wall, base)
     pl = np.where(onmat[..., None], paper, base)
     # тень от предмета (простая: круг под предметом, смещённый от света)
-    sh = np.hypot(P[..., 0] - 10, P[..., 1] + 12) < 30
+    shx, shy = 10.0, -12.0
+    if LIGHTCAM: a_ = np.radians(AZ[0]); shx, shy = 10 * np.cos(a_) - 12 * np.sin(a_), -10 * np.sin(a_) - 12 * np.cos(a_)
+    sh = np.hypot(P[..., 0] - shx, P[..., 1] - shy) < 30
     if not NOOBJ[0]: pl = pl * np.where(sh[..., None], 0.75, 1.0)
     m = tz > 0
     best[m] = tz[m]; img[m] = pl[m]
-    if STATIC: img[onwall] = pl[onwall]; m = m & ~onwall
+    if STATIC: img[onwall] = pl[onwall]; best[onwall] = tw[onwall]; m = m & ~onwall
+    bgd = best.copy()  # глубина фона (стол, коврик, стена): предмет — то, что ближе неё
     # фон-стена далеко (если луч не попал на стол)
     img[~m & ~(onwall if STATIC else False)] = [float(v) for v in os.environ['TABLE'].split(',')] if os.environ.get('TABLE') else [0.6, 0.62, 0.65]
     ow, dw_ = o, d
@@ -87,10 +99,12 @@ def render(Rm, t):
         if ok.any():
             c = shade_obj(Pn, Nn, kind)
             img[ok] = c[ok]; best[ok] = tt[ok]
-    if os.environ.get('OBJ') in ('box', 'hex'):  # выпуклый многогранник (коробка 60×40×45, повёрнута на 20°; шестигранник r=30 h=50)
-        if os.environ['OBJ'] == 'box':
+    if os.environ.get('OBJ') in ('box', 'hex', 'pbank'):  # выпуклый многогранник (коробка 60×40×45, повёрнута на 20°; шестигранник r=30 h=50;
+        # pbank — павербанк, поставленный вертикально: 66×24×140, размеры можно задать BOXDIM="66,24,140")
+        if os.environ['OBJ'] in ('box', 'pbank'):
+            bx, by, bz = [float(x) for x in os.environ.get('BOXDIM', '60,40,45' if os.environ['OBJ'] == 'box' else '66,24,140').split(',')]
             th = np.radians(20); u = np.array([np.cos(th), np.sin(th), 0]); v = np.array([-np.sin(th), np.cos(th), 0])
-            PL = [(u, 30), (-u, 30), (v, 20), (-v, 20), (np.array([0, 0, 1.0]), 45), (np.array([0, 0, -1.0]), 0)]
+            PL = [(u, bx / 2), (-u, bx / 2), (v, by / 2), (-v, by / 2), (np.array([0, 0, 1.0]), bz), (np.array([0, 0, -1.0]), 0)]
         else:
             PL = [(np.array([np.cos(a_), np.sin(a_), 0]), 30 * np.cos(np.pi / 6)) for a_ in np.arange(6) * np.pi / 3 + 0.2] + [(np.array([0, 0, 1.0]), 50), (np.array([0, 0, -1.0]), 0)]
         tn = np.full(d.shape[:2], -np.inf); tf = np.full(d.shape[:2], np.inf); nn = np.zeros(d.shape); ok = np.ones(d.shape[:2], bool)
@@ -103,7 +117,7 @@ def render(Rm, t):
             ok &= ~((np.abs(dn) < 1e-9) & (on > 0))
         Pp = o + d * tn[..., None]
         hit(tn, Pp, nn, 'poly', ok & (tn < tf))
-        objm = best < np.where(m, tz, np.inf) - 1e-3
+        objm = best < bgd - 1e-3
         img = np.clip(img + rng.normal(0, noise / 255, img.shape), 0, 1)
         return (img * 255).astype(np.uint8), objm
     # цилиндр (бок)
@@ -131,7 +145,7 @@ def render(Rm, t):
     nb = np.zeros_like(Pb); ax = np.argmax(np.minimum(t0, t1b), -1)
     for k in range(3): nb[..., k] = np.where(ax == k, -np.sign(d[..., k]), 0)
     hit(tmin, Pb, nb, 'box', tmax > np.maximum(tmin, 0))
-    objm = best < np.where(m, tz, np.inf) - 1e-3
+    objm = best < bgd - 1e-3
     img = np.clip(img + rng.normal(0, noise / 255, img.shape), 0, 1)
     return (img * 255).astype(np.uint8), objm
 def look(cam, target):
@@ -150,12 +164,14 @@ for i in range(N):
     if os.environ.get('DIST'): dist = float(os.environ['DIST']) + rng.normal(0, 8)  # крупные планы (досъёмка для текстуры)
     a = np.radians(az); e = np.radians(el)
     cam = np.array([dist * np.cos(e) * np.sin(a), dist * np.cos(e) * np.cos(a), dist * np.sin(e)])
-    Rm, t = look(cam, np.array([0, 0, 25.0]) + (rng.normal(0, 5, 3) if mode == 'walk' else 0))
+    Rm, t = look(cam, np.array([0, 0, float(os.environ.get('LOOKZ', 25))]) + (rng.normal(0, 5, 3) if mode == 'walk' else 0))
     AZ[0] = az; img, objm = render(Rm, t)
     if STATIC and i == 0:  # кадр фона: пустая вертушка
         NOOBJ[0] = True; pim, _ = render(Rm, t); NOOBJ[0] = False
         Image.fromarray(pim).filter(ImageFilter.GaussianBlur(0.6)).save(f'{out}/plate.jpg', quality=88)
     Image.fromarray((objm * 255).astype(np.uint8)).save(f'{out}/m{i:03d}.png')
+    if EXPO:  # автоэкспозиция и баланс белого «гуляют» от кадра к кадру
+        g_ = np.exp(rng.normal(0, EXPO) + rng.normal(0, EXPO * 0.3, 3)); img = np.clip(img.astype(np.float32) * g_, 0, 255).astype(np.uint8)
     im = Image.fromarray(img).filter(ImageFilter.GaussianBlur(0.6))
     if mode == 'spin':  # смаз при движении: ~2.7 пикс на градус, выдержка 1/30 с
         L = frames_w / 30 * 2.7

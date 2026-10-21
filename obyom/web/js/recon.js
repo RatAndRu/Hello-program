@@ -288,7 +288,21 @@ export function computeMask(fr, ctx) {
   // 4 — «нет сведений»: за листом, ничем не подтверждено (ни фоном, ни отличием от кадра фона).
   // Такие кадры не считаются «видевшими» воксель: иначе они раздувают порог доли и над предметом остаётся шапка.
   if (ctx.mark4) for (let i = 0; i < n; i++) if (mask[i] === 1 && des[i] < 0 && inCyl[i]) mask[i] = 4;
-  return { mask, stats: { ok: true, rho, bgFrac: nb / n, enclosed, plate: PL ? { shift: PL.shift, agree: PL.agree } : null } };
+  // заведомый фон для проверки «камера не сдвинулась» (улики «движения» на вертушке): за листом и вне рамки, через 3 пикс.
+  let refOut = null;
+  // Лист крутится вместе со столиком — его углы заметают круг радиусом в полудиагональ листа: эти точки не берём.
+  if (ctx.refOut) {
+    const r = [], sw2 = (0.5 * Math.hypot(210, 297) * L.k * 1.08) ** 2;
+    for (let y = 2; y < h - 2; y += 3) for (let x = 2; x < w - 2; x += 3) {
+      const i = y * w + x; if (des[i] >= 0 || inCyl[i]) continue;
+      const cx = (x + 0.5 - K.cx) / K.fx, cy = (y + 0.5 - K.cy) / K.fy;
+      const dx = R[0] * cx + R[3] * cy + R[6], dy = R[1] * cx + R[4] * cy + R[7], dz = R[2] * cx + R[5] * cy + R[8];
+      if (dz < -1e-6) { const s = -C[2] / dz, X = C[0] + dx * s, Y = C[1] + dy * s; if (X * X + Y * Y < sw2) continue; }
+      r.push(i);
+    }
+    refOut = Int32Array.from(r);
+  }
+  return { mask, refOut, stats: { ok: true, rho, bgFrac: nb / n, enclosed, plate: PL ? { shift: PL.shift, agree: PL.agree } : null } };
 }
 // Кадр фона (clean plate): телефон в держателе неподвижен, всё за листом (стол, стена) от кадра к кадру не меняется,
 // а предмет на вертушке закрывает часть этого фона. Пиксель за листом, совпавший с фоном, — «здесь пусто»:
@@ -456,17 +470,78 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   // «Колпак рамки»: пространство над предметом, которое ни один кадр не видел на фоне листа, остаётся целым
   // цилиндром рамки. Его признак — слои, заполненные вплотную к стенке рамки по всему кругу, начиная от верха.
   // Настоящий предмет стенки рамки по кругу не касается (если он не шире рамки — тогда ничего не трогаем).
-  const capTrim = opt.capTrim === false ? 0 : trimCap(occ, nx, ny, nz, vs, box.Rb, ox, oy, zg);
+  // Вертушка: пространство, видимое только на фоне стола/стены, проверяем «движением» (что крутится — предмет)
+  const mc = opt.motion === false ? null : motionCarve(occ, nx, ny, nz, vs, ox, oy, oz, zg, frames);
+  if (mc && mc.removed) keepLargest(occ, nx, ny, nz, zg);
+  const capTrim = opt.capTrim === false ? 0 : trimCap(occ, nx, ny, nz, vs, box.Rb, ox, oy, zg, frames, oz);
   if (capTrim) keepLargest(occ, nx, ny, nz, zg);
   // закрытие: заполняет мелкие ямки и щели от бликов; затем заливаем пустоты внутри
   const cr = opt.close ?? Math.max(1, Math.round(1.2 / vs));
   if (cr > 0) closeGrid(occ, nx, ny, nz, cr);
   fillVoids(occ, nx, ny, nz);
-  return { occ, nx, ny, nz, vs, origin: [ox, oy, oz], capTrim: capTrim * vs, Rb: box.Rb, Hb: box.Hb };
+  return { occ, nx, ny, nz, vs, origin: [ox, oy, oz], capTrim: capTrim * vs, capExt: trimCap.lastExt || 0, motionCut: mc ? mc.removed * vs ** 3 : 0, Rb: box.Rb, Hb: box.Hb };
+}
+// ---------- «Движение» на вертушке: что крутится — то предмет ----------
+// Камера стоит, крутится только столик с предметом. Стол и стена за листом в кадрах одной позиции камеры неподвижны:
+// их медиана по кадрам — пустой фон. Пиксель за листом, заметно отличный от этой медианы, — это предмет
+// (или его тень). Это только улика «здесь что-то есть»: ею ничего не вырезаем, лишь не даём срезать верх
+// высокого предмета, который ни в одном кадре не виден на фоне листа.
+// Кадры группируются по положению камеры (высота и расстояние до оси), так что перестановка держателя
+// между оборотами учитывается: у каждой позиции свой фон.
+export function motionMasks(frames, opt = {}) {
+  const tau = opt.tau ?? 26, minG = opt.minGroup ?? 8, groups = [];
+  for (const f of frames) {
+    const R = f.R, t = f.t;
+    const C = [-(R[0] * t[0] + R[3] * t[1] + R[6] * t[2]), -(R[1] * t[0] + R[4] * t[1] + R[7] * t[2]), -(R[2] * t[0] + R[5] * t[1] + R[8] * t[2])];
+    const rho = Math.hypot(C[0], C[1]), cz = C[2], tol = Math.max(4, 0.025 * Math.hypot(rho, cz));
+    let g = groups.find((q) => q.w === f.w && q.h === f.h && Math.abs(q.rho - rho) < tol && Math.abs(q.cz - cz) < tol);
+    if (!g) { g = { rho, cz, w: f.w, h: f.h, fr: [] }; groups.push(g); }
+    g.fr.push(f);
+  }
+  let used = 0;
+  for (const g of groups) {
+    if (g.fr.length < minG) continue;
+    const { w, h } = g, n = g.fr.length, np = w * h, med = new Uint8Array(np * 3), buf = new Uint8Array(n);
+    // медиана считается только там, где пригодится: за листом (маска 1 или 3) хотя бы в одном кадре
+    const need = new Uint8Array(np);
+    for (const f of g.fr) { for (let i = 0; i < np; i++) { const m = f.mask[i]; if (m === 1 || m === 3) need[i] = 1; } if (f.refOut) for (const i of f.refOut) need[i] = 1; }
+    for (let i = 0; i < np; i++) {
+      if (!need[i]) continue;
+      for (let c = 0; c < 3; c++) {
+        for (let k = 0; k < n; k++) buf[k] = g.fr[k].rgba[i * 4 + c];
+        buf.sort(); med[i * 3 + c] = buf[n >> 1];
+      }
+    }
+    for (const f of g.fr) {
+      // поправка яркости (автоэкспозиция): медиана отношения кадр/фон по точкам за листом
+      const rs = [];
+      for (let i = 0; i < np; i += 7) if (need[i] && f.mask[i] !== 0 && f.mask[i] !== 2) { const a = f.rgba[i * 4] + f.rgba[i * 4 + 1] + f.rgba[i * 4 + 2], b = med[i * 3] + med[i * 3 + 1] + med[i * 3 + 2]; if (b > 60) rs.push(a / b); }
+      rs.sort((a, b) => a - b); const gn = rs.length > 50 ? Math.min(1.5, Math.max(0.67, rs[rs.length >> 1])) : 1;
+      const raw = new Uint8Array(np);
+      for (let i = 0; i < np; i++) {
+        const m = f.mask[i]; if (!need[i] || (m !== 1 && m !== 3)) continue;
+        let d = 0; for (let c = 0; c < 3; c++) d = Math.max(d, Math.abs(f.rgba[i * 4 + c] - gn * med[i * 3 + c]));
+        if (d > tau) raw[i] = 1;
+      }
+      // открытие 3×3: одиночные шумовые точки и полоски JPEG не считаются движением
+      const er = new Uint8Array(np), mo = new Uint8Array(np);
+      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const i = y * w + x; if (raw[i] && raw[i - 1] && raw[i + 1] && raw[i - w] && raw[i + w]) er[i] = 1; }
+      for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const i = y * w + x; if (er[i] || er[i - 1] || er[i + 1] || er[i - w] || er[i + w]) mo[i] = raw[i]; }
+      // заведомый фон (за листом, вне рамки) заметно «движется» — камера сдвинулась или свет мигнул: улик не берём
+      if (f.refOut && f.refOut.length > 200) {
+        let nm = 0; for (const i of f.refOut) { let d = 0; for (let c = 0; c < 3; c++) d = Math.max(d, Math.abs(f.rgba[i * 4 + c] - gn * med[i * 3 + c])); if (d > tau) nm++; }
+        f.refMoved = nm / f.refOut.length; f.refN = f.refOut.length;
+        if (nm > 0.1 * f.refOut.length) { f.motion = null; f.bgMed = null; g.moved = (g.moved || 0) + 1; continue; }
+      }
+      f.motion = mo; used++;
+      f.bgMed = med; f.bgGain = gn; // фон за предметом (медиана с этого места камеры) — сплэтам: капли не должны «рисовать» стену
+    }
+  }
+  return { groups: groups.length, used, sizes: groups.map((g) => g.fr.length), moved: groups.reduce((a, g) => a + (g.moved || 0), 0) };
 }
 // после пересечения с «низом»: убрать обрывки (оставить стоящее на столе) и залить пустоты
 export function cleanGrid(G) { const zg = Math.max(1, Math.ceil(3 / G.vs)); keepLargest(G.occ, G.nx, G.ny, G.nz, zg); fillVoids(G.occ, G.nx, G.ny, G.nz); return G; }
-function trimCap(occ, nx, ny, nz, vs, Rb, ox, oy, zg) {
+function trimCap(occ, nx, ny, nz, vs, Rb, ox, oy, zg, frames, oz) {
   const ring = [], r0 = (Rb - 2.2 * vs) ** 2, r1 = Rb * Rb;
   for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { const X = ox + x * vs, Y = oy + y * vs, d = X * X + Y * Y; if (d > r0 && d <= r1) ring.push(y * nx + x); }
   if (!ring.length) return 0;
@@ -478,6 +553,10 @@ function trimCap(occ, nx, ny, nz, vs, Rb, ox, oy, zg) {
   if (z < zg + 2) return 0; // «предмет шире рамки» до самого низа — не трогаем
   let zt = nz - 1;
   for (; zt > z; zt--) { let any = false; for (let i = 0; i < nx * ny && !any; i++) any = occ[zt * nx * ny + i] > 0.5; if (any) break; }
+  // Высокий предмет: его верх тоже ни разу не виден на фоне листа и выглядит как «колпак». Если в кадрах там есть
+  // «движение» (крутящийся предмет на неподвижном фоне), продолжаем предмет вверх, пока движение есть:
+  // сечение — как у последнего надёжного слоя, сужаясь там, где движущийся силуэт уже.
+  const capOcc = occ.slice((z + 1) * nx * ny, (zt + 1) * nx * ny); // для поиска «движения» в колпаке
   for (let q = z + 1; q <= zt; q++) occ.fill(0, q * nx * ny, (q + 1) * nx * ny);
   // Под колпаком — переходная полоса (~25 мм), которую тоже никто не видел на фоне листа: там форма расползается
   // «шляпкой гриба». В этой полосе слой может быть шире нижнего не больше чем на 1 воксель за 3 слоя (почти отвесно).
@@ -493,7 +572,107 @@ function trimCap(occ, nx, ny, nz, vs, Rb, ox, oy, zg) {
     }
     for (let i = 0; i < S; i++) if (!dil[i]) occ[q * S + i] = 0;
   }
-  return zt - z;
+  // уже суженный слой z — основа для продолжения вверх
+  // основа — самый узкий слой надёжной полосы под колпаком (выше форма уже может расползаться «шляпкой»)
+  let zb = z, ab = Infinity;
+  for (let q = Math.max(zg + 1, z - band); q <= z; q++) { let a = 0; for (let i = 0; i < S; i++) a += occ[q * S + i] > 0.5 ? 1 : 0; if (a > 0 && a <= ab) { ab = a; zb = q; } }
+  const ext = frames ? extendByMotion(occ, capOcc, nx, ny, vs, ox, oy, oz, z, zt, frames, zb) : z;
+  trimCap.lastExt = (ext - z) * vs;
+  return Math.max(0, zt - ext);
+}
+// Слои z+1..zt (над уровнем «колпака»): воксель — «предмет», если в ≥35% кадров, где его проекция за листом,
+// там движение. Возвращает новый верх предмета; слои до него заполняются сечением предыдущего слоя ∩ улики.
+export const MOTION_OPT = { frac: 0.5, off: 0.5 }; // для тестов
+// Воксель, который в большинстве кадров виден лишь за листом (маска 1/3), остаётся, только если там «движение»
+// хотя бы в половине таких кадров. Середину силуэта однотонного предмета движение не покрывает — поэтому
+// в каждом слое оставляем всё, что лежит между подтверждёнными вокселями по строкам и столбцам.
+function motionCarve(occ, nx, ny, nz, vs, ox, oy, oz, zg, frames) {
+  const F = frames.filter((f) => f.motion);
+  if (F.length < 8) return null;
+  const S = nx * ny, offF = MOTION_OPT.off, fr = new Float32Array(nz);
+  // доля «непроверенных» вокселей в слое: в большинстве кадров видны только за листом (стол, стена)
+  for (let q = zg + 1; q < nz; q++) {
+    const Z = oz + q * vs; let occN = 0, cand = 0;
+    for (let y = 0; y < ny; y += 2) for (let x = 0; x < nx; x += 2) { // через один — для скорости
+      const i = q * S + y * nx + x; if (occ[i] < 0.5) continue; occN++;
+      const X = ox + x * vs, Y = oy + y * vs; let so = 0, seen = 0;
+      for (const f of F) {
+        const R = f.R, t = f.t, K = f.K, cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
+        const u = (K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx) | 0, v = (K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy) | 0;
+        if (u < 0 || v < 0 || u >= f.w || v >= f.h) continue;
+        const m = f.mask[v * f.w + u]; if (m === 4) continue;
+        seen++; if (m === 1 || m === 3) so++;
+      }
+      if (so >= 4 && so >= offF * seen) cand++;
+    }
+    fr[q] = occN ? cand / occN : 0;
+  }
+  let zu = -1;
+  for (let q = zg + 2; q + 2 < nz; q++) if (fr[q] >= 0.5 && fr[q + 1] >= 0.5 && fr[q + 2] >= 0.5) { zu = q; break; }
+  if (zu < 0) return null;
+  let zt = nz - 1; for (; zt > zu; zt--) { let any = false; for (let i = 0; i < S && !any; i++) any = occ[zt * S + i] > 0.5; if (any) break; }
+  if (zt <= zu) return null;
+  // основа — самый узкий слой в полосе 25 мм под границей; выше — продолжение по «движению»
+  const band = Math.round(25 / vs); let zb = zu, ab = Infinity;
+  for (let q = Math.max(zg + 1, zu - band); q <= zu; q++) { let a = 0; for (let i = 0; i < S; i++) a += occ[q * S + i] > 0.5 ? 1 : 0; if (a > 0 && a <= ab) { ab = a; zb = q; } }
+  const capOcc = occ.slice((zu + 1) * S, (zt + 1) * S), keepTop = occ.slice((zb + 1) * S, (zt + 1) * S);
+  for (let q = zu + 1; q <= zt; q++) occ.fill(0, q * S, (q + 1) * S);
+  const ext = extendByMotion(occ, capOcc, nx, ny, vs, ox, oy, oz, zu, zt, F, zb);
+  if (ext <= zu) { occ.set(keepTop, (zb + 1) * S); return null; } // движения выше нет — решает прежнее правило «колпака»
+  for (let q = ext + 1; q <= zt; q++) occ.fill(0, q * S, (q + 1) * S);
+  let removed = 0; for (let i = 0; i < keepTop.length; i++) if (keepTop[i] > 0.5 && occ[(zb + 1) * S + i] < 0.5) removed++;
+  return { removed, zu: zu * vs, top: ext * vs };
+}
+function extendByMotion(occ, capOcc, nx, ny, vs, ox, oy, oz, z, zt, frames, zb = z) {
+  const mf = MOTION_OPT.frac;
+  const F = frames.filter((f) => f.motion);
+  if (F.length < 8) return z;
+  const S = nx * ny, ev = new Uint8Array(S), minVox = Math.max(4, Math.round(30 / (vs * vs))); // ≥ ~30 мм² сечения
+  let top = z, gap = 0;
+  const lay = [];
+  for (let q = z + 1; q <= zt; q++) {
+    const Z = oz + q * vs; ev.fill(0); let cnt = 0;
+    const prev = q === z + 1 ? null : lay[lay.length - 1];
+    for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+      const i = y * nx + x; if (capOcc[(q - z - 1) * S + i] < 0.5 || occ[zb * S + i] < 0.5) continue; // только над основой
+      const X = ox + x * vs, Y = oy + y * vs; let mv = 0, so = 0;
+      for (const f of F) {
+        const R = f.R, t = f.t, K = f.K, cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
+        const u = (K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx) | 0, v = (K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy) | 0;
+        if (u < 0 || v < 0 || u >= f.w || v >= f.h) continue;
+        const j = v * f.w + u, m = f.mask[j];
+        if (m === 2) { mv++; so++; continue; } // уверенный «предмет» на фоне листа — тоже улика
+        if (m !== 1 && m !== 3) continue;
+        so++; if (f.motion[j]) mv++;
+      }
+      if (so >= 4 && mv >= 3 && mv >= mf * so) { ev[i] = 1; cnt++; }
+    }
+    if (cnt < minVox) { if (++gap > Math.round(4 / vs)) break; lay.push(lay.length ? lay[lay.length - 1] : null); continue; }
+    gap = 0; top = q;
+    // улики → сплошное сечение: расширение на 2 вокселя (центр силуэта всегда закрыт предметом и не «движется»)
+    // и заливка дыр по выпуклой оболочке строк/столбцов
+    const d = dilate2(ev, nx, ny, 2), fill = new Uint8Array(S);
+    for (let y = 0; y < ny; y++) { let a = -1, b = -1; for (let x = 0; x < nx; x++) if (d[y * nx + x]) { if (a < 0) a = x; b = x; } for (let x = a; a >= 0 && x <= b; x++) fill[y * nx + x] = 1; }
+    for (let x = 0; x < nx; x++) { let a = -1, b = -1; for (let y = 0; y < ny; y++) if (d[y * nx + x]) { if (a < 0) a = y; b = y; } for (let y = 0; y < ny; y++) if (fill[y * nx + x] && (y < a || y > b)) fill[y * nx + x] = 0; }
+    lay.push(fill);
+  }
+  if (top <= z) return z;
+  // слои полосы над основой — не шире основы; выше каждый слой ⊆ слой ниже (вверх не расширяется) и ⊆ улики слоя
+  for (let q = zb + 1; q <= z; q++) for (let i = 0; i < S; i++) if (occ[zb * S + i] < 0.5) occ[q * S + i] = 0;
+  for (let q = z + 1; q <= top; q++) {
+    const L = lay[q - z - 1];
+    for (let i = 0; i < S; i++) occ[q * S + i] = occ[(q - 1) * S + i] > 0.5 && (!L || L[i]) ? 1 : 0;
+  }
+  return top;
+}
+function dilate2(a, nx, ny, r) {
+  let cur = a;
+  for (let k = 0; k < r; k++) {
+    const o = new Uint8Array(nx * ny);
+    for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { const i = y * nx + x; o[i] = cur[i] || (x > 0 && cur[i - 1]) || (x < nx - 1 && cur[i + 1]) || (y > 0 && cur[i - nx]) || (y < ny - 1 && cur[i + nx]) ? 1 : 0; }
+    cur = o;
+  }
+  return cur;
 }
 // морфология кубом радиуса r (разделимые проходы по осям)
 function morph(occ, nx, ny, nz, r, dilate) {
