@@ -590,12 +590,27 @@ def _glb_geometry(m: mf.Manifold, max_tris: int = 4_000_000):
     return nv_y, nrm_y, nf
 
 
-def export_glb(objects, with_normals: bool = True) -> bytes:
-    """Собирает GLB со отдельным материалом на каждый объект."""
+def export_glb(objects, with_normals: bool = True, animation: dict | None = None) -> bytes:
+    """Собирает GLB с отдельным материалом на каждый объект.
+
+    Поддерживает текстуры (UV-развёртка + baseColorTexture) и анимацию
+    (вращение / формирование / разлёт) прямо в файле — Blender её увидит.
+    """
     import trimesh
     from trimesh.visual.material import PBRMaterial
+    from .textures import load_texture_image, uv_for
 
     scene = trimesh.Scene()
+    centers: dict[str, np.ndarray] = {}
+    diagonal = 1.0
+    if objects:
+        lo = np.array([1e18, 1e18, 1e18])
+        hi = -lo.copy()
+        for obj in objects:
+            bb = obj.manifold.bounding_box()
+            lo = np.minimum(lo, bb[:3])
+            hi = np.maximum(hi, bb[3:])
+        diagonal = float(np.linalg.norm(hi - lo)) or 1.0
     for obj in objects:
         if obj.manifold.is_empty():
             continue
@@ -613,14 +628,185 @@ def export_glb(objects, with_normals: bool = True) -> bytes:
             roughnessFactor=float(obj.rough),
             doubleSided=False,
         )
+        uv = None
+        if getattr(obj, "tex", None):
+            image = load_texture_image(obj.tex.get("path", ""))
+            if image is not None:
+                material.baseColorTexture = image
+                material.baseColorFactor = [255, 255, 255, 255]
+                uv = uv_for(verts, getattr(obj, "uv", "cylinder"))
+        visual = (trimesh.visual.TextureVisuals(uv=uv, material=material) if uv is not None
+                  else trimesh.visual.TextureVisuals(material=material))
         mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals,
-                               process=False, visual=trimesh.visual.TextureVisuals(material=material))
+                               process=False, visual=visual)
         mesh.metadata["name"] = obj.name
         scene.add_geometry(mesh, node_name=obj.name, geom_name=obj.name)
+        centers[obj.name] = verts.mean(axis=0)
     if len(scene.geometry) == 0:
         raise GeometryError("Нечего экспортировать: нет видимых объектов.")
     data = trimesh.exchange.gltf.export_glb(scene, include_normals=True)
+    if animation:
+        try:
+            data = add_glb_animation(bytes(data), animation, centers, diagonal)
+        except Exception:
+            pass  # анимация — бонус: без неё файл остаётся корректным
     return bytes(data)
+
+
+# --------------------------------------------------------------------------- #
+#  Анимация внутри GLB (без внешних зависимостей)
+# --------------------------------------------------------------------------- #
+
+def _glb_read(data: bytes) -> tuple[dict, bytes]:
+    import json
+    import struct as _struct
+    if data[:4] != b"glTF":
+        raise GeometryError("Это не GLB-файл.")
+    offset = 12
+    doc, binary = None, b""
+    while offset < len(data):
+        length, ctype = _struct.unpack_from("<II", data, offset)
+        chunk = data[offset + 8: offset + 8 + length]
+        offset += 8 + length
+        if ctype == 0x4E4F534A:
+            doc = json.loads(chunk.decode("utf-8"))
+        elif ctype == 0x004E4942:
+            binary = chunk
+    if doc is None:
+        raise GeometryError("В GLB нет JSON-описания.")
+    return doc, binary
+
+
+def _glb_write(doc: dict, binary: bytes) -> bytes:
+    import json
+    import struct as _struct
+    js = json.dumps(doc, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    js += b" " * ((4 - len(js) % 4) % 4)
+    bn = binary + b"\x00" * ((4 - len(binary) % 4) % 4)
+    total = 12 + 8 + len(js) + (8 + len(bn) if bn else 0)
+    out = b"glTF" + _struct.pack("<II", 2, total)
+    out += _struct.pack("<II", len(js), 0x4E4F534A) + js
+    if bn:
+        out += _struct.pack("<II", len(bn), 0x004E4942) + bn
+    return out
+
+
+def add_glb_animation(data: bytes, spec: dict, centers: dict | None = None,
+                      diagonal: float = 1.0) -> bytes:
+    """Добавляет в GLB анимацию: spin (вращение), formation (рост), explode (разлёт)."""
+    import numpy as np
+
+    doc, binary = _glb_read(data)
+    nodes = doc.setdefault("nodes", [])
+    scenes = doc.get("scenes") or [{"nodes": list(range(len(nodes)))}]
+    doc["scenes"] = scenes
+    roots = list(scenes[0].get("nodes") or [])
+    if not roots:
+        roots = list(range(len(nodes)))
+
+    # центр модели в координатах glTF (X, Y вверх, Z)
+    values = [np.asarray(v, dtype=np.float64) for v in (centers or {}).values()
+              if v is not None]
+    pts = np.array(values) if values else np.zeros((1, 3))
+    center = (pts.min(axis=0) + pts.max(axis=0)) / 2.0
+
+    root_index = len(nodes)
+    root = {"name": "FormaAnimationRoot", "children": roots,
+            "translation": [float(center[0]), float(center[1]), float(center[2])]}
+    nodes.append(root)
+    for idx in roots:
+        node = nodes[idx]
+        if "matrix" in node:
+            m = np.array(node["matrix"], dtype=np.float64).reshape(4, 4).T
+            m[:3, 3] -= center
+            node["matrix"] = [float(v) for v in m.T.reshape(-1)]
+        else:
+            t = node.get("translation") or [0.0, 0.0, 0.0]
+            t = [float(t[0]) - center[0], float(t[1]) - center[1], float(t[2]) - center[2]]
+            node["translation"] = t
+    scenes[0]["nodes"] = [root_index]
+
+    kind = str(spec.get("kind") or "spin").lower()
+    seconds = float(spec.get("seconds") or spec.get("time") or 4.0)
+    seconds = max(0.4, min(seconds, 600.0))
+    steps = max(2, int(spec.get("steps") or 48))
+    t = np.linspace(0.0, seconds, steps + 1, dtype=np.float32)
+
+    doc.setdefault("accessors", [])
+    doc.setdefault("bufferViews", [])
+    if doc.get("buffers"):
+        doc["buffers"][0]["byteLength"] = len(binary)
+    else:
+        doc["buffers"] = [{"byteLength": len(binary)}]
+
+    channels = []
+
+    def add_accessor(arr: np.ndarray, atype: str, with_bounds: bool = False):
+        nonlocal binary
+        arr = np.asarray(arr, dtype=np.float32)
+        while len(binary) % 4:
+            binary += b"\x00"
+        view = {"buffer": 0, "byteOffset": len(binary), "byteLength": int(arr.nbytes)}
+        binary += arr.tobytes()
+        doc["bufferViews"].append(view)
+        acc = {"bufferView": len(doc["bufferViews"]) - 1,
+               "componentType": 5126, "count": int(arr.shape[0]), "type": atype}
+        if with_bounds:
+            flat = arr.reshape(-1, 1) if arr.ndim == 1 else arr
+            acc["min"] = [float(flat[:, i].min()) for i in range(flat.shape[1])]
+            acc["max"] = [float(flat[:, i].max()) for i in range(flat.shape[1])]
+        doc["accessors"].append(acc)
+        return len(doc["accessors"]) - 1
+
+    time_acc = add_accessor(t.reshape(-1, 1), "SCALAR", with_bounds=True)
+
+    if kind in ("formation", "сборка", "рост"):
+        s = np.clip(t / max(seconds * 0.85, 0.1), 0, 1)
+        ease = 1 - np.power(1 - s, 3)
+        values = np.maximum(0.001, ease).reshape(-1, 1).repeat(3, axis=1)
+        acc = add_accessor(values, "VEC3")
+        channels.append({"acc": acc, "target": {"node": root_index, "path": "scale"}})
+    elif kind in ("explode", "разлёт", "взрыв"):
+        amount = float(spec.get("amount") or diagonal * 0.18)
+        for idx in roots:
+            name = nodes[idx].get("name") or ""
+            c = centers.get(name) if centers else None
+            if c is None:
+                continue
+            d = np.asarray(c, dtype=np.float64) - center
+            ln = float(np.linalg.norm(d))
+            d = d / ln if ln > 1e-9 else np.array([0.0, 1.0, 0.0])
+            target = d * amount
+            vals = np.array([[0.0, 0.0, 0.0]] + [list(target)] * steps, dtype=np.float32)
+            acc = add_accessor(vals, "VEC3")
+            channels.append({"acc": acc, "target": {"node": idx, "path": "translation"}})
+        if not channels:
+            return data
+    else:  # spin / вращение
+        angle = np.linspace(0.0, 2 * np.pi, steps + 1, dtype=np.float32)
+        axis = str(spec.get("axis") or "z").lower()
+        if axis == "z":
+            quats = np.stack([np.zeros_like(angle), np.sin(angle / 2), np.zeros_like(angle),
+                              np.cos(angle / 2)], axis=1)
+        elif axis == "x":
+            quats = np.stack([np.sin(angle / 2), np.zeros_like(angle), np.zeros_like(angle),
+                              np.cos(angle / 2)], axis=1)
+        else:
+            quats = np.stack([np.zeros_like(angle), np.sin(angle / 2), np.zeros_like(angle),
+                              np.cos(angle / 2)], axis=1)
+        acc = add_accessor(quats, "VEC4")
+        channels.append({"acc": acc, "target": {"node": root_index, "path": "rotation"}})
+
+    samplers = []
+    clean_channels = []
+    for i, ch in enumerate(channels):
+        samplers.append({"input": time_acc, "output": ch["acc"], "interpolation": "LINEAR"})
+        clean_channels.append({"sampler": i, "target": ch["target"]})
+    anim = {"name": "FormaAnimation", "samplers": samplers, "channels": clean_channels}
+    doc.setdefault("animations", []).append(anim)
+    if doc.get("buffers"):
+        doc["buffers"][0]["byteLength"] = len(binary)
+    return _glb_write(doc, binary)
 
 
 def export_stl(objects) -> bytes:
@@ -641,6 +827,35 @@ def export_stl(objects) -> bytes:
     body = b"".join(chunks)
     count = len(body) // 50
     return header.ljust(80, b" ") + struct.pack("<I", count) + body
+
+
+def export_ply(objects) -> bytes:
+    """Бинарный PLY с нормалями — открывается в Blender, MeshLab, CloudCompare."""
+    verts_all, normals_all, faces_all = [], [], []
+    offset = 0
+    for obj in objects:
+        verts, normals, faces = _glb_geometry(obj.manifold)
+        verts_all.append(verts)
+        normals_all.append(normals)
+        faces_all.append(faces + offset)
+        offset += len(verts)
+    if not verts_all:
+        raise GeometryError("Нечего экспортировать: нет видимых объектов.")
+    v = np.vstack(verts_all).astype("<f4")
+    n = np.vstack(normals_all).astype("<f4")
+    f = np.vstack(faces_all).astype("<u4")
+    header = (
+        "ply\nformat binary_little_endian 1.0\n"
+        "comment Forma3D export (Y-up, mm)\n"
+        f"element vertex {len(v)}\n"
+        "property float x\nproperty float y\nproperty float z\n"
+        "property float nx\nproperty float ny\nproperty float nz\n"
+        f"element face {len(f)}\n"
+        "property list uchar uint vertex_indices\nend_header\n"
+    ).encode("ascii")
+    body = np.hstack([v, n]).tobytes()
+    tri = np.hstack([np.full((len(f), 1), 3, dtype=np.uint8), f]).tobytes()
+    return header + body + tri
 
 
 def export_obj(objects) -> bytes:

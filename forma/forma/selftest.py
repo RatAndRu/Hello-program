@@ -29,6 +29,19 @@ check кружка genus 1
 """,
     },
     {
+        "name": "Фигура, текстура и анимация",
+        "script": """ч = human height=420 sex=ж build=обычный pose=a detail=низкий
+color ч #e0b298
+texture ч kind=кожа scale=1
+light preset=студия
+scene bg=#10151c exposure=1.05
+animate kind=spin seconds=3
+check ч height 415..425
+check ч watertight
+check ч parts 1
+""",
+    },
+    {
         "name": "Кузов лофтом",
         "script": """сеч1 = [[-30,10],[30,10],[32,30],[0,36],[-32,30]]
 сеч2 = [[-34,8],[34,8],[36,32],[0,40],[-36,32]]

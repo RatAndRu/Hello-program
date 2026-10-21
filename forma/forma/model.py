@@ -30,6 +30,8 @@ class Solid:
     op: str = ""
     line: int = 0
     notes: list[str] = field(default_factory=list)
+    tex: dict | None = None
+    uv: str = "cylinder"
     _stats: dict | None = field(default=None, repr=False)
 
     def stats(self) -> dict:
@@ -50,10 +52,18 @@ class Solid:
         return self.volume_cm3 * self.density
 
 
+DEFAULT_SETTINGS = {
+    "bg": "#0b0e13", "env": "studio", "exposure": 1.05, "key": 2.5,
+    "fill": 0.75, "rim": 0.5, "shadows": True, "grid": True, "ground": True,
+}
+
+
 class Scene:
     """Сцена скрипта. Хранит объекты по именам, параметры и проверки."""
 
     def __init__(self):
+        self.settings: dict = dict(DEFAULT_SETTINGS)
+        self.animation: dict | None = None
         self.objects: dict[str, Solid] = {}
         self.params: dict[str, float] = {}
         self.vars: dict[str, Any] = {}

@@ -14,7 +14,8 @@ datas = []
 binaries = []
 hiddenimports = []
 
-for package in ("manifold3d", "trimesh", "webview", "clr_loader", "pythonnet"):
+for package in ("manifold3d", "trimesh", "webview", "clr_loader", "pythonnet",
+                "skimage", "PIL"):
     try:
         d, b, h = collect_all(package)
         datas += d
@@ -30,6 +31,12 @@ hiddenimports += [
     "forma.metrics", "forma.agent", "forma.geometry", "forma.values",
     "numpy", "manifold3d", "trimesh", "trimesh.exchange.gltf",
     "trimesh.visual", "trimesh.visual.material", "shapely", "networkx",
+    "forma.sdf", "forma.anatomy", "forma.textures", "forma.blender", "forma.paths",
+    "forma.ops_human", "forma.ops_studio", "forma.ops_io",
+    "skimage", "skimage.measure", "skimage.measure._marching_cubes_lewiner",
+    "skimage.measure._marching_cubes_lewiner_luts",
+    "scipy", "scipy.ndimage", "scipy.sparse", "scipy.spatial",
+    "PIL", "PIL.Image", "PIL.ImageFile", "PIL.PngImagePlugin",
 ]
 
 # интерфейс и примеры кладём внутрь exe
@@ -49,7 +56,7 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     runtime_hooks=[],
-    excludes=["tkinter", "matplotlib", "PyQt5", "PySide6", "scipy", "pandas",
+    excludes=["tkinter", "matplotlib", "PyQt5", "PySide6", "pandas",
               "IPython", "pytest", "setuptools"],
     noarchive=False,
 )

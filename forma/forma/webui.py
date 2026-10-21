@@ -19,11 +19,12 @@ from pathlib import Path
 
 from .agent import build_prompt, command_reference_md
 from .errors import FormaError
-from .geometry import export_glb, export_obj, export_stl
+from .geometry import export_glb, export_obj, export_ply, export_stl
 from .render import render_views
 from .run import build as run_build
 from .version import APP_NAME, __version__
 
+MAX_UPLOAD = 300 * 1024 * 1024
 MAX_BODY = 8 * 1024 * 1024
 
 _TRANSLIT = {
@@ -53,14 +54,8 @@ def resource_path(rel: str) -> Path:
 
 
 def user_data_dir() -> Path:
-    if os.name == "nt":
-        base = Path(os.environ.get("APPDATA", Path.home() / "AppData" / "Roaming"))
-        path = base / "Forma3D"
-    else:
-        path = Path.home() / ".forma3d"
-    for sub in ("projects", "exports", "renders", "prompts"):
-        (path / sub).mkdir(parents=True, exist_ok=True)
-    return path
+    from .paths import user_data_dir as _dir
+    return _dir()
 
 
 class AppState:
@@ -129,8 +124,9 @@ class AppState:
             out_dir = self.data_dir / "exports"
             base = slugify(self.project_name or "model")
             fmt = fmt.lower()
+            animation = self.last_build.scene.animation if self.last_build.scene else None
             if fmt == "glb":
-                data = export_glb(solids)
+                data = export_glb(solids, animation=animation)
                 name = f"{base}.glb"
             elif fmt == "stl":
                 data = export_stl(solids)
@@ -138,6 +134,21 @@ class AppState:
             elif fmt == "obj":
                 data = export_obj(solids)
                 name = f"{base}.obj"
+            elif fmt in ("ply", "blend"):
+                if fmt == "ply":
+                    data = export_ply(solids)
+                    name = f"{base}.ply"
+                else:
+                    from .blender import glb_to_blend
+                    tmp = out_dir / f"_tmp_{base}.glb"
+                    tmp.write_bytes(export_glb(solids, animation=animation))
+                    name = f"{base}.blend"
+                    try:
+                        glb_to_blend(str(tmp), str(out_dir / name))
+                    finally:
+                        tmp.unlink(missing_ok=True)
+                    return {"path": str(out_dir / name), "url": file_url("exports", name),
+                            "name": name}
             elif fmt == "png":
                 result = render_views(solids, out_dir, prefix=base, size=900, ss=2)
                 name = Path(result.get("combined") or result["files"][0]["path"]).name
@@ -154,9 +165,10 @@ class AppState:
                 target = out_dir / name
                 with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
                     zf.writestr(f"{base}.forma", self.last_script)
-                    zf.writestr(f"{base}.glb", export_glb(solids))
+                    zf.writestr(f"{base}.glb", export_glb(solids, animation=animation))
                     zf.writestr(f"{base}.stl", export_stl(solids))
                     zf.writestr(f"{base}.obj", export_obj(solids))
+                    zf.writestr(f"{base}.ply", export_ply(solids))
                     zf.writestr("OTCHET.txt", (self.last_build.analysis or {}).get("text", ""))
                     zf.writestr("SPRAVKA.md", command_reference_md())
                     tmp = out_dir / "_views"
@@ -170,6 +182,34 @@ class AppState:
             target = out_dir / name
             target.write_bytes(data)
             return {"path": str(target), "url": file_url("exports", name), "name": name}
+
+    def blender_info(self) -> dict:
+        from .blender import available
+        return available()
+
+    def import_script(self, name: str, script: str) -> dict:
+        """Готовит строку импорта для сценария (файл уже сохранён в imports)."""
+        safe = slugify(name)
+        line = f"{safe} = import file={Path(name).name} repair=да"
+        return {"script": script, "name": safe, "line": line, "file": str(self.data_dir / "imports" / Path(name).name)}
+
+    def save_upload(self, data: bytes, filename: str) -> dict:
+        from .paths import safe_name
+        clean = safe_name(filename or "модель.glb", "модель.glb")
+        if not Path(clean).suffix:
+            clean += ".glb"
+        target = self.data_dir / "imports" / clean
+        target.write_bytes(data)
+        stem = slugify(Path(clean).stem)
+        ext = Path(clean).suffix.lower()
+        line = f"{stem} = import file={clean} unit=auto repair=да"
+        note = ""
+        if ext == ".blend":
+            info = self.blender_info()
+            note = ("" if info["found"] else
+                    "Blender не найден на этом компьютере: .blend откроется только после установки Blender.")
+        return {"file": clean, "path": str(target), "size": len(data),
+                "line": line, "suffix": ext, "note": note}
 
     def save_project(self, name: str, script: str) -> dict:
         display = "".join(c for c in (name or "проект") if c not in '\\/:*?"<>|').strip() or "проект"
@@ -219,6 +259,8 @@ EXAMPLES = [
     ("Органическая капля", "blob"),
     ("Шестерня", "gear"),
     ("Человек (манекен)", "human"),
+    ("Анатомическая фигура", "human_studio"),
+    ("Кружка со студией", "mug_studio"),
 ]
 
 
@@ -331,6 +373,16 @@ class Handler(BaseHTTPRequestHandler):
             if not self._token_ok(query):
                 self._send_json({"error": {"message": "Нет доступа (токен)."}}, 403)
                 return
+            if path == "/api/upload":
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                if length <= 0:
+                    raise FormaError("Пустой файл.")
+                if length > MAX_UPLOAD:
+                    raise FormaError("Файл больше 300 МБ — откройте его через импорт в сценарии.")
+                data = self.rfile.read(length)
+                name = query.get("name", ["модель.glb"])[0]
+                self._send_json(self.state.save_upload(data, name))
+                return
             body = self._read_body()
             self._api_post(path, body)
         except Exception as exc:  # pragma: no cover
@@ -358,6 +410,7 @@ class Handler(BaseHTTPRequestHandler):
                 "projects": st.list_projects(),
                 "data_dir": str(st.data_dir),
                 "has_build": bool(st.last_build and st.last_build.ok),
+                "blender": st.blender_info(),
             })
             return
         if path == "/api/model.glb":
@@ -417,8 +470,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"text": text, "path": str(out)})
             return
         if path == "/api/import":
-            script = body.get("script", "")
-            self._send_json({"script": script, "name": body.get("name", "импорт")})
+            self._send_json(st.import_script(body.get("name", "импорт"),
+                                             body.get("script", "")))
             return
         self._send_json({"error": {"message": f"Неизвестный маршрут {path}"}}, 404)
 

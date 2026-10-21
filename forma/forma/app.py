@@ -137,6 +137,26 @@ def _run_uistest(report_path: str | None) -> int:
                 check("снимки видов (PNG)", len(rendered.get("files", [])) == 4)
             except Exception as exc:
                 check("снимки видов (PNG)", False, str(exc))
+            # новые возможности 0.2: текстуры, свет, анимация, импорт, форматы
+            check("панель вида в интерфейсе", b"studio-panel" in html and b"material-panel" in html)
+            try:
+                rich = post("/api/build", {"script": (
+                    "к = lathe points=[[0,0],[30,0],[30,60],[0,60]] "
+                    "segments=96 thickness=3 open=top\n"
+                    "color к #ffffff\ntexture к kind=мрамор\n"
+                    "scene bg=#10151c env=studio\nlight preset=студия\n"
+                    "animate kind=spin seconds=4\ncheck к height 55..65")})
+                check("текстура и материалы", rich.get("ok") is True and
+                      bool(rich.get("objects", [{}])[0].get("tex")), "мрамор")
+                check("настройки сцены", rich.get("settings", {}).get("env") == "studio")
+                check("команда анимации", (rich.get("animation") or {}).get("kind") == "spin")
+                check("экспорт PLY", post("/api/export", {"format": "ply"})["name"].endswith(".ply"))
+                rich_glb = get("/api/model.glb", raw=True)
+                check("анимация и текстура в GLB",
+                      b'"animations"' in rich_glb and b'"images"' in rich_glb,
+                      f"{len(rich_glb)} байт")
+            except Exception as exc:
+                check("новые возможности", False, str(exc))
         except Exception as exc:
             check("ответ API", False, str(exc))
         finally:

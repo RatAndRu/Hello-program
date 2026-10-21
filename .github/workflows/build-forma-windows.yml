@@ -56,13 +56,18 @@ jobs:
         run: |
           pyinstaller packaging/forma.spec --noconfirm --clean --distpath dist --workpath build/pyi
           ls -la dist
+          python - <<'PY'
+          from pathlib import Path
+          exe = Path('dist/Forma3D.exe')
+          print(f"EXE: {exe.stat().st_size / 1024 / 1024:.1f} МБ")
+          PY
 
       - name: Проверить собранный EXE (самопроверка моделей)
         working-directory: forma
         run: |
           rm -f selftest.txt
           ./dist/Forma3D.exe --selftest --report selftest.txt || true
-          for i in $(seq 1 90); do
+          for i in $(seq 1 150); do
             if [ -s selftest.txt ]; then break; fi
             sleep 1
           done
@@ -77,7 +82,7 @@ jobs:
         run: |
           rm -f uitest.txt
           ./dist/Forma3D.exe --uistest --report uitest.txt || true
-          for i in $(seq 1 120); do
+          for i in $(seq 1 180); do
             if [ -s uitest.txt ]; then break; fi
             sleep 1
           done
@@ -138,8 +143,19 @@ jobs:
             * `Forma3D-…-windows.zip` — распакуй и запусти `Forma3D.exe` (рекомендуется).
             * `Forma3D.exe` — то же приложение одним файлом.
 
-            Внутри ZIP: сама программа, справка по командам и примеры моделей (кружка, ваза,
-            бутылка, шестерня, кузов машины, манекен человека).
+            **Что нового в 0.2.0**
+
+            * материалы и процедурные текстуры (дерево, мрамор, металл, ткань, кожа);
+            * студийный свет, фон, экспозиция и тени (пресеты в панели «вид ▾»);
+            * анимация — вращение, формирование из нуля и разлёт; пишется в GLB;
+            * анатомическая фигура человека командой `human`;
+            * открытие GLB/OBJ/STL/PLY/3MF и `.blend` (если установлен Blender);
+            * экспорт GLB с материалами и анимацией, BLEND, PLY, ZIP;
+            * полигонаж и статистика (треугольники, вершины, кадры в секунду);
+            * справочник команд закрывается, панели не перекрывают работу.
+
+            Внутри ZIP: программа, справка по командам и примеры (кружка, кружка со
+            студией, ваза, шестерня, кузов, манекен и анатомическая фигура).
           prerelease: true
           fail_on_unmatched_files: true
           files: |

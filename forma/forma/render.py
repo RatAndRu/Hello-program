@@ -15,8 +15,8 @@ import numpy as np
 from .geometry import crease_normals, color_to_float_rgb, manifold_mesh, write_png
 
 VIEWS = {
-    "iso": ((0.92, -1.25, 0.78), (0.0, 0.0, 1.0)),
-    "front": ((0.0, -1.0, 0.0), (0.0, 0.0, 1.0)),
+    "iso": ((0.92, 1.25, 0.78), (0.0, 0.0, 1.0)),
+    "front": ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
     "right": ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
     "top": ((0.0, 0.0, 1.0), (0.0, 1.0, 0.0)),
 }

@@ -23,6 +23,9 @@ from . import ops_curves  # noqa: F401,E402
 from . import ops_shape  # noqa: F401,E402
 from . import ops_scene  # noqa: F401,E402
 from . import ops_sdf  # noqa: F401,E402
+from . import ops_human  # noqa: F401,E402
+from . import ops_studio  # noqa: F401,E402
+from . import ops_io  # noqa: F401,E402
 
 
 @dataclass
@@ -51,7 +54,8 @@ class Build:
             solids = self.visible_solids()
             if not solids:
                 raise GeometryError("Нет видимых объектов для экспорта.")
-            self._glb = export_glb(solids)
+            animation = self.scene.animation if self.scene else None
+            self._glb = export_glb(solids, animation=animation)
         return self._glb
 
     def objects_payload(self) -> list[dict]:
@@ -77,6 +81,9 @@ class Build:
                 "bbox": st["bbox"],
                 "size": st["size"],
                 "genus": st["genus"],
+                "tex": ({"kind": solid.tex.get("kind"), "label": solid.tex.get("label"),
+                         "scale": solid.tex.get("scale")} if getattr(solid, "tex", None) else None),
+                "uv": getattr(solid, "uv", "cylinder"),
             })
         return out
 
@@ -91,6 +98,8 @@ class Build:
             "analysis": self.analysis,
             "timings": self.timings,
             "log": self.log,
+            "settings": dict(scene.settings) if scene else {},
+            "animation": scene.animation if scene else None,
         }
 
 
