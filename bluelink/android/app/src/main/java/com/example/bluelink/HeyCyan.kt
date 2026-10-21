@@ -24,8 +24,19 @@ import java.util.UUID
  * Тип в канале 2 — это и есть «команда»: 0x41 — управление очками (камера),
  * 0x42 — заряд, 0x40 — синхронизация времени, 0x43 — сведения об устройстве и т.д.
  *
- * Сами фотографии по Bluetooth не идут: очки поднимают Wi-Fi точку доступа,
- * а приложение тянет файлы по HTTP. BLE — только команды и статусы.
+ * Как это работает на живых очках (сверено с открытым приложением, которое
+ * управляет теми же очками):
+ *   - команда «снять фото» — это кадр 0x41 канала B: BC 41 03 00 CRC 02 01 01;
+ *   - очки отвечают таким же кадром, где есть код ошибки и текущий режим.
+ *     Ноль в коде ошибки = команда реально выполнена, и это единственное
+ *     доказательство (эхо собственной записи доказательством не является);
+ *   - сам кадр забирается миниатюрой: BC FD [01 номер часть], очки отдают
+ *     JPEG частями и в приложении он склеивается целиком;
+ *   - видео и звук остаются в памяти очков: полноразмерные файлы отдаёт только
+ *     Wi-Fi очков (HTTP), по Bluetooth их не передают.
+ *
+ * Запись в канал A (6E400002) очки иногда просто возвращают эхом. Это значит,
+ * что байты дошли до устройства, но ничего не доказывает про выполнение.
  */
 object HeyCyan {
 
@@ -92,6 +103,150 @@ object HeyCyan {
     fun isStreamFrame(value: ByteArray): Boolean =
         isBigFrame(value) && (value[1].toInt() and 0xFF) == 0x59
 
+    // ---------- Управление очками (кадр 0x41 канала B) ----------
+    //
+    // Восстановлено из SDK и сверено с работающим открытым приложением
+    // (FerSaiyan/Alternative-HeyCyan-App-and-SDK, MainActivity.kt: btnCamera / controlVideoRecording).
+    // Полезная нагрузка всегда [0x02, 0x01, что_делать]:
+    //   01 — снять фото (одиночный кадр)
+    //   02 — начать запись видео, 03 — остановить
+    //   04 — включить Wi-Fi и режим передачи файлов
+    //   05 — обновление прошивки
+    //   06 — фото для ИИ + качество в двух байтах (06 q q)
+    //   07 — ИИ-собеседник, 0B — остановить его
+    //   08 — начать запись звука, 0C — остановить
+    //   0F — Wi-Fi «без питания» (SDK так отвечает на неудачный сценарий)
+    //
+    // Ответ очков: BC 41 .. [02, 01, что_просили, код_ошибки, что_сейчас].
+    // Код ошибки 0 = принято и работает. Именно этот байт — доказательство,
+    // а не факт того, что наша запись ушла в GATT.
+
+    object Work {
+        const val PHOTO = 0x01
+        const val VIDEO_START = 0x02
+        const val VIDEO_STOP = 0x03
+        const val TRANSFER = 0x04
+        const val OTA = 0x05
+        const val PHOTO_AI = 0x06
+        const val ASSISTANT = 0x07
+        const val AUDIO_START = 0x08
+        const val STOP_AI = 0x0B
+        const val AUDIO_STOP = 0x0C
+        const val NO_POWER_P2P = 0x0F
+    }
+
+    /** «Сделай то-то» для очков. */
+    fun control(work: Int, extra: ByteArray = ByteArray(0)): ByteArray =
+        byteArrayOf(0x02, 0x01, work.toByte()) + extra
+
+    /** Качество кадра для ИИ-съёмки: SDK шлёт значение дважды. */
+    fun photoQuality(q: Int): ByteArray =
+        byteArrayOf(0x02, 0x01, Work.PHOTO_AI.toByte(), q.toByte(), q.toByte())
+
+    /** Ответ очков на команду 0x41: что просили, код ошибки и что сейчас происходит. */
+    data class GlassState(val work: Int, val error: Int, val running: Int)
+
+    fun glassState(value: ByteArray): GlassState? {
+        if (!isBigFrame(value)) return null
+        if ((value[1].toInt() and 0xFF) != 0x41) return null
+        if (value.size < 11) return null
+        if ((value[7].toInt() and 0xFF) != 0x01) return null
+        return GlassState(
+            work = value[8].toInt() and 0xFF,
+            error = value[9].toInt() and 0xFF,
+            running = value[10].toInt() and 0xFF
+        )
+    }
+
+    /** Сколько фото, видео и записей лежит в памяти очков (ответ на 0x41 02 04). */
+    data class MediaCounts(val photos: Int, val videos: Int, val records: Int)
+
+    fun mediaCounts(value: ByteArray): MediaCounts? {
+        if (!isBigFrame(value)) return null
+        if ((value[1].toInt() and 0xFF) != 0x41) return null
+        if (value.size < 14) return null
+        if ((value[7].toInt() and 0xFF) != 0x04) return null
+        fun at(i: Int) = (value[i].toInt() and 0xFF) or ((value[i + 1].toInt() and 0xFF) shl 8)
+        return MediaCounts(at(8), at(10), at(12))
+    }
+
+    /**
+     * Запрос миниатюры последнего снимка: BC FD [01, номер, номер>>8].
+     * Очки отвечают серией таких же кадров, в каждом — сколько всего частей,
+     * номер этой части и кусок JPEG. Полноразмерный файл по Bluetooth не ходит,
+     * а миниатюра приходит целиком.
+     */
+    fun thumbnailRequest(index: Int): ByteArray =
+        bigFrame(0xFD, byteArrayOf(0x01, (index and 0xFF).toByte(), ((index shr 8) and 0xFF).toByte()))
+
+    data class ThumbChunk(val total: Int, val index: Int, val data: ByteArray)
+
+    fun thumbChunk(value: ByteArray): ThumbChunk? {
+        if (!isBigFrame(value)) return null
+        if ((value[1].toInt() and 0xFF) != 0xFD) return null
+        if (value.size < 11) return null
+        val total = (value[7].toInt() and 0xFF) or ((value[8].toInt() and 0xFF) shl 8)
+        val index = (value[9].toInt() and 0xFF) or ((value[10].toInt() and 0xFF) shl 8)
+        val data = if (value.size > 11) value.copyOfRange(11, value.size) else ByteArray(0)
+        return ThumbChunk(total, index, data)
+    }
+
+    /** Человеческое имя рабочего режима очков. */
+    fun workName(code: Int): String = when (code) {
+        0x01 -> "фото"
+        0x02 -> "видеозапись идёт"
+        0x03 -> "видеозапись остановлена"
+        0x04 -> "передача файлов по Wi-Fi"
+        0x05 -> "обновление прошивки"
+        0x06 -> "фото (ИИ)"
+        0x07 -> "ИИ-собеседник"
+        0x08 -> "запись звука"
+        0x0B -> "ИИ-режим остановлен"
+        0x0C -> "запись звука остановлена"
+        0x0F -> "Wi-Fi без питания"
+        else -> "режим $code"
+    }
+
+    /**
+     * Склейка кадров канала B: очки режут длинный кадр на части по размеру MTU,
+     * поэтому парсить надо поток, а не отдельные уведомления.
+     */
+    class BigFramer {
+        private val buf = java.io.ByteArrayOutputStream()
+
+        fun push(chunk: ByteArray): List<ByteArray> {
+            buf.write(chunk)
+            val out = ArrayList<ByteArray>()
+            while (true) {
+                var data = buf.toByteArray()
+                if (data.isEmpty()) break
+                var start = 0
+                while (start < data.size && (data[start].toInt() and 0xFF) != 0xBC) start += 1
+                if (start > 0) {
+                    buf.reset()
+                    buf.write(data, start, data.size - start)
+                    continue
+                }
+                if (data.size < 6) break
+                val len = (data[2].toInt() and 0xFF) or ((data[3].toInt() and 0xFF) shl 8)
+                if (len < 0 || len > 4096) {
+                    buf.reset()
+                    buf.write(data, 1, data.size - 1)
+                    continue
+                }
+                if (data.size < 6 + len) break
+                out.add(data.copyOfRange(0, 6 + len))
+                buf.reset()
+                buf.write(data, 6 + len, data.size - (6 + len))
+            }
+            return out
+        }
+
+        fun reset() {
+            buf.reset()
+        }
+    }
+
     data class Battery(val level: Int, val charging: Boolean)
 
     fun batteryInfo(value: ByteArray): Battery? {
@@ -128,11 +283,20 @@ object HeyCyan {
                 0x42 -> batteryInfo(value)?.let {
                     "заряд ${it.level}%" + if (it.charging) ", заряжается" else ""
                 }
-                0xFD -> if (payload.isNotEmpty()) "готово файлов: ${payload[0].toInt() and 0xFF}" else "список файлов получен"
-                0x41 -> if (payload.size >= 2 && (payload[0].toInt() and 0xFF) == 0x02) {
-                    if (payload.size >= 3 && (payload[2].toInt() and 0xFF) == 0x07) "голосовой помощник включён"
-                    else "очки приняли команду"
-                } else "очки ответили: " + hex(payload.take(8).toByteArray())
+                0xFD -> thumbChunk(value)?.let { ch ->
+                    if (ch.total <= 0) "миниатюр на очках пока нет"
+                    else "миниатюра: часть ${ch.index + 1} из ${ch.total} (${ch.data.size} байт)"
+                }
+                0x41 -> glassState(value)?.let { st ->
+                    if (st.error == 0) {
+                        "очки подтвердили: ${workName(st.work)}" +
+                            if (st.running != st.work) " · сейчас: ${workName(st.running)}" else ""
+                    } else {
+                        "очки отказали (код ${st.error}) · сейчас: ${workName(st.running)}"
+                    }
+                } ?: mediaCounts(value)?.let {
+                    "на очках: ${it.photos} фото, ${it.videos} видео, ${it.records} записей"
+                } ?: "очки ответили: " + hex(payload.take(8).toByteArray())
                 0x43 -> "сведения об устройстве получены"
                 0x3E -> "режим подтверждён"
                 else -> describeBig(value)
@@ -308,7 +472,8 @@ object HeyCyan {
         Probe(CH_SERIAL, 0x42, byteArrayOf(0x00, 0x00), "заряд по каналу B (0x42)"),
         Probe(CH_SERIAL, 0x43, byteArrayOf(0x00, 0x00), "сведения об устройстве (0x43)"),
         Probe(CH_SERIAL, 0x40, syncTimePayload(), "время (0x40)"),
-        Probe(CH_CTRL, 0x3E, byteArrayOf(0x02, 0x01, 0x00), "режим очков: фото (0x3E)")
+        // Счётчики файлов. Именно BC 41 02 04, а не миниатюры: 0xFD — это картинки.
+        Probe(CH_SERIAL, 0x41, byteArrayOf(0x02, 0x04), "файлы в памяти (0x41)")
     )
 
     fun frameFor(channel: String, type: Int, payload: ByteArray): ByteArray =
