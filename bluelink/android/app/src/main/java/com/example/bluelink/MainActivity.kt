@@ -3796,6 +3796,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             card0.addView(spacer(8))
             card0.addView(actionButton("Найти кольцо", primary = true) { tab = TAB_SCAN; rebuild() })
             c.addView(card0)
+            // Пульт работает и без подключения по BLE: кольцо общается с телефоном
+            // само, поэтому перехват полезен до всякой настройки.
+            c.addView(ringPultCard())
             return c
         }
 
