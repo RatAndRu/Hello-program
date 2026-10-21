@@ -57,6 +57,26 @@ object Ring {
     val CH_REPORT: UUID = uuid(0x2A4D)
     val CH_HID_INFO: UUID = uuid(0x2A4A)
 
+    /**
+     * Каналы, по которым кольцо может говорить. Их несколько, потому что по GATT
+     * нельзя угадать, какой из производительских сервисов «главный»: у RWfit это
+     * A00A, но у похожих прошивок команды идут в FF00 или 0BC0. Мы пробуем все
+     * и оставляем тот, который ответил.
+     */
+    data class Channel(
+        val title: String,
+        val service: UUID,
+        val write: UUID?,
+        val notify: UUID?,
+        val family: String
+    )
+
+    val CHANNEL_DATA = Channel("A00A → B003", SVC_DATA, CH_WRITE, CH_NOTIFY, "RWfit / JieLi")
+    val CHANNEL_FF00 = Channel("FF00 → FF01", SVC_FF00, uuid(0xFF02), uuid(0xFF01), "неизвестный (FF00)")
+    val CHANNEL_0BC0 = Channel("0BC0 → 0BC2", SVC_0BC0, CH_0BC1, CH_0BC2, "неизвестный (0BC0)")
+
+    fun channels(): List<Channel> = listOf(CHANNEL_DATA, CHANNEL_FF00, CHANNEL_0BC0)
+
     enum class Framing(val label: String) {
         JIELI("современный (0xAB)"),
         LEGACY("старый (0x7E)")
@@ -301,6 +321,15 @@ object Ring {
     fun jlSessionInit(): ByteArray = jlFrame(byteArrayOf(0x03, 0x02, 0x20, 0, 0, 0, 1))
 
     fun jlBattery(): ByteArray = jlFrame(byteArrayOf(0x02, 0x03, 0x10))
+
+    /** Часовой пояс в четвертях часа: 02 02 00 <четверти> 01. */
+    fun jlTimezone(offsetSeconds: Int): ByteArray {
+        val quarters = (offsetSeconds / 900.0).toInt().coerceIn(-48, 56)
+        return jlFrame(byteArrayOf(0x02, 0x02, 0x00, quarters.toByte(), 0x01))
+    }
+
+    /** Проверка привязки старого формата: команда 0x02 без данных. */
+    fun legacyBindStatus(serial: Int): ByteArray = legacyFrame(0x02, ByteArray(0), serial)
 
     fun jlDeviceInfo(): ByteArray = jlFrame(byteArrayOf(0x02, 0x04, 0x10))
 

@@ -55,6 +55,9 @@ class RingSession(
     private val legacy = Ring.LegacyFramer()
     private var legacySerial = 0
     private var hidMap: HidMap.Map? = null
+    /** Что уже попробовали и что из этого получило ответ — для честного отчёта. */
+    val probeLog = ArrayList<String>()
+    private var replies = 0
     private var lastGestureAt = 0L
     private var lastGestureName = ""
     private var timers = ArrayList<Runnable>()
@@ -91,6 +94,8 @@ class RingSession(
         reportMapSummary = ""
         hidMap = null
         gestureLog.clear()
+        probeLog.clear()
+        replies = 0
     }
 
     fun stop() {
@@ -119,12 +124,17 @@ class RingSession(
         later(700) { readReportMap() }
         later(1100) { firstProbes() }
         later(4200) { fallbackProbe() }
-        later(9000) {
+        later(6500) { probeOtherChannels() }
+        later(11000) {
             if (!framingConfirmed) {
-                status = "Кольцо не ответило ни на один из двух форматов кадров. " +
-                    "Похоже, у этой прошивки свой протокол — команды писать не будем, " +
-                    "чтобы не мешать кольцу. Взмахи (HID) при этом можем принимать."
-                log("Кольцо: ни современный (0xAB), ни старый (0x7E) формат не ответил")
+                status = buildString {
+                    append("Кольцо не ответило ни на один проверенный канал. ")
+                    append("Это не поломка: у многих колец производительский канал закрыт, ")
+                    append("а наружу отдаётся только пульт (HID). ")
+                    append("Нажатия при этом ловятся как клавиши телефона — включите карточку «Кольцо как пульт» ниже.")
+                }
+                log("Кольцо: ни современный (0xAB), ни старый (0x7E) формат не ответил; каналы: " +
+                    probeLog.joinToString("; "))
                 changed()
             }
         }
@@ -140,18 +150,29 @@ class RingSession(
             if (svc.uuid == Ring.SVC_HID) {
                 // Отчётов бывает несколько с ОДНИМ И ТЕМ ЖЕ UUID (2A4D) — поэтому
                 // подписываемся на каждое вхождение отдельно, по его номеру.
+                // Раньше подписывались на все экземпляры 2A4D подряд, и Android 13
+                // отвечал «Need BLUETOOTH PRIVILEGED permission» на второй и далее.
+                // Теперь берём первый экземпляр, на который подписка вообще возможна:
+                // так меньше нагрузки на связь и кольцо не отваливается.
                 var ordinal = 0
-                var ok = 0
+                var done = false
+                var total = 0
                 for (ch in svc.chars) {
                     if (GattNames.shortCode(ch.uuid) != 0x2A4D) continue
                     val myIndex = ordinal
                     ordinal += 1
                     if (!ch.notifiable) continue
+                    total += 1
+                    if (done) continue
                     ble.subscribe(Ring.SVC_HID, ch.uuid, true, myIndex)
-                    ok += 1
+                    done = true
                 }
-                if (ok > 0) {
-                    log("Кольцо: подписался на HID-отчёты ($ok из $ordinal) — жду взмахов")
+                if (done) {
+                    log("Кольцо: подписался на HID-отчёты (1 из $total) — жду взмахов")
+                    if (total > 1) {
+                        log("Кольцо: остальные $total-1 отчётов HID Android не отдаёт приложению " +
+                            "(нужно системное разрешение BLUETOOTH_PRIVILEGED)")
+                    }
                 }
             }
         }
@@ -178,6 +199,37 @@ class RingSession(
         if (framingConfirmed) return
         sendLegacy(Ring.legacyBattery(nextSerial()))
         later(900) { sendLegacy(Ring.legacyFrame(0x00, ByteArray(0), nextSerial())) }
+    }
+
+    /**
+     * Другие производительственные каналы. У части колец команды живут не в A00A,
+     * а в FF00 или 0BC0. Мы пишем туда те же проверочные кадры и слушаем ответ.
+     */
+    private fun probeOtherChannels() {
+        if (framingConfirmed) return
+        for (channel in Ring.channels()) {
+            if (channel.service == Ring.SVC_DATA) continue
+            val svc = currentServices.firstOrNull { it.uuid == channel.service } ?: continue
+            val hasWrite = svc.chars.any { it.uuid == channel.write }
+            if (!hasWrite) {
+                probeLog.add("${channel.title}: нет характеристики записи")
+                continue
+            }
+            channel.notify?.let { n ->
+                if (svc.chars.any { it.uuid == n && it.notifiable }) {
+                    ble.subscribe(channel.service, n, true)
+                    log("Кольцо: подписался на ${channel.title}")
+                }
+            }
+            ble.write(channel.service, channel.write!!, Ring.jlBattery(), false)
+            probeLog.add("${channel.title}: послал запрос заряда (0xAB)")
+            later(1200) {
+                ble.write(channel.service, channel.write!!, Ring.legacyBattery(nextSerial()), false)
+                probeLog.add("${channel.title}: послал запрос заряда (0x7E)")
+            }
+        }
+        log("Кольцо: проверяю дополнительные каналы — " +
+            (probeLog.takeLast(4).joinToString("; ").ifBlank { "их нет" }))
     }
 
     private fun nextSerial(): Int {
@@ -227,8 +279,20 @@ class RingSession(
             handleHidReport(value)
             return true
         }
+        if (service == Ring.SVC_FF00 || service == Ring.SVC_0BC0) {
+            // Ответ на проверочный кадр в «чужом» сервисе — тоже настоящий ответ.
+            replies += 1
+            probeLog.add(
+                GattNames.uuidLabel(service) + " → " + GattNames.uuidLabel(char) +
+                    ": " + hex(value.take(20).toByteArray())
+            )
+            log("Кольцо: ответ в канале ${GattNames.uuidLabel(service)} — " + hex(value.take(20).toByteArray()))
+            changed()
+            return true
+        }
         if (service == Ring.SVC_DATA && char == Ring.CH_NOTIFY) {
             var handled = false
+            replies += 1
             for (frame in jl.push(value)) {
                 handled = true
                 if (!framingConfirmed) {

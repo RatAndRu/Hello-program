@@ -142,6 +142,21 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var ring: RingSession? = null
     private var ringStartedFor = ""
     private var ringHaptic = false
+
+    // Очки держат только одно подключение: нативное приложение и мы не можем
+    // быть подключены одновременно. Значит, связь надо вовремя отдавать.
+    // Кольцо-пульт: перехват нажатий на уровне телефона.
+    private var ringPult: RingControls.Catcher? = null
+    private var ringPultOn = false
+    private var ringTorch: RingControls.Torch? = null
+    private var ringAction = RingControls.Action.PHOTO
+    private var ringPressLog = ArrayList<String>()
+    private var ringPressCount = 0
+    private var lastRingPress: String = ""
+
+    private var releaseInBackground = true
+    private var autoReconnectPending = false
+    private var handoverStatus = ""
     private var ringStatusShown = ""
 
     // Прямой эфир: кадры по Bluetooth и (если прошивка отдаёт) RTSP по Wi-Fi очков.
@@ -217,6 +232,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         camera.listener = this
         store = PhotoStore(this)
         activeProfile = profiles.byId(prefs.getString("active_profile", null))
+        releaseInBackground = prefs.getBoolean("release_bg", true)
+        ringAction = RingControls.Action.byId(prefs.getString("ring_action", null))
 
         crashText = try {
             val f = File(filesDir, "last_crash.txt")
@@ -230,6 +247,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         addLog("BlueLink запущен, версия ${appVersion()}")
         crashText?.let { addLog("Прошлый запуск завершился ошибкой — стек в отчёте") }
 
+        if (prefs.getBoolean("ring_pult", false)) {
+            ringSetPult(true)
+        }
+
         if (!ble.isSupported()) {
             addLog("Bluetooth не поддерживается этим устройством")
         } else if (!ble.hasPermissions()) {
@@ -240,6 +261,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     override fun onDestroy() {
         super.onDestroy()
         try {
+            ringPult?.stop()
+        } catch (ignored: Exception) {
+        }
+        try {
             ble.stopScan()
             wifi.release()
         } catch (ignored: Exception) {
@@ -249,6 +274,33 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     override fun onResume() {
         super.onResume()
         updateHeader()
+        // Вернулись в приложение — забираем очки обратно, если отпускали их сами.
+        if (autoReconnectPending) {
+            autoReconnectPending = false
+            val item = lastConnItem
+            if (item != null) {
+                handoverStatus = "Возвращаю подключение к очкам…"
+                ui.postDelayed({ if (connState != ConnState.CONNECTED) connectTo(item) }, 500)
+            }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Пока приложение свёрнуто, очки лучше отдать их приложению: иначе оно
+        // не сможет подключиться вообще (у очков только один канал связи).
+        if (!releaseInBackground || isChangingConfigurations) return
+        if (connState != ConnState.CONNECTED) return
+        if (!isHeyCyanDevice()) return
+        if (heyWantVideo || heyVideoOn || heyWantAudio || heyAudioOn || heyTransferOn || liveMode.isNotBlank()) {
+            handoverStatus = "Очки заняты записью или выгрузкой — не отпускаю их до конца работы."
+            return
+        }
+        lastConnItem?.let {
+            autoReconnectPending = true
+            addLog("Отпускаю очки, пока приложение свёрнуто — чтобы их приложение могло подключиться")
+            doDisconnect()
+        }
     }
 
     // ---------- Каркас экрана ----------
@@ -316,6 +368,13 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     }
 
     private fun rebuild() {
+        // Интерфейс можно трогать только из главного потока. Слушатели сетевых
+        // операций зовут rebuild() из фоновых потоков — это ловилось падением
+        // «Only the original thread that created a view hierarchy can touch its views».
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            ui.post { rebuild() }
+            return
+        }
         if (isFinishing || isDestroyed) return
         // Во время живого видео SurfaceView нельзя пересоздавать: вместе с ним
         // умирает и поверхность, на которой играет поток.
@@ -2317,6 +2376,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         state.addView(stateRow)
         c.addView(state)
 
+        c.addView(heyHandoverCard())
+
         // Тревожная плашка: камера занята режимом передачи — съёмка не сработает.
         if (HeyCyan.cameraBusy(heyGlassWork)) {
             val warn = card()
@@ -3142,6 +3203,13 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         // Текущее состояние берём из ответа очков, а не из наших надежд.
         heyVideoOn = st.running == HeyCyan.Work.VIDEO_START
         heyAudioOn = st.running == HeyCyan.Work.AUDIO_START
+        // Очки часто не сообщают «видео остановлено», а просто возвращаются
+        // в другой режим. Тогда снимаем наш флаг, иначе кадры больше не просятся.
+        if (!heyVideoOn && st.running != -1 && st.running != 0xFF &&
+            st.work != HeyCyan.Work.VIDEO_START
+        ) {
+            heyWantVideo = false
+        }
         if (previous != st.running) {
             addLog("Режим очков: ${HeyCyan.workName(st.running)}")
         }
@@ -3211,8 +3279,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private fun heyStartThumb(reason: String) {
         if (connState != ConnState.CONNECTED) return
         if (heyThumbParts.isNotEmpty() || heyThumbTotal > 0) return
-        if (heyWantVideo || heyVideoOn) {
+        if (heyWantVideo && (heyVideoOn || heyGlassWork == HeyCyan.Work.VIDEO_START)) {
             // Пока идёт запись, камера занята: любые запросы миниатюр уходят в пустоту.
+            // Ограничение снимаем, если запись уже не нужна: после остановки
+            // прошивка не всегда сообщает об этом, и флаг «видео» залипает.
             addLog("Миниатюра: пропускаю — идёт видеозапись")
             return
         }
@@ -3371,6 +3441,137 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (tab == TAB_HEY) rebuild()
     }
 
+    // ---------- Очки и их родное приложение ----------
+
+    /**
+     * У BLE-очков один канал связи: пока подключены мы, их приложение подключиться
+     * не может, и наоборот. Обойти это нельзя — можно только аккуратно передавать
+     * связь друг другу.
+     */
+    private fun heyHandoverCard(): View {
+        val box = card()
+        box.addView(txt("Очки и их родное приложение", 12, Pal.MUTED, bold = true))
+        box.addView(spacer(6))
+        box.addView(txt(
+            "У очков один канал Bluetooth: одновременно держать его наше и родное приложение не могут. " +
+                "Это ограничение самого устройства, а не приложения. Поэтому связь передаётся по очереди: " +
+                "можно отпустить очки одним нажатием или автоматически, пока BlueLink свёрнут.",
+            11, Pal.MUTED
+        ))
+        box.addView(spacer(8))
+        box.addView(txt(
+            "Отпускать в фоне: " + if (releaseInBackground) "включено" else "выключено",
+            11, if (releaseInBackground) Pal.GREEN else Pal.MUTED
+        ))
+        box.addView(spacer(6))
+        box.addView(actionButton(
+            if (releaseInBackground) "Выключить авто-отпускание" else "Отпускать очки в фоне",
+            primary = false
+        ) {
+            releaseInBackground = !releaseInBackground
+            prefs.edit().putBoolean("release_bg", releaseInBackground).apply()
+            handoverStatus = if (releaseInBackground)
+                "Теперь очки освобождаются, как только приложение уходит в фон."
+            else
+                "Авто-отпускание выключено: очки остаются за BlueLink."
+            rebuild()
+        })
+        val row1 = row()
+        if (connState == ConnState.CONNECTED) {
+            row1.addView(actionButton("Отдать очкам их приложение", primary = true) { handoverToNative() })
+        } else {
+            row1.addView(actionButton("Забрать подключение обратно", primary = true) {
+                val item = lastConnItem
+                if (item != null) {
+                    autoReconnectPending = false
+                    handoverStatus = "Забираю подключение…"
+                    connectTo(item)
+                } else {
+                    tab = TAB_SCAN
+                    rebuild()
+                }
+            })
+        }
+        box.addView(row1)
+        if (handoverStatus.isNotBlank()) {
+            box.addView(spacer(6))
+            box.addView(txt(handoverStatus, 11, Pal.AMBER))
+        }
+        return box
+    }
+
+    /** Отпустить очки и открыть их приложение. */
+    private fun handoverToNative() {
+        val apps = nativeGlassesApps()
+        addLog("Отпускаю очки: связь нужна их приложению")
+        autoReconnectPending = false
+        doDisconnect()
+        handoverStatus = "Очки освобождены. Выберите их приложение — оно подключится само."
+        if (apps.isEmpty()) {
+            handoverStatus = "Очки освобождены. Приложение очков не нашлось среди установленных — " +
+                "откройте его вручную. Когда вернётесь, нажмите «Забрать подключение обратно»."
+            rebuild()
+            return
+        }
+        if (apps.size == 1) {
+            launchApp(apps[0].first)
+            rebuild()
+            return
+        }
+        lateinit var dialog: Dialog
+        val body = column()
+        body.addView(txt("Выберите приложение, которое должно получить связь с очками:", 12, Pal.MUTED))
+        body.addView(spacer(8))
+        for ((pkg, label) in apps) {
+            body.addView(actionButton(label, primary = false) {
+                launchApp(pkg)
+                try {
+                    dialog.dismiss()
+                } catch (ignored: Exception) {
+                }
+            })
+        }
+        dialog = showSheet("Приложение очков", body)
+    }
+
+    private fun launchApp(pkg: String) {
+        try {
+            val intent = packageManager.getLaunchIntentForPackage(pkg)
+            if (intent != null) {
+                startActivity(intent)
+                handoverStatus = "Открыл «$pkg». Вернитесь в BlueLink — подключение вернётся само."
+            } else {
+                handoverStatus = "Не удалось открыть $pkg."
+            }
+        } catch (e: Exception) {
+            handoverStatus = "Не удалось открыть $pkg: ${e.message}"
+        }
+        rebuild()
+    }
+
+    /** Установленные приложения, похожие на приложение очков. */
+    private fun nativeGlassesApps(): List<Pair<String, String>> {
+        val keys = listOf("heycyan", "hey cyan", "cyan", "glasses", "очки", "smart glass", "smartglass", "meta view")
+        return try {
+            val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
+            @Suppress("DEPRECATION")
+            val list = packageManager.queryIntentActivities(main, 0)
+            list.mapNotNull { info ->
+                val pkg = info.activityInfo.packageName
+                if (pkg == packageName) return@mapNotNull null
+                val label = try {
+                    info.loadLabel(packageManager).toString()
+                } catch (e: Exception) {
+                    pkg
+                }
+                val hay = (pkg + " " + label).lowercase()
+                if (keys.any { hay.contains(it) }) pkg to label else null
+            }.distinctBy { it.first }
+        } catch (e: Exception) {
+            emptyList()
+        }
+    }
+
     // ---------- Кольцо ----------
 
     private fun startRingIfNeeded(services: List<GattServiceInfo>) {
@@ -3406,6 +3607,163 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             if (tab == TAB_RING) rebuildThrottled()
         }
         session.start(services)
+    }
+
+    // ---------- Кольцо-пульт ----------
+
+    private fun ringSetPult(on: Boolean) {
+        ringPultOn = on
+        if (on) {
+            if (ringPult == null) {
+                ringPult = RingControls.Catcher(this) { press -> onRingPress(press) }
+            }
+            ringPult?.start()
+            if (ringPult?.active == true) {
+                addLog("Кольцо-пульт: перехватываю нажатия кольца (медиа-клавиши)")
+            } else {
+                addLog("Кольцо-пульт: система не дала перехватить медиа-клавиши")
+            }
+        } else {
+            ringPult?.stop()
+            addLog("Кольцо-пульт: перехват выключен")
+        }
+        prefs.edit().putBoolean("ring_pult", on).apply()
+        rebuild()
+    }
+
+    private fun onRingPress(press: RingControls.Press) {
+        if (!press.isPress()) {
+            // Отпускание клавиши тоже полезно видеть: по нему понятно, что кольцо живое.
+            if (press.keyCode != 0) addLog("Кольцо-пульт: отпущено ${press.keyName()}")
+            return
+        }
+        ringPressCount += 1
+        lastRingPress = press.describe()
+        ringPressLog.add(0, "${nowClock()} ${press.describe()}")
+        while (ringPressLog.size > 30) ringPressLog.removeAt(ringPressLog.size - 1)
+        addLog("Кольцо-пульт: ${press.describe()} → ${ringAction.title}")
+        if (ringHaptic) try {
+            val v = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+            v.vibrate(60)
+        } catch (ignored: Exception) {
+        }
+        runRingAction()
+        if (tab == TAB_RING) rebuildThrottled()
+    }
+
+    private fun runRingAction() {
+        when (ringAction) {
+            RingControls.Action.NOTHING -> {}
+            RingControls.Action.LOG -> addLog("Кольцо-пульт: нажатие записано")
+            RingControls.Action.TORCH -> {
+                if (ringTorch == null) ringTorch = RingControls.Torch(this)
+                val on = ringTorch?.toggle() == true
+                addLog(if (on) "Кольцо-пульт: фонарик включён" else "Кольцо-пульт: фонарик выключен (или недоступен)")
+            }
+            RingControls.Action.PHOTO -> heyQuickShot()
+            RingControls.Action.LED -> heyLedFromRing()
+            RingControls.Action.VIDEO -> heyVideoFromRing()
+        }
+    }
+
+    override fun dispatchKeyEvent(event: KeyEvent): Boolean {
+        // Нажатия кольца могут прийти и мимо медиа-сессии: HID-кольца шлют
+        // стрелки, громкость, кнопку камеры. Пока приложение на экране — видим их.
+        if (ringPultOn) {
+            val interesting = event.keyCode == KeyEvent.KEYCODE_CAMERA ||
+                event.keyCode == KeyEvent.KEYCODE_HEADSETHOOK ||
+                event.keyCode == KeyEvent.KEYCODE_MEDIA_NEXT ||
+                event.keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS ||
+                event.keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE
+            if (interesting && event.action == KeyEvent.ACTION_DOWN) {
+                ringPult?.let { onRingPress(it.fromKeyEvent(event)) }
+                return true
+            }
+        }
+        return super.dispatchKeyEvent(event)
+    }
+
+    /** Действия, которые запускает нажатие кольца. */
+    private fun heyQuickShot() {
+        if (connState != ConnState.CONNECTED || !heyAvailable()) {
+            toast("Очки не подключены — нажатие кольца только записано в журнал")
+            return
+        }
+        heyTakePhoto()
+    }
+
+    private fun heyLedFromRing() {
+        if (connState != ConnState.CONNECTED || !heyAvailable()) {
+            toast("Очки не подключены — подсветку не включить")
+            return
+        }
+        // «Найти очки» — единственная штатная команда, которая гарантированно
+        // заставляет очки мигнуть светодиодом. Это заметный ответ на жест.
+        heySubscribeProtocol()
+        heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.FIND_DEVICE), "Найти очки (жест кольца)")
+        heyActionStatus = "Жест кольца: прошу очки мигнуть."
+        rebuild()
+    }
+
+    private fun heyVideoFromRing() {
+        if (connState != ConnState.CONNECTED || !heyAvailable()) {
+            toast("Очки не подключены — запись не запустить")
+            return
+        }
+        heySubscribeProtocol()
+        heyToggleVideo()
+    }
+
+    private fun nowClock(): String {
+        return java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
+            .format(java.util.Date())
+    }
+
+    private fun ringPultCard(): View {
+        val box = card()
+        box.addView(txt("Кольцо как пульт", 12, Pal.MUTED, bold = true))
+        box.addView(spacer(6))
+        box.addView(txt(
+            "Кольцо с датчиками касания работает как беспроводной пульт: телефон получает от него " +
+                "обычные нажатия. Перехватив их, мы можем на каждый взмах что-то делать — снимать кадр, " +
+                "включать подсветку очков, зажигать фонарик. Это работает даже без разгаданного протокола кольца.",
+            11, Pal.MUTED
+        ))
+        box.addView(spacer(8))
+        box.addView(txt(
+            "Перехват: " + if (ringPultOn && ringPult?.active == true) "включён" else if (ringPultOn) "не удался" else "выключен",
+            11, if (ringPultOn && ringPult?.active == true) Pal.GREEN else Pal.MUTED
+        ))
+        box.addView(spacer(6))
+        box.addView(actionButton(
+            if (ringPultOn) "Выключить перехват" else "Ловить нажатия кольца",
+            primary = !ringPultOn
+        ) { ringSetPult(!ringPultOn) })
+        box.addView(spacer(8))
+        box.addView(txt("Что делать на нажатие", 11, Pal.MUTED))
+        box.addView(spacer(4))
+        for (a in RingControls.Action.values()) {
+            val on = a == ringAction
+            box.addView(actionButton((if (on) "✓ " else "") + a.title, primary = false) {
+                ringAction = a
+                prefs.edit().putString("ring_action", a.id).apply()
+                addLog("Кольцо-пульт: действие «${a.title}»")
+                rebuild()
+            })
+        }
+        box.addView(spacer(8))
+        box.addView(txt(
+            "Нажатий поймано: $ringPressCount" +
+                (if (lastRingPress.isNotBlank()) "\nПоследнее: $lastRingPress" else ""),
+            11, Pal.TEXT
+        ))
+        if (ringPressLog.isNotEmpty()) {
+            box.addView(spacer(6))
+            box.addView(txt(ringPressLog.take(8).joinToString("\n"), 10, Pal.MUTED, mono = true))
+        }
+        box.addView(spacer(8))
+        box.addView(txt(RingControls.describeInput(RingControls.inputState(this), connName), 11, Pal.MUTED))
+        return box
     }
 
     private fun buildRingTab(): View {
@@ -3461,6 +3819,22 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         ))
         about.addView(spacer(6))
         about.addView(txt(session.status, 11, if (session.framingConfirmed) Pal.GREEN else Pal.AMBER))
+        if (session.probeLog.isNotEmpty()) {
+            about.addView(spacer(8))
+            about.addView(txt("Что уже проверено", 11, Pal.MUTED))
+            about.addView(txt(session.probeLog.takeLast(10).joinToString("\n"), 10, Pal.MUTED, mono = true))
+        }
+        about.addView(spacer(8))
+        about.addView(actionButton("Проверить кольцо заново", primary = false) {
+            val services = gattServices
+            if (services.isEmpty()) {
+                toast("Нет списка сервисов — подключитесь к кольцу заново")
+            } else {
+                ring?.start(services)
+                addLog("Кольцо: повторная проверка каналов")
+                rebuild()
+            }
+        })
         c.addView(about)
 
         val metrics = card()
@@ -3491,6 +3865,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             11, Pal.MUTED
         ))
         c.addView(metrics)
+
+        c.addView(ringPultCard())
 
         val gestures = card()
         val gh = row()
@@ -3794,25 +4170,31 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         rebuild()
         val listener = object : LiveVideo.Listener {
             override fun onStatus(text: String) {
-                liveStatus = text
-                addLog("Эфир: $text")
-                if (tab == TAB_LIVE && !liveVideo.isPlaying()) rebuildThrottled()
+                ui.post {
+                    liveStatus = text
+                    addLog("Эфир: $text")
+                    if (tab == TAB_LIVE && !liveVideo.isPlaying()) rebuildThrottled()
+                }
             }
 
             override fun onLog(line: String) {
-                addLog(line)
+                ui.post { addLog(line) }
             }
 
             override fun onPlaying(url: String) {
-                liveLastUrl = url
-                liveStatus = "Идёт живое видео: $url"
-                if (tab == TAB_LIVE) rebuild()
+                ui.post {
+                    liveLastUrl = url
+                    liveStatus = "Идёт живое видео: $url"
+                    if (tab == TAB_LIVE) rebuild()
+                }
             }
 
             override fun onFailed(reason: String) {
-                liveStatus = reason
-                addLog("Эфир: не получилось — $reason")
-                if (tab == TAB_LIVE) rebuild()
+                ui.post {
+                    liveStatus = reason
+                    addLog("Эфир: не получилось — $reason")
+                    if (tab == TAB_LIVE) rebuild()
+                }
             }
 
             override fun onStopped() {

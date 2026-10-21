@@ -27,6 +27,15 @@
 
     <uses-feature android:name="android.hardware.bluetooth_le" android:required="false" />
 
+    <!-- Список приложений нужен, чтобы предложить «отдать очки их приложению»:
+         без этого запроса Android 11+ не показывает установленные приложения. -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+    </queries>
+
     <application
         android:label="BlueLink"
         android:icon="@mipmap/ic_launcher"
