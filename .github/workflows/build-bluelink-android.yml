@@ -54,11 +54,25 @@ jobs:
           BLUELINK_KEY_PASSWORD: ${{ secrets.BLUELINK_KEY_PASSWORD }}
           BLUELINK_KEY_ALIAS: ${{ secrets.BLUELINK_KEY_ALIAS }}
         run: |
+          set -o pipefail
           if [ -n "$BLUELINK_KEYSTORE_FILE" ]; then
-            gradle assembleRelease --stacktrace
+            gradle assembleRelease --stacktrace 2>&1 | tee /tmp/build.log
           else
-            gradle assembleDebug --stacktrace
+            gradle assembleDebug --stacktrace 2>&1 | tee /tmp/build.log
           fi
+
+      - name: Сохранить лог сборки при ошибке (диагностика)
+        if: failure()
+        run: |
+          cd "$RUNNER_TEMP"
+          mkdir logrepo && cd logrepo
+          git init -q
+          git config user.name "ci-bot"
+          git config user.email "ci@example.com"
+          tail -c 80000 /tmp/build.log > build.log || true
+          git add build.log
+          git commit -q -m "build log $(date -u +%FT%TZ)" || true
+          git push -q -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:refs/heads/bluelink-build-log || true
 
       - name: Загрузить APK в Artifacts
         uses: actions/upload-artifact@v4
