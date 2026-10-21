@@ -16,7 +16,7 @@ for (const fr of gt.frames) {
 const f0 = focalFromEqs(eqs); const rf = refineFocal(frames.map(f => f.p), { ...K, fx: f0, fy: f0 }); K = { ...K, fx: rf.f, fy: rf.f };
 let clean = null; if (fs.existsSync(dir + '/clean_640.rgba')) clean = new Uint8Array(fs.readFileSync(dir + '/clean_640.rgba'));
 console.time('masks');
-for (const f of frames) { const p = poseFromMarkers(f.ms, L, K); f.R = p.R; f.t = p.t; f.K = K; const m = computeMask(f, { layout: L, mr, Rb: 55, Hb: 90, clean, cutOnly: !!process.env.CUT, peel: +(process.env.PEEL||0), peelAll: !!process.env.PALL, major: +(process.env.MAJ||0), edgeRefine: process.env.NOER ? false : undefined }); f.mask = m.mask; f.stats = m.stats; }
+for (const f of frames) { const p = poseFromMarkers(f.ms, L, K); f.R = p.R; f.t = p.t; f.K = K; const m = computeMask(f, { layout: L, mr, Rb: 55, Hb: 90, clean, cutOnly: !!process.env.CUT, offMat: process.env.NOOFF ? false : undefined, plainWeak: process.env.NOPW ? false : undefined, plainZone: process.env.PZ ? +process.env.PZ : undefined, peel: +(process.env.PEEL||0), peelAll: !!process.env.PALL, major: +(process.env.MAJ||0), edgeRefine: process.env.NOER ? false : undefined }); f.mask = m.mask; f.stats = m.stats; }
 console.timeEnd('masks');
 // имитация бликов на блестящем предмете: ложный «фон» пятнами внутри предмета
 if (process.env.CORRUPT) { let seed = 11; const rnd = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
@@ -40,7 +40,7 @@ if (process.env.POSEERR) { let seed = 5; const rnd = () => { seed = (seed * 1664
     const Rx = [1,0,0, 0,c(a[0]),-s(a[0]), 0,s(a[0]),c(a[0])], Ry = [c(a[1]),0,s(a[1]), 0,1,0, -s(a[1]),0,c(a[1])];
     const mul = (A, B) => { const C = []; for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) C[i*3+j] = A[i*3]*B[j] + A[i*3+1]*B[3+j] + A[i*3+2]*B[6+j]; return C; };
     f.R = mul(mul(Rx, Ry), f.R); f.t = [f.t[0] + rnd() * 2 * amp, f.t[1] + rnd() * 2 * amp, f.t[2]]; }); console.log('pose errors amp', amp); }
-console.time('hull'); const G = process.env.USEIDEAL ? globalThis.Gi : carveHull(frames, { Rb: 55, Hb: 90 }, N, null, { frac: +(process.env.FRAC ?? 0.15), close: process.env.CLOSE != null ? +process.env.CLOSE : undefined }); console.timeEnd('hull');
+console.time('hull'); const G = process.env.USEIDEAL ? globalThis.Gi : carveHull(frames, { Rb: 55, Hb: 90 }, N, null, { weakMaj: process.env.WM != null ? +process.env.WM : undefined, frac: +(process.env.FRAC ?? 0.15), close: process.env.CLOSE != null ? +process.env.CLOSE : undefined }); console.timeEnd('hull'); if (globalThis.Gi && G !== globalThis.Gi) { let cut = 0, extra = 0, cutTop = 0; const Gi = globalThis.Gi; for (let i = 0; i < G.occ.length; i++) { if (Gi.occ[i] > 0.5 && G.occ[i] < 0.5) { cut++; if ((i / (G.nx * G.ny) | 0) * G.vs > 45) cutTop++; } if (Gi.occ[i] < 0.5 && G.occ[i] > 0.5) extra++; } const v3 = G.vs ** 3; console.log('CUT mm3', (cut * v3).toFixed(0), 'of which z>45:', (cutTop * v3).toFixed(0), 'EXTRA mm3', (extra * v3).toFixed(0)); }
 let vox = 0; for (const v of G.occ) vox += v; console.log('hull volume mm3', (vox * G.vs ** 3).toFixed(0), 'true ~100500');
 console.time('mesh'); const M = meshFromGrid(process.env.REV ? revolveGrid(G) : G, +(process.env.SM || 1)); taubin(M, +(process.env.TB || 10)); computeNormals(M); console.timeEnd('mesh');
 // объём по сетке (знак = ориентация)

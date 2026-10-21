@@ -72,6 +72,7 @@ export function computeMask(fr, ctx) {
   // локальная корреляция наблюдаемого с ожидаемым рисунком (окно 7×7): узор коврика виден и в тени
   const ncc = nccMap(gray, des, w, h, 3);
   const strong = new Uint8Array(n); // фон, подтверждённый узором коврика
+  const plain = new Uint8Array(n);  // фон только по белизне (без узора) — для светлых предметов ненадёжно
   let nb = 0;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x;
@@ -91,7 +92,7 @@ export function computeMask(fr, ctx) {
         const r = rgba[i * 4] * kr, g = rgba[i * 4 + 1] * kg, b = rgba[i * 4 + 2] * kb, m = (r + g + b) / 3;
         const chroma = (Math.max(r, g, b) - Math.min(r, g, b)) / (m + 12);
         const diff = Math.abs(gray[i] - pred);
-        if (diff < Math.max(14, 0.11 * pred) && chroma < 0.13) { mask[i] = 0; continue; }
+        if (diff < Math.max(14, 0.11 * pred) && chroma < 0.13) { mask[i] = 0; plain[i] = 1; continue; }
         if (diff > Math.max(40, 0.3 * pred) || chroma > 0.3) { mask[i] = 2; continue; }
         continue;
       }
@@ -122,33 +123,6 @@ export function computeMask(fr, ctx) {
       if (ok) mask[i] = 0;
     }
   }
-  // За листом (стол, стена): фон заливкой от области заведомо вне цилиндра — по плавности цвета
-  // и по совпадению с цветами этого фона. Иначе над предметом ничего не вырезается (острая «шапка»).
-  if (ctx.offMat !== false) {
-    const hist = new Uint32Array(4096); let seeds = 0;
-    const bl = blur3rgb(rgba, w, h);
-    const q = (j) => ((bl[j * 3] >> 4) << 8) | ((bl[j * 3 + 1] >> 4) << 4) | (bl[j * 3 + 2] >> 4);
-    for (let i = 0; i < n; i++) if (!inCyl[i] && des[i] < 0) { hist[q(i)]++; seeds++; }
-    if (seeds > 200) {
-      const thr = Math.max(3, seeds * 0.0004);
-      const okc = (j) => { const c = q(j), R0 = c >> 8, G0 = (c >> 4) & 15, B0 = c & 15; let s2 = 0;
-        for (let dr = -1; dr <= 1; dr++) for (let dg = -1; dg <= 1; dg++) for (let db = -1; db <= 1; db++) { const R1 = R0 + dr, G1 = G0 + dg, B1 = B0 + db; if (R1 < 0 || G1 < 0 || B1 < 0 || R1 > 15 || G1 > 15 || B1 > 15) continue; s2 += hist[(R1 << 8) | (G1 << 4) | B1]; }
-        return s2 >= thr; };
-      const vis = new Uint8Array(n), st = new Int32Array(n); let sp = 0;
-      for (let i = 0; i < n; i++) if (!inCyl[i] && des[i] < 0) { vis[i] = 1; st[sp++] = i; }
-      const step = ctx.offMatStep ?? 14;
-      while (sp) {
-        const j = st[--sp], x = j % w, y = (j / w) | 0;
-        const nb4 = [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1];
-        for (const k of nb4) {
-          if (k < 0 || vis[k] || des[k] >= 0 || mask[k] === 0) continue;
-          const d = Math.abs(bl[k * 3] - bl[j * 3]) + Math.abs(bl[k * 3 + 1] - bl[j * 3 + 1]) + Math.abs(bl[k * 3 + 2] - bl[j * 3 + 2]);
-          if (d > step || !okc(k)) continue;
-          vis[k] = 1; mask[k] = 0; st[sp++] = k;
-        }
-      }
-    }
-  }
   // ровные места в тени: фон, если рядом проверенный по узору коврик такой же яркости
   {
     const ver = new Uint8Array(n);
@@ -164,7 +138,7 @@ export function computeMask(fr, ctx) {
       const exp = mg * (rho + (1 - rho) * des[i] / 255); // ожидаемая яркость с учётом рисунка
       const rr = rgba[i * 4] * kr, gg = rgba[i * 4 + 1] * kg, bb2 = rgba[i * 4 + 2] * kb, m = (rr + gg + bb2) / 3;
       const chroma = (Math.max(rr, gg, bb2) - Math.min(rr, gg, bb2)) / (m + 12);
-      if (Math.abs(gray[i] - exp) < Math.max(10, 0.08 * exp) && chroma < 0.14) mask[i] = 0;
+      if (Math.abs(gray[i] - exp) < Math.max(10, 0.08 * exp) && chroma < 0.14) { mask[i] = 0; plain[i] = 1; }
     }
   }
   // «Фон», со всех сторон окружённый предметом, — обычно блик или отражение коврика на блестящем боку.
@@ -226,8 +200,59 @@ export function computeMask(fr, ctx) {
     }
     mask.set(out);
   }
+  // Фон «по белизне» (узор коврика в окне не проверялся) → слабый фон: светлый матовый предмет на белой бумаге
+  // выглядит так же, поэтому вырезать по нему можно только большинством кадров.
+  // Только рядом со светлыми, похожими на бумагу частями предмета: у цветного предмета белизна надёжна.
+  if (ctx.plainWeak !== false) {
+    const pl = new Uint8Array(n);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x; if (mask[i] !== 1 && mask[i] !== 2) continue; if (des[i] < 0) continue;
+      const r = rgba[i * 4] * kr, g = rgba[i * 4 + 1] * kg, b = rgba[i * 4 + 2] * kb, m = (r + g + b) / 3;
+      if ((Math.max(r, g, b) - Math.min(r, g, b)) / (m + 12) < 0.13 && gray[i] > 0.6 * white(x, y)) pl[i] = 1;
+    }
+    const zone = dilate(pl, w, h, ctx.plainZone ?? 3);
+    for (let i = 0; i < n; i++) if (plain[i] && zone[i] && mask[i] === 0 && inCyl[i]) mask[i] = 3;
+  }
+  // За листом (стол, стена): «слабый фон» (3) заливкой от области заведомо вне цилиндра — по плавности цвета
+  // и по совпадению с цветами этого фона. Слабый фон вырезает воксель, только если так считает большинство кадров:
+  // если заливка затекла в предмет похожего цвета в отдельных кадрах, предмет не режется.
+  if (ctx.offMat !== false) {
+    const hist = new Uint32Array(4096); let seeds = 0;
+    const bl = blur3rgb(rgba, w, h);
+    const q = (j) => ((bl[j * 3] >> 4) << 8) | ((bl[j * 3 + 1] >> 4) << 4) | (bl[j * 3 + 2] >> 4);
+    for (let i = 0; i < n; i++) if (!inCyl[i] && des[i] < 0) { hist[q(i)]++; seeds++; }
+    if (seeds > 200) {
+      const thr = Math.max(3, seeds * 0.0004);
+      const okc = (j) => { const c = q(j), R0 = c >> 8, G0 = (c >> 4) & 15, B0 = c & 15; let s2 = 0;
+        for (let dr = -1; dr <= 1; dr++) for (let dg = -1; dg <= 1; dg++) for (let db = -1; db <= 1; db++) { const R1 = R0 + dr, G1 = G0 + dg, B1 = B0 + db; if (R1 < 0 || G1 < 0 || B1 < 0 || R1 > 15 || G1 > 15 || B1 > 15) continue; s2 += hist[(R1 << 8) | (G1 << 4) | B1]; }
+        return s2 >= thr; };
+      const vis = new Uint8Array(n), st = new Int32Array(n); let sp = 0;
+      for (let i = 0; i < n; i++) if (!inCyl[i] && des[i] < 0) { vis[i] = 1; st[sp++] = i; }
+      const step = ctx.offMatStep ?? 10;
+      // перепад яркости (Собель) без размытия: заливка не переходит даже через слабый край
+      const gr = (k) => { const x = k % w, y = (k / w) | 0; if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) return 0;
+        const gx = gray[k - w + 1] + 2 * gray[k + 1] + gray[k + w + 1] - gray[k - w - 1] - 2 * gray[k - 1] - gray[k + w - 1];
+        const gy = gray[k + w - 1] + 2 * gray[k + w] + gray[k + w + 1] - gray[k - w - 1] - 2 * gray[k - w] - gray[k - w + 1];
+        return Math.abs(gx) + Math.abs(gy); };
+      const gmax = ctx.offMatGrad ?? 40;
+      while (sp) {
+        const j = st[--sp], x = j % w, y = (j / w) | 0;
+        const nb4 = [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1];
+        for (const k of nb4) {
+          if (k < 0 || vis[k] || des[k] >= 0 || mask[k] === 0) continue;
+          const d = Math.abs(bl[k * 3] - bl[j * 3]) + Math.abs(bl[k * 3 + 1] - bl[j * 3 + 1]) + Math.abs(bl[k * 3 + 2] - bl[j * 3 + 2]);
+          if (d > step || gr(k) > gmax || !okc(k)) continue;
+          vis[k] = 1; mask[k] = 3; st[sp++] = k;
+        }
+      }
+      // отступ 2 пикселя от «не фона»: у самого края предмета слабым фоном не считаем
+      const nb2 = new Uint8Array(n); for (let q = 0; q < n; q++) nb2[q] = mask[q] === 1 || mask[q] === 2 ? 1 : 0;
+      const near2 = dilate(nb2, w, h, 2);
+      for (let q = 0; q < n; q++) if (mask[q] === 3 && near2[q]) mask[q] = 1;
+    }
+  }
   // осторожность у границ: фон рядом с «не фоном» — в неизвестное
-  const notBg = new Uint8Array(n); for (let i = 0; i < n; i++) notBg[i] = mask[i] ? 1 : 0;
+  const notBg = new Uint8Array(n); for (let i = 0; i < n; i++) notBg[i] = mask[i] === 1 || mask[i] === 2 ? 1 : 0;
   const grown = dilate(notBg, w, h, 1);
   for (let i = 0; i < n; i++) { if (ctx.grow && !mask[i] && grown[i] && inCyl[i]) mask[i] = 1; if (!mask[i]) nb++; }
   return { mask, stats: { ok: true, rho, bgFrac: nb / n } };
@@ -311,6 +336,14 @@ function solve6(A, b) {
   return M.map((r, i) => r[n] / r[i]);
 }
 // ---------- вырезание объёма ----------
+// Решение «вырезать воксель»: фон по узору коврика (bg) — от доли frac видевших кадров;
+// «слабый фон» за листом (weak) — только вместе с bg и большинством (weakMaj, по умолчанию 0.5) видевших.
+export function carveVote(bg, weak, seen, frac = 0.08, few = false, weakMaj = 0.5) {
+  if (seen < 3) return true;
+  const need = few ? 1 : Math.max(2, Math.ceil(frac * seen));
+  if (bg >= need) return true;
+  return bg + weak >= need && bg + weak >= (weakMaj ?? 0.5) * seen;
+}
 // frames: [{w,h,K,R,t,mask}], box: {Rb,Hb}, N — вокселей по ширине
 export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   const vs = 2 * box.Rb / N, nx = N, ny = N, nz = Math.max(8, Math.ceil(box.Hb / vs));
@@ -329,19 +362,19 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
       for (let x = 0; x < nx; x++) {
         const X = ox + x * vs;
         if (X * X + Y * Y > box.Rb * box.Rb) continue;
-        let bg = 0, seen = 0, left = F.length;
+        let bg = 0, weak = 0, seen = 0, left = F.length;
         for (let k = 0; k < F.length; k++, left--) {
           const f = F[k], R = f.R, t = f.t, K = f.K;
           const cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
           const u = (K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx) | 0, v = (K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy) | 0;
           if (u < 0 || v < 0 || u >= f.w || v >= f.h) continue;
           seen++;
-          if (f.mask[v * f.w + u] === 0) bg++;
+          const mv = f.mask[v * f.w + u]; if (mv === 0) bg++; else if (mv === 3) weak++;
           // досрочно: уже точно вырезан (даже если все оставшиеся кадры увидят точку)
           if (!few && bg >= 2 && bg >= frac * (seen + left - 1)) break;
         }
         const need = few ? 1 : Math.max(2, Math.ceil(frac * seen));
-        occ[(z * ny + y) * nx + x] = bg >= need || seen < 3 ? 0 : 1;
+        occ[(z * ny + y) * nx + x] = carveVote(bg, weak, seen, frac, few, opt.weakMaj) ? 0 : 1;
       }
     }
     if (onProgress && (z & 3) === 0) onProgress(z / nz);

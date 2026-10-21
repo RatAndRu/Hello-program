@@ -44,6 +44,14 @@ export class Capture {
       await new Promise((r) => setTimeout(r, Math.max(10, 60 - dt)));
     }
   }
+  // Таймер старта: после нажатия «▶» съёмка начнётся через delay секунд (успеть раскрутить столик и убрать руку)
+  arm(delay = 0) { this.paused = false; this.startAt = performance.now() + delay * 1000; this.lastDir = null; this.theta = 0; this.blind = 0; }
+  // насколько сдвинулся ракурс, градусы. Вертушка — по повороту столика (азимут) или подъёму держателя;
+  // с рук — угол между направлениями на камеру.
+  progress(a0, a1) {
+    if (this.opt.method === 'turn') { const daz = Math.abs(((a1.az - a0.az + 540) % 360) - 180); return Math.max(daz, Math.abs(a1.el - a0.el)); }
+    return angDeg(a0.c, a1.c);
+  }
   async step() {
     const v = this.video, vw = v.videoWidth, vh = v.videoHeight; if (!vw) return;
     const w = TRACK_W, h = Math.round(vh * w / vw);
@@ -53,44 +61,63 @@ export class Capture {
     const ms = detectMarkers(g, w, h);
     const f = this.f || 0.75 * w, K = { fx: f, fy: f, cx: w / 2, cy: h / 2 };
     const p = ms.length ? poseFromMarkers(ms, this.L, K) : null;
-    const now = performance.now();
-    const st = { found: !!p, markers: ms.length, w, h, ms, count: this.shots.length };
+    const now = performance.now(), dt = this.lastT ? Math.min(1, (now - this.lastT) / 1000) : 0; this.lastT = now;
+    if (dt > 0) this.fps = this.fps ? this.fps * 0.9 + 0.1 / dt : 1 / dt; // скорость слежения, кадров/с
+    const turn = this.opt.method === 'turn', step = this.opt.step || (turn ? 8 : 10);
+    const st = { found: false, markers: ms.length, w, h, ms, count: this.shots.length, fps: this.fps || 0, step };
+    let a = null, sh;
     if (p && p.n >= 2 && p.rms < 3) {
       if (this.eqs.length < 400 && p.n >= 3) { this.eqs.push(...focalEqs(p.H, w / 2, h / 2)); if (this.eqs.length >= 12) { const nf = focalFromEqs(this.eqs); if (nf > 0.45 * w && nf < 1.6 * w) this.f = nf; } }
-      const a = camAngles(p.R, p.t);
-      // скорость: угол между направлениями на камеру за секунду
+      a = camAngles(p.R, p.t);
+      // скорость: угол между направлениями на камеру (в системе коврика) за секунду
       let speed = 0;
-      if (this.prev) { const c0 = this.prev.a.c, c1 = a.c, d0 = Math.hypot(...c0), d1 = Math.hypot(...c1); const cos = (c0[0] * c1[0] + c0[1] * c1[1] + c0[2] * c1[2]) / (d0 * d1); speed = Math.acos(Math.min(1, cos)) * 180 / Math.PI / Math.max(0.03, (now - this.prev.t) / 1000); }
+      if (this.prev) speed = this.progress(this.prev.a, a) / Math.max(0.03, (now - this.prev.t) / 1000);
       this.prev = { a, t: now };
-      Object.assign(st, { R: p.R, t: p.t, K, az: a.az, el: a.el, dist: a.dist, speed, n: p.n });
-      // На вертушке скорость считается по повороту коврика; рука крутит рывком — порог мягче,
-      // а смаз ловит проверка резкости.
-      const turn = this.opt.method === 'turn', lim = turn ? 30 : 16;
-      const cell = this.cellOf(a), slow = speed < lim;
-      const sh = sharpness(g, w, h, this.cylBox(R_(p), p.t, K, w, h));
-      this.sharpMax = Math.max(this.sharpMax * 0.997, sh);
-      const sharp = sh >= (turn ? 0.7 : 0.75) * this.sharpMax;
-      Object.assign(st, { slow, cell, sharp, sh, lim });
-      let why = '';
-      if (this.paused) why = 'пауза';
-      else if (this.shots.length >= 120) why = 'уже 120 кадров — хватит';
-      else if (!cell) why = a.el < BANDS[0][0] ? 'камера слишком низко' : 'камера слишком высоко';
-      else if (p.n < 3) why = `видно мало меток (${p.n}, нужно 3)`;
-      else if (!slow) why = `быстро: ${speed.toFixed(0)}°/с, нужно < ${lim}`;
-      else if (!sharp) why = 'кадр смазан — подожди долю секунды';
-      else if (this.cells.has(cell)) why = turn ? 'этот угол уже снят — крути дальше' : 'этот угол уже снят — иди дальше';
-      else if (now - this.lastShot <= 350) why = 'пауза между кадрами';
-      st.why = why;
-      const manual = this.manual && !this.paused && this.shots.length < 150;
-      if ((!why || manual)) {
-        this.manual = false;
-        this.lastShot = now; if (cell && !this.cells.has(cell)) this.cells.set(cell, this.shots.length);
-        const blob = await this.grab();
-        this.shots.push({ blob, az: a.az, el: a.el, manual });
-        st.count = this.shots.length; st.shot = true; st.why = '';
-        this.opt.onShot && this.opt.onShot(this.shots.length, a, manual);
-      }
-    } else { this.prev = null; st.why = ms.length ? `видно мало меток (${ms.length})` : 'коврик не виден'; }
+      this.omega = this.omega == null ? speed : this.omega * 0.5 + speed * 0.5; this.poseT = now;
+      Object.assign(st, { found: true, R: p.R, t: p.t, K, az: a.az, el: a.el, dist: a.dist, speed: this.omega, n: p.n, cell: this.cellOf(a), slow: true });
+      sh = sharpness(g, w, h, this.cylBox(p.R, p.t, K, w, h));
+    } else {
+      this.prev = null;
+      sh = sharpness(g, w, h, [(w * 0.2) | 0, (h * 0.2) | 0, (w * 0.8) | 0, (h * 0.8) | 0]);
+    }
+    // резкость сравниваем с последними ~8 кадрами (а не с рекордом за всё время — иначе при вращении не снимет никогда)
+    (this.shHist = this.shHist || []).push(sh); if (this.shHist.length > 8) this.shHist.shift();
+    const shMax = Math.max(...this.shHist);
+    // ---- когда снимать: по пройденному углу. Медленнее крутится — реже кадры. Ограничения скорости нет. ----
+    let why = '', due = false, blindShot = false;
+    if (this.paused) why = 'пауза — нажми ▶';
+    else if (this.startAt && now < this.startAt) { why = `старт через ${Math.ceil((this.startAt - now) / 1000)} с`; st.countdown = Math.ceil((this.startAt - now) / 1000); }
+    else if (a) {
+      this.blind = 0;
+      const prog = this.lastDir ? this.progress(this.lastDir, a) : Infinity; this.theta = prog === Infinity ? 0 : prog;
+      st.prog = prog;
+      if (prog >= step) due = true;
+      else if (this.omega < 1) why = turn ? 'столик стоит — крутни ещё раз (или подними держатель)' : 'стоишь на месте — иди дальше по кругу';
+      else why = `жду поворота: ${prog.toFixed(0)}° из ${step}°`;
+    } else if (this.poseT && now - this.poseT < 3000 && this.omega > 2 && this.lastDir) {
+      // метки на миг потерялись (смаз) — досчитываем угол по последней скорости с замедлением
+      this.omega *= Math.exp(-dt / 5); this.theta += this.omega * dt;
+      if (this.theta >= step && this.blind < 6) { due = true; blindShot = true; }
+      else why = 'метки смазаны — досчитываю поворот';
+    } else why = ms.length ? `видно мало меток (${ms.length})` : 'коврик не виден';
+    if (due && now - this.lastShot < 150) { due = false; why = 'слишком часто'; }
+    if (due) {
+      this.dueFrames = (this.dueFrames || 0) + 1;
+      // подождём до 3 кадров слежения, если текущий заметно мутнее соседних
+      if (sh < 0.8 * shMax && this.dueFrames <= 3) { due = false; why = 'кадр смазан — жду резкий'; }
+    }
+    const manual = this.manual && !this.paused;
+    if (due || manual) {
+      this.manual = false; this.dueFrames = 0;
+      this.lastShot = now;
+      if (a) { this.lastDir = a; this.theta = 0; } else { this.theta = 0; this.blind++; }
+      if (st.cell && !this.cells.has(st.cell)) this.cells.set(st.cell, this.shots.length);
+      const blob = await this.grab();
+      this.shots.push({ blob, az: a ? a.az : null, el: a ? a.el : null, manual, blind: blindShot });
+      st.count = this.shots.length; st.shot = true; why = '';
+      this.opt.onShot && this.opt.onShot(this.shots.length, a, manual);
+    }
+    st.why = why; st.sharp = sh >= 0.8 * shMax;
     // контраст печати: насколько чёрное на метках действительно чёрное (p10/p90 яркости внутри метки)
     if (ms.length) { const r = inkRatio(g, w, h, ms); if (r != null) this.ink = this.ink == null ? r : this.ink * 0.9 + r * 0.1; }
     st.ink = this.ink;
@@ -135,7 +162,7 @@ export class Capture {
   }
 }
 
-const R_ = (p) => p.R;
+const angDeg = (c0, c1) => { const d0 = Math.hypot(...c0), d1 = Math.hypot(...c1); return Math.acos(Math.max(-1, Math.min(1, (c0[0] * c1[0] + c0[1] * c1[1] + c0[2] * c1[2]) / (d0 * d1)))) * 180 / Math.PI; };
 // резкость: средний модуль лапласиана в рамке, нормированный на яркость
 export function sharpness(g, w, h, bb) {
   let [x0, y0, x1, y1] = bb; if (x1 - x0 < 8 || y1 - y0 < 8) { x0 = 1; y0 = 1; x1 = w - 2; y1 = h - 2; }

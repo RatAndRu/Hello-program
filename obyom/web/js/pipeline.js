@@ -57,7 +57,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   // 3) маски «где предмет»
   for (let i = 0; i < good.length; i++) {
     if (shouldStop()) throw new Error('stopped');
-    const m = computeMask(good[i], { layout: L, mr, Rb, Hb, cutOnly: turn });
+    const m = computeMask(good[i], { layout: L, mr, Rb, Hb, cutOnly: turn, offMat: !turn });
     good[i].mask = m.mask;
     cb.progress('Отделяю предмет от коврика', (i + 1) / good.length, `кадр ${i + 1} из ${good.length}`);
     if (i % 2) await tick();
@@ -80,7 +80,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   colorize(M, good, (p) => cb.progress('Раскрашиваю', p, ''));
   await tick();
   const result = { mesh: { pos: M.pos, nrm: M.nrm, col: M.col, idx: M.idx }, stats: { frames: job.blobs.length, used: good.length, focal: rf.f, elMax, hullVol: vox * G.vs ** 3, t: 0 } };
-  if (elMax < 50) result.stats.warn = 'Мало кадров сверху — верх модели может быть «колпаком». В следующий раз добавь круг с высоты 60–75°.';
+  if (elMax < (turn ? 62 : 50)) result.stats.warn = `Самый высокий кадр — ${elMax.toFixed(0)}°: верх модели может выйти «колпаком». В следующий раз добавь оборот почти сверху (65–75°)${turn ? ' — на вертушке фон за кругом не используется, верх вырезают только кадры сверху' : ''}.`;
   // 6) сплэты
   if (job.mode === 'splat' || job.mode === 'both') {
     const S = initFromMesh(M, Q.n0);

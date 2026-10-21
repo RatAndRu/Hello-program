@@ -7,11 +7,12 @@ const fs = require('fs'); const SH = process.env.SH || '/home/user/Hello-program
   const logs = []; page.on('console', m => logs.push(m.type() + ': ' + m.text())); page.on('pageerror', e => logs.push('PAGEERR ' + e.message));
   const cdp = await page.target().createCDPSession(); await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: '/tmp/t/dl' }).catch(async () => { await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: '/tmp/t/dl' }); });
   await page.goto('http://127.0.0.1:8765/index.html', { waitUntil: 'networkidle0' });
-  await page.evaluate((shape) => { localStorage.setItem('obyom.settings', JSON.stringify({ mode: 'both', method: 'walk', size: 'A4', height: '90', quality: 'fast', shape })); localStorage.setItem('obyom.cal', JSON.stringify({ A4: { sx: 1.02, sy: 1.0 } })); }, process.env.SHAPE || 'normal');
+  await page.evaluate((o) => { localStorage.setItem('obyom.settings', JSON.stringify({ mode: o.mode, method: o.method, size: 'A4', height: '90', quality: 'fast', shape: o.shape, delay: '3', step: '10' })); localStorage.setItem('obyom.cal', JSON.stringify({ A4: { sx: 1.02, sy: 1.0 } })); }, { shape: process.env.SHAPE || 'normal', mode: process.env.MODE || 'both', method: process.env.METHOD || 'walk' });
   await page.reload({ waitUntil: 'networkidle0' });
   await page.screenshot({ path: SH + 'e_home.png' });
   await page.click('#btnNew'); await new Promise(r => setTimeout(r, 300)); await page.screenshot({ path: SH + 'e_setup.png' });
   await page.click('#btnStart');
+  await new Promise(r => setTimeout(r, 1500)); await page.click('#capPause'); // ▶ → таймер 3 с
   const t0 = Date.now(); let shot = false;
   while (Date.now() - t0 < 70000) {
     await new Promise(r => setTimeout(r, 2000));

@@ -1,3 +1,4 @@
+import { carveVote } from './recon.js';
 // Объём — гауссовы сплэты на процессоре (без видеокарты и без нейросетей).
 // Каждая «капля»: центр, 3 радиуса, поворот, непрозрачность, цвет. Подгоняем их градиентным спуском (Adam)
 // так, чтобы картинка совпала с кадрами. Рендер — тайлами 16×16, как в оригинальном методе 3DGS.
@@ -392,7 +393,7 @@ export function splatViews(M, frames, depthMap, opt = {}) {
       const isBg = f.mask ? f.mask[gi] === 0 : zb[gi] > 1e8;
       for (let c = 0; c < 3; c++) bg[j * 3 + c] = isBg ? img[j * 3 + c] : 0.5;
       // неуверенные пиксели (тень, блики коврика) почти не учитываем — иначе капли «рисуют» тень вокруг предмета
-      wt[j] = f.mask && f.mask[gi] === 1 ? (opt.unkW ?? 0.15) : 1;
+      wt[j] = f.mask && (f.mask[gi] === 1 || f.mask[gi] === 3) ? (opt.unkW ?? 0.15) : 1; // 3 — слабый фон за листом
     }
     views.push({ K: f.K, R: f.R, t: f.t, x0, y0, cw, ch, img, bg, wt, src: f });
   }
@@ -420,17 +421,19 @@ export function nearHull(G, pad = 3) {
   };
 }
 // Где капле можно жить: рядом с оболочкой, выше коврика и не на «уверенном фоне» (маска 0) в ≥2 кадрах
-export function allowedRegion(G, frames, pad = 2, votes = 2) {
-  const near = nearHull(G, pad);
+// Можно ли капле быть в точке: то же правило, что и для вырезания сетки (доля кадров, а не «любые два»),
+// иначе сплэты обрезаются сильнее сетки.
+export function allowedRegion(G, frames, pad = 2, frac = 0.08) {
+  const near = nearHull(G, pad), few = frames.length < 8;
   return (X, Y, Z) => {
     if (Z < 0.4 || !near(X, Y, Z)) return false;
-    let bg = 0;
+    let bg = 0, weak = 0, seen = 0;
     for (const f of frames) {
       const R = f.R, t = f.t, K = f.K, cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
       const u = (K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx) | 0, v = (K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy) | 0;
       if (u < 0 || v < 0 || u >= f.w || v >= f.h) continue;
-      if (f.mask[v * f.w + u] === 0 && ++bg >= votes) return false;
+      seen++; const mv = f.mask[v * f.w + u]; if (mv === 0) bg++; else if (mv === 3) weak++;
     }
-    return true;
+    return !carveVote(bg, weak, seen, frac, few);
   };
 }

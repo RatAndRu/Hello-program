@@ -24,6 +24,8 @@ def shade_obj(P, Nrm, kind):
         col[:] = [0.2, 0.45, 0.9]; col[ch] = [0.9, 0.9, 0.95]
     else:
         col[:] = [0.25, 0.75, 0.35]
+    if os.environ.get('OBJWHITE'):  # однотонный светлый матовый предмет (как дезодорант)
+        col[:] = [0.88, 0.88, 0.9]
     return col * lam[..., None]
 def render(Rm, t):
     ys, xs = np.mgrid[0:H, 0:W].astype(np.float32)
@@ -39,6 +41,8 @@ def render(Rm, t):
     mi = np.clip((v * PPM).astype(int), 0, mat.shape[0] - 1); mj = np.clip((u * PPM).astype(int), 0, mat.shape[1] - 1)
     wood = 0.45 + 0.08 * np.sin(P[..., 0] * 0.15 + np.sin(P[..., 1] * 0.05) * 3)
     base = np.stack([wood * 1.0, wood * 0.75, wood * 0.5], -1)
+    if os.environ.get('TABLE'):  # трудный случай: стол/стена цвета предмета, напр. TABLE=0.86,0.86,0.9
+        tc = np.array([float(v) for v in os.environ['TABLE'].split(',')]); base = (1 + 0.03 * np.sin(P[..., 0] * 0.01))[..., None] * tc
     paper = mat[mi, mj][..., None] * np.array([0.93, 0.92, 0.9])
     pl = np.where(onmat[..., None], paper, base)
     # тень от предмета (простая: круг под предметом, смещённый от света)
@@ -47,7 +51,7 @@ def render(Rm, t):
     m = tz > 0
     best[m] = tz[m]; img[m] = pl[m]
     # фон-стена далеко (если луч не попал на стол)
-    img[~m] = [0.6, 0.62, 0.65]
+    img[~m] = [float(v) for v in os.environ['TABLE'].split(',')] if os.environ.get('TABLE') else [0.6, 0.62, 0.65]
     def hit(tt, Pn, Nn, kind, ok):
         nonlocal best, img
         ok = ok & (tt > 0) & (tt < best)
@@ -85,7 +89,10 @@ def look(cam, target):
     Rm = np.stack([x, y, z]); return Rm, -Rm @ cam
 frames = []
 for i in range(N):
-    if mode == 'turn':
+    if mode == 'spin':  # вертушка, раскрученная рукой: 10 к/с, ω0 = 120°/с, затухание τ = 5 с, держатель на 35°
+        tt = i / 10.0; az = 120 * 5 * (1 - np.exp(-tt / 5)); el = 35; dist = 380
+        frames_w = 120 * np.exp(-tt / 5)
+    elif mode == 'turn':
         az = i * 360 / N; el = [32, 52][i % 2]; dist = 380
     else:
         az = i * 360 / N + rng.normal(0, 3); el = 30 + 25 * (i % 3) / 2 + rng.normal(0, 2); dist = 340 + rng.normal(0, 20)
@@ -95,6 +102,9 @@ for i in range(N):
     img, objm = render(Rm, t)
     Image.fromarray((objm * 255).astype(np.uint8)).save(f'{out}/m{i:03d}.png')
     im = Image.fromarray(img).filter(ImageFilter.GaussianBlur(0.6))
+    if mode == 'spin':  # смаз при движении: ~2.7 пикс на градус, выдержка 1/30 с
+        L = frames_w / 30 * 2.7
+        if L > 1.5 and not os.environ.get('NOBLUR'): im = im.filter(ImageFilter.BoxBlur(float(L) / 2))
     im.save(f'{out}/f{i:03d}.jpg', quality=88)
     frames.append({'file': f'f{i:03d}.jpg', 'R': Rm.flatten().tolist(), 't': t.tolist(), 'az': az, 'el': el})
 json.dump({'K': {'fx': f, 'fy': f, 'cx': cx, 'cy': cy}, 'w': W, 'h': H, 'frames': frames}, open(f'{out}/gt.json', 'w'))

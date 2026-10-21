@@ -9,9 +9,9 @@ import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '1.1';
+export const VERSION = '1.2';
 const $ = (id) => document.getElementById(id);
-const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
+const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
 // калибровка печати: { A4: {sx, sy}, ... } — во сколько раз принтер растянул лист по ширине и длине
 const loadCal = () => { try { return JSON.parse(localStorage.getItem('obyom.cal') || '{}'); } catch (e) { return {}; } };
@@ -83,7 +83,7 @@ function renderSetup() {
   const sp = S.mode === 'mesh' ? '' : ` Сплэты на телефоне: ~${Math.round(it * 0.4 / 60)}–${Math.round(it * 0.7 / 60)} мин.`;
   const how = S.method === 'walk'
     ? 'Обходи предмет по кругу 2–3 раза на разной высоте: низко (~30°), выше (~55°) и почти сверху (~75°). Кадры снимаются сами.'
-    : 'Телефон в держателе смотрит на коврик сверху-сбоку. Плавно крути столик (оборот за 15–20 с). Потом подними держатель выше и сделай ещё оборот. Подойдёт круг, вырезанный из коврика, или целый лист — если он лежит ровно.';
+    : 'Телефон в держателе смотрит на коврик сверху-сбоку. Нажми ▶, раскрути столик и убери руку — после таймера кадры пойдут сами, каждые несколько градусов поворота (замедлился — кадры реже, остановился — пауза). Потом подними держатель выше, ⏸ → ▶ и ещё оборот.';
   const tall = +S.height >= 200 ? ' Для высокого предмета отойди дальше, чтобы в кадр влезал и весь круг меток, и верх предмета.' : '';
   $('setupHint').textContent = how + tall + ' Форма считается за 20–60 секунд.' + sp;
 }
@@ -95,35 +95,44 @@ let cap = null;
 async function startCapture() {
   go('capture');
   cap = new Capture($('video'), $('overlay'), {
-    size: S.size, method: S.method, Hb: +S.height,
+    size: S.size, method: S.method, Hb: +S.height, step: +S.step || 8,
     onState: capState,
     onShot: (n, a, manual) => { beep(manual ? 1318 : 1046, 0.05); if (navigator.vibrate) navigator.vibrate(15); },
   });
+  // с таймером — ждём «▶»; без таймера — снимаем сразу
+  if (+S.delay > 0) { cap.paused = true; $('capPause').textContent = '▶'; } else { cap.arm(0); $('capPause').textContent = '⏸'; }
+  lastCount = null;
+  window.__obyomCap = cap; // для отладки и тестов
   try { await cap.start(); } catch (e) { toast('Нет доступа к камере: ' + e.message, 4000); history.back(); }
 }
-let lastWarnBeep = 0;
+let lastCount = null;
 function capState(st) {
   const msg = $('capMsg'), cov = st.coverage || [0, 0, 0, 0];
   drawDome($('dome'), cap.cells, st);
   $('capDone').textContent = `Готово · ${st.count}`; $('capDone').disabled = st.count < 10;
   let text = '', cls = '';
   const low = Math.max(cov[0], cov[1]), mid = cov[2], high = cov[3], turn = S.method === 'turn';
-  if (cap.paused) { text = 'Пауза'; cls = 'warn'; }
+  if (st.countdown) { if (st.countdown !== lastCount) { lastCount = st.countdown; beep(660, 0.08); } }
+  if (cap.paused) { text = +S.delay > 0 ? `Нажми ▶ — через ${S.delay} с начнётся съёмка` : 'Пауза — нажми ▶'; cls = 'warn'; }
+  else if (st.countdown) { text = `Старт через ${st.countdown}…${turn ? ' раскрути столик и убери руку' : ''}`; cls = 'warn'; }
   else if (!st.found) { text = st.markers ? 'Мало меток — отодвинь телефон, чтобы влез весь круг' : 'Наведи камеру на коврик'; cls = 'bad'; }
   else if (st.el < BANDS[0][0]) { text = 'Слишком низко — подними телефон'; cls = 'warn'; }
-  else if (!st.slow) { text = turn ? 'Медленнее крути столик' : 'Медленнее'; cls = 'bad'; const now = Date.now(); if (now - lastWarnBeep > 1500) { beep(300, 0.12, 0.12); lastWarnBeep = now; } }
-  else if (low < 0.75) { text = turn ? 'Крути столик медленно — первый оборот' : 'Обходи вокруг предмета, держа телефон невысоко (~30°)'; }
+  else if (low < 0.75) { text = turn ? 'Крути столик — первый оборот (кадры идут сами)' : 'Обходи вокруг предмета, держа телефон невысоко (~30°)'; }
   else if (mid < 0.6) { text = turn ? 'Подними держатель выше (~55°) и ещё оборот' : 'Теперь ещё круг повыше (~55°)'; }
   else if (high < 0.4) { text = turn ? 'Ещё выше (~75°) — последний оборот' : 'И круг почти сверху (~75°)'; }
   else { text = 'Отлично! Можно нажимать «Готово»'; cls = 'good'; }
   msg.textContent = text; msg.className = 'capMsg ' + cls;
-  const info = st.found ? `высота ${st.el.toFixed(0)}° · азимут ${st.az.toFixed(0)}° · ${Math.round(st.dist / 10)} см · меток ${st.n} · ${st.speed.toFixed(0)}°/с${cap.f ? '' : ' · калибровка…'}` : '';
+  const info = st.found ? `высота ${st.el.toFixed(0)}° · азимут ${st.az.toFixed(0)}° · ${Math.round(st.dist / 10)} см · меток ${st.n} · ${st.speed.toFixed(0)}°/с${cap.f ? '' : ' · калибровка…'}` : `слежение ${st.fps.toFixed(0)} к/с`;
   $('capInfo').textContent = [info, st.why ? 'Не снимаю: ' + st.why : (st.found ? 'Снимаю' : ''), inkLabel(st.ink)].filter(Boolean).join('\n');
 }
 function cancelCapture() { if (cap) cap.stop(); cap = null; go('home'); }
 $('capCancel').onclick = () => { if (!cap || cap.shots.length < 3 || confirm('Выбросить снятые кадры?')) history.back(); };
 $('capShot').onclick = () => { if (!cap) return; cap.shootNow(); if (!cap.state || !cap.state.found) toast('Сниму, как только увижу коврик'); };
-$('capPause').onclick = () => { if (!cap) return; cap.paused = !cap.paused; $('capPause').textContent = cap.paused ? '▶' : '⏸'; };
+$('capPause').onclick = () => {
+  if (!cap) return;
+  if (cap.paused) { cap.arm(+S.delay || 0); lastCount = null; $('capPause').textContent = '⏸'; }
+  else { cap.paused = true; $('capPause').textContent = '▶'; }
+};
 $('capDone').onclick = async () => {
   if (!cap) return;
   const shots = cap.shots.map((s) => s.blob); cap.stop(); cap = null;
@@ -321,8 +330,9 @@ function showHelp() {
   sheet(`<h3>Как снимать</h3>
   <ol><li>Положи коврик на стол, предмет — в центр круга. Свет мягкий, рассеянный (у окна днём или две лампы по бокам), без резких теней.</li>
   <li><b>С рук:</b> обходи предмет медленно, держа в кадре весь круг меток. Три круга: низко (~30°), повыше (~55°) и почти сверху (~75°). Купол справа показывает, что уже снято.</li>
-  <li><b>Держатель + вертушка:</b> телефон в держателе смотрит на коврик сверху-сбоку с 25–35 см. Крути столик плавно, примерно оборот за 15–20 секунд — после толчка он сам замедляется, это нормально. Кадр снимается, когда поворот медленнее 30°/с и кадр резкий. Потом подними держатель выше и ещё оборот.</li>
-  <li>Внизу экрана строка <b>«Не снимаю: …»</b> объясняет, почему кадр не взят. Кнопка 📷 снимает кадр сразу, вручную.</li>
+  <li><b>Держатель + вертушка:</b> телефон в держателе смотрит на коврик сверху-сбоку с 25–35 см. Нажми ▶, раскрути столик и убери руку: после таймера кадр снимается каждые 8° поворота (настройка «Частота кадров»). Столик замедляется — кадры реже, остановился — съёмка ждёт. Скорость не ограничена: если кадр мутный, приложение подождёт пару кадров порезче. Потом подними держатель выше, ⏸ → ▶ и ещё оборот.</li>
+  <li><b>С рук:</b> то же правило — новый кадр через каждые ~10° сдвига ракурса.</li>
+  <li>Количество кадров не ограничено. Строка <b>«Не снимаю: …»</b> объясняет, почему кадр не взят; «слежение N к/с» — как быстро телефон успевает искать метки. Кнопка 📷 снимает кадр сразу.</li>
   <li>Когда купол заполнен — «Готово». Форма считается за полминуты, сплэты — несколько минут; можно остановить раньше.</li></ol>
   <p><b>Высота предмета</b> — выбери с запасом: всё, что выше, обрежется. <b>Ширина</b>: A4 — до 12 см, A3 — до 17 см, A2 — до 24 см.</p>
   <p><b>Форма предмета:</b> «Тело вращения» — для бутылок, дезодорантов, ваз, банок: каждое сечение делается кругом, бока выходят ровными. «Гладкая» — сильнее сглаживает, мелкие детали пропадут. Её можно сменить и потом: ⋯ → Пересчитать.</p>
