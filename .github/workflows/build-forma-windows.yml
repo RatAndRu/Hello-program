@@ -72,6 +72,22 @@ jobs:
           fi
           cat selftest.txt
 
+      - name: Проверить интерфейс внутри EXE (API, 3D-ресурсы, снимки)
+        working-directory: forma
+        run: |
+          rm -f uitest.txt
+          ./dist/Forma3D.exe --uistest --report uitest.txt || true
+          for i in $(seq 1 120); do
+            if [ -s uitest.txt ]; then break; fi
+            sleep 1
+          done
+          if [ ! -s uitest.txt ]; then
+            echo "EXE не отчитался о проверке интерфейса"
+            exit 1
+          fi
+          cat uitest.txt
+          grep -q "ИТОГ: всё в порядке" uitest.txt
+
       - name: Подготовить ZIP с понятным именем
         working-directory: forma
         run: |
@@ -107,6 +123,7 @@ jobs:
             forma/Forma3D-*-windows.zip
             forma/dist/Forma3D.exe
             forma/selftest.txt
+            forma/uitest.txt
           if-no-files-found: error
           retention-days: 60
 

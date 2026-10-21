@@ -75,6 +75,83 @@ def _utf8_stdout() -> None:
             pass
 
 
+def _run_uistest(report_path: str | None) -> int:
+    """Проверка, что внутри собранного exe работают интерфейс и API."""
+    import json
+    import urllib.request
+
+    lines = []
+    ok = True
+
+    def check(name: str, condition: bool, detail: str = "") -> None:
+        nonlocal ok
+        ok = ok and condition
+        lines.append(("OK   " if condition else "FAIL ") + name + (f" — {detail}" if detail else ""))
+
+    try:
+        server, url = serve_in_thread(port=0, open_browser=False, verbose=False)
+    except Exception as exc:
+        lines.append(f"FAIL  запуск сервера: {exc}")
+        ok = False
+        server = None
+        url = None
+    if server and url:
+        token = server.forma_state.token
+        base = url.split("/?")[0]
+
+        def get(path: str, raw: bool = False):
+            req = urllib.request.Request(f"{base}{path}{'&' if '?' in path else '?'}token={token}")
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = resp.read()
+                return data if raw else json.loads(data)
+
+        def post(path: str, body: dict):
+            req = urllib.request.Request(
+                f"{base}{path}?token={token}", data=json.dumps(body).encode("utf-8"),
+                headers={"Content-Type": "application/json"}, method="POST")
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                return json.loads(resp.read())
+
+        try:
+            html = get("/?x=1", raw=True)
+            check("страница интерфейса", b"FORMA" in html.upper() or "ФОРМА".encode("utf-8") in html,
+                  f"{len(html)} байт")
+            check("скрипт интерфейса", len(get("/js/app.js", raw=True)) > 5000)
+            check("3D-движок (three.js)", len(get("/vendor/three.module.js", raw=True)) > 500000)
+            check("загрузчик GLB", len(get("/vendor/GLTFLoader.js", raw=True)) > 50000)
+            state = get("/api/state")
+            check("состояние приложения", state.get("app") == "Форма 3D", state.get("version", ""))
+            check("примеры моделей", len(state.get("examples", [])) >= 5,
+                  f"{len(state.get('examples', []))} шт.")
+            payload = post("/api/build", {"script": state["script"]})
+            check("построение модели", payload.get("ok") is True,
+                  f"{payload.get('analysis', {}).get('metrics', {}).get('tris', 0)} трис")
+            check("проверки выполнены",
+                  payload.get("analysis", {}).get("checks_total", 0) > 0,
+                  f"{payload.get('analysis', {}).get('checks_passed')} из "
+                  f"{payload.get('analysis', {}).get('checks_total')}")
+            glb = get("/api/model.glb", raw=True)
+            check("экспорт GLB", glb[:4] == b"glTF", f"{len(glb)} байт")
+            try:
+                rendered = post("/api/render", {})
+                check("снимки видов (PNG)", len(rendered.get("files", [])) == 4)
+            except Exception as exc:
+                check("снимки видов (PNG)", False, str(exc))
+        except Exception as exc:
+            check("ответ API", False, str(exc))
+        finally:
+            server.shutdown()
+    text = "\n".join(lines) + "\n\nИТОГ: " + ("всё в порядке" if ok else "есть проблемы")
+    say(text)
+    if report_path:
+        try:
+            from pathlib import Path
+            Path(report_path).write_text(text, encoding="utf-8")
+        except Exception:
+            pass
+    return 0 if ok else 1
+
+
 def main(argv=None) -> int:
     _utf8_stdout()
     parser = argparse.ArgumentParser(description=f"{APP_NAME} {__version__}")
@@ -83,6 +160,7 @@ def main(argv=None) -> int:
     parser.add_argument("--browser", action="store_true", help="открыть в браузере")
     parser.add_argument("--no-open", action="store_true", help="не открывать окно/браузер")
     parser.add_argument("--selftest", action="store_true", help="проверить геометрическое ядро")
+    parser.add_argument("--uistest", action="store_true", help="проверить интерфейс и API")
     parser.add_argument("--report", default=None, help="куда записать отчёт самопроверки")
     parser.add_argument("--version", action="store_true", help="показать версию")
     args, _unknown = parser.parse_known_args(argv)
@@ -92,6 +170,8 @@ def main(argv=None) -> int:
         return 0
     if args.selftest:
         return _run_selftest(args.report)
+    if args.uistest:
+        return _run_uistest(args.report)
 
     server, url = serve_in_thread(host=args.host, port=args.port, open_browser=False, verbose=False)
     say(f"{APP_NAME} {__version__}")
