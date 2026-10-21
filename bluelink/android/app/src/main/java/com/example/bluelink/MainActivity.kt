@@ -19,6 +19,8 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.View
 import android.view.ViewGroup
 import android.widget.EditText
@@ -131,6 +133,29 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var heyPhotoStatus = ""
     private var heyThumbTotal = -1
     private var heyPhotoBitmap: Bitmap? = null
+    // Последовательный сбор миниатюры, как в вендорском SDK: один запрос — одна часть.
+    private var heyThumbLastPartAt = 0L
+    private var heyThumbRequestedAt = 0L
+    private var heyThumbIndex = 0
+
+    // Кольцо: своя сессия и свои данные.
+    private var ring: RingSession? = null
+    private var ringHaptic = false
+    private var ringStatusShown = ""
+
+    // Прямой эфир: кадры по Bluetooth и (если прошивка отдаёт) RTSP по Wi-Fi очков.
+    private val liveVideo by lazy { LiveVideo(this) }
+    private var liveSurfaceView: SurfaceView? = null
+    private var liveMode = ""
+    private var liveStatus = ""
+    private var liveFrames = 0
+    private var liveIntervalMs = 3000L
+    private var livePreview: Bitmap? = null
+    private var liveFrameStartedAt = 0L
+    private var livePartialFrame = -1
+    private var liveLastUrl = ""
+    private var liveShotAt = 0L
+    private var liveTick: Runnable? = null
 
     private var tab = TAB_SCAN
     private val scanItems = ArrayList<ScanItem>()
@@ -291,6 +316,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     private fun rebuild() {
         if (isFinishing || isDestroyed) return
+        // Во время живого видео SurfaceView нельзя пересоздавать: вместе с ним
+        // умирает и поверхность, на которой играет поток.
+        if (tab == TAB_LIVE && liveMode == "rtsp" && lastBuiltTab == TAB_LIVE && liveVideo.isPlaying()) return
         // Список устройств обновляется каждые 400 мс во время скана — не сбрасываем прокрутку.
         val keepScroll = lastBuiltTab == tab && tab == TAB_SCAN
         val scrollY = if (keepScroll && ::mainScroll.isInitialized) mainScroll.scrollY else 0
@@ -313,6 +341,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             TAB_PHOTOS -> buildPhotosTab()
             TAB_REPORT -> buildReportTab()
             TAB_HEY -> buildHeyTab()
+            TAB_RING -> buildRingTab()
+            TAB_LIVE -> buildLiveTab()
             else -> buildConsoleTab()
         }
         contentSlot.addView(view)
@@ -578,6 +608,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             heyMedia = null
             heyWifiSsid = ""
             heyWifiPass = ""
+            ring?.stop()
+            stopLive("связь потеряна")
             if (DemoDevice.isDemo(address)) connAddress = ""
         }
         rebuild()
@@ -588,6 +620,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         batteryUnavailable = false
         if (services.isNotEmpty()) ensureProfileMatchesDevice()
         syncBattery()
+        startRingIfNeeded(services)
         if (heyAvailable() && connState == ConnState.CONNECTED && !heyAutoDone) {
             // Очки HeyCyan: сразу подписываемся на их каналы и читаем паспорт устройства,
             // иначе интерфейс остаётся без данных до первого нажатия.
@@ -622,6 +655,20 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
      * батарея, Device Information, а также кандидаты на камеру (запись + уведомления в сервисе).
      */
     private fun ensureProfileMatchesDevice() {
+        // Кольцо опознаём до всякой «авто-камеры»: иначе приложение решит, что это
+        // очки, и начнёт слать ему команды, которых кольцо не понимает.
+        if (Ring.detect(gattServices).ring && !heyAvailable()) {
+            val ringProfile = profiles.byId("ring_rwfit")
+                ?: profiles.ensureLoaded().firstOrNull { it.id == "ring_rwfit" }
+            if (ringProfile != null) {
+                if (activeProfile?.id != ringProfile.id) {
+                    activeProfile = ringProfile
+                    saveActiveProfile()
+                    addLog("Профиль: ${ringProfile.name} (кольцо определено по набору сервисов)")
+                }
+                return
+            }
+        }
         val item = scanItems.firstOrNull { it.address == connAddress } ?: lastConnItem
         val matched = item?.let { profiles.bestFor(it) }
             ?: profiles.ensureLoaded().firstOrNull {
@@ -663,8 +710,11 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (batteryChar != null) caps.add("battery")
 
         // Кандидаты на камеру: сервис производителя, где есть и запись, и уведомления.
+        // У кольца камеры нет — ему такие «кандидаты» только мешают.
         val candidates = ArrayList<CameraSpec>()
+        val isRing = Ring.detect(gattServices).ring
         for (svc in gattServices) {
+            if (isRing) break
             val vendor = GattNames.shortCode(svc.uuid) == null ||
                 (GattNames.shortCode(svc.uuid) ?: 0) >= 0xFF00
             if (!vendor) continue
@@ -689,6 +739,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         val deviceName = connName.ifBlank { "Устройство ${connAddress.takeLast(5)}" }
         val prefix = deviceName.substringBefore(" (").trim()
         val notes = ArrayList<String>()
+        if (isRing) {
+            notes.add("Похоже на умное кольцо: сервис данных A00A/0BC0 и HID-взмахи.")
+            notes.add("Команды очков такому устройству не отправляются.")
+        }
         if (batteryChar != null) {
             notes.add("Батарея: ${GattNames.uuidLabel(batteryChar)} (найдена автоматически)")
         } else {
@@ -746,7 +800,14 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (!force && batteryAttempted) return
         val ref = batteryRef()
         if (ref == null) {
-            batteryUnavailable = true
+            // У кольца заряд приходит не отдельной характеристикой, а командой протокола.
+            val fromRing = ring?.battery
+            if (fromRing != null) {
+                batteryPercent = fromRing
+                batteryUnavailable = false
+            } else {
+                batteryUnavailable = true
+            }
             return
         }
         batteryUnavailable = false
@@ -772,6 +833,13 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         stat.lastAt = System.currentTimeMillis()
 
         camera.feed(service, char, value)
+        // Кольцо разбирает свои уведомления само; чужие кадры оно не трогает.
+        ring?.let { session ->
+            if (session.onValue(service, char, value)) {
+                if (tab == TAB_RING || tab == TAB_DEVICE) rebuildThrottled()
+                return
+            }
+        }
         val isBatteryChar = GattNames.shortCode(char) == 0x2A19 || activeProfile?.batteryChar == char
         if (isBatteryChar && value.isNotEmpty()) {
             batteryPercent = value[0].toInt() and 0xFF
@@ -2963,7 +3031,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             heyStreamCount += 1
             heyStreamBytes += value.size
             if (heyStreamCount == 1) {
-                addLog("Очки начали поток данных: ${HeyCyan.hex(value.take(16).toByteArray())}")
+                addLog(
+                    "Очки начали поток данных (${HeyCyan.streamName(value)}): " +
+                        HeyCyan.hex(value.take(16).toByteArray())
+                )
             } else if (heyStreamCount - heyStreamLogged >= 200) {
                 heyStreamLogged = heyStreamCount
                 addLog("Поток данных: $heyStreamCount пакетов, ${heyStreamBytes / 1024} КБ")
@@ -2973,6 +3044,11 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
         // События очков (тип 0x73). Самое важное — 09 FF: Wi-Fi у очков не поднялся,
         // SDK в этом случае шлёт «сброс Wi-Fi» (0x0F), иначе очки залипают.
+        HeyCyan.p2pIp(value)?.let { ip ->
+            heyP2pIp = ip
+            addLog("Очки сообщили свой адрес в Wi-Fi: $ip")
+        }
+
         HeyCyan.deviceEvent(value)?.let { ev ->
             if (HeyCyan.wifiFailed(value)) {
                 addLog("Очки: Wi-Fi не поднялся (73 09 FF) — отправляю сброс Wi-Fi")
@@ -3122,85 +3198,125 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     }
 
     // ---------- Миниатюра снимка ----------
+    //
+    // Как это делает вендорский SDK (LargeDataHandler.getPictureThumbnails):
+    //   запрос BC FD 01 <номер младший> <номер старший> — просит ОДНУ часть;
+    //   в ответ приходит BC FD ... [всего, номер, кусок JPEG];
+    //   получив часть N, SDK сразу просит N+1 и так до последней.
+    // Наша прошлая ошибка была в том, что мы отправляли один запрос и ждали,
+    // что очки сами пришлют всё: они так не делают — отвечают одной частью.
 
-    /**
-     * Просим миниатюру последнего снимка. Очки присылают её частями, причём
-     * пачкой и не по порядку — поэтому запрашиваем один раз, складываем части
-     * по номерам и потом добираем только недостающие.
-     */
     private fun heyStartThumb(reason: String) {
         if (connState != ConnState.CONNECTED) return
         if (heyThumbParts.isNotEmpty() || heyThumbTotal > 0) return
+        if (heyWantVideo || heyVideoOn) {
+            // Пока идёт запись, камера занята: любые запросы миниатюр уходят в пустоту.
+            addLog("Миниатюра: пропускаю — идёт видеозапись")
+            return
+        }
         heyThumbParts.clear()
         heyThumbTotal = -1
         heyThumbStartedAt = System.currentTimeMillis()
+        heyThumbLastPartAt = 0L
         heyThumbRounds = 0
+        heyThumbIndex = 0
         addLog("Прошу миниатюру снимка ($reason)")
-        heySend(HeyCyan.CH_SERIAL, 0xFD, byteArrayOf(0x01, 0x00, 0x00), "Миниатюра")
+        heyRequestThumbPart(0, "Миниатюра")
         ui.postDelayed({ heyThumbWatchdog(false) }, 2000)
+    }
+
+    private fun heyRequestThumbPart(index: Int, title: String) {
+        heyThumbIndex = index
+        heyThumbRequestedAt = System.currentTimeMillis()
+        heySend(
+            HeyCyan.CH_SERIAL, 0xFD,
+            byteArrayOf(0x01, (index and 0xFF).toByte(), ((index shr 8) and 0xFF).toByte()),
+            title
+        )
     }
 
     private fun heyOnThumbChunk(chunk: HeyCyan.ThumbChunk) {
         if (chunk.total <= 0) {
-            if (heyThumbParts.isEmpty()) {
-                heyPhotoStatus = "Очки ответили, что миниатюр нет — кадр не сохранился."
-                addLog("Миниатюра: очки ответили «нет файлов»")
+            // «Нет файлов» часто значит «кадр ещё дописывается». Пробуем ещё
+            // несколько раз, а не сдаёмся с первого ответа.
+            if (heyThumbRounds < 4) {
+                heyThumbRounds += 1
+                addLog("Миниатюра: очки ответили «нет файлов» — повторю (${heyThumbRounds}/4)")
+                ui.postDelayed({
+                    if (connState == ConnState.CONNECTED) heyRequestThumbPart(0, "Миниатюра")
+                }, 900)
+            } else if (heyThumbParts.isEmpty()) {
+                heyPhotoStatus = "Очки четыре раза ответили, что миниатюр нет. " +
+                    "Кадр мог не сохраниться — проверьте счётчик фото."
+                addLog("Миниатюра: очки настойчиво отвечают «нет файлов» (total=0)")
             }
             return
         }
         heyThumbTotal = chunk.total
+        heyThumbLastPartAt = System.currentTimeMillis()
         if (chunk.data.isNotEmpty() && !heyThumbParts.containsKey(chunk.index)) {
             heyThumbParts[chunk.index] = chunk.data
         }
         val got = heyThumbParts.size
-        if (got % 5 == 0 || got == chunk.total) {
+        if (got == 1 || got % 5 == 0 || got == chunk.total) {
             heyPhotoStatus = "Получаю снимок: $got из ${chunk.total} частей"
             addLog("Миниатюра: $got / ${chunk.total} частей")
         }
-        if (got >= chunk.total) heyFinishThumb() else if (tab == TAB_HEY) rebuildThrottled()
+        if (liveMode == "frames") liveMaybePartial()
+        if (got >= chunk.total) {
+            heyFinishThumb()
+            return
+        }
+        // Вендорская логика: сразу просим следующую часть, если её ещё нет.
+        val next = chunk.index + 1
+        if (next < chunk.total && !heyThumbParts.containsKey(next)) {
+            ui.postDelayed({
+                if (connState == ConnState.CONNECTED) heyRequestThumbPart(next, "Миниатюра ${next + 1}")
+            }, 120)
+        }
+        if (tab == TAB_HEY || tab == TAB_LIVE) rebuildThrottled()
     }
 
     /**
-     * Добор: если очки прислали пачку и замолчали, просим недостающие части
-     * по одной. Три круга, потом честно сообщаем, чего не хватило.
+     * Сторож приёма. Очки могут замолчать на середине — тогда просим недостающую
+     * часть по одному разу, максимум три круга, и честно говорим, чего не хватило.
      */
     private fun heyThumbWatchdog(force: Boolean) {
         val total = heyThumbTotal
-        val elapsed = System.currentTimeMillis() - heyThumbStartedAt
+        val now = System.currentTimeMillis()
+        val elapsed = now - heyThumbStartedAt
         if (total > 0 && heyThumbParts.size >= total) {
             heyFinishThumb()
             return
         }
         if (total > 0) {
-            val missing = (0 until total).filter { !heyThumbParts.containsKey(it) }
-            if (missing.isNotEmpty() && (force || elapsed > 1200)) {
+            if (now - heyThumbLastPartAt > 1800 && now - heyThumbRequestedAt > 1200) {
                 if (heyThumbRounds >= 3) {
-                    heyPhotoStatus = "Очки прислали ${heyThumbParts.size} из $total частей снимка и перестали отвечать. " +
-                        "Попробуйте «Фото» ещё раз."
-                    addLog("Миниатюра: не хватило частей ${missing.take(8)}")
+                    heyPhotoStatus = "Очки прислали ${heyThumbParts.size} из $total частей снимка и перестали отвечать."
+                    addLog("Миниатюра: не хватило частей ${(0 until total).filter { !heyThumbParts.containsKey(it) }.take(8)}")
                     heyThumbTotal = -1
+                    // Иначе следующая попытка навсегда упрётся в «идёт приём».
+                    heyThumbParts.clear()
+                    if (liveMode == "frames") {
+                        liveStatus = "Кадр пришёл не полностью (${total} частей) — беру следующий."
+                    }
                     return
                 }
                 heyThumbRounds += 1
-                addLog("Миниатюра: прошу недостающие части (${missing.size})")
-                var delay = 0L
-                for (index in missing.take(12)) {
-                    ui.postDelayed({
-                        heySend(HeyCyan.CH_SERIAL, 0xFD,
-                            byteArrayOf(0x01, (index and 0xFF).toByte(), ((index shr 8) and 0xFF).toByte()),
-                            "Миниатюра ${index + 1}", quiet = true)
-                    }, delay)
-                    delay += 220
-                }
-                ui.postDelayed({ heyThumbWatchdog(true) }, delay + 1500)
-                return
+                val missing = (0 until total).firstOrNull { !heyThumbParts.containsKey(it) } ?: 0
+                addLog("Миниатюра: прошу недостающую часть ${missing + 1} (круг ${heyThumbRounds})")
+                heyRequestThumbPart(missing, "Миниатюра ${missing + 1}")
             }
+            ui.postDelayed({ heyThumbWatchdog(false) }, 900)
+            return
         }
-        if (elapsed > 20000) {
-            heyPhotoStatus = "Очки не прислали миниатюру за 20 секунд. " +
-                "Кадр при этом мог сохраниться в памяти очков — проверьте их приложением HeyCyan."
+        if (elapsed > 30000) {
+            heyPhotoStatus = "Очки не прислали миниатюру за 30 секунд. " +
+                "Кадр при этом мог сохраниться в памяти очков — его можно забрать по Wi-Fi."
             addLog("Миниатюра: таймаут")
             heyThumbTotal = -1
+            heyThumbParts.clear()
+            if (liveMode == "frames") liveStatus = "Очки не прислали кадр — пробую снова."
             return
         }
         ui.postDelayed({ heyThumbWatchdog(false) }, 1200)
@@ -3230,7 +3346,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             return
         }
         val file = store.save(bytes, "heycyan")
-        heyPhotoBitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        heyPhotoBitmap = bitmap
         if (file != null) {
             lastPhoto = file
             lastPhotoBitmap = thumb(file, 480)
@@ -3239,7 +3356,493 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             heyPhotoStatus = "Снимок получен: ${bytes.size / 1024} КБ, но сохранить файл не удалось"
         }
         addLog("Снимок с очков получен по Bluetooth: ${bytes.size} байт, частей $total")
+        if (liveMode == "frames") {
+            liveFrames += 1
+            livePartialFrame = -1
+            if (bitmap != null) livePreview = bitmap
+            val took = if (liveFrameStartedAt > 0) (System.currentTimeMillis() - liveFrameStartedAt) / 1000 else 0
+            liveStatus = "Кадр №$liveFrames получен за ${took} с · ${bytes.size / 1024} КБ"
+            addLog("Эфир: кадр $liveFrames за ${took} с (${bytes.size} байт)")
+            if (tab == TAB_LIVE) rebuild()
+            return
+        }
         if (tab == TAB_HEY) rebuild()
+    }
+
+    // ---------- Кольцо ----------
+
+    private fun startRingIfNeeded(services: List<GattServiceInfo>) {
+        if (connState != ConnState.CONNECTED) return
+        val detection = Ring.detect(services)
+        if (!detection.ring) return
+        // Очкам кольцо не мешает: у них другие сервисы, и detect() это учитывает.
+        if (heyAvailable()) return
+        val session = ring ?: RingSession(
+            ble, ui,
+            { line -> addLog(line) },
+            {
+                ring?.battery?.let { batteryPercent = it }
+                if (tab == TAB_RING || tab == TAB_DEVICE) rebuildThrottled()
+            }
+        ).also { ring = it }
+        session.onGesture = { name ->
+            ringStatusShown = "Взмах: $name"
+            if (ringHaptic) {
+                try {
+                    val vib = getSystemService(Context.VIBRATOR_SERVICE) as android.os.Vibrator
+                    if (Build.VERSION.SDK_INT >= 26) {
+                        vib.vibrate(android.os.VibrationEffect.createOneShot(60, 120))
+                    } else {
+                        @Suppress("DEPRECATION")
+                        vib.vibrate(60)
+                    }
+                } catch (ignored: Exception) {
+                }
+            }
+            if (tab == TAB_RING) rebuildThrottled()
+        }
+        session.start(services)
+    }
+
+    private fun buildRingTab(): View {
+        val c = column()
+        val session = ring
+        val connected = connState == ConnState.CONNECTED
+        val head = row()
+        head.addView(txt("💍 Кольцо", 16, Pal.TEXT, bold = true),
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        head.addView(badge(if (connected && session?.detection?.ring == true) "на связи" else "нет связи",
+            if (connected && session?.detection?.ring == true) Pal.GREEN else Pal.MUTED))
+        c.addView(head)
+        c.addView(txt(
+            "Кольцо — не очки: у него свой протокол. Здесь видно, что удалось выяснить у вашего кольца, " +
+                "а что пока предположение.",
+            12, Pal.MUTED
+        ))
+        c.addView(spacer(10))
+
+        if (session == null || session.detection?.ring != true) {
+            val card0 = card()
+            card0.addView(txt("Кольцо не подключено", 13, Pal.TEXT, bold = true))
+            card0.addView(spacer(6))
+            card0.addView(txt(
+                "Наденьте кольцо, включите Bluetooth и найдите его во вкладке «Поиск». " +
+                    "Приложение само поймёт, что это кольцо, по набору сервисов — название ему не нужно.",
+                11, Pal.MUTED
+            ))
+            card0.addView(spacer(8))
+            card0.addView(actionButton("Найти кольцо", primary = true) { tab = TAB_SCAN; rebuild() })
+            c.addView(card0)
+            return c
+        }
+
+        val d = session.detection!!
+        val about = card()
+        about.addView(txt("Что это за устройство", 12, Pal.MUTED, bold = true))
+        about.addView(spacer(6))
+        about.addView(txt(
+            buildString {
+                appendLine("Семейство: ${d.family}")
+                appendLine("Формат кадров: " + (d.framing?.label ?: "не определён"))
+                appendLine(
+                    "Ответ кольца: " + when {
+                        session.framingConfirmed -> "получен, формат подтверждён (${session.framing?.label})"
+                        else -> "пока не получен — протокол не подтверждён"
+                    }
+                )
+                appendLine("Сервисов: ${gattServices.size}")
+                append("Признаки: " + d.reasons.joinToString("; "))
+            },
+            11, Pal.TEXT
+        ))
+        about.addView(spacer(6))
+        about.addView(txt(session.status, 11, if (session.framingConfirmed) Pal.GREEN else Pal.AMBER))
+        c.addView(about)
+
+        val metrics = card()
+        metrics.addView(txt("Состояние человека", 12, Pal.MUTED, bold = true))
+        metrics.addView(spacer(6))
+        metrics.addView(txt(
+            buildString {
+                appendLine("Заряд кольца: " + (session.battery?.let { "$it%" } ?: "кольцо не сообщило"))
+                appendLine("Прошивка: " + (session.firmware ?: "нет данных"))
+                appendLine("Пульс: " + (session.heartRate?.let { "$it уд/мин" } ?: "нет данных"))
+                appendLine("Кислород: " + (session.spo2?.let { "$it%" } ?: "нет данных"))
+                append("Стресс: " + (session.stress?.let { "$it" } ?: "нет данных"))
+            },
+            12, Pal.TEXT
+        ))
+        metrics.addView(spacer(10))
+        val mrow = row()
+        mrow.addView(actionButton("Измерить пульс", primary = true) { ring?.measure("hr"); rebuild() })
+        mrow.addView(actionButton("Кислород", primary = false) { ring?.measure("spo2"); rebuild() })
+        metrics.addView(mrow)
+        metrics.addView(spacer(6))
+        metrics.addView(txt(
+            if (session.framingConfirmed)
+                "Измерение запускается командой протокола; цифры придут уведомлениями. " +
+                    "Если чисел нет — значит, эта прошивка ждёт другую команду."
+            else
+                "Пока кольцо не подтвердило протокол, измерение не запускаем: иначе это была бы имитация.",
+            11, Pal.MUTED
+        ))
+        c.addView(metrics)
+
+        val gestures = card()
+        val gh = row()
+        gh.addView(txt("Взмахи и нажатия", 12, Pal.MUTED, bold = true),
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        gh.addView(pill(if (ringHaptic) "сигнал вкл" else "сигнал выкл", ringHaptic) {
+            ringHaptic = !ringHaptic
+            rebuild()
+        })
+        gestures.addView(gh)
+        gestures.addView(spacer(6))
+        gestures.addView(txt(
+            buildString {
+                appendLine("Последний жест: " + (session.lastGesture.ifBlank { "пока не было" }))
+                appendLine("Поймано жестов: ${session.gestureCount}")
+                appendLine("HID-отчётов: ${session.hidReportCount}")
+                append("Карта HID: " + (session.reportMapSummary.ifBlank { "ещё не прочитана" }))
+            },
+            11, Pal.TEXT
+        ))
+        if (session.gestureLog.isNotEmpty()) {
+            gestures.addView(spacer(8))
+            gestures.addView(txt(session.gestureLog.take(12).joinToString("\n"), 10, Pal.MUTED, mono = true))
+        }
+        gestures.addView(spacer(8))
+        gestures.addView(txt(
+            "Кольцо отдаёт жесты как HID-устройство. Мы читаем карту отчётов (2A4B) и переводим " +
+                "биты в понятные названия — поэтому в журнале видно и код, и смысл. " +
+                "Android при этом тоже получает эти жесты: кольцо работает как пульт.",
+            11, Pal.MUTED
+        ))
+        c.addView(gestures)
+
+        if (session.framingConfirmed) {
+            val note = card()
+            note.addView(txt(
+                "Кольцо ответило — значит, команды протокола ему подходят. Если цифр нет, " +
+                    "пришлите журнал: по нему видно, на что именно кольцо ответило, а на что нет.",
+                11, Pal.MUTED
+            ))
+            c.addView(note)
+        }
+
+        val adv = card()
+        adv.addView(txt("Для специалиста", 12, Pal.MUTED, bold = true))
+        adv.addView(spacer(6))
+        adv.addView(txt(
+            "Сервис данных A00A (запись B002, ответы B003). Современный формат: AB, флаг, длина, CRC-16/ARC, " +
+                "потом {команда, ключ, флаг}. Старый: 7E 01, команда, 0, длина, серийный, XOR.",
+            10, Pal.MUTED, mono = true
+        ))
+        adv.addView(spacer(8))
+        adv.addView(actionButton("Копировать журнал", primary = false) { copyHeyLog() })
+        val tail = logs.takeLast(12).joinToString("\n").ifBlank { "Пока пусто" }
+        adv.addView(spacer(6))
+        adv.addView(txt(tail, 10, Pal.MUTED, mono = true))
+        c.addView(adv)
+        return c
+    }
+
+    // ---------- Прямой эфир ----------
+
+    private fun buildLiveTab(): View {
+        val c = column()
+        val head = row()
+        head.addView(txt("👁 Прямой эфир", 16, Pal.TEXT, bold = true),
+            LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        head.addView(badge(if (liveMode.isBlank()) "выкл" else "вкл", if (liveMode.isBlank()) Pal.MUTED else Pal.GREEN))
+        c.addView(head)
+        c.addView(txt(
+            "Честно про предел: по Bluetooth канал даёт около килобайта в секунду, а кадру нужно в сотни раз " +
+                "больше. Поэтому живого видео по Bluetooth не бывает ни у кого. Есть два пути:",
+            12, Pal.MUTED
+        ))
+        c.addView(spacer(8))
+
+        val frames = card()
+        frames.addView(txt("1. Кадры (работает всегда)", 13, Pal.TEXT, bold = true))
+        frames.addView(spacer(6))
+        frames.addView(txt(
+            "Очки снимают фото по команде, а приложение забирает каждый кадр и показывает его здесь. " +
+                "Это не видео, но картинка обновляется — получается медленный «прямой эфир». " +
+                "Кадр сначала появляется черновиком (верхняя часть), потом дорисовывается целиком.",
+            11, Pal.MUTED
+        ))
+        frames.addView(spacer(8))
+        frames.addView(txt(
+            buildString {
+                appendLine("Кадров получено: $liveFrames")
+                if (liveIntervalMs > 0) appendLine("Пауза между кадрами: ${liveIntervalMs / 1000} с")
+                if (liveStatus.isNotBlank()) append("Статус: $liveStatus")
+            },
+            11, Pal.TEXT
+        ))
+        frames.addView(spacer(8))
+        val ir = row()
+        for (sec in listOf(2L, 3L, 5L)) {
+            ir.addView(pill("$sec с", liveIntervalMs == sec * 1000) {
+                liveIntervalMs = sec * 1000
+                rebuild()
+            })
+        }
+        frames.addView(ir)
+        frames.addView(spacer(8))
+        val frow = row()
+        frow.addView(actionButton(
+            if (liveMode == "frames") "Остановить кадры" else "Начать кадры",
+            primary = liveMode != "frames"
+        ) {
+            if (liveMode == "frames") stopLive("остановлено вручную") else startLiveFrames()
+            rebuild()
+        })
+        frow.addView(actionButton("Стать на паузу", primary = false) {
+            stopLive("пауза")
+            rebuild()
+        })
+        frames.addView(frow)
+        val preview = livePreview
+        if (preview != null) {
+            frames.addView(spacer(8))
+            val img = ImageView(this)
+            img.setImageBitmap(preview)
+            img.adjustViewBounds = true
+            img.scaleType = ImageView.ScaleType.FIT_CENTER
+            img.layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(230))
+            frames.addView(img)
+        }
+        c.addView(frames)
+
+        val rtsp = card()
+        rtsp.addView(txt("2. Настоящее видео по Wi-Fi очков", 13, Pal.TEXT, bold = true))
+        rtsp.addView(spacer(6))
+        rtsp.addView(txt(
+            "В прошивке очков есть отдельная программа трансляции: RTSP-сервер на порту 554 с потоком " +
+                "testH264VideoStreamer. Очки поднимают Wi-Fi, телефон подключается к их сети и проигрывает поток. " +
+                "Открытые источники не подтверждают, какой командой этот режим включается, — поэтому мы " +
+                "сначала поднимаем Wi-Fi для выгрузки файлов, а потом честно проверяем, отвечает ли поток.",
+            11, Pal.MUTED
+        ))
+        rtsp.addView(spacer(8))
+        if (liveLastUrl.isNotBlank()) {
+            rtsp.addView(txt("Поток: $liveLastUrl", 10, Pal.TEXT, mono = true))
+            rtsp.addView(spacer(6))
+        }
+        val surface = ensureLiveSurface()
+        (surface.parent as? ViewGroup)?.removeView(surface)
+        if (liveMode == "rtsp") {
+            rtsp.addView(surface, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(200)))
+            rtsp.addView(spacer(6))
+        }
+        val rrow = row()
+        rrow.addView(actionButton(
+            if (liveMode == "rtsp") "Остановить видео" else "Попробовать видео",
+            primary = liveMode != "rtsp"
+        ) {
+            if (liveMode == "rtsp") stopLive("видео остановлено") else startLiveRtsp()
+            rebuild()
+        })
+        rrow.addView(actionButton("Wi-Fi очков", primary = false) { heyFilesGrab(); tab = TAB_HEY; rebuild() })
+        rtsp.addView(rrow)
+        c.addView(rtsp)
+
+        val adv = card()
+        adv.addView(txt("Что происходит в журнале", 12, Pal.MUTED, bold = true))
+        adv.addView(spacer(6))
+        adv.addView(txt(logs.takeLast(14).joinToString("\n").ifBlank { "Пока пусто" }, 10, Pal.MUTED, mono = true))
+        adv.addView(spacer(8))
+        adv.addView(actionButton("Копировать журнал", primary = false) { copyHeyLog() })
+        c.addView(adv)
+        return c
+    }
+
+    private fun ensureLiveSurface(): SurfaceView {
+        val existing = liveSurfaceView
+        if (existing != null) return existing
+        val view = SurfaceView(this)
+        view.holder.addCallback(object : SurfaceHolder.Callback {
+            override fun surfaceCreated(holder: SurfaceHolder) {
+                liveVideo.setSurface(holder.surface)
+            }
+
+            override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
+                liveVideo.setSurface(holder.surface)
+            }
+
+            override fun surfaceDestroyed(holder: SurfaceHolder) {
+                liveVideo.setSurface(null)
+            }
+        })
+        liveSurfaceView = view
+        return view
+    }
+
+    private fun startLiveFrames() {
+        if (connState != ConnState.CONNECTED) {
+            toast("Сначала подключитесь к очкам")
+            return
+        }
+        if (!heyAvailable()) {
+            toast("Это устройство не похоже на очки HeyCyan")
+            return
+        }
+        stopLive("")
+        liveMode = "frames"
+        liveStatus = "Готовлю первый кадр…"
+        liveFrames = 0
+        liveShotAt = 0L
+        heySubscribeProtocol()
+        val tick = object : Runnable {
+            override fun run() {
+                if (liveMode != "frames") return
+                if (connState != ConnState.CONNECTED) {
+                    liveStatus = "Связь с очками потеряна — эфир остановлен."
+                    liveMode = ""
+                    if (tab == TAB_LIVE) rebuild()
+                    return
+                }
+                // Пока идёт запись видео, камера занята: кадры не просим.
+                if (heyWantVideo || heyVideoOn) {
+                    liveStatus = "Идёт видеозапись — кадры для эфира не снимаю."
+                    ui.postDelayed(this, 1500)
+                    return
+                }
+                if (HeyCyan.cameraBusy(heyGlassWork)) {
+                    liveStatus = "Очки в режиме «${HeyCyan.workName(heyGlassWork)}» — жду, пока освободится камера."
+                    ui.postDelayed(this, 2000)
+                    return
+                }
+                val busy = heyThumbTotal > 0 || heyThumbParts.isNotEmpty()
+                if (busy) {
+                    ui.postDelayed(this, 600)
+                    return
+                }
+                val now = System.currentTimeMillis()
+                if (now - liveShotAt >= liveIntervalMs) {
+                    liveShotAt = now
+                    liveFrameStartedAt = now
+                    livePartialFrame = -1
+                    liveStatus = "Снимаю кадр…"
+                    heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.PHOTO), "Эфир: кадр")
+                    ui.postDelayed({
+                        if (liveMode == "frames") heyStartThumb("прямой эфир")
+                    }, 2200)
+                    if (tab == TAB_LIVE) rebuildThrottled()
+                }
+                ui.postDelayed(this, 500)
+            }
+        }
+        liveTick = tick
+        ui.postDelayed(tick, 300)
+        addLog("Эфир: включён режим кадров, пауза ${liveIntervalMs / 1000} с")
+        rebuild()
+    }
+
+    /**
+     * Быстрый черновик кадра: пока пришли только первые части JPEG, показываем то,
+     * что уже можно декодировать. Полный кадр заменит его, когда дойдёт.
+     */
+    private fun liveMaybePartial() {
+        val total = heyThumbTotal
+        if (total <= 0) return
+        if (livePartialFrame == liveFrames) return
+        if (System.currentTimeMillis() - liveFrameStartedAt < 1200) return
+        var i = 0
+        val buffer = java.io.ByteArrayOutputStream()
+        while (true) {
+            val part = heyThumbParts[i] ?: break
+            buffer.write(part)
+            i += 1
+        }
+        if (i < 3 || i >= total) return
+        livePartialFrame = liveFrames
+        val bytes = buffer.toByteArray()
+        Thread {
+            val bmp = try {
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            } catch (e: Throwable) {
+                null
+            }
+            if (bmp != null) {
+                ui.post {
+                    if (liveMode == "frames") {
+                        livePreview = bmp
+                        liveStatus = "Черновик кадра: $i из $total частей"
+                        if (tab == TAB_LIVE) rebuildThrottled()
+                    }
+                }
+            }
+        }.start()
+    }
+
+    private fun startLiveRtsp() {
+        if (!heyAvailable()) {
+            toast("Живое видео возможно только с очков")
+            return
+        }
+        stopLive("")
+        liveMode = "rtsp"
+        liveStatus = "Готовлю подключение к Wi-Fi очков…"
+        liveLastUrl = ""
+        rebuild()
+        val listener = object : LiveVideo.Listener {
+            override fun onStatus(text: String) {
+                liveStatus = text
+                addLog("Эфир: $text")
+                if (tab == TAB_LIVE && !liveVideo.isPlaying()) rebuildThrottled()
+            }
+
+            override fun onLog(line: String) {
+                addLog(line)
+            }
+
+            override fun onPlaying(url: String) {
+                liveLastUrl = url
+                liveStatus = "Идёт живое видео: $url"
+                if (tab == TAB_LIVE) rebuild()
+            }
+
+            override fun onFailed(reason: String) {
+                liveStatus = reason
+                addLog("Эфир: не получилось — $reason")
+                if (tab == TAB_LIVE) rebuild()
+            }
+
+            override fun onStopped() {
+            }
+        }
+        // Сеть очков поднимается их же командой передачи файлов; креды придут ответом.
+        if (heyWifiSsid.isBlank()) {
+            liveStatus = "Прошу очки поднять Wi-Fi…"
+            heyFilesGrab()
+            ui.postDelayed({ beginRtsp(listener) }, 12000)
+        } else {
+            beginRtsp(listener)
+        }
+    }
+
+    private fun beginRtsp(listener: LiveVideo.Listener) {
+        if (liveMode != "rtsp") return
+        if (heyWifiSsid.isBlank()) {
+            liveStatus = "Очки не сообщили имя своей Wi-Fi-сети — живое видео не проверить. " +
+                "Подключитесь к сети очков вручную в настройках Wi-Fi и повторите."
+            if (tab == TAB_LIVE) rebuild()
+            return
+        }
+        liveVideo.setSurface(ensureLiveSurface().holder.surface)
+        liveVideo.start(heyWifiSsid, heyWifiPass, heyP2pIp, listener)
+    }
+
+    private fun stopLive(reason: String) {
+        liveTick?.let { ui.removeCallbacks(it) }
+        liveTick = null
+        if (liveMode == "rtsp") liveVideo.stop()
+        if (liveMode.isNotBlank()) addLog("Эфир: остановлен" + if (reason.isBlank()) "" else " ($reason)")
+        liveMode = ""
+        if (reason.isNotBlank()) liveStatus = "Остановлено: $reason"
     }
 
     private fun runHeyProbe() {
@@ -3535,6 +4138,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         const val TAB_CONSOLE = "console"
         const val TAB_REPORT = "report"
         const val TAB_HEY = "hey"
+        const val TAB_RING = "ring"
+        const val TAB_LIVE = "live"
 
         private const val REQ_BLE = 100
         private const val REQ_ENABLE_BT = 101
@@ -3549,7 +4154,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             TAB_PROFILES to "⚙️ Профили",
             TAB_PHOTOS to "🖼 Фото",
             TAB_CONSOLE to "⌨️ Консоль",
-            TAB_HEY to "🕶 Очки"
+            TAB_HEY to "🕶 Очки",
+            TAB_RING to "💍 Кольцо",
+            TAB_LIVE to "👁 Эфир"
         )
     }
 }

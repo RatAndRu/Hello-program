@@ -99,9 +99,18 @@ object HeyCyan {
         return out
     }
 
-    /** Поток служебных пакетов, который очки льют постоянно (тип 0x59). */
+    /**
+     * Поток 0x59. В вендорском SDK эта команда называется ACTION_GPT_UPLOAD (89 = 0x59)
+     * и идёт в паре с запросом ИИ-помощника: это звук с микрофона очков, который
+     * приложение отправляет в облако на распознавание. Видео в этом потоке нет —
+     * скорость около 1.5 КБ/с, кадру её не хватит.
+     */
     fun isStreamFrame(value: ByteArray): Boolean =
         isBigFrame(value) && (value[1].toInt() and 0xFF) == 0x59
+
+    /** Что это за поток, по-человечески. */
+    fun streamName(value: ByteArray): String =
+        if (isStreamFrame(value)) "звук с микрофона для ИИ-помощника" else "служебный поток"
 
     // ---------- Управление очками (кадр 0x41 канала B) ----------
     //
@@ -330,6 +339,24 @@ object HeyCyan {
         )
     }
 
+    /**
+     * Адрес очков в их Wi-Fi из события 0x08 (Bytes 7..10).
+     * Именно так SDK сообщает адрес P2P-интерфейса — он нужен и для выгрузки
+     * файлов, и для попытки живого видео по RTSP.
+     */
+    fun p2pIp(value: ByteArray): String? {
+        if (!isBigFrame(value)) return null
+        if ((value[1].toInt() and 0xFF) != 0x73) return null
+        if (value.size < 11) return null
+        if ((value[6].toInt() and 0xFF) != 0x08) return null
+        val a = value[7].toInt() and 0xFF
+        val b = value[8].toInt() and 0xFF
+        val c = value[9].toInt() and 0xFF
+        val d = value[10].toInt() and 0xFF
+        if (a == 0 && b == 0 && c == 0 && d == 0) return null
+        return "$a.$b.$c.$d"
+    }
+
     /** 73 09 FF — очки не смогли поднять Wi-Fi; SDK в ответ шлёт «сброс Wi-Fi». */
     fun wifiFailed(value: ByteArray): Boolean {
         val e = deviceEvent(value) ?: return false
@@ -340,6 +367,9 @@ object HeyCyan {
         0x01 -> "состояние устройства"
         0x02 -> "результат ИИ-снимка"
         0x03 -> "микрофон включён"
+        0x04 -> "ход обновления прошивки"
+        0x07 -> "обновление прошивки завершено"
+        0x08 -> "адрес очков в Wi-Fi"
         0x09 -> "Wi-Fi очков"
         0x0B -> "отсчёт состояния"
         0x0F -> "перевод: пауза"
