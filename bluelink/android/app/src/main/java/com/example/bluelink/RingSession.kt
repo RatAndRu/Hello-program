@@ -267,7 +267,7 @@ class RingSession(
         val m = menu ?: return
         if (!m.requiresPassword) return
         sendJl(Ring.jlAuthenticate())
-        log("Кольцо: меню требует пароль — отправляю стандартный "0000"")
+        log("Кольцо: меню требует пароль — отправляю стандартный пароль 0000")
     }
 
     private fun fallbackProbe() {
