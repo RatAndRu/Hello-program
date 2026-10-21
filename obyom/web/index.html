@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#0b0d12">
+  <title>Объём — 3D-сканер</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Главная -->
+  <section id="home" class="screen active">
+    <header class="top"><h1>Объём</h1><span class="sub">3D-сканер предметов</span></header>
+    <div class="actions">
+      <button id="btnNew" class="big primary">＋ Новый скан</button>
+      <div class="row">
+        <button id="btnMat" class="mid">🖨 Коврик для печати</button>
+        <button id="btnHelp" class="mid">❓ Как снимать</button>
+      </div>
+    </div>
+    <h2 class="sect">Мои модели</h2>
+    <div id="scanList" class="list"></div>
+    <p id="emptyHint" class="hint">Пока пусто. Распечатай коврик, поставь на него предмет и нажми «Новый скан».</p>
+  </section>
+
+  <!-- Настройка скана -->
+  <section id="setup" class="screen">
+    <header class="top"><button class="back" data-go="home">‹</button><h1>Новый скан</h1></header>
+    <div class="form">
+      <label class="lbl">Что получить</label>
+      <div class="seg" data-key="mode">
+        <button data-v="mesh">Полигоны<small>сетка для печати, игр, Blender</small></button>
+        <button data-v="splat">Сплэты<small>фотореализм, для показа</small></button>
+        <button data-v="both">Оба<small>дольше</small></button>
+      </div>
+      <label class="lbl">Как снимать</label>
+      <div class="seg" data-key="method">
+        <button data-v="walk">С рук<small>обойти вокруг предмета</small></button>
+        <button data-v="turn">Держатель + вертушка<small>телефон неподвижен, крутится столик</small></button>
+      </div>
+      <label class="lbl">Коврик</label>
+      <div class="seg" data-key="size">
+        <button data-v="A4">A4<small>предмет до 12 см</small></button>
+        <button data-v="A3">A3<small>до 17 см</small></button>
+      </div>
+      <label class="lbl">Высота предмета</label>
+      <div class="seg" data-key="height">
+        <button data-v="65">до 6 см</button>
+        <button data-v="90">до 9 см</button>
+        <button data-v="140">до 14 см</button>
+      </div>
+      <label class="lbl">Качество</label>
+      <div class="seg" data-key="quality">
+        <button data-v="fast">Быстро</button>
+        <button data-v="normal">Норма</button>
+        <button data-v="best">Лучше</button>
+      </div>
+      <p id="setupHint" class="hint"></p>
+      <button id="btnStart" class="big primary">📷 Начать съёмку</button>
+    </div>
+  </section>
+
+  <!-- Съёмка -->
+  <section id="capture" class="screen dark">
+    <video id="video" playsinline muted></video>
+    <canvas id="overlay"></canvas>
+    <div class="capTop">
+      <div id="capMsg" class="capMsg">Наведи камеру на коврик</div>
+      <div id="capInfo" class="capInfo"></div>
+    </div>
+    <canvas id="dome" class="dome"></canvas>
+    <div class="capBar">
+      <button id="capCancel" class="round">✕</button>
+      <button id="capPause" class="round">⏸</button>
+      <button id="capDone" class="pill primary" disabled>Готово · 0</button>
+    </div>
+  </section>
+
+  <!-- Обработка -->
+  <section id="process" class="screen">
+    <header class="top"><h1>Обработка</h1></header>
+    <div class="proc">
+      <div id="procStage" class="stage">Подготовка…</div>
+      <div class="bar"><div id="procBar"></div></div>
+      <div id="procText" class="hint"></div>
+      <canvas id="procView" class="procView"></canvas>
+      <button id="procStop" class="mid">Остановить</button>
+      <pre id="procLog" class="log"></pre>
+    </div>
+  </section>
+
+  <!-- Просмотр -->
+  <section id="view" class="screen dark">
+    <canvas id="gl"></canvas>
+    <header class="vTop">
+      <button class="back" data-go="home">‹</button>
+      <div class="vTitle"><input id="vName" maxlength="40"><span id="vSize"></span></div>
+    </header>
+    <div id="vWarn" class="vWarn hidden"></div>
+    <div class="vTools">
+      <div class="seg small" id="vShow"><button data-v="mesh">Сетка</button><button data-v="splat">Сплэты</button></div>
+      <div class="seg small" id="vShade"><button data-v="0">Цвет</button><button data-v="1">Свет</button><button data-v="2">Глина</button></div>
+      <button id="vAuto" class="chip">⟳</button>
+      <button id="vHome" class="chip">⌂</button>
+    </div>
+    <div class="vExport">
+      <button id="vExp" class="pill primary">⤓ Экспорт</button>
+      <button id="vMore" class="pill">⋯</button>
+    </div>
+  </section>
+
+  <!-- Листы -->
+  <div id="sheet" class="sheet hidden"><div class="sheetBox"><div id="sheetBody"></div><button id="sheetClose" class="mid">Закрыть</button></div></div>
+  <div id="toast" class="toast hidden"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
