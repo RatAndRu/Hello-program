@@ -123,6 +123,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var heyMediaSaved = 0
     private var heyVideoLimit = -1
     private var heyPulse: Runnable? = null
+    // Мы сами помним, что попросили запись: ответ очков о текущем режиме может
+    // приходить с задержкой или говорить о другом режиме — «пульс» от этого не зависит.
+    private var heyWantVideo = false
+    private var heyWantAudio = false
     private var heyLastEventAt = 0L
     private var heyPhotoStatus = ""
     private var heyThumbTotal = -1
@@ -567,6 +571,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             heyThumbTotal = -1
             heyThumbParts.clear()
             heyStopPulse()
+            heyWantVideo = false
+            heyWantAudio = false
             heyTransferOn = false
             heyMedia?.cancel()
             heyMedia = null
@@ -2721,6 +2727,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             heyStartVideo()
         } else {
             heyActionStatus = "Видео: отправляю «остановить запись»…"
+            heyWantVideo = false
+            heyStartPulse()
             heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.VIDEO_STOP), "Видео: стоп")
             ui.postDelayed({
                 if (heyVideoOn) {
@@ -2736,6 +2744,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.setVideoDuration(60), "Видео: предел 60 с")
         heyVideoLimit = 60
         ui.postDelayed({
+            heyWantVideo = true
+            heyWantAudio = false
             heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.VIDEO_START), "Видео: старт")
             heyActionStatus = "Видео: запись начата. Держу связь с очками, чтобы они не остановили её сами."
             heyStartPulse()
@@ -2750,12 +2760,16 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (start) {
             heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.setAudioDuration(300), "Звук: предел 5 мин")
             ui.postDelayed({
+                heyWantAudio = true
+                heyWantVideo = false
                 heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.AUDIO_START), "Звук: старт")
                 heyActionStatus = "Запись звука начата."
                 heyStartPulse()
             }, 400)
         } else {
             heyActionStatus = "Запись звука: отправляю «остановить»…"
+            heyWantAudio = false
+            heyStartPulse()
             heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.AUDIO_STOP), "Звук: стоп")
             ui.postDelayed({
                 if (heyAudioOn) {
@@ -2778,8 +2792,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                     return
                 }
                 when {
-                    heyVideoOn -> heySendSilent(0x45, byteArrayOf(HeyCyan.Work.VIDEO_START.toByte(), 0x01))
-                    heyAudioOn -> heySendSilent(0x45, byteArrayOf(HeyCyan.Work.AUDIO_START.toByte(), 0x01))
+                    heyWantVideo -> heySendSilent(0x45, byteArrayOf(HeyCyan.Work.VIDEO_START.toByte(), 0x01))
+                    heyWantAudio -> heySendSilent(0x45, byteArrayOf(HeyCyan.Work.AUDIO_START.toByte(), 0x01))
                     heyTransferOn -> heySendSilent(0x45, byteArrayOf(HeyCyan.Work.TRANSFER.toByte(), 0x01))
                 }
                 ui.postDelayed(this, 1500)
@@ -3090,7 +3104,17 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 heyPhotoStatus = heyPhotoStatus.ifBlank { "Очки вышли из режима передачи — камера свободна." }
             }
             HeyCyan.Work.VIDEO_START -> heyStartPulse()
-            HeyCyan.Work.VIDEO_STOP, HeyCyan.Work.AUDIO_STOP, HeyCyan.Work.AUDIO_START -> {
+            HeyCyan.Work.VIDEO_STOP -> {
+                heyWantVideo = false
+                heyStartPulse()
+            }
+            HeyCyan.Work.AUDIO_STOP -> {
+                heyWantAudio = false
+                heyStartPulse()
+            }
+            HeyCyan.Work.AUDIO_START -> {
+                heyWantAudio = true
+                heyWantVideo = false
                 heyStartPulse()
             }
             else -> {}
