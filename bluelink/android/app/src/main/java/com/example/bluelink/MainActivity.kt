@@ -108,11 +108,24 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var heyRecords = -1
     private var heyExpectPhoto = false
     private var heyPhotoBaseline = -1
+    // Приём миниатюры: очки присылают части не по порядку, поэтому складываем их по номеру.
+    private val heyThumbParts = HashMap<Int, ByteArray>()
+    private var heyThumbStartedAt = 0L
+    private var heyThumbRounds = 0
+    // Wi-Fi очков и выгрузка файлов.
+    private var heyMedia: GlassesMedia? = null
+    private var heyWifiSsid = ""
+    private var heyWifiPass = ""
+    private var heyP2pIp: String? = null
+    private var heyTransferOn = false
+    private var heyMediaStatus = ""
+    private var heyMediaNames: List<String> = emptyList()
+    private var heyMediaSaved = 0
+    private var heyVideoLimit = -1
+    private var heyPulse: Runnable? = null
     private var heyLastEventAt = 0L
     private var heyPhotoStatus = ""
     private var heyThumbTotal = -1
-    private var heyThumbBuffer = java.io.ByteArrayOutputStream()
-    private var heyThumbAsked = -1
     private var heyPhotoBitmap: Bitmap? = null
 
     private var tab = TAB_SCAN
@@ -552,8 +565,13 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             heyVideoOn = false
             heyAudioOn = false
             heyThumbTotal = -1
-            heyThumbAsked = -1
-            heyThumbBuffer = java.io.ByteArrayOutputStream()
+            heyThumbParts.clear()
+            heyStopPulse()
+            heyTransferOn = false
+            heyMedia?.cancel()
+            heyMedia = null
+            heyWifiSsid = ""
+            heyWifiPass = ""
             if (DemoDevice.isDemo(address)) connAddress = ""
         }
         rebuild()
@@ -759,17 +777,16 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (short == 0x2A26) heyFirmware = String(value, Charsets.UTF_8).trim().ifBlank { null }
         if (short == 0x2A27) heyModel = String(value, Charsets.UTF_8).trim().ifBlank { null }
         if (short == 0x2A00 && heyModel.isNullOrBlank()) heyModel = String(value, Charsets.UTF_8).trim()
-        if (HeyCyan.isStreamFrame(value)) {
-            // Поток служебных пакетов: считаем и молчим, иначе журнал превращается в кашу.
-            heyObserve(value)
-            if (tab == TAB_HEY) rebuildThrottled()
-            return
-        }
+        val protocolFrame = heyObserve(value)
         when (GattNames.shortCode(char)) {
             0x2A26 -> String(value, Charsets.UTF_8).trim().ifBlank { null }?.let { heyFirmware = it }
             0x2A27 -> String(value, Charsets.UTF_8).trim().ifBlank { null }?.let { heyModel = it }
         }
-        heyObserve(value)
+        // Кадры протокола уже разобраны по смыслу: в журнал их простым текстом не дублируем.
+        if (protocolFrame) {
+            if (tab == TAB_GATT || tab == TAB_DEVICE || tab == TAB_HEY) rebuildThrottled()
+            return
+        }
         val text = heyLastResponse.ifBlank {
             GattNames.describe(char, value) ?: bytesToHex(value.take(24).toByteArray())
         }
@@ -2194,6 +2211,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                         )
                     }
                     if (heyVideoOn) appendLine("🎥 Идёт видеозапись (подтверждено очками)")
+                    if (heyVideoLimit > 0) appendLine("Предел одной записи на очках: $heyVideoLimit с")
                     if (heyAudioOn) appendLine("🎤 Идёт запись звука (подтверждено очками)")
                     if (heyFiles >= 0) appendLine("Файлов на очках: $heyFiles")
                     if (heyFilesRaw.isNotBlank()) appendLine("Ответ по файлам: $heyFilesRaw")
@@ -2297,6 +2315,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             pc.addView(txt("Снимок с очков", 12, Pal.MUTED, bold = true))
             pc.addView(spacer(6))
             pc.addView(txt(heyPhotoStatus, 12, Pal.TEXT))
+            pc.addView(spacer(8))
+            pc.addView(actionButton("Забрать снимок ещё раз", primary = false) {
+                heyStartThumb("повторный запрос")
+            })
             val bmp = heyPhotoBitmap
             if (bmp != null) {
                 pc.addView(spacer(8))
@@ -2386,25 +2408,50 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     /** Карточка «забрать файлы»: честно объясняет, что медиа идут по Wi-Fi очков. */
     private fun heyFilesCard(): View {
         val box = card()
-        box.addView(txt("Файлы с очков", 12, Pal.MUTED, bold = true))
+        box.addView(txt("Фото, видео и звук с очков", 12, Pal.MUTED, bold = true))
         box.addView(spacer(6))
         box.addView(
             txt(
-                "Видео, звук и полноразмерные фото очки отдают только по своей Wi-Fi-сети. " +
-                    "Для этого они переходят в режим передачи файлов — и пока они в нём, камера не работает: " +
-                    "команды съёмки формально принимаются, но кадр не снимается. " +
-                    "Поэтому режим включается отдельной кнопкой, и его нужно явно выключать.",
+                "Полноразмерные файлы лежат в памяти очков, а не в Bluetooth: очки поднимают " +
+                    "свою Wi-Fi-сеть, и приложение скачивает их по ней. На время выгрузки камера занята — " +
+                    "после неё приложение само выйдет из режима передачи.",
                 11,
                 Pal.MUTED
             )
         )
-        box.addView(spacer(8))
+        if (heyMediaStatus.isNotBlank()) {
+            box.addView(spacer(8))
+            box.addView(txt(heyMediaStatus, 12, Pal.TEXT))
+        }
+        if (heyWifiSsid.isNotBlank()) {
+            box.addView(spacer(4))
+            box.addView(txt("Сеть очков: «$heyWifiSsid»", 11, Pal.MUTED))
+        }
+        if (heyP2pIp != null) {
+            box.addView(txt("Адрес очков: ${heyP2pIp}", 11, Pal.MUTED, mono = true))
+        }
+        if (heyMediaNames.isNotEmpty()) {
+            box.addView(spacer(6))
+            box.addView(
+                txt(
+                    heyMediaNames.take(12).joinToString("\n") { "• $it" } +
+                        if (heyMediaNames.size > 12) "\n… и ещё ${heyMediaNames.size - 12}" else "",
+                    11,
+                    Pal.TEXT,
+                    mono = true
+                )
+            )
+        }
+        box.addView(spacer(10))
         val b1 = row()
-        b1.addView(actionButton("Включить Wi-Fi очков", primary = true) { heyFilesGrab() })
-        b1.addView(actionButton("Выйти из передачи", primary = false) { heyExitTransfer() })
+        b1.addView(actionButton("Включить Wi-Fi и скачать", primary = true) { heyFilesGrab() })
+        if (heyTransferOn) b1.addView(actionButton("Выйти из передачи", primary = false) { heyExitTransfer() })
         box.addView(b1)
         box.addView(spacer(6))
-        box.addView(actionButton("Найти сеть очков", primary = false) { heyScanWifi() })
+        val b2 = row()
+        b2.addView(actionButton("Повторить выгрузку", primary = false) { heyStartMediaSync() })
+        b2.addView(actionButton("Остановить", primary = false) { heyMediaCancel() })
+        box.addView(b2)
         if (heyWifi.isNotEmpty()) {
             box.addView(spacer(8))
             box.addView(txt("Сети рядом:", 11, Pal.MUTED))
@@ -2419,6 +2466,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             )
         }
         box.addView(spacer(8))
+        box.addView(actionButton("Найти сеть очков", primary = false) { heyScanWifi() })
+        box.addView(spacer(6))
         box.addView(actionButton("Открыть Wi-Fi настройки", primary = false) {
             wifi.openWifiSettings()
         })
@@ -2436,8 +2485,98 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             ),
             "Режим передачи"
         )
-        heyActionStatus = "Очки переходят в режим передачи и поднимают свою Wi-Fi-сеть. " +
-            "Пока они в нём, камера занята: после передачи обязательно нажмите «Выйти из передачи»."
+        heyTransferOn = true
+        heyMediaStatus = "Очки включают свою Wi-Fi-сеть…"
+        heyActionStatus = "Идёт выгрузка по Wi-Fi очков. Камера в это время занята — " +
+            "после выгрузки приложение само выйдет из режима передачи."
+    }
+
+    // ---------- Выгрузка файлов по Wi-Fi очков ----------
+
+    /**
+     * Полный путь к файлам: очки включают свою точку доступа, отдают имя сети
+     * и пароль в ответе на команду передачи, приложение подключается к этой сети
+     * и скачивает /files/media.config и сами файлы по HTTP.
+     */
+    private fun heyStartMediaSync() {
+        if (connState != ConnState.CONNECTED) return
+        if (heyWifiSsid.isBlank()) {
+            heyMediaStatus = NO_CREDS_TEXT
+            if (tab == TAB_HEY) rebuild()
+            return
+        }
+        // Android 13+ требует разрешение «устройства поблизости» для Wi-Fi.
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingAfterPermission = { heyStartMediaSync() }
+            requestPermissions(arrayOf(Manifest.permission.NEARBY_WIFI_DEVICES), REQ_WIFI)
+            return
+        }
+        heyMediaSaved = 0
+        heyMediaNames = emptyList()
+        heyMediaStatus = "Подключаюсь к Wi-Fi очков «$heyWifiSsid»…"
+        if (tab == TAB_HEY) rebuild()
+        heyMedia = GlassesMedia(this, wifi).also { engine ->
+            engine.sync(heyWifiSsid, heyWifiPass, heyP2pIp, object : GlassesMedia.Listener {
+                override fun onStatus(text: String) {
+                    ui.post {
+                        heyMediaStatus = text
+                        if (tab == TAB_HEY) rebuildThrottled()
+                    }
+                }
+
+                override fun onLog(line: String) {
+                    ui.post { addLog(line) }
+                }
+
+                override fun onFiles(total: Int, names: List<String>) {
+                    ui.post {
+                        heyMediaNames = names
+                        heyFiles = total
+                        heyFilesRaw = names.take(20).joinToString(", ")
+                        heyMediaStatus = "На очках файлов: $total. Скачиваю…"
+                        if (tab == TAB_HEY) rebuild()
+                    }
+                }
+
+                override fun onProgress(index: Int, total: Int, name: String) {
+                    ui.post {
+                        heyMediaStatus = "Скачиваю $index из $total: $name"
+                        if (tab == TAB_HEY) rebuildThrottled()
+                    }
+                }
+
+                override fun onSaved(file: File, isImage: Boolean) {
+                    ui.post {
+                        heyMediaSaved += 1
+                        if (isImage) {
+                            lastPhoto = file
+                            lastPhotoBitmap = thumb(file, 480)
+                        }
+                    }
+                }
+
+                override fun onFinished(ok: Boolean, message: String) {
+                    ui.post {
+                        heyMediaStatus = message
+                        addLog("Файлы с очков: $message")
+                        // Очки в режиме передачи держат камеру занятой — отпускаем её.
+                        if (ok && heyTransferOn) {
+                            ui.postDelayed({ heyExitTransfer() }, 1200)
+                        }
+                        if (tab == TAB_HEY) rebuild()
+                    }
+                }
+            })
+        }
+    }
+
+    private fun heyMediaCancel() {
+        heyMedia?.cancel()
+        heyMedia = null
+        heyMediaStatus = "Выгрузка остановлена."
+        if (tab == TAB_HEY) rebuild()
     }
 
     private fun heyScanWifi() {
@@ -2491,40 +2630,58 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
      */
     private fun heyTakePhoto() {
         heySubscribeProtocol()
-        heyThumbBuffer = java.io.ByteArrayOutputStream()
-        heyThumbTotal = -1
-        heyThumbAsked = -1
         heyPhotoStatus = "Готовлю съёмку…"
         heyActionStatus = ""
         rebuild()
 
-        val shutter = Runnable {
-            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.photoQuality(2), "Фото: качество")
-            ui.postDelayed({
-                heyExpectPhoto = true
-                heyPhotoBaseline = heyPhotos
-                heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.PHOTO), "Фото: снять")
-                heyActionStatus = "Фото: команда ушла в очки. Проверяю счётчик файлов — он и покажет, снят ли кадр."
-                ui.postDelayed({ heyRequestCounts() }, 4000)
-                ui.postDelayed({
-                    if (heyThumbTotal < 0 && heyThumbAsked < 0) heyRequestThumb(0)
-                }, 6000)
-            }, 600)
-        }
+        val shutter = Runnable { heyFireShutter(aiQuality = false) }
 
         if (HeyCyan.cameraBusy(heyGlassWork)) {
             heyActionStatus = "Очки в режиме «${HeyCyan.workName(heyGlassWork)}» — камера занята. " +
                 "Выхожу из него и снимаю."
             heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.TRANSFER_STOP), "Выход из режима передачи")
-            ui.postDelayed(shutter, 1500)
+            ui.postDelayed(shutter, 1800)
         } else {
             shutter.run()
+        }
+    }
+
+    /**
+     * Собственно затвор. Сначала обычная команда фото (0x01). Если очки её приняли,
+     * но кадра нет — повторяем с настройкой качества, как в официальном приложении
+     * (0x06): именно этот путь включает ИИ-снимок и гарантированно отдаёт миниатюру.
+     */
+    private fun heyFireShutter(aiQuality: Boolean) {
+        if (connState != ConnState.CONNECTED) {
+            toast("Сначала подключитесь к очкам")
+            return
+        }
+        if (aiQuality) {
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.photoQuality(2), "Фото: качество")
+            ui.postDelayed({
+                heyExpectPhoto = true
+                heyPhotoBaseline = heyPhotos
+                heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.PHOTO_AI), "Фото: кадр (ИИ)")
+                heyActionStatus = "Фото: команда отправлена, ждём ответ очков…"
+                ui.postDelayed({ heyStartThumb("фото (ИИ)") }, 2500)
+            }, 500)
+        } else {
+            heyExpectPhoto = true
+            heyPhotoBaseline = heyPhotos
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.PHOTO), "Фото: снять")
+            heyActionStatus = "Фото: команда отправлена, ждём ответ очков…"
+            ui.postDelayed({ heyRequestCounts() }, 3500)
+            ui.postDelayed({ if (heyThumbParts.isEmpty()) heyStartThumb("фото") }, 3000)
         }
     }
 
     /** Выйти из режима передачи файлов: именно он блокирует камеру. */
     private fun heyExitTransfer() {
         heySubscribeProtocol()
+        heyMedia?.cancel()
+        heyMedia = null
+        heyTransferOn = false
+        heyStopPulse()
         heyActionStatus = "Отправляю «выйти из режима передачи»…"
         rebuild()
         heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.TRANSFER_STOP), "Выход из режима передачи")
@@ -2543,9 +2700,12 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     }
 
     /**
-     * Видео — переключатель. Остановка: сначала штатный VideoStop (0x03),
-     * а если очки его проигнорировали — повторная команда «старт», которой
-     * официальное приложение тоже останавливает запись.
+     * Видео.
+     *
+     * Две вещи, без которых очки сами прекращают запись через пару секунд:
+     *  1) у очков есть предельная длительность записи — её задаём явно (60 с);
+     *  2) пока идёт запись, приложение должно регулярно посылать «пульс» (0x45),
+     *     иначе прошивка решает, что хозяин отвязался, и закрывает файл.
      */
     private fun heyToggleVideo() {
         heySubscribeProtocol()
@@ -2555,19 +2715,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             if (HeyCyan.cameraBusy(heyGlassWork)) {
                 heyActionStatus = "Очки в режиме «${HeyCyan.workName(heyGlassWork)}» — сначала выхожу из него."
                 heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.TRANSFER_STOP), "Выход из режима передачи")
-                ui.postDelayed({
-                    heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.VIDEO_START), "Видео: старт")
-                }, 1500)
+                ui.postDelayed({ heyStartVideo() }, 1800)
                 return
             }
-            heyActionStatus = "Видео: команда «начать запись» отправлена, ждём подтверждения очков…"
-            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.VIDEO_START), "Видео: старт")
-            ui.postDelayed({
-                if (!heyVideoOn) {
-                    heyActionStatus = "Видео: очки не подтвердили запись — ответа нет или он с ошибкой."
-                    if (tab == TAB_HEY) rebuild()
-                }
-            }, 4000)
+            heyStartVideo()
         } else {
             heyActionStatus = "Видео: отправляю «остановить запись»…"
             heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.VIDEO_STOP), "Видео: стоп")
@@ -2580,13 +2731,29 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         }
     }
 
+    private fun heyStartVideo() {
+        // 60 секунд — разумный предел на одну запись; очки принимают это значение.
+        heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.setVideoDuration(60), "Видео: предел 60 с")
+        heyVideoLimit = 60
+        ui.postDelayed({
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.VIDEO_START), "Видео: старт")
+            heyActionStatus = "Видео: запись начата. Держу связь с очками, чтобы они не остановили её сами."
+            heyStartPulse()
+            ui.postDelayed({ heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.query(2), "Видео: настройки") }, 1500)
+        }, 500)
+    }
+
     private fun heyToggleAudio() {
         heySubscribeProtocol()
         val start = !heyAudioOn
         rebuild()
         if (start) {
-            heyActionStatus = "Запись звука: команда отправлена, ждём подтверждения очков…"
-            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.AUDIO_START), "Звук: старт")
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.setAudioDuration(300), "Звук: предел 5 мин")
+            ui.postDelayed({
+                heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.AUDIO_START), "Звук: старт")
+                heyActionStatus = "Запись звука начата."
+                heyStartPulse()
+            }, 400)
         } else {
             heyActionStatus = "Запись звука: отправляю «остановить»…"
             heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.AUDIO_STOP), "Звук: стоп")
@@ -2598,11 +2765,63 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         }
     }
 
+    /**
+     * «Пульс» для очков: пока идёт запись или открыт режим передачи, раз в 1.5 с
+     * отправляем BC 45 [режим, 01]. Официальное приложение делает так же.
+     */
+    private fun heyStartPulse() {
+        if (heyPulse != null) return
+        val tick = object : Runnable {
+            override fun run() {
+                if (connState != ConnState.CONNECTED) {
+                    heyPulse = null
+                    return
+                }
+                when {
+                    heyVideoOn -> heySendSilent(0x45, byteArrayOf(HeyCyan.Work.VIDEO_START.toByte(), 0x01))
+                    heyAudioOn -> heySendSilent(0x45, byteArrayOf(HeyCyan.Work.AUDIO_START.toByte(), 0x01))
+                    heyTransferOn -> heySendSilent(0x45, byteArrayOf(HeyCyan.Work.TRANSFER.toByte(), 0x01))
+                }
+                ui.postDelayed(this, 1500)
+            }
+        }
+        heyPulse = tick
+        ui.postDelayed(tick, 1500)
+    }
+
+    private fun heyStopPulse() {
+        heyPulse?.let { ui.removeCallbacks(it) }
+        heyPulse = null
+    }
+
+    /** Отправка без записи в журнал — для служебного «пульса». */
+    private fun heySendSilent(cmd: Int, payload: ByteArray) {
+        if (connState != ConnState.CONNECTED || ble.busySubscribing) return
+        val frame = HeyCyan.frameFor(HeyCyan.CH_SERIAL, cmd, payload)
+        ble.write(HeyCyan.SERIAL_SERVICE, HeyCyan.SERIAL_WRITE, frame, withResponse = false)
+    }
+
+    /**
+     * Помощник. Очки умеют только открыть микрофон и включить распознавание речи:
+     * сам разговор (распознавание, ответ, озвучка) ведёт приложение HeyCyan в облаке.
+     * Поэтому мы честно включаем микрофон очков и подсказываем, что дальше нужен
+     * их собственный ассистент.
+     */
     private fun heyToggleAssistant() {
         heySubscribeProtocol()
-        heyActionStatus = "Помощник: команда отправлена, ждём подтверждения очков…"
+        heyActionStatus = "Помощник: включаю микрофон очков…"
         rebuild()
-        heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.ASSISTANT), "Помощник")
+        heySend(HeyCyan.CH_SERIAL, 0x44, HeyCyan.aiVoiceWakePayload(true), "Помощник: микрофон")
+        ui.postDelayed({
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.ASSISTANT), "Помощник: режим")
+            heyActionStatus = "Микрофон очков включён. Ответы и озвучку ведёт приложение HeyCyan: " +
+                "у нас нет их облака, поэтому очки только слушают."
+        }, 500)
+        ui.postDelayed({
+            if (connState == ConnState.CONNECTED) {
+                heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.STOP_AI), "Помощник: стоп")
+            }
+        }, 15000)
     }
 
     data class HeyTx(val channel: String, val cmd: Int, val payload: ByteArray)
@@ -2645,6 +2864,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 HeyTx(HeyCyan.CH_CTRL, 0x3C, ByteArray(0)),
                 HeyTx(HeyCyan.CH_CTRL, 0xA1, byteArrayOf(0x01)),
                 HeyTx(HeyCyan.CH_SERIAL, 0x41, byteArrayOf(0x02, 0x04)),
+                HeyTx(HeyCyan.CH_SERIAL, 0x41, HeyCyan.query(2)),
                 HeyTx(HeyCyan.CH_SERIAL, 0x43, byteArrayOf(0x00, 0x00))
             ),
             "Заряд и сведения"
@@ -2667,22 +2887,22 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         }
     }
 
-    private fun heySend(channel: String, type: Int, payload: ByteArray, title: String) {
-        heySendTitle = title
+    private fun heySend(channel: String, type: Int, payload: ByteArray, title: String, quiet: Boolean = false) {
+        if (!quiet) heySendTitle = title
         val frame = HeyCyan.frameFor(channel, type, payload)
-        heySendRaw(channel, frame, title)
+        heySendRaw(channel, frame, title, quiet = quiet)
     }
 
-    private fun heySendRaw(channel: String, frame: ByteArray, title: String, attempt: Int = 0) {
+    private fun heySendRaw(channel: String, frame: ByteArray, title: String, attempt: Int = 0, quiet: Boolean = false) {
         if (connState != ConnState.CONNECTED) {
-            toast("Сначала подключитесь к устройству")
+            if (!quiet) toast("Сначала подключитесь к устройству")
             return
         }
         val service = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_SERVICE else HeyCyan.SERIAL_SERVICE
         val char = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_WRITE else HeyCyan.SERIAL_WRITE
         if (ble.busySubscribing) {
             // Ещё пишется дескриптор подписки: подождём, иначе GATT отклонит запись.
-            ui.postDelayed({ heySendRaw(channel, frame, title, attempt) }, 250)
+            ui.postDelayed({ heySendRaw(channel, frame, title, attempt, quiet) }, 250)
             return
         }
         // Канал A у SDK — обычная запись с ответом, канал B — без ответа.
@@ -2690,26 +2910,33 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         heyLastTx = frame
         heyLastTxAt = System.currentTimeMillis()
         if (ok) {
-            addLog("→ Очки · $title · ${HeyCyan.hex(frame)}")
+            if (!quiet) addLog("→ Очки · $title · ${HeyCyan.hex(frame)}")
         } else if (attempt < 2) {
             // GATT занят предыдущей операцией — повторяем, это обычное дело на Android.
-            ui.postDelayed({ heySendRaw(channel, frame, title, attempt + 1) }, 400)
+            ui.postDelayed({ heySendRaw(channel, frame, title, attempt + 1, quiet) }, 400)
         } else {
             addLog("Очки · $title: запись не принята")
             heyActionStatus = "$title: очки не приняли команду"
         }
-        if (tab == TAB_HEY) rebuildThrottled()
+        if (tab == TAB_HEY && !quiet) rebuildThrottled()
     }
 
     /** Разбор всего, что прилетает в уведомления, в человеческий текст. */
-    private fun heyObserve(value: ByteArray) {
-        // Разбираем только кадры протокола: ASCII-ответы вроде версии прошивки сюда не относятся.
+    /**
+     * Разбор уведомлений. Возвращает true, если кадр относится к протоколу очков:
+     * тогда вызывающий не пишет его в журнал простым текстом (иначе журнал тонет).
+     */
+    private fun heyObserve(value: ByteArray): Boolean {
         if (HeyCyan.isBigFrame(value)) {
             // Канал B режет длинные кадры по MTU — сначала склеиваем, потом разбираем.
             for (frame in heyFramer.push(value)) heyHandleFrame(frame)
-            return
+            return true
         }
-        if (value.size == HeyCyan.FRAME_LEN) heyHandleFrame(value)
+        if (value.size == HeyCyan.FRAME_LEN) {
+            heyHandleFrame(value)
+            return true
+        }
+        return false
     }
 
     private fun heyHandleFrame(value: ByteArray) {
@@ -2746,54 +2973,73 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             if (tab == TAB_HEY) rebuildThrottled()
             return
         }
-        // Ответ очков на команду управления: что просили, ошибка, что сейчас.
-        // Сырые байты в журнале — чтобы любую странность можно было проверить глазами.
-        HeyCyan.glassState(value)?.let { st ->
-            addLog("Ответ 0x41: ${HeyCyan.hex(value)}")
-            heyOnGlassState(st)
+
+        // Очки прислали имя и пароль своей Wi-Fi-сети — это ключ к выгрузке файлов.
+        HeyCyan.transferCredentials(value)?.let { creds ->
+            if (creds.ssid != heyWifiSsid) {
+                heyWifiSsid = creds.ssid
+                heyWifiPass = creds.password
+                addLog("Wi-Fi очков: сеть «${creds.ssid}»" + if (creds.password.isBlank()) " без пароля" else " с паролем")
+                if (heyTransferOn) {
+                    ui.postDelayed({ heyStartMediaSync() }, 400)
+                }
+            }
         }
 
-        // Миниатюра снимка: серия кадров, в каждом — кусок JPEG.
-        HeyCyan.thumbChunk(value)?.let { chunk ->
-            heyOnThumbChunk(chunk)
-            if (tab == TAB_HEY) rebuildThrottled()
+        // Ответ очков на команду управления: что просили, ошибка, что сейчас.
+        HeyCyan.glassState(value)?.let { st ->
+            heyOnGlassState(st)
             return
         }
 
-        // Счётчики файлов в памяти очков. Это и есть проверка съёмки:
-        // очки сами говорят, стало ли файлов больше.
+        // Миниатюра снимка: в каждом кадре — кусок JPEG с номером.
+        HeyCyan.thumbChunk(value)?.let { chunk ->
+            heyOnThumbChunk(chunk)
+            return
+        }
+
+        // Счётчики файлов. Это независимая проверка съёмки: очки сами говорят,
+        // стало ли файлов больше.
         HeyCyan.mediaCounts(value)?.let { counts ->
-            val previousPhotos = heyPhotos
+            val baseline = if (heyPhotoBaseline >= 0) heyPhotoBaseline else heyPhotos
             heyPhotos = counts.photos
             heyVideos = counts.videos
             heyRecords = counts.records
             heyFiles = counts.photos + counts.videos + counts.records
             heyFilesRaw = "${counts.photos} фото · ${counts.videos} видео · ${counts.records} записей"
-            val baseline = if (heyPhotoBaseline >= 0) heyPhotoBaseline else previousPhotos
             if (heyExpectPhoto && baseline >= 0) {
                 heyExpectPhoto = false
-                heyPhotoBaseline = -1
                 if (counts.photos > baseline) {
-                    heyPhotoStatus = "Фото реально снято: очки сообщили, что файлов стало больше " +
-                        "($baseline → ${counts.photos})."
                     addLog("Счётчик фото вырос: $baseline → ${counts.photos}")
+                    if (heyPhotoStatus.isBlank()) {
+                        heyPhotoStatus = "Очки подтвердили новый кадр (файлов было $baseline, стало ${counts.photos})."
+                    }
                 } else {
-                    heyPhotoStatus = "Счётчик фото не изменился (${counts.photos}). Кадр не снят — " +
-                        "очки, скорее всего, были заняты другим режимом."
-                    addLog("Счётчик фото не вырос: ${counts.photos}")
+                    heyPhotoStatus = "Счётчик фото не изменился (${counts.photos}) — кадр, похоже, не сохранился."
                 }
             }
+            return
+        }
+
+        // Настройки записи: длительность видео/звука и адрес очков в их Wi-Fi.
+        HeyCyan.videoDuration(value)?.let { seconds ->
+            heyVideoLimit = seconds
+            addLog("Очки: предел записи видео — $seconds с")
+            return
+        }
+        HeyCyan.deviceIp(value)?.let { ip ->
+            heyP2pIp = ip
+            addLog("Адрес очков в их Wi-Fi: $ip")
+            return
         }
 
         val echo = heyLastTx?.let { it.contentEquals(value) } == true &&
             System.currentTimeMillis() - heyLastTxAt < 8000
         heyLastResponse = if (echo) {
-            // Это всего лишь наша же запись, вернувшаяся эхом. Ничего не доказывает.
             "эхо нашей записи (не ответ очков)"
         } else {
             HeyCyan.friendly(value) ?: HeyCyan.describe(value) ?: HeyCyan.hex(value.take(24).toByteArray())
         }
-        if (tab == TAB_HEY) rebuildThrottled()
     }
 
     /** Очки ответили на команду: только этот ответ и считается подтверждением. */
@@ -2804,11 +3050,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         // Текущее состояние берём из ответа очков, а не из наших надежд.
         heyVideoOn = st.running == HeyCyan.Work.VIDEO_START
         heyAudioOn = st.running == HeyCyan.Work.AUDIO_START
-        addLog(
-            "Очки: просили ${HeyCyan.workName(st.work)}, код ${st.error}, " +
-                "сейчас ${HeyCyan.workName(st.running)}"
-        )
-        if (previous != st.running) addLog("Режим очков: ${HeyCyan.workName(st.running)}")
+        if (previous != st.running) {
+            addLog("Режим очков: ${HeyCyan.workName(st.running)}")
+        }
         if (st.error != 0) {
             heyActionStatus = "Очки отказали: «${HeyCyan.workName(st.work)}» (код ${st.error})" +
                 " · сейчас: ${HeyCyan.workName(st.running)}"
@@ -2819,67 +3063,142 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         when (st.work) {
             HeyCyan.Work.PHOTO, HeyCyan.Work.PHOTO_AI -> {
                 if (HeyCyan.cameraBusy(st.running)) {
-                    // Камера занята чужим режимом: команда «принята», но кадра не будет.
                     heyPhotoStatus = "Очки приняли команду, но остались в режиме «" +
                         HeyCyan.workName(st.running) + "» — кадр не снят. " +
                         "Нажмите «Выйти из режима передачи» и повторите."
                 } else {
-                    heyPhotoStatus = "Очки приняли команду съёмки. Проверяю счётчик файлов…"
-                    ui.postDelayed({ if (heyThumbTotal < 0) heyRequestThumb(0) }, 1500)
+                    heyPhotoStatus = "Очки приняли команду съёмки. Забираю снимок…"
+                    ui.postDelayed({ if (heyThumbParts.isEmpty()) heyStartThumb("фото") }, 1200)
+                }
+            }
+            HeyCyan.Work.TRANSFER -> {
+                heyTransferOn = true
+                heyStartPulse()
+                if (heyWifiSsid.isNotBlank()) {
+                    heyStartMediaSync()
+                } else {
+                    heyActionStatus = "Очки включили свою Wi-Fi-сеть. Жду от них имя сети…"
+                    ui.postDelayed({
+                        heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.query(3), "Адрес очков")
+                        ui.postDelayed({ if (heyWifiSsid.isBlank()) heyMediaStatus = NO_CREDS_TEXT }, 4000)
+                    }, 1200)
                 }
             }
             HeyCyan.Work.TRANSFER_STOP -> {
-                heyPhotoStatus = "Очки вышли из режима передачи — камера свободна."
+                heyTransferOn = false
+                heyStopPulse()
+                heyPhotoStatus = heyPhotoStatus.ifBlank { "Очки вышли из режима передачи — камера свободна." }
+            }
+            HeyCyan.Work.VIDEO_START -> heyStartPulse()
+            HeyCyan.Work.VIDEO_STOP, HeyCyan.Work.AUDIO_STOP, HeyCyan.Work.AUDIO_START -> {
+                heyStartPulse()
             }
             else -> {}
         }
     }
 
-    /** Пришёл кусок миниатюры: собираем JPEG и, если частей ещё много, просим следующую. */
+    // ---------- Миниатюра снимка ----------
+
+    /**
+     * Просим миниатюру последнего снимка. Очки присылают её частями, причём
+     * пачкой и не по порядку — поэтому запрашиваем один раз, складываем части
+     * по номерам и потом добираем только недостающие.
+     */
+    private fun heyStartThumb(reason: String) {
+        if (connState != ConnState.CONNECTED) return
+        if (heyThumbParts.isNotEmpty() || heyThumbTotal > 0) return
+        heyThumbParts.clear()
+        heyThumbTotal = -1
+        heyThumbStartedAt = System.currentTimeMillis()
+        heyThumbRounds = 0
+        addLog("Прошу миниатюру снимка ($reason)")
+        heySend(HeyCyan.CH_SERIAL, 0xFD, byteArrayOf(0x01, 0x00, 0x00), "Миниатюра")
+        ui.postDelayed({ heyThumbWatchdog(false) }, 2000)
+    }
+
     private fun heyOnThumbChunk(chunk: HeyCyan.ThumbChunk) {
         if (chunk.total <= 0) {
-            heyPhotoStatus = "Очки ответили: миниатюр нет — снимок ещё не готов или не сохранился."
-            addLog("Миниатюра: очки ответили «нет файлов»")
+            if (heyThumbParts.isEmpty()) {
+                heyPhotoStatus = "Очки ответили, что миниатюр нет — кадр не сохранился."
+                addLog("Миниатюра: очки ответили «нет файлов»")
+            }
             return
         }
         heyThumbTotal = chunk.total
-        if (chunk.data.isNotEmpty()) heyThumbBuffer.write(chunk.data)
-        addLog("Миниатюра: часть ${chunk.index + 1} из ${chunk.total}, ${chunk.data.size} байт")
-        if (chunk.index + 1 >= chunk.total) {
+        if (chunk.data.isNotEmpty() && !heyThumbParts.containsKey(chunk.index)) {
+            heyThumbParts[chunk.index] = chunk.data
+        }
+        val got = heyThumbParts.size
+        if (got % 5 == 0 || got == chunk.total) {
+            heyPhotoStatus = "Получаю снимок: $got из ${chunk.total} частей"
+            addLog("Миниатюра: $got / ${chunk.total} частей")
+        }
+        if (got >= chunk.total) heyFinishThumb() else if (tab == TAB_HEY) rebuildThrottled()
+    }
+
+    /**
+     * Добор: если очки прислали пачку и замолчали, просим недостающие части
+     * по одной. Три круга, потом честно сообщаем, чего не хватило.
+     */
+    private fun heyThumbWatchdog(force: Boolean) {
+        val total = heyThumbTotal
+        val elapsed = System.currentTimeMillis() - heyThumbStartedAt
+        if (total > 0 && heyThumbParts.size >= total) {
             heyFinishThumb()
-        } else {
-            heyPhotoStatus = "Получаю снимок: часть ${chunk.index + 1} из ${chunk.total} · " +
-                "${heyThumbBuffer.size() / 1024} КБ"
-            val next = chunk.index + 1
-            ui.postDelayed({ heyRequestThumb(next) }, 120)
+            return
         }
-    }
-
-    /** Попросить у очков очередную часть миниатюры (номер с нуля). */
-    private fun heyRequestThumb(index: Int) {
-        if (connState != ConnState.CONNECTED) return
-        if (index == 0) {
-            heyThumbBuffer = java.io.ByteArrayOutputStream()
-            heyThumbTotal = -1
-        }
-        heyThumbAsked = index
-        heySend(HeyCyan.CH_SERIAL, 0xFD, byteArrayOf(0x01, (index and 0xFF).toByte(), ((index shr 8) and 0xFF).toByte()),
-            "Миниатюра, часть ${index + 1}")
-        ui.postDelayed({
-            if (heyThumbTotal < 0 && heyThumbAsked == index) {
-                heyPhotoStatus = "Очки не прислали миниатюру. Кадр, скорее всего, снят — " +
-                    "проверьте индикатор очков и попробуйте «Фото» ещё раз."
-                addLog("Миниатюра: ответа нет за 3 с")
-                if (tab == TAB_HEY) rebuild()
+        if (total > 0) {
+            val missing = (0 until total).filter { !heyThumbParts.containsKey(it) }
+            if (missing.isNotEmpty() && (force || elapsed > 1200)) {
+                if (heyThumbRounds >= 3) {
+                    heyPhotoStatus = "Очки прислали ${heyThumbParts.size} из $total частей снимка и перестали отвечать. " +
+                        "Попробуйте «Фото» ещё раз."
+                    addLog("Миниатюра: не хватило частей ${missing.take(8)}")
+                    heyThumbTotal = -1
+                    return
+                }
+                heyThumbRounds += 1
+                addLog("Миниатюра: прошу недостающие части (${missing.size})")
+                var delay = 0L
+                for (index in missing.take(12)) {
+                    ui.postDelayed({
+                        heySend(HeyCyan.CH_SERIAL, 0xFD,
+                            byteArrayOf(0x01, (index and 0xFF).toByte(), ((index shr 8) and 0xFF).toByte()),
+                            "Миниатюра ${index + 1}", quiet = true)
+                    }, delay)
+                    delay += 220
+                }
+                ui.postDelayed({ heyThumbWatchdog(true) }, delay + 1500)
+                return
             }
-        }, 3000)
+        }
+        if (elapsed > 20000) {
+            heyPhotoStatus = "Очки не прислали миниатюру за 20 секунд. " +
+                "Кадр при этом мог сохраниться в памяти очков — проверьте их приложением HeyCyan."
+            addLog("Миниатюра: таймаут")
+            heyThumbTotal = -1
+            return
+        }
+        ui.postDelayed({ heyThumbWatchdog(false) }, 1200)
     }
 
-    /** Все части собраны: проверяем, что это JPEG, и сохраняем. */
     private fun heyFinishThumb() {
-        val bytes = heyThumbBuffer.toByteArray()
-        heyThumbBuffer = java.io.ByteArrayOutputStream()
+        val total = heyThumbTotal
+        if (total <= 0) return
         heyThumbTotal = -1
+        val buffer = java.io.ByteArrayOutputStream()
+        var missing = 0
+        for (index in 0 until total) {
+            val part = heyThumbParts[index]
+            if (part == null) missing += 1 else buffer.write(part)
+        }
+        if (missing > 0) {
+            heyPhotoStatus = "Снимок собран не полностью: нет $missing из $total частей."
+            heyThumbTotal = -1
+            return
+        }
+        val bytes = buffer.toByteArray()
+        heyThumbParts.clear()
         if (bytes.size < 4 || (bytes[0].toInt() and 0xFF) != 0xFF || (bytes[1].toInt() and 0xFF) != 0xD8) {
             heyPhotoStatus = "Очки прислали ${bytes.size} байт, но это не JPEG. " +
                 "Начало: ${HeyCyan.hex(bytes.take(12).toByteArray())}"
@@ -2893,9 +3212,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             lastPhotoBitmap = thumb(file, 480)
             heyPhotoStatus = "Снимок с очков получен: ${bytes.size / 1024} КБ · сохранён во вкладке «Фото»"
         } else {
-            heyPhotoStatus = "Снимок с очков получен: ${bytes.size / 1024} КБ, но сохранить файл не удалось"
+            heyPhotoStatus = "Снимок получен: ${bytes.size / 1024} КБ, но сохранить файл не удалось"
         }
-        addLog("Снимок с очков получен по Bluetooth: ${bytes.size} байт")
+        addLog("Снимок с очков получен по Bluetooth: ${bytes.size} байт, частей $total")
         if (tab == TAB_HEY) rebuild()
     }
 
@@ -3179,6 +3498,10 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     }
 
     companion object {
+        const val NO_CREDS_TEXT =
+            "Очки не прислали имя своей Wi-Fi-сети. Это бывает, если прошивка держит его в секрете: " +
+                "тогда подключитесь к сети очков вручную в настройках Wi-Fi, вернитесь сюда и нажмите «Забрать по Wi-Fi»."
+
         const val TAB_SCAN = "scan"
         const val TAB_DEVICE = "device"
         const val TAB_CAMERA = "camera"

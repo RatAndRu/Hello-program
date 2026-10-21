@@ -164,6 +164,9 @@ object HeyCyan {
         if (!isBigFrame(value)) return null
         if ((value[1].toInt() and 0xFF) != 0x41) return null
         if (value.size < 11) return null
+        // Ответ на команду: [02, 01, что_просили, код, что_сейчас].
+        // Ответ на запрос настроек начинается с [01, ...] — это не состояние команды.
+        if ((value[6].toInt() and 0xFF) != 0x02) return null
         if ((value[7].toInt() and 0xFF) != 0x01) return null
         return GlassState(
             work = value[8].toInt() and 0xFF,
@@ -192,6 +195,86 @@ object HeyCyan {
      */
     fun thumbnailRequest(index: Int): ByteArray =
         bigFrame(0xFD, byteArrayOf(0x01, (index and 0xFF).toByte(), ((index shr 8) and 0xFF).toByte()))
+
+    // ---------- Запросы настроек (кадр 0x41 с началом [01, тип]) ----------
+    //
+    // Ответ: [01, тип, ...]. Тип 2 — видео (угол, длительность в секундах),
+    // тип 3 — адрес очков в их Wi-Fi, тип 4 — количество файлов,
+    // тип 6 — длительность записи звука.
+
+    fun query(dataType: Int): ByteArray = byteArrayOf(0x01, dataType.toByte())
+
+    /** Установить предельную длительность видео: [02, 02, 00, младший, старший]. */
+    fun setVideoDuration(seconds: Int): ByteArray = byteArrayOf(
+        0x02, 0x02, 0x00, (seconds and 0xFF).toByte(), ((seconds shr 8) and 0xFF).toByte()
+    )
+
+    /** Установить предельную длительность записи звука: [02, 06, 00, младший, старший]. */
+    fun setAudioDuration(seconds: Int): ByteArray = byteArrayOf(
+        0x02, 0x06, 0x00, (seconds and 0xFF).toByte(), ((seconds shr 8) and 0xFF).toByte()
+    )
+
+    /** Длительность видео в секундах из ответа на запрос [01, 02]. */
+    fun videoDuration(value: ByteArray): Int? {
+        if (!isBigFrame(value)) return null
+        if ((value[1].toInt() and 0xFF) != 0x41) return null
+        if (value.size < 11) return null
+        if ((value[6].toInt() and 0xFF) != 0x01) return null
+        if ((value[7].toInt() and 0xFF) != 0x02) return null
+        return (value[9].toInt() and 0xFF) or ((value[10].toInt() and 0xFF) shl 8)
+    }
+
+    /** Адрес очков в их Wi-Fi из ответа на запрос [01, 03]. */
+    fun deviceIp(value: ByteArray): String? {
+        if (!isBigFrame(value)) return null
+        if ((value[1].toInt() and 0xFF) != 0x41) return null
+        if (value.size < 14) return null
+        if ((value[6].toInt() and 0xFF) != 0x01) return null
+        if ((value[7].toInt() and 0xFF) != 0x03) return null
+        val a = value[10].toInt() and 0xFF
+        val b = value[11].toInt() and 0xFF
+        val c = value[12].toInt() and 0xFF
+        val d = value[13].toInt() and 0xFF
+        if (a == 0 && b == 0 && c == 0 && d == 0) return null
+        return "$a.$b.$c.$d"
+    }
+
+    /** Имя и пароль точки доступа очков из ответа на команду режима передачи. */
+    data class WifiCreds(val ssid: String, val password: String)
+
+    fun transferCredentials(value: ByteArray): WifiCreds? {
+        if (!isBigFrame(value)) return null
+        if ((value[1].toInt() and 0xFF) != 0x41) return null
+        if (value.size < 12) return null
+        if ((value[6].toInt() and 0xFF) != 0x02) return null
+        if ((value[8].toInt() and 0xFF) != Work.TRANSFER) return null
+        // После кода ошибки и текущего режима идут: длина, имя сети, длина, пароль.
+        var i = 11
+        if (i >= value.size) return null
+        val nameLen = value[i].toInt() and 0xFF
+        if (nameLen <= 0 || nameLen > 32 || i + 1 + nameLen > value.size) return null
+        val ssid = String(value, i + 1, nameLen, Charsets.UTF_8)
+        i += 1 + nameLen
+        if (i >= value.size) return WifiCreds(ssid, "")
+        val passLen = value[i].toInt() and 0xFF
+        if (passLen <= 0 || passLen > 63 || i + 1 + passLen > value.size) return WifiCreds(ssid, "")
+        val pass = String(value, i + 1, passLen, Charsets.UTF_8)
+        if (ssid.isBlank()) return null
+        return WifiCreds(ssid, pass)
+    }
+
+    /**
+     * Кадр «я ещё здесь» для текущего режима: BC 45 [режим, 01].
+     * Без него очки считают, что хозяин отвязался, и сами завершают запись.
+     * Для режима передачи файлов это же держит Wi-Fi открытым.
+     */
+    fun heartbeat(work: Int): ByteArray = bigFrame(0x45, byteArrayOf(work.toByte(), 0x01))
+
+    /** Голосовое пробуждение помощника (тип 0x44): [02, 01] — микрофон включён. */
+    fun aiVoiceWakePayload(on: Boolean): ByteArray =
+        byteArrayOf(0x02, if (on) 0x01 else 0x00)
+
+    fun aiVoiceWake(on: Boolean): ByteArray = bigFrame(0x44, aiVoiceWakePayload(on))
 
     data class ThumbChunk(val total: Int, val index: Int, val data: ByteArray)
 
