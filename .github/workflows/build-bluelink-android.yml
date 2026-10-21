@@ -1,0 +1,90 @@
+name: Собрать Android APK — BlueLink
+
+# Ручной запуск: Actions -> "Собрать Android APK — BlueLink" -> Run workflow.
+# Плюс автозапуск при изменениях приложения BlueLink.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'bluelink/**'
+      - '.github/workflows/build-bluelink-android.yml'
+
+jobs:
+  build-apk:
+    name: APK (Android)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Получить код
+        uses: actions/checkout@v4
+
+      - name: Установить JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Установить Android SDK (API 34)
+        uses: android-actions/setup-android@v3
+        with:
+          packages: 'platform-tools platforms;android-34 build-tools;34.0.0'
+
+      - name: Установить Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Подготовить постоянный ключ подписи (если секрет задан)
+        env:
+          BLUELINK_KEYSTORE_BASE64: ${{ secrets.BLUELINK_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$BLUELINK_KEYSTORE_BASE64" ]; then
+            echo "$BLUELINK_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/bluelink-release.p12"
+            echo "BLUELINK_KEYSTORE_FILE=$RUNNER_TEMP/bluelink-release.p12" >> "$GITHUB_ENV"
+            echo "Постоянная подпись: включена"
+          else
+            echo "Постоянная подпись: секрет не задан, будет временная debug-подпись"
+          fi
+
+      - name: Собрать APK
+        working-directory: bluelink/android
+        env:
+          BLUELINK_STORE_PASSWORD: ${{ secrets.BLUELINK_STORE_PASSWORD }}
+          BLUELINK_KEY_PASSWORD: ${{ secrets.BLUELINK_KEY_PASSWORD }}
+          BLUELINK_KEY_ALIAS: ${{ secrets.BLUELINK_KEY_ALIAS }}
+        run: |
+          if [ -n "$BLUELINK_KEYSTORE_FILE" ]; then
+            gradle assembleRelease --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
+
+      - name: Загрузить APK в Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bluelink-apk
+          path: bluelink/android/app/build/outputs/apk/**/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Подготовить APK с понятным именем
+        run: |
+          if [ -f bluelink/android/app/build/outputs/apk/release/app-release.apk ]; then
+            cp bluelink/android/app/build/outputs/apk/release/app-release.apk BlueLink.apk
+          else
+            cp bluelink/android/app/build/outputs/apk/debug/app-debug.apk BlueLink.apk
+          fi
+
+      - name: Опубликовать APK в GitHub Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: bluelink-apk-${{ github.run_number }}-${{ github.run_attempt }}
+          name: BlueLink — APK (сборка ${{ github.run_number }})
+          body: |
+            BlueLink — Bluetooth-пульт: поиск устройств, обзор GATT, управление характеристиками,
+            профили устройств и съёмка камерой умных очков (демо-режим, BLE-поток, Wi-Fi/HTTP).
+            Скачай файл BlueLink.apk ниже и установи на телефон (Android 8.0+).
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: BlueLink.apk

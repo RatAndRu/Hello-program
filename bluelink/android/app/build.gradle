@@ -1,0 +1,36 @@
+plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
+android {
+    namespace 'com.example.bluelink'
+    compileSdk 34
+    defaultConfig {
+        applicationId 'com.example.bluelink'
+        minSdk 26
+        targetSdk 34
+        versionCode 1
+        versionName '1.0'
+    }
+    signingConfigs {
+        release {
+            def ks = System.getenv('BLUELINK_KEYSTORE_FILE')
+            if (ks) {
+                storeFile file(ks)
+                storePassword System.getenv('BLUELINK_STORE_PASSWORD')
+                keyAlias System.getenv('BLUELINK_KEY_ALIAS') ?: 'bluelink'
+                keyPassword System.getenv('BLUELINK_KEY_PASSWORD') ?: System.getenv('BLUELINK_STORE_PASSWORD')
+            }
+        }
+    }
+    buildTypes {
+        release {
+            if (System.getenv('BLUELINK_KEYSTORE_FILE')) signingConfig signingConfigs.release
+            minifyEnabled true
+            shrinkResources true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+}
+kotlin { jvmToolchain(17) }
+dependencies {
+    implementation 'androidx.core:core:1.13.1'
+    implementation 'androidx.core:core-ktx:1.13.1'
+}

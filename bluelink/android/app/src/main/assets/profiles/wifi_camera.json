@@ -1,0 +1,24 @@
+{
+  "id": "wifi_camera",
+  "name": "Камера по Wi-Fi (шаблон)",
+  "vendor": "Универсальный",
+  "description": "Очки поднимают свою Wi-Fi точку доступа, телефон подключается к ней и забирает снимок по HTTP. Это самый быстрый способ получить фото хорошего качества.",
+  "match": {
+    "namePrefixes": ["ESP32", "Glass", "Cam", "Owl"]
+  },
+  "capabilities": ["camera", "battery", "device_info"],
+  "battery": { "service": "180f", "characteristic": "2a19" },
+  "camera": {
+    "mode": "http",
+    "label": "Снять фото",
+    "httpUrl": "http://192.168.4.1/capture",
+    "wifiSsid": "ESP32-CAM",
+    "wifiPassword": "12345678",
+    "waitMs": 1500
+  },
+  "notes": [
+    "Замените SSID, пароль и адрес на данные своих очков.",
+    "Адрес обычно вида http://192.168.4.1/photo.jpg или /capture.",
+    "Телефон сам подключится к сети очков и вернётся в обычную сеть после снимка."
+  ]
+}

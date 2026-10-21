@@ -1,0 +1,20 @@
+{
+  "id": "demo_glasses",
+  "name": "Демо: умные очки RayX",
+  "vendor": "BlueLink",
+  "description": "Виртуальные очки внутри приложения. Показывают весь путь целиком: подключение, батарея, сервисы GATT и снимок — без настоящего железа.",
+  "match": {
+    "namePrefixes": ["Демо"]
+  },
+  "capabilities": ["battery", "camera", "device_info"],
+  "battery": { "service": "180f", "characteristic": "2a19" },
+  "camera": {
+    "mode": "demo",
+    "label": "Снять фото (демо)",
+    "demoAsset": "demo/glasses_photo.jpg"
+  },
+  "notes": [
+    "Снимок берётся из памяти телефона — камера очков имитируется.",
+    "Начните отсюда, чтобы понять, как работает приложение."
+  ]
+}

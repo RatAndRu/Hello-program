@@ -1,0 +1,27 @@
+{
+  "id": "ble_camera",
+  "name": "BLE-камера (шаблон)",
+  "vendor": "Универсальный",
+  "description": "Камера, которая отдаёт JPEG прямо по Bluetooth: команда в характеристику-триггер, кадр приходит уведомлениями. Так работают DIY-очки на ESP32/nRF и часть готовых модулей.",
+  "match": {
+    "namePrefixes": ["Glass", "Cam", "ESP", "Frame", "Owl"],
+    "serviceUuids": ["ffe0"]
+  },
+  "capabilities": ["camera", "battery", "device_info"],
+  "battery": { "service": "180f", "characteristic": "2a19" },
+  "camera": {
+    "mode": "ble",
+    "label": "Снять фото",
+    "service": "ffe0",
+    "triggerCharacteristic": "ffe1",
+    "dataCharacteristic": "ffe2",
+    "trigger": "01",
+    "framing": "jpeg",
+    "waitMs": 1200
+  },
+  "notes": [
+    "Проверьте UUID в GATT: у вашего устройства они могут быть другими.",
+    "Если перед JPEG идёт заголовок с размером, поставьте framing: sizeHeader.",
+    "Фото идёт по BLE медленно: кадр 720p может занять несколько секунд."
+  ]
+}

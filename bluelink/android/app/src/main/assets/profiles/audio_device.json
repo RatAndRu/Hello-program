@@ -1,0 +1,16 @@
+{
+  "id": "audio_device",
+  "name": "Наушники и колонки",
+  "vendor": "Универсальный",
+  "description": "Bluetooth-наушники, колонки, гарнитуры. Приложение показывает заряд и служебные данные, а звук идёт через системные настройки — так надёжнее и не ломает шумоподавление.",
+  "match": {
+    "namePrefixes": ["WH-", "WF-", "AirPods", "Buds", "FreeBuds", "QuietComfort", "Jabra", "Bose", "Soundcore", "Anker", "Sony", "JBL", "Marshall", "Pixel Buds", "Beats"]
+  },
+  "capabilities": ["battery", "device_info", "audio"],
+  "battery": { "service": "180f", "characteristic": "2a19" },
+  "notes": [
+    "Заряд читается стандартной характеристикой Battery Level (0x2A19).",
+    "Мультимедиа-кнопки и кодек — стандартные профили A2DP/HFP, их настраивает Android.",
+    "У некоторых моделей батарея есть отдельно для левого и правого наушника."
+  ]
+}
