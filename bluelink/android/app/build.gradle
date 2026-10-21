@@ -21,7 +21,7 @@ android {
                 keyAlias System.getenv('BLUELINK_KEY_ALIAS') ?: 'bluelink'
                 keyPassword System.getenv('BLUELINK_KEY_PASSWORD') ?: System.getenv('BLUELINK_STORE_PASSWORD')
             } else {
-                storeFile file('bluelink-dev.p12')
+                storeFile rootProject.file('bluelink-dev.p12')
                 storePassword 'bluelink-dev-2026'
                 keyAlias 'bluelink'
                 keyPassword 'bluelink-dev-2026'
