@@ -1,0 +1,8 @@
+Exception in thread "main" java.io.FileNotFoundException: bluelink/android/app/build/outputs/apk/release/app-release.apk (No such file or directory)
+	at java.base/java.io.RandomAccessFile.open0(Native Method)
+	at java.base/java.io.RandomAccessFile.open(RandomAccessFile.java:344)
+	at java.base/java.io.RandomAccessFile.<init>(RandomAccessFile.java:259)
+	at java.base/java.io.RandomAccessFile.<init>(RandomAccessFile.java:213)
+	at com.android.apksig.ApkVerifier.verify(ApkVerifier.java:158)
+	at com.android.apksigner.ApkSignerTool.verify(ApkSignerTool.java:587)
+	at com.android.apksigner.ApkSignerTool.main(ApkSignerTool.java:95)
