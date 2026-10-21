@@ -3766,6 +3766,13 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         }
         box.addView(spacer(8))
         box.addView(txt(RingControls.describeInput(RingControls.inputState(this), connName), 11, Pal.MUTED))
+        box.addView(spacer(6))
+        box.addView(txt(
+            "Пока перехват включён, нажатия кольца достаются BlueLink, а не музыкальному плееру: " +
+                "это плата за то, чтобы кольцо что-то делало. Выключите перехват — и кнопки снова " +
+                "будут управлять музыкой.",
+            11, Pal.MUTED
+        ))
         return box
     }
 
