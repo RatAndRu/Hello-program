@@ -77,7 +77,9 @@ class BleCentral(private val ctx: Context) {
 
     // Android разрешает только одну GATT-операцию за раз: подписки ставим в очередь,
     // иначе вторая подряд запись дескриптора молча теряется (и канал остаётся немым).
-    private val subscribeQueue = ArrayDeque<Pair<UUID?, UUID>>()
+    // В очереди лежит тройка: сервис, характеристика и номер её вхождения.
+    // Номер нужен там, где UUID повторяется — например, у HID-отчётов (2A4D).
+    private val subscribeQueue = ArrayDeque<Triple<UUID?, UUID, Int>>()
     private var subscribeBusy = false
 
     var services: List<GattServiceInfo> = emptyList()
@@ -731,12 +733,15 @@ class BleCentral(private val ctx: Context) {
     // ---------- Операции с характеристиками ----------
 
     @SuppressLint("MissingPermission")
-    private fun characteristic(service: UUID?, char: UUID): BluetoothGattCharacteristic? {
+    private fun characteristic(service: UUID?, char: UUID, index: Int = 0): BluetoothGattCharacteristic? {
         val g = gatt ?: return null
+        var seen = 0
         for (s in g.services ?: emptyList()) {
             if (service != null && s.uuid != service) continue
             for (c in s.characteristics ?: emptyList()) {
-                if (c.uuid == char) return c
+                if (c.uuid != char) continue
+                if (seen == index) return c
+                seen += 1
             }
         }
         return null
@@ -798,21 +803,21 @@ class BleCentral(private val ctx: Context) {
         get() = subscribeBusy
 
     /** Ставит подписку в очередь: GATT выполняет операции строго по одной. */
-    fun subscribe(service: UUID?, char: UUID, enable: Boolean = true): Boolean {
-        if (!enable) return doSubscribe(service, char, false)
-        synchronized(subscribeQueue) { subscribeQueue.addLast(service to char) }
+    fun subscribe(service: UUID?, char: UUID, enable: Boolean = true, index: Int = 0): Boolean {
+        if (!enable) return doSubscribe(service, char, false, index)
+        synchronized(subscribeQueue) { subscribeQueue.addLast(Triple(service, char, index)) }
         pumpSubscribe()
         return true
     }
 
     private fun pumpSubscribe() {
-        val next: Pair<UUID?, UUID>
+        val next: Triple<UUID?, UUID, Int>
         synchronized(subscribeQueue) {
             if (subscribeBusy) return
             next = subscribeQueue.removeFirstOrNull() ?: return
             subscribeBusy = true
         }
-        val started = doSubscribe(next.first, next.second, true)
+        val started = doSubscribe(next.first, next.second, true, next.third)
         if (!started) {
             synchronized(subscribeQueue) { subscribeBusy = false }
             main.postDelayed({ pumpSubscribe() }, 120)
@@ -825,12 +830,12 @@ class BleCentral(private val ctx: Context) {
     }
 
     @SuppressLint("MissingPermission")
-    private fun doSubscribe(service: UUID?, char: UUID, enable: Boolean = true): Boolean {
+    private fun doSubscribe(service: UUID?, char: UUID, enable: Boolean = true, index: Int = 0): Boolean {
         val g = gatt ?: run {
             emit { it.onLog("Нет соединения") }
             return false
         }
-        val c = characteristic(service, char) ?: run {
+        val c = characteristic(service, char, index) ?: run {
             emit { it.onLog("Нет характеристики ${GattNames.uuidLabel(char)}") }
             return false
         }

@@ -138,12 +138,20 @@ class RingSession(
                 log("Кольцо: подписался на ответы (A00A → B003)")
             }
             if (svc.uuid == Ring.SVC_HID) {
-                val reports = svc.chars.filter { it.uuid == Ring.CH_REPORT && it.notifiable }
-                for (ch in reports) {
-                    ble.subscribe(Ring.SVC_HID, ch.uuid, true)
+                // Отчётов бывает несколько с ОДНИМ И ТЕМ ЖЕ UUID (2A4D) — поэтому
+                // подписываемся на каждое вхождение отдельно, по его номеру.
+                var ordinal = 0
+                var ok = 0
+                for (ch in svc.chars) {
+                    if (GattNames.shortCode(ch.uuid) != 0x2A4D) continue
+                    val myIndex = ordinal
+                    ordinal += 1
+                    if (!ch.notifiable) continue
+                    ble.subscribe(Ring.SVC_HID, ch.uuid, true, myIndex)
+                    ok += 1
                 }
-                if (reports.isNotEmpty()) {
-                    log("Кольцо: подписался на HID-отчёты (${reports.size} шт.) — ждёшь взмахов")
+                if (ok > 0) {
+                    log("Кольцо: подписался на HID-отчёты ($ok из $ordinal) — жду взмахов")
                 }
             }
         }

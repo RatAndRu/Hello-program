@@ -140,6 +140,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     // Кольцо: своя сессия и свои данные.
     private var ring: RingSession? = null
+    private var ringStartedFor = ""
     private var ringHaptic = false
     private var ringStatusShown = ""
 
@@ -609,6 +610,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             heyWifiSsid = ""
             heyWifiPass = ""
             ring?.stop()
+            ringStartedFor = ""
             stopLive("связь потеряна")
             if (DemoDevice.isDemo(address)) connAddress = ""
         }
@@ -3377,6 +3379,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (!detection.ring) return
         // Очкам кольцо не мешает: у них другие сервисы, и detect() это учитывает.
         if (heyAvailable()) return
+        if (ringStartedFor == connAddress && ring != null) return
+        ringStartedFor = connAddress
         val session = ring ?: RingSession(
             ble, ui,
             { line -> addLog(line) },
