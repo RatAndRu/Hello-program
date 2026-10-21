@@ -76,15 +76,22 @@ jobs:
             cp bluelink/android/app/build/outputs/apk/debug/app-debug.apk BlueLink.apk
           fi
 
+      # Постоянный тег: ссылка на скачивание не меняется от сборки к сборке.
+      # https://github.com/RatAndRu/Hello-program/releases/download/bluelink-latest/BlueLink.apk
       - name: Опубликовать APK в GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: bluelink-apk-${{ github.run_number }}-${{ github.run_attempt }}
-          name: BlueLink — APK (сборка ${{ github.run_number }})
+          tag_name: bluelink-latest
+          name: BlueLink — APK (последняя сборка)
           body: |
+            **Скачать:** https://github.com/RatAndRu/Hello-program/releases/download/bluelink-latest/BlueLink.apk
+
+            Последняя сборка №${{ github.run_number }} от ${{ github.event.head_commit.timestamp }}.
+
             BlueLink — Bluetooth-пульт: поиск устройств, обзор GATT, управление характеристиками,
             профили устройств и съёмка камерой умных очков (демо-режим, BLE-поток, Wi-Fi/HTTP).
-            Скачай файл BlueLink.apk ниже и установи на телефон (Android 8.0+).
+            Установить на телефон с Android 8.0+.
           prerelease: true
+          overwrite_files: true
           fail_on_unmatched_files: true
           files: BlueLink.apk
