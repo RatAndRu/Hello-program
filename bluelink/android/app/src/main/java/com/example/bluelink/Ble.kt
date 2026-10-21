@@ -475,7 +475,8 @@ class BleCentral(private val ctx: Context) {
                 else -> BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
             }
             if (Build.VERSION.SDK_INT >= 33) {
-                g.writeCharacteristic(c, payload, type)
+                // На API 33+ метод возвращает int-код (0 = SUCCESS), а не boolean.
+                g.writeCharacteristic(c, payload, type) == android.bluetooth.BluetoothStatusCodes.SUCCESS
             } else {
                 c.writeType = type
                 c.value = payload
