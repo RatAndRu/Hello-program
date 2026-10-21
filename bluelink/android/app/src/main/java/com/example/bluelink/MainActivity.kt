@@ -67,6 +67,14 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var connError = ""
     private var cameraProfile: DeviceProfile? = null
 
+    // Диагностика: всё, что реально пришло от устройства, чтобы можно было переслать отчётом.
+    private val notifStats = HashMap<String, NotifStat>()
+    private var sdpProfiles: List<UUID> = emptyList()
+    private var crashText: String? = null
+    private var auditStatus = ""
+    private var auditor: DeviceAuditor? = null
+    private var extraNotes = ArrayList<String>()
+
     private var tab = TAB_SCAN
     private val scanItems = ArrayList<ScanItem>()
     private var scanning = false
@@ -99,6 +107,22 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     // ---------- Жизненный цикл ----------
 
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(newBase)
+        // Стек падения сохраняем в файл: без этого на закрытых прошивках не понять, что произошло.
+        try {
+            val previous = Thread.getDefaultUncaughtExceptionHandler()
+            Thread.setDefaultUncaughtExceptionHandler { thread, error ->
+                try {
+                    File(newBase.filesDir, "last_crash.txt").writeText(android.util.Log.getStackTraceString(error))
+                } catch (ignored: Exception) {
+                }
+                previous?.uncaughtException(thread, error)
+            }
+        } catch (ignored: Exception) {
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ble = BleCentral(this)
@@ -111,9 +135,17 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         store = PhotoStore(this)
         activeProfile = profiles.byId(prefs.getString("active_profile", null))
 
+        crashText = try {
+            val f = File(filesDir, "last_crash.txt")
+            if (f.exists()) f.readText() else null
+        } catch (e: Exception) {
+            null
+        }
+
         buildRoot()
         rebuild()
-        addLog("BlueLink запущен")
+        addLog("BlueLink запущен, версия ${appVersion()}")
+        crashText?.let { addLog("Прошлый запуск завершился ошибкой — стек в отчёте") }
 
         if (!ble.isSupported()) {
             addLog("Bluetooth не поддерживается этим устройством")
@@ -151,6 +183,21 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         subtitle = txt("Bluetooth-пульт для любых устройств", 11, Pal.MUTED)
         titleBox.addView(subtitle)
         top.addView(titleBox, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        val reportBtn = txt("📋", 15, Pal.TEXT, bold = true)
+        reportBtn.setPadding(dp(10), dp(4), dp(10), dp(4))
+        reportBtn.background = roundRect(Pal.SURFACE, 999, Pal.STROKE)
+        reportBtn.isClickable = true
+        reportBtn.setOnClickListener {
+            tab = TAB_REPORT
+            rebuild()
+        }
+        val reportLp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        reportLp.rightMargin = dp(8)
+        top.addView(reportBtn, reportLp)
+
         statusBadge = txt("", 11, Pal.MUTED, bold = true)
         statusBadge.setPadding(dp(10), dp(5), dp(10), dp(5))
         top.addView(statusBadge)
@@ -207,6 +254,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             TAB_GATT -> buildGattTab()
             TAB_PROFILES -> buildProfilesTab()
             TAB_PHOTOS -> buildPhotosTab()
+            TAB_REPORT -> buildReportTab()
             else -> buildConsoleTab()
         }
         contentSlot.addView(view)
@@ -614,6 +662,13 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     }
 
     override fun onCharValue(service: UUID, char: UUID, value: ByteArray) {
+        val stat = notifStats.getOrPut("$service|$char") { NotifStat() }
+        stat.count += 1
+        stat.bytes += value.size
+        if (stat.first == null) stat.first = value.take(40).toByteArray()
+        stat.last = value.take(40).toByteArray()
+        stat.lastAt = System.currentTimeMillis()
+
         camera.feed(service, char, value)
         val isBatteryChar = GattNames.shortCode(char) == 0x2A19 || activeProfile?.batteryChar == char
         if (isBatteryChar && value.isNotEmpty()) {
@@ -1042,6 +1097,13 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         } else if (connected && gattServices.isNotEmpty()) {
             c.addView(hintCard("Профиль не собран", "Сервисы получены, но профиль создать не удалось. Откройте «GATT» и посмотрите характеристики вручную."))
         }
+
+        c.addView(
+            actionButton("📋 Отчёт: скопировать всё, что узнали", primary = false) {
+                tab = TAB_REPORT
+                rebuild()
+            }
+        )
 
         c.addView(
             hintCard(
@@ -1674,6 +1736,239 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         }
     }
 
+    // ---------- Вкладка «Отчёт» ----------
+
+    private fun buildReportTab(): View {
+        val c = column()
+
+        val head = row()
+        head.addView(txt("Отчёт о диагностике", 16, Pal.TEXT, bold = true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        head.addView(pill("Обновить", false) { rebuild() })
+        c.addView(head)
+        c.addView(
+            txt(
+                "Здесь собрано всё, что приложение реально получило от устройства: сервисы, характеристики, " +
+                    "значения, коды ошибок, пакеты, SDP-каналы и журнал. Нажмите «Копировать» и пришлите текст.",
+                12,
+                Pal.MUTED
+            )
+        )
+        c.addView(spacer(10))
+
+        val statusCard = card()
+        statusCard.addView(txt("Состояние", 12, Pal.MUTED, bold = true))
+        statusCard.addView(spacer(6))
+        statusCard.addView(
+            txt(
+                buildString {
+                    appendLine("Устройство: ${connName.ifBlank { "—" }}")
+                    appendLine("Адрес: ${connAddress.ifBlank { "—" }}")
+                    appendLine("Связь: ${when (connState) { ConnState.CONNECTED -> "есть"; ConnState.CONNECTING -> "подключается"; else -> "нет" }}")
+                    appendLine("Транспорт: ${ble.transportLabel.ifBlank { "—" }} · MTU ${ble.mtu}")
+                    appendLine("Сервисов: ${gattServices.size} · характеристик: ${gattServices.sumOf { it.chars.size }}")
+                    appendLine("Пакетов от устройства: ${notifStats.values.sumOf { it.count }}")
+                    appendLine("Сопряжение: ${ble.bondStateText()}")
+                    append("SDP-профилей: ${sdpProfiles.size}")
+                },
+                11,
+                Pal.TEXT,
+                mono = true
+            )
+        )
+        statusCard.addView(spacer(10))
+        val actions = row()
+        actions.addView(actionButton("Проверить всё", primary = true) { runAudit() })
+        actions.addView(actionButton("Копировать", primary = false) { copyReport() })
+        statusCard.addView(actions)
+        val actions2 = row()
+        actions2.addView(actionButton("SDP-каналы", primary = false) { fetchSdp() })
+        actions2.addView(actionButton("Сопряжение", primary = false) {
+            if (ble.createBond()) {
+                Toast.makeText(this, "Подтвердите сопряжение в системном окне", Toast.LENGTH_LONG).show()
+            } else {
+                toast("Не удалось запустить сопряжение")
+            }
+        })
+        statusCard.addView(actions2)
+        val actions3 = row()
+        actions3.addView(actionButton("Поделиться", primary = false) { shareReport() })
+        actions3.addView(actionButton("На диск", primary = false) { saveReportFile() })
+        statusCard.addView(actions3)
+        if (auditStatus.isNotBlank()) {
+            statusCard.addView(spacer(8))
+            statusCard.addView(txt(auditStatus, 11, Pal.AMBER))
+        }
+        c.addView(statusCard)
+
+        if (crashText != null) {
+            c.addView(
+                hintCard(
+                    "Прошлый запуск завершился ошибкой",
+                    "Стек падения включён в отчёт ниже. Это важная информация — пришлите её вместе с отчётом.",
+                    "Забыть",
+                ) {
+                    crashText = null
+                    try {
+                        File(filesDir, "last_crash.txt").delete()
+                    } catch (ignored: Exception) {
+                    }
+                    rebuild()
+                }
+            )
+        }
+
+        val text = buildReport()
+        val preview = txt(text, 9, Pal.MUTED, mono = true)
+        preview.setTextIsSelectable(true)
+        val scroll = ScrollView(this)
+        scroll.addView(preview)
+        val cardText = card(10)
+        cardText.addView(txt("Текст отчёта", 12, Pal.MUTED, bold = true))
+        cardText.addView(spacer(6))
+        cardText.addView(scroll, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(300)))
+        c.addView(cardText)
+
+        return c
+    }
+
+    private fun buildReport(): String = Report.build(
+        ReportInputs(
+            ctx = this,
+            appVersion = "${appVersion()} (${appVersionCode()})",
+            connName = connName,
+            connAddress = connAddress,
+            connState = when (connState) {
+                ConnState.CONNECTED -> "CONNECTED"
+                ConnState.CONNECTING -> "CONNECTING"
+                ConnState.DISCONNECTED -> "DISCONNECTED"
+                ConnState.IDLE -> "IDLE"
+            },
+            transport = ble.transportLabel,
+            mtu = ble.mtu,
+            services = gattServices,
+            opStatus = ble.opStatus,
+            notifStats = notifStats,
+            logs = logs.toList(),
+            scanItem = scanItems.firstOrNull { it.address == connAddress } ?: lastConnItem,
+            bondText = ble.bondStateText() + if (connAddress.isNotBlank() && !DemoDevice.isDemo(connAddress)) "" else "",
+            sdpProfiles = sdpProfiles,
+            crash = crashText,
+            extraNotes = extraNotes.toList()
+        )
+    )
+
+    private fun appVersionCode(): Int = try {
+        @Suppress("DEPRECATION")
+        packageManager.getPackageInfo(packageName, 0).versionCode
+    } catch (e: Exception) {
+        0
+    }
+
+    private fun copyReport() {
+        copyToClipboard(buildReport())
+        toast("Отчёт скопирован — можно вставлять в чат")
+    }
+
+    private fun saveReportFile() {
+        val file = Report.saveToFile(this, buildReport())
+        if (file == null) {
+            toast("Не удалось сохранить отчёт")
+        } else {
+            toast("Отчёт сохранён: ${file.name}")
+        }
+    }
+
+    private fun shareReport() {
+        try {
+            val text = buildReport()
+            val file = Report.saveToFile(this, text)
+            val intent = if (file != null) {
+                val uri = androidx.core.content.FileProvider.getUriForFile(
+                    this, "$packageName.fileprovider", file
+                )
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    putExtra(Intent.EXTRA_TEXT, text)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                }
+            } else {
+                Intent(Intent.ACTION_SEND).apply {
+                    type = "text/plain"
+                    putExtra(Intent.EXTRA_TEXT, text)
+                }
+            }
+            startActivity(Intent.createChooser(intent, "Отправить отчёт"))
+        } catch (e: Exception) {
+            copyReport()
+        }
+    }
+
+    private fun runAudit() {
+        if (DemoDevice.isDemo(connAddress)) {
+            toast("Для демо-очков обход не нужен")
+            return
+        }
+        if (connState != ConnState.CONNECTED) {
+            toast("Сначала подключитесь к устройству")
+            return
+        }
+        val existing = auditor
+        if (existing != null && existing.isRunning()) {
+            existing.stop()
+            auditStatus = "Обход остановлен"
+            rebuild()
+            return
+        }
+        extraNotes.clear()
+        extraNotes.add("Выполнен автоматический обход: чтение всех характеристик и подписка на уведомления.")
+        val runner = DeviceAuditor(
+            ble,
+            onStep = { step ->
+                ui.post {
+                    auditStatus = step
+                    if (tab == TAB_REPORT) rebuild()
+                }
+            },
+            onDone = { done ->
+                ui.post {
+                    auditStatus = done
+                    addLog("Обход: $done")
+                    if (tab == TAB_REPORT) rebuild()
+                }
+            }
+        )
+        auditor = runner
+        auditStatus = "Начинаю обход устройства…"
+        rebuild()
+        runner.start()
+    }
+
+    private fun fetchSdp() {
+        if (DemoDevice.isDemo(connAddress)) {
+            toast("Для демо-очков SDP не нужен")
+            return
+        }
+        if (connState != ConnState.CONNECTED) {
+            toast("Сначала подключитесь к устройству")
+            return
+        }
+        auditStatus = "Запрашиваю SDP-профили…"
+        rebuild()
+        ble.fetchSdpProfiles { list ->
+            ui.post {
+                sdpProfiles = list
+                auditStatus = if (list.isEmpty()) {
+                    "SDP: устройство не объявило профилей"
+                } else {
+                    "SDP: найдено профилей ${list.size}"
+                }
+                addLog("SDP: ${list.size} профилей")
+                if (tab == TAB_REPORT) rebuild()
+            }
+        }
+    }
+
     // ---------- Вкладка «Фото» ----------
 
     private fun buildPhotosTab(): View {
@@ -1957,6 +2252,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         const val TAB_PROFILES = "profiles"
         const val TAB_PHOTOS = "photos"
         const val TAB_CONSOLE = "console"
+        const val TAB_REPORT = "report"
 
         private const val REQ_BLE = 100
         private const val REQ_ENABLE_BT = 101

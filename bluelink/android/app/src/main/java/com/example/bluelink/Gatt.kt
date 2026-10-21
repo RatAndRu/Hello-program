@@ -7,7 +7,8 @@ import java.util.UUID
 data class GattCharInfo(
     val uuid: UUID,
     val properties: Int,
-    val value: ByteArray? = null
+    val value: ByteArray? = null,
+    val descriptors: List<UUID> = emptyList()
 ) {
     val readable: Boolean
         get() = (properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0
@@ -122,6 +123,58 @@ object GattNames {
     fun shortHex(uuid: UUID): String {
         val code = shortCode(uuid)
         return if (code != null) String.format("0x%04X", code) else uuid.toString().substring(0, 8) + "…"
+    }
+
+    /** Названия классических профилей (SDP): по ним видно, какие каналы есть у устройства. */
+    private val classic = mapOf(
+        0x1101 to "SPP (последовательный порт)",
+        0x1105 to "OBEX Object Push",
+        0x110A to "A2DP Source (аудио)",
+        0x110B to "A2DP Sink (аудио)",
+        0x110C to "AVRCP Target",
+        0x110D to "AVRCP Controller",
+        0x110E to "AVRCP Remote Control",
+        0x1112 to "HFP (громкая связь)",
+        0x111E to "HFP Audio Gateway",
+        0x111F to "HFP Hands-Free",
+        0x1124 to "HID (человеческий интерфейс)",
+        0x112D to "SIM Access",
+        0x112F to "Phonebook Access (PCE)",
+        0x1130 to "Phonebook Access (PSE)",
+        0x1132 to "Message Access Server",
+        0x1133 to "Message Notification Server",
+        0x1200 to "PnP Information",
+        0x1800 to "GAP",
+        0x1843 to "MAP"
+    )
+
+    fun classicName(uuid: UUID): String? {
+        val s = uuid.toString().lowercase()
+        // Классические UUID вида 0000110b-0000-1000-8000-00805f9b34fb
+        if (!s.endsWith("-0000-1000-8000-00805f9b34fb") || !s.startsWith("0000")) return null
+        val code = s.substring(4, 8).toIntOrNull(16) ?: return null
+        return classic[code]
+    }
+
+    fun gattStatusText(code: Int): String = when (code) {
+        0 -> "0 (успех)"
+        1 -> "1 (неверный handle)"
+        2 -> "2 (чтение запрещено)"
+        3 -> "3 (запись запрещена)"
+        4 -> "4 (неверный пакет)"
+        5 -> "5 (нужна аутентификация — обычно требуется сопряжение)"
+        6 -> "6 (запрос не поддерживается)"
+        7 -> "7 (неверное смещение)"
+        8 -> "8 (недостаточно прав)"
+        9 -> "9 (очередь подготовки заполнена)"
+        10 -> "10 (атрибут не найден)"
+        11 -> "11 (атрибут не длинный)"
+        12 -> "12 (мал размер ключа)"
+        13 -> "13 (неверная длина значения)"
+        15 -> "15 (нужно шифрование — устройство закрыто)"
+        137 -> "137 (устройство занято)"
+        133 -> "133 (ошибка GATT, часто нужен повтор/переподключение)"
+        else -> "$code (см. документацию Android)"
     }
 
     fun uuidLabel(uuid: UUID): String {

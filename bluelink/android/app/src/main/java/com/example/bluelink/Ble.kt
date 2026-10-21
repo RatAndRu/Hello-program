@@ -13,7 +13,10 @@ import android.bluetooth.BluetoothProfile
 import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Handler
@@ -30,7 +33,12 @@ data class ScanItem(
     val demo: Boolean = false,
     /** Устройство классического Bluetooth (наушники/колонка/автомагнитола) из списка сопряжённых. */
     val classic: Boolean = false,
-    val serviceUuids: List<UUID> = emptyList()
+    val serviceUuids: List<UUID> = emptyList(),
+    /** Данные производителя из рекламного пакета: часто содержат модель/протокол. */
+    val manufacturerData: Map<Int, ByteArray> = emptyMap(),
+    val txPower: Int = Int.MIN_VALUE,
+    val bondState: Int = BluetoothDevice.BOND_NONE,
+    val deviceType: Int = BluetoothDevice.DEVICE_TYPE_UNKNOWN
 ) {
     val label: String get() = name.ifBlank { "Без имени" }
 }
@@ -77,6 +85,16 @@ class BleCentral(private val ctx: Context) {
         private set
     var mtu: Int = 23
         private set
+
+    /** Результаты операций: "read|svc|char" -> GATT-статус. По ним видно, нужно ли сопряжение/шифрование. */
+    val opStatus = LinkedHashMap<String, Int>()
+
+    /** Последние прочитанные значения характеристик. */
+    fun valueOf(service: UUID, char: UUID): ByteArray? = values["$service|$char"]
+
+    /** Последнее полученное уведомление по характеристике. */
+    private val lastNotify = HashMap<String, ByteArray>()
+    fun lastNotification(service: UUID, char: UUID): ByteArray? = lastNotify["$service|$char"]
 
     /** Транспорт текущего/последнего соединения: LE, BREDR, AUTO. */
     var transportLabel: String = ""
@@ -184,7 +202,9 @@ class BleCentral(private val ctx: Context) {
                         address = d.address,
                         rssi = 0,
                         device = d,
-                        classic = true
+                        classic = true,
+                        bondState = safeBondState(d),
+                        deviceType = safeDeviceType(d)
                     )
                 )
             }
@@ -220,12 +240,28 @@ class BleCentral(private val ctx: Context) {
         override fun onScanResult(callbackType: Int, result: ScanResult) {
             val device = result.device ?: return
             val recordName = result.scanRecord?.deviceName
+            val record = result.scanRecord
+            val manufacturer = LinkedHashMap<Int, ByteArray>()
+            try {
+                val data = record?.manufacturerSpecificData
+                if (data != null) {
+                    for (i in 0 until data.size()) {
+                        val id = data.keyAt(i)
+                        manufacturer[id] = data.valueAt(i) ?: ByteArray(0)
+                    }
+                }
+            } catch (ignored: Exception) {
+            }
             val item = ScanItem(
                 name = recordName ?: safeName(device).ifBlank { "" },
                 address = device.address,
                 rssi = result.rssi,
                 device = device,
-                serviceUuids = result.scanRecord?.serviceUuids?.map { it.uuid } ?: emptyList()
+                serviceUuids = record?.serviceUuids?.map { it.uuid } ?: emptyList(),
+                manufacturerData = manufacturer,
+                txPower = record?.txPowerLevel ?: Int.MIN_VALUE,
+                bondState = safeBondState(device),
+                deviceType = safeDeviceType(device)
             )
             addItem(item)
         }
@@ -249,7 +285,11 @@ class BleCentral(private val ctx: Context) {
                 device = item.device ?: existing.device,
                 // Устройство реально ответило по BLE — значит, оно не только «классическое».
                 classic = existing.classic && item.rssi == 0 && item.serviceUuids.isEmpty(),
-                serviceUuids = if (item.serviceUuids.isNotEmpty()) item.serviceUuids else existing.serviceUuids
+                serviceUuids = if (item.serviceUuids.isNotEmpty()) item.serviceUuids else existing.serviceUuids,
+                manufacturerData = if (item.manufacturerData.isNotEmpty()) item.manufacturerData else existing.manufacturerData,
+                txPower = if (item.txPower != Int.MIN_VALUE) item.txPower else existing.txPower,
+                bondState = item.bondState,
+                deviceType = if (item.deviceType != BluetoothDevice.DEVICE_TYPE_UNKNOWN) item.deviceType else existing.deviceType
             )
         scheduleUiPush()
     }
@@ -269,6 +309,20 @@ class BleCentral(private val ctx: Context) {
             )
             emit { it.onScan(list) }
         }, delay)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun safeBondState(device: BluetoothDevice): Int = try {
+        device.bondState
+    } catch (e: SecurityException) {
+        BluetoothDevice.BOND_NONE
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun safeDeviceType(device: BluetoothDevice): Int = try {
+        device.type
+    } catch (e: SecurityException) {
+        BluetoothDevice.DEVICE_TYPE_UNKNOWN
     }
 
     @SuppressLint("MissingPermission")
@@ -435,7 +489,14 @@ class BleCentral(private val ctx: Context) {
         for (s in g.services ?: emptyList()) {
             val chars = ArrayList<GattCharInfo>()
             for (c in s.characteristics ?: emptyList()) {
-                chars.add(GattCharInfo(c.uuid, c.properties, values[key(s.uuid, c.uuid)]))
+                chars.add(
+                    GattCharInfo(
+                        c.uuid,
+                        c.properties,
+                        values[key(s.uuid, c.uuid)],
+                        c.descriptors?.map { it.uuid } ?: emptyList()
+                    )
+                )
             }
             out.add(GattServiceInfo(s.uuid, chars))
         }
@@ -542,6 +603,23 @@ class BleCentral(private val ctx: Context) {
             }
         }
 
+        override fun onDescriptorWrite(
+            g: BluetoothGatt,
+            descriptor: BluetoothGattDescriptor,
+            status: Int
+        ) {
+            val ch = descriptor.characteristic
+            val svc = ch?.service?.uuid ?: UUID(0L, 0L)
+            val charUuid = ch?.uuid ?: UUID(0L, 0L)
+            opStatus["notify|$svc|$charUuid"] = status
+            emit {
+                it.onLog(
+                    if (status == BluetoothGatt.GATT_SUCCESS) "Подписка включена: ${GattNames.uuidLabel(charUuid)}"
+                    else "Подписка не удалась: статус ${GattNames.gattStatusText(status)}"
+                )
+            }
+        }
+
         override fun onMtuChanged(g: BluetoothGatt, newMtu: Int, status: Int) {
             mtu = newMtu
             emit { it.onLog("MTU: $newMtu байт") }
@@ -601,6 +679,7 @@ class BleCentral(private val ctx: Context) {
         ) {
             val ok = status == BluetoothGatt.GATT_SUCCESS
             val svc = characteristic.service?.uuid ?: UUID(0L, 0L)
+            opStatus["write|$svc|${characteristic.uuid}"] = status
             emit { it.onCharWritten(svc, characteristic.uuid, ok) }
             emit {
                 it.onLog(
@@ -620,6 +699,7 @@ class BleCentral(private val ctx: Context) {
         value: ByteArray,
         status: Int
     ) {
+        opStatus["read|${serviceOf(characteristic)}|${characteristic.uuid}"] = status
         if (status != BluetoothGatt.GATT_SUCCESS) {
             emit { it.onLog("Чтение не удалось (status=$status)") }
             return
@@ -633,6 +713,7 @@ class BleCentral(private val ctx: Context) {
 
     private fun handleNotify(characteristic: BluetoothGattCharacteristic, value: ByteArray) {
         val svc = serviceOf(characteristic)
+        lastNotify["$svc|${characteristic.uuid}"] = value
         values[key(svc, characteristic.uuid)] = value
         emit { it.onCharValue(svc, characteristic.uuid, value) }
     }
@@ -734,6 +815,134 @@ class BleCentral(private val ctx: Context) {
             emit { it.onLog("Подписка: ${e.message}") }
             false
         }
+    }
+
+    /** Состояние сопряжения с текущим устройством. */
+    @SuppressLint("MissingPermission")
+    fun bondState(): Int = try {
+        connectedDevice?.bondState ?: BluetoothDevice.BOND_NONE
+    } catch (e: SecurityException) {
+        BluetoothDevice.BOND_NONE
+    }
+
+    fun bondStateText(): String = when (bondState()) {
+        BluetoothDevice.BOND_BONDED -> "сопряжено"
+        BluetoothDevice.BOND_BONDING -> "идёт сопряжение"
+        else -> "не сопряжено"
+    }
+
+    /** Запускает системное сопряжение — многим очкам оно нужно до обмена данными. */
+    @SuppressLint("MissingPermission")
+    fun createBond(): Boolean {
+        val device = connectedDevice ?: run {
+            emit { it.onLog("Нет устройства для сопряжения") }
+            return false
+        }
+        return try {
+            val started = device.createBond()
+            emit { it.onLog(if (started) "Запущено сопряжение с ${device.address}" else "Сопряжение не запустилось") }
+            started
+        } catch (e: Exception) {
+            emit { it.onLog("Сопряжение: ${e.message}") }
+            false
+        }
+    }
+
+    /**
+     * SDP-опрос: какие каналы/профили устройство объявляет по классическому Bluetooth
+     * (SPP, A2DP, HFP, HID, OBEX…). Для закрытых очков это иногда единственный видимый след.
+     */
+    @SuppressLint("MissingPermission")
+    fun fetchSdpProfiles(done: (List<UUID>) -> Unit) {
+        val device = connectedDevice ?: connectItem?.device
+        if (device == null) {
+            emit { it.onLog("SDP: устройство не выбрано") }
+            done(emptyList())
+            return
+        }
+        val already = try {
+            device.uuids?.map { it.uuid } ?: emptyList()
+        } catch (e: SecurityException) {
+            emptyList()
+        }
+        var finished = false
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, intent: Intent?) {
+                if (finished) return
+                val fromIntent = try {
+                    val d = if (Build.VERSION.SDK_INT >= 33) {
+                        intent?.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE, BluetoothDevice::class.java)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        intent?.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE)
+                    }
+                    d
+                } catch (e: Exception) {
+                    null
+                }
+                if (fromIntent != null && fromIntent.address != device.address) return
+                finished = true
+                try {
+                    ctx.unregisterReceiver(this)
+                } catch (ignored: Exception) {
+                }
+                val list = parseUuidArray(intent) + already
+                emit { it.onLog("SDP: профилей получено ${list.distinct().size}") }
+                done(list.distinct())
+            }
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                ctx.registerReceiver(receiver, IntentFilter(BluetoothDevice.ACTION_UUID), Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                @Suppress("UnspecifiedRegisterReceiverFlag")
+                ctx.registerReceiver(receiver, IntentFilter(BluetoothDevice.ACTION_UUID))
+            }
+            device.fetchUuidsWithSdp()
+            emit { it.onLog("SDP: запрос профилей отправлен") }
+        } catch (e: Exception) {
+            emit { it.onLog("SDP: не удалось запустить (${e.message})") }
+            finished = true
+            try {
+                ctx.unregisterReceiver(receiver)
+            } catch (ignored: Exception) {
+            }
+            done(already)
+            return
+        }
+        main.postDelayed({
+            if (!finished) {
+                finished = true
+                try {
+                    ctx.unregisterReceiver(receiver)
+                } catch (ignored: Exception) {
+                }
+                emit { it.onLog("SDP: ответа нет, устройство не объявляет классических профилей") }
+                done(already)
+            }
+        }, 5000)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun parseUuidArray(intent: Intent?): List<UUID> {
+        val raw = try {
+            if (Build.VERSION.SDK_INT >= 33) {
+                intent?.getParcelableArrayExtra(BluetoothDevice.EXTRA_UUID, android.os.Parcelable::class.java)
+            } else {
+                intent?.getParcelableArrayExtra(BluetoothDevice.EXTRA_UUID)
+            }
+        } catch (e: Exception) {
+            null
+        }
+        val list = ArrayList<UUID>()
+        for (item in raw ?: emptyArray()) {
+            try {
+                val text = item.toString()
+                UUID.fromString(text)?.let { list.add(it) }
+            } catch (ignored: Exception) {
+            }
+        }
+        return list
     }
 
     fun findServiceByShort(short: Int): UUID? =
