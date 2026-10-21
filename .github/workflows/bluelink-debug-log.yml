@@ -2,6 +2,9 @@ name: BlueLink — диагностика сборки
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/bluelink-debug-log.yml'
 
 jobs:
   build:
