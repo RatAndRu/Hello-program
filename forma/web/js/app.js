@@ -274,6 +274,43 @@ function renderActions() {
   });
 }
 
+function fullReportText() {
+  const a = state.payload?.analysis || {};
+  const parts = [(a.text || '').trim()];
+  if (state.notes.length) {
+    parts.push('', 'ЗАМЕЧАНИЯ К ОБЛАСТЯМ');
+    state.notes.forEach((n) => {
+      const c = (n.center || []).map((v) => fmt(v)).join(', ');
+      parts.push(`• ${n.time || ''} «${n.object || ''}» (${n.tris || 0} трис, `
+        + `${n.area_mm2 || 0} мм², центр (${c})): ${n.text || ''}`);
+    });
+  }
+  if (state.actions.length) {
+    parts.push('', 'ХОД РАБОТЫ');
+    state.actions.slice(-20).forEach((x) => {
+      parts.push(`${x.ok ? '✓' : '✗'} ${x.time || ''} ${x.kind || ''}: ${x.text || ''}`);
+    });
+  }
+  return parts.join('\n');
+}
+
+async function copyReport() {
+  const text = fullReportText();
+  if (!text.trim()) { toast('Отчёт пока пуст — соберите модель', 'bad'); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Отчёт скопирован');
+  } catch {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    document.body.appendChild(ta);
+    ta.select();
+    document.execCommand('copy');
+    ta.remove();
+    toast('Отчёт скопирован');
+  }
+}
+
 function renderChecks(payload) {
   const a = payload.analysis || {};
   const checks = a.checks || [];
@@ -1103,6 +1140,13 @@ function renderHelp(filter = '') {
 }
 
 $('help-search').addEventListener('input', (e) => renderHelp(e.target.value));
+
+$('btn-copy-report')?.addEventListener('click', copyReport);
+$('btn-to-prompt')?.addEventListener('click', () => {
+  document.querySelector('.tab[data-tab="assist"]')?.click();
+  $('goal')?.focus();
+  toast('Опишите задачу и нажмите «Сформировать запрос»');
+});
 
 $('btn-prompt').addEventListener('click', async () => {
   try {

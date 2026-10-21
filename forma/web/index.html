@@ -225,6 +225,10 @@
       </div>
       <div class="tab-body">
         <div class="tab-page active" id="page-report">
+          <div class="report-tools">
+            <button class="mini" id="btn-copy-report" title="Скопировать отчёт, замечания и журнал">⧉ копировать отчёт</button>
+            <button class="mini" id="btn-to-prompt" title="Собрать готовый запрос для нейросети">→ запрос для нейросети</button>
+          </div>
           <div class="verdict" id="verdict" hidden></div>
           <pre class="report-text" id="report-text">Здесь появится словесный отчёт: габариты, объём, масса, толщина стенок, симметрия, замечания.</pre>
           <div class="report-extra">
@@ -295,7 +299,8 @@
         <div class="tab-page" id="page-assist">
           <p class="assist-intro">
             Опишите словами, что нужно изменить. Приложение соберёт готовый запрос
-            для нейросети: текущий сценарий, отчёт о результате и справочник команд.
+            для нейросети: текущий сценарий, отчёт с координатами, замечания к
+            выделенным областям, журнал действий и снимки с разных ракурсов.
           </p>
           <textarea id="goal" class="goal" placeholder="Например: сделай ручку толще и добавь сужение книзу, чтобы кружка была устойчивее"></textarea>
           <label class="assist-opt">

@@ -567,7 +567,8 @@ class Handler(BaseHTTPRequestHandler):
                 b = run_build(script)
             text = build_prompt(b if b.ok else b, goal, notes=list(st.notes),
                                 actions=list(st.actions),
-                                with_reference=bool(body.get("reference", True)))
+                                with_reference=bool(body.get("reference", True)),
+                                renders=st.last_render)
             out = st.data_dir / "prompts" / f"запрос_{time.strftime('%Y%m%d_%H%M%S')}.md"
             out.write_text(text, encoding="utf-8")
             self._send_json({"text": text, "path": str(out)})

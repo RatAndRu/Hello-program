@@ -123,9 +123,21 @@ def _notes_block(notes: list[dict] | None) -> list[str]:
     return lines
 
 
+def _render_block(renders: dict | None) -> list[str]:
+    if not renders or not renders.get("files"):
+        return []
+    lines = ["", "## Снимки модели (PNG, четыре ракурса)"]
+    for f in renders["files"]:
+        lines.append(f"- {f.get('label', '')}: {f.get('path', '')}")
+    if renders.get("combined"):
+        lines.append(f"- общий лист: {renders['combined']}")
+    lines.append("Снимки смотреть глазами: по ним видно форму, которой нет в числах.")
+    return lines
+
+
 def build_prompt(build: Build | None, goal: str = "", out_path: str | None = None,
                  notes: list[dict] | None = None, actions: list[dict] | None = None,
-                 with_reference: bool = True) -> str:
+                 with_reference: bool = True, renders: dict | None = None) -> str:
     """Текст запроса для нейросети.
 
     Справочник команд прикладывается только когда просят (обычно один раз —
@@ -146,6 +158,7 @@ def build_prompt(build: Build | None, goal: str = "", out_path: str | None = Non
                   f"{build.error.get('message')} (строка {build.error.get('line')})"]
         if build.error.get("hint"):
             parts.append(f"Подсказка: {build.error['hint']}")
+    parts += _render_block(renders)
     parts += _actions_block(actions)
     parts += _notes_block(notes)
     parts += ["", "## Как отвечать",

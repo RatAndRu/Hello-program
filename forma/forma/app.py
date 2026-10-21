@@ -140,7 +140,8 @@ def _run_uistest(report_path: str | None) -> int:
             # новые возможности 0.2: текстуры, свет, анимация, импорт, форматы
             check("панель вида в интерфейсе", b"studio-panel" in html and b"material-panel" in html)
             # 0.3: командная строка, выделение области, замечания, журнал, отчёт
-            check("командная строка и выделение", b'id="cmd-input"' in html and b'id="sel-card"' in html)
+            check("командная строка и выделение", b'id="cmd-input"' in html and b'id="sel-card"' in html
+                  and b'id="btn-copy-report"' in html)
             try:
                 note = post("/api/note", {"object": "к", "text": "проверка замечания",
                                           "tris": 3, "area_mm2": 1.5,
