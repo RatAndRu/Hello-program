@@ -60,7 +60,7 @@ def user_data_dir() -> Path:
 
 class AppState:
     def __init__(self):
-        self.lock = threading.Lock()
+        self.lock = threading.RLock()
         self.token = secrets.token_urlsafe(16)
         self.data_dir = user_data_dir()
         self.last_build = None
@@ -70,9 +70,65 @@ class AppState:
         self.gl_cache: tuple[str, bytes] | None = None
         self.project_name = "проект"
         self.started = time.time()
+        self.actions: list[dict] = []
+        self.notes: list[dict] = []
+        self.action_seq = 0
+        self._last_build_hash: str | None = None
 
     # ------------------------------------------------------------------ #
-    def build(self, script: str) -> dict:
+    def log_action(self, kind: str, text: str, ok: bool = True) -> dict:
+        """Журнал действий пользователя и приложения — попадает в отчёт и запрос."""
+        with self.lock:
+            self.action_seq += 1
+            item = {"id": self.action_seq, "kind": kind, "text": text,
+                    "ok": bool(ok), "time": time.strftime("%H:%M:%S")}
+            self.actions.append(item)
+            del self.actions[:-120]
+            return item
+
+    def add_note(self, note: dict) -> dict:
+        """Замечание к выделенной области: координаты + слова пользователя."""
+        with self.lock:
+            self.action_seq += 1
+            item = {
+                "id": self.action_seq,
+                "time": time.strftime("%H:%M:%S"),
+                "object": str(note.get("object") or "").strip(),
+                "text": str(note.get("text") or "").strip(),
+                "tris": int(note.get("tris") or 0),
+                "area_mm2": round(float(note.get("area_mm2") or 0.0), 1),
+                "center": [round(float(v), 2) for v in (note.get("center") or [0, 0, 0])],
+                "size": [round(float(v), 2) for v in (note.get("size") or [0, 0, 0])],
+                "bbox": [round(float(v), 2) for v in (note.get("bbox") or [0] * 6)],
+            }
+            self.notes.append(item)
+            del self.notes[:-80]
+            self.log_action("замечание", f"{item['object']}: {item['text']}")
+            return item
+
+    def cut_region(self, script: str, name: str, center, radius) -> dict:
+        """Вырезает выделенную область: дописывает в сценарий сферу и difference."""
+        name = (name or "").strip()
+        if not name:
+            raise FormaError("Не выбран объект для вырезания.")
+        try:
+            cx, cy, cz = (float(v) for v in center)
+        except Exception as exc:
+            raise FormaError("Некорректные координаты выделения.") from exc
+        r = max(0.5, min(5000.0, float(radius or 5.0)))
+        lines = script.rstrip().split("\n") if script.strip() else []
+        used = {line.split("=", 1)[0].strip() for line in lines if "=" in line}
+        n = 1
+        while f"вырез_{n}" in used:
+            n += 1
+        tool = f"вырез_{n}"
+        lines.append(f"# вырезано выделенное: {name}, центр ({cx:.1f}, {cy:.1f}, {cz:.1f}), радиус {r:.1f} мм")
+        lines.append(f"{tool} = sphere radius={r:.2f} at=[{cx:.2f}, {cy:.2f}, {cz:.2f}]")
+        lines.append(f"{name} = difference [{name}, {tool}]")
+        self.log_action("вырезание", f"«{name}»: сфера r={r:.1f} мм в ({cx:.1f}, {cy:.1f}, {cz:.1f})")
+        return {"script": "\n".join(lines), "tool": tool, "radius": r}
+
+    def build(self, script: str, auto: bool = False) -> dict:
         with self.lock:
             previous = self.last_build.analysis if self.last_build and self.last_build.ok else None
             b = run_build(script, previous_analysis=previous)
@@ -85,6 +141,28 @@ class AppState:
             payload["server"] = {"token": self.token}
             if b.ok:
                 payload["glb_url"] = f"/api/model.glb?v={b.script_hash}"
+            if b.ok:
+                a = b.analysis or {}
+                checks = a.get("checks") or []
+                passed = sum(1 for c in checks if c.get("ok"))
+                dims = a.get("metrics", {}).get("size") or []
+                dim_txt = (" · ".join(f"{v:.0f}" for v in dims) + " мм") if dims else ""
+                failed = len(checks) - passed
+                text = f"собрано {dim_txt}".strip()
+                if checks:
+                    text += f", проверки {passed}/{len(checks)}"
+                if failed:
+                    text += f", не пройдено {failed}"
+                if not auto or self._last_build_hash != b.script_hash and failed:
+                    self.log_action("сборка", text, ok=failed == 0)
+            else:
+                err = b.error or {}
+                self.log_action("сборка", f"ошибка: {err.get('message', 'не собрано')}"
+                                + (f" (строка {err.get('line')})" if err.get("line") else ""),
+                                ok=False)
+            self._last_build_hash = b.script_hash
+            payload["actions"] = list(self.actions)
+            payload["notes"] = list(self.notes)
             return payload
 
     def glb(self) -> bytes:
@@ -112,6 +190,7 @@ class AppState:
             if result.get("combined"):
                 combined = file_url("renders", Path(result['combined']).name)
             self.last_render = {"files": files, "combined": combined, "at": time.time()}
+            self.log_action("снимки", "сделаны PNG-виды: " + ", ".join(f["label"] for f in files))
             return self.last_render
 
     def export(self, fmt: str, script: str | None = None) -> dict:
@@ -410,6 +489,8 @@ class Handler(BaseHTTPRequestHandler):
                 "projects": st.list_projects(),
                 "data_dir": str(st.data_dir),
                 "has_build": bool(st.last_build and st.last_build.ok),
+                "actions": list(st.actions),
+                "notes": list(st.notes),
                 "blender": st.blender_info(),
             })
             return
@@ -446,7 +527,27 @@ class Handler(BaseHTTPRequestHandler):
         st = self.state
         if path == "/api/build":
             script = body.get("script", "")
-            self._send_json(st.build(script))
+            self._send_json(st.build(script, auto=bool(body.get("auto"))))
+            return
+        if path == "/api/action":
+            self._send_json({"action": st.log_action(body.get("kind", "действие"),
+                                                     str(body.get("text") or ""),
+                                                     bool(body.get("ok", True)))})
+            return
+        if path == "/api/note":
+            note = st.add_note(body)
+            self._send_json({"note": note, "notes": list(st.notes)})
+            return
+        if path == "/api/notes":
+            if body.get("clear"):
+                st.notes.clear()
+                st.log_action("замечания", "список замечаний очищен")
+            self._send_json({"notes": list(st.notes)})
+            return
+        if path == "/api/edit/cut":
+            res = st.cut_region(body.get("script", ""), body.get("object", ""),
+                                body.get("center") or [], body.get("radius"))
+            self._send_json(res)
             return
         if path == "/api/render":
             self._send_json(st.render())
@@ -464,7 +565,9 @@ class Handler(BaseHTTPRequestHandler):
             b = st.last_build
             if b is None or b.script != script:
                 b = run_build(script)
-            text = build_prompt(b if b.ok else b, goal)
+            text = build_prompt(b if b.ok else b, goal, notes=list(st.notes),
+                                actions=list(st.actions),
+                                with_reference=bool(body.get("reference", True)))
             out = st.data_dir / "prompts" / f"запрос_{time.strftime('%Y%m%d_%H%M%S')}.md"
             out.write_text(text, encoding="utf-8")
             self._send_json({"text": text, "path": str(out)})

@@ -138,3 +138,48 @@ if __name__ == "__main__":
     if os.environ.get("FORMA_DATA") is None:
         os.environ["FORMA_DATA"] = os.path.join(tempfile.gettempdir(), "forma_test_data")
     unittest.main()
+
+
+class TestReportAndSelection(unittest.TestCase):
+    """Отчёт для нейросети: замечания, координаты, журнал, вырезание области."""
+
+    SCRIPT = "к = cylinder radius=20 height=60\ncheck к watertight"
+
+    def test_note_cut_prompt(self):
+        from forma.agent import build_prompt
+        from forma.webui import AppState
+
+        st = AppState()
+        res = st.build(self.SCRIPT, auto=False)
+        self.assertTrue(res["ok"], res.get("error"))
+        self.assertTrue(any(a["kind"] == "сборка" for a in st.actions))
+
+        note = st.add_note({"object": "к", "text": "тут тонко", "tris": 12,
+                            "area_mm2": 8.5, "center": [0, 0, 30], "size": [4, 4, 6],
+                            "bbox": [-2, -2, 27, 2, 2, 33]})
+        self.assertEqual(note["text"], "тут тонко")
+        self.assertEqual(len(st.notes), 1)
+
+        cut = st.cut_region(self.SCRIPT, "к", [0, 0, 30], 6)
+        self.assertIn("difference [к, вырез_1]", cut["script"])
+        built = st.build(cut["script"], auto=False)
+        self.assertTrue(built["ok"], built.get("error"))
+
+        text = build_prompt(st.last_build, "укрепи", notes=st.notes, actions=st.actions,
+                            with_reference=False)
+        self.assertIn("тут тонко", text)
+        self.assertIn("Журнал действий", text)
+        self.assertIn("центр (0.0, 0.0, 30.0)", text)
+        self.assertNotIn("СПРАВКА ФОРМА 3D (кратко)", text)
+
+        full = build_prompt(st.last_build, "укрепи", with_reference=True)
+        self.assertIn("СПРАВКА ФОРМА 3D (кратко)", full)
+
+    def test_failed_build_is_logged(self):
+        from forma.webui import AppState
+
+        st = AppState()
+        res = st.build("к = такой_команды_нет", auto=False)
+        self.assertFalse(res["ok"])
+        self.assertTrue(any(not a["ok"] for a in st.actions))
+        self.assertIn("ошибка", st.actions[-1]["text"])

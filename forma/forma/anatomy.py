@@ -66,7 +66,8 @@ class Anatomy:
         self.head_h = H / (7.55 if not F else 7.4)
         self.top = H
         self.chin = H - self.head_h
-        self.head_c = np.array([0.0, 0.0, H - self.head_h * 0.54])
+        # центр черепа: макушка ровно на H, низ головы — на подбородке
+        self.head_c = np.array([0.0, 0.0, H - self.head_h * 0.50])
         self.shoulder_z = H * 0.815
         self.chest_z = H * 0.745
         self.waist_z = H * 0.625
@@ -75,20 +76,20 @@ class Anatomy:
         self.knee_z = H * 0.285
         self.ankle_z = H * 0.042
 
-        self.shoulder_x = H * (0.098 if not F else 0.090)
+        self.shoulder_x = H * (0.095 if not F else 0.088)
         self.hip_x = H * (0.055 if not F else 0.060)
         self.knee_x = H * (0.058 if not F else 0.060)
         self.ankle_x = H * (0.058 if not F else 0.060)
 
-        self.chest_w = H * (0.105 if not F else 0.098) * (0.92 + 0.12 * b)
-        self.chest_d = H * (0.068 if not F else 0.062) * (0.92 + 0.14 * b)
+        self.chest_w = H * (0.092 if not F else 0.086) * (0.92 + 0.12 * b)
+        self.chest_d = H * (0.060 if not F else 0.058) * (0.92 + 0.14 * b)
         self.waist_w = H * (0.077 if not F else 0.070) * (0.92 + 0.20 * (b - 1) + 0.08 * b)
         self.waist_d = H * (0.058 if not F else 0.056) * (0.92 + 0.22 * (b - 1) + 0.06 * b)
         self.hip_w = H * (0.093 if not F else 0.102) * (0.92 + 0.14 * b)
         self.hip_d = H * (0.068 if not F else 0.074) * (0.92 + 0.16 * b)
-        self.head_w = H * (0.047 if not F else 0.045)
+        self.head_w = H * (0.0445 if not F else 0.0430)
         self.head_d = H * (0.058 if not F else 0.055)
-        self.head_hh = self.head_h * 0.52
+        self.head_hh = self.head_h * 0.500
 
         self.upper_arm = H * 0.192
         self.forearm = H * 0.152
@@ -146,9 +147,9 @@ class Anatomy:
         add(ellipsoid((0, H * 0.008, H * 0.655), (S.waist_w * 1.05, S.waist_d * 1.05, H * 0.06)))
 
         # грудная клетка
-        add(ellipsoid((0, H * 0.004, S.chest_z), (S.chest_w * 1.06, S.chest_d * 1.02, H * 0.098)))
-        add(ellipsoid((0, H * 0.010, S.chest_z + H * 0.045),
-                      (S.chest_w * 0.96, S.chest_d * 0.92, H * 0.052)))
+        add(ellipsoid((0, H * 0.004, S.chest_z), (S.chest_w * 1.04, S.chest_d * 1.00, H * 0.092)))
+        add(ellipsoid((0, H * 0.012, S.chest_z + H * 0.048),
+                      (S.chest_w * 0.94, S.chest_d * 0.90, H * 0.048)))
         # грудь (женская)
         if F:
             for sx in (1, -1):
@@ -157,8 +158,8 @@ class Anatomy:
         # мужская грудь — единый объём без «шаров»; рельеф даёт рельеф мышц
         # широчайшие (спина) и трапеции
         for sx in (1, -1):
-            add(ellipsoid((sx * S.chest_w * 0.76, -S.chest_d * 0.30, S.chest_z - H * 0.012),
-                          (S.chest_w * 0.20, S.chest_d * 0.46, H * 0.078)))
+            add(ellipsoid((sx * S.chest_w * 0.72, -S.chest_d * 0.28, S.chest_z - H * 0.012),
+                          (S.chest_w * 0.17, S.chest_d * 0.42, H * 0.072)))
         add(capsule((0, -H * 0.030, S.chin - H * 0.012),
                     (S.shoulder_x * 0.92, -H * 0.018, S.shoulder_z + H * 0.006),
                     H * 0.026 if not F else H * 0.020))
@@ -190,8 +191,8 @@ class Anatomy:
         prims = [
             cone((0, -H * 0.008, self.chin - H * 0.010),
                  (0, -H * 0.004, self.chin - H * 0.105),
-                 H * 0.040 if not F else H * 0.034,
-                 H * 0.050 if not F else H * 0.042),
+                 H * 0.036 if not F else H * 0.031,
+                 H * 0.045 if not F else H * 0.038),
         ]
         if self.p.muscles:
             for sx in (1, -1):
@@ -321,111 +322,219 @@ class Anatomy:
         ankle = self.ankle.copy() if side_sign > 0 else self.mirror(self.ankle)
         x = ankle[0]
         prims: list[Prim] = []
-        # колодка: пятка → плюсна → носок (мягко, без «ботинка»)
-        prims.append(round_box((x, -H * 0.035 + H * 0.050, H * 0.026),
-                               (H * 0.034, H * 0.100, H * 0.026), H * 0.013))
-        prims.append(round_box((x, H * 0.105, H * 0.019),
-                               (H * 0.038, H * 0.090, H * 0.019), H * 0.010))
-        # подъём и переход к голени
-        prims.append(ellipsoid((x, ankle[1] + H * 0.004, H * 0.036),
-                               (H * 0.029, H * 0.052, H * 0.028)))
-        prims.append(capsule((x, ankle[1], H * 0.038), (x, ankle[1], H * 0.072), H * 0.026))
-        # пятка
-        prims.append(sphere((x, -H * 0.014, H * 0.026), H * 0.025))
-        # пальцы ног
+        # колодка: пятка (z 8…48) → свод → носок (z 6…30)
+        prims.append(round_box((x, -H * 0.010, H * 0.030),
+                               (H * 0.040, H * 0.082, H * 0.024), H * 0.014))
+        prims.append(round_box((x, H * 0.062, H * 0.024),
+                               (H * 0.042, H * 0.058, H * 0.019), H * 0.012))
+        prims.append(round_box((x, H * 0.108, H * 0.017),
+                               (H * 0.042, H * 0.040, H * 0.014), H * 0.010))
+        # подъём (переход к голени)
+        prims.append(ellipsoid((x, ankle[1] + H * 0.006, H * 0.042),
+                               (H * 0.028, H * 0.046, H * 0.030)))
+        prims.append(capsule((x, ankle[1], H * 0.040), (x, ankle[1], H * 0.075), H * 0.025))
+        # пальцы ног (лежат на полу, не торчат вверх)
         for i in range(5):
-            bx = x + (0.62 - i) * H * 0.0122
-            by = H * 0.112 - abs(i - 0.4) * H * 0.002
-            length = H * (0.031 - 0.0042 * i)
-            r = H * (0.0092 - 0.0011 * i)
-            prims.append(capsule((bx, by, H * 0.0155), (bx, by + length, H * 0.0135), r))
+            bx = x + (0.46 - i) * H * 0.0108
+            by = H * 0.116 - abs(i - 0.4) * H * 0.0014
+            length = H * (0.024 - 0.0034 * i)
+            r = H * (0.0080 - 0.0009 * i)
+            prims.append(capsule((bx, by, H * 0.0150), (bx, by + length, H * 0.0140), r))
         return prims
 
     # ------------------------------------------------------------------ #
+    # --- геометрия лица -------------------------------------------------- #
+    def _face_y(self, x: float, z: float) -> float:
+        """Передняя поверхность лица (эллипсоид головы) в точке (x, z)."""
+        c = self.head_c
+        hw, hd, hh = self.head_w, self.head_d, self.head_hh
+        y0 = c[1] + hd * 0.24
+        ry = hd * 0.58
+        dx = x / (hw * 0.82)
+        dz = (z - (c[2] - hh * 0.18)) / (hh * 0.70)
+        s = max(0.0, 1.0 - dx * dx - dz * dz)
+        return y0 + ry * math.sqrt(s)
+
+    def _eye_geom(self, head=None):
+        """(центр глазного яблока, радиус, нормаль).
+
+        Если передан готовый череп, передняя поверхность лица берётся
+        лучом (ray_cast) — глаз садится точно в кожу, без «выпученности».
+        """
+        c = self.head_c
+        hw, hd, hh = self.head_w, self.head_d, self.head_hh
+        r = hh * 0.098
+        out = []
+        for sx in (1, -1):
+            x = sx * hw * 0.365
+            z = c[2] + hh * 0.050
+            y_surface = self._face_y(x, z)
+            if head is not None:
+                hits = head.ray_cast((x, y_surface + hd * 1.5, z),
+                                     (x, y_surface - hd * 1.5, z))
+                if hits:
+                    y_surface = hits[0].position[1]
+            n = np.array([sx * 0.30, 0.95, 0.0])
+            n /= np.linalg.norm(n)
+            center = np.array([x, y_surface - r * 0.55, z])
+            out.append((center, r, n))
+        return out
+
+    def _head_volumes(self) -> list[Prim]:
+        """Крупные объёмы головы — сливаются мягко."""
+        c = self.head_c
+        hw, hd, hh = self.head_w, self.head_d, self.head_hh
+        prims: list[Prim] = []
+        add = prims.append
+        add(ellipsoid((c[0], c[1] - 0.10 * hd, c[2] + 0.06 * hh),
+                      (hw * 0.97, hd * 0.86, hh * 1.00)))
+        add(ellipsoid((c[0], c[1] + 0.26 * hd, c[2] - 0.16 * hh),
+                      (hw * 0.76, hd * 0.58, hh * 0.64)))
+        # скулы — мягким утолщением, без отдельных «жвал»
+        for sx in (1, -1):
+            zc = c[2] - hh * 0.06
+            xc = sx * hw * 0.52
+            add(ellipsoid((xc, self._face_y(xc, zc) - hd * 0.22, zc),
+                          (hw * 0.15, hd * 0.16, hh * 0.12)))
+        # нижняя челюсть
+        zj = c[2] - hh * 0.44
+        add(ellipsoid((c[0], self._face_y(0, zj) - hd * 0.24, zj),
+                      (hw * 0.32, hd * 0.20, hh * 0.15)))
+        return prims
+
     def _head_prims(self) -> list[Prim]:
         H, F = self.H, self.female
         c = self.head_c
         hw, hd, hh = self.head_w, self.head_d, self.head_hh
         prims: list[Prim] = []
-        # череп
-        prims.append(ellipsoid((c[0], c[1] - hd * 0.06, c[2] + hh * 0.06),
-                               (hw * 0.98, hd * 0.98, hh * 0.98)))
-        # лицо и скулы
-        prims.append(ellipsoid((c[0], c[1] + hd * 0.42, c[2] - hh * 0.20),
-                               (hw * 0.84, hd * 0.62, hh * 0.70)))
+        add = prims.append
+
+        # --- надбровные дуги (по поверхности лица) ---
+        zb = c[2] + hh * 0.24
         for sx in (1, -1):
-            prims.append(ellipsoid((sx * hw * 0.62, c[1] + hd * 0.52, c[2] - hh * 0.08),
-                                   (hw * 0.30, hd * 0.32, hh * 0.24)))
-        # челюсть и подбородок
-        prims.append(ellipsoid((c[0], c[1] + hd * 0.55, c[2] - hh * 0.62),
-                               (hw * 0.66, hd * 0.48, hh * 0.40)))
-        prims.append(ellipsoid((c[0], c[1] + hd * 0.72, c[2] - hh * 0.72),
-                               (hw * 0.34, hd * 0.24, hh * 0.20)))
-        # надбровье
-        prims.append(capsule((c[0] - hw * 0.56, c[1] + hd * 0.62, c[2] + hh * 0.30),
-                             (c[0] + hw * 0.56, c[1] + hd * 0.62, c[2] + hh * 0.30),
-                             hh * 0.14 if not F else hh * 0.10))
-        # нос
-        prims.append(cone((c[0], c[1] + hd * 0.62, c[2] + hh * 0.22),
-                          (c[0], c[1] + hd * 0.92, c[2] - hh * 0.16),
-                          hw * 0.16, hw * 0.24))
-        prims.append(sphere((c[0], c[1] + hd * 0.92, c[2] - hh * 0.15), hw * 0.20))
+            xa, xb2 = sx * hw * 0.08, sx * hw * 0.46
+            add(capsule((xa, self._face_y(xa, zb + hh * 0.02) - hd * 0.03, zb + hh * 0.03),
+                        (xb2, self._face_y(xb2, zb) - hd * 0.03, zb),
+                        hh * 0.050 if not F else hh * 0.038))
+        # --- нос: переносица → кончик, крылья ---
+        z_top = c[2] + hh * 0.16
+        z_tip = c[2] - hh * 0.16
+        add(capsule((c[0], self._face_y(0, z_top) - hd * 0.05, z_top),
+                    (c[0], self._face_y(0, z_tip) - hd * 0.04, z_tip), hw * 0.070))
+        add(ellipsoid((c[0], self._face_y(0, z_tip) + hd * 0.02, z_tip),
+                      (hw * 0.120, hd * 0.090, hh * 0.058)))
         for sx in (1, -1):
-            prims.append(sphere((sx * hw * 0.20, c[1] + hd * 0.86, c[2] - hh * 0.25), hw * 0.12))
-        # губы
-        prims.append(ellipsoid((c[0], c[1] + hd * 0.80, c[2] - hh * 0.42),
-                               (hw * 0.38, hd * 0.18, hh * 0.085)))
-        prims.append(ellipsoid((c[0], c[1] + hd * 0.76, c[2] - hh * 0.54),
-                               (hw * 0.33, hd * 0.16, hh * 0.075)))
-        # уши
+            xn = sx * hw * 0.145
+            add(ellipsoid((xn, self._face_y(xn, z_tip - hh * 0.02) - hd * 0.01,
+                           z_tip - hh * 0.02), (hw * 0.085, hd * 0.070, hh * 0.045)))
+        # --- губы ---
+        z_up = c[2] - hh * 0.30
+        z_dn = c[2] - hh * 0.355
+        add(ellipsoid((c[0], self._face_y(0, z_up) + hd * 0.005, z_up),
+                      (hw * 0.170, hd * 0.070, hh * 0.032)))
+        add(ellipsoid((c[0], self._face_y(0, z_dn) + hd * 0.005, z_dn),
+                      (hw * 0.155, hd * 0.070, hh * 0.034)))
+        # --- уши ---
         for sx in (1, -1):
-            prims.append(ellipsoid((sx * hw * 0.98, c[1] + hd * 0.02, c[2] - hh * 0.05),
-                                   (hw * 0.14, hd * 0.28, hh * 0.34)))
-            prims.append(ellipsoid((sx * hw * 0.94, c[1] + hd * 0.06, c[2] - hh * 0.10),
-                                   (hw * 0.09, hd * 0.20, hh * 0.24)))
-        # шея входит в голову
-        prims.append(cone((c[0], c[1] + hd * 0.10, c[2] - hh * 1.00),
-                          (c[0], c[1] - hd * 0.05, c[2] - hh * 0.62),
-                          H * 0.042, H * 0.050))
+            add(ellipsoid((sx * hw * 0.93, c[1] - 0.04 * hd, c[2] - 0.01 * hh),
+                          (hw * 0.105, hd * 0.135, hh * 0.185)))
+        # --- веки: нависающая кожа над и под глазным яблоком ---
+        for pos, r, n in self._eye_geom():
+            y_skin = pos[1] + r * 0.55
+            add(ellipsoid((pos[0], y_skin - r * 0.10, pos[2] + r * 0.74),
+                          (r * 1.16, r * 0.62, r * 0.46)))
+            add(ellipsoid((pos[0], y_skin - r * 0.02, pos[2] - r * 0.88),
+                          (r * 1.06, r * 0.52, r * 0.26)))
+        # --- шея ---
+        add(cone((c[0], c[1] + 0.02 * hd, c[2] - hh * 1.24),
+                 (c[0], c[1] - 0.06 * hd, c[2] - hh * 0.74),
+                 H * 0.033, H * 0.036))
         return prims
 
     def _eye_positions(self):
+        eyes = self._eye_geom()
+        return [pos for pos, _r, _n in eyes], eyes[0][1]
+
+    def _brows(self) -> mf.Manifold:
+        """Брови: два тонких валика над глазами (отдельный объект с тёмным материалом)."""
         c = self.head_c
         hw, hd, hh = self.head_w, self.head_d, self.head_hh
-        r = hh * 0.125
-        return [np.array([sx * hw * 0.36, c[1] + hd * 0.60, c[2] + hh * 0.10])
-                for sx in (1, -1)], r
+        zb = c[2] + hh * 0.225
+        F = Field([c[0] - hw * 0.75, c[1] - hd * 0.2, c[2] + hh * 0.10,
+                   c[0] + hw * 0.75, c[1] + hd * 0.95, c[2] + hh * 0.36], max(0.7, hh * 0.018))
+        for sx in (1, -1):
+            pts = []
+            for t in (0.0, 0.5, 1.0):
+                xb = sx * hw * (0.07 + 0.40 * t)
+                zz = zb + hh * (0.020 + 0.012 * math.sin(math.pi * t) - 0.010 * t)
+                pts.append((xb, self._face_y(xb, zz) + hd * 0.026, zz))
+            F.add(capsule(pts[0], pts[1], hh * 0.030), 0.0)
+            F.add(capsule(pts[1], pts[2], hh * 0.026), 0.0)
+            F.add(sphere(pts[2], hh * 0.024), 0.0)
+        return F.mesh(smooth_iters=1, what="брови", clean=0.05)
+
+    def _head_lids(self) -> list[Prim]:
+        """Веки: тонкие складки кожи над и под глазным яблоком."""
+        lids: list[Prim] = []
+        for pos, r, n in self._eye_geom():
+            up = np.array([0.0, 0.0, 1.0])
+            for sign, scale in ((1, 1.0), (-1, 0.85)):
+                lids.append(ellipsoid(tuple(pos + n * r * 0.62 + up * sign * r * 0.78),
+                                      (r * 1.00, r * 0.42 * scale, r * 0.30 * scale)))
+        return lids
 
     def _head_cutters(self) -> list[Prim]:
         c = self.head_c
         hw, hd, hh = self.head_w, self.head_d, self.head_hh
         cuts: list[Prim] = []
-        # глазные впадины
+        # линия рта
+        z_lip = c[2] - hh * 0.328
+        cuts.append(round_box((0.0, self._face_y(0, z_lip) + hd * 0.04, z_lip),
+                              (hw * 0.24, hd * 0.09, hh * 0.005)))
+        # ноздри
+        z_tip = c[2] - hh * 0.20
         for sx in (1, -1):
-            cuts.append(sphere((sx * hw * 0.36, c[1] + hd * 0.76, c[2] + hh * 0.10), hh * 0.115))
+            cuts.append(sphere((sx * hw * 0.090, self._face_y(0, z_tip) + hd * 0.06, z_tip),
+                               hw * 0.026))
+        # ушные раковины (неглубокая впадина)
+        for sx in (1, -1):
+            cuts.append(ellipsoid((sx * hw * 1.05, c[1] - 0.04 * hd, c[2] - 0.01 * hh),
+                                  (hw * 0.045, hd * 0.07, hh * 0.10)))
         return cuts
 
     def _hair_solid(self) -> mf.Manifold:
         c = self.head_c
         hw, hd, hh = self.head_w, self.head_d, self.head_hh
-        F = Field([c[0] - hw * 1.25, c[1] - hd * 1.3, c[2] - hh * 1.25,
-                   c[0] + hw * 1.25, c[1] + hd * 1.3, c[2] + hh * 1.35], 2.2)
-        F.add(ellipsoid((c[0], c[1] - hd * 0.05, c[2] + hh * 0.10),
-                        (hw * 1.06, hd * 1.06, hh * 1.10)), 0.0)
-        # убираем лицо и шею
-        F.cut(ellipsoid((c[0], c[1] + hd * 0.95, c[2] + hh * 0.05),
-                        (hw * 0.92, hd * 0.62, hh * 0.95)))
-        F.cut(round_box((c[0], c[1] + hd * 0.1, c[2] - hh * 0.95), (hw * 2.2, hd * 2.6, hh * 0.6)))
+        pad = 0.030 * hw
+        F = Field([c[0] - hw * 1.3, c[1] - hd * 1.4, c[2] - hh * 1.3,
+                   c[0] + hw * 1.3, c[1] + hd * 1.4, c[2] + hh * 1.4], 2.2)
+        # оболочка по черепу
+        F.add(ellipsoid((c[0], c[1] - 0.02 * hd, c[2] + 0.08 * hh),
+                        (hw * 0.98 + pad, hd * 0.96 + pad, hh + pad)), 0.0)
+        # срезаем лицо (спереди) и всё ниже линии роста
+        F.cut(ellipsoid((c[0], c[1] + 0.56 * hd, c[2] - 0.04 * hh),
+                        (hw * 0.92, hd * 0.68, hh * 0.88)))
+        F.cut(ellipsoid((c[0], c[1] - 0.10 * hd, c[2] - hh * 1.35),
+                        (hw * 3.2, hd * 3.0, hh * 1.05)))
+        # лоб открыт: плавная линия роста волос
+        F.cut(ellipsoid((c[0], c[1] + 0.92 * hd, c[2] + 0.46 * hh),
+                        (hw * 1.45, hd * 0.95, hh * 0.66)))
+        # виски открыты, волосы не «обнимают» уши
+        for sx in (1, -1):
+            F.cut(ellipsoid((sx * hw * 1.05, c[1] + 0.06 * hd, c[2] - 0.30 * hh),
+                            (hw * 0.50, hd * 0.75, hh * 0.52)))
         try:
-            return F.mesh(smooth_iters=1, what="волосы")
+            return F.mesh(smooth_iters=2, what="волосы", clean=0.05)
         except GeometryError:
-            F2 = Field([c[0] - hw * 1.25, c[1] - hd * 1.3, c[2] - hh * 1.25,
-                        c[0] + hw * 1.25, c[1] + hd * 1.3, c[2] + hh * 1.35], 3.0)
-            F2.add(ellipsoid((c[0], c[1] - hd * 0.05, c[2] + hh * 0.10),
-                             (hw * 1.05, hd * 1.05, hh * 1.08)), 0.0)
-            F2.cut(ellipsoid((c[0], c[1] + hd * 1.05, c[2] + hh * 0.05),
-                             (hw * 1.0, hd * 0.7, hh * 1.0)))
-            return F2.mesh(smooth_iters=1, what="волосы")
+            F2 = Field([c[0] - hw * 1.3, c[1] - hd * 1.4, c[2] - hh * 1.3,
+                        c[0] + hw * 1.3, c[1] + hd * 1.4, c[2] + hh * 1.4], 3.0)
+            F2.add(ellipsoid((c[0], c[1] - 0.02 * hd, c[2] + 0.08 * hh),
+                             (hw * 0.98 + pad, hd * 0.96 + pad, hh + pad)), 0.0)
+            F2.cut(ellipsoid((c[0], c[1] + 0.50 * hd, c[2] - 0.10 * hh),
+                             (hw * 0.90, hd * 0.66, hh * 0.84)))
+            F2.cut(round_box((c[0], c[1] + 0.04 * hd, c[2] - hh * 0.62),
+                             (hw * 2.6, hd * 2.8, hh * 0.55)))
+            return F2.mesh(smooth_iters=1, what="волосы", clean=0.05)
 
     # ------------------------------------------------------------------ #
     def build(self) -> dict:
@@ -450,11 +559,13 @@ class Anatomy:
         hw, hd, hh = self.head_w, self.head_d, self.head_hh
         head = Field([c[0] - hw * 1.25, c[1] - hd * 1.3, c[2] - hh * 1.55,
                       c[0] + hw * 1.25, c[1] + hd * 1.3, c[2] + hh * 1.35], d["head"])
+        for prim in self._head_volumes():
+            head.add(prim, H * 0.0085)
         for prim in self._head_prims():
-            head.add(prim, H * 0.0055)
+            head.add(prim, H * 0.0016)
         for cut in self._head_cutters():
-            head.cut(cut, H * 0.002)
-        head_solid = head.mesh(smooth_iters=2, simplify=d["simplify"] * 0.6, what="голова")
+            head.cut(cut, H * 0.0008)
+        head_solid = head.mesh(smooth_iters=1, simplify=d["simplify"] * 0.6, what="голова")
 
         # --- кисти ---
         hands = []
@@ -494,7 +605,9 @@ class Anatomy:
 
         # --- глаза ---
         if p.eyes:
-            positions, r = self._eye_positions()
+            eye_data = self._eye_geom(head_solid)
+            positions = [pos for pos, _r, _n in eye_data]
+            r = eye_data[0][1]
             pts = np.array(positions)
             lo = pts.min(axis=0) - r * 1.6
             hi = pts.max(axis=0) + r * 1.6
@@ -502,17 +615,24 @@ class Anatomy:
             for pos in positions:
                 fs.add(sphere(pos, r), 0.0)
             try:
-                eyes = fs.mesh(smooth_iters=1, what="глаза")
-                result["extras"].append(("eyes", eyes, "eyes"))
+                eyeballs = fs.mesh(smooth_iters=1, what="глаза", clean=0.05)
+                result["extras"].append(("eyes", eyeballs, "eyes"))
             except GeometryError:
                 pass
             # радужка/зрачок — отдельный объект чуть впереди глаз
             try:
                 fl = Field([lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]], max(0.8, r / 14))
-                for pos in positions:
-                    fl.add(sphere(pos + np.array([0, r * 0.78, 0]), r * 0.46), 0.0)
-                iris = fl.mesh(smooth_iters=1, what="радужка")
+                for pos, _rr, _n in eye_data:
+                    fl.add(sphere((pos[0], pos[1] + r * 0.80, pos[2]), r * 0.46), 0.0)
+                iris = fl.mesh(smooth_iters=1, what="радужка", clean=0.05)
                 result["extras"].append(("iris", iris, "iris"))
+            except GeometryError:
+                pass
+
+        # --- брови ---
+        if p.hair:
+            try:
+                result["extras"].append(("brows", self._brows(), "brows"))
             except GeometryError:
                 pass
 

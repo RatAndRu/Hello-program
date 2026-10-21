@@ -32,6 +32,15 @@ def _normalize(v):
     return v / n if n > 1e-12 else v
 
 
+def _load_texture(path: str, size: int = 256):
+    try:
+        from PIL import Image
+        img = Image.open(path).convert("RGB").resize((size, size), Image.BILINEAR)
+        return (np.asarray(img, dtype=np.float32) / 255.0)
+    except Exception:
+        return None
+
+
 def _prepare(solids):
     meshes = []
     for s in solids:
@@ -39,11 +48,30 @@ def _prepare(solids):
         if len(f) == 0:
             continue
         nv, nn, nf = crease_normals(v, f, 38.0)
-        meshes.append({
+        item = {
             "verts": nv, "faces": nf, "normals": nn,
             "color": np.array(color_to_float_rgb(s.color), dtype=np.float32),
             "metal": float(s.metal), "rough": float(s.rough),
-        })
+            "uv": None, "tex": None,
+        }
+        tex = getattr(s, "tex", None)
+        if tex and tex.get("path"):
+            image = _load_texture(tex["path"])
+            if image is not None:
+                lo = nv.min(axis=0)
+                hi = nv.max(axis=0)
+                span = np.maximum(hi - lo, 1e-9)
+                mode = getattr(s, "uv", "cylinder")
+                if mode == "planar":
+                    u = (nv[:, 0] - lo[0]) / span[0]
+                    w = (nv[:, 1] - lo[1]) / span[1]
+                else:
+                    cx, cy = (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2
+                    u = np.arctan2(nv[:, 1] - cy, nv[:, 0] - cx) / (2 * np.pi) + 0.5
+                    w = (nv[:, 2] - lo[2]) / span[2]
+                item["uv"] = np.stack([u, w], axis=1).astype(np.float32)
+                item["tex"] = image
+        meshes.append(item)
     return meshes
 
 
@@ -154,7 +182,9 @@ def _shade(normals, col, metal, rough, cam):
     diff2 = np.clip(n @ fill, 0, None)[:, None] * 0.24
     rim = np.clip(n @ back, 0, None)[:, None] * 0.16
     amb = (0.17 + 0.10 * np.clip(n[:, 2:3] * 0.5 + 0.5, 0, 1))
-    col = col[None, :]
+    col = np.asarray(col, dtype=np.float32)
+    if col.ndim == 1:
+        col = col[None, :]
     base = col * (amb + diff + diff2 + rim)
     half = _normalize(key - f)
     spec = np.clip(n @ half, 0, None)[:, None] ** max(8, 2 / max(rough, 0.05) ** 2)
@@ -208,6 +238,8 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
         col = mesh["color"]
         metal = mesh["metal"]
         rough = mesh["rough"]
+        uv = mesh.get("uv")
+        tex = mesh.get("tex")
         scr, dep = _project(verts, cam)
         tri = faces
         n0, n1, n2 = normals[tri[:, 0]], normals[tri[:, 1]], normals[tri[:, 2]]
@@ -253,7 +285,24 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
             nz = w0 * n0[ti, 2] + w1 * n1[ti, 2] + w2 * n2[ti, 2]
             ln = np.sqrt(nx * nx + ny * ny + nz * nz) + 1e-12
             nn = np.stack([(nx / ln)[front], (ny / ln)[front], (nz / ln)[front]], axis=1)
-            shade = _shade(nn, col, metal, rough, cam)
+            colors = col
+            if uv is not None and tex is not None:
+                u = (w0 * uv[a[0], 0] + w1 * uv[a[1], 0] + w2 * uv[a[2], 0])
+                vv = (w0 * uv[a[0], 1] + w1 * uv[a[1], 1] + w2 * uv[a[2], 1])
+                th, tw = tex.shape[:2]
+                uu = (u[front] % 1.0) * tw - 0.5
+                vv2 = (1.0 - np.clip(vv[front], 0, 1)) * th - 0.5
+                u0 = np.floor(uu).astype(np.int32)
+                v0 = np.floor(vv2).astype(np.int32)
+                fx = (uu - u0)[:, None]
+                fy = (vv2 - v0)[:, None]
+                u1 = (u0 + 1) % tw
+                v1 = (v0 + 1) % th
+                u0 %= tw
+                v0 %= th
+                colors = (tex[v0, u0] * (1 - fx) * (1 - fy) + tex[v0, u1] * fx * (1 - fy)
+                          + tex[v1, u0] * (1 - fx) * fy + tex[v1, u1] * fx * fy) * col[None, :]
+            shade = _shade(nn, colors, metal, rough, cam)
             shade = np.clip(shade, 0, 1)
             sub_img = img[miny:maxy + 1, minx:maxx + 1]
             sub_img[front] = shade.astype(np.float32)

@@ -139,6 +139,28 @@ def _run_uistest(report_path: str | None) -> int:
                 check("снимки видов (PNG)", False, str(exc))
             # новые возможности 0.2: текстуры, свет, анимация, импорт, форматы
             check("панель вида в интерфейсе", b"studio-panel" in html and b"material-panel" in html)
+            # 0.3: командная строка, выделение области, замечания, журнал, отчёт
+            check("командная строка и выделение", b'id="cmd-input"' in html and b'id="sel-card"' in html)
+            try:
+                note = post("/api/note", {"object": "к", "text": "проверка замечания",
+                                          "tris": 3, "area_mm2": 1.5,
+                                          "center": [0, 0, 10], "size": [2, 2, 2],
+                                          "bbox": [-1, -1, 9, 1, 1, 11]})
+                check("замечание к области", note.get("note", {}).get("text") == "проверка замечания")
+                cut = post("/api/edit/cut", {"script": "к = cylinder radius=20 height=60",
+                                             "object": "к", "center": [0, 0, 30], "radius": 6})
+                check("вырезание выделенного", "difference [к, вырез_1]" in cut.get("script", ""))
+                prompt = post("/api/prompt", {"script": state["script"], "goal": "тест",
+                                              "reference": False})
+                text = prompt.get("text", "")
+                check("отчёт для нейросети", "Журнал действий" in text
+                      and "Замечания пользователя" in text
+                      and "СПРАВКА ФОРМА 3D (кратко)" not in text)
+                state2 = get("/api/state")
+                check("журнал действий в состоянии", len(state2.get("actions", [])) > 0,
+                      f"{len(state2.get('actions', []))} записей")
+            except Exception as exc:
+                check("отчёт и выделение", False, str(exc))
             try:
                 rich = post("/api/build", {"script": (
                     "к = lathe points=[[0,0],[30,0],[30,60],[0,60]] "

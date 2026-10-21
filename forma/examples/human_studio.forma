@@ -7,7 +7,6 @@
 
 # кожа и волосы — материалы, которые видны в окне и в Blender
 color человек #e2b79b rough=0.58
-texture человек kind=кожа scale=0.8
 color человек_волосы #33241b rough=0.42
 color человек_глаза #f4f1ea rough=0.16
 color человек_радужка #4a3423 rough=0.3

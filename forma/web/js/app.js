@@ -16,6 +16,12 @@ const state = {
   autobuildTimer: null,
   lastBuildAt: 0,
   selected: null,
+  selection: null,
+  selectMode: false,
+  notes: [],
+  actions: [],
+  cmdHistory: [],
+  cmdIndex: -1,
   material: { color: '#c9d1e3', metal: 0, rough: 0.5 },
 };
 
@@ -123,6 +129,11 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open'));
     $('help-modal').hidden = true;
+    const studio = $('studio-panel');
+    if (studio && !studio.hidden) toggleStudio(false);
+    const mat = $('material-panel');
+    if (mat && !mat.hidden) selectObject('');
+    if (state.selectMode) setSelectMode(false);
   }
 });
 
@@ -136,7 +147,7 @@ async function buildNow(silent = false) {
   $('btn-build').disabled = true;
   const t0 = performance.now();
   try {
-    const payload = await api('/api/build', { script: currentScript() });
+    const payload = await api('/api/build', { script: currentScript(), auto: silent });
     state.payload = payload;
     applyBuild(payload, Math.round(performance.now() - t0));
     if (payload.ok) {
@@ -181,6 +192,13 @@ function applyBuild(payload, elapsed) {
   renderChecks(payload);
   renderObjects(payload);
   renderDimensions(metrics);
+  if (payload.notes) { state.notes = payload.notes; renderNotes(); }
+  if (payload.actions) { state.actions = payload.actions; renderActions(); }
+  const checks = (payload.analysis?.checks || []);
+  const failed = checks.filter((c) => !c.ok).length;
+  setCmdResult(`✓ собрано · ${fmtInt(metrics.tris || 0)} трис`
+    + (checks.length ? ` · проверки ${checks.length - failed}/${checks.length}` : ''),
+    failed ? 'bad' : 'ok');
   applyViewSettings(payload);
   updatePolyBadge();
 }
@@ -215,6 +233,45 @@ function renderReport(payload) {
     verdict.className = 'verdict warn';
     verdict.textContent = 'Проверки не заданы. Добавьте строки check, чтобы приложение само оценивало результат.';
   }
+}
+
+function renderNotes() {
+  const box = $('notes-list');
+  if (!box) return;
+  const notes = state.notes || [];
+  box.innerHTML = '';
+  if (!notes.length) {
+    box.innerHTML = '<div class="notes-empty">Пока пусто. Включите «выбор», кликните по области модели и напишите, что не так.</div>';
+    return;
+  }
+  notes.slice().reverse().forEach((n) => {
+    const el = document.createElement('div');
+    el.className = 'note-item';
+    const c = (n.center || []).map((v) => fmt(v)).join(', ');
+    el.innerHTML = `<div class="note-meta">${escapeHtml(n.time || '')} · ${escapeHtml(n.object || '')} · `
+      + `${n.tris || 0} трис · центр (${escapeHtml(c)})</div>`
+      + `<div class="note-text">${escapeHtml(n.text || '')}</div>`;
+    box.appendChild(el);
+  });
+}
+
+function renderActions() {
+  const box = $('actions-list');
+  if (!box) return;
+  const actions = (state.actions || []).slice(-10).reverse();
+  box.innerHTML = '';
+  if (!actions.length) {
+    box.innerHTML = '<div class="actions-empty">Здесь появятся выполненные шаги: сборка, снимки, экспорт, правки.</div>';
+    return;
+  }
+  actions.forEach((a) => {
+    const el = document.createElement('div');
+    el.className = 'action-item ' + (a.ok ? 'ok' : 'bad');
+    el.innerHTML = `<span class="t">${escapeHtml(a.time || '')}</span>`
+      + `<span class="k">${a.ok ? '✓' : '✗'}</span>`
+      + `<span class="d">${escapeHtml(a.kind || '')}: ${escapeHtml(a.text || '')}</span>`;
+    box.appendChild(el);
+  });
 }
 
 function renderChecks(payload) {
@@ -297,7 +354,15 @@ function renderDimensions(metrics) {
   badge.textContent = `${fmtInt(metrics.tris)} треугольников`;
 }
 
+function setCmdResult(text, kind = '') {
+  const el = $('cmd-result');
+  if (!el) return;
+  el.textContent = text || '';
+  el.className = 'cmd-result ' + kind;
+}
+
 function showError(err) {
+  setCmdResult('✗ ' + (err.message || 'ошибка'), 'bad');
   const bar = $('error-bar');
   bar.hidden = false;
   $('error-msg').textContent = (err.line ? `Строка ${err.line}: ` : '') + (err.message || 'Ошибка');
@@ -351,6 +416,7 @@ function initViewer() {
   try {
     state.viewer = new Viewer($('viewer'));
     state.viewer.onSelect = (name) => selectObject(name);
+    state.viewer.onSelection = (stats) => showSelection(stats);
   } catch (e) {
     $('viewer-empty').innerHTML = '<p>WebGL недоступен в этом окне.<br>Модель можно посмотреть через PNG-снимки кнопкой «Снимки».</p>';
     console.error(e);
@@ -603,6 +669,157 @@ $('mat-apply')?.addEventListener('click', () => {
 });
 
 /* ------------------------------------------------------------------ */
+/*  Выделение области и замечания                                     */
+/* ------------------------------------------------------------------ */
+function setSelectMode(on) {
+  state.selectMode = on;
+  $('btn-select')?.classList.toggle('active', on);
+  state.viewer?.setSelectMode(on);
+  if (!on) {
+    $('sel-card').hidden = true;
+    state.selection = null;
+  } else {
+    toast('Кликните по модели — выделится область. Затем опишите, что не так.');
+  }
+  updateViewerHint();
+}
+
+function updateViewerHint() {
+  const hint = $('viewer-hint');
+  if (!hint) return;
+  hint.textContent = state.selectMode
+    ? 'выбор: ЛКМ — выделить область · ползунок — размер · «Вырезать» — убрать'
+    : 'ЛКМ — вращать · колесо — масштаб · ПКМ — сдвинуть · двойной клик — вернуть вид';
+}
+
+function showSelection(stats) {
+  state.selection = stats;
+  const card = $('sel-card');
+  if (!stats) { card.hidden = true; return; }
+  card.hidden = false;
+  $('sel-title').textContent = 'выделено: ' + (stats.object || 'деталь');
+  const c = stats.center.map((v) => fmt(v)).join(', ');
+  const sz = stats.size.map((v) => fmt(v)).join(' × ');
+  $('sel-info').innerHTML =
+    `треугольников: <b>${fmtInt(stats.tris)}</b> · площадь <b>${fmt(stats.area_mm2)}</b> мм²<br>`
+    + `центр: <b>(${escapeHtml(c)})</b> мм<br>`
+    + `размер области: <b>${escapeHtml(sz)}</b> мм`;
+  $('sel-note').focus();
+}
+
+function clearSelection() {
+  state.selection = null;
+  $('sel-card').hidden = true;
+  state.viewer?.clearSelection();
+}
+
+$('btn-select')?.addEventListener('click', () => setSelectMode(!state.selectMode));
+$('sel-close')?.addEventListener('click', () => clearSelection());
+$('sel-radius')?.addEventListener('input', (e) => {
+  $('sel-radius-val').textContent = e.target.value + ' мм';
+  state.viewer?.setSelectRadius(Number(e.target.value));
+});
+$('sel-save')?.addEventListener('click', async () => {
+  if (!state.selection) { toast('Сначала выделите область на модели', 'bad'); return; }
+  const text = $('sel-note').value.trim();
+  if (!text) { toast('Напишите словами, что не так в этом месте', 'bad'); return; }
+  try {
+    const res = await api('/api/note', { ...state.selection, text });
+    state.notes = res.notes || [];
+    renderNotes();
+    if (res.note) {
+      state.actions = [...(state.actions || []), { time: res.note.time, kind: 'замечание',
+        text: `${res.note.object}: ${text}`, ok: true }];
+      renderActions();
+    }
+    $('sel-note').value = '';
+    toast('Замечание добавлено в отчёт и в запрос для нейросети');
+  } catch (e) { toast(e.message || 'Не удалось сохранить замечание', 'bad'); }
+});
+
+$('sel-cut')?.addEventListener('click', async () => {
+  if (!state.selection) return;
+  const name = state.selection.object;
+  const defined = currentScript().split('\n').some((l) => l.includes('=') && l.split('=')[0].trim() === name);
+  if (!defined) {
+    toast('Это часть составного объекта — вырезание недоступно, оставьте замечание', 'bad');
+    return;
+  }
+  const radius = Math.max(state.selection.radius, Math.max(...state.selection.size) / 2);
+  try {
+    const res = await api('/api/edit/cut', {
+      script: currentScript(), object: name,
+      center: state.selection.center, radius,
+    });
+    clearSelection();
+    setSelectMode(false);
+    setScript(res.script);
+    toast(`Область вырезана сферой r=${fmt(res.radius)} мм`);
+  } catch (e) { toast(e.message || 'Не удалось вырезать область', 'bad'); }
+});
+
+$('notes-clear')?.addEventListener('click', async () => {
+  try {
+    const res = await api('/api/notes', { clear: true });
+    state.notes = res.notes || [];
+    renderNotes();
+    toast('Список замечаний очищен');
+  } catch (e) { toast(e.message || 'Ошибка', 'bad'); }
+});
+
+/* ------------------------------------------------------------------ */
+/*  Командная строка                                                   */
+/* ------------------------------------------------------------------ */
+async function captureViews() {
+  if (!state.payload?.ok) { toast('Сначала соберите модель', 'bad'); return; }
+  try {
+    const res = await api('/api/render', {});
+    renderStrip(res);
+    toast('Снимки четырёх видов готовы');
+    setCmdResult(`✓ снимки: ${(res.files || []).length} видов`, 'ok');
+  } catch (e) { toast(e.message || 'Ошибка снимков', 'bad'); }
+}
+
+function runCommand() {
+  const raw = $('cmd-input').value.trim();
+  if (!raw) { buildNow(); return; }
+  const low = raw.toLowerCase();
+  if (low === '/снимки' || low === '/render') { $('cmd-input').value = ''; captureViews(); return; }
+  if (low === '/отчёт' || low === '/report') {
+    $('cmd-input').value = '';
+    document.querySelector('.tab[data-tab="report"]')?.click();
+    return;
+  }
+  if (low === '/справка' || low === '/help') { $('cmd-input').value = ''; openHelp(); return; }
+  if (low === '/очистить' || low === '/clear') {
+    setScript('');
+    $('cmd-input').value = '';
+    return;
+  }
+  state.cmdHistory.push(raw);
+  state.cmdIndex = state.cmdHistory.length;
+  const script = currentScript().replace(/\s+$/, '');
+  $('cmd-input').value = '';
+  setCmdResult('выполняю: ' + raw);
+  setScript((script ? script + '\n' : '') + raw);
+}
+
+$('cmd-run')?.addEventListener('click', runCommand);
+$('cmd-input')?.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); runCommand(); return; }
+  if (e.key === 'ArrowUp' && state.cmdHistory.length) {
+    state.cmdIndex = Math.max(0, state.cmdIndex - 1);
+    $('cmd-input').value = state.cmdHistory[state.cmdIndex] || '';
+    e.preventDefault();
+  }
+  if (e.key === 'ArrowDown' && state.cmdHistory.length) {
+    state.cmdIndex = Math.min(state.cmdHistory.length, state.cmdIndex + 1);
+    $('cmd-input').value = state.cmdHistory[state.cmdIndex] || '';
+    e.preventDefault();
+  }
+});
+
+/* ------------------------------------------------------------------ */
 /*  Открытие внешних файлов                                           */
 /* ------------------------------------------------------------------ */
 async function uploadFile(file) {
@@ -651,6 +868,21 @@ if (viewerEl) {
 /* ------------------------------------------------------------------ */
 /*  Снимки, экспорт                                                   */
 /* ------------------------------------------------------------------ */
+function renderStrip(res) {
+  const strip = $('render-strip');
+  if (!strip) return;
+  strip.hidden = false;
+  strip.innerHTML = '';
+  (res.files || []).forEach((f) => {
+    const a = document.createElement('a');
+    a.href = f.url + '&token=' + encodeURIComponent(TOKEN);
+    a.target = '_blank';
+    a.innerHTML = `<img src="${f.url}&token=${encodeURIComponent(TOKEN)}" alt="${escapeHtml(f.label)}">
+      <div class="cap">${escapeHtml(f.label)}</div>`;
+    strip.appendChild(a);
+  });
+}
+
 $('btn-render').addEventListener('click', async () => {
   if (!state.payload?.ok) { toast('Сначала соберите модель', 'bad'); return; }
   const btn = $('btn-render');
@@ -658,17 +890,7 @@ $('btn-render').addEventListener('click', async () => {
   toast('Готовим снимки четырёх видов…');
   try {
     const res = await api('/api/render', {});
-    const strip = $('render-strip');
-    strip.hidden = false;
-    strip.innerHTML = '';
-    res.files.forEach((f) => {
-      const a = document.createElement('a');
-      a.href = f.url + '&token=' + encodeURIComponent(TOKEN);
-      a.target = '_blank';
-      a.innerHTML = `<img src="${f.url}&token=${encodeURIComponent(TOKEN)}" alt="${escapeHtml(f.label)}">
-        <div class="cap">${escapeHtml(f.label)}</div>`;
-      strip.appendChild(a);
-    });
+    renderStrip(res);
     toast('Снимки готовы — они лежат в папке renders');
   } catch (e) {
     toast(e.message || 'Ошибка рендера', 'bad');
@@ -884,7 +1106,11 @@ $('help-search').addEventListener('input', (e) => renderHelp(e.target.value));
 
 $('btn-prompt').addEventListener('click', async () => {
   try {
-    const res = await api('/api/prompt', { script: currentScript(), goal: $('goal').value });
+    const res = await api('/api/prompt', {
+      script: currentScript(), goal: $('goal').value,
+      reference: $('with-reference') ? $('with-reference').checked : true,
+    });
+    if ($('with-reference')?.checked) localStorage.setItem('forma_reference_shown', '1');
     $('prompt-out').value = res.text;
     toast('Запрос готов и сохранён: ' + res.path);
   } catch (e) { toast(e.message || 'Ошибка', 'bad'); }
@@ -928,6 +1154,15 @@ async function init() {
     state.projects = st.projects || [];
     state.projectName = st.project || 'проект';
     state.help = (await api('/api/commands')).commands || [];
+    state.notes = st.notes || [];
+    state.actions = st.actions || [];
+    renderNotes();
+    renderActions();
+    const ref = $('with-reference');
+    if (ref) {
+      const seen = localStorage.getItem('forma_reference_shown') === '1';
+      ref.checked = !seen;
+    }
     if (st.blender?.found) {
       $('status-blender').textContent = 'Blender найден';
       $('status-blender').title = st.blender.path;

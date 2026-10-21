@@ -70,43 +70,94 @@ def _now() -> str:
     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
 
 
-def build_prompt(build: Build | None, goal: str = "", out_path: str | None = None) -> str:
-    parts = []
-    parts.append("# Запрос к помощнику по проекту «ФОРМА 3D»")
-    parts.append("")
-    parts.append(f"Дата: {_now()}")
+def _coord_block(build) -> list[str]:
+    """Координаты объектов — коротко, чтобы модель понимала объём и положение."""
+    if not build or not build.ok or not build.analysis:
+        return []
+    objs = (build.analysis.get("metrics") or {}).get("objects") or []
+    if not objs:
+        return []
+    lines = ["## Координаты (мм, ось Z вверх)"]
+    for o in objs:
+        bb = o.get("bbox") or []
+        c = o.get("center") or []
+        if len(bb) == 6 and len(c) == 3:
+            lines.append(
+                f"- {o['name']}: центр ({c[0]:.1f}, {c[1]:.1f}, {c[2]:.1f}); "
+                f"габарит {o['size'][0]:.1f}×{o['size'][1]:.1f}×{o['size'][2]:.1f}; "
+                f"X {bb[0]:.1f}…{bb[3]:.1f}, Y {bb[1]:.1f}…{bb[4]:.1f}, Z {bb[2]:.1f}…{bb[5]:.1f}; "
+                f"{o['tris']} трис")
+    return lines
+
+
+def _actions_block(actions: list[dict] | None) -> list[str]:
+    if not actions:
+        return []
+    lines = ["", "## Журнал действий (что делал пользователь и приложение)"]
+    for a in actions[-25:]:
+        mark = "✓" if a.get("ok", True) else "✗"
+        lines.append(f"- {a.get('time', '')} {mark} {a.get('kind', '')}: {a.get('text', '')}".replace("  ", " "))
+    bad = [a for a in actions if not a.get("ok", True)]
+    if bad:
+        lines.append("")
+        lines.append("Не выполнено / пропущено из-за ошибок:")
+        for a in bad[-8:]:
+            lines.append(f"- {a.get('time', '')} {a.get('kind', '')}: {a.get('text', '')}")
+    return lines
+
+
+def _notes_block(notes: list[dict] | None) -> list[str]:
+    if not notes:
+        return []
+    lines = ["", "## Замечания пользователя к областям модели"]
+    for n in notes[-12:]:
+        c = n.get("center") or []
+        size = n.get("size") or []
+        where = ""
+        if len(c) == 3:
+            where = f" центр ({c[0]:.1f}, {c[1]:.1f}, {c[2]:.1f})"
+        if len(size) == 3:
+            where += f", область {size[0]:.1f}×{size[1]:.1f}×{size[2]:.1f} мм"
+        lines.append(f"- «{n.get('object', '')}», {n.get('tris', 0)} трис, "
+                     f"{n.get('area_mm2', 0)} мм²{where}: {n.get('text', '')}")
+    return lines
+
+
+def build_prompt(build: Build | None, goal: str = "", out_path: str | None = None,
+                 notes: list[dict] | None = None, actions: list[dict] | None = None,
+                 with_reference: bool = True) -> str:
+    """Текст запроса для нейросети.
+
+    Справочник команд прикладывается только когда просят (обычно один раз —
+    при первом знакомстве). Дальше в запрос идут только конкретные отчёты:
+    измерения, координаты, проверки, замечания пользователя и журнал действий.
+    """
+    parts = ["# Запрос к помощнику по проекту «ФОРМА 3D»", "", f"Дата: {_now()}"]
     if goal.strip():
-        parts.append("")
-        parts.append("## Что требуется")
-        parts.append(goal.strip())
-    parts.append("")
-    parts.append("## Текущий сценарий")
-    parts.append("```forma")
-    parts.append((build.script if build else "").strip() or "# пусто")
-    parts.append("```")
+        parts += ["", "## Что требуется", goal.strip()]
+    parts += ["", "## Текущий сценарий", "```forma",
+              (build.script if build else "").strip() or "# пусто", "```"]
     if build and build.ok and build.analysis:
-        parts.append("")
-        parts.append("## Отчёт приложения о результате")
-        parts.append("```")
-        parts.append(build.analysis.get("text", "").strip())
-        parts.append("```")
+        parts += ["", "## Отчёт приложения о результате", "```",
+                  build.analysis.get("text", "").strip(), "```"]
+        parts += [""] + _coord_block(build)
     elif build and build.error:
-        parts.append("")
-        parts.append("## Ошибка построения")
-        parts.append(f"{build.error.get('message')} (строка {build.error.get('line')})")
+        parts += ["", "## Ошибка построения",
+                  f"{build.error.get('message')} (строка {build.error.get('line')})"]
         if build.error.get("hint"):
             parts.append(f"Подсказка: {build.error['hint']}")
-    parts.append("")
-    parts.append("## Как отвечать")
-    parts.append(
-        "1. Сначала коротко скажи, что не так или что нужно изменить (словами, по измерениям).\n"
-        "2. Затем выдай ПОЛНЫЙ новый сценарий в одном блоке ```forma — без сокращений.\n"
-        "3. Добавь или обнови строки check, чтобы результат можно было проверить словами.\n"
-        "4. Укажи, какие виды (изометрия/спереди/справа/сверху) нужно посмотреть, чтобы убедиться."
-    )
-    parts.append("")
-    parts.append("## Справочник команд")
-    parts.append(DOCS_INDEX)
+    parts += _actions_block(actions)
+    parts += _notes_block(notes)
+    parts += ["", "## Как отвечать",
+              "1. Сначала коротко скажи, что не так или что нужно изменить (словами, по измерениям).\n"
+              "2. Затем выдай ПОЛНЫЙ новый сценарий в одном блоке ```forma — без сокращений.\n"
+              "3. Обнови строки check, чтобы результат можно было проверить словами.\n"
+              "4. Если в запросе есть замечания к выделенным областям — ответь по каждой области отдельно."]
+    if with_reference:
+        parts += ["", "## Справочник команд (показывать один раз)", DOCS_INDEX]
+    else:
+        parts += ["", "## Справочник команд",
+                  "Не приложен: он уже был показан ранее. Команды берутся из текущего сценария."]
     text = "\n".join(parts)
     if out_path:
         Path(os.path.dirname(os.path.abspath(out_path))).mkdir(parents=True, exist_ok=True)

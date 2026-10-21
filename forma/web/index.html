@@ -111,6 +111,7 @@
           <button class="mini view-btn" data-view="front" title="Спереди">спереди</button>
           <button class="mini view-btn" data-view="right" title="Справа">справа</button>
           <button class="mini view-btn" data-view="top" title="Сверху">сверху</button>
+          <button class="mini" id="btn-select" title="Выделять области и оставлять замечания">выбор</button>
           <button class="mini" id="btn-grid" title="Сетка">сетка</button>
           <button class="mini" id="btn-wire" title="Полигонаж (каркас)">полигоны</button>
           <button class="mini" id="btn-spin" title="Автоповорот">⟳</button>
@@ -194,6 +195,23 @@
         <div class="viewer-hint" id="viewer-hint">ЛКМ — вращать · колесо — масштаб · ПКМ — сдвинуть · двойной клик — вернуть вид</div>
         <div class="drop-zone" id="drop-zone" hidden>Отпустите файл — открою и добавлю в сцену</div>
         <div class="loader" id="loader" hidden><div class="spinner"></div><span>Строим…</span></div>
+        <div class="sel-card" id="sel-card" hidden>
+          <div class="sel-head">
+            <strong id="sel-title">выделено</strong>
+            <button class="mini" id="sel-close" title="Снять выделение">✕</button>
+          </div>
+          <div class="sel-info" id="sel-info"></div>
+          <label class="sel-radius">
+            <span>радиус</span>
+            <input type="range" id="sel-radius" min="3" max="80" step="1" value="14" />
+            <span class="sel-radius-val" id="sel-radius-val">14 мм</span>
+          </label>
+          <textarea id="sel-note" rows="2" placeholder="Что не так в этом месте? Например: «слишком остро», «тонко», «сдвинь ручку»"></textarea>
+          <div class="sel-actions">
+            <button class="small primary" id="sel-save">Оставить замечание</button>
+            <button class="small" id="sel-cut" title="Вырезать выделенную область из модели">Вырезать</button>
+          </div>
+        </div>
       </div>
       <div class="render-strip" id="render-strip" hidden></div>
     </section>
@@ -209,6 +227,15 @@
         <div class="tab-page active" id="page-report">
           <div class="verdict" id="verdict" hidden></div>
           <pre class="report-text" id="report-text">Здесь появится словесный отчёт: габариты, объём, масса, толщина стенок, симметрия, замечания.</pre>
+          <div class="report-extra">
+            <div class="extra-head">
+              <span>Замечания к областям</span>
+              <button class="mini" id="notes-clear" title="Очистить список">очистить</button>
+            </div>
+            <div id="notes-list" class="notes-list"></div>
+            <div class="extra-head"><span>Ход работы</span></div>
+            <div id="actions-list" class="actions-list"></div>
+          </div>
         </div>
         <div class="tab-page" id="page-checks">
           <div class="checks-head">
@@ -271,6 +298,10 @@
             для нейросети: текущий сценарий, отчёт о результате и справочник команд.
           </p>
           <textarea id="goal" class="goal" placeholder="Например: сделай ручку толще и добавь сужение книзу, чтобы кружка была устойчивее"></textarea>
+          <label class="assist-opt">
+            <input type="checkbox" id="with-reference" checked />
+            приложить справочник команд (нужен только при первом запросе)
+          </label>
           <div class="assist-actions">
             <button id="btn-prompt" class="primary small">Сформировать запрос</button>
             <button id="btn-copy" class="small">Копировать</button>
@@ -281,6 +312,14 @@
       </div>
     </section>
   </main>
+
+  <div class="cmdbar">
+    <span class="cmd-prompt">›</span>
+    <input id="cmd-input" spellcheck="false" autocomplete="off"
+           placeholder="Команда сценария: check кружка height 90..110 · color кружка #d9d4c8 · или /снимки, /отчёт" />
+    <button id="cmd-run" class="small primary" title="Дописать команду в сценарий и собрать (Enter)">Выполнить</button>
+    <span class="cmd-result" id="cmd-result"></span>
+  </div>
 
   <footer class="statusbar">
     <span class="status-item" id="status-state">готово</span>

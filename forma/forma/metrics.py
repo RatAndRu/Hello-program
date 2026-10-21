@@ -375,6 +375,11 @@ def build_text(scene, m: dict, checks: list[dict], warnings: list[str],
     lines.append(f"• габариты: {fmt(s[0])} × {fmt(s[1])} × {fmt(s[2])} мм (Ш×Г×В)")
     lines.append(f"• объём материала: {fmt(m['volume_cm3'])} см³")
     lines.append(f"• масса: {fmt(m['mass_g'], 0)} г (плотность {fmt(m['density'], 2)} г/см³)")
+    bb = m.get("bbox") or []
+    if len(bb) == 6:
+        lines.append(f"• центр: ({fmt((bb[0] + bb[3]) / 2)}, {fmt((bb[1] + bb[4]) / 2)}, "
+                     f"{fmt((bb[2] + bb[5]) / 2)}) мм; границы X {fmt(bb[0])}…{fmt(bb[3])}, "
+                     f"Y {fmt(bb[1])}…{fmt(bb[4])}, Z {fmt(bb[2])}…{fmt(bb[5])}")
     lines.append(f"• площадь поверхности: {fmt(m['area_cm2'])} см²")
     lines.append(f"• частей: {m['parts']}" + (", единое тело" if m["parts"] == 1 else ""))
     lines.append(f"• сквозных отверстий (род): {m['genus']}")
@@ -398,8 +403,10 @@ def build_text(scene, m: dict, checks: list[dict], warnings: list[str],
         lines.append("")
         lines.append("ОБЪЕКТЫ")
         for o in m["objects"]:
+            c = o.get("center") or [0, 0, 0]
             lines.append(f"• {o['name']}: {fmt(o['size'][0])}×{fmt(o['size'][1])}×{fmt(o['size'][2])} мм, "
-                         f"{fmt(o['volume_cm3'])} см³, {o['tris']:,} трис".replace(",", " "))
+                         f"{fmt(o['volume_cm3'])} см³, {o['tris']:,} трис".replace(",", " ")
+                         + f", центр ({fmt(c[0])}, {fmt(c[1])}, {fmt(c[2])})")
     lines.append("")
     if checks:
         lines.append(f"ПРОВЕРКИ: {sum(1 for c in checks if c['ok'])} из {len(checks)}")

@@ -43,6 +43,10 @@ export class Viewer {
     this.speed = 1;
     this.loop = true;
     this._overlays = [];
+    this._selOverlay = null;
+    this.selectMode = false;
+    this.selRadius = 14;
+    this.selection = null;
     this._frames = 0;
     this._lastFps = 0;
     this._fpsTime = 0;
@@ -180,6 +184,16 @@ export class Viewer {
       const ray = new THREE.Raycaster();
       ray.setFromCamera(pointer, this.camera);
       const hits = ray.intersectObject(this.model, true);
+      if (this.selectMode) {
+        if (hits.length) {
+          const stats = this._selectRegion(hits[0]);
+          if (stats && this.onSelection) this.onSelection(stats);
+        } else {
+          this.clearSelection();
+          if (this.onSelection) this.onSelection(null);
+        }
+        return;
+      }
       if (hits.length && this.onSelect) {
         const mesh = hits[0].object;
         this.onSelect(mesh.name || mesh.parent?.name || '');
@@ -234,6 +248,8 @@ export class Viewer {
     this.action = null;
     this.playing = false;
     this._clearOverlays();
+    this._disposeSelOverlay();
+    this.selection = null;
   }
 
   _clearOverlays() {
@@ -453,6 +469,100 @@ export class Viewer {
       o.add(lines);
       this._overlays.push(lines);
     });
+  }
+
+  /** Режим выделения областей: клик по модели выбирает треугольники вокруг точки. */
+  setSelectMode(on) {
+    this.selectMode = Boolean(on);
+    const el = this.renderer?.domElement;
+    if (el) el.style.cursor = this.selectMode ? 'crosshair' : '';
+    if (!this.selectMode) this.clearSelection();
+    if (this.selectMode) this.controls.enablePan = false;
+    else this.controls.enablePan = true;
+  }
+
+  setSelectRadius(mm) {
+    this.selRadius = Math.max(1, Number(mm) || 14);
+  }
+
+  _selectRegion(hit) {
+    const mesh = hit.object;
+    const geo = mesh.geometry;
+    if (!geo || !geo.attributes || !geo.attributes.position) return null;
+    mesh.updateMatrixWorld(true);
+    const m = mesh.matrixWorld;
+    const pos = geo.attributes.position;
+    const idx = geo.index;
+    const total = idx ? Math.floor(idx.count / 3) : Math.floor(pos.count / 3);
+    const radius = this.selRadius;
+    const center = hit.point.clone();
+    const stride = total > 300000 ? Math.ceil(total / 300000) : 1;
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const mid = new THREE.Vector3(), ab = new THREE.Vector3(), ac = new THREE.Vector3();
+    const out = [];
+    let area = 0;
+    let count = 0;
+    const box = new THREE.Box3();
+    for (let t = 0; t < total; t += stride) {
+      const i0 = idx ? idx.getX(t * 3) : t * 3;
+      const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+      const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+      a.fromBufferAttribute(pos, i0).applyMatrix4(m);
+      b.fromBufferAttribute(pos, i1).applyMatrix4(m);
+      c.fromBufferAttribute(pos, i2).applyMatrix4(m);
+      mid.copy(a).add(b).add(c).multiplyScalar(1 / 3);
+      if (mid.distanceTo(center) > radius) continue;
+      out.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+      ab.subVectors(b, a); ac.subVectors(c, a);
+      area += ab.cross(ac).length() * 0.5;
+      box.expandByPoint(a); box.expandByPoint(b); box.expandByPoint(c);
+      count += 1;
+    }
+    if (!count) return null;
+    this._setSelectionOverlay(out);
+    const size = new THREE.Vector3();
+    const ctr = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(ctr);
+    // GLB хранится в Y-up, а сценарий — в Z-up: переводим координаты обратно.
+    this.selection = {
+      object: mesh.name || mesh.parent?.name || 'деталь',
+      tris: count,
+      area_mm2: area,
+      center: [ctr.x, -ctr.z, ctr.y],
+      size: [size.x, size.z, size.y],
+      bbox: [box.min.x, -box.max.z, box.min.y, box.max.x, -box.min.z, box.max.y],
+      radius: radius,
+      point: [hit.point.x, -hit.point.z, hit.point.y],
+    };
+    return this.selection;
+  }
+
+  _setSelectionOverlay(vertices) {
+    this._disposeSelOverlay();
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0xff5a5a, transparent: true, opacity: 0.55,
+      side: THREE.DoubleSide, depthTest: false, depthWrite: false,
+    });
+    const hl = new THREE.Mesh(g, mat);
+    hl.renderOrder = 900;
+    this.scene.add(hl);
+    this._selOverlay = hl;
+  }
+
+  _disposeSelOverlay() {
+    if (!this._selOverlay) return;
+    this.scene.remove(this._selOverlay);
+    this._selOverlay.geometry?.dispose();
+    this._selOverlay.material?.dispose();
+    this._selOverlay = null;
+  }
+
+  clearSelection() {
+    this._disposeSelOverlay();
+    this.selection = null;
   }
 
   setSpin(on) {

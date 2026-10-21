@@ -98,9 +98,9 @@ def human(a, name):
     a.scene.add(solid)
     for extra_name, manifold, kind in result.get("extras", []):
         color = {"hair": hair_color, "eyes": EYE_DEFAULT,
-                 "iris": IRIS_DEFAULT}.get(kind, "#cccccc")
-        rough = {"hair": 0.42, "eyes": 0.18, "iris": 0.3}.get(kind, 0.5)
-        labels = {"hair": "волосы", "eyes": "глаза", "iris": "радужка"}
+                 "iris": IRIS_DEFAULT, "brows": hair_color}.get(kind, "#cccccc")
+        rough = {"hair": 0.42, "eyes": 0.18, "iris": 0.3, "brows": 0.5}.get(kind, 0.5)
+        labels = {"hair": "волосы", "eyes": "глаза", "iris": "радужка", "brows": "брови"}
         named = base_name + "_" + labels.get(kind, extra_name)
         a.scene.add(Solid(name=a.scene.unique_name(named), manifold=manifold,
                           color=color, metal=0.0, rough=rough, density=1.0,

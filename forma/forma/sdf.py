@@ -126,7 +126,7 @@ class Field:
 
     # ------------------------------------------------------------------ #
     def mesh(self, smooth_iters: int = 0, simplify: float = 0.0,
-             what: str = "фигура") -> mf.Manifold:
+             what: str = "фигура", clean: float = 0.0) -> mf.Manifold:
         from skimage import measure
 
         F = self.F
@@ -152,10 +152,27 @@ class Field:
         if smooth_iters > 0:
             verts = _laplacian_smooth(verts, faces, smooth_iters)
         solid = manifold_from_arrays(verts, faces, what)
+        if clean > 0:
+            solid = _drop_specks(solid, clean)
         solid = solid.simplify(float(simplify)) if simplify > 0 else solid
         if solid.is_empty():
             raise GeometryError(f"Не удалось построить {what}.")
         return solid
+
+
+def _drop_specks(m: mf.Manifold, keep_ratio: float = 0.01) -> mf.Manifold:
+    """Убирает крошечные обрывки поверхности (артефакты marching cubes)."""
+    parts = m.decompose()
+    if len(parts) <= 1:
+        return m
+    volumes = [p.volume() for p in parts]
+    total = sum(v for v in volumes if v > 0)
+    if total <= 0:
+        return m
+    keep = [p for p, v in zip(parts, volumes) if v >= total * float(keep_ratio)]
+    if not keep or len(keep) == len(parts):
+        return m
+    return mf.Manifold.batch_boolean(keep, mf.OpType.Add)
 
 
 def _laplacian_smooth(verts: np.ndarray, faces: np.ndarray, iters: int,

@@ -39,21 +39,33 @@ def _rng(seed: int | str) -> np.random.Generator:
 
 
 def _noise(size: int, cells: int, rng: np.random.Generator, smooth: int = 2) -> np.ndarray:
-    """Периодический (бесшовный по обеим осям) плавный шум 0..1."""
-    g = rng.random((cells, cells)).astype(np.float32)
-    # бесшовность: сшиваем крайние строки/столбцы
-    g = 0.5 * (g + np.roll(g, 1, axis=0))
-    step = max(1, size // cells)
-    img = np.kron(g, np.ones((step, step), dtype=np.float32))
-    if img.shape[0] < size:
-        pad = size - img.shape[0]
-        img = np.pad(img, ((0, pad), (0, pad)), mode="wrap")
-    img = img[:size, :size]
-    for _ in range(smooth):
-        img = 0.25 * (np.roll(img, 1, 0) + np.roll(img, -1, 0)
-                      + np.roll(img, 1, 1) + np.roll(img, -1, 1))
-    lo, hi = float(img.min()), float(img.max())
-    return (img - lo) / max(hi - lo, 1e-6)
+    """Бесшовный плавный шум 0..1 (билинейное увеличение случайной решётки)."""
+    cells = max(2, int(cells))
+    g = rng.random((cells + 1, cells + 1)).astype(np.float32)
+    g[-1, :] = g[0, :]
+    g[:, -1] = g[:, 0]
+    xs = np.linspace(0, cells, size, endpoint=False, dtype=np.float32)
+    x0 = np.clip(np.floor(xs).astype(np.int32), 0, cells - 1)
+    tx = xs - x0
+    tx = tx * tx * (3 - 2 * tx)          # smoothstep
+    a = g[:, x0] * (1 - tx)[None, :] + g[:, x0 + 1] * tx[None, :]
+    out = a[x0, :] * (1 - tx)[:, None] + a[x0 + 1, :] * tx[:, None]
+    for _ in range(max(0, int(smooth) - 1)):
+        out = 0.25 * (np.roll(out, 1, 0) + np.roll(out, -1, 0)
+                      + np.roll(out, 1, 1) + np.roll(out, -1, 1))
+    lo, hi = float(out.min()), float(out.max())
+    return (out - lo) / max(hi - lo, 1e-6)
+
+
+def _fbm(size: int, rng: np.random.Generator, octaves=(4, 9, 18, 40)) -> np.ndarray:
+    total = np.zeros((size, size), dtype=np.float32)
+    amp = 1.0
+    norm = 0.0
+    for cells in octaves:
+        total += amp * _noise(size, cells, rng)
+        norm += amp
+        amp *= 0.55
+    return total / max(norm, 1e-6)
 
 
 def _mix(c1, c2, t):
@@ -75,9 +87,9 @@ def make_texture(kind: str, size: int = 512, seed: int | str = 1,
     u, v = np.meshgrid(np.linspace(0, 1, n, endpoint=False),
                        np.linspace(0, 1, n, endpoint=False))
     k = max(0.2, float(scale))
-    n1 = _noise(n, 8, rng)
-    n2 = _noise(n, 24, rng)
-    n3 = _noise(n, 64, rng)
+    n1 = _noise(n, 5, rng)
+    n2 = _noise(n, 13, rng)
+    n3 = _noise(n, 33, rng)
 
     if key == "wood":
         rings = 0.5 + 0.5 * np.sin((u * 9.0 * k + 0.8 * n1 + 0.35 * n2) * 2 * np.pi)
@@ -85,11 +97,13 @@ def make_texture(kind: str, size: int = 512, seed: int | str = 1,
         t = np.clip(0.18 + 0.72 * rings ** 1.6 + 0.16 * fibre, 0, 1)
         img = _mix((104, 62, 34), (214, 166, 112), t)
     elif key == "marble":
-        veins = np.abs(np.sin((u * 2.2 + v * 1.1 + 1.9 * n1 + 0.6 * n2) * np.pi * 2.2))
-        veins = np.clip(1.0 - veins * 1.8, 0, 1) ** 0.65
-        t = np.clip(0.86 + 0.10 * n3 - 0.55 * veins, 0, 1)
-        img = _mix((246, 245, 240), (126, 122, 118), t)
-        img = _mix(img, (214, 208, 198), 0.35 * n2)
+        turb = _fbm(n, rng, (3, 7, 15, 31))
+        phase = (u * 1.6 + v * 0.8 + 1.15 * turb) * np.pi * 2.0
+        veins = np.clip(1.0 - np.abs(np.sin(phase)) * 2.4, 0, 1) ** 0.8
+        cloud = 0.55 + 0.45 * _noise(n, 6, rng)
+        t = np.clip(0.92 - 0.42 * veins - 0.16 * (1 - cloud), 0, 1)
+        img = _mix((248, 247, 243), (150, 146, 143), t)
+        img = _mix(img, (226, 220, 210), 0.25 * n2)
     elif key == "metal":
         brushed = _noise(n, 256, rng, smooth=1)
         band = 0.5 + 0.5 * np.sin(v * np.pi * 2 * 24 * k + n2 * 3)
@@ -142,11 +156,13 @@ def texture_file(kind: str, scale: float = 1.0, seed: int | str = 1,
     if key is None:
         raise DslError(f"Неизвестная текстура «{kind}».",
                        hint="Доступно: " + ", ".join(sorted(KIND_NAMES.values())))
-    tag = hashlib.sha1(f"{key}|{float(scale):.4f}|{seed}".encode("utf-8")).hexdigest()[:10]
+    image = make_texture(key, size=size, seed=seed, scale=scale)
+    # имя зависит от самих пикселей: изменили генератор — изменилась и картинка
+    tag = hashlib.sha1(image.tobytes()).hexdigest()[:10]
     name = f"{key}_{tag}.png"
     path = user_data_dir() / "textures" / name
     if not path.exists():
-        write_png(path, make_texture(key, size=size, seed=seed, scale=scale))
+        write_png(path, image)
     return {"kind": key, "label": KIND_NAMES[key], "path": str(path),
             "scale": float(scale), "seed": str(seed)}
 

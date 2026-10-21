@@ -38,7 +38,7 @@ html, body {
 
 body {
   display: grid;
-  grid-template-rows: 58px 1fr 30px;
+  grid-template-rows: 58px 1fr 42px 30px;
   height: 100vh;
 }
 
@@ -508,3 +508,118 @@ button.mini.active { background: #23304a; color: #cfe0ff; border-color: #35507f;
 .material-hex { font-family: var(--mono); font-size: 10.5px; color: #8ea0b8; width: 54px; }
 .material-actions { display: flex; gap: 7px; justify-content: flex-end; }
 .obj-item.selected { border-color: rgba(107,157,255,.6); background: rgba(107,157,255,.08); }
+
+
+/* ---------- командная строка ---------- */
+.cmdbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  background: #0f131a;
+  border-top: 1px solid var(--line);
+}
+.cmd-prompt {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 16px;
+  font-weight: 700;
+}
+#cmd-input {
+  flex: 1;
+  min-width: 0;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #0b0f15;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12.5px;
+  outline: none;
+}
+#cmd-input:focus { border-color: #3c5b8c; box-shadow: 0 0 0 2px rgba(107, 157, 255, .12); }
+.cmd-result {
+  font-size: 11.5px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 40%;
+}
+.cmd-result.ok { color: var(--good); }
+.cmd-result.bad { color: var(--bad); }
+
+/* ---------- выделение области ---------- */
+.sel-card {
+  position: absolute;
+  right: 12px;
+  bottom: 34px;
+  width: 300px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid #4b3038;
+  background: rgba(24, 17, 20, .94);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, .45);
+  backdrop-filter: blur(6px);
+  display: grid;
+  gap: 8px;
+  z-index: 6;
+}
+.sel-head { display: flex; align-items: center; justify-content: space-between; }
+.sel-head strong { font-size: 12.5px; color: #ffb0b0; }
+.sel-info { font-family: var(--mono); font-size: 11px; line-height: 1.5; color: var(--text-dim); }
+.sel-info b { color: var(--text); font-weight: 600; }
+.sel-radius { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-dim); }
+.sel-radius input { flex: 1; }
+.sel-radius-val { font-family: var(--mono); width: 44px; text-align: right; }
+#sel-note {
+  width: 100%;
+  resize: vertical;
+  min-height: 46px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #0b0f15;
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 12px;
+  padding: 6px 8px;
+  outline: none;
+}
+#sel-note:focus { border-color: #7a4450; }
+.sel-actions { display: flex; gap: 6px; }
+.sel-actions .small { flex: 1; }
+
+/* ---------- замечания и журнал ---------- */
+.report-extra { margin-top: 12px; display: grid; gap: 6px; }
+.extra-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 6px;
+  font-size: 11px; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-faint);
+}
+.notes-list, .actions-list { display: grid; gap: 4px; }
+.note-item {
+  border: 1px solid #3a2a2e;
+  background: #1b1417;
+  border-radius: 8px;
+  padding: 6px 8px;
+  font-size: 11.5px;
+  line-height: 1.45;
+}
+.note-item .note-meta { color: var(--text-faint); font-family: var(--mono); font-size: 10.5px; }
+.note-item .note-text { color: #ffd8d8; }
+.action-item {
+  display: flex; gap: 8px;
+  font-size: 11px; color: var(--text-dim);
+  padding: 2px 0;
+}
+.action-item .t { font-family: var(--mono); color: var(--text-faint); }
+.action-item.ok .k { color: var(--good); }
+.action-item.bad .k { color: var(--bad); }
+.notes-empty, .actions-empty { color: var(--text-faint); font-size: 11px; font-style: italic; }
+.assist-opt {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 11.5px; color: var(--text-dim);
+  margin: 8px 0 4px;
+}
