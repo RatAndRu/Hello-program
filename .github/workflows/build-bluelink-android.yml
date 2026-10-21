@@ -9,6 +9,12 @@ on:
       - 'bluelink/**'
       - '.github/workflows/build-bluelink-android.yml'
 
+# Две сборки подряд не должны гоняться за один и тот же релиз: если пришёл новый
+# коммит, старая сборка отменяется, и в релиз попадает самый свежий APK.
+concurrency:
+  group: bluelink-apk
+  cancel-in-progress: true
+
 jobs:
   build-apk:
     name: APK (Android)
