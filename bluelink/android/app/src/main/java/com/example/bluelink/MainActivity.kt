@@ -158,14 +158,11 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var lastRingPressAt = 0L
 
     private var lastHeyRefreshAt = 0L
+    private var writeFails = 0
     private var heySelfTestSeen = 0
     private var heySelfTestUntil = 0L
     private var heySelfTestWrites = 0
     private var heySelfTestStage = 0
-    private var releaseInBackground = false
-    private var releaseRunnable: Runnable? = null
-    private var autoReconnectPending = false
-    private var handoverStatus = ""
     private var ringStatusShown = ""
 
     // Прямой эфир: кадры по Bluetooth и (если прошивка отдаёт) RTSP по Wi-Fi очков.
@@ -245,7 +242,6 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         camera.listener = this
         store = PhotoStore(this)
         activeProfile = profiles.byId(prefs.getString("active_profile", null))
-        releaseInBackground = prefs.getBoolean("release_bg", false)
         ringAction = RingControls.Action.byId(prefs.getString("ring_action", null))
 
         crashText = try {
@@ -294,58 +290,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     override fun onResume() {
         super.onResume()
         updateHeader()
-        // Вернулись в приложение — забираем очки обратно, если отпускали их сами.
-        if (autoReconnectPending) {
-            autoReconnectPending = false
-            val item = lastConnItem
-            if (item != null) {
-                handoverStatus = "Возвращаю подключение к очкам…"
-                ui.postDelayed({ if (connState != ConnState.CONNECTED) connectTo(item) }, 500)
-            }
-        }
     }
 
-    override fun onStop() {
-        super.onStop()
-        // Пока приложение свёрнуто, очки можно отдать их приложению — но только
-        // если пользователь этого действительно хочет и мы не посреди работы.
-        // Мгновенное отключение оказалось вредным: короткий уход с экрана рвал
-        // сеанс и команды терялись. Поэтому ждём и отменяем, если вернулись.
-        if (!releaseInBackground || isChangingConfigurations) return
-        if (connState != ConnState.CONNECTED || !isHeyCyanDevice()) return
-        if (busyWithGlasses()) {
-            handoverStatus = "Очки заняты записью или выгрузкой — не отпускаю их до конца работы."
-            return
-        }
-        if (lastConnItem == null) return
-        val delayed = Runnable {
-            releaseRunnable = null
-            if (!releaseInBackground) return@Runnable
-            if (connState != ConnState.CONNECTED || busyWithGlasses()) return@Runnable
-            autoReconnectPending = true
-            addLog(
-                "Отпускаю очки после ${RELEASE_DELAY_MS / 1000} с в фоне — " +
-                    "чтобы их приложение могло подключиться"
-            )
-            doDisconnect()
-        }
-        releaseRunnable = delayed
-        ui.postDelayed(delayed, RELEASE_DELAY_MS)
-        handoverStatus = "Приложение свёрнуто. Через ${RELEASE_DELAY_MS / 1000} с очки освободятся, " +
-            "если вы не вернётесь."
-    }
-
-    override fun onStart() {
-        super.onStart()
-        releaseRunnable?.let { ui.removeCallbacks(it) }
-        releaseRunnable = null
-    }
-
-    /** Идёт ли работа, которую нельзя обрывать отключением. */
-    private fun busyWithGlasses(): Boolean =
-        heyWantVideo || heyVideoOn || heyWantAudio || heyAudioOn || heyTransferOn ||
-            liveMode.isNotBlank() || heyThumbTotal > 0 || heyThumbParts.isNotEmpty() ||
-            System.currentTimeMillis() - heyLastTxAt < 4000
 
     // ---------- Каркас экрана ----------
 
@@ -974,6 +920,16 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     }
 
     override fun onCharWritten(service: UUID, char: UUID, ok: Boolean) {
+        // Запись теперь идёт через очередь, поэтому результат известен здесь,
+        // а не в момент постановки в очередь. Если очки отказали — пишем это
+        // понятным текстом, а не молчим.
+        if (!ok) {
+            writeFails += 1
+            heyActionStatus = "Очки не приняли команду (запись отклонена). Пробую ещё раз."
+            if (writeFails % 5 == 1) addLog("Очки: запись отклонена (${GattNames.uuidLabel(char)})")
+        } else {
+            writeFails = 0
+        }
         if (tab == TAB_GATT) rebuild()
     }
 
@@ -2421,7 +2377,6 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         state.addView(stateRow)
         c.addView(state)
 
-        c.addView(heyHandoverCard())
         c.addView(heySoundCard())
 
         // Тревожная плашка: камера занята режимом передачи — съёмка не сработает.
@@ -3123,8 +3078,12 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         // уведомления сервисов приводила к двум бедам: часть характеристик
         // требует системного BLUETOOTH_PRIVILEGED, а очередь подписок
         // застревала и блокировала все команды очкам.
-        val skip = setOf(0x2A05, 0x2A4D, 0x2A4B, 0x2A22, 0x2A32, 0x2A33, 0x2A4E, 0x2A4C)
-        val wanted = setOf(0xAE30, 0x3802, 0xFEE1, 0xA00A)
+        // Подписываемся только на те каналы, которые реально несут данные очков.
+        // Широкий перебор (3802/4A02, FEE1/FEE3 и прочее) бесполезен: часть этих
+        // характеристик требует системного BLUETOOTH_PRIVILEGED, а зависшая
+        // операция блокировала GATT и все команды получали «запись не принята».
+        val skip = setOf(0x2A05, 0xAE05, 0x2A4D, 0x2A4B, 0x2A22, 0x2A32, 0x2A33, 0x2A4E, 0x2A4C)
+        val wanted = setOf(0xAE30, 0xA00A, 0xFF00)
         for (service in gattServices) {
             val short = GattNames.shortCode(service.uuid)
             if (short !in wanted) continue
@@ -3149,8 +3108,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         frame: ByteArray,
         title: String,
         attempt: Int = 0,
-        quiet: Boolean = false,
-        busyWaits: Int = 0
+        quiet: Boolean = false
     ) {
         if (connState != ConnState.CONNECTED) {
             if (!quiet) toast("Сначала подключитесь к устройству")
@@ -3158,17 +3116,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         }
         val service = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_SERVICE else HeyCyan.SERIAL_SERVICE
         val char = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_WRITE else HeyCyan.SERIAL_WRITE
-        if (ble.busySubscribing) {
-            // Ещё пишется дескриптор подписки: подождём, иначе GATT отклонит запись.
-            // Но не бесконечно: иначе команды молча копились бы в очереди и «терялись».
-            if (busyWaits < 6) {
-                ui.postDelayed({ heySendRaw(channel, frame, title, attempt, quiet, busyWaits + 1) }, 250)
-                return
-            }
-            // Ждать дольше нельзя: подписка могла зависнуть. Пробуем писать —
-            // если GATT занят, попытка просто не пройдёт и мы это увидим.
-            addLog("Очки · $title: подписка задерживает связь, пробую писать всё равно")
-        }
+        // Все операции идут через одну очередь в BleCentral, поэтому ждать
+        // «освобождения» GATT больше не нужно: команда встанет в очередь сама.
         // Канал A у SDK — обычная запись с ответом, канал B — без ответа.
         val ok = ble.write(service, char, frame, withResponse = if (channel == HeyCyan.CH_CTRL) null else false)
         heyLastTx = frame
@@ -3564,13 +3513,6 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (tab == TAB_HEY) rebuild()
     }
 
-    // ---------- Очки и их родное приложение ----------
-
-    /**
-     * У BLE-очков один канал связи: пока подключены мы, их приложение подключиться
-     * не может, и наоборот. Обойти это нельзя — можно только аккуратно передавать
-     * связь друг другу.
-     */
     /** Громкость очков: единственный доступный способ повлиять на их писк. */
     private fun heySoundCard(): View {
         val box = card()
@@ -3615,131 +3557,6 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         heySubscribeProtocol()
         heySend(HeyCyan.CH_SERIAL, 0x51, HeyCyan.volumePayload(level, level, level), "Громкость $level%")
         anyStatus("Громкость очков: $level%. Проверьте фото — если писк остался, он зашит в прошивке.")
-    }
-
-    private fun heyHandoverCard(): View {
-        val box = card()
-        box.addView(txt("Очки и их родное приложение", 12, Pal.MUTED, bold = true))
-        box.addView(spacer(6))
-        box.addView(txt(
-            "У очков один канал Bluetooth: одновременно держать его наше и родное приложение не могут. " +
-                "Это ограничение самого устройства, а не приложения. Поэтому связь передаётся по очереди: " +
-                "можно отпустить очки одним нажатием или автоматически, пока BlueLink свёрнут.",
-            11, Pal.MUTED
-        ))
-        box.addView(spacer(8))
-        box.addView(txt(
-            "Отпускать в фоне: " + if (releaseInBackground)
-                "включено (через ${RELEASE_DELAY_MS / 1000} с)" else "выключено",
-            11, if (releaseInBackground) Pal.GREEN else Pal.MUTED
-        ))
-        box.addView(spacer(6))
-        box.addView(actionButton(
-            if (releaseInBackground) "Выключить авто-отпускание" else "Отпускать очки в фоне",
-            primary = false
-        ) {
-            releaseInBackground = !releaseInBackground
-            prefs.edit().putBoolean("release_bg", releaseInBackground).apply()
-            handoverStatus = if (releaseInBackground)
-                "Теперь очки освобождаются, как только приложение уходит в фон."
-            else
-                "Авто-отпускание выключено: очки остаются за BlueLink."
-            rebuild()
-        })
-        val row1 = row()
-        if (connState == ConnState.CONNECTED) {
-            row1.addView(actionButton("Отдать очкам их приложение", primary = true) { handoverToNative() })
-        } else {
-            row1.addView(actionButton("Забрать подключение обратно", primary = true) {
-                val item = lastConnItem
-                if (item != null) {
-                    autoReconnectPending = false
-                    handoverStatus = "Забираю подключение…"
-                    connectTo(item)
-                } else {
-                    tab = TAB_SCAN
-                    rebuild()
-                }
-            })
-        }
-        box.addView(row1)
-        if (handoverStatus.isNotBlank()) {
-            box.addView(spacer(6))
-            box.addView(txt(handoverStatus, 11, Pal.AMBER))
-        }
-        return box
-    }
-
-    /** Отпустить очки и открыть их приложение. */
-    private fun handoverToNative() {
-        val apps = nativeGlassesApps()
-        addLog("Отпускаю очки: связь нужна их приложению")
-        autoReconnectPending = false
-        doDisconnect()
-        handoverStatus = "Очки освобождены. Выберите их приложение — оно подключится само."
-        if (apps.isEmpty()) {
-            handoverStatus = "Очки освобождены. Приложение очков не нашлось среди установленных — " +
-                "откройте его вручную. Когда вернётесь, нажмите «Забрать подключение обратно»."
-            rebuild()
-            return
-        }
-        if (apps.size == 1) {
-            launchApp(apps[0].first)
-            rebuild()
-            return
-        }
-        lateinit var dialog: Dialog
-        val body = column()
-        body.addView(txt("Выберите приложение, которое должно получить связь с очками:", 12, Pal.MUTED))
-        body.addView(spacer(8))
-        for ((pkg, label) in apps) {
-            body.addView(actionButton(label, primary = false) {
-                launchApp(pkg)
-                try {
-                    dialog.dismiss()
-                } catch (ignored: Exception) {
-                }
-            })
-        }
-        dialog = showSheet("Приложение очков", body)
-    }
-
-    private fun launchApp(pkg: String) {
-        try {
-            val intent = packageManager.getLaunchIntentForPackage(pkg)
-            if (intent != null) {
-                startActivity(intent)
-                handoverStatus = "Открыл «$pkg». Вернитесь в BlueLink — подключение вернётся само."
-            } else {
-                handoverStatus = "Не удалось открыть $pkg."
-            }
-        } catch (e: Exception) {
-            handoverStatus = "Не удалось открыть $pkg: ${e.message}"
-        }
-        rebuild()
-    }
-
-    /** Установленные приложения, похожие на приложение очков. */
-    private fun nativeGlassesApps(): List<Pair<String, String>> {
-        val keys = listOf("heycyan", "hey cyan", "cyan", "glasses", "очки", "smart glass", "smartglass", "meta view")
-        return try {
-            val main = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER)
-            @Suppress("DEPRECATION")
-            val list = packageManager.queryIntentActivities(main, 0)
-            list.mapNotNull { info ->
-                val pkg = info.activityInfo.packageName
-                if (pkg == packageName) return@mapNotNull null
-                val label = try {
-                    info.loadLabel(packageManager).toString()
-                } catch (e: Exception) {
-                    pkg
-                }
-                val hay = (pkg + " " + label).lowercase()
-                if (keys.any { hay.contains(it) }) pkg to label else null
-            }.distinctBy { it.first }
-        } catch (e: Exception) {
-            emptyList()
-        }
     }
 
     // ---------- Кольцо ----------
@@ -3909,6 +3726,44 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private fun nowClock(): String {
         return java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.getDefault())
             .format(java.util.Date())
+    }
+
+    /**
+     * Жесты кольца и данные кольца требуют одного и того же канала связи.
+     * Пока приложение подключено к кольцу само (чтобы показывать пульс и
+     * кислород), Android не может держать его ещё и как HID-пульт — поэтому
+     * нажатия до системы не доходят. Это ограничение BLE, а не приложения.
+     */
+    private fun ringLinkCard(): View {
+        val box = card()
+        box.addView(txt("Данные кольца или жесты — что важнее", 12, Pal.MUTED, bold = true))
+        box.addView(spacer(6))
+        box.addView(txt(
+            "У кольца один канал связи. Пока BlueLink подключён к нему напрямую, " +
+                "Android не держит кольцо как пульт, и нажатия никуда не приходят. " +
+                "Если отпустить кольцо, система подключит его как устройство ввода и " +
+                "нажатия начнут доходить — но тогда пульс и кислород в приложении не появятся.",
+            11, Pal.MUTED
+        ))
+        box.addView(spacer(8))
+        box.addView(actionButton("Отпустить кольцо для жестов", primary = false) {
+            ring?.stop()
+            ringStartedFor = ""
+            doDisconnect()
+            ringStatusShown = "Кольцо отпущено. Подключите его в настройках Bluetooth — " +
+                "тогда нажатия начнут доходить как клавиши."
+            addLog("Кольцо отпущено: жесты возможны только через системный HID")
+            rebuild()
+        })
+        box.addView(spacer(6))
+        box.addView(actionButton("Открыть настройки Bluetooth", primary = false) {
+            try {
+                startActivity(Intent(android.provider.Settings.ACTION_BLUETOOTH_SETTINGS))
+            } catch (e: Exception) {
+                toast("Настройки Bluetooth не открылись")
+            }
+        })
+        return box
     }
 
     private fun ringPultCard(): View {
@@ -4101,6 +3956,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             c.addView(readCard)
         }
 
+        c.addView(ringLinkCard())
         c.addView(ringPultCard())
 
         val gestures = card()
@@ -4756,7 +4612,6 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         const val TAB_CONSOLE = "console"
         const val TAB_REPORT = "report"
         const val TAB_HEY = "hey"
-        const val RELEASE_DELAY_MS = 45_000L
         const val TAB_RING = "ring"
         const val TAB_LIVE = "live"
 

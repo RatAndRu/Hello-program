@@ -79,8 +79,6 @@ class BleCentral(private val ctx: Context) {
     // иначе вторая подряд запись дескриптора молча теряется (и канал остаётся немым).
     // В очереди лежит тройка: сервис, характеристика и номер её вхождения.
     // Номер нужен там, где UUID повторяется — например, у HID-отчётов (2A4D).
-    private val subscribeQueue = ArrayDeque<Triple<UUID?, UUID, Int>>()
-    private var subscribeBusy = false
 
     var services: List<GattServiceInfo> = emptyList()
         private set
@@ -452,11 +450,12 @@ class BleCentral(private val ctx: Context) {
         main.removeCallbacks(subscribeWatchdog)
         deniedSubscriptions.clear()
         subscribeTimeouts = 0
-        synchronized(subscribeQueue) { subscribedKeys.clear() }
-        synchronized(subscribeQueue) {
-            subscribeQueue.clear()
-            subscribeBusy = false
+        synchronized(subscribedKeys) { subscribedKeys.clear() }
+        synchronized(opQueue) {
+            opQueue.clear()
+            opBusy = false
         }
+        main.removeCallbacks(opTimeout)
         try {
             g?.disconnect()
             g?.close()
@@ -633,7 +632,7 @@ class BleCentral(private val ctx: Context) {
                     else "Подписка не удалась: статус ${GattNames.gattStatusText(status)}"
                 )
             }
-            subscribeDone()
+            finishOp()
         }
 
         override fun onMtuChanged(g: BluetoothGatt, newMtu: Int, status: Int) {
@@ -703,6 +702,7 @@ class BleCentral(private val ctx: Context) {
                     else "Ошибка записи (status=$status)"
                 )
             }
+            finishOp()
         }
     }
 
@@ -716,6 +716,7 @@ class BleCentral(private val ctx: Context) {
         status: Int
     ) {
         opStatus["read|${serviceOf(characteristic)}|${characteristic.uuid}"] = status
+        finishOp()
         if (status != BluetoothGatt.GATT_SUCCESS) {
             emit { it.onLog("Чтение не удалось (status=$status)") }
             return
@@ -751,193 +752,201 @@ class BleCentral(private val ctx: Context) {
         return null
     }
 
-    @SuppressLint("MissingPermission")
-    fun read(service: UUID?, char: UUID): Boolean {
-        val g = gatt ?: run {
-            emit { it.onLog("Нет соединения") }
-            return false
-        }
-        val c = characteristic(service, char) ?: run {
-            emit { it.onLog("Нет характеристики ${GattNames.uuidLabel(char)}") }
-            return false
-        }
-        return try {
-            g.readCharacteristic(c)
-        } catch (e: Exception) {
-            emit { it.onLog("Чтение: ${e.message}") }
-            false
-        }
-    }
+    // ---------- Очередь операций GATT ----------
+    //
+    // Android выполняет операции GATT строго по одной. Если отправить вторую,
+    // пока первая не завершилась, вызов возвращает ошибку — именно так в 2.3.1
+    // все команды очкам получали «запись не принята», хотя связь была жива.
+    // Поэтому все чтения, записи и подписки идут через одну очередь, а каждая
+    // операция завершается по своему обратному вызову или по таймауту.
 
-    @SuppressLint("MissingPermission")
-    fun write(service: UUID?, char: UUID, payload: ByteArray, withResponse: Boolean? = null): Boolean {
-        val g = gatt ?: run {
-            emit { it.onLog("Нет соединения") }
-            return false
-        }
-        val c = characteristic(service, char) ?: run {
-            emit { it.onLog("Нет характеристики ${GattNames.uuidLabel(char)}") }
-            return false
-        }
-        return try {
-            val supportsResponse = (c.properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0
-            val type = when {
-                withResponse == true -> BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                withResponse == false -> BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-                supportsResponse -> BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                else -> BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
-            }
-            if (Build.VERSION.SDK_INT >= 33) {
-                // На API 33+ метод возвращает int-код (0 = SUCCESS), а не boolean.
-                val first = g.writeCharacteristic(c, payload, type) == android.bluetooth.BluetoothStatusCodes.SUCCESS
-                if (first) return true
-                // Часть прошивок принимает только запись с подтверждением — пробуем её.
-                if (type != BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT && supportsResponse) {
-                    val second = g.writeCharacteristic(
-                        c, payload, BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
-                    ) == android.bluetooth.BluetoothStatusCodes.SUCCESS
-                    if (second) emit { it.onLog("Запись: принята только с подтверждением") }
-                    return second
-                }
-                false
-            } else {
-                c.writeType = type
-                c.value = payload
-                @Suppress("DEPRECATION")
-                g.writeCharacteristic(c)
-            }
-        } catch (e: Exception) {
-            emit { it.onLog("Запись: ${e.message}") }
-            false
-        }
-    }
+    private enum class OpKind { SUBSCRIBE, UNSUBSCRIBE, READ, WRITE }
 
-    private var subscribeStartedAt = 0L
+    private data class GattOp(
+        val kind: OpKind,
+        val service: UUID?,
+        val char: UUID,
+        val index: Int,
+        val payload: ByteArray?,
+        val withResponse: Boolean?,
+        val title: String
+    )
+
+    private val opQueue = ArrayDeque<GattOp>()
     private val subscribedKeys = HashSet<String>()
+    private var opBusy = false
+    private var opStartedAt = 0L
+    private var opTitle = ""
+    private val opTimeout = Runnable { opTimedOut() }
 
-    /**
-     * Идёт запись дескриптора подписки — писать в характеристику сейчас нельзя.
-     * Но только пока операция действительно свежая: если обратного вызова нет,
-     * ждать вечно нельзя, иначе все команды очкам блокируются навсегда.
-     */
-    val busySubscribing: Boolean
-        get() = subscribeBusy && System.currentTimeMillis() - subscribeStartedAt < 1200
-
-    /** Ставит подписку в очередь: GATT выполняет операции строго по одной. */
-    fun subscribe(service: UUID?, char: UUID, enable: Boolean = true, index: Int = 0): Boolean {
-        if (!enable) return doSubscribe(service, char, false, index)
-        val key = "$service|$char|$index"
-        val already = synchronized(subscribeQueue) {
-            if (!subscribedKeys.add(key)) true
-            else {
-                subscribeQueue.addLast(Triple(service, char, index))
-                false
-            }
-        }
-        if (already) return true
-        pumpSubscribe()
-        return true
+    private fun enqueue(op: GattOp) {
+        synchronized(opQueue) { opQueue.addLast(op) }
+        pumpOps()
     }
 
-    private fun pumpSubscribe() {
-        val next: Triple<UUID?, UUID, Int>
-        synchronized(subscribeQueue) {
-            if (subscribeBusy) return
-            next = subscribeQueue.removeFirstOrNull() ?: return
-            subscribeBusy = true
+    private fun pumpOps() {
+        val next: GattOp
+        synchronized(opQueue) {
+            if (opBusy) return
+            next = opQueue.removeFirstOrNull() ?: return
+            opBusy = true
         }
-        subscribeStartedAt = System.currentTimeMillis()
-        val started = doSubscribe(next.first, next.second, true, next.third)
+        opStartedAt = System.currentTimeMillis()
+        opTitle = next.title
+        val started = runOp(next)
         if (!started) {
-            synchronized(subscribeQueue) { subscribeBusy = false }
-            main.postDelayed({ pumpSubscribe() }, 120)
+            finishOp()
             return
         }
-        // Сторож: если устройство не ответило на запись дескриптора, очередь не должна
-        // застрять навсегда — иначе все команды тихо уходят в никуда.
-        main.postDelayed(subscribeWatchdog, 3000)
+        main.removeCallbacks(opTimeout)
+        main.postDelayed(opTimeout, 2000)
     }
 
-    private var subscribeTimeouts = 0
+    private fun finishOp() {
+        main.removeCallbacks(opTimeout)
+        synchronized(opQueue) { opBusy = false }
+        main.postDelayed({ pumpOps() }, 60)
+    }
 
-    private val subscribeWatchdog = Runnable {
-        val wasBusy = synchronized(subscribeQueue) {
-            val was = subscribeBusy
-            subscribeBusy = false
-            was
+    private fun opTimedOut() {
+        val was = synchronized(opQueue) {
+            val v = opBusy
+            opBusy = false
+            v
         }
-        if (!wasBusy) return@Runnable
-        subscribeTimeouts += 1
-        if (subscribeTimeouts >= 3) {
-            // Устройство молчит на записи дескрипторов. Продолжать бессмысленно:
-            // очередь только блокирует команды. Оставляем то, что уже подписано.
-            val dropped = synchronized(subscribeQueue) {
-                val n = subscribeQueue.size
-                subscribeQueue.clear()
-                n
+        if (!was) return
+        emit { it.onLog("Связь: операция «$opTitle» не ответила за 2 с — иду дальше") }
+        main.postDelayed({ pumpOps() }, 60)
+    }
+
+    /** Сколько операций ждёт выполнения. */
+    val pendingOps: Int
+        get() = synchronized(opQueue) { opQueue.size + if (opBusy) 1 else 0 }
+
+    @SuppressLint("MissingPermission")
+    private fun runOp(op: GattOp): Boolean {
+        val g = gatt ?: run {
+            emit { it.onLog("Нет соединения") }
+            return false
+        }
+        val c = characteristic(op.service, op.char, op.index) ?: run {
+            emit { it.onLog("Нет характеристики ${GattNames.uuidLabel(op.char)}") }
+            return false
+        }
+        return try {
+            when (op.kind) {
+                OpKind.SUBSCRIBE, OpKind.UNSUBSCRIBE -> {
+                    val enable = op.kind == OpKind.SUBSCRIBE
+                    g.setCharacteristicNotification(c, enable)
+                    val descriptor = c.getDescriptor(
+                        UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
+                    )
+                    if (descriptor == null) {
+                        if (enable) emit { it.onLog("Подписка включена: ${GattNames.uuidLabel(c.uuid)}") }
+                        finishOp()
+                        return true
+                    }
+                    val value = when {
+                        !enable -> BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
+                        (c.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0 ->
+                            BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
+                        else -> BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                    }
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        g.writeDescriptor(descriptor, value)
+                    } else {
+                        descriptor.value = value
+                        @Suppress("DEPRECATION")
+                        g.writeDescriptor(descriptor)
+                    }
+                    true
+                }
+                OpKind.READ -> g.readCharacteristic(c)
+                OpKind.WRITE -> {
+                    val payload = op.payload ?: ByteArray(0)
+                    val supportsResponse =
+                        (c.properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0
+                    val type = when {
+                        op.withResponse == true -> BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                        op.withResponse == false -> BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                        supportsResponse -> BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                        else -> BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
+                    }
+                    if (Build.VERSION.SDK_INT >= 33) {
+                        g.writeCharacteristic(c, payload, type) ==
+                            android.bluetooth.BluetoothStatusCodes.SUCCESS
+                    } else {
+                        c.writeType = type
+                        c.value = payload
+                        @Suppress("DEPRECATION")
+                        g.writeCharacteristic(c)
+                    }
+                }
             }
-            emit { it.onLog("Подписка: устройство не отвечает — очередь сброшена (пропущено $dropped)") }
-            return@Runnable
+        } catch (e: Exception) {
+            emit { it.onLog("Операция «${op.title}»: ${e.message}") }
+            val message = e.message ?: ""
+            if (message.contains("PRIVILEGED", ignoreCase = true)) {
+                deniedSubscriptions.add("${op.service}|${op.char}")
+            }
+            false
         }
-        emit { it.onLog("Подписка: устройство не ответило на запись — пробую следующий пункт") }
-        main.postDelayed({ pumpSubscribe() }, 150)
     }
 
-    /** Характеристики, на которые система не даёт подписаться: второй раз не пробуем. */
+    /** Характеристики, на которые система не дала подписаться: второй раз не пробуем. */
     private val deniedSubscriptions = HashSet<String>()
 
     fun wasDenied(service: UUID?, char: UUID): Boolean =
         deniedSubscriptions.contains("$service|$char")
 
-    private fun subscribeDone() {
-        main.removeCallbacks(subscribeWatchdog)
-        subscribeTimeouts = 0
-        synchronized(subscribeQueue) { subscribeBusy = false }
-        main.postDelayed({ pumpSubscribe() }, 150)
-    }
-
-    @SuppressLint("MissingPermission")
-    private fun doSubscribe(service: UUID?, char: UUID, enable: Boolean = true, index: Int = 0): Boolean {
-        val g = gatt ?: run {
+    fun read(service: UUID?, char: UUID): Boolean {
+        if (gatt == null) {
             emit { it.onLog("Нет соединения") }
             return false
         }
-        val c = characteristic(service, char, index) ?: run {
-            emit { it.onLog("Нет характеристики ${GattNames.uuidLabel(char)}") }
+        enqueue(GattOp(OpKind.READ, service, char, 0, null, null, "чтение"))
+        return true
+    }
+
+    /**
+     * Запись ставится в очередь и выполняется, когда освободится GATT.
+     * Возвращает true, если запись принята в очередь (результат — в журнале).
+     */
+    fun write(service: UUID?, char: UUID, payload: ByteArray, withResponse: Boolean? = null): Boolean {
+        if (gatt == null) {
+            emit { it.onLog("Нет соединения") }
             return false
         }
-        return try {
-            g.setCharacteristicNotification(c, enable)
-            val descriptor = c.getDescriptor(UUID.fromString("00002902-0000-1000-8000-00805f9b34fb"))
-                ?: run {
-                    if (enable) main.postDelayed({ subscribeDone() }, 80)
-                    return enable
-                }
-            val value = when {
-                !enable -> BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
-                (c.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0 ->
-                    BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
-                else -> BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-            }
-            if (Build.VERSION.SDK_INT >= 33) {
-                g.writeDescriptor(descriptor, value)
-            } else {
-                descriptor.value = value
-                @Suppress("DEPRECATION")
-                g.writeDescriptor(descriptor)
-            }
-            true
-        } catch (e: Exception) {
-            emit { it.onLog("Подписка: ${e.message}") }
-            val message = e.message ?: ""
-            if (message.contains("BLUETOOTH_PRIVILEGED", ignoreCase = true) ||
-                message.contains("privileged", ignoreCase = true)
-            ) {
-                deniedSubscriptions.add("$service|$char")
-            }
-            false
-        }
+        enqueue(GattOp(OpKind.WRITE, service, char, 0, payload, withResponse, "запись"))
+        return true
     }
+
+    /** Подписка тоже идёт через очередь — без дублей и без блокировки команд. */
+    fun subscribe(service: UUID?, char: UUID, enable: Boolean = true, index: Int = 0): Boolean {
+        if (gatt == null) {
+            emit { it.onLog("Нет соединения") }
+            return false
+        }
+        val key = "$service|$char|$index|$enable"
+        synchronized(subscribedKeys) {
+            if (!subscribedKeys.add(key)) return true
+        }
+        enqueue(
+            GattOp(
+                if (enable) OpKind.SUBSCRIBE else OpKind.UNSUBSCRIBE,
+                service, char, index, null, null,
+                if (enable) "подписка" else "отписка"
+            )
+        )
+        return true
+    }
+
+    /**
+     * Раньше здесь был флаг «идёт подписка». Теперь очередь одна на всё,
+     * поэтому отдельная блокировка команд не нужна.
+     */
+    val busySubscribing: Boolean
+        get() = false
 
     /** Состояние сопряжения с текущим устройством. */
     @SuppressLint("MissingPermission")

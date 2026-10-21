@@ -319,8 +319,24 @@ class RingSession(
         return legacySerial
     }
 
+    private var lastHistoryAt = 0L
+    private var lastSendAt = 0L
+
+    /**
+     * Запись в кольцо. Раньше команды уходили пачками: кольцо отвечало потоком,
+     * а потом связь рвалась. Теперь между кадрами держим паузу и не пишем,
+     * когда сеанс уже завершён.
+     */
     private fun sendJl(frame: ByteArray) {
-        ble.write(Ring.SVC_DATA, Ring.CH_WRITE, frame, false)
+        if (!active) return
+        val now = System.currentTimeMillis()
+        val wait = (lastSendAt + 220) - now
+        lastSendAt = maxOf(now, lastSendAt + 220)
+        if (wait <= 0) {
+            ble.write(Ring.SVC_DATA, Ring.CH_WRITE, frame, false)
+        } else {
+            later(wait) { ble.write(Ring.SVC_DATA, Ring.CH_WRITE, frame, false) }
+        }
     }
 
     private fun sendLegacy(frame: ByteArray) {
@@ -350,6 +366,15 @@ class RingSession(
 
     /** Забрать последние измерения из памяти кольца (история, а не live). */
     fun history() {
+        // Не чаще раза в 8 секунд: кольцо отвечает потоком кадров, и частые
+        // запросы подряд приводили к обрыву связи.
+        val now = System.currentTimeMillis()
+        if (now - lastHistoryAt < 8000) {
+            log("Кольцо: историю только что запрашивали — подожду")
+            return
+        }
+        lastHistoryAt = now
+        if (!active) return
         if (!framingConfirmed) {
             status = "Кольцо ещё не ответило — историю не запрашиваю."
             changed()
@@ -367,6 +392,11 @@ class RingSession(
 
     /** Пользователь нажал «измерить пульс». */
     fun measure(kind: String) {
+        if (!active) {
+            status = "Кольцо не подключено — сначала подключитесь к нему."
+            changed()
+            return
+        }
         if (!framingConfirmed || framing != Ring.Framing.JIELI) {
             status = "Кольцо ещё не подтвердило протокол — измерение не запускаю."
             changed()
@@ -487,9 +517,6 @@ class RingSession(
         Ring.measureStatus(frame)?.let { st ->
             measureState = Ring.measureStatusText(st)
             log("Кольцо: измерение — $measureState")
-            // Как только кольцо говорит «готово», забираем измерение из памяти:
-            // live-кадры приходят не у всех прошивок, история — почти у всех.
-            if (st.status == 0x01) later(1500) { history() }
             changed()
         }
         for (r in Ring.readJl(frame)) {
