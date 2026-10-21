@@ -3312,12 +3312,14 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (chunk.total <= 0) {
             // «Нет файлов» часто значит «кадр ещё дописывается». Пробуем ещё
             // несколько раз, а не сдаёмся с первого ответа.
-            if (heyThumbRounds < 4) {
+            if (heyThumbRounds < 5) {
                 heyThumbRounds += 1
-                addLog("Миниатюра: очки ответили «нет файлов» — повторю (${heyThumbRounds}/4)")
+                val wait = if (liveMode == "frames") 500L else 700L * heyThumbRounds
+                addLog("Миниатюра: очки ответили «нет файлов» — повторю через ${wait} мс (${heyThumbRounds}/5)")
+                heyThumbStartedAt = System.currentTimeMillis()
                 ui.postDelayed({
                     if (connState == ConnState.CONNECTED) heyRequestThumbPart(0, "Миниатюра")
-                }, 900)
+                }, wait)
             } else if (heyThumbParts.isEmpty()) {
                 heyPhotoStatus = "Очки четыре раза ответили, что миниатюр нет. " +
                     "Кадр мог не сохраниться — проверьте счётчик фото."
@@ -3823,6 +3825,14 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         ))
         about.addView(spacer(6))
         about.addView(txt(session.status, 11, if (session.framingConfirmed) Pal.GREEN else Pal.AMBER))
+        if (session.rawReads.isNotEmpty()) {
+            about.addView(spacer(8))
+            about.addView(txt("Что кольцо разрешило прочитать", 11, Pal.MUTED))
+            about.addView(txt(
+                session.rawReads.entries.take(8).joinToString("\n") { "${it.key}: ${it.value}" },
+                10, Pal.MUTED, mono = true
+            ))
+        }
         if (session.probeLog.isNotEmpty()) {
             about.addView(spacer(8))
             about.addView(txt("Что уже проверено", 11, Pal.MUTED))
@@ -4113,7 +4123,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                     heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.PHOTO), "Эфир: кадр")
                     ui.postDelayed({
                         if (liveMode == "frames") heyStartThumb("прямой эфир")
-                    }, 2200)
+                    }, 2000)
                     if (tab == TAB_LIVE) rebuildThrottled()
                 }
                 ui.postDelayed(this, 500)

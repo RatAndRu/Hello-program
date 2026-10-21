@@ -58,6 +58,9 @@ class RingSession(
     /** Что уже попробовали и что из этого получило ответ — для честного отчёта. */
     val probeLog = ArrayList<String>()
     private var replies = 0
+    private var readsAsked = 0
+    /** Сырые чтения характеристик кольца: что удалось прочитать без команд. */
+    val rawReads = LinkedHashMap<String, String>()
     private var lastGestureAt = 0L
     private var lastGestureName = ""
     private var timers = ArrayList<Runnable>()
@@ -95,7 +98,9 @@ class RingSession(
         hidMap = null
         gestureLog.clear()
         probeLog.clear()
+        rawReads.clear()
         replies = 0
+        readsAsked = 0
     }
 
     fun stop() {
@@ -121,6 +126,7 @@ class RingSession(
         changed()
 
         later(250) { subscribeAll() }
+        later(500) { readAllReadable() }
         later(700) { readReportMap() }
         later(1100) { firstProbes() }
         later(4200) { fallbackProbe() }
@@ -176,6 +182,26 @@ class RingSession(
                 }
             }
         }
+    }
+
+    /**
+     * Читаем всё, что кольцо вообще разрешает читать. Это не «команды», а обычное
+     * чтение GATT: оно безопасно и иногда сразу отдаёт заряд — у многих колец он
+     * лежит в первой характеристике производительского сервиса.
+     */
+    private fun readAllReadable() {
+        var asked = 0
+        for (svc in currentServices) {
+            if (svc.uuid != Ring.SVC_DATA && svc.uuid != Ring.SVC_FF00 && svc.uuid != Ring.SVC_0BC0) continue
+            for (ch in svc.chars) {
+                if (!ch.readable) continue
+                if (GattNames.shortCode(ch.uuid) == 0x2A4B) continue
+                ble.read(svc.uuid, ch.uuid)
+                asked += 1
+            }
+        }
+        if (asked > 0) log("Кольцо: читаю $asked характеристик без записи команд")
+        readsAsked = asked
     }
 
     private fun readReportMap() {
@@ -277,6 +303,15 @@ class RingSession(
         }
         if (service == Ring.SVC_HID && short == 0x2A4D) {
             handleHidReport(value)
+            return true
+        }
+        if ((service == Ring.SVC_DATA || service == Ring.SVC_FF00 || service == Ring.SVC_0BC0) &&
+            char != Ring.CH_NOTIFY && readsAsked > 0
+        ) {
+            val key = GattNames.uuidLabel(service) + " / " + GattNames.uuidLabel(char)
+            rawReads[key] = hex(value.take(16).toByteArray()) + (if (value.size > 16) " …(${value.size} Б)" else "")
+            log("Кольцо: чтение $key → ${hex(value.take(8).toByteArray())}")
+            changed()
             return true
         }
         if (service == Ring.SVC_FF00 || service == Ring.SVC_0BC0) {
