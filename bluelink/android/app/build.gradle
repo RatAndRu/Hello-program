@@ -6,26 +6,35 @@ android {
         applicationId 'com.example.bluelink'
         minSdk 26
         targetSdk 34
-        versionCode 2
-        versionName '1.1'
+        versionCode 3
+        versionName '1.2'
     }
     signingConfigs {
+        // Постоянный ключ разработчика лежит в репозитории (это НЕ секрет: приложение личное).
+        // Без него каждый прогон CI подписывал APK новым случайным debug-ключом,
+        // из-за чего обновление поверх установленной версии было невозможно.
         release {
-            def ks = System.getenv('BLUELINK_KEYSTORE_FILE')
-            if (ks) {
-                storeFile file(ks)
+            def envStore = System.getenv('BLUELINK_KEYSTORE_FILE')
+            if (envStore) {
+                storeFile file(envStore)
                 storePassword System.getenv('BLUELINK_STORE_PASSWORD')
                 keyAlias System.getenv('BLUELINK_KEY_ALIAS') ?: 'bluelink'
                 keyPassword System.getenv('BLUELINK_KEY_PASSWORD') ?: System.getenv('BLUELINK_STORE_PASSWORD')
+            } else {
+                storeFile file('bluelink-dev.p12')
+                storePassword 'bluelink-dev-2026'
+                keyAlias 'bluelink'
+                keyPassword 'bluelink-dev-2026'
             }
         }
     }
     buildTypes {
         release {
-            if (System.getenv('BLUELINK_KEYSTORE_FILE')) signingConfig signingConfigs.release
-            minifyEnabled true
-            shrinkResources true
-            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
+            // Сжатие кода выключено намеренно: приложение небольшое, а экономия 200–300 КБ
+            // не стоит риска, что R8 что-то вырежет в обработчиках Bluetooth.
+            minifyEnabled false
+            shrinkResources false
         }
     }
 }

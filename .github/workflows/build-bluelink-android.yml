@@ -35,16 +35,19 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Подготовить постоянный ключ подписи (если секрет задан)
+      # Подпись: по умолчанию используется постоянный ключ из репозитория
+      # (bluelink/android/bluelink-dev.p12). Если задан секрет BLUELINK_KEYSTORE_BASE64,
+      # он имеет приоритет. Главное — подпись больше не меняется от сборки к сборке.
+      - name: Подготовить ключ подписи из секрета (если задан)
         env:
           BLUELINK_KEYSTORE_BASE64: ${{ secrets.BLUELINK_KEYSTORE_BASE64 }}
         run: |
           if [ -n "$BLUELINK_KEYSTORE_BASE64" ]; then
             echo "$BLUELINK_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/bluelink-release.p12"
             echo "BLUELINK_KEYSTORE_FILE=$RUNNER_TEMP/bluelink-release.p12" >> "$GITHUB_ENV"
-            echo "Постоянная подпись: включена"
+            echo "Подпись: ключ из секрета"
           else
-            echo "Постоянная подпись: секрет не задан, будет временная debug-подпись"
+            echo "Подпись: постоянный ключ из репозитория (bluelink-dev.p12)"
           fi
 
       - name: Собрать APK
@@ -53,12 +56,12 @@ jobs:
           BLUELINK_STORE_PASSWORD: ${{ secrets.BLUELINK_STORE_PASSWORD }}
           BLUELINK_KEY_PASSWORD: ${{ secrets.BLUELINK_KEY_PASSWORD }}
           BLUELINK_KEY_ALIAS: ${{ secrets.BLUELINK_KEY_ALIAS }}
+        run: gradle assembleRelease --stacktrace
+
+      - name: Проверить подпись APK
         run: |
-          if [ -n "$BLUELINK_KEYSTORE_FILE" ]; then
-            gradle assembleRelease --stacktrace
-          else
-            gradle assembleDebug --stacktrace
-          fi
+          APK=bluelink/android/app/build/outputs/apk/release/app-release.apk
+          "$ANDROID_HOME/build-tools/34.0.0/apksigner" verify --print-certs "$APK" | head -5
 
       - name: Загрузить APK в Artifacts
         uses: actions/upload-artifact@v4
@@ -69,12 +72,7 @@ jobs:
           retention-days: 30
 
       - name: Подготовить APK с понятным именем
-        run: |
-          if [ -f bluelink/android/app/build/outputs/apk/release/app-release.apk ]; then
-            cp bluelink/android/app/build/outputs/apk/release/app-release.apk BlueLink.apk
-          else
-            cp bluelink/android/app/build/outputs/apk/debug/app-debug.apk BlueLink.apk
-          fi
+        run: cp bluelink/android/app/build/outputs/apk/release/app-release.apk BlueLink.apk
 
       # Постоянный тег: ссылка на скачивание не меняется от сборки к сборке.
       # https://github.com/RatAndRu/Hello-program/releases/download/bluelink-latest/BlueLink.apk

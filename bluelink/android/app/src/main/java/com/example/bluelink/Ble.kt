@@ -90,6 +90,7 @@ class BleCentral(private val ctx: Context) {
     private var attemptIndex = 0
     private var connectedOnce = false
     private var servicesReceived = false
+    private var discoveryRetries = 0
 
     private val connectTimeout = Runnable {
         if (!connectedOnce) {
@@ -307,6 +308,7 @@ class BleCentral(private val ctx: Context) {
         attemptIndex = 0
         connectedOnce = false
         servicesReceived = false
+        discoveryRetries = 0
         lastError = ""
         values.clear()
         connectedName = item.label
@@ -413,6 +415,7 @@ class BleCentral(private val ctx: Context) {
             return
         }
         servicesReceived = false
+        discoveryRetries = 0
         main.removeCallbacks(discoveryTimeout)
         main.postDelayed(discoveryTimeout, 12_000)
         try {
@@ -510,10 +513,29 @@ class BleCentral(private val ctx: Context) {
                 return
             }
             main.removeCallbacks(discoveryTimeout)
+            val discovered = buildServices(g)
+            if (discovered.isEmpty() && discoveryRetries < 2) {
+                // Часть устройств отдаёт GATT-таблицу только со второго запроса.
+                discoveryRetries += 1
+                emit { it.onLog("Устройство вернуло пустую таблицу — запрашиваю сервисы ещё раз (${discoveryRetries}/2)") }
+                main.postDelayed({
+                    try {
+                        g.discoverServices()
+                    } catch (e: Exception) {
+                        emit { it.onLog("Повторный запрос сервисов: ${e.message}") }
+                    }
+                }, 1200L * discoveryRetries)
+                return
+            }
             servicesReceived = true
-            services = buildServices(g)
+            services = discovered
             emit { it.onServices(services) }
-            emit { it.onLog("Сервисов найдено: ${services.size}") }
+            emit { it.onLog("Сервисов найдено: ${services.size}, характеристик: ${services.sumOf { it.chars.size }}") }
+            if (services.isEmpty()) {
+                lastError = "Устройство не отдало ни одного сервиса. Возможно, оно требует сопряжения " +
+                    "или работает только по классическому Bluetooth."
+                emit { it.onLog(lastError) }
+            }
             try {
                 g.requestMtu(247)
             } catch (ignored: Exception) {
@@ -523,6 +545,16 @@ class BleCentral(private val ctx: Context) {
         override fun onMtuChanged(g: BluetoothGatt, newMtu: Int, status: Int) {
             mtu = newMtu
             emit { it.onLog("MTU: $newMtu байт") }
+            if (services.isEmpty() && discoveryRetries < 2) {
+                discoveryRetries += 1
+                emit { it.onLog("Сервисы ещё пусты — повторный запрос после MTU") }
+                main.postDelayed({
+                    try {
+                        g.discoverServices()
+                    } catch (ignored: Exception) {
+                    }
+                }, 800)
+            }
         }
 
         // --- API 33+ ---

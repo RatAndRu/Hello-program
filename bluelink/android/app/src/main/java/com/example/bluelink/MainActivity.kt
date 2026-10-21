@@ -247,11 +247,18 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             Pal.SURFACE, 999,
             if (connected) ColorUtils.withAlpha(Pal.GREEN, 0x55) else Pal.STROKE
         )
+        val version = appVersion()
         subtitle.text = when {
-            connected -> "$connName · ${gattServices.size} сервисов"
-            activeProfile != null -> "Профиль: ${activeProfile?.name}"
-            else -> "Bluetooth-пульт для любых устройств"
+            connected -> "$connName · ${gattServices.size} сервисов · v$version"
+            activeProfile != null -> "Профиль: ${activeProfile?.name} · v$version"
+            else -> "Bluetooth-пульт для любых устройств · v$version"
         }
+    }
+
+    private fun appVersion(): String = try {
+        packageManager.getPackageInfo(packageName, 0).versionName ?: "?"
+    } catch (e: Exception) {
+        "?"
     }
 
     private fun toast(message: String) {
@@ -964,10 +971,12 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 ble.reconnect()
                 rebuild()
             })
-            emptyActions.addView(actionButton("Настройки Bluetooth", primary = false) {
+            emptyActions.addView(actionButton("Журнал", primary = false) { copyLog() })
+            emptyCard.addView(emptyActions)
+            emptyCard.addView(spacer(6))
+            emptyCard.addView(actionButton("Настройки Bluetooth", primary = false) {
                 openBluetoothSettings()
             })
-            emptyCard.addView(emptyActions)
             c.addView(emptyCard)
         }
 
@@ -1165,6 +1174,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             }
         })
         c.addView(head)
+        c.addView(txt("сервисов: ${gattServices.size} · характеристик: ${gattServices.sumOf { it.chars.size }} · v${appVersion()}", 11, Pal.MUTED))
 
         if (gattServices.isEmpty()) {
             val connected = connState == ConnState.CONNECTED
@@ -1190,10 +1200,24 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
                 })
             }
             c.addView(spacer(6))
-            c.addView(actionButton("К поиску устройств", primary = false) {
+            val emptyButtons = row()
+            emptyButtons.addView(actionButton("К поиску устройств", primary = false) {
                 tab = TAB_SCAN
                 rebuild()
             })
+            emptyButtons.addView(actionButton("Копировать журнал", primary = false) { copyLog() })
+            c.addView(emptyButtons)
+            c.addView(spacer(8))
+            c.addView(
+                listOf(
+                    "Подключение: ${if (connState == ConnState.CONNECTED) "есть" else "нет"}",
+                    "Транспорт: ${ble.transportLabel.ifBlank { "—" }}",
+                    "MTU: ${ble.mtu}",
+                    "Сервисов: ${gattServices.size}",
+                    "Устройство: $connName ($connAddress)",
+                    "Версия приложения: v${appVersion()}"
+                ).joinToString("\n").let { txt(it, 11, Pal.MUTED, mono = true) }
+            )
             return c
         }
 
@@ -1437,6 +1461,17 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             toast("JSON скопирован")
         })
         showSheet(p.name, body)
+    }
+
+    private fun copyLog() {
+        if (logs.isEmpty()) {
+            toast("Журнал пуст")
+            return
+        }
+        val header = "BlueLink v${appVersion()} · устройство: $connName ($connAddress) · " +
+            "транспорт ${ble.transportLabel.ifBlank { "—" }} · сервисов ${gattServices.size}\n"
+        copyToClipboard(header + logs.joinToString("\n"))
+        toast("Журнал скопирован")
     }
 
     private fun copyToClipboard(text: String) {
@@ -1729,6 +1764,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         val logCard = card()
         val logHead = row()
         logHead.addView(txt("Журнал", 12, Pal.MUTED, bold = true), LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        logHead.addView(pill("Копировать", false) { copyLog() })
         logHead.addView(pill("Очистить", false) {
             logs.clear()
             addLog("Журнал очищен")
