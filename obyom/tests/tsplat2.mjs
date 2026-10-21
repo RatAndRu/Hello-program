@@ -48,8 +48,11 @@ const opt = {
 };
 const ITERS = num('ITERS', 1200);
 const S = initFromMesh(M, num('N0', 8000), opt.deg);
-const vopt = E.MEDW !== undefined ? { medW: +E.MEDW } : {};
+const vopt = { ...(E.MEDW !== undefined ? { medW: +E.MEDW } : {}), farHull: E.FAR !== '0' };
 const SV = splatViews(M, train, depthMap, vopt);
+if (E.DBGFAR) { const S0 = splatViews(M, train, depthMap, { ...vopt, farHull: false }); let ch = 0, all = 0, z0 = 0, gtObj = 0;
+  SV.forEach((v, k) => { const f = train[k]; for (let j = 0; j < v.at.length; j++) { all++; if (v.at[j] === 0) z0++; if (v.at[j] !== S0[k].at[j]) { ch++; const x = j % v.cw + v.x0, y = (j / v.cw | 0) + v.y0; if (f.gm && f.gm[y * f.w + x]) gtObj++; } } });
+  console.log(`farHull: изменено ${ch} пикс. из ${all} (${(100 * ch / all).toFixed(2)}%), из них на настоящем предмете ${gtObj}; цель «прозрачно» всего ${(100 * z0 / all).toFixed(1)}%`); process.exit(0); }
 const tr = new Trainer(S, SV, { ...opt, iters: ITERS, extent: 110, maxN: num('NMAX', 20000), inside: allowedRegion(G, train, 2) });
 const TV = splatViews(M, test, depthMap, vopt);
 

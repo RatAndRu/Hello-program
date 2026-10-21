@@ -65,6 +65,12 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // экспорт GLB: проверим, что файл с текстурой собирается
   const glb = await page.evaluate(async () => { const m = await import('./js/export.js'); const s = window.__obyomScan; return s ? m.toGLB(s.mesh, 't').length : -1; });
   console.log('GLB байт:', glb);
+  if (process.env.MAPS) { // v2.2: кнопка «Карта» — сами карты на модели
+    const vis = await page.evaluate(() => !document.getElementById('vMap').classList.contains('hidden')); console.log('кнопка «Карта» видна:', vis);
+    if (vis) { await page.evaluate(() => { const v = window.__obyomViewer; v.auto = false; v.yaw = 0.9; v.pitch = 0.35; v.dirty = true; }); const ttl = [];
+      for (let k = 0; k < 6; k++) { await new Promise((r) => setTimeout(r, 700)); ttl.push(await page.evaluate(() => document.getElementById('vMap').textContent)); await page.screenshot({ path: `${process.env.MAPS}map${k}.jpg`, type: 'jpeg', quality: 75 }); await page.click('#vMap'); }
+      console.log('карты:', ttl.join(' | ')); }
+  }
   if (process.env.NATIVE) console.log('своя камера:', JSON.stringify(await page.evaluate(() => window.__nat)));
   if (errs.length) console.log(errs.join('\n'));
   await browser.close();

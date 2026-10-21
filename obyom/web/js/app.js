@@ -9,7 +9,7 @@ import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '2.1';
+export const VERSION = '2.2';
 const $ = (id) => document.getElementById(id);
 const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8', torch: 'off' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
@@ -267,7 +267,7 @@ function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
   proc.promise.then(async (r) => {
     if (procViewer) { procViewer.destroy(); procViewer = null; }
     const M = r.mesh, b = bounds(M);
-    Object.assign(scan, { mode: st.mode, mesh: M, splats: r.splats || null, hasMesh: st.mode !== 'splat', hasSplats: !!r.splats,
+    Object.assign(scan, { log: $('procLog').textContent.slice(-20000), mode: st.mode, mesh: M, splats: r.splats || null, hasMesh: st.mode !== 'splat', hasSplats: !!r.splats,
       stats: { ...r.stats, size: b.size, volume: meshVolume(M) } });
     await openScan(null, scan);
     scan.thumb = viewer.snapshot(320);
@@ -283,7 +283,7 @@ function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
     log('✗ ' + m); $('procStage').textContent = 'Не получилось'; $('procStop').textContent = 'На главную';
     $('procStop').onclick = () => { history.back(); };
     // сохраним пустую запись, чтобы можно было пересчитать
-    store.getScan(scan.id).then((old) => { if (!(old && old.hasMesh && !old.failed)) return store.putScan({ ...scan, failed: m, hasMesh: false, hasSplats: false }); }).catch(() => {});
+    store.getScan(scan.id).then((old) => { if (!(old && old.hasMesh && !old.failed)) return store.putScan({ ...scan, log: $('procLog').textContent.slice(-20000), failed: m, hasMesh: false, hasSplats: false }); }).catch(() => {});
   });
 }
 function boundsPacked(p) { const I = splatInfo(p), mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9]; for (let k = 0; k < I.n; k++) { const i = I.off + k * I.stride; for (let c = 0; c < 3; c++) { mn[c] = Math.min(mn[c], p[i + c]); mx[c] = Math.max(mx[c], p[i + c]); } } return { mn, mx }; }
@@ -310,7 +310,7 @@ async function openScan(id, scanObj) {
   viewer.hasTex = !!(scan.mesh && scan.mesh.uv && scan.mesh.tex);
   viewer.hasPbr = !!(viewer.hasTex && scan.mesh.pbr && scan.mesh.tan);
   // настройки поверхности хранятся в скане (и идут в экспорт): материал, сила рельефа, какая текстура
-  const sv = scan.surf || {}; viewer.mat = sv.mat ?? -1; viewer.relief = sv.relief ?? 1; viewer.texSrc = viewer.hasPbr ? (sv.tex || 'albedo') : 'photo'; viewer.useTex = sv.useTex !== false;
+  const sv = scan.surf || {}; viewer.mat = sv.mat ?? -1; viewer.relief = sv.relief ?? 1; viewer.texSrc = viewer.hasPbr ? (sv.tex || 'albedo') : 'photo'; viewer.useTex = sv.useTex !== false; viewer.map = 0;
   syncViewTools();
 }
 function syncViewTools() {
@@ -321,6 +321,8 @@ function syncViewTools() {
   $('vTex').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', (viewer.useTex === false ? '0' : viewer.texSrc === 'albedo' && viewer.hasPbr ? 'a' : '1') === b.dataset.v); if (b.dataset.v === 'a') b.classList.toggle('hidden', !viewer.hasPbr); });
   const pbrTools = viewer.show === 'mesh' && viewer.hasPbr && viewer.shade !== 0;
   $('vMat').classList.toggle('hidden', !pbrTools || viewer.shade === 2); $('vRelief').classList.toggle('hidden', !pbrTools);
+  $('vMap').classList.toggle('hidden', !(viewer.show === 'mesh' && viewer.hasPbr));
+  $('vMap').textContent = 'Карта: ' + MAPS[viewer.map || 0]; $('vMap').classList.toggle('on', (viewer.map || 0) > 0);
   $('vMat').querySelectorAll('button').forEach((b) => b.classList.toggle('on', String(viewer.mat ?? -1) === b.dataset.v));
   $('vRelief').textContent = `Рельеф ${{ 0: 'выкл', 0.5: '½×', 1: '1×', 2: '2×' }[viewer.relief ?? 1] || (viewer.relief + '×')}`;
   $('vAuto').classList.toggle('on', viewer.auto);
@@ -331,6 +333,9 @@ const saveSurf = () => { if (!curScan) return; curScan.surf = { mat: viewer.mat,
 $('vTex').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.useTex = b.dataset.v !== '0'; if (b.dataset.v !== '0') viewer.texSrc = b.dataset.v === 'a' ? 'albedo' : 'photo'; viewer.dirty = true; syncViewTools(); saveSurf(); };
 $('vMat').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.mat = +b.dataset.v; viewer.dirty = true; syncViewTools(); saveSurf(); };
 $('vRelief').onclick = () => { const L = [0, 0.5, 1, 2], i = L.indexOf(viewer.relief ?? 1); viewer.relief = L[(i + 1) % L.length]; viewer.dirty = true; syncViewTools(); saveSurf(); };
+// v2.2: сами карты на модели — чтобы было видно, что посчиталось (рельеф, материал)
+const MAPS = ['нет', 'нормали', 'высота', 'шероховатость', 'металл', 'затенение'];
+$('vMap').onclick = () => { viewer.map = ((viewer.map || 0) + 1) % MAPS.length; viewer.dirty = true; syncViewTools(); };
 $('vAuto').onclick = () => { viewer.auto = !viewer.auto; syncViewTools(); };
 $('vHome').onclick = () => { viewer.reset(); };
 $('vName').onchange = async () => { if (!curScan) return; curScan.name = $('vName').value.trim() || curScan.name; await store.putScan(curScan).catch(() => {}); };
@@ -425,6 +430,7 @@ async function moreSheet(scan) {
     <div class="seg wrap3" id="rShape"><button data-v="normal">Обычная</button><button data-v="revolve">Тело вращения</button><button data-v="smooth">Гладкая</button><button data-v="box">Коробка</button><button data-v="prism">Призма</button><button data-v="planes">Плоские грани</button></div>
     ${nb ? '<label class="lbl"><input type="checkbox" id="rNoB"> пересчитать без досъёмки низа</label><button data-a="dropbottom">Удалить досъёмку низа</button>' : ''}
     ${nc ? '<button data-a="dropclose">Удалить крупные планы</button>' : ''}
+    <button data-a="zip">📦 Кадры для разбора (ZIP)<small>все кадры + настройки и журнал обработки — если модель вышла странной, этот файл можно прислать разработчику</small></button>
     <button data-a="dropframes">Удалить кадры (освободить место)</button>` : '<p>Кадров съёмки нет — пересчёт невозможен.</p>'}
     <button data-a="delete" style="color:var(--bad)">Удалить модель</button>`,
   (box) => {
@@ -445,6 +451,17 @@ async function moreSheet(scan) {
     const cb2 = box.querySelector('[data-a="close"]'); if (cb2) cb2.onclick = () => { closeSheet(); const go2 = () => startCapture({ closeOf: scan }); if (cur !== 'home') { history.back(); setTimeout(go2, 80); } else go2(); };
     const dc = box.querySelector('[data-a="dropclose"]'); if (dc) dc.onclick = async () => { await store.delFrames(scan.id + ':close'); delete scan.close; await store.putScan(scan).catch(() => {}); closeSheet(); toast('Крупные планы удалены (текстура останется, пока не пересчитаешь)'); };
     const db = box.querySelector('[data-a="dropbottom"]'); if (db) db.onclick = async () => { await store.delFrames(scan.id + ':bottom'); await store.delFrames(scan.id + ':bplate').catch(() => {}); delete scan.bottom; await store.putScan(scan).catch(() => {}); closeSheet(); toast('Досъёмка низа удалена (модель останется, пока не пересчитаешь)'); };
+    const zb = box.querySelector('[data-a="zip"]'); if (zb) zb.onclick = async () => {
+      closeSheet(); toast('Собираю архив кадров…', 6000);
+      try {
+        const { makeZip } = await import('./zip.js'), files = [], pad = (i) => String(i).padStart(3, '0');
+        const add = async (list, pre) => { if (list) for (let i = 0; i < list.length; i++) files.push({ name: `${pre}${pad(i)}.jpg`, data: new Uint8Array(await list[i].arrayBuffer()) }); };
+        await add(frames, 'frames/f'); await add(bframes, 'bottom/b'); await add(close, 'close/c'); await add(plates, 'plate/p'); await add(bplates, 'bplate/q');
+        const info = { app: 'Объём ' + VERSION, name: scan.name, date: new Date(scan.date).toISOString(), settings: scan.settings, bottom: scan.bottom || null, stats: scan.stats || null, failed: scan.failed || null, ua: navigator.userAgent, log: scan.log || '' };
+        files.push({ name: 'info.json', data: new TextEncoder().encode(JSON.stringify(info, null, 1)) });
+        await saveFile(makeZip(files), fileBase(scan.name) + '_кадры.zip', 'application/zip');
+      } catch (e) { toast('Архив не собрался: ' + e.message, 4000); }
+    };
     const dz = box.querySelector('[data-a="dropframes"]'); if (dz) dz.onclick = async () => { await store.delFrames(scan.id); await store.delFrames(scan.id + ':bottom'); for (const k of [':plate', ':bplate', ':close']) await store.delFrames(scan.id + k).catch(() => {}); closeSheet(); toast('Кадры удалены'); };
     box.querySelector('[data-a="delete"]').onclick = async () => { if (!confirm('Удалить модель «' + scan.name + '»?')) return; await store.delScan(scan.id); closeSheet(); if (cur === 'view') history.back(); else renderList(); };
   });

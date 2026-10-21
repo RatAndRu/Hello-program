@@ -11,6 +11,7 @@ const MESH_FS = `#version 300 es
 precision highp float; in vec3 vN; in vec3 vC; in vec3 vP; in vec2 vUV; in vec4 vT;
 uniform int uMode; uniform int uTexOn; uniform sampler2D uTex; uniform vec3 uEye;
 uniform int uPbr; uniform sampler2D uNrm; uniform sampler2D uOrm; uniform float uRelief; uniform int uMat; out vec4 o;
+uniform int uMap; uniform sampler2D uHgt; // v2.2: показать саму карту (1 нормали, 2 высота, 3 шероховатость, 4 металл, 5 затенение)
 const float PI=3.14159265;
 vec3 light(vec3 n, vec3 v, vec3 L, vec3 rad, vec3 base, float rough, float metal){
   float NdL=max(dot(n,L),0.0); if(NdL<=0.0) return vec3(0.0);
@@ -53,6 +54,12 @@ void main(){
     // окружение: рассеянное + отражение студии (металл и глянец)
     vec3 F0=mix(vec3(0.04),alb,mt); float NdV=max(dot(n,v),1e-3);
     c += ao*(alb*(1.0-mt)*0.33 + env(reflect(-v,n), L1, rg)*envBRDF(F0, rg, NdV)*mix(0.6, 1.0, mt));
+  }
+  if(uMap>0 && uPbr==1){
+    vec3 orm=texture(uOrm,vUV).rgb;
+    if(uMap==1) c=texture(uNrm,vUV).rgb; // как в файле: сиреневый — ровно, оттенки — наклон
+    else if(uMap==2){ float hh=texture(uHgt,vUV).r; c=mix(vec3(0.05,0.1,0.35), vec3(1.0,0.95,0.6), hh); c=mix(c, vec3(hh), 0.35); } // синее — впадины, светлое — выпуклости
+    else if(uMap==3) c=vec3(orm.g); else if(uMap==4) c=vec3(orm.b); else c=vec3(orm.r);
   }
   o=vec4(c,1.0);
 }`;
@@ -135,7 +142,7 @@ export class Viewer3D {
   reset() { if (this.home) { Object.assign(this, { yaw: this.home.yaw, pitch: this.home.pitch, dist: this.home.dist, target: [...this.home.target] }); this.dirty = true; } }
   setMesh(M) {
     const gl = this.gl;
-    if (this.mesh) { this.mesh.bufs.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(this.mesh.vao); for (const k of ['tex', 'alb', 'nrm', 'orm']) if (this.mesh[k]) gl.deleteTexture(this.mesh[k]); }
+    if (this.mesh) { this.mesh.bufs.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(this.mesh.vao); for (const k of ['tex', 'alb', 'nrm', 'orm', 'hgt']) if (this.mesh[k]) gl.deleteTexture(this.mesh[k]); }
     if (!M) { this.mesh = null; return; }
     const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
     const mk = (data, loc, n, type, norm) => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, type, norm, 0, 0); return b; };
@@ -160,7 +167,7 @@ export class Viewer3D {
     }).catch((e) => console.warn('текстура', key, e));
     // текстура (JPEG атласа) и карты поверхности (альбедо без теней, нормали, ORM) — раскрываем асинхронно
     if (hasUV) load(M.tex.jpg, 'image/jpeg', 'tex');
-    if (hasPbr) { if (M.pbr.albedo) load(M.pbr.albedo, 'image/jpeg', 'alb'); load(M.pbr.normal, 'image/png', 'nrm'); load(M.pbr.orm, 'image/png', 'orm'); }
+    if (hasPbr) { if (M.pbr.albedo) load(M.pbr.albedo, 'image/jpeg', 'alb'); load(M.pbr.normal, 'image/png', 'nrm'); load(M.pbr.orm, 'image/png', 'orm'); if (M.pbr.height) load(M.pbr.height, 'image/png', 'hgt'); }
     this.dirty = true;
   }
   // packed: см. splat.js (splatInfo) — v2 с гармониками или старый формат по 14 чисел на каплю
@@ -238,6 +245,8 @@ export class Viewer3D {
         gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, M_.nrm); gl.uniform1i(gl.getUniformLocation(this.pm, 'uNrm'), 1);
         gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, M_.orm); gl.uniform1i(gl.getUniformLocation(this.pm, 'uOrm'), 2); gl.activeTexture(gl.TEXTURE0);
       } else gl.vertexAttrib4f(4, 1, 0, 0, 1);
+      const mapOn = pbrOn && this.map > 0 && (this.map !== 2 || M_.hgt) ? this.map : 0; gl.uniform1i(gl.getUniformLocation(this.pm, 'uMap'), mapOn);
+      if (mapOn === 2) { gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, M_.hgt); gl.uniform1i(gl.getUniformLocation(this.pm, 'uHgt'), 3); gl.activeTexture(gl.TEXTURE0); }
       gl.uniform1f(gl.getUniformLocation(this.pm, 'uRelief'), this.relief ?? 1); gl.uniform1i(gl.getUniformLocation(this.pm, 'uMat'), this.mat ?? -1);
       gl.bindVertexArray(this.mesh.vao); gl.drawElements(gl.TRIANGLES, this.mesh.n, gl.UNSIGNED_INT, 0);
     } else if (this.show === 'splat' && this.splats) {

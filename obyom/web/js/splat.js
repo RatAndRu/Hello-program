@@ -554,6 +554,24 @@ export function splatViews(M, frames, depthMap, opt = {}) {
     const m = opt.margin ?? 6; x0 = Math.max(0, x0 - m); y0 = Math.max(0, y0 - m); x1 = Math.min(w - 1, x1 + m); y1 = Math.min(h - 1, y1 + m);
     const cw = x1 - x0 + 1, ch = y1 - y0 + 1, n = cw * ch;
     const img = new Float32Array(n * 3), bg = new Float32Array(n * 3), wt = new Float32Array(n), at = new Int8Array(n).fill(-1);
+    // v2.2: «далеко от оболочки» — оболочка всегда объемлет предмет, значит там, куда она не проецируется (с запасом
+    // ~2 мм, как и область жизни капель), предмета точно нет: требуем прозрачность, даже если маска не уверена
+    // (стена за листом, тень). Иначе крайние капли рисуют «дымку» под цвет стены — облачка над предметом.
+    let far = null;
+    if (opt.farHull !== false) {
+      const zc = (() => { let s = 0, c = 0; for (let i = 0; i < zb.length; i += 7) if (zb[i] < 1e8) { s += zb[i]; c++; } return c ? s / c : 300; })();
+      const r = Math.max(2, Math.ceil((opt.farPad ?? 2.5) * f.K.fx / zc));
+      far = new Uint8Array(n).fill(1);
+      const rowD = new Int32Array(n).fill(1 << 20); // расстояние по строке до пикселя оболочки (два прохода), затем по столбцу
+      for (let y = 0; y < ch; y++) {
+        let d = 1 << 20; for (let x = 0; x < cw; x++) { d = zb[(y + y0) * w + x + x0] < 1e8 ? 0 : d + 1; rowD[y * cw + x] = d; }
+        d = 1 << 20; for (let x = cw - 1; x >= 0; x--) { d = zb[(y + y0) * w + x + x0] < 1e8 ? 0 : d + 1; if (d < rowD[y * cw + x]) rowD[y * cw + x] = d; }
+      }
+      for (let x = 0; x < cw; x++) for (let y = 0; y < ch; y++) {
+        if (rowD[y * cw + x] > r) continue;
+        for (let yy = Math.max(0, y - r); yy <= Math.min(ch - 1, y + r); yy++) far[yy * cw + x] = 0; // квадратная окрестность r — с запасом
+      }
+    }
     for (let y = 0; y < ch; y++) for (let x = 0; x < cw; x++) {
       const j = y * cw + x, gi = (y + y0) * w + x + x0;
       for (let c = 0; c < 3; c++) img[j * 3 + c] = f.rgba[gi * 4 + c] / 255;
@@ -565,6 +583,7 @@ export function splatViews(M, frames, depthMap, opt = {}) {
       if (unk && f.bgMed && opt.medW !== 0) { const gn = f.bgGain || 1; for (let c = 0; c < 3; c++) bg[j * 3 + c] = Math.min(1, gn * f.bgMed[gi * 3 + c] / 255); wt[j] = opt.medW ?? 1; }
       // цель прозрачности: уверенный фон — капель нет (0); уверенный предмет внутри оболочки — сплошь (1); прочее — без цели
       if (f.mask) at[j] = f.mask[gi] === 0 ? 0 : f.mask[gi] === 2 && zb[gi] < 1e8 ? 1 : -1;
+      if (far && far[j] && at[j] < 0 && !(f.mask && f.mask[gi] === 2)) at[j] = 0;
     }
     views.push({ K: f.K, R: f.R, t: f.t, x0, y0, cw, ch, img, bg, wt, at, src: f });
   }

@@ -25,8 +25,9 @@ const check = (label, get, set, gradOf, e) => {
   totalBad += bad; console.log(label, 'pixels with grad', tot, 'mismatch', bad);
 };
 for (const [name, k] of [['mu', 0], ['mu', 2], ['ls', 0], ['ls', 2], ['q', 1], ['q', 3], ['op', 0], ['sh', 0], ['sh', 4], ['sh', 13], ['sh', 25]]) {
-  const jj = name === 'q' ? 44 + k : name === 'op' ? 11 : name === 'sh' ? 3 * S.nb * 3 + k : 33 + k, e = name === 'mu' ? 1e-3 : 1e-4;
+  const jj = name === 'q' ? 44 + k : name === 'op' ? 11 : name === 'sh' ? 3 * S.nb * 3 + k : 33 + k, e = name === 'mu' || name === 'ls' ? 1e-3 : 1e-4; // ls: при 1e-4 численная разность тонет в шуме float32 (третья ось почти не влияет)
   check(`${name}[${k}]`, () => S[name][jj], (v) => { S[name][jj] = v; }, (G) => G[name][jj], e);
 }
 for (let c = 0; c < 3; c++) check(`gain[${c}]`, () => view.gain[c], (v) => { view.gain[c] = v; }, (G) => G.gain[c], 1e-4);
 console.log(totalBad ? 'ЕСТЬ РАСХОЖДЕНИЯ' : 'OK');
+if (totalBad) process.exit(1); // годится как проверка в CI

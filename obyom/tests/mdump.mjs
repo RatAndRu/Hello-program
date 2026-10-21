@@ -1,8 +1,8 @@
 import fs from 'fs';
-import { matLayout, matRaster } from '/home/user/Hello-program/obyom/web/js/mat.js';
-import { detectMarkers, toGray } from '/home/user/Hello-program/obyom/web/js/detect.js';
-import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal } from '/home/user/Hello-program/obyom/web/js/pose.js';
-import { computeMask } from '/home/user/Hello-program/obyom/web/js/recon.js';
+import { matLayout, matRaster } from '../web/js/mat.js';
+import { detectMarkers, toGray } from '../web/js/detect.js';
+import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal } from '../web/js/pose.js';
+import { computeMask } from '../web/js/recon.js';
 const dir = process.argv[2], ks = process.argv[3].split(',').map(Number), w = 640;
 const gt = JSON.parse(fs.readFileSync(dir + '/gt.json')), h = Math.round(gt.h * w / gt.w);
 const L = matLayout('A4', 'round'), mr = matRaster(L, 'light', 2);
