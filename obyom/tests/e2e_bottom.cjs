@@ -26,7 +26,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await sleep(1500);
   };
   if (PH === 'A') {
-    await page.evaluate((o) => { localStorage.setItem('obyom.settings', JSON.stringify({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'fast', shape: o.shape, delay: '3', step: '10' })); }, { shape: process.env.SHAPE || 'normal' });
+    await page.evaluate((o) => { localStorage.setItem('obyom.settings', JSON.stringify({ mode: o.mode, method: 'walk', size: 'A4', height: '90', quality: 'fast', shape: o.shape, delay: '3', step: '10' })); }, { shape: process.env.SHAPE || 'normal', mode: process.env.MODE || 'mesh' });
     await page.reload({ waitUntil: 'networkidle0' });
     await page.click('#btnNew'); await sleep(300); await page.screenshot({ path: SH + 'eb_setup.png' }); await page.click('#btnStart');
     await capture();
