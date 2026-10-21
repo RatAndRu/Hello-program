@@ -1152,7 +1152,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         body.addView(description)
 
         body.addView(label("Совпадение по имени (через запятую)"))
-        val prefixes = input("RayX, Glass, Frame", base?.namePrefixes.joinToString(", ") ?: "")
+        val prefixes = input("RayX, Glass, Frame", base?.namePrefixes?.joinToString(", ") ?: "")
         body.addView(prefixes)
 
         body.addView(label("UUID сервисов для поиска (через запятую)"))

@@ -9,15 +9,18 @@ data class GattCharInfo(
     val properties: Int,
     val value: ByteArray? = null
 ) {
-    val readable: Boolean get() = properties and BluetoothGattCharacteristic.PROPERTY_READ != 0
-    val writable: Boolean get() = properties and (
-        BluetoothGattCharacteristic.PROPERTY_WRITE or
-            BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE
-        ) != 0
-    val notifiable: Boolean get() = properties and (
-        BluetoothGattCharacteristic.PROPERTY_NOTIFY or
-            BluetoothGattCharacteristic.PROPERTY_INDICATE
-        ) != 0
+    val readable: Boolean
+        get() = (properties and BluetoothGattCharacteristic.PROPERTY_READ) != 0
+    val writable: Boolean
+        get() = (properties and (
+            BluetoothGattCharacteristic.PROPERTY_WRITE or
+                BluetoothGattCharacteristic.PROPERTY_WRITE_NO_RESPONSE
+            )) != 0
+    val notifiable: Boolean
+        get() = (properties and (
+            BluetoothGattCharacteristic.PROPERTY_NOTIFY or
+                BluetoothGattCharacteristic.PROPERTY_INDICATE
+            )) != 0
 
     fun props(): String {
         val out = StringBuilder()
@@ -140,7 +143,7 @@ object GattNames {
             0x2A6F -> if (value.isNotEmpty()) "Влажность: ${(value[0].toInt() and 0xFF)}%" else null
             0x2A37 -> if (value.size >= 2) {
                 val flags = value[0].toInt() and 0xFF
-                val bpm = if (flags and 0x01 != 0 && value.size >= 3)
+                val bpm = if ((flags and 0x01) != 0 && value.size >= 3)
                     (value[1].toInt() and 0xFF) or ((value[2].toInt() and 0xFF) shl 8)
                 else value[1].toInt() and 0xFF
                 "Пульс: $bpm уд/мин"

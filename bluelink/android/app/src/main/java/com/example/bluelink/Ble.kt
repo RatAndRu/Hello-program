@@ -467,7 +467,7 @@ class BleCentral(private val ctx: Context) {
             return false
         }
         return try {
-            val supportsResponse = c.properties and BluetoothGattCharacteristic.PROPERTY_WRITE != 0
+            val supportsResponse = (c.properties and BluetoothGattCharacteristic.PROPERTY_WRITE) != 0
             val type = when {
                 withResponse == true -> BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
                 withResponse == false -> BluetoothGattCharacteristic.WRITE_TYPE_NO_RESPONSE
@@ -504,7 +504,7 @@ class BleCentral(private val ctx: Context) {
                 ?: return enable
             val value = when {
                 !enable -> BluetoothGattDescriptor.DISABLE_NOTIFICATION_VALUE
-                c.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE != 0 ->
+                (c.properties and BluetoothGattCharacteristic.PROPERTY_INDICATE) != 0 ->
                     BluetoothGattDescriptor.ENABLE_INDICATION_VALUE
                 else -> BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
             }
