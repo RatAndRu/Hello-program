@@ -289,6 +289,10 @@ object Ring {
             0x02 to 0x4E -> series(p) { item -> Reading(Metric.SPO2, item[4].toInt() and 0xFF) }.let { out.addAll(it) }
             0x02 to 0x69 -> series(p) { item -> Reading(Metric.HRV, item[4].toInt() and 0xFF) }.let { out.addAll(it) }
             0x02 to 0x4F -> series(p) { item -> Reading(Metric.STRESS, item[4].toInt() and 0xFF) }.let { out.addAll(it) }
+            0x05 to 0x03 -> series(p) { item -> Reading(Metric.HEART_RATE, item[4].toInt() and 0xFF) }.let { out.addAll(it) }
+            0x05 to 0x09 -> series(p) { item -> Reading(Metric.SPO2, item[4].toInt() and 0xFF) }.let { out.addAll(it) }
+            0x05 to 0x0A -> series(p) { item -> Reading(Metric.HRV, item[4].toInt() and 0xFF) }.let { out.addAll(it) }
+            0x05 to 0x0D -> series(p) { item -> Reading(Metric.STRESS, item[4].toInt() and 0xFF) }.let { out.addAll(it) }
             0x02 to 0x30 -> series(p) { item ->
                 Reading(Metric.TEMPERATURE, item[4].toInt() and 0xFF, String.format("%.1f", (item[4].toInt() and 0xFF) + (item[5].toInt() and 0xFF) / 10.0))
             }.let { out.addAll(it) }
@@ -331,6 +335,10 @@ object Ring {
     /** Проверка привязки старого формата: команда 0x02 без данных. */
     fun legacyBindStatus(serial: Int): ByteArray = legacyFrame(0x02, ByteArray(0), serial)
 
+    /** Пароль по умолчанию: 03 04 10 "0000" (так делает официальное приложение). */
+    fun jlAuthenticate(password: String = "0000"): ByteArray =
+        jlFrame(byteArrayOf(0x03, 0x04, 0x10) + password.toByteArray(Charsets.US_ASCII))
+
     fun jlDeviceInfo(): ByteArray = jlFrame(byteArrayOf(0x02, 0x04, 0x10))
 
     fun jlFeatures(): ByteArray = jlFrame(byteArrayOf(0x02, 0x63, 0x10))
@@ -351,6 +359,61 @@ object Ring {
         const val STRESS = 0x0D
         const val HRV = 0x0A
     }
+
+    /** Ответ на команду измерения: 06 09 00 <тип> 05 <статус>. Значений там нет. */
+    data class MeasureStatus(val type: Int, val status: Int)
+
+    fun measureStatus(frame: JlFrame): MeasureStatus? {
+        val p = frame.payload
+        if (frame.cmd != 0x06 || frame.key != 0x09 || p.size < 6) return null
+        return MeasureStatus(p[3].toInt() and 0xFF, p[5].toInt() and 0xFF)
+    }
+
+    fun measureStatusText(s: MeasureStatus): String {
+        val what = when (s.type) {
+            Measure.HEART_RATE -> "пульс"
+            Measure.SPO2 -> "кислород"
+            Measure.STRESS -> "стресс"
+            Measure.HRV -> "HRV"
+            else -> "тип 0x" + String.format("%02X", s.type)
+        }
+        val state = when (s.status) {
+            0x00 -> "измерение идёт"
+            0x01 -> "готово"
+            0x02 -> "не удалось (датчик не увидел палец?)"
+            0x03 -> "остановлено"
+            else -> "статус " + s.status
+        }
+        return "$what: $state"
+    }
+
+    /**
+     * Меню возможностей кольца (ответ на 02 63 10). Раскладка из открытого разбора
+     * RWfit (PulseLoopiOS, RWfitProtocol.swift, структура RWfitFunctionMenu):
+     * байт 0x53 — признак валидности меню, 0x54…0x5E — флаги потоков, 0x2C — пароль.
+     */
+    data class Menu(
+        val streams: List<String>,
+        val requiresPassword: Boolean,
+        val valid: Boolean
+    )
+
+    fun functionMenu(payload: ByteArray): Menu? {
+        if (payload.size < 0x5f) return null
+        val flags = payload[0x53].toInt() and 0xFF
+        val valid = (flags and 1) != 0
+        val requiresPassword = (payload[0x2c].toInt() and 1) != 0
+        val map = listOf(
+            0x54 to "шаги", 0x55 to "пульс", 0x56 to "давление", 0x57 to "сон",
+            0x59 to "кислород", 0x5A to "HRV", 0x5B to "стресс",
+            0x5C to "сахар", 0x5E to "температура"
+        )
+        val streams = map.filter { (payload[it.first].toInt() and 1) != 0 }.map { it.second }
+        return Menu(streams, requiresPassword, valid)
+    }
+
+    /** Запрос истории измерений: 05 <тип> 10. */
+    fun jlHistory(type: Int): ByteArray = jlFrame(byteArrayOf(0x05, type.toByte(), 0x10))
 
     fun jlRealtime(type: Int, on: Boolean): ByteArray =
         jlFrame(byteArrayOf(0x06, 0x09, 0x00, type.toByte(), 0x05, if (on) 0x01 else 0x00))

@@ -156,7 +156,12 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     private var lastRingPress: String = ""
     private var lastRingPressAt = 0L
 
-    private var releaseInBackground = true
+    private var heySelfTestSeen = 0
+    private var heySelfTestUntil = 0L
+    private var heySelfTestWrites = 0
+    private var heySelfTestStage = 0
+    private var releaseInBackground = false
+    private var releaseRunnable: Runnable? = null
     private var autoReconnectPending = false
     private var handoverStatus = ""
     private var ringStatusShown = ""
@@ -214,7 +219,11 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
             val previous = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, error ->
                 try {
-                    File(newBase.filesDir, "last_crash.txt").writeText(android.util.Log.getStackTraceString(error))
+                    val stamp = java.text.SimpleDateFormat("dd.MM.yyyy HH:mm:ss", java.util.Locale.getDefault())
+                        .format(java.util.Date())
+                    File(newBase.filesDir, "last_crash.txt").writeText(
+                        "Время падения: $stamp\n" + android.util.Log.getStackTraceString(error)
+                    )
                 } catch (ignored: Exception) {
                 }
                 previous?.uncaughtException(thread, error)
@@ -234,12 +243,19 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         camera.listener = this
         store = PhotoStore(this)
         activeProfile = profiles.byId(prefs.getString("active_profile", null))
-        releaseInBackground = prefs.getBoolean("release_bg", true)
+        releaseInBackground = prefs.getBoolean("release_bg", false)
         ringAction = RingControls.Action.byId(prefs.getString("ring_action", null))
 
         crashText = try {
             val f = File(filesDir, "last_crash.txt")
-            if (f.exists()) f.readText() else null
+            if (f.exists()) {
+                val text = f.readText()
+                // Показываем один раз: иначе старое падение выглядит как новое.
+                f.delete()
+                text
+            } else {
+                null
+            }
         } catch (e: Exception) {
             null
         }
@@ -289,21 +305,45 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     override fun onStop() {
         super.onStop()
-        // Пока приложение свёрнуто, очки лучше отдать их приложению: иначе оно
-        // не сможет подключиться вообще (у очков только один канал связи).
+        // Пока приложение свёрнуто, очки можно отдать их приложению — но только
+        // если пользователь этого действительно хочет и мы не посреди работы.
+        // Мгновенное отключение оказалось вредным: короткий уход с экрана рвал
+        // сеанс и команды терялись. Поэтому ждём и отменяем, если вернулись.
         if (!releaseInBackground || isChangingConfigurations) return
-        if (connState != ConnState.CONNECTED) return
-        if (!isHeyCyanDevice()) return
-        if (heyWantVideo || heyVideoOn || heyWantAudio || heyAudioOn || heyTransferOn || liveMode.isNotBlank()) {
+        if (connState != ConnState.CONNECTED || !isHeyCyanDevice()) return
+        if (busyWithGlasses()) {
             handoverStatus = "Очки заняты записью или выгрузкой — не отпускаю их до конца работы."
             return
         }
-        lastConnItem?.let {
+        if (lastConnItem == null) return
+        val delayed = Runnable {
+            releaseRunnable = null
+            if (!releaseInBackground) return@Runnable
+            if (connState != ConnState.CONNECTED || busyWithGlasses()) return@Runnable
             autoReconnectPending = true
-            addLog("Отпускаю очки, пока приложение свёрнуто — чтобы их приложение могло подключиться")
+            addLog(
+                "Отпускаю очки после ${RELEASE_DELAY_MS / 1000} с в фоне — " +
+                    "чтобы их приложение могло подключиться"
+            )
             doDisconnect()
         }
+        releaseRunnable = delayed
+        ui.postDelayed(delayed, RELEASE_DELAY_MS)
+        handoverStatus = "Приложение свёрнуто. Через ${RELEASE_DELAY_MS / 1000} с очки освободятся, " +
+            "если вы не вернётесь."
     }
+
+    override fun onStart() {
+        super.onStart()
+        releaseRunnable?.let { ui.removeCallbacks(it) }
+        releaseRunnable = null
+    }
+
+    /** Идёт ли работа, которую нельзя обрывать отключением. */
+    private fun busyWithGlasses(): Boolean =
+        heyWantVideo || heyVideoOn || heyWantAudio || heyAudioOn || heyTransferOn ||
+            liveMode.isNotBlank() || heyThumbTotal > 0 || heyThumbParts.isNotEmpty() ||
+            System.currentTimeMillis() - heyLastTxAt < 4000
 
     // ---------- Каркас экрана ----------
 
@@ -2369,6 +2409,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         state.addView(spacer(10))
         val stateRow = row()
         stateRow.addView(actionButton("Обновить данные", primary = true) { heyRefresh() })
+        stateRow.addView(actionButton("Проверить связь", primary = false) { heySelfTest() })
         if (!connected) {
             stateRow.addView(actionButton("Подключиться", primary = false) {
                 val item = lastConnItem
@@ -2379,6 +2420,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         c.addView(state)
 
         c.addView(heyHandoverCard())
+        c.addView(heySoundCard())
 
         // Тревожная плашка: камера занята режимом передачи — съёмка не сработает.
         if (HeyCyan.cameraBusy(heyGlassWork)) {
@@ -2996,6 +3038,51 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         ui.postDelayed(step, 60)
     }
 
+    /**
+     * Проверка связи «в одну кнопку»: посылаем два самых простых и когда-то
+     * работавших запроса и честно показываем, приняла ли их очки и ответили ли.
+     * Это отвечает на вопрос «очки молчат или приложение не отправляет».
+     */
+    private fun heySelfTest() {
+        if (connState != ConnState.CONNECTED || !heyAvailable()) {
+            toast("Сначала подключитесь к очкам")
+            return
+        }
+        heySubscribeProtocol()
+        heySelfTestSeen = 0
+        heySelfTestUntil = System.currentTimeMillis() + 7000
+        heySelfTestStage = 0
+        heyActionStatus = "Проверка связи: отправляю…"
+        addLog("Проверка связи: начинаю (очки ${connName.ifBlank { connAddress }})")
+        rebuild()
+
+        val stop = Runnable {
+            // TransferStop: единственная команда, которая точно принимается в любом режиме.
+            heySend(HeyCyan.CH_SERIAL, 0x41, HeyCyan.control(HeyCyan.Work.TRANSFER_STOP), "Проверка: выход из передачи")
+        }
+        val battery = Runnable {
+            heySelfTestStage = 1
+            heySend(HeyCyan.CH_SERIAL, 0x42, byteArrayOf(0x00, 0x00), "Проверка: заряд")
+        }
+        val verdict = Runnable {
+            val seen = heySelfTestSeen
+            val writesOk = heySelfTestWrites
+            heyActionStatus = when {
+                seen > 0 -> "Связь есть: очки ответили ($seen кадров), заряд «${heyBattery ?: "—"}»."
+                writesOk > 0 -> "Команды записались ($writesOk), но очки не ответили за 5 секунд. " +
+                    "Похоже, связь держит их родное приложение — нажмите «Отдать очкам их приложение», " +
+                    "закройте его и подключитесь заново."
+                else -> "Команды даже не записались. Переподключитесь к очкам и повторите."
+            }
+            addLog("Проверка связи: ${heyActionStatus}")
+            rebuild()
+        }
+        heySelfTestWrites = 0
+        ui.postDelayed(stop, 200)
+        ui.postDelayed(battery, 1600)
+        ui.postDelayed(verdict, 6600)
+    }
+
     /** Опросить заряд и сведения об очках. */
     private fun heyRefresh() {
         if (connState != ConnState.CONNECTED) {
@@ -3040,7 +3127,14 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         heySendRaw(channel, frame, title, quiet = quiet)
     }
 
-    private fun heySendRaw(channel: String, frame: ByteArray, title: String, attempt: Int = 0, quiet: Boolean = false) {
+    private fun heySendRaw(
+        channel: String,
+        frame: ByteArray,
+        title: String,
+        attempt: Int = 0,
+        quiet: Boolean = false,
+        busyWaits: Int = 0
+    ) {
         if (connState != ConnState.CONNECTED) {
             if (!quiet) toast("Сначала подключитесь к устройству")
             return
@@ -3049,7 +3143,14 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         val char = if (channel == HeyCyan.CH_CTRL) HeyCyan.CTRL_WRITE else HeyCyan.SERIAL_WRITE
         if (ble.busySubscribing) {
             // Ещё пишется дескриптор подписки: подождём, иначе GATT отклонит запись.
-            ui.postDelayed({ heySendRaw(channel, frame, title, attempt, quiet) }, 250)
+            // Но не бесконечно: иначе команды молча копились бы в очереди и «терялись».
+            if (busyWaits < 20) {
+                ui.postDelayed({ heySendRaw(channel, frame, title, attempt, quiet, busyWaits + 1) }, 250)
+            } else {
+                addLog("Очки · $title: связь занята подпиской, команда не отправлена")
+                heyActionStatus = "$title: очки не приняли команду (связь занята)"
+                if (tab == TAB_HEY) rebuildThrottled()
+            }
             return
         }
         // Канал A у SDK — обычная запись с ответом, канал B — без ответа.
@@ -3057,6 +3158,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         heyLastTx = frame
         heyLastTxAt = System.currentTimeMillis()
         if (ok) {
+            heySelfTestWrites += 1
             if (!quiet) addLog("→ Очки · $title · ${HeyCyan.hex(frame)}")
         } else if (attempt < 2) {
             // GATT занят предыдущей операцией — повторяем, это обычное дело на Android.
@@ -3087,6 +3189,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
     }
 
     private fun heyHandleFrame(value: ByteArray) {
+        if (System.currentTimeMillis() < heySelfTestUntil) heySelfTestSeen += 1
         HeyCyan.batteryInfo(value)?.let {
             heyBattery = it.level
             heyCharging = it.charging
@@ -3452,6 +3555,52 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
      * не может, и наоборот. Обойти это нельзя — можно только аккуратно передавать
      * связь друг другу.
      */
+    /** Громкость очков: единственный доступный способ повлиять на их писк. */
+    private fun heySoundCard(): View {
+        val box = card()
+        box.addView(txt("Звук очков", 12, Pal.MUTED, bold = true))
+        box.addView(spacer(6))
+        box.addView(txt(
+            "Прошивку очков поменять нельзя: она закрытая и подписанная, а обновление проверяет " +
+                "свою подпись — самодельная прошивка просто не зальётся. Зато в самом протоколе есть " +
+                "команда громкости (0x51). Если сигнал съёмки идёт через неё, его можно убрать.",
+            11, Pal.MUTED
+        ))
+        box.addView(spacer(8))
+        val row1 = row()
+        row1.addView(actionButton("Без звука", primary = true) { heyVolume(0) })
+        row1.addView(actionButton("Тише (25%)", primary = false) { heyVolume(25) })
+        box.addView(row1)
+        box.addView(spacer(6))
+        val row2 = row()
+        row2.addView(actionButton("50%", primary = false) { heyVolume(50) })
+        row2.addView(actionButton("Вернуть 100%", primary = false) { heyVolume(100) })
+        box.addView(row2)
+        box.addView(spacer(6))
+        box.addView(txt(
+            "Проверка честная: нажмите «Без звука», затем снимите фото. Если очки всё равно пищат — " +
+                "значит, сигнал зашит в прошивке и командой не отключается.",
+            11, Pal.MUTED
+        ))
+        return box
+    }
+
+    private fun anyStatus(text: String) {
+        heyActionStatus = text
+        addLog(text)
+        rebuild()
+    }
+
+    private fun heyVolume(level: Int) {
+        if (connState != ConnState.CONNECTED || !heyAvailable()) {
+            toast("Сначала подключитесь к очкам")
+            return
+        }
+        heySubscribeProtocol()
+        heySend(HeyCyan.CH_SERIAL, 0x51, HeyCyan.volumePayload(level, level, level), "Громкость $level%")
+        anyStatus("Громкость очков: $level%. Проверьте фото — если писк остался, он зашит в прошивке.")
+    }
+
     private fun heyHandoverCard(): View {
         val box = card()
         box.addView(txt("Очки и их родное приложение", 12, Pal.MUTED, bold = true))
@@ -3464,7 +3613,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         ))
         box.addView(spacer(8))
         box.addView(txt(
-            "Отпускать в фоне: " + if (releaseInBackground) "включено" else "выключено",
+            "Отпускать в фоне: " + if (releaseInBackground)
+                "включено (через ${RELEASE_DELAY_MS / 1000} с)" else "выключено",
             11, if (releaseInBackground) Pal.GREEN else Pal.MUTED
         ))
         box.addView(spacer(6))
@@ -3584,7 +3734,12 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         if (!detection.ring) return
         // Очкам кольцо не мешает: у них другие сервисы, и detect() это учитывает.
         if (heyAvailable()) return
-        if (ringStartedFor == connAddress && ring != null) return
+        if (ringStartedFor == connAddress && ring != null) {
+            // Переподключение: подписки прежние уже не действуют. Восстанавливаем,
+            // иначе кольцо измеряет, а данные в приложение не приходят.
+            ring?.ensureSubscriptions(services)
+            return
+        }
         ringStartedFor = connAddress
         // Кольцо найдено впервые — сразу включаем перехват, чтобы не заставлять
         // пользователя искать переключатель. Отключить можно в любой момент.
@@ -3878,6 +4033,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         metrics.addView(txt(
             buildString {
                 appendLine("Заряд кольца: " + (session.battery?.let { "$it%" } ?: "кольцо не сообщило"))
+                if (session.menuText.isNotBlank()) appendLine("Возможности: ${session.menuText}")
+                if (session.measureState.isNotBlank()) appendLine("Измерение: ${session.measureState}")
+                if (session.lastReading.isNotBlank()) appendLine("Последнее: ${session.lastReading}")
                 appendLine("Прошивка: " + (session.firmware ?: "нет данных"))
                 appendLine("Пульс: " + (session.heartRate?.let { "$it уд/мин" } ?: "нет данных"))
                 appendLine("Кислород: " + (session.spo2?.let { "$it%" } ?: "нет данных"))
@@ -3890,6 +4048,11 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         mrow.addView(actionButton("Измерить пульс", primary = true) { ring?.measure("hr"); rebuild() })
         mrow.addView(actionButton("Кислород", primary = false) { ring?.measure("spo2"); rebuild() })
         metrics.addView(mrow)
+        metrics.addView(spacer(6))
+        metrics.addView(actionButton("Забрать последние измерения", primary = false) {
+            ring?.history()
+            rebuild()
+        })
         metrics.addView(spacer(6))
         metrics.addView(txt(
             if (session.framingConfirmed)
@@ -4556,6 +4719,7 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         const val TAB_CONSOLE = "console"
         const val TAB_REPORT = "report"
         const val TAB_HEY = "hey"
+        const val RELEASE_DELAY_MS = 45_000L
         const val TAB_RING = "ring"
         const val TAB_LIVE = "live"
 

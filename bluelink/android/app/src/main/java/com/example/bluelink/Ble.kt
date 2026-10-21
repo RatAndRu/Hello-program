@@ -449,6 +449,8 @@ class BleCentral(private val ctx: Context) {
     private fun closeGatt() {
         val g = gatt
         gatt = null
+        main.removeCallbacks(subscribeWatchdog)
+        deniedSubscriptions.clear()
         synchronized(subscribeQueue) {
             subscribeQueue.clear()
             subscribeBusy = false
@@ -821,10 +823,33 @@ class BleCentral(private val ctx: Context) {
         if (!started) {
             synchronized(subscribeQueue) { subscribeBusy = false }
             main.postDelayed({ pumpSubscribe() }, 120)
+            return
+        }
+        // Сторож: если устройство не ответило на запись дескриптора, очередь не должна
+        // застрять навсегда — иначе все команды тихо уходят в никуда.
+        main.postDelayed(subscribeWatchdog, 3000)
+    }
+
+    private val subscribeWatchdog = Runnable {
+        val wasBusy = synchronized(subscribeQueue) {
+            val was = subscribeBusy
+            subscribeBusy = false
+            was
+        }
+        if (wasBusy) {
+            emit { it.onLog("Подписка: устройство не ответило на запись — продолжаю") }
+            main.postDelayed({ pumpSubscribe() }, 120)
         }
     }
 
+    /** Характеристики, на которые система не даёт подписаться: второй раз не пробуем. */
+    private val deniedSubscriptions = HashSet<String>()
+
+    fun wasDenied(service: UUID?, char: UUID): Boolean =
+        deniedSubscriptions.contains("$service|$char")
+
     private fun subscribeDone() {
+        main.removeCallbacks(subscribeWatchdog)
         synchronized(subscribeQueue) { subscribeBusy = false }
         main.postDelayed({ pumpSubscribe() }, 150)
     }
@@ -862,6 +887,12 @@ class BleCentral(private val ctx: Context) {
             true
         } catch (e: Exception) {
             emit { it.onLog("Подписка: ${e.message}") }
+            val message = e.message ?: ""
+            if (message.contains("BLUETOOTH_PRIVILEGED", ignoreCase = true) ||
+                message.contains("privileged", ignoreCase = true)
+            ) {
+                deniedSubscriptions.add("$service|$char")
+            }
             false
         }
     }

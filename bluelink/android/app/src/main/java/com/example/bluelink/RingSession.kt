@@ -35,6 +35,13 @@ class RingSession(
     var stress: Int? = null
         private set
     var capabilitiesText = ""
+    /** Что кольцо само заявило в меню возможностей. */
+    var menuText = ""
+    var menu: Ring.Menu? = null
+        private set
+    var measureState = ""
+        private set
+    var lastReading = ""
         private set
     var lastGesture = ""
         private set
@@ -91,6 +98,10 @@ class RingSession(
         spo2 = null
         stress = null
         capabilitiesText = ""
+        menuText = ""
+        menu = null
+        measureState = ""
+        lastReading = ""
         lastGesture = ""
         gestureCount = 0
         hidReportCount = 0
@@ -129,6 +140,7 @@ class RingSession(
         later(500) { readAllReadable() }
         later(700) { readReportMap() }
         later(1100) { firstProbes() }
+        later(6200) { if (!framingConfirmed) probeOtherChannels() }
         later(4200) { fallbackProbe() }
         later(6500) { probeOtherChannels() }
         later(11000) {
@@ -213,12 +225,49 @@ class RingSession(
         }
     }
 
+    /**
+     * Порядок как в официальном SDK: инициализация сеанса, часовой пояс, время,
+     * меню возможностей, при необходимости — пароль. Без времени и меню кольцо
+     * молча игнорирует команды измерения.
+     */
     private fun firstProbes() {
         if (framingConfirmed) return
         sendJl(Ring.jlSessionInit())
-        later(500) { sendJl(Ring.jlBattery()) }
-        later(1100) { sendJl(Ring.jlDeviceInfo()) }
-        later(1700) { sendJl(Ring.jlFeatures()) }
+        later(400) { sendJlTimezone() }
+        later(900) { sendJlTime() }
+        later(1400) { sendJl(Ring.jlFeatures()) }
+        later(1900) { sendJl(Ring.jlBattery()) }
+        later(2400) { sendJl(Ring.jlDeviceInfo()) }
+        later(2900) { maybeAuthenticate() }
+    }
+
+    private fun sendJlTimezone() {
+        val tz = java.util.TimeZone.getDefault()
+        val offsetSeconds = tz.getOffset(System.currentTimeMillis()) / 1000
+        sendJl(Ring.jlTimezone(offsetSeconds))
+        log("Кольцо: передаю часовой пояс (${offsetSeconds / 3600} ч)")
+    }
+
+    private fun sendJlTime() {
+        val now = java.util.Calendar.getInstance()
+        sendJl(
+            Ring.jlTimeSync(
+                now.get(java.util.Calendar.YEAR),
+                now.get(java.util.Calendar.MONTH) + 1,
+                now.get(java.util.Calendar.DAY_OF_MONTH),
+                now.get(java.util.Calendar.HOUR_OF_DAY),
+                now.get(java.util.Calendar.MINUTE),
+                now.get(java.util.Calendar.SECOND)
+            )
+        )
+        log("Кольцо: передаю текущее время")
+    }
+
+    private fun maybeAuthenticate() {
+        val m = menu ?: return
+        if (!m.requiresPassword) return
+        sendJl(Ring.jlAuthenticate())
+        log("Кольцо: меню требует пароль — отправляю стандартный "0000"")
     }
 
     private fun fallbackProbe() {
@@ -271,6 +320,35 @@ class RingSession(
         ble.write(Ring.SVC_DATA, Ring.CH_WRITE, frame, false)
     }
 
+    /**
+     * Подписки живут только до переподключения. После каждого нового списка
+     * сервисов подписываемся заново — иначе кольцо измеряет, а мы ничего не видим.
+     */
+    fun ensureSubscriptions(services: List<GattServiceInfo>) {
+        currentServices = services
+        active = true
+        subscribeAll()
+        later(600) { readReportMap() }
+        if (!framingConfirmed) later(900) { firstProbes() }
+        log("Кольцо: восстановил подписки после подключения")
+    }
+
+    /** Забрать последние измерения из памяти кольца (история, а не live). */
+    fun history() {
+        if (!framingConfirmed) {
+            status = "Кольцо ещё не ответило — историю не запрашиваю."
+            changed()
+            return
+        }
+        sendJl(Ring.jlHistory(Ring.Measure.HEART_RATE))
+        later(1200) { sendJl(Ring.jlHistory(Ring.Measure.SPO2)) }
+        later(2400) { sendJl(Ring.jlHistory(Ring.Measure.HRV)) }
+        status = "Прошу у кольца последние измерения из памяти."
+        measureState = "запрос истории отправлен"
+        log("Кольцо: запрос истории 05 03 10 / 05 09 10 / 05 0A 10")
+        changed()
+    }
+
     /** Пользователь нажал «измерить пульс». */
     fun measure(kind: String) {
         if (!framingConfirmed || framing != Ring.Framing.JIELI) {
@@ -284,6 +362,7 @@ class RingSession(
             else -> Ring.Measure.HEART_RATE
         }
         sendJl(Ring.jlRealtime(type, true))
+        measureState = "команда отправлена, жду ответ кольца"
         status = "Прошу кольцо измерить: " + when (type) {
             Ring.Measure.SPO2 -> "кислород"
             Ring.Measure.STRESS -> "стресс"
@@ -361,6 +440,24 @@ class RingSession(
             "Кольцо → " + String.format("%02X %02X %02X", frame.cmd, frame.key, frame.keyFlag) +
                 "  " + hex(frame.payload)
         )
+        if (frame.cmd == 0x02 && frame.key == 0x63) {
+            val parsed = Ring.functionMenu(frame.payload)
+            if (parsed != null) {
+                menu = parsed
+                menuText = if (parsed.streams.isEmpty())
+                    "кольцо не заявило ни одного потока данных"
+                else
+                    "кольцо заявляет: " + parsed.streams.joinToString(", ") +
+                        (if (parsed.requiresPassword) " · нужен пароль" else "")
+                log("Кольцо: меню возможностей — $menuText")
+                maybeAuthenticate()
+            }
+        }
+        Ring.measureStatus(frame)?.let { st ->
+            measureState = Ring.measureStatusText(st)
+            log("Кольцо: измерение — $measureState")
+            changed()
+        }
         for (r in Ring.readJl(frame)) {
             when (r.metric) {
                 Ring.Metric.BATTERY -> {
@@ -368,9 +465,18 @@ class RingSession(
                     capabilitiesText = "заряд сообщает"
                 }
                 Ring.Metric.FIRMWARE -> firmware = r.extra
-                Ring.Metric.HEART_RATE -> heartRate = r.value
-                Ring.Metric.SPO2 -> spo2 = r.value
-                Ring.Metric.STRESS -> stress = r.value
+                Ring.Metric.HEART_RATE -> {
+                    heartRate = r.value
+                    lastReading = timeStamp() + "  пульс $r.value"
+                }
+                Ring.Metric.SPO2 -> {
+                    spo2 = r.value
+                    lastReading = timeStamp() + "  кислород $r.value%"
+                }
+                Ring.Metric.STRESS -> {
+                    stress = r.value
+                    lastReading = timeStamp() + "  стресс $r.value"
+                }
                 else -> {}
             }
         }

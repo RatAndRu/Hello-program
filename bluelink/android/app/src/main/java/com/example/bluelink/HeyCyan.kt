@@ -297,6 +297,25 @@ object HeyCyan {
         return ThumbChunk(total, index, data)
     }
 
+    /**
+     * Громкость очков (команда 0x51). Раскладка из официального SDK
+     * (`LargeDataHandler.setVolumeControl`): {2,1,min,max,curr, 2,min,max,curr,
+     * 3,min,max,curr, тип}. Отдельной «громкости сигнала съёмки» в SDK нет —
+     * поэтому 0 % может убрать писк, только если прошивка играет его через
+     * системную громкость. Это проверяем опытом, а не обещаем.
+     */
+    fun volumePayload(music: Int, call: Int, system: Int, type: Int = 1): ByteArray = byteArrayOf(
+        0x02, 0x01, 0x00, 0x64, music.toByte(),
+        0x02, 0x00, 0x64, call.toByte(),
+        0x03, 0x00, 0x64, system.toByte(),
+        type.toByte()
+    )
+
+    fun volumeSet(music: Int, call: Int, system: Int, type: Int = 1): ByteArray =
+        bigFrame(0x51, volumePayload(music, call, system, type))
+
+    fun volumeGet(): ByteArray = bigFrame(0x51, byteArrayOf(0x01))
+
     /** Человеческое имя рабочего режима очков. */
     fun workName(code: Int): String = when (code) {
         0x00 -> "ожидание"
