@@ -9,7 +9,7 @@ import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '1.6';
+export const VERSION = '1.7';
 const $ = (id) => document.getElementById(id);
 const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
@@ -98,7 +98,7 @@ async function startCapture(ctx) {
   go('capture');
   const bo = capCtx && capCtx.bottomOf, co = capCtx && capCtx.closeOf;
   const base = bo || co;
-  cap = new Capture($('video'), $('overlay'), {
+  cap = new Capture($('video'), $('overlay'), { view: $('camView'),
     size: base ? (base.settings && base.settings.size) || S.size : S.size, method: co ? (co.settings && co.settings.method) || S.method : S.method, close: !!co, hiRes: (base ? (base.settings && base.settings.quality) : S.quality) === 'best',
     Hb: bo ? +((bo.bottom && bo.bottom.Hb) || (bo.settings && bo.settings.height) || S.height) : co ? +((co.settings && co.settings.height) || S.height) : +S.height, step: co ? 5 : +S.step || 8,
     onState: capState,
@@ -140,7 +140,7 @@ function capState(st) {
   else if (high < 0.4) { text = turn ? 'Ещё выше (~75°) — последний оборот' : 'И круг почти сверху (~75°)'; }
   else { text = 'Отлично! Можно нажимать «Готово»'; cls = 'good'; }
   msg.textContent = text; msg.className = 'capMsg ' + cls + (capCtx && capCtx.bottomOf ? ' bottomTag' : '');
-  const info = st.found ? `высота ${st.el.toFixed(0)}° · азимут ${st.az.toFixed(0)}° · ${Math.round(st.dist / 10)} см · меток ${st.n} · ${st.speed.toFixed(0)}°/с · ${st.fps.toFixed(0)} к/с${cap.f ? '' : ' · калибровка…'}` : `слежение ${(st.fps || 0).toFixed(0)} к/с · меток ${st.markers || 0}${st.restarts ? ` · перезапусков камеры ${st.restarts}` : ''}`;
+  const info = st.found ? `высота ${st.el.toFixed(0)}° · азимут ${st.az.toFixed(0)}° · ${Math.round(st.dist / 10)} см · меток ${st.n} · ${st.speed.toFixed(0)}°/с · ${st.fps.toFixed(0)} к/с${st.native ? ' · своя камера' : ''}${cap.f ? '' : ' · калибровка…'}` : `${st.native ? `камера ${(st.camFps || 0).toFixed(0)} к/с · ` : ''}слежение ${(st.fps || 0).toFixed(0)} к/с · меток ${st.markers || 0}${st.restarts ? ` · перезапусков камеры ${st.restarts}` : ''}`;
   $('capInfo').textContent = [info, st.why ? 'Не снимаю: ' + st.why : (st.found ? 'Снимаю' : ''), inkLabel(st.ink)].filter(Boolean).join('\n');
 }
 function cancelCapture() { if (cap) cap.stop(); cap = null; go('home'); }

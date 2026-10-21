@@ -9,6 +9,23 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const browser = await puppeteer.launch({ executablePath: await chromium.executablePath(), headless: true, userDataDir: '/tmp/t/profP',
     args: [...chromium.args.filter((a) => !a.startsWith('--user-data-dir') && a !== '--single-process'), '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', `--use-file-for-fake-video-capture=${process.env.CAM}`, '--autoplay-policy=no-user-gesture-required', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
   const page = await browser.newPage(); await page.setViewport({ width: 400, height: 800, deviceScaleFactor: 1 });
+  // NATIVE=1 (или угол 0/90/180/270): подставная «своя камера» APK (ObyomNative.camStart/camFrame/camStop) —
+  // кадры берутся из фейковой камеры браузера и отдаются повёрнутыми, как с сенсора телефона
+  if (process.env.NATIVE) await page.evaluateOnNewDocument((ROT) => {
+    let v = null, id = 0, lastT = 0, starting = false; window.__nat = { frames: 0, starts: 0, stops: 0 };
+    const c = document.createElement('canvas');
+    async function init() { starting = true; const st = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 } }); v = document.createElement('video'); v.muted = true; v.srcObject = st; await v.play(); }
+    window.ObyomNative = {
+      camStart() { window.__nat.starts++; if (!starting) init(); return 'ok'; },
+      camFrame() {
+        if (!v || !v.videoWidth) return ''; const now = performance.now(); if (now - lastT < 50) return ''; lastT = now;
+        const W = v.videoWidth, H = v.videoHeight, sw = ROT % 180 ? H : W, sh = ROT % 180 ? W : H; c.width = sw; c.height = sh;
+        const x = c.getContext('2d'); x.save(); x.translate(sw / 2, sh / 2); x.rotate(-ROT * Math.PI / 180); x.drawImage(v, -W / 2, -H / 2, W, H); x.restore();
+        id++; window.__nat.frames++; return `${ROT}|${id}|${sw}|${sh}|` + c.toDataURL('image/jpeg', 0.9).split(',')[1];
+      },
+      camStop() { window.__nat.stops++; },
+    };
+  }, +process.env.NATIVE === 1 ? 90 : +process.env.NATIVE);
   const errs = []; page.on('pageerror', (e) => errs.push('PAGEERR ' + e.message)); page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
   await page.goto('http://127.0.0.1:8765/index.html', { waitUntil: 'networkidle0' });
   await page.evaluate((o) => { localStorage.setItem('obyom.settings', JSON.stringify({ mode: o.mode, method: 'turn', size: 'A4', height: '90', quality: o.q, shape: 'normal', delay: '3', step: '8' })); }, { q: process.env.Q || 'normal', mode: process.env.MODE || 'mesh' });
@@ -47,6 +64,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   // экспорт GLB: проверим, что файл с текстурой собирается
   const glb = await page.evaluate(async () => { const m = await import('./js/export.js'); const s = window.__obyomScan; return s ? m.toGLB(s.mesh, 't').length : -1; });
   console.log('GLB байт:', glb);
+  if (process.env.NATIVE) console.log('своя камера:', JSON.stringify(await page.evaluate(() => window.__nat)));
   if (errs.length) console.log(errs.join('\n'));
   await browser.close();
 })().catch((e) => { console.log('FAIL', e); process.exit(1); });

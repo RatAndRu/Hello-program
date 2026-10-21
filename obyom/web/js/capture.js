@@ -2,6 +2,7 @@
 import { matLayout } from './mat.js';
 import { detectMarkers, toGray } from './detect.js';
 import { poseFromMarkers, focalEqs, focalFromEqs, camAngles, project } from './pose.js';
+import { hasNativeCam, NativeCam } from './nativecam.js';
 
 export const BANDS = [[8, 28], [28, 48], [48, 66], [66, 86]]; // пояса высоты камеры, градусы
 export const AZ_BINS = 24;                                  // по 15°
@@ -9,7 +10,8 @@ const TRACK_W = 640;
 
 export class Capture {
   constructor(video, overlay, opt) {
-    this.video = video; this.ov = overlay; this.opt = opt; // {size, method:'walk'|'turn', Hb, onState, onShot}
+    this.video = video; this.ov = overlay; this.opt = opt; // {size, method:'walk'|'turn', Hb, onState, onShot, view}
+    this.view = opt.view || null; // холст для показа кадров своей камеры (APK)
     // на вертушке — только кольцо меток: угловые метки неподвижны или лист свисает
     this.L = matLayout(opt.size || 'A4', opt.method === 'turn' ? 'round' : 'full');
     this.Lfull = matLayout(opt.size || 'A4', 'full'); // запасной вариант на вертушке: весь лист крутится вместе со столиком
@@ -21,6 +23,14 @@ export class Capture {
   async start() { await this.openCam(); this.running = true; this.loop(); }
   // Камера 1280×720 (в 1.5 «Лучше» просило Full HD — на части телефонов WebView тогда перестаёт обновлять кадры)
   async openCam() {
+    // APK: своя камера (Camera2). Камера WebView на части телефонов «замирает», пока не коснёшься экрана.
+    if (hasNativeCam()) {
+      this.src = new NativeCam(this.view); await this.src.open(); this.native = true;
+      this.video.style.display = 'none'; if (this.view) this.view.style.display = '';
+      this.freshT = performance.now(); this.prevSig = null; this.woke = false;
+      return;
+    }
+    this.native = false; this.src = this.video; this.video.style.display = ''; if (this.view) this.view.style.display = 'none';
     const c = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio: false };
     this.stream = await navigator.mediaDevices.getUserMedia(c);
     this.video.srcObject = this.stream; this.video.muted = true; this.video.setAttribute('playsinline', '');
@@ -33,17 +43,21 @@ export class Capture {
   // Такой кадр не анализируем (иначе на экране «застывшие» метки), через 1.5 с будим видео, через 4 с перезапускаем камеру.
   async revive(now) {
     const stale = now - this.freshT;
-    if (stale > 1500 && !this.woke) { this.woke = true; try { await this.video.play(); } catch (e) {} }
+    if (stale > 1500 && !this.woke) { this.woke = true; if (!this.native) try { await this.video.play(); } catch (e) {} }
     if (stale > 4000 && !this.restarting && (this.restarts || 0) < 5) {
       this.restarting = true; this.restarts = (this.restarts || 0) + 1;
-      try { if (this.stream) this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; await new Promise((r) => setTimeout(r, 300)); if (this.running) await this.openCam(); }
+      try { this.closeCam(); await new Promise((r) => setTimeout(r, 300)); if (this.running) await this.openCam(); }
       catch (e) { console.warn('камера', e); }
       this.restarting = false;
     }
   }
   // ручной затвор: снимет ближайший кадр, где виден коврик (даже если эта ячейка купола уже есть)
   shootNow() { this.manual = true; }
-  stop() { this.running = false; if (this.stream) this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
+  closeCam() { if (this.native && this.src) this.src.close(); if (this.stream) this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
+  stop() { this.running = false; this.closeCam(); }
+  // кадр источника (своя камера или <video>) в холст w×h
+  drawSrc(c, w, h) { if (this.native) this.src.drawTo(c, w, h); else c.drawImage(this.video, 0, 0, w, h); }
+  get srcEl() { return this.native ? this.src : this.video; }
   coverage() {
     // доля заполненных ячеек по поясам
     const per = BANDS.map(() => 0);
@@ -68,10 +82,10 @@ export class Capture {
     return angDeg(a0.c, a1.c);
   }
   async step() {
-    const v = this.video, vw = v.videoWidth, vh = v.videoHeight; if (!vw) return;
+    const v = this.srcEl, vw = v.videoWidth, vh = v.videoHeight; if (!vw) return;
     const w = TRACK_W, h = Math.round(vh * w / vw);
     if (this.cv.width !== w || this.cv.height !== h) { this.cv.width = w; this.cv.height = h; }
-    this.cx.drawImage(v, 0, 0, w, h);
+    this.drawSrc(this.cx, w, h);
     const img = this.cx.getImageData(0, 0, w, h), g = toGray(new Uint8Array(img.data.buffer), w, h);
     const now = performance.now();
     // свежий ли кадр: «подпись» из редкой выборки пикселей
@@ -96,7 +110,7 @@ export class Capture {
     const dt = this.lastT ? Math.min(1, (now - this.lastT) / 1000) : 0; this.lastT = now;
     if (dt > 0) this.fps = this.fps ? this.fps * 0.9 + 0.1 / dt : 1 / dt; // скорость слежения, кадров/с
     const turn = this.opt.method === 'turn', step = this.opt.step || (turn ? 8 : 10);
-    const st = { found: false, markers: ms.length, ring: ringN, poseRms: p ? p.rms : null, poseN: p ? p.n : 0, w, h, ms, count: this.shots.length, fps: this.fps || 0, step, restarts: this.restarts || 0 };
+    const st = { native: !!this.native, camFps: this.native ? this.src.fps : null, found: false, markers: ms.length, ring: ringN, poseRms: p ? p.rms : null, poseN: p ? p.n : 0, w, h, ms, count: this.shots.length, fps: this.fps || 0, step, restarts: this.restarts || 0 };
     let a = null, sh;
     if (p && p.n >= 2 && p.rms < 3) {
       if (this.eqs.length < 400 && p.n >= 3) { this.eqs.push(...focalEqs(p.H, w / 2, h / 2)); if (this.eqs.length >= 12) { const nf = focalFromEqs(this.eqs); if (nf > 0.45 * w && nf < 1.6 * w) this.f = nf; } }
@@ -170,8 +184,8 @@ export class Capture {
     return [Math.max(1, x0 | 0), Math.max(1, y0 | 0), Math.min(w - 2, x1 | 0), Math.min(h - 2, y1 | 0)];
   }
   async grab() {
-    const v = this.video, W = Math.min(1280, v.videoWidth), H = Math.round(v.videoHeight * W / v.videoWidth);
-    const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').drawImage(v, 0, 0, W, H);
+    const v = this.srcEl, W = Math.min(1280, v.videoWidth), H = Math.round(v.videoHeight * W / v.videoWidth);
+    const c = document.createElement('canvas'); c.width = W; c.height = H; this.drawSrc(c.getContext('2d'), W, H);
     return await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.92));
   }
   // наложение: метки, цилиндр рабочего объёма, стрелка «перед»

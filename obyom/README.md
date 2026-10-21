@@ -111,6 +111,7 @@ APK собирается GitHub Actions (`.github/workflows/build-obyom-android.
 | `web/js/splat.js` | растеризатор гауссовых сплэтов на процессоре с обратным проходом, Adam, деление/клонирование/чистка капель, экспорт PLY |
 | `web/js/pipeline.js`, `worker.js`, `procclient.js` | конвейер обработки в фоновом потоке |
 | `web/js/capture.js` | камера, слежение за ковриком, автокадры, купол покрытия, AR-рамка |
+| `web/js/nativecam.js` + `android/.../NativeCam.kt` | своя камера APK (Camera2): камера WebView на части телефонов замирает без касания экрана |
 | `web/js/viewer.js` | просмотр сетки и сплэтов (WebGL2) |
 | `web/js/export.js`, `matprint.js`, `store.js` | экспорт моделей, PDF коврика, хранение в IndexedDB |
 | `android/` | обёртка WebView `com.example.obyom` (камера, сохранение больших файлов в «Загрузки → Объём») |

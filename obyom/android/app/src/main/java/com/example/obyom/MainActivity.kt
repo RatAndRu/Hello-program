@@ -8,6 +8,8 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.view.Choreographer
+import android.view.Surface
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowInsetsController
@@ -39,6 +41,31 @@ class MainActivity : Activity() {
     private var pendingPermission: PermissionRequest? = null
     private var fileCallback: ValueCallback<Array<Uri>>? = null
 
+    // Своя камера (Camera2): камера WebView на части телефонов «замирает», пока не коснёшься экрана
+    private val cam by lazy { NativeCam(this) }
+    @Volatile private var camWanted = false
+    @Volatile private var camPermAsked = false
+    @Volatile private var camDenied = false
+    private var camResume = false
+    private var keepAlive = false
+    // пока идёт съёмка — просим WebView перерисовываться каждый кадр экрана (вторая известная ошибка: «не рисует без касания»)
+    private val frameCb = object : Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            if (!keepAlive) return
+            web.invalidate()
+            Choreographer.getInstance().postFrameCallback(this)
+        }
+    }
+    private fun startKeepAlive() { if (keepAlive) return; keepAlive = true; Choreographer.getInstance().postFrameCallback(frameCb) }
+
+    @Suppress("DEPRECATION")
+    private fun camRotation(): Int {
+        val r = when (windowManager.defaultDisplay.rotation) {
+            Surface.ROTATION_90 -> 90; Surface.ROTATION_180 -> 180; Surface.ROTATION_270 -> 270; else -> 0
+        }
+        return (cam.sensorOrientation - r + 360) % 360
+    }
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -60,6 +87,7 @@ class MainActivity : Activity() {
             userAgentString = "$userAgentString ObyomAndroid/1.0"
         }
 
+        web.setRendererPriorityPolicy(WebView.RENDERER_PRIORITY_IMPORTANT, false)
         web.addJavascriptInterface(NativeBridge(), "ObyomNative")
 
         web.webViewClient = object : WebViewClient() {
@@ -184,7 +212,35 @@ class MainActivity : Activity() {
         } catch (e: Exception) { "Не удалось сохранить: ${e.message}" }
 
         @JavascriptInterface
-        fun version(): String = "1.0"
+        fun version(): String = "1.7"
+
+        /** Включить свою камеру: "ok", "perm" (ждём разрешения — спросить ещё раз позже) или текст ошибки. */
+        @JavascriptInterface
+        fun camStart(w: Int, h: Int): String {
+            if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+                if (camDenied) return "Нет разрешения на камеру — разреши его в настройках телефона (Приложения → Объём → Права)"
+                if (!camPermAsked) { camPermAsked = true; runOnUiThread { requestPermissions(arrayOf(Manifest.permission.CAMERA), REQ_CAMERA) } }
+                return "perm"
+            }
+            camWanted = true
+            val r = try { cam.start(w, h) } catch (e: Exception) { "камера: ${e.message}" }
+            if (r == "ok") runOnUiThread { startKeepAlive() }
+            return r
+        }
+
+        /** Свежий кадр после last: "поворот|id|w|h|jpeg-base64"; "" — нового пока нет; "E:текст" — ошибка. */
+        @JavascriptInterface
+        fun camFrame(last: Int): String {
+            val f = cam.frame(last)
+            return if (f.isEmpty() || f.startsWith("E:")) f else "${camRotation()}|$f"
+        }
+
+        @JavascriptInterface
+        fun camStop() {
+            camWanted = false; camResume = false
+            cam.stop()
+            runOnUiThread { keepAlive = false }
+        }
     }
 
     /** Возвращает (uri для отправки или null, сообщение пользователю). */
@@ -228,6 +284,8 @@ class MainActivity : Activity() {
     override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode != REQ_CAMERA) return
+        val granted = grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED
+        camPermAsked = false; camDenied = !granted
         val req = pendingPermission ?: return
         pendingPermission = null
         if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
@@ -272,9 +330,19 @@ class MainActivity : Activity() {
         web.saveState(outState)
     }
 
-    override fun onPause() { web.onPause(); super.onPause() }
-    override fun onResume() { super.onResume(); web.onResume() }
-    override fun onDestroy() { web.destroy(); super.onDestroy() }
+    override fun onPause() {
+        if (cam.running) { camResume = true; cam.stop() }
+        keepAlive = false
+        web.onPause(); super.onPause()
+    }
+    override fun onResume() {
+        super.onResume(); web.onResume()
+        if (camResume && camWanted && checkSelfPermission(Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
+            camResume = false
+            if (cam.start(cam.reqW, cam.reqH) == "ok") startKeepAlive()
+        }
+    }
+    override fun onDestroy() { cam.stop(); web.destroy(); super.onDestroy() }
 
     @Deprecated("Deprecated in Java")
     override fun onBackPressed() {

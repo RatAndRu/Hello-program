@@ -50,3 +50,16 @@ v1.5: `STATIC=1 python3 scene.py /tmp/t/spinS spin 100` — вертушка у 
   `CAM=/tmp/t/camS.y4m node stale.cjs` → `stale` = 0, `opens` = 1 (нет ложных срабатываний).
 - `ui.cjs` — скриншоты экранов при `VW`×`VH` (по умолчанию 360×720) и координаты кнопок панели съёмки
   и экрана модели: все должны лежать в пределах ширины экрана.
+
+## v1.7 — своя камера (Camera2) в APK
+
+В Android WebView камера getUserMedia на части телефонов «замирает», пока не коснёшься экрана
+(ошибка Chromium issues.chromium.org/40884226, «Won't fix»). В APK кадры теперь идут из `NativeCam.kt`
+через мост `ObyomNative.camStart / camFrame / camStop` (JPEG base64 + угол поворота сенсора), веб-часть —
+`js/nativecam.js`. В браузере остаётся обычная камера.
+
+- `rot.cjs` — подставной `ObyomNative`, все повороты 0/90/180/270: после `drawTo` красный угол слева сверху,
+  зелёный справа снизу, размер 1280×720.
+- `NATIVE=1 CAM=/tmp/t/camS.y4m PLATE=/tmp/t/spinS/plate.jpg node e2e_plate.cjs` — вся съёмка и обработка через
+  подставную нативную камеру (кадры повёрнуты на 90°, как с сенсора). `NATIVE=270` и т. п. — другой угол.
+  Ожидается: автокадры ≥ 36, размер как без NATIVE, `своя камера: {starts:1, stops:1}`.
