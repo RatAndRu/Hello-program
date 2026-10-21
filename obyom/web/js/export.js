@@ -4,7 +4,14 @@
 
 const yUp = (x, y, z) => [x, z, -y];
 
-export function toGLB(M, name = 'Объём') {
+// материал поверхности для экспорта: surf = {mat: −1 авто | 0 мат | 1 глянец | 2 металл, relief: сила, tex: 'albedo' | 'photo'}
+export const MAT_PRESET = { 0: { rough: 0.9, metal: 0 }, 1: { rough: 0.22, metal: 0 }, 2: { rough: 0.32, metal: 1 } };
+export function surfOf(M, surf = {}) {
+  const pbr = M.uv && M.tex && M.tex.jpg && M.pbr && M.tan && M.pbr.normal ? M.pbr : null, mat = surf.mat ?? -1;
+  return { pbr, mat, preset: MAT_PRESET[mat] || null, relief: surf.relief ?? 1, color: pbr && (surf.tex || 'albedo') === 'albedo' && pbr.albedo ? pbr.albedo : M.tex && M.tex.jpg };
+}
+
+export function toGLB(M, name = 'Объём', surf = {}) {
   const nv = M.pos.length / 3, nt = M.idx.length / 3;
   const pos = new Float32Array(nv * 3), nrm = new Float32Array(nv * 3), col = new Uint8Array(nv * 4);
   const mn = [1e9, 1e9, 1e9], mx = [-1e9, -1e9, -1e9];
@@ -18,27 +25,41 @@ export function toGLB(M, name = 'Объём') {
   const idx = new Uint32Array(M.idx);
   const pad4 = (n) => (n + 3) & ~3;
   const tex = M.uv && M.tex && M.tex.jpg ? M.tex : null; // с текстурой цвет вершин не пишем (glTF перемножил бы их)
-  const views = tex ? [pos, nrm, new Float32Array(M.uv), idx, tex.jpg] : [pos, nrm, col, idx];
+  const S = surfOf(M, surf), pbr = tex ? S.pbr : null, useN = pbr && S.relief > 0, useMR = pbr && !S.preset;
+  // касательные (glTF: xyz + знак битангенса w), тем же поворотом в Y-вверх; с нулевой длиной — glTF не принимает
+  let tan = null;
+  if (useN) { tan = new Float32Array(nv * 4); for (let v = 0; v < nv; v++) { let t = yUp(M.tan[v * 4], M.tan[v * 4 + 1], M.tan[v * 4 + 2]); const l = Math.hypot(...t); t = l > 1e-6 ? t.map((x) => x / l) : [1, 0, 0]; tan.set(t, v * 4); tan[v * 4 + 3] = M.tan[v * 4 + 3] < 0 ? -1 : 1; } }
+  const views = tex ? [pos, nrm, new Float32Array(M.uv), idx, S.color] : [pos, nrm, col, idx];
+  const img = (bytes, mime) => { views.push(bytes); return { bufferView: views.length - 1, mimeType: mime }; };
+  const images = tex ? [{ bufferView: 4, mimeType: 'image/jpeg' }] : [];
+  let tanAcc = -1, nIdx = -1, mrIdx = -1;
+  if (useN) { views.push(tan); tanAcc = views.length - 1; images.push(img(pbr.normal, 'image/png')); nIdx = images.length - 1; }
+  if (useMR) { images.push(img(pbr.orm, 'image/png')); mrIdx = images.length - 1; }
   let off = 0; const bufferViews = [], parts = [];
   for (const [i, a] of views.entries()) {
     const bytes = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
-    const bv = { buffer: 0, byteOffset: off, byteLength: bytes.length }; if (i < 4) bv.target = i === 3 ? 34963 : 34962;
+    const bv = { buffer: 0, byteOffset: off, byteLength: bytes.length }; if (i < 4 || i === tanAcc) bv.target = i === 3 ? 34963 : 34962;
     bufferViews.push(bv);
     parts.push(bytes); off += pad4(bytes.length);
   }
+  const mat = { name: 'scan', pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: S.preset ? S.preset.metal : useMR ? 1 : 0, roughnessFactor: S.preset ? S.preset.rough : useMR ? 1 : 0.85, ...(tex ? { baseColorTexture: { index: 0 } } : {}) }, doubleSided: false };
+  if (useMR) { mat.pbrMetallicRoughness.metallicRoughnessTexture = { index: mrIdx }; mat.occlusionTexture = { index: mrIdx }; } // ORM: R — затенённость, G — шероховатость, B — металл
+  if (useN) mat.normalTexture = { index: nIdx, scale: S.relief };
+  const attrs = tex ? { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 } : { POSITION: 0, NORMAL: 1, COLOR_0: 2 };
+  const accessors = [
+    { bufferView: 0, componentType: 5126, count: nv, type: 'VEC3', min: mn, max: mx },
+    { bufferView: 1, componentType: 5126, count: nv, type: 'VEC3' },
+    tex ? { bufferView: 2, componentType: 5126, count: nv, type: 'VEC2' } : { bufferView: 2, componentType: 5121, normalized: true, count: nv, type: 'VEC4' },
+    { bufferView: 3, componentType: 5125, count: nt * 3, type: 'SCALAR' },
+  ];
+  if (useN) { accessors.push({ bufferView: tanAcc, componentType: 5126, count: nv, type: 'VEC4' }); attrs.TANGENT = accessors.length - 1; }
   const json = {
     asset: { version: '2.0', generator: 'Объём — сканер без нейросетей' },
     scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0, name }],
-    materials: [{ name: 'scan', pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 0.85, ...(tex ? { baseColorTexture: { index: 0 } } : {}) }, doubleSided: false }],
-    meshes: [{ name, primitives: [{ attributes: tex ? { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 } : { POSITION: 0, NORMAL: 1, COLOR_0: 2 }, indices: 3, material: 0, mode: 4 }] }],
-    ...(tex ? { images: [{ bufferView: 4, mimeType: 'image/jpeg' }], samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 33071, wrapT: 33071 }], textures: [{ source: 0, sampler: 0 }] } : {}),
-    buffers: [{ byteLength: off }], bufferViews,
-    accessors: [
-      { bufferView: 0, componentType: 5126, count: nv, type: 'VEC3', min: mn, max: mx },
-      { bufferView: 1, componentType: 5126, count: nv, type: 'VEC3' },
-      tex ? { bufferView: 2, componentType: 5126, count: nv, type: 'VEC2' } : { bufferView: 2, componentType: 5121, normalized: true, count: nv, type: 'VEC4' },
-      { bufferView: 3, componentType: 5125, count: nt * 3, type: 'SCALAR' },
-    ],
+    materials: [mat],
+    meshes: [{ name, primitives: [{ attributes: attrs, indices: 3, material: 0, mode: 4 }] }],
+    ...(tex ? { images, samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 33071, wrapT: 33071 }], textures: images.map((_, i) => ({ source: i, sampler: 0 })) } : {}),
+    buffers: [{ byteLength: off }], bufferViews, accessors,
   };
   let js = new TextEncoder().encode(JSON.stringify(json));
   const jl = pad4(js.length), total = 12 + 8 + jl + 8 + off;
@@ -51,7 +72,8 @@ export function toGLB(M, name = 'Объём') {
 }
 
 // OBJ: с текстурой — {obj, mtl, jpg} (три файла рядом), без — {obj}
-export function toOBJ(M, base = 'scan') {
+// surf + maps (из app: отдельные серые PNG шероховатости/металла) → MTL с картами PBR (Blender читает map_Bump как карту нормалей, Pr/Pm/map_Pr/map_Pm)
+export function toOBJ(M, base = 'scan', surf = {}) {
   const tex = M.uv && M.tex && M.tex.jpg ? M.tex : null;
   const nv = M.pos.length / 3, L = ['# Объём — 3D-сканер. Единицы: метры, Y вверх. Цвет вершин после координат (r g b 0..1).'];
   if (tex) L.push(`mtllib ${base}.mtl`);
@@ -64,8 +86,13 @@ export function toOBJ(M, base = 'scan') {
   for (let i = 0; i < M.idx.length; i += 3) { const a = M.idx[i] + 1, b = M.idx[i + 1] + 1, c = M.idx[i + 2] + 1; L.push(tex ? `f ${a}/${a}/${a} ${b}/${b}/${b} ${c}/${c}/${c}` : `f ${a}//${a} ${b}//${b} ${c}//${c}`); }
   const enc = new TextEncoder(), obj = enc.encode(L.join('\n') + '\n');
   if (!tex) return { obj };
-  const mtl = enc.encode(`# Объём\nnewmtl scan\nKa 1 1 1\nKd 1 1 1\nKs 0 0 0\nillum 1\nmap_Kd ${base}.jpg\n`);
-  return { obj, mtl, jpg: tex.jpg };
+  const S = surfOf(M, surf), P = S.pbr, L2 = ['# Объём', 'newmtl scan', 'Ka 1 1 1', 'Kd 1 1 1', 'Ks 0 0 0', 'illum 2', `map_Kd ${base}.jpg`];
+  if (P) {
+    if (S.relief > 0) L2.push(`map_Bump -bm ${S.relief} ${base}_normal.png`, `norm ${base}_normal.png`);
+    if (S.preset) L2.push(`Pr ${S.preset.rough}`, `Pm ${S.preset.metal}`); else L2.push('Pr 1', 'Pm 1', `map_Pr ${base}_roughness.png`, `map_Pm ${base}_metallic.png`);
+  }
+  const mtl = enc.encode(L2.join('\n') + '\n');
+  return { obj, mtl, jpg: S.color || tex.jpg, normal: P && S.relief > 0 ? P.normal : null, splitMR: !!(P && !S.preset) };
 }
 
 export function toMeshPLY(M) {

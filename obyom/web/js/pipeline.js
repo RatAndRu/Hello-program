@@ -7,6 +7,7 @@ import { computeMask, motionMasks, carveHull, meshFromGrid, revolveGrid, taubin,
 import { alignHulls, intersectHulls, framesToA } from './align.js';
 import { boxMesh, prismMesh, snapPlanes } from './shapes.js';
 import { bakeTexture, subdivideLong } from './texture.js';
+import { analyzeSurface, computeTangents } from './surface.js';
 import { initFromMesh, Trainer, splatViews, allowedRegion, packSplats, scalePacked } from './splat.js';
 
 export const PROC_W = 640;
@@ -25,15 +26,17 @@ export async function decodeBlob(blob, W) {
   return { rgba: new Uint8Array(cx.getImageData(0, 0, w, h).data.buffer), w, h, srcW: sw, srcH: shh };
 }
 // атлас → JPEG (в фоновом потоке — OffscreenCanvas, иначе обычный canvas)
-async function encodeJPEG(rgba, T) {
+async function encodeJPEG(rgba, T, type = 'image/jpeg') {
   const id = new ImageData(new Uint8ClampedArray(rgba.buffer, rgba.byteOffset, rgba.byteLength), T, T);
   if (typeof OffscreenCanvas !== 'undefined') {
     const cv = new OffscreenCanvas(T, T); cv.getContext('2d').putImageData(id, 0, 0);
-    const b = await cv.convertToBlob({ type: 'image/jpeg', quality: 0.9 }); return new Uint8Array(await b.arrayBuffer());
+    const b = await cv.convertToBlob({ type, quality: 0.9 }); return new Uint8Array(await b.arrayBuffer());
   }
   const cv = Object.assign(document.createElement('canvas'), { width: T, height: T }); cv.getContext('2d').putImageData(id, 0, 0);
-  const b = await new Promise((r) => cv.toBlob(r, 'image/jpeg', 0.9)); return new Uint8Array(await b.arrayBuffer());
+  const b = await new Promise((r) => cv.toBlob(r, type, 0.9)); return new Uint8Array(await b.arrayBuffer());
 }
+// карты нормалей / ORM / высоты — PNG (JPEG испортил бы нормали)
+const encodePNG = (rgba, T) => encodeJPEG(rgba, T, 'image/png');
 
 // job: {blobs:[Blob], mode:'mesh'|'splat'|'both', quality:'fast'|'normal'|'best', size:'A4'|'A3'|'A2', theme, Hb,
 //       method:'walk'|'turn', shape:'normal'|'revolve'|'smooth', scale:[sx, sy] — поправка масштаба печати}
@@ -117,15 +120,25 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     log(`крупные планы: поза найдена на ${cl.length} из ${job.close.length}${cl.length < job.close.length ? ' (в кадре должно быть видно хотя бы 3 метки коврика)' : ''}`);
   }
   // 5в) отдельная текстура: лучший кадр на каждый кусок поверхности, в полном разрешении
-  let tex = null, texInfo = null;
+  let tex = null, texInfo = null, pbr = null;
   if (job.texture !== false && job.mode !== 'splat') {
     try {
       const r = await bakeTexture(M, texFrames, { size: TEX[job.quality || 'normal'], decode: (b) => decodeBlob(b, 0), encode: encodeJPEG, onProgress: (p, t) => cb.progress('Текстура', p, t) });
       if (r.tex) { M = r.mesh; tex = r.tex; texInfo = r.info; log(`текстура ${r.T}×${r.T}: ${r.info.charts} лоскутов из ${r.info.frames} кадров${nClose ? ' (с крупными планами)' : ''}, масштаб ${(r.info.scale * 100).toFixed(0)}% от кадра`); }
+      // 5г) свет, рельеф, материал, текстура без теней — фотометрия по тем же кадрам
+      if (r.tex && job.surface !== false) {
+        try {
+          const Sf = await analyzeSurface(r.mesh, texFrames, r.faceFrame, r.faceChart, r.atlas, r.T, { G, turn, onProgress: (p, t) => cb.progress('Рельеф и материал', p, t), tick });
+          const [albedo, normal, orm, height] = await Promise.all([encodeJPEG(Sf.albedo, r.T), encodePNG(Sf.normal, Sf.Wr), encodePNG(Sf.orm, Sf.Wr), encodePNG(Sf.height, Sf.Wr)]);
+          M.tan = computeTangents(M);
+          pbr = { albedo, normal, orm, height, Wr: Sf.Wr, info: Sf.info };
+          log(surfaceLog(Sf.info));
+        } catch (e) { if (e.message === 'stopped') throw e; log('✗ рельеф и материал не получились: ' + e.message + ' — остаётся фото-текстура'); }
+      }
     } catch (e) { if (e.message === 'stopped') throw e; log('✗ текстура не получилась: ' + e.message + ' — остаётся цвет вершин'); }
     await tick();
   }
-  const result = { mesh: { pos: M.pos, nrm: M.nrm, col: M.col, idx: M.idx, ...(tex ? { uv: M.uv, tex } : {}) }, stats: { tex: texInfo, close: nClose, frames: job.blobs.length + (bt && bt.blobs ? bt.blobs.length : 0), used: frAll.length, focal: A.rf.f, elMax, hullVol: vox * G.vs ** 3, t: 0, bottom: bottomOk } };
+  const result = { mesh: { pos: M.pos, nrm: M.nrm, col: M.col, idx: M.idx, ...(tex ? { uv: M.uv, tex } : {}), ...(pbr ? { pbr, tan: M.tan } : {}) }, stats: { tex: texInfo, close: nClose, frames: job.blobs.length + (bt && bt.blobs ? bt.blobs.length : 0), used: frAll.length, focal: A.rf.f, elMax, hullVol: vox * G.vs ** 3, t: 0, bottom: bottomOk } };
   if (elMax < (turn ? 62 : 50) && !bottomOk && !(turn && A.withPlate > 0.5 * good.length)) result.stats.warn = `Самый высокий кадр — ${elMax.toFixed(0)}°: верх модели может выйти «шапкой». В следующий раз ${turn ? 'сними «Фон» (пустой коврик с того же места) или ' : ''}добавь оборот почти сверху (65–75°), или «Доснять низ» (предмет на боку).`;
   result.stats.plate = A.withPlate || 0;
   // 6) сплэты
@@ -270,3 +283,13 @@ export function plateEmpty(d, L, mr, K0, Rb, Hb) {
 }
 const SHAPES = { revolve: 'тело вращения', smooth: 'гладкая', box: 'коробка', prism: 'призма (одно сечение по высоте)', planes: 'плоские грани' };
 export function fmtT(s) { s = Math.max(0, Math.round(s)); return s < 60 ? `${s} с` : `${Math.floor(s / 60)} мин ${s % 60 ? (s % 60) + ' с' : ''}`; }
+
+// строка журнала про свет, рельеф и материалы
+function surfaceLog(I) {
+  const L = I.light, el = L ? Math.asin(Math.max(-1, Math.min(1, L.dir[2]))) * 180 / Math.PI : 0;
+  const kinds = new Map(); for (const m of I.materials || []) { const k = m.metal >= 1 ? 'металл' : m.metal > 0 ? 'похоже на металл' : m.rough < 0.3 ? 'глянец' : m.rough < 0.75 ? 'полуглянец' : 'мат'; kinds.set(k, (kinds.get(k) || 0) + m.share); }
+  const mats = [...kinds].filter(([, v]) => v > 0.04).sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} ${Math.round(v * 100)}%`);
+  const rm = I.relief && I.relief.mode;
+  return (L ? `свет: лампа ${el.toFixed(0)}° над горизонтом${L.rotates ? ' (стоит в комнате, предмет вертится)' : ''}, рассеянного ${Math.round(L.ambient * 100)}%; ` : '') +
+    `рельеф ${rm === 'none' ? 'выключен' : rm === 'photo' ? 'по смене света' : 'по светотени снимков (приблизительный)'}${rm === 'none' ? '' : `, перепад ±${I.heightRange} мм`}; материал (авто): ${mats.join(', ') || 'мат'} — можно поменять кнопками; текстура без бликов и теней`;
+}

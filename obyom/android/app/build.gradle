@@ -2,7 +2,7 @@ plugins { id 'com.android.application'; id 'org.jetbrains.kotlin.android' }
 android {
     namespace 'com.example.obyom'
     compileSdk 34
-    defaultConfig { applicationId 'com.example.obyom'; minSdk 26; targetSdk 34; versionCode 10; versionName '1.9' }
+    defaultConfig { applicationId 'com.example.obyom'; minSdk 26; targetSdk 34; versionCode 11; versionName '2.0' }
     // Веб-часть (obyom/web) целиком кладётся в assets APK — приложение работает без интернета.
     sourceSets { main { assets.srcDirs = ['../../web'] } }
     signingConfigs {

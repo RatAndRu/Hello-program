@@ -19,16 +19,30 @@ if os.environ.get('OBJPOSE'):
     QR = rot(2, v[2]) @ rot(1, v[1]) @ rot(0, v[0]); QT = np.array(v[3:6])
 # предмет: цилиндр r=24 h=0..42 (полоски) + шар r=17 центр z=58 (шахматка) + «ручка»-кубик сбоку
 def shade_obj(P, Nrm, kind):
-    L = np.array([0.4, -0.5, 0.75]); L /= np.linalg.norm(L)
+    L = np.array([float(v) for v in os.environ.get('LDIR', '0.4,-0.5,0.75').split(',')]); L /= np.linalg.norm(L)  # LDIR — направление на лампу (при az=0 камера на +Y)
     if LIGHTCAM:  # лампа стоит в комнате: на вертушке она поворачивается относительно предмета вместе с камерой
         a_ = np.radians(AZ[0]); L = np.array([L[0] * np.cos(a_) + L[1] * np.sin(a_), -L[0] * np.sin(a_) + L[1] * np.cos(a_), L[2]])
+    if BUMP and kind == 'cyl':  # рельеф: горизонтальные бороздки на боку цилиндра, h(z) = 0.3·sin(2πz/5) мм (наклон до ±21°)
+        side = np.abs(Nrm[..., 2]) < 0.5
+        Nrm = Nrm.copy(); gz = -0.3 * 2 * np.pi / 5 * np.cos(2 * np.pi * P[..., 2] / 5); gs = 0 * gz
+        if BUMP == 2:  # BUMP=2: внизу (z<21) бороздки, вверху — сетка выпуклостей h = 0.4·cos(2πs/6)·cos(2πz/6), s — длина дуги
+            ang_ = np.arctan2(P[..., 1], P[..., 0]); s_ = 24 * ang_; k_ = 2 * np.pi / 6; up = P[..., 2] >= 21
+            gz = np.where(up, 0.4 * k_ * np.cos(k_ * s_) * np.sin(k_ * P[..., 2]), gz)   # n = r̂ − ∂h/∂s·t̂ − ∂h/∂z·ẑ
+            gs = np.where(up, 0.4 * k_ * np.sin(k_ * s_) * np.cos(k_ * P[..., 2]), 0 * gz)
+            tx, ty = -np.sin(ang_), np.cos(ang_)
+            Nrm[..., 0] = np.where(side, Nrm[..., 0] + gs * tx, Nrm[..., 0]); Nrm[..., 1] = np.where(side, Nrm[..., 1] + gs * ty, Nrm[..., 1])
+        Nrm[..., 2] = np.where(side, gz, Nrm[..., 2])
+        Nrm = Nrm / np.linalg.norm(Nrm, axis=-1, keepdims=True)
     Nrm = Nrm @ QR.T
     lam = 0.35 + 0.65 * np.clip((Nrm * L).sum(-1), 0, 1)
     spec = 0
-    if SPEC:  # блик (Блинн — Фонг): белый, зависит от направления взгляда
+    if SPEC or MATS:  # блик (Блинн — Фонг): белый, зависит от направления взгляда
         Pw = P @ QR.T + QT; V = CAMW[0] - Pw; V = V / np.linalg.norm(V, axis=-1, keepdims=True)
         Hh = V + L; Hh = Hh / np.linalg.norm(Hh, axis=-1, keepdims=True)
-        spec = SPEC * np.clip((Nrm * Hh).sum(-1), 0, 1) ** 40
+        nh = np.clip((Nrm * Hh).sum(-1), 0, 1)
+        spec = SPEC * nh ** 40
+        # MATS=1: цилиндр матовый, шар — глянцевый пластик (узкий белый блик), кубик-ручка — металл (широкий цветной блик, тёмный диффузный)
+        if MATS: spec = {'cyl': 0 * nh, 'sph': 0.7 * nh ** 200, 'box': 0.9 * nh ** 30}.get(kind, spec)
     col = np.zeros(P.shape, np.float32)
     ang = np.arctan2(P[..., 1], P[..., 0])
     if kind == 'cyl':
@@ -45,8 +59,11 @@ def shade_obj(P, Nrm, kind):
         col[:] = [0.25, 0.75, 0.35]
     if os.environ.get('OBJWHITE'):  # однотонный светлый матовый предмет (как дезодорант)
         col[:] = [0.88, 0.88, 0.9]
-    return np.clip(col * lam[..., None] + (spec[..., None] if SPEC else 0), 0, 1)
+    if MATS and kind == 'box':  # металл: блик цвета металла, диффузного почти нет
+        return np.clip(col * lam[..., None] * 0.15 + spec[..., None] * col / col.max(-1, keepdims=True), 0, 1)
+    return np.clip(col * lam[..., None] + (spec[..., None] if (SPEC or MATS) else 0), 0, 1)
 AZ = [0.0]; NOOBJ = [False]; CAMW = [np.zeros(3)]
+BUMP = int(os.environ.get('BUMP', 0) or 0); MATS = bool(os.environ.get('MATS'))  # рельеф и разные материалы (v2.0)
 LIGHTCAM = bool(os.environ.get('LIGHTCAM')); SPEC = float(os.environ.get('SPEC', 0))  # свет в комнате; сила блика
 EXPO = float(os.environ.get('EXPO', 0))  # разброс автоэкспозиции между кадрами (σ лог-усиления), напр. 0.1
 STATIC = bool(os.environ.get('STATIC'))  # вертушка у неподвижной камеры: стол и стена неподвижны относительно камеры

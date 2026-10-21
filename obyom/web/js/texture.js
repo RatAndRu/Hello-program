@@ -241,5 +241,6 @@ export async function bakeTexture(M, frames, opt = {}) {
   const mesh = { pos: new Float32Array(np), nrm: new Float32Array(nn), col: new Uint8Array(nc), idx: ni, uv: new Float32Array(uv) };
   const jpg = opt.encode ? await opt.encode(atlas, T) : null;
   prog(1, 'текстура готова');
-  return { mesh, tex: jpg ? { w: T, h: T, jpg } : null, atlas, T, info: { charts: charts.length, frames: byFrame.size, scale: sg, unseen: unseen.length } };
+  // faceFrame / faceChart — для анализа поверхности (свет, рельеф, материал): из какого кадра и лоскута каждая грань
+  return { mesh, tex: jpg ? { w: T, h: T, jpg } : null, atlas, T, faceFrame: lab, faceChart: chart, info: { charts: charts.length, frames: byFrame.size, scale: sg, unseen: unseen.length } };
 }

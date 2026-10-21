@@ -9,7 +9,7 @@ import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '1.9';
+export const VERSION = '2.0';
 const $ = (id) => document.getElementById(id);
 const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
@@ -272,6 +272,7 @@ async function openScan(id, scanObj) {
   curScan = scan; window.__obyomScan = scan; // для тестов
   if (cur === 'process') { cur = 'view'; document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === 'view')); } else go('view');
   if (!viewer) { try { viewer = new Viewer3D($('gl')); } catch (e) { toast('3D-просмотр недоступен: ' + e.message, 5000); return; } }
+  window.__obyomViewer = viewer;
   viewer.setMesh(scan.mesh || null);
   viewer.setSplats(scan.splats || new Float32Array(0));
   viewer.show = scan.mode === 'splat' && scan.splats ? 'splat' : 'mesh';
@@ -282,6 +283,9 @@ async function openScan(id, scanObj) {
   $('vWarn').textContent = scan.stats && scan.stats.warn || ''; $('vWarn').classList.toggle('hidden', !(scan.stats && scan.stats.warn));
   $('vShow').classList.toggle('hidden', !scan.splats);
   viewer.hasTex = !!(scan.mesh && scan.mesh.uv && scan.mesh.tex);
+  viewer.hasPbr = !!(viewer.hasTex && scan.mesh.pbr && scan.mesh.tan);
+  // настройки поверхности хранятся в скане (и идут в экспорт): материал, сила рельефа, какая текстура
+  const sv = scan.surf || {}; viewer.mat = sv.mat ?? -1; viewer.relief = sv.relief ?? 1; viewer.texSrc = viewer.hasPbr ? (sv.tex || 'albedo') : 'photo'; viewer.useTex = sv.useTex !== false;
   syncViewTools();
 }
 function syncViewTools() {
@@ -289,26 +293,54 @@ function syncViewTools() {
   $('vShade').querySelectorAll('button').forEach((b) => b.classList.toggle('on', String(viewer.shade) === b.dataset.v));
   $('vShade').classList.toggle('hidden', viewer.show !== 'mesh');
   $('vTex').classList.toggle('hidden', viewer.show !== 'mesh' || !viewer.hasTex || viewer.shade === 2);
-  $('vTex').querySelectorAll('button').forEach((b) => b.classList.toggle('on', String(viewer.useTex === false ? 0 : 1) === b.dataset.v));
+  $('vTex').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', (viewer.useTex === false ? '0' : viewer.texSrc === 'albedo' && viewer.hasPbr ? 'a' : '1') === b.dataset.v); if (b.dataset.v === 'a') b.classList.toggle('hidden', !viewer.hasPbr); });
+  const pbrTools = viewer.show === 'mesh' && viewer.hasPbr && viewer.shade !== 0;
+  $('vMat').classList.toggle('hidden', !pbrTools || viewer.shade === 2); $('vRelief').classList.toggle('hidden', !pbrTools);
+  $('vMat').querySelectorAll('button').forEach((b) => b.classList.toggle('on', String(viewer.mat ?? -1) === b.dataset.v));
+  $('vRelief').textContent = `Рельеф ${{ 0: 'выкл', 0.5: '½×', 1: '1×', 2: '2×' }[viewer.relief ?? 1] || (viewer.relief + '×')}`;
   $('vAuto').classList.toggle('on', viewer.auto);
 }
 $('vShow').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.show = b.dataset.v; viewer.dirty = true; syncViewTools(); };
 $('vShade').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.shade = +b.dataset.v; viewer.dirty = true; syncViewTools(); };
-$('vTex').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.useTex = b.dataset.v === '1'; viewer.dirty = true; syncViewTools(); };
+const saveSurf = () => { if (!curScan) return; curScan.surf = { mat: viewer.mat, relief: viewer.relief, tex: viewer.texSrc, useTex: viewer.useTex !== false }; store.putScan(curScan).catch(() => {}); };
+$('vTex').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.useTex = b.dataset.v !== '0'; if (b.dataset.v !== '0') viewer.texSrc = b.dataset.v === 'a' ? 'albedo' : 'photo'; viewer.dirty = true; syncViewTools(); saveSurf(); };
+$('vMat').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.mat = +b.dataset.v; viewer.dirty = true; syncViewTools(); saveSurf(); };
+$('vRelief').onclick = () => { const L = [0, 0.5, 1, 2], i = L.indexOf(viewer.relief ?? 1); viewer.relief = L[(i + 1) % L.length]; viewer.dirty = true; syncViewTools(); saveSurf(); };
 $('vAuto').onclick = () => { viewer.auto = !viewer.auto; syncViewTools(); };
 $('vHome').onclick = () => { viewer.reset(); };
 $('vName').onchange = async () => { if (!curScan) return; curScan.name = $('vName').value.trim() || curScan.name; await store.putScan(curScan).catch(() => {}); };
 setInterval(() => { if (viewer && cur === 'view') { const on = $('vAuto').classList.contains('on'); if (on !== viewer.auto) syncViewTools(); } }, 500);
 
+// ORM (R — затенённость, G — шероховатость, B — металл) → три серые PNG (OBJ/MTL и «Карты PNG»)
+async function splitORM(png) {
+  const bmp = await createImageBitmap(new Blob([png], { type: 'image/png' }), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' });
+  const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height; const x = c.getContext('2d'); x.drawImage(bmp, 0, 0);
+  const src = x.getImageData(0, 0, c.width, c.height), out = {};
+  for (const [k, ch] of [['ao', 0], ['rough', 1], ['metal', 2]]) {
+    const d = x.createImageData(c.width, c.height); for (let i = 0; i < d.data.length; i += 4) { const v = src.data[i + ch]; d.data[i] = d.data[i + 1] = d.data[i + 2] = v; d.data[i + 3] = 255; }
+    x.putImageData(d, 0, 0); out[k] = new Uint8Array(await (await new Promise((r) => c.toBlob(r, 'image/png'))).arrayBuffer());
+  }
+  return out;
+}
 $('vExp').onclick = () => {
   const s = curScan; if (!s) return;
-  const base = fileBase(s.name);
+  const base = fileBase(s.name), pbr = !!(s.mesh && s.mesh.tex && s.mesh.pbr && s.mesh.tan);
   const items = [];
   if (s.mesh) items.push(
-    ['glb', 'GLB', s.mesh.tex ? 'с текстурой внутри · Blender, Godot, Unity, сайты, AR' : 'Blender, Godot, Unity, сайты, AR', () => saveFile(toGLB(s.mesh, s.name), base + '.glb', 'model/gltf-binary')],
-    ['obj', 'OBJ', s.mesh.tex ? 'три файла: .obj + .mtl + текстура .jpg' : 'с цветами вершин, любые 3D-программы', async () => { const o = toOBJ(s.mesh, base); await saveFile(o.obj, base + '.obj', 'text/plain'); if (o.mtl) { await saveFile(o.mtl, base + '.mtl', 'text/plain'); await saveFile(o.jpg, base + '.jpg', 'image/jpeg'); } }],
+    ['glb', 'GLB', s.mesh.tex ? (pbr ? 'текстура, рельеф и материал внутри · Blender, Godot, Unity, сайты, AR' : 'с текстурой внутри · Blender, Godot, Unity, сайты, AR') : 'Blender, Godot, Unity, сайты, AR', () => saveFile(toGLB(s.mesh, s.name, s.surf), base + '.glb', 'model/gltf-binary')],
+    ['obj', 'OBJ', s.mesh.tex ? (pbr ? '.obj + .mtl + текстура + карты рельефа и материала' : 'три файла: .obj + .mtl + текстура .jpg') : 'с цветами вершин, любые 3D-программы', async () => {
+      const o = toOBJ(s.mesh, base, s.surf); await saveFile(o.obj, base + '.obj', 'text/plain');
+      if (o.mtl) { await saveFile(o.mtl, base + '.mtl', 'text/plain'); await saveFile(o.jpg, base + '.jpg', 'image/jpeg'); }
+      if (o.normal) await saveFile(o.normal, base + '_normal.png', 'image/png');
+      if (o.splitMR) { const g = await splitORM(s.mesh.pbr.orm); await saveFile(g.rough, base + '_roughness.png', 'image/png'); await saveFile(g.metal, base + '_metallic.png', 'image/png'); }
+    }],
     ['ply', 'PLY', 'сетка с цветом (MeshLab, Blender)', () => saveFile(toMeshPLY(s.mesh), base + '.ply', 'application/octet-stream')],
     ['stl', 'STL', '3D-печать, миллиметры', () => saveFile(toSTL(s.mesh), base + '.stl', 'model/stl')]);
+  if (pbr) items.push(['maps', 'Карты PNG', 'для своей сцены: цвет без теней, нормали, высота, ORM, шероховатость, металл', async () => {
+    const P = s.mesh.pbr, g = await splitORM(P.orm);
+    await saveFile(P.albedo || s.mesh.tex.jpg, base + '_albedo.jpg', 'image/jpeg'); await saveFile(P.normal, base + '_normal.png', 'image/png'); await saveFile(P.height, base + '_height.png', 'image/png');
+    await saveFile(P.orm, base + '_orm.png', 'image/png'); await saveFile(g.rough, base + '_roughness.png', 'image/png'); await saveFile(g.metal, base + '_metallic.png', 'image/png'); await saveFile(g.ao, base + '_ao.png', 'image/png');
+  }]);
   if (s.splats) items.push(['splat', 'Сплэты PLY', 'SuperSplat, Brush, Blender-аддоны', () => saveFile(new Uint8Array(plyFromPacked(s.splats)), base + '_splats.ply', 'application/octet-stream')]);
   sheet(`<h3>Экспорт «${s.name.replace(/</g, '&lt;')}»</h3><p>Файлы попадут в «Загрузки → Объём». Размер модели настоящий (${(s.stats.size || [0, 0, 0]).map((v) => Math.round(v)).join('×')} мм).</p><div class="grid2">${items.map(([k, t, d]) => `<button data-k="${k}">${t}<small>${d}</small></button>`).join('')}</div>`,
     (box) => box.querySelectorAll('button[data-k]').forEach((b) => b.onclick = async () => { const it = items.find((x) => x[0] === b.dataset.k); b.disabled = true; try { await it[3](); } catch (e) { toast('Ошибка: ' + e.message); } b.disabled = false; }));

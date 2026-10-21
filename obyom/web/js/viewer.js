@@ -2,17 +2,58 @@
 import { splatInfo } from './splat.js';
 
 const MESH_VS = `#version 300 es
-layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec3 aCol; layout(location=3) in vec2 aUV;
-uniform mat4 uVP; out vec3 vN; out vec3 vC; out vec3 vP; out vec2 vUV;
-void main(){ vN=aNrm; vC=aCol; vP=aPos; vUV=aUV; gl_Position=uVP*vec4(aPos,1.0); }`;
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec3 aCol; layout(location=3) in vec2 aUV; layout(location=4) in vec4 aTan;
+uniform mat4 uVP; out vec3 vN; out vec3 vC; out vec3 vP; out vec2 vUV; out vec4 vT;
+void main(){ vN=aNrm; vC=aCol; vP=aPos; vUV=aUV; vT=aTan; gl_Position=uVP*vec4(aPos,1.0); }`;
+// uMode: 0 — цвет без света, 1 — свет (PBR: GGX, карты нормалей и ORM), 2 — глина (без цвета, с рельефом)
+// uMat: −1 — материал из карт (авто), 0 — мат, 1 — глянец, 2 — металл
 const MESH_FS = `#version 300 es
-precision highp float; in vec3 vN; in vec3 vC; in vec3 vP; in vec2 vUV; uniform int uMode; uniform int uTexOn; uniform sampler2D uTex; uniform vec3 uEye; out vec4 o;
+precision highp float; in vec3 vN; in vec3 vC; in vec3 vP; in vec2 vUV; in vec4 vT;
+uniform int uMode; uniform int uTexOn; uniform sampler2D uTex; uniform vec3 uEye;
+uniform int uPbr; uniform sampler2D uNrm; uniform sampler2D uOrm; uniform float uRelief; uniform int uMat; out vec4 o;
+const float PI=3.14159265;
+vec3 light(vec3 n, vec3 v, vec3 L, vec3 rad, vec3 base, float rough, float metal){
+  float NdL=max(dot(n,L),0.0); if(NdL<=0.0) return vec3(0.0);
+  vec3 h=normalize(v+L); float NdV=max(dot(n,v),1e-3), NdH=max(dot(n,h),0.0), VdH=max(dot(v,h),0.0);
+  float a=rough*rough, a2=a*a, dd=NdH*NdH*(a2-1.0)+1.0, D=a2/(PI*dd*dd);
+  float k=(rough+1.0)*(rough+1.0)/8.0, G=NdV/(NdV*(1.0-k)+k)*NdL/(NdL*(1.0-k)+k);
+  vec3 F0=mix(vec3(0.04),base,metal), F=F0+(1.0-F0)*pow(1.0-VdH,5.0);
+  vec3 spec=D*G*F/(4.0*NdL*NdV+1e-4), kd=(1.0-F)*(1.0-metal);
+  return (kd*base/PI+spec)*rad*NdL;
+}
+// студийное окружение (без файлов): пол — горизонт — небо и софтбокс со стороны основной лампы; шероховатость размывает
+vec3 env(vec3 R, vec3 L1, float rg){
+  float w=0.08+0.5*rg, z=R.z;
+  float g=mix(0.10, 0.62, smoothstep(-0.25-w, 0.02+w, z)); g=mix(g, 1.0, 0.55*smoothstep(0.1, 0.95, z));
+  float sb=pow(max(dot(R,L1),0.0), mix(90.0, 2.5, rg))*mix(4.0, 0.5, rg);
+  float rim=pow(max(dot(R,normalize(vec3(-0.7,0.6,0.35))),0.0), mix(60.0,2.0,rg))*mix(1.6,0.25,rg);
+  return vec3(g*0.95, g*0.98, g*1.04) + sb + rim;
+}
+vec3 envBRDF(vec3 F0, float rg, float NdV){
+  vec4 r=rg*vec4(-1.0,-0.0275,-0.572,0.022)+vec4(1.0,0.0425,1.04,-0.04);
+  float a004=min(r.x*r.x, exp2(-9.28*NdV))*r.x+r.y; vec2 AB=vec2(-1.04,1.04)*a004+r.zw; return F0*AB.x+AB.y;
+}
 void main(){
   vec3 base = uTexOn==1 ? texture(uTex, vUV).rgb : vC;
   vec3 n=normalize(vN); vec3 v=normalize(uEye-vP); if(dot(n,v)<0.0) n=-n;
-  vec3 L1=normalize(vec3(0.4,-0.6,0.8)); float d=0.35+0.5*max(dot(n,v),0.0)+0.25*max(dot(n,L1),0.0);
-  vec3 c = uMode==0 ? base : (uMode==1 ? base*d*1.05 : vec3(0.78,0.74,0.70)*d);
-  if(uMode==2){ vec3 h=normalize(v+L1); c+=0.12*pow(max(dot(n,h),0.0),24.0); }
+  float rough=0.85, metal=0.0, ao=1.0;
+  if(uPbr==1){
+    vec3 t=vT.xyz-n*dot(n,vT.xyz); float tl=length(t);
+    if(tl>1e-5 && uRelief>0.0){ t/=tl; vec3 b=cross(n,t)*(vT.w<0.0?-1.0:1.0); vec3 tn=texture(uNrm,vUV).xyz*2.0-1.0; tn.xy*=uRelief; n=normalize(t*tn.x+b*tn.y+n*max(tn.z,0.05)); }
+    vec3 orm=texture(uOrm,vUV).rgb; ao=orm.r; rough=orm.g; metal=orm.b;
+  }
+  if(uMat==0){ rough=0.9; metal=0.0; } else if(uMat==1){ rough=0.22; metal=0.0; } else if(uMat==2){ rough=0.32; metal=1.0; }
+  rough=clamp(rough,0.06,1.0);
+  vec3 c;
+  if(uMode==0) c=base;
+  else {
+    vec3 alb = uMode==2 ? vec3(0.78,0.74,0.70) : base; float mt = uMode==2 ? 0.0 : metal; float rg = uMode==2 ? max(rough,0.5) : rough;
+    vec3 L1=normalize(vec3(0.4,-0.6,0.8)), L2=normalize(v+vec3(0.0,0.0,0.35));
+    c = light(n,v,L1,vec3(1.45),alb,rg,mt) + light(n,v,L2,vec3(1.55)*(1.0-0.6*mt),alb,rg,mt);
+    // окружение: рассеянное + отражение студии (металл и глянец)
+    vec3 F0=mix(vec3(0.04),alb,mt); float NdV=max(dot(n,v),1e-3);
+    c += ao*(alb*(1.0-mt)*0.33 + env(reflect(-v,n), L1, rg)*envBRDF(F0, rg, NdV)*mix(0.6, 1.0, mt));
+  }
   o=vec4(c,1.0);
 }`;
 const SPLAT_VS = `#version 300 es
@@ -94,27 +135,32 @@ export class Viewer3D {
   reset() { if (this.home) { Object.assign(this, { yaw: this.home.yaw, pitch: this.home.pitch, dist: this.home.dist, target: [...this.home.target] }); this.dirty = true; } }
   setMesh(M) {
     const gl = this.gl;
-    if (this.mesh) { this.mesh.bufs.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(this.mesh.vao); if (this.mesh.tex) gl.deleteTexture(this.mesh.tex); }
+    if (this.mesh) { this.mesh.bufs.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(this.mesh.vao); for (const k of ['tex', 'alb', 'nrm', 'orm']) if (this.mesh[k]) gl.deleteTexture(this.mesh[k]); }
     if (!M) { this.mesh = null; return; }
     const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
     const mk = (data, loc, n, type, norm) => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, type, norm, 0, 0); return b; };
     const bufs = [mk(M.pos, 0, 3, gl.FLOAT, false), mk(M.nrm, 1, 3, gl.FLOAT, false), mk(M.col instanceof Uint8Array ? M.col : new Uint8Array(M.col), 2, 3, gl.UNSIGNED_BYTE, true)];
     const hasUV = !!(M.uv && M.tex && M.tex.jpg);
     if (hasUV) bufs.push(mk(M.uv instanceof Float32Array ? M.uv : new Float32Array(M.uv), 3, 2, gl.FLOAT, false));
+    const hasPbr = hasUV && !!(M.pbr && M.tan && M.pbr.normal && M.pbr.orm);
+    if (hasPbr) bufs.push(mk(M.tan instanceof Float32Array ? M.tan : new Float32Array(M.tan), 4, 4, gl.FLOAT, false));
     const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, M.idx instanceof Uint32Array ? M.idx : new Uint32Array(M.idx), gl.STATIC_DRAW); bufs.push(ib);
     gl.bindVertexArray(null);
-    const mesh = this.mesh = { vao, bufs, n: M.idx.length, tex: null, hasUV };
+    const mesh = this.mesh = { vao, bufs, n: M.idx.length, tex: null, hasUV, hasPbr };
     // текстура (JPEG атласа) — раскрываем асинхронно; пока грузится, показываем цвет вершин
-    if (hasUV) createImageBitmap(new Blob([M.tex.jpg], { type: 'image/jpeg' })).then((bmp) => {
-      if (this.mesh !== mesh) return;
+    const load = (bytes, type, key) => createImageBitmap(new Blob([bytes], { type }), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }).then((bmp) => {
+      if (this.mesh !== mesh) { bmp.close && bmp.close(); return; }
       const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bmp); bmp.close && bmp.close();
       gl.generateMipmap(gl.TEXTURE_2D);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      mesh.tex = t; this.dirty = true;
-    }).catch((e) => console.warn('текстура', e));
+      mesh[key] = t; this.dirty = true;
+    }).catch((e) => console.warn('текстура', key, e));
+    // текстура (JPEG атласа) и карты поверхности (альбедо без теней, нормали, ORM) — раскрываем асинхронно
+    if (hasUV) load(M.tex.jpg, 'image/jpeg', 'tex');
+    if (hasPbr) { if (M.pbr.albedo) load(M.pbr.albedo, 'image/jpeg', 'alb'); load(M.pbr.normal, 'image/png', 'nrm'); load(M.pbr.orm, 'image/png', 'orm'); }
     this.dirty = true;
   }
   // packed: см. splat.js (splatInfo) — v2 с гармониками или старый формат по 14 чисел на каплю
@@ -183,8 +229,16 @@ export class Viewer3D {
     if (this.show === 'mesh' && this.mesh) {
       gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.useProgram(this.pm);
       gl.uniformMatrix4fv(gl.getUniformLocation(this.pm, 'uVP'), false, VP); gl.uniform1i(gl.getUniformLocation(this.pm, 'uMode'), this.shade); gl.uniform3fv(gl.getUniformLocation(this.pm, 'uEye'), e);
-      const texOn = this.mesh.tex && this.useTex !== false ? 1 : 0; gl.uniform1i(gl.getUniformLocation(this.pm, 'uTexOn'), texOn);
-      if (texOn) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.mesh.tex); gl.uniform1i(gl.getUniformLocation(this.pm, 'uTex'), 0); }
+      // текстура: «фото» — атлас как снят, «без теней» — альбедо из карт поверхности
+      const M_ = this.mesh, colTex = this.texSrc === 'albedo' && M_.alb ? M_.alb : M_.tex;
+      const texOn = colTex && this.useTex !== false ? 1 : 0; gl.uniform1i(gl.getUniformLocation(this.pm, 'uTexOn'), texOn);
+      if (texOn) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, colTex); gl.uniform1i(gl.getUniformLocation(this.pm, 'uTex'), 0); }
+      const pbrOn = M_.hasPbr && M_.nrm && M_.orm ? 1 : 0; gl.uniform1i(gl.getUniformLocation(this.pm, 'uPbr'), pbrOn);
+      if (pbrOn) {
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, M_.nrm); gl.uniform1i(gl.getUniformLocation(this.pm, 'uNrm'), 1);
+        gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, M_.orm); gl.uniform1i(gl.getUniformLocation(this.pm, 'uOrm'), 2); gl.activeTexture(gl.TEXTURE0);
+      } else gl.vertexAttrib4f(4, 1, 0, 0, 1);
+      gl.uniform1f(gl.getUniformLocation(this.pm, 'uRelief'), this.relief ?? 1); gl.uniform1i(gl.getUniformLocation(this.pm, 'uMat'), this.mat ?? -1);
       gl.bindVertexArray(this.mesh.vao); gl.drawElements(gl.TRIANGLES, this.mesh.n, gl.UNSIGNED_INT, 0);
     } else if (this.show === 'splat' && this.splats) {
       this.sortSplats(V);
