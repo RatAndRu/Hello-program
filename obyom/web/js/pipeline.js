@@ -166,6 +166,14 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   const turn = cfg.method === 'turn', PROC_W = cfg.PW || procW();
   const L = matLayout(cfg.size || 'A4', turn ? 'round' : 'full'), mr = matRaster(L, cfg.theme || 'light', 2);
   const Rb = 55 * L.k, Hb = cfg.Hb || 90 * L.k;
+  // вертушка: если меток круга не хватило, пробуем весь лист (лист крутится целиком) — только при точном совпадении
+  const Lf = turn ? matLayout(cfg.size || 'A4', 'full') : null;
+  const poseOf = (ms, K, maxR) => {
+    const p = poseFromMarkers(ms, L, K);
+    if (!Lf || (p && p.n >= 2 && p.rms <= maxR) || !ms.some((m) => m.id >= 16)) return p;
+    const q = poseFromMarkers(ms, Lf, K);
+    return q && q.n >= 2 && q.rms < Math.min(maxR, 2.5) ? q : p;
+  };
   // 1) кадры и метки
   const frames = [], eqs = [];
   for (let i = 0; i < blobs.length; i++) {
@@ -173,7 +181,7 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
     const d = await decodeBlob(blobs[i], PROC_W);
     const ms = detectMarkers(toGray(d.rgba, d.w, d.h), d.w, d.h);
     const K0 = { fx: 0.7 * d.w, fy: 0.7 * d.w, cx: d.w / 2, cy: d.h / 2 };
-    const p = poseFromMarkers(ms, L, K0);
+    const p = poseOf(ms, K0, 1e9);
     if (p && p.n >= 2) { eqs.push(...focalEqs(p.H, d.w / 2, d.h / 2)); frames.push({ ...d, ms, p, idx: i, blob: blobs[i] }); }
     cb.progress(tag + 'Метки на кадрах', (i + 1) / blobs.length, `${frames.length} из ${i + 1} кадров с метками`);
     if (i % 2) await tick();
@@ -187,7 +195,7 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   log(`${tag}фокус ${rf.f.toFixed(0)} px (угол обзора ${(2 * Math.atan(w / 2 / rf.f) * 180 / Math.PI).toFixed(0)}°), ошибка ${rf.rms.toFixed(2)} px`);
   const good = [];
   for (const f of frames) {
-    const p = poseFromMarkers(f.ms, L, K); if (!p || p.rms > 3) continue;
+    const p = poseOf(f.ms, K, 3); if (!p || p.rms > 3) continue;
     f.R = p.R; f.t = p.t; f.K = K; f.rms = p.rms; f.ang = camAngles(p.R, p.t); good.push(f);
   }
   await tick();

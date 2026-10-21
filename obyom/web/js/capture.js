@@ -12,20 +12,34 @@ export class Capture {
     this.video = video; this.ov = overlay; this.opt = opt; // {size, method:'walk'|'turn', Hb, onState, onShot}
     // на вертушке — только кольцо меток: угловые метки неподвижны или лист свисает
     this.L = matLayout(opt.size || 'A4', opt.method === 'turn' ? 'round' : 'full');
+    this.Lfull = matLayout(opt.size || 'A4', 'full'); // запасной вариант на вертушке: весь лист крутится вместе со столиком
     this.sharpMax = 0; this.ink = null; this.manual = false;
     this.cv = document.createElement('canvas'); this.cx = this.cv.getContext('2d', { willReadFrequently: true });
     this.shots = []; this.cells = new Map(); this.eqs = []; this.f = null;
     this.prev = null; this.running = false; this.paused = false; this.lastShot = 0;
   }
-  async start() {
-    // «Лучше» — Full HD: кадры для текстуры детальнее (слежение всё равно идёт на 640 px)
-    const hi = !!this.opt.hiRes, c = { video: { facingMode: { ideal: 'environment' }, width: { ideal: hi ? 1920 : 1280 }, height: { ideal: hi ? 1080 : 720 }, frameRate: { ideal: 30 } }, audio: false };
+  async start() { await this.openCam(); this.running = true; this.loop(); }
+  // Камера 1280×720 (в 1.5 «Лучше» просило Full HD — на части телефонов WebView тогда перестаёт обновлять кадры)
+  async openCam() {
+    const c = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio: false };
     this.stream = await navigator.mediaDevices.getUserMedia(c);
     this.video.srcObject = this.stream; this.video.muted = true; this.video.setAttribute('playsinline', '');
     await this.video.play();
     // попросим камеру держать фокус на ближнем расстоянии, если умеет
     try { const tr = this.stream.getVideoTracks()[0], cap = tr.getCapabilities ? tr.getCapabilities() : {}; if (cap.focusMode && cap.focusMode.includes('continuous')) await tr.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
-    this.running = true; this.loop();
+    this.freshT = performance.now(); this.prevSig = null; this.woke = false;
+  }
+  // Сторож: живая камера всегда шумит, поэтому два подряд совершенно одинаковых кадра = кадры не обновляются.
+  // Такой кадр не анализируем (иначе на экране «застывшие» метки), через 1.5 с будим видео, через 4 с перезапускаем камеру.
+  async revive(now) {
+    const stale = now - this.freshT;
+    if (stale > 1500 && !this.woke) { this.woke = true; try { await this.video.play(); } catch (e) {} }
+    if (stale > 4000 && !this.restarting && (this.restarts || 0) < 5) {
+      this.restarting = true; this.restarts = (this.restarts || 0) + 1;
+      try { if (this.stream) this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; await new Promise((r) => setTimeout(r, 300)); if (this.running) await this.openCam(); }
+      catch (e) { console.warn('камера', e); }
+      this.restarting = false;
+    }
   }
   // ручной затвор: снимет ближайший кадр, где виден коврик (даже если эта ячейка купола уже есть)
   shootNow() { this.manual = true; }
@@ -59,13 +73,30 @@ export class Capture {
     if (this.cv.width !== w || this.cv.height !== h) { this.cv.width = w; this.cv.height = h; }
     this.cx.drawImage(v, 0, 0, w, h);
     const img = this.cx.getImageData(0, 0, w, h), g = toGray(new Uint8Array(img.data.buffer), w, h);
+    const now = performance.now();
+    // свежий ли кадр: «подпись» из редкой выборки пикселей
+    let sig = 0, diff = 0; const ps = this.prevSig, n = Math.floor(g.length / 97), cur = new Uint8Array(n);
+    for (let k = 0; k < n; k++) { const v2 = g[k * 97]; cur[k] = v2; if (ps) diff += Math.abs(v2 - ps[k]); sig += v2; }
+    this.prevSig = cur;
+    if (!ps || diff > 0) { this.freshT = now; this.woke = false; this.restarts = 0; }
+    else {
+      // тот же кадр: не анализируем; если так уже долго — чиним камеру
+      const stale = now - this.freshT;
+      if (stale > 1000) { const st = { ...(this.state || {}), stale: Math.round(stale / 100) / 10, found: false, ms: [], R: null, count: this.shots.length, coverage: this.coverage(), why: 'камера не присылает новые кадры' }; this.state = st; this.draw(st); this.opt.onState && this.opt.onState(st); }
+      this.revive(now);
+      return;
+    }
     const ms = detectMarkers(g, w, h);
     const f = this.f || 0.75 * w, K = { fx: f, fy: f, cx: w / 2, cy: h / 2 };
-    const p = ms.length ? poseFromMarkers(ms, this.L, K) : null;
-    const now = performance.now(), dt = this.lastT ? Math.min(1, (now - this.lastT) / 1000) : 0; this.lastT = now;
+    let p = ms.length ? poseFromMarkers(ms, this.L, K) : null;
+    const ringN = ms.filter((m) => m.id < 16).length;
+    // вертушка: по кольцу не вышло — пробуем весь лист (если он крутится целиком, угловые метки тоже годятся;
+    // если лист свисает/гнётся — поза не сойдётся и будет отброшена)
+    if (this.opt.method === 'turn' && (!p || p.n < 2 || p.rms >= 3) && ms.length > ringN) { const q = poseFromMarkers(ms, this.Lfull, K); if (q && q.n >= 2 && q.rms < 2.5) p = q; }
+    const dt = this.lastT ? Math.min(1, (now - this.lastT) / 1000) : 0; this.lastT = now;
     if (dt > 0) this.fps = this.fps ? this.fps * 0.9 + 0.1 / dt : 1 / dt; // скорость слежения, кадров/с
     const turn = this.opt.method === 'turn', step = this.opt.step || (turn ? 8 : 10);
-    const st = { found: false, markers: ms.length, w, h, ms, count: this.shots.length, fps: this.fps || 0, step };
+    const st = { found: false, markers: ms.length, ring: ringN, poseRms: p ? p.rms : null, poseN: p ? p.n : 0, w, h, ms, count: this.shots.length, fps: this.fps || 0, step, restarts: this.restarts || 0 };
     let a = null, sh;
     if (p && p.n >= 2 && p.rms < 3) {
       if (this.eqs.length < 400 && p.n >= 3) { this.eqs.push(...focalEqs(p.H, w / 2, h / 2)); if (this.eqs.length >= 12) { const nf = focalFromEqs(this.eqs); if (nf > 0.45 * w && nf < 1.6 * w) this.f = nf; } }
@@ -101,7 +132,7 @@ export class Capture {
       this.omega *= Math.exp(-dt / 5); this.theta += this.omega * dt;
       if (this.theta >= step && this.blind < 6) { due = true; blindShot = true; }
       else why = 'метки смазаны — досчитываю поворот';
-    } else why = ms.length ? `видно мало меток (${ms.length})` : 'коврик не виден';
+    } else why = !ms.length ? 'коврик не виден' : (p && p.n >= 2 ? `поза неточная (${p.rms.toFixed(1)} пикс) — смаз или блик` : `видно меток ${ms.length}${this.opt.method === 'turn' ? `, из круга ${ringN}` : ''} — нужно 2`);
     if (due && now - this.lastShot < 150) { due = false; why = 'слишком часто'; }
     if (due) {
       this.dueFrames = (this.dueFrames || 0) + 1;
@@ -139,7 +170,7 @@ export class Capture {
     return [Math.max(1, x0 | 0), Math.max(1, y0 | 0), Math.min(w - 2, x1 | 0), Math.min(h - 2, y1 | 0)];
   }
   async grab() {
-    const v = this.video, W = Math.min(this.opt.hiRes ? 1920 : 1280, v.videoWidth), H = Math.round(v.videoHeight * W / v.videoWidth);
+    const v = this.video, W = Math.min(1280, v.videoWidth), H = Math.round(v.videoHeight * W / v.videoWidth);
     const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').drawImage(v, 0, 0, W, H);
     return await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.92));
   }

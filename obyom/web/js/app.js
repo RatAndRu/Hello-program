@@ -9,7 +9,7 @@ import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '1.5';
+export const VERSION = '1.6';
 const $ = (id) => document.getElementById(id);
 const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
@@ -123,17 +123,24 @@ function capState(st) {
   let text = '', cls = '';
   const low = Math.max(cov[0], cov[1]), mid = cov[2], high = cov[3], turn = S.method === 'turn';
   if (st.countdown) { if (st.countdown !== lastCount) { lastCount = st.countdown; beep(660, 0.08); } }
-  if (cap.paused) { text = +S.delay > 0 ? `Нажми ▶ — через ${S.delay} с начнётся съёмка` : 'Пауза — нажми ▶'; cls = 'warn'; }
+  if (st.stale) { text = st.stale > 4 ? 'Камера перестала присылать кадры — перезапускаю камеру…' : 'Картинка с камеры не обновляется — жду…'; cls = 'bad'; }
+  else if (cap.paused) { text = +S.delay > 0 ? `Нажми ▶ — через ${S.delay} с начнётся съёмка` : 'Пауза — нажми ▶'; cls = 'warn'; }
   else if (st.countdown) { text = `Старт через ${st.countdown}…${turn ? ' раскрути столик и убери руку' : ''}`; cls = 'warn'; }
   else if (closeMode) { text = !st.found ? (st.markers ? `Видно меток: ${st.markers} — нужно хотя бы 3 (чуть отодвинь телефон)` : 'Наведи на предмет так, чтобы были видны метки коврика') : (st.n < 3 ? 'Мало меток в кадре — чуть дальше' : `Крупно: ${Math.round(st.dist / 10)} см · медленно веди вокруг · кадров ${st.count}`); cls = st.found && st.n >= 3 ? 'good' : 'warn'; }
-  else if (!st.found) { text = st.markers ? 'Мало меток — отодвинь телефон, чтобы влез весь круг' : 'Наведи камеру на коврик'; cls = 'bad'; }
+  else if (!st.found) {
+    text = !st.markers ? 'Наведи камеру на коврик'
+      : st.poseN >= 2 ? 'Метки видны, но положение неточное — блик или смаз. Убери блик, держи телефон неподвижно'
+      : turn && st.ring < 2 ? `Видно меток: ${st.markers}, из них на круге ${st.ring} — нужно 2 метки круга (или весь лист на столике)`
+      : `Видно меток: ${st.markers} — не хватает чёткости, подвинь телефон чуть ближе/дальше`;
+    cls = 'bad';
+  }
   else if (st.el < BANDS[0][0]) { text = 'Слишком низко — подними телефон'; cls = 'warn'; }
   else if (low < 0.75) { text = turn ? 'Крути столик — первый оборот (кадры идут сами)' : 'Обходи вокруг предмета, держа телефон невысоко (~30°)'; }
   else if (mid < 0.6) { text = turn ? 'Подними держатель выше (~55°) и ещё оборот' : 'Теперь ещё круг повыше (~55°)'; }
   else if (high < 0.4) { text = turn ? 'Ещё выше (~75°) — последний оборот' : 'И круг почти сверху (~75°)'; }
   else { text = 'Отлично! Можно нажимать «Готово»'; cls = 'good'; }
   msg.textContent = text; msg.className = 'capMsg ' + cls + (capCtx && capCtx.bottomOf ? ' bottomTag' : '');
-  const info = st.found ? `высота ${st.el.toFixed(0)}° · азимут ${st.az.toFixed(0)}° · ${Math.round(st.dist / 10)} см · меток ${st.n} · ${st.speed.toFixed(0)}°/с${cap.f ? '' : ' · калибровка…'}` : `слежение ${st.fps.toFixed(0)} к/с`;
+  const info = st.found ? `высота ${st.el.toFixed(0)}° · азимут ${st.az.toFixed(0)}° · ${Math.round(st.dist / 10)} см · меток ${st.n} · ${st.speed.toFixed(0)}°/с · ${st.fps.toFixed(0)} к/с${cap.f ? '' : ' · калибровка…'}` : `слежение ${(st.fps || 0).toFixed(0)} к/с · меток ${st.markers || 0}${st.restarts ? ` · перезапусков камеры ${st.restarts}` : ''}`;
   $('capInfo').textContent = [info, st.why ? 'Не снимаю: ' + st.why : (st.found ? 'Снимаю' : ''), inkLabel(st.ink)].filter(Boolean).join('\n');
 }
 function cancelCapture() { if (cap) cap.stop(); cap = null; go('home'); }
@@ -143,7 +150,7 @@ $('capCancel').onclick = () => { if (!cap || cap.shots.length < 3 || confirm('В
 function showH() { if (cap) $('hVal').textContent = `${(cap.opt.Hb / 10).toFixed(1).replace('.0', '')} см`; }
 function adjH(d) { if (!cap) return; cap.opt.Hb = Math.max(20, Math.min(400, Math.round((cap.opt.Hb + d) / 5) * 5)); showH(); }
 $('hUp').onclick = () => adjH(+5); $('hDn').onclick = () => adjH(-5);
-$('capShot').onclick = () => { if (!cap) return; cap.shootNow(); if (!cap.state || !cap.state.found) toast('Сниму, как только увижу коврик'); };
+$('capShot').onclick = () => { if (!cap) return; cap.shootNow(); if (!cap.state || !cap.state.found) toast('Снято. Метки сейчас не найдены — положение кадра найдётся при обработке, если они видны'); };
 $('capPause').onclick = () => {
   if (!cap) return;
   if (cap.paused) { cap.arm(+S.delay || 0); lastCount = null; $('capPause').textContent = '⏸'; }
@@ -158,7 +165,7 @@ async function takePlate(btn) {
   try {
     for (let s = 3; s > 0; s--) { if (btn) btn.textContent = `Через ${s}…`; $('capMsg').textContent = `Фон через ${s} с — руки и предмет из кадра, телефон не трогать`; beep(660, 0.08); await new Promise((r) => setTimeout(r, 1000)); if (!cap) return false; }
     const blob = await cap.grab(); cap.plates.push(blob); beep(1318, 0.08); if (navigator.vibrate) navigator.vibrate(30);
-    $('capPlate').textContent = `Фон ✓${cap.plates.length > 1 ? cap.plates.length : ''}`;
+    $('capPlate').textContent = cap.plates.length > 1 ? `Фон✓${cap.plates.length}` : 'Фон✓';
     return true;
   } finally { plateBusy = false; if (cap) cap.paused = wasPaused; if (btn) btn.textContent = 'Фон'; }
 }
@@ -314,6 +321,13 @@ function unpackSplats(p) {
   return o;
 }
 $('vMore').onclick = () => curScan && moreSheet(curScan);
+// «Доснять низ» прямо с экрана модели (раньше — только в ⋯)
+$('vBottom').onclick = async () => {
+  const scan = curScan; if (!scan) return;
+  const fr = await store.getFrames(scan.id).catch(() => null);
+  if (!fr || !fr.length) { toast('Кадры этой съёмки удалены — низ не к чему добавить. Сними предмет заново.', 4000); return; }
+  history.back(); setTimeout(() => startCapture({ bottomOf: scan }), 80);
+};
 async function moreSheet(scan) {
   const frames = await store.getFrames(scan.id).catch(() => null);
   const nf = frames ? frames.length : 0;

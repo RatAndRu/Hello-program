@@ -87,3 +87,13 @@ button.primary { background: var(--acc); color: #06210f; border-color: transpare
 .hAdj { position: absolute; right: 10px; top: calc(env(safe-area-inset-top) + 200px); width: 120px; display: flex; flex-direction: column; align-items: center; gap: 6px; color: #fff; text-shadow: 0 1px 3px #000; font-size: 15px; }
 .hAdj small { color: #cfd6e0; font-size: 11px; }
 .round.sm { width: 44px; height: 44px; font-size: 18px; }
+
+/* 1.5.1: панель съёмки и кнопки модели влезают и в 320 px */
+.capBar { gap: 8px; padding-left: 8px; padding-right: 8px; flex-wrap: wrap; }
+.capBar .round { width: 52px; height: 52px; flex: none; }
+.capBar #capPlate { width: 52px; height: 52px; padding: 0; border-radius: 50%; font-size: 14px; font-weight: 600; flex: none; }
+.capBar #capDone { padding: 13px 16px; flex: none; }
+@media (max-width: 370px) { .capBar { gap: 6px; } .capBar .round, .capBar #capPlate { width: 46px; height: 46px; } .capBar .round { font-size: 19px; } .capBar #capDone { font-size: 15px; padding: 12px 12px; } }
+.vExport { gap: 8px; flex-wrap: wrap; }
+.vExport .pill { padding: 13px 18px; }
+@media (max-width: 370px) { .vExport .pill { padding: 12px 13px; font-size: 15px; } }

@@ -54,6 +54,7 @@ class MainActivity : Activity() {
             domStorageEnabled = true
             databaseEnabled = true
             mediaPlaybackRequiresUserGesture = false
+            textZoom = 100 // крупный системный шрифт не должен выталкивать кнопки за край экрана
             allowFileAccess = false
             allowContentAccess = false
             userAgentString = "$userAgentString ObyomAndroid/1.0"
