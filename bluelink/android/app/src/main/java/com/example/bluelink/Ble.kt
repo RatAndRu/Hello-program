@@ -447,9 +447,7 @@ class BleCentral(private val ctx: Context) {
     private fun closeGatt() {
         val g = gatt
         gatt = null
-        main.removeCallbacks(subscribeWatchdog)
         deniedSubscriptions.clear()
-        subscribeTimeouts = 0
         synchronized(subscribedKeys) { subscribedKeys.clear() }
         synchronized(opQueue) {
             opQueue.clear()
