@@ -73,19 +73,27 @@ class LiveVideo(private val ctx: Context) {
 
     fun start(ssid: String, password: String, ipHint: String?, l: Listener) {
         cancelled = false
-        if (ssid.isBlank()) {
-            l.onFailed(
-                "Очки не сообщили имя своей Wi-Fi-сети, значит их сеть ещё не поднята. " +
-                    "Сначала нажмите «Файлы с очков» → «Включить Wi-Fi», затем повторите."
-            )
-            return
-        }
-        l.onStatus("Подключаюсь к сети очков «$ssid»…")
+        l.onStatus(
+            if (ssid.isBlank()) "Ищу уже поднятую сеть очков (Wi-Fi Direct)…"
+            else "Подключаюсь к сети очков «$ssid»…"
+        )
         io.execute {
-            val network = join(ssid, password, 25_000)
+            // Сначала смотрим, не поднята ли уже сеть очков (например, её подняла
+            // выгрузка файлов). Это дешевле и точнее, чем ждать имя сети из BLE.
+            var network = findP2pNetwork()
+            if (network != null && cancelled) return@execute
+            if (network == null && ssid.isNotBlank()) {
+                network = join(ssid, password, 25_000)
+            }
             if (cancelled) return@execute
             if (network == null) {
-                l.onFailed("Сеть очков не открылась. Проверьте, что очки подняли Wi-Fi, и повторите.")
+                l.onFailed(
+                    if (ssid.isBlank())
+                        "Сеть очков ещё не поднята. Нажмите «Файлы с очков» → «Включить Wi-Fi и скачать», " +
+                            "дождитесь, пока очки поднимут Wi-Fi, и повторите."
+                    else
+                        "Сеть очков не открылась. Проверьте, что очки подняли Wi-Fi, и повторите."
+                )
                 return@execute
             }
             if (bound == null) {
@@ -277,6 +285,22 @@ class LiveVideo(private val ctx: Context) {
         if (!ipHint.isNullOrBlank()) out.add(ipHint)
         out.addAll(listOf("192.168.49.1", "192.168.4.1", "192.168.43.1", "192.168.1.1"))
         return out.toList()
+    }
+
+    /** Уже существующая сеть очков: P2P-интерфейс или адрес 192.168.49.x. */
+    @SuppressLint("MissingPermission")
+    private fun findP2pNetwork(): Network? {
+        val manager = cm ?: return null
+        return try {
+            manager.allNetworks.firstOrNull { network ->
+                val lp = manager.getLinkProperties(network) ?: return@firstOrNull false
+                val iface = lp.interfaceName ?: ""
+                iface.startsWith("p2p") ||
+                    lp.linkAddresses.any { it.address.hostAddress?.startsWith("192.168.49.") == true }
+            }
+        } catch (e: Exception) {
+            null
+        }
     }
 
     private fun portOpen(network: Network, host: String, port: Int): Boolean {

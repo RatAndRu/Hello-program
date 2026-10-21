@@ -2576,11 +2576,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
      */
     private fun heyStartMediaSync() {
         if (connState != ConnState.CONNECTED) return
-        if (heyWifiSsid.isBlank()) {
-            heyMediaStatus = NO_CREDS_TEXT
-            if (tab == TAB_HEY) rebuild()
-            return
-        }
+        // Имени сети может не быть вовсе: очки умеют поднимать P2P-группу, а не
+        // точку доступа. Тогда выгрузка идёт через Wi-Fi Direct — не отказываемся.
         // Android 13+ требует разрешение «устройства поблизости» для Wi-Fi.
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.NEARBY_WIFI_DEVICES) != PackageManager.PERMISSION_GRANTED
@@ -2591,10 +2588,13 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
         }
         heyMediaSaved = 0
         heyMediaNames = emptyList()
-        heyMediaStatus = "Подключаюсь к Wi-Fi очков «$heyWifiSsid»…"
+        heyMediaStatus = if (heyWifiSsid.isBlank())
+            "Пробую прямое соединение с очками (Wi-Fi Direct)…"
+        else
+            "Подключаюсь к Wi-Fi очков «$heyWifiSsid»…"
         if (tab == TAB_HEY) rebuild()
         heyMedia = GlassesMedia(this, wifi).also { engine ->
-            engine.sync(heyWifiSsid, heyWifiPass, heyP2pIp, object : GlassesMedia.Listener {
+            engine.sync(heyWifiSsid, heyWifiPass, heyP2pIp, connName, object : GlassesMedia.Listener {
                 override fun onStatus(text: String) {
                     ui.post {
                         heyMediaStatus = text
@@ -3830,12 +3830,8 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     private fun beginRtsp(listener: LiveVideo.Listener) {
         if (liveMode != "rtsp") return
-        if (heyWifiSsid.isBlank()) {
-            liveStatus = "Очки не сообщили имя своей Wi-Fi-сети — живое видео не проверить. " +
-                "Подключитесь к сети очков вручную в настройках Wi-Fi и повторите."
-            if (tab == TAB_LIVE) rebuild()
-            return
-        }
+        // Имени сети может не быть: очки поднимают P2P-группу. LiveVideo сначала
+        // ищет уже существующую сеть очков и только потом просит подключение по имени.
         liveVideo.setSurface(ensureLiveSurface().holder.surface)
         liveVideo.start(heyWifiSsid, heyWifiPass, heyP2pIp, listener)
     }
@@ -4130,8 +4126,9 @@ class MainActivity : Activity(), BleListener, GlassesCamera.Listener {
 
     companion object {
         const val NO_CREDS_TEXT =
-            "Очки не прислали имя своей Wi-Fi-сети. Это бывает, если прошивка держит его в секрете: " +
-                "тогда подключитесь к сети очков вручную в настройках Wi-Fi, вернитесь сюда и нажмите «Забрать по Wi-Fi»."
+            "Очки не прислали имя своей Wi-Fi-сети. Так бывает, когда они поднимают не точку доступа, " +
+                "а P2P-группу: приложение подключится к ним через Wi-Fi Direct само. " +
+                "Если и это не выйдет — подключитесь к сети очков вручную в настройках Wi-Fi и нажмите «Повторить выгрузку»."
 
         const val TAB_SCAN = "scan"
         const val TAB_DEVICE = "device"

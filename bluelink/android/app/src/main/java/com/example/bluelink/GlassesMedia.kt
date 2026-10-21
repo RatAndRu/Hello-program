@@ -1,14 +1,22 @@
 package com.example.bluelink
 
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.net.ConnectivityManager
 import android.net.LinkProperties
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.net.wifi.WifiNetworkSpecifier
+import android.net.wifi.p2p.WifiP2pConfig
+import android.net.wifi.p2p.WifiP2pInfo
+import android.net.wifi.p2p.WifiP2pManager
+import android.net.wifi.p2p.WpsInfo
 import android.os.Build
+import android.os.Looper
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -64,25 +72,35 @@ class GlassesMedia(private val ctx: Context, private val wifi: WifiHelper) {
      * Подключиться к точке доступа очков и скачать всё, что есть в памяти.
      * [p2pIp] — адрес из ответа очков, если он был.
      */
-    fun sync(ssid: String, password: String, p2pIp: String?, listener: Listener) {
+    fun sync(ssid: String, password: String, p2pIp: String?, deviceName: String = "", listener: Listener) {
         cancelled = false
         io.execute {
             try {
-                runSync(ssid, password, p2pIp, listener)
+                runSync(ssid, password, p2pIp, deviceName, listener)
             } catch (e: Exception) {
                 listener.onFinished(false, "Wi-Fi очков: ${e.message ?: e.javaClass.simpleName}")
             }
         }
     }
 
-    private fun runSync(ssid: String, password: String, p2pIp: String?, l: Listener) {
-        if (ssid.isBlank()) {
-            l.onFinished(false, "Очки не прислали имя своей Wi-Fi-сети.")
-            return
+    private fun runSync(ssid: String, password: String, p2pIp: String?, deviceName: String, l: Listener) {
+        var network: Network? = null
+        if (ssid.isNotBlank()) {
+            l.onLog("Wi-Fi очков: сеть «$ssid»" + if (password.isBlank()) " (без пароля)" else "")
+            l.onStatus("Подключаюсь к сети «$ssid»…")
+            network = join(ssid, password, 30_000)
+        } else {
+            l.onLog("Сеть очков не назвалась — пробую Wi-Fi Direct, как это делает их приложение")
         }
-        l.onLog("Wi-Fi очков: сеть «$ssid»" + if (password.isBlank()) " (без пароля)" else "")
-        l.onStatus("Подключаюсь к сети «$ssid»…")
-        var network = join(ssid, password, 30_000)
+        if (network == null) {
+            // Очки могут поднимать не точку доступа, а P2P-группу: тогда имени сети
+            // в BLE-ответе нет вообще, и подключиться можно только через Wi-Fi Direct.
+            l.onStatus("Пробую прямое соединение с очками (Wi-Fi Direct)…")
+            network = p2pJoin(deviceName, p2pIp, 30_000)
+            if (network != null) {
+                l.onLog("Wi-Fi Direct: соединение с очками установлено")
+            }
+        }
         if (network == null) {
             // Возможно, к сети очков уже подключились вручную в настройках телефона.
             network = anyWifiNetwork()
@@ -93,22 +111,23 @@ class GlassesMedia(private val ctx: Context, private val wifi: WifiHelper) {
         if (network == null) {
             l.onFinished(
                 false,
-                "Не удалось подключиться к сети «$ssid». Если она есть в списке сетей телефона, " +
-                    "подключитесь к ней вручную и нажмите «Повторить выгрузку»."
+                "Не удалось подключиться к очкам ни по имени сети, ни через Wi-Fi Direct. " +
+                    "Проверьте, что очки подняли Wi-Fi (индикатор на очках), и нажмите «Повторить выгрузку»."
             )
             return
         }
+        val net: Network = network
         try {
             if (cancelled) return
             l.onStatus("Ищу файлы на очках…")
-            val addresses = candidates(network, p2pIp)
+            val addresses = candidates(net, p2pIp)
             l.onLog("Проверяю адреса: ${addresses.joinToString()}")
             var base: String? = null
             var config = ""
             for (address in addresses) {
                 if (cancelled) return
                 val url = "http://$address/files/media.config"
-                val text = httpText(network, url)
+                val text = httpText(net, url)
                 if (text != null) {
                     base = address
                     config = text
@@ -139,7 +158,7 @@ class GlassesMedia(private val ctx: Context, private val wifi: WifiHelper) {
             names.forEachIndexed { index, name ->
                 if (cancelled) return
                 l.onProgress(index + 1, names.size, name)
-                val bytes = httpBytes(network, "http://$base/files/$name")
+                val bytes = httpBytes(net, "http://$base/files/$name")
                 if (bytes == null || bytes.isEmpty()) {
                     failed += 1
                     l.onLog("Не скачался: $name")
@@ -163,6 +182,142 @@ class GlassesMedia(private val ctx: Context, private val wifi: WifiHelper) {
         } finally {
             releaseNetwork()
         }
+    }
+
+    // ---------- Wi-Fi Direct (P2P) ----------
+    //
+    // Очки умеют поднимать не только точку доступа, но и P2P-группу. В этом случае
+    // имени сети и пароля в BLE-ответе нет вообще, и единственный способ
+    // подключиться — WifiP2pManager, как это делает официальное приложение.
+    // Группой владеют очки (GO), телефон — клиент; адрес очков приходит
+    // в сведениях о соединении.
+
+    private var p2pReceiver: BroadcastReceiver? = null
+
+    @Volatile
+    private var p2pGoAddress: String? = null
+
+    @SuppressLint("MissingPermission")
+    private fun p2pJoin(deviceName: String, ipHint: String?, timeoutMs: Long): Network? {
+        val manager = ctx.getSystemService(Context.WIFI_P2P_SERVICE) as? WifiP2pManager ?: return null
+        val channel = try {
+            manager.initialize(ctx, Looper.getMainLooper(), null)
+        } catch (e: Exception) {
+            null
+        } ?: return null
+
+        // 1. Поиск: у очков в P2P обычно имя модели или имя BLE-устройства.
+        var peers: List<android.net.wifi.p2p.WifiP2pDevice> = emptyList()
+        try {
+            manager.discoverPeers(channel, null)
+        } catch (e: Exception) {
+            return null
+        }
+        for (i in 0 until 8) {
+            if (cancelled) return null
+            val latch = CountDownLatch(1)
+            try {
+                manager.requestPeers(channel) { list ->
+                    peers = list?.deviceList?.toList() ?: emptyList()
+                    latch.countDown()
+                }
+            } catch (e: Exception) {
+                return null
+            }
+            latch.await(2, TimeUnit.SECONDS)
+            if (peers.isNotEmpty()) break
+            Thread.sleep(600)
+        }
+        if (peers.isEmpty()) return null
+
+        val hint = deviceName.substringBefore(" (").trim()
+        val target = peers.firstOrNull { hint.isNotBlank() && it.deviceName.contains(hint, true) }
+            ?: peers.firstOrNull { it.deviceName.contains("glass", true) || it.deviceName.contains("hey", true) }
+            ?: peers.first()
+
+        // 2. Соединение и ожидание сведений о группе.
+        val connected = CountDownLatch(1)
+        var groupAddress: String? = null
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(c: Context?, intent: Intent?) {
+                if (intent?.action != WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION) return
+                try {
+                    manager.requestConnectionInfo(channel) { info: WifiP2pInfo ->
+                        if (info.groupFormed) {
+                            groupAddress = info.groupOwnerAddress?.hostAddress
+                            p2pGoAddress = groupAddress
+                            connected.countDown()
+                        }
+                    }
+                } catch (ignored: Exception) {
+                }
+            }
+        }
+        p2pReceiver = receiver
+        try {
+            ctx.registerReceiver(receiver, IntentFilter(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION))
+        } catch (e: Exception) {
+            return null
+        }
+
+        val config = WifiP2pConfig()
+        config.deviceAddress = target.deviceAddress
+        config.wps.setup = WpsInfo.PBC
+        try {
+            manager.connect(channel, config, null)
+        } catch (e: Exception) {
+            unregisterP2p()
+            return null
+        }
+
+        val ok = try {
+            connected.await(timeoutMs, TimeUnit.MILLISECONDS)
+        } catch (e: InterruptedException) {
+            false
+        }
+        if (!ok) {
+            unregisterP2p()
+            return null
+        }
+        // Группа поднялась — ждём, пока Android покажет сеть с адресом P2P.
+        val network = waitForP2pNetwork(8000)
+        if (network != null) {
+            try {
+                cm?.bindProcessToNetwork(network)
+            } catch (ignored: Exception) {
+            }
+        }
+        return network
+    }
+
+    private fun waitForP2pNetwork(timeoutMs: Long): Network? {
+        val manager = cm ?: return null
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            val found = try {
+                manager.allNetworks.firstOrNull { network ->
+                    val lp = manager.getLinkProperties(network) ?: return@firstOrNull false
+                    val iface = lp.interfaceName ?: ""
+                    iface.startsWith("p2p") ||
+                        lp.linkAddresses.any { it.address.hostAddress?.startsWith("192.168.49.") == true }
+                }
+            } catch (e: Exception) {
+                null
+            }
+            if (found != null) return found
+            Thread.sleep(400)
+        }
+        return null
+    }
+
+    private fun unregisterP2p() {
+        p2pReceiver?.let {
+            try {
+                ctx.unregisterReceiver(it)
+            } catch (ignored: Exception) {
+            }
+        }
+        p2pReceiver = null
     }
 
     // ---------- Сеть очков ----------
@@ -209,6 +364,7 @@ class GlassesMedia(private val ctx: Context, private val wifi: WifiHelper) {
     }
 
     private fun releaseNetwork() {
+        unregisterP2p()
         networkCallback?.let { callback ->
             try {
                 cm?.unregisterNetworkCallback(callback)
@@ -246,6 +402,7 @@ class GlassesMedia(private val ctx: Context, private val wifi: WifiHelper) {
         } catch (ignored: Exception) {
         }
         if (!p2pIp.isNullOrBlank()) out.add(p2pIp)
+        p2pGoAddress?.let { out.add(it) }
         out.addAll(listOf("192.168.4.1", "192.168.49.1", "192.168.43.1", "192.168.1.1", "192.168.0.1"))
         return out.toList()
     }
