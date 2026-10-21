@@ -1,5 +1,6 @@
 // Сквозной тест «Доснять низ»: PHASE=A — обычная съёмка (камера CAM), PHASE=B — открыть скан → ⋯ → «Доснять низ» → вторая съёмка.
 // Профиль браузера общий (/tmp/t/prof), чтобы скан из фазы A сохранился. Нужен сервер obyom/web на :8765.
+// PHASE=C CAM=/tmp/t/camC.y4m — ⋯ → «Крупные планы» (1.5): досъёмка для текстуры.
 // PHASE=A CAM=/tmp/t/camA.y4m node e2e_bottom.cjs; PHASE=B CAM=/tmp/t/camB.y4m SHAPE=normal node e2e_bottom.cjs
 const puppeteer = require('puppeteer-core'); const chromium = (m => m.default || m)(require('@sparticuz/chromium'));
 const SH = process.env.SH || '/home/user/shots/', PH = process.env.PHASE || 'A';
@@ -10,10 +11,10 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const page = await browser.newPage(); await page.setViewport({ width: 400, height: 800, deviceScaleFactor: 1 });
   const errs = []; page.on('pageerror', (e) => errs.push('PAGEERR ' + e.message)); page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
   await page.goto('http://127.0.0.1:8765/index.html', { waitUntil: 'networkidle0' });
-  const capture = async () => {
-    await sleep(1500); await page.click('#capPause');
+  const capture = async (re = /· (2[6-9]|[3-9]\d)/, press = true) => {
+    await sleep(1500); if (press) await page.click('#capPause');
     const t0 = Date.now();
-    while (Date.now() - t0 < 80000) { await sleep(2000); const d = await page.evaluate(() => document.getElementById('capDone').textContent); if (/· (2[6-9]|[3-9]\d)/.test(d)) break; }
+    while (Date.now() - t0 < 80000) { await sleep(2000); const d = await page.evaluate(() => document.getElementById('capDone').textContent); if (re.test(d)) break; }
     await page.screenshot({ path: SH + `eb_cap${PH}.png` });
     await page.click('#capDone');
     const t1 = Date.now();
@@ -30,6 +31,14 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
     await page.reload({ waitUntil: 'networkidle0' });
     await page.click('#btnNew'); await sleep(300); await page.screenshot({ path: SH + 'eb_setup.png' }); await page.click('#btnStart');
     await capture();
+  } else if (PH === 'C') {
+    await page.click('#scanList button.card'); await sleep(1500);
+    await page.click('#vMore'); await sleep(800);
+    await page.click('[data-a="close"]'); await sleep(500);
+    console.log('экран:', await page.evaluate(() => document.querySelector('.screen.active').id));
+    await capture(/· ([8-9]|\d\d)/, false);
+    await page.evaluate(() => document.querySelector('#vShade button[data-v="0"]').click()); await sleep(1500);
+    await page.screenshot({ path: SH + 'eb_viewC_tex.png' });
   } else {
     await page.click('#scanList button.card'); await sleep(1500);
     await page.click('#vMore'); await sleep(800); await page.screenshot({ path: SH + 'eb_more.png' });

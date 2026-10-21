@@ -17,23 +17,26 @@ export function toGLB(M, name = 'Объём') {
   }
   const idx = new Uint32Array(M.idx);
   const pad4 = (n) => (n + 3) & ~3;
-  const views = [pos, nrm, col, idx];
+  const tex = M.uv && M.tex && M.tex.jpg ? M.tex : null; // с текстурой цвет вершин не пишем (glTF перемножил бы их)
+  const views = tex ? [pos, nrm, new Float32Array(M.uv), idx, tex.jpg] : [pos, nrm, col, idx];
   let off = 0; const bufferViews = [], parts = [];
   for (const [i, a] of views.entries()) {
     const bytes = new Uint8Array(a.buffer, a.byteOffset, a.byteLength);
-    bufferViews.push({ buffer: 0, byteOffset: off, byteLength: bytes.length, target: i === 3 ? 34963 : 34962 });
+    const bv = { buffer: 0, byteOffset: off, byteLength: bytes.length }; if (i < 4) bv.target = i === 3 ? 34963 : 34962;
+    bufferViews.push(bv);
     parts.push(bytes); off += pad4(bytes.length);
   }
   const json = {
     asset: { version: '2.0', generator: 'Объём — сканер без нейросетей' },
     scene: 0, scenes: [{ nodes: [0] }], nodes: [{ mesh: 0, name }],
-    materials: [{ name: 'scan', pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 0.85 }, doubleSided: false }],
-    meshes: [{ name, primitives: [{ attributes: { POSITION: 0, NORMAL: 1, COLOR_0: 2 }, indices: 3, material: 0, mode: 4 }] }],
+    materials: [{ name: 'scan', pbrMetallicRoughness: { baseColorFactor: [1, 1, 1, 1], metallicFactor: 0, roughnessFactor: 0.85, ...(tex ? { baseColorTexture: { index: 0 } } : {}) }, doubleSided: false }],
+    meshes: [{ name, primitives: [{ attributes: tex ? { POSITION: 0, NORMAL: 1, TEXCOORD_0: 2 } : { POSITION: 0, NORMAL: 1, COLOR_0: 2 }, indices: 3, material: 0, mode: 4 }] }],
+    ...(tex ? { images: [{ bufferView: 4, mimeType: 'image/jpeg' }], samplers: [{ magFilter: 9729, minFilter: 9987, wrapS: 33071, wrapT: 33071 }], textures: [{ source: 0, sampler: 0 }] } : {}),
     buffers: [{ byteLength: off }], bufferViews,
     accessors: [
       { bufferView: 0, componentType: 5126, count: nv, type: 'VEC3', min: mn, max: mx },
       { bufferView: 1, componentType: 5126, count: nv, type: 'VEC3' },
-      { bufferView: 2, componentType: 5121, normalized: true, count: nv, type: 'VEC4' },
+      tex ? { bufferView: 2, componentType: 5126, count: nv, type: 'VEC2' } : { bufferView: 2, componentType: 5121, normalized: true, count: nv, type: 'VEC4' },
       { bufferView: 3, componentType: 5125, count: nt * 3, type: 'SCALAR' },
     ],
   };
@@ -47,15 +50,22 @@ export function toGLB(M, name = 'Объём') {
   return out;
 }
 
-export function toOBJ(M) {
+// OBJ: с текстурой — {obj, mtl, jpg} (три файла рядом), без — {obj}
+export function toOBJ(M, base = 'scan') {
+  const tex = M.uv && M.tex && M.tex.jpg ? M.tex : null;
   const nv = M.pos.length / 3, L = ['# Объём — 3D-сканер. Единицы: метры, Y вверх. Цвет вершин после координат (r g b 0..1).'];
+  if (tex) L.push(`mtllib ${base}.mtl`);
   for (let v = 0; v < nv; v++) {
     const p = yUp(M.pos[v * 3] / 1000, M.pos[v * 3 + 1] / 1000, M.pos[v * 3 + 2] / 1000);
     L.push(`v ${p[0].toFixed(5)} ${p[1].toFixed(5)} ${p[2].toFixed(5)} ${(M.col[v * 3] / 255).toFixed(3)} ${(M.col[v * 3 + 1] / 255).toFixed(3)} ${(M.col[v * 3 + 2] / 255).toFixed(3)}`);
   }
   for (let v = 0; v < nv; v++) { const n = yUp(M.nrm[v * 3], M.nrm[v * 3 + 1], M.nrm[v * 3 + 2]); L.push(`vn ${n[0].toFixed(3)} ${n[1].toFixed(3)} ${n[2].toFixed(3)}`); }
-  for (let i = 0; i < M.idx.length; i += 3) { const a = M.idx[i] + 1, b = M.idx[i + 1] + 1, c = M.idx[i + 2] + 1; L.push(`f ${a}//${a} ${b}//${b} ${c}//${c}`); }
-  return new TextEncoder().encode(L.join('\n') + '\n');
+  if (tex) { for (let v = 0; v < nv; v++) L.push(`vt ${M.uv[v * 2].toFixed(5)} ${(1 - M.uv[v * 2 + 1]).toFixed(5)}`); L.push('usemtl scan'); }
+  for (let i = 0; i < M.idx.length; i += 3) { const a = M.idx[i] + 1, b = M.idx[i + 1] + 1, c = M.idx[i + 2] + 1; L.push(tex ? `f ${a}/${a}/${a} ${b}/${b}/${b} ${c}/${c}/${c}` : `f ${a}//${a} ${b}//${b} ${c}//${c}`); }
+  const enc = new TextEncoder(), obj = enc.encode(L.join('\n') + '\n');
+  if (!tex) return { obj };
+  const mtl = enc.encode(`# Объём\nnewmtl scan\nKa 1 1 1\nKd 1 1 1\nKs 0 0 0\nillum 1\nmap_Kd ${base}.jpg\n`);
+  return { obj, mtl, jpg: tex.jpg };
 }
 
 export function toMeshPLY(M) {

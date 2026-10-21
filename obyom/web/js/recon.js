@@ -69,6 +69,13 @@ export function computeMask(fr, ctx) {
   const white = (x, y) => { const f = feat(x, y); let p = 0; for (let a = 0; a < 6; a++) p += f[a] * coef[a]; return p; };
   let rho = 0.15;
   { const rs = []; for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) { const i = y * w + x; if (des[i] >= 0 && des[i] < 20 && !edge2[i]) rs.push(gray[i] / white(x, y)); } if (rs.length > 30) { rs.sort((a, c) => a - c); rho = Math.min(0.5, Math.max(0.02, rs[rs.length >> 1])); } }
+  // кадров фона может быть несколько (разные положения держателя) — берём тот, что лучше совпал с этим кадром
+  let PL = null;
+  for (const P of ctx.clean ? (Array.isArray(ctx.clean) ? ctx.clean : [ctx.clean]) : []) {
+    const pm = P && P.length === n * 4 ? plateModel(rgba, P, w, h, des, inCyl, ctx.plateOpt || {}) : null;
+    if (pm && (!PL || pm.agree > PL.agree)) PL = pm;
+  }
+  const plateBg = new Uint8Array(n);
   // локальная корреляция наблюдаемого с ожидаемым рисунком (окно 7×7): узор коврика виден и в тени
   const ncc = nccMap(gray, des, w, h, 3);
   const strong = new Uint8Array(n); // фон, подтверждённый узором коврика
@@ -97,10 +104,10 @@ export function computeMask(fr, ctx) {
         continue;
       }
     }
-    if (ctx.clean && (des[i] < 0)) {
-      const c = ctx.clean; const d = Math.abs(rgba[i * 4] - c[i * 4]) + Math.abs(rgba[i * 4 + 1] - c[i * 4 + 1]) + Math.abs(rgba[i * 4 + 2] - c[i * 4 + 2]);
-      if (d < 36) { mask[i] = 0; continue; }
-      if (d > 90) mask[i] = 2;
+    if (PL && des[i] < 0) { // за листом: сравнение с кадром фона (пустая вертушка, телефон неподвижен)
+      const d = PL.diff(x, y);
+      if (d < PL.lo) { mask[i] = PL.weak ? 3 : 0; if (!PL.weak) plateBg[i] = 1; continue; }
+      if (d > PL.hi) mask[i] = 2;
     }
   }
   // Край силуэта: окно 7×7 вокруг пикселя у края захватывает предмет, и корреляция падает.
@@ -255,7 +262,40 @@ export function computeMask(fr, ctx) {
   const notBg = new Uint8Array(n); for (let i = 0; i < n; i++) notBg[i] = mask[i] === 1 || mask[i] === 2 ? 1 : 0;
   const grown = dilate(notBg, w, h, 1);
   for (let i = 0; i < n; i++) { if (ctx.grow && !mask[i] && grown[i] && inCyl[i]) mask[i] = 1; if (!mask[i]) nb++; }
-  return { mask, stats: { ok: true, rho, bgFrac: nb / n } };
+  // 4 — «нет сведений»: за листом, ничем не подтверждено (ни фоном, ни отличием от кадра фона).
+  // Такие кадры не считаются «видевшими» воксель: иначе они раздувают порог доли и над предметом остаётся шапка.
+  if (ctx.mark4) for (let i = 0; i < n; i++) if (mask[i] === 1 && des[i] < 0 && inCyl[i]) mask[i] = 4;
+  return { mask, stats: { ok: true, rho, bgFrac: nb / n, plate: PL ? { shift: PL.shift, agree: PL.agree } : null } };
+}
+// Кадр фона (clean plate): телефон в держателе неподвижен, всё за листом (стол, стена) от кадра к кадру не меняется,
+// а предмет на вертушке закрывает часть этого фона. Пиксель за листом, совпавший с фоном, — «здесь пусто»:
+// так вырезается пространство над предметом, которое на фоне самого листа не видно («шапка гриба»).
+// Подбираются сдвиг (держатель мог чуть сместиться) и усиление по каналам (автоэкспозиция).
+function plateModel(rgba, P, w, h, des, inCyl, o) {
+  const n = w * h, A = blur3rgb(rgba, w, h), B = blur3rgb(P, w, h);
+  const ref = []; // заведомый фон: за листом и вне цилиндра рамки
+  for (let y = 4; y < h - 4; y += 2) for (let x = 4; x < w - 4; x += 2) { const i = y * w + x; if (des[i] < 0 && !inCyl[i]) ref.push(i); }
+  if (ref.length < 300) return null;
+  const S = Math.max(1, Math.floor(ref.length / 4000));
+  let best = null;
+  for (let dy = -4; dy <= 4; dy++) for (let dx = -4; dx <= 4; dx++) {
+    let e = 0, c = 0;
+    for (let k = 0; k < ref.length; k += S * 3) { const i = ref[k], j = i + dy * w + dx; e += Math.abs(A[i * 3] - B[j * 3]) + Math.abs(A[i * 3 + 1] - B[j * 3 + 1]) + Math.abs(A[i * 3 + 2] - B[j * 3 + 2]); c++; }
+    e /= c; if (!best || e < best.e) best = { e, dx, dy };
+  }
+  const off = best.dy * w + best.dx;
+  const g = [0, 1, 2].map((ch) => { const r = []; for (let k = 0; k < ref.length; k += S) { const i = ref[k], b = B[(i + off) * 3 + ch]; if (b > 20) r.push(A[i * 3 + ch] / b); } r.sort((a, c) => a - c); return r.length ? r[r.length >> 1] : 1; });
+  if (g.some((v) => v < 0.5 || v > 2)) return null;
+  // шум: разброс разницы на заведомом фоне
+  const ds = [];
+  const diff = (x, y) => { const xx = Math.min(w - 1, Math.max(0, x + best.dx)), yy = Math.min(h - 1, Math.max(0, y + best.dy)), i = (y * w + x) * 3, j = (yy * w + xx) * 3;
+    return Math.abs(A[i] - g[0] * B[j]) + Math.abs(A[i + 1] - g[1] * B[j + 1]) + Math.abs(A[i + 2] - g[2] * B[j + 2]); };
+  for (let k = 0; k < ref.length; k += S) { const i = ref[k]; ds.push(diff(i % w, (i / w) | 0)); }
+  ds.sort((a, c) => a - c);
+  const med = ds[ds.length >> 1], agree = ds.filter((v) => v < Math.max(24, 3 * med)).length / ds.length;
+  if (agree < (o.minAgree ?? 0.6)) return null; // телефон сдвинулся или свет сильно изменился — фон не годится
+  const lo = Math.max(o.lo ?? 21, 3 * med), hi = Math.max(o.hi ?? 75, 8 * med);
+  return { diff, lo, hi, weak: !!o.weak, shift: [best.dx, best.dy], gain: g, agree };
 }
 function nccMap(o, d, w, h, r) {
   const n = w * h, W1 = w + 1, mk = () => new Float64Array(W1 * (h + 1));
@@ -368,8 +408,9 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
           const cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
           const u = (K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx) | 0, v = (K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy) | 0;
           if (u < 0 || v < 0 || u >= f.w || v >= f.h) continue;
+          const mv = f.mask[v * f.w + u]; if (mv === 4) continue;
           seen++;
-          const mv = f.mask[v * f.w + u]; if (mv === 0) bg++; else if (mv === 3) weak++;
+          if (mv === 0) bg++; else if (mv === 3) weak++;
           // досрочно: уже точно вырезан (даже если все оставшиеся кадры увидят точку)
           if (!few && bg >= 2 && bg >= frac * (seen + left - 1)) break;
         }

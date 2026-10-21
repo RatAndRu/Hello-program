@@ -18,7 +18,8 @@ export class Capture {
     this.prev = null; this.running = false; this.paused = false; this.lastShot = 0;
   }
   async start() {
-    const c = { video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } }, audio: false };
+    // «Лучше» — Full HD: кадры для текстуры детальнее (слежение всё равно идёт на 640 px)
+    const hi = !!this.opt.hiRes, c = { video: { facingMode: { ideal: 'environment' }, width: { ideal: hi ? 1920 : 1280 }, height: { ideal: hi ? 1080 : 720 }, frameRate: { ideal: 30 } }, audio: false };
     this.stream = await navigator.mediaDevices.getUserMedia(c);
     this.video.srcObject = this.stream; this.video.muted = true; this.video.setAttribute('playsinline', '');
     await this.video.play();
@@ -91,7 +92,8 @@ export class Capture {
       this.blind = 0;
       const prog = this.lastDir ? this.progress(this.lastDir, a) : Infinity; this.theta = prog === Infinity ? 0 : prog;
       st.prog = prog;
-      if (prog >= step) due = true;
+      if (this.opt.close && p.n < 3) why = 'крупный план: нужно хотя бы 3 метки в кадре';
+      else if (prog >= step) due = true;
       else if (this.omega < 1) why = turn ? 'столик стоит — крутни ещё раз (или подними держатель)' : 'стоишь на месте — иди дальше по кругу';
       else why = `жду поворота: ${prog.toFixed(0)}° из ${step}°`;
     } else if (this.poseT && now - this.poseT < 3000 && this.omega > 2 && this.lastDir) {
@@ -137,7 +139,7 @@ export class Capture {
     return [Math.max(1, x0 | 0), Math.max(1, y0 | 0), Math.min(w - 2, x1 | 0), Math.min(h - 2, y1 | 0)];
   }
   async grab() {
-    const v = this.video, W = Math.min(1280, v.videoWidth), H = Math.round(v.videoHeight * W / v.videoWidth);
+    const v = this.video, W = Math.min(this.opt.hiRes ? 1920 : 1280, v.videoWidth), H = Math.round(v.videoHeight * W / v.videoWidth);
     const c = document.createElement('canvas'); c.width = W; c.height = H; c.getContext('2d').drawImage(v, 0, 0, W, H);
     return await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.92));
   }

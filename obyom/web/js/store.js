@@ -13,7 +13,7 @@ function db() {
 const tx = async (store, mode, fn) => { const d = await db(); return new Promise((res, rej) => { const t = d.transaction(store, mode), s = t.objectStore(store); const r = fn(s); t.oncomplete = () => res(r && 'result' in r ? r.result : undefined); t.onerror = () => rej(t.error); t.onabort = () => rej(t.error || new Error('Недостаточно места?')); }); };
 export const putScan = (scan) => tx('scans', 'readwrite', (s) => s.put(scan));
 export const getScan = (id) => tx('scans', 'readonly', (s) => s.get(id));
-export const delScan = async (id) => { await tx('scans', 'readwrite', (s) => s.delete(id)); await tx('frames', 'readwrite', (s) => s.delete(id)); await tx('frames', 'readwrite', (s) => s.delete(id + ':bottom')); };
+export const delScan = async (id) => { await tx('scans', 'readwrite', (s) => s.delete(id)); await tx('frames', 'readwrite', (s) => s.delete(id)); for (const k of [':bottom', ':plate', ':bplate', ':close']) await tx('frames', 'readwrite', (s) => s.delete(id + k)); };
 export async function listScans() {
   const all = await tx('scans', 'readonly', (s) => s.getAll());
   return (all || []).map(({ id, name, date, mode, thumb, stats, hasMesh, hasSplats }) => ({ id, name, date, mode, thumb, stats, hasMesh, hasSplats })).sort((a, b) => b.date - a.date);

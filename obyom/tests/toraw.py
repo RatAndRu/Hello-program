@@ -1,7 +1,7 @@
 import sys, glob, numpy as np
 from PIL import Image
 d, W = sys.argv[1], int(sys.argv[2])
-for f in sorted(glob.glob(d + '/f*.jpg')):
+for f in sorted(glob.glob(d + '/f*.jpg') + glob.glob(d + '/plate.jpg')):
     im = Image.open(f).convert('RGBA'); h = round(im.height * W / im.width)
     np.asarray(im.resize((W, h), Image.BILINEAR)).tofile(f[:-4] + f'_{W}.rgba')
 print(W, h)

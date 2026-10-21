@@ -7,7 +7,7 @@ const M = { pos: new Float32Array(J.pos), idx: new Uint32Array(J.idx), col: new 
 const glb = toGLB(M, 'Тест'); fs.writeFileSync('/tmp/t/t.glb', glb);
 const v = require('gltf-validator'); const rep = await v.validateBytes(new Uint8Array(glb));
 console.log('GLB', glb.length, 'errors', rep.issues.numErrors, 'warnings', rep.issues.numWarnings, rep.issues.messages.slice(0, 4).map(m => m.code + ' ' + m.message).join(' | '));
-const obj = new TextDecoder().decode(toOBJ(M)); console.log('OBJ lines', obj.split('\n').length, obj.split('\n')[1]);
+const obj = new TextDecoder().decode(toOBJ(M).obj); console.log('OBJ lines', obj.split('\n').length, obj.split('\n')[1]);
 const ply = toMeshPLY(M); console.log('PLY', ply.length, new TextDecoder().decode(ply.subarray(0, 60)).split('\n')[0]);
 const stl = toSTL(M); console.log('STL', stl.length, 'tris', new DataView(stl.buffer).getUint32(80, true), 'expect', M.idx.length / 3, 'size ok', stl.length === 84 + 50 * M.idx.length / 3);
 console.log('bounds mm', bounds(M).size.map(x => x.toFixed(1)));

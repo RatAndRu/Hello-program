@@ -39,6 +39,8 @@ def shade_obj(P, Nrm, kind):
     if os.environ.get('OBJWHITE'):  # однотонный светлый матовый предмет (как дезодорант)
         col[:] = [0.88, 0.88, 0.9]
     return col * lam[..., None]
+AZ = [0.0]; NOOBJ = [False]
+STATIC = bool(os.environ.get('STATIC'))  # вертушка у неподвижной камеры: стол и стена неподвижны относительно камеры
 def render(Rm, t):
     ys, xs = np.mgrid[0:H, 0:W].astype(np.float32)
     d_cam = np.stack([(xs - cx) / f, (ys - cy) / f, np.ones_like(xs)], -1)
@@ -56,19 +58,32 @@ def render(Rm, t):
     if os.environ.get('TABLE'):  # трудный случай: стол/стена цвета предмета, напр. TABLE=0.86,0.86,0.9
         tc = np.array([float(v) for v in os.environ['TABLE'].split(',')]); base = (1 + 0.03 * np.sin(P[..., 0] * 0.01))[..., None] * tc
     paper = mat[mi, mj][..., None] * np.array([0.93, 0.92, 0.9])
+    if STATIC:  # стол и стена — в системе камеры (повёрнуты на az относительно коврика)
+        ca, sa = np.cos(np.radians(AZ[0])), np.sin(np.radians(AZ[0]))
+        Pfx = ca * P[..., 0] - sa * P[..., 1]; Pfy = sa * P[..., 0] + ca * P[..., 1]
+        wood = 0.45 + 0.08 * np.sin(Pfx * 0.15 + np.sin(Pfy * 0.05) * 3)
+        base = np.stack([wood * 1.0, wood * 0.75, wood * 0.5], -1)
+        ofy = sa * o[0] + ca * o[1]; dfy = sa * d[..., 0] + ca * d[..., 1]
+        tw = (-260 - ofy) / np.where(np.abs(dfy) < 1e-9, -1e-9, dfy)
+        Pw = o + d * tw[..., None]; Pwx = ca * Pw[..., 0] - sa * Pw[..., 1]
+        wall = (0.78 + 0.04 * np.sin(Pwx * 0.02) + 0.03 * (Pw[..., 2] > 180))[..., None] * np.array([1.0, 0.97, 0.92])
+        wall = np.where(((np.abs(Pwx + 120) < 60) & (np.abs(Pw[..., 2] - 150) < 45))[..., None], np.array([0.3, 0.5, 0.6]), wall)  # картинка на стене
+        onwall = (dfy < 0) & (tw > 0) & ((tz <= 0) | (Pfy < -260))
+        base = np.where(onwall[..., None], wall, base)
     pl = np.where(onmat[..., None], paper, base)
     # тень от предмета (простая: круг под предметом, смещённый от света)
     sh = np.hypot(P[..., 0] - 10, P[..., 1] + 12) < 30
-    pl = pl * np.where(sh[..., None], 0.75, 1.0)
+    if not NOOBJ[0]: pl = pl * np.where(sh[..., None], 0.75, 1.0)
     m = tz > 0
     best[m] = tz[m]; img[m] = pl[m]
+    if STATIC: img[onwall] = pl[onwall]; m = m & ~onwall
     # фон-стена далеко (если луч не попал на стол)
-    img[~m] = [float(v) for v in os.environ['TABLE'].split(',')] if os.environ.get('TABLE') else [0.6, 0.62, 0.65]
+    img[~m & ~(onwall if STATIC else False)] = [float(v) for v in os.environ['TABLE'].split(',')] if os.environ.get('TABLE') else [0.6, 0.62, 0.65]
     ow, dw_ = o, d
     o = QR.T @ (ow - QT); d = d @ QR  # луч в систему предмета
     def hit(tt, Pn, Nn, kind, ok):
         nonlocal best, img
-        ok = ok & (tt > 0) & (tt < best)
+        ok = ok & (tt > 0) & (tt < best) & (not NOOBJ[0])
         if ok.any():
             c = shade_obj(Pn, Nn, kind)
             img[ok] = c[ok]; best[ok] = tt[ok]
@@ -132,10 +147,14 @@ for i in range(N):
         az = i * 360 / N; el = [32, 52][i % 2]; dist = 380
     else:
         az = i * 360 / N + rng.normal(0, 3); el = 30 + 25 * (i % 3) / 2 + rng.normal(0, 2); dist = 340 + rng.normal(0, 20)
+    if os.environ.get('DIST'): dist = float(os.environ['DIST']) + rng.normal(0, 8)  # крупные планы (досъёмка для текстуры)
     a = np.radians(az); e = np.radians(el)
     cam = np.array([dist * np.cos(e) * np.sin(a), dist * np.cos(e) * np.cos(a), dist * np.sin(e)])
     Rm, t = look(cam, np.array([0, 0, 25.0]) + (rng.normal(0, 5, 3) if mode == 'walk' else 0))
-    img, objm = render(Rm, t)
+    AZ[0] = az; img, objm = render(Rm, t)
+    if STATIC and i == 0:  # кадр фона: пустая вертушка
+        NOOBJ[0] = True; pim, _ = render(Rm, t); NOOBJ[0] = False
+        Image.fromarray(pim).filter(ImageFilter.GaussianBlur(0.6)).save(f'{out}/plate.jpg', quality=88)
     Image.fromarray((objm * 255).astype(np.uint8)).save(f'{out}/m{i:03d}.png')
     im = Image.fromarray(img).filter(ImageFilter.GaussianBlur(0.6))
     if mode == 'spin':  # смаз при движении: ~2.7 пикс на градус, выдержка 1/30 с

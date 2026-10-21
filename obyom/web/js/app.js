@@ -9,7 +9,7 @@ import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '1.4';
+export const VERSION = '1.5';
 const $ = (id) => document.getElementById(id);
 const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
@@ -26,6 +26,7 @@ function go(id) {
   if (id === 'home') renderList();
 }
 window.addEventListener('popstate', () => {
+  if (cur === 'capture' && plateSheet && !$('sheet').classList.contains('hidden')) { closeSheet(); plateSheet = false; history.pushState({ s: cur }, ''); return; }
   if (cur === 'capture') { cancelCapture(); return; }
   if (cur === 'process') { history.pushState({ s: cur }, ''); toast('Идёт обработка — дождись или нажми «Остановить»'); return; }
   if (!$('sheet').classList.contains('hidden')) { closeSheet(); history.pushState({ s: cur }, ''); return; }
@@ -83,7 +84,7 @@ function renderSetup() {
   const sp = S.mode === 'mesh' ? '' : ` Сплэты на телефоне: ~${Math.round(it * 0.4 / 60)}–${Math.round(it * 0.7 / 60)} мин.`;
   const how = S.method === 'walk'
     ? 'Обходи предмет по кругу 2–3 раза на разной высоте: низко (~30°), выше (~55°) и почти сверху (~75°). Кадры снимаются сами.'
-    : 'Телефон в держателе смотрит на коврик сверху-сбоку. Нажми ▶, раскрути столик и убери руку — после таймера кадры пойдут сами, каждые несколько градусов поворота (замедлился — кадры реже, остановился — пауза). Потом подними держатель выше, ⏸ → ▶ и ещё оборот.';
+    : 'Телефон в держателе смотрит на коврик сверху-сбоку. Нажми ▶, раскрути столик и убери руку — после таймера кадры пойдут сами, каждые несколько градусов поворота (замедлился — кадры реже, остановился — пауза). Потом подними держатель выше, ⏸ → ▶ и ещё оборот. Пока коврик пустой — нажми «Фон»; после «Готово» убери предмет и сними фон ещё раз: верх выйдет без «шапки».';
   const tall = +S.height >= 200 ? ' Для высокого предмета отойди дальше, чтобы в кадр влезал и весь круг меток, и верх предмета.' : '';
   $('setupHint').textContent = how + tall + ' Форма считается за 20–60 секунд.' + sp;
 }
@@ -93,19 +94,23 @@ $('btnStart').onclick = () => startCapture();
 // ---------- съёмка ----------
 let cap = null, capCtx = null; // capCtx.bottomOf — досъёмка низа для этого скана
 async function startCapture(ctx) {
-  capCtx = ctx && ctx.bottomOf ? ctx : null;
+  capCtx = ctx && (ctx.bottomOf || ctx.closeOf) ? ctx : null;
   go('capture');
-  const bo = capCtx && capCtx.bottomOf;
+  const bo = capCtx && capCtx.bottomOf, co = capCtx && capCtx.closeOf;
+  const base = bo || co;
   cap = new Capture($('video'), $('overlay'), {
-    size: bo ? (bo.settings && bo.settings.size) || S.size : S.size, method: S.method, Hb: bo ? +((bo.bottom && bo.bottom.Hb) || (bo.settings && bo.settings.height) || S.height) : +S.height, step: +S.step || 8,
+    size: base ? (base.settings && base.settings.size) || S.size : S.size, method: co ? (co.settings && co.settings.method) || S.method : S.method, close: !!co, hiRes: (base ? (base.settings && base.settings.quality) : S.quality) === 'best',
+    Hb: bo ? +((bo.bottom && bo.bottom.Hb) || (bo.settings && bo.settings.height) || S.height) : co ? +((co.settings && co.settings.height) || S.height) : +S.height, step: co ? 5 : +S.step || 8,
     onState: capState,
     onShot: (n, a, manual) => { beep(manual ? 1318 : 1046, 0.05); if (navigator.vibrate) navigator.vibrate(15); },
   });
   // с таймером — ждём «▶»; без таймера — снимаем сразу
-  if (+S.delay > 0) { cap.paused = true; $('capPause').textContent = '▶'; } else { cap.arm(0); $('capPause').textContent = '⏸'; }
+  if (+S.delay > 0 && !co) { cap.paused = true; $('capPause').textContent = '▶'; } else { cap.arm(0); $('capPause').textContent = '⏸'; }
   lastCount = null;
   window.__obyomCap = cap; // для отладки и тестов
+  cap.plates = []; $('capPlate').classList.toggle('hidden', S.method !== 'turn' || !!co); $('capPlate').textContent = 'Фон';
   showH();
+  if (co) toast('Крупные планы: предмет не двигай! Поднеси телефон ближе (15–25 см) — чтобы в кадре был кусок предмета и хотя бы 3 метки коврика. Кадры снимаются сами при движении, 📷 — вручную', 8000);
   if (bo) toast('Доснять низ: положи предмет на бок или вверх дном в центр круга (целиком внутри рамки) и сними так же, со всех сторон', 6000);
   try { await cap.start(); } catch (e) { toast('Нет доступа к камере: ' + e.message, 4000); history.back(); }
 }
@@ -113,19 +118,21 @@ let lastCount = null;
 function capState(st) {
   const msg = $('capMsg'), cov = st.coverage || [0, 0, 0, 0];
   drawDome($('dome'), cap.cells, st);
-  $('capDone').textContent = `Готово · ${st.count}`; $('capDone').disabled = st.count < 10;
+  const closeMode = !!(capCtx && capCtx.closeOf);
+  $('capDone').textContent = `Готово · ${st.count}`; $('capDone').disabled = st.count < (closeMode ? 3 : 10);
   let text = '', cls = '';
   const low = Math.max(cov[0], cov[1]), mid = cov[2], high = cov[3], turn = S.method === 'turn';
   if (st.countdown) { if (st.countdown !== lastCount) { lastCount = st.countdown; beep(660, 0.08); } }
   if (cap.paused) { text = +S.delay > 0 ? `Нажми ▶ — через ${S.delay} с начнётся съёмка` : 'Пауза — нажми ▶'; cls = 'warn'; }
   else if (st.countdown) { text = `Старт через ${st.countdown}…${turn ? ' раскрути столик и убери руку' : ''}`; cls = 'warn'; }
+  else if (closeMode) { text = !st.found ? (st.markers ? `Видно меток: ${st.markers} — нужно хотя бы 3 (чуть отодвинь телефон)` : 'Наведи на предмет так, чтобы были видны метки коврика') : (st.n < 3 ? 'Мало меток в кадре — чуть дальше' : `Крупно: ${Math.round(st.dist / 10)} см · медленно веди вокруг · кадров ${st.count}`); cls = st.found && st.n >= 3 ? 'good' : 'warn'; }
   else if (!st.found) { text = st.markers ? 'Мало меток — отодвинь телефон, чтобы влез весь круг' : 'Наведи камеру на коврик'; cls = 'bad'; }
   else if (st.el < BANDS[0][0]) { text = 'Слишком низко — подними телефон'; cls = 'warn'; }
   else if (low < 0.75) { text = turn ? 'Крути столик — первый оборот (кадры идут сами)' : 'Обходи вокруг предмета, держа телефон невысоко (~30°)'; }
   else if (mid < 0.6) { text = turn ? 'Подними держатель выше (~55°) и ещё оборот' : 'Теперь ещё круг повыше (~55°)'; }
   else if (high < 0.4) { text = turn ? 'Ещё выше (~75°) — последний оборот' : 'И круг почти сверху (~75°)'; }
   else { text = 'Отлично! Можно нажимать «Готово»'; cls = 'good'; }
-  msg.textContent = text; msg.className = 'capMsg ' + cls + (capCtx ? ' bottomTag' : '');
+  msg.textContent = text; msg.className = 'capMsg ' + cls + (capCtx && capCtx.bottomOf ? ' bottomTag' : '');
   const info = st.found ? `высота ${st.el.toFixed(0)}° · азимут ${st.az.toFixed(0)}° · ${Math.round(st.dist / 10)} см · меток ${st.n} · ${st.speed.toFixed(0)}°/с${cap.f ? '' : ' · калибровка…'}` : `слежение ${st.fps.toFixed(0)} к/с`;
   $('capInfo').textContent = [info, st.why ? 'Не снимаю: ' + st.why : (st.found ? 'Снимаю' : ''), inkLabel(st.ink)].filter(Boolean).join('\n');
 }
@@ -142,27 +149,68 @@ $('capPause').onclick = () => {
   if (cap.paused) { cap.arm(+S.delay || 0); lastCount = null; $('capPause').textContent = '⏸'; }
   else { cap.paused = true; $('capPause').textContent = '▶'; }
 };
+// Кадр фона (вертушка): пустой коврик с того же места, где стоит телефон. Всё за кругом (стол, стена) неподвижно —
+// где кадр совпал с фоном, там над предметом пусто: так вырезается «шапка» над верхом.
+let plateBusy = false;
+async function takePlate(btn) {
+  if (!cap || plateBusy) return false;
+  plateBusy = true; const wasPaused = cap.paused; cap.paused = true;
+  try {
+    for (let s = 3; s > 0; s--) { if (btn) btn.textContent = `Через ${s}…`; $('capMsg').textContent = `Фон через ${s} с — руки и предмет из кадра, телефон не трогать`; beep(660, 0.08); await new Promise((r) => setTimeout(r, 1000)); if (!cap) return false; }
+    const blob = await cap.grab(); cap.plates.push(blob); beep(1318, 0.08); if (navigator.vibrate) navigator.vibrate(30);
+    $('capPlate').textContent = `Фон ✓${cap.plates.length > 1 ? cap.plates.length : ''}`;
+    return true;
+  } finally { plateBusy = false; if (cap) cap.paused = wasPaused; if (btn) btn.textContent = 'Фон'; }
+}
+$('capPlate').onclick = async () => { if (await takePlate()) toast('Фон снят. Теперь поставь предмет в центр круга и снимай. В конце предложу снять фон ещё раз — после последнего оборота', 5000); };
+let plateSheet = false;
 $('capDone').onclick = async () => {
   if (!cap) return;
-  const shots = cap.shots.map((s) => s.blob), Hb = cap.opt.Hb; cap.stop(); cap = null;
+  if (S.method === 'turn' && !plateSheet && !(capCtx && capCtx.closeOf)) { // последнее положение держателя: предложим кадр фона
+    cap.paused = true; $('capPause').textContent = '▶'; plateSheet = true;
+    sheet(`<h3>Кадр фона</h3><p>Убери предмет с вертушки, <b>не сдвигая телефон и держатель</b>, и нажми «Снять фон» — через 3 секунды сниму пустой коврик. По нему вырежется пространство над предметом: верх выйдет без «шапки».</p><p style="color:var(--mute)">Фон годится для кадров, снятых с этого же места. Если в начале уже снимал «Фон» с другой высоты — он тоже пойдёт в дело.</p><button data-a="plate" class="mid primary">Снять фон</button><button data-a="skip" class="mid">Без фона — обработать</button>`, (box) => {
+      box.querySelector('[data-a="plate"]').onclick = async (e) => { const ok = await takePlate(e.currentTarget); closeSheet(); if (ok) finishCapture(); else plateSheet = false; };
+      box.querySelector('[data-a="skip"]').onclick = () => { closeSheet(); finishCapture(); };
+    });
+    return;
+  }
+  finishCapture();
+};
+async function finishCapture() {
+  plateSheet = false;
+  if (!cap) return;
+  const shots = cap.shots.map((s) => s.blob), Hb = cap.opt.Hb, plates = cap.plates || []; cap.stop(); cap = null;
+  if (capCtx && capCtx.closeOf) { // крупные планы: только для текстуры, пересчёт со всеми кадрами
+    const base = capCtx.closeOf; capCtx = null;
+    const fa = await store.getFrames(base.id).catch(() => null);
+    if (!fa || !fa.length) { toast('Кадры основной съёмки удалены — пересчитать не из чего', 4000); history.back(); return; }
+    const old = await store.getFrames(base.id + ':close').catch(() => null), all = (old || []).concat(shots);
+    try { await store.putFrames(base.id + ':close', all); } catch (e) { toast('Не удалось сохранить кадры: ' + e.message); }
+    const [bf, pa, bp] = await Promise.all([base.bottom ? store.getFrames(base.id + ':bottom').catch(() => null) : null, store.getFrames(base.id + ':plate').catch(() => null), store.getFrames(base.id + ':bplate').catch(() => null)]);
+    const ns = { id: base.id, name: base.name, date: base.date, settings: { ...(base.settings || S) }, bottom: base.bottom, close: all.length };
+    runProcessing(ns, fa, bf, { plates: pa, bottomPlates: bp, close: all });
+    return;
+  }
   if (capCtx) { // досъёмка низа: кадры — отдельно, обработка — обе съёмки вместе
     const base = capCtx.bottomOf; capCtx = null;
     const fa = await store.getFrames(base.id).catch(() => null);
     if (!fa || !fa.length) { toast('Кадры основной съёмки удалены — низ не к чему добавить', 4000); history.back(); return; }
-    try { await store.putFrames(base.id + ':bottom', shots); } catch (e) { toast('Не удалось сохранить кадры: ' + e.message); }
-    const ns = { id: base.id, name: base.name, date: base.date, settings: { ...(base.settings || S) }, bottom: { n: shots.length, Hb: String(Hb), method: S.method } };
-    runProcessing(ns, fa, shots);
+    try { await store.putFrames(base.id + ':bottom', shots); await store.delFrames(base.id + ':bplate'); if (plates.length) await store.putFrames(base.id + ':bplate', plates); } catch (e) { toast('Не удалось сохранить кадры: ' + e.message); }
+    const pa = await store.getFrames(base.id + ':plate').catch(() => null);
+    const cl = base.close ? await store.getFrames(base.id + ':close').catch(() => null) : null;
+    const ns = { id: base.id, name: base.name, date: base.date, settings: { ...(base.settings || S) }, bottom: { n: shots.length, Hb: String(Hb), method: S.method }, close: base.close };
+    runProcessing(ns, fa, shots, { plates: pa, bottomPlates: plates, close: cl });
     return;
   }
   const id = 'scan-' + Date.now(), d = new Date();
   const scan = { id, name: `Скан ${d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' })} ${d.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`, date: Date.now(), settings: { ...S, height: String(Hb) } };
-  try { await store.putFrames(id, shots); } catch (e) { toast('Не удалось сохранить кадры: ' + e.message); }
-  runProcessing(scan, shots);
-};
+  try { await store.putFrames(id, shots); if (plates.length) await store.putFrames(id + ':plate', plates); } catch (e) { toast('Не удалось сохранить кадры: ' + e.message); }
+  runProcessing(scan, shots, null, { plates });
+}
 
 // ---------- обработка ----------
 let proc = null, procViewer = null;
-function runProcessing(scan, blobs, bottomBlobs) {
+function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
   go('process');
   const st = scan.settings;
   $('procLog').textContent = ''; $('procBar').style.width = '0%'; $('procStage').textContent = 'Подготовка…'; $('procText').textContent = '';
@@ -170,7 +218,9 @@ function runProcessing(scan, blobs, bottomBlobs) {
   const log = (t) => { $('procLog').textContent += t + '\n'; };
   log(`кадров: ${blobs.length}; режим: ${{ mesh: 'полигоны', splat: 'сплэты', both: 'полигоны + сплэты' }[st.mode]}`);
   const job = { blobs, mode: st.mode, quality: st.quality, size: st.size, theme: 'light', Hb: +st.height, method: st.method || 'walk', shape: st.shape || 'normal', scale: calFor(st.size) };
-  if (bottomBlobs && bottomBlobs.length && scan.bottom) { job.bottom = { blobs: bottomBlobs, Hb: +scan.bottom.Hb, method: scan.bottom.method }; log(`+ досъёмка низа: ${bottomBlobs.length} кадров`); }
+  if (extra.close && extra.close.length && st.mode !== 'splat') { job.close = extra.close; log(`+ крупные планы: ${extra.close.length}`); }
+  if (extra.plates && extra.plates.length) { job.plates = extra.plates; log(`+ кадр фона: ${extra.plates.length}`); }
+  if (bottomBlobs && bottomBlobs.length && scan.bottom) { job.bottom = { blobs: bottomBlobs, Hb: +scan.bottom.Hb, method: scan.bottom.method, plates: extra.bottomPlates || null }; log(`+ досъёмка низа: ${bottomBlobs.length} кадров`); }
   let splatting = false;
   proc = startProcessing(job, {
     progress: (stage, p, text) => {
@@ -212,7 +262,7 @@ async function openScan(id, scanObj) {
   const scan = scanObj || await store.getScan(id);
   if (!scan) { toast('Модель не найдена'); return; }
   if (scan.failed || (!scan.mesh && !scan.splats)) { moreSheet(scan); return; }
-  curScan = scan;
+  curScan = scan; window.__obyomScan = scan; // для тестов
   if (cur === 'process') { cur = 'view'; document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === 'view')); } else go('view');
   if (!viewer) { try { viewer = new Viewer3D($('gl')); } catch (e) { toast('3D-просмотр недоступен: ' + e.message, 5000); return; } }
   viewer.setMesh(scan.mesh || null);
@@ -224,16 +274,20 @@ async function openScan(id, scanObj) {
   $('vSize').textContent = `${sz.map((v) => Math.round(v)).join(' × ')} мм · ${scan.stats ? scan.stats.used + ' кадров' : ''}`;
   $('vWarn').textContent = scan.stats && scan.stats.warn || ''; $('vWarn').classList.toggle('hidden', !(scan.stats && scan.stats.warn));
   $('vShow').classList.toggle('hidden', !scan.splats);
+  viewer.hasTex = !!(scan.mesh && scan.mesh.uv && scan.mesh.tex);
   syncViewTools();
 }
 function syncViewTools() {
   $('vShow').querySelectorAll('button').forEach((b) => b.classList.toggle('on', viewer.show === b.dataset.v));
   $('vShade').querySelectorAll('button').forEach((b) => b.classList.toggle('on', String(viewer.shade) === b.dataset.v));
   $('vShade').classList.toggle('hidden', viewer.show !== 'mesh');
+  $('vTex').classList.toggle('hidden', viewer.show !== 'mesh' || !viewer.hasTex || viewer.shade === 2);
+  $('vTex').querySelectorAll('button').forEach((b) => b.classList.toggle('on', String(viewer.useTex === false ? 0 : 1) === b.dataset.v));
   $('vAuto').classList.toggle('on', viewer.auto);
 }
 $('vShow').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.show = b.dataset.v; viewer.dirty = true; syncViewTools(); };
 $('vShade').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.shade = +b.dataset.v; viewer.dirty = true; syncViewTools(); };
+$('vTex').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.useTex = b.dataset.v === '1'; viewer.dirty = true; syncViewTools(); };
 $('vAuto').onclick = () => { viewer.auto = !viewer.auto; syncViewTools(); };
 $('vHome').onclick = () => { viewer.reset(); };
 $('vName').onchange = async () => { if (!curScan) return; curScan.name = $('vName').value.trim() || curScan.name; await store.putScan(curScan).catch(() => {}); };
@@ -244,8 +298,8 @@ $('vExp').onclick = () => {
   const base = fileBase(s.name);
   const items = [];
   if (s.mesh) items.push(
-    ['glb', 'GLB', 'Blender, Godot, Unity, сайты, AR', () => saveFile(toGLB(s.mesh, s.name), base + '.glb', 'model/gltf-binary')],
-    ['obj', 'OBJ', 'с цветами вершин, любые 3D-программы', () => saveFile(toOBJ(s.mesh), base + '.obj', 'text/plain')],
+    ['glb', 'GLB', s.mesh.tex ? 'с текстурой внутри · Blender, Godot, Unity, сайты, AR' : 'Blender, Godot, Unity, сайты, AR', () => saveFile(toGLB(s.mesh, s.name), base + '.glb', 'model/gltf-binary')],
+    ['obj', 'OBJ', s.mesh.tex ? 'три файла: .obj + .mtl + текстура .jpg' : 'с цветами вершин, любые 3D-программы', async () => { const o = toOBJ(s.mesh, base); await saveFile(o.obj, base + '.obj', 'text/plain'); if (o.mtl) { await saveFile(o.mtl, base + '.mtl', 'text/plain'); await saveFile(o.jpg, base + '.jpg', 'image/jpeg'); } }],
     ['ply', 'PLY', 'сетка с цветом (MeshLab, Blender)', () => saveFile(toMeshPLY(s.mesh), base + '.ply', 'application/octet-stream')],
     ['stl', 'STL', '3D-печать, миллиметры', () => saveFile(toSTL(s.mesh), base + '.stl', 'model/stl')]);
   if (s.splats) items.push(['splat', 'Сплэты PLY', 'SuperSplat, Brush, Blender-аддоны', () => saveFile(new Uint8Array(splatPLY(unpackSplats(s.splats))), base + '_splats.ply', 'application/octet-stream')]);
@@ -265,10 +319,13 @@ async function moreSheet(scan) {
   const nf = frames ? frames.length : 0;
   const bframes = scan.bottom ? await store.getFrames(scan.id + ':bottom').catch(() => null) : null;
   const nb = bframes ? bframes.length : 0;
+  const close = await store.getFrames(scan.id + ':close').catch(() => null), nc = close ? close.length : 0;
+  const plates = await store.getFrames(scan.id + ':plate').catch(() => null), bplates = scan.bottom ? await store.getFrames(scan.id + ':bplate').catch(() => null) : null;
   const bInfo = nb ? `<p>Досъёмка низа: ${nb} кадров${scan.stats && 'bottom' in scan.stats ? (scan.stats.bottom ? ' — учтена ✓' : ' — <span style="color:var(--warn)">не совместилась</span>') : ''}.</p>` : '';
   sheet(`<h3>${scan.name.replace(/</g, '&lt;')}</h3>${scan.failed ? `<p style="color:var(--warn)">${scan.failed}</p>` : ''}
     ${scan.stats ? `<p>Кадров использовано: ${scan.stats.used} из ${scan.stats.frames}. Объём: ${(scan.stats.volume / 1000).toFixed(1)} см³. Обработка: ${fmtT(scan.stats.t)}.</p>` : ''}
     ${nf ? `<button data-a="bottom" class="mid">↻ ${nb ? 'Переснять низ' : 'Доснять низ'}<small>положить предмет на бок / вверх дном и снять ещё раз — появится дно, уточнится верх</small></button>${bInfo}
+    <button data-a="close" class="mid">🔍 ${nc ? 'Ещё крупные планы' : 'Крупные планы для текстуры'}<small>${nc ? `уже ${nc} кадров; ` : ''}предмет не двигать, телефон ближе — текстура станет детальнее</small></button>
     <p>Пересчитать из сохранённых кадров (${nf} шт.${nb ? ` + низ ${nb}` : ''}) с другими настройками:</p>
     <div class="grid2"><button data-r="mesh">Полигоны</button><button data-r="splat">Сплэты</button><button data-r="both">Оба</button><button data-r="best">Оба, качество «Лучше»</button></div>
     <label class="lbl">Высота предмета при пересчёте, см (чуть больше настоящей — лишний верх не достроится)</label>
@@ -276,6 +333,7 @@ async function moreSheet(scan) {
     <p>Форма предмета при пересчёте:</p>
     <div class="seg wrap3" id="rShape"><button data-v="normal">Обычная</button><button data-v="revolve">Тело вращения</button><button data-v="smooth">Гладкая</button><button data-v="box">Коробка</button><button data-v="prism">Призма</button><button data-v="planes">Плоские грани</button></div>
     ${nb ? '<label class="lbl"><input type="checkbox" id="rNoB"> пересчитать без досъёмки низа</label><button data-a="dropbottom">Удалить досъёмку низа</button>' : ''}
+    ${nc ? '<button data-a="dropclose">Удалить крупные планы</button>' : ''}
     <button data-a="dropframes">Удалить кадры (освободить место)</button>` : '<p>Кадров съёмки нет — пересчёт невозможен.</p>'}
     <button data-a="delete" style="color:var(--bad)">Удалить модель</button>`,
   (box) => {
@@ -291,11 +349,13 @@ async function moreSheet(scan) {
       if (b.dataset.r === 'best') { st.mode = 'both'; st.quality = 'best'; } else st.mode = b.dataset.r;
       const noB = box.querySelector('#rNoB') && box.querySelector('#rNoB').checked;
       const ns = { id: scan.id, name: scan.name, date: scan.date, settings: st, bottom: scan.bottom };
-      if (cur !== 'home') history.back(); setTimeout(() => runProcessing(ns, frames, noB ? null : bframes), 50);
+      if (cur !== 'home') history.back(); ns.close = scan.close; setTimeout(() => runProcessing(ns, frames, noB ? null : bframes, { plates, bottomPlates: bplates, close }), 50);
     });
     const bb = box.querySelector('[data-a="bottom"]'); if (bb) bb.onclick = () => { closeSheet(); const go2 = () => startCapture({ bottomOf: scan }); if (cur !== 'home') { history.back(); setTimeout(go2, 80); } else go2(); };
-    const db = box.querySelector('[data-a="dropbottom"]'); if (db) db.onclick = async () => { await store.delFrames(scan.id + ':bottom'); delete scan.bottom; await store.putScan(scan).catch(() => {}); closeSheet(); toast('Досъёмка низа удалена (модель останется, пока не пересчитаешь)'); };
-    const dz = box.querySelector('[data-a="dropframes"]'); if (dz) dz.onclick = async () => { await store.delFrames(scan.id); await store.delFrames(scan.id + ':bottom'); closeSheet(); toast('Кадры удалены'); };
+    const cb2 = box.querySelector('[data-a="close"]'); if (cb2) cb2.onclick = () => { closeSheet(); const go2 = () => startCapture({ closeOf: scan }); if (cur !== 'home') { history.back(); setTimeout(go2, 80); } else go2(); };
+    const dc = box.querySelector('[data-a="dropclose"]'); if (dc) dc.onclick = async () => { await store.delFrames(scan.id + ':close'); delete scan.close; await store.putScan(scan).catch(() => {}); closeSheet(); toast('Крупные планы удалены (текстура останется, пока не пересчитаешь)'); };
+    const db = box.querySelector('[data-a="dropbottom"]'); if (db) db.onclick = async () => { await store.delFrames(scan.id + ':bottom'); await store.delFrames(scan.id + ':bplate').catch(() => {}); delete scan.bottom; await store.putScan(scan).catch(() => {}); closeSheet(); toast('Досъёмка низа удалена (модель останется, пока не пересчитаешь)'); };
+    const dz = box.querySelector('[data-a="dropframes"]'); if (dz) dz.onclick = async () => { await store.delFrames(scan.id); await store.delFrames(scan.id + ':bottom'); for (const k of [':plate', ':bplate', ':close']) await store.delFrames(scan.id + k).catch(() => {}); closeSheet(); toast('Кадры удалены'); };
     box.querySelector('[data-a="delete"]').onclick = async () => { if (!confirm('Удалить модель «' + scan.name + '»?')) return; await store.delScan(scan.id); closeSheet(); if (cur === 'view') history.back(); else renderList(); };
   });
 }
@@ -375,6 +435,8 @@ function showHelp() {
   <li><b>Призма</b> — одно и то же сечение по всей высоте (любой формы): флакон-брусок, мыло, деталь. Прямые стороны сечения выпрямляются, углы — острые.</li>
   <li><b>Плоские грани</b> — обычная форма, но найденные плоскости становятся ровными, а рёбра между ними — острыми: предметы из граней.</li></ul>
   <p><b>Дно:</b> в обычной съёмке предмет стоит на нём, и снизу модель срезана по столу. Чтобы получить дно — открой модель → ⋯ → <b>«Доснять низ»</b>: положи предмет на бок или вверх дном в центр круга и сними ещё раз. Приложение само найдёт, как он лежал (совместит две формы), и вырежет то, что видно только во второй съёмке: появится настоящее дно, а «колпак» сверху уточнится. Кадры второй съёмки дают и цвет дна.</p>
+  <p><b>«Фон» (вертушка):</b> телефон в держателе неподвижен, поэтому стол и стена за ковриком от кадра к кадру одинаковые. Сними их без предмета — кнопка «Фон» в начале (коврик ещё пустой) и после «Готово» (убери предмет, не трогая телефон). Там, где кадр совпал с фоном, над предметом пусто — так вырезается «шапка» над верхом, которую по самому коврику не видно. Фон годится только для того же положения держателя.</p>
+  <p><b>Текстура:</b> цвет модели — отдельная картинка-атлас: каждый кусок поверхности берётся из одного лучшего кадра в полном разрешении (а не из цвета вершин). В просмотре — переключатель «Текстура / Вершины». Для большей детальности — ⋯ → <b>«Крупные планы»</b>: предмет не двигать, телефон ближе (15–25 см), в кадре хотя бы 3 метки. Качество «Лучше» снимает в Full HD и считает форму на 960 px.</p>
   <p><b>Что не получится:</b> прозрачные и зеркальные предметы; глубокие впадины (внутренность чашки) — метод видит силуэты. Блестящий бок даёт блики — лучше «Тело вращения» или матовый свет.</p>
   <p>Всё считается на телефоне, без интернета и без нейросетей. Версия ${VERSION}.</p>`);
 }

@@ -1,15 +1,16 @@
 // Объём — просмотр 3D: сетка и сплэты (WebGL2). Мир: миллиметры, Z вверх.
 
 const MESH_VS = `#version 300 es
-layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec3 aCol;
-uniform mat4 uVP; out vec3 vN; out vec3 vC; out vec3 vP;
-void main(){ vN=aNrm; vC=aCol; vP=aPos; gl_Position=uVP*vec4(aPos,1.0); }`;
+layout(location=0) in vec3 aPos; layout(location=1) in vec3 aNrm; layout(location=2) in vec3 aCol; layout(location=3) in vec2 aUV;
+uniform mat4 uVP; out vec3 vN; out vec3 vC; out vec3 vP; out vec2 vUV;
+void main(){ vN=aNrm; vC=aCol; vP=aPos; vUV=aUV; gl_Position=uVP*vec4(aPos,1.0); }`;
 const MESH_FS = `#version 300 es
-precision highp float; in vec3 vN; in vec3 vC; in vec3 vP; uniform int uMode; uniform vec3 uEye; out vec4 o;
+precision highp float; in vec3 vN; in vec3 vC; in vec3 vP; in vec2 vUV; uniform int uMode; uniform int uTexOn; uniform sampler2D uTex; uniform vec3 uEye; out vec4 o;
 void main(){
+  vec3 base = uTexOn==1 ? texture(uTex, vUV).rgb : vC;
   vec3 n=normalize(vN); vec3 v=normalize(uEye-vP); if(dot(n,v)<0.0) n=-n;
   vec3 L1=normalize(vec3(0.4,-0.6,0.8)); float d=0.35+0.5*max(dot(n,v),0.0)+0.25*max(dot(n,L1),0.0);
-  vec3 c = uMode==0 ? vC : (uMode==1 ? vC*d*1.05 : vec3(0.78,0.74,0.70)*d);
+  vec3 c = uMode==0 ? base : (uMode==1 ? base*d*1.05 : vec3(0.78,0.74,0.70)*d);
   if(uMode==2){ vec3 h=normalize(v+L1); c+=0.12*pow(max(dot(n,h),0.0),24.0); }
   o=vec4(c,1.0);
 }`;
@@ -77,14 +78,27 @@ export class Viewer3D {
   reset() { if (this.home) { Object.assign(this, { yaw: this.home.yaw, pitch: this.home.pitch, dist: this.home.dist, target: [...this.home.target] }); this.dirty = true; } }
   setMesh(M) {
     const gl = this.gl;
-    if (this.mesh) { this.mesh.bufs.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(this.mesh.vao); }
+    if (this.mesh) { this.mesh.bufs.forEach(b => gl.deleteBuffer(b)); gl.deleteVertexArray(this.mesh.vao); if (this.mesh.tex) gl.deleteTexture(this.mesh.tex); }
     if (!M) { this.mesh = null; return; }
     const vao = gl.createVertexArray(); gl.bindVertexArray(vao);
     const mk = (data, loc, n, type, norm) => { const b = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, b); gl.bufferData(gl.ARRAY_BUFFER, data, gl.STATIC_DRAW); gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc, n, type, norm, 0, 0); return b; };
     const bufs = [mk(M.pos, 0, 3, gl.FLOAT, false), mk(M.nrm, 1, 3, gl.FLOAT, false), mk(M.col instanceof Uint8Array ? M.col : new Uint8Array(M.col), 2, 3, gl.UNSIGNED_BYTE, true)];
+    const hasUV = !!(M.uv && M.tex && M.tex.jpg);
+    if (hasUV) bufs.push(mk(M.uv instanceof Float32Array ? M.uv : new Float32Array(M.uv), 3, 2, gl.FLOAT, false));
     const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, M.idx instanceof Uint32Array ? M.idx : new Uint32Array(M.idx), gl.STATIC_DRAW); bufs.push(ib);
     gl.bindVertexArray(null);
-    this.mesh = { vao, bufs, n: M.idx.length };
+    const mesh = this.mesh = { vao, bufs, n: M.idx.length, tex: null, hasUV };
+    // текстура (JPEG атласа) — раскрываем асинхронно; пока грузится, показываем цвет вершин
+    if (hasUV) createImageBitmap(new Blob([M.tex.jpg], { type: 'image/jpeg' })).then((bmp) => {
+      if (this.mesh !== mesh) return;
+      const t = gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bmp); bmp.close && bmp.close();
+      gl.generateMipmap(gl.TEXTURE_2D);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      mesh.tex = t; this.dirty = true;
+    }).catch((e) => console.warn('текстура', e));
     this.dirty = true;
   }
   // packed: Float32Array, 14 чисел на каплю: центр(3) logScale(3) quat(4) opacity color(3)
@@ -146,6 +160,8 @@ export class Viewer3D {
     if (this.show === 'mesh' && this.mesh) {
       gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.useProgram(this.pm);
       gl.uniformMatrix4fv(gl.getUniformLocation(this.pm, 'uVP'), false, VP); gl.uniform1i(gl.getUniformLocation(this.pm, 'uMode'), this.shade); gl.uniform3fv(gl.getUniformLocation(this.pm, 'uEye'), e);
+      const texOn = this.mesh.tex && this.useTex !== false ? 1 : 0; gl.uniform1i(gl.getUniformLocation(this.pm, 'uTexOn'), texOn);
+      if (texOn) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.mesh.tex); gl.uniform1i(gl.getUniformLocation(this.pm, 'uTex'), 0); }
       gl.bindVertexArray(this.mesh.vao); gl.drawElements(gl.TRIANGLES, this.mesh.n, gl.UNSIGNED_INT, 0);
     } else if (this.show === 'splat' && this.splats) {
       this.sortSplats(V);
