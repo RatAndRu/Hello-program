@@ -3,7 +3,7 @@
 import { matLayout, matRaster } from './mat.js';
 import { detectMarkers, toGray } from './detect.js';
 import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal, camAngles } from './pose.js';
-import { computeMask, carveHull, meshFromGrid, taubin, computeNormals, colorize, depthMap } from './recon.js';
+import { computeMask, carveHull, meshFromGrid, revolveGrid, taubin, computeNormals, colorize, depthMap } from './recon.js';
 import { initFromMesh, Trainer, splatViews, allowedRegion, packSplats } from './splat.js';
 
 export const PROC_W = 640;
@@ -19,11 +19,14 @@ export async function decodeBlob(blob, W) {
   return { rgba: new Uint8Array(cx.getImageData(0, 0, w, h).data.buffer), w, h };
 }
 
-// job: {blobs:[Blob], mode:'mesh'|'splat'|'both', quality:'fast'|'normal'|'best', size:'A4'|'A3', theme, Hb}
+// job: {blobs:[Blob], mode:'mesh'|'splat'|'both', quality:'fast'|'normal'|'best', size:'A4'|'A3'|'A2', theme, Hb,
+//       method:'walk'|'turn', shape:'normal'|'revolve'|'smooth', scale:[sx, sy] — поправка масштаба печати}
 // cb: {progress(stage, p, text), preview(packed), log(text)}; shouldStop() → true — прервать
 export async function runPipeline(job, cb, shouldStop = () => false) {
   const t0 = Date.now(), log = (s) => cb.log && cb.log(`${((Date.now() - t0) / 1000).toFixed(1)} с · ${s}`);
-  const L = matLayout(job.size || 'A4'), mr = matRaster(L, job.theme || 'light', 2);
+  // на вертушке угловые метки не используются: лист может свисать со столика или быть вырезан по кругу
+  const turn = job.method === 'turn';
+  const L = matLayout(job.size || 'A4', turn ? 'round' : 'full'), mr = matRaster(L, job.theme || 'light', 2);
   const Rb = 55 * L.k, Hb = job.Hb || 90 * L.k;
   const Q = { fast: { N: 112, iters: 600, n0: 6000, nmax: 14000 }, normal: { N: 128, iters: 1200, n0: 8000, nmax: 20000 }, best: { N: 160, iters: 2400, n0: 11000, nmax: 32000 } }[job.quality || 'normal'];
   // 1) кадры и метки
@@ -54,7 +57,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   // 3) маски «где предмет»
   for (let i = 0; i < good.length; i++) {
     if (shouldStop()) throw new Error('stopped');
-    const m = computeMask(good[i], { layout: L, mr, Rb, Hb });
+    const m = computeMask(good[i], { layout: L, mr, Rb, Hb, cutOnly: turn });
     good[i].mask = m.mask;
     cb.progress('Отделяю предмет от коврика', (i + 1) / good.length, `кадр ${i + 1} из ${good.length}`);
     if (i % 2) await tick();
@@ -67,7 +70,10 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   await tick();
   let vox = 0; for (const v of G.occ) vox += v;
   if (vox < 50) throw new Error('Предмет не найден над ковриком. Он стоит в центре круга? Метки видны со всех сторон?');
-  const M = meshFromGrid(G, 1); taubin(M, 6); computeNormals(M);
+  const shape = job.shape || 'normal';
+  const GS = shape === 'revolve' ? revolveGrid(G) : G;
+  const M = meshFromGrid(GS, shape === 'smooth' ? 5 : 3); taubin(M, shape === 'smooth' ? 60 : 30); computeNormals(M);
+  if (shape !== 'normal') log(`форма: ${shape === 'revolve' ? 'тело вращения' : 'гладкая'}`);
   cb.progress('Строю форму', 1, `${(M.idx.length / 3) | 0} треугольников`);
   await tick();
   // 5) цвет вершин
@@ -94,6 +100,15 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     tr.finalize();
     result.splats = packSplats(S);
     log(`сплэты: ${S.n} капель, ${tr.it} шагов`);
+  }
+  // поправка масштаба печати (принтер мог чуть растянуть лист): X, Y — по калибровке, высота — по среднему
+  const sc = job.scale || [1, 1], sx = +sc[0] || 1, sy = +sc[1] || 1, sz = (sx + sy) / 2;
+  if (Math.abs(sx - 1) > 1e-4 || Math.abs(sy - 1) > 1e-4) {
+    const P = result.mesh.pos; for (let i = 0; i < P.length; i += 3) { P[i] *= sx; P[i + 1] *= sy; P[i + 2] *= sz; }
+    computeNormals(result.mesh);
+    if (result.splats) { const S2 = result.splats, ls = Math.log(Math.cbrt(sx * sy * sz)); for (let i = 0; i < S2.length; i += 14) { S2[i] *= sx; S2[i + 1] *= sy; S2[i + 2] *= sz; S2[i + 3] += ls; S2[i + 4] += ls; S2[i + 5] += ls; } }
+    result.stats.hullVol *= sx * sy * sz;
+    log(`масштаб печати: ×${sx.toFixed(3)} по ширине, ×${sy.toFixed(3)} по длине`);
   }
   result.stats.t = (Date.now() - t0) / 1000;
   return result;

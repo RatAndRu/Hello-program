@@ -29,9 +29,12 @@ export const DICT = buildDict(24, 5);
 export const N_RING = 16;
 
 // ---------- раскладка ----------
-// size: 'A4' (210×297) или 'A3' (тот же рисунок ×√2). Всё в мм.
-export function matLayout(size = 'A4') {
-  const k = size === 'A3' ? Math.SQRT2 : 1;
+// size: 'A4' (210×297), 'A3' (тот же рисунок ×√2) или 'A2' (×2). Всё в мм.
+// variant: 'full' — лист целиком; 'round' — только круг (для вертушки): угловых меток нет.
+export const SIZE_K = { A4: 1, A3: Math.SQRT2, A2: 2 };
+export const sizeK = (size) => SIZE_K[size] || 1;
+export function matLayout(size = 'A4', variant = 'full') {
+  const k = sizeK(size);
   const W = 210 * k, H = 297 * k, cu = W / 2, cv = H / 2;
   const toSheet = (X, Y) => [cu + X, cv - Y];
   const markers = [];
@@ -43,9 +46,11 @@ export function matLayout(size = 'A4') {
   const Rr = 85 * k, s = 20 * k;
   for (let i = 0; i < N_RING; i++) { const a = Math.PI / 2 - i * 2 * Math.PI / N_RING; add(i, Rr * Math.cos(a), Rr * Math.sin(a), s, a); }
   const sb = 18 * k, bu = 20 * k, bv = 24 * k;
-  add(16, -cu + bu, cv - bv, sb, Math.PI / 2); add(17, cu - bu, cv - bv, sb, Math.PI / 2);
-  add(18, -cu + bu, -cv + bv, sb, Math.PI / 2); add(19, cu - bu, -cv + bv, sb, Math.PI / 2);
-  return { size, k, W, H, cu, cv, toSheet, markers, ringR: Rr, discR: 66 * k, cutR: 100 * k, objR: 62 * k };
+  if (variant !== 'round') {
+    add(16, -cu + bu, cv - bv, sb, Math.PI / 2); add(17, cu - bu, cv - bv, sb, Math.PI / 2);
+    add(18, -cu + bu, -cv + bv, sb, Math.PI / 2); add(19, cu - bu, -cv + bv, sb, Math.PI / 2);
+  }
+  return { size, variant, k, calSpan: 2 * (Rr + s / 2), W, H, cu, cv, toSheet, markers, ringR: Rr, discR: 66 * k, cutR: 100 * k, objR: 62 * k };
 }
 
 // ---------- примитивы рисунка (общие для печати и для модели) ----------
@@ -97,7 +102,7 @@ export function matDots(L) {
 // области с надписями — в модели они «неизвестны» (в мм листа: u, v, w, h)
 export function textRects(L) {
   const k = L.k;
-  return [[40 * k, 4 * k, L.W - 80 * k, 40 * k], [40 * k, L.H - 44 * k, L.W - 80 * k, 40 * k]];
+  return [[40 * k, 4 * k, L.W - 80 * k, 40 * k], [10 * k, L.H - 44 * k, L.W - 20 * k, 40 * k]];
 }
 
 // ---------- растр-модель коврика (без canvas, для масок и тестов) ----------
@@ -161,7 +166,7 @@ export function drawMatCanvas(ctx, L, theme = 'light', ppm = 300 / 25.4) {
   // верхняя полоса: название и линейка
   const mm = (v) => v * ppm, cx = L.W / 2;
   ctx.fillStyle = '#000';
-  ctx.font = `bold ${mm(4.6 * k)}px sans-serif`; ctx.fillText('Объём — коврик для 3D-съёмки · ' + L.size, mm(cx), mm(11 * k));
+  ctx.font = `bold ${mm(4.6 * k)}px sans-serif`; ctx.fillText('Объём — коврик для 3D-съёмки · ' + L.size + (L.variant === 'round' ? ' · круг для вертушки' : ''), mm(cx), mm(11 * k));
   ctx.font = `${mm(3 * k)}px sans-serif`; ctx.fillText('Печатать в масштабе 100% («Фактический размер»), без «Вписать в страницу»', mm(cx), mm(18 * k));
   const ry = 30 * k, rx0 = cx - 50;
   ctx.lineWidth = mm(0.3); ctx.strokeStyle = '#000';
@@ -169,8 +174,11 @@ export function drawMatCanvas(ctx, L, theme = 'light', ppm = 300 / 25.4) {
   for (let i = 0; i <= 100; i += 5) { ctx.beginPath(); ctx.moveTo(mm(rx0 + i), mm(ry)); ctx.lineTo(mm(rx0 + i), mm(ry - (i % 10 ? 1.5 : 3))); ctx.stroke(); }
   ctx.font = `${mm(2.8 * k)}px sans-serif`; ctx.fillText('ровно 100 мм — проверь линейкой', mm(cx), mm(ry + 4 * k));
   // нижняя полоса: подсказки
-  const tips = ['Предмет — в центр круга. Метки не закрывать, лист не мять и не сгибать.', 'Для столика — вырежи круг по пунктиру и приклей. Для съёмки с рук — положи лист на стол.', L.size === 'A4' ? 'Предмет до ~12 см в ширину. Для крупных — печатай A3.' : 'Предмет до ~17 см в ширину.'];
+  const wid = { A4: 12, A3: 17, A2: 24 }[L.size] || 12;
+  const tips = L.variant === 'round'
+    ? ['Вариант для вертушки: вырежи круг по пунктиру и положи/приклей на столик — он должен лежать ровно.', 'Столик меньше круга? Подложи под круг картон того же размера. Предмет — в центр.', `Калибровка: от внешнего края верхней метки до внешнего края нижней — ровно ${Math.round(L.calSpan)} мм. Слева–справа — тоже.`]
+    : ['Предмет — в центр круга. Метки не закрывать, лист не мять и не сгибать. Вырезать не нужно.', `Предмет до ~${wid} см в ширину. Калибровка: от внешнего края верхней метки до внешнего края нижней — ${Math.round(L.calSpan)} мм.`, 'Градусы на круге — для тебя (видно, насколько повернул). Телефон ориентируется по чёрным меткам.'];
   ctx.font = `${mm(2.8 * k)}px sans-serif`;
-  tips.forEach((t, i) => ctx.fillText(t, mm(cx), mm(L.H - (34 - i * 6) * k)));
+  tips.forEach((t, i) => ctx.fillText(t, mm(cx), mm(L.H - (34 - i * 6) * k), mm(L.W - 24 * k)));
   ctx.restore();
 }

@@ -1,5 +1,5 @@
-const puppeteer = require('puppeteer-core'); const chromium = require('@sparticuz/chromium');
-const fs = require('fs'); const SH = '/home/user/Hello-program/.cache/shots/';
+const puppeteer = require('puppeteer-core'); const chromium = (m => m.default || m)(require('@sparticuz/chromium'));
+const fs = require('fs'); const SH = process.env.SH || '/home/user/Hello-program/.cache/shots/';
 (async () => {
   const browser = await puppeteer.launch({ executablePath: await chromium.executablePath(), headless: true,
     args: [...chromium.args, '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--use-file-for-fake-video-capture=/tmp/t/cam.y4m', '--autoplay-policy=no-user-gesture-required', '--enable-unsafe-swiftshader', '--ignore-gpu-blocklist'] });
@@ -7,7 +7,7 @@ const fs = require('fs'); const SH = '/home/user/Hello-program/.cache/shots/';
   const logs = []; page.on('console', m => logs.push(m.type() + ': ' + m.text())); page.on('pageerror', e => logs.push('PAGEERR ' + e.message));
   const cdp = await page.target().createCDPSession(); await cdp.send('Browser.setDownloadBehavior', { behavior: 'allow', downloadPath: '/tmp/t/dl' }).catch(async () => { await cdp.send('Page.setDownloadBehavior', { behavior: 'allow', downloadPath: '/tmp/t/dl' }); });
   await page.goto('http://127.0.0.1:8765/index.html', { waitUntil: 'networkidle0' });
-  await page.evaluate(() => localStorage.setItem('obyom.settings', JSON.stringify({ mode: 'both', method: 'walk', size: 'A4', height: '90', quality: 'fast' })));
+  await page.evaluate((shape) => { localStorage.setItem('obyom.settings', JSON.stringify({ mode: 'both', method: 'walk', size: 'A4', height: '90', quality: 'fast', shape })); localStorage.setItem('obyom.cal', JSON.stringify({ A4: { sx: 1.02, sy: 1.0 } })); }, process.env.SHAPE || 'normal');
   await page.reload({ waitUntil: 'networkidle0' });
   await page.screenshot({ path: SH + 'e_home.png' });
   await page.click('#btnNew'); await new Promise(r => setTimeout(r, 300)); await page.screenshot({ path: SH + 'e_setup.png' });
@@ -43,7 +43,10 @@ const fs = require('fs'); const SH = '/home/user/Hello-program/.cache/shots/';
   // коврик PDF
   await page.evaluate(() => { history.back(); }); await new Promise(r => setTimeout(r, 800));
   await page.click('#btnMat'); await new Promise(r => setTimeout(r, 300));
-  await page.evaluate(() => document.querySelector('#sheetBody button[data-m="pdfA4"]').click()); await new Promise(r => setTimeout(r, 6000));
+  await page.screenshot({ path: SH + 'e_mat.png' });
+  await page.evaluate(() => document.querySelector('#sheetBody button[data-m="pdf:A4:full"]').click()); await new Promise(r => setTimeout(r, 6000));
+  await page.evaluate(() => document.getElementById('btnCal').click()); await new Promise(r => setTimeout(r, 300));
+  await page.screenshot({ path: SH + 'e_cal.png' });
   await page.click('#sheetClose'); await new Promise(r => setTimeout(r, 500));
   await page.screenshot({ path: SH + 'e_home2.png' });
   console.log('DL', fs.readdirSync('/tmp/t/dl').map(f => f + ' ' + fs.statSync('/tmp/t/dl/' + f).size).join(', '));

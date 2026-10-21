@@ -40,7 +40,7 @@ button.primary { background: var(--acc); color: #06210f; border-color: transpare
 .capMsg.warn { color: var(--warn); }
 .capMsg.bad { color: var(--bad); }
 .capMsg.good { color: var(--acc); }
-.capInfo { color: #cfd6e0; font-size: 13px; text-shadow: 0 1px 3px #000; margin-top: 2px; }
+.capInfo { white-space: pre-line; color: #cfd6e0; font-size: 13px; text-shadow: 0 1px 3px #000; margin-top: 2px; }
 .dome { position: absolute; right: 10px; top: calc(env(safe-area-inset-top) + 70px); width: 120px; height: 120px; }
 .capBar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; gap: 12px; align-items: center; justify-content: center; padding: 14px 14px calc(env(safe-area-inset-bottom) + 16px); background: linear-gradient(#0000, #000a); }
 .round { width: 58px; height: 58px; border-radius: 50%; font-size: 22px; background: rgba(20,24,32,.75); }
@@ -75,3 +75,9 @@ button.primary { background: var(--acc); color: #06210f; border-color: transpare
 .sheetBox .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .sheetBox button small { display: block; color: var(--mute); font-size: 12px; }
 .toast { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom) + 90px); transform: translateX(-50%); background: #1d2430f2; border: 1px solid var(--line); padding: 10px 16px; border-radius: 14px; z-index: 30; max-width: 90vw; text-align: center; }
+
+.inp { width: 100%; box-sizing: border-box; padding: 10px; font-size: 16px; border-radius: 10px; border: 1px solid #333a46; background: #12161e; color: inherit; margin-bottom: 8px; }
+
+.sheetBox .lbl { display: block; }
+#btnCal { width: 100%; margin: 8px 0; }
+#btnCal small { display: block; color: var(--mute); font-size: 12px; margin-top: 2px; }

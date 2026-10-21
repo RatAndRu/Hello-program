@@ -10,7 +10,9 @@ const TRACK_W = 640;
 export class Capture {
   constructor(video, overlay, opt) {
     this.video = video; this.ov = overlay; this.opt = opt; // {size, method:'walk'|'turn', Hb, onState, onShot}
-    this.L = matLayout(opt.size || 'A4');
+    // на вертушке — только кольцо меток: угловые метки неподвижны или лист свисает
+    this.L = matLayout(opt.size || 'A4', opt.method === 'turn' ? 'round' : 'full');
+    this.sharpMax = 0; this.ink = null; this.manual = false;
     this.cv = document.createElement('canvas'); this.cx = this.cv.getContext('2d', { willReadFrequently: true });
     this.shots = []; this.cells = new Map(); this.eqs = []; this.f = null;
     this.prev = null; this.running = false; this.paused = false; this.lastShot = 0;
@@ -24,6 +26,8 @@ export class Capture {
     try { const tr = this.stream.getVideoTracks()[0], cap = tr.getCapabilities ? tr.getCapabilities() : {}; if (cap.focusMode && cap.focusMode.includes('continuous')) await tr.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }); } catch (e) {}
     this.running = true; this.loop();
   }
+  // ручной затвор: снимет ближайший кадр, где виден коврик (даже если эта ячейка купола уже есть)
+  shootNow() { this.manual = true; }
   stop() { this.running = false; if (this.stream) this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
   coverage() {
     // доля заполненных ячеек по поясам
@@ -59,20 +63,51 @@ export class Capture {
       if (this.prev) { const c0 = this.prev.a.c, c1 = a.c, d0 = Math.hypot(...c0), d1 = Math.hypot(...c1); const cos = (c0[0] * c1[0] + c0[1] * c1[1] + c0[2] * c1[2]) / (d0 * d1); speed = Math.acos(Math.min(1, cos)) * 180 / Math.PI / Math.max(0.03, (now - this.prev.t) / 1000); }
       this.prev = { a, t: now };
       Object.assign(st, { R: p.R, t: p.t, K, az: a.az, el: a.el, dist: a.dist, speed, n: p.n });
-      const cell = this.cellOf(a), slow = speed < (this.opt.method === 'turn' ? 14 : 18);
-      st.slow = slow; st.cell = cell;
-      if (!this.paused && cell && !this.cells.has(cell) && slow && p.n >= 3 && now - this.lastShot > 350 && this.shots.length < 120) {
-        this.lastShot = now; this.cells.set(cell, this.shots.length);
+      // На вертушке скорость считается по повороту коврика; рука крутит рывком — порог мягче,
+      // а смаз ловит проверка резкости.
+      const turn = this.opt.method === 'turn', lim = turn ? 30 : 16;
+      const cell = this.cellOf(a), slow = speed < lim;
+      const sh = sharpness(g, w, h, this.cylBox(R_(p), p.t, K, w, h));
+      this.sharpMax = Math.max(this.sharpMax * 0.997, sh);
+      const sharp = sh >= (turn ? 0.7 : 0.75) * this.sharpMax;
+      Object.assign(st, { slow, cell, sharp, sh, lim });
+      let why = '';
+      if (this.paused) why = 'пауза';
+      else if (this.shots.length >= 120) why = 'уже 120 кадров — хватит';
+      else if (!cell) why = a.el < BANDS[0][0] ? 'камера слишком низко' : 'камера слишком высоко';
+      else if (p.n < 3) why = `видно мало меток (${p.n}, нужно 3)`;
+      else if (!slow) why = `быстро: ${speed.toFixed(0)}°/с, нужно < ${lim}`;
+      else if (!sharp) why = 'кадр смазан — подожди долю секунды';
+      else if (this.cells.has(cell)) why = turn ? 'этот угол уже снят — крути дальше' : 'этот угол уже снят — иди дальше';
+      else if (now - this.lastShot <= 350) why = 'пауза между кадрами';
+      st.why = why;
+      const manual = this.manual && !this.paused && this.shots.length < 150;
+      if ((!why || manual)) {
+        this.manual = false;
+        this.lastShot = now; if (cell && !this.cells.has(cell)) this.cells.set(cell, this.shots.length);
         const blob = await this.grab();
-        this.shots.push({ blob, az: a.az, el: a.el });
-        st.count = this.shots.length; st.shot = true;
-        this.opt.onShot && this.opt.onShot(this.shots.length, a);
+        this.shots.push({ blob, az: a.az, el: a.el, manual });
+        st.count = this.shots.length; st.shot = true; st.why = '';
+        this.opt.onShot && this.opt.onShot(this.shots.length, a, manual);
       }
-    } else this.prev = null;
+    } else { this.prev = null; st.why = ms.length ? `видно мало меток (${ms.length})` : 'коврик не виден'; }
+    // контраст печати: насколько чёрное на метках действительно чёрное (p10/p90 яркости внутри метки)
+    if (ms.length) { const r = inkRatio(g, w, h, ms); if (r != null) this.ink = this.ink == null ? r : this.ink * 0.9 + r * 0.1; }
+    st.ink = this.ink;
     st.coverage = this.coverage();
     this.state = st;
     this.draw(st);
     this.opt.onState && this.opt.onState(st);
+  }
+  // рамка (в пикселях кадра) вокруг рабочего объёма — там меряем резкость
+  cylBox(R, t, K, w, h) {
+    const Rb = 55 * this.L.k, Hb = this.opt.Hb || 90 * this.L.k; let x0 = w, y0 = h, x1 = 0, y1 = 0;
+    for (const z of [0, Hb]) for (let i = 0; i < 8; i++) {
+      const X = Rb * Math.cos(i * Math.PI / 4), Y = Rb * Math.sin(i * Math.PI / 4);
+      if (R[6] * X + R[7] * Y + R[8] * z + t[2] < 5) continue;
+      const q = project(K, R, t, X, Y, z); x0 = Math.min(x0, q[0]); y0 = Math.min(y0, q[1]); x1 = Math.max(x1, q[0]); y1 = Math.max(y1, q[1]);
+    }
+    return [Math.max(1, x0 | 0), Math.max(1, y0 | 0), Math.min(w - 2, x1 | 0), Math.min(h - 2, y1 | 0)];
   }
   async grab() {
     const v = this.video, W = Math.min(1280, v.videoWidth), H = Math.round(v.videoHeight * W / v.videoWidth);
@@ -99,6 +134,29 @@ export class Capture {
     for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2, q0 = pr(Rb * Math.cos(a), Rb * Math.sin(a), 0), q1 = pr(Rb * Math.cos(a), Rb * Math.sin(a), Hb); if (q0 && q1) { c.beginPath(); c.moveTo(...q0); c.lineTo(...q1); c.stroke(); } }
   }
 }
+
+const R_ = (p) => p.R;
+// резкость: средний модуль лапласиана в рамке, нормированный на яркость
+export function sharpness(g, w, h, bb) {
+  let [x0, y0, x1, y1] = bb; if (x1 - x0 < 8 || y1 - y0 < 8) { x0 = 1; y0 = 1; x1 = w - 2; y1 = h - 2; }
+  let s = 0, m = 0, n = 0;
+  for (let y = y0; y <= y1; y += 2) for (let x = x0; x <= x1; x += 2) { const i = y * w + x, v = g[i]; s += Math.abs(4 * v - g[i - 1] - g[i + 1] - g[i - w] - g[i + w]); m += v; n++; }
+  return n ? s / (m / n + 10) : 0;
+}
+// p10/p90 яркости внутри найденных меток: ~0.1 — чёрный, > 0.4 — бледная печать
+export function inkRatio(g, w, h, ms) {
+  const rs = [];
+  for (const m of ms) {
+    const xs = m.corners.map((c) => c[0]), ys = m.corners.map((c) => c[1]);
+    const x0 = Math.max(0, Math.min(...xs) | 0), x1 = Math.min(w - 1, Math.max(...xs) | 0), y0 = Math.max(0, Math.min(...ys) | 0), y1 = Math.min(h - 1, Math.max(...ys) | 0);
+    if (x1 - x0 < 6 || y1 - y0 < 6) continue;
+    const v = []; for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) v.push(g[y * w + x]);
+    v.sort((a, b) => a - b); const p10 = v[(v.length * 0.1) | 0], p90 = v[(v.length * 0.9) | 0];
+    if (p90 > 20) rs.push(p10 / p90);
+  }
+  if (!rs.length) return null; rs.sort((a, b) => a - b); return rs[rs.length >> 1];
+}
+export function inkLabel(r) { if (r == null) return ''; return r < 0.22 ? 'печать: чёрный отлично' : r < 0.4 ? 'печать: чёрный норм' : 'печать бледная — ярче свет или печать темнее'; }
 
 // купол покрытия: вид сверху, кольца = пояса высоты (внешнее — низкое), сектора = азимут
 export function drawDome(canvas, cells, cur) {

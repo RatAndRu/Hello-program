@@ -44,12 +44,21 @@
       <div class="seg" data-key="size">
         <button data-v="A4">A4<small>предмет до 12 см</small></button>
         <button data-v="A3">A3<small>до 17 см</small></button>
+        <button data-v="A2">A2<small>до 24 см</small></button>
       </div>
       <label class="lbl">Высота предмета</label>
       <div class="seg" data-key="height">
         <button data-v="65">до 6 см</button>
         <button data-v="90">до 9 см</button>
         <button data-v="140">до 14 см</button>
+        <button data-v="200">до 20 см</button>
+        <button data-v="300">до 30 см</button>
+      </div>
+      <label class="lbl">Форма предмета</label>
+      <div class="seg" data-key="shape">
+        <button data-v="normal">Обычная<small>любой предмет</small></button>
+        <button data-v="revolve">Тело вращения<small>бутылка, дезодорант, ваза</small></button>
+        <button data-v="smooth">Гладкая<small>без мелких деталей</small></button>
       </div>
       <label class="lbl">Качество</label>
       <div class="seg" data-key="quality">
@@ -74,6 +83,7 @@
     <div class="capBar">
       <button id="capCancel" class="round">✕</button>
       <button id="capPause" class="round">⏸</button>
+      <button id="capShot" class="round" title="Снять кадр сейчас">📷</button>
       <button id="capDone" class="pill primary" disabled>Готово · 0</button>
     </div>
   </section>

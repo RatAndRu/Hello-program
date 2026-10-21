@@ -13,6 +13,7 @@ export function computeMask(fr, ctx) {
   const des = new Float32Array(n).fill(-1), unk = new Uint8Array(n);
   const inCyl = new Uint8Array(n);
   const Rb = ctx.Rb, Hb = ctx.Hb;
+  const cut2 = ctx.cutOnly ? (L.cutR - 1.5 * L.k) ** 2 : 0;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x;
     const cx = (x + 0.5 - K.cx) / K.fx, cy = (y + 0.5 - K.cy) / K.fy;
@@ -22,6 +23,8 @@ export function computeMask(fr, ctx) {
     if (dz < -1e-6) {
       const s = -C[2] / dz, X = C[0] + dx * s, Y = C[1] + dy * s;
       const u = (X + L.cu) * mr.ppm, v = (L.cv - Y) * mr.ppm;
+      // вертушка / вырезанный круг: всё за кругом — «не коврик» (столик, стол)
+      if (cut2 && X * X + Y * Y > cut2) continue;
       if (u >= 0 && v >= 0 && u < mr.w - 1 && v < mr.h - 1) {
         const u0 = u | 0, v0 = v | 0, fu = u - u0, fv = v - v0, j = v0 * mr.w + u0;
         des[i] = (mr.g[j] * (1 - fu) + mr.g[j + 1] * fu) * (1 - fv) + (mr.g[j + mr.w] * (1 - fu) + mr.g[j + mr.w + 1] * fu) * fv;
@@ -68,6 +71,7 @@ export function computeMask(fr, ctx) {
   { const rs = []; for (let y = 0; y < h; y += 2) for (let x = 0; x < w; x += 2) { const i = y * w + x; if (des[i] >= 0 && des[i] < 20 && !edge2[i]) rs.push(gray[i] / white(x, y)); } if (rs.length > 30) { rs.sort((a, c) => a - c); rho = Math.min(0.5, Math.max(0.02, rs[rs.length >> 1])); } }
   // локальная корреляция наблюдаемого с ожидаемым рисунком (окно 7×7): узор коврика виден и в тени
   const ncc = nccMap(gray, des, w, h, 3);
+  const strong = new Uint8Array(n); // фон, подтверждённый узором коврика
   let nb = 0;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x;
@@ -76,7 +80,7 @@ export function computeMask(fr, ctx) {
       const r = rgba[i * 4] * kr, g = rgba[i * 4 + 1] * kg, b = rgba[i * 4 + 2] * kb, m = (r + g + b) / 3;
       const chroma = (Math.max(r, g, b) - Math.min(r, g, b)) / (m + 12);
       const W0 = white(x, y), ratio = ncc.so[i] / (ncc.sd[i] * W0 / 255 + 1e-6);
-      if (ncc.c[i] > 0.72 && ratio > 0.25 && ratio < 1.6 && chroma < 0.16) { mask[i] = 0; continue; }
+      if (ncc.c[i] > 0.72 && ratio > 0.25 && ratio < 1.6 && chroma < 0.16) { mask[i] = 0; strong[i] = 1; continue; }
       if (ncc.c[i] < 0.3 && !unk[i]) { mask[i] = 2; continue; }
       if (!unk[i]) continue;
     }
@@ -98,6 +102,53 @@ export function computeMask(fr, ctx) {
       if (d > 90) mask[i] = 2;
     }
   }
+  // Край силуэта: окно 7×7 вокруг пикселя у края захватывает предмет, и корреляция падает.
+  // Пробуем сдвинутые окна (целиком по одну сторону края): если в одном из них узор совпал,
+  // подбираем там яркость a·рисунок+b и проверяем сам пиксель.
+  if (ctx.edgeRefine !== false) {
+    const near = dilate(strong, w, h, 4);
+    const S = ncc.S, sh = [-3, 0, 3];
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x; if (mask[i] === 0 || !near[i] || des[i] < 0 || !inCyl[i]) continue;
+      const r = rgba[i * 4] * kr, g = rgba[i * 4 + 1] * kg, b = rgba[i * 4 + 2] * kb, m = (r + g + b) / 3;
+      if ((Math.max(r, g, b) - Math.min(r, g, b)) / (m + 12) > 0.16) continue;
+      let ok = false;
+      for (const oy of sh) { for (const ox of sh) {
+        if (!ox && !oy) continue;
+        const st = S(x + ox, y + oy, 3); if (!st || st.c < 0.8 || st.sd < 14) continue;
+        const pred = st.a * des[i] + st.b;
+        if (Math.abs(gray[i] - pred) < Math.max(10, 2.5 * st.rms)) { ok = true; break; }
+      } if (ok) break; }
+      if (ok) mask[i] = 0;
+    }
+  }
+  // За листом (стол, стена): фон заливкой от области заведомо вне цилиндра — по плавности цвета
+  // и по совпадению с цветами этого фона. Иначе над предметом ничего не вырезается (острая «шапка»).
+  if (ctx.offMat !== false) {
+    const hist = new Uint32Array(4096); let seeds = 0;
+    const bl = blur3rgb(rgba, w, h);
+    const q = (j) => ((bl[j * 3] >> 4) << 8) | ((bl[j * 3 + 1] >> 4) << 4) | (bl[j * 3 + 2] >> 4);
+    for (let i = 0; i < n; i++) if (!inCyl[i] && des[i] < 0) { hist[q(i)]++; seeds++; }
+    if (seeds > 200) {
+      const thr = Math.max(3, seeds * 0.0004);
+      const okc = (j) => { const c = q(j), R0 = c >> 8, G0 = (c >> 4) & 15, B0 = c & 15; let s2 = 0;
+        for (let dr = -1; dr <= 1; dr++) for (let dg = -1; dg <= 1; dg++) for (let db = -1; db <= 1; db++) { const R1 = R0 + dr, G1 = G0 + dg, B1 = B0 + db; if (R1 < 0 || G1 < 0 || B1 < 0 || R1 > 15 || G1 > 15 || B1 > 15) continue; s2 += hist[(R1 << 8) | (G1 << 4) | B1]; }
+        return s2 >= thr; };
+      const vis = new Uint8Array(n), st = new Int32Array(n); let sp = 0;
+      for (let i = 0; i < n; i++) if (!inCyl[i] && des[i] < 0) { vis[i] = 1; st[sp++] = i; }
+      const step = ctx.offMatStep ?? 14;
+      while (sp) {
+        const j = st[--sp], x = j % w, y = (j / w) | 0;
+        const nb4 = [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1];
+        for (const k of nb4) {
+          if (k < 0 || vis[k] || des[k] >= 0 || mask[k] === 0) continue;
+          const d = Math.abs(bl[k * 3] - bl[j * 3]) + Math.abs(bl[k * 3 + 1] - bl[j * 3 + 1]) + Math.abs(bl[k * 3 + 2] - bl[j * 3 + 2]);
+          if (d > step || !okc(k)) continue;
+          vis[k] = 1; mask[k] = 0; st[sp++] = k;
+        }
+      }
+    }
+  }
   // ровные места в тени: фон, если рядом проверенный по узору коврик такой же яркости
   {
     const ver = new Uint8Array(n);
@@ -115,6 +166,65 @@ export function computeMask(fr, ctx) {
       const chroma = (Math.max(rr, gg, bb2) - Math.min(rr, gg, bb2)) / (m + 12);
       if (Math.abs(gray[i] - exp) < Math.max(10, 0.08 * exp) && chroma < 0.14) mask[i] = 0;
     }
+  }
+  // «Фон», со всех сторон окружённый предметом, — обычно блик или отражение коврика на блестящем боку.
+  // Настоящий фон связан с областью вокруг. Замкнутые пятна → «неизвестно», кроме крупных сквозных
+  // отверстий, где узор коврика подтверждён корреляцией (ручка кружки и т. п.).
+  if (ctx.holes !== false) {
+    const lab = new Int32Array(n), st = new Int32Array(n); let sp = 0;
+    const seed = (j) => { if (!lab[j] && mask[j] === 0) { lab[j] = 1; st[sp++] = j; } };
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x; if (!inCyl[i] || x === 0 || y === 0 || x === w - 1 || y === h - 1) seed(i); }
+    const flood = (L) => { while (sp) { const j = st[--sp], x = j % w, y = (j / w) | 0; const nbh = [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1]; for (const q of nbh) if (q >= 0 && !lab[q] && mask[q] === 0) { lab[q] = L; st[sp++] = q; } } };
+    flood(1);
+    const big = Math.max(400, 0.004 * n);
+    for (let i = 0; i < n; i++) {
+      if (mask[i] !== 0 || lab[i]) continue;
+      const L = 2 + i; lab[i] = L; st[sp++] = i;
+      const members = []; let ns = 0;
+      while (sp) { const j = st[--sp]; members.push(j); if (strong[j]) ns++; const x = j % w, y = (j / w) | 0; const nbh = [x > 0 ? j - 1 : -1, x < w - 1 ? j + 1 : -1, y > 0 ? j - w : -1, y < h - 1 ? j + w : -1]; for (const q of nbh) if (q >= 0 && !lab[q] && mask[q] === 0) { lab[q] = L; st[sp++] = q; } }
+      if (!(members.length > big && ns > 0.5 * members.length)) for (const j of members) mask[j] = 1;
+    }
+  }
+  // Чистка «не фона»: крапинки и волоски вокруг предмета (края крапинок коврика, шум) иначе
+  // не дают вырезать воксели у поверхности — модель выходит бугристой.
+  if (ctx.clean2 !== false) {
+    const nbm = new Uint8Array(n); for (let i = 0; i < n; i++) nbm[i] = mask[i] ? 1 : 0;
+    const op = ctx.open ?? 1;
+    if (op > 0) {
+      const er = erode(nbm, w, h, op), opened = dilate(er, w, h, op);
+      for (let i = 0; i < n; i++) if (nbm[i] && !opened[i] && inCyl[i]) { mask[i] = 0; nbm[i] = 0; }
+    }
+    // островки «не фона» меньше minA пикселей → фон
+    const minA = ctx.minIsland ?? Math.max(30, 0.0005 * n);
+    const lab = new Uint8Array(n), st = new Int32Array(n);
+    for (let i = 0; i < n; i++) {
+      if (!nbm[i] || lab[i] || !inCyl[i]) continue;
+      let sp = 0; st[sp++] = i; lab[i] = 1; const mem = [];
+      let touchesOut = false;
+      while (sp) { const j = st[--sp]; mem.push(j); if (!inCyl[j]) touchesOut = true; const x = j % w, y = (j / w) | 0;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= w || Y >= h) continue; const q = Y * w + X; if (nbm[q] && !lab[q]) { lab[q] = 1; st[sp++] = q; } } }
+      if (mem.length < minA && !touchesOut) for (const j of mem) mask[j] = 0;
+    }
+  }
+  // «Неизвестные» пиксели на самой кромке силуэта, касающиеся фона, — снимаем слоями (peel):
+  // ошибочно «фоновых» пикселей предмета почти не бывает, а кромка из неизвестных дрожит в такт узору.
+  for (let it = 0, P = ctx.peel ?? 1; it < P; it++) {
+    const rm = [];
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) { const i = y * w + x; if (!mask[i] || (mask[i] === 2 && !(ctx.peelAll !== false && it === 0)) || !inCyl[i]) continue; if (!mask[i - 1] || !mask[i + 1] || !mask[i - w] || !mask[i + w]) rm.push(i); }
+    for (const i of rm) mask[i] = 0;
+  }
+  // сглаживание контура силуэта: большинство в окне (2r+1)² для «фон / не фон»
+  if ((ctx.major ?? 0) > 0) {
+    const r = ctx.major, W1 = w + 1, I = new Int32Array(W1 * (h + 1));
+    for (let y = 0; y < h; y++) { let a = 0; for (let x = 0; x < w; x++) { if (mask[y * w + x]) a++; I[(y + 1) * W1 + x + 1] = I[y * W1 + x + 1] + a; } }
+    const out = mask.slice();
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const i = y * w + x; if (!inCyl[i]) continue;
+      const x0 = Math.max(0, x - r), y0 = Math.max(0, y - r), x1 = Math.min(w, x + r + 1), y1 = Math.min(h, y + r + 1);
+      const cnt = I[y1 * W1 + x1] - I[y0 * W1 + x1] - I[y1 * W1 + x0] + I[y0 * W1 + x0], tot = (x1 - x0) * (y1 - y0);
+      if (mask[i] && cnt * 2 < tot) out[i] = 0; else if (!mask[i] && cnt * 2 > tot) out[i] = 1;
+    }
+    mask.set(out);
   }
   // осторожность у границ: фон рядом с «не фоном» — в неизвестное
   const notBg = new Uint8Array(n); for (let i = 0; i < n; i++) notBg[i] = mask[i] ? 1 : 0;
@@ -145,7 +255,26 @@ function nccMap(o, d, w, h, r) {
     sd[i] = Math.sqrt(vd); so[i] = Math.sqrt(vo);
     c[i] = vo > 1 && vd > 1 ? cov / Math.sqrt(vo * vd) : 0;
   }
-  return { c, sd, so };
+  const S = (x, y, r2) => {
+    if (x < 0 || y < 0 || x >= w || y >= h) return null;
+    const x0 = Math.max(0, x - r2), y0 = Math.max(0, y - r2), x1 = Math.min(w, x + r2 + 1), y1 = Math.min(h, y + r2 + 1);
+    const N = box(Sn, x0, y0, x1, y1); if (N < 20) return null;
+    const mo = box(So, x0, y0, x1, y1) / N, md = box(Sd, x0, y0, x1, y1) / N;
+    const vo = Math.max(0, box(Soo, x0, y0, x1, y1) / N - mo * mo), vd = Math.max(0, box(Sdd, x0, y0, x1, y1) / N - md * md);
+    if (vo < 1 || vd < 1) return null;
+    const cov = box(Sod, x0, y0, x1, y1) / N - mo * md, cc = cov / Math.sqrt(vo * vd), a = cov / vd;
+    return { c: cc, a, b: mo - a * md, sd: Math.sqrt(vd), rms: Math.sqrt(Math.max(0, vo * (1 - cc * cc))) };
+  };
+  return { c, sd, so, S };
+}
+function blur3rgb(rgba, w, h) {
+  const o = new Uint8Array(w * h * 3);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    let r = 0, g = 0, b = 0, k = 0;
+    for (let yy = Math.max(0, y - 1); yy <= Math.min(h - 1, y + 1); yy++) for (let xx = Math.max(0, x - 1); xx <= Math.min(w - 1, x + 1); xx++) { const j = (yy * w + xx) * 4; r += rgba[j]; g += rgba[j + 1]; b += rgba[j + 2]; k++; }
+    const i = (y * w + x) * 3; o[i] = r / k; o[i + 1] = g / k; o[i + 2] = b / k;
+  }
+  return o;
 }
 function rayCyl(C, dx, dy, dz, Rb, Hb) {
   // параметрический отрезок луча внутри слоя 0..Hb
@@ -158,6 +287,15 @@ function rayCyl(C, dx, dy, dz, Rb, Hb) {
   const D = Bq * Bq - 4 * A * Cq; if (D < 0) return false;
   const s = Math.sqrt(D), r0 = (-Bq - s) / (2 * A), r1 = (-Bq + s) / (2 * A);
   return Math.max(t0, r0) <= Math.min(t1, r1);
+}
+function erode(m, w, h, r) {
+  const o = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (!m[y * w + x]) continue; let ok = 1;
+    for (let yy = y - r; yy <= y + r && ok; yy++) for (let xx = x - r; xx <= x + r; xx++) { if (xx < 0 || yy < 0 || xx >= w || yy >= h || !m[yy * w + xx]) { ok = 0; break; } }
+    o[y * w + x] = ok;
+  }
+  return o;
 }
 function dilate(m, w, h, r) {
   const o = new Uint8Array(m.length);
@@ -174,14 +312,16 @@ function solve6(A, b) {
 }
 // ---------- вырезание объёма ----------
 // frames: [{w,h,K,R,t,mask}], box: {Rb,Hb}, N — вокселей по ширине
-export function carveHull(frames, box, N = 128, onProgress) {
+export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   const vs = 2 * box.Rb / N, nx = N, ny = N, nz = Math.max(8, Math.ceil(box.Hb / vs));
   const ox = -box.Rb + vs / 2, oy = -box.Rb + vs / 2, oz = vs / 2;
   const occ = new Float32Array(nx * ny * nz);
   const order = frames.map((_, i) => i);
   for (let i = order.length - 1; i > 0; i--) { const j = (i * 7919 + 13) % (i + 1); [order[i], order[j]] = [order[j], order[i]]; }
   const F = order.map(i => frames[i]);
-  const need = frames.length >= 8 ? 2 : 1;
+  // Сколько кадров должны сказать «здесь фон», чтобы вырезать воксель. Не «любые два», а доля от видевших:
+  // блики на блестящем предмете дают ложный «фон» в отдельных кадрах — они больше не прорезают дыры.
+  const frac = opt.frac ?? 0.08, few = frames.length < 8;
   for (let z = 0; z < nz; z++) {
     const Z = oz + z * vs;
     for (let y = 0; y < ny; y++) {
@@ -189,15 +329,18 @@ export function carveHull(frames, box, N = 128, onProgress) {
       for (let x = 0; x < nx; x++) {
         const X = ox + x * vs;
         if (X * X + Y * Y > box.Rb * box.Rb) continue;
-        let bg = 0, seen = 0;
-        for (let k = 0; k < F.length; k++) {
+        let bg = 0, seen = 0, left = F.length;
+        for (let k = 0; k < F.length; k++, left--) {
           const f = F[k], R = f.R, t = f.t, K = f.K;
           const cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
           const u = (K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx) | 0, v = (K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy) | 0;
           if (u < 0 || v < 0 || u >= f.w || v >= f.h) continue;
           seen++;
-          if (f.mask[v * f.w + u] === 0 && ++bg >= need) break;
+          if (f.mask[v * f.w + u] === 0) bg++;
+          // досрочно: уже точно вырезан (даже если все оставшиеся кадры увидят точку)
+          if (!few && bg >= 2 && bg >= frac * (seen + left - 1)) break;
         }
+        const need = few ? 1 : Math.max(2, Math.ceil(frac * seen));
         occ[(z * ny + y) * nx + x] = bg >= need || seen < 3 ? 0 : 1;
       }
     }
@@ -208,7 +351,41 @@ export function carveHull(frames, box, N = 128, onProgress) {
   for (let z = 0; z < zf; z++) for (let i = 0; i < nx * ny; i++) occ[z * nx * ny + i] = occ[zf * nx * ny + i];
   // оставляем самую большую связную часть (убирает мусор)
   keepLargest(occ, nx, ny, nz);
+  // закрытие: заполняет мелкие ямки и щели от бликов; затем заливаем пустоты внутри
+  const cr = opt.close ?? Math.max(1, Math.round(1.2 / vs));
+  if (cr > 0) closeGrid(occ, nx, ny, nz, cr);
+  fillVoids(occ, nx, ny, nz);
   return { occ, nx, ny, nz, vs, origin: [ox, oy, oz] };
+}
+// морфология кубом радиуса r (разделимые проходы по осям)
+function morph(occ, nx, ny, nz, r, dilate) {
+  const tmp = new Float32Array(occ.length);
+  const pass = (src, dst, stride, len, idx) => {
+    for (let i = 0; i < src.length; i++) {
+      const c = idx(i); let v = dilate ? 0 : 1;
+      for (let d = -r; d <= r; d++) { const cc = c + d; const s = cc < 0 || cc >= len ? (dilate ? 0 : 1) : src[i + d * stride]; if (dilate ? s > 0.5 : s < 0.5) { v = dilate ? 1 : 0; break; } }
+      dst[i] = v;
+    }
+  };
+  pass(occ, tmp, 1, nx, (i) => i % nx); pass(tmp, occ, nx, ny, (i) => ((i / nx) | 0) % ny); pass(occ, tmp, nx * ny, nz, (i) => (i / (nx * ny)) | 0);
+  occ.set(tmp);
+}
+function closeGrid(occ, nx, ny, nz, r) {
+  const orig = occ.slice();
+  morph(occ, nx, ny, nz, r, true); morph(occ, nx, ny, nz, r, false);
+  // у дна (z=0) эрозия «съедает» нижний слой — там оставляем исходное
+  for (let z = 0; z < Math.min(nz, r); z++) for (let i = 0; i < nx * ny; i++) { const j = z * nx * ny + i; occ[j] = Math.max(orig[j], occ[(r * ny * nx) + i] && orig[j + 0] ? 1 : orig[j]); }
+}
+// пустоты, не связанные с внешним пространством, — часть предмета
+function fillVoids(occ, nx, ny, nz) {
+  const out = new Uint8Array(occ.length), st = new Int32Array(occ.length); let sp = 0;
+  const push = (j) => { if (!out[j] && occ[j] < 0.5) { out[j] = 1; st[sp++] = j; } };
+  for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) if (x === 0 || y === 0 || z === nz - 1 || x === nx - 1 || y === ny - 1) push((z * ny + y) * nx + x);
+  while (sp) {
+    const j = st[--sp], x = j % nx, y = ((j / nx) | 0) % ny, z = (j / (nx * ny)) | 0;
+    if (x > 0) push(j - 1); if (x < nx - 1) push(j + 1); if (y > 0) push(j - nx); if (y < ny - 1) push(j + nx); if (z > 0) push(j - nx * ny); if (z < nz - 1) push(j + nx * ny);
+  }
+  for (let j = 0; j < occ.length; j++) if (!out[j]) occ[j] = 1;
 }
 function keepLargest(occ, nx, ny, nz) {
   const lab = new Int32Array(occ.length), sizes = [0];
@@ -229,6 +406,37 @@ function keepLargest(occ, nx, ny, nz) {
 }
 
 // ---------- поверхность: surface nets по сглаженному полю ----------
+// «Тело вращения» (бутылка, дезодорант, ваза): ось по центрам слоёв (допускается небольшой наклон),
+// радиус каждого слоя — медиана по 48 секторам. Неровности силуэтов и блики усредняются по кругу.
+export function revolveGrid(G) {
+  const { nx, ny, nz, vs, origin, occ } = G, NS = 48;
+  const cxs = [], cys = [], ws = [];
+  for (let z = 0; z < nz; z++) { let sx = 0, sy = 0, n = 0; for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) if (occ[(z * ny + y) * nx + x] > 0.5) { sx += x; sy += y; n++; } cxs.push(n ? sx / n : 0); cys.push(n ? sy / n : 0); ws.push(n); }
+  // взвешенная прямая c(z) = a + b·z для обеих координат
+  const fit = (c) => { let W = 0, Sz = 0, Sc = 0, Szz = 0, Szc = 0; for (let z = 0; z < nz; z++) { const w = ws[z]; W += w; Sz += w * z; Sc += w * c[z]; Szz += w * z * z; Szc += w * z * c[z]; } const d = W * Szz - Sz * Sz; const b = Math.abs(d) > 1e-9 ? (W * Szc - Sz * Sc) / d : 0; return [(Sc - b * Sz) / Math.max(W, 1e-9), Math.max(-0.3, Math.min(0.3, b))]; };
+  const [ax, bx] = fit(cxs), [ay, by] = fit(cys);
+  const Rz = new Float32Array(nz);
+  for (let z = 0; z < nz; z++) {
+    if (!ws[z]) continue;
+    const cx = ax + bx * z, cy = ay + by * z, sec = new Float32Array(NS);
+    for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) if (occ[(z * ny + y) * nx + x] > 0.5) {
+      const dx = x - cx, dy = y - cy, r = Math.hypot(dx, dy) + 0.5, k = Math.floor(((Math.atan2(dy, dx) + Math.PI) / (2 * Math.PI)) * NS) % NS;
+      if (r > sec[k]) sec[k] = r;
+    }
+    const srt = Array.from(sec).sort((a, b) => a - b); Rz[z] = srt[NS >> 1];
+  }
+  // сглаживание профиля по высоте: медиана 5, затем среднее 3
+  const med = new Float32Array(nz);
+  for (let z = 0; z < nz; z++) { const w = []; for (let d = -2; d <= 2; d++) { const q = z + d; if (q >= 0 && q < nz) w.push(Rz[q]); } w.sort((a, b) => a - b); med[z] = Rz[z] ? w[w.length >> 1] : 0; }
+  const out = new Float32Array(occ.length);
+  for (let z = 0; z < nz; z++) {
+    let r = med[z], c = 1; if (z > 0 && med[z - 1]) { r += med[z - 1]; c++; } if (z < nz - 1 && med[z + 1]) { r += med[z + 1]; c++; } r = med[z] ? r / c : 0;
+    if (r <= 0) continue;
+    const cx = ax + bx * z, cy = ay + by * z;
+    for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) if (Math.hypot(x - cx, y - cy) <= r) out[(z * ny + y) * nx + x] = 1;
+  }
+  return { occ: out, nx, ny, nz, vs, origin };
+}
 export function meshFromGrid(G, smooth = 1) {
   const { nx, ny, nz, vs, origin } = G;
   // поле с пустой рамкой (чтобы поверхность была замкнутой) + размытие

@@ -1,16 +1,18 @@
-// Объём — печать коврика: PDF ровно A4/A3 (картинка 300 dpi внутри) и PNG
+// Объём — печать коврика: PDF ровно A4/A3/A2 (картинка 300/250/180 dpi внутри) и PNG.
+// Разрешение для больших листов ниже — иначе холст не помещается в память телефона.
 import { matLayout, drawMatCanvas } from './mat.js';
 
-export function matCanvas(size = 'A4', theme = 'light', dpi = 300) {
-  const L = matLayout(size), ppm = dpi / 25.4;
+const DPI = { A4: 300, A3: 250, A2: 180 };
+export function matCanvas(size = 'A4', theme = 'light', dpi = DPI[size] || 300, variant = 'full') {
+  const L = matLayout(size, variant), ppm = dpi / 25.4;
   const c = document.createElement('canvas'); c.width = Math.round(L.W * ppm); c.height = Math.round(L.H * ppm);
   drawMatCanvas(c.getContext('2d'), L, theme, ppm);
   return { canvas: c, L };
 }
 const blobOf = (c, type, q) => new Promise((r) => c.toBlob(r, type, q));
 
-export async function matPDF(size = 'A4', theme = 'light') {
-  const { canvas, L } = matCanvas(size, theme, 300);
+export async function matPDF(size = 'A4', theme = 'light', variant = 'full') {
+  const { canvas, L } = matCanvas(size, theme, undefined, variant);
   const jpg = new Uint8Array(await (await blobOf(canvas, 'image/jpeg', 0.95)).arrayBuffer());
   const Wpt = L.W / 25.4 * 72, Hpt = L.H / 25.4 * 72;
   const enc = new TextEncoder(), parts = [], offs = [];
@@ -29,7 +31,7 @@ export async function matPDF(size = 'A4', theme = 'light') {
   const out = new Uint8Array(len); let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
   return out;
 }
-export async function matPNG(size = 'A4', theme = 'light') {
-  const { canvas } = matCanvas(size, theme, 300);
+export async function matPNG(size = 'A4', theme = 'light', variant = 'full') {
+  const { canvas } = matCanvas(size, theme, undefined, variant);
   return new Uint8Array(await (await blobOf(canvas, 'image/png')).arrayBuffer());
 }

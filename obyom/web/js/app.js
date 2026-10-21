@@ -1,5 +1,6 @@
 // Объём — интерфейс приложения
-import { Capture, drawDome, beep, BANDS } from './capture.js';
+import { Capture, drawDome, beep, BANDS, inkLabel } from './capture.js';
+import { matLayout } from './mat.js';
 import { startProcessing } from './procclient.js';
 import { Viewer3D } from './viewer.js';
 import { toGLB, toOBJ, toMeshPLY, toSTL, bounds, meshVolume } from './export.js';
@@ -8,10 +9,13 @@ import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
 
-export const VERSION = '1.0';
+export const VERSION = '1.1';
 const $ = (id) => document.getElementById(id);
-const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
+const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
+// калибровка печати: { A4: {sx, sy}, ... } — во сколько раз принтер растянул лист по ширине и длине
+const loadCal = () => { try { return JSON.parse(localStorage.getItem('obyom.cal') || '{}'); } catch (e) { return {}; } };
+function calFor(size) { const c = loadCal(), v = c[size] || c.A4; return v ? [v.sx, v.sy] : [1, 1]; }
 
 // ---------- навигация ----------
 let cur = 'home';
@@ -79,8 +83,9 @@ function renderSetup() {
   const sp = S.mode === 'mesh' ? '' : ` Сплэты на телефоне: ~${Math.round(it * 0.4 / 60)}–${Math.round(it * 0.7 / 60)} мин.`;
   const how = S.method === 'walk'
     ? 'Обходи предмет по кругу 2–3 раза на разной высоте: низко (~30°), выше (~55°) и почти сверху (~75°). Кадры снимаются сами.'
-    : 'Телефон в держателе смотрит на коврик сверху-сбоку. Медленно крути столик. Потом подними держатель выше и сделай ещё оборот.';
-  $('setupHint').textContent = how + ' Форма считается за 20–60 секунд.' + sp;
+    : 'Телефон в держателе смотрит на коврик сверху-сбоку. Плавно крути столик (оборот за 15–20 с). Потом подними держатель выше и сделай ещё оборот. Подойдёт круг, вырезанный из коврика, или целый лист — если он лежит ровно.';
+  const tall = +S.height >= 200 ? ' Для высокого предмета отойди дальше, чтобы в кадр влезал и весь круг меток, и верх предмета.' : '';
+  $('setupHint').textContent = how + tall + ' Форма считается за 20–60 секунд.' + sp;
 }
 document.querySelectorAll('#setup .seg').forEach((seg) => seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S[seg.dataset.key] = b.dataset.v; saveSettings(); renderSetup(); }));
 $('btnStart').onclick = startCapture;
@@ -89,11 +94,10 @@ $('btnStart').onclick = startCapture;
 let cap = null;
 async function startCapture() {
   go('capture');
-  const k = S.size === 'A3' ? Math.SQRT2 : 1;
   cap = new Capture($('video'), $('overlay'), {
     size: S.size, method: S.method, Hb: +S.height,
     onState: capState,
-    onShot: (n) => { beep(1046, 0.05); if (navigator.vibrate) navigator.vibrate(15); },
+    onShot: (n, a, manual) => { beep(manual ? 1318 : 1046, 0.05); if (navigator.vibrate) navigator.vibrate(15); },
   });
   try { await cap.start(); } catch (e) { toast('Нет доступа к камере: ' + e.message, 4000); history.back(); }
 }
@@ -113,10 +117,12 @@ function capState(st) {
   else if (high < 0.4) { text = turn ? 'Ещё выше (~75°) — последний оборот' : 'И круг почти сверху (~75°)'; }
   else { text = 'Отлично! Можно нажимать «Готово»'; cls = 'good'; }
   msg.textContent = text; msg.className = 'capMsg ' + cls;
-  $('capInfo').textContent = st.found ? `высота ${st.el.toFixed(0)}° · азимут ${st.az.toFixed(0)}° · ${Math.round(st.dist / 10)} см · меток ${st.n}${cap.f ? '' : ' · калибровка…'}` : '';
+  const info = st.found ? `высота ${st.el.toFixed(0)}° · азимут ${st.az.toFixed(0)}° · ${Math.round(st.dist / 10)} см · меток ${st.n} · ${st.speed.toFixed(0)}°/с${cap.f ? '' : ' · калибровка…'}` : '';
+  $('capInfo').textContent = [info, st.why ? 'Не снимаю: ' + st.why : (st.found ? 'Снимаю' : ''), inkLabel(st.ink)].filter(Boolean).join('\n');
 }
 function cancelCapture() { if (cap) cap.stop(); cap = null; go('home'); }
 $('capCancel').onclick = () => { if (!cap || cap.shots.length < 3 || confirm('Выбросить снятые кадры?')) history.back(); };
+$('capShot').onclick = () => { if (!cap) return; cap.shootNow(); if (!cap.state || !cap.state.found) toast('Сниму, как только увижу коврик'); };
 $('capPause').onclick = () => { if (!cap) return; cap.paused = !cap.paused; $('capPause').textContent = cap.paused ? '▶' : '⏸'; };
 $('capDone').onclick = async () => {
   if (!cap) return;
@@ -131,12 +137,12 @@ $('capDone').onclick = async () => {
 let proc = null, procViewer = null;
 function runProcessing(scan, blobs) {
   go('process');
-  const st = scan.settings, k = st.size === 'A3' ? Math.SQRT2 : 1;
+  const st = scan.settings;
   $('procLog').textContent = ''; $('procBar').style.width = '0%'; $('procStage').textContent = 'Подготовка…'; $('procText').textContent = '';
   $('procStop').textContent = 'Остановить'; $('procView').classList.remove('on');
   const log = (t) => { $('procLog').textContent += t + '\n'; };
   log(`кадров: ${blobs.length}; режим: ${{ mesh: 'полигоны', splat: 'сплэты', both: 'полигоны + сплэты' }[st.mode]}`);
-  const job = { blobs, mode: st.mode, quality: st.quality, size: st.size, theme: 'light', Hb: +st.height };
+  const job = { blobs, mode: st.mode, quality: st.quality, size: st.size, theme: 'light', Hb: +st.height, method: st.method || 'walk', shape: st.shape || 'normal', scale: calFor(st.size) };
   let splatting = false;
   proc = startProcessing(job, {
     progress: (stage, p, text) => {
@@ -233,11 +239,17 @@ async function moreSheet(scan) {
     ${scan.stats ? `<p>Кадров использовано: ${scan.stats.used} из ${scan.stats.frames}. Объём: ${(scan.stats.volume / 1000).toFixed(1)} см³. Обработка: ${fmtT(scan.stats.t)}.</p>` : ''}
     ${nf ? `<p>Пересчитать из сохранённых кадров (${nf} шт.) с другими настройками:</p>
     <div class="grid2"><button data-r="mesh">Полигоны</button><button data-r="splat">Сплэты</button><button data-r="both">Оба</button><button data-r="best">Оба, качество «Лучше»</button></div>
+    <p>Форма предмета при пересчёте:</p>
+    <div class="seg" id="rShape"><button data-v="normal">Обычная</button><button data-v="revolve">Тело вращения</button><button data-v="smooth">Гладкая</button></div>
     <button data-a="dropframes">Удалить кадры (освободить место)</button>` : '<p>Кадров съёмки нет — пересчёт невозможен.</p>'}
     <button data-a="delete" style="color:var(--bad)">Удалить модель</button>`,
   (box) => {
+    let shape = (scan.settings && scan.settings.shape) || 'normal';
+    const rs = box.querySelector('#rShape');
+    const syncShape = () => rs && rs.querySelectorAll('button').forEach((b) => b.classList.toggle('on', b.dataset.v === shape));
+    if (rs) { rs.onclick = (e) => { const b = e.target.closest('button'); if (b) { shape = b.dataset.v; syncShape(); } }; syncShape(); }
     box.querySelectorAll('[data-r]').forEach((b) => b.onclick = () => {
-      closeSheet(); const st = { ...(scan.settings || S) };
+      closeSheet(); const st = { ...(scan.settings || S), shape };
       if (b.dataset.r === 'best') { st.mode = 'both'; st.quality = 'best'; } else st.mode = b.dataset.r;
       const ns = { id: scan.id, name: scan.name, date: scan.date, settings: st };
       if (cur !== 'home') history.back(); setTimeout(() => runProcessing(ns, frames), 50);
@@ -250,26 +262,72 @@ async function moreSheet(scan) {
 // ---------- коврик и справка ----------
 function showMat() {
   sheet(`<h3>Коврик для съёмки</h3>
-  <p>Распечатай на обычном белом листе <b>в масштабе 100%</b> («Фактический размер», без «Вписать в страницу»). Проверь линейкой полоску «100 мм» сверху — от этого зависит настоящий размер модели.</p>
-  <div class="grid2"><button data-m="pdfA4">PDF A4<small>предметы до 12 см</small></button><button data-m="pdfA3">PDF A3<small>до 17 см</small></button><button data-m="pngA4">PNG A4<small>300 dpi</small></button><button data-m="pngA3">PNG A3<small>300 dpi</small></button></div>
-  <ul><li><b>Чёрные квадраты</b> по кругу — метки: по ним телефон узнаёт, откуда смотрит камера, и точный масштаб.</li>
-  <li><b>Серые крапинки</b> в центре нужны, чтобы отличать тень от предмета: в тени крапинки остаются видны, а предмет их закрывает.</li>
-  <li><b>Градусы и стрелка</b> — чтобы на вертушке было видно, насколько повернули.</li>
-  <li>Для вертушки вырежи круг по пунктиру и приклей на столик (подойдёт крышка от банки на ленивой Сьюзен). Лист должен быть ровным, без бликов.</li></ul>`,
-  (box) => box.querySelectorAll('[data-m]').forEach((b) => b.onclick = async () => {
-    b.disabled = true; toast('Готовлю файл…');
-    try { const k = b.dataset.m, size = k.slice(-2); if (k.startsWith('pdf')) await saveFile(await matPDF(size), `Объём-коврик-${size}.pdf`, 'application/pdf'); else await saveFile(await matPNG(size), `Объём-коврик-${size}.png`, 'image/png'); } catch (e) { toast('Ошибка: ' + e.message); }
-    b.disabled = false;
-  }));
+  <p>Печатай на обычном белом листе <b>в масштабе 100%</b> («Фактический размер», без «Вписать в страницу»). Сероватая печать — не страшно; индикатор при съёмке подскажет, хватает ли контраста.</p>
+  <p><b>Весь лист</b> — для съёмки с рук; вырезать ничего не нужно, лист просто лежит на столе.</p>
+  <div class="grid2"><button data-m="pdf:A4:full">PDF A4<small>предметы до 12 см</small></button><button data-m="pdf:A3:full">PDF A3<small>до 17 см</small></button><button data-m="pdf:A2:full">PDF A2<small>до 24 см (копицентр)</small></button><button data-m="png:A4:full">PNG A4<small>картинка</small></button></div>
+  <p><b>Круг для вертушки</b> — без угловых меток. Вырежи по пунктиру; если столик меньше круга, подложи картон: круг должен лежать ровно, не свисать.</p>
+  <div class="grid2"><button data-m="pdf:A4:round">Круг A4</button><button data-m="pdf:A3:round">Круг A3</button></div>
+  <button id="btnCal" class="mid">📏 Калибровка печати${calInfo()}</button>
+  <ul><li><b>Чёрные квадраты</b> по кругу — метки: по ним телефон узнаёт, откуда смотрит камера, и масштаб.</li>
+  <li><b>Серые крапинки</b> — чтобы отличать тень от предмета: в тени крапинки видны, а предмет их закрывает.</li>
+  <li><b>Градусы и стрелка</b> — только для тебя (видно, насколько повернул столик). Телефон на них не смотрит.</li>
+  <li>На вертушке приложение смотрит только на кольцо меток: всё, что за кругом, ему не важно.</li></ul>`,
+  (box) => {
+    box.querySelectorAll('[data-m]').forEach((b) => b.onclick = async () => {
+      b.disabled = true; toast('Готовлю файл…');
+      try {
+        const [kind, size, variant] = b.dataset.m.split(':'), suf = variant === 'round' ? '-круг' : '';
+        if (kind === 'pdf') await saveFile(await matPDF(size, 'light', variant), `Объём-коврик-${size}${suf}.pdf`, 'application/pdf');
+        else await saveFile(await matPNG(size, 'light', variant), `Объём-коврик-${size}${suf}.png`, 'image/png');
+      } catch (e) { toast('Ошибка: ' + e.message); }
+      b.disabled = false;
+    });
+    box.querySelector('#btnCal').onclick = showCal;
+  });
+}
+function calInfo() { const c = loadCal(); const ks = Object.keys(c); return ks.length ? `<small>${ks.map((k) => `${k}: ×${c[k].sx.toFixed(3)} / ×${c[k].sy.toFixed(3)}`).join(' · ')}</small>` : '<small>не сделана — размеры как есть</small>'; }
+function showCal() {
+  const c = loadCal();
+  sheet(`<h3>Калибровка печати</h3>
+  <p>Принтер часто чуть уменьшает или растягивает лист (на 1–3%) — тогда и модель выйдет на столько же меньше. Измерь линейкой на напечатанном коврике:</p>
+  <ol><li><b>Сверху вниз:</b> от внешнего (дальнего от центра) края верхней чёрной метки до внешнего края нижней.</li>
+  <li><b>Слева направо:</b> то же для левой и правой меток.</li></ol>
+  <label class="lbl">Лист</label>
+  <div class="seg" id="calSize"><button data-v="A4">A4</button><button data-v="A3">A3</button><button data-v="A2">A2</button></div>
+  <p id="calNom" class="hint"></p>
+  <label class="lbl">Сверху вниз, мм</label><input id="calV" type="number" inputmode="decimal" step="0.5" class="inp">
+  <label class="lbl">Слева направо, мм</label><input id="calH" type="number" inputmode="decimal" step="0.5" class="inp">
+  <div class="grid2"><button id="calSave" class="primary">Сохранить</button><button id="calReset">Сбросить</button></div>`,
+  (box) => {
+    let size = S.size;
+    const sync = () => {
+      box.querySelectorAll('#calSize button').forEach((b) => b.classList.toggle('on', b.dataset.v === size));
+      const nom = matLayout(size).calSpan, v = c[size];
+      box.querySelector('#calNom').textContent = `Должно быть ${nom.toFixed(0)} мм в обе стороны.`;
+      box.querySelector('#calV').value = v ? (nom * v.sy).toFixed(1) : ''; box.querySelector('#calH').value = v ? (nom * v.sx).toFixed(1) : '';
+    };
+    box.querySelector('#calSize').onclick = (e) => { const b = e.target.closest('button'); if (b) { size = b.dataset.v; sync(); } };
+    box.querySelector('#calSave').onclick = () => {
+      const nom = matLayout(size).calSpan, V = parseFloat(String(box.querySelector('#calV').value).replace(',', '.')), H = parseFloat(String(box.querySelector('#calH').value).replace(',', '.'));
+      if (!(V > nom * 0.85 && V < nom * 1.15 && H > nom * 0.85 && H < nom * 1.15)) { toast(`Проверь числа: должно быть около ${nom.toFixed(0)} мм`); return; }
+      c[size] = { sx: H / nom, sy: V / nom }; localStorage.setItem('obyom.cal', JSON.stringify(c));
+      toast(`Сохранено: ширина ×${(H / nom).toFixed(3)}, длина ×${(V / nom).toFixed(3)}. Учтётся при обработке (и при пересчёте старых сканов).`, 4500); closeSheet();
+    };
+    box.querySelector('#calReset').onclick = () => { delete c[size]; localStorage.setItem('obyom.cal', JSON.stringify(c)); toast('Калибровка ' + size + ' сброшена'); sync(); };
+    sync();
+  });
 }
 function showHelp() {
   sheet(`<h3>Как снимать</h3>
-  <ol><li>Положи коврик на стол, предмет — в центр круга. Свет — мягкий, рассеянный (у окна днём или две лампы по бокам), без резких теней.</li>
+  <ol><li>Положи коврик на стол, предмет — в центр круга. Свет мягкий, рассеянный (у окна днём или две лампы по бокам), без резких теней.</li>
   <li><b>С рук:</b> обходи предмет медленно, держа в кадре весь круг меток. Три круга: низко (~30°), повыше (~55°) и почти сверху (~75°). Купол справа показывает, что уже снято.</li>
-  <li><b>Держатель + вертушка:</b> телефон в держателе (штатив, стопка книг, прищепка-держатель) смотрит на коврик сверху-сбоку с 25–35 см. Крути столик медленно — сам пищит, когда снимает. После оборота подними держатель выше и сделай ещё оборот.</li>
+  <li><b>Держатель + вертушка:</b> телефон в держателе смотрит на коврик сверху-сбоку с 25–35 см. Крути столик плавно, примерно оборот за 15–20 секунд — после толчка он сам замедляется, это нормально. Кадр снимается, когда поворот медленнее 30°/с и кадр резкий. Потом подними держатель выше и ещё оборот.</li>
+  <li>Внизу экрана строка <b>«Не снимаю: …»</b> объясняет, почему кадр не взят. Кнопка 📷 снимает кадр сразу, вручную.</li>
   <li>Когда купол заполнен — «Готово». Форма считается за полминуты, сплэты — несколько минут; можно остановить раньше.</li></ol>
-  <p><b>Что не получится:</b> прозрачные, зеркальные и блестящие предметы; глубокие впадины (внутренность чашки) — метод видит силуэты. Очень тёмные предметы снимай при ярком свете.</p>
-  <p><b>На вертушке</b> свет «едет» вместе с предметом — блики на модели могут размазаться. Для блестящего лучше обход с рук.</p>
+  <p><b>Высота предмета</b> — выбери с запасом: всё, что выше, обрежется. <b>Ширина</b>: A4 — до 12 см, A3 — до 17 см, A2 — до 24 см.</p>
+  <p><b>Форма предмета:</b> «Тело вращения» — для бутылок, дезодорантов, ваз, банок: каждое сечение делается кругом, бока выходят ровными. «Гладкая» — сильнее сглаживает, мелкие детали пропадут. Её можно сменить и потом: ⋯ → Пересчитать.</p>
+  <p><b>Дно</b> не снимается: предмет стоит на нём. Снизу модель ровно срезана по столу.</p>
+  <p><b>Что не получится:</b> прозрачные и зеркальные предметы; глубокие впадины (внутренность чашки) — метод видит силуэты. Блестящий бок даёт блики — лучше «Тело вращения» или матовый свет.</p>
   <p>Всё считается на телефоне, без интернета и без нейросетей. Версия ${VERSION}.</p>`);
 }
 
