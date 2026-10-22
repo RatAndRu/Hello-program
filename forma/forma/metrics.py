@@ -67,6 +67,10 @@ def wall_thickness(m: mf.Manifold, samples: int = 128) -> dict | None:
     if diag < 1e-6:
         return None
     center = np.array([(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2, (bb[2] + bb[5]) / 2])
+    # Сплошную деталь толщиной не меряем: у монолита «стенка» — это весь габарит.
+    bbox_volume = max((bb[3] - bb[0]) * (bb[4] - bb[1]) * (bb[5] - bb[2]), 1e-9)
+    if m.volume() / bbox_volume > 0.62:
+        return None
     gaps: list[tuple[float, list[float]]] = []
     for d in fibonacci_sphere(samples):
         origin = center + d * diag
@@ -114,7 +118,15 @@ def wall_thickness(m: mf.Manifold, samples: int = 128) -> dict | None:
     med = float(np.median(cluster))
     mad = float(np.median(np.abs(cluster - med))) / max(med, 1e-9)
     if ratio < 0.16 or mad > 0.30:
-        return None
+        # Плавно меняющаяся толщина (кружка с тонким дном, литая деталь):
+        # резкого пика нет — берём нижнюю половину тонких хорд.
+        fallback = thin[thin <= np.median(thin)]
+        if len(fallback) < 8:
+            return None
+        cluster = fallback
+        ratio = len(cluster) / len(thin)
+        med = float(np.median(cluster))
+        mad = float(np.median(np.abs(cluster - med))) / max(med, 1e-9)
     min_value = float(np.min(cluster))
     min_point = None
     for idx in range(len(arr)):
