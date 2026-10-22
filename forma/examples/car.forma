@@ -214,6 +214,24 @@ color спица4_3 #cbd3dd metal=0.85 rough=0.18
 спица4_4 = place [спица4_4] at=[1400,745,340] align=center
 color спица4_4 #cbd3dd metal=0.85 rough=0.18
 
+# --- полуоси: входят в кузов и держат колесо на ступице ---
+полуось1 = cylinder radius=52 height=380 segments=32 round=8
+полуось1 = rotate [полуось1] angle=90 axis=x
+полуось1 = place [полуось1] at=[-1400,-570,340] align=center
+color полуось1 #6f7783 metal=0.8 rough=0.3
+полуось2 = cylinder radius=52 height=380 segments=32 round=8
+полуось2 = rotate [полуось2] angle=90 axis=x
+полуось2 = place [полуось2] at=[-1400,570,340] align=center
+color полуось2 #6f7783 metal=0.8 rough=0.3
+полуось3 = cylinder radius=52 height=380 segments=32 round=8
+полуось3 = rotate [полуось3] angle=90 axis=x
+полуось3 = place [полуось3] at=[1400,-570,340] align=center
+color полуось3 #6f7783 metal=0.8 rough=0.3
+полуось4 = cylinder radius=52 height=380 segments=32 round=8
+полуось4 = rotate [полуось4] angle=90 axis=x
+полуось4 = place [полуось4] at=[1400,570,340] align=center
+color полуось4 #6f7783 metal=0.8 rough=0.3
+
 # --- оптика, решётка, ручки, зеркала ---
 решётка = box size=[46,980,150] round=20
 решётка = place [решётка] at=[-2195,0,560] align=center
@@ -243,3 +261,5 @@ check кузов watertight
 check кузов width 4380..4460
 check кузов depth 1730..1850
 check кузов height 1130..1170
+check полуось1 gap шина1 0..1
+check полуось3 gap шина3 0..1
