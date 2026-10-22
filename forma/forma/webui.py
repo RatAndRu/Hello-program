@@ -19,7 +19,7 @@ from pathlib import Path
 
 from .agent import build_prompt, command_reference_md
 from .errors import FormaError
-from .geometry import export_glb, export_obj, export_ply, export_stl
+from .geometry import export_3mf, export_glb, export_obj, export_ply, export_stl
 from .render import render_views
 from .run import build as run_build
 from .version import APP_NAME, __version__
@@ -224,10 +224,13 @@ class AppState:
             elif fmt == "obj":
                 data = export_obj(solids)
                 name = f"{base}.obj"
-            elif fmt in ("ply", "blend"):
+            elif fmt in ("ply", "3mf", "blend"):
                 if fmt == "ply":
                     data = export_ply(solids)
                     name = f"{base}.ply"
+                elif fmt == "3mf":
+                    data = export_3mf(solids)
+                    name = f"{base}.3mf"
                 else:
                     from .blender import glb_to_blend
                     tmp = out_dir / f"_tmp_{base}.glb"
