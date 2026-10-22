@@ -241,6 +241,21 @@ def _run_uistest(report_path: str | None) -> int:
                       and any(o.get("name") == "к" for o in welded.get("objects", [])))
                 apple = get("/api/example?key=apple")
                 check("пример «Яблоко»", "яблоко" in (apple.get("script") or "").lower())
+                tracks = get("/api/example?key=animation_tracks")
+                built = post("/api/build", {"script": tracks.get("script") or ""})
+                plan = built.get("timeline") or {}
+                check("пример «Анимация по дорожкам»",
+                      built.get("ok") is True and plan.get("track_count", 0) >= 4
+                      and plan.get("key_count", 0) >= 2,
+                      f"дорожек {plan.get('track_count')}, ключей {plan.get('key_count')}")
+                morph_script = ("R = 30\nк = cylinder radius=R height=40 segments=32\n"
+                                "animate kind=morph param=R from=20 to=40 seconds=2")
+                post("/api/build", {"script": morph_script})
+                morphed = post("/api/morph", {"script": morph_script,
+                                              "param": "R", "value": 20})
+                check("морфинг строит кадр с другим параметром",
+                      morphed.get("ok") is True and morphed.get("glb") is True,
+                      str(morphed.get("key") or morphed.get("error")))
                 exported = post("/api/export", {"format": "glb"})
                 downloads = str(Path.home() / "Downloads")
                 check("экспорт в «Загрузки»",

@@ -40,6 +40,7 @@ const state = {
     mode: 'clips', time: 0, duration: 0, playing: false,
     frames: [], frameIndex: 0, frameTimer: 0, hold: 0.8, fps: 24,
     cache: new Map(), pending: null, timer: null, busy: false, preview: null,
+    seqKey: null, morphPending: null,
   },
 };
 
@@ -341,6 +342,7 @@ function applyBuild(payload, elapsed) {
   // Сразу показываем, что за клипы придут с моделью, не дожидаясь загрузки GLB.
   state.anim.frames = payload.frames || [];
   if (state.anim.mode === 'frames' && !state.anim.frames.length) state.anim.mode = 'clips';
+  refreshAnimSelectors();
   updateAnimState();
 }
 
@@ -684,12 +686,13 @@ async function loadModel(url, animation = null) {
       const onlyAssembly = clips.length && clips.every((c) => c.kind === 'assembly');
       state.anim.mode = onlyAssembly && state.anim.frames.length ? 'frames' : 'clips';
     }
+    refreshAnimSelectors();
     if (state.anim.mode === 'frames' && !state.anim.frames.length) state.anim.mode = 'clips';
     if ($('anim-mode')) $('anim-mode').value = state.anim.mode;
     updateAnimState();
     if (state.anim.mode === 'frames') {
       if (state.anim.frames.length) showFrame(0);
-    } else if (animClips().length) {
+    } else if (animClips().length || animKeys().length) {
       state.viewer.playAnimation(true);
       state.anim.playing = state.viewer.playing;
       syncAnimUI();
@@ -758,7 +761,11 @@ function showTexturePreview(kind) {
 }
 
 const ANIM_KINDS = { spin: 'вращение', formation: 'формирование', explode: 'разлёт',
-  assembly: 'сборка по шагам' };
+  assembly: 'сборка по шагам', move: 'перемещение', scale: 'масштаб', turn: 'доворот',
+  wait: 'пауза', morph: 'изменение формы' };
+const ANIM_COLORS = { spin: '#2f4f8a', formation: '#2f7a5f', explode: '#8a5a2f',
+  assembly: '#6b4f9e', move: '#2f7a8a', scale: '#8a7a2f', turn: '#8a2f6b',
+  wait: '#4a4f57', morph: '#2f5f8a' };
 
 function animPlan() {
   const p = state.payload?.timeline;
@@ -772,13 +779,19 @@ function animClips() {
   if (plan?.clips?.length) return plan.clips;
   return state.anim.preview?.clips || [];
 }
+function animKeys() { return animPlan()?.keys || []; }
 function animFrames() { return state.anim.frames || []; }
 function animFps() { return Number(animClips()[0]?.fps) || 24; }
+function animTrackList() {
+  const tracks = new Set(animClips().map((c) => Number(c.track) || 1));
+  return [...tracks].sort((a, b) => a - b);
+}
 
 function animHasContent() {
   if (state.anim.mode === 'frames') return animFrames().length > 0;
   if (state.anim.preview) return true;
-  return animClips().length > 0 || Boolean(state.viewer?.hasAnimation());
+  return animClips().length > 0 || animKeys().length > 0
+    || Boolean(state.viewer?.hasAnimation());
 }
 
 /** Нет animate в сценарии — всё равно показываем вращение, но не пишем его в сценарий. */
@@ -786,9 +799,9 @@ function startPreviewAnimation() {
   const v = state.viewer;
   if (!v || !v.hasModel?.()) return false;
   const clip = { kind: 'spin', axis: 'z', start: 0, length: 6, end: 6, loop: true,
-                 seconds: 6, fps: 24, preview: true };
+                 seconds: 6, fps: 24, preview: true, track: 1 };
   const plan = { clips: [clip], duration: 6, count: 1, has: true, kinds: ['spin'],
-                 assembly: null };
+                 assembly: null, tracks: [1], keys: [] };
   if (!v.setTimeline) return false;
   v.setTimeline(plan);
   v.playAnimation(true);
@@ -838,14 +851,19 @@ function syncAnimUI() {
       label.className = 'anim-status ' + (animFrames().length ? 'ok' : '');
     } else {
       const clips = animClips();
-      const total = animPlan()?.duration || 0;
+      const keys = animKeys();
+      const total = Number(animPlan()?.duration) || 0;
       const preview = Boolean(a.preview);
       const shownTotal = preview ? a.preview.duration : total;
-      label.textContent = clips.length
-        ? `${clips.map((c) => ANIM_KINDS[c.kind] || c.kind).join(' + ')} · `
-          + `${shownTotal.toFixed(1)} с` + (preview ? ' · предпросмотр' : '')
+      const tracks = animTrackList().length;
+      const bits = [];
+      if (clips.length) bits.push(`клипов ${clips.length}`);
+      if (keys.length) bits.push(`ключей ${keys.length}`);
+      if (tracks > 1) bits.push(`дорожек ${tracks}`);
+      label.textContent = bits.length
+        ? `${bits.join(' · ')} · ${shownTotal.toFixed(1)} с` + (preview ? ' · предпросмотр' : '')
         : 'анимация не задана (animate)';
-      label.className = 'anim-status ' + (clips.length ? 'ok' : '');
+      label.className = 'anim-status ' + ((clips.length || keys.length) ? 'ok' : '');
     }
   }
   const scrub = $('anim-scrub');
@@ -864,6 +882,7 @@ function syncAnimUI() {
   syncAnimClock();
   renderAnimTracks();
   renderAnimClipsEditor();
+  renderAnimKeys();
 }
 
 /** Быстрое обновление только часов (вызывается каждый кадр во время игры). */
@@ -903,38 +922,83 @@ function renderAnimTracks() {
       box.innerHTML = '<span class="anim-empty">шагов сборки нет — добавьте объекты в сценарий</span>';
       return;
     }
+    // шаги в отдельной прокручиваемой строке: их может быть сотня
+    const row = document.createElement('div');
+    row.className = 'anim-steps';
     frames.forEach((f, i) => {
       const b = document.createElement('button');
       b.className = 'anim-step' + (i === a.frameIndex ? ' cur' : '');
       b.textContent = String(f.frame || i + 1);
       b.title = `строка ${f.line}: ${f.text}`;
       b.onclick = () => { pauseAnim(); seekFrame(i); };
-      box.appendChild(b);
+      row.appendChild(b);
     });
+    box.appendChild(row);
     return;
   }
   const clips = animClips();
-  const total = animPlan()?.duration || 0;
-  if (!clips.length) {
+  const keys = animKeys();
+  const total = Number(animPlan()?.duration) || Number(a.preview?.duration) || 0;
+  if (!clips.length && !keys.length) {
     box.innerHTML = '<span class="anim-empty">клипов нет: animate kind=spin seconds=6</span>';
     return;
   }
-  const lane = document.createElement('div');
-  lane.className = 'anim-lane';
-  clips.forEach((c, i) => {
-    const seg = document.createElement('div');
-    seg.className = 'anim-seg seg-' + (c.kind || 'spin');
-    const start = Number(c.start) || 0;
-    const len = Number(c.length) || Number(c.seconds) || 1;
-    seg.style.left = total ? `${(start / total) * 100}%` : '0%';
-    seg.style.width = total ? `${Math.max(2, (len / total) * 100)}%` : '100%';
-    seg.title = `${ANIM_KINDS[c.kind] || c.kind} · ${start.toFixed(1)}–${(start + len).toFixed(1)} с`
-      + (c.line ? ` · строка ${c.line}` : '');
-    seg.innerHTML = `<span>${ANIM_KINDS[c.kind] || c.kind}</span>`;
-    seg.onclick = () => { pauseAnim(); seekTime(start); };
-    lane.appendChild(seg);
-  });
-  box.appendChild(lane);
+  const laneFor = (track) => {
+    const row = document.createElement('div');
+    row.className = 'anim-track-row';
+    if (animTrackList().length > 1) {
+      const name = document.createElement('span');
+      name.className = 'anim-track-name';
+      name.textContent = 'дорожка ' + track;
+      row.appendChild(name);
+    }
+    const lane = document.createElement('div');
+    lane.className = 'anim-lane';
+    clips.filter((c) => (Number(c.track) || 1) === track).forEach((c) => {
+      const seg = document.createElement('div');
+      seg.className = 'anim-seg seg-' + (c.kind || 'spin');
+      const st = Number(c.start) || 0;
+      const len = Number(c.length) || Number(c.seconds) || 1;
+      seg.style.left = total ? `${(st / total) * 100}%` : '0%';
+      seg.style.width = total ? `${Math.max(2, (len / total) * 100)}%` : '100%';
+      if (ANIM_COLORS[c.kind]) seg.style.background = ANIM_COLORS[c.kind];
+      seg.title = `${ANIM_KINDS[c.kind] || c.kind} · ${st.toFixed(1)}–${(st + len).toFixed(1)} с`
+        + (c.object ? ` · ${c.object}` : '') + (c.line ? ` · строка ${c.line}` : '');
+      seg.innerHTML = `<span>${(st === 0 || len / Math.max(total, 0.001) > 0.12)
+        ? (ANIM_KINDS[c.kind] || c.kind) : ''}</span>`;
+      seg.onclick = () => { pauseAnim(); seekTime(st); };
+      lane.appendChild(seg);
+    });
+    row.appendChild(lane);
+    return row;
+  };
+  animTrackList().forEach((track) => box.appendChild(laneFor(track)));
+
+  if (keys.length) {
+    const row = document.createElement('div');
+    row.className = 'anim-track-row';
+    if (animTrackList().length > 1) {
+      const name = document.createElement('span');
+      name.className = 'anim-track-name';
+      name.textContent = 'ключи';
+      row.appendChild(name);
+    }
+    const lane = document.createElement('div');
+    lane.className = 'anim-lane anim-lane-keys';
+    keys.forEach((k) => {
+      const d = document.createElement('div');
+      d.className = 'anim-key';
+      d.style.left = total ? `${Math.min(100, ((Number(k.t) || 0) / total) * 100)}%` : '0%';
+      d.title = `ключ ${k.object} @ ${(Number(k.t) || 0).toFixed(1)} с`
+        + (k.pos ? ` · Δ(${k.pos.join(', ')})` : '')
+        + (k.rot ? ` · ∠(${k.rot.join(', ')})` : '')
+        + (k.scale !== undefined ? ` · ×${k.scale}` : '');
+      d.onclick = () => { pauseAnim(); seekTime(Number(k.t) || 0); };
+      lane.appendChild(d);
+    });
+    row.appendChild(lane);
+    box.appendChild(row);
+  }
 }
 
 /* --- редактор клипов ------------------------------------------------ */
@@ -951,10 +1015,12 @@ function renderAnimClipsEditor() {
     const row = document.createElement('div');
     row.className = 'anim-clip-row';
     const title = `${ANIM_KINDS[c.kind] || c.kind}`
+      + ` · дорожка ${Number(c.track) || 1}`
+      + (c.object ? ` · ${c.object}` : '')
       + (c.kind === 'assembly' ? ` · ${(c.hold || 0.8).toFixed(1)} с/шаг`
         : ` · ${(Number(c.length) || Number(c.seconds) || 0).toFixed(1)} с`)
       + ` · с ${(Number(c.start) || 0).toFixed(1)} с`;
-    row.innerHTML = `<span class="anim-clip-name">${title}</span>`
+    row.innerHTML = `<span class="anim-clip-name">${escapeHtml(title)}</span>`
       + `<code>${escapeHtml(c.text || '')}</code>`;
     const edit = document.createElement('button');
     edit.className = 'mini';
@@ -965,7 +1031,8 @@ function renderAnimClipsEditor() {
     del.className = 'mini';
     del.textContent = '✕';
     del.title = 'Удалить клип из сценария';
-    del.onclick = () => removeAnimationLine(c.line);
+    del.onclick = () => removeScriptLine(c.line, /^\s*(animate|анимация|движение|animation)\b/i,
+                                         'клип');
     row.appendChild(edit);
     row.appendChild(del);
     box.appendChild(row);
@@ -975,55 +1042,275 @@ function renderAnimClipsEditor() {
 function loadClipIntoEditor(c) {
   $('anim-editor').hidden = false;
   $('ae-kind').value = c.kind || 'spin';
-  $('ae-axis').value = c.axis || 'z';
+  $('ae-axis').value = c.axis ? ((Number(c.axis_sign) < 0 ? '-' : '') + c.axis) : 'z';
   $('ae-seconds').value = String(Number(c.seconds) || 4);
   $('ae-start').value = c.start === null || c.start === undefined ? '' : String(c.start);
+  $('ae-track').value = String(Number(c.track) || 1);
+  $('ae-object').value = c.object || '';
   $('ae-hold').value = String(Number(c.hold) || 0.8);
   $('ae-amount').value = String(Number(c.amount) || 30);
+  if (c.delta) {
+    $('ae-dx').value = String(c.delta[0]); $('ae-dy').value = String(c.delta[1]);
+    $('ae-dz').value = String(c.delta[2]);
+  }
+  const num = (v, fallback) => (v === undefined || v === null ? fallback : Number(v));
+  if (c.kind === 'scale') {
+    $('ae-from').value = String(num(c.from, 1));
+    $('ae-to').value = String(num(c.to, 1.5));
+  }
+  if (c.kind === 'turn') $('ae-angle').value = String(Number(c.angle) || 90);
+  if (c.kind === 'morph') {
+    $('ae-param').value = c.param || '';
+    $('ae-from').value = String(num(c.from, 0));
+    $('ae-to').value = String(num(c.to, 1));
+    $('ae-samples').value = String(Number(c.samples) || 12);
+  }
   $('ae-loop').checked = c.loop !== false;
   updateEditorVisibility();
 }
 
 function updateEditorVisibility() {
-  const kind = $('ae-kind')?.value;
-  if ($('ae-hold-wrap')) $('ae-hold-wrap').style.display = kind === 'assembly' ? '' : 'none';
-  if ($('ae-amount-wrap')) $('ae-amount-wrap').style.display = kind === 'explode' ? '' : 'none';
-  const seconds = $('ae-seconds');
-  if (seconds) seconds.disabled = kind === 'assembly';
+  const kind = $('ae-kind')?.value || 'spin';
+  const show = (id, on) => { if ($(id)) $(id).style.display = on ? '' : 'none'; };
+  show('ae-hold-wrap', kind === 'assembly');
+  show('ae-amount-wrap', kind === 'explode');
+  show('ae-dx-wrap', kind === 'move');
+  show('ae-dy-wrap', kind === 'move');
+  show('ae-dz-wrap', kind === 'move');
+  show('ae-from-wrap', kind === 'scale' || kind === 'morph');
+  show('ae-to-wrap', kind === 'scale' || kind === 'morph');
+  show('ae-angle-wrap', kind === 'turn');
+  show('ae-param-wrap', kind === 'morph');
+  show('ae-samples-wrap', kind === 'morph');
+  show('ae-object-wrap', ['move', 'scale', 'turn', 'spin', 'explode'].includes(kind));
+  if ($('ae-seconds')) $('ae-seconds').disabled = kind === 'assembly' || kind === 'wait';
+  if ($('ae-loop')) $('ae-loop').parentElement.style.display = ['spin', 'formation'].includes(kind) ? '' : 'none';
 }
 
-function addAnimationClip() {
+function animLineFromEditor() {
   const kind = $('ae-kind').value;
   const axis = $('ae-axis').value || 'z';
   const seconds = Number($('ae-seconds').value) || 4;
   const start = $('ae-start').value.trim();
+  const track = Math.max(1, Math.min(8, Number($('ae-track').value) || 1));
+  const object = $('ae-object')?.value || '';
   const hold = Number($('ae-hold').value) || 0.8;
   const loop = $('ae-loop').checked;
   const parts = [`animate kind=${kind}`];
-  if (kind === 'spin' || kind === 'formation' || kind === 'explode') parts.push(`axis=${axis}`);
+  if (['spin', 'turn', 'formation', 'explode'].includes(kind)) parts.push(`axis=${axis}`);
   if (kind === 'assembly') parts.push(`hold=${hold}`);
   else parts.push(`seconds=${seconds}`);
   if (kind === 'explode') parts.push(`amount=${Number($('ae-amount').value) || 30}`);
+  if (kind === 'move') {
+    parts.push(`dx=${Number($('ae-dx').value) || 0}`);
+    parts.push(`dy=${Number($('ae-dy').value) || 0}`);
+    parts.push(`dz=${Number($('ae-dz').value) || 0}`);
+  }
+  if (kind === 'scale') {
+    parts.push(`from=${Number($('ae-from').value) || 1}`);
+    parts.push(`to=${Number($('ae-to').value) || 1.5}`);
+  }
+  if (kind === 'morph') {
+    const param = $('ae-param').value;
+    if (!param) { toast('Для изменения формы нужен параметр сценария (R = 40…)', 'bad'); return null; }
+    parts.push(`param=${param}`);
+    parts.push(`from=${Number($('ae-from').value) || 0}`);
+    parts.push(`to=${Number($('ae-to').value) || 1}`);
+    parts.push(`samples=${Math.max(2, Number($('ae-samples').value) || 12)}`);
+  }
+  if (kind === 'turn') parts.push(`angle=${Number($('ae-angle').value) || 90}`);
+  if (object) parts.push(`object=${object}`);
+  if (track !== 1) parts.push(`track=${track}`);
   if (start !== '' && Number(start) > 0) parts.push(`start=${start}`);
-  if (!loop) parts.push('loop=нет');
-  const line = parts.join(' ');
-  const script = currentScript().replace(/\s+$/, '');
-  setScript((script ? script + '\n' : '') + line, { label: 'анимация: ' + line });
-  toast('Клип добавлен: ' + (ANIM_KINDS[kind] || kind));
+  if (!loop && ['spin', 'formation'].includes(kind)) parts.push('loop=нет');
+  return parts.join(' ');
 }
 
-function removeAnimationLine(line) {
-  if (!line) { toast('Клип добавлен не строкой animate — уберите строку вручную', 'bad'); return; }
+function addAnimationClip() {
+  const line = animLineFromEditor();
+  if (!line) return;
+  const script = currentScript().replace(/\s+$/, '');
+  setScript((script ? script + '\n' : '') + line, { label: 'анимация: ' + line });
+  toast('Клип добавлен: ' + line);
+}
+
+function renderAnimKeys() {
+  const box = $('anim-keys');
+  if (!box) return;
+  const keys = animKeys();
+  box.innerHTML = '';
+  if (!keys.length) {
+    box.innerHTML = '<span class="anim-empty">ключей нет — добавьте их ниже</span>';
+    return;
+  }
+  keys.forEach((k) => {
+    const row = document.createElement('div');
+    row.className = 'anim-clip-row';
+    const bits = [`${k.object} @ ${(Number(k.t) || 0).toFixed(2)} с`];
+    if (k.pos) bits.push(`Δ(${k.pos.map((v) => Number(v).toFixed(0)).join(', ')})`);
+    if (k.rot) bits.push(`∠(${k.rot.map((v) => Number(v).toFixed(0)).join(', ')})`);
+    if (k.scale !== undefined && k.scale !== null) bits.push(`×${Number(k.scale)}`);
+    row.innerHTML = `<span class="anim-clip-name">${escapeHtml(bits.join(' · '))}</span>`
+      + `<code>${escapeHtml(k.text || '')}</code>`;
+    const del = document.createElement('button');
+    del.className = 'mini';
+    del.textContent = '✕';
+    del.title = 'Удалить ключ из сценария';
+    del.onclick = () => removeScriptLine(k.line,
+      /^\s*(keyframe|key|ключ|кадр|ключ_кадр|keys)\b/i, 'ключ');
+    row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+
+function parseVecField(value) {
+  return String(value || '').split(/[,;\s]+/).map((v) => Number(v)).filter((v) => !Number.isNaN(v));
+}
+
+function addKeyframe() {
+  const object = $('ak-object')?.value;
+  if (!object) { toast('Выберите объект для ключа', 'bad'); return; }
+  const at = Math.max(0, Number($('ak-at').value) || 0);
+  const pos = parseVecField($('ak-pos').value);
+  const rot = parseVecField($('ak-rot').value);
+  const scaleRaw = $('ak-scale').value.trim();
+  if (pos.length && pos.length !== 3) { toast('Смещение: три числа через запятую', 'bad'); return; }
+  if (rot.length && rot.length !== 3) { toast('Поворот: три угла через запятую', 'bad'); return; }
+  const parts = [`keyframe ${object}`, `at=${at}`];
+  if (pos.length === 3 && pos.some((v) => v !== 0)) parts.push(`pos=[${pos.join(', ')}]`);
+  if (rot.length === 3 && rot.some((v) => v !== 0)) parts.push(`rot=[${rot.join(', ')}]`);
+  if (scaleRaw !== '') parts.push(`scale=${Number(scaleRaw)}`);
+  if (parts.length === 2) { toast('Ключ пустой: задайте смещение, поворот или масштаб', 'bad'); return; }
+  const line = parts.join(' ');
+  const script = currentScript().replace(/\s+$/, '');
+  setScript((script ? script + '\n' : '') + line, { label: 'ключ: ' + line });
+  toast('Ключ добавлен: ' + line);
+}
+
+/** Удаление строки сценария по номеру (клип или ключ). */
+function removeScriptLine(line, pattern, what = 'строку') {
+  if (!line) { toast('Эта строка добавлена не командой — уберите её в тексте сценария', 'bad'); return; }
   const lines = currentScript().split('\n');
   const idx = line - 1;
   if (idx < 0 || idx >= lines.length) { toast('Строка не найдена', 'bad'); return; }
-  if (!/^\s*(animate|анимация|движение|animation)\b/i.test(lines[idx])) {
-    toast('Строка изменилась — удалите клип в тексте сценария', 'bad');
+  if (!pattern.test(lines[idx])) {
+    toast('Строка изменилась — удалите её в тексте сценария', 'bad');
     return;
   }
   lines.splice(idx, 1);
-  setScript(lines.join('\n'), { label: 'удаление клипа' });
-  toast('Клип удалён из сценария');
+  setScript(lines.join('\n'), { label: `удаление: ${what}` });
+  toast('Удалено из сценария');
+}
+
+/** Обновляет списки объектов и параметров в редакторе анимации. */
+function refreshAnimSelectors() {
+  const objs = (state.payload?.objects || []).map((o) => o.name);
+  ['ae-object', 'ak-object'].forEach((id) => {
+    const sel = $(id);
+    if (!sel) return;
+    const cur = sel.value;
+    sel.innerHTML = (id === 'ae-object' ? '<option value="">вся модель</option>' : '')
+      + objs.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    if (objs.includes(cur)) sel.value = cur;
+    else if (id === 'ak-object' && objs.length) sel.value = objs[0];
+  });
+  const params = Object.keys(state.payload?.params || {});
+  const ps = $('ae-param');
+  if (ps) {
+    const cur = ps.value;
+    ps.innerHTML = '<option value="">—</option>'
+      + params.map((n) => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+    if (params.includes(cur)) ps.value = cur;
+  }
+}
+
+/* --- последовательность: сборка и морфинг внутри клипов --------------- */
+function updateSequence(t) {
+  const a = state.anim;
+  const clips = animClips();
+  const active = clips.filter((c) => t >= (Number(c.start) || 0) - 1e-6
+    && t < (Number(c.start) || 0) + (Number(c.length) || 0) + 1e-6);
+  const assembly = active.find((c) => c.kind === 'assembly');
+  const morph = active.find((c) => c.kind === 'morph');
+  if (assembly && animFrames().length) {
+    const hold = Math.max(0.1, Number(assembly.hold) || 0.8);
+    const idx = Math.max(0, Math.min(animFrames().length - 1,
+      Math.floor((t - (Number(assembly.start) || 0)) / hold)));
+    if (a.seqKey !== 'a' + idx) {
+      a.seqKey = 'a' + idx;
+      a.frameIndex = idx;
+      showFrame(idx);
+      prefetchFrame(idx + 1);
+    }
+    return;
+  }
+  if (morph) {
+    const length = Math.max(0.001, Number(morph.length) || 1);
+    const p = Math.max(0, Math.min(1, (t - (Number(morph.start) || 0)) / length));
+    const n = Math.max(2, Number(morph.samples) || 12);
+    const idx = Math.min(n - 1, Math.round(p * (n - 1)));
+    const value = Number(morph.from) + (Number(morph.to) - Number(morph.from)) * (idx / (n - 1));
+    if (a.seqKey !== 'm' + idx) {
+      a.seqKey = 'm' + idx;
+      showMorph(morph, value);
+      prefetchMorph(morph, idx + 1);
+    }
+    return;
+  }
+  if (a.seqKey) {
+    a.seqKey = null;
+    state.viewer?.showFinalModel();
+  }
+}
+
+function showMorph(clip, value) {
+  const script = currentScript();
+  const pending = 'm' + value.toFixed(3) + clip.param;
+  state.anim.morphPending = pending;
+  api('/api/morph', { script, param: clip.param, value })
+    .then((res) => {
+      if (!res.glb || state.anim.morphPending !== pending) return;
+      state.viewer?.loadFrame(res.key, '/api/frame.glb?key=' + encodeURIComponent(res.key)
+        + '&token=' + encodeURIComponent(TOKEN)).catch(() => {});
+    })
+    .catch(() => {});
+}
+
+function morphValueAt(clip, index) {
+  const n = Math.max(2, Number(clip.samples) || 12);
+  const i = Math.max(0, Math.min(n - 1, index));
+  return Number(clip.from) + (Number(clip.to) - Number(clip.from)) * (i / (n - 1));
+}
+
+function prefetchMorph(clip, index) {
+  const n = Math.max(2, Number(clip.samples) || 12);
+  if (index >= n) return;
+  const value = morphValueAt(clip, index);
+  const script = currentScript();
+  const key = `pf_m_${clip.param}_${value}`;
+  if (state.anim.cache.has(key)) return;
+  state.anim.cache.set(key, true);
+  api('/api/morph', { script, param: clip.param, value })
+    .then((res) => {
+      if (res.glb) state.viewer?.preloadFrame(res.key,
+        '/api/frame.glb?key=' + encodeURIComponent(res.key) + '&token=' + encodeURIComponent(TOKEN));
+    })
+    .catch(() => { state.anim.cache.delete(key); });
+}
+
+function prefetchFrame(index) {
+  const frames = animFrames();
+  const frame = frames[index];
+  if (!frame) return;
+  const key = `pf_${state.payload?.script_hash || ''}_${frame.n}`;
+  if (state.anim.cache.has(key)) return;
+  state.anim.cache.set(key, true);
+  api('/api/frame', { script: currentScript(), upto: frame.n })
+    .then((res) => {
+      if (res.glb) state.viewer?.preloadFrame(res.key,
+        '/api/frame.glb?key=' + encodeURIComponent(res.key) + '&token=' + encodeURIComponent(TOKEN));
+    })
+    .catch(() => { state.anim.cache.delete(key); });
 }
 
 /* --- транспорт и прокрутка ------------------------------------------ */
@@ -1098,6 +1385,7 @@ async function showFrame(index) {
 function setAnimMode(mode) {
   const a = state.anim;
   a.mode = mode;
+  a.seqKey = null;
   a.playing = false;
   a.time = 0;
   a.frameTimer = 0;
@@ -1141,6 +1429,7 @@ function initViewer() {
     state.viewer.onTime = (t) => {
       if (state.anim.mode !== 'clips') return;
       state.anim.time = t;
+      updateSequence(t);
       const now = performance.now();
       if (now - lastClock > 60) { lastClock = now; syncAnimClock(); }
     };
@@ -1345,6 +1634,8 @@ $('anim-editor-toggle')?.addEventListener('click', () => {
 });
 $('ae-kind')?.addEventListener('change', updateEditorVisibility);
 $('ae-add')?.addEventListener('click', addAnimationClip);
+$('ak-add')?.addEventListener('click', addKeyframe);
+refreshAnimSelectors();
 
 document.addEventListener('keydown', (e) => {
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;

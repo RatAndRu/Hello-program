@@ -546,17 +546,47 @@ def scale(a, name):
 
 
 @op("place", aliases=("поставить", "позиционировать", "align"), category="Массивы и преобразования",
-    summary="Ставит объект в точку: низом, центром или верхом.",
-    example="деталь = place [деталь] at=[0,0,50] align=bottom",
+    summary="Ставит объект в точку или прикрепляет к другому объекту: сверху, снизу, "
+            "слева, справа, спереди, сзади — без вычисления координат вручную.",
+    example="крышка = place [крышка] on=кружка side=top offset=2",
     params={"objects": "объект", "at": "точка [x,y,z]",
             "align": "bottom (по умолчанию), center или top",
-            "center_xy": "центрировать по X и Y (true)"},
+            "center_xy": "центрировать по X и Y (true)",
+            "on": "к какому объекту прикрепить (имя)",
+            "side": "top, bottom, left, right, front, back или center",
+            "offset": "зазор от поверхности, мм (0)"},
     positional=["objects"])
 def place(a, name):
     solids = a.solids()
     if len(solids) != 1:
         raise GeometryError("place работает с одним объектом.")
     base = solids[0]
+    if a.has("on"):
+        host = a.scene.resolve(a.text("on") or "")
+        side = (a.text("side", "top", ["top", "bottom", "left", "right",
+                                       "front", "back", "center"]) or "top").lower()
+        gap = float(a.num("offset", 0.0) or 0.0)
+        hb = host.manifold.bounding_box()
+        ob = base.manifold.bounding_box()
+        hc = [(hb[0] + hb[3]) / 2, (hb[1] + hb[4]) / 2, (hb[2] + hb[5]) / 2]
+        oc = [(ob[0] + ob[3]) / 2, (ob[1] + ob[4]) / 2, (ob[2] + ob[5]) / 2]
+        os_ = [ob[3] - ob[0], ob[4] - ob[1], ob[5] - ob[2]]
+        target = list(hc)
+        if side == "top":
+            target = [hc[0], hc[1], hb[5] + gap + os_[2] / 2]
+        elif side == "bottom":
+            target = [hc[0], hc[1], hb[2] - gap - os_[2] / 2]
+        elif side == "right":
+            target = [hb[3] + gap + os_[0] / 2, hc[1], hc[2]]
+        elif side == "left":
+            target = [hb[0] - gap - os_[0] / 2, hc[1], hc[2]]
+        elif side == "back":
+            target = [hc[0], hb[4] + gap + os_[1] / 2, hc[2]]
+        elif side == "front":
+            target = [hc[0], hb[2] - gap - os_[1] / 2, hc[2]]
+        off = (target[0] - oc[0], target[1] - oc[1], target[2] - oc[2])
+        a.scene.log("info", f"place: {base.name} → {side} от {host.name}", a.cmd.line)
+        return _derived(a, name, translate_manifold(base.manifold, off), base, "place")
     at = a.vec("at", 3, default=(0, 0, 0))
     align = (a.text("align", "bottom", ["bottom", "center", "top"]) or "bottom").lower()
     bb = base.manifold.bounding_box()

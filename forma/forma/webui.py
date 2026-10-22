@@ -208,6 +208,41 @@ class AppState:
         item = self.frame_cache.get(key)
         return item[1] if item else None
 
+    def morph(self, script: str, param: str, value: float) -> dict:
+        """Кадр морфинга: та же модель, но параметр сценария подменён.
+
+        Так анимация меняет геометрию во времени: кадры строятся по запросу и
+        кешируются рядом с кадрами сборки.
+        """
+        import hashlib
+        param = str(param or "").strip()
+        if not param:
+            raise FormaError("Морфинг: не указан параметр сценария.")
+        value = round(float(value), 4)
+        key = f"morph_{hashlib.sha1((script or '').encode('utf-8')).hexdigest()[:12]}_{param}_{value:g}"
+        cached = self.frame_cache.get(key)
+        if cached is None:
+            with self.lock:
+                b = run_build(script, analyze_model=False, overrides={param: value})
+                payload = b.payload(light=False)
+                glb = None
+                if b.ok and not b.empty:
+                    try:
+                        glb = b.glb()
+                    except Exception:
+                        glb = None
+                payload["key"] = key
+                payload["glb"] = bool(glb)
+                cached = (payload, glb)
+                self.frame_cache[key] = cached
+                self.frame_order.append(key)
+                while len(self.frame_order) > 48 or (
+                        len(self.frame_order) > 2
+                        and sum(len(v[1] or b"") for v in self.frame_cache.values()) > 96 * 1024 * 1024):
+                    old = self.frame_order.pop(0)
+                    self.frame_cache.pop(old, None)
+        return cached[0]
+
     def glb(self) -> bytes:
         with self.lock:
             if not self.last_build or not self.last_build.ok:
@@ -408,6 +443,7 @@ EXAMPLES = [
     ("Анатомическая фигура", "human_studio"),
     ("Кружка со студией", "mug_studio"),
     ("Анимация и сборка по шагам", "animation"),
+    ("Анимация по дорожкам и ключи", "animation_tracks"),
 ]
 
 
@@ -671,6 +707,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/build":
             script = body.get("script", "")
             self._send_json(st.build(script, auto=bool(body.get("auto"))))
+            return
+        if path == "/api/morph":
+            script = body.get("script", st.last_script)
+            self._send_json(st.morph(script, body.get("param", ""),
+                                     body.get("value", 0)))
             return
         if path == "/api/frame":
             script = body.get("script", st.last_script)

@@ -65,6 +65,8 @@ class Scene:
         self.settings: dict = dict(DEFAULT_SETTINGS)
         self.animation: dict | None = None
         self.animations: list[dict] = []
+        # ключевые кадры по объектам: {имя: [{t, pos, rot, scale, line}, ...]}
+        self.keys: dict[str, list[dict]] = {}
         self.objects: dict[str, Solid] = {}
         self.params: dict[str, float] = {}
         self.vars: dict[str, Any] = {}
@@ -122,45 +124,71 @@ class Scene:
             solid.notes.append("использован в другой фигуре")
 
     def add_animation(self, spec: dict) -> dict:
-        """Добавляет клип анимации. Строк animate может быть несколько — они идут подряд."""
+        """Добавляет клип анимации. Клипы с одинаковым track идут друг за другом,
+        с разным — параллельно."""
         self.animations.append(spec)
         self.animation = spec
         return spec
 
-    def animation_plan(self, step_count: int = 0) -> dict:
-        """Склеивает клипы в один тайм-лайн (для окна, отчёта и GLB).
+    def add_key(self, name: str, spec: dict) -> dict:
+        """Ключевой кадр объекта: смещение, поворот и масштаб в момент времени."""
+        self.keys.setdefault(name, []).append(spec)
+        self.keys[name].sort(key=lambda k: float(k.get("t") or 0.0))
+        return spec
 
-        ``start`` не задан — клип идёт сразу за предыдущим. Анимация сборки
-        длится ``hold`` секунд на шаг сценария, поэтому её длина зависит от
-        числа шагов, а не от секунд.
+    def animation_plan(self, step_count: int = 0) -> dict:
+        """Склеивает клипы в тайм-лайн. Клипы одного track идут друг за другом,
+        разные track — параллельно; ``start`` задаёт время вручную.
+
+        Анимация сборки длится ``hold`` секунд на шаг сценария, морфинг —
+        ``seconds``. Ключевые кадры объектов живут на своей дорожке.
         """
         clips: list[dict] = []
-        cursor = 0.0
+        cursors: dict[int, float] = {}
         for raw in self.animations:
             spec = dict(raw)
             kind = str(spec.get("kind") or "spin").lower()
+            track = int(spec.get("track") or 1)
             if kind == "assembly":
                 hold = float(spec.get("hold") or 0.8)
                 length = max(0.4, hold * max(1, step_count))
+            elif kind == "morph":
+                length = float(spec.get("seconds") or 3.0)
+                samples = int(spec.get("samples") or 12)
+                spec["samples"] = max(2, min(samples, 60))
             else:
                 length = float(spec.get("seconds") or 4.0)
             start = spec.get("start")
             if start is None:
-                start = cursor
+                start = cursors.get(track, 0.0)
             start = max(0.0, float(start))
+            spec["track"] = track
             spec["start"] = round(start, 3)
             spec["length"] = round(length, 3)
             spec["end"] = round(start + length, 3)
             clips.append(spec)
-            cursor = max(cursor, start + length)
-        total = max([c["end"] for c in clips], default=0.0)
+            cursors[track] = max(cursors.get(track, 0.0), start + length)
+
+        keys: list[dict] = []
+        for name, items in self.keys.items():
+            for item in sorted(items, key=lambda k: float(k.get("t") or 0.0)):
+                keys.append({**item, "object": name})
+        keys.sort(key=lambda k: float(k.get("t") or 0.0))
+
+        total = max([c["end"] for c in clips]
+                    + [float(k.get("t") or 0.0) for k in keys], default=0.0)
+        tracks = sorted(cursors) if clips else []
         return {
             "clips": clips,
             "duration": round(total, 3),
             "count": len(clips),
-            "has": bool(clips),
+            "has": bool(clips or keys),
             "kinds": [c["kind"] for c in clips],
             "assembly": next((c for c in clips if c["kind"] == "assembly"), None),
+            "track_count": len(tracks),
+            "tracks": tracks,
+            "keys": keys,
+            "key_count": len(keys),
         }
 
     def next_color(self) -> str:

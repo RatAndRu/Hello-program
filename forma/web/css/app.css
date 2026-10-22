@@ -738,15 +738,57 @@ button.mini:disabled { opacity: .38; cursor: default; }
 .anim-transport .chip { padding: 3px 7px; min-width: 30px; }
 .anim-transport #anim-scrub { flex: 1 1 160px; }
 .anim-read { min-width: 74px; text-align: right; font-variant-numeric: tabular-nums; }
-.anim-tracks { min-height: 26px; display: flex; align-items: center; }
+/* Таймлайн всегда внутри панели: при сотнях клипов и ключей он прокручивается,
+   а не вылезает за окно. */
+.anim-tracks {
+  min-height: 26px;
+  max-height: min(168px, 26vh);
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex; flex-direction: column; gap: 4px;
+  padding-right: 2px;
+  overscroll-behavior: contain;
+}
+.anim-track-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.anim-track-name {
+  flex: 0 0 58px; font-size: 10px; color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
 .anim-lane {
-  position: relative; flex: 1;
+  position: relative; flex: 1 1 auto; min-width: 0;
   height: 24px;
   background: #0f141b;
   border: 1px solid var(--line-soft);
   border-radius: 6px;
   overflow: hidden;
 }
+.anim-lane-keys { background: #0c1017; height: 20px; }
+.anim-key {
+  position: absolute; top: 2px; width: 8px; height: 14px;
+  margin-left: -4px; border-radius: 2px;
+  background: #e0b34a; border: 1px solid #f0cd7a;
+  cursor: pointer;
+}
+.anim-key:hover { background: #ffd77a; }
+/* Шаги сборки — своя прокручиваемая строка, не растягивают панель. */
+.anim-steps {
+  display: flex; align-items: center;
+  overflow-x: auto; overflow-y: hidden;
+  max-width: 100%; padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+.anim-keys { display: flex; flex-direction: column; gap: 3px; max-height: 108px; overflow: auto; }
+.anim-keys-head {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--text-faint); margin-top: 2px;
+}
+.anim-editor-row .ae-vec { width: 118px; }
+.anim-seg.seg-move { background: linear-gradient(180deg, #2f7a8a, #235261); border-color: #3f9aad; }
+.anim-seg.seg-scale { background: linear-gradient(180deg, #8a7a2f, #5f5321); border-color: #a99a3f; }
+.anim-seg.seg-turn { background: linear-gradient(180deg, #8a2f6b, #5f2149); border-color: #ad3f8a; }
+.anim-seg.seg-wait { background: linear-gradient(180deg, #4a4f57, #31353b); border-color: #5f6570; }
+.anim-seg.seg-morph { background: linear-gradient(180deg, #2f5f8a, #21425f); border-color: #3f7aad; }
+.anim-seg.seg-assembly { background: linear-gradient(180deg, #6b4f9e, #46346b); border-color: #8a6bc4; }
 .anim-seg {
   position: absolute; top: 3px; bottom: 3px;
   border-radius: 4px;

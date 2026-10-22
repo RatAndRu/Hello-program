@@ -45,10 +45,20 @@ ANIMATIONS = {
     "взрыв": "explode", "разнесение": "explode",
     "assembly": "assembly", "сборка": "assembly", "шаги": "assembly",
     "пошагово": "assembly", "steps": "assembly", "по_шагам": "assembly",
+    "move": "move", "перенос": "move", "перемещение": "move", "сдвиг": "move",
+    "shift": "move", "движение": "move",
+    "scale": "scale", "размер": "scale", "масштаб": "scale", "рост_размер": "scale",
+    "turn": "turn", "доворот": "turn", "наклон": "turn", "tilt": "turn",
+    "rotation": "turn",
+    "wait": "wait", "пауза": "wait", "ожидание": "wait", "задержка": "wait",
+    "morph": "morph", "морф": "morph", "морфинг": "morph",
+    "изменение": "morph", "форма": "morph", "shape": "morph",
 }
 
 KIND_NAMES_ANIM = {"spin": "вращение", "formation": "формирование",
-                   "explode": "разлёт", "assembly": "сборка по шагам"}
+                   "explode": "разлёт", "assembly": "сборка по шагам",
+                   "move": "перемещение", "scale": "масштаб", "turn": "доворот",
+                   "wait": "пауза", "morph": "изменение формы"}
 
 
 @op("scene", aliases=("сцена", "окружение", "фон", "view"), category="Сцена и материал",
@@ -177,32 +187,65 @@ def texture(a, name):
 
 
 @op("animate", aliases=("анимация", "движение", "animation"), category="Сцена и материал",
-    summary="Добавляет клип анимации: вращение, формирование, разлёт или сборка по шагам "
-            "сценария. Строк animate может быть несколько — клипы идут друг за другом.",
-    example="animate kind=spin axis=z seconds=6 loop=да",
+    summary="Добавляет клип анимации: вращение, формирование, разлёт, перемещение, "
+            "масштаб, доворот, пауза, сборка по шагам или изменение формы. "
+            "Клипы одного track идут друг за другом, разные track — параллельно.",
+    example="animate kind=spin axis=z seconds=6 track=1\n"
+            "animate kind=move dz=40 seconds=2 track=1\n"
+            "animate kind=scale to=1.4 seconds=2 track=1",
     positional=["kind"],
-    params={"kind": "spin, formation, explode или assembly (сборка по шагам)",
-            "axis": "ось вращения x, y или z", "seconds": "длительность клипа, с",
-            "start": "с какой секунды начинать (иначе — сразу за предыдущим клипом)",
+    params={"kind": "spin, formation, explode, move, scale, turn, wait, assembly, morph",
+            "axis": "ось: x, y, z (можно -x, -y, -z); z — вверх",
+            "seconds": "длительность клипа, с", "duration": "то же, что seconds",
+            "start": "с какой секунды начинать (иначе — за предыдущим клипом дорожки)",
             "loop": "зациклить да/нет", "amount": "разлёт: расстояние в мм",
-            "steps": "число ключей анимации", "fps": "кадров в секунду для покадрового просмотра",
-            "hold": "сборка: секунд на один шаг сценария"})
+            "steps": "число ключей анимации", "fps": "кадров в секунду",
+            "hold": "сборка: секунд на один шаг сценария",
+            "track": "дорожка 1…8: клипы одной дорожки идут подряд, разных — параллельно",
+            "object": "объект для move/scale (иначе — вся модель)",
+            "dx": "move: смещение по X, мм", "dy": "move: смещение по Y, мм",
+            "dz": "move: смещение по Z, мм", "to": "move: куда переместить центр [x,y,z]; "
+            "scale: во сколько раз увеличить (2 = вдвое)",
+            "from": "scale/morph: начальное значение", "angle": "turn: угол поворота, градусы",
+            "param": "morph: имя параметра сценария (R, H, …)",
+            "samples": "morph: сколько кадров геометрии построить (12)"})
 def animate(a, name):
     kind_raw = (a.text("kind") or "spin").strip().lower()
     if kind_raw not in ANIMATIONS:
         raise DslError(f"Неизвестная анимация «{kind_raw}».",
-                       hint="Доступно: spin (вращение), formation (формирование), "
-                            "explode (разлёт), assembly (сборка по шагам)",
+                       hint="Доступно: spin (вращение), formation (рост), explode (разлёт), "
+                            "move (перемещение), scale (масштаб), turn (доворот), "
+                            "wait (пауза), assembly (сборка по шагам), morph (изменение формы)",
                        line=a.cmd.line, command=a.cmd.text)
     kind = ANIMATIONS[kind_raw]
-    axis = (a.text("axis") or "z").strip().lower()
-    if axis not in ("x", "y", "z"):
-        raise DslError("Ось анимации: x, y или z.", line=a.cmd.line, command=a.cmd.text)
-    default_seconds = {"spin": 6.0, "formation": 4.0, "explode": 3.0, "assembly": 0.8}[kind]
-    seconds = float(a.num("seconds", default_seconds) or default_seconds)
+    axis_raw = (a.text("axis") or "z").strip().lower().replace(" ", "")
+    sign = 1.0
+    if axis_raw.startswith("-"):
+        sign, axis_raw = -1.0, axis_raw[1:]
+    elif axis_raw.startswith("+"):
+        axis_raw = axis_raw[1:]
+    elif axis_raw.endswith("-"):
+        sign, axis_raw = -1.0, axis_raw[:-1]
+    elif axis_raw.endswith("+"):
+        axis_raw = axis_raw[:-1]
+    if axis_raw not in ("x", "y", "z"):
+        raise DslError(f"Ось анимации «{a.text('axis')}» не понята.",
+                       hint="Ось задаётся буквой: x, y или z. Z — вверх (высота модели), "
+                            "X — влево/вправо, Y — глубина. Знак: axis=-z крутит в другую сторону.",
+                       line=a.cmd.line, command=a.cmd.text)
+    track = int(a.num("track", 1) or 1)
+    if track < 1 or track > 8:
+        raise DslError(f"Дорожка {track} вне диапазона 1…8.",
+                       hint="Клипы на одной дорожке идут друг за другом, на разных — "
+                            "одновременно. Всего дорожек восемь.",
+                       line=a.cmd.line, command=a.cmd.text)
+    default_seconds = {"spin": 6.0, "formation": 4.0, "explode": 3.0, "assembly": 0.8,
+                       "move": 2.0, "scale": 2.0, "turn": 2.0, "wait": 1.0,
+                       "morph": 3.0}[kind]
+    seconds = float(a.num("seconds", a.num("duration", default_seconds)) or default_seconds)
     seconds = max(0.2, min(seconds, 600.0))
     start_at = None
-    for key in ("start", "at", "from"):
+    for key in ("start", "at"):
         if a.has(key):
             start_at = float(a.num(key) or 0.0)
             start_at = max(0.0, min(start_at, 3600.0))
@@ -213,17 +256,119 @@ def animate(a, name):
     spec = {"kind": kind, "seconds": seconds, "fps": fps,
             "loop": a.boolean("loop", True),
             "steps": max(2, min(steps, 600)),
-            "axis": axis, "start": start_at,
-            "line": a.cmd.line, "text": a.cmd.text}
+            "axis": axis_raw, "axis_sign": sign, "start": start_at,
+            "track": track, "line": a.cmd.line, "text": a.cmd.text}
+
+    target = None
+    if a.has("object"):
+        target = a.scene.resolve(a.text("object") or "")
+        spec["object"] = target.name
+
     if kind == "assembly":
         spec["hold"] = max(0.1, min(float(a.num("hold", seconds) or seconds), 30.0))
         spec["seconds"] = spec["hold"]
-    if a.has("amount"):
-        spec["amount"] = float(a.num("amount") or 0.0)
+    elif kind in ("explode",):
+        if a.has("amount"):
+            spec["amount"] = float(a.num("amount") or 0.0)
+    elif kind == "move":
+        if a.has("to"):
+            to = a.vec("to", 3, required=True)
+            if target is not None:
+                bb = target.manifold.bounding_box()
+                cur = [(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2, (bb[2] + bb[5]) / 2]
+            else:
+                visible = a.scene.visible_solids()
+                if not visible:
+                    raise DslError("Нечего перемещать: в сцене нет видимых объектов.",
+                                   line=a.cmd.line, command=a.cmd.text)
+                boxes = [s.manifold.bounding_box() for s in visible]
+                lo = [min(b[0] for b in boxes), min(b[1] for b in boxes), min(b[2] for b in boxes)]
+                hi = [max(b[3] for b in boxes), max(b[4] for b in boxes), max(b[5] for b in boxes)]
+                cur = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2]
+            spec["delta"] = [float(to[i] - cur[i]) for i in range(3)]
+        else:
+            spec["delta"] = [float(a.num("dx", 0.0) or 0.0),
+                             float(a.num("dy", 0.0) or 0.0),
+                             float(a.num("dz", 0.0) or 0.0)]
+        if not any(abs(v) > 1e-9 for v in spec["delta"]):
+            raise DslError("Куда перемещать? Укажите dx/dy/dz или to=[x,y,z].",
+                           hint="Например: animate kind=move dz=40 seconds=2",
+                           line=a.cmd.line, command=a.cmd.text)
+    elif kind == "scale":
+        spec["from"] = float(a.num("from", 1.0) or 1.0)
+        spec["to"] = float(a.num("to", 1.5) or 1.5)
+        if abs(spec["to"] - spec["from"]) < 1e-9:
+            raise DslError("Масштаб не меняется: from и to равны.",
+                           line=a.cmd.line, command=a.cmd.text)
+    elif kind == "turn":
+        spec["angle"] = float(a.num("angle", 90.0) or 90.0) * sign
+    elif kind == "morph":
+        param = (a.text("param") or "").strip()
+        if not param:
+            raise DslError("morph меняет геометрию через параметр сценария.",
+                           hint="Сначала объявите параметр: R = 42, затем "
+                                "animate kind=morph param=R from=35 to=50 seconds=3",
+                           line=a.cmd.line, command=a.cmd.text)
+        if param not in a.scene.params:
+            raise DslError(f"Параметр «{param}» не найден в сценарии.",
+                           hint="Параметры объявляются строкой «имя = число» до команды animate.",
+                           line=a.cmd.line, command=a.cmd.text)
+        if not a.has("from") or not a.has("to"):
+            raise DslError("morph: нужны from= и to= (начальное и конечное значение).",
+                           line=a.cmd.line, command=a.cmd.text)
+        spec["param"] = param
+        spec["from"] = float(a.num("from") or 0.0)
+        spec["to"] = float(a.num("to") or 0.0)
+        spec["samples"] = max(2, min(int(a.num("samples", round(seconds * 4)) or 12), 60))
+
     a.scene.add_animation(spec)
-    if kind == "assembly":
-        a.scene.log("info", f"анимация сборки: {spec['hold']:g} с на шаг сценария", a.cmd.line)
-    else:
-        a.scene.log("info", f"анимация: {KIND_NAMES_ANIM.get(kind, kind)}, {seconds:g} с",
-                    a.cmd.line)
+    label = KIND_NAMES_ANIM.get(kind, kind)
+    extra = ""
+    if kind == "move":
+        extra = f", Δ=({spec['delta'][0]:g}, {spec['delta'][1]:g}, {spec['delta'][2]:g}) мм"
+    elif kind == "scale":
+        extra = f", ×{spec['from']:g}→×{spec['to']:g}"
+    elif kind == "turn":
+        extra = f", {spec['angle']:g}° вокруг {axis_raw}"
+    elif kind == "morph":
+        extra = f", {spec['param']} {spec['from']:g}→{spec['to']:g}"
+    a.scene.log("info", f"анимация: {label}, {seconds:g} с, дорожка {track}{extra}",
+                a.cmd.line)
     return None
+
+
+@op("keyframe", aliases=("key", "ключ", "кадр", "ключ_кадр", "keys"), category="Сцена и материал",
+    summary="Ключевой кадр объекта: смещение, поворот и масштаб в заданный момент. "
+            "Строк keyframe может быть несколько — между ними плавная интерполяция.",
+    example="keyframe ручка at=0 pos=[0, 0, 0]\nkeyframe ручка at=2 pos=[0, 0, 30]",
+    positional=["object"],
+    params={"object": "имя объекта", "at": "время ключа, с",
+            "pos": "смещение [dx, dy, dz] в мм", "rot": "поворот [rx, ry, rz] в градусах",
+            "scale": "масштаб (1 — как построено)"})
+def keyframe(a, name):
+    target = a.text("object") or name
+    if not target:
+        raise DslError("Укажите объект: keyframe ручка at=0 pos=[0,0,20]",
+                       line=a.cmd.line, command=a.cmd.text)
+    solid = a.scene.resolve(target)
+    at = float(a.num("at", 0.0) or 0.0)
+    at = max(0.0, min(at, 3600.0))
+    pos = a.vec("pos", 3) if a.has("pos") else None
+    rot = a.vec("rot", 3) if a.has("rot") else None
+    scale = float(a.num("scale")) if a.has("scale") else None
+    if pos is None and rot is None and scale is None:
+        raise DslError("Ключ пустой: укажите pos, rot или scale.",
+                       hint="Например: keyframe ручка at=1 pos=[0,0,20] rot=[0,0,45]",
+                       line=a.cmd.line, command=a.cmd.text)
+    spec = {"t": at, "line": a.cmd.line, "text": a.cmd.text}
+    if pos is not None:
+        spec["pos"] = [float(v) for v in pos]
+    if rot is not None:
+        spec["rot"] = [float(v) for v in rot]
+    if scale is not None:
+        spec["scale"] = float(scale)
+    a.scene.add_key(solid.name, spec)
+    a.scene.log("info", f"ключ: {solid.name} @ {at:g} с", a.cmd.line)
+    return None
+
+

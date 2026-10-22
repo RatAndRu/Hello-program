@@ -65,7 +65,8 @@ export class Viewer {
     this._frameCache = new Map();
     this._animWrap = null;
     this._animCenter = null;
-    this._explodeItems = [];
+    this._items = [];          // детали: базовые поза/поворот/масштаб + центр
+    this._keyTracks = [];      // ключевые кадры по объектам
     this._overlays = [];
     this._selOverlays = [];
     this.selectMode = false;
@@ -452,6 +453,15 @@ export class Viewer {
       this.frameRoot = null;
       this.frameKey = null;
     }
+    this._frameCache.forEach((root) => {
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        o.geometry?.dispose();
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => m?.dispose?.());
+      });
+    });
+    this._frameCache.clear();
     this.model = null;
     this.mixer = null;
     this.action = null;
@@ -462,7 +472,8 @@ export class Viewer {
     this.playing = false;
     this.time = 0;
     this.duration = 0;
-    this._explodeItems = [];
+    this._items = [];
+    this._keyTracks = [];
     this._animCenter = null;
     this._clearOverlays();
     this._disposeSelOverlay();
@@ -512,7 +523,8 @@ export class Viewer {
       this._prepareAnimWrap();
       const clips = animation?.clips?.length ? animation.clips
         : (animation && animation.kind ? [animation] : []);
-      this.setTimeline({ clips, duration: Number(animation?.duration) || 0,
+      this.setTimeline({ clips, keys: animation?.keys || [],
+                         duration: Number(animation?.duration) || 0,
                          assembly: animation?.assembly || null });
       this.setAxes(this.axesVisible);
       this.setShading(this.shading);
@@ -552,7 +564,7 @@ export class Viewer {
   _prepareAnimWrap() {
     this._animWrap = null;
     this._animCenter = null;
-    this._explodeItems = [];
+    this._items = [];
     if (!this.model) return;
     this.model.updateMatrixWorld(true);
     const box = new THREE.Box3().setFromObject(this.model);
@@ -573,37 +585,89 @@ export class Viewer {
     wrap.add(this.model);
     this._animWrap = wrap;
     this._animCenter = center;
+    this.model.updateMatrixWorld(true);
     this.model.traverse((o) => {
       if (!o.isMesh) return;
-      const p = new THREE.Vector3();
-      o.getWorldPosition(p);
-      const dir = p.clone().sub(center);
+      const worldCenter = new THREE.Box3().setFromObject(o).getCenter(new THREE.Vector3());
+      const dir = worldCenter.clone().sub(center);
       const len = dir.length();
-      const local = dir.length() > 1e-6 ? dir.normalize() : new THREE.Vector3(0, 1, 0);
-      if (o.parent && o.parent !== wrap) {
-        const q = new THREE.Quaternion();
-        o.parent.getWorldQuaternion(q);
-        local.applyQuaternion(q.invert());
-      }
-      this._explodeItems.push({ node: o, base: o.position.clone(), dir: local,
-                                reach: Math.min(1, len / 120) });
+      const local = len > 1e-6 ? dir.normalize() : new THREE.Vector3(0, 1, 0);
+      // Вращение и масштаб меша идут вокруг его собственного центра, поэтому
+      // позиция узла не меняется: достаточно повернуть кватернион и масштаб.
+      this._items.push({
+        node: o, name: o.name || o.parent?.name || '',
+        base: o.position.clone(), baseQ: o.quaternion.clone(), baseS: o.scale.clone(),
+        dir: local, reach: Math.min(1, len / 120),
+      });
     });
   }
 
-  /** Тайм-лайн сценария: клипы со временем начала. */
+  /** Тайм-лайн сценария: клипы со временем начала и ключевые кадры объектов. */
   setTimeline(timeline) {
-    this.plan = timeline && timeline.clips && timeline.clips.length ? timeline : null;
+    const clips = (timeline && timeline.clips) || [];
+    const keys = (timeline && timeline.keys) || [];
+    this.plan = timeline && (clips.length || keys.length) ? { ...timeline, clips, keys } : null;
     this.timeline = this.plan;
     if (this.plan) {
-      const ends = this.plan.clips.map((c) => Number(c.end) || 0);
-      this.duration = Math.max(0.2, Number(this.plan.duration) || Math.max(...ends) || 4);
+      const ends = clips.map((c) => Number(c.end) || 0)
+        .concat(keys.map((k) => Number(k.t) || 0));
+      this.duration = Math.max(0.2, Number(this.plan.duration) || Math.max(...ends, 0) || 4);
     } else {
       this.duration = Math.max(0.2, this.animDuration || 0);
     }
+    this._keyTracks = this._buildKeyTracks(keys);
     this.time = 0;
-    this.loop = this.plan ? this.plan.clips.every((c) => c.loop !== false) : this.loop;
+    this.loop = this.plan && clips.length ? clips.every((c) => c.loop !== false) : this.loop;
     this.applyTime(0);
     return this.duration;
+  }
+
+  /** Ключи по объектам → массивы для быстрой выборки на каждом кадре. */
+  _buildKeyTracks(keys) {
+    const byObject = new Map();
+    (keys || []).forEach((k) => {
+      const name = k.object || '';
+      if (!name) return;
+      if (!byObject.has(name)) byObject.set(name, []);
+      byObject.get(name).push(k);
+    });
+    const out = [];
+    byObject.forEach((items, name) => {
+      items.sort((a, b) => (Number(a.t) || 0) - (Number(b.t) || 0));
+      out.push({
+        name,
+        times: items.map((k) => Number(k.t) || 0),
+        pos: items.map((k) => k.pos ? new THREE.Vector3(k.pos[0], k.pos[2], -k.pos[1])
+          : new THREE.Vector3(0, 0, 0)),
+        quat: items.map((k) => k.rot ? this._modelingQuat(k.rot) : new THREE.Quaternion()),
+        scale: items.map((k) => (k.scale === undefined || k.scale === null) ? 1 : Number(k.scale)),
+      });
+    });
+    return out;
+  }
+
+  /** Углы Эйлера сценария (градусы, Z вверх) → кватернион three.js. */
+  _modelingQuat(rot) {
+    const rx = THREE.MathUtils.degToRad(Number(rot[0]) || 0);
+    const ry = THREE.MathUtils.degToRad(Number(rot[1]) || 0);
+    const rz = THREE.MathUtils.degToRad(Number(rot[2]) || 0);
+    const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), rx);
+    const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), ry);
+    const qz = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), rz);
+    const qModel = qz.multiply(qy).multiply(qx);
+    // сценарий Z-up → three.js Y-up: поворот −90° вокруг X
+    const m = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0),
+                                                      -Math.PI / 2);
+    return m.clone().multiply(qModel).multiply(m.clone().invert());
+  }
+
+  /** Ось сценария (x/y/z, Z — вверх) в координатах three.js (Y — вверх). */
+  _axisVector(axis, sign = 1) {
+    const a = String(axis || 'z').toLowerCase();
+    const v = a === 'x' ? new THREE.Vector3(1, 0, 0)
+      : a === 'y' ? new THREE.Vector3(0, 0, -1)
+        : new THREE.Vector3(0, 1, 0);
+    return v.multiplyScalar(Number(sign) || 1);
   }
 
   hasModel() {
@@ -612,7 +676,8 @@ export class Viewer {
   }
 
   hasAnimation() {
-    return Boolean((this.plan && this.plan.clips.length) || this.gltfClips.length);
+    return Boolean((this.plan && (this.plan.clips.length || this._keyTracks.length))
+      || this.gltfClips.length);
   }
 
   animationKinds() {
@@ -642,50 +707,124 @@ export class Viewer {
     return 1 - Math.pow(1 - Math.max(0, Math.min(1, x)), 3);
   }
 
+  /** Значение ключей объекта в момент t (линейная интерполяция между ключами). */
+  _sampleKeys(track, t) {
+    const times = track.times;
+    if (!times.length) return null;
+    if (t <= times[0]) {
+      return { pos: track.pos[0], quat: track.quat[0], scale: track.scale[0] };
+    }
+    const last = times.length - 1;
+    if (t >= times[last]) {
+      return { pos: track.pos[last], quat: track.quat[last], scale: track.scale[last] };
+    }
+    let i = 0;
+    while (i < last && times[i + 1] <= t) i += 1;
+    const span = Math.max(1e-6, times[i + 1] - times[i]);
+    const u = Math.max(0, Math.min(1, (t - times[i]) / span));
+    const pos = track.pos[i].clone().lerp(track.pos[i + 1], u);
+    const quat = track.quat[i].clone().slerp(track.quat[i + 1], u);
+    const scale = track.scale[i] + (track.scale[i + 1] - track.scale[i]) * u;
+    return { pos, quat, scale };
+  }
+
+  _resetItems() {
+    this._items.forEach((item) => {
+      item.node.position.copy(item.base);
+      item.node.quaternion.copy(item.baseQ);
+      item.node.scale.copy(item.baseS);
+    });
+  }
+
+  _applyItemTransform(item, rot, scale, offset) {
+    const off = offset || new THREE.Vector3();
+    item.node.position.copy(item.base).add(off);
+    item.node.quaternion.copy(item.baseQ);
+    if (rot) item.node.quaternion.premultiply(rot);
+    item.node.scale.copy(item.baseS).multiplyScalar(scale);
+  }
+
   _applyPlan(t) {
     const wrap = this._animWrap;
     if (!wrap) return;
-    let angle = 0;
-    let axis = 'z';
-    let scale = 1;
-    let explode = 0;
-    let forming = false;
-    for (const clip of this.plan.clips) {
+    this._resetItems();
+    wrap.quaternion.identity();
+    wrap.scale.setScalar(1);
+    wrap.position.copy(this._animCenter || new THREE.Vector3());
+
+    const wrapRot = new THREE.Quaternion();
+    let wrapScale = 1;
+    const wrapOffset = new THREE.Vector3();
+    const objectState = new Map();
+    this._items.forEach((item) => {
+      objectState.set(item.name, { rot: new THREE.Quaternion(), scale: 1,
+                                   offset: new THREE.Vector3() });
+    });
+
+    // 1) ключевые кадры — базовая поза объекта
+    this._keyTracks.forEach((track) => {
+      const st = objectState.get(track.name);
+      if (!st) return;
+      const sample = this._sampleKeys(track, t);
+      if (!sample) return;
+      st.rot.multiply(sample.quat);
+      st.scale *= sample.scale;
+      st.offset.add(sample.pos);
+    });
+
+    // 2) клипы: все дорожки сразу, поэтому действия складываются
+    for (const clip of (this.plan?.clips || [])) {
+      const kind = String(clip.kind || 'spin').toLowerCase();
+      if (kind === 'assembly' || kind === 'morph' || kind === 'wait') continue;
       const start = Number(clip.start) || 0;
-      const earlyKind = String(clip.kind || 'spin').toLowerCase();
+      const len = Math.max(0.1, Number(clip.length) || Number(clip.seconds) || 4);
+      const target = clip.object ? objectState.get(String(clip.object)) : null;
       if (t + 1e-6 < start) {
-        // как в GLB: до начала формирования модель ещё «не выросла»
-        if (earlyKind === 'formation') { forming = true; scale = 0.001; }
+        if (kind === 'formation') {
+          if (target) target.scale *= 0.001; else wrapScale *= 0.001;
+        }
         continue;
       }
       const local = t - start;
-      const len = Math.max(0.1, Number(clip.length) || Number(clip.seconds) || 4);
       const p = Math.max(0, Math.min(1, local / len));
-      const kind = String(clip.kind || 'spin').toLowerCase();
+      const sign = Number(clip.axis_sign) || 1;
       if (kind === 'spin') {
-        angle = Math.PI * 2 * p;
-        axis = String(clip.axis || 'z').toLowerCase();
+        const q = new THREE.Quaternion().setFromAxisAngle(
+          this._axisVector(clip.axis, sign), Math.PI * 2 * p);
+        if (target) target.rot.multiply(q); else wrapRot.multiply(q);
+      } else if (kind === 'turn') {
+        const q = new THREE.Quaternion().setFromAxisAngle(
+          this._axisVector(clip.axis, 1), THREE.MathUtils.degToRad(Number(clip.angle) || 0) * p);
+        if (target) target.rot.multiply(q); else wrapRot.multiply(q);
       } else if (kind === 'formation') {
-        // в GLB рост заканчивается на 0,85 длительности — держим ту же кривую
-        forming = true;
         const grow = Math.min(1, local / Math.max(0.1, len * 0.85));
-        scale = Math.max(0.001, 0.001 + 0.999 * grow);
+        const f = Math.max(0.001, 0.001 + 0.999 * grow);
+        if (target) target.scale *= f; else wrapScale *= f;
+      } else if (kind === 'scale') {
+        const f0 = Number(clip.from ?? 1);
+        const f1 = Number(clip.to ?? 1.5);
+        const f = f0 + (f1 - f0) * p;
+        if (target) target.scale *= f; else wrapScale *= f;
+      } else if (kind === 'move') {
+        const d = clip.delta || [0, 0, 0];
+        const off = new THREE.Vector3(d[0], d[2], -d[1]).multiplyScalar(p);
+        if (target) target.offset.add(off); else wrapOffset.add(off);
       } else if (kind === 'explode') {
-        explode = p * (Number(clip.amount) || 30);
+        const amount = Number(clip.amount) || 30;
+        this._items.forEach((item) => {
+          objectState.get(item.name)?.offset.addScaledVector(item.dir, amount * p);
+        });
       }
     }
-    if (!forming) scale = 1;
-    wrap.scale.setScalar(scale);
-    const q = new THREE.Quaternion();
-    if (angle) {
-      const v = axis === 'x' ? new THREE.Vector3(1, 0, 0)
-        : axis === 'y' ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
-      q.setFromAxisAngle(v, angle);
-    }
-    wrap.quaternion.copy(q);
-    this._explodeItems.forEach(({ node, base, dir }) => {
-      if (!explode) { node.position.copy(base); return; }
-      node.position.copy(base).addScaledVector(dir, explode);
+
+    wrap.quaternion.copy(wrapRot);
+    wrap.scale.setScalar(wrapScale);
+    wrap.position.copy(this._animCenter || new THREE.Vector3()).add(wrapOffset);
+
+    objectState.forEach((st, name) => {
+      const item = this._items.find((it) => it.name === name);
+      if (!item) return;
+      this._applyItemTransform(item, st.rot, st.scale, st.offset);
     });
   }
 
@@ -758,6 +897,28 @@ export class Viewer {
       this._frameCache.delete(oldest);
     }
     this._showFrameObject(key, root);
+  }
+
+  /** Предзагрузка кадра, чтобы проигрывание «сборки по шагам» не спотыкалось. */
+  async preloadFrame(key, url) {
+    if (!key || !url || this._frameCache.has(key)) return;
+    const loader = new GLTFLoader();
+    const gltf = await new Promise((resolve, reject) => {
+      loader.load(url, resolve, undefined, reject);
+    });
+    const root = gltf.scene;
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => { if (m) { m.envMapIntensity = 1.15; m.side = THREE.FrontSide; } });
+    });
+    this._frameCache.set(key, root);
+    while (this._frameCache.size > 20) {
+      const oldest = this._frameCache.keys().next().value;
+      this._frameCache.delete(oldest);
+    }
   }
 
   _showFrameObject(key, root) {

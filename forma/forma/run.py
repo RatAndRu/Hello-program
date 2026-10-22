@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 import time
 import traceback
 from dataclasses import dataclass, field
@@ -61,7 +62,8 @@ class Build:
             scene = self.scene
             self._glb = export_glb(solids,
                                    animation=scene.animation if scene else None,
-                                   animations=list(scene.animations) if scene else None)
+                                   animations=list(scene.animations) if scene else None,
+                                   keys=dict(scene.keys) if scene else None)
         return self._glb
 
     def objects_payload(self) -> list[dict]:
@@ -128,6 +130,7 @@ class Build:
             "settings": dict(scene.settings) if scene else {},
             "animation": scene.animation if scene else None,
             "animations": plan["clips"],
+            "keys": plan.get("keys", []),
             "timeline": plan,
             "steps": self.steps,
             "frames": frames,
@@ -141,6 +144,58 @@ def _hash(script: str) -> str:
     return hashlib.sha1(script.encode("utf-8")).hexdigest()[:12]
 
 
+MEASURES = {
+    "height": lambda bb, st: st["size"][2],
+    "width": lambda bb, st: st["size"][0],
+    "depth": lambda bb, st: st["size"][1],
+    "volume": lambda bb, st: st["volume"] / 1000.0,
+    "top": lambda bb, st: bb[5],
+    "bottom": lambda bb, st: bb[2],
+    "left": lambda bb, st: bb[0],
+    "right": lambda bb, st: bb[3],
+    "front": lambda bb, st: bb[1],
+    "back": lambda bb, st: bb[4],
+    "cx": lambda bb, st: (bb[0] + bb[3]) / 2,
+    "cy": lambda bb, st: (bb[1] + bb[4]) / 2,
+    "cz": lambda bb, st: (bb[2] + bb[5]) / 2,
+    "высота_об": None, "ширина_об": None, "объём": None, "объем": None,
+    "верх": None, "низ": None, "лево": None, "право": None,
+}
+
+
+def _measure(name: str, obj: str, scene: Scene) -> float:
+    name = name.lower()
+    aliases = {"высота_об": "height", "ширина_об": "width", "объём": "volume",
+               "объем": "volume", "верх": "top", "низ": "bottom", "лево": "left",
+               "право": "right"}
+    name = aliases.get(name, name)
+    fn = MEASURES.get(name)
+    if fn is None:
+        raise DslError(f"Неизвестная функция «{name}».", line=scene.line)
+    target = (obj or "").strip().strip("\"'")
+    if not target:
+        raise DslError(f"Функции {name}() нужно имя объекта: {name}(кружка)",
+                       line=scene.line, command=scene.command)
+    solid = scene.resolve(target)
+    stats = solid.stats()
+    return float(fn(stats["bbox"], stats))
+
+
+def _substitute_measures(raw: str, scene: Scene) -> str:
+    """Подставляет height(кружка), top(крышка) … в числовое выражение."""
+    if "(" not in raw:
+        return raw
+    pattern = re.compile(r"([A-Za-zА-Яа-яЁё_][\w]*)\s*\(\s*([^()]*?)\s*\)")
+    out = raw
+    for match in list(pattern.finditer(raw)):
+        fn = match.group(1).lower()
+        if fn not in MEASURES:
+            continue
+        value = _measure(fn, match.group(2), scene)
+        out = out.replace(match.group(0), f"{value:.6f}", 1)
+    return out
+
+
 def _handle_let(scene: Scene, cmd) -> None:
     if cmd.kwargs:
         name, raw = next(iter(cmd.kwargs.items()))
@@ -150,6 +205,12 @@ def _handle_let(scene: Scene, cmd) -> None:
         raise DslError("Формат: let имя = значение", line=cmd.line, command=cmd.text)
     if not name.isidentifier():
         raise DslError(f"Недопустимое имя параметра «{name}».", line=cmd.line, command=cmd.text)
+    if name in getattr(scene, "overrides", {}):
+        value = float(scene.overrides[name])
+        scene.params[name] = value
+        scene.log("info", f"параметр {name} = {value:g} (морфинг)", cmd.line)
+        return
+    raw = _substitute_measures(raw, scene)
     value = parse_value(raw, scene.params)
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise DslError(f"Параметр «{name}» должен быть числом, получено «{value}».",
@@ -188,8 +249,15 @@ def _execute(scene: Scene, cmd) -> None:
 
     spec = lookup(verb)
     if spec is None and cmd.target:
+        # морфинг: значение параметра подменяется при сборке кадра
+        if cmd.target in getattr(scene, "overrides", {}):
+            value = float(scene.overrides[cmd.target])
+            scene.params[cmd.target] = value
+            scene.log("info", f"параметр {cmd.target} = {value:g} (морфинг)", cmd.line)
+            return
         # строка вида  height = 95  или  точки = [[0,0],[40,0]]  или  имя = "Кружка"
         raw = (cmd.rest or "").strip()
+        raw = _substitute_measures(raw, scene)
         value = parse_value(raw, scene.params, scene.vars)
         is_number = isinstance(value, (int, float)) and not isinstance(value, bool)
         parsed_ok = not (isinstance(value, str) and value == raw)
@@ -256,12 +324,23 @@ def _execute(scene: Scene, cmd) -> None:
 
 
 def build(script: str, previous_analysis: dict | None = None,
-          upto: int | None = None, analyze_model: bool = True) -> Build:
-    """Собирает сцену. ``upto`` — остановиться после N-й команды (кадр сборки)."""
+          upto: int | None = None, analyze_model: bool = True,
+          overrides: dict | None = None) -> Build:
+    """Собирает сцену. ``upto`` — остановиться после N-й команды (кадр сборки).
+
+    ``overrides`` подменяет числовые параметры сценария (R = 42) — так строится
+    морфинг: одна и та же модель с разными значениями параметра.
+    """
     started = time.perf_counter()
     script = script or ""
     result = Build(script=script, script_hash=_hash(script), upto=upto)
     scene = Scene()
+    scene.overrides = dict(overrides or {})
+    for key, value in (overrides or {}).items():
+        try:
+            scene.params[str(key)] = float(value)
+        except (TypeError, ValueError):
+            continue
     result.scene = scene
     t_parse = time.perf_counter()
     try:

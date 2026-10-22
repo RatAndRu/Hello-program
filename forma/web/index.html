@@ -204,30 +204,72 @@
           <div class="anim-tracks" id="anim-tracks"></div>
           <div class="anim-editor" id="anim-editor" hidden>
             <div class="anim-editor-row">
-              <label>Вид
+              <label>Действие
                 <select id="ae-kind">
                   <option value="spin">вращение</option>
+                  <option value="turn">доворот на угол</option>
+                  <option value="move">перемещение</option>
+                  <option value="scale">масштаб</option>
                   <option value="formation">формирование</option>
                   <option value="explode">разлёт</option>
+                  <option value="wait">пауза</option>
                   <option value="assembly">сборка по шагам</option>
+                  <option value="morph">изменение формы</option>
                 </select>
               </label>
               <label>Ось
-                <select id="ae-axis"><option>x</option><option>y</option><option selected>z</option></select>
+                <select id="ae-axis">
+                  <option>x</option><option>y</option><option selected>z</option>
+                  <option>-x</option><option>-y</option><option>-z</option>
+                </select>
               </label>
               <label>Секунд <input type="number" id="ae-seconds" min="0.2" max="600" step="0.1" value="4" /></label>
               <label>Старт, с <input type="number" id="ae-start" min="0" max="3600" step="0.1" placeholder="само" /></label>
+              <label>Дорожка <input type="number" id="ae-track" min="1" max="8" step="1" value="1" /></label>
+              <label id="ae-object-wrap">Объект
+                <select id="ae-object"><option value="">вся модель</option></select>
+              </label>
               <label id="ae-hold-wrap">Шаг, с <input type="number" id="ae-hold" min="0.1" max="30" step="0.1" value="0.8" /></label>
               <label id="ae-amount-wrap">Разлёт, мм <input type="number" id="ae-amount" min="0" max="2000" step="1" value="30" /></label>
+              <label id="ae-dx-wrap">ΔX <input type="number" id="ae-dx" step="1" value="0" /></label>
+              <label id="ae-dy-wrap">ΔY <input type="number" id="ae-dy" step="1" value="0" /></label>
+              <label id="ae-dz-wrap">ΔZ <input type="number" id="ae-dz" step="1" value="0" /></label>
+              <label id="ae-from-wrap">От <input type="number" id="ae-from" step="0.1" value="1" /></label>
+              <label id="ae-to-wrap">До <input type="number" id="ae-to" step="0.1" value="1.5" /></label>
+              <label id="ae-angle-wrap">Угол, ° <input type="number" id="ae-angle" min="-360" max="360" step="5" value="90" /></label>
+              <label id="ae-param-wrap">Параметр
+                <select id="ae-param"><option value="">—</option></select>
+              </label>
+              <label id="ae-samples-wrap">Кадров <input type="number" id="ae-samples" min="2" max="60" step="1" value="12" /></label>
               <label class="ae-check"><input type="checkbox" id="ae-loop" checked /> зациклить</label>
               <button class="small primary" id="ae-add">Добавить клип</button>
             </div>
             <div class="anim-editor-hint">
-              Клип записывается строкой <code>animate ...</code> в сценарий — нейросеть может
-              добавлять и менять их обычными командами.
+              Клип записывается строкой <code>animate ...</code> в сценарий. Клипы одной
+              дорожки идут друг за другом, разных — <b>параллельно</b>.
+              Оси: <b>x</b> — влево/вправо, <b>y</b> — глубина (вперёд/назад),
+              <b>z</b> — <b>вверх</b> (высота). Знак «−» крутит или двигает в обратную сторону.
+              Для <code>move</code>, <code>scale</code>, <code>turn</code> можно указать объект —
+              тогда движется только он.
             </div>
             <div class="anim-clips" id="anim-clips"></div>
+
+            <div class="anim-keys-head">Ключевые кадры</div>
+            <div class="anim-editor-row">
+              <label>Объект <select id="ak-object"></select></label>
+              <label>Время, с <input type="number" id="ak-at" min="0" step="0.1" value="0" /></label>
+              <label>Смещение <input class="ae-vec" id="ak-pos" value="0, 0, 0" /></label>
+              <label>Поворот <input class="ae-vec" id="ak-rot" value="0, 0, 0" /></label>
+              <label>Масштаб <input type="number" id="ak-scale" min="0.01" max="50" step="0.1" placeholder="—" /></label>
+              <button class="small primary" id="ak-add">Добавить ключ</button>
+            </div>
+            <div class="anim-keys" id="anim-keys"></div>
           </div>
+        </div>
+        <div class="studio-note">
+          Анимация хранится в сценарии: клипы <code>animate</code> и ключи <code>keyframe</code>
+          сохраняются в GLB (Blender покажет их действиями). «Кадры сборки» — настоящие
+          промежуточные модели по шагам, «изменение формы» строит кадры с другим параметром.
         </div>
         <div class="studio-note">
           Анимация хранится в сценарии: клипы <code>animate</code> сохраняются в GLB (Blender покажет

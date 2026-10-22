@@ -1,0 +1,23 @@
+# Анимация 0.12: несколько дорожек, свои клипы и ключевые кадры.
+# Дорожка 1 — общее вращение сцены, дорожка 2 — доворот рычага,
+# дорожка 3 — подъём и опускание груза, ключи — отдельная поза груза.
+
+кольцо = cylinder radius=48 height=6 segments=64
+рычаг = box size=[80, 8, 8]
+рычаг = place [рычаг] on=кольцо side=top offset=2
+груз = sphere radius=9 segments=32
+груз = place [груз] on=рычаг side=right offset=4
+стойка = cylinder radius=4 height=56 segments=24
+стойка = place [стойка] on=кольцо side=top offset=2
+
+animate kind=spin axis=z seconds=8 track=1
+animate kind=turn object=рычаг angle=360 axis=z seconds=4 track=2
+animate kind=turn object=рычаг angle=-360 axis=z seconds=4 track=2 start=4
+animate kind=move object=груз dz=24 seconds=2 track=3
+animate kind=move object=груз dz=-24 seconds=2 track=3 start=2
+animate kind=scale object=груз from=1 to=1.4 seconds=1 track=4 start=4
+animate kind=scale object=груз from=1.4 to=1 seconds=1 track=4 start=5
+
+keyframe груз at=0 pos=[0, 0, 0] rot=[0, 0, 0] scale=1
+keyframe груз at=2 pos=[0, 0, 10] rot=[0, 0, 180] scale=1.2
+keyframe груз at=4 pos=[0, 0, 0] rot=[0, 0, 360] scale=1

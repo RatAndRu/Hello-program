@@ -657,7 +657,7 @@ def _glb_geometry(m: mf.Manifold, max_tris: int = 4_000_000):
 
 
 def export_glb(objects, with_normals: bool = True, animation: dict | None = None,
-               animations: list[dict] | None = None) -> bytes:
+               animations: list[dict] | None = None, keys: dict | None = None) -> bytes:
     """Собирает GLB с отдельным материалом на каждый объект.
 
     Поддерживает текстуры (UV-развёртка + baseColorTexture) и анимацию
@@ -726,9 +726,9 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
     clips = [sp for sp in (animations or []) if sp]
     if animation and not clips:
         clips = [animation]
-    if clips:
+    if clips or keys:
         try:
-            data = add_glb_animations(bytes(data), clips, centers, diagonal)
+            data = add_glb_animations(bytes(data), clips, centers, diagonal, keys=keys)
         except Exception:
             pass  # анимация — бонус: без неё файл остаётся корректным
     return bytes(data)
@@ -778,20 +778,111 @@ def add_glb_animation(data: bytes, spec: dict, centers: dict | None = None,
     return add_glb_animations(data, [spec], centers, diagonal)
 
 
+def _gltf_axis(axis: str, sign: float = 1.0) -> np.ndarray:
+    """Ось сценария (Z-up) в координатах glTF (Y-up): x→x, y→−z, z→y."""
+    a = str(axis or "z").lower()
+    vec = {"x": (1.0, 0.0, 0.0), "y": (0.0, 0.0, -1.0), "z": (0.0, 1.0, 0.0)}.get(a)
+    if vec is None:
+        vec = (0.0, 1.0, 0.0)
+    return np.array(vec, dtype=np.float64) * float(sign)
+
+
+def _gltf_vec(v) -> np.ndarray:
+    return np.array([float(v[0]), float(v[2]), -float(v[1])], dtype=np.float64)
+
+
+def _quat(axis: np.ndarray, angle: float) -> np.ndarray:
+    ax = np.asarray(axis, dtype=np.float64)
+    ln = float(np.linalg.norm(ax))
+    if ln < 1e-12:
+        return np.array([0.0, 0.0, 0.0, 1.0])
+    ax = ax / ln
+    h = float(angle) / 2.0
+    return np.array([ax[0] * np.sin(h), ax[1] * np.sin(h), ax[2] * np.sin(h),
+                     np.cos(h)], dtype=np.float64)
+
+
+def _qmul(a: np.ndarray, b: np.ndarray) -> np.ndarray:
+    ax, ay, az, aw = a
+    bx, by, bz, bw = b
+    return np.array([aw * bx + ax * bw + ay * bz - az * by,
+                     aw * by - ax * bz + ay * bw + az * bx,
+                     aw * bz + ax * by - ay * bx + az * bw,
+                     aw * bw - ax * bx - ay * by - az * bz], dtype=np.float64)
+
+
+def _qconj(q: np.ndarray) -> np.ndarray:
+    return np.array([-q[0], -q[1], -q[2], q[3]], dtype=np.float64)
+
+
+# поворот из системы сценария (Z-up) в glTF (Y-up): −90° вокруг X
+_Q_TO_GLTF = _quat(np.array([1.0, 0.0, 0.0]), -np.pi / 2)
+
+
+def _euler_modeling_to_gltf(rot_deg) -> np.ndarray:
+    """Углы Эйлера сценария (градусы, X→Y→Z) → кватернион glTF."""
+    rx, ry, rz = [np.radians(float(v)) for v in rot_deg]
+    q = _qmul(_qmul(_quat(np.array([0.0, 0.0, 1.0]), rz),
+                    _quat(np.array([0.0, 1.0, 0.0]), ry)),
+              _quat(np.array([1.0, 0.0, 0.0]), rx))
+    return _qmul(_qmul(_Q_TO_GLTF, q), _qconj(_Q_TO_GLTF))
+
+
+def _node_trs(node: dict) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Разбирает узел на translation / rotation / scale (matrix тоже понимает)."""
+    if "matrix" in node:
+        m = np.array(node["matrix"], dtype=np.float64).reshape(4, 4).T
+        t = m[:3, 3].copy()
+        sx = float(np.linalg.norm(m[:3, 0])) or 1.0
+        sy = float(np.linalg.norm(m[:3, 1])) or 1.0
+        sz = float(np.linalg.norm(m[:3, 2])) or 1.0
+        rot = np.stack([m[:3, 0] / sx, m[:3, 1] / sy, m[:3, 2] / sz], axis=1)
+        # матрица → кватернион
+        tr = rot[0, 0] + rot[1, 1] + rot[2, 2]
+        if tr > 0:
+            w = np.sqrt(tr + 1.0) * 2
+            q = np.array([(rot[2, 1] - rot[1, 2]) / w, (rot[0, 2] - rot[2, 0]) / w,
+                          (rot[1, 0] - rot[0, 1]) / w, 0.25 * w])
+        elif rot[0, 0] > rot[1, 1] and rot[0, 0] > rot[2, 2]:
+            w = np.sqrt(1.0 + rot[0, 0] - rot[1, 1] - rot[2, 2]) * 2
+            q = np.array([0.25 * w, (rot[0, 1] + rot[1, 0]) / w,
+                          (rot[0, 2] + rot[2, 0]) / w, (rot[2, 1] - rot[1, 2]) / w])
+        elif rot[1, 1] > rot[2, 2]:
+            w = np.sqrt(1.0 + rot[1, 1] - rot[0, 0] - rot[2, 2]) * 2
+            q = np.array([(rot[0, 1] + rot[1, 0]) / w, 0.25 * w,
+                          (rot[1, 2] + rot[2, 1]) / w, (rot[0, 2] - rot[2, 0]) / w])
+        else:
+            w = np.sqrt(1.0 + rot[2, 2] - rot[0, 0] - rot[1, 1]) * 2
+            q = np.array([(rot[0, 2] + rot[2, 0]) / w, (rot[1, 2] + rot[2, 1]) / w,
+                          0.25 * w, (rot[1, 0] - rot[0, 1]) / w])
+        q = q / (np.linalg.norm(q) or 1.0)
+        return t, q, np.array([sx, sy, sz])
+    return (np.array(node.get("translation") or [0.0, 0.0, 0.0], dtype=np.float64),
+            np.array(node.get("rotation") or [0.0, 0.0, 0.0, 1.0], dtype=np.float64),
+            np.array(node.get("scale") or [1.0, 1.0, 1.0], dtype=np.float64))
+
+
+def _set_trs(node: dict, t, q, s) -> None:
+    node.pop("matrix", None)
+    node["translation"] = [float(v) for v in t]
+    node["rotation"] = [float(v) for v in q]
+    node["scale"] = [float(v) for v in s]
+
+
 def add_glb_animations(data: bytes, specs: list[dict], centers: dict | None = None,
-                       diagonal: float = 1.0) -> bytes:
-    """Добавляет в GLB анимации: spin (вращение), formation (рост), explode (разлёт).
+                       diagonal: float = 1.0, keys: dict | None = None) -> bytes:
+    """Добавляет в GLB клипы анимации и ключевые кадры объектов.
 
-    Каждый клип получает собственное время (``start`` + ``seconds``) и своё имя,
-    поэтому Blender покажет их отдельными действиями (actions). Анимация сборки
-    по шагам живёт в окне приложения: в GLB её не переносят, потому что кадры —
-    это отдельные модели сценария.
+    Поддерживаются spin, formation, explode, move, scale, turn и ключевые кадры
+    (``keys``: {имя: [{t, pos, rot, scale}]}). Сборка по шагам и морфинг — это
+    отдельные модели, они живут в окне приложения и в GLB не переносятся.
     """
-    import numpy as np
-
     specs = [dict(sp) for sp in (specs or [])
-             if str(sp.get("kind") or "").lower() not in ("assembly",)]
-    if not specs:
+             if str(sp.get("kind") or "").lower()
+             not in ("assembly", "morph", "wait")]
+    key_tracks = {name: [dict(k) for k in items if items] for name, items in (keys or {}).items()}
+    key_tracks = {name: items for name, items in key_tracks.items() if items}
+    if not specs and not key_tracks:
         return data
 
     doc, binary = _glb_read(data)
@@ -802,27 +893,54 @@ def add_glb_animations(data: bytes, specs: list[dict], centers: dict | None = No
     if not roots:
         roots = list(range(len(nodes)))
 
-    # центр модели в координатах glTF (X, Y вверх, Z)
     values = [np.asarray(v, dtype=np.float64) for v in (centers or {}).values()
               if v is not None]
     pts = np.array(values) if values else np.zeros((1, 3))
     center = (pts.min(axis=0) + pts.max(axis=0)) / 2.0
 
     root_index = len(nodes)
-    root = {"name": "FormaAnimationRoot", "children": roots,
-            "translation": [float(center[0]), float(center[1]), float(center[2])]}
-    nodes.append(root)
+    nodes.append({"name": "FormaAnimationRoot", "children": list(roots),
+                  "translation": [float(center[0]), float(center[1]), float(center[2])]})
     for idx in roots:
         node = nodes[idx]
-        if "matrix" in node:
-            m = np.array(node["matrix"], dtype=np.float64).reshape(4, 4).T
-            m[:3, 3] -= center
-            node["matrix"] = [float(v) for v in m.T.reshape(-1)]
-        else:
-            t = node.get("translation") or [0.0, 0.0, 0.0]
-            t = [float(t[0]) - center[0], float(t[1]) - center[1], float(t[2]) - center[2]]
-            node["translation"] = t
+        t, q, sc = _node_trs(node)
+        _set_trs(node, t - center, q, sc)
     scenes[0]["nodes"] = [root_index]
+
+    by_name = {str(node.get("name") or ""): i for i, node in enumerate(nodes)}
+    pivots: dict[str, int] = {}
+
+    def find_parent(idx: int) -> int | None:
+        for i, node in enumerate(nodes):
+            if idx in (node.get("children") or []):
+                return i
+        return None
+
+    def pivot(name: str) -> int | None:
+        """Узел-подвес в центре объекта: вокруг него крутим и масштабируем деталь."""
+        if name in pivots:
+            return pivots[name]
+        idx = by_name.get(name)
+        if idx is None:
+            return None
+        c = centers.get(name) if centers else None
+        if c is None:
+            return idx
+        local = np.asarray(c, dtype=np.float64) - center
+        node = nodes[idx]
+        t, q, sc = _node_trs(node)
+        _set_trs(node, t - local, q, sc)
+        p = len(nodes)
+        nodes.append({"name": f"FormaPivot_{name}",
+                      "translation": [float(v) for v in local], "children": [idx]})
+        parent = find_parent(idx)
+        if parent is not None:
+            kids = nodes[parent]["children"]
+            kids[kids.index(idx)] = p
+        elif idx in scenes[0]["nodes"]:
+            scenes[0]["nodes"][scenes[0]["nodes"].index(idx)] = p
+        pivots[name] = p
+        return p
 
     doc.setdefault("accessors", [])
     doc.setdefault("bufferViews", [])
@@ -848,8 +966,7 @@ def add_glb_animations(data: bytes, specs: list[dict], centers: dict | None = No
         doc["accessors"].append(acc)
         return len(doc["accessors"]) - 1
 
-    def keys(pairs):
-        """Убирает совпадающие по времени ключи (остаётся последний)."""
+    def clean_keys(pairs):
         out = []
         for t, val in pairs:
             if out and abs(float(t) - out[-1][0]) < 1e-6:
@@ -858,82 +975,147 @@ def add_glb_animations(data: bytes, specs: list[dict], centers: dict | None = No
                 out.append((float(t), val))
         return ([p[0] for p in out], [p[1] for p in out])
 
-    clip_names = {"spin": "FormaSpin", "formation": "FormaFormation",
-                  "explode": "FormaExplode"}
+    def animation(name: str, channels: list[dict]) -> None:
+        if not channels:
+            return
+        times = channels[0]["times"]
+        time_acc = add_accessor(np.asarray(times, dtype=np.float32).reshape(-1, 1),
+                                "SCALAR", with_bounds=True)
+        samplers = []
+        clean = []
+        for i, ch in enumerate(channels):
+            samplers.append({"input": time_acc, "output": ch["acc"],
+                             "interpolation": "LINEAR"})
+            clean.append({"sampler": i, "target": {"node": ch["node"], "path": ch["path"]}})
+        doc.setdefault("animations", []).append(
+            {"name": name, "samplers": samplers, "channels": clean})
 
+    names_used: dict[str, int] = {}
+
+    def unique_name(base: str) -> str:
+        names_used[base] = names_used.get(base, 0) + 1
+        return base if names_used[base] == 1 else f"{base}_{names_used[base]}"
+
+    clip_names = {"spin": "FormaSpin", "formation": "FormaFormation",
+                  "explode": "FormaExplode", "move": "FormaMove",
+                  "scale": "FormaScale", "turn": "FormaTurn"}
+
+    # --- клипы ---------------------------------------------------------- #
     for spec in specs:
         kind = str(spec.get("kind") or "spin").lower()
-        seconds = float(spec.get("seconds") or 4.0)
-        seconds = max(0.2, min(seconds, 600.0))
+        seconds = max(0.2, min(float(spec.get("seconds") or 4.0), 600.0))
         start = max(0.0, float(spec.get("start") or 0.0))
         steps = max(2, int(spec.get("steps") or 48))
+        target_name = spec.get("object")
+        node_idx = root_index
+        if target_name:
+            node_idx = pivot(str(target_name)) or root_index
+        node = nodes[node_idx]
+        base_t, base_q, base_s = _node_trs(node)
         channels = []
 
         if kind == "formation":
-            ts, vals = keys([(0.0, 0.001),
-                             (start, 0.001),
-                             (start + seconds * 0.85, 1.0),
-                             (start + seconds, 1.0)])
-            arr = np.asarray(vals, dtype=np.float32).reshape(-1, 1).repeat(3, axis=1)
-            acc = add_accessor(arr, "VEC3")
-            channels.append({"acc": acc, "target": {"node": root_index, "path": "scale"}})
+            ts, vals = clean_keys([(0.0, 0.001), (start, 0.001),
+                                   (start + seconds * 0.85, 1.0), (start + seconds, 1.0)])
+            arr = np.asarray(vals, dtype=np.float64).reshape(-1, 1).repeat(3, axis=1)
+            arr = arr * np.asarray(base_s, dtype=np.float64).reshape(1, 3)
+            channels.append({"node": node_idx, "path": "scale", "times": ts,
+                             "acc": add_accessor(arr, "VEC3")})
         elif kind == "explode":
             amount = float(spec.get("amount") or diagonal * 0.18)
             for idx in roots:
-                name = nodes[idx].get("name") or ""
+                name = str(nodes[idx].get("name") or "")
                 c = centers.get(name) if centers else None
                 if c is None:
                     continue
                 d = np.asarray(c, dtype=np.float64) - center
                 ln = float(np.linalg.norm(d))
                 d = d / ln if ln > 1e-9 else np.array([0.0, 1.0, 0.0])
-                target = d * amount
-                # узел уже сдвинут на -center: анимируем от его базового положения,
-                # иначе деталь прыгнет в начало координат
-                base = [float(v) for v in (nodes[idx].get("translation") or [0.0, 0.0, 0.0])]
-                end = [base[0] + float(target[0]), base[1] + float(target[1]),
-                       base[2] + float(target[2])]
-                ts, vals = keys([(0.0, list(base)),
-                                 (start, list(base)),
-                                 (start + seconds, end)])
-                acc = add_accessor(np.asarray(vals, dtype=np.float32), "VEC3")
-                channels.append({"acc": acc, "target": {"node": idx, "path": "translation"}})
-        else:  # spin
-            angle = np.linspace(0.0, 2 * np.pi, steps + 1, dtype=np.float64)
-            axis = str(spec.get("axis") or "z").lower()
-            zero = np.zeros_like(angle)
-            # сценарий задаёт ось в Z-up, а GLB — в Y-up: z → Y, y → Z, x → X
-            if axis == "x":
-                quats = np.stack([np.sin(angle / 2), zero, zero, np.cos(angle / 2)], axis=1)
-            elif axis == "y":
-                quats = np.stack([zero, zero, np.sin(angle / 2), np.cos(angle / 2)], axis=1)
+                t_idx = pivots.get(name, idx)
+                t_node = nodes[t_idx]
+                bt, _bq, _bs = _node_trs(t_node)
+                end = bt + d * amount
+                ts, vals = clean_keys([(0.0, list(bt)), (start, list(bt)),
+                                       (start + seconds, list(end))])
+                channels.append({"node": t_idx, "path": "translation", "times": ts,
+                                 "acc": add_accessor(np.asarray(vals), "VEC3")})
+        elif kind == "move":
+            delta = _gltf_vec(spec.get("delta") or [0.0, 0.0, 0.0])
+            ts = [start, start + seconds] if not start else [0.0, start, start + seconds]
+            vals = [list(base_t)] * (len(ts) - 1) + [list(base_t + delta)]
+            channels.append({"node": node_idx, "path": "translation", "times": ts,
+                             "acc": add_accessor(np.asarray(vals), "VEC3")})
+        elif kind == "scale":
+            f0 = float(spec.get("from") or 1.0)
+            f1 = float(spec.get("to") or 1.5)
+            ts = [start, start + seconds] if not start else [0.0, start, start + seconds]
+            vals = [list(base_s * f0)] * (len(ts) - 1) + [list(base_s * f1)]
+            channels.append({"node": node_idx, "path": "scale", "times": ts,
+                             "acc": add_accessor(np.asarray(vals), "VEC3")})
+        else:  # spin / turn
+            if kind == "turn":
+                angle = np.radians(float(spec.get("angle") or 90.0))
             else:
-                quats = np.stack([zero, np.sin(angle / 2), zero, np.cos(angle / 2)], axis=1)
-            pairs = [(start + seconds * i / steps, list(quats[i]))
-                     for i in range(steps + 1)]
-            if start > 0:
-                pairs.insert(0, (0.0, list(quats[0])))
-            ts, vals = keys(pairs)
-            acc = add_accessor(np.asarray(vals, dtype=np.float32), "VEC4")
-            channels.append({"acc": acc, "target": {"node": root_index, "path": "rotation"}})
+                angle = 2 * np.pi * float(spec.get("axis_sign") or 1.0)
+            axis = _gltf_axis(spec.get("axis") or "z")
+            q0 = base_q
+            q1 = _qmul(_quat(axis, angle), base_q)
+            ts = [start, start + seconds] if not start else [0.0, start, start + seconds]
+            vals = [list(q0)] * (len(ts) - 1) + [list(q1)]
+            channels.append({"node": node_idx, "path": "rotation", "times": ts,
+                             "acc": add_accessor(np.asarray(vals), "VEC4")})
 
-        if not channels:
+        if channels:
+            animation(unique_name(clip_names.get(kind, "FormaAnimation")), channels)
+
+    # --- ключевые кадры объектов --------------------------------------- #
+    for name, items in key_tracks.items():
+        idx = pivot(name)
+        if idx is None:
             continue
-        time_acc = add_accessor(np.asarray(ts, dtype=np.float32).reshape(-1, 1), "SCALAR",
-                                with_bounds=True)
-        samplers = []
-        clean_channels = []
-        for i, ch in enumerate(channels):
-            samplers.append({"input": time_acc, "output": ch["acc"], "interpolation": "LINEAR"})
-            clean_channels.append({"sampler": i, "target": ch["target"]})
-        doc.setdefault("animations", []).append(
-            {"name": clip_names.get(kind, "FormaAnimation"),
-             "samplers": samplers, "channels": clean_channels})
+        node = nodes[idx]
+        base_t, base_q, base_s = _node_trs(node)
+        items = sorted(items, key=lambda k: float(k.get("t") or 0.0))
+        need_pos = any("pos" in k for k in items)
+        need_rot = any("rot" in k for k in items)
+        need_scale = any("scale" in k for k in items)
+        times: list[float] = []
+        if items and float(items[0].get("t") or 0.0) > 1e-6:
+            times.append(0.0)
+        for k in items:
+            t = max(0.0, float(k.get("t") or 0.0))
+            if not times or abs(t - times[-1]) > 1e-6:
+                times.append(t)
+            else:
+                times[-1] = t
+        pos_vals, rot_vals, scale_vals = [], [], []
+        for k in items:
+            pos = _gltf_vec(k["pos"]) if "pos" in k else np.zeros(3)
+            pos_vals.append(base_t + pos)
+            rot_vals.append(_qmul(_euler_modeling_to_gltf(k["rot"]), base_q)
+                            if "rot" in k else base_q)
+            scale_vals.append(base_s * float(k["scale"]) if "scale" in k else base_s)
+        # если первый ключ позже нуля — до него объект стоит в базовом состоянии
+        pad = len(times) - len(items)
+        if pad:
+            pos_vals.insert(0, base_t)
+            rot_vals.insert(0, base_q)
+            scale_vals.insert(0, base_s)
+        channels = []
+        if need_pos:
+            channels.append({"node": idx, "path": "translation", "times": times,
+                             "acc": add_accessor(np.asarray(pos_vals), "VEC3")})
+        if need_rot:
+            channels.append({"node": idx, "path": "rotation", "times": times,
+                             "acc": add_accessor(np.asarray(rot_vals), "VEC4")})
+        if need_scale:
+            channels.append({"node": idx, "path": "scale", "times": times,
+                             "acc": add_accessor(np.asarray(scale_vals), "VEC3")})
+        animation(unique_name(f"FormaKeys_{name}"), channels)
 
     if doc.get("buffers"):
         doc["buffers"][0]["byteLength"] = len(binary)
     return _glb_write(doc, binary)
-
 
 def export_stl(objects) -> bytes:
     """Бинарный STL (Z-up, мм) — для 3D-печати."""
