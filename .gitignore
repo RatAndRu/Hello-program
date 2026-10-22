@@ -27,3 +27,11 @@ forma/renders/
 forma/selftest.txt
 forma/packaging/version_info.txt
 **/__pycache__/
+
+# Рабочие папки приложения при запуске из исходников (рядом с exe в релизе)
+forma/forma-data/
+forma/projects/
+forma/exports/
+forma/prompts/
+forma/textures/
+forma/imports/

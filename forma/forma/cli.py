@@ -107,7 +107,14 @@ def cmd_doctor(args) -> int:
             print(f"  {module}: {getattr(mod, '__version__', 'есть')}")
         except Exception as exc:
             print(f"  {module}: НЕТ ({exc})")
-    print(f"Данные: {user_data_dir()}")
+    from .paths import describe, migrate_legacy
+    info = migrate_legacy()
+    if info.get("removed"):
+        print("Старые папки данных очищены: " + ", ".join(info["removed"]))
+    folders = describe()
+    print(f"Данные (рядом с exe): {folders['root']}")
+    for name in ("projects", "exports", "renders", "prompts", "textures", "imports"):
+        print(f"  {name}: {folders[name]}")
     print(f"Загрузки: {downloads_dir()}")
     try:
         probe = user_data_dir() / ".write_test"

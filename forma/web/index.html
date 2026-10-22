@@ -178,22 +178,60 @@
           <label><input type="checkbox" id="opt-poly" /> полигонаж</label>
         </div>
         <div class="studio-sep"></div>
-        <div class="studio-row">
-          <span class="studio-label">Анимация</span>
-          <button class="chip" id="anim-play">▶ играть</button>
-          <span class="anim-status" id="anim-status"></span>
-          <button class="chip" id="anim-restart">↺</button>
-          <select id="anim-kind" title="Анимация записывается командой animate в сценарий">
-            <option value="">из сценария</option>
-            <option value="spin">вращение</option>
-            <option value="formation">формирование</option>
-            <option value="explode">разлёт</option>
-          </select>
-          <input type="range" id="anim-speed" min="0.2" max="4" step="0.1" value="1" title="Скорость" />
-          <span class="studio-value" id="anim-speed-val">1×</span>
+        <div class="anim-panel" id="anim-panel">
+          <div class="studio-row anim-head">
+            <span class="studio-label">Анимация</span>
+            <select id="anim-mode" title="Что показывать в окне">
+              <option value="clips">клипы сценария</option>
+              <option value="frames">кадры сборки</option>
+            </select>
+            <span class="anim-status" id="anim-status"></span>
+            <button class="chip" id="anim-editor-toggle" title="Редактор анимации с ключевыми кадрами">✎ редактор</button>
+          </div>
+          <div class="studio-row anim-transport">
+            <button class="chip" id="anim-first" title="В начало (Home)">⏮</button>
+            <button class="chip" id="anim-back" title="Предыдущий кадр (←)">◀</button>
+            <button class="chip primary" id="anim-play" title="Играть / пауза (пробел)">▶ играть</button>
+            <button class="chip" id="anim-fwd" title="Следующий кадр (→)">▶|</button>
+            <button class="chip" id="anim-restart" title="С начала">↺</button>
+            <input type="range" id="anim-scrub" min="0" max="1000" step="1" value="0"
+                   title="Прокрутка времени / кадров" />
+            <span class="studio-value anim-read" id="anim-time">0.00 с</span>
+            <span class="studio-value anim-read" id="anim-frame-label">кадр 0/0</span>
+            <input type="range" id="anim-speed" min="0.2" max="4" step="0.1" value="1" title="Скорость" />
+            <span class="studio-value" id="anim-speed-val">1×</span>
+          </div>
+          <div class="anim-tracks" id="anim-tracks"></div>
+          <div class="anim-editor" id="anim-editor" hidden>
+            <div class="anim-editor-row">
+              <label>Вид
+                <select id="ae-kind">
+                  <option value="spin">вращение</option>
+                  <option value="formation">формирование</option>
+                  <option value="explode">разлёт</option>
+                  <option value="assembly">сборка по шагам</option>
+                </select>
+              </label>
+              <label>Ось
+                <select id="ae-axis"><option>x</option><option>y</option><option selected>z</option></select>
+              </label>
+              <label>Секунд <input type="number" id="ae-seconds" min="0.2" max="600" step="0.1" value="4" /></label>
+              <label>Старт, с <input type="number" id="ae-start" min="0" max="3600" step="0.1" placeholder="само" /></label>
+              <label id="ae-hold-wrap">Шаг, с <input type="number" id="ae-hold" min="0.1" max="30" step="0.1" value="0.8" /></label>
+              <label id="ae-amount-wrap">Разлёт, мм <input type="number" id="ae-amount" min="0" max="2000" step="1" value="30" /></label>
+              <label class="ae-check"><input type="checkbox" id="ae-loop" checked /> зациклить</label>
+              <button class="small primary" id="ae-add">Добавить клип</button>
+            </div>
+            <div class="anim-editor-hint">
+              Клип записывается строкой <code>animate ...</code> в сценарий — нейросеть может
+              добавлять и менять их обычными командами.
+            </div>
+            <div class="anim-clips" id="anim-clips"></div>
+          </div>
         </div>
         <div class="studio-note">
-          Анимация сохраняется внутри GLB — её видно в Blender и любом просмотрщике.
+          Анимация хранится в сценарии: клипы <code>animate</code> сохраняются в GLB (Blender покажет
+          их действиями), а «кадры сборки» — это настоящие промежуточные модели по шагам сценария.
         </div>
       </div>
 

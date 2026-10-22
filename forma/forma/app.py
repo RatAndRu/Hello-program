@@ -150,6 +150,13 @@ def _run_uistest(report_path: str | None) -> int:
                 check("снимки видов (PNG)", False, str(exc))
             # новые возможности 0.2: текстуры, свет, анимация, импорт, форматы
             check("панель вида в интерфейсе", b"studio-panel" in html and b"material-panel" in html)
+            # 0.9: редактор анимации, дорожка кадров, папки рядом с exe
+            check("редактор анимации в интерфейсе",
+                  b'id="anim-editor"' in html and b'id="anim-scrub"' in html
+                  and b'id="anim-tracks"' in html and b'id="ae-kind"' in html)
+            check("папки данных рядом с exe",
+                  str(state.get("paths", {}).get("root", "")) == state.get("data_dir"),
+                  str(state.get("data_dir", "")))
             # 0.3: командная строка, выделение области, замечания, журнал, отчёт
             check("командная строка и выделение", b'id="cmd-input"' in html and b'id="sel-card"' in html
                   and b'id="btn-copy-report"' in html)
@@ -174,16 +181,29 @@ def _run_uistest(report_path: str | None) -> int:
             except Exception as exc:
                 check("отчёт и выделение", False, str(exc))
             try:
-                rich = post("/api/build", {"script": (
+                rich_script = (
                     "к = lathe points=[[0,0],[30,0],[30,60],[0,60]] "
                     "segments=96 thickness=3 open=top\n"
+                    "к2 = cylinder radius=6 height=80 at=[40,0,40]\n"
                     "color к #ffffff\ntexture к kind=мрамор\n"
                     "scene bg=#10151c env=studio\nlight preset=студия\n"
-                    "animate kind=spin seconds=4\ncheck к height 55..65")})
+                    "animate kind=spin seconds=4\ncheck к height 55..65")
+                rich = post("/api/build", {"script": rich_script})
                 check("текстура и материалы", rich.get("ok") is True and
                       bool(rich.get("objects", [{}])[0].get("tex")), "мрамор")
                 check("настройки сцены", rich.get("settings", {}).get("env") == "studio")
                 check("команда анимации", (rich.get("animation") or {}).get("kind") == "spin")
+                check("тайм-лайн клипов", len(rich.get("timeline", {}).get("clips", [])) == 1
+                      and rich.get("timeline", {}).get("clips", [{}])[0].get("kind") == "spin")
+                frames = rich.get("frames", [])
+                check("кадры сборки", len(frames) >= 2, f"{len(frames)} шт.")
+                if frames:
+                    fr = post("/api/frame", {"script": rich_script,
+                                             "upto": frames[-1]["n"]})
+                    frame_glb = get("/api/frame.glb?key=" + fr.get("key", ""), raw=True) \
+                        if fr.get("glb") else b""
+                    check("кадр сборки — отдельная модель", frame_glb[:4] == b"glTF",
+                          f"{len(frame_glb)} байт")
                 check("экспорт PLY", post("/api/export", {"format": "ply"})["name"].endswith(".ply"))
                 rich_glb = get("/api/model.glb", raw=True)
                 check("анимация и текстура в GLB",

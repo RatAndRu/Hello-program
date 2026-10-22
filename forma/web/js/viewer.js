@@ -39,9 +39,25 @@ export class Viewer {
     this.shading = 'realistic';
     this.mixer = null;
     this.action = null;
+    this.actions = [];
+    this.gltfClips = [];
+    this.plan = null;          // тайм-лайн из сценария: {clips, duration, assembly}
+    this.timeline = null;
+    this.time = 0;
+    this.duration = 0;
     this.playing = false;
     this.speed = 1;
     this.loop = true;
+    this.manualAdvance = false;  // кадры сборки листает интерфейс
+    this.onFrame = null;         // (dt) => void, для покадрового режима
+    this.onTime = null;          // (time, duration) => void
+    this.onEnd = null;           // достигнут конец без зацикливания
+    this.frameRoot = null;
+    this.frameKey = null;
+    this._frameCache = new Map();
+    this._animWrap = null;
+    this._animCenter = null;
+    this._explodeItems = [];
     this._overlays = [];
     this._selOverlays = [];
     this.selectMode = false;
@@ -49,7 +65,6 @@ export class Viewer {
     this.selection = null;
     this.selections = [];
     this.hidden = new Set();
-    this.sceneAnimation = null;
     this._frames = 0;
     this._lastFps = 0;
     this._fpsTime = 0;
@@ -168,7 +183,7 @@ export class Viewer {
       const dt = clock.getDelta();
       this.controls.update();
       this._animateTiming(dt);
-      if (this.mixer) this.mixer.update(dt * this.speed);
+      this._tickAnimation(dt);
       this._frames += 1;
       this._fpsTime += dt;
       if (this._fpsTime > 0.5) {
@@ -380,15 +395,6 @@ export class Viewer {
     if (first && !additive) this.clearSelection();
   }
 
-  _updateExplode() {
-    if (!this._explodeTargets || !this.action || this.sceneAnimation?.kind !== 'explode') return;
-    const t = this.action.time / Math.max(0.2, Number(this.sceneAnimation.seconds) || 4);
-    const e = Math.sin(Math.min(1, t) * Math.PI * 0.5);
-    this._explodeTargets.forEach(({ node, dir }) => {
-      node.position.set(dir.x * e, dir.y * e, dir.z * e);
-    });
-  }
-
   _animateTiming(dt) {
     if (this._progress !== undefined && this._progress !== null) {
       this._progress = Math.min(1, this._progress + dt * 2.2);
@@ -428,10 +434,27 @@ export class Viewer {
         });
       }
     });
+    if (this._animWrap) {
+      this.scene.remove(this._animWrap);
+      this._animWrap = null;
+    }
+    if (this.frameRoot) {
+      this.scene.remove(this.frameRoot);
+      this.frameRoot = null;
+      this.frameKey = null;
+    }
     this.model = null;
     this.mixer = null;
     this.action = null;
+    this.actions = [];
+    this.gltfClips = [];
+    this.plan = null;
+    this.timeline = null;
     this.playing = false;
+    this.time = 0;
+    this.duration = 0;
+    this._explodeItems = [];
+    this._animCenter = null;
     this._clearOverlays();
     this._disposeSelOverlay();
     this.selection = null;
@@ -475,56 +498,196 @@ export class Viewer {
     this.applyShading(this.shading);
     this.applySettings(this.settings);
     this._setupAnimation(gltf);
-    if (animation && animation.kind) {
-      // сценарий — источник истины: своя анимация работает даже если GLB её потерял
-      this.applySceneAnimation(animation);
-      this.playing = true;
-    }
-    this.hidden.forEach((name) => this.setObjectVisible(name, false));
+    this._prepareAnimWrap();
+    const clips = animation?.clips?.length ? animation.clips
+      : (animation && animation.kind ? [animation] : []);
+    this.setTimeline({ clips, duration: Number(animation?.duration) || 0,
+                       assembly: animation?.assembly || null });
     this.setPolygons(this.polygons);
     return this.bbox;
   }
 
   _setupAnimation(gltf) {
+    this.gltfClips = (gltf.animations || []).slice();
     this.mixer = null;
     this.action = null;
-    if (!gltf.animations || !gltf.animations.length) return;
+    this.actions = [];
+    this.animDuration = 0;
+    if (!this.gltfClips.length) return;
     this.mixer = new THREE.AnimationMixer(this.model);
-    const clip = gltf.animations[0];
-    this.clipDuration = clip.duration;
-    this.action = this.mixer.clipAction(clip);
-    this.action.setLoop(this.loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
-    this.action.clampWhenFinished = !this.loop;
-    if (this.playing) this.action.play();
+    this.gltfClips.forEach((clip) => {
+      const act = this.mixer.clipAction(clip);
+      act.setLoop(THREE.LoopOnce, 1);
+      act.clampWhenFinished = true;
+      act.paused = true;
+      act.enabled = true;
+      act.play();
+      this.actions.push(act);
+      this.animDuration = Math.max(this.animDuration, clip.duration);
+    });
+  }
+
+  /** Обёртка для процедурной анимации: вращение и рост идут вокруг центра модели. */
+  _prepareAnimWrap() {
+    this._animWrap = null;
+    this._animCenter = null;
+    this._explodeItems = [];
+    if (!this.model) return;
+    this.model.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(this.model);
+    if (box.isEmpty()) return;
+    const center = box.getCenter(new THREE.Vector3());
+    const wrap = new THREE.Group();
+    wrap.name = 'FormaAnimWrap';
+    wrap.position.copy(center);
+    this.scene.add(wrap);
+    this.model.position.sub(center);
+    wrap.add(this.model);
+    this._animWrap = wrap;
+    this._animCenter = center;
+    this.model.traverse((o) => {
+      if (!o.isMesh) return;
+      const p = new THREE.Vector3();
+      o.getWorldPosition(p);
+      const dir = p.clone().sub(center);
+      const len = dir.length();
+      const local = dir.length() > 1e-6 ? dir.normalize() : new THREE.Vector3(0, 1, 0);
+      if (o.parent && o.parent !== wrap) {
+        const q = new THREE.Quaternion();
+        o.parent.getWorldQuaternion(q);
+        local.applyQuaternion(q.invert());
+      }
+      this._explodeItems.push({ node: o, base: o.position.clone(), dir: local,
+                                reach: Math.min(1, len / 120) });
+    });
+  }
+
+  /** Тайм-лайн сценария: клипы со временем начала. */
+  setTimeline(timeline) {
+    this.plan = timeline && timeline.clips && timeline.clips.length ? timeline : null;
+    this.timeline = this.plan;
+    if (this.plan) {
+      const ends = this.plan.clips.map((c) => Number(c.end) || 0);
+      this.duration = Math.max(0.2, Number(this.plan.duration) || Math.max(...ends) || 4);
+    } else {
+      this.duration = Math.max(0.2, this.animDuration || 0);
+    }
+    this.time = 0;
+    this.loop = this.plan ? this.plan.clips.every((c) => c.loop !== false) : this.loop;
+    this.applyTime(0);
+    return this.duration;
   }
 
   hasAnimation() {
-    return Boolean(this.action || this.sceneAnimation);
+    return Boolean((this.plan && this.plan.clips.length) || this.gltfClips.length);
+  }
+
+  animationKinds() {
+    return (this.plan?.clips || []).map((c) => c.kind);
+  }
+
+  /** Ставит анимацию на нужную секунду — этим же работает прокрутка кадров. */
+  applyTime(t) {
+    const total = this.duration || 0;
+    this.time = Math.max(0, Math.min(Number(t) || 0, Math.max(total, 0)));
+    if (this.plan) this._applyPlan(this.time);
+    else if (this.actions.length) {
+      this.actions.forEach((act) => {
+        const clip = act.getClip();
+        act.time = Math.min(this.time, clip.duration);
+      });
+      if (this.mixer) this.mixer.update(0);
+    }
+    this.onTime?.(this.time, total);
+  }
+
+  setTime(t) {
+    this.applyTime(t);
+  }
+
+  _easeOut(x) {
+    return 1 - Math.pow(1 - Math.max(0, Math.min(1, x)), 3);
+  }
+
+  _applyPlan(t) {
+    const wrap = this._animWrap;
+    if (!wrap) return;
+    let angle = 0;
+    let axis = 'z';
+    let scale = 1;
+    let explode = 0;
+    let forming = false;
+    for (const clip of this.plan.clips) {
+      const start = Number(clip.start) || 0;
+      const earlyKind = String(clip.kind || 'spin').toLowerCase();
+      if (t + 1e-6 < start) {
+        // как в GLB: до начала формирования модель ещё «не выросла»
+        if (earlyKind === 'formation') { forming = true; scale = 0.001; }
+        continue;
+      }
+      const local = t - start;
+      const len = Math.max(0.1, Number(clip.length) || Number(clip.seconds) || 4);
+      const p = Math.max(0, Math.min(1, local / len));
+      const kind = String(clip.kind || 'spin').toLowerCase();
+      if (kind === 'spin') {
+        angle = Math.PI * 2 * p;
+        axis = String(clip.axis || 'z').toLowerCase();
+      } else if (kind === 'formation') {
+        // в GLB рост заканчивается на 0,85 длительности — держим ту же кривую
+        forming = true;
+        const grow = Math.min(1, local / Math.max(0.1, len * 0.85));
+        scale = Math.max(0.001, 0.001 + 0.999 * grow);
+      } else if (kind === 'explode') {
+        explode = p * (Number(clip.amount) || 30);
+      }
+    }
+    if (!forming) scale = 1;
+    wrap.scale.setScalar(scale);
+    const q = new THREE.Quaternion();
+    if (angle) {
+      const v = axis === 'x' ? new THREE.Vector3(1, 0, 0)
+        : axis === 'y' ? new THREE.Vector3(0, 0, 1) : new THREE.Vector3(0, 1, 0);
+      q.setFromAxisAngle(v, angle);
+    }
+    wrap.quaternion.copy(q);
+    this._explodeItems.forEach(({ node, base, dir }) => {
+      if (!explode) { node.position.copy(base); return; }
+      node.position.copy(base).addScaledVector(dir, explode);
+    });
+  }
+
+  _tickAnimation(dt) {
+    if (this.manualAdvance) {
+      if (this.playing) this.onFrame?.(dt);
+      return;
+    }
+    if (!this.hasAnimation()) return;
+    if (!this.playing) return;
+    const total = this.duration;
+    let t = this.time + dt * this.speed;
+    if (t > total) {
+      if (this.loop) t = ((t - total) % Math.max(total, 0.001));
+      else { t = total; this.playing = false; this.onEnd?.(); }
+    }
+    this.applyTime(t);
   }
 
   playAnimation(playing = true) {
-    this.playing = playing;
-    if (!this.action && this.sceneAnimation) {
-      this.applySceneAnimation(this.sceneAnimation);
-      this.action.paused = !playing;
-      return;
-    }
-    if (!this.action) return;
-    if (playing) {
-      this.action.reset();
-      this.action.paused = false;
-      this.action.play();
-    } else {
-      this.action.paused = true;
-    }
+    if (playing && !this.hasAnimation()) return false;
+    this.playing = Boolean(playing);
+    if (this.playing && !this.loop && this.time >= this.duration - 1e-6) this.applyTime(0);
+    return true;
   }
 
   restartAnimation() {
-    if (!this.action) return;
-    this.action.reset();
-    this.action.paused = false;
-    this.action.play();
+    if (!this.hasAnimation()) return false;
+    this.applyTime(0);
     this.playing = true;
+    return true;
+  }
+
+  toggleAnimation() {
+    return this.playAnimation(!this.playing);
   }
 
   setSpeed(v) {
@@ -533,9 +696,53 @@ export class Viewer {
 
   setLoop(loop) {
     this.loop = Boolean(loop);
-    if (!this.action) return;
-    this.action.setLoop(this.loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
-    this.action.clampWhenFinished = !this.loop;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Кадры сборки: промежуточные модели по шагам сценария              */
+  /* ------------------------------------------------------------------ */
+  async loadFrame(key, url) {
+    if (this.frameKey === key) return;
+    if (this._frameCache.has(key)) {
+      this._showFrameObject(key, this._frameCache.get(key));
+      return;
+    }
+    const loader = new GLTFLoader();
+    const gltf = await new Promise((resolve, reject) => {
+      loader.load(url, resolve, undefined, reject);
+    });
+    const root = gltf.scene;
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      o.castShadow = true;
+      o.receiveShadow = true;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => { if (m) { m.envMapIntensity = 1.15; m.side = THREE.FrontSide; } });
+    });
+    this._frameCache.set(key, root);
+    while (this._frameCache.size > 20) {
+      const oldest = this._frameCache.keys().next().value;
+      this._frameCache.delete(oldest);
+    }
+    this._showFrameObject(key, root);
+  }
+
+  _showFrameObject(key, root) {
+    if (this.frameKey === key) return;
+    if (this.frameRoot) this.scene.remove(this.frameRoot);
+    this.frameRoot = root;
+    this.frameKey = key;
+    if (this.model) this.model.visible = false;
+    if (this._animWrap) this._animWrap.visible = false;
+    this.scene.add(root);
+  }
+
+  showFinalModel() {
+    if (this.frameRoot) this.scene.remove(this.frameRoot);
+    this.frameRoot = null;
+    this.frameKey = null;
+    if (this.model) this.model.visible = true;
+    if (this._animWrap) this._animWrap.visible = true;
   }
 
   _fit(root) {
@@ -912,57 +1119,6 @@ export class Viewer {
         m.needsUpdate = true;
       });
     });
-  }
-
-  /** Анимация из сценария: гарантированно работает, даже если GLB её не отдал. */
-  applySceneAnimation(spec) {
-    this.sceneAnimation = spec || null;
-    if (!spec || !this.model) return;
-    const kind = spec.kind || 'spin';
-    const seconds = Math.max(0.2, Number(spec.seconds) || 4);
-    const axis = (spec.axis || 'z').toLowerCase();
-    const loop = spec.loop !== false;
-    this.mixer = new THREE.AnimationMixer(this.model);
-    const times = [0, seconds];
-    const tracks = [];
-    if (kind === 'spin') {
-      const target = this.model.children[0] || this.model;
-      target.name = target.name || 'FormaSpinTarget';
-      const euler = { x: 0, y: 0, z: 0 };
-      // axis — ось из сценария (Z вверх), в окне модель стоит в Y-up
-      if (axis === 'x') euler.x = Math.PI * 2;
-      else if (axis === 'y') euler.z = Math.PI * 2;
-      else euler.y = -Math.PI * 2;
-      const q0 = new THREE.Quaternion();
-      const q1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(euler.x, euler.y, euler.z));
-      tracks.push(new THREE.QuaternionKeyframeTrack(
-        `${target.name}.quaternion`, times, [...q0.toArray(), ...q1.toArray()]));
-    } else if (kind === 'formation') {
-      this.model.scale.setScalar(0.001);
-      this.model.updateMatrixWorld();
-      tracks.push(new THREE.VectorKeyframeTrack(`${this.model.name || 'Scene'}.scale`,
-        [0, seconds * 0.8, seconds], [0.001, 0.001, 0.001, 1, 1, 1, 1, 1, 1]));
-      tracks.push(new THREE.VectorKeyframeTrack(`${this.model.name || 'Scene'}.position`,
-        [0, seconds], [0, 60, 0, 0, 0, 0]));
-    } else if (kind === 'explode') {
-      const offsets = [];
-      this.model.traverse((o) => {
-        if (!o.isMesh) return;
-        const p = o.getWorldPosition(new THREE.Vector3());
-        const dir = p.clone().normalize().multiplyScalar(60);
-        offsets.push({ node: o, dir });
-      });
-      tracks.push(new THREE.VectorKeyframeTrack(`${this.model.name || 'Scene'}.position`,
-        [0, seconds], [0, 0, 0, 0, 0, 0]));
-      this._explodeTargets = offsets;
-    }
-    if (!tracks.length) return;
-    const clip = new THREE.AnimationClip('FormaScene', seconds, tracks);
-    this.action = this.mixer.clipAction(clip);
-    this.action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
-    this.action.clampWhenFinished = !loop;
-    this.action.play();
-    this.playing = true;
   }
 
   setSpin(on) {

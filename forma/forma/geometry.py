@@ -636,7 +636,8 @@ def _glb_geometry(m: mf.Manifold, max_tris: int = 4_000_000):
     return nv_y, nrm_y, nf
 
 
-def export_glb(objects, with_normals: bool = True, animation: dict | None = None) -> bytes:
+def export_glb(objects, with_normals: bool = True, animation: dict | None = None,
+               animations: list[dict] | None = None) -> bytes:
     """Собирает GLB с отдельным материалом на каждый объект.
 
     Поддерживает текстуры (UV-развёртка + baseColorTexture) и анимацию
@@ -699,9 +700,12 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
     if len(scene.geometry) == 0:
         raise GeometryError("Нечего экспортировать: нет видимых объектов.")
     data = trimesh.exchange.gltf.export_glb(scene, include_normals=True)
-    if animation:
+    clips = [sp for sp in (animations or []) if sp]
+    if animation and not clips:
+        clips = [animation]
+    if clips:
         try:
-            data = add_glb_animation(bytes(data), animation, centers, diagonal)
+            data = add_glb_animations(bytes(data), clips, centers, diagonal)
         except Exception:
             pass  # анимация — бонус: без неё файл остаётся корректным
     return bytes(data)
@@ -747,8 +751,25 @@ def _glb_write(doc: dict, binary: bytes) -> bytes:
 
 def add_glb_animation(data: bytes, spec: dict, centers: dict | None = None,
                       diagonal: float = 1.0) -> bytes:
-    """Добавляет в GLB анимацию: spin (вращение), formation (рост), explode (разлёт)."""
+    """Добавляет в GLB одну анимацию (совместимость со старым вызовом)."""
+    return add_glb_animations(data, [spec], centers, diagonal)
+
+
+def add_glb_animations(data: bytes, specs: list[dict], centers: dict | None = None,
+                       diagonal: float = 1.0) -> bytes:
+    """Добавляет в GLB анимации: spin (вращение), formation (рост), explode (разлёт).
+
+    Каждый клип получает собственное время (``start`` + ``seconds``) и своё имя,
+    поэтому Blender покажет их отдельными действиями (actions). Анимация сборки
+    по шагам живёт в окне приложения: в GLB её не переносят, потому что кадры —
+    это отдельные модели сценария.
+    """
     import numpy as np
+
+    specs = [dict(sp) for sp in (specs or [])
+             if str(sp.get("kind") or "").lower() not in ("assembly",)]
+    if not specs:
+        return data
 
     doc, binary = _glb_read(data)
     nodes = doc.setdefault("nodes", [])
@@ -780,20 +801,12 @@ def add_glb_animation(data: bytes, spec: dict, centers: dict | None = None,
             node["translation"] = t
     scenes[0]["nodes"] = [root_index]
 
-    kind = str(spec.get("kind") or "spin").lower()
-    seconds = float(spec.get("seconds") or spec.get("time") or 4.0)
-    seconds = max(0.4, min(seconds, 600.0))
-    steps = max(2, int(spec.get("steps") or 48))
-    t = np.linspace(0.0, seconds, steps + 1, dtype=np.float32)
-
     doc.setdefault("accessors", [])
     doc.setdefault("bufferViews", [])
     if doc.get("buffers"):
         doc["buffers"][0]["byteLength"] = len(binary)
     else:
         doc["buffers"] = [{"byteLength": len(binary)}]
-
-    channels = []
 
     def add_accessor(arr: np.ndarray, atype: str, with_bounds: bool = False):
         nonlocal binary
@@ -812,51 +825,88 @@ def add_glb_animation(data: bytes, spec: dict, centers: dict | None = None,
         doc["accessors"].append(acc)
         return len(doc["accessors"]) - 1
 
-    time_acc = add_accessor(t.reshape(-1, 1), "SCALAR", with_bounds=True)
+    def keys(pairs):
+        """Убирает совпадающие по времени ключи (остаётся последний)."""
+        out = []
+        for t, val in pairs:
+            if out and abs(float(t) - out[-1][0]) < 1e-6:
+                out[-1] = (float(t), val)
+            else:
+                out.append((float(t), val))
+        return ([p[0] for p in out], [p[1] for p in out])
 
-    if kind in ("formation", "сборка", "рост"):
-        s = np.clip(t / max(seconds * 0.85, 0.1), 0, 1)
-        ease = 1 - np.power(1 - s, 3)
-        values = np.maximum(0.001, ease).reshape(-1, 1).repeat(3, axis=1)
-        acc = add_accessor(values, "VEC3")
-        channels.append({"acc": acc, "target": {"node": root_index, "path": "scale"}})
-    elif kind in ("explode", "разлёт", "взрыв"):
-        amount = float(spec.get("amount") or diagonal * 0.18)
-        for idx in roots:
-            name = nodes[idx].get("name") or ""
-            c = centers.get(name) if centers else None
-            if c is None:
-                continue
-            d = np.asarray(c, dtype=np.float64) - center
-            ln = float(np.linalg.norm(d))
-            d = d / ln if ln > 1e-9 else np.array([0.0, 1.0, 0.0])
-            target = d * amount
-            vals = np.array([[0.0, 0.0, 0.0]] + [list(target)] * steps, dtype=np.float32)
-            acc = add_accessor(vals, "VEC3")
-            channels.append({"acc": acc, "target": {"node": idx, "path": "translation"}})
+    clip_names = {"spin": "FormaSpin", "formation": "FormaFormation",
+                  "explode": "FormaExplode"}
+
+    for spec in specs:
+        kind = str(spec.get("kind") or "spin").lower()
+        seconds = float(spec.get("seconds") or 4.0)
+        seconds = max(0.2, min(seconds, 600.0))
+        start = max(0.0, float(spec.get("start") or 0.0))
+        steps = max(2, int(spec.get("steps") or 48))
+        channels = []
+
+        if kind == "formation":
+            ts, vals = keys([(0.0, 0.001),
+                             (start, 0.001),
+                             (start + seconds * 0.85, 1.0),
+                             (start + seconds, 1.0)])
+            arr = np.asarray(vals, dtype=np.float32).reshape(-1, 1).repeat(3, axis=1)
+            acc = add_accessor(arr, "VEC3")
+            channels.append({"acc": acc, "target": {"node": root_index, "path": "scale"}})
+        elif kind == "explode":
+            amount = float(spec.get("amount") or diagonal * 0.18)
+            for idx in roots:
+                name = nodes[idx].get("name") or ""
+                c = centers.get(name) if centers else None
+                if c is None:
+                    continue
+                d = np.asarray(c, dtype=np.float64) - center
+                ln = float(np.linalg.norm(d))
+                d = d / ln if ln > 1e-9 else np.array([0.0, 1.0, 0.0])
+                target = d * amount
+                # узел уже сдвинут на -center: анимируем от его базового положения,
+                # иначе деталь прыгнет в начало координат
+                base = [float(v) for v in (nodes[idx].get("translation") or [0.0, 0.0, 0.0])]
+                end = [base[0] + float(target[0]), base[1] + float(target[1]),
+                       base[2] + float(target[2])]
+                ts, vals = keys([(0.0, list(base)),
+                                 (start, list(base)),
+                                 (start + seconds, end)])
+                acc = add_accessor(np.asarray(vals, dtype=np.float32), "VEC3")
+                channels.append({"acc": acc, "target": {"node": idx, "path": "translation"}})
+        else:  # spin
+            angle = np.linspace(0.0, 2 * np.pi, steps + 1, dtype=np.float64)
+            axis = str(spec.get("axis") or "z").lower()
+            zero = np.zeros_like(angle)
+            # сценарий задаёт ось в Z-up, а GLB — в Y-up: z → Y, y → Z, x → X
+            if axis == "x":
+                quats = np.stack([np.sin(angle / 2), zero, zero, np.cos(angle / 2)], axis=1)
+            elif axis == "y":
+                quats = np.stack([zero, zero, np.sin(angle / 2), np.cos(angle / 2)], axis=1)
+            else:
+                quats = np.stack([zero, np.sin(angle / 2), zero, np.cos(angle / 2)], axis=1)
+            pairs = [(start + seconds * i / steps, list(quats[i]))
+                     for i in range(steps + 1)]
+            if start > 0:
+                pairs.insert(0, (0.0, list(quats[0])))
+            ts, vals = keys(pairs)
+            acc = add_accessor(np.asarray(vals, dtype=np.float32), "VEC4")
+            channels.append({"acc": acc, "target": {"node": root_index, "path": "rotation"}})
+
         if not channels:
-            return data
-    else:  # spin / вращение
-        angle = np.linspace(0.0, 2 * np.pi, steps + 1, dtype=np.float32)
-        axis = str(spec.get("axis") or "z").lower()
-        # сценарий задаёт ось в Z-up, а GLB — в Y-up: z → Y, y → Z, x → X
-        zero = np.zeros_like(angle)
-        if axis == "x":
-            quats = np.stack([np.sin(angle / 2), zero, zero, np.cos(angle / 2)], axis=1)
-        elif axis == "y":
-            quats = np.stack([zero, zero, np.sin(angle / 2), np.cos(angle / 2)], axis=1)
-        else:  # z — вертикаль модели, в glTF это Y
-            quats = np.stack([zero, np.sin(angle / 2), zero, np.cos(angle / 2)], axis=1)
-        acc = add_accessor(quats, "VEC4")
-        channels.append({"acc": acc, "target": {"node": root_index, "path": "rotation"}})
+            continue
+        time_acc = add_accessor(np.asarray(ts, dtype=np.float32).reshape(-1, 1), "SCALAR",
+                                with_bounds=True)
+        samplers = []
+        clean_channels = []
+        for i, ch in enumerate(channels):
+            samplers.append({"input": time_acc, "output": ch["acc"], "interpolation": "LINEAR"})
+            clean_channels.append({"sampler": i, "target": ch["target"]})
+        doc.setdefault("animations", []).append(
+            {"name": clip_names.get(kind, "FormaAnimation"),
+             "samplers": samplers, "channels": clean_channels})
 
-    samplers = []
-    clean_channels = []
-    for i, ch in enumerate(channels):
-        samplers.append({"input": time_acc, "output": ch["acc"], "interpolation": "LINEAR"})
-        clean_channels.append({"sampler": i, "target": ch["target"]})
-    anim = {"name": "FormaAnimation", "samplers": samplers, "channels": clean_channels}
-    doc.setdefault("animations", []).append(anim)
     if doc.get("buffers"):
         doc["buffers"][0]["byteLength"] = len(binary)
     return _glb_write(doc, binary)

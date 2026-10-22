@@ -83,10 +83,84 @@ class TestAnimation(unittest.TestCase):
             self.assertEqual(doc["buffers"][0]["byteLength"], len(binary))
 
     def test_scene_animation_stored(self):
-        b = ok("a = box size=[10,10,10]\nanimate kind=сборка seconds=2")
+        b = ok("a = box size=[10,10,10]\nanimate kind=рост seconds=2")
         anim = b.payload()["animation"]
         self.assertEqual(anim["kind"], "formation")
         self.assertAlmostEqual(anim["seconds"], 2.0)
+        # «сборка» — это теперь пошаговая сборка сценария, а не рост
+        b2 = ok("a = box size=[10,10,10]\nanimate kind=сборка hold=0.5")
+        self.assertEqual(b2.payload()["animation"]["kind"], "assembly")
+        self.assertAlmostEqual(b2.payload()["animation"]["hold"], 0.5)
+
+    def test_timeline_of_several_clips(self):
+        script = ("a = box size=[40,20,10]\nplace a at=[0,0,0]\n"
+                  "animate kind=spin seconds=4\n"
+                  "animate kind=formation seconds=2\n"
+                  "animate kind=assembly hold=0.5\n")
+        p = ok(script).payload()
+        plan = p["timeline"]
+        self.assertEqual([c["kind"] for c in plan["clips"]],
+                         ["spin", "formation", "assembly"])
+        self.assertAlmostEqual(plan["clips"][0]["start"], 0.0)
+        self.assertAlmostEqual(plan["clips"][1]["start"], 4.0)
+        self.assertAlmostEqual(plan["clips"][2]["start"], 6.0)
+        # два кадра сборки (куб и его перенос) × 0.5 с
+        self.assertAlmostEqual(plan["clips"][2]["length"], 1.0)
+        self.assertAlmostEqual(plan["duration"], 7.0)
+        self.assertEqual([c["kind"] for c in p["animations"]],
+                         ["spin", "formation", "assembly"])
+
+    def test_explicit_start_and_fps(self):
+        p = ok("a = box size=[10,10,10]\nanimate kind=spin start=2.5 seconds=1 fps=12"
+               ).payload()
+        clip = p["timeline"]["clips"][0]
+        self.assertAlmostEqual(clip["start"], 2.5)
+        self.assertEqual(clip["fps"], 12)
+        self.assertAlmostEqual(p["timeline"]["duration"], 3.5)
+
+    def test_bad_axis(self):
+        b = build("a = box size=[10,10,10]\nanimate kind=spin axis=w")
+        self.assertFalse(b.ok)
+        self.assertIn("Ось анимации", b.error["message"])
+
+    def test_glb_keeps_every_clip(self):
+        b = ok("a = box size=[30,20,10]\nb = sphere radius=8 at=[40,0,0]\n"
+               "animate kind=spin seconds=2\nanimate kind=explode start=2 seconds=2")
+        doc, binary = _glb_read(b.glb())
+        names = [a.get("name") for a in doc.get("animations", [])]
+        self.assertEqual(names, ["FormaSpin", "FormaExplode"])
+        self.assertEqual(doc["buffers"][0]["byteLength"], len(binary))
+        # анимация сборки в GLB не выгружается: её кадры — отдельные модели
+        b2 = ok("a = box size=[10,10,10]\nanimate kind=assembly")
+        doc2, _ = _glb_read(b2.glb())
+        self.assertFalse(doc2.get("animations"))
+
+    def test_explode_starts_from_node_position(self):
+        b = ok("a = box size=[20,10,10]\nb = sphere radius=5 at=[30,0,0]\n"
+               "animate kind=explode seconds=2 amount=20")
+        doc, binary = _glb_read(b.glb())
+        import numpy as np
+        anim = doc["animations"][0]
+        self.assertEqual(anim["name"], "FormaExplode")
+        for ch in anim["channels"]:
+            sampler = anim["samplers"][ch["sampler"]]
+            acc = doc["accessors"][sampler["output"]]
+            view = doc["bufferViews"][acc["bufferView"]]
+            arr = np.frombuffer(binary, dtype=np.float32, count=acc["count"] * 3,
+                                offset=view["byteOffset"]).reshape(-1, 3)
+            node = doc["nodes"][ch["target"]["node"]]
+            base = np.array(node.get("translation") or [0, 0, 0], dtype=np.float32)
+            self.assertTrue(np.allclose(arr[0], base, atol=1e-5),
+                            "кадр 0 должен совпадать с положением узла (иначе деталь прыгнет)")
+            self.assertGreater(float(np.linalg.norm(arr[-1] - base)), 5.0)
+
+    def test_assembly_frames(self):
+        script = ("a = box size=[40,40,40]\nb = sphere radius=12 at=[10,0,0]\n"
+                  "c = difference a b\n")
+        p = ok(script).payload()
+        self.assertEqual(len(p["frames"]), 3)
+        self.assertEqual([f["n"] for f in p["frames"]], [1, 2, 3])
+        self.assertEqual(p["steps"][-1]["verb"], "difference")
 
 
 class TestExportFormats(unittest.TestCase):

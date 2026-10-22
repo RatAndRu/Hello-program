@@ -52,6 +52,15 @@ DOCS_INDEX = """СПРАВКА ФОРМА 3D (кратко)
   имя = from_sdf expression="sd_sphere(x,y,z,30)-sd_sphere(x,y,z,24)" bounds=[...] resolution=1.5
   имя = blob spheres=[[x,y,z,r],...] capsules=[[x1,y1,z1,x2,y2,z2,r],...] blend=12
 
+АНИМАЦИЯ (клипы идут друг за другом, строк может быть несколько)
+  animate kind=spin axis=z seconds=6 [loop=да]          — вращение
+  animate kind=formation seconds=4                      — рост из нуля
+  animate kind=explode amount=30 seconds=3              — разлёт на части
+  animate kind=assembly hold=0.8                        — сборка: каждый шаг сценария как кадр
+  start=2.5 — с какой секунды начинать; fps=24 — кадры для просмотра.
+  Анимация сохраняется в GLB (Blender покажет действиями). Клипы можно ставить
+  в любом месте сценария; «анимация сборки» показывает настоящие промежуточные модели.
+
 ПАРАМЕТРЫ, ЦВЕТ, ПРОВЕРКИ
   толщина = 4            (параметр; используется в выражениях: height=толщина*2)
   color имя material=ceramic|metal|wood|plastic | color=#RRGGBB
@@ -136,6 +145,29 @@ def _render_block(renders: dict | None) -> list[str]:
     return lines
 
 
+def _animation_block(build) -> list[str]:
+    """Что сейчас анимировано и какие кадры сборки есть — для нейросети."""
+    scene = getattr(build, "scene", None)
+    if scene is None:
+        return []
+    clips = list(getattr(scene, "animations", []) or [])
+    frames = build.frames() if hasattr(build, "frames") else []
+    if not clips and not frames:
+        return ["", "## Анимация", "Клипов нет. Добавьте строку animate, например "
+                "`animate kind=spin seconds=6` или `animate kind=assembly hold=0.8`."]
+    names = {"spin": "вращение", "formation": "формирование",
+             "explode": "разлёт", "assembly": "сборка по шагам"}
+    out = ["", "## Анимация", "| клип | с | длительность |", "|---|---|---|"]
+    plan = scene.animation_plan(len(frames))
+    for clip in plan["clips"]:
+        kind = names.get(clip["kind"], clip["kind"])
+        out.append(f"| {kind} | {clip['start']:.1f} | {clip['length']:.1f} |")
+    if frames:
+        out += ["", f"Кадров сборки: {len(frames)} (шаги сценария: "
+                + ", ".join(str(f["n"]) for f in frames[:24]) + ")"]
+    return out
+
+
 def _metrics_block(build) -> list[str]:
     """Короткая таблица измерений — чтобы нейросеть видела цифры прошлой сборки."""
     metrics = (build.analysis or {}).get("metrics") or {}
@@ -191,6 +223,7 @@ def build_prompt(build: Build | None, goal: str = "", out_path: str | None = Non
                   f"{build.error.get('message')} (строка {build.error.get('line')})"]
         if build.error.get("hint"):
             parts.append(f"Подсказка: {build.error['hint']}")
+    parts += _animation_block(build)
     parts += _render_block(renders)
     parts += _actions_block(actions)
     parts += _notes_block(notes)

@@ -1,0 +1,30 @@
+# Анимация: вращение, разлёт и сборка по шагам сценария.
+# Кадры сборки — это настоящие промежуточные модели: видно, как из заготовки
+# появляется ручка, а потом обе детали объединяются в кружку.
+
+радиус = 40
+высота = 90
+
+корпус = lathe points=[
+    [0, 0], [радиус - 6, 0], [радиус - 2, 4], [радиус, 10],
+    [радиус, высота - 4], [радиус - 3, высота], [0, высота]
+  ] segments=120 thickness=4 open=top
+
+ручка = torus major=24 minor=6
+ручка = rotate [ручка] angle=90 axis=y
+ручка = place [ручка] at=[радиус + 20, 0, 48] align=center
+
+кружка = union [корпус, ручка]
+color кружка #e6ddcd material=ceramic
+color ручка #b07c4a
+
+light preset=студия
+scene bg=#0d1218 env=studio
+
+animate kind=spin seconds=5
+animate kind=explode start=5 seconds=2 amount=25
+animate kind=assembly start=7 hold=0.7
+
+check кружка watertight
+check кружка height 88..92
+check кружка wall 3..5

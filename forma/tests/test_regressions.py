@@ -238,11 +238,22 @@ class TestLeanBuild(unittest.TestCase):
         self.assertTrue((back == arr).all())
 
     def test_no_heavy_science_stack(self):
-        # from_sdf/blob/human не должны тянуть scipy, scikit-image или Pillow
-        ok("ш = from_sdf expression=\"sd_sphere(x,y,z,10)\" bounds=[-12,-12,-12,12,12,12] resolution=2")
-        ok("к = blob spheres=[[0,0,20,15],[0,0,45,12]] blend=6 resolution=2")
-        for name in ("scipy", "skimage", "PIL"):
-            self.assertNotIn(name, sys.modules, f"{name} больше не нужен приложению")
+        # сборка from_sdf/blob в отдельном процессе не должна тянуть scipy,
+        # scikit-image или Pillow (в тестах trimesh может импортировать их сам)
+        import subprocess
+        code = (
+            "import sys; sys.path.insert(0, r'%s');\n"
+            "from forma.run import build;\n"
+            "build('ш = from_sdf expression=\"sd_sphere(x,y,z,10)\" "
+            "bounds=[-12,-12,-12,12,12,12] resolution=2');\n"
+            "build('к = blob spheres=[[0,0,20,15],[0,0,45,12]] blend=6 resolution=2');\n"
+            "bad = [n for n in ('scipy', 'skimage', 'PIL') if n in sys.modules];\n"
+            "print(','.join(bad))"
+        ) % str(ROOT)
+        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                             timeout=180)
+        self.assertEqual(out.returncode, 0, out.stderr[-800:])
+        self.assertEqual(out.stdout.strip(), "", "лишние зависимости в сборке")
 
     def test_symmetry_only_when_asked(self):
         # без проверки симметрии дорогая метрика не считается на большой сетке

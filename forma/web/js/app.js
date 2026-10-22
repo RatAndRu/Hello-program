@@ -35,6 +35,11 @@ const state = {
   hidden: new Set(),
   lastSaved: '', 
   material: { color: '#c9d1e3', metal: 0, rough: 0.5 },
+  anim: {
+    mode: 'clips', time: 0, duration: 0, playing: false,
+    frames: [], frameIndex: 0, frameTimer: 0, hold: 0.8, fps: 24,
+    cache: new Map(), pending: null, timer: null, busy: false,
+  },
 };
 
 function toast(message, kind = '') {
@@ -254,7 +259,7 @@ async function buildNow(silent = false) {
     state.payload = payload;
     applyBuild(payload, Math.round(performance.now() - t0));
     if (payload.ok) {
-      await loadModel(payload.glb_url, payload.animation);
+      await loadModel(payload.glb_url, payload.timeline || payload.animation);
       if (!silent) toast(`Готово за ${Math.round(performance.now() - t0)} мс`);
     }
   } catch (err) {
@@ -283,6 +288,9 @@ function applyBuild(payload, elapsed) {
     $('checks-list').innerHTML = '';
     $('checks-summary').textContent = '—';
     $('verdict').hidden = true;
+    state.anim.frames = [];
+    state.anim.playing = false;
+    updateAnimState();
     return;
   }
 
@@ -570,6 +578,9 @@ function escapeHtml(s) {
 /*  Просмотр                                                          */
 /* ------------------------------------------------------------------ */
 async function loadModel(url, animation = null) {
+  state.anim.cache.clear();
+  state.anim.pending = null;
+  state.anim.frameTimer = 0;
   if (!url) return;
   $('viewer-empty').hidden = true;
   try {
@@ -580,7 +591,24 @@ async function loadModel(url, animation = null) {
     (state.payload?.objects || []).forEach((o) => {
       if (o.tex && o.tex.kind) applyTextureToViewer(o.name, o.tex.kind, o.tex.scale);
     });
+    state.anim.frames = state.payload?.frames || [];
+    state.anim.frameIndex = 0;
+    state.anim.time = 0;
+    if (!state.anim.userMode) {
+      const clips = animClips();
+      const onlyAssembly = clips.length && clips.every((c) => c.kind === 'assembly');
+      state.anim.mode = onlyAssembly && state.anim.frames.length ? 'frames' : 'clips';
+    }
+    if (state.anim.mode === 'frames' && !state.anim.frames.length) state.anim.mode = 'clips';
+    if ($('anim-mode')) $('anim-mode').value = state.anim.mode;
     updateAnimState();
+    if (state.anim.mode === 'frames') {
+      if (state.anim.frames.length) showFrame(0);
+    } else if (animClips().length) {
+      state.viewer.playAnimation(true);
+      state.anim.playing = state.viewer.playing;
+      syncAnimUI();
+    }
   } catch (e) {
     toast('Не удалось показать модель: ' + (e?.message || e), 'bad');
   }
@@ -616,25 +644,345 @@ function showTexturePreview(kind) {
   img.title = 'Так выглядит рисунок «' + kind + '»';
 }
 
-function updateAnimState() {
+const ANIM_KINDS = { spin: 'вращение', formation: 'формирование', explode: 'разлёт',
+  assembly: 'сборка по шагам' };
+
+function animPlan() {
+  const p = state.payload?.timeline;
+  if (p && Array.isArray(p.clips)) return p;
+  const one = state.payload?.animation;
+  return one && one.kind ? { clips: [one], duration: one.seconds || 4, count: 1 } : null;
+}
+
+function animClips() { return animPlan()?.clips || []; }
+function animFrames() { return state.anim.frames || []; }
+function animFps() { return Number(animClips()[0]?.fps) || 24; }
+
+function animHasContent() {
+  if (state.anim.mode === 'frames') return animFrames().length > 0;
+  return animClips().length > 0 || Boolean(state.viewer?.hasAnimation());
+}
+
+/** Понятное объяснение вместо ложного «в сценарии нет анимации». */
+function explainNoAnimation() {
+  if (state.building) { toast('Модель ещё строится — анимация появится сразу после сборки'); return; }
+  if (!state.payload?.ok) { toast('Сценарий не построен — сначала исправьте ошибку', 'bad'); return; }
+  if (state.anim.mode === 'frames') {
+    toast('В сценарии нет шагов сборки: добавьте объекты и операции', 'bad');
+    return;
+  }
+  const lines = currentScript().split('\n').filter((l) => /^\s*animate\b/i.test(l)).length;
+  if (lines) {
+    toast('Строка animate есть, но клип пока не построен — нажмите «Собрать»', 'bad');
+  } else {
+    toast('Анимация не задана. Добавьте клип в редакторе или строкой animate kind=spin', 'bad');
+    $('anim-editor').hidden = false;
+  }
+}
+
+function syncAnimUI() {
+  const a = state.anim;
+  const has = animHasContent();
   const btn = $('anim-play');
-  const spec = state.payload?.animation;
-  const has = Boolean(state.viewer?.hasAnimation() || (spec && spec.kind));
   if (btn) {
-    btn.disabled = !has;
-    btn.title = has ? 'Проиграть анимацию из сценария' : 'В сценарии нет строки animate';
-    const playing = has && state.viewer?.playing !== false;
-    btn.dataset.playing = playing ? '1' : '';
-    btn.textContent = playing ? '❚❚ пауза' : '▶ играть';
+    btn.textContent = a.playing ? '❚❚ пауза' : '▶ играть';
+    btn.classList.toggle('active', a.playing);
+    btn.disabled = false;   // всегда можно нажать: приложение объяснит, чего не хватает
+    btn.title = has ? 'Играть / пауза' : 'Анимация не задана — открою редактор';
   }
   const label = $('anim-status');
   if (label) {
-    const a = state.payload?.animation;
-    label.textContent = a && a.kind
-      ? `анимация: ${{ spin: 'вращение', formation: 'формирование', explode: 'разлёт' }[a.kind] || a.kind}, ${a.seconds} с`
-      : 'анимация не задана (добавьте строку animate)';
-    label.className = 'anim-status ' + (a && a.kind ? 'ok' : '');
+    if (a.mode === 'frames') {
+      label.textContent = animFrames().length
+        ? `кадры сборки: ${animFrames().length} шаг(ов)` : 'кадров сборки нет';
+      label.className = 'anim-status ' + (animFrames().length ? 'ok' : '');
+    } else {
+      const clips = animClips();
+      const total = animPlan()?.duration || 0;
+      label.textContent = clips.length
+        ? `${clips.map((c) => ANIM_KINDS[c.kind] || c.kind).join(' + ')} · ${total.toFixed(1)} с`
+        : 'анимация не задана (animate)';
+      label.className = 'anim-status ' + (clips.length ? 'ok' : '');
+    }
   }
+  const scrub = $('anim-scrub');
+  if (scrub) {
+    if (a.mode === 'frames') {
+      scrub.max = String(Math.max(0, animFrames().length - 1));
+      scrub.value = String(a.frameIndex || 0);
+    } else {
+      scrub.max = '1000';
+    }
+  }
+  if ($('anim-frame-label') && a.mode === 'frames') {
+    $('anim-frame-label').textContent =
+      `шаг ${animFrames().length ? a.frameIndex + 1 : 0}/${animFrames().length}`;
+  }
+  syncAnimClock();
+  renderAnimTracks();
+  renderAnimClipsEditor();
+}
+
+/** Быстрое обновление только часов (вызывается каждый кадр во время игры). */
+function syncAnimClock() {
+  const a = state.anim;
+  const total = a.duration || animPlan()?.duration || 0;
+  const scrub = $('anim-scrub');
+  if (scrub && a.mode !== 'frames') scrub.value = String(total ? Math.round((a.time / total) * 1000) : 0);
+  if ($('anim-time')) $('anim-time').textContent = `${a.time.toFixed(2)} / ${total.toFixed(2)} с`;
+  if ($('anim-frame-label') && a.mode !== 'frames') {
+    const fps = animFps();
+    $('anim-frame-label').textContent = `кадр ${Math.round((a.time || 0) * fps)}/${Math.round(total * fps)}`;
+  }
+  const btn = $('anim-play');
+  if (btn) {
+    btn.textContent = a.playing ? '❚❚ пауза' : '▶ играть';
+    btn.classList.toggle('active', a.playing);
+  }
+}
+
+function updateAnimState() {
+  const a = state.anim;
+  a.duration = Number(state.viewer?.duration) || Number(animPlan()?.duration) || 0;
+  if (a.mode === 'frames') a.duration = 0;
+  syncAnimUI();
+}
+
+/* --- дорожки клипов и шагов ------------------------------------------ */
+function renderAnimTracks() {
+  const box = $('anim-tracks');
+  if (!box) return;
+  const a = state.anim;
+  box.innerHTML = '';
+  if (a.mode === 'frames') {
+    const frames = animFrames();
+    if (!frames.length) {
+      box.innerHTML = '<span class="anim-empty">шагов сборки нет — добавьте объекты в сценарий</span>';
+      return;
+    }
+    frames.forEach((f, i) => {
+      const b = document.createElement('button');
+      b.className = 'anim-step' + (i === a.frameIndex ? ' cur' : '');
+      b.textContent = String(f.frame || i + 1);
+      b.title = `строка ${f.line}: ${f.text}`;
+      b.onclick = () => { pauseAnim(); seekFrame(i); };
+      box.appendChild(b);
+    });
+    return;
+  }
+  const clips = animClips();
+  const total = animPlan()?.duration || 0;
+  if (!clips.length) {
+    box.innerHTML = '<span class="anim-empty">клипов нет: animate kind=spin seconds=6</span>';
+    return;
+  }
+  const lane = document.createElement('div');
+  lane.className = 'anim-lane';
+  clips.forEach((c, i) => {
+    const seg = document.createElement('div');
+    seg.className = 'anim-seg seg-' + (c.kind || 'spin');
+    const start = Number(c.start) || 0;
+    const len = Number(c.length) || Number(c.seconds) || 1;
+    seg.style.left = total ? `${(start / total) * 100}%` : '0%';
+    seg.style.width = total ? `${Math.max(2, (len / total) * 100)}%` : '100%';
+    seg.title = `${ANIM_KINDS[c.kind] || c.kind} · ${start.toFixed(1)}–${(start + len).toFixed(1)} с`
+      + (c.line ? ` · строка ${c.line}` : '');
+    seg.innerHTML = `<span>${ANIM_KINDS[c.kind] || c.kind}</span>`;
+    seg.onclick = () => { pauseAnim(); seekTime(start); };
+    lane.appendChild(seg);
+  });
+  box.appendChild(lane);
+}
+
+/* --- редактор клипов ------------------------------------------------ */
+function renderAnimClipsEditor() {
+  const box = $('anim-clips');
+  if (!box) return;
+  const clips = animClips();
+  box.innerHTML = '';
+  if (!clips.length) {
+    box.innerHTML = '<span class="anim-empty">пока ни одного клипа</span>';
+    return;
+  }
+  clips.forEach((c) => {
+    const row = document.createElement('div');
+    row.className = 'anim-clip-row';
+    const title = `${ANIM_KINDS[c.kind] || c.kind}`
+      + (c.kind === 'assembly' ? ` · ${(c.hold || 0.8).toFixed(1)} с/шаг`
+        : ` · ${(Number(c.length) || Number(c.seconds) || 0).toFixed(1)} с`)
+      + ` · с ${(Number(c.start) || 0).toFixed(1)} с`;
+    row.innerHTML = `<span class="anim-clip-name">${title}</span>`
+      + `<code>${escapeHtml(c.text || '')}</code>`;
+    const edit = document.createElement('button');
+    edit.className = 'mini';
+    edit.textContent = '✎';
+    edit.title = 'Загрузить значения в редактор';
+    edit.onclick = () => loadClipIntoEditor(c);
+    const del = document.createElement('button');
+    del.className = 'mini';
+    del.textContent = '✕';
+    del.title = 'Удалить клип из сценария';
+    del.onclick = () => removeAnimationLine(c.line);
+    row.appendChild(edit);
+    row.appendChild(del);
+    box.appendChild(row);
+  });
+}
+
+function loadClipIntoEditor(c) {
+  $('anim-editor').hidden = false;
+  $('ae-kind').value = c.kind || 'spin';
+  $('ae-axis').value = c.axis || 'z';
+  $('ae-seconds').value = String(Number(c.seconds) || 4);
+  $('ae-start').value = c.start === null || c.start === undefined ? '' : String(c.start);
+  $('ae-hold').value = String(Number(c.hold) || 0.8);
+  $('ae-amount').value = String(Number(c.amount) || 30);
+  $('ae-loop').checked = c.loop !== false;
+  updateEditorVisibility();
+}
+
+function updateEditorVisibility() {
+  const kind = $('ae-kind')?.value;
+  if ($('ae-hold-wrap')) $('ae-hold-wrap').style.display = kind === 'assembly' ? '' : 'none';
+  if ($('ae-amount-wrap')) $('ae-amount-wrap').style.display = kind === 'explode' ? '' : 'none';
+  const seconds = $('ae-seconds');
+  if (seconds) seconds.disabled = kind === 'assembly';
+}
+
+function addAnimationClip() {
+  const kind = $('ae-kind').value;
+  const axis = $('ae-axis').value || 'z';
+  const seconds = Number($('ae-seconds').value) || 4;
+  const start = $('ae-start').value.trim();
+  const hold = Number($('ae-hold').value) || 0.8;
+  const loop = $('ae-loop').checked;
+  const parts = [`animate kind=${kind}`];
+  if (kind === 'spin' || kind === 'formation' || kind === 'explode') parts.push(`axis=${axis}`);
+  if (kind === 'assembly') parts.push(`hold=${hold}`);
+  else parts.push(`seconds=${seconds}`);
+  if (kind === 'explode') parts.push(`amount=${Number($('ae-amount').value) || 30}`);
+  if (start !== '' && Number(start) > 0) parts.push(`start=${start}`);
+  if (!loop) parts.push('loop=нет');
+  const line = parts.join(' ');
+  const script = currentScript().replace(/\s+$/, '');
+  setScript((script ? script + '\n' : '') + line, { label: 'анимация: ' + line });
+  toast('Клип добавлен: ' + (ANIM_KINDS[kind] || kind));
+}
+
+function removeAnimationLine(line) {
+  if (!line) { toast('Клип добавлен не строкой animate — уберите строку вручную', 'bad'); return; }
+  const lines = currentScript().split('\n');
+  const idx = line - 1;
+  if (idx < 0 || idx >= lines.length) { toast('Строка не найдена', 'bad'); return; }
+  if (!/^\s*(animate|анимация|движение|animation)\b/i.test(lines[idx])) {
+    toast('Строка изменилась — удалите клип в тексте сценария', 'bad');
+    return;
+  }
+  lines.splice(idx, 1);
+  setScript(lines.join('\n'), { label: 'удаление клипа' });
+  toast('Клип удалён из сценария');
+}
+
+/* --- транспорт и прокрутка ------------------------------------------ */
+function pauseAnim() {
+  const a = state.anim;
+  a.playing = false;
+  if (state.viewer) state.viewer.playAnimation(false);
+  syncAnimUI();
+}
+
+function seekTime(t) {
+  const a = state.anim;
+  a.time = Math.max(0, Math.min(Number(t) || 0, a.duration || 0));
+  state.viewer?.setTime(a.time);
+  syncAnimUI();
+}
+
+function stepByFrames(dir) {
+  const a = state.anim;
+  if (a.mode === 'frames') {
+    pauseAnim();
+    seekFrame(a.frameIndex + dir);
+    return;
+  }
+  const fps = animFps();
+  pauseAnim();
+  seekTime((a.time || 0) + dir / fps);
+}
+
+function seekFrame(index) {
+  const a = state.anim;
+  const frames = animFrames();
+  if (!frames.length) return;
+  a.frameIndex = Math.max(0, Math.min(index, frames.length - 1));
+  syncAnimUI();
+  showFrame(a.frameIndex);
+}
+
+async function showFrame(index) {
+  const a = state.anim;
+  const frame = animFrames()[index];
+  if (!frame || !state.viewer) return;
+  const script = currentScript();
+  const key = `${state.payload?.script_hash || 'x'}_${frame.n}`;
+  const cached = a.cache.get(key);
+  if (cached) {
+    await state.viewer.loadFrame(cached.key, cached.url).catch(() => {});
+    return;
+  }
+  if (a.busy) { a.next = index; return; }
+  a.busy = true;
+  try {
+    const res = await api('/api/frame', { script, upto: frame.n });
+    if (!res.glb) { toast('Этот шаг не даёт геометрии — выберите другой', 'bad'); return; }
+    const url = '/api/frame.glb?key=' + encodeURIComponent(res.key)
+      + '&token=' + encodeURIComponent(TOKEN);
+    a.cache.set(key, { key: res.key, url });
+    while (a.cache.size > 24) a.cache.delete(a.cache.keys().next().value);
+    await state.viewer.loadFrame(res.key, url);
+  } catch (e) {
+    toast('Не удалось показать кадр: ' + (e.message || e), 'bad');
+  } finally {
+    a.busy = false;
+    if (a.next !== undefined && a.next !== index) {
+      const next = a.next;
+      a.next = undefined;
+      showFrame(next);
+    }
+  }
+}
+
+function setAnimMode(mode) {
+  const a = state.anim;
+  a.mode = mode;
+  a.playing = false;
+  a.time = 0;
+  a.frameTimer = 0;
+  state.viewer?.playAnimation(false);
+  if (mode === 'frames') {
+    if (state.viewer) state.viewer.manualAdvance = true;
+    a.frameIndex = 0;
+    if (animFrames().length) showFrame(0);
+  } else {
+    if (state.viewer) { state.viewer.manualAdvance = false; state.viewer.showFinalModel(); state.viewer.setTime(0); }
+  }
+  updateAnimState();
+}
+
+function togglePlayAnim() {
+  const a = state.anim;
+  if (!animHasContent()) { explainNoAnimation(); return; }
+  a.playing = !a.playing;
+  if (a.mode === 'frames') {
+    if (state.viewer) { state.viewer.manualAdvance = true; state.viewer.playing = a.playing; }
+    a.frameTimer = 0;
+    if (a.playing) seekFrame(a.frameIndex);
+  } else if (state.viewer) {
+    state.viewer.manualAdvance = false;
+    state.viewer.playAnimation(a.playing);
+    a.playing = state.viewer.playing;
+  }
+  syncAnimUI();
 }
 
 function initViewer() {
@@ -643,6 +991,29 @@ function initViewer() {
     state.viewer.onSelect = (name) => selectObject(name);
     state.viewer.onSelection = (stats) => showSelection(stats);
     state.viewer.onTextureError = () => toast('Не удалось загрузить текстуру: проверьте соединение с окном приложения', 'bad');
+    let lastClock = 0;
+    state.viewer.onTime = (t) => {
+      if (state.anim.mode !== 'clips') return;
+      state.anim.time = t;
+      const now = performance.now();
+      if (now - lastClock > 60) { lastClock = now; syncAnimClock(); }
+    };
+    state.viewer.onEnd = () => { state.anim.playing = false; syncAnimUI(); };
+    state.viewer.onFrame = (dt) => {
+      const a = state.anim;
+      if (a.mode !== 'frames' || !a.playing) return;
+      a.frameTimer += dt * (state.viewer.speed || 1);
+      const hold = Math.max(0.15, Number(animPlan()?.assembly?.hold) || 0.8);
+      if (a.frameTimer < hold) return;
+      a.frameTimer = 0;
+      const last = animFrames().length - 1;
+      if (a.frameIndex >= last) {
+        if (state.viewer.loop) seekFrame(0);
+        else { a.playing = false; state.viewer.playing = false; syncAnimUI(); }
+      } else {
+        seekFrame(a.frameIndex + 1);
+      }
+    };
   } catch (e) {
     $('viewer-empty').innerHTML = '<p>WebGL недоступен в этом окне.<br>Модель можно посмотреть через PNG-снимки кнопкой «Снимки».</p>';
     console.error(e);
@@ -715,11 +1086,6 @@ function applyViewSettings(payload) {
   document.querySelectorAll('#bg-swatches .swatch').forEach((sw) => {
     sw.classList.toggle('active', (sw.dataset.bg || '').toLowerCase() === (s.bg || '').toLowerCase());
   });
-  const anim = payload.animation;
-  if (anim && $('anim-kind')) $('anim-kind').value = anim.kind || '';
-  if (state.viewer?.hasAnimation()) {
-    state.viewer.setLoop(anim ? anim.loop !== false : true);
-  }
   updateStatsOverlay();
 }
 
@@ -793,42 +1159,62 @@ $('opt-poly')?.addEventListener('change', (e) => {
   $('btn-wire')?.classList.toggle('active', e.target.checked);
   state.viewer?.setPolygons(e.target.checked);
 });
-$('anim-play')?.addEventListener('click', (e) => {
-  if (!state.viewer) return;
-  if (!state.viewer.hasAnimation()) { toast('В сценарии нет анимации. Выберите вид анимации.', 'bad'); return; }
-  const playing = e.currentTarget.dataset.playing !== '1';
-  e.currentTarget.dataset.playing = playing ? '1' : '';
-  e.currentTarget.textContent = playing ? '❚❚ пауза' : '▶ играть';
-  state.viewer.playAnimation(playing);
-});
+$('anim-play')?.addEventListener('click', () => togglePlayAnim());
 $('anim-restart')?.addEventListener('click', () => {
-  state.viewer?.restartAnimation();
-  const b = $('anim-play');
-  if (b) { b.dataset.playing = '1'; b.textContent = '❚❚ пауза'; }
+  const a = state.anim;
+  a.playing = false;
+  if (a.mode === 'frames') { seekFrame(0); return; }
+  seekTime(0);
 });
+$('anim-first')?.addEventListener('click', () => {
+  pauseAnim();
+  if (state.anim.mode === 'frames') seekFrame(0); else seekTime(0);
+});
+$('anim-back')?.addEventListener('click', () => stepByFrames(-1));
+$('anim-fwd')?.addEventListener('click', () => stepByFrames(1));
 $('anim-speed')?.addEventListener('input', (e) => {
   const v = Number(e.target.value);
   $('anim-speed-val').textContent = v.toFixed(1) + '×';
   state.viewer?.setSpeed(v);
 });
-$('anim-kind')?.addEventListener('change', (e) => {
-  const kind = e.target.value;
-  if (!kind) return;
-  setAnimationCommand(kind);
+$('anim-scrub')?.addEventListener('input', (e) => {
+  const a = state.anim;
+  const value = Number(e.target.value);   // читаем до паузы: она перерисовывает ползунок
+  pauseAnim();
+  if (a.mode === 'frames') {
+    seekFrame(value);
+  } else {
+    const total = a.duration || animPlan()?.duration || 0;
+    seekTime((value / 1000) * total);
+  }
 });
+$('anim-mode')?.addEventListener('change', (e) => {
+  state.anim.userMode = true;
+  setAnimMode(e.target.value);
+});
+$('anim-editor-toggle')?.addEventListener('click', () => {
+  const box = $('anim-editor');
+  box.hidden = !box.hidden;
+  updateEditorVisibility();
+});
+$('ae-kind')?.addEventListener('change', updateEditorVisibility);
+$('ae-add')?.addEventListener('click', addAnimationClip);
+
+document.addEventListener('keydown', (e) => {
+  if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+  if (e.code === 'Space' && !e.ctrlKey && !e.metaKey) {
+    if ($('anim-panel') && !$('anim-panel').hidden) { e.preventDefault(); togglePlayAnim(); }
+  } else if (e.key === 'ArrowLeft' && e.altKey) {
+    e.preventDefault(); stepByFrames(-1);
+  } else if (e.key === 'ArrowRight' && e.altKey) {
+    e.preventDefault(); stepByFrames(1);
+  }
+});
+
 $('btn-wire')?.addEventListener('dblclick', () => {
   $('opt-poly').checked = !$('opt-poly').checked;
   state.viewer?.setPolygons($('opt-poly').checked);
 });
-
-function setAnimationCommand(kind) {
-  const names = { spin: 'вращение', formation: 'формирование', explode: 'разлёт' };
-  const lines = currentScript().split('\n').filter((l) => !/^\s*animate\b/i.test(l));
-  const seconds = { spin: 6, formation: 4, explode: 3 }[kind] || 4;
-  lines.push(`animate kind=${kind} seconds=${seconds}`);
-  setScript(lines.join('\n'));
-  toast(`Анимация сценария: ${names[kind] || kind}`);
-}
 
 /* ------------------------------------------------------------------ */
 /*  Материал выбранного объекта                                       */
@@ -1110,9 +1496,37 @@ async function captureViews() {
   } catch (e) { toast(e.message || 'Ошибка снимков', 'bad'); }
 }
 
+function scriptLines(text) {
+  return String(text || '').replace(/\r\n?/g, '\n').split('\n')
+    .map((l) => l.replace(/\s+$/, ''))
+    .filter((l) => l.trim() && !l.trim().startsWith('#'));
+}
+
+/** Вставка нескольких строк: полный сценарий заменяем, одиночную команду дописываем. */
+function insertScriptText(text, { replace = false } = {}) {
+  const lines = scriptLines(text);
+  if (!lines.length) return 0;
+  if (replace || lines.length > 1) {
+    setScript(lines.join('\n'), { label: `вставка ${lines.length} строк` });
+  } else {
+    const script = currentScript().replace(/\s+$/, '');
+    setScript((script ? script + '\n' : '') + lines[0], { label: 'команда: ' + lines[0] });
+  }
+  return lines.length;
+}
+
 function runCommand() {
   const raw = $('cmd-input').value.trim();
   if (!raw) { buildNow(); return; }
+  if (/[\n\r]/.test(raw)) {
+    $('cmd-input').value = '';
+    const n = insertScriptText(raw, { replace: true });
+    if (n) {
+      setCmdResult(`✓ вставлено строк: ${n} — сценарий заменён (откат: Ctrl+Z)`, 'ok');
+      toast(`Сценарий из ${n} строк собран`);
+    }
+    return;
+  }
   const low = raw.toLowerCase();
   if (low === '/снимки' || low === '/render') { $('cmd-input').value = ''; captureViews(); return; }
   if (low === '/отчёт' || low === '/report') {
@@ -1126,11 +1540,12 @@ function runCommand() {
     '/шестерня': 'gear', '/gear': 'gear', '/кузов': 'car', '/car': 'car',
     '/бутылка': 'bottle', '/bottle': 'bottle', '/пришелец': 'alien', '/alien': 'alien',
     '/манекен': 'mannequin', '/mannequin': 'mannequin',
-    '/инструменты': 'tools', '/tools': 'tools' };
+    '/инструменты': 'tools', '/tools': 'tools',
+    '/анимация': 'animation', '/animation': 'animation' };
   if (RECIPES[low] || low === '/рецепты' || low === '/recipes') {
     $('cmd-input').value = '';
     if (RECIPES[low]) { loadExample(RECIPES[low]); return; }
-    toast('Рецепты: /банан, /гриб, /кружка, /ваза, /бутылка, /шестерня, /кузов, /пришелец, /манекен, /инструменты');
+    toast('Рецепты: /банан, /гриб, /кружка, /ваза, /бутылка, /шестерня, /кузов, /пришелец, /манекен, /инструменты, /анимация');
     return;
   }
   if (low === '/очистить' || low === '/clear') {
@@ -1158,6 +1573,18 @@ function sendToAssistant() {
 }
 
 $('cmd-run')?.addEventListener('click', runCommand);
+$('cmd-input')?.addEventListener('paste', (e) => {
+  const text = e.clipboardData?.getData('text') || '';
+  if (!/[\n\r]/.test(text)) return;   // одна строка — обычная вставка
+  e.preventDefault();
+  $('cmd-input').value = '';
+  const n = insertScriptText(text, { replace: true });
+  if (n) {
+    setCmdResult(`✓ вставлено строк: ${n} — сценарий заменён (откат: Ctrl+Z)`, 'ok');
+    toast(`Многострочный сценарий: ${n} строк`);
+  }
+});
+
 $('cmd-input')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();

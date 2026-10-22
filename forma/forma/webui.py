@@ -74,6 +74,16 @@ class AppState:
         self.notes: list[dict] = []
         self.action_seq = 0
         self._last_build_hash: str | None = None
+        self.frame_cache: dict[str, tuple[dict, bytes | None]] = {}
+        self.frame_order: list[str] = []
+
+    def paths_info(self) -> dict:
+        """Карта папок рядом с exe — показывается в справке."""
+        try:
+            from .paths import describe
+            return describe()
+        except Exception:
+            return {"root": str(self.data_dir)}
 
     # ------------------------------------------------------------------ #
     def log_action(self, kind: str, text: str, ok: bool = True) -> dict:
@@ -165,6 +175,39 @@ class AppState:
             payload["notes"] = list(self.notes)
             return payload
 
+    def frame(self, script: str, upto: int, light: bool = True) -> dict:
+        """Кадр сборки: сцена после первых ``upto`` команд сценария."""
+        upto = max(0, min(int(upto), 4000))
+        import hashlib
+        key = f"{hashlib.sha1((script or '').encode('utf-8')).hexdigest()[:12]}_{upto}"
+        cached = self.frame_cache.get(key)
+        if cached is None:
+            with self.lock:
+                b = run_build(script, upto=upto, analyze_model=False)
+                payload = b.payload(light=light)
+                glb = None
+                if b.ok and not b.empty:
+                    try:
+                        glb = b.glb()
+                    except Exception:
+                        glb = None
+                payload["key"] = key
+                payload["glb"] = bool(glb)
+                cached = (payload, glb)
+                self.frame_cache[key] = cached
+                self.frame_order.append(key)
+                # держим не больше 48 кадров и ~96 МБ: у больших моделей GLB тяжёлый
+                while len(self.frame_order) > 48 or (
+                        len(self.frame_order) > 2
+                        and sum(len(v[1] or b"") for v in self.frame_cache.values()) > 96 * 1024 * 1024):
+                    old = self.frame_order.pop(0)
+                    self.frame_cache.pop(old, None)
+        return cached[0]
+
+    def frame_glb(self, key: str) -> bytes | None:
+        item = self.frame_cache.get(key)
+        return item[1] if item else None
+
     def glb(self) -> bytes:
         with self.lock:
             if not self.last_build or not self.last_build.ok:
@@ -214,9 +257,11 @@ class AppState:
             out_dir = self.data_dir / "exports"
             base = slugify(self.project_name or "model")
             fmt = fmt.lower()
-            animation = self.last_build.scene.animation if self.last_build.scene else None
+            scene = self.last_build.scene
+            animation = scene.animation if scene else None
+            animations = list(scene.animations) if scene else None
             if fmt == "glb":
-                data = export_glb(solids, animation=animation)
+                data = export_glb(solids, animation=animation, animations=animations)
                 name = f"{base}.glb"
             elif fmt == "stl":
                 data = export_stl(solids)
@@ -234,7 +279,8 @@ class AppState:
                 else:
                     from .blender import glb_to_blend
                     tmp = out_dir / f"_tmp_{base}.glb"
-                    tmp.write_bytes(export_glb(solids, animation=animation))
+                    tmp.write_bytes(export_glb(solids, animation=animation,
+                                               animations=animations))
                     name = f"{base}.blend"
                     try:
                         glb_to_blend(str(tmp), str(out_dir / name))
@@ -361,6 +407,7 @@ EXAMPLES = [
     ("Человек (манекен)", "human"),
     ("Анатомическая фигура", "human_studio"),
     ("Кружка со студией", "mug_studio"),
+    ("Анимация и сборка по шагам", "animation"),
 ]
 
 
@@ -541,6 +588,7 @@ class Handler(BaseHTTPRequestHandler):
                 "examples": [{"name": n, "key": k} for n, k in EXAMPLES],
                 "projects": st.list_projects(),
                 "data_dir": str(st.data_dir),
+                "paths": st.paths_info(),
                 "has_build": bool(st.last_build and st.last_build.ok),
                 "actions": list(st.actions),
                 "notes": list(st.notes),
@@ -549,6 +597,19 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/model.glb":
             data = st.glb()
+            self.send_response(200)
+            self.send_header("Content-Type", "model/gltf-binary")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+        if path == "/api/frame.glb":
+            key = query.get("key", [""])[0]
+            data = st.frame_glb(key)
+            if data is None:
+                self._send_json({"error": {"message": "Кадр не найден — постройте его заново"}}, 404)
+                return
             self.send_response(200)
             self.send_header("Content-Type", "model/gltf-binary")
             self.send_header("Content-Length", str(len(data)))
@@ -602,6 +663,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/build":
             script = body.get("script", "")
             self._send_json(st.build(script, auto=bool(body.get("auto"))))
+            return
+        if path == "/api/frame":
+            script = body.get("script", st.last_script)
+            try:
+                upto = int(body.get("upto") or 0)
+            except (TypeError, ValueError):
+                raise FormaError("Номер кадра должен быть числом.")
+            self._send_json(st.frame(script, upto))
             return
         if path == "/api/action":
             self._send_json({"action": st.log_action(body.get("kind", "действие"),
@@ -660,6 +729,11 @@ class FormaHTTPServer(ThreadingHTTPServer):
 
 
 def make_server(host: str = "127.0.0.1", port: int = 0) -> tuple[FormaHTTPServer, str]:
+    try:
+        from .paths import migrate_legacy
+        migrate_legacy()  # старые APPDATA/User-папки переносим к exe и убираем
+    except Exception:
+        pass
     state = AppState()
     handler = type("BoundHandler", (Handler,), {"state": state})
     server = FormaHTTPServer((host, port), handler)

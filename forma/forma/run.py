@@ -38,6 +38,9 @@ class Build:
     timings: dict = field(default_factory=dict)
     log: list = field(default_factory=list)
     script_hash: str = ""
+    steps: list = field(default_factory=list)
+    upto: int | None = None
+    empty: bool = False
     _glb: bytes | None = None
     _glb_error: str | None = None
 
@@ -55,8 +58,10 @@ class Build:
             solids = self.visible_solids()
             if not solids:
                 raise GeometryError("Нет видимых объектов для экспорта.")
-            animation = self.scene.animation if self.scene else None
-            self._glb = export_glb(solids, animation=animation)
+            scene = self.scene
+            self._glb = export_glb(solids,
+                                   animation=scene.animation if scene else None,
+                                   animations=list(scene.animations) if scene else None)
         return self._glb
 
     def objects_payload(self) -> list[dict]:
@@ -88,20 +93,43 @@ class Build:
             })
         return out
 
-    def payload(self) -> dict:
+    def frames(self) -> list[dict]:
+        """Кадры сборки: шаги сценария, после которых менялась видимая модель."""
+        out = []
+        prev = None
+        for step in self.steps:
+            sig = (tuple(step.get("objects") or []), step.get("ops"))
+            if not step.get("objects") or sig == prev:
+                continue
+            prev = sig
+            out.append({**step, "frame": len(out) + 1})
+        return out
+
+    def payload(self, light: bool = False) -> dict:
         scene = self.scene
-        return {
+        frames = self.frames()
+        plan = scene.animation_plan(len(frames)) if scene else {
+            "clips": [], "duration": 0.0, "count": 0, "has": False,
+            "kinds": [], "assembly": None}
+        payload = {
             "ok": self.ok,
             "error": self.error,
             "script_hash": self.script_hash,
-            "objects": self.objects_payload(),
+            "objects": [] if light else self.objects_payload(),
             "params": dict(scene.params) if scene else {},
             "analysis": self.analysis,
             "timings": self.timings,
             "log": self.log,
             "settings": dict(scene.settings) if scene else {},
             "animation": scene.animation if scene else None,
+            "animations": plan["clips"],
+            "timeline": plan,
+            "steps": self.steps,
+            "frames": frames,
+            "upto": self.upto,
+            "empty": self.empty,
         }
+        return payload
 
 
 def _hash(script: str) -> str:
@@ -222,10 +250,12 @@ def _execute(scene: Scene, cmd) -> None:
     scene.log("info", f"{spec.name}: готово", cmd.line)
 
 
-def build(script: str, previous_analysis: dict | None = None) -> Build:
+def build(script: str, previous_analysis: dict | None = None,
+          upto: int | None = None, analyze_model: bool = True) -> Build:
+    """Собирает сцену. ``upto`` — остановиться после N-й команды (кадр сборки)."""
     started = time.perf_counter()
     script = script or ""
-    result = Build(script=script, script_hash=_hash(script))
+    result = Build(script=script, script_hash=_hash(script), upto=upto)
     scene = Scene()
     result.scene = scene
     t_parse = time.perf_counter()
@@ -242,15 +272,30 @@ def build(script: str, previous_analysis: dict | None = None) -> Build:
     parse_time = time.perf_counter() - t_parse
 
     build_start = time.perf_counter()
+    limit = len(commands) if upto is None else max(0, min(int(upto), len(commands)))
     try:
-        for cmd in commands:
+        for index, cmd in enumerate(commands):
+            if index >= limit:
+                break
             _execute(scene, cmd)
+            try:
+                names = [solid.name for solid in scene.visible_solids()]
+            except Exception:
+                names = []
+            result.steps.append({"n": index + 1, "line": cmd.line, "text": cmd.text,
+                                 "verb": (cmd.verb or "").lower(),
+                                 "target": cmd.target or "",
+                                 "objects": names, "ops": scene.op_count})
         visible = scene.visible_solids()
         if not visible:
-            if scene.objects:
+            if upto is not None:
+                # кадр сборки до первого объекта — это нормально, покажем пустую сцену
+                result.empty = True
+            elif scene.objects:
                 raise DslError("Все объекты скрыты — покажите нужный командой show.",
                                hint="Например: show корпус")
-            raise DslError("В сцене нет видимых объектов.")
+            else:
+                raise DslError("В сцене нет видимых объектов.")
     except FormaError as exc:
         if exc.line is None:
             exc.line = scene.line
@@ -278,6 +323,12 @@ def build(script: str, previous_analysis: dict | None = None) -> Build:
         return result
 
     build_time = time.perf_counter() - build_start
+    if not analyze_model:
+        result.log = scene.logs
+        result.timings = {"parse": round(parse_time * 1000, 1),
+                          "build": round(build_time * 1000, 1),
+                          "total": round((time.perf_counter() - started) * 1000, 1)}
+        return result
     analysis_start = time.perf_counter()
     try:
         analysis = analyze(scene, previous=previous_analysis)

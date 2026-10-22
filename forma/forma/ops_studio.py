@@ -39,11 +39,16 @@ LIGHT_PRESETS = {
 }
 ANIMATIONS = {
     "spin": "spin", "вращение": "spin", "поворот": "spin", "turntable": "spin",
-    "formation": "formation", "сборка": "formation", "рост": "formation",
-    "появление": "formation", "build": "formation",
+    "formation": "formation", "рост": "formation", "формирование": "formation",
+    "появление": "formation", "growth": "formation",
     "explode": "explode", "разлёт": "explode", "разлет": "explode",
     "взрыв": "explode", "разнесение": "explode",
+    "assembly": "assembly", "сборка": "assembly", "шаги": "assembly",
+    "пошагово": "assembly", "steps": "assembly", "по_шагам": "assembly",
 }
+
+KIND_NAMES_ANIM = {"spin": "вращение", "formation": "формирование",
+                   "explode": "разлёт", "assembly": "сборка по шагам"}
 
 
 @op("scene", aliases=("сцена", "окружение", "фон", "view"), category="Сцена и материал",
@@ -170,30 +175,53 @@ def texture(a, name):
 
 
 @op("animate", aliases=("анимация", "движение", "animation"), category="Сцена и материал",
-    summary="Задаёт анимацию: вращение, формирование из нуля или разлёт на части; "
-            "сохраняется в GLB для Blender.",
+    summary="Добавляет клип анимации: вращение, формирование, разлёт или сборка по шагам "
+            "сценария. Строк animate может быть несколько — клипы идут друг за другом.",
     example="animate kind=spin axis=z seconds=6 loop=да",
-    params={"kind": "spin (вращение), formation (сборка/рост), explode (разлёт)",
-            "axis": "ось вращения x, y или z", "seconds": "длительность, с",
+    positional=["kind"],
+    params={"kind": "spin, formation, explode или assembly (сборка по шагам)",
+            "axis": "ось вращения x, y или z", "seconds": "длительность клипа, с",
+            "start": "с какой секунды начинать (иначе — сразу за предыдущим клипом)",
             "loop": "зациклить да/нет", "amount": "разлёт: расстояние в мм",
-            "steps": "число ключей анимации"})
+            "steps": "число ключей анимации", "fps": "кадров в секунду для покадрового просмотра",
+            "hold": "сборка: секунд на один шаг сценария"})
 def animate(a, name):
     kind_raw = (a.text("kind") or "spin").strip().lower()
     if kind_raw not in ANIMATIONS:
         raise DslError(f"Неизвестная анимация «{kind_raw}».",
-                       hint="Доступно: spin, formation, explode",
+                       hint="Доступно: spin (вращение), formation (формирование), "
+                            "explode (разлёт), assembly (сборка по шагам)",
                        line=a.cmd.line, command=a.cmd.text)
     kind = ANIMATIONS[kind_raw]
     axis = (a.text("axis") or "z").strip().lower()
     if axis not in ("x", "y", "z"):
         raise DslError("Ось анимации: x, y или z.", line=a.cmd.line, command=a.cmd.text)
-    seconds = float(a.num("seconds", 4.0) or 4.0)
-    seconds = max(0.4, min(seconds, 600.0))
-    spec = {"kind": kind, "axis": axis, "seconds": seconds,
+    default_seconds = {"spin": 6.0, "formation": 4.0, "explode": 3.0, "assembly": 0.8}[kind]
+    seconds = float(a.num("seconds", default_seconds) or default_seconds)
+    seconds = max(0.2, min(seconds, 600.0))
+    start_at = None
+    for key in ("start", "at", "from"):
+        if a.has(key):
+            start_at = float(a.num(key) or 0.0)
+            start_at = max(0.0, min(start_at, 3600.0))
+            break
+    fps = int(a.num("fps", 24) or 24)
+    fps = max(1, min(fps, 60))
+    steps = int(a.num("steps", 48) or 48)
+    spec = {"kind": kind, "seconds": seconds, "fps": fps,
             "loop": a.boolean("loop", True),
-            "steps": int(a.num("steps", 48) or 48)}
+            "steps": max(2, min(steps, 600)),
+            "axis": axis, "start": start_at,
+            "line": a.cmd.line, "text": a.cmd.text}
+    if kind == "assembly":
+        spec["hold"] = max(0.1, min(float(a.num("hold", seconds) or seconds), 30.0))
+        spec["seconds"] = spec["hold"]
     if a.has("amount"):
         spec["amount"] = float(a.num("amount") or 0.0)
-    a.scene.animation = spec
-    a.scene.log("info", f"анимация: {kind}, {seconds:g} с", a.cmd.line)
+    a.scene.add_animation(spec)
+    if kind == "assembly":
+        a.scene.log("info", f"анимация сборки: {spec['hold']:g} с на шаг сценария", a.cmd.line)
+    else:
+        a.scene.log("info", f"анимация: {KIND_NAMES_ANIM.get(kind, kind)}, {seconds:g} с",
+                    a.cmd.line)
     return None

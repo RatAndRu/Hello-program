@@ -64,6 +64,7 @@ class Scene:
     def __init__(self):
         self.settings: dict = dict(DEFAULT_SETTINGS)
         self.animation: dict | None = None
+        self.animations: list[dict] = []
         self.objects: dict[str, Solid] = {}
         self.params: dict[str, float] = {}
         self.vars: dict[str, Any] = {}
@@ -119,6 +120,48 @@ class Scene:
         if solid.name in self.objects:
             solid.visible = False
             solid.notes.append("использован в другой фигуре")
+
+    def add_animation(self, spec: dict) -> dict:
+        """Добавляет клип анимации. Строк animate может быть несколько — они идут подряд."""
+        self.animations.append(spec)
+        self.animation = spec
+        return spec
+
+    def animation_plan(self, step_count: int = 0) -> dict:
+        """Склеивает клипы в один тайм-лайн (для окна, отчёта и GLB).
+
+        ``start`` не задан — клип идёт сразу за предыдущим. Анимация сборки
+        длится ``hold`` секунд на шаг сценария, поэтому её длина зависит от
+        числа шагов, а не от секунд.
+        """
+        clips: list[dict] = []
+        cursor = 0.0
+        for raw in self.animations:
+            spec = dict(raw)
+            kind = str(spec.get("kind") or "spin").lower()
+            if kind == "assembly":
+                hold = float(spec.get("hold") or 0.8)
+                length = max(0.4, hold * max(1, step_count))
+            else:
+                length = float(spec.get("seconds") or 4.0)
+            start = spec.get("start")
+            if start is None:
+                start = cursor
+            start = max(0.0, float(start))
+            spec["start"] = round(start, 3)
+            spec["length"] = round(length, 3)
+            spec["end"] = round(start + length, 3)
+            clips.append(spec)
+            cursor = max(cursor, start + length)
+        total = max([c["end"] for c in clips], default=0.0)
+        return {
+            "clips": clips,
+            "duration": round(total, 3),
+            "count": len(clips),
+            "has": bool(clips),
+            "kinds": [c["kind"] for c in clips],
+            "assembly": next((c for c in clips if c["kind"] == "assembly"), None),
+        }
 
     def next_color(self) -> str:
         c = PALETTE[self._color_idx % len(PALETTE)]

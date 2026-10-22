@@ -710,3 +710,81 @@ button.mini:disabled { opacity: .38; cursor: default; }
 .objects-tools button { padding: 3px 6px; }
 .obj-item .eye { font-size: 15px; color: #7f93ad; padding: 0 4px; cursor: pointer; }
 .obj-item .eye:hover { color: #cfe0ff; }
+
+/* ---------- анимация: транспорт, дорожки, редактор ---------- */
+.anim-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px 0 2px;
+  border-top: 1px solid var(--line-soft);
+}
+.anim-head { gap: 10px; }
+.anim-head select { flex: 0 0 auto; min-width: 118px; }
+.anim-head .chip { margin-left: auto; }
+.anim-transport { gap: 6px; }
+.anim-transport .chip { padding: 3px 7px; min-width: 30px; }
+.anim-transport #anim-scrub { flex: 1 1 160px; }
+.anim-read { min-width: 74px; text-align: right; font-variant-numeric: tabular-nums; }
+.anim-tracks { min-height: 26px; display: flex; align-items: center; }
+.anim-lane {
+  position: relative; flex: 1;
+  height: 24px;
+  background: #0f141b;
+  border: 1px solid var(--line-soft);
+  border-radius: 6px;
+  overflow: hidden;
+}
+.anim-seg {
+  position: absolute; top: 3px; bottom: 3px;
+  border-radius: 4px;
+  background: linear-gradient(180deg, #2f4f8a, #243a63);
+  border: 1px solid #3b5e9e;
+  color: #dce8ff; font-size: 10px;
+  display: flex; align-items: center; justify-content: center;
+  overflow: hidden; white-space: nowrap; cursor: pointer;
+}
+.anim-seg:hover { filter: brightness(1.2); }
+.anim-seg.seg-spin { background: linear-gradient(180deg, #2f4f8a, #243a63); }
+.anim-seg.seg-formation { background: linear-gradient(180deg, #2f7a5f, #235242); border-color: #3f9375; }
+.anim-seg.seg-explode { background: linear-gradient(180deg, #8a5a2f, #5f3d21); border-color: #a9743f; }
+.anim-seg.seg-assembly { background: linear-gradient(180deg, #6b4f9e, #46346b); border-color: #8a6bc4; }
+.anim-step {
+  min-width: 24px; height: 24px; margin-right: 4px;
+  border-radius: 6px; border: 1px solid var(--line);
+  background: #121821; color: var(--text-dim);
+  font-size: 10.5px; cursor: pointer;
+}
+.anim-step:hover { color: var(--text); border-color: #3a4a63; }
+.anim-step.cur { background: #24406e; border-color: #4f7ac0; color: #eaf2ff; }
+.anim-empty { color: var(--text-faint); font-size: 11px; }
+.anim-editor {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #11161d;
+  padding: 8px;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.anim-editor-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; }
+.anim-editor-row label {
+  display: flex; flex-direction: column; gap: 3px;
+  font-size: 10.5px; color: var(--text-faint);
+}
+.anim-editor-row input[type="number"] {
+  width: 74px; padding: 3px 5px;
+  background: #0d1219; color: var(--text);
+  border: 1px solid var(--line); border-radius: 5px;
+}
+.anim-editor-row .ae-check { flex-direction: row; align-items: center; gap: 5px; }
+.anim-editor-hint { font-size: 10.5px; color: var(--text-faint); line-height: 1.4; }
+.anim-editor-hint code { color: var(--accent-2); }
+.anim-clips { display: flex; flex-direction: column; gap: 3px; max-height: 116px; overflow: auto; }
+.anim-clip-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 3px 5px; border-radius: 5px; background: #0d1219;
+  font-size: 11px;
+}
+.anim-clip-row code { color: var(--text-faint); font-size: 10px; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.anim-clip-name { color: var(--text-dim); min-width: 140px; }
+.anim-clip-row .mini { padding: 0 5px; }
