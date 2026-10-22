@@ -81,13 +81,20 @@ jobs:
         working-directory: forma
         run: |
           rm -f selftest.txt
-          ./dist/Forma3D.exe --selftest --report selftest.txt || true
-          for i in $(seq 1 150); do
+          ./dist/Forma3D.exe --selftest --report selftest.txt &
+          exe_pid=$!
+          for i in $(seq 1 180); do
             if [ -s selftest.txt ]; then break; fi
+            if ! kill -0 "$exe_pid" 2>/dev/null; then break; fi
             sleep 1
           done
           if [ ! -s selftest.txt ]; then
-            echo "EXE не отчитался о самопроверке"
+            echo "EXE не отчитался о самопроверке за 180 с"
+            taskkill //F //IM Forma3D.exe || true
+            echo "=== диагностическая сборка с консолью (чтобы видеть ошибку) ==="
+            FORMA_CONSOLE=1 pyinstaller packaging/forma.spec --noconfirm --clean \
+              --distpath distc --workpath build/pyic 2>&1 | tail -3
+            ./distc/Forma3D.exe --selftest 2>&1 | tail -40 || true
             exit 1
           fi
           cat selftest.txt
@@ -96,13 +103,16 @@ jobs:
         working-directory: forma
         run: |
           rm -f uitest.txt
-          ./dist/Forma3D.exe --uistest --report uitest.txt || true
-          for i in $(seq 1 180); do
+          ./dist/Forma3D.exe --uistest --report uitest.txt &
+          exe_pid=$!
+          for i in $(seq 1 240); do
             if [ -s uitest.txt ]; then break; fi
+            if ! kill -0 "$exe_pid" 2>/dev/null; then break; fi
             sleep 1
           done
           if [ ! -s uitest.txt ]; then
-            echo "EXE не отчитался о проверке интерфейса"
+            echo "EXE не отчитался о проверке интерфейса за 240 с"
+            taskkill //F //IM Forma3D.exe || true
             exit 1
           fi
           cat uitest.txt

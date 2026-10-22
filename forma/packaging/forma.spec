@@ -89,16 +89,20 @@ a = Analysis(
 )
 
 
+# Что можно выкинуть без риска: исходники, заголовки, отладочные символы и
+# папки с тестами. ВАЖНО: сравниваем только окончания имён (а не «.c» внутри
+# имени) — иначе под нож попадут собранные модули вида
+# numpy/_core/_multiarray_umath.cp312-win_amd64.pyd.
+_DROP_DIRS = ("/tests/", "/test/", "__pycache__/", "/include/")
+_DROP_EXT = (".c", ".h", ".hpp", ".cpp", ".cc", ".pyx", ".pxd", ".pyi",
+             ".lib", ".a", ".inc", ".def", ".exp", ".pdb", ".obj", ".o")
+
+
 def _keep(entry):
-    """Фильтр собранных файлов: выкидываем тесты, заголовки и типы."""
     name = entry[0].replace("\\", "/").lower()
-    if "/tests/" in name or "/test/" in name or name.startswith("tests/"):
+    if any(part in name for part in _DROP_DIRS):
         return False
-    for bad in (".pyi", ".pxd", ".pyx", ".c", ".h", ".hpp", ".lib", ".a", ".inc",
-                ".dist-info/", "conftest.py"):
-        if name.endswith(bad) or bad in name:
-            return False
-    return True
+    return not name.endswith(_DROP_EXT)
 
 
 a.datas = [d for d in a.datas if _keep(d)]
@@ -119,12 +123,12 @@ exe = EXE(
     upx=False,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    console=os.environ.get("FORMA_CONSOLE") == "1",
     icon=str(icon_path) if icon_path.exists() else None,
     version=str(version_file) if version_file.exists() else None,
 )
