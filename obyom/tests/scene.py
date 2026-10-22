@@ -73,9 +73,13 @@ EXPO = float(os.environ.get('EXPO', 0))  # разброс автоэкспози
 TORCH = float(os.environ.get('TORCH', 0) or 0)  # фонарик (v2.1): доля комнатного света, напр. 0.25; 0 — без фонарика
 TD0 = float(os.environ.get('TD0', 360)); TOFF = [np.zeros(3)]  # TD0 — расстояние, на котором фонарик даёт яркость 1
 STATIC = bool(os.environ.get('STATIC'))  # вертушка у неподвижной камеры: стол и стена неподвижны относительно камеры
+K1 = float(os.environ.get('K1', 0) or 0)  # радиальная дисторсия, напр. -0.06 (бочка)
 def render(Rm, t):
     ys, xs = np.mgrid[0:H, 0:W].astype(np.float32)
-    d_cam = np.stack([(xs - cx) / f, (ys - cy) / f, np.ones_like(xs)], -1)
+    xd = (xs - cx) / f; yd = (ys - cy) / f; xu = xd.copy(); yu = yd.copy()
+    if K1:  # дисторсия объектива (v2.3): пиксель (xs, ys) — искажённый; луч — по неискажённым координатам x_d = x_u·(1 + k1·r_u²)
+        for _ in range(8): s_ = 1 + K1 * (xu * xu + yu * yu); xu = xd / s_; yu = yd / s_
+    d_cam = np.stack([xu, yu, np.ones_like(xs)], -1)
     Rt = Rm.T; o = -Rt @ t; CAMW[0] = o.copy()
     TOFF[0] = Rm.T @ np.array([12.0, -8.0, 0])  # светодиод в ~1.4 см от объектива
     d = d_cam @ Rt.T; d /= np.linalg.norm(d, axis=-1, keepdims=True)

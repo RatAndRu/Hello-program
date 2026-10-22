@@ -168,3 +168,52 @@ export function refineFocal(frames, K0) {
   const f = (a + b) / 2;
   return { f, rms: Math.sqrt(total(f)) };
 }
+
+// ---------- Дисторсия объектива (v2.3) ----------
+// Модель: x_d = x_u·(1 + k1·r_u²) в нормированных координатах (x = (u − cx)/f). Оценка — по углам меток: поза и k1 по очереди.
+export function undistortPts(pts, K, k1) {
+  if (!k1) return pts;
+  return pts.map(([u, v]) => { const xd = (u - K.cx) / K.fx, yd = (v - K.cy) / K.fy; let xu = xd, yu = yd;
+    for (let i = 0; i < 8; i++) { const s = 1 + k1 * (xu * xu + yu * yu); xu = xd / s; yu = yd / s; }
+    return [xu * K.fx + K.cx, yu * K.fy + K.cy]; });
+}
+export function fitK1(poses, K, iters = 3) {
+  const rmsOf = (k) => { let s = 0, n = 0; for (const p of poses) { const Pi = undistortPts(p.Pi, K, k), H = homography(p.Pw.map((q) => [q[0], q[1]]), Pi); if (!H) continue; const p0 = poseFromH(H, K), r = refinePose(K, p0.R, p0.t, p.Pw, Pi, 6); s += r.rms * r.rms * Pi.length; n += Pi.length; } return Math.sqrt(s / Math.max(1, n)); };
+  // g(k): позы по исправленным с k углам → МНК-оценка k1 по искажённым наблюдениям. Неподвижная точка g — ответ;
+  // поза частично «съедает» дисторсию, поэтому простая итерация сходится медленно — ускоряем Стеффенсеном.
+  const g = (k1) => {
+    let num = 0, den = 0;
+    for (const p of poses) {
+      const Pi = undistortPts(p.Pi, K, k1), H = homography(p.Pw.map((q) => [q[0], q[1]]), Pi); if (!H) continue;
+      const p0 = poseFromH(H, K), r = refinePose(K, p0.R, p0.t, p.Pw, Pi, 6), R = r.R, t = r.t;
+      for (let i = 0; i < p.Pw.length; i++) { const [X, Y, Z] = p.Pw[i], z = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (z <= 1) continue;
+        const xn = (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / z, yn = (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / z, r2 = xn * xn + yn * yn;
+        const xo = (p.Pi[i][0] - K.cx) / K.fx, yo = (p.Pi[i][1] - K.cy) / K.fy; // наблюдение — искажённое
+        num += (xo - xn) * xn * r2 + (yo - yn) * yn * r2; den += r2 * r2 * (xn * xn + yn * yn); }
+    }
+    return den > 0 ? Math.max(-0.4, Math.min(0.4, num / den)) : k1;
+  };
+  const rms0 = rmsOf(0); let k = 0;
+  for (let it = 0; it < iters; it++) {
+    const k1 = g(k), k2 = g(k1), d = k2 - 2 * k1 + k;
+    const kn = Math.abs(d) > 1e-9 ? k - (k1 - k) ** 2 / d : k2;
+    k = Math.max(-0.4, Math.min(0.4, Number.isFinite(kn) ? kn : k2));
+    if (Math.abs(k2 - k1) < 1e-5) break;
+  }
+  const rms1 = rmsOf(k);
+  if (!(rms1 < rms0)) return { k1: 0, rms0, rms1: rms0 };
+  return { k1: k, rms0, rms1 };
+}
+
+// дисторсия (v2.3): перерисовка кадра в неискажённую проекцию; dist = { k1, fr } — fr = фокус / ширина кадра
+export function undistortRGBA(rgba, w, h, k1, fx) {
+  const out = new Uint8Array(w * h * 4), cx = w / 2, cy = h / 2;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const xu = (x - cx) / fx, yu = (y - cy) / fx, s = 1 + k1 * (xu * xu + yu * yu), u = cx + xu * s * fx, v = cy + yu * s * fx, o = (y * w + x) * 4;
+    const i0 = Math.floor(u), j0 = Math.floor(v); if (i0 < 0 || j0 < 0 || i0 >= w - 1 || j0 >= h - 1) { const q = (Math.min(h - 1, Math.max(0, Math.round(v))) * w + Math.min(w - 1, Math.max(0, Math.round(u)))) * 4; out[o] = rgba[q]; out[o + 1] = rgba[q + 1]; out[o + 2] = rgba[q + 2]; out[o + 3] = 255; continue; }
+    const a = u - i0, b = v - j0, q = (j0 * w + i0) * 4, q2 = q + w * 4;
+    for (let c = 0; c < 3; c++) out[o + c] = (1 - b) * ((1 - a) * rgba[q + c] + a * rgba[q + 4 + c]) + b * ((1 - a) * rgba[q2 + c] + a * rgba[q2 + 4 + c]) + 0.5;
+    out[o + 3] = 255;
+  }
+  return out;
+}

@@ -2,7 +2,7 @@
 // Один и тот же код работает в фоновом потоке (worker.js) и, если поток недоступен, в основном.
 import { matLayout, matRaster } from './mat.js';
 import { detectMarkers, toGray } from './detect.js';
-import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal, camAngles } from './pose.js';
+import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal, camAngles, fitK1, undistortPts, undistortRGBA } from './pose.js';
 import { computeMask, motionMasks, carveHull, meshFromGrid, revolveGrid, taubin, computeNormals, colorize, depthMap, cleanGrid, vesselCarve } from './recon.js';
 import { alignHulls, intersectHulls, framesToA } from './align.js';
 import { boxMesh, prismMesh, snapPlanes } from './shapes.js';
@@ -17,14 +17,16 @@ export const procW = (q) => (q === 'best' ? 960 : PROC_W);
 const TEX = { fast: 1024, normal: 2048, best: 4096 };
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-export async function decodeBlob(blob, W) {
+export async function decodeBlob(blob, W, dist) {
   const bmp = await createImageBitmap(blob);
   const w = W || bmp.width, h = Math.round(bmp.height * w / bmp.width), sw = bmp.width, shh = bmp.height;
   const cv = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
   const cx = cv.getContext('2d', { willReadFrequently: true });
   cx.imageSmoothingQuality = 'high';
   cx.drawImage(bmp, 0, 0, w, h); bmp.close && bmp.close();
-  return { rgba: new Uint8Array(cx.getImageData(0, 0, w, h).data.buffer), w, h, srcW: sw, srcH: shh };
+  let rgba = new Uint8Array(cx.getImageData(0, 0, w, h).data.buffer);
+  if (dist && dist.k1) rgba = undistortRGBA(rgba, w, h, dist.k1, dist.fr * w);
+  return { rgba, w, h, srcW: sw, srcH: shh };
 }
 // атлас → JPEG (в фоновом потоке — OffscreenCanvas, иначе обычный canvas)
 async function encodeJPEG(rgba, T, type = 'image/jpeg') {
@@ -119,9 +121,14 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     for (let i = 0; i < job.close.length; i++) {
       if (shouldStop()) throw new Error('stopped');
       try {
-        const d = await decodeBlob(job.close[i], PW); if (d.w !== good[0].w || d.h !== good[0].h) continue;
-        const ms = detectMarkers(toGray(d.rgba, d.w, d.h), d.w, d.h), p = poseFromMarkers(ms, L, K);
-        if (p && p.n >= 3 && p.rms < 2) cl.push({ ...d, R: p.R, t: p.t, K, rms: p.rms, blob: job.close[i], close: true });
+        const d = await decodeBlob(job.close[i], PW, A.dist); if (d.w !== good[0].w || d.h !== good[0].h) continue;
+        const ms = detectMarkers(toGray(d.rgba, d.w, d.h), d.w, d.h); let p = poseFromMarkers(ms, L, K), Kc = K;
+        // полноразмерный снимок может иметь чуть другую обрезку сенсора (другой угол обзора): уточняем фокус по его меткам
+        if (p && p.n >= 3 && d.srcW > 1.5 * (good[0].srcW || d.w)) {
+          const rf1 = refineFocal([p], K);
+          if (Math.abs(rf1.f / K.fx - 1) < 0.08 && rf1.rms < 0.75 * p.rms) { Kc = { ...K, fx: rf1.f, fy: rf1.f }; p = poseFromMarkers(ms, L, Kc) || p; }
+        }
+        if (p && p.n >= 3 && p.rms < 2) cl.push({ ...d, R: p.R, t: p.t, K: Kc, rms: p.rms, blob: job.close[i], close: true });
       } catch (e) {}
       cb.progress('Крупные планы', (i + 1) / job.close.length, `${cl.length} из ${i + 1} с позой`);
       if (i % 2) await tick();
@@ -133,7 +140,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   let tex = null, texInfo = null, pbr = null;
   if (job.texture !== false && job.mode !== 'splat') {
     try {
-      const r = await bakeTexture(M, texFrames, { size: TEX[job.quality || 'normal'], decode: (b) => decodeBlob(b, 0), encode: encodeJPEG, onProgress: (p, t) => cb.progress('Текстура', p, t) });
+      const r = await bakeTexture(M, texFrames, { size: TEX[job.quality || 'normal'], decode: (b) => decodeBlob(b, 0, A.dist), encode: encodeJPEG, onProgress: (p, t) => cb.progress('Текстура', p, t) });
       if (r.tex) { M = r.mesh; tex = r.tex; texInfo = r.info; log(`текстура ${r.T}×${r.T}: ${r.info.charts} лоскутов из ${r.info.frames} кадров${nClose ? ' (с крупными планами)' : ''}, масштаб ${(r.info.scale * 100).toFixed(0)}% от кадра`); }
       // 5г) свет, рельеф, материал, текстура без теней — фотометрия по тем же кадрам
       if (r.tex && job.surface !== false) {
@@ -148,7 +155,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     } catch (e) { if (e.message === 'stopped') throw e; log('✗ текстура не получилась: ' + e.message + ' — остаётся цвет вершин'); }
     await tick();
   }
-  const result = { mesh: { pos: M.pos, nrm: M.nrm, col: M.col, idx: M.idx, ...(tex ? { uv: M.uv, tex } : {}), ...(pbr ? { pbr, tan: M.tan } : {}) }, stats: { tex: texInfo, close: nClose, frames: job.blobs.length + (bt && bt.blobs ? bt.blobs.length : 0), used: frAll.length, focal: A.rf.f, elMax, hullVol: vox * G.vs ** 3, t: 0, bottom: bottomOk } };
+  const result = { mesh: { pos: M.pos, nrm: M.nrm, col: M.col, idx: M.idx, ...(tex ? { uv: M.uv, tex, ...(M.detail ? { detail: M.detail } : {}) } : {}), ...(pbr ? { pbr, tan: M.tan } : {}) }, stats: { tex: texInfo, close: nClose, frames: job.blobs.length + (bt && bt.blobs ? bt.blobs.length : 0), used: frAll.length, focal: A.rf.f, elMax, hullVol: vox * G.vs ** 3, t: 0, bottom: bottomOk } };
   if (elMax < (turn ? 62 : 50) && !bottomOk && !(turn && A.withPlate > 0.5 * good.length)) result.stats.warn = `Самый высокий кадр — ${elMax.toFixed(0)}°: верх модели может выйти «шапкой». В следующий раз ${turn ? 'сними «Фон» (пустой коврик с того же места) или ' : ''}добавь оборот почти сверху (65–75°), или «Доснять низ» (предмет на боку).`;
   result.stats.plate = A.withPlate || 0;
   // 6) сплэты
@@ -233,7 +240,18 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   const L0 = Math.max(w, h); // вертикальный кадр: фокус считаем от длинной стороны
   let f0 = focalFromEqs(eqs); if (!(f0 > 0.35 * L0 && f0 < 2 * L0)) f0 = 0.75 * L0;
   const rf = refineFocal(frames.map((f) => f.p), { fx: f0, fy: f0, cx: w / 2, cy: h / 2 });
-  const K = { fx: rf.f, fy: rf.f, cx: w / 2, cy: h / 2 };
+  let K = { fx: rf.f, fy: rf.f, cx: w / 2, cy: h / 2 }, dist = null;
+  // дисторсия объектива: k1 по углам меток; исправляем, только если она заметна и позы от этого точнее
+  if (cfg.dist !== false && frames.length >= 6) {
+    const dk = fitK1(frames.map((f) => f.p), K), rn = Math.hypot(w / 2, h / 2) / K.fx, shift = Math.abs(dk.k1) * rn ** 3 * K.fx;
+    if (shift > 0.6 && dk.rms1 < 0.9 * dk.rms0) {
+      dist = { k1: dk.k1, fr: K.fx / w };
+      for (const f of frames) { f.rgba = undistortRGBA(f.rgba, w, h, dk.k1, K.fx); f.ms = f.ms.map((m) => ({ ...m, corners: undistortPts(m.corners, K, dk.k1) })); }
+      const ps = frames.map((f) => poseOf(f.ms, K, 1e9)).filter((p) => p && p.n >= 2), rf2 = refineFocal(ps, K);
+      log(`${tag}дисторсия объектива исправлена: на краю кадра было до ${shift.toFixed(1)} px (k1 ${dk.k1.toFixed(3)}), ошибка меток ${dk.rms0.toFixed(2)} → ${dk.rms1.toFixed(2)} px`);
+      rf.f = rf2.f; rf.rms = rf2.rms; K = { fx: rf.f, fy: rf.f, cx: w / 2, cy: h / 2 };
+    }
+  }
   log(`${tag}фокус ${rf.f.toFixed(0)} px (угол обзора ${(2 * Math.atan(w / 2 / rf.f) * 180 / Math.PI).toFixed(0)}°), ошибка ${rf.rms.toFixed(2)} px`);
   const good = [];
   for (const f of frames) {
@@ -246,7 +264,7 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   if (turn && cfg.plates && cfg.plates.length) {
     for (const b of cfg.plates) {
       try {
-        const d = await decodeBlob(b, PROC_W); if (d.w !== w || d.h !== h) { log(`${tag}✗ кадр фона другого размера — пропущен`); continue; }
+        const d = await decodeBlob(b, PROC_W, dist); if (d.w !== w || d.h !== h) { log(`${tag}✗ кадр фона другого размера — пропущен`); continue; }
         const why = plateEmpty(d, L, mr, K, Rb, Hb);
         if (why) { log(`${tag}✗ кадр фона не подошёл: ${why}`); continue; }
         clean.push(d.rgba);
@@ -273,7 +291,7 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
     if (mo.used) log(`${tag}движение: ${mo.groups} позиц. камеры, ${mo.used} кадров${mo.moved ? `, ${mo.moved} кадров не учтены — камера сдвинулась или менялся свет` : ''}`);
   }
   const els = good.map((f) => f.ang.el);
-  return { withPlate, good, rf, L, Rb, Hb, turn, elMax: Math.max(...els), elMin: Math.min(...els) };
+  return { withPlate, good, rf, L, Rb, Hb, turn, dist, elMax: Math.max(...els), elMin: Math.min(...els) };
 }
 // уменьшенная копия кадра (картинка — усреднением, маска — ближайшим), фокус в новых пикселях
 function shrinkFrame(f, W) {
