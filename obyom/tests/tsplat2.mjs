@@ -43,6 +43,7 @@ const test = good.filter((_, k) => k % 6 === 3), train = good.filter((_, k) => k
 const num = (k, d) => (E[k] !== undefined ? +E[k] : d);
 const opt = {
   deg: num('DEG', SPLAT_DEFAULTS.deg), alphaW: num('AW', SPLAT_DEFAULTS.alphaW), depthW: num('DW', SPLAT_DEFAULTS.depthW), flat: num('FLAT', SPLAT_DEFAULTS.flat),
+  clean: E.CLEAN !== '0', // v2.3: чистка облачков по согласию кадров
   batch: num('BATCH', 1), // кадров на шаг (v2.1: в приложении — по потоку на кадр)
   expo: E.EXPO !== undefined ? E.EXPO !== '0' : SPLAT_DEFAULTS.expo, lrDC: num('LRDC', SPLAT_DEFAULTS.lrDC), lrRest: num('LRREST', SPLAT_DEFAULTS.lrRest),
 };
@@ -92,7 +93,7 @@ for (let i = 1; i <= ITERS; i++) {
 }
 tr.finalize(allowedRegion(G, train, 1.5, 1));
 const r = evaluate();
-console.log(`ИТОГ: ${fmt(r)} капель ${S.n} мс/шаг ${(tTrain / ITERS).toFixed(1)} всего ${((Date.now() - t0) / 1000).toFixed(0)} с`);
+console.log(`ИТОГ: ${fmt(r)} капель ${S.n} убрано облачков ${tr.cleaned || 0} мс/шаг ${(tTrain / ITERS).toFixed(1)} всего ${((Date.now() - t0) / 1000).toFixed(0)} с`);
 if (E.PLY) fs.writeFileSync(E.PLY, Buffer.from(plyFromPacked(packSplats(S))));
 if (E.PPM) { // верх — проверочные кадры, низ — сплэты на сером
   const rows = TV.slice(0, 4).map((v) => ({ v, o: renderView(S, { ...v, bg: new Float32Array(v.img.length).fill(0.12), gain: [1, 1, 1] }).out }));

@@ -165,13 +165,13 @@ export function renderView(S, view, opt = {}) {
   const { cw, ch } = view, npx = cw * ch, gain = view.gain || [1, 1, 1];
   const out = opt.out || new Float32Array(npx * 3), Tf = new Float32Array(npx), last = new Int32Array(npx);
   const grad = opt.grad, sc = grad ? new Float32Array(npx * 3) : null, Wd = grad ? new Float32Array(npx) : null, Zd = grad ? new Float32Array(npx) : null;
-  const bg = view.bg;
+  const bg = view.bg, zMid = opt.zMid || null;
   // часть кадра (v2.1, потоки): только ряды тайлов с номером ≡ part.k (mod part.K) — остальные считают другие потоки
   const part = opt.part, rowOn = part ? (py) => ((py / TILE) | 0) % part.K === part.k : null;
   for (let py = 0; py < ch; py++) { if (rowOn && !rowOn(py)) continue; for (let px = 0; px < cw; px++) {
     const tile = ((py / TILE) | 0) * tw + ((px / TILE) | 0), k0 = start[tile], k1 = start[tile + 1];
     const gx = view.x0 + px + 0.5, gy = view.y0 + py + 0.5;
-    let T = 1, r = 0, g = 0, b = 0, lastK = k0, ws = 0, zs = 0;
+    let T = 1, r = 0, g = 0, b = 0, lastK = k0, ws = 0, zs = 0, zh = Infinity;
     for (let k = k0; k < k1; k++) {
       const o = k * PK, dx = gx - pk[o], dy = gy - pk[o + 1];
       const power = -0.5 * (pk[o + 2] * dx * dx + pk[o + 4] * dy * dy) - pk[o + 3] * dx * dy;
@@ -179,13 +179,14 @@ export function renderView(S, view, opt = {}) {
       const al = Math.min(0.99, pk[o + 5] * Math.exp(power));
       if (al < 1 / 255) continue;
       const nT = T * (1 - al);
+      if (T >= 0.5 && nT < 0.5) zh = pk[o + 9]; // глубина «поверхности»: где пиксель становится непрозрачным наполовину
       if (nT < 1e-4) break;
       const aT = al * T;
       r += pk[o + 6] * aT; g += pk[o + 7] * aT; b += pk[o + 8] * aT; ws += aT; zs += aT * pk[o + 9];
       T = nT; lastK = k + 1;
     }
     const j = py * cw + px;
-    Tf[j] = T; last[j] = lastK;
+    Tf[j] = T; last[j] = lastK; if (zMid) zMid[j] = zh;
     out[j * 3] = gain[0] * r + T * bg[j * 3]; out[j * 3 + 1] = gain[1] * g + T * bg[j * 3 + 1]; out[j * 3 + 2] = gain[2] * b + T * bg[j * 3 + 2];
     if (grad) { sc[j * 3] = r; sc[j * 3 + 1] = g; sc[j * 3 + 2] = b; Wd[j] = ws; Zd[j] = zs; }
   } }
@@ -418,6 +419,11 @@ export class Trainer {
     const s0 = this.seen, s1 = (this.seen += B), cross = (P) => ((s1 / P) | 0) > ((s0 / P) | 0);
     if (cross(100) && s1 >= 200 && this.it <= this.iters * 0.65) this.densify();
     if (cross(100)) this.prune();
+    // v2.3: облачка — по согласию кадров, дважды после уплотнения (оставшиеся шаги залечивают)
+    if (this.o.clean !== false && (this.it === Math.round(this.iters * 0.7) || this.it === Math.round(this.iters * 0.9))) {
+      const st = Math.max(1, Math.ceil(this.views.length / 30)), vs = this.views.filter((_, k) => k % st === 0);
+      this.cleaned = (this.cleaned || 0) + cleanFloaters(this.S, vs, { minViews: Math.max(2, Math.round(vs.length * 0.1)) }); this.prune();
+    }
     return loss;
   }
   // в конце: строгая чистка (fn — более жёсткое правило «где можно жить») и выкидываем почти прозрачные
@@ -466,6 +472,33 @@ export class Trainer {
     for (const X of [this.m, this.v]) { X.mu.fill(0, w * 3, S.n * 3); X.ls.fill(0, w * 3, S.n * 3); X.q.fill(0, w * 4, S.n * 4); X.op.fill(0, w, S.n); X.sh.fill(0, w * nb3, S.n * nb3); }
     S.n = w;
   }
+}
+
+// v2.3: чистка облачков по согласию кадров. В каждом кадре — глубина «поверхности» (где картинка становится
+// непрозрачной). Капля, которая в большинстве кадров висит перед поверхностью (дальше margin мм) или над пустотой,
+// а на поверхности почти не бывает, — облачко: её непрозрачность обнуляется (prune уберёт). Настоящие капли поверхности
+// лежат на глубине поверхности, а там, где их заслоняют, кадр ничего не говорит.
+export function cleanFloaters(S, views, opt = {}) {
+  const n = S.n, front = new Uint16Array(n), on = new Uint16Array(n), P = {}, m = opt.margin ?? 2;
+  for (const v of views) {
+    const npx = v.cw * v.ch, zMid = new Float32Array(npx);
+    renderView(S, v, { P, zMid, out: new Float32Array(npx * 3) });
+    for (let i = 0; i < n; i++) {
+      if (!P.ok[i]) continue;
+      const px = Math.floor(P.u[i] - v.x0), py = Math.floor(P.v[i] - v.y0);
+      if (px < 0 || py < 0 || px >= v.cw || py >= v.ch) continue;
+      const zs = zMid[py * v.cw + px], z = P.z[i];
+      if (zs === Infinity) front[i]++; // над пустотой: здесь картинка прозрачна, значит капля бледная и висит в воздухе
+      else if (z < zs - m) front[i]++;
+      else if (z <= zs + m) on[i]++;
+    }
+  }
+  let removed = 0; const minV = opt.minViews ?? 3, share = opt.share ?? 0.7;
+  for (let i = 0; i < n; i++) {
+    const f = front[i], o = on[i];
+    if (f >= minV && f >= share * (f + o)) { S.op[i] = -12; removed++; }
+  }
+  return removed;
 }
 
 // начальные капли — точки на поверхности сетки, плоские вдоль поверхности (третья ось — по нормали)
