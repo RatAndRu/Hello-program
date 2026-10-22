@@ -427,6 +427,10 @@ def render_single(solids, out_dir, filename="preview.png", size=720, ss=2,
     radius = float(np.linalg.norm(hi - lo)) / 2
     img, _ = _render_view(meshes, center, radius, view, size, ss, bbox)
     os.makedirs(out_dir, exist_ok=True)
+    # Имя без расширения — дописываем .png: иначе файл «есть», а открыть его
+    # просмотрщиком нельзя.
+    if not os.path.splitext(filename)[1]:
+        filename += ".png"
     path = os.path.join(out_dir, filename)
     write_png(path, _to_bytes(img))
     return path
