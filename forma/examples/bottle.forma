@@ -20,9 +20,12 @@ check бутылка wall 2..6
 # пробка: чуть шире горлышка, с 24 вертикальными ложбинками
 пробка = cylinder radius=18 height=26 segments=96 round=3
 пробка = place [пробка] at=[0,0,248]
-ложбина = box size=[5.6,7,18] at=[19.2,0,261]
-ложбины = array [ложбина] count=24 mode=radial around=z center=[0,0,0]
+ложбина = box size=[7.2,4.4,19] at=[18.4,0,262]
+ложбины = array [ложбина] count=32 mode=radial around=z center=[0,0,0]
 пробка = difference [пробка, ложбины]
+поясок = cylinder radius=18.4 height=4.2 segments=96 round=1
+поясок = place [поясок] at=[0,0,245.4]
+пробка = union [пробка, поясок]
 color пробка #3f7fe0 material=plastic
 check пробка parts 1
 check пробка width 35..37

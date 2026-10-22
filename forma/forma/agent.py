@@ -37,7 +37,8 @@ DOCS_INDEX = """СПРАВКА ФОРМА 3D (кратко)
 БУЛЕВЫ
   имя = union [a, b]    имя = difference [основа, вычитаемое]    имя = intersect [a, b]
   имя = shell [a] thickness=t open=top|bottom|both|none
-  имя = offset [a] delta=+2      имя = fillet [a] radius=r (скругление стыков)
+  имя = offset [a] delta=+2      имя = fillet [a] radius=r edges=convex|concave|all
+  имя = chamfer [a] width=w edges=convex|concave|all  (плоская фаска 45°)
 
 МАССИВЫ И ПРЕОБРАЗОВАНИЯ
   имя = array [a] count=n mode=linear|radial|grid [offset=] [around=z] [counts=] [spacing=]

@@ -18,6 +18,7 @@ from .ops import make_solid, op
 from .values import parse_value
 
 MAX_GRID_POINTS = 2_200_000
+MAX_CELLS = 12_000_000
 
 
 # --------------------------------------------------------------------------- #
@@ -25,50 +26,48 @@ MAX_GRID_POINTS = 2_200_000
 # --------------------------------------------------------------------------- #
 
 def _sd_sphere(x, y, z, r):
-    return math.sqrt(x * x + y * y + z * z) - r
+    return np.sqrt(x * x + y * y + z * z) - r
 
 
 def _sd_box(x, y, z, hx, hy, hz):
-    qx = abs(x) - hx
-    qy = abs(y) - hy
-    qz = abs(z) - hz
-    ax, ay, az = max(qx, 0.0), max(qy, 0.0), max(qz, 0.0)
-    return math.sqrt(ax * ax + ay * ay + az * az) + min(max(qx, max(qy, qz)), 0.0)
+    qx, qy, qz = np.abs(x) - hx, np.abs(y) - hy, np.abs(z) - hz
+    ax, ay, az = np.maximum(qx, 0.0), np.maximum(qy, 0.0), np.maximum(qz, 0.0)
+    return (np.sqrt(ax * ax + ay * ay + az * az)
+            + np.minimum(np.maximum(qx, np.maximum(qy, qz)), 0.0))
 
 
 def _sd_capsule(x, y, z, ax, ay, az, bx, by, bz, r):
     px, py, pz = x - ax, y - ay, z - az
     ex, ey, ez = bx - ax, by - ay, bz - az
     denom = ex * ex + ey * ey + ez * ez
-    t = 0.0 if denom < 1e-12 else max(0.0, min(1.0, (px * ex + py * ey + pz * ez) / denom))
+    t = np.clip((px * ex + py * ey + pz * ez) / denom, 0.0, 1.0) if denom > 1e-12 else 0.0
     dx, dy, dz = px - ex * t, py - ey * t, pz - ez * t
-    return math.sqrt(dx * dx + dy * dy + dz * dz) - r
+    return np.sqrt(dx * dx + dy * dy + dz * dz) - r
 
 
 def _sd_cylinder(x, y, z, r, h):
-    dx = math.sqrt(x * x + y * y) - r
-    dz = abs(z) - h / 2.0
-    ax, az = max(dx, 0.0), max(dz, 0.0)
-    return min(max(dx, dz), 0.0) + math.sqrt(ax * ax + az * az)
+    dx = np.sqrt(x * x + y * y) - r
+    dz = np.abs(z) - h / 2.0
+    ax, az = np.maximum(dx, 0.0), np.maximum(dz, 0.0)
+    return np.minimum(np.maximum(dx, dz), 0.0) + np.sqrt(ax * ax + az * az)
 
 
 def _sd_torus(x, y, z, R, r):
-    q = math.sqrt(x * x + y * y) - R
-    return math.sqrt(q * q + z * z) - r
+    q = np.sqrt(x * x + y * y) - R
+    return np.sqrt(q * q + z * z) - r
 
 
 def _sd_ellipsoid(x, y, z, rx, ry, rz):
-    k0 = math.sqrt((x / rx) ** 2 + (y / ry) ** 2 + (z / rz) ** 2)
-    k1 = math.sqrt((x / (rx * rx)) ** 2 + (y / (ry * ry)) ** 2 + (z / (rz * rz)) ** 2)
-    if k1 < 1e-12:
-        return -min(rx, ry, rz)
-    return k0 * (k0 - 1.0) / k1
+    k0 = np.sqrt((x / rx) ** 2 + (y / ry) ** 2 + (z / rz) ** 2)
+    k1 = np.sqrt((x / (rx * rx)) ** 2 + (y / (ry * ry)) ** 2 + (z / (rz * rz)) ** 2)
+    k1 = np.maximum(k1, 1e-12)
+    return np.where(k1 < 1e-12, -min(rx, ry, rz), k0 * (k0 - 1.0) / k1)
 
 
 def _smin(a, b, k):
     if k <= 1e-9:
-        return min(a, b)
-    h = max(0.0, min(1.0, 0.5 + 0.5 * (b - a) / k))
+        return np.minimum(a, b)
+    h = np.clip(0.5 + 0.5 * (b - a) / k, 0.0, 1.0)
     return b + (a - b) * h - k * h * (1.0 - h)
 
 
@@ -77,25 +76,27 @@ def _smax(a, b, k):
 
 
 def _clamp(v, lo, hi):
-    return max(lo, min(hi, v))
+    return np.clip(v, lo, hi)
 
 
 def _smoothstep(a, b, v):
-    t = _clamp((v - a) / (b - a), 0.0, 1.0) if abs(b - a) > 1e-12 else 0.0
+    t = np.clip((v - a) / (b - a), 0.0, 1.0) if abs(b - a) > 1e-12 else 0.0
     return t * t * (3 - 2 * t)
 
 
 SDF_NAMESPACE: dict[str, Any] = {
     "pi": math.pi, "e": math.e, "tau": math.tau,
-    "sqrt": math.sqrt, "sin": math.sin, "cos": math.cos, "tan": math.tan,
-    "asin": math.asin, "acos": math.acos, "atan": math.atan, "atan2": math.atan2,
-    "abs": abs, "min": min, "max": max, "pow": pow, "exp": math.exp, "log": math.log,
-    "floor": math.floor, "ceil": math.ceil, "round": round, "hypot": math.hypot,
+    "sqrt": np.sqrt, "sin": np.sin, "cos": np.cos, "tan": np.tan,
+    "asin": np.arcsin, "acos": np.arccos, "atan": np.arctan, "atan2": np.arctan2,
+    "abs": np.abs, "min": np.minimum, "max": np.maximum, "pow": np.power,
+    "exp": np.exp, "log": np.log,
+    "floor": np.floor, "ceil": np.ceil, "round": np.round,
+    "hypot": np.hypot,
     "clamp": _clamp, "smoothstep": _smoothstep,
     "smin": _smin, "smax": _smax,
     "sd_sphere": _sd_sphere, "sd_box": _sd_box, "sd_capsule": _sd_capsule,
     "sd_cylinder": _sd_cylinder, "sd_torus": _sd_torus, "sd_ellipsoid": _sd_ellipsoid,
-    "len": lambda x, y, z: math.sqrt(x * x + y * y + z * z),
+    "len": lambda x, y, z: np.sqrt(x * x + y * y + z * z),
 }
 
 _ALLOWED_NODES = (
@@ -107,7 +108,7 @@ _ALLOWED_NODES = (
 )
 
 
-def compile_sdf(expression: str):
+def _compile_expression(expression: str):
     expression = (expression or "").strip()
     if not expression:
         raise DslError("Пустое выражение для SDF.")
@@ -141,10 +142,14 @@ def compile_sdf(expression: str):
         fn(0.0, 0.0, 0.0)
     except Exception as exc:
         raise DslError(f"Ошибка в формуле при проверке: {exc}") from exc
+    return fn
+
+
+def compile_sdf(expression: str):
+    """Скалярный вариант (по одной точке) — оставлен для совместимости."""
+    fn = _compile_expression(expression)
 
     def safe(x, y, z):
-        # Исключение Python внутри обратного вызова C++ роняло процесс
-        # (segmentation fault). Теперь «сбойная» точка считается внешней.
         try:
             value = float(fn(x, y, z))
         except Exception:
@@ -156,26 +161,123 @@ def compile_sdf(expression: str):
     return safe
 
 
+def compile_field(expression: str):
+    """Векторный вариант: считает поле сразу на numpy-массиве точек.
+
+    Раньше формула вызывалась из C++ по одной точке (сотни тысяч вызовов
+    Python). Теперь поле считается массивами, а поверхность извлекает
+    marching cubes — это в десятки раз быстрее и без падений на «плохих»
+    точках: исключение внутри массива не роняет процесс.
+    """
+    fn = _compile_expression(expression)
+
+    def field(x, y, z):
+        with np.errstate(all="ignore"):
+            try:
+                value = fn(x, y, z)
+            except Exception:
+                value = 1e6
+            arr = np.asarray(value, dtype=np.float64)
+        return np.nan_to_num(arr, nan=1e6, posinf=1e6, neginf=-1e6)
+
+    return field
+
+
+def surface_from_field(field, bounds: list[float], res: float,
+                       level: float = 0.0):
+    """Извлекает поверхность из поля. Возвращает (вершины, грани, res)."""
+    x0, y0, z0, x1, y1, z1 = [float(v) for v in bounds]
+    span = max(x1 - x0, y1 - y0, z1 - z0)
+    step = max(float(res), 1e-3)
+    # держим сетку в разумной памяти (float32 × ~12 млн ячеек)
+    for _ in range(40):
+        nx = int(round((x1 - x0) / step)) + 1
+        ny = int(round((y1 - y0) / step)) + 1
+        nz = int(round((z1 - z0) / step)) + 1
+        if nx * ny * nz <= MAX_CELLS:
+            break
+        step *= 1.12
+    else:
+        raise GeometryError("Слишком мелкая сетка для SDF — увеличьте resolution.")
+    xs = np.linspace(x0, x1, nx, dtype=np.float32)
+    ys = np.linspace(y0, y1, ny, dtype=np.float32)
+    zs = np.linspace(z0, z1, nz, dtype=np.float32)
+    X, Y, Z = np.meshgrid(xs, ys, zs, indexing="ij")
+    values = -np.asarray(field(X, Y, Z), dtype=np.float64) - float(level)
+    del X, Y, Z
+    if not np.isfinite(values).all():
+        values = np.nan_to_num(values, nan=1e6, posinf=1e6, neginf=-1e6)
+    if values.min() > 0 or values.max() < 0:
+        return None, None, step
+
+    try:
+        from skimage import measure
+    except Exception as exc:  # scikit-image входит в зависимости, но вдруг
+        raise GeometryError(f"Нет scikit-image для извлечения поверхности: {exc}") from exc
+
+    # Снаружи bounds поля нет: добавляем рамку «снаружи», чтобы поверхность,
+    # упёршаяся в границу области, закрывалась крышкой, а не оставалась дырой.
+    # values > 0 — внутри тела, поэтому рамка должна быть «снаружи» (< 0).
+    padded = np.pad(values, 1, mode="constant", constant_values=-1e3).astype(np.float32)
+    verts, faces, _normals, _ = measure.marching_cubes(
+        padded, level=0.0, spacing=(step, step, step), allow_degenerate=False)
+    verts = np.asarray(verts, dtype=np.float64) - float(step) + np.array([x0, y0, z0])
+    return verts, np.asarray(faces, dtype=np.int64), step
+
+
+def finalize_sdf(verts: np.ndarray, faces: np.ndarray, step: float,
+                 what: str = "поверхность"):
+    """Собирает поверхность и чистит «строчку» marching cubes (лишние трис)."""
+    solid = mesh_to_manifold(verts, faces, what)
+    try:
+        simplified = solid.simplify(max(float(step) * 0.06, 0.01))
+        if not simplified.is_empty():
+            before, after = solid.volume(), simplified.volume()
+            if before > 0 and 0.97 < after / before < 1.03:
+                solid = simplified
+    except Exception:
+        pass
+    return solid
+
+
+def mesh_to_manifold(verts: np.ndarray, faces: np.ndarray, what: str = "поверхность"):
+    """Собирает Manifold из сетки marching cubes, подбирая ориентацию граней."""
+    from .geometry import manifold_from_arrays
+
+    last: Exception | None = None
+    for candidate in (faces, faces[:, ::-1]):
+        try:
+            solid = manifold_from_arrays(verts, candidate, what=what)
+            if not solid.is_empty() and solid.volume() > 0:
+                return solid
+        except Exception as exc:
+            last = exc
+    if last is not None:
+        raise GeometryError(f"Не удалось собрать поверхность: {last}") from last
+    raise GeometryError("Поверхность пуста.")
+
+
 def _grid_budget(bounds: list[float], resolution: float) -> float:
     return ((bounds[3] - bounds[0]) / resolution + 1) * \
            ((bounds[4] - bounds[1]) / resolution + 1) * \
            ((bounds[5] - bounds[2]) / resolution + 1) * 2.0
 
 
-def _choose_resolution(a, bounds: list[float], default_div: float = 100.0) -> float:
+def _choose_resolution(a, bounds: list[float], default_div: float = 100.0,
+                       limit: float = MAX_GRID_POINTS) -> float:
     res = a.num("resolution", None, minv=0.1)
     if res is None:
         extent = max(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2])
         res = max(0.5, extent / default_div)
-        if _grid_budget(bounds, res) > MAX_GRID_POINTS:
-            res = max(0.5, res * (_grid_budget(bounds, res) / MAX_GRID_POINTS) ** (1 / 3))
+        if _grid_budget(bounds, res) > limit:
+            res = max(0.5, res * (_grid_budget(bounds, res) / limit) ** (1 / 3))
             a.scene.log("warn", f"SDF: разрешение автоматически уменьшено до {res:.2f} мм "
                                 f"(иначе расчёт был бы слишком долгим).", a.cmd.line)
-    if _grid_budget(bounds, res) > MAX_GRID_POINTS * 1.05:
+    if _grid_budget(bounds, res) > limit * 1.05:
         raise GeometryError(
             f"Слишком мелкое разрешение {res:g} мм для области {bounds}.",
             hint=f"Увеличьте resolution (сейчас {res:g}) или уменьшите bounds. "
-                 f"Лимит — {MAX_GRID_POINTS:,} точек.".replace(",", " "))
+                 f"Лимит — {limit:,} точек.".replace(",", " "))
     return float(res)
 
 
@@ -193,25 +295,25 @@ def from_sdf(a, name):
     if not expr:
         raise DslError("Укажите expression — формулу поверхности.",
                        hint="Например: sd_sphere(x,y,z,30) - sd_sphere(x,y,z,24)")
-    fn = compile_sdf(expr)
     bounds = a.vec("bounds", 6, required=True)
     if not (bounds[0] < bounds[3] and bounds[1] < bounds[4] and bounds[2] < bounds[5]):
         raise GeometryError("bounds заданы неверно: минимумы должны быть меньше максимумов.")
-    res = _choose_resolution(a, bounds)
-    # Сетка ровно по целому числу ячеек: так изоповерхность не «рвётся» на краю.
-    span = max(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2])
-    cells = max(8, int(round(span / res)))
-    res = span / cells
-    level = a.num("level", 0.0)
+    fn = compile_field(expr)
+    res = _choose_resolution(a, bounds, default_div=120.0, limit=MAX_CELLS)
+    level = float(a.num("level", 0.0) or 0.0)
     try:
-        solid = mf.Manifold.level_set(lambda x, y, z: -fn(x, y, z), bounds, res, float(level))
+        verts, faces, step = surface_from_field(fn, bounds, res, level)
+    except GeometryError:
+        raise
     except Exception as exc:
         raise GeometryError(f"Не удалось извлечь поверхность: {exc}") from exc
-    if solid.is_empty():
+    if verts is None:
         raise GeometryError(
             "Поверхность пуста — функция нигде не становится отрицательной внутри bounds.",
             hint="Проверьте формулу и границы: внутри области должно быть f < 0.",
         )
+    solid = finalize_sdf(verts, faces, step, f"SDF «{name or 'фигура'}»")
+    a.scene.log("info", f"from_sdf: сетка {step:g} мм, {solid.num_tri()} треугольников", a.cmd.line)
     return make_solid(a.scene, name, solid, a, kind="sdf")
 
 
@@ -271,15 +373,19 @@ def blob(a, name):
     expr = terms[0]
     for term in terms[1:]:
         expr = f"smin({expr},{term},{blend})"
-    fn = compile_sdf(expr)
+    fn = compile_field(expr)
     margin = max(1.0, blend) + 2.0
     bounds = [min(xs) - margin, min(ys) - margin, min(zs) - margin,
               max(xs) + margin, max(ys) + margin, max(zs) + margin]
-    res = _choose_resolution(a, bounds, default_div=110.0)
+    res = _choose_resolution(a, bounds, default_div=120.0, limit=MAX_CELLS)
     try:
-        solid = mf.Manifold.level_set(lambda x, y, z: -fn(x, y, z), bounds, res)
+        verts, faces, step = surface_from_field(fn, bounds, res)
+    except GeometryError:
+        raise
     except Exception as exc:
         raise GeometryError(f"Не удалось слепить форму: {exc}") from exc
-    if solid.is_empty():
+    if verts is None:
         raise GeometryError("Форма пуста — проверьте координаты и радиусы.")
+    solid = finalize_sdf(verts, faces, step, "капля")
+    a.scene.log("info", f"blob: сетка {step:g} мм, {solid.num_tri()} треугольников", a.cmd.line)
     return make_solid(a.scene, name, solid, a, kind="blob")

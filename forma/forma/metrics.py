@@ -54,7 +54,7 @@ def overhang_percent(m: mf.Manifold) -> float:
     return float(area[mask].sum() / total * 100) if total > 0 else 0.0
 
 
-def wall_thickness(m: mf.Manifold, samples: int = 128) -> dict | None:
+def wall_thickness(m: mf.Manifold, samples: int = 96) -> dict | None:
     """Оценка толщины материала лучами из центра наружу.
 
     Учитываются только участки «внутри материала»: вход в тело (нормаль вдоль
@@ -71,6 +71,17 @@ def wall_thickness(m: mf.Manifold, samples: int = 128) -> dict | None:
     bbox_volume = max((bb[3] - bb[0]) * (bb[4] - bb[1]) * (bb[5] - bb[2]), 1e-9)
     if m.volume() / bbox_volume > 0.62:
         return None
+    # Толщина — статистика по лучам: подробная сетка ей не нужна.
+    # Считаем на упрощённой копии (до 0,2 мм), это в разы быстрее.
+    approx = 0.0
+    if m.num_tri() > 3000:
+        approx = float(min(0.2, max(0.05, diag / 2000.0)))
+        try:
+            simple = m.simplify(approx)
+            if not simple.is_empty() and simple.num_tri() > 500:
+                m = simple
+        except Exception:
+            approx = 0.0
     gaps: list[tuple[float, list[float]]] = []
     for d in fibonacci_sphere(samples):
         origin = center + d * diag
@@ -142,6 +153,7 @@ def wall_thickness(m: mf.Manifold, samples: int = 128) -> dict | None:
         "max": float(np.max(cluster)),
         "samples": int(len(arr)),
         "consistency": float(ratio),
+        "approx": approx,
     }
 
 
@@ -271,7 +283,8 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
             gparts = len(visible)
         gflat = flat_bottom_percent(union)
         gover = overhang_percent(union)
-        gwall = wall_thickness(union, 120)
+        # для одного объекта сплошной «union» — это он же: не считаем дважды
+        gwall = objects[0]["wall"] if len(visible) == 1 else wall_thickness(union, 96)
         gsym = {axis: symmetry_error(union, axis) for axis in ("x", "y", "z")}
         density = max(s.density for s in visible)
         gmass = gvol * density

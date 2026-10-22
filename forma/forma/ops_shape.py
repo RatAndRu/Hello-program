@@ -7,7 +7,7 @@ import math
 import manifold3d as mf
 import numpy as np
 
-from .errors import GeometryError
+from .errors import DslError, GeometryError
 from .geometry import fibonacci_sphere
 from .ops import (anchor, ensure_solid, make_solid, mirror as mirror_manifold,
                   merge_solids, op, rotate as rotate_manifold, scale as scale_manifold,
@@ -168,23 +168,157 @@ def offset(a, name):
     return make_solid(a.scene, name, result, a, base=source, kind="offset")
 
 
-@op("fillet", aliases=("скругление", "скруглить", "зализать"), category="Форма и деформации",
-    summary="Скругляет внутренние стыки и углубления (наружные рёбра скругляйте параметром round у примитивов).",
-    example="корпус = fillet [склеенный] radius=3",
+def _edge_mode(a, default: str = "all") -> str:
+    raw = (a.text("edges") or a.text("кромки") or default).strip().lower()
+    table = {
+        "all": "all", "все": "all", "обе": "all", "оба": "all",
+        "convex": "convex", "выпуклые": "convex", "наружные": "convex",
+        "concave": "concave", "вогнутые": "concave", "внутренние": "concave",
+    }
+    mode = table.get(raw)
+    if mode is None:
+        raise DslError("edges бывает convex (выпуклые), concave (вогнутые) или all.",
+                         hint="Пример: деталь = fillet [деталь] radius=2 edges=convex")
+    return mode
+
+
+def _clean_rounded(m: mf.Manifold) -> mf.Manifold:
+    """Убирает вырожденные треугольники, которые оставляет minkowski."""
+    from .geometry import manifold_from_arrays, manifold_mesh
+    try:
+        import trimesh
+        verts, faces = manifold_mesh(m)
+        mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=True)
+        mesh.merge_vertices(merge_tex=True, merge_norm=True)
+        mesh.update_faces(mesh.nondegenerate_faces())
+        mesh.update_faces(mesh.unique_faces())
+        mesh.remove_unreferenced_vertices()
+        out = manifold_from_arrays(np.asarray(mesh.vertices), np.asarray(mesh.faces),
+                                   what="скругление")
+        if not out.is_empty() and abs(out.volume() - m.volume()) < m.volume() * 0.02:
+            return out
+    except Exception:
+        pass
+    return m
+
+
+def _morph(a, source: mf.Manifold, tool: mf.Manifold, mode: str, kind: str) -> mf.Manifold:
+    """Морфологическое скругление.
+
+    Выпуклые рёбра скругляет opening (сжатие → рост), вогнутые — closing
+    (рост → сжатие). Порядок важен: сначала closing, потом opening. Обратный
+    порядок на L-образных деталях уходит в многочасовой расчёт.
+    """
+    steps: list[str] = []
+    if mode in ("concave", "all"):
+        steps.append("closing")
+    if mode in ("convex", "all"):
+        steps.append("opening")
+    shrink = 0.0
+    for step in steps:
+        try:
+            if step == "closing":
+                source = source.minkowski_sum(tool).minkowski_difference(tool)
+            else:
+                source = source.minkowski_difference(tool).minkowski_sum(tool)
+        except Exception as exc:
+            raise GeometryError(f"Не удалось выполнить {kind} ({step}): {exc}") from exc
+        if source.is_empty():
+            raise GeometryError(f"{kind}: объект исчез на шаге {step} — уменьшите радиус.")
+        if source.num_tri() > 120000:
+            raise GeometryError(
+                f"{kind}: слишком подробная сетка после {step} ({source.num_tri()} треугольников).",
+                hint="Уменьшите radius/segments или примените скругление к более простой детали.")
+    return source
+
+
+@op("fillet", aliases=("скругление", "скруглить", "зализать"),
+    category="Форма и деформации",
+    summary="Скругляет рёбра радиусом: выпуклые (наружные), вогнутые (внутренние) "
+            "или все сразу — в отличие от bevel, который снимает материал только снаружи.",
+    example="корпус = fillet [корпус] radius=3 edges=convex",
     params={"objects": "объект", "radius": "радиус скругления, мм (обязательно)",
-            "segments": "качество (32)"},
+            "edges": "convex (наружные), concave (внутренние) или all (оба; по умолчанию)",
+            "segments": "качество скругления 8…40 (12 — без тонких треугольников)"},
     positional=["objects"])
 def fillet(a, name):
     solids = a.solids()
     if len(solids) != 1:
         raise GeometryError("fillet работает с одним объектом.")
     radius = a.num("radius", required=True, minv=0.05)
-    ball = mf.Manifold.sphere(float(radius), a.int("segments", 32, minv=8, maxv=96))
+    mode = _edge_mode(a, "all")
     source = solids[0]
-    grown = source.manifold.minkowski_sum(ball)
-    result = grown.minkowski_difference(ball)
+    if source.manifold.num_tri() > 12000:
+        raise GeometryError(
+            "Слишком подробная сетка для скругления рёбер — это надолго.",
+            hint="Сначала упростите: имя = simplify [объект] tolerance=0.2, "
+                 "или задайте round у примитива.")
+    ball = mf.Manifold.sphere(float(radius), a.int("segments", 12, minv=8, maxv=40))
+    v0 = float(source.manifold.volume())
+    result = _morph(a, source.manifold, ball, mode, "fillet")
+    if result.is_empty() or result.volume() <= 1e-9:
+        raise GeometryError("После скругления объект исчез — уменьшите radius.")
+    result = _clean_rounded(result)
+    v1 = float(result.volume())
+    if v1 < v0 * 0.7:
+        raise GeometryError(
+            f"Скругление radius={radius:g} слишком велико: объём упал на {(1 - v1 / v0) * 100:.0f} %.",
+            hint="Уменьшите radius или сделайте скругление на примитиве (round=…).")
+    a.scene.log("info", f"fillet: {mode}, радиус {radius:g} мм, "
+                        f"объём {(v1 / v0 - 1) * 100:+.2f} %", a.cmd.line)
     a.scene.consume(source)
     return make_solid(a.scene, name, result, a, base=source, kind="fillet")
+
+
+def _chamfer_tool(width: float) -> mf.Manifold:
+    """Инструмент фаски — октаэдр (ромб).
+
+    Opening кубом ничего не срезает (куб «совпадает» с гранями детали),
+    а ромб срезает кромку плоской гранью под 45° — это и есть фаска.
+    """
+    r = float(width) * 1.7320508  # вписанная сфера октаэдра = r/√3 = width
+    return mf.Manifold.hull_points([[r, 0, 0], [-r, 0, 0], [0, r, 0],
+                                    [0, -r, 0], [0, 0, r], [0, 0, -r]])
+
+
+@op("chamfer", aliases=("снять_фаску", "срез", "кромка45"),
+    category="Форма и деформации",
+    summary="Снимает кромку плоской фаской под 45° (в отличие от fillet — без радиуса).",
+    example="плита = chamfer [плита] width=2 edges=convex",
+    params={"objects": "объект", "width": "ширина фаски, мм (2% самой тонкой стороны)",
+            "edges": "convex (наружные), concave (внутренние) или all"},
+    positional=["objects"])
+def chamfer(a, name):
+    solids = a.solids()
+    if len(solids) != 1:
+        raise GeometryError("chamfer работает с одним объектом.")
+    source = solids[0]
+    bbox = source.manifold.bounding_box()
+    thin = min(bbox[3] - bbox[0], bbox[4] - bbox[1], bbox[5] - bbox[2])
+    width = a.num("width", None, minv=0.05)
+    if width is None:
+        width = thin * 0.02
+    width = float(min(width, thin * 0.4))
+    mode = _edge_mode(a, "convex")
+    if source.manifold.num_tri() > 40000:
+        raise GeometryError(
+            "Слишком подробная сетка для фаски — это надолго.",
+            hint="Сначала упростите: имя = simplify [объект] tolerance=0.2.")
+    tool = _chamfer_tool(width)
+    v0 = float(source.manifold.volume())
+    result = _morph(a, source.manifold, tool, mode, "chamfer")
+    if result.is_empty() or result.volume() <= 1e-9:
+        raise GeometryError("После фаски объект исчез — уменьшите width.")
+    result = _clean_rounded(result)
+    v1 = float(result.volume())
+    if v1 < v0 * 0.7:
+        raise GeometryError(
+            f"Фаска width={width:g} слишком велика: объём упал на {(1 - v1 / v0) * 100:.0f} %.",
+            hint="Уменьшите width.")
+    a.scene.log("info", f"chamfer: {mode}, ширина {width:g} мм, "
+                        f"объём {(v1 / v0 - 1) * 100:+.2f} %", a.cmd.line)
+    a.scene.consume(source)
+    return make_solid(a.scene, name, result, a, base=source, kind="chamfer")
 
 
 # --------------------------------------------------------------------------- #

@@ -162,6 +162,40 @@ class TestNewChecks(unittest.TestCase):
         self.assertTrue(b.analysis["checks"][-1]["ok"], b.analysis["checks"][-1]["text"])
 
 
+class TestEdgeRounding(unittest.TestCase):
+    """Скругление и фаска: размер не «плывёт», объём меняется в разумную сторону."""
+
+    def test_fillet_convex_keeps_size(self):
+        b = ok("к = box size=[60,60,60]\nк = fillet [к] radius=6 edges=convex")
+        size = b.analysis["metrics"]["size"]
+        for v in size:
+            self.assertAlmostEqual(v, 60.0, delta=0.25)
+        self.assertLess(b.analysis["metrics"]["volume_cm3"], 216.0)
+        self.assertGreater(b.analysis["metrics"]["volume_cm3"], 200.0)
+
+    def test_fillet_adds_material_on_concave_edge(self):
+        base = ok("а = box size=[90,30,30] at=[-30,0,0]\n"
+                  "б = box size=[30,30,80] at=[15,0,0]\nс = union [а, б]")
+        rounded = ok("а = box size=[90,30,30] at=[-30,0,0]\n"
+                     "б = box size=[30,30,80] at=[15,0,0]\nс = union [а, б]\n"
+                     "с = fillet [с] radius=6 edges=concave")
+        self.assertGreater(rounded.analysis["metrics"]["volume_cm3"],
+                           base.analysis["metrics"]["volume_cm3"])
+
+    def test_chamfer_cuts_corner_at_45(self):
+        b = ok("п = box size=[150,75,10]\nп = chamfer [п] width=2 edges=convex")
+        m = b.analysis["metrics"]
+        for v in m["size"]:
+            self.assertAlmostEqual(v, {"x": 150, "y": 75, "z": 10}[
+                ["x", "y", "z"][list(m["size"]).index(v)]], delta=0.3)
+        self.assertLess(m["volume_cm3"], 112.5)
+        self.assertGreater(m["volume_cm3"], 100.0)
+
+    def test_edges_value_is_validated(self):
+        err = fails("к = box size=[20,20,20]\nк = fillet [к] radius=2 edges=рёбра")
+        self.assertIn("convex", err["message"])
+
+
 class TestExport(unittest.TestCase):
     def test_3mf_is_valid_zip(self):
         b = ok("куб = box size=[20,20,20]")

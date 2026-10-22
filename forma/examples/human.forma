@@ -40,6 +40,6 @@ color тело #d8b48c material=plastic
 check тело watertight
 check тело parts 1
 check тело height 1650..1750
-check тело symmetric y 3
+check тело symmetric x 2
 check тело volume 40000..90000
 check тело flat_bottom 1..
