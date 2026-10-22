@@ -5,6 +5,58 @@
 
 ---
 
+## 0. Одной строкой (проверено сборкой)
+
+```
+мяч = sphere radius=50 at=[0,0,50]
+кружка = lathe points=[[0,0],[42,0],[42,95],[38,95],[38,4],[0,4]] segments=144 smooth=2
+ваза = lathe points=[[0,0],[60,0],[80,60],[60,140],[80,220],[66,232],[60,222],[70,200],[50,120],[46,6],[0,6]] segments=112 smooth=2
+тарелка = lathe points=[[0,0],[80,0],[86,6],[86,12],[70,12],[70,6],[0,6]] segments=128 smooth=2
+пришелец = blob spheres=[[0,0,120,95],[0,0,240,70],[0,0,330,62],[0,0,460,120]] capsules=[[-80,0,310,-190,0,190,18],[80,0,310,190,0,190,18]] blend=34
+человек = human height=1750 pose=t detail=средний
+рамка = extrude profile=[[-90,-90],[90,-90],[90,90],[-90,90]] holes=[[[-55,-55],[55,-55],[55,55],[-55,55]]] height=24 fillet=8
+```
+
+Двумя-четырьмя строками:
+
+```
+шайба = cylinder radius=40 height=8 segments=96
+отв = cylinder radius=16 height=40 segments=64
+шайба = difference [шайба, отв]
+```
+
+```
+гайка = extrude profile=[[36,0],[18,31.2],[-18,31.2],[-36,0],[-18,-31.2],[18,-31.2]] height=16 fillet=2
+отв = cylinder radius=16 height=60 segments=64
+гайка = difference [гайка, отв]
+```
+
+```
+брусок = box size=[40,40,300] round=4
+брусок = twist [брусок] angle=180 axis=z
+```
+
+```
+брусок = box size=[30,120,300] round=4
+брусок = bend [брусок] angle=90
+```
+
+```
+диск = cylinder radius=58 height=12 segments=128
+зуб = box size=[18,16,12] at=[62,0,0]
+зубья = array [зуб] count=20 mode=radial around=z center=[0,0,0]
+шестерня = union [диск, зубья]
+```
+
+```
+крышка = cylinder radius=18 height=26 segments=96 round=3
+лок = box size=[5.6,7,18] at=[19.2,0,13]
+локи = array [лок] count=24 mode=radial around=z center=[0,0,0]
+крышка = difference [крышка, локи]
+```
+
+---
+
 ## 1. Ваза с вогнутой кромкой (232 мм, стенка 9 мм)
 
 ```

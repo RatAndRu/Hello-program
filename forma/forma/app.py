@@ -27,13 +27,23 @@ def _start_window(url: str) -> bool:
         say(f"Окно недоступно ({exc}). Открываю в браузере.")
         return False
     try:
-        webview.create_window(
-            APP_TITLE, url,
-            width=1520, height=960,
-            min_size=(1080, 680),
-            background_color="#0c0f14",
-            confirm_close=False,
-        )
+        try:
+            window = webview.create_window(
+                APP_TITLE, url,
+                width=1520, height=960,
+                min_size=(1080, 680),
+                background_color="#0c0f14",
+                confirm_close=False,
+                text_select=True,   # без этого в окне нельзя выделять и копировать текст
+            )
+        except TypeError:  # старый pywebview без параметра text_select
+            window = webview.create_window(
+                APP_TITLE, url,
+                width=1520, height=960,
+                min_size=(1080, 680),
+                background_color="#0c0f14",
+                confirm_close=False,
+            )
         webview.start(debug=False, private_mode=False)
         return True
     except Exception as exc:
