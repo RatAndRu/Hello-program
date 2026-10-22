@@ -201,6 +201,8 @@ export class Capture {
     return [Math.max(1, x0 | 0), Math.max(1, y0 | 0), Math.min(w - 2, x1 | 0), Math.min(h - 2, y1 | 0)];
   }
   async grab() {
+    // крупный план: полноразмерный снимок камеры (в 3–4 раза больше деталей на текстуре), если APK умеет
+    if (this.opt.close && this.native && this.src && this.src.still) { const b = await this.src.still(); if (b) return b; }
     const v = this.srcEl, W = Math.min(1280, v.videoWidth), H = Math.round(v.videoHeight * W / v.videoWidth);
     const c = document.createElement('canvas'); c.width = W; c.height = H; this.drawSrc(c.getContext('2d'), W, H);
     return await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.92));

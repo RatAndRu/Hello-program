@@ -54,6 +54,28 @@ export class NativeCam {
     try { const N = window.ObyomNative; if (N && typeof N.camTorch === 'function') return N.camTorch(!!on) === 'ok'; } catch (e) {}
     return false;
   }
+  // полноразмерный снимок (APK 2.3+): JPEG наибольшего размера 16:9, повёрнутый как кадры; null — не умеет/не успел
+  async still(timeout = 5000) {
+    const N = window.ObyomNative;
+    if (!N || typeof N.camStill !== 'function' || typeof N.camStillGet !== 'function') return null;
+    try {
+      const last = this.stillId ?? -1;
+      if (N.camStill() !== 'ok') return null;
+      const t0 = performance.now(); let s = '';
+      while (!(s = N.camStillGet(last)) && performance.now() - t0 < timeout) await sleep(40);
+      if (!s) return null;
+      let p = 0; const parts = [];
+      for (let k = 0; k < 4; k++) { const q = s.indexOf('|', p); parts.push(+s.slice(p, q)); p = q + 1; }
+      const [rot, id] = parts; this.stillId = id;
+      const bin = atob(s.slice(p)), u = new Uint8Array(bin.length);
+      for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i);
+      const raw = new Blob([u], { type: 'image/jpeg' });
+      if (!rot) return raw;
+      const bm = await createImageBitmap(raw), W = rot % 180 ? bm.height : bm.width, H = rot % 180 ? bm.width : bm.height;
+      const c = document.createElement('canvas'); c.width = W; c.height = H; drawRot(c.getContext('2d'), bm, rot, 0, 0, W, H); bm.close && bm.close();
+      return await new Promise((r) => c.toBlob(r, 'image/jpeg', 0.92));
+    } catch (e) { return null; }
+  }
   close() {
     this.alive = false;
     try { window.ObyomNative.camStop(); } catch (e) {}

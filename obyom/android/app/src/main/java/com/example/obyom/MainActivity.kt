@@ -299,6 +299,14 @@ class MainActivity : Activity() {
         }
 
         /** Зафиксировать/отпустить экспозицию и баланс белого (съёмка: все кадры одной яркости и цвета). */
+        /** Полноразмерный снимок (v2.3): camStill() → "ok"/"nostill"; затем camStillGet(last) → "поворот|id|w|h|jpeg-base64" или "". */
+        @JavascriptInterface
+        fun camStill(): String = cam.still()
+        @JavascriptInterface
+        fun camStillGet(last: Int): String {
+            val f = cam.stillGet(last)
+            return if (f.isEmpty()) f else "${camRotation()}|$f"
+        }
         @JavascriptInterface
         fun camLock(on: Boolean): String = cam.lock(on)
         @JavascriptInterface

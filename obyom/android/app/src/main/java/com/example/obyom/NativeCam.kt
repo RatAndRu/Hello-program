@@ -33,6 +33,13 @@ class NativeCam(private val ctx: Context) {
     private var device: CameraDevice? = null
     private var session: CameraCaptureSession? = null
     private var reader: ImageReader? = null
+    /** Полноразмерный снимок (v2.3): JPEG наибольшего размера с тем же соотношением сторон — для крупных планов. */
+    private var stillReader: ImageReader? = null
+    private var stillJpeg: String? = null
+    private var stillId = 0
+    private var stillW = 0
+    private var stillH = 0
+    private var afMode = -1
     private var nv21: ByteArray? = null
     private val lock = Object()
 
@@ -91,6 +98,18 @@ class NativeCam(private val ctx: Context) {
         val rd = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 3)
         rd.setOnImageAvailableListener({ r -> onImage(r) }, hd)
         reader = rd
+        afMode = af
+        try {
+            val js = map.getOutputSizes(ImageFormat.JPEG)
+            val want = width.toDouble() / height
+            val big = js?.filter { Math.abs(it.width.toDouble() / it.height - want) < 0.02 && it.width <= 4096 && it.width > width }
+                ?.maxByOrNull { it.width.toLong() * it.height }
+            if (big != null) {
+                val sr = ImageReader.newInstance(big.width, big.height, ImageFormat.JPEG, 2)
+                sr.setOnImageAvailableListener({ r -> onStill(r) }, hd)
+                stillReader = sr
+            }
+        } catch (e: Exception) { stillReader = null }
         running = true; wanted = true
         try {
             mgr.openCamera(id, object : CameraDevice.StateCallback() {
@@ -111,7 +130,9 @@ class NativeCam(private val ctx: Context) {
     @Suppress("DEPRECATION")
     private fun createSession(d: CameraDevice, rd: ImageReader, hd: Handler, af: Int) {
         val surf = rd.surface
-        d.createCaptureSession(listOf(surf), object : CameraCaptureSession.StateCallback() {
+        val sr = stillReader
+        val outs = if (sr != null) listOf(surf, sr.surface) else listOf(surf)
+        d.createCaptureSession(outs, object : CameraCaptureSession.StateCallback() {
             override fun onConfigured(s: CameraCaptureSession) {
                 if (!running) { s.close(); return }
                 session = s
@@ -128,8 +149,64 @@ class NativeCam(private val ctx: Context) {
                     if (lockWanted) hd.postDelayed({ applyLock(true) }, 900)
                 } catch (e: Exception) { lastError = "камера: ${e.message}" }
             }
-            override fun onConfigureFailed(s: CameraCaptureSession) { lastError = "не удалось настроить камеру" }
+            override fun onConfigureFailed(s: CameraCaptureSession) {
+                // телефон не тянет два выхода сразу — работаем без полноразмерных снимков
+                if (sr != null) {
+                    stillReader = null
+                    try { sr.close() } catch (e: Exception) {}
+                    try { createSession(d, rd, hd, af) } catch (e: Exception) { lastError = "камера: ${e.message}" }
+                } else lastError = "не удалось настроить камеру"
+            }
         }, hd)
+    }
+
+    /** Полноразмерный снимок: "ok" — запрошен (забрать через stillGet), "nostill" — не поддерживается. */
+    fun still(): String {
+        val hd = handler ?: return "nostill"
+        val sr = stillReader ?: return "nostill"
+        val d = device ?: return "nostill"
+        val s = session ?: return "nostill"
+        hd.post {
+            try {
+                val rb = d.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE)
+                rb.addTarget(sr.surface)
+                rb.set(CaptureRequest.CONTROL_MODE, CaptureRequest.CONTROL_MODE_AUTO)
+                if (afMode >= 0) rb.set(CaptureRequest.CONTROL_AF_MODE, afMode)
+                rb.set(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                rb.set(CaptureRequest.CONTROL_AE_LOCK, lockWanted)
+                rb.set(CaptureRequest.CONTROL_AWB_LOCK, lockWanted)
+                if (torchWanted && hasFlash) rb.set(CaptureRequest.FLASH_MODE, CaptureRequest.FLASH_MODE_TORCH)
+                rb.set(CaptureRequest.JPEG_QUALITY, 92.toByte())
+                rb.set(CaptureRequest.JPEG_ORIENTATION, 0)
+                s.capture(rb.build(), null, hd)
+            } catch (e: Exception) { lastError = "снимок: ${e.message}" }
+        }
+        return "ok"
+    }
+
+    private fun onStill(r: ImageReader) {
+        var acquired: Image? = null
+        try { acquired = r.acquireLatestImage() } catch (e: Exception) {}
+        val img = acquired ?: return
+        try {
+            val b = img.planes[0].buffer
+            val bytes = ByteArray(b.remaining()); b.get(bytes)
+            val b64 = Base64.encodeToString(bytes, Base64.NO_WRAP)
+            synchronized(lock) { stillJpeg = b64; stillW = img.width; stillH = img.height; stillId++ }
+        } catch (e: Exception) {
+            lastError = "снимок: ${e.message}"
+        } finally {
+            img.close()
+        }
+    }
+
+    /** Снимок новее [last]: "id|w|h|b64"; "" — ещё не готов. Отдаётся один раз (память). */
+    fun stillGet(last: Int): String {
+        synchronized(lock) {
+            val j = stillJpeg
+            if (j != null && stillId != last) { stillJpeg = null; return "$stillId|$stillW|$stillH|$j" }
+        }
+        return ""
     }
 
     /** Фонарик: "ok", "noflash" — у камеры нет вспышки. Включать до фиксации экспозиции (до первого снимка). */
@@ -206,16 +283,17 @@ class NativeCam(private val ctx: Context) {
     fun stop() {
         running = false
         val hd = handler; val th = thread
-        val s = session; val d = device; val rd = reader
-        session = null; device = null; reader = null; handler = null; thread = null; builder = null
+        val s = session; val d = device; val rd = reader; val sr = stillReader
+        session = null; device = null; reader = null; stillReader = null; handler = null; thread = null; builder = null
         val close = Runnable {
             try { s?.close() } catch (e: Exception) {}
             try { d?.close() } catch (e: Exception) {}
             try { rd?.close() } catch (e: Exception) {}
+            try { sr?.close() } catch (e: Exception) {}
             th?.quitSafely()
         }
         if (hd != null) hd.post(close) else close.run()
-        synchronized(lock) { jpeg = null }
+        synchronized(lock) { jpeg = null; stillJpeg = null }
     }
 
     /** YUV_420_888 → NV21 (Y, затем чередующиеся V U) с учётом шагов строк и пикселей. */
