@@ -7,10 +7,10 @@ import { toGLB, toOBJ, toMeshPLY, toSTL, bounds, meshVolume } from './export.js'
 import { plyFromPacked, splatInfo } from './splat.js';
 import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
-import { fmtT } from './pipeline.js';
+import { fmtT, TEX } from './pipeline.js';
 import { hasNativeCam } from './nativecam.js';
 
-export const VERSION = '2.4';
+export const VERSION = '2.5';
 const $ = (id) => document.getElementById(id);
 const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8', torch: 'off' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
@@ -231,9 +231,13 @@ let proc = null, procViewer = null;
 const NAT = () => window.ObyomNative || null;
 const natCall = (fn, ...a) => { const N = NAT(); try { if (N && N[fn]) return N[fn](...a); } catch (e) {} return null; };
 const PENDING = 'obyom.pending';
+// v2.5: подпись контрольной точки — продолжать с текстуры можно, только если кадры и настройки формы те же
+const ckptSig = (st, n, nb) => JSON.stringify([st.mode, st.quality, st.size, +st.height, st.method || 'walk', st.shape || 'normal', n, nb || 0]);
 function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
   go('process');
-  try { localStorage.setItem(PENDING, JSON.stringify({ id: scan.id, name: scan.name, settings: scan.settings, noB: !bottomBlobs, t: Date.now() })); } catch (e) {}
+  const pend = { id: scan.id, name: scan.name, settings: scan.settings, noB: !bottomBlobs, t: Date.now(), stage: '', texSize: extra.texSize || 0 };
+  const savePend = () => { try { localStorage.setItem(PENDING, JSON.stringify(pend)); } catch (e) {} };
+  savePend();
   // новая съёмка ещё без записи в списке — заводим её сразу: если приложение закроется, скан не потеряется
   store.getScan(scan.id).then((old) => { if (!old) return store.putScan({ ...scan, failed: 'Обработка не закончилась (приложение закрылось). Кадры сохранены — нажми «Пересчитать».', hasMesh: false, hasSplats: false }); }).catch(() => {});
   natCall('procStart', `«${scan.name}»: подготовка…`);
@@ -246,10 +250,15 @@ function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
   if (extra.close && extra.close.length && st.mode !== 'splat') { job.close = extra.close; log(`+ крупные планы: ${extra.close.length}`); }
   if (extra.plates && extra.plates.length) { job.plates = extra.plates; log(`+ кадр фона: ${extra.plates.length}`); }
   if (bottomBlobs && bottomBlobs.length && scan.bottom) { job.bottom = { blobs: bottomBlobs, Hb: +scan.bottom.Hb, method: scan.bottom.method, plates: extra.bottomPlates || null }; log(`+ досъёмка низа: ${bottomBlobs.length} кадров`); }
+  // v2.5: контрольная точка перед текстурой — если приложение закроется (память!), продолжим с неё, а не заново
+  job.ckptId = scan.id; job.ckptSig = ckptSig(st, blobs.length, job.bottom ? bottomBlobs.length : 0);
+  if (extra.resume) { job.resume = extra.resume; log('продолжаю с сохранённой формы — сразу к текстуре'); }
+  if (extra.texSize) { job.texSize = extra.texSize; log(`текстура уменьшена до ${extra.texSize}×${extra.texSize}, чтобы хватило памяти`); }
   let splatting = false;
   proc = startProcessing(job, {
     progress: (stage, p, text) => {
       natCall('procUpdate', `${stage}${text ? ' · ' + text : ''}`, Math.round(p * 100));
+      if (stage !== pend.stage) { pend.stage = stage; savePend(); }
       $('procStage').textContent = stage; $('procBar').style.width = (p * 100).toFixed(1) + '%'; $('procText').textContent = text;
       if (stage === 'Учу сплэты' && !splatting) { splatting = true; $('procStop').textContent = 'Хватит — сохранить как есть'; }
     },
@@ -266,8 +275,8 @@ function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
         const M = r.mesh, b = bounds(M), old = await store.getScan(scan.id).catch(() => null);
         if (old && old.hasMesh && !old.failed && old.date !== scan.date) return;
         await store.putScan({ ...(old || {}), ...scan, mode: st.mode, mesh: M, splats: (old && old.splats) || null, hasMesh: true, hasSplats: !!(old && old.splats), failed: undefined,
-          stats: { ...r.stats, size: b.size, volume: meshVolume(M) }, note: 'сплэты не доучились — сетка сохранена' });
-        log('сетка сохранена — сплэты учатся дальше');
+          stats: { ...r.stats, size: b.size, volume: meshVolume(M) }, note: r.note || 'сплэты не доучились — сетка сохранена' });
+        log(r.note ? 'форма сохранена (пока без текстуры)' : 'сетка сохранена — сплэты учатся дальше');
       } catch (e) {}
     },
   });
@@ -282,6 +291,7 @@ function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
     try { await store.putScan(scan); } catch (e) { toast('Не хватает места для сохранения: ' + e.message, 4000); }
     toast(`Готово за ${fmtT(r.stats.t)}`);
     try { localStorage.removeItem(PENDING); } catch (e) {}
+    store.delFrames(scan.id + ':ckpt').catch(() => {});
     natCall('procEnd', `«${scan.name}» готов за ${fmtT(r.stats.t)}`);
   }).catch((e) => {
     try { localStorage.removeItem(PENDING); } catch (e2) {}
@@ -402,29 +412,43 @@ $('vBottom').onclick = async () => {
   history.back(); setTimeout(() => startCapture({ bottomOf: scan }), 80);
 };
 // пересчёт из сохранённых кадров (⋯ → Пересчитать и продолжение прерванной обработки)
-async function rerun(scan, st, noB) {
+async function rerun(scan, st, noB, more = {}) {
   const frames = await store.getFrames(scan.id).catch(() => null);
   if (!frames || !frames.length) { toast('Кадров съёмки нет — пересчёт невозможен', 3500); return; }
   const bframes = scan.bottom && !noB ? await store.getFrames(scan.id + ':bottom').catch(() => null) : null;
   const close = await store.getFrames(scan.id + ':close').catch(() => null);
   const plates = await store.getFrames(scan.id + ':plate').catch(() => null), bplates = scan.bottom ? await store.getFrames(scan.id + ':bplate').catch(() => null) : null;
   const ns = { id: scan.id, name: scan.name, date: scan.date, settings: st, bottom: scan.bottom, close: scan.close };
-  runProcessing(ns, frames, bframes, { plates, bottomPlates: bplates, close });
+  runProcessing(ns, frames, bframes, { plates, bottomPlates: bplates, close, ...more });
 }
 // при запуске: обработка в прошлый раз не закончилась (приложение закрыли, система выгрузила, не хватило памяти)
 async function checkInterrupted() {
   let p = null; try { p = JSON.parse(localStorage.getItem(PENDING) || 'null'); } catch (e) {}
   if (!p) return;
   localStorage.removeItem(PENDING);
-  const why = { memory: 'системе не хватило памяти', crash: 'сбой браузерной части' }[natCall('lastCrash') || ''] || 'приложение закрылось';
+  const crash = natCall('lastCrash') || '';
+  const why = { memory: 'системе не хватило памяти', crash: 'сбой браузерной части' }[crash] || 'приложение закрылось';
   const scan = await store.getScan(p.id).catch(() => null);
   if (!scan) return;
   const fr = await store.getFrames(p.id).catch(() => null);
   if (!fr || !fr.length) { toast(`Обработка «${scan.name}» прервалась, а кадров не осталось — сними заново`, 4000); return; }
-  sheet(`<h3>Обработка прервалась</h3><p>«${scan.name.replace(/</g, '&lt;')}» не досчитался: ${why}. Кадры сохранены${scan.hasMesh && !scan.failed ? ', сетка тоже' : ''}.</p>
+  const st = p.settings || scan.settings || S;
+  const bfr = scan.bottom && !p.noB ? await store.getFrames(p.id + ':bottom').catch(() => null) : null;
+  // v2.5: форма уже построена и сохранена — продолжаем с текстуры, а не с начала
+  const ck = await store.getFrames(p.id + ':ckpt').catch(() => null);
+  const canResume = !!(ck && ck.stage === 'texture' && ck.sig === ckptSig(st, fr.length, bfr ? bfr.length : 0));
+  // упали на текстуре (или просто от нехватки памяти) — в следующий раз печём текстуру на ступень меньше
+  const base = TEX[st.quality || 'normal'] || 2048, prevTex = +p.texSize || base;
+  const texSize = crash === 'memory' || /Текстура/.test(p.stage || '') ? Math.max(512, prevTex / 2) : (p.texSize || 0);
+  const texNote = texSize && texSize < base ? `<p><small>Текстура будет ${texSize}×${texSize} вместо ${base}×${base} — так ей хватит памяти. Крупные планы для деталей можно доснять потом.</small></p>` : '';
+  const more = (resume) => ({ resume: resume ? ck : null, texSize: texSize || 0 });
+  sheet(`<h3>Обработка прервалась</h3><p>«${scan.name.replace(/</g, '&lt;')}» не досчитался${p.stage ? ` на этапе «${p.stage}»` : ''}: ${why}. Кадры сохранены${canResume ? ', форма тоже' : scan.hasMesh && !scan.failed ? ', сетка тоже' : ''}.</p>${texNote}
     <p><small>Во время обработки приложение можно сворачивать и гасить экран — обработка идёт дальше (уведомление «Объём — обработка»). Закрывать его из списка недавних нельзя.</small></p>
-    <button data-a="go" class="mid">▶ Продолжить обработку<small>заново с теми же настройками</small></button><button data-a="later">Позже (⋯ → Пересчитать)</button>`, (box) => {
-    box.querySelector('[data-a="go"]').onclick = () => { closeSheet(); rerun(scan, p.settings || scan.settings || S, p.noB); };
+    ${canResume ? '<button data-a="res" class="mid">▶ Продолжить с текстуры<small>форма уже построена — не пересчитываю</small></button>' : ''}
+    <button data-a="go" class="${canResume ? '' : 'mid'}">${canResume ? '↻ Заново' : '▶ Продолжить обработку'}<small>с самого начала с теми же настройками</small></button><button data-a="later">Позже (⋯ → Пересчитать)</button>`, (box) => {
+    const go = (resume) => { closeSheet(); rerun(scan, st, p.noB, more(resume)); };
+    if (canResume) box.querySelector('[data-a="res"]').onclick = () => go(true);
+    box.querySelector('[data-a="go"]').onclick = () => go(false);
     box.querySelector('[data-a="later"]').onclick = () => closeSheet();
   });
 }
@@ -565,6 +589,8 @@ function showHelp() {
   <p><b>Текстура:</b> цвет модели — отдельная картинка-атлас: каждый кусок поверхности берётся из одного лучшего кадра в полном разрешении (а не из цвета вершин). В просмотре — переключатель «Текстура / Вершины». Для большей детальности — ⋯ → <b>«Крупные планы»</b>: предмет не двигать, телефон ближе (15–25 см), в кадре хотя бы 3 метки. Качество «Лучше» снимает в Full HD и считает форму на 960 px.</p>
   <p><b>Что не получится:</b> прозрачные и зеркальные предметы; глубокие впадины (внутренность чашки — кроме формы «Сосуд») — метод видит силуэты. Блестящий бок даёт блики — лучше «Тело вращения» или матовый свет.</p>
   <p><b>Точность (2.3):</b> край предмета уточняется до долей пикселя; искажение объектива («бочка») находится по меткам и исправляется само. В режиме <b>«Сетка + сплэты»</b> форма дополнительно уточняется по сплэтам — они видят вогнутости (шейки, выемки), которых не видят силуэты; текстура печётся уже на уточнённой форме.</p>
+  <p><b>Высокий предмет «с рук» (2.5):</b> раньше, если верх предмета ни в одном кадре не был виден на фоне листа, приложение принимало его за пустую «шапку» рамки и срезало — оставались ноги и подставка. Теперь стена за листом узнаётся надёжнее, а лишнее над пёстрым столом вырезается по цвету: точка предмета во всех кадрах одного цвета, а пустота «показывает» каждый раз другой кусок фона. Строгость подстраивается сама — по низу предмета, который точно виден на листе. Если сомнения остаются, предмет лучше оставить чуть толще, чем отрезать. Самая точная форма — с оборотом повыше (от ~50°).</p>
+  <p><b>Продолжение после вылета (2.5):</b> перед текстурой форма сохраняется. Если приложение закроется (обычно от нехватки памяти на текстуре), при следующем запуске будет «▶ Продолжить с текстуры» — форма не пересчитывается, а текстура печётся на ступень меньше.</p>
   <p><b>Форма точнее (2.4):</b> в режиме «Полигоны» (качество «Норма» и «Лучше», формы «Обычная», «Гладкая», «Плоские грани», «Сосуд») приложение коротко учит сплэты на уменьшенных кадрах — только ради глубины: они видят вогнутости и «жир» силуэтов, и лишнее из оболочки вырезается. Затем форма доводится по рисунку поверхности (сравнение кусочков между кадрами) — сдвиг теперь попадает в саму сетку и экспорт, а не только в рельеф. На однотонном предмете без рисунка это уточнение само отключается. «Плоские грани» больше не стирают вмятины глубже ~1 мм. Занимает 1–3 минуты; нужно быстрее — «Быстро».</p>
   <p><b>Крупные планы</b> снимаются в полном разрешении камеры. Кнопка <b>«Детальность»</b> у текстуры красит модель по тому, сколько миллиметров приходится на пиксель снимка: красные места стоит доснять крупным планом. В экспорте есть <b>«OBJ квадраты»</b> — ровная сетка из четырёхугольников для анимации и скульптинга.</p>
   <p>Всё считается на телефоне, без интернета и без нейросетей. Версия ${VERSION}.</p>`);

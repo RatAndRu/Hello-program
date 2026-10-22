@@ -5,12 +5,12 @@ import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal } from '../web/js/
 import { computeMask } from '../web/js/recon.js';
 const dir = process.argv[2], ks = process.argv[3].split(',').map(Number), w = 640;
 const gt = JSON.parse(fs.readFileSync(dir + '/gt.json')), h = Math.round(gt.h * w / gt.w);
-const L = matLayout('A4', 'round'), mr = matRaster(L, 'light', 2);
+const WALK = !!process.env.WALK, L = matLayout('A4', WALK ? 'full' : 'round'), mr = matRaster(L, 'light', 2);
 const K = { fx: gt.K.fx * w / gt.w, fy: gt.K.fx * w / gt.w, cx: w / 2, cy: h / 2 };
 for (const k of ks) {
   const fr = gt.frames[k], rgba = new Uint8Array(fs.readFileSync(dir + '/' + fr.file.replace('.jpg', '_640.rgba'))), gm = new Uint8Array(fs.readFileSync(dir + `/m${String(k).padStart(3, '0')}_640.m`));
   const ms = detectMarkers(toGray(rgba, w, h), w, h), p = poseFromMarkers(ms, L, K); console.log(k, ms.length, rgba.length, w, h, K);
-  const m = computeMask({ rgba, w, h, K, R: p.R, t: p.t }, { layout: L, mr, Rb: 55, Hb: 90, cutOnly: true, offMat: false, enclose: !!process.env.ENC }).mask;
+  const m = computeMask({ rgba, w, h, K, R: p.R, t: p.t }, { layout: L, mr, Rb: 55, Hb: +(process.env.HB || 90), cutOnly: !WALK, offMat: WALK, enclose: !!process.env.ENC }).mask; { const hh = [0, 0, 0, 0, 0]; for (const v of m) hh[v]++; console.log('маска 0..4:', hh.join(' ')); }
   const o = Buffer.alloc(w * h * 3 * 2);
   const col = { 0: [0, 0, 0], 1: [120, 120, 120], 2: [255, 255, 255], 3: [40, 80, 220], 4: [200, 40, 40] };
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const i = y * w + x; let c = col[m[i]];

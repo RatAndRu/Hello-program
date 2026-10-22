@@ -72,6 +72,8 @@ LIGHTCAM = bool(os.environ.get('LIGHTCAM')); SPEC = float(os.environ.get('SPEC',
 EXPO = float(os.environ.get('EXPO', 0))  # разброс автоэкспозиции между кадрами (σ лог-усиления), напр. 0.1
 TORCH = float(os.environ.get('TORCH', 0) or 0)  # фонарик (v2.1): доля комнатного света, напр. 0.25; 0 — без фонарика
 TD0 = float(os.environ.get('TD0', 360)); TOFF = [np.zeros(3)]  # TD0 — расстояние, на котором фонарик даёт яркость 1
+ROOM = float(os.environ.get('ROOM', 0))  # v2.5: стены комнаты вокруг (мм), для съёмки «с рук»
+PAL = np.random.default_rng(7).uniform(0.15, 0.9, (14, 3))
 STATIC = bool(os.environ.get('STATIC'))  # вертушка у неподвижной камеры: стол и стена неподвижны относительно камеры
 K1 = float(os.environ.get('K1', 0) or 0)  # радиальная дисторсия, напр. -0.06 (бочка)
 def render(Rm, t):
@@ -107,6 +109,16 @@ def render(Rm, t):
         wall = np.where(((np.abs(Pwx + 120) < 60) & (np.abs(Pw[..., 2] - 150) < 45))[..., None], np.array([0.3, 0.5, 0.6]), wall)  # картинка на стене
         onwall = (dfy < 0) & (tw > 0) & ((tz <= 0) | (Pfy < -260))
         base = np.where(onwall[..., None], wall, base)
+    if ROOM and not STATIC:  # v2.5: комната — круглая стена радиуса ROOM мм с разноцветными «шкафами», полками и картинками
+        a2 = d[..., 0] ** 2 + d[..., 1] ** 2 + 1e-12; b2 = o[0] * d[..., 0] + o[1] * d[..., 1]; c2 = o[0] ** 2 + o[1] ** 2 - ROOM ** 2
+        tw = (-b2 + np.sqrt(np.maximum(b2 * b2 - a2 * c2, 0))) / a2
+        Pw = o + d * tw[..., None]; ang = np.arctan2(Pw[..., 1], Pw[..., 0]); zw = Pw[..., 2]
+        pidx = np.floor((ang + np.pi) / (2 * np.pi) * 14).astype(int) % 14
+        wall = PAL[pidx] * (0.88 + 0.12 * np.sin(zw * 0.035 + pidx))[..., None]
+        wall = np.where(((zw % 380) < 28)[..., None], np.array([0.35, 0.24, 0.15]), wall)  # полки
+        wall = np.where(((np.abs(((ang * ROOM) % 520) - 260) < 90) & (np.abs(zw - 330) < 70))[..., None], PAL[(pidx + 5) % 14] * 0.6, wall)  # картинки
+        onwall = (tw > 0) & ((tz <= 0) | (np.hypot(P[..., 0], P[..., 1]) > ROOM))
+        base = np.where(onwall[..., None], wall, base)
     pl = np.where(onmat[..., None], paper, base)
     if TORCH:  # пятно фонарика на коврике и столе
         Lm = o + TOFF[0] - P; dm = np.linalg.norm(Lm, axis=-1); cz = np.clip(Lm[..., 2] / dm, 0, 1)
@@ -118,10 +130,10 @@ def render(Rm, t):
     if not NOOBJ[0]: pl = pl * np.where(sh[..., None], 0.75, 1.0)
     m = tz > 0
     best[m] = tz[m]; img[m] = pl[m]
-    if STATIC: img[onwall] = pl[onwall]; best[onwall] = tw[onwall]; m = m & ~onwall
+    if STATIC or ROOM: img[onwall] = pl[onwall]; best[onwall] = tw[onwall]; m = m & ~onwall
     bgd = best.copy()  # глубина фона (стол, коврик, стена): предмет — то, что ближе неё
     # фон-стена далеко (если луч не попал на стол)
-    img[~m & ~(onwall if STATIC else False)] = [float(v) for v in os.environ['TABLE'].split(',')] if os.environ.get('TABLE') else [0.6, 0.62, 0.65]
+    img[~m & ~(onwall if (STATIC or ROOM) else False)] = [float(v) for v in os.environ['TABLE'].split(',')] if os.environ.get('TABLE') else [0.6, 0.62, 0.65]
     ow, dw_ = o, d
     o = QR.T @ (ow - QT); d = d @ QR  # луч в систему предмета
     def hit(tt, Pn, Nn, kind, ok):
@@ -214,9 +226,11 @@ for i in range(N):
         frames_w = 120 * np.exp(-tt / 5)
     elif mode == 'turn':
         az = i * 360 / N; el = [32, 52][i % 2]; dist = 380
+        if os.environ.get('ELS'): els = [float(v) for v in os.environ['ELS'].split(',')]; el = els[i % len(els)]
     else:
         az = i * 360 / N + rng.normal(0, 3); el = 30 + 25 * (i % 3) / 2 + rng.normal(0, 2); dist = 340 + rng.normal(0, 20)
         if os.environ.get('TOPV'): el = [30, 52, 74][i % 3] + rng.normal(0, 2)  # v2.3: с кадрами почти сверху (заглянуть в кружку)
+        if os.environ.get('ELS'): els = [float(v) for v in os.environ['ELS'].split(',')]; el = els[i % len(els)] + rng.normal(0, 2)  # v2.5: свои высоты обхода, напр. ELS=8,15,22 — почти в профиль
     if os.environ.get('DIST'): dist = float(os.environ['DIST']) + rng.normal(0, 8)  # крупные планы (досъёмка для текстуры)
     a = np.radians(az); e = np.radians(el)
     cam = np.array([dist * np.cos(e) * np.sin(a), dist * np.cos(e) * np.cos(a), dist * np.sin(e)])

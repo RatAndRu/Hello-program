@@ -3,7 +3,7 @@
 import { matLayout, matRaster } from './mat.js';
 import { detectMarkers, toGray } from './detect.js';
 import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal, camAngles, fitK1, undistortPts, undistortRGBA } from './pose.js';
-import { computeMask, motionMasks, carveHull, meshFromGrid, revolveGrid, taubin, computeNormals, colorize, depthMap, cleanGrid, vesselCarve } from './recon.js';
+import { computeMask, motionMasks, tableConsistency, carveHull, meshFromGrid, revolveGrid, taubin, computeNormals, colorize, depthMap, cleanGrid, vesselCarve } from './recon.js';
 import { alignHulls, intersectHulls, framesToA } from './align.js';
 import { boxMesh, prismMesh, snapPlanes } from './shapes.js';
 import { bakeTexture, subdivideLong } from './texture.js';
@@ -14,7 +14,7 @@ import { createPool, poolSize } from './splatpool.js';
 export const PROC_W = 640;
 // рабочая ширина кадра по качеству: «Лучше» — 960 px (мельче деталь силуэта, мельче воксели)
 export const procW = (q) => (q === 'best' ? 960 : PROC_W);
-const TEX = { fast: 1024, normal: 2048, best: 4096 };
+export const TEX = { fast: 1024, normal: 2048, best: 4096 };
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 export async function decodeBlob(blob, W, dist) {
@@ -51,21 +51,39 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   const k = matLayout(job.size || 'A4', 'full').k, Rb = 55 * k, Hb = job.Hb || 90 * k;
   const Q = { fast: { N: 112, iters: 600, n0: 6000, nmax: 14000 }, normal: { N: 128, iters: 1200, n0: 8000, nmax: 20000, dIters: 600 }, best: { N: 200, iters: 2400, n0: 11000, nmax: 32000, deg: 2, dIters: 1200 } }[job.quality || 'normal'];
   const PW = procW(job.quality);
-  const A = await prepSet(job.blobs, { size: job.size, method: job.method, Hb, theme: job.theme, plates: job.plates, PW }, cb, shouldStop, log, '');
-  const good = A.good;
-  const els = good.map((f) => f.ang.el), elMax = Math.max(...els);
+  // v2.5: продолжение после вылета — с сохранённой формы (контрольная точка перед текстурой), без пересчёта формы
+  const R0 = job.resume && job.resume.stage === 'texture' ? job.resume : null;
+  let A, good, els, elMax, G, vox, frAll, bottomOk = false, M, shapeInfo = '';
+  const bt = job.bottom;
+  const shape = job.shape || 'normal';
+  function geom() { // сетка из оболочки по выбранной форме (вызывается снова после уточнения сплэтами)
+    if (shape === 'box' || shape === 'prism') { const r = shape === 'box' ? boxMesh(G) : prismMesh(G); return { M: r.mesh, info: r.info }; }
+    const GS = shape === 'revolve' ? revolveGrid(G) : G; // «сосуд» — обычная сетка с вырезанной полостью
+    let M = meshFromGrid(GS, shape === 'smooth' ? 5 : 3); taubin(M, shape === 'smooth' ? 60 : 30); computeNormals(M);
+    if (shape === 'planes') { const r = snapPlanes(M); return { M: r.mesh, info: r.info }; }
+    return { M, info: '' };
+  };
+  if (R0) {
+    ({ A, good, frAll, G, vox, M, elMax, bottomOk } = await restoreCkpt(R0, job, cb, shouldStop));
+    els = good.map((f) => f.ang.el);
+    log(`продолжаю с сохранённой формы: ${frAll.length} кадров, ${(M.idx.length / 3) | 0} треугольников — форма не пересчитывается`);
+  } else {
+  A = await prepSet(job.blobs, { size: job.size, method: job.method, Hb, theme: job.theme, plates: job.plates, PW }, cb, shouldStop, log, '');
+  good = A.good;
+  els = good.map((f) => f.ang.el); elMax = Math.max(...els);
   log(`кадров с позой: ${good.length}; высота камеры ${Math.min(...els).toFixed(0)}–${elMax.toFixed(0)}°`);
   // 4) оболочка → сетка
   cb.progress('Строю форму', 0, 'вырезаю объём');
-  const G = carveHull(good, { Rb, Hb }, Q.N, (p) => cb.progress('Строю форму', p * 0.7, 'вырезаю объём'));
+  G = carveHull(good, { Rb, Hb }, Q.N, (p) => cb.progress('Строю форму', p * 0.7, 'вырезаю объём'), { photo: job.method === 'walk' && job.photo !== false });
   await tick();
-  let vox = 0; for (const v of G.occ) vox += v;
+  vox = 0; for (const v of G.occ) vox += v;
   if (vox < 50) throw new Error('Предмет не найден над ковриком. Он стоит в центре круга? Метки видны со всех сторон?');
   if (G.motionCut > 1000) log(`верх выше листа достроен по движению предмета между кадрами; лишнего вырезано ${(G.motionCut / 1000).toFixed(1)} см³`);
+  if (G.photoCut > 1000) log(`выше листа лишнее вырезано по цвету (фон в разных кадрах разный, предмет — одинаковый): ${(G.photoCut / 1000).toFixed(1)} см³`);
+  if (G.capBridge) log(`середина высокого предмета (${(G.capBridge / 10).toFixed(1)} см) видна только на фоне стола/стены — достроена по сечениям выше и ниже; верх по фону найден`);
   if (G.capTrim) log(`срезан пустой «колпак рамки»: ${(G.capTrim / 10).toFixed(1)} см сверху (его не видно на фоне листа). Верх рамки лучше ставить чуть выше предмета — кнопки ▲▼ при съёмке`);
   // 4б) «доснять низ»: вторая съёмка, где предмет лежит на боку / вверх дном — совмещаем и пересекаем оболочки
-  let frAll = good, bottomOk = false;
-  const bt = job.bottom;
+  frAll = good;
   if (bt && bt.blobs && bt.blobs.length >= 8) {
     try {
       const B = await prepSet(bt.blobs, { size: job.size, method: bt.method || job.method, Hb: bt.Hb || Hb, theme: job.theme, plates: bt.plates, PW }, cb, shouldStop, log, 'Низ: ');
@@ -81,14 +99,12 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
         G.occ.set(occ0);
         log(`✗ низ не учтён: съёмки не совместились (совпадение ${(al.score * 100).toFixed(0)}%, осталось бы ${(keep * 100).toFixed(0)}% объёма). Предмет во второй съёмке целиком в рамке? Это тот же предмет?`);
       } else {
-        bottomOk = true; frAll = good.concat(framesToA(B.good, al.R, al.t));
+        bottomOk = true; frAll = good.concat(framesToA(B.good, al.R, al.t).map((f) => ({ ...f, bot: true, dist: B.dist })));
         log(`низ учтён: предмет во 2-й съёмке был повёрнут на ${ang.toFixed(0)}°; совпадение поверхностей ${(al.score * 100).toFixed(0)}%, ошибка ${al.rms.toFixed(1)} мм; вырезано ${((vox - v2) * G.vs ** 3 / 1000).toFixed(1)} см³ лишнего`);
         vox = v2;
       }
     } catch (e) { if (e.message === 'stopped') throw e; log('✗ низ не учтён: ' + e.message); }
   }
-  const shape = job.shape || 'normal';
-  let M, shapeInfo = '';
   if (shape === 'vessel') { // v2.3: полость внутри (кружка, ваза) — силуэты её не видят, достраиваем по горлышку и виду сверху
     const r = vesselCarve(G, good);
     if (!r.removed) shapeInfo = 'полость не построена: ' + r.reason;
@@ -99,21 +115,15 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
       if (r.cap > 500) log(`срезана «шапка» над горлышком: ${(r.cap / 1000).toFixed(1)} см³ (по ${r.capBy === 'стенка' ? 'цвету стенки' : 'сужению'})`);
     }
   }
-  const geom = () => { // сетка из оболочки по выбранной форме (вызывается снова после уточнения сплэтами)
-    if (shape === 'box' || shape === 'prism') { const r = shape === 'box' ? boxMesh(G) : prismMesh(G); return { M: r.mesh, info: r.info }; }
-    const GS = shape === 'revolve' ? revolveGrid(G) : G; // «сосуд» — обычная сетка с вырезанной полостью
-    let M = meshFromGrid(GS, shape === 'smooth' ? 5 : 3); taubin(M, shape === 'smooth' ? 60 : 30); computeNormals(M);
-    if (shape === 'planes') { const r = snapPlanes(M); return { M: r.mesh, info: r.info }; }
-    return { M, info: '' };
-  };
   { const g = geom(); M = g.M; if (g.info) shapeInfo = g.info; }
   if (shape !== 'normal') log(`форма: ${SHAPES[shape] || shape}${shapeInfo ? ' — ' + shapeInfo : ''}`);
   cb.progress('Строю форму', 1, `${(M.idx.length / 3) | 0} треугольников`);
   await tick();
+  } // конец «не продолжение»
   // 5) цвет вершин (кадры обеих съёмок: вторая даёт цвет дна)
   const prepColor = (M) => { if (job.texture !== false && (shape === 'box' || shape === 'prism' || shape === 'planes')) M = subdivideLong(M, 6); // большие грани — мельче, чтобы лоскут влезал в кадр
     colorize(M, frAll, (p) => cb.progress('Раскрашиваю', p, '')); return M; };
-  M = prepColor(M);
+  if (!R0) M = prepColor(M);
   await tick();
   const M0 = M; // сетка без текстуры — для сплэтов
   // «гибрид» (сетка + сплэты): сплэты видят вогнутости, которых не видят силуэты, — оболочку уточняем по ним, а текстуру
@@ -189,7 +199,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     // 5в) отдельная текстура: лучший кадр на каждый кусок поверхности, в полном разрешении
     if (job.texture !== false && job.mode !== 'splat') {
       try {
-        const r = await bakeTexture(M, texFrames, { size: TEX[job.quality || 'normal'], decode: (b) => decodeBlob(b, 0, A.dist), encode: encodeJPEG, onProgress: (p, t) => cb.progress('Текстура', p, t) });
+        const r = await bakeTexture(M, texFrames, { size: job.texSize || TEX[job.quality || 'normal'], decode: (b) => decodeBlob(b, 0, A.dist), encode: encodeJPEG, onProgress: (p, t) => cb.progress('Текстура', p, t) });
         if (r.tex) { M = r.mesh; tex = r.tex; texInfo = r.info; log(`текстура ${r.T}×${r.T}: ${r.info.charts} лоскутов из ${r.info.frames} кадров${nClose ? ' (с крупными планами)' : ''}, масштаб ${(r.info.scale * 100).toFixed(0)}% от кадра`); }
         // 5г) свет, рельеф, материал, текстура без теней — фотометрия по тем же кадрам
         if (r.tex && job.surface !== false) {
@@ -211,11 +221,17 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     }
     return M;
   };
-  if (depthPass && !shouldStop()) {
+  if (depthPass && !R0 && !shouldStop()) {
     const t1 = Date.now();
     const { S, views } = await trainSplats({ W: 320, iters: job.depthIters ?? Q.dIters, n0: 6000, nmax: 14000, label: 'Глубина по сплэтам', quiet: true });
     if (!shouldStop()) { const MH = await carveBySplats(S, views); if (MH) M = prepColor(MH); }
     log(`уточнение формы по сплэтам: ${((Date.now() - t1) / 1000).toFixed(0)} с`);
+  }
+  // контрольная точка: форма готова — если на текстуре приложение вылетит, продолжим отсюда (и сетка без текстуры уже сохранена)
+  if (!hyb && !R0 && job.mode !== 'splat') {
+    if (cb.partial) { const PM = { pos: Float32Array.from(M.pos), nrm: Float32Array.from(M.nrm), col: M.col, idx: M.idx }; scalePlain(PM, job.scale); cb.partial({ mesh: PM, stats: { frames: job.blobs.length, used: frAll.length, focal: A.rf.f, elMax, hullVol: vox * G.vs ** 3, t: (Date.now() - t0) / 1000 }, note: 'текстура не досчиталась — сохранена форма с цветом вершин' }); }
+    if (job.ckptHook) job.ckptHook(packCkpt({ stage: 'texture', sig: '', A, good, frAll, G, vox, M, elMax, bottomOk })); // для тестов
+    if (job.ckptId) await saveCkpt(job.ckptId, { stage: 'texture', sig: job.ckptSig || '', A, good, frAll, G, vox, M, elMax, bottomOk }).then(() => log('форма сохранена — если приложение закроется, продолжу с текстуры'), (e) => log('контрольная точка не сохранилась: ' + e.message));
   }
   if (!hyb) M = await texturize(M);
   const meshOf = (M) => ({ pos: M.pos, nrm: M.nrm, col: M.col, idx: M.idx, ...(tex ? { uv: M.uv, tex, ...(M.detail ? { detail: M.detail } : {}) } : {}), ...(pbr ? { pbr, tan: M.tan } : {}) });
@@ -336,6 +352,11 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   if (clean.length) log(`${tag}кадр фона: ${clean.length} шт., совпал с ${withPlate} кадрами из ${good.length} — пространство над предметом вырезано и по фону за кругом`);
   if (nTrust) log(`${tag}предмет целиком на листе в ${nTrust} кадрах из ${good.length} — по ним срезано лишнее над предметом`);
   else if (!withPlate) log(`${tag}ни в одном кадре предмет не лежит целиком на листе — «шапку» над ним срезать нечем: оборот повыше (от ~50°), коврик A3 или «Фон»`);
+  // с рук: стол за листом — та же точка стола в других кадрах (срезает «колпак» над предметом, снятым почти в профиль)
+  if (!turn && cfg.table !== false) {
+    const tc = tableConsistency(good, { Rb });
+    if (tc.marked > 0.002 * good.length * w * h) log(`${tag}стол за листом узнан по другим кадрам: ${(100 * tc.marked / (good.length * w * h)).toFixed(1)}% пикселей — по ним срезается лишнее над предметом`);
+  }
   // вертушка: что двигалось между кадрами с одного места камеры — «улики» предмета для верха выше листа
   if (turn) {
     const mo = motionMasks(good);
@@ -388,4 +409,43 @@ function surfaceLog(I) {
   const rm = I.relief && I.relief.mode, rf = Array.isArray(I.refine) ? I.refine[0] : null;
   return (rf && rf.found ? `поверхность уточнена по ${rf.found} точкам (в среднем на ${rf.meanMM} мм внутрь оболочки); ` : '') + (L ? `свет: лампа ${el.toFixed(0)}° над горизонтом${L.rotates ? ' (стоит в комнате, предмет вертится)' : ''}, рассеянного ${Math.round(L.ambient * 100)}%; ` : '') +
     `рельеф ${rm === 'none' ? 'выключен' : rm === 'photo' ? 'по смене света' : rm === 'torch' ? `по фонарику (фотометрия${I.torch ? `, комнатного света ${Math.round(I.torch.alpha / (1 + I.torch.alpha) * 100)}%` : ''})` : 'по светотени снимков (приблизительный)'}${rm === 'none' ? '' : `, перепад ±${I.heightRange} мм`}; материал (авто): ${mats.join(', ') || 'мат'} — можно поменять кнопками; текстура без бликов и теней`;
+}
+
+// ---------- v2.5: контрольная точка перед текстурой (продолжение после вылета) ----------
+function scalePlain(M, sc) {
+  const sx = +(sc && sc[0]) || 1, sy = +(sc && sc[1]) || 1, sz = (sx + sy) / 2; if (sx === 1 && sy === 1) return;
+  const P = M.pos; for (let i = 0; i < P.length; i += 3) { P[i] *= sx; P[i + 1] *= sy; P[i + 2] *= sz; }
+}
+const frameKeys = ['w', 'h', 'K', 'R', 't', 'rms', 'srcW', 'srcH', 'idx', 'ang', 'bot', 'dist', 'trusted'];
+export function packCkpt(c) {
+  const fr = c.frAll.map((f) => { const o = {}; for (const k of frameKeys) if (f[k] !== undefined) o[k] = f[k]; o.mask = f.mask || null; return o; });
+  const occ = new Uint8Array(c.G.occ.length); for (let i = 0; i < occ.length; i++) occ[i] = c.G.occ[i] > 0.5 ? 1 : 0;
+  return { v: 1, stage: c.stage, sig: c.sig, t: Date.now(), nGood: c.good.length, frames: fr,
+    A: { dist: c.A.dist || null, f: c.A.rf.f, withPlate: c.A.withPlate || 0, size: c.A.L && c.A.L.size },
+    G: { occ, nx: c.G.nx, ny: c.G.ny, nz: c.G.nz, vs: c.G.vs, origin: c.G.origin, Rb: c.G.Rb, Hb: c.G.Hb },
+    vox: c.vox, elMax: c.elMax, bottomOk: !!c.bottomOk, M: { pos: c.M.pos, nrm: c.M.nrm, col: c.M.col, idx: c.M.idx } };
+}
+async function saveCkpt(id, c) {
+  if (typeof indexedDB === 'undefined') return;
+  const store = await import('./store.js');
+  await store.putFrames(id + ':ckpt', packCkpt(c));
+}
+async function restoreCkpt(R0, job, cb, shouldStop) {
+  const turn = job.method === 'turn', L = matLayout(job.size || 'A4', turn ? 'round' : 'full');
+  const frAll = [];
+  for (let k = 0; k < R0.frames.length; k++) {
+    if (shouldStop()) throw new Error('stopped');
+    const s = R0.frames[k], blob = s.bot ? job.bottom && job.bottom.blobs && job.bottom.blobs[s.idx] : job.blobs[s.idx];
+    if (!blob) throw new Error('кадры не совпадают с сохранённой формой');
+    const d = await decodeBlob(blob, s.w, s.bot ? s.dist : R0.A.dist);
+    frAll.push({ ...s, rgba: d.rgba, srcW: d.srcW, srcH: d.srcH, blob, mask: s.mask || undefined });
+    cb.progress('Продолжаю: кадры', (k + 1) / R0.frames.length, `${k + 1} из ${R0.frames.length}`);
+    if (k % 3 === 2) await tick();
+  }
+  const g = R0.G, occ = new Float32Array(g.occ.length); for (let i = 0; i < occ.length; i++) occ[i] = g.occ[i];
+  const G = { ...g, occ };
+  const good = frAll.slice(0, R0.nGood);
+  const A = { L, dist: R0.A.dist, rf: { f: R0.A.f }, withPlate: R0.A.withPlate, good };
+  const M = { pos: R0.M.pos, nrm: R0.M.nrm, col: R0.M.col, idx: R0.M.idx };
+  return { A, good, frAll, G, vox: R0.vox, M, elMax: R0.elMax, bottomOk: R0.bottomOk };
 }

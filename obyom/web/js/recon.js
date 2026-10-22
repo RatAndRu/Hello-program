@@ -234,7 +234,9 @@ export function computeMask(fr, ctx) {
         for (let dr = -1; dr <= 1; dr++) for (let dg = -1; dg <= 1; dg++) for (let db = -1; db <= 1; db++) { const R1 = R0 + dr, G1 = G0 + dg, B1 = B0 + db; if (R1 < 0 || G1 < 0 || B1 < 0 || R1 > 15 || G1 > 15 || B1 > 15) continue; s2 += hist[(R1 << 8) | (G1 << 4) | B1]; }
         return s2 >= thr; };
       const vis = new Uint8Array(n), st = new Int32Array(n); let sp = 0;
-      for (let i = 0; i < n; i++) if (!inCyl[i] && des[i] < 0) { vis[i] = 1; st[sp++] = i; }
+      // v2.5: затравка — весь фон за листом, не только вне рамки: «чистка кромки» (peel) оставляет по краю рамки кольцо
+      // фона в 1 пиксель, и заливка от «вне рамки» через него не проходила — «слабого фона» внутри рамки не было вовсе
+      for (let i = 0; i < n; i++) if (des[i] < 0 && (!inCyl[i] || mask[i] === 0)) { vis[i] = 1; st[sp++] = i; }
       const step = ctx.offMatStep ?? 10;
       // перепад яркости (Собель) без размытия: заливка не переходит даже через слабый край
       const gr = (k) => { const x = k % w, y = (k / w) | 0; if (x < 1 || y < 1 || x >= w - 1 || y >= h - 1) return 0;
@@ -250,6 +252,22 @@ export function computeMask(fr, ctx) {
           const d = Math.abs(bl[k * 3] - bl[j * 3]) + Math.abs(bl[k * 3 + 1] - bl[j * 3 + 1]) + Math.abs(bl[k * 3 + 2] - bl[j * 3 + 2]);
           if (d > step || gr(k) > gmax || !okc(k)) continue;
           vis[k] = 1; mask[k] = 3; st[sp++] = k;
+        }
+      }
+      // v2.5: и без заливки — по цвету: цвет частый у фона этого кадра (вне рамки) и редкий у предмета (на листе, «точно предмет»).
+      // Узорчатый стол заливка не проходит (перепады яркости), а по цвету он узнаётся. Режет только большинством кадров (слабый фон).
+      if (ctx.colorWeak !== false) {
+        const ho = new Uint32Array(4096); let no = 0;
+        for (let i = 0; i < n; i++) if (mask[i] === 2 && des[i] >= 0) { ho[q(i)]++; no++; }
+        if (no > 150) {
+          const nbh = (H, c) => { const R0 = c >> 8, G0 = (c >> 4) & 15, B0 = c & 15; let s2 = 0; for (let dr = -1; dr <= 1; dr++) for (let dg = -1; dg <= 1; dg++) for (let db = -1; db <= 1; db++) { const R1 = R0 + dr, G1 = G0 + dg, B1 = B0 + db; if (R1 < 0 || G1 < 0 || B1 < 0 || R1 > 15 || G1 > 15 || B1 > 15) continue; s2 += H[(R1 << 8) | (G1 << 4) | B1]; } return s2; };
+          const cache = new Int8Array(4096).fill(-1);
+          for (let i = 0; i < n; i++) {
+            if (mask[i] !== 1 || des[i] >= 0 || !inCyl[i]) continue;
+            const c = q(i); let v = cache[c];
+            if (v < 0) { const pb = nbh(hist, c) / seeds, po = nbh(ho, c) / no; v = cache[c] = pb > 0.002 && pb > 10 * po ? 1 : 0; }
+            if (v) mask[i] = 3;
+          }
         }
       }
       // отступ 2 пикселя от «не фона»: у самого края предмета слабым фоном не считаем
@@ -524,13 +542,105 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   // Вертушка: пространство, видимое только на фоне стола/стены, проверяем «движением» (что крутится — предмет)
   const mc = opt.motion === false ? null : motionCarve(occ, nx, ny, nz, vs, ox, oy, oz, zg, frames);
   if (mc && mc.removed) keepLargest(occ, nx, ny, nz, zg);
-  const capTrim = opt.capTrim === false ? 0 : trimCap(occ, nx, ny, nz, vs, box.Rb, ox, oy, zg, frames, oz);
+  // v2.5 «с рук»: пространство, видимое только на фоне пёстрого стола, чистим по согласованности цвета (до среза колпака)
+  const pc = opt.photo ? photoCarve({ occ, nx, ny, nz, vs, origin: [ox, oy, oz] }, frames, { onProgress }) : null;
+  if (pc && pc.removed) keepLargest(occ, nx, ny, nz, zg);
+  const capTrim = opt.capTrim === false ? 0 : trimCap(occ, nx, ny, nz, vs, box.Rb, ox, oy, zg, frames, oz, !!opt.photo);
   if (capTrim) keepLargest(occ, nx, ny, nz, zg);
   // закрытие: заполняет мелкие ямки и щели от бликов; затем заливаем пустоты внутри
   const cr = opt.close ?? Math.max(1, Math.round(1.2 / vs));
   if (cr > 0) closeGrid(occ, nx, ny, nz, cr);
   fillVoids(occ, nx, ny, nz);
-  return { occ, nx, ny, nz, vs, origin: [ox, oy, oz], capTrim: capTrim * vs, capExt: trimCap.lastExt || 0, motionCut: mc ? mc.removed * vs ** 3 : 0, Rb: box.Rb, Hb: box.Hb };
+  return { occ, nx, ny, nz, vs, origin: [ox, oy, oz], capTrim: capTrim * vs, capExt: trimCap.lastExt || 0, capBridge: trimCap.lastBridge || 0, photoCut: pc ? pc.removed : 0, motionCut: mc ? mc.removed * vs ** 3 : 0, Rb: box.Rb, Hb: box.Hb };
+}
+// ---------- v2.5: вырезание по согласованности цвета (space carving) ----------
+// Снимая «с рук», выше листа предмет виден только на фоне стола/стены. Если фон пёстрый, маска его не узнаёт, и над
+// предметом остаётся цилиндр рамки. Но у точки на поверхности предмета цвет во всех кадрах, где она видна, одинаков, а
+// пустая точка в каждом кадре «показывает» другой кусок фона. Снаружи внутрь: видимость — по z-буферу текущей оболочки
+// (она всегда шире предмета, поэтому видимое по ней видно и на самом деле), несогласованные поверхностные воксели
+// вырезаем, повторяем. Воксели, которые большинство кадров видят на фоне листа (маска 2), не трогаем — там силуэт точен.
+export function photoCarve(G, frames, opt = {}) {
+  const { occ, nx, ny, nz, vs } = G, [ox, oy, oz] = G.origin, S = nx * ny;
+  const F = frames.filter((f) => f.rgba && f.mask && f.R);
+  if (F.length < 6) return { removed: 0, iters: 0 };
+  const sc = 2, zb = F.map((f) => ({ w: Math.ceil(f.w / sc), h: Math.ceil(f.h / sc), d: new Float32Array(Math.ceil(f.w / sc) * Math.ceil(f.h / sc)) }));
+  const state = new Uint8Array(occ.length); // 0 — не оценён, 1 — можно резать, 2 — защищён
+  const agreeFrac = opt.agree ?? 0.7, maxIt = opt.iters ?? 80, zg = Math.max(1, Math.ceil(4 / vs)), minV = opt.minViews ?? 4;
+  const E = (x, y, z) => x < 0 || y < 0 || x >= nx || y >= ny || z >= nz || occ[(z * ny + y) * nx + x] <= 0.5;
+  const NV = F.length, cr = new Int16Array(NV * 3), pu = new Int32Array(NV), pv = new Int32Array(NV), med = [0, 0, 0], tmp = new Int16Array(NV), dv = new Float32Array(NV);
+  let tol = 20, tolInfo = null;
+  let removed = 0, it = 0;
+  for (; it < maxIt; it++) {
+    const surf = [];
+    for (let z = zg; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+      const i = (z * ny + y) * nx + x; if (occ[i] <= 0.5) continue;
+      if (E(x - 1, y, z) || E(x + 1, y, z) || E(x, y - 1, z) || E(x, y + 1, z) || E(x, y, z + 1) || E(x, y, z - 1)) surf.push(i);
+    }
+    // z-буферы (полразмера кадра), воксель — квадрат по его размеру на экране
+    for (let k = 0; k < NV; k++) {
+      const f = F[k], R = f.R, t = f.t, K = f.K, B = zb[k], D = B.d; D.fill(Infinity);
+      for (const i of surf) {
+        const x = i % nx, y = ((i / nx) | 0) % ny, z = (i / S) | 0, X = ox + x * vs, Y = oy + y * vs, Z = oz + z * vs;
+        const cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
+        const u = (K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx) / sc, v = (K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy) / sc;
+        const r = 0.5 * K.fx * vs / cz / sc + 0.5;
+        const u0 = Math.max(0, Math.floor(u - r)), u1 = Math.min(B.w - 1, Math.floor(u + r)), v0 = Math.max(0, Math.floor(v - r)), v1 = Math.min(B.h - 1, Math.floor(v + r));
+        for (let yy = v0; yy <= v1; yy++) for (let xx = u0; xx <= u1; xx++) { const q = yy * B.w + xx; if (cz < D[q]) D[q] = cz; }
+      }
+    }
+    // сбор: видимые кадры воксела (z-буфер), голоса «фон», цвета; dv — отклонения от медианы (мин. по окну 3×3)
+    const gather = (i) => {
+      const x = i % nx, y = ((i / nx) | 0) % ny, z = (i / S) | 0, X = ox + x * vs, Y = oy + y * vs, Z = oz + z * vs;
+      let n = 0, n2 = 0, nb = 0;
+      for (let k = 0; k < NV; k++) {
+        const f = F[k], R = f.R, t = f.t, K = f.K;
+        const cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
+        const uf = K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx, vf = K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy;
+        const u = uf | 0, v = vf | 0; if (u < 1 || v < 1 || u >= f.w - 1 || v >= f.h - 1) continue;
+        const B = zb[k]; if (cz > B.d[((v / sc) | 0) * B.w + ((u / sc) | 0)] + 1.5 * vs) continue; // заслонён
+        const m = f.mask[v * f.w + u]; if (m === 4) continue;
+        if (m === 2) n2++;
+        if (m === 0 || m === 3) { nb++; continue; } // за точкой узнан фон (стена/небо) — голос «пусто», цвет не нужен
+        const p = (v * f.w + u) * 4; cr[n * 3] = f.rgba[p]; cr[n * 3 + 1] = f.rgba[p + 1]; cr[n * 3 + 2] = f.rgba[p + 2]; pu[n] = u; pv[n] = v; tmp[n] = k; n++;
+      }
+      if (n >= 2) {
+        for (let c = 0; c < 3; c++) { const a_ = []; for (let j = 0; j < n; j++) a_.push(cr[j * 3 + c]); a_.sort((p_, q_) => p_ - q_); med[c] = a_[n >> 1]; }
+        for (let j = 0; j < n; j++) {
+          const f = F[tmp[j]], w = f.w; let best = 1e9;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) { const p = ((pv[j] + dy) * w + pu[j] + dx) * 4, d = Math.abs(f.rgba[p] - med[0]) + Math.abs(f.rgba[p + 1] - med[1]) + Math.abs(f.rgba[p + 2] - med[2]); if (d < best) best = d; }
+          dv[j] = best;
+        }
+      }
+      return { n, n2, nb, nt: n + nb };
+    };
+    if (it === 0) { // допуск по самой съёмке: насколько согласован низ предмета, видимый на фоне листа (точно предмет)
+      const ds = [];
+      for (const i of surf) {
+        const g = gather(i);
+        if (g.nt >= 3) state[i] = g.n2 >= 2 && g.n2 >= 0.3 * g.nt ? 2 : 1;
+        if (state[i] === 2 && g.n >= 3) { const a_ = Array.from(dv.subarray(0, g.n)).sort((p_, q_) => p_ - q_); ds.push(a_[Math.floor(g.n * 0.5)]); }
+      }
+      ds.sort((p_, q_) => p_ - q_);
+      const d0 = ds.length >= 50 ? ds[Math.floor(ds.length * 0.5)] : 16;
+      tol = opt.tol ?? Math.max(10, Math.min(40, 1.3 * d0 + 4));
+      tolInfo = { d0, tol, nRef: ds.length };
+    }
+    const kill = [];
+    for (const i of surf) {
+      if (state[i] === 2) continue;
+      const g = gather(i), nt = g.nt;
+      if (!state[i] && nt >= 3) state[i] = g.n2 >= 2 && g.n2 >= 0.3 * nt ? 2 : 1;
+      if (state[i] !== 1 || nt < minV) continue;
+      if (g.n < 2) { if (g.nb >= minV) kill.push(i); continue; }
+      let agree = 0; for (let j = 0; j < g.n; j++) if (dv[j] < tol) agree++;
+      if (agree < agreeFrac * nt) kill.push(i); // согласных по цвету — меньшинство всех видевших
+    }
+    for (const i of kill) occ[i] = 0;
+    removed += kill.length;
+    if (opt.onProgress) opt.onProgress(Math.min(1, 0.7 + 0.3 * it / maxIt));
+    if (kill.length < Math.max(10, surf.length * 0.0005)) break;
+  }
+  return { removed: removed * vs ** 3, iters: it + 1, tol: tolInfo };
 }
 // ---------- «Сосуд»: полость внутри (кружка, ваза, стакан) ----------
 // Силуэты полость не видят никогда — снаружи она закрыта стенкой. Достраиваем: контур полости = верхний срез,
@@ -644,6 +754,54 @@ export function vesselCarve(G, frames, opt = {}) {
 // высокого предмета, который ни в одном кадре не виден на фоне листа.
 // Кадры группируются по положению камеры (высота и расстояние до оси), так что перестановка держателя
 // между оборотами учитывается: у каждой позиции свой фон.
+// v2.5: «стол за листом» (съёмка с рук). Стол — плоскость z=0, как и коврик. Пиксель «неизвестно» за листом, чей луч
+// упирается в стол, сравниваем с той же точкой стола в других кадрах, где она заведомо открыта (там за рамкой, фон 0):
+// совпал рисунок (корреляция окна 5×5 на плоскости стола) — здесь тоже стол, «слабый фон» (3). Предмет, заслонивший стол,
+// в разных кадрах заслоняет разные его точки — совпадения не будет. Так срезается «колпак» над высоким предметом,
+// снятым почти в профиль, когда верх виден только на фоне стола (раньше колпак срезался вслепую — вместе с верхом).
+export function tableConsistency(frames, opt = {}) {
+  const Rb = opt.Rb || 55, rMax = opt.rMax ?? 2500, R = 2, NP = (2 * R + 1) ** 2, stride = opt.stride ?? 2;
+  const gr = frames.map((f) => { const g = new Uint8Array(f.w * f.h); for (let i = 0; i < g.length; i++) g[i] = (77 * f.rgba[i * 4] + 150 * f.rgba[i * 4 + 1] + 29 * f.rgba[i * 4 + 2]) >> 8; return g; });
+  const C = frames.map((f) => { const R_ = f.R, t = f.t; return [-(R_[0] * t[0] + R_[3] * t[1] + R_[6] * t[2]), -(R_[1] * t[0] + R_[4] * t[1] + R_[7] * t[2]), -(R_[2] * t[0] + R_[5] * t[1] + R_[8] * t[2])]; });
+  const proj = (f, X, Y, out) => { const R_ = f.R, t = f.t, K = f.K, cz = R_[6] * X + R_[7] * Y + t[2]; if (cz <= 1) return false;
+    out[0] = K.fx * (R_[0] * X + R_[1] * Y + t[0]) / cz + K.cx - 0.5; out[1] = K.fy * (R_[3] * X + R_[4] * Y + t[1]) / cz + K.cy - 0.5;
+    return out[0] >= 1 && out[1] >= 1 && out[0] < f.w - 2 && out[1] < f.h - 2; };
+  const samp = (g, w, x, y) => { const x0 = x | 0, y0 = y | 0, a = x - x0, b = y - y0, i = y0 * w + x0; return (g[i] * (1 - a) + g[i + 1] * a) * (1 - b) + (g[i + w] * (1 - a) + g[i + w + 1] * a) * b; };
+  let marked = 0, tested = 0; const q = [0, 0], PX = new Float32Array(NP * 2), A = new Float32Array(NP), B = new Float32Array(NP);
+  for (let i = 0; i < frames.length; i++) {
+    const f = frames[i], { w, h, K, mask } = f, R_ = f.R, Ci = C[i], g = gr[i], add = [];
+    for (let y = R + 1; y < h - R - 1; y += stride) for (let x = R + 1; x < w - R - 1; x += stride) {
+      const p = y * w + x; if (mask[p] !== 1) continue;
+      // точки стола под пикселями окна 5×5
+      let ok = true;
+      for (let dy = -R, k = 0; dy <= R && ok; dy++) for (let dx = -R; dx <= R; dx++, k++) {
+        const cx = (x + dx + 0.5 - K.cx) / K.fx, cy = (y + dy + 0.5 - K.cy) / K.fy;
+        const ddx = R_[0] * cx + R_[3] * cy + R_[6], ddy = R_[1] * cx + R_[4] * cy + R_[7], ddz = R_[2] * cx + R_[5] * cy + R_[8];
+        if (ddz > -1e-4) { ok = false; break; } const s_ = -Ci[2] / ddz, X = Ci[0] + ddx * s_, Y = Ci[1] + ddy * s_;
+        if (X * X + Y * Y < (1.3 * Rb) ** 2 || X * X + Y * Y > rMax * rMax) { ok = false; break; }
+        PX[k * 2] = X; PX[k * 2 + 1] = Y; A[k] = g[(y + dy) * w + x + dx];
+      }
+      if (!ok) continue;
+      let ma = 0; for (let k = 0; k < NP; k++) ma += A[k]; ma /= NP; let va = 0; for (let k = 0; k < NP; k++) { A[k] -= ma; va += A[k] * A[k]; }
+      if (va / NP < 16) continue; // гладкий стол — тут работает заливка по цвету
+      tested++;
+      let agree = 0, views = 0;
+      for (let j = 0; j < frames.length && views < 8; j++) {
+        if (j === i) continue; const fj = frames[j];
+        if (!proj(fj, PX[2 * (NP >> 1)], PX[2 * (NP >> 1) + 1], q)) continue;
+        if (fj.mask[Math.round(q[1]) * fj.w + Math.round(q[0])] !== 0) continue; // там точка стола может быть заслонена
+        let okj = true; for (let k = 0; k < NP; k++) { if (!proj(fj, PX[k * 2], PX[k * 2 + 1], q)) { okj = false; break; } B[k] = samp(gr[j], fj.w, q[0], q[1]); }
+        if (!okj) continue;
+        let mb = 0; for (let k = 0; k < NP; k++) mb += B[k]; mb /= NP; let vb = 0, ab = 0; for (let k = 0; k < NP; k++) { const b = B[k] - mb; vb += b * b; ab += A[k] * b; }
+        views++; if (vb / NP > 8 && ab / Math.sqrt(va * vb) > (opt.ncc ?? 0.7)) agree++;
+      }
+      if (views >= 2 && agree >= 2 && agree >= 0.6 * views) add.push(p);
+    }
+    // шаг 2 пикселя: метим и соседей по сетке
+    for (const p of add) { const x = p % w, y = (p / w) | 0; for (let dy = 0; dy < stride; dy++) for (let dx = 0; dx < stride; dx++) { const r = (y + dy) * w + x + dx; if (y + dy < h && x + dx < w && mask[r] === 1) { mask[r] = 3; marked++; } } }
+  }
+  return { tested, marked };
+}
 export function motionMasks(frames, opt = {}) {
   const tau = opt.tau ?? 26, minG = opt.minGroup ?? 8, groups = [];
   for (const f of frames) {
@@ -697,7 +855,7 @@ export function motionMasks(frames, opt = {}) {
 }
 // после пересечения с «низом»: убрать обрывки (оставить стоящее на столе) и залить пустоты
 export function cleanGrid(G) { const zg = Math.max(1, Math.ceil(3 / G.vs)); keepLargest(G.occ, G.nx, G.ny, G.nz, zg); fillVoids(G.occ, G.nx, G.ny, G.nz); return G; }
-function trimCap(occ, nx, ny, nz, vs, Rb, ox, oy, zg, frames, oz) {
+function trimCap(occ, nx, ny, nz, vs, Rb, ox, oy, zg, frames, oz, soft = false) {
   const ring = [], r0 = (Rb - 2.2 * vs) ** 2, r1 = Rb * Rb;
   for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { const X = ox + x * vs, Y = oy + y * vs, d = X * X + Y * Y; if (d > r0 && d <= r1) ring.push(y * nx + x); }
   if (!ring.length) return 0;
@@ -709,6 +867,32 @@ function trimCap(occ, nx, ny, nz, vs, Rb, ox, oy, zg, frames, oz) {
   if (z < zg + 2) return 0; // «предмет шире рамки» до самого низа — не трогаем
   let zt = nz - 1;
   for (; zt > z; zt--) { let any = false; for (let i = 0; i < nx * ny && !any; i++) any = occ[zt * nx * ny + i] > 0.5; if (any) break; }
+  // v2.5: «мост». Над полосой колпака может стоять настоящий верх предмета: там фон (стена, небо) узнан, и форма уже
+  // вырезана — узкая, стенок рамки не касается. Тогда полоса — середина предмета, а не крышка: вместо среза всего выше z
+  // заменяем полосу сечениями сверху и снизу (их объединение, чуть расширенное), верх оставляем.
+  trimCap.lastBridge = 0;
+  { const S = nx * ny, area = (q) => { let a = 0; for (let i = 0; i < S; i++) a += occ[q * S + i] > 0.5 ? 1 : 0; return a; };
+    let disc = 0; for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { const X = ox + x * vs, Y = oy + y * vs; if (X * X + Y * Y <= Rb * Rb) disc++; }
+    // «с рук» (soft): форма выше полосы уже вырезана по цвету — достаточно, что это не сплошной круг рамки
+    let za = 0, good = 0, zTop = 0;
+    for (const [rMax, aMax, rag] of soft ? [[0.1, 0.6, nz], [0.5, 0.9, Math.round(6 / vs)]] : [[0.1, 0.6, nz]]) {
+      za = zr + 1; while (za <= zt && za - zr <= rag && rf(za) >= rMax) za++; // рваный край над полосой
+      good = 0; zTop = za - 1;
+      for (let q = za; q <= zt; q++) { const a = area(q); if (!a) break; if (rf(q) < rMax && a < aMax * disc) { good++; zTop = q; } else break; }
+      if (good * vs >= 10) break;
+    }
+    if (good * vs >= 10 && za <= zt) {
+      const Sa = new Uint8Array(S), Sb = new Uint8Array(S);
+      for (let i = 0; i < S; i++) { Sa[i] = occ[za * S + i] > 0.5 ? 1 : 0; Sb[i] = z >= 0 && occ[z * S + i] > 0.5 ? 1 : 0; }
+      const U = new Uint8Array(S); for (let i = 0; i < S; i++) U[i] = Sa[i] | Sb[i];
+      const D = new Uint8Array(S);
+      for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { let v = 0; for (let dy = -1; dy <= 1 && !v; dy++) for (let dx = -1; dx <= 1 && !v; dx++) { const xx = x + dx, yy = y + dy; if (xx >= 0 && yy >= 0 && xx < nx && yy < ny && U[yy * nx + xx]) v = 1; } D[y * nx + x] = v; }
+      for (let q = z + 1; q < za; q++) for (let i = 0; i < S; i++) if (!D[i]) occ[q * S + i] = 0;
+      for (let q = zTop + 1; q <= zt; q++) occ.fill(0, q * S, (q + 1) * S); // над верхом — мусор
+      trimCap.lastBridge = (za - z - 1) * vs; trimCap.lastExt = 0;
+      return 0;
+    }
+  }
   // Высокий предмет: его верх тоже ни разу не виден на фоне листа и выглядит как «колпак». Если в кадрах там есть
   // «движение» (крутящийся предмет на неподвижном фоне), продолжаем предмет вверх, пока движение есть:
   // сечение — как у последнего надёжного слоя, сужаясь там, где движущийся силуэт уже.
