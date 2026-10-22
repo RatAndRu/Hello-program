@@ -214,6 +214,33 @@ def _run_uistest(report_path: str | None) -> int:
                           raw=True)
                 check("своя процедурная текстура", png[:8] == b"\x89PNG\r\n\x1a\n",
                       f"{len(png)} байт")
+                # 0.10: песочница текстур, рельеф, спайка/отсечение, облегчение
+                check("песочница генеративных текстур",
+                      b'id="tex-modal"' in html and b'id="tex-big"' in html
+                      and b'id="tex-relief"' in html and b'id="tex-apply"' in html)
+                check("кнопка «облегчить» в списке объектов",
+                      b'id="objects-optimize"' in html)
+                from urllib.parse import quote
+                relief_png = get("/api/texture?kind=" + quote("своя")
+                                 + "&pattern=" + quote("камень")
+                                 + "&color1=%238a5a2b&color2=%23d9c9a8&relief=0.6", raw=True)
+                check("текстура с рельефом", relief_png[:8] == b"\x89PNG\r\n\x1a\n",
+                      f"{len(relief_png)} байт")
+                normal_png = get("/api/texture?kind=" + quote("своя")
+                                 + "&pattern=" + quote("камень")
+                                 + "&relief=0.6&normal=1", raw=True)
+                check("карта нормалей к текстуре",
+                      normal_png[:8] == b"\x89PNG\r\n\x1a\n", f"{len(normal_png)} байт")
+                welded = post("/api/build", {"script": (
+                    "ц = cylinder radius=30 height=80 segments=96\n"
+                    "т = torus major=34 minor=8 segments=96\n"
+                    "т = place [т] at=[34,0,70] align=center\n"
+                    "р = trim [т, ц]\nк = weld [ц, р]\n")})
+                check("отсечение и спайка",
+                      welded.get("ok") is True
+                      and any(o.get("name") == "к" for o in welded.get("objects", [])))
+                apple = get("/api/example?key=apple")
+                check("пример «Яблоко»", "яблоко" in (apple.get("script") or "").lower())
                 exported = post("/api/export", {"format": "glb"})
                 downloads = str(Path.home() / "Downloads")
                 check("экспорт в «Загрузки»",

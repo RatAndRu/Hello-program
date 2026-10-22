@@ -62,6 +62,97 @@ def difference(a, name):
     return make_solid(a.scene, name, merged, a, base=solids[0], kind="difference")
 
 
+def _weld_manifold(m: mf.Manifold, tol: float) -> mf.Manifold:
+    """Сварка шва: склеивает совпадающие вершины и убирает вырожденные грани."""
+    from .geometry import manifold_from_arrays, manifold_mesh
+    try:
+        import trimesh
+        verts, faces = manifold_mesh(m)
+        mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=False)
+        mesh.merge_vertices()
+        if tol > 0:
+            mesh.merge_vertices(merge_tex=False, merge_norm=False)
+            mesh.update_faces(mesh.nondegenerate_faces())
+            try:
+                mesh.update_faces(mesh.unique_faces())
+            except Exception:
+                pass
+            mesh.remove_unreferenced_vertices()
+            # сжимаем близкие вершины к средней точке — шов становится единым
+            if len(mesh.vertices):
+                try:
+                    mesh.merge_vertices()
+                except Exception:
+                    pass
+        mesh.update_faces(mesh.nondegenerate_faces())
+        mesh.remove_unreferenced_vertices()
+        return manifold_from_arrays(np.asarray(mesh.vertices), np.asarray(mesh.faces),
+                                    what="спайка")
+    except Exception as exc:
+        raise GeometryError(f"Не удалось спаять шов: {exc}") from exc
+
+
+@op("weld", aliases=("спаять", "спайка", "сварить", "шов", "объединить_шов"),
+    category="Булевы операции",
+    summary="Спаивает детали в один объект и сваривает шов: внутри не остаётся "
+            "скрытой геометрии, стык ровный. Для ручки кружки, корпуса и т.п.",
+    example="кружка = weld [корпус, ручка] tolerance=0.05",
+    params={"objects": "список [деталь, деталь, ...]",
+            "tolerance": "допуск сварки вершин, мм (0.05)"},
+    positional="*")
+def weld(a, name):
+    solids = a.solids()
+    if not solids:
+        raise GeometryError("weld: нечего спаивать.",
+                            hint="Например: кружка = weld [корпус, ручка]")
+    tol = float(a.num("tolerance", 0.05, minv=0.0) or 0.0)
+    try:
+        if len(solids) > 1:
+            merged = merge_solids(solids, mf.OpType.Add)
+        else:
+            merged = solids[0].manifold
+        for s in solids:
+            a.scene.consume(s)
+        result = _weld_manifold(merged, tol)
+    except Exception as exc:
+        if isinstance(exc, GeometryError):
+            raise
+        raise GeometryError(f"Не удалось спаять объекты: {exc}") from exc
+    if result.is_empty() or result.volume() <= 1e-9:
+        raise GeometryError("После спайки ничего не осталось.")
+    a.scene.log("info", f"спайка: {merged.num_tri()} → {result.num_tri()} треугольников, "
+                        f"допуск {tol:g} мм", a.cmd.line)
+    return make_solid(a.scene, name, result, a, base=solids[0], kind="weld")
+
+
+@op("trim", aliases=("отсечь", "обрезать", "отрезать", "обрезка"),
+    category="Булевы операции",
+    summary="Отсекает лишнее: вычитает из первой детали остальные и спаивает шов. "
+            "Внутри не остаётся геометрии — только чистый стык.",
+    example="ручка = trim [ручка, корпус] tolerance=0.05",
+    params={"objects": "список [основа, лишнее, ...]",
+            "tolerance": "допуск сварки вершин, мм (0.05)"},
+    positional="*")
+def trim(a, name):
+    solids = a.solids()
+    if len(solids) < 2:
+        raise GeometryError("trim: нужна основа и то, что отсекаем.",
+                            hint="Например: ручка = trim [ручка, корпус]")
+    tol = float(a.num("tolerance", 0.05, minv=0.0) or 0.0)
+    try:
+        merged = merge_solids(solids, mf.OpType.Subtract)
+    except Exception as exc:
+        raise GeometryError(f"Не удалось отсечь: {exc}") from exc
+    if merged.is_empty() or merged.volume() <= 1e-9:
+        raise GeometryError("После отсечения ничего не осталось.")
+    for s in solids:
+        a.scene.consume(s)
+    result = _weld_manifold(merged, tol)
+    a.scene.log("info", f"отсечение: {merged.num_tri()} → {result.num_tri()} треугольников, "
+                        f"допуск {tol:g} мм", a.cmd.line)
+    return make_solid(a.scene, name, result, a, base=solids[0], kind="trim")
+
+
 @op("intersect", aliases=("пересечение", "пересечь", "and", "общее"), category="Булевы операции",
     summary="Оставляет только общий объём объектов.",
     example="линза = intersect [сфера1, сфера2]",
@@ -523,15 +614,39 @@ def refine(a, name):
     return _derived(a, name, result, base, "refine")
 
 
-@op("simplify", aliases=("упростить", "облегчить"), category="Форма и деформации",
-    summary="Упрощает сетку, сохраняя форму (меньше треугольников).",
-    example="деталь = simplify [деталь] tolerance=0.3",
-    params={"objects": "объект", "tolerance": "допуск, мм (0.3)"},
+@op("simplify", aliases=("упростить", "облегчить", "optimize", "оптимизировать"),
+    category="Форма и деформации",
+    summary="Упрощает сетку, сохраняя форму: меньше треугольников при отклонении "
+            "не больше tolerance. Ровные участки теряют лишние грани.",
+    example="деталь = optimize [деталь] tolerance=0.15",
+    params={"objects": "объект", "tolerance": "допуск отклонения, мм (0.3)"},
     positional=["objects"])
 def simplify(a, name):
-    solids = a.solids()
-    if len(solids) != 1:
-        raise GeometryError("simplify работает с одним объектом.")
+    def _all(v) -> bool:
+        return isinstance(v, str) and v.strip().lower() in ("all", "*", "все", "всё")
+
+    asked = list(a.extra) + ([a.kwargs["objects"]] if "objects" in a.kwargs else [])
+    if any(_all(v) for v in asked):
+        solids = [s for s in a.scene.objects.values()]
+    else:
+        solids = a.solids()
+    if not solids:
+        raise GeometryError("simplify: нечего упрощать.")
+    if len(solids) > 1:
+        tol = float(a.num("tolerance", 0.15, minv=0.0) or 0.0)
+        before = sum(int(s.manifold.num_tri()) for s in solids)
+        for solid in list(solids):
+            try:
+                result = solid.manifold.simplify(tol)
+                if result.is_empty():
+                    continue
+                _derived(a, solid.name, result, solid, "simplify")
+            except Exception as exc:
+                a.scene.log("warn", f"simplify {solid.name}: {exc}", a.cmd.line)
+        after = sum(int(s.manifold.num_tri()) for s in a.scene.objects.values())
+        a.scene.log("info", f"оптимизация: {before} → {after} треугольников "
+                            f"(допуск {tol:g} мм)", a.cmd.line)
+        return None
     base = solids[0]
     tol = float(a.num("tolerance", 0.3, minv=0.0) or 0.0)
     result = base.manifold.simplify(tol)

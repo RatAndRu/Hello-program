@@ -216,14 +216,12 @@ def make_texture(kind: str, size: int = 512, seed: int | str = 1,
     return np.clip(img, 0, 255).astype(np.uint8)
 
 
-def make_custom(pattern: str = "полосы", color1="#3a6ea5", color2="#e8dfcf",
-                scale: float = 1.0, seed: int | str = 1, size: int = 512) -> np.ndarray:
-    """Своя процедурная текстура: узор + два цвета (бесшовная по построению)."""
+def custom_height(pattern: str = "полосы", scale: float = 1.0, seed: int | str = 1,
+                  size: int = 512) -> np.ndarray:
+    """Карта высот своего узора 0..1 — из неё делаются цвет и рельеф."""
     key = PATTERNS.get(str(pattern).strip().lower(), "stripes")
     n = int(max(64, min(1024, size)))
     rng = _rng(seed)
-    c1 = np.asarray(parse_color(color1, (58, 110, 165)), dtype=np.float32)
-    c2 = np.asarray(parse_color(color2, (232, 223, 207)), dtype=np.float32)
     u, v = np.meshgrid(np.linspace(0, 1, n, endpoint=False),
                        np.linspace(0, 1, n, endpoint=False))
     k = max(1, int(round(float(scale) * 6)))
@@ -240,12 +238,11 @@ def make_custom(pattern: str = "полосы", color1="#3a6ea5", color2="#e8dfcf
         t = 0.5 + 0.5 * np.sin(2 * np.pi * (v * k) + 2.4 * np.sin(2 * np.pi * u * 2))
         t = np.clip(t * (0.75 + 0.45 * n2), 0, 1)
     elif key == "gradient":
-        # мягкий «перелив» без шва: косинус замыкается через период
         t = 0.5 + 0.35 * np.sin(2 * np.pi * (u * 0.5 + v * 0.5)) + 0.12 * (n2 - 0.5)
         t = np.clip(t, 0, 1)
     elif key == "dots":
-        s = np.sin(2 * np.pi * u * k) * np.sin(2 * np.pi * v * k)
-        t = np.clip((s > 0.55).astype(np.float32) * (0.8 + 0.2 * n2), 0, 1)
+        s2 = np.sin(2 * np.pi * u * k) * np.sin(2 * np.pi * v * k)
+        t = np.clip((s2 > 0.55).astype(np.float32) * (0.8 + 0.2 * n2), 0, 1)
     elif key == "grid":
         fu = np.minimum((u * k) % 1.0, 1 - (u * k) % 1.0)
         fv = np.minimum((v * k) % 1.0, 1 - (v * k) % 1.0)
@@ -255,8 +252,42 @@ def make_custom(pattern: str = "полосы", color1="#3a6ea5", color2="#e8dfcf
         t = np.clip(0.45 * n1 + 0.35 * n2 + 0.2 * np.sin(2 * np.pi * (u * 3 + n1)), 0, 1)
     else:  # noise
         t = np.clip(0.4 * n1 + 0.6 * n2, 0, 1)
-    img = _mix(c1, c2, np.clip(t, 0, 1))
+    return np.clip(t, 0, 1).astype(np.float32)
+
+
+def make_custom(pattern: str = "полосы", color1="#3a6ea5", color2="#e8dfcf",
+                scale: float = 1.0, seed: int | str = 1, size: int = 512,
+                relief: float = 0.0) -> np.ndarray:
+    """Своя процедурная текстура: узор + два цвета + необязательный рельеф."""
+    key = PATTERNS.get(str(pattern).strip().lower(), "stripes")
+    c1 = np.asarray(parse_color(color1, (58, 110, 165)), dtype=np.float32)
+    c2 = np.asarray(parse_color(color2, (232, 223, 207)), dtype=np.float32)
+    t = custom_height(pattern, scale=scale, seed=seed, size=size)
+    img = _mix(c1, c2, t)
+    r = float(max(0.0, min(1.0, relief)))
+    if r > 0.001:
+        # Подсветка рельефа: край «выступает», впадина затемняется. Даже без
+        # карты нормалей рисунок читается как объёмный.
+        gy, gx = np.gradient(t)
+        light = (-gx * 0.7 + -gy * 0.7)
+        light = light / max(1e-6, float(np.abs(light).max()))
+        img = img * (1.0 + r * 1.15 * light[..., None])
+    _ = key
     return np.clip(img, 0, 255).astype(np.uint8)
+
+
+def make_normal(pattern: str = "полосы", scale: float = 1.0, seed: int | str = 1,
+                size: int = 512, relief: float = 0.6) -> np.ndarray:
+    """Карта нормалей из той же карты высот — рельеф виден при любом свете."""
+    t = custom_height(pattern, scale=scale, seed=seed, size=size)
+    r = float(max(0.02, min(1.0, relief))) * 4.0
+    gy, gx = np.gradient(t)
+    nx = (-gx * r)
+    ny = (-gy * r)
+    nz = np.ones_like(nx)
+    length = np.sqrt(nx * nx + ny * ny + nz * nz)
+    rgb = np.stack([nx / length, ny / length, nz / length], axis=-1)
+    return np.clip((rgb * 0.5 + 0.5) * 255, 0, 255).astype(np.uint8)
 
 
 def texture_file(kind: str, scale: float = 1.0, seed: int | str = 1,
@@ -281,20 +312,31 @@ def texture_file(kind: str, scale: float = 1.0, seed: int | str = 1,
 
 def custom_texture_file(pattern: str = "полосы", color1: str = "#3a6ea5",
                         color2: str = "#e8dfcf", scale: float = 1.0,
-                        seed: int | str = 1, size: int = 512) -> dict:
-    """Сохраняет свою текстуру и возвращает описание (как у готовых)."""
+                        seed: int | str = 1, size: int = 512,
+                        relief: float = 0.0) -> dict:
+    """Сохраняет свою текстуру и (если нужен рельеф) карту нормалей."""
     from .geometry import write_png
 
-    image = make_custom(pattern, color1, color2, scale=scale, seed=seed, size=size)
+    image = make_custom(pattern, color1, color2, scale=scale, seed=seed, size=size,
+                        relief=relief)
     tag = hashlib.sha1(image.tobytes()).hexdigest()[:10]
     name = f"custom_{tag}.png"
     path = user_data_dir() / "textures" / name
     if not path.exists():
         write_png(path, image)
-    key = PATTERNS.get(str(pattern).strip().lower(), "stripes")
-    return {"kind": "custom", "label": "своя: " + PATTERN_NAMES.get(key, key),
+    info = {"kind": "custom", "label": "своя: "
+            + PATTERN_NAMES.get(PATTERNS.get(str(pattern).strip().lower(), "stripes"), pattern),
             "path": str(path), "scale": float(scale), "seed": str(seed),
-            "pattern": key, "color1": color1, "color2": color2}
+            "pattern": pattern, "color1": color1, "color2": color2,
+            "relief": float(relief)}
+    if relief > 0.001:
+        normal = make_normal(pattern, scale=scale, seed=seed, size=size, relief=relief)
+        ntag = hashlib.sha1(normal.tobytes()).hexdigest()[:10]
+        npath = user_data_dir() / "textures" / f"custom_normal_{ntag}.png"
+        if not npath.exists():
+            write_png(npath, normal)
+        info["normal_path"] = str(npath)
+    return info
 
 
 def load_texture_image(path: str):

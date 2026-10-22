@@ -569,14 +569,20 @@ button.mini:disabled { opacity: .38; cursor: default; }
   flex: 1;
   min-width: 0;
   height: 28px;
-  padding: 0 10px;
+  min-height: 28px;
+  max-height: 132px;
+  padding: 6px 10px;
   border-radius: 8px;
   border: 1px solid var(--line);
   background: #0b0f15;
   color: var(--text);
   font-family: var(--mono);
   font-size: 12.5px;
+  line-height: 16px;
+  resize: none;
+  overflow-y: auto;
   outline: none;
+  white-space: pre;
 }
 #cmd-input:focus { border-color: #3c5b8c; box-shadow: 0 0 0 2px rgba(107, 157, 255, .12); }
 .cmd-result {
@@ -788,3 +794,28 @@ button.mini:disabled { opacity: .38; cursor: default; }
   text-overflow: ellipsis; white-space: nowrap; flex: 1; }
 .anim-clip-name { color: var(--text-dim); min-width: 140px; }
 .anim-clip-row .mini { padding: 0 5px; }
+
+/* ---------- песочница текстур ---------- */
+.tex-card { width: min(760px, 94vw); }
+.tex-sandbox { display: grid; grid-template-columns: 260px 1fr; gap: 18px; padding: 16px; }
+.tex-preview-wrap { display: flex; flex-direction: column; gap: 10px; align-items: center; }
+#tex-big {
+  width: 240px; height: 240px; border-radius: 12px; border: 1px solid #263244;
+  background: #0d1218; object-fit: cover; image-rendering: auto;
+}
+.tex-hint { font-size: 11px; color: var(--text-dim); text-align: center; }
+.tex-controls { display: flex; flex-direction: column; gap: 10px; }
+.tex-controls .row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tex-controls label { font-size: 11.5px; color: var(--text-dim); }
+.tex-controls select, .tex-controls input[type="number"] {
+  background: #10151c; border: 1px solid #232d3a; color: var(--text);
+  border-radius: 8px; padding: 5px 8px; font-family: inherit; font-size: 12px;
+}
+.tex-controls input[type="number"] { width: 84px; }
+.tex-command {
+  font-family: var(--mono); font-size: 11px; color: #9fd6c0; background: #0d1218;
+  border: 1px dashed #263244; border-radius: 8px; padding: 8px 10px;
+  user-select: text; -webkit-user-select: text; word-break: break-word;
+}
+.tex-note { font-size: 11.5px; color: var(--text-dim); }
+@media (max-width: 720px) { .tex-sandbox { grid-template-columns: 1fr; } }

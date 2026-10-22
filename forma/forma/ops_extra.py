@@ -140,8 +140,7 @@ def bevel(a, name):
     return _derived(a, name, result, base, "bevel")
 
 
-@op("clean", aliases=("почистить", "weld", "сварить", "сварка", "убрать_мусор",
-                       "remove_degenerate", "ремонт"),
+@op("clean", aliases=("почистить", "убрать_мусор", "remove_degenerate", "ремонт"),
     category="Форма и деформации",
     summary="Сваривает совпавшие вершины, убирает вырожденные и дублирующиеся "
             "треугольники. Полезно после импорта и сложных булевых операций.",

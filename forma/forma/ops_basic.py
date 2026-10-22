@@ -8,7 +8,8 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import auto_segments, circle_profile, hull_of_manifolds, manifold_mesh
+from .geometry import (FINENESS_MM, auto_segments, circle_profile, hull_of_manifolds,
+                       limit_segments, manifold_mesh)
 from .ops import anchor, ensure_solid, make_solid, op
 
 
@@ -18,6 +19,18 @@ def _round_value(a) -> float:
 
 def _sphere_segments(radius: float) -> int:
     return auto_segments(radius, tolerance=0.10, min_n=16, max_n=96)
+
+
+def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
+              max_n: int = 512) -> int:
+    """Сегменты по допуску: слишком большое число в сценарии не раздувает модель."""
+    if requested is None:
+        return int(limit_segments(None, radius, tolerance=tolerance, max_n=max_n))
+    got = limit_segments(requested, radius, tolerance=tolerance, max_n=max_n)
+    if got < int(requested):
+        a.scene.log("info", f"гладкость {requested} → {got} сегментов "
+                            f"(отклонение ≤ {tolerance:g} мм)", a.cmd.line)
+    return int(got)
 
 
 @op("box", aliases=("куб", "коробка", "cube", "параллелепипед", "брусок", "блок"),
@@ -62,9 +75,7 @@ def box(a, name):
     positional=["radius"])
 def sphere(a, name):
     radius = a.num("radius", required=True, minv=0.01)
-    segments = a.int("segments", None, minv=8, maxv=512)
-    if segments is None:
-        segments = auto_segments(radius)
+    segments = _segments(a, a.int("segments", None, minv=8, maxv=512), radius)
     solid = mf.Manifold.sphere(radius, segments)
     at = a.vec("at", 3, default=(0, 0, 0))
     solid = anchor(solid, at, center=True)
@@ -89,9 +100,7 @@ def cylinder(a, name):
     r2 = a.num("r2", radius, minv=0.0)
     if r2 is None:
         r2 = radius
-    segments = a.int("segments", None, minv=8, maxv=1024)
-    if segments is None:
-        segments = auto_segments(max(radius, r2))
+    segments = _segments(a, a.int("segments", None, minv=8, maxv=1024), max(radius, r2))
     r = _round_value(a)
     if r > 1e-6:
         if height <= 2 * r + 1e-6:
@@ -116,9 +125,7 @@ def cylinder(a, name):
 def cone(a, name):
     radius = a.num("radius", required=True, minv=0.01)
     height = a.num("height", required=True, minv=0.01)
-    segments = a.int("segments", None, minv=8, maxv=1024)
-    if segments is None:
-        segments = auto_segments(radius)
+    segments = _segments(a, a.int("segments", None, minv=8, maxv=1024), radius)
     solid = mf.Manifold.cylinder(height, radius, 0.0, segments)
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     return make_solid(a.scene, name, solid, a, kind="cone")
@@ -138,10 +145,11 @@ def torus(a, name):
     minor = a.num("minor", required=True, minv=0.01)
     segments = a.int("segments", None, minv=12, maxv=512)
     mseg = a.int("minor_segments", None, minv=8, maxv=128)
-    if segments is None:
-        segments = auto_segments(major + minor)
+    segments = _segments(a, segments, major + minor)
     if mseg is None:
-        mseg = max(8, auto_segments(minor, tolerance=0.08))
+        mseg = max(8, auto_segments(minor, tolerance=0.05))
+    else:
+        mseg = _segments(a, mseg, minor)
     if minor >= major:
         raise GeometryError("Радиус трубки тора должен быть меньше радиуса кольца.")
     prof = circle_profile(minor, mseg) + np.array([major, 0.0])

@@ -129,7 +129,8 @@ def light(a, name):
             "pattern": "для своей текстуры: полосы, клетка, волны, градиент, "
                        "шум, камень, точки, сетка",
             "color1": "для своей текстуры: первый цвет (#rrggbb или название)",
-            "color2": "для своей текстуры: второй цвет"},
+            "color2": "для своей текстуры: второй цвет",
+            "relief": "для своей текстуры: рельеф 0…1 (0 — гладкая, 0.5 — заметный)"},
     positional=["target"])
 def texture(a, name):
     target = (a.text("target") or "").strip()
@@ -156,7 +157,8 @@ def texture(a, name):
             pattern=pattern,
             color1=(a.text("color1") or "#3a6ea5"),
             color2=(a.text("color2") or "#e8dfcf"),
-            scale=scale, seed=seed, size=size)
+            scale=scale, seed=seed, size=size,
+            relief=float(a.num("relief", 0.0, minv=0.0, maxv=1.0) or 0.0))
     else:
         if kind not in KINDS:
             raise DslError(f"Неизвестная текстура «{kind}».",

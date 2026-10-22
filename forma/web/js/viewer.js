@@ -12,6 +12,14 @@ const VIEW_DIRS = {
   top: new THREE.Vector3(0, 1, 0.001),
 };
 
+/** Совпадает ли меш с именем объекта из сценария. */
+function meshMatches(o, name) {
+  if (!o || !o.isMesh || !name) return false;
+  const candidates = [o.name, o.parent?.name, o.userData?.formaName];
+  for (let n = o.parent; n && n !== o; n = n.parent) candidates.push(n.name);
+  return candidates.some((c) => c && c === name);
+}
+
 const ENV_PRESETS = {
   studio: { bg: '#0b0e13', key: '#ffffff', fill: '#9dbcff', rim: '#ffe6c4', ground: '#11161d', hemi: 0.55, fog: true },
   sun: { bg: '#1b2733', key: '#fff2d8', fill: '#a8c8ff', rim: '#ffd9a0', ground: '#20262b', hemi: 0.35, fog: true },
@@ -504,6 +512,10 @@ export class Viewer {
     this.setTimeline({ clips, duration: Number(animation?.duration) || 0,
                        assembly: animation?.assembly || null });
     this.setPolygons(this.polygons);
+    // Скрытые объекты остаются скрытыми и после пересборки: состояние живёт
+    // в вьюере, а не только в списке объектов.
+    this.hidden.forEach((name) => this.setObjectVisible(name, false));
+    if (this.highlightName) this.setHighlight(this.highlightName);
     return this.bbox;
   }
 
@@ -746,8 +758,13 @@ export class Viewer {
   }
 
   _fit(root) {
-    const box = new THREE.Box3().setFromObject(root);
-    if (box.isEmpty()) return;
+    let box = new THREE.Box3().setFromObject(root);
+    if (box.isEmpty()) {
+      // Пустая рамка (например, все детали скрыты) не должна оставлять камеру
+      // «в никуда»: ставим разумные границы, чтобы вид всё равно применился.
+      box = new THREE.Box3(new THREE.Vector3(-50, -50, -50),
+                           new THREE.Vector3(50, 50, 50));
+    }
     const size = new THREE.Vector3();
     const center = new THREE.Vector3();
     box.getSize(size);
@@ -1069,18 +1086,108 @@ export class Viewer {
 
   /** Скрыть/показать объект сцены по имени. */
   setObjectVisible(name, visible) {
-    if (!this.model || !name) return;
+    if (!name) return;
     if (visible) this.hidden.delete(name);
     else this.hidden.add(name);
+    if (!this.model) return;
+    let found = 0;
     this.model.traverse((o) => {
-      if (!o.isMesh) return;
-      const objName = o.name || o.parent?.name;
-      if (objName === name) o.visible = visible;
+      if (!meshMatches(o, name)) return;
+      o.visible = Boolean(visible);
+      found += 1;
     });
+    if (found && visible) this.model.updateMatrixWorld(true);
+    return found;
   }
 
-  /** Наложить текстуру на объект (картинка уже загружена). */
-  setTexture(name, url) {
+  /** Меши объекта по имени (для подсветки и наведения камеры). */
+  objectMeshes(name) {
+    const out = [];
+    if (!this.model || !name) return out;
+    this.model.traverse((o) => { if (meshMatches(o, name)) out.push(o); });
+    return out;
+  }
+
+  /** Подсветка выбранного объекта: свечение + рамка вокруг детали. */
+  setHighlight(name) {
+    this.clearHighlight();
+    if (!name || !this.model) return false;
+    const meshes = this.objectMeshes(name);
+    if (!meshes.length) return false;
+    this.highlightName = name;
+    this._highlight = [];
+    const box = new THREE.Box3();
+    meshes.forEach((o) => {
+      box.expandByObject(o);
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => {
+        if (!m) return;
+        if (!m.userData.baseEmissive) {
+          m.userData.baseEmissive = {
+            color: m.emissive ? m.emissive.clone() : null,
+            intensity: m.emissiveIntensity ?? 1,
+          };
+        }
+        if (m.emissive) {
+          m.emissive.setHex(0x2f6bff);
+          m.emissiveIntensity = 0.45;
+        }
+        this._highlight.push(m);
+      });
+    });
+    if (!box.isEmpty()) {
+      const pad = Math.max(0.5, box.getSize(new THREE.Vector3()).length() * 0.008);
+      box.expandByScalar(pad);
+      this._highlightBox = new THREE.Box3Helper(box, 0x6fb3ff);
+      this._highlightBox.material.transparent = true;
+      this._highlightBox.material.opacity = 0.75;
+      this._highlightBox.material.depthWrite = false;
+      this.scene.add(this._highlightBox);
+    }
+    return true;
+  }
+
+  clearHighlight() {
+    (this._highlight || []).forEach((m) => {
+      const base = m.userData.baseEmissive;
+      if (!base) return;
+      if (m.emissive && base.color) m.emissive.copy(base.color);
+      m.emissiveIntensity = base.intensity;
+    });
+    this._highlight = [];
+    if (this._highlightBox) {
+      this.scene.remove(this._highlightBox);
+      this._highlightBox.geometry?.dispose?.();
+      this._highlightBox.material?.dispose?.();
+      this._highlightBox = null;
+    }
+    this.highlightName = null;
+  }
+
+  /** Наводит камеру на объект — удобно, когда деталь выбрана в списке. */
+  focusObject(name) {
+    const meshes = this.objectMeshes(name);
+    if (!meshes.length) return false;
+    const box = new THREE.Box3();
+    meshes.forEach((o) => box.expandByObject(o));
+    if (box.isEmpty()) return false;
+    const center = new THREE.Vector3();
+    const size = new THREE.Vector3();
+    box.getCenter(center);
+    box.getSize(size);
+    const radius = Math.max(size.length() * 0.5, 5);
+    const dist = radius / Math.tan((this.camera.fov * Math.PI) / 360) * 1.8;
+    const dir = VIEW_DIRS.iso.clone().normalize();
+    this._from = this.camera.position.clone();
+    this._to = center.clone().add(dir.multiplyScalar(dist));
+    this._fromTarget = this.controls.target.clone();
+    this._toTarget = center.clone();
+    this._progress = 0;
+    return true;
+  }
+
+  /** Наложить текстуру на объект; normalUrl — карта рельефа (необязательно). */
+  setTexture(name, url, normalUrl = '') {
     if (!this.model || !name) return;
     new THREE.TextureLoader().load(url, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -1088,14 +1195,31 @@ export class Viewer {
       tex.wrapT = THREE.RepeatWrapping;
       tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
       tex.needsUpdate = true;
+      if (normalUrl) {
+        new THREE.TextureLoader().load(normalUrl, (nt) => {
+          nt.wrapS = THREE.RepeatWrapping;
+          nt.wrapT = THREE.RepeatWrapping;
+          nt.needsUpdate = true;
+          this.model.traverse((o) => {
+            if (!meshMatches(o, name)) return;
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach((m) => {
+              if (!m) return;
+              m.normalMap = nt;
+              m.normalScale = new THREE.Vector2(0.8, 0.8);
+              m.needsUpdate = true;
+            });
+          });
+        }, undefined, () => {});
+      }
       this.model.traverse((o) => {
-        if (!o.isMesh) return;
-        if (o.name !== name && o.parent?.name !== name) return;
+        if (!meshMatches(o, name)) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((m) => {
           if (!m) return;
           if (!m.userData.base) {
-            m.userData.base = { color: m.color?.clone() || null, metal: m.metalness, rough: m.roughness, map: m.map };
+            m.userData.base = { color: m.color?.clone() || null, metal: m.metalness,
+                                rough: m.roughness, map: m.map, normal: m.normalMap };
           }
           m.map = tex;
           m.color?.setHex(0xffffff);
@@ -1109,12 +1233,12 @@ export class Viewer {
   clearTexture(name) {
     if (!this.model || !name) return;
     this.model.traverse((o) => {
-      if (!o.isMesh) return;
-      if (o.name !== name && o.parent?.name !== name) return;
+      if (!meshMatches(o, name)) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       mats.forEach((m) => {
         if (!m) return;
         m.map = null;
+        m.normalMap = null;
         if (m.userData.base?.color) m.color?.copy(m.userData.base.color);
         m.needsUpdate = true;
       });

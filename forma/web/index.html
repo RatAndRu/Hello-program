@@ -346,24 +346,9 @@
               <img id="mat-tex-preview" alt="образец текстуры" hidden />
               <div class="custom-tex" id="custom-tex" hidden>
                 <div class="row">
-                  <label for="tex-pattern">узор</label>
-                  <select id="tex-pattern">
-                    <option value="полосы">полосы</option>
-                    <option value="клетка">клетка</option>
-                    <option value="волны">волны</option>
-                    <option value="градиент">градиент</option>
-                    <option value="шум">шум</option>
-                    <option value="камень">камень</option>
-                    <option value="точки">точки</option>
-                    <option value="сетка">сетка</option>
-                  </select>
+                  <span class="tex-note">Своя текстура: узор, цвета и рельеф</span>
+                  <button class="small" id="tex-sandbox">Песочница…</button>
                 </div>
-                <div class="row">
-                  <label for="tex-color1">цвет 1</label>
-                  <input type="color" id="tex-color1" value="#3a6ea5" />
-                  <input type="color" id="tex-color2" value="#e8dfcf" />
-                </div>
-                <button class="small" id="tex-create">Создать свою текстуру</button>
               </div>
             </div>
             <div class="material-actions">
@@ -374,6 +359,7 @@
             <span>Объекты · глаз показывает и скрывает</span>
             <button class="mini" id="objects-hide-all" title="Скрыть все объекты">скрыть все</button>
             <button class="mini" id="objects-show-all" title="Показать все объекты">показать все</button>
+            <button class="mini" id="objects-optimize" title="Убрать лишние грани на ровных участках">облегчить</button>
           </div>
           <div id="objects-list" class="objects-list"></div>
           <div class="hint-box" id="objects-summary"></div>
@@ -402,8 +388,8 @@
 
   <div class="cmdbar">
     <span class="cmd-prompt">›</span>
-    <input id="cmd-input" spellcheck="false" autocomplete="off"
-           placeholder="Команда сценария: check кружка height 90..110 · /снимки · Ctrl+Enter — задача словами для нейросети" />
+    <textarea id="cmd-input" rows="1" spellcheck="false" autocomplete="off"
+           placeholder="Команда сценария: check кружка height 90..110 · /снимки · Shift+Enter — новая строка · Ctrl+Enter — задача нейросети"></textarea>
     <button id="cmd-run" class="small primary" title="Дописать команду в сценарий и собрать (Enter)">Выполнить</button>
     <span class="cmd-result" id="cmd-result"></span>
   </div>
@@ -419,6 +405,57 @@
     <span class="status-item muted" id="status-version"></span>
   </footer>
 
+
+  <div class="modal" id="tex-modal" hidden>
+    <div class="modal-card tex-card">
+      <div class="modal-head">
+        <strong>Песочница генеративных текстур</strong>
+        <button class="mini" id="tex-close">✕</button>
+      </div>
+      <div class="tex-sandbox">
+        <div class="tex-preview-wrap">
+          <img id="tex-big" alt="предпросмотр текстуры" />
+          <div class="tex-hint" id="tex-hint">Узор бесшовный: его можно намотать на любой объект.</div>
+        </div>
+        <div class="tex-controls">
+          <div class="row"><label for="tex-pattern">узор</label>
+            <select id="tex-pattern">
+              <option value="полосы">полосы</option>
+              <option value="клетка">клетка</option>
+              <option value="волны">волны</option>
+              <option value="градиент">градиент</option>
+              <option value="шум">шум</option>
+              <option value="камень">камень</option>
+              <option value="точки">точки</option>
+              <option value="сетка">сетка</option>
+            </select>
+          </div>
+          <div class="row"><label for="tex-color1">цвет 1</label>
+            <input type="color" id="tex-color1" value="#3a6ea5" />
+            <label for="tex-color2">цвет 2</label>
+            <input type="color" id="tex-color2" value="#e8dfcf" />
+          </div>
+          <div class="material-row"><span>масштаб</span>
+            <input type="range" id="tex-scale" min="0.25" max="6" step="0.05" value="1" />
+            <span class="material-hex" id="tex-scale-val">1</span>
+          </div>
+          <div class="material-row"><span>рельеф</span>
+            <input type="range" id="tex-relief" min="0" max="1" step="0.05" value="0.45" />
+            <span class="material-hex" id="tex-relief-val">0.45</span>
+          </div>
+          <div class="row"><label for="tex-seed">вариация</label>
+            <input type="number" id="tex-seed" value="1" min="1" max="9999" step="1" />
+            <button class="small" id="tex-dice" title="Другая вариация">🎲</button>
+          </div>
+          <div class="tex-command" id="tex-command"></div>
+          <div class="material-actions">
+            <button class="small primary" id="tex-apply">Применить к выбранному</button>
+            <button class="small" id="tex-download">Скачать PNG</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
   <div class="modal" id="help-modal" hidden>
     <div class="modal-card">
       <div class="modal-head">

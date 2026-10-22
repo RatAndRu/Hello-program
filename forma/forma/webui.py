@@ -403,8 +403,8 @@ EXAMPLES = [
     ("Пришелец из капли", "alien"),
     ("Шестерня", "gear"),
     ("Манекен в T-позе", "mannequin"),
+    ("Яблоко", "apple"),
     ("Инструменты (bend/twist/taper…)", "tools"),
-    ("Человек (манекен)", "human"),
     ("Анатомическая фигура", "human_studio"),
     ("Кружка со студией", "mug_studio"),
     ("Анимация и сборка по шагам", "animation"),
@@ -631,12 +631,20 @@ class Handler(BaseHTTPRequestHandler):
                 scale = float(query.get("scale", ["1"])[0] or 1)
             except ValueError:
                 scale = 1.0
+            try:
+                relief = float(query.get("relief", ["0"])[0] or 0)
+            except ValueError:
+                relief = 0.0
             if kind.strip().lower() in ("своя", "своё", "custom", "мой"):
                 info = custom_texture_file(
                     pattern=query.get("pattern", ["полосы"])[0],
                     color1=query.get("color1", ["#3a6ea5"])[0],
                     color2=query.get("color2", ["#e8dfcf"])[0],
-                    scale=scale, seed=query.get("seed", ["1"])[0])
+                    scale=scale, seed=query.get("seed", ["1"])[0],
+                    relief=relief)
+                if query.get("normal", ["0"])[0] in ("1", "да", "true") and info.get("normal_path"):
+                    self._send_file(Path(info["normal_path"]), "image/png")
+                    return
             else:
                 info = texture_file(kind, scale=scale)
             self._send_file(Path(info["path"]), "image/png")

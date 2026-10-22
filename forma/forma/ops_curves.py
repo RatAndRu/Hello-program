@@ -8,10 +8,10 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import (as_points, auto_segments, catmull_rom, circle_profile,
-                       ellipse_profile, ensure_ccw, fillet_polyline, loft_solid,
-                       loft_solid_smooth, polygon_area, smooth_closed_profile,
-                       sweep_solid)
+from .geometry import (FINENESS_MM, as_points, auto_segments, catmull_rom, circle_profile,
+                       ellipse_profile, ensure_ccw, fillet_polyline, limit_segments,
+                       loft_solid, loft_solid_smooth, polygon_area,
+                       smooth_closed_profile, sweep_solid)
 from .ops import ensure_solid, make_solid, op
 from .values import parse_value
 
@@ -52,10 +52,12 @@ def lathe(a, name):
         pts = fillet_polyline(pts, float(fillet), closed=True, skip_axis=True)
     if smooth and smooth > 1:
         pts = smooth_closed_profile(pts, samples=int(smooth))
-    segments = a.int("segments", None, minv=8, maxv=1024)
-    if segments is None:
-        radius_max = float(np.max(np.abs(pts[:, 0]))) if len(pts) else 50.0
-        segments = auto_segments(radius_max, tolerance=0.10, min_n=32)
+    radius_max = float(np.max(np.abs(pts[:, 0]))) if len(pts) else 50.0
+    asked = a.int("segments", None, minv=8, maxv=1024)
+    segments = int(limit_segments(asked, radius_max, tolerance=FINENESS_MM, max_n=1024))
+    if asked and segments < asked:
+        a.scene.log("info", f"точение: {asked} → {segments} сегментов "
+                            f"(отклонение ≤ {FINENESS_MM:g} мм)", a.cmd.line)
     arc = a.num("arc", 360.0, minv=0.1, maxv=360.0)
     if abs(arc - 360.0) < 1e-9:
         solid = mf.Manifold.revolve(mf.CrossSection([pts]), int(segments))
@@ -184,15 +186,23 @@ def sweep(a, name):
     path = np.asarray(path, dtype=np.float64)
     if len(path) < 2:
         raise GeometryError("Путь развёртки должен содержать минимум 2 точки.")
+    def _sides(radius: float) -> int:
+        asked = a.int("sides", 24, minv=3, maxv=256)
+        got = int(limit_segments(asked, radius, tolerance=FINENESS_MM, max_n=256))
+        if got < asked:
+            a.scene.log("info", f"развёртка: {asked} → {got} сторон профиля "
+                                f"(отклонение ≤ {FINENESS_MM:g} мм)", a.cmd.line)
+        return max(3, got)
+
     if a.has("profile"):
         prof = _clean_profile(as_points(a.value("profile"), 2, "profile"))
     elif a.has("radius"):
-        prof = circle_profile(a.num("radius", required=True, minv=0.01),
-                              a.int("sides", 24, minv=3, maxv=256))
+        radius = a.num("radius", required=True, minv=0.01)
+        prof = circle_profile(radius, _sides(radius))
     elif a.has("width") and a.has("height"):
-        prof = ellipse_profile(a.num("width", required=True, minv=0.01),
-                               a.num("height", required=True, minv=0.01),
-                               a.int("sides", 24, minv=3, maxv=256))
+        w = a.num("width", required=True, minv=0.01)
+        h = a.num("height", required=True, minv=0.01)
+        prof = ellipse_profile(w, h, _sides(max(w, h) / 2.0))
     else:
         raise GeometryError("Для развёртки нужен profile, radius или width+height.",
                             hint="Например: sweep path=[[40,0,20],[60,0,45],[40,0,70]] radius=5")

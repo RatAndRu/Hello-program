@@ -88,7 +88,12 @@ class Build:
                 "size": st["size"],
                 "genus": st["genus"],
                 "tex": ({"kind": solid.tex.get("kind"), "label": solid.tex.get("label"),
-                         "scale": solid.tex.get("scale")} if getattr(solid, "tex", None) else None),
+                         "scale": solid.tex.get("scale"),
+                         "relief": solid.tex.get("relief"),
+                         "pattern": solid.tex.get("pattern"),
+                         "color1": solid.tex.get("color1"),
+                         "color2": solid.tex.get("color2")}
+                        if getattr(solid, "tex", None) else None),
                 "uv": getattr(solid, "uv", "cylinder"),
             })
         return out

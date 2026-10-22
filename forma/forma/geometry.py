@@ -40,6 +40,26 @@ def auto_segments(radius: float, tolerance: float = 0.12,
     return int(max(min_n, min(max_n, n)))
 
 
+# Допуск огранки по умолчанию, мм. 0,06 мм на модели 100–200 мм глазом не
+# видно, а число сегментов (и треугольников) падает в разы.
+FINENESS_MM = 0.06
+
+
+def limit_segments(requested, radius: float, tolerance: float = FINENESS_MM,
+                   max_n: int = 512) -> int:
+    """Ограничивает число сегментов разумным: лишние грани на ровной
+    поверхности не видны, но раздувают модель.
+
+    ``requested`` — сколько попросил сценарий (None — посчитать самому).
+    Возвращает число сегментов, при котором стрелка прогиба хорды не больше
+    ``tolerance`` мм.
+    """
+    need = auto_segments(radius, tolerance=tolerance, max_n=max_n)
+    if requested is None:
+        return int(need)
+    return int(min(max(8, int(requested)), need))
+
+
 def manifold_mesh(m: mf.Manifold) -> tuple[np.ndarray, np.ndarray]:
     """Возвращает (vertices float64 Nx3, faces int64 Nx3)."""
     mesh = m.to_mesh()
@@ -682,6 +702,9 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             if image is not None and len(faces):
                 material.baseColorTexture = image
                 material.baseColorFactor = [1.0, 1.0, 1.0, 1.0]
+                normal_image = load_texture_image(obj.tex.get("normal_path", ""))
+                if normal_image is not None:
+                    material.normalTexture = normal_image
                 # разворачиваем геометрию по треугольникам: шов текстуры не виден
                 flat_faces = faces.reshape(-1)
                 # verts уже в Y-up glTF, поэтому bbox считаем по ним же

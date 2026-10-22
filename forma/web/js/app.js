@@ -299,6 +299,12 @@ function applyBuild(payload, elapsed) {
   stateEl.textContent = 'модель построена';
   stateEl.className = 'status-item ok';
 
+  // Скрытые детали (например, вошедшие в union/weld) должны оставаться
+  // скрытыми, но открываться одним кликом по глазку. Держим единое состояние.
+  const names = new Set((payload.objects || []).map((o) => o.name));
+  [...state.hidden].forEach((n) => { if (!names.has(n)) state.hidden.delete(n); });
+  (payload.objects || []).forEach((o) => { if (!o.visible) state.hidden.add(o.name); });
+
   renderReport(payload);
   renderChecks(payload);
   renderObjects(payload);
@@ -485,6 +491,11 @@ function renderObjects(payload) {
       selectObject(o.name);
     });
     el.addEventListener('dblclick', () => {
+      // двойной клик — навести камеру на деталь
+      if (state.viewer?.focusObject(o.name)) {
+        toast(`Камера наведена: ${o.name}`);
+        return;
+      }
       const ta = $('code');
       const lines = ta.value.split('\n');
       const lineIndex = Math.max(0, (o.line || 1) - 1);
@@ -511,6 +522,13 @@ function setAllObjectsVisible(visible) {
   renderObjects(state.payload || {});
   toast(visible ? 'Показаны все объекты' : 'Скрыты все объекты');
 }
+
+$('objects-optimize')?.addEventListener('click', () => {
+  const lines = currentScript().split('\n').filter((l) => !l.trim().toLowerCase().startsWith('optimize '));
+  lines.push('optimize all tolerance=0.15');
+  setScript(lines.join('\n').trimEnd());
+  setCmdResult('✓ добавлена оптимизация сетки: ровные участки теряют лишние грани', 'ok');
+});
 
 $('objects-hide-all')?.addEventListener('click', () => setAllObjectsVisible(false));
 $('objects-show-all')?.addEventListener('click', () => setAllObjectsVisible(true));
@@ -591,6 +609,23 @@ async function loadModel(url, animation = null) {
     (state.payload?.objects || []).forEach((o) => {
       if (o.tex && o.tex.kind) applyTextureToViewer(o.name, o.tex.kind, o.tex.scale);
     });
+    // Диагностика: если GLB загрузился, но деталей нет, честно говорим об этом,
+    // а не оставляем пустое окно после «сборка готова».
+    const shown = state.viewer.getStats?.();
+    if (shown && typeof shown.meshes === 'number' && !shown.meshes) {
+      const bar = $('error-bar');
+      if (bar) {
+        bar.hidden = false;
+        $('error-msg').textContent = 'Модель построена, но в окне нет ни одной детали. '
+          + 'Нажмите «Снимки» — отчёт покажет, что получилось.';
+        $('error-hint').textContent = 'Если детали должны быть видимы, проверьте команды hide и глазки в списке объектов.';
+      }
+    } else if (shown) {
+      $('viewer-badge').textContent = `${fmtInt(shown.tris)} треугольников`;
+    }
+    if (state.selected?.name && !state.hidden.has(state.selected.name)) {
+      state.viewer?.setHighlight(state.selected.name);
+    }
     state.anim.frames = state.payload?.frames || [];
     state.anim.frameIndex = 0;
     state.anim.time = 0;
@@ -614,24 +649,52 @@ async function loadModel(url, animation = null) {
   }
 }
 
+function sandboxParams() {
+  return {
+    pattern: $('tex-pattern')?.value || 'полосы',
+    color1: $('tex-color1')?.value || '#3a6ea5',
+    color2: $('tex-color2')?.value || '#e8dfcf',
+    scale: $('tex-scale')?.value || '1',
+    relief: $('tex-relief')?.value || '0',
+    seed: $('tex-seed')?.value || '1',
+  };
+}
+
+function sandboxCommand(name = 'объект') {
+  const p = sandboxParams();
+  return `texture ${name} kind=своя pattern=${p.pattern} color1=${p.color1} `
+    + `color2=${p.color2} scale=${p.scale} seed=${p.seed} relief=${p.relief}`;
+}
+
 function textureUrl(kind, scale = 1) {
   let url = '/api/texture?kind=' + encodeURIComponent(kind)
     + '&scale=' + encodeURIComponent(scale);
   if (kind === 'своя') {
-    const pattern = $('tex-pattern')?.value || 'полосы';
-    const c1 = $('tex-color1')?.value || '#3a6ea5';
-    const c2 = $('tex-color2')?.value || '#e8dfcf';
-    url += '&pattern=' + encodeURIComponent(pattern)
-      + '&color1=' + encodeURIComponent(c1) + '&color2=' + encodeURIComponent(c2);
+    const p = sandboxParams();
+    url += '&pattern=' + encodeURIComponent(p.pattern)
+      + '&color1=' + encodeURIComponent(p.color1) + '&color2=' + encodeURIComponent(p.color2)
+      + '&seed=' + encodeURIComponent(p.seed) + '&relief=' + encodeURIComponent(p.relief);
   }
   return url + '&token=' + encodeURIComponent(TOKEN);
+}
+
+function textureNormalUrl() {
+  const p = sandboxParams();
+  return '/api/texture?kind=своя&normal=1'
+    + '&pattern=' + encodeURIComponent(p.pattern)
+    + '&color1=' + encodeURIComponent(p.color1) + '&color2=' + encodeURIComponent(p.color2)
+    + '&scale=' + encodeURIComponent(p.scale) + '&seed=' + encodeURIComponent(p.seed)
+    + '&relief=' + encodeURIComponent(p.relief) + '&token=' + encodeURIComponent(TOKEN);
 }
 
 function applyTextureToViewer(name, kind, scale = 1) {
   if (!name) return;
   if (!kind) { state.viewer?.clearTexture(name); return; }
-  // своя текстура уже встроена в GLB — перерисовывать её по URL не нужно
-  if (kind === 'custom') return;
+  if (kind === 'custom' || kind === 'своя') {
+    // свою текстуру показываем сразу, не дожидаясь пересборки
+    state.viewer?.setTexture(name, textureUrl('своя'), textureNormalUrl());
+    return;
+  }
   state.viewer?.setTexture(name, textureUrl(kind, scale));
 }
 
@@ -1225,6 +1288,7 @@ function selectObject(name) {
     state.selected = null;
     document.querySelectorAll('.obj-item').forEach((el) => el.classList.remove('selected'));
     $('material-panel').hidden = true;
+    state.viewer?.clearHighlight();
     return;
   }
   const obj = (state.payload?.objects || []).find((o) => o.name === name);
@@ -1233,6 +1297,8 @@ function selectObject(name) {
   document.querySelectorAll('.obj-item').forEach((el) => {
     el.classList.toggle('selected', el.dataset.name === name);
   });
+  // Подсветка прямо в окне: выбранный в списке объект видно на модели.
+  if (!state.hidden.has(name)) state.viewer?.setHighlight(name);
   $('material-panel').hidden = false;
   $('mat-name').textContent = obj.name;
   state.material = { color: obj.color || '#c9d1e3', metal: obj.metal || 0, rough: obj.rough ?? 0.5 };
@@ -1298,7 +1364,8 @@ function writeMaterialScript({ rebuild = true } = {}) {
     return !(t.startsWith(`color ${m} `) || t.startsWith(`texture ${m} `) || t.startsWith(`материал ${m} `));
   });
   lines.push(`color ${m} ${color} metal=${metal} rough=${rough}`);
-  if (tex) lines.push(`texture ${m} kind=${tex}`);
+  if (tex === 'своя') lines.push(sandboxCommand(m));
+  else if (tex) lines.push(`texture ${m} kind=${tex}`);
   setScript(lines.join('\n').trimEnd());
   if (!rebuild) toast(`Материал «${m}» записан в сценарий`);
 }
@@ -1315,19 +1382,68 @@ function updateCustomTexVisibility() {
   block.hidden = ($('mat-tex')?.value || '') !== 'своя';
 }
 
-$('tex-create')?.addEventListener('click', () => {
-  if (!state.selected) return;
-  const name = state.selected.name;
-  const pattern = $('tex-pattern')?.value || 'полосы';
-  const c1 = $('tex-color1')?.value || '#3a6ea5';
-  const c2 = $('tex-color2')?.value || '#e8dfcf';
-  $('mat-tex').value = 'своя';
+/* ---------------- песочница генеративных текстур ---------------- */
+let texPreviewTimer = 0;
+
+function updateSandboxPreview() {
+  const img = $('tex-big');
+  if (!img) return;
+  img.src = textureUrl('своя') + '&_=' + Date.now();
+  const cmd = $('tex-command');
+  if (cmd) cmd.textContent = sandboxCommand(state.selected?.name || 'объект');
+  if ($('tex-scale-val')) $('tex-scale-val').textContent = $('tex-scale').value;
+  if ($('tex-relief-val')) $('tex-relief-val').textContent = $('tex-relief').value;
+}
+
+function scheduleSandboxPreview() {
+  clearTimeout(texPreviewTimer);
+  texPreviewTimer = setTimeout(updateSandboxPreview, 180);
+}
+
+function openTexSandbox() {
+  const modal = $('tex-modal');
+  if (!modal) return;
+  modal.hidden = false;
+  updateSandboxPreview();
+}
+
+function closeTexSandbox() {
+  const modal = $('tex-modal');
+  if (modal) modal.hidden = true;
+}
+
+function applySandboxTexture() {
+  const name = state.selected?.name;
+  if (!name) { toast('Сначала выберите объект в списке справа', 'bad'); return; }
+  const cmd = sandboxCommand(name);
   const lines = currentScript().split('\n').filter((l) => !l.trim().startsWith(`texture ${name} `));
-  lines.push(`texture ${name} kind=своя pattern=${pattern} color1=${c1} color2=${c2}`);
-  setScript(lines.join('\n').trimEnd());
+  lines.push(cmd);
+  $('mat-tex').value = 'своя';
   applyTextureToViewer(name, 'своя');
   showTexturePreview('своя');
-  toast(`Своя текстура «${pattern}» записана в сценарий`);
+  setScript(lines.join('\n').trimEnd());
+  toast(`Текстура применена к «${name}»`);
+}
+
+$('tex-sandbox')?.addEventListener('click', openTexSandbox);
+$('tex-close')?.addEventListener('click', closeTexSandbox);
+$('tex-modal')?.addEventListener('click', (e) => { if (e.target === $('tex-modal')) closeTexSandbox(); });
+['tex-pattern', 'tex-color1', 'tex-color2', 'tex-scale', 'tex-relief', 'tex-seed']
+  .forEach((id) => $(id)?.addEventListener('input', scheduleSandboxPreview));
+['tex-pattern', 'tex-color1', 'tex-color2', 'tex-seed']
+  .forEach((id) => $(id)?.addEventListener('change', updateSandboxPreview));
+$('tex-dice')?.addEventListener('click', () => {
+  $('tex-seed').value = String(1 + Math.floor(Math.random() * 999));
+  updateSandboxPreview();
+});
+$('tex-apply')?.addEventListener('click', applySandboxTexture);
+$('tex-download')?.addEventListener('click', () => {
+  const a = document.createElement('a');
+  a.href = textureUrl('своя') + '&download=1';
+  a.download = 'forma-texture.png';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 });
 
 $('mat-tex')?.addEventListener('change', (e) => {
@@ -1539,13 +1655,13 @@ function runCommand() {
     '/кружка': 'mug', '/mug': 'mug', '/ваза': 'vase', '/vase': 'vase',
     '/шестерня': 'gear', '/gear': 'gear', '/кузов': 'car', '/car': 'car',
     '/бутылка': 'bottle', '/bottle': 'bottle', '/пришелец': 'alien', '/alien': 'alien',
-    '/манекен': 'mannequin', '/mannequin': 'mannequin',
+    '/манекен': 'mannequin', '/mannequin': 'mannequin', '/яблоко': 'apple', '/apple': 'apple',
     '/инструменты': 'tools', '/tools': 'tools',
     '/анимация': 'animation', '/animation': 'animation' };
   if (RECIPES[low] || low === '/рецепты' || low === '/recipes') {
     $('cmd-input').value = '';
     if (RECIPES[low]) { loadExample(RECIPES[low]); return; }
-    toast('Рецепты: /банан, /гриб, /кружка, /ваза, /бутылка, /шестерня, /кузов, /пришелец, /манекен, /инструменты, /анимация');
+    toast('Рецепты: /яблоко, /банан, /гриб, /кружка, /ваза, /бутылка, /шестерня, /кузов, /пришелец, /манекен, /инструменты, /анимация');
     return;
   }
   if (low === '/очистить' || low === '/clear') {
@@ -1585,13 +1701,21 @@ $('cmd-input')?.addEventListener('paste', (e) => {
   }
 });
 
+function fitCmdInput() {
+  const el = $('cmd-input');
+  if (!el) return;
+  el.style.height = 'auto';
+  el.style.height = Math.min(132, Math.max(28, el.scrollHeight)) + 'px';
+}
+$('cmd-input')?.addEventListener('input', fitCmdInput);
+
 $('cmd-input')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
     e.preventDefault();
     sendToAssistant();
     return;
   }
-  if (e.key === 'Enter') { e.preventDefault(); runCommand(); return; }
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); runCommand(); return; }
   if (e.key === 'ArrowUp' && state.cmdHistory.length) {
     state.cmdIndex = Math.max(0, state.cmdIndex - 1);
     $('cmd-input').value = state.cmdHistory[state.cmdIndex] || '';
