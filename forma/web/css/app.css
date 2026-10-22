@@ -716,6 +716,12 @@ button.mini:disabled { opacity: .38; cursor: default; }
 .objects-tools button { padding: 3px 6px; }
 .obj-item .eye { font-size: 15px; color: #7f93ad; padding: 0 4px; cursor: pointer; }
 .obj-item .eye:hover { color: #cfe0ff; }
+.obj-item .trash {
+  font-size: 13px; color: #6f7d91; padding: 0 4px; cursor: pointer;
+  opacity: .55; transition: color .15s, opacity .15s;
+}
+.obj-item:hover .trash { opacity: 1; }
+.obj-item .trash:hover { color: #ff7f7f; }
 
 /* ---------- анимация: транспорт, дорожки, редактор ---------- */
 .anim-panel {

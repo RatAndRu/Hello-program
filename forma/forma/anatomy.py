@@ -254,6 +254,9 @@ class Anatomy:
         palm_w = self.hand_len * 0.36
         palm_t = self.hand_len * 0.20
         palm_c = origin + d * (palm_len * 0.55)
+        # запястье: перекрывает стык с предплечьем, иначе кисть «висит» отдельно
+        prims.append(capsule(origin - d * (palm_len * 0.22), origin + d * (palm_len * 0.12),
+                             self.hand_len * 0.115))
         rot = np.column_stack([side, up, d])
         prims.append(round_box(palm_c, (palm_w, palm_t, palm_len), palm_t * 0.45, rot=rot))
         # большой палец

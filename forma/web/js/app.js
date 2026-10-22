@@ -33,12 +33,13 @@ const state = {
   future: [],
   futureInfo: [],
   hidden: new Set(),
+  editBaseline: null,
   lastSaved: '', 
   material: { color: '#c9d1e3', metal: 0, rough: 0.5 },
   anim: {
     mode: 'clips', time: 0, duration: 0, playing: false,
     frames: [], frameIndex: 0, frameTimer: 0, hold: 0.8, fps: 24,
-    cache: new Map(), pending: null, timer: null, busy: false,
+    cache: new Map(), pending: null, timer: null, busy: false, preview: null,
   },
 };
 
@@ -79,8 +80,10 @@ function updateUndoButtons() {
   if (redo) redo.disabled = !state.future.length;
 }
 
-function pushHistory(previous, label = 'правка') {
-  if (previous === undefined || previous === currentScript()) return;
+function pushHistory(previous, label = 'правка', next = null) {
+  if (previous === undefined || previous === null) return;
+  const target = next === null ? currentScript() : next;
+  if (previous === target) return;          // действие ничего не меняет
   state.history.push(previous);
   state.historyInfo.push({ label, at: Date.now() });
   if (state.history.length > 200) {
@@ -94,11 +97,24 @@ function pushHistory(previous, label = 'правка') {
 }
 
 function setScript(text, { build = true, record = true, label = 'правка' } = {}) {
-  if (record) pushHistory(currentScript(), label);
+  if (record) pushHistory(currentScript(), label, text);
   $('code').value = text;
+  state.editBaseline = text;
   updateGutter();
   updateCursor();
   if (build) buildNow();
+}
+
+/** Правки в самом редакторе: одна запись истории на «сеанс» набора. */
+let editTimer = 0;
+function scheduleEditSnapshot() {
+  clearTimeout(editTimer);
+  editTimer = setTimeout(() => {
+    const now = currentScript();
+    if (state.editBaseline === null || now === state.editBaseline) return;
+    pushHistory(state.editBaseline, 'правка в редакторе', now);
+    state.editBaseline = now;
+  }, 650);
 }
 
 function undo() {
@@ -108,6 +124,7 @@ function undo() {
   const prev = state.history.pop();
   setScript(prev, { record: false });
   updateUndoButtons();
+  renderHistory();
   toast('Шаг отменён (' + state.history.length + ' в истории)');
 }
 
@@ -118,6 +135,7 @@ function redo() {
   const next = state.future.pop();
   setScript(next, { record: false });
   updateUndoButtons();
+  renderHistory();
   toast('Шаг возвращён');
 }
 
@@ -156,6 +174,7 @@ function rollbackTo(index) {
   state.historyInfo = state.historyInfo.slice(0, index);
   setScript(target, { record: false });
   updateUndoButtons();
+  renderHistory();
   toast(`Откат к шагу ${state.history.length + 1} — сделано`);
 }
 
@@ -188,6 +207,7 @@ $('code').addEventListener('scroll', () => { $('gutter').scrollTop = $('code').s
 $('code').addEventListener('input', () => {
   updateGutter();
   updateCursor();
+  scheduleEditSnapshot();
   hideError();
   if ($('autobuild').checked) {
     clearTimeout(state.autobuildTimer);
@@ -318,6 +338,10 @@ function applyBuild(payload, elapsed) {
     failed ? 'bad' : 'ok');
   applyViewSettings(payload);
   updatePolyBadge();
+  // Сразу показываем, что за клипы придут с моделью, не дожидаясь загрузки GLB.
+  state.anim.frames = payload.frames || [];
+  if (state.anim.mode === 'frames' && !state.anim.frames.length) state.anim.mode = 'clips';
+  updateAnimState();
 }
 
 function fmt(v, digits = 2) {
@@ -471,7 +495,8 @@ function renderObjects(payload) {
           ${fmt(o.volume_cm3)} см³ · ${fmtInt(o.tris)} трис
           ${o.tex ? ' · <span class="obj-tex">текстура: ' + escapeHtml(o.tex.label || o.tex.kind) + '</span>' : ''}</div>
       </div>
-      <span class="eye">${state.hidden.has(o.name) ? '○' : '●'}</span>`;
+      <span class="eye" title="Скрыть или показать">${state.hidden.has(o.name) ? '○' : '●'}</span>
+      <span class="trash" title="Удалить объект из модели">🗑</span>`;
     el.dataset.name = o.name;
     const eye = el.querySelector('.eye');
     if (eye) {
@@ -485,6 +510,13 @@ function renderObjects(payload) {
         eye.textContent = willHide ? '○' : '●';
         el.classList.toggle('hidden-obj', willHide);
         toast(willHide ? `Скрыто: ${name}` : `Показано: ${name}`);
+      });
+    }
+    const trash = el.querySelector('.trash');
+    if (trash) {
+      trash.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        deleteObject(o.name);
       });
     }
     el.addEventListener('click', () => {
@@ -511,6 +543,23 @@ function renderObjects(payload) {
     ? `Всего объектов: ${objs.length} (видимых ${m.visible_count ?? '—'}).<br>
        Материал: ${fmt(m.volume_cm3)} см³, масса ${fmt(m.mass_g, 0)} г.`
     : 'Пока нет объектов.';
+}
+
+/** Удаление объекта: дописывает команду «удалить» и чистит его строки материала. */
+function deleteObject(name) {
+  if (!name) return;
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const keep = (line) => {
+    const t = line.trim();
+    if (new RegExp(`^(удалить|delete|remove|убрать)\\s+${esc}$`, 'i').test(t)) return false;
+    if (new RegExp(`^(color|цвет|texture|текстура|hide|скрыть|show|показать)\\s+${esc}(\\s|$)`, 'i').test(t)) return false;
+    return true;
+  };
+  const lines = currentScript().split('\n').filter(keep);
+  lines.push(`удалить ${name}`);
+  if (state.selected?.name === name) selectObject('');
+  setScript(lines.join('\n').trimEnd(), { label: `удаление «${name}»` });
+  toast(`Объект «${name}» удалён — Ctrl+Z вернёт`);
 }
 
 function setAllObjectsVisible(visible) {
@@ -596,6 +645,7 @@ function escapeHtml(s) {
 /*  Просмотр                                                          */
 /* ------------------------------------------------------------------ */
 async function loadModel(url, animation = null) {
+  state.anim.preview = null;
   state.anim.cache.clear();
   state.anim.pending = null;
   state.anim.frameTimer = 0;
@@ -717,13 +767,40 @@ function animPlan() {
   return one && one.kind ? { clips: [one], duration: one.seconds || 4, count: 1 } : null;
 }
 
-function animClips() { return animPlan()?.clips || []; }
+function animClips() {
+  const plan = animPlan();
+  if (plan?.clips?.length) return plan.clips;
+  return state.anim.preview?.clips || [];
+}
 function animFrames() { return state.anim.frames || []; }
 function animFps() { return Number(animClips()[0]?.fps) || 24; }
 
 function animHasContent() {
   if (state.anim.mode === 'frames') return animFrames().length > 0;
+  if (state.anim.preview) return true;
   return animClips().length > 0 || Boolean(state.viewer?.hasAnimation());
+}
+
+/** Нет animate в сценарии — всё равно показываем вращение, но не пишем его в сценарий. */
+function startPreviewAnimation() {
+  const v = state.viewer;
+  if (!v || !v.hasModel?.()) return false;
+  const clip = { kind: 'spin', axis: 'z', start: 0, length: 6, end: 6, loop: true,
+                 seconds: 6, fps: 24, preview: true };
+  const plan = { clips: [clip], duration: 6, count: 1, has: true, kinds: ['spin'],
+                 assembly: null };
+  if (!v.setTimeline) return false;
+  v.setTimeline(plan);
+  v.playAnimation(true);
+  state.anim.preview = plan;
+  state.anim.mode = 'clips';
+  state.anim.duration = 6;
+  state.anim.time = 0;
+  state.anim.playing = v.playing !== false;
+  if ($('anim-mode')) $('anim-mode').value = 'clips';
+  syncAnimUI();
+  toast('Включён предпросмотр вращения. Чтобы сохранить его в модель, добавьте строку animate');
+  return true;
 }
 
 /** Понятное объяснение вместо ложного «в сценарии нет анимации». */
@@ -762,8 +839,11 @@ function syncAnimUI() {
     } else {
       const clips = animClips();
       const total = animPlan()?.duration || 0;
+      const preview = Boolean(a.preview);
+      const shownTotal = preview ? a.preview.duration : total;
       label.textContent = clips.length
-        ? `${clips.map((c) => ANIM_KINDS[c.kind] || c.kind).join(' + ')} · ${total.toFixed(1)} с`
+        ? `${clips.map((c) => ANIM_KINDS[c.kind] || c.kind).join(' + ')} · `
+          + `${shownTotal.toFixed(1)} с` + (preview ? ' · предпросмотр' : '')
         : 'анимация не задана (animate)';
       label.className = 'anim-status ' + (clips.length ? 'ok' : '');
     }
@@ -806,7 +886,7 @@ function syncAnimClock() {
 
 function updateAnimState() {
   const a = state.anim;
-  a.duration = Number(state.viewer?.duration) || Number(animPlan()?.duration) || 0;
+  a.duration = Number(animPlan()?.duration) || Number(state.viewer?.duration) || 0;
   if (a.mode === 'frames') a.duration = 0;
   syncAnimUI();
 }
@@ -1034,7 +1114,10 @@ function setAnimMode(mode) {
 
 function togglePlayAnim() {
   const a = state.anim;
-  if (!animHasContent()) { explainNoAnimation(); return; }
+  if (!animHasContent()) {
+    if (!startPreviewAnimation()) explainNoAnimation();
+    return;
+  }
   a.playing = !a.playing;
   if (a.mode === 'frames') {
     if (state.viewer) { state.viewer.manualAdvance = true; state.viewer.playing = a.playing; }
@@ -2142,7 +2225,9 @@ async function init() {
     renderProjects();
     renderHelp();
     setScript(st.script, { build: false, record: false });
+    state.editBaseline = st.script;
     updateUndoButtons();
+    renderHistory();
     $('status-version').textContent = 'v' + (st.version || '');
     if (st.has_build) {
       buildNow(true);

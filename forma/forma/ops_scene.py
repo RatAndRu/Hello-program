@@ -61,6 +61,32 @@ def hide(a, name):
     return None
 
 
+@op("delete", aliases=("удалить", "стереть", "remove", "убрать"), category="Сцена и материал",
+    summary="Удаляет объект из сцены: он исчезает из списка, модели, рендера и экспорта. "
+            "Строки сценария самого объекта остаются — их можно вернуть откатом.",
+    example="удалить ручка",
+    params={"target": "имя объекта или all"},
+    positional=["target"])
+def delete_object(a, name):
+    target = (a.text("target") or "").strip()
+    if not target:
+        raise DslError("Укажите, что удалить: удалить ручка",
+                       line=a.cmd.line, command=a.cmd.text)
+    if target in ("all", "*", "все", "всё"):
+        targets = list(a.scene.objects.values())
+    else:
+        targets = [a.scene.resolve(target)]
+    removed = []
+    for solid in targets:
+        if solid.name in a.scene.objects:
+            a.scene.objects.pop(solid.name, None)
+            removed.append(solid.name)
+    if not removed:
+        raise DslError(f"Объект «{target}» уже удалён.", line=a.cmd.line)
+    a.scene.log("info", "удалено: " + ", ".join(removed), a.cmd.line)
+    return None
+
+
 @op("check", aliases=("проверить", "проверка"), category="Проверка",
     summary="Задаёт проверку результата: размер, толщина стенок, герметичность, симметрия и т.д.",
     example="check кружка height 90..110",

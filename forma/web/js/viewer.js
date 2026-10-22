@@ -502,21 +502,29 @@ export class Viewer {
     });
     this.scene.add(root);
     this.model = root;
-    this._fit(root);
-    this.setAxes(this.axesVisible);
-    this.applyShading(this.shading);
-    this.applySettings(this.settings);
-    this._setupAnimation(gltf);
-    this._prepareAnimWrap();
-    const clips = animation?.clips?.length ? animation.clips
-      : (animation && animation.kind ? [animation] : []);
-    this.setTimeline({ clips, duration: Number(animation?.duration) || 0,
-                       assembly: animation?.assembly || null });
-    this.setPolygons(this.polygons);
-    // Скрытые объекты остаются скрытыми и после пересборки: состояние живёт
-    // в вьюере, а не только в списке объектов.
-    this.hidden.forEach((name) => this.setObjectVisible(name, false));
-    if (this.highlightName) this.setHighlight(this.highlightName);
+    // Модель уже на экране. Дальше — только оформление и анимация: сбой в них
+    // не должен выглядеть как «не удалось показать модель».
+    try {
+      this._fit(root);
+      // Сначала анимация: если что-то в оформлении ниже упадёт, модель всё равно
+      // должна играть, а не превращаться в «статичную картинку».
+      this._setupAnimation(gltf);
+      this._prepareAnimWrap();
+      const clips = animation?.clips?.length ? animation.clips
+        : (animation && animation.kind ? [animation] : []);
+      this.setTimeline({ clips, duration: Number(animation?.duration) || 0,
+                         assembly: animation?.assembly || null });
+      this.setAxes(this.axesVisible);
+      this.setShading(this.shading);
+      this.applySettings(this.settings);
+      this.setPolygons(this.polygons);
+      // Скрытые объекты остаются скрытыми и после пересборки: состояние живёт
+      // в вьюере, а не только в списке объектов.
+      this.hidden.forEach((name) => this.setObjectVisible(name, false));
+      if (this.highlightName) this.setHighlight(this.highlightName);
+    } catch (e) {
+      console.error('оформление модели:', e);
+    }
     return this.bbox;
   }
 
@@ -550,6 +558,13 @@ export class Viewer {
     const box = new THREE.Box3().setFromObject(this.model);
     if (box.isEmpty()) return;
     const center = box.getCenter(new THREE.Vector3());
+    // Ось вращения — вертикальная прямая через центр модели. Если начало
+    // координат попадает внутрь габаритов (все модели ядра строятся вокруг
+    // нуля), вращаем ровно вокруг него: у кружки ручка не сдвигает ось.
+    if (!(box.min.x < 0 && box.max.x > 0)) center.x = (box.min.x + box.max.x) / 2;
+    else center.x = 0;
+    if (!(box.min.z < 0 && box.max.z > 0)) center.z = (box.min.z + box.max.z) / 2;
+    else center.z = 0;
     const wrap = new THREE.Group();
     wrap.name = 'FormaAnimWrap';
     wrap.position.copy(center);
@@ -589,6 +604,11 @@ export class Viewer {
     this.loop = this.plan ? this.plan.clips.every((c) => c.loop !== false) : this.loop;
     this.applyTime(0);
     return this.duration;
+  }
+
+  hasModel() {
+    const stats = this.getStats?.();
+    return Boolean(this.model && (!stats || typeof stats.meshes !== 'number' || stats.meshes > 0));
   }
 
   hasAnimation() {

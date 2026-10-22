@@ -29,6 +29,9 @@ t = 4
 
 color кружка #efe9df material=ceramic
 
+# презентационное вращение — кнопка «играть» работает сразу
+animate kind=spin axis=z seconds=8 loop=да
+
 check кружка watertight
 check кружка parts 1
 check кружка genus 1
