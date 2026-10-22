@@ -170,6 +170,22 @@ class LinksTest(unittest.TestCase):
         self.assertAlmostEqual(point_gap(block, [0, 0, 25]), 20.0, places=1)
 
 
+class ImportBackTest(unittest.TestCase):
+    """Свой GLB возвращается в сцену: швы сварены, оси Z-вверх."""
+
+    def test_glb_round_trip(self):
+        import tempfile
+        res = scene("кружка = cup diameter=80 height=95 wall=4")
+        path = Path(tempfile.mkdtemp()) / "кружка.glb"
+        path.write_bytes(res.glb())
+        back = scene(f"импорт = import file={path}\ncheck импорт watertight\n"
+                     "check импорт height 92..98")
+        obj = {o["name"]: o for o in back.payload()["objects"]}["импорт"]
+        self.assertAlmostEqual(obj["bbox"][2], 0.0, places=1)
+        self.assertAlmostEqual(obj["bbox"][5], 95.0, places=1)
+        self.assertTrue(all(c["ok"] for c in back.payload()["analysis"]["checks"]))
+
+
 class CommandsTest(unittest.TestCase):
     def test_every_command_has_card_fields(self):
         commands = commands_help()

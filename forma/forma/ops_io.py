@@ -86,6 +86,10 @@ def load_any(path: Path, scale: float | None = 1.0,
     # unit=auto раньше угадывал масштаб по размеру и ошибался в 100–1000 раз.
     # Теперь по умолчанию файл считается миллиметровым: масштаб меняется только
     # по явному указанию unit=cm|m|inch.
+    # GLB/glTF хранят Y вверх (как Blender): возвращаем модель в Z-вверх,
+    # иначе кружка после импорта лежит на боку.
+    if path.suffix.lower() in {".glb", ".gltf"}:
+        v = np.column_stack([v[:, 0], -v[:, 2], v[:, 1]])
     if scale is not None and abs(float(scale) - 1.0) > 1e-12:
         v = v * float(scale)
     if repair:
@@ -118,6 +122,20 @@ def load_any(path: Path, scale: float | None = 1.0,
         except Exception:
             pass
     return v, f
+
+
+def weld_mesh(verts, faces):
+    """Сваривает швы (вершины по месту) — свой GLB после экспорта снова замкнут."""
+    try:
+        import trimesh
+        mesh = trimesh.Trimesh(vertices=np.asarray(verts, dtype=np.float64),
+                               faces=np.asarray(faces, dtype=np.int64), process=True)
+        if len(mesh.faces) == 0:
+            return None
+        return (np.asarray(mesh.vertices, dtype=np.float64),
+                np.asarray(mesh.faces, dtype=np.int64))
+    except Exception:
+        return None
 
 
 # Предупреждения последнего импорта (выводит команда import).
@@ -161,13 +179,25 @@ def import_mesh(a, name):
     try:
         solid_mesh = manifold_from_arrays(verts, faces, what=f"импорт «{path.name}»")
     except GeometryError as exc:
-        if not repair:
+        # Экспорт режет вершины по граням и нормалям, поэтому свой же GLB
+        # после импорта выглядит незамкнутым. Сначала пробуем сварить швы.
+        welded = weld_mesh(verts, faces)
+        if welded is not None:
+            try:
+                solid_mesh = manifold_from_arrays(welded[0], welded[1],
+                                                  what=f"импорт «{path.name}»")
+                a.scene.log("info", "импорт: швы сварены (вершины совпали)", a.cmd.line)
+                verts, faces = welded
+            except GeometryError:
+                solid_mesh = None
+        if solid_mesh is None and not repair:
             raise GeometryError(
                 f"Сетка файла «{path.name}» не герметична: {exc}",
                 hint="Если форма важнее точности, добавьте repair=да — программа "
                      "закроет дыры, но объём может измениться. Или почините файл "
                      "в Blender.") from exc
-        raise
+        if solid_mesh is None:
+            raise
     target = (a.text("target") or name or a.scene.auto_name("импорт")).strip() or "импорт"
     style = a.style()
     solid = Solid(name=a.scene.unique_name(target), manifold=solid_mesh,
