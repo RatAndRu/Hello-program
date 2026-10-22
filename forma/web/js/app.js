@@ -602,6 +602,8 @@ function textureUrl(kind, scale = 1) {
 function applyTextureToViewer(name, kind, scale = 1) {
   if (!name) return;
   if (!kind) { state.viewer?.clearTexture(name); return; }
+  // своя текстура уже встроена в GLB — перерисовывать её по URL не нужно
+  if (kind === 'custom') return;
   state.viewer?.setTexture(name, textureUrl(kind, scale));
 }
 
@@ -859,7 +861,8 @@ function selectObject(name) {
   $('mat-tex').value = !obj.tex ? ''
     : (obj.tex.kind === 'custom' ? 'своя' : (KIND_RU[obj.tex.kind] || ''));
   updateCustomTexVisibility();
-  showTexturePreview(obj.tex ? (KIND_RU[obj.tex.kind] || '') : '');
+  showTexturePreview(!obj.tex ? ''
+    : (obj.tex.kind === 'custom' ? 'своя' : (KIND_RU[obj.tex.kind] || '')));
   // открываем вкладку объектов
   const tab = document.querySelector('.tab[data-tab="objects"]');
   if (tab && !tab.classList.contains('active')) tab.click();
