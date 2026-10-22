@@ -372,6 +372,7 @@
         <button class="tab active" data-tab="report">Отчёт</button>
         <button class="tab" data-tab="checks">Проверки</button>
         <button class="tab" data-tab="objects">Объекты</button>
+        <button class="tab" data-tab="links">Связи</button>
         <button class="tab" data-tab="assist">Помощник</button>
       </div>
       <div class="tab-body">
@@ -476,6 +477,21 @@
           </div>
           <div id="objects-list" class="objects-list"></div>
           <div class="hint-box" id="objects-summary"></div>
+        </div>
+        <div class="tab-page" id="page-links">
+          <div class="links-head">
+            <span id="links-summary">Связи не считались</span>
+            <button class="mini" id="links-refresh" title="Пересчитать зазоры между деталями">↻ пересчитать</button>
+          </div>
+          <div id="links-body" class="links-body">
+            <div class="hint-box">
+              Здесь видно, <b>что с чем соединено</b>, у каких деталей есть зазор и где
+              деталь висит в воздухе. Счёт идёт по точному расстоянию между телами,
+              а не по габаритам. Кнопка «связать» дописывает в сценарий команду
+              <code>сопряжение</code> — деталь встанет на место отношением, и проверка
+              <code>check имя связь</code> будет следить за стыком.
+            </div>
+          </div>
         </div>
         <div class="tab-page" id="page-assist">
           <p class="assist-intro">
@@ -588,7 +604,9 @@
       </div>
       <div class="tools-hint">
         Задайте параметры и нажмите «Добавить» — строка появится в конце сценария,
-        её можно править как обычную команду.
+        её можно править как обычную команду. Внизу — карточка на каждую команду
+        справочника: описание, параметры и пример («Вставить пример» подставит
+        уникальные имена, ничего не затерев).
       </div>
       <div class="tools-search-row">
         <input type="search" id="tools-search" class="tools-search"

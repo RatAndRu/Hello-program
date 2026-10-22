@@ -34,6 +34,7 @@ RULE_ALIASES = {
     "треугольники": "tris", "трис": "tris",
     "отклонение": "deviation", "похожесть": "deviation", "эталон": "deviation",
     "hausdorff": "deviation", "гаусдорф": "deviation", "сравнение": "deviation",
+    "связь": "связь", "сопряжение": "связь", "петля": "связь", "mate": "связь",
 }
 
 RULE_LABELS = {
@@ -57,6 +58,7 @@ RULE_LABELS = {
     "sharp_edge": "острые рёбра",
     "tri_quality": "качество треугольников",
     "deviation": "отклонение от эталона",
+    "связь": "сопряжение",
 }
 
 UNITS = {
@@ -65,7 +67,7 @@ UNITS = {
     "flat_bottom": "%", "overhang": "%", "symmetric": "%",
     "tris": "трис", "genus": "шт", "parts": "шт",
     "wall_min": "мм", "sharp_edge": "°", "tri_quality": "%",
-    "deviation": "мм",
+    "deviation": "мм", "связь": "мм",
 }
 
 AXES = {"x": 0, "y": 1, "z": 2, "ширина": 0, "глубина": 1, "высота": 2,
@@ -165,7 +167,8 @@ def _load_reference(path):
 
 RULES = {"watertight", "genus", "parts", "size", "height", "width", "depth", "volume",
          "mass", "wall", "wall_min", "flat_bottom", "overhang", "symmetric", "gap",
-         "clearance", "inside", "tris", "sharp_edge", "tri_quality", "deviation"}
+         "clearance", "inside", "tris", "sharp_edge", "tri_quality", "deviation",
+         "связь"}
 
 
 def evaluate_checks(scene, cache) -> list[dict]:
@@ -373,6 +376,25 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache) -> dict:
         return _result(ok, rule, f"{label} до «{other.name}»: {actual_text} "
                                  f"({'в норме' if ok else 'не в норме'}, нужно {_fmt_range(rng, 'мм')})",
                        name, line, gap, _fmt_range(rng, "мм"), label)
+
+    if rule == "связь":
+        scene = _scene(cache)
+        from .mates import residual_of
+        records = [m for m in (getattr(scene, "mates", []) or [])
+                   if m.get("moving") == name]
+        if not records:
+            raise FormaError("У этой детали нет сопряжений.",
+                             hint=f"Добавьте: сопряжение {name} основание type=плоскость")
+        worst = max(records, key=lambda r: residual_of(r, scene))
+        res = residual_of(worst, scene)
+        tol = 1.0 if worst.get("kind") == "hinge" else 0.05
+        if args:
+            tol = float(_parse_range(args[0], cache_scene(cache)).hi or tol)
+        ok = res <= tol
+        text = (f"связь с «{worst.get('base')}» ({worst.get('kind_ru', worst.get('kind'))}): "
+                f"остаток {_num(res, 'мм')} — {'держится' if ok else 'разъехалась'}"
+                f" (допуск {_num(tol, 'мм')})")
+        return _result(ok, rule, text, name, line, res, f"0..{tol:g}", "сопряжение")
 
     if rule == "inside":
         if not args:

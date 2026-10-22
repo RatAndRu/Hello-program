@@ -81,6 +81,8 @@ class Scene:
         self.sections: list[dict] = []
         self.probes: list[dict] = []
         self.passports: list[dict] = []
+        # сопряжения: деталь ставится отношением (плоскость, ось, паз, петля…)
+        self.mates: list[dict] = []
         self.logs: list[dict] = []
         self.line = 0
         self.command = ""

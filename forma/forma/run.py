@@ -34,6 +34,7 @@ from . import ops_tech  # noqa: F401,E402
 from . import ops_shapes  # noqa: F401,E402
 from . import ops_hardware  # noqa: F401,E402
 from . import ops_kit  # noqa: F401,E402
+from . import ops_assembly  # noqa: F401,E402
 from . import ops_parts  # noqa: F401,E402
 
 
@@ -174,6 +175,7 @@ class Build:
             "sections": _sections_payload(scene),
             "probes": list(getattr(scene, "probes", []) or []) if scene else [],
             "passports": list(getattr(scene, "passports", []) or []) if scene else [],
+            "mates": list(getattr(scene, "mates", []) or []) if scene else [],
             "steps": self.steps,
             "frames": frames,
             "upto": self.upto,

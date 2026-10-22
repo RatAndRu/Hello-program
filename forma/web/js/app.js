@@ -358,6 +358,7 @@ function applyBuild(payload, elapsed) {
   renderReport(payload);
   renderSections(payload);
   renderChecks(payload);
+  if ($('page-links')?.classList.contains('active')) renderLinks();
   renderObjects(payload);
   renderDimensions(metrics);
   if (state.selected?.name) {
@@ -559,6 +560,116 @@ function renderChecks(payload) {
       '<code>check кружка height 90..110</code></div>';
   }
 }
+
+/* ------------------------------------------------------------------ */
+/*  0.19: мастер зазоров — что с чем соединено                        */
+/* ------------------------------------------------------------------ */
+function linkRow(name, note, status, mateLine) {
+  const row = document.createElement('div');
+  row.className = 'links-row';
+  const badge = document.createElement('span');
+  badge.className = 'links-badge ' + (status.kind || '');
+  badge.textContent = status.text;
+  const nm = document.createElement('span');
+  nm.className = 'links-name';
+  nm.textContent = name;
+  const nt = document.createElement('span');
+  nt.className = 'links-note';
+  nt.textContent = note;
+  row.append(badge, nm, nt);
+  if (mateLine) {
+    const btn = document.createElement('button');
+    btn.className = 'small';
+    btn.textContent = 'связать';
+    btn.title = 'Дописать в сценарий: ' + mateLine;
+    btn.addEventListener('click', () => insertTool(mateLine, 'сопряжение'));
+    row.appendChild(btn);
+  }
+  return row;
+}
+
+function addLinksTitle(body, text) {
+  const t = document.createElement('div');
+  t.className = 'links-group-title';
+  t.textContent = text;
+  body.appendChild(t);
+}
+
+async function renderLinks() {
+  const body = $('links-body');
+  if (!body) return;
+  if (!state.payload) {
+    body.innerHTML = '<div class="hint-box">Соберите модель — тогда будет видно, ' +
+      'какие детали касаются друг друга, а какие висят отдельно.</div>';
+    return;
+  }
+  let data;
+  try {
+    data = await api('/api/links');
+  } catch (e) {
+    $('links-summary').textContent = e.message || 'не удалось посчитать связи';
+    return;
+  }
+  body.innerHTML = '';
+  const total = data.objects || 0;
+  const loose = data.loose || [];
+  const mates = data.mates || [];
+  $('links-summary').textContent = total
+    ? `деталей ${total} · сборок ${data.groups || 0} · в главной ${data.main || 0}` +
+      ` · касаний ${data.touches || 0}`
+    : 'в сцене нет видимых деталей';
+
+  if (loose.length) {
+    addLinksTitle(body, `Висят отдельно — ${loose.length}`);
+    loose.forEach((item) => {
+      const near = item.nearest ? `ближайшая «${item.nearest}», зазор ${item.gap} мм`
+        : 'рядом ничего нет';
+      const status = item.gap !== null && item.gap <= 2
+        ? { text: 'зазор', kind: 'warn' } : { text: 'висит', kind: 'bad' };
+      const line = item.nearest
+        ? `сопряжение ${item.name} ${item.nearest} type=зазор offset=0`
+        : null;
+      body.appendChild(linkRow(item.name, near, status, line));
+    });
+  } else if (total) {
+    addLinksTitle(body, 'Все детали соединены');
+    body.appendChild(linkRow('сборка', `${total} деталей образуют одну сборку`,
+      { text: 'ok', kind: 'ok' }, null));
+  }
+
+  if (mates.length) {
+    addLinksTitle(body, `Сопряжения — ${mates.length}`);
+    mates.forEach((m) => {
+      const hinge = m.kind === 'hinge';
+      const tol = hinge ? 1 : 0.05;
+      const res = Number(m.residual || 0);
+      const ok = res <= tol;
+      const off = m.offset ? `, зазор ${m.offset} мм` : '';
+      const ang = m.angle ? `, поворот ${m.angle}°` : '';
+      body.appendChild(linkRow(
+        `${m.moving} → ${m.base}`,
+        `${m.kind_ru || m.kind}${off}${ang} · остаток ${res.toFixed(3)} мм · стр. ${m.line}`,
+        { text: ok ? 'держится' : 'разъехалась', kind: ok ? 'ok' : 'bad' }, null));
+    });
+  } else if (total) {
+    addLinksTitle(body, 'Сопряжений нет');
+    body.appendChild(linkRow('как добавить',
+      'сопряжение колесо рейка type=паз axis=y · дверь корпус type=петля point=[x,y,z] angle=30',
+      { text: 'подсказка', kind: '' }, null));
+  }
+
+  const pairs = (data.pairs || []).filter((pr) => pr.gap > 0.05).slice(0, 24);
+  if (pairs.length) {
+    addLinksTitle(body, 'Зазоры между деталями');
+    pairs.forEach((pr) => {
+      body.appendChild(linkRow(`${pr.a} ↔ ${pr.b}`,
+        `зазор ${pr.gap} мм`,
+        { text: pr.gap <= 2 ? 'стык' : 'щель', kind: pr.gap <= 2 ? 'warn' : '' }, null));
+    });
+  }
+}
+
+$('links-refresh')?.addEventListener('click', renderLinks);
 
 function renderObjects(payload) {
   const list = $('objects-list');
@@ -3702,6 +3813,57 @@ function addShapeTool(tool, card) {
   insertTool(`${name} = ${tool.op} ${parts.join(' ')}`, tool.title);
 }
 
+/** Переименовывает объекты примера, чтобы вставка не ломала имена. */
+function uniqueExample(text, script) {
+  const names = [...text.matchAll(/^([\wА-Яа-яЁё]+)\s*=/gm)].map((m) => m[1]);
+  let out = text;
+  names.forEach((name) => {
+    const fresh = uniqueObjectName(name, script + '\n' + out);
+    if (fresh === name) return;
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    out = out.replace(new RegExp(`(?<![\\wА-Яа-яЁё])${esc}(?![\\wА-Яа-яЁё])`, 'g'), fresh);
+  });
+  return out;
+}
+
+/** Карточка команды, собранная из справочника: описание, параметры, пример. */
+function commandCard(c) {
+  const card = document.createElement('div');
+  card.className = 'tool-card tool-cmd';
+  const head = document.createElement('div');
+  head.className = 'tool-card-head';
+  head.innerHTML = `<b>${escapeHtml(c.name)}</b><code>${escapeHtml((c.aliases || []).join(', ') || c.category)}</code>`;
+  const desc = document.createElement('div');
+  desc.className = 'tool-desc';
+  desc.textContent = c.summary || '';
+  card.append(head, desc);
+  const params = document.createElement('div');
+  params.className = 'tool-params';
+  (c.params || []).forEach((p) => {
+    const chip = document.createElement('span');
+    chip.innerHTML = `<b>${escapeHtml(p.name)}</b> — ${escapeHtml(p.desc)}`;
+    params.appendChild(chip);
+  });
+  if (params.children.length) card.appendChild(params);
+  if (c.example) {
+    const pre = document.createElement('pre');
+    pre.textContent = c.example;
+    card.appendChild(pre);
+  }
+  card.dataset.search = [c.name, (c.aliases || []).join(' '), c.category, c.summary,
+    ...(c.params || []).map((p) => p.name + ' ' + p.desc)].join(' ').toLowerCase();
+  if (c.example) {
+    const btn = document.createElement('button');
+    btn.className = 'small primary';
+    btn.textContent = 'Вставить пример';
+    btn.addEventListener('click', () => insertTool(
+      `# ${c.name}: пример из справочника\n` + uniqueExample(c.example, currentScript()),
+      c.name));
+    card.appendChild(btn);
+  }
+  return card;
+}
+
 function renderTools() {
   const body = $('tools-body');
   if (!body) return;
@@ -3800,6 +3962,27 @@ function renderTools() {
   });
   recipes.appendChild(rgrid);
   body.appendChild(recipes);
+
+  // Все команды из справочника — у каждой своя карточка с параметрами и примером.
+  const commands = state.help || [];
+  const order = [];
+  const byCat = new Map();
+  commands.forEach((c) => {
+    const key = c.category || 'Прочее';
+    if (!byCat.has(key)) { byCat.set(key, []); order.push(key); }
+    byCat.get(key).push(c);
+  });
+  order.forEach((cat) => {
+    const section = document.createElement('div');
+    section.className = 'tool-group tool-group-cmd';
+    const head = document.createElement('h4');
+    head.textContent = `Все команды · ${cat} · ${byCat.get(cat).length}`;
+    const grid = document.createElement('div');
+    grid.className = 'tool-grid';
+    section.append(head, grid);
+    byCat.get(cat).forEach((c) => grid.appendChild(commandCard(c)));
+    body.appendChild(section);
+  });
   applyToolsFilter();
 }
 
@@ -3989,6 +4172,7 @@ document.querySelectorAll('.tab').forEach((tab) => {
     document.querySelectorAll('.tab-page').forEach((p) => p.classList.remove('active'));
     tab.classList.add('active');
     $('page-' + tab.dataset.tab).classList.add('active');
+    if (tab.dataset.tab === 'links') renderLinks();
   });
 });
 

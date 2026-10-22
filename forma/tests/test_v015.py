@@ -214,7 +214,7 @@ class TestExamplesAndTools(unittest.TestCase):
             "mug", "car", "vase", "bottle", "alien", "gear",
             "mannequin", "apple", "human_studio", "animation_tracks", "wardrobe",
             "mechanics", "showcase", "units",
-            "motorcycle", "clock",
+            "motorcycle", "clock", "mates",
         ])
 
     def test_removed_examples_are_gone(self):

@@ -472,6 +472,7 @@ EXAMPLES = [
     ("Узлы и крепёж: подшипник, шкив, болт", "units"),
     ("Мотоцикл: рама, вилка, езда и прыжок", "motorcycle"),
     ("Скелетон-часы: механизм и ход 10:10:35", "clock"),
+    ("Сопряжения: рейка, петля, ось и зазор", "mates"),
 ]
 
 
@@ -684,6 +685,14 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/commands":
             from .run import commands_help
             self._send_json({"commands": commands_help()})
+            return
+        if path == "/api/links":
+            b = st.last_build
+            if not b or not b.ok:
+                self._send_json({"error": {"message": "Сначала постройте модель"}}, 409)
+                return
+            from .links import scene_links
+            self._send_json(scene_links(b.scene))
             return
         if path == "/api/reference":
             self._send_json({"markdown": command_reference_md()})
