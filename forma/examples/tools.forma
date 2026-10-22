@@ -1,0 +1,58 @@
+# Витрина безопасных инструментов: twist, bend, taper, extrude, slice, align.
+# Каждый объект — отдельная деталь, команды можно копировать по одной.
+
+# 1. Скрутка: квадратный брусок превращается в витую колонну
+скрутка = box size=[46,46,320] round=4
+скрутка = twist [скрутка] angle=240 axis=z
+скрутка = align [скрутка] x=center y=center z=min
+скрутка = place [скрутка] at=[-620,0,0]
+color скрутка #b9c6d8 metal=0.4 rough=0.3
+
+# 2. Изгиб: полоса гнётся дугой
+изгиб = box size=[26,190,340] round=6
+изгиб = bend [изгиб] angle=95
+изгиб = align [изгиб] x=center y=center z=min
+изгиб = place [изгиб] at=[-330,0,0]
+color изгиб #d7b98f metal=0.25 rough=0.35
+
+# 3. Конусность: цилиндр сужается кверху
+конус = cylinder radius=58 height=300 segments=96
+конус = taper [конус] factor=0.32 axis=z
+конус = align [конус] x=center y=center z=min
+конус = place [конус] at=[-60,0,0]
+color конус #9fd8c6 metal=0.2 rough=0.32
+
+# 4. Выдавливание профиля с отверстием: рамка
+рамка = extrude profile=[[-95,-95],[95,-95],[95,95],[-95,95]] holes=[[[-58,-58],[58,-58],[58,58],[-58,58]]] height=26 fillet=8
+рамка = align [рамка] x=center y=center z=min
+рамка = place [рамка] at=[240,0,0]
+color рамка #c9a0d8 metal=0.35 rough=0.28
+
+# 5. Срез: у куба отрезана верхушка под углом
+куб = box size=[150,150,150] round=8
+куб = slice [куб] axis=z at=78 keep=top
+куб = rotate [куб] angle=18 axis=x
+куб = align [куб] x=center y=center z=min
+куб = place [куб] at=[520,0,0]
+color куб #e0c46a metal=0.3 rough=0.25
+
+# 6. Выравнивание: три цилиндра разной высоты стоят на одном уровне
+for_h = 0
+цилиндр1 = cylinder radius=34 height=120 segments=72
+цилиндр1 = align [цилиндр1] x=center y=center z=min
+цилиндр1 = place [цилиндр1] at=[820,-70,0]
+цилиндр2 = cylinder radius=34 height=190 segments=72
+цилиндр2 = align [цилиндр2] x=center y=center z=min
+цилиндр2 = place [цилиндр2] at=[820,0,0]
+цилиндр3 = cylinder radius=34 height=260 segments=72
+цилиндр3 = align [цилиндр3] x=center y=center z=min
+цилиндр3 = place [цилиндр3] at=[820,70,0]
+color цилиндр1 #a8c4e0 metal=0.3 rough=0.3
+color цилиндр2 #a8c4e0 metal=0.3 rough=0.3
+color цилиндр3 #a8c4e0 metal=0.3 rough=0.3
+
+check скрутка watertight
+check изгиб watertight
+check конус watertight
+check рамка watertight
+check куб watertight

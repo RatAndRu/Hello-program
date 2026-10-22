@@ -337,8 +337,10 @@ EXAMPLES = [
     ("Ваза", "vase"),
     ("Бутылка", "bottle"),
     ("Кубик с отверстием", "cube_hole"),
-    ("Органическая капля", "blob"),
+    ("Пришелец из капли", "alien"),
     ("Шестерня", "gear"),
+    ("Манекен в T-позе", "mannequin"),
+    ("Инструменты (bend/twist/taper…)", "tools"),
     ("Человек (манекен)", "human"),
     ("Анатомическая фигура", "human_studio"),
     ("Кружка со студией", "mug_studio"),
@@ -436,9 +438,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._api_get(path, query)
                 return
             if path.startswith("/files/"):
-                if not self._token_ok(query):
-                    self._send_json({"error": {"message": "Нет доступа (токен)."}}, 403)
-                    return
+                # Снимки, текстуры и экспорт — только чтение из папки данных.
+                # Токен здесь не требуем: иначе картинка, открытая из отчёта
+                # или из нового окна, показывала «Нет доступа (токен)».
                 rel = path[len("/files/"):]
                 base = (self.state.data_dir / rel.split("/")[0]).resolve()
                 target = (self.state.data_dir / rel).resolve()

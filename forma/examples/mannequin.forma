@@ -1,0 +1,102 @@
+# Витринный манекен в T-позе, рост 1800 мм.
+# Собран из капсул и сфер, объединён и мягко сглажен — стыков не видно.
+
+голова = sphere radius=112 segments=72
+голова = scale [голова] factor=[0.86,0.94,1.16]
+голова = place [голова] at=[0,0,1655] align=center
+
+шея = cylinder radius=54 height=170 segments=64 round=18
+шея = place [шея] at=[0,0,1515] align=center
+
+грудь = sphere radius=196 segments=96
+грудь = scale [грудь] factor=[1.0,0.56,0.86]
+грудь = place [грудь] at=[0,0,1360] align=center
+
+корпус = capsule radius=152 height=460 segments=96
+корпус = scale [корпус] factor=[1.0,0.60,1.0]
+корпус = place [корпус] at=[0,0,1175] align=center
+
+таз = sphere radius=168 segments=96
+таз = scale [таз] factor=[1.0,0.62,0.70]
+таз = place [таз] at=[0,0,1000] align=center
+
+плечо_л = sphere radius=106 segments=48
+плечо_л = place [плечо_л] at=[-205,0,1425] align=center
+бицепс_л = capsule radius=60 height=400 segments=48
+бицепс_л = rotate [бицепс_л] angle=90 axis=y
+бицепс_л = place [бицепс_л] at=[-370,0,1425] align=center
+локоть_л = sphere radius=58 segments=40
+локоть_л = place [локоть_л] at=[-582,0,1425] align=center
+предплечье_л = capsule radius=48 height=340 segments=48
+предплечье_л = rotate [предплечье_л] angle=90 axis=y
+предплечье_л = place [предплечье_л] at=[-748,0,1425] align=center
+кисть_л = sphere radius=74 segments=48
+кисть_л = scale [кисть_л] factor=[1.32,0.62,0.92]
+кисть_л = place [кисть_л] at=[-960,0,1425] align=center
+палец_л0 = capsule radius=14 height=120 segments=24
+палец_л0 = rotate [палец_л0] angle=90 axis=y
+палец_л0 = place [палец_л0] at=[-1038,-38,1425] align=center
+палец_л1 = capsule radius=14 height=120 segments=24
+палец_л1 = rotate [палец_л1] angle=90 axis=y
+палец_л1 = place [палец_л1] at=[-1038,-13,1425] align=center
+палец_л2 = capsule radius=14 height=120 segments=24
+палец_л2 = rotate [палец_л2] angle=90 axis=y
+палец_л2 = place [палец_л2] at=[-1038,13,1425] align=center
+палец_л3 = capsule radius=14 height=120 segments=24
+палец_л3 = rotate [палец_л3] angle=90 axis=y
+палец_л3 = place [палец_л3] at=[-1038,38,1425] align=center
+бедро_л = capsule radius=92 height=560 segments=64
+бедро_л = place [бедро_л] at=[-118,0,745] align=center
+колено_л = sphere radius=86 segments=48
+колено_л = place [колено_л] at=[-118,0,505] align=center
+голень_л = capsule radius=70 height=450 segments=56
+голень_л = place [голень_л] at=[-118,0,285] align=center
+лодыжка_л = sphere radius=60 segments=40
+лодыжка_л = place [лодыжка_л] at=[-118,5,90] align=center
+стопа_л = box size=[116,272,92] round=36
+стопа_л = place [стопа_л] at=[-118,46,0]
+плечо_п = sphere radius=106 segments=48
+плечо_п = place [плечо_п] at=[205,0,1425] align=center
+бицепс_п = capsule radius=60 height=400 segments=48
+бицепс_п = rotate [бицепс_п] angle=90 axis=y
+бицепс_п = place [бицепс_п] at=[370,0,1425] align=center
+локоть_п = sphere radius=58 segments=40
+локоть_п = place [локоть_п] at=[582,0,1425] align=center
+предплечье_п = capsule radius=48 height=340 segments=48
+предплечье_п = rotate [предплечье_п] angle=90 axis=y
+предплечье_п = place [предплечье_п] at=[748,0,1425] align=center
+кисть_п = sphere radius=74 segments=48
+кисть_п = scale [кисть_п] factor=[1.32,0.62,0.92]
+кисть_п = place [кисть_п] at=[960,0,1425] align=center
+палец_п0 = capsule radius=14 height=120 segments=24
+палец_п0 = rotate [палец_п0] angle=90 axis=y
+палец_п0 = place [палец_п0] at=[1038,-38,1425] align=center
+палец_п1 = capsule radius=14 height=120 segments=24
+палец_п1 = rotate [палец_п1] angle=90 axis=y
+палец_п1 = place [палец_п1] at=[1038,-13,1425] align=center
+палец_п2 = capsule radius=14 height=120 segments=24
+палец_п2 = rotate [палец_п2] angle=90 axis=y
+палец_п2 = place [палец_п2] at=[1038,13,1425] align=center
+палец_п3 = capsule radius=14 height=120 segments=24
+палец_п3 = rotate [палец_п3] angle=90 axis=y
+палец_п3 = place [палец_п3] at=[1038,38,1425] align=center
+бедро_п = capsule radius=92 height=560 segments=64
+бедро_п = place [бедро_п] at=[118,0,745] align=center
+колено_п = sphere radius=86 segments=48
+колено_п = place [колено_п] at=[118,0,505] align=center
+голень_п = capsule radius=70 height=450 segments=56
+голень_п = place [голень_п] at=[118,0,285] align=center
+лодыжка_п = sphere radius=60 segments=40
+лодыжка_п = place [лодыжка_п] at=[118,5,90] align=center
+стопа_п = box size=[116,272,92] round=36
+стопа_п = place [стопа_п] at=[118,46,0]
+
+манекен = union [голова, шея, грудь, корпус, таз, плечо_л, бицепс_л, локоть_л, предплечье_л, кисть_л, бедро_л, колено_л, голень_л, лодыжка_л, стопа_л, палец_л0, палец_л1, палец_л2, палец_л3, плечо_п, бицепс_п, локоть_п, предплечье_п, кисть_п, бедро_п, колено_п, голень_п, лодыжка_п, стопа_п, палец_п0, палец_п1, палец_п2, палец_п3]
+манекен = smooth [манекен] angle=48 soft=0.32 levels=1
+манекен = align [манекен] x=center y=center z=min
+color манекен #e6e9ee metal=0.0 rough=0.42
+
+check манекен watertight
+check манекен parts 1
+check манекен height 1780..1830
+check манекен symmetric x 6

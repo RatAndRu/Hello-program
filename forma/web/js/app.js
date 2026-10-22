@@ -1070,11 +1070,14 @@ function runCommand() {
   if (low === '/справка' || low === '/help') { $('cmd-input').value = ''; openHelp(); return; }
   const RECIPES = { '/банан': 'banana', '/banana': 'banana', '/гриб': 'mushroom', '/mushroom': 'mushroom',
     '/кружка': 'mug', '/mug': 'mug', '/ваза': 'vase', '/vase': 'vase',
-    '/шестерня': 'gear', '/gear': 'gear', '/кузов': 'car', '/car': 'car' };
+    '/шестерня': 'gear', '/gear': 'gear', '/кузов': 'car', '/car': 'car',
+    '/бутылка': 'bottle', '/bottle': 'bottle', '/пришелец': 'alien', '/alien': 'alien',
+    '/манекен': 'mannequin', '/mannequin': 'mannequin',
+    '/инструменты': 'tools', '/tools': 'tools' };
   if (RECIPES[low] || low === '/рецепты' || low === '/recipes') {
     $('cmd-input').value = '';
     if (RECIPES[low]) { loadExample(RECIPES[low]); return; }
-    toast('Рецепты: /банан, /гриб, /кружка, /ваза, /шестерня, /кузов');
+    toast('Рецепты: /банан, /гриб, /кружка, /ваза, /бутылка, /шестерня, /кузов, /пришелец, /манекен, /инструменты');
     return;
   }
   if (low === '/очистить' || low === '/clear') {
@@ -1210,7 +1213,7 @@ $('btn-export').parentElement.querySelector('.menu').addEventListener('click', a
   toast('Экспорт…');
   try {
     const res = await api('/api/export', { format: fmt });
-    const url = res.url + '&token=' + encodeURIComponent(TOKEN) + '&download=1';
+    const url = res.url + (res.url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN) + '&download=1';
     const link = document.createElement('a');
     link.href = url;
     link.download = res.name;
@@ -1379,8 +1382,45 @@ function openHelp() {
 }
 $('btn-help').addEventListener('click', openHelp);
 $('help-close').addEventListener('click', () => { $('help-modal').hidden = true; });
+// Закрываем только если и нажали, и отпустили на затемнении: иначе выделение
+// текста мышью с «вылетом» за карточку закрывало справочник.
+let helpBackdropDown = false;
+$('help-modal').addEventListener('mousedown', (e) => {
+  helpBackdropDown = (e.target === $('help-modal'));
+});
+$('help-modal').addEventListener('mouseup', (e) => {
+  if (helpBackdropDown && e.target === $('help-modal')) $('help-modal').hidden = true;
+  helpBackdropDown = false;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('help-modal').hidden) $('help-modal').hidden = true;
+});
+
+async function copyText(text, okMsg = 'Скопировано') {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(okMsg);
+    return true;
+  } catch (err) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand && document.execCommand('copy');
+    ta.remove();
+    toast(ok ? okMsg : 'Не удалось скопировать', ok ? '' : 'bad');
+    return !!ok;
+  }
+}
+
 $('help-modal').addEventListener('click', (e) => {
-  if (e.target === $('help-modal')) $('help-modal').hidden = true;
+  const btn = e.target.closest && e.target.closest('.cmd-copy');
+  if (!btn) return;
+  const card = btn.closest('.cmd-card');
+  const pre = card && card.querySelector('pre');
+  copyText(pre ? pre.textContent : (card ? card.textContent.trim() : ''));
 });
 
 function renderHelp(filter = '') {
@@ -1415,7 +1455,8 @@ function renderHelp(filter = '') {
           <span class="cmd-aliases">${(c.aliases || []).map(escapeHtml).join(', ')}</span></div>
         <div class="cmd-summary">${escapeHtml(c.summary)}</div>
         ${params ? `<div class="cmd-params">${params}</div>` : ''}
-        ${c.example ? `<pre>${escapeHtml(c.example)}</pre>` : ''}`;
+        ${c.example ? `<div class="cmd-example"><pre>${escapeHtml(c.example)}</pre>
+          <button class="mini cmd-copy" title="Скопировать пример">⧉</button></div>` : ''}`;
       g.appendChild(card);
     });
     body.appendChild(g);

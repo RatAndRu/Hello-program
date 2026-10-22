@@ -209,11 +209,14 @@ def _shade(normals, col, metal, rough, cam):
     diff = np.clip(n @ key, 0, None)[:, None] * 0.72
     diff2 = np.clip(n @ fill, 0, None)[:, None] * 0.24
     rim = np.clip(n @ back, 0, None)[:, None] * 0.16
-    amb = (0.17 + 0.10 * np.clip(n[:, 2:3] * 0.5 + 0.5, 0, 1))
+    # Свет сверху (небо) + отражение от пола снизу: нижние грани больше не чёрные.
+    nz = n[:, 2:3]
+    amb = (0.20 + 0.10 * np.clip(nz * 0.5 + 0.5, 0, 1))
+    bounce = 0.26 * np.clip(-nz, 0, 1) + 0.05
     col = np.asarray(col, dtype=np.float32)
     if col.ndim == 1:
         col = col[None, :]
-    base = col * (amb + diff + diff2 + rim)
+    base = col * (amb + bounce + diff + diff2 + rim)
     half = _normalize(key - f)
     spec = np.clip(n @ half, 0, None)[:, None] ** max(8, 2 / max(rough, 0.05) ** 2)
     spec_strength = 0.62 * (1 - rough) ** 2

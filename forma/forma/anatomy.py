@@ -19,12 +19,14 @@ from .sdf import (Capsule, Cone, Ellipsoid, Field, Prim, RoundBox, Sphere, Torus
                   capsule, cone, ellipsoid, lerp, rotation_matrix, round_box, sphere)
 
 DETAILS = {
-    "низкий": {"body": 5.0, "head": 3.0, "hand": 2.8, "foot": 3.2, "smooth": 1,
-               "simplify": 0.5, "polish": 46.0},
-    "средний": {"body": 4.0, "head": 2.2, "hand": 2.0, "foot": 2.6, "smooth": 1,
-                "simplify": 0.35, "polish": 42.0},
-    "высокий": {"body": 3.2, "head": 1.7, "hand": 1.5, "foot": 2.0, "smooth": 1,
-                "simplify": 0.2, "polish": 38.0},
+    # Шаг сетки подобран так, чтобы рельеф читался, но полигонаж не разрастался:
+    # 7 000–90 000 треугольников на фигуру вместо прежних 400 000+.
+    "низкий": {"body": 6.0, "head": 3.4, "hand": 3.0, "foot": 3.6, "smooth": 2,
+               "simplify": 0.55, "polish": 44.0},
+    "средний": {"body": 4.8, "head": 2.6, "hand": 2.2, "foot": 2.8, "smooth": 2,
+                "simplify": 0.40, "polish": 40.0},
+    "высокий": {"body": 3.8, "head": 2.0, "hand": 1.7, "foot": 2.2, "smooth": 2,
+                "simplify": 0.28, "polish": 36.0},
 }
 DETAIL_ALIASES = {"low": "низкий", "medium": "средний", "high": "высокий",
                   "низкая": "низкий", "средняя": "средний", "высокая": "высокий",
@@ -63,7 +65,7 @@ class Anatomy:
     # ------------------------------------------------------------------ #
     def _landmarks(self):
         H, F, b = self.H, self.female, self.b
-        self.head_h = H / (7.55 if not F else 7.4)
+        self.head_h = H / (6.6 if not F else 6.45)
         self.top = H
         self.chin = H - self.head_h
         # центр черепа: макушка ровно на H, низ головы — на подбородке

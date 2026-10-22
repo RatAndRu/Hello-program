@@ -3,7 +3,7 @@
 # Ось Z — вверх, размеры в миллиметрах.
 
 рост = 1780
-человек = human height=рост sex=м build=спортивный pose=a detail=средний hair=да eyes=да
+человек = human height=рост sex=м build=спортивный pose=a detail=низкий hair=да eyes=да
 
 # кожа и волосы — материалы, которые видны в окне и в Blender
 color человек #e2b79b rough=0.58

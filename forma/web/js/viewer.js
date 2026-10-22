@@ -98,7 +98,7 @@ export class Viewer {
     this.controls.minDistance = 5;
     this.controls.maxDistance = 40000;
 
-    this.hemi = new THREE.HemisphereLight(0xdfe9ff, 0x1a1f26, 0.55);
+    this.hemi = new THREE.HemisphereLight(0xdfe9ff, 0x4a5566, 0.62);
     scene.add(this.hemi);
 
     const key = new THREE.DirectionalLight(0xffffff, 2.5);
@@ -117,6 +117,13 @@ export class Viewer {
     this.rimLight = new THREE.DirectionalLight(0xffe6c4, 0.5);
     this.rimLight.position.set(60, 180, -520);
     scene.add(this.rimLight);
+
+    // Свет снизу («отражение от пола») — низ модели больше не проваливается в чёрный.
+    this.bounceLight = new THREE.DirectionalLight(0xffe0bd, 0.85);
+    this.bounceLight.position.set(-120, -520, 260);
+    this.bounceLight.castShadow = false;
+    this.bounceLight.target.position.set(0, 60, 0);
+    this.scene.add(this.bounceLight, this.bounceLight.target);
 
     // «пол» с мягкой тенью
     const ground = new THREE.Mesh(
@@ -918,6 +925,7 @@ export class Viewer {
     this.keyLight.intensity = Number(s.key ?? 2.5);
     this.fillLight.intensity = Number(s.fill ?? 0.75);
     this.rimLight.intensity = Number(s.rim ?? 0.5);
+    this.bounceLight.intensity = Number(s.bounce ?? 0.85);
     this.renderer.toneMappingExposure = Number(s.exposure ?? 1.05);
     this.renderer.shadowMap.enabled = s.shadows !== false;
     this.keyLight.castShadow = s.shadows !== false;

@@ -411,8 +411,24 @@ def simplify(a, name):
 # --------------------------------------------------------------------------- #
 
 def _warp(a, base, fn, kind: str, name=None):
+    # manifold3d.warp двигает только существующие вершины, поэтому без
+    # предварительного разбиения изгиб/скрутка превращаются в «сдвиг» углов.
+    # Дробим сетку (refine), чтобы кривая получилась настоящей.
+    source = base.manifold
     try:
-        result = base.manifold.warp(fn)
+        refine = int(a.num("refine", 3, minv=0, maxv=4))
+    except Exception:
+        refine = 3
+    if refine > 0:
+        tris = int(source.num_tri())
+        while refine > 0 and tris * (4 ** refine) > 240000:
+            refine -= 1
+        try:
+            source = source.refine(refine)
+        except Exception:
+            source = base.manifold
+    try:
+        result = source.warp(fn)
     except Exception as exc:
         raise GeometryError(f"Деформация не удалась: {exc}") from exc
     if result.is_empty() or result.volume() <= 1e-9:
