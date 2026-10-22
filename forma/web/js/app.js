@@ -1,4 +1,5 @@
 import { Viewer } from './viewer.js';
+import { encodeGif, downloadBlob } from './gif.js';
 
 const $ = (id) => document.getElementById(id);
 // Токен берём из адреса, а если его нет (обновили страницу, открыли голый
@@ -27,6 +28,10 @@ const state = {
   spaceMode: false,
   space: null,
   loopMode: 'auto',
+  orbitSelection: false,
+  occluders: true,
+  runLine: 0,
+  runSoft: [],
   notes: [],
   actions: [],
   cmdHistory: [],
@@ -190,8 +195,13 @@ function rollbackTo(index) {
 function updateGutter(errorLine) {
   const lines = currentScript().split('\n');
   const gutter = $('gutter');
+  const soft = new Set(state.runSoft || []);
   gutter.innerHTML = lines
-    .map((_, i) => `<div class="${errorLine === i + 1 ? 'err' : ''}">${i + 1}</div>`)
+    .map((_, i) => {
+      const cls = [errorLine === i + 1 ? 'err' : '', state.runLine === i + 1 ? 'run' : '',
+        soft.has(i + 1) ? 'run-soft' : ''].filter(Boolean).join(' ');
+      return `<div class="${cls}">${i + 1}</div>`;
+    })
     .join('');
   gutter.scrollTop = $('code').scrollTop;
   $('script-stats').textContent = `${lines.length} стр. · ${currentScript().length} симв.`;
@@ -212,8 +222,12 @@ function lineAt(index) {
   return before.split('\n').length;
 }
 
-$('code').addEventListener('scroll', () => { $('gutter').scrollTop = $('code').scrollTop; });
+$('code').addEventListener('scroll', () => {
+  $('gutter').scrollTop = $('code').scrollTop;
+  placeRunHighlight(false);
+});
 $('code').addEventListener('input', () => {
+  clearScriptHighlight();
   updateGutter();
   updateCursor();
   scheduleEditSnapshot();
@@ -341,6 +355,11 @@ function applyBuild(payload, elapsed) {
   renderChecks(payload);
   renderObjects(payload);
   renderDimensions(metrics);
+  if (state.selected?.name) {
+    const fresh = (payload.objects || []).find((o) => o.name === state.selected.name);
+    if (fresh) renderObjectStats(fresh);
+    else selectObject('');
+  }
   if (payload.notes) { state.notes = payload.notes; renderNotes(); }
   if (payload.actions) { state.actions = payload.actions; renderActions(); }
   const checks = (payload.analysis?.checks || []);
@@ -652,6 +671,51 @@ function renderDimensions(metrics) {
   badge.textContent = `${fmtInt(metrics.tris)} треугольников`;
 }
 
+/** Статистика только выбранного предмета — в подписи, статусе и списке. */
+function renderObjectStats(obj) {
+  if (!obj) { renderSceneStats(); return; }
+  state.selected = obj;
+  const size = obj.size || [0, 0, 0];
+  const box = $('dim-overlay');
+  if (box) {
+    box.hidden = false;
+    box.innerHTML = `<b>${escapeHtml(obj.name)}</b> · ${fmt(size[0])} × ${fmt(size[1])} × ${fmt(size[2])} мм<br>`
+      + `${fmt(obj.volume_cm3)} см³ · ${fmt(obj.mass_g, 0)} г · ${fmtInt(obj.tris)} трис`
+      + (obj.parts !== undefined ? ` · частей ${obj.parts}` : '')
+      + `<br><span class="dim">строка ${obj.line || '—'}${obj.op ? ' · ' + escapeHtml(obj.op) : ''}</span>`;
+  }
+  const badge = $('viewer-badge');
+  if (badge) {
+    badge.hidden = false;
+    badge.textContent = `${escapeHtml(obj.name)} · ${fmtInt(obj.tris)} трис · ${fmt(obj.volume_cm3)} см³`;
+  }
+  $('status-tris').textContent = `${fmtInt(obj.tris)} трис`;
+  $('status-size').textContent = `${fmt(size[0])} × ${fmt(size[1])} × ${fmt(size[2])} мм`;
+  $('status-parts').textContent = 'объект: ' + obj.name;
+  const sum = $('objects-summary');
+  if (sum) {
+    const ghosts = (state.occludersNow || []).length;
+    sum.innerHTML = `Выбран: <b>${escapeHtml(obj.name)}</b><br>`
+      + `${fmt(size[0])} × ${fmt(size[1])} × ${fmt(size[2])} мм · ${fmt(obj.volume_cm3)} см³ · ${fmt(obj.mass_g, 0)} г<br>`
+      + `${fmtInt(obj.tris)} трис · ${fmtInt(obj.verts)} верш.`
+      + (obj.genus !== undefined ? ` · род ${obj.genus}` : '')
+      + (obj.areas_mm2 || obj.area_mm2 ? ` · площадь ${fmt(obj.area_mm2)} мм²` : '')
+      + (obj.tex ? ` · текстура: ${escapeHtml(obj.tex.label || obj.tex.kind)}` : '')
+      + (ghosts ? `<br><span class="dim">заслонок прозрачных: ${ghosts}</span>` : '')
+      + '<br><span class="dim">двойной клик в списке — камера; Delete — удалить; ⌖ — приблизить</span>';
+  }
+}
+
+/** Возврат к статистике всей сцены. */
+function renderSceneStats() {
+  const m = state.payload?.analysis?.metrics || {};
+  renderDimensions(m);
+  if (m.tris) $('status-tris').textContent = `${fmtInt(m.tris)} трис`;
+  if (m.size) $('status-size').textContent = `${fmt(m.size[0])} × ${fmt(m.size[1])} × ${fmt(m.size[2])} мм`;
+  if (m.parts) $('status-parts').textContent = `частей: ${m.parts}`;
+  if (state.payload) renderObjects(state.payload);
+}
+
 function setCmdResult(text, kind = '') {
   const el = $('cmd-result');
   if (!el) return;
@@ -689,6 +753,121 @@ function focusLine(line) {
   const lineHeight = 1.65 * 12.5;
   ta.scrollTop = Math.max(0, idx * lineHeight - ta.clientHeight / 2);
   updateCursor();
+}
+
+/** Подсветка строки сценария, которая сейчас играет. */
+function placeRunHighlight(scroll = false) {
+  const el = $('code-run');
+  const ta = $('code');
+  if (!el || !ta) return;
+  const cs = getComputedStyle(ta);
+  const lh = parseFloat(cs.lineHeight) || 20.6;
+  const pad = parseFloat(cs.paddingTop) || 12;
+  if (!state.runLine) { el.hidden = true; return; }
+  const lineTop = (state.runLine - 1) * lh;
+  const viewTop = ta.scrollTop;
+  const viewBottom = viewTop + (ta.clientHeight || 0) - lh;
+  const outside = lineTop < viewTop || lineTop > viewBottom;
+  if (scroll || outside) {
+    // держим играющую строку на виду: текст сам подкручивается за анимацией
+    const target = lineTop - Math.max(0, (ta.clientHeight || 0)) * 0.35;
+    ta.scrollTop = Math.max(0, target);
+    const gutter = $('gutter');
+    if (gutter) gutter.scrollTop = ta.scrollTop;
+  }
+  const offset = pad + lineTop - ta.scrollTop;
+  el.style.top = offset + 'px';
+  el.style.height = lh + 'px';
+  el.hidden = false;
+}
+
+/** Подсветить одну строку (основную) и необязательно ещё несколько бледных. */
+function highlightScriptLine(line, { scroll = false, soft = [] } = {}) {
+  const n = Number(line) || 0;
+  state.runLine = n;
+  state.runSoft = n ? (soft || []).map(Number).filter((x) => x && x !== n) : [];
+  const gutter = $('gutter');
+  if (gutter) {
+    const softSet = new Set(state.runSoft);
+    [...gutter.children].forEach((el, i) => {
+      el.classList.toggle('run', i + 1 === n);
+      el.classList.toggle('run-soft', softSet.has(i + 1));
+    });
+  }
+  placeRunHighlight(scroll);
+  if (state.runSoft.length) {
+    // вторая полоса — на самом раннем из параллельных клипов
+    const lines = [...state.runSoft, n].sort((x, y) => x - y);
+    const el = $('code-run-soft');
+    const ta = $('code');
+    if (el && ta) {
+      const cs = getComputedStyle(ta);
+      const lh = parseFloat(cs.lineHeight) || 20.6;
+      const pad = parseFloat(cs.paddingTop) || 12;
+      const top = pad + (lines[0] - 1) * lh - ta.scrollTop;
+      el.style.top = top + 'px';
+      el.style.height = (lines[lines.length - 1] - lines[0] + 1) * lh + 'px';
+      el.hidden = top + parseFloat(el.style.height) < 0 || top > ta.clientHeight;
+    }
+  } else if ($('code-run-soft')) {
+    $('code-run-soft').hidden = true;
+  }
+}
+
+function clearScriptHighlight() {
+  state.runLine = 0;
+  state.runSoft = [];
+  const gutter = $('gutter');
+  if (gutter) [...gutter.children].forEach((el) => el.classList.remove('run', 'run-soft'));
+  ['code-run', 'code-run-soft'].forEach((id) => { const el = $(id); if (el) el.hidden = true; });
+}
+
+/** Клипы, звучащие в момент t. */
+function activeClipsAt(time) {
+  const eps = 1e-6;
+  return animClips().filter((c) => {
+    if (!c.line) return false;
+    const s0 = Number(c.start) || 0;
+    const s1 = s0 + (Number(c.length) || 0);
+    return time >= s0 - eps && time <= s1 + eps;
+  });
+}
+
+/** Самый «подробный» клип: короткий, а при равенстве — начавшийся позже. */
+function pickClosest(list) {
+  return list.reduce((best, c) => {
+    if (!best) return c;
+    const a = Number(c.length) || 0;
+    const b = Number(best.length) || 0;
+    if (a < b - 1e-6) return c;
+    if (Math.abs(a - b) <= 1e-6 && (Number(c.start) || 0) >= (Number(best.start) || 0)) return c;
+    return best;
+  }, null);
+}
+
+/** Какая строка сценария соответствует моменту t: клипы или кадр сборки. */
+function highlightFromTime(t, { scroll = false } = {}) {
+  const a = state.anim;
+  if (a.mode === 'frames') {
+    const frame = animFrames()[a.frameIndex];
+    if (frame) highlightScriptLine(frame.line, { scroll });
+    return;
+  }
+  const clips = animClips();
+  if (!clips.length) return;
+  const time = Number(t) || 0;
+  const active = activeClipsAt(time);
+  const focus = state.viewer?._focusName || '';
+  const focused = focus ? active.filter((c) => c.object === focus) : [];
+  let pick = pickClosest(focused) || pickClosest(active);
+  if (!pick) {
+    // пауза между движениями: показываем последнюю прошедшую строку
+    const past = clips.filter((c) => (Number(c.start) || 0) + (Number(c.length) || 0) <= time + 1e-6);
+    pick = past.sort((x, y) => (Number(x.start) + Number(x.length)) - (Number(y.start) + Number(y.length))).pop();
+  }
+  if (!pick) return;
+  const soft = active.filter((c) => c.line !== pick.line).map((c) => c.line);
+  highlightScriptLine(pick.line, { scroll, soft });
 }
 
 function escapeHtml(s) {
@@ -749,9 +928,18 @@ async function loadModel(url, animation = null) {
     if (state.anim.mode === 'frames') {
       if (state.anim.frames.length) showFrame(0);
     } else if (animClips().length || animKeys().length) {
-      state.viewer.playAnimation(true);
-      state.anim.playing = state.viewer.playing;
+      // Не запускаем анимацию сами: сначала показываем готовую модель.
+      // Пользователь нажмёт «играть», когда захочет смотреть движение.
+      state.viewer.playAnimation(false);
+      state.anim.playing = false;
+      state.viewer.setTime(0);
+      state.anim.time = 0;
+      highlightScriptLine(0);
       syncAnimUI();
+      // подпись ставим последней: syncAnimUI её не перетирает, но порядок надёжнее
+      if ($('anim-focus')) {
+        $('anim-focus').textContent = `анимация готова (${animClips().length} движений) — нажмите ▶`;
+      }
     }
   } catch (e) {
     toast('Не удалось показать модель: ' + (e?.message || e), 'bad');
@@ -920,8 +1108,13 @@ function syncAnimUI() {
   const label = $('anim-status');
   if (label) {
     if (a.mode === 'frames') {
+      const totalSteps = (state.payload?.steps || []).length;
       label.textContent = animFrames().length
-        ? `кадры сборки: ${animFrames().length} шаг(ов)` : 'кадров сборки нет';
+        ? `кадры сборки: ${animFrames().length} шаг(ов)` + (totalSteps > animFrames().length
+          ? ` из ${totalSteps} команд` : '')
+        : 'кадров сборки нет';
+      label.title = 'Шагами считаются только команды, меняющие форму или видимость; '
+        + 'проверки, цвет и служебные строки пропускаются';
       label.className = 'anim-status ' + (animFrames().length ? 'ok' : '');
     } else {
       const clips = animClips();
@@ -1464,6 +1657,7 @@ function seekTime(t) {
   const a = state.anim;
   a.time = Math.max(0, Math.min(Number(t) || 0, a.duration || 0));
   state.viewer?.setTime(a.time);
+  highlightFromTime(a.time);
   syncAnimUI();
 }
 
@@ -1485,6 +1679,7 @@ function seekFrame(index) {
   if (!frames.length) return;
   a.frameIndex = Math.max(0, Math.min(index, frames.length - 1));
   syncAnimUI();
+  highlightScriptLine(frames[a.frameIndex].line);
   showFrame(a.frameIndex);
 }
 
@@ -1689,6 +1884,14 @@ function openContextMenu(x, y, name) {
     const n = state.viewer?.setObjectPolygons(name, on) || 0;
     toast(on ? `Полигонами: ${name} (${n} меш.)` : `Сплошной вид: ${name}`);
   }));
+  menu.appendChild(item('приблизить и вращать вокруг', () => {
+    selectObject(name);
+    state.orbitSelection = true;
+    $('btn-orbit-sel')?.classList.add('active');
+    state.viewer?.setOrbitTarget(name);
+    state.viewer?.focusObject(name);
+    setTimeout(() => state.viewer?.refreshOccluders?.(), 420);
+  }));
   menu.appendChild(item('выделить кубы этого предмета', () => {
     const sel = state.viewer?.selectSpaceForObject(name);
     if (!sel) { toast('Не удалось определить секторы предмета', 'bad'); return; }
@@ -1716,12 +1919,17 @@ function initViewer() {
     state.viewer.onSelection = (stats) => showSelection(stats);
     state.viewer.onTextureError = () => toast('Не удалось загрузить текстуру: проверьте соединение с окном приложения', 'bad');
     let lastClock = 0;
+    let lastLine = 0;
     state.viewer.onTime = (t) => {
       if (state.anim.mode !== 'clips') return;
       state.anim.time = t;
       updateSequence(t);
       const now = performance.now();
-      if (now - lastClock > 60) { lastClock = now; syncAnimClock(); }
+      if (now - lastClock > 60) {
+        lastClock = now;
+        syncAnimClock();
+        if (now - lastLine > 90) { lastLine = now; highlightFromTime(t, { scroll: true }); }
+      }
     };
     state.viewer.onFocus = (name, names) => {
       if (state.anim.mode !== 'clips') return;
@@ -1730,6 +1938,7 @@ function initViewer() {
       if (name && !state.hidden.has(name)) {
         state.viewer.setHighlight(name);
         if ($('anim-focus')) $('anim-focus').textContent = 'движется: ' + all.join(', ');
+        highlightFromTime(state.anim.time);
       } else {
         if (state.selected?.name && !state.hidden.has(state.selected.name)) {
           state.viewer.setHighlight(state.selected.name);
@@ -1739,6 +1948,21 @@ function initViewer() {
     };
     state.viewer.onEnd = () => { state.anim.playing = false; syncAnimUI(); };
     state.viewer.onSpace = (sel) => updateSpaceUI(sel);
+    state.viewer.onSpaceCell = (mm, asked) => {
+      // ползунок остаётся там, куда его поставил пользователь, а в подписи
+      // честно пишем, какой шаг получился на самом деле
+      const real = Math.round(mm * 10) / 10;
+      const want = Math.round((Number(asked) || real) * 10) / 10;
+      const num = (v) => String(v).replace('.', ',');
+      if ($('space-size-val')) {
+        $('space-size-val').textContent = Math.abs(real - want) < 0.05
+          ? `${num(real)} мм`
+          : `${num(want)} мм → клетки по ${num(real)} мм (мельче не влезает)`;
+      }
+    };
+    state.viewer.onOccluders = (names) => {
+      state.occludersNow = names || [];
+    };
     state.viewer.onContextMenu = (event, hit) => {
       const name = hit?.name || state.selected?.name || '';
       openContextMenu(event.clientX, event.clientY, name);
@@ -1788,6 +2012,30 @@ $('btn-wire').addEventListener('click', (e) => {
   const on = !e.currentTarget.classList.contains('active');
   e.currentTarget.classList.toggle('active', on);
   state.viewer?.setWireframe(on);
+});
+$('btn-focus-sel')?.addEventListener('click', () => {
+  const name = state.selected?.name;
+  if (!name) { toast('Сначала выделите предмет в списке или кликом', 'bad'); return; }
+  if (state.viewer?.focusObject(name)) {
+    toast(`Камера наведена: ${name}`);
+    setTimeout(() => state.viewer?.refreshOccluders?.(), 420);
+  }
+});
+$('btn-orbit-sel')?.addEventListener('click', (e) => {
+  state.orbitSelection = !state.orbitSelection;
+  e.currentTarget.classList.toggle('active', state.orbitSelection);
+  state.viewer?.setOrbitTarget(state.orbitSelection ? (state.selected?.name || '') : '');
+  toast(state.orbitSelection
+    ? 'Вращение и приближение — вокруг выделенного предмета'
+    : 'Вращение — вокруг центра сцены');
+});
+$('btn-occl')?.addEventListener('click', (e) => {
+  state.occluders = !state.occluders;
+  e.currentTarget.classList.toggle('active', state.occluders);
+  state.viewer?.setOccluders(state.occluders);
+  toast(state.occluders
+    ? 'Предметы перед выделенным показываются прозрачным каркасом'
+    : 'Заслоняющие предметы снова сплошные');
 });
 $('btn-spin').addEventListener('click', (e) => {
   const on = !e.currentTarget.classList.contains('active');
@@ -1955,6 +2203,23 @@ refreshAnimSelectors();
 
 document.addEventListener('keydown', (e) => {
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
+  if ((e.key === 'Delete' || e.key === 'Backspace') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (state.selected?.name) {
+      e.preventDefault();
+      const name = state.selected.name;
+      deleteObject(name);
+      toast(`Удалено: ${name}`);
+      return;
+    }
+    const space = state.space || state.viewer?.spaceSelection?.();
+    if (state.spaceMode && space?.cells) {
+      e.preventDefault();
+      state.viewer?.clearSpaceSelection?.();
+      updateSpaceUI(null);
+      toast(`Удалено секторов: ${space.cells}`);
+      return;
+    }
+  }
   if (e.code === 'Space' && !e.ctrlKey && !e.metaKey) {
     if ($('anim-panel') && !$('anim-panel').hidden) { e.preventDefault(); togglePlayAnim(); }
   } else if (e.key === 'ArrowLeft' && e.altKey) {
@@ -1996,9 +2261,13 @@ function selectObject(name) {
   updateCustomTexVisibility();
   if (!name) {
     state.selected = null;
+    state.occludersNow = [];
     document.querySelectorAll('.obj-item').forEach((el) => el.classList.remove('selected'));
     $('material-panel').hidden = true;
     state.viewer?.clearHighlight();
+    if (state.orbitSelection) state.viewer?.setOrbitTarget('');
+    if (state.spaceMode) state.viewer?.rebuildSpace?.();
+    renderSceneStats();
     return;
   }
   const obj = (state.payload?.objects || []).find((o) => o.name === name);
@@ -2008,7 +2277,12 @@ function selectObject(name) {
     el.classList.toggle('selected', el.dataset.name === name);
   });
   // Подсветка прямо в окне: выбранный в списке объект видно на модели.
+  // Заодно прозрачным каркасом показываются детали, которые его закрывают.
+  state.occludersNow = [];
   if (!state.hidden.has(name)) state.viewer?.setHighlight(name);
+  if (state.orbitSelection) state.viewer?.setOrbitTarget(name);
+  renderObjectStats(obj);
+  if (state.spaceMode) state.viewer?.rebuildSpace?.();
   $('material-panel').hidden = false;
   $('mat-name').textContent = obj.name;
   state.material = { color: obj.color || '#c9d1e3', metal: obj.metal || 0, rough: obj.rough ?? 0.5 };
@@ -2650,12 +2924,141 @@ document.querySelectorAll('[data-section-export]').forEach((btn) => {
   });
 });
 
+
+/* ------------------------------------------------------------------ */
+/*  Экспорт анимации: GIF и видео                                     */
+/* ------------------------------------------------------------------ */
+function animExportSeconds() {
+  const total = Number(state.viewer?.duration) || animDuration() || 0;
+  if (total < 0.2) return 0;
+  return total;
+}
+
+function animExportName(ext) {
+  const base = (state.payload?.project || state.projectName || 'анимация')
+    .toString().replace(/[^\wа-яА-ЯёЁ-]+/g, '_').slice(0, 40) || 'анимация';
+  return `${base}_${new Date().toISOString().slice(0, 16).replace(/[:T]/g, '-')}.${ext}`;
+}
+
+function exportCanvas(viewer, maxWidth) {
+  const src = viewer?.renderer?.domElement;
+  if (!src || !src.width) return null;
+  const scale = Math.min(1, maxWidth / src.width);
+  const w = Math.max(2, Math.round(src.width * scale));
+  const h = Math.max(2, Math.round(src.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(src, 0, 0, w, h);
+  return { canvas, ctx, w, h };
+}
+
+function setAnimExportBusy(busy, label = '') {
+  ['anim-gif', 'anim-webm'].forEach((id) => {
+    const btn = $(id);
+    if (btn) btn.disabled = busy;
+  });
+  if (label) toast(label);
+}
+
+async function exportAnimationGif() {
+  const viewer = state.viewer;
+  const seconds = animExportSeconds();
+  if (!viewer || !viewer.hasAnimation?.() || !seconds) {
+    toast('Сначала постройте модель с анимацией: animate … в сценарии', 'bad');
+    return;
+  }
+  const fps = 12;
+  const total = Math.min(240, Math.max(2, Math.round(seconds * fps)));
+  const keep = viewer.time;
+  setAnimExportBusy(true, `GIF: кадр 1/${total}…`);
+  try {
+    let frames = [];
+    let size = null;
+    for (let i = 0; i < total; i++) {
+      viewer.applyTime(seconds * i / total);
+      viewer.renderNow();
+      const shot = exportCanvas(viewer, 560);
+      if (!shot) throw new Error('Нет изображения для записи');
+      size = { w: shot.w, h: shot.h };
+      frames.push(new Uint8ClampedArray(shot.ctx.getImageData(0, 0, shot.w, shot.h).data));
+      if (i % 3 === 0) {
+        toast(`GIF: кадр ${i + 1} из ${total}…`);
+        await new Promise((r) => setTimeout(r, 0));
+      }
+    }
+    viewer.applyTime(keep);
+    toast('GIF: сжимаю кадры…');
+    await new Promise((r) => setTimeout(r, 30));
+    const data = encodeGif(frames, size.w, size.h, { fps, maxColors: 256, loop: true });
+    downloadBlob(new Blob([data], { type: 'image/gif' }), animExportName('gif'));
+    toast(`GIF сохранён: ${size.w}×${size.h}, ${total} кадров`);
+  } catch (err) {
+    toast(err.message || 'Не удалось собрать GIF', 'bad');
+  } finally {
+    setAnimExportBusy(false);
+  }
+}
+
+async function exportAnimationWebm() {
+  const viewer = state.viewer;
+  const seconds = animExportSeconds();
+  if (!viewer || !viewer.hasAnimation?.() || !seconds) {
+    toast('Сначала постройте модель с анимацией: animate … в сценарии', 'bad');
+    return;
+  }
+  const canvas = viewer.renderer?.domElement;
+  if (!canvas || !canvas.captureStream || typeof MediaRecorder === 'undefined') {
+    toast('Браузер не поддерживает запись видео — сохраните GIF', 'bad');
+    return;
+  }
+  const fps = 30;
+  const total = Math.min(600, Math.max(2, Math.round(seconds * fps)));
+  const keep = viewer.time;
+  setAnimExportBusy(true, 'Видео: запись…');
+  try {
+    const stream = canvas.captureStream(0);
+    const track = stream.getVideoTracks()[0];
+    const types = ['video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+    const mime = types.find((t) => MediaRecorder.isTypeSupported?.(t)) || 'video/webm';
+    const rec = new MediaRecorder(stream, { mimeType: mime, videoBitsPerSecond: 8_000_000 });
+    const chunks = [];
+    rec.ondataavailable = (e) => { if (e.data && e.data.size) chunks.push(e.data); };
+    const stopped = new Promise((resolve) => { rec.onstop = resolve; });
+    rec.start();
+    for (let i = 0; i < total; i++) {
+      viewer.applyTime(seconds * i / total);
+      viewer.renderNow();
+      if (track?.requestFrame) track.requestFrame();
+      await new Promise((r) => setTimeout(r, Math.max(8, 1000 / fps)));
+      if (i % 15 === 0) toast(`Видео: кадр ${i + 1} из ${total}…`);
+    }
+    rec.stop();
+    await stopped;
+    track?.stop?.();
+    const blob = new Blob(chunks, { type: mime.split(';')[0] || 'video/webm' });
+    downloadBlob(blob, animExportName('webm'));
+    toast(`Видео сохранено: ${(blob.size / 1024 / 1024).toFixed(1)} МБ`);
+  } catch (err) {
+    toast(err.message || 'Не удалось записать видео', 'bad');
+  } finally {
+    viewer.applyTime(keep);
+    setAnimExportBusy(false);
+  }
+}
+
+$('anim-gif')?.addEventListener('click', exportAnimationGif);
+$('anim-webm')?.addEventListener('click', exportAnimationWebm);
+
 $('btn-export').parentElement.querySelector('.menu').addEventListener('click', async (e) => {
   const btn = e.target.closest('button[data-format]');
   if (!btn) return;
   const fmt = btn.dataset.format;
   document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open'));
   if (!state.payload?.ok) { toast('Сначала соберите модель', 'bad'); return; }
+  if (fmt === 'gif') { exportAnimationGif(); return; }
+  if (fmt === 'webm') { exportAnimationWebm(); return; }
   toast('Экспорт…');
   try {
     const res = await api('/api/export', { format: fmt });
@@ -2829,13 +3232,269 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'ring', name: 'кольцо', title: 'Кольцо',
+    op: 'box', name: 'куб', title: 'Куб', group: 'Примитивы',
+    desc: 'Прямоугольный блок со скруглением рёбер.',
+    params: [
+      { k: 'size', label: 'размер', v: '120,80,60', kind: 'vec' },
+      { k: 'round', label: 'скругл.', v: 3, step: 1 },
+    ],
+  },
+  {
+    op: 'sphere', name: 'сфера', title: 'Сфера', group: 'Примитивы',
+    desc: 'Шар заданного радиуса.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 50, step: 1 },
+      { k: 'segments', label: 'сегм.', v: 64, step: 8 },
+    ],
+  },
+  {
+    op: 'cylinder', name: 'цилиндр', title: 'Цилиндр', group: 'Примитивы',
+    desc: 'Круглый столбик: радиус, высота, сегменты.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 40, step: 1 },
+      { k: 'height', label: 'высота', v: 100, step: 1 },
+    ],
+  },
+  {
+    op: 'cone', name: 'конус', title: 'Конус', group: 'Примитивы',
+    desc: 'Конус с вершиной вверх — воронки, ножки, сопла.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 45, step: 1 },
+      { k: 'height', label: 'высота', v: 90, step: 1 },
+    ],
+  },
+  {
+    op: 'torus', name: 'тор', title: 'Тор', group: 'Примитивы',
+    desc: 'Кольцо-бублик: радиус кольца и радиус трубки.',
+    params: [
+      { k: 'major', label: 'радиус', v: 55, step: 1 },
+      { k: 'minor', label: 'трубка', v: 12, step: 1 },
+    ],
+  },
+  {
+    op: 'prism', name: 'призма', title: 'Призма', group: 'Примитивы',
+    desc: 'Правильный многоугольник: гайки, колонны, соты.',
+    params: [
+      { k: 'sides', label: 'сторон', v: 6, step: 1 },
+      { k: 'radius', label: 'радиус', v: 40, step: 1 },
+      { k: 'height', label: 'высота', v: 60, step: 1 },
+    ],
+  },
+  {
+    op: 'capsule', name: 'капсула', title: 'Капсула', group: 'Примитивы',
+    desc: 'Цилиндр с полусферическими концами.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 18, step: 1 },
+      { k: 'height', label: 'длина', v: 90, step: 5 },
+    ],
+  },
+  {
+    op: 'box_body', name: 'ящик', title: 'Коробка с полостью', group: 'Готовые фигуры',
+    desc: 'Открытый сверху корпус с дном и стенками — ящик, лоток, кожух.',
+    params: [
+      { k: 'size', label: 'размер', v: '200,150,80', kind: 'vec' },
+      { k: 'wall', label: 'стенка', v: 4, step: 0.5 },
+      { k: 'bottom', label: 'дно', v: 6, step: 0.5 },
+      { k: 'round', label: 'скругл.', v: 8, step: 1 },
+    ],
+  },
+  {
+    op: 'pipe', name: 'трубка', title: 'Труба со стенкой', group: 'Готовые фигуры',
+    desc: 'Труба по ломаной: митры на поворотах, настоящая стенка.',
+    params: [
+      { k: 'path', label: 'путь', v: '[[0,0,0],[0,0,150],[90,0,150]]', kind: 'raw' },
+      { k: 'diameter', label: 'диаметр', v: 32, step: 1 },
+      { k: 'wall', label: 'стенка', v: 2, step: 0.5 },
+    ],
+  },
+  {
+    op: 'shaft', name: 'вал', title: 'Вал', group: 'Готовые фигуры',
+    desc: 'Ступенчатый вал с фасками и осевым отверстием.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 20, step: 1 },
+      { k: 'length', label: 'длина', v: 120, step: 5 },
+      { k: 'bore', label: 'осевое', v: 6, step: 1 },
+    ],
+  },
+  {
+    op: 'wheel', name: 'колесо', title: 'Колесо', group: 'Готовые фигуры',
+    desc: 'Шина, обод, спицы и ступица; ось по Y — катится вдоль X.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 300, step: 10 },
+      { k: 'width', label: 'ширина', v: 90, step: 5 },
+      { k: 'spokes', label: 'спиц', v: 5, step: 1 },
+    ],
+  },
+  {
+    op: 'handle', name: 'ручка', title: 'Ручка-скоба', group: 'Готовые фигуры',
+    desc: 'Мебельная ручка с площадками крепления — одно тело.',
+    params: [
+      { k: 'length', label: 'длина', v: 160, step: 10 },
+      { k: 'height', label: 'вынос', v: 34, step: 2 },
+      { k: 'diameter', label: 'толщина', v: 10, step: 1 },
+    ],
+  },
+  {
+    op: 'rack', name: 'рейка', title: 'Зубчатая рейка', group: 'Готовые фигуры',
+    desc: 'Рейка того же модуля, что шестерня, — реечная передача.',
+    params: [
+      { k: 'length', label: 'длина', v: 200, step: 10 },
+      { k: 'teeth', label: 'зубьев', v: 20, step: 1 },
+      { k: 'module', label: 'модуль', v: 2, step: 0.25 },
+    ],
+  },
+  {
+    op: 'coupling', name: 'муфта', title: 'Муфта', group: 'Готовые фигуры',
+    desc: 'Соединительная муфта двух валов с буртиком.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 40, step: 2 },
+      { k: 'length', label: 'длина', v: 60, step: 5 },
+      { k: 'bore', label: 'вал', v: 12, step: 1 },
+    ],
+  },
+  {
+    op: 'heatsink', name: 'радиатор', title: 'Радиатор', group: 'Готовые фигуры',
+    desc: 'Основание и рёбра с заданным шагом.',
+    params: [
+      { k: 'size', label: 'размер', v: '80,60,30', kind: 'vec' },
+      { k: 'fins', label: 'рёбер', v: 9, step: 1 },
+      { k: 'base', label: 'основание', v: 5, step: 1 },
+    ],
+  },
+  {
+    op: 'rock', name: 'камень', title: 'Камень', group: 'Готовые фигуры',
+    desc: 'Выпуклая оболочка: всегда замкнутый, seed повторяет форму.',
+    params: [
+      { k: 'size', label: 'размер', v: '120,90,55', kind: 'vec' },
+      { k: 'seed', label: 'зерно', v: 3, step: 1 },
+      { k: 'rough', label: 'грубость', v: 0.35, step: 0.05 },
+    ],
+  },
+  {
+    op: 'leaf', name: 'лист', title: 'Лист', group: 'Готовые фигуры',
+    desc: 'Лист с изгибом — для растений и декора.',
+    params: [
+      { k: 'length', label: 'длина', v: 90, step: 5 },
+      { k: 'width', label: 'ширина', v: 45, step: 5 },
+      { k: 'curl', label: 'изгиб', v: 0.25, step: 0.05 },
+    ],
+  },
+  {
+    op: 'branch', name: 'ветка', title: 'Ветка', group: 'Готовые фигуры',
+    desc: 'Сужающаяся ветка по изогнутому пути.',
+    params: [
+      { k: 'length', label: 'длина', v: 240, step: 10 },
+      { k: 'diameter', label: 'толщина', v: 26, step: 2 },
+      { k: 'taper', label: 'сужение', v: 0.45, step: 0.05 },
+    ],
+  },
+  {
+    op: 'ring', name: 'кольцо', title: 'Кольцо', group: 'Готовые фигуры',
     desc: 'Обод с плоскими сторонами и скруглёнными краями.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 20, step: 1 },
       { k: 'width', label: 'ширина', v: 6, step: 0.5 },
       { k: 'thickness', label: 'толщина', v: 2.2, step: 0.2 },
       { k: 'round', label: 'скругл.', v: 0.6, step: 0.1 },
+    ],
+  },
+  {
+    op: 'cup', name: 'корпус', title: 'Корпус кружки', group: 'Корпуса и посуда',
+    desc: 'Главная часть кружки: вогнутый цилиндр со стенкой и дном, без ручки.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 80, step: 2 },
+      { k: 'height', label: 'высота', v: 95, step: 2 },
+      { k: 'wall', label: 'стенка', v: 4, step: 0.5 },
+      { k: 'bottom', label: 'дно', v: 6, step: 0.5 },
+      { k: 'taper', label: 'сужение', v: 0.1, step: 0.02 },
+      { k: 'handle', label: 'ручка', v: false, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'panel', name: 'панель', title: 'Панель с бортиком', group: 'Корпуса и посуда',
+    desc: 'Дно и четыре стенки одним телом: лоток, поддон, приборная панель.',
+    params: [
+      { k: 'size', label: 'размер', v: '240,160,22', kind: 'vec' },
+      { k: 'wall', label: 'стенка', v: 3, step: 0.5 },
+      { k: 'round', label: 'скругл.', v: 8, step: 1 },
+    ],
+  },
+  {
+    op: 'drawer', name: 'ящик', title: 'Выдвижной ящик', group: 'Корпуса и посуда',
+    desc: 'Корпус с полостью, фасад, ручка и направляющие — готовый узел.',
+    params: [
+      { k: 'size', label: 'размер', v: '420,480,180', kind: 'vec' },
+      { k: 'wall', label: 'стенка', v: 14, step: 1 },
+      { k: 'front', label: 'фасад', v: 18, step: 1 },
+      { k: 'handle', label: 'ручка', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'rail', name: 'направляющая', title: 'Направляющая', group: 'Механика',
+    desc: 'П-образный профиль постоянного сечения для ящиков и станков.',
+    params: [
+      { k: 'length', label: 'длина', v: 400, step: 10 },
+      { k: 'width', label: 'ширина', v: 30, step: 2 },
+      { k: 'height', label: 'высота', v: 14, step: 1 },
+      { k: 'wall', label: 'стенка', v: 2, step: 0.5 },
+    ],
+  },
+  {
+    op: 'profile2020', name: 'профиль', title: 'Профиль 2020', group: 'Механика',
+    desc: 'Конструкционный профиль 20×20 с четырьмя T-пазами и каналом.',
+    params: [
+      { k: 'length', label: 'длина', v: 300, step: 10 },
+      { k: 'size', label: 'сторона', v: 20, step: 1 },
+      { k: 'slot', label: 'паз', v: 6, step: 0.5 },
+    ],
+  },
+  {
+    op: 'gusset', name: 'косынка', title: 'Косынка', group: 'Механика',
+    desc: 'Треугольная пластина жёсткости с полками — в угол рамы.',
+    params: [
+      { k: 'leg', label: 'катет', v: 70, step: 5 },
+      { k: 'height', label: 'высота', v: 55, step: 5 },
+      { k: 'thickness', label: 'толщина', v: 6, step: 1 },
+    ],
+  },
+  {
+    op: 'leg', name: 'ножка', title: 'Ножка', group: 'Механика',
+    desc: 'Стойка с пяткой и крепёжной площадкой, с сужением.',
+    params: [
+      { k: 'height', label: 'высота', v: 90, step: 5 },
+      { k: 'top', label: 'сверху', v: 34, step: 2 },
+      { k: 'bottom', label: 'снизу', v: 22, step: 2 },
+      { k: 'flange', label: 'площадка', v: 8, step: 1 },
+    ],
+  },
+  {
+    op: 'grommet', name: 'люверс', title: 'Люверс', group: 'Механика',
+    desc: 'Втулка с бортиком под шнур или провод — блочка.',
+    params: [
+      { k: 'diameter', label: 'внутри', v: 12, step: 1 },
+      { k: 'height', label: 'высота', v: 8, step: 1 },
+      { k: 'wall', label: 'стенка', v: 1.6, step: 0.2 },
+      { k: 'flange', label: 'борт', v: 3, step: 0.5 },
+    ],
+  },
+  {
+    op: 'worm', name: 'червяк', title: 'Червяк', group: 'Механика',
+    desc: 'Цилиндр с настоящим винтовым витком: шаг, глубина, заходы.',
+    params: [
+      { k: 'length', label: 'длина', v: 90, step: 5 },
+      { k: 'diameter', label: 'диаметр', v: 30, step: 2 },
+      { k: 'pitch', label: 'шаг', v: 8, step: 1 },
+      { k: 'depth', label: 'виток', v: 4, step: 0.5 },
+    ],
+  },
+  {
+    op: 'horn', name: 'рог', title: 'Рог', group: 'Природа',
+    desc: 'Изогнутый сужающийся рог — природа, трофей, декор.',
+    params: [
+      { k: 'length', label: 'длина', v: 160, step: 10 },
+      { k: 'radius', label: 'основание', v: 22, step: 2 },
+      { k: 'tip', label: 'кончик', v: 3, step: 0.5 },
+      { k: 'bend', label: 'изгиб', v: 55, step: 5 },
     ],
   },
 ];
@@ -2847,16 +3506,60 @@ const TOOL_RECIPES = [
     lines: 'надпись = text "ПРИВЕТ" size=10 depth=2\ncolor надпись #e8c27a',
   },
   {
-    title: 'Резьба',
-    desc: 'Настоящая винтовая резьба: болт и гайка с одинаковым шагом.',
-    lines: 'болт = thread diameter=10 length=24 pitch=1.5\n'
-      + 'гайка = thread diameter=17 length=7 pitch=1.5 internal=true\n'
-      + 'гайка = translate [гайка] offset=[26, 0, 0]',
+    title: 'Скрутка',
+    desc: 'Брусок превращается в витую колонну: twist закручивает верх.',
+    lines: 'скрутка = box size=[40,40,200] round=3\nскрутка = twist [скрутка] angle=180 axis=z',
+  },
+  {
+    title: 'Изгиб',
+    desc: 'bend гнёт деталь по дуге — поручни, дуги, скобы.',
+    lines: 'дуга = box size=[24,160,240] round=5\nдуга = bend [дуга] angle=90',
+  },
+  {
+    title: 'Резьба: болт',
+    desc: 'Настоящая винтовая резьба на стержне с шестигранной головкой.',
+    lines: 'болт_резьба = thread diameter=10 length=24 pitch=1.5',
+  },
+  {
+    title: 'Резьба: гайка',
+    desc: 'Внутренняя резьба того же шага — гайка накручивается на болт.',
+    lines: 'гайка_резьба = thread diameter=17 length=7 pitch=1.5 internal=true\n'
+      + 'гайка_резьба = translate [гайка_резьба] offset=[26, 0, 0]',
+  },
+  {
+    title: 'Фаска',
+    desc: 'Скругление наружных рёбер настоящим радиусом в миллиметрах.',
+    lines: 'плита_фаска = box size=[60,40,20]\nплита_фаска = bevel [плита_фаска] radius=3',
+  },
+  {
+    title: 'Облегчение',
+    desc: 'Упрощение сетки с контролем отклонения — деталь легче для печати.',
+    lines: 'плита_лёгкая = box size=[60,40,20]\n'
+      + 'плита_лёгкая = simplify [плита_лёгкая] deviation=0.2',
   },
   {
     title: 'Уклон',
     desc: 'Технологический уклон стенок — деталь вынимается из формы.',
-    lines: 'плита = box size=[80,50,10]\nплита = draft [плита] angle=2',
+    lines: 'плита_уклон = box size=[80,50,10]\nплита_уклон = draft [плита_уклон] angle=2',
+  },
+  {
+    title: 'Отверстия сеткой',
+    desc: 'Один вызов holes вместо десятка difference: сетка, шаг, зенковка.',
+    lines: 'панель_дыр = box size=[200,120,8] round=3\n'
+      + 'панель_дыр = holes [панель_дыр] grid=[4,3] diameter=8 pitch=[40,30]',
+  },
+  {
+    title: 'Разброс деталей',
+    desc: 'scatter раскладывает копии по площади с повтором через seed.',
+    lines: 'камень_разброс = rock size=[120,90,55] seed=3\n'
+      + 'камни = scatter [камень_разброс] count=24 area=[500,400] seed=7 scale=[0.7,1.3]',
+  },
+  {
+    title: 'Оболочка',
+    desc: 'hull обтягивает детали выпуклой оболочкой — кузова, скульптуры.',
+    lines: 'низ_оболочки = prism sides=6 radius=60 height=50\n'
+      + 'верх_оболочки = sphere radius=55 at=[0,0,90]\n'
+      + 'оболочка = hull objects=[низ_оболочки, верх_оболочки]',
   },
   {
     title: 'Сечение, проба и паспорт',
@@ -2867,19 +3570,10 @@ const TOOL_RECIPES = [
       + 'passport деталь',
   },
   {
-    title: 'Формы: скрутка и изгиб',
-    desc: 'twist и bend превращают брусок в витую колонну или дугу.',
-    lines: 'скрутка = box size=[40,40,200] round=3\n'
-      + 'скрутка = twist [скрутка] angle=180 axis=z\n'
-      + 'дуга = box size=[24,160,240] round=5\n'
-      + 'дуга = bend [дуга] angle=90',
-  },
-  {
-    title: 'Фаска и облегчение',
-    desc: 'Скругление настоящим радиусом и упрощение сетки с контролем отклонения.',
-    lines: 'плита = box size=[60,40,20]\n'
-      + 'плита = bevel [плита] radius=3\n'
-      + 'плита = simplify [плита] deviation=0.2',
+    title: 'Накатка',
+    desc: 'knurl режет рифление по окружности — ручки, винты, крышки.',
+    lines: 'заготовка = cylinder radius=16 height=70\n'
+      + 'заготовка = knurl [заготовка] count=24 depth=1',
   },
 ];
 
@@ -2914,6 +3608,8 @@ function addShapeTool(tool, card) {
     if (p.kind === 'vec') {
       const nums = raw.split(/[,\s]+/).filter(Boolean);
       parts.push(`${p.k}=[${nums.join(', ')}]`);
+    } else if (p.kind === 'raw') {
+      parts.push(`${p.k}=${raw}`);
     } else {
       parts.push(`${p.k}=${raw}`);
     }
@@ -2926,58 +3622,66 @@ function renderTools() {
   const body = $('tools-body');
   if (!body) return;
   body.innerHTML = '';
-  const shapes = document.createElement('div');
-  shapes.className = 'tool-group';
-  const shapesHead = document.createElement('h4');
-  shapesHead.textContent = 'Готовые фигуры';
-  const grid = document.createElement('div');
-  grid.className = 'tool-grid';
-  shapes.appendChild(shapesHead);
-  shapes.appendChild(grid);
+  const groups = new Map();
   TOOL_SHAPES.forEach((tool) => {
-    const card = document.createElement('div');
-    card.className = 'tool-card';
-    const head = document.createElement('div');
-    head.className = 'tool-card-head';
-    head.innerHTML = `<b>${escapeHtml(tool.title)}</b><code>${escapeHtml(tool.op)}</code>`;
-    card.appendChild(head);
-    const desc = document.createElement('div');
-    desc.className = 'tool-desc';
-    desc.textContent = tool.desc;
-    card.appendChild(desc);
-    const fields = document.createElement('div');
-    fields.className = 'tool-fields';
-    tool.params.forEach((p) => {
-      const label = document.createElement('label');
-      label.className = 'tool-field';
-      const caption = document.createElement('span');
-      caption.textContent = p.label;
-      let input;
-      if (p.kind === 'bool') {
-        input = document.createElement('input');
-        input.type = 'checkbox';
-        input.checked = p.v !== false;
-      } else {
-        input = document.createElement('input');
-        input.type = 'text';
-        input.value = String(p.v);
-        if (p.kind !== 'vec') input.inputMode = 'decimal';
-        input.style.width = p.kind === 'vec' ? '86px' : '58px';
-      }
-      input.dataset.key = p.k;
-      label.appendChild(caption);
-      label.appendChild(input);
-      fields.appendChild(label);
-    });
-    card.appendChild(fields);
-    const btn = document.createElement('button');
-    btn.className = 'small primary';
-    btn.textContent = 'Добавить';
-    btn.addEventListener('click', () => addShapeTool(tool, card));
-    card.appendChild(btn);
-    grid.appendChild(card);
+    const key = tool.group || 'Готовые фигуры';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(tool);
   });
-  body.appendChild(shapes);
+  groups.forEach((tools, title) => {
+    const section = document.createElement('div');
+    section.className = 'tool-group';
+    const head = document.createElement('h4');
+    head.textContent = title;
+    const grid = document.createElement('div');
+    grid.className = 'tool-grid';
+    section.appendChild(head);
+    section.appendChild(grid);
+    tools.forEach((tool) => {
+      const card = document.createElement('div');
+      card.className = 'tool-card';
+      const cardHead = document.createElement('div');
+      cardHead.className = 'tool-card-head';
+      cardHead.innerHTML = `<b>${escapeHtml(tool.title)}</b><code>${escapeHtml(tool.op)}</code>`;
+      card.appendChild(cardHead);
+      const desc = document.createElement('div');
+      desc.className = 'tool-desc';
+      desc.textContent = tool.desc;
+      card.appendChild(desc);
+      const fields = document.createElement('div');
+      fields.className = 'tool-fields';
+      tool.params.forEach((p) => {
+        const label = document.createElement('label');
+        label.className = 'tool-field';
+        const caption = document.createElement('span');
+        caption.textContent = p.label;
+        let input;
+        if (p.kind === 'bool') {
+          input = document.createElement('input');
+          input.type = 'checkbox';
+          input.checked = p.v !== false;
+        } else {
+          input = document.createElement('input');
+          input.type = 'text';
+          input.value = String(p.v);
+          if (p.kind !== 'vec' && p.kind !== 'raw') input.inputMode = 'decimal';
+          input.style.width = p.kind === 'vec' || p.kind === 'raw' ? '124px' : '58px';
+        }
+        input.dataset.key = p.k;
+        label.appendChild(caption);
+        label.appendChild(input);
+        fields.appendChild(label);
+      });
+      card.appendChild(fields);
+      const btn = document.createElement('button');
+      btn.className = 'small primary';
+      btn.textContent = 'Добавить';
+      btn.addEventListener('click', () => addShapeTool(tool, card));
+      card.appendChild(btn);
+      grid.appendChild(card);
+    });
+    body.appendChild(section);
+  });
 
   const recipes = document.createElement('div');
   recipes.className = 'tool-group';

@@ -317,6 +317,32 @@ def _run_uistest(report_path: str | None) -> int:
                 check("новые проверки sharp_edge/tri_quality/wall_min",
                       extra.get("ok") is True and
                       len(extra.get("analysis", {}).get("checks", [])) == 4)
+                # 0.17: интерфейс для новых замечаний — статистика детали,
+                # заслонки, вращение вокруг выделенного, подсветка строки
+                check("кнопки «вокруг выделенного» и «заслонки»",
+                      b'id="btn-orbit-sel"' in html and b'id="btn-occl"' in html
+                      and b'id="btn-focus-sel"' in html)
+                check("подсветка строки сценария", b'id="code-run"' in html
+                      and b'id="code-run-soft"' in html and b"placeRunHighlight" in
+                      get("/js/app.js", raw=True))
+                clock = get("/api/example?key=clock")
+                clock_build = post("/api/build", {"script": clock.get("script", "")})
+                clock_plan = clock_build.get("timeline") or {}
+                with_line = [c for c in clock_plan.get("clips", []) if c.get("line")]
+                check("у каждого движения есть строка сценария",
+                      clock_build.get("ok") is True and len(with_line) == len(clock_plan.get("clips", []))
+                      and len(with_line) > 10, f"{len(with_line)} клипов")
+                clock_frames = clock_build.get("frames") or []
+                service = {"check", "color", "probe", "passport", "light", "scene"}
+                check("в шагах сборки нет проверок и цвета",
+                      bool(clock_frames) and not any(
+                          (f.get("verb") or "") in service for f in clock_frames),
+                      f"{len(clock_frames)} кадров из {len(clock_build.get('steps') or [])} команд")
+                parts = [o for o in (clock_build.get("objects") or []) if "parts" in o]
+                check("у детали есть число частей и площадь",
+                      len(parts) == len(clock_build.get("objects") or [])
+                      and all(o.get("area_mm2", 0) > 0 for o in parts),
+                      f"{len(parts)} деталей")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

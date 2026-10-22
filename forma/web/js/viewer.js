@@ -85,6 +85,7 @@ export class Viewer {
     // выделение пустого пространства кубическими секторами
     this.spaceMode = false;
     this.spaceCell = 50;
+    this.spaceAsked = 50;   // что попросил ползунок (эффективный размер может быть крупнее)
     this.spaceRoot = null;
     this._spaceSel = new Map();      // "i,j,k" → {i,j,k}
     this._spaceOrigin = new THREE.Vector3();
@@ -95,6 +96,9 @@ export class Viewer {
     this.selection = null;
     this.selections = [];
     this.hidden = new Set();
+    this.ghostOccluders = true;   // заслонки показываем прозрачным каркасом
+    this._ghosts = [];
+    this._orbitName = '';
     this._frames = 0;
     this._lastFps = 0;
     this._fpsTime = 0;
@@ -148,6 +152,9 @@ export class Viewer {
     };
     this.controls.screenSpacePanning = true;
     this.controls.enablePan = true;
+    this.controls.addEventListener('end', () => {
+      if (this.highlightName) this.refreshOccluders();
+    });
     renderer.domElement.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       const hit = this.pickAt(e.clientX, e.clientY);
@@ -531,6 +538,9 @@ export class Viewer {
     this.groupNodes = [];
     this._pendingGroups = {};
     this._animCenter = null;
+    this._ghosts = [];
+    this._ghostNames = [];
+    this._orbitName = '';
     this._clearOverlays();
     this._disposeSelOverlay();
     this.selection = null;
@@ -840,10 +850,15 @@ export class Viewer {
     const ray = new THREE.Raycaster();
     ray.setFromCamera(pointer, this.camera);
     const hits = ray.intersectObject(this.model, true);
+    const ghosts = new Set(this._ghostNames || []);
     for (const hit of hits) {
       if (!hit.object.visible || hit.object.userData?.paintPreview) continue;
+      const hitName = hit.object.name || hit.object.parent?.name || '';
+      // прозрачный каркас заслонок не должен перехватывать клик: сквозь него
+      // выбирается тот предмет, который за ним
+      if (ghosts.has(hitName) && hitName !== this.highlightName) continue;
       return {
-        name: hit.object.name || hit.object.parent?.name || '',
+        name: hitName,
         mesh: hit.object, point: hit.point,
         faceIndex: hit.faceIndex, face: hit.face,
       };
@@ -1563,9 +1578,18 @@ export class Viewer {
     this.onSpace?.(this.spaceSelection());
   }
 
+  /** Пересобрать сетку кубов: после выбора предмета объём может сузиться до него. */
+  rebuildSpace() {
+    if (!this.spaceMode) return false;
+    this._spaceSel?.clear?.();
+    this._buildSpaceGrid();
+    return true;
+  }
+
   setSpaceCell(mm) {
-    const cell = Math.max(5, Math.min(500, Number(mm) || 50));
-    if (Math.abs(cell - this.spaceCell) < 1e-6) return;
+    const cell = Math.max(1, Math.min(500, Number(mm) || 50));
+    if (Math.abs(cell - (this.spaceAsked || this.spaceCell)) < 1e-6 && this.spaceMode) return;
+    this.spaceAsked = cell;
     this.spaceCell = cell;
     this._spaceSel.clear();
     if (this.spaceMode) this._buildSpaceGrid();
@@ -1579,10 +1603,21 @@ export class Viewer {
   }
 
   _spaceVolume() {
-    const cell = this.spaceCell;
+    const cell = this.spaceAsked || this.spaceCell;
     let min;
     let max;
-    if (this.model) {
+    // Если выделен предмет и куб мелкий — объём строим вокруг предмета,
+    // а не вокруг всей сцены: иначе на сцену-«склад» просто не хватит клеток.
+    const focus = this.highlightName ? this.objectMeshes(this.highlightName) : [];
+    if (focus.length) {
+      const bb = new THREE.Box3();
+      focus.forEach((m) => bb.expandByObject(m));
+      if (!bb.isEmpty() && Number.isFinite(bb.min.x)) {
+        min = bb.min.clone();
+        max = bb.max.clone();
+      }
+    }
+    if (!min && this.model) {
       const bb = new THREE.Box3().setFromObject(this.model);
       if (!bb.isEmpty() && Number.isFinite(bb.min.x)) {
         min = bb.min.clone();
@@ -1596,29 +1631,50 @@ export class Viewer {
     const pad = cell * 1.5;
     min = new THREE.Vector3(min.x - pad, min.y - pad, min.z - pad);
     max = new THREE.Vector3(max.x + pad, max.y + pad, max.z + pad);
-    // не больше 32 секторов на ось: сетка остаётся лёгкой и читаемой.
-    // Если кубы мелкие, объём центрируется на модели, а не обрезается слева.
+    // Сетка обязана обхватывать модель. Раньше при мелком кубе число
+    // секторов ограничивалось 32 — и объём сжимался внутрь модели.
+    // Теперь предел 128, а если куб слишком мелкий для такого объёма,
+    // он честно укрупняется до минимально возможного и об этом сообщается.
+    const MAX = 128;
+    const MAX_TOTAL = 48000;   // больше клеток — сетка тормозит выделение рамкой
+    const axes = ['x', 'y', 'z'];
+    let used = cell;
+    // укрупняем куб ровно настолько, чтобы он обхватил модель и не раздул сетку
+    for (let guard = 0; guard < 16; guard += 1) {
+      let total = 1;
+      axes.forEach((axis) => {
+        const span = Math.abs(max[axis] - min[axis]);
+        total *= Math.max(2, Math.min(MAX, Math.ceil(span / used) + 1));
+      });
+      if (total <= MAX_TOTAL) break;
+      used *= Math.pow(total / MAX_TOTAL, 1 / 3);
+    }
+    used = Math.max(1, used);
     const dim = { x: 0, y: 0, z: 0 };
     const origin = new THREE.Vector3();
-    const axes = ['x', 'y', 'z'];
     axes.forEach((axis) => {
       const lo = Math.min(min[axis], max[axis]);
       const hi = Math.max(min[axis], max[axis]);
-      let n = Math.ceil((hi - lo) / cell);
-      n = Math.max(2, Math.min(32, n));
+      let n = Math.ceil((hi - lo) / used) + 1;   // запас, чтобы края не резали модель
+      n = Math.max(2, Math.min(MAX, n));
       const center = (lo + hi) / 2;
-      origin[axis] = Math.round((center - (n * cell) / 2) / cell) * cell;
+      // выравниваем по мировым координатам: клетки не «прыгают» между сборками
+      origin[axis] = Math.floor((center - (n * used) / 2) / used) * used;
       dim[axis] = n;
     });
-    return { origin, dim };
+    return { origin, dim, cell: used, asked: cell };
   }
 
   _buildSpaceGrid() {
     this._clearSpaceVisual();
-    const { origin, dim } = this._spaceVolume();
+    const { origin, dim, cell, asked } = this._spaceVolume();
     this._spaceOrigin.copy(origin);
     this._spaceDim = dim;
-    const cell = this.spaceCell;
+    if (Math.abs(cell - this.spaceCell) > 1e-6) {
+      this.spaceCell = cell;
+      this._spaceCellShown = true;
+      this.onSpaceCell?.(cell, asked);
+    }
     const root = new THREE.Group();
     root.name = 'FormaSectors';
     const pts = [];
@@ -2039,8 +2095,139 @@ export class Viewer {
     return out;
   }
 
+  /** Имя объекта по мешу: ближайший предок, который сценарий знает как деталь. */
+  _objectName(mesh) {
+    if (!mesh) return '';
+    if (mesh.userData?.formaName) return mesh.userData.formaName;
+    const known = this._itemByName;
+    const hasKnown = Boolean(known && known.size);
+    for (let n = mesh; n; n = n.parent) {
+      if (!n.name) continue;
+      if (!hasKnown || known.has(n.name)) return n.name;
+    }
+    return mesh.name || mesh.parent?.name || '';
+  }
+
+  /** Объекты, которые закрывают выделенный от камеры (по 9 лучам). */
+  _occludingNames(name) {
+    if (!this.model || !name) return [];
+    const meshes = this.objectMeshes(name);
+    if (!meshes.length) return [];
+    const box = new THREE.Box3();
+    meshes.forEach((o) => box.expandByObject(o));
+    if (box.isEmpty()) return [];
+    const points = [box.getCenter(new THREE.Vector3())];
+    for (const x of [box.min.x, box.max.x]) {
+      for (const y of [box.min.y, box.max.y]) {
+        for (const z of [box.min.z, box.max.z]) points.push(new THREE.Vector3(x, y, z));
+      }
+    }
+    const cam = this.camera.position;
+    const ray = new THREE.Raycaster();
+    const found = new Set();
+    for (const p of points) {
+      const dir = p.clone().sub(cam);
+      const dist = dir.length();
+      if (dist < 1e-4) continue;
+      dir.normalize();
+      ray.set(cam, dir);
+      ray.far = Math.max(0, dist - 0.5);
+      const hits = ray.intersectObject(this.model, true);
+      for (const hit of hits) {
+        if (!hit.object.visible) continue;
+        const hitName = this._objectName(hit.object);
+        if (!hitName) continue;
+        if (hitName === name) break;          // добрались до самого предмета
+        found.add(hitName);
+        break;                                // первая же заслонка на луче
+      }
+    }
+    found.delete(name);
+    return [...found];
+  }
+
+  _clearGhosts() {
+    (this._ghosts || []).forEach((g) => {
+      const m = g.material;
+      if (!m) return;
+      m.wireframe = g.wireframe;
+      m.transparent = g.transparent;
+      m.opacity = g.opacity;
+      m.depthWrite = g.depthWrite;
+      m.needsUpdate = true;
+    });
+    this._ghosts = [];
+  }
+
+  _applyGhosts(names) {
+    this._clearGhosts();
+    if (!names?.length || !this.model) return 0;
+    const set = new Set(names);
+    const seen = new Set();
+    this.model.traverse((o) => {
+      if (!o.isMesh || !o.visible) return;
+      if (!set.has(this._objectName(o))) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => {
+        if (!m || seen.has(m)) return;
+        seen.add(m);
+        this._ghosts.push({ material: m, wireframe: m.wireframe,
+                            transparent: m.transparent, opacity: m.opacity,
+                            depthWrite: m.depthWrite });
+        m.wireframe = true;
+        m.transparent = true;
+        m.opacity = 0.16;
+        m.depthWrite = false;
+        m.needsUpdate = true;
+      });
+    });
+    return this._ghosts.length;
+  }
+
+  /** Пересчитать заслонки (после поворота камеры или выбора). */
+  refreshOccluders() {
+    if (!this.highlightName) { this._clearGhosts(); return []; }
+    if (this.ghostOccluders === false) { this._clearGhosts(); return []; }
+    this._ghostNames = this._occludingNames(this.highlightName);
+    this._applyGhosts(this._ghostNames);
+    this.onOccluders?.(this._ghostNames.slice());
+    return this._ghostNames.slice();
+  }
+
+  /** Заслонки: прозрачный каркас (true) или ничего не делать (false). */
+  setOccluders(on) {
+    this.ghostOccluders = Boolean(on);
+    return this.refreshOccluders();
+  }
+
+  /** Вращение и приближение вокруг выбранного: цель орбиты — его центр. */
+  setOrbitTarget(name) {
+    const target = new THREE.Vector3();
+    if (name) {
+      const meshes = this.objectMeshes(name);
+      if (meshes.length) {
+        const box = new THREE.Box3();
+        meshes.forEach((o) => box.expandByObject(o));
+        if (!box.isEmpty()) {
+          box.getCenter(target);
+          this._orbitName = name;
+          this.controls.target.copy(target);
+          this.controls.update();
+          return true;
+        }
+      }
+    }
+    this._orbitName = '';
+    const center = this._animCenter || (this.bbox && this.bbox.center);
+    if (center) {
+      this.controls.target.copy(center);
+      this.controls.update();
+    }
+    return false;
+  }
+
   /** Подсветка выбранного объекта: свечение + рамка вокруг детали. */
-  setHighlight(name) {
+  setHighlight(name, options = {}) {
     this.clearHighlight();
     if (!name || !this.model) return false;
     const meshes = this.objectMeshes(name);
@@ -2075,6 +2262,7 @@ export class Viewer {
       this._highlightBox.material.depthWrite = false;
       this.scene.add(this._highlightBox);
     }
+    if (options.occluders !== false) this.refreshOccluders();
     return true;
   }
 
@@ -2093,6 +2281,9 @@ export class Viewer {
       this._highlightBox = null;
     }
     this.highlightName = null;
+    this._ghostNames = [];
+    this._clearGhosts();
+    this.onOccluders?.([]);
   }
 
   /** Наводит камеру на объект — удобно, когда деталь выбрана в списке. */
@@ -2217,6 +2408,7 @@ export class Viewer {
         m.needsUpdate = true;
       });
     });
+    if (this.highlightName) this.refreshOccluders();
   }
 
   applyMaterial(name, { color, metal, rough }) {
@@ -2312,8 +2504,13 @@ export class Viewer {
     return { tris, verts, meshes, fps: this._lastFps };
   }
 
+  renderNow() {
+    if (this.renderer) this.renderer.render(this.scene, this.camera);
+    return this.renderer?.domElement || null;
+  }
+
   screenshot() {
-    this.renderer.render(this.scene, this.camera);
+    this.renderNow();
     return this.renderer.domElement.toDataURL('image/png');
   }
 }

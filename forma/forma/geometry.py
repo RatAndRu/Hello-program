@@ -72,6 +72,19 @@ def manifold_mesh(m: mf.Manifold) -> tuple[np.ndarray, np.ndarray]:
     return verts, faces
 
 
+def solid_parts(m: mf.Manifold) -> int:
+    """Сколько в детали настоящих кусков.
+
+    ``Manifold.decompose`` отдаёт ещё и замкнутые внутренние полости как
+    отдельные оболочки с отрицательным объёмом — для детали с закрытой
+    полостью это не «две части». Считаем только куски с положительным объёмом.
+    """
+    try:
+        return sum(1 for piece in m.decompose() if piece.volume() > 1e-6)
+    except Exception:
+        return 1
+
+
 def manifold_from_arrays(verts: np.ndarray, faces: np.ndarray, what: str = "фигура") -> mf.Manifold:
     """Собирает Manifold из массивов, проверяя корректность."""
     verts = np.ascontiguousarray(verts, dtype=np.float32)
@@ -709,7 +722,9 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
                 # разворачиваем геометрию по треугольникам: шов текстуры не виден
                 flat_faces = faces.reshape(-1)
                 # verts уже в Y-up glTF, поэтому bbox считаем по ним же
-                uv = uv_triangles(verts, faces, uv_mode, bbox=None)
+                # мир как единая система координат: текстура не «съезжает»
+                # на стыках соседних деталей составного предмета
+                uv = uv_triangles(verts, faces, uv_mode, bbox=None, origin=(0.0, 0.0, 0.0))
                 verts = verts[flat_faces]
                 if normals is not None:
                     normals = normals[flat_faces]

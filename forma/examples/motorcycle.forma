@@ -1,0 +1,201 @@
+# ============================================================================
+#  МОТОЦИКЛ — база 1400 мм, колёса Ø600, вилка 31°
+# ============================================================================
+#  Ось X — вперёд, Y — влево, Z — вверх. Каждая деталь строится в своём
+#  начале координат, затем поворачивается и ставится на место: так поворот
+#  вилки и качение колёс считаются вокруг настоящих осей.
+#  Всё соединено: рама, бак, седло, крылья, двигатель, выпуск, вилка.
+#  Сцены: «езда» (колёса + подвеска + руль), «прыжок» (упругий прыжок).
+# ----------------------------------------------------------------------------
+
+scene bg=#e9edf2 env=studio shadows=да grid=нет
+light preset=студия strength=1.35
+
+# ---------- КОЛЁСА: ось Y, катятся вдоль X ----------
+колесо_зад = wheel diameter=600 width=180 rim=32 spokes=5 hub=70 tire=25 segments=96 center=да
+колесо_зад = translate [колесо_зад] offset=[0, 0, 300]
+колесо_перед = wheel diameter=600 width=180 rim=32 spokes=5 hub=70 tire=25 segments=96 center=да
+колесо_перед = translate [колесо_перед] offset=[1400, 0, 310]
+
+# ---------- РАМА ----------
+рама_верх = pipe path=[[0, 0, 0], [400, 0, 50], [760, 0, 80], [990, 0, 100], [1100, 0, 105]] diameter=46 wall=5
+рама_верх = translate [рама_верх] offset=[570, 0, 800]
+рама_низ = pipe path=[[0, 0, 0], [-110, 0, -220], [-320, 0, -390], [-545, 0, -435]] diameter=40 wall=4
+рама_низ = translate [рама_низ] offset=[847.5, 0, 435]
+маятник_л = pipe path=[[0, 0, 0], [-240, 0, -50], [-450, 0, -130]] diameter=42 wall=5
+маятник_л = translate [маятник_л] offset=[225, -125, 300]
+маятники = mirror_copy [маятник_л] plane=y
+траверса_низ = box size=[90, 330, 34] round=8 center=да at=[1128, 0, 760]
+траверса_верх = box size=[86, 310, 30] round=8 center=да at=[1090, 0, 830]
+
+# ---------- БАК, СЕДЛО, ХВОСТ ----------
+бак_низ = box size=[420, 310, 190] round=46 center=да at=[800, 0, 850]
+бак_верх = box size=[280, 250, 120] round=40 center=да at=[760, 0, 930]
+бак = hull objects=[бак_низ, бак_верх]
+седло = box size=[470, 270, 84] round=36 center=да at=[380, 0, 898]
+седло_зад = box size=[220, 240, 70] round=30 center=да at=[120, 0, 930]
+хвост = box size=[280, 190, 110] round=26 center=да at=[-140, 0, 860]
+номер = box size=[150, 8, 100] round=4 center=да at=[-150, 0, 760]
+
+# ---------- КРЫЛЬЯ: дуга над колесом ----------
+зад_внеш = cylinder radius=332 height=250 segments=80 center=да
+зад_внеш = rotate [зад_внеш] angle=90 axis=x
+зад_внутр = cylinder radius=310 height=260 segments=80 center=да
+зад_внутр = rotate [зад_внутр] angle=90 axis=x
+зад_низ = box size=[900, 240, 340] round=10 center=да at=[0, 0, -170]
+зад_крыло = difference [зад_внеш, зад_внутр, зад_низ]
+зад_крыло = translate [зад_крыло] offset=[0, 0, 300]
+
+перед_внеш = cylinder radius=332 height=250 segments=80 center=да
+перед_внеш = rotate [перед_внеш] angle=90 axis=x
+перед_внутр = cylinder radius=310 height=260 segments=80 center=да
+перед_внутр = rotate [перед_внутр] angle=90 axis=x
+перед_низ = box size=[900, 220, 360] round=10 center=да at=[0, 0, -180]
+перед_крыло = difference [перед_внеш, перед_внутр, перед_низ]
+перед_крыло = translate [перед_крыло] offset=[1400, 0, 310]
+
+# ---------- ДВИГАТЕЛЬ ----------
+блок = box size=[430, 310, 340] round=24 center=да at=[640, 0, 450]
+поддон = box size=[340, 260, 70] round=16 center=да at=[640, 0, 270]
+головка = heatsink size=[330, 280, 150] fins=7 center=да at=[700, 0, 690]
+цилиндр_л = cylinder radius=62 height=150 segments=48 center=да at=[700, -150, 640]
+цилиндры = mirror_copy [цилиндр_л] plane=y
+выпуск = pipe path=[[0, 0, 0], [-110, -60, -48], [-360, -65, -28], [-540, -65, 80]] diameter=54 wall=4
+выпуск = translate [выпуск] offset=[510, -175, 420]
+глушитель = cylinder radius=44 height=230 segments=48 center=да
+глушитель = rotate [глушитель] angle=90 axis=y
+глушитель = translate [глушитель] offset=[-150, -240, 560]
+подножка_л = cylinder radius=12 height=170 segments=32 center=да
+подножка_л = rotate [подножка_л] angle=90 axis=x
+подножка_л = translate [подножка_л] offset=[440, -185, 430]
+подножки = mirror_copy [подножка_л] plane=y
+звезда = cylinder radius=110 height=14 segments=64 center=да
+звезда = rotate [звезда] angle=90 axis=x
+звезда = translate [звезда] offset=[0, -95, 300]
+
+# ---------- ЦЕПЬ ----------
+цепь_верх = pipe path=[[0, 0, 0], [600, 0, 96]] diameter=13 wall=3
+цепь_верх = translate [цепь_верх] offset=[300, -95, 360]
+цепь_низ = pipe path=[[0, 0, 0], [600, 0, 26]] diameter=13 wall=3
+цепь_низ = translate [цепь_низ] offset=[300, -95, 300]
+
+# ---------- ВИЛКА 31° ----------
+перо_л = cylinder radius=27 height=620 segments=48 center=да
+перо_л = rotate [перо_л] angle=-31 axis=y
+перо_л = translate [перо_л] offset=[1400, -112, 310]
+перья = mirror_copy [перо_л] plane=y
+руль = pipe path=[[-18, -330, 36], [0, -150, 8], [6, 0, 0], [0, 150, 8], [-18, 330, 36]] diameter=28 wall=4
+руль = translate [руль] offset=[1096, 0, 848]
+грипс_л = cylinder radius=20 height=110 segments=32 center=да
+грипс_л = rotate [грипс_л] angle=90 axis=x
+грипс_л = translate [грипс_л] offset=[1082, -300, 878]
+грипсы = mirror_copy [грипс_л] plane=y
+фара_корпус = cylinder radius=98 height=120 segments=64 center=да
+фара_корпус = rotate [фара_корпус] angle=90 axis=y
+фара_корпус = translate [фара_корпус] offset=[1215, 0, 812]
+фара_стекло = cylinder radius=82 height=14 segments=64 center=да
+фара_стекло = rotate [фара_стекло] angle=90 axis=y
+фара_стекло = translate [фара_стекло] offset=[1282, 0, 812]
+зеркало_стойка_л = pipe path=[[0, 0, 0], [0, -50, 80], [10, -80, 130]] diameter=14 wall=2
+зеркало_стойка_л = translate [зеркало_стойка_л] offset=[1080, -250, 880]
+зеркало_стойки = mirror_copy [зеркало_стойка_л] plane=y
+зеркало_л = cylinder radius=40 height=14 segments=48 center=да
+зеркало_л = rotate [зеркало_л] angle=90 axis=y
+зеркало_л = translate [зеркало_л] offset=[1092, -335, 1024]
+зеркала = mirror_copy [зеркало_л] plane=y
+амортизатор_л = spring diameter=48 wire=7 turns=14 pitch=24 center=да
+амортизатор_л = rotate [амортизатор_л] angle=-8 axis=y
+амортизатор_л = translate [амортизатор_л] offset=[275, -160, 590]
+амортизаторы = mirror_copy [амортизатор_л] plane=y
+
+# ---------- СБОРКИ ----------
+рама = group [рама_верх, рама_низ, маятники, траверса_низ,
+              траверса_верх, бак, седло, седло_зад, хвост, номер,
+              зад_крыло, перед_крыло]
+двигатель = group [блок, поддон, головка, цилиндры, выпуск, глушитель,
+                   подножки, амортизаторы, звезда, цепь_верх, цепь_низ]
+вилка = group [перья, руль, грипсы, фара_корпус, фара_стекло,
+               зеркало_стойки, зеркала]
+
+# ---------- АНИМАЦИЯ: дорожки идут параллельно ----------
+animate колесо_зад roll distance=3400 radius=300 axis=y seconds=6 track=1 scene=езда
+animate колесо_зад wait seconds=1 track=1 scene=езда
+animate колесо_зад roll distance=3400 radius=300 axis=y seconds=6 track=1 scene=езда
+animate колесо_перед roll distance=3400 radius=300 axis=y seconds=6 track=1 scene=езда
+animate колесо_перед wait seconds=1 track=1 scene=езда
+animate колесо_перед roll distance=3400 radius=300 axis=y seconds=6 track=1 scene=езда
+
+animate рама move dz=10 seconds=0.55 track=2 scene=езда
+animate рама move dz=-10 seconds=0.55 track=2 scene=езда
+animate рама move dz=6 seconds=0.45 track=2 scene=езда
+animate рама move dz=-6 seconds=0.45 track=2 scene=езда
+animate рама wait seconds=4.1 track=2 scene=езда
+animate двигатель move dz=-6 seconds=0.55 track=2 scene=езда
+animate двигатель move dz=6 seconds=0.55 track=2 scene=езда
+animate двигатель move dz=-4 seconds=0.45 track=2 scene=езда
+animate двигатель move dz=4 seconds=0.45 track=2 scene=езда
+animate двигатель wait seconds=4.1 track=2 scene=езда
+
+animate вилка turn angle=7 axis=z pivot=[1100, 0, 880] seconds=1.4 track=3 scene=езда
+animate вилка turn angle=-14 axis=z pivot=[1100, 0, 880] seconds=2.4 track=3 scene=езда
+animate вилка turn angle=7 axis=z pivot=[1100, 0, 880] seconds=1.4 track=3 scene=езда
+animate вилка wait seconds=2.8 track=3 scene=езда
+
+animate колесо_зад roll distance=2200 radius=300 axis=y seconds=1.2 track=1 scene=прыжок
+animate колесо_перед roll distance=2200 radius=300 axis=y seconds=1.2 track=1 scene=прыжок
+animate jump height=280 elastic=да seconds=1.7 track=2 scene=прыжок
+animate wait seconds=0.6 track=2 scene=прыжок
+animate fall height=280 elastic=да seconds=1.5 track=2 scene=прыжок
+animate двигатель move dz=-18 seconds=0.9 track=3 scene=прыжок
+animate двигатель move dz=18 seconds=1.3 track=3 scene=прыжок
+
+# ---------- ПРОВЕРКИ ----------
+check колесо_зад watertight
+check колесо_зад parts 1
+check колесо_зад height 596..604
+check колесо_перед height 596..604
+check колесо_перед gap колесо_зад 799..801
+check зад_крыло parts 1
+check перед_крыло parts 1
+check бак watertight
+check бак parts 1
+check седло height 82..90
+check глушитель height 86..92
+check фара_корпус height 194..198
+check бак height 230..240
+check рама_верх watertight
+check рама_низ watertight
+
+# ---------- МАТЕРИАЛ (цвет ставим каждой детали: группа его не принимает) ----------
+color колесо_зад #17181c rough=0.82
+color колесо_перед #17181c rough=0.82
+color рама_верх #b8452f rough=0.32 metal=0.25
+color рама_низ #b8452f rough=0.32 metal=0.25
+color маятники #3a3e45 metal=0.7 rough=0.3
+color бак #c04a2f rough=0.24 metal=0.35
+color седло #23252a rough=0.9
+color седло_зад #23252a rough=0.9
+color хвост #b8452f rough=0.32 metal=0.25
+color номер #f0ede6 rough=0.5
+color зад_крыло #c04a2f rough=0.3 metal=0.3
+color перед_крыло #c04a2f rough=0.3 metal=0.3
+color блок #6e747c metal=0.9 rough=0.3
+color головка #9aa1a9 metal=0.9 rough=0.26
+color цилиндры #7d848c metal=0.9 rough=0.3
+color выпуск #c9ccd0 metal=0.95 rough=0.2
+color глушитель #cfd3d7 metal=0.95 rough=0.18
+color поддон #5e646c metal=0.85 rough=0.35
+color цепь_верх #3a3d42 metal=0.8 rough=0.35
+color цепь_низ #3a3d42 metal=0.8 rough=0.35
+color подножки #4a4f56 metal=0.8 rough=0.3
+color амортизаторы #e0b64a metal=0.85 rough=0.28
+color звезда #8d939a metal=0.9 rough=0.25
+color перья #c8ccd2 metal=0.95 rough=0.16
+color траверса_низ #3c4148 metal=0.8 rough=0.28
+color траверса_верх #3c4148 metal=0.8 rough=0.28
+color руль #2f3238 metal=0.85 rough=0.25
+color грипсы #1c1e22 rough=0.85
+color фара_корпус #d8dce1 metal=0.9 rough=0.2
+color фара_стекло #eaf2f8 rough=0.08 metal=0.1
+color зеркало_стойки #2a2c31 metal=0.8 rough=0.25
+color зеркала #2a2c31 metal=0.8 rough=0.25

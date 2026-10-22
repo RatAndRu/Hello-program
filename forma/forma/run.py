@@ -33,6 +33,23 @@ from . import ops_text  # noqa: F401,E402
 from . import ops_tech  # noqa: F401,E402
 from . import ops_shapes  # noqa: F401,E402
 from . import ops_hardware  # noqa: F401,E402
+from . import ops_kit  # noqa: F401,E402
+from . import ops_parts  # noqa: F401,E402
+
+
+# Команды, которые не меняют ни форму, ни видимость: в анимации сборки
+# им делать нечего — пользователь смотрит детали, а не отчёт о проверках.
+FRAME_SKIP_VERBS = {
+    "check", "gap", "clearance", "probe", "passport", "note", "param", "help",
+    "version", "save", "load", "light", "color", "scene", "comment", "info",
+}
+
+
+def _part_count(manifold) -> int:
+    try:
+        return 0 if manifold.is_empty() else len(manifold.decompose())
+    except Exception:
+        return 0
 
 
 @dataclass
@@ -95,6 +112,8 @@ class Build:
                 "bbox": st["bbox"],
                 "size": st["size"],
                 "genus": st["genus"],
+                "parts": _part_count(solid.manifold),
+                "area_mm2": round(st["area"], 1),
                 "tex": ({"kind": solid.tex.get("kind"), "label": solid.tex.get("label"),
                          "scale": solid.tex.get("scale"),
                          "relief": solid.tex.get("relief"),
@@ -107,11 +126,17 @@ class Build:
         return out
 
     def frames(self) -> list[dict]:
-        """Кадры сборки: шаги сценария, после которых менялась видимая модель."""
+        """Кадры сборки: шаги сценария, после которых менялась видимая модель.
+
+        Служебные команды (проверки, цвет, свет, параметры, заметки) форму не
+        меняют — в кадры они не попадают, иначе анимация «стоит» на проверках.
+        """
         out = []
         prev = None
         prev_names: set[str] = set()
         for step in self.steps:
+            if (step.get("verb") or "").lower() in FRAME_SKIP_VERBS:
+                continue
             sig = (tuple(step.get("objects") or []), step.get("ops"))
             if not step.get("objects") or sig == prev:
                 continue

@@ -374,3 +374,25 @@ check деталь volume 300..500
 check деталь symmetric x 3
 check деталь flat_bottom 1..
 ```
+
+---
+
+## 11. Новые детали 0.17
+
+```
+корпус:       корпус = cup diameter=80 height=95 wall=4 bottom=6 handle=нет
+коробка:      коробка = box_body size=[200,150,80] wall=4 bottom=6 round=8
+ящик:         ящик = drawer size=[420,480,180] wall=14 front=18
+панель:       панель = panel size=[240,160,22] wall=3 round=8
+направляющая: рельс = rail length=400 width=30 height=14 wall=2
+профиль 2020: профиль = profile2020 length=300 size=20
+косынка:      косынка = gusset leg=70 height=55 thickness=6
+ножка:        ножка = leg height=90 top=34 bottom=22 flange=8
+люверс:       люверс = grommet diameter=12 height=8 wall=1.6 flange=3
+червяк:       червяк = worm length=90 diameter=30 pitch=8 depth=4
+рог:          рог = horn length=160 radius=22 tip=3 bend=55
+накатка:      ручка = cylinder radius=16 height=70
+              ручка = knurl [ручка] count=24 depth=1
+```
+
+> Целиком — примеры «Мотоцикл», «Скелетон-часы» и «Витрина инструментов».

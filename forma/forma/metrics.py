@@ -8,7 +8,7 @@ from typing import Any
 import manifold3d as mf
 import numpy as np
 
-from .geometry import fibonacci_sphere, manifold_mesh
+from .geometry import fibonacci_sphere, manifold_mesh, solid_parts
 from .values import fmt
 
 AXIS_NAMES = {"x": "X (ширина)", "y": "Y (глубина)", "z": "Z (высота)"}
@@ -303,7 +303,7 @@ def collect_solid(solid, wall: bool = True, symmetry: bool = False,
         "overhang_pct": overhang_percent(m),
     }
     try:
-        data["parts"] = len(m.decompose())
+        data["parts"] = solid_parts(m)
     except Exception:
         data["parts"] = 1
     data["wall"] = wall_thickness(m) if wall else None
@@ -394,7 +394,7 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
         garea = union.surface_area() / 100.0
         ggenus = union.genus()
         try:
-            gparts = len(union.decompose())
+            gparts = solid_parts(union)
         except Exception:
             gparts = len(visible)
         gflat = flat_bottom_percent(union)

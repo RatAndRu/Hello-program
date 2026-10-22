@@ -167,7 +167,7 @@ button.mini:disabled { opacity: .38; cursor: default; }
   font-size: 10.5px; letter-spacing: .16em; text-transform: uppercase;
   color: var(--text-faint); font-weight: 600;
 }
-.panel-tools, .view-tools { display: flex; align-items: center; gap: 4px; }
+.panel-tools, .view-tools { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
 .switch { display: flex; align-items: center; gap: 5px; color: var(--text-faint); font-size: 11px; cursor: pointer; }
 .switch input { accent-color: var(--accent); }
 
@@ -190,7 +190,19 @@ button.mini:disabled { opacity: .38; cursor: default; }
   background: #0e1218;
 }
 .gutter .err { color: var(--bad); font-weight: 700; }
+.gutter .run { color: #ffc36b; font-weight: 700; }
+.gutter .run-soft { color: #c9a05a; }
+.code-run {
+  position: absolute; left: 44px; right: 0;
+  pointer-events: none; background: rgba(255, 195, 107, 0.13);
+  border-left: 2px solid #ffc36b; box-shadow: inset 0 0 0 1px rgba(255, 195, 107, 0.08);
+}
+.code-run-soft {
+  background: rgba(255, 195, 107, 0.055); border-left-color: rgba(255, 195, 107, 0.45);
+  box-shadow: none;
+}
 #code {
+  position: relative; z-index: 1;
   flex: 1;
   border: 0; outline: 0; resize: none;
   background: transparent;

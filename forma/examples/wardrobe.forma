@@ -100,18 +100,18 @@ light preset=студия strength=1.2
 # ---------- КОЛЁСИКИ (ось X, катятся по рейкам) ----------
 #  Стоят в задней половине ящика: при выезде на 250 мм остаются на рейках,
 #  поэтому качение видно, а не «крутятся на месте».
-колесо_1 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
-колесо_1 = rotate [колесо_1] angle=90 axis=y
-колесо_1 = translate [колесо_1] offset=[-440, 45, 113]
-колесо_2 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
-колесо_2 = rotate [колесо_2] angle=90 axis=y
-колесо_2 = translate [колесо_2] offset=[440, 45, 113]
-колесо_3 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
-колесо_3 = rotate [колесо_3] angle=90 axis=y
-колесо_3 = translate [колесо_3] offset=[-440, 175, 113]
-колесо_4 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
-колесо_4 = rotate [колесо_4] angle=90 axis=y
-колесо_4 = translate [колесо_4] offset=[440, 175, 113]
+колесо_1 = wheel diameter=26 width=12 rim=5 spokes=3 hub=8 tire=2 segments=48
+колесо_1 = rotate [колесо_1] angle=90 axis=z
+колесо_1 = translate [колесо_1] offset=[-440, 45, 100]
+колесо_2 = wheel diameter=26 width=12 rim=5 spokes=3 hub=8 tire=2 segments=48
+колесо_2 = rotate [колесо_2] angle=90 axis=z
+колесо_2 = translate [колесо_2] offset=[440, 45, 100]
+колесо_3 = wheel diameter=26 width=12 rim=5 spokes=3 hub=8 tire=2 segments=48
+колесо_3 = rotate [колесо_3] angle=90 axis=z
+колесо_3 = translate [колесо_3] offset=[-440, 175, 100]
+колесо_4 = wheel diameter=26 width=12 rim=5 spokes=3 hub=8 tire=2 segments=48
+колесо_4 = rotate [колесо_4] angle=90 axis=z
+колесо_4 = translate [колесо_4] offset=[440, 175, 100]
 
 # ---------- СБОРКА ----------
 корпус = union [цоколь, боковина_л, боковина_п, дно, верх, разделитель, задняя_стенка,
@@ -130,6 +130,8 @@ light preset=студия strength=1.2
 # ---------- АНИМАЦИЯ: сцены-варианты + параллельные движения ----------
 #  scene=… — заготовка для просмотра: «дверь», «ящик». В окне их можно
 #  переключать, не трогая сценарий; «все сцены» показывает всё сразу.
+animate ручка_левая move dy=4 seconds=0.25 scene=дверь
+animate ручка_левая move dy=-4 seconds=0.3 scene=дверь
 animate ручка_левая move dy=-9 seconds=0.4 scene=дверь
 animate ручка_левая move dy=9 seconds=0.4 scene=дверь
 animate дверь turn angle=-100 axis=z pivot=[-481, -216, 0] seconds=2 scene=дверь
@@ -137,6 +139,8 @@ animate дверь wait seconds=1 scene=дверь
 animate дверь turn angle=100 axis=z pivot=[-481, -216, 0] seconds=2 scene=дверь
 
 animate ящик_сборка move dy=-250 seconds=2 scene=ящик
+animate ручка_ящика move dy=6 seconds=0.25 scene=ящик
+animate ручка_ящика move dy=-6 seconds=0.25 scene=ящик
 animate ящик_сборка wait seconds=1 scene=ящик
 animate ящик_сборка move dy=250 seconds=2 scene=ящик
 animate колесо_1 roll distance=250 radius=13 axis=x seconds=2 scene=ящик
@@ -163,6 +167,8 @@ check ящик watertight
 check ящик parts 1
 check рейки height 9..13
 check колесо_1 gap рейки 0
+check колесо_1 height 24..28
+check ручка_левая height 198..202
 
 # ---------- МАТЕРИАЛ ----------
 color корпус #a8794a rough=0.66 density=0.72

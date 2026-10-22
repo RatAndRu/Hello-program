@@ -406,7 +406,8 @@ def _triplanar_uv(tri: np.ndarray, tile_mm: float,
 
 
 def uv_triangles(verts: np.ndarray, faces: np.ndarray, mode: str = "auto",
-                 bbox: np.ndarray | None = None, tile_mm: float = 140.0) -> np.ndarray:
+                 bbox: np.ndarray | None = None, tile_mm: float = 140.0,
+                 origin=None) -> np.ndarray:
     """UV на каждый угол треугольника.
 
     Главное отличие от uv_for: шов цилиндра не «растягивается» через всю
@@ -421,7 +422,8 @@ def uv_triangles(verts: np.ndarray, faces: np.ndarray, mode: str = "auto",
     tri = v[f]  # (F, 3, 3) — координаты в glTF (X, Y вверх, Z)
     mode = (mode or "auto").lower()
     if mode in ("auto", "triplanar", "box", "грани", "авто"):
-        return _triplanar_uv(tri, tile_mm, origin=lo)
+        base = lo if origin is None else np.asarray(origin, dtype=np.float64)[:3]
+        return _triplanar_uv(tri, tile_mm, origin=base)
     if mode == "planar":
         u = (tri[:, :, 0] - lo[0]) / span[0]
         w = (tri[:, :, 2] - lo[2]) / span[2]
