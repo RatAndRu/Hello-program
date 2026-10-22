@@ -8,8 +8,9 @@ import { plyFromPacked, splatInfo } from './splat.js';
 import { matPDF, matPNG } from './matprint.js';
 import * as store from './store.js';
 import { fmtT } from './pipeline.js';
+import { hasNativeCam } from './nativecam.js';
 
-export const VERSION = '2.3';
+export const VERSION = '2.4';
 const $ = (id) => document.getElementById(id);
 const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8', torch: 'off' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
@@ -46,12 +47,15 @@ function b64(u8) { let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += 
 async function saveFile(bytes, name, mime, share = false) {
   const N = window.ObyomNative;
   if (N && N.begin) {
-    const id = N.begin(name), CH = 3 * 131072;
-    for (let o = 0; o < bytes.length; o += CH) { if (!N.append(id, b64(bytes.subarray(o, o + CH)))) { toast('Не удалось записать файл'); return; } if ((o / CH) % 8 === 7) await new Promise((r) => setTimeout(r, 0)); }
+    const id = N.begin(name), CH = 3 * 131072, isB = bytes instanceof Blob, n = isB ? bytes.size : bytes.length;
+    for (let o = 0; o < n; o += CH) {
+      const part = isB ? new Uint8Array(await bytes.slice(o, o + CH).arrayBuffer()) : bytes.subarray(o, o + CH); // Blob — читаем кусками (потоковый ZIP)
+      if (!N.append(id, b64(part))) { toast('Не удалось записать файл'); return; } if ((o / CH) % 8 === 7) await new Promise((r) => setTimeout(r, 0));
+    }
     const msg = N.finish(id, name, mime, share); if (msg) toast(msg, 3800);
     return;
   }
-  const url = URL.createObjectURL(new Blob([bytes], { type: mime }));
+  const url = URL.createObjectURL(bytes instanceof Blob ? bytes : new Blob([bytes], { type: mime }));
   const a = Object.assign(document.createElement('a'), { href: url, download: name }); document.body.appendChild(a); a.click(); a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 5000);
   toast('Файл сохранён: ' + name);
@@ -80,14 +84,18 @@ $('btnHelp').onclick = showHelp;
 // ---------- настройка ----------
 function renderSetup() {
   document.querySelectorAll('#setup .seg').forEach((seg) => seg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', S[seg.dataset.key] === b.dataset.v)));
+  // фонарик включается только своей камерой приложения (Android); в браузере выбора нет
+  const nat = hasNativeCam(); $('torchLbl').classList.toggle('hidden', !nat); document.querySelector('#setup .seg[data-key="torch"]').classList.toggle('hidden', !nat);
   const it = { fast: 600, normal: 1200, best: 2400 }[S.quality];
   const sp = S.mode === 'mesh' ? '' : ` Сплэты на телефоне: ~${Math.round(it * 0.4 / 60)}–${Math.round(it * 0.7 / 60)} мин.`;
   const how = S.method === 'walk'
     ? 'Обходи предмет по кругу 2–3 раза на разной высоте: низко (~30°), выше (~55°) и почти сверху (~75°). Кадры снимаются сами.'
     : 'Телефон в держателе смотрит на коврик сверху-сбоку. Нажми ▶, раскрути столик и убери руку — после таймера кадры пойдут сами, каждые несколько градусов поворота (замедлился — кадры реже, остановился — пауза). Потом подними держатель выше, ⏸ → ▶ и ещё оборот. Пока коврик пустой — нажми «Фон»; после «Готово» убери предмет и сними фон ещё раз: верх выйдет без «шапки».';
   const tall = +S.height >= 200 ? ' Для высокого предмета отойди дальше, чтобы в кадр влезал и весь круг меток, и верх предмета.' : '';
-  const tor = S.torch === 'on' ? ' Фонарик горит всю съёмку: рельеф считается по тому, как свет из камеры ложится на поверхность при повороте. Верхний свет в комнате лучше погасить или приглушить' + (S.method === 'walk' ? ', снимать без резких рывков.' : ', держатель не трогать.') : '';
-  $('setupHint').textContent = how + tall + tor + ' Форма считается за 20–60 секунд.' + sp;
+  const tor = S.torch === 'on' && nat ? ' Фонарик горит всю съёмку: рельеф считается по тому, как свет из камеры ложится на поверхность при повороте. Верхний свет в комнате лучше погасить или приглушить' + (S.method === 'walk' ? ', снимать без резких рывков.' : ', держатель не трогать.') : '';
+  const deep = S.mode !== 'splat' && S.quality !== 'fast' && ['normal', 'smooth', 'planes', 'vessel'].includes(S.shape);
+  const ft = deep ? ` Форма считается за ${S.quality === 'best' ? '2–5' : '1–3'} мин: вогнутости уточняются по сплэтам (для быстрого результата — «Быстро»).` : ' Форма считается за 20–60 секунд.';
+  $('setupHint').textContent = how + tall + tor + ft + sp;
 }
 document.querySelectorAll('#setup .seg').forEach((seg) => seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S[seg.dataset.key] = b.dataset.v; saveSettings(); renderSetup(); }));
 $('btnStart').onclick = () => startCapture();
@@ -464,12 +472,12 @@ async function moreSheet(scan) {
     const zb = box.querySelector('[data-a="zip"]'); if (zb) zb.onclick = async () => {
       closeSheet(); toast('Собираю архив кадров…', 6000);
       try {
-        const { makeZip } = await import('./zip.js'), files = [], pad = (i) => String(i).padStart(3, '0');
-        const add = async (list, pre) => { if (list) for (let i = 0; i < list.length; i++) files.push({ name: `${pre}${pad(i)}.jpg`, data: new Uint8Array(await list[i].arrayBuffer()) }); };
+        const { makeZipBlob } = await import('./zip.js'), files = [], pad = (i) => String(i).padStart(3, '0');
+        const add = async (list, pre) => { if (list) for (let i = 0; i < list.length; i++) files.push({ name: `${pre}${pad(i)}.jpg`, data: list[i] }); };
         await add(frames, 'frames/f'); await add(bframes, 'bottom/b'); await add(close, 'close/c'); await add(plates, 'plate/p'); await add(bplates, 'bplate/q');
         const info = { app: 'Объём ' + VERSION, name: scan.name, date: new Date(scan.date).toISOString(), settings: scan.settings, bottom: scan.bottom || null, stats: scan.stats || null, failed: scan.failed || null, ua: navigator.userAgent, log: scan.log || '' };
         files.push({ name: 'info.json', data: new TextEncoder().encode(JSON.stringify(info, null, 1)) });
-        await saveFile(makeZip(files), fileBase(scan.name) + '_кадры.zip', 'application/zip');
+        await saveFile(await makeZipBlob(files), fileBase(scan.name) + '_кадры.zip', 'application/zip');
       } catch (e) { toast('Архив не собрался: ' + e.message, 4000); }
     };
     const dz = box.querySelector('[data-a="dropframes"]'); if (dz) dz.onclick = async () => { await store.delFrames(scan.id); await store.delFrames(scan.id + ':bottom'); for (const k of [':plate', ':bplate', ':close']) await store.delFrames(scan.id + k).catch(() => {}); closeSheet(); toast('Кадры удалены'); };
@@ -557,6 +565,7 @@ function showHelp() {
   <p><b>Текстура:</b> цвет модели — отдельная картинка-атлас: каждый кусок поверхности берётся из одного лучшего кадра в полном разрешении (а не из цвета вершин). В просмотре — переключатель «Текстура / Вершины». Для большей детальности — ⋯ → <b>«Крупные планы»</b>: предмет не двигать, телефон ближе (15–25 см), в кадре хотя бы 3 метки. Качество «Лучше» снимает в Full HD и считает форму на 960 px.</p>
   <p><b>Что не получится:</b> прозрачные и зеркальные предметы; глубокие впадины (внутренность чашки — кроме формы «Сосуд») — метод видит силуэты. Блестящий бок даёт блики — лучше «Тело вращения» или матовый свет.</p>
   <p><b>Точность (2.3):</b> край предмета уточняется до долей пикселя; искажение объектива («бочка») находится по меткам и исправляется само. В режиме <b>«Сетка + сплэты»</b> форма дополнительно уточняется по сплэтам — они видят вогнутости (шейки, выемки), которых не видят силуэты; текстура печётся уже на уточнённой форме.</p>
+  <p><b>Форма точнее (2.4):</b> в режиме «Полигоны» (качество «Норма» и «Лучше», формы «Обычная», «Гладкая», «Плоские грани», «Сосуд») приложение коротко учит сплэты на уменьшенных кадрах — только ради глубины: они видят вогнутости и «жир» силуэтов, и лишнее из оболочки вырезается. Затем форма доводится по рисунку поверхности (сравнение кусочков между кадрами) — сдвиг теперь попадает в саму сетку и экспорт, а не только в рельеф. На однотонном предмете без рисунка это уточнение само отключается. «Плоские грани» больше не стирают вмятины глубже ~1 мм. Занимает 1–3 минуты; нужно быстрее — «Быстро».</p>
   <p><b>Крупные планы</b> снимаются в полном разрешении камеры. Кнопка <b>«Детальность»</b> у текстуры красит модель по тому, сколько миллиметров приходится на пиксель снимка: красные места стоит доснять крупным планом. В экспорте есть <b>«OBJ квадраты»</b> — ровная сетка из четырёхугольников для анимации и скульптинга.</p>
   <p>Всё считается на телефоне, без интернета и без нейросетей. Версия ${VERSION}.</p>`);
 }

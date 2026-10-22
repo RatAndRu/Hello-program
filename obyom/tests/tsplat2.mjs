@@ -39,7 +39,9 @@ for (const f of good) {
 if (!WALK) motionMasks(good);
 const G = carveHull(good, { Rb: 55, Hb: HB }, 128);
 const M = meshFromGrid(G, 3); taubin(M, 30); computeNormals(M); colorize(M, good);
-const test = good.filter((_, k) => k % 6 === 3), train = good.filter((_, k) => k % 6 !== 3);
+const { shrinkFrame } = await import('../web/js/pipeline.js'); const SW = +(E.SW || 640);
+const shr = (f) => { const g = shrinkFrame(f, SW); if (g === f) return f; const k = f.w / g.w; g.gm = new Uint8Array(g.w * g.h); for (let y = 0; y < g.h; y++) for (let x = 0; x < g.w; x++) g.gm[y * g.w + x] = f.gm[Math.min(f.h - 1, Math.floor((y + 0.5) * k)) * f.w + Math.min(f.w - 1, Math.floor((x + 0.5) * k))]; return g; };
+const test = good.filter((_, k) => k % 6 === 3).map(shr), train = good.filter((_, k) => k % 6 !== 3).map(shr);
 const num = (k, d) => (E[k] !== undefined ? +E[k] : d);
 const opt = {
   deg: num('DEG', SPLAT_DEFAULTS.deg), alphaW: num('AW', SPLAT_DEFAULTS.alphaW), depthW: num('DW', SPLAT_DEFAULTS.depthW), flat: num('FLAT', SPLAT_DEFAULTS.flat),
@@ -60,7 +62,7 @@ const TV = splatViews(M, test, depthMap, vopt);
 function evaluate() {
   let se = 0, nse = 0, fl = 0, nfl = 0, ho = 0, nho = 0;
   for (const v of TV) {
-    const gm = v.src.gm, zero = new Float32Array(v.img.length);
+    const gm = v.src.gm, w = v.src.w, zero = new Float32Array(v.img.length);
     const { out, T } = renderView(S, { ...v, bg: zero, gain: [1, 1, 1] });
     // яркость кадра: img ≈ g·out + T·img (на предмете T≈0) — МНК по каналам
     const g = [0, 0, 0], a = [0, 0, 0], b = [0, 0, 0];
@@ -98,7 +100,7 @@ if (process.env.HYB) { const vol = () => { let n = 0; for (const v of G.occ) n +
   const truth = (X, Y, Z) => (X * X + Y * Y <= 576 && Z >= 0 && Z <= 42) || X * X + Y * Y + (Z - 58) ** 2 <= 289;
   const err = () => { let ex = 0, mi = 0; const [ox, oy, oz] = G.origin; for (let z = 0; z < G.nz; z++) for (let y = 0; y < G.ny; y++) for (let x = 0; x < G.nx; x++) { const o = G.occ[(z * G.ny + y) * G.nx + x] > 0.5, t = truth(ox + x * G.vs, oy + y * G.vs, oz + z * G.vs); if (o && !t) ex++; if (!o && t) mi++; } return `лишнее ${(ex * G.vs ** 3).toFixed(0)} недостаёт ${(mi * G.vs ** 3).toFixed(0)}`; };
   console.log('HYB before', v0.toFixed(0), err());
-  for (const sh of (process.env.HYB_SH || '0.6').split(',')) { const occ0 = G.occ.slice(); const r = splatCarve(G, S, SV.concat(TV), { share: +sh }); console.log('HYB share', sh, 'removed', r.volume.toFixed(0), 'after', vol().toFixed(0), err()); G.occ.set(occ0); } }
+  for (const sh of (process.env.HYB_SH || '0.6').split(',')) { const occ0 = G.occ.slice(); const r = splatCarve(G, S, SV.concat(TV), { share: +sh, ...(E.HYB_M ? { margin: +E.HYB_M } : {}) }); console.log('HYB share', sh, 'removed', r.volume.toFixed(0), 'after', vol().toFixed(0), err()); G.occ.set(occ0); } }
 console.log(`ИТОГ: ${fmt(r)} капель ${S.n} убрано облачков ${tr.cleaned || 0} мс/шаг ${(tTrain / ITERS).toFixed(1)} всего ${((Date.now() - t0) / 1000).toFixed(0)} с`);
 if (E.PLY) fs.writeFileSync(E.PLY, Buffer.from(plyFromPacked(packSplats(S))));
 if (E.PPM) { // верх — проверочные кадры, низ — сплэты на сером

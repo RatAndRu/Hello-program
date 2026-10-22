@@ -7,7 +7,7 @@ import { computeMask, motionMasks, carveHull, meshFromGrid, revolveGrid, taubin,
 import { alignHulls, intersectHulls, framesToA } from './align.js';
 import { boxMesh, prismMesh, snapPlanes } from './shapes.js';
 import { bakeTexture, subdivideLong } from './texture.js';
-import { analyzeSurface, computeTangents } from './surface.js';
+import { analyzeSurface, computeTangents, applyVertexDisp } from './surface.js';
 import { splatCarve, initFromMesh, Trainer, splatViews, allowedRegion, packSplats, scalePacked } from './splat.js';
 import { createPool, poolSize } from './splatpool.js';
 
@@ -49,7 +49,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   // на вертушке угловые метки не используются: лист может свисать со столика или быть вырезан по кругу
   const turn = job.method === 'turn';
   const k = matLayout(job.size || 'A4', 'full').k, Rb = 55 * k, Hb = job.Hb || 90 * k;
-  const Q = { fast: { N: 112, iters: 600, n0: 6000, nmax: 14000 }, normal: { N: 128, iters: 1200, n0: 8000, nmax: 20000 }, best: { N: 200, iters: 2400, n0: 11000, nmax: 32000, deg: 2 } }[job.quality || 'normal'];
+  const Q = { fast: { N: 112, iters: 600, n0: 6000, nmax: 14000 }, normal: { N: 128, iters: 1200, n0: 8000, nmax: 20000, dIters: 600 }, best: { N: 200, iters: 2400, n0: 11000, nmax: 32000, deg: 2, dIters: 1200 } }[job.quality || 'normal'];
   const PW = procW(job.quality);
   const A = await prepSet(job.blobs, { size: job.size, method: job.method, Hb, theme: job.theme, plates: job.plates, PW }, cb, shouldStop, log, '');
   const good = A.good;
@@ -118,7 +118,49 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   const M0 = M; // сетка без текстуры — для сплэтов
   // «гибрид» (сетка + сплэты): сплэты видят вогнутости, которых не видят силуэты, — оболочку уточняем по ним, а текстуру
   // печём уже на уточнённой сетке (на исходной — не тратим время)
-  const hyb = job.mode === 'both' && job.hybrid !== false && ['normal', 'smooth', 'vessel', 'planes'].includes(shape);
+  const hybShape = ['normal', 'smooth', 'vessel', 'planes'].includes(shape);
+  const hyb = job.mode === 'both' && job.hybrid !== false && hybShape;
+  // v2.4: и в режиме «Полигоны» — короткое обучение сплэтов на кадрах 320 px только ради глубины (вогнутости, «жир» силуэтов)
+  const depthPass = job.mode === 'mesh' && job.hybrid !== false && hybShape && (job.depthIters ?? Q.dIters) > 0;
+  // обучение сплэтов (общая часть для «Сплэтов», «Обоих» и уточнения формы)
+  const trainSplats = async (o) => {
+    const S = initFromMesh(M0, o.n0, o.deg || 1);
+    const sf = frAll.map((f) => shrinkFrame(f, o.W));
+    const views = splatViews(M0, sf, depthMap);
+    for (const v of views) v.src = null;
+    if (o.free) for (const f of frAll) { f.rgba = null; f.bgMed = null; f.refOut = null; }
+    const inside = allowedRegion(G, sf, 2);
+    let pool = null;
+    if (job.pool !== false) { try { pool = await createPool(job.poolSize || poolSize()); } catch (e) { pool = null; log('потоки для сплэтов не запустились: ' + e.message); } }
+    const steps = o.iters;
+    const tr = new Trainer(S, views, { iters: steps, extent: 2 * Rb, maxN: o.nmax, inside, batch: 1 });
+    if (pool && !o.quiet) log(`сплэты учатся в ${pool.size} потоках`);
+    const ts = Date.now();
+    try {
+      for (let i = 1; i <= steps; i++) {
+        if (shouldStop()) break; // остановка — оставляем то, что успело выучиться
+        if (pool) { try { await pool.step(tr); } catch (e) { log('✗ поток сплэтов упал: ' + e.message + ' — оставляю то, что успело выучиться'); break; } }
+        else tr.step();
+        if (i % 10 === 0) {
+          const el = (Date.now() - ts) / 1000, left = el / i * (steps - i);
+          cb.progress(o.label, i / steps, `шаг ${i} из ${steps} · капель ${S.n} · осталось ~${fmtT(left)}`);
+          await tick();
+        }
+        if (o.preview && cb.preview && i % 100 === 0) cb.preview(packSplats(S));
+      }
+    } finally { if (pool) await pool.close(); }
+    return { S, views, tr };
+  };
+  // оболочку уточняем по глубине сплэтов: воксели перед их поверхностью в нескольких кадрах — пустота. Возвращает новую сетку или null
+  const carveBySplats = async (S, views) => {
+    cb.progress('Уточняю форму по сплэтам', 0, 'глубина по кадрам'); await tick();
+    const occ0 = G.occ.slice(), hc = splatCarve(G, S, views, { share: 0.5 });
+    cleanGrid(G); let v2 = 0; for (const v of G.occ) v2 += v > 0.5 ? 1 : 0;
+    if (v2 < 0.6 * vox) { G.occ.set(occ0); log(`✗ уточнение по сплэтам отменено: вырезало бы ${(100 - 100 * v2 / vox).toFixed(0)}% объёма`); return null; }
+    if (!hc.removed) return null;
+    log(`форма уточнена по сплэтам: вырезано ${(hc.volume / 1000).toFixed(1)} см³ (вогнутости, лишнее от силуэтов)`);
+    vox = v2; return geom().M;
+  };
   let tex = null, texInfo = null, pbr = null, nClose = 0;
   const texturize = async (M) => {
     tex = null; texInfo = null; pbr = null;
@@ -152,8 +194,13 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
         // 5г) свет, рельеф, материал, текстура без теней — фотометрия по тем же кадрам
         if (r.tex && job.surface !== false) {
           try {
-            const Sf = await analyzeSurface(r.mesh, texFrames, r.faceFrame, r.faceChart, r.atlas, r.T, { G, turn, torch: !!job.torch, onProgress: (p, t) => cb.progress('Рельеф и материал', p, t), tick });
+            const Sf = await analyzeSurface(r.mesh, texFrames, r.faceFrame, r.faceChart, r.atlas, r.T, { G, turn, torch: !!job.torch, refine: job.refine, refineMinShare: job.refineMinShare, onProgress: (p, t) => cb.progress('Рельеф и материал', p, t), tick });
             const [albedo, normal, orm, height] = await Promise.all([encodeJPEG(Sf.albedo, r.T), encodePNG(Sf.normal, Sf.Wr), encodePNG(Sf.orm, Sf.Wr), encodePNG(Sf.height, Sf.Wr)]);
+            if (Sf.vdisp) {
+              let mx = 0, sm = 0; for (const d of Sf.vdisp) { sm += d; if (Math.abs(d) > Math.abs(mx)) mx = d; }
+              applyVertexDisp(M, Sf.vdisp);
+              log(`форма уточнена по рисунку поверхности: в среднем ${(sm / Sf.vdisp.length).toFixed(2)} мм внутрь, до ${mx.toFixed(1)} мм (опора у ${Math.round(100 * Sf.info.refineShare)}% проверенных точек)`);
+            } else if (Sf.info.refineSkip) log(`уточнение по рисунку пропущено (мало опоры: ${Sf.info.refineSkip})`);
             M.tan = computeTangents(M);
             pbr = { albedo, normal, orm, height, Wr: Sf.Wr, info: Sf.info };
             log(surfaceLog(Sf.info));
@@ -164,6 +211,12 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     }
     return M;
   };
+  if (depthPass && !shouldStop()) {
+    const t1 = Date.now();
+    const { S, views } = await trainSplats({ W: 320, iters: job.depthIters ?? Q.dIters, n0: 6000, nmax: 14000, label: 'Глубина по сплэтам', quiet: true });
+    if (!shouldStop()) { const MH = await carveBySplats(S, views); if (MH) M = prepColor(MH); }
+    log(`уточнение формы по сплэтам: ${((Date.now() - t1) / 1000).toFixed(0)} с`);
+  }
   if (!hyb) M = await texturize(M);
   const meshOf = (M) => ({ pos: M.pos, nrm: M.nrm, col: M.col, idx: M.idx, ...(tex ? { uv: M.uv, tex, ...(M.detail ? { detail: M.detail } : {}) } : {}), ...(pbr ? { pbr, tan: M.tan } : {}) });
   const result = { mesh: meshOf(M), stats: { tex: texInfo, close: nClose, frames: job.blobs.length + (bt && bt.blobs ? bt.blobs.length : 0), used: frAll.length, focal: A.rf.f, elMax, hullVol: vox * G.vs ** 3, t: 0, bottom: bottomOk } };
@@ -186,46 +239,15 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   }
   if (job.mode === 'splat' || job.mode === 'both') {
     if (job.mode === 'both' && cb.partial) cb.partial(result); // сетка готова — пусть сохранится до долгого обучения сплэтов
-    const S = initFromMesh(M0, Q.n0, Q.deg || 1); // цвет зависит от угла взгляда: гармоники 1-й степени, у «Лучше» — 2-й
-    const sf = frAll.map((f) => shrinkFrame(f, 640)); // сплэтам хватает 640 px — учатся вдвое быстрее, чем на 960
-    const views = splatViews(M0, sf, depthMap);
-    // виды скопировали всё нужное — полноразмерные кадры больше не нужны: меньше пик памяти («Лучше» на телефоне)
-    for (const v of views) v.src = null;
-    for (const f of frAll) { f.rgba = null; f.bgMed = null; f.refOut = null; }
-    // несколько потоков (v2.1): кадр шага считают все потоки по частям — тот же результат, быстрее
-    const inside = allowedRegion(G, sf, 2);
-    let pool = null;
-    if (job.pool !== false) { try { pool = await createPool(job.poolSize || poolSize()); } catch (e) { pool = null; log('потоки для сплэтов не запустились: ' + e.message); } }
-    const steps = Q.iters;
-    const tr = new Trainer(S, views, { iters: steps, extent: 2 * Rb, maxN: Q.nmax, inside, batch: 1 });
-    if (pool) log(`сплэты учатся в ${pool.size} потоках`);
-    const ts = Date.now();
-    try {
-      for (let i = 1; i <= steps; i++) {
-        if (shouldStop()) break; // остановка — оставляем то, что успело выучиться
-        if (pool) { try { await pool.step(tr); } catch (e) { log('✗ поток сплэтов упал: ' + e.message + ' — оставляю то, что успело выучиться'); break; } }
-        else tr.step();
-        if (i % 10 === 0) {
-          const el = (Date.now() - ts) / 1000, left = el / i * (steps - i);
-          cb.progress('Учу сплэты', i / steps, `шаг ${i} из ${steps} · капель ${S.n} · осталось ~${fmtT(left)}`);
-          await tick();
-        }
-        if (cb.preview && i % 100 === 0) cb.preview(packSplats(S));
-      }
-    } finally { if (pool) await pool.close(); }
+    // сплэтам хватает 640 px — учатся вдвое быстрее, чем на 960; полноразмерные кадры освобождаем — меньше пик памяти
+    const { S, views, tr } = await trainSplats({ W: 640, iters: Q.iters, n0: Q.n0, nmax: Q.nmax, deg: Q.deg, free: true, preview: true, label: 'Учу сплэты' });
     if (hyb && !shouldStop()) {
       // сплэты уточняют оболочку: воксели перед их поверхностью в нескольких кадрах — пустота (вогнутости, «жир» силуэтов)
-      cb.progress('Уточняю форму по сплэтам', 0, 'глубина по кадрам'); await tick();
-      const occ0 = G.occ.slice(), hc = splatCarve(G, S, views, { share: 0.5 });
-      cleanGrid(G); let v2 = 0; for (const v of G.occ) v2 += v > 0.5 ? 1 : 0;
-      if (v2 < 0.6 * vox) { G.occ.set(occ0); log(`✗ уточнение по сплэтам отменено: вырезало бы ${(100 - 100 * v2 / vox).toFixed(0)}% объёма`); }
-      else if (hc.removed) log(`форма уточнена по сплэтам: вырезано ${(hc.volume / 1000).toFixed(1)} см³ (вогнутости, лишнее от силуэтов)`);
+      const MC = await carveBySplats(S, views);
       // кадры для цвета и текстуры: освобождены перед обучением — раскрываем снова
       for (let k = 0; k < frAll.length; k++) { const f = frAll[k]; if (!f.rgba && f.blob) { try { f.rgba = (await decodeBlob(f.blob, f.w, A.dist)).rgba; } catch (e) {} } if (k % 4 === 3) { cb.progress('Уточняю форму по сплэтам', k / frAll.length, 'кадры для текстуры'); await tick(); } }
-      let MH = v2 < 0.6 * vox || !hc.removed ? M : geom().M;
-      MH = MH === M ? M : prepColor(MH);
-      MH = await texturize(MH);
-      result.mesh = meshOf(MH); result.stats.tex = texInfo; result.stats.close = nClose; result.stats.hullVol = (v2 < 0.6 * vox ? vox : v2) * G.vs ** 3;
+      const MH = await texturize(MC ? prepColor(MC) : M);
+      result.mesh = meshOf(MH); result.stats.tex = texInfo; result.stats.close = nClose; result.stats.hullVol = vox * G.vs ** 3;
       if (scaled) { scaleMesh(result.mesh); result.stats.hullVol *= sx * sy * sz; }
       for (const f of frAll) f.rgba = null;
     }
@@ -323,7 +345,7 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   return { withPlate, good, rf, L, Rb, Hb, turn, dist, elMax: Math.max(...els), elMin: Math.min(...els) };
 }
 // уменьшенная копия кадра (картинка — усреднением, маска — ближайшим), фокус в новых пикселях
-function shrinkFrame(f, W) {
+export function shrinkFrame(f, W) {
   if (f.w <= W) return f;
   const k = f.w / W, w = W, h = Math.round(f.h / k), rgba = new Uint8Array(w * h * 4), mask = f.mask ? new Uint8Array(w * h) : null;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {

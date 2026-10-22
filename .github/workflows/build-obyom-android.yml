@@ -6,8 +6,23 @@ on:
       - 'obyom/**'
       - '.github/workflows/build-obyom-android.yml'
 jobs:
+  tests:
+    name: Проверки (без сцен)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Градиенты сплэтов, потоки, ZIP, сдвиг вершин, плоские грани
+        working-directory: obyom/tests
+        run: |
+          node --stack-size=200 gradcheck.mjs
+          node --stack-size=200 tpool.mjs
+          node --stack-size=200 tunit.mjs
   build-apk:
     name: APK (Android)
+    needs: tests
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -68,6 +83,7 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: obyom-apk-${{ github.run_number }}-${{ github.run_attempt }}
+          target_commitish: ${{ github.sha }}
           name: Объём — APK (сборка ${{ github.run_number }})
           body: 3D-сканер небольших предметов (полигоны и сплэты) без нейросетей. Скачай Obyom.apk и установи на телефон. Для обновлений поверх не меняй ключ подписи после первой установки.
           prerelease: true

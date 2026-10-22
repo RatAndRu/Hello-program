@@ -166,7 +166,10 @@ export async function analyzeSurface(M, frames, faceFrame, faceChart, atlas, T, 
   // окрестность 5×5 текселей одинакова во всех кадрах (нормированная корреляция — не зависит от яркости и света),
   // затем сглаживаем по поверхности. Многовидовое стерео с оболочкой как начальным приближением, без ИИ.
   const DL = new Float32Array(NT); // насколько точка ушла внутрь (мм) — допуск для проверки заслонения
-  if (o.refine ?? !!o.torch) {
+  // v2.4: уточнение не зависит от фонарика (стерео по рисунку поверхности работает и без него)
+  const Dtot = new Float32Array(NT); let refined = false;
+  if (o.refine ?? true) {
+    const Xp0 = Xp.slice();
     const passes = [[-(o.refineOut ?? 1), o.refineIn ?? 5, 0.5], [-1, 1, 0.25]].slice(0, o.refinePasses ?? 2), infos = [];
     for (const [dMin, dMax, dStep] of passes) {
     const nD = Math.round((dMax - dMin) / dStep) + 1, R = 2, stride = 3;
@@ -231,12 +234,38 @@ export async function analyzeSurface(M, frames, faceFrame, faceChart, atlas, T, 
       let moved = 0, sum = 0;
       for (const jj of texels) {
         if (!(Ws[jj] > 0)) continue; const conf = Ws[jj] / (Ws[jj] + 0.3 * w50), d = clamp(Ds[jj] / Ws[jj], dMin, dMax) * conf;
-        DL[jj] = Math.max(0, DL[jj] + d); for (let c = 0; c < 3; c++) Xp[jj * 3 + c] -= d * N0[jj * 3 + c]; moved++; sum += d;
+        DL[jj] = Math.max(0, DL[jj] + d); Dtot[jj] += d; for (let c = 0; c < 3; c++) Xp[jj * 3 + c] -= d * N0[jj * 3 + c]; moved++; sum += d;
       }
       infos.push({ rej, tried, found, meanMM: +(sum / Math.max(1, moved)).toFixed(2) });
     } else infos.push({ tried, found });
     }
     info.refine = infos;
+    // проверка уверенности: на однотонном предмете стерео «находит» ложные сдвиги — тогда не трогаем ничего
+    const p0 = infos[0] || {}, share = p0.tried ? p0.found / p0.tried : 0;
+    let sD = 0, nDm = 0; for (const jj of texels) if (Dtot[jj]) { sD += Dtot[jj]; nDm++; }
+    const meanD = nDm ? sD / nDm : 0;
+    if (!(p0.tried > 30) || share < (o.refineMinShare ?? 0.2) || Math.abs(meanD) > (o.refineMaxMean ?? 3)) {
+      Xp.set(Xp0); DL.fill(0); Dtot.fill(0);
+      info.refineSkip = `${p0.found || 0} из ${p0.tried || 0} точек с рисунком, средний сдвиг ${meanD.toFixed(2)} мм`;
+    } else { refined = true; info.refineMean = +meanD.toFixed(2); info.refineShare = +share.toFixed(2); }
+  }
+  // сдвиги — в вершины сетки (раньше уточнялась только развёртка для рельефа, а форма и экспорт оставались прежними)
+  let vdisp = null;
+  if (refined && o.meshDisp !== false) {
+    const vs = new Float32Array(nv), vw = new Float32Array(nv);
+    for (const j of texels) { const d = Dtot[j]; if (!d) continue; const f = tri[j]; for (let q = 0; q < 3; q++) { const w = Math.max(0, bw[j * 3 + q]); vs[idx[f * 3 + q]] += w * d; vw[idx[f * 3 + q]] += w; } }
+    // вершины, разрезанные швами развёртки, склеиваем по положению (иначе — трещины)
+    const W = weldIndex(pos), ng = W.n, gs = new Float64Array(ng), gw = new Float64Array(ng);
+    for (let v = 0; v < nv; v++) { gs[W.g[v]] += vs[v]; gw[W.g[v]] += vw[v]; }
+    let gd = new Float32Array(ng); for (let g = 0; g < ng; g++) gd[g] = gw[g] > 0.05 ? gs[g] / gw[g] : 0;
+    // два прохода сглаживания по рёбрам — без ступенек на краю области, где сдвиг найден
+    const nb = new Float32Array(ng), nc = new Float32Array(ng);
+    for (let it = 0; it < 2; it++) {
+      nb.fill(0); nc.fill(0);
+      for (let i = 0; i < idx.length; i += 3) for (let e = 0; e < 3; e++) { const a = W.g[idx[i + e]], b = W.g[idx[i + (e + 1) % 3]]; nb[a] += gd[b]; nc[a]++; nb[b] += gd[a]; nc[b]++; }
+      const g2 = new Float32Array(ng); for (let g = 0; g < ng; g++) g2[g] = nc[g] ? 0.5 * gd[g] + 0.5 * nb[g] / nc[g] : gd[g]; gd = g2;
+    }
+    vdisp = new Float32Array(nv); for (let v = 0; v < nv; v++) vdisp[v] = gd[W.g[v]];
   }
   // ---------- 4) уточнение совмещения: сдвиг каждого лоскута в каждом кадре (оболочка шире предмета → проекции «плывут») ----------
   let nCh = 0; if (faceChart) for (let i = 0; i < faceChart.length; i++) if (faceChart[i] + 1 > nCh) nCh = faceChart[i] + 1; // без «...»: при «Лучше» граней сотни тысяч — переполнение стека
@@ -674,7 +703,7 @@ export async function analyzeSurface(M, frames, faceFrame, faceChart, atlas, T, 
     for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) { const j = nW(x, y); if (lab[j] !== ci) continue; const i = (y * T + x) * 4, m = lum(alb[i], alb[i + 1], alb[i + 2]) || 1, kk = mi.metal * Math.min(3, 150 / m) + (1 - mi.metal); for (let c = 0; c < 3; c++) alb[i + c] = clamp(Math.round(alb[i + c] * kk), 0, 255); }
   }
   prog(1, 'поверхность готова');
-  return { Wr, albedo: alb, normal: nmap, orm, height: hmap, info, world: { Nw, rhoC, tri, AO, lab, conf, texels, Xp, N0, Hh, rhoV, Pm, Qm, Iaa, Ibb, Iab } };
+  return { Wr, albedo: alb, normal: nmap, orm, height: hmap, info, vdisp, world: { Nw, rhoC, tri, AO, lab, conf, texels, Xp, N0, Hh, rhoV, Pm, Qm, Iaa, Ibb, Iab } };
 }
 
 // максимум по графу (наращивание на iters шагов)
@@ -689,6 +718,38 @@ export function graphMax(G, src, texels, iters) {
 }
 // общее поле высот по графу соседних точек (см. шаг 7б); экспорт — для проверки отдельно
 // граф соседних точек поверхности (в пространстве, сквозь швы развёртки): рёбра i<j, |d| ≤ 1.6 текселя, близкие нормали
+// одинаковые по положению вершины (швы развёртки) → общий номер группы
+export function weldIndex(pos, eps = 1e-3) {
+  const nv = pos.length / 3, g = new Int32Array(nv), map = new Map(); let n = 0;
+  for (let v = 0; v < nv; v++) { const k = Math.round(pos[v * 3] / eps) + ',' + Math.round(pos[v * 3 + 1] / eps) + ',' + Math.round(pos[v * 3 + 2] / eps); let id = map.get(k); if (id === undefined) { id = n++; map.set(k, id); } g[v] = id; }
+  return { g, n };
+}
+// сдвинуть вершины внутрь по нормали на d (мм) и пересчитать нормали — общие для склеенных по шву вершин
+export function applyVertexDisp(M, d) {
+  const { pos, idx } = M, nv = pos.length / 3, nrm = M.nrm, W = weldIndex(pos);
+  // направление сдвига — общая (средняя) нормаль копий вершины: у копий на остром ребре нормали разные, иначе — трещина
+  const g0 = new Float64Array(W.n * 3); for (let v = 0; v < nv; v++) for (let c = 0; c < 3; c++) g0[W.g[v] * 3 + c] += nrm[v * 3 + c];
+  const P = new Float32Array(pos);
+  for (let v = 0; v < nv; v++) { const g = W.g[v] * 3, l = Math.hypot(g0[g], g0[g + 1], g0[g + 2]) || 1; for (let c = 0; c < 3; c++) P[v * 3 + c] -= d[v] * g0[g + c] / l; }
+  // нормали склеиваем только у копий с почти одинаковой исходной нормалью (шов развёртки); острое ребро остаётся острым
+  const sg = new Int32Array(nv), reps = new Map(); let ns = 0;
+  for (let v = 0; v < nv; v++) {
+    let L = reps.get(W.g[v]); if (!L) reps.set(W.g[v], (L = []));
+    let id = -1; for (const [u, k] of L) if (nrm[u * 3] * nrm[v * 3] + nrm[u * 3 + 1] * nrm[v * 3 + 1] + nrm[u * 3 + 2] * nrm[v * 3 + 2] > 0.87) { id = k; break; }
+    if (id < 0) { id = ns++; L.push([v, id]); } sg[v] = id;
+  }
+  const gn = new Float64Array(ns * 3);
+  for (let i = 0; i < idx.length; i += 3) {
+    const a = idx[i] * 3, b = idx[i + 1] * 3, c = idx[i + 2] * 3;
+    const ux = P[b] - P[a], uy = P[b + 1] - P[a + 1], uz = P[b + 2] - P[a + 2], vx = P[c] - P[a], vy = P[c + 1] - P[a + 1], vz = P[c + 2] - P[a + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+    for (let q = 0; q < 3; q++) { const g = sg[idx[i + q]] * 3; gn[g] += nx; gn[g + 1] += ny; gn[g + 2] += nz; }
+  }
+  const N = new Float32Array(pos.length);
+  for (let v = 0; v < nv; v++) { const g = sg[v] * 3, l = Math.hypot(gn[g], gn[g + 1], gn[g + 2]) || 1; N[v * 3] = gn[g] / l; N[v * 3 + 1] = gn[g + 1] / l; N[v * 3 + 2] = gn[g + 2] / l; }
+  M.pos = P; M.nrm = N; return M;
+}
+
 export function buildGraph({ texels, Xp, N0, texMM }) {
   const R = 1.6 * texMM, cell = R, hash = new Map(), key = (x, y, z) => (x * 73856093) ^ (y * 19349663) ^ (z * 83492791);
   for (const j of texels) { const kk = key(Math.floor(Xp[j * 3] / cell), Math.floor(Xp[j * 3 + 1] / cell), Math.floor(Xp[j * 3 + 2] / cell)); let L = hash.get(kk); if (!L) hash.set(kk, (L = [])); L.push(j); }

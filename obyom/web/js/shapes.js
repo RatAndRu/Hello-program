@@ -243,7 +243,7 @@ export function snapPlanes(M, opt = {}) {
   if (!planes.length) return { mesh: M, info: 'плоскостей не найдено — оставлена обычная форма' };
   // притягивание: к своей плоскости; у рёбер — к линии пересечения двух; в углах — к точке трёх
   const cos65 = Math.cos(65 * Math.PI / 180);
-  const out = new Float32Array(pos);
+  const out = new Float32Array(pos); let kept = 0;
   for (let v = 0; v < nv; v++) {
     const p = [pos[v * 3], pos[v * 3 + 1], pos[v * 3 + 2]], nn = [nrm[v * 3], nrm[v * 3 + 1], nrm[v * 3 + 2]];
     const cand = [];
@@ -251,11 +251,14 @@ export function snapPlanes(M, opt = {}) {
     if (!cand.length) continue;
     cand.sort((a, b) => a[0] - b[0]);
     const sel = []; for (const [, i] of cand) { if (sel.every((j) => Math.abs(dot(planes[i].n, planes[j].n)) < 0.94)) sel.push(i); if (sel.length === 3) break; }
+    // допуск (v2.4): точка посреди грани глубже ~0.8 мм под плоскостью — настоящая вмятина (оболочка бывает только шире
+    // предмета, а не уже), её не выравниваем. Рёбра и углы (2–3 плоскости) — выпрямляем как раньше
+    if (sel.length === 1) { const pl = planes[sel[0]]; if (dot(pl.n, p) - pl.d < -(opt.band ?? 0.8)) { kept++; continue; } }
     const q = projectPlanes(p, sel.map((i) => planes[i]));
     if (q && Math.hypot(q[0] - p[0], q[1] - p[1], q[2] - p[2]) < 4) { out[v * 3] = q[0]; out[v * 3 + 1] = q[1]; out[v * 3 + 2] = q[2]; }
   }
   const M2 = splitCreases({ pos: out, idx: M.idx }, 30);
-  return { mesh: M2, info: `${planes.length} плоск${planes.length % 10 === 1 && planes.length % 100 !== 11 ? 'ость' : planes.length % 10 >= 2 && planes.length % 10 <= 4 && (planes.length % 100 < 10 || planes.length % 100 >= 20) ? 'ости' : 'остей'}` };
+  return { mesh: M2, kept, info: `${kept > 20 ? 'вмятины сохранены, ' : ''}${planes.length} плоск${planes.length % 10 === 1 && planes.length % 100 !== 11 ? 'ость' : planes.length % 10 >= 2 && planes.length % 10 <= 4 && (planes.length % 100 < 10 || planes.length % 100 >= 20) ? 'ости' : 'остей'}` };
 }
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 // ближайшая к p точка, лежащая на всех плоскостях (1–3)
