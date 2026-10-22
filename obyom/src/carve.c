@@ -1,29 +1,29 @@
 // Объём v2.8 — C++/WASM ядро: вырезание оболочки (visual hull).
-// Полный аналог JS-цикла в recon.js: взвешенное голосование по кадрам, субпиксельная кромка
-// через edge-alpha, доверенные кадры, досрочный выход.
 //
-// Структура кадра (упакована как Float32, floatsPerFrame = 24):
-//   0:fx 1:fy 2:cx 3:cy
-//   4..12: R (row-major 3x3)
-//   13..15: t
-//   16: rms (вес = 1/(1+max(0,rms-1)^2) вычисляется в JS)
-//   17: w  18: h
-//   19: maskByteOffset (HEAPU8, абсолютное смещение)
-//   20: alphaByteOffset (HEAPU8, абсолютное смещение; 0 если нет alpha)
-//   21: wF (вес кадра, нормализованный)
-//   22: trusted (1 или 0)
-//   23: __padding
+// ABI (линейная память WASM, 32-битные указатели от её начала):
+//   carve_occ(occ, nx, ny, nz, vs, ox, oy, oz, Rb, framesPtr, nFrames,
+//             maskBase, alphaBase, frac, few, weakMaj, tfrac, wMean)
 //
-// Маска: Uint8, значения 0/1/2/3/4 (см. recon.js).
-// Alpha: Uint8, 0..255, доля предмета на кромке (edgeAlpha).
-//
-// Вызывающий из JS (wasmcarve.js) упаковывает все кадры в один HEAPF32 и копирует
-// маски/альфы в один непрерывный HEAPU8, передавая абсолютные смещения.
+// FFrameDesc (22 × float32 = 88 байт):
+//   0..3  fx, fy, cx, cy
+//   4..12 R[3x3], row-major
+//   13..15 t[3]
+//   16    rms
+//   17..18 w, h (как float; при чтении (int))
+//   19    maskOff  (uint32 — смещение относительно maskBase; упаковано в 4 байта float через memcpy)
+//   20    alphaOff (uint32 — смещение относительно alphaBase, 0 если нет)
+//   21    wF (нормализованный вес кадра)
+// Доверие (trusted) пока не передаётся — в v2.8 WASM делает базовое голосование,
+// JS-цикл в recon.js всегда доуточняет и применяет trustCut.
 
 #include <emscripten.h>
 #include <math.h>
+#include <string.h>
 
-static inline float softAt(const unsigned char* mask, const unsigned char* alpha, int w, int h, int idx) {
+static inline float myfmax(float a, float b) { return a > b ? a : b; }
+static inline unsigned u32f(const float* p) { unsigned v; memcpy(&v, p, 4); return v; }
+
+static inline float softAt(const unsigned char* mask, const unsigned char* alpha, int idx) {
   unsigned char m = mask[idx];
   if (m == 0) return 0.f;
   if ((m == 1 || m == 2) && alpha && alpha[idx] < 255) return alpha[idx] / 255.f;
@@ -31,26 +31,24 @@ static inline float softAt(const unsigned char* mask, const unsigned char* alpha
   return 1.f;
 }
 
-// Проекция вокселя (X,Y,Z) камерой f; возвращает 0 если воксель за камерой/вне кадра, 1 если внутри; *uf/*vf — пиксельные координаты
-static inline int projectVoxel(const float* f, float X, float Y, float Z, float* uf_out, float* vf_out) {
+static inline int projectVoxel(const float* f, float X, float Y, float Z, float* uf, float* vf) {
   const float* R = f+4; const float* t = f+13;
   float cz = R[6]*X + R[7]*Y + R[8]*Z + t[2];
   if (cz <= 1.f) return 0;
-  float u = f[0]*(R[0]*X + R[1]*Y + R[2]*Z + t[0])/cz + f[2];
-  float v = f[1]*(R[3]*X + R[4]*Y + R[5]*Z + t[1])/cz + f[3];
-  *uf_out = u; *vf_out = v;
+  *uf = f[0]*(R[0]*X + R[1]*Y + R[2]*Z + t[0])/cz + f[2];
+  *vf = f[1]*(R[3]*X + R[4]*Y + R[5]*Z + t[1])/cz + f[3];
   int w = (int)f[17], h = (int)f[18];
-  int iu = (int)u, iv = (int)v;
-  if (iu < 0 || iv < 0 || iu >= w || iv >= h) return 0;
-  return 1;
+  int iu = (int)*uf, iv = (int)*vf;
+  return (iu >= 0 && iv >= 0 && iu < w && iv < h);
 }
 
 EMSCRIPTEN_KEEPALIVE
-void carve_occ(float* occ,                                     // nx*ny*nz float 0..1 (output)
+void carve_occ(float* occ,
                int nx, int ny, int nz, float vs,
                float ox, float oy, float oz, float Rb,
-               float* frames, int nFrames,
-               float frac, int few, float weakMaj, float tfrac,
+               const float* frames, int nFrames,
+               const unsigned char* maskBase, const unsigned char* alphaBase,
+               float frac, int few, float weakMaj,
                float wMean) {
   for (int z = 0; z < nz; z++) {
     float Z = oz + z * vs;
@@ -61,51 +59,45 @@ void carve_occ(float* occ,                                     // nx*ny*nz float
         int vi = (z*ny + y)*nx + x;
         if (X*X + Y*Y > Rb*Rb) { occ[vi] = 0.f; continue; }
         float bg = 0.f, weak = 0.f, seen = 0.f;
-        int nbg = 0, nwk = 0; // nwk = nbg+weak (для штучного порога)
-        float tbg = 0.f; int tseen = 0;
-        int left = nFrames;
+        int nbg = 0, nwk = 0, left = nFrames;
         for (int k = 0; k < nFrames; k++, left--) {
-          const float* f = frames + k*24;
-          const unsigned char* mask = maskBuf + ((int)f[19]);
-          const unsigned char* alpha = ((int)f[20]) ? (alphaBuf ? alphaBuf + ((int)f[20]) : 0) : 0;
+          const float* f = frames + k*22;
+          unsigned mOff = u32f(f+19), aOff = u32f(f+20);
+          const unsigned char* mask = maskBase + mOff;
+          const unsigned char* alpha = aOff ? (alphaBase + aOff) : (const unsigned char*)0;
           int w = (int)f[17], h = (int)f[18];
           float uf, vf;
           if (!projectVoxel(f, X, Y, Z, &uf, &vf)) continue;
           int iu = (int)uf, iv = (int)vf;
           int idx = iv*w + iu;
           unsigned char mv = mask[idx];
-          if (mv == 4) continue; // в цилиндре не видно
-          // субпиксельная кромка
+          if (mv == 4) continue;
           if ((mv == 1 || mv == 2) && alpha && alpha[idx] < 255 && iu > 0 && iv > 0 && iu < w-2 && iv < h-2) {
             float uu = uf - 0.5f, vv = vf - 0.5f;
             int i0 = (int)uu, j0 = (int)vv;
             float a = uu - i0, b = vv - j0;
             int q = j0*w + i0;
-            float sv = (1-a)*(1-b)*softAt(mask, alpha, w, h, q)
-                     + a*(1-b)*softAt(mask, alpha, w, h, q+1)
-                     + (1-a)*b*softAt(mask, alpha, w, h, q+w)
-                     + a*b*softAt(mask, alpha, w, h, q+w+1);
+            float sv = (1-a)*(1-b)*softAt(mask, alpha, q)
+                     + a*(1-b)*softAt(mask, alpha, q+1)
+                     + (1-a)*b*softAt(mask, alpha, q+w)
+                     + a*b*softAt(mask, alpha, q+w+1);
             if (sv < 0.5f) mv = 0;
           }
-          float wk = f[21]; // wF[k]
+          float wk = f[21];
           seen += wk;
           if (mv == 0) { bg += wk; nbg++; nwk++; }
           else if (mv == 3) { weak += wk; nwk++; }
-          int trusted = (int)f[22];
-          if (trusted) { tseen++; if (mv == 0) tbg += wk; }
-          // досрочный выход
           if (!few && nbg >= 2 && bg >= frac * (seen + left - 1)) break;
         }
-        int trustCut = (tseen >= 3 && tbg >= fmaxf(2.f, tfrac * tseen));
         int cut;
         if (seen < 3 * wMean) cut = 1;
         else if (few) cut = (nbg >= 1) ? 1 : 0;
         else {
           int c1 = (nbg >= 2 && bg >= frac * seen);
-          int c2 = (nwk > 0 && (bg+weak) >= fmaxf(2.f*wMean, frac*seen) && (bg+weak) >= weakMaj * seen);
+          int c2 = (nwk > 0 && (bg+weak) >= myfmax(2.f*wMean, frac*seen) && (bg+weak) >= weakMaj * seen);
           cut = c1 || c2;
         }
-        occ[vi] = (trustCut || cut) ? 0.f : 1.f;
+        occ[vi] = cut ? 0.f : 1.f;
       }
     }
   }
