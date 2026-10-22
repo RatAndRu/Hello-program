@@ -251,10 +251,8 @@ $('code').addEventListener('keydown', (e) => {
     updateGutter();
     return;
   }
-  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-    e.preventDefault();
-    buildNow();
-  }
+  // Ctrl+Enter обрабатывает глобальный обработчик: иначе сборка
+  // запускалась дважды (в поле и ещё раз после всплытия события)
 });
 
 document.addEventListener('keydown', (e) => {
@@ -614,6 +612,17 @@ function renderObjects(payload) {
     list.appendChild(el);
   });
   const m = (payload.analysis || {}).metrics || {};
+  if ($('obj-badge-count')) $('obj-badge-count').textContent = objs.length;
+  // если предмет выбран, карточка справа должна остаться его, а не сцены:
+  // список перерисовывается после каждого скрытия/показа и пересборки
+  if (state.selected?.name) {
+    const sel = objs.find((o) => o.name === state.selected.name);
+    if (sel) {
+      Object.assign(state.selected, sel);
+      renderObjectStats(sel);
+      return;
+    }
+  }
   $('objects-summary').innerHTML = objs.length
     ? `Всего объектов: ${objs.length} (видимых ${m.visible_count ?? '—'}).<br>
        Материал: ${fmt(m.volume_cm3)} см³, масса ${fmt(m.mass_g, 0)} г.`
@@ -2095,16 +2104,28 @@ function updateStatsOverlay() {
   const v = state.viewer;
   if (!v || !state.payload?.ok) { box.hidden = true; return; }
   const st = v.getStats();
-  const objs = state.payload?.objects || [];
-  const dims = state.payload?.analysis?.metrics?.size;
+  const sel = state.selected;
+  const dims = sel?.size || state.payload?.analysis?.metrics?.size;
   box.hidden = false;
-  box.innerHTML = `<b>${fmtInt(st.tris)}</b> треугольников<br>
-    <b>${fmtInt(st.verts)}</b> вершин · <b>${st.meshes}</b> объектов<br>
-    ${dims ? `<b>${fmt(dims[0])}×${fmt(dims[1])}×${fmt(dims[2])}</b> мм<br>` : ''}
-    ${st.fps ? `<b>${st.fps}</b> кадр/с` : ''}`;
+  // пока предмет выделен, счётчики показывают его, а не всю сцену:
+  // иначе таймер раз в 0,7 с затирал бы статистику выбора
+  box.innerHTML = sel
+    ? `<b>${escapeHtml(sel.name)}</b><br>
+      <b>${fmtInt(sel.tris)}</b> треугольников · <b>${fmtInt(sel.verts || 0)}</b> верш.<br>
+      ${fmt(sel.volume_cm3)} см³ · ${fmt(sel.mass_g, 0)} г<br>
+      ${dims ? `<b>${fmt(dims[0])}×${fmt(dims[1])}×${fmt(dims[2])}</b> мм<br>` : ''}
+      <span class="dim">вся сцена: ${fmtInt(st.tris)} трис</span>
+      ${st.fps ? `<br><b>${st.fps}</b> кадр/с` : ''}`
+    : `<b>${fmtInt(st.tris)}</b> треугольников<br>
+      <b>${fmtInt(st.verts)}</b> вершин · <b>${st.meshes}</b> объектов<br>
+      ${dims ? `<b>${fmt(dims[0])}×${fmt(dims[1])}×${fmt(dims[2])}</b> мм<br>` : ''}
+      ${st.fps ? `<b>${st.fps}</b> кадр/с` : ''}`;
   const badge = $('viewer-badge');
-  if (badge) badge.textContent = `${fmtInt(st.tris)} треугольников`;
-  if ($('obj-badge-count')) $('obj-badge-count').textContent = objs.length;
+  if (badge) {
+    badge.textContent = sel
+      ? `${sel.name} · ${fmtInt(sel.tris)} трис`
+      : `${fmtInt(st.tris)} треугольников`;
+  }
 }
 setInterval(updateStatsOverlay, 700);
 
@@ -2808,7 +2829,10 @@ $('cmd-input')?.addEventListener('input', fitCmdInput);
 
 $('cmd-input')?.addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    // здесь Ctrl+Enter — «вопрос нейросети», а не пересборка модели;
+    // событие не должно всплыть до глобального обработчика
     e.preventDefault();
+    e.stopPropagation();
     sendToAssistant();
     return;
   }
@@ -3095,8 +3119,8 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'cup', name: 'кружка', title: 'Кружка',
-    desc: 'Корпус с полостью, дном и ручкой; стенка и сужение задаются.',
+    op: 'cup', name: 'кружка', title: 'Кружка с ручкой',
+    desc: 'Целая кружка: корпус с полостью, дно и ручка. Стенка и сужение задаются.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 80, step: 1 },
       { k: 'height', label: 'высота', v: 95, step: 1 },
@@ -3674,6 +3698,8 @@ function renderTools() {
         fields.appendChild(label);
       });
       card.appendChild(fields);
+      card.dataset.search = [tool.title, tool.op, tool.name, tool.desc, title,
+        ...tool.params.map((p) => p.label)].join(' ').toLowerCase();
       const btn = document.createElement('button');
       btn.className = 'small primary';
       btn.textContent = 'Добавить';
@@ -3705,6 +3731,7 @@ function renderTools() {
     const pre = document.createElement('pre');
     pre.textContent = recipe.lines;
     card.appendChild(pre);
+    card.dataset.search = [recipe.title, recipe.desc, recipe.lines].join(' ').toLowerCase();
     const btn = document.createElement('button');
     btn.className = 'small primary';
     btn.textContent = 'Вставить';
@@ -3714,7 +3741,31 @@ function renderTools() {
   });
   recipes.appendChild(rgrid);
   body.appendChild(recipes);
+  applyToolsFilter();
 }
+
+/** Поиск по инструментам: фильтрует карточки и прячет пустые группы. */
+function applyToolsFilter() {
+  const q = ($('tools-search')?.value || '').trim().toLowerCase();
+  const body = $('tools-body');
+  if (!body) return;
+  let shown = 0;
+  let total = 0;
+  body.querySelectorAll('.tool-group').forEach((group) => {
+    let visible = 0;
+    group.querySelectorAll('.tool-card').forEach((card) => {
+      total += 1;
+      const hit = !q || (card.dataset.search || '').includes(q);
+      card.hidden = !hit;
+      if (hit) visible += 1;
+    });
+    group.hidden = visible === 0;
+    shown += visible;
+  });
+  const label = $('tools-count');
+  if (label) label.textContent = q ? `нашлось ${shown} из ${total}` : `всего ${total}`;
+}
+$('tools-search')?.addEventListener('input', applyToolsFilter);
 
 function openTools() {
   $('tools-modal').hidden = false;

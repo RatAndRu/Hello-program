@@ -9,7 +9,7 @@ from .ops import op
 
 @op("color", aliases=("цвет", "покрасить", "материал", "paint"), category="Сцена и материал",
     summary="Задаёт цвет и материал объекта (или всех объектов).",
-    example="color ручка #d8b98a material=wood",
+    example='ручка = cylinder radius=6 height=50\ncolor ручка #d8b98a material=wood',
     params={"target": "имя объекта или all",
             "color": "цвет #RRGGBB или название",
             "material": "ceramic, metal, steel, aluminum, gold, copper, plastic, wood, rubber, glass",
@@ -37,7 +37,7 @@ def color(a, name):
 
 @op("show", aliases=("показать", "видимый"), category="Сцена и материал",
     summary="Показывает объект (в том числе промежуточный).",
-    example="show корпус", params={"target": "имя объекта или all"},
+    example='корпус = box size=[60,60,60]\nshow корпус', params={"target": "имя объекта или all"},
     positional=["target"])
 def show(a, name):
     target = (a.text("target") or "").strip()
@@ -50,7 +50,7 @@ def show(a, name):
 
 @op("hide", aliases=("скрыть", "спрятать"), category="Сцена и материал",
     summary="Скрывает объект.",
-    example="hide корпус", params={"target": "имя объекта или all"},
+    example='корпус = box size=[60,60,60]\nплита = box size=[100,100,10]\nhide корпус', params={"target": "имя объекта или all"},
     positional=["target"])
 def hide(a, name):
     target = (a.text("target") or "").strip()
@@ -64,7 +64,7 @@ def hide(a, name):
 @op("delete", aliases=("удалить", "стереть", "remove", "убрать"), category="Сцена и материал",
     summary="Удаляет объект из сцены: он исчезает из списка, модели, рендера и экспорта. "
             "Строки сценария самого объекта остаются — их можно вернуть откатом.",
-    example="удалить ручка",
+    example='ручка = cylinder radius=6 height=50\nкорпус = box size=[60,60,60]\nудалить ручка',
     params={"target": "имя объекта или all"},
     positional=["target"])
 def delete_object(a, name):
@@ -92,8 +92,7 @@ def delete_object(a, name):
     category="Сцена и материал",
     summary="Собирает готовые объекты в группу для анимации: группа целиком едет или "
             "поворачивается, а детали внутри могут двигаться и крутиться сами.",
-    example="дверь = group [фасад_л, ручка_левая]\n"
-            "animate дверь turn angle=100 axis=z pivot=[-481, 216, 0] seconds=2",
+    example='фасад_л = box size=[100,20,300]\nручка_левая = cylinder radius=5 height=60 at=[0,-10,150]\nдверь = group [фасад_л, ручка_левая]\nanimate дверь turn angle=100 axis=z pivot=[-481, 216, 0] seconds=2',
     params={"objects": "объекты через запятую: [a, b, c]",
             "name": "имя группы (берётся из «имя = group …»)"},
     positional=["objects"])
@@ -132,7 +131,7 @@ def group(a, name):
 
 @op("check", aliases=("проверить", "проверка"), category="Проверка",
     summary="Задаёт проверку результата: размер, толщина стенок, герметичность, симметрия и т.д.",
-    example="check кружка height 90..110  ·  check деталь deviation эталон.stl 0.3",
+    example='кружка = cup diameter=80 height=95\ncheck кружка height 90..110\ncheck кружка watertight',
     params={"object": "имя объекта",
             "rule": "watertight, genus, parts, size, height, width, depth, volume, mass, "
                     "wall, wall_min, flat_bottom, overhang, symmetric, gap, inside, tris, "

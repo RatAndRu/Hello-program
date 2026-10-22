@@ -40,7 +40,7 @@ def _one(a, command: str):
     category="Форма и деформации",
     summary="Сглаживает переходы и убирает «лесенки» на гранях: G1-непрерывность "
             "и дополнительное дробление поверхности. Размер модели сохраняется.",
-    example="кружка = smooth [кружка] angle=50 soft=0.2 levels=1",
+    example='кружка = box size=[40,40,40] round=2\nкружка = smooth [кружка] angle=50 soft=0.2 levels=1',
     params={"objects": "объект",
             "angle": "угол, выше которого ребро остаётся острым, ° (50)",
             "soft": "мягкость 0…1 (0.2 — безопасно; больше 0.4 деформирует)",
@@ -91,7 +91,7 @@ def _keep_envelope(a, source, result, kind: str) -> mf.Manifold:
 @op("bevel", aliases=("фаска", "скос", "округление", "кромка"), category="Форма и деформации",
     summary="Скругляет наружные рёбра настоящим радиусом в миллиметрах: размер детали "
             "не меняется, снимается только материал на углах.",
-    example="плита = bevel [плита] radius=3",
+    example='плита = box size=[60,40,20]\nплита = bevel [плита] radius=3',
     params={"objects": "объект",
             "radius": "радиус скругления, мм (по умолчанию 4% самой тонкой стороны)",
             "segments": "качество скругления 8…64 (24)",
@@ -144,7 +144,7 @@ def bevel(a, name):
     category="Форма и деформации",
     summary="Сваривает совпавшие вершины, убирает вырожденные и дублирующиеся "
             "треугольники. Полезно после импорта и сложных булевых операций.",
-    example="деталь = clean [деталь]",
+    example='деталь = sphere radius=30 segments=32\nдеталь = clean [деталь]',
     params={"objects": "объект", "tolerance": "допуск сварки вершин, мм (0.01)"},
     positional=["objects"])
 def clean(a, name):
@@ -219,7 +219,7 @@ def _cutter(a, at) -> mf.Manifold:
     category="Булевы операции",
     summary="Вырезает готовую форму из объекта одной командой: сфера, блок, "
             "цилиндр, конус или кольцо в точке at.",
-    example="кружка = cut [кружка] shape=box size=[30,30,60] at=[0,0,80]",
+    example='кружка = cup diameter=80 height=95\nкружка = cut [кружка] shape=box size=[30,30,60] at=[0,0,80]',
     params={"objects": "объект", "shape": "sphere|box|cylinder|cone|ring (sphere)",
             "at": "центр выреза [x,y,z] (0,0,0)", "radius": "радиус, мм",
             "size": "размер блока [x,y,z]", "height": "высота цилиндра/конуса, мм",
@@ -242,7 +242,7 @@ def cut(a, name):
 @op("groove", aliases=("канавка", "борозда", "насечка", "рифление"), category="Форма и деформации",
     summary="Прорезает кольцевую канавку вокруг вертикальной оси — как на пробке "
             "или крышке. Можно задать несколько канавок.",
-    example="пробка = groove [пробка] at=[0,0,20] radius=14 depth=1.2 height=2 count=3",
+    example='пробка = cylinder radius=18 height=40 segments=64\nпробка = groove [пробка] at=[0,0,20] radius=14 depth=1.2 height=2 count=3',
     params={"objects": "объект", "at": "центр первой канавки [x,y,z]",
             "radius": "радиус канавки, мм (обязательно)", "depth": "глубина, мм (1.2)",
             "height": "высота канавки, мм (2)", "count": "сколько канавок (1)",
@@ -279,7 +279,7 @@ def groove(a, name):
     category="Массивы и преобразования",
     summary="Выравнивает объект по осям: min|center|max или точное число. "
             "Например, align деталь z=min поставит её на пол.",
-    example="деталь = align [деталь] x=center y=center z=min",
+    example='деталь = box size=[40,40,40] at=[30,30,30]\nдеталь = align [деталь] x=center y=center z=min',
     params={"objects": "объект", "x": "min|center|max|число",
             "y": "min|center|max|число", "z": "min|center|max|число"},
     positional=["objects"])
@@ -315,7 +315,7 @@ def align(a, name):
 
 @op("slice", aliases=("срез", "разрезать", "отрезать", "обрезать"), category="Булевы операции",
     summary="Отрезает объект плоскостью по X/Y/Z: keep=top|bottom|left|right|front|back.",
-    example="корпус = slice [корпус] axis=z at=0 keep=top",
+    example='корпус = box size=[60,60,80]\nкорпус = slice [корпус] axis=z at=0 keep=top',
     params={"objects": "объект", "axis": "x|y|z (z)", "at": "координата плоскости, мм (0)",
             "keep": "top|bottom (top)", "size": "размер режущего блока, мм (10000)"},
     positional=["objects"])
@@ -341,7 +341,7 @@ def slice(a, name):
 
 @op("mirror_copy", aliases=("отразить_копию", "симметрия"), category="Массивы и преобразования",
     summary="Оставляет объект и добавляет его отражённую копию — удобно для парных деталей.",
-    example="ручки = mirror_copy [ручка] plane=x",
+    example='ручка = box size=[20,10,80] at=[40,0,0]\nручки = mirror_copy [ручка] plane=x',
     params={"objects": "объект", "plane": "x|y|z (x)", "gap": "зазор между половинами, мм (0)"},
     positional=["objects"])
 def mirror_copy(a, name):

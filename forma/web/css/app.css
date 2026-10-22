@@ -47,6 +47,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  flex-wrap: wrap;
   padding: 0 16px;
   background: linear-gradient(180deg, #171d26, #11151c);
   border-bottom: 1px solid var(--line);
@@ -64,7 +65,7 @@ body {
 .brand-text strong { letter-spacing: .12em; font-size: 13px; }
 .brand-text span { color: var(--text-faint); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.actions { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
+.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 
 button {
   font-family: inherit;
@@ -409,6 +410,14 @@ button.mini:disabled { opacity: .38; cursor: default; }
   background: #10151c; border: 1px solid #232d3a; color: var(--text);
   font-family: inherit; font-size: 12px; outline: 0;
 }
+.tools-search-row { display: flex; align-items: center; gap: 8px; padding: 0 16px 8px; }
+.tools-search {
+  flex: 1; min-width: 200px; font: inherit; font-size: 12px;
+  background: #141922; color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 10px;
+}
+.tools-search:focus { outline: 1px solid var(--accent); }
+.tools-count { font-size: 11px; color: var(--text-faint); white-space: nowrap; }
 .modal-body {
   overflow: auto; padding: 12px 16px 20px;
   /* Текст справочника можно выделять и копировать мышью. */

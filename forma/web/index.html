@@ -469,7 +469,7 @@
             </div>
           </div>
           <div class="objects-tools">
-            <span>Объекты · глаз показывает и скрывает</span>
+            <span>Объекты: <b id="obj-badge-count">0</b> · глаз показывает и скрывает</span>
             <button class="mini" id="objects-hide-all" title="Скрыть все объекты">скрыть все</button>
             <button class="mini" id="objects-show-all" title="Показать все объекты">показать все</button>
             <button class="mini" id="objects-optimize" title="Убрать лишние грани на ровных участках">облегчить</button>
@@ -589,6 +589,11 @@
       <div class="tools-hint">
         Задайте параметры и нажмите «Добавить» — строка появится в конце сценария,
         её можно править как обычную команду.
+      </div>
+      <div class="tools-search-row">
+        <input type="search" id="tools-search" class="tools-search"
+               placeholder="поиск: шестерня, панель, ящик, пружина…" />
+        <span class="tools-count" id="tools-count"></span>
       </div>
       <div class="modal-body" id="tools-body"></div>
     </div>

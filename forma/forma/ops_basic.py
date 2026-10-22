@@ -203,7 +203,7 @@ def capsule(a, name):
 
 @op("hull", aliases=("оболочка", "выпуклая_оболочка", "обернуть"), category="Примитивы",
     summary="Выпуклая оболочка объектов или набора 3D-точек.",
-    example="кузов = hull objects=[низ, кабина]",
+    example='низ = box size=[300,120,40]\nкабина = box size=[160,110,80] at=[0,0,40]\nкузов = hull objects=[низ, кабина]',
     params={"objects": "объекты, которые нужно обернуть",
             "points": "точки [[x,y,z],...]"},
     positional="*")

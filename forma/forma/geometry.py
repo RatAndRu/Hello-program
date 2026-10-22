@@ -715,7 +715,9 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             image = load_texture_image(obj.tex.get("path", ""))
             if image is not None and len(faces):
                 material.baseColorTexture = image
-                material.baseColorFactor = [1.0, 1.0, 1.0, 1.0]
+                # цвет остаётся цветом: рисунок умножается на него и в окне,
+                # и в снимках PNG, и в Blender — иначе один и тот же предмет
+                # выглядел по-разному в приложении и в отчёте
                 normal_image = load_texture_image(obj.tex.get("normal_path", ""))
                 if normal_image is not None:
                     material.normalTexture = normal_image
@@ -724,7 +726,8 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
                 # verts уже в Y-up glTF, поэтому bbox считаем по ним же
                 # мир как единая система координат: текстура не «съезжает»
                 # на стыках соседних деталей составного предмета
-                uv = uv_triangles(verts, faces, uv_mode, bbox=None, origin=(0.0, 0.0, 0.0))
+                uv = uv_triangles(verts, faces, uv_mode, bbox=None, origin=(0.0, 0.0, 0.0),
+                                  tile_mm=float(obj.tex.get("tile_mm") or 140.0))
                 verts = verts[flat_faces]
                 if normals is not None:
                     normals = normals[flat_faces]

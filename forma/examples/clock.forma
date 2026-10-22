@@ -225,9 +225,10 @@ color анкерное #e2c07a metal=0.95 rough=0.15
 color анкер #e6c684 metal=0.95 rough=0.14
 color баланс #e6c684 metal=0.95 rough=0.14
 color волосок #b9c0c8 metal=0.9 rough=0.2
-color часовая #1f2126 metal=0.6 rough=0.3
-color минутная #1f2126 metal=0.6 rough=0.3
-color секундная #b8452f metal=0.7 rough=0.25
+# Стрелки светлее механизма: на скелетоне тёмные сливались с шестернями
+color часовая #ded6c4 metal=0.55 rough=0.32
+color минутная #f4efe2 metal=0.55 rough=0.28
+color секундная #c0402a metal=0.7 rough=0.25
 color мотор_корпус #555b63 metal=0.85 rough=0.3
 color мотор_шестерня #9aa1a9 metal=0.9 rough=0.25
 color втулка_стрелок #c8a45c metal=0.9 rough=0.2

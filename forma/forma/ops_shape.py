@@ -26,7 +26,7 @@ def _derived(a, name, manifold, base, kind: str):
 
 @op("union", aliases=("объединить", "объединение", "плюс", "add"), category="Булевы операции",
     summary="Объединяет объекты в один. Исходные объекты скрываются.",
-    example="кружка = union [корпус, ручка]",
+    example='корпус = cup diameter=80 height=95 handle=нет\nручка = box size=[40,12,30] at=[30,0,50]\nкружка = union [корпус, ручка]',
     params={"objects": "список объектов [a, b, ...]"}, positional="*")
 def union(a, name):
     solids = a.solids()
@@ -43,7 +43,7 @@ def union(a, name):
 
 @op("difference", aliases=("вычесть", "минус", "subtract", "отверстие"), category="Булевы операции",
     summary="Вычитает объекты из первого. Первый объект — основа, остальные — вычитаемые.",
-    example="стакан = difference [заготовка, полость]",
+    example='заготовка = box size=[60,60,60]\nполость = sphere radius=22 at=[0,0,50]\nстакан = difference [заготовка, полость]',
     params={"objects": "список [основа, вычитаемое, ...]"}, positional="*")
 def difference(a, name):
     solids = a.solids()
@@ -96,7 +96,7 @@ def _weld_manifold(m: mf.Manifold, tol: float) -> mf.Manifold:
     category="Булевы операции",
     summary="Спаивает детали в один объект и сваривает шов: внутри не остаётся "
             "скрытой геометрии, стык ровный. Для ручки кружки, корпуса и т.п.",
-    example="кружка = weld [корпус, ручка] tolerance=0.05",
+    example='корпус = cup diameter=80 height=95 handle=нет\nручка = box size=[40,12,30] at=[30,0,50]\nкружка = weld [корпус, ручка] tolerance=0.05',
     params={"objects": "список [деталь, деталь, ...]",
             "tolerance": "допуск сварки вершин, мм (0.05)"},
     positional="*")
@@ -129,7 +129,7 @@ def weld(a, name):
     category="Булевы операции",
     summary="Отсекает лишнее: вычитает из первой детали остальные и спаивает шов. "
             "Внутри не остаётся геометрии — только чистый стык.",
-    example="ручка = trim [ручка, корпус] tolerance=0.05",
+    example='ручка = cylinder radius=6 height=40 at=[40,0,0]\nкорпус = box size=[60,60,60]\nручка = trim [ручка, корпус] tolerance=0.05',
     params={"objects": "список [основа, лишнее, ...]",
             "tolerance": "допуск сварки вершин, мм (0.05)"},
     positional="*")
@@ -155,7 +155,7 @@ def trim(a, name):
 
 @op("intersect", aliases=("пересечение", "пересечь", "and", "общее"), category="Булевы операции",
     summary="Оставляет только общий объём объектов.",
-    example="линза = intersect [сфера1, сфера2]",
+    example='сфера1 = sphere radius=30\nсфера2 = sphere radius=30 at=[20,0,20]\nлинза = intersect [сфера1, сфера2]',
     params={"objects": "список объектов [a, b, ...]"}, positional="*")
 def intersect(a, name):
     solids = a.solids()
@@ -220,7 +220,7 @@ def shell_manifold(m: mf.Manifold, thickness: float, open_mode: str = "top") -> 
 
 @op("shell", aliases=("оболочка", "полый", "выдолбить", "hollow"), category="Форма и деформации",
     summary="Делает объект полым с заданной толщиной стенки. Можно открыть верх, низ или оба.",
-    example="кружка = shell [заготовка] thickness=4 open=top",
+    example='заготовка = box size=[60,60,60] round=4\nкружка = shell [заготовка] thickness=4 open=top',
     params={"objects": "объект [a] или a", "thickness": "толщина стенки, мм (обязательно)",
             "open": "top (по умолчанию), bottom, both, none"},
     positional=["objects"])
@@ -238,7 +238,7 @@ def shell(a, name):
 @op("offset", aliases=("смещение", "раздуть", "ужать", "inset", "outset"),
     category="Форма и деформации",
     summary="Расширяет (delta>0) или сжимает (delta<0) объект на заданную величину.",
-    example="деталь = offset [деталь] delta=-0.4",
+    example='деталь = sphere radius=30 segments=48\nдеталь = offset [деталь] delta=-0.4',
     params={"objects": "объект", "delta": "смещение, мм (плюс — наружу)",
             "segments": "качество скругления (32)"},
     positional=["objects"])
@@ -327,7 +327,7 @@ def _morph(a, source: mf.Manifold, tool: mf.Manifold, mode: str, kind: str) -> m
     category="Форма и деформации",
     summary="Скругляет рёбра радиусом: выпуклые (наружные), вогнутые (внутренние) "
             "или все сразу — в отличие от bevel, который снимает материал только снаружи.",
-    example="корпус = fillet [корпус] radius=3 edges=convex",
+    example='корпус = box size=[60,60,80]\nкорпус = fillet [корпус] radius=3 edges=convex',
     params={"objects": "объект", "radius": "радиус скругления, мм (обязательно)",
             "edges": "convex (наружные), concave (внутренние) или all (оба; по умолчанию)",
             "segments": "качество скругления 8…40 (12 — без тонких треугольников)"},
@@ -375,7 +375,7 @@ def _chamfer_tool(width: float) -> mf.Manifold:
 @op("chamfer", aliases=("снять_фаску", "срез", "кромка45"),
     category="Форма и деформации",
     summary="Снимает кромку плоской фаской под 45° (в отличие от fillet — без радиуса).",
-    example="плита = chamfer [плита] width=2 edges=convex",
+    example='плита = box size=[60,40,20]\nплита = chamfer [плита] width=2 edges=convex',
     params={"objects": "объект", "width": "ширина фаски, мм (2% самой тонкой стороны)",
             "edges": "convex (наружные), concave (внутренние) или all"},
     positional=["objects"])
@@ -423,7 +423,7 @@ def _rotate_about(m, axis: str, angle: float, center) -> mf.Manifold:
 
 @op("array", aliases=("массив", "копии", "повторить", "размножить"), category="Массивы и преобразования",
     summary="Создаёт копии объекта: линейно, по кругу или сеткой.",
-    example="стойки = array [стойка] count=4 mode=radial around=z center=[0,0,0]",
+    example='стойка = cylinder radius=6 height=60\nстойки = array [стойка] count=4 mode=radial around=z center=[0,0,0]',
     params={"objects": "исходный объект (или несколько — они объединяются)",
             "count": "количество копий (включая исходную)",
             "mode": "linear (по умолчанию), radial (по кругу), grid (сетка)",
@@ -485,7 +485,7 @@ def array(a, name):
 
 @op("translate", aliases=("сдвинуть", "переместить", "move", "сдвиг"), category="Массивы и преобразования",
     summary="Сдвигает объект на вектор.",
-    example="деталь = translate [шкив] offset=[0,0,20]",
+    example='шкив = cylinder radius=30 height=14\nдеталь = translate [шкив] offset=[0,0,20]',
     params={"objects": "объект", "offset": "вектор [dx,dy,dz] или число",
             "x": "сдвиг по X", "y": "сдвиг по Y", "z": "сдвиг по Z"},
     positional=["objects"])
@@ -506,7 +506,7 @@ def translate(a, name):
 
 @op("rotate", aliases=("повернуть", "вращать", "поворот"), category="Массивы и преобразования",
     summary="Поворачивает объект вокруг оси (по умолчанию Z) на угол в градусах.",
-    example="деталь = rotate [деталь] angle=90 axis=z",
+    example='деталь = box size=[60,20,20]\nдеталь = rotate [деталь] angle=90 axis=z',
     params={"objects": "объект", "angle": "угол, градусы",
             "axis": "x, y, z или вектор [x,y,z]",
             "pivot": "точка, вокруг которой вращать"},
@@ -529,7 +529,7 @@ def rotate(a, name):
 
 @op("scale", aliases=("масштабировать", "увеличить", "size"), category="Массивы и преобразования",
     summary="Масштабирует объект: равномерно (factor=2) или по осям (factor=[1,2,1]).",
-    example="деталь = scale [деталь] factor=[1,1,1.5]",
+    example='деталь = box size=[20,20,40]\nдеталь = scale [деталь] factor=[1,1,1.5]',
     params={"objects": "объект", "factor": "число или [sx,sy,sz]",
             "pivot": "точка отсчёта масштаба"},
     positional=["objects"])
@@ -548,7 +548,7 @@ def scale(a, name):
 @op("place", aliases=("поставить", "позиционировать", "align"), category="Массивы и преобразования",
     summary="Ставит объект в точку или прикрепляет к другому объекту: сверху, снизу, "
             "слева, справа, спереди, сзади — без вычисления координат вручную.",
-    example="крышка = place [крышка] on=кружка side=top offset=2",
+    example='крышка = plate diameter=90 depth=10\nкружка = cup diameter=80 height=95\nкрышка = place [крышка] on=кружка side=top offset=2',
     params={"objects": "объект", "at": "точка [x,y,z]",
             "align": "bottom (по умолчанию), center или top",
             "center_xy": "центрировать по X и Y (true)",
@@ -607,7 +607,7 @@ def place(a, name):
 
 @op("mirror", aliases=("зеркало", "отразить", "симметрия"), category="Массивы и преобразования",
     summary="Отражает объект через плоскость. keep=true — оставляет и оригинал (симметричная сборка).",
-    example="ножки = mirror [ножка] plane=x",
+    example='ножка = cylinder radius=8 height=70 at=[40,0,0]\nножки = mirror [ножка] plane=x',
     params={"objects": "объект", "plane": "x (по умолчанию), y или z",
             "at": "координата плоскости (0)", "keep": "оставить оригинал (true)"},
     positional=["objects"])
@@ -626,7 +626,7 @@ def mirror(a, name):
 
 @op("refine", aliases=("уточнить", "подразбить", "subdivide"), category="Форма и деформации",
     summary="Повышает плотность сетки (плавнее поверхность).",
-    example="деталь = refine [деталь] length=1.5",
+    example='деталь = box size=[40,40,40]\nдеталь = refine [деталь] length=1.5',
     params={"objects": "объект", "length": "целевая длина ребра, мм",
             "levels": "число уровней подразбиения"},
     positional=["objects"])
@@ -649,7 +649,7 @@ def refine(a, name):
     summary="Упрощает сетку, сохраняя форму: меньше треугольников при отклонении "
             "не больше tolerance. Отклонение меряется двусторонним расстоянием "
             "Хаусдорфа. Ровные участки теряют лишние грани.",
-    example="деталь = optimize [деталь] deviation=0.2",
+    example='деталь = sphere radius=30 segments=64\nдеталь = optimize [деталь] deviation=0.2',
     params={"objects": "объект", "tolerance": "шаг упрощения, мм (0.3)",
             "deviation": "допустимое отклонение от исходной формы, мм"},
     positional=["objects"])
@@ -751,7 +751,7 @@ def _warp(a, base, fn, kind: str, name=None):
 
 @op("twist", aliases=("скрутить", "закрутить"), category="Форма и деформации",
     summary="Скручивает объект вокруг оси: угол растёт вдоль оси.",
-    example="деталь = twist [деталь] angle=90 axis=z",
+    example='деталь = box size=[40,40,160] round=3\nдеталь = twist [деталь] angle=90 axis=z',
     params={"objects": "объект", "angle": "полный угол закрутки, градусы",
             "axis": "x, y или z", "pivot": "центр оси"},
     positional=["objects"])
@@ -792,7 +792,7 @@ def twist(a, name):
 
 @op("taper", aliases=("сузить", "конусность", "taper"), category="Форма и деформации",
     summary="Плавно сужает объект кверху (factor<1) или расширяет (factor>1).",
-    example="деталь = taper [деталь] factor=0.6 axis=z",
+    example='деталь = cylinder radius=20 height=80 segments=48\nдеталь = taper [деталь] factor=0.6 axis=z',
     params={"objects": "объект", "factor": "масштаб на дальнем конце (0.6)",
             "axis": "x, y или z", "pivot": "центр по осям сечения"},
     positional=["objects"])
@@ -823,7 +823,7 @@ def taper(a, name):
 
 @op("bend", aliases=("согнуть", "изгиб", "дуга"), category="Форма и деформации",
     summary="Сгибает объект дугой. Ось Z изгибается в плоскости XZ.",
-    example="прут = bend [прут] angle=60",
+    example='прут = cylinder radius=6 height=160 segments=48\nпрут = bend [прут] angle=60',
     params={"objects": "объект", "angle": "угол изгиба, градусы", "pivot": "смещение центра"},
     positional=["objects"])
 def bend(a, name):

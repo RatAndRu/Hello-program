@@ -511,17 +511,20 @@ python -m forma reference --out СПРАВКА.md
 
 | Категория | Команды |
 |---|---|
-| Примитивы | `box`, `sphere`, `cylinder`, `cone`, `torus`, `prism`, `capsule`, `hull` |
-| Готовые фигуры | `star`, `cup`, `plate`, `spring`, `gear`, `washer`, `cube_hole`, `ring` |
-| Крепёж и фурнитура | `nut`, `bolt`, `screw`, `hinge`, `bracket`, `bearing`, `caster`, `pulley` |
-| Вращение и развёртки | `lathe` (с `thickness`), `extrude`, `sweep`, `loft` |
-| Булевы | `union`, `difference`, `intersect`, `shell`, `offset`, `fillet` |
-| Массивы и преобразования | `array`, `translate`, `rotate`, `scale`, `place`, `mirror`, `twist`, `taper`, `bend`, `refine`, `simplify` |
-| Математические поверхности | `from_sdf`, `blob` (метаболы), `human` (анатомическая фигура) |
-| Надписи, резьба, уклон | `text`, `emboss`, `thread`, `draft` |
-| Сцена и материал | `color`, `texture`, `scene`, `light`, `animate`, `import`, `show`, `hide` |
-| Проверка формы | `section`, `probe`, `passport` |
-| Проверки | `check` |
+| Примитивы (44) | `bearing`, `bolt`, `box`, `box_body`, `bracket`, `branch`, `capsule`, `caster`, `cone`, `coupling`, `cube_hole`, `cup`, `cylinder`, `drawer`, `gear`, `grommet`, `gusset`, `handle`, `heatsink`, `hinge`, `horn`, `hull`, `leaf`, `leg`, `nut`, `panel`, `plate`, `prism`, `profile2020`, `pulley`, `rack`, `rail`, `ring`, `rock`, `screw`, `shaft`, `sphere`, `spring`, `star`, `text`, `torus`, `washer`, `wheel`, `worm` |
+| Тела вращения и развёртки (5) | `extrude`, `lathe`, `loft`, `pipe`, `sweep` |
+| Булевы операции (7) | `cut`, `difference`, `intersect`, `slice`, `trim`, `union`, `weld` |
+| Форма и деформации (18) | `bend`, `bevel`, `chamfer`, `clean`, `draft`, `emboss`, `fillet`, `groove`, `holes`, `knurl`, `offset`, `refine`, `shell`, `simplify`, `smooth`, `taper`, `thread`, `twist` |
+| Массивы и преобразования (9) | `align`, `array`, `mirror`, `mirror_copy`, `place`, `rotate`, `scale`, `scatter`, `translate` |
+| Математические поверхности (3) | `blob`, `from_sdf`, `human` |
+| Сцена и материал (11) | `animate`, `color`, `delete`, `group`, `hide`, `import`, `keyframe`, `light`, `scene`, `show`, `texture` |
+| Проверка (4) | `check`, `passport`, `probe`, `section` |
+
+Все 101 команда перечислены здесь без сокращений; полные описания параметров —
+в справке приложения (кнопка «?») и в файле `СПРАВКА_КОМАНДЫ.md` внутри ZIP.
+У каждой команды в справке есть **запускаемый** пример: его можно скопировать
+в сценарий целиком — он соберётся без правок (кроме `import`, которому нужен
+ваш файл).
 
 ### Человек
 

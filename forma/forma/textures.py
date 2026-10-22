@@ -55,6 +55,15 @@ KIND_NAMES = {
     "ceramic": "керамика",
 }
 
+# Через сколько миллиметров рисунок повторяется на поверхности. Дерево, мрамор
+# и кирпич — крупные узоры: при повторе каждые 140 мм (общий шаг развёртки)
+# шкаф выглядел «гофрированным», потому что кольца шли слишком часто.
+TILE_MM = {
+    "wood": 640.0, "marble": 520.0, "brick": 360.0, "fabric": 260.0,
+    "leather": 300.0, "metal": 320.0, "checker": 120.0, "noise": 260.0,
+    "ceramic": 420.0,
+}
+
 
 def parse_color(value, fallback=(200, 200, 200)) -> tuple[int, int, int]:
     """Цвет из «#rrggbb», названия или списка чисел."""
@@ -149,10 +158,28 @@ def make_texture(kind: str, size: int = 512, seed: int | str = 1,
     n3 = _noise(n, 33, rng)
 
     if key == "wood":
-        rings = 0.5 + 0.5 * np.sin((u * 7.0 * k + 0.38 * n1 + 0.16 * n2) * 2 * np.pi)
-        fibre = _noise(n, 128, rng)
-        t = np.clip(0.18 + 0.72 * rings ** 1.6 + 0.16 * fibre, 0, 1)
-        img = _mix((104, 62, 34), (214, 166, 112), t)
+        # Годичные кольца: их число целое (иначе картинка не стыкуется сама с
+        # собой), а фаза волнистая по обеим осям. Частые ровные полосы на
+        # фасадах шкафа читались как «рубчик», а не как дерево.
+        rings_n = max(3, int(round(9 * k)))       # ~15 мм между линиями
+        # Волна колец должна быть медленной и слабой: при сильном искажении
+        # доски шкафа выглядят как рубчик ткани.
+        warp = (0.16 * n1 + 0.07 * n2
+                + 0.07 * np.sin(2 * np.pi * v + 1.1)
+                + 0.05 * np.sin(2 * np.pi * u + 0.4))
+        rings = 0.5 + 0.5 * np.cos((u * rings_n + warp) * 2 * np.pi)
+        # Волокно вытянуто вдоль колец: размытие только по v даёт длинные
+        # штрихи, а не пятна.
+        fibre = _noise(n, 160, rng)
+        for _ in range(16):
+            fibre = 0.5 * (fibre + np.roll(fibre, -1, axis=0))
+        # У поздней древесины тёмная линия узкая, а не широкая полоса.
+        # Одни кольца темнее, другие почти пропадают — так доска не выглядит
+        # гофрированной; редкие «сучковые» сгущения дают крупный рисунок.
+        amp = np.clip(0.25 + 0.95 * _noise(n, 3, rng) + 0.25 * (n2 - 0.5), 0, 1)
+        line = (1.0 - rings) ** 3.0
+        t = np.clip(0.87 - 0.46 * line * amp + 0.20 * (fibre - 0.5), 0, 1)
+        img = _mix((98, 60, 34), (216, 176, 128), t)
     elif key == "marble":
         turb = _fbm(n, rng, (2, 5, 11, 23))
         turb2 = _fbm(n, rng, (3, 8, 17))
@@ -172,12 +199,14 @@ def make_texture(kind: str, size: int = 512, seed: int | str = 1,
                    np.clip(veins, 0, 1) ** 1.1 * 0.55)
     elif key == "metal":
         brushed = _noise(n, 256, rng, smooth=1)
-        band = 0.5 + 0.5 * np.sin(v * np.pi * 2 * 24 * k + n2 * 1.4)
+        bands = max(2, int(round(24 * k)))
+        band = 0.5 + 0.5 * np.sin(v * np.pi * 2 * bands + n2 * 1.4)
         t = np.clip(0.38 + 0.34 * brushed + 0.26 * band, 0, 1)
         img = _mix((92, 100, 112), (238, 242, 248), t)
     elif key == "fabric":
-        warp = 0.5 + 0.5 * np.sin(u * np.pi * 2 * 48 * k)
-        weft = 0.5 + 0.5 * np.sin(v * np.pi * 2 * 48 * k)
+        threads = max(2, int(round(48 * k)))
+        warp = 0.5 + 0.5 * np.sin(u * np.pi * 2 * threads)
+        weft = 0.5 + 0.5 * np.sin(v * np.pi * 2 * threads)
         t = np.clip(0.35 + 0.35 * warp * weft + 0.3 * n2, 0, 1)
         img = _mix((38, 62, 96), (128, 158, 198), t)
     elif key == "leather":
@@ -196,13 +225,14 @@ def make_texture(kind: str, size: int = 512, seed: int | str = 1,
         img = _mix((70, 72, 78), (198, 200, 205), t)
     elif key == "brick":
         rows = max(4, int(round(10 * k)))
+        rows += rows % 2          # чётное число рядов: смещение кладки совпадёт
         cols = max(2, int(round(5 * k)))
         vv = v * rows
-        row = np.floor(vv)
+        row = np.floor(vv) % rows
         uu = u * cols + (row % 2) * 0.5
         col = np.floor(uu)
         mortar_u = np.minimum(uu - col, 1 - (uu - col))
-        mortar_v = np.minimum(vv - row, 1 - (vv - row))
+        mortar_v = np.minimum(vv - np.floor(vv), 1 - (vv - np.floor(vv)))
         mortar = (mortar_u < 0.06) | (mortar_v < 0.10)
         shade = 0.82 + 0.18 * n3
         t = np.where(mortar, 0.92, 0.18 + 0.55 * n2 + 0.15 * shade)
@@ -210,9 +240,9 @@ def make_texture(kind: str, size: int = 512, seed: int | str = 1,
     else:  # ceramic
         t = np.clip(0.9 + 0.08 * n1 - 0.12 * n2, 0, 1)
         img = _mix((236, 240, 246), (188, 202, 220), t)
-    if key not in ("checker", "brick", "marble"):
-        # шов в UV-развёртке виден только на непериодической картинке
-        img = _seamless(img)
+    # Все узоры собраны из периодических функций и бесшовного шума, поэтому
+    # картинка стыкуется сама с собой. Прежняя «сшивка» сдвигом на полпериода
+    # оставляла на панелях широкие полосы-призраки.
     return np.clip(img, 0, 255).astype(np.uint8)
 
 
@@ -307,7 +337,8 @@ def texture_file(kind: str, scale: float = 1.0, seed: int | str = 1,
     if not path.exists():
         write_png(path, image)
     return {"kind": key, "label": KIND_NAMES[key], "path": str(path),
-            "scale": float(scale), "seed": str(seed)}
+            "scale": float(scale), "seed": str(seed),
+            "tile_mm": float(TILE_MM.get(key, 140.0))}
 
 
 def custom_texture_file(pattern: str = "полосы", color1: str = "#3a6ea5",
@@ -405,6 +436,64 @@ def _triplanar_uv(tri: np.ndarray, tile_mm: float,
     return np.stack([u.ravel(), w.ravel()], axis=1).astype(np.float32)
 
 
+def _round_uv(tri: np.ndarray, lo: np.ndarray, hi: np.ndarray,
+              tile_mm: float) -> np.ndarray:
+    """Круговая развёртка: u — угол вокруг вертикали, w — высота в мм.
+
+    Шов разрезается по треугольникам (на разрыве к u прибавляется 1), а крышки
+    разворачиваются плоско — иначе на торце получается «крест» из полос.
+    """
+    tile = max(1.0, float(tile_mm))
+    span = np.maximum(hi - lo, 1e-9)
+    cx, cz = (lo[0] + hi[0]) / 2.0, (lo[2] + hi[2]) / 2.0
+    u = np.arctan2(tri[:, :, 2] - cz, tri[:, :, 0] - cx) / (2.0 * np.pi) + 0.5
+    w = (tri[:, :, 1] - lo[1]) / span[1]
+    e1 = tri[:, 1] - tri[:, 0]
+    e2 = tri[:, 2] - tri[:, 0]
+    nrm = np.cross(e1, e2)
+    vertical = np.abs(nrm[:, 1]) > 0.75 * (np.linalg.norm(nrm, axis=1) + 1e-12)
+    if vertical.any():
+        cap_u = (tri[:, :, 0] - lo[0]) / span[0]
+        cap_w = (tri[:, :, 2] - lo[2]) / span[2]
+        u = np.where(vertical[:, None], cap_u, u)
+        w = np.where(vertical[:, None], cap_w, w)
+    umin = u.min(axis=1, keepdims=True)
+    umax = u.max(axis=1, keepdims=True)
+    u = np.where((umax - umin > 0.5) & (u < 0.5), u + 1.0, u)
+    circ = np.pi * max(span[0], span[2])
+    u = u * max(1.0, round(circ / max(20.0, tile)))
+    w = w * max(1.0, round(span[1] / max(20.0, tile)))
+    return np.stack([u.ravel(), w.ravel()], axis=1).astype(np.float32)
+
+
+def _auto_uv(tri: np.ndarray, tile_mm: float, origin: np.ndarray,
+             lo: np.ndarray, hi: np.ndarray) -> np.ndarray:
+    """Развёртка «auto»: у плоских тел — по осям, у круглых — по углу.
+
+    Раньше решение принималось на каждый треугольник отдельно. На плавных
+    переходах (плечо вазы, скругление кружки) соседние грани попадали в разные
+    развёртки, и рисунок рвался пополам. Теперь решение одно на всё тело:
+    считаем, какая доля площади смотрит «вкось» (не вверх и не вдоль оси X/Z),
+    и если такая доля велика — всё тело разворачиваем по окружности.
+    Так у вазы, гайки и колеса нет ни одного стыка между развёртками,
+    а у куба, панели и ящика рисунок по-прежнему идёт в миллиметрах мира,
+    поэтому линии на соседних деталях совпадают.
+    """
+    n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    area = np.linalg.norm(n, axis=1)
+    ok = area > 1e-12
+    if not np.any(ok):
+        return _triplanar_uv(tri, tile_mm, origin=origin)
+    nn = n[ok] / area[ok][:, None]
+    side = np.abs(nn[:, 1]) <= 0.7
+    off = np.minimum(np.abs(nn[:, 0]), np.abs(nn[:, 2])) > 0.2
+    curved = side & off
+    share = float(area[ok][curved].sum() / max(area[ok].sum(), 1e-9))
+    if share >= 0.25:
+        return _round_uv(tri, lo, hi, tile_mm)
+    return _triplanar_uv(tri, tile_mm, origin=origin)
+
+
 def uv_triangles(verts: np.ndarray, faces: np.ndarray, mode: str = "auto",
                  bbox: np.ndarray | None = None, tile_mm: float = 140.0,
                  origin=None) -> np.ndarray:
@@ -423,35 +512,13 @@ def uv_triangles(verts: np.ndarray, faces: np.ndarray, mode: str = "auto",
     mode = (mode or "auto").lower()
     if mode in ("auto", "triplanar", "box", "грани", "авто"):
         base = lo if origin is None else np.asarray(origin, dtype=np.float64)[:3]
-        return _triplanar_uv(tri, tile_mm, origin=base)
+        return _auto_uv(tri, tile_mm, base, lo, hi)
+    if mode in ("cylinder", "цилиндр", "круг"):
+        return _round_uv(tri, lo, hi, tile_mm)
     if mode == "planar":
         u = (tri[:, :, 0] - lo[0]) / span[0]
         w = (tri[:, :, 2] - lo[2]) / span[2]
-    elif mode == "box":
+    else:
         u = (tri[:, :, 0] - lo[0]) / span[0]
         w = (tri[:, :, 2] - lo[2]) / span[2]
-    else:
-        cx, cz = (lo[0] + hi[0]) / 2.0, (lo[2] + hi[2]) / 2.0
-        u = np.arctan2(tri[:, :, 2] - cz, tri[:, :, 0] - cx) / (2.0 * np.pi) + 0.5
-        w = (tri[:, :, 1] - lo[1]) / span[1]
-        # крышки (нормаль вдоль вертикали) разворачиваем плоско —
-        # иначе на торце получается «крест» из растянутых жил
-        e1 = tri[:, 1] - tri[:, 0]
-        e2 = tri[:, 2] - tri[:, 0]
-        nrm = np.cross(e1, e2)
-        vertical = np.abs(nrm[:, 1]) > 0.75 * (np.linalg.norm(nrm, axis=1) + 1e-12)
-        if vertical.any():
-            cap_u = (tri[:, :, 0] - lo[0]) / span[0]
-            cap_w = (tri[:, :, 2] - lo[2]) / span[2]
-            u = np.where(vertical[:, None], cap_u, u)
-            w = np.where(vertical[:, None], cap_w, w)
-        # разрыв шва: если треугольник переходит через 0/1, поднимаем малые u
-        umin = u.min(axis=1, keepdims=True)
-        umax = u.max(axis=1, keepdims=True)
-        u = np.where((umax - umin > 0.5) & (u < 0.5), u + 1.0, u)
-        # повторяем текстуру по окружности, чтобы рисунок был одинакового масштаба
-        circ = np.pi * max(span[0], span[2])
-        rep = max(1.0, round(circ / max(20.0, tile_mm)))
-        u = u * rep
-        w = w * max(1.0, round(span[1] / max(20.0, tile_mm)))
     return np.stack([u.ravel(), w.ravel()], axis=1).astype(np.float32)

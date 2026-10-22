@@ -28,6 +28,7 @@ t = 4
 кружка = smooth [кружка] angle=48 soft=0.40 levels=1
 
 color кружка #efe9df material=ceramic
+texture кружка kind=керамика scale=0.7 uv=auto
 
 # презентационное вращение — кнопка «играть» работает сразу
 animate kind=spin axis=z seconds=8 loop=да

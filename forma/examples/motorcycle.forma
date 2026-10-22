@@ -15,7 +15,7 @@ light preset=студия strength=1.35
 колесо_зад = wheel diameter=600 width=180 rim=32 spokes=5 hub=70 tire=25 segments=96 center=да
 колесо_зад = translate [колесо_зад] offset=[0, 0, 300]
 колесо_перед = wheel diameter=600 width=180 rim=32 spokes=5 hub=70 tire=25 segments=96 center=да
-колесо_перед = translate [колесо_перед] offset=[1400, 0, 310]
+колесо_перед = translate [колесо_перед] offset=[1400, 0, 300]
 
 # ---------- РАМА ----------
 рама_верх = pipe path=[[0, 0, 0], [400, 0, 50], [760, 0, 80], [990, 0, 100], [1100, 0, 105]] diameter=46 wall=5
@@ -34,7 +34,7 @@ light preset=студия strength=1.35
 бак = hull objects=[бак_низ, бак_верх]
 седло = box size=[470, 270, 84] round=36 center=да at=[380, 0, 898]
 седло_зад = box size=[220, 240, 70] round=30 center=да at=[120, 0, 930]
-хвост = box size=[280, 190, 110] round=26 center=да at=[-140, 0, 860]
+хвост = box size=[280, 190, 110] round=26 center=да at=[-125, 0, 860]
 номер = box size=[150, 8, 100] round=4 center=да at=[-150, 0, 760]
 
 # ---------- КРЫЛЬЯ: дуга над колесом ----------
@@ -42,7 +42,7 @@ light preset=студия strength=1.35
 зад_внеш = rotate [зад_внеш] angle=90 axis=x
 зад_внутр = cylinder radius=310 height=260 segments=80 center=да
 зад_внутр = rotate [зад_внутр] angle=90 axis=x
-зад_низ = box size=[900, 240, 340] round=10 center=да at=[0, 0, -170]
+зад_низ = box size=[900, 300, 420] round=10 center=да at=[0, 0, -210]
 зад_крыло = difference [зад_внеш, зад_внутр, зад_низ]
 зад_крыло = translate [зад_крыло] offset=[0, 0, 300]
 
@@ -50,9 +50,9 @@ light preset=студия strength=1.35
 перед_внеш = rotate [перед_внеш] angle=90 axis=x
 перед_внутр = cylinder radius=310 height=260 segments=80 center=да
 перед_внутр = rotate [перед_внутр] angle=90 axis=x
-перед_низ = box size=[900, 220, 360] round=10 center=да at=[0, 0, -180]
+перед_низ = box size=[900, 300, 440] round=10 center=да at=[0, 0, -220]
 перед_крыло = difference [перед_внеш, перед_внутр, перед_низ]
-перед_крыло = translate [перед_крыло] offset=[1400, 0, 310]
+перед_крыло = translate [перед_крыло] offset=[1400, 0, 300]
 
 # ---------- ДВИГАТЕЛЬ ----------
 блок = box size=[430, 310, 340] round=24 center=да at=[640, 0, 450]
@@ -64,7 +64,7 @@ light preset=студия strength=1.35
 выпуск = translate [выпуск] offset=[510, -175, 420]
 глушитель = cylinder radius=44 height=230 segments=48 center=да
 глушитель = rotate [глушитель] angle=90 axis=y
-глушитель = translate [глушитель] offset=[-150, -240, 560]
+глушитель = translate [глушитель] offset=[125, -240, 575]
 подножка_л = cylinder radius=12 height=170 segments=32 center=да
 подножка_л = rotate [подножка_л] angle=90 axis=x
 подножка_л = translate [подножка_л] offset=[440, -185, 430]

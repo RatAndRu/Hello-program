@@ -62,47 +62,20 @@ def _prepare(solids):
         if tex and tex.get("path"):
             image = _load_texture(tex["path"])
             if image is not None:
-                lo = nv.min(axis=0)
-                hi = nv.max(axis=0)
-                span = np.maximum(hi - lo, 1e-9)
-                mode = getattr(s, "uv", "cylinder")
-                if mode == "planar":
-                    u = (nv[:, 0] - lo[0]) / span[0]
-                    w = (nv[:, 1] - lo[1]) / span[1]
-                    item["uv"] = np.stack([u, w], axis=1).astype(np.float32)
-                else:
-                    # UV на угол треугольника: шов не «растягивается» через всю
-                    # текстуру, а разрезается — мрамор идёт без полосы.
-                    tri_v = nv[nf]
-                    cx, cy = (lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2
-                    uu = np.arctan2(tri_v[:, :, 1] - cy, tri_v[:, :, 0] - cx) / (2 * np.pi) + 0.5
-                    ww = (tri_v[:, :, 2] - lo[2]) / span[2]
-                    # крышки — плоская развёртка (без «креста» на торце)
-                    e1 = tri_v[:, 1] - tri_v[:, 0]
-                    e2 = tri_v[:, 2] - tri_v[:, 0]
-                    nrm = np.cross(e1, e2)
-                    vertical = np.abs(nrm[:, 2]) > 0.75 * (np.linalg.norm(nrm, axis=1) + 1e-12)
-                    if vertical.any():
-                        cap_u = (tri_v[:, :, 0] - lo[0]) / span[0]
-                        cap_w = (tri_v[:, :, 1] - lo[1]) / span[1]
-                        uu = np.where(vertical[:, None], cap_u, uu)
-                        ww = np.where(vertical[:, None], cap_w, ww)
-                    umin = uu.min(axis=1, keepdims=True)
-                    umax = uu.max(axis=1, keepdims=True)
-                    uu = np.where((umax - umin > 0.5) & (uu < 0.5), uu + 1.0, uu)
-                    circ = np.pi * max(span[0], span[1])
-                    rep = max(1.0, round(circ / 140.0))
-                    uu = uu * rep
-                    ww = ww * max(1.0, round(span[2] / 140.0))
-                    flat = nf.reshape(-1)
-                    item["nv"] = nv[flat]
-                    item["nn"] = nn[flat]
-                    item["nf"] = np.arange(len(flat), dtype=np.int64).reshape(-1, 3)
-                    item["uv"] = np.stack([uu.ravel(), ww.ravel()], axis=1).astype(np.float32)
-                    item["tex"] = image
-                    item["verts"] = item["nv"]
-                    item["normals"] = item["nn"]
-                    item["faces"] = item["nf"]
+                from .textures import uv_triangles
+                # Та же развёртка, что у GLB и окна: трипланарная по мировым
+                # координатам. Раньше здесь была цилиндрическая — на плоских
+                # фасадах шкафа рисунок сжимался в вертикальные полосы, а в
+                # окне и в Blender выглядел правильно. Теперь одинаково везде.
+                gltf = np.stack([nv[:, 0], nv[:, 2], -nv[:, 1]], axis=1)
+                uvs = uv_triangles(gltf, nf, getattr(s, "uv", "auto") or "auto",
+                                   tile_mm=float(tex.get("tile_mm") or 140.0))
+                flat = nf.reshape(-1)
+                item["uv"] = uvs
+                item["tex"] = image
+                item["verts"] = nv[flat]
+                item["normals"] = nn[flat]
+                item["faces"] = np.arange(len(flat), dtype=np.int64).reshape(-1, 3)
         meshes.append(item)
     return meshes
 

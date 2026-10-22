@@ -11,6 +11,7 @@
   ] segments=112 smooth=2
 
 color ваза #cfd8e6 material=ceramic
+texture ваза kind=керамика scale=1.1 uv=auto
 check ваза watertight
 check ваза height 225..240
 check ваза width 155..165

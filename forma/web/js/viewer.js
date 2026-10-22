@@ -2345,7 +2345,8 @@ export class Viewer {
                                 rough: m.roughness, map: m.map, normal: m.normalMap };
           }
           m.map = tex;
-          m.color?.setHex(0xffffff);
+          // цвет материала сохраняем: текстура умножается на него,
+          // как и в снимках PNG — один предмет выглядит одинаково везде
           m.userData.base.map = tex;
           m.needsUpdate = true;
         });

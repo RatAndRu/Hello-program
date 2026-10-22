@@ -172,8 +172,11 @@ check ручка_левая height 198..202
 
 # ---------- МАТЕРИАЛ ----------
 color корпус #a8794a rough=0.66 density=0.72
+texture корпус kind=дерево scale=0.8 uv=auto
 color фасад_п #e3dccd rough=0.48 density=0.72
+texture фасад_п kind=дерево scale=0.9 uv=auto
 color фасад_л #e0d9c8 rough=0.48 density=0.72
+texture фасад_л kind=дерево scale=0.9 uv=auto
 color ручка_правая #2b2d31 metal=0.9 rough=0.24
 color ручка_левая #2b2d31 metal=0.9 rough=0.24
 color ручка_ящика #2b2d31 metal=0.9 rough=0.24

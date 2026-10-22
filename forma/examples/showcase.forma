@@ -39,7 +39,7 @@ light preset=студия strength=1.05
 звезда = star points=7 outer=88 inner=38 depth=14 bevel=3 smooth=0.5
 звезда = translate [звезда] offset=[270, 420, 86]
 кольцо = torus major=62 minor=14 segments=72
-кольцо = translate [кольцо] offset=[540, 420, 110]
+кольцо = translate [кольцо] offset=[540, 420, 108]
 
 # ---------- СРЕДНИЙ РЯД: механизм ----------
 шестерня = gear teeth=28 module=2 thickness=12 bore=16 hub=30
@@ -50,7 +50,7 @@ light preset=студия strength=1.05
 лепесток = extrude profile=[[-18,-52],[0,-22],[18,-52],[52,-18],[22,0],[52,18],
                             [18,52],[0,22],[-18,52],[-52,18],[-22,0],[-52,-18]] height=12 fillet=3
 турбина = array [лепесток] count=12 mode=radial around=z center=[0, 0, 0]
-турбина = translate [турбина] offset=[0, 140, 95]
+турбина = translate [турбина] offset=[0, 140, 94]
 колесо = wheel diameter=230 width=84 rim=18 spokes=6 hub=40
 колесо = translate [колесо] offset=[270, 140, 86]
 вал = shaft diameter=34 length=190 chamfer=2 bore=8
@@ -65,7 +65,7 @@ light preset=студия strength=1.05
 рейка = rack length=210 teeth=21 module=2 thickness=10 height=14
 рейка = translate [рейка] offset=[0, -140, 86]
 муфта = coupling diameter=64 length=76 bore=20
-муфта = translate [муфта] offset=[540, -140, 102]
+муфта = translate [муфта] offset=[540, -140, 94]
 радиатор = heatsink size=[150, 96, 58] fins=11
 радиатор = translate [радиатор] offset=[270, -140, 86]
 камень = rock size=[170, 130, 78] seed=7 rough=0.42
@@ -99,23 +99,23 @@ light preset=студия strength=1.05
 направляющая = translate [направляющая] offset=[180, -470, 96]
 профиль = profile2020 length=280 size=20
 профиль = rotate [профиль] angle=90 axis=x
-профиль = translate [профиль] offset=[330, -420, 96]
+профиль = translate [профиль] offset=[330, -240, 86]
 панель = panel size=[200, 140, 22] wall=3 round=8
 панель = translate [панель] offset=[500, -330, 96]
 люверс = grommet diameter=14 height=9 wall=1.8 flange=3
 люверс = translate [люверс] offset=[380, -500, 96]
 червяк = worm length=110 diameter=30 pitch=8 depth=4
 червяк = rotate [червяк] angle=90 axis=x
-червяк = translate [червяк] offset=[250, -330, 120]
+червяк = translate [червяк] offset=[250, -330, 109]
 колесо_червя = gear teeth=40 module=2 thickness=10 bore=6
 колесо_червя = rotate [колесо_червя] angle=90 axis=x
 колесо_червя = rotate [колесо_червя] angle=90 axis=y
-колесо_червя = translate [колесо_червя] offset=[250, -330, 190]
+колесо_червя = translate [колесо_червя] offset=[250, -330, 164]
 рог = horn length=150 radius=20 tip=3 bend=48
 рог = translate [рог] offset=[120, -330, 96]
 ручка_накатка = cylinder radius=16 height=70 segments=48
 ручка_накатка = knurl [ручка_накатка] count=22 depth=1
-ручка_накатка = translate [ручка_накатка] offset=[620, -470, 96]
+ручка_накатка = translate [ручка_накатка] offset=[620, -470, 94]
 
 # ---------- ПРОВЕРКИ ----------
 check подиум watertight
@@ -169,6 +169,7 @@ color подиум #2f333b rough=0.55 metal=0.15
 color подставки #4c525b rough=0.5 metal=0.2
 color ряд_штифтов #d8b263 metal=0.9 rough=0.25
 color ваза #a05f38 rough=0.45
+texture ваза kind=мрамор scale=1.2 uv=auto
 color кубок #e6e0d4 rough=0.4
 color тарелка #eae6dc rough=0.45
 color звезда #d8a93f metal=0.85 rough=0.25
@@ -185,6 +186,7 @@ color радиатор #b7bdc4 metal=0.9 rough=0.24
 color труба #6f8f9c metal=0.7 rough=0.3
 color камень #77726a rough=0.85
 color ветка #6b4a2f rough=0.75
+texture ветка kind=дерево scale=1.0 uv=auto
 color листва #4f7f45 rough=0.7
 color ящик #a8794a rough=0.6
 color скульптура #b9c2c9 metal=0.3 rough=0.35

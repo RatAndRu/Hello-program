@@ -72,7 +72,7 @@ KIND_NAMES_ANIM = {"spin": "вращение", "formation": "формирова�
 
 @op("scene", aliases=("сцена", "окружение", "фон", "view"), category="Сцена и материал",
     summary="Настраивает вид сцены: фон, окружение, экспозицию, тени и сетку.",
-    example="scene bg=#0b0e13 env=studio exposure=1.05 shadows=да grid=да",
+    example='к = box size=[40,40,40]\nscene bg=#0b0e13 env=studio exposure=1.05 shadows=да grid=да',
     params={"bg": "цвет фона #RRGGBB или название",
             "env": "студия, солнце, закат, ночь, мягкий, контражур, серый, белый",
             "exposure": "экспозиция (1.0 — нейтрально)",
@@ -100,7 +100,7 @@ def scene(a, name):
 
 @op("light", aliases=("свет", "освещение", "lights"), category="Сцена и материал",
     summary="Ставит свет: пресеты студия/солнце/ночь/мягкий/контражур или свои силы источников.",
-    example="light preset=студия strength=1.1",
+    example='к = box size=[40,40,40]\nlight preset=студия strength=1.1',
     params={"preset": "студия, солнце, ночь, мягкий, контражур, портрет",
             "strength": "общая яркость (множитель)",
             "key": "сила основного света", "fill": "сила заполняющего",
@@ -138,7 +138,7 @@ def light(a, name):
 
 @op("texture", aliases=("текстура", "материал-текстура", "tex"), category="Сцена и материал",
     summary="Накладывает процедурную текстуру: дерево, мрамор, металл, ткань, кожу, кирпич.",
-    example="texture кружка kind=дерево scale=1.2",
+    example='кружка = cup diameter=80 height=95\ntexture кружка kind=дерево scale=1.2',
     params={"target": "имя объекта или all",
             "kind": "дерево, мрамор, металл, ткань, кожа, клетка, шум, кирпич, "
                     "керамика или своя",
@@ -201,9 +201,7 @@ def texture(a, name):
     summary="Добавляет клип анимации: вращение, формирование, разлёт, перемещение, "
             "масштаб, доворот, пауза, сборка по шагам или изменение формы. "
             "Клипы одного track идут друг за другом, разные track — параллельно.",
-    example="animate kind=spin axis=z seconds=6 track=1\n"
-            "animate kind=move dz=40 seconds=2 track=1\n"
-            "animate kind=scale to=1.4 seconds=2 track=1",
+    example='к = box size=[40,40,40]\nanimate kind=spin axis=z seconds=6 track=1\nanimate kind=move dz=40 seconds=2 track=1\nanimate kind=scale to=1.4 seconds=2 track=1',
     positional="*",
     params={"kind": "spin, formation, explode, move, scale, turn, wait, assembly, morph, roll, "
                     "jump, fall, fan",
@@ -446,7 +444,7 @@ def animate(a, name):
 @op("keyframe", aliases=("key", "ключ", "кадр", "ключ_кадр", "keys"), category="Сцена и материал",
     summary="Ключевой кадр объекта: смещение, поворот и масштаб в заданный момент. "
             "Строк keyframe может быть несколько — между ними плавная интерполяция.",
-    example="keyframe ручка at=0 pos=[0, 0, 0]\nkeyframe ручка at=2 pos=[0, 0, 30]",
+    example='ручка = box size=[20,20,20]\nkeyframe ручка at=0 pos=[0, 0, 0]\nkeyframe ручка at=2 pos=[0, 0, 30]',
     positional=["object"],
     params={"object": "имя объекта", "at": "время ключа, с",
             "pos": "смещение [dx, dy, dz] в мм", "rot": "поворот [rx, ry, rz] в градусах",
