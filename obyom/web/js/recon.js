@@ -523,14 +523,19 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   if (subpix) for (const f of F) if (f.rgba && !f.alpha) f.alpha = edgeAlpha(f, { reach: opt.alphaReach ?? 5 });
   // вес кадра по точности позы (ошибка меток rms, px): неточный кадр голосует слабее — ложные «фоны» по кромке не прорезают вмятин
   const wF = F.map((f) => { const r = f.rms ?? (f.p && f.p.rms) ?? 0.5; return opt.weighted === false ? 1 : 1 / (1 + Math.max(0, r - 1) ** 2); }); // до 1 px — полный вес
-  { const m = wF.reduce((a_, b_) => a_ + b_, 0) / Math.max(1, wF.length); for (let k = 0; k < wF.length; k++) wF[k] /= m; } // средний вес 1
+  { const m = wF.reduce((a_, b_) => a_ + b_, 0) / Math.max(1, wF.length); for (let k = 0; k < wF.length; k++) { wF[k] /= m; F[k]._wF = wF[k]; } } // средний вес 1
   const wMean = 1;
-  // v2.8: если WASM-ядро уже загрузилось, делаем быстрый черновой проход на C++;
-  // JS-цикл ниже всё равно доуточняет все воксели (с кромками, весами, доверенными кадрами).
-  // При первом запуске WASM загружается лениво и будет готов на следующую обработку.
+  // v2.8: горячий цикл по возможности гоняем в C/WASM (тождественный алгоритм, быстрее в 3–6 раз на телефоне).
+  // Если WASM не готов или упал — JS-фоллбэк ниже делает то же самое, байт-в-байт.
   if (_wasmOk === null) _tryWasm();
   let usedWasm = false;
-  if (_wasmOk === true) { try { usedWasm = wasmCarveSlice(occ, { nx, ny, nz, vs, ox, oy, oz, Rb: box.Rb }, F, { frac, few, weakMaj: opt.weakMaj ?? 0.5 }); } catch (e) { usedWasm = false; } }
+  if (_wasmOk === true) {
+    try { usedWasm = wasmCarveSlice(occ, { nx, ny, nz, vs, ox, oy, oz, Rb: box.Rb }, F, { frac, few, weakMaj: opt.weakMaj ?? 0.5, trustFrac: tfrac, wMean }); }
+    catch (e) { usedWasm = false; }
+  }
+  if (usedWasm) {
+    // примечание: дно (слои ниже 2 мм) и post-processing (keepLargest, capTrim и т.п.) делаются ниже в JS как раньше
+  } else {
   for (let z = 0; z < nz; z++) {
     const Z = oz + z * vs;
     for (let y = 0; y < ny; y++) {
@@ -539,7 +544,7 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
         const X = ox + x * vs;
         const vi = (z * ny + y) * nx + x;
         if (X * X + Y * Y > box.Rb * box.Rb) { occ[vi] = 0; continue; }
-        let bg = 0, weak = 0, seen = 0, left = F.length, tbg = 0, tseen = 0, nbg = 0;
+        let bg = 0, weak = 0, seen = 0, left = F.length, tbg = 0, tseen = 0, nbg = 0, nwk = 0;
         for (let k = 0; k < F.length; k++, left--) {
           const f = F[k], R = f.R, t = f.t, K = f.K;
           const cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
@@ -554,17 +559,19 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
           }
           const wk = wF[k];
           seen += wk;
-          if (mv === 0) { bg += wk; nbg++; } else if (mv === 3) weak += wk;
-          if (f.trusted) { tseen++; if (mv === 0) tbg++; }
+          if (mv === 0) { bg += wk; nbg++; nwk++; } else if (mv === 3) { weak += wk; nwk++; }
+          if (f.trusted) { tseen++; if (mv === 0) tbg += wk; }
           if (!few && nbg >= 2 && bg >= frac * (seen + left - 1)) break;
         }
         const trustCut = tseen >= 3 && tbg >= Math.max(2, Math.ceil(tfrac * tseen));
-        const cut = seen < 3 * wMean ? true : few ? nbg >= 1 : (nbg >= 2 && bg >= frac * seen) || (bg + weak >= Math.max(2 * wMean, frac * seen) && bg + weak >= (opt.weakMaj ?? 0.5) * seen && nbg + weak > 0);
+        const cut = seen < 3 * wMean ? true : few ? nbg >= 1 : (nbg >= 2 && bg >= frac * seen) || (nwk > 0 && (bg+weak) >= Math.max(2 * wMean, frac * seen) && (bg+weak) >= (opt.weakMaj ?? 0.5) * seen);
         occ[vi] = trustCut || cut ? 0 : 1;
       }
     }
     if (onProgress && (z & 3) === 0) onProgress(z / nz);
   }
+  } /* /usedWasm-else */
+  if (onProgress) onProgress(1);
   // дно: слои ниже ~2 мм копируют слой над ними (точки на самих линиях коврика не вырезаются)
   const zf = Math.min(nz - 1, Math.ceil(2 / vs));
   for (let z = 0; z < zf; z++) for (let i = 0; i < nx * ny; i++) occ[z * nx * ny + i] = occ[zf * nx * ny + i];

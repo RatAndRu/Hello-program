@@ -4,6 +4,7 @@ import { matLayout, matRaster } from './mat.js';
 import { detectMarkers, toGray } from './detect.js';
 import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal, camAngles, fitK1, undistortPts, undistortRGBA } from './pose.js';
 import { computeMask, motionMasks, tableConsistency, carveHull, meshFromGrid, revolveGrid, taubin, computeNormals, colorize, depthMap, cleanGrid, vesselCarve, MOTION_OPT } from './recon.js';
+import { ensureSam, samReady, encodeFrame, refineMask } from './sam.js';
 import { alignHulls, intersectHulls, framesToA } from './align.js';
 import { boxMesh, prismMesh, snapPlanes } from './shapes.js';
 import { bakeTexture, subdivideLong } from './texture.js';
@@ -68,7 +69,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     els = good.map((f) => f.ang.el);
     log(`продолжаю с сохранённой формы: ${frAll.length} кадров, ${(M.idx.length / 3) | 0} треугольников — форма не пересчитывается`);
   } else {
-  A = await prepSet(job.blobs, { size: job.size, method: job.method, Hb, theme: job.theme, plates: job.plates, PW, objColor: job.objColor, prepped: job.prepped || null }, cb, shouldStop, log, '');
+  A = await prepSet(job.blobs, { size: job.size, method: job.method, Hb, theme: job.theme, plates: job.plates, PW, objColor: job.objColor, prepped: job.prepped || null, sam: !!job.sam }, cb, shouldStop, log, '');
   good = A.good;
   els = good.map((f) => f.ang.el); elMax = Math.max(...els);
   log(`кадров с позой: ${good.length}; высота камеры ${Math.min(...els).toFixed(0)}–${elMax.toFixed(0)}°`);
@@ -375,6 +376,65 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
     good[i].mask = m.mask; good[i].refOut = m.refOut; good[i].trusted = !!m.stats.enclosed; if (good[i].trusted) nTrust++; if (m.stats.plate) withPlate++;
     cb.progress(tag + 'Отделяю предмет от коврика', (i + 1) / good.length, `кадр ${i + 1} из ${good.length}`);
     if (i % 2) await tick();
+  }
+  // v2.8: AI-маска (MobileSAM) — уточняет каждую маску по ббоксу проекции цилиндра как промпту.
+  // Маска SAM влияет только на «неизвестные» пиксели внутри цилиндра: не перезаписывает «точный фон» (m=0),
+  // и добавляет предмет (m=2) там, где SAM уверен. Так не сломаются ни блики, ни коврик.
+  if (cfg.sam) {
+    log(`${tag}загружаю AI-маску…`);
+    const samOk = await ensureSam((t) => cb.log(t), (p, t) => cb.progress(tag + 'AI-маска', p * 0.1, t));
+    if (samOk) {
+      log(`${tag}AI-маска (MobileSAM) уточняет силуэты…`);
+      for (let i = 0; i < good.length; i++) {
+        if (shouldStop()) break;
+        const f = good[i];
+        if (!f.rgba) continue;
+        // ббокс проекции цилиндра (как подсказка для SAM)
+        const { K, R, t } = f;
+        let x0 = f.w, y0 = f.h, x1 = 0, y1 = 0;
+        for (let z = 0; z <= 1; z++) for (let a = 0; a < 16; a++) {
+          const ang = a / 16 * Math.PI * 2;
+          const X = Rb * Math.cos(ang), Y = Rb * Math.sin(ang), Z = z * Hb;
+          const cz = R[6]*X + R[7]*Y + R[8]*Z + t[2]; if (cz <= 1) continue;
+          const u = K.fx*(R[0]*X + R[1]*Y + R[2]*Z + t[0])/cz + K.cx;
+          const v = K.fy*(R[3]*X + R[4]*Y + R[5]*Z + t[1])/cz + K.cy;
+          if (u < x0) x0 = u; if (v < y0) y0 = v; if (u > x1) x1 = u; if (v > y1) y1 = v;
+        }
+        x0 = Math.max(0, Math.min(f.w-1, x0|0)); y0 = Math.max(0, Math.min(f.h-1, y0|0));
+        x1 = Math.max(0, Math.min(f.w-1, x1|0)); y1 = Math.max(0, Math.min(f.h-1, y1|0));
+        const fg = [];
+        // если есть цвет предмета (пипетка) — добавляем опорную точку в центр (пиксель этого цвета)
+        if (cfg.objColor) {
+          const cr=(cfg.objColor[0]||128), cg=(cfg.objColor[1]||128), cb_=(cfg.objColor[2]||128);
+          let best=[(x0+x1)/2,(y0+y1)/2], bd=1e9;
+          for (let yy=y0; yy<y1; yy+=4) for (let xx=x0; xx<x1; xx+=4){
+            const ii=(yy*f.w+xx)*4;
+            const dr=f.rgba[ii]-cr, dg=f.rgba[ii+1]-cg, db=f.rgba[ii+2]-cb_;
+            const dd=dr*dr+dg*dg+db*db;
+            if (dd<bd){bd=dd;best=[xx,yy];}
+          }
+          fg.push({x:best[0], y:best[1], label:1});
+        }
+        try {
+          const emb = await encodeFrame(f.rgba, f.w, f.h);
+          if (!emb) continue;
+          const samMask = await refineMask(emb, [x0,y0,x1,y1], fg);
+          if (samMask) {
+            // сливаем: SAM говорит «предмет» (m=2) — ставим m=2 в обычную маску, только если там было «неизвестно» (1)
+            // SAM не режет «предмет» обратно (не ставит 0), чтобы не сломать фон.
+            for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
+              const ii = y*f.w + x;
+              if (samMask[ii] === 2 && f.mask[ii] === 1) f.mask[ii] = 2;
+            }
+          }
+        } catch (e) { /* кадр не уточнился — не страшно */ }
+        cb.progress(tag + 'AI-маска', (i+1) / good.length, `${i+1} из ${good.length}`);
+        if (i % 2) await tick();
+      }
+      log(`${tag}AI-маска применена`);
+    } else {
+      log(`${tag}AI-маска не загрузилась — обычные маски`);
+    }
   }
   if (plates.length) log(`${tag}кадров фона использовано: совпало с ${withPlate} кадрами из ${good.length} — пространство над предметом вырезано и по фону за кругом`);
   if (nTrust) log(`${tag}предмет целиком на листе в ${nTrust} кадрах из ${good.length} — по ним срезано лишнее над предметом`);
