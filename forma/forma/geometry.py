@@ -24,6 +24,21 @@ EPS = 1e-9
 #  Базовые преобразования Manifold <-> numpy
 # --------------------------------------------------------------------------- #
 
+def auto_segments(radius: float, tolerance: float = 0.12,
+                  min_n: int = 12, max_n: int = 256) -> int:
+    """Сколько сегментов нужно, чтобы огранка была не грубее допуска.
+
+    Раньше у примитивов стояло фиксированное число сегментов: маленький шарик
+    получал тысячи лишних треугольников, а большой — заметные грани. Здесь
+    число сегментов считается по радиусу и допуску (стрелка прогиба хорды).
+    """
+    r = max(float(radius), 1e-6)
+    tol = min(max(float(tolerance), 1e-3), r * 0.5)
+    n = math.pi / math.acos(max(-0.999999, min(1.0, 1.0 - tol / r)))
+    n = int(math.ceil(n / 4.0) * 4)
+    return int(max(min_n, min(max_n, n)))
+
+
 def manifold_mesh(m: mf.Manifold) -> tuple[np.ndarray, np.ndarray]:
     """Возвращает (vertices float64 Nx3, faces int64 Nx3)."""
     mesh = m.to_mesh()
@@ -864,6 +879,61 @@ def export_stl(objects) -> bytes:
     body = b"".join(chunks)
     count = len(body) // 50
     return header.ljust(80, b" ") + struct.pack("<I", count) + body
+
+
+def export_3mf(objects) -> bytes:
+    """3MF (ZIP + XML) — формат для слайсеров и Windows-программ 3D-печати."""
+    import io
+    import zipfile
+    from xml.sax.saxutils import escape
+
+    verts_all, faces_all = [], []
+    offset = 0
+    names = []
+    for obj in objects:
+        verts, _normals, faces = _glb_geometry(obj.manifold)
+        verts_all.append(verts)
+        faces_all.append(faces + offset)
+        offset += len(verts)
+        names.append(escape(getattr(obj, "name", "деталь")))
+    if not verts_all:
+        raise GeometryError("Нечего экспортировать: нет видимых объектов.")
+    v = np.vstack(verts_all).astype(np.float64)
+    f = np.vstack(faces_all).astype(np.int64)
+    # 3MF использует Z-up и миллиметры — переводим из внутренних Y-up координат
+    v = np.stack([v[:, 0], -v[:, 2], v[:, 1]], axis=1)
+    parts = []
+    for tri in f:
+        parts.append(f'<triangle v1="{tri[0]}" v2="{tri[1]}" v3="{tri[2]}"/>')
+    vertex_xml = "".join(
+        f'<vertex x="{x:.4f}" y="{y:.4f}" z="{z:.4f}"/>' for x, y, z in v)
+    model = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<model unit="millimeter" xml:lang="ru-RU" '
+        'xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n'
+        f'<metadata name="Title">{names[0] if names else "Форма 3D"}</metadata>\n'
+        '<resources><object id="1" type="model"><mesh><vertices>'
+        + vertex_xml
+        + '</vertices><triangles>' + "".join(parts) + '</triangles></mesh></object></resources>\n'
+        '<build><item objectid="1"/></build></model>\n')
+    content_types = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">\n'
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>\n'
+        '<Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/>\n'
+        '</Types>\n')
+    rels = (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">\n'
+        '<Relationship Target="/3D/3dmodel.model" Id="rel0" '
+        'Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/>\n'
+        '</Relationships>\n')
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("[Content_Types].xml", content_types)
+        zf.writestr("_rels/.rels", rels)
+        zf.writestr("3D/3dmodel.model", model)
+    return buf.getvalue()
 
 
 def export_ply(objects) -> bytes:

@@ -25,11 +25,68 @@ KINDS = {
     "кирпич": "brick", "brick": "brick",
     "керамика": "ceramic", "ceramic": "ceramic", "глазурь": "ceramic",
 }
+PATTERNS = {
+    "полосы": "stripes", "stripes": "stripes", "полоски": "stripes",
+    "клетка": "checker", "шахматка": "checker", "checker": "checker",
+    "волны": "waves", "waves": "waves", "зебра": "waves",
+    "градиент": "gradient", "gradient": "gradient",
+    "шум": "noise", "noise": "noise", "облака": "noise",
+    "камень": "stone", "stone": "stone", "гранит": "stone",
+    "точки": "dots", "dots": "dots", "горошек": "dots",
+    "сетка": "grid", "grid": "grid", "клеточки": "grid",
+}
+PATTERN_NAMES = {
+    "stripes": "полосы", "checker": "клетка", "waves": "волны",
+    "gradient": "градиент", "noise": "шум", "stone": "камень",
+    "dots": "точки", "grid": "сетка",
+}
+NAMED_COLORS = {
+    "белый": (245, 245, 242), "чёрный": (24, 24, 26), "черный": (24, 24, 26),
+    "серый": (128, 130, 134), "красный": (196, 62, 54), "синий": (48, 86, 168),
+    "зелёный": (58, 128, 78), "желтый": (226, 190, 66), "жёлтый": (226, 190, 66),
+    "коричневый": (104, 62, 34), "бежевый": (222, 206, 178),
+    "бирюзовый": (52, 160, 158), "фиолетовый": (118, 74, 158),
+    "золотой": (206, 168, 78), "медный": (184, 110, 66),
+}
+
 KIND_NAMES = {
     "wood": "дерево", "marble": "мрамор", "metal": "металл", "fabric": "ткань",
     "leather": "кожа", "checker": "клетка", "noise": "шум", "brick": "кирпич",
     "ceramic": "керамика",
 }
+
+
+def parse_color(value, fallback=(200, 200, 200)) -> tuple[int, int, int]:
+    """Цвет из «#rrggbb», названия или списка чисел."""
+    if value is None:
+        return fallback
+    if isinstance(value, (list, tuple)) and len(value) >= 3:
+        return tuple(int(max(0, min(255, float(v)))) for v in value[:3])
+    text = str(value).strip().lower()
+    if not text:
+        return fallback
+    if text.startswith("#"):
+        text = text[1:]
+    if len(text) in (3, 6) and all(c in "0123456789abcdef" for c in text):
+        if len(text) == 3:
+            text = "".join(c * 2 for c in text)
+        return int(text[0:2], 16), int(text[2:4], 16), int(text[4:6], 16)
+    if text in NAMED_COLORS:
+        return NAMED_COLORS[text]
+    return fallback
+
+
+def _seamless(img: np.ndarray) -> np.ndarray:
+    """Делает картинку бесшовной: смешивает её со сдвигом на полпериода."""
+    a = img.astype(np.float32)
+    h, w = a.shape[:2]
+    rolled = np.roll(np.roll(a, w // 2, axis=1), h // 2, axis=0)
+    x = np.linspace(0.0, 1.0, w, endpoint=False)[None, :, None]
+    y = np.linspace(0.0, 1.0, h, endpoint=False)[:, None, None]
+    wx = np.sin(np.pi * x) ** 0.6
+    wy = np.sin(np.pi * y) ** 0.6
+    weight = (wx * wy).astype(np.float32)
+    return a * weight + rolled * (1.0 - weight)
 
 
 def _rng(seed: int | str) -> np.random.Generator:
@@ -97,26 +154,22 @@ def make_texture(kind: str, size: int = 512, seed: int | str = 1,
         t = np.clip(0.18 + 0.72 * rings ** 1.6 + 0.16 * fibre, 0, 1)
         img = _mix((104, 62, 34), (214, 166, 112), t)
     elif key == "marble":
-        base = _noise(n, 4, rng)
         turb = _fbm(n, rng, (2, 5, 11, 23))
         turb2 = _fbm(n, rng, (3, 8, 17))
         cloud = _noise(n, 7, rng)
-        # жилы — не замкнутые кольца, а длинные ветвящиеся полосы:
-        # берём дробную часть сильно искажённой линейной координаты
-        warp = 0.55 * turb + 0.10 * cloud
-        f1 = u * 1.15 + v * 0.55 + warp
-        f2 = u * 0.35 - v * 0.90 + 0.42 * turb2 + 0.12 * base
-        b1 = np.abs((f1 * 2.0) % 1.0 - 0.5)
-        b2 = np.abs((f2 * 3.0) % 1.0 - 0.5)
-        vein1 = np.exp(-((b1 / 0.055) ** 2))
-        halo1 = np.exp(-((b1 / 0.20) ** 2)) * 0.35
-        vein2 = np.exp(-((b2 / 0.022) ** 2)) * 0.45
-        veins = np.clip(vein1 + halo1 + vein2, 0, 1.0)
-        # камень: тёплый светлый фон с мягкими серыми облаками
-        tone = np.clip(0.55 + 0.55 * base + 0.18 * (cloud - 0.5), 0, 1)
-        stone = _mix((250, 248, 244), (206, 201, 194), 1.0 - tone)
-        img = _mix(stone, np.array((104, 101, 108), dtype=np.float32),
-                   np.clip(veins, 0, 1) ** 1.2 * 0.62)
+        # Полосы задаются фазой синуса: она замкнута по u и v, поэтому
+        # картинка стыкуется без шва, а жилы выходят плавными и ветвящимися.
+        phase = (2 * np.pi * (u + 0.35 * np.sin(2 * np.pi * v))
+                 + 5.2 * turb + 1.4 * cloud)
+        vein_main = np.exp(-((np.sin(phase) / 0.16) ** 2))
+        phase2 = (2 * np.pi * (v * 2 - 0.45 * np.sin(2 * np.pi * u))
+                  + 7.5 * turb2)
+        vein_thin = np.exp(-((np.sin(phase2) / 0.09) ** 2)) * 0.55
+        veins = np.clip(vein_main + vein_thin * 0.8, 0, 1)
+        tone = np.clip(0.62 + 0.32 * cloud + 0.12 * (turb - 0.5), 0, 1)
+        stone = _mix((252, 251, 248), (216, 214, 210), 1.0 - tone)
+        img = _mix(stone, np.array((96, 98, 106), dtype=np.float32),
+                   np.clip(veins, 0, 1) ** 1.1 * 0.55)
     elif key == "metal":
         brushed = _noise(n, 256, rng, smooth=1)
         band = 0.5 + 0.5 * np.sin(v * np.pi * 2 * 24 * k + n2 * 1.4)
@@ -157,6 +210,52 @@ def make_texture(kind: str, size: int = 512, seed: int | str = 1,
     else:  # ceramic
         t = np.clip(0.9 + 0.08 * n1 - 0.12 * n2, 0, 1)
         img = _mix((236, 240, 246), (188, 202, 220), t)
+    if key not in ("checker", "brick", "marble"):
+        # шов в UV-развёртке виден только на непериодической картинке
+        img = _seamless(img)
+    return np.clip(img, 0, 255).astype(np.uint8)
+
+
+def make_custom(pattern: str = "полосы", color1="#3a6ea5", color2="#e8dfcf",
+                scale: float = 1.0, seed: int | str = 1, size: int = 512) -> np.ndarray:
+    """Своя процедурная текстура: узор + два цвета (бесшовная по построению)."""
+    key = PATTERNS.get(str(pattern).strip().lower(), "stripes")
+    n = int(max(64, min(1024, size)))
+    rng = _rng(seed)
+    c1 = np.asarray(parse_color(color1, (58, 110, 165)), dtype=np.float32)
+    c2 = np.asarray(parse_color(color2, (232, 223, 207)), dtype=np.float32)
+    u, v = np.meshgrid(np.linspace(0, 1, n, endpoint=False),
+                       np.linspace(0, 1, n, endpoint=False))
+    k = max(1, int(round(float(scale) * 6)))
+    n1 = _noise(n, 6, rng)
+    n2 = _noise(n, 18, rng)
+    if key == "stripes":
+        t = 0.5 + 0.5 * np.sin(2 * np.pi * (u * k + 0.1 * n1))
+        t = np.clip(t ** 0.8, 0, 1)
+    elif key == "checker":
+        cu = np.floor(u * k * 2).astype(np.int32)
+        cv = np.floor(v * k * 2).astype(np.int32)
+        t = ((cu + cv) % 2).astype(np.float32) * 0.85 + 0.1 * n2
+    elif key == "waves":
+        t = 0.5 + 0.5 * np.sin(2 * np.pi * (v * k) + 2.4 * np.sin(2 * np.pi * u * 2))
+        t = np.clip(t * (0.75 + 0.45 * n2), 0, 1)
+    elif key == "gradient":
+        # мягкий «перелив» без шва: косинус замыкается через период
+        t = 0.5 + 0.35 * np.sin(2 * np.pi * (u * 0.5 + v * 0.5)) + 0.12 * (n2 - 0.5)
+        t = np.clip(t, 0, 1)
+    elif key == "dots":
+        s = np.sin(2 * np.pi * u * k) * np.sin(2 * np.pi * v * k)
+        t = np.clip((s > 0.55).astype(np.float32) * (0.8 + 0.2 * n2), 0, 1)
+    elif key == "grid":
+        fu = np.minimum((u * k) % 1.0, 1 - (u * k) % 1.0)
+        fv = np.minimum((v * k) % 1.0, 1 - (v * k) % 1.0)
+        t = np.clip((fu < 0.08) | (fv < 0.08), 0, 1).astype(np.float32)
+        t = t * 0.9 + 0.1 * n2
+    elif key == "stone":
+        t = np.clip(0.45 * n1 + 0.35 * n2 + 0.2 * np.sin(2 * np.pi * (u * 3 + n1)), 0, 1)
+    else:  # noise
+        t = np.clip(0.4 * n1 + 0.6 * n2, 0, 1)
+    img = _mix(c1, c2, np.clip(t, 0, 1))
     return np.clip(img, 0, 255).astype(np.uint8)
 
 
@@ -178,6 +277,24 @@ def texture_file(kind: str, scale: float = 1.0, seed: int | str = 1,
         write_png(path, image)
     return {"kind": key, "label": KIND_NAMES[key], "path": str(path),
             "scale": float(scale), "seed": str(seed)}
+
+
+def custom_texture_file(pattern: str = "полосы", color1: str = "#3a6ea5",
+                        color2: str = "#e8dfcf", scale: float = 1.0,
+                        seed: int | str = 1, size: int = 512) -> dict:
+    """Сохраняет свою текстуру и возвращает описание (как у готовых)."""
+    from .geometry import write_png
+
+    image = make_custom(pattern, color1, color2, scale=scale, seed=seed, size=size)
+    tag = hashlib.sha1(image.tobytes()).hexdigest()[:10]
+    name = f"custom_{tag}.png"
+    path = user_data_dir() / "textures" / name
+    if not path.exists():
+        write_png(path, image)
+    key = PATTERNS.get(str(pattern).strip().lower(), "stripes")
+    return {"kind": "custom", "label": "своя: " + PATTERN_NAMES.get(key, key),
+            "path": str(path), "scale": float(scale), "seed": str(seed),
+            "pattern": key, "color1": color1, "color2": color2}
 
 
 def load_texture_image(path: str):

@@ -15,7 +15,7 @@ from .ops import OPS, help_list, lookup, suggest
 from .dsl import Args, command_value, parse_script
 from .geometry import export_glb
 from .metrics import analyze
-from .values import parse_value
+from .values import numeric_issue, parse_value
 
 # регистрируем команды
 from . import ops_basic  # noqa: F401,E402
@@ -164,6 +164,14 @@ def _execute(scene: Scene, cmd) -> None:
             scene.params[cmd.target] = float(value)
             scene.log("info", f"параметр {cmd.target} = {value:g}", cmd.line)
             return
+        if not parsed_ok:
+            reason = numeric_issue(raw, scene.params)
+            if reason:
+                raise DslError(
+                    f"Не удалось вычислить «{raw}»: {reason}.",
+                    hint="Проверьте выражение: деление на ноль и корень из "
+                         "отрицательного числа недопустимы.",
+                    line=cmd.line, command=cmd.text)
         if parsed_ok:
             scene.vars[cmd.target] = value
             if isinstance(value, (list, tuple)):
@@ -189,6 +197,8 @@ def _execute(scene: Scene, cmd) -> None:
         return
 
     args = Args(cmd, scene, spec, spec.positional)
+    previous = scene.objects.get(cmd.target) if cmd.target else None
+    scene.last_replaced = None
     try:
         result = spec.fn(args, cmd.target)
     except FormaError as exc:
@@ -202,6 +212,13 @@ def _execute(scene: Scene, cmd) -> None:
         scene.remove(result.name)
         result.name = scene.unique_name(cmd.target)
         scene.add(result)
+    if (previous is not None and cmd.target
+            and scene.last_replaced is previous and previous.visible):
+        # Новая деталь получила имя уже существующей — не затираем молча.
+        raise DslError(
+            f"Имя «{cmd.target}» уже занято другим объектом.",
+            hint=f"Придумайте новое имя или удалите прежний объект: remove {cmd.target}",
+            line=cmd.line, command=cmd.text)
     scene.log("info", f"{spec.name}: готово", cmd.line)
 
 

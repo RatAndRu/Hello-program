@@ -135,6 +135,37 @@ def _render_block(renders: dict | None) -> list[str]:
     return lines
 
 
+def _metrics_block(build) -> list[str]:
+    """Короткая таблица измерений — чтобы нейросеть видела цифры прошлой сборки."""
+    metrics = (build.analysis or {}).get("metrics") or {}
+    if not metrics:
+        return []
+    size = metrics.get("size") or [0, 0, 0]
+    checks = (build.analysis or {}).get("checks") or []
+    bad = [c for c in checks if not c.get("ok")]
+    rows = [
+        ("габариты, мм", f"{size[0]:.2f} × {size[1]:.2f} × {size[2]:.2f}"),
+        ("объём, см³", f"{metrics.get('volume_cm3', 0):.2f}"),
+        ("площадь, см²", f"{metrics.get('area_cm2', 0):.2f}"),
+        ("масса, г", f"{metrics.get('mass_g', 0):.2f}"),
+        ("треугольников", f"{metrics.get('tris', 0)}"),
+        ("отверстий (genus)", f"{metrics.get('genus', 0)}"),
+        ("частей", f"{metrics.get('parts', 0)}"),
+        ("проверок", f"{len(checks) - len(bad)} из {len(checks)} в норме"),
+    ]
+    wall = metrics.get("wall") or {}
+    if wall.get("median"):
+        rows.append(("стенка (медиана), мм", f"{wall['median']:.2f}"))
+        rows.append(("стенка (минимум), мм", f"{wall.get('min', 0):.2f}"))
+    lines = ["## Метрики прошлой сборки", "| показатель | значение |", "|---|---|"]
+    lines += [f"| {name} | {value} |" for name, value in rows]
+    if bad:
+        lines.append("")
+        lines.append("Невыполненные проверки:")
+        lines += [f"- {c.get('text')}" for c in bad[:8]]
+    return lines
+
+
 def build_prompt(build: Build | None, goal: str = "", out_path: str | None = None,
                  notes: list[dict] | None = None, actions: list[dict] | None = None,
                  with_reference: bool = True, renders: dict | None = None) -> str:
@@ -152,6 +183,7 @@ def build_prompt(build: Build | None, goal: str = "", out_path: str | None = Non
     if build and build.ok and build.analysis:
         parts += ["", "## Отчёт приложения о результате", "```",
                   build.analysis.get("text", "").strip(), "```"]
+        parts += [""] + _metrics_block(build)
         parts += [""] + _coord_block(build)
     elif build and build.error:
         parts += ["", "## Ошибка построения",

@@ -67,7 +67,7 @@ def wall_thickness(m: mf.Manifold, samples: int = 128) -> dict | None:
     if diag < 1e-6:
         return None
     center = np.array([(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2, (bb[2] + bb[5]) / 2])
-    gaps: list[float] = []
+    gaps: list[tuple[float, list[float]]] = []
     for d in fibonacci_sphere(samples):
         origin = center + d * diag
         end = center - d * diag
@@ -84,10 +84,15 @@ def wall_thickness(m: mf.Manifold, samples: int = 128) -> dict | None:
             enter = float(np.dot(na, d)) > 0.15
             exit_ = float(np.dot(nb, d)) < -0.15
             if enter and exit_:
-                gaps.append(abs(b.distance - a.distance) * diag * 2)
+                # середина «стенки» — где именно она тонкая
+                mid = (a.distance + b.distance) / 2.0
+                point = center - d * mid
+                gaps.append((abs(b.distance - a.distance) * diag * 2,
+                             [float(point[0]), float(point[1]), float(point[2])]))
     if len(gaps) < 10:
         return None
-    arr = np.asarray(gaps, dtype=np.float64)
+    positions = {i: g[1] for i, g in enumerate(gaps)}
+    arr = np.asarray([g[0] for g in gaps], dtype=np.float64)
     arr = arr[arr > 0.08]
     if len(arr) < 10:
         return None
@@ -101,7 +106,8 @@ def wall_thickness(m: mf.Manifold, samples: int = 128) -> dict | None:
     peak = int(np.argmax(smooth))
     lo_edge, hi_edge = float(edges[peak]), float(edges[peak + 1])
     pad = (hi_edge - lo_edge) * 0.6
-    cluster = thin[(thin >= lo_edge - pad) & (thin <= hi_edge + pad)]
+    keep = (thin >= lo_edge - pad) & (thin <= hi_edge + pad)
+    cluster = thin[keep]
     if len(cluster) < 5:
         return None
     ratio = len(cluster) / len(thin)
@@ -109,8 +115,15 @@ def wall_thickness(m: mf.Manifold, samples: int = 128) -> dict | None:
     mad = float(np.median(np.abs(cluster - med))) / max(med, 1e-9)
     if ratio < 0.16 or mad > 0.30:
         return None
+    min_value = float(np.min(cluster))
+    min_point = None
+    for idx in range(len(arr)):
+        if abs(arr[idx] - min_value) < 1e-9:
+            min_point = positions.get(idx)
+            break
     return {
-        "min": float(np.min(cluster)),
+        "min_point": min_point,
+        "min": min_value,
         "p10": float(np.percentile(cluster, 10)),
         "median": med,
         "p90": float(np.percentile(cluster, 90)),
@@ -432,3 +445,66 @@ def build_text(scene, m: dict, checks: list[dict], warnings: list[str],
     lines.append("")
     lines.append("Все размеры в миллиметрах, ось Z — вверх.")
     return "\n".join(lines)
+
+# --------------------------------------------------------------------------- #
+#  Качество сетки: острые рёбра и «тонкие» треугольники
+# --------------------------------------------------------------------------- #
+
+def edge_angles(m: mf.Manifold) -> np.ndarray:
+    """Углы между соседними гранями, ° (0 — плоско, 90 — прямой угол)."""
+    from .geometry import manifold_mesh
+    v, f = manifold_mesh(m)
+    if len(f) == 0:
+        return np.zeros(0, dtype=np.float64)
+    tri = v[f]
+    n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    length = np.linalg.norm(n, axis=1)
+    good = length > 1e-12
+    n[good] /= length[good, None]
+    n[~good] = 0.0
+    nv = len(v)
+    keys = np.concatenate([
+        np.sort(np.stack([f[:, 0], f[:, 1]], axis=1), axis=1),
+        np.sort(np.stack([f[:, 1], f[:, 2]], axis=1), axis=1),
+        np.sort(np.stack([f[:, 2], f[:, 0]], axis=1), axis=1),
+    ])
+    face_ids = np.tile(np.arange(len(f)), 3)
+    codes = keys[:, 0].astype(np.int64) * nv + keys[:, 1].astype(np.int64)
+    uniq, inverse = np.unique(codes, return_inverse=True)
+    counts = np.bincount(inverse, minlength=len(uniq))
+    # нормали граней, приходящихся на ребро (для рёбер с двумя гранями)
+    order = np.argsort(inverse, kind="stable")
+    sorted_inv = inverse[order]
+    starts = np.flatnonzero(np.r_[True, sorted_inv[1:] != sorted_inv[:-1]])
+    idx2 = np.flatnonzero(counts == 2)
+    out = []
+    for e in idx2:
+        ids = face_ids[order[starts[e]:starts[e] + 2]]
+        if len(ids) != 2:
+            continue
+        c = float(np.clip(np.dot(n[ids[0]], n[ids[1]]), -1.0, 1.0))
+        out.append(math.degrees(math.acos(c)))
+    return np.asarray(out, dtype=np.float64)
+
+
+def tri_quality(m: mf.Manifold) -> dict:
+    """Доля треугольников с очень острым углом (тонкие, «игольчатые»)."""
+    from .geometry import manifold_mesh
+    v, f = manifold_mesh(m)
+    if len(f) == 0:
+        return {"min_angle": 0.0, "bad_pct": 0.0, "bad": 0, "total": 0}
+    tri = v[f]
+    a = np.linalg.norm(tri[:, 1] - tri[:, 0], axis=1)
+    b = np.linalg.norm(tri[:, 2] - tri[:, 1], axis=1)
+    c = np.linalg.norm(tri[:, 0] - tri[:, 2], axis=1)
+    eps = 1e-9
+    ang = []
+    for x, y, z in ((a, b, c), (b, c, a), (c, a, b)):
+        cos = (y * y + z * z - x * x) / (2 * np.maximum(y * z, eps))
+        ang.append(np.degrees(np.arccos(np.clip(cos, -1.0, 1.0))))
+    stacked = np.stack(ang, axis=0)
+    biggest = stacked.max(axis=0)
+    smallest = np.minimum(stacked.min(axis=0), np.clip(180.0 - biggest, 0.0, 180.0))
+    bad = int((smallest < 8.0).sum())
+    return {"min_angle": float(smallest.min()) if len(smallest) else 0.0,
+            "bad_pct": bad / len(smallest) * 100.0, "bad": bad, "total": int(len(smallest))}

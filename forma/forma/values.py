@@ -302,6 +302,31 @@ def parse_value(raw: str, params: dict[str, float], variables: dict | None = Non
     return _unquote(text)
 
 
+def numeric_issue(text: str, params: dict[str, float] | None = None) -> str | None:
+    """Если строка — арифметика, но вычислить не вышло, объясняет причину."""
+    raw = (text or "").strip()
+    if not raw or not any(c.isdigit() for c in raw):
+        return None
+    try:
+        tree = ast.parse(raw, mode="eval")
+    except SyntaxError:
+        return None
+    for node in ast.walk(tree):
+        if not isinstance(node, _ALLOWED_NODES):
+            return None
+    names = dict(_MATH_NAMES)
+    names.update({k: v for k, v in (params or {}).items() if isinstance(v, (int, float))})
+    try:
+        _eval_node(tree, names)
+    except ZeroDivisionError:
+        return "деление на ноль"
+    except ValueError as exc:
+        return str(exc) or "недопустимое значение в формуле"
+    except Exception as exc:  # прочие ошибки вычисления
+        return str(exc)
+    return None
+
+
 def parse_range(raw: str, params: dict[str, float]) -> Range:
     value = parse_value(raw, params)
     if isinstance(value, Range):

@@ -193,6 +193,17 @@ class AppState:
             self.log_action("снимки", "сделаны PNG-виды: " + ", ".join(f["label"] for f in files))
             return self.last_render
 
+    def _to_downloads(self, path: Path) -> Path:
+        """Копирует готовый файл в папку «Загрузки» и возвращает путь оттуда."""
+        from .paths import downloads_dir
+        try:
+            target = downloads_dir() / path.name
+            if target.resolve() != path.resolve():
+                shutil.copy2(path, target)
+            return target
+        except OSError:
+            return path
+
     def export(self, fmt: str, script: str | None = None) -> dict:
         if script is not None and script != self.last_script:
             self.build(script)
@@ -226,8 +237,8 @@ class AppState:
                         glb_to_blend(str(tmp), str(out_dir / name))
                     finally:
                         tmp.unlink(missing_ok=True)
-                    return {"path": str(out_dir / name), "url": file_url("exports", name),
-                            "name": name}
+                    return {"path": str(self._to_downloads(out_dir / name)),
+                            "url": file_url("exports", name), "name": name}
             elif fmt == "png":
                 result = render_views(solids, out_dir, prefix=base, size=900, ss=2)
                 name = Path(result.get("combined") or result["files"][0]["path"]).name
@@ -255,12 +266,14 @@ class AppState:
                     for png in sorted(tmp.glob("*.png")):
                         zf.write(png, f"views/{png.name}")
                     shutil.rmtree(tmp, ignore_errors=True)
-                return {"path": str(target), "url": file_url("exports", name), "name": name}
+                return {"path": str(self._to_downloads(target)),
+                        "url": file_url("exports", name), "name": name}
             else:
                 raise FormaError(f"Неизвестный формат «{fmt}».")
             target = out_dir / name
             target.write_bytes(data)
-            return {"path": str(target), "url": file_url("exports", name), "name": name}
+            return {"path": str(self._to_downloads(target)),
+                    "url": file_url("exports", name), "name": name}
 
     def blender_info(self) -> dict:
         from .blender import available
@@ -298,8 +311,9 @@ class AppState:
         meta = {"script": script, "saved": time.strftime("%Y-%m-%d %H:%M"), "name": display}
         (self.data_dir / "projects" / f"{safe}.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+        shown = self._to_downloads(path)
         self.project_name = display
-        return {"name": display, "key": safe, "path": str(path)}
+        return {"name": display, "key": safe, "path": str(shown), "app_path": str(path)}
 
     def list_projects(self) -> list[dict]:
         out = []
@@ -547,13 +561,20 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"markdown": command_reference_md()})
             return
         if path == "/api/texture":
-            from .textures import KIND_NAMES, texture_file
+            from .textures import custom_texture_file, texture_file
             kind = query.get("kind", ["мрамор"])[0]
             try:
                 scale = float(query.get("scale", ["1"])[0] or 1)
             except ValueError:
                 scale = 1.0
-            info = texture_file(kind, scale=scale)
+            if kind.strip().lower() in ("своя", "своё", "custom", "мой"):
+                info = custom_texture_file(
+                    pattern=query.get("pattern", ["полосы"])[0],
+                    color1=query.get("color1", ["#3a6ea5"])[0],
+                    color2=query.get("color2", ["#e8dfcf"])[0],
+                    scale=scale, seed=query.get("seed", ["1"])[0])
+            else:
+                info = texture_file(kind, scale=scale)
             self._send_file(Path(info["path"]), "image/png")
             return
         if path == "/api/textures":

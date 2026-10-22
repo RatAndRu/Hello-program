@@ -10,7 +10,8 @@ from __future__ import annotations
 from .errors import DslError
 from .geometry import normalize_color
 from .ops import op
-from .textures import KIND_NAMES, KINDS, texture_file
+from .textures import (KIND_NAMES, KINDS, PATTERN_NAMES, PATTERNS,
+                       custom_texture_file, texture_file)
 
 ENVIRONMENTS = {
     "студия": "studio", "studio": "studio",
@@ -115,10 +116,15 @@ def light(a, name):
     summary="Накладывает процедурную текстуру: дерево, мрамор, металл, ткань, кожу, кирпич.",
     example="texture кружка kind=дерево scale=1.2",
     params={"target": "имя объекта или all",
-            "kind": "дерево, мрамор, металл, ткань, кожа, клетка, шум, кирпич, керамика",
+            "kind": "дерево, мрамор, металл, ткань, кожа, клетка, шум, кирпич, "
+                    "керамика или своя",
             "scale": "масштаб рисунка", "seed": "число или строка для вариации",
             "uv": "cylinder (вокруг), planar (плоско), box (по граням)",
-            "size": "размер картинки в пикселях (512)"},
+            "size": "размер картинки в пикселях (512)",
+            "pattern": "для своей текстуры: полосы, клетка, волны, градиент, "
+                       "шум, камень, точки, сетка",
+            "color1": "для своей текстуры: первый цвет (#rrggbb или название)",
+            "color2": "для своей текстуры: второй цвет"},
     positional=["target"])
 def texture(a, name):
     target = (a.text("target") or "").strip()
@@ -128,10 +134,6 @@ def texture(a, name):
     targets = list(a.scene.objects.values()) if target in ("all", "*", "все") else \
         [a.scene.resolve(target)]
     kind = (a.text("kind") or "дерево").strip().lower()
-    if kind not in KINDS:
-        raise DslError(f"Неизвестная текстура «{kind}».",
-                       hint="Доступно: " + ", ".join(sorted(KIND_NAMES.values())),
-                       line=a.cmd.line, command=a.cmd.text)
     scale = float(a.num("scale", 1.0) or 1.0)
     seed = a.text("seed") or "1"
     uv = (a.text("uv") or "cylinder").strip().lower()
@@ -139,13 +141,30 @@ def texture(a, name):
         raise DslError("Параметр uv: cylinder, planar или box.",
                        line=a.cmd.line, command=a.cmd.text)
     size = int(a.num("size", 512) or 512)
-    info = texture_file(kind, scale=scale, seed=seed, size=size)
+    if kind in ("своя", "своё", "свое", "custom", "мой"):
+        pattern = (a.text("pattern") or "полосы").strip().lower()
+        if pattern not in PATTERNS:
+            raise DslError(f"Неизвестный узор «{pattern}».",
+                           hint="Доступно: " + ", ".join(sorted(PATTERN_NAMES.values())),
+                           line=a.cmd.line, command=a.cmd.text)
+        info = custom_texture_file(
+            pattern=pattern,
+            color1=(a.text("color1") or "#3a6ea5"),
+            color2=(a.text("color2") or "#e8dfcf"),
+            scale=scale, seed=seed, size=size)
+    else:
+        if kind not in KINDS:
+            raise DslError(f"Неизвестная текстура «{kind}».",
+                           hint="Доступно: " + ", ".join(sorted(KIND_NAMES.values()))
+                                + ", а также своя",
+                           line=a.cmd.line, command=a.cmd.text)
+        info = texture_file(kind, scale=scale, seed=seed, size=size)
     for solid in targets:
         solid.tex = info
         solid.uv = uv
         if solid.color == "#c9d1e3":
             solid.color = "#ffffff"
-    a.scene.log("info", f"текстура {KIND_NAMES.get(info['kind'], kind)}: "
+    a.scene.log("info", f"текстура {info.get('label') or KIND_NAMES.get(info['kind'], kind)}: "
                         f"{', '.join(s.name for s in targets)}", a.cmd.line)
     return None
 

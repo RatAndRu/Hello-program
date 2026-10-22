@@ -8,7 +8,7 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import circle_profile, hull_of_manifolds, manifold_mesh
+from .geometry import auto_segments, circle_profile, hull_of_manifolds, manifold_mesh
 from .ops import anchor, ensure_solid, make_solid, op
 
 
@@ -17,7 +17,7 @@ def _round_value(a) -> float:
 
 
 def _sphere_segments(radius: float) -> int:
-    return int(max(24, min(64, round(radius * 12))))
+    return auto_segments(radius, tolerance=0.10, min_n=16, max_n=96)
 
 
 @op("box", aliases=("куб", "коробка", "cube", "параллелепипед", "брусок", "блок"),
@@ -36,12 +36,14 @@ def box(a, name):
     r = _round_value(a)
     solid = None
     if r > 1e-6:
-        if min(size) <= 2 * r + 1e-6:
+        if min(size) < 2 * r - 1e-6:
             raise GeometryError(
                 f"Скругление {r:g} мм слишком велико для блока {size}.",
-                hint=f"Максимум — {min(size) / 2 - 0.01:.2f} мм.",
+                hint=f"Максимум — {min(size) / 2:.2f} мм (половина самой тонкой стороны).",
             )
-        inner = [s - 2 * r for s in size]
+        # ровно половина толщины — допустимый предельный случай:
+        # средняя часть вырождается в плоскость, скругление даёт «таблетку»
+        inner = [max(s - 2 * r, 1e-3) for s in size]
         solid = mf.Manifold.cube(inner, True).minkowski_sum(
             mf.Manifold.sphere(r, _sphere_segments(r)))
     else:
@@ -55,12 +57,14 @@ def box(a, name):
     summary="Сфера. Центр — в точке at (по умолчанию в начале координат).",
     example="шар = sphere radius=40 at=[0,0,40]",
     params={"radius": "радиус, мм (обязательно)",
-            "segments": "число сегментов (по умолчанию 64)",
+            "segments": "число сегментов (по умолчанию — по размеру)",
             "at": "центр сферы [x,y,z]"},
     positional=["radius"])
 def sphere(a, name):
     radius = a.num("radius", required=True, minv=0.01)
-    segments = a.int("segments", 64, minv=8, maxv=512)
+    segments = a.int("segments", None, minv=8, maxv=512)
+    if segments is None:
+        segments = auto_segments(radius)
     solid = mf.Manifold.sphere(radius, segments)
     at = a.vec("at", 3, default=(0, 0, 0))
     solid = anchor(solid, at, center=True)
@@ -74,7 +78,7 @@ def sphere(a, name):
     params={"radius": "радиус снизу, мм (обязательно)",
             "height": "высота, мм (обязательно)",
             "r2": "радиус сверху (по умолчанию равен нижнему)",
-            "segments": "число сегментов (по умолчанию 96)",
+            "segments": "число сегментов (по умолчанию — по размеру)",
             "round": "скругление верхней и нижней кромки, мм",
             "center": "центрировать по высоте",
             "at": "положение [x,y,z]"},
@@ -85,7 +89,9 @@ def cylinder(a, name):
     r2 = a.num("r2", radius, minv=0.0)
     if r2 is None:
         r2 = radius
-    segments = a.int("segments", 96, minv=8, maxv=1024)
+    segments = a.int("segments", None, minv=8, maxv=1024)
+    if segments is None:
+        segments = auto_segments(max(radius, r2))
     r = _round_value(a)
     if r > 1e-6:
         if height <= 2 * r + 1e-6:
@@ -105,12 +111,14 @@ def cylinder(a, name):
     summary="Конус с вершиной вверх, стоит на полу.",
     example="воронка = cone radius=30 height=60",
     params={"radius": "радиус основания, мм", "height": "высота, мм",
-            "segments": "сегментов (96)", "center": "центрировать", "at": "положение"},
+            "segments": "сегментов (по размеру)", "center": "центрировать", "at": "положение"},
     positional=["radius", "height"])
 def cone(a, name):
     radius = a.num("radius", required=True, minv=0.01)
     height = a.num("height", required=True, minv=0.01)
-    segments = a.int("segments", 96, minv=8, maxv=1024)
+    segments = a.int("segments", None, minv=8, maxv=1024)
+    if segments is None:
+        segments = auto_segments(radius)
     solid = mf.Manifold.cylinder(height, radius, 0.0, segments)
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     return make_solid(a.scene, name, solid, a, kind="cone")
@@ -121,15 +129,19 @@ def cone(a, name):
     example="кольцо = torus major=35 minor=6",
     params={"major": "радиус кольца до центра трубки, мм",
             "minor": "радиус трубки, мм",
-            "segments": "сегментов по кругу (96)",
-            "minor_segments": "сегментов трубки (28)",
+            "segments": "сегментов по кругу (по размеру)",
+            "minor_segments": "сегментов трубки (по размеру)",
             "at": "центр [x,y,z]"},
     positional=["major", "minor"])
 def torus(a, name):
     major = a.num("major", required=True, minv=0.1)
     minor = a.num("minor", required=True, minv=0.01)
-    segments = a.int("segments", 96, minv=12, maxv=512)
-    mseg = a.int("minor_segments", 28, minv=8, maxv=128)
+    segments = a.int("segments", None, minv=12, maxv=512)
+    mseg = a.int("minor_segments", None, minv=8, maxv=128)
+    if segments is None:
+        segments = auto_segments(major + minor)
+    if mseg is None:
+        mseg = max(8, auto_segments(minor, tolerance=0.08))
     if minor >= major:
         raise GeometryError("Радиус трубки тора должен быть меньше радиуса кольца.")
     prof = circle_profile(minor, mseg) + np.array([major, 0.0])
@@ -159,12 +171,14 @@ def prism(a, name):
     summary="Капсула: цилиндр с полусферами. Высота задаётся полная.",
     example="палец = capsule radius=9 height=70",
     params={"radius": "радиус, мм", "height": "полная высота, мм",
-            "segments": "сегментов (48)", "center": "центрировать", "at": "положение"},
+            "segments": "сегментов (по размеру)", "center": "центрировать", "at": "положение"},
     positional=["radius", "height"])
 def capsule(a, name):
     radius = a.num("radius", required=True, minv=0.01)
     height = a.num("height", required=True, minv=0.02)
-    segments = a.int("segments", 48, minv=8, maxv=256)
+    segments = a.int("segments", None, minv=8, maxv=256)
+    if segments is None:
+        segments = auto_segments(radius)
     if height < 2 * radius - 1e-6:
         raise GeometryError(
             f"Высота капсулы {height:g} мм меньше двух радиусов ({2 * radius:g} мм).",

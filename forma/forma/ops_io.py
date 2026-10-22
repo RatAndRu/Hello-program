@@ -32,7 +32,8 @@ def resolve_file(raw: str) -> Path:
                              "импорта (она показана в справке).")
 
 
-def load_any(path: Path, scale: float | None = None, repair: bool = True) -> tuple[np.ndarray, np.ndarray]:
+def load_any(path: Path, scale: float | None = 1.0,
+             repair: bool = False) -> tuple[np.ndarray, np.ndarray]:
     """Читает любой поддерживаемый файл в (вершины, грани) без внешних конвертеров."""
     suffix = path.suffix.lower()
     source = path
@@ -82,11 +83,18 @@ def load_any(path: Path, scale: float | None = None, repair: bool = True) -> tup
     else:
         v = np.asarray(loaded.vertices, dtype=np.float64)
         f = np.asarray(loaded.faces, dtype=np.int64)
-    if scale is None:
-        span = float(np.max(v.max(axis=0) - v.min(axis=0)))
-        scale = 1000.0 if span < 10 else (10.0 if span < 100 else 1.0)
-    v = v * float(scale)
+    # unit=auto раньше угадывал масштаб по размеру и ошибался в 100–1000 раз.
+    # Теперь по умолчанию файл считается миллиметровым: масштаб меняется только
+    # по явному указанию unit=cm|m|inch.
+    if scale is not None and abs(float(scale) - 1.0) > 1e-12:
+        v = v * float(scale)
     if repair:
+        volume_before = None
+        try:
+            import trimesh as _tm
+            volume_before = float(_tm.Trimesh(vertices=v, faces=f, process=False).volume)
+        except Exception:
+            volume_before = None
         try:
             import trimesh
             mesh = trimesh.Trimesh(vertices=v, faces=f, process=True)
@@ -101,9 +109,19 @@ def load_any(path: Path, scale: float | None = None, repair: bool = True) -> tup
                 trimesh.repair.fix_normals(mesh)
             v = np.asarray(mesh.vertices, dtype=np.float64)
             f = np.asarray(mesh.faces, dtype=np.int64)
+            if volume_before:
+                volume_after = float(mesh.volume)
+                if abs(volume_after - volume_before) > 0.02 * abs(volume_before):
+                    LIMITS.append(
+                        f"починка сетки изменила объём на "
+                        f"{(volume_after - volume_before) / volume_before * 100:+.1f} %")
         except Exception:
             pass
     return v, f
+
+
+# Предупреждения последнего импорта (выводит команда import).
+LIMITS: list[str] = []
 
 
 @op("import", aliases=("импорт", "открыть", "open"), category="Сцена и материал",
@@ -112,8 +130,8 @@ def load_any(path: Path, scale: float | None = None, repair: bool = True) -> tup
     example="скульптура = import file=модель.glb unit=auto",
     params={"target": "имя будущего объекта",
             "file": "путь к файлу (можно перетащить в окно)",
-            "unit": "mm, cm, m, inch или auto (по размеру)",
-            "scale": "дополнительный множитель", "repair": "починить сетку да/нет",
+            "unit": "mm, cm, m, inch или auto (= мм, без догадок)",
+            "scale": "дополнительный множитель", "repair": "починить сетку да/нет (по умолчанию нет)",
             "pos": "смещение [x, y, z]", "material": "материал для импорта"},
     positional=["target"])
 def import_mesh(a, name):
@@ -124,19 +142,32 @@ def import_mesh(a, name):
     path = resolve_file(raw)
     unit = (a.text("unit") or "auto").strip().lower()
     factors = {"mm": 1.0, "мм": 1.0, "cm": 10.0, "см": 10.0, "m": 1000.0, "м": 1000.0,
-               "inch": 25.4, "in": 25.4, "auto": None, "авто": None}
+               "inch": 25.4, "in": 25.4, "auto": 1.0, "авто": 1.0}
     if unit not in factors:
         raise DslError("Единицы: mm, cm, m, inch или auto.",
                        line=a.cmd.line, command=a.cmd.text)
     extra = float(a.num("scale", 1.0) or 1.0)
     base_scale = factors[unit]
-    verts, faces = load_any(path, scale=(base_scale * extra) if base_scale is not None else None,
-                            repair=a.boolean("repair", True))
-    if base_scale is None and extra != 1.0:
-        verts = verts * extra
+    if unit in ("auto", "авто"):
+        a.scene.log("info", "unit=auto: файл прочитан как миллиметровый "
+                            "(уточните unit=cm|m|inch, если это не так)", a.cmd.line)
+    repair = a.boolean("repair", False)
+    LIMITS.clear()
+    verts, faces = load_any(path, scale=base_scale * extra, repair=repair)
+    for note in LIMITS:
+        a.scene.log("warn", f"импорт: {note}; проверьте объём и стенки", a.cmd.line)
     pos = a.vec("pos", dims=3, default=[0.0, 0.0, 0.0])
     verts = verts + np.asarray(pos, dtype=np.float64)
-    solid_mesh = manifold_from_arrays(verts, faces, what=f"импорт «{path.name}»")
+    try:
+        solid_mesh = manifold_from_arrays(verts, faces, what=f"импорт «{path.name}»")
+    except GeometryError as exc:
+        if not repair:
+            raise GeometryError(
+                f"Сетка файла «{path.name}» не герметична: {exc}",
+                hint="Если форма важнее точности, добавьте repair=да — программа "
+                     "закроет дыры, но объём может измениться. Или почините файл "
+                     "в Blender.") from exc
+        raise
     target = (a.text("target") or name or a.scene.auto_name("импорт")).strip() or "импорт"
     style = a.style()
     solid = Solid(name=a.scene.unique_name(target), manifold=solid_mesh,

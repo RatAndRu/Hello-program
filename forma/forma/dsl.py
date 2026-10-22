@@ -341,10 +341,18 @@ class Args:
         solids: list[Solid] = []
         for raw in raws:
             if isinstance(raw, (list, tuple)):
-                for item in raw:
-                    solids.append(self.scene.resolve(item, "объект"))
+                items = list(raw)
             else:
-                solids.append(self.scene.resolve(raw, "объект"))
+                items = [raw]
+            for item in items:
+                if isinstance(item, bool) or item is None:
+                    raise DslError(
+                        "Ожидалось имя объекта, а получено «"
+                        + ("да" if item else "нет") + "».",
+                        hint="Проверьте аргумент: в квадратных скобках указывается имя "
+                             "объекта, например fillet [деталь] radius=2.",
+                        line=self.cmd.line, command=self.cmd.text)
+                solids.append(self.scene.resolve(item, "объект"))
         # уникализируем по имени, сохраняя порядок
         seen = set()
         out = []

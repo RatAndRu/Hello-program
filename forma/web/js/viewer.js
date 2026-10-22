@@ -97,9 +97,20 @@ export class Viewer {
     this.controls.maxPolarAngle = Math.PI * 0.995;
     this.controls.minDistance = 5;
     this.controls.maxDistance = 40000;
+    // Правая кнопка — перемещение по сцене, колесо — приближение.
+    this.controls.mouseButtons = {
+      LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.PAN,
+    };
+    this.controls.screenSpacePanning = true;
+    this.controls.enablePan = true;
+    renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
 
     this.hemi = new THREE.HemisphereLight(0xdfe9ff, 0x5d6a7d, 0.72);
     scene.add(this.hemi);
+
+    // минимальная освещённость: даже внутренние и «спрятанные» участки видны
+    this.ambient = new THREE.AmbientLight(0xdfe6f2, 0.34);
+    scene.add(this.ambient);
 
     const key = new THREE.DirectionalLight(0xffffff, 2.5);
     key.position.set(320, 620, 420);
@@ -228,15 +239,54 @@ export class Viewer {
   _bindPointer() {
     const el = this.renderer.domElement;
     let down = null;
+    let band = null;
+
+    const local = (e) => {
+      const rect = el.getBoundingClientRect();
+      return { x: e.clientX - rect.left, y: e.clientY - rect.top, w: rect.width, h: rect.height };
+    };
+    const hideBand = () => { if (band) { band.remove(); band = null; } };
+
     el.addEventListener('pointerdown', (e) => {
-      down = { x: e.clientX, y: e.clientY, t: performance.now() };
+      if (e.button !== 0) return;   // правая — панорама, средняя — вращение
+      const p = local(e);
+      down = { x: e.clientX, y: e.clientY, t: performance.now(), p };
+      if (this.selectMode) {
+        band = document.createElement('div');
+        band.className = 'marquee';
+        band.style.left = p.x + 'px';
+        band.style.top = p.y + 'px';
+        band.style.width = '0px';
+        band.style.height = '0px';
+        this.container.appendChild(band);
+      }
     });
+
+    el.addEventListener('pointermove', (e) => {
+      if (!band || !down) return;
+      const p = local(e);
+      band.style.left = Math.min(down.p.x, p.x) + 'px';
+      band.style.top = Math.min(down.p.y, p.y) + 'px';
+      band.style.width = Math.abs(p.x - down.p.x) + 'px';
+      band.style.height = Math.abs(p.y - down.p.y) + 'px';
+    });
+
     el.addEventListener('pointerup', (e) => {
-      if (!down) return;
+      if (e.button !== 0 || !down) { hideBand(); return; }
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       const quick = performance.now() - down.t < 420;
+      const start = down;
       down = null;
-      if (moved > 5 || !quick || !this.model) return;
+      hideBand();
+      if (!this.model) return;
+      const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+      if (this.selectMode && moved > 8) {
+        const p = local(e);
+        this._selectMarquee({ x0: start.p.x, y0: start.p.y, x1: p.x, y1: p.y }, additive);
+        if (this.onSelection) this.onSelection(this.selections);
+        return;
+      }
+      if (moved > 5 || !quick) return;
       const rect = el.getBoundingClientRect();
       const pointer = new THREE.Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -247,7 +297,7 @@ export class Viewer {
       const hits = ray.intersectObject(this.model, true);
       if (this.selectMode) {
         if (!hits.length) {
-          if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+          if (!additive) {
             this.clearSelection();
             if (this.onSelection) this.onSelection(this.selections);
           }
@@ -268,7 +318,66 @@ export class Viewer {
         this.onSelect('');
       }
     });
+
+    el.addEventListener('pointercancel', () => { down = null; hideBand(); });
     el.addEventListener('dblclick', () => this.reset());
+  }
+
+  /** Квадратное выделение: все треугольники, чьи центры попали в рамку. */
+  _selectMarquee(rect, additive = false) {
+    if (!this.model) return;
+    const el = this.renderer.domElement;
+    const w = el.clientWidth || 1;
+    const h = el.clientHeight || 1;
+    const x0 = Math.min(rect.x0, rect.x1), x1 = Math.max(rect.x0, rect.x1);
+    const y0 = Math.min(rect.y0, rect.y1), y1 = Math.max(rect.y0, rect.y1);
+    this.camera.updateMatrixWorld(true);
+    const v = new THREE.Vector3();
+    const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+    const ab = new THREE.Vector3(), ac = new THREE.Vector3();
+    let first = true;
+    this.model.traverse((mesh) => {
+      if (!mesh.isMesh || !mesh.visible) return;
+      const geo = mesh.geometry;
+      const pos = geo?.attributes?.position;
+      if (!pos) return;
+      mesh.updateMatrixWorld(true);
+      const m = mesh.matrixWorld;
+      const idx = geo.index;
+      const total = idx ? Math.floor(idx.count / 3) : Math.floor(pos.count / 3);
+      const stride = total > 150000 ? Math.ceil(total / 150000) : 1;
+      const out = [];
+      let area = 0, count = 0;
+      const box = new THREE.Box3();
+      for (let t = 0; t < total; t += stride) {
+        const i0 = idx ? idx.getX(t * 3) : t * 3;
+        const i1 = idx ? idx.getX(t * 3 + 1) : t * 3 + 1;
+        const i2 = idx ? idx.getX(t * 3 + 2) : t * 3 + 2;
+        a.fromBufferAttribute(pos, i0).applyMatrix4(m);
+        b.fromBufferAttribute(pos, i1).applyMatrix4(m);
+        c.fromBufferAttribute(pos, i2).applyMatrix4(m);
+        v.copy(a).add(b).add(c).multiplyScalar(1 / 3).project(this.camera);
+        if (v.z < -1 || v.z > 1) continue;
+        const sx = (v.x * 0.5 + 0.5) * w;
+        const sy = (-v.y * 0.5 + 0.5) * h;
+        if (sx < x0 || sx > x1 || sy < y0 || sy > y1) continue;
+        out.push(a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z);
+        ab.subVectors(b, a); ac.subVectors(c, a);
+        area += ab.cross(ac).length() * 0.5;
+        box.expandByPoint(a); box.expandByPoint(b); box.expandByPoint(c);
+        count += 1;
+      }
+      if (!count) return;
+      const size = new THREE.Vector3();
+      const ctr = new THREE.Vector3();
+      box.getSize(size);
+      box.getCenter(ctr);
+      const radius = Math.max(2, size.length() * 0.5);
+      this._commitRegion(mesh.name || mesh.parent?.name || 'деталь', out, count, area, box,
+                         ctr, radius, additive || !first);
+      first = false;
+    });
+    if (first && !additive) this.clearSelection();
   }
 
   _updateExplode() {
@@ -581,8 +690,12 @@ export class Viewer {
     const el = this.renderer?.domElement;
     if (el) el.style.cursor = this.selectMode ? 'crosshair' : '';
     if (!this.selectMode) this.clearSelection();
-    if (this.selectMode) this.controls.enablePan = false;
-    else this.controls.enablePan = true;
+    // Панорамирование правой кнопкой работает всегда; в режиме выделения
+    // левая кнопка рисует рамку, поэтому вращение переносим на среднюю.
+    this.controls.enablePan = true;
+    this.controls.mouseButtons.LEFT = this.selectMode ? null : THREE.MOUSE.ROTATE;
+    this.controls.mouseButtons.MIDDLE = this.selectMode ? THREE.MOUSE.ROTATE : THREE.MOUSE.DOLLY;
+    this.controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
   }
 
   setSelectRadius(mm) {
@@ -634,22 +747,29 @@ export class Viewer {
       count += 1;
     }
     if (!count) return null;
+    return this._commitRegion(mesh.name || mesh.parent?.name || 'деталь', out, count, area,
+                              box, center, radius, additive);
+  }
+
+  /** Добавляет выделенную область и её подсветку. */
+  _commitRegion(name, vertices, count, area, box, point, radius, additive = false) {
+    if (!count) return null;
     if (!additive) this.clearSelection();
     const size = new THREE.Vector3();
     const ctr = new THREE.Vector3();
     box.getSize(size);
     box.getCenter(ctr);
-    const overlay = this._addSelectionOverlay(out, this.selections.length);
+    const overlay = this._addSelectionOverlay(vertices, this.selections.length);
     // GLB хранится в Y-up, а сценарий — в Z-up: переводим координаты обратно.
     const sel = {
-      object: mesh.name || mesh.parent?.name || 'деталь',
+      object: name,
       tris: count,
       area_mm2: area,
       center: [ctr.x, -ctr.z, ctr.y],
       size: [size.x, size.z, size.y],
       bbox: [box.min.x, -box.max.z, box.min.y, box.max.x, -box.min.z, box.max.y],
-      radius: radius,
-      point: [center.x, -center.z, center.y],
+      radius,
+      point: [point.x, -point.z, point.y],
       _center: ctr.clone(),
       _overlay: overlay,
     };
@@ -919,6 +1039,11 @@ export class Viewer {
     this.scene.fog.far = this.dist ? this.dist * 8 : 9000;
     this.ground.material.color.set(env.ground);
     this.hemi.intensity = s.ambient !== undefined ? Number(s.ambient) : env.hemi;
+    // нижняя граница освещённости: тёмных «провалов» внутри модели нет
+    if (this.ambient) {
+      const hemi = s.ambient !== undefined ? Number(s.ambient) : env.hemi;
+      this.ambient.intensity = Math.max(0.18, hemi * 0.45);
+    }
     this.keyLight.color.set(env.key);
     this.fillLight.color.set(env.fill);
     this.rimLight.color.set(env.rim);

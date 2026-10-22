@@ -8,9 +8,10 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import (as_points, catmull_rom, circle_profile, ellipse_profile,
-                       ensure_ccw, fillet_polyline, loft_solid, loft_solid_smooth,
-                       polygon_area, smooth_closed_profile, sweep_solid)
+from .geometry import (as_points, auto_segments, catmull_rom, circle_profile,
+                       ellipse_profile, ensure_ccw, fillet_polyline, loft_solid,
+                       loft_solid_smooth, polygon_area, smooth_closed_profile,
+                       sweep_solid)
 from .ops import ensure_solid, make_solid, op
 from .values import parse_value
 
@@ -30,7 +31,7 @@ def _clean_profile(pts: np.ndarray, what: str = "профиль") -> np.ndarray:
     summary="Вращает замкнутый профиль (радиус, высота) вокруг оси Z. Основа для посуды, ваз, бутылок.",
     example="""корпус = lathe points=[[0,0],[40,0],[42,3],[42,90],[39,92],[38,8],[0,5]] segments=128 fillet=2""",
     params={"points": "контур в плоскости (r,z): [[r,z],...] (обязательно)",
-            "segments": "сегментов по кругу (128)",
+            "segments": "сегментов по кругу (по размеру)",
             "arc": "угол вращения в градусах (360)",
             "smooth": "сгладить профиль: число подсегментов на участок",
             "fillet": "скруглить углы профиля радиусом, мм",
@@ -51,7 +52,10 @@ def lathe(a, name):
         pts = fillet_polyline(pts, float(fillet), closed=True, skip_axis=True)
     if smooth and smooth > 1:
         pts = smooth_closed_profile(pts, samples=int(smooth))
-    segments = a.int("segments", 128, minv=8, maxv=1024)
+    segments = a.int("segments", None, minv=8, maxv=1024)
+    if segments is None:
+        radius_max = float(np.max(np.abs(pts[:, 0]))) if len(pts) else 50.0
+        segments = auto_segments(radius_max, tolerance=0.10, min_n=32)
     arc = a.num("arc", 360.0, minv=0.1, maxv=360.0)
     if abs(arc - 360.0) < 1e-9:
         solid = mf.Manifold.revolve(mf.CrossSection([pts]), int(segments))

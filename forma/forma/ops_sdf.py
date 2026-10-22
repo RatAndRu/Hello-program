@@ -141,7 +141,19 @@ def compile_sdf(expression: str):
         fn(0.0, 0.0, 0.0)
     except Exception as exc:
         raise DslError(f"Ошибка в формуле при проверке: {exc}") from exc
-    return lambda x, y, z: float(fn(x, y, z))
+
+    def safe(x, y, z):
+        # Исключение Python внутри обратного вызова C++ роняло процесс
+        # (segmentation fault). Теперь «сбойная» точка считается внешней.
+        try:
+            value = float(fn(x, y, z))
+        except Exception:
+            return 1e6
+        if not math.isfinite(value):
+            return 1e6
+        return value
+
+    return safe
 
 
 def _grid_budget(bounds: list[float], resolution: float) -> float:
@@ -186,6 +198,10 @@ def from_sdf(a, name):
     if not (bounds[0] < bounds[3] and bounds[1] < bounds[4] and bounds[2] < bounds[5]):
         raise GeometryError("bounds заданы неверно: минимумы должны быть меньше максимумов.")
     res = _choose_resolution(a, bounds)
+    # Сетка ровно по целому числу ячеек: так изоповерхность не «рвётся» на краю.
+    span = max(bounds[3] - bounds[0], bounds[4] - bounds[1], bounds[5] - bounds[2])
+    cells = max(8, int(round(span / res)))
+    res = span / cells
     level = a.num("level", 0.0)
     try:
         solid = mf.Manifold.level_set(lambda x, y, z: -fn(x, y, z), bounds, res, float(level))

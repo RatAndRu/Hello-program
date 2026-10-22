@@ -211,7 +211,7 @@ def _shade(normals, col, metal, rough, cam):
     rim = np.clip(n @ back, 0, None)[:, None] * 0.16
     # Свет сверху (небо) + отражение от пола снизу: нижние грани больше не чёрные.
     nz = n[:, 2:3]
-    amb = (0.24 + 0.10 * np.clip(nz * 0.5 + 0.5, 0, 1))
+    amb = (0.28 + 0.10 * np.clip(nz * 0.5 + 0.5, 0, 1))
     # Отражение от пола: светим снизу тем сильнее, чем «ниже» смотрит нормаль.
     bounce = 0.38 * np.clip(-nz, 0, 1) ** 0.8 + 0.05
     col = np.asarray(col, dtype=np.float32)

@@ -72,6 +72,7 @@ class Scene:
         self.line = 0
         self.command = ""
         self.op_count = 0
+        self.last_replaced: Solid | None = None
         self._auto_idx = 0
         self._color_idx = 0
 
@@ -81,6 +82,7 @@ class Scene:
                           "line": self.line if line is None else line})
 
     def add(self, solid: Solid) -> Solid:
+        self.last_replaced = self.objects.get(solid.name)
         if solid.name in self.objects:
             self.objects.pop(solid.name)
         self.objects[solid.name] = solid

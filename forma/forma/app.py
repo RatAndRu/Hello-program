@@ -89,6 +89,7 @@ def _run_uistest(report_path: str | None) -> int:
     """Проверка, что внутри собранного exe работают интерфейс и API."""
     import json
     import urllib.request
+    from pathlib import Path
 
     lines = []
     ok = True
@@ -188,6 +189,25 @@ def _run_uistest(report_path: str | None) -> int:
                 check("анимация и текстура в GLB",
                       b'"animations"' in rich_glb and b'"images"' in rich_glb,
                       f"{len(rich_glb)} байт")
+                # 0.6: своя текстура, сохранение в «Загрузки», новые проверки
+                png = get("/api/texture?kind=custom&pattern=waves&color1=%23c0504d&color2=%23f2e6d9",
+                          raw=True)
+                check("своя процедурная текстура", png[:8] == b"\x89PNG\r\n\x1a\n",
+                      f"{len(png)} байт")
+                exported = post("/api/export", {"format": "glb"})
+                downloads = str(Path.home() / "Downloads")
+                check("экспорт в «Загрузки»",
+                      downloads.lower() in exported.get("path", "").lower()
+                      or "exports" in exported.get("path", ""),
+                      exported.get("path", ""))
+                extra = post("/api/build", {"script": (
+                    "к = box size=[40,40,40]\n"
+                    "к = bevel [к] radius=3\n"
+                    "check к sharp_edge 90\ncheck к tri_quality 2\n"
+                    "check к wall_min 1..5\ncheck к size 39..41")})
+                check("новые проверки sharp_edge/tri_quality/wall_min",
+                      extra.get("ok") is True and
+                      len(extra.get("analysis", {}).get("checks", [])) == 4)
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

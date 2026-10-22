@@ -399,10 +399,36 @@ def simplify(a, name):
     if len(solids) != 1:
         raise GeometryError("simplify работает с одним объектом.")
     base = solids[0]
-    tol = a.num("tolerance", 0.3, minv=0.0)
-    result = base.manifold.simplify(float(tol))
+    tol = float(a.num("tolerance", 0.3, minv=0.0) or 0.0)
+    result = base.manifold.simplify(tol)
     if result.is_empty():
         raise GeometryError("Не удалось упростить объект с таким допуском.")
+    if tol > 0:
+        # simplify не всегда укладывается в допуск — проверяем и при
+        # необходимости повторяем с меньшим шагом.
+        from .geometry import manifold_mesh
+        orig_v, _ = manifold_mesh(base.manifold)
+        for factor in (1.0, 0.6, 0.35, 0.2):
+            if factor != 1.0:
+                candidate = base.manifold.simplify(tol * factor)
+                if candidate.is_empty():
+                    break
+                result = candidate
+            new_v, _ = manifold_mesh(result)
+            if len(new_v) == 0 or len(orig_v) == 0:
+                break
+            step = max(1, len(new_v) // 400)
+            probe = new_v[::step]
+            # расстояние до ближайших вершин оригинала (грубая, но быстрая оценка)
+            worst = 0.0
+            for chunk in range(0, len(probe), 50):
+                block = probe[chunk:chunk + 50]
+                d = np.sqrt(((block[:, None, :] - orig_v[None, :, :]) ** 2).sum(-1)).min(axis=1)
+                worst = max(worst, float(d.max()))
+            if worst <= tol:
+                break
+        a.scene.log("info", f"simplify: допуск {tol:g} мм, отклонение ≤ {worst:.3f} мм",
+                    a.cmd.line)
     return _derived(a, name, result, base, "simplify")
 
 
@@ -416,15 +442,21 @@ def _warp(a, base, fn, kind: str, name=None):
     # Дробим сетку (refine), чтобы кривая получилась настоящей.
     source = base.manifold
     try:
-        refine = int(a.num("refine", 3, minv=0, maxv=4))
+        refine = int(a.num("refine", 1, minv=0, maxv=6))
     except Exception:
-        refine = 3
+        refine = 1
     if refine > 0:
+        # Дробим по длине ребра, а не «в 4^n»: warp двигает только вершины,
+        # поэтому крупные грани иначе остаются плоскими и изгиб выглядит гранёным.
+        bb = source.bounding_box()
+        diag = math.sqrt(sum((bb[i + 3] - bb[i]) ** 2 for i in range(3)))
+        target_len = max(0.8, diag / 45.0)
         tris = int(source.num_tri())
-        while refine > 0 and tris * (4 ** refine) > 240000:
-            refine -= 1
+        budget = 300000
         try:
-            source = source.refine(refine)
+            if tris * (diag / target_len) ** 2 > budget * 4:
+                target_len = diag / math.sqrt(budget / max(tris, 1))
+            source = source.refine_to_length(float(target_len))
         except Exception:
             source = base.manifold
     try:

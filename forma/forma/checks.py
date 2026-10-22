@@ -26,7 +26,10 @@ RULE_ALIASES = {
     "дно": "flat_bottom", "плоское_дно": "flat_bottom",
     "нависания": "overhang", "нависание": "overhang",
     "симметрия": "symmetric", "симметричность": "symmetric",
-    "зазор": "gap", "расстояние": "gap",
+    "зазор": "gap", "расстояние": "gap", "clearance": "gap", "посадка": "gap",
+    "острота": "sharp_edge", "острые_рёбра": "sharp_edge",
+    "качество_сетки": "tri_quality", "иглы": "tri_quality",
+    "мин_стенка": "wall_min", "стенка_мин": "wall_min",
     "внутри": "inside",
     "треугольники": "tris", "трис": "tris",
 }
@@ -48,6 +51,9 @@ RULE_LABELS = {
     "gap": "зазор",
     "inside": "вложенность",
     "tris": "треугольники",
+    "wall_min": "минимальная стенка",
+    "sharp_edge": "острые рёбра",
+    "tri_quality": "качество треугольников",
 }
 
 UNITS = {
@@ -55,6 +61,7 @@ UNITS = {
     "volume": "см³", "mass": "г", "wall": "мм", "gap": "мм",
     "flat_bottom": "%", "overhang": "%", "symmetric": "%",
     "tris": "трис", "genus": "шт", "parts": "шт",
+    "wall_min": "мм", "sharp_edge": "°", "tri_quality": "%",
 }
 
 AXES = {"x": 0, "y": 1, "z": 2, "ширина": 0, "глубина": 1, "высота": 2,
@@ -134,7 +141,8 @@ def _num(value, unit: str, digits: int = 2) -> str:
 
 
 RULES = {"watertight", "genus", "parts", "size", "height", "width", "depth", "volume",
-         "mass", "wall", "flat_bottom", "overhang", "symmetric", "gap", "inside", "tris"}
+         "mass", "wall", "wall_min", "flat_bottom", "overhang", "symmetric", "gap",
+         "clearance", "inside", "tris", "sharp_edge", "tri_quality"}
 
 
 def evaluate_checks(scene, cache) -> list[dict]:
@@ -227,18 +235,18 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache) -> dict:
         return _result(ok, rule, f"{label}: {_num(value, 'мм')} — {verdict} ({_fmt_range(rng, 'мм')})",
                        name, line, value, _fmt_range(rng, "мм"), label)
 
-    if rule in ("volume", "mass", "wall", "flat_bottom", "overhang", "tris"):
+    if rule in ("volume", "mass", "wall", "wall_min", "flat_bottom", "overhang", "tris"):
         if not args:
             raise FormaError(f"Укажите диапазон: check объект {rule} 3..5")
         rng = _parse_range(args[0], cache_scene(cache))
-        if rule == "wall":
+        if rule in ("wall", "wall_min"):
             wall = data.get("wall")
             if not wall:
                 return _result(False, rule,
                                f"{label}: полости не найдено — объект сплошной "
                                f"(проверка толщины применима к полым телам)",
                                name, line, None, _fmt_range(rng, "мм"), label)
-            value = wall["median"]
+            value = wall["min"] if rule == "wall_min" else wall["median"]
         elif rule == "volume":
             value = data["volume_cm3"]
         elif rule == "mass":
@@ -250,7 +258,14 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache) -> dict:
         ok, verdict = _range_verdict(value, rng, unit)
         digits = 0 if rule in ("tris", "mass") else 2
         actual_text = _num(int(value) if rule == "tris" else value, unit, digits)
-        return _result(ok, rule, f"{label}: {actual_text} — {verdict} ({_fmt_range(rng, unit)})",
+        where = ""
+        if rule in ("wall", "wall_min"):
+            point = (wall or {}).get("min_point")
+            if point:
+                where = (f"; минимум {_num(wall['min'], 'мм')} мм в точке "
+                         f"({_num(point[0], 'мм')}, {_num(point[1], 'мм')}, {_num(point[2], 'мм')})")
+        return _result(ok, rule,
+                       f"{label}: {actual_text} — {verdict} ({_fmt_range(rng, unit)}){where}",
                        name, line, value, _fmt_range(rng, unit), label)
 
     if rule == "symmetric":
@@ -309,6 +324,41 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache) -> dict:
                        f"«{name}» {'целиком внутри' if ok else 'выходит за пределы'} «{other.name}»"
                        + ("" if ok else f" (лишний объём {fmt(diff / 1000)} см³)"),
                        name, line, diff, "внутри", label)
+
+    if rule == "sharp_edge":
+        from .metrics import edge_angles
+        limit = 90.0
+        if args:
+            value = _parse_value(args[0], cache_scene(cache))
+            if isinstance(value, (int, float)):
+                limit = float(value)
+        angles = edge_angles(solid.manifold)
+        if len(angles) == 0:
+            return _result(True, rule, f"{label}: рёбер не найдено", name, line, 0.0,
+                           f"≤ {fmt(limit)}°", label)
+        worst = float(angles.max())
+        count = int((angles > limit).sum())
+        ok = count == 0
+        return _result(ok, rule,
+                       f"{label}: самое острое ребро {fmt(worst, 1)}°, "
+                       f"рёбер острее {fmt(limit, 0)}° — {count} "
+                       f"({'в норме' if ok else 'нарушено'})",
+                       name, line, worst, f"≤ {fmt(limit, 0)}°", label)
+
+    if rule == "tri_quality":
+        from .metrics import tri_quality
+        limit = 1.0
+        if args:
+            value = _parse_value(args[0], cache_scene(cache))
+            if isinstance(value, (int, float)):
+                limit = float(value)
+        q = tri_quality(solid.manifold)
+        ok = q["bad_pct"] <= limit
+        return _result(ok, rule,
+                       f"{label}: тонких треугольников {fmt(q['bad_pct'])} % "
+                       f"({q['bad']} из {q['total']}), самый острый угол "
+                       f"{fmt(q['min_angle'], 1)}° ({'в норме' if ok else 'нарушено'})",
+                       name, line, q["bad_pct"], f"≤ {fmt(limit)}%", label)
 
     raise FormaError(f"Правило «{rule}» не поддерживается.")
 

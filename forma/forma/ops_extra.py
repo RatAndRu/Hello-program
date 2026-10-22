@@ -39,17 +39,17 @@ def _one(a, command: str):
 @op("smooth", aliases=("сгладить", "сглаживание", "плавно", "умягчить", "soften"),
     category="Форма и деформации",
     summary="Сглаживает переходы и убирает «лесенки» на гранях: G1-непрерывность "
-            "и дополнительное дробление поверхности.",
-    example="кружка = smooth [кружка] angle=50 soft=0.35 levels=2",
+            "и дополнительное дробление поверхности. Размер модели сохраняется.",
+    example="кружка = smooth [кружка] angle=50 soft=0.2 levels=1",
     params={"objects": "объект",
             "angle": "угол, выше которого ребро остаётся острым, ° (50)",
-            "soft": "мягкость острых рёбер 0…1 (0.3)",
+            "soft": "мягкость 0…1 (0.2 — безопасно; больше 0.4 деформирует)",
             "levels": "дробление поверхности 1…3 (1 — без дробления)"},
     positional=["objects"])
 def smooth(a, name):
     base = _one(a, "smooth")
     angle = a.num("angle", 50.0, minv=0.0, maxv=180.0)
-    soft = a.num("soft", 0.3, minv=0.0, maxv=1.0)
+    soft = a.num("soft", 0.2, minv=0.0, maxv=1.0)
     levels = a.int("levels", 1, minv=1, maxv=3)
     tris = base.manifold.num_tri()
     if tris * (levels ** 2) > MAX_TRIS:
@@ -64,30 +64,109 @@ def smooth(a, name):
         raise GeometryError(f"Не удалось сгладить объект: {exc}") from exc
     if result.is_empty() or result.volume() <= 1e-9:
         raise GeometryError("После сглаживания объект исчез — уменьшите параметры.")
+    result = _keep_envelope(a, base.manifold, result, "smooth")
     return _derived(a, name, result, base, "smooth")
 
 
+def _keep_envelope(a, source, result, kind: str) -> mf.Manifold:
+    """Возвращает габарит исходной детали (сглаживание любит «раздувать»)."""
+    b0 = source.bounding_box()
+    b1 = result.bounding_box()
+    s0 = [b0[i + 3] - b0[i] for i in range(3)]
+    s1 = [b1[i + 3] - b1[i] for i in range(3)]
+    ratios = [s0[i] / s1[i] for i in range(3) if s1[i] > 1e-9 and s0[i] > 1e-9]
+    if not ratios:
+        return result
+    k = sum(ratios) / len(ratios)
+    k = min(max(k, 0.5), 2.0)
+    if abs(k - 1.0) < 2e-3:
+        return result
+    center = [(b1[i] + b1[i + 3]) / 2.0 for i in range(3)]
+    shifted = result.translate([-center[0], -center[1], -center[2]])
+    out = shifted.scale([k, k, k]).translate([center[0], center[1], center[2]])
+    a.scene.log("info", f"{kind}: габарит приведён к исходному (множитель {k:.3f})", a.cmd.line)
+    return out
+
+
 @op("bevel", aliases=("фаска", "скос", "округление", "кромка"), category="Форма и деформации",
-    summary="Мягкая фаска на острых рёбрах без тяжёлых булевых операций.",
-    example="плита = bevel [плита] angle=55 soft=0.5 levels=2",
-    params={"objects": "объект", "angle": "угол острых рёбер, ° (55)",
-            "soft": "ширина фаски 0…1 (0.5)", "levels": "дробление 1…3 (2)"},
+    summary="Скругляет наружные рёбра настоящим радиусом в миллиметрах: размер детали "
+            "не меняется, снимается только материал на углах.",
+    example="плита = bevel [плита] radius=3",
+    params={"objects": "объект",
+            "radius": "радиус скругления, мм (по умолчанию 4% самой тонкой стороны)",
+            "segments": "качество скругления 8…64 (24)",
+            "soft": "устаревшее: доля от половины тонкой стороны (0…1)",
+            "levels": "устаревшее: не используется"},
     positional=["objects"])
 def bevel(a, name):
     base = _one(a, "bevel")
-    angle = a.num("angle", 55.0, minv=1.0, maxv=180.0)
-    soft = a.num("soft", 0.5, minv=0.0, maxv=1.0)
-    levels = a.int("levels", 2, minv=1, maxv=3)
-    tris = base.manifold.num_tri()
-    if tris * (levels ** 2) > MAX_TRIS:
-        levels = 1
+    bbox = base.manifold.bounding_box()
+    thin = min(bbox[3] - bbox[0], bbox[4] - bbox[1], bbox[5] - bbox[2])
+    soft = a.num("soft", None, minv=0.0, maxv=1.0)
+    radius = a.num("radius", None, minv=0.01)
+    if radius is None:
+        radius = float(soft) * thin / 2.0 if soft else thin * 0.02
+    radius = min(float(radius), thin * 0.45)
+    seg = a.int("segments", 24, minv=8, maxv=64)
+    if base.manifold.num_tri() > 60000:
+        raise GeometryError(
+            "Слишком подробная сетка для фаски — это надолго.",
+            hint="Сначала упростите объект: имя = simplify [объект] tolerance=0.2. "
+                 "Для плавных тел лучше smooth.")
     try:
-        result = base.manifold.smooth_out(float(angle), float(soft))
-        if levels > 1:
-            result = result.refine(int(levels))
+        ball = mf.Manifold.sphere(float(radius), int(seg))
+        # «раскрытие»: сжатие на радиус и обратный рост — скругляет выпуклые
+        # рёбра, не раздувая деталь (в отличие от простого сглаживания).
+        result = base.manifold.minkowski_difference(ball).minkowski_sum(ball)
     except Exception as exc:
         raise GeometryError(f"Не удалось сделать фаску: {exc}") from exc
+    if result.is_empty() or result.volume() <= 1e-9:
+        raise GeometryError("После фаски объект исчез — уменьшите radius.")
+    b1 = result.bounding_box()
+    v0, v1 = float(base.manifold.volume()), float(result.volume())
+    shrink = max((bbox[i + 3] - bbox[i]) - (b1[i + 3] - b1[i]) for i in range(3))
+    if v1 < v0 * 0.85 or shrink > max(1.0, thin * 0.08):
+        raise GeometryError(
+            f"Фаска radius={radius:g} мм слишком велика для этой детали: "
+            f"объём уменьшился на {(1 - v1 / v0) * 100:.0f} %, "
+            f"габарит — на {shrink:.1f} мм.",
+            hint="Уменьшите radius (например, в 2 раза) или примените smooth — "
+                 "он не снимает материал. У тонкостенных деталей фаска «съедает» стенку.")
+    grew = max(abs((b1[i + 3] - b1[i]) - (bbox[i + 3] - bbox[i])) for i in range(3))
+    delta = (result.volume() - base.manifold.volume()) / base.manifold.volume() * 100.0
+    a.scene.log("info",
+                f"bevel: радиус {radius:.2f} мм, объём {delta:+.2f} %, "
+                f"габарит {grew:+.3f} мм", a.cmd.line)
     return _derived(a, name, result, base, "bevel")
+
+
+@op("clean", aliases=("почистить", "weld", "сварить", "сварка", "убрать_мусор",
+                       "remove_degenerate", "ремонт"),
+    category="Форма и деформации",
+    summary="Сваривает совпавшие вершины, убирает вырожденные и дублирующиеся "
+            "треугольники. Полезно после импорта и сложных булевых операций.",
+    example="деталь = clean [деталь]",
+    params={"objects": "объект", "tolerance": "допуск сварки вершин, мм (0.01)"},
+    positional=["objects"])
+def clean(a, name):
+    from .geometry import manifold_from_arrays, manifold_mesh
+    base = _one(a, "clean")
+    tol = float(a.num("tolerance", 0.01, minv=0.0) or 0.01)
+    try:
+        import trimesh
+        verts, faces = manifold_mesh(base.manifold)
+        mesh = trimesh.Trimesh(vertices=verts, faces=faces, process=True)
+        mesh.merge_vertices(merge_tex=True, merge_norm=True)
+        mesh.update_faces(mesh.nondegenerate_faces())
+        mesh.update_faces(mesh.unique_faces())
+        mesh.remove_unreferenced_vertices()
+        result = manifold_from_arrays(np.asarray(mesh.vertices), np.asarray(mesh.faces),
+                                      what="чистка")
+    except Exception as exc:
+        raise GeometryError(f"Не удалось почистить сетку: {exc}") from exc
+    a.scene.log("info", f"clean: {base.manifold.num_tri()} → {result.num_tri()} треугольников",
+                a.cmd.line)
+    return _derived(a, name, result, base, "clean")
 
 
 # --------------------------------------------------------------------------- #

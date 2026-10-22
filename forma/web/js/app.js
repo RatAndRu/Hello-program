@@ -587,8 +587,16 @@ async function loadModel(url, animation = null) {
 }
 
 function textureUrl(kind, scale = 1) {
-  return '/api/texture?kind=' + encodeURIComponent(kind) + '&scale=' + encodeURIComponent(scale)
-    + '&token=' + encodeURIComponent(TOKEN);
+  let url = '/api/texture?kind=' + encodeURIComponent(kind)
+    + '&scale=' + encodeURIComponent(scale);
+  if (kind === 'своя') {
+    const pattern = $('tex-pattern')?.value || 'полосы';
+    const c1 = $('tex-color1')?.value || '#3a6ea5';
+    const c2 = $('tex-color2')?.value || '#e8dfcf';
+    url += '&pattern=' + encodeURIComponent(pattern)
+      + '&color1=' + encodeURIComponent(c1) + '&color2=' + encodeURIComponent(c2);
+  }
+  return url + '&token=' + encodeURIComponent(TOKEN);
 }
 
 function applyTextureToViewer(name, kind, scale = 1) {
@@ -824,6 +832,7 @@ function setAnimationCommand(kind) {
 /*  Материал выбранного объекта                                       */
 /* ------------------------------------------------------------------ */
 function selectObject(name) {
+  updateCustomTexVisibility();
   if (!name) {
     state.selected = null;
     document.querySelectorAll('.obj-item').forEach((el) => el.classList.remove('selected'));
@@ -847,27 +856,46 @@ function selectObject(name) {
   $('mat-rough-val').textContent = state.material.rough;
   const KIND_RU = { wood: 'дерево', marble: 'мрамор', metal: 'металл', fabric: 'ткань',
     leather: 'кожа', checker: 'клетка', noise: 'шум', brick: 'кирпич', ceramic: 'керамика' };
-  $('mat-tex').value = obj.tex ? (KIND_RU[obj.tex.kind] || '') : '';
+  $('mat-tex').value = !obj.tex ? ''
+    : (obj.tex.kind === 'custom' ? 'своя' : (KIND_RU[obj.tex.kind] || ''));
+  updateCustomTexVisibility();
   showTexturePreview(obj.tex ? (KIND_RU[obj.tex.kind] || '') : '');
   // открываем вкладку объектов
   const tab = document.querySelector('.tab[data-tab="objects"]');
   if (tab && !tab.classList.contains('active')) tab.click();
 }
 
+/** Держим значения в самих объектах сцены: при переключении они не откатятся. */
+function rememberMaterial(patch) {
+  if (!state.selected) return;
+  Object.assign(state.selected, patch);
+  const obj = (state.payload?.objects || []).find((o) => o.name === state.selected.name);
+  if (obj) Object.assign(obj, patch);
+}
 $('mat-color')?.addEventListener('input', (e) => {
   state.material.color = e.target.value;
   $('mat-hex').textContent = e.target.value;
+  rememberMaterial({ color: e.target.value });
   state.viewer?.applyMaterial(state.selected?.name, { color: e.target.value });
 });
 $('mat-metal')?.addEventListener('input', (e) => {
   state.material.metal = Number(e.target.value);
   $('mat-metal-val').textContent = e.target.value;
+  rememberMaterial({ metal: Number(e.target.value) });
   state.viewer?.applyMaterial(state.selected?.name, { metal: Number(e.target.value) });
 });
 $('mat-rough')?.addEventListener('input', (e) => {
   state.material.rough = Number(e.target.value);
   $('mat-rough-val').textContent = e.target.value;
+  rememberMaterial({ rough: Number(e.target.value) });
   state.viewer?.applyMaterial(state.selected?.name, { rough: Number(e.target.value) });
+});
+// по отпусканию ползунка записываем значение в сценарий, чтобы оно жило после пересборки
+['mat-color', 'mat-metal', 'mat-rough'].forEach((id) => {
+  $(id)?.addEventListener('change', () => {
+    if (!state.selected) return;
+    writeMaterialScript({ rebuild: true });
+  });
 });
 $('mat-close')?.addEventListener('click', () => selectObject(''));
 
@@ -892,7 +920,29 @@ $('mat-apply')?.addEventListener('click', () => {
   toast(`Материал «${state.selected.name}» записан в сценарий`);
 });
 
+function updateCustomTexVisibility() {
+  const block = $('custom-tex');
+  if (!block) return;
+  block.hidden = ($('mat-tex')?.value || '') !== 'своя';
+}
+
+$('tex-create')?.addEventListener('click', () => {
+  if (!state.selected) return;
+  const name = state.selected.name;
+  const pattern = $('tex-pattern')?.value || 'полосы';
+  const c1 = $('tex-color1')?.value || '#3a6ea5';
+  const c2 = $('tex-color2')?.value || '#e8dfcf';
+  $('mat-tex').value = 'своя';
+  const lines = currentScript().split('\n').filter((l) => !l.trim().startsWith(`texture ${name} `));
+  lines.push(`texture ${name} kind=своя pattern=${pattern} color1=${c1} color2=${c2}`);
+  setScript(lines.join('\n').trimEnd());
+  applyTextureToViewer(name, 'своя');
+  showTexturePreview('своя');
+  toast(`Своя текстура «${pattern}» записана в сценарий`);
+});
+
 $('mat-tex')?.addEventListener('change', (e) => {
+  updateCustomTexVisibility();
   if (!state.selected) return;
   const name = state.selected.name;
   const kind = e.target.value || '';
