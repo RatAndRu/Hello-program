@@ -429,6 +429,7 @@ export class Viewer {
   }
 
   disposeModel() {
+    this.clearHighlight();
     if (!this.model) return;
     this.scene.remove(this.model);
     this.model.traverse((o) => {
