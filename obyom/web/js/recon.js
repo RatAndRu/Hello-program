@@ -626,7 +626,11 @@ export function vesselCarve(G, frames, opt = {}) {
   }
   let zb = -1, cb = Infinity; const cs = []; for (let z = 0; z < zr - 1; z++) if (cost[z] === cost[z]) { cs.push(cost[z]); if (cost[z] < cb) { cb = cost[z]; zb = z; } }
   cs.sort((a, b) => a - b); const med = cs.length ? cs[cs.length >> 1] : NaN, lid = cost[zr];
-  let measured = zb >= 0 && cs.length >= 4 && cb < 0.6 * med && !(lid <= cb * 1.1);
+  // настоящая ямка: и выше, и ниже найденной глубины стоимость заметно больше (однотонное дно даёт монотонный спад — не верим)
+  const at = (z) => (z >= 0 && z < nz && cost[z] === cost[z] ? cost[z] : NaN), dz4 = Math.max(1, Math.round(4 / vs)), dz6 = Math.max(2, Math.round(6 / vs));
+  let below = NaN; for (let z = zb - 1; z >= zb - dz4; z--) { const c = at(z); if (c === c) below = below === below ? Math.max(below, c) : c; }
+  const above = at(zb + dz6);
+  let measured = zb >= 0 && cs.length >= 4 && cb < 0.6 * med && !(lid <= cb * 1.1) && below > 1.8 * cb && above > 1.8 * cb && above - cb > 100;
   if (!measured) zb = Math.max(zLow, Math.min(zr - 2, Math.round((opt.defBottom ?? Math.max(3, Math.min(8, 0.08 * H))) / vs) - 1));
   zb = Math.max(zb, zLow - 1);
   let removed = 0;
