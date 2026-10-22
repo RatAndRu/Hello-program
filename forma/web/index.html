@@ -59,6 +59,8 @@
           <button data-format="ply">PLY — облака и сканы</button>
           <button data-format="3mf">3MF — для слайсеров и 3D-печати</button>
           <button data-format="png">PNG — снимки видов</button>
+          <button data-format="dxf">DXF — сечение контуром (2D)</button>
+          <button data-format="svg">SVG — сечение для проверки формы</button>
           <button data-format="forma">.forma — сценарий</button>
           <button data-format="zip">ZIP — всё сразу</button>
         </div>
@@ -327,6 +329,16 @@
           </div>
           <div class="verdict" id="verdict" hidden></div>
           <pre class="report-text" id="report-text">Здесь появится словесный отчёт: габариты, объём, масса, толщина стенок, симметрия, замечания.</pre>
+          <div class="section-panel" id="section-panel" hidden>
+            <div class="extra-head">
+              <span>Сечение (2D)</span>
+              <span class="section-tools">
+                <button class="mini" data-section-export="dxf" title="Скачать DXF">DXF</button>
+                <button class="mini" data-section-export="svg" title="Скачать SVG">SVG</button>
+              </span>
+            </div>
+            <div class="section-view" id="section-view"></div>
+          </div>
           <div class="report-extra">
             <div class="extra-head">
               <span>Замечания к областям</span>

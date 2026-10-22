@@ -583,7 +583,7 @@ def place(a, name):
         elif side == "back":
             target = [hc[0], hb[4] + gap + os_[1] / 2, hc[2]]
         elif side == "front":
-            target = [hc[0], hb[2] - gap - os_[1] / 2, hc[2]]
+            target = [hc[0], hb[1] - gap - os_[1] / 2, hc[2]]
         off = (target[0] - oc[0], target[1] - oc[1], target[2] - oc[2])
         a.scene.log("info", f"place: {base.name} → {side} от {host.name}", a.cmd.line)
         return _derived(a, name, translate_manifold(base.manifold, off), base, "place")
@@ -647,9 +647,11 @@ def refine(a, name):
 @op("simplify", aliases=("упростить", "облегчить", "optimize", "оптимизировать"),
     category="Форма и деформации",
     summary="Упрощает сетку, сохраняя форму: меньше треугольников при отклонении "
-            "не больше tolerance. Ровные участки теряют лишние грани.",
-    example="деталь = optimize [деталь] tolerance=0.15",
-    params={"objects": "объект", "tolerance": "допуск отклонения, мм (0.3)"},
+            "не больше tolerance. Отклонение меряется двусторонним расстоянием "
+            "Хаусдорфа. Ровные участки теряют лишние грани.",
+    example="деталь = optimize [деталь] deviation=0.2",
+    params={"objects": "объект", "tolerance": "шаг упрощения, мм (0.3)",
+            "deviation": "допустимое отклонение от исходной формы, мм"},
     positional=["objects"])
 def simplify(a, name):
     def _all(v) -> bool:
@@ -664,6 +666,9 @@ def simplify(a, name):
         raise GeometryError("simplify: нечего упрощать.")
     if len(solids) > 1:
         tol = float(a.num("tolerance", 0.15, minv=0.0) or 0.0)
+        dev_param = a.num("deviation")
+        if dev_param is not None:
+            tol = min(tol, float(dev_param))
         before = sum(int(s.manifold.num_tri()) for s in solids)
         for solid in list(solids):
             try:
@@ -679,34 +684,31 @@ def simplify(a, name):
         return None
     base = solids[0]
     tol = float(a.num("tolerance", 0.3, minv=0.0) or 0.0)
+    dev_param = a.num("deviation")
+    if dev_param is not None and tol <= 0:
+        tol = max(0.05, float(dev_param))
+    limit = float(dev_param) if dev_param is not None else tol
     result = base.manifold.simplify(tol)
     if result.is_empty():
         raise GeometryError("Не удалось упростить объект с таким допуском.")
-    if tol > 0:
-        # simplify не всегда укладывается в допуск — проверяем и при
-        # необходимости повторяем с меньшим шагом.
-        from .geometry import manifold_mesh
-        orig_v, _ = manifold_mesh(base.manifold)
+    worst = 0.0
+    if tol > 0 and limit > 0:
+        # simplify не всегда укладывается в допуск — проверяем честным
+        # двусторонним расстоянием Хаусдорфа и повторяем с меньшим шагом.
+        from .cuts import hausdorff
         for factor in (1.0, 0.6, 0.35, 0.2):
-            if factor != 1.0:
-                candidate = base.manifold.simplify(tol * factor)
-                if candidate.is_empty():
-                    break
-                result = candidate
-            new_v, _ = manifold_mesh(result)
-            if len(new_v) == 0 or len(orig_v) == 0:
+            candidate = result if factor == 1.0 else base.manifold.simplify(tol * factor)
+            if candidate.is_empty():
                 break
-            step = max(1, len(new_v) // 400)
-            probe = new_v[::step]
-            # расстояние до ближайших вершин оригинала (грубая, но быстрая оценка)
-            worst = 0.0
-            for chunk in range(0, len(probe), 50):
-                block = probe[chunk:chunk + 50]
-                d = np.sqrt(((block[:, None, :] - orig_v[None, :, :]) ** 2).sum(-1)).min(axis=1)
-                worst = max(worst, float(d.max()))
-            if worst <= tol:
+            samples = 400 if candidate.num_tri() > 25_000 else 700
+            measured = hausdorff(base.manifold, candidate, samples=samples)
+            worst = measured["max"]
+            result = candidate
+            if worst <= limit:
                 break
-        a.scene.log("info", f"simplify: допуск {tol:g} мм, отклонение ≤ {worst:.3f} мм",
+        a.scene.log("info",
+                    f"simplify: {'допуск' if dev_param is None else 'отклонение'} "
+                    f"{limit:g} мм, фактическое отклонение ≤ {worst:.3f} мм",
                     a.cmd.line)
     return _derived(a, name, result, base, "simplify")
 

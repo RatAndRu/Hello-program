@@ -71,6 +71,10 @@ class Scene:
         self.params: dict[str, float] = {}
         self.vars: dict[str, Any] = {}
         self.checks: list[dict] = []
+        # сечения, пробы материала и паспорта деталей
+        self.sections: list[dict] = []
+        self.probes: list[dict] = []
+        self.passports: list[dict] = []
         self.logs: list[dict] = []
         self.line = 0
         self.command = ""

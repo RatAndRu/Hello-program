@@ -89,10 +89,11 @@ def delete_object(a, name):
 
 @op("check", aliases=("проверить", "проверка"), category="Проверка",
     summary="Задаёт проверку результата: размер, толщина стенок, герметичность, симметрия и т.д.",
-    example="check кружка height 90..110",
+    example="check кружка height 90..110  ·  check деталь deviation эталон.stl 0.3",
     params={"object": "имя объекта",
             "rule": "watertight, genus, parts, size, height, width, depth, volume, mass, "
-                    "wall, flat_bottom, overhang, symmetric, gap, inside, tris, inverted",
+                    "wall, wall_min, flat_bottom, overhang, symmetric, gap, inside, tris, "
+                    "sharp_edge, tri_quality, deviation",
             "args": "параметры правила, например 90..110 или x"},
     positional="*")
 def check(a, name):

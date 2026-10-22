@@ -28,6 +28,9 @@ from . import ops_human  # noqa: F401,E402
 from . import ops_studio  # noqa: F401,E402
 from . import ops_io  # noqa: F401,E402
 from . import ops_extra  # noqa: F401,E402
+from . import ops_inspect  # noqa: F401,E402
+from . import ops_text  # noqa: F401,E402
+from . import ops_tech  # noqa: F401,E402
 
 
 @dataclass
@@ -132,12 +135,45 @@ class Build:
             "animations": plan["clips"],
             "keys": plan.get("keys", []),
             "timeline": plan,
+            "sections": _sections_payload(scene),
+            "probes": list(getattr(scene, "probes", []) or []) if scene else [],
+            "passports": list(getattr(scene, "passports", []) or []) if scene else [],
             "steps": self.steps,
             "frames": frames,
             "upto": self.upto,
             "empty": self.empty,
         }
         return payload
+
+
+def _sections_payload(scene) -> list[dict]:
+    """Сечения для интерфейса: контуры с ограничением числа точек."""
+    if scene is None:
+        return []
+    try:
+        import numpy as np
+
+        from .cuts import polygons_payload
+    except Exception:
+        return []
+    out = []
+    for entry in getattr(scene, "sections", []) or []:
+        out.append({
+            "object": entry.get("object"),
+            "plane": entry.get("plane"),
+            "at": entry.get("at"),
+            "layer": entry.get("layer"),
+            "area": entry.get("area"),
+            "outer": entry.get("outer"),
+            "holes": entry.get("holes"),
+            "bbox": entry.get("bbox"),
+            "contours": polygons_payload(
+                [{"points": np.asarray(c, dtype=float)}
+                 for c in entry.get("contours") or []], max_points=200),
+            "dxf": entry.get("dxf"),
+            "svg": entry.get("svg"),
+        })
+    return out
 
 
 def _hash(script: str) -> str:

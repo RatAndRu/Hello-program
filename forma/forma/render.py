@@ -15,8 +15,10 @@ import numpy as np
 from .geometry import crease_normals, color_to_float_rgb, manifold_mesh, write_png
 
 VIEWS = {
-    "iso": ((0.92, 1.25, 0.78), (0.0, 0.0, 1.0)),
-    "front": ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+    # камера стоит там, куда смотрит вектор: «спереди» — со стороны −Y,
+    # как в окне просмотра (иначе отчёт показывал обратную сторону детали)
+    "iso": ((0.92, -1.25, 0.78), (0.0, 0.0, 1.0)),
+    "front": ((0.0, -1.0, 0.0), (0.0, 0.0, 1.0)),
     "right": ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
     "top": ((0.0, 0.0, 1.0), (0.0, 1.0, 0.0)),
 }
@@ -349,9 +351,11 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
         zf = np.where(finite, zbuf, np.nan)
         gx = np.abs(np.diff(zf, axis=1, prepend=np.nan))
         gy = np.abs(np.diff(zf, axis=0, prepend=np.nan))
+        # резкие уступы (буквы, фаски, канавки) должны читаться: слабый
+        # градиент глубины усиливаем, плавные скругления остаются гладкими
         edge = np.nan_to_num(np.maximum(gx, gy) / max(cam["scale"] * 2.0, 1e-9))
-        edge = np.clip(edge, 0, 1) * finite
-        img *= (1.0 - 0.22 * edge)[:, :, None]
+        edge = np.clip(edge * 3.0, 0, 1) * finite
+        img *= (1.0 - 0.32 * edge)[:, :, None]
 
     # уменьшение (сглаживание)
     if ss > 1:

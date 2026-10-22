@@ -32,6 +32,8 @@ RULE_ALIASES = {
     "мин_стенка": "wall_min", "стенка_мин": "wall_min",
     "внутри": "inside",
     "треугольники": "tris", "трис": "tris",
+    "отклонение": "deviation", "похожесть": "deviation", "эталон": "deviation",
+    "hausdorff": "deviation", "гаусдорф": "deviation", "сравнение": "deviation",
 }
 
 RULE_LABELS = {
@@ -54,6 +56,7 @@ RULE_LABELS = {
     "wall_min": "минимальная стенка",
     "sharp_edge": "острые рёбра",
     "tri_quality": "качество треугольников",
+    "deviation": "отклонение от эталона",
 }
 
 UNITS = {
@@ -62,6 +65,7 @@ UNITS = {
     "flat_bottom": "%", "overhang": "%", "symmetric": "%",
     "tris": "трис", "genus": "шт", "parts": "шт",
     "wall_min": "мм", "sharp_edge": "°", "tri_quality": "%",
+    "deviation": "мм",
 }
 
 AXES = {"x": 0, "y": 1, "z": 2, "ширина": 0, "глубина": 1, "высота": 2,
@@ -140,9 +144,28 @@ def _num(value, unit: str, digits: int = 2) -> str:
     return f"{s} {unit}".strip()
 
 
+_REFERENCE_CACHE: dict[str, tuple[float, object]] = {}
+
+
+def _load_reference(path):
+    """Читает эталон (STL/OBJ/GLB/...) и кэширует по времени изменения."""
+    from .geometry import manifold_from_arrays
+    from .ops_io import load_any
+
+    key = str(path.resolve())
+    mtime = path.stat().st_mtime
+    cached = _REFERENCE_CACHE.get(key)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    verts, faces = load_any(path)
+    ref = manifold_from_arrays(verts, faces, "эталон")
+    _REFERENCE_CACHE[key] = (mtime, ref)
+    return ref
+
+
 RULES = {"watertight", "genus", "parts", "size", "height", "width", "depth", "volume",
          "mass", "wall", "wall_min", "flat_bottom", "overhang", "symmetric", "gap",
-         "clearance", "inside", "tris", "sharp_edge", "tri_quality"}
+         "clearance", "inside", "tris", "sharp_edge", "tri_quality", "deviation"}
 
 
 def evaluate_checks(scene, cache) -> list[dict]:
@@ -267,6 +290,39 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache) -> dict:
         return _result(ok, rule,
                        f"{label}: {actual_text} — {verdict} ({_fmt_range(rng, unit)}){where}",
                        name, line, value, _fmt_range(rng, unit), label)
+
+    if rule == "deviation":
+        if not args:
+            raise FormaError("Укажите эталон и допуск: check деталь deviation reference.stl 0.3")
+        raw = (args[0] or "").strip().strip("\"'")
+        if not raw:
+            raise FormaError("Нужен путь к эталону: check деталь deviation reference.stl 0.3")
+        tol = 0.3
+        if len(args) > 1:
+            value = _parse_value(args[1], cache_scene(cache))
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                tol = float(value)
+        from .cuts import hausdorff
+        from .ops_io import resolve_file
+        path = resolve_file(raw)
+        ref = _load_reference(path)
+        a_bb = solid.manifold.bounding_box()
+        r_bb = ref.bounding_box()
+        # сравниваем по центру габаритов: эталон мог быть сохранён в другом месте
+        shift = [(a_bb[i] + a_bb[i + 3]) / 2 - (r_bb[i] + r_bb[i + 3]) / 2
+                 for i in range(3)]
+        if any(abs(v) > 1e-6 for v in shift):
+            ref = ref.translate(shift)
+        res = hausdorff(solid.manifold, ref, samples=900)
+        ok = res["max"] <= tol
+        verdict = "в норме" if ok else "слишком далеко от эталона"
+        text = (f"{label} «{path.name}»: макс {fmt(res['max'])} мм, "
+                f"среднее {fmt(res['mean'])} мм, 95% ≤ {fmt(res['p95'])} мм — {verdict} "
+                f"(допуск {fmt(tol)} мм)")
+        result = _result(ok, rule, text, name, line, res["max"], f"≤ {fmt(tol)} мм", label)
+        result["deviation"] = res
+        result["reference"] = path.name
+        return result
 
     if rule == "symmetric":
         if not args:

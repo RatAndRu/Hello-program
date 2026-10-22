@@ -327,6 +327,20 @@ class AppState:
                 result = render_views(solids, out_dir, prefix=base, size=900, ss=2)
                 name = Path(result.get("combined") or result["files"][0]["path"]).name
                 data = Path(out_dir / name).read_bytes()
+            elif fmt in ("dxf", "svg"):
+                from . import cuts
+                sections = [s for s in (getattr(scene, "sections", []) or [])
+                            if s.get("contours")]
+                if not sections:
+                    raise FormaError("Нет сечений — добавьте в сценарий строку section z=40.")
+                name = f"{base}_sections.{fmt}"
+                target = out_dir / name
+                if fmt == "dxf":
+                    cuts.export_dxf(sections, target)
+                else:
+                    cuts.export_svg(sections, target)
+                return {"path": str(self._to_downloads(target)),
+                        "url": file_url("exports", name), "name": name}
             elif fmt == "forma":
                 data = self.last_script.encode("utf-8")
                 name = f"{base}.forma"
@@ -444,6 +458,7 @@ EXAMPLES = [
     ("Кружка со студией", "mug_studio"),
     ("Анимация и сборка по шагам", "animation"),
     ("Анимация по дорожкам и ключи", "animation_tracks"),
+    ("Надпись, резьба и сечение", "tech"),
 ]
 
 

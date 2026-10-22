@@ -46,6 +46,7 @@ PARAM_ALIASES = {
     "разрешение": "resolution", "сферы": "spheres", "капсулы": "capsules",
     "касание": "blend", "к": "k", "объединить": "merge",
     "сохранить": "keep", "плоскость": "plane", "слой": "layer",
+    "текст": "text", "надпись_текст": "text", "буквы": "text",
 }
 
 STYLE_KEYS = {"color", "metal", "rough", "density", "material", "visible"}

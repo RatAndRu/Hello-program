@@ -309,6 +309,7 @@ function applyBuild(payload, elapsed) {
     $('checks-list').innerHTML = '';
     $('checks-summary').textContent = '—';
     $('verdict').hidden = true;
+    renderSections(null);
     state.anim.frames = [];
     state.anim.playing = false;
     updateAnimState();
@@ -327,6 +328,7 @@ function applyBuild(payload, elapsed) {
   (payload.objects || []).forEach((o) => { if (!o.visible) state.hidden.add(o.name); });
 
   renderReport(payload);
+  renderSections(payload);
   renderChecks(payload);
   renderObjects(payload);
   renderDimensions(metrics);
@@ -354,6 +356,35 @@ function fmt(v, digits = 2) {
   return v.toFixed(digits).replace(/\.?0+$/, '');
 }
 function fmtInt(v) { return String(v).replace(/\B(?=(\d{3})+(?!\d))/g, ' '); }
+
+function renderSections(payload) {
+  const panel = $('section-panel');
+  const view = $('section-view');
+  if (!panel || !view) return;
+  // в сценарии может быть несколько строк section: показываем последнюю
+  const sections = (payload?.sections || []).filter((s) => (s.contours || []).length);
+  if (!sections.length) {
+    panel.hidden = true;
+    view.innerHTML = '';
+    return;
+  }
+  const sec = sections[sections.length - 1];
+  const bb = sec.bbox || [0, 0, 1, 1];
+  const w = Math.max(1e-3, bb[2] - bb[0]);
+  const h = Math.max(1e-3, bb[3] - bb[1]);
+  const path = sec.contours.map((c) => 'M ' + c.map((pt) => `${pt[0].toFixed(2)} ${pt[1].toFixed(2)}`).join(' L ') + ' Z').join(' ');
+  const stroke = Math.max(w, h) / 300;
+  view.innerHTML = `<svg viewBox="${bb[0]} ${bb[1]} ${w} ${h}" preserveAspectRatio="xMidYMid meet">`
+    + `<g transform="translate(0 ${bb[1] + bb[3]}) scale(1 -1)">`
+    + `<path d="${path}" fill="#79a9e0" fill-opacity="0.35" fill-rule="evenodd" `
+    + `stroke="#bcd9ff" stroke-width="${stroke}" stroke-linejoin="round" />`
+    + '</g></svg>'
+    + `<div class="section-caption">${escapeHtml(sec.object || '')} · ${escapeHtml(sec.plane || 'z')}=${fmt(sec.at)} мм`
+    + ` · площадь ${fmt((sec.area || 0) / 100)} см²`
+    + (sec.holes ? ` · отверстий ${sec.holes}` : '')
+    + '</div>';
+  panel.hidden = false;
+}
 
 function renderReport(payload) {
   const a = payload.analysis || {};
@@ -2180,6 +2211,26 @@ $('btn-render').addEventListener('click', async () => {
   } finally {
     btn.disabled = false;
   }
+});
+
+document.querySelectorAll('[data-section-export]').forEach((btn) => {
+  btn.addEventListener('click', async () => {
+    if (!state.payload?.ok) { toast('Сначала соберите модель', 'bad'); return; }
+    const fmtName = btn.dataset.sectionExport;
+    try {
+      const res = await api('/api/export', { format: fmtName });
+      const url = res.url + (res.url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN) + '&download=1';
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = res.name;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast(`Сечение сохранено: ${res.name}`);
+    } catch (err) {
+      toast(err.message || 'Нет сечений: добавьте section z=40 в сценарий', 'bad');
+    }
+  });
 });
 
 $('btn-export').parentElement.querySelector('.menu').addEventListener('click', async (e) => {

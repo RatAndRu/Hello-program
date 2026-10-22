@@ -1,0 +1,19 @@
+# Надпись, резьба и сечение — то, что нужно в реальной работе
+
+болт = thread diameter=10 length=24 pitch=1.5
+гайка = thread diameter=17 length=7 pitch=1.5 internal=true
+гайка = translate [гайка] offset=[26, 0, 0]
+
+табличка = box size=[90, 28, 6]
+табличка = translate [табличка] offset=[0, 55, 0]
+табличка = draft [табличка] angle=1.5
+табличка = emboss [табличка] text="ФОРМА 3D" size=12 depth=1.2 mode=relief
+
+надпись = text "ДЕТАЛИ" size=10 depth=2
+надпись = translate [надпись] offset=[0, -40, 0]
+
+section табличка z=6.8
+probe табличка x=0 y=55 z=3
+passport болт
+check болт height 23..25
+check гайка height 6..8

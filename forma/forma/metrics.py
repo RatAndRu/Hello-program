@@ -157,6 +157,99 @@ def wall_thickness(m: mf.Manifold, samples: int = 96) -> dict | None:
     }
 
 
+def find_holes(m: mf.Manifold, levels: int = 9, min_diameter: float = 0.6,
+               max_count: int = 12) -> list[dict]:
+    """Ищет вертикальные отверстия и полости по сечениям z.
+
+    Камеры и полости (крупные контуры) отделяются от отверстий по диаметру:
+    отверстие не может занимать половину ширины детали. Это приближение —
+    горизонтальные отверстия ищутся командой section plane=x/y.
+    """
+    from .cuts import section_polygons
+
+    bb = m.bounding_box()
+    height = bb[5] - bb[2]
+    if height <= 1e-6:
+        return []
+    levels = max(4, min(int(levels), 15))
+    groups: list[dict] = []
+    used = 0
+    for k in range(levels):
+        z = bb[2] + height * (k + 0.5) / levels
+        try:
+            cs = m.slice(z)
+        except Exception:
+            continue
+        if cs.is_empty():
+            continue
+        polygons = section_polygons(cs)
+        if not polygons:
+            continue
+        used += 1
+        for contour in polygons:
+            area = contour["area"]
+            if area >= -1e-9:
+                continue
+            pts = contour["points"]
+            cx, cy = float(pts[:, 0].mean()), float(pts[:, 1].mean())
+            diameter = 2.0 * math.sqrt(abs(area) / math.pi)
+            if diameter < min_diameter:
+                continue
+            target = None
+            for group in groups:
+                last_d = group["_d"][-1]
+                tol = max(1.5, 0.15 * max(diameter, last_d))
+                if (math.hypot(group["_x"][-1] - cx, group["_y"][-1] - cy) <= tol
+                        and abs(last_d - diameter) <= 0.3 * max(diameter, last_d)):
+                    target = group
+                    break
+            if target is None:
+                target = {"_x": [], "_y": [], "_d": [], "levels": [], "z": []}
+                groups.append(target)
+            target["_x"].append(cx)
+            target["_y"].append(cy)
+            target["_d"].append(diameter)
+            target["levels"].append(k)
+            target["z"].append(z)
+    holes = []
+    for group in groups:
+        if not group["levels"]:
+            continue
+        kmin, kmax = min(group["levels"]), max(group["levels"])
+        depth = (kmax - kmin + 1) * height / levels
+        through = kmin <= 0.15 * levels and kmax >= levels - 1 - 0.15 * levels
+        holes.append({
+            "x": round(float(sum(group["_x"]) / len(group["_x"])), 3),
+            "y": round(float(sum(group["_y"]) / len(group["_y"])), 3),
+            "diameter": round(float(sum(group["_d"]) / len(group["_d"])), 3),
+            "depth": round(float(depth), 3),
+            "through": bool(through),
+            "levels": len(group["levels"]),
+        })
+    holes.sort(key=lambda h: (-h["diameter"], h["x"]))
+    if used and len(holes) > max_count:
+        holes = holes[:max_count]
+    return holes
+
+
+def detail_passport(solid, base: dict | None = None, with_holes: bool = True) -> dict:
+    """Паспорт детали: габариты, центр, масса, стенка, отверстия."""
+    data = dict(base or collect_solid(solid, wall=True))
+    info = solid.stats()
+    size = info["size"]
+    holes: list[dict] = []
+    if with_holes:
+        try:
+            holes = find_holes(solid.manifold)
+        except Exception:
+            holes = []
+    limit = 0.5 * max(1e-6, min(size[0], size[1]) if min(size[0], size[1]) > 1e-6 else size[2])
+    data["holes"] = [h for h in holes if h["diameter"] <= limit]
+    data["cavity"] = [h for h in holes if h["diameter"] > limit]
+    data["passport"] = True
+    return data
+
+
 def symmetry_error(m: mf.Manifold, axis: str, plane: float | None = None,
                    max_tris: int = 90_000) -> float | None:
     if m.num_tri() > max_tris:
@@ -363,6 +456,11 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
         "objects": objects,
         "main": main["name"],
     }
+    try:
+        main_solid = next((s for s in visible if s.name == main["name"]), visible[0])
+        metrics["passport"] = detail_passport(main_solid, base=main)
+    except Exception:
+        metrics["passport"] = None
 
     # ---- предупреждения ---------------------------------------------------
     if gparts > 1:
@@ -459,6 +557,35 @@ def build_text(scene, m: dict, checks: list[dict], warnings: list[str],
     lines.append(f"• площадь поверхности: {fmt(m['area_cm2'])} см²")
     lines.append(f"• частей: {m['parts']}" + (", единое тело" if m["parts"] == 1 else ""))
     lines.append(f"• сквозных отверстий (род): {m['genus']}")
+    passport = m.get("passport")
+    if passport:
+        ps = passport["size"]
+        pc = passport["center"]
+        lines.append("")
+        lines.append(f"ПАСПОРТ ДЕТАЛИ (главный объект «{passport['name']}»)")
+        lines.append(f"• габариты {fmt(ps[0])} × {fmt(ps[1])} × {fmt(ps[2])} мм; "
+                     f"центр ({fmt(pc[0])}, {fmt(pc[1])}, {fmt(pc[2])})")
+        pw = passport.get("wall")
+        if pw:
+            lines.append(f"• материал: {fmt(passport['volume_cm3'])} см³, "
+                         f"{fmt(passport['mass_g'], 0)} г; минимальная стенка "
+                         f"{fmt(pw['min'])} мм (медиана {fmt(pw['median'])})")
+        else:
+            lines.append(f"• материал: {fmt(passport['volume_cm3'])} см³, "
+                         f"{fmt(passport['mass_g'], 0)} г; деталь сплошная")
+        cavity = passport.get("cavity") or []
+        if cavity:
+            lines.append("• полость: есть, ø" + ", ".join(fmt(c["diameter"]) for c in cavity[:3])
+                         + " мм (внутренний объём)")
+        holes = passport.get("holes") or []
+        if holes:
+            items = []
+            for hole in holes[:6]:
+                kind = "сквозное" if hole["through"] else f"глухое {fmt(hole['depth'])} мм"
+                items.append(f"ø{fmt(hole['diameter'])} в ({fmt(hole['x'])}, {fmt(hole['y'])}) {kind}")
+            lines.append("• отверстия: " + "; ".join(items))
+        else:
+            lines.append("• отверстия: вертикальных нет")
     if m.get("wall"):
         w = m["wall"]
         lines.append(f"• толщина материала: медиана {fmt(w['median'])} мм "
@@ -478,6 +605,33 @@ def build_text(scene, m: dict, checks: list[dict], warnings: list[str],
     elif m["tris"] > 15_000:
         lines.append("• симметрия: не измерялась (самая дорогая метрика) — "
                      "добавьте check имя symmetric x")
+    sections = getattr(scene, "sections", []) or []
+    if sections:
+        lines.append("")
+        lines.append("СЕЧЕНИЯ")
+        for sec in sections[-6:]:
+            lines.append(f"• {sec.get('object')} {sec.get('plane')}={fmt(sec.get('at'))} мм: "
+                         f"площадь {fmt((sec.get('area') or 0) / 100)} см², контуров "
+                         f"{len(sec.get('contours') or [])} "
+                         f"({sec.get('outer') or 0} внешних, {sec.get('holes') or 0} внутренних); "
+                         f"файлы {sec.get('layer')}.dxf/.svg")
+    probes = getattr(scene, "probes", []) or []
+    if probes:
+        lines.append("")
+        lines.append("ПРОБЫ МАТЕРИАЛА")
+        for probe in probes[-6:]:
+            pt = probe.get("point") or [0, 0, 0]
+            where = f"({fmt(pt[0])}, {fmt(pt[1])}, {fmt(pt[2])})"
+            if probe.get("outside_bbox"):
+                lines.append(f"• {where} — вне габаритов, материала нет")
+            elif probe.get("inside"):
+                dist = probe.get("distance")
+                extra = "" if dist is None else f", до стенки {fmt(dist)} мм"
+                lines.append(f"• {where} — материал есть{extra}")
+            else:
+                dist = probe.get("distance")
+                extra = "" if dist is None else f", до стенки {fmt(dist)} мм"
+                lines.append(f"• {where} — пусто{extra}")
     if len(m["objects"]) > 1:
         lines.append("")
         lines.append("ОБЪЕКТЫ")

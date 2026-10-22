@@ -248,6 +248,15 @@ def _run_uistest(report_path: str | None) -> int:
                       built.get("ok") is True and plan.get("track_count", 0) >= 4
                       and plan.get("key_count", 0) >= 2,
                       f"дорожек {plan.get('track_count')}, ключей {plan.get('key_count')}")
+                tech = get("/api/example?key=tech")
+                tech_built = post("/api/build", {"script": tech.get("script") or ""})
+                check("пример «Надпись, резьба и сечение»",
+                      tech_built.get("ok") is True
+                      and len(tech_built.get("sections") or []) >= 1,
+                      f"сечений {len(tech_built.get('sections') or [])}")
+                dxf = post("/api/export", {"format": "dxf"})
+                check("экспорт сечения в DXF", str(dxf.get("name", "")).endswith(".dxf"),
+                      str(dxf.get("name") or dxf.get("error")))
                 morph_script = ("R = 30\nк = cylinder radius=R height=40 segments=32\n"
                                 "animate kind=morph param=R from=20 to=40 seconds=2")
                 post("/api/build", {"script": morph_script})
