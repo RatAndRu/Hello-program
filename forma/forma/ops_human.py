@@ -27,14 +27,6 @@ IRIS_DEFAULT = "#4a3423"
             "muscles": "рельеф мышц да/нет",
             "skin": "цвет кожи #RRGGBB", "hair_color": "цвет волос"})
 def human(a, name):
-    try:
-        import skimage  # noqa: F401
-    except Exception:
-        raise DslError(
-            "Для команды human нужен модуль scikit-image.",
-            hint="Установите зависимости: pip install scikit-image. "
-                 "В собранном Forma3D.exe он уже встроен.",
-            line=a.cmd.line, command=a.cmd.text)
     from .anatomy import DETAIL_ALIASES, DETAILS, Anatomy, HumanParams
 
     height = float(a.num("height", 1750.0) or 1750.0)

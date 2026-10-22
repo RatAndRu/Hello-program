@@ -185,11 +185,12 @@ def compile_field(expression: str):
 
 def surface_from_field(field, bounds: list[float], res: float,
                        level: float = 0.0):
-    """Извлекает поверхность из поля. Возвращает (вершины, грани, res)."""
+    """Извлекает поверхность из поля. Возвращает (вершины, грани, шаг)."""
+    from .mesher import mesh_field
+
     x0, y0, z0, x1, y1, z1 = [float(v) for v in bounds]
-    span = max(x1 - x0, y1 - y0, z1 - z0)
     step = max(float(res), 1e-3)
-    # держим сетку в разумной памяти (float32 × ~12 млн ячеек)
+    # держим сетку в разумной памяти
     for _ in range(40):
         nx = int(round((x1 - x0) / step)) + 1
         ny = int(round((y1 - y0) / step)) + 1
@@ -203,26 +204,20 @@ def surface_from_field(field, bounds: list[float], res: float,
     ys = np.linspace(y0, y1, ny, dtype=np.float32)
     zs = np.linspace(z0, z1, nz, dtype=np.float32)
     X, Y, Z = np.meshgrid(xs, ys, zs, indexing="ij")
-    values = -np.asarray(field(X, Y, Z), dtype=np.float64) - float(level)
+    values = np.asarray(field(X, Y, Z), dtype=np.float64)
     del X, Y, Z
     if not np.isfinite(values).all():
         values = np.nan_to_num(values, nan=1e6, posinf=1e6, neginf=-1e6)
-    if values.min() > 0 or values.max() < 0:
+    if values.min() >= level:
         return None, None, step
-
-    try:
-        from skimage import measure
-    except Exception as exc:  # scikit-image входит в зависимости, но вдруг
-        raise GeometryError(f"Нет scikit-image для извлечения поверхности: {exc}") from exc
-
-    # Снаружи bounds поля нет: добавляем рамку «снаружи», чтобы поверхность,
-    # упёршаяся в границу области, закрывалась крышкой, а не оставалась дырой.
-    # values > 0 — внутри тела, поэтому рамка должна быть «снаружи» (< 0).
-    padded = np.pad(values, 1, mode="constant", constant_values=-1e3).astype(np.float32)
-    verts, faces, _normals, _ = measure.marching_cubes(
-        padded, level=0.0, spacing=(step, step, step), allow_degenerate=False)
-    verts = np.asarray(verts, dtype=np.float64) - float(step) + np.array([x0, y0, z0])
-    return verts, np.asarray(faces, dtype=np.int64), step
+    hx = (x1 - x0) / max(nx - 1, 1)
+    hy = (y1 - y0) / max(ny - 1, 1)
+    hz = (z1 - z0) / max(nz - 1, 1)
+    verts, faces = mesh_field(values.astype(np.float32), origin=(x0, y0, z0),
+                              spacing=(hx, hy, hz), level=float(level))
+    if len(faces) == 0:
+        return None, None, step
+    return np.asarray(verts, dtype=np.float64), np.asarray(faces, dtype=np.int64), step
 
 
 def finalize_sdf(verts: np.ndarray, faces: np.ndarray, step: float,

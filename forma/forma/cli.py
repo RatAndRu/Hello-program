@@ -101,7 +101,7 @@ def cmd_doctor(args) -> int:
 
     print(f"{APP_NAME} {__version__}")
     print(f"Python: {platform.python_version()} ({platform.system()} {platform.release()})")
-    for module in ("manifold3d", "numpy", "trimesh", "webview", "PIL"):
+    for module in ("manifold3d", "numpy", "trimesh", "webview"):
         try:
             mod = __import__(module)
             print(f"  {module}: {getattr(mod, '__version__', 'есть')}")

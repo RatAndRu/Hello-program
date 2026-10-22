@@ -208,5 +208,49 @@ class TestExport(unittest.TestCase):
         self.assertIn("<triangle", model)
 
 
+class TestLeanBuild(unittest.TestCase):
+    """Сборка без scipy/skimage/Pillow: свой мешер и свой PNG-кодек."""
+
+    def test_mesher_matches_sphere_volume(self):
+        import numpy as np
+        from forma.geometry import manifold_from_arrays
+        from forma.mesher import mesh_field
+
+        R, h = 20.0, 1.0
+        xs = np.arange(-R - 2 * h, R + 2 * h + 1e-9, h, dtype=np.float32)
+        X, Y, Z = np.meshgrid(xs, xs, xs, indexing="ij")
+        field = (np.sqrt(X * X + Y * Y + Z * Z) - R).astype(np.float32)
+        verts, faces = mesh_field(field, origin=(float(xs[0]),) * 3, spacing=h)
+        solid = manifold_from_arrays(verts, faces, what="сфера")
+        true_volume = 4 / 3 * np.pi * R ** 3 / 1000.0
+        self.assertAlmostEqual(solid.volume() / 1000.0 / true_volume, 1.0, delta=0.01)
+
+    def test_png_roundtrip(self):
+        import numpy as np
+        from forma.geometry import png_bytes, read_png
+
+        arr = (np.random.default_rng(7).random((23, 31, 3)) * 255).astype(np.uint8)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "x.png"
+            path.write_bytes(png_bytes(arr))
+            back = read_png(path)
+        self.assertEqual(back.shape, arr.shape)
+        self.assertTrue((back == arr).all())
+
+    def test_no_heavy_science_stack(self):
+        # from_sdf/blob/human не должны тянуть scipy, scikit-image или Pillow
+        ok("ш = from_sdf expression=\"sd_sphere(x,y,z,10)\" bounds=[-12,-12,-12,12,12,12] resolution=2")
+        ok("к = blob spheres=[[0,0,20,15],[0,0,45,12]] blend=6 resolution=2")
+        for name in ("scipy", "skimage", "PIL"):
+            self.assertNotIn(name, sys.modules, f"{name} больше не нужен приложению")
+
+    def test_symmetry_only_when_asked(self):
+        # без проверки симметрии дорогая метрика не считается на большой сетке
+        b = ok("т = human height=1500 detail=низкий")
+        self.assertEqual(b.analysis["metrics"]["symmetry"], {})
+        b2 = ok("т = human height=1500 detail=низкий\ncheck т symmetric x 5")
+        self.assertIn("x", b2.analysis["metrics"]["symmetry"])
+
+
 if __name__ == "__main__":
     unittest.main()

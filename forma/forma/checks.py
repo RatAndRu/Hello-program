@@ -287,13 +287,18 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache) -> dict:
                 plane = float(plane_val)
         err = cache.symmetry(solid, axis, plane)
         if err is None:
-            return _result(True, rule, f"{label} по {axis.upper()}: слишком тяжёлая сетка — пропущено",
-                           name, line, None, f"≤ {fmt(tol)}%", label)
+            skipped = _result(True, rule,
+                              f"{label} по {axis.upper()}: слишком тяжёлая сетка — пропущено",
+                              name, line, None, f"≤ {fmt(tol)}%", label)
+            skipped["axis"] = axis
+            return skipped
         ok = err <= tol
-        return _result(ok, rule,
-                       f"{label} по {axis.upper()}: отклонение {fmt(err, 3)}% "
-                       f"({'в норме' if ok else 'нарушена'}, допуск {fmt(tol)}%)",
-                       name, line, err, f"≤ {fmt(tol)}%", label)
+        result = _result(ok, rule,
+                         f"{label} по {axis.upper()}: отклонение {fmt(err, 3)}% "
+                         f"({'в норме' if ok else 'нарушена'}, допуск {fmt(tol)}%)",
+                         name, line, err, f"≤ {fmt(tol)}%", label)
+        result["axis"] = axis
+        return result
 
     if rule == "gap":
         if not args:

@@ -34,9 +34,11 @@ def _normalize(v):
 
 def _load_texture(path: str, size: int = 256):
     try:
-        from PIL import Image
-        img = Image.open(path).convert("RGB").resize((size, size), Image.BILINEAR)
-        return (np.asarray(img, dtype=np.float32) / 255.0)
+        from .geometry import read_png, resize_rgb
+        arr = read_png(path)
+        if arr is None:
+            return None
+        return resize_rgb(arr, size).astype(np.float32) / 255.0
     except Exception:
         return None
 

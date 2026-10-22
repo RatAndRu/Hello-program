@@ -9,6 +9,7 @@ from __future__ import annotations
 import math
 import struct
 import zlib
+from pathlib import Path
 from typing import Iterable, Sequence
 
 import manifold3d as mf
@@ -1053,43 +1054,167 @@ def color_to_float_rgb(color: str) -> tuple[float, float, float]:
     return (int(c[0:2], 16) / 255.0, int(c[2:4], 16) / 255.0, int(c[4:6], 16) / 255.0)
 
 
-def write_png(path, rgb: np.ndarray) -> None:
-    """Минималистичный PNG-энкодер (RGB, uint8). Без внешних зависимостей."""
-    import os
-    arr = np.asarray(rgb, dtype=np.uint8)
+def _png_chunk(tag: bytes, data: bytes) -> bytes:
+    return (struct.pack(">I", len(data)) + tag + data
+            + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+
+def _png_encode(arr: np.ndarray) -> bytes:
+    """PNG без внешних библиотек: RGB или RGBA, 8 бит, без интерлейса."""
+    arr = np.asarray(arr, dtype=np.uint8)
     if arr.ndim == 2:
         arr = np.stack([arr, arr, arr], axis=2)
-    h, w, _ = arr.shape
+    h, w, ch = arr.shape
+    if ch not in (3, 4):
+        arr = arr[:, :, :3]
+        ch = 3
+    color_type = 2 if ch == 3 else 6
     raw = b"".join(b"\x00" + arr[y].tobytes() for y in range(h))
-
-    def chunk(tag: bytes, data: bytes) -> bytes:
-        return (struct.pack(">I", len(data)) + tag + data
-                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
-
     png = b"\x89PNG\r\n\x1a\n"
-    png += chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
-    png += chunk(b"IDAT", zlib.compress(raw, 6))
-    png += chunk(b"IEND", b"")
+    png += _png_chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, color_type, 0, 0, 0))
+    png += _png_chunk(b"IDAT", zlib.compress(raw, 6))
+    png += _png_chunk(b"IEND", b"")
+    return png
+
+
+def write_png(path, rgb: np.ndarray) -> None:
+    """Минималистичный PNG-энкодер (RGB/RGBA, uint8). Без внешних зависимостей."""
+    import os
+    data = _png_encode(rgb)
     os.makedirs(os.path.dirname(os.path.abspath(path)) or ".", exist_ok=True)
     with open(path, "wb") as fh:
-        fh.write(png)
+        fh.write(data)
 
 
 def png_bytes(rgb: np.ndarray) -> bytes:
-    import io
-    arr = np.asarray(rgb, dtype=np.uint8)
-    h, w, _ = arr.shape
-    raw = b"".join(b"\x00" + arr[y].tobytes() for y in range(h))
+    return _png_encode(rgb)
 
-    def chunk(tag: bytes, data: bytes) -> bytes:
-        return (struct.pack(">I", len(data)) + tag + data
-                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
 
-    out = b"\x89PNG\r\n\x1a\n"
-    out += chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
-    out += chunk(b"IDAT", zlib.compress(raw, 6))
-    out += chunk(b"IEND", b"")
-    return out
+def read_png(path) -> np.ndarray | None:
+    """Читает PNG, который пишет само приложение (8 бит, RGB/RGBA, без интерлейса).
+
+    Нужен, чтобы текстуры не требовали Pillow: свои узоры мы пишем сами,
+    а сторонние PNG с другими настройками просто пропускаются.
+    """
+    try:
+        data = Path(path).read_bytes()
+    except Exception:
+        return None
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        return None
+    pos = 8
+    idat = bytearray()
+    w = h = 0
+    color_type = 2
+    bit_depth = 8
+    while pos + 8 <= len(data):
+        length = struct.unpack(">I", data[pos:pos + 4])[0]
+        tag = data[pos + 4:pos + 8]
+        chunk = data[pos + 8:pos + 8 + length]
+        pos += 12 + length
+        if tag == b"IHDR":
+            w, h, bit_depth, color_type, _comp, _filt, interlace = struct.unpack(
+                ">IIBBBBB", chunk)
+            if bit_depth != 8 or interlace != 0:
+                return None
+        elif tag == b"IDAT":
+            idat += chunk
+        elif tag == b"IEND":
+            break
+    channels = {0: 1, 2: 3, 4: 2, 6: 4}.get(color_type)
+    if channels is None or w <= 0 or h <= 0:
+        return None
+    try:
+        raw = zlib.decompress(bytes(idat))
+    except Exception:
+        return None
+    stride = w * channels
+    if len(raw) < h * (stride + 1):
+        return None
+    out = np.zeros((h, stride), dtype=np.uint8)
+    prev = np.zeros(stride, dtype=np.uint8)
+    bpp = channels
+    p = 0
+    for y in range(h):
+        ftype = raw[p]
+        p += 1
+        line = np.frombuffer(raw, dtype=np.uint8, count=stride, offset=p)
+        p += stride
+        if ftype == 0:
+            cur = line.copy()
+        elif ftype == 2:
+            cur = (line.astype(np.int16) + prev).astype(np.uint8)
+        elif ftype == 1:
+            cur = line.copy()
+            for i in range(bpp, stride):
+                cur[i] = (int(cur[i]) + int(cur[i - bpp])) & 0xFF
+        elif ftype == 3:
+            cur = line.copy()
+            for i in range(stride):
+                left = int(cur[i - bpp]) if i >= bpp else 0
+                cur[i] = (int(cur[i]) + ((left + int(prev[i])) >> 1)) & 0xFF
+        elif ftype == 4:
+            cur = line.copy()
+            for i in range(stride):
+                a = int(cur[i - bpp]) if i >= bpp else 0
+                b = int(prev[i])
+                c = int(prev[i - bpp]) if i >= bpp else 0
+                pa, pb, pc = abs(b - c), abs(a - c), abs(a + b - 2 * c)
+                pred = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                cur[i] = (int(cur[i]) + pred) & 0xFF
+        else:
+            return None
+        out[y] = cur
+        prev = cur
+    img = out.reshape(h, w, channels)
+    if channels == 1:
+        img = np.repeat(img, 3, axis=2)
+    elif channels == 2:
+        img = np.repeat(img[:, :, :1], 3, axis=2)
+    return img
+
+
+class SimpleImage:
+    """Крошечная замена PIL.Image для GLB: только сохранение в PNG."""
+
+    format = "PNG"
+
+    def __init__(self, array: np.ndarray):
+        self.array = np.asarray(array, dtype=np.uint8)
+
+    @property
+    def size(self):
+        h, w = self.array.shape[:2]
+        return (w, h)
+
+    def save(self, fp, format: str | None = None) -> None:  # noqa: A002
+        fp.write(_png_encode(self.array))
+
+    def __array__(self, dtype=None):
+        return self.array if dtype is None else self.array.astype(dtype)
+
+
+def resize_rgb(arr: np.ndarray, size: int) -> np.ndarray:
+    """Приводит картинку к size×size билинейно, без Pillow."""
+    a = np.asarray(arr, dtype=np.float32)
+    if a.ndim == 2:
+        a = np.stack([a, a, a], axis=2)
+    a = a[:, :, :3]
+    h, w, _ = a.shape
+    if h == size and w == size:
+        return np.clip(a, 0, 255).astype(np.uint8)
+    ys = (np.arange(size) + 0.5) * (h / size) - 0.5
+    xs = (np.arange(size) + 0.5) * (w / size) - 0.5
+    y0 = np.clip(np.floor(ys).astype(int), 0, h - 1)
+    y1 = np.clip(y0 + 1, 0, h - 1)
+    x0 = np.clip(np.floor(xs).astype(int), 0, w - 1)
+    x1 = np.clip(x0 + 1, 0, w - 1)
+    wy = np.clip(ys - y0, 0, 1)[:, None, None]
+    wx = np.clip(xs - x0, 0, 1)[None, :, None]
+    top = a[y0][:, x0] * (1 - wx) + a[y0][:, x1] * wx
+    bot = a[y1][:, x0] * (1 - wx) + a[y1][:, x1] * wx
+    out = top * (1 - wy) + bot * wy
+    return np.clip(out, 0, 255).astype(np.uint8)
 
 
 def fibonacci_sphere(n: int) -> np.ndarray:

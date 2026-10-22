@@ -298,15 +298,15 @@ def custom_texture_file(pattern: str = "полосы", color1: str = "#3a6ea5",
 
 
 def load_texture_image(path: str):
-    try:
-        from PIL import Image
-    except Exception:
+    """Картинка текстуры в виде, который понимает экспорт GLB (без Pillow)."""
+    from .geometry import SimpleImage, read_png
+    arr = read_png(path)
+    if arr is None:
         return None
-    try:
-        img = Image.open(path).convert("RGBA")
-        return img
-    except Exception:
-        return None
+    if arr.shape[2] == 3:
+        alpha = np.full(arr.shape[:2] + (1,), 255, dtype=np.uint8)
+        arr = np.concatenate([arr, alpha], axis=2)
+    return SimpleImage(arr)
 
 
 def uv_for(verts: np.ndarray, mode: str = "cylinder",

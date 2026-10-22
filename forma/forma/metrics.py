@@ -233,7 +233,9 @@ class MetricsCache:
         return self._cache[key]
 
     def symmetry(self, solid, axis: str, plane: float | None = None) -> float | None:
-        key = f"sym:{solid.name}:{axis}:{plane}"
+        # None и 0.0 означают одно и то же (плоскость по центру/через начало),
+        # поэтому ключ кэша у них общий — иначе считаем одно и то же дважды.
+        key = f"sym:{solid.name}:{solid.manifold.num_tri()}:{axis}:{float(plane or 0.0)}"
         if key not in self._cache:
             self._cache[key] = {"value": symmetry_error(solid.manifold, axis, plane)}
         return self._cache[key]["value"]
@@ -255,6 +257,27 @@ def union_visible(scene) -> tuple[mf.Manifold | None, list]:
         return merged, solids
     except Exception:
         return None, solids
+
+
+def _requested_axes(scene, check_results: list[dict] | None) -> set[str]:
+    """Какие оси симметрии реально спрашивают проверки (остальные не считаем)."""
+    axes: set[str] = set()
+    for r in check_results or []:
+        axis = r.get("axis")
+        if r.get("rule") == "symmetric" and axis:
+            axes.add(str(axis))
+    for spec in getattr(scene, "checks", []) or []:
+        rule = (spec.get("rule") or "").lower()
+        if rule not in ("symmetric", "симметрия", "симметричность"):
+            continue
+        args = spec.get("args") or []
+        if args:
+            raw = str(args[0]).strip().lower()
+            axis = {"ширина": "x", "глубина": "y", "высота": "z",
+                    "width": "x", "depth": "y", "height": "z"}.get(raw, raw)
+            if axis in ("x", "y", "z"):
+                axes.add(axis)
+    return axes
 
 
 def analyze(scene, previous: dict | None = None, check_results: list[dict] | None = None) -> dict:
@@ -285,7 +308,18 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
         gover = overhang_percent(union)
         # для одного объекта сплошной «union» — это он же: не считаем дважды
         gwall = objects[0]["wall"] if len(visible) == 1 else wall_thickness(union, 96)
-        gsym = {axis: symmetry_error(union, axis) for axis in ("x", "y", "z")}
+        # симметрия — самая дорогая метрика (булевы операции). Считаем её по
+        # тем осям, которые просят проверки, и по всем трём — только если
+        # сетка небольшая и это дёшево.
+        axes = _requested_axes(scene, check_results)
+        if gtris <= 15_000:
+            axes.update(("x", "y", "z"))
+        if len(visible) == 1:
+            # один объект: считаем через кэш сцены, чтобы проверка ниже
+            # не считала то же самое второй раз
+            gsym = {axis: cache.symmetry(visible[0], axis) for axis in sorted(axes)}
+        else:
+            gsym = {axis: symmetry_error(union, axis) for axis in sorted(axes)}
         density = max(s.density for s in visible)
         gmass = gvol * density
     else:
@@ -301,6 +335,10 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
         gover = main["overhang_pct"]
         gwall = main["wall"]
         gsym = main.get("symmetry") or {}
+        axes = _requested_axes(scene, check_results)
+        if axes and not gsym:
+            biggest = max(visible, key=lambda s: s.manifold.volume())
+            gsym = {axis: cache.symmetry(biggest, axis) for axis in sorted(axes)}
         gmass = sum(o["mass_g"] for o in objects)
         density = max(s.density for s in visible)
 
@@ -437,6 +475,9 @@ def build_text(scene, m: dict, checks: list[dict], warnings: list[str],
                 sym.append(f"{axis.upper()} {fmt(max(0.0, 100 - v), 1)}%")
         if sym:
             lines.append("• симметрия: " + ", ".join(sym))
+    elif m["tris"] > 15_000:
+        lines.append("• симметрия: не измерялась (самая дорогая метрика) — "
+                     "добавьте check имя symmetric x")
     if len(m["objects"]) > 1:
         lines.append("")
         lines.append("ОБЪЕКТЫ")

@@ -134,24 +134,14 @@ class Field:
         указанного угла и удвоение плотности сетки. Именно это убирает
         «лесенки» марширующих кубов на плавных переходах.
         """
-        from skimage import measure
+        from .mesher import mesh_field
 
-        F = self.F
-        if not np.all(F > 0):
-            pad = [(1, 1), (1, 1), (1, 1)]
-            F = np.pad(F, pad, mode="constant", constant_values=BIG)
-            origin = [self.bounds[0] - self.h, self.bounds[1] - self.h, self.bounds[2] - self.h]
-        else:
-            origin = [self.bounds[0], self.bounds[1], self.bounds[2]]
-        verts, faces, _normals, _ = measure.marching_cubes(
-            F, level=0.0, spacing=(self.h, self.h, self.h), allow_degenerate=False)
+        verts, faces = mesh_field(self.F, origin=self.bounds[:3], spacing=self.h)
         if len(verts) == 0 or len(faces) == 0:
             raise GeometryError(f"Не удалось построить {what}: пустая поверхность.",
                                 hint="Проверьте размеры и разрешение.")
-        verts = verts + np.asarray(origin, dtype=np.float64)
         faces = faces.astype(np.int64)
-        # ориентация: у skimage нормали смотрят от внутренней области к внешней;
-        # приводим к CCW-наружу, проверяя знак объёма
+        # ориентация: нормали смотрят изнутри наружу — приводим к CCW-наружу
         v0, v1, v2 = verts[faces[:, 0]], verts[faces[:, 1]], verts[faces[:, 2]]
         vol = np.einsum("ij,ij->i", v0, np.cross(v1, v2)).sum() / 6.0
         if vol < 0:
