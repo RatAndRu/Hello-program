@@ -6,11 +6,37 @@ on:
       - 'obyom/**'
       - '.github/workflows/build-obyom-android.yml'
 jobs:
-  tests:
-    name: Проверки (без сцен)
+  wasm:
+    name: C++/WASM ядро (Emscripten)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.68
+      - name: Скомпилировать carve.c → carve.mjs + carve.wasm
+        run: |
+          mkdir -p obyom/web/js/wasm
+          emcc obyom/src/carve.c -o obyom/web/js/wasm/carve.mjs \
+            -O3 -s ENVIRONMENT=web -s MODULARIZE=1 -s EXPORT_ES6=1 \
+            -s EXPORT_NAME=createModule -s EXPORTED_FUNCTIONS=_malloc,_free,_carve_occ \
+            -s ALLOW_MEMORY_GROWTH=1 -s STANDALONE_WASM=0 --no-entry
+          ls -la obyom/web/js/wasm/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: obyom-wasm
+          path: obyom/web/js/wasm/
+          retention-days: 1
+  tests:
+    name: Проверки (без сцен)
+    needs: wasm
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: obyom-wasm
+          path: obyom/web/js/wasm/
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -28,6 +54,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: obyom-wasm
+          path: obyom/web/js/wasm/
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

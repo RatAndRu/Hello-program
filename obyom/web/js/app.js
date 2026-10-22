@@ -10,9 +10,9 @@ import * as store from './store.js';
 import { fmtT, TEX } from './pipeline.js';
 import { hasNativeCam } from './nativecam.js';
 
-export const VERSION = '2.7';
+export const VERSION = '2.8';
 const $ = (id) => document.getElementById(id);
-const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8', torch: 'off', mono: 'off', objColor: null }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
+const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8', torch: 'off', mono: 'off', sam: 'off', objColor: null }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
 // калибровка печати: { A4: {sx, sy}, ... } — во сколько раз принтер растянул лист по ширине и длине
 const loadCal = () => { try { return JSON.parse(localStorage.getItem('obyom.cal') || '{}'); } catch (e) { return {}; } };
@@ -220,7 +220,12 @@ $('capDone').onclick = async () => {
 async function finishCapture() {
   plateSheet = false;
   if (!cap) return;
-  const shots = cap.shots.map((s) => s.blob), Hb = cap.opt.Hb, plates = cap.plates || [], torchUsed = !!cap.torchOn; cap.stop(); cap = null;
+  const shots = cap.shots.map((s) => s.blob), Hb = cap.opt.Hb, plates = cap.plates || [], torchUsed = !!cap.torchOn;
+  // v2.8: дожидаемся фоновой подготовки всех кадров (decode + метки) и передаём pipeline готовые фреймы
+  const prepWait = cap._bgPrep || Promise.resolve();
+  const prepped = cap.prepped || []; const sunDir = cap.getSunDir && cap.getSunDir(); cap.stop(); cap = null;
+  if (prepped.length < shots.length) { try { await prepWait; } catch(e){} }
+  const preppedFrames = prepped.length >= shots.length ? prepped.slice(0, shots.length) : null;
   if (capCtx && capCtx.closeOf) { // крупные планы: только для текстуры, пересчёт со всеми кадрами
     const base = capCtx.closeOf; capCtx = null;
     const fa = await store.getFrames(base.id).catch(() => null);
@@ -270,7 +275,7 @@ function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
   $('procStop').textContent = 'Остановить'; $('procView').classList.remove('on');
   const log = (t) => { $('procLog').textContent += t + '\n'; };
   log(`кадров: ${blobs.length}; режим: ${{ mesh: 'полигоны', splat: 'сплэты', both: 'полигоны + сплэты' }[st.mode]}`);
-  const job = { poolSize: +localStorage.getItem('obyom.pool') || undefined, torch: st.torch === 'on', blobs, mode: st.mode, quality: st.quality, size: st.size, theme: 'light', Hb: +st.height, method: st.method || 'walk', shape: st.shape || 'normal', scale: calFor(st.size), objColor: st.mono === 'on' ? st.objColor : null };
+  const job = { poolSize: +localStorage.getItem('obyom.pool') || undefined, torch: st.torch === 'on', blobs, mode: st.mode, quality: st.quality, size: st.size, theme: 'light', Hb: +st.height, method: st.method || 'walk', shape: st.shape || 'normal', scale: calFor(st.size), objColor: st.mono === 'on' ? st.objColor : null, sam: st.sam === 'on', prepped: preppedFrames, sunDir };
   if (extra.close && extra.close.length && st.mode !== 'splat') { job.close = extra.close; log(`+ крупные планы: ${extra.close.length}`); }
   if (extra.plates && extra.plates.length) { job.plates = extra.plates; log(`+ кадр фона: ${extra.plates.length}`); }
   if (bottomBlobs && bottomBlobs.length && scan.bottom) { job.bottom = { blobs: bottomBlobs, Hb: +scan.bottom.Hb, method: scan.bottom.method, plates: extra.bottomPlates || null }; log(`+ досъёмка низа: ${bottomBlobs.length} кадров`); }
@@ -614,6 +619,7 @@ function showHelp() {
   <p><b>Что не получится:</b> прозрачные и зеркальные предметы; глубокие впадины (внутренность чашки — кроме формы «Сосуд») — метод видит силуэты. Блестящий бок даёт блики — лучше «Тело вращения» или матовый свет.</p>
   <p><b>Точность (2.3):</b> край предмета уточняется до долей пикселя; искажение объектива («бочка») находится по меткам и исправляется само. В режиме <b>«Сетка + сплэты»</b> форма дополнительно уточняется по сплэтам — они видят вогнутости (шейки, выемки), которых не видят силуэты; текстура печётся уже на уточнённой форме.</p>
   <p><b>Однотонные предметы и живой силуэт (2.7):</b> режим «Однотонный» и пипетка 💧 прямо в кадре: тап по предмету — и приложение запомнит его цвет, чтобы точнее отделять силуэт от коврика и тёмных стен. Во время съёмки на кадре рисуется контур того, что приложение сейчас видит как предмет; точки резких кадров на радаре — зелёные, смазанных — жёлтые, пустые ячейки — красные.</p>
+  <p><b>Скорость, солнце и AI-маска (2.8):</b> пока ты снимаешь, фон уже готовит кадры — декодирует и ищет метки, так что после «Готово» обработка стартует сразу. В кадре появилось ☀ «солнце» — таскай его пальцем, чтобы прикинуть, как свет будет падать на готовую модель. «AI-маска (beta)» подключает MobileSAM (Apache-2.0) для уточнения силуэта — модель скачается при первом включении, расчёт медленнее. Ядро оболочки частично ускорено через C++/WASM (собирается в CI, JS остаётся запасным вариантом).</p>
   <p><b>Однотонные и тёмные предметы (2.6):</b> чёрная фигурка на чёрном фоне коробки раньше сливалась с метками коврика и «шапкой» над листом — и форма срезалась по пояс. Исправлены маски на тёмных участках коврика; кадр фона подбирается под каждую позицию камеры (все четыре кадра «Фон», а не один); пороги «движения» смягчены, чтобы видеть и тёмный силуэт; к указанной высоте рамки добавляется небольшой запас, чтобы не обрезать волосы и детали подставки.</p>
   <p><b>Высокий предмет «с рук» (2.5):</b> раньше, если верх предмета ни в одном кадре не был виден на фоне листа, приложение принимало его за пустую «шапку» рамки и срезало — оставались ноги и подставка. Теперь стена за листом узнаётся надёжнее, а лишнее над пёстрым столом вырезается по цвету: точка предмета во всех кадрах одного цвета, а пустота «показывает» каждый раз другой кусок фона. Строгость подстраивается сама — по низу предмета, который точно виден на листе. Если сомнения остаются, предмет лучше оставить чуть толще, чем отрезать. Самая точная форма — с оборотом повыше (от ~50°).</p>
   <p><b>Продолжение после вылета (2.5):</b> перед текстурой форма сохраняется. Если приложение закроется (обычно от нехватки памяти на текстуре), при следующем запуске будет «▶ Продолжить с текстуры» — форма не пересчитывается, а текстура печётся на ступень меньше.</p>

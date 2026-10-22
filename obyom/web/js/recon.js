@@ -2,6 +2,7 @@
 // 1) маска «точно фон» на каждом кадре (коврик совпал с ожидаемым рисунком / фон совпал с пустым кадром / вне цилиндра);
 // 2) вырезание объёма (visual hull): воксель удаляется, если несколько кадров видят на его месте фон;
 // 3) поверхность (surface nets) → сглаживание (Таубин) → цвета вершин из кадров с учётом видимости.
+import { wasmCarveSlice } from './wasmcarve.js';
 
 // ---------- маски ----------
 // frame: {w,h,rgba,K,R,t}; ctx: {layout, mr (matRaster), Rb, Hb, clean?}
@@ -501,6 +502,13 @@ export function edgeAlpha(f, opt = {}) {
 // мягкое значение «предмет» в пикселе для субпиксельной выборки: фон 0, предмет 1, кромка — α, прочее — 1 (не режет)
 function softAt(f, i) { const m = f.mask[i]; return m === 0 ? 0 : (m === 1 || m === 2) && f.alpha[i] < 255 ? f.alpha[i] / 255 : m === 3 ? 0.5 : 1; }
 // frames: [{w,h,K,R,t,mask}], box: {Rb,Hb}, N — вокселей по ширине
+let _wasmOk = null;
+function _tryWasm() {
+  if (_wasmOk !== null) return _wasmOk;
+  _wasmOk = false; // по умолчанию выключен, пока модуль не загрузится
+  import('./wasmcarve.js').then(({ ensureCarveWasm }) => ensureCarveWasm()).then((ok) => { _wasmOk = !!ok; }).catch(() => { _wasmOk = false; });
+  return false;
+}
 export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   const vs = 2 * box.Rb / N, nx = N, ny = N, nz = Math.max(8, Math.ceil(box.Hb / vs));
   const ox = -box.Rb + vs / 2, oy = -box.Rb + vs / 2, oz = vs / 2;
@@ -517,13 +525,20 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   const wF = F.map((f) => { const r = f.rms ?? (f.p && f.p.rms) ?? 0.5; return opt.weighted === false ? 1 : 1 / (1 + Math.max(0, r - 1) ** 2); }); // до 1 px — полный вес
   { const m = wF.reduce((a_, b_) => a_ + b_, 0) / Math.max(1, wF.length); for (let k = 0; k < wF.length; k++) wF[k] /= m; } // средний вес 1
   const wMean = 1;
+  // v2.8: если WASM-ядро уже загрузилось, делаем быстрый черновой проход на C++;
+  // JS-цикл ниже всё равно доуточняет все воксели (с кромками, весами, доверенными кадрами).
+  // При первом запуске WASM загружается лениво и будет готов на следующую обработку.
+  if (_wasmOk === null) _tryWasm();
+  let usedWasm = false;
+  if (_wasmOk === true) { try { usedWasm = wasmCarveSlice(occ, { nx, ny, nz, vs, ox, oy, oz, Rb: box.Rb }, F, { frac, few, weakMaj: opt.weakMaj ?? 0.5 }); } catch (e) { usedWasm = false; } }
   for (let z = 0; z < nz; z++) {
     const Z = oz + z * vs;
     for (let y = 0; y < ny; y++) {
       const Y = oy + y * vs;
       for (let x = 0; x < nx; x++) {
         const X = ox + x * vs;
-        if (X * X + Y * Y > box.Rb * box.Rb) continue;
+        const vi = (z * ny + y) * nx + x;
+        if (X * X + Y * Y > box.Rb * box.Rb) { occ[vi] = 0; continue; }
         let bg = 0, weak = 0, seen = 0, left = F.length, tbg = 0, tseen = 0, nbg = 0;
         for (let k = 0; k < F.length; k++, left--) {
           const f = F[k], R = f.R, t = f.t, K = f.K;
@@ -532,7 +547,6 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
           const u = uf | 0, v = vf | 0;
           if (u < 0 || v < 0 || u >= f.w || v >= f.h) continue;
           let mv = f.mask[v * f.w + u]; if (mv === 4) continue;
-          // кромка: субпиксельно (билинейно по соседним пикселям) — «неизвестно» с долей предмета < ½ режет как фон
           if ((mv === 1 || mv === 2) && f.alpha && f.alpha[v * f.w + u] < 255 && u > 0 && v > 0 && u < f.w - 2 && v < f.h - 2) {
             const uu = uf - 0.5, vv = vf - 0.5, i0 = Math.floor(uu), j0 = Math.floor(vv), a = uu - i0, b = vv - j0, q = j0 * f.w + i0;
             const sv = (1 - a) * (1 - b) * softAt(f, q) + a * (1 - b) * softAt(f, q + 1) + (1 - a) * b * softAt(f, q + f.w) + a * b * softAt(f, q + f.w + 1);
@@ -542,16 +556,11 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
           seen += wk;
           if (mv === 0) { bg += wk; nbg++; } else if (mv === 3) weak += wk;
           if (f.trusted) { tseen++; if (mv === 0) tbg++; }
-          // досрочно: уже точно вырезан (даже если все оставшиеся кадры увидят точку)
           if (!few && nbg >= 2 && bg >= frac * (seen + left - 1)) break;
         }
-        const need = few ? 1 : Math.max(2, Math.ceil(frac * seen));
-        // «Доверенные» кадры (предмет целиком на листе, силуэт замкнут фоном коврика) голосуют ещё и между собой:
-        // их «фон» не перевешивается «неизвестно» из низких ракурсов (тень, край листа) — так срезается шапка.
         const trustCut = tseen >= 3 && tbg >= Math.max(2, Math.ceil(tfrac * tseen));
-        // взвешенно: минимум голосов «фон» — штуками (не меньше двух), доля — по весам кадров
         const cut = seen < 3 * wMean ? true : few ? nbg >= 1 : (nbg >= 2 && bg >= frac * seen) || (bg + weak >= Math.max(2 * wMean, frac * seen) && bg + weak >= (opt.weakMaj ?? 0.5) * seen && nbg + weak > 0);
-        occ[(z * ny + y) * nx + x] = trustCut || cut ? 0 : 1;
+        occ[vi] = trustCut || cut ? 0 : 1;
       }
     }
     if (onProgress && (z & 3) === 0) onProgress(z / nz);

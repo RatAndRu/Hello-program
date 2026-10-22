@@ -26,6 +26,12 @@ export class Capture {
     this.pipette = false; // режим пипетки: тап по кадру — замер цвета
     this._pipCb = null;
     this.ov.addEventListener('click', (e) => this._onOverlayTap(e));
+    // v2.8: перетаскиваемое солнце на оверлее — подсказка направления света для AR-предпросмотра
+    this.sunDragging = false; this.sunPos = null;
+    this.ov.addEventListener('pointerdown', (e) => this._sunDown(e));
+    this.ov.addEventListener('pointermove', (e) => this._sunMove(e));
+    const upFn = () => { this.sunDragging = false; };
+    this.ov.addEventListener('pointerup', upFn); this.ov.addEventListener('pointercancel', upFn);
   }
   // Тап по overlay: в режиме пипетки замеряет цвет предмета в точке тапа и выходит из пипетки
   _onOverlayTap(e) {
@@ -47,7 +53,47 @@ export class Capture {
     this.pipette=false; if(this._pipCb) this._pipCb(this.objColor);
   }
   setPipette(on, cb){ this.pipette=!!on; this._pipCb=cb||null; }
-  async start() { await this.openCam(); this.running = true; this.loop(); }
+  getSunDir() { // единичный 2D-вектор направления света в координатах кадра
+    if (!this.state || !this.state.w || !this.sunPos) return null;
+    const W=this.state.w, H=this.state.h;
+    const dx=(this.sunPos[0]-W/2)/(Math.min(W,H)/2), dy=(this.sunPos[1]-H/2)/(Math.min(W,H)/2);
+    const l=Math.hypot(dx,dy); if (l<0.05) return null;
+    return [dx/l,dy/l];
+  }
+  _sunDown(e){
+    if (!this.state || !this.state.w) return;
+    const dpr=Math.min(2, window.devicePixelRatio||1);
+    const r=this.ov.getBoundingClientRect();
+    const ex=(e.clientX-r.left)*dpr, ey=(e.clientY-r.top)*dpr;
+    const sp=this._sunScreen(); if (!sp) return;
+    if (Math.hypot(ex-sp[0], ey-sp[1]) < 30*dpr) { this.sunDragging=true; try{this.ov.setPointerCapture(e.pointerId);}catch(ee){} e.preventDefault(); }
+  }
+  _sunMove(e){
+    if (!this.sunDragging) return;
+    const dpr=Math.min(2, window.devicePixelRatio||1);
+    const r=this.ov.getBoundingClientRect();
+    const ex=(e.clientX-r.left)*dpr, ey=(e.clientY-r.top)*dpr;
+    const W=this.ov.width, H=this.ov.height;
+    const st=this.state; if (!st || !st.w) return;
+    const s=Math.max(W/st.w, H/st.h), ox=(W-st.w*s)/2, oy=(H-st.h*s)/2;
+    const fx=(ex-ox)/s, fy=(ey-oy)/s;
+    this.sunPos=[Math.max(0,Math.min(st.w,fx)), Math.max(0,Math.min(st.h,fy))];
+  }
+  _sunScreen(){
+    if (!this.sunPos || !this.state || !this.state.w) return null;
+    const W=this.ov.width, H=this.ov.height, st=this.state;
+    const s=Math.max(W/st.w, H/st.h), ox=(W-st.w*s)/2, oy=(H-st.h*s)/2;
+    return [ox+this.sunPos[0]*s, oy+this.sunPos[1]*s];
+  }
+  async _bgPrepLoop() {
+    while (this.running || this.prepped.length < this.shots.length) {
+      const i = this.prepped.length;
+      if (i >= this.shots.length) { await new Promise(r => setTimeout(r, 80)); continue; }
+      try { this.prepped.push(await _prepFrame(this.shots[i].blob)); if (this.opt.onPrep) this.opt.onPrep(i, this.shots.length); }
+      catch(e){ this.prepped.push({ blob:this.shots[i].blob, rgba:null, w:0, h:0, ms:[] }); }
+    }
+  }
+  async start() { await this.openCam(); this.running = true; this.prepped = []; this._bgPrep = this._bgPrepLoop(); this.loop(); }
   // Камера 1280×720 (в 1.5 «Лучше» просило Full HD — на части телефонов WebView тогда перестаёт обновлять кадры)
   async openCam() {
     // APK: своя камера (Camera2). Камера WebView на части телефонов «замирает», пока не коснёшься экрана.
@@ -84,7 +130,7 @@ export class Capture {
   // ручной затвор: снимет ближайший кадр, где виден коврик (даже если эта ячейка купола уже есть)
   shootNow() { this.manual = true; }
   closeCam() { if (this.native && this.src) this.src.close(); if (this.stream) this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
-  stop() { this.running = false; if (this.native && this.src) { if (this.torchOn) this.src.torch(false); this.src.lock(false); } this.closeCam(); }
+  stop() { this.running = false; if (this.native && this.src) { if (this.torchOn) this.src.torch(false); this.src.lock(false); } this.closeCam(); if (this._bgPrep) this._bgPrep.catch(()=>{}); }
   // С первого снимка экспозиция и баланс белого зафиксированы (своя камера APK): все кадры одной яркости и цвета —
   // иначе телефон подкручивает их при каждом повороте, и сплэты/текстура «запоминают» пятна яркости.
   lockExposure() { if (this.native && this.src && !this.src.locked) this.expLocked = this.src.lock(true); }
@@ -258,8 +304,9 @@ export class Capture {
     for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2, q0 = pr(Rb * Math.cos(a), Rb * Math.sin(a), 0), q1 = pr(Rb * Math.cos(a), Rb * Math.sin(a), Hb); if (q0 && q1) { c.beginPath(); c.moveTo(...q0); c.lineTo(...q1); c.stroke(); } }
     // v2.7: грубый контур предмета в цилиндре — «что не похоже на коврик в рабочем объёме», обводка по контуру.
     // Это только подсказка пользователю во время съёмки (не используется в реконструкции). Считается на текущем уменьшенном кадре.
+    let ctr = null;
     if (st.found) {
-      const ctr = _silhouetteContour(st, this.L, Rb, Hb, this.objColor);
+      ctr = _silhouetteContour(st, this.L, Rb, Hb, this.objColor);
       if (ctr && ctr.length > 20) {
         c.strokeStyle = this.objColor ? 'rgba(255,120,220,.95)' : 'rgba(120,220,255,.75)';
         c.lineWidth = 2.5 * dpr; c.beginPath();
@@ -273,7 +320,46 @@ export class Capture {
       c.beginPath(); c.arc(W/2, H/2, 22*dpr, 0, Math.PI*2); c.moveTo(W/2-30*dpr, H/2); c.lineTo(W/2+30*dpr, H/2); c.moveTo(W/2, H/2-30*dpr); c.lineTo(W/2, H/2+30*dpr); c.stroke();
       c.fillStyle = '#ffd250'; c.font = `${14*dpr}px sans-serif`; c.textAlign='center'; c.fillText('Тап по предмету', W/2, H/2-40*dpr);
     }
+    // v2.8: AR-ручка «солнце» (перетаскивается) + псевдозатенение внутри силуэта
+    if (st.found) {
+      if (!this.sunPos) this.sunPos = [st.w * 0.2, st.h * 0.25];
+      const sp = this._sunScreen();
+      if (ctr && ctr.length > 20 && sp) {
+        const lx = (sp[0]-W/2)/(Math.min(W,H)/2), ly=(sp[1]-H/2)/(Math.min(W,H)/2);
+        const ll = Math.hypot(lx,ly)||1; const Lx=lx/ll, Ly=ly/ll;
+        c.save(); c.beginPath();
+        for (let i = 0; i < ctr.length; i++) { const [px,py]=P(ctr[i][0],ctr[i][1]); i?c.lineTo(px,py):c.moveTo(px,py); }
+        c.closePath(); c.clip();
+        const grd = c.createRadialGradient(W/2-Lx*W*0.28, H/2-Ly*H*0.28, 4*dpr, W/2+Lx*18*dpr, H/2+Ly*18*dpr, Math.max(W,H)*0.55);
+        grd.addColorStop(0, 'rgba(255,230,150,0.12)');
+        grd.addColorStop(0.5, 'rgba(0,0,0,0)');
+        grd.addColorStop(1, 'rgba(20,30,60,0.35)');
+        c.fillStyle = grd; c.fillRect(0,0,W,H);
+        c.restore();
+      }
+      if (sp) {
+        c.save();
+        c.strokeStyle = 'rgba(255,210,80,.95)'; c.fillStyle = 'rgba(255,220,120,.95)';
+        c.lineWidth = 2*dpr;
+        for (let i=0;i<8;i++){ const a=i/8*Math.PI*2; c.beginPath(); c.moveTo(sp[0]+Math.cos(a)*18*dpr, sp[1]+Math.sin(a)*18*dpr); c.lineTo(sp[0]+Math.cos(a)*26*dpr, sp[1]+Math.sin(a)*26*dpr); c.stroke(); }
+        c.beginPath(); c.arc(sp[0], sp[1], 14*dpr, 0, Math.PI*2); c.fill(); c.stroke();
+        c.fillStyle='rgba(80,50,0,.85)'; c.font=`${12*dpr}px sans-serif`; c.textAlign='center';
+        c.fillText('☀', sp[0], sp[1]+4*dpr);
+        c.restore();
+      }
+    }
   }
+}
+// v2.8: фоновая подготовка кадра (decode до TRACK_W + detectMarkers) — запускается между выстрелами
+async function _prepFrame(blob) {
+  const bmp = await createImageBitmap(blob);
+  const w = TRACK_W, h = Math.round(bmp.height * w / bmp.width);
+  const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+  const cx = cv.getContext('2d'); cx.drawImage(bmp, 0, 0, w, h); bmp.close && bmp.close();
+  const img = cx.getImageData(0, 0, w, h);
+  const g = toGray(new Uint8Array(img.data.buffer), w, h);
+  const ms = detectMarkers(g, w, h);
+  return { blob, rgba: new Uint8ClampedArray(img.data.buffer), w, h, ms };
 }
 // Контур силуэта в кадре: очень грубая маска (не фон) в проекции цилиндра. Строится за ~1 мс.
 // Считает ожидаемую яркость коврика по угловым/кольцевым меткам и обводит край «не фона» сверху-снизу-слева-справа.

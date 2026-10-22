@@ -68,7 +68,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     els = good.map((f) => f.ang.el);
     log(`продолжаю с сохранённой формы: ${frAll.length} кадров, ${(M.idx.length / 3) | 0} треугольников — форма не пересчитывается`);
   } else {
-  A = await prepSet(job.blobs, { size: job.size, method: job.method, Hb, theme: job.theme, plates: job.plates, PW, objColor: job.objColor }, cb, shouldStop, log, '');
+  A = await prepSet(job.blobs, { size: job.size, method: job.method, Hb, theme: job.theme, plates: job.plates, PW, objColor: job.objColor, prepped: job.prepped || null }, cb, shouldStop, log, '');
   good = A.good;
   els = good.map((f) => f.ang.el); elMax = Math.max(...els);
   log(`кадров с позой: ${good.length}; высота камеры ${Math.min(...els).toFixed(0)}–${elMax.toFixed(0)}°`);
@@ -292,11 +292,18 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
     return q && q.n >= 2 && q.rms < Math.min(maxR, 2.5) ? { ...q, L_: Lf } : (p ? { ...p, L_: L } : p);
   };
   // 1) кадры и метки
+  // 1) кадры и метки; v2.8: если кадры уже декодированы между съёмкой (prepped), используем их
   const frames = [], eqs = [];
+  const prepped = cfg.prepped && cfg.prepped.length === blobs.length ? cfg.prepped : null;
   for (let i = 0; i < blobs.length; i++) {
     if (shouldStop()) throw new Error('stopped');
-    const d = await decodeBlob(blobs[i], PROC_W);
-    const ms = detectMarkers(toGray(d.rgba, d.w, d.h), d.w, d.h);
+    let d, ms;
+    if (prepped && prepped[i] && prepped[i].rgba) {
+      d = { rgba: prepped[i].rgba, w: prepped[i].w, h: prepped[i].h }; ms = prepped[i].ms;
+    } else {
+      d = await decodeBlob(blobs[i], PROC_W);
+      ms = detectMarkers(toGray(d.rgba, d.w, d.h), d.w, d.h);
+    }
     const f00 = 0.75 * Math.max(d.w, d.h), K0 = { fx: f00, fy: f00, cx: d.w / 2, cy: d.h / 2 };
     const p = poseOf(ms, K0, 1e9);
     if (p && p.n >= 2) { eqs.push(...focalEqs(p.H, d.w / 2, d.h / 2)); frames.push({ ...d, ms, p, idx: i, blob: blobs[i] }); }
