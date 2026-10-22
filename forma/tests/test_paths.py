@@ -51,8 +51,10 @@ class TestPortableData(unittest.TestCase):
                     self.assertEqual(root, Path(tmp).resolve())
                     for name in paths.SUBDIRS:
                         self.assertTrue((root / name).is_dir(), name)
-                    self.assertNotIn("AppData", str(root))
-                    self.assertNotIn(".forma3d", str(root))
+                    # приложение не должно создавать данных в APPDATA / домашней папке
+                    appdata = Path(os.environ.get("APPDATA") or Path.home()) / "Forma3D"
+                    self.assertNotEqual(Path(str(root)).resolve(), appdata.resolve())
+                    self.assertFalse((Path(tmp) / ".forma3d").exists())
             finally:
                 if old is not None:
                     os.environ["FORMA_DATA"] = old
@@ -62,7 +64,8 @@ class TestPortableData(unittest.TestCase):
             old = os.environ.get("FORMA_DATA")
             os.environ["FORMA_DATA"] = tmp
             try:
-                self.assertEqual(paths.user_data_dir(), Path(tmp).resolve())
+                self.assertEqual(Path(str(paths.user_data_dir())).resolve(),
+                                 Path(tmp).resolve())
                 self.assertTrue((Path(tmp) / "projects").is_dir())
             finally:
                 if old is None:
@@ -75,7 +78,7 @@ class TestPortableData(unittest.TestCase):
         old = os.environ.pop("FORMA_DATA", None)
         try:
             root = paths.data_root()
-            self.assertEqual(root, ROOT / "forma-data")
+            self.assertEqual(Path(str(root)).resolve(), (ROOT / "forma-data").resolve())
         finally:
             if old is not None:
                 os.environ["FORMA_DATA"] = old

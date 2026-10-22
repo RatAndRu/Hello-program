@@ -43,7 +43,17 @@ jobs:
 
       - name: Прогнать тесты ядра
         working-directory: forma
-        run: python -m unittest discover -s tests -v
+        run: |
+          python -m unittest discover -s tests -v 2>&1 | tee tests.log
+          rc=${PIPESTATUS[0]}
+          if [ "$rc" -ne 0 ]; then
+            # публикуем имена упавших тестов аннотациями: логи иногда недоступны
+            grep -E "^(FAIL|ERROR):" tests.log | while read -r line; do
+              echo "::error::$line"
+            done
+            tail -60 tests.log
+          fi
+          exit "$rc"
 
       - name: Подготовить иконку и версию
         working-directory: forma
