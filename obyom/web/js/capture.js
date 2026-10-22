@@ -15,11 +15,38 @@ export class Capture {
     // на вертушке — только кольцо меток: угловые метки неподвижны или лист свисает
     this.L = matLayout(opt.size || 'A4', opt.method === 'turn' ? 'round' : 'full');
     this.Lfull = matLayout(opt.size || 'A4', 'full'); // запасной вариант на вертушке: весь лист крутится вместе со столиком
+    // v2.7: качество кадра в ячейке купола (1=хороший, 0=смазанный/слабый)
+    this.cellQual = new Map();
     this.sharpMax = 0; this.ink = null; this.manual = false;
     this.cv = document.createElement('canvas'); this.cx = this.cv.getContext('2d', { willReadFrequently: true });
     this.shots = []; this.cells = new Map(); this.eqs = []; this.f = null;
     this.prev = null; this.running = false; this.paused = false; this.lastShot = 0;
+    // v2.7: пипетка и силуэт
+    this.objColor = opt.objColor || null; // [r,g,b] 0..255, подсказка «цвет однотонного предмета»
+    this.pipette = false; // режим пипетки: тап по кадру — замер цвета
+    this._pipCb = null;
+    this.ov.addEventListener('click', (e) => this._onOverlayTap(e));
   }
+  // Тап по overlay: в режиме пипетки замеряет цвет предмета в точке тапа и выходит из пипетки
+  _onOverlayTap(e) {
+    if (!this.pipette || !this.state) return;
+    const ov = this.ov, rect = ov.getBoundingClientRect();
+    const x = (e.clientX - rect.left) / rect.width * (this.state.w || 1);
+    const y = (e.clientY - rect.top) / rect.height * (this.state.h || 1);
+    const ix = Math.max(2, Math.min((this.state.w || 0) - 3, Math.round(x)));
+    const iy = Math.max(2, Math.min((this.state.h || 0) - 3, Math.round(y)));
+    if (!this.state.rgba) { this.pipette = false; if (this._pipCb) this._pipCb(null); return; }
+    // медианный цвет в окне 7×7
+    const w = this.state.w, buf = this.state.rgba;
+    const rs=[], gs=[], bs=[];
+    for (let dy=-3;dy<=3;dy++) for(let dx=-3;dx<=3;dx++){
+      const i=((iy+dy)*w+(ix+dx))*4; rs.push(buf[i]); gs.push(buf[i+1]); bs.push(buf[i+2]);
+    }
+    rs.sort((a,b)=>a-b); gs.sort((a,b)=>a-b); bs.sort((a,b)=>a-b);
+    this.objColor=[rs[rs.length>>1], gs[gs.length>>1], bs[bs.length>>1]];
+    this.pipette=false; if(this._pipCb) this._pipCb(this.objColor);
+  }
+  setPipette(on, cb){ this.pipette=!!on; this._pipCb=cb||null; }
   async start() { await this.openCam(); this.running = true; this.loop(); }
   // Камера 1280×720 (в 1.5 «Лучше» просило Full HD — на части телефонов WebView тогда перестаёт обновлять кадры)
   async openCam() {
@@ -127,7 +154,7 @@ export class Capture {
     const dt = this.lastT ? Math.min(1, (now - this.lastT) / 1000) : 0; this.lastT = now;
     if (dt > 0) this.fps = this.fps ? this.fps * 0.9 + 0.1 / dt : 1 / dt; // скорость слежения, кадров/с
     const turn = this.opt.method === 'turn', step = this.opt.step || (turn ? 8 : 10);
-    const st = { native: !!this.native, camFps: this.native ? this.src.fps : null, found: false, markers: ms.length, ring: ringN, poseRms: p ? p.rms : null, poseN: p ? p.n : 0, w, h, ms, count: this.shots.length, fps: this.fps || 0, step, restarts: this.restarts || 0 };
+    const st = { native: !!this.native, camFps: this.native ? this.src.fps : null, found: false, markers: ms.length, ring: ringN, poseRms: p ? p.rms : null, poseN: p ? p.n : 0, w, h, ms, rgba: img.data, count: this.shots.length, fps: this.fps || 0, step, restarts: this.restarts || 0 };
     let a = null, sh;
     if (p && p.n >= 2 && p.rms < 3) {
       a = camAngles(p.R, p.t);
@@ -174,7 +201,11 @@ export class Capture {
       this.manual = false; this.dueFrames = 0;
       this.lastShot = now;
       if (a) { this.lastDir = a; this.theta = 0; } else { this.theta = 0; this.blind++; }
-      if (st.cell && !this.cells.has(st.cell)) this.cells.set(st.cell, this.shots.length);
+      if (st.cell) {
+        const prev = this.cellQual.get(st.cell) || 0;
+        this.cellQual.set(st.cell, Math.max(prev, st.sharp ? 1 : (blindShot ? 0.3 : 0.6)));
+        if (!this.cells.has(st.cell)) this.cells.set(st.cell, this.shots.length);
+      }
       this.lockExposure();
       const blob = await this.grab();
       this.shots.push({ blob, az: a ? a.az : null, el: a ? a.el : null, manual, blind: blindShot });
@@ -225,7 +256,80 @@ export class Capture {
     c.strokeStyle = st.slow ? 'rgba(255,210,80,.85)' : 'rgba(255,90,70,.9)';
     for (const z of [0, Hb]) { c.beginPath(); let first = true; for (let i = 0; i <= 48; i++) { const a = i / 48 * Math.PI * 2, q = pr(Rb * Math.cos(a), Rb * Math.sin(a), z); if (!q) { first = true; continue; } first ? c.moveTo(...q) : c.lineTo(...q); first = false; } c.stroke(); }
     for (let i = 0; i < 8; i++) { const a = i / 8 * Math.PI * 2, q0 = pr(Rb * Math.cos(a), Rb * Math.sin(a), 0), q1 = pr(Rb * Math.cos(a), Rb * Math.sin(a), Hb); if (q0 && q1) { c.beginPath(); c.moveTo(...q0); c.lineTo(...q1); c.stroke(); } }
+    // v2.7: грубый контур предмета в цилиндре — «что не похоже на коврик в рабочем объёме», обводка по контуру.
+    // Это только подсказка пользователю во время съёмки (не используется в реконструкции). Считается на текущем уменьшенном кадре.
+    if (st.found) {
+      const ctr = _silhouetteContour(st, this.L, Rb, Hb, this.objColor);
+      if (ctr && ctr.length > 20) {
+        c.strokeStyle = this.objColor ? 'rgba(255,120,220,.95)' : 'rgba(120,220,255,.75)';
+        c.lineWidth = 2.5 * dpr; c.beginPath();
+        for (let i = 0; i < ctr.length; i++) { const [px, py] = P(ctr[i][0], ctr[i][1]); i ? c.lineTo(px, py) : c.moveTo(px, py); }
+        c.stroke();
+      }
+    }
+    // v2.7: индикатор пипетки — перекрестие
+    if (this.pipette) {
+      c.strokeStyle = '#ffd250'; c.lineWidth = 2 * dpr;
+      c.beginPath(); c.arc(W/2, H/2, 22*dpr, 0, Math.PI*2); c.moveTo(W/2-30*dpr, H/2); c.lineTo(W/2+30*dpr, H/2); c.moveTo(W/2, H/2-30*dpr); c.lineTo(W/2, H/2+30*dpr); c.stroke();
+      c.fillStyle = '#ffd250'; c.font = `${14*dpr}px sans-serif`; c.textAlign='center'; c.fillText('Тап по предмету', W/2, H/2-40*dpr);
+    }
   }
+}
+// Контур силуэта в кадре: очень грубая маска (не фон) в проекции цилиндра. Строится за ~1 мс.
+// Считает ожидаемую яркость коврика по угловым/кольцевым меткам и обводит край «не фона» сверху-снизу-слева-справа.
+function _silhouetteContour(st, L, Rb, Hb, objColor) {
+  const { w, h, ms, rgba } = st; if (!rgba) return null;
+  // ожидаемая яркость белого листа в кадре — по 4 самым ярким окрестностям меток
+  let W0 = 180;
+  const whites = [];
+  for (const m of ms) {
+    const xs = m.corners.map(q => q[0]), ys = m.corners.map(q => q[1]);
+    const cx = (xs[0]+xs[2])/2, cy=(ys[0]+ys[2])/2;
+    for (let dy=-8; dy<=8; dy+=4) for (let dx=-8; dx<=8; dx+=4){
+      const x=(cx+dx)|0, y=(cy+dy)|0;
+      if (x<3||y<3||x>=w-3||y>=h-3) continue;
+      const i=(y*w+x)*4; const v = (rgba[i]*77+rgba[i+1]*150+rgba[i+2]*29)>>8;
+      if (v>150) whites.push(v);
+    }
+  }
+  if (whites.length) { whites.sort((a,b)=>a-b); W0 = whites[(whites.length*0.75)|0]; }
+  // проекция цилиндра в пиксели → рамка
+  let x0=w, x1=0, y0=h, y1=0;
+  const R=st.R, t=st.t, K=st.K;
+  for (const z of [0, Hb]) for (let i=0;i<64;i++){
+    const a=i/64*Math.PI*2;
+    const cz=R[6]*Rb*Math.cos(a)+R[7]*Rb*Math.sin(a)+R[8]*z+t[2]; if (cz<5) continue;
+    const u=K.fx*(R[0]*Rb*Math.cos(a)+R[1]*Rb*Math.sin(a)+R[2]*z+t[0])/cz+K.cx;
+    const vv=K.fy*(R[3]*Rb*Math.cos(a)+R[4]*Rb*Math.sin(a)+R[5]*z+t[1])/cz+K.cy;
+    x0=Math.min(x0,u); x1=Math.max(x1,u); y0=Math.min(y0,vv); y1=Math.max(y1,vv);
+  }
+  x0=Math.max(0,(x0|0)-4); x1=Math.min(w-1,(x1|0)+4); y0=Math.max(0,(y0|0)-4); y1=Math.min(h-1,(y1|0)+4);
+  if (x1-x0<20||y1-y0<20) return null;
+  // набираем тёмные/цветные пиксели как «похоже на предмет»: не белый лист и не чёрные метки (слишком тёмные <40 не режет без подсказки)
+  const mask = new Uint8Array(w*h);
+  const darkBoost = objColor && (objColor[0]+objColor[1]+objColor[2])/3 < 100; // тёмный предмет — принимаем и тёмные пиксели
+  for (let y=y0; y<=y1; y++) for (let x=x0; x<=x1; x++){
+    const i=(y*w+x)*4, r=rgba[i], g=rgba[i+1], b=rgba[i+2], m=(r+g+b)/3;
+    const ch=(Math.max(r,g,b)-Math.min(r,g,b))/(m+12);
+    // белый лист: яркость ≥ 0.7·W0 и мало хромы — это фон
+    const onMat = m > 0.6*W0 && ch<0.12;
+    // чёрная метка: очень тёмно (<40) без подсказки — не считаем предметом
+    const blackMark = !darkBoost && m < 45;
+    // подсказка цвета предмета: похож — предмет
+    const nearCol = objColor ? Math.sqrt((r-objColor[0])**2+(g-objColor[1])**2+(b-objColor[2])**2) < 55 : false;
+    if (!onMat && !blackMark && (ch>0.13 || m < 0.35*W0 || nearCol)) mask[y*w+x]=1;
+  }
+  // простой контур: первая/последняя «не фоновая» точка по строкам и столбцам в рамке
+  const pts=[];
+  for (let y=y0; y<=y1; y+=Math.max(1,((y1-y0)/60)|0)){
+    for(let x=x0;x<=x1;x++) if(mask[y*w+x]){ pts.push([x,y]); break; }
+    for(let x=x1;x>=x0;x--) if(mask[y*w+x]){ pts.push([x,y]); break; }
+  }
+  for (let x=x0; x<=x1; x+=Math.max(1,((x1-x0)/60)|0)){
+    for(let y=y0;y<=y1;y++) if(mask[y*w+x]){ pts.push([x,y]); break; }
+    for(let y=y1;y>=y0;y--) if(mask[y*w+x]){ pts.push([x,y]); break; }
+  }
+  return pts;
 }
 
 const angDeg = (c0, c1) => { const d0 = Math.hypot(...c0), d1 = Math.hypot(...c1); return Math.acos(Math.max(-1, Math.min(1, (c0[0] * c1[0] + c0[1] * c1[1] + c0[2] * c1[2]) / (d0 * d1)))) * 180 / Math.PI; };
@@ -252,23 +356,28 @@ export function inkRatio(g, w, h, ms) {
 export function inkLabel(r) { if (r == null) return ''; return r < 0.22 ? 'печать: чёрный отлично' : r < 0.4 ? 'печать: чёрный норм' : 'печать бледная — ярче свет или печать темнее'; }
 
 // купол покрытия: вид сверху, кольца = пояса высоты (внешнее — низкое), сектора = азимут
-export function drawDome(canvas, cells, cur) {
+// v2.7: ячейка залита зелёным — есть резкий кадр; жёлтым — кадр есть, но смазан/слепой;
+// красным — пусто (ещё не было кадра в этом секторе/поясе). Точка текущего ракурса — красная, если кадр смазан.
+export function drawDome(canvas, cells, cur, qual) {
   const dpr = Math.min(2, window.devicePixelRatio || 1), S = Math.round(canvas.clientWidth * dpr);
   if (canvas.width !== S) { canvas.width = S; canvas.height = S; }
   const c = canvas.getContext('2d'), R = S / 2 - 2 * dpr, cx = S / 2, cy = S / 2;
   c.clearRect(0, 0, S, S);
   c.fillStyle = 'rgba(0,0,0,.45)'; c.beginPath(); c.arc(cx, cy, R, 0, Math.PI * 2); c.fill();
-  const nb = BANDS.length, ring = (b) => [R * (1 - b / nb), R * (1 - (b + 1) / nb) + 1];
+  const nb = BANDS.length, ring = (b) => [R * (1 - b / nb), R * (1 - (b + 1) / nb) + 1], Q = qual || new Map();
   for (let b = 0; b < nb; b++) for (let k = 0; k < AZ_BINS; k++) {
+    const key = `${b}:${k}`;
     const [r0, r1] = ring(b), a0 = -Math.PI / 2 + k / AZ_BINS * Math.PI * 2, a1 = a0 + Math.PI * 2 / AZ_BINS;
     c.beginPath(); c.arc(cx, cy, r0, a0, a1); c.arc(cx, cy, r1, a1, a0, true); c.closePath();
-    c.fillStyle = cells.has(`${b}:${k}`) ? (b === nb - 1 ? 'rgba(120,200,255,.9)' : 'rgba(90,220,140,.85)') : 'rgba(255,255,255,.07)';
-    c.fill(); c.strokeStyle = 'rgba(0,0,0,.35)'; c.lineWidth = 1; c.stroke();
+    let fill;
+    if (!cells.has(key)) fill = b === nb - 1 ? 'rgba(255,90,70,.55)' : 'rgba(255,90,70,.35)'; // красный — пусто
+    else { const q = Q.get(key) || 0.7; fill = q >= 0.85 ? (b === nb - 1 ? 'rgba(120,200,255,.9)' : 'rgba(90,220,140,.85)') : 'rgba(255,200,70,.8)'; }
+    c.fillStyle = fill; c.fill(); c.strokeStyle = 'rgba(0,0,0,.3)'; c.lineWidth = 1; c.stroke();
   }
   if (cur && cur.az != null) {
     const b = Math.max(0, Math.min(nb - 0.01, BANDS.findIndex(([lo, hi]) => cur.el >= lo && cur.el < hi) + 0.5));
     const r = cur.el >= BANDS[nb - 1][1] ? 0 : R * (1 - (b < 0 ? 0 : b) / nb), a = -Math.PI / 2 + cur.az / 360 * Math.PI * 2;
-    c.fillStyle = '#fff'; c.beginPath(); c.arc(cx + r * Math.cos(a), cy + r * Math.sin(a), 4 * dpr, 0, Math.PI * 2); c.fill();
+    c.fillStyle = cur.sharp ? '#fff' : '#ff5a46'; c.beginPath(); c.arc(cx + r * Math.cos(a), cy + r * Math.sin(a), 4 * dpr, 0, Math.PI * 2); c.fill();
   }
 }
 

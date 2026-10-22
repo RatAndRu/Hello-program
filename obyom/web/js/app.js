@@ -10,9 +10,9 @@ import * as store from './store.js';
 import { fmtT, TEX } from './pipeline.js';
 import { hasNativeCam } from './nativecam.js';
 
-export const VERSION = '2.6';
+export const VERSION = '2.7';
 const $ = (id) => document.getElementById(id);
-const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8', torch: 'off' }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
+const S = Object.assign({ mode: 'mesh', method: 'walk', size: 'A4', height: '90', quality: 'normal', shape: 'normal', delay: '5', step: '8', torch: 'off', mono: 'off', objColor: null }, JSON.parse(localStorage.getItem('obyom.settings') || '{}'));
 const saveSettings = () => localStorage.setItem('obyom.settings', JSON.stringify(S));
 // калибровка печати: { A4: {sx, sy}, ... } — во сколько раз принтер растянул лист по ширине и длине
 const loadCal = () => { try { return JSON.parse(localStorage.getItem('obyom.cal') || '{}'); } catch (e) { return {}; } };
@@ -95,7 +95,8 @@ function renderSetup() {
   const tor = S.torch === 'on' && nat ? ' Фонарик горит всю съёмку: рельеф считается по тому, как свет из камеры ложится на поверхность при повороте. Верхний свет в комнате лучше погасить или приглушить' + (S.method === 'walk' ? ', снимать без резких рывков.' : ', держатель не трогать.') : '';
   const deep = S.mode !== 'splat' && S.quality !== 'fast' && ['normal', 'smooth', 'planes', 'vessel'].includes(S.shape);
   const ft = deep ? ` Форма считается за ${S.quality === 'best' ? '2–5' : '1–3'} мин: вогнутости уточняются по сплэтам (для быстрого результата — «Быстро»).` : ' Форма считается за 20–60 секунд.';
-  $('setupHint').textContent = how + tall + tor + ft + sp;
+  const mono = S.mono === 'on' ? ' «Однотонный»: после старта нажми 💧 и тапни по предмету в кадре — приложение запомнит его цвет и лучше отделит силуэт от коврика и тёмных стен.' : '';
+  $('setupHint').textContent = how + tall + tor + ft + sp + mono;
 }
 document.querySelectorAll('#setup .seg').forEach((seg) => seg.addEventListener('click', (e) => { const b = e.target.closest('button'); if (!b) return; S[seg.dataset.key] = b.dataset.v; saveSettings(); renderSetup(); }));
 $('btnStart').onclick = () => startCapture();
@@ -107,9 +108,11 @@ async function startCapture(ctx) {
   go('capture');
   const bo = capCtx && capCtx.bottomOf, co = capCtx && capCtx.closeOf;
   const base = bo || co;
+  const objColor = (S.mono === 'on' && S.objColor) ? S.objColor : null;
   cap = new Capture($('video'), $('overlay'), { view: $('camView'),
     size: base ? (base.settings && base.settings.size) || S.size : S.size, method: co ? (co.settings && co.settings.method) || S.method : S.method, close: !!co, torch: (base ? (base.settings && base.settings.torch) : S.torch) === 'on', hiRes: (base ? (base.settings && base.settings.quality) : S.quality) === 'best',
     Hb: bo ? +((bo.bottom && bo.bottom.Hb) || (bo.settings && bo.settings.height) || S.height) : co ? +((co.settings && co.settings.height) || S.height) : +S.height, step: co ? 5 : +S.step || 8,
+    objColor,
     onState: capState,
     onTorchFail: () => toast('Фонарик недоступен (нет вспышки или старая версия приложения) — рельеф будет приблизительным', 4000),
     onShot: (n, a, manual) => { beep(manual ? 1318 : 1046, 0.05); if (navigator.vibrate) navigator.vibrate(15); },
@@ -119,7 +122,22 @@ async function startCapture(ctx) {
   lastCount = null;
   window.__obyomCap = cap; // для отладки и тестов
   cap.plates = []; $('capPlate').classList.toggle('hidden', S.method !== 'turn' || !!co); $('capPlate').textContent = 'Фон';
-  showH();
+  // v2.7: пипетка цвета — только когда включён «однотонный» и это не крупный план и не досъёмка низа
+  const eyeBtn = $('capEye'); eyeBtn.classList.toggle('hidden', !(S.mono === 'on') || !!co || !!bo);
+  eyeBtn.classList.remove('on'); eyeBtn.textContent = '💧';
+  eyeBtn.onclick = () => {
+    if (!cap) return;
+    cap.setPipette(!cap.pipette, (col) => {
+      eyeBtn.classList.remove('on');
+      if (col) {
+        S.objColor = col; saveSettings();
+        toast(`Цвет запомнен: rgb(${col[0]}, ${col[1]}, ${col[2]}) — силуэт будет искать по нему`, 3000);
+        showSwatch();
+      } else toast('Не удалось считать цвет — попробуй ещё раз', 2500);
+    });
+    eyeBtn.classList.toggle('on', cap.pipette);
+  };
+  showH(); showSwatch();
   if (co) toast('Крупные планы: предмет не двигай! Поднеси телефон ближе (15–25 см) — чтобы в кадре был кусок предмета и хотя бы 3 метки коврика. Кадры снимаются сами при движении, 📷 — вручную', 8000);
   if (bo) toast('Доснять низ: положи предмет на бок или вверх дном в центр круга (целиком внутри рамки) и сними так же, со всех сторон', 6000);
   try { await cap.start(); } catch (e) { toast('Нет доступа к камере: ' + e.message, 4000); history.back(); }
@@ -127,7 +145,7 @@ async function startCapture(ctx) {
 let lastCount = null;
 function capState(st) {
   const msg = $('capMsg'), cov = st.coverage || [0, 0, 0, 0];
-  drawDome($('dome'), cap.cells, st);
+  drawDome($('dome'), cap.cells, st, cap.cellQual);
   const closeMode = !!(capCtx && capCtx.closeOf);
   $('capDone').textContent = `Готово · ${st.count}`; $('capDone').disabled = st.count < (closeMode ? 3 : 10);
   let text = '', cls = '';
@@ -158,6 +176,12 @@ $('capCancel').onclick = () => { if (!cap || cap.shots.length < 3 || confirm('В
 // Верх рамки: подгони верхнее кольцо AR-цилиндра к верху предмета (чуть выше). Всё, что выше, не попадёт в модель.
 // Над предметом пространство видно только на фоне стены/стола — по коврику там не понять, где кончается предмет.
 function showH() { if (cap) $('hVal').textContent = `${(cap.opt.Hb / 10).toFixed(1).replace('.0', '')} см`; }
+function showSwatch() {
+  const sw = $('swatch'), col = cap && cap.objColor ? cap.objColor : (S.mono === 'on' ? S.objColor : null);
+  if (!col) { sw.classList.add('hidden'); return; }
+  sw.classList.remove('hidden');
+  sw.style.background = `rgb(${col[0]}, ${col[1]}, ${col[2]})`;
+}
 function adjH(d) { if (!cap) return; cap.opt.Hb = Math.max(20, Math.min(400, Math.round((cap.opt.Hb + d) / 5) * 5)); showH(); }
 $('hUp').onclick = () => adjH(+5); $('hDn').onclick = () => adjH(-5);
 $('capShot').onclick = () => { if (!cap) return; cap.shootNow(); if (!cap.state || !cap.state.found) toast('Снято. Метки сейчас не найдены — положение кадра найдётся при обработке, если они видны'); };
@@ -246,7 +270,7 @@ function runProcessing(scan, blobs, bottomBlobs, extra = {}) {
   $('procStop').textContent = 'Остановить'; $('procView').classList.remove('on');
   const log = (t) => { $('procLog').textContent += t + '\n'; };
   log(`кадров: ${blobs.length}; режим: ${{ mesh: 'полигоны', splat: 'сплэты', both: 'полигоны + сплэты' }[st.mode]}`);
-  const job = { poolSize: +localStorage.getItem('obyom.pool') || undefined, torch: st.torch === 'on', blobs, mode: st.mode, quality: st.quality, size: st.size, theme: 'light', Hb: +st.height, method: st.method || 'walk', shape: st.shape || 'normal', scale: calFor(st.size) };
+  const job = { poolSize: +localStorage.getItem('obyom.pool') || undefined, torch: st.torch === 'on', blobs, mode: st.mode, quality: st.quality, size: st.size, theme: 'light', Hb: +st.height, method: st.method || 'walk', shape: st.shape || 'normal', scale: calFor(st.size), objColor: st.mono === 'on' ? st.objColor : null };
   if (extra.close && extra.close.length && st.mode !== 'splat') { job.close = extra.close; log(`+ крупные планы: ${extra.close.length}`); }
   if (extra.plates && extra.plates.length) { job.plates = extra.plates; log(`+ кадр фона: ${extra.plates.length}`); }
   if (bottomBlobs && bottomBlobs.length && scan.bottom) { job.bottom = { blobs: bottomBlobs, Hb: +scan.bottom.Hb, method: scan.bottom.method, plates: extra.bottomPlates || null }; log(`+ досъёмка низа: ${bottomBlobs.length} кадров`); }
@@ -589,6 +613,7 @@ function showHelp() {
   <p><b>Текстура:</b> цвет модели — отдельная картинка-атлас: каждый кусок поверхности берётся из одного лучшего кадра в полном разрешении (а не из цвета вершин). В просмотре — переключатель «Текстура / Вершины». Для большей детальности — ⋯ → <b>«Крупные планы»</b>: предмет не двигать, телефон ближе (15–25 см), в кадре хотя бы 3 метки. Качество «Лучше» снимает в Full HD и считает форму на 960 px.</p>
   <p><b>Что не получится:</b> прозрачные и зеркальные предметы; глубокие впадины (внутренность чашки — кроме формы «Сосуд») — метод видит силуэты. Блестящий бок даёт блики — лучше «Тело вращения» или матовый свет.</p>
   <p><b>Точность (2.3):</b> край предмета уточняется до долей пикселя; искажение объектива («бочка») находится по меткам и исправляется само. В режиме <b>«Сетка + сплэты»</b> форма дополнительно уточняется по сплэтам — они видят вогнутости (шейки, выемки), которых не видят силуэты; текстура печётся уже на уточнённой форме.</p>
+  <p><b>Однотонные предметы и живой силуэт (2.7):</b> режим «Однотонный» и пипетка 💧 прямо в кадре: тап по предмету — и приложение запомнит его цвет, чтобы точнее отделять силуэт от коврика и тёмных стен. Во время съёмки на кадре рисуется контур того, что приложение сейчас видит как предмет; точки резких кадров на радаре — зелёные, смазанных — жёлтые, пустые ячейки — красные.</p>
   <p><b>Однотонные и тёмные предметы (2.6):</b> чёрная фигурка на чёрном фоне коробки раньше сливалась с метками коврика и «шапкой» над листом — и форма срезалась по пояс. Исправлены маски на тёмных участках коврика; кадр фона подбирается под каждую позицию камеры (все четыре кадра «Фон», а не один); пороги «движения» смягчены, чтобы видеть и тёмный силуэт; к указанной высоте рамки добавляется небольшой запас, чтобы не обрезать волосы и детали подставки.</p>
   <p><b>Высокий предмет «с рук» (2.5):</b> раньше, если верх предмета ни в одном кадре не был виден на фоне листа, приложение принимало его за пустую «шапку» рамки и срезало — оставались ноги и подставка. Теперь стена за листом узнаётся надёжнее, а лишнее над пёстрым столом вырезается по цвету: точка предмета во всех кадрах одного цвета, а пустота «показывает» каждый раз другой кусок фона. Строгость подстраивается сама — по низу предмета, который точно виден на листе. Если сомнения остаются, предмет лучше оставить чуть толще, чем отрезать. Самая точная форма — с оборотом повыше (от ~50°).</p>
   <p><b>Продолжение после вылета (2.5):</b> перед текстурой форма сохраняется. Если приложение закроется (обычно от нехватки памяти на текстуре), при следующем запуске будет «▶ Продолжить с текстуры» — форма не пересчитывается, а текстура печётся на ступень меньше.</p>

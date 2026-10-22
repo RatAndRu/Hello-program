@@ -15,8 +15,9 @@ export function computeMask(fr, ctx) {
   const Rb = ctx.Rb, Hb = ctx.Hb;
   // v2.6: подсказка «однотонный предмет такого цвета» (sRGB 0..255). Пиксели в цилиндре, похожие на этот цвет и
   // непохожие на ожидаемый коврик → «похоже на предмет». Это срабатывает на чёрных/белых фигурках, где по узору
-  // коврика предмет нельзя отделить от чёрных меток (UI пипетка поставит objColor и mask окрасит их предметом).
-  const objCol = null; // включается из UI в следующей версии, кода каркаса уже готов
+  // коврика предмет нельзя отделить от чёрных меток (пипетка в кадре ставит objColor).
+  const objCol = ctx.objColor && ctx.objColor.length === 3 ? [ctx.objColor[0], ctx.objColor[1], ctx.objColor[2]] : null;
+  const objTol = ctx.objTol ?? (objCol && (objCol[0]+objCol[1]+objCol[2])/3 < 90 ? 55 : 50);
   const cut2 = ctx.cutOnly ? (L.cutR - 1.5 * L.k) ** 2 : 0;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x;
@@ -228,6 +229,22 @@ export function computeMask(fr, ctx) {
     }
     const zone = dilate(pl, w, h, ctx.plainZone ?? 3);
     for (let i = 0; i < n; i++) if (plain[i] && zone[i] && mask[i] === 0 && inCyl[i]) mask[i] = 3;
+  }
+  // v2.7: подсказка «однотонный предмет такого цвета» — пиксели цвета предмета в цилиндре, не совпадающие с ковриком, считаем предметом
+  if (objCol) {
+    const [or0, og0, ob0] = objCol;
+    const chromaOk = 0.18;
+    for (let i = 0; i < n; i++) {
+      if (mask[i] === 0 || !inCyl[i]) continue;
+      const R_ = rgba[i * 4], G_ = rgba[i * 4 + 1], B_ = rgba[i * 4 + 2], m = (R_ + G_ + B_) / 3;
+      const dr = R_ - or0, dg = G_ - og0, db = B_ - ob0;
+      const dd = Math.sqrt(dr * dr + dg * dg + db * db);
+      const ch = (Math.max(R_, G_, B_) - Math.min(R_, G_, B_)) / (m + 12);
+      const pred = white(i % w, (i / w) | 0) * (rho + (1 - rho) * des[i] / 255);
+      const matDiff = des[i] >= 0 ? Math.abs(gray[i] - pred) : 0;
+      // на коврике разница с ожидаемым должна быть заметна (иначе чёрные метки под чёрный предмет примем за него)
+      if (dd < objTol && ch < chromaOk && (des[i] < 0 || matDiff > 18)) mask[i] = 2;
+    }
   }
   // За листом (стол, стена): «слабый фон» (3) заливкой от области заведомо вне цилиндра — по плавности цвета
   // и по совпадению с цветами этого фона. Слабый фон вырезает воксель, только если так считает большинство кадров:

@@ -68,7 +68,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     els = good.map((f) => f.ang.el);
     log(`продолжаю с сохранённой формы: ${frAll.length} кадров, ${(M.idx.length / 3) | 0} треугольников — форма не пересчитывается`);
   } else {
-  A = await prepSet(job.blobs, { size: job.size, method: job.method, Hb, theme: job.theme, plates: job.plates, PW }, cb, shouldStop, log, '');
+  A = await prepSet(job.blobs, { size: job.size, method: job.method, Hb, theme: job.theme, plates: job.plates, PW, objColor: job.objColor }, cb, shouldStop, log, '');
   good = A.good;
   els = good.map((f) => f.ang.el); elMax = Math.max(...els);
   log(`кадров с позой: ${good.length}; высота камеры ${Math.min(...els).toFixed(0)}–${elMax.toFixed(0)}°`);
@@ -86,7 +86,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   frAll = good;
   if (bt && bt.blobs && bt.blobs.length >= 8) {
     try {
-      const B = await prepSet(bt.blobs, { size: job.size, method: bt.method || job.method, Hb: bt.Hb || Hb, theme: job.theme, plates: bt.plates, PW }, cb, shouldStop, log, 'Низ: ');
+      const B = await prepSet(bt.blobs, { size: job.size, method: bt.method || job.method, Hb: bt.Hb || Hb, theme: job.theme, plates: bt.plates, PW, objColor: job.objColor }, cb, shouldStop, log, 'Низ: ');
       log(`низ: кадров с позой ${B.good.length}; высота камеры ${B.elMin.toFixed(0)}–${B.elMax.toFixed(0)}°`);
       const GB = carveHull(B.good, { Rb: B.Rb, Hb: B.Hb }, Q.N, (p) => cb.progress('Низ: строю форму', p, 'вырезаю объём'));
       await tick();
@@ -364,7 +364,7 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
     // enclose: кадр, где предмет целиком на листе (силуэт замкнут фоном коврика), — «доверенный»: за листом в нём
     // только фон, и его «фон» срезает шапку, даже если низкие ракурсы там видят лишь «неизвестно»
     const Lfr = good[i].L_ || L, mrfr = (good[i].L_ && good[i].L_ !== L) ? matRaster(good[i].L_, cfg.theme || 'light', 2) : mr;
-    const m = computeMask(good[i], { layout: Lfr, mr: mrfr, Rb, Hb, cutOnly: turn, offMat: !turn, clean: cleanFor(good[i]), enclose: true, refOut: turn, plateOpt: { minAgree: 0.4, weak: true } });
+    const m = computeMask(good[i], { layout: Lfr, mr: mrfr, Rb, Hb, cutOnly: turn, offMat: !turn, clean: cleanFor(good[i]), enclose: true, refOut: turn, plateOpt: { minAgree: 0.4, weak: true }, objColor: cfg.objColor });
     good[i].mask = m.mask; good[i].refOut = m.refOut; good[i].trusted = !!m.stats.enclosed; if (good[i].trusted) nTrust++; if (m.stats.plate) withPlate++;
     cb.progress(tag + 'Отделяю предмет от коврика', (i + 1) / good.length, `кадр ${i + 1} из ${good.length}`);
     if (i % 2) await tick();

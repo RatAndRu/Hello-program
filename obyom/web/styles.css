@@ -99,3 +99,8 @@ button.primary { background: var(--acc); color: #06210f; border-color: transpare
 .vExport .pill { padding: 13px 18px; }
 @media (max-width: 370px) { .vExport .pill { padding: 12px 13px; font-size: 15px; } }
 @media (max-width: 390px) { .vTools { gap: 6px; padding: 0 4px; } .vTools .seg.small button { padding: 7px 8px; font-size: 13.5px; } .vTools .seg.small { gap: 4px; } .vTools .chip { padding: 7px 11px; } }
+
+/* 2.7: свотч выбранного цвета предмета */
+.swatch { width: 28px; height: 28px; border-radius: 50%; border: 2px solid #fff; box-shadow: 0 1px 3px #000a; display: inline-block; }
+.swatch.hidden { display: none; }
+#capEye.on { background: #ffd250; color: #12161d; }
