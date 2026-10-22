@@ -242,7 +242,7 @@ class MainActivity : Activity() {
         } catch (e: Exception) { "Не удалось сохранить: ${e.message}" }
 
         @JavascriptInterface
-        fun version(): String = "2.5"
+        fun version(): String = "2.6"
 
         /** Началась обработка: служба переднего плана (уведомление) — процесс не выгрузят, процессор не уснёт. */
         @JavascriptInterface

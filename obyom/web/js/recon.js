@@ -13,6 +13,10 @@ export function computeMask(fr, ctx) {
   const des = new Float32Array(n).fill(-1), unk = new Uint8Array(n);
   const inCyl = new Uint8Array(n);
   const Rb = ctx.Rb, Hb = ctx.Hb;
+  // v2.6: подсказка «однотонный предмет такого цвета» (sRGB 0..255). Пиксели в цилиндре, похожие на этот цвет и
+  // непохожие на ожидаемый коврик → «похоже на предмет». Это срабатывает на чёрных/белых фигурках, где по узору
+  // коврика предмет нельзя отделить от чёрных меток (UI пипетка поставит objColor и mask окрасит их предметом).
+  const objCol = null; // включается из UI в следующей версии, кода каркаса уже готов
   const cut2 = ctx.cutOnly ? (L.cutR - 1.5 * L.k) ** 2 : 0;
   for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
     const i = y * w + x;
@@ -99,9 +103,14 @@ export function computeMask(fr, ctx) {
         const r = rgba[i * 4] * kr, g = rgba[i * 4 + 1] * kg, b = rgba[i * 4 + 2] * kb, m = (r + g + b) / 3;
         const chroma = (Math.max(r, g, b) - Math.min(r, g, b)) / (m + 12);
         const diff = Math.abs(gray[i] - pred);
-        if (diff < Math.max(14, 0.11 * pred) && chroma < 0.13) { mask[i] = 0; plain[i] = 1; continue; }
+        // v2.6: «фон по белизне» на тёмных кусочках коврика (чёрные метки и кольца, des ~0) ненадёжен —
+        // тёмный однотонный предмет там выглядит так же. Считаем «фоном по белизне» только там, где коврик
+        // действительно светлый (pred ≥ 70), а в тёмных метках оставляем «неизвестно»: это безопаснее — предмет
+        // не вырезается, а «дыра» позже закроется закрытием и заливкой.
+        const onDarkMat = pred < 70;
+        if (!onDarkMat && diff < Math.max(14, 0.11 * pred) && chroma < 0.13) { mask[i] = 0; plain[i] = 1; continue; }
         if (diff > Math.max(40, 0.3 * pred) || chroma > 0.3) { mask[i] = 2; continue; }
-        continue;
+        if (onDarkMat) { /* оставляем неизвестно */ } else continue;
       }
     }
     if (PL && des[i] < 0) { // за листом: сравнение с кадром фона (пустая вертушка, телефон неподвижен)
@@ -803,7 +812,7 @@ export function tableConsistency(frames, opt = {}) {
   return { tested, marked };
 }
 export function motionMasks(frames, opt = {}) {
-  const tau = opt.tau ?? 26, minG = opt.minGroup ?? 8, groups = [];
+  const tau = opt.tau ?? 26, minG = opt.minGroup ?? 8, refTol = opt.refMoveTol ?? 0.10, groups = [];
   for (const f of frames) {
     const R = f.R, t = f.t;
     const C = [-(R[0] * t[0] + R[3] * t[1] + R[6] * t[2]), -(R[1] * t[0] + R[4] * t[1] + R[7] * t[2]), -(R[2] * t[0] + R[5] * t[1] + R[8] * t[2])];
@@ -845,7 +854,7 @@ export function motionMasks(frames, opt = {}) {
       if (f.refOut && f.refOut.length > 200) {
         let nm = 0; for (const i of f.refOut) { let d = 0; for (let c = 0; c < 3; c++) d = Math.max(d, Math.abs(f.rgba[i * 4 + c] - gn * med[i * 3 + c])); if (d > tau) nm++; }
         f.refMoved = nm / f.refOut.length; f.refN = f.refOut.length;
-        if (nm > 0.1 * f.refOut.length) { f.motion = null; f.bgMed = null; g.moved = (g.moved || 0) + 1; continue; }
+        if (nm > refTol * f.refOut.length) { f.motion = null; f.bgMed = null; g.moved = (g.moved || 0) + 1; continue; }
       }
       f.motion = mo; used++;
       f.bgMed = med; f.bgGain = gn; // фон за предметом (медиана с этого места камеры) — сплэтам: капли не должны «рисовать» стену
@@ -922,14 +931,16 @@ function trimCap(occ, nx, ny, nz, vs, Rb, ox, oy, zg, frames, oz, soft = false) 
 }
 // Слои z+1..zt (над уровнем «колпака»): воксель — «предмет», если в ≥35% кадров, где его проекция за листом,
 // там движение. Возвращает новый верх предмета; слои до него заполняются сечением предыдущего слоя ∩ улики.
-export const MOTION_OPT = { frac: 0.5, off: 0.5 }; // для тестов
+export const MOTION_OPT = { frac: 0.3, off: 0.35, minGroup: 4 }; // v2.6: мягче пороги — тёмные силуэты дают мало разницы с медианой фона
 // Воксель, который в большинстве кадров виден лишь за листом (маска 1/3), остаётся, только если там «движение»
 // хотя бы в половине таких кадров. Середину силуэта однотонного предмета движение не покрывает — поэтому
 // в каждом слое оставляем всё, что лежит между подтверждёнными вокселями по строкам и столбцам.
 function motionCarve(occ, nx, ny, nz, vs, ox, oy, oz, zg, frames) {
+  const minGroup = MOTION_OPT.minGroup ?? 4;
+  const offF = MOTION_OPT.off;
   const F = frames.filter((f) => f.motion);
-  if (F.length < 8) return null;
-  const S = nx * ny, offF = MOTION_OPT.off, fr = new Float32Array(nz);
+  if (F.length < minGroup) return null;
+  const S = nx * ny, fr = new Float32Array(nz);
   // доля «непроверенных» вокселей в слое: в большинстве кадров видны только за листом (стол, стена)
   for (let q = zg + 1; q < nz; q++) {
     const Z = oz + q * vs; let occN = 0, cand = 0;
@@ -943,12 +954,12 @@ function motionCarve(occ, nx, ny, nz, vs, ox, oy, oz, zg, frames) {
         const m = f.mask[v * f.w + u]; if (m === 4) continue;
         seen++; if (m === 1 || m === 3) so++;
       }
-      if (so >= 4 && so >= offF * seen) cand++;
+      if (so >= minGroup && so >= offF * seen) cand++;
     }
     fr[q] = occN ? cand / occN : 0;
   }
   let zu = -1;
-  for (let q = zg + 2; q + 2 < nz; q++) if (fr[q] >= 0.5 && fr[q + 1] >= 0.5 && fr[q + 2] >= 0.5) { zu = q; break; }
+  for (let q = zg + 2; q + 2 < nz; q++) if (fr[q] >= 0.35 && fr[q + 1] >= 0.35 && fr[q + 2] >= 0.3) { zu = q; break; }
   if (zu < 0) return null;
   let zt = nz - 1; for (; zt > zu; zt--) { let any = false; for (let i = 0; i < S && !any; i++) any = occ[zt * S + i] > 0.5; if (any) break; }
   if (zt <= zu) return null;
@@ -965,9 +976,10 @@ function motionCarve(occ, nx, ny, nz, vs, ox, oy, oz, zg, frames) {
 }
 function extendByMotion(occ, capOcc, nx, ny, vs, ox, oy, oz, z, zt, frames, zb = z) {
   const mf = MOTION_OPT.frac;
+  const minV = MOTION_OPT.minGroup ?? 4;
   const F = frames.filter((f) => f.motion);
-  if (F.length < 8) return z;
-  const S = nx * ny, ev = new Uint8Array(S), minVox = Math.max(4, Math.round(30 / (vs * vs))); // ≥ ~30 мм² сечения
+  if (F.length < minV) return z;
+  const S = nx * ny, ev = new Uint8Array(S), minVox = Math.max(3, Math.round(15 / (vs * vs))); // ≥ ~15 мм² сечения — для тонких деталей наверху (пальцы, волосы)
   let top = z, gap = 0;
   const lay = [];
   for (let q = z + 1; q <= zt; q++) {
@@ -985,9 +997,9 @@ function extendByMotion(occ, capOcc, nx, ny, vs, ox, oy, oz, z, zt, frames, zb =
         if (m !== 1 && m !== 3) continue;
         so++; if (f.motion[j]) mv++;
       }
-      if (so >= 4 && mv >= 3 && mv >= mf * so) { ev[i] = 1; cnt++; }
+      if (so >= Math.max(3, Math.floor(minV / 2)) && mv >= Math.max(2, Math.floor(minV / 2)) && mv >= mf * so) { ev[i] = 1; cnt++; }
     }
-    if (cnt < minVox) { if (++gap > Math.round(4 / vs)) break; lay.push(lay.length ? lay[lay.length - 1] : null); continue; }
+    if (cnt < minVox) { if (++gap > Math.round(8 / vs)) break; lay.push(lay.length ? lay[lay.length - 1] : null); continue; }
     gap = 0; top = q;
     // улики → сплошное сечение: расширение на 2 вокселя (центр силуэта всегда закрыт предметом и не «движется»)
     // и заливка дыр по выпуклой оболочке строк/столбцов

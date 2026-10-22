@@ -3,7 +3,7 @@
 import { matLayout, matRaster } from './mat.js';
 import { detectMarkers, toGray } from './detect.js';
 import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal, camAngles, fitK1, undistortPts, undistortRGBA } from './pose.js';
-import { computeMask, motionMasks, tableConsistency, carveHull, meshFromGrid, revolveGrid, taubin, computeNormals, colorize, depthMap, cleanGrid, vesselCarve } from './recon.js';
+import { computeMask, motionMasks, tableConsistency, carveHull, meshFromGrid, revolveGrid, taubin, computeNormals, colorize, depthMap, cleanGrid, vesselCarve, MOTION_OPT } from './recon.js';
 import { alignHulls, intersectHulls, framesToA } from './align.js';
 import { boxMesh, prismMesh, snapPlanes } from './shapes.js';
 import { bakeTexture, subdivideLong } from './texture.js';
@@ -48,7 +48,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   const t0 = Date.now(), log = (s) => cb.log && cb.log(`${((Date.now() - t0) / 1000).toFixed(1)} с · ${s}`);
   // на вертушке угловые метки не используются: лист может свисать со столика или быть вырезан по кругу
   const turn = job.method === 'turn';
-  const k = matLayout(job.size || 'A4', 'full').k, Rb = 55 * k, Hb = job.Hb || 90 * k;
+  const k = matLayout(job.size || 'A4', 'full').k, Rb = 55 * k, Hb = (job.Hb || 90 * k) + 15 * k;
   const Q = { fast: { N: 112, iters: 600, n0: 6000, nmax: 14000 }, normal: { N: 128, iters: 1200, n0: 8000, nmax: 20000, dIters: 600 }, best: { N: 200, iters: 2400, n0: 11000, nmax: 32000, deg: 2, dIters: 1200 } }[job.quality || 'normal'];
   const PW = procW(job.quality);
   // v2.5: продолжение после вылета — с сохранённой формы (контрольная точка перед текстурой), без пересчёта формы
@@ -280,14 +280,16 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
 async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   const turn = cfg.method === 'turn', PROC_W = cfg.PW || procW();
   const L = matLayout(cfg.size || 'A4', turn ? 'round' : 'full'), mr = matRaster(L, cfg.theme || 'light', 2);
-  const Rb = 55 * L.k, Hb = cfg.Hb || 90 * L.k;
+  // запас по высоте рамки на случай если предмет чуть выше, чем пользователь указал (волосы, палец на подставке)
+  const Rb = 55 * L.k, Hb = (cfg.Hb || 90 * L.k) + 15 * L.k;
   // вертушка: если меток круга не хватило, пробуем весь лист (лист крутится целиком) — только при точном совпадении
   const Lf = turn ? matLayout(cfg.size || 'A4', 'full') : null;
+  // какая раскладка сошлась на этом кадре — такая и нужна для масок (des в цилиндре)
   const poseOf = (ms, K, maxR) => {
     const p = poseFromMarkers(ms, L, K);
-    if (!Lf || (p && p.n >= 2 && p.rms <= maxR) || !ms.some((m) => m.id >= 16)) return p;
+    if (!Lf || (p && p.n >= 2 && p.rms <= maxR) || !ms.some((m) => m.id >= 16)) return p ? { ...p, L_: L } : p;
     const q = poseFromMarkers(ms, Lf, K);
-    return q && q.n >= 2 && q.rms < Math.min(maxR, 2.5) ? q : p;
+    return q && q.n >= 2 && q.rms < Math.min(maxR, 2.5) ? { ...q, L_: Lf } : (p ? { ...p, L_: L } : p);
   };
   // 1) кадры и метки
   const frames = [], eqs = [];
@@ -323,33 +325,51 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   const good = [];
   for (const f of frames) {
     const p = poseOf(f.ms, K, 3); if (!p || p.rms > 3) continue;
-    f.R = p.R; f.t = p.t; f.K = K; f.rms = p.rms; f.ang = camAngles(p.R, p.t); good.push(f);
+    f.R = p.R; f.t = p.t; f.K = K; f.rms = p.rms; f.L_ = p.L_; f.ang = camAngles(p.R, p.t); good.push(f);
   }
   await tick();
-  // 2б) кадры фона (вертушка, телефон в держателе): пустой коврик с того же места
-  const clean = [];
+  // 2б) кадры фона (вертушка, телефон в держателе): пустой коврик с того же места. Поддерживаем несколько кадров
+  // фона с разных ракурсов/высот: каждому предметному кадру подбираем самый близкий по позиции камеры.
+  const plates = [];
   if (turn && cfg.plates && cfg.plates.length) {
     for (const b of cfg.plates) {
       try {
         const d = await decodeBlob(b, PROC_W, dist); if (d.w !== w || d.h !== h) { log(`${tag}✗ кадр фона другого размера — пропущен`); continue; }
-        const why = plateEmpty(d, L, mr, K, Rb, Hb);
-        if (why) { log(`${tag}✗ кадр фона не подошёл: ${why}`); continue; }
-        clean.push(d.rgba);
+        const ms = detectMarkers(toGray(d.rgba, d.w, d.h), d.w, d.h);
+        const p = poseOf(ms, K, 1e9);
+        if (!p || p.n < 2) { log(`${tag}✗ кадр фона — коврик не виден`); continue; }
+        // plateEmpty проверяет, что в центре нет предмета, но допускает неточность позы (до 5 px)
+        const why = plateEmpty(d, L, mr, K, Rb, Hb, 5);
+        if (why) { log(`${tag}~ кадр фона не идеален: ${why} — берём как ориентир фона (с поправкой яркости)`); }
+        plates.push({ rgba: d.rgba, t: p.t, pos: [-(p.R[0] * p.t[0] + p.R[3] * p.t[1] + p.R[6] * p.t[2]), -(p.R[1] * p.t[0] + p.R[4] * p.t[1] + p.R[7] * p.t[2]), -(p.R[2] * p.t[0] + p.R[5] * p.t[1] + p.R[8] * p.t[2])] });
       } catch (e) { log(`${tag}✗ кадр фона: ${e.message}`); }
     }
+    if (plates.length) log(`${tag}кадров фона: ${plates.length} шт. — пространство над предметом вырезается и по фону за кругом (с поправкой на позицию камеры)`);
   }
   // 3) маски «где предмет»
   let withPlate = 0, nTrust = 0;
+  const cleanFor = (f) => {
+    if (!plates.length) return null;
+    // позиция камеры этого кадра
+    const Cf = [-(f.R[0] * f.t[0] + f.R[3] * f.t[1] + f.R[6] * f.t[2]), -(f.R[1] * f.t[0] + f.R[4] * f.t[1] + f.R[7] * f.t[2]), -(f.R[2] * f.t[0] + f.R[5] * f.t[1] + f.R[8] * f.t[2])];
+    let best = null, bd = 40 * L.k; // в пределах 40 мм от камеры (допускает небольшие смещения держателя)
+    for (const pl of plates) {
+      const dt = Math.hypot(pl.pos[0] - Cf[0], pl.pos[1] - Cf[1], pl.pos[2] - Cf[2]);
+      if (dt < bd) { bd = dt; best = pl; }
+    }
+    return best ? [best.rgba] : plates.map((p) => p.rgba); // если ничего не близко — пробуем все (plateModel выберет лучший)
+  };
   for (let i = 0; i < good.length; i++) {
     if (shouldStop()) throw new Error('stopped');
     // enclose: кадр, где предмет целиком на листе (силуэт замкнут фоном коврика), — «доверенный»: за листом в нём
     // только фон, и его «фон» срезает шапку, даже если низкие ракурсы там видят лишь «неизвестно»
-    const m = computeMask(good[i], { layout: L, mr, Rb, Hb, cutOnly: turn, offMat: !turn, clean: clean.length ? clean : null, enclose: true, refOut: turn });
+    const Lfr = good[i].L_ || L, mrfr = (good[i].L_ && good[i].L_ !== L) ? matRaster(good[i].L_, cfg.theme || 'light', 2) : mr;
+    const m = computeMask(good[i], { layout: Lfr, mr: mrfr, Rb, Hb, cutOnly: turn, offMat: !turn, clean: cleanFor(good[i]), enclose: true, refOut: turn, plateOpt: { minAgree: 0.4, weak: true } });
     good[i].mask = m.mask; good[i].refOut = m.refOut; good[i].trusted = !!m.stats.enclosed; if (good[i].trusted) nTrust++; if (m.stats.plate) withPlate++;
     cb.progress(tag + 'Отделяю предмет от коврика', (i + 1) / good.length, `кадр ${i + 1} из ${good.length}`);
     if (i % 2) await tick();
   }
-  if (clean.length) log(`${tag}кадр фона: ${clean.length} шт., совпал с ${withPlate} кадрами из ${good.length} — пространство над предметом вырезано и по фону за кругом`);
+  if (plates.length) log(`${tag}кадров фона использовано: совпало с ${withPlate} кадрами из ${good.length} — пространство над предметом вырезано и по фону за кругом`);
   if (nTrust) log(`${tag}предмет целиком на листе в ${nTrust} кадрах из ${good.length} — по ним срезано лишнее над предметом`);
   else if (!withPlate) log(`${tag}ни в одном кадре предмет не лежит целиком на листе — «шапку» над ним срезать нечем: оборот повыше (от ~50°), коврик A3 или «Фон»`);
   // с рук: стол за листом — та же точка стола в других кадрах (срезает «колпак» над предметом, снятым почти в профиль)
@@ -359,7 +379,7 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   }
   // вертушка: что двигалось между кадрами с одного места камеры — «улики» предмета для верха выше листа
   if (turn) {
-    const mo = motionMasks(good);
+    const mo = motionMasks(good, { tau: 22, minGroup: MOTION_OPT.minGroup, refMoveTol: 0.15 });
     if (mo.used) log(`${tag}движение: ${mo.groups} позиц. камеры, ${mo.used} кадров${mo.moved ? `, ${mo.moved} кадров не учтены — камера сдвинулась или менялся свет` : ''}`);
   }
   const els = good.map((f) => f.ang.el);
@@ -382,9 +402,9 @@ export function shrinkFrame(f, W) {
   return { ...f, w, h, rgba, mask, K, bgMed };
 }
 // Кадр фона годится, только если предмет с коврика убран: центр круга должен выглядеть как сам коврик.
-export function plateEmpty(d, L, mr, K0, Rb, Hb) {
+export function plateEmpty(d, L, mr, K0, Rb, Hb, maxRms = 3) {
   const ms = detectMarkers(toGray(d.rgba, d.w, d.h), d.w, d.h), p = poseFromMarkers(ms, L, K0);
-  if (!p || p.n < 2 || p.rms > 3) return 'на нём не видно коврика (телефон сдвинули?)';
+  if (!p || p.n < 2 || p.rms > maxRms) return 'на нём не видно коврика (телефон сдвинули?)';
   const m = computeMask({ ...d, K: K0, R: p.R, t: p.t }, { layout: L, mr, Rb, Hb, cutOnly: true, offMat: false }).mask;
   let bg = 0, all = 0;
   for (let r = 4; r <= 0.65 * L.objR; r += 3) for (let a = 0; a < 360; a += 4) {
@@ -395,7 +415,7 @@ export function plateEmpty(d, L, mr, K0, Rb, Hb) {
     all++; if (m[v * d.w + u] === 0 || m[v * d.w + u] === 3) bg++;
   }
   if (all < 50) return 'центр круга не в кадре';
-  if (bg < 0.8 * all) return `в центре круга что-то стоит (коврик виден на ${Math.round(100 * bg / all)}%) — предмет нужно убрать`;
+  if (bg < 0.55 * all) return `в центре круга что-то стоит (коврик виден на ${Math.round(100 * bg / all)}%) — предмет нужно убрать`;
   return '';
 }
 const SHAPES = { revolve: 'тело вращения', smooth: 'гладкая', box: 'коробка', prism: 'призма (одно сечение по высоте)', planes: 'плоские грани', vessel: 'сосуд' };
