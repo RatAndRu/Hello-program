@@ -3,276 +3,241 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="description" content="Япония осенью 2027: десять дней в Токио, Киото, Наре и Осаке. Клёны, подсветки храмов, фестиваль Тори-но-ити, Акихабара, парк Марио, бюджет и маршрут по дням.">
-<meta property="og:type" content="website">
-<meta property="og:title" content="Япония · осень 2027 — десять дней красной осени">
-<meta property="og:description" content="Маршрут на 10 дней: Токио, Киото, Нара, Осака. Клёны на пике, подсветки храмов, Тори-но-ити, Акихабара и парк Марио.">
-<title>Япония · осень 2027 — десять дней красной осени</title>
+<title>Япония · 24 ноября — 3 декабря 2027</title>
+<meta name="description" content="Маршрут на 10 дней: Токио, Киото, Нара, Осака. Почасовые планы, карты, стоимость.">
 <style>
 :root{
-  --paper:#fbf7f0;
-  --paper-2:#f4ece0;
-  --card:#fffdf9;
-  --ink:#221d18;
-  --ink-2:#60574d;
-  --ink-3:#8b8177;
-  --line:#e9dfd0;
-  --line-2:#d8cbb7;
-  --vermil:#cd3f2b;
-  --vermil-soft:#f8e4de;
-  --indigo:#2e4a5c;
-  --gold:#a87c22;
-  --green:#3f7d5a;
-  --shadow:0 1px 2px rgba(80,55,30,.05), 0 14px 34px -22px rgba(80,55,30,.35);
-  --shadow-lg:0 2px 6px rgba(80,55,30,.05), 0 30px 60px -34px rgba(80,55,30,.4);
-  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,"Times New Roman",serif;
+  --paper:#fbf7f0;--paper-2:#f5ede1;--card:#fffdf9;
+  --ink:#221d18;--ink-2:#5d544a;--ink-3:#8e8478;
+  --line:#eadfce;--line-2:#d7c9b3;
+  --vermil:#cd3f2b;--vermil-d:#a9301f;--vermil-soft:#fae7e1;
+  --indigo:#2e4a5c;--gold:#a87c22;--green:#3f7d5a;
+  --sh:0 1px 2px rgba(90,62,32,.05),0 12px 28px -20px rgba(90,62,32,.4);
+  --sh-lg:0 2px 6px rgba(90,62,32,.05),0 28px 55px -32px rgba(90,62,32,.45);
+  --serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
   --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  --max:1160px;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
-body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16.5px;line-height:1.66;-webkit-font-smoothing:antialiased}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16.5px;line-height:1.65;-webkit-font-smoothing:antialiased}
 img{display:block;max-width:100%}
 a{color:inherit}
-.wrap{max-width:var(--max);margin:0 auto;padding:0 26px}
+.wrap{max-width:1140px;margin:0 auto;padding:0 26px}
 
-/* ---------------- nav ---------------- */
-.nav{position:sticky;top:0;z-index:60;background:rgba(251,247,240,.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
-.nav-in{max-width:var(--max);margin:0 auto;padding:0 26px;display:flex;align-items:center;gap:24px;height:60px}
-.nav-logo{font-family:var(--serif);font-size:17.5px;white-space:nowrap;letter-spacing:.01em}
+.nav{position:sticky;top:0;z-index:60;background:rgba(251,247,240,.93);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav-in{max-width:1140px;margin:0 auto;padding:0 26px;display:flex;align-items:center;gap:20px;height:56px}
+.nav-logo{font-family:var(--serif);font-size:16.5px;white-space:nowrap}
 .nav-logo b{color:var(--vermil);font-weight:400}
-.nav-links{display:flex;gap:19px;overflow-x:auto;scrollbar-width:none;margin-left:auto}
+.nav-links{display:flex;gap:16px;overflow-x:auto;scrollbar-width:none;margin-left:auto}
 .nav-links::-webkit-scrollbar{display:none}
-.nav-links a{font-size:13.5px;color:var(--ink-2);text-decoration:none;white-space:nowrap;padding:5px 0;border-bottom:1.5px solid transparent;transition:.18s}
+.nav-links a{font-size:12.8px;color:var(--ink-2);text-decoration:none;white-space:nowrap;padding:5px 0;border-bottom:1.5px solid transparent;transition:.18s}
 .nav-links a:hover,.nav-links a.on{color:var(--ink);border-color:var(--vermil)}
 
-/* ---------------- hero ---------------- */
-.hero{position:relative;padding:64px 0 56px;overflow:hidden}
-.hero:before{content:"";position:absolute;top:-180px;right:-160px;width:640px;height:640px;border-radius:50%;background:radial-gradient(circle,rgba(205,63,43,.09),rgba(205,63,43,0) 68%);pointer-events:none}
-.hero:after{content:"";position:absolute;bottom:-220px;left:-180px;width:560px;height:560px;border-radius:50%;background:radial-gradient(circle,rgba(46,74,92,.08),rgba(46,74,92,0) 70%);pointer-events:none}
-.hero-grid{position:relative;display:grid;grid-template-columns:1fr 1.02fr;gap:52px;align-items:center}
-.kicker{display:inline-flex;align-items:center;gap:10px;font-size:12.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--vermil);margin-bottom:20px;font-weight:500}
-.kicker:before{content:"";width:30px;height:1.5px;background:var(--vermil)}
-h1{font-family:var(--serif);font-weight:400;font-size:clamp(38px,5.4vw,62px);line-height:1.03;letter-spacing:-.02em;margin:0 0 22px}
+.hero{padding:56px 0 44px;position:relative;overflow:hidden}
+.hero:before{content:"";position:absolute;top:-220px;right:-120px;width:600px;height:600px;border-radius:50%;background:radial-gradient(circle,rgba(205,63,43,.10),rgba(205,63,43,0) 68%);pointer-events:none}
+.hero-grid{position:relative;display:grid;grid-template-columns:1.06fr .94fr;gap:44px;align-items:center}
+.kicker{display:inline-flex;align-items:center;gap:10px;font-size:12px;letter-spacing:.17em;text-transform:uppercase;color:var(--vermil);margin-bottom:16px;font-weight:600}
+.kicker:before{content:"";width:28px;height:1.5px;background:var(--vermil)}
+h1{font-family:var(--serif);font-weight:400;font-size:clamp(34px,4.7vw,56px);line-height:1.04;letter-spacing:-.02em;margin:0 0 18px}
 h1 em{font-style:italic;color:var(--vermil)}
-.hero-sub{font-size:17.5px;color:var(--ink-2);max-width:520px;margin:0 0 30px}
+.hero-sub{font-size:17px;color:var(--ink-2);max-width:520px;margin:0 0 24px}
 .hero-sub b{color:var(--ink);font-weight:600}
-.btns{display:flex;gap:12px;flex-wrap:wrap;margin-bottom:34px}
-.btn{display:inline-flex;align-items:center;gap:9px;padding:12px 22px;border-radius:100px;text-decoration:none;font-size:14.5px;font-weight:500;transition:.2s;border:1.5px solid transparent}
-.btn-p{background:var(--vermil);color:#fff;box-shadow:0 8px 20px -10px rgba(205,63,43,.7)}
-.btn-p:hover{background:#b8361f;transform:translateY(-1px)}
+.btns{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:28px}
+.btn{display:inline-flex;align-items:center;gap:8px;padding:11px 20px;border-radius:100px;text-decoration:none;font-size:14.2px;font-weight:500;transition:.2s;border:1.5px solid transparent}
+.btn-p{background:var(--vermil);color:#fff;box-shadow:0 8px 18px -10px rgba(205,63,43,.75)}
+.btn-p:hover{background:var(--vermil-d);transform:translateY(-1px)}
 .btn-s{border-color:var(--line-2);color:var(--ink)}
 .btn-s:hover{border-color:var(--ink);background:#fff}
-.hero-stats{display:flex;gap:28px;flex-wrap:wrap;padding-top:22px;border-top:1px solid var(--line)}
-.hs b{display:block;font-family:var(--serif);font-size:27px;font-weight:400;line-height:1.1}
-.hs span{font-size:12px;color:var(--ink-3);letter-spacing:.03em}
+.hero-stats{display:flex;gap:24px;flex-wrap:wrap;padding-top:18px;border-top:1px solid var(--line)}
+.hs b{display:block;font-family:var(--serif);font-size:25px;font-weight:400;line-height:1.1}
+.hs span{font-size:11.5px;color:var(--ink-3)}
+.collage{border-radius:18px;overflow:hidden;box-shadow:var(--sh-lg);border:1px solid var(--line)}
+.collage img{width:100%;height:min(420px,47vw);object-fit:cover}
 
-.collage{position:relative;padding-bottom:34px}
-.collage-main{border-radius:22px;overflow:hidden;box-shadow:var(--shadow-lg);border:1px solid var(--line)}
-.collage-main img{width:100%;height:min(460px,52vw);object-fit:cover}
-.sticker{position:absolute;right:-6px;bottom:0;width:212px;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:16px 18px;box-shadow:var(--shadow-lg)}
-.sticker .st-d{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--vermil);margin-bottom:5px;font-weight:600}
-.sticker .st-t{font-family:var(--serif);font-size:16.5px;line-height:1.25;margin-bottom:4px}
-.sticker .st-s{font-size:12.5px;color:var(--ink-3);line-height:1.4}
-
-/* ---------------- sections ---------------- */
-section{padding:82px 0;border-top:1px solid var(--line)}
-.s-head{margin-bottom:12px}
-.s-num{font-size:12px;letter-spacing:.18em;color:var(--vermil);font-weight:600;text-transform:uppercase;margin-bottom:12px;display:flex;align-items:center;gap:10px}
-.s-num:after{content:"";flex:1;height:1px;background:var(--line);max-width:70px}
-h2{font-family:var(--serif);font-weight:400;font-size:clamp(27px,3.7vw,40px);line-height:1.1;letter-spacing:-.018em;margin:0 0 16px}
-.lead{font-size:17.5px;color:var(--ink-2);max-width:720px;margin:0 0 42px}
+section{padding:74px 0;border-top:1px solid var(--line)}
+.s-num{font-size:11.5px;letter-spacing:.18em;color:var(--vermil);font-weight:700;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:10px}
+.s-num:after{content:"";flex:1;height:1px;background:var(--line);max-width:64px}
+h2{font-family:var(--serif);font-weight:400;font-size:clamp(26px,3.5vw,37px);line-height:1.1;letter-spacing:-.018em;margin:0 0 12px}
+.lead{font-size:16.8px;color:var(--ink-2);max-width:760px;margin:0 0 34px}
 .lead b{color:var(--ink);font-weight:600}
-h3{font-family:var(--serif);font-weight:400;font-size:22px;margin:0 0 10px;letter-spacing:-.01em}
-p{margin:0 0 15px}
+h3{font-family:var(--serif);font-weight:400;font-size:20.5px;margin:0 0 10px}
+p{margin:0 0 14px}
 .muted{color:var(--ink-2)}
 
-/* ---------------- windows ---------------- */
-.win{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-.wcard{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:30px 30px 26px;box-shadow:var(--shadow)}
-.wcard.rec{border-color:rgba(205,63,43,.35);background:linear-gradient(175deg,#fffaf7,#fffdf9 45%)}
-.wtag{display:inline-block;font-size:11px;letter-spacing:.14em;text-transform:uppercase;padding:5px 11px;border-radius:100px;border:1px solid var(--line-2);color:var(--ink-2);margin-bottom:16px;font-weight:600}
-.wcard.rec .wtag{border-color:rgba(205,63,43,.4);background:var(--vermil-soft);color:var(--vermil)}
-.wdate{font-family:var(--serif);font-size:29px;line-height:1.15;margin-bottom:5px}
-.wsub{font-size:14px;color:var(--ink-3);margin-bottom:20px}
-.wlist{list-style:none;padding:0;margin:0}
-.wlist li{display:flex;gap:11px;padding:9px 0;border-top:1px solid var(--line);font-size:14.6px;color:var(--ink-2)}
-.wlist li i{font-style:normal;flex:none;color:var(--green);font-weight:700;line-height:1.5}
-.wlist li.no i{color:var(--vermil)}
-.wlist li b{color:var(--ink);font-weight:600}
+.mapbox{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:var(--sh)}
+.map{width:100%;height:auto;display:block}
+.map .land{fill:#efe5d3;stroke:#c9b89d;stroke-width:1.1;stroke-linejoin:round}
+.map .rail{fill:none;stroke:var(--vermil);stroke-width:2.6;stroke-dasharray:8 6;stroke-linecap:round}
+.map .rail-air{stroke:var(--gold);stroke-dasharray:3 6;stroke-width:2.2}
+.map .dot{fill:#fff;stroke:var(--vermil);stroke-width:3}
+.map .dot-kix{stroke:var(--gold);stroke-width:2.4}
+.map .leader{stroke:#b9a88d;stroke-width:1;stroke-dasharray:2 3;fill:none}
+.map .lbl{font-family:var(--sans);font-size:16px;fill:var(--ink);font-weight:600;paint-order:stroke;stroke:#fbf7f0;stroke-width:4px;stroke-linejoin:round}
+.map .lbl-s{font-size:12.5px;font-weight:500;fill:var(--ink-2)}
+.map .lbl-route{font-size:12.5px;font-weight:600;fill:var(--vermil)}
+.map .sea{font-family:var(--serif);font-style:italic;font-size:15px;fill:#b9a98f;letter-spacing:.06em}
 
-.callout{margin-top:20px;background:var(--paper-2);border-radius:18px;padding:26px 30px;border:1px solid var(--line)}
-.callout p{margin:0;font-size:15.5px;color:var(--ink-2)}
-.callout b{color:var(--ink)}
+.maprow{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:26px;align-items:start}
+.legs{display:flex;flex-direction:column;gap:10px}
+.leg{display:grid;grid-template-columns:96px 1fr;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;box-shadow:var(--sh)}
+.leg .when{font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--vermil);font-weight:700;padding-top:2px}
+.leg .what{font-family:var(--serif);font-size:16px;line-height:1.25;margin-bottom:4px}
+.leg .how{font-size:12.8px;color:var(--ink-2);line-height:1.45}
+.leg .price{font-size:11.5px;color:var(--ink-3);margin-top:5px}
 
-/* ---------------- festival cards ---------------- */
-.fest{display:grid;grid-template-columns:300px 1fr;background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;margin-bottom:16px;box-shadow:var(--shadow);transition:.22s}
-.fest:hover{box-shadow:var(--shadow-lg);transform:translateY(-2px)}
-.fest-img{position:relative;min-height:260px;overflow:hidden}
-.fest-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;transition:.5s}
-.fest:hover .fest-img img{transform:scale(1.04)}
-.fest-body{padding:26px 30px 28px;min-width:0}
-.fest-top{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap;margin-bottom:6px}
-.fest-when{font-size:12.5px;color:var(--ink-3);white-space:nowrap;padding-top:4px}
-.tagline{font-size:14px;color:var(--vermil);font-weight:600;margin-bottom:12px}
-.fest-text{font-size:15px;color:var(--ink-2);margin-bottom:14px}
-.why{background:var(--paper-2);border-radius:12px;padding:14px 16px;font-size:14.4px;color:var(--ink);margin-bottom:14px;border-left:2.5px solid var(--gold)}
-.why b{font-weight:600}
-.know{list-style:none;padding:0;margin:0;font-size:14px}
-.know li{position:relative;padding:5px 0 5px 18px;color:var(--ink-2)}
-.know li:before{content:"·";position:absolute;left:4px;color:var(--vermil);font-weight:700;font-size:18px;line-height:1.2}
-.know li b{color:var(--ink);font-weight:600}
-.hit{display:inline-block;font-size:10.5px;letter-spacing:.1em;text-transform:uppercase;padding:4px 9px;border-radius:100px;font-weight:700;vertical-align:2px;margin-left:8px}
-.hit-y{background:#e7f2ea;color:#2f6b48;border:1px solid #c9e2d3}
-.hit-n{background:#f2efe9;color:#8b8177;border:1px solid #e2d9c9}
-.hit-t{background:#fdf3dd;color:#8a6516;border:1px solid #efdfb8}
+.citycard{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px 18px 6px;box-shadow:var(--sh);margin-bottom:16px}
+.cityhead{display:flex;justify-content:space-between;align-items:baseline;gap:12px;margin-bottom:10px;flex-wrap:wrap}
+.cityhead b{font-family:var(--serif);font-size:19px;font-weight:400}
+.cityhead span{font-size:11.8px;color:var(--ink-3)}
+.citybody{display:grid;grid-template-columns:minmax(0,1fr) 258px;gap:20px;align-items:start}
+.citymap{width:100%;height:auto;display:block;border-radius:10px;border:1px solid var(--line);background:#fdfbf7}
+.citymap .pin{stroke:#fff;stroke-width:2}
+.citymap .pin-t{fill:var(--ink);font-size:12.5px;font-weight:700;font-family:var(--sans);paint-order:stroke;stroke:#fdfbf7;stroke-width:3px}
+.citymap .water{fill:#cfe0e9;fill-opacity:.75;stroke:#b3cad7}
+.citymap .park{fill:#dfe9d4;fill-opacity:.7;stroke:#c6d4b9}
+.citymap .river{fill:none;stroke:#a9c3d4;stroke-width:5;stroke-linecap:round}
+.citymap .water-lbl{font-family:var(--serif);font-style:italic;font-size:12px;fill:#7a96a8}
+.citymap .tick{stroke:#c3b49b;stroke-width:.9}
+.citymap .scale{stroke:#a39683;stroke-width:1.4}
+.citymap .scale-tick{stroke:#a39683;stroke-width:1.2}
+.citymap .scale-t{font-size:10.5px;fill:#8e8478;font-family:var(--sans)}
+.dayskey{list-style:none;margin:0;padding:0;font-size:13px}
+.dayskey li{padding:7px 0;border-bottom:1px solid var(--line)}
+.dayskey li:last-child{border:0}
+.dayskey b{display:inline-flex;align-items:center;gap:7px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);font-weight:700;margin-bottom:4px}
+.dayskey b i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.dayskey span{display:block;color:var(--ink-2);line-height:1.45}
+.dayskey em{font-style:normal;color:var(--ink);font-weight:600}
 
-/* ---------------- route ---------------- */
-.day{display:grid;grid-template-columns:62px 1fr 196px;background:var(--card);border:1px solid var(--line);border-radius:16px;margin-bottom:11px;overflow:hidden;transition:.2s;box-shadow:var(--shadow)}
-.day:hover{border-color:var(--line-2);box-shadow:var(--shadow-lg)}
-.day-n{display:flex;flex-direction:column;align-items:center;padding:20px 0;border-right:1px solid var(--line);background:var(--paper-2)}
-.day-n b{font-family:var(--serif);font-size:25px;font-weight:400;line-height:1}
-.day-n span{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);margin-top:4px;text-align:center}
-.day-main{padding:20px 24px;min-width:0}
-.day-city{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--vermil);margin-bottom:5px;font-weight:600}
-.day-title{font-family:var(--serif);font-size:20px;margin-bottom:8px;line-height:1.22}
-.day-stops{font-size:14.2px;color:var(--ink-2);margin:0}
-.day-stops i{color:var(--ink);font-style:normal;font-weight:500}
-.day-side{border-left:1px solid var(--line);padding:18px 18px;display:flex;flex-direction:column;gap:9px;justify-content:center}
-.bars{display:flex;gap:3px}
-.bars span{height:4px;flex:1;background:#eee6d8;border-radius:2px}
-.bars span.f{background:var(--vermil)}
-.bars span.f2{background:rgba(205,63,43,.4)}
-.metric{font-size:12.2px;color:var(--ink-3);display:flex;justify-content:space-between;gap:8px}
-.metric b{color:var(--ink);font-weight:600}
+.daytools{display:flex;gap:8px;margin:-22px 0 18px}
+.daytools button{background:#fff;border:1px solid var(--line-2);color:var(--ink-2);font:inherit;font-size:12.2px;padding:6px 14px;border-radius:100px;cursor:pointer;transition:.16s}
+.daytools button:hover{border-color:var(--ink);color:var(--ink)}
+.day{background:var(--card);border:1px solid var(--line);border-radius:16px;margin-bottom:10px;box-shadow:var(--sh);overflow:hidden;transition:.18s}
+.day[open]{border-color:var(--line-2);box-shadow:var(--sh-lg)}
+.day summary{list-style:none;cursor:pointer;display:grid;grid-template-columns:56px 1fr auto;align-items:stretch}
+.day summary::-webkit-details-marker{display:none}
+.dnum{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:15px 0;border-right:1px solid var(--line);background:var(--paper-2)}
+.dnum b{font-family:var(--serif);font-size:22px;font-weight:400;line-height:1}
+.dnum span{font-size:8.5px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3);margin-top:3px;text-align:center;line-height:1.35}
+.dmain{padding:14px 20px;min-width:0}
+.dcity{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--vermil);margin-bottom:3px;font-weight:700}
+.dtitle{font-family:var(--serif);font-size:18px;line-height:1.25}
+.dmeta{padding:14px 18px;display:flex;flex-direction:column;justify-content:center;align-items:flex-end;gap:4px;border-left:1px solid var(--line)}
+.dmeta .km{font-size:11.5px;color:var(--ink-3);white-space:nowrap}
+.dmeta .km b{color:var(--ink);font-weight:600}
+.dmeta .chev{font-size:12px;color:var(--vermil);transition:.2s}
+.day[open] .chev{transform:rotate(180deg)}
+.dbody{padding:6px 22px 20px 76px;border-top:1px solid var(--line)}
 
-/* ---------------- budget ---------------- */
-.calc{display:grid;grid-template-columns:320px 1fr;gap:24px;align-items:start}
-.panel{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:26px;box-shadow:var(--shadow)}
-.panel h4{font-family:var(--serif);font-size:16.5px;font-weight:400;margin:0 0 18px}
-.field{margin-bottom:17px}
-.field label{display:block;font-size:12.5px;color:var(--ink-2);margin-bottom:7px;font-weight:500}
+.tl{list-style:none;margin:10px 0 0;padding:0}
+.tl li{display:grid;grid-template-columns:62px 1fr;gap:14px;padding:7px 0;border-bottom:1px dashed var(--line);font-size:14.2px}
+.tl li:last-child{border:0}
+.tl .t{font-family:var(--serif);font-size:14.5px;color:var(--vermil);padding-top:1px}
+.tl .e{color:var(--ink-2)}
+.tl .e b{color:var(--ink);font-weight:600}
+.tl .e em{font-style:normal;color:var(--ink-3);font-size:12.4px}
+.dnote{margin-top:10px;font-size:13px;color:var(--ink-2);background:var(--paper-2);border-radius:10px;padding:11px 14px}
+
+.chips{display:flex;gap:7px;flex-wrap:wrap;margin-top:12px}
+.chip{font-size:11.5px;padding:4px 10px;border-radius:100px;border:1px solid var(--line-2);color:var(--ink-2);background:#fff}
+.chip.w{background:var(--vermil-soft);border-color:rgba(205,63,43,.28);color:var(--vermil-d);font-weight:600}
+
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:19px;box-shadow:var(--sh)}
+.g2{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.card h4{font-family:var(--serif);font-size:16.5px;font-weight:400;margin:0 0 7px}
+.card p{margin:0;font-size:13.5px;color:var(--ink-2);line-height:1.55}
+
+.fest{display:grid;grid-template-columns:280px 1fr;background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;margin-bottom:14px;box-shadow:var(--sh)}
+.fest-img{position:relative;min-height:250px}
+.fest-img img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.fest-b{padding:22px 24px}
+.fest-h{display:flex;justify-content:space-between;gap:14px;flex-wrap:wrap;align-items:baseline}
+.fest-h h3{margin:0}
+.fest-h span{font-size:11.5px;color:var(--ink-3)}
+.why{background:var(--paper-2);border-left:2.5px solid var(--gold);border-radius:10px;padding:12px 15px;font-size:13.8px;line-height:1.55;margin:10px 0 0}
+.why b{display:block;margin-bottom:3px}
+.meta{font-size:12.8px;color:var(--ink-3);margin-top:10px}
+
+.tscroll{overflow-x:auto}
+.cost{width:100%;border-collapse:collapse;font-size:14.2px}
+.cost th{text-align:left;font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);padding:9px 12px 9px 0;border-bottom:1.5px solid var(--line-2);font-weight:700}
+.cost td{padding:10px 12px 10px 0;border-bottom:1px solid var(--line);color:var(--ink-2);vertical-align:top}
+.cost td:first-child{color:var(--ink);font-weight:600;white-space:nowrap}
+.cost td.n{text-align:right;font-variant-numeric:tabular-nums;color:var(--ink);white-space:nowrap}
+.cost tr.sum td{border-top:2px solid var(--line-2);font-weight:700;color:var(--ink);font-size:14.8px}
+.calc{display:grid;grid-template-columns:290px minmax(0,1fr);gap:20px;align-items:start;margin-top:24px}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;box-shadow:var(--sh)}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:12.5px;color:var(--ink-2);margin-bottom:6px;font-weight:500}
 .field input[type=range]{width:100%;accent-color:var(--vermil)}
-.field .val{font-family:var(--serif);font-size:17px;color:var(--ink)}
+.field .val{font-family:var(--serif);font-size:16.5px}
 .seg{display:flex;border:1px solid var(--line-2);border-radius:100px;overflow:hidden;background:#fff}
-.seg button{flex:1;background:transparent;border:0;color:var(--ink-2);font:inherit;font-size:12.5px;padding:9px 4px;cursor:pointer;transition:.16s}
+.seg button{flex:1;background:transparent;border:0;color:var(--ink-2);font:inherit;font-size:11.8px;padding:8px 3px;cursor:pointer;transition:.16s}
 .seg button.on{background:var(--vermil);color:#fff}
-.seg button:not(.on):hover{background:var(--paper-2)}
-.chk{display:flex;align-items:center;gap:9px;font-size:13.5px;color:var(--ink-2);padding:6px 0;cursor:pointer}
-.chk input{accent-color:var(--vermil);width:15px;height:15px}
-.total-box{background:linear-gradient(135deg,#fff6f2,#fffdf9);border:1px solid rgba(205,63,43,.25);border-radius:18px;padding:24px 28px;margin-bottom:18px;display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:14px;box-shadow:var(--shadow)}
-.total-box .lbl{font-size:11.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);font-weight:600}
-.total-box .big{font-family:var(--serif);font-size:clamp(32px,4.6vw,48px);line-height:1;margin-top:6px}
-.total-box .big small{font-size:16px;color:var(--ink-3);font-family:var(--sans)}
-.b-row{display:grid;grid-template-columns:146px 1fr 124px;gap:14px;align-items:center;padding:11px 0;border-top:1px solid var(--line);font-size:13.8px}
-.b-row .nm{color:var(--ink-2);font-weight:500}
-.b-row .nm em{display:block;font-style:normal;font-size:11.5px;color:var(--ink-3);font-weight:400}
-.b-bar{height:7px;background:#efe7d9;border-radius:4px;overflow:hidden}
-.b-bar i{display:block;height:100%;background:var(--vermil);opacity:.85;border-radius:4px}
-.b-row .amt{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}
-.b-row .amt small{display:block;color:var(--ink-3);font-size:11.5px;font-weight:400}
-.note{font-size:13.2px;color:var(--ink-2);background:var(--paper-2);border-radius:12px;padding:14px 16px;margin-top:14px}
+.chk{display:flex;align-items:center;gap:8px;font-size:12.8px;color:var(--ink-2);padding:4px 0;cursor:pointer}
+.chk input{accent-color:var(--vermil)}
+.total{background:linear-gradient(135deg,#fff5f0,#fffdf9);border:1px solid rgba(205,63,43,.24);border-radius:16px;padding:18px 22px;display:flex;justify-content:space-between;align-items:flex-end;gap:14px;flex-wrap:wrap;box-shadow:var(--sh)}
+.total .lbl{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);font-weight:700}
+.total .big{font-family:var(--serif);font-size:clamp(28px,4vw,42px);line-height:1;margin-top:5px}
+.total .big small{font-size:14px;color:var(--ink-3);font-family:var(--sans)}
+.note{font-size:12.8px;color:var(--ink-2);background:var(--paper-2);border-radius:12px;padding:12px 15px;margin-top:12px;line-height:1.55}
+.note b{color:var(--ink)}
 
-/* ---------------- places ---------------- */
-.filters{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
-.filters button{background:#fff;border:1px solid var(--line-2);color:var(--ink-2);font:inherit;font-size:13px;padding:8px 16px;border-radius:100px;cursor:pointer;transition:.16s;font-weight:500}
-.filters button:hover{border-color:var(--ink-2)}
-.filters button.on{background:var(--ink);border-color:var(--ink);color:#fff}
-.places{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.place{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;transition:.2s;display:flex;flex-direction:column;box-shadow:var(--shadow)}
-.place:hover{border-color:var(--line-2);transform:translateY(-3px);box-shadow:var(--shadow-lg)}
-.place img{width:100%;height:160px;object-fit:cover}
-.place-b{padding:16px 18px 18px;flex:1;display:flex;flex-direction:column}
-.place-w{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--vermil);margin-bottom:6px;font-weight:600}
-.place-t{font-family:var(--serif);font-size:17px;line-height:1.24;margin-bottom:8px}
-.place-d{font-size:13.4px;color:var(--ink-2);flex:1;line-height:1.52}
-.place-m{display:flex;gap:10px;justify-content:space-between;margin-top:12px;font-size:11.5px;color:var(--ink-3);border-top:1px solid var(--line);padding-top:9px}
-.place-m b{color:var(--ink);font-weight:600}
-.stars{color:var(--gold);letter-spacing:.5px}
+.places{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.place{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;box-shadow:var(--sh);display:flex;flex-direction:column;transition:.2s}
+.place:hover{transform:translateY(-3px);box-shadow:var(--sh-lg)}
+.place img{width:100%;height:150px;object-fit:cover}
+.place-b{padding:14px 15px 15px;flex:1;display:flex;flex-direction:column}
+.place-w{font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--vermil);margin-bottom:4px;font-weight:700}
+.place-t{font-family:var(--serif);font-size:16px;line-height:1.24;margin-bottom:6px}
+.place-d{font-size:12.8px;color:var(--ink-2);flex:1;line-height:1.5}
+.place-m{display:flex;justify-content:space-between;gap:9px;margin-top:9px;font-size:10.5px;color:var(--ink-3);border-top:1px solid var(--line);padding-top:7px}
+.place-m b{color:var(--ink)}
 
-/* ---------------- cards grid ---------------- */
-.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;box-shadow:var(--shadow)}
-.card h4{font-family:var(--serif);font-size:18px;font-weight:400;margin:0 0 8px}
-.card p{margin:0;font-size:14px;color:var(--ink-2)}
-.g2{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
-.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
-.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-.mini{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
-.mini .mt{font-family:var(--serif);font-size:16px;margin-bottom:4px}
-.mini .md{font-size:13px;color:var(--ink-2);line-height:1.5}
-.mini .mp{font-size:11.5px;color:var(--vermil);font-weight:600;margin-top:8px}
-
-/* ---------------- vibe with photo ---------------- */
-.vibe{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.vcard{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow);transition:.2s}
-.vcard:hover{transform:translateY(-3px);box-shadow:var(--shadow-lg)}
-.vcard img{width:100%;height:190px;object-fit:cover}
-.vcard .vb{padding:20px 22px 22px}
-.vcard h4{font-family:var(--serif);font-size:19px;font-weight:400;margin:0 0 7px}
-.vcard p{margin:0;font-size:14px;color:var(--ink-2)}
-.vcard .vp{display:inline-block;margin-top:10px;font-size:12px;color:var(--vermil);font-weight:600}
-
-/* ---------------- people ---------------- */
-.ptable{width:100%;border-collapse:collapse;font-size:14.3px}
-.ptable th{text-align:left;font-weight:600;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);padding:10px 14px 10px 0;border-bottom:1.5px solid var(--line-2)}
-.ptable td{padding:13px 14px 13px 0;border-bottom:1px solid var(--line);vertical-align:top;color:var(--ink-2)}
-.ptable td:first-child{color:var(--ink);font-weight:600;width:30%}
-.tscroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
-.tscroll .ptable{min-width:600px}
-.rules{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:24px}
-.rule{background:var(--card);border:1px solid var(--line);border-radius:14px;border-left:3px solid var(--green);padding:17px 19px;font-size:14.2px;box-shadow:var(--shadow)}
+.rules{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:18px}
+.rule{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--green);border-radius:12px;padding:14px 16px;font-size:13.5px;box-shadow:var(--sh)}
 .rule.no{border-left-color:var(--vermil)}
-.rule b{display:block;margin-bottom:3px;font-weight:600}
+.rule b{display:block;margin-bottom:2px}
 .rule span{color:var(--ink-2)}
 
-/* ---------------- booking ---------------- */
-.book{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
-.bk{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;box-shadow:var(--shadow)}
-.bk-when{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--vermil);margin-bottom:9px;font-weight:700}
-.bk-t{font-family:var(--serif);font-size:16.5px;margin-bottom:7px;line-height:1.26}
-.bk-d{font-size:13.2px;color:var(--ink-2);line-height:1.5}
+.ptable{width:100%;border-collapse:collapse;font-size:13.8px;min-width:600px}
+.ptable th{text-align:left;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);padding:9px 14px 9px 0;border-bottom:1.5px solid var(--line-2)}
+.ptable td{padding:10px 14px 10px 0;border-bottom:1px solid var(--line);color:var(--ink-2);vertical-align:top}
+.ptable td:first-child{color:var(--ink);font-weight:600;white-space:nowrap}
 
-/* ---------------- plans ---------------- */
-.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.plan{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--gold);border-radius:14px;padding:20px 22px;box-shadow:var(--shadow)}
-.plan-if{font-size:10.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--gold);margin-bottom:8px;font-weight:700}
-.plan p{margin:0;font-size:13.6px;color:var(--ink-2);line-height:1.54}
-.plan b{color:var(--ink)}
+.book{display:grid;grid-template-columns:repeat(4,1fr);gap:11px}
+.bk{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;box-shadow:var(--sh)}
+.bk-when{font-size:9.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--vermil);margin-bottom:6px;font-weight:700}
+.bk-t{font-family:var(--serif);font-size:15px;margin-bottom:5px}
+.bk-d{font-size:12.3px;color:var(--ink-2);line-height:1.48}
 
-/* ---------------- gallery ---------------- */
-.gallery{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
-.gallery figure{margin:0;background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;box-shadow:var(--shadow)}
-.gallery img{width:100%;height:190px;object-fit:cover;transition:.4s}
-.gallery figure:hover img{transform:scale(1.03)}
-.gallery figcaption{padding:14px 16px 16px;font-size:12.8px;color:var(--ink-2);line-height:1.5}
-.gallery figcaption b{display:block;color:var(--ink);font-weight:600;font-size:14px;margin-bottom:3px;font-family:var(--serif)}
+.plans{display:grid;grid-template-columns:repeat(3,1fr);gap:11px}
+.plan{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--gold);border-radius:12px;padding:16px 18px;box-shadow:var(--sh)}
+.plan-if{font-size:9.8px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold);margin-bottom:6px;font-weight:700}
+.plan p{margin:0;font-size:12.9px;color:var(--ink-2);line-height:1.5}
 
-/* ---------------- footer ---------------- */
-footer{padding:54px 0 70px;border-top:1px solid var(--line);background:var(--paper-2)}
-.foot{display:flex;justify-content:space-between;gap:30px;flex-wrap:wrap;font-size:13px;color:var(--ink-3)}
-.foot b{color:var(--ink);font-weight:600}
+footer{padding:44px 0 60px;border-top:1px solid var(--line);background:var(--paper-2)}
+.foot{display:flex;justify-content:space-between;gap:26px;flex-wrap:wrap;font-size:12.2px;color:var(--ink-3)}
+.foot b{color:var(--ink)}
 
-@media(max-width:980px){
-  .hero-grid{grid-template-columns:1fr;gap:34px}
-  .collage-main img{height:330px}
-  .win,.calc,.fest,.places,.book,.g2,.g3,.g4,.vibe,.plans,.gallery,.rules{grid-template-columns:1fr 1fr}
-  .calc{grid-template-columns:1fr}
+@media(max-width:1000px){
+  .hero-grid,.maprow,.calc,.citybody{grid-template-columns:1fr}
+  .book,.g4{grid-template-columns:repeat(2,1fr)}
+  .places,.g3,.plans{grid-template-columns:repeat(2,1fr)}
   .fest{grid-template-columns:1fr}
-  .fest-img{min-height:0;height:230px}
-  .day{grid-template-columns:54px 1fr}
-  .day-side{grid-column:1/-1;border-left:0;border-top:1px solid var(--line);flex-direction:row;justify-content:space-around;flex-wrap:wrap;padding:14px 18px}
-  .bars{min-width:80px}
+  .fest-img{min-height:210px}
 }
-@media(max-width:680px){
-  .wrap{padding:0 18px}
-  section{padding:58px 0}
-  .hero{padding:40px 0}
-  .win,.places,.book,.g2,.g3,.g4,.vibe,.plans,.gallery,.rules{grid-template-columns:1fr}
-  .sticker{position:static;width:auto;margin-top:14px}
-  .collage{padding-bottom:0}
-  .b-row{grid-template-columns:110px 1fr;gap:8px}
-  .b-row .amt{grid-column:2;text-align:left}
-  .hero-stats{gap:18px}
+@media(max-width:640px){
+  .wrap{padding:0 16px}
+  section{padding:52px 0}
+  .book,.g2,.g3,.g4,.places,.plans,.rules{grid-template-columns:1fr}
+  .day summary{grid-template-columns:48px 1fr}
+  .dmeta{display:none}
+  .tl li{grid-template-columns:52px 1fr;gap:10px;font-size:13.5px}
+  .dbody{padding:6px 16px 18px 16px}
+  .leg{grid-template-columns:1fr;gap:4px}
 }
 </style>
 </head>
@@ -282,1079 +247,883 @@ footer{padding:54px 0 70px;border-top:1px solid var(--line);background:var(--pap
   <div class="nav-in">
     <div class="nav-logo">Япония <b>2027</b></div>
     <div class="nav-links">
-      <a href="#dates">Когда</a>
-      <a href="#fests">Праздники</a>
-      <a href="#route">Маршрут</a>
-      <a href="#akiba">Акихабара</a>
-      <a href="#budget">Бюджет</a>
-      <a href="#anime">Аниме</a>
+      <a href="#map">Маршрут</a>
+      <a href="#days">Дни</a>
+      <a href="#cities">Города</a>
+      <a href="#events">События</a>
+      <a href="#cost">Стоимость</a>
+      <a href="#anime">Акихабара</a>
       <a href="#vibe">Вайб</a>
-      <a href="#people">Люди</a>
       <a href="#book">Брони</a>
       <a href="#planb">План Б</a>
     </div>
   </div>
 </nav>
 
-<!-- ================== HERO ================== -->
 <header class="hero">
   <div class="wrap hero-grid">
     <div>
-      <div class="kicker">Токио · Киото · Нара · Осака</div>
+      <div class="kicker">24 ноября — 3 декабря 2027</div>
       <h1>Десять дней<br><em>красной</em> осени</h1>
-      <p class="hero-sub">
-        24 ноября — 3 декабря 2027. Клёны на пике, храмы подсвечены, на улицах жарят каштаны,
-        а в Асакусе в эти же дни шумит праздник, где <b>можно торговаться</b> — единственный раз в году.
-      </p>
+      <p class="hero-sub">Токио, Киото, Нара и Осака. Клёны на пике, храмы подсвечены, в Асакусе шумит
+      единственный в году базар, где <b>принято торговаться</b>. Всё остальное из календаря выброшено —
+      здесь только то, что реально попадает в эти десять дней.</p>
       <div class="btns">
-        <a class="btn btn-p" href="#route">Посмотреть маршрут →</a>
-        <a class="btn btn-s" href="#budget">Сколько это стоит</a>
+        <a class="btn btn-p" href="#days">Разложить по часам →</a>
+        <a class="btn btn-s" href="#cost">Сколько стоит</a>
       </div>
       <div class="hero-stats">
         <div class="hs"><b>10</b><span>дней</span></div>
         <div class="hs"><b>4</b><span>города</span></div>
-        <div class="hs"><b>39</b><span>точек</span></div>
-        <div class="hs"><b>¥208k</b><span>на человека</span></div>
+        <div class="hs"><b>5</b><span>переездов</span></div>
+        <div class="hs"><b>¥182k</b><span>на человека</span></div>
       </div>
     </div>
-    <div class="collage">
-      <div class="collage-main"><img src="assets/tofukuji.jpg" alt="Тофуку-дзи в кленах"></div>
-      <div class="sticker">
-        <div class="st-d">26 ноября 2027</div>
-        <div class="st-t">Тори-но-ити</div>
-        <div class="st-s">Праздник грабель удачи в Асакусе — ровно в третий день маршрута</div>
-      </div>
-    </div>
+    <div class="collage"><img src="assets/tofukuji.jpg" alt="Тофуку-дзи в кленах"></div>
   </div>
 </header>
 
-<!-- ================== 01 КОГДА ================== -->
-<section id="dates">
+<section id="map">
   <div class="wrap">
-    <div class="s-head"><div class="s-num">01 · когда ехать</div><h2>Осень распадается на две разные поездки</h2></div>
-    <p class="lead">Между ними месяц, и совместить их в десять дней не получится. Октябрь — про праздники и горы. Ноябрь — про клёны, огни и подсветки. <b>Мы выбираем ноябрь</b>, и ниже видно, что за это отдаёте.</p>
+    <div class="s-num">01 · маршрут</div>
+    <h2>Куда и как мы двигаемся</h2>
+    <p class="lead">Вся поездка — это <b>две базы</b>: Токио на четыре ночи и Кансай на пять.
+    Между ними один переезд на синкансэне, всё остальное — короткие ветки по 30–45 минут.
+    Киото, Нара и Осака стоят треугольником, из которого никуда не надо тащить чемодан дважды.</p>
 
-    <div class="win">
-      <div class="wcard">
-        <div class="wtag">Окно A · праздничное</div>
-        <div class="wdate">20 — 30 октября</div>
-        <div class="wsub">Два главных праздника Киото за один день</div>
-        <ul class="wlist">
-          <li><i>✓</i><span><b>Дзидай-мацури и Курама</b> — оба 22 октября</span></li>
-          <li><i>✓</i><span>Выставка Сёсоин в Наре (конец октября — начало ноября)</span></li>
-          <li><i>✓</i><span>Горные клёны: Никко, Хаконэ, Такао</span></li>
-          <li class="no"><i>✕</i><span>В городах ещё зелено — тех самых клёнов не будет</span></li>
-          <li class="no"><i>✕</i><span>Ночных подсветок храмов ещё нет</span></li>
-          <li class="no"><i>✕</i><span>Ябусамэ 3 ноября и Тори-но-ити 26 ноября — мимо</span></li>
-        </ul>
+    <div class="maprow">
+      <div class="mapbox">
+        <svg viewBox="0 0 756 791" class="map" role="img" aria-label="Карта Японии с маршрутом поездки">
+<path class="land" d="M698 27L701 29L712 25L708 47L710 75L712 83L717 89L723 93L732 106L743 142L742 169L738 184L738 192L734 193L730 199L724 202L722 210L717 217L715 236L712 243L707 245L700 245L691 248L683 262L681 269L681 276L685 295L687 311L685 337L683 345L673 357L669 365L663 382L663 390L660 401L663 414L671 429L678 438L664 443L653 454L651 462L651 471L647 478L630 488L622 498L617 497L615 494L617 490L616 486L618 474L616 469L621 466L623 460L631 452L632 448L626 442L617 443L614 446L613 455L606 461L607 468L611 473L607 480L605 481L601 473L596 469L589 469L582 471L577 476L575 480L574 484L575 494L573 503L569 510L562 518L558 519L554 513L556 500L556 493L562 489L557 484L551 482L543 485L539 492L529 502L524 510L520 520L508 517L482 515L454 521L455 518L467 512L466 507L452 508L451 504L448 503L447 504L447 511L445 512L443 510L444 505L442 492L444 488L442 487L439 487L432 492L426 506L423 514L428 521L443 532L443 536L442 540L438 542L424 545L411 551L387 596L374 601L360 596L353 584L343 571L341 563L341 550L339 543L351 533L357 524L358 519L354 516L345 516L336 518L329 516L318 508L309 508L289 512L273 525L267 528L256 528L242 532L228 539L224 542L217 540L203 545L196 546L188 543L182 538L176 540L171 547L166 575L142 560L126 562L112 567L103 562L94 565L92 545L96 538L99 535L106 534L114 535L119 534L134 519L149 511L161 498L172 489L193 469L198 460L201 458L211 454L225 450L231 450L238 458L245 455L252 454L259 455L273 454L287 452L301 445L326 443L343 437L349 438L349 443L347 448L349 451L352 453L373 454L380 451L393 441L397 435L393 427L392 419L396 410L401 402L413 392L433 364L436 349L434 331L441 318L462 309L469 307L470 314L459 325L446 333L445 337L450 344L452 348L451 357L458 362L465 363L471 362L480 349L504 341L515 334L522 333L528 330L546 311L554 297L557 289L561 284L582 272L591 262L598 236L602 229L612 215L615 209L621 183L628 170L630 155L629 145L626 138L623 136L615 136L611 133L612 130L616 130L621 126L625 117L627 108L627 104L622 88L622 84L624 78L628 74L638 71L643 66L646 54L645 43L649 38L652 39L659 39L663 40L666 62L668 65L670 67L673 67L676 64L678 60L681 59L692 63L696 60L698 55L700 47L699 40L697 37L689 41L673 44L673 36L677 24L679 20L681 18L691 21L698 27ZM109 593L120 595L133 589L136 590L139 593L141 596L140 600L130 616L140 618L151 618L149 623L148 628L154 633L152 638L158 642L156 648L141 666L137 675L125 718L126 725L125 733L118 752L113 752L107 750L103 750L101 754L104 763L93 774L80 781L80 777L84 771L86 762L85 754L81 744L81 740L86 738L87 733L85 730L78 730L73 741L71 748L71 752L78 762L74 769L52 761L48 752L57 749L59 738L56 731L51 726L52 720L51 713L51 702L52 701L59 699L63 693L73 676L77 664L73 663L69 661L73 656L72 649L66 640L62 630L54 623L47 629L50 635L50 647L53 647L56 646L59 647L61 654L60 658L57 660L54 660L49 655L43 653L37 657L31 664L26 668L30 656L22 645L20 637L21 632L27 637L30 644L34 647L39 647L34 635L15 619L17 611L20 610L31 613L32 609L30 605L35 601L44 598L50 593L56 593L61 590L68 576L82 569L89 570L96 573L102 587L109 593ZM295 545L303 548L312 547L312 560L315 569L314 575L318 577L307 583L297 592L289 604L285 618L272 604L266 600L253 599L233 610L224 630L222 634L217 637L214 648L208 654L204 654L198 653L195 654L199 643L186 642L186 636L182 632L185 627L185 623L187 618L187 615L183 614L181 612L181 605L174 606L162 612L159 612L164 608L174 602L195 586L203 564L212 557L215 557L219 564L224 569L227 569L236 565L244 566L250 562L253 559L253 554L251 546L257 546L264 541L271 538L279 538L287 540L295 545ZM529 286L522 285L526 283L528 275L528 273L524 273L524 267L527 261L538 250L539 254L536 267L543 268L538 280L529 286Z"/>
+<text class="sea" x="58" y="150">Японское море</text>
+<text class="sea" x="716" y="735" text-anchor="end">Тихий океан</text>
+<path class="rail rail-shinkansen" d="M611 438 Q501 496 376 488"/>
+<text class="lbl lbl-route" x="507" y="492">460 км · 2 ч 15</text>
+<path class="rail rail-air" d="M361 509 Q350 516 346 528"/>
+<circle class="dot dot-tokyo" cx="611" cy="438" r="8"/>
+<text class="lbl" x="626" y="442">Токио</text>
+<text class="lbl lbl-s" x="626" y="459">4 ночи</text>
+<circle class="dot dot-kyoto" cx="376" cy="488" r="6"/>
+<circle class="dot dot-osaka" cx="361" cy="509" r="6"/>
+<circle class="dot dot-nara" cx="379" cy="510" r="4"/>
+<circle class="dot dot-kix" cx="346" cy="528" r="3.5"/>
+<path class="leader" d="M371 493L318 574"/>
+<text class="lbl" x="312" y="598" text-anchor="end">Киото · Нара · Осака</text>
+<text class="lbl lbl-s" x="312" y="616" text-anchor="end">3 ночи</text>
+<text class="lbl lbl-s" x="338" y="531" text-anchor="end">аэропорт</text>
+<text class="lbl lbl-s" x="338" y="545" text-anchor="end">Кансай</text>
+</svg>
       </div>
-      <div class="wcard rec">
-        <div class="wtag">Окно B · кленовое — берём его</div>
-        <div class="wdate">24 ноября — 3 декабря</div>
-        <div class="wsub">Больше красоты на километр, чем где-либо ещё</div>
-        <ul class="wlist">
-          <li><i>✓</i><span><b>Пик момидзи</b> в Киото: 20.11 — 5.12</span></li>
-          <li><i>✓</i><span>Гинкго в Токио: 26.11 — 1.12</span></li>
-          <li><i>✓</i><span>Подсветки: Киёмидзу, Эйкан-до, Тофуку-дзи</span></li>
-          <li><i>✓</i><span><b>Тори-но-ити 26 ноября</b> — попадает в маршрут</span></li>
-          <li><i>✓</i><span>Рождественский рынок в Осаке и 4 км огней на Мидосудзи</span></li>
-          <li class="no"><i>✕</i><span>Дзидай-мацури и Курама уже прошли</span></li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="callout">
-      <p><b>Почему всё-таки ноябрь.</b> Клёны — то, за чем вообще едут осенью. Только в этом окне они совпадают
-      с пиком сразу в двух городах, а вечером добавляются подсветки храмов: та самая картинка, которую все представляют.
-      Плюс удача: 23 ноября — государственный праздник, японцы берут отгул на 22-е и уезжают в четырёхдневный отпуск
-      20–23 ноября. Мы приезжаем 24-го, когда внутренний турист уже разъехался, а клёны ещё держатся.</p>
-    </div>
-  </div>
-</section>
-
-<!-- ================== 02 ПРАЗДНИКИ ================== -->
-<section id="fests">
-  <div class="wrap">
-    <div class="s-head"><div class="s-num">02 · праздники</div><h2>Что это за дни и почему о них вообще речь</h2></div>
-    <p class="lead">Не список дат, а объяснение: в чём соль каждого события, что вы там увидите и стоит ли ради него менять планы. <b>Зелёная метка</b> — попадает в наше окно, <b>серая</b> — нет, <b>жёлтая</b> — даты объявят позже.</p>
-
-    <div class="fest">
-      <div class="fest-img"><img src="assets/torinoichi2.jpg" alt="Тори-но-ити в Асакусе"></div>
-      <div class="fest-body">
-        <div class="fest-top">
-          <h3 style="margin:0">Тори-но-ити<span class="hit hit-y">попадает</span></h3>
-          <div class="fest-when">26 ноября 2027, пятница · Асакуса</div>
-        </div>
-        <div class="tagline">Единственный день в году, когда в Японии торгуются</div>
-        <p class="fest-text">Рынок «грабель удачи» — бамбуковых кумадэ, усыпанных золотыми монетами, масками и фигурками.
-        Торговцы выстраивают их штабелями до крыши, а вокруг стоят сотни людей с деньгами.</p>
-        <div class="why"><b>В чём фишка.</b> В Японии не принято сбивать цену. Здесь — обязательно. На кумадэ нет ценника:
-        вы спрашиваете, вам называют сумму, и начинается торг в три раунда. Чем сильнее сбили — тем больше удачи,
-        потому что «удача должна достаться с боем». В конце вы платите <i>первоначальную</i> цену, а сдачу оставляете
-        продавцу как подарок, и он бьёт с вами в ладоши «три хлопка» на весь переулок. Со стороны это выглядит как
-        театр, и вы в нём участвуете.</div>
-        <ul class="know">
-          <li><b>Бесплатно</b>, работает с полуночи до полуночи. Храм Отори-дзиндзя, 10 минут от станции Асакуса</li>
-          <li>Около 150 лавок с кумадэ и 750 лотков с едой — крупнейший праздник такого рода в стране</li>
-          <li>Приходите <b>после 18:00</b>: днём это рынок, вечером — огни и толпа</li>
-          <li>Маленький кумадэ — от ¥1 500, большой — от ¥10 000. Везут домой как багаж, не в ручной клади</li>
-          <li>В 2027 году «три петушиных дня» (2, 14 и 26 ноября) — по примете это год частых пожаров, японцы шутят, что удачи тоже будет втрое</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="fest">
-      <div class="fest-img"><img src="assets/jidai.jpg" alt="Дзидай-мацури"></div>
-      <div class="fest-body">
-        <div class="fest-top">
-          <h3 style="margin:0">Дзидай-мацури<span class="hit hit-n">не попадает</span></h3>
-          <div class="fest-when">22 октября · 12:00–14:30</div>
-        </div>
-        <div class="tagline">Парад длиной в тысячу сто лет</div>
-        <p class="fest-text">Две тысячи человек идут от Императорского дворца до Хэйан-дзингу в костюмах всех эпох —
-        от придворных в шелках VIII века до солдат накануне революции Мэйдзи.</p>
-        <div class="why"><b>В чём фишка.</b> За два часа мимо вас проезжает вся история страны по порядку. Это не
-        реконструкция для туристов, а парад, который город устраивает сам с 1895 года — его придумали к 1100-летию
-        переноса столицы в Киото. Ни один музей не покажет столько костюмов сразу, и никто не объяснит их так,
-        как это делает улица.</div>
-        <ul class="know">
-          <li><b>Бесплатно</b> с любой разрешённой точки вдоль маршрута — Каварамати, Оикэ, Сандзё</li>
-          <li>Трибуны: ¥5 000 вторые ряды, ¥7 500 первые, часть мест с английским комментарием в наушниках</li>
-          <li>Продажа с начала сентября 2027 — первый ряд уходит первым</li>
-          <li>При дожде переносят на 23-е, решают утром того же дня</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="fest">
-      <div class="fest-img"><img src="assets/kurama.jpg" alt="Курама-но Химацури"></div>
-      <div class="fest-body">
-        <div class="fest-top">
-          <h3 style="margin:0">Курама-но Химацури<span class="hit hit-n">не попадает</span></h3>
-          <div class="fest-when">22 октября · вечер</div>
-        </div>
-        <div class="tagline">Огонь идёт по улице деревни на тысячу человек</div>
-        <p class="fest-text">В горной деревне Курама, в сорока минутах от Киото, мужчины несут на плечах горящие сосновые
-        факелы размером с человека. Улица одна, и она же — праздник.</p>
-        <div class="why"><b>В чём фишка.</b> Это не шоу с трибунами, а обряд, который деревня проводит для себя, —
-        туристов просто пускают постоять у стены. Огонь проходит в двух метрах от вас, искры летят на куртки,
-        а вокруг живут обычные люди, которым завтра на работу. Ощущение «я попал не в аттракцион, а в чужую жизнь»
-        здесь сильнее, чем где угодно ещё в Японии.</div>
-        <ul class="know">
-          <li><b>Бесплатно</b>, мест нет вовсе — смотрите с обочины</li>
-          <li>С 15:00 закрыты дорога и <b>все парковки</b>. Только поезд Эйдзан от Дэматиандзаги, ~30 минут</li>
-          <li><b>Последний поезд около 23:25</b>, а праздник идёт за полночь. Опоздали — уехать нечем</li>
-          <li>Не надевайте синтетику: искры прожигают ткань. Вспышка запрещена</li>
-          <li>Это жилая деревня: мусор с собой, разговаривать тихо</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="fest">
-      <div class="fest-img"><img src="assets/yabusame.jpg" alt="Ябусамэ"></div>
-      <div class="fest-body">
-        <div class="fest-top">
-          <h3 style="margin:0">Ябусамэ<span class="hit hit-n">не попадает</span></h3>
-          <div class="fest-when">3 ноября · 13:00 · Мэйдзи-дзингу</div>
-        </div>
-        <div class="tagline">Стрельба из лука с лошади на полном галопе</div>
-        <p class="fest-text">Всадник в костюме самурая разгоняет коня по 218-метровой дорожке и на скаку выпускает
-        три стрелы в три мишени. Промах — не просто неудача, а видимый всем позор.</p>
-        <div class="why"><b>В чём фишка.</b> Традиция XII века, которую возродили в 1932-м. Вы смотрите на навык,
-        который оттачивали семьсот лет: лук держат двумя пальцами, поводья — в зубах. И всё это в лесу Мэйдзи,
-        куда через десять минут можно просто уйти гулять.</div>
-        <ul class="know">
-          <li><b>Бесплатно</b>, но места на западной лужайке не бронируются — после заполнения вход закрывают</li>
-          <li>Приходите к 12:00: в 11:00 там же показательная стрельба лучников</li>
-          <li>Тишина во время заезда, без вспышек — это обряд, а не шоу</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="fest">
-      <div class="fest-img"><img src="assets/midosuji.jpg" alt="Иллюминация Мидосудзи"></div>
-      <div class="fest-body">
-        <div class="fest-top">
-          <h3 style="margin:0">Мидосудзи в огнях<span class="hit hit-y">попадает</span></h3>
-          <div class="fest-when">с 3 ноября по 31 декабря · 17:00–01:00</div>
-        </div>
-        <div class="tagline">Четыре километра деревьев в лампочках</div>
-        <p class="fest-text">Главный бульвар Осаки от Умэды до Намбы целиком одевают в гирлянды. По официальным данным —
-        самая длинная иллюминированная улица в мире.</p>
-        <div class="why"><b>В чём фишка.</b> Вход не нужен, билет не нужен, правил нет: это обычная городская улица,
-        по которой просто идут люди после работы. Именно поэтому она работает — вы не смотрите аттракцион,
-        а оказываетесь внутри чужого вечера. В конце ноября к огням добавляются жёлтые гинкго, и получается
-        палитра, которую невозможно испортить даже телефонным снимком.</div>
-        <ul class="know">
-          <li><b>Бесплатно</b>, идти можно в любой точке — от станции Умэда до Намбы</li>
-          <li>Лучшее время — 17:30: небо ещё синее, огни уже горят</li>
-          <li>Проезд на такси по бульвару в это время медленнее пешком</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="fest">
-      <div class="fest-img"><img src="assets/kiyomizu.jpg" alt="Киёмидзу-дэра ночью"></div>
-      <div class="fest-body">
-        <div class="fest-top">
-          <h3 style="margin:0">Ночные подсветки храмов<span class="hit hit-t">объявят осенью</span></h3>
-          <div class="fest-when">весь ноябрь · Киото</div>
-        </div>
-        <div class="tagline">Храмы открываются после темноты</div>
-        <p class="fest-text">Раз в год, на две недели пика клёнов, храмы Киото работают вечером: деревья подсвечивают
-        снизу, дорожки — фонарями, и всё это отражается в прудах.</p>
-        <div class="why"><b>В чём фишка.</b> Днём Киёмидзу — это очередь на смотровую площадку. В десять вечера
-        те же клёны горят красным на чёрном, и на террасе стоит человек двадцать. Один билет ¥400–1 000,
-        и вы получаете храм, которого не увидите ни в какое другое время суток.</div>
-        <ul class="know">
-          <li>Киёмидзу-дэра: обычно 21–30 ноября, до 21:30, ¥500, без брони</li>
-          <li>Эйкан-до: 20.11–6.12, ¥1 000 — считается лучшей подсветкой города</li>
-          <li>Тофуку-дзи: 14.11–6.12, ¥1 000. Кодай-дзи: до 13.12, ¥800</li>
-          <li>Точные даты 2027 объявят в сентябре — маршрут собран так, чтобы они попали в любом случае</li>
-        </ul>
-      </div>
-    </div>
-
-    <div class="fest">
-      <div class="fest-img"><img src="assets/nara.jpg" alt="Нара осенью"></div>
-      <div class="fest-body">
-        <div class="fest-top">
-          <h3 style="margin:0">Сёсоин<span class="hit hit-t">объявят весной</span></h3>
-          <div class="fest-when">конец октября — начало ноября · Нара</div>
-        </div>
-        <div class="tagline">Вещи, которыми пользовался двор в 750 году</div>
-        <p class="fest-text">Раз в год Национальный музей Нары на несколько недель выставляет 60 предметов
-        из императорского хранилища Сёсоин — и больше их не показывает.</p>
-        <div class="why"><b>В чём фишка.</b> Это не «древности» в обычном смысле. Склад императора Сёму
-        законсервировали после его смерти в VIII веке и не трогали 1250 лет: музыкальные инструменты, шахматы,
-        лекарства, письма. Вещи не переделывали и не реставрировали — они дошли такими, какими были в руках
-        у людей, которых мы знаем только по учебнику.</div>
-        <ul class="know">
-          <li>Вход по сеансам, ¥2 000, очередь на входе даже с билетом</li>
-          <li>В ноябре 2027 в окно B не попадает — выставка идёт в октябре. Даты объявят весной</li>
-          <li>Если решите ехать в окно A — это главный аргумент «за»</li>
-        </ul>
+      <div class="legs">
+        <div class="leg"><div class="when">24 ноября</div><div><div class="what">Ханэда → Синдзюку</div><div class="how">Keikyu до Синагавы, дальше JR Yamanote. Одна пересадка, 45 минут.</div><div class="price">¥540 · 18 км</div></div></div>
+        <div class="leg"><div class="when">27 ноября</div><div><div class="what">Токио → Киото</div><div class="how">Синкансэн Nozomi, 2 ч 15. Поезда каждые 10 минут, бронь не нужна.</div><div class="price">¥14 170 · 460 км</div></div></div>
+        <div class="leg"><div class="when">30 ноября</div><div><div class="what">Киото → Нара</div><div class="how">Kintetsu или JR, 45 минут. Чемоданы в камеру хранения на станции Нары.</div><div class="price">¥760 · 40 км</div></div></div>
+        <div class="leg"><div class="when">30 ноября</div><div><div class="what">Нара → Осака</div><div class="how">Двадцать минут до Намбы. Дальше отель в двух шагах от выхода.</div><div class="price">¥580 · 35 км</div></div></div>
+        <div class="leg"><div class="when">3 декабря</div><div><div class="what">Осака → аэропорт Кансай</div><div class="how">Nankai, 45 минут вдоль залива. Обычный экспресс ¥970, Rapi:t с местами — ¥1 490.</div><div class="price">¥970 · 50 км</div></div></div>
+        <div class="note" style="margin-top:2px">Итого по земле <b>≈ 600 км</b> и <b>¥17 000 с человека</b> на все переезды.
+        JR Pass не нужен: он стоит ¥53 000 и не окупается на таком маршруте.</div>
       </div>
     </div>
   </div>
 </section>
-
-<!-- ================== 03 МАРШРУТ ================== -->
-<section id="route">
+<section id="days">
   <div class="wrap">
-    <div class="s-head"><div class="s-num">03 · маршрут</div><h2>Десять дней по кластерам</h2></div>
-    <p class="lead">В каждом городе два-три пятна, внутри пятна всё пешком. Полоска справа — плотность дня:
-    сколько точек, сколько километров ногами и сколько минут в транспорте. <b>Один день намеренно пустой</b> —
-    первый, после перелёта.</p>
+    <div class="s-num">02 · десять дней</div>
+    <h2>По часам, с дорогой и едой</h2>
+    <p class="lead">Внутри каждого дня — реальный тайминг: подъём, завтрак, переходы, пауза после обеда.
+    Без паузы к шестому дню ноги отваливаются, поэтому она есть в каждом длинном дне.
+    <b>Нажмите на день, чтобы раскрыть.</b></p>
+    <div class="daytools"><button id="expand">Раскрыть все дни</button><button id="collapse">Свернуть все</button></div>
 
-    <div class="day">
-      <div class="day-n"><b>1</b><span>ср<br>24.11</span></div>
-      <div class="day-main">
-        <div class="day-city">Токио · прилёт</div>
-        <div class="day-title">Заселиться и выйти поесть</div>
-        <p class="day-stops">Ханэда, заселение в Синдзюку. Вечером — <i>Омоидэ-Ёкочо</i>: переулок якитория под путями, шесть мест за стойкой. Потом <i>Голден-Гай</i>, если ещё есть силы.</p>
+    <details class="day" open>
+      <summary>
+        <div class="dnum"><b>1</b><span>ср<br>24.11</span></div>
+        <div class="dmain"><div class="dcity">Токио · прилёт</div><div class="dtitle">Добраться, заселиться и поесть в переулке</div></div>
+        <div class="dmeta"><div class="km">3 км пешком</div><div class="km"><b>¥13 000</b> на двоих</div><div class="chev">▾</div></div>
+      </summary>
+      <div class="dbody">
+        <ul class="tl">
+          <li><span class="t">12:40</span><span class="e"><b>Прилёт в Ханэду.</b> Время условное — подставьте своё. Паспортный контроль и багаж: 40–60 минут. <em>Деньги снимайте здесь же: в городе банкоматы искать дольше.</em></span></li>
+          <li><span class="t">14:00</span><span class="e"><b>Дорога до Синдзюку.</b> Keikyu до Синагавы, дальше JR Yamanote по кольцу. 45 минут. <em>Такси — 8 000 и час в пробке, не надо.</em></span></li>
+          <li><span class="t">15:10</span><span class="e"><b>Заселение.</b> Если номер ещё не готов — чемоданы на ресепшен и сразу гулять.</span></li>
+          <li><span class="t">16:30</span><span class="e"><b>Голден-Гай днём.</b> Вечером там не протолкнуться, а в четыре видно сам переулок: шесть рядов по двадцать баров, и почти все пустые.</span></li>
+          <li><span class="t">18:00</span><span class="e"><b>Ужин в Омоидэ-Ёкочо.</b> Якитория под путями, шесть мест за стойкой, пиво ¥500. Ищите заведение с дымом и без английского меню. <em>¥2 500 на двоих.</em></span></li>
+          <li><span class="t">20:30</span><span class="e"><b>Голден-Гай, второй заход.</b> Уже с толпой и огнями — то, зачем сюда едут. Один бар, один разговор, дальше спать.</span></li>
+        </ul>
+        <div class="chips"><span class="chip w">Первый вечер</span><span class="chip">Дешево</span><span class="chip">Без музеев</span></div>
       </div>
-      <div class="day-side">
-        <div class="bars"><span class="f"></span><span class="f"></span><span></span><span></span><span></span></div>
-        <div class="metric"><span>Точки</span><b>2</b></div>
-        <div class="metric"><span>Ногами</span><b>3 км</b></div>
-        <div class="metric"><span>Транспорт</span><b>45 мин</b></div>
-        <div class="metric"><span>День на двоих*</span><b>¥13 000</b></div>
-      </div>
-    </div>
+    </details>
 
-    <div class="day">
-      <div class="day-n"><b>2</b><span>чт<br>25.11</span></div>
-      <div class="day-main">
-        <div class="day-city">Токио · Сибуя — Харадзюку</div>
-        <div class="day-title">Лес, улица и перекрёсток</div>
-        <p class="day-stops"><i>Мэйдзи-дзингу</i> — 100 000 деревьев в центре города → <i>Такэсита</i> → <i>Омотэсандо</i> с её флагманами → <i>Shibuya Sky</i> на закат → <i>перекрёсток Сибуя</i>. Всё в радиусе двух километров.</p>
+    <details class="day">
+      <summary>
+        <div class="dnum"><b>2</b><span>чт<br>25.11</span></div>
+        <div class="dmain"><div class="dcity">Токио · Сибуя — Харадзюку</div><div class="dtitle">Лес, улица и перекрёсток</div></div>
+        <div class="dmeta"><div class="km">11 км пешком</div><div class="km"><b>¥20 000</b> на двоих</div><div class="chev">▾</div></div>
+      </summary>
+      <div class="dbody">
+        <ul class="tl">
+          <li><span class="t">07:30</span><span class="e"><b>Завтрак.</b> Комбини у отеля: онигири, кофе ¥400. Если хочется сесть — киссатэн с утренним сетом.</span></li>
+          <li><span class="t">08:40</span><span class="e"><b>Метро до Харадзюку.</b> 12 минут.</span></li>
+          <li><span class="t">09:00</span><span class="e"><b>Мэйдзи-дзингу.</b> Лес из ста тысяч деревьев, тории из кипариса выше дома. Час спокойным шагом.</span></li>
+          <li><span class="t">10:40</span><span class="e"><b>Такэсита.</b> Пять минут пешком — и вы в пятидесятых: рок-н-ролл, кожаные куртки, гитары.</span></li>
+          <li><span class="t">12:00</span><span class="e"><b>Обед.</b> Рамен в переулке за станцией. <em>¥1 400 на двоих.</em></span></li>
+          <li><span class="t">13:30</span><span class="e"><b>Омотэсандо.</b> Флагманы архитектуры: Prada от Herzog &amp; de Meuron, Dior, Sunny Hills. Заходить внутрь не обязательно — смотреть снаружи.</span></li>
+          <li><span class="t">15:30</span><span class="e"><b>Shibuya Sky.</b> Слот на закат бронируйте за месяц. ¥2 500. <em>Крыша под открытым небом, в ясный день видно Фудзи.</em></span></li>
+          <li><span class="t">17:10</span><span class="e"><b>Перекрёсток Сибуя.</b> Спуститься вниз и просто постоять. Лучший вид сверху — из окна Starbucks на втором этаже.</span></li>
+          <li><span class="t">18:30</span><span class="e"><b>Ужин.</b> Окономияки или суши-конвейер. <em>¥3 500 на двоих.</em></span></li>
+          <li><span class="t">21:00</span><span class="e"><b>Отель.</b></span></li>
+        </ul>
+        <div class="chips"><span class="chip w">Закат на крыше</span><span class="chip">Билет заранее</span><span class="chip">11 км</span></div>
       </div>
-      <div class="day-side">
-        <div class="bars"><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span></div>
-        <div class="metric"><span>Точки</span><b>5</b></div>
-        <div class="metric"><span>Ногами</span><b>11 км</b></div>
-        <div class="metric"><span>Транспорт</span><b>25 мин</b></div>
-        <div class="metric"><span>День на двоих*</span><b>¥22 000</b></div>
-      </div>
-    </div>
+    </details>
 
-    <div class="day">
-      <div class="day-n"><b>3</b><span>пт<br>26.11</span></div>
-      <div class="day-main">
-        <div class="day-city">Токио · Асакуса — Уэно — Акихабара</div>
-        <div class="day-title">Старый Токио, а вечером — грабли удачи</div>
-        <p class="day-stops"><i>Сэнсо-дзи</i> к восьми утра, до толпы → <i>Накамисэ</i> → <i>Каппабаси</i> → <i>Уэно</i> → <i>Акихабара</i>. Вечером возвращаемся в Асакусу на <i>Тори-но-ити</i> — он идёт до полуночи.</p>
+    <details class="day">
+      <summary>
+        <div class="dnum"><b>3</b><span>пт<br>26.11</span></div>
+        <div class="dmain"><div class="dcity">Токио · Асакуса — Уэно — Акихабара</div><div class="dtitle">Старый город и базар грабель удачи</div></div>
+        <div class="dmeta"><div class="km">10 км пешком</div><div class="km"><b>¥15 000</b> на двоих</div><div class="chev">▾</div></div>
+      </summary>
+      <div class="dbody">
+        <ul class="tl">
+          <li><span class="t">07:00</span><span class="e"><b>Выезд.</b> JR до Асакусы, 20 минут.</span></li>
+          <li><span class="t">07:40</span><span class="e"><b>Сэнсо-дзи.</b> В восемь утра храм почти пустой; в одиннадцать здесь уже не пройти. <em>Купите омамори в лавке у входа.</em></span></li>
+          <li><span class="t">09:00</span><span class="e"><b>Накамисэ и завтрак.</b> Улица лавок перед храмом: сэмбэй, тайяки, чай. <em>¥900 на двоих.</em></span></li>
+          <li><span class="t">10:00</span><span class="e"><b>Каппабаси.</b> Улица ножей и посуды — то, что везут домой вместо магнитов.</span></li>
+          <li><span class="t">11:30</span><span class="e"><b>Уэно.</b> Парк и один музей на выбор: Токийский национальный (¥1 000) или западного искусства (¥500).</span></li>
+          <li><span class="t">13:00</span><span class="e"><b>Обед под эстакадой.</b> <em>¥1 500 на двоих.</em></span></li>
+          <li><span class="t">14:30</span><span class="e"><b>Акихабара.</b> Super Potato, Mandarake, Animate. Едете за конкретикой — сразу туда, не по главной улице.</span></li>
+          <li><span class="t">17:30</span><span class="e"><b>Мансэйбаси.</b> Кофе на платформе старого вокзала, поезда в метре от стола. ¥600.</span></li>
+          <li><span class="t">18:30</span><span class="e"><b>Тори-но-ити.</b> Праздник начинается с темнотой. Торгуйтесь за кумадэ — здесь это не грубость, а часть ритуала.</span></li>
+          <li><span class="t">20:00</span><span class="e"><b>Ужин на празднике.</b> Лотки: якисоба, такояки, амасакэ. <em>¥2 000 на двоих.</em></span></li>
+          <li><span class="t">21:30</span><span class="e"><b>Отель.</b></span></li>
+        </ul>
+        <div class="chips"><span class="chip w">Тори-но-ити · 26 ноября</span><span class="chip">Торг уместен</span><span class="chip">Храм до толпы</span></div>
       </div>
-      <div class="day-side">
-        <div class="bars"><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span></div>
-        <div class="metric"><span>Точки</span><b>6</b></div>
-        <div class="metric"><span>Ногами</span><b>10 км</b></div>
-        <div class="metric"><span>Транспорт</span><b>30 мин</b></div>
-        <div class="metric"><span>День на двоих*</span><b>¥19 000</b></div>
-      </div>
-    </div>
+    </details>
 
-    <div class="day">
-      <div class="day-n"><b>4</b><span>сб<br>27.11</span></div>
-      <div class="day-main">
-        <div class="day-city">Токио → Киото</div>
-        <div class="day-title">Гинкго утром, синкансэн днём, Гион вечером</div>
-        <p class="day-stops">Утром — <i>аллея гинкго в Мэйдзи-Гайэн</i>, пик жёлтого как раз 26.11–1.12. Потом синкансэн два часа с небольшим. Вечером — <i>Гион</i>, <i>Ханамикодзи</i> и <i>Понтотё</i>.</p>
+    <details class="day">
+      <summary>
+        <div class="dnum"><b>4</b><span>сб<br>27.11</span></div>
+        <div class="dmain"><div class="dcity">Токио → Киото</div><div class="dtitle">Золотые гинкго утром, синкансэн днём</div></div>
+        <div class="dmeta"><div class="km">8 км пешком</div><div class="km"><b>¥34 000</b> на двоих</div><div class="chev">▾</div></div>
+      </summary>
+      <div class="dbody">
+        <ul class="tl">
+          <li><span class="t">07:00</span><span class="e"><b>Завтрак и сборы.</b> Чемодан соберите с вечера, иначе выедете в десять.</span></li>
+          <li><span class="t">08:00</span><span class="e"><b>Внешние сады Мэйдзи.</b> 146 гинкго в четыре ряда, 300 метров золота. Пик — 26 ноября–1 декабря, ровно сейчас. <em>Вход свободный.</em></span></li>
+          <li><span class="t">09:30</span><span class="e"><b>Чек-аут.</b> Чемоданы в камеру хранения на станции Токио, ¥800 за штуку.</span></li>
+          <li><span class="t">10:40</span><span class="e"><b>Станция Токио.</b> Бэнто на платформе — поезд идёт два с лишним часа, обед в пути.</span></li>
+          <li><span class="t">11:00</span><span class="e"><b>Синкансэн Nozomi.</b> ¥14 170 с человека. Справа по ходу — Фудзи, если повезёт с погодой.</span></li>
+          <li><span class="t">13:20</span><span class="e"><b>Киото.</b> Выход на север, к автобусам. В отель можно не сразу: вещи оставят и до трёх.</span></li>
+          <li><span class="t">15:00</span><span class="e"><b>Обед у станции.</b> <em>¥1 500.</em></span></li>
+          <li><span class="t">16:30</span><span class="e"><b>Гион и Ханамикодзи.</b> Деревянная улица с фонарями. Снимайте улицу, людей — нет.</span></li>
+          <li><span class="t">18:00</span><span class="e"><b>Понтотё.</b> Узкий переулок у канала, где ужинают за барной стойкой.</span></li>
+          <li><span class="t">19:30</span><span class="e"><b>Ужин.</b> <em>¥4 000 на двоих</em>, если сесть у стойки в идзакая.</span></li>
+        </ul>
+        <div class="chips"><span class="chip w">Переезд</span><span class="chip">Гинкго на пике</span><span class="chip">Бэнто в поезд</span></div>
       </div>
-      <div class="day-side">
-        <div class="bars"><span class="f"></span><span class="f"></span><span class="f"></span><span></span><span></span></div>
-        <div class="metric"><span>Точки</span><b>3</b></div>
-        <div class="metric"><span>Ногами</span><b>8 км</b></div>
-        <div class="metric"><span>Транспорт</span><b>2 ч 20</b></div>
-        <div class="metric"><span>День на двоих*</span><b>¥36 000</b></div>
-      </div>
-    </div>
+    </details>
 
-    <div class="day">
-      <div class="day-n"><b>5</b><span>вс<br>28.11</span></div>
-      <div class="day-main">
-        <div class="day-city">Киото · Хигасияма</div>
-        <div class="day-title">Главный день клёнов</div>
-        <p class="day-stops"><i>Киёмидзу-дэра</i> к открытию в 6:00 — в десять там уже не пройти → <i>Саннэн-дзанкэ</i> → <i>Ясака</i> → <i>Кодай-дзи</i>. Вечером возвращаемся на подсветку храма.</p>
+    <details class="day">
+      <summary>
+        <div class="dnum"><b>5</b><span>вс<br>28.11</span></div>
+        <div class="dmain"><div class="dcity">Киото · Хигасияма</div><div class="dtitle">Главный день клёнов — и он начинается в шесть</div></div>
+        <div class="dmeta"><div class="km">7 км пешком</div><div class="km"><b>¥16 000</b> на двоих</div><div class="chev">▾</div></div>
+      </summary>
+      <div class="dbody">
+        <ul class="tl">
+          <li><span class="t">05:30</span><span class="e"><b>Подъём.</b> Да, рано. Это единственный способ увидеть Киёмидзу без толпы: к одиннадцати там очередь на два часа.</span></li>
+          <li><span class="t">06:00</span><span class="e"><b>Киёмидзу-дэра.</b> Храм открывается в шесть. Клёны горят на утреннем свете, на террасе человек десять. ¥500.</span></li>
+          <li><span class="t">07:30</span><span class="e"><b>Завтрак внизу.</b> Кофе и тост в киссатэн у подножия, <em>¥1 200.</em> Вниз — пешком по Саннэн-дзанкэ.</span></li>
+          <li><span class="t">09:30</span><span class="e"><b>Ясака-дзиндзя.</b> Оранжевые ворота и парк Маруяма — самый плотный цвет на квадратный метр во всём городе.</span></li>
+          <li><span class="t">11:00</span><span class="e"><b>Кодай-дзи.</b> Бамбуковая роща внутри храма и пруд с отражением. ¥600.</span></li>
+          <li><span class="t">12:30</span><span class="e"><b>Обед.</b> Юдофу — тофу в горячей воде, местная киотская классика. <em>¥3 000 на двоих.</em></span></li>
+          <li><span class="t">14:00</span><span class="e"><b>Пауза в отеле.</b> Час лежать. Вечером ещё один выход, и ноги нужны целыми.</span></li>
+          <li><span class="t">17:00</span><span class="e"><b>Подсветка.</b> Киёмидзу или Кодай-дзи после заката, ¥500–800. <em>Приходите за полчаса до темноты — застанете переход.</em></span></li>
+          <li><span class="t">19:30</span><span class="e"><b>Ужин в Гионе.</b> <em>¥4 500 на двоих.</em></span></li>
+        </ul>
+        <div class="chips"><span class="chip w">Встать в 5:30</span><span class="chip">Подсветка</span><span class="chip">Пауза днём</span></div>
       </div>
-      <div class="day-side">
-        <div class="bars"><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span></div>
-        <div class="metric"><span>Точки</span><b>5</b></div>
-        <div class="metric"><span>Ногами</span><b>7 км</b></div>
-        <div class="metric"><span>Транспорт</span><b>15 мин</b></div>
-        <div class="metric"><span>День на двоих*</span><b>¥17 000</b></div>
-      </div>
-    </div>
+    </details>
 
-    <div class="day">
-      <div class="day-n"><b>6</b><span>пн<br>29.11</span></div>
-      <div class="day-main">
-        <div class="day-city">Киото · Арасияма + Восток</div>
-        <div class="day-title">Бамбук, мост и лучшая подсветка города</div>
-        <p class="day-stops"><i>Тофуку-дзи</i> рано — мостик над морем клёнов → <i>Тэнрю-дзи</i> → <i>бамбуковая роща</i> до девяти утра → обезьяний парк. Вечером <i>Эйкан-до</i>.</p>
+    <details class="day">
+      <summary>
+        <div class="dnum"><b>6</b><span>пн<br>29.11</span></div>
+        <div class="dmain"><div class="dcity">Киото · Арасияма и восток</div><div class="dtitle">Бамбук, обезьяны и лучшая подсветка города</div></div>
+        <div class="dmeta"><div class="km">12 км пешком</div><div class="km"><b>¥17 000</b> на двоих</div><div class="chev">▾</div></div>
+      </summary>
+      <div class="dbody">
+        <ul class="tl">
+          <li><span class="t">06:30</span><span class="e"><b>Выезд на запад.</b> Электричка до Арасиямы, 20 минут.</span></li>
+          <li><span class="t">07:00</span><span class="e"><b>Тофуку-дзи.</b> Мостик над морем клёнов — тот самый кадр. ¥1 000. <em>В девять здесь уже очередь на час.</em></span></li>
+          <li><span class="t">08:30</span><span class="e"><b>Тэнрю-дзи.</b> Сад камней и вид на реку с террасы.</span></li>
+          <li><span class="t">09:30</span><span class="e"><b>Бамбуковая роща.</b> Пятьсот метров. До девяти — пусто, после — поток. Вы успели.</span></li>
+          <li><span class="t">10:30</span><span class="e"><b>Обезьяний парк.</b> Подъём по склону двадцать минут, ¥600. Сверху весь Киото в дымке.</span></li>
+          <li><span class="t">12:00</span><span class="e"><b>Обед у реки.</b> <em>¥2 500 на двоих.</em></span></li>
+          <li><span class="t">13:30</span><span class="e"><b>Возврат и отдых.</b> Два часа в отеле: сегодня вы прошли двенадцать километров.</span></li>
+          <li><span class="t">17:00</span><span class="e"><b>Эйкан-до.</b> Три тысячи клёнов у пруда, подсветка примерно до 21:00, ¥1 000. Считается лучшей в городе — и не зря.</span></li>
+          <li><span class="t">19:30</span><span class="e"><b>Ужин.</b> <em>¥3 500.</em></span></li>
+        </ul>
+        <div class="chips"><span class="chip w">Тофуку-дзи до 9</span><span class="chip">Эйкан-до</span><span class="chip">12 км</span></div>
       </div>
-      <div class="day-side">
-        <div class="bars"><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f2"></span></div>
-        <div class="metric"><span>Точки</span><b>4</b></div>
-        <div class="metric"><span>Ногами</span><b>12 км</b></div>
-        <div class="metric"><span>Транспорт</span><b>60 мин</b></div>
-        <div class="metric"><span>День на двоих*</span><b>¥19 000</b></div>
-      </div>
-    </div>
+    </details>
 
-    <div class="day">
-      <div class="day-n"><b>7</b><span>вт<br>30.11</span></div>
-      <div class="day-main">
-        <div class="day-city">Нара → Осака</div>
-        <div class="day-title">Олени, гигантский Будда и переезд</div>
-        <p class="day-stops"><i>Тодай-дзи</i> с пятнадцатиметровым Буддой → <i>парк Нары</i> с оленями → <i>Касуга-тайся</i> → <i>Исуиэн</i>. К вечеру переезд в Осаку, сорок минут. Чемоданы — в камеру хранения на станции.</p>
+    <details class="day">
+      <summary>
+        <div class="dnum"><b>7</b><span>вт<br>30.11</span></div>
+        <div class="dmain"><div class="dcity">Нара → Осака</div><div class="dtitle">Тории на рассвете, олени, Будда — и в Осаку</div></div>
+        <div class="dmeta"><div class="km">10 км пешком</div><div class="km"><b>¥22 000</b> на двоих</div><div class="chev">▾</div></div>
+      </summary>
+      <div class="dbody">
+        <ul class="tl">
+          <li><span class="t">06:30</span><span class="e"><b>Чек-аут.</b> Чемоданы в камеру хранения на Киото-стейшн, ¥700 за штуку. Завтрак — онигири из комбини по дороге.</span></li>
+          <li><span class="t">07:10</span><span class="e"><b>Фусими Инари.</b> Пять минут на электричке от Киото. В семь утра тоннель из красных торий почти пустой; в десять по нему уже не пройти. <em>Вход свободный, открыто круглосуточно.</em></span></li>
+          <li><span class="t">09:00</span><span class="e"><b>Назад за вещами.</b> Пятнадцать минут туда и обратно — и вы на Киото-стейшн.</span></li>
+          <li><span class="t">09:30</span><span class="e"><b>Поезд до Нары.</b> Kintetsu от Киото, 45 минут. В Наре снова камера хранения, ¥700.</span></li>
+          <li><span class="t">10:40</span><span class="e"><b>Тодай-дзи.</b> Пятнадцатиметровый Будда в самом большом деревянном зале мира. ¥800.</span></li>
+          <li><span class="t">11:50</span><span class="e"><b>Парк Нары.</b> Олени кланяются за печенье (¥200). Держите руки пустыми — иначе окружат и обыщут.</span></li>
+          <li><span class="t">12:40</span><span class="e"><b>Обед.</b> Камамэси — рис в глиняном горшочке. <em>¥2 500 на двоих.</em></span></li>
+          <li><span class="t">13:40</span><span class="e"><b>Касуга-тайся.</b> Три тысячи фонарей и лесная тропа. Идти пешком, не на автобусе. <em>Есть запас времени — рядом сад Исуиэн, ¥900.</em></span></li>
+          <li><span class="t">15:00</span><span class="e"><b>Поезд в Осаку.</b> Сорок минут до Намбы.</span></li>
+          <li><span class="t">15:50</span><span class="e"><b>Отель.</b> Заселение и полчаса на душ.</span></li>
+          <li><span class="t">18:00</span><span class="e"><b>Дотонбори.</b> Канал, вывески, «Глико». Ужин с лотков — такояки и окономияки. <em>¥3 000.</em></span></li>
+        </ul>
+        <div class="chips"><span class="chip w">Переезд</span><span class="chip">Фусими Инари в семь утра</span><span class="chip">Две камеры хранения</span></div>
       </div>
-      <div class="day-side">
-        <div class="bars"><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span></span></div>
-        <div class="metric"><span>Точки</span><b>4</b></div>
-        <div class="metric"><span>Ногами</span><b>9 км</b></div>
-        <div class="metric"><span>Транспорт</span><b>1 ч 30</b></div>
-        <div class="metric"><span>День на двоих*</span><b>¥22 000</b></div>
-      </div>
-    </div>
+    </details>
 
-    <div class="day">
-      <div class="day-n"><b>8</b><span>ср<br>01.12</span></div>
-      <div class="day-main">
-        <div class="day-city">Осака · Намба — Дотонбори</div>
-        <div class="day-title">Еда как достопримечательность</div>
-        <p class="day-stops"><i>Курамон-маркет</i>, где едят стоя → <i>Синсайбаси</i> → <i>Дэн-Дэн-таун</i> → вечером <i>Дотонбори</i>: канал, «Глико», такояки и окономияки.</p>
+    <details class="day">
+      <summary>
+        <div class="dnum"><b>8</b><span>ср<br>01.12</span></div>
+        <div class="dmain"><div class="dcity">Осака · Намба</div><div class="dtitle">День, где еда — достопримечательность</div></div>
+        <div class="dmeta"><div class="km">8 км пешком</div><div class="km"><b>¥18 000</b> на двоих</div><div class="chev">▾</div></div>
+      </summary>
+      <div class="dbody">
+        <ul class="tl">
+          <li><span class="t">08:30</span><span class="e"><b>Завтрак.</b> Кофе и тамаго-сандо в комбини. <em>¥900.</em></span></li>
+          <li><span class="t">09:30</span><span class="e"><b>Курамон-маркет.</b> Рынок, где едят стоя: тунец, унаги, фугу. Идите к дальним прилавкам — там дешевле и вкуснее.</span></li>
+          <li><span class="t">11:00</span><span class="e"><b>Синсайбаси.</b> Крытая улица на два километра. Если дождь — вы уже в укрытии.</span></li>
+          <li><span class="t">12:30</span><span class="e"><b>Обед.</b> Окономияки в Дотонбори. <em>¥2 800.</em></span></li>
+          <li><span class="t">14:00</span><span class="e"><b>Дэн-Дэн-таун.</b> Местная Акихабара: дешевле токийской, туристов почти нет.</span></li>
+          <li><span class="t">16:00</span><span class="e"><b>Пауза в отеле.</b></span></li>
+          <li><span class="t">17:30</span><span class="e"><b>Дотонбори после заката.</b> Совсем другой город: неон, отражения, толпа.</span></li>
+          <li><span class="t">19:30</span><span class="e"><b>Ужин.</b> Кусикацу или суши. <em>¥4 500.</em></span></li>
+          <li><span class="t">21:00</span><span class="e"><b>Бар в ёкатё.</b> Крошечные бары без вывесок — заходите туда, где горит свет.</span></li>
+        </ul>
+        <div class="chips"><span class="chip w">Рынок утром</span><span class="chip">Дождевой план</span><span class="chip">Бар без вывески</span></div>
       </div>
-      <div class="day-side">
-        <div class="bars"><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span><span class="f"></span></div>
-        <div class="metric"><span>Точки</span><b>5</b></div>
-        <div class="metric"><span>Ногами</span><b>8 км</b></div>
-        <div class="metric"><span>Транспорт</span><b>20 мин</b></div>
-        <div class="metric"><span>День на двоих*</span><b>¥24 000</b></div>
-      </div>
-    </div>
+    </details>
 
-    <div class="day">
-      <div class="day-n"><b>9</b><span>чт<br>02.12</span></div>
-      <div class="day-main">
-        <div class="day-city">Осака · Умэда</div>
-        <div class="day-title">Крыша над городом и четыре километра огней <span style="font-size:13px;color:var(--vermil);font-weight:600">· или USJ</span></div>
-        <p class="day-stops"><i>Умэда-Скай</i> — открытая площадка между двумя башнями → <i>Гранд-Фронт</i> → спуск по <i>Мидосудзи</i> в огнях до самой Намбы. Один переход за весь день. Замена на целый день — <i>Universal Studios Japan</i> и парк Марио, см. раздел выше.</p>
+    <details class="day">
+      <summary>
+        <div class="dnum"><b>9</b><span>чт<br>02.12</span></div>
+        <div class="dmain"><div class="dcity">Осака · Умэда или USJ</div><div class="dtitle">Крыша над городом или парк Марио</div></div>
+        <div class="dmeta"><div class="km">7 км пешком</div><div class="km"><b>¥17 000</b> на двоих</div><div class="chev">▾</div></div>
+      </summary>
+      <div class="dbody">
+        <p class="muted" style="font-size:13.5px;margin:12px 0 0"><b>Вариант А — спокойный.</b></p>
+        <ul class="tl">
+          <li><span class="t">09:30</span><span class="e"><b>Умэда-Скай.</b> Открытая площадка между двумя башнями, ¥1 500. Утром очередь короче, чем на закате.</span></li>
+          <li><span class="t">11:30</span><span class="e"><b>Гранд-Фронт.</b> Сад на крыше вокзала, кофе и вид на поезда.</span></li>
+          <li><span class="t">12:30</span><span class="e"><b>Обед.</b> <em>¥2 500.</em></span></li>
+          <li><span class="t">14:00</span><span class="e"><b>Пауза.</b> Час в отеле — вечером много ходьбы.</span></li>
+          <li><span class="t">16:00</span><span class="e"><b>Мидосудзи пешком.</b> Четыре километра огней от Умэды до Намбы. Выходите в сумерках — к Намбе придёте в полной темноте.</span></li>
+          <li><span class="t">19:00</span><span class="e"><b>Ужин в Намбе.</b> <em>¥3 500.</em></span></li>
+        </ul>
+        <p class="muted" style="font-size:13.5px;margin:18px 0 0"><b>Вариант Б — парк Марио.</b> Заменяет весь день.</p>
+        <ul class="tl">
+          <li><span class="t">07:00</span><span class="e"><b>Выезд.</b> JR до Universal City, 25 минут.</span></li>
+          <li><span class="t">08:00</span><span class="e"><b>Вход.</b> Сразу в приложении берите Area Timed Entry для Super Nintendo World — бесплатные слоты разбирают за минуты.</span></li>
+          <li><span class="t">09:00</span><span class="e"><b>Super Nintendo World.</b> Mario Kart, Yoshi's Adventure и Donkey Kong Country с Mine Cart Madness.</span></li>
+          <li><span class="t">13:00</span><span class="e"><b>Обед в парке.</b> <em>¥3 000.</em></span></li>
+          <li><span class="t">21:00</span><span class="e"><b>Возврат в отель.</b> Ужин по дороге.</span></li>
+        </ul>
+        <div class="chips"><span class="chip w">Два варианта</span><span class="chip">USJ: Express со входом в SNW</span><span class="chip">Мидосудзи</span></div>
       </div>
-      <div class="day-side">
-        <div class="bars"><span class="f"></span><span class="f"></span><span class="f"></span><span></span><span></span></div>
-        <div class="metric"><span>Точки</span><b>3</b></div>
-        <div class="metric"><span>Ногами</span><b>7 км</b></div>
-        <div class="metric"><span>Транспорт</span><b>15 мин</b></div>
-        <div class="metric"><span>День на двоих*</span><b>¥17 000</b></div>
-      </div>
-    </div>
+    </details>
 
-    <div class="day">
-      <div class="day-n"><b>10</b><span>пт<br>03.12</span></div>
-      <div class="day-main">
-        <div class="day-city">Осака · вылет</div>
-        <div class="day-title">Замок или Синсэкай — и в аэропорт</div>
-        <p class="day-stops">Утром <i>замок Осаки</i> с парком, либо <i>Синсэкай</i> с башней Цутэнкаку и кушкацу. Вылет из Кансая — 50 минут от города.</p>
+    <details class="day">
+      <summary>
+        <div class="dnum"><b>10</b><span>пт<br>03.12</span></div>
+        <div class="dmain"><div class="dcity">Осака · вылет</div><div class="dtitle">Замок или Синсэкай — и в аэропорт</div></div>
+        <div class="dmeta"><div class="km">5 км пешком</div><div class="km"><b>¥9 000</b> на двоих</div><div class="chev">▾</div></div>
+      </summary>
+      <div class="dbody">
+        <ul class="tl">
+          <li><span class="t">07:30</span><span class="e"><b>Завтрак, сборы.</b> Чемоданы на ресепшен.</span></li>
+          <li><span class="t">08:30</span><span class="e"><b>Замок Осаки.</b> Парк бесплатный, башня ¥600. До девяти почти безлюдно.</span></li>
+          <li><span class="t">11:00</span><span class="e"><b>Чек-аут.</b> Или Синсэкай с башней Цутэнкаку, если замок не нужен.</span></li>
+          <li><span class="t">11:30</span><span class="e"><b>Ранний обед.</b> Кусикацу в Синсэкае. <em>¥2 500.</em></span></li>
+          <li><span class="t">12:30</span><span class="e"><b>Nankai Express до Кансая.</b> 45 минут от Намбы, ¥1 210. <em>За три часа до вылета — спокойно.</em></span></li>
+          <li><span class="t">13:30</span><span class="e"><b>Аэропорт.</b> Tax-free возврат, если остались чеки.</span></li>
+          <li><span class="t">15:30</span><span class="e"><b>Вылет.</b></span></li>
+        </ul>
+        <div class="chips"><span class="chip w">Вылет</span><span class="chip">Запас 3 часа</span><span class="chip">Tax-free</span></div>
       </div>
-      <div class="day-side">
-        <div class="bars"><span class="f"></span><span class="f2"></span><span></span><span></span><span></span></div>
-        <div class="metric"><span>Точки</span><b>2</b></div>
-        <div class="metric"><span>Ногами</span><b>5 км</b></div>
-        <div class="metric"><span>Транспорт</span><b>60 мин</b></div>
-        <div class="metric"><span>День на двоих*</span><b>¥10 000</b></div>
-      </div>
-    </div>
-
-    <p style="font-size:13px;color:var(--ink-3);margin:14px 0 0">* Траты дня — еда, входные и местный транспорт. Жильё считается отдельно, ниже.</p>
-
-    <div class="g3" style="margin-top:26px">
-      <div class="card"><h4>Не возвращаться в Токио</h4><p>Обратный билет <b>из Кансая, а не из Токио</b> экономит ¥14 000 на человека и полдня дороги.</p></div>
-      <div class="card"><h4>Не брать JR Pass</h4><p>Семь дней стоят ¥53 000, а Токио–Киото–Осака по отдельности — около ¥29 500. Пасс окупается только с Хиросимой.</p></div>
-      <div class="card"><h4>Жить в Киото, не в Осаке</h4><p>Иначе не попадёте в храмы к шести утра — а именно это спасает от толпы.</p></div>
-    </div>
+    </details>
   </div>
 </section>
 
-<!-- ================== 04 АКИХАБАРА ================== -->
-<section id="akiba">
+<section id="cities">
   <div class="wrap">
-    <div class="s-head"><div class="s-num">04 · акихабара</div><h2>Акихабара и Уэно: то, что просил друг</h2></div>
-    <p class="lead">Четыре точки, которые он назвал, и две рядом, о которых он, возможно, и говорил.
-    Всё это складывается в один длинный день — при одном условии, о нём ниже.</p>
+    <div class="s-num">03 · карты городов</div>
+    <h2>Где что находится</h2>
+    <p class="lead">Точки с номерами — ровно те места, что в плане выше. Цвет — день, в который вы там оказываетесь.
+    Масштабная линейка в углу честная: по ней видно, что «далеко» в Токио — это сорок минут, а в Киото — двадцать минут пешком.</p>
 
-    <div class="vibe">
-      <div class="vcard">
-        <img src="assets/akihabara.jpg" alt="Акихабара">
-        <div class="vb">
-          <h4>Акихабара Электрик-таун</h4>
-          <p>Не «район магазинов», а шесть слоёв вывесок над головой. Смотреть: Super Potato на пятом этаже
-          (ретро-игры и аркады), Mandarake в восемь этажей (манга, фигурки, целевые издания), Animate,
-          автоматы с гасяпонами. Идти не за покупками, а за плотностью.</p>
-          <span class="vp">вход бесплатно · 10:00–20:00</span>
-        </div>
-      </div>
-
-      <div class="vcard">
-        <img src="assets/hokoten.jpg" alt="Пешеходная зона Акихабары">
-        <div class="vb">
-          <h4>歩行者天国 · пешеходная зона</h4>
-          <p>По воскресеньям Центральная улица на 570 метров закрыта для машин — от перекрёстка Гайдзинда
-          до моста Мансэйбаси. Люди идут по проезжей части между вывесками, и это совсем другой город.
-          Октябрь–март: <b>13:00–17:00</b>. В дождь и сильный ветер отменяют.</p>
-          <span class="vp">только воскресенье · бесплатно</span>
-        </div>
-      </div>
-
-      <div class="vcard">
-        <img src="assets/manseibashi.jpg" alt="mAAch ecute Канада Мансэйбаси">
-        <div class="vb">
-          <h4>Мансэйбаси · mAAch ecute</h4>
-          <p>Вокзал 1912 года, закрытый в 1943-м, полвека бывший Музеем транспорта и с 2013-го ставший
-          галереей в кирпичных арках над рекой Канда. Сохранились лестница 1912 года и платформа,
-          превращённая в кафе: поезда идут в метре от стола.</p>
-          <span class="vp">4 минуты от станции · бесплатно</span>
-        </div>
-      </div>
-
-      <div class="vcard">
-        <img src="assets/ueno.jpg" alt="Парк Уэно осенью">
-        <div class="vb">
-          <h4>Парк Уэно и музеи</h4>
-          <p>Если «парк-галерея» — это он: в одном парке Токийский национальный музей (крупнейший в стране),
-          Национальный музей западного искусства в здании Ле Корбюзье (объект ЮНЕСКО) и Токийский
-          музей искусств. Вход в парк свободный, музеи ¥500–1 000. Одна станция от Акихабары.</p>
-          <span class="vp">парк бесплатно · музеи ¥500–1 000</span>
-        </div>
-      </div>
-
-      <div class="vcard">
-        <img src="assets/gaien.jpg" alt="Внешние сады Мэйдзи, гинкго">
-        <div class="vb">
-          <h4>Внешние сады Мэйдзи · Гайэн</h4>
-          <p>146 гинкго в четыре ряда на 300 метров — золотой тоннель. Это не сам храм Мэйдзи-дзингу,
-          а отдельный сад в 15 минутах от него. Пик жёлтого: <b>26 ноября — 1 декабря</b>,
-          ровно ваши даты. Вход в сад свободный.</p>
-          <span class="vp">бесплатно · 20 минут от Акихабары</span>
-        </div>
-      </div>
-
-      <div class="vcard">
-        <img src="assets/akioka.jpg" alt="2k540 AKI-OKA ARTISAN">
-        <div class="vb">
-          <h4>2k540 AKI-OKA ARTISAN</h4>
-          <p>Если «галерея» — про ремёсла: полсотни мастерских под железнодорожной эстакадой между
-          Акихабарой и Окатимати. Керамика, кожа, дерево, бумага — и всё это в бетонных арках,
-          где над головой идут поезда. По пути от Акихабары к Уэно.</p>
-          <span class="vp">бесплатно · 11:00–19:00</span>
-        </div>
+    <div class="citycard">
+      <div class="cityhead"><b>Токио</b><span>дни 1–4 · запад и восток — два разных города</span></div>
+      <div class="citybody">
+        <svg viewBox="0 0 760 500" class="citymap" role="img" aria-label="Схема передвижения по городу">
+<defs><pattern id="dgmtokyo" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.15" fill="#dbd0be"/></pattern></defs>
+<rect width="760" height="500" fill="url(#dgmtokyo)"/>
+<path class="water" d="M597 546L626 469L691 418L763 393L763 546Z"/>
+<path class="park" d="M98 297L155 291L160 351L103 358Z"/>
+<path class="park" d="M484 45L543 49L540 109L481 106Z"/>
+<path class="river" d="M678 -168L660 -28L644 68L626 170L597 268L561 361L546 431L540 495"/>
+<line class="tick" x1="129" y1="210" x2="109" y2="214"/>
+<circle class="pin" style="fill:#cd3f2b" cx="129" cy="210" r="6.5"/>
+<text class="pin-t" x="109" y="218" text-anchor="middle">1</text>
+<line class="tick" x1="128" y1="314" x2="108" y2="308"/>
+<circle class="pin" style="fill:#2e4a5c" cx="128" cy="314" r="6.5"/>
+<text class="pin-t" x="108" y="312" text-anchor="middle">2</text>
+<line class="tick" x1="154" y1="344" x2="134" y2="354"/>
+<circle class="pin" style="fill:#2e4a5c" cx="154" cy="344" r="6.5"/>
+<text class="pin-t" x="134" y="358" text-anchor="middle">3</text>
+<line class="tick" x1="140" y1="431" x2="124" y2="448"/>
+<circle class="pin" style="fill:#2e4a5c" cx="140" cy="431" r="6.5"/>
+<text class="pin-t" x="124" y="452" text-anchor="middle">4</text>
+<line class="tick" x1="632" y1="69" x2="652" y2="58"/>
+<circle class="pin" style="fill:#3f7d5a" cx="632" cy="69" r="6.5"/>
+<text class="pin-t" x="652" y="62" text-anchor="middle">5</text>
+<line class="tick" x1="517" y1="69" x2="535" y2="54"/>
+<circle class="pin" style="fill:#3f7d5a" cx="517" cy="69" r="6.5"/>
+<text class="pin-t" x="535" y="58" text-anchor="middle">6</text>
+<line class="tick" x1="510" y1="174" x2="530" y2="162"/>
+<circle class="pin" style="fill:#3f7d5a" cx="510" cy="174" r="6.5"/>
+<text class="pin-t" x="530" y="166" text-anchor="middle">7</text>
+<line class="tick" x1="489" y1="189" x2="469" y2="201"/>
+<circle class="pin" style="fill:#3f7d5a" cx="489" cy="189" r="6.5"/>
+<text class="pin-t" x="469" y="205" text-anchor="middle">8</text>
+<line class="tick" x1="220" y1="337" x2="203" y2="353"/>
+<circle class="pin" style="fill:#a87c22" cx="220" cy="337" r="6.5"/>
+<text class="pin-t" x="203" y="357" text-anchor="middle">9</text>
+<text class="water-lbl" x="711" y="495" text-anchor="end">Токийский залив</text>
+<text class="water-lbl" x="649" y="-60" text-anchor="start">река Сумида</text>
+<path class="scale" d="M611 474h115"/>
+<path class="scale-tick" d="M611 469v10M726 469v10"/>
+<text class="scale-t" x="669" y="465" text-anchor="middle">2 км</text>
+</svg>
+        <ul class="dayskey">
+          <li><b><i style="background:#cd3f2b"></i>День 1</b><span><em>1</em> Омоидэ-Ёкочо</span></li>
+          <li><b><i style="background:#2e4a5c"></i>День 2</b><span><em>2</em> Мэйдзи-дзингу · <em>3</em> Такэсита · <em>4</em> Сибуя</span></li>
+          <li><b><i style="background:#3f7d5a"></i>День 3</b><span><em>5</em> Сэнсо-дзи · <em>6</em> Уэно · <em>7</em> Акихабара · <em>8</em> Мансэйбаси</span></li>
+          <li><b><i style="background:#a87c22"></i>День 4, утро</b><span><em>9</em> Гайэн · гинкго</span></li>
+        </ul>
       </div>
     </div>
 
-    <h3 style="margin:44px 0 8px">Как сложить это в один день</h3>
-    <p class="muted" style="margin:0 0 22px;font-size:14.5px">Порядок не случайный: музеи открываются раньше магазинов, а гинкго лучше всего на закате.</p>
+    <div class="citycard">
+      <div class="cityhead"><b>Киото</b><span>дни 4–7 · всё в радиусе пяти километров</span></div>
+      <div class="citybody">
+        <svg viewBox="0 0 760 440" class="citymap" role="img" aria-label="Схема передвижения по городу">
+<defs><pattern id="dgmkyoto" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.15" fill="#dbd0be"/></pattern></defs>
+<rect width="760" height="440" fill="url(#dgmkyoto)"/>
+<path class="park" d="M597 105L640 116L645 163L621 186L588 163Z"/>
+<path class="river" d="M563 1L565 93L562 151L557 197L538 278L517 359"/>
+<path class="river" d="M177 -11L139 59L115 111L144 168L205 197"/>
+<line class="tick" x1="502" y1="256" x2="492" y2="277"/>
+<circle class="pin" style="fill:#cd3f2b" cx="502" cy="256" r="6.5"/>
+<text class="pin-t" x="492" y="281" text-anchor="middle">1</text>
+<line class="tick" x1="588" y1="153" x2="606" y2="138"/>
+<circle class="pin" style="fill:#cd3f2b" cx="588" cy="153" r="6.5"/>
+<text class="pin-t" x="606" y="142" text-anchor="middle">2</text>
+<line class="tick" x1="555" y1="142" x2="564" y2="121"/>
+<circle class="pin" style="fill:#cd3f2b" cx="555" cy="142" r="6.5"/>
+<text class="pin-t" x="564" y="125" text-anchor="middle">3</text>
+<line class="tick" x1="626" y1="204" x2="649" y2="206"/>
+<circle class="pin" style="fill:#2e4a5c" cx="626" cy="204" r="6.5"/>
+<text class="pin-t" x="649" y="210" text-anchor="middle">4</text>
+<line class="tick" x1="606" y1="183" x2="629" y2="178"/>
+<circle class="pin" style="fill:#2e4a5c" cx="606" cy="183" r="6.5"/>
+<text class="pin-t" x="629" y="182" text-anchor="middle">5</text>
+<line class="tick" x1="572" y1="312" x2="580" y2="334"/>
+<circle class="pin" style="fill:#3f7d5a" cx="572" cy="312" r="6.5"/>
+<text class="pin-t" x="580" y="338" text-anchor="middle">6</text>
+<line class="tick" x1="87" y1="76" x2="65" y2="70"/>
+<circle class="pin" style="fill:#3f7d5a" cx="87" cy="76" r="6.5"/>
+<text class="pin-t" x="65" y="74" text-anchor="middle">7</text>
+<line class="tick" x1="673" y1="93" x2="692" y2="80"/>
+<circle class="pin" style="fill:#3f7d5a" cx="673" cy="93" r="6.5"/>
+<text class="pin-t" x="692" y="84" text-anchor="middle">8</text>
+<line class="tick" x1="568" y1="364" x2="573" y2="386"/>
+<circle class="pin" style="fill:#a87c22" cx="568" cy="364" r="6.5"/>
+<text class="pin-t" x="573" y="390" text-anchor="middle">9</text>
+<text class="water-lbl" x="538" y="318" text-anchor="end">река Камо</text>
+<path class="scale" d="M622 414h104"/>
+<path class="scale-tick" d="M622 409v10M726 409v10"/>
+<text class="scale-t" x="674" y="405" text-anchor="middle">2 км</text>
+</svg>
+        <ul class="dayskey">
+          <li><b><i style="background:#cd3f2b"></i>День 4</b><span><em>1</em> Киото-стейшн · <em>2</em> Гион и Ясака · <em>3</em> Понтотё</span></li>
+          <li><b><i style="background:#2e4a5c"></i>День 5</b><span><em>4</em> Киёмидзу-дэра · <em>5</em> Кодай-дзи</span></li>
+          <li><b><i style="background:#3f7d5a"></i>День 6</b><span><em>6</em> Тофуку-дзи · <em>7</em> Арасияма · <em>8</em> Эйкан-до</span></li>
+          <li><b><i style="background:#a87c22"></i>День 7, утро</b><span><em>9</em> Фусими Инари</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="citycard">
+      <div class="cityhead"><b>Осака</b><span>дни 7–10 · всё вдоль одной линии метро</span></div>
+      <div class="citybody">
+        <svg viewBox="0 0 560 480" class="citymap" style="max-width:640px;margin:0 auto" role="img" aria-label="Схема передвижения по городу">
+<defs><pattern id="dgmosaka" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.15" fill="#dbd0be"/></pattern></defs>
+<rect width="560" height="480" fill="url(#dgmosaka)"/>
+<path class="water" d="M60 461L79 422L114 390L156 364L205 351L210 377L151 403L108 442L87 471Z"/>
+<path class="park" d="M312 155L392 155L397 220L322 220Z"/>
+<path class="river" d="M65 168L130 188L189 227L226 273L269 325L333 364L403 396"/>
+<line class="tick" x1="215" y1="325" x2="189" y2="335"/>
+<circle class="pin" style="fill:#cd3f2b" cx="215" cy="325" r="6.5"/>
+<text class="pin-t" x="189" y="339" text-anchor="middle">1</text>
+<line class="tick" x1="222" y1="307" x2="196" y2="299"/>
+<circle class="pin" style="fill:#cd3f2b" cx="222" cy="307" r="6.5"/>
+<text class="pin-t" x="196" y="303" text-anchor="middle">2</text>
+<line class="tick" x1="227" y1="331" x2="253" y2="339"/>
+<circle class="pin" style="fill:#2e4a5c" cx="227" cy="331" r="6.5"/>
+<text class="pin-t" x="253" y="343" text-anchor="middle">3</text>
+<line class="tick" x1="226" y1="263" x2="210" y2="246"/>
+<circle class="pin" style="fill:#2e4a5c" cx="226" cy="263" r="6.5"/>
+<text class="pin-t" x="210" y="250" text-anchor="middle">4</text>
+<line class="tick" x1="210" y1="370" x2="186" y2="376"/>
+<circle class="pin" style="fill:#2e4a5c" cx="210" cy="370" r="6.5"/>
+<text class="pin-t" x="186" y="380" text-anchor="middle">5</text>
+<line class="tick" x1="206" y1="68" x2="203" y2="45"/>
+<circle class="pin" style="fill:#3f7d5a" cx="206" cy="68" r="6.5"/>
+<text class="pin-t" x="203" y="49" text-anchor="middle">6</text>
+<line class="tick" x1="218" y1="198" x2="212" y2="175"/>
+<circle class="pin" style="fill:#3f7d5a" cx="218" cy="198" r="6.5"/>
+<text class="pin-t" x="212" y="179" text-anchor="middle">7</text>
+<line class="tick" x1="354" y1="186" x2="372" y2="172"/>
+<circle class="pin" style="fill:#a87c22" cx="354" cy="186" r="6.5"/>
+<text class="pin-t" x="372" y="176" text-anchor="middle">8</text>
+<line class="tick" x1="249" y1="412" x2="267" y2="424"/>
+<circle class="pin" style="fill:#a87c22" cx="249" cy="412" r="6.5"/>
+<text class="pin-t" x="267" y="428" text-anchor="middle">9</text>
+<text class="water-lbl" x="205" y="-14" text-anchor="middle">река Ёдо</text>
+<path class="scale" d="M409 454h117"/>
+<path class="scale-tick" d="M409 449v10M526 449v10"/>
+<text class="scale-t" x="468" y="445" text-anchor="middle">2 км</text>
+</svg>
+        <ul class="dayskey">
+          <li><b><i style="background:#cd3f2b"></i>День 7</b><span><em>1</em> Намба · <em>2</em> Дотонбори</span></li>
+          <li><b><i style="background:#2e4a5c"></i>День 8</b><span><em>3</em> Курамон-маркет · <em>4</em> Синсайбаси · <em>5</em> Дэн-Дэн-таун</span></li>
+          <li><b><i style="background:#3f7d5a"></i>День 9</b><span><em>6</em> Умэда · <em>7</em> Мидосудзи</span></li>
+          <li><b><i style="background:#a87c22"></i>День 10</b><span><em>8</em> Замок Осаки · <em>9</em> Синсэкай</span></li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="citycard">
+      <div class="cityhead"><b>Нара</b><span>день 7 · четыре точки, кольцо на девять километров</span></div>
+      <div class="citybody">
+        <svg viewBox="0 0 520 440" class="citymap" style="max-width:560px;margin:0 auto" role="img" aria-label="Схема передвижения по городу">
+<defs><pattern id="dgmnara" width="20" height="20" patternUnits="userSpaceOnUse"><circle cx="2" cy="2" r="1.15" fill="#dbd0be"/></pattern></defs>
+<rect width="520" height="440" fill="url(#dgmnara)"/>
+<path class="park" d="M-25 -55L250 -66L388 113L329 351L54 351L-84 136Z"/>
+<line class="tick" x1="207" y1="65" x2="204" y2="42"/>
+<circle class="pin" style="fill:#cd3f2b" cx="207" cy="65" r="6.5"/>
+<text class="pin-t" x="204" y="46" text-anchor="middle">1</text>
+<line class="tick" x1="172" y1="160" x2="155" y2="144"/>
+<circle class="pin" style="fill:#cd3f2b" cx="172" cy="160" r="6.5"/>
+<text class="pin-t" x="155" y="148" text-anchor="middle">2</text>
+<line class="tick" x1="368" y1="246" x2="390" y2="252"/>
+<circle class="pin" style="fill:#cd3f2b" cx="368" cy="246" r="6.5"/>
+<text class="pin-t" x="390" y="256" text-anchor="middle">3</text>
+<line class="tick" x1="152" y1="375" x2="143" y2="396"/>
+<circle class="pin" style="fill:#cd3f2b" cx="152" cy="375" r="6.5"/>
+<text class="pin-t" x="143" y="400" text-anchor="middle">4</text>
+<text class="water-lbl" x="132" y="136" text-anchor="middle">парк Нары</text>
+</svg>
+        <ul class="dayskey">
+          <li><b><i style="background:#cd3f2b"></i>День 7</b><span><em>1</em> Тодай-дзи · <em>2</em> Парк Нары · <em>3</em> Касуга-тайся · <em>4</em> Исуиэн</span></li>
+        </ul>
+        <div class="note">От станции Kintetsu до Тодай-дзи — двадцать минут пешком, и по дороге уже начинаются олени.</div>
+      </div>
+    </div>
+  </div>
+</section>
+<section id="events">
+  <div class="wrap">
+    <div class="s-num">04 · что происходит в эти даты</div>
+    <h2>Единственный базар, где торгуются</h2>
+    <p class="lead">Всё, что было в октябре и декабре, вычеркнуто. Осталось то, что действительно работает
+    с 24 ноября по 3 декабря — и объяснение, зачем ради этого сворачивать с маршрута.</p>
+
+    <div class="fest">
+      <div class="fest-img"><img src="assets/torinoichi2.jpg" alt="Кумадэ на Тори-но-ити"></div>
+      <div class="fest-b">
+        <div class="fest-h"><h3>Тори-но-ити</h3><span>26 ноября 2027 · Асакуса, храм Отори</span></div>
+        <p class="muted" style="font-size:14.2px;margin:10px 0 0">Базар «грабель удачи»: бамбуковые кумадэ, сплошь увешанные золотом,
+        масками и фигурками. Торговцы выстраивают их штабелями до крыши, а вы выбираете свои на весь год.</p>
+        <div class="why">
+          <b>Зачем именно вам.</b>
+          Это единственный день в году, когда в Японии <b>принято торговаться</b>. Ценника на кумадэ нет: спрашиваете цену,
+          сбиваете в три раунда, потом платите исходную сумму и оставляете сдачу — и продавец с вами хлопает в ладоши
+          на весь переулок. Ритуал называется <i>тэдзимэ</i>, и он дороже любой покупки.
+        </div>
+        <p class="meta">Бесплатно · с полуночи до полуночи · около 150 лавок и 750 лотков · 10 минут от станции Асакуса · вечером толпа и огни</p>
+        <p class="meta" style="margin-top:6px"><b>Почему попал в план:</b> в 2027-м «петушиные дни» выпадают на 2, 14 и 26 ноября.
+        Ваш — третий, пятница. Это ровно третий день маршрута, когда вы и так в Асакусе.</p>
+      </div>
+    </div>
 
     <div class="g3">
-      <div class="mini"><div class="mt">09:30 · Уэно</div><div class="md">Национальный музей к открытию — за два часа до того, как подтянутся группы. Дальше парк пешком.</div><div class="mp">2,5 часа</div></div>
-      <div class="mini"><div class="mt">12:30 · Обед</div><div class="md">Под эстакадой у Уэно или в самой Акихабаре — рамен, карри, тонкацу. Порции рассчитаны на работающих мужчин.</div><div class="mp">¥1 200</div></div>
-      <div class="mini"><div class="mt">13:00 · Пешеходная зона</div><div class="md">Ровно к открытию: улица уже перекрыта, машин нет. Идти от Гайдзинда к Мансэйбаси, заходя в магазины.</div><div class="mp">3 часа</div></div>
-      <div class="mini"><div class="mt">16:00 · Мансэйбаси</div><div class="md">Кирпичные арки, лестница 1912 года, кофе на платформе над путями. Закат здесь — лучший свет дня.</div><div class="mp">1 час</div></div>
-      <div class="mini"><div class="mt">17:00 · 2k540</div><div class="md">Обратно в сторону Уэно по эстакаде, мимо мастерских. Успеваете до закрытия в 19:00.</div><div class="mp">40 минут</div></div>
-      <div class="mini"><div class="mt">18:00 · Гайэн</div><div class="md">Две остановки на метро — и золотая аллея при вечернем свете. Дальше ужин в Синдзюку рядом.</div><div class="mp">1 час</div></div>
+      <div class="card">
+        <h4>Подсветки храмов</h4>
+        <p>Киёмидзу-дэра, Кодай-дзи, Эйкан-до и Тофуку-дзи открыты вечером весь пик клёнов — примерно до 21:00, ¥500–1 000, без брони. Точное время каждый храм объявляет сам, сверяйтесь на входе.
+        Днём туда очередь, в восемь вечера — двадцать человек.</p>
+      </div>
+      <div class="card">
+        <h4>Гинкго в Гайэне</h4>
+        <p>146 деревьев в четыре ряда, 300 метров золота. Пик — 26 ноября–1 декабря, то есть ровно ваши даты.
+        Вход свободный, двадцать минут от Сибуи. Ради этого и стоит выехать из отеля в восемь утра.</p>
+      </div>
+      <div class="card">
+        <h4>Мидосудзи в огнях</h4>
+        <p>Четыре километра бульвара от Умэды до Намбы в гирляндах, с 3 ноября по 31 декабря, до часу ночи.
+        Говорят «самая длинная иллюминированная улица в мире» — и это не реклама, а замер.</p>
+      </div>
+      <div class="card">
+        <h4>Рождественские рынки Осаки</h4>
+        <p>С конца ноября: немецкие палатки с глинтвейном на площади Тэммабаси у башни Абуэно-Харукас.
+        Вечером после Дотонбори — пятнадцать минут на метро. Немного китч, но глинтвейн настоящий.</p>
+      </div>
+      <div class="card">
+        <h4>Рынок Тэндзин-сан</h4>
+        <p>25-го числа каждого месяца, храм Китано Тэнмангу в Киото: восемьсот лотков со старьём и едой.
+        В ваш план не попадает — в этот день вы в Токио. Но если поменяете дни местами, это лучший рынок поездки.</p>
+      </div>
+      <div class="card">
+        <h4>Клёны, ради которых всё</h4>
+        <p>Пик в Киото — 20 ноября – 5 декабря. Тофуку-дзи, Эйкан-до, Киёмидзу. Окно поездки выбрано под них,
+        и это единственная причина, по которой стоит терпеть ранние подъёмы.</p>
+      </div>
     </div>
 
-    <div class="callout" style="margin-top:24px">
-      <p><b>Одна проблема, которую надо решить заранее.</b> Пешеходная зона бывает только по воскресеньям.
-      В нашей сетке 24 ноября — среда, а единственное воскресенье, 28-е, вы уже в Киото.
-      Два выхода: сдвинуть всю поездку на день (старт 25 ноября, тогда 28-е в Токио, а Киото 29–2 декабря —
-      клёны всё ещё в пике) или пойти в Акихабару в пятницу 26-го: магазины те же, но улица будет с машинами.
-      Первый вариант лучше — и он же даёт вам воскресенье в Токио целиком.</p>
-    </div>
-
-    <div style="margin-top:52px">
-      <div class="s-num" style="margin-bottom:10px">и ещё одно, уже в Осаке</div>
-      <h3 style="font-size:30px;margin-bottom:10px">Парк Марио · Super Nintendo World</h3>
-      <p class="muted" style="max-width:760px;margin-bottom:24px">Друг имел в виду его. Это Universal Studios Japan
-      в Осаке, 15 минут от станции Осака, и это не «уголок с Марио», а отдельная зона размером с городок —
-      в 2024-м её расширили на 70 %, добавив Donkey Kong Country.</p>
-
-      <div class="fest" style="grid-template-columns:340px 1fr">
-        <div class="fest-img"><img src="assets/mario2.jpg" alt="Вход в Super Nintendo World"></div>
-        <div class="fest-body">
-          <div class="fest-top">
-            <h3 style="margin:0">Что внутри</h3>
-            <div class="fest-when">Осака · 15 мин от станции</div>
-          </div>
-          <div class="tagline">Зелёные трубы, вопрос-блоки и вагонетка, которая прыгает с рельсов</div>
-          <p class="fest-text">Mario Kart: Koopa's Challenge с AR-шлемами, Yoshi's Adventure для тех, кто не хочет
-          экстрима, и Mine Cart Madness в Donkey Kong Country — тот самый эффект «вагонетка сходит с рельсов»,
-          ради которого сюда едут отдельно.</p>
-          <div class="why"><b>В чём фишка.</b> Это единственное место в мире, где игровой мир собран в масштабе 1:1
-          и по нему можно ходить. Звуки, блоки, труба на входе — всё работает как в игре, а не как декорация.
-          Половина взрослых людей выходит оттуда с лицом ребёнка, и это не преувеличение.</div>
-          <ul class="know">
-            <li><b>Билет в парк не даёт входа в зону.</b> Нужен Area Timed Entry Ticket — бесплатный, но выдаётся
-            только в приложении USJ в день визита, после того как отсканировали билет на входе. Разбирают за минуты</li>
-            <li><b>Гарантированный вход</b> — только через Express Pass, где в составе <i>явно</i> указан
-            «Area Timed Entry Ticket for Super Nintendo World». Картинка с Марио на обложке ничего не значит</li>
-            <li>Studio Pass: ¥8 900–10 900 в зависимости от даты. В конце ноября, в будни — у нижней границы</li>
-            <li>Express с гарантией входа: от ¥12 800, в пиковые даты до ¥25 800</li>
-            <li>Power-Up Band (браслет) ¥3 800 — без него блоки не бьются и очки не считаются, но пройти можно</li>
-            <li>Закладывайте <b>целый день</b> и приходите к открытию: очереди на Mine Cart Madness доходят до 240 минут</li>
-          </ul>
-        </div>
-      </div>
-
-      <div class="callout">
-        <p><b>Куда это вставить.</b> Девятый день (Умэда и Мидосудзи) — единственный, который можно заменить
-        без потерь: USJ съедает весь день, парк закрывается поздно, и вечером вы просто возвращаетесь в отель.
-        Лучшая дата — <b>2 декабря, четверг</b>: будний день, очереди короче, толпа местных ещё не приехала.
-        Но тогда Мидосудзи придётся смотреть по дороге в день вылета — или перенести её на восьмой день,
-        сразу после Дотонбори.</p>
-      </div>
+    <h3 style="margin:32px 0 8px">Что в эти даты не попадает — и почему</h3>
+    <p class="muted" style="font-size:14.2px;margin-bottom:14px">Эти праздники всплывают в любом путеводителе по осени. Все они пролетают мимо вашего окна, и лучше знать это заранее, чем искать их на месте.</p>
+    <div class="rules">
+      <div class="rule no"><b>Дзидай-мацури · 22 октября</b><span>Парад в Киото с 1895 года, к 1100-летию переноса столицы: две тысячи человек в костюмах восьми эпох. Красиво — но за месяц до вашего прилёта.</span></div>
+      <div class="rule no"><b>Курама-но-химацури · 22 октября</b><span>Ночной огненный праздник в горах Курамы: триста факелов, «огонь!» на весь склон. Тот же день, та же проблема.</span></div>
+      <div class="rule no"><b>Мэйдзи-дзингу, осенний фестиваль · 1–3 ноября</b><span>Конные стрелки-ябусамэ на 218-метровой дорожке. Возродили в 1932-м, билеты по лотерее. Не ваш месяц.</span></div>
+      <div class="rule no"><b>Хокотэн в Акихабаре · воскресенья</b><span>Перекрывают улицу, играют на барабанах, торгуют деталями. Ближайшее к вам воскресенье — 28 ноября, и вы в этот день в Киото.</span></div>
+      <div class="rule no"><b>Kobe Luminarie · не ноябрь</b><span>Мемориальная иллюминация после землетрясения 1995-го. С 2024 года её перенесли на январь–февраль, так что в декабре её тоже нет.</span></div>
+      <div class="rule no"><b>Кобо-сан · 21-е число</b><span>Блошиный рынок у Тодзи-дзи, тысяча лотков. 21 ноября — за три дня до вашего прилёта, 21 декабря — уже дома.</span></div>
     </div>
   </div>
 </section>
 
-<!-- ================== 05 БЮДЖЕТ ================== -->
-<section id="budget">
+<section id="cost">
   <div class="wrap">
-    <div class="s-head"><div class="s-num">05 · бюджет</div><h2>Сколько это стоит на самом деле</h2></div>
-    <p class="lead">Двигайте ползунки — цифры пересчитаются. По умолчанию: двое, десять дней, комфортное жильё
-    и еда без экономии на впечатлениях. <b>Без перелёта.</b></p>
+    <div class="s-num">05 · стоимость</div>
+    <h2>Сколько стоит именно этот маршрут</h2>
+    <p class="lead">Не «от» и не диапазон на глазок, а смета по плану выше: десять дней, двое,
+    отели среднего уровня, еда без самоистязания. <b>Без перелёта.</b></p>
 
+    <div class="tscroll">
+      <table class="cost">
+        <thead><tr><th>Статья</th><th>Из чего складывается</th><th style="text-align:right">Иена</th></tr></thead>
+        <tbody>
+          <tr><td>Жильё · 9 ночей</td><td>Токио 3 × ¥18 000, Киото 3 × ¥28 000, Осака 3 × ¥15 000 — номер на двоих</td><td class="n">183 000</td></tr>
+          <tr><td>Еда · 10 дней</td><td>Завтрак ¥500, обед ¥1 500, ужин ¥3 000 на человека</td><td class="n">100 000</td></tr>
+          <tr><td>Транспорт в городах</td><td>Метро и автобусы на двоих, все десять дней</td><td class="n">22 000</td></tr>
+          <tr><td>Между городами</td><td>Ханэда→Синдзюку ¥1 080 · Токио→Киото ¥28 340 · Киото→Фусими-Инари→Нара ¥1 840 · Нара→Осака ¥1 160 · Осака→Кансай ¥1 940</td><td class="n">34 360</td></tr>
+          <tr><td>Входные билеты</td><td>Храмы, подсветки, Shibuya Sky, Умэда-Скай, два музея</td><td class="n">24 000</td></tr>
+          <tr class="sum"><td>Итого на двоих</td><td>на земле, без перелёта</td><td class="n">363 360</td></tr>
+          <tr class="sum" style="border-top:0"><td>На человека</td><td>181 680 · ≈ 100 000 ₽ по курсу 0,55 · с перелётом 160–195 тыс ₽</td><td class="n">181 800</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note">Сверху стоит добавить <b>резерв 10 %</b> — на «ой, а давайте ещё» и на случай, если киотский отель
+    окажется дороже. Получается <b>¥400 000 на двоих</b>: вот эту цифру и держите в голове.
+    Перелёт считается отдельно: 60–95 тыс ₽ с человека туда-обратно, прямых рейсов Москва–Токио нет. С ним выходит <b>160–195 тыс ₽ на человека</b> — вот это и есть реальный бюджет поездки.</div>
+
+    <h3 style="margin:34px 0 6px">Если хочется поменять</h3>
+    <p class="muted" style="font-size:14px;margin-bottom:16px">Крутите ползунки — цифры пересчитываются на месте, галочки добавляют то, чего в маршруте нет.</p>
     <div class="calc">
       <div class="panel">
-        <h4>Ваши параметры</h4>
         <div class="field">
           <label>Сколько вас</label>
           <div class="seg" id="seg-pax"><button data-v="1">Один</button><button data-v="2" class="on">Двое</button></div>
         </div>
         <div class="field">
-          <label>Курс: рублей за ¥1 <span class="val" id="rate-v">0.55</span></label>
+          <label>Курс: рублей за ¥1 — <span class="val" id="rate-v">0,55</span></label>
           <input type="range" id="rate" min="0.35" max="0.85" step="0.01" value="0.55">
         </div>
         <div class="field">
-          <label>Жильё · 9 ночей</label>
+          <label>Жильё</label>
           <div class="seg" id="seg-stay"><button data-v="0">Просто</button><button data-v="1" class="on">Комфорт</button><button data-v="2">Хорошо</button></div>
         </div>
         <div class="field">
-          <label>Еда · на человека в день</label>
+          <label>Еда на человека в день</label>
           <div class="seg" id="seg-food"><button data-v="0">Скромно</button><button data-v="1" class="on">Нормально</button><button data-v="2">Гурман</button></div>
         </div>
-        <div class="field" style="margin-bottom:4px">
+        <div class="field" style="margin-bottom:2px">
           <label>Добавить</label>
-          <label class="chk"><input type="checkbox" id="x-ghibli"> Музей Гибли (¥1 000)</label>
-          <label class="chk"><input type="checkbox" id="x-teamlab"> teamLab (¥4 800)</label>
-          <label class="chk"><input type="checkbox" id="x-usj"> Universal Studios (¥9 800)</label>
-          <label class="chk"><input type="checkbox" id="x-jidai"> Трибуна Дзидай-мацури (¥5 000)</label>
-          <label class="chk"><input type="checkbox" id="x-jrpass"> JR Pass на 7 дней (¥53 000)</label>
+          <label class="chk"><input type="checkbox" id="x-usj"> Universal Studios, ¥9 800</label>
+          <label class="chk"><input type="checkbox" id="x-express"> Express со входом в парк Марио, ¥14 000</label>
+          <label class="chk"><input type="checkbox" id="x-ghibli"> Музей Гибли, ¥1 000</label>
+          <label class="chk"><input type="checkbox" id="x-teamlab"> teamLab, ¥4 800</label>
         </div>
       </div>
-
       <div>
-        <div class="total-box">
-          <div>
-            <div class="lbl">Итого на всех, на земле</div>
-            <div class="big"><span id="tot-rub">0</span> <small>₽</small></div>
-          </div>
-          <div style="text-align:right">
-            <div class="lbl">На человека</div>
-            <div style="font-family:var(--serif);font-size:25px;margin-top:5px"><span id="tot-per">0</span> <span style="font-size:14px;color:var(--ink-3)" id="tot-per-yen">¥0</span></div>
-          </div>
+        <div class="total">
+          <div><div class="lbl">Итого на всех</div><div class="big"><span id="tot-rub">0</span> <small>₽</small></div></div>
+          <div style="text-align:right"><div class="lbl">На человека</div>
+            <div style="font-family:var(--serif);font-size:23px;margin-top:5px"><span id="tot-per">0</span> <span style="font-size:12.5px;color:var(--ink-3)" id="tot-per-yen">¥0</span></div></div>
         </div>
-        <div id="breakdown"></div>
-        <div class="note">Перелёт — отдельно: прямых Москва–Токио нет, с одной пересадкой 60–95 тыс ₽ туда-обратно.
-        Виза для граждан РФ бесплатна, платится только сервисный сбор визового центра ≈970 ₽.</div>
-        <div class="note">Жильё в Киото на конец ноября — самая дорогая и самая дефицитная позиция поездки.
-        Она определяет бюджет больше, чем всё остальное вместе.</div>
+        <div id="breakdown" style="margin-top:12px"></div>
       </div>
     </div>
   </div>
 </section>
 
-<!-- ================== 05 АНИМЕ ================== -->
 <section id="anime">
   <div class="wrap">
-    <div class="s-head"><div class="s-num">06 · аниме и манга</div><h2>Куда идти, если вы в теме</h2></div>
-    <p class="lead">Сразу неприятная правда: <b>крупные аниме-фестивали в наше окно не попадают.</b>
-    Comiket — 29–31 декабря, Tokyo Comic Con — вторая неделя декабря, Jump Festa — перед Рождеством,
-    KYOMAF в Киото — в сентябре. Но в Токио, Киото и Осаке хватает постоянных мест, ради которых едут
-    отдельно, и они работают круглый год.</p>
+    <div class="s-num">06 · акихабара и аниме</div>
+    <h2>Если едете за конкретикой</h2>
+    <p class="lead">Акихабара в этом плане — вечер третьего дня, два с половиной часа.
+    Этого хватает, если знать, куда идти. Главная улица Тюо-дори — ловушка: дороже и всё то же самое.</p>
 
-    <div class="filters" id="filters">
-      <button class="on" data-f="all">Все</button>
-      <button data-f="tokyo">Токио</button>
-      <button data-f="kyoto">Киото</button>
-      <button data-f="osaka">Осака</button>
-      <button data-f="tickets">Нужны билеты</button>
-    </div>
-
-    <div class="places" id="places">
-      <div class="place" data-cat="tokyo">
-        <img src="assets/akihabara.jpg" alt="Акихабара">
-        <div class="place-b">
-          <div class="place-w">Токио · Акихабара</div>
-          <div class="place-t">Электрический город</div>
-          <div class="place-d">Mandarake с мангой и фигурками б/у, Super Potato с ретро-играми и аркадным этажом, Animate. Днём толпа, вечером неон. Идут за конкретикой, а не «погулять».</div>
-          <div class="place-m"><span class="stars">★★★★★</span><span>вход <b>бесплатно</b></span></div>
+    <div class="g2" style="gap:16px">
+      <div class="card" style="padding:0;overflow:hidden">
+        <img src="assets/akihabara.jpg" alt="Акихабара" style="width:100%;height:225px;object-fit:cover">
+        <div style="padding:17px 19px">
+          <h4>Куда именно</h4>
+          <p><b>Super Potato</b> — ретро-игры и фигурки, третий этаж, лестница без лифта.
+          <b>Mandarake</b> — восемь этажей манги, самый честный ценник.
+          <b>Animate</b> — свежие релизы и мерч по сезонным тайтлам.
+          <b>Yodobashi</b> — техника, tax-free по паспорту.</p>
         </div>
       </div>
-      <div class="place" data-cat="tokyo">
-        <img src="assets/nakano.jpg" alt="Накано Бродвей">
-        <div class="place-b">
-          <div class="place-w">Токио · Накано</div>
-          <div class="place-t">Накано Бродвей</div>
-          <div class="place-d">Четыре этажа барахолок: манга, старые журналы, фигурки восьмидесятых. Дешевле Акихабары и без туристов — здесь закупаются местные коллекционеры.</div>
-          <div class="place-m"><span class="stars">★★★★★</span><span>вход <b>бесплатно</b></span></div>
-        </div>
-      </div>
-      <div class="place" data-cat="tokyo tickets">
-        <img src="assets/ghibli.jpg" alt="Музей Гибли">
-        <div class="place-b">
-          <div class="place-w">Токио · Митака</div>
-          <div class="place-t">Музей Гибли</div>
-          <div class="place-d">Билеты только на Lawson, 10-го числа предыдущего месяца в 10:00 по Японии. На входе не продают. Нужен аккаунт Lawson с японским номером — заводите заранее, не в день продажи.</div>
-          <div class="place-m"><span class="stars">★★★★★</span><span><b>¥1 000</b></span></div>
-        </div>
-      </div>
-      <div class="place" data-cat="tokyo tickets">
-        <img src="assets/teamlab.jpg" alt="teamLab">
-        <div class="place-b">
-          <div class="place-w">Токио · Адзабудай</div>
-          <div class="place-t">teamLab Borderless</div>
-          <div class="place-d">Комнаты без границ: свет, вода, зеркала. Брать на утро буднего дня — вечером и в выходные внутри не протолкнуться.</div>
-          <div class="place-m"><span class="stars">★★★★☆</span><span><b>¥4 800</b></span></div>
-        </div>
-      </div>
-      <div class="place" data-cat="tokyo">
-        <img src="assets/shibuya.jpg" alt="Сибуя">
-        <div class="place-b">
-          <div class="place-w">Токио · Сибуя</div>
-          <div class="place-t">PARCO и перекрёсток</div>
-          <div class="place-d">Nintendo Tokyo, Pokémon Center и Jump Shop на верхних этажах PARCO. Внизу — тот самый перекрёсток. Лучший вид на него с Shibuya Sky.</div>
-          <div class="place-m"><span class="stars">★★★★★</span><span>вход <b>бесплатно</b></span></div>
-        </div>
-      </div>
-      <div class="place" data-cat="kyoto">
-        <img src="assets/gion.jpg" alt="Гион">
-        <div class="place-b">
-          <div class="place-w">Киото · Гион</div>
-          <div class="place-t">Ханамикодзи</div>
-          <div class="place-d">Деревянная улица с фонарями, которую рисуют в каждой второй истории про Киото. Снимать можно улицу, но не людей: фото гейко без разрешения запрещено.</div>
-          <div class="place-m"><span class="stars">★★★★★</span><span>вход <b>бесплатно</b></span></div>
-        </div>
-      </div>
-      <div class="place" data-cat="kyoto">
-        <img src="assets/fushimi.jpg" alt="Фусими Инари">
-        <div class="place-b">
-          <div class="place-w">Киото · Фусими</div>
-          <div class="place-t">Фусими Инари</div>
-          <div class="place-d">Десять тысяч оранжевых тории на склоне горы. Круглосуточно и бесплатно — приходите в семь утра. После девятого уровня почти все разворачиваются, дальше вы идёте один.</div>
-          <div class="place-m"><span class="stars">★★★★★</span><span>вход <b>бесплатно</b></span></div>
-        </div>
-      </div>
-      <div class="place" data-cat="kyoto">
-        <img src="assets/arashiyama.jpg" alt="Арасияма">
-        <div class="place-b">
-          <div class="place-w">Киото · Арасияма</div>
-          <div class="place-t">Бамбуковая роща</div>
-          <div class="place-d">Кадр, который узнают без подписи. Тропа шириной три метра: до восьми утра пустая, после девяти — очередь. Идти от Тэнрю-дзи вниз.</div>
-          <div class="place-m"><span class="stars">★★★★☆</span><span>вход <b>бесплатно</b></span></div>
-        </div>
-      </div>
-      <div class="place" data-cat="osaka">
-        <img src="assets/shinsekai.jpg" alt="Синсэкай">
-        <div class="place-b">
-          <div class="place-w">Осака · Синсэкай</div>
-          <div class="place-t">Цутэнкаку и Дэн-Дэн-таун</div>
-          <div class="place-d">Ретро-квартал 1912 года с башней в стиле Эйфеля, рядом — местная Акихабара. Дешевле токийской, туристов почти нет, ассортимент тот же.</div>
-          <div class="place-m"><span class="stars">★★★★☆</span><span>башня <b>¥900</b></span></div>
-        </div>
-      </div>
-      <div class="place" data-cat="osaka">
-        <img src="assets/dotonbori.jpg" alt="Дотонбори">
-        <div class="place-b">
-          <div class="place-w">Осака · Намба</div>
-          <div class="place-t">Дотонбори ночью</div>
-          <div class="place-d">Самый плотный неон в Японии: вывески, отражения в канале, «Глико». Бесплатно и без расписания — прийти после шести и идти вдоль воды.</div>
-          <div class="place-m"><span class="stars">★★★★★</span><span>вход <b>бесплатно</b></span></div>
-        </div>
-      </div>
-      <div class="place" data-cat="tokyo osaka">
-        <img src="assets/donki.jpg" alt="Дон Кихоте">
-        <div class="place-b">
-          <div class="place-w">Везде · до 3 ночи</div>
-          <div class="place-t">Don Quijote</div>
-          <div class="place-d">Хаотичный дисконт-лабиринт: сувениры, снеки, всё сразу. Tax-free на кассе. Отдельный вид спорта — выйти, потратив ¥3 000 на ерунду.</div>
-          <div class="place-m"><span class="stars">★★★☆☆</span><span>вход <b>бесплатно</b></span></div>
-        </div>
-      </div>
-      <div class="place" data-cat="tokyo">
-        <img src="assets/asakusa.jpg" alt="Сэнсо-дзи">
-        <div class="place-b">
-          <div class="place-w">Токио · Асакуса</div>
-          <div class="place-t">Сэнсо-дзи и Накамисэ</div>
-          <div class="place-d">Старейший храм города и улица лавок перед ним. В восемь утра пусто, в одиннадцать уже не пройти. Ставьте первым пунктом дня.</div>
-          <div class="place-m"><span class="stars">★★★★☆</span><span>вход <b>бесплатно</b></span></div>
+      <div class="card" style="padding:0;overflow:hidden">
+        <img src="assets/nakano.jpg" alt="Витрины" style="width:100%;height:225px;object-fit:cover">
+        <div style="padding:17px 19px">
+          <h4>Что важно знать</h4>
+          <p>Tax-free — от ¥5 000 в одном магазине, паспорт с собой.
+          Гасяпоны и кран-машины съедают бюджет быстрее, чем кажется: ставьте лимит заранее.
+          В комиссионках состояние вещи помечено буквой: <b>A</b> — почти новая, <b>B</b> — с потёртостями.
+          Витрины снимать можно, людей и интерьеры — спрашивайте.</p>
         </div>
       </div>
     </div>
 
-    <h3 style="margin:46px 0 8px">Ещё три, о которых обычно забывают</h3>
-    <div class="g3" style="margin-top:18px">
-      <div class="card">
-        <h4>Манга-музей Киото</h4>
-        <p>Бывшая школа, триста тысяч томов, читать можно где угодно — хоть на газоне перед входом. Зал с мангой на двадцати языках. ¥1 200, работает каждый день, кроме среды.</p>
-      </div>
-      <div class="card">
-        <h4>Toei Kyoto Studio Park</h4>
-        <p>Действующая съёмочная площадка исторического кино: декорации эпохи Эдо, ниндзя-шоу, костюмы напрокат. Здесь снимают самурайские сериалы, и между съёмками туда пускают. ¥2 400.</p>
-      </div>
-      <div class="card">
-        <h4>Ghibli Park, Нагоя</h4>
-        <p>35 минут синкансэном до Нагои, дальше электричка. Парк без аттракционов: декорации из фильмов, в которые можно зайти. Билеты по лотерее за три месяца — планируйте заранее или пропускайте.</p>
-      </div>
+    <div class="rules" style="margin-top:14px">
+      <div class="rule"><b>Бюджет</b><span>¥8 000–15 000 на человека. Больше — только если точно знаете, что ищете.</span></div>
+      <div class="rule"><b>Время</b><span>Магазины закрываются в 20:00–21:00. Приходите к 17:30 — два часа ровно.</span></div>
+      <div class="rule"><b>Домой</b><span>Фигурки бьются. Пузырчатую плёнку берите на почте, а не в магазине.</span></div>
+      <div class="rule no"><b>Крупные события мимо</b><span>Comiket — последние дни декабря, Tokyo Comic Con — вторая неделя декабря (в 2026-м было 11–13-е), Jump Festa — перед Рождеством. Все три за пределами вашего окна, так что расписание под них подгонять не нужно.</span></div>
     </div>
-
-    <div class="callout" style="margin-top:24px">
-      <p><b>Если аниме важнее клёнов.</b> Сдвиньте вылет на 6–8 дней позже — и попадёте на Tokyo Comic Con
-      (вторая неделя декабря) и зимний Comiket (29–31 декабря). Клёны к тому моменту облетят, зато это
-      единственный способ увидеть оба главных события года за одну поездку.</p>
-    </div>
+    <div class="note"><b>Музея Гибли в маршруте нет.</b> Он в Митаке, ехать сорок минут, и он съедает полдня.
+    Билеты продают только через Lawson, 10-го числа за месяц, за десять минут. Если очень нужно — см. «План Б».</div>
   </div>
 </section>
 
-<!-- ================== 06 ВАЙБ ================== -->
 <section id="vibe">
   <div class="wrap">
-    <div class="s-head"><div class="s-num">07 · вайб</div><h2>Форматы вечера, а не достопримечательности</h2></div>
-    <p class="lead">Это то, за чем возвращаются. Каждое место — от ¥1 500 и работает как вход в разговор:
-    в Японии люди не знакомятся на улице, зато охотно разговаривают, когда вы пришли на их территорию.</p>
+    <div class="s-num">07 · как это будет ощущаться</div>
+    <h2>Темнеет в четыре</h2>
+    <p class="lead">Самое важное, что нужно знать заранее. В Токио 24 ноября солнце садится <b>в 16:31</b>,
+    в Киото — <b>в 16:48</b>. К пяти вечера — ночь. Весь город живёт с этим: подсветки включают в четыре,
+    ужинают в шесть, ложатся в десять.</p>
 
-    <div class="vibe">
-      <div class="vcard">
-        <img src="assets/goldengai.jpg" alt="Голден-Гай">
-        <div class="vb"><h4>Голден-Гай</h4>
-        <p>Шесть переулков, около двухсот баров на пять-восемь мест. Вход ¥500–1 500 «за место», напиток ¥700. Хозяин за стойкой и есть разговор — ищите табличку «welcome» или её отсутствие.</p>
-        <span class="vp">~¥4 000 на человека</span></div>
-      </div>
-      <div class="vcard">
-        <img src="assets/omoide.jpg" alt="Омоидэ-Ёкочо">
-        <div class="vb"><h4>Омоидэ-Ёкочо</h4>
-        <p>Переулок якитория пятидесятых под путями Синдзюку: дым, шесть мест, пиво ¥500. Самое дешёвое и честное место в городе. Больше двух человек туда не влезут.</p>
-        <span class="vp">~¥2 500</span></div>
-      </div>
-      <div class="vcard">
-        <img src="assets/izakaya.jpg" alt="Идзакая">
-        <div class="vb"><h4>Идзакая у стойки</h4>
-        <p>Главное — сесть <b>у счётчика</b>, а не за стол: стойка читается как «я открыт». Средний чек ¥3 000–4 000 с пивом. Заказывайте то же, что пьёт сосед, — это комплимент.</p>
-        <span class="vp">~¥3 500</span></div>
-      </div>
-      <div class="vcard">
-        <img src="assets/kissaten.jpg" alt="Киссатэн">
-        <div class="vb"><h4>Киссатэн</h4>
-        <p>Старая кофейня: тяжёлые чашки, джаз, хозяин в одиночку. Кофе ¥600, завтрак ¥900. Единственное место, где днём можно сидеть час и к вам не подойдут.</p>
-        <span class="vp">~¥900</span></div>
-      </div>
-      <div class="vcard">
-        <img src="assets/onsen.jpg" alt="Сэнто">
-        <div class="vb"><h4>Сэнто · ¥500</h4>
-        <p>Общественная баня, куда ходят каждый день. Мыться сидя на табуретке <b>до</b> бассейна, полотенце не в воду. С татуировками уточняйте заранее — в части бань просят закрыть.</p>
-        <span class="vp">¥500 + полотенце</span></div>
-      </div>
-      <div class="vcard">
-        <img src="assets/capsule.jpg" alt="Капсульный отель">
-        <div class="vb"><h4>Капсула и караоке</h4>
-        <p>Одна ночь в капсуле — ¥3 500 и отдельный опыт. Караоке — комната на двоих, ¥1 000–2 000 в час ночью, напитки включены.</p>
-        <span class="vp">¥3 500 ночь</span></div>
-      </div>
+    <div class="g4" style="margin-bottom:16px">
+      <div class="card"><h4>+8…+14 °C</h4><p>Днём в Токио и Киото, к вечеру плюс пять. Куртка, шарф, тёплые носки. Дождь за десять дней — максимум один.</p></div>
+      <div class="card"><h4>Толпа</h4><p>Клёны — высокий сезон внутри Японии. В Киёмидзу в одиннадцать не пройти. Лечится ранним утром и поздним вечером.</p></div>
+      <div class="card"><h4>Свет</h4><p>Храмы и сады — на утро, города и подсветки — на вечер. После пяти в парке без фонаря делать нечего.</p></div>
+      <div class="card"><h4>Выходные</h4><p>Суббота и воскресенье — местные тоже едут на клёны. Ваши дни 4–5 попадают на уик-энд: вставать рано придётся.</p></div>
     </div>
 
-    <h3 style="margin:46px 0 8px">Ещё пять на вечер, если первые надоели</h3>
-    <div class="g3" style="margin-top:18px">
-      <div class="mini">
-        <div class="mt">Татинми</div>
-        <div class="md">Стоячий бар: тесно, дёшево, разговор физически неизбежен. Открываются в 17:00 вместе с офисами.</div>
-        <div class="mp">¥1 500–2 500</div>
-      </div>
-      <div class="mini">
-        <div class="mt">GiGO и Round One</div>
-        <div class="md">Аркады в несколько этажей: крановые автоматы, ритм-игры, тирёвые галереи с призами. Round One добавляет боулинг и дартс.</div>
-        <div class="mp">¥1 000–2 000</div>
-      </div>
-      <div class="mini">
-        <div class="mt">Манга-кафе</div>
-        <div class="md">Кабинка с диваном, безлимит манги и напитков, душ. Дешёвая ночёвка, если не хочется искать отель в час ночи.</div>
-        <div class="mp">¥1 800 / 6 часов</div>
-      </div>
-      <div class="mini">
-        <div class="mt">Супермаркет в 20:30</div>
-        <div class="md">Главный лайфхак: за два часа до закрытия на бэнто и суши клеят скидки 20–50 %. Ужин на двоих за ¥1 200.</div>
-        <div class="mp">¥600–1 200</div>
-      </div>
-      <div class="mini">
-        <div class="mt">Караоке-бокс</div>
-        <div class="md">Не бар, а комната: свой диван, свой чайник, свой позор. Утренние тарифы с 6:00 втрое дешевле вечерних.</div>
-        <div class="mp">¥800–2 000 / час</div>
-      </div>
-      <div class="mini">
-        <div class="mt">Ёкатё</div>
-        <div class="md">Кварталы у станций, где после десяти открываются крошечные бары без вывесок. Идти вдвоём, не шуметь, заходить туда, где горит свет.</div>
-        <div class="mp">¥3 000+</div>
-      </div>
+    <div class="places">
+      <div class="place"><img src="assets/goldengai.jpg" alt="Голден-Гай"><div class="place-b">
+        <div class="place-w">Токио · вечер 1</div><div class="place-t">Голден-Гай</div>
+        <div class="place-d">Шесть переулков, двести баров, в каждом шесть мест. Под вывеской «Locker» — стойка на четверых. Днём пусто и видно всю фактуру, к десяти не протолкнуться.</div>
+        <div class="place-m"><span>Вход <b>бесплатно</b></span><span>18:00–23:00</span></div></div></div>
+
+      <div class="place"><img src="assets/manseibashi.jpg" alt="Мансэйбаси"><div class="place-b">
+        <div class="place-w">Токио · день 3</div><div class="place-t">mAAch ecute 万世橋</div>
+        <div class="place-d">Вокзал 1912 года постройки, закрытый в 1943-м. В кирпичных арках теперь кофейни, а поезда идут в двух метрах от столиков. Бесплатно.</div>
+        <div class="place-m"><span>Кофе <b>¥600</b></span><span>до 21:00</span></div></div></div>
+
+      <div class="place"><img src="assets/izakaya.jpg" alt="Идзакая"><div class="place-b">
+        <div class="place-w">Везде · любой вечер</div><div class="place-t">Идзакая у стойки</div>
+        <div class="place-d">Кричат при входе и при выходе, стойка из дерева, меню на стене. Самое честное место, чтобы поесть за ¥2 500 и поговорить с соседом.</div>
+        <div class="place-m"><span>Ужин <b>¥2 500–4 000</b></span><span>17:00–24:00</span></div></div></div>
+
+      <div class="place"><img src="assets/kissaten.jpg" alt="Киссатэн"><div class="place-b">
+        <div class="place-w">Везде · утро</div><div class="place-t">Киссатэн</div>
+        <div class="place-d">Кофейня, где остановилось время: бархат, дым, ложки на блюдце. Утренний сет — тост с яйцом и кофе за ¥700. Открываются в семь, и это спасение.</div>
+        <div class="place-m"><span>Завтрак <b>¥700</b></span><span>07:00–11:00</span></div></div></div>
+
+      <div class="place"><img src="assets/onsen.jpg" alt="Сэнто"><div class="place-b">
+        <div class="place-w">Везде · после 16 км</div><div class="place-t">Сэнто по-соседски</div>
+        <div class="place-d">Районная баня за ¥550, без туристов, с полками и сушилкой для волос. Мыться сидя, полотенце в воду не опускать. Лучшее средство после дня на ногах.</div>
+        <div class="place-m"><span>Вход <b>¥550</b></span><span>15:00–23:00</span></div></div></div>
+
+      <div class="place"><img src="assets/shinsekai.jpg" alt="Синсэкай"><div class="place-b">
+        <div class="place-w">Осака · день 10</div><div class="place-t">Синсэкай</div>
+        <div class="place-d">Ретро-квартал под башней Цутэнкаку: вывески 1960-х, кусикацу по ¥100 за штуку, ни одного приличного сувенирного магазина. Именно этим и хорош.</div>
+        <div class="place-m"><span>Ужин <b>¥2 000</b></span><span>круглосуточно</span></div></div></div>
     </div>
   </div>
 </section>
 
-<!-- ================== 07 ЛЮДИ ================== -->
 <section id="people">
   <div class="wrap">
-    <div class="s-head"><div class="s-num">08 · люди</div><h2>Как познакомиться и не быть навязчивым</h2></div>
-    <p class="lead">Японец не подойдёт первым, но почти всегда рад, если вы пришли на его территорию.
-    Разговор случается не на улице, а там, где людям положено общаться.</p>
+    <div class="s-num">08 · люди и правила</div>
+    <h2>Что делать, чтобы всё шло гладко</h2>
+    <p class="lead">От вас не требуют идеальности. Требуют внимания к мелочам, которые видно за секунду:
+    как вы едите, как стоите в очереди, как говорите «спасибо».</p>
+    <div class="rules">
+      <div class="rule"><b>Очередь</b><span>На платформе стоят по разметке, в лифте — сбоку. Не влезать и не обгонять: это единственное, что реально раздражает.</span></div>
+      <div class="rule"><b>Тишина в поезде</b><span>Не говорить по телефону, звук на беззвучный. Синкансэн — не место для звонков.</span></div>
+      <div class="rule no"><b>Чаевые</b><span>Не дают. Совсем. Оставленные деньги догонят вас у выхода.</span></div>
+      <div class="rule no"><b>Еда на ходу</b><span>Не едят. Мороженое у лотка — исключение.</span></div>
+      <div class="rule"><b>Онсэн</b><span>Мыться сидя до входа в воду, полотенце в воду не опускать. Татуировки — уточняйте: часть бань не пускает.</span></div>
+      <div class="rule"><b>Мусор</b><span>Урн почти нет. Носите пакет, выбрасывайте у комбини или в отеле.</span></div>
+      <div class="rule"><b>Фото</b><span>Людей — не снимать без спроса, в Гионе — вообще. В храмах, где стоит значок запрета, нельзя даже со штативом.</span></div>
+      <div class="rule"><b>Три фразы</b><span>«Сумимасэн» — простите, работает в 80 % ситуаций. «Аригато годзаимас» — спасибо. «Окайкэй дэс» — счёт, пожалуйста.</span></div>
+    </div>
+  </div>
+</section>
 
+<section id="book">
+  <div class="wrap">
+    <div class="s-num">09 · что и когда бронировать</div>
+    <h2>Календарь броней</h2>
+    <p class="lead">Часть вещей нельзя купить на месте — их разбирают. Ниже только то, что требует даты,
+    а не «на всякий случай».</p>
     <div class="tscroll">
       <table class="ptable">
-        <thead><tr><th>Где</th><th>Почему работает</th><th>Когда</th></tr></thead>
+        <thead><tr><th style="width:21%">Когда</th><th style="width:29%">Что</th><th>Почему именно так</th></tr></thead>
         <tbody>
-          <tr><td>Идзакая у стойки</td><td>Мастер и завсегдатаи сами начинают разговор. Стойка = «я открыт»</td><td>18:00–22:00, будни</td></tr>
-          <tr><td>Татинми</td><td>Тесно и дёшево, разговор физически неизбежен</td><td>После работы</td></tr>
-          <tr><td>Джаз-киссатэн</td><td>Один хозяин, винил, шесть мест — говорить про музыку легко</td><td>Вечер, вторник–четверг</td></tr>
-          <tr><td>Хостел-бар</td><td>Единственное место, где общаться — норма для всех, включая японцев</td><td>19:00–23:00</td></tr>
-          <tr><td>Языковой обмен</td><td>Люди пришли именно разговаривать, неловкости нет</td><td>По расписанию групп</td></tr>
-          <tr><td>Чайная церемония</td><td>Структурировано, есть о чём говорить, малая группа</td><td>День</td></tr>
-          <tr><td>Горная тропа</td><td>На тропе разговор естественен: идти рядом — уже контакт</td><td>Утро, выходные</td></tr>
-          <tr><td>Дегустация сакэ</td><td>Маленькие залы, пивовар сам наливает и рассказывает</td><td>День, Фусими или Нада</td></tr>
+          <tr><td>29 декабря 2026</td><td>Авиабилеты</td><td>Продажа на ноябрь 2027 открывается за 330–350 дней. Раньше — выбор рейсов минимальный.</td></tr>
+          <tr><td>Январь 2027</td><td>Отели в Токио, Киото, Осаке</td><td>Конец ноября — высокий сезон клёнов внутри Японии. В Киото нормальные номера кончаются за 8–10 месяцев.</td></tr>
+          <tr><td>Май 2027</td><td>Рёткан, если хочется</td><td>Малые рётканы берут брони за полгода и по телефону.</td></tr>
+          <tr><td>Сентябрь 2027</td><td>Виза</td><td>Подача за три месяца, оформление 5–10 рабочих дней. Бесплатно, сбор визового центра ~970 ₽.</td></tr>
+          <tr><td>10 октября 2027, 10:00 JST</td><td>Музей Гибли</td><td>Только через Lawson, ровно за месяц, разбирают за минуты. Для этого маршрута — опция.</td></tr>
+          <tr><td>Конец сентября 2027</td><td>Shibuya Sky на закат</td><td>Слоты 17:00–17:30 уходят первыми. ¥2 500, перенос бесплатный.</td></tr>
+          <tr><td>Сентябрь 2027</td><td>USJ: Studio Pass и Express</td><td>Если выбираете вариант Б. Express со входом в парк Марио — ¥12 800–19 800; без него в зону могут не пустить.</td></tr>
+          <tr><td>Не нужно</td><td>Поезда</td><td>Синкансэн и электрички без брони, места есть всегда. Кроме праздников — ваши даты чистые.</td></tr>
         </tbody>
       </table>
     </div>
-
-    <div class="rules">
-      <div class="rule"><b>Начинайте с «сумимасэн»</b><span>Это не извинение, а «можно обратиться». Дальше — вопрос о месте, не о человеке.</span></div>
-      <div class="rule"><b>Комплимент месту, не человеку</b><span>«Какой красивый бар» → «а вы давно здесь?». Работает всегда.</span></div>
-      <div class="rule"><b>Приходите дважды</b><span>На второй раз вас узнают. В Японии вход в круг открывается повторением, а не напором.</span></div>
-      <div class="rule"><b>Предложить напиток — норма</b><span>Не навязчивость и не «плата». Отказ принимается сразу и без обсуждения.</span></div>
-      <div class="rule no"><b>Не в поезде, очереди, храме, бане</b><span>Это молчаливые пространства. Разговор там читается как вторжение.</span></div>
-      <div class="rule no"><b>Не про политику, войну и зарплату</b><span>Безопасно: еда, район, музыка, поезда. Контактом обменивается японец, не вы.</span></div>
-    </div>
-
-    <div class="callout" style="margin-top:22px">
-      <p>Если человек вежлив, но короток — он не грубит, он закрылся. Поблагодарите и оставьте:
-      это правильный выход, и он запомнится лучше, чем продолжение разговора.</p>
-    </div>
+    <div class="note"><b>Чего бронировать не нужно вообще:</b> храмы и подсветки (билет на месте), Дотонбори,
+    Арасияма, Нара, Акихабара, Мидосудзи, Тори-но-ити. Всё это работает без записи — и это половина поездки.</div>
   </div>
 </section>
 
-<!-- ================== 08 БРОНИ ================== -->
-<section id="book">
-  <div class="wrap">
-    <div class="s-head"><div class="s-num">09 · брони</div><h2>Что и когда бронировать</h2></div>
-    <p class="lead">Мой прежний совет «билеты в мае–июне» был неверным — извините. Правильно так:
-    <b>январь — хорошее время для отелей</b>, а вот визу в январе подавать нельзя, она сгорит.</p>
-
-    <div class="book">
-      <div class="bk"><div class="bk-when">конец декабря 2026</div><div class="bk-t">Авиабилеты</div><div class="bk-d">Расписание открывается за 330 дней — для 24 ноября это ≈29 декабря. Дальше следите за ценой, ждать лета незачем.</div></div>
-      <div class="bk"><div class="bk-when">январь 2027</div><div class="bk-t">Сетевые отели</div><div class="bk-d">APA, Tokyu, Mitsui Garden открывают продажи за 6–12 месяцев. Берите тариф с бесплатной отменой — это страховка.</div></div>
-      <div class="bk"><div class="bk-when">май 2027</div><div class="bk-t">Рёткан и матия</div><div class="bk-d">Малые киотские дома открывают бронь за полгода и на пик клёнов уходят за часы. Нашли дешевле — отмените сетевой тариф.</div></div>
-      <div class="bk"><div class="bk-when">10 октября 2027</div><div class="bk-t">Музей Гибли</div><div class="bk-d">10:00 по Японии, сразу на весь ноябрь. Аккаунт Lawson заведите заранее — в момент продажи его создать нельзя.</div></div>
-      <div class="bk"><div class="bk-when">сентябрь 2027</div><div class="bk-t">Трибуна Дзидай-мацури</div><div class="bk-d">Только если выбрали окно A. Продажа с начала сентября, первый ряд уходит первым. ¥5 000–7 500.</div></div>
-      <div class="bk"><div class="bk-when">сентябрь 2027</div><div class="bk-t">Прогноз клёнов</div><div class="bk-d">Первая версия, потом уточняют еженедельно. Если пик сдвинется — меняйте порядок городов, а не даты.</div></div>
-      <div class="bk"><div class="bk-when">сентябрь–октябрь 2027</div><div class="bk-t">Виза</div><div class="bk-d">Однократная действует три месяца с даты выдачи — подавать в январе нельзя. Плюс 1,5–2 месяца на рассмотрение.</div></div>
-      <div class="bk"><div class="bk-when">за 1–2 месяца</div><div class="bk-t">teamLab, Shibuya Sky</div><div class="bk-d">Слоты открываются за месяц-два. Брать утро буднего дня: вечером внутри не протолкнуться.</div></div>
-    </div>
-
-    <div class="g2" style="margin-top:22px">
-      <div class="card">
-        <h4>Виза и перелёт</h4>
-        <p>Паспорт РФ — виза обязательна. Туристическая бесплатна, платится только сервисный сбор визового центра ≈970 ₽.
-        С 12 февраля 2026 подача в Москве и Петербурге — через JVAC/VFS, по записи, электронной визы для россиян нет.
-        Прямых рейсов Москва–Токио нет: одна пересадка (Пекин, Шанхай, Ташкент, Стамбул), 12–17 часов.</p>
-      </div>
-      <div class="card">
-        <h4>Деньги и связь</h4>
-        <p>Наличные всё ещё нужны: храмы, маленькие бары, рынки — только кэш. IC-карта (Suica или ICOCA) — на транспорт
-        и комбини. Карты российских банков не работают: нужна карта иностранного банка или наличные.
-        eSIM покупается до вылета.</p>
-      </div>
-    </div>
-  </div>
-</section>
-
-<!-- ================== 09 ПЛАН Б ================== -->
 <section id="planb">
   <div class="wrap">
-    <div class="s-head"><div class="s-num">10 · план Б</div><h2>Если что-то пойдёт не так</h2></div>
-    <p class="lead">Маршрут собран так, чтобы ни один день не держался на предыдущем. Ниже — что делать,
-    когда планы ломает погода, усталость или билеты.</p>
-
+    <div class="s-num">10 · если что-то пойдёт не так</div>
+    <h2>План Б на каждый случай</h2>
+    <p class="lead">В конце ноября бывает дождь, а в Киото — очередь на два часа. Вот что делать вместо,
+    чтобы не потерять день.</p>
     <div class="plans">
-      <div class="plan"><div class="plan-if">Если дождь</div><p><b>Храмы не отменяются</b>, но лист под дождём — не тот кадр. Переставьте вперёд музеи: Национальный музей Киото, железнодорожный музей. В Наре — Тодай-дзи и музей под ним.</p></div>
-      <div class="plan"><div class="plan-if">Если пик сдвинулся</div><p><b>Не меняйте даты — поменяйте порядок городов.</b> Пик идёт с гор на юг: Никко, потом Киото, потом Нара. Сдвиг на неделю лечится перестановкой дней 5–7.</p></div>
-      <div class="plan"><div class="plan-if">Если устали</div><p><b>Дни 6 и 9 — отрывные.</b> Уберите Арасияму до одного храма, а Мидосудзи проезжайте на метро. Пропуск любой точки ничего не ломает.</p></div>
-      <div class="plan"><div class="plan-if">Если Гибли не достался</div><p><b>Свободный полдня:</b> парк Инокасира с храмом кота-дзидзи, или Экспо-парк с монорэйлом. Резервный канал — пакет Sunrise Tours, но дороже и продаётся с 1-го числа.</p></div>
-      <div class="plan"><div class="plan-if">Если бюджет жмёт</div><p><b>Три рычага по силе:</b> жильё (разница «комфорт» против «просто» — почти ¥90 000 на поездку), еда до ¥4 000 в день, отказ от двух платных смотровых. Перелёт и транспорт не трогайте.</p></div>
-      <div class="plan"><div class="plan-if">Если дней больше</div><p><b>Добавляйте в конце, не в середине:</b> Хиросима и Миядзима — два дня из Осаки; Канадзава — день из Киото. Оба варианта сдвигают вылет, но не ломают маршрут.</p></div>
+      <div class="plan"><div class="plan-if">Дождь</div><p>Киото: музей манги, рынок Нисики под крышей, железнодорожный музей. Токио: аквариум, депато, подземные галереи станции. Осака: Синсайбаси и Курамон целиком под крышей.</p></div>
+      <div class="plan"><div class="plan-if">Очередь в Киёмидзу</div><p>Разворачивайтесь и идите в Кодай-дзи или Нандзэн-дзи: те же клёны, втрое меньше людей. Киёмидзу вернётесь вечером — на подсветку.</p></div>
+      <div class="plan"><div class="plan-if">Устали к шестому дню</div><p>Вычеркните Арасияму, оставьте только Эйкан-до вечером. Или целый день в Киото без переездов: рынок, книжный, кофе, баня.</p></div>
+      <div class="plan"><div class="plan-if">Хочется Гибли</div><p>Только вместо одного дня в Киото: Митака в сорока минутах от Синдзюку. Билет за месяц через Lawson, вторник — закрыто. Киото сокращается до двух дней.</p></div>
+      <div class="plan"><div class="plan-if">Хочется USJ</div><p>День 9 целиком в Осаке: Studio Pass ¥9 800 плюс Express со входом в SNW. Area Timed Entry берите в приложении сразу на входе, иначе в парк Марио не попасть.</p></div>
+      <div class="plan"><div class="plan-if">Бюджет жмёт</div><p>Живите в Осаке и ездите в Киото электричкой: 40 минут, ¥580. Отели в Осаке дешевле киотских на 40 % — за три ночи это около ¥40 000 экономии.</p></div>
     </div>
-
-    <h3 style="margin:50px 0 8px">Кадры, которые вы привезёте</h3>
-    <p class="muted" style="margin:0 0 22px;font-size:14.5px">Верхний ряд — что даёт октябрь. Низ — что даёт ноябрь.
-    Горные Никко, Хаконэ и Такао в конце ноября уже облетели: это единственная причина смотреть на октябрь.</p>
-
-    <div class="gallery">
-      <figure><img src="assets/nikko.jpg" alt="Никко осенью"><figcaption><b>Никко, середина октября</b>Горные клёны на две недели раньше городов. Только в окне A.</figcaption></figure>
-      <figure><img src="assets/hakone.jpg" alt="Хаконэ"><figcaption><b>Хаконэ, начало ноября</b>Фудзи над озером Аси. Добавляется как день из Токио.</figcaption></figure>
-      <figure><img src="assets/momiji.jpg" alt="Момидзи"><figcaption><b>Клён крупным планом</b>То, за чем едут: 20 ноября — 5 декабря в Киото.</figcaption></figure>
-      <figure><img src="assets/kiyomizu.jpg" alt="Киёмидзу ночью"><figcaption><b>Киёмидзу-дэра, вечер</b>Подсветка до 21:30, ¥500, без брони. Только ноябрь.</figcaption></figure>
-      <figure><img src="assets/nara.jpg" alt="Нара"><figcaption><b>Нара</b>Клёны здесь на две недели позже Киото — запас, если пик сдвинется.</figcaption></figure>
-      <figure><img src="assets/osaka-castle.jpg" alt="Замок Осаки"><figcaption><b>Замок Осаки</b>Парк бесплатный, башня ¥600. Финал маршрута.</figcaption></figure>
-    </div>
+    <div class="note" style="margin-top:14px"><b>Что выброшено сознательно:</b> Хаконэ, Никко, Хиросима, Миядзима,
+    Пять озёр, Хоккайдо и Окинава. Причина одна: в десяти днях они превращаются в переезды, а клёны и города остаются
+    недосмотренными. Хаконэ — отдельная поездка на два дня, не в этот раз.</div>
   </div>
 </section>
 
 <footer>
   <div class="wrap foot">
-    <div>
-      <b>Япония · осень 2027</b> — Токио, Киото, Нара, Осака.<br>
-      Десять дней, 24 ноября — 3 декабря. Собрано под двоих.
-    </div>
-    <div style="max-width:390px">
-      Даты фестивалей повторяются каждый год и проверены. Прогноз клёнов, расписание подсветок
-      и даты Сёсоина появятся только в 2027 году — на это в маршруте заложен запас. Цены — ориентиры 2026 года.
-    </div>
+    <div><b>Япония · 24 ноября — 3 декабря 2027</b><br>Токио — Киото — Нара — Осака</div>
+    <div>Иены — по состоянию на 2026 год: курс и цены проверяйте перед покупкой.<br>Карты схематические; контуры суши — Natural Earth, точки — по координатам мест.</div>
+    <div><b>10 дней · 4 города · 5 переездов</b><br>Собрано под клёны и гинкго, а не под галочки.</div>
   </div>
 </footer>
 
 <script>
-/* подсветка меню */
-const links=[...document.querySelectorAll('.nav-links a')];
-const secs=links.map(a=>document.querySelector(a.getAttribute('href'))).filter(Boolean);
-const io=new IntersectionObserver(es=>{
-  es.forEach(e=>{
-    const l=links.find(a=>a.getAttribute('href')==='#'+e.target.id);
-    if(l&&e.isIntersecting){links.forEach(x=>x.classList.remove('on'));l.classList.add('on');}
+(function(){
+  var state={pax:2,rate:0.55,stay:1,food:1,usj:false,express:false,ghibli:false,teamlab:false};
+  var STAY=[{f:0.6},{f:1},{f:1.65}];
+  var FOOD=[{y:3500},{y:5000},{y:8500}];
+  var BASE={stay:91500,local:11000,intercity:17180,tickets:12000},DAYS=10;
+  function money(n){return Math.round(n).toLocaleString('ru-RU').replace(/\u00A0/g,' ').replace(/,/g,' ')}
+  function calc(){
+    var stay=Math.round(BASE.stay*STAY[state.stay].f);
+    var food=FOOD[state.food].y*DAYS;
+    var add=0;
+    if(state.usj)add+=9800;
+    if(state.express)add+=14000;
+    if(state.ghibli)add+=1000;
+    if(state.teamlab)add+=4800;
+    var pp=stay+food+BASE.local+BASE.intercity+BASE.tickets+add;
+    return {stay:stay,food:food,local:BASE.local,intercity:BASE.intercity,tickets:BASE.tickets,add:add,pp:pp,all:pp*state.pax,rub:pp*state.pax*state.rate};
+  }
+  function render(){
+    var r=calc();
+    var rubEl=document.getElementById('tot-rub');
+    if(!rubEl)return;
+    rubEl.textContent=money(r.rub);
+    document.getElementById('tot-per').textContent=money(r.pp*state.rate);
+    document.getElementById('tot-per-yen').textContent='¥'+money(r.pp);
+    document.getElementById('rate-v').textContent=state.rate.toFixed(2).replace('.',',');
+    var rows=[['Жильё, 9 ночей',r.stay],['Еда, 10 дней',r.food],['Транспорт в городах',r.local],['Между городами',r.intercity],['Билеты и входы',r.tickets]];
+    if(r.add)rows.push(['Доп. билеты',r.add]);
+    var html=rows.map(function(x){
+      return '<div style="display:flex;justify-content:space-between;gap:12px;font-size:13.2px;padding:6px 0;border-bottom:1px solid var(--line)">'
+        +'<span style="color:var(--ink-2)">'+x[0]+'</span>'
+        +'<span style="font-variant-numeric:tabular-nums">¥'+money(x[1]*state.pax)+'</span></div>';
+    }).join('');
+    html+='<div style="display:flex;justify-content:space-between;gap:12px;font-size:13.4px;padding:9px 0 0;font-weight:700">'
+      +'<span>Итого на '+state.pax+'</span><span style="font-variant-numeric:tabular-nums">¥'+money(r.all)+'</span></div>';
+    document.getElementById('breakdown').innerHTML=html;
+  }
+  function seg(id,key){
+    var w=document.getElementById(id); if(!w)return;
+    w.querySelectorAll('button').forEach(function(b){
+      b.addEventListener('click',function(){
+        w.querySelectorAll('button').forEach(function(x){x.classList.toggle('on',x===b)});
+        state[key]=+b.dataset.v;render();
+      });
+    });
+  }
+  seg('seg-pax','pax');seg('seg-stay','stay');seg('seg-food','food');
+  var rate=document.getElementById('rate');
+  if(rate)rate.addEventListener('input',function(){state.rate=+this.value;render()});
+  ['usj','express','ghibli','teamlab'].forEach(function(k){
+    var el=document.getElementById('x-'+k);
+    if(el)el.addEventListener('change',function(){state[k]=this.checked;render()});
   });
-},{rootMargin:'-45% 0px -50% 0px'});
-secs.forEach(s=>io.observe(s));
+  render();
 
-/* фильтр мест */
-const fbtns=[...document.querySelectorAll('#filters button')];
-const places=[...document.querySelectorAll('#places .place')];
-fbtns.forEach(b=>b.addEventListener('click',()=>{
-  fbtns.forEach(x=>x.classList.remove('on'));b.classList.add('on');
-  const f=b.dataset.f;
-  places.forEach(p=>{p.style.display=(f==='all'||p.dataset.cat.includes(f))?'':'none';});
-}));
+  var exp=document.getElementById('expand'),col=document.getElementById('collapse');
+  if(exp)exp.addEventListener('click',function(){document.querySelectorAll('details.day').forEach(function(d){d.open=true})});
+  if(col)col.addEventListener('click',function(){document.querySelectorAll('details.day').forEach(function(d){d.open=false})});
 
-/* калькулятор */
-const DATA={
-  stay:[{n:'Просто',tokyo:10000,kyoto:14000,osaka:8000},
-        {n:'Комфорт',tokyo:18000,kyoto:28000,osaka:15000},
-        {n:'Хорошо',tokyo:32000,kyoto:55000,osaka:26000}],
-  food:[{n:'Скромно',per:4000},{n:'Нормально',per:7500},{n:'Гурман',per:13000}]
-};
-const N={tokyo:3,kyoto:3,osaka:3};
-let pax=2,stayIdx=1,foodIdx=1,rate=0.55;
-
-function seg(id,cb){
-  const el=document.getElementById(id);
-  el.querySelectorAll('button').forEach(b=>b.addEventListener('click',()=>{
-    el.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
-    b.classList.add('on');cb(+b.dataset.v);recalc();
-  }));
-}
-seg('seg-pax',v=>pax=v);
-seg('seg-stay',v=>stayIdx=v);
-seg('seg-food',v=>foodIdx=v);
-
-document.getElementById('rate').addEventListener('input',e=>{
-  rate=+e.target.value;
-  document.getElementById('rate-v').textContent=rate.toFixed(2);
-  recalc();
-});
-['x-ghibli','x-teamlab','x-usj','x-jidai','x-jrpass'].forEach(id=>
-  document.getElementById(id).addEventListener('change',recalc));
-
-const fmt=n=>Math.round(n).toLocaleString('ru-RU');
-
-function recalc(){
-  const s=DATA.stay[stayIdx],f=DATA.food[foodIdx];
-  const room=s.tokyo*N.tokyo+s.kyoto*N.kyoto+s.osaka*N.osaka;
-  const housing=room*(pax===1?0.75:1);
-  const food=f.per*10*pax;
-  const local=1100*10*pax;
-  const intercity=16000*pax;
-  const jr=document.getElementById('x-jrpass').checked?53000*pax:0;
-  const transport=local+intercity+jr;
-  const base=14000*pax;
-  const extras=(document.getElementById('x-ghibli').checked?1000*pax:0)
-    +(document.getElementById('x-teamlab').checked?4800*pax:0)
-    +(document.getElementById('x-usj').checked?9800*pax:0)
-    +(document.getElementById('x-jidai').checked?5000*pax:0);
-  const tickets=base+extras;
-
-  const rows=[
-    ['Жильё',housing,'9 ночей, '+s.n.toLowerCase()],
-    ['Еда',food,f.n.toLowerCase()+', ¥'+fmt(f.per)+' в день'],
-    ['Транспорт',transport,'город + синкансэн'+(jr?' + JR Pass':'')],
-    ['Билеты',tickets,'храмы, смотровые, музеи']
-  ];
-  const total=rows.reduce((a,r)=>a+r[1],0);
-  const max=Math.max(...rows.map(r=>r[1]));
-
-  document.getElementById('tot-rub').textContent=fmt(total*rate);
-  document.getElementById('tot-per').textContent=fmt(total/pax*rate)+' ₽';
-  document.getElementById('tot-per-yen').textContent='¥'+fmt(total/pax);
-
-  document.getElementById('breakdown').innerHTML=rows.map(([n,v,d])=>`
-    <div class="b-row">
-      <div class="nm">${n}<em>${d}</em></div>
-      <div class="b-bar"><i style="width:${(v/max*100).toFixed(1)}%"></i></div>
-      <div class="amt">${fmt(v*rate)} ₽<small>¥${fmt(v)}</small></div>
-    </div>`).join('');
-}
-recalc();
+  var links=[].slice.call(document.querySelectorAll('.nav-links a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'))}).filter(Boolean);
+  if('IntersectionObserver' in window){
+    var io=new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if(e.isIntersecting){
+          links.forEach(function(a){a.classList.toggle('on',a.getAttribute('href')==='#'+e.target.id)});
+        }
+      });
+    },{rootMargin:'-45% 0px -50% 0px'});
+    secs.forEach(function(s){io.observe(s)});
+  }
+})();
 </script>
 </body>
 </html>
