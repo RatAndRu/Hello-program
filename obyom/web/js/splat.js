@@ -660,3 +660,26 @@ export function allowedRegion(G, frames, pad = 2, frac = 0.08) {
     return !carveVote(bg, weak, seen, frac, few);
   };
 }
+
+// v2.3 «гибрид»: сплэты уточняют оболочку. Силуэты не видят вогнутостей; обученные сплэты — видят (глубина, где кадр
+// становится непрозрачным). Воксель оболочки, который в нескольких кадрах лежит заметно ближе этой глубины
+// (перед поверхностью сплэтов), — пустота: вырезаем. Где сплэты прозрачны — кадр ничего не говорит.
+export function splatCarve(G, S, views, opt = {}) {
+  const { occ, nx, ny, nz, vs } = G, [ox, oy, oz] = G.origin, N = nx * ny * nz, m = opt.margin ?? Math.max(2, 2 * vs);
+  const front = new Uint16Array(N), on = new Uint16Array(N), P = {};
+  for (const v of views) {
+    const npx = v.cw * v.ch, zMid = new Float32Array(npx); renderView(S, v, { P, zMid, out: new Float32Array(npx * 3) });
+    const { K, R, t } = v;
+    for (let z = 0; z < nz; z++) for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) {
+      const i = (z * ny + y) * nx + x; if (occ[i] < 0.5) continue;
+      const X = ox + x * vs, Y = oy + y * vs, Z = oz + z * vs, cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
+      const u = Math.floor(K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx - v.x0), w_ = Math.floor(K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy - v.y0);
+      if (u < 0 || w_ < 0 || u >= v.cw || w_ >= v.ch) continue;
+      const zs = zMid[w_ * v.cw + u]; if (zs === Infinity) continue;
+      if (cz < zs - m) front[i]++; else if (cz <= zs + m) on[i]++;
+    }
+  }
+  const minV = opt.minViews ?? 2, share = opt.share ?? 0.6; let removed = 0;
+  for (let i = 0; i < N; i++) if (occ[i] > 0.5 && front[i] >= minV && front[i] >= share * (front[i] + on[i])) { occ[i] = 0; removed++; }
+  return { removed, volume: removed * vs ** 3 };
+}

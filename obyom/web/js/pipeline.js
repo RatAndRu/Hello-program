@@ -8,7 +8,7 @@ import { alignHulls, intersectHulls, framesToA } from './align.js';
 import { boxMesh, prismMesh, snapPlanes } from './shapes.js';
 import { bakeTexture, subdivideLong } from './texture.js';
 import { analyzeSurface, computeTangents } from './surface.js';
-import { initFromMesh, Trainer, splatViews, allowedRegion, packSplats, scalePacked } from './splat.js';
+import { splatCarve, initFromMesh, Trainer, splatViews, allowedRegion, packSplats, scalePacked } from './splat.js';
 import { createPool, poolSize } from './splatpool.js';
 
 export const PROC_W = 640;
@@ -95,79 +95,92 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     else {
       shapeInfo = `горлышко Ø${(2 * r.R).toFixed(0)} мм на высоте ${r.rim.toFixed(0)} мм, глубина ${r.depth.toFixed(0)} мм, стенка ~${r.wall.toFixed(1)} мм (по размеру горлышка), дно ${r.bottom.toFixed(0)} мм` +
         (r.measured ? ' (найдено по виду сверху)' : ' (дна сверху не видно — толщина по умолчанию; сними несколько кадров сверху, чтобы было видно дно)');
+      vox = 0; for (const v of G.occ) vox += v > 0.5 ? 1 : 0;
       if (r.cap > 500) log(`срезана «шапка» над горлышком: ${(r.cap / 1000).toFixed(1)} см³ (по ${r.capBy === 'стенка' ? 'цвету стенки' : 'сужению'})`);
     }
   }
-  if (shape === 'box' || shape === 'prism') {
-    const r = shape === 'box' ? boxMesh(G) : prismMesh(G);
-    M = r.mesh; shapeInfo = r.info;
-  } else {
+  const geom = () => { // сетка из оболочки по выбранной форме (вызывается снова после уточнения сплэтами)
+    if (shape === 'box' || shape === 'prism') { const r = shape === 'box' ? boxMesh(G) : prismMesh(G); return { M: r.mesh, info: r.info }; }
     const GS = shape === 'revolve' ? revolveGrid(G) : G; // «сосуд» — обычная сетка с вырезанной полостью
-    M = meshFromGrid(GS, shape === 'smooth' ? 5 : 3); taubin(M, shape === 'smooth' ? 60 : 30); computeNormals(M);
-    if (shape === 'planes') { const r = snapPlanes(M); M = r.mesh; shapeInfo = r.info; }
-  }
+    let M = meshFromGrid(GS, shape === 'smooth' ? 5 : 3); taubin(M, shape === 'smooth' ? 60 : 30); computeNormals(M);
+    if (shape === 'planes') { const r = snapPlanes(M); return { M: r.mesh, info: r.info }; }
+    return { M, info: '' };
+  };
+  { const g = geom(); M = g.M; if (g.info) shapeInfo = g.info; }
   if (shape !== 'normal') log(`форма: ${SHAPES[shape] || shape}${shapeInfo ? ' — ' + shapeInfo : ''}`);
   cb.progress('Строю форму', 1, `${(M.idx.length / 3) | 0} треугольников`);
   await tick();
   // 5) цвет вершин (кадры обеих съёмок: вторая даёт цвет дна)
-  if (job.texture !== false && (shape === 'box' || shape === 'prism' || shape === 'planes')) M = subdivideLong(M, 6); // большие грани — мельче, чтобы лоскут влезал в кадр
-  colorize(M, frAll, (p) => cb.progress('Раскрашиваю', p, ''));
+  const prepColor = (M) => { if (job.texture !== false && (shape === 'box' || shape === 'prism' || shape === 'planes')) M = subdivideLong(M, 6); // большие грани — мельче, чтобы лоскут влезал в кадр
+    colorize(M, frAll, (p) => cb.progress('Раскрашиваю', p, '')); return M; };
+  M = prepColor(M);
   await tick();
   const M0 = M; // сетка без текстуры — для сплэтов
-  // 5б) крупные планы (для текстуры): позы по меткам коврика, тот же фокус
-  let texFrames = frAll, nClose = 0;
-  if (job.close && job.close.length) {
-    const L = A.L, K = good[0].K, cl = [];
-    for (let i = 0; i < job.close.length; i++) {
-      if (shouldStop()) throw new Error('stopped');
-      try {
-        const d = await decodeBlob(job.close[i], PW, A.dist); if (d.w !== good[0].w || d.h !== good[0].h) continue;
-        const ms = detectMarkers(toGray(d.rgba, d.w, d.h), d.w, d.h); let p = poseFromMarkers(ms, L, K), Kc = K;
-        // полноразмерный снимок может иметь чуть другую обрезку сенсора (другой угол обзора): уточняем фокус по его меткам
-        if (p && p.n >= 3 && d.srcW > 1.5 * (good[0].srcW || d.w)) {
-          const rf1 = refineFocal([p], K);
-          if (Math.abs(rf1.f / K.fx - 1) < 0.08 && rf1.rms < 0.75 * p.rms) { Kc = { ...K, fx: rf1.f, fy: rf1.f }; p = poseFromMarkers(ms, L, Kc) || p; }
-        }
-        if (p && p.n >= 3 && p.rms < 2) cl.push({ ...d, R: p.R, t: p.t, K: Kc, rms: p.rms, blob: job.close[i], close: true });
-      } catch (e) {}
-      cb.progress('Крупные планы', (i + 1) / job.close.length, `${cl.length} из ${i + 1} с позой`);
-      if (i % 2) await tick();
-    }
-    nClose = cl.length; texFrames = frAll.concat(cl);
-    log(`крупные планы: поза найдена на ${cl.length} из ${job.close.length}${cl.length < job.close.length ? ' (в кадре должно быть видно хотя бы 3 метки коврика)' : ''}`);
-  }
-  // 5в) отдельная текстура: лучший кадр на каждый кусок поверхности, в полном разрешении
-  let tex = null, texInfo = null, pbr = null;
-  if (job.texture !== false && job.mode !== 'splat') {
-    try {
-      const r = await bakeTexture(M, texFrames, { size: TEX[job.quality || 'normal'], decode: (b) => decodeBlob(b, 0, A.dist), encode: encodeJPEG, onProgress: (p, t) => cb.progress('Текстура', p, t) });
-      if (r.tex) { M = r.mesh; tex = r.tex; texInfo = r.info; log(`текстура ${r.T}×${r.T}: ${r.info.charts} лоскутов из ${r.info.frames} кадров${nClose ? ' (с крупными планами)' : ''}, масштаб ${(r.info.scale * 100).toFixed(0)}% от кадра`); }
-      // 5г) свет, рельеф, материал, текстура без теней — фотометрия по тем же кадрам
-      if (r.tex && job.surface !== false) {
+  // «гибрид» (сетка + сплэты): сплэты видят вогнутости, которых не видят силуэты, — оболочку уточняем по ним, а текстуру
+  // печём уже на уточнённой сетке (на исходной — не тратим время)
+  const hyb = job.mode === 'both' && job.hybrid !== false && ['normal', 'smooth', 'vessel', 'planes'].includes(shape);
+  let tex = null, texInfo = null, pbr = null, nClose = 0;
+  const texturize = async (M) => {
+    tex = null; texInfo = null; pbr = null;
+    // 5б) крупные планы (для текстуры): позы по меткам коврика, тот же фокус
+    let texFrames = frAll; nClose = 0;
+    if (job.close && job.close.length) {
+      const L = A.L, K = good[0].K, cl = [];
+      for (let i = 0; i < job.close.length; i++) {
+        if (shouldStop()) throw new Error('stopped');
         try {
-          const Sf = await analyzeSurface(r.mesh, texFrames, r.faceFrame, r.faceChart, r.atlas, r.T, { G, turn, torch: !!job.torch, onProgress: (p, t) => cb.progress('Рельеф и материал', p, t), tick });
-          const [albedo, normal, orm, height] = await Promise.all([encodeJPEG(Sf.albedo, r.T), encodePNG(Sf.normal, Sf.Wr), encodePNG(Sf.orm, Sf.Wr), encodePNG(Sf.height, Sf.Wr)]);
-          M.tan = computeTangents(M);
-          pbr = { albedo, normal, orm, height, Wr: Sf.Wr, info: Sf.info };
-          log(surfaceLog(Sf.info));
-        } catch (e) { if (e.message === 'stopped') throw e; log('✗ рельеф и материал не получились: ' + e.message + ' — остаётся фото-текстура'); }
+          const d = await decodeBlob(job.close[i], PW, A.dist); if (d.w !== good[0].w || d.h !== good[0].h) continue;
+          const ms = detectMarkers(toGray(d.rgba, d.w, d.h), d.w, d.h); let p = poseFromMarkers(ms, L, K), Kc = K;
+          // полноразмерный снимок может иметь чуть другую обрезку сенсора (другой угол обзора): уточняем фокус по его меткам
+          if (p && p.n >= 3 && d.srcW > 1.5 * (good[0].srcW || d.w)) {
+            const rf1 = refineFocal([p], K);
+            if (Math.abs(rf1.f / K.fx - 1) < 0.08 && rf1.rms < 0.75 * p.rms) { Kc = { ...K, fx: rf1.f, fy: rf1.f }; p = poseFromMarkers(ms, L, Kc) || p; }
+          }
+          if (p && p.n >= 3 && p.rms < 2) cl.push({ ...d, R: p.R, t: p.t, K: Kc, rms: p.rms, blob: job.close[i], close: true });
+        } catch (e) {}
+        cb.progress('Крупные планы', (i + 1) / job.close.length, `${cl.length} из ${i + 1} с позой`);
+        if (i % 2) await tick();
       }
-    } catch (e) { if (e.message === 'stopped') throw e; log('✗ текстура не получилась: ' + e.message + ' — остаётся цвет вершин'); }
-    await tick();
-  }
-  const result = { mesh: { pos: M.pos, nrm: M.nrm, col: M.col, idx: M.idx, ...(tex ? { uv: M.uv, tex, ...(M.detail ? { detail: M.detail } : {}) } : {}), ...(pbr ? { pbr, tan: M.tan } : {}) }, stats: { tex: texInfo, close: nClose, frames: job.blobs.length + (bt && bt.blobs ? bt.blobs.length : 0), used: frAll.length, focal: A.rf.f, elMax, hullVol: vox * G.vs ** 3, t: 0, bottom: bottomOk } };
+      nClose = cl.length; texFrames = frAll.concat(cl);
+      log(`крупные планы: поза найдена на ${cl.length} из ${job.close.length}${cl.length < job.close.length ? ' (в кадре должно быть видно хотя бы 3 метки коврика)' : ''}`);
+    }
+    // 5в) отдельная текстура: лучший кадр на каждый кусок поверхности, в полном разрешении
+    if (job.texture !== false && job.mode !== 'splat') {
+      try {
+        const r = await bakeTexture(M, texFrames, { size: TEX[job.quality || 'normal'], decode: (b) => decodeBlob(b, 0, A.dist), encode: encodeJPEG, onProgress: (p, t) => cb.progress('Текстура', p, t) });
+        if (r.tex) { M = r.mesh; tex = r.tex; texInfo = r.info; log(`текстура ${r.T}×${r.T}: ${r.info.charts} лоскутов из ${r.info.frames} кадров${nClose ? ' (с крупными планами)' : ''}, масштаб ${(r.info.scale * 100).toFixed(0)}% от кадра`); }
+        // 5г) свет, рельеф, материал, текстура без теней — фотометрия по тем же кадрам
+        if (r.tex && job.surface !== false) {
+          try {
+            const Sf = await analyzeSurface(r.mesh, texFrames, r.faceFrame, r.faceChart, r.atlas, r.T, { G, turn, torch: !!job.torch, onProgress: (p, t) => cb.progress('Рельеф и материал', p, t), tick });
+            const [albedo, normal, orm, height] = await Promise.all([encodeJPEG(Sf.albedo, r.T), encodePNG(Sf.normal, Sf.Wr), encodePNG(Sf.orm, Sf.Wr), encodePNG(Sf.height, Sf.Wr)]);
+            M.tan = computeTangents(M);
+            pbr = { albedo, normal, orm, height, Wr: Sf.Wr, info: Sf.info };
+            log(surfaceLog(Sf.info));
+          } catch (e) { if (e.message === 'stopped') throw e; log('✗ рельеф и материал не получились: ' + e.message + ' — остаётся фото-текстура'); }
+        }
+      } catch (e) { if (e.message === 'stopped') throw e; log('✗ текстура не получилась: ' + e.message + ' — остаётся цвет вершин'); }
+      await tick();
+    }
+    return M;
+  };
+  if (!hyb) M = await texturize(M);
+  const meshOf = (M) => ({ pos: M.pos, nrm: M.nrm, col: M.col, idx: M.idx, ...(tex ? { uv: M.uv, tex, ...(M.detail ? { detail: M.detail } : {}) } : {}), ...(pbr ? { pbr, tan: M.tan } : {}) });
+  const result = { mesh: meshOf(M), stats: { tex: texInfo, close: nClose, frames: job.blobs.length + (bt && bt.blobs ? bt.blobs.length : 0), used: frAll.length, focal: A.rf.f, elMax, hullVol: vox * G.vs ** 3, t: 0, bottom: bottomOk } };
   if (elMax < (turn ? 62 : 50) && !bottomOk && !(turn && A.withPlate > 0.5 * good.length)) result.stats.warn = `Самый высокий кадр — ${elMax.toFixed(0)}°: верх модели может выйти «шапкой». В следующий раз ${turn ? 'сними «Фон» (пустой коврик с того же места) или ' : ''}добавь оборот почти сверху (65–75°), или «Доснять низ» (предмет на боку).`;
   result.stats.plate = A.withPlate || 0;
   // 6) сплэты
   // поправка масштаба печати (принтер мог чуть растянуть лист): X, Y — по калибровке, высота — по среднему.
   // Сетка (результат) масштабируется сразу — у сплэтов своя копия формы (M0) и свой масштаб в конце
   const sc = job.scale || [1, 1], sx = +sc[0] || 1, sy = +sc[1] || 1, sz = (sx + sy) / 2, scaled = Math.abs(sx - 1) > 1e-4 || Math.abs(sy - 1) > 1e-4;
-  if (scaled) {
-    const RM = result.mesh;
+  const scaleMesh = (RM) => {
     if (RM.pos === M0.pos) RM.pos = Float32Array.from(RM.pos); // сплэтам нужна форма в мм коврика (позы кадров)
     if (RM.nrm === M0.nrm) RM.nrm = Float32Array.from(RM.nrm);
     const P = RM.pos; for (let i = 0; i < P.length; i += 3) { P[i] *= sx; P[i + 1] *= sy; P[i + 2] *= sz; }
     computeNormals(RM);
+  };
+  if (scaled) {
+    scaleMesh(result.mesh);
     result.stats.hullVol *= sx * sy * sz;
     log(`масштаб печати: ×${sx.toFixed(3)} по ширине, ×${sy.toFixed(3)} по длине`);
   }
@@ -200,6 +213,22 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
         if (cb.preview && i % 100 === 0) cb.preview(packSplats(S));
       }
     } finally { if (pool) await pool.close(); }
+    if (hyb && !shouldStop()) {
+      // сплэты уточняют оболочку: воксели перед их поверхностью в нескольких кадрах — пустота (вогнутости, «жир» силуэтов)
+      cb.progress('Уточняю форму по сплэтам', 0, 'глубина по кадрам'); await tick();
+      const occ0 = G.occ.slice(), hc = splatCarve(G, S, views, { share: 0.5 });
+      cleanGrid(G); let v2 = 0; for (const v of G.occ) v2 += v > 0.5 ? 1 : 0;
+      if (v2 < 0.6 * vox) { G.occ.set(occ0); log(`✗ уточнение по сплэтам отменено: вырезало бы ${(100 - 100 * v2 / vox).toFixed(0)}% объёма`); }
+      else if (hc.removed) log(`форма уточнена по сплэтам: вырезано ${(hc.volume / 1000).toFixed(1)} см³ (вогнутости, лишнее от силуэтов)`);
+      // кадры для цвета и текстуры: освобождены перед обучением — раскрываем снова
+      for (let k = 0; k < frAll.length; k++) { const f = frAll[k]; if (!f.rgba && f.blob) { try { f.rgba = (await decodeBlob(f.blob, f.w, A.dist)).rgba; } catch (e) {} } if (k % 4 === 3) { cb.progress('Уточняю форму по сплэтам', k / frAll.length, 'кадры для текстуры'); await tick(); } }
+      let MH = v2 < 0.6 * vox || !hc.removed ? M : geom().M;
+      MH = MH === M ? M : prepColor(MH);
+      MH = await texturize(MH);
+      result.mesh = meshOf(MH); result.stats.tex = texInfo; result.stats.close = nClose; result.stats.hullVol = (v2 < 0.6 * vox ? vox : v2) * G.vs ** 3;
+      if (scaled) { scaleMesh(result.mesh); result.stats.hullVol *= sx * sy * sz; }
+      for (const f of frAll) f.rgba = null;
+    }
     tr.finalize();
     result.splats = packSplats(S);
     log(`сплэты: ${S.n} капель, ${tr.it} шагов`);

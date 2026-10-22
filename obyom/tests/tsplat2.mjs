@@ -10,7 +10,7 @@ import { matLayout, matRaster } from '../web/js/mat.js';
 import { detectMarkers, toGray } from '../web/js/detect.js';
 import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal } from '../web/js/pose.js';
 import { computeMask, motionMasks, carveHull, meshFromGrid, taubin, computeNormals, colorize, depthMap } from '../web/js/recon.js';
-import { initFromMesh, Trainer, splatViews, allowedRegion, renderView, packSplats, plyFromPacked, SPLAT_DEFAULTS } from '../web/js/splat.js';
+import { splatCarve, initFromMesh, Trainer, splatViews, allowedRegion, renderView, packSplats, plyFromPacked, SPLAT_DEFAULTS } from '../web/js/splat.js';
 
 const E = process.env, dirs = process.argv.slice(2), W = 640, STEP = +(E.STEP || 1), HB = +(E.HB || 90);
 const WALK = !!E.WALK, L = matLayout('A4', WALK ? 'full' : 'round'), mr = matRaster(L, 'light', 2);
@@ -93,6 +93,12 @@ for (let i = 1; i <= ITERS; i++) {
 }
 tr.finalize(allowedRegion(G, train, 1.5, 1));
 const r = evaluate();
+if (process.env.HYB) { const vol = () => { let n = 0; for (const v of G.occ) n += v > 0.5 ? 1 : 0; return n * G.vs ** 3; }; const v0 = vol();
+  const prof = (GG) => { const out = []; for (let z = 0; z < GG.nz; z += 6) { let a = 0; for (let i = 0; i < GG.nx * GG.ny; i++) a += GG.occ[z * GG.nx * GG.ny + i] > 0.5 ? 1 : 0; out.push(`${(z * GG.vs).toFixed(0)}:${(a * GG.vs * GG.vs).toFixed(0)}`); } return out.join(' '); };
+  const truth = (X, Y, Z) => (X * X + Y * Y <= 576 && Z >= 0 && Z <= 42) || X * X + Y * Y + (Z - 58) ** 2 <= 289;
+  const err = () => { let ex = 0, mi = 0; const [ox, oy, oz] = G.origin; for (let z = 0; z < G.nz; z++) for (let y = 0; y < G.ny; y++) for (let x = 0; x < G.nx; x++) { const o = G.occ[(z * G.ny + y) * G.nx + x] > 0.5, t = truth(ox + x * G.vs, oy + y * G.vs, oz + z * G.vs); if (o && !t) ex++; if (!o && t) mi++; } return `лишнее ${(ex * G.vs ** 3).toFixed(0)} недостаёт ${(mi * G.vs ** 3).toFixed(0)}`; };
+  console.log('HYB before', v0.toFixed(0), err());
+  for (const sh of (process.env.HYB_SH || '0.6').split(',')) { const occ0 = G.occ.slice(); const r = splatCarve(G, S, SV.concat(TV), { share: +sh }); console.log('HYB share', sh, 'removed', r.volume.toFixed(0), 'after', vol().toFixed(0), err()); G.occ.set(occ0); } }
 console.log(`ИТОГ: ${fmt(r)} капель ${S.n} убрано облачков ${tr.cleaned || 0} мс/шаг ${(tTrain / ITERS).toFixed(1)} всего ${((Date.now() - t0) / 1000).toFixed(0)} с`);
 if (E.PLY) fs.writeFileSync(E.PLY, Buffer.from(plyFromPacked(packSplats(S))));
 if (E.PPM) { // верх — проверочные кадры, низ — сплэты на сером
