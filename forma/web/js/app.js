@@ -1,7 +1,13 @@
 import { Viewer } from './viewer.js';
 
 const $ = (id) => document.getElementById(id);
-const TOKEN = new URLSearchParams(location.search).get('token') || '';
+// Токен берём из адреса, а если его нет (обновили страницу, открыли голый
+// адрес) — из мета-тега, который сервер подставляет в index.html.
+const TOKEN = (() => {
+  const meta = document.querySelector('meta[name="forma-token"]')?.content || '';
+  if (meta && meta !== '__FORMA_TOKEN__') return meta;
+  return new URLSearchParams(location.search).get('token') || '';
+})();
 
 const state = {
   script: '',
@@ -22,6 +28,12 @@ const state = {
   actions: [],
   cmdHistory: [],
   cmdIndex: -1,
+  history: [],
+  historyInfo: [],
+  future: [],
+  futureInfo: [],
+  hidden: new Set(),
+  lastSaved: '', 
   material: { color: '#c9d1e3', metal: 0, rough: 0.5 },
 };
 
@@ -55,11 +67,91 @@ function currentScript() {
   return $('code').value;
 }
 
-function setScript(text, { build = true } = {}) {
+function updateUndoButtons() {
+  const undo = $('btn-undo');
+  const redo = $('btn-redo');
+  if (undo) { undo.disabled = !state.history.length; undo.title = state.history.length ? 'Отменить последнее действие (Ctrl+Z)' : 'Отменять нечего'; }
+  if (redo) redo.disabled = !state.future.length;
+}
+
+function pushHistory(previous, label = 'правка') {
+  if (previous === undefined || previous === currentScript()) return;
+  state.history.push(previous);
+  state.historyInfo.push({ label, at: Date.now() });
+  if (state.history.length > 200) {
+    state.history.shift();
+    state.historyInfo.shift();
+  }
+  state.future.length = 0;
+  state.futureInfo.length = 0;
+  updateUndoButtons();
+  renderHistory();
+}
+
+function setScript(text, { build = true, record = true, label = 'правка' } = {}) {
+  if (record) pushHistory(currentScript(), label);
   $('code').value = text;
   updateGutter();
   updateCursor();
   if (build) buildNow();
+}
+
+function undo() {
+  if (!state.history.length) { toast('Отменять нечего'); return; }
+  state.future.push(currentScript());
+  state.futureInfo.push(state.historyInfo.pop() || { label: 'правка', at: Date.now() });
+  const prev = state.history.pop();
+  setScript(prev, { record: false });
+  updateUndoButtons();
+  toast('Шаг отменён (' + state.history.length + ' в истории)');
+}
+
+function redo() {
+  if (!state.future.length) { toast('Возвращать нечего'); return; }
+  state.history.push(currentScript());
+  state.historyInfo.push(state.futureInfo.pop() || { label: 'возврат', at: Date.now() });
+  const next = state.future.pop();
+  setScript(next, { record: false });
+  updateUndoButtons();
+  toast('Шаг возвращён');
+}
+
+/** Список всех шагов: текущий и предыдущие состояния сценария. */
+function renderHistory() {
+  const list = $('history-list');
+  if (!list) return;
+  list.innerHTML = '';
+  const row = (title, subtitle, onClick, active = false) => {
+    const el = document.createElement('button');
+    el.className = 'history-item' + (active ? ' active' : '');
+    el.innerHTML = `<span class="history-title">${escapeHtml(title)}</span>
+      <span class="history-sub">${escapeHtml(subtitle)}</span>`;
+    if (onClick) el.addEventListener('click', onClick);
+    else el.disabled = true;
+    list.appendChild(el);
+  };
+  row('Сейчас', state.history.length ? `${state.history.length + 1}-е состояние` : 'начальное состояние', null, true);
+  for (let i = state.history.length - 1; i >= 0; i--) {
+    const info = state.historyInfo[i] || { label: 'правка', at: 0 };
+    const time = info.at ? new Date(info.at).toLocaleTimeString('ru-RU') : '';
+    const stepsBack = state.history.length - i;
+    row(`${stepsBack} шаг(ов) назад: ${info.label}`, time,
+      () => rollbackTo(i));
+  }
+}
+
+/** Откат к состоянию из истории (от последнего к первому). */
+function rollbackTo(index) {
+  const target = state.history[index];
+  if (target === undefined) return;
+  state.future = [currentScript(), ...state.history.slice(index + 1)];
+  state.futureInfo = [{ label: 'сейчас', at: Date.now() },
+    ...state.historyInfo.slice(index + 1)];
+  state.history = state.history.slice(0, index);
+  state.historyInfo = state.historyInfo.slice(0, index);
+  setScript(target, { record: false });
+  updateUndoButtons();
+  toast(`Откат к шагу ${state.history.length + 1} — сделано`);
 }
 
 function updateGutter(errorLine) {
@@ -125,6 +217,17 @@ document.addEventListener('keydown', (e) => {
   if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
     e.preventDefault();
     buildNow();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && (e.key === 'z' || e.key === 'Z' || e.key === 'я' || e.key === 'Я')) {
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y' || e.key === 'н' || e.key === 'Н')) {
+    e.preventDefault();
+    redo();
+    return;
   }
   if (e.key === 'Escape') {
     document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open'));
@@ -151,7 +254,7 @@ async function buildNow(silent = false) {
     state.payload = payload;
     applyBuild(payload, Math.round(performance.now() - t0));
     if (payload.ok) {
-      await loadModel(payload.glb_url);
+      await loadModel(payload.glb_url, payload.animation);
       if (!silent) toast(`Готово за ${Math.round(performance.now() - t0)} мс`);
     }
   } catch (err) {
@@ -345,7 +448,7 @@ function renderObjects(payload) {
   const objs = payload.objects || [];
   objs.forEach((o) => {
     const el = document.createElement('div');
-    el.className = 'obj-item' + (o.visible ? '' : ' hidden-obj');
+    el.className = 'obj-item' + (o.visible && !state.hidden.has(o.name) ? '' : ' hidden-obj');
     el.innerHTML = `
       <span class="swatch" style="background:${o.color}"></span>
       <div class="obj-main">
@@ -354,8 +457,22 @@ function renderObjects(payload) {
           ${fmt(o.volume_cm3)} см³ · ${fmtInt(o.tris)} трис
           ${o.tex ? ' · <span class="obj-tex">текстура: ' + escapeHtml(o.tex.label || o.tex.kind) + '</span>' : ''}</div>
       </div>
-      <span class="eye">${o.visible ? '●' : '○'}</span>`;
+      <span class="eye">${state.hidden.has(o.name) ? '○' : '●'}</span>`;
     el.dataset.name = o.name;
+    const eye = el.querySelector('.eye');
+    if (eye) {
+      eye.title = o.visible ? 'Скрыть объект' : 'Показать объект';
+      eye.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const name = o.name;
+        const willHide = !state.hidden.has(name);
+        if (willHide) state.hidden.add(name); else state.hidden.delete(name);
+        state.viewer?.setObjectVisible(name, !willHide);
+        eye.textContent = willHide ? '○' : '●';
+        el.classList.toggle('hidden-obj', willHide);
+        toast(willHide ? `Скрыто: ${name}` : `Показано: ${name}`);
+      });
+    }
     el.addEventListener('click', () => {
       selectObject(o.name);
     });
@@ -376,6 +493,19 @@ function renderObjects(payload) {
        Материал: ${fmt(m.volume_cm3)} см³, масса ${fmt(m.mass_g, 0)} г.`
     : 'Пока нет объектов.';
 }
+
+function setAllObjectsVisible(visible) {
+  const objs = state.payload?.objects || [];
+  objs.forEach((o) => {
+    if (visible) state.hidden.delete(o.name); else state.hidden.add(o.name);
+    state.viewer?.setObjectVisible(o.name, visible);
+  });
+  renderObjects(state.payload || {});
+  toast(visible ? 'Показаны все объекты' : 'Скрыты все объекты');
+}
+
+$('objects-hide-all')?.addEventListener('click', () => setAllObjectsVisible(false));
+$('objects-show-all')?.addEventListener('click', () => setAllObjectsVisible(true));
 
 function renderDimensions(metrics) {
   const box = $('dim-overlay');
@@ -439,13 +569,61 @@ function escapeHtml(s) {
 /* ------------------------------------------------------------------ */
 /*  Просмотр                                                          */
 /* ------------------------------------------------------------------ */
-async function loadModel(url) {
+async function loadModel(url, animation = null) {
   if (!url) return;
   $('viewer-empty').hidden = true;
   try {
-    await state.viewer.load(url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN));
+    await state.viewer.load(url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN), animation);
+    // мгновенная проверка видимости и текстур (не зависит от того, что попало в GLB)
+    state.viewer.setAxes($('opt-axes')?.checked !== false);
+    state.hidden.forEach((name) => state.viewer.setObjectVisible(name, false));
+    (state.payload?.objects || []).forEach((o) => {
+      if (o.tex && o.tex.kind) applyTextureToViewer(o.name, o.tex.kind, o.tex.scale);
+    });
+    updateAnimState();
   } catch (e) {
     toast('Не удалось показать модель: ' + (e?.message || e), 'bad');
+  }
+}
+
+function textureUrl(kind, scale = 1) {
+  return '/api/texture?kind=' + encodeURIComponent(kind) + '&scale=' + encodeURIComponent(scale)
+    + '&token=' + encodeURIComponent(TOKEN);
+}
+
+function applyTextureToViewer(name, kind, scale = 1) {
+  if (!name) return;
+  if (!kind) { state.viewer?.clearTexture(name); return; }
+  state.viewer?.setTexture(name, textureUrl(kind, scale));
+}
+
+function showTexturePreview(kind) {
+  const img = $('mat-tex-preview');
+  if (!img) return;
+  if (!kind) { img.hidden = true; img.removeAttribute('src'); return; }
+  img.hidden = false;
+  img.src = textureUrl(kind);
+  img.title = 'Так выглядит рисунок «' + kind + '»';
+}
+
+function updateAnimState() {
+  const btn = $('anim-play');
+  const spec = state.payload?.animation;
+  const has = Boolean(state.viewer?.hasAnimation() || (spec && spec.kind));
+  if (btn) {
+    btn.disabled = !has;
+    btn.title = has ? 'Проиграть анимацию из сценария' : 'В сценарии нет строки animate';
+    const playing = has && state.viewer?.playing !== false;
+    btn.dataset.playing = playing ? '1' : '';
+    btn.textContent = playing ? '❚❚ пауза' : '▶ играть';
+  }
+  const label = $('anim-status');
+  if (label) {
+    const a = state.payload?.animation;
+    label.textContent = a && a.kind
+      ? `анимация: ${{ spin: 'вращение', formation: 'формирование', explode: 'разлёт' }[a.kind] || a.kind}, ${a.seconds} с`
+      : 'анимация не задана (добавьте строку animate)';
+    label.className = 'anim-status ' + (a && a.kind ? 'ok' : '');
   }
 }
 
@@ -454,6 +632,7 @@ function initViewer() {
     state.viewer = new Viewer($('viewer'));
     state.viewer.onSelect = (name) => selectObject(name);
     state.viewer.onSelection = (stats) => showSelection(stats);
+    state.viewer.onTextureError = () => toast('Не удалось загрузить текстуру: проверьте соединение с окном приложения', 'bad');
   } catch (e) {
     $('viewer-empty').innerHTML = '<p>WebGL недоступен в этом окне.<br>Модель можно посмотреть через PNG-снимки кнопкой «Снимки».</p>';
     console.error(e);
@@ -669,6 +848,7 @@ function selectObject(name) {
   const KIND_RU = { wood: 'дерево', marble: 'мрамор', metal: 'металл', fabric: 'ткань',
     leather: 'кожа', checker: 'клетка', noise: 'шум', brick: 'кирпич', ceramic: 'керамика' };
   $('mat-tex').value = obj.tex ? (KIND_RU[obj.tex.kind] || '') : '';
+  showTexturePreview(obj.tex ? (KIND_RU[obj.tex.kind] || '') : '');
   // открываем вкладку объектов
   const tab = document.querySelector('.tab[data-tab="objects"]');
   if (tab && !tab.classList.contains('active')) tab.click();
@@ -690,19 +870,45 @@ $('mat-rough')?.addEventListener('input', (e) => {
   state.viewer?.applyMaterial(state.selected?.name, { rough: Number(e.target.value) });
 });
 $('mat-close')?.addEventListener('click', () => selectObject(''));
-$('mat-apply')?.addEventListener('click', () => {
+
+function writeMaterialScript({ rebuild = true } = {}) {
   if (!state.selected) return;
   const { color, metal, rough } = state.material;
   const tex = $('mat-tex')?.value || '';
   const m = state.selected.name;
-  let lines = currentScript().split('\n').filter((l) => {
+  const lines = currentScript().split('\n').filter((l) => {
     const t = l.trim();
     return !(t.startsWith(`color ${m} `) || t.startsWith(`texture ${m} `) || t.startsWith(`материал ${m} `));
   });
   lines.push(`color ${m} ${color} metal=${metal} rough=${rough}`);
   if (tex) lines.push(`texture ${m} kind=${tex}`);
   setScript(lines.join('\n').trimEnd());
-  toast(`Материал «${m}» записан в сценарий`);
+  if (!rebuild) toast(`Материал «${m}» записан в сценарий`);
+}
+
+$('mat-apply')?.addEventListener('click', () => {
+  if (!state.selected) return;
+  writeMaterialScript({ rebuild: true });
+  toast(`Материал «${state.selected.name}» записан в сценарий`);
+});
+
+$('mat-tex')?.addEventListener('change', (e) => {
+  if (!state.selected) return;
+  const name = state.selected.name;
+  const kind = e.target.value || '';
+  if (!kind) {
+    applyTextureToViewer(name, '');
+    showTexturePreview('');
+    const lines = currentScript().split('\n').filter((l) => !l.trim().startsWith(`texture ${name} `));
+    setScript(lines.join('\n').trimEnd());
+    toast('Текстура снята');
+    return;
+  }
+  // 1) мгновенный предпросмотр на модели и в панели, 2) запись в сценарий и пересборка
+  applyTextureToViewer(name, kind);
+  showTexturePreview(kind);
+  writeMaterialScript({ rebuild: true });
+  toast(`Текстура «${kind}» применена к «${name}»`);
 });
 
 /* ------------------------------------------------------------------ */
@@ -729,18 +935,33 @@ function updateViewerHint() {
     : 'ЛКМ — вращать · колесо — масштаб · ПКМ — сдвинуть · двойной клик — вернуть вид';
 }
 
-function showSelection(stats) {
-  state.selection = stats;
+function showSelection(list) {
+  const selections = Array.isArray(list) ? list : (list ? [list] : []);
   const card = $('sel-card');
-  if (!stats) { card.hidden = true; return; }
+  if (!selections.length) { card.hidden = true; return; }
+  const summary = state.viewer?.selectionSummary();
+  if (!summary) { card.hidden = true; return; }
+  state.selection = summary;
   card.hidden = false;
-  $('sel-title').textContent = 'выделено: ' + (stats.object || 'деталь');
-  const c = stats.center.map((v) => fmt(v)).join(', ');
-  const sz = stats.size.map((v) => fmt(v)).join(' × ');
+  $('sel-title').textContent = summary.regions > 1
+    ? `выделено областей: ${summary.regions}` : 'выделено: ' + (summary.object || 'деталь');
+  const c = summary.center.map((v) => fmt(v)).join(', ');
+  const sz = summary.size.map((v) => fmt(v)).join(' × ');
   $('sel-info').innerHTML =
-    `треугольников: <b>${fmtInt(stats.tris)}</b> · площадь <b>${fmt(stats.area_mm2)}</b> мм²<br>`
-    + `центр: <b>(${escapeHtml(c)})</b> мм<br>`
-    + `размер области: <b>${escapeHtml(sz)}</b> мм`;
+    `треугольников: <b>${fmtInt(summary.tris)}</b> · площадь <b>${fmt(summary.area_mm2)}</b> мм²<br>`
+    + `общий центр: <b>(${escapeHtml(c)})</b> мм · размер <b>${escapeHtml(sz)}</b> мм<br>`
+    + `<span class="dim">Shift — добавить область, Ctrl+клик — убрать</span>`;
+  const palette = ['#ff5a5a', '#ffb35a', '#7dff8f', '#5ac8ff', '#c78bff', '#ff6bd6'];
+  const box = $('sel-list');
+  box.innerHTML = '';
+  selections.forEach((sel, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'sel-chip';
+    chip.innerHTML = `<span><span class="dot" style="background:${palette[i % palette.length]}"></span>`
+      + `<b>${escapeHtml(sel.object || 'деталь')}</b> · ${fmtInt(sel.tris)} трис</span>`
+      + `<span>${fmt(sel.area_mm2)} мм²</span>`;
+    box.appendChild(chip);
+  });
   $('sel-note').focus();
 }
 
@@ -750,6 +971,13 @@ function clearSelection() {
   state.viewer?.clearSelection();
 }
 
+function selectionRegions() {
+  return (state.viewer?.selections || []).map((s) => ({
+    object: s.object, tris: s.tris, area_mm2: s.area_mm2, center: s.center,
+    size: s.size, bbox: s.bbox, point: s.point, radius: s.radius,
+  }));
+}
+
 $('btn-select')?.addEventListener('click', () => setSelectMode(!state.selectMode));
 $('sel-close')?.addEventListener('click', () => clearSelection());
 $('sel-radius')?.addEventListener('input', (e) => {
@@ -757,41 +985,53 @@ $('sel-radius')?.addEventListener('input', (e) => {
   state.viewer?.setSelectRadius(Number(e.target.value));
 });
 $('sel-save')?.addEventListener('click', async () => {
-  if (!state.selection) { toast('Сначала выделите область на модели', 'bad'); return; }
+  const regions = selectionRegions();
+  if (!regions.length) { toast('Сначала выделите область на модели', 'bad'); return; }
   const text = $('sel-note').value.trim();
   if (!text) { toast('Напишите словами, что не так в этом месте', 'bad'); return; }
   try {
-    const res = await api('/api/note', { ...state.selection, text });
-    state.notes = res.notes || [];
-    renderNotes();
-    if (res.note) {
-      state.actions = [...(state.actions || []), { time: res.note.time, kind: 'замечание',
-        text: `${res.note.object}: ${text}`, ok: true }];
-      renderActions();
+    let notes = state.notes || [];
+    for (let i = 0; i < regions.length; i += 1) {
+      const label = regions.length > 1 ? `${text} [область ${i + 1}/${regions.length}]` : text;
+      const res = await api('/api/note', { ...regions[i], text: label });
+      notes = res.notes || notes;
     }
+    state.notes = notes;
+    renderNotes();
+    state.actions = [...(state.actions || []), { time: new Date().toLocaleTimeString('ru-RU'),
+      kind: 'замечание', text: `${regions.length} обл.: ${text}`, ok: true }];
+    renderActions();
+    state.notes = (await api('/api/notes', {})).notes || notes;
+    renderNotes();
     $('sel-note').value = '';
-    toast('Замечание добавлено в отчёт и в запрос для нейросети');
+    toast(`Замечание добавлено (${regions.length} обл.)`);
   } catch (e) { toast(e.message || 'Не удалось сохранить замечание', 'bad'); }
 });
 
+$('sel-clear')?.addEventListener('click', () => clearSelection());
+
 $('sel-cut')?.addEventListener('click', async () => {
-  if (!state.selection) return;
-  const name = state.selection.object;
-  const defined = currentScript().split('\n').some((l) => l.includes('=') && l.split('=')[0].trim() === name);
-  if (!defined) {
-    toast('Это часть составного объекта — вырезание недоступно, оставьте замечание', 'bad');
-    return;
-  }
-  const radius = Math.max(state.selection.radius, Math.max(...state.selection.size) / 2);
+  const regions = selectionRegions();
+  if (!regions.length) { toast('Сначала выделите область', 'bad'); return; }
+  let script = currentScript();
+  let last = null;
   try {
-    const res = await api('/api/edit/cut', {
-      script: currentScript(), object: name,
-      center: state.selection.center, radius,
-    });
+    for (const region of regions) {
+      const name = region.object;
+      const defined = script.split('\n').some((l) => l.includes('=') && l.split('=')[0].trim() === name);
+      if (!defined) {
+        toast(`«${name}» — часть составного объекта, вырезание пропущено`, 'bad');
+        continue;
+      }
+      const radius = Math.max(region.radius, Math.max(...region.size) / 2);
+      last = await api('/api/edit/cut', { script, object: name, center: region.center, radius });
+      script = last.script;
+    }
+    if (!last) return;
     clearSelection();
     setSelectMode(false);
-    setScript(res.script);
-    toast(`Область вырезана сферой r=${fmt(res.radius)} мм`);
+    setScript(script);
+    toast(`Вырезано областей: ${regions.length}`);
   } catch (e) { toast(e.message || 'Не удалось вырезать область', 'bad'); }
 });
 
@@ -828,6 +1068,15 @@ function runCommand() {
     return;
   }
   if (low === '/справка' || low === '/help') { $('cmd-input').value = ''; openHelp(); return; }
+  const RECIPES = { '/банан': 'banana', '/banana': 'banana', '/гриб': 'mushroom', '/mushroom': 'mushroom',
+    '/кружка': 'mug', '/mug': 'mug', '/ваза': 'vase', '/vase': 'vase',
+    '/шестерня': 'gear', '/gear': 'gear', '/кузов': 'car', '/car': 'car' };
+  if (RECIPES[low] || low === '/рецепты' || low === '/recipes') {
+    $('cmd-input').value = '';
+    if (RECIPES[low]) { loadExample(RECIPES[low]); return; }
+    toast('Рецепты: /банан, /гриб, /кружка, /ваза, /шестерня, /кузов');
+    return;
+  }
   if (low === '/очистить' || low === '/clear') {
     setScript('');
     $('cmd-input').value = '';
@@ -838,7 +1087,7 @@ function runCommand() {
   const script = currentScript().replace(/\s+$/, '');
   $('cmd-input').value = '';
   setCmdResult('выполняю: ' + raw);
-  setScript((script ? script + '\n' : '') + raw);
+  setScript((script ? script + '\n' : '') + raw, { label: 'команда: ' + raw });
 }
 
 function sendToAssistant() {
@@ -928,9 +1177,9 @@ function renderStrip(res) {
   strip.innerHTML = '';
   (res.files || []).forEach((f) => {
     const a = document.createElement('a');
-    a.href = f.url + '&token=' + encodeURIComponent(TOKEN);
+    a.href = f.url + (f.url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
     a.target = '_blank';
-    a.innerHTML = `<img src="${f.url}&token=${encodeURIComponent(TOKEN)}" alt="${escapeHtml(f.label)}">
+    a.innerHTML = `<img src="${f.url}${f.url.includes('?') ? '&' : '?'}token=${encodeURIComponent(TOKEN)}" alt="${escapeHtml(f.label)}">
       <div class="cap">${escapeHtml(f.label)}</div>`;
     strip.appendChild(a);
   });
@@ -1079,12 +1328,30 @@ async function saveProject() {
 
 $('btn-save').addEventListener('click', saveProject);
 $('btn-build').addEventListener('click', () => buildNow());
+$('btn-undo')?.addEventListener('click', undo);
+$('btn-redo')?.addEventListener('click', redo);
+$('btn-history')?.addEventListener('click', () => {
+  const panel = $('history-panel');
+  if (!panel) return;
+  panel.hidden = !panel.hidden;
+  if (!panel.hidden) { renderHistory(); panel.scrollIntoView({ block: 'nearest' }); }
+});
+$('history-close')?.addEventListener('click', () => { $('history-panel').hidden = true; });
 $('btn-format')?.addEventListener('click', () => {
   const lines = currentScript().split('\n').map((l) => l.replace(/[ \t]+$/, ''));
   while (lines.length && !lines[lines.length - 1].trim()) lines.pop();
   setScript(lines.join('\n'));
   toast('Сценарий выровнен');
 });
+
+async function loadExample(key, name = '') {
+  try {
+    const res = await api('/api/example?key=' + encodeURIComponent(key));
+    state.projectName = name || key;
+    setScript(res.script, { label: 'пример: ' + (name || key) });
+    toast('Готовый сценарий загружен: ' + (name || key));
+  } catch (e) { toast(e.message || 'Не удалось загрузить сценарий', 'bad'); }
+}
 
 async function refreshProjects() {
   try {
@@ -1229,7 +1496,8 @@ async function init() {
     }
     renderProjects();
     renderHelp();
-    setScript(st.script, { build: false });
+    setScript(st.script, { build: false, record: false });
+    updateUndoButtons();
     $('status-version').textContent = 'v' + (st.version || '');
     if (st.has_build) {
       buildNow(true);

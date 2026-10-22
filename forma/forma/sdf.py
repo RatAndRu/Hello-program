@@ -126,7 +126,14 @@ class Field:
 
     # ------------------------------------------------------------------ #
     def mesh(self, smooth_iters: int = 0, simplify: float = 0.0,
-             what: str = "фигура", clean: float = 0.0) -> mf.Manifold:
+             what: str = "фигура", clean: float = 0.0,
+             polish: float = 0.0) -> mf.Manifold:
+        """Строит Manifold по полю расстояний.
+
+        polish > 0 — «полировка» поверхности: G1-сглаживание рёбер мельче
+        указанного угла и удвоение плотности сетки. Именно это убирает
+        «лесенки» марширующих кубов на плавных переходах.
+        """
         from skimage import measure
 
         F = self.F
@@ -155,6 +162,11 @@ class Field:
         if clean > 0:
             solid = _drop_specks(solid, clean)
         solid = solid.simplify(float(simplify)) if simplify > 0 else solid
+        if polish > 0:
+            try:
+                solid = solid.smooth_out(float(polish), 0.35).refine(2)
+            except Exception:
+                pass
         if solid.is_empty():
             raise GeometryError(f"Не удалось построить {what}.")
         return solid

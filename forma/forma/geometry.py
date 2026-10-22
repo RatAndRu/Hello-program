@@ -314,7 +314,9 @@ def _rings_to_arrays(rings: list[np.ndarray], profile2d: np.ndarray,
 def sweep_solid(path: np.ndarray, profile: np.ndarray, closed_path: bool = False,
                 twist_deg: float = 0.0, scale_end: float = 1.0,
                 up_hint: Sequence[float] = (0.0, 0.0, 1.0),
-                what: str = "развёртка") -> mf.Manifold:
+                what: str = "развёртка",
+                scale_curve: Sequence[float] | None = None,
+                round_caps: float = 0.0) -> mf.Manifold:
     """Развёртка 2D-профиля вдоль 3D-пути (с параллельным переносом)."""
     path = np.asarray(path, dtype=np.float64)
     profile = ensure_ccw(dedupe_points(np.asarray(profile, dtype=np.float64)))
@@ -352,6 +354,7 @@ def sweep_solid(path: np.ndarray, profile: np.ndarray, closed_path: bool = False
     up /= np.linalg.norm(up) + EPS
 
     rings = []
+    frames = []
     npts = len(path) if closed_path else len(path)
     total = npts if closed_path else max(1, len(path) - 1)
     for i in range(len(path)):
@@ -368,7 +371,12 @@ def sweep_solid(path: np.ndarray, profile: np.ndarray, closed_path: bool = False
             up = np.cross(tangents[i], right)
             up /= np.linalg.norm(up) + EPS
         frac = i / total
-        sc = 1.0 + (scale_end - 1.0) * frac
+        if scale_curve:
+            # плавная «луковица»: радиус по длине пути (для банана, ручек, носиков)
+            xs = np.linspace(0.0, 1.0, len(scale_curve))
+            sc = float(np.interp(frac, xs, np.asarray(scale_curve, dtype=np.float64)))
+        else:
+            sc = 1.0 + (scale_end - 1.0) * frac
         ang = math.radians(twist_deg) * frac
         ca, sa = math.cos(ang), math.sin(ang)
         px = profile[:, 0] * sc
@@ -376,7 +384,29 @@ def sweep_solid(path: np.ndarray, profile: np.ndarray, closed_path: bool = False
         lx = px * ca - py * sa
         ly = px * sa + py * ca
         rings.append(path[i] + right[None, :] * lx[:, None] + up[None, :] * ly[:, None])
+        frames.append((path[i].copy(), right.copy(), up.copy(), sc))
 
+    if round_caps > 0.0 and not closed_path and len(frames) >= 2:
+        # Полукруглые торцы: несколько колец, сжимающихся к точке.
+        # Спасает бананы, ручки и носики от плоских «срезов».
+        steps = 4
+        p0, r0, u0, sc0 = frames[0]
+        p1, r1, u1, sc1 = frames[-1]
+        t0 = tangents[0]
+        t1 = tangents[-1]
+        rad0 = float(np.max(np.linalg.norm(profile, axis=1))) * sc0 * round_caps
+        rad1 = float(np.max(np.linalg.norm(profile, axis=1))) * sc1 * round_caps
+        head, tail = [], []
+        for k in range(1, steps + 1):
+            phi = (math.pi / 2) * k / steps
+            f = math.cos(phi)
+            head.append(p0 - t0 * (rad0 * math.sin(phi))
+                        + r0[None, :] * (profile[:, 0] * sc0 * f)[:, None]
+                        + u0[None, :] * (profile[:, 1] * sc0 * f)[:, None])
+            tail.append(p1 + t1 * (rad1 * math.sin(phi))
+                        + r1[None, :] * (profile[:, 0] * sc1 * f)[:, None]
+                        + u1[None, :] * (profile[:, 1] * sc1 * f)[:, None])
+        rings = list(reversed(head)) + rings + tail
     verts, faces = _rings_to_arrays(rings, profile, cap_start=not closed_path,
                                     cap_end=not closed_path)
     if closed_path:
@@ -598,7 +628,7 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
     """
     import trimesh
     from trimesh.visual.material import PBRMaterial
-    from .textures import load_texture_image, uv_for
+    from .textures import load_texture_image, uv_for, uv_triangles
 
     scene = trimesh.Scene()
     centers: dict[str, np.ndarray] = {}
@@ -620,7 +650,8 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             verts, faces = manifold_mesh(obj.manifold)
             verts = np.stack([verts[:, 0], verts[:, 2], -verts[:, 1]], axis=1)
             normals = None
-        rgba = color_to_rgba(obj.color)
+        rgba = color_to_gltf(obj.color)
+        uv_mode = getattr(obj, "uv", "cylinder") or "cylinder"
         material = PBRMaterial(
             name=f"mat_{obj.name}",
             baseColorFactor=rgba,
@@ -628,13 +659,20 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             roughnessFactor=float(obj.rough),
             doubleSided=False,
         )
-        uv = None
+        uv = uv_for(verts, uv_mode)
         if getattr(obj, "tex", None):
             image = load_texture_image(obj.tex.get("path", ""))
-            if image is not None:
+            if image is not None and len(faces):
                 material.baseColorTexture = image
-                material.baseColorFactor = [255, 255, 255, 255]
-                uv = uv_for(verts, getattr(obj, "uv", "cylinder"))
+                material.baseColorFactor = [1.0, 1.0, 1.0, 1.0]
+                # разворачиваем геометрию по треугольникам: шов текстуры не виден
+                flat_faces = faces.reshape(-1)
+                # verts уже в Y-up glTF, поэтому bbox считаем по ним же
+                uv = uv_triangles(verts, faces, uv_mode, bbox=None)
+                verts = verts[flat_faces]
+                if normals is not None:
+                    normals = normals[flat_faces]
+                faces = np.arange(len(verts), dtype=np.int64).reshape(-1, 3)
         visual = (trimesh.visual.TextureVisuals(uv=uv, material=material) if uv is not None
                   else trimesh.visual.TextureVisuals(material=material))
         mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals,
@@ -785,15 +823,14 @@ def add_glb_animation(data: bytes, spec: dict, centers: dict | None = None,
     else:  # spin / вращение
         angle = np.linspace(0.0, 2 * np.pi, steps + 1, dtype=np.float32)
         axis = str(spec.get("axis") or "z").lower()
-        if axis == "z":
-            quats = np.stack([np.zeros_like(angle), np.sin(angle / 2), np.zeros_like(angle),
-                              np.cos(angle / 2)], axis=1)
-        elif axis == "x":
-            quats = np.stack([np.sin(angle / 2), np.zeros_like(angle), np.zeros_like(angle),
-                              np.cos(angle / 2)], axis=1)
-        else:
-            quats = np.stack([np.zeros_like(angle), np.sin(angle / 2), np.zeros_like(angle),
-                              np.cos(angle / 2)], axis=1)
+        # сценарий задаёт ось в Z-up, а GLB — в Y-up: z → Y, y → Z, x → X
+        zero = np.zeros_like(angle)
+        if axis == "x":
+            quats = np.stack([np.sin(angle / 2), zero, zero, np.cos(angle / 2)], axis=1)
+        elif axis == "y":
+            quats = np.stack([zero, zero, np.sin(angle / 2), np.cos(angle / 2)], axis=1)
+        else:  # z — вертикаль модели, в glTF это Y
+            quats = np.stack([zero, np.sin(angle / 2), zero, np.cos(angle / 2)], axis=1)
         acc = add_accessor(quats, "VEC4")
         channels.append({"acc": acc, "target": {"node": root_index, "path": "rotation"}})
 
@@ -931,6 +968,14 @@ def normalize_color(value: str) -> str:
 def color_to_rgba(color: str) -> list[int]:
     c = normalize_color(color).lstrip("#")
     return [int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16), 255]
+
+
+def color_to_gltf(color: str) -> list[float]:
+    """Цвет для glTF: компоненты строго 0…1 (иначе материалы и текстуры горят белым)."""
+    c = normalize_color(color).lstrip("#")
+    return [round(int(c[0:2], 16) / 255.0, 4),
+            round(int(c[2:4], 16) / 255.0, 4),
+            round(int(c[4:6], 16) / 255.0, 4), 1.0]
 
 
 def color_to_float_rgb(color: str) -> tuple[float, float, float]:

@@ -26,6 +26,7 @@ from . import ops_sdf  # noqa: F401,E402
 from . import ops_human  # noqa: F401,E402
 from . import ops_studio  # noqa: F401,E402
 from . import ops_io  # noqa: F401,E402
+from . import ops_extra  # noqa: F401,E402
 
 
 @dataclass

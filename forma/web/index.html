@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="forma-token" content="__FORMA_TOKEN__" />
   <title>ФОРМА 3D — параметрический редактор</title>
   <link rel="stylesheet" href="/css/app.css" />
   <script type="importmap">
@@ -15,6 +16,14 @@
   </script>
 </head>
 <body>
+  <div id="history-panel" class="history-panel" hidden>
+    <div class="history-head">
+      <strong>История действий</strong>
+      <button class="mini" id="history-close">✕</button>
+    </div>
+    <div class="history-hint">Щёлкните шаг, чтобы вернуться к нему. Шаги идут от нового к старому.</div>
+    <div id="history-list" class="history-list"></div>
+  </div>
   <header class="topbar">
     <div class="brand">
       <div class="logo">Ф</div>
@@ -27,6 +36,9 @@
       <button id="btn-build" class="primary" title="Построить модель (Ctrl+Enter)">
         <span class="icon">▶</span> Собрать
       </button>
+      <button id="btn-undo" class="mini icon-btn" title="Отменить последнее действие (Ctrl+Z)" disabled>↶</button>
+      <button id="btn-redo" class="mini icon-btn" title="Вернуть отменённое (Ctrl+Shift+Z)" disabled>↷</button>
+      <button id="btn-history" class="mini icon-btn" title="История действий: откат к любому шагу">🕘</button>
       <button id="btn-open-file" title="Открыть GLB, OBJ, STL, PLY, 3MF или .blend">
         <span class="icon">⇧</span> Открыть файл
       </button>
@@ -161,13 +173,14 @@
           <label><input type="checkbox" id="opt-shadows" checked /> тени</label>
           <label><input type="checkbox" id="opt-grid" checked /> сетка</label>
           <label><input type="checkbox" id="opt-ground" checked /> пол</label>
-          <label><input type="checkbox" id="opt-axes" /> оси</label>
+          <label><input type="checkbox" id="opt-axes" checked /> оси</label>
           <label><input type="checkbox" id="opt-poly" /> полигонаж</label>
         </div>
         <div class="studio-sep"></div>
         <div class="studio-row">
           <span class="studio-label">Анимация</span>
           <button class="chip" id="anim-play">▶ играть</button>
+          <span class="anim-status" id="anim-status"></span>
           <button class="chip" id="anim-restart">↺</button>
           <select id="anim-kind" title="Анимация записывается командой animate в сценарий">
             <option value="">из сценария</option>
@@ -201,15 +214,17 @@
             <button class="mini" id="sel-close" title="Снять выделение">✕</button>
           </div>
           <div class="sel-info" id="sel-info"></div>
+          <div class="sel-list" id="sel-list"></div>
           <label class="sel-radius">
             <span>радиус</span>
             <input type="range" id="sel-radius" min="3" max="80" step="1" value="14" />
             <span class="sel-radius-val" id="sel-radius-val">14 мм</span>
           </label>
-          <textarea id="sel-note" rows="2" placeholder="Что не так в этом месте? Например: «слишком остро», «тонко», «сдвинь ручку»"></textarea>
+          <textarea id="sel-note" rows="2" placeholder="Что не так в этих областях? Например: «слишком остро», «тонко», «сдвинь ручку»"></textarea>
           <div class="sel-actions">
             <button class="small primary" id="sel-save">Оставить замечание</button>
-            <button class="small" id="sel-cut" title="Вырезать выделенную область из модели">Вырезать</button>
+            <button class="small" id="sel-cut" title="Вырезать все выделенные области">Вырезать всё</button>
+            <button class="small" id="sel-clear" title="Снять выделение">Снять</button>
           </div>
         </div>
       </div>
@@ -288,10 +303,16 @@
                 <option value="кирпич">кирпич</option>
                 <option value="керамика">керамика</option>
               </select>
+              <img id="mat-tex-preview" alt="образец текстуры" hidden />
             </div>
             <div class="material-actions">
               <button class="small" id="mat-apply">Записать в сценарий</button>
             </div>
+          </div>
+          <div class="objects-tools">
+            <span>Объекты · глаз показывает и скрывает</span>
+            <button class="mini" id="objects-hide-all" title="Скрыть все объекты">скрыть все</button>
+            <button class="mini" id="objects-show-all" title="Показать все объекты">показать все</button>
           </div>
           <div id="objects-list" class="objects-list"></div>
           <div class="hint-box" id="objects-summary"></div>

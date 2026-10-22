@@ -92,23 +92,36 @@ def make_texture(kind: str, size: int = 512, seed: int | str = 1,
     n3 = _noise(n, 33, rng)
 
     if key == "wood":
-        rings = 0.5 + 0.5 * np.sin((u * 9.0 * k + 0.8 * n1 + 0.35 * n2) * 2 * np.pi)
+        rings = 0.5 + 0.5 * np.sin((u * 7.0 * k + 0.38 * n1 + 0.16 * n2) * 2 * np.pi)
         fibre = _noise(n, 128, rng)
         t = np.clip(0.18 + 0.72 * rings ** 1.6 + 0.16 * fibre, 0, 1)
         img = _mix((104, 62, 34), (214, 166, 112), t)
     elif key == "marble":
-        turb = _fbm(n, rng, (3, 7, 15, 31))
-        phase = (u * 1.6 + v * 0.8 + 1.15 * turb) * np.pi * 2.0
-        veins = np.clip(1.0 - np.abs(np.sin(phase)) * 2.4, 0, 1) ** 0.8
-        cloud = 0.55 + 0.45 * _noise(n, 6, rng)
-        t = np.clip(0.92 - 0.42 * veins - 0.16 * (1 - cloud), 0, 1)
-        img = _mix((248, 247, 243), (150, 146, 143), t)
-        img = _mix(img, (226, 220, 210), 0.25 * n2)
+        base = _noise(n, 4, rng)
+        turb = _fbm(n, rng, (2, 5, 11, 23))
+        turb2 = _fbm(n, rng, (3, 8, 17))
+        cloud = _noise(n, 7, rng)
+        # жилы — не замкнутые кольца, а длинные ветвящиеся полосы:
+        # берём дробную часть сильно искажённой линейной координаты
+        warp = 0.55 * turb + 0.10 * cloud
+        f1 = u * 1.15 + v * 0.55 + warp
+        f2 = u * 0.35 - v * 0.90 + 0.42 * turb2 + 0.12 * base
+        b1 = np.abs((f1 * 2.0) % 1.0 - 0.5)
+        b2 = np.abs((f2 * 3.0) % 1.0 - 0.5)
+        vein1 = np.exp(-((b1 / 0.055) ** 2))
+        halo1 = np.exp(-((b1 / 0.20) ** 2)) * 0.35
+        vein2 = np.exp(-((b2 / 0.022) ** 2)) * 0.45
+        veins = np.clip(vein1 + halo1 + vein2, 0, 1.0)
+        # камень: тёплый светлый фон с мягкими серыми облаками
+        tone = np.clip(0.55 + 0.55 * base + 0.18 * (cloud - 0.5), 0, 1)
+        stone = _mix((250, 248, 244), (206, 201, 194), 1.0 - tone)
+        img = _mix(stone, np.array((104, 101, 108), dtype=np.float32),
+                   np.clip(veins, 0, 1) ** 1.2 * 0.62)
     elif key == "metal":
         brushed = _noise(n, 256, rng, smooth=1)
-        band = 0.5 + 0.5 * np.sin(v * np.pi * 2 * 24 * k + n2 * 3)
-        t = np.clip(0.55 + 0.18 * brushed + 0.10 * band, 0, 1)
-        img = _mix((120, 128, 138), (226, 232, 240), t)
+        band = 0.5 + 0.5 * np.sin(v * np.pi * 2 * 24 * k + n2 * 1.4)
+        t = np.clip(0.38 + 0.34 * brushed + 0.26 * band, 0, 1)
+        img = _mix((92, 100, 112), (238, 242, 248), t)
     elif key == "fabric":
         warp = 0.5 + 0.5 * np.sin(u * np.pi * 2 * 48 * k)
         weft = 0.5 + 0.5 * np.sin(v * np.pi * 2 * 48 * k)
@@ -203,3 +216,50 @@ def uv_for(verts: np.ndarray, mode: str = "cylinder",
         u = np.arctan2(v[:, 2] - cz, v[:, 0] - cx) / (2 * np.pi) + 0.5
         w = (v[:, 1] - lo[1]) / span[1]
     return np.stack([u, w], axis=1).astype(np.float32)
+
+
+def uv_triangles(verts: np.ndarray, faces: np.ndarray, mode: str = "cylinder",
+                 bbox: np.ndarray | None = None, tile_mm: float = 140.0) -> np.ndarray:
+    """UV на каждый угол треугольника.
+
+    Главное отличие от uv_for: шов цилиндра не «растягивается» через всю
+    текстуру — на разрыве к u прибавляется 1, а вершины не склеены между
+    треугольниками. Так мрамор и дерево выглядят без видимой полосы.
+    """
+    v = np.asarray(verts, dtype=np.float64)
+    f = np.asarray(faces, dtype=np.int64)
+    lo = v.min(axis=0) if bbox is None else np.asarray(bbox[:3], dtype=np.float64)
+    hi = v.max(axis=0) if bbox is None else np.asarray(bbox[3:], dtype=np.float64)
+    span = np.maximum(hi - lo, 1e-9)
+    tri = v[f]  # (F, 3, 3) — координаты в glTF (X, Y вверх, Z)
+    if mode == "planar":
+        u = (tri[:, :, 0] - lo[0]) / span[0]
+        w = (tri[:, :, 2] - lo[2]) / span[2]
+    elif mode == "box":
+        u = (tri[:, :, 0] - lo[0]) / span[0]
+        w = (tri[:, :, 2] - lo[2]) / span[2]
+    else:
+        cx, cz = (lo[0] + hi[0]) / 2.0, (lo[2] + hi[2]) / 2.0
+        u = np.arctan2(tri[:, :, 2] - cz, tri[:, :, 0] - cx) / (2.0 * np.pi) + 0.5
+        w = (tri[:, :, 1] - lo[1]) / span[1]
+        # крышки (нормаль вдоль вертикали) разворачиваем плоско —
+        # иначе на торце получается «крест» из растянутых жил
+        e1 = tri[:, 1] - tri[:, 0]
+        e2 = tri[:, 2] - tri[:, 0]
+        nrm = np.cross(e1, e2)
+        vertical = np.abs(nrm[:, 1]) > 0.75 * (np.linalg.norm(nrm, axis=1) + 1e-12)
+        if vertical.any():
+            cap_u = (tri[:, :, 0] - lo[0]) / span[0]
+            cap_w = (tri[:, :, 2] - lo[2]) / span[2]
+            u = np.where(vertical[:, None], cap_u, u)
+            w = np.where(vertical[:, None], cap_w, w)
+        # разрыв шва: если треугольник переходит через 0/1, поднимаем малые u
+        umin = u.min(axis=1, keepdims=True)
+        umax = u.max(axis=1, keepdims=True)
+        u = np.where((umax - umin > 0.5) & (u < 0.5), u + 1.0, u)
+        # повторяем текстуру по окружности, чтобы рисунок был одинакового масштаба
+        circ = np.pi * max(span[0], span[2])
+        rep = max(1.0, round(circ / max(20.0, tile_mm)))
+        u = u * rep
+        w = w * max(1.0, round(span[1] / max(20.0, tile_mm)))
+    return np.stack([u.ravel(), w.ravel()], axis=1).astype(np.float32)

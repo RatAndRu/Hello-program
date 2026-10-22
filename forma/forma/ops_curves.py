@@ -170,6 +170,8 @@ def extrude(a, name):
             "closed_path": "замкнутый путь (кольцо)",
             "twist": "закрутка профиля по пути, градусы",
             "scale_end": "масштаб профиля в конце пути",
+            "scale_curve": "толщина по длине пути: [0.4, 1.0, 0.5] — банан, луковица",
+            "round_caps": "скруглить торцы: 0..1 (0 — плоские, 0.6 — заметная полусфера)",
             "up": "вектор «вверх» для ориентации профиля [x,y,z]",
             "caps": "закрывать торцы (true)"},
     positional=["path", "profile"])
@@ -196,10 +198,19 @@ def sweep(a, name):
     if smooth > 1:
         path = catmull_rom(path, closed=closed_path, samples=smooth)
     up = a.vec("up", 3, default=(0.0, 0.0, 1.0))
+    curve_raw = a.value("scale_curve", None)
+    curve = None
+    if curve_raw is not None:
+        if not isinstance(curve_raw, list) or len(curve_raw) < 2:
+            raise GeometryError("scale_curve — список чисел: [0.4, 1.0, 0.6].")
+        curve = [float(v) for v in curve_raw]
+        if min(curve) <= 0.0:
+            raise GeometryError("scale_curve: все значения должны быть > 0.")
     solid = sweep_solid(path, prof, closed_path=closed_path,
                         twist_deg=float(a.num("twist", 0.0) or 0.0),
                         scale_end=float(a.num("scale_end", 1.0, minv=0.01) or 1.0),
-                        up_hint=up, what="развёртка")
+                        up_hint=up, what="развёртка", scale_curve=curve,
+                        round_caps=float(a.num("round_caps", 0.0, minv=0.0, maxv=1.0) or 0.0))
     if not closed_path and not a.boolean("caps", True):
         a.scene.log("warn", "caps=false пока не поддерживается: торцы закрыты.", a.cmd.line)
     return make_solid(a.scene, name, solid, a, kind="sweep")

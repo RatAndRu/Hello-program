@@ -20,11 +20,11 @@ from .sdf import (Capsule, Cone, Ellipsoid, Field, Prim, RoundBox, Sphere, Torus
 
 DETAILS = {
     "низкий": {"body": 5.0, "head": 3.0, "hand": 2.8, "foot": 3.2, "smooth": 1,
-               "simplify": 0.5},
+               "simplify": 0.5, "polish": 46.0},
     "средний": {"body": 4.0, "head": 2.2, "hand": 2.0, "foot": 2.6, "smooth": 1,
-                "simplify": 0.35},
+                "simplify": 0.35, "polish": 42.0},
     "высокий": {"body": 3.2, "head": 1.7, "hand": 1.5, "foot": 2.0, "smooth": 1,
-                "simplify": 0.2},
+                "simplify": 0.2, "polish": 38.0},
 }
 DETAIL_ALIASES = {"low": "низкий", "medium": "средний", "high": "высокий",
                   "низкая": "низкий", "средняя": "средний", "высокая": "высокий",
@@ -376,7 +376,7 @@ class Anatomy:
                     y_surface = hits[0].position[1]
             n = np.array([sx * 0.30, 0.95, 0.0])
             n /= np.linalg.norm(n)
-            center = np.array([x, y_surface - r * 0.55, z])
+            center = np.array([x, y_surface - r * 0.30, z])
             out.append((center, r, n))
         return out
 
@@ -439,12 +439,7 @@ class Anatomy:
             add(ellipsoid((sx * hw * 0.93, c[1] - 0.04 * hd, c[2] - 0.01 * hh),
                           (hw * 0.105, hd * 0.135, hh * 0.185)))
         # --- веки: нависающая кожа над и под глазным яблоком ---
-        for pos, r, n in self._eye_geom():
-            y_skin = pos[1] + r * 0.55
-            add(ellipsoid((pos[0], y_skin - r * 0.10, pos[2] + r * 0.74),
-                          (r * 1.16, r * 0.62, r * 0.46)))
-            add(ellipsoid((pos[0], y_skin - r * 0.02, pos[2] - r * 0.88),
-                          (r * 1.06, r * 0.52, r * 0.26)))
+
         # --- шея ---
         add(cone((c[0], c[1] + 0.02 * hd, c[2] - hh * 1.24),
                  (c[0], c[1] - 0.06 * hd, c[2] - hh * 0.74),
@@ -454,6 +449,38 @@ class Anatomy:
     def _eye_positions(self):
         eyes = self._eye_geom()
         return [pos for pos, _r, _n in eyes], eyes[0][1]
+
+    def _lashes(self) -> mf.Manifold:
+        """Верхние ресничные линии: тонкие тёмные дуги над глазами (аниме-стиль)."""
+        c = self.head_c
+        hw, hd, hh = self.head_w, self.head_d, self.head_hh
+        F = Field([c[0] - hw * 0.85, c[1] - hd * 0.4, c[2] + hh * 0.02,
+                   c[0] + hw * 0.85, c[1] + hd * 1.05, c[2] + hh * 0.30], max(0.6, hh * 0.012))
+        for pos, r, n in self._eye_geom():
+            y_skin = pos[1] + r * 0.55
+            pts = []
+            for t in (-1.0, -0.45, 0.2, 0.75, 1.15):
+                x = pos[0] + t * r * 1.22
+                z = pos[2] + r * (0.56 - 0.24 * t * t + 0.10 * max(0.0, t))
+                pts.append((x, y_skin + r * 0.34, z))
+            for i in range(len(pts) - 1):
+                rad = r * (0.12 if i < 2 else 0.18)
+                F.add(capsule(pts[i], pts[i + 1], rad), 0.0)
+            # утолщение у внешнего угла — аниме-акцент
+            F.add(sphere(pts[-1], r * 0.19), 0.0)
+        return F.mesh(smooth_iters=1, what="ресницы", clean=0.06)
+
+    def _pupils(self) -> mf.Manifold:
+        """Зрачки: тёмные диски впереди радужки."""
+        c = self.head_c
+        hw, hd, hh = self.head_w, self.head_d, self.head_hh
+        r = hh * 0.098
+        F = Field([c[0] - hw * 0.7, c[1] - hd * 0.6, c[2] - hh * 0.2,
+                   c[0] + hw * 0.7, c[1] + hd * 1.2, c[2] + hh * 0.35], max(0.5, hh * 0.010))
+        for pos, _r, _n in self._eye_geom():
+            F.add(ellipsoid((pos[0], pos[1] + r * 0.54, pos[2] - r * 0.02),
+                            (r * 0.30, r * 0.18, r * 0.36)), 0.0)
+        return F.mesh(smooth_iters=1, what="зрачки", clean=0.06)
 
     def _brows(self) -> mf.Manifold:
         """Брови: два тонких валика над глазами (отдельный объект с тёмным материалом)."""
@@ -487,6 +514,7 @@ class Anatomy:
         c = self.head_c
         hw, hd, hh = self.head_w, self.head_d, self.head_hh
         cuts: list[Prim] = []
+        # глазная щель: миндалевидная прорезь в коже, в ней видно яблоко
         # линия рта
         z_lip = c[2] - hh * 0.328
         cuts.append(round_box((0.0, self._face_y(0, z_lip) + hd * 0.04, z_lip),
@@ -552,7 +580,7 @@ class Anatomy:
             body.add_many(self._arm_prims(side), H * 0.010)
             body.add_many(self._leg_prims(side), H * 0.012)
         body_solid = body.mesh(smooth_iters=d["smooth"], simplify=d["simplify"],
-                               what="тело")
+                               what="тело", polish=d.get("polish", 0.0))
 
         # --- голова ---
         c = self.head_c
@@ -565,7 +593,8 @@ class Anatomy:
             head.add(prim, H * 0.0016)
         for cut in self._head_cutters():
             head.cut(cut, H * 0.0008)
-        head_solid = head.mesh(smooth_iters=1, simplify=d["simplify"] * 0.6, what="голова")
+        head_solid = head.mesh(smooth_iters=1, simplify=d["simplify"] * 0.6, what="голова",
+                               polish=d.get("polish", 0.0))
 
         # --- кисти ---
         hands = []
@@ -580,7 +609,7 @@ class Anatomy:
                           origin[1] + H * 0.08, origin[2] + H * 0.09], d["hand"])
             hand.add_many(self._hand_prims(side, origin, direction), H * 0.004)
             hands.append(hand.mesh(smooth_iters=1, simplify=d["simplify"] * 0.5,
-                                   what="кисть"))
+                                   what="кисть", polish=d.get("polish", 0.0)))
 
         # --- стопы ---
         feet = []
@@ -593,7 +622,7 @@ class Anatomy:
             foot.cut(round_box((ankle[0], H * 0.04, -H * 0.03),
                                (H * 0.20, H * 0.40, H * 0.03)), H * 0.0015)
             feet.append(foot.mesh(smooth_iters=1, simplify=d["simplify"] * 0.5,
-                                  what="стопа"))
+                                  what="стопа", polish=d.get("polish", 0.0)))
 
         parts = [body_solid, head_solid, *hands, *feet]
         skin = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
@@ -611,23 +640,42 @@ class Anatomy:
             pts = np.array(positions)
             lo = pts.min(axis=0) - r * 1.6
             hi = pts.max(axis=0) + r * 1.6
-            fs = Field([lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]], max(0.8, r / 12))
+            # Глаз — миндалевидная линза: шар пересекаем «вековой» формой.
+            seg = 48
+            parts = []
             for pos in positions:
-                fs.add(sphere(pos, r), 0.0)
+                ball = mf.Manifold.sphere(r, seg).scale((1.30, 0.62, 1.02))
+                ball = ball.translate((float(pos[0]), float(pos[1]), float(pos[2])))
+                almond = mf.Manifold.sphere(r * 1.2, seg).scale((1.28, 1.9, 0.62))
+                almond = almond.translate((float(pos[0]), float(pos[1]), float(pos[2]) + r * 0.02))
+                parts.append(mf.Manifold.batch_boolean([ball, almond], mf.OpType.Intersect)
+                             .translate((0.0, 0.0, 0.0)))
             try:
-                eyeballs = fs.mesh(smooth_iters=1, what="глаза", clean=0.05)
+                eyeballs = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
                 result["extras"].append(("eyes", eyeballs, "eyes"))
-            except GeometryError:
+            except Exception:
                 pass
             # радужка/зрачок — отдельный объект чуть впереди глаз
             try:
                 fl = Field([lo[0], lo[1], lo[2], hi[0], hi[1], hi[2]], max(0.8, r / 14))
                 for pos, _rr, _n in eye_data:
-                    fl.add(sphere((pos[0], pos[1] + r * 0.80, pos[2]), r * 0.46), 0.0)
+                    # радужка стоит впереди линзы глаза
+                    fl.add(ellipsoid((pos[0], pos[1] + r * 0.34, pos[2] - r * 0.02),
+                                     (r * 0.62, r * 0.32, r * 0.70)), 0.0)
                 iris = fl.mesh(smooth_iters=1, what="радужка", clean=0.05)
                 result["extras"].append(("iris", iris, "iris"))
             except GeometryError:
                 pass
+
+        # --- ресницы и зрачки (аниме-глаз: линия века + тёмный зрачок) ---
+        try:
+            result["extras"].append(("lashes", self._lashes(), "lashes"))
+        except GeometryError:
+            pass
+        try:
+            result["extras"].append(("pupils", self._pupils(), "pupils"))
+        except GeometryError:
+            pass
 
         # --- брови ---
         if p.hair:

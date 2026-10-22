@@ -43,10 +43,13 @@ export class Viewer {
     this.speed = 1;
     this.loop = true;
     this._overlays = [];
-    this._selOverlay = null;
+    this._selOverlays = [];
     this.selectMode = false;
     this.selRadius = 14;
     this.selection = null;
+    this.selections = [];
+    this.hidden = new Set();
+    this.sceneAnimation = null;
     this._frames = 0;
     this._lastFps = 0;
     this._fpsTime = 0;
@@ -132,10 +135,9 @@ export class Viewer {
     this.grid.material.depthWrite = false;
     scene.add(this.grid);
 
-    this.axes = new THREE.AxesHelper(80);
-    this.axes.material.transparent = true;
-    this.axes.material.opacity = 0.55;
-    this.axes.visible = false;
+    this.axesVisible = true;
+    this.axes = this._buildAxes();
+    this.axes.visible = true;
     scene.add(this.axes);
 
     const resize = () => this.resize();
@@ -164,6 +166,58 @@ export class Viewer {
     this._bindPointer();
   }
 
+  /** Оси X/Y/Z: стрелки и подписи, длину подбираем под модель. */
+  _buildAxes() {
+    const group = new THREE.Group();
+    group.name = 'FormaAxes';
+    const colors = { x: 0xff5a5a, y: 0x3ddc84, z: 0x4a9bff };
+    // сценарий живёт в Z-up, окно — в Y-up: X→X, Y→-Z, Z→Y
+    const dirs = {
+      x: new THREE.Vector3(1, 0, 0),
+      y: new THREE.Vector3(0, 0, -1),
+      z: new THREE.Vector3(0, 1, 0),
+    };
+    Object.entries(dirs).forEach(([key, dir]) => {
+      const color = colors[key];
+      const mat = new THREE.MeshBasicMaterial({
+        color, depthTest: false, depthWrite: false, transparent: true, opacity: 0.98,
+      });
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 16), mat);
+      shaft.name = 'axis-' + key;
+      shaft.renderOrder = 990;
+      const head = new THREE.Mesh(new THREE.ConeGeometry(1, 1, 20), mat);
+      head.renderOrder = 991;
+      const label = this._axisLabel(key.toUpperCase(), color);
+      label.renderOrder = 992;
+      group.add(shaft, head, label);
+      group.userData[key] = { dir, shaft, head, label };
+    });
+    return group;
+  }
+
+  _axisLabel(text, color) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 128;
+    canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#0b0e13';
+    ctx.beginPath();
+    ctx.arc(64, 64, 58, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
+    ctx.font = 'bold 74px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 64, 70);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, transparent: true, depthTest: false, depthWrite: false,
+    }));
+    sprite.renderOrder = 1000;
+    return sprite;
+  }
+
   _bindPointer() {
     const el = this.renderer.domElement;
     let down = null;
@@ -185,13 +239,19 @@ export class Viewer {
       ray.setFromCamera(pointer, this.camera);
       const hits = ray.intersectObject(this.model, true);
       if (this.selectMode) {
-        if (hits.length) {
-          const stats = this._selectRegion(hits[0]);
-          if (stats && this.onSelection) this.onSelection(stats);
-        } else {
-          this.clearSelection();
-          if (this.onSelection) this.onSelection(null);
+        if (!hits.length) {
+          if (!e.shiftKey && !e.ctrlKey && !e.metaKey) {
+            this.clearSelection();
+            if (this.onSelection) this.onSelection(this.selections);
+          }
+          return;
         }
+        if (e.ctrlKey || e.metaKey) {
+          this._removeSelectionAt(hits[0].point);
+        } else {
+          this._selectRegion(hits[0], e.shiftKey);
+        }
+        if (this.onSelection) this.onSelection(this.selections);
         return;
       }
       if (hits.length && this.onSelect) {
@@ -202,6 +262,15 @@ export class Viewer {
       }
     });
     el.addEventListener('dblclick', () => this.reset());
+  }
+
+  _updateExplode() {
+    if (!this._explodeTargets || !this.action || this.sceneAnimation?.kind !== 'explode') return;
+    const t = this.action.time / Math.max(0.2, Number(this.sceneAnimation.seconds) || 4);
+    const e = Math.sin(Math.min(1, t) * Math.PI * 0.5);
+    this._explodeTargets.forEach(({ node, dir }) => {
+      node.position.set(dir.x * e, dir.y * e, dir.z * e);
+    });
   }
 
   _animateTiming(dt) {
@@ -250,6 +319,7 @@ export class Viewer {
     this._clearOverlays();
     this._disposeSelOverlay();
     this.selection = null;
+    this.selections = [];
   }
 
   _clearOverlays() {
@@ -261,7 +331,7 @@ export class Viewer {
     this._overlays = [];
   }
 
-  async load(url) {
+  async load(url, animation = null) {
     this.lastUrl = url;
     const loader = new GLTFLoader();
     const gltf = await new Promise((resolve, reject) => {
@@ -285,9 +355,16 @@ export class Viewer {
     this.scene.add(root);
     this.model = root;
     this._fit(root);
+    this.setAxes(this.axesVisible);
     this.applyShading(this.shading);
     this.applySettings(this.settings);
     this._setupAnimation(gltf);
+    if (animation && animation.kind) {
+      // сценарий — источник истины: своя анимация работает даже если GLB её потерял
+      this.applySceneAnimation(animation);
+      this.playing = true;
+    }
+    this.hidden.forEach((name) => this.setObjectVisible(name, false));
     this.setPolygons(this.polygons);
     return this.bbox;
   }
@@ -306,11 +383,16 @@ export class Viewer {
   }
 
   hasAnimation() {
-    return Boolean(this.action);
+    return Boolean(this.action || this.sceneAnimation);
   }
 
   playAnimation(playing = true) {
     this.playing = playing;
+    if (!this.action && this.sceneAnimation) {
+      this.applySceneAnimation(this.sceneAnimation);
+      this.action.paused = !playing;
+      return;
+    }
     if (!this.action) return;
     if (playing) {
       this.action.reset();
@@ -428,8 +510,23 @@ export class Viewer {
   }
 
   setAxes(visible) {
+    this.axesVisible = visible;
     this.axes.visible = visible;
-    if (this.bbox) this.axes.scale.setScalar(Math.max(this.bbox.size.length() * 0.18, 40) / 80);
+    if (!visible) return;
+    const size = this.bbox ? this.bbox.size : new THREE.Vector3(100, 100, 100);
+    const length = Math.max(size.x, size.y, size.z, 20) * 0.6;
+    const up = new THREE.Vector3(0, 1, 0);
+    Object.entries(this.axes.userData).forEach(([key, part]) => {
+      const { dir, shaft, head, label } = part;
+      shaft.position.copy(dir).multiplyScalar(length * 0.5);
+      shaft.scale.set(length * 0.018, length, length * 0.018);
+      shaft.quaternion.setFromUnitVectors(up, dir);
+      head.position.copy(dir).multiplyScalar(length * 0.93);
+      head.quaternion.setFromUnitVectors(up, dir);
+      head.scale.set(length * 0.048, length * 0.16, length * 0.048);
+      label.position.copy(dir).multiplyScalar(length * 1.06);
+      label.scale.setScalar(length * 0.13);
+    });
   }
 
   setWireframe(on) {
@@ -485,7 +582,18 @@ export class Viewer {
     this.selRadius = Math.max(1, Number(mm) || 14);
   }
 
-  _selectRegion(hit) {
+  _nearestRegion(point) {
+    let best = -1;
+    let bestDist = Infinity;
+    this.selections.forEach((sel, i) => {
+      const c = sel._center;
+      const d = c.distanceTo(point);
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    return { index: best, distance: bestDist };
+  }
+
+  _selectRegion(hit, additive = false) {
     const mesh = hit.object;
     const geo = mesh.geometry;
     if (!geo || !geo.attributes || !geo.attributes.position) return null;
@@ -519,13 +627,14 @@ export class Viewer {
       count += 1;
     }
     if (!count) return null;
-    this._setSelectionOverlay(out);
+    if (!additive) this.clearSelection();
     const size = new THREE.Vector3();
     const ctr = new THREE.Vector3();
     box.getSize(size);
     box.getCenter(ctr);
+    const overlay = this._addSelectionOverlay(out, this.selections.length);
     // GLB хранится в Y-up, а сценарий — в Z-up: переводим координаты обратно.
-    this.selection = {
+    const sel = {
       object: mesh.name || mesh.parent?.name || 'деталь',
       tris: count,
       area_mm2: area,
@@ -533,36 +642,200 @@ export class Viewer {
       size: [size.x, size.z, size.y],
       bbox: [box.min.x, -box.max.z, box.min.y, box.max.x, -box.min.z, box.max.y],
       radius: radius,
-      point: [hit.point.x, -hit.point.z, hit.point.y],
+      point: [center.x, -center.z, center.y],
+      _center: ctr.clone(),
+      _overlay: overlay,
     };
-    return this.selection;
+    this.selections.push(sel);
+    this.selection = sel;
+    return sel;
   }
 
-  _setSelectionOverlay(vertices) {
-    this._disposeSelOverlay();
+  _addSelectionOverlay(vertices, index) {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+    const palette = [0xff5a5a, 0xffb35a, 0x7dff8f, 0x5ac8ff, 0xc78bff, 0xff6bd6];
     const mat = new THREE.MeshBasicMaterial({
-      color: 0xff5a5a, transparent: true, opacity: 0.55,
+      color: palette[index % palette.length], transparent: true, opacity: 0.45,
       side: THREE.DoubleSide, depthTest: false, depthWrite: false,
     });
     const hl = new THREE.Mesh(g, mat);
     hl.renderOrder = 900;
     this.scene.add(hl);
-    this._selOverlay = hl;
+    this._selOverlays.push(hl);
+    return hl;
+  }
+
+  _removeSelectionAt(point) {
+    const { index, distance } = this._nearestRegion(point);
+    if (index < 0) return;
+    const sel = this.selections[index];
+    const limit = Math.max(this.selRadius * 2.2, Math.max(...sel.size) * 0.75);
+    if (distance > limit) return;
+    this._disposeSelection(sel);
+    this.selections.splice(index, 1);
+    this.selection = this.selections[this.selections.length - 1] || null;
+  }
+
+  _disposeSelection(sel) {
+    if (!sel?._overlay) return;
+    this.scene.remove(sel._overlay);
+    sel._overlay.geometry?.dispose();
+    sel._overlay.material?.dispose();
+    this._selOverlays = this._selOverlays.filter((o) => o !== sel._overlay);
+    sel._overlay = null;
   }
 
   _disposeSelOverlay() {
-    if (!this._selOverlay) return;
-    this.scene.remove(this._selOverlay);
-    this._selOverlay.geometry?.dispose();
-    this._selOverlay.material?.dispose();
-    this._selOverlay = null;
+    this._selOverlays.forEach((o) => {
+      this.scene.remove(o);
+      o.geometry?.dispose();
+      o.material?.dispose();
+    });
+    this._selOverlays = [];
+    this.selections.forEach((s) => { s._overlay = null; });
   }
 
   clearSelection() {
     this._disposeSelOverlay();
+    this.selections = [];
     this.selection = null;
+  }
+
+  /** Суммарные данные по всем выделенным областям. */
+  selectionSummary() {
+    if (!this.selections.length) return null;
+    let tris = 0, area = 0;
+    const box = new THREE.Box3();
+    this.selections.forEach((s) => {
+      tris += s.tris;
+      area += s.area_mm2;
+      const b = s.bbox;
+      box.expandByPoint(new THREE.Vector3(b[0], b[2], -b[1]));
+      box.expandByPoint(new THREE.Vector3(b[3], b[5], -b[4]));
+    });
+    const size = new THREE.Vector3();
+    const center = new THREE.Vector3();
+    box.getSize(size);
+    box.getCenter(center);
+    const objects = [...new Set(this.selections.map((s) => s.object))];
+    return {
+      object: objects.join(', '),
+      regions: this.selections.length,
+      tris,
+      area_mm2: area,
+      center: [center.x, center.y, center.z],
+      size: [size.x, size.y, size.z],
+      bbox: [box.min.x, -box.max.z, box.min.y, box.max.x, -box.min.z, box.max.y],
+      points: this.selections.map((s) => s.point),
+      centers: this.selections.map((s) => s.center),
+      radius: this.selRadius,
+    };
+  }
+
+  /** Скрыть/показать объект сцены по имени. */
+  setObjectVisible(name, visible) {
+    if (!this.model || !name) return;
+    if (visible) this.hidden.delete(name);
+    else this.hidden.add(name);
+    this.model.traverse((o) => {
+      if (!o.isMesh) return;
+      const objName = o.name || o.parent?.name;
+      if (objName === name) o.visible = visible;
+    });
+  }
+
+  /** Наложить текстуру на объект (картинка уже загружена). */
+  setTexture(name, url) {
+    if (!this.model || !name) return;
+    new THREE.TextureLoader().load(url, (tex) => {
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = THREE.RepeatWrapping;
+      tex.wrapT = THREE.RepeatWrapping;
+      tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
+      tex.needsUpdate = true;
+      this.model.traverse((o) => {
+        if (!o.isMesh) return;
+        if (o.name !== name && o.parent?.name !== name) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => {
+          if (!m) return;
+          if (!m.userData.base) {
+            m.userData.base = { color: m.color?.clone() || null, metal: m.metalness, rough: m.roughness, map: m.map };
+          }
+          m.map = tex;
+          m.color?.setHex(0xffffff);
+          m.userData.base.map = tex;
+          m.needsUpdate = true;
+        });
+      });
+    }, undefined, () => { this.onTextureError?.(name); });
+  }
+
+  clearTexture(name) {
+    if (!this.model || !name) return;
+    this.model.traverse((o) => {
+      if (!o.isMesh) return;
+      if (o.name !== name && o.parent?.name !== name) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => {
+        if (!m) return;
+        m.map = null;
+        if (m.userData.base?.color) m.color?.copy(m.userData.base.color);
+        m.needsUpdate = true;
+      });
+    });
+  }
+
+  /** Анимация из сценария: гарантированно работает, даже если GLB её не отдал. */
+  applySceneAnimation(spec) {
+    this.sceneAnimation = spec || null;
+    if (!spec || !this.model) return;
+    const kind = spec.kind || 'spin';
+    const seconds = Math.max(0.2, Number(spec.seconds) || 4);
+    const axis = (spec.axis || 'z').toLowerCase();
+    const loop = spec.loop !== false;
+    this.mixer = new THREE.AnimationMixer(this.model);
+    const times = [0, seconds];
+    const tracks = [];
+    if (kind === 'spin') {
+      const target = this.model.children[0] || this.model;
+      target.name = target.name || 'FormaSpinTarget';
+      const euler = { x: 0, y: 0, z: 0 };
+      // axis — ось из сценария (Z вверх), в окне модель стоит в Y-up
+      if (axis === 'x') euler.x = Math.PI * 2;
+      else if (axis === 'y') euler.z = Math.PI * 2;
+      else euler.y = -Math.PI * 2;
+      const q0 = new THREE.Quaternion();
+      const q1 = new THREE.Quaternion().setFromEuler(new THREE.Euler(euler.x, euler.y, euler.z));
+      tracks.push(new THREE.QuaternionKeyframeTrack(
+        `${target.name}.quaternion`, times, [...q0.toArray(), ...q1.toArray()]));
+    } else if (kind === 'formation') {
+      this.model.scale.setScalar(0.001);
+      this.model.updateMatrixWorld();
+      tracks.push(new THREE.VectorKeyframeTrack(`${this.model.name || 'Scene'}.scale`,
+        [0, seconds * 0.8, seconds], [0.001, 0.001, 0.001, 1, 1, 1, 1, 1, 1]));
+      tracks.push(new THREE.VectorKeyframeTrack(`${this.model.name || 'Scene'}.position`,
+        [0, seconds], [0, 60, 0, 0, 0, 0]));
+    } else if (kind === 'explode') {
+      const offsets = [];
+      this.model.traverse((o) => {
+        if (!o.isMesh) return;
+        const p = o.getWorldPosition(new THREE.Vector3());
+        const dir = p.clone().normalize().multiplyScalar(60);
+        offsets.push({ node: o, dir });
+      });
+      tracks.push(new THREE.VectorKeyframeTrack(`${this.model.name || 'Scene'}.position`,
+        [0, seconds], [0, 0, 0, 0, 0, 0]));
+      this._explodeTargets = offsets;
+    }
+    if (!tracks.length) return;
+    const clip = new THREE.AnimationClip('FormaScene', seconds, tracks);
+    this.action = this.mixer.clipAction(clip);
+    this.action.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, Infinity);
+    this.action.clampWhenFinished = !loop;
+    this.action.play();
+    this.playing = true;
   }
 
   setSpin(on) {

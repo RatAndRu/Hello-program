@@ -331,6 +331,8 @@ class AppState:
 
 EXAMPLES = [
     ("Кружка", "mug"),
+    ("Банан", "banana"),
+    ("Гриб", "mushroom"),
     ("Кузов машины", "car"),
     ("Ваза", "vase"),
     ("Бутылка", "bottle"),
@@ -361,7 +363,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def _token_ok(self, query: dict) -> bool:
         token = query.get("token", [""])[0]
-        return secrets.compare_digest(token, self.state.token)
+        if token and secrets.compare_digest(token, self.state.token):
+            return True
+        # запасной вход: cookie, которую сервер ставит вместе с index.html.
+        # Так открываются снимки и текстуры, если адрес потерял ?token=...
+        cookie = self._cookie_token()
+        return bool(cookie) and secrets.compare_digest(cookie, self.state.token)
 
     def _send_json(self, data, status=200):
         body = json.dumps(data, ensure_ascii=False).encode("utf-8")
@@ -379,7 +386,8 @@ class Handler(BaseHTTPRequestHandler):
             data = {"error": {"message": str(exc), "internal": True}}
         self._send_json(data, status)
 
-    def _send_file(self, path: Path, ctype: str | None = None, download: bool = False):
+    def _send_file(self, path: Path, ctype: str | None = None, download: bool = False,
+                   headers: dict | None = None):
         if not path.exists() or not path.is_file():
             self._send_json({"error": {"message": "Файл не найден"}}, 404)
             return
@@ -388,11 +396,22 @@ class Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        for key, value in (headers or {}).items():
+            self.send_header(key, value)
         if download:
             self.send_header("Content-Disposition",
                              f'attachment; filename="{urllib.parse.quote(path.name)}"')
         self.end_headers()
         self.wfile.write(data)
+
+    def _cookie_token(self) -> str:
+        raw = self.headers.get("Cookie", "") or ""
+        for part in raw.split(";"):
+            key, _, value = part.strip().partition("=")
+            if key == "forma_token":
+                return urllib.parse.unquote(value)
+        return ""
 
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length", "0") or 0)
@@ -439,6 +458,21 @@ class Handler(BaseHTTPRequestHandler):
                 target = target / "index.html"
             if not target.exists():
                 self.send_error(404)
+                return
+            if target.name == "index.html" and target.parent == web_dir:
+                # выдаём страницу с «вшитым» токеном и ставим cookie:
+                # после перезагрузки или открытия голого адреса интерфейс цел.
+                html = target.read_text(encoding="utf-8")
+                html = html.replace("__FORMA_TOKEN__", self.state.token)
+                data = html.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Content-Length", str(len(data)))
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Set-Cookie",
+                                 f"forma_token={urllib.parse.quote(self.state.token)}; Path=/; SameSite=Lax")
+                self.end_headers()
+                self.wfile.write(data)
                 return
             self._send_file(target)
         except Exception as exc:  # pragma: no cover
@@ -509,6 +543,20 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/reference":
             self._send_json({"markdown": command_reference_md()})
+            return
+        if path == "/api/texture":
+            from .textures import KIND_NAMES, texture_file
+            kind = query.get("kind", ["мрамор"])[0]
+            try:
+                scale = float(query.get("scale", ["1"])[0] or 1)
+            except ValueError:
+                scale = 1.0
+            info = texture_file(kind, scale=scale)
+            self._send_file(Path(info["path"]), "image/png")
+            return
+        if path == "/api/textures":
+            from .textures import KIND_NAMES
+            self._send_json({"kinds": [{"key": k, "label": v} for k, v in KIND_NAMES.items()]})
             return
         if path == "/api/projects":
             self._send_json({"projects": st.list_projects()})

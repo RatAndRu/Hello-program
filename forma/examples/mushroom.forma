@@ -1,0 +1,46 @@
+# Гриб — шляпка-купол с валиком, ножка, «юбочка» и пятнышки.
+# Все части — тела вращения: ровные, гладкие, без лесенок.
+
+ножка = lathe points=[[0,0],[26,0],[30,3],[27,14],[23,34],[22,50],[25,58],[24,62],[0,62]] smooth=3 segments=72
+юбочка = lathe points=[[0,56],[26,56],[34,60],[33,64],[26,65],[0,65]] smooth=3 segments=72
+шляпка = lathe points=[[0,72],[22,72],[40,74],[54,78],[63,84],[66,92],[64,102],[58,113],[47,122],[33,127],[17,129],[0,130]] smooth=3 segments=112
+
+color шляпка #bf3b2b material=plastic
+color ножка #efe6d8 material=plastic
+color юбочка #e2d6c4 material=plastic
+
+пятно1 = sphere radius=7.0 segments=24
+пятно1 = scale [пятно1] factor=[1, 1, 0.38]
+пятно1 = place [пятно1] at=[10.4, 6.0, 128.6]
+color пятно1 #f6ead2 material=plastic
+пятно2 = sphere radius=8.5 segments=24
+пятно2 = scale [пятно2] factor=[1, 1, 0.38]
+пятно2 = place [пятно2] at=[-7.0, 26.1, 126.9]
+color пятно2 #f6ead2 material=plastic
+пятно3 = sphere radius=9.5 segments=24
+пятно3 = scale [пятно3] factor=[1, 1, 0.38]
+пятно3 = place [пятно3] at=[-41.4, -7.3, 122.8]
+color пятно3 #f6ead2 material=plastic
+пятно4 = sphere radius=8.0 segments=24
+пятно4 = scale [пятно4] factor=[1, 1, 0.38]
+пятно4 = place [пятно4] at=[14.0, -52.2, 115.5]
+color пятно4 #f6ead2 material=plastic
+пятно5 = sphere radius=7.5 segments=24
+пятно5 = scale [пятно5] factor=[1, 1, 0.38]
+пятно5 = place [пятно5] at=[31.2, -18.0, 125.2]
+color пятно5 #f6ead2 material=plastic
+пятно6 = sphere radius=6.5 segments=24
+пятно6 = scale [пятно6] factor=[1, 1, 0.38]
+пятно6 = place [пятно6] at=[-16.4, -11.5, 128.0]
+color пятно6 #f6ead2 material=plastic
+пятно7 = sphere radius=8.5 segments=24
+пятно7 = scale [пятно7] factor=[1, 1, 0.38]
+пятно7 = place [пятно7] at=[28.7, 41.0, 118.7]
+color пятно7 #f6ead2 material=plastic
+
+check ножка watertight
+check шляпка watertight
+check шляпка parts 1
+check ножка height 60..64
+check шляпка height 55..60
+check шляпка tris ..60000
