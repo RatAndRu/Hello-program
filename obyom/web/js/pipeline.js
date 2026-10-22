@@ -3,7 +3,7 @@
 import { matLayout, matRaster } from './mat.js';
 import { detectMarkers, toGray } from './detect.js';
 import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal, camAngles } from './pose.js';
-import { computeMask, motionMasks, carveHull, meshFromGrid, revolveGrid, taubin, computeNormals, colorize, depthMap, cleanGrid } from './recon.js';
+import { computeMask, motionMasks, carveHull, meshFromGrid, revolveGrid, taubin, computeNormals, colorize, depthMap, cleanGrid, vesselCarve } from './recon.js';
 import { alignHulls, intersectHulls, framesToA } from './align.js';
 import { boxMesh, prismMesh, snapPlanes } from './shapes.js';
 import { bakeTexture, subdivideLong } from './texture.js';
@@ -87,11 +87,20 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   }
   const shape = job.shape || 'normal';
   let M, shapeInfo = '';
+  if (shape === 'vessel') { // v2.3: полость внутри (кружка, ваза) — силуэты её не видят, достраиваем по горлышку и виду сверху
+    const r = vesselCarve(G, good);
+    if (!r.removed) shapeInfo = 'полость не построена: ' + r.reason;
+    else {
+      shapeInfo = `горлышко Ø${(2 * r.R).toFixed(0)} мм на высоте ${r.rim.toFixed(0)} мм, глубина ${r.depth.toFixed(0)} мм, стенка ~${r.wall.toFixed(1)} мм (по размеру горлышка), дно ${r.bottom.toFixed(0)} мм` +
+        (r.measured ? ' (найдено по виду сверху)' : ' (дна сверху не видно — толщина по умолчанию; сними несколько кадров сверху, чтобы было видно дно)');
+      if (r.cap > 500) log(`срезана «шапка» над горлышком: ${(r.cap / 1000).toFixed(1)} см³ (по ${r.capBy === 'стенка' ? 'цвету стенки' : 'сужению'})`);
+    }
+  }
   if (shape === 'box' || shape === 'prism') {
     const r = shape === 'box' ? boxMesh(G) : prismMesh(G);
     M = r.mesh; shapeInfo = r.info;
   } else {
-    const GS = shape === 'revolve' ? revolveGrid(G) : G;
+    const GS = shape === 'revolve' ? revolveGrid(G) : G; // «сосуд» — обычная сетка с вырезанной полостью
     M = meshFromGrid(GS, shape === 'smooth' ? 5 : 3); taubin(M, shape === 'smooth' ? 60 : 30); computeNormals(M);
     if (shape === 'planes') { const r = snapPlanes(M); M = r.mesh; shapeInfo = r.info; }
   }
@@ -299,7 +308,7 @@ export function plateEmpty(d, L, mr, K0, Rb, Hb) {
   if (bg < 0.8 * all) return `в центре круга что-то стоит (коврик виден на ${Math.round(100 * bg / all)}%) — предмет нужно убрать`;
   return '';
 }
-const SHAPES = { revolve: 'тело вращения', smooth: 'гладкая', box: 'коробка', prism: 'призма (одно сечение по высоте)', planes: 'плоские грани' };
+const SHAPES = { revolve: 'тело вращения', smooth: 'гладкая', box: 'коробка', prism: 'призма (одно сечение по высоте)', planes: 'плоские грани', vessel: 'сосуд' };
 export function fmtT(s) { s = Math.max(0, Math.round(s)); return s < 60 ? `${s} с` : `${Math.floor(s / 60)} мин ${s % 60 ? (s % 60) + ' с' : ''}`; }
 
 // строка журнала про свет, рельеф и материалы

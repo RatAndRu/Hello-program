@@ -421,6 +421,41 @@ export function carveVote(bg, weak, seen, frac = 0.08, few = false, weakMaj = 0.
   if (bg >= need) return true;
   return bg + weak >= need && bg + weak >= (weakMaj ?? 0.5) * seen;
 }
+// v2.3: субпиксельный край. Пиксели полосы «неизвестно» (1) на кромке силуэта — смесь предмета и фона. По цвету оцениваем
+// долю предмета α (как в мэттинге): цвет пикселя между средним соседним фоном и средним соседним предметом.
+// Если фон и предмет почти одного цвета — α не оценить, пиксель остаётся «не фон» (как раньше).
+export function edgeAlpha(f, opt = {}) {
+  const { w, h, mask, rgba } = f, np = w * h, al = new Uint8Array(np).fill(255), minC = opt.minContrast ?? 40, R = opt.band ?? 3;
+  // «глубокий предмет»: пиксели предмета, у которых в радиусе 3 нет ничего, кроме предмета (эрозия) — их цвет чистый, без смеси
+  const deep = new Uint8Array(np);
+  { const rowOk = new Uint8Array(np);
+    for (let y = 0; y < h; y++) { let run = 0; for (let x = 0; x < w; x++) { run = mask[y * w + x] === 2 ? run + 1 : 0; if (run >= 7) rowOk[y * w + x - 3] = 1; } }
+    for (let x = 0; x < w; x++) { let run = 0; for (let y = 0; y < h; y++) { run = rowOk[y * w + x] ? run + 1 : 0; if (run >= 7) deep[(y - 3) * w + x] = 1; } } }
+  const S = R + (opt.reach ?? 3);
+  for (let y = S; y < h - S; y++) for (let x = S; x < w - S; x++) {
+    const i = y * w + x, mi = mask[i]; if (mi !== 1 && mi !== 2) continue;
+    let near = 0; for (let dy = -R; dy <= R && !near; dy++) for (let dx = -R; dx <= R; dx++) if (mask[i + dy * w + dx] === 0) { near = 1; break; }
+    if (!near) continue; // не кромка
+    let b0 = 0, b1 = 0, b2 = 0, cb = 0, o0 = 0, o1 = 0, o2 = 0, co = 0;
+    for (let dy = -S; dy <= S; dy++) for (let dx = -S; dx <= S; dx++) {
+      const j = i + dy * w + dx, m = mask[j];
+      if (m === 0 && Math.abs(dx) <= R + 1 && Math.abs(dy) <= R + 1) { b0 += rgba[j * 4]; b1 += rgba[j * 4 + 1]; b2 += rgba[j * 4 + 2]; cb++; }
+      else if (deep[j]) { o0 += rgba[j * 4]; o1 += rgba[j * 4 + 1]; o2 += rgba[j * 4 + 2]; co++; }
+    }
+    if (cb < 3 || co < 4) continue;
+    b0 /= cb; b1 /= cb; b2 /= cb; o0 /= co; o1 /= co; o2 /= co;
+    const d0 = o0 - b0, d1 = o1 - b1, d2 = o2 - b2, dd = d0 * d0 + d1 * d1 + d2 * d2;
+    if (dd < minC * minC) continue; // фон и предмет похожи — долю не оценить
+    const e0 = rgba[i * 4] - b0, e1 = rgba[i * 4 + 1] - b1, e2 = rgba[i * 4 + 2] - b2, a = (e0 * d0 + e1 * d1 + e2 * d2) / dd;
+    // цвет должен лежать «между» фоном и предметом: иначе это рисунок/контур предмета, а не смесь — не трогаем
+    const r0 = e0 - a * d0, r1 = e1 - a * d1, r2 = e2 - a * d2;
+    if (r0 * r0 + r1 * r1 + r2 * r2 > 0.12 * dd) continue;
+    al[i] = Math.max(0, Math.min(255, Math.round(a * 255)));
+  }
+  return al;
+}
+// мягкое значение «предмет» в пикселе для субпиксельной выборки: фон 0, предмет 1, кромка — α, прочее — 1 (не режет)
+function softAt(f, i) { const m = f.mask[i]; return m === 0 ? 0 : (m === 1 || m === 2) && f.alpha[i] < 255 ? f.alpha[i] / 255 : m === 3 ? 0.5 : 1; }
 // frames: [{w,h,K,R,t,mask}], box: {Rb,Hb}, N — вокселей по ширине
 export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   const vs = 2 * box.Rb / N, nx = N, ny = N, nz = Math.max(8, Math.ceil(box.Hb / vs));
@@ -432,6 +467,12 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   // Сколько кадров должны сказать «здесь фон», чтобы вырезать воксель. Не «любые два», а доля от видевших:
   // блики на блестящем предмете дают ложный «фон» в отдельных кадрах — они больше не прорезают дыры.
   const frac = opt.frac ?? 0.08, few = frames.length < 8, tfrac = opt.trustFrac ?? 0.1;
+  const subpix = opt.subpix !== false;
+  if (subpix) for (const f of F) if (f.rgba && !f.alpha) f.alpha = edgeAlpha(f, { reach: opt.alphaReach ?? 5 });
+  // вес кадра по точности позы (ошибка меток rms, px): неточный кадр голосует слабее — ложные «фоны» по кромке не прорезают вмятин
+  const wF = F.map((f) => { const r = f.rms ?? (f.p && f.p.rms) ?? 0.5; return opt.weighted === false ? 1 : 1 / (1 + Math.max(0, r - 1) ** 2); }); // до 1 px — полный вес
+  { const m = wF.reduce((a_, b_) => a_ + b_, 0) / Math.max(1, wF.length); for (let k = 0; k < wF.length; k++) wF[k] /= m; } // средний вес 1
+  const wMean = 1;
   for (let z = 0; z < nz; z++) {
     const Z = oz + z * vs;
     for (let y = 0; y < ny; y++) {
@@ -439,24 +480,34 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
       for (let x = 0; x < nx; x++) {
         const X = ox + x * vs;
         if (X * X + Y * Y > box.Rb * box.Rb) continue;
-        let bg = 0, weak = 0, seen = 0, left = F.length, tbg = 0, tseen = 0;
+        let bg = 0, weak = 0, seen = 0, left = F.length, tbg = 0, tseen = 0, nbg = 0;
         for (let k = 0; k < F.length; k++, left--) {
           const f = F[k], R = f.R, t = f.t, K = f.K;
           const cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
-          const u = (K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx) | 0, v = (K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy) | 0;
+          const uf = K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx, vf = K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy;
+          const u = uf | 0, v = vf | 0;
           if (u < 0 || v < 0 || u >= f.w || v >= f.h) continue;
-          const mv = f.mask[v * f.w + u]; if (mv === 4) continue;
-          seen++;
-          if (mv === 0) bg++; else if (mv === 3) weak++;
+          let mv = f.mask[v * f.w + u]; if (mv === 4) continue;
+          // кромка: субпиксельно (билинейно по соседним пикселям) — «неизвестно» с долей предмета < ½ режет как фон
+          if ((mv === 1 || mv === 2) && f.alpha && f.alpha[v * f.w + u] < 255 && u > 0 && v > 0 && u < f.w - 2 && v < f.h - 2) {
+            const uu = uf - 0.5, vv = vf - 0.5, i0 = Math.floor(uu), j0 = Math.floor(vv), a = uu - i0, b = vv - j0, q = j0 * f.w + i0;
+            const sv = (1 - a) * (1 - b) * softAt(f, q) + a * (1 - b) * softAt(f, q + 1) + (1 - a) * b * softAt(f, q + f.w) + a * b * softAt(f, q + f.w + 1);
+            if (sv < 0.5) mv = 0;
+          }
+          const wk = wF[k];
+          seen += wk;
+          if (mv === 0) { bg += wk; nbg++; } else if (mv === 3) weak += wk;
           if (f.trusted) { tseen++; if (mv === 0) tbg++; }
           // досрочно: уже точно вырезан (даже если все оставшиеся кадры увидят точку)
-          if (!few && bg >= 2 && bg >= frac * (seen + left - 1)) break;
+          if (!few && nbg >= 2 && bg >= frac * (seen + left - 1)) break;
         }
         const need = few ? 1 : Math.max(2, Math.ceil(frac * seen));
         // «Доверенные» кадры (предмет целиком на листе, силуэт замкнут фоном коврика) голосуют ещё и между собой:
         // их «фон» не перевешивается «неизвестно» из низких ракурсов (тень, край листа) — так срезается шапка.
         const trustCut = tseen >= 3 && tbg >= Math.max(2, Math.ceil(tfrac * tseen));
-        occ[(z * ny + y) * nx + x] = trustCut || carveVote(bg, weak, seen, frac, few, opt.weakMaj) ? 0 : 1;
+        // взвешенно: минимум голосов «фон» — штуками (не меньше двух), доля — по весам кадров
+        const cut = seen < 3 * wMean ? true : few ? nbg >= 1 : (nbg >= 2 && bg >= frac * seen) || (bg + weak >= Math.max(2 * wMean, frac * seen) && bg + weak >= (opt.weakMaj ?? 0.5) * seen && nbg + weak > 0);
+        occ[(z * ny + y) * nx + x] = trustCut || cut ? 0 : 1;
       }
     }
     if (onProgress && (z & 3) === 0) onProgress(z / nz);
@@ -480,6 +531,107 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   if (cr > 0) closeGrid(occ, nx, ny, nz, cr);
   fillVoids(occ, nx, ny, nz);
   return { occ, nx, ny, nz, vs, origin: [ox, oy, oz], capTrim: capTrim * vs, capExt: trimCap.lastExt || 0, motionCut: mc ? mc.removed * vs ** 3 : 0, Rb: box.Rb, Hb: box.Hb };
+}
+// ---------- «Сосуд»: полость внутри (кружка, ваза, стакан) ----------
+// Силуэты полость не видят никогда — снаружи она закрыта стенкой. Достраиваем: контур полости = верхний срез,
+// суженный на толщину стенки; вниз полость только сужается (пересечение суженных срезов); глубину дна ищем
+// перебором плоскостей: на верной глубине цвет дна одинаков во всех кадрах, которые видят его сквозь горлышко.
+function dist2D(m, nx, ny) { // шашечное (3-4) расстояние до «пусто», в шагах сетки
+  const d = new Float32Array(nx * ny), INF = 1e9;
+  for (let i = 0; i < nx * ny; i++) d[i] = m[i] ? INF : 0;
+  for (let y = 0; y < ny; y++) for (let x = 0; x < nx; x++) { const i = y * nx + x; if (!d[i]) continue; let v = d[i];
+    if (x > 0) v = Math.min(v, d[i - 1] + 1); else v = Math.min(v, 1); if (y > 0) v = Math.min(v, d[i - nx] + 1); else v = Math.min(v, 1);
+    if (x > 0 && y > 0) v = Math.min(v, d[i - nx - 1] + 1.4142); if (x < nx - 1 && y > 0) v = Math.min(v, d[i - nx + 1] + 1.4142); d[i] = v; }
+  for (let y = ny - 1; y >= 0; y--) for (let x = nx - 1; x >= 0; x--) { const i = y * nx + x; if (!d[i]) continue; let v = d[i];
+    if (x < nx - 1) v = Math.min(v, d[i + 1] + 1); else v = Math.min(v, 1); if (y < ny - 1) v = Math.min(v, d[i + nx] + 1); else v = Math.min(v, 1);
+    if (x < nx - 1 && y < ny - 1) v = Math.min(v, d[i + nx + 1] + 1.4142); if (x > 0 && y < ny - 1) v = Math.min(v, d[i + nx - 1] + 1.4142); d[i] = v; }
+  return d;
+}
+function largest2D(m, nx, ny) {
+  const lab = new Int32Array(nx * ny), st = []; let best = 0, bestL = 0, L = 0;
+  for (let i = 0; i < nx * ny; i++) { if (!m[i] || lab[i]) continue; L++; let n = 0; st.push(i); lab[i] = L;
+    while (st.length) { const j = st.pop(); n++; const x = j % nx, y = (j / nx) | 0;
+      if (x > 0 && m[j - 1] && !lab[j - 1]) { lab[j - 1] = L; st.push(j - 1); } if (x < nx - 1 && m[j + 1] && !lab[j + 1]) { lab[j + 1] = L; st.push(j + 1); }
+      if (y > 0 && m[j - nx] && !lab[j - nx]) { lab[j - nx] = L; st.push(j - nx); } if (y < ny - 1 && m[j + nx] && !lab[j + nx]) { lab[j + nx] = L; st.push(j + nx); } }
+    if (n > best) { best = n; bestL = L; } }
+  const out = new Uint8Array(nx * ny); for (let i = 0; i < nx * ny; i++) out[i] = lab[i] === bestL && bestL ? 1 : 0; return { m: out, n: best };
+}
+// Фотосогласованность внешней поверхности оболочки по слоям: настоящая стенка видна одинаковой во всех кадрах,
+// «шапка» над горлышком — воздух, сквозь который кадры видят разные места внутренности.
+export function shellConsistency(G, frames) {
+  const { occ, nx, ny, nz, vs } = G, [ox, oy, oz] = G.origin, NN = nx * ny, O = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < nx && y < ny && z < nz && occ[(z * ny + y) * nx + x] > 0.5;
+  const cams = frames.filter((f) => f.rgba).map((f) => { const R = f.R, t = f.t; return { f, c: [-(R[0] * t[0] + R[3] * t[1] + R[6] * t[2]), -(R[1] * t[0] + R[4] * t[1] + R[7] * t[2]), -(R[2] * t[0] + R[5] * t[1] + R[8] * t[2])] }; });
+  const out = new Float32Array(nz).fill(NaN);
+  for (let z = 1; z < nz - 1; z++) {
+    const pts = []; for (let y = 1; y < ny - 1; y++) for (let x = 1; x < nx - 1; x++) { if (!O(x, y, z)) continue; let gx = 0, gy = 0;
+      if (!O(x - 1, y, z)) gx--; if (!O(x + 1, y, z)) gx++; if (!O(x, y - 1, z)) gy--; if (!O(x, y + 1, z)) gy++; if (gx || gy) { const l = Math.hypot(gx, gy); pts.push([x, y, gx / l, gy / l]); } }
+    if (pts.length < 8) continue; const stp = Math.max(1, Math.floor(pts.length / 150)); let sv = 0, np = 0;
+    for (let k = 0; k < pts.length; k += stp) { const [x, y, gx, gy] = pts[k], X = ox + (x + 0.5 * gx) * vs, Y = oy + (y + 0.5 * gy) * vs, Z = oz + z * vs; let n = 0, s0 = 0, s1 = 0, s2 = 0, q = 0;
+      for (const cm of cams) { const dx = cm.c[0] - X, dy = cm.c[1] - Y, dz = cm.c[2] - Z, L = Math.hypot(dx, dy, dz); if ((dx * gx + dy * gy) / L < 0.35) continue;
+        let vis = true; for (let s_ = 1.5; s_ < 60 && vis; s_ += 1) { const xi = Math.round(x + gx * 0.5 + s_ * dx / L), yi = Math.round(y + gy * 0.5 + s_ * dy / L), zi = Math.round(z + s_ * dz / L); if (zi >= nz) break; if (O(xi, yi, zi)) vis = false; }
+        if (!vis) continue; const f = cm.f, R = f.R, t = f.t, K = f.K, cz = R[6] * X + R[7] * Y + R[8] * Z + t[2]; if (cz <= 1) continue;
+        const u = (K.fx * (R[0] * X + R[1] * Y + R[2] * Z + t[0]) / cz + K.cx) | 0, v = (K.fy * (R[3] * X + R[4] * Y + R[5] * Z + t[1]) / cz + K.cy) | 0; if (u < 1 || v < 1 || u >= f.w - 1 || v >= f.h - 1) continue;
+        const i = (v * f.w + u) * 4, a = f.rgba[i], b = f.rgba[i + 1], c = f.rgba[i + 2]; n++; s0 += a; s1 += b; s2 += c; q += a * a + b * b + c * c; }
+      if (n < 3) continue; sv += (q - (s0 * s0 + s1 * s1 + s2 * s2) / n) / n; np++; }
+    if (np >= 6) out[z] = sv / np;
+  }
+  return out;
+}
+export function vesselCarve(G, frames, opt = {}) {
+  const { occ, nx, ny, nz, vs } = G, [ox, oy, oz] = G.origin, NN = nx * ny;
+  const area = new Int32Array(nz); for (let z = 0; z < nz; z++) { let a = 0; for (let i = 0; i < NN; i++) a += occ[z * NN + i] > 0.5 ? 1 : 0; area[z] = a; }
+  let zt = nz - 1; while (zt > 0 && area[zt] === 0) zt--;
+  // «шапка» над горлышком: сверху пространство над отверстием видно на фоне внутренности — силуэты его не срезают.
+  // Кромка = верхний слой, где внешняя стенка фотосогласована; запасной признак — резкое сужение площади к верху.
+  let zr = Math.max(1, zt - 1), capBy = '';
+  { const c = shellConsistency(G, frames), body = [];
+    for (let z = Math.round(0.15 * zt); z <= Math.round(0.7 * zt); z++) if (c[z] === c[z]) body.push(c[z]);
+    body.sort((a_, b_) => a_ - b_); const M = body.length ? body[body.length >> 1] : NaN, thr = 2.5 * M;
+    let z = zt, hi = 0; while (z > zt * 0.5 && !(c[z] < thr && c[z - 1] < thr)) { if (c[z] >= thr) hi++; z--; }
+    if (M === M && hi >= 2 && z > zt * 0.5 && z < zt) { zr = z; capBy = 'стенка'; }
+    else { const d = Math.max(1, Math.round(3 / vs)); let z2 = zt - 1; while (z2 - d > zt * 0.5 && area[z2] < 0.93 * area[z2 - d]) z2--; if (z2 < zt - 1) { zr = z2; capBy = 'площадь'; } } }
+  let capRemoved = 0;
+  for (let z = zr + 1; z <= zt; z++) for (let i = 0; i < NN; i++) if (occ[z * NN + i] > 0.5) { occ[z * NN + i] = 0; capRemoved++; }
+  zt = zr;
+  const H = (zt + 1) * vs, rim = new Uint8Array(NN); for (let i = 0; i < NN; i++) rim[i] = occ[zr * NN + i] > 0.5 ? 1 : 0;
+  const R = Math.sqrt(largest2D(rim, nx, ny).n / Math.PI) * vs;
+  const wall = opt.wall ?? Math.max(2, Math.min(5, 0.1 * R)), tv = wall / vs;
+  // контуры полости по слоям сверху вниз
+  const C = new Array(nz).fill(null);
+  { const d = dist2D(rim, nx, ny), c = new Uint8Array(NN); for (let i = 0; i < NN; i++) c[i] = d[i] > tv ? 1 : 0; C[zr] = largest2D(c, nx, ny).m; }
+  let cA = 0; for (const v of C[zr]) cA += v;
+  if (cA * vs * vs < Math.PI * 9) return { removed: 0, reason: `горлышко слишком узкое (радиус ${R.toFixed(0)} мм, стенка ${wall.toFixed(1)} мм)` };
+  const zMin = Math.max(1, Math.ceil((opt.minBottom ?? 2) / vs)); let zLow = zr;
+  for (let z = zr - 1; z >= zMin; z--) { const sl = new Uint8Array(NN); for (let i = 0; i < NN; i++) sl[i] = occ[z * NN + i] > 0.5 ? 1 : 0;
+    const d = dist2D(sl, nx, ny), c = new Uint8Array(NN); let n = 0; for (let i = 0; i < NN; i++) { c[i] = C[z + 1][i] && d[i] > tv ? 1 : 0; n += c[i]; }
+    if (n * vs * vs < Math.PI * 4) break; C[z] = c; zLow = z; }
+  // перебор глубины дна: zf — верхний слой дна (полость — слои zf+1..zt)
+  const cams = frames.map((f) => { const Rm = f.R, t = f.t; return { f, c: [-(Rm[0] * t[0] + Rm[3] * t[1] + Rm[6] * t[2]), -(Rm[1] * t[0] + Rm[4] * t[1] + Rm[7] * t[2]), -(Rm[2] * t[0] + Rm[5] * t[1] + Rm[8] * t[2])] }; })
+    .filter((c) => c.f.rgba && c.c[2] > oz + (zr + 1) * vs);
+  const sample = (f, X, Y, Z, out) => { const Rm = f.R, t = f.t, K = f.K, cz = Rm[6] * X + Rm[7] * Y + Rm[8] * Z + t[2]; if (cz <= 1) return false;
+    const u = (K.fx * (Rm[0] * X + Rm[1] * Y + Rm[2] * Z + t[0]) / cz + K.cx) | 0, v = (K.fy * (Rm[3] * X + Rm[4] * Y + Rm[5] * Z + t[1]) / cz + K.cy) | 0;
+    if (u < 1 || v < 1 || u >= f.w - 1 || v >= f.h - 1) return false; const q = (v * f.w + u) * 4; out[0] = f.rgba[q]; out[1] = f.rgba[q + 1]; out[2] = f.rgba[q + 2]; return true; };
+  const cost = new Float32Array(nz).fill(NaN), col = [0, 0, 0];
+  for (let zf = zLow - 1; zf <= zr; zf++) {
+    const Cf = zf === zr ? C[zr] : C[zf + 1]; if (!Cf) continue; // точки дна лежат под полостью слоя zf+1 (zf = zr — гипотеза «сплошная крышка»)
+    const Zf = oz + (zf + 0.5) * vs, pts = []; for (let i = 0; i < NN; i++) if (Cf[i]) pts.push(i);
+    const stp = Math.max(1, Math.floor(pts.length / 300)); let sv = 0, np = 0;
+    for (let k = 0; k < pts.length; k += stp) { const i = pts[k], X = ox + (i % nx) * vs, Y = oy + ((i / nx) | 0) * vs; let n = 0, s0 = 0, s1 = 0, s2 = 0, q0 = 0, q1 = 0, q2 = 0;
+      for (const cm of cams) { const dx = cm.c[0] - X, dy = cm.c[1] - Y, dz = cm.c[2] - Zf; let vis = true;
+        for (let z = zf + 1; z <= zr && vis; z++) { const s_ = (oz + z * vs - Zf) / dz, xi = Math.round((X + s_ * dx - ox) / vs), yi = Math.round((Y + s_ * dy - oy) / vs);
+          if (xi < 0 || yi < 0 || xi >= nx || yi >= ny || !C[z][yi * nx + xi]) vis = false; }
+        if (!vis || !sample(cm.f, X, Y, Zf, col)) continue; n++; s0 += col[0]; s1 += col[1]; s2 += col[2]; q0 += col[0] * col[0]; q1 += col[1] * col[1]; q2 += col[2] * col[2]; }
+      if (n < 3) continue; sv += (q0 - s0 * s0 / n + q1 - s1 * s1 / n + q2 - s2 * s2 / n) / n; np++; }
+    if (np >= 12) cost[zf] = sv / np;
+  }
+  let zb = -1, cb = Infinity; const cs = []; for (let z = 0; z < zr - 1; z++) if (cost[z] === cost[z]) { cs.push(cost[z]); if (cost[z] < cb) { cb = cost[z]; zb = z; } }
+  cs.sort((a, b) => a - b); const med = cs.length ? cs[cs.length >> 1] : NaN, lid = cost[zr];
+  let measured = zb >= 0 && cs.length >= 4 && cb < 0.6 * med && !(lid <= cb * 1.1);
+  if (!measured) zb = Math.max(zLow, Math.min(zr - 2, Math.round((opt.defBottom ?? Math.max(3, Math.min(8, 0.08 * H))) / vs) - 1));
+  zb = Math.max(zb, zLow - 1);
+  let removed = 0;
+  for (let z = zb + 1; z <= zt; z++) { const c = C[Math.min(z, zr)]; if (!c) continue; for (let i = 0; i < NN; i++) if (c[i] && occ[z * NN + i] > 0.5) { occ[z * NN + i] = 0; removed++; } }
+  return { removed, volume: removed * vs ** 3, capBy, cap: capRemoved * vs ** 3, rim: (zr + 1) * vs, depth: (zt + 1 - (zb + 1)) * vs, bottom: (zb + 1) * vs, wall, R, measured, lidLike: lid <= cb * 1.1, cost: Array.from(cost) };
 }
 // ---------- «Движение» на вертушке: что крутится — то предмет ----------
 // Камера стоит, крутится только столик с предметом. Стол и стена за листом в кадрах одной позиции камеры неподвижны:

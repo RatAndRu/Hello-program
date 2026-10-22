@@ -126,6 +126,30 @@ def render(Rm, t):
         if ok.any():
             c = shade_obj(Pn, Nn, kind)
             img[ok] = c[ok]; best[ok] = tt[ok]
+    if os.environ.get('OBJ') == 'mug':  # v2.3: кружка — полая (внутри видно только сверху): r 30 / 26.5, высота 80, дно 7, П-ручка
+        RO, RI, HM, HB_ = 30.0, 26.5, 80.0, 7.0
+        inner = 'plain' if os.environ.get('MUGPLAIN') else 'sph'  # внутри: однотонно или с рисунком
+        def cyl_roots(r):
+            a_ = d[..., 0]**2 + d[..., 1]**2; b_ = 2 * (o[0] * d[..., 0] + o[1] * d[..., 1]); c_ = o[0]**2 + o[1]**2 - r * r
+            dc = b_ * b_ - 4 * a_ * c_; q_ = np.sqrt(np.maximum(dc, 0)); return dc > 0, (-b_ - q_) / (2 * a_ + 1e-12), (-b_ + q_) / (2 * a_ + 1e-12)
+        okc, t1, _ = cyl_roots(RO); Pc = o + d * t1[..., None]
+        hit(t1, Pc, np.stack([Pc[..., 0], Pc[..., 1], np.zeros_like(t1)], -1) / RO, 'cyl', okc & (Pc[..., 2] >= 0) & (Pc[..., 2] <= HM))
+        oki, _, t2 = cyl_roots(RI); Pi = o + d * t2[..., None]
+        hit(t2, Pi, -np.stack([Pi[..., 0], Pi[..., 1], np.zeros_like(t2)], -1) / RI, inner, oki & (Pi[..., 2] >= HB_) & (Pi[..., 2] <= HM))
+        def plane(z0, nz_, rmin, rmax, kind):
+            tz_ = (z0 - o[2]) / np.where(np.abs(d[..., 2]) < 1e-9, 1e-9, d[..., 2]); Pz = o + d * tz_[..., None]; rr = np.hypot(Pz[..., 0], Pz[..., 1])
+            hit(tz_, Pz, np.broadcast_to(np.array([0, 0, nz_]), Pz.shape), kind, (rr >= rmin) & (rr <= rmax))
+        plane(HM, 1.0, RI, RO, 'cyl'); plane(HB_, 1.0, 0, RI, inner); plane(0.0, -1.0, 0, RO, 'cyl')
+        inv = 1 / np.where(np.abs(d) < 1e-9, 1e-9, d)
+        for lo, hi in [((28, -5, 20.0), (46, 5, 28.0)), ((28, -5, 52.0), (46, 5, 60.0)), ((39, -5, 28.0), (46, 5, 52.0))]:
+            lo = np.array(lo); hi = np.array(hi); t0 = (lo - o) * inv; t1b = (hi - o) * inv
+            tmin = np.minimum(t0, t1b).max(-1); tmax = np.maximum(t0, t1b).min(-1); Pb = o + d * tmin[..., None]
+            nb = np.zeros_like(Pb); ax = np.argmax(np.minimum(t0, t1b), -1)
+            for k in range(3): nb[..., k] = np.where(ax == k, -np.sign(d[..., k]), 0)
+            hit(tmin, Pb, nb, 'box', tmax > np.maximum(tmin, 0))
+        objm = best < bgd - 1e-3
+        img = np.clip(img + rng.normal(0, noise / 255, img.shape), 0, 1)
+        return (img * 255).astype(np.uint8), objm
     if os.environ.get('OBJ') in ('box', 'hex', 'pbank'):  # выпуклый многогранник (коробка 60×40×45, повёрнута на 20°; шестигранник r=30 h=50;
         # pbank — павербанк, поставленный вертикально: 66×24×140, размеры можно задать BOXDIM="66,24,140")
         if os.environ['OBJ'] in ('box', 'pbank'):
@@ -188,6 +212,7 @@ for i in range(N):
         az = i * 360 / N; el = [32, 52][i % 2]; dist = 380
     else:
         az = i * 360 / N + rng.normal(0, 3); el = 30 + 25 * (i % 3) / 2 + rng.normal(0, 2); dist = 340 + rng.normal(0, 20)
+        if os.environ.get('TOPV'): el = [30, 52, 74][i % 3] + rng.normal(0, 2)  # v2.3: с кадрами почти сверху (заглянуть в кружку)
     if os.environ.get('DIST'): dist = float(os.environ['DIST']) + rng.normal(0, 8)  # крупные планы (досъёмка для текстуры)
     a = np.radians(az); e = np.radians(el)
     cam = np.array([dist * np.cos(e) * np.sin(a), dist * np.cos(e) * np.cos(a), dist * np.sin(e)])
