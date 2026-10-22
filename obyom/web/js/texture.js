@@ -226,19 +226,26 @@ export async function bakeTexture(M, frames, opt = {}) {
     for (let ch = 0; ch < 3; ch++) { let s = 0; for (let e = 0; e < 3; e++) s += M.col ? M.col[idx[i * 3 + e] * 3 + ch] : 128; atlas[o + ch] = s / 3; }
   });
   // 7) новая сетка: вершина на каждом лоскуте своя (на швах — дубли с разными UV)
-  const np = [], nn = [], nc = [], uv = [], ni = new Uint32Array(nt * 3);
+  const np = [], nn = [], nc = [], uv = [], dt = [], ni = new Uint32Array(nt * 3);
+  // детальность (v2.3): сколько мм поверхности на пиксель исходного кадра лоскута (с учётом наклона к камере)
+  const mmpx = (f, v) => { if (!f) return 0; const { K, R, t } = f, s = (f.srcW || f.w) / f.w, X = pos[v * 3], Y = pos[v * 3 + 1], Z = pos[v * 3 + 2];
+    const C = [-(R[0] * t[0] + R[3] * t[1] + R[6] * t[2]), -(R[1] * t[0] + R[4] * t[1] + R[7] * t[2]), -(R[2] * t[0] + R[5] * t[1] + R[8] * t[2])];
+    const dx = C[0] - X, dy = C[1] - Y, dz = C[2] - Z, d = Math.hypot(dx, dy, dz), cs = Math.abs(M.nrm[v * 3] * dx + M.nrm[v * 3 + 1] * dy + M.nrm[v * 3 + 2] * dz) / d;
+    return d / (K.fx * s * Math.max(0.25, cs)); };
   const stamp = new Int32Array(nv).fill(-1), map = new Int32Array(nv);
-  const addV = (v, U, V) => { const id = np.length / 3; for (let c = 0; c < 3; c++) { np.push(pos[v * 3 + c]); nn.push(M.nrm[v * 3 + c]); nc.push(M.col ? M.col[v * 3 + c] : 200); } uv.push(U, V); return id; };
+  const addV = (v, U, V, f) => { const id = np.length / 3; dt.push(mmpx(f, v)); for (let c = 0; c < 3; c++) { np.push(pos[v * 3 + c]); nn.push(M.nrm[v * 3 + c]); nc.push(M.col ? M.col[v * 3 + c] : 200); } uv.push(U, V); return id; };
   rects.forEach((r, ri) => {
     if (!r.c) return; const c = r.c, f = frames[c.fi];
     for (const i of c.faces) for (let e = 0; e < 3; e++) {
       const v = idx[i * 3 + e];
-      if (stamp[v] !== ri) { stamp[v] = ri; const [u, vv] = projSrc(f, v); map[v] = addV(v, (r.x + G + (u - c.bx) * sg) / T, (r.y + G + (vv - c.by) * sg) / T); }
+      if (stamp[v] !== ri) { stamp[v] = ri; const [u, vv] = projSrc(f, v); map[v] = addV(v, (r.x + G + (u - c.bx) * sg) / T, (r.y + G + (vv - c.by) * sg) / T, f); }
       ni[i * 3 + e] = map[v];
     }
   });
   if (ur) unseen.forEach((i, k) => { const U = (ur.x + G + (k % us) + 0.5) / T, V = (ur.y + G + ((k / us) | 0) + 0.5) / T; for (let e = 0; e < 3; e++) ni[i * 3 + e] = addV(idx[i * 3 + e], U, V); });
-  const mesh = { pos: new Float32Array(np), nrm: new Float32Array(nn), col: new Uint8Array(nc), idx: ni, uv: new Float32Array(uv) };
+  // атлас может быть мельче исходника (σ < 1): тогда детальность ограничена атласом
+  const detail = new Float32Array(dt); if (sg < 1) for (let i = 0; i < detail.length; i++) detail[i] /= sg;
+  const mesh = { pos: new Float32Array(np), nrm: new Float32Array(nn), col: new Uint8Array(nc), idx: ni, uv: new Float32Array(uv), detail };
   const jpg = opt.encode ? await opt.encode(atlas, T) : null;
   prog(1, 'текстура готова');
   // faceFrame / faceChart — для анализа поверхности (свет, рельеф, материал): из какого кадра и лоскута каждая грань

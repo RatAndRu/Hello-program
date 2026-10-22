@@ -2,7 +2,7 @@ import fs from 'fs';
 // v2.2: по умолчанию — те же параметры, что в приложении (peel=1, frac=0.08, major по умолчанию); PEEL/MAJ/FRAC — переопределить
 import { matLayout, matRaster } from '../web/js/mat.js';
 import { detectMarkers, toGray } from '../web/js/detect.js';
-import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal } from '../web/js/pose.js';
+import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal, fitK1, undistortPts, undistortRGBA } from '../web/js/pose.js';
 import { shellConsistency, vesselCarve, edgeAlpha, revolveGrid, computeMask, carveHull, meshFromGrid, taubin, computeNormals, colorize } from '../web/js/recon.js';
 const dir = process.argv[2], W = 640, theme = process.argv[3] || 'light', N = +(process.argv[4] || 128);
 const gt = JSON.parse(fs.readFileSync(dir + '/gt.json')); const s = W / gt.w, w = W, h = Math.round(gt.h * s);
@@ -15,6 +15,11 @@ for (const [gi, fr] of gt.frames.entries()) {
   if (!p) continue; eqs.push(...focalEqs(p.H, w / 2, h / 2)); frames.push({ rgba, ms, p, w, h, gi });
 }
 const f0 = focalFromEqs(eqs); const rf = refineFocal(frames.map(f => f.p), { ...K, fx: f0, fy: f0 }); K = { ...K, fx: rf.f, fy: rf.f };
+{ const dk = fitK1(frames.map((f) => f.p), K), rn = Math.hypot(w / 2, h / 2) / K.fx, shift = Math.abs(dk.k1) * rn ** 3 * K.fx;
+  console.log('K1', dk.k1.toFixed(4), 'shift px', shift.toFixed(2), 'rms', dk.rms0.toFixed(3), '->', dk.rms1.toFixed(3), 'f', K.fx.toFixed(1), 'true f', (gt.K.fx * s).toFixed(1));
+  if (process.env.UNDIST && shift > 0.6 && dk.rms1 < 0.9 * dk.rms0) {
+    for (const f of frames) { f.rgba = undistortRGBA(f.rgba, w, h, dk.k1, K.fx); f.ms = f.ms.map((m) => ({ ...m, corners: undistortPts(m.corners, K, dk.k1) })); f.p = poseFromMarkers(f.ms, L, K); }
+    const rf2 = refineFocal(frames.map((f) => f.p).filter(Boolean), K); K = { ...K, fx: rf2.f, fy: rf2.f }; console.log('undistorted; f', rf2.f.toFixed(1), 'rms', rf2.rms.toFixed(3)); } }
 let clean = null; if (fs.existsSync(dir + '/clean_640.rgba')) clean = new Uint8Array(fs.readFileSync(dir + '/clean_640.rgba'));
 console.time('masks');
 for (const f of frames) { const p = poseFromMarkers(f.ms, L, K); f.R = p.R; f.t = p.t; f.K = K; f.rms = p.rms; const m = computeMask(f, { layout: L, mr, Rb: 55, Hb: +(process.env.HB || 90), clean, cutOnly: !!process.env.CUT, offMat: process.env.NOOFF ? false : undefined, plainWeak: process.env.NOPW ? false : undefined, plainZone: process.env.PZ ? +process.env.PZ : undefined, peel: process.env.PEEL != null ? +process.env.PEEL : undefined, peelAll: !!process.env.PALL, major: process.env.MAJ != null ? +process.env.MAJ : undefined, edgeRefine: process.env.NOER ? false : undefined }); f.mask = m.mask; f.stats = m.stats; }
@@ -57,6 +62,13 @@ console.time('mesh'); const M = meshFromGrid(process.env.REV ? revolveGrid(G) : 
 // объём по сетке (знак = ориентация)
 let V = 0; for (let i = 0; i < M.idx.length; i += 3) { const a = M.idx[i] * 3, b = M.idx[i + 1] * 3, c = M.idx[i + 2] * 3, p = M.pos; V += (p[a] * (p[b + 1] * p[c + 2] - p[b + 2] * p[c + 1]) - p[a + 1] * (p[b] * p[c + 2] - p[b + 2] * p[c]) + p[a + 2] * (p[b] * p[c + 1] - p[b + 1] * p[c])) / 6; }
 console.log('verts', M.pos.length / 3, 'tris', M.idx.length / 3, 'mesh volume', V.toFixed(0));
+if (process.env.QUAD) { const { quadRemesh } = await import('../web/js/retopo.js'); const t0q = Date.now(), Q = quadRemesh(M, +process.env.QUAD, { debug: 1 });
+  const ec = new Map(); for (let q = 0; q < Q.quads.length; q += 4) for (let k = 0; k < 4; k++) { const a = Q.quads[q + k], b = Q.quads[q + ((k + 1) & 3)], key = a < b ? a + ',' + b : b + ',' + a; ec.set(key, (ec.get(key) || 0) + 1); }
+  let bad = 0; for (const c of ec.values()) if (c !== 2) bad++;
+  const val = new Map(); for (const q of Q.quads) val.set(q, (val.get(q) || 0) + 1); let v4 = 0; for (const c of val.values()) if (c === 4) v4++;
+  let QV = 0; for (let q = 0; q < Q.quads.length; q += 4) for (const [i, j, k] of [[0, 1, 2], [0, 2, 3]]) { const a = Q.quads[q + i] * 3, b = Q.quads[q + j] * 3, c = Q.quads[q + k] * 3, P = Q.pos;
+    QV += (P[a] * (P[b + 1] * P[c + 2] - P[b + 2] * P[c + 1]) - P[a + 1] * (P[b] * P[c + 2] - P[b + 2] * P[c]) + P[a + 2] * (P[b] * P[c + 1] - P[b + 1] * P[c])) / 6; }
+  console.log('QUAD', Q.quads.length / 4, 'quads', Q.pos.length / 3, 'verts; cell', Q.cell.toFixed(2), 'mm; non-manifold edges', bad, 'of', ec.size, '; valence4', (100 * v4 / val.size).toFixed(0) + '%; volume', QV.toFixed(0), 'vs', V.toFixed(0), (Date.now() - t0q) + 'мс'); }
 console.time('color'); colorize(M, frames); console.timeEnd('color');
 fs.writeFileSync('/tmp/t/mesh.json', JSON.stringify({ pos: [...M.pos].map(v => +v.toFixed(2)), idx: [...M.idx], col: [...M.col] }));
 { const { occ, nx, ny, nz, vs, origin } = G;

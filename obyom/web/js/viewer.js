@@ -153,7 +153,19 @@ export class Viewer3D {
     if (hasPbr) bufs.push(mk(M.tan instanceof Float32Array ? M.tan : new Float32Array(M.tan), 4, 4, gl.FLOAT, false));
     const ib = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, M.idx instanceof Uint32Array ? M.idx : new Uint32Array(M.idx), gl.STATIC_DRAW); bufs.push(ib);
     gl.bindVertexArray(null);
-    const mesh = this.mesh = { vao, bufs, n: M.idx.length, tex: null, hasUV, hasPbr };
+    // детальность текстуры (мм/пикс) → цвет вершин: синий ≤0.1, голубой 0.14, зелёный 0.2, жёлтый 0.4, красный ≥0.8; 0 — серый (невидимо)
+    let detBuf = null, colBuf = bufs[2];
+    if (M.detail && M.detail.length * 3 === M.pos.length) {
+      const c = new Uint8Array(M.detail.length * 3), ramp = [[40, 90, 255], [40, 200, 255], [60, 220, 90], [250, 220, 40], [240, 60, 40]];
+      for (let i = 0; i < M.detail.length; i++) { const d = M.detail[i];
+        if (!(d > 0)) { c[i * 3] = c[i * 3 + 1] = c[i * 3 + 2] = 120; continue; }
+        const x = Math.max(0, Math.min(3.999, (Math.log2(d) - Math.log2(0.1)) / 0.75)), k = x | 0, a = x - k;
+        for (let ch = 0; ch < 3; ch++) c[i * 3 + ch] = ramp[k][ch] * (1 - a) + ramp[k + 1][ch] * a; }
+      detBuf = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, detBuf); gl.bufferData(gl.ARRAY_BUFFER, c, gl.STATIC_DRAW); bufs.push(detBuf);
+      const ds = Float32Array.from(M.detail).filter((d) => d > 0).sort(); this.detailMed = ds.length ? ds[ds.length >> 1] : 0; this.detailBest = ds.length ? ds[Math.floor(ds.length * 0.05)] : 0;
+    } else { this.detailMed = 0; this.detailBest = 0; }
+    this.hasDetail = !!detBuf;
+    const mesh = this.mesh = { vao, bufs, n: M.idx.length, tex: null, hasUV, hasPbr, detBuf, colBuf };
     // текстура (JPEG атласа) — раскрываем асинхронно; пока грузится, показываем цвет вершин
     const load = (bytes, type, key) => createImageBitmap(new Blob([bytes], { type }), { colorSpaceConversion: 'none', premultiplyAlpha: 'none' }).then((bmp) => {
       if (this.mesh !== mesh) { bmp.close && bmp.close(); return; }
@@ -237,10 +249,11 @@ export class Viewer3D {
       gl.enable(gl.DEPTH_TEST); gl.disable(gl.BLEND); gl.useProgram(this.pm);
       gl.uniformMatrix4fv(gl.getUniformLocation(this.pm, 'uVP'), false, VP); gl.uniform1i(gl.getUniformLocation(this.pm, 'uMode'), this.shade); gl.uniform3fv(gl.getUniformLocation(this.pm, 'uEye'), e);
       // текстура: «фото» — атлас как снят, «без теней» — альбедо из карт поверхности
-      const M_ = this.mesh, colTex = this.texSrc === 'albedo' && M_.alb ? M_.alb : M_.tex;
-      const texOn = colTex && this.useTex !== false ? 1 : 0; gl.uniform1i(gl.getUniformLocation(this.pm, 'uTexOn'), texOn);
+      const M_ = this.mesh, colTex = this.texSrc === 'albedo' && M_.alb ? M_.alb : M_.tex, detOn = this.texSrc === 'detail' && M_.detBuf;
+      gl.bindVertexArray(M_.vao); gl.bindBuffer(gl.ARRAY_BUFFER, detOn ? M_.detBuf : M_.colBuf); gl.vertexAttribPointer(2, 3, gl.UNSIGNED_BYTE, true, 0, 0); gl.bindVertexArray(null);
+      const texOn = colTex && this.useTex !== false && !detOn ? 1 : 0; if (detOn) gl.uniform1i(gl.getUniformLocation(this.pm, 'uMode'), 0); gl.uniform1i(gl.getUniformLocation(this.pm, 'uTexOn'), texOn);
       if (texOn) { gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, colTex); gl.uniform1i(gl.getUniformLocation(this.pm, 'uTex'), 0); }
-      const pbrOn = M_.hasPbr && M_.nrm && M_.orm ? 1 : 0; gl.uniform1i(gl.getUniformLocation(this.pm, 'uPbr'), pbrOn);
+      const pbrOn = M_.hasPbr && M_.nrm && M_.orm && !detOn ? 1 : 0; gl.uniform1i(gl.getUniformLocation(this.pm, 'uPbr'), pbrOn);
       if (pbrOn) {
         gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, M_.nrm); gl.uniform1i(gl.getUniformLocation(this.pm, 'uNrm'), 1);
         gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, M_.orm); gl.uniform1i(gl.getUniformLocation(this.pm, 'uOrm'), 2); gl.activeTexture(gl.TEXTURE0);

@@ -318,7 +318,7 @@ function syncViewTools() {
   $('vShade').querySelectorAll('button').forEach((b) => b.classList.toggle('on', String(viewer.shade) === b.dataset.v));
   $('vShade').classList.toggle('hidden', viewer.show !== 'mesh');
   $('vTex').classList.toggle('hidden', viewer.show !== 'mesh' || !viewer.hasTex || viewer.shade === 2);
-  $('vTex').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', (viewer.useTex === false ? '0' : viewer.texSrc === 'albedo' && viewer.hasPbr ? 'a' : '1') === b.dataset.v); if (b.dataset.v === 'a') b.classList.toggle('hidden', !viewer.hasPbr); });
+  $('vTex').querySelectorAll('button').forEach((b) => { b.classList.toggle('on', (viewer.useTex === false ? '0' : viewer.texSrc === 'detail' ? 'd' : viewer.texSrc === 'albedo' && viewer.hasPbr ? 'a' : '1') === b.dataset.v); if (b.dataset.v === 'd') b.classList.toggle('hidden', !viewer.hasDetail); if (b.dataset.v === 'a') b.classList.toggle('hidden', !viewer.hasPbr); });
   const pbrTools = viewer.show === 'mesh' && viewer.hasPbr && viewer.shade !== 0;
   $('vMat').classList.toggle('hidden', !pbrTools || viewer.shade === 2); $('vRelief').classList.toggle('hidden', !pbrTools);
   $('vMap').classList.toggle('hidden', !(viewer.show === 'mesh' && viewer.hasPbr));
@@ -330,7 +330,10 @@ function syncViewTools() {
 $('vShow').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.show = b.dataset.v; viewer.dirty = true; syncViewTools(); };
 $('vShade').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.shade = +b.dataset.v; viewer.dirty = true; syncViewTools(); };
 const saveSurf = () => { if (!curScan) return; curScan.surf = { mat: viewer.mat, relief: viewer.relief, tex: viewer.texSrc, useTex: viewer.useTex !== false }; store.putScan(curScan).catch(() => {}); };
-$('vTex').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.useTex = b.dataset.v !== '0'; if (b.dataset.v !== '0') viewer.texSrc = b.dataset.v === 'a' ? 'albedo' : 'photo'; viewer.dirty = true; syncViewTools(); saveSurf(); };
+$('vTex').onclick = (e) => { const b = e.target.closest('button'); if (!b) return;
+  if (b.dataset.v === 'd') { viewer.useTex = true; viewer.texSrc = 'detail'; viewer.dirty = true; syncViewTools();
+    toast(`Детальность текстуры, мм на пиксель: синий ≤0.1 · голубой 0.14 · зелёный 0.2 · жёлтый 0.4 · красный ≥0.8. Сейчас: обычно ${viewer.detailMed.toFixed(2)}, лучшие места ${viewer.detailBest.toFixed(2)}. Красное — сними крупным планом.`, 7000); return; }
+  viewer.useTex = b.dataset.v !== '0'; if (b.dataset.v !== '0') viewer.texSrc = b.dataset.v === 'a' ? 'albedo' : 'photo'; viewer.dirty = true; syncViewTools(); saveSurf(); };
 $('vMat').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; viewer.mat = +b.dataset.v; viewer.dirty = true; syncViewTools(); saveSurf(); };
 $('vRelief').onclick = () => { const L = [0, 0.5, 1, 2], i = L.indexOf(viewer.relief ?? 1); viewer.relief = L[(i + 1) % L.length]; viewer.dirty = true; syncViewTools(); saveSurf(); };
 // v2.2: сами карты на модели — чтобы было видно, что посчиталось (рельеф, материал)
@@ -363,6 +366,13 @@ $('vExp').onclick = () => {
       if (o.mtl) { await saveFile(o.mtl, base + '.mtl', 'text/plain'); await saveFile(o.jpg, base + '.jpg', 'image/jpeg'); }
       if (o.normal) await saveFile(o.normal, base + '_normal.png', 'image/png');
       if (o.splitMR) { const g = await splitORM(s.mesh.pbr.orm); await saveFile(g.rough, base + '_roughness.png', 'image/png'); await saveFile(g.metal, base + '_metallic.png', 'image/png'); }
+    }],
+    ['quad', 'OBJ квадраты', 'ровная сетка из четырёхугольников: анимация, скульптинг (цвет вершин; текстуру запекают с обычной модели)', async () => {
+      const n = await new Promise((res) => sheet(`<h3>Квадратная сетка</h3><p>Сколько четырёхугольников? Тонкие стенки (кружка) — выбирай больше.</p><div class="grid2"><button data-n="1500">~1 500 · лёгкая</button><button data-n="5000">~5 000 · средняя</button><button data-n="15000">~15 000 · подробная</button><button data-n="40000">~40 000 · для скульптинга</button></div>`,
+        (box) => box.querySelectorAll('button[data-n]').forEach((b) => b.onclick = () => { closeSheet(); res(+b.dataset.n); })));
+      toast('Строю квадратную сетку…', 8000); await new Promise((r) => setTimeout(r, 50));
+      const { quadRemesh, toQuadOBJ } = await import('./retopo.js'); const Q = quadRemesh(s.mesh, n);
+      await saveFile(toQuadOBJ(Q), base + `_quads${Q.quads.length / 4}.obj`, 'text/plain'); toast(`Квадратов: ${Q.quads.length / 4}, шаг ~${Q.cell.toFixed(1)} мм`);
     }],
     ['ply', 'PLY', 'сетка с цветом (MeshLab, Blender)', () => saveFile(toMeshPLY(s.mesh), base + '.ply', 'application/octet-stream')],
     ['stl', 'STL', '3D-печать, миллиметры', () => saveFile(toSTL(s.mesh), base + '.stl', 'model/stl')]);
