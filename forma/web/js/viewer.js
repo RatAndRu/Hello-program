@@ -56,6 +56,8 @@ export class Viewer {
     this.playing = false;
     this.speed = 1;
     this.loop = true;
+    this.loopMode = 'auto';      // auto — как в клипах, on/off — принудительно
+    this._loopBase = true;
     this.manualAdvance = false;  // кадры сборки листает интерфейс
     this.onFrame = null;         // (dt) => void, для покадрового режима
     this.onTime = null;          // (time, duration) => void
@@ -74,6 +76,16 @@ export class Viewer {
     this._selOverlays = [];
     this.selectMode = false;
     this.selRadius = 14;
+    // выделение пустого пространства кубическими секторами
+    this.spaceMode = false;
+    this.spaceCell = 50;
+    this.spaceRoot = null;
+    this._spaceSel = new Map();      // "i,j,k" → {i,j,k}
+    this._spaceOrigin = new THREE.Vector3();
+    this._spaceDim = { x: 0, y: 0, z: 0 };
+    this._spaceFill = null;
+    this._spaceHover = null;
+    this.onSpace = null;             // (summary|null) => void
     this.selection = null;
     this.selections = [];
     this.hidden = new Set();
@@ -278,7 +290,7 @@ export class Viewer {
       if (e.button !== 0) return;   // правая — панорама, средняя — вращение
       const p = local(e);
       down = { x: e.clientX, y: e.clientY, t: performance.now(), p };
-      if (this.selectMode) {
+      if (this.selectMode || this.spaceMode) {
         band = document.createElement('div');
         band.className = 'marquee';
         band.style.left = p.x + 'px';
@@ -290,6 +302,7 @@ export class Viewer {
     });
 
     el.addEventListener('pointermove', (e) => {
+      if (this.spaceMode && !down) { this._spaceHoverAt(e); return; }
       if (!band || !down) return;
       const p = local(e);
       band.style.left = Math.min(down.p.x, p.x) + 'px';
@@ -305,15 +318,22 @@ export class Viewer {
       const start = down;
       down = null;
       hideBand();
-      if (!this.model) return;
       const additive = e.shiftKey || e.ctrlKey || e.metaKey;
+      if (this.spaceMode && moved > 8) {
+        const p = local(e);
+        this._spaceMarquee({ x0: start.p.x, y0: start.p.y, x1: p.x, y1: p.y }, additive);
+        this.onSpace?.(this.spaceSelection());
+        return;
+      }
       if (this.selectMode && moved > 8) {
+        if (!this.model) return;
         const p = local(e);
         this._selectMarquee({ x0: start.p.x, y0: start.p.y, x1: p.x, y1: p.y }, additive);
         if (this.onSelection) this.onSelection(this.selections);
         return;
       }
       if (moved > 5 || !quick) return;
+      if (!this.model && !this.spaceMode) return;
       const rect = el.getBoundingClientRect();
       const pointer = new THREE.Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -321,7 +341,22 @@ export class Viewer {
       );
       const ray = new THREE.Raycaster();
       ray.setFromCamera(pointer, this.camera);
-      const hits = ray.intersectObject(this.model, true);
+      const hits = this.model ? ray.intersectObject(this.model, true) : [];
+      if (this.spaceMode) {
+        const point = this._spacePoint(ray, hits[0]);
+        const key = point ? this._cellKeyAt(point) : null;
+        if (key) {
+          if (e.ctrlKey || e.metaKey) this._spaceSel.delete(key);
+          else if (e.shiftKey) this._spaceSel.set(key, { ...this._cellFromKey(key) });
+          else {
+            this._spaceSel.clear();
+            this._spaceSel.set(key, { ...this._cellFromKey(key) });
+          }
+          this._refreshSpaceVisual();
+          this.onSpace?.(this.spaceSelection());
+        }
+        return;
+      }
       if (this.selectMode) {
         if (!hits.length) {
           if (!additive) {
@@ -520,6 +555,7 @@ export class Viewer {
     });
     this.scene.add(root);
     this.model = root;
+    if (this.spaceMode) this._buildSpaceGrid();
     // Модель уже на экране. Дальше — только оформление и анимация: сбой в них
     // не должен выглядеть как «не удалось показать модель».
     try {
@@ -672,7 +708,9 @@ export class Viewer {
     }
     this._keyTracks = this._buildKeyTracks(keys);
     this.time = 0;
-    this.loop = this.plan && clips.length ? clips.every((c) => c.loop !== false) : this.loop;
+    this._loopBase = this.plan && clips.length ? clips.every((c) => c.loop !== false) : true;
+    this.loop = this.loopMode === 'on' ? true
+      : this.loopMode === 'off' ? false : this._loopBase;
     this.applyTime(0);
     return this.duration;
   }
@@ -1189,6 +1227,7 @@ export class Viewer {
   /** Режим выделения областей: клик по модели выбирает треугольники вокруг точки. */
   setSelectMode(on) {
     this.selectMode = Boolean(on);
+    if (this.selectMode && this.spaceMode) this.setSpaceMode(false);
     const el = this.renderer?.domElement;
     if (el) el.style.cursor = this.selectMode ? 'crosshair' : '';
     if (!this.selectMode) this.clearSelection();
@@ -1202,6 +1241,326 @@ export class Viewer {
 
   setSelectRadius(mm) {
     this.selRadius = Math.max(1, Number(mm) || 14);
+  }
+
+  /** Повтор в конце: auto — как записано в клипах, on/off — принудительно. */
+  setLoopMode(mode) {
+    this.loopMode = ['auto', 'on', 'off'].includes(mode) ? mode : 'auto';
+    this.loop = this.loopMode === 'on' ? true
+      : this.loopMode === 'off' ? false : Boolean(this._loopBase);
+    return this.loop;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Пространство: кубические секторы вокруг модели                    */
+  /* ------------------------------------------------------------------ */
+  setSpaceMode(on) {
+    this.spaceMode = Boolean(on);
+    const el = this.renderer?.domElement;
+    if (el) el.style.cursor = this.spaceMode ? 'crosshair' : '';
+    this.controls.mouseButtons.LEFT = this.spaceMode || this.selectMode ? null : THREE.MOUSE.ROTATE;
+    this.controls.mouseButtons.MIDDLE = this.spaceMode || this.selectMode
+      ? THREE.MOUSE.ROTATE : THREE.MOUSE.DOLLY;
+    this.controls.mouseButtons.RIGHT = THREE.MOUSE.PAN;
+    if (!this.spaceMode) {
+      this._clearSpaceVisual();
+      this._spaceSel.clear();
+      this.onSpace?.(null);
+      return;
+    }
+    this._buildSpaceGrid();
+    this.onSpace?.(this.spaceSelection());
+  }
+
+  setSpaceCell(mm) {
+    const cell = Math.max(5, Math.min(500, Number(mm) || 50));
+    if (Math.abs(cell - this.spaceCell) < 1e-6) return;
+    this.spaceCell = cell;
+    this._spaceSel.clear();
+    if (this.spaceMode) this._buildSpaceGrid();
+    this.onSpace?.(this.spaceSelection());
+  }
+
+  clearSpaceSelection() {
+    this._spaceSel.clear();
+    this._refreshSpaceVisual();
+    this.onSpace?.(this.spaceSelection());
+  }
+
+  _spaceVolume() {
+    const cell = this.spaceCell;
+    let min;
+    let max;
+    if (this.model) {
+      const bb = new THREE.Box3().setFromObject(this.model);
+      if (!bb.isEmpty() && Number.isFinite(bb.min.x)) {
+        min = bb.min.clone();
+        max = bb.max.clone();
+      }
+    }
+    if (!min) {
+      min = new THREE.Vector3(-200, 0, -200);
+      max = new THREE.Vector3(200, 200, 200);
+    }
+    const pad = cell * 1.5;
+    min = new THREE.Vector3(min.x - pad, min.y - pad, min.z - pad);
+    max = new THREE.Vector3(max.x + pad, max.y + pad, max.z + pad);
+    // не больше 32 секторов на ось: сетка остаётся лёгкой и читаемой.
+    // Если кубы мелкие, объём центрируется на модели, а не обрезается слева.
+    const dim = { x: 0, y: 0, z: 0 };
+    const origin = new THREE.Vector3();
+    const axes = ['x', 'y', 'z'];
+    axes.forEach((axis) => {
+      const lo = Math.min(min[axis], max[axis]);
+      const hi = Math.max(min[axis], max[axis]);
+      let n = Math.ceil((hi - lo) / cell);
+      n = Math.max(2, Math.min(32, n));
+      const center = (lo + hi) / 2;
+      origin[axis] = Math.round((center - (n * cell) / 2) / cell) * cell;
+      dim[axis] = n;
+    });
+    return { origin, dim };
+  }
+
+  _buildSpaceGrid() {
+    this._clearSpaceVisual();
+    const { origin, dim } = this._spaceVolume();
+    this._spaceOrigin.copy(origin);
+    this._spaceDim = dim;
+    const cell = this.spaceCell;
+    const root = new THREE.Group();
+    root.name = 'FormaSectors';
+    const pts = [];
+    const x1 = origin.x + dim.x * cell;
+    const y1 = origin.y + dim.y * cell;
+    const z1 = origin.z + dim.z * cell;
+    for (let i = 0; i <= dim.x; i += 1) {
+      for (let j = 0; j <= dim.y; j += 1) {
+        pts.push(origin.x + i * cell, origin.y + j * cell, origin.z,
+                 origin.x + i * cell, origin.y + j * cell, z1);
+      }
+    }
+    for (let i = 0; i <= dim.x; i += 1) {
+      for (let k = 0; k <= dim.z; k += 1) {
+        pts.push(origin.x + i * cell, origin.y, origin.z + k * cell,
+                 origin.x + i * cell, y1, origin.z + k * cell);
+      }
+    }
+    for (let j = 0; j <= dim.y; j += 1) {
+      for (let k = 0; k <= dim.z; k += 1) {
+        pts.push(origin.x, origin.y + j * cell, origin.z + k * cell,
+                 x1, origin.y + j * cell, origin.z + k * cell);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3));
+    const lines = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({
+      color: 0x5f7fb8, transparent: true, opacity: 0.22, depthWrite: false,
+    }));
+    root.add(lines);
+    const mat = new THREE.MeshBasicMaterial({
+      color: 0x7ee0c0, transparent: true, opacity: 0.32, depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const capacity = Math.min(20000, Math.max(1, dim.x * dim.y * dim.z));
+    const fill = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), mat, capacity);
+    fill.count = 0;
+    fill.name = 'FormaSectorFill';
+    root.add(fill);
+    this._spaceFill = fill;
+    // подсветка клетки под курсором
+    const hover = new THREE.LineSegments(
+      new THREE.EdgesGeometry(new THREE.BoxGeometry(1, 1, 1)),
+      new THREE.LineBasicMaterial({ color: 0xffc36b, transparent: true, opacity: 0.9 })
+    );
+    hover.visible = false;
+    this._spaceHover = hover;
+    root.add(hover);
+    this.spaceRoot = root;
+    this.scene.add(root);
+  }
+
+  _clearSpaceVisual() {
+    if (this.spaceRoot) {
+      this.scene.remove(this.spaceRoot);
+      this.spaceRoot.traverse((o) => {
+        o.geometry?.dispose?.();
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => m?.dispose?.());
+      });
+    }
+    this.spaceRoot = null;
+    this._spaceFill = null;
+    this._spaceHover = null;
+  }
+
+  _clearSpace() {
+    this._spaceSel.clear();
+    this._refreshSpaceVisual();
+  }
+
+  _cellFromKey(key) {
+    const parts = String(key).split(',').map(Number);
+    return { i: parts[0], j: parts[1], k: parts[2] };
+  }
+
+  _cellKeyAt(point) {
+    const cell = this.spaceCell;
+    const i = Math.floor((point.x - this._spaceOrigin.x) / cell);
+    const j = Math.floor((point.y - this._spaceOrigin.y) / cell);
+    const k = Math.floor((point.z - this._spaceOrigin.z) / cell);
+    if (i < 0 || j < 0 || k < 0) return null;
+    if (i >= this._spaceDim.x || j >= this._spaceDim.y || k >= this._spaceDim.z) return null;
+    return `${i},${j},${k}`;
+  }
+
+  _spacePoint(ray, hit) {
+    if (hit && hit.point) {
+      const p = hit.point.clone();
+      const n = hit.face?.normal
+        ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld)
+        : new THREE.Vector3();
+      if (n.lengthSq() > 0.5) p.addScaledVector(n, this.spaceCell * 0.55);
+      else p.y += this.spaceCell * 0.55;
+      return p;
+    }
+    const center = new THREE.Vector3();
+    if (this.model) {
+      const bb = new THREE.Box3().setFromObject(this.model);
+      if (!bb.isEmpty() && Number.isFinite(bb.min.x)) bb.getCenter(center);
+    }
+    const normal = this.camera.getWorldDirection(new THREE.Vector3()).negate();
+    const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, center);
+    const out = new THREE.Vector3();
+    return ray.ray.intersectPlane(plane, out) ? out : null;
+  }
+
+  _refreshSpaceVisual() {
+    const fill = this._spaceFill;
+    if (!fill) return;
+    const cell = this.spaceCell;
+    const m = new THREE.Matrix4();
+    let n = 0;
+    this._spaceSel.forEach((c) => {
+      if (n >= fill.instanceMatrix.count) return;
+      const x = this._spaceOrigin.x + (c.i + 0.5) * cell;
+      const y = this._spaceOrigin.y + (c.j + 0.5) * cell;
+      const z = this._spaceOrigin.z + (c.k + 0.5) * cell;
+      m.makeScale(cell * 0.94, cell * 0.94, cell * 0.94);
+      m.setPosition(x, y, z);
+      fill.setMatrixAt(n, m);
+      n += 1;
+    });
+    fill.count = n;
+    fill.instanceMatrix.needsUpdate = true;
+  }
+
+  /** Подсветка клетки под курсором. */
+  _spaceHoverAt(e) {
+    if (!this._spaceHover) return;
+    const el = this.renderer.domElement;
+    const rect = el.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((e.clientX - rect.left) / rect.width) * 2 - 1,
+      -((e.clientY - rect.top) / rect.height) * 2 + 1
+    );
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(pointer, this.camera);
+    const hits = this.model ? ray.intersectObject(this.model, true) : [];
+    const point = this._spacePoint(ray, hits[0]);
+    const key = point ? this._cellKeyAt(point) : null;
+    if (!key) { this._spaceHover.visible = false; return; }
+    const c = this._cellFromKey(key);
+    const cell = this.spaceCell;
+    this._spaceHover.visible = true;
+    this._spaceHover.position.set(
+      this._spaceOrigin.x + (c.i + 0.5) * cell,
+      this._spaceOrigin.y + (c.j + 0.5) * cell,
+      this._spaceOrigin.z + (c.k + 0.5) * cell
+    );
+    this._spaceHover.scale.setScalar(cell * 0.98);
+  }
+
+  /** Рамка: выбрать все секторы, чьи углы/центр попали в прямоугольник на экране. */
+  _spaceMarquee(box, additive) {
+    if (!additive) this._spaceSel.clear();
+    const el = this.renderer.domElement;
+    const rect = el.getBoundingClientRect();
+    const half = this.spaceCell / 2;
+    const v = new THREE.Vector3();
+    const inside = (p) => {
+      v.copy(p).project(this.camera);
+      if (v.z > 1) return false;
+      const x = (v.x * 0.5 + 0.5) * rect.width;
+      const y = (-v.y * 0.5 + 0.5) * rect.height;
+      return x >= Math.min(box.x0, box.x1) && x <= Math.max(box.x0, box.x1)
+        && y >= Math.min(box.y0, box.y1) && y <= Math.max(box.y0, box.y1);
+    };
+    for (let i = 0; i < this._spaceDim.x; i += 1) {
+      for (let j = 0; j < this._spaceDim.y; j += 1) {
+        for (let k = 0; k < this._spaceDim.z; k += 1) {
+          const c = new THREE.Vector3(
+            this._spaceOrigin.x + (i + 0.5) * this.spaceCell,
+            this._spaceOrigin.y + (j + 0.5) * this.spaceCell,
+            this._spaceOrigin.z + (k + 0.5) * this.spaceCell
+          );
+          let hit = inside(c);
+          if (!hit) {
+            for (let dx = -1; dx <= 1 && !hit; dx += 1) {
+              for (let dy = -1; dy <= 1 && !hit; dy += 1) {
+                for (let dz = -1; dz <= 1 && !hit; dz += 1) {
+                  if (!dx && !dy && !dz) continue;
+                  hit = inside(new THREE.Vector3(c.x + dx * half, c.y + dy * half, c.z + dz * half));
+                  if (hit) break;
+                }
+              }
+            }
+          }
+          if (hit) this._spaceSel.set(`${i},${j},${k}`, { i, j, k });
+        }
+      }
+    }
+    this._refreshSpaceVisual();
+  }
+
+  spaceSelection() {
+    if (!this._spaceSel.size) return null;
+    const cell = this.spaceCell;
+    const min = new THREE.Vector3(Infinity, Infinity, Infinity);
+    const max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
+    this._spaceSel.forEach((c) => {
+      min.x = Math.min(min.x, this._spaceOrigin.x + c.i * cell);
+      min.y = Math.min(min.y, this._spaceOrigin.y + c.j * cell);
+      min.z = Math.min(min.z, this._spaceOrigin.z + c.k * cell);
+      max.x = Math.max(max.x, this._spaceOrigin.x + (c.i + 1) * cell);
+      max.y = Math.max(max.y, this._spaceOrigin.y + (c.j + 1) * cell);
+      max.z = Math.max(max.z, this._spaceOrigin.z + (c.k + 1) * cell);
+    });
+    const size = max.clone().sub(min);
+    const span = { i: [Infinity, -Infinity], j: [Infinity, -Infinity], k: [Infinity, -Infinity] };
+    this._spaceSel.forEach((c) => {
+      ['i', 'j', 'k'].forEach((axis) => {
+        span[axis][0] = Math.min(span[axis][0], c[axis]);
+        span[axis][1] = Math.max(span[axis][1], c[axis]);
+      });
+    });
+    const idx = ['i', 'j', 'k'].map((axis) => {
+      const [a, b] = span[axis];
+      return `${axis} ${a}…${b}`;
+    }).join(', ');
+    return {
+      cells: this._spaceSel.size,
+      indices: idx,
+      cell,
+      min: [min.x, min.y, min.z],
+      max: [max.x, max.y, max.z],
+      center: [(min.x + max.x) / 2, (min.y + max.y) / 2, (min.z + max.z) / 2],
+      size: [size.x, size.y, size.z],
+      volume_cm3: (size.x * size.y * size.z) / 1000,
+      // координаты сценария: x, y — горизонт, z — вверх (three: x, y=вверх, z=глубина)
+      script_center: [(min.x + max.x) / 2, -(min.z + max.z) / 2, (min.y + max.y) / 2],
+      script_size: [size.x, size.z, size.y],
+    };
   }
 
   _nearestRegion(point) {

@@ -31,6 +31,7 @@ from . import ops_extra  # noqa: F401,E402
 from . import ops_inspect  # noqa: F401,E402
 from . import ops_text  # noqa: F401,E402
 from . import ops_tech  # noqa: F401,E402
+from . import ops_shapes  # noqa: F401,E402
 
 
 @dataclass

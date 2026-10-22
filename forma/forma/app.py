@@ -166,6 +166,17 @@ def _run_uistest(report_path: str | None) -> int:
                                           "center": [0, 0, 10], "size": [2, 2, 2],
                                           "bbox": [-1, -1, 9, 1, 1, 11]})
                 check("замечание к области", note.get("note", {}).get("text") == "проверка замечания")
+                space_note = post("/api/note", {
+                    "kind": "пространство", "object": "секторы: 6",
+                    "text": "поставить полку", "cells": 6, "cell": 50,
+                    "indices": "i 0…1, j 0…0, k 0…1", "center": [50, -50, 25],
+                    "size": [100, 100, 50], "volume_cm3": 500})
+                cube_note = space_note.get("note") or {}
+                check("приписка к кубическому объёму",
+                      cube_note.get("cells") == 6
+                      and cube_note.get("indices", "").startswith("i 0…1")
+                      and cube_note.get("center") == [50.0, -50.0, 25.0],
+                      str(cube_note.get("indices")))
                 cut = post("/api/edit/cut", {"script": "к = cylinder radius=20 height=60",
                                              "object": "к", "center": [0, 0, 30], "radius": 6})
                 check("вырезание выделенного", "difference [к, вырез_1]" in cut.get("script", ""))
@@ -248,12 +259,25 @@ def _run_uistest(report_path: str | None) -> int:
                       built.get("ok") is True and plan.get("track_count", 0) >= 4
                       and plan.get("key_count", 0) >= 2,
                       f"дорожек {plan.get('track_count')}, ключей {plan.get('key_count')}")
-                tech = get("/api/example?key=tech")
-                tech_built = post("/api/build", {"script": tech.get("script") or ""})
-                check("пример «Надпись, резьба и сечение»",
-                      tech_built.get("ok") is True
-                      and len(tech_built.get("sections") or []) >= 1,
-                      f"сечений {len(tech_built.get('sections') or [])}")
+                section_script = (
+                    "деталь = cube_hole size=[60,60,20] hole=16\n"
+                    "section деталь z=10\n"
+                    "probe деталь x=0 y=0 z=10\n"
+                    "passport деталь\n"
+                    "check деталь genus 1")
+                sectioned = post("/api/build", {"script": section_script})
+                check("сечение, проба и паспорт детали",
+                      sectioned.get("ok") is True
+                      and len(sectioned.get("sections") or []) >= 1
+                      and len(sectioned.get("probes") or []) >= 1
+                      and len(sectioned.get("passports") or []) >= 1,
+                      f"сечений {len(sectioned.get('sections') or [])}, "
+                      f"проб {len(sectioned.get('probes') or [])}")
+                check("инструменты: фигуры и приёмы",
+                      b'id="tools-modal"' in html and b'id="btn-tools"' in html)
+                check("выделение кубических секторов",
+                      b'id="space-card"' in html and b'id="btn-space"' in html)
+                check("переключатель повтора анимации", b'id="anim-loop"' in html)
                 wardrobe = get("/api/example?key=wardrobe")
                 cabinet = post("/api/build", {"script": wardrobe.get("script") or ""})
                 cabinet_plan = cabinet.get("timeline") or {}
@@ -265,7 +289,7 @@ def _run_uistest(report_path: str | None) -> int:
                       and {"дверь", "ящик_сборка", "колесо_1"} <= objects_anim
                       and any(c.get("kind") == "roll" for c in cabinet_plan.get("clips", [])),
                       f"групп {len(cabinet_groups)}, объектов в анимации {len(objects_anim)}")
-                post("/api/build", {"script": tech.get("script") or ""})
+                post("/api/build", {"script": section_script})
                 dxf = post("/api/export", {"format": "dxf"})
                 check("экспорт сечения в DXF", str(dxf.get("name", "")).endswith(".dxf"),
                       str(dxf.get("name") or dxf.get("error")))

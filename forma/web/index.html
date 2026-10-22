@@ -79,6 +79,9 @@
       <button id="btn-save" title="Сохранить проект (Ctrl+S)">
         <span class="icon">✎</span> Сохранить
       </button>
+      <button id="btn-tools" title="Готовые фигуры и приёмы с параметрами">
+        <span class="icon">✦</span> Инструменты
+      </button>
       <button id="btn-help" title="Справочник команд">
         <span class="icon">?</span> Справка
       </button>
@@ -127,6 +130,7 @@
           <button class="mini view-btn" data-view="right" title="Справа">справа</button>
           <button class="mini view-btn" data-view="top" title="Сверху">сверху</button>
           <button class="mini" id="btn-select" title="Выделять области и оставлять замечания">выбор</button>
+          <button class="mini" id="btn-space" title="Выделять пустое пространство кубическими секторами">кубы</button>
           <button class="mini" id="btn-grid" title="Сетка">сетка</button>
           <button class="mini" id="btn-wire" title="Полигонаж (каркас)">полигоны</button>
           <button class="mini" id="btn-spin" title="Автоповорот">⟳</button>
@@ -203,6 +207,11 @@
             <span class="studio-value anim-read anim-focus" id="anim-focus"></span>
             <input type="range" id="anim-speed" min="0.2" max="4" step="0.1" value="1" title="Скорость" />
             <span class="studio-value" id="anim-speed-val">1×</span>
+            <select id="anim-loop" class="anim-loop" title="Конец анимации: повторять или остановиться на последнем кадре">
+              <option value="auto">повтор: авто</option>
+              <option value="on">повтор: всегда</option>
+              <option value="off">повтор: стоп</option>
+            </select>
           </div>
           <div class="anim-tracks" id="anim-tracks"></div>
           <div class="anim-editor" id="anim-editor" hidden>
@@ -314,6 +323,26 @@
             <button class="small primary" id="sel-save">Оставить замечание</button>
             <button class="small" id="sel-cut" title="Вырезать все выделенные области">Вырезать всё</button>
             <button class="small" id="sel-clear" title="Снять выделение">Снять</button>
+          </div>
+        </div>
+        <div class="sel-card space-card" id="space-card" hidden>
+          <div class="sel-head">
+            <strong id="space-title">секторы пространства</strong>
+            <button class="mini" id="space-close" title="Выйти из режима кубов">✕</button>
+          </div>
+          <div class="sel-info" id="space-info">
+            Включён режим кубов: щёлкните по пустому месту рядом с моделью.<br>
+            <span class="dim">Shift — добавить сектор · Ctrl — убрать · рамка — выбрать сразу много</span>
+          </div>
+          <label class="sel-radius">
+            <span>куб</span>
+            <input type="range" id="space-size" min="10" max="200" step="5" value="50" />
+            <span class="sel-radius-val" id="space-size-val">50 мм</span>
+          </label>
+          <textarea id="space-note" rows="2" placeholder="Что добавить в этом месте? Например: «поставить здесь полку», «сделать вырез», «добавить винт»"></textarea>
+          <div class="sel-actions">
+            <button class="small primary" id="space-save">Прикрепить приписку</button>
+            <button class="small" id="space-clear">Снять секторы</button>
           </div>
         </div>
       </div>
@@ -524,6 +553,20 @@
       </div>
       <input type="search" id="help-search" placeholder="Поиск команды или параметра…" />
       <div class="modal-body" id="help-body"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="tools-modal" hidden>
+    <div class="modal-card tools-card">
+      <div class="modal-head">
+        <strong>Инструменты: готовые фигуры и приёмы</strong>
+        <button class="mini" id="tools-close">✕</button>
+      </div>
+      <div class="tools-hint">
+        Задайте параметры и нажмите «Добавить» — строка появится в конце сценария,
+        её можно править как обычную команду.
+      </div>
+      <div class="modal-body" id="tools-body"></div>
     </div>
   </div>
 

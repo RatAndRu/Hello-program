@@ -24,6 +24,9 @@ const state = {
   selected: null,
   selection: null,
   selectMode: false,
+  spaceMode: false,
+  space: null,
+  loopMode: 'auto',
   notes: [],
   actions: [],
   cmdHistory: [],
@@ -43,6 +46,11 @@ const state = {
     seqKey: null, morphPending: null,
   },
 };
+
+function readLoopMode() {
+  try { return localStorage.getItem('forma_loop_mode') || 'auto'; } catch (e) { return 'auto'; }
+}
+state.loopMode = readLoopMode();
 
 function toast(message, kind = '') {
   const el = $('toast');
@@ -263,6 +271,7 @@ document.addEventListener('keydown', (e) => {
     const mat = $('material-panel');
     if (mat && !mat.hidden) selectObject('');
     if (state.selectMode) setSelectMode(false);
+    if (state.spaceMode) setSpaceMode(false);
   }
 });
 
@@ -422,9 +431,17 @@ function renderNotes() {
     const el = document.createElement('div');
     el.className = 'note-item';
     const c = (n.center || []).map((v) => fmt(v)).join(', ');
-    el.innerHTML = `<div class="note-meta">${escapeHtml(n.time || '')} · ${escapeHtml(n.object || '')} · `
-      + `${n.tris || 0} трис · центр (${escapeHtml(c)})</div>`
-      + `<div class="note-text">${escapeHtml(n.text || '')}</div>`;
+    if (n.kind === 'пространство') {
+      el.classList.add('note-space');
+      el.innerHTML = `<div class="note-meta">${escapeHtml(n.time || '')} · кубы: `
+        + `<b>${n.cells || 0}</b> × ${fmt(n.cell || 0)} мм · ${escapeHtml(n.indices || '')} · `
+        + `центр (${escapeHtml(c)}) мм · ${fmt(n.volume_cm3 || 0)} см³</div>`
+        + `<div class="note-text">${escapeHtml(n.text || '')}</div>`;
+    } else {
+      el.innerHTML = `<div class="note-meta">${escapeHtml(n.time || '')} · ${escapeHtml(n.object || '')} · `
+        + `${n.tris || 0} трис · центр (${escapeHtml(c)})</div>`
+        + `<div class="note-text">${escapeHtml(n.text || '')}</div>`;
+    }
     box.appendChild(el);
   });
 }
@@ -455,8 +472,14 @@ function fullReportText() {
     parts.push('', 'ЗАМЕЧАНИЯ К ОБЛАСТЯМ');
     state.notes.forEach((n) => {
       const c = (n.center || []).map((v) => fmt(v)).join(', ');
-      parts.push(`• ${n.time || ''} «${n.object || ''}» (${n.tris || 0} трис, `
-        + `${n.area_mm2 || 0} мм², центр (${c})): ${n.text || ''}`);
+      if (n.kind === 'пространство') {
+        parts.push(`• ${n.time || ''} ${n.cells || 0} куб. по ${fmt(n.cell || 0)} мм `
+          + `[${n.indices || ''}], центр (${c}) мм, объём ${fmt(n.volume_cm3 || 0)} см³: `
+          + `${n.text || ''}`);
+      } else {
+        parts.push(`• ${n.time || ''} «${n.object || ''}» (${n.tris || 0} трис, `
+          + `${n.area_mm2 || 0} мм², центр (${c})): ${n.text || ''}`);
+      }
     });
   }
   if (state.actions.length) {
@@ -687,6 +710,7 @@ async function loadModel(url, animation = null) {
   try {
     await state.viewer.load(url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN), animation);
     // мгновенная проверка видимости и текстур (не зависит от того, что попало в GLB)
+    applyLoopMode();
     state.viewer.setAxes($('opt-axes')?.checked !== false);
     state.hidden.forEach((name) => state.viewer.setObjectVisible(name, false));
     (state.payload?.objects || []).forEach((o) => {
@@ -1517,6 +1541,31 @@ function togglePlayAnim() {
   syncAnimUI();
 }
 
+/* ------------------------------------------------------------------ */
+/*  0.15: конец анимации — повтор или остановка                       */
+/* ------------------------------------------------------------------ */
+function applyLoopMode() {
+  const loop = state.viewer?.setLoopMode(state.loopMode);
+  const el = $('anim-loop');
+  if (el) {
+    el.value = state.loopMode;
+    el.classList.toggle('loop-off', state.loopMode === 'off');
+  }
+  return loop;
+}
+
+$('anim-loop')?.addEventListener('change', (e) => {
+  state.loopMode = e.target.value;
+  try { localStorage.setItem('forma_loop_mode', state.loopMode); } catch (err) { /* ок */ }
+  const loop = applyLoopMode();
+  const msg = state.loopMode === 'off'
+    ? 'Анимация остановится на последнем кадре'
+    : state.loopMode === 'on'
+      ? 'Анимация будет повторяться'
+      : (loop ? 'Повтор: как в сценарии (включён)' : 'Повтор: как в сценарии (выключен)');
+  toast(msg);
+});
+
 function initViewer() {
   try {
     state.viewer = new Viewer($('viewer'));
@@ -1546,6 +1595,8 @@ function initViewer() {
       }
     };
     state.viewer.onEnd = () => { state.anim.playing = false; syncAnimUI(); };
+    state.viewer.onSpace = (sel) => updateSpaceUI(sel);
+    applyLoopMode();
     state.viewer.onFrame = (dt) => {
       const a = state.anim;
       if (a.mode !== 'frames' || !a.playing) return;
@@ -1972,10 +2023,115 @@ function setSelectMode(on) {
 function updateViewerHint() {
   const hint = $('viewer-hint');
   if (!hint) return;
+  if (state.spaceMode) {
+    hint.textContent = 'кубы: ЛКМ — выбрать сектор · Shift — добавить · Ctrl — убрать · рамка — много · СКМ — вращать';
+    return;
+  }
   hint.textContent = state.selectMode
     ? 'выбор: ЛКМ — выделить область · ползунок — размер · «Вырезать» — убрать'
     : 'ЛКМ — вращать · колесо — масштаб · ПКМ — сдвинуть · двойной клик — вернуть вид';
 }
+
+
+/* ------------------------------------------------------------------ */
+/*  0.15: выделение пустого пространства кубическими секторами         */
+/* ------------------------------------------------------------------ */
+function setSpaceMode(on) {
+  state.spaceMode = Boolean(on);
+  if (state.spaceMode) setSelectMode(false);
+  state.viewer?.setSpaceMode(state.spaceMode);
+  $('btn-space')?.classList.toggle('active', state.spaceMode);
+  const card = $('space-card');
+  if (card) card.hidden = !state.spaceMode;
+  if (state.spaceMode) {
+    let cell = Number($('space-size')?.value) || 50;
+    // размер куба подгоняется под модель: примерно 10 секторов по большей стороне
+    const size = state.viewer?.bbox?.size;
+    if (size) {
+      const span = Math.max(Number(size.x) || 0, Number(size.y) || 0, Number(size.z) || 0);
+      if (span > 0) cell = Math.max(10, Math.min(200, Math.round(span / 10 / 5) * 5));
+    }
+    if ($('space-size')) $('space-size').value = String(cell);
+    state.viewer?.setSpaceCell(cell);
+    if ($('space-size-val')) $('space-size-val').textContent = cell + ' мм';
+    updateSpaceUI(state.viewer?.spaceSelection() || null);
+    toast('Кубы: щёлкните рядом с моделью; Shift — добавить, Ctrl — убрать, рамка — много');
+  } else {
+    state.space = null;
+  }
+  updateViewerHint();
+}
+
+function updateSpaceUI(sel) {
+  state.space = sel || null;
+  const info = $('space-info');
+  if (!info) return;
+  if (!sel || !sel.cells) {
+    info.innerHTML = 'Включён режим кубов: щёлкните по пустому месту рядом с моделью.<br>'
+      + '<span class="dim">Shift — добавить сектор · Ctrl — убрать · рамка — выбрать сразу много</span>';
+    return;
+  }
+  const c = sel.script_center.map((v) => fmt(v)).join(', ');
+  const sz = sel.script_size.map((v) => fmt(v)).join(' × ');
+  info.innerHTML = `секторов: <b>${sel.cells}</b> · куб <b>${fmt(sel.cell)}</b> мм<br>`
+    + `индексы: <b>${escapeHtml(sel.indices || '')}</b><br>`
+    + `центр сцены: <b>(${escapeHtml(c)})</b> мм · размер <b>${escapeHtml(sz)}</b> мм<br>`
+    + `<span class="dim">${fmt(sel.volume_cm3)} см³ · Shift — добавить, Ctrl — убрать</span>`;
+}
+
+async function saveSpaceNote() {
+  const sel = state.space || state.viewer?.spaceSelection();
+  if (!sel || !sel.cells) { toast('Сначала выделите кубы', 'bad'); return; }
+  const text = ($('space-note')?.value || '').trim();
+  if (!text) { toast('Напишите, что добавить в этом месте', 'bad'); return; }
+  const c = sel.script_center.map((v) => fmt(v)).join(', ');
+  try {
+    const res = await api('/api/note', {
+      kind: 'пространство',
+      object: `секторы: ${sel.cells}`,
+      text,
+      cells: sel.cells,
+      cell: sel.cell,
+      indices: sel.indices || '',
+      center: sel.script_center,
+      size: sel.script_size,
+      volume_cm3: sel.volume_cm3,
+      tris: 0,
+      area_mm2: 0,
+    });
+    state.notes = res.notes || state.notes;
+    renderNotes();
+    // Приписка остаётся и в сценарии — вместе с индексами и координатами.
+    const comment = `# приписка [${sel.cells} куб., ${fmt(sel.cell)} мм, ${sel.indices || ''}, `
+      + `центр (${c})]: ${text}`;
+    const script = currentScript().replace(/\s+$/, '');
+    setScript(script ? `${script}\n${comment}\n` : `${comment}\n`,
+      { build: false, label: 'приписка к пространству' });
+    state.actions = [...(state.actions || []), {
+      time: new Date().toLocaleTimeString('ru-RU'),
+      kind: 'приписка', text: `${sel.cells} сектор(ов): ${text}`, ok: true,
+    }];
+    renderActions();
+    $('space-note').value = '';
+    toast(`Приписка прикреплена к ${sel.cells} сектор(ам)`);
+  } catch (e) {
+    toast(e.message || 'Не удалось сохранить приписку', 'bad');
+  }
+}
+
+$('btn-space')?.addEventListener('click', () => setSpaceMode(!state.spaceMode));
+$('space-close')?.addEventListener('click', () => setSpaceMode(false));
+$('space-size')?.addEventListener('input', (e) => {
+  const mm = Number(e.target.value) || 50;
+  if ($('space-size-val')) $('space-size-val').textContent = mm + ' мм';
+  state.viewer?.setSpaceCell(mm);
+  updateSpaceUI(state.viewer?.spaceSelection() || null);
+});
+$('space-clear')?.addEventListener('click', () => {
+  state.viewer?.clearSpaceSelection();
+  updateSpaceUI(null);
+});
+$('space-save')?.addEventListener('click', saveSpaceNote);
 
 function showSelection(list) {
   const selections = Array.isArray(list) ? list : (list ? [list] : []);
@@ -2138,17 +2294,21 @@ function runCommand() {
     return;
   }
   if (low === '/справка' || low === '/help') { $('cmd-input').value = ''; openHelp(); return; }
-  const RECIPES = { '/банан': 'banana', '/banana': 'banana', '/гриб': 'mushroom', '/mushroom': 'mushroom',
-    '/кружка': 'mug', '/mug': 'mug', '/ваза': 'vase', '/vase': 'vase',
+  if (low === '/инструменты' || low === '/tools') {
+    $('cmd-input').value = '';
+    openTools();
+    return;
+  }
+  const RECIPES = { '/кружка': 'mug', '/mug': 'mug', '/ваза': 'vase', '/vase': 'vase',
     '/шестерня': 'gear', '/gear': 'gear', '/кузов': 'car', '/car': 'car',
     '/бутылка': 'bottle', '/bottle': 'bottle', '/пришелец': 'alien', '/alien': 'alien',
     '/манекен': 'mannequin', '/mannequin': 'mannequin', '/яблоко': 'apple', '/apple': 'apple',
-    '/инструменты': 'tools', '/tools': 'tools',
-    '/анимация': 'animation', '/animation': 'animation' };
+    '/шкаф': 'wardrobe', '/wardrobe': 'wardrobe',
+    '/дорожки': 'animation_tracks', '/tracks': 'animation_tracks' };
   if (RECIPES[low] || low === '/рецепты' || low === '/recipes') {
     $('cmd-input').value = '';
     if (RECIPES[low]) { loadExample(RECIPES[low]); return; }
-    toast('Рецепты: /яблоко, /банан, /гриб, /кружка, /ваза, /бутылка, /шестерня, /кузов, /пришелец, /манекен, /инструменты, /анимация');
+    toast('Рецепты: /кружка, /яблоко, /ваза, /бутылка, /шестерня, /кузов, /пришелец, /манекен, /шкаф, /дорожки, /инструменты');
     return;
   }
   if (low === '/очистить' || low === '/clear') {
@@ -2335,6 +2495,283 @@ $('btn-export').parentElement.querySelector('.menu').addEventListener('click', a
   } catch (err) {
     toast(err.message || 'Ошибка экспорта', 'bad');
   }
+});
+
+
+/* ------------------------------------------------------------------ */
+/*  0.15: «Инструменты» — готовые фигуры и приёмы с параметрами        */
+/* ------------------------------------------------------------------ */
+const TOOL_SHAPES = [
+  {
+    op: 'star', name: 'звезда', title: 'Звезда',
+    desc: 'Лучи, глубина впадин, фаска и плавное скругление кромки.',
+    params: [
+      { k: 'points', label: 'лучи', v: 5, step: 1, min: 3 },
+      { k: 'outer', label: 'радиус', v: 55, step: 1 },
+      { k: 'inner', label: 'впадина', v: 22, step: 1 },
+      { k: 'depth', label: 'толщина', v: 12, step: 1 },
+      { k: 'bevel', label: 'фаска', v: 2, step: 0.5 },
+      { k: 'smooth', label: 'сглаж.', v: 0.4, step: 0.1 },
+      { k: 'twist', label: 'закрутка', v: 0, step: 5 },
+    ],
+  },
+  {
+    op: 'cup', name: 'кружка', title: 'Кружка',
+    desc: 'Корпус с полостью, дном и ручкой; стенка и сужение задаются.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 80, step: 1 },
+      { k: 'height', label: 'высота', v: 95, step: 1 },
+      { k: 'wall', label: 'стенка', v: 4, step: 0.5 },
+      { k: 'bottom', label: 'дно', v: 6, step: 0.5 },
+      { k: 'taper', label: 'сужение', v: 0.1, step: 0.02 },
+      { k: 'handle', label: 'ручка', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'plate', name: 'тарелка', title: 'Тарелка',
+    desc: 'Борт, плоское дно и стенка — глубокая или мелкая.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 220, step: 5 },
+      { k: 'depth', label: 'высота', v: 26, step: 1 },
+      { k: 'wall', label: 'стенка', v: 4, step: 0.5 },
+      { k: 'well', label: 'дно', v: 0.62, step: 0.02 },
+    ],
+  },
+  {
+    op: 'spring', name: 'пружина', title: 'Пружина',
+    desc: 'Винтовая пружина: средний диаметр, проволока, витки и шаг.',
+    params: [
+      { k: 'diameter', label: 'виток', v: 22, step: 1 },
+      { k: 'wire', label: 'провол.', v: 3, step: 0.2 },
+      { k: 'turns', label: 'витки', v: 8, step: 1 },
+      { k: 'pitch', label: 'шаг', v: 6, step: 0.5 },
+      { k: 'right', label: 'правая', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'gear', name: 'шестерня', title: 'Шестерня',
+    desc: 'Прямозубая: число зубьев, модуль, толщина, ступица и отверстие.',
+    params: [
+      { k: 'teeth', label: 'зубья', v: 20, step: 1, min: 6 },
+      { k: 'module', label: 'модуль', v: 2, step: 0.25 },
+      { k: 'thickness', label: 'толщина', v: 8, step: 1 },
+      { k: 'bore', label: 'отверстие', v: 8, step: 1 },
+      { k: 'hub', label: 'ступица', v: 0, step: 2 },
+    ],
+  },
+  {
+    op: 'washer', name: 'шайба', title: 'Шайба',
+    desc: 'Плоское кольцо с фаской; размеры в миллиметрах.',
+    params: [
+      { k: 'outer', label: 'наружн.', v: 40, step: 1 },
+      { k: 'inner', label: 'отверстие', v: 16, step: 1 },
+      { k: 'thickness', label: 'толщина', v: 4, step: 0.5 },
+    ],
+  },
+  {
+    op: 'cube_hole', name: 'кубик', title: 'Кубик с отверстием',
+    desc: 'Брусок с круглым отверстием; можно задать размеры и ось.',
+    params: [
+      { k: 'size', label: 'размер', v: '40,40,40', kind: 'vec' },
+      { k: 'hole', label: 'отверстие', v: 16, step: 1 },
+      { k: 'axis', label: 'ось', v: 'z' },
+      { k: 'round', label: 'скругл.', v: 2, step: 0.5 },
+    ],
+  },
+  {
+    op: 'ring', name: 'кольцо', title: 'Кольцо',
+    desc: 'Обод с плоскими сторонами и скруглёнными краями.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 20, step: 1 },
+      { k: 'width', label: 'ширина', v: 6, step: 0.5 },
+      { k: 'thickness', label: 'толщина', v: 2.2, step: 0.2 },
+      { k: 'round', label: 'скругл.', v: 0.6, step: 0.1 },
+    ],
+  },
+];
+
+const TOOL_RECIPES = [
+  {
+    title: 'Надпись',
+    desc: 'Объёмный текст своим шрифтом — без сторонних файлов.',
+    lines: 'надпись = text "ПРИВЕТ" size=10 depth=2\ncolor надпись #e8c27a',
+  },
+  {
+    title: 'Резьба',
+    desc: 'Настоящая винтовая резьба: болт и гайка с одинаковым шагом.',
+    lines: 'болт = thread diameter=10 length=24 pitch=1.5\n'
+      + 'гайка = thread diameter=17 length=7 pitch=1.5 internal=true\n'
+      + 'гайка = translate [гайка] offset=[26, 0, 0]',
+  },
+  {
+    title: 'Уклон',
+    desc: 'Технологический уклон стенок — деталь вынимается из формы.',
+    lines: 'плита = box size=[80,50,10]\nплита = draft [плита] angle=2',
+  },
+  {
+    title: 'Сечение, проба и паспорт',
+    desc: 'Проверка формы числами: контур сечения, материал в точке, паспорт детали.',
+    lines: 'деталь = cube_hole size=[60,60,20] hole=16\n'
+      + 'section деталь z=10\n'
+      + 'probe деталь x=0 y=0 z=10\n'
+      + 'passport деталь',
+  },
+  {
+    title: 'Формы: скрутка и изгиб',
+    desc: 'twist и bend превращают брусок в витую колонну или дугу.',
+    lines: 'скрутка = box size=[40,40,200] round=3\n'
+      + 'скрутка = twist [скрутка] angle=180 axis=z\n'
+      + 'дуга = box size=[24,160,240] round=5\n'
+      + 'дуга = bend [дуга] angle=90',
+  },
+  {
+    title: 'Фаска и облегчение',
+    desc: 'Скругление настоящим радиусом и упрощение сетки с контролем отклонения.',
+    lines: 'плита = box size=[60,40,20]\n'
+      + 'плита = bevel [плита] radius=3\n'
+      + 'плита = simplify [плита] deviation=0.2',
+  },
+];
+
+function uniqueObjectName(name, script) {
+  const used = new Set(String(script).split('\n')
+    .map((line) => (line.includes('=') ? line.split('=')[0].trim() : ''))
+    .filter(Boolean));
+  if (!used.has(name)) return name;
+  let i = 2;
+  while (used.has(`${name}_${i}`)) i += 1;
+  return `${name}_${i}`;
+}
+
+function insertTool(lines, label) {
+  const script = currentScript().replace(/\s+$/, '');
+  const text = (script ? script + '\n' : '') + `# инструмент: ${label}\n` + lines + '\n';
+  setScript(text, { label: 'инструмент: ' + label });
+  toast(`Добавлено: ${label}`);
+}
+
+function addShapeTool(tool, card) {
+  const parts = [];
+  tool.params.forEach((p) => {
+    const input = card.querySelector(`[data-key="${p.k}"]`);
+    if (!input) return;
+    if (p.kind === 'bool') {
+      parts.push(`${p.k}=${input.checked ? 'да' : 'нет'}`);
+      return;
+    }
+    const raw = input.value.trim();
+    if (!raw) return;
+    if (p.kind === 'vec') {
+      const nums = raw.split(/[,\s]+/).filter(Boolean);
+      parts.push(`${p.k}=[${nums.join(', ')}]`);
+    } else {
+      parts.push(`${p.k}=${raw}`);
+    }
+  });
+  const name = uniqueObjectName(tool.name, currentScript());
+  insertTool(`${name} = ${tool.op} ${parts.join(' ')}`, tool.title);
+}
+
+function renderTools() {
+  const body = $('tools-body');
+  if (!body) return;
+  body.innerHTML = '';
+  const shapes = document.createElement('div');
+  shapes.className = 'tool-group';
+  const shapesHead = document.createElement('h4');
+  shapesHead.textContent = 'Готовые фигуры';
+  const grid = document.createElement('div');
+  grid.className = 'tool-grid';
+  shapes.appendChild(shapesHead);
+  shapes.appendChild(grid);
+  TOOL_SHAPES.forEach((tool) => {
+    const card = document.createElement('div');
+    card.className = 'tool-card';
+    const head = document.createElement('div');
+    head.className = 'tool-card-head';
+    head.innerHTML = `<b>${escapeHtml(tool.title)}</b><code>${escapeHtml(tool.op)}</code>`;
+    card.appendChild(head);
+    const desc = document.createElement('div');
+    desc.className = 'tool-desc';
+    desc.textContent = tool.desc;
+    card.appendChild(desc);
+    const fields = document.createElement('div');
+    fields.className = 'tool-fields';
+    tool.params.forEach((p) => {
+      const label = document.createElement('label');
+      label.className = 'tool-field';
+      const caption = document.createElement('span');
+      caption.textContent = p.label;
+      let input;
+      if (p.kind === 'bool') {
+        input = document.createElement('input');
+        input.type = 'checkbox';
+        input.checked = p.v !== false;
+      } else {
+        input = document.createElement('input');
+        input.type = 'text';
+        input.value = String(p.v);
+        if (p.kind !== 'vec') input.inputMode = 'decimal';
+        input.style.width = p.kind === 'vec' ? '86px' : '58px';
+      }
+      input.dataset.key = p.k;
+      label.appendChild(caption);
+      label.appendChild(input);
+      fields.appendChild(label);
+    });
+    card.appendChild(fields);
+    const btn = document.createElement('button');
+    btn.className = 'small primary';
+    btn.textContent = 'Добавить';
+    btn.addEventListener('click', () => addShapeTool(tool, card));
+    card.appendChild(btn);
+    grid.appendChild(card);
+  });
+  body.appendChild(shapes);
+
+  const recipes = document.createElement('div');
+  recipes.className = 'tool-group';
+  const recipesHead = document.createElement('h4');
+  recipesHead.textContent = 'Приёмы';
+  recipes.appendChild(recipesHead);
+  const rgrid = document.createElement('div');
+  rgrid.className = 'tool-grid';
+  TOOL_RECIPES.forEach((recipe) => {
+    const card = document.createElement('div');
+    card.className = 'tool-card tool-recipe';
+    const head = document.createElement('div');
+    head.className = 'tool-card-head';
+    head.innerHTML = `<b>${escapeHtml(recipe.title)}</b><code>сценарий</code>`;
+    card.appendChild(head);
+    const desc = document.createElement('div');
+    desc.className = 'tool-desc';
+    desc.textContent = recipe.desc;
+    card.appendChild(desc);
+    const pre = document.createElement('pre');
+    pre.textContent = recipe.lines;
+    card.appendChild(pre);
+    const btn = document.createElement('button');
+    btn.className = 'small primary';
+    btn.textContent = 'Вставить';
+    btn.addEventListener('click', () => insertTool(recipe.lines, recipe.title));
+    card.appendChild(btn);
+    rgrid.appendChild(card);
+  });
+  recipes.appendChild(rgrid);
+  body.appendChild(recipes);
+}
+
+function openTools() {
+  $('tools-modal').hidden = false;
+  renderTools();
+}
+$('btn-tools')?.addEventListener('click', openTools);
+$('tools-close')?.addEventListener('click', () => { $('tools-modal').hidden = true; });
+$('tools-modal')?.addEventListener('click', (e) => {
+  if (e.target === $('tools-modal')) $('tools-modal').hidden = true;
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !$('tools-modal').hidden) $('tools-modal').hidden = true;
 });
 
 /* ------------------------------------------------------------------ */

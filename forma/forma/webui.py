@@ -103,6 +103,7 @@ class AppState:
             item = {
                 "id": self.action_seq,
                 "time": time.strftime("%H:%M:%S"),
+                "kind": str(note.get("kind") or "область").strip() or "область",
                 "object": str(note.get("object") or "").strip(),
                 "text": str(note.get("text") or "").strip(),
                 "tris": int(note.get("tris") or 0),
@@ -110,10 +111,19 @@ class AppState:
                 "center": [round(float(v), 2) for v in (note.get("center") or [0, 0, 0])],
                 "size": [round(float(v), 2) for v in (note.get("size") or [0, 0, 0])],
                 "bbox": [round(float(v), 2) for v in (note.get("bbox") or [0] * 6)],
+                # приписка к пустому пространству: сколько кубов и где именно
+                "cells": int(note.get("cells") or 0),
+                "cell": round(float(note.get("cell") or 0.0), 2),
+                "indices": str(note.get("indices") or "").strip(),
+                "volume_cm3": round(float(note.get("volume_cm3") or 0.0), 1),
             }
             self.notes.append(item)
             del self.notes[:-80]
-            self.log_action("замечание", f"{item['object']}: {item['text']}")
+            if item["cells"]:
+                self.log_action("приписка к пространству",
+                                f"{item['cells']} сектор(ов): {item['text']}")
+            else:
+                self.log_action("замечание", f"{item['object']}: {item['text']}")
             return item
 
     def cut_region(self, script: str, name: str, center, radius) -> dict:
@@ -447,22 +457,15 @@ class AppState:
 
 EXAMPLES = [
     ("Кружка", "mug"),
-    ("Банан", "banana"),
-    ("Гриб", "mushroom"),
     ("Кузов машины", "car"),
     ("Ваза", "vase"),
     ("Бутылка", "bottle"),
-    ("Кубик с отверстием", "cube_hole"),
     ("Пришелец из капли", "alien"),
     ("Шестерня", "gear"),
     ("Манекен в T-позе", "mannequin"),
     ("Яблоко", "apple"),
-    ("Инструменты (bend/twist/taper…)", "tools"),
     ("Анатомическая фигура", "human_studio"),
-    ("Кружка со студией", "mug_studio"),
-    ("Анимация и сборка по шагам", "animation"),
     ("Анимация по дорожкам и ключи", "animation_tracks"),
-    ("Надпись, резьба и сечение", "tech"),
     ("Шкаф: дверь, ящик, колёсики", "wardrobe"),
 ]
 

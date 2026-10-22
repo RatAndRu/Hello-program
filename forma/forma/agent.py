@@ -136,8 +136,13 @@ def _notes_block(notes: list[dict] | None) -> list[str]:
             where = f" центр ({c[0]:.1f}, {c[1]:.1f}, {c[2]:.1f})"
         if len(size) == 3:
             where += f", область {size[0]:.1f}×{size[1]:.1f}×{size[2]:.1f} мм"
-        lines.append(f"- «{n.get('object', '')}», {n.get('tris', 0)} трис, "
-                     f"{n.get('area_mm2', 0)} мм²{where}: {n.get('text', '')}")
+        if n.get("cells"):
+            lines.append(f"- приписка к пустому пространству: {n['cells']} куб. по "
+                         f"{n.get('cell', 0):g} мм [{n.get('indices', '')}], "
+                         f"объём {n.get('volume_cm3', 0):g} см³{where}: {n.get('text', '')}")
+        else:
+            lines.append(f"- «{n.get('object', '')}», {n.get('tris', 0)} трис, "
+                         f"{n.get('area_mm2', 0)} мм²{where}: {n.get('text', '')}")
     return lines
 
 
