@@ -108,6 +108,9 @@ jobs:
           from forma.version import __version__
           root = Path('release')
           (root / 'СПРАВКА_КОМАНДЫ.md').write_text(command_reference_md(), encoding='utf-8')
+          recipes = Path('docs/RECIPES.md')
+          if recipes.exists():
+              (root / 'РЕЦЕПТЫ.md').write_text(recipes.read_text(encoding='utf-8'), encoding='utf-8')
           examples = Path('release/examples')
           examples.mkdir(exist_ok=True)
           for p in Path('examples').glob('*.forma'):
