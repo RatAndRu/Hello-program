@@ -561,10 +561,14 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
           seen += wk;
           if (mv === 0) { bg += wk; nbg++; nwk++; } else if (mv === 3) { weak += wk; nwk++; }
           if (f.trusted) { tseen++; if (mv === 0) tbg += wk; }
-          if (!few && nbg >= 2 && bg >= frac * (seen + left - 1)) break;
+          // v2.8: досрочный выход ужесточён: режем только если минимум 3 «фона» видят воксель,
+          // и доля фонов в видевших ≥ frac даже если бы все оставшиеся увидели предмет.
+          // Раньше два блика могли прорезать дырку.
+          if (!few && nbg >= 3 && bg >= frac * (seen + left - 1)) break;
         }
+        const need_bg = few ? 1 : 3; // минимум 3 кадра подтверждают фон — уменьшает дырки на бликах
         const trustCut = tseen >= 3 && tbg >= Math.max(2, Math.ceil(tfrac * tseen));
-        const cut = seen < 3 * wMean ? true : few ? nbg >= 1 : (nbg >= 2 && bg >= frac * seen) || (nwk > 0 && (bg+weak) >= Math.max(2 * wMean, frac * seen) && (bg+weak) >= (opt.weakMaj ?? 0.5) * seen);
+        const cut = seen < 3 * wMean ? true : few ? nbg >= 1 : (nbg >= need_bg && bg >= frac * seen) || (nwk > 0 && (bg+weak) >= Math.max(2 * wMean, frac * seen) && (bg+weak) >= (opt.weakMaj ?? 0.5) * seen);
         occ[vi] = trustCut || cut ? 0 : 1;
       }
     }

@@ -86,14 +86,14 @@ export class Capture {
     return [ox+this.sunPos[0]*s, oy+this.sunPos[1]*s];
   }
   async _bgPrepLoop() {
-    while (this.running || this.prepped.length < this.shots.length) {
+    while (!this._prepCanceled && (this.running || this.prepped.length < this.shots.length)) {
       const i = this.prepped.length;
       if (i >= this.shots.length) { await new Promise(r => setTimeout(r, 80)); continue; }
       try { this.prepped.push(await _prepFrame(this.shots[i].blob)); if (this.opt.onPrep) this.opt.onPrep(i, this.shots.length); }
       catch(e){ this.prepped.push({ blob:this.shots[i].blob, rgba:null, w:0, h:0, ms:[] }); }
     }
   }
-  async start() { await this.openCam(); this.running = true; this.prepped = []; this._bgPrep = this._bgPrepLoop(); this.loop(); }
+  async start() { await this.openCam(); this.running = true; this.prepped = []; this._prepCanceled = false; this._bgPrep = this._bgPrepLoop(); this.loop(); }
   // Камера 1280×720 (в 1.5 «Лучше» просило Full HD — на части телефонов WebView тогда перестаёт обновлять кадры)
   async openCam() {
     // APK: своя камера (Camera2). Камера WebView на части телефонов «замирает», пока не коснёшься экрана.
@@ -130,7 +130,7 @@ export class Capture {
   // ручной затвор: снимет ближайший кадр, где виден коврик (даже если эта ячейка купола уже есть)
   shootNow() { this.manual = true; }
   closeCam() { if (this.native && this.src) this.src.close(); if (this.stream) this.stream.getTracks().forEach((t) => t.stop()); this.stream = null; }
-  stop() { this.running = false; if (this.native && this.src) { if (this.torchOn) this.src.torch(false); this.src.lock(false); } this.closeCam(); if (this._bgPrep) this._bgPrep.catch(()=>{}); }
+  stop() { this.running = false; this._prepCanceled = true; if (this.native && this.src) { if (this.torchOn) this.src.torch(false); this.src.lock(false); } this.closeCam(); if (this._bgPrep) this._bgPrep.catch(()=>{}); }
   // С первого снимка экспозиция и баланс белого зафиксированы (своя камера APK): все кадры одной яркости и цвета —
   // иначе телефон подкручивает их при каждом повороте, и сплэты/текстура «запоминают» пятна яркости.
   lockExposure() { if (this.native && this.src && !this.src.locked) this.expLocked = this.src.lock(true); }
@@ -343,8 +343,8 @@ export class Capture {
         c.lineWidth = 2*dpr;
         for (let i=0;i<8;i++){ const a=i/8*Math.PI*2; c.beginPath(); c.moveTo(sp[0]+Math.cos(a)*18*dpr, sp[1]+Math.sin(a)*18*dpr); c.lineTo(sp[0]+Math.cos(a)*26*dpr, sp[1]+Math.sin(a)*26*dpr); c.stroke(); }
         c.beginPath(); c.arc(sp[0], sp[1], 14*dpr, 0, Math.PI*2); c.fill(); c.stroke();
-        c.fillStyle='rgba(80,50,0,.85)'; c.font=`${12*dpr}px sans-serif`; c.textAlign='center';
-        c.fillText('☀', sp[0], sp[1]+4*dpr);
+        // центр рисуем маленьким кружком (вместо ☀ — не у всех шрифтов есть глиф)
+        c.fillStyle='rgba(255,240,180,1)'; c.beginPath(); c.arc(sp[0], sp[1], 6*dpr, 0, Math.PI*2); c.fill();
         c.restore();
       }
     }

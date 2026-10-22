@@ -38,7 +38,7 @@ export function wasmCarveSlice(occ, dims, frames, opt) {
   if (!modReady()) return false;
   const { nx, ny, nz, vs, ox, oy, oz, Rb } = dims;
   const nF = frames.length;
-  const FPF = 22;
+  const FPF = 24;
   // Собрать общие буферы масок и альф; смещения в них идут от 0
   let mOff = 0, aOff = 0;
   const mStart = new Int32Array(nF), aStart = new Int32Array(nF);
@@ -46,14 +46,20 @@ export function wasmCarveSlice(occ, dims, frames, opt) {
     mStart[i] = mOff; mOff += frames[i].mask.length;
     if (frames[i].alpha) { aStart[i] = aOff; aOff += frames[i].alpha.length; } else aStart[i] = -1;
   }
+  // Сначала выделяем маски и альфы, потом уже фреймы и occ — чтобы рост HEAP при _malloc не инвалидировал
+  // представление HEAPF32/HEAPU8 (ссылки DataView живые, но запись через .set надо делать после всех аллокаций? —
+  // нет, HEAPU8 это TypedArray поверх AB, при росте он меняет буфер; поэтому ставим данные ПОСЛЕ всех _malloc.
   const maskBase = mod._malloc(mOff || 1);
   const alphaBase = aOff ? mod._malloc(aOff) : 0;
+  const fp = mod._malloc(nF * FPF * 4);
+  const occp = mod._malloc(occ.length * 4);
+  // После всех _malloc заново берём представления HEAP (на случай роста buffer)
+  const H8 = mod.HEAPU8, H32 = mod.HEAPF32;
   for (let i = 0; i < nF; i++) {
-    mod.HEAPU8.set(frames[i].mask, maskBase + mStart[i]);
-    if (frames[i].alpha && aStart[i] >= 0) mod.HEAPU8.set(frames[i].alpha, alphaBase + aStart[i]);
+    H8.set(frames[i].mask, maskBase + mStart[i]);
+    if (frames[i].alpha && aStart[i] >= 0) H8.set(frames[i].alpha, alphaBase + aStart[i]);
   }
   // Упаковать FFrameDesc
-  const fp = mod._malloc(nF * FPF * 4);
   const fb = new Float32Array(nF * FPF);
   const view = new DataView(fb.buffer);
   for (let i = 0; i < nF; i++) {
@@ -66,16 +72,16 @@ export function wasmCarveSlice(occ, dims, frames, opt) {
     view.setUint32((o+19)*4, mStart[i], true);
     view.setUint32((o+20)*4, aStart[i] >= 0 ? aStart[i] : 0, true);
     fb[o+21] = f._wF != null ? f._wF : 1;
-    fb.fill(0, o+22, o+FPF);
+    fb[o+22] = f.trusted ? 1 : 0;
+    fb.fill(0, o+23, o+FPF);
   }
-  mod.HEAPF32.set(fb, fp >> 2);
-  const occp = mod._malloc(occ.length * 4);
+  H32.set(fb, fp >> 2);
   try {
     mod._carve_occ(occp, nx, ny, nz, vs, ox, oy, oz, Rb, fp, nF,
                   maskBase, alphaBase,
                   opt.frac ?? 0.08, opt.few ? 1 : 0, opt.weakMaj ?? 0.5,
                   opt.wMean ?? 1);
-    occ.set(mod.HEAPF32.subarray(occp >> 2, (occp >> 2) + occ.length));
+    occ.set(H32.subarray(occp >> 2, (occp >> 2) + occ.length));
   } catch (e) {
     mod._free(occp); mod._free(fp); mod._free(maskBase); if (alphaBase) mod._free(alphaBase);
     return false;

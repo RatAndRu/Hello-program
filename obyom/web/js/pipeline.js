@@ -293,14 +293,15 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
     return q && q.n >= 2 && q.rms < Math.min(maxR, 2.5) ? { ...q, L_: Lf } : (p ? { ...p, L_: L } : p);
   };
   // 1) кадры и метки
-  // 1) кадры и метки; v2.8: если кадры уже декодированы между съёмкой (prepped), используем их
-  const frames = [], eqs = [];
+  // v2.8: если кадры уже декодированы между съёмкой (prepped) и их размер совпадает с PROC_W, используем их.
+  // Если размер не совпадает (напр. качество «Лучше» = 960 px) — перекодируем из blob'а как обычно.
   const prepped = cfg.prepped && cfg.prepped.length === blobs.length ? cfg.prepped : null;
   for (let i = 0; i < blobs.length; i++) {
     if (shouldStop()) throw new Error('stopped');
     let d, ms;
-    if (prepped && prepped[i] && prepped[i].rgba) {
-      d = { rgba: prepped[i].rgba, w: prepped[i].w, h: prepped[i].h }; ms = prepped[i].ms;
+    const prepOk = prepped && prepped[i] && prepped[i].rgba && prepped[i].w >= PROC_W - 4; // допуск ± на округление
+    if (prepOk) {
+      d = { rgba: new Uint8ClampedArray(prepped[i].rgba), w: prepped[i].w, h: prepped[i].h }; ms = prepped[i].ms;
     } else {
       d = await decodeBlob(blobs[i], PROC_W);
       ms = detectMarkers(toGray(d.rgba, d.w, d.h), d.w, d.h);
@@ -334,6 +335,21 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   for (const f of frames) {
     const p = poseOf(f.ms, K, 3); if (!p || p.rms > 3) continue;
     f.R = p.R; f.t = p.t; f.K = K; f.rms = p.rms; f.L_ = p.L_; f.ang = camAngles(p.R, p.t); good.push(f);
+  }
+  // v2.8: прореживаем слишком близкие ракурсы (шаг меньше ~5°) — оставляем тот, у которого меньше rms.
+  // На длинной съёмке с рук это часто 300+ кадров с копеечным шагом — только тратит время и множит «ложные фоны» от бликов.
+  if (good.length > 80) {
+    good.sort((a,b)=>a.rms-b.rms);
+    const kept=[]; const taken=new Set();
+    for (const g of good) {
+      let tooClose=false;
+      for (const k of kept) {
+        const dA=Math.abs(k.ang.el-g.ang.el), dB=Math.acos(Math.max(-1,Math.min(1, k.R[6]*g.R[6]+k.R[7]*g.R[7]+k.R[8]*g.R[8])))*180/Math.PI;
+        if (dA<4 && dB<6) { tooClose=true; break; }
+      }
+      if (!tooClose) kept.push(g);
+    }
+    if (kept.length >= 20) { log(`${tag}прорежено ракурсов: ${good.length} → ${kept.length} (убраны ближе 5°, более точный оставлен)`); good.length=0; good.push(...kept); }
   }
   await tick();
   // 2б) кадры фона (вертушка, телефон в держателе): пустой коврик с того же места. Поддерживаем несколько кадров

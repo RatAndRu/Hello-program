@@ -1,6 +1,6 @@
 // Объём v2.8 — C++/WASM ядро: вырезание оболочки (visual hull).
 //
-// ABI (линейная память WASM, 32-битные указатели от её начала):
+// ABI (линейная память WASM):
 //   carve_occ(occ, nx, ny, nz, vs, ox, oy, oz, Rb, framesPtr, nFrames,
 //             maskBase, alphaBase, frac, few, weakMaj, tfrac, wMean)
 //
@@ -9,12 +9,11 @@
 //   4..12 R[3x3], row-major
 //   13..15 t[3]
 //   16    rms
-//   17..18 w, h (как float; при чтении (int))
-//   19    maskOff  (uint32 — смещение относительно maskBase; упаковано в 4 байта float через memcpy)
-//   20    alphaOff (uint32 — смещение относительно alphaBase, 0 если нет)
+//   17..18 w, h (как float)
+//   19    maskOff  (uint32, в байтах от maskBase)
+//   20    alphaOff (uint32, в байтах от alphaBase; 0 если нет)
 //   21    wF (нормализованный вес кадра)
-// Доверие (trusted) пока не передаётся — в v2.8 WASM делает базовое голосование,
-// JS-цикл в recon.js всегда доуточняет и применяет trustCut.
+//   22    trusted (float 1/0)
 
 #include <emscripten.h>
 #include <math.h>
@@ -48,7 +47,7 @@ void carve_occ(float* occ,
                float ox, float oy, float oz, float Rb,
                const float* frames, int nFrames,
                const unsigned char* maskBase, const unsigned char* alphaBase,
-               float frac, int few, float weakMaj,
+               float frac, int few, float weakMaj, float tfrac,
                float wMean) {
   for (int z = 0; z < nz; z++) {
     float Z = oz + z * vs;
@@ -60,6 +59,7 @@ void carve_occ(float* occ,
         if (X*X + Y*Y > Rb*Rb) { occ[vi] = 0.f; continue; }
         float bg = 0.f, weak = 0.f, seen = 0.f;
         int nbg = 0, nwk = 0, left = nFrames;
+        float tbg = 0.f; int tseen = 0;
         for (int k = 0; k < nFrames; k++, left--) {
           const float* f = frames + k*22;
           unsigned mOff = u32f(f+19), aOff = u32f(f+20);
@@ -84,20 +84,24 @@ void carve_occ(float* occ,
             if (sv < 0.5f) mv = 0;
           }
           float wk = f[21];
+          int trusted = (f[22] >= 0.5f);
           seen += wk;
-          if (mv == 0) { bg += wk; nbg++; nwk++; }
+          if (mv == 0) { bg += wk; nbg++; nwk++; if (trusted) { tseen++; tbg += wk; } }
           else if (mv == 3) { weak += wk; nwk++; }
-          if (!few && nbg >= 2 && bg >= frac * (seen + left - 1)) break;
+          else if (trusted) tseen++;
+          if (!few && nbg >= 3 && bg >= frac * (seen + left - 1)) break;
         }
+        int need_bg = few ? 1 : 3;
+        int trustCut = (tseen >= 3 && tbg >= myfmax(2.f, tfrac * tseen));
         int cut;
         if (seen < 3 * wMean) cut = 1;
         else if (few) cut = (nbg >= 1) ? 1 : 0;
         else {
-          int c1 = (nbg >= 2 && bg >= frac * seen);
+          int c1 = (nbg >= need_bg && bg >= frac * seen);
           int c2 = (nwk > 0 && (bg+weak) >= myfmax(2.f*wMean, frac*seen) && (bg+weak) >= weakMaj * seen);
           cut = c1 || c2;
         }
-        occ[vi] = cut ? 0.f : 1.f;
+        occ[vi] = (trustCut || cut) ? 0.f : 1.f;
       }
     }
   }
