@@ -2,7 +2,7 @@
 // 1) маска «точно фон» на каждом кадре (коврик совпал с ожидаемым рисунком / фон совпал с пустым кадром / вне цилиндра);
 // 2) вырезание объёма (visual hull): воксель удаляется, если несколько кадров видят на его месте фон;
 // 3) поверхность (surface nets) → сглаживание (Таубин) → цвета вершин из кадров с учётом видимости.
-import { wasmCarveSlice } from './wasmcarve.js';
+// WASM-ускорение опциональное — загружается динамически при первом carveHull (не статически, чтобы не ломать module worker на старых WebView).
 
 // ---------- маски ----------
 // frame: {w,h,rgba,K,R,t}; ctx: {layout, mr (matRaster), Rb, Hb, clean?}
@@ -502,14 +502,18 @@ export function edgeAlpha(f, opt = {}) {
 // мягкое значение «предмет» в пикселе для субпиксельной выборки: фон 0, предмет 1, кромка — α, прочее — 1 (не режет)
 function softAt(f, i) { const m = f.mask[i]; return m === 0 ? 0 : (m === 1 || m === 2) && f.alpha[i] < 255 ? f.alpha[i] / 255 : m === 3 ? 0.5 : 1; }
 // frames: [{w,h,K,R,t,mask}], box: {Rb,Hb}, N — вокселей по ширине
-let _wasmOk = null;
-function _tryWasm() {
+let _wasmOk = null, _wasmMod = null;
+async function _tryWasm() {
   if (_wasmOk !== null) return _wasmOk;
-  _wasmOk = false; // по умолчанию выключен, пока модуль не загрузится
-  import('./wasmcarve.js').then(({ ensureCarveWasm }) => ensureCarveWasm()).then((ok) => { _wasmOk = !!ok; }).catch(() => { _wasmOk = false; });
-  return false;
+  _wasmOk = false;
+  try {
+    const m = await import('./wasmcarve.js');
+    const ok = await m.ensureCarveWasm();
+    if (ok) { _wasmMod = m; _wasmOk = true; }
+  } catch (e) { _wasmOk = false; }
+  return _wasmOk;
 }
-export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
+export async function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   const vs = 2 * box.Rb / N, nx = N, ny = N, nz = Math.max(8, Math.ceil(box.Hb / vs));
   const ox = -box.Rb + vs / 2, oy = -box.Rb + vs / 2, oz = vs / 2;
   const occ = new Float32Array(nx * ny * nz);
@@ -527,10 +531,10 @@ export function carveHull(frames, box, N = 128, onProgress, opt = {}) {
   const wMean = 1;
   // v2.8: горячий цикл по возможности гоняем в C/WASM (тождественный алгоритм, быстрее в 3–6 раз на телефоне).
   // Если WASM не готов или упал — JS-фоллбэк ниже делает то же самое, байт-в-байт.
-  if (_wasmOk === null) _tryWasm();
+  if (_wasmOk === null) await _tryWasm();
   let usedWasm = false;
-  if (_wasmOk === true) {
-    try { usedWasm = wasmCarveSlice(occ, { nx, ny, nz, vs, ox, oy, oz, Rb: box.Rb }, F, { frac, few, weakMaj: opt.weakMaj ?? 0.5, trustFrac: tfrac, wMean }); }
+  if (_wasmOk === true && _wasmMod) {
+    try { usedWasm = _wasmMod.wasmCarveSlice(occ, { nx, ny, nz, vs, ox, oy, oz, Rb: box.Rb }, F, { frac, few, weakMaj: opt.weakMaj ?? 0.5, trustFrac: tfrac, wMean }); }
     catch (e) { usedWasm = false; }
   }
   if (usedWasm) {

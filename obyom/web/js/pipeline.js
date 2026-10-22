@@ -4,7 +4,7 @@ import { matLayout, matRaster } from './mat.js';
 import { detectMarkers, toGray } from './detect.js';
 import { poseFromMarkers, focalEqs, focalFromEqs, refineFocal, camAngles, fitK1, undistortPts, undistortRGBA } from './pose.js';
 import { computeMask, motionMasks, tableConsistency, carveHull, meshFromGrid, revolveGrid, taubin, computeNormals, colorize, depthMap, cleanGrid, vesselCarve, MOTION_OPT } from './recon.js';
-import { ensureSam, samReady, encodeFrame, refineMask } from './sam.js';
+// sam загружаем динамически только когда пользователь включил AI-маску (не статически, чтобы не ломать worker при старте)
 import { alignHulls, intersectHulls, framesToA } from './align.js';
 import { boxMesh, prismMesh, snapPlanes } from './shapes.js';
 import { bakeTexture, subdivideLong } from './texture.js';
@@ -75,7 +75,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
   log(`кадров с позой: ${good.length}; высота камеры ${Math.min(...els).toFixed(0)}–${elMax.toFixed(0)}°`);
   // 4) оболочка → сетка
   cb.progress('Строю форму', 0, 'вырезаю объём');
-  G = carveHull(good, { Rb, Hb }, Q.N, (p) => cb.progress('Строю форму', p * 0.7, 'вырезаю объём'), { photo: job.method === 'walk' && job.photo !== false });
+  G = await carveHull(good, { Rb, Hb }, Q.N, (p) => cb.progress('Строю форму', p * 0.7, 'вырезаю объём'), { photo: job.method === 'walk' && job.photo !== false });
   await tick();
   vox = 0; for (const v of G.occ) vox += v;
   if (vox < 50) throw new Error('Предмет не найден над ковриком. Он стоит в центре круга? Метки видны со всех сторон?');
@@ -89,7 +89,7 @@ export async function runPipeline(job, cb, shouldStop = () => false) {
     try {
       const B = await prepSet(bt.blobs, { size: job.size, method: bt.method || job.method, Hb: bt.Hb || Hb, theme: job.theme, plates: bt.plates, PW, objColor: job.objColor }, cb, shouldStop, log, 'Низ: ');
       log(`низ: кадров с позой ${B.good.length}; высота камеры ${B.elMin.toFixed(0)}–${B.elMax.toFixed(0)}°`);
-      const GB = carveHull(B.good, { Rb: B.Rb, Hb: B.Hb }, Q.N, (p) => cb.progress('Низ: строю форму', p, 'вырезаю объём'));
+      const GB = await carveHull(B.good, { Rb: B.Rb, Hb: B.Hb }, Q.N, (p) => cb.progress('Низ: строю форму', p, 'вырезаю объём'));
       await tick();
       const al = alignHulls(G, GB, (p) => cb.progress('Совмещаю две съёмки', p, 'ищу, как лежал предмет'));
       await tick();
@@ -399,8 +399,12 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   // и добавляет предмет (m=2) там, где SAM уверен. Так не сломаются ни блики, ни коврик.
   if (cfg.sam) {
     log(`${tag}загружаю AI-маску…`);
-    const samOk = await ensureSam((t) => cb.log(t), (p, t) => cb.progress(tag + 'AI-маска', p * 0.1, t));
+    let samMod = null;
+    try { samMod = await import('./sam.js'); } catch(e) { log(`${tag}AI-маска не загрузилась: ` + e.message); }
+    let samOk = false;
+    if (samMod) samOk = await samMod.ensureSam((t) => cb.log(t), (p, t) => cb.progress(tag + 'AI-маска', p * 0.1, t));
     if (samOk) {
+      const { encodeFrame: eF, refineMask: rM } = samMod;
       log(`${tag}AI-маска (MobileSAM) уточняет силуэты…`);
       for (let i = 0; i < good.length; i++) {
         if (shouldStop()) break;
@@ -433,9 +437,9 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
           fg.push({x:best[0], y:best[1], label:1});
         }
         try {
-          const emb = await encodeFrame(f.rgba, f.w, f.h);
+          const emb = await eF(f.rgba, f.w, f.h);
           if (!emb) continue;
-          const samMask = await refineMask(emb, [x0,y0,x1,y1], fg);
+          const samMask = await rM(emb, [x0,y0,x1,y1], fg);
           if (samMask) {
             // сливаем: SAM говорит «предмет» (m=2) — ставим m=2 в обычную маску, только если там было «неизвестно» (1)
             // SAM не режет «предмет» обратно (не ставит 0), чтобы не сломать фон.

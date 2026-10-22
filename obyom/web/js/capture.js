@@ -407,24 +407,36 @@ function _silhouetteContour(st, L, Rb, Hb, objColor) {
   }
   x0=Math.max(0,(x0|0)-4); x1=Math.min(w-1,(x1|0)+4); y0=Math.max(0,(y0|0)-4); y1=Math.min(h-1,(y1|0)+4);
   if (x1-x0<20||y1-y0<20) return null;
-  // convex hull видимых углов меток — за его пределами не рисуем контур (там стена/рука/стол, не предмет)
-  const hullPts = [];
-  for (const m of ms) for (const q of m.corners) hullPts.push(q);
-  let inHull = null;
-  if (hullPts.length >= 6) {
-    hullPts.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
-    const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
-    const lower=[],upper=[];
-    for(const p of hullPts){while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],p)<=0)lower.pop();lower.push(p);}
-    for(let i=hullPts.length-1;i>=0;i--){const p=hullPts[i];while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],p)<=0)upper.pop();upper.push(p);}
-    const hull=lower.slice(1,-1).concat(upper.slice(1,-1));
-    inHull=(x,y)=>{let inside=false;for(let i=0,j=hull.length-1;i<hull.length;j=i++){const xi=hull[i][0],yi=hull[i][1],xj=hull[j][0],yj=hull[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi))inside=!inside;}return inside;};
+  // граница листа: проецируем 4 угла ЛИСТА в кадр и ограничиваем контур этим многоугольником.
+  // Выпуклая оболочка углов МАРОК обрезала предмет на краях коврика (лист ведь заходит за марку).
+  // Всё что за проекцией листа — стена/рука/стол, не предмет.
+  let inSheet = null;
+  {
+    const W = L.W, H = L.H;
+    const corners = [[-W/2,-H/2],[W/2,-H/2],[W/2,H/2],[-W/2,H/2]];
+    const poly = [];
+    for (const [X,Y] of corners) {
+      // проецируем углы листа (z=0, на столе); если угол за камерой, поднимаем до верха (граница всё ещё грубо верна)
+      for (const z of [0, Hb]) {
+        const cz=R[6]*X+R[7]*Y+R[8]*z+t[2]; if(cz<5) continue;
+        const u=K.fx*(R[0]*X+R[1]*Y+R[2]*z+t[0])/cz+K.cx;
+        const vv=K.fy*(R[3]*X+R[4]*Y+R[5]*z+t[1])/cz+K.cy;
+        poly.push([u,vv]); break;
+      }
+    }
+    if (poly.length===4) {
+      inSheet=(x,y)=>{
+        let inside=false;
+        for(let i=0,j=3;i<4;j=i++){const xi=poly[i][0],yi=poly[i][1],xj=poly[j][0],yj=poly[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi))inside=!inside;}
+        return inside;
+      };
+    }
   }
   const mask = new Uint8Array(w*h);
   const darkBoost = objColor && (objColor[0]+objColor[1]+objColor[2])/3 < 100;
   const whiteThr = Math.max(150, W0 * 0.80);
   for (let y=y0; y<=y1; y++) for (let x=x0; x<=x1; x++){
-    if (inHull && !inHull(x,y)) continue;
+    if (inSheet && !inSheet(x,y)) continue;
     const i=(y*w+x)*4, r=rgba[i], g=rgba[i+1], b=rgba[i+2], m=(r+g+b)/3;
     const ch=(Math.max(r,g,b)-Math.min(r,g,b))/(m+12);
     const onMat = m > whiteThr && ch < 0.10;
