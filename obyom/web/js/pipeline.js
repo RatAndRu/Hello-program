@@ -295,6 +295,7 @@ async function prepSet(blobs, cfg, cb, shouldStop, log, tag) {
   // 1) кадры и метки
   // v2.8: если кадры уже декодированы между съёмкой (prepped) и их размер совпадает с PROC_W, используем их.
   // Если размер не совпадает (напр. качество «Лучше» = 960 px) — перекодируем из blob'а как обычно.
+  const frames = [], eqs = [];
   const prepped = cfg.prepped && cfg.prepped.length === blobs.length ? cfg.prepped : null;
   for (let i = 0; i < blobs.length; i++) {
     if (shouldStop()) throw new Error('stopped');

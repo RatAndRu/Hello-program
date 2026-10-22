@@ -27,14 +27,16 @@ export class Capture {
     this._pipCb = null;
     this.ov.addEventListener('click', (e) => this._onOverlayTap(e));
     // v2.8: перетаскиваемое солнце на оверлее — подсказка направления света для AR-предпросмотра
-    this.sunDragging = false; this.sunPos = null;
+    this.sunDragging = false; this.sunPos = null; this.sunDragged = false;
     this.ov.addEventListener('pointerdown', (e) => this._sunDown(e));
     this.ov.addEventListener('pointermove', (e) => this._sunMove(e));
     const upFn = () => { this.sunDragging = false; };
     this.ov.addEventListener('pointerup', upFn); this.ov.addEventListener('pointercancel', upFn);
   }
-  // Тап по overlay: в режиме пипетки замеряет цвет предмета в точке тапа и выходит из пипетки
+  // Тап по overlay: в режиме пипетки замеряет цвет предмета в точке тапа и выходит из пипетки;
+  // после перетаскивания солнца клик глотаем.
   _onOverlayTap(e) {
+    if (this.sunDragged) { this.sunDragged = false; return; }
     if (!this.pipette || !this.state) return;
     const ov = this.ov, rect = ov.getBoundingClientRect();
     const x = (e.clientX - rect.left) / rect.width * (this.state.w || 1);
@@ -66,7 +68,12 @@ export class Capture {
     const r=this.ov.getBoundingClientRect();
     const ex=(e.clientX-r.left)*dpr, ey=(e.clientY-r.top)*dpr;
     const sp=this._sunScreen(); if (!sp) return;
-    if (Math.hypot(ex-sp[0], ey-sp[1]) < 30*dpr) { this.sunDragging=true; try{this.ov.setPointerCapture(e.pointerId);}catch(ee){} e.preventDefault(); }
+    // радиус хвата 40*dpr — чтобы легко попасть пальцем
+    if (Math.hypot(ex-sp[0], ey-sp[1]) < 40*dpr) {
+      this.sunDragging=true; this.sunDragged=false;
+      try{this.ov.setPointerCapture(e.pointerId);}catch(ee){}
+      e.preventDefault(); e.stopPropagation();
+    }
   }
   _sunMove(e){
     if (!this.sunDragging) return;
@@ -76,8 +83,14 @@ export class Capture {
     const W=this.ov.width, H=this.ov.height;
     const st=this.state; if (!st || !st.w) return;
     const s=Math.max(W/st.w, H/st.h), ox=(W-st.w*s)/2, oy=(H-st.h*s)/2;
-    const fx=(ex-ox)/s, fy=(ey-oy)/s;
-    this.sunPos=[Math.max(0,Math.min(st.w,fx)), Math.max(0,Math.min(st.h,fy))];
+    let fx=(ex-ox)/s, fy=(ey-oy)/s;
+    // v2.8: солнце «бесконечно далеко» — тащишь за край экрана → свет параллельный,
+    // не перепрыгивает. Если тащишь за пределы кадра — оставляем крайнее положение.
+    const MARGIN = st.w * 0.5;
+    fx = Math.max(-MARGIN, Math.min(st.w+MARGIN, fx));
+    fy = Math.max(-MARGIN, Math.min(st.h+MARGIN, fy));
+    this.sunPos=[fx,fy]; this.sunDragged=true;
+    e.preventDefault();
   }
   _sunScreen(){
     if (!this.sunPos || !this.state || !this.state.w) return null;
@@ -218,6 +231,8 @@ export class Capture {
     // резкость сравниваем с последними ~8 кадрами (а не с рекордом за всё время — иначе при вращении не снимет никогда)
     (this.shHist = this.shHist || []).push(sh); if (this.shHist.length > 8) this.shHist.shift();
     const shMax = Math.max(...this.shHist);
+    const sharpNow = sh >= 0.8 * shMax && shMax > 0; // v2.8: вычисляем до решения о кадре, чтобы cellQual правильно записал
+    st.sharp = sharpNow;
     // ---- когда снимать: по пройденному углу. Медленнее крутится — реже кадры. Ограничения скорости нет. ----
     let why = '', due = false, blindShot = false;
     if (this.paused) why = 'пауза — нажми ▶';
@@ -258,7 +273,7 @@ export class Capture {
       st.count = this.shots.length; st.shot = true; why = '';
       this.opt.onShot && this.opt.onShot(this.shots.length, a, manual);
     }
-    st.why = why; st.sharp = sh >= 0.8 * shMax;
+    st.why = why;
     // контраст печати: насколько чёрное на метках действительно чёрное (p10/p90 яркости внутри метки)
     if (ms.length) { const r = inkRatio(g, w, h, ms); if (r != null) this.ink = this.ink == null ? r : this.ink * 0.9 + r * 0.1; }
     st.ink = this.ink;
@@ -308,8 +323,9 @@ export class Capture {
     if (st.found) {
       ctr = _silhouetteContour(st, this.L, Rb, Hb, this.objColor);
       if (ctr && ctr.length > 20) {
-        c.strokeStyle = this.objColor ? 'rgba(255,120,220,.95)' : 'rgba(120,220,255,.75)';
-        c.lineWidth = 2.5 * dpr; c.beginPath();
+        // v2.8: контур больше не «розовое бельмо» — тонкая полупрозрачная линия, не перекрывает предмет
+        c.strokeStyle = this.objColor ? 'rgba(255,120,220,.55)' : 'rgba(120,220,255,.55)';
+        c.lineWidth = 1.5 * dpr; c.beginPath();
         for (let i = 0; i < ctr.length; i++) { const [px, py] = P(ctr[i][0], ctr[i][1]); i ? c.lineTo(px, py) : c.moveTo(px, py); }
         c.stroke();
       }
@@ -391,19 +407,30 @@ function _silhouetteContour(st, L, Rb, Hb, objColor) {
   }
   x0=Math.max(0,(x0|0)-4); x1=Math.min(w-1,(x1|0)+4); y0=Math.max(0,(y0|0)-4); y1=Math.min(h-1,(y1|0)+4);
   if (x1-x0<20||y1-y0<20) return null;
-  // набираем тёмные/цветные пиксели как «похоже на предмет»: не белый лист и не чёрные метки (слишком тёмные <40 не режет без подсказки)
+  // convex hull видимых углов меток — за его пределами не рисуем контур (там стена/рука/стол, не предмет)
+  const hullPts = [];
+  for (const m of ms) for (const q of m.corners) hullPts.push(q);
+  let inHull = null;
+  if (hullPts.length >= 6) {
+    hullPts.sort((a,b)=>a[0]-b[0]||a[1]-b[1]);
+    const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+    const lower=[],upper=[];
+    for(const p of hullPts){while(lower.length>=2&&cross(lower[lower.length-2],lower[lower.length-1],p)<=0)lower.pop();lower.push(p);}
+    for(let i=hullPts.length-1;i>=0;i--){const p=hullPts[i];while(upper.length>=2&&cross(upper[upper.length-2],upper[upper.length-1],p)<=0)upper.pop();upper.push(p);}
+    const hull=lower.slice(1,-1).concat(upper.slice(1,-1));
+    inHull=(x,y)=>{let inside=false;for(let i=0,j=hull.length-1;i<hull.length;j=i++){const xi=hull[i][0],yi=hull[i][1],xj=hull[j][0],yj=hull[j][1];if(((yi>y)!=(yj>y))&&(x<(xj-xi)*(y-yi)/((yj-yi)||1e-9)+xi))inside=!inside;}return inside;};
+  }
   const mask = new Uint8Array(w*h);
-  const darkBoost = objColor && (objColor[0]+objColor[1]+objColor[2])/3 < 100; // тёмный предмет — принимаем и тёмные пиксели
+  const darkBoost = objColor && (objColor[0]+objColor[1]+objColor[2])/3 < 100;
+  const whiteThr = Math.max(150, W0 * 0.80);
   for (let y=y0; y<=y1; y++) for (let x=x0; x<=x1; x++){
+    if (inHull && !inHull(x,y)) continue;
     const i=(y*w+x)*4, r=rgba[i], g=rgba[i+1], b=rgba[i+2], m=(r+g+b)/3;
     const ch=(Math.max(r,g,b)-Math.min(r,g,b))/(m+12);
-    // белый лист: яркость ≥ 0.7·W0 и мало хромы — это фон
-    const onMat = m > 0.6*W0 && ch<0.12;
-    // чёрная метка: очень тёмно (<40) без подсказки — не считаем предметом
-    const blackMark = !darkBoost && m < 45;
-    // подсказка цвета предмета: похож — предмет
-    const nearCol = objColor ? Math.sqrt((r-objColor[0])**2+(g-objColor[1])**2+(b-objColor[2])**2) < 55 : false;
-    if (!onMat && !blackMark && (ch>0.13 || m < 0.35*W0 || nearCol)) mask[y*w+x]=1;
+    const onMat = m > whiteThr && ch < 0.10;
+    const blackMark = !darkBoost && m < 45 && ch < 0.10;
+    const nearCol = objColor ? Math.sqrt((r-objColor[0])**2+(g-objColor[1])**2+(b-objColor[2])**2) < (darkBoost?75:55) : false;
+    if (!onMat && !blackMark && (nearCol || (ch>0.18 && m<0.82*W0) || (darkBoost && m<0.3*W0 && ch<0.20))) mask[y*w+x]=1;
   }
   // простой контур: первая/последняя «не фоновая» точка по строкам и столбцам в рамке
   const pts=[];
