@@ -254,6 +254,18 @@ def _run_uistest(report_path: str | None) -> int:
                       tech_built.get("ok") is True
                       and len(tech_built.get("sections") or []) >= 1,
                       f"сечений {len(tech_built.get('sections') or [])}")
+                wardrobe = get("/api/example?key=wardrobe")
+                cabinet = post("/api/build", {"script": wardrobe.get("script") or ""})
+                cabinet_plan = cabinet.get("timeline") or {}
+                cabinet_groups = cabinet.get("groups") or {}
+                objects_anim = {c.get("object") for c in cabinet_plan.get("clips", [])}
+                check("пример «Шкаф»: группы и движение по объектам",
+                      cabinet.get("ok") is True
+                      and set(cabinet_groups.get("дверь") or []) == {"фасад_л", "ручка_левая"}
+                      and {"дверь", "ящик_сборка", "колесо_1"} <= objects_anim
+                      and any(c.get("kind") == "roll" for c in cabinet_plan.get("clips", [])),
+                      f"групп {len(cabinet_groups)}, объектов в анимации {len(objects_anim)}")
+                post("/api/build", {"script": tech.get("script") or ""})
                 dxf = post("/api/export", {"format": "dxf"})
                 check("экспорт сечения в DXF", str(dxf.get("name", "")).endswith(".dxf"),
                       str(dxf.get("name") or dxf.get("error")))

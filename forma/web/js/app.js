@@ -793,10 +793,10 @@ function showTexturePreview(kind) {
 
 const ANIM_KINDS = { spin: 'вращение', formation: 'формирование', explode: 'разлёт',
   assembly: 'сборка по шагам', move: 'перемещение', scale: 'масштаб', turn: 'доворот',
-  wait: 'пауза', morph: 'изменение формы' };
+  wait: 'пауза', morph: 'изменение формы', roll: 'качение' };
 const ANIM_COLORS = { spin: '#2f4f8a', formation: '#2f7a5f', explode: '#8a5a2f',
   assembly: '#6b4f9e', move: '#2f7a8a', scale: '#8a7a2f', turn: '#8a2f6b',
-  wait: '#4a4f57', morph: '#2f5f8a' };
+  wait: '#4a4f57', morph: '#2f5f8a', roll: '#8a5f2f' };
 
 function animPlan() {
   const p = state.payload?.timeline;
@@ -888,6 +888,8 @@ function syncAnimUI() {
       const shownTotal = preview ? a.preview.duration : total;
       const tracks = animTrackList().length;
       const bits = [];
+      const kinds = [...new Set(clips.map((c) => ANIM_KINDS[c.kind] || c.kind))];
+      if (kinds.length) bits.push(kinds.slice(0, 3).join(', '));
       if (clips.length) bits.push(`клипов ${clips.length}`);
       if (keys.length) bits.push(`ключей ${keys.length}`);
       if (tracks > 1) bits.push(`дорожек ${tracks}`);
@@ -974,18 +976,19 @@ function renderAnimTracks() {
     box.innerHTML = '<span class="anim-empty">клипов нет: animate kind=spin seconds=6</span>';
     return;
   }
-  const laneFor = (track) => {
+  const laneFor = (track, object) => {
     const row = document.createElement('div');
     row.className = 'anim-track-row';
-    if (animTrackList().length > 1) {
+    if (animTrackList().length > 1 || object) {
       const name = document.createElement('span');
       name.className = 'anim-track-name';
-      name.textContent = 'дорожка ' + track;
+      name.textContent = 'дорожка ' + track + (object ? ` · ${object}` : '');
       row.appendChild(name);
     }
     const lane = document.createElement('div');
     lane.className = 'anim-lane';
-    clips.filter((c) => (Number(c.track) || 1) === track).forEach((c) => {
+    clips.filter((c) => (Number(c.track) || 1) === track
+      && (c.object || '') === object).forEach((c) => {
       const seg = document.createElement('div');
       seg.className = 'anim-seg seg-' + (c.kind || 'spin');
       const st = Number(c.start) || 0;
@@ -1003,7 +1006,16 @@ function renderAnimTracks() {
     row.appendChild(lane);
     return row;
   };
-  animTrackList().forEach((track) => box.appendChild(laneFor(track)));
+  const lanes = [];
+  clips.forEach((c) => {
+    const track = Number(c.track) || 1;
+    const object = c.object || '';
+    if (!lanes.some((l) => l.track === track && l.object === object)) {
+      lanes.push({ track, object });
+    }
+  });
+  lanes.sort((a, b) => (a.track - b.track) || a.object.localeCompare(b.object, 'ru'));
+  lanes.forEach((l) => box.appendChild(laneFor(l.track, l.object)));
 
   if (keys.length) {
     const row = document.createElement('div');
@@ -1084,12 +1096,21 @@ function loadClipIntoEditor(c) {
     $('ae-dx').value = String(c.delta[0]); $('ae-dy').value = String(c.delta[1]);
     $('ae-dz').value = String(c.delta[2]);
   }
-  const num = (v, fallback) => (v === undefined || v === null ? fallback : Number(v));
+  const num = (v, fallback) => (v === undefined || v === null || Number.isNaN(Number(v))
+    ? fallback : Number(v));
   if (c.kind === 'scale') {
     $('ae-from').value = String(num(c.from, 1));
     $('ae-to').value = String(num(c.to, 1.5));
   }
   if (c.kind === 'turn') $('ae-angle').value = String(Number(c.angle) || 90);
+  if (c.kind === 'spin') $('ae-turns').value = String(Number(c.turns ?? 1));
+  if (c.kind === 'roll') {
+    $('ae-distance').value = String(Number(c.distance ?? 250));
+    $('ae-radius').value = String(Number(c.radius ?? 10));
+  }
+  if ($('ae-pivot')) {
+    $('ae-pivot').value = Array.isArray(c.pivot) ? c.pivot.join(', ') : '';
+  }
   if (c.kind === 'morph') {
     $('ae-param').value = c.param || '';
     $('ae-from').value = String(num(c.from, 0));
@@ -1111,9 +1132,13 @@ function updateEditorVisibility() {
   show('ae-from-wrap', kind === 'scale' || kind === 'morph');
   show('ae-to-wrap', kind === 'scale' || kind === 'morph');
   show('ae-angle-wrap', kind === 'turn');
+  show('ae-pivot-wrap', ['turn', 'spin', 'roll'].includes(kind));
+  show('ae-turns-wrap', kind === 'spin');
+  show('ae-distance-wrap', kind === 'roll');
+  show('ae-radius-wrap', kind === 'roll');
   show('ae-param-wrap', kind === 'morph');
   show('ae-samples-wrap', kind === 'morph');
-  show('ae-object-wrap', ['move', 'scale', 'turn', 'spin', 'explode'].includes(kind));
+  show('ae-object-wrap', ['move', 'scale', 'turn', 'spin', 'explode', 'roll', 'formation'].includes(kind));
   if ($('ae-seconds')) $('ae-seconds').disabled = kind === 'assembly' || kind === 'wait';
   if ($('ae-loop')) $('ae-loop').parentElement.style.display = ['spin', 'formation'].includes(kind) ? '' : 'none';
 }
@@ -1150,6 +1175,17 @@ function animLineFromEditor() {
     parts.push(`samples=${Math.max(2, Number($('ae-samples').value) || 12)}`);
   }
   if (kind === 'turn') parts.push(`angle=${Number($('ae-angle').value) || 90}`);
+  if (kind === 'spin') parts.push(`turns=${Number($('ae-turns')?.value) || 1}`);
+  if (kind === 'roll') {
+    parts.push(`distance=${Number($('ae-distance')?.value) || 250}`);
+    parts.push(`radius=${Number($('ae-radius')?.value) || 10}`);
+  }
+  if (['turn', 'spin', 'roll'].includes(kind)) {
+    const piv = ($('ae-pivot')?.value || '').split(/[,\s]+/).filter(Boolean).map(Number);
+    if (piv.length === 3 && piv.every((v) => Number.isFinite(v))) {
+      parts.push(`pivot=[${piv.join(', ')}]`);
+    }
+  }
   if (object) parts.push(`object=${object}`);
   if (track !== 1) parts.push(`track=${track}`);
   if (start !== '' && Number(start) > 0) parts.push(`start=${start}`);
@@ -1235,7 +1271,8 @@ function removeScriptLine(line, pattern, what = 'строку') {
 
 /** Обновляет списки объектов и параметров в редакторе анимации. */
 function refreshAnimSelectors() {
-  const objs = (state.payload?.objects || []).map((o) => o.name);
+  const objs = (state.payload?.objects || []).map((o) => o.name)
+    .concat(Object.keys(state.payload?.groups || {}));
   ['ae-object', 'ak-object'].forEach((id) => {
     const sel = $(id);
     if (!sel) return;
@@ -1291,10 +1328,19 @@ function updateSequence(t) {
   if (a.seqKey) {
     a.seqKey = null;
     state.viewer?.showFinalModel();
+    if (state.selected?.name && !state.hidden.has(state.selected.name)) {
+      state.viewer?.setHighlight(state.selected.name);
+    }
+    if ($('anim-focus')) $('anim-focus').textContent = '';
   }
 }
 
 function showMorph(clip, value) {
+  const target = clip.object || state.payload?.analysis?.metrics?.main || '';
+  if (target && !state.hidden.has(target)) {
+    state.viewer?.setHighlight(target);
+    if ($('anim-focus')) $('anim-focus').textContent = 'меняется: ' + target;
+  }
   const script = currentScript();
   const pending = 'm' + value.toFixed(3) + clip.param;
   state.anim.morphPending = pending;
@@ -1389,6 +1435,7 @@ async function showFrame(index) {
   const cached = a.cache.get(key);
   if (cached) {
     await state.viewer.loadFrame(cached.key, cached.url).catch(() => {});
+    focusFrameObject(frame);
     return;
   }
   if (a.busy) { a.next = index; return; }
@@ -1401,6 +1448,7 @@ async function showFrame(index) {
     a.cache.set(key, { key: res.key, url });
     while (a.cache.size > 24) a.cache.delete(a.cache.keys().next().value);
     await state.viewer.loadFrame(res.key, url);
+    focusFrameObject(frame);
   } catch (e) {
     toast('Не удалось показать кадр: ' + (e.message || e), 'bad');
   } finally {
@@ -1410,6 +1458,25 @@ async function showFrame(index) {
       a.next = undefined;
       showFrame(next);
     }
+  }
+}
+
+/** Во время сборки подсвечиваем деталь, которая появилась на этом шаге. */
+function focusFrameObject(frame) {
+  const objects = new Set((state.payload?.objects || []).map((o) => o.name));
+  const added = (frame?.added || []).filter((n) => !state.hidden.has(n));
+  const changed = frame?.target && objects.has(frame.target)
+    && !state.hidden.has(frame.target) ? frame.target : '';
+  const name = added[0] || changed;
+  const label = $('anim-focus');
+  if (name) {
+    state.viewer?.setHighlight(name);
+    if (label) label.textContent = (added.length ? 'появился: ' : 'меняется: ') + name;
+  } else if (state.selected?.name && !state.hidden.has(state.selected.name)) {
+    state.viewer?.setHighlight(state.selected.name);
+    if (label) label.textContent = '';
+  } else {
+    if (label) label.textContent = '';
   }
 }
 
@@ -1463,6 +1530,20 @@ function initViewer() {
       updateSequence(t);
       const now = performance.now();
       if (now - lastClock > 60) { lastClock = now; syncAnimClock(); }
+    };
+    state.viewer.onFocus = (name, names) => {
+      if (state.anim.mode !== 'clips') return;
+      const all = (names && names.length ? names : (name ? [name] : []))
+        .filter((n) => !state.hidden.has(n));
+      if (name && !state.hidden.has(name)) {
+        state.viewer.setHighlight(name);
+        if ($('anim-focus')) $('anim-focus').textContent = 'движется: ' + all.join(', ');
+      } else {
+        if (state.selected?.name && !state.hidden.has(state.selected.name)) {
+          state.viewer.setHighlight(state.selected.name);
+        }
+        if ($('anim-focus')) $('anim-focus').textContent = '';
+      }
     };
     state.viewer.onEnd = () => { state.anim.playing = false; syncAnimUI(); };
     state.viewer.onFrame = (dt) => {
@@ -1827,6 +1908,7 @@ function applySandboxTexture() {
   applyTextureToViewer(name, 'своя');
   showTexturePreview('своя');
   setScript(lines.join('\n').trimEnd());
+  buildNow(true);
   toast(`Текстура применена к «${name}»`);
 }
 

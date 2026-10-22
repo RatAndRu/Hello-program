@@ -24,7 +24,7 @@ def color(a, name):
                        hint="Например: color корпус #e8e8e8 material=ceramic",
                        line=a.cmd.line, command=a.cmd.text)
     targets = list(a.scene.objects.values()) if target in ("all", "*", "все") else \
-        [a.scene.resolve(target)]
+        a.scene.expand(target)
     for solid in targets:
         for key, value in style.items():
             if key == "color":
@@ -42,7 +42,7 @@ def color(a, name):
 def show(a, name):
     target = (a.text("target") or "").strip()
     targets = list(a.scene.objects.values()) if target in ("all", "*", "все") else \
-        [a.scene.resolve(target)]
+        a.scene.expand(target)
     for solid in targets:
         solid.visible = True
     return None
@@ -55,7 +55,7 @@ def show(a, name):
 def hide(a, name):
     target = (a.text("target") or "").strip()
     targets = list(a.scene.objects.values()) if target in ("all", "*", "все") else \
-        [a.scene.resolve(target)]
+        a.scene.expand(target)
     for solid in targets:
         solid.visible = False
     return None
@@ -75,15 +75,58 @@ def delete_object(a, name):
     if target in ("all", "*", "все", "всё"):
         targets = list(a.scene.objects.values())
     else:
-        targets = [a.scene.resolve(target)]
+        targets = a.scene.expand(target)
     removed = []
     for solid in targets:
         if solid.name in a.scene.objects:
-            a.scene.objects.pop(solid.name, None)
+            a.scene.remove(solid.name)
             removed.append(solid.name)
     if not removed:
         raise DslError(f"Объект «{target}» уже удалён.", line=a.cmd.line)
+    a.scene.groups.pop(target, None)
     a.scene.log("info", "удалено: " + ", ".join(removed), a.cmd.line)
+    return None
+
+
+@op("group", aliases=("группа", "сборка_объектов", "assembly_group", "группировать"),
+    category="Сцена и материал",
+    summary="Собирает готовые объекты в группу для анимации: группа целиком едет или "
+            "поворачивается, а детали внутри могут двигаться и крутиться сами.",
+    example="дверь = group [фасад_л, ручка_левая]\n"
+            "animate дверь turn angle=100 axis=z pivot=[-481, 216, 0] seconds=2",
+    params={"objects": "объекты через запятую: [a, b, c]",
+            "name": "имя группы (берётся из «имя = group …»)"},
+    positional=["objects"])
+def group(a, name):
+    members = a.solids()
+    if not members:
+        raise DslError("Группа пустая: перечислите объекты в квадратных скобках.",
+                       hint="Например: дверь = group [фасад_л, ручка_левая]",
+                       line=a.cmd.line, command=a.cmd.text)
+    gname = (name or "").strip()
+    if not gname:
+        raise DslError("Укажите имя группы: дверь = group [фасад_л, ручка_левая]",
+                       line=a.cmd.line, command=a.cmd.text)
+    if gname in a.scene.objects:
+        raise DslError(f"Имя «{gname}» уже занято объектом.",
+                       hint="Назовите группу иначе, например «дверь_сборка».",
+                       line=a.cmd.line, command=a.cmd.text)
+    names = [s.name for s in members]
+    used = {}
+    for other, items in a.scene.groups.items():
+        if other == gname:
+            continue
+        for n in items:
+            if n in names:
+                used[n] = other
+    if used:
+        first = next(iter(used))
+        raise DslError(f"Объект «{first}» уже входит в группу «{used[first]}».",
+                       hint="Один объект может быть только в одной группе: "
+                            "уберите его из прежней или назовите новую иначе.",
+                       line=a.cmd.line, command=a.cmd.text)
+    a.scene.groups[gname] = names
+    a.scene.log("info", f"группа «{gname}»: " + ", ".join(names), a.cmd.line)
     return None
 
 

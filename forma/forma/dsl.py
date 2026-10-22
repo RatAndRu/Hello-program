@@ -47,6 +47,8 @@ PARAM_ALIASES = {
     "касание": "blend", "к": "k", "объединить": "merge",
     "сохранить": "keep", "плоскость": "plane", "слой": "layer",
     "текст": "text", "надпись_текст": "text", "буквы": "text",
+    "точка_вращения": "pivot", "петля": "pivot", "обороты": "turns",
+    "расстояние": "distance", "путь_качения": "distance",
 }
 
 STYLE_KEYS = {"color", "metal", "rough", "density", "material", "visible"}

@@ -1,0 +1,165 @@
+# ============================================================================
+#  ШКАФ-ВИТРИНА 1000 × 450 × 1200 мм — ЛДСП 18 мм
+# ============================================================================
+#  Фасад смотрит в −Y (как «спереди» в окне просмотра и отчёте).
+#  Дверь открывается вокруг петли, ящик выезжает по направляющим,
+#  колёсики катятся по рейкам. Клипы привязаны к объектам, поэтому
+#  дверь, ящик и колёса двигаются одновременно, в одном клипе.
+# ----------------------------------------------------------------------------
+
+scene bg=#1b1e25 env=studio shadows=да grid=нет
+light preset=студия strength=1.2
+
+# ---------- ЦОКОЛЬ (утоплен на 35 мм) ----------
+цоколь_перед = box size=[964, 25, 72] center=да at=[0, -177.5, 36]
+цоколь_зад = box size=[964, 25, 72] center=да at=[0, 194.5, 36]
+цоколь_л = box size=[25, 372, 72] center=да at=[-487.5, 7, 36]
+цоколь_п = mirror_copy [цоколь_л] plane=x
+цоколь = union [цоколь_перед, цоколь_зад, цоколь_л, цоколь_п]
+
+# ---------- КОРПУС: глубина 414, двери накладные 18 мм ----------
+боковина_л = box size=[18, 414, 1130] center=да at=[-491, 0, 635]
+боковина_п = mirror_copy [боковина_л] plane=x
+дно = box size=[970, 414, 18] center=да at=[0, 0, 79]
+верх = box size=[970, 414, 18] center=да at=[0, 0, 1191]
+разделитель = box size=[970, 410, 18] center=да at=[0, -2, 317]
+задняя_стенка = box size=[970, 4, 1092] center=да at=[0, 205, 634]
+полка = box size=[966, 380, 18] center=да at=[0, 0, 665]
+
+# ---------- ПОЛКОДЕРЖАТЕЛИ (штифты 5 мм в боковины) ----------
+полкодержатель_1 = cylinder radius=2.5 height=30 segments=24 center=да at=[0, 0, 0]
+полкодержатель_1 = rotate [полкодержатель_1] angle=90 axis=y
+полкодержатель_1 = translate [полкодержатель_1] offset=[-467, -150, 654]
+полкодержатель_2 = cylinder radius=2.5 height=30 segments=24 center=да at=[0, 0, 0]
+полкодержатель_2 = rotate [полкодержатель_2] angle=90 axis=y
+полкодержатель_2 = translate [полкодержатель_2] offset=[-467, 150, 654]
+полкодержатель_3 = cylinder radius=2.5 height=30 segments=24 center=да at=[0, 0, 0]
+полкодержатель_3 = rotate [полкодержатель_3] angle=90 axis=y
+полкодержатель_3 = translate [полкодержатель_3] offset=[467, -150, 654]
+полкодержатель_4 = cylinder radius=2.5 height=30 segments=24 center=да at=[0, 0, 0]
+полкодержатель_4 = rotate [полкодержатель_4] angle=90 axis=y
+полкодержатель_4 = translate [полкодержатель_4] offset=[467, 150, 654]
+
+# ---------- НАПРАВЛЯЮЩИЕ ЯЩИКА (телескопические, 45 мм) ----------
+направ_л = box size=[14, 400, 45] center=да at=[-475.75, 7, 110]
+направ_п = mirror_copy [направ_л] plane=x
+
+# ---------- ПРАВАЯ ДВЕРЬ (накладная, закрыта) ----------
+фасад_п = box size=[479.5, 18, 854] round=2 center=да at=[241.25, -216, 754]
+филёнка_п = box size=[359.5, 8, 734] round=1.5 center=да at=[241.25, -221, 754]
+фасад_п = difference [фасад_п, филёнка_п]
+ручка_п_штанга = capsule radius=5 height=200 center=да at=[0, 0, 0]
+ручка_п_штанга = translate [ручка_п_штанга] offset=[55, -235, 784]
+ручка_п_стойка1 = cylinder radius=4 height=14 segments=24 center=да at=[0, 0, 0]
+ручка_п_стойка1 = rotate [ручка_п_стойка1] angle=90 axis=x
+ручка_п_стойка1 = translate [ручка_п_стойка1] offset=[55, -232, 704]
+ручка_п_стойка2 = cylinder radius=4 height=14 segments=24 center=да at=[0, 0, 0]
+ручка_п_стойка2 = rotate [ручка_п_стойка2] angle=90 axis=x
+ручка_п_стойка2 = translate [ручка_п_стойка2] offset=[55, -232, 864]
+ручка_правая = union [ручка_п_штанга, ручка_п_стойка1, ручка_п_стойка2]
+
+# ---------- ЛЕВАЯ ДВЕРЬ (петли слева, открывается) ----------
+фасад_л = box size=[479.5, 18, 854] round=2 center=да at=[-241.25, -216, 754]
+филёнка_л = box size=[359.5, 8, 734] round=1.5 center=да at=[-241.25, -221, 754]
+фасад_л = difference [фасад_л, филёнка_л]
+ручка_л_штанга = capsule radius=5 height=200 center=да at=[0, 0, 0]
+ручка_л_штанга = translate [ручка_л_штанга] offset=[-55, -235, 784]
+ручка_л_стойка1 = cylinder radius=4 height=14 segments=24 center=да at=[0, 0, 0]
+ручка_л_стойка1 = rotate [ручка_л_стойка1] angle=90 axis=x
+ручка_л_стойка1 = translate [ручка_л_стойка1] offset=[-55, -232, 704]
+ручка_л_стойка2 = cylinder radius=4 height=14 segments=24 center=да at=[0, 0, 0]
+ручка_л_стойка2 = rotate [ручка_л_стойка2] angle=90 axis=x
+ручка_л_стойка2 = translate [ручка_л_стойка2] offset=[-55, -232, 864]
+ручка_левая = union [ручка_л_штанга, ручка_л_стойка1, ручка_л_стойка2]
+
+# ---------- РЕЙКИ ЯЩИКА (колёсики катятся по ним) ----------
+рейка_л = box size=[73, 417, 11] center=да at=[-463.5, -1.5, 94.5]
+рейка_п = mirror_copy [рейка_л] plane=x
+рейки = union [рейка_л, рейка_п]
+
+# ---------- ЯЩИК ----------
+ящик_фасад = box size=[960, 18, 216] round=2 center=да at=[0, -216, 198]
+ящик_окно = box size=[820, 8, 116] round=1.5 center=да at=[0, -221, 198]
+ящик_фасад = difference [ящик_фасад, ящик_окно]
+ящик_бок_л = box size=[15, 390, 181] center=да at=[-442.5, -12, 214.5]
+ящик_бок_п = mirror_copy [ящик_бок_л] plane=x
+ящик_зад = box size=[870, 15, 181] center=да at=[0, 175.5, 214.5]
+ящик_дно = box size=[900, 390, 4] center=да at=[0, -12, 126]
+ручка_ящ_штанга = capsule radius=4.5 height=140 center=да at=[0, 0, 0]
+ручка_ящ_штанга = rotate [ручка_ящ_штанга] angle=90 axis=y
+ручка_ящ_штанга = translate [ручка_ящ_штанга] offset=[0, -245, 198]
+ручка_ящ_стойка1 = cylinder radius=4 height=16 segments=24 center=да at=[0, 0, 0]
+ручка_ящ_стойка1 = rotate [ручка_ящ_стойка1] angle=90 axis=x
+ручка_ящ_стойка1 = translate [ручка_ящ_стойка1] offset=[-56, -233, 198]
+ручка_ящ_стойка2 = cylinder radius=4 height=16 segments=24 center=да at=[0, 0, 0]
+ручка_ящ_стойка2 = rotate [ручка_ящ_стойка2] angle=90 axis=x
+ручка_ящ_стойка2 = translate [ручка_ящ_стойка2] offset=[56, -233, 198]
+ручка_ящика = union [ручка_ящ_штанга, ручка_ящ_стойка1, ручка_ящ_стойка2]
+ящик = union [ящик_фасад, ящик_бок_л, ящик_бок_п, ящик_зад, ящик_дно]
+
+# ---------- КОЛЁСИКИ (ось X, катятся по рейкам) ----------
+колесо_1 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
+колесо_1 = rotate [колесо_1] angle=90 axis=y
+колесо_1 = translate [колесо_1] offset=[-440, -120, 113]
+колесо_2 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
+колесо_2 = rotate [колесо_2] angle=90 axis=y
+колесо_2 = translate [колесо_2] offset=[440, -120, 113]
+колесо_3 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
+колесо_3 = rotate [колесо_3] angle=90 axis=y
+колесо_3 = translate [колесо_3] offset=[-440, 150, 113]
+колесо_4 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
+колесо_4 = rotate [колесо_4] angle=90 axis=y
+колесо_4 = translate [колесо_4] offset=[440, 150, 113]
+
+# ---------- СБОРКА ----------
+корпус = union [цоколь, боковина_л, боковина_п, дно, верх, разделитель, задняя_стенка,
+                полка, полкодержатель_1, полкодержатель_2, полкодержатель_3,
+                полкодержатель_4, направ_л, направ_п]
+
+дверь = group [фасад_л, ручка_левая]
+ящик_сборка = group [ящик, колесо_1, колесо_2, колесо_3, колесо_4]
+
+# ---------- АНИМАЦИЯ: у каждого объекта своя очередь клипов ----------
+animate дверь turn angle=-100 axis=z pivot=[-481, -216, 0] seconds=2
+animate дверь wait seconds=1
+animate дверь turn angle=100 axis=z pivot=[-481, -216, 0] seconds=2
+animate ящик_сборка move dy=-250 seconds=2
+animate ящик_сборка wait seconds=1
+animate ящик_сборка move dy=250 seconds=2
+animate колесо_1 roll distance=250 radius=13 axis=x seconds=2
+animate колесо_1 wait seconds=1
+animate колесо_1 roll distance=250 radius=13 axis=-x seconds=2
+animate колесо_2 roll distance=250 radius=13 axis=x seconds=2
+animate колесо_2 wait seconds=1
+animate колесо_2 roll distance=250 radius=13 axis=-x seconds=2
+animate колесо_3 roll distance=250 radius=13 axis=x seconds=2
+animate колесо_3 wait seconds=1
+animate колесо_3 roll distance=250 radius=13 axis=-x seconds=2
+animate колесо_4 roll distance=250 radius=13 axis=x seconds=2
+animate колесо_4 wait seconds=1
+animate колесо_4 roll distance=250 radius=13 axis=-x seconds=2
+
+# ---------- ПРОВЕРКИ ----------
+check корпус watertight
+check корпус parts 1
+check корпус size 998..1002 412..416 1198..1202
+check фасад_л size 478..481 16..20 852..856
+check фасад_л watertight
+check фасад_л parts 1
+check ящик watertight
+check ящик parts 1
+check рейки height 9..13
+
+# ---------- МАТЕРИАЛ ----------
+color корпус #a8794a rough=0.66 density=0.72
+color фасад_п #e3dccd rough=0.48 density=0.72
+color фасад_л #e0d9c8 rough=0.48 density=0.72
+color ручка_правая #2b2d31 metal=0.9 rough=0.24
+color ручка_левая #2b2d31 metal=0.9 rough=0.24
+color ручка_ящика #2b2d31 metal=0.9 rough=0.24
+color ящик #ddd5c5 rough=0.52 density=0.72
+color рейки #2c2f35 metal=0.85 rough=0.28
+color колесо_1 #24262b metal=0.9 rough=0.22
+color колесо_2 #24262b metal=0.9 rough=0.22
+color колесо_3 #24262b metal=0.9 rough=0.22
+color колесо_4 #24262b metal=0.9 rough=0.22

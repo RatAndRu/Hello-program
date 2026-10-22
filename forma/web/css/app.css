@@ -102,6 +102,21 @@ button.mini:disabled { opacity: .38; cursor: default; }
 .icon-btn { font-size: 15px; line-height: 1; padding: 4px 9px; }
 .anim-status { font-size: 10.5px; color: var(--text-faint); }
 .anim-status.ok { color: var(--good); }
+/* «движется: …» — кто сейчас анимируется. Подпись не распирает панель. */
+.anim-focus {
+  min-width: 0;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(126, 224, 192, .3);
+  background: rgba(126, 224, 192, .1);
+  color: var(--accent-2);
+  font-size: 10.5px;
+}
+.anim-focus:empty { display: none; }
 .icon { font-size: 11px; opacity: .9; }
 
 .menu-wrap { position: relative; }

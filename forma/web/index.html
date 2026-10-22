@@ -200,6 +200,7 @@
                    title="Прокрутка времени / кадров" />
             <span class="studio-value anim-read" id="anim-time">0.00 с</span>
             <span class="studio-value anim-read" id="anim-frame-label">кадр 0/0</span>
+            <span class="studio-value anim-read anim-focus" id="anim-focus"></span>
             <input type="range" id="anim-speed" min="0.2" max="4" step="0.1" value="1" title="Скорость" />
             <span class="studio-value" id="anim-speed-val">1×</span>
           </div>
@@ -210,6 +211,7 @@
                 <select id="ae-kind">
                   <option value="spin">вращение</option>
                   <option value="turn">доворот на угол</option>
+                  <option value="roll">качение колеса</option>
                   <option value="move">перемещение</option>
                   <option value="scale">масштаб</option>
                   <option value="formation">формирование</option>
@@ -239,6 +241,10 @@
               <label id="ae-from-wrap">От <input type="number" id="ae-from" step="0.1" value="1" /></label>
               <label id="ae-to-wrap">До <input type="number" id="ae-to" step="0.1" value="1.5" /></label>
               <label id="ae-angle-wrap">Угол, ° <input type="number" id="ae-angle" min="-360" max="360" step="5" value="90" /></label>
+              <label id="ae-pivot-wrap">Точка вращения <input type="text" id="ae-pivot" placeholder="x, y, z" /></label>
+              <label id="ae-turns-wrap">Оборотов <input type="number" id="ae-turns" min="0.1" max="50" step="0.5" value="1" /></label>
+              <label id="ae-distance-wrap">Путь, мм <input type="number" id="ae-distance" step="1" value="250" /></label>
+              <label id="ae-radius-wrap">Радиус, мм <input type="number" id="ae-radius" min="0.1" step="0.5" value="10" /></label>
               <label id="ae-param-wrap">Параметр
                 <select id="ae-param"><option value="">—</option></select>
               </label>
@@ -251,8 +257,11 @@
               дорожки идут друг за другом, разных — <b>параллельно</b>.
               Оси: <b>x</b> — влево/вправо, <b>y</b> — глубина (вперёд/назад),
               <b>z</b> — <b>вверх</b> (высота). Знак «−» крутит или двигает в обратную сторону.
-              Для <code>move</code>, <code>scale</code>, <code>turn</code> можно указать объект —
-              тогда движется только он.
+              Для <code>move</code>, <code>scale</code>, <code>turn</code>, <code>spin</code>,
+              <code>roll</code> и <code>formation</code> можно указать объект или группу —
+              тогда движется только она. У каждого объекта своя очередь клипов, поэтому
+              шкаф может ехать, а его колёсики — крутиться одновременно; «дорожка» нужна
+              лишь для нескольких независимых движений одного и того же объекта.
             </div>
             <div class="anim-clips" id="anim-clips"></div>
 
@@ -272,10 +281,7 @@
           Анимация хранится в сценарии: клипы <code>animate</code> и ключи <code>keyframe</code>
           сохраняются в GLB (Blender покажет их действиями). «Кадры сборки» — настоящие
           промежуточные модели по шагам, «изменение формы» строит кадры с другим параметром.
-        </div>
-        <div class="studio-note">
-          Анимация хранится в сценарии: клипы <code>animate</code> сохраняются в GLB (Blender покажет
-          их действиями), а «кадры сборки» — это настоящие промежуточные модели по шагам сценария.
+          Группа <code>group [a, b]</code> двигается целиком, а её объекты могут анимироваться сами.
         </div>
       </div>
 

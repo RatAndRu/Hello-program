@@ -52,12 +52,20 @@ DOCS_INDEX = """СПРАВКА ФОРМА 3D (кратко)
   имя = from_sdf expression="sd_sphere(x,y,z,30)-sd_sphere(x,y,z,24)" bounds=[...] resolution=1.5
   имя = blob spheres=[[x,y,z,r],...] capsules=[[x1,y1,z1,x2,y2,z2,r],...] blend=12
 
-АНИМАЦИЯ (клипы идут друг за другом, строк может быть несколько)
-  animate kind=spin axis=z seconds=6 [loop=да]          — вращение
-  animate kind=formation seconds=4                      — рост из нуля
-  animate kind=explode amount=30 seconds=3              — разлёт на части
-  animate kind=assembly hold=0.8                        — сборка: каждый шаг сценария как кадр
-  start=2.5 — с какой секунды начинать; fps=24 — кадры для просмотра.
+ГРУППЫ И АНИМАЦИЯ ПО ОБЪЕКТАМ (у каждого объекта своя очередь клипов)
+  сборка = group [дверь, ручка]      — группа двигается одним клипом
+  animate дверь turn angle=90 axis=z pivot=[-40, 0, 0] seconds=2   — поворот вокруг петли
+  animate дверь move dy=-250 seconds=2                  — выехать вперёд на 250 мм
+  animate колесо roll distance=250 radius=13 axis=x     — качение: угол = путь / радиус
+  animate колесо spin turns=2 seconds=4                 — два оборота
+  animate дверь wait seconds=1 | scale from=1 to=1.2 | keyframe ...
+  animate kind=spin seconds=6         — вся модель: вращение
+  animate kind=formation seconds=4    — рост из нуля
+  animate kind=explode amount=30 seconds=3  — разлёт на части
+  animate kind=assembly hold=0.8      — сборка: каждый шаг сценария как кадр
+  axis: x — влево/вправо, y — глубина (вперёд/назад), z — вверх; «−» — обратно.
+  pivot=[x,y,z] — точка вращения (петля двери, ось колеса). start=, fps=, track=1..8 —
+  когда начинать и на какой дорожке; клипы разных объектов играют параллельно.
   Анимация сохраняется в GLB (Blender покажет действиями). Клипы можно ставить
   в любом месте сценария; «анимация сборки» показывает настоящие промежуточные модели.
 
@@ -155,13 +163,15 @@ def _animation_block(build) -> list[str]:
     if not clips and not frames:
         return ["", "## Анимация", "Клипов нет. Добавьте строку animate, например "
                 "`animate kind=spin seconds=6` или `animate kind=assembly hold=0.8`."]
-    names = {"spin": "вращение", "formation": "формирование",
-             "explode": "разлёт", "assembly": "сборка по шагам"}
-    out = ["", "## Анимация", "| клип | с | длительность |", "|---|---|---|"]
+    names = {"spin": "вращение", "formation": "формирование", "explode": "разлёт",
+             "assembly": "сборка по шагам", "move": "перемещение", "scale": "масштаб",
+             "turn": "поворот", "roll": "качение", "wait": "пауза", "morph": "форма"}
+    out = ["", "## Анимация", "| объект | клип | с | длительность |", "|---|---|---|---|"]
     plan = scene.animation_plan(len(frames))
     for clip in plan["clips"]:
         kind = names.get(clip["kind"], clip["kind"])
-        out.append(f"| {kind} | {clip['start']:.1f} | {clip['length']:.1f} |")
+        target = clip.get("object") or "вся модель"
+        out.append(f"| {target} | {kind} | {clip['start']:.1f} | {clip['length']:.1f} |")
     if frames:
         out += ["", f"Кадров сборки: {len(frames)} (шаги сценария: "
                 + ", ".join(str(f["n"]) for f in frames[:24]) + ")"]

@@ -296,7 +296,8 @@ class AppState:
             animation = scene.animation if scene else None
             animations = list(scene.animations) if scene else None
             if fmt == "glb":
-                data = export_glb(solids, animation=animation, animations=animations)
+                data = export_glb(solids, animation=animation, animations=animations,
+                                  groups=dict(scene.groups) if scene else None)
                 name = f"{base}.glb"
             elif fmt == "stl":
                 data = export_stl(solids)
@@ -315,6 +316,7 @@ class AppState:
                     from .blender import glb_to_blend
                     tmp = out_dir / f"_tmp_{base}.glb"
                     tmp.write_bytes(export_glb(solids, animation=animation,
+                                               groups=dict(scene.groups) if scene else None,
                                                animations=animations))
                     name = f"{base}.blend"
                     try:
@@ -353,7 +355,9 @@ class AppState:
                 target = out_dir / name
                 with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
                     zf.writestr(f"{base}.forma", self.last_script)
-                    zf.writestr(f"{base}.glb", export_glb(solids, animation=animation))
+                    zf.writestr(f"{base}.glb", export_glb(
+                        solids, animation=animation,
+                        groups=dict(scene.groups) if scene else None))
                     zf.writestr(f"{base}.stl", export_stl(solids))
                     zf.writestr(f"{base}.obj", export_obj(solids))
                     zf.writestr(f"{base}.ply", export_ply(solids))
@@ -459,6 +463,7 @@ EXAMPLES = [
     ("Анимация и сборка по шагам", "animation"),
     ("Анимация по дорожкам и ключи", "animation_tracks"),
     ("Надпись, резьба и сечение", "tech"),
+    ("Шкаф: дверь, ящик, колёсики", "wardrobe"),
 ]
 
 

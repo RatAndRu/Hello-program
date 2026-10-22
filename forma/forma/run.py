@@ -66,7 +66,8 @@ class Build:
             self._glb = export_glb(solids,
                                    animation=scene.animation if scene else None,
                                    animations=list(scene.animations) if scene else None,
-                                   keys=dict(scene.keys) if scene else None)
+                                   keys=dict(scene.keys) if scene else None,
+                                   groups=dict(scene.groups) if scene else None)
         return self._glb
 
     def objects_payload(self) -> list[dict]:
@@ -107,12 +108,18 @@ class Build:
         """Кадры сборки: шаги сценария, после которых менялась видимая модель."""
         out = []
         prev = None
+        prev_names: set[str] = set()
         for step in self.steps:
             sig = (tuple(step.get("objects") or []), step.get("ops"))
             if not step.get("objects") or sig == prev:
                 continue
             prev = sig
-            out.append({**step, "frame": len(out) + 1})
+            names = list(step.get("objects") or [])
+            added = [n for n in names if n not in prev_names]
+            removed = [n for n in prev_names if n not in names]
+            prev_names = set(names)
+            out.append({**step, "frame": len(out) + 1,
+                        "added": added, "removed": removed})
         return out
 
     def payload(self, light: bool = False) -> dict:
@@ -135,6 +142,7 @@ class Build:
             "animations": plan["clips"],
             "keys": plan.get("keys", []),
             "timeline": plan,
+            "groups": {g: list(m) for g, m in (scene.groups if scene else {}).items()},
             "sections": _sections_payload(scene),
             "probes": list(getattr(scene, "probes", []) or []) if scene else [],
             "passports": list(getattr(scene, "passports", []) or []) if scene else [],

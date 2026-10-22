@@ -38,12 +38,16 @@ renders, prompts, textures, imports) — ничего не пишется в App
    попадут текущий сценарий, отчёт и справочник команд.
 9. Анимация. Под окном модели — таймлайн, прокрутка времени, кадры и редактор.
    Клипы пишутся строками сценария:
+       дверь = group [фасад, ручка]
+       animate дверь turn angle=-100 axis=z pivot=[-481, -216, 0] seconds=2
+       animate дверь move dy=-250 seconds=2
+       animate колесо roll distance=250 radius=13 axis=x seconds=2
        animate kind=spin axis=z seconds=6 track=1
-       animate kind=move object=ручка dz=20 seconds=2 track=2
-       animate kind=turn object=крышка axis=x angle=90 seconds=2 track=3
        animate kind=morph param=R from=30 to=45 seconds=4 samples=12
        keyframe ручка at=2 pos=[0, 0, 20] rot=[0, 0, 90] scale=1.2
-   Дорожки 1…8 играют одновременно, клипы одной дорожки — по очереди.
+   Клип привязан к объекту или группе: у каждого своя очередь клипов, поэтому
+   дверь, ящик и колёсики двигаются одновременно. pivot=[x, y, z] — петля или ось
+   вращения. Дорожки 1…8 нужны для нескольких движений одного и того же объекта.
    Оси: x — влево/вправо, y — глубина, z — вверх; «−» — обратное направление.
 
 ЕДИНИЦЫ

@@ -7,6 +7,8 @@
 
 from __future__ import annotations
 
+import math
+
 from .errors import DslError
 from .geometry import normalize_color
 from .ops import op
@@ -53,12 +55,15 @@ ANIMATIONS = {
     "wait": "wait", "пауза": "wait", "ожидание": "wait", "задержка": "wait",
     "morph": "morph", "морф": "morph", "морфинг": "morph",
     "изменение": "morph", "форма": "morph", "shape": "morph",
+    "roll": "roll", "качение": "roll", "катить": "roll", "rolling": "roll",
+    "открыть": "turn", "закрыть": "turn", "open": "turn", "close": "turn",
 }
 
 KIND_NAMES_ANIM = {"spin": "вращение", "formation": "формирование",
                    "explode": "разлёт", "assembly": "сборка по шагам",
                    "move": "перемещение", "scale": "масштаб", "turn": "доворот",
-                   "wait": "пауза", "morph": "изменение формы"}
+                   "wait": "пауза", "morph": "изменение формы",
+                   "roll": "качение"}
 
 
 @op("scene", aliases=("сцена", "окружение", "фон", "view"), category="Сцена и материал",
@@ -193,8 +198,8 @@ def texture(a, name):
     example="animate kind=spin axis=z seconds=6 track=1\n"
             "animate kind=move dz=40 seconds=2 track=1\n"
             "animate kind=scale to=1.4 seconds=2 track=1",
-    positional=["kind"],
-    params={"kind": "spin, formation, explode, move, scale, turn, wait, assembly, morph",
+    positional="*",
+    params={"kind": "spin, formation, explode, move, scale, turn, wait, assembly, morph, roll",
             "axis": "ось: x, y, z (можно -x, -y, -z); z — вверх",
             "seconds": "длительность клипа, с", "duration": "то же, что seconds",
             "start": "с какой секунды начинать (иначе — за предыдущим клипом дорожки)",
@@ -208,9 +213,34 @@ def texture(a, name):
             "scale: во сколько раз увеличить (2 = вдвое)",
             "from": "scale/morph: начальное значение", "angle": "turn: угол поворота, градусы",
             "param": "morph: имя параметра сценария (R, H, …)",
-            "samples": "morph: сколько кадров геометрии построить (12)"})
+            "samples": "morph: сколько кадров геометрии построить (12)",
+            "pivot": "точка вращения [x,y,z]: дверная петля, ось колеса и т.п.",
+            "turns": "spin: сколько полных оборотов (1)",
+            "distance": "roll: путь качения, мм", "radius": "roll: радиус колеса, мм"})
 def animate(a, name):
-    kind_raw = (a.text("kind") or "spin").strip().lower()
+    # Порядок слов свободный: animate дверь turn angle=…, animate turn object=дверь
+    words = [str(w).strip() for w in a.extra if str(w).strip()]
+    kind_raw = (a.text("kind") or "").strip().lower()
+    if not kind_raw:
+        for w in list(words):
+            if w.lower() in ANIMATIONS:
+                kind_raw = w.lower()
+                words.remove(w)
+                break
+    if not kind_raw:
+        kind_raw = "spin"
+    object_raw = (a.text("object") or "").strip()
+    if not object_raw:
+        for w in list(words):
+            if w in a.scene.groups or w in a.scene.objects:
+                object_raw = w
+                words.remove(w)
+                break
+    if words:
+        raise DslError(f"Лишний аргумент «{words[0]}» у команды animate.",
+                       hint="Пишите: animate [объект] [вид] параметры — например "
+                            "animate дверь turn angle=100 axis=z pivot=[-481,216,0]",
+                       line=a.cmd.line, command=a.cmd.text)
     if kind_raw not in ANIMATIONS:
         raise DslError(f"Неизвестная анимация «{kind_raw}».",
                        hint="Доступно: spin (вращение), formation (рост), explode (разлёт), "
@@ -241,7 +271,7 @@ def animate(a, name):
                        line=a.cmd.line, command=a.cmd.text)
     default_seconds = {"spin": 6.0, "formation": 4.0, "explode": 3.0, "assembly": 0.8,
                        "move": 2.0, "scale": 2.0, "turn": 2.0, "wait": 1.0,
-                       "morph": 3.0}[kind]
+                       "morph": 3.0, "roll": 2.0}[kind]
     seconds = float(a.num("seconds", a.num("duration", default_seconds)) or default_seconds)
     seconds = max(0.2, min(seconds, 600.0))
     start_at = None
@@ -260,9 +290,27 @@ def animate(a, name):
             "track": track, "line": a.cmd.line, "text": a.cmd.text}
 
     target = None
-    if a.has("object"):
-        target = a.scene.resolve(a.text("object") or "")
-        spec["object"] = target.name
+    target_solids = []
+    if object_raw:
+        raw = object_raw
+        if raw in a.scene.groups:
+            # группа: двигается целиком, детали внутри могут двигаться сами
+            spec["object"] = raw
+            spec["target_kind"] = "group"
+            target_solids = a.scene.expand(raw)
+        else:
+            target = a.scene.resolve(raw)
+            spec["object"] = target.name
+            target_solids = [target]
+
+    if a.has("pivot"):
+        if not target and not target_solids:
+            raise DslError("pivot задаёт точку вращения объекта — укажите object=…",
+                           hint="Например: animate фасад_л turn angle=100 axis=z "
+                                "pivot=[-481,216,0]",
+                           line=a.cmd.line, command=a.cmd.text)
+        pivot = a.vec("pivot", 3, required=True)
+        spec["pivot"] = [float(v) for v in pivot]
 
     if kind == "assembly":
         spec["hold"] = max(0.1, min(float(a.num("hold", seconds) or seconds), 30.0))
@@ -273,9 +321,11 @@ def animate(a, name):
     elif kind == "move":
         if a.has("to"):
             to = a.vec("to", 3, required=True)
-            if target is not None:
-                bb = target.manifold.bounding_box()
-                cur = [(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2, (bb[2] + bb[5]) / 2]
+            if target_solids:
+                boxes = [s.manifold.bounding_box() for s in target_solids]
+                lo = [min(b[0] for b in boxes), min(b[1] for b in boxes), min(b[2] for b in boxes)]
+                hi = [max(b[3] for b in boxes), max(b[4] for b in boxes), max(b[5] for b in boxes)]
+                cur = [(lo[0] + hi[0]) / 2, (lo[1] + hi[1]) / 2, (lo[2] + hi[2]) / 2]
             else:
                 visible = a.scene.visible_solids()
                 if not visible:
@@ -302,6 +352,23 @@ def animate(a, name):
                            line=a.cmd.line, command=a.cmd.text)
     elif kind == "turn":
         spec["angle"] = float(a.num("angle", 90.0) or 90.0) * sign
+    elif kind == "spin":
+        spec["turns"] = float(a.num("turns", 1.0) or 1.0)
+    elif kind == "roll":
+        distance = float(a.num("distance", 0.0) or 0.0)
+        radius = float(a.num("radius", 0.0) or 0.0)
+        if abs(distance) < 1e-9:
+            raise DslError("roll: укажите distance= — на сколько миллиметров катится колесо.",
+                           hint="Например: animate колесо roll distance=250 radius=15 axis=x",
+                           line=a.cmd.line, command=a.cmd.text)
+        if radius <= 1e-9:
+            raise DslError("roll: укажите radius= — радиус колеса в мм.",
+                           hint="Например: animate колесо roll distance=250 radius=15 axis=x",
+                           line=a.cmd.line, command=a.cmd.text)
+        # угол качения = путь / радиус; знак задаётся осью (axis=-x)
+        spec["radians"] = (distance / radius) * sign
+        spec["distance"] = distance
+        spec["radius"] = radius
     elif kind == "morph":
         param = (a.text("param") or "").strip()
         if not param:
@@ -330,6 +397,11 @@ def animate(a, name):
         extra = f", ×{spec['from']:g}→×{spec['to']:g}"
     elif kind == "turn":
         extra = f", {spec['angle']:g}° вокруг {axis_raw}"
+    elif kind == "spin":
+        extra = f", {spec.get('turns', 1):g} об. вокруг {axis_raw}"
+    elif kind == "roll":
+        extra = f", {spec['distance']:g} мм, R{spec['radius']:g} → " \
+                f"{math.degrees(spec['radians']):.0f}°"
     elif kind == "morph":
         extra = f", {spec['param']} {spec['from']:g}→{spec['to']:g}"
     a.scene.log("info", f"анимация: {label}, {seconds:g} с, дорожка {track}{extra}",

@@ -68,6 +68,8 @@ class Scene:
         # ключевые кадры по объектам: {имя: [{t, pos, rot, scale, line}, ...]}
         self.keys: dict[str, list[dict]] = {}
         self.objects: dict[str, Solid] = {}
+        # группы объектов: двигаются и вращаются целиком, детали внутри — сами
+        self.groups: dict[str, list[str]] = {}
         self.params: dict[str, float] = {}
         self.vars: dict[str, Any] = {}
         self.checks: list[dict] = []
@@ -98,6 +100,19 @@ class Scene:
 
     def remove(self, name: str) -> None:
         self.objects.pop(name, None)
+        self.groups.pop(name, None)
+        for members in self.groups.values():
+            while name in members:
+                members.remove(name)
+
+    def expand(self, value: Any, what: str = "объект") -> list[Solid]:
+        """Объект или группа → список объектов."""
+        if isinstance(value, str) and value.strip() in self.groups:
+            return [self.objects[n] for n in self.groups[value.strip()] if n in self.objects]
+        return [self.resolve(value, what)]
+
+    def expand_name(self, name: str) -> list[Solid]:
+        return self.expand(name)
 
     def get(self, name: str) -> Solid | None:
         return self.objects.get(name)
@@ -141,14 +156,17 @@ class Scene:
         return spec
 
     def animation_plan(self, step_count: int = 0) -> dict:
-        """Склеивает клипы в тайм-лайн. Клипы одного track идут друг за другом,
-        разные track — параллельно; ``start`` задаёт время вручную.
+        """Склеивает клипы в тайм-лайн. Клипы одного объекта на одной дорожке идут
+        друг за другом, разные объекты и разные дорожки — параллельно;
+        ``start`` задаёт время вручную.
 
         Анимация сборки длится ``hold`` секунд на шаг сценария, морфинг —
         ``seconds``. Ключевые кадры объектов живут на своей дорожке.
         """
         clips: list[dict] = []
-        cursors: dict[int, float] = {}
+        # дорожка + объект: у каждого объекта своя очередь клипов, поэтому
+        # движение шкафа и качение его колёсиков идут одновременно
+        cursors: dict[tuple[int, str], float] = {}
         for raw in self.animations:
             spec = dict(raw)
             kind = str(spec.get("kind") or "spin").lower()
@@ -163,15 +181,16 @@ class Scene:
             else:
                 length = float(spec.get("seconds") or 4.0)
             start = spec.get("start")
+            key = (track, str(spec.get("object") or ""))
             if start is None:
-                start = cursors.get(track, 0.0)
+                start = cursors.get(key, 0.0)
             start = max(0.0, float(start))
             spec["track"] = track
             spec["start"] = round(start, 3)
             spec["length"] = round(length, 3)
             spec["end"] = round(start + length, 3)
             clips.append(spec)
-            cursors[track] = max(cursors.get(track, 0.0), start + length)
+            cursors[key] = max(cursors.get(key, 0.0), start + length)
 
         keys: list[dict] = []
         for name, items in self.keys.items():
@@ -181,7 +200,7 @@ class Scene:
 
         total = max([c["end"] for c in clips]
                     + [float(k.get("t") or 0.0) for k in keys], default=0.0)
-        tracks = sorted(cursors) if clips else []
+        tracks = sorted({c["track"] for c in clips}) if clips else []
         return {
             "clips": clips,
             "duration": round(total, 3),
@@ -193,6 +212,7 @@ class Scene:
             "tracks": tracks,
             "keys": keys,
             "key_count": len(keys),
+            "groups": {g: list(m) for g, m in self.groups.items()},
         }
 
     def next_color(self) -> str:

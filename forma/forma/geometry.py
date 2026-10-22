@@ -657,7 +657,8 @@ def _glb_geometry(m: mf.Manifold, max_tris: int = 4_000_000):
 
 
 def export_glb(objects, with_normals: bool = True, animation: dict | None = None,
-               animations: list[dict] | None = None, keys: dict | None = None) -> bytes:
+               animations: list[dict] | None = None, keys: dict | None = None,
+               groups: dict | None = None) -> bytes:
     """Собирает GLB с отдельным материалом на каждый объект.
 
     Поддерживает текстуры (UV-развёртка + baseColorTexture) и анимацию
@@ -728,7 +729,8 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
         clips = [animation]
     if clips or keys:
         try:
-            data = add_glb_animations(bytes(data), clips, centers, diagonal, keys=keys)
+            data = add_glb_animations(bytes(data), clips, centers, diagonal, keys=keys,
+                                      groups=groups)
         except Exception:
             pass  # анимация — бонус: без неё файл остаётся корректным
     return bytes(data)
@@ -789,6 +791,16 @@ def _gltf_axis(axis: str, sign: float = 1.0) -> np.ndarray:
 
 def _gltf_vec(v) -> np.ndarray:
     return np.array([float(v[0]), float(v[2]), -float(v[1])], dtype=np.float64)
+
+
+def _qrot(q, v) -> np.ndarray:
+    """Поворот вектора кватернионом (x, y, z, w)."""
+    q = np.asarray(q, dtype=np.float64)
+    v = np.asarray(v, dtype=np.float64)
+    xyz = q[:3]
+    w = q[3]
+    t = np.cross(xyz, v) + w * v
+    return v + 2.0 * np.cross(xyz, t)
 
 
 def _quat(axis: np.ndarray, angle: float) -> np.ndarray:
@@ -870,7 +882,8 @@ def _set_trs(node: dict, t, q, s) -> None:
 
 
 def add_glb_animations(data: bytes, specs: list[dict], centers: dict | None = None,
-                       diagonal: float = 1.0, keys: dict | None = None) -> bytes:
+                       diagonal: float = 1.0, keys: dict | None = None,
+                       groups: dict | None = None) -> bytes:
     """Добавляет в GLB клипы анимации и ключевые кадры объектов.
 
     Поддерживаются spin, formation, explode, move, scale, turn и ключевые кадры
@@ -892,6 +905,35 @@ def add_glb_animations(data: bytes, specs: list[dict], centers: dict | None = No
     roots = list(scenes[0].get("nodes") or [])
     if not roots:
         roots = list(range(len(nodes)))
+
+    # группы объектов: узел-группа, чтобы дверь или ящик ехали целиком
+    group_nodes: dict[str, int] = {}
+    group_spec = {str(g): [str(m) for m in members]
+                  for g, members in (groups or {}).items() if members}
+    if group_spec:
+        by_first = {str(node.get("name") or ""): i for i, node in enumerate(nodes)}
+        parents: dict[int, int] = {}
+        for i, node in enumerate(nodes):
+            for ch in node.get("children") or []:
+                parents[ch] = i
+        for gname, members in group_spec.items():
+            idxs = [by_first[m] for m in members if m in by_first]
+            if not idxs:
+                continue
+            gi = len(nodes)
+            nodes.append({"name": gname, "children": []})
+            for i in idxs:
+                parent = parents.pop(i, None)
+                if parent is not None:
+                    kids = nodes[parent].get("children") or []
+                    if i in kids:
+                        kids.remove(i)
+                if i in roots:
+                    roots.remove(i)
+                nodes[gi]["children"].append(i)
+            roots.append(gi)
+            scenes[0]["nodes"] = list(roots)
+            group_nodes[gname] = gi
 
     values = [np.asarray(v, dtype=np.float64) for v in (centers or {}).values()
               if v is not None]
@@ -1007,9 +1049,11 @@ def add_glb_animations(data: bytes, specs: list[dict], centers: dict | None = No
         start = max(0.0, float(spec.get("start") or 0.0))
         steps = max(2, int(spec.get("steps") or 48))
         target_name = spec.get("object")
+        is_group = bool(target_name and str(target_name) in group_nodes)
         node_idx = root_index
         if target_name:
-            node_idx = pivot(str(target_name)) or root_index
+            node_idx = pivot(str(target_name)) or group_nodes.get(str(target_name)) \
+                or root_index
         node = nodes[node_idx]
         base_t, base_q, base_s = _node_trs(node)
         channels = []
@@ -1052,18 +1096,43 @@ def add_glb_animations(data: bytes, specs: list[dict], centers: dict | None = No
             vals = [list(base_s * f0)] * (len(ts) - 1) + [list(base_s * f1)]
             channels.append({"node": node_idx, "path": "scale", "times": ts,
                              "acc": add_accessor(np.asarray(vals), "VEC3")})
-        else:  # spin / turn
+        else:  # spin / turn / roll
             if kind == "turn":
                 angle = np.radians(float(spec.get("angle") or 90.0))
+            elif kind == "roll":
+                angle = float(spec.get("radians") or 0.0)
             else:
-                angle = 2 * np.pi * float(spec.get("axis_sign") or 1.0)
+                angle = 2 * np.pi * float(spec.get("axis_sign") or 1.0) \
+                    * float(spec.get("turns") or 1.0)
             axis = _gltf_axis(spec.get("axis") or "z")
-            q0 = base_q
-            q1 = _qmul(_quat(axis, angle), base_q)
-            ts = [start, start + seconds] if not start else [0.0, start, start + seconds]
-            vals = [list(q0)] * (len(ts) - 1) + [list(q1)]
-            channels.append({"node": node_idx, "path": "rotation", "times": ts,
-                             "acc": add_accessor(np.asarray(vals), "VEC4")})
+            pivot_raw = spec.get("pivot")
+            if is_group and pivot_raw:
+                # группа крутится вокруг петли: кроме поворота нужен сдвиг
+                p = _gltf_vec(pivot_raw)
+                n = max(8, min(int(steps), 72))
+                ts, rots, trs = [], [], []
+                if start > 1e-6:
+                    ts.append(0.0)
+                    rots.append(list(base_q))
+                    trs.append(list(base_t))
+                for k in range(n):
+                    u = k / (n - 1)
+                    q = _qmul(_quat(axis, angle * u), base_q)
+                    t = base_t + p - _qrot(q, p)
+                    ts.append(start + seconds * u)
+                    rots.append(list(q))
+                    trs.append(list(t))
+                channels.append({"node": node_idx, "path": "rotation", "times": ts,
+                                 "acc": add_accessor(np.asarray(rots), "VEC4")})
+                channels.append({"node": node_idx, "path": "translation", "times": ts,
+                                 "acc": add_accessor(np.asarray(trs), "VEC3")})
+            else:
+                q0 = base_q
+                q1 = _qmul(_quat(axis, angle), base_q)
+                ts = [start, start + seconds] if not start else [0.0, start, start + seconds]
+                vals = [list(q0)] * (len(ts) - 1) + [list(q1)]
+                channels.append({"node": node_idx, "path": "rotation", "times": ts,
+                                 "acc": add_accessor(np.asarray(vals), "VEC4")})
 
         if channels:
             animation(unique_name(clip_names.get(kind, "FormaAnimation")), channels)
