@@ -1,0 +1,1737 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Мастерская · разбор бизнеса 3D-печати</title>
+<meta name="description" content="Внутренний разбор: рынок, экономика, риски и план на 90 дней для мастерской 3D-печати с электроникой в Петербурге.">
+<style>
+:root{
+  --paper:#f6f4ef; --paper-2:#efebe2; --card:#fffefb; --card-2:#faf8f3;
+  --ink:#181716; --ink-2:#57524b; --ink-3:#8b8379;
+  --line:#e3ded3; --line-2:#ccc4b5;
+  --orange:#dd5417; --orange-soft:#fdeee5; --orange-line:#f3c9b2;
+  --blue:#2b5f8a; --blue-soft:#eaf1f7;
+  --green:#2f7d5b; --green-soft:#ebf4ee;
+  --red:#b23a2b; --red-soft:#fbece9;
+  --gold:#9c7419; --gold-soft:#faf2df;
+  --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,"Liberation Mono",monospace;
+  --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --max:1180px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:70px}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);font-size:16px;line-height:1.62;-webkit-font-smoothing:antialiased}
+a{color:inherit}
+p{margin:0 0 12px}
+b,strong{font-weight:650}
+.wrap{max-width:var(--max);margin:0 auto;padding:0 24px}
+.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ---------- nav ---------- */
+.nav{position:sticky;top:0;z-index:80;background:rgba(246,244,239,.94);backdrop-filter:blur(14px);border-bottom:1px solid var(--line)}
+.nav-in{max-width:var(--max);margin:0 auto;padding:0 24px;height:56px;display:flex;align-items:center;gap:18px}
+.brand{font-family:var(--mono);font-size:12px;letter-spacing:.14em;text-transform:uppercase;white-space:nowrap}
+.brand b{color:var(--orange);font-weight:700}
+.nav-links{display:flex;gap:15px;overflow-x:auto;scrollbar-width:none;margin-left:auto}
+.nav-links::-webkit-scrollbar{display:none}
+.nav-links a{font-size:11.5px;letter-spacing:.03em;color:var(--ink-3);text-decoration:none;white-space:nowrap;padding:4px 0;border-bottom:1.5px solid transparent;transition:.15s}
+.nav-links a:hover,.nav-links a.on{color:var(--ink);border-color:var(--orange)}
+.progress{position:absolute;left:0;bottom:-1px;height:2px;width:0;background:var(--orange);transition:width .1s linear}
+
+/* ---------- hero ---------- */
+.hero{position:relative;padding:56px 0 44px;overflow:hidden;border-bottom:1px solid var(--line)}
+.hero:before{content:"";position:absolute;inset:0;
+  background-image:linear-gradient(rgba(24,23,22,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(24,23,22,.035) 1px,transparent 1px);
+  background-size:34px 34px;mask-image:radial-gradient(ellipse at 70% 20%,#000 10%,transparent 72%);
+  -webkit-mask-image:radial-gradient(ellipse at 70% 20%,#000 10%,transparent 72%);pointer-events:none}
+.hero-in{position:relative;display:grid;grid-template-columns:1.35fr .65fr;gap:44px;align-items:start}
+.eyebrow{display:inline-flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--orange);margin-bottom:16px}
+.eyebrow:before{content:"";width:26px;height:1.5px;background:var(--orange)}
+h1{font-size:clamp(34px,5vw,58px);line-height:.99;letter-spacing:-.035em;font-weight:750;margin:0 0 18px}
+h1 em{font-style:normal;color:var(--orange)}
+.hero-sub{font-size:17.5px;color:var(--ink-2);max-width:640px;margin:0 0 24px}
+.hero-sub b{color:var(--ink)}
+.hero-tags{display:flex;gap:7px;flex-wrap:wrap}
+.tag{font-family:var(--mono);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:5px 9px;border:1px solid var(--line-2);border-radius:3px;color:var(--ink-2);background:#fff}
+.tag.hot{background:var(--orange-soft);border-color:var(--orange-line);color:var(--orange)}
+
+.passport{background:var(--card);border:1px solid var(--line-2);border-radius:4px;padding:0;overflow:hidden;box-shadow:0 18px 40px -32px rgba(40,30,15,.5)}
+.passport-h{padding:11px 16px;border-bottom:1px solid var(--line);font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3);display:flex;justify-content:space-between}
+.passport-h b{color:var(--green)}
+.passport dl{margin:0;padding:6px 16px 12px}
+.passport .row{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px dashed var(--line);font-size:13px}
+.passport .row:last-child{border:0}
+.passport dt{color:var(--ink-3);font-size:12px}
+.passport dd{margin:0;font-family:var(--mono);font-size:12.5px;text-align:right;font-weight:600}
+
+/* ---------- verdict ---------- */
+.verdict{padding:34px 0 8px}
+.verdict-grid{display:grid;grid-template-columns:1.1fr 1fr 1fr 1fr;gap:12px}
+.vcard{background:var(--card);border:1px solid var(--line);border-top:3px solid var(--ink);padding:16px 17px 18px;border-radius:3px}
+.vcard.acc{border-top-color:var(--orange)}
+.vcard.ok{border-top-color:var(--green)}
+.vcard.bad{border-top-color:var(--red)}
+.vcard .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-3);margin-bottom:7px}
+.vcard .v{font-size:19px;font-weight:700;letter-spacing:-.02em;line-height:1.18;margin-bottom:6px}
+.vcard .v small{font-size:11.5px;font-weight:500;color:var(--ink-3);letter-spacing:0}
+.vcard p{font-size:12.6px;color:var(--ink-2);margin:0;line-height:1.45}
+
+/* ---------- sections ---------- */
+section{padding:64px 0;border-top:1px solid var(--line)}
+.shead{margin-bottom:26px}
+.snum{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--orange);margin-bottom:10px}
+h2{font-size:clamp(25px,3.4vw,36px);line-height:1.08;letter-spacing:-.028em;font-weight:720;margin:0 0 12px}
+.lead{font-size:16.5px;color:var(--ink-2);max-width:800px;margin:0}
+.lead b{color:var(--ink)}
+h3{font-size:19px;letter-spacing:-.015em;margin:0 0 10px;font-weight:680}
+h4{font-size:14.5px;margin:0 0 6px;font-weight:680}
+.small{font-size:13px;color:var(--ink-2);line-height:1.55}
+.tiny{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;color:var(--ink-3)}
+
+/* callouts */
+.note{border-left:3px solid var(--ink);background:var(--card-2);padding:13px 16px;font-size:13.6px;line-height:1.55;color:var(--ink-2);margin:14px 0;border-radius:0 3px 3px 0}
+.note b{color:var(--ink)}
+.note.o{border-color:var(--orange);background:var(--orange-soft)}
+.note.g{border-color:var(--green);background:var(--green-soft)}
+.note.r{border-color:var(--red);background:var(--red-soft)}
+.note.b{border-color:var(--blue);background:var(--blue-soft)}
+.note .lbl{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;margin-bottom:4px;color:var(--ink-3)}
+
+/* tables */
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:3px;background:var(--card)}
+table{width:100%;border-collapse:collapse;font-size:13.4px}
+th{text-align:left;font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);padding:10px 13px;border-bottom:1.5px solid var(--line-2);background:var(--card-2);font-weight:600;white-space:nowrap}
+td{padding:10px 13px;border-bottom:1px solid var(--line);color:var(--ink-2);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td:first-child{color:var(--ink);font-weight:600}
+td.n,th.n{text-align:right;font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr.total td{background:var(--paper-2);font-weight:700;color:var(--ink);border-top:2px solid var(--line-2)}
+.pos{color:var(--green);font-weight:650}
+.neg{color:var(--red);font-weight:650}
+
+/* grids */
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.g3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.g4{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:17px 18px}
+.card p:last-child{margin-bottom:0}
+.card-h{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:8px}
+.num-big{font-family:var(--mono);font-size:27px;letter-spacing:-.03em;line-height:1;font-weight:700}
+.num-big small{font-size:12px;color:var(--ink-3);font-weight:400;letter-spacing:0}
+
+/* skill bars */
+.skills{display:flex;flex-direction:column;gap:9px}
+.skill{display:grid;grid-template-columns:170px 1fr 52px;gap:12px;align-items:center;font-size:13px}
+.skill .bar{height:7px;background:var(--paper-2);border-radius:2px;overflow:hidden}
+.skill .bar i{display:block;height:100%;background:var(--ink);border-radius:2px}
+.skill.hi .bar i{background:var(--green)}
+.skill.mid .bar i{background:var(--gold)}
+.skill.lo .bar i{background:var(--red)}
+.skill .val{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);text-align:right}
+
+/* product cards */
+.filters{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:16px}
+.filters button{font-family:var(--mono);font-size:10.5px;letter-spacing:.05em;text-transform:uppercase;background:#fff;border:1px solid var(--line-2);color:var(--ink-2);padding:6px 12px;border-radius:3px;cursor:pointer;transition:.15s}
+.filters button:hover{border-color:var(--ink)}
+.filters button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.prods{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.prod{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:15px 16px 14px;display:flex;flex-direction:column;transition:.15s}
+.prod:hover{border-color:var(--line-2);box-shadow:0 10px 24px -20px rgba(40,30,15,.6)}
+.prod-t{font-size:15px;font-weight:680;letter-spacing:-.01em;line-height:1.25;margin-bottom:4px}
+.prod-d{font-size:12.5px;color:var(--ink-2);line-height:1.45;flex:1;margin-bottom:10px}
+.prod-m{display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;border-top:1px solid var(--line);padding-top:9px}
+.prod-m div{font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.prod-m b{display:block;font-size:13px;letter-spacing:-.02em;color:var(--ink);margin-top:2px;font-family:var(--sans);text-transform:none;letter-spacing:0}
+.lvl{position:relative;display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;padding:2px 6px;border-radius:2px;margin-bottom:7px}
+.lvl.a{background:var(--green-soft);color:var(--green)}
+.lvl.b{background:var(--gold-soft);color:var(--gold)}
+.lvl.c{background:var(--red-soft);color:var(--red)}
+
+/* calculator */
+.calc{display:grid;grid-template-columns:330px 1fr;gap:20px;align-items:start;background:var(--card);border:1px solid var(--line-2);border-radius:4px;padding:20px}
+.field{margin-bottom:15px}
+.field label{display:flex;justify-content:space-between;gap:10px;font-size:12px;color:var(--ink-2);margin-bottom:6px}
+.field label b{font-family:var(--mono);font-size:12px;color:var(--ink);font-weight:600}
+input[type=range]{width:100%;height:18px;accent-color:var(--orange);background:transparent;cursor:pointer}
+.calc-out{display:flex;flex-direction:column;gap:10px}
+.kpis{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.kpi{background:var(--card-2);border:1px solid var(--line);padding:13px 15px;border-radius:3px}
+.kpi .k{font-family:var(--mono);font-size:9px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-3);margin-bottom:5px}
+.kpi .v{font-family:var(--mono);font-size:22px;line-height:1.05;letter-spacing:-.03em;font-weight:700}
+.kpi .v small{font-size:11px;font-weight:400;color:var(--ink-3);letter-spacing:0}
+.kpi.main{background:var(--ink);border-color:var(--ink)}
+.kpi.main .k{color:#b8b1a6}
+.kpi.main .v{color:#fff}
+.kpi.main .v small{color:#b8b1a6}
+.verdict-line{font-size:12.5px;padding:10px 13px;border-radius:3px;background:var(--paper-2);color:var(--ink-2);line-height:1.5}
+.verdict-line b{color:var(--ink)}
+
+/* startup cost */
+.costcol{display:grid;grid-template-columns:repeat(2,1fr);gap:14px}
+.costgroup{background:var(--card);border:1px solid var(--line);padding:14px 16px;border-radius:3px}
+.costgroup h4{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3);margin-bottom:9px;font-weight:600}
+.citem{display:flex;align-items:flex-start;gap:9px;padding:4px 0;font-size:12.8px;color:var(--ink-2);cursor:pointer}
+.citem input{margin-top:4px;accent-color:var(--orange);flex:none}
+.citem span{flex:1}
+.citem b{font-family:var(--mono);font-size:12px;color:var(--ink);white-space:nowrap}
+.citem.on span{color:var(--ink)}
+.sumbar{display:flex;justify-content:space-between;align-items:flex-end;gap:16px;background:var(--ink);color:#fff;border-radius:4px;padding:16px 20px;margin-top:14px;flex-wrap:wrap}
+.sumbar .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:#b8b1a6;margin-bottom:4px}
+.sumbar .v{font-family:var(--mono);font-size:30px;letter-spacing:-.03em;line-height:1}
+.sumbar .side{font-size:12px;color:#b8b1a6;text-align:right;line-height:1.45}
+
+/* risks */
+.risks{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+.risk{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--line-2);padding:13px 15px;border-radius:0 3px 3px 0}
+.risk[data-imp="high"]{border-left-color:var(--red)}
+.risk[data-imp="mid"]{border-left-color:var(--gold)}
+.risk[data-imp="low"]{border-left-color:var(--green)}
+.risk-h{display:flex;justify-content:space-between;gap:10px;align-items:baseline;margin-bottom:4px}
+.risk-t{font-size:13.6px;font-weight:680;line-height:1.3}
+.risk-cat{font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);white-space:nowrap}
+.risk p{font-size:12.4px;color:var(--ink-2);margin:0;line-height:1.45}
+.risk .fix{display:block;margin-top:6px;font-size:12.2px;color:var(--ink)}
+.risk .fix b{color:var(--green)}
+
+/* paths */
+.paths{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.path{background:var(--card);border:1px solid var(--line);border-radius:3px;padding:17px 18px;cursor:pointer;transition:.15s;position:relative}
+.path:hover{border-color:var(--line-2)}
+.path.on{border-color:var(--ink);box-shadow:inset 0 3px 0 var(--ink)}
+.path .id{font-family:var(--mono);font-size:10px;letter-spacing:.1em;color:var(--orange);margin-bottom:6px}
+.path h4{font-size:16px;margin-bottom:6px}
+.path p{font-size:12.4px;color:var(--ink-2);margin:0}
+.path .badge{position:absolute;top:-9px;right:12px;background:var(--orange);color:#fff;font-family:var(--mono);font-size:8.5px;letter-spacing:.09em;text-transform:uppercase;padding:3px 7px;border-radius:2px}
+.path-detail{margin-top:14px;background:var(--card-2);border:1px solid var(--line);padding:18px 20px;border-radius:3px;display:none}
+.path-detail.on{display:block}
+.path-detail h4{margin-bottom:8px;font-size:15px}
+.path-detail ul{margin:0;padding-left:18px;font-size:13.2px;color:var(--ink-2);line-height:1.6}
+.path-detail li{margin-bottom:4px}
+
+/* matrix */
+.matrix{display:grid;grid-template-columns:auto 1fr 1fr;gap:6px;font-size:12px}
+.matrix .axis{display:flex;align-items:center;justify-content:center;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);padding:6px}
+.matrix .cell{background:var(--card);border:1px solid var(--line);padding:12px 13px;border-radius:3px;min-height:92px}
+.matrix .cell.hl{background:var(--orange-soft);border-color:var(--orange-line)}
+.matrix .cell b{display:block;font-size:12.8px;margin-bottom:3px}
+.matrix .cell span{font-size:11.4px;color:var(--ink-2);line-height:1.4}
+.matrix .cell-k{display:none;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:3px}
+
+/* timeline */
+.tl{position:relative;padding-left:24px}
+.tl:before{content:"";position:absolute;left:6px;top:6px;bottom:6px;width:1.5px;background:var(--line-2)}
+.tl-item{position:relative;padding:0 0 20px}
+.tl-item:before{content:"";position:absolute;left:-22px;top:5px;width:9px;height:9px;border-radius:50%;background:var(--paper);border:2px solid var(--ink)}
+.tl-item.gate:before{background:var(--orange);border-color:var(--orange)}
+.tl-w{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--orange);margin-bottom:3px}
+.tl-item h4{font-size:14.5px;margin-bottom:4px}
+.tl-item p{font-size:12.8px;color:var(--ink-2);margin:0;line-height:1.5}
+.tl-item .gate-lbl{display:inline-block;background:var(--orange);color:#fff;font-family:var(--mono);font-size:8.5px;letter-spacing:.1em;text-transform:uppercase;padding:2px 6px;border-radius:2px;margin-left:6px;vertical-align:2px}
+
+/* chain */
+.chain{display:flex;gap:5px;flex-wrap:wrap;margin:14px 0}
+.chain div{flex:1;min-width:118px;background:var(--card);border:1px solid var(--line);padding:10px 11px;border-radius:3px;font-size:11.5px;position:relative}
+.chain b{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--orange);margin-bottom:3px}
+.chain .hrs{font-family:var(--mono);font-size:14px;font-weight:700;display:block;margin-bottom:2px}
+.chain .who{color:var(--ink-3);font-size:10.5px}
+
+/* stack */
+.stack{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.stack div{background:var(--card);border:1px solid var(--line);padding:12px;border-radius:3px;font-size:12px;text-align:center}
+.stack b{display:block;font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--ink-3);margin-bottom:4px}
+
+/* misc */
+ul.clean{margin:0 0 12px;padding-left:19px;font-size:14px;color:var(--ink-2);line-height:1.6}
+ul.clean li{margin-bottom:5px}
+ul.clean b{color:var(--ink)}
+.check{list-style:none;padding:0;margin:0}
+.check li{position:relative;padding-left:24px;margin-bottom:7px;font-size:13.6px;color:var(--ink-2);line-height:1.5}
+.check li:before{content:"";position:absolute;left:0;top:7px;width:10px;height:10px;border:1.5px solid var(--ink-3);border-radius:2px}
+.check li.no:before{border-color:var(--red);background:linear-gradient(45deg,transparent 45%,var(--red) 45%,var(--red) 55%,transparent 55%)}
+.check li.yes:before{background:var(--green);border-color:var(--green)}
+footer{padding:40px 0 64px;border-top:1px solid var(--line);background:var(--paper-2)}
+.foot{display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:26px;font-size:12px;color:var(--ink-3);line-height:1.55}
+.foot b{color:var(--ink)}
+.src{font-size:11.5px;line-height:1.6}
+.src a{color:var(--ink-2);text-decoration:none;border-bottom:1px dotted var(--line-2)}
+.src a:hover{color:var(--orange);border-color:var(--orange)}
+
+@media(max-width:980px){
+  .hero-in{grid-template-columns:1fr;gap:28px}
+  .verdict-grid,.g4,.prods,.paths,.stack{grid-template-columns:repeat(2,1fr)}
+  .calc{grid-template-columns:1fr}
+  .risks,.g2,.g3,.costcol{grid-template-columns:1fr}
+  .matrix{grid-template-columns:1fr;gap:8px}
+  .matrix .axis{display:none}
+  .matrix .cell{min-height:0}
+  .matrix .cell-k{display:block}
+}
+@media(max-width:620px){
+  .wrap{padding:0 15px}
+  section{padding:46px 0}
+  .verdict-grid,.prods,.paths,.stack,.g4,.kpis{grid-template-columns:1fr}
+  .chain div{min-width:100%}
+  .skill{grid-template-columns:110px 1fr 40px;font-size:12px}
+  .foot{grid-template-columns:1fr}
+  .nav-links{gap:11px}
+}
+</style>
+</head>
+<body>
+
+<nav class="nav">
+  <div class="nav-in">
+    <div class="brand">Мастерская <b>/01</b></div>
+    <div class="nav-links">
+      <a href="#verdict">Вердикт</a>
+      <a href="#us">Мы</a>
+      <a href="#market">Рынок</a>
+      <a href="#money">Деньги</a>
+      <a href="#paths">Пути</a>
+      <a href="#products">Изделия</a>
+      <a href="#first">Первый продукт</a>
+      <a href="#electronics">Электроника</a>
+      <a href="#printer">Принтер</a>
+      <a href="#scan">Сканер</a>
+      <a href="#law">Право</a>
+      <a href="#clients">Клиенты</a>
+      <a href="#time">Время</a>
+      <a href="#start">Старт</a>
+      <a href="#risks">Риски</a>
+      <a href="#plan">90 дней</a>
+    </div>
+    <div class="progress" id="prog"></div>
+  </div>
+</nav>
+
+<header class="hero">
+  <div class="wrap hero-in">
+    <div>
+      <div class="eyebrow">Рабочий документ · 23 октября 2026</div>
+      <h1>Печатать, паять<br>и <em>не прогореть</em></h1>
+      <p class="hero-sub">Разбор для двоих: рынок печати в России и Петербурге, экономика изделия,
+      риски, право и план на первые 90 дней. Без утешений и без «потенциала роста» — только то,
+      что можно проверить руками и посчитать в рублях.</p>
+      <div class="hero-tags">
+        <span class="tag hot">Решение: гибрид, не «печать на заказ»</span>
+        <span class="tag">FDM, без смолы</span>
+        <span class="tag">Дома, без студии</span>
+        <span class="tag">СПб</span>
+      </div>
+    </div>
+    <div class="passport">
+      <div class="passport-h"><span>Паспорт проекта</span><b>черновик 0.9</b></div>
+      <dl>
+        <div class="row"><dt>Стартовый бюджет</dt><dd>180–280 тыс ₽</dd></div>
+        <div class="row"><dt>Минимальный тест</dt><dd>60–80 тыс ₽</dd></div>
+        <div class="row"><dt>Реальный выход</dt><dd>50–70 тыс ₽/мес</dd></div>
+        <div class="row"><dt>Срок до этого</dt><dd>6–9 месяцев</dd></div>
+        <div class="row"><dt>Главный дефицит</dt><dd>время, не станок</dd></div>
+        <div class="row"><dt>Главный риск</dt><dd>дешёвый демпинг</dd></div>
+      </dl>
+    </div>
+  </div>
+</header>
+
+<div class="verdict" id="verdict">
+  <div class="wrap">
+    <div class="verdict-grid">
+      <div class="vcard acc">
+        <div class="k">Короткий ответ</div>
+        <div class="v">Идея рабочая, но не так, как вы её сформулировали</div>
+        <p>«Печать на заказ» — это рынок за 7 ₽/грамм и очередь из школьников с принтерами. Заработать можно на другом: на том, что не может сделать человек с принтером.</p>
+      </div>
+      <div class="vcard ok">
+        <div class="k">Где ваше преимущество</div>
+        <div class="v">Модель + плата + сборка в одних руках</div>
+        <p>Мало кто умеет и смоделировать, и развести плату, и спаять, и напечатать. Это и есть продукт. Всё остальное — расходники.</p>
+      </div>
+      <div class="vcard bad">
+        <div class="k">Что убьёт бизнес</div>
+        <div class="v">Ручной труд по цене материала</div>
+        <p>Если считать «цена минус пластик», всё выглядит прекрасно. Как только в счёт входят ваши часы — брелок за 990 ₽ перестаёт окупаться.</p>
+      </div>
+      <div class="vcard">
+        <div class="k">Что делать в понедельник</div>
+        <div class="v">Не покупать принтер. Сначала 3 заказа</div>
+        <p>Найдите трёх людей, готовых заплатить вперёд за конкретную вещь. Пока их нет — вы покупаете хобби, а не бизнес.</p>
+      </div>
+    </div>
+  </div>
+</div>
+<section id="us">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">01 — что у нас на руках</div>
+      <h2>Два человека, четыре навыка, ноль продаж</h2>
+      <p class="lead">Партнёрство сильное, но не симметричное. Ниже — честная карта: что есть, чего нет
+      и что из этого следует для выбора модели бизнеса.</p>
+    </div>
+
+    <div class="g2" style="gap:20px">
+      <div class="card">
+        <div class="card-h">Участник А — «железо и лицо»</div>
+        <h4>Пайка, электроника, обслуживание принтера, публичность</h4>
+        <div class="skills" style="margin-top:14px">
+          <div class="skill hi"><span>Пайка, монтаж</span><span class="bar"><i style="width:88%"></i></span><span class="val">сильно</span></div>
+          <div class="skill hi"><span>Уход за принтером</span><span class="bar"><i style="width:72%"></i></span><span class="val">хорошо</span></div>
+          <div class="skill mid"><span>Разводка плат</span><span class="bar"><i style="width:55%"></i></span><span class="val">средне</span></div>
+          <div class="skill lo"><span>Продажи, переговоры</span><span class="bar"><i style="width:20%"></i></span><span class="val">не проверено</span></div>
+          <div class="skill lo"><span>Смета и учёт денег</span><span class="bar"><i style="width:15%"></i></span><span class="val">не проверено</span></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-h">Участник Б — «модель и картинка»</div>
+        <h4>Моделирование, подготовка к печати, фронтенд, схемы</h4>
+        <div class="skills" style="margin-top:14px">
+          <div class="skill hi"><span>3D-моделирование</span><span class="bar"><i style="width:85%"></i></span><span class="val">сильно</span></div>
+          <div class="skill hi"><span>Подготовка к печати</span><span class="bar"><i style="width:78%"></i></span><span class="val">сильно</span></div>
+          <div class="skill hi"><span>Сайт, витрина, фото</span><span class="bar"><i style="width:80%"></i></span><span class="val">сильно</span></div>
+          <div class="skill mid"><span>Схемы, прошивка</span><span class="bar"><i style="width:60%"></i></span><span class="val">средне</span></div>
+          <div class="skill lo"><span>Ручная отделка, покраска</span><span class="bar"><i style="width:25%"></i></span><span class="val">учиться</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="g4" style="margin-top:14px">
+      <div class="card"><div class="card-h">Есть</div><p class="small"><b>Полный цикл без подрядчиков.</b> От идеи до коробки — сами. Это редкость и это же ловушка: соблазн делать всё приводит к тому, что ничего не продаётся.</p></div>
+      <div class="card"><div class="card-h">Нет</div><p class="small"><b>Канала продаж.</b> Ни аудитории, ни кейсов, ни отзывов. Это не «потом приложится» — это половина работы, и она не сделается сама.</p></div>
+      <div class="card"><div class="card-h">Нет</div><p class="small"><b>Финансовой дисциплины.</b> Пока нет разделения «деньги бизнеса» и «деньги кармана». На первых 100 тысячах это неважно, на 300 уже смертельно.</p></div>
+      <div class="card"><div class="card-h">Нет</div><p class="small"><b>Времени.</b> Если оба работают, реально остаётся 15–25 часов в неделю на двоих, и это без учёта уборки, ремонта и общения с клиентами.</p></div>
+    </div>
+
+    <div class="note o">
+      <span class="lbl">Вывод раздела</span>
+      Ваша комбинация навыков тянет <b>не сервис печати</b>, а <b>мастерскую штучных вещей с электроникой</b>.
+      Сервис печати — это про очередь станков и загрузку; штучные вещи — про руки, вкус и портфолио.
+      Второе у вас есть, первого нет и покупать его дорого.
+    </div>
+  </div>
+</section>
+
+<section id="market">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">02 — рынок</div>
+      <h2>Большой рынок, маленькая лужа</h2>
+      <p class="lead">22,3 млрд рублей — это вся страна, включая промышленные принтеры и авиационные детали.
+      Наш сегмент — услуги — это 5 млрд на всех. И почти весь он уже поделён.</p>
+    </div>
+
+    <div class="g4">
+      <div class="card"><div class="card-h">Рынок РФ, 2025</div><div class="num-big">22,3 <small>млрд ₽</small></div><p class="tiny" style="margin-top:7px">+21,2% к 2024-му</p></div>
+      <div class="card"><div class="card-h">Из них услуги</div><div class="num-big">5,0 <small>млрд ₽</small></div><p class="tiny" style="margin-top:7px">печать на заказ, инжиниринг</p></div>
+      <div class="card"><div class="card-h">Оборудование</div><div class="num-big">11,8 <small>млрд ₽</small></div><p class="tiny" style="margin-top:7px">импорт и локализация</p></div>
+      <div class="card"><div class="card-h">Прогноз 2030</div><div class="num-big">58 <small>млрд ₽</small></div><p class="tiny" style="margin-top:7px">инновационный сценарий АРАТ</p></div>
+    </div>
+
+    <div class="note b" style="margin-top:16px">
+      <span class="lbl">Что это значит на практике</span>
+      Рост рынка идёт <b>не за счёт подарков</b>. Он идёт за счёт промышленности: импортозамещение, детали для
+      оборудования, малые серии. Потребительский сегмент — капля в этом объёме, но у него другая экономика:
+      там можно жить с наценкой 300%, которой в промышленности не бывает.
+    </div>
+
+    <h3 style="margin:30px 0 12px">Как устроены цены в Петербурге</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Тип исполнителя</th><th>Почём печатает</th><th>Как находит клиентов</th><th>Что это значит для нас</th></tr></thead>
+        <tbody>
+          <tr><td>Частник с одним принтером</td><td class="n">5–10 ₽/г</td><td>Авито, чаты, «а можете напечатать»</td><td>Это не конкурент, это установленная цена. Воевать с ней — проиграть.</td></tr>
+          <tr><td>Мелкая студия</td><td class="n">10–20 ₽/г</td><td>Яндекс Услуги, контекст</td><td>Уже чуть больше сервиса, но всё ещё про станок, а не про изделие.</td></tr>
+          <tr><td>Бюро прототипирования</td><td class="n">20–40 ₽/г, мин. заказ 3–15 тыс ₽</td><td>B2B, рекомендации, тендеры</td><td>Другой продукт: инжиниринг и ответственность. Сюда можно заходить.</td></tr>
+          <tr><td>Промышленный подрядчик</td><td class="n">по проекту</td><td>Долгие связи, сертификаты</td><td>Не наш масштаб ещё года три.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="g2" style="margin-top:16px">
+      <div class="note r">
+        <span class="lbl">Ловушка</span>
+        Цена 7 ₽ за грамм — это <b>не «низкий рынок», это цена пластика плюс износ сопла</b>.
+        Человек, который так считает, продаёт свои часы по нулю. Если вы встанете рядом с ним, ваша работа будет стоить столько же.
+      </div>
+      <div class="note g">
+        <span class="lbl">Где дырка в рынке</span>
+        Между «напечатайте мне модель за 300 ₽» и «сделайте прототип за 40 000 ₽» — пустота.
+        Вещи за 2–8 тысяч, которые нельзя купить в магазине: персонализированные, с подсветкой, с историей.
+        Тут мало исполнителей, потому что нужно не только печатать.
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="money">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">03 — где деньги</div>
+      <h2>Четыре сегмента и одна неприятная правда</h2>
+      <p class="lead">Сначала выберите, у кого вы берёте деньги. Это решение важнее выбора принтера:
+      от него зависит всё — от рекламы до упаковки.</p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Сегмент</th><th>Средний чек</th><th>Сколько заказов нужно</th><th>Сложность входа</th><th>Честно</th></tr></thead>
+        <tbody>
+          <tr><td>Промышленность, малые серии</td><td class="n">30–300 тыс ₽</td><td>1–2 в месяц</td><td>высокая: тендеры, ответственность, сроки</td><td>Деньги хорошие, но без опыта и оборотки туда не пустят.</td></tr>
+          <tr><td>B2B: прототипы, реверс деталей</td><td class="n">3–20 тыс ₽</td><td>4–10 в месяц</td><td>средняя: нужно портфолио и один «свой» завод</td><td><b>Самый быстрый ручеёк.</b> Платит за скорость и точность, а не за граммы.</td></tr>
+          <tr><td>B2C: премиум-подарки</td><td class="n">2–25 тыс ₽</td><td>10–40 в месяц</td><td>средняя: нужен контент и доверие</td><td>Маржа 3–5×, но сезонность и много общения.</td></tr>
+          <tr><td>B2C: маркетплейс, декор</td><td class="n">600–2 500 ₽</td><td>100+ в месяц</td><td>низкая, но высокая конкуренция</td><td>Гонка на объёме и рекламе. Не для старта без денег.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin:34px 0 10px">Почему «себестоимость × 3» не работает</h3>
+    <p class="small" style="max-width:820px">Пластик почти бесплатный: 15 граммов — это 25 рублей. Если считать только материал,
+    брелок выглядит золотой жилой: 25 рублей затрат, 990 рублей продажи, «наценка 40×». Проблема в том,
+    что между этими двумя цифрами стоят ваши руки. И именно они, а не пластик, определяют, заработали вы или нет.</p>
+
+    <div class="chain">
+      <div><b>01 идея</b><span class="hrs">2–8 ч</span>до первой формы<span class="who">Б</span></div>
+      <div><b>02 модель</b><span class="hrs">3–12 ч</span>CAD, посадки, допуски<span class="who">Б</span></div>
+      <div><b>03 печать</b><span class="hrs">1–12 ч</span>фоном, руки свободны<span class="who">станок</span></div>
+      <div><b>04 электроника</b><span class="hrs">0,5–3 ч</span>плата, пайка, тест<span class="who">А</span></div>
+      <div><b>05 отделка</b><span class="hrs">0,5–3 ч</span>шлифовка, грунт, краска<span class="who">любой</span></div>
+      <div><b>06 упаковка</b><span class="hrs">0,3–0,7 ч</span>коробка, вкладыш<span class="who">любой</span></div>
+      <div><b>07 продажа</b><span class="hrs">0,5–2 ч</span>переписка, оплата, отправка<span class="who">А</span></div>
+    </div>
+
+    <div class="note o">
+      <span class="lbl">Ключевой вывод</span>
+      Печать — единственный этап, который идёт параллельно. Всё остальное — последовательный ручной труд.
+      Поэтому <b>ваша пропускная способность считается не в принтерах, а в часах рук</b>. Второй принтер
+      добавит 30% мощности; второй человек с руками — 100%.
+    </div>
+
+    <h3 style="margin:34px 0 6px">Калькулятор изделия</h3>
+    <p class="small" style="margin-bottom:14px">Покрутите. Главная цифра — не прибыль, а <b>сколько на самом деле стоит ваш час</b>
+    после вычета материала, брака и постоянных расходов.</p>
+
+    <div class="calc">
+      <div>
+        <div class="field"><label>Цена продажи <b id="v-price">4 500 ₽</b></label>
+          <input type="range" id="r-price" min="300" max="30000" step="100" value="4500"></div>
+        <div class="field"><label>Материал и комплектующие <b id="v-mat">500 ₽</b></label>
+          <input type="range" id="r-mat" min="30" max="3000" step="10" value="500"></div>
+        <div class="field"><label>Ручного времени на штуку <b id="v-hrs">3 ч</b></label>
+          <input type="range" id="r-hrs" min="0.25" max="16" step="0.25" value="3"></div>
+        <div class="field"><label>Сколько штук в месяц <b id="v-qty">12 шт</b></label>
+          <input type="range" id="r-qty" min="1" max="120" step="1" value="12"></div>
+        <div class="field" style="margin-bottom:0"><label>Постоянные расходы в месяц <b id="v-fix">16 000 ₽</b></label>
+          <input type="range" id="r-fix" min="0" max="80000" step="1000" value="16000"></div>
+      </div>
+      <div class="calc-out">
+        <div class="kpis">
+          <div class="kpi main"><div class="k">Прибыль в месяц</div><div class="v" id="o-profit">0 <small>₽</small></div></div>
+          <div class="kpi"><div class="k">Ваш час по факту</div><div class="v" id="o-hour">0 <small>₽/ч</small></div></div>
+          <div class="kpi"><div class="k">Маржа на штуку</div><div class="v" id="o-unit">0 <small>₽</small></div></div>
+          <div class="kpi"><div class="k">Нужно штук для нуля</div><div class="v" id="o-be">0 <small>шт</small></div></div>
+        </div>
+        <div class="verdict-line" id="o-verdict"></div>
+        <div class="tiny" style="line-height:1.5">Налог не учтён: НПД 4–6% или УСН 6%. Постоянные расходы — реклама, доставка, износ, брак, связь.</div>
+      </div>
+    </div>
+
+    <h3 style="margin:34px 0 10px">Четыре изделия в цифрах</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Изделие</th><th class="n">Материал</th><th class="n">Время</th><th class="n">Себестоимость</th><th class="n">Цена</th><th class="n">Маржа</th><th class="n">₽ за час</th></tr></thead>
+        <tbody>
+          <tr><td>Брелок с подсветкой</td><td class="n">120 ₽</td><td class="n">0,7 ч</td><td class="n">470 ₽</td><td class="n">990 ₽</td><td class="n pos">520 ₽</td><td class="n">743 ₽</td></tr>
+          <tr><td>Ночник-диорама, USB</td><td class="n">500 ₽</td><td class="n">3 ч</td><td class="n">2 000 ₽</td><td class="n">4 500 ₽</td><td class="n pos">2 500 ₽</td><td class="n">833 ₽</td></tr>
+          <tr><td>Фигурка по фото</td><td class="n">250 ₽</td><td class="n">8 ч</td><td class="n">4 250 ₽</td><td class="n">15 000 ₽</td><td class="n pos">10 750 ₽</td><td class="n">1 344 ₽</td></tr>
+          <tr><td>Реверс детали для B2B</td><td class="n">150 ₽</td><td class="n">2,5 ч</td><td class="n">1 400 ₽</td><td class="n">6 000 ₽</td><td class="n pos">4 600 ₽</td><td class="n">1 840 ₽</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="tiny" style="margin-top:8px">Себестоимость = материал + упаковка + 10% на брак + время по ставке 500 ₽/ч.</p>
+
+    <div class="note" style="margin-top:14px">
+      <span class="lbl">Что видно из таблицы</span>
+      Чем дороже изделие, тем выше оплата часа — <b>потому что время растёт медленнее цены</b>.
+      Брелок и фигурка отличаются по времени в 11 раз, а по цене — в 15. Разница — в уникальности и в эмоции,
+      которую вы продаёте. Это и есть аргумент в пользу «премиальных и личных» вещей.
+    </div>
+
+    <h3 style="margin:34px 0 8px">Проверка гипотезы: личные подарки</h3>
+    <p class="small" style="max-width:840px">Гипотеза звучит так: персонализированные вещи дороже в производстве,
+    но приносят больше с клиента. Проверим на цифрах, а не на вере.</p>
+
+    <div class="tw" style="margin-top:12px">
+      <table>
+        <thead><tr><th>Что меняется</th><th class="n">Обычная вещь</th><th class="n">С именем / датой</th><th class="n">Разница</th></tr></thead>
+        <tbody>
+          <tr><td>Брелок: цена</td><td class="n">990 ₽</td><td class="n">1 490 ₽</td><td class="n pos">+50%</td></tr>
+          <tr><td>Брелок: работа</td><td class="n">0,7 ч</td><td class="n">1,0 ч</td><td class="n neg">+0,3 ч</td></tr>
+          <tr><td>Брелок: маржа</td><td class="n">520 ₽</td><td class="n">870 ₽</td><td class="n pos">+67%</td></tr>
+          <tr><td>Ночник: цена</td><td class="n">4 500 ₽</td><td class="n">5 900 ₽</td><td class="n pos">+31%</td></tr>
+          <tr><td>Ночник: маржа</td><td class="n">2 500 ₽</td><td class="n">3 400 ₽</td><td class="n pos">+36%</td></tr>
+          <tr><td>Фигурка по фото: цена</td><td class="n">15 000 ₽</td><td class="n">18 000 ₽</td><td class="n pos">+20%</td></tr>
+          <tr><td>Срок изготовления</td><td class="n">2–3 дня</td><td class="n">4–7 дней</td><td class="n neg">дольше</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="g2" style="margin-top:14px">
+      <div class="note g" style="margin:0">
+        <span class="lbl">Гипотеза подтверждается</span>
+        Наценка за имя обгоняет прирост работы: <b>+50% к цене против +30% ко времени</b> у брелока.
+        Плюс такие вещи почти не сравнивают по цене — «такое же, но дешевле» просто не существует.
+        Это главный аргумент в пользу личных подарков.
+      </div>
+      <div class="note r" style="margin:0">
+        <span class="lbl">Но есть три оговорки</span>
+        <b>1.</b> Персонализация не масштабируется: нельзя напечатать партию заранее.<br>
+        <b>2.</b> Растёт доля переделок: клиент ждал одно, получил другое.<br>
+        <b>3.</b> Если весь бизнес только про имена — вы зависите от каждого заказа и не можете уйти в отпуск.
+      </div>
+    </div>
+
+    <div class="note o">
+      <span class="lbl">Итог по гипотезе</span>
+      Она верна <b>как наценка, а не как модель</b>. Правильная схема: 2–3 товара, которые продаются
+      и без имени (в подарок «просто так», в корпоратив, на маркете), плюс персонализация как платная опция
+      за 400–900 ₽. Тогда вы получаете и поток, и высокий чек.
+    </div>
+  </div>
+</section>
+<section id="paths">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">04 — пути развития</div>
+      <h2>Три дороги и одна развилка</h2>
+      <p class="lead">Все, кто покупает принтер, стоят перед одним выбором: продавать <b>услугу</b>,
+      продавать <b>товар</b> или продавать <b>себя как мастера</b>. Это разные бизнесы с разной рекламой,
+      разной экономикой и разными людьми.</p>
+    </div>
+
+    <div class="matrix" style="margin-bottom:22px">
+      <div class="axis"></div>
+      <div class="axis top">Стандартное изделие</div>
+      <div class="axis top">Индивидуальный заказ</div>
+
+      <div class="axis">B2B</div>
+      <div class="cell"><div class="cell-k">B2B · стандартное изделие</div><b>Серийные детали</b><span>Корпуса, крепёж, запчасти мелкой серией. Стабильно, скучно, требует надёжности и сроков.</span></div>
+      <div class="cell hl"><div class="cell-k">B2B · индивидуальный заказ</div><b>Прототипы и реверс</b><span>Инжиниринг по запросу. Высокий чек, мало клиентов, много доверия. <b>Здесь быстрые деньги.</b></span></div>
+
+      <div class="axis">B2C</div>
+      <div class="cell"><div class="cell-k">B2C · стандартное изделие</div><b>Маркетплейс-декор</b><span>Светильники, вазы, органайзеры. Объём, реклама, демпинг, возвраты. Нужен капитал.</span></div>
+      <div class="cell hl"><div class="cell-k">B2C · индивидуальный заказ</div><b>Личные подарки</b><span>Фигурки, именные вещи, диорамы. Маржа 3–5×, сезонность, продаётся глазами. <b>Здесь ваш вкус.</b></span></div>
+    </div>
+
+    <div class="paths">
+      <div class="path on" data-p="0">
+        <div class="id">Путь A</div>
+        <h4>Сервис-бюро</h4>
+        <p>Печать по чужим моделям, реверс деталей, прототипы для местных производств.</p>
+      </div>
+      <div class="path" data-p="1">
+        <div class="badge">база</div>
+        <div class="id">Путь B</div>
+        <h4>Бренд подарков</h4>
+        <p>Штучные светящиеся вещи под заказ: брелоки, ночники, фигурки, диорамы.</p>
+      </div>
+      <div class="path" data-p="2">
+        <div class="badge">цель</div>
+        <div class="id">Путь C</div>
+        <h4>Свой продукт</h4>
+        <p>Каталожная линейка с электроникой, которую покупают без «сделайте мне».</p>
+      </div>
+    </div>
+
+    <div class="path-detail on" data-d="0">
+      <h4>A · Сервис-бюро: деньги сегодня, потолок завтра</h4>
+      <ul>
+        <li><b>Кто платит:</b> местные производства, мастера по ремонту, изобретатели, инженеры, автосервисы, косплееры.</li>
+        <li><b>Плюсы:</b> не нужно придумывать продукт; чек 3–20 тыс ₽; клиент возвращается; можно начать с одним принтером.</li>
+        <li><b>Минусы:</b> вы конкурируете с бюро, у которых 5 станков и юрлицо; клиент приходит с готовым файлом и торгуется за граммы; масштаб ограничен вашими руками.</li>
+        <li><b>Экономика:</b> 4–8 заказов в месяц × 5 тыс ₽ = 20–40 тыс ₽. Хорошо как ручеёк, плохо как единственный источник.</li>
+        <li><b>Кому подходит:</b> как <i>финансовая подушка</i> первых 6 месяцев и как источник кейсов и связей.</li>
+      </ul>
+    </div>
+    <div class="path-detail" data-d="1">
+      <h4>B · Бренд подарков: маржа, но нужен контент</h4>
+      <ul>
+        <li><b>Кто платит:</b> люди, которым нужно подарить что-то не банальное: день рождения, свадьба, годовщина, «своему человеку».</li>
+        <li><b>Плюсы:</b> маржа 300–500%; нет сравнения «по граммам»; один удачный ролик даёт заказы на месяц; вы продаёте эмоцию, а не пластик.</li>
+        <li><b>Минусы:</b> сезонность (декабрь, февраль–март, май); долгие переписки; каждый заказ уникален; без фото и видео вас не существует.</li>
+        <li><b>Экономика:</b> 10–25 заказов × 3–5 тыс ₽ = 40–90 тыс ₽ выручки, маржа 25–45 тыс ₽.</li>
+        <li><b>Кому подходит:</b> как <i>лицо и бренд</i> — то, что вы потом масштабируете.</li>
+      </ul>
+    </div>
+    <div class="path-detail" data-d="2">
+      <h4>C · Свой продукт: самое дорогое и самое ценное</h4>
+      <ul>
+        <li><b>Кто платит:</b> не «заказчик», а покупатель в витрине: увидел, захотел, купил без переписки.</li>
+        <li><b>Плюсы:</b> можно продавать сотнями; не зависит от вашего времени на каждый экземпляр; можно выйти на маркетплейс; актив растёт.</li>
+        <li><b>Минусы:</b> нужно угадать продукт; нужны вложения в партию, упаковку, фото, рекламу; нужна повторяемость качества; возможна сертификация.</li>
+        <li><b>Экономика:</b> 100–300 штук × 1,5–3 тыс ₽ = 200–700 тыс ₽ выручки, но и затраты на рекламу 15–25%.</li>
+        <li><b>Кому подходит:</b> как <i>цель на год второй</i>, когда есть 2–3 проверенных хита.</li>
+      </ul>
+    </div>
+
+    <div class="note o" style="margin-top:18px">
+      <span class="lbl">Рекомендация</span>
+      Не выбирать один путь. Первые 6 месяцев — <b>B как лицо + A как деньги</b>. Каждый B2B-заказ
+      оплачивает материалы для B2C-экспериментов, а каждый подарок даёт фотографии, которые продают вас
+      производственникам. К пути C переходить только когда один и тот же товар купили <b>десять разных людей
+      без ваших уговоров</b>.
+    </div>
+
+    <div class="g3" style="margin-top:16px">
+      <div class="card"><div class="card-h">Признак, что пора в C</div><p class="small">Вам пишут «а можно так же, но в другом цвете?» — и это повторяется. Значит продукт есть, пора делать партию.</p></div>
+      <div class="card"><div class="card-h">Признак, что надо в A</div><p class="small">За месяц ни одного входящего заказа на подарки. Идёте к производствам и продаёте скорость и точность, а не красоту.</p></div>
+      <div class="card"><div class="card-h">Признак, что всё плохо</div><p class="small">Вы третий месяц дорабатываете модель и ещё ничего не продали. Это не подготовка, это избегание продаж.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="products">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">05 — изделия</div>
+      <h2>Что конкретно можно делать</h2>
+      <p class="lead">Двенадцать направлений, отсортированных по сложности входа. У каждого — реальная
+      себестоимость, время и цена, за которую это покупают в Петербурге. Цифры — ориентир, не гарантия.</p>
+    </div>
+
+    <div class="filters" id="pf">
+      <button class="on" data-f="all">Все</button>
+      <button data-f="a">Просто · можно на этой неделе</button>
+      <button data-f="b">Средне · нужен опыт</button>
+      <button data-f="c">Сложно · нужен станок и время</button>
+    </div>
+
+    <div class="prods" id="prods">
+      <div class="prod" data-lvl="a">
+        <span class="lvl a">просто</span>
+        <div class="prod-t">Брелок с подсветкой</div>
+        <div class="prod-d">Пластик + 2–3 светодиода + CR2032. Гравировка имени. Первый продукт: дешёвый вход, быстрый цикл, отличные фото.</div>
+        <div class="prod-m"><div>себест.<b>120 ₽</b></div><div>цена<b>990 ₽</b></div><div>время<b>0,7 ч</b></div></div>
+      </div>
+      <div class="prod" data-lvl="a">
+        <span class="lvl a">просто</span>
+        <div class="prod-t">Литофания с подсветкой</div>
+        <div class="prod-d">Фото, напечатанное тонкими слоями: на просвет получается объёмная картинка. Требует ровной печати и хорошего снимка.</div>
+        <div class="prod-m"><div>себест.<b>250 ₽</b></div><div>цена<b>2 400 ₽</b></div><div>время<b>1,5 ч</b></div></div>
+      </div>
+      <div class="prod" data-lvl="a">
+        <span class="lvl a">просто</span>
+        <div class="prod-t">Именная настольная табличка</div>
+        <div class="prod-d">Для кабинета, бара, подарка руководителю. Двухцветная печать, аккуратная типографика, тяжёлое основание.</div>
+        <div class="prod-m"><div>себест.<b>180 ₽</b></div><div>цена<b>2 900 ₽</b></div><div>время<b>1,2 ч</b></div></div>
+      </div>
+      <div class="prod" data-lvl="a">
+        <span class="lvl a">просто</span>
+        <div class="prod-t">Запчасть для бытовой техники</div>
+        <div class="prod-d">Ручка холодильника, шестерня, клипса, ножка. Модель по образцу. Клиент счастлив, потому что новой детали не купить.</div>
+        <div class="prod-m"><div>себест.<b>80 ₽</b></div><div>цена<b>900 ₽</b></div><div>время<b>0,8 ч</b></div></div>
+      </div>
+      <div class="prod" data-lvl="b">
+        <span class="lvl b">средне</span>
+        <div class="prod-t">Ночник-диорама</div>
+        <div class="prod-d">Сцена в коробке: город, лес, космос. Внутренняя подсветка на WS2812, режимы, USB-C. Самый «подарочный» товар.</div>
+        <div class="prod-m"><div>себест.<b>500 ₽</b></div><div>цена<b>4 500 ₽</b></div><div>время<b>3 ч</b></div></div>
+      </div>
+      <div class="prod" data-lvl="b">
+        <span class="lvl b">средне</span>
+        <div class="prod-t">Кинетический настольный объект</div>
+        <div class="prod-d">Шестерни, маятник, волновая машина. Печать с допусками, сборка без клея. Продаётся как «антистресс для взрослых».</div>
+        <div class="prod-m"><div>себест.<b>350 ₽</b></div><div>цена<b>3 800 ₽</b></div><div>время<b>2,5 ч</b></div></div>
+      </div>
+      <div class="prod" data-lvl="b">
+        <span class="lvl b">средне</span>
+        <div class="prod-t">Корпус для чужой платы</div>
+        <div class="prod-d">B2B: у человека есть электроника, нет корпуса. Проектирование по размерам, стойки, вентиляция, разъёмы. Чек выше, чем кажется.</div>
+        <div class="prod-m"><div>себест.<b>200 ₽</b></div><div>цена<b>6 000 ₽</b></div><div>время<b>2,5 ч</b></div></div>
+      </div>
+      <div class="prod" data-lvl="b">
+        <span class="lvl b">средне</span>
+        <div class="prod-t">Реверс сломанной детали</div>
+        <div class="prod-d">Обмер, модель, печать, проверка посадки. Самая недооценённая ниша: заводы и сервисы платят за то, что нельзя купить.</div>
+        <div class="prod-m"><div>себест.<b>150 ₽</b></div><div>цена<b>6 000 ₽</b></div><div>время<b>2,5 ч</b></div></div>
+      </div>
+      <div class="prod" data-lvl="b">
+        <span class="lvl b">средне</span>
+        <div class="prod-t">Свадебный набор</div>
+        <div class="prod-d">Топпер, держатели, номера столов, подставка под кольца. Один заказ = 20–60 предметов, но срок жёсткий и клиент нервный.</div>
+        <div class="prod-m"><div>себест.<b>150 ₽/шт</b></div><div>цена<b>1 200 ₽/шт</b></div><div>время<b>0,5 ч/шт</b></div></div>
+      </div>
+      <div class="prod" data-lvl="c">
+        <span class="lvl c">сложно</span>
+        <div class="prod-t">Фигурка по фотографии</div>
+        <div class="prod-d">Скан или лепка по фото, печать, грунт, покраска. Самая высокая цена и самая высокая доля ручной работы. Требует вкуса.</div>
+        <div class="prod-m"><div>себест.<b>250 ₽</b></div><div>цена<b>15 000 ₽</b></div><div>время<b>8 ч</b></div></div>
+      </div>
+      <div class="prod" data-lvl="c">
+        <span class="lvl c">сложно</span>
+        <div class="prod-t">Косплей-реквизит</div>
+        <div class="prod-d">Маска, меч, доспех. Много печати, много шпатлёвки. Клиент платит за попадание в образ, а не за пластик. Сезон — перед фестивалями.</div>
+        <div class="prod-m"><div>себест.<b>1 800 ₽</b></div><div>цена<b>18 000 ₽</b></div><div>время<b>12 ч</b></div></div>
+      </div>
+      <div class="prod" data-lvl="c">
+        <span class="lvl c">сложно</span>
+        <div class="prod-t">Корпоративный мерч</div>
+        <div class="prod-d">50–200 одинаковых изделий с логотипом. Деньги хорошие, но нужны 2–3 принтера, контроль цвета и жёсткие сроки.</div>
+        <div class="prod-m"><div>себест.<b>180 ₽/шт</b></div><div>цена<b>900 ₽/шт</b></div><div>время<b>0,3 ч/шт</b></div></div>
+      </div>
+    </div>
+
+    <div class="note" style="margin-top:16px">
+      <span class="lbl">Как выбирать из списка</span>
+      Берите не то, что интересно печатать, а то, <b>на что уже есть запрос</b>. Проверка простая:
+      напишите в местных чатах и на Авито «делаю вот это» с картинкой. Если за неделю нет ни одного
+      «сколько?» — идея не продаётся, сколько бы часов вы в неё ни вложили.
+    </div>
+  </div>
+</section>
+
+<section id="first">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">06 — первый продукт</div>
+      <h2>Брелок с подсветкой: разбор по косточкам</h2>
+      <p class="lead">Хороший первый продукт. Плохой основной. Ниже — как его сделать правильно и почему
+      на нём нельзя остановиться.</p>
+    </div>
+
+    <div class="g2" style="gap:18px">
+      <div>
+        <h3>Что внутри</h3>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Позиция</th><th class="n">Кол-во</th><th class="n">₽</th></tr></thead>
+            <tbody>
+              <tr><td>PLA, корпус + вставка</td><td class="n">14 г</td><td class="n">22</td></tr>
+              <tr><td>Светодиоды 3 мм, тёплый</td><td class="n">3</td><td class="n">12</td></tr>
+              <tr><td>Резисторы, провода</td><td class="n">—</td><td class="n">8</td></tr>
+              <tr><td>Держатель CR2032 + батарейка</td><td class="n">1</td><td class="n">45</td></tr>
+              <tr><td>Кольцо, шнурок</td><td class="n">1</td><td class="n">15</td></tr>
+              <tr><td>Упаковка, вкладыш</td><td class="n">1</td><td class="n">30</td></tr>
+              <tr class="total"><td>Итого материал</td><td class="n"></td><td class="n">132</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note" style="margin-top:12px">
+          Плюс 7% на брак и переделки. Реальная себестоимость — <b>около 140 ₽</b> при печати партией.
+          Печать одного корпуса — 55–70 минут, партия из 20 штук на столе 256×256 — примерно 4 часа.
+        </div>
+      </div>
+      <div>
+        <h3>Тайминг на одну штуку</h3>
+        <div class="tw">
+          <table>
+            <thead><tr><th>Этап</th><th class="n">Минут</th><th>Кто</th></tr></thead>
+            <tbody>
+              <tr><td>Печать (фоном)</td><td class="n">60</td><td>станок</td></tr>
+              <tr><td>Снять поддержки, зачистить</td><td class="n">6</td><td>любой</td></tr>
+              <tr><td>Пайка платы и диодов</td><td class="n">10</td><td>А</td></tr>
+              <tr><td>Сборка, проверка света</td><td class="n">6</td><td>А</td></tr>
+              <tr><td>Гравировка имени</td><td class="n">4</td><td>Б</td></tr>
+              <tr><td>Упаковка</td><td class="n">5</td><td>любой</td></tr>
+              <tr><td>Переписка и отправка</td><td class="n">12</td><td>А</td></tr>
+              <tr class="total"><td>Руками</td><td class="n">43</td><td></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="note g" style="margin-top:12px">
+          <b>43 минуты</b> при серийной сборке. Это нормально. Это не 3 часа — но и не 5 минут,
+          как кажется в начале. Всё, что дольше 60 минут на брелок, — это уже убыток.
+        </div>
+      </div>
+    </div>
+
+    <h3 style="margin:30px 0 10px">Шесть правил, чтобы брелок не вернулся</h3>
+    <div class="g3">
+      <div class="card"><div class="card-h">01 · питание</div><p class="small">Только CR2032 или AAA. Никаких Li-Po в первом продукте: они вздуваются, их нельзя отправлять почтой отдельно и они горят.</p></div>
+      <div class="card"><div class="card-h">02 · ток</div><p class="small">Один резистор на каждый диод, ток 10–15 мА. Ярче — не лучше: батарейка садится за вечер, а пластик греется.</p></div>
+      <div class="card"><div class="card-h">03 · доступ</div><p class="small">Батарейка должна меняться без отвёртки и без разрушения корпуса. Отсек на защёлке, а не на клею.</p></div>
+      <div class="card"><div class="card-h">04 · зазоры</div><p class="small">0,25–0,3 мм на посадку платы, 0,15 мм на крышку. Печатайте тестовый кубик под свой станок, а не «по паспорту».</p></div>
+      <div class="card"><div class="card-h">05 · петля</div><p class="small">Кольцо — самое слабое место. Отверстие печатайте вдоль слоёв или ставьте металлическую втулку. Не поперёк.</p></div>
+      <div class="card"><div class="card-h">06 · материал</div><p class="small">PLA хорош, но размягчается при 55–60 °C. Для брелока норм. Всё, что греется или живёт в машине, — PETG.</p></div>
+    </div>
+
+    <div class="g2" style="margin-top:16px">
+      <div class="note r">
+        <span class="lbl">Почему брелок не кормит</span>
+        При 40 минутах ручной работы и цене 990 ₽ вы зарабатываете около <b>520 ₽</b>. Чтобы получить
+        50 тысяч, нужно 96 брелоков в месяц — это 64 часа только сборки, плюс переписка, плюс печать,
+        плюс упаковка. Один станок этого не выдержит, а вы — тем более.
+      </div>
+      <div class="note g">
+        <span class="lbl">Зачем он нужен</span>
+        Брелок — это <b>вход и витрина</b>. Он дешёвый для клиента, быстрый для вас, отлично снимается на видео
+        и служит доказательством, что вы умеете делать светящиеся вещи. С него начинается разговор
+        про ночник за 4 500 и фигурку за 15 000.
+      </div>
+    </div>
+  </div>
+</section>
+<section id="electronics">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">07 — печать + электроника</div>
+      <h2>Ниша есть, но она узкая и капризная</h2>
+      <p class="lead">Светящиеся, звучащие и движущиеся модели — реальный сегмент. Но почти весь он занят
+      либо дешёвым Китаем, либо мастерами, которые делают по одной штуке в месяц. Это и есть ваше окно.</p>
+    </div>
+
+    <h3 style="margin-bottom:12px">Что уже продаётся</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Категория</th><th>Кто делает</th><th>Цена</th><th>Слабое место</th></tr></thead>
+        <tbody>
+          <tr><td>Светящиеся брелоки, значки</td><td>Китай, маркетплейсы, единичные мастера</td><td class="n">300–1 200 ₽</td><td>Однообразие, нет персонализации, батарейка на клею</td></tr>
+          <tr><td>Ночники-диорамы, «светильники-сцены»</td><td>Мастера, небольшие студии</td><td class="n">2 500–9 000 ₽</td><td>Долго, дорого, часто плохая покраска</td></tr>
+          <tr><td>Фигурки по фото / по мотивам</td><td>Скульпторы, 3D-печать, иногда с подсветкой</td><td class="n">8 000–35 000 ₽</td><td>Сроки 2–6 недель, высокая цена ошибки</td></tr>
+          <tr><td>Кинетические объекты, антистресс</td><td>Импорт + единичные печатники</td><td class="n">1 500–8 000 ₽</td><td>Нет ремонта, ломается, нет сервиса</td></tr>
+          <tr><td>Корпуса для своих плат</td><td>Почти никто как продукт</td><td class="n">3 000–15 000 ₽</td><td>Ниша пустая: людей с платой больше, чем людей с корпусом</td></tr>
+          <tr><td>Косплей с подсветкой</td><td>Мастера-косплееры</td><td class="n">5 000–60 000 ₽</td><td>Сезонность, долгие согласования</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note b" style="margin-top:14px">
+      <span class="lbl">Честно про нишу</span>
+      «Печать + электроника» — это не отдельный рынок. Это <b>надбавка к обычной вещи</b>: свет делает
+      подарок запоминающимся и снимает вопрос «а почему так дорого». Но клиент всё равно покупает
+      не электронику, а эмоцию. Как только вы начинаете продавать «плату с контроллером», вы проигрываете Китаю.
+    </div>
+
+    <h3 style="margin:30px 0 10px">Стек изделия: четыре слоя</h3>
+    <div class="stack">
+      <div><b>питание</b>USB-C 5 В,<br>CR2032, AAA<br><span class="tiny">ни в коем случае не 220 В</span></div>
+      <div><b>управление</b>кнопка,<br>ATtiny, ESP32<br><span class="tiny">или вообще без него</span></div>
+      <div><b>свет / звук</b>WS2812,<br>тёплые 3 мм,<br>пищалка<br><span class="tiny">5–12 В, не громче 80 дБ</span></div>
+      <div><b>корпус</b>PLA / PETG,<br>зазоры,<br>теплоотвод<br><span class="tiny">зазор и вентиляция</span></div>
+    </div>
+
+    <h3 style="margin:30px 0 10px">Технические грабли: где реально ломается</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Проблема</th><th>Что происходит</th><th>Как убрать заранее</th></tr></thead>
+        <tbody>
+          <tr><td>Тепло от LED</td><td>PLA ползёт при 55–60 °C. Через месяц диод «утопает» в корпусе.</td><td>Ток 10–15 мА, зазор 3 мм до стенки, PETG в местах нагрева.</td></tr>
+          <tr><td>Холодная пайка</td><td>Работает при сборке, отваливается в дороге. Возврат дороже трёх продаж.</td><td>Проверка каждой платы под нагрузкой 10 минут, протяжка проводов, термоусадка.</td></tr>
+          <tr><td>Отсек батарейки</td><td>Крышка на клею → клиент ломает корпус, чтобы заменить батарейку.</td><td>Защёлка, допуск 0,15 мм, тест «снял-поставил 20 раз».</td></tr>
+          <tr><td>Влага и конденсат</td><td>Петербург. Металл окисляется, контакты зеленеют.</td><td>Лак на плату, силикагель в упаковку, никаких открытых контактов снаружи.</td></tr>
+          <tr><td>УФ и выгорание</td><td>Дешёвый прозрачный пластик желтеет за сезон на подоконнике.</td><td>Не обещать «навсегда», использовать PETG или матовые рассеиватели.</td></tr>
+          <tr><td>Провод-петля</td><td>Провод перетирается в месте выхода из корпуса.</td><td>Канал, галтель, капля клея как разгрузка, гофра на выходе.</td></tr>
+          <tr><td>Звук</td><td>Пищалка в глухом корпусе почти не слышна, в тонком — дребезжит.</td><td>Отверстие 3 мм напротив, отдельная камера, тест на расстоянии 3 м.</td></tr>
+          <tr><td>Батарейка</td><td>CR2032 садится за 2–3 вечера при ярком свете.</td><td>Ток, режим «выключено», честно писать ресурс в карточке.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="g3" style="margin-top:16px">
+      <div class="note r" style="margin:0"><span class="lbl">Красная линия</span><b>Никакого 220 В.</b> Ни в одном изделии, которое человек берёт в руки. Только готовые сертифицированные адаптеры и USB.</div>
+      <div class="note r" style="margin:0"><span class="lbl">Красная линия</span><b>Никаких самодельных зарядок.</b> Только готовые модули с защитой, только проверенные разъёмы, только пайка с флюсом и промывкой.</div>
+      <div class="note r" style="margin:0"><span class="lbl">Красная линия</span><b>Никаких Li-Po в v1.</b> Вздутие, пожар, запрет на пересылку отдельно от устройства. Если очень нужно — готовый повербанк-модуль с сертификатом.</div>
+    </div>
+
+    <h3 style="margin:30px 0 10px">Пайка дома: что учесть</h3>
+    <ul class="clean">
+      <li><b>Вентиляция обязательна.</b> Флюс и свинец — не «немного дыма». Вытяжка с угольным фильтром или работа у открытого окна с вентилятором <i>от</i> себя.</li>
+      <li><b>Бессвинцовый припой</b> и отдельный набор для него: температура выше, жала другие, но меньше свинца в квартире.</li>
+      <li><b>Стол.</b> Термостойкий коврик, держатель платы, третья рука. Пайка на кухонном столе — это и запах, и риск.</li>
+      <li><b>Хранение.</b> Компоненты по пакетам с подписями, батарейки отдельно от металла. Одна рассыпанная коробка резисторов съедает вечер.</li>
+      <li><b>Принтер рядом нельзя.</b> Испарения и пыль от шлифовки оседают на плате и в механике станка.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="printer">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">08 — оборудование</div>
+      <h2>Какой принтер купить, если печатать дома</h2>
+      <p class="lead">Смолу не рассматриваем — вы правы. Значит FDM. Вопрос не «какой лучше»,
+      а «какой даст товарный вид и не потребует мастерской».</p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Модель</th><th class="n">Цена, ₽</th><th>Поле</th><th>Почему смотрим</th><th>Минусы</th></tr></thead>
+        <tbody>
+          <tr><td>Bambu Lab A1 mini</td><td class="n">19 999</td><td>180³</td><td>Дешёвый вход, отличное качество, тихий</td><td>Поле мало для ночников и диорам</td></tr>
+          <tr><td>Bambu Lab A1</td><td class="n">27 999–29 990</td><td>256³</td><td>Хорошее поле, автокалибровка, быстро</td><td>Открытая рама: ABS/ASA не для квартиры</td></tr>
+          <tr><td><b>Bambu Lab A1 Combo</b></td><td class="n">44 999–46 990</td><td>256³</td><td><b>4 цвета из коробки — это и есть подарочный вид</b></td><td>Смена цвета съедает пластик и время</td></tr>
+          <tr><td>Bambu Lab P1S</td><td class="n">49 990</td><td>256³</td><td>Закрытая камера, ABS/ASA, надёжнее в долгую</td><td>Шумнее, нужна вентиляция, дороже</td></tr>
+          <tr><td>Bambu Lab P1S Combo</td><td class="n">66 990</td><td>256³</td><td>Сразу цвета + закрытая камера</td><td>Цена ближе к «половине бюджета»</td></tr>
+          <tr><td>Creality K1C</td><td class="n">40–50 тыс</td><td>220³</td><td>Закрытая, дешевле P1S, нормальное качество</td><td>Софт и обслуживание хуже, больше подкручивать</td></tr>
+          <tr><td>Anycubic Kobra 3</td><td class="n">30–40 тыс</td><td>250³</td><td>Мультицвет дешевле, поле большое</td><td>Стабильность ниже, расходники капризнее</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note o" style="margin-top:16px">
+      <span class="lbl">Рекомендация</span>
+      <b>Bambu Lab A1 Combo</b> — если бюджет 45–50 тысяч и вы печатаете подарки.
+      Многоцветность здесь не роскошь: двухцветная табличка или цветной корпус — это разница между
+      «напечатал на принтере» и «выглядит как изделие». <b>P1S</b> берите, если сразу планируете
+      ABS/PETG-корпуса для B2B и печать в закрытом ящике. <b>A1 mini</b> — только если хотите проверить
+      идею за 20 тысяч и печатать мелочь.
+    </div>
+
+    <div class="g2" style="margin-top:14px">
+      <div class="card">
+        <div class="card-h">Что обязательно докупить</div>
+        <ul class="clean" style="margin-bottom:0">
+          <li><b>Сушилка для филамента</b> — 4–6 тыс ₽. В Петербурге влажность убивает PETG.</li>
+          <li><b>Запасные сопла</b> (0,4 и 0,6 мм) — 1,5–3 тыс ₽. Сопло расходник, как лезвие.</li>
+          <li><b>PEI-стол</b> — 2–3 тыс ₽. Адгезия и внешний вид дна.</li>
+          <li><b>Кусачки, надфили, нож</b>, пинцет, штангенциркуль — 3–4 тыс ₽.</li>
+          <li><b>Паяльная станция</b> с феном и вытяжкой — 8–14 тыс ₽.</li>
+          <li><b>Термоклейка, пресс-гайки</b> (heat-set) — 1,5 тыс ₽. Резьба в пластике без гайки живёт до третьего закручивания.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-h">Домашние ограничения</div>
+        <ul class="clean" style="margin-bottom:0">
+          <li><b>Шум.</b> A1 — около 50 дБ, P1S громче. Ночью печатать в спальне нельзя.</li>
+          <li><b>Запах и частицы.</b> PLA мягче всех, но всё равно выделяет. Нужна отдельная комната или вытяжка.</li>
+          <li><b>Место.</b> Стол 80×60 см, доступ со всех сторон, розетка с заземлением, не у шторы.</li>
+          <li><b>Пожарная безопасность.</b> Датчик дыма над станком, не оставлять без присмотра на ночь в первый месяц.</li>
+          <li><b>Семья.</b> Пыль от шлифовки и запах краски — это разговор, который лучше провести до покупки, а не после.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="note r" style="margin-top:14px">
+      <span class="lbl">Не покупайте</span>
+      Б/у принтер «после апгрейда» без истории, безымянный клон с AliExpress за 15 тысяч и станок
+      «на вырост» за 150 тысяч. Первый съест время на ремонт, второй — нервы, третий — деньги,
+      которые лучше потратить на материалы и рекламу.
+    </div>
+  </div>
+</section>
+
+<section id="scan">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">09 — сканирование</div>
+      <h2>Сканер: приятная добавка, а не фундамент</h2>
+      <p class="lead">3D-сканирование звучит как суперсила. На практике это ещё один этап ручной
+      обработки, который добавляет 1–3 часа на модель. Полезно, но не в первый месяц.</p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Способ</th><th class="n">Цена входа</th><th>Что получается</th><th>Где реально нужен</th></tr></thead>
+        <tbody>
+          <tr><td>Фотограмметрия с телефона</td><td class="n">0 ₽</td><td>Грязная сетка, нужна чистка 1–2 ч</td><td>Крупные объекты, фигуры, здания, «слепок» человека</td></tr>
+          <tr><td>Сканер начального уровня</td><td class="n">40–80 тыс ₽</td><td>Лучше, но тёмное и блестящее всё равно ломается</td><td>Мелкие детали, реверс, лица</td></tr>
+          <tr><td>Revopoint MIRACO</td><td class="n">134–160 тыс ₽</td><td>Автономный, точность до 0,05 мм</td><td>Если сканирование станет отдельной услугой</td></tr>
+          <tr><td>Заказ сканирования на стороне</td><td class="n">2–3 тыс ₽/объект</td><td>Готовый скан за день</td><td><b>Первые 6 месяцев — только так</b></td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3 style="margin:30px 0 10px">Как это работает: пять шагов</h3>
+    <div class="chain">
+      <div><b>01 снять</b><span class="hrs">10–40 мин</span>30–60 фото по кругу<span class="who">или сканер</span></div>
+      <div><b>02 почистить</b><span class="hrs">1–3 ч</span>шум, дыры, сшивка<span class="who">Blender</span></div>
+      <div><b>03 подготовить</b><span class="hrs">0,5–1,5 ч</span>полость, толщина 2–3 мм<span class="who">слайсер</span></div>
+      <div><b>04 напечатать</b><span class="hrs">2–12 ч</span>проверить посадку<span class="who">станок</span></div>
+      <div><b>05 довести</b><span class="hrs">1–4 ч</span>шпатлёвка, грунт, краска<span class="who">руки</span></div>
+    </div>
+    <p class="small" style="margin-top:8px">Главная ошибка новичка — думать, что скан это готовая модель. Между «снял» и «напечатал»
+    лежит больше работы, чем сама печать. Именно поэтому сканирование редко бывает дешёвой услугой.</p>
+
+    <div class="g2" style="margin-top:16px">
+      <div class="card">
+        <div class="card-h">Пять сценариев, где скан реально продаётся</div>
+        <ul class="clean" style="margin-bottom:0">
+          <li><b>Фигурка человека.</b> Скан в студии или по 30 фото. Цена 12–30 тыс ₽. Эмоция максимальная, но и работа 6–12 ч.</li>
+          <li><b>Реверс детали.</b> Сломанная шестерня, корпус насоса, ручка. Скан → модель → печать. Чек 3–8 тыс ₽, время 1–3 ч.</li>
+          <li><b>Косплей.</b> Скан лица под маску, скан реквизита под повтор. Сезонно, но платят хорошо.</li>
+          <li><b>Подарок-слепок.</b> Рука ребёнка, любимая чашка, фигурка питомца. Дёшево в производстве, дорого в эмоции.</li>
+          <li><b>Архив.</b> Семейная вещь, которую нельзя потерять: скан и печать копии. Ниша узкая, но почти без конкурентов.</li>
+        </ul>
+      </div>
+      <div class="note b" style="margin:0">
+        <span class="lbl">Как решать</span>
+        <b>Не покупать сканер в первый год.</b> Берите фотограмметрию бесплатно и заказывайте
+        сканирование на стороне за 2–3 тысячи, когда клиент уже заплатил. Сканер за 140 тысяч
+        окупается только при 50–70 платных сканах — это примерно два года при вашем потоке.
+        <br><br>
+        Покупать есть смысл, если сканирование станет <b>отдельной услугой</b> с потоком от B2B
+        (реверс, контроль геометрии) — но это уже другой бизнес.
+      </div>
+    </div>
+  </div>
+</section>
+<section id="law">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">10 — право и налоги</div>
+      <h2>Что можно, что нельзя и чем это грозит</h2>
+      <p class="lead">Самая скучная и самая недооценённая часть. Один сертификат может съесть всю прибыль
+      первого года, а одна претензия — всю прибыль второго. Ниже — то, что нужно решить до первой продажи.</p>
+    </div>
+
+    <h3 style="margin-bottom:12px">Форма деятельности: три ступени</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Форма</th><th>Когда</th><th>Налог</th><th>Ограничения</th></tr></thead>
+        <tbody>
+          <tr><td>Самозанятый (НПД)</td><td>Первые продажи, до 2,4 млн ₽/год</td><td class="n">4% физлицам<br>6% юрлицам</td><td>Только своё производство. Нельзя перепродавать. Нельзя маркированные товары. Нельзя нанимать. Нет стажа.</td></tr>
+          <tr><td>ИП на УСН 6%</td><td>Стабильные продажи, маркетплейс, маркировка</td><td class="n">6% + взносы</td><td>Взносы ~57 400 ₽/год (2026) + 1% свыше 300 тыс ₽. Нужна касса. Можно нанимать.</td></tr>
+          <tr><td>ООО, двое по 50%</td><td>Партнёрство на равных, инвестиции, найм</td><td class="n">УСН 6%</td><td>Бухгалтерия 3–8 тыс ₽/мес, отчётность, уставный капитал от 10 тыс ₽. Зато доли и выход прописаны.</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note" style="margin-top:12px">
+      <span class="lbl">Как это выглядит на практике</span>
+      Начинать с <b>НПД на одного</b> — это 10 минут через приложение и ноль расходов. Но если вы двое и
+      делите деньги, НПД оформляет один, а второй либо помогает безвозмездно (и это его риск),
+      либо получает выплаты как подрядчик-самозанятый. Как только появляется «наше общее» —
+      нужен либо <b>договор простого товарищества</b>, либо ООО. Подробнее в разделе про партнёрство.
+    </div>
+
+    <h3 style="margin:30px 0 12px">Игрушка или сувенир? Это решает всё</h3>
+    <p class="small" style="max-width:850px">Самый дорогой вопрос в этом бизнесе. Если вещь предназначена для игры детям до 14 лет —
+    это игрушка, и на неё нужен <b>сертификат</b> по ТР ТС 008/2011 (декларация не подходит), а с 1 сентября 2026 года —
+    ещё и обязательная маркировка «Честный знак». Если вещь — сувенир, декор или коллекционная модель для взрослых,
+    она под регламент не попадает: достаточно маркировки <b>«14+»</b> и надписи «не является игрушкой» плюс отказное письмо.</p>
+
+    <div class="g2" style="margin-top:14px">
+      <div class="card">
+        <div class="card-h">Если идёте в игрушки</div>
+        <ul class="clean" style="margin-bottom:0">
+          <li>Сертификат: <b>от 30 тыс ₽ и выше</b> за серию или партию, срок 3–8 недель, нужны образцы и испытания. Точную цену даёт только аккредитованный орган — запрашивайте смету под свой ассортимент.</li>
+          <li>Маркировка «Честный знак» с 01.09.2026 (ПП № 819): коды, ЭДО, оборудование.</li>
+          <li>Самозанятый этим заниматься <b>не может</b> — только ИП или ООО.</li>
+          <li>Плюс: вы легально продаёте на маркетплейсе в детской категории, где спрос выше.</li>
+        </ul>
+      </div>
+      <div class="card">
+        <div class="card-h">Если идёте в сувениры 14+</div>
+        <ul class="clean" style="margin-bottom:0">
+          <li>Отказное письмо: <b>3–7 тыс ₽</b>, делается за 5–10 дней, снимает вопросы маркетплейса.</li>
+          <li>Маркировка «14+» и «не является игрушкой» на упаковке и в карточке.</li>
+          <li>Изделия <b>по индивидуальному заказу</b> прямо исключены из ТР ТС 008 — это ваш козырь для персонализации.</li>
+          <li>Риск: если фактически продаёте детям и позиционируете как игрушку — назначение определят по подаче, а не по наклейке.</li>
+        </ul>
+      </div>
+    </div>
+
+    <h3 style="margin:30px 0 12px">Электроника: что формально требуется</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Регламент</th><th>Про что</th><th>Касается ли нас</th></tr></thead>
+        <tbody>
+          <tr><td>ТР ТС 004/2011</td><td>Низковольтное оборудование, 50–1000 В переменного тока</td><td>Нет, если изделие питается от 5 В USB или батарейки</td></tr>
+          <tr><td>ТР ТС 020/2011</td><td>Электромагнитная совместимость</td><td>Формально да. На микро-партиях не оформляют, но маркетплейс может запросить документы</td></tr>
+          <tr><td>ТР ЕАЭС 037/2016</td><td>Ограничение опасных веществ (аналог RoHS)</td><td>Касается материалов и компонентов; для самодельных изделий не оформляется</td></tr>
+          <tr><td>Почтовые правила</td><td>Литиевые элементы</td><td>Только встроенные в устройство, не больше 4 элементов. CR2032 — около 0,1 г лития, это допустимо. Отдельные батарейки в посылку не кладём</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note r" style="margin-top:12px">
+      <span class="lbl">Правило, которое дешевле любого сертификата</span>
+      Не писать «сертифицировано», «безопасно для детей», «одобрено». Не продавать под видом детского товара.
+      Не ставить 220 В. Не отправлять литиевые батарейки отдельно. Всё остальное — вопрос аккуратности, а не бумаг.
+    </div>
+
+    <h3 style="margin:30px 0 12px">Авторские права: самое дорогое «нельзя»</h3>
+    <div class="tw">
+      <table>
+        <thead><tr><th>Ситуация</th><th>Можно?</th><th>Что бывает</th></tr></thead>
+        <tbody>
+          <tr><td>Своя модель, свой персонаж</td><td class="pos">Да</td><td>Ничего, вы автор</td></tr>
+          <tr><td>Модель, купленная с коммерческой лицензией</td><td class="pos">Да, если лицензия прямо разрешает продажу изделий</td><td>Проверять формулировку: «для личного использования» — не разрешает</td></tr>
+          <tr><td>Фигурка Марио, Пикачу, Губки Боба «по мотивам»</td><td class="neg">Нет</td><td>Претензия, блокировка карточки, иск. Компенсация от 10 тыс до 5 млн ₽ за факт</td></tr>
+          <tr><td>Печать модели заказчика по его файлу</td><td class="pos">Обычно да</td><td>Но ответственность за файл лучше переложить на заказчика письменно</td></tr>
+          <tr><td>Логотип известного бренда на подарке</td><td class="neg">Нет без договора</td><td>Товарный знак, ст. 1484 и 1515 ГК РФ</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note o" style="margin-top:12px">
+      <span class="lbl">Почему это критично именно для вас</span>
+      Соблазн сделать фигурку по популярному аниме огромен — на этом строится половина косплей-заказов.
+      Но <b>фан-арт не даёт права на коммерцию</b>, даже если вы лепили с нуля. Правообладатель приходит
+      не к автору файла, а к продавцу изделия. Безопасная стратегия: собственные персонажи,
+      «вдохновлено» без узнаваемых черт, и личные заказы по эскизу клиента с его подтверждением прав.
+    </div>
+
+    <h3 style="margin:30px 0 12px">Ещё четыре пункта, о которых забывают</h3>
+    <div class="g2">
+      <div class="card"><div class="card-h">Персональные данные · 152-ФЗ</div><p class="small">Фото и скан лица — это персональные данные. Нужно письменное согласие на обработку, хранение у себя, удаление после заказа. Публиковать фото клиента можно только с разрешения. Если скан используется для идентификации человека — это уже биометрия с отдельными требованиями.</p></div>
+      <div class="card"><div class="card-h">Возвраты · ЗоЗПП</div><p class="small">Вещь, изготовленная по индивидуальному заказу, надлежащего качества возврату не подлежит — это ваша защита. Но брак, несоответствие описанию и повреждение при доставке — ваша ответственность. Пропишите это в оферте простыми словами.</p></div>
+      <div class="card"><div class="card-h">Чеки</div><p class="small">НПД — чек в приложении «Мой налог» на каждую продажу. ИП — онлайн-касса. Маркетплейс закрывает это сам, но только если вы продаёте через него, а не «переводом на карту».</p></div>
+      <div class="card"><div class="card-h">Реклама · 38-ФЗ</div><p class="small">Платное размещение у блогера нужно маркировать (ОРД, ERID). Бартер — тоже реклама. Штрафы за отсутствие маркировки выше, чем стоимость самой рекламы.</p></div>
+    </div>
+
+    <p class="tiny" style="margin-top:14px">Это ориентир, а не юридическая консультация. Перед первой крупной партией — 2–3 часа консультации юриста за 5–10 тыс ₽ дешевле одного штрафа.</p>
+  </div>
+</section>
+
+<section id="clients">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">11 — клиенты</div>
+      <h2>Где взять первых десять</h2>
+      <p class="lead">У вас нет проблемы с производством. У вас есть проблема с тем, что вас никто не знает.
+      Ниже — каналы, честная оценка каждого и сценарий первого месяца.</p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Канал</th><th>Сколько даёт</th><th>Затраты</th><th>Честно</th></tr></thead>
+        <tbody>
+          <tr><td>Знакомые и их знакомые</td><td class="n">3–7 заказов</td><td>0 ₽</td><td>Первый круг выгорает за месяц. Не считайте это бизнесом.</td></tr>
+          <tr><td>Личные соцсети, Telegram</td><td class="n">2–5 в месяц</td><td>время</td><td>Работает, если публиковать процесс, а не «принимаю заказы».</td></tr>
+          <tr><td>Авито и Юла</td><td class="n">3–10 в месяц</td><td>0–1 тыс ₽</td><td>Там ищут дешевле всех. Зато хорошо ловит «сломалась ручка холодильника».</td></tr>
+          <tr><td>Яндекс Услуги</td><td class="n">2–6 в месяц</td><td>отклики 100–300 ₽</td><td>Конкуренция по цене, но поток стабильный.</td></tr>
+          <tr><td>VK-сообщества СПб</td><td class="n">1–4 в месяц</td><td>0 ₽</td><td>Нужно быть полезным, а не рекламироваться. Забанят за спам.</td></tr>
+          <tr><td>Дизайн-маркеты и фестивали</td><td class="n">5–20 продаж за weekend</td><td>3–15 тыс ₽ за стол</td><td><b>Лучший источник премиума.</b> Люди щупают руками и платят сразу.</td></tr>
+          <tr><td>B2B напрямую</td><td class="n">1 заказ на 20 писем</td><td>время</td><td>Долго, но чек в 5–10 раз выше. Это ваш главный канал на год вперёд.</td></tr>
+          <tr><td>Свадебные подрядчики</td><td class="n">1–3 в месяц</td><td>комиссия 10–15%</td><td>Сезон май–сентябрь. Зато один заказ = 20–60 предметов.</td></tr>
+          <tr><td>Маркетплейсы</td><td class="n">потенциально много</td><td>комиссия 15–25% + реклама</td><td>Только когда есть готовый SKU, фото, упаковка и документы. Не в первый месяц.</td></tr>
+          <tr><td>Микроблогеры, бартер</td><td class="n">2–5 заказов за пост</td><td>1 изделие</td><td>Работает с блогерами 2–20 тыс подписчиков, не с «инфлюенсерами».</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="g2" style="margin-top:18px">
+      <div>
+        <h3>Как выглядит первый месяц</h3>
+        <div class="tl" style="margin-top:12px">
+          <div class="tl-item"><div class="tl-w">Неделя 1</div><h4>Сделать три вещи руками</h4><p>Брелок, ночник и табличку. Не «идеальную», а готовую. Снять на телефон при дневном свете. Без фото продавать нечего.</p></div>
+          <div class="tl-item"><div class="tl-w">Неделя 2</div><h4>Показать десяти людям</h4><p>Не «реклама», а «смотрите, что собрал, как вам?». Цель — три честных «сколько стоит?». Если ноль — меняйте изделие, а не текст.</p></div>
+          <div class="tl-item"><div class="tl-w">Неделя 3</div><h4>Первый платный заказ</h4><p>Даже за 700 ₽. Важно не заработать, а пройти весь путь: переписка, предоплата, сборка, упаковка, отправка, отзыв.</p></div>
+          <div class="tl-item"><div class="tl-w">Неделя 4</div><h4>Письма в B2B</h4><p>20 писем в мастерские, лаборатории, мелкие производства. Тема: «делаю корпуса и запчасти по образцу, срок 3 дня». Не «предлагаю услуги».</p></div>
+        </div>
+      </div>
+      <div>
+        <h3>Оффер, который работает</h3>
+        <div class="note g" style="margin-top:12px">
+          <b>Плохо:</b> «Здравствуйте! Мы занимаемся 3D-печатью на заказ. Печатаем любые изделия из PLA и PETG по вашим моделям».<br><br>
+          <b>Хорошо:</b> «Здравствуйте! Делаю корпуса и запчасти по образцу: сломанную деталь приносите — через три дня получаете новую. В Петербурге, забирать на Петроградской. Вот три примера».
+        </div>
+        <div class="note" style="margin-top:12px">
+          <span class="lbl">Три правила</span>
+          <b>1.</b> Продавайте результат, а не технологию. Клиенту всё равно, FDM это или чудо.<br>
+          <b>2.</b> Всегда называйте цену и срок сразу. «Зависит от модели» — способ потерять заказ.<br>
+          <b>3.</b> Берите предоплату 50%. Всегда. Даже с друзей.
+        </div>
+      </div>
+    </div>
+
+    <div class="note o" style="margin-top:14px">
+      <span class="lbl">Что публиковать, если не умеете продавать</span>
+      Не «рекламу», а <b>процесс</b>: таймлапс печати, «как я три раза переделывал крепление», до/после
+      покраски, «сколько стоит светодиод и почему он греется». Такой контент смотрят и запоминают.
+      Три поста в неделю в течение трёх месяцев дают больше, чем один пост в день и бросить через две недели.
+    </div>
+  </div>
+</section>
+
+<section id="time">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">12 — время</div>
+      <h2>Куда уходят часы</h2>
+      <p class="lead">Оценка для режима «оба работают, мастерская по вечерам и в выходные».
+      Если цифры кажутся большими — это потому, что в бизнесе про физические вещи их правда много.</p>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead><tr><th>Активность</th><th class="n">Часов в неделю</th><th>Кто</th><th>Можно ли не делать</th></tr></thead>
+        <tbody>
+          <tr><td>Печать и обслуживание станка</td><td class="n">3–5</td><td>А</td><td>Нет, но это фон</td></tr>
+          <tr><td>Моделирование под заказы</td><td class="n">4–8</td><td>Б</td><td>Частично, можно шаблонами</td></tr>
+          <tr><td>Электроника и сборка</td><td class="n">3–6</td><td>А</td><td>Только автоматизацией</td></tr>
+          <tr><td>Отделка и покраска</td><td class="n">3–6</td><td>оба</td><td>Нет, если продаёте премиум</td></tr>
+          <tr><td>Переписка с клиентами</td><td class="n">3–5</td><td>А</td><td>Частично, шаблонами</td></tr>
+          <tr><td>Контент и соцсети</td><td class="n">3–5</td><td>Б</td><td>Нет, это ваш канал</td></tr>
+          <tr><td>Поиск B2B-клиентов</td><td class="n">2–4</td><td>А</td><td>Нет в первые полгода</td></tr>
+          <tr><td>Упаковка и отправка</td><td class="n">2–3</td><td>оба</td><td>Частично</td></tr>
+          <tr><td>Учёт, налоги, закупки</td><td class="n">1–2</td><td>Б</td><td>Нет</td></tr>
+          <tr class="total"><td>Итого</td><td class="n">24–44</td><td></td><td>на двоих</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="note r" style="margin-top:14px">
+      <span class="lbl">Отрезвляющая арифметика</span>
+      30 часов в неделю на двоих — это 130 часов в месяц. При прибыли 50 тысяч рублей вы получаете
+      <b>около 385 ₽ за час совместного труда</b>. Это нормально для проверки идеи и мало для замены зарплаты.
+      Чтобы выйти на 150 тысяч, нужно либо поднять чек втрое, либо автоматизировать половину операций,
+      либо нанять руки.
+    </div>
+
+    <div class="g3" style="margin-top:16px">
+      <div class="card"><div class="card-h">Что съедает больше всего</div><p class="small">Не печать. <b>Отделка и переписка.</b> Шлифовка, грунт, покраска — это 40% времени на премиальном изделии и почти всё, что отличает «дорого» от «дешёво».</p></div>
+      <div class="card"><div class="card-h">Что можно сократить</div><p class="small">Шаблоны ответов, каталог готовых моделей с заменой имени, партии вместо штук, предоплата, самовывоз в один день недели.</p></div>
+      <div class="card"><div class="card-h">Что нельзя сокращать</div><p class="small">Контроль качества и упаковку. Дешёвая коробка убивает впечатление от дорогой вещи быстрее, чем кривой слой печати.</p></div>
+    </div>
+  </div>
+</section>
+<section id="start">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">13 — деньги на старт</div>
+      <h2>Сколько нужно на самом деле</h2>
+      <p class="lead">Ниже — три сценария. Отметьте, что планируете купить, и увидите сумму.
+      По умолчанию стоит «рабочий» набор: на нём можно делать товарный вид, а не только печатать.</p>
+    </div>
+
+    <div class="filters" id="scen">
+      <button data-s="test">Проверка гипотезы · ~61 тыс</button>
+      <button class="on" data-s="work">Рабочий старт · ~193 тыс</button>
+      <button data-s="full">Максимум · ~357 тыс</button>
+    </div>
+
+    <div class="costcol" id="costs">
+      <div class="costgroup" data-kind="hard">
+        <h4>Печать</h4>
+        <label class="citem"><input type="checkbox" data-k="a1" data-c="30000"><span>Bambu Lab A1 — без AMS</span><b>30 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="a1c" data-c="46000" checked><span>Bambu Lab A1 Combo — 4 цвета</span><b>46 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="dryer" data-c="5000"><span>Сушилка для филамента</span><b>5 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="nozzles" data-c="5000"><span>Сопла, PEI-стол, расходники</span><b>5 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="tools" data-c="4000"><span>Кусачки, надфили, штангенциркуль</span><b>4 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="filament" data-c="15000"><span>Филамент, 10 кг — PLA и PETG</span><b>15 000</b></label>
+      </div>
+
+      <div class="costgroup" data-kind="hard">
+        <h4>Электроника</h4>
+        <label class="citem"><input type="checkbox" data-k="iron" data-c="9000"><span>Паяльная станция с феном</span><b>9 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="fume" data-c="5000"><span>Вытяжка с угольным фильтром</span><b>5 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="meter" data-c="4000"><span>Мультиметр, лабораторный блок питания</span><b>4 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="comp" data-c="7000"><span>Компоненты, платы, провода — старт</span><b>7 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="inserts" data-c="2000"><span>Термоклейка, пресс-гайки, крепёж</span><b>2 000</b></label>
+      </div>
+
+      <div class="costgroup" data-kind="hard">
+        <h4>Отделка</h4>
+        <label class="citem"><input type="checkbox" data-k="dremel" data-c="4500"><span>Бормашина, насадки, шлифматериалы</span><b>4 500</b></label>
+        <label class="citem"><input type="checkbox" data-k="paint" data-c="4500"><span>Грунт, краски, кисти, скотч</span><b>4 500</b></label>
+        <label class="citem"><input type="checkbox" data-k="airbrush" data-c="14000"><span>Аэрограф с компрессором</span><b>14 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="ultra" data-c="2500"><span>Ультразвуковая ванна для плат</span><b>2 500</b></label>
+      </div>
+
+      <div class="costgroup" data-kind="soft">
+        <h4>Право и администрирование</h4>
+        <label class="citem"><input type="checkbox" data-k="npd" data-c="0" checked><span>Регистрация НПД</span><b>0</b></label>
+        <label class="citem"><input type="checkbox" data-k="refuse" data-c="4500" checked><span>Отказное письмо «не игрушка, 14+»</span><b>4 500</b></label>
+        <label class="citem"><input type="checkbox" data-k="domain" data-c="2000"><span>Домен, почта, хостинг на год</span><b>2 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="lawyer" data-c="8000"><span>Консультация юриста, 2 часа</span><b>8 000</b></label>
+      </div>
+
+      <div class="costgroup" data-kind="hard">
+        <h4>Витрина и упаковка</h4>
+        <label class="citem"><input type="checkbox" data-k="light" data-c="6000" checked><span>Свет для съёмки, фон, штатив</span><b>6 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="boxes" data-c="9000" checked><span>Коробки, вкладыши, карточки — 50 шт</span><b>9 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="cards" data-c="3000"><span>Визитки и наклейки</span><b>3 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="market" data-c="5000"><span>Стол-маркет: скатерть, стенд, ценники</span><b>5 000</b></label>
+      </div>
+
+      <div class="costgroup" data-kind="soft">
+        <h4>Продвижение и резерв</h4>
+        <label class="citem"><input type="checkbox" data-k="ads" data-c="15000" checked><span>Реклама в первые 3 месяца</span><b>15 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="fair" data-c="6000"><span>Участие в дизайн-маркете</span><b>6 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="reserve" data-c="45000" checked><span>Резерв на 3 месяца без прибыли</span><b>45 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="buffer" data-c="10000"><span>Буфер на брак и переделки</span><b>10 000</b></label>
+      </div>
+
+      <div class="costgroup" data-kind="hard">
+        <h4>На вырост — не обязательно</h4>
+        <label class="citem"><input type="checkbox" data-k="mini" data-c="20000"><span>Второй принтер, A1 mini</span><b>20 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="scanner" data-c="60000"><span>3D-сканер начального уровня</span><b>60 000</b></label>
+        <label class="citem"><input type="checkbox" data-k="spares" data-c="6000"><span>Запас сопел, ремней, термисторов</span><b>6 000</b></label>
+      </div>
+    </div>
+
+    <div class="sumbar">
+      <div><div class="k">Итого на старт</div><div class="v"><span id="total">0</span> ₽</div></div>
+      <div class="side">Из них «железо и руки» — <span id="hard">0</span> ₽<br>«мягкое» (право, реклама, резерв) — <span id="soft">0</span> ₽</div>
+    </div>
+
+    <div class="note" style="margin-top:14px">
+      <span class="lbl">Как читать сумму</span>
+      Это не «сколько нужно, чтобы начать», а <b>сколько нужно, чтобы начать и не бросить через два месяца</b>.
+      Половина стартов — это не оборудование, а способность три месяца работать без выручки.
+      Если денег только на принтер — начните с одного платного заказа и купите принтер после предоплаты.
+    </div>
+  </div>
+</section>
+
+<section id="risks">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">14 — риски</div>
+      <h2>Что может пойти не так</h2>
+      <p class="lead">Двадцать пунктов, отсортированных по тяжести последствий. Не для того, чтобы напугать,
+      а чтобы половину из них закрыть до того, как они случатся.</p>
+    </div>
+
+    <div class="filters" id="rf">
+      <button class="on" data-r="all">Все</button>
+      <button data-r="market">Рынок</button>
+      <button data-r="tech">Техника</button>
+      <button data-r="law">Право</button>
+      <button data-r="money">Деньги</button>
+      <button data-r="team">Партнёрство</button>
+    </div>
+
+    <div class="risks">
+      <div class="risk" data-cat="market" data-imp="high"><div class="risk-h"><span class="risk-t">Демпинг частников</span><span class="risk-cat">рынок</span></div><p>Рядом сотни людей с принтером, которые считают цену пластика и печатают за 5 ₽/г.</p><span class="fix"><b>Что делать:</b> не продавать граммы. Продавать изделие, срок и внешний вид. В прайсе не должно быть «₽/г».</span></div>
+
+      <div class="risk" data-cat="market" data-imp="high"><div class="risk-h"><span class="risk-t">Нет спроса именно на это</span><span class="risk-cat">рынок</span></div><p>Красивая идея может не совпасть с тем, за что платят. Особенно в первый месяц.</p><span class="fix"><b>Что делать:</b> три предоплаты до закупки. Не «соберу и посмотрю», а «соберу, когда заплатят».</span></div>
+
+      <div class="risk" data-cat="market" data-imp="mid"><div class="risk-h"><span class="risk-t">Сезонность</span><span class="risk-cat">рынок</span></div><p>Декабрь, февраль–март и май дают половину годовой выручки. Июль — почти ноль.</p><span class="fix"><b>Что делать:</b> в низкий сезон уходить в B2B и в подготовку партий к пику.</span></div>
+
+      <div class="risk" data-cat="market" data-imp="mid"><div class="risk-h"><span class="risk-t">Ваш хит скопируют</span><span class="risk-cat">рынок</span></div><p>Удачную модель сфотографируют и напечатают за 300 ₽ те, кому нечего терять.</p><span class="fix"><b>Что делать:</b> продавать не форму, а сборку, свет, упаковку и срок. Плюс свой бренд, который узнают на фото.</span></div>
+
+      <div class="risk" data-cat="market" data-imp="mid"><div class="risk-h"><span class="risk-t">Маркетплейс съедает маржу</span><span class="risk-cat">рынок</span></div><p>Комиссия 15–25%, реклама 10–20%, возвраты и логистика. Итог — минус 40% от цены.</p><span class="fix"><b>Что делать:</b> идти туда с товаром, у которого наценка не меньше 400%.</span></div>
+
+      <div class="risk" data-cat="tech" data-imp="high"><div class="risk-h"><span class="risk-t">Возвраты из-за качества</span><span class="risk-cat">техника</span></div><p>Одна отвалившаяся пайка убивает репутацию быстрее, чем десять хороших отзывов её создают.</p><span class="fix"><b>Что делать:</b> 10-минутный прогон каждой платы, тест отсека батарейки 20 раз, фото перед отправкой.</span></div>
+
+      <div class="risk" data-cat="tech" data-imp="mid"><div class="risk-h"><span class="risk-t">Брак печати</span><span class="risk-cat">техника</span></div><p>Отслоение, сопли, сдвиг слоя. 5–15% брака — норма, а не катастрофа.</p><span class="fix"><b>Что делать:</b> заложить 10% в цену, печатать партиями, менять сопло по регламенту, а не когда сломается.</span></div>
+
+      <div class="risk" data-cat="tech" data-imp="mid"><div class="risk-h"><span class="risk-t">Пластик не держит тепло</span><span class="risk-cat">техника</span></div><p>PLA размягчается при 55–60 °C. Летом в машине изделие «поплывёт».</p><span class="fix"><b>Что делать:</b> PETG для всего, что греется или живёт вне дома. Честно писать это в карточке.</span></div>
+
+      <div class="risk" data-cat="tech" data-imp="mid"><div class="risk-h"><span class="risk-t">Пожар и электрика</span><span class="risk-cat">техника</span></div><p>Принтер и паяльник в квартире — это реальный риск, а не абстрактный.</p><span class="fix"><b>Что делать:</b> датчик дыма, не оставлять без присмотра, заземлённая розетка, огнетушитель в комнате.</span></div>
+
+      <div class="risk" data-cat="tech" data-imp="low"><div class="risk-h"><span class="risk-t">Станок встал</span><span class="risk-cat">техника</span></div><p>Сопло, термистор, ремень — всё ломается в самый неподходящий момент.</p><span class="fix"><b>Что делать:</b> держать запас сопел и термисторов, знать сервис в городе, иметь второй дешёвый принтер к сезону.</span></div>
+
+      <div class="risk" data-cat="law" data-imp="high"><div class="risk-h"><span class="risk-t">Претензия правообладателя</span><span class="risk-cat">право</span></div><p>Фигурка по мотивам — это нарушение. Компенсация от 10 тыс до 5 млн ₽ за факт.</p><span class="fix"><b>Что делать:</b> только свои модели и лицензии с правом продажи. Никакого фан-арта в коммерции.</span></div>
+
+      <div class="risk" data-cat="law" data-imp="high"><div class="risk-h"><span class="risk-t">Признали игрушкой</span><span class="risk-cat">право</span></div><p>Нет сертификата ТР ТС 008 и маркировки «Честный знак» — штраф и изъятие партии.</p><span class="fix"><b>Что делать:</b> позиционирование 14+, «не является игрушкой», отказное письмо, не продавать детям.</span></div>
+
+      <div class="risk" data-cat="law" data-imp="mid"><div class="risk-h"><span class="risk-t">Литиевые батарейки в посылке</span><span class="risk-cat">право</span></div><p>Отправка отдельных элементов запрещена; посылку могут задержать или вернуть.</p><span class="fix"><b>Что делать:</b> батарейка только внутри устройства, запасную не кладём, в описании — «элемент встроен».</span></div>
+
+      <div class="risk" data-cat="law" data-imp="mid"><div class="risk-h"><span class="risk-t">Персональные данные</span><span class="risk-cat">право</span></div><p>Скан лица без согласия — нарушение 152-ФЗ. Публикация фото клиента — тоже.</p><span class="fix"><b>Что делать:</b> согласие на обработку, хранение локально, удаление через 30 дней, публикация только с разрешения.</span></div>
+
+      <div class="risk" data-cat="money" data-imp="high"><div class="risk-h"><span class="risk-t">Закончились деньги до первых продаж</span><span class="risk-cat">деньги</span></div><p>Самый частый сценарий: оборудование куплено, заказов нет, мотивация кончилась.</p><span class="fix"><b>Что делать:</b> резерв на 3 месяца, покупка станка после первой предоплаты, не брать кредит на оборудование.</span></div>
+
+      <div class="risk" data-cat="money" data-imp="mid"><div class="risk-h"><span class="risk-t">Цена не покрывает время</span><span class="risk-cat">деньги</span></div><p>Считали по материалу, а не по часам. Через месяц работы выясняется, что прибыль — ноль.</p><span class="fix"><b>Что делать:</b> считать по формуле из раздела «Деньги», а не «на глаз». Минимум 500 ₽/ч.</span></div>
+
+      <div class="risk" data-cat="money" data-imp="mid"><div class="risk-h"><span class="risk-t">Кассовый разрыв</span><span class="risk-cat">деньги</span></div><p>Клиент платит через неделю, а материалы и доставку надо оплатить сегодня.</p><span class="fix"><b>Что делать:</b> предоплата 50%, никаких «оплачу после получения» для новых клиентов.</span></div>
+
+      <div class="risk" data-cat="team" data-imp="high"><div class="risk-h"><span class="risk-t">Партнёрство без договора</span><span class="risk-cat">партнёрство</span></div><p>Кто владеет принтером, кто что вложил, что при выходе — через полгода это ссора.</p><span class="fix"><b>Что делать:</b> письменно зафиксировать вклад, доли, ИС и порядок выхода. До первого рубля.</span></div>
+
+      <div class="risk" data-cat="team" data-imp="mid"><div class="risk-h"><span class="risk-t">Разная загрузка</span><span class="risk-cat">партнёрство</span></div><p>Один печатает по вечерам, второй пропадает на работе. Делить 50/50 становится обидно.</p><span class="fix"><b>Что делать:</b> считать часы и вклад, пересматривать доли раз в квартал по факту, а не по обещаниям.</span></div>
+
+      <div class="risk" data-cat="team" data-imp="mid"><div class="risk-h"><span class="risk-t">Выгорание</span><span class="risk-cat">партнёрство</span></div><p>Мастерская по вечерам после работы — это второй рабочий день. Хватает на 2–4 месяца.</p><span class="fix"><b>Что делать:</b> один выходной без принтера, понятный стоп-лосс по времени, честный разговор раз в месяц.</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="team">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">15 — партнёрство</div>
+      <h2>Как не поссориться на третьем месяце</h2>
+      <p class="lead">Две трети мастерских умирают не из-за рынка, а из-за того, что двое по-разному
+      понимали, что они строят. Это решается за один вечер на бумаге.</p>
+    </div>
+
+    <div class="g2">
+      <div class="card">
+        <div class="card-h">Зафиксировать письменно</div>
+        <ul class="clean" style="margin-bottom:0">
+          <li><b>Вклад.</b> Кто сколько денег, кто какое оборудование, кто сколько часов в неделю. В рублях и часах.</li>
+          <li><b>Доли.</b> 50/50 — нормально, но если один вложил 200 тысяч, а второй 20, это надо признать и компенсировать.</li>
+          <li><b>Кому принадлежит принтер.</b> Личное имущество или общее? Что при выходе — выкуп, продажа, остаётся?</li>
+          <li><b>Интеллектуальная собственность.</b> Модели, прошивки, бренд — общие или у того, кто создал? Лучше: общие, с правом использования после выхода.</li>
+          <li><b>Кто принимает решения.</b> Цены, закупки, приём заказов. Один голос или консенсус? Тупик решается как?</li>
+          <li><b>Выход.</b> За сколько дней предупреждать, как делить клиентов, можно ли уйти к конкуренту.</li>
+        </ul>
+      </div>
+      <div>
+        <div class="note" style="margin-top:0">
+          <span class="lbl">Три варианта формы</span>
+          <b>1. На доверии.</b> Ничего не подписано. Дёшево, быстро, и именно так заканчиваются хорошие дружбы.<br><br>
+          <b>2. Договор простого товарищества</b> (гл. 55 ГК РФ). Простая письменная форма, без регистрации, можно прописать вклады и распределение. Подходит, пока нет юрлица.<br><br>
+          <b>3. ООО 50/50.</b> Дороже в обслуживании, но доли, выход и наследование прописаны по умолчанию. Нужно, когда появляются настоящие деньги.
+        </div>
+        <div class="note g">
+          <span class="lbl">Правило первого рубля</span>
+          Договоритесь о деньгах <b>до</b> первой продажи. После первой тысячи рублей разговор
+          становится в три раза сложнее, после первой сотни тысяч — почти невозможным.
+        </div>
+      </div>
+    </div>
+
+    <div class="g3" style="margin-top:16px">
+      <div class="card"><div class="card-h">Разделение по факту</div><p class="small">А: продажи, переписка, электроника, обслуживание станка, закупки. Б: модели, сайт, контент, фото, учёт. Оба: сборка, отделка, упаковка.</p></div>
+      <div class="card"><div class="card-h">Что не делить</div><p class="small">Личные инструменты и личный ноутбук. Всё, что куплено «в общее», сразу в таблицу с датой и суммой.</p></div>
+      <div class="card"><div class="card-h">Ритм</div><p class="small">Раз в неделю — 20 минут: что сделали, что продали, что застряло. Раз в месяц — 1 час: деньги, доли, планы. Без этого всё держится на памяти.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="plan">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">16 — план на 90 дней</div>
+      <h2>Что делать по неделям</h2>
+      <p class="lead">Три месяца, три контрольные точки. Если точка не пройдена — не «продолжаем стараться»,
+      а меняем модель. Это и есть главный смысл плана.</p>
+    </div>
+
+    <div class="g2" style="gap:24px">
+      <div class="tl">
+        <div class="tl-item"><div class="tl-w">Недели 1–2</div><h4>Без покупок</h4><p>Выбрать три изделия из списка. Найти, у кого в Петербурге можно напечатать разово (или попросить знакомого). Сделать три физических образца. Снять на телефон при дневном свете.</p></div>
+        <div class="tl-item"><div class="tl-w">Недели 3–4</div><h4>Проверка спроса</h4><p>Показать 30 людям. Разместить на Авито и в двух VK-сообществах. Цель — 10 диалогов и 3 «сколько стоит».</p></div>
+        <div class="tl-item gate"><div class="tl-w">Гейт №1 · день 30</div><h4>Есть ли интерес<span class="gate-lbl">решение</span></h4><p><b>Прошли:</b> минимум 3 человека спросили цену и 1 готов заплатить вперёд → покупаем принтер.<br><b>Не прошли:</b> меняем изделие, а не текст объявления. Ещё две недели без закупки.</p></div>
+        <div class="tl-item"><div class="tl-w">Недели 5–6</div><h4>Покупка и первый заказ</h4><p>Принтер, сушилка, инструмент, компоненты. Первый платный заказ — даже за 700 ₽. Пройти весь путь до отзыва.</p></div>
+        <div class="tl-item"><div class="tl-w">Недели 7–8</div><h4>B2B-разведка</h4><p>20 писем и 5 визитов: мастерские, ремонт техники, лаборатории, мелкие производства. Оффер — «деталь по образцу за 3 дня».</p></div>
+        <div class="tl-item gate"><div class="tl-w">Гейт №2 · день 60</div><h4>Появился ручеёк<span class="gate-lbl">решение</span></h4><p><b>Прошли:</b> 5 оплаченных заказов и хотя бы один B2B-диалог → оформляем ИП/ООО, идём в маркет.<br><b>Не прошли:</b> снижаем цену входа (брелок за 690), усиливаем контент, пробуем другой сегмент.</p></div>
+        <div class="tl-item"><div class="tl-w">Недели 9–10</div><h4>Упаковка бизнеса</h4><p>Витрина, прайс, оферта, отказное письмо, шаблоны ответов. Фотосессия всех изделий. Первая партия на маркет или в витрину.</p></div>
+        <div class="tl-item"><div class="tl-w">Недели 11–12</div><h4>Масштаб</h4><p>Первая партия 20–30 штук одного товара. Проверка: покупают ли без вашего участия. Подсчёт реальной себестоимости и часа.</p></div>
+        <div class="tl-item gate"><div class="tl-w">Гейт №3 · день 90</div><h4>Стоит ли продолжать<span class="gate-lbl">решение</span></h4><p><b>Прошли:</b> 30+ тыс ₽ прибыли за месяц и повторные клиенты → путь C, партия, маркетплейс.<br><b>Не прошли:</b> оставить как подработку на B2B, не вкладывать дальше.</p></div>
+      </div>
+
+      <div>
+        <div class="card" style="margin-bottom:12px">
+          <div class="card-h">Метрики, которые считаем</div>
+          <ul class="clean" style="margin-bottom:0">
+            <li><b>Диалоги → заказы.</b> Норма: 10–20%. Ниже 5% — проблема в оффере или цене.</li>
+            <li><b>Средний чек.</b> Цель первого квартала — 2 500 ₽. Ниже 1 200 — вы продаёте пластик.</li>
+            <li><b>Часы на заказ.</b> Если больше 4 — либо дорого продаёте, либо плохо автоматизировали.</li>
+            <li><b>Возвраты и брак.</b> Цель — ниже 5%. Выше 10% — стоп и разбор техпроцесса.</li>
+            <li><b>Повторные клиенты.</b> Первый признак, что продукт настоящий.</li>
+          </ul>
+        </div>
+        <div class="note o" style="margin-top:0">
+          <span class="lbl">Правило 90 дней</span>
+          Не вкладывайте больше <b>той суммы, которую готовы потерять целиком</b>. Мастерская — это
+          не инвестиция с гарантией, это эксперимент. Если через три месяца нет ни прибыли, ни роста
+          диалогов — это ответ, а не неудача.
+        </div>
+        <div class="note">
+          <span class="lbl">Что считать успехом на 90-й день</span>
+          Не выручку. А: <b>10 оплаченных заказов, 3 отзыва, 1 повторный клиент и понимание,
+          какие два изделия продаются лучше остальных</b>. Этого достаточно, чтобы решать про второй год.
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="anti">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">17 — чего не делать</div>
+      <h2>Девять способов убить мастерскую</h2>
+      <p class="lead">Все пункты наблюдаемы, все встречаются постоянно. Если узнали себя — это не приговор,
+      это список того, что нужно прекратить на этой неделе.</p>
+    </div>
+    <div class="g3">
+      <div class="card"><div class="card-h">01</div><h4>Купить принтер первым делом</h4><p class="small">Пока нет ни одного платного заказа, принтер — это хобби за 50 тысяч, а не бизнес.</p></div>
+      <div class="card"><div class="card-h">02</div><h4>Продавать «печать на заказ»</h4><p class="small">Это рынок, где вы конкурируете с сотней людей по цене грамма. Вы проиграете по определению.</p></div>
+      <div class="card"><div class="card-h">03</div><h4>Считать себестоимость по пластику</h4><p class="small">Пластик — 5% цены. Остальное — ваши часы, упаковка, брак, доставка и реклама.</p></div>
+      <div class="card"><div class="card-h">04</div><h4>Делать фигурки по франшизам</h4><p class="small">Быстрый старт, быстрый бан и иск. Одна претензия перекрывает прибыль за полгода.</p></div>
+      <div class="card"><div class="card-h">05</div><h4>Идти на маркетплейс в первый месяц</h4><p class="small">Комиссия, реклама, возвраты и сертификаты съедят то, чего у вас ещё нет.</p></div>
+      <div class="card"><div class="card-h">06</div><h4>Брать «на посмотреть» без предоплаты</h4><p class="small">Половина таких заказов не выкупается. Время уже потрачено, пластик израсходован.</p></div>
+      <div class="card"><div class="card-h">07</div><h4>Обещать «завтра»</h4><p class="small">Печать идёт 8 часов, сушка 4, покраска сутки. Срок — это ваша репутация, считайте его честно.</p></div>
+      <div class="card"><div class="card-h">08</div><h4>Делать всё самому</h4><p class="small">Сайт, фото, упаковка, бухгалтерия, реклама. Что-то из этого вы делаете плохо и тратите на это лучшие часы.</p></div>
+      <div class="card"><div class="card-h">09</div><h4>Молчать, когда не продаётся</h4><p class="small">Три месяца без продаж и без разговора о том, что не так, — это не упорство, это избегание.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="src" style="padding-bottom:44px">
+  <div class="wrap">
+    <div class="shead">
+      <div class="snum">18 — источники и допущения</div>
+      <h2>Откуда цифры</h2>
+      <p class="lead">Всё, что можно проверить, — проверено. Всё, что оценка, — помечено. Цены на оборудование
+      и материалы — на октябрь 2026 года, они меняются каждые несколько месяцев.</p>
+    </div>
+    <div class="g2">
+      <div class="src">
+        <p><b>Рынок.</b> Объём рынка аддитивных технологий РФ — 22,3 млрд ₽ за 2025 год, услуги — 5 млрд ₽,
+        прогноз 58 млрд к 2030 (данные Ассоциации развития аддитивных технологий, публикация марта 2026).</p>
+        <p><b>Цены услуг в СПб.</b> Публичные прайсы студий: 5–15 ₽/г за PLA, 10–40 ₽/г у бюро, минимальный заказ
+        500–15 000 ₽; сканирование от 2 000–3 000 ₽ за объект.</p>
+        <p><b>Оборудование.</b> Розничные цены российских магазинов на октябрь 2026: A1 mini 19 999, A1 27 999–29 990,
+        A1 Combo 44 999–46 990, P1S 49 990, P1S Combo 66 990 ₽.</p>
+        <p><b>Сканеры.</b> Revopoint MIRACO — 134–160 тыс ₽, Einstar — около 101 тыс ₽.</p>
+      </div>
+      <div class="src">
+        <p><b>Право.</b> ТР ТС 008/2011 — сертификация игрушек, исключения для сувениров и изделий по индивидуальному
+        заказу; обязательная маркировка игрушек с 01.09.2026 (ПП № 819 от 31.05.2025); ст. 1259, 1484, 1515 ГК РФ;
+        152-ФЗ; ЗоЗПП ст. 26.1.</p>
+        <p><b>Налоги.</b> НПД — 422-ФЗ, 4/6%, лимит 2,4 млн ₽. ИП на УСН 6% — взносы ~57 400 ₽ за 2026 год + 1% свыше 300 тыс ₽.</p>
+        <p><b>Батарейки.</b> Правила Почты России: литиевые элементы — только встроенные в устройство, не более 4 элементов;
+        CR2032 содержит около 0,1 г лития.</p>
+        <p style="margin-top:14px"><b>Допущения, которые нужно проверить самим:</b> реальная конверсия из диалога в заказ,
+        готовность платить 4–5 тыс ₽ за ночник в Петербурге, стоимость сертификации у конкретного органа,
+        доступность B2B-клиентов. Всё это проверяется только опытом — и лучше до покупки станка.</p>
+      </div>
+    </div>
+    <div class="note" style="margin-top:16px">
+      <span class="lbl">Честно о точности</span>
+      Это не бизнес-план для банка, а рабочий документ для двоих. Числа — ориентиры на октябрь 2026,
+      а не обещания. Единственный способ узнать настоящую экономику — продать первые десять штук
+      и посчитать, сколько часов ушло.
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap foot">
+    <div><b>Мастерская /01</b><br>Внутренний разбор бизнеса 3D-печати и электроники в Петербурге.<br>Версия 0.9 · 23 октября 2026</div>
+    <div><b>Кому</b><br>Двум людям, которые собираются печатать, паять и продавать. Не для клиентов.</div>
+    <div><b>Что дальше</b><br>Три предоплаты до покупки станка.<br>Если это не получается — не покупать станок.</div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  var fmt=function(n){return Math.round(n).toLocaleString('ru-RU').replace(/\u00A0/g,' ')};
+
+  // ---------- progress + active nav ----------
+  var prog=document.getElementById('prog');
+  var links=[].slice.call(document.querySelectorAll('.nav-links a'));
+  var secs=links.map(function(a){return document.querySelector(a.getAttribute('href'))}).filter(Boolean);
+  function onScroll(){
+    var h=document.documentElement;
+    var max=h.scrollHeight-h.clientHeight;
+    if(prog)prog.style.width=(max>0?h.scrollTop/max*100:0)+'%';
+    var y=h.scrollTop+90, cur=null;
+    secs.forEach(function(el){ if(el.offsetTop<=y) cur=el.id; });
+    links.forEach(function(a){a.classList.toggle('on',a.getAttribute('href')==='#'+cur)});
+  }
+  window.addEventListener('scroll',onScroll,{passive:true}); onScroll();
+
+  // ---------- paths ----------
+  var paths=[].slice.call(document.querySelectorAll('.path'));
+  var details=[].slice.call(document.querySelectorAll('.path-detail'));
+  paths.forEach(function(p){
+    p.addEventListener('click',function(){
+      paths.forEach(function(x){x.classList.remove('on')});
+      p.classList.add('on');
+      var i=p.getAttribute('data-p');
+      details.forEach(function(d){d.classList.toggle('on',d.getAttribute('data-d')===i)});
+    });
+  });
+
+  // ---------- product filter ----------
+  var pf=document.getElementById('pf');
+  if(pf){
+    var pb=[].slice.call(pf.querySelectorAll('button'));
+    pb.forEach(function(b){
+      b.addEventListener('click',function(){
+        var f=b.getAttribute('data-f');
+        pb.forEach(function(x){x.classList.toggle('on',x===b)});
+        document.querySelectorAll('.prods .prod').forEach(function(p){
+          p.style.display=(f==='all'||p.getAttribute('data-lvl')===f)?'':'none';
+        });
+      });
+    });
+  }
+
+  // ---------- risk filter ----------
+  var rf=document.getElementById('rf');
+  if(rf){
+    var rb=[].slice.call(rf.querySelectorAll('button'));
+    rb.forEach(function(b){
+      b.addEventListener('click',function(){
+        var c=b.getAttribute('data-r');
+        rb.forEach(function(x){x.classList.toggle('on',x===b)});
+        document.querySelectorAll('.risks .risk').forEach(function(r){
+          r.style.display=(c==='all'||r.getAttribute('data-cat')===c)?'':'none';
+        });
+      });
+    });
+  }
+
+  // ---------- unit calculator ----------
+  var RATE=500;
+  var ids=['price','mat','hrs','qty','fix'];
+  function setText(id,txt){var el=document.getElementById(id); if(el)el.innerHTML=txt;}
+  function calcUnit(){
+    var o={};
+    ids.forEach(function(k){var el=document.getElementById('r-'+k); if(el)o[k]=+el.value;});
+    if(!o.price)return;
+    var labor=o.hrs*RATE;
+    var unit=o.price-o.mat-labor;
+    var month=unit*o.qty-o.fix;
+    var hours=o.hrs*o.qty;
+    var perHour=hours>0?month/hours:0;
+    var be=unit>0?Math.ceil(o.fix/unit):0;
+
+    setText('o-profit',fmt(month)+' <small>₽</small>');
+    setText('o-hour',fmt(perHour)+' <small>₽/ч</small>');
+    setText('o-unit',fmt(unit)+' <small>₽</small>');
+    setText('o-be',(unit>0?be:'—')+' <small>шт</small>');
+
+    document.getElementById('v-price').textContent=fmt(o.price)+' ₽';
+    document.getElementById('v-mat').textContent=fmt(o.mat)+' ₽';
+    document.getElementById('v-hrs').textContent=o.hrs+' ч';
+    document.getElementById('v-qty').textContent=o.qty+' шт';
+    document.getElementById('v-fix').textContent=fmt(o.fix)+' ₽';
+
+    var v=document.getElementById('o-verdict');
+    if(unit<=0){
+      v.innerHTML='<b>Минус на каждой штуке.</b> Цена не покрывает даже материал и время по 500 ₽/ч. Поднимайте цену минимум на '+fmt(Math.abs(unit))+' ₽ или упрощайте изделие.';
+    }else if(month<0){
+      v.innerHTML='<b>Убыток в месяц.</b> На покрытие постоянных расходов нужно '+be+' шт, у вас '+o.qty+'. Варианты: объём, цена выше на '+fmt(Math.max(0,o.fix/o.qty-unit))+' ₽ или меньше постоянных расходов.';
+    }else if(perHour<500){
+      v.innerHTML='<b>Работает, но час дешёвый.</b> '+fmt(perHour)+' ₽/ч — меньше базовой ставки 500 ₽/ч. Поднимайте цену или сокращайте ручные операции.';
+    }else{
+      v.innerHTML='<b>Экономика сходится.</b> '+fmt(perHour)+' ₽/ч и '+fmt(month)+' ₽ в месяц. Можно думать про партию и второй станок.';
+    }
+  }
+  ids.forEach(function(k){
+    var el=document.getElementById('r-'+k);
+    if(el)el.addEventListener('input',calcUnit);
+  });
+  calcUnit();
+
+  // ---------- startup cost ----------
+  var boxes=[].slice.call(document.querySelectorAll('#costs input[type=checkbox]'));
+  var byKey={};
+  boxes.forEach(function(b){byKey[b.getAttribute('data-k')]=b;});
+  function sumCost(){
+    var hard=0,soft=0;
+    boxes.forEach(function(b){
+      b.parentNode.classList.toggle('on',b.checked);
+      if(!b.checked)return;
+      var c=+b.getAttribute('data-c');
+      if(b.closest('.costgroup').getAttribute('data-kind')==='soft') soft+=c; else hard+=c;
+    });
+    document.getElementById('total').textContent=fmt(hard+soft);
+    document.getElementById('hard').textContent=fmt(hard);
+    document.getElementById('soft').textContent=fmt(soft);
+  }
+  boxes.forEach(function(b){b.addEventListener('change',sumCost)});
+
+  var PRESETS={
+    test:['a1','filament','comp','boxes','npd'],
+    work:['a1c','dryer','nozzles','tools','filament','iron','fume','meter','comp','inserts','dremel','paint','npd','refuse','domain','light','boxes','ads','reserve'],
+    full:Object.keys(byKey)
+  };
+  var scen=document.getElementById('scen');
+  if(scen){
+    var sb=[].slice.call(scen.querySelectorAll('button'));
+    sb.forEach(function(btn){
+      btn.addEventListener('click',function(){
+        var keys=PRESETS[btn.getAttribute('data-s')]||[];
+        sb.forEach(function(x){x.classList.toggle('on',x===btn)});
+        boxes.forEach(function(b){b.checked=keys.indexOf(b.getAttribute('data-k'))>=0});
+        sumCost();
+      });
+    });
+    var pre=scen.querySelector('button.on');
+    if(pre){
+      var pk=PRESETS[pre.getAttribute('data-s')]||[];
+      boxes.forEach(function(b){b.checked=pk.indexOf(b.getAttribute('data-k'))>=0});
+    }
+  }
+  sumCost();
+})();
+</script>
+</body>
+</html>
