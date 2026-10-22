@@ -38,7 +38,10 @@ def glb_json(data: bytes) -> dict:
 class PaintRegionTest(unittest.TestCase):
     """Регион покраски: одна команда — целая полоса, а не треугольник."""
 
-    MUG = ("кружка = cup diameter=80 height=95 wall=4 bottom=6\n"
+    MUG = ("корпус = cylinder radius=34 height=95 r2=40 segments=128\n"
+           "полость = cylinder radius=30 height=89 r2=36 segments=128\n"
+           "полость = translate [полость] offset=[0,0,6]\n"
+           "кружка = difference [корпус, полость]\n"
            "paint кружка #2f6fb0 side=верх\n"
            "paint кружка #d94f3d height=18..34\n"
            "color кружка #efe9df")

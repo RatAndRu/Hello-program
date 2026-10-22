@@ -49,6 +49,11 @@ PARAM_ALIASES = {
     "текст": "text", "надпись_текст": "text", "буквы": "text",
     "точка_вращения": "pivot", "петля": "pivot", "обороты": "turns",
     "расстояние": "distance", "путь_качения": "distance",
+    # крепёж и сборка
+    "в": "into", "во_что": "into", "направление": "direction", "вектор": "direction",
+    "утопить": "sink", "шлиц": "drive", "головка": "head", "остриё": "tip",
+    "острие": "tip", "шейка": "neck", "полная": "full", "полный": "full",
+    "кисть": "radius", "радиус_кисти": "radius", "точка": "point", "центр_входа": "point",
 }
 
 STYLE_KEYS = {"color", "metal", "rough", "density", "material", "visible"}

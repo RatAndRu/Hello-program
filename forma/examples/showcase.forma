@@ -32,7 +32,15 @@ light preset=студия strength=1.05
 ваза = lathe points=[[0,0],[64,0],[70,8],[58,26],[74,120],[96,170],[104,206],
                      [98,214],[92,206],[84,174],[64,126],[50,30],[56,8],[0,8]]
 ваза = translate [ваза] offset=[-540, 420, 86]
-кубок = cup diameter=104 height=132 wall=3.2 bottom=7 handle=да
+кубок_корпус = cylinder radius=52 height=132 r2=56 segments=96
+кубок_полость = cylinder radius=48.8 height=125 r2=52.8 segments=96
+кубок_полость = translate [кубок_полость] offset=[0, 0, 7]
+кубок_тело = difference [кубок_корпус, кубок_полость]
+кубок_ручка = sweep path=[[50, 0, 34], [70, 0, 38], [80, 0, 66], [70, 0, 98], [54, 0, 102]] radius=5.4 smooth=12 round_caps=0.3
+кубок = union [кубок_тело, кубок_ручка]
+кубок_повтор = cylinder radius=48.8 height=125 r2=52.8 segments=96
+кубок_повтор = translate [кубок_повтор] offset=[0, 0, 7]
+кубок = difference [кубок, кубок_повтор]
 кубок = translate [кубок] offset=[-270, 420, 86]
 тарелка = plate diameter=210 depth=26 wall=3.5
 тарелка = translate [тарелка] offset=[0, 420, 86]
@@ -70,7 +78,7 @@ light preset=студия strength=1.05
 радиатор = translate [радиатор] offset=[270, -140, 86]
 камень = rock size=[170, 130, 78] seed=7 rough=0.42
 камень = translate [камень] offset=[0, -450, 86]
-ветка = branch length=190 diameter=20 taper=0.55 bend=[40, 20]
+ветка = sweep path=[[0, 0, 0], [8, 5, 60], [24, 12, 120], [44, 18, 180]] radius=10 smooth=14 scale_curve=[1.0, 0.85, 0.65, 0.45]
 ветка = rotate [ветка] angle=90 axis=y
 ветка = translate [ветка] offset=[0, -390, 128]
 лист = leaf length=74 width=40 thickness=2 curl=0.3
@@ -100,11 +108,14 @@ light preset=студия strength=1.05
 профиль = profile2020 length=280 size=20
 профиль = rotate [профиль] angle=90 axis=x
 профиль = translate [профиль] offset=[330, -240, 86]
-панель = panel size=[200, 140, 22] wall=3 round=8
+панель_внеш = box size=[200, 140, 22] round=8 center=да
+панель_полость = box size=[194, 134, 26] round=6 center=да
+панель_полость = translate [панель_полость] offset=[0, 0, 3]
+панель = difference [панель_внеш, панель_полость]
 панель = translate [панель] offset=[500, -330, 96]
 люверс = grommet diameter=14 height=9 wall=1.8 flange=3
 люверс = translate [люверс] offset=[380, -500, 96]
-червяк = worm length=110 diameter=30 pitch=8 depth=4
+червяк = worm_shaft length=110 diameter=30 pitch=8 depth=4
 червяк = rotate [червяк] angle=90 axis=x
 червяк = translate [червяк] offset=[250, -330, 109]
 колесо_червя = gear teeth=40 module=2 thickness=10 bore=6

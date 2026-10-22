@@ -1089,3 +1089,12 @@ button.mini:disabled { opacity: .38; cursor: default; }
   font-size: 10.5px; color: var(--text-faint); max-height: 62px; overflow: auto;
 }
 .tool-card .tool-params b { color: #93a4bc; font-family: var(--mono); font-weight: 500; }
+
+/* 0.19: кисть и ластик */
+.brush-size { display: flex; align-items: center; }
+.brush-size input[type="range"] { width: 74px; }
+.brush-count { font-family: var(--mono); color: #cfe0ff; font-size: 11px; }
+.paint-undo-row { opacity: .9; }
+#paint-erase.active, #paint-toggle.active {
+  background: #2b3d55; color: #d8e6ff; border-color: #4a6b96;
+}

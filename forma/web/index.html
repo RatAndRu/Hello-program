@@ -460,10 +460,19 @@
               </div>
             </div>
             <div class="material-row paint-row">
-              <span>Грани</span>
-              <button class="small" id="paint-toggle" title="Красить отдельные полигоны кликом по модели">кисть</button>
-              <input type="color" id="paint-color" value="#ff8a3d" title="Цвет кисти по граням" />
-              <button class="small" id="paint-clear" title="Убрать покраску граней">сброс</button>
+              <span>Кисть</span>
+              <button class="small" id="paint-toggle" title="Рисовать по поверхности предмета: зажмите кнопку и ведите мышью">кисть</button>
+              <button class="small" id="paint-erase" title="Ластик: стирает нарисованное кистью, материал не трогает">ластик</button>
+              <input type="color" id="paint-color" value="#ff8a3d" title="Цвет кисти" />
+              <label class="brush-size" title="Радиус кисти в пикселях экрана">
+                <input type="range" id="paint-size" min="2" max="40" step="1" value="10" />
+              </label>
+              <button class="small" id="paint-clear" title="Снять всю роспись кистью с предмета">сброс</button>
+            </div>
+            <div class="material-row paint-row paint-undo-row">
+              <span>Мазки</span>
+              <span class="brush-count" id="brush-count">0</span>
+              <button class="small" id="brush-undo" title="Убрать последний мазок">↶ убрать</button>
             </div>
             <div class="material-actions">
               <button class="small" id="mat-apply">Записать в сценарий</button>

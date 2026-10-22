@@ -124,6 +124,7 @@ class Build:
                         if getattr(solid, "tex", None) else None),
                 "uv": getattr(solid, "uv", "cylinder"),
                 "paint": list(getattr(solid, "paint", None) or []) or None,
+                "brush": list(getattr(solid, "brush", None) or []) or None,
             })
         return out
 
@@ -419,8 +420,6 @@ def build(script: str, previous_analysis: dict | None = None,
     t_parse = time.perf_counter()
     try:
         commands = parse_script(script)
-        if not commands:
-            raise DslError("Сценарий пуст. Начните с команды, например: шар = sphere radius=50")
     except FormaError as exc:
         result.error = exc.to_dict()
         result.scene = None
@@ -428,6 +427,15 @@ def build(script: str, previous_analysis: dict | None = None,
         result.timings = {"parse": time.perf_counter() - t_parse}
         return result
     parse_time = time.perf_counter() - t_parse
+    if not commands:
+        # Пустой сценарий — это не ошибка, а чистая сцена: всё, что было
+        # построено и применено, сбрасывается.
+        result.empty = True
+        result.analysis = empty_analysis()
+        result.log = []
+        result.timings = {"parse": round(parse_time * 1000, 1), "build": 0.0,
+                          "total": round((time.perf_counter() - started) * 1000, 1)}
+        return result
 
     build_start = time.perf_counter()
     limit = len(commands) if upto is None else max(0, min(int(upto), len(commands)))
@@ -446,7 +454,10 @@ def build(script: str, previous_analysis: dict | None = None,
                                  "objects": names, "ops": scene.op_count})
         visible = scene.visible_solids()
         if not visible:
-            if upto is not None:
+            if not scene.objects:
+                # все объекты удалены — честная пустая сцена
+                result.empty = True
+            elif upto is not None:
                 # кадр сборки до первого объекта — это нормально, покажем пустую сцену
                 result.empty = True
             elif scene.objects:
@@ -515,6 +526,24 @@ def build(script: str, previous_analysis: dict | None = None,
         "total": round((time.perf_counter() - started) * 1000, 1),
     }
     return result
+
+
+def empty_analysis() -> dict:
+    """Отчёт для пустой сцены: нули вместо ошибки."""
+    metrics = {"size": [0.0, 0.0, 0.0], "bbox": [0.0] * 6, "volume_cm3": 0.0,
+               "mass_g": 0.0, "area_cm2": 0.0, "tris": 0, "verts": 0,
+               "parts": 0, "genus": 0, "visible_count": 0, "total_count": 0,
+               "density": 0.0, "wall": None, "flat_bottom_pct": 0.0,
+               "overhang_pct": 0.0, "symmetry": {}}
+    return {
+        "metrics": metrics, "checks": [], "checks_passed": 0, "checks_total": 0,
+        "warnings": [], "advice": [],
+        "compare": None,
+        "text": ("СЦЕНА ПУСТА\n\nВ сценарии нет ни одной команды.\n"
+                 "Всё, что было построено, снято: объекты, цвета, текстуры, "
+                 "проверки и анимации.\n\nНачните с команды, например:\n"
+                 "  шар = sphere radius=50"),
+    }
 
 
 def commands_help() -> list[dict]:

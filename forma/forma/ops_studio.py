@@ -138,12 +138,13 @@ def light(a, name):
 
 @op("texture", aliases=("текстура", "материал-текстура", "tex"), category="Сцена и материал",
     summary="Накладывает процедурную текстуру: дерево, мрамор, металл, ткань, кожу, кирпич.",
-    example='кружка = cup diameter=80 height=95\ntexture кружка kind=дерево scale=1.2',
+    example='кружка = cylinder radius=40 height=95\ntexture кружка kind=дерево scale=1.2',
     params={"target": "имя объекта или all",
             "kind": "дерево, мрамор, металл, ткань, кожа, клетка, шум, кирпич, "
                     "керамика или своя",
             "scale": "масштаб рисунка", "seed": "число или строка для вариации",
-            "uv": "auto (бесшовно по граням), cylinder (вокруг), planar (плоско), box",
+            "uv": "auto (бесшовно по граням), atlas (атлас: каждая грань — свой остров), "
+                  "cylinder (вокруг), planar (плоско), box",
             "size": "размер картинки в пикселях (512)",
             "pattern": "для своей текстуры: полосы, клетка, волны, градиент, "
                        "шум, камень, точки, сетка",
@@ -164,8 +165,11 @@ def texture(a, name):
     uv = (a.text("uv") or "auto").strip().lower()
     if uv in ("авто", "грани", "triplanar"):
         uv = "auto"
-    if uv not in ("auto", "cylinder", "planar", "box"):
-        raise DslError("Параметр uv: auto (бесшовно), cylinder, planar или box.",
+    if uv in ("атлас", "атласная", "atlas", "развёртка"):
+        uv = "atlas"
+    if uv not in ("auto", "atlas", "cylinder", "planar", "box"):
+        raise DslError("Параметр uv: auto (бесшовно), atlas (атлас), cylinder, "
+                       "planar или box.",
                        line=a.cmd.line, command=a.cmd.text)
     size = int(a.num("size", 512) or 512)
     if kind in ("своя", "своё", "свое", "custom", "мой"):
@@ -296,7 +300,13 @@ def animate(a, name):
     steps = int(a.num("steps", 48) or 48)
     scene_name = (a.text("scene_name") or a.text("scene") or "").strip()
     if scene_name.lower() in ("все", "все сцены", "all", "*", "любая"):
-        scene_name = ""   # общий клип: виден в любой сцене
+        scene_name = ""   # общий клип: виден в любой анимации
+    if scene_name:
+        # любая названная анимация регистрируется сама: отдельно объявлять
+        # её командой «анимация …» не обязательно (но можно — так список
+        # анимаций остаётся упорядоченным и видным до первого клипа)
+        scene_name = scene_name.replace(" ", "_")
+        a.scene.add_named_animation(scene_name)
     spec = {"kind": kind, "seconds": seconds, "fps": fps,
             "loop": a.boolean("loop", True),
             "steps": max(2, min(steps, 600)),
@@ -438,6 +448,42 @@ def animate(a, name):
         extra = f", {spec['param']} {spec['from']:g}→{spec['to']:g}"
     a.scene.log("info", f"анимация: {label}, {seconds:g} с, дорожка {track}{extra}",
                 a.cmd.line)
+    return None
+
+
+@op("заготовка", aliases=("анимации", "сцена_анимации", "сюжет", "storyboard"),
+    category="Сцена и материал",
+    summary="Объявляет заготовку анимации — их у сцены может быть сколько угодно. "
+            "Клипы привязываются к ней через scene=имя: «открывание двери» и «выезд "
+            "ящика» становятся независимыми анимациями, а не одной кучей на общей "
+            "шкале. Заготовку без клипов тоже видно в списке.",
+    example='дверь = box size=[40,2,60] at=[0,-1,0]\n''ящик = box size=[40,2,60] at=[60,-1,0]\n''заготовка names=[открыть_дверь, выезд_ящика]\n'
+            'animate дверь turn angle=-100 axis=z pivot=[-486,-212,0] seconds=2 scene=открыть_дверь\n'
+            'animate ящик move dy=-250 seconds=2 scene=выезд_ящика',
+    params={"name": "имя анимации (без пробелов; можно в кавычках)",
+            "names": "несколько имён сразу [открыть_дверь, выезд_ящика]"},
+    positional="*")
+def animation(a, name):
+    names: list[str] = []
+    if a.has("names"):
+        value = a.value("names")
+        names = [str(v) for v in value] if isinstance(value, (list, tuple)) else [str(value)]
+    raw = (a.text("name") or "").strip()
+    if raw:
+        names.extend(part for part in raw.strip("[]").split(",") if part.strip())
+    names.extend(str(w) for w in a.extra)
+    clean = []
+    for item in names:
+        item = str(item).strip().strip('"\'').replace(" ", "_").strip(",;")
+        if not item or item in clean:
+            continue
+        a.scene.add_named_animation(item)
+        clean.append(item)
+    if not clean:
+        raise DslError("Укажите имя анимации: анимация открыть_дверь",
+                       hint="Клипы привязываются к ней через scene=открыть_дверь",
+                       line=a.cmd.line, command=a.cmd.text)
+    a.scene.log("info", "анимация сцены: " + ", ".join(clean), a.cmd.line)
     return None
 
 

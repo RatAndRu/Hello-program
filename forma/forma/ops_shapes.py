@@ -208,85 +208,82 @@ def star(a, name):
 
 
 # --------------------------------------------------------------------------- #
-#  Кружка
-# --------------------------------------------------------------------------- #
-@op("cup", aliases=("кружка", "чашка", "mug"), category="Примитивы",
-    summary="Кружка с полостью, дном и ручкой: стенка, сужение и размеры задаются.",
-    example="кружка = cup diameter=80 height=95 wall=4 handle=да",
-    params={"diameter": "наружный диаметр сверху, мм (80)",
-            "height": "высота, мм (90)", "wall": "толщина стенки, мм (4)",
-            "bottom": "толщина дна, мм (6)", "taper": "сужение к низу 0..0.3 (0.1)",
-            "handle": "сделать ручку (да)", "handle_radius": "радиус ручки, мм (26)",
-            "handle_wire": "толщина ручки, мм (5)", "segments": "сегментов по кругу",
-            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
-def cup(a, name):
-    diameter = float(a.num("diameter", 80.0, minv=1.0))
-    height = float(a.num("height", 90.0, minv=1.0))
-    wall = float(a.num("wall", 4.0, minv=0.2))
-    bottom = float(a.num("bottom", 6.0, minv=0.2))
-    taper = float(a.num("taper", 0.1, minv=0.0, maxv=0.45) or 0.0)
-    r0 = diameter / 2.0
-    rb = r0 * (1.0 - taper)
-    if wall >= rb - 1.0:
-        raise GeometryError(f"Стенка {wall:g} мм не оставляет полости при радиусе {rb:g} мм.",
-                            hint="wall должен быть меньше радиуса минус 1 мм.")
-    if bottom >= height - wall:
-        raise GeometryError(f"Дно {bottom:g} мм выше стенки при высоте {height:g} мм.")
-    segments = _segments(a.int("segments", None, minv=24, maxv=256), 96)
-    profile = [(0.0, 0.0), (rb, 0.0), (r0, height), (r0 - wall, height),
-               (rb - wall, bottom), (0.0, bottom)]
-    solid = _revolve(profile, segments, "кружка")
-    if a.boolean("handle", True):
-        hrad = float(a.num("handle_radius", max(12.0, r0 * 0.65), minv=3.0))
-        wire = float(a.num("handle_wire", max(2.0, r0 * 0.12), minv=1.0))
-        if wire >= hrad * 0.8:
-            raise GeometryError("Ручка слишком толстая для своего радиуса.")
-        # Концы ручки входят в стенку на её середине, а дуга выходит наружу.
-        # Иначе у маленькой кружки ручка протыкала бы полость.
-        sin_end = math.sin(math.radians(82.0))
-        hspan = min(hrad * sin_end, height * 0.42)
-        cz = height * 0.5
-        z_low, z_high = cz - hspan, cz + hspan
-        r_low = rb + (r0 - rb) * (z_low / height)
-        r_high = rb + (r0 - rb) * (z_high / height)
-        x_attach = min(r_low, r_high) - wall * 0.5
-        cx = x_attach - hrad * math.cos(math.radians(82.0))
-        path = []
-        for i in range(41):
-            ang = math.radians(-82.0 + 164.0 * i / 40.0)
-            path.append((cx + hrad * math.cos(ang), 0.0, cz + hspan * math.sin(ang)))
-        handle = _tube(np.asarray(path), wire, segments=16)
-        solid = ensure_volume(solid + handle, "кружка")
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="cup")
-
-
-# --------------------------------------------------------------------------- #
 #  Тарелка
 # --------------------------------------------------------------------------- #
 @op("plate", aliases=("тарелка", "блюдо", "dish"), category="Примитивы",
-    summary="Тарелка с бортом и плоским дном — глубокая или мелкая, стенка задаётся.",
-    example="тарелка = plate diameter=220 depth=26 wall=4",
+    summary="Тарелка: плоское дно, плавная стенка и борт. Форма задаётся "
+            "глубиной, долей дна, шириной борта, радиусом перехода и толщиной "
+            "стенки — от блюдца до глубокой пиалы.",
+    example="тарелка = plate diameter=220 depth=26 wall=4 rim=6\n"
+            "блюдце = plate diameter=140 depth=12 wall=3 well=0.78 rim=4",
     params={"diameter": "диаметр, мм (220)", "depth": "высота борта, мм (26)",
             "wall": "толщина стенки и дна, мм (4)",
-            "well": "доля плоского дна 0.2..0.9 (0.62)", "segments": "сегментов по кругу",
+            "well": "доля плоского дна 0.2..0.9 (0.62)",
+            "rim": "ширина отогнутого борта, мм (4)",
+            "round": "радиус перехода от дна к стенке, мм (0.35·глубины)",
+            "foot": "диаметр кольцевой ножки снизу (0 — нет)",
+            "segments": "сегментов по кругу",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def plate(a, name):
     diameter = float(a.num("diameter", 220.0, minv=5.0))
     depth = float(a.num("depth", 26.0, minv=1.0))
     wall = float(a.num("wall", 4.0, minv=0.3))
     well = float(a.num("well", 0.62, minv=0.2, maxv=0.9) or 0.62)
+    rim_w = float(a.num("rim", max(0.8, wall * 1.2), minv=0.4))
+    round_r = float(a.num("round", depth * 0.35, minv=0.0) or 0.0)
+    foot = float(a.num("foot", 0.0, minv=0.0) or 0.0)
     r = diameter / 2.0
     if wall >= depth - 0.5 or wall >= r * 0.5:
         raise GeometryError(f"Стенка {wall:g} мм слишком толстая для тарелки {diameter:g}×{depth:g} мм.")
-    segments = _segments(a.int("segments", None, minv=32, maxv=256), 120)
+    segments = min(96, _segments(a.int("segments", None, minv=32, maxv=256), 96))
     rw = r * well
-    rim = max(0.6, wall * 0.35)
-    profile = [
-        (0.0, 0.0), (rw, 0.0), (r - rim, depth * 0.35), (r, depth * 0.75),
-        (r, depth), (r - wall * 1.4, depth), (r - wall * 1.4, depth * 0.72),
-        (r - wall * 2.2, depth * 0.36), (rw, wall), (0.0, wall),
-    ]
-    solid = _revolve(profile, segments, "тарелка")
+    if rw >= r - wall * 2.0 - 2.0:
+        raise GeometryError("Дно почти во всю тарелку: уменьшите well или увеличьте диаметр.")
+    rb = min(round_r, depth * 0.55, (r - rw) * 0.6)
+    rim_r = min(rim_w, depth * 0.4, (r - rw) * 0.3, wall * 1.6)
+    z_top = depth - rim_r
+    # внешний профиль: дно → скругление → стенка с развалом → закатанный борт
+    prof = [(0.0, 0.0), (rw, 0.0)]
+    n_arc, n_wall = 5, 7
+    for i in range(1, n_arc + 1):
+        ang = (math.pi / 2.0) * i / n_arc
+        prof.append((rw + rb * math.sin(ang), rb * (1.0 - math.cos(ang))))
+    x0, z0 = rw + rb, rb
+    wall_pts = []
+    for i in range(1, n_wall + 1):
+        u = i / n_wall
+        z = z0 + (z_top - z0) * u
+        f = (z - z0) / max(1e-6, z_top - z0)
+        # стенка почти вертикальная у дна и мягко разваливается к борту
+        x = x0 + (r - x0) * (0.35 * f + 0.65 * f * f)
+        wall_pts.append((x, z))
+    prof += wall_pts
+    n_rim = 4
+    for i in range(1, n_rim + 1):
+        ang = (math.pi / 2.0) * i / n_rim
+        prof.append((r - rim_r + rim_r * math.cos(ang), z_top + rim_r * math.sin(ang)))
+    prof += [(r - rim_r, depth), (0.0, depth)]
+    solid = _revolve(prof, segments, "тарелка")
+    # полость: та же стенка, отступленная внутрь ровно на толщину wall
+    cavity = [(0.0, wall), (rw, wall)]
+    rb_i = max(0.4, rb - wall)
+    for i in range(1, n_arc + 1):
+        ang = (math.pi / 2.0) * i / n_arc
+        cavity.append((rw + rb_i * math.sin(ang), wall + rb_i * (1.0 - math.cos(ang))))
+    for x, z in wall_pts:
+        cavity.append((max(0.6, x - wall), z))
+    cavity += [(max(0.6, r - wall), depth + 2.0), (0.0, depth + 2.0)]
+    solid = solid - _revolve(cavity, segments, "полость тарелки")
+    if foot > 0:
+        foot_r = min(rw * 0.9, r - wall - 1.0)
+        if foot_r <= 1.0:
+            raise GeometryError("Ножка не помещается под дном.")
+        ring = (mf.Manifold.cylinder(float(foot), float(foot_r), float(foot_r), int(segments))
+                - mf.Manifold.cylinder(float(foot + 1.0), float(foot_r - max(0.6, wall * 0.6)),
+                                       float(foot_r - max(0.6, wall * 0.6)), int(segments))
+                .translate((0.0, 0.0, -0.5)))
+        solid = solid + ring.translate((0.0, 0.0, -foot))
+        solid = solid.translate((0.0, 0.0, foot))
     return make_solid(a.scene, name, _placed(a, solid), a, kind="plate")
 
 
@@ -326,11 +323,19 @@ def spring(a, name):
 #  Шестерня
 # --------------------------------------------------------------------------- #
 @op("gear", aliases=("шестерня", "зубчатое_колесо"), category="Примитивы",
-    summary="Прямозубая шестерня: число зубьев, модуль, толщина, ступица и отверстие.",
-    example="шестерня = gear teeth=20 module=2 thickness=8 bore=8",
+    summary="Прямозубая шестерня: зубья, модуль, толщина, ступица и отверстие. "
+            "Ступица выступает над телом на hub_height — так её видно и по ней "
+            "шестерню сажают на вал; hub_round скругляет её кромку.",
+    example="шестерня = gear teeth=20 module=2 thickness=8 bore=8 hub=18 hub_height=5",
     params={"teeth": "число зубьев (20)", "module": "модуль, мм (2)",
-            "thickness": "толщина, мм (8)", "bore": "диаметр отверстия, мм (0 — без него)",
-            "hub": "диаметр ступицы, мм (0 — без ступицы)", "hub_height": "высота ступицы (толщина)",
+            "thickness": "толщина венца, мм (8)",
+            "bore": "диаметр отверстия, мм (0 — без него)",
+            "hub": "диаметр ступицы, мм (0 — без ступицы)",
+            "hub_height": "насколько ступица выступает над телом, мм (0.6·толщины)",
+            "hub_below": "выступ ступицы с обратной стороны, мм (0)",
+            "hub_round": "скругление кромки ступицы, мм (0.4)",
+            "web": "толщина диска между зубьями и ступицей (толщина)",
+            "spokes": "окон в диске между ступицей и венцом (0)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def gear(a, name):
     teeth = int(a.num("teeth", 20, minv=6, maxv=200))
@@ -338,7 +343,11 @@ def gear(a, name):
     thickness = float(a.num("thickness", 8.0, minv=0.2))
     bore = float(a.num("bore", 0.0, minv=0.0) or 0.0)
     hub = float(a.num("hub", 0.0, minv=0.0) or 0.0)
-    hub_h = float(a.num("hub_height", thickness, minv=0.2))
+    hub_h = float(a.num("hub_height", thickness * 0.6, minv=0.0) or 0.0)
+    hub_below = float(a.num("hub_below", 0.0, minv=0.0) or 0.0)
+    hub_round = float(a.num("hub_round", 0.4, minv=0.0) or 0.0)
+    web = float(a.num("web", thickness, minv=0.4))
+    spokes = int(a.num("spokes", 0, minv=0, maxv=12) or 0)
     pitch_r = module * teeth / 2.0
     add = module
     ded = module * 1.25
@@ -364,12 +373,55 @@ def gear(a, name):
         holes.append(hole)
     cross = _cross(pts, holes)
     solid = cross.extrude(thickness)
+    if web < thickness - 0.2:
+        # облегчение венца: снимаем кольцо с обеих сторон, оставляя обод
+        rim_w = max(module * 1.6, thickness * 0.35)
+        for z0, h in ((0.0, thickness - web), (web, thickness - web)):
+            if h <= 0.05:
+                continue
+            ring = mf.Manifold.cylinder(h + 0.4, r_root - 0.4, r_root - 0.4, 96)
+            ring = ring - mf.Manifold.cylinder(h + 1.0, max(1.0, r_root - rim_w), 
+                                              max(1.0, r_root - rim_w), 96).translate((0, 0, -0.5))
+            solid = solid - ring.translate((0, 0, z0 - 0.2))
+    if spokes > 0:
+        # окна в диске: сектора между ступицей и венцом
+        inner_r = max(1.0, (hub / 2.0 if hub > 0 else (bore / 2.0 if bore else 2.0)) + 2.0)
+        outer_r = max(inner_r + 1.0, r_root - max(module * 1.6, thickness * 0.35))
+        win = mf.Manifold.cylinder(thickness + 2.0, outer_r, outer_r, 96)
+        win = win - mf.Manifold.cylinder(thickness + 3.0, inner_r, inner_r, 96).translate(
+            (0, 0, -0.5))
+        for i in range(spokes):
+            a0 = 2.0 * math.pi * i / spokes
+            a1 = a0 + 2.0 * math.pi / spokes * 0.60
+            # вырезаем сектор: пересечение кольца-окна с клином
+            rr = outer_r * 1.6
+            pts_w = [(0.0, 0.0),
+                     (rr * math.cos(a0), rr * math.sin(a0)),
+                     (rr * math.cos(a1), rr * math.sin(a1))]
+            cutter = mf.Manifold.extrude(mf.CrossSection([_profile(pts_w)]),
+                                         thickness + 2.0).translate((0, 0, -1.0))
+            window = mf.Manifold.batch_boolean([win, cutter], mf.OpType.Intersect)
+            solid = solid - window
     if hub > 0:
         if hub / 2.0 <= (bore / 2.0 if bore else 0) + 0.5:
             raise GeometryError("Ступица должна быть толще отверстия.")
-        hub_m = mf.Manifold.cylinder(hub_h, hub / 2.0, hub / 2.0, 64)
+        if hub_h <= 0.05 and hub_below <= 0.05:
+            # без выступа ступица просто не видна — предупреждаем в журнале
+            a.scene.log("info", "gear: hub_height=0 — ступица спрятана в теле шестерни",
+                        a.cmd.line)
+        top = thickness + hub_h
+        bottom = -hub_below
+        height = top - bottom
+        hub_m = mf.Manifold.cylinder(height, hub / 2.0, hub / 2.0, 96).translate((0, 0, bottom))
+        if hub_round > 0:
+            hr = min(hub_round, hub * 0.25, height * 0.3)
+            hub_m = hub_m - mf.Manifold.cylinder(hr, hub / 2.0 - hr, hub / 2.0, 96).translate(
+                (0, 0, top - hr))
+            hub_m = hub_m - mf.Manifold.cylinder(hr, hub / 2.0, hub / 2.0 - hr, 96).translate(
+                (0, 0, bottom))
         if bore > 0:
-            hub_m = hub_m - mf.Manifold.cylinder(hub_h + 2, bore / 2.0, bore / 2.0, 48).translate((0, 0, -1))
+            hub_m = hub_m - mf.Manifold.cylinder(height + 2, bore / 2.0, bore / 2.0, 48).translate(
+                (0, 0, bottom - 1))
         solid = solid + hub_m
     solid = ensure_volume(solid, "шестерня")
     return make_solid(a.scene, name, _placed(a, solid), a, kind="gear")
@@ -466,21 +518,262 @@ def _rounded_rect(r0: float, r1: float, z0: float, z1: float, rad: float,
 @op("ring", aliases=("кольцо", "обручальное_кольцо", "band"), category="Примитивы",
     summary="Кольцо с плоским ободом и скруглёнными краями (обручальное, деталь опоры).",
     example="кольцо = ring diameter=20 width=6 thickness=2.2",
-    params={"diameter": "внутренний диаметр, мм (20)", "width": "ширина обода, мм (6)",
-            "thickness": "толщина стенки, мм (2.2)", "round": "скругление краёв, мм",
+    params={"diameter": "внутренний диаметр, мм (20)",
+            "outer": "наружный диаметр, мм — если задан, толщина считается сама",
+            "inner": "внутренний диаметр (синоним diameter)",
+            "width": "ширина обода (высота кольца), мм (6)",
+            "height": "синоним width",
+            "thickness": "толщина стенки по радиусу, мм (2.2)",
+            "round": "скругление краёв (наружного и внутреннего), мм",
             "segments": "сегментов по кругу", "at": "положение [x,y,z]",
             "center": "центрировать по высоте"})
 def ring(a, name):
     diameter = float(a.num("diameter", 20.0, minv=1.0))
-    width = float(a.num("width", 6.0, minv=0.4))
-    thickness = float(a.num("thickness", 2.2, minv=0.2))
+    inner_d = a.num("inner", None, minv=0.5)
+    outer_d = a.num("outer", None, minv=1.0)
+    if inner_d is not None:
+        diameter = float(inner_d)
+    width = float(a.num("width", a.num("height", 6.0, minv=0.4) or 6.0, minv=0.4))
+    thickness = a.num("thickness", None, minv=0.2)
+    if outer_d is not None:
+        if thickness is not None and abs(outer_d / 2.0 - diameter / 2.0 - thickness) > 1e-6:
+            raise GeometryError(
+                "Наружный диаметр не сходится с толщиной.",
+                hint=f"outer = diameter + 2·thickness = {diameter + 2 * thickness:g} мм. "
+                     "Уберите один из параметров.")
+        thickness = max(0.2, (float(outer_d) - diameter) / 2.0)
+    if thickness is None:
+        thickness = 2.2
+    thickness = float(thickness)
     r_in = diameter / 2.0
     r_out = r_in + thickness
     if thickness >= width:
-        raise GeometryError("Толщина кольца должна быть меньше его ширины.")
+        raise GeometryError(
+            "Толщина кольца должна быть меньше его ширины.",
+            hint="Геометрия кольца: отверстие diameter, наружу thickness, в высоту width.")
     rnd = float(a.num("round", min(thickness, width) * 0.3, minv=0.0) or 0.0)
     rnd = min(rnd, thickness * 0.45, width * 0.45)
     segments = _segments(a.int("segments", None, minv=32, maxv=256), 120)
     profile = _rounded_rect(r_in, r_out, -width / 2.0, width / 2.0, rnd, steps=5)
     solid = _revolve(profile, segments, "кольцо")
     return make_solid(a.scene, name, _placed(a, solid), a, kind="ring")
+
+
+# --------------------------------------------------------------------------- #
+#  Яйцо
+# --------------------------------------------------------------------------- #
+@op("egg", aliases=("яйцо", "яичко", "овоид"), category="Примитивы",
+    summary="Яйцо (овоид): тело вращения с плавной асимметрией — один конец "
+            "шире и тупее, другой уже и острее. proportion задаёт «яйцевидность»: "
+            "0 — сфера, 0.5 — куриное яйцо, 1 — острый овал.",
+    example="яйцо = egg height=60 diameter=42 proportion=0.5\n"
+            "капля = egg height=80 diameter=40 proportion=0.9",
+    params={"height": "высота, мм (60)", "diameter": "наибольший диаметр, мм (42)",
+            "proportion": "яйцевидность 0..1 (0.5)",
+            "sharp": "какой конец острый: верх или низ (верх)",
+            "segments": "сегментов по кругу (по размеру)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def egg(a, name):
+    height = float(a.num("height", 60.0, minv=1.0))
+    diameter = float(a.num("diameter", 42.0, minv=1.0))
+    prop = float(a.num("proportion", 0.5, minv=0.0, maxv=1.0) or 0.0)
+    sharp = (a.text("sharp") or "верх").strip().lower()
+    if sharp in ("bottom", "низ", "вниз", "снизу"):
+        sharp = "низ"
+    r_max = diameter / 2.0
+    if r_max >= height / 2.0 + r_max * 0.2:
+        pass
+    segments = _segments(a.int("segments", None, minv=16, maxv=256), r_max)
+    steps = max(24, int(segments * 0.6))
+    prof = [(0.0, 0.0)]
+    for i in range(1, steps):
+        t = i / steps                     # от низа к верху
+        # x = sin(pi*t) даёт ширину, деформированную к одному концу
+        width = math.sin(math.pi * t) ** (1.0 + prop * 0.9)
+        if sharp == "верх":
+            width *= (1.0 - 0.35 * prop * t)      # верх уже
+        else:
+            width *= (1.0 - 0.35 * prop * (1.0 - t))
+        prof.append((max(0.0, r_max * width), height * t))
+    prof.append((0.0, height))
+    solid = _revolve(prof, segments, "яйца")
+    return make_solid(a.scene, name, _placed(a, solid), a, kind="egg")
+
+
+# --------------------------------------------------------------------------- #
+#  Арка (полукольцо)
+# --------------------------------------------------------------------------- #
+@op("arch", aliases=("арка", "полукольцо", "дуга", "archway"), category="Примитивы",
+    summary="Арка — половина кольца с прямоугольным сечением: проём окна, "
+            "дверной проём, тоннель. Угол задаётся (180° — полукольцо), "
+            "сечение — шириной и толщиной, торцы можно скруглить.",
+    example="арка = arch radius=200 width=60 thickness=40 angle=180\n"
+            "тоннель = arch radius=160 width=30 thickness=25 angle=120",
+    params={"radius": "радиус по средней линии, мм (200)",
+            "width": "ширина сечения вбок (радиально), мм (60)",
+            "thickness": "толщина по оси, мм (40)",
+            "angle": "угол дуги, градусы (180)",
+            "round": "скругление торцов, мм (0)",
+            "segments": "сегментов по дуге (по размеру)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def arch(a, name):
+    radius = float(a.num("radius", 200.0, minv=2.0))
+    width = float(a.num("width", 60.0, minv=1.0))
+    thickness = float(a.num("thickness", 40.0, minv=1.0))
+    angle = float(a.num("angle", 180.0, minv=5.0, maxv=360.0) or 180.0)
+    round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    if width >= radius * 1.9:
+        raise GeometryError("Ширина сечения больше диаметра арки.",
+                            hint="width должна быть меньше 2·radius.")
+    r_in = max(0.2, radius - width / 2.0)
+    r_out = radius + width / 2.0
+    round_r = min(round_r, width * 0.45, thickness * 0.45)
+    if round_r > 0.05:
+        prof = _rounded_rect(r_in, r_out, -thickness / 2.0, thickness / 2.0, round_r, steps=4)
+    else:
+        prof = np.array([[r_in, -thickness / 2.0], [r_out, -thickness / 2.0],
+                         [r_out, thickness / 2.0], [r_in, thickness / 2.0]])
+    segments = _segments(a.int("segments", None, minv=8, maxv=360),
+                         max(radius, width) * 2.0)
+    segments = max(6, int(round(segments * angle / 360.0)) + 2)
+    solid = mf.Manifold.revolve(mf.CrossSection([prof]), segments, angle)
+    # арка стоит на полу, как дверной проём: плоскость дуги — XZ,
+    # толщина — по Y, торцы опираются на z = 0
+    solid = solid.rotate([90.0, 0.0, 0.0])
+    at = a.vec("at", 3, default=(0, 0, 0))
+    solid = anchor(solid, at, a.boolean("center", False))
+    out = make_solid(a.scene, name, solid, a, kind="arch")
+    out.notes.append(f"дуга {angle:g}°, радиус {radius:g}, сечение {width:g}×{thickness:g}")
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Полусфера и миска
+# --------------------------------------------------------------------------- #
+@op("hemisphere", aliases=("полусфера", "полушар", "миска", "чаша", "bowl"),
+    category="Примитивы",
+    summary="Полусфера: выпуклая (купол) или вогнутая миска со стенкой. "
+            "Купол — половина шара со ровным сечением; миска — та же половина, "
+            "выдолбленная с заданной толщиной стенки и кромкой.",
+    example="купол = hemisphere radius=60\n"
+            "миска = hemisphere radius=70 mode=миска wall=4",
+    params={"radius": "радиус, мм (50)",
+            "mode": "купол (выпуклая) или миска (вогнутая); dome/bowl тоже",
+            "wall": "толщина стенки миски, мм (4)",
+            "rim": "ширина кромки бортика, мм (0 — без отворота)",
+            "segments": "сегментов по кругу (по размеру)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def hemisphere(a, name):
+    radius = float(a.num("radius", 50.0, minv=1.0))
+    mode = (a.text("mode") or "купол").strip().lower()
+    if mode in ("dome", "купол", "выпуклая", "верх"):
+        mode = "купол"
+    elif mode in ("bowl", "миска", "чаша", "вогнутая"):
+        mode = "миска"
+    else:
+        raise GeometryError("Полусфера: mode=купол или mode=миска.")
+    wall = float(a.num("wall", 4.0, minv=0.2))
+    rim_w = float(a.num("rim", 0.0, minv=0.0) or 0.0)
+    segments = _segments(a.int("segments", None, minv=16, maxv=256), radius)
+    steps = max(16, int(segments * 0.6))
+    if mode == "купол":
+        prof = [(0.0, 0.0)]
+        for i in range(1, steps + 1):
+            ang = math.pi / 2.0 * i / steps
+            prof.append((radius * math.sin(ang), radius * math.cos(ang)))
+        prof.append((radius, 0.0))
+        # закрываем плоское дно
+        prof = [(0.0, 0.0)] + [(p[0], p[1]) for p in prof[1:]]
+        solid = _revolve(prof, segments, "купол")
+        # купол стоит плоско: дно — плоскость z=0, вершина вверху
+        return make_solid(a.scene, name, _placed(a, solid), a, kind="hemisphere")
+    # миска: внешняя полусфера + кромка, внутренняя — со стенкой
+    if wall >= radius * 0.8:
+        raise GeometryError("Стенка миски слишком толстая для этого радиуса.")
+    outer = [(0.0, 0.0)]
+    for i in range(1, steps + 1):
+        ang = math.pi / 2.0 * i / steps
+        outer.append((radius * math.sin(ang), radius * math.cos(ang)))
+    outer.append((0.0, radius))
+    solid = _revolve(outer, segments, "миска")
+    inner_r = radius - wall
+    inner = [(0.0, wall)]
+    for i in range(1, steps + 1):
+        ang = math.pi / 2.0 * i / steps
+        inner.append((inner_r * math.sin(ang), wall + inner_r * math.cos(ang)))
+    cavity = _revolve(inner, segments, "полость миски")
+    solid = solid - cavity
+    if rim_w > 0:
+        rim_w = min(rim_w, radius * 0.25)
+        band = (mf.Manifold.cylinder(float(wall * 1.4), float(radius + rim_w),
+                                     float(radius + rim_w), int(segments))
+                - mf.Manifold.cylinder(float(wall * 1.4 + 1.0), float(radius - wall * 0.5),
+                                       float(radius - wall * 0.5), int(segments))
+                .translate((0.0, 0.0, -0.5)))
+        solid = solid + band.translate((0, 0, wall * 0.15))
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="hemisphere")
+    out.notes.append(f"миска R{radius:g}, стенка {wall:g} мм")
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Облако / вата
+# --------------------------------------------------------------------------- #
+@op("cloud", aliases=("облако", "вата", "облачко", "туча", "cloud_puff"),
+    category="Примитивы",
+    summary="Облако-вата: несколько сфер, сплавленных в одно пушистое тело. "
+            "size — габарит, puffs — сколько шаров, seed повторяет форму, "
+            "flat — подрезанное снизу дно, чтобы облако лежало на полке.",
+    example="облако = cloud size=[180,90,70] puffs=9 seed=3\n"
+            "вата = cloud size=[120,120,90] puffs=12 seed=7 flat=нет",
+    params={"size": "габарит [x,y,z], мм (160,90,70)",
+            "puffs": "число сфер (8)",
+            "seed": "зерно формы (1)",
+            "rough": "разброс размеров 0..1 (0.35)",
+            "flat": "плоское дно да/нет (да)",
+            "segments": "сегментов сферы (по размеру)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def cloud(a, name):
+    size = a.vec("size", 3, default=(160.0, 90.0, 70.0))
+    sx, sy, sz = float(size[0]), float(size[1]), float(size[2])
+    puffs = int(a.num("puffs", 8, minv=3, maxv=40) or 8)
+    seed = int(a.num("seed", 1, minv=0) or 0)
+    rough = float(a.num("rough", 0.35, minv=0.0, maxv=1.0) or 0.0)
+    flat = a.boolean("flat", True)
+    seg = int(a.num("segments", max(12, min(32, int(8 + max(sx, sy, sz) / 8))),
+                    minv=8, maxv=64) or 20)
+    rng = np.random.default_rng(seed)
+    # Шары должны ПЕРЕКРЫВАТЬСЯ, иначе это не облако, а гроздь шариков.
+    # Кладём «грядку» перекрывающихся сфер по осям X и Y, сверху — бугры.
+    unit = min(sx, sy, sz)
+    base_r = unit * 0.45
+    parts = []
+    # нижний ряд: 3–5 шаров вдоль X, чтобы облако было вытянутым, а не шаром
+    nx = max(3, min(6, int(round(sx / max(unit * 0.7, 1.0))) + 1))
+    for i in range(nx):
+        t = (i / (nx - 1)) - 0.5 if nx > 1 else 0.0
+        r = base_r * (1.0 - 0.10 * abs(t) * 2.0)
+        parts.append(mf.Manifold.sphere(r, seg).translate((sx * 0.42 * t, 0.0, r * 0.55)))
+    # средний слой: бугры сбоку и сверху со случайным смещением
+    bumps = max(3, puffs - nx)
+    for i in range(bumps):
+        ang = 2.0 * math.pi * i / bumps + float(rng.uniform(-0.3, 0.3))
+        rad = float(rng.uniform(0.45, 0.72))
+        k = 1.0 - rough * 0.25 * float(rng.random())
+        r = base_r * 0.82 * k
+        px = math.cos(ang) * sx * 0.30 * rad
+        py = math.sin(ang) * sy * 0.34 * rad
+        pz = base_r * (0.55 + 0.45 * float(rng.random()))
+        parts.append(mf.Manifold.sphere(r, seg).translate((px, py, pz)))
+    solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
+    if solid.is_empty():
+        raise GeometryError("Облако не собралось: увеличьте size или число сфер.")
+    bb = solid.bounding_box()
+    solid = solid.translate((0.0, 0.0, -bb[2]))
+    if flat:
+        cutter = mf.Manifold.cube([sx * 4.0, sy * 4.0, sz * 2.0], True)
+        cutter = cutter.translate((0.0, 0.0, -sz * 0.10 - sz))
+        solid = solid - cutter
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="cloud")
+    out.notes.append(f"облако из {puffs} сфер, seed {seed}")
+    return out

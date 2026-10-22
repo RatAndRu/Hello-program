@@ -26,7 +26,7 @@ def _derived(a, name, manifold, base, kind: str):
 
 @op("union", aliases=("объединить", "объединение", "плюс", "add"), category="Булевы операции",
     summary="Объединяет объекты в один. Исходные объекты скрываются.",
-    example='корпус = cup diameter=80 height=95 handle=нет\nручка = box size=[40,12,30] at=[30,0,50]\nкружка = union [корпус, ручка]',
+    example='корпус = cylinder radius=40 height=95\nручка = box size=[40,12,30] at=[30,0,50]\nкружка = union [корпус, ручка]',
     params={"objects": "список объектов [a, b, ...]"}, positional="*")
 def union(a, name):
     solids = a.solids()
@@ -96,7 +96,7 @@ def _weld_manifold(m: mf.Manifold, tol: float) -> mf.Manifold:
     category="Булевы операции",
     summary="Спаивает детали в один объект и сваривает шов: внутри не остаётся "
             "скрытой геометрии, стык ровный. Для ручки кружки, корпуса и т.п.",
-    example='корпус = cup diameter=80 height=95 handle=нет\nручка = box size=[40,12,30] at=[30,0,50]\nкружка = weld [корпус, ручка] tolerance=0.05',
+    example='корпус = cylinder radius=40 height=95\nручка = box size=[40,12,30] at=[30,0,50]\nкружка = weld [корпус, ручка] tolerance=0.05',
     params={"objects": "список [деталь, деталь, ...]",
             "tolerance": "допуск сварки вершин, мм (0.05)"},
     positional="*")
@@ -548,7 +548,7 @@ def scale(a, name):
 @op("place", aliases=("поставить", "позиционировать", "align"), category="Массивы и преобразования",
     summary="Ставит объект в точку или прикрепляет к другому объекту: сверху, снизу, "
             "слева, справа, спереди, сзади — без вычисления координат вручную.",
-    example='крышка = plate diameter=90 depth=10\nкружка = cup diameter=80 height=95\nкрышка = place [крышка] on=кружка side=top offset=2',
+    example='крышка = plate diameter=90 depth=10\nкружка = cylinder radius=40 height=95\nкрышка = place [крышка] on=кружка side=top offset=2',
     params={"objects": "объект", "at": "точка [x,y,z]",
             "align": "bottom (по умолчанию), center или top",
             "center_xy": "центрировать по X и Y (true)",

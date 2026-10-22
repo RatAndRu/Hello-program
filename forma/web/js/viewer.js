@@ -58,6 +58,10 @@ export class Viewer {
     this.paintColor = '#ff8a3d';
     this.paintTarget = '';     // какой предмет красим (без него кисть не работает)
     this.painting = false;     // сейчас тянем кисть
+    this.eraseMode = false;    // ластик: возвращает исходный цвет
+    this.paintRadiusPx = 10;   // радиус кисти в пикселях экрана
+    this.strokePoints = [];    // мазок: точки в координатах сценария
+    this.strokeRadius = 4;     // радиус текущего мазка в мм
     this.lastPaintPoint = null;
     this._polyNames = new Set();
     this.time = 0;
@@ -327,6 +331,7 @@ export class Viewer {
         // Камера при этом не вращается: рисование важнее.
         if (!this.paintTarget) { this.onPaintNeedsTarget?.(); return; }
         this.painting = true;
+        this.strokePoints = [];
         this._paintAtPointer(e, true);
         this.controls.enabled = false;
         down = null;
@@ -365,16 +370,20 @@ export class Viewer {
         this.controls.enabled = true;
         this.lastPaintPoint = null;
         this._rightDown = null;
+        const stroke = this.strokePoints;
+        this.strokePoints = [];
+        if (stroke.length) {
+          this.onPaintStroke?.({
+            name: this.paintTarget,
+            points: stroke,
+            radius: Math.max(0.4, Math.round(this.strokeRadius * 10) / 10),
+            color: this.paintColor,
+            erase: this.eraseMode,
+          });
+        }
         return;
       }
       if (e.button !== 0 || !down) { hideBand(); return; }
-      if (this.playing) {
-        // Во время анимации ничего не выделяем: клик по сцене не должен
-        // перебивать движение и подсветку. Камера при этом вращается.
-        down = null;
-        hideBand();
-        return;
-      }
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       const quick = performance.now() - down.t < 420;
       const start = down;
@@ -968,10 +977,12 @@ export class Viewer {
   }
 
   /** Кисть по граням: включаем режим, запоминаем цвет и предмет. */
-  setPaintMode(on, color, target) {
+  setPaintMode(on, color, target, erase) {
     this.paintMode = Boolean(on);
     if (color) this.paintColor = color;
     if (target !== undefined) this.paintTarget = target || '';
+    if (erase !== undefined) this.eraseMode = Boolean(erase);
+    if (!this.paintMode) { this.eraseMode = false; this.strokePoints = []; }
     // без выбранного предмета кисть не включается: непонятно, что красить
     if (this.paintMode && !this.paintTarget) this.paintMode = false;
     this.painting = false;
@@ -1006,6 +1017,25 @@ export class Viewer {
     this._paintAtPointer(e);
   }
 
+  /** Радиус кисти в пикселях → миллиметры на глубине точки касания. */
+  _screenRadiusMm(point, pixels) {
+    if (!point || !this.camera) return 2;
+    const cam = this.camera;
+    const right = new THREE.Vector3().setFromMatrixColumn(cam.matrixWorld, 0).normalize();
+    const p0 = point.clone().project(cam);
+    const p1 = point.clone().add(right).project(cam);
+    const dx = (p1.x - p0.x) * 0.5 * (this.renderer.domElement.clientWidth || 800);
+    const dy = (p1.y - p0.y) * 0.5 * (this.renderer.domElement.clientHeight || 600);
+    const perPx = 1 / Math.max(1e-6, Math.hypot(dx, dy));
+    return Math.max(0.2, perPx * Math.max(1, pixels));
+  }
+
+  /** Точка в системе сценария (x, y, z; z — вверх) по месту касания. */
+  _scriptPoint(mesh, point) {
+    const local = mesh.worldToLocal(point.clone());
+    return [local.x, -local.z, local.y];
+  }
+
   /** Готовит геометрию к покраске: у каждого треугольника свои вершины. */
   _ensurePaint(mesh) {
     if (!mesh || !mesh.isMesh) return null;
@@ -1033,7 +1063,7 @@ export class Viewer {
         }
       }
       geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      mesh.userData.paintInfo = { src, color: base.clone() };
+      mesh.userData.paintInfo = { src, color: base.clone(), baseColors: colors.slice() };
       mesh.geometry = geom;
       mats.forEach((m) => {
         if (m.color) m.color.setRGB(1, 1, 1);
@@ -1053,14 +1083,33 @@ export class Viewer {
     const geom = this._ensurePaint(hit.mesh);
     if (!geom) return null;
     const attr = geom.attributes.color;
+    const info = hit.mesh.userData.paintInfo || {};
+    const base = info.baseColors || null;
     const fi = Math.max(0, Number(hit.faceIndex) || 0);
+    const erase = this.eraseMode && !color;
     const c = new THREE.Color(color || this.paintColor);
     for (let k = 0; k < 3; k += 1) {
       const idx = fi * 3 + k;
-      if (idx < attr.count) attr.setXYZ(idx, c.r, c.g, c.b);
+      if (idx >= attr.count) continue;
+      if (erase && base && base.length === attr.count * 3) {
+        attr.setXYZ(idx, base[idx * 3], base[idx * 3 + 1], base[idx * 3 + 2]);
+      } else {
+        attr.setXYZ(idx, c.r, c.g, c.b);
+      }
     }
     attr.needsUpdate = true;
-    return { name: hit.name, face: fi, color: color || this.paintColor };
+    if (this.painting) {
+      const p = this._scriptPoint(hit.mesh, hit.point);
+      const last = this.strokePoints[this.strokePoints.length - 1];
+      if (!last || Math.hypot(p[0] - last[0], p[1] - last[1], p[2] - last[2]) > 0.6) {
+        this.strokePoints.push([Math.round(p[0] * 10) / 10,
+          Math.round(p[1] * 10) / 10, Math.round(p[2] * 10) / 10]);
+        if (this.strokePoints.length > 400) this.strokePoints.shift();
+      }
+      this.strokeRadius = this._screenRadiusMm(hit.point, this.paintRadiusPx);
+    }
+    return { name: hit.name, face: fi, color: erase ? null : (color || this.paintColor),
+      erase };
   }
 
   /** Убирает покрас по граням и возвращает исходные материалы. */

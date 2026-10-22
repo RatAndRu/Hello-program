@@ -9,6 +9,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
+import math
+
 import numpy as np
 
 from .errors import DslError
@@ -494,6 +496,128 @@ def _auto_uv(tri: np.ndarray, tile_mm: float, origin: np.ndarray,
     return _triplanar_uv(tri, tile_mm, origin=origin)
 
 
+def _triangle_islands(tri: np.ndarray) -> list[np.ndarray]:
+    """Группы треугольников по направлению грани (6 основных осей).
+
+    Для атласа кусок поверхности должен разворачиваться на свою плоскость:
+    верх, низ, перед, зад, лево, право — шесть «островов». Внутри одного
+    острова проекция общая, поэтому линии рисунка не ломаются.
+    """
+    n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    area = np.linalg.norm(n, axis=1)
+    ok = area > 1e-12
+    if not ok.any():
+        return []
+    nn = n[ok] / area[ok][:, None]
+    axis = np.argmax(np.abs(nn), axis=1)
+    sign = np.sign(np.take_along_axis(nn, axis[:, None], axis=1)[:, 0])
+    bucket = axis * 2 + (sign > 0).astype(np.int64)
+    groups = []
+    for b in range(6):
+        idx = np.where(ok)[0][bucket == b]
+        if len(idx):
+            groups.append(idx)
+    return groups
+
+
+def atlas_uv_triangles(verts: np.ndarray, faces: np.ndarray,
+                       margin: float = 0.012) -> np.ndarray:
+    """Атласная развёртка: каждый плоский остров — свой прямоугольник в [0,1].
+
+    Текстура натягивается на каждый остров целиком (1×1), поэтому рисунок
+    нигде не растягивается и не «съезжает» на соседнюю грань; острова
+    упакованы полками с зазором, масштаб текселей общий — плотность рисунка
+    одинаковая на всех гранях.
+    """
+    v = np.asarray(verts, dtype=np.float64)
+    f = np.asarray(faces, dtype=np.int64)
+    if len(v) == 0 or len(f) == 0:
+        return np.zeros((0, 2), dtype=np.float32)
+    tri = v[f]
+    uv = np.zeros((len(f), 3, 2), dtype=np.float64)
+    groups = _triangle_islands(tri)
+    if not groups:
+        return np.zeros((len(f) * 3, 2), dtype=np.float32)
+    # какой паре осей соответствует каждая из 6 нормалей
+    axes_for = [(2, 1), (2, 1), (0, 2), (0, 2), (0, 1), (0, 1)]
+    sign_for = [1, -1, 1, -1, 1, -1]
+    n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    area = np.linalg.norm(n, axis=1)
+    nn = n / np.maximum(area, 1e-12)[:, None]
+    axis = np.argmax(np.abs(nn), axis=1)
+    sign = np.sign(np.take_along_axis(nn, axis[:, None], axis=1)[:, 0])
+    bucket_of = axis * 2 + (sign > 0).astype(np.int64)
+
+    islands = []
+    total = 0.0
+    for b, idx in enumerate(groups):
+        ua, va = axes_for[b]
+        if sign_for[b] < 0 and b % 2 == 1:
+            pass
+        sub = tri[idx]
+        u = sub[:, :, ua]
+        w = sub[:, :, va]
+        if b % 2 == 1:
+            u = -u  # обратные грани разворачиваем, чтобы рисунок не зеркалился
+        umin, wmin = float(u.min()), float(w.min())
+        uw = float(u.max() - umin)
+        ww = float(w.max() - wmin)
+        islands.append({"idx": idx, "u": u - umin, "w": w - wmin,
+                        "uw": max(uw, 1e-6), "ww": max(ww, 1e-6)})
+        total += max(uw, 1e-6) * max(ww, 1e-6)
+    if total <= 0:
+        return np.zeros((len(f) * 3, 2), dtype=np.float32)
+    # полочная упаковка: подбираем общий масштаб так, чтобы все острова
+    # поместились без наложений (текстура не «переезжает» между гранями)
+    order = sorted(range(len(islands)), key=lambda i: -islands[i]["ww"])
+    art = 1.0 - 2.0 * margin
+
+    def pack(scale: float):
+        x, y, shelf_h = margin, margin, 0.0
+        out = {}
+        for i in order:
+            isl = islands[i]
+            w = isl["uw"] * scale
+            h = isl["ww"] * scale
+            if w > art - 1e-9 or h > art - 1e-9:
+                return None
+            if x + w > 1.0 - margin and x > margin + 1e-9:
+                x = margin
+                y += shelf_h + margin * 0.6
+                shelf_h = 0.0
+            if y + h > 1.0 - margin:
+                return None
+            out[i] = (x, y, scale, scale)
+            x += w + margin * 0.6
+            shelf_h = max(shelf_h, h)
+        return out
+
+    scale = math.sqrt(art * art / total) * 0.95
+    placed = None
+    for _ in range(40):
+        placed = pack(scale)
+        if placed is not None:
+            break
+        scale *= 0.9
+    if placed is None:
+        # страховка: мелкая сетка без полок
+        placed = {}
+        cols = max(1, int(math.ceil(math.sqrt(len(islands)))))
+        cell = art / cols
+        for k, i in enumerate(order):
+            placed[i] = (margin + (k % cols) * cell, margin + (k // cols) * cell,
+                         cell * 0.9 / max(islands[i]["uw"], 1e-6),
+                         cell * 0.9 / max(islands[i]["ww"], 1e-6))
+    for b, idx in enumerate(groups):
+        isl = islands[b]
+        ox, oy, ku, kv = placed[b]
+        uv[idx, :, 0] = ox + isl["u"] * ku
+        uv[idx, :, 1] = oy + isl["w"] * kv
+        uv[idx, :, 0] = np.clip(uv[idx, :, 0], 0.0, 1.0)
+        uv[idx, :, 1] = np.clip(uv[idx, :, 1], 0.0, 1.0)
+    return np.stack([uv[:, :, 0].ravel(), uv[:, :, 1].ravel()], axis=1).astype(np.float32)
+
+
 def uv_triangles(verts: np.ndarray, faces: np.ndarray, mode: str = "auto",
                  bbox: np.ndarray | None = None, tile_mm: float = 140.0,
                  origin=None) -> np.ndarray:
@@ -510,6 +634,8 @@ def uv_triangles(verts: np.ndarray, faces: np.ndarray, mode: str = "auto",
     span = np.maximum(hi - lo, 1e-9)
     tri = v[f]  # (F, 3, 3) — координаты в glTF (X, Y вверх, Z)
     mode = (mode or "auto").lower()
+    if mode in ("atlas", "атлас", "атласная", "atlas_uv"):
+        return atlas_uv_triangles(v, f)
     if mode in ("auto", "triplanar", "box", "грани", "авто"):
         base = lo if origin is None else np.asarray(origin, dtype=np.float64)[:3]
         return _auto_uv(tri, tile_mm, base, lo, hi)

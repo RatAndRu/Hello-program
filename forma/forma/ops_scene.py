@@ -38,10 +38,10 @@ def color(a, name):
 @op("paint", aliases=("краска", "пятно", "раскрасить", "покрасить_часть"), category="Сцена и материал",
     summary="Красит часть предмета: верх, низ, бок, полосу по высоте, радиусу или область. "
             "Не нужно перечислять полигоны — регион задаётся словами и числами.",
-    example='кружка = cup diameter=80 height=95\n'
+    example='кружка = cylinder radius=40 height=95\n'
             'paint кружка #2f6fb0 side=верх\n'
             'paint кружка #ffffff height=40..70\n'
-            'paint кружка #d94f3d radius 0..18',
+            'paint кружка #d94f3d radius=0..18',
     params={"target": "имя объекта",
             "color": "цвет #RRGGBB или название",
             "side": "верх, низ, перед, зад, лево, право — по направлению граней",
@@ -194,7 +194,7 @@ def group(a, name):
 
 @op("check", aliases=("проверить", "проверка"), category="Проверка",
     summary="Задаёт проверку результата: размер, толщина стенок, герметичность, симметрия и т.д.",
-    example='кружка = cup diameter=80 height=95\ncheck кружка height 90..110\ncheck кружка watertight',
+    example='кружка = cylinder radius=40 height=95\ncheck кружка height 90..110\ncheck кружка watertight',
     params={"object": "имя объекта",
             "rule": "watertight, genus, parts, size, height, width, depth, volume, mass, "
                     "wall, wall_min, flat_bottom, overhang, symmetric, gap, inside, tris, "
@@ -204,3 +204,81 @@ def group(a, name):
 def check(a, name):
     raise DslError("Внутренняя ошибка: проверка должна обрабатываться построителем.",
                    line=a.cmd.line)
+
+
+# --------------------------------------------------------------------------- #
+#  Кисть и ластик: свободная роспись по поверхности
+# --------------------------------------------------------------------------- #
+def _stroke(a, erase: bool = False):
+    """Общий разбор мазка для кисти и ластика."""
+    target = (a.text("target") or "").strip()
+    if not target:
+        raise DslError("Укажите предмет: кисть кружка #c0402a point=[0,40,60]",
+                       line=a.cmd.line, command=a.cmd.text)
+    solid = a.scene.resolve(target)
+    if (a.text("clear") or "").lower() in ("да", "yes", "1", "true"):
+        had = len(solid.brush or [])
+        solid.brush = []
+        a.scene.log("info", f"Роспись снята: {solid.name} ({had} мазков)", a.cmd.line)
+        return None
+    radius = float(a.num("radius", 4.0, minv=0.05) or 4.0)
+    path = []
+    if a.has("path"):
+        raw = a.points("path", 3)
+        path = [[float(v) for v in p] for p in raw]
+    if a.has("point"):
+        point = a.vec("point", 3, required=True)
+        if not path:
+            path.append([float(v) for v in point])
+        else:
+            path.insert(0, [float(v) for v in point])
+    if not path:
+        raise DslError("Где рисовать? Укажите point=[x,y,z] или path=[[x,y,z], …]",
+                       hint="Например: кисть кружка #2f6fb0 radius=6 point=[0,40,60]",
+                       line=a.cmd.line, command=a.cmd.text)
+    spec: dict = {"radius": round(radius, 3),
+                  "path": [[round(v, 2) for v in p] for p in path]}
+    if erase:
+        spec["erase"] = True
+    else:
+        color = normalize_color(a.text("color") or "")
+        if not color:
+            raise DslError("Укажите цвет мазка.",
+                           hint="Например: кисть кружка #2f6fb0 radius=6 point=[0,40,60]",
+                           line=a.cmd.line, command=a.cmd.text)
+        spec["color"] = color
+    solid.brush = list(solid.brush or []) + [spec]
+    a.scene.log("info", ("ластик: " if erase else "мазок: ") + solid.name, a.cmd.line)
+    return solid
+
+
+@op("кисть", aliases=("мазок", "brush", "рисовать", "кисточка"), category="Сцена и материал",
+    summary="Рисует по поверхности предмета свободным мазком: шар краски заданного "
+            "радиуса проходит по точкам path. Мазки ложатся и в PNG, и в GLB, "
+            "хранятся в сценарии отдельно от материала — их можно стереть ластиком.",
+    example="кружка = cylinder radius=40 height=95\n"
+            "кисть кружка #2f6fb0 radius=6 point=[0,40,60]\n"
+            "кисть кружка #ffd166 radius=4 path=[[0,40,30],[0,40,50],[0,40,70]]",
+    params={"target": "имя предмета", "color": "цвет мазка #RRGGBB или название",
+            "radius": "радиус кисти в мм (4)",
+            "point": "одна точка касания [x,y,z]",
+            "path": "цепочка точек [[x,y,z], …] — сплошной мазок",
+            "clear": "да — снять все мазки с предмета"},
+    positional=["target", "color"])
+def brush(a, name):
+    return _stroke(a, erase=False)
+
+
+@op("ластик", aliases=("стёрка", "стерка", "eraser", "erase_brush", "ластик_кисти"),
+    category="Сцена и материал",
+    summary="Стирает нарисованное кистью, но не материал и не регионы paint. "
+            "Работает как кисть наоборот: в месте мазка возвращается цвет основания.",
+    example="кружка = cylinder radius=40 height=95\n"
+            "кисть кружка #2f6fb0 radius=6 point=[0,40,60]\n"
+            "ластик кружка radius=8 point=[0,40,60]",
+    params={"target": "имя предмета", "radius": "радиус ластика в мм (6)",
+            "point": "точка [x,y,z]", "path": "цепочка точек [[x,y,z], …]",
+            "clear": "да — стереть все мазки сразу"},
+    positional=["target"])
+def eraser(a, name):
+    return _stroke(a, erase=True)

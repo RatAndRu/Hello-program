@@ -21,8 +21,16 @@ VIEWS = {
     "front": ((0.0, -1.0, 0.0), (0.0, 0.0, 1.0)),
     "right": ((1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
     "top": ((0.0, 0.0, 1.0), (0.0, 1.0, 0.0)),
+    # обратные стороны: нужны там, где важно посмотреть крепёж сзади
+    # (задняя стенка шкафа, гвозди) или левую боковину
+    "back": ((0.0, 1.0, 0.0), (0.0, 0.0, 1.0)),
+    "left": ((-1.0, 0.0, 0.0), (0.0, 0.0, 1.0)),
+    "bottom": ((0.0, 0.0, -1.0), (0.0, 1.0, 0.0)),
+    "iso_back": ((-0.92, 1.25, 0.78), (0.0, 0.0, 1.0)),
 }
-VIEW_LABELS = {"iso": "изометрия", "front": "спереди", "right": "справа", "top": "сверху"}
+VIEW_LABELS = {"iso": "изометрия", "front": "спереди", "right": "справа", "top": "сверху",
+               "back": "сзади", "left": "слева", "bottom": "снизу",
+               "iso_back": "изометрия сзади"}
 
 BG_TOP = np.array([0.105, 0.118, 0.145], dtype=np.float32)
 BG_BOTTOM = np.array([0.045, 0.052, 0.068], dtype=np.float32)
@@ -55,7 +63,7 @@ def _prepare(solids):
         item = {
             "verts": nv, "faces": nf, "normals": nn,
             "color": np.array(color_to_float_rgb(s.color), dtype=np.float32),
-            "paint": None,
+            "paint": None, "brush": None,
             "metal": float(s.metal), "rough": float(s.rough),
             "uv": None, "tex": None,
         }
@@ -65,6 +73,9 @@ def _prepare(solids):
             # регионы держим как есть и считаем цвет на каждый пиксель —
             # так граница полосы ровная, без зубцов по треугольникам
             item["paint"] = list(s.paint)
+        if getattr(s, "brush", None):
+            # мазки кистью и ластика: тоже считаем на каждый пиксель
+            item["brush"] = list(s.brush)
         tex = getattr(s, "tex", None)
         if tex and tex.get("path"):
             image = _load_texture(tex["path"])
@@ -257,6 +268,7 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
         uv = mesh.get("uv")
         tex = mesh.get("tex")
         paint = mesh.get("paint")
+        brush = mesh.get("brush")
         scr, dep = _project(verts, cam)
         tri = faces
         n0, n1, n2 = normals[tri[:, 0]], normals[tri[:, 1]], normals[tri[:, 2]]
@@ -303,16 +315,14 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
             ln = np.sqrt(nx * nx + ny * ny + nz * nz) + 1e-12
             nn = np.stack([(nx / ln)[front], (ny / ln)[front], (nz / ln)[front]], axis=1)
             colors = col
-            if paint is not None:
-                from .geometry import paint_point_colors
+            if paint is not None or brush is not None:
+                from .geometry import surface_point_colors
                 # положение пикселя в координатах сценария (Z вверх)
                 pos = (w0[front, None] * verts[a[0]] + w1[front, None] * verts[a[1]]
                        + w2[front, None] * verts[a[2]])
                 # снимок считается прямо в координатах сценария (Z вверх),
                 # поэтому точка и нормаль идут как есть
-                pix = paint_point_colors(paint, pos, nn)
-                if pix is not None:
-                    colors = col[None, :] * pix
+                colors = surface_point_colors(col, paint, brush, pos, nn)
             if uv is not None and tex is not None:
                 u = (w0 * uv[a[0], 0] + w1 * uv[a[1], 0] + w2 * uv[a[2], 0])
                 vv = (w0 * uv[a[0], 1] + w1 * uv[a[1], 1] + w2 * uv[a[2], 1])
@@ -327,7 +337,7 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
                 v1 = (v0 + 1) % th
                 u0 %= tw
                 v0 %= th
-                base = col if paint is None else colors
+                base = colors
                 colors = (tex[v0, u0] * (1 - fx) * (1 - fy) + tex[v0, u1] * fx * (1 - fy)
                           + tex[v1, u0] * (1 - fx) * fy + tex[v1, u1] * fx * fy) * base
             shade = _shade(nn, colors, metal, rough, cam)

@@ -283,8 +283,15 @@ class TestErrors(unittest.TestCase):
         self.assertIn("3 точки", err["message"])
 
     def test_empty_script(self):
-        err = fails("# только комментарий")
-        self.assertIn("пуст", err["message"].lower())
+        # 0.20: пустой сценарий — это чистая сцена, а не ошибка
+        b = build("# только комментарий")
+        self.assertTrue(b.ok, b.error)
+        self.assertTrue(b.empty)
+        self.assertEqual(b.payload()["objects"], [])
+        text = b.analysis["text"].upper()
+        self.assertIn("ПУСТ", text)
+        empty = build("")
+        self.assertTrue(empty.ok and empty.empty)
 
 
 class TestExamples(unittest.TestCase):

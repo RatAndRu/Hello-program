@@ -302,8 +302,15 @@ async function buildNow(silent = false) {
     state.payload = payload;
     applyBuild(payload, Math.round(performance.now() - t0));
     if (payload.ok) {
-      await loadModel(payload.glb_url, payload.timeline || payload.animation);
-      if (!silent) toast(`Готово за ${Math.round(performance.now() - t0)} мс`);
+      if (payload.empty || !payload.glb_url) {
+        // Пустой сценарий = чистая сцена: снимаем и модель, и подсветку,
+        // и всё, что было применено раньше. Никакой ошибки — просто ничего.
+        clearSceneView();
+      } else {
+        await loadModel(payload.glb_url, payload.timeline || payload.animation);
+      }
+      if (!silent) toast(payload.empty ? 'Сцена пуста — всё снято'
+        : `Готово за ${Math.round(performance.now() - t0)} мс`);
     }
   } catch (err) {
     showError(err);
@@ -313,6 +320,28 @@ async function buildNow(silent = false) {
     $('btn-build').disabled = false;
     if (state.pending) { state.pending = false; buildNow(true); }
   }
+}
+
+/** Чистая сцена: убираем модель, подсветку, кисть и надпись «пусто». */
+function clearSceneView() {
+  const v = state.viewer;
+  if (!v) return;
+  v.setPaintMode(false, null, '', false);
+  v.disposeModel();
+  state.hidden.clear();
+  state.userHidden.clear();
+  state.selected = null;
+  state.paintCount = 0;
+  state.anim.frames = [];
+  state.anim.playing = false;
+  const empty = $('viewer-empty');
+  if (empty) {
+    empty.hidden = false;
+    empty.innerHTML = '<p>Сцена пуста. Напишите команды в сценарии слева — '
+      + 'например, <code>куб = box size=[100,100,100]</code>.</p>';
+  }
+  syncPaintMode();
+  updateAnimState();
 }
 
 function applyBuild(payload, elapsed) {
@@ -340,7 +369,7 @@ function applyBuild(payload, elapsed) {
 
   hideError();
   const stateEl = $('status-state');
-  stateEl.textContent = 'модель построена';
+  stateEl.textContent = payload.empty ? 'сцена пуста' : 'модель построена';
   stateEl.className = 'status-item ok';
 
   // Скрытые детали (например, вошедшие в union/weld) должны оставаться
@@ -2124,6 +2153,7 @@ function initViewer() {
     state.viewer.onPaintNeedsTarget = () => {
       toast('Сначала выделите предмет: кисть красит только выбранное', 'bad');
     };
+    state.viewer.onPaintStroke = (stroke) => addStroke(stroke);
     state.viewer.onPaint = (info) => {
       state.paintCount = (state.paintCount || 0) + 1;
       if (state.paintCount === 1 || state.paintCount % 12 === 0) {
@@ -2413,33 +2443,99 @@ function paintTargetName() {
 
 function syncPaintMode() {
   const on = Boolean(state.viewer?.paintMode);
-  $('paint-toggle')?.classList.toggle('active', on);
+  const erase = Boolean(state.viewer?.eraseMode);
+  $('paint-toggle')?.classList.toggle('active', on && !erase);
+  $('paint-erase')?.classList.toggle('active', on && erase);
+  const count = brushLines(paintTargetName()).length;
+  if ($('brush-count')) $('brush-count').textContent = String(count);
 }
 
-$('paint-toggle')?.addEventListener('click', () => {
+/** Строки кисти/ластика этого предмета в сценарии. */
+function brushLines(name) {
+  if (!name) return [];
+  const re = new RegExp(`^(кисть|brush|ластик|eraser)\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`);
+  return currentScript().split('\n').filter((line) => re.test(line.trim()));
+}
+
+/** Одна команда на мазок: точка или цепочка точек. */
+function strokeCommand(stroke) {
+  const op = stroke.erase ? 'ластик' : 'кисть';
+  const head = stroke.erase ? `${op} ${stroke.name} radius=${stroke.radius}`
+    : `${op} ${stroke.name} ${stroke.color} radius=${stroke.radius}`;
+  const pts = stroke.points.map((p) => `[${p[0]}, ${p[1]}, ${p[2]}]`);
+  return pts.length > 1 ? `${head} path=[${pts.join(', ')}]` : `${head} point=${pts[0]}`;
+}
+
+/** Дописать мазок в сценарий (и пересобрать модель). */
+function addStroke(stroke) {
+  if (!stroke || !stroke.points.length) return;
+  const script = currentScript().replace(/\s+$/, '');
+  const line = strokeCommand(stroke);
+  setScript(`${script}\n${line}\n`, { label: stroke.erase ? 'ластик' : 'кисть' });
+  syncPaintMode();
+  toast(stroke.erase ? 'Стёрто нарисованное' : `Мазок: ${stroke.points.length} точ.`);
+}
+
+function toggleBrush(erase) {
   const name = paintTargetName();
   if (!name) {
     toast('Сначала выделите предмет: кисть красит только выбранное', 'bad');
     return;
   }
   if (state.hidden.has(name)) {
-    toast('Предмет скрыт — покажите его, чтобы красить', 'bad');
+    toast('Предмет скрыт — покажите его, чтобы рисовать', 'bad');
     return;
   }
-  const on = !(state.viewer?.paintMode);
-  state.viewer?.setPaintMode(on, $('paint-color')?.value || '#ff8a3d', name);
+  const v = state.viewer;
+  const want = !(v?.paintMode) || Boolean(v?.eraseMode) !== erase;
+  if (!want) {
+    v?.setPaintMode(false, null, name, false);
+    syncPaintMode();
+    toast('Рисование выключено — обычное вращение и выделение');
+    return;
+  }
+  v?.setPaintMode(true, $('paint-color')?.value || '#ff8a3d', name, erase);
+  if (v) v.paintRadiusPx = Number($('paint-size')?.value) || 10;
   syncPaintMode();
   state.paintCount = 0;
-  toast(on ? 'Кисть включена: зажмите кнопку и ведите по предмету — красится полоса'
-    : 'Кисть выключена — обычное вращение и выделение');
-});
+  toast(erase
+    ? 'Ластик: стирает нарисованное кистью, материал не трогает'
+    : 'Кисть включена: зажмите кнопку и ведите по предмету');
+  return undefined;
+}
+
+$('paint-toggle')?.addEventListener('click', () => toggleBrush(false));
+$('paint-erase')?.addEventListener('click', () => toggleBrush(true));
 $('paint-color')?.addEventListener('input', (e) => {
-  if (state.viewer?.paintMode) state.viewer.setPaintMode(true, e.target.value, paintTargetName());
+  if (state.viewer?.paintMode && !state.viewer?.eraseMode) {
+    state.viewer.setPaintMode(true, e.target.value, paintTargetName(), false);
+  }
+});
+$('paint-size')?.addEventListener('input', (e) => {
+  if (state.viewer) state.viewer.paintRadiusPx = Number(e.target.value) || 10;
 });
 $('paint-clear')?.addEventListener('click', () => {
-  const n = state.viewer?.clearPaint() || 0;
-  state.paintCount = 0;
-  toast(n ? `Покраска снята с ${n} меш.` : 'Покрашенных граней нет');
+  const name = paintTargetName();
+  if (!name) { toast('Сначала выделите предмет', 'bad'); return; }
+  const lines = brushLines(name);
+  if (!lines.length) { toast('У этого предмета нет мазков'); return; }
+  const keep = currentScript().split('\n').filter((line) => !lines.includes(line));
+  setScript(keep.join('\n') + '\n', { label: 'снять роспись' });
+  syncPaintMode();
+  toast(`Снято мазков: ${lines.length}`);
+});
+$('brush-undo')?.addEventListener('click', () => {
+  const name = paintTargetName();
+  if (!name) { toast('Сначала выделите предмет', 'bad'); return; }
+  const lines = brushLines(name);
+  if (!lines.length) { toast('Мазков нет'); return; }
+  const last = lines[lines.length - 1];
+  const all = currentScript().split('\n');
+  const idx = all.lastIndexOf(last);
+  if (idx >= 0) all.splice(idx, 1);
+  setScript(all.join('\n') + '\n', { label: 'убрать мазок' });
+  syncPaintMode();
+  toast('Последний мазок убран');
 });
 
 /* ------------------------------------------------------------------ */
@@ -2454,7 +2550,7 @@ function selectObject(name) {
     $('material-panel').hidden = true;
     state.viewer?.clearHighlight();
     // без выделения кисть не должна срабатывать: выключаем её вместе с выбором
-    state.viewer?.setPaintMode(false, null, '');
+    state.viewer?.setPaintMode(false, null, '', false);
     syncPaintMode();
     if (state.orbitSelection) state.viewer?.setOrbitTarget('');
     if (state.spaceMode) state.viewer?.rebuildSpace?.();
@@ -2471,7 +2567,10 @@ function selectObject(name) {
   // Заодно прозрачным каркасом показываются детали, которые его закрывают.
   state.occludersNow = [];
   if (!state.hidden.has(name)) state.viewer?.setHighlight(name);
-  if (state.viewer?.paintMode) state.viewer.setPaintMode(true, null, name);
+  if (state.viewer?.paintMode) {
+    state.viewer.setPaintMode(true, null, name, state.viewer.eraseMode);
+  }
+  syncPaintMode();
   if (state.orbitSelection) state.viewer?.setOrbitTarget(name);
   renderObjectStats(obj);
   if (state.spaceMode) state.viewer?.rebuildSpace?.();
@@ -3289,18 +3388,6 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'cup', name: 'кружка', title: 'Кружка с ручкой',
-    desc: 'Целая кружка: корпус с полостью, дно и ручка. Стенка и сужение задаются.',
-    params: [
-      { k: 'diameter', label: 'диаметр', v: 80, step: 1 },
-      { k: 'height', label: 'высота', v: 95, step: 1 },
-      { k: 'wall', label: 'стенка', v: 4, step: 0.5 },
-      { k: 'bottom', label: 'дно', v: 6, step: 0.5 },
-      { k: 'taper', label: 'сужение', v: 0.1, step: 0.02 },
-      { k: 'handle', label: 'ручка', v: true, kind: 'bool' },
-    ],
-  },
-  {
     op: 'plate', name: 'тарелка', title: 'Тарелка',
     desc: 'Борт, плоское дно и стенка — глубокая или мелкая.',
     params: [
@@ -3427,6 +3514,43 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'egg', name: 'яйцо', title: 'Яйцо', group: 'Примитивы',
+    desc: 'Овоид: один конец тупее, другой острее; proportion задаёт форму.',
+    params: [
+      { k: 'height', label: 'высота', v: 60, step: 1 },
+      { k: 'diameter', label: 'диаметр', v: 42, step: 1 },
+      { k: 'proportion', label: 'яйцевидн.', v: 0.5, step: 0.05 },
+    ],
+  },
+  {
+    op: 'arch', name: 'арка', title: 'Арка', group: 'Примитивы',
+    desc: 'Полукольцо с прямоугольным сечением: проём, свод, тоннель.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 200, step: 10 },
+      { k: 'width', label: 'сечение', v: 60, step: 5 },
+      { k: 'thickness', label: 'толщина', v: 40, step: 5 },
+      { k: 'angle', label: 'угол', v: 180, step: 15 },
+    ],
+  },
+  {
+    op: 'hemisphere', name: 'полусфера', title: 'Полусфера', group: 'Примитивы',
+    desc: 'Купол или миска со стенкой — mode=купол|миска.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 60, step: 1 },
+      { k: 'mode', label: 'вид', v: 'купол' },
+      { k: 'wall', label: 'стенка', v: 4, step: 0.5 },
+    ],
+  },
+  {
+    op: 'cloud', name: 'облако', title: 'Облако', group: 'Примитивы',
+    desc: 'Пушистое тело из сплавленных сфер: габарит, число шаров, зерно.',
+    params: [
+      { k: 'size', label: 'размер', v: '180,90,70', kind: 'vec' },
+      { k: 'puffs', label: 'шаров', v: 9, step: 1, min: 3 },
+      { k: 'seed', label: 'зерно', v: 3, step: 1 },
+    ],
+  },
+  {
     op: 'box', name: 'куб', title: 'Куб', group: 'Примитивы',
     desc: 'Прямоугольный блок со скруглением рёбер.',
     params: [
@@ -3476,6 +3600,34 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'pyramid', name: 'пирамида', title: 'Пирамида', group: 'Примитивы',
+    desc: 'Правильная n-угольная пирамида: плоские грани, острая вершина, можно наклонить.',
+    params: [
+      { k: 'sides', label: 'сторон', v: 4, step: 1 },
+      { k: 'radius', label: 'радиус', v: 60, step: 2 },
+      { k: 'height', label: 'высота', v: 90, step: 5 },
+    ],
+  },
+  {
+    op: 'icosphere', name: 'икосфера', title: 'Икосфера', group: 'Примитивы',
+    desc: 'Сфера из одинаковых треугольников, как в Blender: ровный полигонаж без полюсов.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 40, step: 2 },
+      { k: 'divisions', label: 'уровень', v: 2, step: 1, min: 1, max: 4 },
+    ],
+  },
+  {
+    op: 'diamond', name: 'алмаз', title: 'Алмаз', group: 'Примитивы',
+    desc: 'Нижний конус и верхняя огранка с площадкой; sharp — острая трапецевидная призма.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 40, step: 2 },
+      { k: 'crown', label: 'верх', v: 14, step: 1 },
+      { k: 'pavilion', label: 'низ', v: 26, step: 1 },
+      { k: 'sides', label: 'граней', v: 8, step: 1 },
+      { k: 'sharp', label: 'острый', v: false, kind: 'bool' },
+    ],
+  },
+  {
     op: 'capsule', name: 'капсула', title: 'Капсула', group: 'Примитивы',
     desc: 'Цилиндр с полусферическими концами.',
     params: [
@@ -3503,30 +3655,36 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'shaft', name: 'вал', title: 'Вал', group: 'Готовые фигуры',
-    desc: 'Ступенчатый вал с фасками и осевым отверстием.',
+    op: 'shaft', name: 'вал', title: 'Вал с буртиком', group: 'Готовые фигуры',
+    desc: 'Ступенчатый вал: буртик задаётся шириной и диаметром, фаски и осевое отверстие.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 20, step: 1 },
       { k: 'length', label: 'длина', v: 120, step: 5 },
+      { k: 'flange', label: 'буртик', v: 6, step: 1 },
+      { k: 'flange_d', label: 'Ø буртика', v: 46, step: 1 },
       { k: 'bore', label: 'осевое', v: 6, step: 1 },
     ],
   },
   {
     op: 'wheel', name: 'колесо', title: 'Колесо', group: 'Готовые фигуры',
-    desc: 'Шина, обод, спицы и ступица; ось по Y — катится вдоль X.',
+    desc: 'Шина, обод, спицы и ступица. Ось по Y; 1 спица — сплошной диск.',
     params: [
-      { k: 'diameter', label: 'диаметр', v: 300, step: 10 },
+      { k: 'diameter', label: 'Ø по шине', v: 300, step: 10 },
       { k: 'width', label: 'ширина', v: 90, step: 5 },
+      { k: 'tire', label: 'шина', v: 21, step: 1 },
+      { k: 'rim', label: 'обод', v: 18, step: 1 },
       { k: 'spokes', label: 'спиц', v: 5, step: 1 },
+      { k: 'hub', label: 'ступица', v: 40, step: 2 },
     ],
   },
   {
     op: 'handle', name: 'ручка', title: 'Ручка-скоба', group: 'Готовые фигуры',
-    desc: 'Мебельная ручка с площадками крепления — одно тело.',
+    desc: 'П-образная ручка: перекладина, стойки и круглые площадки под винты.',
     params: [
       { k: 'length', label: 'длина', v: 160, step: 10 },
       { k: 'height', label: 'вынос', v: 34, step: 2 },
       { k: 'diameter', label: 'толщина', v: 10, step: 1 },
+      { k: 'plate_d', label: 'Ø площадки', v: 24, step: 1 },
     ],
   },
   {
@@ -3575,15 +3733,6 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'branch', name: 'ветка', title: 'Ветка', group: 'Готовые фигуры',
-    desc: 'Сужающаяся ветка по изогнутому пути.',
-    params: [
-      { k: 'length', label: 'длина', v: 240, step: 10 },
-      { k: 'diameter', label: 'толщина', v: 26, step: 2 },
-      { k: 'taper', label: 'сужение', v: 0.45, step: 0.05 },
-    ],
-  },
-  {
     op: 'ring', name: 'кольцо', title: 'Кольцо', group: 'Готовые фигуры',
     desc: 'Обод с плоскими сторонами и скруглёнными краями.',
     params: [
@@ -3591,37 +3740,6 @@ const TOOL_SHAPES = [
       { k: 'width', label: 'ширина', v: 6, step: 0.5 },
       { k: 'thickness', label: 'толщина', v: 2.2, step: 0.2 },
       { k: 'round', label: 'скругл.', v: 0.6, step: 0.1 },
-    ],
-  },
-  {
-    op: 'cup', name: 'корпус', title: 'Корпус кружки', group: 'Корпуса и посуда',
-    desc: 'Главная часть кружки: вогнутый цилиндр со стенкой и дном, без ручки.',
-    params: [
-      { k: 'diameter', label: 'диаметр', v: 80, step: 2 },
-      { k: 'height', label: 'высота', v: 95, step: 2 },
-      { k: 'wall', label: 'стенка', v: 4, step: 0.5 },
-      { k: 'bottom', label: 'дно', v: 6, step: 0.5 },
-      { k: 'taper', label: 'сужение', v: 0.1, step: 0.02 },
-      { k: 'handle', label: 'ручка', v: false, kind: 'bool' },
-    ],
-  },
-  {
-    op: 'panel', name: 'панель', title: 'Панель с бортиком', group: 'Корпуса и посуда',
-    desc: 'Дно и четыре стенки одним телом: лоток, поддон, приборная панель.',
-    params: [
-      { k: 'size', label: 'размер', v: '240,160,22', kind: 'vec' },
-      { k: 'wall', label: 'стенка', v: 3, step: 0.5 },
-      { k: 'round', label: 'скругл.', v: 8, step: 1 },
-    ],
-  },
-  {
-    op: 'drawer', name: 'ящик', title: 'Выдвижной ящик', group: 'Корпуса и посуда',
-    desc: 'Корпус с полостью, фасад, ручка и направляющие — готовый узел.',
-    params: [
-      { k: 'size', label: 'размер', v: '420,480,180', kind: 'vec' },
-      { k: 'wall', label: 'стенка', v: 14, step: 1 },
-      { k: 'front', label: 'фасад', v: 18, step: 1 },
-      { k: 'handle', label: 'ручка', v: true, kind: 'bool' },
     ],
   },
   {
@@ -3635,31 +3753,37 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'profile2020', name: 'профиль', title: 'Профиль 2020', group: 'Механика',
-    desc: 'Конструкционный профиль 20×20 с четырьмя T-пазами и каналом.',
+    op: 'profile2020', name: 'профиль', title: 'Конструкционный профиль', group: 'Механика',
+    desc: 'Квадрат с четырьмя T-пазами и набором столбиков внутри (без круглого канала).',
     params: [
       { k: 'length', label: 'длина', v: 300, step: 10 },
       { k: 'size', label: 'сторона', v: 20, step: 1 },
       { k: 'slot', label: 'паз', v: 6, step: 0.5 },
+      { k: 'columns', label: 'столбиков', v: 5, step: 1 },
+      { k: 'smooth', label: 'сглаж.', v: 0.6, step: 0.1 },
     ],
   },
   {
     op: 'gusset', name: 'косынка', title: 'Косынка', group: 'Механика',
-    desc: 'Треугольная пластина жёсткости с полками — в угол рамы.',
+    desc: 'Треугольный лист жёсткости в прямой угол рамы; впадина на гипотенузе настраивается.',
     params: [
       { k: 'leg', label: 'катет', v: 70, step: 5 },
       { k: 'height', label: 'высота', v: 55, step: 5 },
       { k: 'thickness', label: 'толщина', v: 6, step: 1 },
+      { k: 'notch', label: 'впадина', v: 16, step: 2 },
+      { k: 'notch_shape', label: 'форма', v: 'ступени' },
     ],
   },
   {
-    op: 'leg', name: 'ножка', title: 'Ножка', group: 'Механика',
-    desc: 'Стойка с пяткой и крепёжной площадкой, с сужением.',
+    op: 'leg', name: 'ножка', title: 'Ножка мебели', group: 'Механика',
+    desc: 'Опора под корпус: пятка на полу, площадка под саморезы сверху, сужение и регулировка.',
     params: [
       { k: 'height', label: 'высота', v: 90, step: 5 },
       { k: 'top', label: 'сверху', v: 34, step: 2 },
       { k: 'bottom', label: 'снизу', v: 22, step: 2 },
       { k: 'flange', label: 'площадка', v: 8, step: 1 },
+      { k: 'shape', label: 'форма', v: 'круглая' },
+      { k: 'adjust', label: 'пятка', v: 0, step: 1 },
     ],
   },
   {
@@ -3673,7 +3797,7 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'worm', name: 'червяк', title: 'Червяк', group: 'Механика',
+    op: 'worm_shaft', name: 'червяк', title: 'Червячный вал', group: 'Механика',
     desc: 'Цилиндр с настоящим винтовым витком: шаг, глубина, заходы.',
     params: [
       { k: 'length', label: 'длина', v: 90, step: 5 },
@@ -3695,6 +3819,20 @@ const TOOL_SHAPES = [
 ];
 
 const TOOL_RECIPES = [
+  {
+    title: 'Кружка',
+    desc: 'Корпус с полостью, дно и ручка — тремя строками; ручка не входит в стенку.',
+    lines: 'корпус = cylinder radius=34 height=95 r2=40 segments=128\n'
+      + 'полость = cylinder radius=30 height=89 r2=36 segments=128\n'
+      + 'полость = translate [полость] offset=[0,0,6]\n'
+      + 'кружка = difference [корпус, полость]\n'
+      + 'ручка = sweep path=[[33,0,24],[47,0,27],[55,0,50],[47,0,73],[37,0,77]] radius=4.6 smooth=10\n'
+      + 'кружка = union [кружка, ручка]\n'
+      + 'полость = cylinder radius=30 height=89 r2=36 segments=128\n'
+      + 'полость = translate [полость] offset=[0,0,6]\n'
+      + 'кружка = difference [кружка, полость]\n'
+      + 'color кружка #ece7df rough=0.35',
+  },
   {
     title: 'Надпись',
     desc: 'Объёмный текст своим шрифтом — без сторонних файлов.',

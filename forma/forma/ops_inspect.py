@@ -174,7 +174,7 @@ def probe(a, name):
 @op("passport", aliases=("паспорт", "паспорт_детали", "карточка"), category="Проверка",
     summary="Печатает паспорт детали: габариты, центр, массу, минимальную стенку и "
             "найденные отверстия — факты, по которым можно проверять модель.",
-    example='кружка = cup diameter=80 height=95\npassport кружка',
+    example='кружка = cylinder radius=40 height=95\npassport кружка',
     params={"objects": "объект (по умолчанию самый крупный видимый)"},
     positional=["objects"])
 def passport(a, name):

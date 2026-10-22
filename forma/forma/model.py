@@ -35,6 +35,14 @@ class Solid:
     # "height": [a, b], "radius": [a, b]}]. Регион определяется по центру
     # треугольника, поэтому нейросети не нужно перечислять полигоны.
     paint: list[dict] = field(default_factory=list)
+    # Свободная роспись кистью: мазки задаются точками в координатах сцены.
+    # [{"color": "#rrggbb", "radius": 5, "path": [[x,y,z], …], "erase": False}]
+    # Ластик — тот же мазок с "erase": True: он возвращает цвет основания,
+    # но не трогает регионы `paint` и материал предмета.
+    brush: list[dict] = field(default_factory=list)
+    # Служебные сведения о детали (например, у самореза — тип головки и её высота),
+    # чтобы сборка «ввернуть» ставила крепёж правильно, а не по габариту.
+    meta: dict = field(default_factory=dict)
     uv: str = "cylinder"
     _stats: dict | None = field(default=None, repr=False)
 
@@ -69,6 +77,9 @@ class Scene:
         self.settings: dict = dict(DEFAULT_SETTINGS)
         self.animation: dict | None = None
         self.animations: list[dict] = []
+        # именованные анимации сцены: «открыть дверь», «выезд ящика», …
+        # их может быть сколько угодно; клипы ссылаются на них через scene=
+        self.named_animations: list[str] = []
         # ключевые кадры по объектам: {имя: [{t, pos, rot, scale, line}, ...]}
         self.keys: dict[str, list[dict]] = {}
         self.objects: dict[str, Solid] = {}
@@ -148,6 +159,13 @@ class Scene:
             solid.visible = False
             solid.notes.append("использован в другой фигуре")
 
+    def add_named_animation(self, name: str) -> str:
+        """Объявляет анимацию сцены (без клипов — просто имя в списке)."""
+        name = (name or "").strip()
+        if name and name not in self.named_animations:
+            self.named_animations.append(name)
+        return name
+
     def add_animation(self, spec: dict) -> dict:
         """Добавляет клип анимации. Клипы с одинаковым track идут друг за другом,
         с разным — параллельно."""
@@ -170,7 +188,7 @@ class Scene:
         ``seconds``. Ключевые кадры объектов живут на своей дорожке.
         """
         clips: list[dict] = []
-        scene_names: list[str] = []
+        scene_names: list[str] = list(self.named_animations)
         # дорожка + объект: у каждого объекта своя очередь клипов, поэтому
         # движение шкафа и качение его колёсиков идут одновременно
         cursors: dict[tuple[int, str], float] = {}

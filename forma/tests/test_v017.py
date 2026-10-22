@@ -24,14 +24,14 @@ class NewPartsTest(unittest.TestCase):
     """Новые инструменты: каждое тело замкнуто, цельно и нужных размеров."""
 
     CASES = {
-        "панель = panel size=[240,160,22] wall=3 round=8": (240, 160, 25),
+        "корпус = box_body size=[240,160,200] wall=3": (240, 160, 200),
         "косынка = gusset leg=70 height=55 thickness=6": (70, 6, 55),
         "ножка = leg height=90 top=34 bottom=22 flange=8": (34, 34, 90),
         "профиль = profile2020 length=300 size=20": (20, 20, 300),
         "люверс = grommet diameter=12 height=8 wall=1.6 flange=3": (21.2, 21.2, 8),
         "червяк = worm length=90 diameter=30 pitch=8 depth=4": (30, 30, 90),
         "рог = horn length=160 radius=22 tip=3 bend=55": (160, 44, 79),
-        "ящик = drawer size=[420,480,180] wall=14 front=18": (427, 503, 180),
+        "станина = shaft length=300 diameter=40": (40, 40, 300),
     }
 
     def test_parts_are_solid(self):
@@ -171,8 +171,8 @@ class InterfaceTest(unittest.TestCase):
         self.assertIn("clearSpaceSelection", self.app)
 
     def test_tool_cards(self):
-        for op in ("panel", "drawer", "profile2020", "worm", "horn",
-                   "grommet", "leg", "rail", "gusset"):
+        for op in ("profile2020", "worm_shaft", "horn", "grommet", "leg",
+                   "rail", "gusset", "bracket", "bearing", "caster"):
             self.assertIn(f"op: '{op}'", self.app)
         blocks = self.app.split("const TOOL_SHAPES = [", 1)[1].split("const TOOL_RECIPES", 1)[0]
         self.assertGreaterEqual(blocks.count("op: '"), 40)

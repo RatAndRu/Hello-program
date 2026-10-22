@@ -702,22 +702,72 @@ def region_mask(spec: dict, points: np.ndarray,
     return mask
 
 
-def paint_point_colors(paint: list[dict] | None, points: np.ndarray,
-                       normals: np.ndarray | None = None) -> np.ndarray | None:
-    """Цвет каждой точки по регионам покраски (для снимков PNG)."""
-    if not paint:
-        return None
+def _color_rgb(value) -> np.ndarray:
+    return np.asarray(color_to_float_rgb(normalize_color(value or "#ffffff")),
+                      dtype=np.float32)
+
+
+def brush_masks(brush: list[dict] | None, points: np.ndarray):
+    """Маски мазков: каждая точка мазка — шар заданного радиуса."""
     pts = np.asarray(points, dtype=np.float64).reshape(-1, 3)
-    rgb = np.ones((len(pts), 3), dtype=np.float32)
-    for spec in paint:
-        mask = region_mask(spec, pts, normals)
-        if not mask.any():
+    for spec in brush or []:
+        path = spec.get("path") or []
+        if not path:
             continue
-        rgb[mask] = color_to_float_rgb(normalize_color(spec.get("color") or "#ffffff"))
+        try:
+            centers = np.asarray(path, dtype=np.float64).reshape(-1, 3)
+        except (TypeError, ValueError):
+            continue
+        radius = max(0.05, float(spec.get("radius") or 4.0))
+        r2 = radius * radius
+        mask = np.zeros(len(pts), dtype=bool)
+        for center in centers:
+            mask |= np.sum((pts - center) ** 2, axis=1) <= r2
+        if mask.any():
+            yield spec, mask
+
+
+def surface_point_colors(base, paint: list[dict] | None, brush: list[dict] | None,
+                         points: np.ndarray, normals: np.ndarray | None = None):
+    """Абсолютный цвет точек: материал → регионы `paint` → мазки кистью.
+
+    Ластик возвращает цвет, который был под мазком (материал или регион
+    `paint`), поэтому он стирает именно нарисованное кистью, а не материал.
+    """
+    pts = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+    rgb = np.tile(np.asarray(base, dtype=np.float32).reshape(1, 3), (len(pts), 1))
+    for spec in paint or []:
+        mask = region_mask(spec, pts, normals)
+        if mask.any():
+            rgb[mask] = _color_rgb(spec.get("color"))
+    under = rgb.copy()
+    for spec, mask in brush_masks(brush, pts):
+        color = None if spec.get("erase") else _color_rgb(spec.get("color"))
+        rgb[mask] = under[mask] if color is None else color
     return rgb
 
 
-def region_triangle_colors(paint: list[dict] | None, verts, faces) -> np.ndarray | None:
+def paint_point_colors(paint: list[dict] | None, points: np.ndarray,
+                       normals: np.ndarray | None = None,
+                       brush: list[dict] | None = None, base=None) -> np.ndarray | None:
+    """Цвет каждой точки по регионам покраски (для снимков PNG)."""
+    if not paint and not brush:
+        return None
+    if base is not None:
+        return surface_point_colors(base, paint, brush, points, normals)
+    pts = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+    rgb = np.ones((len(pts), 3), dtype=np.float32)
+    for spec in paint or []:
+        mask = region_mask(spec, pts, normals)
+        if not mask.any():
+            continue
+        rgb[mask] = _color_rgb(spec.get("color"))
+    return rgb
+
+
+def region_triangle_colors(paint: list[dict] | None, verts, faces,
+                           brush: list[dict] | None = None,
+                           base=None) -> np.ndarray | None:
     """Цвет каждого треугольника по регионам покраски (для GLB и снимков).
 
     Регион задаётся словарём: side (верх/низ/перед/зад/лево/право), box
@@ -726,7 +776,7 @@ def region_triangle_colors(paint: list[dict] | None, verts, faces) -> np.ndarray
     а для side — ещё и нормаль смотрит в нужную сторону. Так нейросети не нужно
     перечислять грани по одной: достаточно сказать «покрась верх в красный».
     """
-    if not paint:
+    if not paint and not brush:
         return None
     v = np.asarray(verts, dtype=np.float64)
     f = np.asarray(faces, dtype=np.int64)
@@ -735,12 +785,19 @@ def region_triangle_colors(paint: list[dict] | None, verts, faces) -> np.ndarray
     tri = v[f]
     n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
     ln = np.linalg.norm(n, axis=1)
-    colors = np.ones((len(f), 3), dtype=np.float32)
-    for spec in paint:
-        mask = region_mask(spec, tri.mean(axis=1), n / np.maximum(ln, 1e-12)[:, None])
-        if not mask.any():
-            continue
-        colors[mask] = color_to_float_rgb(normalize_color(spec.get("color") or "#ffffff"))
+    normals = n / np.maximum(ln, 1e-12)[:, None]
+    centers = tri.mean(axis=1)
+    white = np.ones(3, dtype=np.float32) if base is None else np.asarray(base, dtype=np.float32)
+    colors = np.tile(white.reshape(1, 3), (len(f), 1)).astype(np.float32)
+    for spec in paint or []:
+        mask = region_mask(spec, centers, normals)
+        if mask.any():
+            colors[mask] = _color_rgb(spec.get("color"))
+    if brush:
+        under = colors.copy()
+        for spec, mask in brush_masks(brush, centers):
+            color = None if spec.get("erase") else _color_rgb(spec.get("color"))
+            colors[mask] = under[mask] if color is None else color
     return colors
 
 
@@ -903,8 +960,11 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
         # Регионная покраска: цвета вершин (COLOR_0) умножаются на цвет
         # материала — Blender и другие программы увидят те же полосы.
         script_verts = np.stack([verts[:, 0], -verts[:, 2], verts[:, 1]], axis=1)
+        base_rgb = color_to_float_rgb(normalize_color(obj.color or "#c9d1e3"))
         paint_colors = region_triangle_colors(getattr(obj, "paint", None),
-                                              script_verts, faces)
+                                              script_verts, faces,
+                                              brush=getattr(obj, "brush", None),
+                                              base=base_rgb)
         if paint_colors is not None and len(faces) != len(verts) // 3:
             # Для цветов вершин геометрию разворачиваем по треугольникам —
             # иначе общие вершины нельзя покрасить в разные цвета.
@@ -917,7 +977,9 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             faces = np.arange(len(verts), dtype=np.int64).reshape(-1, 3)
             script_verts = np.stack([verts[:, 0], -verts[:, 2], verts[:, 1]], axis=1)
             paint_colors = region_triangle_colors(getattr(obj, "paint", None),
-                                                  script_verts, faces)
+                                                  script_verts, faces,
+                                                  brush=getattr(obj, "brush", None),
+                                                  base=base_rgb)
         if paint_colors is not None:
             try:
                 # COLOR_0 умножается на цвет материала — в Blender и в окне

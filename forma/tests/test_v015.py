@@ -14,6 +14,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+import numpy as np  # noqa: E402
+
+from forma.geometry import manifold_mesh  # noqa: E402
 from forma.run import build  # noqa: E402
 
 
@@ -29,11 +32,11 @@ def checks(b) -> list[dict]:
 
 
 class TestShapes(unittest.TestCase):
-    """Восемь готовых фигур: одна команда вместо десятка булевых операций."""
+    """Готовые фигуры: одна команда вместо десятка булевых операций."""
 
     CASES = {
         "star": "ф = star points=5 outer=60 inner=25 depth=12 bevel=2",
-        "cup": "ф = cup diameter=80 height=95 wall=4",
+        "pyramid": "ф = pyramid sides=4 radius=60 height=90",
         "plate": "ф = plate diameter=220 depth=26 wall=4",
         "spring": "ф = spring diameter=22 wire=3 turns=10 pitch=7",
         "gear": "ф = gear teeth=20 module=2 thickness=8 bore=8",
@@ -69,22 +72,43 @@ class TestShapes(unittest.TestCase):
         self.assertLess(cut.scene.objects["ф"].manifold.volume(),
                         plain.scene.objects["ф"].manifold.volume())
 
-    def test_cup_and_plate_sizes(self):
-        cup = ok("ф = cup diameter=80 height=95 wall=4", analyze_model=False)
-        bb = cup.scene.objects["ф"].manifold.bounding_box()
-        self.assertAlmostEqual(bb[5] - bb[2], 95.0, places=2)
-        self.assertGreater(bb[3] - bb[0], 80.0)    # ручка выступает за корпус
-        plate = ok("ф = plate diameter=220 depth=26 wall=4", analyze_model=False)
-        bb = plate.scene.objects["ф"].manifold.bounding_box()
-        self.assertAlmostEqual(bb[3] - bb[0], 220.0, places=2)
-        self.assertAlmostEqual(bb[5] - bb[2], 26.0, places=2)
+    def test_new_primitives_sizes(self):
+        pyr = ok("ф = pyramid sides=4 radius=60 height=90", analyze_model=False)
+        bb = pyr.scene.objects["ф"].manifold.bounding_box()
+        self.assertAlmostEqual(bb[5] - bb[2], 90.0, places=2)
+        ico = ok("ф = icosphere radius=40 divisions=2", analyze_model=False)
+        bb = ico.scene.objects["ф"].manifold.bounding_box()
+        self.assertAlmostEqual(bb[3] - bb[0], 80.0, delta=0.5)
+        gem = ok("ф = diamond diameter=40 crown=14 pavilion=26 sides=8",
+                 analyze_model=False)
+        bb = gem.scene.objects["ф"].manifold.bounding_box()
+        self.assertAlmostEqual(bb[5] - bb[2], 40.0, places=2)
 
-    def test_no_handle_makes_cup_narrower(self):
-        with_handle = ok("ф = cup diameter=60 height=70", analyze_model=False)
-        without = ok("ф = cup diameter=60 height=70 handle=нет", analyze_model=False)
-        a = with_handle.scene.objects["ф"].manifold.bounding_box()
-        b = without.scene.objects["ф"].manifold.bounding_box()
-        self.assertGreater(a[3] - a[0], b[3] - b[0] + 5.0)
+    def test_taper_and_ring_parameters(self):
+        # призма сужается к концу: верх меньше низа
+        taper = ok("ф = prism sides=6 radius=20 height=30 r2=8", analyze_model=False)
+        self.assertAlmostEqual(taper.scene.objects["ф"].manifold.bounding_box()[3],
+                               20.0, places=2)
+        # тор можно задавать наружным/внутренним радиусом и толщиной
+        a = ok("ф = torus outer=40 inner=24 thickness=8", analyze_model=False)
+        b = ok("ф = torus major=32 minor=8", analyze_model=False)
+        va = a.scene.objects["ф"].manifold.volume()
+        vb = b.scene.objects["ф"].manifold.volume()
+        self.assertAlmostEqual(va, vb, delta=vb * 0.02)
+        # кольцо — то же, но с плоским ободом
+        r1 = ok("ф = ring diameter=20 width=6 thickness=2.2", analyze_model=False)
+        r2 = ok("ф = ring inner=20 outer=24.4 height=6", analyze_model=False)
+        self.assertAlmostEqual(r1.scene.objects["ф"].manifold.volume(),
+                               r2.scene.objects["ф"].manifold.volume(), delta=1.0)
+
+    def test_leaf_has_pointed_ends(self):
+        leaf = ok("ф = leaf length=90 width=45 thickness=2", analyze_model=False)
+        v, _ = manifold_mesh(leaf.scene.objects["ф"].manifold)
+        # у концов листа вершины сходятся в остриё, а не в плоскую кромку
+        self.assertAlmostEqual(float(v[:, 0].min()), -45.0, delta=0.6)
+        self.assertAlmostEqual(float(v[:, 0].max()), 45.0, delta=0.6)
+        near = v[np.abs(v[:, 0] - float(v[:, 0].max())) < 0.35]
+        self.assertLess(float(np.abs(near[:, 1]).max()), 1.2)
 
     def test_spring_height_follows_turns_and_pitch(self):
         b = ok("ф = spring diameter=22 wire=3 turns=10 pitch=7", analyze_model=False)
@@ -112,7 +136,10 @@ class TestShapes(unittest.TestCase):
     def test_aliases_are_commands(self):
         aliases = {
             "звезда": "star outer=40 inner=16",
-            "кружка": "cup diameter=60 height=70 handle=нет",
+            "яйцо": "egg height=60 diameter=42 proportion=0.5",
+            "арка": "arch radius=120 width=40 thickness=30",
+            "полусфера": "hemisphere radius=50",
+            "облако": "cloud size=[120,70,60] puffs=8",
             "тарелка": "plate diameter=180 depth=20",
             "пружина": "spring diameter=18 wire=2 turns=6 pitch=5",
             "шестерня": "gear teeth=14 module=2",
@@ -134,7 +161,7 @@ class TestShapes(unittest.TestCase):
         self.assertIn("Проволока", b.error["message"])
 
     def test_all_shapes_fit_poly_budget(self):
-        limits = {"star": 900, "cup": 4000, "plate": 3500, "spring": 14000,
+        limits = {"star": 900, "pyramid": 64, "plate": 6500, "spring": 14000,
                   "gear": 2200, "washer": 1600, "cube_hole": 900, "ring": 7200}
         for name, script in self.CASES.items():
             with self.subTest(shape=name):
@@ -213,7 +240,7 @@ class TestExamplesAndTools(unittest.TestCase):
         self.assertEqual(keys, [
             "mug", "car", "vase", "bottle", "alien", "gear",
             "mannequin", "apple", "human_studio", "animation_tracks", "wardrobe",
-            "mechanics", "showcase", "units",
+            "mechanics", "polygons", "showcase", "units",
             "motorcycle", "clock", "mates",
         ])
 
@@ -241,15 +268,16 @@ class TestExamplesAndTools(unittest.TestCase):
         self.assertIn("function renderTools", app)
         self.assertIn("function addShapeTool", app)
         # все восемь фигур доступны из библиотеки
-        for op in ("star", "cup", "plate", "spring", "gear", "washer", "cube_hole", "ring"):
+        for op in ("star", "pyramid", "plate", "spring", "gear", "washer",
+                   "cube_hole", "ring", "egg", "arch", "hemisphere", "cloud"):
             self.assertIn(f"op: '{op}'", app)
 
     def test_shape_commands_in_help(self):
         import forma.run  # noqa: F401  — регистрирует команды
         from forma.ops import OPS
 
-        for name in ("star", "cup", "plate", "spring", "gear", "washer",
-                     "cube_hole", "ring"):
+        for name in ("star", "pyramid", "icosphere", "diamond", "plate",
+                     "spring", "gear", "washer", "cube_hole", "ring"):
             spec = OPS[name]
             self.assertEqual(spec.category, "Примитивы")
             self.assertTrue(spec.example)

@@ -22,89 +22,108 @@ from .ops_kit import (_dedupe, _one, _pair, _placed, _profile, _rect_profile,
 
 
 # --------------------------------------------------------------------------- #
-#  Панель с бортиком (лоток)
-# --------------------------------------------------------------------------- #
-@op("panel", aliases=("панель", "лоток", "поддон", "tray"),
-    category="Примитивы",
-    summary="Панель с бортиком по периметру: дно и четыре стенки одним телом. "
-            "Основание приборной панели, лотка, поддона.",
-    example="панель = panel size=[240, 160, 22] wall=3 round=8",
-    params={"size": "размер в плане и высота бортика [x,y,h], мм (240,160,22)",
-            "wall": "толщина стенки и дна (3)", "round": "скругление углов (6)",
-            "segments": "сегментов в скруглении", "at": "положение [x,y,z]",
-            "center": "центрировать по высоте"})
-def panel(a, name):
-    sx, sy, h = _triple(a, "size", (240.0, 160.0, 22.0))
-    wall = float(a.num("wall", 3.0, minv=0.4))
-    floor = max(1.2, wall * 0.8)
-    if wall * 2 >= min(sx, sy) - 2.0:
-        raise GeometryError("Стенки не оставляют места внутри панели.",
-                            hint="wall должен быть меньше половины меньшей стороны.")
-    if h < wall * 1.2:
-        raise GeometryError("Бортик ниже стенки — увеличьте высоту.",
-                            hint="Третье число в size — высота бортика над дном.")
-    round_r = float(a.num("round", 6.0, minv=0.0) or 0.0)
-    seg = _seg(a, "segments", 6, 2, 32)
-    outer = mf.Manifold.extrude(
-        mf.CrossSection([_rect_profile(sx, sy, round_r, seg)]), float(floor + h))
-    inner = mf.Manifold.extrude(
-        mf.CrossSection([_rect_profile(sx - 2 * wall, sy - 2 * wall,
-                                       max(0.0, round_r - wall), seg)]),
-        float(h + 1.0)).translate((0.0, 0.0, floor))
-    solid = outer - inner
-    out = make_solid(a.scene, name, _placed(a, solid), a, kind="panel")
-    out.notes.append(f"стенка {wall:g} мм, борт {h:g} мм")
-    return out
-
-
-# --------------------------------------------------------------------------- #
 #  Косынка
 # --------------------------------------------------------------------------- #
-@op("gusset", aliases=("косынка", "угольник", "усилитель_угла"),
+@op("gusset", aliases=("косынка", "усилитель_угла", "треугольник_жесткости"),
     category="Примитивы",
-    summary="Треугольная косынка жёсткости с полками: катеты, толщина, "
-            "скругление вершины. Ставится в угол рамы или полки.",
-    example="косынка = gusset leg=70 height=55 thickness=6",
-    params={"leg": "горизонтальный катет, мм (60)", "height": "вертикальный катет (60)",
-            "thickness": "толщина листа (6)", "round": "скругление свободного угла (10)",
+    summary="Косынка — треугольный лист жёсткости, который вваривают или "
+            "прикручивают в прямой угол рамы, чтобы он не сложился. Прямой угол "
+            "здесь — вершина с катетами, гипотенуза — свободная кромка. "
+            "Впадина на гипотенузе задаётся: дуга, ступени или прямой рез.",
+    example="косынка = gusset leg=70 height=55 thickness=6 notch=18 notch_shape=ступени\n"
+            "уголок = gusset leg=60 height=60 thickness=5 notch=0",
+    params={"leg": "горизонтальный катет, мм (60)",
+            "height": "вертикальный катет (60)",
+            "thickness": "толщина листа (6)",
+            "notch": "глубина впадины на гипотенузе, мм (0 — прямой рез)",
+            "notch_shape": "форма впадины: дуга, ступени или прямо (дуга)",
+            "notch_steps": "ступеней во впадине, 2…12 (4)",
+            "round": "скругление свободного угла, мм (10)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def gusset(a, name):
     leg = float(a.num("leg", 60.0, minv=5.0))
     height = float(a.num("height", 60.0, minv=5.0))
     thick = float(a.num("thickness", 6.0, minv=0.6))
     round_r = float(a.num("round", 10.0, minv=0.0) or 0.0)
-    steps = 6
-    pts = [(0.0, 0.0), (leg, 0.0)]
-    # гипотенуза с небольшим скруглением у вершины
+    notch = float(a.num("notch", 0.0, minv=0.0) or 0.0)
+    shape = (a.text("notch_shape") or "дуга").strip().lower()
+    steps_n = int(a.int("notch_steps", 4, minv=2, maxv=12) or 4)
+    if shape in ("arc", "дуга", "круг", "радиус"):
+        shape = "дуга"
+    elif shape in ("steps", "ступени", "ступеньки", "лесенка"):
+        shape = "ступени"
+    elif shape in ("straight", "прямо", "прямой", "нет"):
+        shape = "прямо"
+    else:
+        raise GeometryError("Форма впадины: дуга, ступени или прямо.")
     hyp = math.hypot(leg, height)
-    for i in range(1, steps):
-        t = i / steps
+    # свободная кромка: от (leg,0) к (0,height); впадина — выемка внутрь листа
+    samples = 24 if shape == "дуга" else max(2, steps_n)
+    pts = [(0.0, 0.0), (leg, 0.0)]
+    edge = []
+    for i in range(1, samples):
+        t = i / samples
         x = leg * (1.0 - t)
         y = height * t
-        if round_r > 0:
-            shrink = round_r * (1.0 - math.sin(math.pi * t))
-            x -= shrink * leg / hyp * 0.4
-            y -= shrink * height / hyp * 0.4
-        pts.append((x, y))
+        edge.append((x, y, t))
+    if shape == "дуга" and notch > 0:
+        shaped = []
+        for x, y, t in edge:
+            shrink = notch * math.sin(math.pi * t)
+            shaped.append((x - shrink * leg / hyp * 0.55,
+                           y - shrink * height / hyp * 0.55))
+        edge_pts = shaped
+    elif shape == "ступени" and notch > 0:
+        # лесенка: каждый шаг заходит в лист и выходит обратно
+        edge_pts = []
+        for k in range(steps_n):
+            t0 = (k + 0.15) / steps_n
+            t1 = (k + 0.85) / steps_n
+            depth = notch * (0.5 + 0.5 * math.sin(math.pi * (k + 0.5) / steps_n))
+            for t in (t0, t1):
+                x = leg * (1.0 - t)
+                y = height * t
+                edge_pts.append((x - depth * leg / hyp * 0.55,
+                                 y - depth * height / hyp * 0.55))
+    else:
+        edge_pts = [(x, y) for x, y, _ in edge]
+    # скругление свободного угла — в самом конце (у вершины с катетом height)
+    if round_r > 0 and edge_pts:
+        x, y = edge_pts[-1]
+        norm = math.hypot(leg, height)
+        shift = min(round_r, leg * 0.3, height * 0.3)
+        edge_pts[-1] = (x + shift * leg / norm * 0.25, y + shift * height / norm * 0.25)
+    pts.extend(edge_pts)
     pts.append((0.0, height))
     solid = mf.Manifold.extrude(mf.CrossSection([_profile(pts)]), thick)
     solid = solid.rotate([90.0, 0.0, 0.0])
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="gusset")
-    out.notes.append(f"катеты {leg:g}×{height:g} мм, лист {thick:g} мм")
+    note = f"катеты {leg:g}×{height:g} мм, лист {thick:g} мм"
+    if notch > 0:
+        note += f", впадина {notch:g} мм ({shape})"
+    out.notes.append(note)
     return out
 
 
 # --------------------------------------------------------------------------- #
 #  Мебельная ножка
 # --------------------------------------------------------------------------- #
-@op("leg", aliases=("ножка", "опора", "мебельная_ножка"),
+@op("leg", aliases=("ножка", "опора", "мебельная_ножка", "стойка"),
     category="Примитивы",
-    summary="Ножка с верхней и нижней площадками и сужением: конусная стойка, "
-            "пятка и крепёжная площадка одним телом.",
-    example="ножка = leg height=90 top=34 bottom=22 flange=8",
-    params={"height": "высота ножки (90)", "top": "диаметр площадки сверху (34)",
-            "bottom": "диаметр стойки снизу (22)", "flange": "высота площадок (8)",
-            "waist": "сужение стойки 0…1 (0.55)", "segments": "сегментов (48)",
+    summary="Опора мебели: стойка с верхней и нижней площадками. Это именно "
+            "ножка под корпус (кровать, комод, стол), а не стойка стеллажа: "
+            "у неё есть пятка на полу и площадка под саморезы сверху. "
+            "Круглая или квадратная, с сужением, с регулировочной пяткой.",
+    example="ножка = leg height=90 top=34 bottom=22 flange=8\n"
+            "квадратная = leg height=70 top=40 bottom=30 shape=квадрат",
+    params={"height": "высота ножки, мм (90)",
+            "top": "размер верхней площадки, мм (34)",
+            "bottom": "размер стойки снизу, мм (22)",
+            "flange": "высота площадок, мм (8)",
+            "waist": "сужение стойки 0…1 (0.55)",
+            "shape": "круглая или квадратная (круглая)",
+            "adjust": "регулировочная пятка: крутить по высоте, мм (0 — нет)",
+            "segments": "сегментов круглой ножки (48)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def leg(a, name):
     height = float(a.num("height", 90.0, minv=10.0))
@@ -112,15 +131,44 @@ def leg(a, name):
     bottom = float(a.num("bottom", 22.0, minv=4.0))
     flange = min(float(a.num("flange", 8.0, minv=1.0)), height * 0.45)
     waist = float(a.num("waist", 0.55, minv=0.0, maxv=1.0))
+    shape = (a.text("shape") or "круглая").strip().lower()
+    if shape in ("square", "квадрат", "квадратная", "box"):
+        shape = "квадрат"
+    elif shape in ("round", "круг", "круглая", "cylinder"):
+        shape = "круглая"
+    else:
+        raise GeometryError("Форма ножки: круглая или квадратная.")
+    adjust = float(a.num("adjust", 0.0, minv=0.0) or 0.0)
     seg = _seg(a, "segments", 48, 12, 160)
     rt, rb = top / 2.0, bottom / 2.0
     mid = (rt + rb) / 2.0 * (1.0 - 0.35 * waist)
     pts = [(0.0, 0.0), (rb, 0.0), (rb, flange), (mid, height * 0.45),
            (rt * 0.92, height - flange), (rt, height - flange), (rt, height),
            (0.0, height)]
-    solid = _revolve_profile(pts, seg, "ножки")
+    if shape == "круглая":
+        solid = _revolve_profile(pts, seg, "ножки")
+    else:
+        # квадратная: площадки-плиты и сужающаяся стойка (оболочка сечений)
+        def plate(side, z0, h):
+            return mf.Manifold.cube((side, side, h), True).translate((0.0, 0.0, z0 + h / 2.0))
+        base = plate(bottom, 0.0, max(0.6, flange))
+        head = plate(top, height - flange, flange)
+        waist_side = (top + bottom) / 2.0 * (1.0 - 0.35 * waist)
+        lower = plate(waist_side * 0.98, height * 0.40, 1.0)
+        upper = plate(waist_side * 0.98, height * 0.58, 1.0)
+        shaft = mf.Manifold.batch_boolean(
+            [base, head, lower, upper], mf.OpType.Add).hull()
+        solid = shaft
+    if adjust > 0:
+        # пятка-винт: тонкий цилиндр под основанием и насечка на пятке
+        stem = mf.Manifold.cylinder(adjust, max(2.0, rb * 0.35), max(2.0, rb * 0.35),
+                                    max(12, seg // 2))
+        stem = stem.translate((0.0, 0.0, -adjust))
+        pad = mf.Manifold.cylinder(2.0, rb * 1.05, rb * 0.9, max(12, seg // 2))
+        pad = pad.translate((0.0, 0.0, -adjust - 2.0))
+        solid = solid + stem + pad
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="leg")
-    out.notes.append(f"высота {height:g} мм, площадка ø{top:g} мм")
+    out.notes.append(f"высота {height:g} мм, площадка {top:g} мм, {shape}")
     return out
 
 
@@ -152,47 +200,106 @@ def rail(a, name):
 
 
 # --------------------------------------------------------------------------- #
-#  Конструкционный профиль 2020
+#  Конструкционный профиль (2020 и его аналоги)
 # --------------------------------------------------------------------------- #
 @op("profile2020", aliases=("профиль2020", "профиль_2020", "алюминиевый_профиль",
-                            " extrusion_2020", "profile_2020"),
+                            " extrusion_2020", "profile_2020", "конструкционный_профиль"),
     category="Примитивы",
-    summary="Алюминиевый конструкционный профиль 20×20 с четырьмя T-пазами и "
-            "центральным каналом — стандарт станочных рам и 3D-принтеров.",
-    example="профиль = profile2020 length=300 size=20",
+    summary="Алюминиевый конструкционный профиль: квадрат со скруглёнными "
+            "рёбрами и T-пазами с четырёх сторон. Внутри — не одно круглое "
+            "отверстие, а рёбра жёсткости: при малом size профиль становится "
+            "набором параллельных столбиков, число и сглаживание которых "
+            "настраивается. Стандарт рам, станков и 3D-принтеров.",
+    example="профиль = profile2020 length=300 size=20\n"
+            "мини = profile2020 length=120 size=12 columns=5 smooth=0.5",
     params={"length": "длина, мм (300)", "size": "сторона квадрата (20)",
-            "slot": "ширина паза (6)", "depth": "глубина паза (4.2)",
-            "bore": "центральный канал (5)", "at": "положение [x,y,z]",
-            "center": "центрировать по высоте"})
+            "slot": "ширина T-паза (6)", "depth": "глубина паза (4.2)",
+            "columns": "число внутренних столбиков (5); 0 — сплошной",
+            "smooth": "сглаживание столбиков 0…1 (0.6): 0 — острые рёбра",
+            "wall": "толщина стенки профиля, мм (size/8)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def profile2020(a, name):
     length = float(a.num("length", 300.0, minv=10.0))
-    size = float(a.num("size", 20.0, minv=8.0))
-    slot = float(a.num("slot", 6.0, minv=1.0))
-    depth = float(a.num("depth", 4.2, minv=0.5))
-    bore = float(a.num("bore", 5.0, minv=1.0))
-    if slot >= size - 2.0 or depth >= size / 2.0:
-        raise GeometryError("Паз не помещается в профиль.",
-                            hint="slot ≤ size−2, depth < size/2.")
+    size = float(a.num("size", 20.0, minv=6.0))
+    wall = float(a.num("wall", max(0.8, size / 9.0), minv=0.4))
+    slot = float(a.num("slot", min(6.0, size * 0.3), minv=0.8))
+    depth = float(a.num("depth", min(4.2, max(0.6, wall - 0.8)), minv=0.4))
+    columns = int(a.int("columns", 5, minv=0, maxv=12) or 0)
+    smooth = float(a.num("smooth", 0.6, minv=0.0, maxv=1.0) or 0.0)
+    if slot >= size - 2.0 * wall:
+        raise GeometryError("Паз шире просвета между стенками профиля.",
+                            hint=f"slot ≤ size − 2·wall = {size - 2 * wall:g} мм.")
+    if wall * 2 >= size - 1.0:
+        raise GeometryError("Стенка профиля слишком толстая.",
+                            hint="wall должна быть меньше половины size.")
+    # T-паз остаётся ЗАКРЫТЫМ: его дно не доходит до внутренней полости,
+    # иначе профиль распадается на четыре угловых куска (было в 0.19).
+    if depth > wall - 0.6:
+        a.scene.log("info", f"profile2020: глубина паза {depth:g} → {wall - 0.6:g} мм "
+                            f"(чтобы паз не пробил стенку)", a.cmd.line)
+        depth = max(0.4, wall - 0.6)
     base = mf.Manifold.cube((size, size, length), center=True)
+    # T-паз: узкая горловина у поверхности и широкий канал под ней.
+    lip_h = min(max(0.7, depth * 0.35), depth * 0.55)
+    neck = max(0.9, slot * 0.72)
+    channel = slot
+    body_h = max(0.4, depth - lip_h)
+    mid = size / 2.0 - lip_h - body_h / 2.0
     tools = []
     for axis in ((1.0, 0.0), (-1.0, 0.0), (0.0, 1.0), (0.0, -1.0)):
         if axis[0]:
-            box = mf.Manifold.cube((depth * 2, slot, length + 2.0), center=True)
+            neck_box = mf.Manifold.cube((lip_h * 2, neck, length + 2.0), center=True)
+            body_box = mf.Manifold.cube((body_h * 2, channel, length + 2.0), center=True)
+            neck_box = neck_box.translate((axis[0] * (size / 2.0 - lip_h),
+                                           axis[1] * (size / 2.0 - lip_h * 0.0), 0.0))
+            body_box = body_box.translate((axis[0] * mid, 0.0, 0.0))
         else:
-            box = mf.Manifold.cube((slot, depth * 2, length + 2.0), center=True)
-        box = box.translate((axis[0] * size / 2.0, axis[1] * size / 2.0, 0.0))
-        tools.append(box)
-    channel = mf.Manifold.cylinder(length + 2.0, bore / 2.0, bore / 2.0, 24)
-    channel = channel.rotate([90.0, 0.0, 0.0])
-    tools.append(channel)
+            neck_box = mf.Manifold.cube((neck, lip_h * 2, length + 2.0), center=True)
+            body_box = mf.Manifold.cube((channel, body_h * 2, length + 2.0), center=True)
+            neck_box = neck_box.translate((0.0, axis[1] * (size / 2.0 - lip_h), 0.0))
+            body_box = body_box.translate((0.0, axis[1] * mid, 0.0))
+        tools.append(neck_box)
+        tools.append(body_box)
     solid = base
     for tool in tools:
         solid = solid - tool
-    if solid.is_empty():
-        raise GeometryError("Профиль получился пустым — уменьшите пазы.")
+    # Внутри — не одно круглое отверстие, а параллельные каналы,
+    # разделённые столбиками; при малом size это и есть «набор столбиков».
+    inner_size = size - 2.0 * wall
+    if columns <= 0:
+        solid = solid - mf.Manifold.cube((inner_size, inner_size, length + 2.0), center=True)
+    else:
+        max_columns = max(1, int((inner_size - 0.6) / 1.2))
+        if columns > max_columns:
+            a.scene.log("info", f"profile2020: столбиков {columns} → {max_columns} "
+                                f"(профиль {size:g} мм)", a.cmd.line)
+            columns = max_columns
+        rib = max(0.6, min(inner_size * 0.12,
+                           (inner_size - columns * 0.9) / max(1, columns)))
+        slot_w = (inner_size - rib * (columns - 1)) / columns
+        if slot_w < 0.7:
+            raise GeometryError("Столбики не помещаются внутри профиля.",
+                                hint=f"Уменьшите columns (сейчас {columns}) или увеличьте size.")
+        corner = min(rib * 0.6 * smooth, slot_w * 0.45, inner_size * 0.3)
+        seg_r = 4 if corner > 1e-3 else 2
+        tool = None
+        for i in range(columns):
+            center = -inner_size / 2.0 + slot_w / 2.0 + i * (slot_w + rib)
+            prof = _rect_profile(slot_w, inner_size, corner, seg_r)
+            cavity = mf.Manifold.extrude(mf.CrossSection([prof]), length + 2.0)
+            cavity = cavity.translate((center, 0.0, 0.0))
+            tool = cavity if tool is None else tool + cavity
+        solid = solid - tool
+    if solid.is_empty() or solid.volume() <= 1e-6:
+        raise GeometryError("Профиль получился пустым — уменьшите пазы или полость.")
+    if len(solid.decompose()) != 1:
+        raise GeometryError(
+            "Профиль распался на части: пазы пробили стенку.",
+            hint="Уменьшите depth или увеличьте wall.")
     solid = solid.translate((0.0, 0.0, length / 2.0))
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="profile2020")
-    out.notes.append(f"профиль {size:g}×{size:g} мм, длина {length:g} мм, 4 паза")
+    out.notes.append(f"профиль {size:g}×{size:g} мм, длина {length:g} мм, "
+                     f"4 T-паза, каналов {columns}")
     return out
 
 
@@ -228,10 +335,11 @@ def grommet(a, name):
 # --------------------------------------------------------------------------- #
 #  Червяк
 # --------------------------------------------------------------------------- #
-@op("worm", aliases=("червяк", "червячный_вал", "worm_shaft"),
+@op("worm_shaft", aliases=("червяк", "червячный_вал", "червячная_передача", "worm"),
     category="Примитивы",
-    summary="Червяк: цилиндр с настоящим винтовым витком. Шаг, число заходов, "
-            "глубина витка — как у червячной передачи.",
+    summary="Червячный вал (по-простому «червяк») — винт, который крутит "
+            "червячное колесо. Это не крепёж и не шнек: виток непрерывный, "
+            "шаг и число заходов задаются, как у настоящей передачи.",
     example="червяк = worm length=90 diameter=30 pitch=8 depth=4",
     params={"length": "длина, мм (90)", "diameter": "наружный диаметр (30)",
             "pitch": "шаг витка, мм (8)", "depth": "глубина витка (4)",
@@ -343,62 +451,4 @@ def knurl(a, name):
     out = make_solid(a.scene, name, _shifted(a, solid), a, base=base, kind="knurl")
     a.scene.consume(base)
     out.notes.append(f"накатка {count} канавок, глубина {depth:g} мм")
-    return out
-
-
-# --------------------------------------------------------------------------- #
-#  Выдвижной ящик
-# --------------------------------------------------------------------------- #
-@op("drawer", aliases=("выдвижной_ящик", "ящик_с_фасадом"),
-    category="Примитивы",
-    summary="Готовый ящик: корпус с полостью, фасад, ручка и направляющие. "
-            "Всё одним телом — двигайте по рельсу анимацией move.",
-    example="ящик = drawer size=[420, 480, 180] wall=14 front=18 handle=да",
-    params={"size": "ширина, глубина, высота [x,y,z], мм (420,480,180)",
-            "wall": "толщина стенок (14)", "bottom": "толщина дна (8)",
-            "front": "толщина фасада (18)", "round": "скругление углов (6)",
-            "handle": "поставить ручку да/нет (да)",
-            "rail": "добавить направляющие да/нет (да)",
-            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
-def drawer(a, name):
-    sx, sy, sz = _triple(a, "size", (420.0, 480.0, 180.0))
-    wall = float(a.num("wall", 14.0, minv=1.0))
-    bottom = float(a.num("bottom", 8.0, minv=1.0))
-    front = float(a.num("front", 18.0, minv=2.0))
-    round_r = float(a.num("round", 6.0, minv=0.0) or 0.0)
-    seg = _seg(a, "segments", 6, 2, 32)
-    if wall * 2 >= min(sx, sy) - 2.0 or front * 2 >= sy:
-        raise GeometryError("Стенки ящика не оставляют полости.")
-    body_d = max(10.0, sy - front)
-    outer = mf.Manifold.extrude(
-        mf.CrossSection([_rect_profile(sx, body_d, round_r, seg)]), float(sz))
-    inner = mf.Manifold.extrude(
-        mf.CrossSection([_rect_profile(sx - 2 * wall, body_d - 2 * wall,
-                                       max(0.0, round_r - wall), seg)]),
-        float(sz - bottom + 1.0)).translate((0.0, 0.0, bottom))
-    solid = outer - inner
-    front_panel = mf.Manifold.extrude(
-        mf.CrossSection([_rect_profile(sx + 2.0, front + 1.0, round_r, seg)]),
-        float(sz - 2.0)).translate((0.0, body_d / 2.0 + front / 2.0 - 0.5, 1.0))
-    solid = solid + front_panel
-    if a.boolean("rail", True):
-        for side in (-1.0, 1.0):
-            rail = mf.Manifold.cube((4.0, body_d - 20.0, 12.0), center=True)
-            rail = rail.translate((side * (sx / 2.0 + 1.5), -5.0, sz * 0.35))
-            solid = solid + rail
-    if a.boolean("handle", True):
-        h_len = min(sx * 0.55, 220.0)
-        bar = mf.Manifold.cylinder(h_len + 16.0, 7.0, 7.0, 20, center=True)
-        bar = bar.rotate([0.0, 90.0, 0.0]).translate((0.0, body_d / 2.0 + front + 16.0,
-                                                      sz * 0.68))
-        solid = solid + bar
-        for side in (-1.0, 1.0):
-            post = mf.Manifold.cylinder(20.0, 6.0, 6.0, 16, center=True)
-            post = post.rotate([90.0, 0.0, 0.0]).translate(
-                (side * h_len / 2.0, body_d / 2.0 + front + 6.0, sz * 0.68))
-            solid = solid + post
-    if solid.is_empty() or solid.volume() <= 1e-6:
-        raise GeometryError("Ящик получился пустым — проверьте размеры.")
-    out = make_solid(a.scene, name, _placed(a, solid), a, kind="drawer")
-    out.notes.append(f"корпус {sx:g}×{sy:g}×{sz:g} мм, фасад {front:g} мм")
     return out

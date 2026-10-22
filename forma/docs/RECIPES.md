@@ -35,7 +35,10 @@ texture кузов kind=своя pattern=волны color1=#1f6f8b color2=#d7e6e
 
 ```
 # готовые детали для примеров ниже
-кружка = cup diameter=80 height=95
+корпус = cylinder radius=34 height=95 r2=40
+полость = cylinder radius=30 height=89 r2=36
+полость = translate [полость] offset=[0,0,6]
+кружка = difference [корпус, полость]
 шестерня = gear teeth=20 module=2 thickness=8 bore=8
 сфера = sphere radius=30 segments=48
 
@@ -361,7 +364,10 @@ check корпус size 310..330 130..150 110..130
 ## 9. Анимация и материалы
 
 ```
-кружка = cup diameter=80 height=95
+корпус = cylinder radius=34 height=95 r2=40
+полость = cylinder radius=30 height=89 r2=36
+полость = translate [полость] offset=[0,0,6]
+кружка = difference [корпус, полость]
 деталь = box size=[60,40,20]
 animate kind=spin axis=z seconds=4 loop=да
 texture кружка kind=marble scale=1.4
@@ -386,16 +392,16 @@ check деталь flat_bottom 1..
 ## 11. Новые детали 0.17
 
 ```
-корпус:       корпус = cup diameter=80 height=95 wall=4 bottom=6 handle=нет
+корпус:       корпус = cylinder radius=34 height=95 r2=40 (полость — difference)
 коробка:      коробка = box_body size=[200,150,80] wall=4 bottom=6 round=8
-ящик:         ящик = drawer size=[420,480,180] wall=14 front=18
-панель:       панель = panel size=[240,160,22] wall=3 round=8
+ящик:         ящик = box size=[420,480,180] − box внутренний (difference)
+панель:       панель = box size=[240,160,22] − box (difference) с round=8
 направляющая: рельс = rail length=400 width=30 height=14 wall=2
 профиль 2020: профиль = profile2020 length=300 size=20
 косынка:      косынка = gusset leg=70 height=55 thickness=6
 ножка:        ножка = leg height=90 top=34 bottom=22 flange=8
 люверс:       люверс = grommet diameter=12 height=8 wall=1.6 flange=3
-червяк:       червяк = worm length=90 diameter=30 pitch=8 depth=4
+червяк:       червяк = worm_shaft length=90 diameter=30 pitch=8 depth=4
 рог:          рог = horn length=160 radius=22 tip=3 bend=55
 накатка:      ручка = cylinder radius=16 height=70
               ручка = knurl [ручка] count=24 depth=1

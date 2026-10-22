@@ -219,7 +219,7 @@ def _cutter(a, at) -> mf.Manifold:
     category="Булевы операции",
     summary="Вырезает готовую форму из объекта одной командой: сфера, блок, "
             "цилиндр, конус или кольцо в точке at.",
-    example='кружка = cup diameter=80 height=95\nкружка = cut [кружка] shape=box size=[30,30,60] at=[0,0,80]',
+    example='кружка = cylinder radius=40 height=95\nкружка = cut [кружка] shape=box size=[30,30,60] at=[0,0,80]',
     params={"objects": "объект", "shape": "sphere|box|cylinder|cone|ring (sphere)",
             "at": "центр выреза [x,y,z] (0,0,0)", "radius": "радиус, мм",
             "size": "размер блока [x,y,z]", "height": "высота цилиндра/конуса, мм",

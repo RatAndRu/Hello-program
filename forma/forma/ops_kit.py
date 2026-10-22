@@ -388,10 +388,17 @@ def _drill(base: mf.Manifold, axis: str, positions, diameter: float,
 # --------------------------------------------------------------------------- #
 @op("shaft", aliases=("вал", "ось", "ступенчатый_вал"), category="Примитивы",
     summary="Ступенчатый вал: диаметры и длины ступеней, фаски на концах и "
-            "осевое отверстие. Одно тело вращения.",
-    example="вал = shaft diameter=20 length=120 bore=6",
+            "осевое отверстие. Одно тело вращения. Отличие от кольца и тора: "
+            "вал — сплошной стержень (с отверстием или без) с буртиком по оси; "
+            "фланец у буртика задаётся шириной и радиусом, а не толщиной стенки.",
+    example="вал = shaft diameter=20 length=120 bore=6\n"
+            "вал_с_буртиком = shaft diameter=20 length=140 flange=6 flange_d=46",
     params={"diameter": "диаметр, мм (20)", "length": "длина, мм (100)",
             "steps": "ступени [[длина, диаметр], …] вместо одного диаметра",
+            "flange": "ширина буртика по оси, мм (0 — без буртика)",
+            "flange_d": "диаметр буртика (2·diameter)",
+            "flange_at": "где стоит буртик, мм от начала (length/2)",
+            "flange_round": "скругление кромок буртика, мм (0.5)",
             "chamfer": "фаска на концах, мм (1)",
             "bore": "осевое отверстие насквозь, мм (0)",
             "axis": "ось вала: x, y или z (z)", "segments": "сегментов (64)",
@@ -437,6 +444,21 @@ def shaft(a, name):
             points.append((r, z))
     points.append((0.0, z))
     solid = _revolve_profile(points, segments, "вал")
+    flange = float(a.num("flange", 0.0, minv=0.0) or 0.0)
+    if flange > 0:
+        flange_d = float(a.num("flange_d", diameter * 2.0, minv=diameter + 0.5))
+        if flange_d >= max(s[1] for s in steps) - 0.01:
+            pass  # буртик может быть больше ступени — это нормально
+        pos = float(a.num("flange_at", max(0.0, length / 2.0 - flange / 2.0), minv=0.0))
+        pos = min(max(0.0, pos), max(0.0, length - flange))
+        fr = flange_d / 2.0
+        fr_round = min(float(a.num("flange_round", 0.5, minv=0.0) or 0.0),
+                       flange / 2.0 - 1e-3, (flange_d - diameter) / 3.0)
+        prof = [(0.0, pos), (fr - max(fr_round, 0.0), pos), (fr, pos + fr_round),
+                (fr, pos + flange - fr_round), (fr - max(fr_round, 0.0), pos + flange),
+                (0.0, pos + flange)]
+        collar = _revolve_profile(prof, segments, "буртик")
+        solid = solid + collar
     if bore > 0:
         if bore >= min(s[1] for s in steps) - 0.4:
             raise GeometryError("Отверстие не оставляет стенки вала.")
@@ -451,13 +473,17 @@ def shaft(a, name):
 #  Ручка мебельная
 # --------------------------------------------------------------------------- #
 @op("handle", aliases=("мебельная_ручка", "скоба"), category="Примитивы",
-    summary="Мебельная ручка-скоба: перекладина, стойки и площадки крепления. "
-            "Одно тело, готова к сборке.",
-    example="ручка = handle length=160 height=34 diameter=10",
-    params={"length": "длина по центрам, мм (160)", "height": "вынос, мм (34)",
+    summary="Мебельная ручка-скоба (П-образная): перекладина-штанга, две "
+            "стойки и круглые площадки-основания под винты. Снизу площадки "
+            "лежат на фасаде, поэтому ручка не висит в воздухе. Настройки: "
+            "длина по центрам стоек, вынос, толщина стержня, диаметр площадок.",
+    example="ручка = handle length=160 height=34 diameter=10\n"
+            "тонкая = handle length=128 height=26 diameter=8 plates=нет",
+    params={"length": "длина по центрам стоек, мм (160)", "height": "вынос, мм (34)",
             "diameter": "толщина стержня, мм (10)",
             "posts": "стоек: 1 по центру или 2 по краям (2)",
-            "plates": "площадки крепления да/нет (да)",
+            "plates": "круглые площадки-основания да/нет (да)",
+            "plate_d": "диаметр площадки (2.4 × диаметр стержня)",
             "segments": "сегментов (32)", "at": "положение [x,y,z]",
             "center": "центрировать по высоте"})
 def handle(a, name):
@@ -479,7 +505,8 @@ def handle(a, name):
         parts.append(mf.Manifold.cylinder(height + r, r, r, segments)
                      .translate((dx, 0.0, 0.0)))
         if a.boolean("plates", True):
-            parts.append(mf.Manifold.cylinder(2.0, r * 2.4, r * 2.4, segments)
+            plate_r = float(a.num("plate_d", wire * 2.4, minv=wire * 1.2)) / 2.0
+            parts.append(mf.Manifold.cylinder(2.0, plate_r, plate_r, segments)
                          .translate((dx, 0.0, 0.0)))
     solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
     return make_solid(a.scene, name, _placed(a, solid), a, kind="handle")
@@ -489,11 +516,18 @@ def handle(a, name):
 #  Колесо
 # --------------------------------------------------------------------------- #
 @op("wheel", aliases=("колесо", "колесо_с_ободом", "wheel_rim"), category="Примитивы",
-    summary="Колесо: шина, обод, спицы и ступица. Ось по Y — катится вдоль X, "
-            "готово для animate … roll.",
-    example="колесо = wheel diameter=600 width=140 rim=28 spokes=5",
-    params={"diameter": "наружный диаметр, мм (600)", "width": "ширина шины (140)",
-            "rim": "ширина обода, мм (28)", "spokes": "спиц (5)",
+    summary="Колесо целиком: шина, обод, спицы и ступица одним телом. "
+            "Элементы: diameter — по наружной кромке шины, tire — толщина шины "
+            "(отнимается от радиуса), rim — ширина обода внутрь, spokes — число "
+            "спиц (при 1 вместо спиц сплошной диск), hub — диаметр ступицы. "
+            "Ось по Y: катится вдоль X и готова для animate … roll. Кронштейн "
+            "и ось в колесо не входят — их делают отдельно, чтобы они не крутились.",
+    example="колесо = wheel diameter=600 width=140 rim=28 spokes=5 tire=42 hub=80\n"
+            "диск = wheel diameter=120 width=24 rim=18 spokes=1",
+    params={"diameter": "наружный диаметр по шине, мм (600)",
+            "width": "ширина шины (140)",
+            "rim": "ширина обода от шины внутрь, мм (28)",
+            "spokes": "спиц (5); 1 — сплошной диск вместо спиц",
             "hub": "диаметр ступицы (80)", "tire": "толщина шины (7 % диаметра)",
             "segments": "сегментов (96)", "at": "положение [x,y,z]",
             "center": "центрировать по высоте"})
@@ -547,19 +581,23 @@ def wheel(a, name):
 #  Рейка, муфта, радиатор
 # --------------------------------------------------------------------------- #
 @op("rack", aliases=("рейка", "зубчатая_рейка", "gear_rack"), category="Примитивы",
-    summary="Зубчатая рейка того же модуля, что gear: длина, зубья, модуль, "
-            "толщина и высота тела.",
-    example="рейка = rack length=200 teeth=20 module=2",
+    summary="Зубчатая рейка в паре с gear: длина, число зубьев, модуль. "
+            "Основание (тело под зубьями) задаётся отдельно: его высота не "
+            "входит в высоту зуба, поэтому рейку можно поставить на любую раму "
+            "и подогнать по высоте оси колеса.",
+    example="рейка = rack length=200 teeth=20 module=2 base=8 tooth=4.5",
     params={"length": "длина, мм (200)", "teeth": "число зубьев (20)",
             "module": "модуль, мм (2)", "thickness": "толщина, мм (8)",
-            "height": "высота тела, мм (10)", "tooth": "высота зуба (2.25·m)",
+            "height": "высота основания под зубьями, мм (10)",
+            "base": "то же, что height — высота основания",
+            "tooth": "высота зуба над основанием (2.25·m)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def rack(a, name):
     length = float(a.num("length", 200.0, minv=10.0))
     teeth = int(a.num("teeth", 20, minv=2, maxv=400) or 20)
     module = float(a.num("module", 2.0, minv=0.2))
     thickness = float(a.num("thickness", 8.0, minv=1.0))
-    height = float(a.num("height", 10.0, minv=1.0))
+    height = float(a.num("height", a.num("base", 10.0, minv=1.0) or 10.0, minv=1.0))
     tooth_h = float(a.num("tooth", module * 2.25, minv=0.3))
     pitch = length / teeth
     base = mf.Manifold.cube([length, thickness, height], True)
@@ -602,13 +640,18 @@ def coupling(a, name):
     return make_solid(a.scene, name, _placed(a, solid), a, kind="coupling")
 
 
-@op("heatsink", aliases=("радиатор", "охладитель"), category="Примитивы",
-    summary="Радиатор: основание и рёбра с заданным шагом. Одно тело.",
-    example="радиатор = heatsink size=[80,60,30] fins=9",
+@op("heatsink", aliases=("радиатор", "охладитель", "радиатор_ребристый"),
+    category="Примитивы",
+    summary="Радиатор охлаждения: плита-основание и рёбра с шагом. Полезен там, "
+            "где нужен честный теплоотвод — на плате, корпусе мотора, блоке "
+            "питания; для декора обычно проще box + array. Площадь рёбер и "
+            "толщину можно подобрать под реальный размер.",
+    example="радиатор = heatsink size=[80,60,30] fins=9 fin=2\n"
+            "мелкий = heatsink size=[40,40,18] fins=12 fin=1.2 base=3",
     params={"size": "размер [x,y,z], мм (80,60,30)",
             "fins": "число рёбер (8)", "base": "толщина основания (5)",
-            "fin": "толщина ребра (2)", "at": "положение [x,y,z]",
-            "center": "центрировать по высоте"})
+            "fin": "толщина ребра (2)", "round": "скругление кромок рёбер (0.4)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def heatsink(a, name):
     sx, sy, sz = _triple(a, "size", (80.0, 60.0, 30.0))
     fins = int(a.num("fins", 8, minv=1, maxv=80) or 8)
@@ -616,9 +659,15 @@ def heatsink(a, name):
     fin_t = float(a.num("fin", 2.0, minv=0.4))
     if base_h >= sz - 1.0:
         raise GeometryError("Основание выше радиатора.")
+    round_r = float(a.num("round", min(fin_t * 0.25, 0.6), minv=0.0) or 0.0)
     base = mf.Manifold.cube([sx, sy, base_h], True).translate((0.0, 0.0, base_h / 2.0))
     fin_h = sz - base_h
-    fin = mf.Manifold.cube([fin_t, sy, fin_h], True)
+    if round_r > 1e-3 and fin_t > 2 * round_r + 1e-3:
+        fin = mf.Manifold.cube([fin_t - 2 * round_r, sy - 2 * round_r, fin_h - round_r],
+                               True).minkowski_sum(
+            mf.Manifold.sphere(round_r, max(8, int(10 + round_r))))
+    else:
+        fin = mf.Manifold.cube([fin_t, sy, fin_h], True)
     fin = fin.translate((0.0, 0.0, base_h + fin_h / 2.0))
     step = sx / max(1, fins)
     parts = [base]
@@ -682,16 +731,20 @@ def leaf(a, name):
     thickness = float(a.num("thickness", 2.0, minv=0.3))
     curl = float(a.num("curl", 0.25, minv=0.0, maxv=1.0) or 0.0)
     count = int(a.num("segments", 48, minv=12, maxv=120) or 48)
+    # Контур листа строится от точного острия к острию: у концов шаг мельче,
+    # поэтому нет ни плоской «обрезанной» кромки, ни заломов. Раньше у концов
+    # принудительно ставилась ширина 0.6 мм — на стыке с дугой получался
+    # заметный излом; теперь ширина плавно сходит в ноль.
     upper = []
-    for i in range(count + 1):
-        t = i / count
+    for i in range(1, count):
+        # косинусный шаг: узлы сгущаются у обоих концов
+        t = 0.5 - 0.5 * math.cos(math.pi * i / count)
         x = -length / 2.0 + length * t
-        w = max(0.6, width / 2.0 * math.sin(math.pi * t) ** 0.72)
-        if i == 0 or i == count:
-            w = 0.6
+        w = width / 2.0 * math.sin(math.pi * t) ** 0.62
         upper.append((x, w))
-    points = upper + [(x, -w) for x, w in reversed(upper[1:-1])]
-    points = _dedupe(points, 1e-4)
+    points = [(-length / 2.0, 0.0)] + upper + [(length / 2.0, 0.0)]
+    points += [(x, -w) for x, w in reversed(upper)]
+    points = _dedupe(points, 1e-5)
     body = mf.Manifold.extrude(mf.CrossSection([_profile(points)]), float(thickness))
     if curl > 0:
         verts, faces = manifold_mesh(body)
@@ -699,28 +752,6 @@ def leaf(a, name):
         out[:, 2] += curl * (out[:, 0] / max(length, 1e-6) + 0.5) ** 2 * (width * 0.5)
         body = manifold_from_arrays(out, faces, "лист")
     return make_solid(a.scene, name, _placed(a, body), a, kind="leaf")
-
-
-@op("branch", aliases=("ветка", "сучок"), category="Примитивы",
-    summary="Ветка: сужающаяся труба по изогнутому пути. Одно тело.",
-    example="ветка = branch length=240 diameter=26 taper=0.45 bend=[60, 20]",
-    params={"length": "длина, мм (240)", "diameter": "толщина у корня (26)",
-            "taper": "сужение к концу 0..0.9 (0.45)",
-            "bend": "изгиб [вбок, вперёд], мм (30, 0)",
-            "sides": "сегментов (16)", "steps": "точек пути (12)",
-            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
-def branch(a, name):
-    length = float(a.num("length", 240.0, minv=10.0))
-    diameter = float(a.num("diameter", 26.0, minv=1.0))
-    taper = float(a.num("taper", 0.45, minv=0.0, maxv=0.9) or 0.0)
-    bx, by = _pair(a, "bend", (30.0, 0.0))
-    sides = _seg(a, "sides", 16, 6, 64)
-    steps = int(a.num("steps", 12, minv=3, maxv=64) or 12)
-    pts = np.asarray([(bx * (i / steps) ** 2, by * (i / steps) ** 2, length * i / steps)
-                      for i in range(steps + 1)], dtype=np.float64)
-    radii = [diameter / 2.0 * (1.0 - taper * (i / steps)) for i in range(steps + 1)]
-    solid = _tube_mesh(pts, radii, sides, "ветка")
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="branch")
 
 
 # --------------------------------------------------------------------------- #

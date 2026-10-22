@@ -175,7 +175,7 @@ class ImportBackTest(unittest.TestCase):
 
     def test_glb_round_trip(self):
         import tempfile
-        res = scene("кружка = cup diameter=80 height=95 wall=4")
+        res = scene("кружка = cylinder radius=34 height=95 r2=40 segments=96")
         path = Path(tempfile.mkdtemp()) / "кружка.glb"
         path.write_bytes(res.glb())
         back = scene(f"импорт = import file={path}\ncheck импорт watertight\n"

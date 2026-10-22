@@ -220,7 +220,7 @@ def _cylinder_radius(m: mf.Manifold) -> float | None:
     category="Форма и деформации",
     summary="Выдавливает надпись на детали или гравирует её: плоская грань либо "
             "обёртывание вокруг цилиндра (кружка, бутылка, крышка).",
-    example='кружка = cup diameter=80 height=95\nкружка = emboss [кружка] text="ФОРМА" size=14 depth=0.8',
+    example='кружка = cylinder radius=40 height=95\nкружка = emboss [кружка] text="ФОРМА" size=14 depth=0.8',
     params={"objects": "объект, на который наносится надпись",
             "text": "текст в кавычках",
             "size": "высота букв, мм (14)",
