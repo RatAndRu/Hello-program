@@ -517,6 +517,7 @@ def tri_quality(m: mf.Manifold) -> dict:
     stacked = np.stack(ang, axis=0)
     biggest = stacked.max(axis=0)
     smallest = np.minimum(stacked.min(axis=0), np.clip(180.0 - biggest, 0.0, 180.0))
-    bad = int((smallest < 8.0).sum())
+    # 3° — уже настоящая «игла»; веерные треугольники торцов (≈8°) нормальны
+    bad = int((smallest < 3.0).sum())
     return {"min_angle": float(smallest.min()) if len(smallest) else 0.0,
             "bad_pct": bad / len(smallest) * 100.0, "bad": bad, "total": int(len(smallest))}
