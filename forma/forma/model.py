@@ -31,6 +31,10 @@ class Solid:
     line: int = 0
     notes: list[str] = field(default_factory=list)
     tex: dict | None = None
+    # Покраска частей предмета: [{"color": "#rrggbb", "side": "верх", "box": [...],
+    # "height": [a, b], "radius": [a, b]}]. Регион определяется по центру
+    # треугольника, поэтому нейросети не нужно перечислять полигоны.
+    paint: list[dict] = field(default_factory=list)
     uv: str = "cylinder"
     _stats: dict | None = field(default=None, repr=False)
 

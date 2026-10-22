@@ -122,6 +122,7 @@ class Build:
                          "color2": solid.tex.get("color2")}
                         if getattr(solid, "tex", None) else None),
                 "uv": getattr(solid, "uv", "cylinder"),
+                "paint": list(getattr(solid, "paint", None) or []) or None,
             })
         return out
 

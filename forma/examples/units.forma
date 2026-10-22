@@ -70,8 +70,8 @@ light preset=студия strength=1.1
 пружина = translate [пружина] offset=[-160, 140, 14]
 
 # ---------- АНИМАЦИЯ ----------
-animate ротор fan rpm=1200 axis=y seconds=4 scene=вентилятор
-animate шкив fan rpm=600 axis=y seconds=4 scene=вентилятор
+animate ротор fan rpm=260 axis=y seconds=4 scene=вентилятор
+animate шкив fan rpm=200 axis=y seconds=4 scene=вентилятор
 
 animate шарик jump height=130 elastic=да seconds=1.6 scene=прыжок
 animate шарик wait seconds=0.4 scene=прыжок

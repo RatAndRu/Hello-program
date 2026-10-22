@@ -578,6 +578,172 @@ def hull_of_manifolds(solids: Iterable[mf.Manifold]) -> mf.Manifold:
 #  Нормали с разделением по углу (для красивого рендера)
 # --------------------------------------------------------------------------- #
 
+def _region_planes(paint: list[dict] | None) -> list[tuple[int, float]]:
+    """Плоскости, по которым надо разрезать грани, чтобы полосы были ровными."""
+    planes: list[tuple[int, float]] = []
+    for spec in paint or []:
+        for key, axis in (("height", 2), ("box", None)):
+            value = spec.get(key)
+            if key == "height" and value and len(value) == 2:
+                for v in value:
+                    if v not in (float("-inf"), float("inf")):
+                        planes.append((axis, float(v)))
+            elif key == "box" and value and len(value) == 6:
+                x0, y0, z0, x1, y1, z1 = [float(v) for v in value]
+                for c in (x0, x1):
+                    planes.append((0, c))
+                for c in (y0, y1):
+                    planes.append((1, c))
+                for c in (z0, z1):
+                    planes.append((2, c))
+    return sorted(set(planes))
+
+
+def _split_faces(verts: np.ndarray, faces: np.ndarray,
+                 planes: list[tuple[int, float]]) -> tuple[np.ndarray, np.ndarray]:
+    """Режет треугольники по плоскостям x/y/z = c.
+
+    Нужно для покраски: если граница полосы проходит через треугольник, цвет
+    выбирается по его центру и полоса получается рваной. После разреза все
+    границы идут ровно по рёбрам.
+    """
+    if not planes:
+        return verts, faces
+    v = [tuple(float(c) for c in p) for p in np.asarray(verts, dtype=np.float64)]
+    out: list[tuple[int, int, int]] = []
+
+    for face in np.asarray(faces, dtype=np.int64):
+        tris = [(int(face[0]), int(face[1]), int(face[2]))]
+        for axis, c in planes:
+            nxt = []
+            for t in tris:
+                for piece in _cut_triangle([v[t[0]], v[t[1]], v[t[2]]], axis, c):
+                    idx = []
+                    for pnt in piece:
+                        try:
+                            idx.append(v.index(pnt))
+                        except ValueError:
+                            v.append(pnt)
+                            idx.append(len(v) - 1)
+                    nxt.append(tuple(idx))
+            tris = nxt
+        for t in tris:
+            if len({t[0], t[1], t[2]}) == 3:
+                out.append(t)
+    return np.asarray(v, dtype=np.float64), np.asarray(out, dtype=np.int64)
+
+
+def _cut_triangle(tri, axis: int, c: float):
+    """Один треугольник → 1 или 3 треугольника по плоскости axis = c."""
+    vals = [p[axis] - c for p in tri]
+    pos = [i for i, s in enumerate(vals) if s > 1e-9]
+    neg = [i for i, s in enumerate(vals) if s < -1e-9]
+    if not pos or not neg:
+        return [tri]
+    zero = [i for i, s in enumerate(vals) if abs(s) <= 1e-9]
+    if len(zero) >= 2:
+        return [tri]
+    if len(zero) == 1:
+        zi = zero[0]
+        a, b = [i for i in range(3) if i != zi]
+        return [(tri[zi], tri[a], tri[b])]
+    single = (pos if len(pos) == 1 else neg)[0]
+    i, j = [k for k in range(3) if k != single]
+    p_i, p_j, p_s = tri[i], tri[j], tri[single]
+    v_i, v_j, v_s = vals[i], vals[j], vals[single]
+
+    def mix(a, b, sa, sb):
+        t = sa / (sa - sb)
+        return tuple(a[k] + (b[k] - a[k]) * t for k in range(3))
+
+    m1 = mix(p_i, p_s, v_i, v_s)
+    m2 = mix(p_j, p_s, v_j, v_s)
+    return [(tri[i], m1, m2), (m1, tri[j], m2), (m1, tri[single], tri[j])]
+
+
+SIDE_AXES = {
+    "верх": (2, 1), "верхняя": (2, 1), "top": (2, 1),
+    "низ": (2, -1), "нижняя": (2, -1), "bottom": (2, -1),
+    "перед": (1, -1), "передняя": (1, -1), "front": (1, -1),
+    "зад": (1, 1), "задняя": (1, 1), "back": (1, 1),
+    "лево": (0, -1), "левая": (0, -1), "left": (0, -1),
+    "право": (0, 1), "правая": (0, 1), "right": (0, 1),
+}
+
+
+def region_mask(spec: dict, points: np.ndarray,
+                normals: np.ndarray | None = None) -> np.ndarray:
+    """Маска точек, попадающих в регион покраски.
+
+    Одна и та же проверка работает и для треугольников (по центрам), и для
+    пикселей снимка — поэтому полоса на картинке идёт ровно, без «лесенки».
+    """
+    pts = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+    mask = np.ones(len(pts), dtype=bool)
+    side = str(spec.get("side") or "").strip().lower()
+    if side and normals is not None:
+        axis, sign = SIDE_AXES.get(side, (2, 1))
+        mask &= np.asarray(normals)[:, axis] * sign > 0.55
+    box = spec.get("box")
+    if box and len(box) == 6:
+        x0, y0, z0, x1, y1, z1 = [float(v) for v in box]
+        mask &= ((pts[:, 0] >= min(x0, x1)) & (pts[:, 0] <= max(x0, x1))
+                 & (pts[:, 1] >= min(y0, y1)) & (pts[:, 1] <= max(y0, y1))
+                 & (pts[:, 2] >= min(z0, z1)) & (pts[:, 2] <= max(z0, z1)))
+    height = spec.get("height")
+    if height and len(height) == 2:
+        lo, hi = sorted(float(h) for h in height)
+        mask &= (pts[:, 2] >= lo) & (pts[:, 2] <= hi)
+    radius = spec.get("radius")
+    if radius and len(radius) == 2:
+        lo, hi = sorted(float(h) for h in radius)
+        r = np.hypot(pts[:, 0], pts[:, 1])
+        mask &= (r >= lo) & (r <= hi)
+    return mask
+
+
+def paint_point_colors(paint: list[dict] | None, points: np.ndarray,
+                       normals: np.ndarray | None = None) -> np.ndarray | None:
+    """Цвет каждой точки по регионам покраски (для снимков PNG)."""
+    if not paint:
+        return None
+    pts = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+    rgb = np.ones((len(pts), 3), dtype=np.float32)
+    for spec in paint:
+        mask = region_mask(spec, pts, normals)
+        if not mask.any():
+            continue
+        rgb[mask] = color_to_float_rgb(normalize_color(spec.get("color") or "#ffffff"))
+    return rgb
+
+
+def region_triangle_colors(paint: list[dict] | None, verts, faces) -> np.ndarray | None:
+    """Цвет каждого треугольника по регионам покраски (для GLB и снимков).
+
+    Регион задаётся словарём: side (верх/низ/перед/зад/лево/право), box
+    (x0..x1, y0..y1, z0..z1), height (диапазон z), radius (расстояние от оси Z).
+    Треугольник попадает в регион, если его центр подходит по всем условиям,
+    а для side — ещё и нормаль смотрит в нужную сторону. Так нейросети не нужно
+    перечислять грани по одной: достаточно сказать «покрась верх в красный».
+    """
+    if not paint:
+        return None
+    v = np.asarray(verts, dtype=np.float64)
+    f = np.asarray(faces, dtype=np.int64)
+    if not len(f):
+        return None
+    tri = v[f]
+    n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    ln = np.linalg.norm(n, axis=1)
+    colors = np.ones((len(f), 3), dtype=np.float32)
+    for spec in paint:
+        mask = region_mask(spec, tri.mean(axis=1), n / np.maximum(ln, 1e-12)[:, None])
+        if not mask.any():
+            continue
+        colors[mask] = color_to_float_rgb(normalize_color(spec.get("color") or "#ffffff"))
+    return colors
+
+
 def crease_normals(verts: np.ndarray, faces: np.ndarray, angle_deg: float = 38.0):
     """Возвращает (verts, normals, faces) с расщеплением рёбер жёсткости.
 
@@ -734,6 +900,35 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
                 faces = np.arange(len(verts), dtype=np.int64).reshape(-1, 3)
         visual = (trimesh.visual.TextureVisuals(uv=uv, material=material) if uv is not None
                   else trimesh.visual.TextureVisuals(material=material))
+        # Регионная покраска: цвета вершин (COLOR_0) умножаются на цвет
+        # материала — Blender и другие программы увидят те же полосы.
+        script_verts = np.stack([verts[:, 0], -verts[:, 2], verts[:, 1]], axis=1)
+        paint_colors = region_triangle_colors(getattr(obj, "paint", None),
+                                              script_verts, faces)
+        if paint_colors is not None and len(faces) != len(verts) // 3:
+            # Для цветов вершин геометрию разворачиваем по треугольникам —
+            # иначе общие вершины нельзя покрасить в разные цвета.
+            flat_faces = faces.reshape(-1)
+            verts = verts[flat_faces]
+            if normals is not None:
+                normals = normals[flat_faces]
+            if uv is not None and len(uv) > len(flat_faces):
+                uv = uv[flat_faces]
+            faces = np.arange(len(verts), dtype=np.int64).reshape(-1, 3)
+            script_verts = np.stack([verts[:, 0], -verts[:, 2], verts[:, 1]], axis=1)
+            paint_colors = region_triangle_colors(getattr(obj, "paint", None),
+                                                  script_verts, faces)
+        if paint_colors is not None:
+            try:
+                # COLOR_0 умножается на цвет материала — в Blender и в окне
+                # будут те же полосы, что и на снимках PNG.
+                rgba = np.concatenate([
+                    np.repeat(paint_colors, 3, axis=0),
+                    np.ones((len(faces) * 3, 1), dtype=np.float32)], axis=1)
+                visual.vertex_attributes["color"] = (rgba * 255).astype(np.uint8)
+                material.baseColorFactor = [1.0, 1.0, 1.0, 1.0]
+            except Exception:
+                pass
         mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals,
                                process=False, visual=visual)
         mesh.metadata["name"] = obj.name

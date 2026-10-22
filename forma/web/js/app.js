@@ -29,7 +29,7 @@ const state = {
   space: null,
   loopMode: 'auto',
   orbitSelection: false,
-  occluders: true,
+  occluders: false,
   runLine: 0,
   runSoft: [],
   notes: [],
@@ -41,6 +41,7 @@ const state = {
   future: [],
   futureInfo: [],
   hidden: new Set(),
+  userHidden: new Set(),
   editBaseline: null,
   lastSaved: '', 
   material: { color: '#c9d1e3', metal: 0, rough: 0.5 },
@@ -345,8 +346,14 @@ function applyBuild(payload, elapsed) {
   // Скрытые детали (например, вошедшие в union/weld) должны оставаться
   // скрытыми, но открываться одним кликом по глазку. Держим единое состояние.
   const names = new Set((payload.objects || []).map((o) => o.name));
-  [...state.hidden].forEach((n) => { if (!names.has(n)) state.hidden.delete(n); });
+  // Скрытое состояние собираем заново на каждой сборке: иначе деталь,
+  // спрятанная в прошлом примере, оставалась невидимой в новом, хотя глазок
+  // показывал «видим». Скрытие глазком храним отдельно и переносим.
+  state.hidden.clear();
   (payload.objects || []).forEach((o) => { if (!o.visible) state.hidden.add(o.name); });
+  [...state.userHidden].forEach((n) => {
+    if (names.has(n)) state.hidden.add(n); else state.userHidden.delete(n);
+  });
 
   renderReport(payload);
   renderSections(payload);
@@ -578,7 +585,8 @@ function renderObjects(payload) {
         ev.stopPropagation();
         const name = o.name;
         const willHide = !state.hidden.has(name);
-        if (willHide) state.hidden.add(name); else state.hidden.delete(name);
+        if (willHide) { state.hidden.add(name); state.userHidden.add(name); }
+        else { state.hidden.delete(name); state.userHidden.delete(name); }
         state.viewer?.setObjectVisible(name, !willHide);
         eye.textContent = willHide ? '○' : '●';
         el.classList.toggle('hidden-obj', willHide);
@@ -649,7 +657,8 @@ function deleteObject(name) {
 function setAllObjectsVisible(visible) {
   const objs = state.payload?.objects || [];
   objs.forEach((o) => {
-    if (visible) state.hidden.delete(o.name); else state.hidden.add(o.name);
+    if (visible) { state.hidden.delete(o.name); state.userHidden.delete(o.name); }
+    else { state.hidden.add(o.name); state.userHidden.add(o.name); }
     state.viewer?.setObjectVisible(o.name, visible);
   });
   renderObjects(state.payload || {});
@@ -764,6 +773,25 @@ function focusLine(line) {
   updateCursor();
 }
 
+/** Плавная прокрутка текстового поля к нужной высоте (без рывков). */
+let scrollTween = null;
+function smoothScrollTo(el, target) {
+  const from = el.scrollTop;
+  const to = Math.max(0, target);
+  if (Math.abs(to - from) < 2) { el.scrollTop = to; return; }
+  if (scrollTween) cancelAnimationFrame(scrollTween.raf);
+  const t0 = performance.now();
+  const dur = 240;
+  const step = (now) => {
+    const k = Math.min(1, (now - t0) / dur);
+    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
+    el.scrollTop = from + (to - from) * e;
+    if (k < 1) scrollTween.raf = requestAnimationFrame(step);
+    else scrollTween = null;
+  };
+  scrollTween = { raf: requestAnimationFrame(step) };
+}
+
 /** Подсветка строки сценария, которая сейчас играет. */
 function placeRunHighlight(follow = false) {
   const el = $('code-run');
@@ -776,13 +804,13 @@ function placeRunHighlight(follow = false) {
   const lineTop = (state.runLine - 1) * lh;
   const viewTop = ta.scrollTop;
   const viewBottom = viewTop + (ta.clientHeight || 0) - lh;
-  const outside = lineTop < viewTop || lineTop > viewBottom;
   if (follow) {
-    // держим играющую строку на виду: текст сам подкручивается за анимацией
-    const target = lineTop - Math.max(0, (ta.clientHeight || 0)) * 0.35;
-    ta.scrollTop = Math.max(0, target);
+    // Держим играющую строку на виду, но подкручиваем плавно: мгновенный
+    // скачок на каждом кадре и был той самой «телепортацией».
+    const target = Math.max(0, lineTop - Math.max(0, (ta.clientHeight || 0)) * 0.35);
+    smoothScrollTo(ta, target);
     const gutter = $('gutter');
-    if (gutter) gutter.scrollTop = ta.scrollTop;
+    if (gutter) smoothScrollTo(gutter, target);
   }
   const offset = pad + lineTop - ta.scrollTop;
   el.style.top = offset + 'px';
@@ -901,6 +929,8 @@ async function loadModel(url, animation = null) {
     // мгновенная проверка видимости и текстур (не зависит от того, что попало в GLB)
     applyLoopMode();
     state.viewer.setAxes($('opt-axes')?.checked !== false);
+    // Сбрасываем прежние скрытия: набор объектов мог смениться целиком.
+    if (state.viewer.hidden) state.viewer.hidden.clear();
     state.hidden.forEach((name) => state.viewer.setObjectVisible(name, false));
     (state.payload?.objects || []).forEach((o) => {
       if (o.tex && o.tex.kind) applyTextureToViewer(o.name, o.tex.kind, o.tex.scale);
@@ -1667,7 +1697,7 @@ function seekTime(t) {
   const a = state.anim;
   a.time = Math.max(0, Math.min(Number(t) || 0, a.duration || 0));
   state.viewer?.setTime(a.time);
-  highlightFromTime(a.time);
+  if (a.mode === 'frames') highlightFromTime(a.time);
   syncAnimUI();
 }
 
@@ -1852,7 +1882,8 @@ $('anim-scene')?.addEventListener('change', (e) => {
 function toggleObjectHidden(name) {
   if (!name) return;
   const willHide = !state.hidden.has(name);
-  if (willHide) state.hidden.add(name); else state.hidden.delete(name);
+  if (willHide) { state.hidden.add(name); state.userHidden.add(name); }
+  else { state.hidden.delete(name); state.userHidden.delete(name); }
   state.viewer?.setObjectVisible(name, !willHide);
   if (state.payload) renderObjects(state.payload);
   toast(willHide ? `Скрыто: ${name}` : `Показано: ${name}`);
@@ -1863,7 +1894,8 @@ function openContextMenu(x, y, name) {
   const menu = $('ctx-menu');
   if (!menu) return;
   if (!name) { menu.hidden = true; return; }
-  selectObject(name);
+  // Правая кнопка ничего не выделяет: в меню только действия над предметом
+  // под курсором, а выделение — левой кнопкой (или пунктом «выделить»).
   const isHidden = state.hidden.has(name);
   const poly = Boolean(state.viewer?.objectPolygons(name));
   const spacer = () => { const d = document.createElement('div'); d.className = 'ctx-sep'; return d; };
@@ -1882,6 +1914,9 @@ function openContextMenu(x, y, name) {
   const title = document.createElement('div');
   title.className = 'ctx-title';
   title.textContent = name;
+  if (state.selected?.name !== name) {
+    title.textContent = name + '  (не выделен)';
+  }
   menu.appendChild(title);
   menu.appendChild(item('выделить предмет', () => {
     selectObject(name);
@@ -1938,23 +1973,21 @@ function initViewer() {
       if (now - lastClock > 60) {
         lastClock = now;
         syncAnimClock();
-        if (now - lastLine > 90) { lastLine = now; highlightFromTime(t, { scroll: true }); }
+        // Подсветка строки нужна только сборке по шагам. Во время обычной
+        // анимации сценарий не дёргается и не подкручивается.
+        if (state.anim.mode === 'frames' && now - lastLine > 90) {
+          lastLine = now;
+          highlightFromTime(t, { scroll: false });
+        }
       }
     };
     state.viewer.onFocus = (name, names) => {
       if (state.anim.mode !== 'clips') return;
+      // В обычной анимации ничего не выделяем: подсветка и слежение за
+      // сценарием — только у сборки по шагам.
       const all = (names && names.length ? names : (name ? [name] : []))
         .filter((n) => !state.hidden.has(n));
-      if (name && !state.hidden.has(name)) {
-        state.viewer.setHighlight(name);
-        if ($('anim-focus')) $('anim-focus').textContent = 'движется: ' + all.join(', ');
-        highlightFromTime(state.anim.time);
-      } else {
-        if (state.selected?.name && !state.hidden.has(state.selected.name)) {
-          state.viewer.setHighlight(state.selected.name);
-        }
-        if ($('anim-focus')) $('anim-focus').textContent = '';
-      }
+      if ($('anim-focus') && all.length) $('anim-focus').textContent = 'движется: ' + all.join(', ');
     };
     state.viewer.onEnd = () => { state.anim.playing = false; syncAnimUI(); };
     state.viewer.onSpace = (sel) => updateSpaceUI(sel);
@@ -1976,6 +2009,9 @@ function initViewer() {
     state.viewer.onContextMenu = (event, hit) => {
       const name = hit?.name || state.selected?.name || '';
       openContextMenu(event.clientX, event.clientY, name);
+    };
+    state.viewer.onPaintNeedsTarget = () => {
+      toast('Сначала выделите предмет: кисть красит только выбранное', 'bad');
     };
     state.viewer.onPaint = (info) => {
       state.paintCount = (state.paintCount || 0) + 1;
@@ -2039,6 +2075,7 @@ $('btn-orbit-sel')?.addEventListener('click', (e) => {
     ? 'Вращение и приближение — вокруг выделенного предмета'
     : 'Вращение — вокруг центра сцены');
 });
+$('btn-occl')?.classList.toggle('active', Boolean(state.occluders));
 $('btn-occl')?.addEventListener('click', (e) => {
   state.occluders = !state.occluders;
   e.currentTarget.classList.toggle('active', state.occluders);
@@ -2259,16 +2296,34 @@ $('btn-wire')?.addEventListener('dblclick', () => {
 /* ------------------------------------------------------------------ */
 /*  Кисть по граням                                                   */
 /* ------------------------------------------------------------------ */
+function paintTargetName() {
+  return state.selected?.name || '';
+}
+
+function syncPaintMode() {
+  const on = Boolean(state.viewer?.paintMode);
+  $('paint-toggle')?.classList.toggle('active', on);
+}
+
 $('paint-toggle')?.addEventListener('click', () => {
+  const name = paintTargetName();
+  if (!name) {
+    toast('Сначала выделите предмет: кисть красит только выбранное', 'bad');
+    return;
+  }
+  if (state.hidden.has(name)) {
+    toast('Предмет скрыт — покажите его, чтобы красить', 'bad');
+    return;
+  }
   const on = !(state.viewer?.paintMode);
-  state.viewer?.setPaintMode(on, $('paint-color')?.value || '#ff8a3d');
-  $('paint-toggle').classList.toggle('active', on);
+  state.viewer?.setPaintMode(on, $('paint-color')?.value || '#ff8a3d', name);
+  syncPaintMode();
   state.paintCount = 0;
-  toast(on ? 'Кисть включена: клик по грани красит только этот полигон'
+  toast(on ? 'Кисть включена: зажмите кнопку и ведите по предмету — красится полоса'
     : 'Кисть выключена — обычное вращение и выделение');
 });
 $('paint-color')?.addEventListener('input', (e) => {
-  if (state.viewer?.paintMode) state.viewer.setPaintMode(true, e.target.value);
+  if (state.viewer?.paintMode) state.viewer.setPaintMode(true, e.target.value, paintTargetName());
 });
 $('paint-clear')?.addEventListener('click', () => {
   const n = state.viewer?.clearPaint() || 0;
@@ -2287,6 +2342,9 @@ function selectObject(name) {
     document.querySelectorAll('.obj-item').forEach((el) => el.classList.remove('selected'));
     $('material-panel').hidden = true;
     state.viewer?.clearHighlight();
+    // без выделения кисть не должна срабатывать: выключаем её вместе с выбором
+    state.viewer?.setPaintMode(false, null, '');
+    syncPaintMode();
     if (state.orbitSelection) state.viewer?.setOrbitTarget('');
     if (state.spaceMode) state.viewer?.rebuildSpace?.();
     renderSceneStats();
@@ -2302,6 +2360,7 @@ function selectObject(name) {
   // Заодно прозрачным каркасом показываются детали, которые его закрывают.
   state.occludersNow = [];
   if (!state.hidden.has(name)) state.viewer?.setHighlight(name);
+  if (state.viewer?.paintMode) state.viewer.setPaintMode(true, null, name);
   if (state.orbitSelection) state.viewer?.setOrbitTarget(name);
   renderObjectStats(obj);
   if (state.spaceMode) state.viewer?.rebuildSpace?.();
@@ -3905,6 +3964,9 @@ async function loadExample(key, name = '') {
   try {
     const res = await api('/api/example?key=' + encodeURIComponent(key));
     state.projectName = name || key;
+    state.userHidden.clear();
+    state.hidden.clear();
+    if (state.viewer?.hidden) state.viewer.hidden.clear();
     setScript(res.script, { label: 'пример: ' + (name || key) });
     toast('Готовый сценарий загружен: ' + (name || key));
   } catch (e) { toast(e.message || 'Не удалось загрузить сценарий', 'bad'); }

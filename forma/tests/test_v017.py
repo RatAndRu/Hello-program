@@ -139,7 +139,7 @@ class ExamplesTest(unittest.TestCase):
     def test_clock(self):
         res = self._example("clock")
         names = {o.name for o in res.visible_solids()}
-        for part in ("баланс", "анкер", "анкерное", "барабан", "минутное", "секундная"):
+        for part in ("баланс", "вилка", "анкерное", "барабан", "минутное", "секундная"):
             self.assertIn(part, names)
         plan = res.scene.animation_plan()
         self.assertGreaterEqual(len(plan["clips"]), 20)

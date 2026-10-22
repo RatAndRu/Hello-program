@@ -7,7 +7,7 @@ from .geometry import normalize_color
 from .ops import op
 
 
-@op("color", aliases=("цвет", "покрасить", "материал", "paint"), category="Сцена и материал",
+@op("color", aliases=("цвет", "материал"), category="Сцена и материал",
     summary="Задаёт цвет и материал объекта (или всех объектов).",
     example='ручка = cylinder radius=6 height=50\ncolor ручка #d8b98a material=wood',
     params={"target": "имя объекта или all",
@@ -32,6 +32,69 @@ def color(a, name):
             else:
                 setattr(solid, key, value)
     a.scene.log("info", f"Материал применён: {', '.join(s.name for s in targets)}", a.cmd.line)
+    return None
+
+
+@op("paint", aliases=("краска", "пятно", "раскрасить", "покрасить_часть"), category="Сцена и материал",
+    summary="Красит часть предмета: верх, низ, бок, полосу по высоте, радиусу или область. "
+            "Не нужно перечислять полигоны — регион задаётся словами и числами.",
+    example='кружка = cup diameter=80 height=95\n'
+            'paint кружка #2f6fb0 side=верх\n'
+            'paint кружка #ffffff height=40..70\n'
+            'paint кружка #d94f3d radius 0..18',
+    params={"target": "имя объекта",
+            "color": "цвет #RRGGBB или название",
+            "side": "верх, низ, перед, зад, лево, право — по направлению граней",
+            "box": "область [x0,y0,z0,x1,y1,z1] в мм",
+            "height": "полоса по высоте: height=40..70",
+            "radius": "кольцо вокруг оси Z: 0..18",
+            "clear": "да — снять всю покраску с предмета"},
+    positional=["target", "color"])
+def paint(a, name):
+    """Регионная покраска: одна команда вместо перечисления граней."""
+    target = (a.text("target") or "").strip()
+    if not target:
+        raise DslError("Укажите объект: paint кружка #c0402a side=верх",
+                       line=a.cmd.line, command=a.cmd.text)
+    solid = a.scene.resolve(target)
+    if (a.text("clear") or "").lower() in ("да", "yes", "1", "true"):
+        solid.paint = []
+        a.scene.log("info", f"Покраска снята: {solid.name}", a.cmd.line)
+        return None
+    color_value = normalize_color(a.text("color") or "")
+    if not color_value or color_value == "#c9d1e3":
+        raise DslError("Укажите цвет для покраски.",
+                       hint="Например: paint кружка #c0402a height 60..90",
+                       line=a.cmd.line, command=a.cmd.text)
+    spec: dict = {"color": color_value}
+    side = (a.text("side") or "").strip().lower()
+    if side:
+        spec["side"] = side
+    box = a.value("box")
+    if isinstance(box, (list, tuple)) and len(box) == 6:
+        spec["box"] = [float(b) for b in box]
+    for key in ("height", "radius"):
+        value = a.value(key)
+        if value is None:
+            continue
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            spec[key] = [float(value), float(value)]
+        elif hasattr(value, "lo"):
+            lo = getattr(value, "lo", None)
+            hi = getattr(value, "hi", None)
+            spec[key] = [float(lo if lo is not None else float("-inf")),
+                         float(hi if hi is not None else float("inf"))]
+        elif isinstance(value, (list, tuple)) and len(value) == 2:
+            spec[key] = [float(value[0]), float(value[1])]
+    if len(spec) == 1:
+        # без условия это просто цвет всего предмета
+        solid.paint = []
+        solid.color = color_value
+        a.scene.log("info", f"Цвет предмета: {solid.name}", a.cmd.line)
+        return None
+    solid.paint = list(solid.paint or []) + [spec]
+    a.scene.log("info", f"Покрашено: {solid.name} — {', '.join(k for k in spec if k != 'color')}",
+                a.cmd.line)
     return None
 
 

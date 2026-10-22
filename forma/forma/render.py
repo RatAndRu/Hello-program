@@ -55,9 +55,16 @@ def _prepare(solids):
         item = {
             "verts": nv, "faces": nf, "normals": nn,
             "color": np.array(color_to_float_rgb(s.color), dtype=np.float32),
+            "paint": None,
             "metal": float(s.metal), "rough": float(s.rough),
             "uv": None, "tex": None,
         }
+        # регионная покраска: цвет каждого треугольника (после расщепления
+        # рёбер вершины те же, поэтому классификация по центрам работает)
+        if getattr(s, "paint", None):
+            # регионы держим как есть и считаем цвет на каждый пиксель —
+            # так граница полосы ровная, без зубцов по треугольникам
+            item["paint"] = list(s.paint)
         tex = getattr(s, "tex", None)
         if tex and tex.get("path"):
             image = _load_texture(tex["path"])
@@ -249,6 +256,7 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
         rough = mesh["rough"]
         uv = mesh.get("uv")
         tex = mesh.get("tex")
+        paint = mesh.get("paint")
         scr, dep = _project(verts, cam)
         tri = faces
         n0, n1, n2 = normals[tri[:, 0]], normals[tri[:, 1]], normals[tri[:, 2]]
@@ -295,6 +303,16 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
             ln = np.sqrt(nx * nx + ny * ny + nz * nz) + 1e-12
             nn = np.stack([(nx / ln)[front], (ny / ln)[front], (nz / ln)[front]], axis=1)
             colors = col
+            if paint is not None:
+                from .geometry import paint_point_colors
+                # положение пикселя в координатах сценария (Z вверх)
+                pos = (w0[front, None] * verts[a[0]] + w1[front, None] * verts[a[1]]
+                       + w2[front, None] * verts[a[2]])
+                # снимок считается прямо в координатах сценария (Z вверх),
+                # поэтому точка и нормаль идут как есть
+                pix = paint_point_colors(paint, pos, nn)
+                if pix is not None:
+                    colors = col[None, :] * pix
             if uv is not None and tex is not None:
                 u = (w0 * uv[a[0], 0] + w1 * uv[a[1], 0] + w2 * uv[a[2], 0])
                 vv = (w0 * uv[a[0], 1] + w1 * uv[a[1], 1] + w2 * uv[a[2], 1])
@@ -309,8 +327,9 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
                 v1 = (v0 + 1) % th
                 u0 %= tw
                 v0 %= th
+                base = col if paint is None else colors
                 colors = (tex[v0, u0] * (1 - fx) * (1 - fy) + tex[v0, u1] * fx * (1 - fy)
-                          + tex[v1, u0] * (1 - fx) * fy + tex[v1, u1] * fx * fy) * col[None, :]
+                          + tex[v1, u0] * (1 - fx) * fy + tex[v1, u1] * fx * fy) * base
             shade = _shade(nn, colors, metal, rough, cam)
             shade = np.clip(shade, 0, 1)
             sub_img = img[miny:maxy + 1, minx:maxx + 1]

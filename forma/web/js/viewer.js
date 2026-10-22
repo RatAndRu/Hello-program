@@ -56,6 +56,9 @@ export class Viewer {
     this.sceneName = '';       // выбранная заготовка анимации
     this.paintMode = false;    // кисть по полигонам
     this.paintColor = '#ff8a3d';
+    this.paintTarget = '';     // какой предмет красим (без него кисть не работает)
+    this.painting = false;     // сейчас тянем кисть
+    this.lastPaintPoint = null;
     this._polyNames = new Set();
     this.time = 0;
     this.duration = 0;
@@ -96,7 +99,9 @@ export class Viewer {
     this.selection = null;
     this.selections = [];
     this.hidden = new Set();
-    this.ghostOccluders = true;   // заслонки показываем прозрачным каркасом
+    // Заслонки по умолчанию выключены: иначе корпус шкафа при выделении
+    // ящика превращался в еле видимую сетку и казался пропавшим.
+    this.ghostOccluders = false;
     this._ghosts = [];
     this._orbitName = '';
     this._frames = 0;
@@ -157,8 +162,13 @@ export class Viewer {
     });
     renderer.domElement.addEventListener('contextmenu', (e) => {
       e.preventDefault();
+      // Правая кнопка — только панорама. Если курсор сдвинулся, это было
+      // перетаскивание, а не клик: меню не открываем, выделение не меняем.
+      const moved = this._rightMoved || 0;
+      this._rightMoved = 0;
+      if (moved > 6) return;
       const hit = this.pickAt(e.clientX, e.clientY);
-      this.onContextMenu?.(e, hit);
+      this.onContextMenu?.(e, hit, { moved });
     });
 
     this.hemi = new THREE.HemisphereLight(0xdfe9ff, 0x5d6a7d, 0.72);
@@ -304,8 +314,24 @@ export class Viewer {
     const hideBand = () => { if (band) { band.remove(); band = null; } };
 
     el.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0) return;   // правая — панорама, средняя — вращение
+      if (e.button === 2) {
+        // правая — панорама: запоминаем точку, чтобы отличить клик от перетаскивания
+        this._rightDown = { x: e.clientX, y: e.clientY };
+        this._rightMoved = 0;
+        return;
+      }
+      if (e.button !== 0) return;   // средняя — вращение
       const p = local(e);
+      if (this.paintMode) {
+        // Кисть: тянем мышь — красим полосу, а не один полигон.
+        // Камера при этом не вращается: рисование важнее.
+        if (!this.paintTarget) { this.onPaintNeedsTarget?.(); return; }
+        this.painting = true;
+        this._paintAtPointer(e, true);
+        this.controls.enabled = false;
+        down = null;
+        return;
+      }
       down = { x: e.clientX, y: e.clientY, t: performance.now(), p };
       if (this.selectMode || this.spaceMode) {
         band = document.createElement('div');
@@ -319,6 +345,11 @@ export class Viewer {
     });
 
     el.addEventListener('pointermove', (e) => {
+      if (this._rightDown) {
+        this._rightMoved = Math.max(this._rightMoved || 0,
+          Math.hypot(e.clientX - this._rightDown.x, e.clientY - this._rightDown.y));
+      }
+      if (this.painting) { this._paintStroke(e); return; }
       if (this.spaceMode && !down) { this._spaceHoverAt(e); return; }
       if (!band || !down) return;
       const p = local(e);
@@ -329,7 +360,21 @@ export class Viewer {
     });
 
     el.addEventListener('pointerup', (e) => {
+      if (this.painting) {
+        this.painting = false;
+        this.controls.enabled = true;
+        this.lastPaintPoint = null;
+        this._rightDown = null;
+        return;
+      }
       if (e.button !== 0 || !down) { hideBand(); return; }
+      if (this.playing) {
+        // Во время анимации ничего не выделяем: клик по сцене не должен
+        // перебивать движение и подсветку. Камера при этом вращается.
+        down = null;
+        hideBand();
+        return;
+      }
       const moved = Math.hypot(e.clientX - down.x, e.clientY - down.y);
       const quick = performance.now() - down.t < 420;
       const start = down;
@@ -402,7 +447,10 @@ export class Viewer {
       }
     });
 
-    el.addEventListener('pointercancel', () => { down = null; hideBand(); });
+    el.addEventListener('pointercancel', () => {
+      down = null; hideBand();
+      this.painting = false; this.controls.enabled = true;
+    });
     el.addEventListener('dblclick', () => this.reset());
   }
 
@@ -465,7 +513,7 @@ export class Viewer {
 
   _animateTiming(dt) {
     if (this._progress !== undefined && this._progress !== null) {
-      this._progress = Math.min(1, this._progress + dt * 2.2);
+      this._progress = Math.min(1, this._progress + dt * 1.4);
       const e = 1 - Math.pow(1 - this._progress, 3);
       const p = this._from.clone().lerp(this._to, e);
       this.camera.position.copy(p);
@@ -773,6 +821,38 @@ export class Viewer {
     const clips = active ? allClips.filter((c) => !c.scene || c.scene === active) : allClips;
     this.plan = timeline && (clips.length || keys.length) ? { ...timeline, clips, keys } : null;
     this.timeline = this.plan;
+    // Вентиляторы: фаза у объекта одна на всю сцену. Считаем её заранее по
+    // всем клипам объекта, чтобы на стыке коротких клипов лопасти не
+    // останавливались (и чтобы смена rpm внутри сцены не давала скачка).
+    this._fanStart = new Map();
+    this._fanClips = new Map();
+    this._fanRamp = 0.5;
+    const fanByName = new Map();
+    for (const c of clips) {
+      const nm = c.object ? String(c.object) : '';
+      if (!nm || String(c.kind || '').toLowerCase() !== 'fan') continue;
+      if (!fanByName.has(nm)) fanByName.set(nm, []);
+      fanByName.get(nm).push(c);
+    }
+    fanByName.forEach((list, nm) => {
+      list.sort((a, b) => (Number(a.start) || 0) - (Number(b.start) || 0));
+      const t0 = Number(list[0].start) || 0;
+      const ramp = this._fanRamp;
+      const F = (tau) => (tau <= 0 ? 0 : tau < ramp
+        ? (tau * tau * tau) / (3 * ramp * ramp)
+        : ramp / 3 + (tau - ramp));
+      let cum = 0;
+      const rows = list.map((c) => {
+        const start = Number(c.start) || 0;
+        const len = Math.max(0.1, Number(c.length) || Number(c.seconds) || 4);
+        const w = (Number(c.rpm) || 900) / 60;
+        const row = { start, len, w, from: cum, t0, F };
+        cum += w * (F(start + len - t0) - F(start - t0));
+        return row;
+      });
+      this._fanStart.set(nm, t0);
+      this._fanClips.set(nm, rows);
+    });
     if (this.plan) {
       const ends = clips.map((c) => Number(c.end) || 0)
         .concat(keys.map((k) => Number(k.t) || 0));
@@ -887,13 +967,43 @@ export class Viewer {
     return this._polyNames.has(name);
   }
 
-  /** Кисть по граням: включаем режим и запоминаем цвет. */
-  setPaintMode(on, color) {
+  /** Кисть по граням: включаем режим, запоминаем цвет и предмет. */
+  setPaintMode(on, color, target) {
     this.paintMode = Boolean(on);
     if (color) this.paintColor = color;
+    if (target !== undefined) this.paintTarget = target || '';
+    // без выбранного предмета кисть не включается: непонятно, что красить
+    if (this.paintMode && !this.paintTarget) this.paintMode = false;
+    this.painting = false;
+    this.lastPaintPoint = null;
+    if (this.controls) this.controls.enabled = true;
     const el = this.renderer?.domElement;
     if (el) el.style.cursor = this.paintMode ? 'crosshair' : '';
     return this.paintMode;
+  }
+
+  /** Красит по экранной точке с интерполяцией: зажатая кисть рисует полосу. */
+  _paintAtPointer(e) {
+    if (!this.paintTarget) return null;
+    const x = e.clientX;
+    const y = e.clientY;
+    const last = this.lastPaintPoint;
+    const dist = last ? Math.hypot(x - last.x, y - last.y) : 0;
+    const steps = last ? Math.min(14, Math.max(1, Math.round(dist / 5))) : 1;
+    let painted = null;
+    for (let i = 1; i <= steps; i += 1) {
+      const px = last ? last.x + ((x - last.x) * i) / steps : x;
+      const py = last ? last.y + ((y - last.y) * i) / steps : y;
+      const hit = this.paintAt(px, py);
+      if (hit) painted = hit;
+    }
+    this.lastPaintPoint = { x, y };
+    if (painted) this.onPaint?.(painted);
+    return painted;
+  }
+
+  _paintStroke(e) {
+    this._paintAtPointer(e);
   }
 
   /** Готовит геометрию к покраске: у каждого треугольника свои вершины. */
@@ -908,10 +1018,19 @@ export class Viewer {
       const base = mat.color ? mat.color.clone() : new THREE.Color(1, 1, 1);
       const count = geom.attributes.position.count;
       const colors = new Float32Array(count * 3);
+      // Если предмет уже покрашен командами «paint», в GLB есть COLOR_0:
+      // берём эти цвета за основу, иначе кисть стёрла бы готовые полосы.
+      const existing = geom.attributes.color;
       for (let i = 0; i < count; i += 1) {
-        colors[i * 3] = base.r;
-        colors[i * 3 + 1] = base.g;
-        colors[i * 3 + 2] = base.b;
+        if (existing && existing.count === count) {
+          colors[i * 3] = existing.getX(i);
+          colors[i * 3 + 1] = existing.getY(i);
+          colors[i * 3 + 2] = existing.getZ(i);
+        } else {
+          colors[i * 3] = base.r;
+          colors[i * 3 + 1] = base.g;
+          colors[i * 3 + 2] = base.b;
+        }
       }
       geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
       mesh.userData.paintInfo = { src, color: base.clone() };
@@ -929,6 +1048,8 @@ export class Viewer {
   paintAt(clientX, clientY, color) {
     const hit = this.pickAt(clientX, clientY);
     if (!hit) return null;
+    // Красим только выбранный предмет: щёлкнули мимо выбора — кисть молчит.
+    if (this.paintTarget && !meshMatches(hit.mesh, this.paintTarget)) return null;
     const geom = this._ensurePaint(hit.mesh);
     if (!geom) return null;
     const attr = geom.attributes.color;
@@ -1189,9 +1310,26 @@ export class Viewer {
         if (item && st) rotate(item, st, pivot, q);
         else about(wrapM, new THREE.Vector3(), q, null);
       } else if (kind === 'fan') {
-        // вентилятор: разгон от нуля к рабочим оборотам
-        const turns = Number(clip.turns) || (Number(clip.rpm) || 900) * len / 60;
-        const rad = Math.PI * 2 * turns * Math.pow(p, 1.7);
+        // Вентилятор: фаза одна на объект и растёт непрерывно. Раньше угол
+        // считался как p^1.7 внутри каждого клипа, да ещё и все прошлые клипы
+        // применялись заново — на стыках лопасти дёргались. Теперь фазу
+        // считает только текущий клип, а пройденные обороты уже учтены в from.
+        const rows = this._fanClips?.get(targetName) || [];
+        let row = null;
+        for (let k = 0; k < rows.length; k += 1) {
+          if (rows[k].start <= t + 1e-9) row = rows[k];
+        }
+        if (rows.length && (!row || row.start !== start)) continue;
+        let turnsDone;
+        if (row) {
+          const tt = Math.min(t, row.start + row.len);
+          const tau = Math.max(0, tt - row.t0);
+          turnsDone = row.from + row.w * (row.F(tau) - row.F(row.start - row.t0));
+        } else {
+          const rpm = Number(clip.rpm) || 900;
+          turnsDone = (t - start) * (rpm / 60);
+        }
+        const rad = Math.PI * 2 * turnsDone;
         const q = axisQ(clip.axis, rad * sign);
         if (item && st) rotate(item, st, pivot, q);
         else about(wrapM, new THREE.Vector3(), q, null);
@@ -2177,7 +2315,7 @@ export class Viewer {
                             depthWrite: m.depthWrite });
         m.wireframe = true;
         m.transparent = true;
-        m.opacity = 0.16;
+        m.opacity = 0.3;
         m.depthWrite = false;
         m.needsUpdate = true;
       });

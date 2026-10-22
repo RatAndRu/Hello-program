@@ -173,7 +173,9 @@ def screw(a, name):
     elif head == "полукруг":
         cap = _cyl(d * 0.6, head_d / 2.0, 40).translate((0, 0, length))
         dome = mf.Manifold.sphere(head_d / 2.0, 32).translate((0, 0, length + d * 0.6))
-        cap = (cap + dome) * _cyl(d * 1.6, head_d / 2.0, 40).translate((0, 0, length))
+        cap = mf.Manifold.batch_boolean(
+            [cap + dome, _cyl(d * 1.6, head_d / 2.0, 40).translate((0, 0, length))],
+            mf.OpType.Intersect)
     else:
         cap = _hex_prism(1.6 * d, 0.7 * d).translate((0, 0, length))
     body = body + cap

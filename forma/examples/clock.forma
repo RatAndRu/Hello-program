@@ -1,234 +1,472 @@
 # ============================================================================
-#  СКЕЛЕТОН-ЧАСЫ Ø 420 мм — колесо 10:10:35
+#  СКЕЛЕТОН-ЧАСЫ Ø 480 мм — открытый механизм
 # ============================================================================
-#  Циферблат стоит в плоскости XZ, лицом в −Y. Модуль передачи m = 2,
-#  межосевые расстояния a = m·(z1+z2)/2 — зубья входят в зацепление.
-#  Механизм: барабан 48 → минутное 30 → промежуточное 36 → секундное 30 →
-#  анкерное 30; анкер, баланс с волоском, мотор завода.
-#  Сцена «ход»: баланс ±200° (2 Гц), анкер ±14°, анкерное колесо шагает по
-#  6° каждые 0,25 с, секундная стрелка идёт по 6°, остальные — медленно.
-# ----------------------------------------------------------------------------
+#  Циферблат стоит в плоскости XZ, лицом в −Y. Модуль передачи m = 2.
+#  Межосевые расстояния считаются строго как a = m·(z1+z2)/2, поэтому зубья
+#  входят в зацепление, а колёса не наезжают друг на друга.
+#
+#  Компоновка нарочно «хаотичная», как в настоящем скелетоне: минутное колесо
+#  в центре, барабан уходит влево-вниз, промежуточное — вниз, секундное —
+#  вправо-вниз, анкерное — вправо-вверх, баланс с волоском — наверх,
+#  мотор завода — влево-вверх. Мостики идут ломаными коромыслами через камни.
+#
+#  Передаточное отношение (ω·z = const, соседние колёса крутятся навстречу):
+#    мотор 12 → барабан 48 → минутное 30 → промежуточное 36 →
+#    секундное 24 → анкерное 20.
+#  Сцена «ход»: за 8 с мотор +60°, барабан −15°, минутное +24°,
+#  промежуточное −20°, секундное +30°, анкерное −36° — ровно по зубьям.
+# ============================================================================
 
-scene bg=#11141a env=studio shadows=да grid=нет
-light preset=студия strength=1.5
+scene bg=#0e1116 env=studio shadows=да grid=нет
+light preset=студия strength=1.6
 
-# ---------- КОРПУС ----------
-основание = cylinder radius=240 height=24 segments=96 center=да at=[0, 0, 12]
-задняя_внеш = cylinder radius=206 height=10 segments=96 center=да
-задняя_внеш = rotate [задняя_внеш] angle=90 axis=x
-задняя_внутр = cylinder radius=168 height=14 segments=96 center=да
-задняя_внутр = rotate [задняя_внутр] angle=90 axis=x
-задняя_плата = difference [задняя_внеш, задняя_внутр]
-задняя_плата = translate [задняя_плата] offset=[0, 34, 230]
-стойка_1 = cylinder radius=9 height=76 segments=32 center=да
-стойка_1 = rotate [стойка_1] angle=90 axis=x
-стойка_1 = translate [стойка_1] offset=[127, -1, 357]
-стойка_2 = cylinder radius=9 height=76 segments=32 center=да
-стойка_2 = rotate [стойка_2] angle=90 axis=x
-стойка_2 = translate [стойка_2] offset=[-127, -1, 357]
-стойка_3 = cylinder radius=9 height=76 segments=32 center=да
-стойка_3 = rotate [стойка_3] angle=90 axis=x
-стойка_3 = translate [стойка_3] offset=[127, -1, 103]
-стойка_4 = cylinder radius=9 height=76 segments=32 center=да
-стойка_4 = rotate [стойка_4] angle=90 axis=x
-стойка_4 = translate [стойка_4] offset=[-127, -1, 103]
-
-безель_внеш = cylinder radius=214 height=14 segments=112 center=да
+# ---------- КОРПУС: среднее кольцо, безель, задняя крышка ----------
+корпус_внеш = cylinder radius=240 height=62 segments=132 center=да
+корпус_внеш = rotate [корпус_внеш] angle=90 axis=x
+корпус_внутр = cylinder radius=212 height=68 segments=132 center=да
+корпус_внутр = rotate [корпус_внутр] angle=90 axis=x
+корпус = difference [корпус_внеш, корпус_внутр]
+корпус = translate [корпус] offset=[0, -13, 230]
+безель_внеш = cylinder radius=240 height=14 segments=132 center=да
 безель_внеш = rotate [безель_внеш] angle=90 axis=x
-безель_внутр = cylinder radius=190 height=18 segments=112 center=да
+безель_внутр = cylinder radius=206 height=18 segments=132 center=да
 безель_внутр = rotate [безель_внутр] angle=90 axis=x
 безель = difference [безель_внеш, безель_внутр]
-безель = translate [безель] offset=[0, -46, 230]
+безель = translate [безель] offset=[0, -51, 230]
+крышка_задняя = cylinder radius=212 height=12 segments=132 center=да
+крышка_задняя = rotate [крышка_задняя] angle=90 axis=x
+крышка_задняя = translate [крышка_задняя] offset=[0.00, 24, 230.00]
+крышка_окно = cylinder radius=96 height=4 segments=96 center=да
+крышка_окно = rotate [крышка_окно] angle=90 axis=x
+крышка_окно = translate [крышка_окно] offset=[0.00, 20, 230.00]
+крышка_пружина = ring diameter=110 width=5 thickness=2
+крышка_пружина = rotate [крышка_пружина] angle=90 axis=x
+крышка_пружина = translate [крышка_пружина] offset=[0, 20, 230]
 
-глава_внеш = cylinder radius=196 height=8 segments=112 center=да
-глава_внеш = rotate [глава_внеш] angle=90 axis=x
-глава_внутр = cylinder radius=182 height=12 segments=112 center=да
-глава_внутр = rotate [глава_внутр] angle=90 axis=x
-глава = difference [глава_внеш, глава_внутр]
-глава = translate [глава] offset=[0, -36, 230]
+# заводная головка справа (ось X)
+головка = cylinder radius=17 height=24 segments=48 center=да
+головка = rotate [головка] angle=90 axis=y
+головка = translate [головка] offset=[252, -13, 230]
+головка_вал = cylinder radius=6 height=26 segments=24 center=да
+головка_вал = rotate [головка_вал] angle=90 axis=y
+головка_вал = translate [головка_вал] offset=[238, -13, 230]
 
-# ---------- МЕТКИ ЦИФЕРБЛАТА (12 штук) ----------
-метка = box size=[7, 26, 7] round=1.5 center=да at=[0, 172, 0]
+# ---------- ПЛАТА: скелетон с шестью большими окнами ----------
+плата_болванка = cylinder radius=202 height=4 segments=132 center=да
+плата_болванка = rotate [плата_болванка] angle=90 axis=x
+окно_1 = cylinder radius=46 height=12 segments=72 center=да
+окно_1 = rotate [окно_1] angle=90 axis=x
+окно_1 = translate [окно_1] offset=[118.00, 0, 0.00]
+окно_2 = cylinder radius=46 height=12 segments=72 center=да
+окно_2 = rotate [окно_2] angle=90 axis=x
+окно_2 = translate [окно_2] offset=[59.00, 0, 102.00]
+окно_3 = cylinder radius=46 height=12 segments=72 center=да
+окно_3 = rotate [окно_3] angle=90 axis=x
+окно_3 = translate [окно_3] offset=[-59.00, 0, 102.00]
+окно_4 = cylinder radius=46 height=12 segments=72 center=да
+окно_4 = rotate [окно_4] angle=90 axis=x
+окно_4 = translate [окно_4] offset=[-118.00, 0, 0.00]
+окно_5 = cylinder radius=46 height=12 segments=72 center=да
+окно_5 = rotate [окно_5] angle=90 axis=x
+окно_5 = translate [окно_5] offset=[-59.00, 0, -102.00]
+окно_6 = cylinder radius=46 height=12 segments=72 center=да
+окно_6 = rotate [окно_6] angle=90 axis=x
+окно_6 = translate [окно_6] offset=[59.00, 0, -102.00]
+окно_центр = cylinder radius=52 height=12 segments=72 center=да
+окно_центр = rotate [окно_центр] angle=90 axis=x
+окно_центр = translate [окно_центр] offset=[0.00, 0, 0.00]
+плата = difference [плата_болванка, окно_1, окно_2, окно_3, окно_4, окно_5, окно_6, окно_центр]
+плата = translate [плата] offset=[0, 14, 230]
+
+# ---------- СТОЙКИ: мостики опираются на плату, а не висят ----------
+стойка_1 = cylinder radius=5.5 height=34 segments=24 center=да
+стойка_1 = rotate [стойка_1] angle=90 axis=x
+стойка_1 = translate [стойка_1] offset=[176.00, -3, 156.00]
+стойка_2 = cylinder radius=5.5 height=34 segments=24 center=да
+стойка_2 = rotate [стойка_2] angle=90 axis=x
+стойка_2 = translate [стойка_2] offset=[-172.00, -3, 260.00]
+стойка_3 = cylinder radius=5.5 height=34 segments=24 center=да
+стойка_3 = rotate [стойка_3] angle=90 axis=x
+стойка_3 = translate [стойка_3] offset=[128.00, -3, 366.00]
+
+# ---------- МОСТИКИ: четыре отдельные детали, каждая на своей стойке ----------
+мк_1 = box size=[44.92, 13, 8] round=3.0 center=да
+мк_1 = rotate [мк_1] angle=90 axis=x
+мк_1 = rotate [мк_1] angle=-175.64 axis=y
+мк_1 = translate [мк_1] offset=[160.09, -16, 157.21]
+мк_2 = box size=[41.60, 13, 8] round=3.0 center=да
+мк_2 = rotate [мк_2] angle=90 axis=x
+мк_2 = rotate [мк_2] angle=138.00 axis=y
+мк_2 = translate [мк_2] offset=[133.55, -16, 148.86]
+мк_3 = box size=[41.60, 13, 8] round=3.0 center=да
+мк_3 = rotate [мк_3] angle=90 axis=x
+мк_3 = rotate [мк_3] angle=138.00 axis=y
+мк_3 = translate [мк_3] offset=[112.29, -16, 129.72]
+мк_4 = box size=[52.00, 13, 8] round=3.0 center=да
+мк_4 = rotate [мк_4] angle=90 axis=x
+мк_4 = rotate [мк_4] angle=-158.00 axis=y
+мк_4 = translate [мк_4] offset=[83.59, -16, 127.46]
+мк_5 = box size=[52.00, 13, 8] round=3.0 center=да
+мк_5 = rotate [мк_5] angle=90 axis=x
+мк_5 = rotate [мк_5] angle=-158.00 axis=y
+мк_5 = translate [мк_5] offset=[47.43, -16, 142.07]
+мк_6 = box size=[98.80, 13, 8] round=3.0 center=да
+мк_6 = rotate [мк_6] angle=90 axis=x
+мк_6 = rotate [мк_6] angle=-110.00 axis=y
+мк_6 = translate [мк_6] offset=[14.67, -16, 189.69]
+манк_1 = box size=[53.00, 11, 8] round=3.0 center=да
+манк_1 = rotate [манк_1] angle=90 axis=x
+манк_1 = rotate [манк_1] angle=-109.67 axis=y
+манк_1 = translate [манк_1] offset=[137.10, -16, 178.20]
+мбар_1 = box size=[52.01, 13, 8] round=3.0 center=да
+мбар_1 = rotate [мбар_1] angle=90 axis=x
+мбар_1 = rotate [мбар_1] angle=-13.81 axis=y
+мбар_1 = translate [мбар_1] offset=[-153.06, -16, 264.66]
+мбар_2 = box size=[60.68, 13, 8] round=3.0 center=да
+мбар_2 = rotate [мбар_2] angle=90 axis=x
+мбар_2 = rotate [мбар_2] angle=-13.81 axis=y
+мбар_2 = translate [мбар_2] offset=[-110.97, -16, 275.01]
+мбар_3 = box size=[48.10, 13, 8] round=3.0 center=да
+мбар_3 = rotate [мбар_3] angle=90 axis=x
+мбар_3 = rotate [мбар_3] angle=-100.00 axis=y
+мбар_3 = translate [мбар_3] offset=[-90.86, -16, 297.98]
+мбар_4 = box size=[55.90, 13, 8] round=3.0 center=да
+мбар_4 = rotate [мбар_4] angle=90 axis=x
+мбар_4 = rotate [мбар_4] angle=-100.00 axis=y
+мбар_4 = translate [мбар_4] offset=[-97.63, -16, 336.39]
+мбал_1 = box size=[59.27, 15, 8] round=3.0 center=да
+мбал_1 = rotate [мбал_1] angle=90 axis=x
+мбал_1 = rotate [мбал_1] angle=108.43 axis=y
+мбал_1 = translate [мбал_1] offset=[121.00, -16, 345.00]
+мбал_2 = box size=[59.27, 15, 8] round=3.0 center=да
+мбал_2 = rotate [мбал_2] angle=90 axis=x
+мбал_2 = rotate [мбал_2] angle=108.43 axis=y
+мбал_2 = translate [мбал_2] offset=[107.00, -16, 303.00]
+босс_бар = cylinder radius=17 height=8 segments=40 center=да
+босс_бар = rotate [босс_бар] angle=90 axis=x
+босс_бар = translate [босс_бар] offset=[-87.81, -16, 280.70]
+босс_мин = cylinder radius=16 height=8 segments=40 center=да
+босс_мин = rotate [босс_мин] angle=90 axis=x
+босс_мин = translate [босс_мин] offset=[0.00, -16, 230.00]
+босс_инт = cylinder radius=15 height=8 segments=40 center=да
+босс_инт = rotate [босс_инт] angle=90 axis=x
+босс_инт = translate [босс_инт] offset=[29.35, -16, 149.37]
+босс_сек = cylinder radius=14 height=8 segments=40 center=да
+босс_сек = rotate [босс_сек] angle=90 axis=x
+босс_сек = translate [босс_сек] offset=[101.67, -16, 120.16]
+босс_эск = cylinder radius=13 height=8 segments=40 center=да
+босс_эск = rotate [босс_эск] angle=90 axis=x
+босс_эск = translate [босс_эск] offset=[144.17, -16, 158.43]
+босс_анк = cylinder radius=11 height=8 segments=40 center=да
+босс_анк = rotate [босс_анк] angle=90 axis=x
+босс_анк = translate [босс_анк] offset=[130.04, -16, 197.98]
+босс_бал = cylinder radius=17 height=8 segments=40 center=да
+босс_бал = rotate [босс_бал] angle=90 axis=x
+босс_бал = translate [босс_бал] offset=[100.00, -16, 282.00]
+мостик_колёс = union [мк_1, мк_2, мк_3, мк_4, мк_5, мк_6, манк_1, босс_мин, босс_инт, босс_сек, босс_эск, босс_анк]
+мостик_барабана = union [мбар_1, мбар_2, мбар_3, мбар_4, босс_бар]
+мостик_баланса = union [мбал_1, мбал_2, босс_бал]
+
+# ---------- КОЛЁСА (m = 2, ось Y) ----------
+барабан = gear teeth=48 module=2.6 thickness=14 bore=8
+барабан = rotate [барабан] angle=90 axis=x
+барабан = translate [барабан] offset=[-87.81, 0, 280.70]
+барабан_стенка = cylinder radius=44 height=18 segments=96 center=да
+барабан_стенка = rotate [барабан_стенка] angle=90 axis=x
+барабан_стенка = translate [барабан_стенка] offset=[-87.81, 0, 280.70]
+барабан_крышка = cylinder radius=40 height=3 segments=96 center=да
+барабан_крышка = rotate [барабан_крышка] angle=90 axis=x
+барабан_крышка = translate [барабан_крышка] offset=[-87.81, -10.5, 280.70]
+ось_барабана = cylinder radius=4 height=36 segments=24 center=да
+ось_барабана = rotate [ось_барабана] angle=90 axis=x
+ось_барабана = translate [ось_барабана] offset=[-87.81, -4, 280.70]
+храповик = gear teeth=26 module=1.6 thickness=3.5 bore=9
+храповик = rotate [храповик] angle=90 axis=x
+храповик = translate [храповик] offset=[-87.81, -24, 280.70]
+храповик_втулка = cylinder radius=9 height=12 segments=32 center=да
+храповик_втулка = rotate [храповик_втулка] angle=90 axis=x
+храповик_втулка = translate [храповик_втулка] offset=[-87.81, -24, 280.70]
+минутное = gear teeth=30 module=2.6 thickness=10 bore=6 hub=14
+минутное = rotate [минутное] angle=90 axis=x
+минутное = translate [минутное] offset=[0.00, 0, 230.00]
+ось_минутного = cylinder radius=3.5 height=36 segments=24 center=да
+ось_минутного = rotate [ось_минутного] angle=90 axis=x
+ось_минутного = translate [ось_минутного] offset=[0.00, -4, 230.00]
+часовое = gear teeth=60 module=1.4 thickness=2.5 bore=14
+часовое = rotate [часовое] angle=90 axis=x
+часовое = translate [часовое] offset=[0.00, -11, 230.00]
+трубка_часовая = cylinder radius=9 height=5 segments=32 center=да
+трубка_часовая = rotate [трубка_часовая] angle=90 axis=x
+трубка_часовая = translate [трубка_часовая] offset=[0.00, -9, 230.00]
+промежуточное = gear teeth=36 module=2.6 thickness=8 bore=5 hub=12
+промежуточное = rotate [промежуточное] angle=90 axis=x
+промежуточное = translate [промежуточное] offset=[29.35, 0, 149.37]
+ось_промежуточного = cylinder radius=3 height=36 segments=24 center=да
+ось_промежуточного = rotate [ось_промежуточного] angle=90 axis=x
+ось_промежуточного = translate [ось_промежуточного] offset=[29.35, -4, 149.37]
+секундное = gear teeth=24 module=2.6 thickness=8 bore=5
+секундное = rotate [секундное] angle=90 axis=x
+секундное = translate [секундное] offset=[101.67, 0, 120.16]
+ось_секундного = cylinder radius=3 height=36 segments=24 center=да
+ось_секундного = rotate [ось_секундного] angle=90 axis=x
+ось_секундного = translate [ось_секундного] offset=[101.67, -4, 120.16]
+анкерное = gear teeth=20 module=2.6 thickness=6 bore=4
+анкерное = rotate [анкерное] angle=90 axis=x
+анкерное = translate [анкерное] offset=[144.17, 0, 158.43]
+ось_анкерного = cylinder radius=2.5 height=36 segments=24 center=да
+ось_анкерного = rotate [ось_анкерного] angle=90 axis=x
+ось_анкерного = translate [ось_анкерного] offset=[144.17, -4, 158.43]
+
+# ---------- МОТОР ЗАВОДА: фланец привинчен к мостику барабана ----------
+мотор_шестерня = gear teeth=12 module=2.6 thickness=8 bore=5
+мотор_шестерня = rotate [мотор_шестерня] angle=90 axis=x
+мотор_шестерня = translate [мотор_шестерня] offset=[-101.36, 0, 357.52]
+мотор_вал = cylinder radius=4.5 height=30 segments=32 center=да
+мотор_вал = rotate [мотор_вал] angle=90 axis=x
+мотор_вал = translate [мотор_вал] offset=[-101.36, -9, 357.52]
+мотор_фланец = cylinder radius=23 height=2.6 segments=56 center=да
+мотор_фланец = rotate [мотор_фланец] angle=90 axis=x
+мотор_фланец = translate [мотор_фланец] offset=[-101.36, -21.2, 357.52]
+мотор_корпус = cylinder radius=19 height=20 segments=64 center=да
+мотор_корпус = rotate [мотор_корпус] angle=90 axis=x
+мотор_корпус = translate [мотор_корпус] offset=[-101.36, -33, 357.52]
+мотор_торец = cylinder radius=16 height=8 segments=64 center=да
+мотор_торец = rotate [мотор_торец] angle=90 axis=x
+мотор_торец = translate [мотор_торец] offset=[-101.36, -44, 357.52]
+
+# ---------- БАЛАНС, ВОЛОСОК, ВИЛКА ----------
+баланс_обод = torus major=52 minor=5 segments=96 minor_segments=16 at=[0, 0, 0]
+спица_1 = box size=[104, 5, 7] round=2 center=да at=[0, 0, 0]
+спица_2 = box size=[104, 5, 7] round=2 center=да at=[0, 0, 0]
+спица_2 = rotate [спица_2] angle=60 axis=z
+спица_3 = box size=[104, 5, 7] round=2 center=да at=[0, 0, 0]
+спица_3 = rotate [спица_3] angle=120 axis=z
+баланс_втулка = cylinder radius=10 height=14 segments=32 center=да
+баланс_втулка = rotate [баланс_втулка] angle=90 axis=x
+баланс = union [баланс_обод, спица_1, спица_2, спица_3, баланс_втулка]
+баланс = rotate [баланс] angle=90 axis=x
+баланс = translate [баланс] offset=[100.00, 0, 282.00]
+ось_баланса = cylinder radius=3 height=36 segments=24 center=да
+ось_баланса = rotate [ось_баланса] angle=90 axis=x
+ось_баланса = translate [ось_баланса] offset=[100.00, -4, 282.00]
+волосок = spring diameter=42 wire=1.4 turns=5 pitch=1.5
+волосок = rotate [волосок] angle=90 axis=x
+волосок = translate [волосок] offset=[100.00, -12, 282.00]
+# вилка: короткое плечо с камнями к анкерному колесу, длинный рог к балансу
+вилка_плечо = box size=[24.00, 9, 6] round=2 center=да
+вилка_плечо = rotate [вилка_плечо] angle=90 axis=x
+вилка_плечо = rotate [вилка_плечо] angle=70.33 axis=y
+вилка_плечо = translate [вилка_плечо] offset=[132.56, 0, 190.92]
+вилка_рог = box size=[50.00, 8, 6] round=2 center=да
+вилка_рог = rotate [вилка_рог] angle=90 axis=x
+вилка_рог = rotate [вилка_рог] angle=-109.67 axis=y
+вилка_рог = translate [вилка_рог] offset=[122.97, 0, 217.75]
+вилка_втулка = cylinder radius=7 height=8 segments=32 center=да
+вилка_втулка = rotate [вилка_втулка] angle=90 axis=x
+вилка_втулка = translate [вилка_втулка] offset=[130.04, 0, 197.98]
+вилка_ось = cylinder radius=2.5 height=36 segments=24 center=да
+вилка_ось = rotate [вилка_ось] angle=90 axis=x
+вилка_ось = translate [вилка_ось] offset=[130.04, -4, 197.98]
+вилка = union [вилка_плечо, вилка_рог, вилка_втулка]
+
+# ---------- СТРЕЛКИ 10 : 10 : 35 ----------
+трубка_центральная = cylinder radius=6.5 height=56 segments=32 center=да
+трубка_центральная = rotate [трубка_центральная] angle=90 axis=x
+трубка_центральная = translate [трубка_центральная] offset=[0, -20, 230]
+часовая = box size=[16, 6, 118] round=3 center=да at=[0, 0, 59]
+часовая = rotate [часовая] angle=305 axis=y pivot=[0, 0, 0]
+часовая = translate [часовая] offset=[0, -35, 230]
+минутная = box size=[11, 5, 162] round=2.4 center=да at=[0, 0, 81]
+минутная = rotate [минутная] angle=60 axis=y pivot=[0, 0, 0]
+минутная = translate [минутная] offset=[0, -41, 230]
+секундная = box size=[5, 4, 186] round=2 center=да at=[0, 0, 82]
+секундная = rotate [секундная] angle=210 axis=y pivot=[0, 0, 0]
+секундная = translate [секундная] offset=[0, -47, 230]
+противовес = cylinder radius=10 height=4 segments=32 center=да
+противовес = rotate [противовес] angle=90 axis=x
+противовес = translate [противовес] offset=[0, -47, 214]
+
+# ---------- МЕТКИ НА ВНУТРЕННЕМ КОЛЬЦЕ КОРПУСА ----------
+метка = box size=[7, 32, 6] round=2 center=да at=[0, 196, 0]
 метки = array [метка] count=12 mode=radial around=z
 метки = rotate [метки] angle=90 axis=x
 метки = translate [метки] offset=[0, -44, 230]
 
-# ---------- КОЛЁСА (m = 2, ось Y) ----------
-барабан = gear teeth=48 module=2 thickness=16 bore=8
-барабан = rotate [барабан] angle=90 axis=x
-барабан = translate [барабан] offset=[-108, 0, 230]
-минутное = gear teeth=30 module=2 thickness=10 bore=6 hub=14
-минутное = rotate [минутное] angle=90 axis=x
-минутное = translate [минутное] offset=[-30, 0, 230]
-промежуточное = gear teeth=36 module=2 thickness=8 bore=6
-промежуточное = rotate [промежуточное] angle=90 axis=x
-промежуточное = translate [промежуточное] offset=[36, 0, 230]
-секундное = gear teeth=30 module=2 thickness=8 bore=6
-секундное = rotate [секундное] angle=90 axis=x
-секундное = translate [секундное] offset=[102, 0, 230]
-анкерное = gear teeth=30 module=2 thickness=6 bore=5
-анкерное = rotate [анкерное] angle=90 axis=x
-анкерное = translate [анкерное] offset=[150, 0, 230]
+# ---------- ГРАВИРОВКА НА ПЛАТЕ ----------
+клеймо = text "FORMA" size=17 depth=2 weight=1.6 align=center plane=xz at=[0, 0, 0]
+клеймо = translate [клеймо] offset=[0, 11.5, 62]
 
-ось_1 = cylinder radius=3 height=74 segments=24 center=да
-ось_1 = rotate [ось_1] angle=90 axis=x
-ось_1 = translate [ось_1] offset=[-108, -4, 230]
-ось_2 = cylinder radius=3 height=74 segments=24 center=да
-ось_2 = rotate [ось_2] angle=90 axis=x
-ось_2 = translate [ось_2] offset=[-30, -4, 230]
-ось_3 = cylinder radius=3 height=74 segments=24 center=да
-ось_3 = rotate [ось_3] angle=90 axis=x
-ось_3 = translate [ось_3] offset=[36, -4, 230]
-ось_4 = cylinder radius=2.5 height=74 segments=24 center=да
-ось_4 = rotate [ось_4] angle=90 axis=x
-ось_4 = translate [ось_4] offset=[102, -4, 230]
-ось_5 = cylinder radius=2.5 height=74 segments=24 center=да
-ось_5 = rotate [ось_5] angle=90 axis=x
-ось_5 = translate [ось_5] offset=[150, -4, 230]
-
-# ---------- АНКЕР ----------
-анкер_профиль = extrude profile=[[0,12],[11,6],[20,-18],[12,-24],[4,-10],[0,-5],
-                                 [-4,-10],[-12,-24],[-20,-18],[-11,6]] height=6 fillet=0
-анкер = rotate [анкер_профиль] angle=90 axis=x
-анкер = translate [анкер] offset=[150, -8, 246]
-анкер_ось = cylinder radius=4 height=14 segments=24 center=да
-анкер_ось = rotate [анкер_ось] angle=90 axis=x
-анкер_ось = translate [анкер_ось] offset=[150, -8, 246]
-
-# ---------- БАЛАНС И ВОЛОСОК ----------
-баланс_обод = torus major=52 minor=5 at=[0, 0, 0]
-спица_1 = box size=[104, 5, 6] round=2 center=да at=[0, 0, 0]
-спица_2 = box size=[104, 5, 6] round=2 center=да at=[0, 0, 0]
-спица_2 = rotate [спица_2] angle=60 axis=z
-спица_3 = box size=[104, 5, 6] round=2 center=да at=[0, 0, 0]
-спица_3 = rotate [спица_3] angle=120 axis=z
-втулка = cylinder radius=9 height=12 segments=32 center=да
-втулка = rotate [втулка] angle=90 axis=x
-баланс = union [баланс_обод, спица_1, спица_2, спица_3, втулка]
-баланс = rotate [баланс] angle=90 axis=x
-баланс = translate [баланс] offset=[95, -30, 318]
-волосок = spring diameter=40 wire=1.4 turns=5 pitch=1.6
-волосок = rotate [волосок] angle=90 axis=x
-волосок = translate [волосок] offset=[95, -24, 318]
-баланс_ось = cylinder radius=3 height=52 segments=24 center=да
-баланс_ось = rotate [баланс_ось] angle=90 axis=x
-баланс_ось = translate [баланс_ось] offset=[95, -22, 318]
-
-# ---------- МОТОР ЗАВОДА ----------
-мотор_корпус = cylinder radius=24 height=46 segments=48 center=да
-мотор_корпус = rotate [мотор_корпус] angle=90 axis=x
-мотор_корпус = translate [мотор_корпус] offset=[-108, 46, 150]
-мотор_вал = cylinder radius=5 height=34 segments=24 center=да
-мотор_вал = rotate [мотор_вал] angle=90 axis=x
-мотор_вал = translate [мотор_вал] offset=[-108, 18, 150]
-мотор_шестерня = gear teeth=12 module=2 thickness=8 bore=6
-мотор_шестерня = rotate [мотор_шестерня] angle=90 axis=x
-мотор_шестерня = translate [мотор_шестерня] offset=[-108, 14, 150]
-
-# ---------- СТРЕЛКИ: 10 : 10 : 35 ----------
-часовая = box size=[16, 6, 118] round=3 center=да at=[0, 0, 59]
-часовая = rotate [часовая] angle=305 axis=y pivot=[0, 0, 0]
-часовая = translate [часовая] offset=[0, -56, 230]
-минутная = box size=[11, 6, 158] round=3 center=да at=[0, 0, 79]
-минутная = rotate [минутная] angle=60 axis=y pivot=[0, 0, 0]
-минутная = translate [минутная] offset=[0, -62, 230]
-секундная = box size=[5, 4, 176] round=2 center=да at=[0, 0, 88]
-секундная = rotate [секундная] angle=210 axis=y pivot=[0, 0, 0]
-секундная = translate [секундная] offset=[0, -68, 230]
-втулка_стрелок = cylinder radius=12 height=14 segments=48 center=да
-втулка_стрелок = rotate [втулка_стрелок] angle=90 axis=x
-втулка_стрелок = translate [втулка_стрелок] offset=[0, -64, 230]
+# ---------- КАМНИ И ВИНТЫ ----------
+камень_бар = cylinder radius=6.5 height=2.4 segments=32 center=да
+камень_бар = rotate [камень_бар] angle=90 axis=x
+камень_бар = translate [камень_бар] offset=[-87.81, -21.2, 280.70]
+камень_мин = cylinder radius=6.5 height=2.4 segments=32 center=да
+камень_мин = rotate [камень_мин] angle=90 axis=x
+камень_мин = translate [камень_мин] offset=[0.00, -21.2, 230.00]
+камень_инт = cylinder radius=6.5 height=2.4 segments=32 center=да
+камень_инт = rotate [камень_инт] angle=90 axis=x
+камень_инт = translate [камень_инт] offset=[29.35, -21.2, 149.37]
+камень_сек = cylinder radius=6.5 height=2.4 segments=32 center=да
+камень_сек = rotate [камень_сек] angle=90 axis=x
+камень_сек = translate [камень_сек] offset=[101.67, -21.2, 120.16]
+камень_эск = cylinder radius=6.5 height=2.4 segments=32 center=да
+камень_эск = rotate [камень_эск] angle=90 axis=x
+камень_эск = translate [камень_эск] offset=[144.17, -21.2, 158.43]
+камень_анк = cylinder radius=6.5 height=2.4 segments=32 center=да
+камень_анк = rotate [камень_анк] angle=90 axis=x
+камень_анк = translate [камень_анк] offset=[130.04, -21.2, 197.98]
+камень_бал = cylinder radius=6.5 height=2.4 segments=32 center=да
+камень_бал = rotate [камень_бал] angle=90 axis=x
+камень_бал = translate [камень_бал] offset=[100.00, -21.2, 282.00]
+винт_1 = screw d=5 length=8 head=полукруг head_d=11 at=[0, 0, 0]
+винт_1 = rotate [винт_1] angle=-90 axis=x
+винт_1 = translate [винт_1] offset=[176, -22.4, 156.0]
+винт_2 = screw d=5 length=8 head=полукруг head_d=11 at=[0, 0, 0]
+винт_2 = rotate [винт_2] angle=-90 axis=x
+винт_2 = translate [винт_2] offset=[-172, -22.4, 260.0]
+винт_3 = screw d=5 length=8 head=полукруг head_d=11 at=[0, 0, 0]
+винт_3 = rotate [винт_3] angle=-90 axis=x
+винт_3 = translate [винт_3] offset=[128, -22.4, 366.0]
+винт_4 = screw d=5 length=8 head=полукруг head_d=11 at=[0, 0, 0]
+винт_4 = rotate [винт_4] angle=-90 axis=x
+винт_4 = translate [винт_4] offset=[160.1, -22.4, 157.2]
+винт_5 = screw d=5 length=8 head=полукруг head_d=11 at=[0, 0, 0]
+винт_5 = rotate [винт_5] angle=-90 axis=x
+винт_5 = translate [винт_5] offset=[-129.9, -22.4, 270.3]
+винт_6 = screw d=5 length=8 head=полукруг head_d=11 at=[0, 0, 0]
+винт_6 = rotate [винт_6] angle=-90 axis=x
+винт_6 = translate [винт_6] offset=[114.0, -22.4, 324.0]
 
 # ---------- АНИМАЦИЯ: СЦЕНА «ХОД» ----------
-animate баланс turn angle=200 axis=y pivot=[95, -30, 318] seconds=0.25 track=1 scene=ход
-animate баланс turn angle=-200 axis=y pivot=[95, -30, 318] seconds=0.25 track=1 scene=ход
-animate баланс turn angle=200 axis=y pivot=[95, -30, 318] seconds=0.25 track=1 scene=ход
-animate баланс turn angle=-200 axis=y pivot=[95, -30, 318] seconds=0.25 track=1 scene=ход
-animate баланс turn angle=200 axis=y pivot=[95, -30, 318] seconds=0.25 track=1 scene=ход
-animate баланс turn angle=-200 axis=y pivot=[95, -30, 318] seconds=0.25 track=1 scene=ход
-animate баланс turn angle=200 axis=y pivot=[95, -30, 318] seconds=0.25 track=1 scene=ход
-animate баланс turn angle=-200 axis=y pivot=[95, -30, 318] seconds=0.25 track=1 scene=ход
-
-animate анкер turn angle=14 axis=y pivot=[150, -8, 246] seconds=0.25 track=2 scene=ход
-animate анкер turn angle=-14 axis=y pivot=[150, -8, 246] seconds=0.25 track=2 scene=ход
-animate анкер turn angle=14 axis=y pivot=[150, -8, 246] seconds=0.25 track=2 scene=ход
-animate анкер turn angle=-14 axis=y pivot=[150, -8, 246] seconds=0.25 track=2 scene=ход
-animate анкер turn angle=14 axis=y pivot=[150, -8, 246] seconds=0.25 track=2 scene=ход
-animate анкер turn angle=-14 axis=y pivot=[150, -8, 246] seconds=0.25 track=2 scene=ход
-animate анкер turn angle=14 axis=y pivot=[150, -8, 246] seconds=0.25 track=2 scene=ход
-animate анкер turn angle=-14 axis=y pivot=[150, -8, 246] seconds=0.25 track=2 scene=ход
-
-animate анкерное turn angle=6 axis=y pivot=[150, 0, 230] seconds=0.25 track=3 scene=ход
-animate анкерное turn angle=6 axis=y pivot=[150, 0, 230] seconds=0.25 track=3 scene=ход
-animate анкерное turn angle=6 axis=y pivot=[150, 0, 230] seconds=0.25 track=3 scene=ход
-animate анкерное turn angle=6 axis=y pivot=[150, 0, 230] seconds=0.25 track=3 scene=ход
-animate анкерное turn angle=6 axis=y pivot=[150, 0, 230] seconds=0.25 track=3 scene=ход
-animate анкерное turn angle=6 axis=y pivot=[150, 0, 230] seconds=0.25 track=3 scene=ход
-animate анкерное turn angle=6 axis=y pivot=[150, 0, 230] seconds=0.25 track=3 scene=ход
-animate анкерное turn angle=6 axis=y pivot=[150, 0, 230] seconds=0.25 track=3 scene=ход
-
-animate секундная turn angle=12 axis=y pivot=[0, -68, 230] seconds=2 track=4 scene=ход
-animate секундная turn angle=12 axis=y pivot=[0, -68, 230] seconds=2 track=4 scene=ход
-animate минутная turn angle=0.4 axis=y pivot=[0, -62, 230] seconds=8 track=5 scene=ход
-animate часовая turn angle=0.03 axis=y pivot=[0, -56, 230] seconds=8 track=6 scene=ход
-animate секундное turn angle=3 axis=y pivot=[102, 0, 230] seconds=8 track=7 scene=ход
-animate промежуточное turn angle=2.5 axis=y pivot=[36, 0, 230] seconds=8 track=7 scene=ход
-animate минутное turn angle=2 axis=y pivot=[-30, 0, 230] seconds=8 track=7 scene=ход
-animate барабан turn angle=1.2 axis=y pivot=[-108, 0, 230] seconds=8 track=7 scene=ход
-animate мотор_шестерня turn angle=24 axis=y pivot=[-108, 14, 150] seconds=1 track=8 scene=ход
-animate мотор_шестерня turn angle=24 axis=y pivot=[-108, 14, 150] seconds=1 track=8 scene=ход
-animate мотор_шестерня turn angle=24 axis=y pivot=[-108, 14, 150] seconds=1 track=8 scene=ход
-animate мотор_шестерня turn angle=24 axis=y pivot=[-108, 14, 150] seconds=1 track=8 scene=ход
+#  ω_ведомого = −ω_ведущего · z_ведущего / z_ведомого.
+#  За 8 с: мотор +60°, барабан −15°, минутное +24°, промежуточное −20°,
+#  секундное +30°, анкерное −36° — ровно по зубьям.
+animate мотор_шестерня turn angle=60 axis=y pivot=[-101.36, 0, 357.52] seconds=8 track=1 scene=ход
+animate барабан turn angle=-15 axis=y pivot=[-87.81, 0, 280.70] seconds=8 track=1 scene=ход
+animate барабан_стенка turn angle=-15 axis=y pivot=[-87.81, 0, 280.70] seconds=8 track=1 scene=ход
+animate барабан_крышка turn angle=-15 axis=y pivot=[-87.81, 0, 280.70] seconds=8 track=1 scene=ход
+animate храповик turn angle=-15 axis=y pivot=[-87.81, 0, 280.70] seconds=8 track=1 scene=ход
+animate минутное turn angle=24 axis=y pivot=[0, 0, 230] seconds=8 track=2 scene=ход
+animate промежуточное turn angle=-20 axis=y pivot=[29.35, 0, 149.37] seconds=8 track=2 scene=ход
+animate секундное turn angle=30 axis=y pivot=[101.67, 0, 120.16] seconds=8 track=2 scene=ход
+animate анкерное turn angle=-36 axis=y pivot=[144.17, 0, 158.43] seconds=8 track=2 scene=ход
+animate часовое turn angle=1 axis=y pivot=[0, 0, 230] seconds=8 track=3 scene=ход
+animate минутная turn angle=24 axis=y pivot=[0, -41, 230] seconds=8 track=3 scene=ход
+animate часовая turn angle=2 axis=y pivot=[0, -35, 230] seconds=8 track=3 scene=ход
+animate секундная turn angle=30 axis=y pivot=[0, -47, 230] seconds=8 track=3 scene=ход
+animate противовес turn angle=30 axis=y pivot=[0, -47, 230] seconds=8 track=3 scene=ход
+animate баланс turn angle=200 axis=y pivot=[100.00, 0, 282.00] seconds=0.5 track=4 scene=ход
+animate баланс turn angle=-200 axis=y pivot=[100.00, 0, 282.00] seconds=0.5 track=4 scene=ход
+animate баланс turn angle=200 axis=y pivot=[100.00, 0, 282.00] seconds=0.5 track=4 scene=ход
+animate баланс turn angle=-200 axis=y pivot=[100.00, 0, 282.00] seconds=0.5 track=4 scene=ход
+animate баланс turn angle=200 axis=y pivot=[100.00, 0, 282.00] seconds=0.5 track=4 scene=ход
+animate баланс turn angle=-200 axis=y pivot=[100.00, 0, 282.00] seconds=0.5 track=4 scene=ход
+animate баланс turn angle=200 axis=y pivot=[100.00, 0, 282.00] seconds=0.5 track=4 scene=ход
+animate баланс turn angle=-200 axis=y pivot=[100.00, 0, 282.00] seconds=0.5 track=4 scene=ход
+animate вилка turn angle=14 axis=y pivot=[130.04, 0, 197.98] seconds=0.5 track=4 scene=ход
+animate вилка turn angle=-14 axis=y pivot=[130.04, 0, 197.98] seconds=0.5 track=4 scene=ход
+animate вилка turn angle=14 axis=y pivot=[130.04, 0, 197.98] seconds=0.5 track=4 scene=ход
+animate вилка turn angle=-14 axis=y pivot=[130.04, 0, 197.98] seconds=0.5 track=4 scene=ход
+animate вилка turn angle=14 axis=y pivot=[130.04, 0, 197.98] seconds=0.5 track=4 scene=ход
+animate вилка turn angle=-14 axis=y pivot=[130.04, 0, 197.98] seconds=0.5 track=4 scene=ход
+animate вилка turn angle=14 axis=y pivot=[130.04, 0, 197.98] seconds=0.5 track=4 scene=ход
+animate вилка turn angle=-14 axis=y pivot=[130.04, 0, 197.98] seconds=0.5 track=4 scene=ход
 
 # ---------- ПРОВЕРКИ ----------
-check основание watertight
-check основание size 476..484 476..484 22..26
+check корпус watertight
+check корпус parts 1
+check корпус size 478..482 60..64 478..482
 check безель watertight
 check безель parts 1
-check глава parts 1
-check метки parts 12
-check барабан parts 1
+check крышка_задняя watertight
+check крышка_задняя size 422..426 10..14 422..426
+check плата parts 1
+check плата size 402..406 2..6 402..406
+check мостик_колёс parts 1
+check мостик_барабана parts 1
+check мостик_баланса parts 1
 check барабан watertight
+check барабан parts 1
+check барабан size 128..132 12..16 128..132
+check храповик parts 1
+check храповик_втулка parts 1
+check минутное watertight
 check минутное parts 1
+check минутное size 81..85 8..12 81..85
+check часовое parts 1
 check промежуточное parts 1
 check секундное parts 1
 check анкерное parts 1
-check анкер parts 1
-check анкер watertight
-check баланс parts 1
+check мотор_шестерня parts 1
+check мотор_корпус size 36..40 18..22 36..40
 check баланс watertight
-check баланс height 110..116
+check баланс parts 1
+check баланс height 112..116
 check волосок watertight
-check часовая parts 1
+check вилка parts 1
 check часовая watertight
-check минутная parts 1
 check минутная watertight
-check секундная parts 1
 check секундная watertight
-check мотор_корпус height 46..50
+check метки parts 12
+check головка parts 1
 
 # ---------- МАТЕРИАЛ ----------
-color основание #23262c rough=0.5 metal=0.3
-color задняя_плата #2c3037 rough=0.45 metal=0.35
-color стойка_1 #c8a45c metal=0.9 rough=0.2
-color стойка_2 #c8a45c metal=0.9 rough=0.2
-color стойка_3 #c8a45c metal=0.9 rough=0.2
-color стойка_4 #c8a45c metal=0.9 rough=0.2
-color безель #c8a45c metal=0.95 rough=0.16
-color глава #b9974f metal=0.9 rough=0.22
-color метки #f0ece2 rough=0.4
-color барабан #b98b4e metal=0.85 rough=0.25
-color минутное #d8b46a metal=0.9 rough=0.2
-color промежуточное #cfa85f metal=0.9 rough=0.2
-color секундное #d8b46a metal=0.9 rough=0.2
-color анкерное #e2c07a metal=0.95 rough=0.15
-color анкер #e6c684 metal=0.95 rough=0.14
-color баланс #e6c684 metal=0.95 rough=0.14
+color корпус #22262c metal=0.92 rough=0.32
+color безель #d9b46a metal=0.95 rough=0.16
+color крышка_задняя #101216 metal=0.9 rough=0.4
+color крышка_пружина #8e939a metal=0.95 rough=0.22
+color головка #d9b46a metal=0.95 rough=0.2
+color головка_вал #9aa1a9 metal=0.9 rough=0.25
+color плата #2b3037 metal=0.8 rough=0.45
+color мостик_колёс #9aa4b0 metal=0.95 rough=0.18
+color мостик_барабана #9aa4b0 metal=0.95 rough=0.18
+color мостик_баланса #9aa4b0 metal=0.95 rough=0.18
+color барабан #b98b4e metal=0.9 rough=0.24
+color барабан_стенка #9c7238 metal=0.9 rough=0.3
+color барабан_крышка #c49a5c metal=0.92 rough=0.22
+color храповик #8e6a34 metal=0.9 rough=0.3
+color храповик_втулка #a9aeb5 metal=0.9 rough=0.25
+color минутное #d8b46a metal=0.92 rough=0.18
+color часовое #b08c4e metal=0.9 rough=0.28
+color промежуточное #cfa85f metal=0.92 rough=0.2
+color секундное #d8b46a metal=0.92 rough=0.18
+color анкерное #e2c07a metal=0.95 rough=0.14
+color мотор_шестерня #a7aeb6 metal=0.95 rough=0.2
+color мотор_корпус #33383f metal=0.9 rough=0.32
+color мотор_фланец #6d747d metal=0.9 rough=0.28
+color мотор_торец #2f343a metal=0.8 rough=0.4
+color мотор_вал #b6bcc4 metal=0.95 rough=0.15
+color баланс #e6c684 metal=0.95 rough=0.12
 color волосок #b9c0c8 metal=0.9 rough=0.2
-# Стрелки светлее механизма: на скелетоне тёмные сливались с шестернями
-color часовая #ded6c4 metal=0.55 rough=0.32
-color минутная #f4efe2 metal=0.55 rough=0.28
-color секундная #c0402a metal=0.7 rough=0.25
-color мотор_корпус #555b63 metal=0.85 rough=0.3
-color мотор_шестерня #9aa1a9 metal=0.9 rough=0.25
-color втулка_стрелок #c8a45c metal=0.9 rough=0.2
+color вилка #e6c684 metal=0.95 rough=0.12
+color часовая #8f97a4 metal=0.7 rough=0.28
+color минутная #f4efe2 metal=0.6 rough=0.26
+color секундная #c0402a metal=0.7 rough=0.22
+color противовес #c0402a metal=0.7 rough=0.24
+color метки #e8e2d2 rough=0.35
+color клеймо #8b6a3c metal=0.9 rough=0.3
+color винт_1 #2b3f6b metal=0.95 rough=0.18
+color винт_2 #2b3f6b metal=0.95 rough=0.18
+color винт_3 #2b3f6b metal=0.95 rough=0.18
+color винт_4 #2b3f6b metal=0.95 rough=0.18
+color винт_5 #2b3f6b metal=0.95 rough=0.18
+color винт_6 #2b3f6b metal=0.95 rough=0.18
+color камень_бар #b4152e metal=0.2 rough=0.1
+color камень_мин #b4152e metal=0.2 rough=0.1
+color камень_инт #b4152e metal=0.2 rough=0.1
+color камень_сек #b4152e metal=0.2 rough=0.1
+color камень_эск #b4152e metal=0.2 rough=0.1
+color камень_анк #b4152e metal=0.2 rough=0.1
+color камень_бал #b4152e metal=0.2 rough=0.1
+color стойка_1 #6d747d metal=0.9 rough=0.3
+color стойка_2 #6d747d metal=0.9 rough=0.3
+color стойка_3 #6d747d metal=0.9 rough=0.3
+color ось_барабана #cfd4da metal=0.95 rough=0.12
+color ось_минутного #cfd4da metal=0.95 rough=0.12
+color ось_промежуточного #cfd4da metal=0.95 rough=0.12
+color ось_секундного #cfd4da metal=0.95 rough=0.12
+color ось_анкерного #cfd4da metal=0.95 rough=0.12
+color ось_баланса #cfd4da metal=0.95 rough=0.12
+color вилка_ось #cfd4da metal=0.95 rough=0.12
+color трубка_центральная #cfd4da metal=0.95 rough=0.12
+color трубка_часовая #cfd4da metal=0.95 rough=0.12
