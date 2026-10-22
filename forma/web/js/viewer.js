@@ -1583,6 +1583,7 @@ export class Viewer {
     if (!this.spaceMode) return false;
     this._spaceSel?.clear?.();
     this._buildSpaceGrid();
+    this.onSpace?.(this.spaceSelection());
     return true;
   }
 

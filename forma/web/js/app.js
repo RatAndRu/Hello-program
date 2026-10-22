@@ -756,7 +756,7 @@ function focusLine(line) {
 }
 
 /** Подсветка строки сценария, которая сейчас играет. */
-function placeRunHighlight(scroll = false) {
+function placeRunHighlight(follow = false) {
   const el = $('code-run');
   const ta = $('code');
   if (!el || !ta) return;
@@ -768,7 +768,7 @@ function placeRunHighlight(scroll = false) {
   const viewTop = ta.scrollTop;
   const viewBottom = viewTop + (ta.clientHeight || 0) - lh;
   const outside = lineTop < viewTop || lineTop > viewBottom;
-  if (scroll || outside) {
+  if (follow) {
     // держим играющую строку на виду: текст сам подкручивается за анимацией
     const target = lineTop - Math.max(0, (ta.clientHeight || 0)) * 0.35;
     ta.scrollTop = Math.max(0, target);
@@ -778,11 +778,12 @@ function placeRunHighlight(scroll = false) {
   const offset = pad + lineTop - ta.scrollTop;
   el.style.top = offset + 'px';
   el.style.height = lh + 'px';
-  el.hidden = false;
+  // если пользователь сам прокрутил текст, полосу не навязываем
+  el.hidden = offset < -lh || offset > ta.clientHeight;
 }
 
 /** Подсветить одну строку (основную) и необязательно ещё несколько бледных. */
-function highlightScriptLine(line, { scroll = false, soft = [] } = {}) {
+function highlightScriptLine(line, { scroll = false, follow = true, soft = [] } = {}) {
   const n = Number(line) || 0;
   state.runLine = n;
   state.runSoft = n ? (soft || []).map(Number).filter((x) => x && x !== n) : [];
@@ -794,7 +795,7 @@ function highlightScriptLine(line, { scroll = false, soft = [] } = {}) {
       el.classList.toggle('run-soft', softSet.has(i + 1));
     });
   }
-  placeRunHighlight(scroll);
+  placeRunHighlight(follow);
   if (state.runSoft.length) {
     // вторая полоса — на самом раннем из параллельных клипов
     const lines = [...state.runSoft, n].sort((x, y) => x - y);
