@@ -377,7 +377,35 @@ def uv_for(verts: np.ndarray, mode: str = "cylinder",
     return np.stack([u, w], axis=1).astype(np.float32)
 
 
-def uv_triangles(verts: np.ndarray, faces: np.ndarray, mode: str = "cylinder",
+def _triplanar_uv(tri: np.ndarray, tile_mm: float,
+                  origin: np.ndarray | None = None) -> np.ndarray:
+    """Бесшовная развёртка по граням: проекция зависит от нормали треугольника.
+
+    Для панелей шкафа, ящиков и любых составных предметов рисунок идёт в
+    миллиметрах мира, поэтому линии на соседних деталях совпадают, а не
+    «съезжают» на стыках. Масштаб текстуры одинаков по всем осям.
+    """
+    tile = max(1.0, float(tile_mm))
+    o = np.zeros(3) if origin is None else np.asarray(origin, dtype=np.float64)[:3]
+    p = tri - o
+    e1 = tri[:, 1] - tri[:, 0]
+    e2 = tri[:, 2] - tri[:, 0]
+    nrm = np.cross(e1, e2)
+    axis = np.argmax(np.abs(nrm), axis=1)
+    # ось нормали → какая пара мировых осей становится (u, v)
+    # x: (z, y), y (вверх): (x, z), z: (x, y) — без зеркального отражения
+    ax = axis[:, None]
+    # x: (z, y); y (вверх): (x, z); z: (x, y)
+    u = np.where(ax == 0, p[:, :, 2], p[:, :, 0]) / tile
+    w = np.where(ax == 0, p[:, :, 1],
+                 np.where(ax == 1, p[:, :, 2], p[:, :, 1])) / tile
+    # на гранях, смотрящих в минус оси, разворачиваем u, чтобы текст не зеркалился
+    neg = np.take_along_axis(nrm, axis[:, None], axis=1)[:, 0] < 0
+    u = np.where(neg[:, None], -u, u)
+    return np.stack([u.ravel(), w.ravel()], axis=1).astype(np.float32)
+
+
+def uv_triangles(verts: np.ndarray, faces: np.ndarray, mode: str = "auto",
                  bbox: np.ndarray | None = None, tile_mm: float = 140.0) -> np.ndarray:
     """UV на каждый угол треугольника.
 
@@ -391,6 +419,9 @@ def uv_triangles(verts: np.ndarray, faces: np.ndarray, mode: str = "cylinder",
     hi = v.max(axis=0) if bbox is None else np.asarray(bbox[3:], dtype=np.float64)
     span = np.maximum(hi - lo, 1e-9)
     tri = v[f]  # (F, 3, 3) — координаты в glTF (X, Y вверх, Z)
+    mode = (mode or "auto").lower()
+    if mode in ("auto", "triplanar", "box", "грани", "авто"):
+        return _triplanar_uv(tri, tile_mm, origin=lo)
     if mode == "planar":
         u = (tri[:, :, 0] - lo[0]) / span[0]
         w = (tri[:, :, 2] - lo[2]) / span[2]

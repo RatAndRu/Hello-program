@@ -285,7 +285,9 @@ def _run_uistest(report_path: str | None) -> int:
                 objects_anim = {c.get("object") for c in cabinet_plan.get("clips", [])}
                 check("пример «Шкаф»: группы и движение по объектам",
                       cabinet.get("ok") is True
-                      and set(cabinet_groups.get("дверь") or []) == {"фасад_л", "ручка_левая"}
+                      and {"фасад_л", "ручка_левая", "петля_1", "петля_2"}
+                      <= set(cabinet_groups.get("дверь") or [])
+                      and "ручка_ящика" in (cabinet_groups.get("ящик_сборка") or [])
                       and {"дверь", "ящик_сборка", "колесо_1"} <= objects_anim
                       and any(c.get("kind") == "roll" for c in cabinet_plan.get("clips", [])),
                       f"групп {len(cabinet_groups)}, объектов в анимации {len(objects_anim)}")

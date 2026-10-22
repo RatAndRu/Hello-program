@@ -164,6 +164,7 @@ class Scene:
         ``seconds``. Ключевые кадры объектов живут на своей дорожке.
         """
         clips: list[dict] = []
+        scene_names: list[str] = []
         # дорожка + объект: у каждого объекта своя очередь клипов, поэтому
         # движение шкафа и качение его колёсиков идут одновременно
         cursors: dict[tuple[int, str], float] = {}
@@ -185,6 +186,10 @@ class Scene:
             if start is None:
                 start = cursors.get(key, 0.0)
             start = max(0.0, float(start))
+            scene_name = str(spec.get("scene") or "").strip()
+            spec["scene"] = scene_name
+            if scene_name and scene_name not in scene_names:
+                scene_names.append(scene_name)
             spec["track"] = track
             spec["start"] = round(start, 3)
             spec["length"] = round(length, 3)
@@ -201,8 +206,14 @@ class Scene:
         total = max([c["end"] for c in clips]
                     + [float(k.get("t") or 0.0) for k in keys], default=0.0)
         tracks = sorted({c["track"] for c in clips}) if clips else []
+        scene_durations = {}
+        for name in scene_names:
+            scene_durations[name] = round(max(
+                (c["end"] for c in clips if c["scene"] == name), default=0.0), 3)
         return {
             "clips": clips,
+            "scenes": scene_names,
+            "scene_durations": scene_durations,
             "duration": round(total, 3),
             "count": len(clips),
             "has": bool(clips or keys),

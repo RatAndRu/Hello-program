@@ -191,6 +191,7 @@
               <option value="clips">клипы сценария</option>
               <option value="frames">кадры сборки</option>
             </select>
+            <select id="anim-scene" class="anim-scene" title="Заготовленная сцена анимации: дверь, ящик, прыжок…" hidden></select>
             <span class="anim-status" id="anim-status"></span>
             <button class="chip" id="anim-editor-toggle" title="Редактор анимации с ключевыми кадрами">✎ редактор</button>
           </div>
@@ -221,6 +222,9 @@
                   <option value="spin">вращение</option>
                   <option value="turn">доворот на угол</option>
                   <option value="roll">качение колеса</option>
+                  <option value="jump">прыжок</option>
+                  <option value="fall">падение</option>
+                  <option value="fan">вентилятор</option>
                   <option value="move">перемещение</option>
                   <option value="scale">масштаб</option>
                   <option value="formation">формирование</option>
@@ -254,6 +258,10 @@
               <label id="ae-turns-wrap">Оборотов <input type="number" id="ae-turns" min="0.1" max="50" step="0.5" value="1" /></label>
               <label id="ae-distance-wrap">Путь, мм <input type="number" id="ae-distance" step="1" value="250" /></label>
               <label id="ae-radius-wrap">Радиус, мм <input type="number" id="ae-radius" min="0.1" step="0.5" value="10" /></label>
+              <label id="ae-height-wrap">Высота, мм <input type="number" id="ae-height" min="1" step="5" value="80" /></label>
+              <label id="ae-elastic-wrap" class="ae-check"><input type="checkbox" id="ae-elastic" checked /> упругое сжатие</label>
+              <label id="ae-rpm-wrap">Оборотов/мин <input type="number" id="ae-rpm" min="1" max="20000" step="50" value="900" /></label>
+              <label id="ae-scene-wrap">Сцена <input type="text" id="ae-scene" placeholder="дверь, ящик…" /></label>
               <label id="ae-param-wrap">Параметр
                 <select id="ae-param"><option value="">—</option></select>
               </label>
@@ -305,6 +313,7 @@
         <div class="viewer-stats" id="viewer-stats" hidden></div>
         <div class="viewer-hint" id="viewer-hint">ЛКМ — вращать · колесо — масштаб · ПКМ — сдвинуть сцену · в режиме «выбор» ЛКМ тянет рамку</div>
         <div class="drop-zone" id="drop-zone" hidden>Отпустите файл — открою и добавлю в сцену</div>
+        <div class="ctx-menu" id="ctx-menu" hidden></div>
         <div class="loader" id="loader" hidden><div class="spinner"></div><span>Строим…</span></div>
         <div class="sel-card" id="sel-card" hidden>
           <div class="sel-head">
@@ -439,6 +448,12 @@
                   <button class="small" id="tex-sandbox">Песочница…</button>
                 </div>
               </div>
+            </div>
+            <div class="material-row paint-row">
+              <span>Грани</span>
+              <button class="small" id="paint-toggle" title="Красить отдельные полигоны кликом по модели">кисть</button>
+              <input type="color" id="paint-color" value="#ff8a3d" title="Цвет кисти по граням" />
+              <button class="small" id="paint-clear" title="Убрать покраску граней">сброс</button>
             </div>
             <div class="material-actions">
               <button class="small" id="mat-apply">Записать в сценарий</button>

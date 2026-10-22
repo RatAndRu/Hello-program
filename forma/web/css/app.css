@@ -989,3 +989,45 @@ button.mini:disabled { opacity: .38; cursor: default; }
 .tool-card .small { justify-self: start; }
 .tool-recipe pre { margin: 0; font-size: 10.5px; line-height: 1.5; color: #bfe6d6; white-space: pre-wrap; }
 .tool-recipe { display: grid; gap: 6px; }
+
+/* контекстное меню по правой кнопке на предмете */
+.ctx-menu {
+  position: absolute;
+  z-index: 40;
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid #2c3443;
+  border-radius: 10px;
+  background: rgba(14, 18, 25, 0.97);
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.ctx-menu[hidden] { display: none; }
+.ctx-menu .ctx-title {
+  padding: 5px 9px 7px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #7f8b9c;
+}
+.ctx-menu button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: #e6ebf3;
+  font-size: 12.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.ctx-menu button:hover { background: #1c2431; }
+.ctx-menu button.danger { color: #ff9a8f; }
+.ctx-menu .ctx-sep { height: 1px; margin: 4px 6px; background: #232b38; }
+.paint-row input[type="color"] { width: 34px; height: 24px; padding: 0; border: 1px solid #2c3443; border-radius: 6px; background: none; }
+.paint-row .small.active { background: #2f6bff; border-color: #2f6bff; color: #fff; }
+.anim-scene { max-width: 190px; }

@@ -98,46 +98,59 @@ light preset=студия strength=1.2
 ящик = union [ящик_фасад, ящик_бок_л, ящик_бок_п, ящик_зад, ящик_дно]
 
 # ---------- КОЛЁСИКИ (ось X, катятся по рейкам) ----------
+#  Стоят в задней половине ящика: при выезде на 250 мм остаются на рейках,
+#  поэтому качение видно, а не «крутятся на месте».
 колесо_1 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
 колесо_1 = rotate [колесо_1] angle=90 axis=y
-колесо_1 = translate [колесо_1] offset=[-440, -120, 113]
+колесо_1 = translate [колесо_1] offset=[-440, 45, 113]
 колесо_2 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
 колесо_2 = rotate [колесо_2] angle=90 axis=y
-колесо_2 = translate [колесо_2] offset=[440, -120, 113]
+колесо_2 = translate [колесо_2] offset=[440, 45, 113]
 колесо_3 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
 колесо_3 = rotate [колесо_3] angle=90 axis=y
-колесо_3 = translate [колесо_3] offset=[-440, 150, 113]
+колесо_3 = translate [колесо_3] offset=[-440, 175, 113]
 колесо_4 = cylinder radius=13 height=12 segments=40 center=да at=[0, 0, 0]
 колесо_4 = rotate [колесо_4] angle=90 axis=y
-колесо_4 = translate [колесо_4] offset=[440, 150, 113]
+колесо_4 = translate [колесо_4] offset=[440, 175, 113]
 
 # ---------- СБОРКА ----------
 корпус = union [цоколь, боковина_л, боковина_п, дно, верх, разделитель, задняя_стенка,
                 полка, полкодержатель_1, полкодержатель_2, полкодержатель_3,
                 полкодержатель_4, направ_л, направ_п]
 
-дверь = group [фасад_л, ручка_левая]
-ящик_сборка = group [ящик, колесо_1, колесо_2, колесо_3, колесо_4]
+# ---------- ПЕТЛИ (крепления двери к корпусу) ----------
+петля_1 = hinge width=36 height=35 thickness=2
+петля_1 = translate [петля_1] offset=[-452, -197, 350]
+петля_2 = hinge width=36 height=35 thickness=2
+петля_2 = translate [петля_2] offset=[-452, -197, 1055]
 
-# ---------- АНИМАЦИЯ: у каждого объекта своя очередь клипов ----------
-animate дверь turn angle=-100 axis=z pivot=[-481, -216, 0] seconds=2
-animate дверь wait seconds=1
-animate дверь turn angle=100 axis=z pivot=[-481, -216, 0] seconds=2
-animate ящик_сборка move dy=-250 seconds=2
-animate ящик_сборка wait seconds=1
-animate ящик_сборка move dy=250 seconds=2
-animate колесо_1 roll distance=250 radius=13 axis=x seconds=2
-animate колесо_1 wait seconds=1
-animate колесо_1 roll distance=250 radius=13 axis=-x seconds=2
-animate колесо_2 roll distance=250 radius=13 axis=x seconds=2
-animate колесо_2 wait seconds=1
-animate колесо_2 roll distance=250 radius=13 axis=-x seconds=2
-animate колесо_3 roll distance=250 radius=13 axis=x seconds=2
-animate колесо_3 wait seconds=1
-animate колесо_3 roll distance=250 radius=13 axis=-x seconds=2
-animate колесо_4 roll distance=250 radius=13 axis=x seconds=2
-animate колесо_4 wait seconds=1
-animate колесо_4 roll distance=250 radius=13 axis=-x seconds=2
+дверь = group [фасад_л, ручка_левая, петля_1, петля_2]
+ящик_сборка = group [ящик, ручка_ящика, колесо_1, колесо_2, колесо_3, колесо_4]
+
+# ---------- АНИМАЦИЯ: сцены-варианты + параллельные движения ----------
+#  scene=… — заготовка для просмотра: «дверь», «ящик». В окне их можно
+#  переключать, не трогая сценарий; «все сцены» показывает всё сразу.
+animate ручка_левая move dy=-9 seconds=0.4 scene=дверь
+animate ручка_левая move dy=9 seconds=0.4 scene=дверь
+animate дверь turn angle=-100 axis=z pivot=[-481, -216, 0] seconds=2 scene=дверь
+animate дверь wait seconds=1 scene=дверь
+animate дверь turn angle=100 axis=z pivot=[-481, -216, 0] seconds=2 scene=дверь
+
+animate ящик_сборка move dy=-250 seconds=2 scene=ящик
+animate ящик_сборка wait seconds=1 scene=ящик
+animate ящик_сборка move dy=250 seconds=2 scene=ящик
+animate колесо_1 roll distance=250 radius=13 axis=x seconds=2 scene=ящик
+animate колесо_1 wait seconds=1 scene=ящик
+animate колесо_1 roll distance=250 radius=13 axis=-x seconds=2 scene=ящик
+animate колесо_2 roll distance=250 radius=13 axis=x seconds=2 scene=ящик
+animate колесо_2 wait seconds=1 scene=ящик
+animate колесо_2 roll distance=250 radius=13 axis=-x seconds=2 scene=ящик
+animate колесо_3 roll distance=250 radius=13 axis=x seconds=2 scene=ящик
+animate колесо_3 wait seconds=1 scene=ящик
+animate колесо_3 roll distance=250 radius=13 axis=-x seconds=2 scene=ящик
+animate колесо_4 roll distance=250 radius=13 axis=x seconds=2 scene=ящик
+animate колесо_4 wait seconds=1 scene=ящик
+animate колесо_4 roll distance=250 radius=13 axis=-x seconds=2 scene=ящик
 
 # ---------- ПРОВЕРКИ ----------
 check корпус watertight
@@ -149,6 +162,7 @@ check фасад_л parts 1
 check ящик watertight
 check ящик parts 1
 check рейки height 9..13
+check колесо_1 gap рейки 0
 
 # ---------- МАТЕРИАЛ ----------
 color корпус #a8794a rough=0.66 density=0.72

@@ -213,6 +213,7 @@ class TestExamplesAndTools(unittest.TestCase):
         self.assertEqual(keys, [
             "mug", "car", "vase", "bottle", "alien", "gear",
             "mannequin", "apple", "human_studio", "animation_tracks", "wardrobe",
+            "mechanics",
         ])
 
     def test_removed_examples_are_gone(self):

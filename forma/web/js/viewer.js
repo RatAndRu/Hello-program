@@ -51,6 +51,12 @@ export class Viewer {
     this.gltfClips = [];
     this.plan = null;          // тайм-лайн из сценария: {clips, duration, assembly}
     this.timeline = null;
+    this._timelineRaw = null;  // весь план, включая сцены-варианты
+    this._sceneList = [];
+    this.sceneName = '';       // выбранная заготовка анимации
+    this.paintMode = false;    // кисть по полигонам
+    this.paintColor = '#ff8a3d';
+    this._polyNames = new Set();
     this.time = 0;
     this.duration = 0;
     this.playing = false;
@@ -142,7 +148,11 @@ export class Viewer {
     };
     this.controls.screenSpacePanning = true;
     this.controls.enablePan = true;
-    renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+    renderer.domElement.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      const hit = this.pickAt(e.clientX, e.clientY);
+      this.onContextMenu?.(e, hit);
+    });
 
     this.hemi = new THREE.HemisphereLight(0xdfe9ff, 0x5d6a7d, 0.72);
     scene.add(this.hemi);
@@ -333,6 +343,10 @@ export class Viewer {
         return;
       }
       if (moved > 5 || !quick) return;
+      if (this.paintMode && this.model) {
+        const painted = this.paintAt(e.clientX, e.clientY);
+        if (painted) { this.onPaint?.(painted); return; }
+      }
       if (!this.model && !this.spaceMode) return;
       const rect = el.getBoundingClientRect();
       const pointer = new THREE.Vector2(
@@ -609,6 +623,7 @@ export class Viewer {
     this._animWrap = null;
     this._animCenter = null;
     this._items = [];
+    this._itemByName = new Map();
     this.groupNodes = [];
     if (!this.model) return;
     // группы собираются до вычисления центра: они не меняют вид модели,
@@ -634,12 +649,24 @@ export class Viewer {
     this._animWrap = wrap;
     this._animCenter = center;
     this.model.updateMatrixWorld(true);
+    wrap.updateMatrixWorld(true);
     this.groupNodes.forEach((node) => {
-      this._items.push({
+      const pInv = new THREE.Matrix4();
+      if (node.parent) pInv.copy(node.parent.matrixWorld).invert();
+      const box = new THREE.Box3().setFromObject(node);
+      const wc = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
+      const item = {
         node, name: node.name, kind: 'group',
         base: node.position.clone(), baseQ: node.quaternion.clone(), baseS: node.scale.clone(),
         dir: new THREE.Vector3(0, 1, 0), reach: 0,
-      });
+        parentInv: pInv,
+        parentQInv: new THREE.Quaternion().setFromRotationMatrix(pInv).normalize(),
+        centerLocal: wc.clone().applyMatrix4(pInv),
+        bottomLocal: new THREE.Vector3(wc.x, box.isEmpty() ? wc.y : box.min.y, wc.z)
+          .applyMatrix4(pInv),
+      };
+      this._items.push(item);
+      if (!this._itemByName.has(item.name)) this._itemByName.set(item.name, item);
     });
     this.model.traverse((o) => {
       if (!o.isMesh) return;
@@ -647,13 +674,21 @@ export class Viewer {
       const dir = worldCenter.clone().sub(center);
       const len = dir.length();
       const local = len > 1e-6 ? dir.normalize() : new THREE.Vector3(0, 1, 0);
-      // Вращение и масштаб меша идут вокруг его собственного центра, поэтому
-      // позиция узла не меняется: достаточно повернуть кватернион и масштаб.
-      this._items.push({
+      const pInv = new THREE.Matrix4();
+      if (o.parent) pInv.copy(o.parent.matrixWorld).invert();
+      const wbox = new THREE.Box3().setFromObject(o);
+      const item = {
         node: o, name: o.name || o.parent?.name || '', kind: 'mesh',
         base: o.position.clone(), baseQ: o.quaternion.clone(), baseS: o.scale.clone(),
         dir: local, reach: Math.min(1, len / 120),
-      });
+        parentInv: pInv,
+        parentQInv: new THREE.Quaternion().setFromRotationMatrix(pInv).normalize(),
+        centerLocal: worldCenter.clone().applyMatrix4(pInv),
+        bottomLocal: new THREE.Vector3(worldCenter.x, wbox.isEmpty() ? worldCenter.y : wbox.min.y,
+          worldCenter.z).applyMatrix4(pInv),
+      };
+      this._items.push(item);
+      if (!this._itemByName.has(item.name)) this._itemByName.set(item.name, item);
     });
   }
 
@@ -695,14 +730,44 @@ export class Viewer {
 
   /** Тайм-лайн сценария: клипы со временем начала и ключевые кадры объектов. */
   setTimeline(timeline) {
-    const clips = (timeline && timeline.clips) || [];
+    this._timelineRaw = timeline || null;
+    this._sceneList = (timeline && timeline.scenes) || [];
+    if (this.sceneName && !this._sceneList.includes(this.sceneName)) this.sceneName = '';
+    if (!this.sceneName && this._sceneList.length) this.sceneName = this._sceneList[0];
+    this._rebuildPlan();
+    return this.duration;
+  }
+
+  /** Заготовки-сцены из сценария (дверь, ящик, прыжок …). */
+  scenes() {
+    return (this._sceneList || []).slice();
+  }
+
+  currentScene() {
+    return this.sceneName || '';
+  }
+
+  /** Выбирает сцену-вариант: '' — показывать все клипы сразу. */
+  setScene(name) {
+    const next = String(name || '');
+    this.sceneName = this._sceneList.includes(next) ? next : '';
+    this._rebuildPlan();
+    return this.sceneName;
+  }
+
+  _rebuildPlan() {
+    const timeline = this._timelineRaw;
+    const allClips = (timeline && timeline.clips) || [];
     const keys = (timeline && timeline.keys) || [];
+    const active = this.sceneName || '';
+    const clips = active ? allClips.filter((c) => !c.scene || c.scene === active) : allClips;
     this.plan = timeline && (clips.length || keys.length) ? { ...timeline, clips, keys } : null;
     this.timeline = this.plan;
     if (this.plan) {
       const ends = clips.map((c) => Number(c.end) || 0)
         .concat(keys.map((k) => Number(k.t) || 0));
-      this.duration = Math.max(0.2, Number(this.plan.duration) || Math.max(...ends, 0) || 4);
+      this.duration = Math.max(0.2, Math.max(...ends, 0)
+        || Number(this.plan.duration) || 4);
     } else {
       this.duration = Math.max(0.2, this.animDuration || 0);
     }
@@ -761,6 +826,161 @@ export class Viewer {
       : a === 'y' ? new THREE.Vector3(0, 0, -1)
         : new THREE.Vector3(0, 1, 0);
     return v.multiplyScalar(Number(sign) || 1);
+  }
+
+  /** Объект под курсором: имя, меш, точка и номер треугольника. */
+  pickAt(clientX, clientY) {
+    if (!this.model || !this.renderer) return null;
+    const el = this.renderer.domElement;
+    const rect = el.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1,
+      -((clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1
+    );
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(pointer, this.camera);
+    const hits = ray.intersectObject(this.model, true);
+    for (const hit of hits) {
+      if (!hit.object.visible || hit.object.userData?.paintPreview) continue;
+      return {
+        name: hit.object.name || hit.object.parent?.name || '',
+        mesh: hit.object, point: hit.point,
+        faceIndex: hit.faceIndex, face: hit.face,
+      };
+    }
+    return null;
+  }
+
+  /** Полигонаж только для одного предмета (или сплошной вид обратно). */
+  setObjectPolygons(name, on) {
+    if (!name) return 0;
+    const meshes = this.objectMeshes(name);
+    meshes.forEach((o) => {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => {
+        if (!m) return;
+        m.wireframe = Boolean(on);
+        m.needsUpdate = true;
+      });
+    });
+    if (on) this._polyNames.add(name);
+    else this._polyNames.delete(name);
+    return meshes.length;
+  }
+
+  objectPolygons(name) {
+    return this._polyNames.has(name);
+  }
+
+  /** Кисть по граням: включаем режим и запоминаем цвет. */
+  setPaintMode(on, color) {
+    this.paintMode = Boolean(on);
+    if (color) this.paintColor = color;
+    const el = this.renderer?.domElement;
+    if (el) el.style.cursor = this.paintMode ? 'crosshair' : '';
+    return this.paintMode;
+  }
+
+  /** Готовит геометрию к покраске: у каждого треугольника свои вершины. */
+  _ensurePaint(mesh) {
+    if (!mesh || !mesh.isMesh) return null;
+    const mats = (Array.isArray(mesh.material) ? mesh.material : [mesh.material]).filter(Boolean);
+    const mat = mats[0];
+    if (!mat) return null;
+    if (!mesh.userData.paintInfo) {
+      const src = mesh.geometry;
+      const geom = src.index ? src.toNonIndexed() : src.clone();
+      const base = mat.color ? mat.color.clone() : new THREE.Color(1, 1, 1);
+      const count = geom.attributes.position.count;
+      const colors = new Float32Array(count * 3);
+      for (let i = 0; i < count; i += 1) {
+        colors[i * 3] = base.r;
+        colors[i * 3 + 1] = base.g;
+        colors[i * 3 + 2] = base.b;
+      }
+      geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      mesh.userData.paintInfo = { src, color: base.clone() };
+      mesh.geometry = geom;
+      mats.forEach((m) => {
+        if (m.color) m.color.setRGB(1, 1, 1);
+        m.vertexColors = true;
+        m.needsUpdate = true;
+      });
+    }
+    return mesh.geometry;
+  }
+
+  /** Красит треугольник под курсором. Возвращает {name, face} или null. */
+  paintAt(clientX, clientY, color) {
+    const hit = this.pickAt(clientX, clientY);
+    if (!hit) return null;
+    const geom = this._ensurePaint(hit.mesh);
+    if (!geom) return null;
+    const attr = geom.attributes.color;
+    const fi = Math.max(0, Number(hit.faceIndex) || 0);
+    const c = new THREE.Color(color || this.paintColor);
+    for (let k = 0; k < 3; k += 1) {
+      const idx = fi * 3 + k;
+      if (idx < attr.count) attr.setXYZ(idx, c.r, c.g, c.b);
+    }
+    attr.needsUpdate = true;
+    return { name: hit.name, face: fi, color: color || this.paintColor };
+  }
+
+  /** Убирает покрас по граням и возвращает исходные материалы. */
+  clearPaint() {
+    if (!this.model) return 0;
+    let n = 0;
+    this.model.traverse((o) => {
+      const info = o.userData?.paintInfo;
+      if (!info) return;
+      o.geometry = info.src;
+      const mats = (Array.isArray(o.material) ? o.material : [o.material]).filter(Boolean);
+      mats.forEach((m) => {
+        if (m.color) m.color.copy(info.color);
+        m.vertexColors = false;
+        m.needsUpdate = true;
+      });
+      delete o.userData.paintInfo;
+      n += 1;
+    });
+    return n;
+  }
+
+  /** Кубы пространства, в которых находится предмет. */
+  selectSpaceForObject(name) {
+    const meshes = this.objectMeshes(name);
+    if (!meshes.length) return null;
+    const box = new THREE.Box3();
+    meshes.forEach((m) => box.expandByObject(m));
+    if (box.isEmpty()) return null;
+    if (!this.spaceMode) this.setSpaceMode(true);
+    const cell = this.spaceCell;
+    const origin = this._spaceOrigin;
+    const dim = this._spaceDim;
+    this._spaceSel.clear();
+    const i0 = Math.max(0, Math.floor((box.min.x - origin.x) / cell));
+    const i1 = Math.min(dim.x - 1, Math.floor((box.max.x - origin.x) / cell));
+    const j0 = Math.max(0, Math.floor((box.min.y - origin.y) / cell));
+    const j1 = Math.min(dim.y - 1, Math.floor((box.max.y - origin.y) / cell));
+    const k0 = Math.max(0, Math.floor((box.min.z - origin.z) / cell));
+    const k1 = Math.min(dim.z - 1, Math.floor((box.max.z - origin.z) / cell));
+    for (let i = i0; i <= i1; i += 1) {
+      for (let j = j0; j <= j1; j += 1) {
+        for (let k = k0; k <= k1; k += 1) {
+          const center = new THREE.Vector3(
+            origin.x + (i + 0.5) * cell,
+            origin.y + (j + 0.5) * cell,
+            origin.z + (k + 0.5) * cell
+          );
+          if (!box.containsPoint(center)) continue;
+          this._spaceSel.set(`${i},${j},${k}`, { i, j, k });
+        }
+      }
+    }
+    this._refreshSpaceVisual();
+    this.onSpace?.(this.spaceSelection());
+    return this.spaceSelection();
   }
 
   hasModel() {
@@ -829,60 +1049,83 @@ export class Viewer {
     });
   }
 
-  _applyItemTransform(item, rot, scale, offset) {
-    const off = offset || new THREE.Vector3();
-    item.node.position.copy(item.base).add(off);
-    item.node.quaternion.copy(item.baseQ);
-    if (rot) item.node.quaternion.premultiply(rot);
-    item.node.scale.copy(item.baseS).multiplyScalar(scale);
-  }
-
   /** Точка сценария (x, y, z; z — вверх) в координатах three.js. */
   _modelPoint(p) {
     return new THREE.Vector3(Number(p[0]) || 0, Number(p[2]) || 0, -(Number(p[1]) || 0));
   }
 
-  /** Сдвиг для вращения/масштаба вокруг точки p: T(x) = R·(s·x) + t. */
-  _pivotOffset(p, rot, scale, extra) {
-    if (!p) return extra ? extra.clone() : new THREE.Vector3();
-    const moved = p.clone().multiplyScalar(scale === undefined ? 1 : scale);
-    if (rot) moved.applyQuaternion(rot);
-    const t = p.clone().sub(moved);
-    if (extra) t.add(extra);
-    return t;
+  /** Точка (world, покой) → система родителя узла. */
+  _itemPoint(item, p) {
+    if (!p) return item.centerLocal.clone();
+    const v = Array.isArray(p) ? this._modelPoint(p) : p;
+    return v.clone().applyMatrix4(item.parentInv);
   }
 
-  /** Прибавляет к состоянию объекта преобразование R·(s·x) + t. */
-  _composeState(st, rot, offset, scale) {
-    const R = rot || null;
-    const sc = (scale === undefined || scale === null) ? 1 : scale;
-    if (R) st.t.applyQuaternion(R);
-    st.t.multiplyScalar(sc);
-    if (offset) st.t.add(offset);
-    if (R) st.R.premultiply(R);
-    st.s *= sc;
+  /** Матрица вращения/масштаба вокруг точки q (в системе родителя). */
+  _aboutPoint(q, rot, scale) {
+    const m = new THREE.Matrix4().makeTranslation(q.x, q.y, q.z);
+    if (rot) m.multiply(new THREE.Matrix4().makeRotationFromQuaternion(rot));
+    if (scale !== null && scale !== undefined) {
+      const sx = Array.isArray(scale) ? scale[0] : scale;
+      const sy = Array.isArray(scale) ? scale[1] : scale;
+      const sz = Array.isArray(scale) ? scale[2] : scale;
+      if (sx !== 1 || sy !== 1 || sz !== 1) {
+        m.multiply(new THREE.Matrix4().makeScale(sx, sy, sz));
+      }
+    }
+    m.multiply(new THREE.Matrix4().makeTranslation(-q.x, -q.y, -q.z));
+    return m;
+  }
+
+  /** Вектор сценария (x/y/z, z вверх) → система родителя узла (без сдвига). */
+  _itemVector(item, v) {
+    return new THREE.Vector3(v[0], v[2], -v[1]).applyQuaternion(item.parentQInv);
+  }
+
+  _applyItemTransform(item, rot, scale, offset) {
+    const q = offset || item.centerLocal;
+    const M = this._aboutPoint(q, rot, scale === undefined ? 1 : scale);
+    M.multiply(new THREE.Matrix4().compose(item.base, item.baseQ, item.baseS));
+    M.decompose(item.node.position, item.node.quaternion, item.node.scale);
   }
 
   _applyPlan(t) {
     const wrap = this._animWrap;
     if (!wrap) return;
     this._resetItems();
+    const center = this._animCenter || new THREE.Vector3();
+    const wrapM = new THREE.Matrix4().makeTranslation(center.x, center.y, center.z);
     wrap.quaternion.identity();
     wrap.scale.setScalar(1);
-    wrap.position.copy(this._animCenter || new THREE.Vector3());
+    wrap.position.copy(center);
 
-    const empty = () => ({ R: new THREE.Quaternion(), t: new THREE.Vector3(), s: 1 });
-    const wrapState = empty();
+    const empty = () => ({ M: new THREE.Matrix4() });
     const objectState = new Map();
     this._items.forEach((item) => objectState.set(item.name, empty()));
+    const matrixOf = (st) => (st instanceof THREE.Matrix4 ? st : st.M);
+    const shift = (st, v) => {
+      matrixOf(st).premultiply(new THREE.Matrix4().makeTranslation(v.x, v.y, v.z));
+    };
+    const about = (st, q, rot, sc) => {
+      matrixOf(st).premultiply(this._aboutPoint(q, rot, sc));
+    };
+    const rotate = (item, st, q, rot) => {
+      const piv = this._itemPoint(item, q);
+      about(st, piv, rot, null);
+    };
 
-    // 1) ключевые кадры — базовая поза объекта
+    // 1) ключевые кадры — базовая поза объекта (вращение вокруг его центра)
     this._keyTracks.forEach((track) => {
       const st = objectState.get(track.name);
-      if (!st) return;
+      const item = this._itemByName.get(track.name);
+      if (!st || !item) return;
       const sample = this._sampleKeys(track, t);
       if (!sample) return;
-      this._composeState(st, sample.quat, sample.pos, sample.scale);
+      if (sample.pos && sample.pos.lengthSq() > 1e-12) shift(st, sample.pos);
+      if (sample.quat) about(st, item.centerLocal, sample.quat, null);
+      if (Number.isFinite(sample.scale) && Math.abs(sample.scale - 1) > 1e-6) {
+        about(st, item.centerLocal, null, sample.scale);
+      }
     });
 
     // 2) клипы: у каждого объекта своя очередь, объекты живут параллельно
@@ -893,64 +1136,112 @@ export class Viewer {
       const start = Number(clip.start) || 0;
       const len = Math.max(0.1, Number(clip.length) || Number(clip.seconds) || 4);
       const targetName = clip.object ? String(clip.object) : '';
-      const target = targetName ? objectState.get(targetName) : null;
-      const st = target || wrapState;
-      const pivot = clip.pivot ? this._modelPoint(clip.pivot) : null;
+      const item = targetName ? this._itemByName.get(targetName) : null;
+      const st = targetName ? objectState.get(targetName) : null;
+      const pivot = clip.pivot || null;
       if (targetName && t + 1e-6 >= start && t - 1e-6 <= start + len) {
         activeObjects.push(targetName);
       }
       if (t + 1e-6 < start) {
-        if (kind === 'formation') this._composeState(st, null, null, 0.001);
+        if (kind === 'formation') {
+          if (item && st) about(st, item.centerLocal, null, 0.001);
+          else about(wrapM, new THREE.Vector3(), null, 0.001);
+        }
         continue;
       }
       const local = t - start;
       const p = Math.max(0, Math.min(1, local / len));
       const sign = Number(clip.axis_sign) || 1;
+      const axisQ = (axis, radians) => new THREE.Quaternion().setFromAxisAngle(
+        this._axisVector(axis, 1), radians);
+      const spinAngle = (rad) => {
+        if (!item || !st) {
+          const q = axisQ(clip.axis, rad * sign);
+          about(wrapM, new THREE.Vector3(), q, null);
+          return true;
+        }
+        return false;
+      };
       if (kind === 'spin') {
         const turns = Number(clip.turns ?? 1) || 1;
-        const q = new THREE.Quaternion().setFromAxisAngle(
-          this._axisVector(clip.axis, sign), Math.PI * 2 * turns * p);
-        this._composeState(st, q, this._pivotOffset(pivot, q, 1), 1);
+        const rad = Math.PI * 2 * turns * p * sign;
+        if (!spinAngle(rad)) rotate(item, st, pivot, axisQ(clip.axis, rad * sign));
       } else if (kind === 'turn' || kind === 'roll') {
         const rad = kind === 'roll'
           ? (Number(clip.radians) || 0) * p
           : THREE.MathUtils.degToRad(Number(clip.angle) || 0) * p;
-        const q = new THREE.Quaternion().setFromAxisAngle(
-          this._axisVector(clip.axis, 1), rad);
-        this._composeState(st, q, this._pivotOffset(pivot, q, 1), 1);
+        const q = axisQ(clip.axis, rad);
+        if (item && st) rotate(item, st, pivot, q);
+        else about(wrapM, new THREE.Vector3(), q, null);
+      } else if (kind === 'fan') {
+        // вентилятор: разгон от нуля к рабочим оборотам
+        const turns = Number(clip.turns) || (Number(clip.rpm) || 900) * len / 60;
+        const rad = Math.PI * 2 * turns * Math.pow(p, 1.7);
+        const q = axisQ(clip.axis, rad * sign);
+        if (item && st) rotate(item, st, pivot, q);
+        else about(wrapM, new THREE.Vector3(), q, null);
       } else if (kind === 'formation') {
         const grow = Math.min(1, local / Math.max(0.1, len * 0.85));
         const f = Math.max(0.001, 0.001 + 0.999 * grow);
-        this._composeState(st, null, this._pivotOffset(pivot, null, f), f);
+        if (item && st) about(st, this._itemPoint(item, pivot), null, f);
+        else about(wrapM, new THREE.Vector3(), null, f);
       } else if (kind === 'scale') {
         const f0 = Number(clip.from ?? 1);
         const f1 = Number(clip.to ?? 1.5);
         const f = f0 + (f1 - f0) * p;
-        this._composeState(st, null, this._pivotOffset(pivot, null, f), f);
+        if (item && st) about(st, this._itemPoint(item, pivot), null, f);
+        else about(wrapM, new THREE.Vector3(), null, f);
       } else if (kind === 'move') {
         const d = clip.delta || [0, 0, 0];
-        this._composeState(st, null,
-          new THREE.Vector3(d[0], d[2], -d[1]).multiplyScalar(p), 1);
+        const v = item ? this._itemVector(item, d) : new THREE.Vector3(d[0], d[2], -d[1]);
+        v.multiplyScalar(p);
+        shift(item && st ? st : wrapM, v);
+      } else if (kind === 'jump' || kind === 'fall') {
+        const h = Number(clip.height) || 60;
+        const up = new THREE.Vector3(0, h, 0);
+        let y;
+        if (kind === 'jump') {
+          y = h * Math.sin(Math.PI * p);            // вверх и обратно
+        } else {
+          y = h * (1 - p * p);                      // падение с ускорением
+        }
+        const elastic = clip.elastic !== false && clip.elastic !== 'нет';
+        let impact = 0;
+        if (elastic) {
+          impact = kind === 'jump'
+            ? Math.max(0, 1 - Math.min(p, 1 - p) / 0.12)
+            : Math.max(0, (p - 0.86) / 0.14);
+          impact = impact * impact;
+        }
+        const sy = 1 - 0.22 * impact;
+        const sxz = 1 + 0.11 * impact;
+        if (item && st) {
+          shift(st, up.clone().multiplyScalar(kind === 'jump' ? Math.sin(Math.PI * p) : (1 - p * p)));
+          if (impact > 1e-4) about(st, item.bottomLocal, null, [sxz, sy, sxz]);
+        } else {
+          shift(wrapM, new THREE.Vector3(0, y, 0));
+          if (impact > 1e-4) {
+            about(wrapM, new THREE.Vector3(0, -center.y, 0), null, [sxz, sy, sxz]);
+          }
+        }
       } else if (kind === 'explode') {
         const amount = Number(clip.amount) || 30;
-        this._items.forEach((item) => {
-          if (item.kind === 'group') return;
-          objectState.get(item.name)?.t.addScaledVector(item.dir, amount * p);
-        });
+        if (item && st && item.kind !== 'group') {
+          const dir = item.dir.clone();               // world → родитель
+          shift(st, dir.applyQuaternion(item.parentQInv)
+            .multiply(new THREE.Vector3(1, 1, 1)).multiplyScalar(amount * p));
+        }
       }
     }
-
-    wrap.quaternion.copy(wrapState.R);
-    wrap.scale.setScalar(wrapState.s);
-    wrap.position.copy(this._animCenter || new THREE.Vector3()).add(wrapState.t);
 
     this._items.forEach((item) => {
       const st = objectState.get(item.name);
       if (!st) return;
-      item.node.position.copy(item.base).add(st.t);
-      item.node.quaternion.copy(item.baseQ).multiply(st.R);
-      item.node.scale.copy(item.baseS).multiplyScalar(st.s);
+      st.M.multiply(new THREE.Matrix4().compose(item.base, item.baseQ, item.baseS));
+      st.M.decompose(item.node.position, item.node.quaternion, item.node.scale);
     });
+
+    wrapM.decompose(wrap.position, wrap.quaternion, wrap.scale);
 
     // подсказываем интерфейсу, кто сейчас двигается: последний активный клип
     const focus = activeObjects.length ? activeObjects[activeObjects.length - 1] : '';

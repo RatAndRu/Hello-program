@@ -741,6 +741,7 @@ async function loadModel(url, animation = null) {
       const onlyAssembly = clips.length && clips.every((c) => c.kind === 'assembly');
       state.anim.mode = onlyAssembly && state.anim.frames.length ? 'frames' : 'clips';
     }
+    renderSceneSelect();
     refreshAnimSelectors();
     if (state.anim.mode === 'frames' && !state.anim.frames.length) state.anim.mode = 'clips';
     if ($('anim-mode')) $('anim-mode').value = state.anim.mode;
@@ -817,10 +818,12 @@ function showTexturePreview(kind) {
 
 const ANIM_KINDS = { spin: 'вращение', formation: 'формирование', explode: 'разлёт',
   assembly: 'сборка по шагам', move: 'перемещение', scale: 'масштаб', turn: 'доворот',
-  wait: 'пауза', morph: 'изменение формы', roll: 'качение' };
+  wait: 'пауза', morph: 'изменение формы', roll: 'качение', jump: 'прыжок',
+  fall: 'падение', fan: 'вентилятор' };
 const ANIM_COLORS = { spin: '#2f4f8a', formation: '#2f7a5f', explode: '#8a5a2f',
   assembly: '#6b4f9e', move: '#2f7a8a', scale: '#8a7a2f', turn: '#8a2f6b',
-  wait: '#4a4f57', morph: '#2f5f8a', roll: '#8a5f2f' };
+  wait: '#4a4f57', morph: '#2f5f8a', roll: '#8a5f2f', jump: '#3f7a4f',
+  fall: '#7a4f3f', fan: '#4f7a8a' };
 
 function animPlan() {
   const p = state.payload?.timeline;
@@ -829,10 +832,26 @@ function animPlan() {
   return one && one.kind ? { clips: [one], duration: one.seconds || 4, count: 1 } : null;
 }
 
+/** Заготовленная сцена, выбранная в просмотре ('' — все сцены). */
+function activeScene() { return state.viewer?.currentScene?.() || ''; }
+
+/** Клип относится к выбранной сцене? Клипы без scene — общие. */
+function inScene(clip) {
+  const scene = activeScene();
+  return !clip?.scene || !scene || clip.scene === scene;
+}
+
 function animClips() {
   const plan = animPlan();
-  if (plan?.clips?.length) return plan.clips;
-  return state.anim.preview?.clips || [];
+  if (plan?.clips?.length) return plan.clips.filter(inScene);
+  return (state.anim.preview?.clips || []).filter(inScene);
+}
+
+/** Длительность с учётом выбранной сцены: у «прыжка» она короче, чем у всех. */
+function animDuration() {
+  const own = Number(state.viewer?.duration) || 0;
+  const all = Number(animPlan()?.duration) || Number(state.anim.preview?.duration) || 0;
+  return Math.max(own, all);
 }
 function animKeys() { return animPlan()?.keys || []; }
 function animFrames() { return state.anim.frames || []; }
@@ -907,7 +926,7 @@ function syncAnimUI() {
     } else {
       const clips = animClips();
       const keys = animKeys();
-      const total = Number(animPlan()?.duration) || 0;
+      const total = animDuration() || 0;
       const preview = Boolean(a.preview);
       const shownTotal = preview ? a.preview.duration : total;
       const tracks = animTrackList().length;
@@ -962,7 +981,7 @@ function syncAnimClock() {
 
 function updateAnimState() {
   const a = state.anim;
-  a.duration = Number(animPlan()?.duration) || Number(state.viewer?.duration) || 0;
+  a.duration = animDuration();
   if (a.mode === 'frames') a.duration = 0;
   syncAnimUI();
 }
@@ -995,7 +1014,7 @@ function renderAnimTracks() {
   }
   const clips = animClips();
   const keys = animKeys();
-  const total = Number(animPlan()?.duration) || Number(a.preview?.duration) || 0;
+  const total = animDuration() || Number(a.preview?.duration) || 0;
   if (!clips.length && !keys.length) {
     box.innerHTML = '<span class="anim-empty">клипов нет: animate kind=spin seconds=6</span>';
     return;
@@ -1141,6 +1160,7 @@ function loadClipIntoEditor(c) {
     $('ae-to').value = String(num(c.to, 1));
     $('ae-samples').value = String(Number(c.samples) || 12);
   }
+  if ($('ae-scene')) $('ae-scene').value = c.scene || '';
   $('ae-loop').checked = c.loop !== false;
   updateEditorVisibility();
 }
@@ -1160,9 +1180,14 @@ function updateEditorVisibility() {
   show('ae-turns-wrap', kind === 'spin');
   show('ae-distance-wrap', kind === 'roll');
   show('ae-radius-wrap', kind === 'roll');
+  show('ae-height-wrap', kind === 'jump' || kind === 'fall');
+  show('ae-elastic-wrap', kind === 'jump' || kind === 'fall');
+  show('ae-rpm-wrap', kind === 'fan');
+  show('ae-scene-wrap', true);
   show('ae-param-wrap', kind === 'morph');
   show('ae-samples-wrap', kind === 'morph');
-  show('ae-object-wrap', ['move', 'scale', 'turn', 'spin', 'explode', 'roll', 'formation'].includes(kind));
+  show('ae-object-wrap', ['move', 'scale', 'turn', 'spin', 'explode', 'roll', 'formation',
+    'jump', 'fall', 'fan'].includes(kind));
   if ($('ae-seconds')) $('ae-seconds').disabled = kind === 'assembly' || kind === 'wait';
   if ($('ae-loop')) $('ae-loop').parentElement.style.display = ['spin', 'formation'].includes(kind) ? '' : 'none';
 }
@@ -1204,6 +1229,13 @@ function animLineFromEditor() {
     parts.push(`distance=${Number($('ae-distance')?.value) || 250}`);
     parts.push(`radius=${Number($('ae-radius')?.value) || 10}`);
   }
+  if (kind === 'jump' || kind === 'fall') {
+    parts.push(`height=${Number($('ae-height')?.value) || 80}`);
+    if ($('ae-elastic') && !$('ae-elastic').checked) parts.push('elastic=нет');
+  }
+  if (kind === 'fan') parts.push(`rpm=${Number($('ae-rpm')?.value) || 900}`);
+  const sceneName = ($('ae-scene')?.value || '').trim();
+  if (sceneName) parts.push(`scene=${sceneName.replace(/\s+/g, '_')}`);
   if (['turn', 'spin', 'roll'].includes(kind)) {
     const piv = ($('ae-pivot')?.value || '').split(/[,\s]+/).filter(Boolean).map(Number);
     if (piv.length === 3 && piv.every((v) => Number.isFinite(v))) {
@@ -1346,6 +1378,12 @@ function updateSequence(t) {
       a.seqKey = 'm' + idx;
       showMorph(morph, value);
       prefetchMorph(morph, idx + 1);
+      // видно, что именно меняется: подсвечиваем деталь и подписываем её
+      const target = morph.object && !state.hidden.has(morph.object) ? morph.object : '';
+      if (target) {
+        state.viewer?.setHighlight(target);
+        if ($('anim-focus')) $('anim-focus').textContent = 'меняется: ' + target;
+      }
     }
     return;
   }
@@ -1566,6 +1604,111 @@ $('anim-loop')?.addEventListener('change', (e) => {
   toast(msg);
 });
 
+/** Список заготовленных сцен анимации: у шкафа — дверь, ящик, колёса… */
+function renderSceneSelect() {
+  const sel = $('anim-scene');
+  if (!sel) return;
+  const scenes = state.viewer?.scenes?.() || [];
+  sel.innerHTML = '';
+  if (scenes.length < 2) {
+    sel.hidden = true;
+    return;
+  }
+  sel.hidden = false;
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = 'все сцены';
+  sel.appendChild(all);
+  scenes.forEach((name) => {
+    const opt = document.createElement('option');
+    opt.value = name;
+    opt.textContent = name;
+    sel.appendChild(opt);
+  });
+  sel.value = state.viewer?.currentScene?.() || '';
+}
+
+$('anim-scene')?.addEventListener('change', (e) => {
+  const name = state.viewer?.setScene(e.target.value) || '';
+  state.anim.time = 0;
+  renderAnimTracks();
+  renderAnimKeys();
+  updateAnimState();
+  applyLoopMode();
+  const scenes = state.viewer?.scenes?.() || [];
+  const total = name ? (animPlan()?.scene_durations?.[name] || state.viewer?.duration || 0) : 0;
+  toast(name ? `Сцена «${name}» · ${Number(total).toFixed(1)} с` : 'Показаны все сцены сразу');
+  state.viewer?.playAnimation(true);
+  state.anim.playing = state.viewer?.playing || false;
+  syncAnimUI();
+});
+
+/** Скрыть/показать объект так же, как глаз в списке. */
+function toggleObjectHidden(name) {
+  if (!name) return;
+  const willHide = !state.hidden.has(name);
+  if (willHide) state.hidden.add(name); else state.hidden.delete(name);
+  state.viewer?.setObjectVisible(name, !willHide);
+  if (state.payload) renderObjects(state.payload);
+  toast(willHide ? `Скрыто: ${name}` : `Показано: ${name}`);
+}
+
+/** Контекстное меню по правой кнопке на предмете. */
+function openContextMenu(x, y, name) {
+  const menu = $('ctx-menu');
+  if (!menu) return;
+  if (!name) { menu.hidden = true; return; }
+  selectObject(name);
+  const isHidden = state.hidden.has(name);
+  const poly = Boolean(state.viewer?.objectPolygons(name));
+  const spacer = () => { const d = document.createElement('div'); d.className = 'ctx-sep'; return d; };
+  const item = (label, fn, cls = '') => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    if (cls) b.className = cls;
+    b.addEventListener('click', () => {
+      menu.hidden = true;
+      fn();
+    });
+    return b;
+  };
+  menu.innerHTML = '';
+  const title = document.createElement('div');
+  title.className = 'ctx-title';
+  title.textContent = name;
+  menu.appendChild(title);
+  menu.appendChild(item('выделить предмет', () => {
+    selectObject(name);
+    toast(`Выделено: ${name}`);
+  }));
+  menu.appendChild(item(isHidden ? 'показать предмет' : 'скрыть предмет',
+    () => toggleObjectHidden(name)));
+  menu.appendChild(item(poly ? 'вернуть сплошной вид' : 'показать полигонами', () => {
+    const on = !state.viewer?.objectPolygons(name);
+    const n = state.viewer?.setObjectPolygons(name, on) || 0;
+    toast(on ? `Полигонами: ${name} (${n} меш.)` : `Сплошной вид: ${name}`);
+  }));
+  menu.appendChild(item('выделить кубы этого предмета', () => {
+    const sel = state.viewer?.selectSpaceForObject(name);
+    if (!sel) { toast('Не удалось определить секторы предмета', 'bad'); return; }
+    if (state.selected?.name) state.hidden.delete(name);
+    updateSpaceUI(sel);
+    toast(`Секторы «${name}»: ${sel.cells} шт. · ${sel.indices}`);
+  }));
+  menu.appendChild(spacer());
+  menu.appendChild(item('удалить предмет', () => deleteObject(name), 'danger'));
+  menu.style.left = Math.max(8, Math.min(x, window.innerWidth - 250)) + 'px';
+  menu.style.top = Math.max(8, Math.min(y, window.innerHeight - 240)) + 'px';
+  menu.hidden = false;
+}
+
+document.addEventListener('pointerdown', (e) => {
+  const menu = $('ctx-menu');
+  if (menu && !menu.hidden && !menu.contains(e.target)) menu.hidden = true;
+});
+window.addEventListener('blur', () => { const m = $('ctx-menu'); if (m) m.hidden = true; });
+
 function initViewer() {
   try {
     state.viewer = new Viewer($('viewer'));
@@ -1596,6 +1739,16 @@ function initViewer() {
     };
     state.viewer.onEnd = () => { state.anim.playing = false; syncAnimUI(); };
     state.viewer.onSpace = (sel) => updateSpaceUI(sel);
+    state.viewer.onContextMenu = (event, hit) => {
+      const name = hit?.name || state.selected?.name || '';
+      openContextMenu(event.clientX, event.clientY, name);
+    };
+    state.viewer.onPaint = (info) => {
+      state.paintCount = (state.paintCount || 0) + 1;
+      if (state.paintCount === 1 || state.paintCount % 12 === 0) {
+        toast(`Покрашено граней: ${state.paintCount} · ${info.name}`);
+      }
+    };
     applyLoopMode();
     state.viewer.onFrame = (dt) => {
       const a = state.anim;
@@ -1814,6 +1967,26 @@ document.addEventListener('keydown', (e) => {
 $('btn-wire')?.addEventListener('dblclick', () => {
   $('opt-poly').checked = !$('opt-poly').checked;
   state.viewer?.setPolygons($('opt-poly').checked);
+});
+
+/* ------------------------------------------------------------------ */
+/*  Кисть по граням                                                   */
+/* ------------------------------------------------------------------ */
+$('paint-toggle')?.addEventListener('click', () => {
+  const on = !(state.viewer?.paintMode);
+  state.viewer?.setPaintMode(on, $('paint-color')?.value || '#ff8a3d');
+  $('paint-toggle').classList.toggle('active', on);
+  state.paintCount = 0;
+  toast(on ? 'Кисть включена: клик по грани красит только этот полигон'
+    : 'Кисть выключена — обычное вращение и выделение');
+});
+$('paint-color')?.addEventListener('input', (e) => {
+  if (state.viewer?.paintMode) state.viewer.setPaintMode(true, e.target.value);
+});
+$('paint-clear')?.addEventListener('click', () => {
+  const n = state.viewer?.clearPaint() || 0;
+  state.paintCount = 0;
+  toast(n ? `Покраска снята с ${n} меш.` : 'Покрашенных граней нет');
 });
 
 /* ------------------------------------------------------------------ */
@@ -2304,11 +2477,13 @@ function runCommand() {
     '/бутылка': 'bottle', '/bottle': 'bottle', '/пришелец': 'alien', '/alien': 'alien',
     '/манекен': 'mannequin', '/mannequin': 'mannequin', '/яблоко': 'apple', '/apple': 'apple',
     '/шкаф': 'wardrobe', '/wardrobe': 'wardrobe',
+    '/механика': 'mechanics', '/mechanics': 'mechanics',
     '/дорожки': 'animation_tracks', '/tracks': 'animation_tracks' };
   if (RECIPES[low] || low === '/рецепты' || low === '/recipes') {
     $('cmd-input').value = '';
     if (RECIPES[low]) { loadExample(RECIPES[low]); return; }
-    toast('Рецепты: /кружка, /яблоко, /ваза, /бутылка, /шестерня, /кузов, /пришелец, /манекен, /шкаф, /дорожки, /инструменты');
+    if (low === '/инструменты' || low === '/tools') { openTools(); return; }
+    toast('Рецепты: /кружка, /яблоко, /ваза, /бутылка, /шестерня, /кузов, /пришелец, /манекен, /шкаф, /механика, /дорожки, /инструменты');
     return;
   }
   if (low === '/очистить' || low === '/clear') {
@@ -2576,6 +2751,81 @@ const TOOL_SHAPES = [
       { k: 'hole', label: 'отверстие', v: 16, step: 1 },
       { k: 'axis', label: 'ось', v: 'z' },
       { k: 'round', label: 'скругл.', v: 2, step: 0.5 },
+    ],
+  },
+  {
+    op: 'nut', name: 'гайка', title: 'Гайка',
+    desc: 'Шестигранная гайка с настоящей внутренней резьбой.',
+    params: [
+      { k: 'd', label: 'резьба', v: 8, step: 1 },
+      { k: 'pitch', label: 'шаг', v: 1.25, step: 0.25 },
+      { k: 'h', label: 'высота', v: 6.4, step: 0.2 },
+    ],
+  },
+  {
+    op: 'bolt', name: 'болт', title: 'Болт',
+    desc: 'Шестигранная головка и резьба на стержне.',
+    params: [
+      { k: 'd', label: 'резьба', v: 8, step: 1 },
+      { k: 'length', label: 'длина', v: 30, step: 1 },
+      { k: 'pitch', label: 'шаг', v: 1.25, step: 0.25 },
+    ],
+  },
+  {
+    op: 'screw', name: 'винт', title: 'Винт / саморез',
+    desc: 'Потайная или полукруглая головка, частая резьба и остриё.',
+    params: [
+      { k: 'd', label: 'диаметр', v: 4, step: 0.5 },
+      { k: 'length', label: 'длина', v: 25, step: 1 },
+      { k: 'head', label: 'головка', v: 'потай' },
+    ],
+  },
+  {
+    op: 'hinge', name: 'петля', title: 'Петля',
+    desc: 'Две пластины, шарнир и ось; отверстия под саморезы.',
+    params: [
+      { k: 'width', label: 'ширина', v: 45, step: 1 },
+      { k: 'height', label: 'высота', v: 35, step: 1 },
+      { k: 'thickness', label: 'толщина', v: 2, step: 0.5 },
+    ],
+  },
+  {
+    op: 'bracket', name: 'уголок', title: 'Уголок',
+    desc: 'Две полки под 90° и отверстия под крепёж.',
+    params: [
+      { k: 'width', label: 'ширина', v: 60, step: 5 },
+      { k: 'depth', label: 'глубина', v: 40, step: 5 },
+      { k: 'height', label: 'высота', v: 40, step: 5 },
+      { k: 'thickness', label: 'сталь', v: 3, step: 0.5 },
+    ],
+  },
+  {
+    op: 'bearing', name: 'подшипник', title: 'Подшипник',
+    desc: 'Наружное и внутреннее кольца, шарики, посадка под вал.',
+    params: [
+      { k: 'outer', label: 'наружный', v: 40, step: 1 },
+      { k: 'inner', label: 'вал', v: 17, step: 1 },
+      { k: 'width', label: 'ширина', v: 12, step: 1 },
+      { k: 'balls', label: 'шариков', v: 9, step: 1 },
+    ],
+  },
+  {
+    op: 'caster', name: 'ролик', title: 'Ролик',
+    desc: 'Колесо, вилка, площадка и ось — готовое колёсико под шкаф.',
+    params: [
+      { k: 'wheel', label: 'колесо', v: 50, step: 5 },
+      { k: 'width', label: 'ширина', v: 18, step: 1 },
+      { k: 'plate', label: 'площадка', v: 45, step: 5 },
+    ],
+  },
+  {
+    op: 'pulley', name: 'шкив', title: 'Шкив',
+    desc: 'Обод с канавкой под ремень и отверстием под вал.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 80, step: 5 },
+      { k: 'width', label: 'ширина', v: 20, step: 1 },
+      { k: 'bore', label: 'вал', v: 10, step: 1 },
+      { k: 'groove', label: 'канавка', v: 6, step: 1 },
     ],
   },
   {

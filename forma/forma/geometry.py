@@ -689,7 +689,7 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             verts = np.stack([verts[:, 0], verts[:, 2], -verts[:, 1]], axis=1)
             normals = None
         rgba = color_to_gltf(obj.color)
-        uv_mode = getattr(obj, "uv", "cylinder") or "cylinder"
+        uv_mode = getattr(obj, "uv", "auto") or "auto"
         material = PBRMaterial(
             name=f"mat_{obj.name}",
             baseColorFactor=rgba,

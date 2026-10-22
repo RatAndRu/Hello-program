@@ -56,6 +56,9 @@ ANIMATIONS = {
     "morph": "morph", "морф": "morph", "морфинг": "morph",
     "изменение": "morph", "форма": "morph", "shape": "morph",
     "roll": "roll", "качение": "roll", "катить": "roll", "rolling": "roll",
+    "jump": "jump", "прыжок": "jump", "прыгать": "jump", "подскок": "jump",
+    "fall": "fall", "падение": "fall", "падать": "fall", "упасть": "fall",
+    "fan": "fan", "вентилятор": "fan", "турбина": "fan", "пропеллер": "fan",
     "открыть": "turn", "закрыть": "turn", "open": "turn", "close": "turn",
 }
 
@@ -63,7 +66,8 @@ KIND_NAMES_ANIM = {"spin": "вращение", "formation": "формирова�
                    "explode": "разлёт", "assembly": "сборка по шагам",
                    "move": "перемещение", "scale": "масштаб", "turn": "доворот",
                    "wait": "пауза", "morph": "изменение формы",
-                   "roll": "качение"}
+                   "roll": "качение", "jump": "прыжок", "fall": "падение",
+                   "fan": "вращение вентилятора"}
 
 
 @op("scene", aliases=("сцена", "окружение", "фон", "view"), category="Сцена и материал",
@@ -139,7 +143,7 @@ def light(a, name):
             "kind": "дерево, мрамор, металл, ткань, кожа, клетка, шум, кирпич, "
                     "керамика или своя",
             "scale": "масштаб рисунка", "seed": "число или строка для вариации",
-            "uv": "cylinder (вокруг), planar (плоско), box (по граням)",
+            "uv": "auto (бесшовно по граням), cylinder (вокруг), planar (плоско), box",
             "size": "размер картинки в пикселях (512)",
             "pattern": "для своей текстуры: полосы, клетка, волны, градиент, "
                        "шум, камень, точки, сетка",
@@ -157,9 +161,11 @@ def texture(a, name):
     kind = (a.text("kind") or "дерево").strip().lower()
     scale = float(a.num("scale", 1.0) or 1.0)
     seed = a.text("seed") or "1"
-    uv = (a.text("uv") or "cylinder").strip().lower()
-    if uv not in ("cylinder", "planar", "box"):
-        raise DslError("Параметр uv: cylinder, planar или box.",
+    uv = (a.text("uv") or "auto").strip().lower()
+    if uv in ("авто", "грани", "triplanar"):
+        uv = "auto"
+    if uv not in ("auto", "cylinder", "planar", "box"):
+        raise DslError("Параметр uv: auto (бесшовно), cylinder, planar или box.",
                        line=a.cmd.line, command=a.cmd.text)
     size = int(a.num("size", 512) or 512)
     if kind in ("своя", "своё", "свое", "custom", "мой"):
@@ -199,7 +205,8 @@ def texture(a, name):
             "animate kind=move dz=40 seconds=2 track=1\n"
             "animate kind=scale to=1.4 seconds=2 track=1",
     positional="*",
-    params={"kind": "spin, formation, explode, move, scale, turn, wait, assembly, morph, roll",
+    params={"kind": "spin, formation, explode, move, scale, turn, wait, assembly, morph, roll, "
+                    "jump, fall, fan",
             "axis": "ось: x, y, z (можно -x, -y, -z); z — вверх",
             "seconds": "длительность клипа, с", "duration": "то же, что seconds",
             "start": "с какой секунды начинать (иначе — за предыдущим клипом дорожки)",
@@ -216,7 +223,12 @@ def texture(a, name):
             "samples": "morph: сколько кадров геометрии построить (12)",
             "pivot": "точка вращения [x,y,z]: дверная петля, ось колеса и т.п.",
             "turns": "spin: сколько полных оборотов (1)",
-            "distance": "roll: путь качения, мм", "radius": "roll: радиус колеса, мм"})
+            "distance": "roll: путь качения, мм", "radius": "roll: радиус колеса, мм",
+            "height": "jump/fall: высота прыжка или падения, мм",
+            "elastic": "jump/fall: упругое сжатие да/нет",
+            "rpm": "fan: оборотов в минуту (900)",
+            "scene_name": "сцена-вариант: имя заготовки (дверь, ящик, …)",
+            "scene": "то же, что scene_name"})
 def animate(a, name):
     # Порядок слов свободный: animate дверь turn angle=…, animate turn object=дверь
     words = [str(w).strip() for w in a.extra if str(w).strip()]
@@ -271,7 +283,8 @@ def animate(a, name):
                        line=a.cmd.line, command=a.cmd.text)
     default_seconds = {"spin": 6.0, "formation": 4.0, "explode": 3.0, "assembly": 0.8,
                        "move": 2.0, "scale": 2.0, "turn": 2.0, "wait": 1.0,
-                       "morph": 3.0, "roll": 2.0}[kind]
+                       "morph": 3.0, "roll": 2.0, "jump": 1.2, "fall": 1.4,
+                       "fan": 3.0}[kind]
     seconds = float(a.num("seconds", a.num("duration", default_seconds)) or default_seconds)
     seconds = max(0.2, min(seconds, 600.0))
     start_at = None
@@ -283,11 +296,16 @@ def animate(a, name):
     fps = int(a.num("fps", 24) or 24)
     fps = max(1, min(fps, 60))
     steps = int(a.num("steps", 48) or 48)
+    scene_name = (a.text("scene_name") or a.text("scene") or "").strip()
+    if scene_name.lower() in ("все", "все сцены", "all", "*", "любая"):
+        scene_name = ""   # общий клип: виден в любой сцене
     spec = {"kind": kind, "seconds": seconds, "fps": fps,
             "loop": a.boolean("loop", True),
             "steps": max(2, min(steps, 600)),
             "axis": axis_raw, "axis_sign": sign, "start": start_at,
             "track": track, "line": a.cmd.line, "text": a.cmd.text}
+    if scene_name:
+        spec["scene"] = scene_name
 
     target = None
     target_solids = []
@@ -369,6 +387,16 @@ def animate(a, name):
         spec["radians"] = (distance / radius) * sign
         spec["distance"] = distance
         spec["radius"] = radius
+    elif kind in ("jump", "fall"):
+        default_h = 60.0 if kind == "jump" else 200.0
+        spec["height"] = max(0.5, float(a.num("height", default_h) or default_h))
+        spec["elastic"] = a.boolean("elastic", True)
+    elif kind == "fan":
+        rpm = float(a.num("rpm", 900.0) or 900.0)
+        rpm = max(1.0, min(rpm, 20000.0))
+        spec["rpm"] = rpm
+        spec["turns"] = rpm * seconds / 60.0
+        spec["loop"] = a.boolean("loop", True)
     elif kind == "morph":
         param = (a.text("param") or "").strip()
         if not param:
@@ -402,6 +430,12 @@ def animate(a, name):
     elif kind == "roll":
         extra = f", {spec['distance']:g} мм, R{spec['radius']:g} → " \
                 f"{math.degrees(spec['radians']):.0f}°"
+    elif kind == "jump":
+        extra = f", высота {spec['height']:g} мм" + (", упруго" if spec["elastic"] else "")
+    elif kind == "fall":
+        extra = f", падение {spec['height']:g} мм" + (", упруго" if spec["elastic"] else "")
+    elif kind == "fan":
+        extra = f", {spec['rpm']:g} об/мин"
     elif kind == "morph":
         extra = f", {spec['param']} {spec['from']:g}→{spec['to']:g}"
     a.scene.log("info", f"анимация: {label}, {seconds:g} с, дорожка {track}{extra}",
