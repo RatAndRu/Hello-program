@@ -1213,7 +1213,7 @@ def spiral(a, name):
             f"Витки спирали налезут друг на друга: шаг между витками {pitch:g} мм, "
             f"а нить с зазором {wire + max(0.0, gap):g} мм.",
             hint=f"Уменьшите wire (сейчас {wire:g}) или увеличьте radius относительно turns.")
-    r0 = max(wire / 2.0, 0.5)
+    r0 = max(wire / 2.0 + 0.5, 1.0)
     steps = int(max(seg * turns, 48))
     r_in = r0
     r_out = radius
@@ -1223,10 +1223,22 @@ def spiral(a, name):
         ang = math.radians(start) + 2 * math.pi * turns * t
         rr = r_in + (r_out - r_in) * t
         w = wire / 2.0
+        # у самого центра нить сходит на нет остриём — иначе в середине
+        # остаётся «пень» с плоским срезом, который видно при любом угле
+        taper = min(1.0, t / 0.08) if t < 0.08 else 1.0
+        w = max(0.02, w * taper)
         inner_pts.append(((rr - w) * math.cos(ang), (rr - w) * math.sin(ang)))
         outer_pts.append(((rr + w) * math.cos(ang), (rr + w) * math.sin(ang)))
-    # контур: наружная кромка туда, внутренняя обратно, плюс круглые концы
-    pts = outer_pts + inner_pts[::-1]
+    # контур: наружная кромка туда, круглая «пята» на внешнем конце,
+    # внутренняя обратно, и остриё в центре
+    ang_end = math.radians(start) + 2 * math.pi * turns
+    w_end = wire / 2.0
+    cx, cy = r_out * math.cos(ang_end), r_out * math.sin(ang_end)
+    cap = []
+    for k in range(1, 12):
+        phi = ang_end + math.pi * k / 12
+        cap.append((cx + w_end * math.cos(phi), cy + w_end * math.sin(phi)))
+    pts = outer_pts + cap + inner_pts[::-1]
     cross = _cross([(x, y) for x, y in pts])
     solid = cross.extrude(height)
     if abs(height - wire) > 1e-6 and height > 1e-6:
@@ -1287,10 +1299,23 @@ def rope(a, name):
             path.append((r_turn * math.cos(ang), r_turn * math.sin(ang), z))
         pieces.append(_tube(np.asarray(path, dtype=np.float64), wire / 2.0, segments=segments))
     solid = mf.Manifold.batch_boolean(pieces, mf.OpType.Add)
-    # торцы ровные: обрезаем по длине, иначе круглые заглушки нитей торчат
+    # Торцы: режем по длине, но не плоскостью — иначе круглые нити дают
+    # «срез» с острыми кромками. Скругляем кромку радиусом в четверть нити.
     trim = mf.Manifold.cube((diameter * 4.0, diameter * 4.0, length), True) \
         .translate((0.0, 0.0, length / 2.0))
     solid = mf.Manifold.batch_boolean([solid, trim], mf.OpType.Intersect)
+    # лёгкая фаска на торце: срезаем кромку конусом-фаской, а не двойным
+    # minkowski (он на 10 000 треугольников стоил 20 с)
+    edge = min(wire * 0.3, length * 0.1)
+    if edge > 0.3:
+        for z0, sign in ((0.0, 1.0), (length, -1.0)):
+            chamfer = mf.Manifold.cylinder(edge * 2.0, diameter * 0.5 + wire,
+                                           max(0.1, diameter * 0.5 - edge), 48, False)
+            if sign > 0:
+                chamfer = chamfer.translate((0.0, 0.0, -edge))
+            else:
+                chamfer = chamfer.rotate((180.0, 0.0, 0.0)).translate((0.0, 0.0, length + edge))
+            solid = solid - chamfer
     return make_solid(a.scene, name, _placed(a, solid), a, kind="rope")
 
 

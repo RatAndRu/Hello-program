@@ -216,12 +216,29 @@ def _shade(normals, col, metal, rough, cam):
     col = np.asarray(col, dtype=np.float32)
     if col.ndim == 1:
         col = col[None, :]
-    base = col * (amb + bounce + diff + diff2 + rim)
+    # у металла диффузной составляющей почти нет: свет он отражает, а не рассеивает
+    base = col * (amb + bounce + diff + diff2 + rim) * (1.0 - 0.85 * metal)
     half = _normalize(key - f)
     spec = np.clip(n @ half, 0, None)[:, None] ** max(8, 2 / max(rough, 0.05) ** 2)
     spec_strength = 0.62 * (1 - rough) ** 2
     spec_col = col * (1 - metal) + metal * 0.9
     shade = base + spec * spec_strength * spec_col
+    if metal > 0.02:
+        # Отражение окружения: без карты окружения металл в офлайн-снимке
+        # выглядел серым пятном. Берём простое «небо над горизонтом» и
+        # отражаем его по нормали — зеркало и сталь сразу читаются как
+        # полированные, а не как матовая краска.
+        ref = 2.0 * (n @ f)[:, None] * n - f[None, :]
+        t = np.clip(ref[:, 2:3] * 0.5 + 0.5, 0, 1)
+        # «студия»: тёмный пол, светлая стена, яркая полоса-софтбокс сверху
+        ground = np.array([0.10, 0.11, 0.14], dtype=np.float32)
+        sky = np.array([0.72, 0.79, 0.92], dtype=np.float32)
+        env = ground[None, :] * (1 - t) + sky[None, :] * t
+        band = np.exp(-((ref[:, 2:3] - 0.72) ** 2) / (2 * 0.13 ** 2))
+        env = env + band * np.array([1.0, 0.96, 0.88], dtype=np.float32) * 0.7
+        # резкость отражения: гладкий металл почти как зеркало, матовый — мутный
+        k_env = metal * (1.0 - min(rough, 0.95)) ** 1.4
+        shade = shade + env * k_env * 1.15 * (0.35 + 0.65 * col)
     return _tonemap(shade)
 
 
