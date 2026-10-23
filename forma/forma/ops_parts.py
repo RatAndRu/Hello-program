@@ -441,10 +441,16 @@ def knurl(a, name):
         raise GeometryError("Деталь слишком тонкая для такой накатки.")
     solid = base.manifold
     height = sz + 2.0
+    # канавки идут по всей высоте детали, а не только от нуля: ось — центр
+    # габарита, иначе на детали, стоящей на столе, рифление закрывает низ
+    cx = (bb[0] + bb[3]) / 2.0
+    cy = (bb[1] + bb[4]) / 2.0
+    cz = (bb[2] + bb[5]) / 2.0
     for i in range(count):
         ang = 360.0 * i / count
         box = mf.Manifold.cube((depth * 2.0, width, height), center=True)
         box = box.translate((radius, 0.0, 0.0)).rotate([0.0, 0.0, ang])
+        box = box.translate((cx, cy, cz))
         solid = solid - box
     if solid.is_empty() or solid.volume() <= 1e-6:
         raise GeometryError("Накатка сняла весь материал — уменьшите depth.")
