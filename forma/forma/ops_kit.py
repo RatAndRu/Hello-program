@@ -289,7 +289,8 @@ def _path_length(pts: np.ndarray) -> float:
     category="Форма и деформации",
     summary="Сверлит сетку отверстий в готовой детали. Сквозные или на глубину, "
             "с зенковкой. Один вызов вместо десятка difference.",
-    example='панель = box size=[120,90,10]\nпанель = holes [панель] grid=[3,2] diameter=6 pitch=[40,30]',
+    example='панель = box size=[120,90,10]\n'
+            'панель = holes [панель] grid=[3,2] diameter=6 pitch=[40,30] offset=[12,-8]',
     params={"objects": "объект, в котором сверлим",
             "diameter": "диаметр отверстия, мм (6)",
             "grid": "сколько отверстий по двум осям [nx,ny] (2,2)",
@@ -299,6 +300,8 @@ def _path_length(pts: np.ndarray) -> float:
             "through": "сквозные да/нет (да)", "depth": "глубина, если не сквозное",
             "countersink": "зенковка: ширина фаски, мм (0)",
             "perforate": "шахматный порядок да/нет (нет)",
+            "offset": "сдвиг всей сетки от центра детали [dx,dy], мм (0,0)",
+            "corner": "отсчитывать offset от левого нижнего угла, а не от центра (нет)",
             "segments": "сегментов отверстия (24)", "at": "сдвиг [x,y,z]",
             "center": "центрировать по высоте"},
     positional=["objects"])
@@ -317,6 +320,9 @@ def holes(a, name):
     depth = span + 3.0 if through else float(a.num("depth", 8.0, minv=0.5))
     countersink = float(a.num("countersink", 0.0, minv=0.0) or 0.0)
     center = [(bb[0] + bb[3]) / 2.0, (bb[1] + bb[4]) / 2.0, (bb[2] + bb[5]) / 2.0]
+    # сдвиг сетки относительно центра детали: сверлим не только по центру,
+    # но и в любом месте плоскости (например, ближе к кромке)
+    offset = _pair(a, "offset", (0.0, 0.0))
     if a.has("positions"):
         raw = a.value("positions")
         if not isinstance(raw, (list, tuple)):
@@ -338,8 +344,8 @@ def holes(a, name):
                 dx = (i - (nx - 1) / 2.0) * px
                 if zigzag and j % 2:
                     dx += px / 2.0
-                positions.append((center[0] + dx,
-                                  center[1] + (j - (ny - 1) / 2.0) * py,
+                positions.append((center[0] + dx + offset[0],
+                                  center[1] + (j - (ny - 1) / 2.0) * py + offset[1],
                                   center[2]))
     solid = _drill(base.manifold, axis, positions, diameter, depth, through,
                    countersink, segments)

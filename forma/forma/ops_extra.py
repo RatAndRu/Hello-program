@@ -36,6 +36,178 @@ def _one(a, command: str):
 #  Сглаживание и округление переходов
 # --------------------------------------------------------------------------- #
 
+def _sharp_edge_count(manifold: mf.Manifold, angle_deg: float = 25.0) -> int:
+    """Сколько рёбер имеет излом больше angle_deg.
+
+    Нужно, чтобы не гонять дорогое скругление по гладкой поверхности
+    (тор, сфера, лофт): там нет острых рёбер, и minkowski — чистая трата
+    времени. Считаем по сетке: нормали треугольников + парные рёбра.
+    """
+    try:
+        mesh = manifold.to_mesh()
+        verts = np.asarray(mesh.vert_properties, dtype=np.float64)[:, :3]
+        tris = np.asarray(mesh.tri_verts, dtype=np.int64)
+    except Exception:
+        return 1
+    if len(tris) == 0:
+        return 0
+    p0 = verts[tris[:, 0]]
+    n = np.cross(verts[tris[:, 1]] - p0, verts[tris[:, 2]] - p0)
+    n /= np.maximum(np.linalg.norm(n, axis=1, keepdims=True), 1e-12)
+    edges = np.concatenate([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]], axis=0)
+    edges.sort(axis=1)
+    face = np.tile(np.arange(len(tris)), 3)
+    key = edges[:, 0].astype(np.int64) * (int(verts.shape[0]) + 1) + edges[:, 1]
+    order = np.argsort(key, kind="stable")
+    key, face = key[order], face[order]
+    same = key[1:] == key[:-1]
+    if not np.any(same):
+        return 0
+    i = np.where(same)[0]
+    dots = np.einsum("ij,ij->i", n[face[i]], n[face[i + 1]])
+    dots = np.clip(dots, -1.0, 1.0)
+    angles = np.degrees(np.arccos(dots))
+    return int(np.count_nonzero(angles > angle_deg))
+
+
+_BALL_CACHE: dict[tuple[float, int], mf.Manifold] = {}
+
+
+def _round_ball(radius: float, segments: int) -> mf.Manifold:
+    key = (round(float(radius), 4), int(segments))
+    ball = _BALL_CACHE.get(key)
+    if ball is None:
+        ball = mf.Manifold.sphere(float(radius), int(segments))
+        if len(_BALL_CACHE) > 24:
+            _BALL_CACHE.clear()
+        _BALL_CACHE[key] = ball
+    return ball
+
+
+def _convex_chamfer(manifold: mf.Manifold, width: float, angle_deg: float = 25.0,
+                    limit: int = 4000) -> tuple[mf.Manifold, int]:
+    """Быстрая фаска: снимает каждую выпуклую кромку клином.
+
+    Морфологическое скругление (minkowski) красиво, но на деталях с сотнями
+    кромок — отверстия, зубья, рёбра — считается минутами и раздувает сетку.
+    Здесь на каждую выпуклую кромку строится клин (сечение — треугольник
+    между кромкой и двумя точками на гранях на расстоянии width) и всё
+    вычитается одним пакетом. Время — доли секунды, форма — честная фаска.
+
+    Выпуклость кромки определяется знаком смешанного произведения
+    (n1 × n2) · e — это локальный и точный признак, в отличие от проверки
+    «где лежит третья вершина», которая врёт на вытянутых треугольниках.
+    """
+    mesh = manifold.to_mesh()
+    verts = np.asarray(mesh.vert_properties, dtype=np.float64)[:, :3]
+    tris = np.asarray(mesh.tri_verts, dtype=np.int64)
+    if len(tris) == 0:
+        return manifold, 0
+    p0s = verts[tris[:, 0]]
+    normals = np.cross(verts[tris[:, 1]] - p0s, verts[tris[:, 2]] - p0s)
+    normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
+    edges = np.concatenate([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]], axis=0)
+    faces = np.tile(np.arange(len(tris)), 3)
+    key = edges.min(axis=1) * (int(verts.shape[0]) + 1) + edges.max(axis=1)
+    order = np.argsort(key, kind="stable")
+    edges, faces, key = edges[order], faces[order], key[order]
+    same = np.where(key[1:] == key[:-1])[0]
+    if len(same) == 0:
+        return manifold, 0
+    cos_thr = math.cos(math.radians(angle_deg))
+    width = float(width)
+    wedges: list[mf.Manifold] = []
+    for i in same:
+        if len(wedges) >= limit:
+            break
+        f1, f2 = int(faces[i]), int(faces[i + 1])
+        a, b = int(edges[i][0]), int(edges[i][1])
+        n1, n2 = normals[f1], normals[f2]
+        dot = float(np.clip(np.dot(n1, n2), -1.0, 1.0))
+        if dot > cos_thr:
+            continue  # грань почти плоская — кромки нет
+        e = verts[b] - verts[a]
+        length = float(np.linalg.norm(e))
+        if length < 1e-9:
+            continue
+        e = e / length
+        if float(np.dot(np.cross(n1, n2), e)) <= 0.0:
+            continue  # вогнутая кромка — фаска её не трогает
+        t1 = np.cross(n1, e)
+        t1 /= max(float(np.linalg.norm(t1)), 1e-12)
+        if float(t1 @ (-n2)) < 0.0:
+            t1 = -t1
+        t2 = np.cross(n2, e)
+        t2 /= max(float(np.linalg.norm(t2)), 1e-12)
+        if float(t2 @ (-n1)) < 0.0:
+            t2 = -t2
+        y = np.cross(e, t1)
+        y /= max(float(np.linalg.norm(y)), 1e-12)
+        if float(t2 @ y) < 0.0:
+            y = -y
+        u = float(t2 @ t1)
+        v = float(t2 @ y)
+        if width * abs(v) < 1e-9:
+            continue
+        # вершину клина выносим наружу на 5 % ширины: иначе грани клина
+        # ложатся ровно на поверхность детали и булево оставляет «бахрому»
+        out = max(0.02, width * 0.05)
+        section = [(-out, -out), (width, 0.0), (width * u, width * v)]
+        # клин выпускаем за концы кромки не дальше половины её длины:
+        # на мелких кромках (кольцо отверстия) длинный выпуск рисует «звёзды»
+        ext = min(width * 1.02, length * 0.5)
+        start = verts[a] - e * ext
+        matrix = [[t1[0], y[0], e[0], start[0]],
+                  [t1[1], y[1], e[1], start[1]],
+                  [t1[2], y[2], e[2], start[2]]]
+        try:
+            wedge = mf.Manifold.extrude(mf.CrossSection([section]),
+                                        length + 2.0 * ext).transform(matrix)
+        except Exception:
+            continue
+        if wedge.volume() > 1e-9:
+            wedges.append(wedge)
+    if not wedges:
+        return manifold, 0
+    try:
+        result = mf.Manifold.batch_boolean([manifold] + wedges, mf.OpType.Subtract)
+    except Exception:
+        result = manifold
+        cuts = 0
+        for wedge in wedges:
+            piece = result - wedge
+            if piece.is_empty() or piece.volume() <= 1e-9:
+                continue
+            result = piece
+            cuts += 1
+        return result, cuts
+    if result.is_empty() or result.volume() <= 1e-9:
+        return manifold, 0
+    # после пакетного вычитания много «лишних» кромок на разрезах —
+    # стягиваем их в пределах 2 % ширины, форма не меняется
+    try:
+        simple = result.simplify(max(0.01, float(width) * 0.02))
+        if not simple.is_empty() and simple.volume() > 0:
+            result = simple
+    except Exception:
+        pass
+    return result, len(wedges)
+
+
+def _ball_segments(wanted: int, tris: int, sharp: int) -> int:
+    """Качество скругления под размер сетки.
+
+    Маленькая деталь получает полный segments, крупная — меньше шаров:
+    minkowski стоит ~ tri·ball_tris, поэтому на 60 000 треугольников
+    «24» превращаются в минуту ожидания. Ниже 8 не опускаемся — фаска
+    перестаёт быть круглой.
+    """
+    if tris <= 12_000:
+        return int(wanted)
+    # масштаб по корню из отношения размеров: 4× треугольников → вдвое меньше
+    scale = (12_000.0 / float(tris)) ** 0.5
+    return max(8, min(int(wanted), int(round(wanted * scale))))
+
 @op("smooth", aliases=("сгладить", "сглаживание", "плавно", "умягчить", "soften"),
     category="Форма и деформации",
     summary="Сглаживает переходы и убирает «лесенки» на гранях: G1-непрерывность "
@@ -52,10 +224,14 @@ def smooth(a, name):
     soft = a.num("soft", 0.2, minv=0.0, maxv=1.0)
     levels = a.int("levels", 1, minv=1, maxv=3)
     tris = base.manifold.num_tri()
-    if tris * (levels ** 2) > MAX_TRIS:
+    if tris * (4 ** (levels - 1)) > MAX_TRIS:
         raise GeometryError(
-            f"Сглаживание слишком тяжёлое: {tris:,} трис × {levels ** 2}.".replace(",", " "),
+            f"Сглаживание слишком тяжёлое: {tris:,} трис × 4^{levels - 1}.".replace(",", " "),
             hint="Уменьшите levels до 1 или сначала упростите объект (simplify).")
+    if soft <= 1e-6 and levels <= 1:
+        a.scene.log("info", "smooth: мягкость 0 и без дробления — менять нечего",
+                    a.cmd.line)
+        return _derived(a, name, base.manifold, base, "smooth")
     try:
         result = base.manifold.smooth_out(float(angle), float(soft))
         if levels > 1:
@@ -89,12 +265,15 @@ def _keep_envelope(a, source, result, kind: str) -> mf.Manifold:
 
 
 @op("bevel", aliases=("фаска", "скос", "округление", "кромка"), category="Форма и деформации",
-    summary="Скругляет наружные рёбра настоящим радиусом в миллиметрах: размер детали "
-            "не меняется, снимается только материал на углах.",
+    summary="Снимает наружные рёбра: на простых деталях — настоящим радиусом, на сложных "
+            "(отверстия, зубья, сотни кромок) — фаской 45° клиньями. Размер детали "
+            "не меняется, материал снимается только на кромках.",
     example='плита = box size=[60,40,20]\nплита = bevel [плита] radius=3',
     params={"objects": "объект",
-            "radius": "радиус скругления, мм (по умолчанию 4% самой тонкой стороны)",
+            "radius": "радиус скругления или ширина фаски, мм (по умолчанию 4% тонкой стороны)",
             "segments": "качество скругления 8…64 (24)",
+            "mode": "авто (простое — скругление, сложное — фаска 45°), "
+                    "скругление, фаска",
             "soft": "устаревшее: доля от половины тонкой стороны (0…1)",
             "levels": "устаревшее: не используется"},
     positional=["objects"])
@@ -108,13 +287,49 @@ def bevel(a, name):
         radius = float(soft) * thin / 2.0 if soft else thin * 0.02
     radius = min(float(radius), thin * 0.45)
     seg = a.int("segments", 24, minv=8, maxv=64)
-    if base.manifold.num_tri() > 60000:
+    tris = base.manifold.num_tri()
+    if tris > 60000:
         raise GeometryError(
             "Слишком подробная сетка для фаски — это надолго.",
             hint="Сначала упростите объект: имя = simplify [объект] tolerance=0.2. "
                  "Для плавных тел лучше smooth.")
+    # На гладком теле (сфера, тор, лофт) острых рёбер нет — скруглять нечего.
+    sharp = _sharp_edge_count(base.manifold, 25.0)
+    mode = (a.text("mode") or "авто").strip().lower()
+    if mode in ("avto", "auto", "авто", ""):
+        mode = "авто"
+    if mode in ("фаска", "chamfer", "плоская", "45"):
+        mode = "фаска"
+    elif mode in ("скругление", "round", "круглое", "radius"):
+        mode = "скругление"
+    elif mode != "авто":
+        raise GeometryError("Параметр mode: авто, скругление или фаска.")
+    if sharp == 0:
+        a.scene.log("info", "bevel: острых рёбер нет — тело гладкое, фаска не нужна",
+                    a.cmd.line)
+        return _derived(a, name, base.manifold, base, "bevel")
+    # Морфологическое скругление честное, но дорогое: на деталях с сотнями
+    # кромок (отверстия, зубья, стенки) — минуты и сотни тысяч треугольников.
+    # Простым деталям — настоящее скругление, сложным — фаска 45° клиньями.
+    simple = sharp <= 24 and tris <= 2000
+    if mode == "авто":
+        mode = "скругление" if simple else "фаска"
+    if mode == "скругление" and tris * sharp > 40000:
+        raise GeometryError(
+            f"Скругление radius={radius:g} на такой сетке ({tris} трис, {sharp} кромок) "
+            f"считалось бы минутами.",
+            hint="Добавьте mode=фаска — та же кромка снимается плоскостью за доли "
+                 "секунды, или упростите деталь: имя = simplify [объект] tolerance=0.2.")
+    if mode == "фаска":
+        result, cuts = _convex_chamfer(base.manifold, float(radius), 25.0)
+        if cuts == 0:
+            raise GeometryError("Не нашлось выпуклых кромок для фаски.")
+        a.scene.log("info", f"bevel: фаска 45° {radius:g} мм по {cuts} кромкам "
+                            f"(сетка {tris} трис, быстро)", a.cmd.line)
+        return _derived(a, name, result, base, "bevel")
+    seg = _ball_segments(seg, tris, sharp)
     try:
-        ball = mf.Manifold.sphere(float(radius), int(seg))
+        ball = _round_ball(float(radius), int(seg))
         # «раскрытие»: сжатие на радиус и обратный рост — скругляет выпуклые
         # рёбра, не раздувая деталь (в отличие от простого сглаживания).
         result = base.manifold.minkowski_difference(ball).minkowski_sum(ball)
