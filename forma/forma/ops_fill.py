@@ -409,6 +409,7 @@ def _pile_columns(size: float, radius: float, height: float) -> list:
             "count": "предел числа зёрен (0 — по месту, не больше 1600)",
             "seed": "число для повтора раскладки (1)",
             "rotate": "случайный поворот 0…1 (0.8)",
+            "base": "подложка под горкой: толщина диска, мм (0 — без неё)",
             "at": "сдвиг [x,y,z]", "center": "центрировать по высоте"},
     positional=["objects"])
 def pile(a, name):
@@ -427,6 +428,7 @@ def pile(a, name):
     rotate = float(a.num("rotate", 0.8, minv=0.0, maxv=1.0) or 0.0)
     limit = int(a.num("count", 0) or 0) or MAX_GRAINS
     limit = max(1, min(int(limit), MAX_GRAINS))
+    base = float(a.num("base", 0.0, minv=0.0) or 0.0)
 
     if custom is not None:
         # горка из предметов: каждый лежит на склоне и наклонён по нормали
@@ -447,6 +449,11 @@ def pile(a, name):
                                 f"{size:.1f} мм (предел {limit})", a.cmd.line)
         grains, made = _build_grains(a, kind, size, limit, density, rotate, seed, columns)
         label = "шт."
+    if base > 0:
+        # подложка: круглый диск под насыпью, чтобы горка стояла на «полу»
+        seg = 96
+        disc = mf.Manifold.cylinder(base, radius * 1.04, radius * 1.04, seg)
+        grains = [disc.translate([0.0, 0.0, -base])] + grains
     if made < 1:
         raise GeometryError("Горка не получилась: зерно крупнее её самой.",
                             hint="Уменьшите size или увеличьте radius/height.")

@@ -170,6 +170,12 @@ class TestPile(unittest.TestCase):
         self.assertFalse(b.scene.objects["к"].visible)
         self.assertGreater(last(b).manifold.volume(), 20000.0)
 
+    def test_optional_base_disc(self):
+        plain = last(ok("г = pile radius=90 height=40 grain=галька size=14 seed=5")).manifold
+        based = last(ok("г = pile radius=90 height=40 grain=галька size=14 seed=5 base=8")).manifold
+        self.assertLess(based.bounding_box()[2], -7.0)
+        self.assertGreater(based.volume(), plain.volume() + 200000.0)
+
     def test_too_big_grain(self):
         self.assertIn("зерно крупнее", fails("г = pile radius=10 height=4 grain=шар size=40"))
 

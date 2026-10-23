@@ -3863,11 +3863,14 @@ const TOOL_RECIPES = [
       { k: 'grain', label: 'зерно', v: 'галька', kind: 'raw' },
       { k: 'size', label: 'размер', v: 15 },
       { k: 'seed', label: 'seed', v: 5 },
+      { k: 'base', label: 'подложка', v: 0 },
     ],
     build: (v) => {
       const g = String(v.grain || 'галька').trim() || 'галька';
+      const base = rnum(v.base, 0);
+      const pad = base > 0 ? ` base=${fnum(base)}` : '';
       return `горка = pile radius=${fnum(v.r, 110)} height=${fnum(v.h, 48)} `
-        + `grain=${g} size=${fnum(v.size, 15)} seed=${fnum(v.seed, 5)}`;
+        + `grain=${g} size=${fnum(v.size, 15)}${pad} seed=${fnum(v.seed, 5)}`;
     },
   },
   {
