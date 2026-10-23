@@ -13,7 +13,7 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .ops import make_solid, op
+from .ops import make_solid, merge_solids, op
 
 MAX_TRIS = 1_600_000
 
@@ -262,6 +262,137 @@ def _keep_envelope(a, source, result, kind: str) -> mf.Manifold:
     out = shifted.scale([k, k, k]).translate([center[0], center[1], center[2]])
     a.scene.log("info", f"{kind}: габарит приведён к исходному (множитель {k:.3f})", a.cmd.line)
     return out
+
+
+# --------------------------------------------------------------------------- #
+#  Слияние деталей: убрать стыки
+# --------------------------------------------------------------------------- #
+def _edge_map(verts: np.ndarray, tris: np.ndarray):
+    """Список рёбер сетки и нормали треугольников по сторонам каждого ребра."""
+    p0 = verts[tris[:, 0]]
+    normals = np.cross(verts[tris[:, 1]] - p0, verts[tris[:, 2]] - p0)
+    normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-12)
+    edges = np.concatenate([tris[:, [0, 1]], tris[:, [1, 2]], tris[:, [2, 0]]], axis=0)
+    faces = np.tile(np.arange(len(tris)), 3)
+    key = edges.min(axis=1).astype(np.int64) * (int(verts.shape[0]) + 1) + edges.max(axis=1)
+    order = np.argsort(key, kind="stable")
+    return edges[order], faces[order], key[order], normals
+
+
+def _fuse_surface(m: mf.Manifold, radius: float, angle: float = 34.0,
+                  mode: str = "concave", detail: float | None = None) -> mf.Manifold:
+    """Сглаживает стыки прямо по сетке: тянет вершины к соседям у вогнутых рёбер.
+
+    Почему так, а не minkowski: морфологическое скругление на 50 000
+    треугольников считается минутами. Здесь — дробление до шага detail,
+    поиск рёбер-стыков и несколько проходов лапласиана с весом, который
+    гаснет с расстоянием от стыка. Топология не меняется, тело остаётся
+    замкнутым (status NoError), форма — та же, но без «шва».
+    """
+    radius = max(0.05, float(radius))
+    if m.num_tri() > 400_000:
+        raise GeometryError(
+            f"Слишком подробная сетка для слияния: {m.num_tri():,} трис.".replace(",", " "),
+            hint="Сначала упростите объект: simplify [объект] tolerance=0.5")
+    step = float(detail) if detail else max(0.25, min(radius / 4.0, radius * 0.5))
+    # дробим только настолько, насколько нужно для радиуса слияния
+    need = m.num_tri() * max(1.0, (min(step * 4.0, radius * 2.0) / step) ** 2)
+    if need > MAX_TRIS * 0.9:
+        step = max(step, radius / 3.0)
+    refined = m.refine_to_length(step)
+    mesh = refined.to_mesh()
+    verts = np.asarray(mesh.vert_properties, dtype=np.float64)[:, :3].copy()
+    tris = np.asarray(mesh.tri_verts, dtype=np.int64)
+    if len(tris) == 0:
+        return m
+    edges, faces, key, normals = _edge_map(verts, tris)
+    same = np.nonzero(key[1:] == key[:-1])[0]
+    if len(same) == 0:
+        return refined
+    n1, n2 = normals[faces[same]], normals[faces[same + 1]]
+    dots = np.clip(np.einsum("ij,ij->i", n1, n2), -1.0, 1.0)
+    sel = dots < math.cos(math.radians(angle))
+    if str(mode).lower() in ("concave", "вогнутые", "стыки"):
+        a_idx, b_idx = edges[same][:, 0], edges[same][:, 1]
+        e = verts[b_idx] - verts[a_idx]
+        convex = np.einsum("ij,ij->i", np.cross(n1, n2), e) > 0.0
+        sel &= ~convex
+    sharp = edges[same][sel]
+    if len(sharp) == 0:
+        return refined
+
+    n = len(verts)
+    steps = max(2, int(math.ceil(radius / step)))
+    src = np.concatenate([edges[:, 0], edges[:, 1]])
+    dst = np.concatenate([edges[:, 1], edges[:, 0]])
+    dist = np.full(n, 1e9, dtype=np.float64)
+    dist[sharp.reshape(-1)] = 0.0
+    for _ in range(steps):
+        upd = np.full(n, np.inf)
+        np.minimum.at(upd, src, dist[dst] + 1.0)
+        nxt = np.minimum(dist, upd)
+        if np.array_equal(nxt, dist):
+            break
+        dist = nxt
+    weight = np.clip(1.0 - dist / float(steps + 1), 0.0, 1.0)
+    weight = weight * weight * (3.0 - 2.0 * weight)
+    active = weight > 1e-3
+    if not np.any(active):
+        return refined
+
+    deg = np.bincount(src, minlength=n).astype(np.float64)
+    deg[deg == 0] = 1.0
+    limit = radius * 0.6      # за один проход вершина не уезжает дальше
+    moved = verts.copy()
+    for _ in range(max(6, int(steps * 2.5))):
+        acc = np.empty_like(moved)
+        for axis in range(3):
+            acc[:, axis] = np.bincount(src, weights=moved[dst, axis], minlength=n)
+        avg = acc / deg[:, None]
+        delta = (avg - moved) * (weight[:, None] * 0.55)
+        norm = np.linalg.norm(delta, axis=1, keepdims=True)
+        scale = np.where(norm > limit, limit / np.maximum(norm, 1e-12), 1.0)
+        moved += delta * scale
+    from .geometry import manifold_from_arrays
+    return manifold_from_arrays(moved, tris, "слияние")
+
+
+@op("fuse", aliases=("слить", "слияние", "сварить", "спаять", "smooth_union"),
+    category="Форма и деформации",
+    summary="Сливает детали в одно тело и убирает шов на стыке: вогнутые рёбра "
+            "плавно скругляются в радиусе radius. В отличие от union, детали "
+            "перестают выглядеть «приставленными друг к другу». radius — "
+            "примерно ширина видимого перехода; 2…8 мм для мелких предметов, "
+            "10…25 мм для крупных.",
+    example='голова = sphere radius=40 at=[0,0,40]\n'
+            'шея = cylinder radius=16 height=40 at=[0,0,0]\n'
+            'бюст = fuse [голова, шея] radius=8 edges=все',
+    params={"objects": "детали [a, b, …] (можно одну составную)",
+            "radius": "радиус слияния, мм (4)",
+            "angle": "угол стыка, ниже которого ребро считается острым, ° (34)",
+            "edges": "вогнутые (только стыки, по умолчанию) или все (плюс внешние рёбра)",
+            "detail": "шаг сетки для сглаживания, мм (авто ≈ radius/4)"},
+    positional=["objects"])
+def fuse(a, name):
+    solids = a.solids()
+    if not solids:
+        raise GeometryError("Для слияния нужен хотя бы один объект.")
+    radius = a.num("radius", 4.0, minv=0.05)
+    angle = a.num("angle", 34.0, minv=1.0, maxv=179.0)
+    edges = (a.text("edges") or "вогнутые").strip().lower()
+    detail = a.num("detail", None, minv=0.05)
+    try:
+        joined = merge_solids(solids, mf.OpType.Add)
+    except Exception as exc:
+        raise GeometryError(f"Не удалось объединить детали: {exc}") from exc
+    result = _fuse_surface(joined, radius, angle, edges, detail)
+    if result.is_empty() or result.volume() <= 1e-9:
+        raise GeometryError("После слияния объект исчез — уменьшите радиус.")
+    for s in solids:
+        a.scene.consume(s)
+    a.scene.log("info", f"слияние: {len(solids)} дет., радиус {radius:g} мм, "
+                        f"{result.num_tri():,} трис".replace(",", " "), a.cmd.line)
+    return make_solid(a.scene, name, result, a, base=solids[0], kind="fuse")
 
 
 @op("bevel", aliases=("фаска", "скос", "округление", "кромка"), category="Форма и деформации",

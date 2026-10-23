@@ -437,6 +437,21 @@
               <span class="material-hex" id="mat-rough-val">0.5</span>
             </div>
             <div class="material-row">
+              <span title="Цвет свечения: LED, неон, лампа">Свечение</span>
+              <input type="color" id="mat-emissive" value="#000000" />
+              <span class="material-hex" id="mat-emissive-val">нет</span>
+            </div>
+            <div class="material-row">
+              <span title="Яркость свечения">Яркость</span>
+              <input type="range" id="mat-glow" min="0" max="10" step="0.5" value="1" />
+              <span class="material-hex" id="mat-glow-val">1</span>
+            </div>
+            <div class="material-row">
+              <span title="Прозрачность стекла">Стекло</span>
+              <input type="range" id="mat-trans" min="0" max="1" step="0.05" value="0" />
+              <span class="material-hex" id="mat-trans-val">0</span>
+            </div>
+            <div class="material-row">
               <span>Текстура</span>
               <select id="mat-tex">
                 <option value="">без текстуры</option>

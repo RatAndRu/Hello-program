@@ -40,6 +40,9 @@ PARAM_ALIASES = {
     "глубина": "depth", "ширина": "width", "длина": "length", "масштаб": "factor",
     "шаг": "step", "плотность": "density", "металл": "metal",
     "шероховатость": "rough", "видимость": "visible", "режим": "mode",
+    "свечение": "emissive", "светится": "emissive", "glow": "emissive",
+    "яркость": "emissive_strength", "сила_света": "emissive_strength",
+    "прозрачность": "transmission",
     "точность": "tolerance", "уровень": "level", "уровни": "levels",
     "положение": "at", "позиция": "at", "от": "from", "до": "to",
     "открыто": "open", "выражение": "expression", "границы": "bounds",
@@ -56,7 +59,8 @@ PARAM_ALIASES = {
     "кисть": "radius", "радиус_кисти": "radius", "точка": "point", "центр_входа": "point",
 }
 
-STYLE_KEYS = {"color", "metal", "rough", "density", "material", "visible"}
+STYLE_KEYS = {"color", "metal", "rough", "density", "material", "visible",
+              "emissive", "emissive_strength", "transmission"}
 
 
 @dataclass
@@ -395,6 +399,27 @@ class Args:
                     raise DslError(f"Параметр «{key}» должен быть от 0 до 1.",
                                    line=self.cmd.line, command=self.cmd.text)
                 data[key] = v
+        if "emissive" in self.kwargs:
+            from .geometry import normalize_color
+            raw = (self.text("emissive") or "").strip().lower()
+            if raw in ("да", "yes", "true", "1", "вкл"):
+                data["emissive"] = "#ffffff"
+            elif raw in ("нет", "no", "false", "0", "выкл", ""):
+                data["emissive"] = ""
+            else:
+                data["emissive"] = normalize_color(raw)
+        if "emissive_strength" in self.kwargs:
+            v = self.num("emissive_strength")
+            if not (0.0 <= v <= 20.0):
+                raise DslError("Яркость свечения должна быть от 0 до 20.",
+                               line=self.cmd.line, command=self.cmd.text)
+            data["emissive_strength"] = v
+        if "transmission" in self.kwargs:
+            v = self.num("transmission")
+            if not (0.0 <= v <= 1.0):
+                raise DslError("Прозрачность должна быть от 0 до 1.",
+                               line=self.cmd.line, command=self.cmd.text)
+            data["transmission"] = v
         if "visible" in self.kwargs:
             data["visible"] = self.boolean("visible", True)
         return data

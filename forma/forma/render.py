@@ -65,6 +65,10 @@ def _prepare(solids):
             "color": np.array(color_to_float_rgb(s.color), dtype=np.float32),
             "paint": None, "brush": None,
             "metal": float(s.metal), "rough": float(s.rough),
+            "emissive": (np.array(color_to_float_rgb(s.emissive), dtype=np.float32)
+                         if getattr(s, "emissive", "") else None),
+            "glow": float(getattr(s, "emissive_strength", 1.0) or 1.0),
+            "alpha": 1.0 - 0.8 * float(getattr(s, "transmission", 0.0) or 0.0),
             "uv": None, "tex": None,
         }
         # регионная покраска: цвет каждого треугольника (после расщепления
@@ -258,6 +262,9 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
         _draw_grid(img, zbuf, cam, bbox)
 
     f = cam["f"]
+    # прозрачные тела (стекло) рисуем последними и смешиваем с уже готовым
+    # кадром: иначе они закрывают то, что должно быть видно сквозь них
+    meshes = sorted(meshes, key=lambda m: m.get("alpha", 1.0) < 0.999)
     for mesh in meshes:
         verts = mesh["verts"]
         faces = mesh["faces"]
@@ -340,12 +347,33 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
                 base = colors
                 colors = (tex[v0, u0] * (1 - fx) * (1 - fy) + tex[v0, u1] * fx * (1 - fy)
                           + tex[v1, u0] * (1 - fx) * fy + tex[v1, u1] * fx * fy) * base
-            shade = _shade(nn, colors, metal, rough, cam)
+            alpha = float(mesh.get("alpha", 1.0))
+            emis = mesh.get("emissive")
+            if emis is not None:
+                # Светодиод не затеняется: он сам источник света. Лёгкий
+                # градиент по нормали оставляет объём, чтобы грань не «плоскала».
+                ang = np.clip(nn @ _normalize(0.3 * cam["right"] - 0.4 * cam["up"]
+                                              - 0.85 * cam["f"]), 0, 1)[:, None]
+                # насыщенность важнее «пересвета»: ярче 0.9 цвет не поднимаем,
+                # иначе зелёный LED выгорает в белый
+                shade = np.clip(emis[None, :] * (0.80 + 0.20 * ang), 0, 0.96)
+            else:
+                shade = _shade(nn, colors, metal, rough, cam)
             shade = np.clip(shade, 0, 1)
             sub_img = img[miny:maxy + 1, minx:maxx + 1]
-            sub_img[front] = shade.astype(np.float32)
-            sub_z[front] = depth[front]
-            zbuf[miny:maxy + 1, minx:maxx + 1] = sub_z
+            if alpha < 0.999:
+                # стекло: смешиваем, но глубину не пишем — сквозь него видны
+                # детали, которые лежат глубже
+                sub_img[front] = (sub_img[front] * (1 - alpha)
+                                  + shade * alpha).astype(np.float32)
+            else:
+                sub_img[front] = shade.astype(np.float32)
+                sub_z[front] = depth[front]
+                zbuf[miny:maxy + 1, minx:maxx + 1] = sub_z
+
+    # свечение светодиодов: мягкий ореол вокруг ярких мест
+    if any(m.get("emissive") is not None for m in meshes):
+        img = _glow_pass(img, meshes, cam)
 
     # контурное затемнение по глубине
     finite = np.isfinite(zbuf)
@@ -363,6 +391,71 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
     if ss > 1:
         img = img.reshape(size, ss, size, ss, 3).mean(axis=(1, 3))
     return np.clip(img, 0, 1), cam
+
+
+def _box_blur(arr: np.ndarray, radius: int) -> np.ndarray:
+    """Мягкое размытие кумулятивными суммами — без Pillow и scipy."""
+    r = max(1, int(radius))
+    out = arr.astype(np.float32)
+    for axis in (0, 1):
+        pad = [(0, 0)] * out.ndim
+        pad[axis] = (r, r)
+        padded = np.pad(out, pad, mode="edge")
+        zero_shape = list(padded.shape)
+        zero_shape[axis] = 1
+        prof = np.cumsum(np.concatenate([np.zeros(zero_shape, dtype=np.float64),
+                                         padded.astype(np.float64)], axis=axis), axis=axis)
+        n = out.shape[axis]
+        hi = np.take(prof, np.arange(2 * r + 1, 2 * r + 1 + n), axis=axis)
+        lo = np.take(prof, np.arange(0, n), axis=axis)
+        out = ((hi - lo) / (2 * r + 1)).astype(np.float32)
+    return out
+
+
+def _glow_pass(img: np.ndarray, meshes, cam, radius: int | None = None) -> np.ndarray:
+    """Свечение: размывает только светящиеся пиксели и складывает их с кадром."""
+    h, w = img.shape[:2]
+    bright = np.zeros((h, w, 3), dtype=np.float32)
+    touched = False
+    for mesh in meshes:
+        emis = mesh.get("emissive")
+        if emis is None:
+            continue
+        scr, dep = _project(mesh["verts"], cam)
+        faces = mesh["faces"]
+        tri_scr = scr[faces]
+        # маска: пиксели внутри проекции светящегося тела (приближённо — по
+        # треугольникам, без глубины: ореол и должен «протекать» наружу)
+        for tri in tri_scr:
+            x0, y0 = tri[0]
+            x1, y1 = tri[1]
+            x2, y2 = tri[2]
+            minx = int(max(0, math.floor(min(x0, x1, x2))))
+            maxx = int(min(w - 1, math.ceil(max(x0, x1, x2))))
+            miny = int(max(0, math.floor(min(y0, y1, y2))))
+            maxy = int(min(h - 1, math.ceil(max(y0, y1, y2))))
+            if minx > maxx or miny > maxy:
+                continue
+            area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+            if abs(area) < 1e-12:
+                continue
+            xs = np.arange(minx, maxx + 1, dtype=np.float64) + 0.5
+            ys = np.arange(miny, maxy + 1, dtype=np.float64) + 0.5
+            X, Y = np.meshgrid(xs, ys)
+            w0 = ((x1 - X) * (y2 - Y) - (x2 - X) * (y1 - Y)) / area
+            w1 = ((x2 - X) * (y0 - Y) - (x0 - X) * (y2 - Y)) / area
+            inside = (w0 >= 0) & (w1 >= 0) & (w0 + w1 <= 1)
+            if inside.any():
+                bright[miny:maxy + 1, minx:maxx + 1][inside] = mesh["emissive"]
+                touched = True
+    if not touched:
+        return img
+    r = int(radius or max(3, w // 180))
+    halo = _box_blur(bright, r)
+    halo = _box_blur(halo, max(1, r // 2))
+    # ореол цветной: он подмешивается, но не должен выбеливать сам светодиод
+    halo *= 0.42
+    return np.clip(img + halo, 0, 1)
 
 
 def _compose(images, gap=8, bg=(0.055, 0.062, 0.078)):

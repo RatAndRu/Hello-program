@@ -2576,13 +2576,24 @@ function selectObject(name) {
   if (state.spaceMode) state.viewer?.rebuildSpace?.();
   $('material-panel').hidden = false;
   $('mat-name').textContent = obj.name;
-  state.material = { color: obj.color || '#c9d1e3', metal: obj.metal || 0, rough: obj.rough ?? 0.5 };
+  state.material = { color: obj.color || '#c9d1e3', metal: obj.metal || 0,
+                     rough: obj.rough ?? 0.5, emissive: obj.emissive || '',
+                     glow: obj.emissive_strength ?? 1,
+                     transmission: obj.transmission ?? 0 };
   $('mat-color').value = state.material.color;
   $('mat-hex').textContent = state.material.color;
   $('mat-metal').value = state.material.metal;
   $('mat-metal-val').textContent = state.material.metal;
   $('mat-rough').value = state.material.rough;
   $('mat-rough-val').textContent = state.material.rough;
+  if ($('mat-emissive')) {
+    $('mat-emissive').value = state.material.emissive || '#000000';
+    $('mat-emissive-val').textContent = state.material.emissive || 'нет';
+    $('mat-glow').value = state.material.glow;
+    $('mat-glow-val').textContent = state.material.glow;
+    $('mat-trans').value = state.material.transmission;
+    $('mat-trans-val').textContent = state.material.transmission;
+  }
   const KIND_RU = { wood: 'дерево', marble: 'мрамор', metal: 'металл', fabric: 'ткань',
     leather: 'кожа', checker: 'клетка', noise: 'шум', brick: 'кирпич', ceramic: 'керамика' };
   $('mat-tex').value = !obj.tex ? ''
@@ -2620,8 +2631,29 @@ $('mat-rough')?.addEventListener('input', (e) => {
   rememberMaterial({ rough: Number(e.target.value) });
   state.viewer?.applyMaterial(state.selected?.name, { rough: Number(e.target.value) });
 });
+$('mat-emissive')?.addEventListener('input', (e) => {
+  const v = e.target.value === '#000000' ? '' : e.target.value;
+  state.material.emissive = v;
+  $('mat-emissive-val').textContent = v || 'нет';
+  rememberMaterial({ emissive: v });
+  state.viewer?.applyMaterial(state.selected?.name,
+    { emissive: v, emissiveStrength: Number($('mat-glow')?.value || 1) });
+});
+$('mat-glow')?.addEventListener('input', (e) => {
+  state.material.glow = Number(e.target.value);
+  $('mat-glow-val').textContent = e.target.value;
+  rememberMaterial({ emissive_strength: Number(e.target.value) });
+  state.viewer?.applyMaterial(state.selected?.name,
+    { emissive: state.material.emissive, emissiveStrength: Number(e.target.value) });
+});
+$('mat-trans')?.addEventListener('input', (e) => {
+  state.material.transmission = Number(e.target.value);
+  $('mat-trans-val').textContent = e.target.value;
+  rememberMaterial({ transmission: Number(e.target.value) });
+  state.viewer?.applyMaterial(state.selected?.name, { transmission: Number(e.target.value) });
+});
 // по отпусканию ползунка записываем значение в сценарий, чтобы оно жило после пересборки
-['mat-color', 'mat-metal', 'mat-rough'].forEach((id) => {
+['mat-color', 'mat-metal', 'mat-rough', 'mat-emissive', 'mat-glow', 'mat-trans'].forEach((id) => {
   $(id)?.addEventListener('change', () => {
     if (!state.selected) return;
     writeMaterialScript({ rebuild: true });
@@ -2631,14 +2663,17 @@ $('mat-close')?.addEventListener('click', () => selectObject(''));
 
 function writeMaterialScript({ rebuild = true } = {}) {
   if (!state.selected) return;
-  const { color, metal, rough } = state.material;
+  const { color, metal, rough, emissive, glow, transmission } = state.material;
   const tex = $('mat-tex')?.value || '';
   const m = state.selected.name;
   const lines = currentScript().split('\n').filter((l) => {
     const t = l.trim();
     return !(t.startsWith(`color ${m} `) || t.startsWith(`texture ${m} `) || t.startsWith(`материал ${m} `));
   });
-  lines.push(`color ${m} ${color} metal=${metal} rough=${rough}`);
+  let line = `color ${m} ${color} metal=${metal} rough=${rough}`;
+  if (emissive) line += ` emissive=${emissive} emissive_strength=${glow}`;
+  if (transmission > 0) line += ` transmission=${transmission}`;
+  lines.push(line);
   if (tex === 'своя') lines.push(sandboxCommand(m));
   else if (tex) lines.push(`texture ${m} kind=${tex}`);
   setScript(lines.join('\n').trimEnd());
@@ -3530,6 +3565,63 @@ const TOOL_SHAPES = [
       { k: 'radius', label: 'радиус', v: 14, step: 1 },
       { k: 'height', label: 'высота', v: 36, step: 1 },
       { k: 'tip', label: 'острота', v: 0.5, step: 0.05 },
+    ],
+  },
+  {
+    op: 'heart', name: 'сердце', title: 'Сердце', group: 'Примитивы',
+    desc: 'Настоящая форма сердца: два лепестка и остриё. Ширина, толщина, скругление.',
+    params: [
+      { k: 'width', label: 'ширина', v: 60, step: 2 },
+      { k: 'depth', label: 'толщина', v: 18, step: 1 },
+      { k: 'round', label: 'скругл.', v: 2, step: 0.5 },
+    ],
+  },
+  {
+    op: 'plus', name: 'плюс', title: 'Плюс', group: 'Примитивы',
+    desc: 'Перекрестие из двух брусьев: аптечка, крест, перекладина.',
+    params: [
+      { k: 'arm', label: 'длина', v: 60, step: 2 },
+      { k: 'thick', label: 'брус', v: 18, step: 1 },
+      { k: 'depth', label: 'толщина', v: 14, step: 1 },
+      { k: 'round', label: 'скругл.', v: 1.5, step: 0.5 },
+    ],
+  },
+  {
+    op: 'sector', name: 'сектор', title: 'Сектор шара', group: 'Примитивы',
+    desc: 'Долька шара с любым углом: 90° — четвертинка, 180° — полусфера.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 50, step: 2 },
+      { k: 'angle', label: 'угол°', v: 90, step: 5 },
+      { k: 'thickness', label: 'стенка', v: 0, step: 1 },
+    ],
+  },
+  {
+    op: 'spiral', name: 'спираль', title: 'Спираль', group: 'Примитивы',
+    desc: 'Плоская улитка из центра наружу: пружинка, завиток, креманка.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 60, step: 2 },
+      { k: 'turns', label: 'витки', v: 3, step: 0.5 },
+      { k: 'wire', label: 'нить', v: 6, step: 0.5 },
+      { k: 'height', label: 'высота', v: 6, step: 1 },
+    ],
+  },
+  {
+    op: 'rope', name: 'верёвка', title: 'Верёвка', group: 'Примитивы',
+    desc: 'Кручёные нити вокруг общей оси: канат, шнур, трос.',
+    params: [
+      { k: 'length', label: 'длина', v: 200, step: 10 },
+      { k: 'diameter', label: '⌀', v: 20, step: 1 },
+      { k: 'strands', label: 'нити', v: 3, step: 1 },
+      { k: 'twist', label: 'свивка', v: 55, step: 5 },
+    ],
+  },
+  {
+    op: 'seven_seg', name: 'индикатор', title: 'Семисегментный', group: 'Примитивы',
+    desc: 'Светодиодные цифры: «21:38». С материалом led сразу горит.',
+    params: [
+      { k: 'text', label: 'текст', v: '21:38', kind: 'raw' },
+      { k: 'height', label: 'высота', v: 54, step: 2 },
+      { k: 'depth', label: 'толщина', v: 2, step: 0.5 },
     ],
   },
   {

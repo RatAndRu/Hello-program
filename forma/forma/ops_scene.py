@@ -14,7 +14,10 @@ from .ops import op
             "color": "цвет #RRGGBB или название",
             "material": "ceramic, metal, steel, aluminum, gold, copper, plastic, wood, rubber, glass",
             "metal": "металличность 0..1", "rough": "шероховатость 0..1",
-            "density": "плотность г/см³ (для оценки массы)"},
+            "density": "плотность г/см³ (для оценки массы)",
+            "emissive": "цвет свечения (#rrggbb) — для LED, неона, ламп",
+            "emissive_strength": "яркость свечения 0…20 (1)",
+            "transmission": "прозрачность стекла 0…1 (0)"},
     positional=["target", "color"])
 def color(a, name):
     target = (a.text("target") or "all").strip()

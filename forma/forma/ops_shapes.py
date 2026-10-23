@@ -1029,3 +1029,391 @@ def cloud(a, name):
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="cloud")
     out.notes.append(f"облако из {puffs} сфер, seed {seed}")
     return out
+
+
+# --------------------------------------------------------------------------- #
+#  Сердце
+# --------------------------------------------------------------------------- #
+def _heart_points(r: float, samples: int = 220) -> list[tuple[float, float]]:
+    """Классическая кривая сердца, нормированная по ширине.
+
+    Формула даёт сердце с остриём внизу по оси Y; масштаб подобран так,
+    чтобы полуширина была ровно r, а не «примерно».
+    """
+    raw = []
+    for i in range(samples):
+        t = 2.0 * math.pi * i / samples
+        x = 16.0 * math.sin(t) ** 3
+        y = 13.0 * math.cos(t) - 5.0 * math.cos(2 * t) - 2.0 * math.cos(3 * t) - math.cos(4 * t)
+        raw.append((x, y))
+    span = max(abs(p[0]) for p in raw)
+    k = r / span if span > 1e-9 else 1.0
+    pts = [(x * k, y * k) for x, y in raw]
+    # остриё вниз, верх посередине: сдвигаем по Y, чтобы низ был на z=0
+    low = min(p[1] for p in pts)
+    return [(x, y - low) for x, y in pts]
+
+
+@op("heart", aliases=("сердце", "сердечко", "heart_shape"), category="Примитивы",
+    summary="Сердце настоящей формы: два плавных лепестка сверху и остриё снизу. "
+            "Ширина, высота, толщина и скругление рёбер задаются отдельно. "
+            "Плоскость — XY, остриё вниз, стоит на полу.",
+    example="сердце = heart width=60 depth=20 round=2\n" +
+            "кулон = heart width=24 depth=8 round=1",
+    params={"width": "полная ширина, мм (60)", "depth": "толщина, мм (18)",
+            "height": "высота, мм (по форме ≈ 0.9 ширины)",
+            "round": "скругление кромок, мм (0)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def heart(a, name):
+    width = float(a.num("width", 60.0, minv=1.0))
+    depth = float(a.num("depth", 18.0, minv=0.2))
+    height = a.num("height", None, minv=0.5)
+    round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    pts = _heart_points(width / 2.0)
+    if height:
+        cur = max(p[1] for p in pts)
+        k = float(height) / max(cur, 1e-9)
+        pts = [(x * k, y * k) for x, y in pts]
+    cross = _cross(pts)
+    if round_r > 1e-3:
+        r = min(round_r, depth / 2.0 - 1e-4, width / 8.0)
+        if r > 1e-3:
+            cross = cross.offset(-r, mf.JoinType.Round, 2.0, 24)
+            solid = cross.extrude(depth - 2 * r)
+            solid = solid.translate((0, 0, r)).minkowski_sum(mf.Manifold.sphere(r, 24))
+        else:
+            solid = cross.extrude(depth)
+    else:
+        solid = cross.extrude(depth)
+    return make_solid(a.scene, name, _placed(a, solid), a, kind="heart")
+
+
+# --------------------------------------------------------------------------- #
+#  Плюс / перекрестие
+# --------------------------------------------------------------------------- #
+@op("plus", aliases=("плюс", "плюсик", "перекрестие", "крест", "cross_plus"),
+    category="Примитивы",
+    summary="Знак «плюс»: два пересекающихся бруса одинаковой толщины. "
+            "Арм — полная длина луча, thick — толщина бруса, depth — толщина "
+            "по Z. Скругление скругляет внутренние углы и кромки.",
+    example="плюс = plus arm=60 thick=18 depth=14 round=2\n" +
+            "аптечка = plus arm=120 thick=40 depth=20",
+    params={"arm": "полная длина луча, мм (60)", "thick": "толщина бруса, мм (18)",
+            "depth": "толщина по Z, мм (14)", "round": "скругление, мм (0)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def plus(a, name):
+    arm = float(a.num("arm", 60.0, minv=1.0))
+    thick = float(a.num("thick", 18.0, minv=0.5))
+    depth = float(a.num("depth", 14.0, minv=0.2))
+    round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    if thick >= arm:
+        raise GeometryError(f"Толщина бруса {thick:g} мм не может быть больше длины луча {arm:g} мм.",
+                            hint="thick ≈ 0.2…0.45 от arm.")
+    h = arm / 2.0
+    t = thick / 2.0
+    cs1 = mf.CrossSection([_profile([(-h, -t), (h, -t), (h, t), (-h, t)])])
+    cs2 = mf.CrossSection([_profile([(-t, -h), (t, -h), (t, h), (-t, h)])])
+    cross = mf.CrossSection.batch_boolean([cs1, cs2], mf.OpType.Add)
+    r = min(round_r, depth / 2.0 - 1e-4, thick / 3.0)
+    if r > 1e-3:
+        core = cross.offset(-r, mf.JoinType.Round, 2.0, 24)
+        solid = core.extrude(depth - 2 * r).translate((0, 0, r))
+        solid = solid.minkowski_sum(mf.Manifold.sphere(r, 24))
+    else:
+        solid = cross.extrude(depth)
+    return make_solid(a.scene, name, _placed(a, solid), a, kind="plus")
+
+
+# --------------------------------------------------------------------------- #
+#  Сектор шара (и полусфера — его частный случай)
+# --------------------------------------------------------------------------- #
+@op("sector", aliases=("сектор", "долька", "ломтик", "доля_шара", "wedge"),
+    category="Примитивы",
+    summary="Сектор шара с любым углом: 90° — четвертинка, 180° — полусфера, "
+            "360° — шар. Угол отсчитывается в плоскости XY и может быть повёрнут "
+            "через start. Идеален для кусков арбуза, апельсина, сегментов купола.",
+    example="долька = sector radius=50 angle=90 start=0\n" +
+            "купол = sector radius=80 angle=180 thickness=6",
+    params={"radius": "радиус шара, мм (50)", "angle": "угол сектора, ° (90)",
+            "start": "откуда начинать угол, ° (0)", "thickness": "толщина стенки; "
+            "0 — сплошной сектор (0)", "segments": "сегментов по дуге (по размеру)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте",
+            "up": "какая половина: верх, низ или обе (верх)"})
+def sector(a, name):
+    radius = float(a.num("radius", 50.0, minv=0.5))
+    angle = float(a.num("angle", 90.0, minv=1.0, maxv=360.0))
+    start = float(a.num("start", 0.0) or 0.0)
+    thickness = float(a.num("thickness", 0.0, minv=0.0) or 0.0)
+    up = (a.text("up") or "верх").strip().lower()
+    seg = _segments(a.int("segments", None, minv=8, maxv=256),
+                    max(24, min(180, int(angle / 2))))
+    both = up in ("обе", "both", "полный")
+    lower = up in ("низ", "low", "нижняя")
+    if thickness >= radius - 1e-6:
+        raise GeometryError(f"Стенка {thickness:g} мм больше радиуса {radius:g} мм.")
+    two = max(48, seg * 2)
+    ball = mf.Manifold.sphere(radius, two)
+    # Стенку снимаем ДО разрезов: шар минус внутренний шар — без копланарных
+    # граней. Если вычитать два пересечения с клином, на общей плоскости
+    # получается «нулевая» стенка и булево рвёт сетку (род −8).
+    if thickness > 1e-3:
+        body = ball - mf.Manifold.sphere(radius - thickness, two)
+    else:
+        body = ball
+    cut = mf.Manifold.cube((radius * 4.0, radius * 4.0, radius * 2.0), True)
+    if not both:
+        if lower:
+            # оставляем нижнюю половину: снимаем всё, что выше пола
+            body = body - cut.translate((0, 0, radius * 1.001))
+            body = body.translate((0, 0, -radius))
+        else:
+            body = body - cut.translate((0, 0, -radius * 1.001))
+    if angle < 359.9:
+        # клин: центр плюс дуга. Треугольная «долька» на 180° вырождается
+        # в отрезок и даёт пустое тело — дуга работает при любом угле.
+        big = radius * 2.4
+        n_arc = max(8, int(angle / 3.0))
+        pts = [(0.0, 0.0)]
+        for i in range(n_arc + 1):
+            ang = math.radians(start + angle * i / n_arc)
+            pts.append((big * math.cos(ang), big * math.sin(ang)))
+        wedge = mf.Manifold.extrude(mf.CrossSection([_profile(pts)]), radius * 4.0) \
+            .translate((0, 0, -radius * 2.0))
+        body = mf.Manifold.batch_boolean([body, wedge], mf.OpType.Intersect)
+    solid = ensure_volume(body, "сектора")
+    return make_solid(a.scene, name, _placed(a, solid), a, kind="sector")
+
+
+# --------------------------------------------------------------------------- #
+#  Спираль
+# --------------------------------------------------------------------------- #
+@op("spiral", aliases=("спираль", "улитка", "завиток", "helix_flat", "swirl"),
+    category="Примитивы",
+    summary="Плоская спираль-улитка (архимедова): от центра наружу с заданным "
+            "числом витков. Толщина нити и высота задаются; при height > wire "
+            "получается объёмный завиток, при равных — плоская лента.",
+    example="спираль = spiral radius=60 turns=3 wire=6 height=6\n" +
+            "завиток = spiral radius=80 turns=4 wire=8 height=16 segments=48",
+    params={"radius": "внешний радиус, мм (60)", "turns": "число витков (3)",
+            "wire": "толщина нити, мм (6)", "height": "высота стенки, мм (6)",
+            "gap": "зазор между витками, мм (авто)",
+            "segments": "точек по витку (96)", "start": "угол начала, ° (0)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def spiral(a, name):
+    radius = float(a.num("radius", 60.0, minv=1.0))
+    turns = float(a.num("turns", 3.0, minv=0.25, maxv=40.0))
+    wire = float(a.num("wire", 6.0, minv=0.2))
+    height = float(a.num("height", 6.0, minv=0.05))
+    start = float(a.num("start", 0.0) or 0.0)
+    seg = int(a.num("segments", 96, minv=24, maxv=400))
+    pitch = radius / max(turns, 1e-6)
+    gap = float(a.num("gap", max(0.0, pitch - wire)) or 0.0)
+    if wire + max(0.0, gap) >= pitch + 1e-6 and turns > 1:
+        raise GeometryError(
+            f"Витки спирали налезут друг на друга: шаг между витками {pitch:g} мм, "
+            f"а нить с зазором {wire + max(0.0, gap):g} мм.",
+            hint=f"Уменьшите wire (сейчас {wire:g}) или увеличьте radius относительно turns.")
+    r0 = max(wire / 2.0, 0.5)
+    steps = int(max(seg * turns, 48))
+    r_in = r0
+    r_out = radius
+    inner_pts, outer_pts = [], []
+    for i in range(steps + 1):
+        t = i / steps
+        ang = math.radians(start) + 2 * math.pi * turns * t
+        rr = r_in + (r_out - r_in) * t
+        w = wire / 2.0
+        inner_pts.append(((rr - w) * math.cos(ang), (rr - w) * math.sin(ang)))
+        outer_pts.append(((rr + w) * math.cos(ang), (rr + w) * math.sin(ang)))
+    # контур: наружная кромка туда, внутренняя обратно, плюс круглые концы
+    pts = outer_pts + inner_pts[::-1]
+    cross = _cross([(x, y) for x, y in pts])
+    solid = cross.extrude(height)
+    if abs(height - wire) > 1e-6 and height > 1e-6:
+        pass
+    return make_solid(a.scene, name, _placed(a, solid), a, kind="spiral")
+
+
+# --------------------------------------------------------------------------- #
+#  Верёвка из сплетённых нитей
+# --------------------------------------------------------------------------- #
+@op("rope", aliases=("верёвка", "веревка", "трос", "канат", "шнур", "cable", "cord"),
+    category="Примитивы",
+    summary="Кручёная верёвка: несколько нитей-цилиндров, обвивающих общую ось. "
+            "Каждая нить — настоящая винтовая линия с круглым сечением, поэтому "
+            "верёвка выглядит сплетённой при любом угле обзора. Ось — Z, "
+            "длина и шаг свивки настраиваются.",
+    example="канат = rope length=300 diameter=24 strands=3 twist=40\n" +
+            "шнур = rope length=120 diameter=12 strands=3 twist=16",
+    params={"length": "длина, мм (200)", "diameter": "наружный диаметр, мм (20)",
+            "strands": "число нитей (3)", "wire": "толщина нити, мм (авто)",
+            "twist": "длина одного витка свивки (шаг), мм (диаметр × 2.5)",
+            "segments": "точек по поверхности (по размеру)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def rope(a, name):
+    length = float(a.num("length", 200.0, minv=2.0))
+    diameter = float(a.num("diameter", 20.0, minv=0.5))
+    strands = int(a.num("strands", 3, minv=2, maxv=12))
+    twist = float(a.num("twist", diameter * 2.5, minv=1.0))
+    segments = int(a.num("segments", None, minv=8, maxv=32) or 12) if a.has("segments") else 12
+    # Нити должны касаться друг друга — иначе это не верёвка, а пучок
+    # отдельных прутьев. Условие касания: 2·r·sin(π/n) ≤ wire, где r — радиус
+    # окружности центров нитей, а наружный диаметр = 2·r + wire.
+    sin_n = math.sin(math.pi / max(strands, 2))
+    wire_min = diameter * sin_n / (1.0 + sin_n)
+    wire = float(a.num("wire", wire_min * 1.08, minv=0.05))
+    if wire < wire_min * 0.98:
+        raise GeometryError(
+            f"Нити не сплетаются: при {strands} нитях и диаметре {diameter:g} мм "
+            f"нужна толщина не меньше {wire_min:.2f} мм, а задано {wire:g} мм.",
+            hint=f"Уберите wire или поставьте wire={wire_min * 1.08:.2f}.")
+    # наружный диаметр = 2·r + wire, поэтому нить не может быть толще ~0.6 D
+    if wire > diameter * 0.62:
+        raise GeometryError(
+            f"Нить {wire:g} мм не проходит в верёвку диаметром {diameter:g} мм.",
+            hint=f"wire ≤ {diameter * 0.55:.2f} мм при диаметре {diameter:g}.")
+    core_r = max(0.1, diameter / 2.0 - wire / 2.0)
+    pitches = max(1.0, length / max(twist, 1e-6))
+    steps = max(64, int(round(pitches * 36)))
+    r_turn = core_r          # нити касаются наружного диаметра
+    pieces = []
+    for k in range(strands):
+        phase = 2.0 * math.pi * k / strands
+        path = []
+        for i in range(steps + 1):
+            t = i / steps
+            ang = phase + 2.0 * math.pi * pitches * t
+            z = t * length
+            path.append((r_turn * math.cos(ang), r_turn * math.sin(ang), z))
+        pieces.append(_tube(np.asarray(path, dtype=np.float64), wire / 2.0, segments=segments))
+    solid = mf.Manifold.batch_boolean(pieces, mf.OpType.Add)
+    # торцы ровные: обрезаем по длине, иначе круглые заглушки нитей торчат
+    trim = mf.Manifold.cube((diameter * 4.0, diameter * 4.0, length), True) \
+        .translate((0.0, 0.0, length / 2.0))
+    solid = mf.Manifold.batch_boolean([solid, trim], mf.OpType.Intersect)
+    return make_solid(a.scene, name, _placed(a, solid), a, kind="rope")
+
+
+# --------------------------------------------------------------------------- #
+#  Семисегментный индикатор
+# --------------------------------------------------------------------------- #
+_SEG_MAP = {
+    "0": "ABCDEF", "1": "BC", "2": "ABGED", "3": "ABGCD", "4": "FGBC",
+    "5": "AFGCD", "6": "AFGEDC", "7": "ABC", "8": "ABCDEFG", "9": "ABCFGD",
+    "A": "ABCEFG", "b": "CDEFG", "C": "ADEF", "d": "BCDEG", "E": "ADEFG",
+    "F": "AEFG", "-": "G", "_": "D", " ": "", "°": "", "o": "CDEG",
+}
+
+
+def _seg_polygon(length: float, thick: float, vertical: bool) -> list[tuple[float, float]]:
+    """Контур одного сегмента: шестиугольник со скошенными концами."""
+    half = length / 2.0
+    t = thick / 2.0
+    bevel = min(t, half * 0.6)
+    pts = [(-half + bevel, t), (half - bevel, t), (half, 0.0),
+           (half - bevel, -t), (-half + bevel, -t), (-half, 0.0)]
+    if vertical:
+        pts = [(-y, x) for x, y in pts]
+    return pts
+
+
+@op("seven_seg", aliases=("индикатор", "семисегментный", "цифры", "дисплей", "display",
+                          "sevenseg", "led_display"),
+    category="Примитивы",
+    summary="Семисегментный индикатор: цифры и знаки из светящихся штрихов-«спичек». "
+            "Одно тело, готовое к material=led — получится горящий циферблат. "
+            "Понимает цифры 0-9, знаки -, :, точку, пробел и латинские A-F.",
+    example='цифры = seven_seg text="21:38" height=56\n'
+            'часы = seven_seg text="20:00" height=40 depth=2 color=#ff2d55 '
+            'emissive=#ff2d55 emissive_strength=5',
+    params={"text": "что показать, например 21:38 (0)",
+            "height": "высота цифры, мм (40)",
+            "width": "ширина цифры, мм (0.58 × height)",
+            "thick": "толщина штриха, мм (0.15 × height)",
+            "gap": "зазор между цифрами, мм (0.32 × height)",
+            "depth": "высота штриха над панелью, мм (2)",
+            "slant": "наклон курсивом, градусы (0)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"},
+    positional=["text"])
+def seven_seg(a, name):
+    text = str(a.text("text") or "0")
+    if len(text) > 24:
+        raise GeometryError("Слишком длинная строка индикатора: не больше 24 знаков.")
+    h = float(a.num("height", 40.0, minv=1.0))
+    w = float(a.num("width", h * 0.58, minv=0.2))
+    t = float(a.num("thick", h * 0.15, minv=0.05))
+    gap = float(a.num("gap", h * 0.32, minv=0.0))
+    depth = float(a.num("depth", 2.0, minv=0.05))
+    slant = float(a.num("slant", 0.0) or 0.0)
+    if t >= min(w, h) * 0.9:
+        raise GeometryError(f"Штрих {t:g} мм слишком толстый для цифры {w:g}×{h:g}.",
+                            hint="thick ≈ 0.12…0.2 от height.")
+    # ширина одного знака: цифра w, двоеточие — половина, пробел — половина
+    def char_w(ch: str) -> float:
+        if ch == ":":
+            return w * 0.34
+        if ch == " ":
+            return w * 0.45
+        if ch == ".":
+            return w * 0.28
+        return w
+
+    total = sum(char_w(c) for c in text) + gap * max(0, len(text) - 1)
+    x = -total / 2.0
+    parts: list[mf.Manifold] = []
+
+    def add_seg(cx: float, cy: float, length: float, thick: float, vertical: bool):
+        poly = _seg_polygon(length, thick, vertical)
+        poly = [(cx + px, cy + py) for px, py in poly]
+        cross = _cross(poly)
+        parts.append(cross.extrude(depth))
+
+    for ch in text:
+        cw = char_w(ch)
+        cx = x + cw / 2.0
+        if ch == ":":
+            r = t * 0.55
+            for cy in (h * 0.22, -h * 0.22):
+                parts.append(mf.Manifold.cylinder(depth, r, r, 24, True)
+                             .translate((cx, cy, depth / 2.0)))
+        elif ch == ".":
+            r = t * 0.5
+            parts.append(mf.Manifold.cylinder(depth, r, r, 24, True)
+                         .translate((cx + cw / 2.0 - r, -h / 2.0 + r, depth / 2.0)))
+        else:
+            segs = _SEG_MAP.get(ch)
+            if segs is None:
+                raise GeometryError(f"Индикатор не умеет показывать «{ch}».",
+                                    hint="Доступно: 0-9, A-F, «-», «:», «.», пробел.")
+            hw = cw / 2.0
+            hh = h / 2.0
+            off = t * 0.28
+            # Горизонтали внутри высоты цифры: верхняя кромка ровно на +h/2,
+            # вертикали — между ними. Тогда общая высота точно равна height.
+            if "A" in segs:
+                add_seg(cx, hh - t / 2.0, cw - off, t, False)
+            if "D" in segs:
+                add_seg(cx, -hh + t / 2.0, cw - off, t, False)
+            if "G" in segs:
+                add_seg(cx, 0.0, cw - off, t, False)
+            vlen = hh - t * 0.7     # концы вертикалей заходят в горизонтали
+            if "F" in segs:
+                add_seg(cx - hw + t / 2.0, hh / 2.0, vlen, t, True)
+            if "B" in segs:
+                add_seg(cx + hw - t / 2.0, hh / 2.0, vlen, t, True)
+            if "E" in segs:
+                add_seg(cx - hw + t / 2.0, -hh / 2.0, vlen, t, True)
+            if "C" in segs:
+                add_seg(cx + hw - t / 2.0, -hh / 2.0, vlen, t, True)
+        x += cw + gap
+    if not parts:
+        raise GeometryError("Индикатор пустой: в text нет ни одного знака.")
+    solid = parts[0] if len(parts) == 1 else mf.Manifold.batch_boolean(parts, mf.OpType.Add)
+    if abs(slant) > 1e-6:
+        # курсив: сдвигаем верх относительно низа
+        shear = np.eye(3, 4)
+        shear[0, 2] = math.tan(math.radians(slant)) * 0.0
+        shear[0, 1] = math.tan(math.radians(slant))
+        solid = solid.transform(shear)
+    solid = ensure_volume(solid, "индикатора")
+    return make_solid(a.scene, name, _placed(a, solid), a, kind="seven_seg")

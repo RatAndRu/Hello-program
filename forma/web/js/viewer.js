@@ -2,6 +2,10 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 const VIEW_DIRS = {
   iso: new THREE.Vector3(0.95, 0.72, -1.0),
@@ -246,7 +250,7 @@ export class Viewer {
         this._frames = 0;
         this._fpsTime = 0;
       }
-      renderer.render(scene, this.camera);
+      this._renderFrame();
     };
     loop();
     this.ready = true;
@@ -543,6 +547,7 @@ export class Viewer {
     this.renderer.setSize(w, h, false);
     this.camera.aspect = w / Math.max(h, 1);
     this.camera.updateProjectionMatrix();
+    if (this.composer) this.composer.setSize(w, h);
   }
 
   disposeModel() {
@@ -636,6 +641,7 @@ export class Viewer {
     });
     this.scene.add(root);
     this.model = root;
+    this.setBloom(this._detectEmissive(root));
     if (this.spaceMode) this._buildSpaceGrid();
     // Модель уже на экране. Дальше — только оформление и анимация: сбой в них
     // не должен выглядеть как «не удалось показать модель».
@@ -2600,7 +2606,7 @@ export class Viewer {
     if (this.highlightName) this.refreshOccluders();
   }
 
-  applyMaterial(name, { color, metal, rough }) {
+  applyMaterial(name, { color, metal, rough, emissive, emissiveStrength, transmission }) {
     if (!this.model || !name) return;
     this.model.traverse((o) => {
       if (!o.isMesh) return;
@@ -2615,6 +2621,29 @@ export class Viewer {
         if (metal !== undefined && metal !== null) m.metalness = metal;
         if (rough !== undefined && rough !== null) m.roughness = rough;
         if (color) m.userData.base.color = new THREE.Color(color);
+        if (emissive !== undefined) {
+          if (m.emissive) {
+            if (emissive) {
+              m.emissive.set(emissive);
+              m.emissiveIntensity = Number(emissiveStrength ?? 1);
+            } else {
+              m.emissive.setHex(0x000000);
+              m.emissiveIntensity = 0;
+            }
+          }
+          this.setBloom(this._detectEmissive(this.model));
+        }
+        if (emissiveStrength !== undefined && m.emissive &&
+            m.emissive.getHex() !== 0x000000) {
+          m.emissiveIntensity = Number(emissiveStrength);
+        }
+        if (transmission !== undefined && transmission !== null && 'transmission' in m) {
+          m.transmission = Number(transmission);
+          m.thickness = Math.max(m.thickness || 0, 2);
+          m.transparent = Number(transmission) > 0.02;
+          m.opacity = 1;
+          m.depthWrite = Number(transmission) <= 0.02;
+        }
         m.needsUpdate = true;
       });
     });
@@ -2693,9 +2722,58 @@ export class Viewer {
     return { tris, verts, meshes, fps: this._lastFps };
   }
 
+  /** Кадр: со свечением — через композер, без свечения — напрямую. */
+  _renderFrame() {
+    if (!this.renderer) return;
+    if (this._bloomOn && this.composer) {
+      this.composer.render();
+    } else {
+      this.renderer.render(this.scene, this.camera);
+    }
+  }
+
+  /** Включает мягкое свечение ярких (эмиссивных) поверхностей. */
+  setBloom(on) {
+    this._bloomOn = !!on;
+    if (!this._bloomOn) return;
+    if (!this.composer) {
+      try {
+        const size = new THREE.Vector2();
+        this.renderer.getSize(size);
+        const composer = new EffectComposer(this.renderer);
+        composer.addPass(new RenderPass(this.scene, this.camera));
+        const bloom = new UnrealBloomPass(size, 0.55, 0.55, 0.85);
+        composer.addPass(bloom);
+        composer.addPass(new OutputPass());
+        this.composer = composer;
+        this.bloomPass = bloom;
+      } catch (err) {
+        this._bloomOn = false;
+        this.composer = null;
+      }
+    }
+  }
+
+  /** Есть ли в модели светящиеся материалы — по ним включаем bloom. */
+  _detectEmissive(root) {
+    let found = false;
+    root.traverse((o) => {
+      if (!o.isMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => {
+        if (m && m.emissive && (m.emissiveIntensity > 0.01)) {
+          const c = m.emissive;
+          if (c.r + c.g + c.b > 0.02) found = true;
+        }
+      });
+    });
+    return found;
+  }
+
   renderNow() {
-    if (this.renderer) this.renderer.render(this.scene, this.camera);
-    return this.renderer?.domElement || null;
+    if (!this.renderer) return null;
+    this._renderFrame();
+    return this.renderer.domElement;
   }
 
   screenshot() {

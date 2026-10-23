@@ -925,6 +925,7 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             verts = np.stack([verts[:, 0], verts[:, 2], -verts[:, 1]], axis=1)
             normals = None
         rgba = color_to_gltf(obj.color)
+        transmission = float(getattr(obj, "transmission", 0.0) or 0.0)
         uv_mode = getattr(obj, "uv", "auto") or "auto"
         material = PBRMaterial(
             name=f"mat_{obj.name}",
@@ -933,6 +934,12 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             roughnessFactor=float(obj.rough),
             doubleSided=False,
         )
+        emissive = getattr(obj, "emissive", "") or ""
+        if emissive:
+            # Цвет свечения — как есть; яркость больше 1 уходит в расширение
+            # KHR_materials_emissive_strength (постобработка ниже).
+            e_rgb = color_to_gltf(emissive)[:3]
+            material.emissiveFactor = [round(c, 4) for c in e_rgb]
         uv = uv_for(verts, uv_mode)
         if getattr(obj, "tex", None):
             image = load_texture_image(obj.tex.get("path", ""))
@@ -1008,7 +1015,57 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
                                       groups=groups)
         except Exception:
             pass  # анимация — бонус: без неё файл остаётся корректным
+    styles = {obj.name: {"emissive": getattr(obj, "emissive", "") or "",
+                         "emissive_strength": float(getattr(obj, "emissive_strength", 1.0) or 1.0),
+                         "transmission": float(getattr(obj, "transmission", 0.0) or 0.0)}
+              for obj in objects}
+    if any(st["emissive"] and st["emissive_strength"] > 1.01
+           or st["transmission"] > 0.01 for st in styles.values()):
+        try:
+            data = _glb_patch_materials(bytes(data), styles)
+        except Exception:
+            pass
     return bytes(data)
+
+
+def _glb_patch_materials(data: bytes, styles: dict) -> bytes:
+    """Дописывает в материалы GLB свечение и прозрачность.
+
+    trimesh умеет только emissiveFactor (0…1) и не знает KHR-расширений,
+    поэтому яркость свечения и коэффициент пропускания добавляются здесь:
+    Blender, three.js и другие просмотрщики понимают их из коробки.
+    """
+    doc, binary = _glb_read(data)
+    used = list(doc.get("extensionsUsed") or [])
+    changed = False
+    for mat in doc.get("materials", []) or []:
+        name = str(mat.get("name") or "")
+        if not name.startswith("mat_"):
+            continue
+        st = styles.get(name[4:])
+        if not st:
+            continue
+        ext = mat.setdefault("extensions", {})
+        glow = float(st.get("emissive_strength") or 1.0)
+        if st.get("emissive") and glow > 1.01:
+            ext["KHR_materials_emissive_strength"] = {"emissiveStrength": round(glow, 4)}
+            if "KHR_materials_emissive_strength" not in used:
+                used.append("KHR_materials_emissive_strength")
+            changed = True
+        t = float(st.get("transmission") or 0.0)
+        if t > 0.01:
+            ext["KHR_materials_transmission"] = {"transmissionFactor": round(t, 4)}
+            ext.setdefault("KHR_materials_ior", {"ior": 1.45})
+            for key in ("KHR_materials_transmission", "KHR_materials_ior"):
+                if key not in used:
+                    used.append(key)
+            changed = True
+        if not ext:
+            mat.pop("extensions", None)
+    if not changed:
+        return data
+    doc["extensionsUsed"] = used
+    return _glb_write(doc, binary)
 
 
 # --------------------------------------------------------------------------- #
@@ -1616,8 +1673,28 @@ MATERIAL_PRESETS = {
     "дерево": {"color": "#b98a5a", "metal": 0.0, "rough": 0.72, "density": 0.7},
     "rubber": {"color": "#2b2d33", "metal": 0.0, "rough": 0.9, "density": 1.1},
     "резина": {"color": "#2b2d33", "metal": 0.0, "rough": 0.9, "density": 1.1},
-    "glass": {"color": "#cfe8f2", "metal": 0.0, "rough": 0.08, "density": 2.5},
-    "стекло": {"color": "#cfe8f2", "metal": 0.0, "rough": 0.08, "density": 2.5},
+    "glass": {"color": "#cfe8f2", "metal": 0.0, "rough": 0.08, "density": 2.5,
+              "transmission": 0.92},
+    "стекло": {"color": "#cfe8f2", "metal": 0.0, "rough": 0.08, "density": 2.5,
+               "transmission": 0.92},
+    # Зеркало: гладкий металл отражает окружение почти без искажений.
+    "mirror": {"color": "#eef2f6", "metal": 1.0, "rough": 0.02, "density": 2.5},
+    "зеркало": {"color": "#eef2f6", "metal": 1.0, "rough": 0.02, "density": 2.5},
+    # Светящиеся поверхности: LED-цифры, неон, лампы, экраны.
+    "led": {"color": "#25f06a", "metal": 0.0, "rough": 0.35, "density": 1.2,
+            "emissive": "#25f06a", "emissive_strength": 4.0},
+    "неон": {"color": "#ff3f8e", "metal": 0.0, "rough": 0.3, "density": 1.2,
+             "emissive": "#ff3f8e", "emissive_strength": 6.0},
+    "neon": {"color": "#ff3f8e", "metal": 0.0, "rough": 0.3, "density": 1.2,
+             "emissive": "#ff3f8e", "emissive_strength": 6.0},
+    "lamp": {"color": "#ffe9b8", "metal": 0.0, "rough": 0.4, "density": 1.2,
+             "emissive": "#ffe9b8", "emissive_strength": 5.0},
+    "лампа": {"color": "#ffe9b8", "metal": 0.0, "rough": 0.4, "density": 1.2,
+              "emissive": "#ffe9b8", "emissive_strength": 5.0},
+    "screen": {"color": "#101418", "metal": 0.0, "rough": 0.15, "density": 1.2,
+               "transmission": 0.35},
+    "экран": {"color": "#101418", "metal": 0.0, "rough": 0.15, "density": 1.2,
+              "transmission": 0.35},
 }
 
 

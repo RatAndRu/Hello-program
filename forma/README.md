@@ -44,6 +44,46 @@ check кружка symmetric y
 | **Витрина инструментов: 44 предмета** | |
 | ![витрина](docs/showcase_all.png) | |
 
+## Что нового в 0.23 — сварка объёмов, светящиеся цифры и новые формы
+
+![fuse, сердце, плюс, сектор, спираль, верёвка, индикатор и часы](docs/whatsnew_023.png)
+
+* **`fuse` — главное.** До сих пор «одно тело» получалось только `union`:
+  детали просто приклеивались, а на стыке оставался резкий шов — модель
+  читалась как набор примитивов. Теперь `fuse [a, b] radius=8` сваривает
+  детали и **скругляет вогнутые рёбра** радиусом `radius`: корпус плавно
+  переходит в стойку, шея — в голову, ручка — в кружку. Одна команда, вместо
+  десятка подогнанных скруглений. `edges=все` сглаживает ещё и наружные рёбра
+  (так собраны корпус часов и «мыльница» на плакате).
+  Реализовано не через minkowski (он на 50 000 треугольников считался бы
+  минутами), а по сетке: дробление до шага `detail`, поиск рёбер-стыков,
+  несколько проходов лапласиана с весом, гаснущим по расстоянию от стыка.
+  Топология не меняется, тело остаётся замкнутым. 0.15 с на деталь.
+* **Свечение и прозрачность.** `material=led|neon|lamp` или `emissive=#RRGGBB
+  emissive_strength=4` — поверхность светится. В окне при наличии эмиссии
+  сам включается bloom (`EffectComposer` + `UnrealBloomPass` — вендорены
+  `postprocessing/` и `shaders/` из three r160), в отчётах PNG появился
+  ореол, в GLB пишется `KHR_materials_emissive_strength`.
+  `material=glass|screen` или `transmission=0.7` — прозрачное тело:
+  в GLB это `KHR_materials_transmission`, в PNG-снимках — настоящее
+  смешивание (сквозь стекло видно цифры), в окне — `MeshPhysicalMaterial`.
+  В панели материала появились ползунки «Свечение», «Яркость», «Стекло».
+* **`seven_seg` — семисегментный индикатор.** `seven_seg text="21:38"
+  height=54` — одна команда, одно тело из светящихся штрихов. Понимает цифры,
+  `:`, `.`, `-` и буквы A–F.
+* **Новые фигуры:** `heart` (сердце настоящей кривой, а не два круга),
+  `plus` (перекрестие с прямоугольными плечами и скруглением внутренних углов),
+  `sector` (сектор шара с **любым** углом: 90° — четвертинка, 180° — полусфера,
+  360° — шар; `thickness` — стенка, `up=верх|низ|обе`),
+  `spiral` (плоская улитка от центра наружу), `rope` (кручёная верёвка из
+  настоящих винтовых нитей с проверкой, что нити не висят в воздухе).
+* **Новый пример `examples/clock_led.forma`** — настольные часы с горящим
+  циферблатом: сварной корпус, ниша, тёмный экран, стекло, LED-цифры 21:38,
+  индикатор включения. 6 проверок, все проходят.
+* **Приёмов стало 26**: в витрину добавлены «Сердце», «Плюс», «Сектор шара»,
+  «Спираль», «Верёвка», «Семисегментный индикатор».
+* **340 автотестов** (23 новых в `tests/test_v023.py`), `--selftest` — зелёные.
+
 ## Что нового в 0.22 — настоящее яйцо, капля, крупа в тарелке и горка
 
 ![наполнение, горка, массив по кругу, яйцо и капля](docs/fill_022.png)
@@ -661,16 +701,16 @@ python -m forma reference --out СПРАВКА.md
 
 | Категория | Команды |
 |---|---|
-| Примитивы (50) | `arch`, `bearing`, `bolt`, `box`, `box_body`, `bracket`, `capsule`, `caster`, `cloud`, `cone`, `coupling`, `cube_hole`, `cylinder`, `diamond`, `drive`, `drop`, `egg`, `gear`, `grommet`, `gusset`, `handle`, `heatsink`, `hemisphere`, `hinge`, `horn`, `hull`, `icosphere`, `leaf`, `leg`, `nail`, `nut`, `plate`, `prism`, `profile2020`, `pulley`, `pyramid`, `rack`, `rail`, `ring`, `rock`, `screw`, `shaft`, `sphere`, `spring`, `star`, `text`, `torus`, `washer`, `wheel`, `worm_shaft` |
+| Примитивы (56) | `arch`, `bearing`, `bolt`, `box`, `box_body`, `bracket`, `capsule`, `caster`, `cloud`, `cone`, `coupling`, `cube_hole`, `cylinder`, `diamond`, `drive`, `drop`, `egg`, `gear`, `grommet`, `gusset`, `handle`, `heart`, `heatsink`, `hemisphere`, `hinge`, `horn`, `hull`, `icosphere`, `leaf`, `leg`, `nail`, `nut`, `plate`, `plus`, `prism`, `profile2020`, `pulley`, `pyramid`, `rack`, `rail`, `ring`, `rock`, `rope`, `screw`, `sector`, `seven_seg`, `shaft`, `sphere`, `spiral`, `spring`, `star`, `text`, `torus`, `washer`, `wheel`, `worm_shaft` |
 | Тела вращения и развёртки (5) | `extrude`, `lathe`, `loft`, `pipe`, `sweep` |
 | Булевы операции (7) | `cut`, `difference`, `intersect`, `slice`, `trim`, `union`, `weld` |
-| Форма и деформации (20) | `bend`, `bevel`, `chamfer`, `clean`, `draft`, `emboss`, `fill`, `fillet`, `groove`, `holes`, `knurl`, `offset`, `pile`, `refine`, `shell`, `simplify`, `smooth`, `taper`, `thread`, `twist` |
+| Форма и деформации (21) | `bend`, `bevel`, `chamfer`, `clean`, `draft`, `emboss`, `fill`, `fillet`, `fuse`, `groove`, `holes`, `knurl`, `offset`, `pile`, `refine`, `shell`, `simplify`, `smooth`, `taper`, `thread`, `twist` |
 | Массивы и преобразования (10) | `align`, `array`, `mirror`, `mirror_copy`, `place`, `rotate`, `scale`, `scatter`, `translate`, `сопряжение` |
 | Математические поверхности (3) | `blob`, `from_sdf`, `human` |
 | Сцена и материал (15) | `animate`, `color`, `delete`, `group`, `hide`, `import`, `keyframe`, `light`, `paint`, `scene`, `show`, `texture`, `заготовка`, `кисть`, `ластик` |
 | Проверка (4) | `check`, `passport`, `probe`, `section` |
 
-Все 114 команд перечислены здесь без сокращений; полные описания параметров —
+Все 121 команда перечислена здесь без сокращений; полные описания параметров —
 в справке приложения (кнопка «?») и в файле `СПРАВКА_КОМАНДЫ.md` внутри ZIP.
 У каждой команды в справке есть **запускаемый** пример: его можно скопировать
 в сценарий целиком — он соберётся без правок (кроме `import`, которому нужен

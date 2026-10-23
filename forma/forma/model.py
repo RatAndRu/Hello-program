@@ -25,6 +25,11 @@ class Solid:
     metal: float = 0.0
     rough: float = 0.5
     density: float = 1.24
+    # Свечение: цвет ("" — не светится) и яркость. Светодиод, неон, лампа.
+    emissive: str = ""
+    emissive_strength: float = 1.0
+    # Прозрачность стекла: 0 — плотное тело, 1 — чистое стекло.
+    transmission: float = 0.0
     visible: bool = True
     kind: str = "solid"
     op: str = ""

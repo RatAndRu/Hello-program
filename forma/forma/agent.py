@@ -27,6 +27,13 @@ DOCS_INDEX = """СПРАВКА ФОРМА 3D (кратко)
   имя = prism sides=n radius=r height=h
   имя = capsule radius=r height=h
   имя = hull [объекты] | hull points=[[x,y,z],...]
+  имя = heart width=60 depth=18 round=3          — сердце настоящей формы
+  имя = plus arm=60 thick=18 depth=14 round=2    — плюс/перекрестие
+  имя = sector radius=50 angle=90 [thickness=4] [up=верх|низ|обе]  — сектор шара
+        (90° — четвертинка, 180° — полусфера, 360° — шар; thickness — стенка)
+  имя = spiral radius=60 turns=3 wire=6 height=6 — плоская спираль-улитка
+  имя = rope length=200 diameter=20 strands=3 twist=55 — кручёная верёвка
+  имя = seven_seg text="21:38" height=54 depth=2 — светодиодные цифры (0-9 A-F : -)
 
 ТЕЛА ВРАЩЕНИЯ И РАЗВЁРТКИ (главное для посуды и кузовов)
   имя = lathe points=[[r,z],...] [segments=128] [fillet=r] [smooth=n]
@@ -36,6 +43,10 @@ DOCS_INDEX = """СПРАВКА ФОРМА 3D (кратко)
 
 БУЛЕВЫ
   имя = union [a, b]    имя = difference [основа, вычитаемое]    имя = intersect [a, b]
+  имя = fuse [a, b] radius=5 edges=вогнутые|все   — СВАРИТЬ: убирает шов на стыке.
+        Главный инструмент «одного объёма»: скругляет вогнутые рёбра в радиусе
+        radius. Для органики и корпусов всегда лучше union: детали перестают
+        выглядеть приставленными. radius ≈ 10–20 % от размера детали.
   имя = shell [a] thickness=t open=top|bottom|both|none
   имя = offset [a] delta=+2      имя = fillet [a] radius=r edges=convex|concave|all
   имя = chamfer [a] width=w edges=convex|concave|all  (плоская фаска 45°)
@@ -71,7 +82,12 @@ DOCS_INDEX = """СПРАВКА ФОРМА 3D (кратко)
 
 ПАРАМЕТРЫ, ЦВЕТ, ПРОВЕРКИ
   толщина = 4            (параметр; используется в выражениях: height=толщина*2)
-  color имя material=ceramic|metal|wood|plastic | color=#RRGGBB
+  color имя material=ceramic|metal|wood|plastic|glass|mirror|led|neon|lamp|screen
+  color имя #RRGGBB metal=0..1 rough=0..1 emissive=#RRGGBB emissive_strength=1..20
+  color имя ... transmission=0..1     — свечение (LED, неон, экран) и стекло
+        emissive — цвет свечения: в окне включается bloom, в GLB пишется
+        KHR_materials_emissive_strength. transmission — прозрачность стекла
+        (KHR_materials_transmission), в PNG-снимках тоже видно насквозь.
   show/hide имя
   check имя watertight | genus 1 | parts 1 | height 90..110 | size 80..100 80..100 90..110
   check имя volume 300..500 | mass 200..400 | wall 3..5 | flat_bottom 5.. | overhang ..20
