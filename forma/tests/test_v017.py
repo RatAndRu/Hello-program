@@ -180,9 +180,18 @@ class InterfaceTest(unittest.TestCase):
 
     def test_recipes_are_separate(self):
         recipes = self.app.split("const TOOL_RECIPES = [", 1)[1].split("function uniqueObjectName", 1)[0]
-        for title in ("Скрутка", "Изгиб", "Резьба: болт", "Резьба: гайка", "Фаска", "Облегчение"):
+        for title in ("Скрутка", "Изгиб", "Резьба: гайка", "Фаска", "Облегчение",
+                      "Отверстия сеткой", "Накатка", "Корпус с полостью",
+                      "Зеркальная пара", "Сечение", "Проба материала", "Паспорт детали"):
             self.assertIn(f"title: '{title}'", recipes)
-        self.assertGreaterEqual(recipes.count("title:"), 12)
+        self.assertGreaterEqual(recipes.count("title:"), 17)
+        # 0.21: приёмы с полями, а «Резьба: болт» убрана как дубль команды thread
+        self.assertIn("fields: [", recipes)
+        self.assertIn("build: (v) =>", recipes)
+        self.assertNotIn("title: 'Резьба: болт'", recipes)
+        # поля «сдвиг» у сетки отверстий и «канавок» у накатки
+        self.assertIn("label: 'сдвиг'", recipes)
+        self.assertIn("label: 'канавок'", recipes)
 
     def test_viewer_features(self):
         for name in ("setScene", "scenes", "setObjectPolygons", "objectPolygons",

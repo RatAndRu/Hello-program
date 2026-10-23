@@ -3821,94 +3821,294 @@ const TOOL_SHAPES = [
 const TOOL_RECIPES = [
   {
     title: 'Кружка',
-    desc: 'Корпус с полостью, дно и ручка — тремя строками; ручка не входит в стенку.',
-    lines: 'корпус = cylinder radius=34 height=95 r2=40 segments=128\n'
-      + 'полость = cylinder radius=30 height=89 r2=36 segments=128\n'
-      + 'полость = translate [полость] offset=[0,0,6]\n'
-      + 'кружка = difference [корпус, полость]\n'
-      + 'ручка = sweep path=[[33,0,24],[47,0,27],[55,0,50],[47,0,73],[37,0,77]] radius=4.6 smooth=10\n'
-      + 'кружка = union [кружка, ручка]\n'
-      + 'полость = cylinder radius=30 height=89 r2=36 segments=128\n'
-      + 'полость = translate [полость] offset=[0,0,6]\n'
-      + 'кружка = difference [кружка, полость]\n'
-      + 'color кружка #ece7df rough=0.35',
-  },
-  {
-    title: 'Надпись',
-    desc: 'Объёмный текст своим шрифтом — без сторонних файлов.',
-    lines: 'надпись = text "ПРИВЕТ" size=10 depth=2\ncolor надпись #e8c27a',
-  },
-  {
-    title: 'Скрутка',
-    desc: 'Брусок превращается в витую колонну: twist закручивает верх.',
-    lines: 'скрутка = box size=[40,40,200] round=3\nскрутка = twist [скрутка] angle=180 axis=z',
-  },
-  {
-    title: 'Изгиб',
-    desc: 'bend гнёт деталь по дуге — поручни, дуги, скобы.',
-    lines: 'дуга = box size=[24,160,240] round=5\nдуга = bend [дуга] angle=90',
-  },
-  {
-    title: 'Резьба: болт',
-    desc: 'Настоящая винтовая резьба на стержне с шестигранной головкой.',
-    lines: 'болт_резьба = thread diameter=10 length=24 pitch=1.5',
-  },
-  {
-    title: 'Резьба: гайка',
-    desc: 'Внутренняя резьба того же шага — гайка накручивается на болт.',
-    lines: 'гайка_резьба = thread diameter=17 length=7 pitch=1.5 internal=true\n'
-      + 'гайка_резьба = translate [гайка_резьба] offset=[26, 0, 0]',
-  },
-  {
-    title: 'Фаска',
-    desc: 'Скругление наружных рёбер настоящим радиусом в миллиметрах.',
-    lines: 'плита_фаска = box size=[60,40,20]\nплита_фаска = bevel [плита_фаска] radius=3',
-  },
-  {
-    title: 'Облегчение',
-    desc: 'Упрощение сетки с контролем отклонения — деталь легче для печати.',
-    lines: 'плита_лёгкая = box size=[60,40,20]\n'
-      + 'плита_лёгкая = simplify [плита_лёгкая] deviation=0.2',
-  },
-  {
-    title: 'Уклон',
-    desc: 'Технологический уклон стенок — деталь вынимается из формы.',
-    lines: 'плита_уклон = box size=[80,50,10]\nплита_уклон = draft [плита_уклон] angle=2',
-  },
-  {
-    title: 'Отверстия сеткой',
-    desc: 'Один вызов holes вместо десятка difference: сетка, шаг, зенковка.',
-    lines: 'панель_дыр = box size=[200,120,8] round=3\n'
-      + 'панель_дыр = holes [панель_дыр] grid=[4,3] diameter=8 pitch=[40,30]',
-  },
-  {
-    title: 'Разброс деталей',
-    desc: 'scatter раскладывает копии по площади с повтором через seed.',
-    lines: 'камень_разброс = rock size=[120,90,55] seed=3\n'
-      + 'камни = scatter [камень_разброс] count=24 area=[500,400] seed=7 scale=[0.7,1.3]',
-  },
-  {
-    title: 'Оболочка',
-    desc: 'hull обтягивает детали выпуклой оболочкой — кузова, скульптуры.',
-    lines: 'низ_оболочки = prism sides=6 radius=60 height=50\n'
-      + 'верх_оболочки = sphere radius=55 at=[0,0,90]\n'
-      + 'оболочка = hull objects=[низ_оболочки, верх_оболочки]',
-  },
-  {
-    title: 'Сечение, проба и паспорт',
-    desc: 'Проверка формы числами: контур сечения, материал в точке, паспорт детали.',
-    lines: 'деталь = cube_hole size=[60,60,20] hole=16\n'
-      + 'section деталь z=10\n'
-      + 'probe деталь x=0 y=0 z=10\n'
-      + 'passport деталь',
+    desc: 'Корпус, полость и ручка: ручка врезается в стенку, полость вычитается повторно — внутри сухо.',
+    fields: [
+      { k: 'd', label: '⌀', v: 68 },
+      { k: 'h', label: 'высота', v: 95 },
+      { k: 'wall', label: 'стенка', v: 4 },
+      { k: 'handle', label: 'ручка', v: true, kind: 'bool' },
+    ],
+    build: (v) => {
+      const r = rnum(v.d, 68) / 2;
+      const h = rnum(v.h, 95);
+      const w = Math.max(1.5, rnum(v.wall, 4));
+      const ri = Math.max(2, r - w);
+      const hi = Math.max(6, h - w * 1.5);
+      const out = `корпус = cylinder radius=${fnum(r)} height=${fnum(h)} r2=${fnum(r * 1.18)} segments=128\n`
+        + `полость = cylinder radius=${fnum(ri)} height=${fnum(hi)} r2=${fnum(ri * 1.2)} segments=128\n`
+        + `полость = translate [полость] offset=[0,0,${fnum(w * 1.5)}]\n`
+        + `кружка = difference [корпус, полость]\n`;
+      if (!v.handle) return out + 'color кружка #ece7df rough=0.35';
+      const dx = r - 1;
+      return out
+        + `ручка = sweep path=[[${fnum(dx)},0,${fnum(h * 0.25)}],[${fnum(dx + 14)},0,${fnum(h * 0.28)}],`
+        + `[${fnum(dx + 22)},0,${fnum(h * 0.52)}],[${fnum(dx + 14)},0,${fnum(h * 0.77)}],`
+        + `[${fnum(dx + 3)},0,${fnum(h * 0.81)}]] radius=4.6 smooth=10\n`
+        + 'кружка = union [кружка, ручка]\n'
+        + `полость = cylinder radius=${fnum(ri)} height=${fnum(hi)} r2=${fnum(ri * 1.2)} segments=128\n`
+        + `полость = translate [полость] offset=[0,0,${fnum(w * 1.5)}]\n`
+        + 'кружка = difference [кружка, полость]\n'
+        + 'color кружка #ece7df rough=0.35';
+    },
   },
   {
     title: 'Накатка',
-    desc: 'knurl режет рифление по окружности — ручки, винты, крышки.',
-    lines: 'заготовка = cylinder radius=16 height=70\n'
-      + 'заготовка = knurl [заготовка] count=24 depth=1',
+    desc: 'Рифление по окружности: число канавок и глубина. Ручки, винты, крышки.',
+    fields: [
+      { k: 'd', label: '⌀', v: 32 },
+      { k: 'h', label: 'высота', v: 70 },
+      { k: 'count', label: 'канавок', v: 24 },
+      { k: 'depth', label: 'глубина', v: 1 },
+    ],
+    build: (v) => `заготовка = cylinder radius=${fnum(rnum(v.d, 32) / 2)} height=${fnum(rnum(v.h, 70))} segments=96\n`
+      + `заготовка = knurl [заготовка] count=${Math.max(6, Math.round(rnum(v.count, 24)))} depth=${fnum(rnum(v.depth, 1))}\n`
+      + 'color заготовка #b9bec6 metal=0.6 rough=0.35',
+  },
+  {
+    title: 'Скрутка',
+    desc: 'Брусок превращается в витую колонну: twist закручивает верх на заданный угол.',
+    fields: [
+      { k: 'w', label: 'ширина', v: 40 },
+      { k: 'h', label: 'высота', v: 200 },
+      { k: 'angle', label: 'угол', v: 180 },
+    ],
+    build: (v) => `скрутка = box size=[${fnum(rnum(v.w, 40))},${fnum(rnum(v.w, 40))},${fnum(rnum(v.h, 200))}] round=3\n`
+      + `скрутка = twist [скрутка] angle=${fnum(rnum(v.angle, 180))} axis=z`,
+  },
+  {
+    title: 'Изгиб',
+    desc: 'bend гнёт деталь по дуге — поручни, дуги, скобы. Угол и сечение свои.',
+    fields: [
+      { k: 'w', label: 'ширина', v: 24 },
+      { k: 'l', label: 'длина', v: 160 },
+      { k: 'h', label: 'размах', v: 240 },
+      { k: 'angle', label: 'угол', v: 90 },
+    ],
+    build: (v) => `дуга = box size=[${fnum(rnum(v.w, 24))},${fnum(rnum(v.l, 160))},${fnum(rnum(v.h, 240))}] round=5\n`
+      + `дуга = bend [дуга] angle=${fnum(rnum(v.angle, 90))}`,
+  },
+  {
+    title: 'Надпись',
+    desc: 'Объёмный текст своим шрифтом — без сторонних файлов и шрифтов в системе.',
+    fields: [
+      { k: 'word', label: 'текст', v: 'ПРИВЕТ', kind: 'raw' },
+      { k: 'size', label: 'высота', v: 10 },
+      { k: 'depth', label: 'толщина', v: 2 },
+    ],
+    build: (v) => `надпись = text "${String(v.word || 'ПРИВЕТ').replace(/"/g, '')}" `
+      + `size=${fnum(rnum(v.size, 10))} depth=${fnum(rnum(v.depth, 2))}\n`
+      + 'color надпись #e8c27a',
+  },
+  {
+    title: 'Резьба: гайка',
+    desc: 'Внутренняя резьба: гайка накручивается на болт того же шага.',
+    fields: [
+      { k: 'd', label: '⌀', v: 17 },
+      { k: 'h', label: 'высота', v: 7 },
+      { k: 'pitch', label: 'шаг', v: 1.5 },
+    ],
+    build: (v) => `гайка_резьба = thread diameter=${fnum(rnum(v.d, 17))} length=${fnum(rnum(v.h, 7))} `
+      + `pitch=${fnum(rnum(v.pitch, 1.5))} internal=true`,
+  },
+  {
+    title: 'Фаска',
+    desc: 'Снимает наружные рёбра: на простых деталях — радиусом, на сложных — фаской 45°.',
+    fields: [
+      { k: 'size', label: 'размер', v: '60,40,20', kind: 'vec' },
+      { k: 'radius', label: 'фаска', v: 3 },
+      { k: 'mode', label: 'режим', v: 'авто', kind: 'raw' },
+    ],
+    build: (v) => `плита_фаска = box size=[${rvec(v.size, [60, 40, 20]).join(', ')}]\n`
+      + `плита_фаска = bevel [плита_фаска] radius=${fnum(rnum(v.radius, 3))} mode=${v.mode || 'авто'}`,
+  },
+  {
+    title: 'Облегчение',
+    desc: 'Упрощение сетки с контролем отклонения — деталь легче для печати и рендера.',
+    fields: [
+      { k: 'size', label: 'размер', v: '60,40,20', kind: 'vec' },
+      { k: 'deviation', label: 'допуск', v: 0.2 },
+    ],
+    build: (v) => `плита_лёгкая = box size=[${rvec(v.size, [60, 40, 20]).join(', ')}]\n`
+      + `плита_лёгкая = simplify [плита_лёгкая] deviation=${fnum(rnum(v.deviation, 0.2))}`,
+  },
+  {
+    title: 'Уклон',
+    desc: 'Технологический уклон стенок — деталь вынимается из формы без поднутрений.',
+    fields: [
+      { k: 'size', label: 'размер', v: '80,50,10', kind: 'vec' },
+      { k: 'angle', label: 'угол', v: 2 },
+    ],
+    build: (v) => `плита_уклон = box size=[${rvec(v.size, [80, 50, 10]).join(', ')}]\n`
+      + `плита_уклон = draft [плита_уклон] angle=${fnum(rnum(v.angle, 2))}`,
+  },
+  {
+    title: 'Отверстия сеткой',
+    desc: 'Один вызов holes вместо десятка difference: сетка, шаг, сдвиг сетки по детали.',
+    fields: [
+      { k: 'size', label: 'размер', v: '200,120,8', kind: 'vec' },
+      { k: 'grid', label: 'сетка', v: '4,3', kind: 'vec' },
+      { k: 'diameter', label: '⌀', v: 8 },
+      { k: 'pitch', label: 'шаг', v: '40,30', kind: 'vec' },
+      { k: 'offset', label: 'сдвиг', v: '0,0', kind: 'vec' },
+    ],
+    build: (v) => {
+      const grid = rvec(v.grid, [4, 3]);
+      const pitch = rvec(v.pitch, [40, 30]);
+      const offset = rvec(v.offset, [0, 0]);
+      let line = `панель_дыр = holes [панель_дыр] grid=[${grid.join(', ')}] `
+        + `diameter=${fnum(rnum(v.diameter, 8))} pitch=[${pitch.join(', ')}]`;
+      if (Math.abs(offset[0]) > 1e-9 || Math.abs(offset[1] || 0) > 1e-9) {
+        line += ` offset=[${offset.join(', ')}]`;
+      }
+      return `панель_дыр = box size=[${rvec(v.size, [200, 120, 8]).join(', ')}] round=3\n` + line;
+    },
+  },
+  {
+    title: 'Разброс деталей',
+    desc: 'scatter раскладывает копии по площади; seed повторяет раскладку.',
+    fields: [
+      { k: 'count', label: 'штук', v: 24 },
+      { k: 'area', label: 'площадь', v: '500,400', kind: 'vec' },
+      { k: 'scale', label: 'масштаб', v: '0.7,1.3', kind: 'vec' },
+      { k: 'seed', label: 'seed', v: 7 },
+    ],
+    build: (v) => `камень_разброс = rock size=[120,90,55] seed=3\n`
+      + `камни = scatter [камень_разброс] count=${Math.max(2, Math.round(rnum(v.count, 24)))} `
+      + `area=[${rvec(v.area, [500, 400]).join(', ')}] seed=${Math.round(rnum(v.seed, 7))} `
+      + `scale=[${rvec(v.scale, [0.7, 1.3]).join(', ')}]`,
+  },
+  {
+    title: 'Выпуклая оболочка',
+    desc: 'hull обтягивает детали оболочкой — кузова, скульптуры, капсулы.',
+    fields: [
+      { k: 'r', label: 'радиус', v: 60 },
+      { k: 'h', label: 'высота', v: 50 },
+      { k: 'top', label: 'верх', v: 90 },
+    ],
+    build: (v) => `низ_оболочки = prism sides=6 radius=${fnum(rnum(v.r, 60))} height=${fnum(rnum(v.h, 50))}\n`
+      + `верх_оболочки = sphere radius=${fnum(rnum(v.r, 60) * 0.92)} at=[0,0,${fnum(rnum(v.top, 90))}]\n`
+      + 'оболочка = hull objects=[низ_оболочки, верх_оболочки]',
+  },
+  {
+    title: 'Корпус с полостью',
+    desc: 'shell выдалбливает деталь с заданной стенкой и открытым верхом — корпус, ящик, лоток.',
+    fields: [
+      { k: 'size', label: 'размер', v: '120,80,50', kind: 'vec' },
+      { k: 'thickness', label: 'стенка', v: 3 },
+      { k: 'open', label: 'открыт', v: 'top', kind: 'raw' },
+    ],
+    build: (v) => `корпус_полый = box size=[${rvec(v.size, [120, 80, 50]).join(', ')}] round=4\n`
+      + `корпус_полый = shell [корпус_полый] thickness=${fnum(rnum(v.thickness, 3))} open=${v.open || 'top'}`,
+  },
+  {
+    title: 'Зеркальная пара',
+    desc: 'mirror_copy оставляет деталь и добавляет её отражение — парные кронштейны, ручки.',
+    fields: [
+      { k: 'size', label: 'размер', v: '30,20,60', kind: 'vec' },
+      { k: 'plane', label: 'плоскость', v: 'x', kind: 'raw' },
+      { k: 'gap', label: 'зазор', v: 0 },
+    ],
+    build: (v) => {
+      const size = rvec(v.size, [30, 20, 60]);
+      const plane = (v.plane || 'x').toLowerCase();
+      const gap = rnum(v.gap, 0);
+      const at = [0, 0, 0];
+      at[Math.max(0, 'xyz'.indexOf(plane))] = size[Math.max(0, 'xyz'.indexOf(plane))] / 2 + gap / 2;
+      return `половина = box size=[${size.join(', ')}] round=3 at=[${at.map(fnum).join(',')}]\n`
+        + `пара = mirror_copy [половина] plane=${plane} gap=${fnum(gap)}`;
+    },
+  },
+  {
+    title: 'Сечение',
+    desc: 'section показывает контур разреза на заданной высоте — видно стенки и полости.',
+    fields: [
+      { k: 'z', label: 'высота Z', v: 10 },
+    ],
+    build: (v) => 'деталь_сечения = cube_hole size=[60,60,20] hole=16\n'
+      + `section деталь_сечения z=${fnum(rnum(v.z, 10))}`,
+  },
+  {
+    title: 'Проба материала',
+    desc: 'probe отвечает, есть ли материал в точке — проверка стенки и полости.',
+    fields: [
+      { k: 'x', label: 'X', v: 0 },
+      { k: 'y', label: 'Y', v: 0 },
+      { k: 'z', label: 'Z', v: 10 },
+    ],
+    build: (v) => 'деталь_пробы = cube_hole size=[60,60,20] hole=16\n'
+      + `probe деталь_пробы x=${fnum(rnum(v.x, 0))} y=${fnum(rnum(v.y, 0))} z=${fnum(rnum(v.z, 10))}`,
+  },
+  {
+    title: 'Паспорт детали',
+    desc: 'passport выводит габарит, объём, массу, число треугольников и герметичность.',
+    fields: [],
+    build: () => 'деталь_паспорта = cube_hole size=[60,60,20] hole=16\n'
+      + 'passport деталь_паспорта',
   },
 ];
+
+/** Число из поля рецепта: пустое или мусор — значение по умолчанию. */
+function rnum(raw, fallback) {
+  const n = Number(String(raw).replace(',', '.').replace(/\s+/g, ''));
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** Вектор из поля рецепта: «40, 30» → [40, 30]. */
+function rvec(raw, fallback) {
+  const nums = String(raw).split(/[;,\s]+/).filter(Boolean).map(Number).filter(Number.isFinite);
+  return nums.length ? nums : fallback;
+}
+
+/** Число в сценарии без хвоста нулей: 34.5, 70, 0.35. */
+function fnum(x) {
+  const n = Number(x);
+  if (!Number.isFinite(n)) return '0';
+  return String(Math.round(n * 1000) / 1000);
+}
+
+/** Поля рецепта — те же, что у фигур: подпись + поле ввода. */
+function recipeFields(params) {
+  const wrap = document.createElement('div');
+  wrap.className = 'tool-fields';
+  (params || []).forEach((p) => {
+    const label = document.createElement('label');
+    label.className = 'tool-field';
+    const caption = document.createElement('span');
+    caption.textContent = p.label;
+    let input;
+    if (p.kind === 'bool') {
+      input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = p.v !== false;
+    } else {
+      input = document.createElement('input');
+      input.type = 'text';
+      input.value = String(p.v);
+      if (p.kind !== 'vec' && p.kind !== 'raw') input.inputMode = 'decimal';
+      input.style.width = p.kind === 'vec' || p.kind === 'raw' ? '124px' : '58px';
+    }
+    input.dataset.key = p.k;
+    label.append(caption, input);
+    wrap.appendChild(label);
+  });
+  return wrap;
+}
+
+/** Значения полей рецепта в виде объекта. */
+function recipeValues(recipe, card) {
+  const values = {};
+  (recipe.fields || []).forEach((p) => {
+    const input = card.querySelector(`[data-key="${p.k}"]`);
+    if (!input) return;
+    values[p.k] = p.kind === 'bool' ? input.checked : input.value.trim();
+  });
+  return values;
+}
+
+function addRecipeTool(recipe, card) {
+  const lines = recipe.build(recipeValues(recipe, card));
+  insertTool(uniqueExample(lines, currentScript()), recipe.title);
+}
 
 function uniqueObjectName(name, script) {
   const used = new Set(String(script).split('\n')
@@ -4081,20 +4281,27 @@ function renderTools() {
     card.className = 'tool-card tool-recipe';
     const head = document.createElement('div');
     head.className = 'tool-card-head';
-    head.innerHTML = `<b>${escapeHtml(recipe.title)}</b><code>сценарий</code>`;
+    head.innerHTML = `<b>${escapeHtml(recipe.title)}</b><code>приём</code>`;
     card.appendChild(head);
     const desc = document.createElement('div');
     desc.className = 'tool-desc';
     desc.textContent = recipe.desc;
     card.appendChild(desc);
+    const fields = recipeFields(recipe.fields);
+    if (fields.children.length) card.appendChild(fields);
     const pre = document.createElement('pre');
-    pre.textContent = recipe.lines;
     card.appendChild(pre);
-    card.dataset.search = [recipe.title, recipe.desc, recipe.lines].join(' ').toLowerCase();
+    const refresh = () => {
+      pre.textContent = recipe.build(recipeValues(recipe, card));
+    };
+    fields.addEventListener('input', refresh);
+    refresh();
+    card.dataset.search = [recipe.title, recipe.desc,
+      ...(recipe.fields || []).map((p) => p.label)].join(' ').toLowerCase();
     const btn = document.createElement('button');
     btn.className = 'small primary';
     btn.textContent = 'Вставить';
-    btn.addEventListener('click', () => insertTool(recipe.lines, recipe.title));
+    btn.addEventListener('click', () => addRecipeTool(recipe, card));
     card.appendChild(btn);
     rgrid.appendChild(card);
   });

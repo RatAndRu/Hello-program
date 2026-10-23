@@ -1008,7 +1008,10 @@ button.mini:disabled { opacity: .38; cursor: default; }
   outline: 0;
 }
 .tool-card .small { justify-self: start; }
-.tool-recipe pre { margin: 0; font-size: 10.5px; line-height: 1.5; color: #bfe6d6; white-space: pre-wrap; }
+.tool-recipe pre {
+  margin: 0; font-size: 10.5px; line-height: 1.5; color: #bfe6d6;
+  white-space: pre-wrap; max-height: 118px; overflow: auto;
+}
 .tool-recipe { display: grid; gap: 6px; }
 
 /* контекстное меню по правой кнопке на предмете */
