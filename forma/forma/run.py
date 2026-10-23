@@ -36,6 +36,7 @@ from . import ops_hardware  # noqa: F401,E402
 from . import ops_kit  # noqa: F401,E402
 from . import ops_assembly  # noqa: F401,E402
 from . import ops_parts  # noqa: F401,E402
+from . import ops_fill  # noqa: F401,E402
 
 
 # Команды, которые не меняют ни форму, ни видимость: в анимации сборки

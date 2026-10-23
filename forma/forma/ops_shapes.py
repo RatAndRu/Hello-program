@@ -563,41 +563,114 @@ def ring(a, name):
 #  Яйцо
 # --------------------------------------------------------------------------- #
 @op("egg", aliases=("яйцо", "яичко", "овоид"), category="Примитивы",
-    summary="Яйцо (овоид): тело вращения с плавной асимметрией — один конец "
-            "шире и тупее, другой уже и острее. proportion задаёт «яйцевидность»: "
-            "0 — сфера, 0.5 — куриное яйцо, 1 — острый овал.",
-    example="яйцо = egg height=60 diameter=42 proportion=0.5\n"
-            "капля = egg height=80 diameter=40 proportion=0.9",
+    summary="Настоящее яйцо: широкий тупой низ, узкий острый верх, самая широкая "
+            "точка ниже середины. proportion — насколько яйцо «яйцевидное»: "
+            "0 — симметричный овоид, 0.5 — куриное яйцо, 1 — острое.",
+    example="яйцо = egg height=60 diameter=42 proportion=0.55\n"
+            "перепелиное = egg height=32 diameter=26 proportion=0.6",
     params={"height": "высота, мм (60)", "diameter": "наибольший диаметр, мм (42)",
-            "proportion": "яйцевидность 0..1 (0.5)",
+            "proportion": "яйцевидность 0..1 (0.55)",
             "sharp": "какой конец острый: верх или низ (верх)",
             "segments": "сегментов по кругу (по размеру)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def egg(a, name):
     height = float(a.num("height", 60.0, minv=1.0))
     diameter = float(a.num("diameter", 42.0, minv=1.0))
-    prop = float(a.num("proportion", 0.5, minv=0.0, maxv=1.0) or 0.0)
+    prop = float(a.num("proportion", 0.55, minv=0.0, maxv=1.0) or 0.0)
     sharp = (a.text("sharp") or "верх").strip().lower()
     if sharp in ("bottom", "низ", "вниз", "снизу"):
         sharp = "низ"
     r_max = diameter / 2.0
-    if r_max >= height / 2.0 + r_max * 0.2:
-        pass
-    segments = _segments(a.int("segments", None, minv=16, maxv=256), r_max)
-    steps = max(24, int(segments * 0.6))
-    prof = [(0.0, 0.0)]
-    for i in range(1, steps):
-        t = i / steps                     # от низа к верху
-        # x = sin(pi*t) даёт ширину, деформированную к одному концу
-        width = math.sin(math.pi * t) ** (1.0 + prop * 0.9)
-        if sharp == "верх":
-            width *= (1.0 - 0.35 * prop * t)      # верх уже
-        else:
-            width *= (1.0 - 0.35 * prop * (1.0 - t))
-        prof.append((max(0.0, r_max * width), height * t))
-    prof.append((0.0, height))
+    if r_max * 2.0 >= height * 1.02:
+        raise GeometryError(
+            f"Яйцо не может быть шире своей высоты: диаметр {diameter:g} при высоте {height:g}.",
+            hint="Высота яйца примерно в 1.35–1.5 раза больше диаметра.")
+    segments = _segments(a.int("segments", None, minv=16, maxv=256),
+                         max(48, min(160, int(r_max * 3))))
+    steps = max(28, int(segments * 0.75))
+
+    # Самая широкая точка: у куриного яйца она ниже середины (≈42 % высоты),
+    # у симметричного овоида — ровно посередине.
+    zw = height * (0.5 - 0.06 * prop)
+    prof: list[tuple[float, float]] = [(0.0, 0.0)]
+    # Низ — четверть эллипса: широкое круглое дно без «шипа» в полюсе.
+    n1 = max(12, int(steps * zw / height * 1.6))
+    for i in range(1, n1 + 1):
+        t = i / n1
+        prof.append((r_max * math.sqrt(max(0.0, 1.0 - (1.0 - t) ** 2)), zw * t))
+    # Верх — кубическая кривая от экватора до острого полюса. Касательная
+    # в начале вертикальная (гладкий стык), у полюса — наклонная: яйцо
+    # сужается плавно, а не заканчивается куполом.
+    u2 = 0.5523 - 0.0523 * prop        # радиус второй контрольной точки
+    v2 = 1.0 - 0.10 * prop             # её высота (1.0 — как у эллипса)
+    p0 = (r_max, zw)
+    p1 = (r_max, zw + (0.5523 - 0.2523 * prop) * (height - zw))
+    p2 = (u2 * r_max, zw + v2 * (height - zw))
+    p3 = (0.0, height)
+    n2 = max(16, int(steps * (height - zw) / height * 1.6))
+    for i in range(1, n2 + 1):
+        t = i / n2
+        mt = 1.0 - t
+        r = (mt ** 3 * p0[0] + 3 * mt * mt * t * p1[0]
+             + 3 * mt * t * t * p2[0] + t ** 3 * p3[0])
+        z = (mt ** 3 * p0[1] + 3 * mt * mt * t * p1[1]
+             + 3 * mt * t * t * p2[1] + t ** 3 * p3[1])
+        prof.append((max(0.0, r), z))
+    if sharp == "низ":                       # переворачиваем: острый конец вниз
+        prof = [(r, height - z) for r, z in prof]
+        prof = sorted(prof, key=lambda p: p[1])
+        prof[0] = (0.0, 0.0)
+        prof[-1] = (0.0, height)
     solid = _revolve(prof, segments, "яйца")
     return make_solid(a.scene, name, _placed(a, solid), a, kind="egg")
+
+
+@op("drop", aliases=("капля", "дроп", "слеза", "teardrop"), category="Примитивы",
+    summary="Капля: круглое дно и плавно сходящий на нет хвост — вода, слеза, стекло. "
+            "tip задаёт остроту: 0 — почти сфера, 1 — длинная острая капля.",
+    example="капля = drop radius=14 height=40 tip=0.5\n"
+            "стекло = drop radius=9 height=52 tip=0.8",
+    params={"radius": "радиус круглой части, мм (14)",
+            "height": "полная высота, мм (36)",
+            "tip": "острота хвоста 0…1 (0.5)",
+            "segments": "сегментов по кругу (по размеру)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def drop(a, name):
+    radius = float(a.num("radius", 14.0, minv=0.5))
+    height = float(a.num("height", 36.0, minv=1.0))
+    tip = float(a.num("tip", 0.5, minv=0.0, maxv=1.0) or 0.0)
+    if height < radius * 1.15:
+        raise GeometryError(
+            f"Высота капли {height:g} мм слишком мала для радиуса {radius:g} мм.",
+            hint="Капля — шар с вытянутым хвостом: height от 1.2 до 4 радиусов.")
+    segments = _segments(a.int("segments", None, minv=16, maxv=256),
+                         max(48, min(160, int(radius * 3))))
+    steps = max(40, int(segments * 0.9))
+
+    # низ — полушарие: от полюса до экватора
+    prof: list[tuple[float, float]] = [(0.0, 0.0)]
+    n1 = max(16, steps // 3)
+    for i in range(1, n1 + 1):
+        t = i / n1
+        prof.append((radius * math.sqrt(max(0.0, 1.0 - (1.0 - t) ** 2)), radius * t))
+    # хвост — кубическая кривая: в начале вертикальная касательная (гладкий
+    # стык с шаром), в конце точка. Чем больше tip, тем ниже и левее опора.
+    span = height - radius
+    p0 = (radius, radius)
+    p1 = (radius, radius + 0.45 * span)
+    p2 = (radius * (0.46 - 0.24 * tip), radius + (0.80 - 0.10 * tip) * span)
+    p3 = (0.0, height)
+    n2 = max(24, int(steps * 0.7))
+    for i in range(1, n2 + 1):
+        t = i / n2
+        mt = 1.0 - t
+        r = (mt ** 3 * p0[0] + 3 * mt * mt * t * p1[0]
+             + 3 * mt * t * t * p2[0] + t ** 3 * p3[0])
+        z = (mt ** 3 * p0[1] + 3 * mt * mt * t * p1[1]
+             + 3 * mt * t * t * p2[1] + t ** 3 * p3[1])
+        prof.append((max(0.0, r), z))
+    solid = _revolve(prof, segments, "капли")
+    return make_solid(a.scene, name, _placed(a, solid), a, kind="drop")
 
 
 # --------------------------------------------------------------------------- #
@@ -674,7 +747,186 @@ def hemisphere(a, name):
         raise GeometryError("Полусфера: mode=купол или mode=миска.")
     wall = float(a.num("wall", 4.0, minv=0.2))
     rim_w = float(a.num("rim", 0.0, minv=0.0) or 0.0)
-    segments = _segments(a.int("segments", None, minv=16, maxv=256), radius)
+    segments = _segments(a.int("segments", None, minv=16, maxv=256),
+                         max(48, min(160, int(radius * 3))))
+    steps = max(16, int(segments * 0.6))
+    if mode == "купол":
+        prof = [(0.0, 0.0)]
+        for i in range(1, steps + 1):
+            ang = math.pi / 2.0 * i / steps
+            prof.append((radius * math.sin(ang), radius * math.cos(ang)))
+        prof.append((radius, 0.0))
+        # закрываем плоское дно
+        prof = [(0.0, 0.0)] + [(p[0], p[1]) for p in prof[1:]]
+        solid = _revolve(prof, segments, "купол")
+        # купол стоит плоско: дно — плоскость z=0, вершина вверху
+        return make_solid(a.scene, name, _placed(a, solid), a, kind="hemisphere")
+    # миска: внешняя полусфера + кромка, внутренняя — со стенкой
+    if wall >= radius * 0.8:
+        raise GeometryError("Стенка миски слишком толстая для этого радиуса.")
+    outer = [(0.0, 0.0)]
+    for i in range(1, steps + 1):
+        ang = math.pi / 2.0 * i / steps
+        outer.append((radius * math.sin(ang), radius * math.cos(ang)))
+    outer.append((0.0, radius))
+    solid = _revolve(outer, segments, "миска")
+    inner_r = radius - wall
+    inner = [(0.0, wall)]
+    for i in range(1, steps + 1):
+        ang = math.pi / 2.0 * i / steps
+        inner.append((inner_r * math.sin(ang), wall + inner_r * math.cos(ang)))
+    cavity = _revolve(inner, segments, "полость миски")
+    solid = solid - cavity
+    if rim_w > 0:
+        rim_w = min(rim_w, radius * 0.25)
+        band = (mf.Manifold.cylinder(float(wall * 1.4), float(radius + rim_w),
+                                     float(radius + rim_w), int(segments))
+                - mf.Manifold.cylinder(float(wall * 1.4 + 1.0), float(radius - wall * 0.5),
+                                       float(radius - wall * 0.5), int(segments))
+                .translate((0.0, 0.0, -0.5)))
+        solid = solid + band.translate((0, 0, wall * 0.15))
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="hemisphere")
+    out.notes.append(f"миска R{radius:g}, стенка {wall:g} мм")
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Облако / вата
+# --------------------------------------------------------------------------- #
+@op("cloud", aliases=("облако", "вата", "облачко", "туча", "cloud_puff"),
+    category="Примитивы",
+    summary="Облако-вата: несколько сфер, сплавленных в одно пушистое тело. "
+            "size — габарит, puffs — сколько шаров, seed повторяет форму, "
+            "flat — подрезанное снизу дно, чтобы облако лежало на полке.",
+    example="облако = cloud size=[180,90,70] puffs=9 seed=3\n"
+            "вата = cloud size=[120,120,90] puffs=12 seed=7 flat=нет",
+    params={"size": "габарит [x,y,z], мм (160,90,70)",
+            "puffs": "число сфер (8)",
+            "seed": "зерно формы (1)",
+            "rough": "разброс размеров 0..1 (0.35)",
+            "flat": "плоское дно да/нет (да)",
+            "segments": "сегментов сферы (по размеру)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def cloud(a, name):
+    size = a.vec("size", 3, default=(160.0, 90.0, 70.0))
+    sx, sy, sz = float(size[0]), float(size[1]), float(size[2])
+    puffs = int(a.num("puffs", 8, minv=3, maxv=40) or 8)
+    seed = int(a.num("seed", 1, minv=0) or 0)
+    rough = float(a.num("rough", 0.35, minv=0.0, maxv=1.0) or 0.0)
+    flat = a.boolean("flat", True)
+    seg = int(a.num("segments", max(12, min(32, int(8 + max(sx, sy, sz) / 8))),
+                    minv=8, maxv=64) or 20)
+    rng = np.random.default_rng(seed)
+    # Шары должны ПЕРЕКРЫВАТЬСЯ, иначе это не облако, а гроздь шариков.
+    # Кладём «грядку» перекрывающихся сфер по осям X и Y, сверху — бугры.
+    unit = min(sx, sy, sz)
+    base_r = unit * 0.45
+    parts = []
+    # нижний ряд: 3–5 шаров вдоль X, чтобы облако было вытянутым, а не шаром
+    nx = max(3, min(6, int(round(sx / max(unit * 0.7, 1.0))) + 1))
+    for i in range(nx):
+        t = (i / (nx - 1)) - 0.5 if nx > 1 else 0.0
+        r = base_r * (1.0 - 0.10 * abs(t) * 2.0)
+        parts.append(mf.Manifold.sphere(r, seg).translate((sx * 0.42 * t, 0.0, r * 0.55)))
+    # средний слой: бугры сбоку и сверху со случайным смещением
+    bumps = max(3, puffs - nx)
+    for i in range(bumps):
+        ang = 2.0 * math.pi * i / bumps + float(rng.uniform(-0.3, 0.3))
+        rad = float(rng.uniform(0.45, 0.72))
+        k = 1.0 - rough * 0.25 * float(rng.random())
+        r = base_r * 0.82 * k
+        px = math.cos(ang) * sx * 0.30 * rad
+        py = math.sin(ang) * sy * 0.34 * rad
+        pz = base_r * (0.55 + 0.45 * float(rng.random()))
+        parts.append(mf.Manifold.sphere(r, seg).translate((px, py, pz)))
+    solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
+    if solid.is_empty():
+        raise GeometryError("Облако не собралось: увеличьте size или число сфер.")
+    bb = solid.bounding_box()
+    solid = solid.translate((0.0, 0.0, -bb[2]))
+    if flat:
+        cutter = mf.Manifold.cube([sx * 4.0, sy * 4.0, sz * 2.0], True)
+        cutter = cutter.translate((0.0, 0.0, -sz * 0.10 - sz))
+        solid = solid - cutter
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="cloud")
+    out.notes.append(f"облако из {puffs} сфер, seed {seed}")
+    return out
+# --------------------------------------------------------------------------- #
+#  Арка (полукольцо)
+# --------------------------------------------------------------------------- #
+@op("arch", aliases=("арка", "полукольцо", "дуга", "archway"), category="Примитивы",
+    summary="Арка — половина кольца с прямоугольным сечением: проём окна, "
+            "дверной проём, тоннель. Угол задаётся (180° — полукольцо), "
+            "сечение — шириной и толщиной, торцы можно скруглить.",
+    example="арка = arch radius=200 width=60 thickness=40 angle=180\n"
+            "тоннель = arch radius=160 width=30 thickness=25 angle=120",
+    params={"radius": "радиус по средней линии, мм (200)",
+            "width": "ширина сечения вбок (радиально), мм (60)",
+            "thickness": "толщина по оси, мм (40)",
+            "angle": "угол дуги, градусы (180)",
+            "round": "скругление торцов, мм (0)",
+            "segments": "сегментов по дуге (по размеру)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def arch(a, name):
+    radius = float(a.num("radius", 200.0, minv=2.0))
+    width = float(a.num("width", 60.0, minv=1.0))
+    thickness = float(a.num("thickness", 40.0, minv=1.0))
+    angle = float(a.num("angle", 180.0, minv=5.0, maxv=360.0) or 180.0)
+    round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    if width >= radius * 1.9:
+        raise GeometryError("Ширина сечения больше диаметра арки.",
+                            hint="width должна быть меньше 2·radius.")
+    r_in = max(0.2, radius - width / 2.0)
+    r_out = radius + width / 2.0
+    round_r = min(round_r, width * 0.45, thickness * 0.45)
+    if round_r > 0.05:
+        prof = _rounded_rect(r_in, r_out, -thickness / 2.0, thickness / 2.0, round_r, steps=4)
+    else:
+        prof = np.array([[r_in, -thickness / 2.0], [r_out, -thickness / 2.0],
+                         [r_out, thickness / 2.0], [r_in, thickness / 2.0]])
+    segments = _segments(a.int("segments", None, minv=8, maxv=360),
+                         max(radius, width) * 2.0)
+    segments = max(6, int(round(segments * angle / 360.0)) + 2)
+    solid = mf.Manifold.revolve(mf.CrossSection([prof]), segments, angle)
+    # арка стоит на полу, как дверной проём: плоскость дуги — XZ,
+    # толщина — по Y, торцы опираются на z = 0
+    solid = solid.rotate([90.0, 0.0, 0.0])
+    at = a.vec("at", 3, default=(0, 0, 0))
+    solid = anchor(solid, at, a.boolean("center", False))
+    out = make_solid(a.scene, name, solid, a, kind="arch")
+    out.notes.append(f"дуга {angle:g}°, радиус {radius:g}, сечение {width:g}×{thickness:g}")
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Полусфера и миска
+# --------------------------------------------------------------------------- #
+@op("hemisphere", aliases=("полусфера", "полушар", "миска", "чаша", "bowl"),
+    category="Примитивы",
+    summary="Полусфера: выпуклая (купол) или вогнутая миска со стенкой. "
+            "Купол — половина шара со ровным сечением; миска — та же половина, "
+            "выдолбленная с заданной толщиной стенки и кромкой.",
+    example="купол = hemisphere radius=60\n"
+            "миска = hemisphere radius=70 mode=миска wall=4",
+    params={"radius": "радиус, мм (50)",
+            "mode": "купол (выпуклая) или миска (вогнутая); dome/bowl тоже",
+            "wall": "толщина стенки миски, мм (4)",
+            "rim": "ширина кромки бортика, мм (0 — без отворота)",
+            "segments": "сегментов по кругу (по размеру)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def hemisphere(a, name):
+    radius = float(a.num("radius", 50.0, minv=1.0))
+    mode = (a.text("mode") or "купол").strip().lower()
+    if mode in ("dome", "купол", "выпуклая", "верх"):
+        mode = "купол"
+    elif mode in ("bowl", "миска", "чаша", "вогнутая"):
+        mode = "миска"
+    else:
+        raise GeometryError("Полусфера: mode=купол или mode=миска.")
+    wall = float(a.num("wall", 4.0, minv=0.2))
+    rim_w = float(a.num("rim", 0.0, minv=0.0) or 0.0)
+    segments = _segments(a.int("segments", None, minv=16, maxv=256),
+                         max(48, min(160, int(radius * 3))))
     steps = max(16, int(segments * 0.6))
     if mode == "купол":
         prof = [(0.0, 0.0)]

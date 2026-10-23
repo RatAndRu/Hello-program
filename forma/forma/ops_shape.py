@@ -422,18 +422,26 @@ def _rotate_about(m, axis: str, angle: float, center) -> mf.Manifold:
 
 
 @op("array", aliases=("массив", "копии", "повторить", "размножить"), category="Массивы и преобразования",
-    summary="Создаёт копии объекта: линейно, по кругу или сеткой.",
-    example='стойка = cylinder radius=6 height=60\nстойки = array [стойка] count=4 mode=radial around=z center=[0,0,0]',
+    summary="Создаёт копии объекта: линейно, по кругу или сеткой. Радиальный массив "
+            "ставит копии на окружность радиуса radius, поворачивает каждую вокруг "
+            "своей оси или распределяет по сектору angle.",
+    example='стойка = cylinder radius=6 height=60\n'
+            'кольцо = array [стойка] count=8 mode=radial radius=60 around=z\n'
+            'деталь = box size=[24,10,8]\n'
+            'веер = array [деталь] count=5 mode=radial radius=80 angle=180 spin=да',
     params={"objects": "исходный объект (или несколько — они объединяются)",
             "count": "количество копий (включая исходную)",
             "mode": "linear (по умолчанию), radial (по кругу), grid (сетка)",
             "offset": "шаг для linear [dx,dy,dz]",
             "around": "ось вращения для radial: x, y или z",
+            "radius": "радиус окружности для radial, мм (0 — вращать на месте)",
+            "angle": "полный угол для radial: 360 — полный круг, меньше — сектор (360)",
+            "start": "начальный угол для radial, градусы (0)",
+            "spin": "поворачивать каждую копию вокруг своей оси (да)",
             "center": "центр вращения / точка отсчёта сетки",
-            "angle": "полный угол для radial (360)",
-            "start": "начальный угол для radial",
             "counts": "для grid: [nx,ny,nz]",
-            "spacing": "для grid: шаг [dx,dy,dz]"},
+            "spacing": "для grid: шаг [dx,dy,dz]",
+            "at": "сдвиг готового массива [x,y,z]"},
     positional=["objects"])
 def array(a, name):
     sources = a.solids()
@@ -450,12 +458,42 @@ def array(a, name):
             copies.append(translate_manifold(source, np.array(offset) * i))
     elif mode == "radial":
         axis = (a.text("around", "z", ["x", "y", "z"]) or "z").lower()
-        center = a.vec("center", 3, default=(0.0, 0.0, 0.0))
+        center = np.asarray(a.vec("center", 3, default=(0.0, 0.0, 0.0)),
+                            dtype=np.float64)
         total = float(a.num("angle", 360.0) or 360.0)
         start = float(a.num("start", 0.0) or 0.0)
-        step = total / count
-        for i in range(1, count):
-            copies.append(_rotate_about(source, axis, start + step * i, center))
+        radius = float(a.num("radius", 0.0, minv=0.0) or 0.0)
+        spin = a.boolean("spin", True)
+        full = abs(abs(total) - 360.0) < 1e-6
+        if count > 1:
+            step = total / count if full else total / (count - 1)
+        else:
+            step = 0.0
+        if radius <= 1e-9:
+            for i in range(1, count):
+                copies.append(_rotate_about(source, axis, start + step * i, center))
+        else:
+            # окружность в плоскости, перпендикулярной оси; по умолчанию она
+            # охватывает сам предмет, а не начало координат
+            if axis == "x":
+                u, v = np.array([0.0, 1.0, 0.0]), np.array([0.0, 0.0, 1.0])
+            elif axis == "y":
+                u, v = np.array([1.0, 0.0, 0.0]), np.array([0.0, 0.0, 1.0])
+            else:
+                u, v = np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])
+            sb = source.bounding_box()
+            own = np.array([(sb[0] + sb[3]) / 2.0, (sb[1] + sb[4]) / 2.0,
+                            (sb[2] + sb[5]) / 2.0])
+            hub = center if a.has("center") else own
+            copies = []                     # все копии встают на окружность
+            for i in range(count):
+                az = start + step * i
+                ang = math.radians(az)
+                point = hub + radius * (math.cos(ang) * u + math.sin(ang) * v)
+                copy = translate_manifold(source, point - own)
+                if spin:
+                    copy = _rotate_about(copy, axis, az, point)
+                copies.append(copy)
     else:
         counts = a.vec("counts", 3, default=(2.0, 1.0, 1.0))
         counts_i = [max(1, int(round(c))) for c in counts]
@@ -473,6 +511,8 @@ def array(a, name):
     for s in sources:
         a.scene.consume(s)
     merged = mf.Manifold.batch_boolean(copies, mf.OpType.Add)
+    if a.has("at"):
+        merged = translate_manifold(merged, np.asarray(a.vec("at", 3), dtype=np.float64))
     if merged.num_tri() > 1_500_000:
         a.scene.log("warn", "Массив получился очень тяжёлым — уменьшите количество копий.",
                     a.cmd.line)

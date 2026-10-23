@@ -162,12 +162,13 @@ def texture(a, name):
     kind = (a.text("kind") or "дерево").strip().lower()
     scale = float(a.num("scale", 1.0) or 1.0)
     seed = a.text("seed") or "1"
-    uv = (a.text("uv") or "auto").strip().lower()
+    explicit_uv = a.has("uv")
+    uv = (a.text("uv") or "").strip().lower()
     if uv in ("авто", "грани", "triplanar"):
         uv = "auto"
     if uv in ("атлас", "атласная", "atlas", "развёртка"):
         uv = "atlas"
-    if uv not in ("auto", "atlas", "cylinder", "planar", "box"):
+    if uv and uv not in ("auto", "atlas", "cylinder", "planar", "box"):
         raise DslError("Параметр uv: auto (бесшовно), atlas (атлас), cylinder, "
                        "planar или box.",
                        line=a.cmd.line, command=a.cmd.text)
@@ -191,13 +192,23 @@ def texture(a, name):
                                 + ", а также своя",
                            line=a.cmd.line, command=a.cmd.text)
         info = texture_file(kind, scale=scale, seed=seed, size=size)
+    # 0.22: если uv не задан руками — развёртку выбирает материал:
+    # металлу, ткани и коже — атлас, дереву, мрамору и кирпичу — auto.
+    if not explicit_uv:
+        from .textures import preferred_uv, uv_reason
+        pattern = info.get("pattern") if info.get("kind") == "custom" else None
+        uv = preferred_uv(info.get("kind"), pattern)
+        reason = uv_reason(info.get("kind"), pattern)
+    else:
+        reason = ""
     for solid in targets:
         solid.tex = info
         solid.uv = uv
         if solid.color == "#c9d1e3":
             solid.color = "#ffffff"
     a.scene.log("info", f"текстура {info.get('label') or KIND_NAMES.get(info['kind'], kind)}: "
-                        f"{', '.join(s.name for s in targets)}", a.cmd.line)
+                        f"{', '.join(s.name for s in targets)}"
+                        + (f"; развёртка: {reason}" if reason else ""), a.cmd.line)
     return None
 
 

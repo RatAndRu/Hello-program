@@ -67,6 +67,33 @@ TILE_MM = {
 }
 
 
+# Развёртка по умолчанию — по материалу (0.22). Мелкий рисунок (металл, ткань,
+# кожа, шум, клетка) при общей развёртке «плывёт» и даёт растяжки на торцах,
+# поэтому ему сразу даётся атлас: у каждого треугольника свой остров.
+# Крупные связные узоры (дерево, мрамор, кирпич, керамика) наоборот требуют
+# непрерывности — им атлас режет волокно на куски, поэтому остаётся auto.
+ATLAS_KINDS = {"metal", "fabric", "leather", "checker", "noise"}
+ATLAS_PATTERNS = {"dots", "grid", "checker", "noise"}
+
+
+def preferred_uv(kind: str | None, pattern: str | None = None) -> str:
+    """Какую развёртку выбрать, если пользователь не указал uv явно."""
+    if kind and kind in ATLAS_KINDS:
+        return "atlas"
+    if pattern:
+        key = PATTERNS.get(str(pattern).strip().lower(), str(pattern).strip().lower())
+        if key in ATLAS_PATTERNS:
+            return "atlas"
+    return "auto"
+
+
+def uv_reason(kind: str | None, pattern: str | None = None) -> str:
+    "Пояснение к выбору развёртки — уходит в лог сборки."
+    if preferred_uv(kind, pattern) == "atlas":
+        return "мелкий рисунок — атлас (у каждой грани свой остров)"
+    return "крупный узор — auto (рисунок остаётся целым)"
+
+
 def parse_color(value, fallback=(200, 200, 200)) -> tuple[int, int, int]:
     """Цвет из «#rrggbb», названия или списка чисел."""
     if value is None:

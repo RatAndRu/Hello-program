@@ -3515,11 +3515,21 @@ const TOOL_SHAPES = [
   },
   {
     op: 'egg', name: 'яйцо', title: 'Яйцо', group: 'Примитивы',
-    desc: 'Овоид: один конец тупее, другой острее; proportion задаёт форму.',
+    desc: 'Настоящее яйцо: тупой конец шире, острый — уже; proportion 0..1, sharp=верх|низ.',
     params: [
       { k: 'height', label: 'высота', v: 60, step: 1 },
       { k: 'diameter', label: 'диаметр', v: 42, step: 1 },
-      { k: 'proportion', label: 'яйцевидн.', v: 0.5, step: 0.05 },
+      { k: 'proportion', label: 'яйцевидн.', v: 0.55, step: 0.05 },
+      { k: 'sharp', label: 'острый', v: 'верх', kind: 'raw' },
+    ],
+  },
+  {
+    op: 'drop', name: 'капля', title: 'Капля', group: 'Примитивы',
+    desc: 'Круглое дно и вытянутый хвост: вода, слеза, стекло. tip=0..1 — острота.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 14, step: 1 },
+      { k: 'height', label: 'высота', v: 36, step: 1 },
+      { k: 'tip', label: 'острота', v: 0.5, step: 0.05 },
     ],
   },
   {
@@ -3819,6 +3829,73 @@ const TOOL_SHAPES = [
 ];
 
 const TOOL_RECIPES = [
+  {
+    title: 'Наполнение',
+    desc: 'Сыплет зёрна в открытую посуду: тарелка, миска, ящик. Уровень, плотность и seed '
+      + 'задают раскладку — одна и та же строка всегда даёт одну и ту же кашу.',
+    fields: [
+      { k: 'd', label: '⌀ посуды', v: 180 },
+      { k: 'depth', label: 'глубина', v: 55 },
+      { k: 'grain', label: 'зерно', v: 'зерно', kind: 'raw' },
+      { k: 'size', label: 'размер', v: 7 },
+      { k: 'level', label: 'уровень', v: 0.75 },
+      { k: 'dome', label: 'горб', v: 0 },
+      { k: 'seed', label: 'seed', v: 3 },
+    ],
+    build: (v) => {
+      const d = rnum(v.d, 180);
+      const dep = rnum(v.depth, 55);
+      const g = String(v.grain || 'зерно').trim() || 'зерно';
+      const dome = rnum(v.dome, 0);
+      const hump = dome > 0 ? ` dome=${fnum(dome)}` : '';
+      return `посуда = plate diameter=${fnum(d)} depth=${fnum(dep)} wall=4\n`
+        + `наполнение = fill [посуда] grain=${g} size=${fnum(v.size, 7)} `
+        + `level=${fnum(v.level, 0.75)} density=0.7${hump} seed=${fnum(v.seed, 3)}`;
+    },
+  },
+  {
+    title: 'Горка',
+    desc: 'Насыпь из мелких деталей на плоскости: галька, песок, конфеты. '
+      + 'Профиль — округлый конус; можно дать готовый предмет — горка сложится из его копий.',
+    fields: [
+      { k: 'r', label: 'радиус', v: 110 },
+      { k: 'h', label: 'высота', v: 48 },
+      { k: 'grain', label: 'зерно', v: 'галька', kind: 'raw' },
+      { k: 'size', label: 'размер', v: 15 },
+      { k: 'seed', label: 'seed', v: 5 },
+    ],
+    build: (v) => {
+      const g = String(v.grain || 'галька').trim() || 'галька';
+      return `горка = pile radius=${fnum(v.r, 110)} height=${fnum(v.h, 48)} `
+        + `grain=${g} size=${fnum(v.size, 15)} seed=${fnum(v.seed, 5)}`;
+    },
+  },
+  {
+    title: 'Массив по кругу',
+    desc: 'Копии предмета на окружности: полный круг или сектор. spin=да поворачивает '
+      + 'каждую копию вокруг своей оси — детали смотрят наружу.',
+    fields: [
+      { k: 'obj', label: 'объект', v: '', kind: 'raw' },
+      { k: 'count', label: 'копий', v: 8 },
+      { k: 'radius', label: 'радиус', v: 60 },
+      { k: 'angle', label: 'угол', v: 360 },
+      { k: 'spin', label: 'поворот', v: true, kind: 'bool' },
+    ],
+    build: (v) => {
+      let obj = String(v.obj || '').trim();
+      let head = '';
+      if (!obj) {                      // пусто — соберём показательную стойку
+        obj = 'стойка';
+        head = 'стойка = cylinder radius=6 height=60\n';
+      }
+      const count = Math.max(1, Math.round(rnum(v.count, 8)));
+      const rad = Math.max(0, rnum(v.radius, 60));
+      const ang = rnum(v.angle, 360);
+      const spin = v.spin ? 'да' : 'нет';
+      return head + `кольцо = array [${obj}] count=${count} mode=radial radius=${fnum(rad)} `
+        + `angle=${fnum(ang)} around=z spin=${spin}`;
+    },
+  },
   {
     title: 'Кружка',
     desc: 'Корпус, полость и ручка: ручка врезается в стенку, полость вычитается повторно — внутри сухо.',
