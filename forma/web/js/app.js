@@ -3625,6 +3625,83 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'arrow', name: 'стрелка', title: 'Стрелка', group: 'Знаки и фигуры',
+    desc: 'Указатель остриём вправо: древко, наконечник, вырез в хвосте.',
+    params: [
+      { k: 'length', label: 'длина', v: 120, step: 5 },
+      { k: 'width', label: 'древко', v: 26, step: 2 },
+      { k: 'head', label: 'наконеч.', v: 42, step: 2 },
+      { k: 'head_width', label: 'размах', v: 68, step: 2 },
+      { k: 'tail', label: 'вырез', v: 0, step: 2 },
+      { k: 'depth', label: 'толщина', v: 12, step: 1 },
+      { k: 'round', label: 'скругл.', v: 2, step: 0.5 },
+    ],
+  },
+  {
+    op: 'tee', name: 'тавр', title: 'Форма Т', group: 'Знаки и фигуры',
+    desc: 'Буква Т: перекладина и ножка одной деталью.',
+    params: [
+      { k: 'arm', label: 'переклад.', v: 90, step: 5 },
+      { k: 'bar', label: 'толщина', v: 20, step: 2 },
+      { k: 'stem', label: 'ножка', v: 22, step: 2 },
+      { k: 'leg', label: 'длина нож.', v: 60, step: 5 },
+      { k: 'depth', label: 'толщина Z', v: 14, step: 1 },
+      { k: 'round', label: 'скругл.', v: 2, step: 0.5 },
+    ],
+  },
+  {
+    op: 'crescent', name: 'полумесяц', title: 'Полумесяц', group: 'Знаки и фигуры',
+    desc: 'Серп: из круга выкушен второй круг, рога сходятся в острия.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 50, step: 5 },
+      { k: 'thickness', label: 'толщина', v: 18, step: 2 },
+      { k: 'bite', label: 'выкус', v: 1, step: 0.05 },
+      { k: 'depth', label: 'толщина Z', v: 12, step: 1 },
+    ],
+  },
+  {
+    op: 'swirl', name: 'завиток', title: 'Завиток', group: 'Знаки и фигуры',
+    desc: 'Наплывы со спиральной канавкой: «мягкое мороженое», куча.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 42, step: 2 },
+      { k: 'height', label: 'высота', v: 70, step: 5 },
+      { k: 'coils', label: 'наплывы', v: 3, step: 1, min: 1 },
+      { k: 'groove', label: 'канавка', v: 4, step: 0.5 },
+    ],
+  },
+  {
+    op: 'lightning', name: 'молния', title: 'Молния', group: 'Знаки и фигуры',
+    desc: 'Классический зигзаг с двумя остриями.',
+    params: [
+      { k: 'height', label: 'высота', v: 90, step: 5 },
+      { k: 'width', label: 'ширина', v: 44, step: 2 },
+      { k: 'depth', label: 'толщина Z', v: 10, step: 1 },
+      { k: 'round', label: 'скругл.', v: 1.5, step: 0.5 },
+    ],
+  },
+  {
+    op: 'banana', name: 'банан', title: 'Банан / бровь', group: 'Знаки и фигуры',
+    desc: 'Дуга с утолщением в середине: банан, бровь, стручок, скоба.',
+    params: [
+      { k: 'length', label: 'длина', v: 120, step: 5 },
+      { k: 'bend', label: 'изгиб°', v: 110, step: 10 },
+      { k: 'thick', label: 'толщина', v: 28, step: 2 },
+      { k: 'flat', label: 'плоскость', v: 0.75, step: 0.05 },
+      { k: 'taper', label: 'кончики', v: 0.32, step: 0.05 },
+    ],
+  },
+  {
+    op: 'yoke', name: 'рогатка', title: 'Форма Y', group: 'Знаки и фигуры',
+    desc: 'Буква Y: ствол снизу, две ветви, круглые концы.',
+    params: [
+      { k: 'height', label: 'высота', v: 110, step: 5 },
+      { k: 'spread', label: 'размах', v: 64, step: 4 },
+      { k: 'arm', label: 'ветвь', v: 16, step: 1 },
+      { k: 'fork', label: 'развилка', v: 0.38, step: 0.02 },
+      { k: 'depth', label: 'толщина Z', v: 14, step: 1 },
+    ],
+  },
+  {
     op: 'arch', name: 'арка', title: 'Арка', group: 'Примитивы',
     desc: 'Полукольцо с прямоугольным сечением: проём, свод, тоннель.',
     params: [
