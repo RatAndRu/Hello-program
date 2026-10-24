@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import tempfile
 import unittest
 
 import numpy as np
@@ -67,12 +66,27 @@ class TestSurfaceTools(unittest.TestCase):
         self.assertGreater(size(deep.manifold)[0], size(flat.manifold)[0] - 0.5)
 
     def test_relief_from_height_map(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = os.path.join(tmp, "map.png")
-            height_map(path)
-            s = last(ok(f"в = cylinder radius=30 height=70\nrelief в image={path} depth=4"))
+        # карта лежит рядом и указана относительным путём: так сценарий
+        # одинаково работает и на Windows, и на Linux
+        path = os.path.join(os.getcwd(), "_map_v025.png")
+        height_map(path)
+        try:
+            s = last(ok("в = cylinder radius=30 height=70\nrelief в image=_map_v025.png depth=4"))
+        finally:
+            os.remove(path)
         self.assertEqual(parts(s.manifold), 1)
         self.assertGreater(s.manifold.num_tri(), 2000)
+
+    def test_png_reader_matches_written_map(self):
+        from forma.geometry import read_png_gray
+        path = os.path.join(os.getcwd(), "_map_v025_check.png")
+        height_map(path)
+        try:
+            arr = read_png_gray(path)
+        finally:
+            os.remove(path)
+        self.assertEqual(arr.shape, (64, 64))
+        self.assertAlmostEqual(float(arr.mean()), 0.5, delta=0.25)
 
     def test_relief_needs_image(self):
         message = fails("в = cylinder radius=30 height=70\nrelief в depth=4")

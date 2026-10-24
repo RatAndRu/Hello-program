@@ -244,12 +244,19 @@ def _load_heightmap(path: str) -> np.ndarray:
     if not p.exists():
         raise GeometryError(f"Не найден файл карты высот: {path}.",
                             hint="Положите картинку рядом с проектом и укажите путь.")
-    try:
-        from PIL import Image
-    except ImportError as exc:      # pragma: no cover - Pillow всегда в зависимостях
-        raise GeometryError("Для карт высот нужен Pillow.") from exc
-    img = Image.open(p).convert("L")
-    arr = np.asarray(img, dtype=np.float64) / 255.0
+    from .geometry import read_png_gray
+    if p.suffix.lower() == ".png":
+        arr = read_png_gray(p)                  # свой декодер: без Pillow
+    else:
+        try:
+            from PIL import Image
+        except ImportError as exc:
+            raise GeometryError(
+                f"Формат {p.suffix or 'без расширения'} требует Pillow.",
+                hint="Сохраните карту высот в PNG — он читается без зависимостей.",
+            ) from exc
+        img = Image.open(p).convert("L")
+        arr = np.asarray(img, dtype=np.float64) / 255.0
     arr = 1.0 - arr                 # белое — выступ, чёрное — впадина
     return arr[::-1]                # строки снизу вверх: как ось Y
 

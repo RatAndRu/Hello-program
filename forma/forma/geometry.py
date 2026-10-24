@@ -1845,6 +1845,95 @@ def _png_encode(arr: np.ndarray) -> bytes:
     return png
 
 
+def read_png_gray(path) -> np.ndarray:
+    """Читает PNG без внешних библиотек: яркость 0…1, строки сверху вниз.
+
+    Поддерживается всё, что встречается в картах высот и текстурах: 8- и
+    16-битные каналы, серый, серый+альфа, RGB, RGBA и палитра, без
+    чересстрочности. Нужен, чтобы `relief` работал в собранном EXE: Pillow в
+    зависимостях нет намеренно (EXE не должен пухнуть).
+    """
+    import zlib
+    from pathlib import Path as _Path
+
+    data = _Path(path).read_bytes()
+    if data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise GeometryError(f"Это не PNG: {path}.",
+                            hint="Сохраните карту высот в PNG (8 бит, без чересстрочности).")
+    pos, idat, palette = 8, [], None
+    width = height = depth = color = interlace = 0
+    while pos + 8 <= len(data):
+        length = int.from_bytes(data[pos:pos + 4], "big")
+        ctype = data[pos + 4:pos + 8]
+        body = data[pos + 8:pos + 8 + length]
+        pos += 12 + length
+        if ctype == b"IHDR":
+            width = int.from_bytes(body[0:4], "big")
+            height = int.from_bytes(body[4:8], "big")
+            depth, color = body[8], body[9]
+            interlace = body[12]
+        elif ctype == b"PLTE":
+            palette = body
+        elif ctype == b"IDAT":
+            idat.append(body)
+        elif ctype == b"IEND":
+            break
+    if interlace:
+        raise GeometryError("PNG с чересстрочностью не поддерживается.",
+                            hint="Пересохраните картинку без interlace.")
+    if not idat or width <= 0 or height <= 0:
+        raise GeometryError(f"Повреждённый PNG: {path}.")
+    if depth not in (8, 16):
+        raise GeometryError(f"Глубина {depth} бит не поддерживается.",
+                            hint="Нужен PNG 8 или 16 бит на канал.")
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}.get(color)
+    if channels is None:
+        raise GeometryError(f"Тип цвета PNG {color} не поддерживается.")
+    step = 2 if depth == 16 else 1
+    bpp = channels * step
+    stride = width * bpp
+    raw = zlib.decompress(b"".join(idat))
+    rows = np.zeros((height, stride), dtype=np.uint8)
+    prev = np.zeros(stride, dtype=np.int32)
+    ptr = 0
+    for y in range(height):
+        ftype = raw[ptr]
+        line = np.frombuffer(raw, dtype=np.uint8, count=stride, offset=ptr + 1).astype(np.int32)
+        ptr += 1 + stride
+        if ftype == 1:                      # Sub
+            for i in range(bpp, stride):
+                line[i] = (line[i] + line[i - bpp]) & 0xFF
+        elif ftype == 2:                    # Up
+            line = (line + prev) & 0xFF
+        elif ftype == 3:                    # Average
+            for i in range(stride):
+                left = line[i - bpp] if i >= bpp else 0
+                line[i] = (line[i] + ((left + prev[i]) >> 1)) & 0xFF
+        elif ftype == 4:                    # Paeth
+            for i in range(stride):
+                a = int(line[i - bpp]) if i >= bpp else 0
+                b = int(prev[i])
+                c = int(prev[i - bpp]) if i >= bpp else 0
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                pred = a if (pa <= pb and pa <= pc) else (b if pb <= pc else c)
+                line[i] = (line[i] + pred) & 0xFF
+        elif ftype != 0:
+            raise GeometryError(f"Неизвестный фильтр PNG: {ftype}.")
+        rows[y] = line.astype(np.uint8)
+        prev = line
+    if color == 3:
+        if palette is None:
+            raise GeometryError("В PNG нет палитры цветов.")
+        idx = rows[:, ::step].astype(np.int64) % max(1, len(palette) // 3)
+        rgb = np.frombuffer(palette, dtype=np.uint8).reshape(-1, 3)[idx]
+        return rgb.astype(np.float64).mean(axis=2) / 255.0
+    data8 = rows[:, ::step].reshape(height, width, channels).astype(np.float64)
+    if color in (0, 4):
+        return data8[:, :, 0] / 255.0
+    return data8[:, :, :3].mean(axis=2) / 255.0
+
+
 def write_png(path, rgb: np.ndarray) -> None:
     """Минималистичный PNG-энкодер (RGB/RGBA, uint8). Без внешних зависимостей."""
     import os
