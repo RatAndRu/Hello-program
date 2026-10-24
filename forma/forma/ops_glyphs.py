@@ -21,7 +21,7 @@ from .errors import GeometryError
 from .geometry import (circle_profile, ellipse_profile, sweep_solid, limit_segments,
                        FINENESS_MM)
 from .ops import anchor, make_solid, op
-from .ops_shapes import _cross, _profile
+from .ops_shapes import _cross, _profile, ensure_volume
 
 
 # --------------------------------------------------------------------------- #
@@ -506,9 +506,3 @@ def yoke(a, name):
     solid = _flat(cross, depth, round_r, arm, size=(spread + arm, height))
     return make_solid(a.scene, name, _place_glyph(a, solid), a, kind="yoke")
 
-
-def ensure_volume(m: mf.Manifold, what: str) -> mf.Manifold:
-    if m.is_empty() or m.volume() <= 1e-6:
-        raise GeometryError(f"{what.capitalize()} получилась пустой.",
-                            hint="Проверьте размеры и толщину.")
-    return m
