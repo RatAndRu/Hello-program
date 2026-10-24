@@ -3995,6 +3995,171 @@ const TOOL_SHAPES = [
       { k: 'bend', label: 'изгиб', v: 55, step: 5 },
     ],
   },
+  /* ---------------- 0.25: поверхность, клинки, люди и вещи ---------- */
+  {
+    op: 'wrinkle', name: 'складки', title: 'Складки и мятая поверхность',
+    group: 'Поверхность', base: 'box size=[80,80,80]',
+    desc: 'Волны по поверхности: ткань, гофра, кора, пемза. Режимы: радиус, высота, шум, клетка, трещины.',
+    params: [
+      { k: 'amp', label: 'высота', v: 3, step: 0.5 },
+      { k: 'freq', label: 'частота', v: 6, step: 1 },
+      { k: 'mode', label: 'режим', v: 'радиус', kind: 'raw' },
+    ],
+  },
+  {
+    op: 'relief', name: 'рельеф', title: 'Рельеф по картинке',
+    group: 'Поверхность', base: 'box size=[120,80,10]',
+    desc: 'Выдавливает карту высот (PNG) на поверхность: логотип, узор, текст. Обёртка вокруг тела или плоскость.',
+    params: [
+      { k: 'image', label: 'карта', v: 'docs/pattern.png', kind: 'raw' },
+      { k: 'depth', label: 'глубина', v: 2, step: 0.5 },
+      { k: 'mode', label: 'режим', v: 'плоскость', kind: 'raw' },
+    ],
+  },
+  {
+    op: 'porous', name: 'пористый', title: 'Поры и губка',
+    group: 'Поверхность', base: 'sphere radius=40',
+    desc: 'Поры, ячеи, пузыри и глазки настоящими углублениями — пемза, губка, сыр.',
+    params: [
+      { k: 'mode', label: 'режим', v: 'поры', kind: 'raw' },
+      { k: 'size', label: 'размер', v: 4, step: 0.5 },
+      { k: 'count', label: 'сколько', v: 60, step: 5 },
+    ],
+  },
+  {
+    op: 'scales', name: 'чешуя', title: 'Чешуя',
+    group: 'Поверхность', base: 'sphere radius=40',
+    desc: 'Наложенные чешуйки: рыба, дракон, шишка. Ряды, шаг и подъём задаются числами.',
+    params: [
+      { k: 'rows', label: 'рядов', v: 10, step: 1 },
+      { k: 'per_row', label: 'в ряду', v: 16, step: 1 },
+      { k: 'length', label: 'размер', v: 8, step: 1 },
+    ],
+  },
+  {
+    op: 'lattice', name: 'решётка', title: 'Решётка',
+    group: 'Поверхность', base: 'sphere radius=60',
+    desc: 'Сетка из прутьев сквозь тело: купол, окно, корзина. Узор: прямоуг, ромб, соты.',
+    params: [
+      { k: 'cell', label: 'ячейка', v: 18, step: 1 },
+      { k: 'wire', label: 'прут', v: 4, step: 0.5 },
+      { k: 'mode', label: 'узор', v: 'ромб', kind: 'raw' },
+    ],
+  },
+  {
+    op: 'bark', name: 'кора', title: 'Кора дерева',
+    group: 'Поверхность',
+    desc: 'Ствол с бороздами коры и сужением кверху — сразу готовое тело.',
+    params: [
+      { k: 'height', label: 'высота', v: 600, step: 20 },
+      { k: 'radius', label: 'радиус', v: 90, step: 5 },
+      { k: 'grooves', label: 'борозд', v: 14, step: 1 },
+      { k: 'depth', label: 'глубина', v: 9, step: 1 },
+    ],
+  },
+  {
+    op: 'bricks', name: 'кладка', title: 'Кирпичная кладка',
+    group: 'Поверхность',
+    desc: 'Стена или камин кладкой вперевязку: кирпич, шов и глубина шва.',
+    params: [
+      { k: 'width', label: 'ширина', v: 400, step: 20 },
+      { k: 'height', label: 'высота', v: 300, step: 20 },
+      { k: 'thick', label: 'толщина', v: 40, step: 5 },
+      { k: 'brick', label: 'кирпич', v: '90, 42', kind: 'vec' },
+      { k: 'joint', label: 'шов', v: 7, step: 1 },
+    ],
+  },
+  {
+    op: 'repair', name: 'починка', title: 'Починка скана',
+    group: 'Поверхность', base: 'sphere radius=40',
+    desc: 'Сглаживает и упрощает сетку, убирает мусор — доводит скан до рабочего тела.',
+    params: [
+      { k: 'smooth', label: 'сглаж.', v: 1, step: 1 },
+    ],
+  },
+  {
+    op: 'blade', name: 'клинок', title: 'Клинок',
+    group: 'Клинки',
+    desc: 'Катана, танто, ятоган, стилет, двуручник, серп, нож: дол, остриё, изгиб, рёбра.',
+    params: [
+      { k: 'length', label: 'длина', v: 700, step: 20 },
+      { k: 'width', label: 'ширина', v: 32, step: 2 },
+      { k: 'thick', label: 'толщина', v: 7, step: 0.5 },
+      { k: 'curve', label: 'изгиб', v: 20, step: 5 },
+      { k: 'kind', label: 'вид', v: 'катана', kind: 'raw' },
+    ],
+  },
+  {
+    op: 'hair', name: 'волосы', title: 'Волосы',
+    group: 'Люди и вещи',
+    desc: 'Причёска из прядей одним телом: аниме, хвост, короткий, мех. Пряди, рваность, толщина.',
+    params: [
+      { k: 'length', label: 'длина', v: 200, step: 10 },
+      { k: 'radius', label: 'голова', v: 65, step: 5 },
+      { k: 'style', label: 'стиль', v: 'аниме', kind: 'raw' },
+      { k: 'clumps', label: 'прядей', v: 24, step: 2 },
+    ],
+  },
+  {
+    op: 'skirt', name: 'юбка', title: 'Юбка',
+    group: 'Люди и вещи',
+    desc: 'Юбка со складками: пояс, подол, толщина ткани — полая, её можно надеть на фигуру.',
+    params: [
+      { k: 'waist', label: 'пояс', v: 76, step: 2 },
+      { k: 'hem', label: 'подол', v: 190, step: 5 },
+      { k: 'length', label: 'длина', v: 240, step: 10 },
+      { k: 'pleats', label: 'складок', v: 12, step: 2 },
+      { k: 'depth', label: 'глубина', v: 10, step: 1 },
+      { k: 'thick', label: 'ткань', v: 3, step: 0.5 },
+    ],
+  },
+  {
+    op: 'jacket', name: 'пиджак', title: 'Пиджак',
+    group: 'Люди и вещи',
+    desc: 'Пиджак с рукавами, лацканами и пуговицами: обхваты в миллиметрах, силуэт по талии.',
+    params: [
+      { k: 'height', label: 'высота', v: 740, step: 20 },
+      { k: 'chest', label: 'грудь', v: 1040, step: 20 },
+      { k: 'waist', label: 'талия', v: 920, step: 20 },
+      { k: 'buttons', label: 'пуговиц', v: 2, step: 1 },
+    ],
+  },
+  {
+    op: 'display', name: 'экран', title: 'Экран',
+    group: 'Люди и вещи',
+    desc: 'Смартфон, будильник, монитор: корпус, тёмная панель, горящие цифры и стекло.',
+    params: [
+      { k: 'width', label: 'ширина', v: 160, step: 5 },
+      { k: 'height', label: 'высота', v: 90, step: 5 },
+      { k: 'thick', label: 'толщина', v: 40, step: 2 },
+      { k: 'style', label: 'вид', v: 'будильник', kind: 'raw' },
+      { k: 'content', label: 'на экране', v: 'led', kind: 'raw' },
+      { k: 'text', label: 'надпись', v: '21:38', kind: 'raw' },
+    ],
+  },
+  {
+    op: 'mirror_plate', name: 'зеркало', title: 'Зеркало',
+    group: 'Люди и вещи',
+    desc: 'Рама, отражающая пластина и подвес: прямоугольное, круглое или овальное.',
+    params: [
+      { k: 'width', label: 'ширина', v: 600, step: 20 },
+      { k: 'height', label: 'высота', v: 900, step: 20 },
+      { k: 'frame', label: 'рама', v: 40, step: 2 },
+      { k: 'shape', label: 'форма', v: 'прямоуг', kind: 'raw' },
+    ],
+  },
+  {
+    op: 'pattern', name: 'узор', title: 'Покраска узором',
+    group: 'Покраска', base: 'box size=[60,60,60]',
+    desc: 'Фигуры на поверхности: круги (горошек), кольца, полосы, клетка, треугольники, ромбы, волны.',
+    params: [
+      { k: 'color', label: 'цвет', v: '#d94f3d', kind: 'raw' },
+      { k: 'shape', label: 'фигура', v: 'круги', kind: 'raw' },
+      { k: 'size', label: 'размер', v: 12, step: 1 },
+      { k: 'step', label: 'шаг', v: 24, step: 1 },
+      { k: 'angle', label: 'угол', v: 0, step: 5 },
+    ],
+  },
 ];
 
 const TOOL_RECIPES = [
@@ -4396,6 +4561,13 @@ function addShapeTool(tool, card) {
       parts.push(`${p.k}=${raw}`);
     }
   });
+  if (tool.base) {
+    // команда работает по готовому телу: сначала кладём заготовку
+    const baseName = uniqueObjectName(tool.baseName || 'заготовка', currentScript());
+    const tail = parts.length ? ' ' + parts.join(' ') : '';
+    insertTool(`${baseName} = ${tool.base}\n${tool.op} ${baseName}${tail}`, tool.title);
+    return;
+  }
   const name = uniqueObjectName(tool.name, currentScript());
   insertTool(`${name} = ${tool.op} ${parts.join(' ')}`, tool.title);
 }

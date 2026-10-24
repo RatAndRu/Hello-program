@@ -671,6 +671,95 @@ SIDE_AXES = {
 }
 
 
+PATTERN_SHAPES = ("круги", "кольца", "полосы", "клетка", "треугольники", "ромбы", "волны")
+
+PATTERN_ALIASES = {
+    "круги": "круги", "круг": "круги", "кружки": "круги", "кружок": "круги",
+    "точки": "круги", "горох": "круги", "горошек": "круги", "dots": "круги",
+    "circles": "круги",
+    "кольца": "кольца", "кольцо": "кольца", "rings": "кольца",
+    "полосы": "полосы", "полоса": "полосы", "линии": "полосы",
+    "штрихи": "полосы", "stripes": "полосы",
+    "клетка": "клетка", "шахматы": "клетка", "шашка": "клетка", "checker": "клетка",
+    "треугольники": "треугольники", "треугольник": "треугольники",
+    "triangles": "треугольники",
+    "ромбы": "ромбы", "ромб": "ромбы", "diamonds": "ромбы",
+    "волны": "волны", "волна": "волны", "waves": "волны",
+}
+
+
+def pattern_shape(value) -> str:
+    """Приводит название узора к каноническому (круги, кольца, полосы…)."""
+    key = str(value or "").strip().lower()
+    if not key:
+        return "круги"
+    if key not in PATTERN_ALIASES:
+        raise GeometryError(
+            f"Неизвестный узор «{value}».",
+            hint="shape: " + ", ".join(PATTERN_SHAPES) + ".")
+    return PATTERN_ALIASES[key]
+
+
+def _pattern_plane_mask(pattern: dict, u: np.ndarray, v: np.ndarray) -> np.ndarray:
+    """Узор в одной плоскости: u, v — координаты точек на этой плоскости."""
+    shape = pattern_shape(pattern.get("shape"))
+    size = float(pattern.get("size") or 10.0)
+    if size <= 1e-6:
+        raise GeometryError("size узора должен быть больше нуля.")
+    step = float(pattern.get("step") or size * 2.0)
+    if step <= 1e-6:
+        step = size * 2.0
+    angle = math.radians(float(pattern.get("angle") or 0.0))
+    offset = pattern.get("offset") or (0.0, 0.0)
+    u = np.asarray(u, dtype=np.float64) - float(offset[0])
+    v = np.asarray(v, dtype=np.float64) - float(offset[1])
+    if angle:
+        ca, sa = math.cos(angle), math.sin(angle)
+        u, v = u * ca + v * sa, -u * sa + v * ca
+    fu = np.mod(u, step)
+    fv = np.mod(v, step)
+    cu = fu - step * 0.5
+    cv = fv - step * 0.5
+    if shape == "круги":
+        return cu * cu + cv * cv <= (size * 0.5) ** 2
+    if shape == "кольца":
+        r2 = cu * cu + cv * cv
+        return (r2 <= (size * 0.5) ** 2) & (r2 >= (size * 0.5 * 0.55) ** 2)
+    if shape == "полосы":
+        return fu <= min(size, step)
+    if shape == "клетка":
+        return (np.floor_divide(u, step) + np.floor_divide(v, step)) % 2 == 0
+    if shape == "треугольники":
+        return fu + fv <= step
+    if shape == "ромбы":
+        return np.abs(cu) + np.abs(cv) <= size * 0.5
+    # волны
+    return np.mod(v + size * 0.6 * np.sin(u / max(size, 1e-6)), step) <= size * 0.5
+
+
+def pattern_mask(pattern: dict, points: np.ndarray,
+                 normals: np.ndarray | None = None) -> np.ndarray:
+    """Маска узора: фигуры накладываются на грани по их собственным плоскостям.
+
+    Без нормалей узор считается в плоскости XY (вид сверху). С нормалями —
+    трипланарно: у каждой точки выбирается ось по главной компоненте нормали,
+    поэтому кружки ложатся и на верх куба, и на его бока.
+    """
+    pts = np.asarray(points, dtype=np.float64).reshape(-1, 3)
+    if normals is None:
+        return _pattern_plane_mask(pattern, pts[:, 0], pts[:, 1])
+    n = np.abs(np.asarray(normals, dtype=np.float64).reshape(-1, 3))
+    axis = np.argmax(n, axis=1)
+    mask = np.zeros(len(pts), dtype=bool)
+    for a in (0, 1, 2):
+        sel = axis == a
+        if not sel.any():
+            continue
+        ua, va = [(1, 2), (0, 2), (0, 1)][a]
+        mask[sel] = _pattern_plane_mask(pattern, pts[sel, ua], pts[sel, va])
+    return mask
+
+
 def region_mask(spec: dict, points: np.ndarray,
                 normals: np.ndarray | None = None) -> np.ndarray:
     """Маска точек, попадающих в регион покраски.
@@ -699,6 +788,9 @@ def region_mask(spec: dict, points: np.ndarray,
         lo, hi = sorted(float(h) for h in radius)
         r = np.hypot(pts[:, 0], pts[:, 1])
         mask &= (r >= lo) & (r <= hi)
+    pattern = spec.get("pattern")
+    if pattern:
+        mask &= pattern_mask(pattern, pts, normals)
     return mask
 
 

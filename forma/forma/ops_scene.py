@@ -38,9 +38,12 @@ def color(a, name):
     return None
 
 
-@op("paint", aliases=("краска", "пятно", "раскрасить", "покрасить_часть"), category="Сцена и материал",
-    summary="Красит часть предмета: верх, низ, бок, полосу по высоте, радиусу или область. "
-            "Не нужно перечислять полигоны — регион задаётся словами и числами.",
+@op("paint", aliases=("краска", "пятно", "раскрасить", "покрасить_часть"),
+    category="Сцена и материал",
+    summary="Красит часть предмета: верх, низ, бок, полосу по высоте, радиусу или "
+            "область. Не нужно перечислять полигоны — регион задаётся словами и "
+            "числами. С параметром shape= красит не сплошную область, а узором "
+            "(см. команд�� pattern).",
     example='кружка = cylinder radius=40 height=95\n'
             'paint кружка #2f6fb0 side=верх\n'
             'paint кружка #ffffff height=40..70\n'
@@ -51,10 +54,49 @@ def color(a, name):
             "box": "область [x0,y0,z0,x1,y1,z1] в мм",
             "height": "полоса по высоте: height=40..70",
             "radius": "кольцо вокруг оси Z: 0..18",
+            "shape": "узор вместо сплошного пятна: круги, кольца, полосы, клетка, "
+                     "треугольники, ромбы, волны",
+            "size": "размер фигуры узора, мм",
+            "step": "шаг узора, мм (2 × size)",
+            "angle": "поворот узора, градусы",
+            "offset": "сдвиг узора по двум осям: [x, y]",
             "clear": "да — снять всю покраску с предмета"},
     positional=["target", "color"])
 def paint(a, name):
-    """Регионная покраска: одна команда вместо перечисления граней."""
+    return _paint_region(a, "")
+
+
+@op("pattern", aliases=("узор", "покраска_формой", "рисунок", "орнамент", "горошек"),
+    category="Сцена и материал",
+    summary="Красит поверхность узором из повторяющихся фигур: круги (горошек), "
+            "кольца, полосы, клетка, треугольники, ромбы, волны. Это именно "
+            "покраска — цветные фигуры ложатся на грани и повторяются сами, "
+            "форма предмета остаётся прежней. Узор накладывается на каждую грань "
+            "по её собственной плоскости, поэтому кружки видны и на верху куба, "
+            "и на боках. Чтобы нанести фигуры не цветом, а рельефом или "
+            "отверстиями — используйте porous, wrinkle или boolean.",
+    example='куб = box size=[60,60,60]\n'
+            'pattern куб #d94f3d shape=круги size=12 step=24\n'
+            'кубик = box size=[50,50,50]\n'
+            'pattern кубик #2f6fb0 shape=клетка size=10 step=20 angle=45\n'
+            'ваза = cylinder radius=40 height=90\n'
+            'pattern ваза #e0b64a shape=полосы size=4 step=16 angle=90',
+    params={"target": "имя объекта",
+            "color": "цвет узора #RRGGBB или название",
+            "shape": "круги, кольца, полосы, клетка, треугольники, ромбы, волны — «круги»",
+            "size": "размер фигуры, мм (10)",
+            "step": "шаг повторения, мм (2 × size)",
+            "angle": "поворот узора, градусы (0)",
+            "offset": "сдвиг узора по двум осям: [x, y]",
+            "side": "ограничить узор гранью: верх, низ, бок…",
+            "clear": "да — снять покраску"},
+    positional=["target", "color"])
+def pattern(a, name):
+    return _paint_region(a, "круги")
+
+
+def _paint_region(a, shape_default: str):
+    """Общий разбор покраски для paint и pattern."""
     target = (a.text("target") or "").strip()
     if not target:
         raise DslError("Укажите объект: paint кружка #c0402a side=верх",
@@ -89,6 +131,25 @@ def paint(a, name):
                          float(hi if hi is not None else float("inf"))]
         elif isinstance(value, (list, tuple)) and len(value) == 2:
             spec[key] = [float(value[0]), float(value[1])]
+
+    # узор: фигуры на гранях вместо сплошного пятна
+    shape_raw = (a.text("shape") or shape_default or "").strip()
+    if shape_raw:
+        from .geometry import pattern_shape
+        shape = pattern_shape(shape_raw)
+        size = float(a.num("size", 10.0, minv=0.2))
+        step = float(a.num("step", size * 2.0, minv=0.2))
+        if step < size:
+            raise DslError("Шаг узора меньше его фигуры — фигуры сольются в пятно.",
+                           hint="step ≥ size; например size=8 step=18.",
+                           line=a.cmd.line, command=a.cmd.text)
+        pat: dict = {"shape": shape, "size": size, "step": step,
+                     "angle": float(a.num("angle", 0.0))}
+        offset = a.value("offset")
+        if isinstance(offset, (list, tuple)) and len(offset) == 2:
+            pat["offset"] = [float(offset[0]), float(offset[1])]
+        spec["pattern"] = pat
+
     if len(spec) == 1:
         # без условия это просто цвет всего предмета
         solid.paint = []
@@ -96,8 +157,9 @@ def paint(a, name):
         a.scene.log("info", f"Цвет предмета: {solid.name}", a.cmd.line)
         return None
     solid.paint = list(solid.paint or []) + [spec]
-    a.scene.log("info", f"Покрашено: {solid.name} — {', '.join(k for k in spec if k != 'color')}",
-                a.cmd.line)
+    what = spec.get("pattern", {}).get("shape")
+    label = f"узор «{what}»" if what else ", ".join(k for k in spec if k != "color")
+    a.scene.log("info", f"Покрашено: {solid.name} — {label}", a.cmd.line)
     return None
 
 
