@@ -209,7 +209,9 @@ export class ToolThumbs {
     const center = new THREE.Vector3();
     box.getSize(size);
     box.getCenter(center);
-    model.position.set(-center.x, -box.min.y, -center.z);
+    // Центр модели — в начало координат: тогда при вращении она крутится
+    // вокруг себя, а не качается вокруг нижней точки.
+    model.position.set(-center.x, -center.y, -center.z);
     const holder = new THREE.Group();
     holder.add(model);
     const radius = Math.max(size.length() * 0.5, 1);
@@ -218,8 +220,8 @@ export class ToolThumbs {
     proxy.add(holder);
     // камера смотрит на центр модели; вписываем по габариту
     const dist = (radius / Math.tan((this.camera.fov * Math.PI) / 360)) * 1.12;
-    this.camera.position.set(0, size.y * 0.35, dist / view.zoom);
-    this.camera.lookAt(0, size.y * 0.45, 0);
+    this.camera.position.set(0, 0, dist / view.zoom);
+    this.camera.lookAt(0, 0, 0);
     this.camera.near = Math.max(0.2, radius / 400);
     this.camera.far = Math.max(2000, dist * 24);
     this.camera.updateProjectionMatrix();
