@@ -58,6 +58,20 @@ DOCS_INDEX = """СПРАВКА ФОРМА 3D (кратко)
   имя = mirror [a] plane=x [keep=true]      имя = place [a] at=[x,y,z] align=bottom
   имя = twist [a] angle=deg | taper [a] factor=0.6 | bend [a] angle=deg
   имя = refine [a] length=1.5 | simplify [a] tolerance=0.3
+  имя = ряд [a] count=6 step=[dx,dy,dz] grow=1.15 turn=0 axis=z
+        [инструмент=вмятина|скрутка|сужение|сдвиг|надуть] [сила=] [шаг_силы=]
+        [soft=] [radius=] [merge=да|нет] [at=]
+        — массив СТУПЕНЕЙ ИЗМЕНЕНИЯ, а не одинаковых копий: каждая следующая
+          сдвинута на step, выросла в grow раз и повёрнута на turn; с инструментом
+          её деформация сильнее в шаг_силы раз (Wi-Fi: кольца всё больше)
+  имя = размер [a] width=… depth=… height=… | length=… | factor=…
+        [keep=да|нет] [pivot=[x,y,z]]
+        — габарит ПО МЕРКЕ: width=1.5*width(ящик) делает ширину ровно в
+          полтора раза больше соседа; масштаб считается сам
+  МЕРКИ в любом параметре: width/ширина, depth/глубина, height/высота,
+  length/длина (наибольший габарит), volume/объём, top, bottom, left, right,
+  front, back, cx, cy, cz — по фактическому габариту готовой детали:
+        крышка = translate [крышка] offset=[0.5*width(ящик), 0, height(ящик)]
 
 МАТЕМАТИЧЕСКИЕ ПОВЕРХНОСТИ
   имя = from_sdf expression="sd_sphere(x,y,z,30)-sd_sphere(x,y,z,24)" bounds=[...] resolution=1.5

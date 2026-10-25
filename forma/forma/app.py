@@ -684,6 +684,46 @@ def _run_uistest(report_path: str | None) -> int:
                       and "op: 'складка'".encode("utf-8") in js_app
                       and "op: 'цепь'".encode("utf-8") in js_app,
                       "три новые карточки в инструментах")
+                # 0.35: мерки соседа, размер по мерке и ряд с градацией
+                rel = post("/api/preview", {"script": (
+                    "ящик = box size=[80,50,30]\n"
+                    "ш = cylinder radius=6 height=6\n"
+                    "ш = translate [ш] offset=[0.5*width(ящик), 0, height(ящик)]")})
+                rel_bb = (rel.get("size") or [0, 0, 0])
+                check("мерка соседа: 0.5 ширины в сдвиге",
+                      rel.get("ok") is True and float(rel_bb[0]) > 60,
+                      f"габарит {rel_bb}")
+                sized = post("/api/preview", {"script": (
+                    "а = box size=[80,50,20]\n"
+                    "б = box size=[10,10,10]\n"
+                    "б = размер [б] width=1.5*width(а)")})
+                sized_bb = sized.get("size") or [0, 0, 0]
+                check("размер по мерке: ширина 1.5× соседа",
+                      sized.get("ok") is True and abs(float(sized_bb[0]) - 120.0) < 1.0,
+                      f"ширина {sized_bb[0]} мм")
+                graded = post("/api/preview", {"script": (
+                    "к = torus major=10 minor=2\n"
+                    "р = ряд [к] count=4 grow=1.4")})
+                graded_bb = graded.get("size") or [0, 0, 0]
+                check("ряд: кольца растут по ступеням",
+                      graded.get("ok") is True and float(graded_bb[0]) > 60,
+                      f"внешнее кольцо {graded_bb[0]} мм")
+                stepped = post("/api/preview", {"script": (
+                    "ш = sphere radius=14 segments=64\n"
+                    "р = ряд [ш] count=4 step=[36,0,0] инструмент=вмятина "
+                    "сила=2 шаг_силы=1.5 radius=9")})
+                check("сила инструмента ступенями (ряд с вмятинами)",
+                      stepped.get("ok") is True and stepped.get("tris", 0) > 500,
+                      f"{stepped.get('tris', 0)} трис")
+                for key in ("wifi", "graded"):
+                    one = get(f"/api/example?key={key}")
+                    check(f"пример «{key}» собирается",
+                          post("/api/build", {"script": one.get("script", "")})
+                          .get("ok") is True)
+                check("карточки ряда с градацией и размера по мерке",
+                      "op: 'ряд'".encode("utf-8") in js_app
+                      and "op: 'размер'".encode("utf-8") in js_app,
+                      "две новые карточки в инструментах")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

@@ -49,6 +49,7 @@ from . import ops_hair  # noqa: F401,E402
 from . import ops_face  # noqa: F401,E402
 from . import ops_fold  # noqa: F401,E402
 from . import ops_chain  # noqa: F401,E402
+from . import ops_graded  # noqa: F401,E402
 
 
 # Команды, которые не меняют ни форму, ни видимость: в анимации сборки
@@ -242,6 +243,10 @@ MEASURES = {
     "height": lambda bb, st: st["size"][2],
     "width": lambda bb, st: st["size"][0],
     "depth": lambda bb, st: st["size"][1],
+    # длина — наибольший габарит: у лежащей доски это она сама, у стойки —
+    # высота. Нужна, когда важно «в 1.5 раза длиннее», не думая об осях.
+    "length": lambda bb, st: max(st["size"]),
+    "длина": lambda bb, st: max(st["size"]),
     "volume": lambda bb, st: st["volume"] / 1000.0,
     "top": lambda bb, st: bb[5],
     "bottom": lambda bb, st: bb[2],
@@ -254,6 +259,8 @@ MEASURES = {
     "cz": lambda bb, st: (bb[2] + bb[5]) / 2,
     "высота_об": None, "ширина_об": None, "объём": None, "объем": None,
     "верх": None, "низ": None, "лево": None, "право": None,
+    # русские имена мерок: писать проще, чем вспоминать английские
+    "ширина": None, "высота": None, "глубина": None, "толщина": None,
 }
 
 
@@ -261,7 +268,8 @@ def _measure(name: str, obj: str, scene: Scene) -> float:
     name = name.lower()
     aliases = {"высота_об": "height", "ширина_об": "width", "объём": "volume",
                "объем": "volume", "верх": "top", "низ": "bottom", "лево": "left",
-               "право": "right"}
+               "право": "right", "ширина": "width", "высота": "height",
+               "глубина": "depth", "толщина": "depth"}
     name = aliases.get(name, name)
     fn = MEASURES.get(name)
     if fn is None:
