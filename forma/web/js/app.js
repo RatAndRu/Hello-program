@@ -3780,7 +3780,7 @@ const TOOL_SHAPES = [
     params: [
       { k: 'size', label: 'размер', v: '40,40,40', kind: 'vec' },
       { k: 'hole', label: 'отверстие', v: 16, step: 1 },
-      { k: 'axis', label: 'ось', v: 'z' },
+      { k: 'axis', label: 'ось', v: 'z', kind: 'raw', choices: ['z', 'x', 'y'] },
       { k: 'round', label: 'скругл.', v: 2, step: 0.5 },
     ],
   },
@@ -3808,7 +3808,7 @@ const TOOL_SHAPES = [
     params: [
       { k: 'd', label: 'диаметр', v: 4, step: 0.5 },
       { k: 'length', label: 'длина', v: 25, step: 1 },
-      { k: 'head', label: 'головка', v: 'потай' },
+      { k: 'head', label: 'головка', v: 'потай', kind: 'raw', choices: ['потай', 'полукруг', 'шестигранник', 'нет'] },
     ],
   },
   {
@@ -3866,7 +3866,7 @@ const TOOL_SHAPES = [
       { k: 'height', label: 'высота', v: 60, step: 1 },
       { k: 'diameter', label: 'диаметр', v: 42, step: 1 },
       { k: 'proportion', label: 'яйцевидн.', v: 0.55, step: 0.05 },
-      { k: 'sharp', label: 'острый', v: 'верх', kind: 'raw' },
+      { k: 'sharp', label: 'острый', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
     ],
   },
   {
@@ -3946,6 +3946,7 @@ const TOOL_SHAPES = [
       { k: 'teeth', label: 'зубьев', v: 12, step: 1, min: 3 },
       { k: 'tooth', label: 'зуб', v: 30, step: 2 },
       { k: 'tip', label: 'скругл.', v: 0.35, step: 0.05, min: 0, max: 1 },
+      { k: 'shape', label: 'форма', v: 'треугольные', kind: 'raw', choices: ['треугольные', 'скруглённые', 'волна'] },
       { k: 'rim', label: 'бортик', v: 3, step: 1 },
     ],
   },
@@ -3957,7 +3958,7 @@ const TOOL_SHAPES = [
       { k: 'diameter', label: 'диаметр', v: 120, step: 5 },
       { k: 'thick', label: 'толщина', v: 16, step: 2 },
       { k: 'round', label: 'скругл.', v: 3, step: 0.5 },
-      { k: 'side', label: 'сторона', v: 'левый', kind: 'raw' },
+      { k: 'side', label: 'сторона', v: 'левый', kind: 'raw', choices: ['левый', 'правый'] },
     ],
   },
   {
@@ -3968,8 +3969,8 @@ const TOOL_SHAPES = [
     params: [
       { k: 'diameter', label: 'диаметр', v: 70, step: 5 },
       { k: 'sag', label: 'прогиб', v: 12, step: 1 },
-      { k: 'mode', label: 'вид', v: 'выпуклая', kind: 'raw' },
-      { k: 'edge', label: 'кромка', v: '', step: 1, auto: true },
+      { k: 'mode', label: 'вид', v: 'выпуклая', kind: 'raw', choices: ['выпуклая', 'вогнутая', 'плосковыпуклая', 'плосковогнутая', 'мениск'] },
+      { k: 'edge', label: 'кромка', v: '', step: 1, auto: true, min: 0.2 },
     ],
   },
   {
@@ -3979,7 +3980,7 @@ const TOOL_SHAPES = [
     params: [
       { k: 'diameter', label: 'калибр', v: 9, step: 0.5 },
       { k: 'length', label: 'длина', v: 29, step: 1 },
-      { k: 'kind', label: 'тип', v: 'пистолетный', kind: 'raw' },
+      { k: 'kind', label: 'тип', v: 'пистолетный', kind: 'raw', choices: ['пистолетный', 'винтовочный'] },
     ],
   },
   {
@@ -4074,7 +4075,7 @@ const TOOL_SHAPES = [
     desc: 'Купол или миска со стенкой — mode=купол|миска.',
     params: [
       { k: 'radius', label: 'радиус', v: 60, step: 1 },
-      { k: 'mode', label: 'вид', v: 'купол' },
+      { k: 'mode', label: 'вид', v: 'купол', kind: 'raw', choices: ['купол', 'миска'] },
       { k: 'wall', label: 'стенка', v: 4, step: 0.5 },
     ],
   },
@@ -4308,7 +4309,7 @@ const TOOL_SHAPES = [
       { k: 'height', label: 'высота', v: 55, step: 5 },
       { k: 'thickness', label: 'толщина', v: 6, step: 1 },
       { k: 'notch', label: 'впадина', v: 16, step: 2 },
-      { k: 'notch_shape', label: 'форма', v: 'ступени' },
+      { k: 'notch_shape', label: 'форма', v: 'ступени', kind: 'raw', choices: ['дуга', 'ступени', 'прямо'] },
     ],
   },
   {
@@ -4319,7 +4320,7 @@ const TOOL_SHAPES = [
       { k: 'top', label: 'сверху', v: 34, step: 2 },
       { k: 'bottom', label: 'снизу', v: 22, step: 2 },
       { k: 'flange', label: 'площадка', v: 8, step: 1 },
-      { k: 'shape', label: 'форма', v: 'круглая' },
+      { k: 'shape', label: 'форма', v: 'круглая', kind: 'raw', choices: ['круглая', 'квадратная'] },
       { k: 'adjust', label: 'пятка', v: 0, step: 1 },
     ],
   },
@@ -4361,7 +4362,7 @@ const TOOL_SHAPES = [
     params: [
       { k: 'amp', label: 'высота', v: 3, step: 0.5 },
       { k: 'freq', label: 'частота', v: 6, step: 1 },
-      { k: 'mode', label: 'режим', v: 'радиус', kind: 'raw' },
+      { k: 'mode', label: 'режим', v: 'радиус', kind: 'raw', choices: ['радиус', 'высота', 'шум', 'клетка', 'трещины'] },
     ],
   },
   {
@@ -4371,7 +4372,7 @@ const TOOL_SHAPES = [
     params: [
       { k: 'image', label: 'карта', v: 'docs/pattern.png', kind: 'raw' },
       { k: 'depth', label: 'глубина', v: 2, step: 0.5 },
-      { k: 'mode', label: 'режим', v: 'плоскость', kind: 'raw' },
+      { k: 'mode', label: 'режим', v: 'плоскость', kind: 'raw', choices: ['обёртка', 'плоскость'] },
     ],
   },
   {
@@ -4379,7 +4380,7 @@ const TOOL_SHAPES = [
     group: 'Поверхность', base: 'sphere radius=40',
     desc: 'Поры, ячеи, пузыри и глазки настоящими углублениями — пемза, губка, сыр.',
     params: [
-      { k: 'mode', label: 'режим', v: 'поры', kind: 'raw' },
+      { k: 'mode', label: 'режим', v: 'поры', kind: 'raw', choices: ['поры', 'ячеи', 'пузыри', 'глазки'] },
       { k: 'size', label: 'размер', v: 4, step: 0.5 },
       { k: 'count', label: 'сколько', v: 60, step: 5 },
     ],
@@ -4401,7 +4402,7 @@ const TOOL_SHAPES = [
     params: [
       { k: 'cell', label: 'ячейка', v: 18, step: 1 },
       { k: 'wire', label: 'прут', v: 4, step: 0.5 },
-      { k: 'mode', label: 'узор', v: 'ромб', kind: 'raw' },
+      { k: 'mode', label: 'узор', v: 'ромб', kind: 'raw', choices: ['прямоуг', 'ромб', 'соты'] },
     ],
   },
   {
@@ -4444,7 +4445,7 @@ const TOOL_SHAPES = [
       { k: 'width', label: 'ширина', v: 32, step: 2 },
       { k: 'thick', label: 'толщина', v: 7, step: 0.5 },
       { k: 'curve', label: 'изгиб', v: 20, step: 5 },
-      { k: 'kind', label: 'вид', v: 'катана', kind: 'raw' },
+      { k: 'kind', label: 'вид', v: 'катана', kind: 'raw', choices: ['катана', 'танто', 'ятоган', 'стилет', 'двуручник', 'серп', 'нож'] },
     ],
   },
   {
@@ -4454,7 +4455,7 @@ const TOOL_SHAPES = [
     params: [
       { k: 'length', label: 'длина', v: 200, step: 10 },
       { k: 'radius', label: 'голова', v: 65, step: 5 },
-      { k: 'style', label: 'стиль', v: 'аниме', kind: 'raw' },
+      { k: 'style', label: 'стиль', v: 'аниме', kind: 'raw', choices: ['аниме', 'хвост', 'короткий', 'мех'] },
       { k: 'clumps', label: 'прядей', v: 24, step: 2 },
     ],
   },
@@ -4490,7 +4491,7 @@ const TOOL_SHAPES = [
       { k: 'width', label: 'ширина', v: 160, step: 5 },
       { k: 'height', label: 'высота', v: 90, step: 5 },
       { k: 'thick', label: 'толщина', v: 40, step: 2 },
-      { k: 'style', label: 'вид', v: 'будильник', kind: 'raw' },
+      { k: 'style', label: 'вид', v: 'будильник', kind: 'raw', choices: ['смартфон', 'будильник', 'монитор'] },
       { k: 'content', label: 'на экране', v: 'led', kind: 'raw' },
       { k: 'text', label: 'надпись', v: '21:38', kind: 'raw' },
     ],
@@ -4503,7 +4504,7 @@ const TOOL_SHAPES = [
       { k: 'width', label: 'ширина', v: 600, step: 20 },
       { k: 'height', label: 'высота', v: 900, step: 20 },
       { k: 'frame', label: 'рама', v: 40, step: 2 },
-      { k: 'shape', label: 'форма', v: 'прямоуг', kind: 'raw' },
+      { k: 'shape', label: 'форма', v: 'прямоуг', kind: 'raw', choices: ['прямоуг', 'круг', 'овал'] },
     ],
   },
   {
@@ -4512,7 +4513,7 @@ const TOOL_SHAPES = [
     desc: 'Фигуры на поверхности: круги (горошек), кольца, полосы, клетка, треугольники, ромбы, волны.',
     params: [
       { k: 'color', label: 'цвет', v: '#d94f3d', kind: 'raw' },
-      { k: 'shape', label: 'фигура', v: 'круги', kind: 'raw' },
+      { k: 'shape', label: 'фигура', v: 'круги', kind: 'raw', choices: ['круги', 'кольца', 'полосы', 'клетка', 'треугольники', 'ромбы', 'волны'] },
       { k: 'size', label: 'размер', v: 12, step: 1 },
       { k: 'step', label: 'шаг', v: 24, step: 1 },
       { k: 'angle', label: 'угол', v: 0, step: 5 },
@@ -4525,7 +4526,7 @@ const TOOL_SHAPES = [
     desc: 'Чёрные контуры по форме: силуэт, рёбра и стыки деталей. Плюс ступени '
       + 'тона, растр и бумага — и в окне, и на снимках.',
     params: [
-      { k: 'mode', label: 'стиль', v: 'аниме', kind: 'raw' },
+      { k: 'mode', label: 'стиль', v: 'аниме', kind: 'raw', choices: ['аниме', 'манга', 'комикс', 'скетч', 'линия', 'выкл'] },
       { k: 'line', label: 'контур', v: 1.8, step: 0.1 },
       { k: 'crease', label: 'излом', v: 32, step: 1 },
       { k: 'toon', label: 'ступени', v: 3, step: 1 },
@@ -4542,7 +4543,7 @@ const TOOL_RECIPES = [
     fields: [
       { k: 'd', label: '⌀ посуды', v: 180 },
       { k: 'depth', label: 'глубина', v: 55 },
-      { k: 'grain', label: 'зерно', v: 'зерно', kind: 'raw' },
+      { k: 'grain', label: 'зерно', v: 'зерно', kind: 'raw', choices: ['шар', 'горох', 'зерно', 'капля', 'куб', 'галька'] },
       { k: 'size', label: 'размер', v: 7 },
       { k: 'level', label: 'уровень', v: 0.75 },
       { k: 'dome', label: 'горб', v: 0 },
@@ -4566,7 +4567,7 @@ const TOOL_RECIPES = [
     fields: [
       { k: 'r', label: 'радиус', v: 110 },
       { k: 'h', label: 'высота', v: 48 },
-      { k: 'grain', label: 'зерно', v: 'галька', kind: 'raw' },
+      { k: 'grain', label: 'зерно', v: 'галька', kind: 'raw', choices: ['шар', 'горох', 'зерно', 'капля', 'куб', 'галька'] },
       { k: 'size', label: 'размер', v: 15 },
       { k: 'seed', label: 'seed', v: 5 },
       { k: 'base', label: 'подложка', v: 0 },
@@ -4702,7 +4703,7 @@ const TOOL_RECIPES = [
     fields: [
       { k: 'size', label: 'размер', v: '60,40,20', kind: 'vec' },
       { k: 'radius', label: 'фаска', v: 3 },
-      { k: 'mode', label: 'режим', v: 'авто', kind: 'raw' },
+      { k: 'mode', label: 'режим', v: 'авто', kind: 'raw', choices: ['авто', 'скругление', 'фаска'] },
     ],
     build: (v) => `плита_фаска = box size=[${rvec(v.size, [60, 40, 20]).join(', ')}]\n`
       + `плита_фаска = bevel [плита_фаска] radius=${fnum(rnum(v.radius, 3))} mode=${v.mode || 'авто'}`,
@@ -4781,7 +4782,7 @@ const TOOL_RECIPES = [
     fields: [
       { k: 'size', label: 'размер', v: '120,80,50', kind: 'vec' },
       { k: 'thickness', label: 'стенка', v: 3 },
-      { k: 'open', label: 'открыт', v: 'top', kind: 'raw' },
+      { k: 'open', label: 'открыт', v: 'top', kind: 'raw', choices: ['top', 'bottom', 'both'] },
     ],
     build: (v) => `корпус_полый = box size=[${rvec(v.size, [120, 80, 50]).join(', ')}] round=4\n`
       + `корпус_полый = shell [корпус_полый] thickness=${fnum(rnum(v.thickness, 3))} open=${v.open || 'top'}`,
@@ -4791,7 +4792,7 @@ const TOOL_RECIPES = [
     desc: 'mirror_copy оставляет деталь и добавляет её отражение — парные кронштейны, ручки.',
     fields: [
       { k: 'size', label: 'размер', v: '30,20,60', kind: 'vec' },
-      { k: 'plane', label: 'плоскость', v: 'x', kind: 'raw' },
+      { k: 'plane', label: 'плоскость', v: 'x', kind: 'raw', choices: ['x', 'y', 'z'] },
       { k: 'gap', label: 'зазор', v: 0 },
     ],
     build: (v) => {
@@ -4852,31 +4853,166 @@ function fnum(x) {
   return String(Math.round(n * 1000) / 1000);
 }
 
-/** Поля рецепта — те же, что у фигур: подпись + поле ввода. */
+/** Палитра для стрелочек у цвета: ▴/▾ листают оттенки. */
+const TOOL_COLOR_STEPS = ['#d94f3d', '#e0a33a', '#e8d44d', '#3ac07a', '#3aa9e0',
+  '#8b5cf6', '#f2f4f8', '#2b2f38'];
+
+/** Число из текста поля или null, если это не число («40, 30» — уже не число). */
+function numFromText(raw) {
+  const t = String(raw ?? '').trim().replace(',', '.');
+  return /^[-+]?(\d+\.?\d*|\.\d+)$/.test(t) ? Number(t) : null;
+}
+
+/**
+ * Следующее значение поля при шаге стрелкой.
+ *
+ * * число — прибавляем step (и держимся в min…max);
+ * * текст с вариантами (`choices`) — следующий вариант: kind, mode, side…;
+ * * цвет `#rrggbb` — следующий оттенок из палитры;
+ * * время `21:38` — минута с переходом через час;
+ * * текст с числом на конце — это число.
+ *
+ * null — шагать нечем, стрелки у такого поля не показываем.
+ */
+function stepToolValue(p, raw, dir) {
+  const text = String(raw ?? '').trim();
+  const choices = Array.isArray(p.choices) ? p.choices : null;
+  if (choices && choices.length > 1) {
+    const low = text.toLowerCase();
+    let i = choices.findIndex((c) => String(c).toLowerCase() === low);
+    if (i < 0) i = dir > 0 ? -1 : 0;
+    return String(choices[(i + dir + choices.length * 2) % choices.length]);
+  }
+  // пустое поле с пометкой «авто» (например, кромка линзы): шагаем от нуля,
+  // а min/max не дадут уйти в бессмыслицу
+  const num = text === '' && p.auto ? 0 : numFromText(text);
+  if (num !== null) {
+    const step = Number(p.step ?? 1) || 1;
+    let v = num + step * dir;
+    if (p.min !== undefined && p.min !== null) v = Math.max(Number(p.min), v);
+    if (p.max !== undefined && p.max !== null) v = Math.min(Number(p.max), v);
+    return fnum(v);
+  }
+  const time = text.match(/^(\d{1,2}):(\d{2})$/);
+  if (time) {
+    let h = Number(time[1]);
+    let m = Number(time[2]) + dir;
+    if (m > 59) { m = 0; h = (h + 1) % 24; }
+    if (m < 0) { m = 59; h = (h + 23) % 24; }
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  }
+  if (/^#[0-9a-f]{6}$/i.test(text)) {
+    let i = TOOL_COLOR_STEPS.findIndex((c) => c.toLowerCase() === text.toLowerCase());
+    if (i < 0) i = dir > 0 ? -1 : 0;
+    return TOOL_COLOR_STEPS[(i + dir + TOOL_COLOR_STEPS.length * 2) % TOOL_COLOR_STEPS.length];
+  }
+  if (p.kind === 'vec' || p.kind === 'raw') return null;
+  const tail = text.match(/^(.*?)(\d+)(\D*)$/);
+  if (!tail) return null;
+  const n = Math.max(0, parseInt(tail[2], 10) + dir);
+  return tail[1] + String(n).padStart(tail[2].length, '0') + tail[3];
+}
+
+/** Стрелки шага у поля: короткий щелчок — один шаг, удержание — повтор. */
+function attachToolStep(p, input) {
+  const wrap = document.createElement('span');
+  wrap.className = 'tool-step-wrap';
+  const wide = p.kind === 'vec' || p.kind === 'raw';
+  const canStep = stepToolValue(p, input.value, 1) !== null
+    || stepToolValue(p, input.value, -1) !== null;
+  if (!canStep) {
+    wrap.appendChild(input);
+    return wrap;
+  }
+  // с кнопками поле чуть уже: карточка узкая, перенос строки не нужен
+  input.style.width = wide ? '104px' : '52px';
+  const apply = (dir) => {
+    const next = stepToolValue(p, input.value, dir);
+    if (next === null) return;
+    input.value = next;
+    // то же событие, что и при ручном вводе: миниатюра пересобирается сама
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const button = (dir) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'tool-step';
+    b.dataset.dir = String(dir);
+    b.textContent = dir > 0 ? '▴' : '▾';
+    b.tabIndex = -1;
+    b.title = dir > 0
+      ? 'Больше / следующий вариант (↑ в поле)'
+      : 'Меньше / предыдущий вариант (↓ в поле)';
+    let hold = null;
+    let timer = null;
+    const stop = () => {
+      clearTimeout(hold);
+      clearInterval(timer);
+      hold = null;
+      timer = null;
+    };
+    b.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      apply(dir);
+      hold = setTimeout(() => { timer = setInterval(() => apply(dir), 110); }, 420);
+    });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => {
+      b.addEventListener(ev, stop);
+    });
+    b.addEventListener('click', (e) => e.preventDefault());
+    return b;
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    e.preventDefault();
+    apply(e.key === 'ArrowUp' ? 1 : -1);
+  });
+  wrap.append(button(-1), input, button(1));
+  return wrap;
+}
+
+/**
+ * Поле карточки инструмента: подпись, ввод и стрелки шага.
+ *
+ * Стрелки работают и для чисел, и для текстовых значений: у параметра с
+ * готовыми вариантами они листают варианты (вид линзы, сторона инь-яна,
+ * тип патрона, стиль аниме), у цвета — палитру, у времени — минуту.
+ */
+function buildToolField(p) {
+  const row = document.createElement('div');
+  row.className = 'tool-field';
+  const caption = document.createElement('span');
+  caption.className = 'tool-field-cap';
+  caption.textContent = p.label;
+  row.appendChild(caption);
+  if (p.kind === 'bool') {
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = p.v !== false;
+    box.dataset.key = p.k;
+    row.appendChild(box);
+    return row;
+  }
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = String(p.v ?? '');
+  const wide = p.kind === 'vec' || p.kind === 'raw';
+  if (!wide && !p.choices) input.inputMode = 'decimal';
+  input.style.width = wide ? '124px' : '58px';
+  if (p.auto) input.placeholder = 'авто';
+  if (p.choices && p.choices.length) {
+    input.title = 'Варианты: ' + p.choices.join(' · ') + '. Стрелки листают.';
+  }
+  input.dataset.key = p.k;
+  row.appendChild(attachToolStep(p, input));
+  return row;
+}
+
+/** Поля рецепта — те же, что у фигур: подпись, поле ввода и стрелки шага. */
 function recipeFields(params) {
   const wrap = document.createElement('div');
   wrap.className = 'tool-fields';
-  (params || []).forEach((p) => {
-    const label = document.createElement('label');
-    label.className = 'tool-field';
-    const caption = document.createElement('span');
-    caption.textContent = p.label;
-    let input;
-    if (p.kind === 'bool') {
-      input = document.createElement('input');
-      input.type = 'checkbox';
-      input.checked = p.v !== false;
-    } else {
-      input = document.createElement('input');
-      input.type = 'text';
-      input.value = String(p.v);
-      if (p.kind !== 'vec' && p.kind !== 'raw') input.inputMode = 'decimal';
-      input.style.width = p.kind === 'vec' || p.kind === 'raw' ? '124px' : '58px';
-    }
-    input.dataset.key = p.k;
-    label.append(caption, input);
-    wrap.appendChild(label);
-  });
+  (params || []).forEach((p) => wrap.appendChild(buildToolField(p)));
   return wrap;
 }
 
@@ -5213,28 +5349,7 @@ function renderTools() {
       card.appendChild(makeThumbCanvas());
       const fields = document.createElement('div');
       fields.className = 'tool-fields';
-      tool.params.forEach((p) => {
-        const label = document.createElement('label');
-        label.className = 'tool-field';
-        const caption = document.createElement('span');
-        caption.textContent = p.label;
-        let input;
-        if (p.kind === 'bool') {
-          input = document.createElement('input');
-          input.type = 'checkbox';
-          input.checked = p.v !== false;
-        } else {
-          input = document.createElement('input');
-          input.type = 'text';
-          input.value = String(p.v);
-          if (p.kind !== 'vec' && p.kind !== 'raw') input.inputMode = 'decimal';
-          input.style.width = p.kind === 'vec' || p.kind === 'raw' ? '124px' : '58px';
-        }
-        input.dataset.key = p.k;
-        label.appendChild(caption);
-        label.appendChild(input);
-        fields.appendChild(label);
-      });
+      tool.params.forEach((p) => fields.appendChild(buildToolField(p)));
       card.appendChild(fields);
       card.dataset.search = [tool.title, tool.op, tool.name, tool.desc, title,
         ...tool.params.map((p) => p.label)].join(' ').toLowerCase();

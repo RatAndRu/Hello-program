@@ -410,6 +410,13 @@ def _run_uistest(report_path: str | None) -> int:
                 check("живые превью в карточках",
                       b'id="tools-thumbs"' in html
                       and len(get("/js/toolpreview.js", raw=True)) > 3000)
+                ui_js = get("/js/app.js", raw=True)
+                ui_css = get("/css/app.css", raw=True)
+                check("стрелки шага у параметров инструментов",
+                      b"tool-step" in ui_js and b"choices: [" in ui_js
+                      and b".tool-step" in ui_css
+                      and b"stepToolValue" in ui_js,
+                      f"{ui_js.count(b'choices: [')} параметров с вариантами")
                 check("панель стиля 0.28: штриховка и линии",
                       b'id="anime-row3"' in html and b'id="anime-hatch"' in html
                       and b'id="anime-paper-tex"' in html and b'id="anime-lines"' in html

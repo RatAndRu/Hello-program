@@ -1004,6 +1004,19 @@ button.mini:disabled { opacity: .38; cursor: default; }
 .tool-desc { font-size: 11px; line-height: 1.4; color: var(--text-dim); }
 .tool-fields { display: flex; flex-wrap: wrap; gap: 6px; }
 .tool-field { display: flex; align-items: center; gap: 4px; font-size: 10.5px; color: var(--text-dim); }
+.tool-field-cap { white-space: nowrap; }
+/* стрелки шага у параметра: ▾ меньше / предыдущий вариант, ▴ больше / следующий */
+.tool-step-wrap { display: inline-flex; align-items: center; gap: 2px; }
+.tool-step {
+  width: 18px; height: 20px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: 5px; border: 1px solid var(--line);
+  background: #10151c; color: var(--text-dim);
+  font-size: 9px; line-height: 1; cursor: pointer;
+  user-select: none; touch-action: none;
+}
+.tool-step:hover { color: var(--text); border-color: #33506f; background: #16202b; }
+.tool-step:active { transform: translateY(1px); color: #fff; }
 .tool-field input {
   width: 62px;
   padding: 3px 5px;
