@@ -55,11 +55,8 @@ color фигура color=#f4d6c3
 чёлка = intersect [чёлка, кусок]
 волна = from_sdf bounds=[-120,-150,200,120,-20,400] resolution=1.1 expression="z - (306 + 10*cos(x/9) + 4*cos(y/14))"
 чёлка = difference [чёлка, волна]
-# боковые пряди вдоль щёк — лицо обрамлено, как на образце
-прядь_п = локон at=[66,-38,306] length=126 radius=14 turns=0.3 thick=15 thin=6 dir=[0,0.06,-1] side=[1,0,0]
-прядь_л = локон at=[-66,-38,306] length=126 radius=14 turns=0.3 thick=15 thin=6 dir=[0,0.06,-1] side=[-1,0,0]
-color прядь_п color=#ece4da
-color прядь_л color=#ece4da
+# боковые пряди делает сама масса волос-боб: окно для лица вырезано
+# внутри неё, поэтому волосы спускаются вдоль щёк до самой челюсти
 color чёлка color=#ece4da
 color волосы color=#ece4da
 
