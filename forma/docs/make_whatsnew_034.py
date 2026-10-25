@@ -48,12 +48,17 @@ CASES = [
      "г1 = глаз width=70 height=46 at=[-44,0,60] iris=#8fa48f lash=4 depth=0.55\n"
      "г2 = глаз width=70 height=46 at=[44,0,60] iris=#6f7f96 lash=4 depth=0.9\n"
      "color г1 color=#f4d6c3\ncolor г2 color=#f4d6c3", "front", 1.0, None),
-    ("локоны и волосинки", "завиток-пружина и пучок тонких волосков",
-     "л = локон at=[-48,0,150] length=150 radius=18 turns=0.7 thick=16 thin=6 "
+    ("локоны и волосинки", "три завитка-пружины и пучок тонких волосков",
+     "л1 = локон at=[-80,0,190] length=130 radius=17 turns=0.75 thick=15 thin=6 "
      "dir=[0,0,-1] side=[1,0,0]\n"
-     "в = волосинки from=[10,-30,170] to=[90,-30,170] count=40 length=70 "
-     "thick=1.8 bend=0.7 curl=0.5 dir=[0,-0.3,-1] base=да\n"
-     "color л color=#ece4da\ncolor в color=#ece4da", "iso", 1.0, None),
+     "л2 = локон at=[-40,20,180] length=150 radius=20 turns=0.9 thick=17 thin=6 "
+     "dir=[0,0,-1] side=[1,0,0]\n"
+     "л3 = локон at=[0,-10,200] length=120 radius=14 turns=0.6 thick=13 thin=5 "
+     "dir=[0,0,-1] side=[-1,0,0]\n"
+     "в = волосинки from=[-60,-40,60] to=[80,-40,60] count=60 length=90 "
+     "thick=1.8 bend=0.8 curl=0.5 dir=[0,-0.25,-1] base=да\n"
+     "color л1 color=#ece4da\ncolor л2 color=#ece4da\ncolor л3 color=#ece4da\n"
+     "color в color=#ece4da", "iso", 1.0, None),
     ("сгиб от угла", "лист сложен по диагонали и по линии от края",
      "а = sheet width=110 length=110 thickness=1\n"
      "б = сгиб а at=[0,0,1] dir=45 angle=120\n"
@@ -62,12 +67,13 @@ CASES = [
      "г = сгиб в at=[0,-20,1] dir=0 angle=95 side=-1\n"
      "г = translate [г] offset=[75,0,0]\n"
      "color б color=#f3ecdf\ncolor г color=#dfe3cf", "iso", 1.0, None),
-    ("складки на одежде", "канавка и гребень по линии, с изгибом и сужением",
-     "куртка = box size=[80,46,110] round=8\n"
-     "с1 = складка куртка from=[-36,-23,70] to=[36,-23,74] r=4 mode=канавка bend=6\n"
-     "с2 = складка с1 from=[-34,-23,44] to=[34,-23,40] r=3.6 mode=канавка bend=-8\n"
-     "с3 = складка с2 from=[-26,-23,18] to=[26,-23,22] r=3.2 mode=гребень bend=5\n"
-     "color с3 color=#8aa0b8", "iso", 1.0, None),
+    ("складки на одежде", "канавки и гребень по линии, с изгибом и сужением",
+     "куртка = box size=[96,44,120] round=8\n"
+     "с1 = складка куртка from=[-20,-22,110] to=[-14,-22,16] r=4.2 mode=канавка bend=7\n"
+     "с2 = складка с1 from=[0,-22,112] to=[4,-22,14] r=3.6 mode=канавка bend=-9\n"
+     "с3 = складка с2 from=[20,-22,108] to=[24,-22,18] r=3.2 mode=гребень bend=6\n"
+     "с4 = складка с3 from=[38,-22,104] to=[40,-22,22] r=2.6 mode=гребень bend=-5\n"
+     "color с4 color=#8aa0b8", "front", 1.0, None),
     ("цепь и соединение", "звенья зацеплены; цепь связала балку и лампу",
      "балка = box size=[130,36,12] round=2 at=[0,0,200]\n"
      "лампа = hemisphere radius=26 at=[0,0,60]\n"
