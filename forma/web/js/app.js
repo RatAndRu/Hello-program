@@ -2194,16 +2194,6 @@ document.querySelectorAll('.view-btn').forEach((btn) => {
   });
 });
 
-$('btn-grid').addEventListener('click', (e) => {
-  const on = !e.currentTarget.classList.contains('active');
-  e.currentTarget.classList.toggle('active', on);
-  state.viewer?.setGrid(on);
-});
-$('btn-wire').addEventListener('click', (e) => {
-  const on = !e.currentTarget.classList.contains('active');
-  e.currentTarget.classList.toggle('active', on);
-  state.viewer?.setWireframe(on);
-});
 $('btn-focus-sel')?.addEventListener('click', () => {
   const name = state.selected?.name;
   if (!name) { toast('Сначала выделите предмет в списке или кликом', 'bad'); return; }
@@ -2229,7 +2219,7 @@ $('btn-occl')?.addEventListener('click', (e) => {
     ? 'Предметы перед выделенным показываются прозрачным каркасом'
     : 'Заслоняющие предметы снова сплошные');
 });
-$('btn-spin').addEventListener('click', (e) => {
+$('btn-spin')?.addEventListener('click', (e) => {
   const on = !e.currentTarget.classList.contains('active');
   e.currentTarget.classList.toggle('active', on);
   state.viewer?.setSpin(on);
@@ -2367,7 +2357,6 @@ function applyViewSettings(payload) {
     if (el) el.checked = s[k] !== false;
   });
   if ($('opt-poly')) $('opt-poly').checked = s.poly === true;
-  $('btn-wire')?.classList.toggle('active', s.poly === true);
   if ($('bloom')) {
     const b = Number(s.bloom ?? 0.6);
     $('bloom').value = String(b);
@@ -2666,7 +2655,6 @@ $('opt-grid')?.addEventListener('change', (e) => state.viewer?.setGrid(e.target.
 $('opt-ground')?.addEventListener('change', (e) => state.viewer?.setGround(e.target.checked));
 $('opt-axes')?.addEventListener('change', (e) => state.viewer?.setAxes(e.target.checked));
 $('opt-poly')?.addEventListener('change', (e) => {
-  $('btn-wire')?.classList.toggle('active', e.target.checked);
   state.viewer?.setPolygons(e.target.checked);
 });
 $('anim-play')?.addEventListener('click', () => togglePlayAnim());
@@ -2740,10 +2728,6 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-$('btn-wire')?.addEventListener('dblclick', () => {
-  $('opt-poly').checked = !$('opt-poly').checked;
-  state.viewer?.setPolygons($('opt-poly').checked);
-});
 
 /* ------------------------------------------------------------------ */
 /*  Кисть по граням                                                   */
@@ -4345,6 +4329,20 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'saw', name: 'пила', title: 'Дисковая пила', group: 'Механика',
+    desc: 'Плоское полотно с зубьями и посадочным отверстием. Зубья: треугольные, трапеция-карбид, крюк, волна; передний угол rake.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 200, step: 10, min: 20, max: 4000 },
+      { k: 'thickness', label: 'толщина', v: 2.5, step: 0.5, min: 0.3, max: 60 },
+      { k: 'teeth', label: 'зубьев', v: 24, step: 2, min: 4, max: 200 },
+      { k: 'tooth', label: 'высота зуба', v: 10, step: 1, min: 0.2 },
+      { k: 'shape', label: 'форма зубьев', v: 'трапеция', kind: 'raw', choices: ['треугольные', 'трапеция', 'крюк', 'волна'] },
+      { k: 'rake', label: 'передний угол', v: 10, step: 5, min: -45, max: 45 },
+      { k: 'hole', label: 'отверстие', v: 22, step: 2, min: 1 },
+      { k: 'windows', label: 'окон', v: 0, step: 1, min: 0, max: 12 },
+    ],
+  },
+  {
     op: 'horn', name: 'рог', title: 'Рог', group: 'Природа',
     desc: 'Изогнутый сужающийся рог — природа, трофей, декор.',
     params: [
@@ -4984,8 +4982,12 @@ function buildToolField(p) {
   const caption = document.createElement('span');
   caption.className = 'tool-field-cap';
   caption.textContent = p.label;
+  // длинная подпись не сжимает поле: она обрезается с многоточием и
+  // раскрывается подсказкой
+  caption.title = p.label;
   row.appendChild(caption);
   if (p.kind === 'bool') {
+    row.classList.add('tool-field-bool');
     const box = document.createElement('input');
     box.type = 'checkbox';
     box.checked = p.v !== false;
@@ -4998,11 +5000,17 @@ function buildToolField(p) {
   input.value = String(p.v ?? '');
   const wide = p.kind === 'vec' || p.kind === 'raw';
   if (!wide && !p.choices) input.inputMode = 'decimal';
-  input.style.width = wide ? '124px' : '58px';
+  // ширина — по сетке карточки: вектору даём две колонки
+  if (wide) row.style.gridColumn = 'span 2';
   if (p.auto) input.placeholder = 'авто';
+  const tips = [`параметр «${p.k}»`];
   if (p.choices && p.choices.length) {
-    input.title = 'Варианты: ' + p.choices.join(' · ') + '. Стрелки листают.';
+    tips.push('варианты: ' + p.choices.join(' · ') + ' (стрелки листают)');
   }
+  if (p.min !== undefined || p.max !== undefined) {
+    tips.push(`допустимо ${p.min ?? '…'}…${p.max ?? '…'}`);
+  }
+  input.title = tips.join(' · ');
   input.dataset.key = p.k;
   row.appendChild(attachToolStep(p, input));
   return row;
@@ -5112,7 +5120,13 @@ async function thumbUrl(script) {
   const res = await api('/api/preview', { script });
   if (!res.ok) {
     const err = res.error || {};
-    throw new Error(err.message || res.message || 'не удалось построить');
+    // Причину не теряем: имя параметра и его рамки едут в интерфейс
+    const fail = new Error(err.message || res.message || 'не удалось построить');
+    fail.param = err.param || '';
+    fail.bounds = err.bounds || '';
+    fail.hint = err.hint || '';
+    fail.detail = err;
+    throw fail;
   }
   const url = res.url + (res.url.includes('?') ? '&' : '?')
     + 'token=' + encodeURIComponent(TOKEN);
@@ -5121,6 +5135,26 @@ async function thumbUrl(script) {
 }
 
 /** Собирает миниатюру карточки. Ракурс не сбрасываем — так видно правку. */
+/** Красит поле карточки, из-за которого деталь не построилась, и пишет рамки. */
+function markToolFieldError(card, err) {
+  card.querySelectorAll('.tool-field.bad').forEach((row) => {
+    row.classList.remove('bad');
+    const note = row.querySelector('.tool-field-note');
+    if (note) note.remove();
+  });
+  const key = err?.param;
+  if (!key) return;
+  const input = card.querySelector(`.tool-field input[data-key="${key}"]`);
+  const row = input?.closest('.tool-field');
+  if (!row) return;
+  row.classList.add('bad');
+  const note = document.createElement('span');
+  note.className = 'tool-field-note';
+  note.textContent = err.bounds ? `допустимо ${err.bounds}` : 'недопустимое значение';
+  row.appendChild(note);
+  input.title = `${err.message || ''}${err.hint ? `\n${err.hint}` : ''}`;
+}
+
 async function refreshThumb(card) {
   const canvas = card.querySelector('canvas.tool-shot');
   if (!canvas || !card.dataset.toolId) return;
@@ -5137,7 +5171,15 @@ async function refreshThumb(card) {
     toolThumbs.show(canvas, url);
     canvas.classList.add('ready');
   } catch (err) {
-    if (card.dataset.thumbBusy === '1') toolThumbs.fail(canvas, err?.message || '');
+    if (card.dataset.thumbBusy === '1') {
+      toolThumbs.fail(canvas, {
+        reason: err?.message || 'деталь не построилась',
+        bounds: err?.bounds || '',
+        hint: err?.hint || '',
+        title: err?.message || 'Деталь не построилась',
+      });
+      markToolFieldError(card, err);
+    }
   } finally {
     if (card.dataset.thumbBusy === '1') delete card.dataset.thumbBusy;
     void stamp;
@@ -5211,7 +5253,28 @@ async function loadToolPreview() {
   } catch (err) {
     const box = $('preview-error');
     if (box) {
-      box.textContent = err?.message || 'Не удалось построить превью';
+      box.innerHTML = '';
+      const head = document.createElement('strong');
+      head.textContent = 'Почему нет модели';
+      box.appendChild(head);
+      const why = document.createElement('p');
+      why.className = 'preview-error-why';
+      why.textContent = err?.message || 'Не удалось построить превью';
+      box.appendChild(why);
+      if (err?.param) {
+        const param = document.createElement('p');
+        param.className = 'preview-error-param';
+        param.textContent = err.bounds
+          ? `параметр «${err.param}» — допустимо ${err.bounds}`
+          : `параметр «${err.param}»`;
+        box.appendChild(param);
+      }
+      if (err?.hint) {
+        const hint = document.createElement('p');
+        hint.className = 'preview-error-hint';
+        hint.textContent = err.hint;
+        box.appendChild(hint);
+      }
       box.hidden = false;
     }
   } finally {

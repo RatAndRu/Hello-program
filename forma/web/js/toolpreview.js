@@ -10,9 +10,35 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/RoomEnvironment.js';
+import { wheelZoom } from './viewzoom.js';
 
 const CARD_W = 480;
 const CARD_H = 360;
+
+/** Режет строку по словам под ширину, не больше `maxLines` строк. */
+function wrapText(ctx, text, maxWidth, maxLines) {
+  const words = String(text).split(/\s+/).filter(Boolean);
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const probe = current ? `${current} ${word}` : word;
+    if (ctx.measureText(probe).width > maxWidth && current) {
+      lines.push(current);
+      current = word;
+      if (lines.length === maxLines) break;
+    } else {
+      current = probe;
+    }
+  }
+  if (lines.length < maxLines && current) lines.push(current);
+  if (!lines.length) lines.push('');
+  // если не влезло — многоточие в последней строке
+  const used = lines.join(' ');
+  if (used.length < String(text).length && lines.length) {
+    lines[lines.length - 1] = `${lines[lines.length - 1].replace(/[\s,;.]+$/, '')}…`;
+  }
+  return lines;
+}
 
 export class ToolThumbs {
   constructor() {
@@ -116,20 +142,46 @@ export class ToolThumbs {
     });
   }
 
-  /** Пометка «здесь модель не построилась» — карточка показывает заглушку. */
-  fail(canvas, text = '') {
+  /**
+   * Пометка «здесь модель не построилась».
+   *
+   * Вместо голого «нет модели» пишем причину: какой параметр вышел из рамок и
+   * какие у него границы. Полный текст (с подсказкой) остаётся в title —
+   * наведите мышью, чтобы прочитать целиком.
+   */
+  fail(canvas, info = '') {
     if (!canvas) return;
-    canvas.dataset.failed = text || '1';
+    const reason = typeof info === 'string' ? info : (info.reason || '');
+    const bounds = typeof info === 'string' ? '' : (info.bounds || '');
+    canvas.dataset.failed = reason || '1';
+    canvas.title = typeof info === 'string'
+      ? (reason || 'Деталь не построилась')
+      : [info.title || 'Деталь не построилась', info.hint || ''].filter(Boolean).join('\n');
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
     const w = canvas.width;
     const h = canvas.height;
     ctx.clearRect(0, 0, w, h);
-    ctx.fillStyle = 'rgba(150, 160, 176, 0.55)';
-    ctx.font = `${Math.round(h / 9)}px sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('нет модели', w / 2, h / 2);
+
+    const label = 'нет модели';
+    const small = Math.round(h / 13);
+    const line = Math.round(small * 1.5);
+    ctx.font = `600 ${Math.round(h / 14)}px sans-serif`;
+    ctx.fillStyle = 'rgba(190, 122, 122, 0.9)';
+    ctx.fillText(label, w / 2, h / 2 - line * 1.6);
+
+    ctx.font = `${small}px sans-serif`;
+    ctx.fillStyle = 'rgba(168, 178, 194, 0.92)';
+    const lines = wrapText(ctx, reason || 'деталь не построилась', w - 70, 3);
+    lines.forEach((text, i) => {
+      ctx.fillText(text, w / 2, h / 2 - line * 0.3 + i * line);
+    });
+    if (bounds) {
+      ctx.fillStyle = 'rgba(150, 160, 176, 0.8)';
+      ctx.fillText(`допустимо: ${bounds}`, w / 2, h / 2 + line * (lines.length - 0.3) + line * 0.7);
+    }
   }
 
   _bind(canvas, view) {
@@ -159,7 +211,9 @@ export class ToolThumbs {
     canvas.addEventListener('pointerleave', () => { if (dragging) stop(); });
     canvas.addEventListener('wheel', (e) => {
       e.preventDefault();
-      view.zoom = Math.max(0.45, Math.min(3.2, view.zoom * (e.deltaY > 0 ? 1.12 : 0.89)));
+      const next = wheelZoom(view.zoom, e.deltaY, e.deltaMode);
+      if (Math.abs(next - view.zoom) < 1e-4) return;
+      view.zoom = next;
       this._schedule(canvas, view);
     }, { passive: false });
     canvas.addEventListener('dblclick', () => {

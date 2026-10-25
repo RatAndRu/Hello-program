@@ -4,7 +4,8 @@ import { GLTFLoader } from 'three/addons/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { EmissiveBloomPass } from './selectivebloom.js';
+import { PlanarMirror } from './planarmirror.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 
@@ -2617,12 +2618,17 @@ export class Viewer {
     this.controls.autoRotateSpeed = 1.6;
   }
 
+  /** Настоящий PBR-материал детали: у зеркала сверху лежит шейдер отражения. */
+  _pbrOf(m) {
+    return (m && m.userData && m.userData.mirrorSource) || m;
+  }
+
   setShading(mode) {
     this.shading = mode || 'realistic';
     if (!this.model) return;
     this.model.traverse((o) => {
       if (!o.isMesh) return;
-      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const mats = (Array.isArray(o.material) ? o.material : [o.material]).map((m) => this._pbrOf(m));
       mats.forEach((m) => {
         if (!m) return;
         if (!m.userData.base) {
@@ -2661,7 +2667,7 @@ export class Viewer {
     this.model.traverse((o) => {
       if (!o.isMesh) return;
       if (o.name !== name && o.parent?.name !== name) return;
-      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const mats = (Array.isArray(o.material) ? o.material : [o.material]).map((m) => this._pbrOf(m));
       mats.forEach((m) => {
         if (!m) return;
         if (!m.userData.base) {
@@ -2986,22 +2992,14 @@ export class Viewer {
       const mirror = mats.find((m) => this._isMirrorMaterial(m));
       if (mirror) found.push({ mesh: o, mat: mirror });
     });
-    // больше трёх зеркал не тянем: каждая карта — шесть проходов сцены
+    // больше трёх зеркал не тянем: каждое — отдельный проход сцены
     found.slice(0, 3).forEach(({ mesh, mat }) => {
-      const rt = new THREE.WebGLCubeRenderTarget(256, {
-        generateMipmaps: true,
-        minFilter: THREE.LinearMipmapLinearFilter,
-        type: THREE.HalfFloatType,
-      });
-      const cam = new THREE.CubeCamera(1, 40000, rt);
-      cam.position.set(0, 0, 0);
-      this.scene.add(cam);
-      mat.envMap = rt.texture;
-      mat.envMapIntensity = 1.0;
-      mat.needsUpdate = true;
-      this._mirrors.push({ mesh, mat, rt, cam, center: new THREE.Vector3() });
+      const mirror = new PlanarMirror(mesh, mat, { resolution: 1024 });
+      this._mirrors.push({ mesh, mat: mirror.material, source: mat, mirror,
+                           center: new THREE.Vector3() });
     });
     if (this._mirrors.length) this._updateMirrorCenters();
+    this._mirrorAt = 0;
   }
 
   _updateMirrorCenters() {
@@ -3016,11 +3014,8 @@ export class Viewer {
   }
 
   _disposeMirrors() {
-    this._mirrors.forEach(({ mesh, mat, rt, cam }) => {
-      try { mat.envMap = null; mat.needsUpdate = true; } catch (e) { /* материал мог умереть */ }
-      rt.dispose();
-      cam.parent?.remove(cam);
-      void mesh;
+    this._mirrors.forEach(({ mirror }) => {
+      try { mirror.dispose(); } catch (e) { /* материал мог умереть */ }
     });
     this._mirrors = [];
     this._mirrorKey = '';
@@ -3028,26 +3023,23 @@ export class Viewer {
 
   /** Обновляет отражения, когда камера или модель сдвинулись. */
   _refreshMirrors(force = false) {
-    if (!this._mirrors.length) return;
-    const now = performance.now();
-    const moved = this._mirrorCamPos.distanceToSquared(this.camera.position) > 1e-4
-      || !this._mirrorAt;
-    // не чаще пяти раз в секунду и только по факту движения
-    if (!force && (!moved || now - this._mirrorAt < 200)) return;
-    this._mirrorAt = now;
+    if (!this._mirrors.length || !this.renderer) return;
+    // Во время проигрывания отражение пересчитываем каждый кадр: предмет над
+    // зеркалом едет, и застывшая картинка сразу выдаёт подделку.
+    const moving = this.playing === true;
+    const moved = force || moving
+      || this._mirrorCamPos.distanceToSquared(this.camera.position) > 1e-4;
+    // стоит камера — отражение не пересчитываем: это лишний проход сцены
+    if (!force && !moved) return;
     this._mirrorCamPos.copy(this.camera.position);
     this._updateMirrorCenters();
-    const hidden = [];
-    this._mirrors.forEach(({ mesh }) => {
-      hidden.push([mesh, mesh.visible]);
-      mesh.visible = false;
+    const hide = [this.axes, this.grid, ...this._overlays, ...this._selOverlays];
+    const big = (this.renderer.getDrawingBufferSize(new THREE.Vector2()).x > 1400);
+    this._mirrors.forEach(({ mirror }, i) => {
+      // на слабом экране обновляем не все зеркала в одном кадре
+      if (!force && big && i > 0) return;
+      mirror.update(this.renderer, this.scene, this.camera, { hide, force });
     });
-    const bg = this.scene.background;
-    this._mirrors.forEach(({ cam }) => {
-      try { cam.update(this.renderer, this.scene); } catch (e) { /* нет WebGL2 — без отражений */ }
-    });
-    this.scene.background = bg;
-    hidden.forEach(([mesh, vis]) => { mesh.visible = vis; });
   }
 
   /** Сила свечения: 0 — выключено, 1 — заметный ореол, 2 — «неон». */
@@ -3162,8 +3154,10 @@ export class Viewer {
     const size = new THREE.Vector2();
     this.renderer.getSize(size);
     if (this._bloomOn) {
+      // светятся только детали со своим emissive, а не всё, что ярче порога
       const strength = this.bloomStrength ?? Number(this.settings?.bloom ?? 0.55);
-      const bloom = new UnrealBloomPass(size, strength, 0.4, 0.9);
+      const bloom = new EmissiveBloomPass(this.scene, this.camera, strength);
+      bloom.setSize(size.x, size.y);
       composer.addPass(bloom);
       this.bloomPass = bloom;
     }

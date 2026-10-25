@@ -248,15 +248,24 @@ class Args:
         raw = self.kwargs[key]
         v = parse_value(raw, self.params)
         if isinstance(v, bool) or not isinstance(v, (int, float)):
-            raise DslError(f"Параметр «{key}» должен быть числом, получено «{raw}».",
-                           line=self.cmd.line, command=self.cmd.text)
+            raise DslError(f"Параметр «{key}» должен быть числом, получено «{raw}»",
+                           hint=self._params_hint(), line=self.cmd.line,
+                           command=self.cmd.text, param=key, value=raw)
         v = float(v)
         if minv is not None and v < minv - 1e-9:
-            raise DslError(f"Параметр «{key}» должен быть ≥ {minv:g} (сейчас {v:g}).",
-                           line=self.cmd.line, command=self.cmd.text)
+            raise DslError(
+                f"Параметр «{key}» = {v:g}, а допустимо {minv:g}…{maxv:g}"
+                if maxv is not None else
+                f"Параметр «{key}» = {v:g}, а допустимо не меньше {minv:g}",
+                hint=self._params_hint(), line=self.cmd.line, command=self.cmd.text,
+                param=key, minv=minv, maxv=maxv, value=v)
         if maxv is not None and v > maxv + 1e-9:
-            raise DslError(f"Параметр «{key}» должен быть ≤ {maxv:g} (сейчас {v:g}).",
-                           line=self.cmd.line, command=self.cmd.text)
+            raise DslError(
+                f"Параметр «{key}» = {v:g}, а допустимо {minv:g}…{maxv:g}"
+                if minv is not None else
+                f"Параметр «{key}» = {v:g}, а допустимо не больше {maxv:g}",
+                hint=self._params_hint(), line=self.cmd.line, command=self.cmd.text,
+                param=key, minv=minv, maxv=maxv, value=v)
         return v
 
     def int(self, key: str, default: int | None = None, required: bool = False,
@@ -266,8 +275,9 @@ class Args:
         if v is None:
             return None
         if abs(v - round(v)) > 1e-6:
-            raise DslError(f"Параметр «{key}» должен быть целым числом.", line=self.cmd.line,
-                           command=self.cmd.text)
+            raise DslError(f"Параметр «{key}» должен быть целым числом, получено {v:g}",
+                           hint=self._params_hint(), line=self.cmd.line,
+                           command=self.cmd.text, param=key, value=v)
         return int(round(v))
 
     def boolean(self, key: str, default: bool = False) -> bool:

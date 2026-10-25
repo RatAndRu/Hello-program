@@ -1,4 +1,4 @@
-"""Клинки: катана, ятоган, стилет, двуручник, серп, танто.
+"""Клинки и режущий инструмент: катана, ятоган, стилет, дисковая пила.
 
 Клинок — это не выдавленный контур, а **лофт линзы по изогнутой оси**:
 сечение меняется от толстой спинки к тонкой кромке, по длине сужается к
@@ -219,3 +219,161 @@ def blade(a, name):
                         f"кромок {edges}, {solid.num_tri():,} трис".replace(",", " "),
                 a.cmd.line)
     return make_solid(a.scene, name, solid, a, kind="blade")
+
+
+# --------------------------------------------------------------------------- #
+#  Дисковая пила
+# --------------------------------------------------------------------------- #
+_SAW_SHAPES = {
+    "треугольные": "треугольные", "острые": "треугольные", "треугольник": "треугольные",
+    "sharp": "треугольные", "triangle": "треугольные",
+    "трапеция": "трапеция", "трапеции": "трапеция", "карбид": "трапеция",
+    "carbide": "трапеция", "плоские": "трапеция", "flat": "трапеция",
+    "крюк": "крюк", "крючья": "крюк", "hook": "крюк", "крючковатые": "крюк",
+    "волна": "волна", "волны": "волна", "wave": "волна",
+}
+
+
+def _saw_tooth(u: float, shape: str, rake: float) -> float:
+    """Высота зуба 0…1 внутри одного шага (u∈[0,1)), 0 — дно пазухи.
+
+    У настоящего зуба длинная спинка (подъём) и короткая передняя кромка
+    (спуск), поэтому вершина стоит не в середине шага. ``rake`` — передний
+    угол: положительный сдвигает вершину вперёд по ходу реза.
+    """
+    peak = min(0.88, max(0.35, 0.70 - rake / 130.0))
+    if shape == "треугольные":
+        return (u / peak) if u <= peak else (1.0 - u) / max(1.0 - peak, 1e-6)
+    if shape == "трапеция":
+        # карбидная пластина: плоская площадка на вершине
+        half = 0.09
+        left, right = peak - half, peak + half
+        if u <= left:
+            return (u / max(left, 1e-6)) ** 0.85
+        if u <= right:
+            return 1.0
+        return max(0.0, (1.0 - u) / max(1.0 - right, 1e-6))
+    if shape == "крюк":
+        # загнутая вперёд вершина: спинка вогнутая, передняя кромка почти отвесная
+        if u <= peak:
+            return (u / max(peak, 1e-6)) ** 1.6
+        return ((1.0 - u) / max(1.0 - peak, 1e-6)) ** 2.4
+    # волна: плавный синус без острых вершин
+    return 0.5 + 0.5 * math.cos(2.0 * math.pi * (u - peak))
+
+
+def _disc_solid(outer: list[tuple[float, float]], thickness: float,
+                r_hole: float = 0.0) -> mf.Manifold:
+    """Плоский диск по 2D-контуру с настоящим сквозным отверстием."""
+    pts = ensure_ccw(np.asarray(outer, dtype=np.float64))
+    cs = mf.CrossSection([pts])
+    if cs.is_empty():
+        raise GeometryError("Контур пилы не замкнулся: уменьшите пазуху gullet.")
+    solid = cs.extrude(thickness)
+    if r_hole > 0.5:
+        shaft = mf.Manifold.cylinder(thickness * 6.0, r_hole, r_hole,
+                                     max(48, int(r_hole * 6)), False)
+        solid = solid - shaft.translate((0, 0, -thickness * 3.0))
+    return solid
+
+
+@op("saw", aliases=("пила", "дисковая_пила", "дисковая пила", "циркулярка", "saw_blade",
+                    "circular_saw", "диск"),
+    category="Примитивы",
+    summary="Дисковая пила: плоское полотно с зубьями по кругу и посадочным "
+            "отверстием под вал. Зубья настраиваются отдельно — число, высота, "
+            "форма (треугольные, трапеция-карбид, крюк, волна), передний угол "
+            "rake и глубина пазухи gullet. По желанию — компенсационные "
+            "отверстия windows и расширенный пропил kerf. Лежит плашмя, ось — Z.",
+    example="пила = saw diameter=200 thickness=2.5 teeth=24 tooth=6 hole=22\n"
+            "настольная = saw diameter=150 teeth=40 shape=трапеция windows=5 kerf=3.2",
+    params={"diameter": "наружный диаметр по зубьям, мм (200)",
+            "thickness": "толщина полотна, мм (2.5)",
+            "teeth": "число зубьев по кругу (24)",
+            "tooth": "высота зуба над полотном, мм (5 % диаметра)",
+            "shape": "треугольные, трапеция, крюк или волна — «трапеция»",
+            "rake": "передний угол зуба, градусы: + вперёд, − назад (10)",
+            "gullet": "глубина пазухи между зубьями, мм (2 % диаметра)",
+            "kerf": "ширина пропила по зубьям, мм (толщина × 1.4)",
+            "hole": "посадочное отверстие под вал, мм (11 % диаметра)",
+            "windows": "число круглых отверстий в полотне 0…12 (0)",
+            "detail": "точек на зуб, 4…40 (16)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def saw(a, name):
+    diameter = float(a.num("diameter", 200.0, minv=20.0, maxv=4000.0))
+    thickness = float(a.num("thickness", 2.5, minv=0.3, maxv=60.0))
+    teeth = int(a.num("teeth", 24, minv=4, maxv=200))
+    shape_raw = (a.text("shape") or "трапеция").strip().lower()
+    shape = _SAW_SHAPES.get(shape_raw)
+    if shape is None:
+        raise GeometryError(f"Неизвестная форма зубьев «{a.text('shape')}».",
+                            hint="shape: треугольные, трапеция, крюк или волна.")
+    r_out = diameter / 2.0
+    tooth = float(a.num("tooth", diameter * 0.05, minv=0.2, maxv=diameter * 0.16))
+    rake = float(a.num("rake", 10.0, minv=-45.0, maxv=45.0))
+    gullet = float(a.num("gullet", max(0.4, diameter * 0.02), minv=0.05,
+                         maxv=diameter * 0.08))
+    kerf = float(a.num("kerf", thickness * 1.4, minv=thickness, maxv=thickness * 4.0))
+    hole = float(a.num("hole", diameter * 0.11, minv=1.0, maxv=r_out * 1.2))
+    windows = int(a.num("windows", 0, minv=0, maxv=12))
+    detail = int(a.num("detail", 16, minv=4, maxv=40))
+
+    r_tip = r_out
+    r_gullet = max(r_out - tooth - gullet, 1.0)   # дно пазухи между зубьями
+    r_in = hole / 2.0
+    if r_in >= r_gullet - 1.0:
+        raise GeometryError(
+            f"Отверстие ø{hole:g} мм не оставляет полотна при ø{diameter:g} мм.",
+            hint="hole меньше 0.5 × diameter, обычно 0.1…0.2 от диаметра.")
+
+    # Высоты зубьев по кругу; вершину ставим ровно на точку выборки, иначе
+    # остриё «срезается» и зуб выглядит лепестком.
+    steps = teeth * detail
+    peak_u = min(0.88, max(0.35, 0.70 - rake / 130.0))
+    heights = []
+    for i in range(steps):
+        u = (i * teeth / steps) % 1.0
+        prev_u = ((i - 1) * teeth / steps) % 1.0
+        at_peak = u >= peak_u >= prev_u and (u - peak_u) <= (peak_u - prev_u)
+        heights.append(1.0 if at_peak else _saw_tooth(u, shape, rake))
+    h_max = max(heights)
+    radii = [r_gullet + (r_tip - r_gullet) * h / h_max for h in heights]
+
+    angles = [2.0 * math.pi * i / steps for i in range(steps)]
+    outline = [(r * math.cos(t), r * math.sin(t)) for r, t in zip(radii, angles)]
+    solid = _disc_solid(outline, thickness, r_in)
+
+    # Пропил: венчик по зубьям чуть толще полотна — так пилит настоящий диск.
+    if kerf > thickness * 1.02:
+        # венчик держим только у зубьев: глубже в полотне пропил не нужен
+        band_r = max(r_gullet - tooth * 0.4, r_in + 2.0)
+        inner_band = [(min(r, band_r) * math.cos(t), min(r, band_r) * math.sin(t))
+                      for r, t in zip(radii, angles)]
+        rim = _disc_solid(outline + list(reversed(inner_band)), kerf)
+        solid = solid + rim
+
+    if windows > 0:
+        r_win = max(r_in + 3.0, (r_in + r_gullet) / 2.0)
+        win_d = max(3.0, min((r_gullet - r_in) * 0.42, diameter * 0.06))
+        if r_win - win_d / 2.0 <= r_in + 1.0:
+            raise GeometryError(
+                f"Отверстия ø{win_d:g} мм не помещаются в полотне пилы.",
+                hint="Увеличьте diameter или уменьшите hole/windows.")
+        tall = max(thickness, kerf) * 6.0
+        holes = None
+        for k in range(windows):
+            ang = 2.0 * math.pi * k / windows + math.pi / windows
+            cut = mf.Manifold.cylinder(tall, win_d / 2.0, win_d / 2.0, 32, False)
+            cut = cut.translate((r_win * math.cos(ang), r_win * math.sin(ang), -tall / 2.0))
+            holes = cut if holes is None else holes + cut
+        solid = solid - holes
+
+    solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
+    parts = len([p for p in solid.decompose() if p.volume() > 0])
+    if parts != 1:
+        raise GeometryError(f"Пила распалась на {parts} частей: уменьшите пазуху.",
+                            hint="gullet меньше 6 % диаметра, tooth — меньше 12 %.")
+    a.scene.log("info", f"дисковая пила: ø{diameter:g} мм, {teeth} зубьев, "
+                        f"пропил {kerf:g} мм, {solid.num_tri():,} трис".replace(",", " "),
+                a.cmd.line)
+    return make_solid(a.scene, name, solid, a, kind="saw")

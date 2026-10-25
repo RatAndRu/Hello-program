@@ -135,20 +135,18 @@
           <span class="poly-badge" id="poly-badge" hidden>0</span>
         </div>
         <div class="view-tools">
-          <button class="mini view-btn active" data-view="iso" title="Изометрия">изо</button>
-          <button class="mini view-btn" data-view="front" title="Спереди">спереди</button>
-          <button class="mini view-btn" data-view="right" title="Справа">справа</button>
-          <button class="mini view-btn" data-view="top" title="Сверху">сверху</button>
+          <div class="tool-seg" role="group" aria-label="Ракурс">
+            <button class="mini view-btn active" data-view="iso" title="Изометрия">изо</button>
+            <button class="mini view-btn" data-view="front" title="Спереди">спереди</button>
+            <button class="mini view-btn" data-view="right" title="Справа">справа</button>
+            <button class="mini view-btn" data-view="top" title="Сверху">сверху</button>
+          </div>
+          <span class="tool-sep"></span>
           <button class="mini" id="btn-select" title="Выделять области и оставлять замечания">выбор</button>
           <button class="mini" id="btn-space" title="Выделять пустое пространство кубическими секторами">кубы</button>
-          <button class="mini" id="btn-grid" title="Сетка">сетка</button>
-          <button class="mini" id="btn-wire" title="Полигонаж (каркас)">полигоны</button>
-          <button class="mini" id="btn-spin" title="Автоповорот">⟳</button>
-          <button class="mini" id="btn-focus-sel" title="Приблизить камеру к выделенному предмету">⌖</button>
-          <button class="mini" id="btn-orbit-sel" title="Вращать и приближать вокруг выделенного, а не центра сцены">вокруг</button>
-          <button class="mini active" id="btn-occl" title="Показывать предметы, которые закрывают выделенный, прозрачным каркасом">заслонки</button>
-          <button class="mini" id="btn-studio" title="Свет, фон, экспозиция, анимация">вид ▾</button>
-          <button class="mini" id="btn-shot" title="Сохранить картинку">⤓</button>
+          <span class="tool-sep"></span>
+          <button class="mini" id="btn-studio" title="Свет, фон, показ, анимация">вид ▾</button>
+          <button class="mini icon-only" id="btn-shot" title="Сохранить картинку">⤓</button>
         </div>
       </div>
 
@@ -247,6 +245,15 @@
           <label><input type="checkbox" id="opt-ground" checked /> пол</label>
           <label><input type="checkbox" id="opt-axes" checked /> оси</label>
           <label><input type="checkbox" id="opt-poly" /> полигонаж</label>
+        </div>
+        <div class="studio-row studio-show">
+          <span class="studio-label">Показ</span>
+          <div class="chips" id="show-chips">
+            <button class="chip" id="btn-spin" title="Автоповорот модели">⟳ автоповорот</button>
+            <button class="chip" id="btn-focus-sel" title="Приблизить камеру к выделенному предмету">⌖ к предмету</button>
+            <button class="chip" id="btn-orbit-sel" title="Вращать и приближать вокруг выделенного, а не центра сцены">вокруг выделенного</button>
+            <button class="chip active" id="btn-occl" title="Показывать предметы, которые закрывают выделенный, прозрачным каркасом">заслонки</button>
+          </div>
         </div>
         <div class="studio-sep"></div>
         <div class="anim-panel" id="anim-panel">

@@ -445,6 +445,33 @@ def _run_uistest(report_path: str | None) -> int:
                       and st.get("lines") == "группы",
                       f"hatch={st.get('hatch')} paper_tex={st.get('paper_tex')} "
                       f"lines={st.get('lines')}")
+                # 0.29: дисковая пила, объяснение «нет модели», ревизия окон
+                saw = post("/api/preview", {"script": (
+                    "п = saw diameter=160 thickness=2.4 teeth=24 shape=трапеция "
+                    "windows=5 kerf=3.2")})
+                check("превью формы «дисковая пила»",
+                      saw.get("ok") is True and saw.get("tris", 0) > 0,
+                      f"{saw.get('tris', 0)} трис, {saw.get('size')}")
+                bad = post("/api/preview", {"script": "п = saw diameter=200 teeth=900"})
+                bad_err = (bad.get("error") or {})
+                check("превью объясняет, почему нет модели",
+                      bad.get("ok") is False and bad_err.get("param") == "teeth"
+                      and bad_err.get("bounds") == "4…200"
+                      and "4…200" in (bad_err.get("message") or ""),
+                      f"param={bad_err.get('param')} рамки={bad_err.get('bounds')}")
+                js_app = get("/js/app.js", raw=True)
+                check("карточка пилы и подсветка плохого поля",
+                      b"op: 'saw'" in js_app and b"markToolFieldError" in js_app)
+                js_zoom = get("/js/viewzoom.js", raw=True)
+                js_mirror = get("/js/planarmirror.js", raw=True)
+                js_bloom = get("/js/selectivebloom.js", raw=True)
+                check("модули окна: колесо, план-зеркало, свечение",
+                      b"wheelZoom" in js_zoom and b"platePlane" in js_mirror
+                      and b"EmissiveBloomPass" in js_bloom,
+                      f"{len(js_zoom)}/{len(js_mirror)}/{len(js_bloom)} байт")
+                check("шапки окон без тесноты",
+                      b'class="tool-seg"' in html and b'id="show-chips"' in html
+                      and b'id="btn-grid"' not in html)
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:
