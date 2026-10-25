@@ -57,6 +57,12 @@ PARAM_ALIASES = {
     "утопить": "sink", "шлиц": "drive", "головка": "head", "остриё": "tip",
     "острие": "tip", "шейка": "neck", "полная": "full", "полный": "full",
     "кисть": "radius", "радиус_кисти": "radius", "точка": "point", "центр_входа": "point",
+    # ступеньки, сектор, бусина
+    "форма": "shape", "ступени": "steps", "ступеней": "steps",
+    "число_ступеней": "steps", "подъём": "rise", "подступенок": "rise",
+    "проступь": "run", "отверстие": "hole", "дырка": "hole",
+    "фаска": "chamfer", "перепад": "rise", "скос": "taper",
+    "начало": "start", "старт": "start",
 }
 
 STYLE_KEYS = {"color", "metal", "rough", "density", "material", "visible",

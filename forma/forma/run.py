@@ -53,6 +53,7 @@ from . import ops_graded  # noqa: F401,E402
 from . import ops_mount  # noqa: F401,E402
 from . import ops_attach  # noqa: F401,E402
 from . import ops_vessel  # noqa: F401,E402
+from . import ops_solids  # noqa: F401,E402
 from . import ops_orient  # noqa: F401,E402
 
 

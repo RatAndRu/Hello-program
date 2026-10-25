@@ -278,7 +278,7 @@ def _disc_solid(outer: list[tuple[float, float]], thickness: float,
 
 
 @op("saw", aliases=("пила", "дисковая_пила", "дисковая пила", "циркулярка", "saw_blade",
-                    "circular_saw", "диск"),
+                    "circular_saw"),
     category="Примитивы",
     summary="Дисковая пила: плоское полотно с зубьями по кругу и посадочным "
             "отверстием под вал. Зубья настраиваются отдельно — число, высота, "

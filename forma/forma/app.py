@@ -845,6 +845,60 @@ def _run_uistest(report_path: str | None) -> int:
                       b"title: '\xd0\x9e\xd0\xba\xd1\x82\xd0\xb0\xd1\x8d\xd0\xb4\xd1\x80'" in js_app
                       and b"title: '\xd0\xad\xd0\xbb\xd0\xbb\xd0\xb8\xd0\xbf\xd1\x81\xd0\xbe\xd0\xb8\xd0\xb4'" in js_app,
                       "новые тела первыми в панели")
+
+                # 0.39: слиток, параболоид, седло, ступеньки, круг, сектор,
+                # овал и бусина
+                flat = post("/api/preview", {"script": (
+                    "к = disc diameter=120 thickness=8 round=2\n"
+                    "о = oval width=200 length=120 thickness=8\n"
+                    "с = pie diameter=140 angle=90 thickness=8")})
+                check("круг, овал и сектор круга — тела с объёмом",
+                      flat.get("ok") is True and flat.get("objects") == 3,
+                      f"{flat.get('tris', 0)} трис, объектов {flat.get('objects')}")
+                ing = post("/api/preview", {"script": (
+                    "и = ingot length=100 width=50 height=22 taper=8")})
+                check("слиток: объёмная трапеция",
+                      ing.get("ok") is True and float((ing.get("size") or [0])[0]) > 99.0,
+                      f"габарит по X {(ing.get('size') or [0])[0]} мм")
+                bowl = post("/api/preview", {"script": (
+                    "ч = paraboloid diameter=120 height=40 wall=3")})
+                solid_bowl = post("/api/preview", {"script": (
+                    "п = paraboloid diameter=120 height=40")})
+                check("параболоид: купол и чаша со стенкой",
+                      bowl.get("ok") is True and solid_bowl.get("ok") is True
+                      and bowl.get("tris", 0) > 0 and solid_bowl.get("tris", 0) > 0,
+                      f"чаша {bowl.get('tris', 0)} и купол {solid_bowl.get('tris', 0)} трис")
+                sad = post("/api/preview", {"script": (
+                    "с1 = saddle length=160 width=120 rise=40 thickness=4\n"
+                    "с2 = saddle length=120 width=120 rise=30 thickness=3 mode=седло")})
+                check("гиперболический параболоид: гипар и седло",
+                      sad.get("ok") is True and sad.get("objects") == 2,
+                      f"{sad.get('tris', 0)} трис")
+                stair = post("/api/preview", {"script": (
+                    "л = stairs steps=6 rise=18 run=28 width=120")})
+                stair_size = stair.get("size") or [0, 0, 0]
+                check("ступеньки: марш одной деталью",
+                      stair.get("ok") is True and stair.get("objects") == 1
+                      and abs(float(stair_size[0]) - 168.0) < 0.5,
+                      f"габарит {stair_size[0]}×{stair_size[2]} мм")
+                soft = post("/api/preview", {"script": (
+                    "л = stairs steps=5 rise=16 run=30 width=100 shape=скруглённая")})
+                check("ступеньки со скруглённой кромкой",
+                      soft.get("ok") is True and soft.get("tris", 0) > 60,
+                      f"{soft.get('tris', 0)} трис")
+                bead = post("/api/preview", {"script": (
+                    "б = bead diameter=24 hole=6 chamfer=1.2")})
+                check("бусина: шар с каналом и фаской",
+                      bead.get("ok") is True and bead.get("tris", 0) > 200,
+                      f"{bead.get('tris', 0)} трис")
+                one = get("/api/example?key=more_solids")
+                check("пример «Новые тела» собирается",
+                      post("/api/build", {"script": one.get("script", "")}).get("ok") is True)
+                check("карточки восьми новых тел",
+                      all(f"op: '{op}'".encode("utf-8") in js_app
+                          for op in ("disc", "oval", "pie", "ingot", "paraboloid",
+                                     "saddle", "stairs", "bead")),
+                      "все восемь в инструментах")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

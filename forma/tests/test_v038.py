@@ -173,20 +173,26 @@ class CatalogOrderTest(unittest.TestCase):
                                  "Люди и вещи", "Покраска"])
 
     def test_derived_and_nature_follow_user_list(self):
+        standard = ["sheet", "box", "prism", "octa", "pyramid", "cone", "cylinder",
+                    "sphere", "icosphere", "ellipsoid", "capsule", "torus", "ring",
+                    "washer", "disc", "oval"]
         derived = ["hemisphere", "sector", "bracket", "полуовал", "arch", "воронка",
-                   "скоба", "lens", "cartridge"]
+                   "скоба", "lens", "cartridge", "ingot", "paraboloid", "saddle",
+                   "pie", "bead"]
         nature = ["egg", "drop", "crescent", "star", "lightning", "heart", "cloud",
                   "diamond", "horn", "rock", "leaf", "banana"]
-        self.assertEqual(self.ops[14:14 + len(derived)], derived)
-        start = 14 + len(derived)
+        self.assertEqual(self.ops[:len(standard)], standard)
+        start = len(standard)
+        self.assertEqual(self.ops[start:start + len(derived)], derived)
+        start += len(derived)
         self.assertEqual(self.ops[start:start + len(nature)], nature)
 
     def test_ready_made_follow_user_list(self):
         ready = ["yin_yang", "crown", "arrow", "tee", "скоба", "yoke", "скоба",
                  "plate", "spring", "gear", "saw", "nut", "bolt", "screw", "pulley",
                  "box_body", "shaft", "wheel", "spiral", "plus", "rope", "цепь",
-                 "крюк", "handle", "cardboard", "swirl", "rail", "gusset", "grommet",
-                 "blade"]
+                 "крюк", "handle", "cardboard", "swirl", "rail", "stairs", "gusset",
+                 "grommet", "blade"]
         start = self.ops.index("yin_yang")
         self.assertEqual(self.ops[start:start + len(ready)], ready)
 
