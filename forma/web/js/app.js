@@ -3785,6 +3785,14 @@ $('btn-export').parentElement.querySelector('.menu').addEventListener('click', a
 /* ------------------------------------------------------------------ */
 /*  0.15: «Инструменты» — готовые фигуры и приёмы с параметрами        */
 /* ------------------------------------------------------------------ */
+/** Ползунок «степень детализации» — общий для всех примитивов. */
+function detailParam(value, hint) {
+  return {
+    k: 'detail', label: 'детализация', v: value, min: 0, max: 5, step: 1,
+    kind: 'slider', hint: hint || 'чем больше, тем глаже и тем больше треугольников',
+  };
+}
+
 const TOOL_SHAPES = [
   {
     op: 'star', name: 'звезда', title: 'Звезда',
@@ -4156,26 +4164,28 @@ const TOOL_SHAPES = [
   },
   {
     op: 'box', name: 'куб', title: 'Куб', group: 'Примитивы',
-    desc: 'Прямоугольный блок со скруглением рёбер.',
+    desc: 'Прямоугольный блок со скруглением рёбер; ползунок — гладкость скругления.',
     params: [
       { k: 'size', label: 'размер', v: '120,80,60', kind: 'vec' },
       { k: 'round', label: 'скругл.', v: 3, step: 1 },
+      detailParam(3, 'детализация скругления: 0 — гранёные углы, 5 — гладкие'),
     ],
   },
   {
     op: 'sphere', name: 'сфера', title: 'Сфера', group: 'Примитивы',
-    desc: 'Шар заданного радиуса.',
+    desc: 'Шар заданного радиуса. Ползунок детализации задаёт, насколько он гладкий.',
     params: [
       { k: 'radius', label: 'радиус', v: 50, step: 1 },
-      { k: 'segments', label: 'сегм.', v: 64, step: 8 },
+      detailParam(4, 'детализация: 0 — гранёный шар, 5 — максимально гладкий'),
     ],
   },
   {
     op: 'cylinder', name: 'цилиндр', title: 'Цилиндр', group: 'Примитивы',
-    desc: 'Круглый столбик: радиус, высота, сегменты.',
+    desc: 'Круглый столбик: радиус, высота и гладкость бока.',
     params: [
       { k: 'radius', label: 'радиус', v: 40, step: 1 },
       { k: 'height', label: 'высота', v: 100, step: 1 },
+      detailParam(3, 'детализация: сколько граней у бока'),
     ],
   },
   {
@@ -4184,14 +4194,16 @@ const TOOL_SHAPES = [
     params: [
       { k: 'radius', label: 'радиус', v: 45, step: 1 },
       { k: 'height', label: 'высота', v: 90, step: 1 },
+      detailParam(3, 'детализация: сколько граней по кругу'),
     ],
   },
   {
     op: 'torus', name: 'тор', title: 'Тор', group: 'Примитивы',
-    desc: 'Кольцо-бублик: радиус кольца и радиус трубки.',
+    desc: 'Кольцо-бублик: радиус кольца, радиус трубки и гладкость.',
     params: [
       { k: 'major', label: 'радиус', v: 55, step: 1 },
       { k: 'minor', label: 'трубка', v: 12, step: 1 },
+      detailParam(3, 'детализация: сглаженность кольца и трубки'),
     ],
   },
   {
@@ -4217,7 +4229,9 @@ const TOOL_SHAPES = [
     desc: 'Сфера из одинаковых треугольников, как в Blender: ровный полигонаж без полюсов.',
     params: [
       { k: 'radius', label: 'радиус', v: 40, step: 2 },
-      { k: 'divisions', label: 'уровень', v: 2, step: 1, min: 1, max: 4 },
+      { k: 'divisions', label: 'уровень', v: 2, step: 1, min: 1, max: 4,
+        kind: 'slider', suffix: ' ур.',
+        hint: 'каждый уровень дробит каждый треугольник на четыре' },
     ],
   },
   {
@@ -4237,6 +4251,7 @@ const TOOL_SHAPES = [
     params: [
       { k: 'radius', label: 'радиус', v: 18, step: 1 },
       { k: 'height', label: 'длина', v: 90, step: 5 },
+      detailParam(3, 'детализация скруглений'),
     ],
   },
   {
@@ -4432,6 +4447,7 @@ const TOOL_SHAPES = [
       { k: 'parts', label: 'на части', v: 2, step: 1, min: 2, max: 12 },
       { k: 'angle', label: 'угол', v: 180, step: 10, min: 1, max: 180 },
       { k: 'gap', label: 'просвет', v: 0.5, step: 0.25, min: 0.02 },
+      { k: 'sharp', label: 'жёсткость', v: 0, step: 0.1, min: 0, max: 1 },
       { k: 'axis', label: 'вдоль', v: 'x', kind: 'raw', choices: ['x', 'y'] },
     ],
   },
@@ -4659,6 +4675,105 @@ const TOOL_SHAPES = [
       { k: 'crease', label: 'излом', v: 32, step: 1 },
       { k: 'toon', label: 'ступени', v: 3, step: 1 },
       { k: 'tone', label: 'растр', v: 0, step: 0.05 },
+    ],
+  },
+  /* ---------------- 0.32: скульпт — руками по поверхности ---------------- */
+  {
+    op: 'dent', name: 'вмятина', title: 'Вмятина от удара', group: 'Скульпт',
+    base: 'box size=[60, 60, 60] round=4', baseName: 'заготовка',
+    desc: 'Поверхность проминается внутрь, перед ударом сетка дробится под '
+      + 'размер пятна. soft задаёт мягкость: у мягкого материала вмятина '
+      + 'широкая и гладкая, у жёсткого — узкая, с валиком по краю.',
+    params: [
+      { k: 'depth', label: 'глубина', v: 8, step: 0.5, min: 0.1 },
+      { k: 'radius', label: 'пятно', v: 18, step: 1, min: 1 },
+      { k: 'soft', label: 'мягкость', v: 0.5, step: 0.1, min: 0, max: 1 },
+      { k: 'rim', label: 'валик', v: 0.3, step: 0.1, min: 0, max: 1 },
+    ],
+  },
+  {
+    op: 'blow', name: 'выдутая', title: 'Выдувание объёма', group: 'Скульпт',
+    base: 'sphere radius=30 segments=40', baseName: 'заготовка',
+    desc: 'Как у стеклодува: поверхность расходится вдоль своих нормалей. '
+      + 'Шар надувается шаром, цилиндр — бочкой.',
+    params: [
+      { k: 'height', label: 'выдуть', v: 12, step: 0.5, min: 0.1 },
+      { k: 'radius', label: 'пятно', v: 40, step: 1, min: 1 },
+      { k: 'soft', label: 'мягкость', v: 0.7, step: 0.1, min: 0, max: 1 },
+    ],
+  },
+  {
+    op: 'pinch', name: 'щипок', title: 'Щипок', group: 'Скульпт',
+    base: 'sphere radius=30 segments=40', baseName: 'заготовка',
+    desc: 'Давление с двух сторон: деталь сжимается по оси, материал '
+      + 'выдавливается наружу — как если ухватить пальцами.',
+    params: [
+      { k: 'amount', label: 'сжать', v: 0.4, step: 0.05, min: 0.01, max: 0.9 },
+      { k: 'bulge', label: 'выдавить', v: 0.8, step: 0.1, min: 0, max: 2 },
+      { k: 'radius', label: 'захват', v: 16, step: 1, min: 1 },
+      { k: 'axis', label: 'ось', v: 'x', kind: 'raw', choices: ['x', 'y', 'z'] },
+    ],
+  },
+  {
+    op: 'flatten', name: 'плоская', title: 'Разровнять в плоскость', group: 'Скульпт',
+    base: 'sphere radius=32 segments=48', baseName: 'заготовка',
+    desc: 'Подтягивает участок к плоскости: сила 1 — совсем плоско, меньше — '
+      + 'мягко. Не путать с разглаживанием: тут именно плоскость.',
+    params: [
+      { k: 'radius', label: 'пятно', v: 24, step: 1, min: 1 },
+      { k: 'strength', label: 'сила', v: 0.9, step: 0.05, min: 0, max: 1 },
+      { k: 'soft', label: 'переход', v: 0.6, step: 0.1, min: 0, max: 1 },
+    ],
+  },
+  {
+    op: 'polish', name: 'гладкая', title: 'Разгладить поверхность', group: 'Скульпт',
+    base: 'sphere radius=30 segments=10', baseName: 'заготовка',
+    desc: 'Убирает шероховатость и «лесенки», но не делает плоскостью: '
+      + 'форма и объём остаются. Проходов больше — глаже.',
+    params: [
+      { k: 'passes', label: 'проходов', v: 4, step: 1, min: 1, max: 20 },
+      { k: 'strength', label: 'сила', v: 0.6, step: 0.05, min: 0.05, max: 1 },
+    ],
+  },
+  {
+    op: 'shave', name: 'стёсанная', title: 'Стесать поверхность', group: 'Скульпт',
+    base: 'box size=[50, 50, 90] round=3', baseName: 'заготовка',
+    desc: 'Снимает слой ровной фасеткой под любым углом — как ножом или '
+      + 'наждаком. Круг ограничивает пятно, 0 — вся поверхность.',
+    params: [
+      { k: 'depth', label: 'снять', v: 12, step: 1, min: 0.1 },
+      { k: 'radius', label: 'пятно', v: 0, step: 2, min: 0 },
+    ],
+  },
+  {
+    op: 'point', name: 'заострённая', title: 'Заострить (точилка)', group: 'Скульпт',
+    base: 'cylinder radius=8 height=90 segments=40', baseName: 'заготовка',
+    desc: 'Снимает конус с торца — как точилка карандаш. Длина конуса '
+      + 'задаётся, вершина встаёт ровно на прежний торец.',
+    params: [
+      { k: 'length', label: 'конус', v: 25, step: 1, min: 0.2 },
+      { k: 'side', label: 'торец', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+    ],
+  },
+  {
+    op: 'bore', name: 'сверлёная', title: 'Сверление с формой дна', group: 'Скульпт',
+    base: 'box size=[80, 70, 22]', baseName: 'заготовка',
+    desc: 'Отверстие нужной формы: плоское дно, конус сверла, сфера или '
+      + 'ступень под шляпку. Зенковка — по желанию.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 14, step: 1, min: 0.4 },
+      { k: 'depth', label: 'глубина', v: 14, step: 1, min: 0.2 },
+      { k: 'tip', label: 'дно', v: 'конус', kind: 'raw', choices: ['плоский', 'конус', 'сфера', 'ступень'] },
+      { k: 'countersink', label: 'зенковка', v: 0, step: 0.5, min: 0 },
+    ],
+  },
+  {
+    op: 'refine', name: 'плотная', title: 'Полигонаж (плотность сетки)', group: 'Скульпт',
+    base: 'sphere radius=30 segments=12', baseName: 'заготовка',
+    desc: 'Повышает плотность сетки перед тонкой работой: вмятины и складки '
+      + 'лягут гладко, без гранёных краёв. length — целевая длина ребра.',
+    params: [
+      { k: 'length', label: 'ребро', v: 2, step: 0.5, min: 0.05 },
     ],
   },
 ];
@@ -5116,6 +5231,29 @@ function buildToolField(p) {
   // раскрывается подсказкой
   caption.title = p.label;
   row.appendChild(caption);
+  if (p.kind === 'slider') {
+    // Ползунок для «степени детализации»: тянешь — миниатюра и число
+    // треугольников меняются сразу, без ввода цифр с клавиатуры.
+    row.classList.add('tool-field-slider');
+    row.style.gridColumn = 'span 2';
+    const box = document.createElement('span');
+    box.className = 'tool-slider-wrap';
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = String(p.min ?? 0);
+    input.max = String(p.max ?? 5);
+    input.step = String(p.step ?? 1);
+    input.value = String(p.v ?? p.min ?? 0);
+    input.dataset.key = p.k;
+    input.title = p.hint || `параметр «${p.k}»`;
+    const out = document.createElement('output');
+    out.className = 'tool-slider-val';
+    out.textContent = sliderText(p, input.value);
+    input.addEventListener('input', () => { out.textContent = sliderText(p, input.value); });
+    box.append(input, out);
+    row.appendChild(box);
+    return row;
+  }
   if (p.kind === 'bool') {
     row.classList.add('tool-field-bool');
     const box = document.createElement('input');
@@ -5144,6 +5282,12 @@ function buildToolField(p) {
   input.dataset.key = p.k;
   row.appendChild(attachToolStep(p, input));
   return row;
+}
+
+/** Что показать справа от ползунка: само значение и (для детализации) ×. */
+function sliderText(p, value) {
+  if (p.kind === 'slider' && p.suffix) return `${value}${p.suffix}`;
+  return String(value);
 }
 
 /** Поля рецепта — те же, что у фигур: подпись, поле ввода и стрелки шага. */
@@ -5234,7 +5378,7 @@ function addShapeTool(tool, card) {
 /* ---------------- живые миниатюры в карточках инструментов ---------------- */
 const toolThumbs = new ToolThumbs();
 state.thumbsOn = state.thumbsOn !== false;
-// сценарий → адрес готового GLB: повторные карточки не дёргают сервер
+// сценарий → {url, tris, size}: повторные карточки не дёргают сервер
 const thumbUrls = new Map();
 const thumbTimers = new Map();
 let thumbObserver = null;
@@ -5247,6 +5391,8 @@ function thumbScript(tool, card) {
 
 async function thumbUrl(script) {
   if (thumbUrls.has(script)) return thumbUrls.get(script);
+  // Деталь миниатюры сервер уже построил: берём из ответа и число
+  // треугольников — карточка сразу пишет, сколько будет «весить» примитив.
   const res = await api('/api/preview', { script });
   if (!res.ok) {
     const err = res.error || {};
@@ -5260,8 +5406,29 @@ async function thumbUrl(script) {
   }
   const url = res.url + (res.url.includes('?') ? '&' : '?')
     + 'token=' + encodeURIComponent(TOKEN);
-  thumbUrls.set(script, url);
-  return url;
+  const info = { url, tris: res.tris || 0, size: res.size || [], objects: res.objects || 1 };
+  thumbUrls.set(script, info);
+  return info;
+}
+
+/** Подпись под миниатюрой: сколько треугольников и какой габарит. */
+function toolTrisText(info) {
+  const bits = [];
+  if (info.tris) bits.push(`${fmtInt(info.tris)} трис`);
+  const size = (info.size || []).filter((v) => Number.isFinite(Number(v)));
+  if (size.length === 3) {
+    bits.push(size.map((v) => fmt(Math.round(Number(v)))).join(' × ') + ' мм');
+  }
+  if (info.objects > 1) bits.push(`${info.objects} детали`);
+  return bits.join(' · ');
+}
+
+function showToolTris(card, info) {
+  const badge = card.querySelector('.tool-tris');
+  if (!badge) return;
+  const text = toolTrisText(info || {});
+  badge.textContent = text;
+  badge.hidden = !text;
 }
 
 /** Собирает миниатюру карточки. Ракурс не сбрасываем — так видно правку. */
@@ -5295,13 +5462,15 @@ async function refreshThumb(card) {
   const stamp = String(Date.now());
   card.dataset.thumbBusy = '1';
   try {
-    const url = await thumbUrl(script);
+    const info = await thumbUrl(script);
     if (card.dataset.thumbBusy !== '1') return;   // карточку уже перерисовали
-    canvas.dataset.url = url;
-    toolThumbs.show(canvas, url);
+    canvas.dataset.url = info.url;
+    toolThumbs.show(canvas, info.url);
     canvas.classList.add('ready');
+    showToolTris(card, info);
   } catch (err) {
     if (card.dataset.thumbBusy === '1') {
+      showToolTris(card, null);
       toolThumbs.fail(canvas, {
         reason: err?.message || 'деталь не построилась',
         bounds: err?.bounds || '',
@@ -5540,6 +5709,12 @@ function renderTools() {
       // Живая миниатюра: деталь видно сразу, без отдельного окна. Поля ниже
       // пересобирают её на лету — правка видна, не отрываясь от карточки.
       card.appendChild(makeThumbCanvas());
+      // Сколько треугольников в детали при текущих ползунках — видно сразу,
+      // до добавления в сценарий (число приходит вместе с миниатюрой).
+      const trisBadge = document.createElement('div');
+      trisBadge.className = 'tool-tris';
+      trisBadge.hidden = true;
+      card.appendChild(trisBadge);
       const fields = document.createElement('div');
       fields.className = 'tool-fields';
       tool.params.forEach((p) => fields.appendChild(buildToolField(p)));

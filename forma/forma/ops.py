@@ -142,6 +142,25 @@ def mirror(m: mf.Manifold, axis: str = "x", plane_at: float = 0.0) -> mf.Manifol
     return out
 
 
+# Степень детализации примитива: одно число вместо «сколько сегментов».
+# 0 — черновая (быстро, видно грани), 3 — обычная, 5 — максимальная.
+DETAIL_FACTORS = (0.35, 0.55, 0.80, 1.00, 1.45, 2.00)
+DETAIL_MAX = len(DETAIL_FACTORS) - 1
+
+
+def detail_level(a, default: int = 3) -> int:
+    """Уровень детализации из параметра ``detail`` (0…5, по умолчанию 3)."""
+    value = a.int("detail", default, minv=0, maxv=DETAIL_MAX)
+    if value is None:
+        return default
+    return max(0, min(DETAIL_MAX, int(value)))
+
+
+def detail_factor(a, default: int = 3) -> float:
+    """Во сколько раз подробнее обычной сетки строить примитив."""
+    return DETAIL_FACTORS[detail_level(a, default)]
+
+
 def anchor(m: mf.Manifold, at=None, center: bool = False) -> mf.Manifold:
     """Ставит объект: по умолчанию — центр по XY и низ на z=0."""
     target = np.asarray(at if at is not None else (0.0, 0.0, 0.0), dtype=np.float64)

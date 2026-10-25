@@ -46,18 +46,22 @@ FINENESS_MM = 0.06
 
 
 def limit_segments(requested, radius: float, tolerance: float = FINENESS_MM,
-                   max_n: int = 512) -> int:
+                   max_n: int = 512, factor: float = 1.0) -> int:
     """Ограничивает число сегментов разумным: лишние грани на ровной
     поверхности не видны, но раздувают модель.
 
     ``requested`` — сколько попросил сценарий (None — посчитать самому).
+    ``factor`` — степень детализации: 1.0 обычная, меньше — грубее,
+    больше — глаже (вместе с числом треугольников).
     Возвращает число сегментов, при котором стрелка прогиба хорды не больше
     ``tolerance`` мм.
     """
-    need = auto_segments(radius, tolerance=tolerance, max_n=max_n)
+    need = float(auto_segments(radius, tolerance=tolerance, max_n=max_n))
+    if factor != 1.0:
+        need = min(float(max_n), max(8.0, need * float(factor)))
     if requested is None:
-        return int(need)
-    return int(min(max(8, int(requested)), need))
+        return int(round(need))
+    return int(min(max(8, int(requested)), round(need)))
 
 
 def manifold_mesh(m: mf.Manifold) -> tuple[np.ndarray, np.ndarray]:
@@ -940,18 +944,34 @@ def crease_normals(verts: np.ndarray, faces: np.ndarray, angle_deg: float = 38.0
     for vi in range(len(uniq)):
         v = int(uniq[vi])
         incident = sf[starts[vi]:ends[vi]]
-        clusters: list[dict] = []
-        for f in incident:
-            nrm = fn[f]
-            placed = False
-            for cl in clusters:
-                if float(np.dot(nrm, cl["rep"])) >= cos_t:
-                    cl["faces"].append(int(f))
-                    cl["sum"] += fn[f] * max(area[f], 1e-12)
-                    placed = True
-                    break
-            if not placed:
-                clusters.append({"rep": nrm, "faces": [int(f)], "sum": fn[f] * max(area[f], 1e-12)})
+        # Склейка по соседству, а не по «первому попавшемуся»: у вершины на
+        # дне вмятины грани образуют веер, где крайние расходятся на 120°, но
+        # каждая пара соседей отличается на 10°. Жадная привязка к первому
+        # представителю рвала такой веер на куски и давала звёздчатые шипы —
+        # здесь грани сливаются по цепочке (union-find).
+        k = len(incident)
+        parent = list(range(k))
+
+        def _find(a: int) -> int:
+            while parent[a] != a:
+                parent[a] = parent[parent[a]]
+                a = parent[a]
+            return a
+
+        for a in range(k):
+            na = fn[incident[a]]
+            for b in range(a + 1, k):
+                if float(np.dot(na, fn[incident[b]])) >= cos_t:
+                    ra, rb = _find(a), _find(b)
+                    if ra != rb:
+                        parent[rb] = ra
+        groups: dict[int, list[int]] = {}
+        for a in range(k):
+            groups.setdefault(_find(a), []).append(int(incident[a]))
+        clusters: list[dict] = [
+            {"faces": fs, "sum": sum(fn[f] * max(area[f], 1e-12) for f in fs)}
+            for fs in groups.values()
+        ]
         # если кластер один — не плодим вершины
         for cl in clusters:
             s = cl["sum"]

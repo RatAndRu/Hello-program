@@ -10,23 +10,34 @@ import numpy as np
 from .errors import GeometryError
 from .geometry import (FINENESS_MM, auto_segments, circle_profile, hull_of_manifolds,
                        limit_segments, manifold_from_arrays, manifold_mesh)
-from .ops import anchor, ensure_solid, make_solid, op
+from .ops import anchor, detail_factor, detail_level, ensure_solid, make_solid, op
 
 
 def _round_value(a) -> float:
     return float(a.num("round", 0.0, minv=0.0) or 0.0)
 
 
-def _sphere_segments(radius: float) -> int:
-    return auto_segments(radius, tolerance=0.10, min_n=16, max_n=96)
+def _sphere_segments(radius: float, factor: float = 1.0) -> int:
+    """Сегментов на скругление (Minkowski): чем выше детализация, тем глаже."""
+    need = auto_segments(radius, tolerance=0.10, min_n=16, max_n=96)
+    if factor != 1.0:
+        need = int(min(160, max(10, round(need * factor))))
+    return int(need)
 
 
 def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
               max_n: int = 512) -> int:
-    """Сегменты по допуску: слишком большое число в сценарии не раздувает модель."""
+    """Сегменты по допуску и по степени детализации.
+
+    ``detail=0…5`` (по умолчанию 3) умножает обычное число сегментов: это
+    понятный ползунок «сколько треугольников», а не «сколько сегментов».
+    """
+    factor = detail_factor(a)
     if requested is None:
-        return int(limit_segments(None, radius, tolerance=tolerance, max_n=max_n))
-    got = limit_segments(requested, radius, tolerance=tolerance, max_n=max_n)
+        return int(limit_segments(None, radius, tolerance=tolerance, max_n=max_n,
+                                  factor=factor))
+    got = limit_segments(requested, radius, tolerance=tolerance, max_n=max_n,
+                         factor=factor)
     if got < int(requested):
         a.scene.log("info", f"гладкость {requested} → {got} сегментов "
                             f"(отклонение ≤ {tolerance:g} мм)", a.cmd.line)
@@ -39,6 +50,7 @@ def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
     example="стол = box size=[1200,700,40]",
     params={"size": "размер [x,y,z], мм (обязательно)",
             "round": "радиус скругления рёбер, мм",
+            "detail": "детализация скругления 0…5 (3): больше — глаже и тяжелее",
             "center": "центрировать в точке at (по умолчанию — низ на at)",
             "at": "положение [x,y,z]"},
     positional=[])
@@ -58,7 +70,7 @@ def box(a, name):
         # средняя часть вырождается в плоскость, скругление даёт «таблетку»
         inner = [max(s - 2 * r, 1e-3) for s in size]
         solid = mf.Manifold.cube(inner, True).minkowski_sum(
-            mf.Manifold.sphere(r, _sphere_segments(r)))
+            mf.Manifold.sphere(r, _sphere_segments(r, detail_factor(a))))
     else:
         solid = mf.Manifold.cube(size, True)
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
@@ -70,7 +82,8 @@ def box(a, name):
     summary="Сфера. Центр — в точке at (по умолчанию в начале координат).",
     example="шар = sphere radius=40 at=[0,0,40]",
     params={"radius": "радиус, мм (обязательно)",
-            "segments": "число сегментов (по умолчанию — по размеру)",
+            "detail": "детализация 0…5 (3): 0 — гранёный шар, 5 — гладкий",
+            "segments": "число сегментов (по умолчанию — по детализации)",
             "at": "центр сферы [x,y,z]"},
     positional=["radius"])
 def sphere(a, name):
@@ -89,7 +102,8 @@ def sphere(a, name):
     params={"radius": "радиус снизу, мм (обязательно)",
             "height": "высота, мм (обязательно)",
             "r2": "радиус сверху (по умолчанию равен нижнему)",
-            "segments": "число сегментов (по умолчанию — по размеру)",
+            "segments": "число сегментов (по умолчанию — по детализации)",
+            "detail": "детализация 0…5 (3): больше — глаже и тяжелее",
             "round": "скругление верхней и нижней кромки, мм",
             "center": "центрировать по высоте",
             "at": "положение [x,y,z]"},
@@ -109,7 +123,8 @@ def cylinder(a, name):
             raise GeometryError(f"Скругление {r:g} мм больше радиуса {min(radius, r2):g} мм.")
         inner_h = height - 2 * r
         solid = mf.Manifold.cylinder(inner_h, radius - r, r2 - r, segments)
-        solid = solid.minkowski_sum(mf.Manifold.sphere(r, _sphere_segments(r)))
+        solid = solid.minkowski_sum(
+            mf.Manifold.sphere(r, _sphere_segments(r, detail_factor(a))))
     else:
         solid = mf.Manifold.cylinder(height, radius, r2, segments)
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
@@ -120,7 +135,8 @@ def cylinder(a, name):
     summary="Конус с вершиной вверх, стоит на полу.",
     example="воронка = cone radius=30 height=60",
     params={"radius": "радиус основания, мм", "height": "высота, мм",
-            "segments": "сегментов (по размеру)", "center": "центрировать", "at": "положение"},
+            "detail": "детализация 0…5 (3)", "segments": "сегментов (по детализации)",
+            "center": "центрировать", "at": "положение"},
     positional=["radius", "height"])
 def cone(a, name):
     radius = a.num("radius", required=True, minv=0.01)
@@ -142,8 +158,9 @@ def cone(a, name):
             "thickness": "толщина кольца по радиусу, мм (= 2·minor)",
             "major": "радиус кольца до центра трубки, мм",
             "minor": "радиус трубки, мм",
-            "segments": "сегментов по кругу (по размеру)",
-            "minor_segments": "сегментов трубки (по размеру)",
+            "detail": "детализация 0…5 (3): сглаженность кольца и трубки",
+            "segments": "сегментов по кругу (по детализации)",
+            "minor_segments": "сегментов трубки (по детализации)",
             "at": "центр [x,y,z]"},
     positional=["major", "minor"])
 def torus(a, name):
@@ -308,14 +325,14 @@ def diamond(a, name):
     summary="Капсула: цилиндр с полусферами. Высота задаётся полная.",
     example="палец = capsule radius=9 height=70",
     params={"radius": "радиус, мм", "height": "полная высота, мм",
-            "segments": "сегментов (по размеру)", "center": "центрировать", "at": "положение"},
+            "detail": "детализация 0…5 (3)", "segments": "сегментов (по детализации)",
+            "center": "центрировать", "at": "положение"},
     positional=["radius", "height"])
 def capsule(a, name):
     radius = a.num("radius", required=True, minv=0.01)
     height = a.num("height", required=True, minv=0.02)
-    segments = a.int("segments", None, minv=8, maxv=256)
-    if segments is None:
-        segments = auto_segments(radius)
+    segments = _segments(a, a.int("segments", None, minv=8, maxv=256), radius,
+                         max_n=256)
     if height < 2 * radius - 1e-6:
         raise GeometryError(
             f"Высота капсулы {height:g} мм меньше двух радиусов ({2 * radius:g} мм).",

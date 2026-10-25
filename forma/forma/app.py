@@ -550,6 +550,72 @@ def _run_uistest(report_path: str | None) -> int:
                     saved_path.unlink(missing_ok=True)
                 except OSError:
                     pass
+                # 0.32: скульпт руками — вмятина, выдувание, щипок, стёсывание,
+                # сверление с формой дна, полигонаж, острая складка
+                sculpt = [
+                    ("вмятина", "к = box size=[60,60,60] round=4\n"
+                                "к = dent [к] depth=8 radius=18 soft=0.6 rim=0.3"),
+                    ("выдувание", "ш = sphere radius=30 segments=40\n"
+                                  "ш = blow [ш] height=12 radius=40"),
+                    ("щипок", "ш = sphere radius=30 segments=40\n"
+                              "ш = pinch [ш] axis=x amount=0.4 radius=16"),
+                    ("стёсывание", "к = box size=[50,50,90] round=3\n"
+                                  "к = shave [к] depth=12"),
+                    ("заострение", "к = cylinder radius=8 height=90 segments=40\n"
+                                   "к = point [к] length=25"),
+                    ("сверление", "п = box size=[80,70,22]\n"
+                                  "п = bore [п] diameter=14 depth=14 tip=конус countersink=4"),
+                    ("полигонаж", "ш = sphere radius=30 segments=12\n"
+                                  "ш = refine [ш] length=2"),
+                    ("разровнять", "ш = sphere radius=32 segments=48\n"
+                                   "ш = flatten [ш] at=[0,0,24] radius=24 strength=1"),
+                    ("разгладить", "ш = sphere radius=30 segments=48\n"
+                                   "ш = wrinkle [ш] amp=0.8 freq=40 mode=шум\n"
+                                   "ш = polish [ш] passes=6 strength=0.8"),
+                ]
+                bad = []
+                for title, script in sculpt:
+                    res = post("/api/preview", {"script": script})
+                    if res.get("ok") is not True or res.get("tris", 0) < 100:
+                        bad.append(title)
+                check("девять инструментов скульпта строятся",
+                      not bad, "все, кроме " + ", ".join(bad) if bad else "9 из 9")
+                sharp = post("/api/preview", {"script": (
+                    "л = sheet width=120 length=200 thickness=1\n"
+                    "fold л parts=2 angle=90 gap=2 sharp=1")})
+                check("острая складка бумаги",
+                      sharp.get("ok") is True and sharp.get("tris", 0) > 100,
+                      f"{sharp.get('tris', 0)} трис")
+                anime = post("/api/build", {"script": get("/api/example?key=anime_face")["script"]})
+                anime_objs = [o for o in anime.get("objects", []) if o.get("visible")]
+                check("пример «Аниме-портрет на плоскости»",
+                      anime.get("ok") is True and len(anime_objs) == 1
+                      and anime_objs[0].get("tris", 0) > 1000,
+                      f"{anime_objs[0].get('tris', 0) if anime_objs else 0} трис")
+                cards = js_app.count("group: 'Скульпт'".encode()) if isinstance(js_app, bytes) else 0
+                check("карточки скульпта с живыми превью",
+                      cards >= 9 and b"op: 'dent'" in js_app and b"op: 'bore'" in js_app
+                      and b"op: 'refine'" in js_app, f"{cards} карточек")
+                # 0.32: степень детализации примитивов ползунком + число трисов
+                sliders = js_app.count(b"detailParam(") if isinstance(js_app, bytes) else 0
+                check("ползунок детализации у примитивов",
+                      sliders >= 7 and b"kind: 'slider'" in js_app,
+                      f"{sliders - 1} карточек" if sliders else "нет")
+                check("подпись «сколько трисов» под миниатюрой",
+                      b"tool-tris" in js_app and b"toolTrisText" in js_app
+                      and b"tool-tris" in css,
+                      "как в карточке, так и в стилях")
+                grown = []
+                # имя переменной не base: так называется адрес сервера в post()
+                for op, dims in (("sphere", "radius=50"), ("cylinder", "radius=40 height=100"),
+                                 ("cone", "radius=45 height=90")):
+                    low = post("/api/preview", {"script": f"д = {op} {dims} detail=0"})
+                    high = post("/api/preview", {"script": f"д = {op} {dims} detail=5"})
+                    if not (low.get("ok") and high.get("ok")) \
+                            or high.get("tris", 0) < low.get("tris", 0) * 2:
+                        grown.append(op)
+                check("детализация действительно меняет сетку", not grown,
+                      "все, кроме " + ", ".join(grown) if grown else "0 → 5 втрое и больше")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

@@ -396,6 +396,7 @@ def _refine_for(m: mf.Manifold, length: float) -> float:
             "parts": "на сколько частей сложить: 2 — пополам, 3 — на треть (2)",
             "angle": "угол сгиба в градусах, 180 — совсем пополам (180)",
             "gap": "просвет между слоями после складывания, мм (толщина × 0.5)",
+            "sharp": "жёсткость складки 0…1 (0): 1 — пресс-биг, ребро почти острое",
             "axis": "вдоль какой оси делить лист: x, y («x»)",
             "offset": "где линия сгиба, 0.1…0.9 от длины (0.5)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -421,7 +422,11 @@ def fold(a, name):
     # выше основания на 2r и занимает [2r − t, 2r], поэтому
     # 2r = 2t + gap: между слоями остаётся ровно просвет gap, а внутренний
     # радиус сгиба (r − t = gap/2) не проваливается сквозь себя.
-    radius = thin + gap / 2.0
+    sharp = float(a.num("sharp", 0.0, minv=0.0, maxv=1.0))
+    # Жёсткая складка: радиус сгиба упирается в толщину листа (внутренний
+    # радиус стремится к нулю), а дуга дробится крупно — на рендере ребро
+    # читается линией, а не круглой трубой.
+    radius = thin + gap / 2.0 * (1.0 - 0.9 * sharp)
     turn = math.radians(angle_deg)
     arc_len = radius * turn
     panel = span / parts
@@ -465,7 +470,10 @@ def fold(a, name):
         z += (a0 - s_cur) * math.sin(ang)
         s_cur = a0
         pts.append((x, z, ang, s_cur))
-        n = max(10, int(abs(turn) / math.radians(6)))
+        if sharp > 0.01:
+            n = max(3, int(round(abs(turn) / math.radians(6.0) * (1.0 - 0.86 * sharp))))
+        else:
+            n = max(10, int(abs(turn) / math.radians(6)))
         for i in range(n):
             x, z, ang = arc_step(x, z, ang, sign, sign * turn / n, radius, arc_len / n)
             s_cur += arc_len / n

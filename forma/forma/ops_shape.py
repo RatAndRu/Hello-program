@@ -697,24 +697,46 @@ def mirror(a, name):
     return _derived(a, name, result, base, "mirror")
 
 
-@op("refine", aliases=("уточнить", "подразбить", "subdivide"), category="Форма и деформации",
-    summary="Повышает плотность сетки (плавнее поверхность).",
-    example='деталь = box size=[40,40,40]\nдеталь = refine [деталь] length=1.5',
-    params={"objects": "объект", "length": "целевая длина ребра, мм",
-            "levels": "число уровней подразбиения"},
+@op("refine", aliases=("уточнить", "подразбить", "subdivide", "полигонаж",
+                       "детализация", "плотность", "polygon"),
+    category="Форма и деформации",
+    summary="Полигонаж: повышает плотность сетки. Нужен перед тонкой работой — "
+            "вмятиной, складкой, сверлением: на крупной сетке край выходит "
+            "гранёным, а после дробления инструмент ложится гладко. "
+            "length — целевая длина ребра в мм, levels — готовые уровни "
+            "подразбиения (1…4, каждый учетверяет число граней).",
+    example="# крупная сетка — и после неё мелкая вмятина\n"
+            "заготовка = sphere radius=30 segments=12\n"
+            "заготовка = refine [заготовка] length=2\n"
+            "заготовка = dent [заготовка] radius=14 depth=5",
+    params={"objects": "объект", "length": "целевая длина ребра, мм (1.5)",
+            "levels": "число уровней подразбиения 1…4"},
     positional=["objects"])
 def refine(a, name):
     solids = a.solids()
     if len(solids) != 1:
-        raise GeometryError("refine работает с одним объектом.")
+        raise GeometryError("refine работает с одним объектом.",
+                            hint="Формат: имя = refine [объект] length=2")
     base = solids[0]
+    before = int(base.manifold.num_tri())
     if a.has("levels"):
         levels = a.int("levels", 1, minv=1, maxv=4)
         result = base.manifold.refine(int(levels))
     else:
         length = a.num("length", 1.5, minv=0.05)
+        area = float(base.manifold.surface_area())
+        est = area / max(float(length) ** 2 * 0.43, 1e-9)
+        if est > 2_500_000:
+            raise GeometryError(
+                f"Полигонаж дал бы около {est / 1e6:.1f} млн граней — это "
+                "тяжело даже для просмотра.",
+                hint="Увеличьте length (длину ребра) или уменьшите деталь.",
+                param="length", minv=0.05)
         result = base.manifold.refine_to_length(float(length))
-    return _derived(a, name, result, base, "refine")
+    solid = _derived(a, name, result, base, "refine")
+    after = int(solid.manifold.num_tri())
+    solid.notes.append(f"сетка {before} → {after} трис")
+    return solid
 
 
 @op("simplify", aliases=("упростить", "облегчить", "optimize", "оптимизировать"),

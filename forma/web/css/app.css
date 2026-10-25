@@ -1178,6 +1178,34 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
   font-size: 11px;
   outline: 0;
 }
+/* ползунок детализации: дорожка на всю ширину карточки, значение справа */
+.tool-field.tool-field-slider { grid-column: span 2; }
+.tool-slider-wrap { display: grid; grid-template-columns: 1fr 34px; align-items: center; gap: 7px; }
+.tool-field.tool-field-slider input[type="range"] {
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  height: 16px;
+  border: 0;
+  background: transparent;
+  accent-color: #6ea8e0;
+  cursor: pointer;
+}
+.tool-slider-val {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: #a9c6e6;
+  text-align: right;
+}
+/* сколько треугольников в детали при текущих ползунках */
+.tool-tris {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: .02em;
+  color: #8fa3bb;
+  margin-top: -2px;
+}
+.tool-tris[hidden] { display: none; }
 .tool-card .small { justify-self: start; }
 .tool-recipe pre {
   margin: 0; font-size: 10.5px; line-height: 1.5; color: #bfe6d6;
