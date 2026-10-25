@@ -147,8 +147,15 @@ def cmd_render(args) -> int:
         return 2
     out = Path(args.out)
     views = tuple(args.views.split(","))
+    style = (b.scene.settings or {}).get("anime") if b.scene else None
+    if getattr(args, "style", None):
+        # явный стиль в командной строке важнее команды anime в сценарии
+        from .anime import normalize_mode, normalize_style
+        text = str(args.style).strip().lower()
+        style = normalize_style({"mode": normalize_mode(text, "аниме")}) \
+            if text not in ("выкл", "off", "нет") else None
     result = render_views(b.visible_solids(), out, prefix=args.prefix, size=args.size,
-                          ss=args.ss, views=views, combined=True)
+                          ss=args.ss, views=views, combined=True, style=style)
     for item in result["files"]:
         print(item["path"])
     if result.get("combined"):
@@ -277,6 +284,9 @@ def main(argv=None) -> int:
     p.add_argument("--size", type=int, default=640)
     p.add_argument("--ss", type=int, default=2)
     p.add_argument("--report", action="store_true")
+    p.add_argument("--style", default=None,
+                   help="аниме-стиль снимков: аниме, манга, комикс, линия или выкл "
+                        "(по умолчанию берётся из команды anime в сценарии)")
     p.set_defaults(func=cmd_render)
 
     p = sub.add_parser("export", help="экспортировать модель")

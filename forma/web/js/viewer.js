@@ -6,6 +6,16 @@ import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+
+/** Цвет из #rrggbb в вектор 0…1 — без менеджера цвета three. */
+function hexVec(hex) {
+  const h = String(hex || '#ffffff').replace('#', '').trim();
+  const full = h.length === 3 ? h.split('').map((c) => c + c).join('') : h.padEnd(6, 'f');
+  const n = parseInt(full.slice(0, 6), 16);
+  if (Number.isNaN(n)) return new THREE.Vector3(1, 1, 1);
+  return new THREE.Vector3(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
+}
 
 const VIEW_DIRS = {
   iso: new THREE.Vector3(0.95, 0.72, -1.0),
@@ -112,6 +122,11 @@ export class Viewer {
     this.ghostOccluders = false;
     this._ghosts = [];
     this._orbitName = '';
+    // аниме/манга-подача: контуры по форме, ступени тона, растр
+    this.anime = null;
+    this._animePass = null;
+    this._normalRT = null;
+    this._normalMat = new THREE.MeshNormalMaterial();
     this._frames = 0;
     this._lastFps = 0;
     this._fpsTime = 0;
@@ -548,6 +563,15 @@ export class Viewer {
     this.camera.aspect = w / Math.max(h, 1);
     this.camera.updateProjectionMatrix();
     if (this.composer) this.composer.setSize(w, h);
+    const buf = new THREE.Vector2();
+    this.renderer.getDrawingBufferSize(buf);
+    if (this._normalRT) {
+      // depthTexture не меняет размер вместе с целью — проще создать заново
+      this._normalRT.dispose();
+      this._normalRT = null;
+      this._ensureNormalTarget();
+    }
+    if (this._animePass) this._animePass.uniforms.uResolution.value.set(buf.x, buf.y);
   }
 
   disposeModel() {
@@ -2677,6 +2701,9 @@ export class Viewer {
     this.keyLight.castShadow = s.shadows !== false;
     this.grid.visible = (s.grid !== false) && this.gridVisible;
     this.ground.visible = s.ground !== false;
+    // пустой объект = в сценарии стиля нет, живой выбор в окне не сбрасываем
+    if (s.anime && Object.keys(s.anime).length) this.setAnime(s.anime);
+    else if (s.anime === null) this.setAnime(null);
     if (this.model) {
       this.model.traverse((o) => {
         if (!o.isMesh) return;
@@ -2684,6 +2711,8 @@ export class Viewer {
         mats.forEach((m) => { if (m) m.envMapIntensity = s.env === 'void' ? 0.4 : 1.15; });
       });
     }
+    // сетку и пол включают строки выше — в аниме-стиле их снова прячем
+    this._applyAnimeLook();
   }
 
   setBackground(hex) {
@@ -2722,36 +2751,338 @@ export class Viewer {
     return { tris, verts, meshes, fps: this._lastFps };
   }
 
-  /** Кадр: со свечением — через композер, без свечения — напрямую. */
+  /** Кадр: со свечением или в аниме-стиле — через композер. */
   _renderFrame() {
     if (!this.renderer) return;
-    if (this._bloomOn && this.composer) {
+    const animeOn = this._animeOn();
+    if ((this._bloomOn || animeOn) && this.composer) {
+      // буфер нормалей и глубины для контуров — до отрисовки красоты
+      if (animeOn) this._renderNormalPass();
+      if (animeOn && this._animePass && this._normalRT) {
+        const u = this._animePass.uniforms;
+        u.tNormal.value = this._normalRT.texture;
+        u.tDepth.value = this._normalRT.depthTexture;
+        u.uNear.value = this.camera.near;
+        u.uFar.value = this.camera.far;
+        const size = new THREE.Vector2();
+        this.renderer.getDrawingBufferSize(size);
+        u.uResolution.value.set(size.x, size.y);
+        u.uPixelRatio.value = this.renderer.getPixelRatio() || 1;
+        u.uWorld.value = this._sceneRadius();
+      }
       this.composer.render();
     } else {
       this.renderer.render(this.scene, this.camera);
     }
   }
 
+  _animeOn() {
+    return !!(this.anime && this.anime.mode && this.anime.mode !== 'выкл'
+      && this.animeSupported !== false);
+  }
+
+  /** Буфер нормалей и глубины: по нему ищутся контуры (как G-буфер в Blender). */
+  _renderNormalPass() {
+    if (!this._normalRT) this._ensureNormalTarget();
+    if (!this._normalRT) return;
+    const prevOverride = this.scene.overrideMaterial;
+    const prevBg = this.scene.background;
+    const prevFog = this.scene.fog;
+    const prevClear = this.renderer.getClearAlpha();
+    const prevColor = this.renderer.getClearColor(new THREE.Color());
+    this.scene.overrideMaterial = this._normalMat;
+    this.scene.background = null;
+    this.scene.fog = null;
+    this.renderer.setRenderTarget(this._normalRT);
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.clear(true, true, true);
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.setRenderTarget(null);
+    this.renderer.setClearColor(prevColor, prevClear);
+    this.scene.overrideMaterial = prevOverride;
+    this.scene.background = prevBg;
+    this.scene.fog = prevFog;
+  }
+
+  /** Радиус модели в мировых единицах: порог и толщина линий не зависят от масштаба. */
+  _sceneRadius() {
+    if (this.bbox && this.bbox.size) {
+      const r = Math.max(this.bbox.size.x, this.bbox.size.y, this.bbox.size.z) * 0.5;
+      if (r > 0) return r;
+    }
+    return 100;
+  }
+
+  /** Полная настройка аниме-стиля: параметры из сценария (команда anime). */
+  setAnime(style) {
+    const cleaned = style && Object.keys(style).length && style.mode !== 'выкл'
+      ? Object.assign({}, style) : null;
+    this.anime = cleaned;
+    this._ensureComposer();
+    this._applyAnimeUniforms();
+    this._applyAnimeLook();
+    this._renderFrame();
+  }
+
+  /** Переносит настройки стиля в юниформы шейдера контуров. */
+  _applyAnimeUniforms() {
+    if (!this._animePass) return;
+    const a = this.anime || {};
+    const modeIndex = { 'аниме': 0, 'манга': 1, 'комикс': 2, 'линия': 3 }[a.mode] ?? 0;
+    const u = this._animePass.uniforms;
+    u.uMode.value = modeIndex;
+    u.uLine.value = Number(a.line ?? 1.6);
+    u.uInk.value = hexVec(a.color || '#101018');
+    u.uInner.value = a.inner === false ? 0 : 1;
+    u.uCrease.value = Math.cos((Number(a.crease ?? 32) * Math.PI) / 180);
+    u.uDepthTh.value = Number(a.depth ?? 0.035);
+    u.uSeams.value = a.seams === false ? 0 : 1;
+    u.uToon.value = Number(a.toon ?? 3);
+    u.uTone.value = Number(a.tone ?? 0);
+    u.uCel.value = a.shade === false ? 0 : 1;
+    const paper = a.paper === null || a.paper === undefined ? (this.settings.bg || '#ffffff') : a.paper;
+    u.uPaper.value = hexVec(paper);
+  }
+
+  /** Фон-«бумага», пол и сетка прячутся: рисунок не должен пестрить. */
+  _applyAnimeLook() {
+    const a = this.anime;
+    const on = this._animeOn();
+    if (!on) {
+      if (this.grid) this.grid.visible = this.settings.grid !== false && this.gridVisible;
+      if (this.ground) this.ground.visible = this.settings.ground !== false;
+      if (this.axes) this.axes.visible = this.axesVisible;
+      if (this.scene) {
+        const bg = this.settings.bg || '#0b0e13';
+        this.scene.background = new THREE.Color(bg);
+        this.scene.fog.color.set(bg);
+      }
+      return;
+    }
+    if (this.grid) this.grid.visible = false;
+    if (this.ground) this.ground.visible = false;
+    if (this.axes) this.axes.visible = false;
+    const paper = a.paper === null || a.paper === undefined ? '#ffffff' : a.paper;
+    this.scene.background = new THREE.Color(paper);
+    this.scene.fog.color.set(paper);
+  }
+
   /** Включает мягкое свечение ярких (эмиссивных) поверхностей. */
   setBloom(on) {
     this._bloomOn = !!on;
-    if (!this._bloomOn) return;
+    this._ensureComposer();
+    this._applyAnimeUniforms();
+  }
+
+  /**
+   * Собирает композер: красота → свечение (если есть светящееся) → вывод →
+   * аниме-контуры. Аниме-проход идёт последним и работает уже в цвете экрана,
+   * поэтому линии получаются ровными и одинаковыми в окне и в PNG.
+   */
+  _ensureComposer() {
+    const need = this._bloomOn || this._animeOn() || !!this.anime;
+    if (!need) {
+      this.composer = null;
+      this._animePass = null;
+      return;
+    }
     if (!this.composer) {
       try {
         const size = new THREE.Vector2();
         this.renderer.getSize(size);
         const composer = new EffectComposer(this.renderer);
         composer.addPass(new RenderPass(this.scene, this.camera));
-        const bloom = new UnrealBloomPass(size, 0.55, 0.55, 0.85);
-        composer.addPass(bloom);
-        composer.addPass(new OutputPass());
         this.composer = composer;
-        this.bloomPass = bloom;
+        this._basePassCount = 1;
       } catch (err) {
-        this._bloomOn = false;
         this.composer = null;
+        return;
       }
     }
+    const composer = this.composer;
+    // пересобираем хвост каждый раз: состав зависит от свечения и стиля
+    while (composer.passes.length > 1) composer.removePass(composer.passes[composer.passes.length - 1]);
+    this.bloomPass = null;
+    this._animePass = null;
+    const size = new THREE.Vector2();
+    this.renderer.getSize(size);
+    if (this._bloomOn) {
+      const bloom = new UnrealBloomPass(size, 0.55, 0.55, 0.85);
+      composer.addPass(bloom);
+      this.bloomPass = bloom;
+    }
+    composer.addPass(new OutputPass());
+    // контуры считаются по буферу глубины: в WebGL1 его нет — тогда рисуем
+    // обычный вид, а стиль остаётся на PNG-снимках (их считает numpy)
+    this.animeSupported = !!(this.renderer.capabilities && this.renderer.capabilities.isWebGL2);
+    if (this.anime && this.animeSupported) {
+      const pass = new ShaderPass(this._animeShader());
+      this._animePass = pass;
+      composer.addPass(pass);
+      const buf = new THREE.Vector2();
+      this.renderer.getDrawingBufferSize(buf);
+      this._animePass.uniforms.uResolution.value.set(buf.x, buf.y);
+      this._ensureNormalTarget();
+    }
+  }
+
+  _ensureNormalTarget() {
+    const size = new THREE.Vector2();
+    this.renderer.getDrawingBufferSize(size);
+    const w = Math.max(2, Math.floor(size.x));
+    const h = Math.max(2, Math.floor(size.y));
+    if (this._normalRT && this._normalRT.width === w && this._normalRT.height === h) return;
+    if (this._normalRT) this._normalRT.dispose();
+    const depth = new THREE.DepthTexture(w, h);
+    depth.type = THREE.UnsignedIntType;
+    this._normalRT = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      depthBuffer: true,
+      depthTexture: depth,
+      stencilBuffer: false,
+    });
+  }
+
+  /** Шейдер контуров: силуэт, изломы, стыки деталей + ступени тона и растр. */
+  _animeShader() {
+    const viewer = this;
+    const shader = {
+      uniforms: {
+        tDiffuse: { value: null },
+        tNormal: { value: null },
+        tDepth: { value: null },
+        uResolution: { value: new THREE.Vector2(1, 1) },
+        uLine: { value: 1.6 },
+        uInk: { value: new THREE.Vector3(0.06, 0.06, 0.09) },
+        uPaper: { value: new THREE.Vector3(1, 1, 1) },
+        uInner: { value: 1 },
+        uCrease: { value: Math.cos((32 * Math.PI) / 180) },
+        uDepthTh: { value: 0.035 },
+        uSeams: { value: 1 },
+        uToon: { value: 3 },
+        uTone: { value: 0 },
+        uCel: { value: 1 },
+        uMode: { value: 0 },
+        uNear: { value: 1 },
+        uFar: { value: 40000 },
+        uPixelRatio: { value: 1 },
+        uWorld: { value: 100 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        precision highp float;
+        uniform sampler2D tDiffuse;
+        uniform sampler2D tNormal;
+        uniform sampler2D tDepth;
+        uniform vec2 uResolution;
+        uniform float uLine, uInner, uCrease, uDepthTh, uSeams;
+        uniform float uToon, uTone, uCel, uMode, uNear, uFar, uPixelRatio, uWorld;
+        uniform vec3 uInk, uPaper;
+        varying vec2 vUv;
+
+        float linearDepth(float d) {
+          // перспективная глубина → расстояние: контуры не зависят от масштаба
+          float z = d * 2.0 - 1.0;
+          return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
+        }
+
+        float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+        float halftone(vec2 uv, float cell, float dark) {
+          float ang = 0.5236;                       // 30° — классический растр
+          mat2 rot = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
+          vec2 p = rot * (uv * uResolution / max(cell, 1.0));
+          vec2 f = fract(p) - 0.5;
+          float r = length(f);
+          float rad = 0.62 * sqrt(clamp(dark, 0.0, 1.0));
+          return smoothstep(rad + 0.08, rad - 0.08, r);
+        }
+
+        void main() {
+          vec4 base = texture2D(tDiffuse, vUv);
+          vec3 col = base.rgb;
+          vec4 nC = texture2D(tNormal, vUv);
+          float aC = nC.a;
+          vec3 nvC = normalize(nC.rgb * 2.0 - 1.0);
+          float dC = linearDepth(texture2D(tDepth, vUv).x);
+          vec2 px = 1.0 / uResolution;
+          // толщина линии в экранных пикселях (не зависит от плотности экрана)
+          float radius = max(uLine * 0.5 * uPixelRatio, 0.6);
+
+          float edge = 0.0;
+          for (int i = 0; i < 8; i++) {
+            float ang = float(i) * 0.785398;
+            vec2 off = vec2(cos(ang), sin(ang)) * radius * px;
+            vec4 nN = texture2D(tNormal, vUv + off);
+            float aN = nN.a;
+            if (aC > 0.5 && aN < 0.5) { edge = 1.0; }
+            if (aC > 0.5 && aN > 0.5) {
+              float dN = linearDepth(texture2D(tDepth, vUv + off).x);
+              // перепад глубины меряем долей размера модели: так работает
+              // и на мелкой детали, и на крупной сцене
+              float rel = abs(dN - dC) / max(uWorld * 2.0, 1e-3);
+              if (uSeams > 0.5 && rel > uDepthTh) edge = 1.0;
+              if (uInner > 0.5) {
+                vec3 nv = normalize(nN.rgb * 2.0 - 1.0);
+                if (dot(nv, nvC) < uCrease) edge = 1.0;
+              }
+            }
+          }
+
+          // светящееся не тонируем: это блики и экраны
+          float bright = step(0.97, max(col.r, max(col.g, col.b))) * step(0.5, aC);
+          float bodyMask = step(0.5, aC) * (1.0 - bright);
+
+          if (uMode > 0.5 && uMode < 1.5) {
+            // манга: бумага, серый тон точками, чёрная заливка в глубокой тени
+            float l = clamp(luma(col), 0.0, 1.0);
+            // четыре ступени: бумага → лёгкий тон → плотный тон → заливка
+            float lvl = 0.90;
+            if (l > 0.58) lvl = 0.0;
+            else if (l > 0.44) lvl = 0.35;
+            else if (l > 0.32) lvl = 0.70;
+            float dots = halftone(vUv, 7.0 * uPixelRatio, lvl);
+            vec3 sheet = mix(uPaper, uInk, dots);
+            if (l < 0.14) sheet = uInk;                      // настоящая чернота
+            if (uTone < 0.01) sheet = mix(uPaper, uInk, lvl * 0.9);
+            col = mix(col, sheet, bodyMask);
+          } else if (uMode > 1.5 && uMode < 2.5) {
+            // комикс: цвет + точки в тенях
+            float l = clamp(luma(col), 0.0, 1.0);
+            float dark = clamp((0.62 - l) / 0.62, 0.0, 1.0) * bodyMask;
+            float dots = halftone(vUv, 7.0 * uPixelRatio, dark);
+            col = mix(col, uInk, dark * (1.0 - dots) * uTone * 0.8);
+          } else if (uMode > 2.5) {
+            // линия: только контуры на бумаге
+            col = mix(col, uPaper, bodyMask);
+          } else {
+            // аниме: ступени тона, блики остаются белыми
+            if (uCel > 0.5 && bodyMask > 0.5) {
+              float l = clamp(luma(col), 0.0, 1.0);
+              float steps = max(uToon, 2.0);
+              float q = floor(l * steps + 0.25) / steps;
+              float k = clamp(q / max(l, 1e-3), 0.62, 1.5);
+              col = clamp(col * k, 0.0, 1.0);
+              col = mix(col, vec3(1.0), smoothstep(0.93, 1.0, l) * 0.35);
+            }
+          }
+
+          // контур поверх всего: линия всегда чёрная, даже на светлом
+          col = mix(col, uInk, edge * step(0.5, aC));
+          gl_FragColor = vec4(col, base.a);
+        }`,
+    };
+    // текстуры буфера нормалей подставляются каждый кадр из _normalRT
+    shader.uniforms.tNormal.value = null;
+    shader.uniforms.tDepth.value = null;
+    void viewer;
+    return shader;
   }
 
   /** Есть ли в модели светящиеся материалы — по ним включаем bloom. */

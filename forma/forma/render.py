@@ -265,7 +265,18 @@ def _draw_shadow(img, cam, bbox):
 
 
 def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
-                 shadow=True, bg=None):
+                 shadow=True, bg=None, style=None):
+    # Аниме/манга: контуры и тон считаются по буферам глубины и нормалей.
+    # Стиль задаёт и фон («бумагу»), и отключение сетки — иначе рисунок пестрит.
+    from .anime import normalize_style
+    st = normalize_style(style) if style else None
+    anime = st is not None and st["mode"] != "выкл"
+    if anime:
+        grid = False
+        if st.get("paper"):
+            bg = tuple(color_to_float_rgb(st["paper"]))
+        if st["mode"] in ("манга", "линия"):
+            shadow = False
     W = size * ss
     cam = _camera(center, radius, view, W, W)
     if bg is None:
@@ -273,6 +284,9 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
     else:
         img = np.ones((cam["h"], cam["w"], 3), dtype=np.float32) * np.array(bg, dtype=np.float32)
     zbuf = np.full((cam["h"], cam["w"]), np.inf, dtype=np.float64)
+    nbuf = np.zeros((cam["h"], cam["w"], 3), dtype=np.float32) if anime else None
+    idbuf = np.zeros((cam["h"], cam["w"]), dtype=np.int32) if anime else None
+    ebuf = np.zeros((cam["h"], cam["w"]), dtype=bool) if anime else None
     if shadow:
         _draw_shadow(img, cam, bbox)
     if grid:
@@ -282,7 +296,7 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
     # прозрачные тела (стекло) рисуем последними и смешиваем с уже готовым
     # кадром: иначе они закрывают то, что должно быть видно сквозь них
     meshes = sorted(meshes, key=lambda m: m.get("alpha", 1.0) < 0.999)
-    for mesh in meshes:
+    for mesh_index, mesh in enumerate(meshes):
         verts = mesh["verts"]
         faces = mesh["faces"]
         normals = mesh["normals"]
@@ -378,6 +392,12 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
                 shade = _shade(nn, colors, metal, rough, cam)
             shade = np.clip(shade, 0, 1)
             sub_img = img[miny:maxy + 1, minx:maxx + 1]
+            if nbuf is not None and alpha >= 0.999:
+                # G-буфер для контуров: нормаль, номер детали, свечение
+                nbuf[miny:maxy + 1, minx:maxx + 1][front] = nn.astype(np.float32)
+                idbuf[miny:maxy + 1, minx:maxx + 1][front] = mesh_index + 1
+                if emis is not None:
+                    ebuf[miny:maxy + 1, minx:maxx + 1][front] = True
             if alpha < 0.999:
                 # стекло: смешиваем, но глубину не пишем — сквозь него видны
                 # детали, которые лежат глубже
@@ -392,9 +412,13 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
     if any(m.get("emissive") is not None for m in meshes):
         img = _glow_pass(img, meshes, cam)
 
-    # контурное затемнение по глубине
+    if anime:
+        from .anime import apply_style
+        img = apply_style(img, zbuf, nbuf, idbuf, ebuf, st, ss)
+
+    # контурное затемнение по глубине (обычный вид)
     finite = np.isfinite(zbuf)
-    if finite.any():
+    if finite.any() and not anime:
         zf = np.where(finite, zbuf, np.nan)
         gx = np.abs(np.diff(zf, axis=1, prepend=np.nan))
         gy = np.abs(np.diff(zf, axis=0, prepend=np.nan))
@@ -503,7 +527,8 @@ def _to_bytes(img: np.ndarray) -> np.ndarray:
 
 
 def render_views(solids, out_dir, prefix="model", size=640, ss=2,
-                 views=("iso", "front", "right", "top"), combined=True) -> dict:
+                 views=("iso", "front", "right", "top"), combined=True,
+                 style=None) -> dict:
     """Рендерит набор видов. Возвращает пути к PNG и массив общего вида."""
     meshes = _prepare(solids)
     if not meshes:
@@ -519,7 +544,7 @@ def render_views(solids, out_dir, prefix="model", size=640, ss=2,
     files = []
     images = []
     for view in views:
-        img, _cam = _render_view(meshes, center, radius, view, size, ss, bbox)
+        img, _cam = _render_view(meshes, center, radius, view, size, ss, bbox, style=style)
         arr = _to_bytes(img)
         path = os.path.join(out_dir, f"{prefix}_{view}.png")
         write_png(path, arr)
@@ -535,7 +560,7 @@ def render_views(solids, out_dir, prefix="model", size=640, ss=2,
 
 
 def render_single(solids, out_dir, filename="preview.png", size=720, ss=2,
-                  view="iso") -> str:
+                  view="iso", style=None) -> str:
     meshes = _prepare(solids)
     if not meshes:
         raise ValueError("Нет объектов для рендера.")
@@ -545,7 +570,7 @@ def render_single(solids, out_dir, filename="preview.png", size=720, ss=2,
     bbox = [float(lo[0]), float(lo[1]), float(lo[2]), float(hi[0]), float(hi[1]), float(hi[2])]
     center = (lo + hi) / 2
     radius = float(np.linalg.norm(hi - lo)) / 2
-    img, _ = _render_view(meshes, center, radius, view, size, ss, bbox)
+    img, _ = _render_view(meshes, center, radius, view, size, ss, bbox, style=style)
     os.makedirs(out_dir, exist_ok=True)
     # Имя без расширения — дописываем .png: иначе файл «есть», а открыть его
     # просмотрщиком нельзя.

@@ -179,6 +179,37 @@
           </select>
         </div>
         <div class="studio-row">
+          <span class="studio-label">Стиль</span>
+          <div class="chips" id="anime-chips">
+            <button class="chip active" data-anime="выкл" title="Обычный реалистичный вид">обычный</button>
+            <button class="chip" data-anime="аниме" title="Цвет, ступени тона и чёрные контуры по форме">аниме</button>
+            <button class="chip" data-anime="манга" title="Чёрно-белый рисунок с растром">манга</button>
+            <button class="chip" data-anime="комикс" title="Толстый контур и точки в тенях">комикс</button>
+            <button class="chip" data-anime="линия" title="Только контуры на бумаге, без затенения">линия</button>
+          </div>
+          <button class="chip" id="anime-insert" title="Добавить команду anime в сценарий, чтобы стиль сохранился в проекте и на снимках">в сценарий</button>
+        </div>
+        <div class="studio-row anime-row" id="anime-row" hidden>
+          <span class="studio-label">Контур</span>
+          <input type="range" id="anime-line" min="0" max="6" step="0.1" value="1.6" title="Толщина контура в пикселях" />
+          <span class="studio-value" id="anime-line-val">1.6 px</span>
+          <label class="anime-check" title="Рисовать рёбра и складки внутри силуэта"><input type="checkbox" id="anime-inner" checked /> внутри</label>
+          <input type="range" id="anime-crease" min="5" max="80" step="1" value="32" title="Угол излома: меньше — больше внутренних линий" />
+          <span class="studio-value" id="anime-crease-val">32°</span>
+          <label class="anime-check" title="Линия на стыке отдельных деталей"><input type="checkbox" id="anime-seams" checked /> стыки</label>
+        </div>
+        <div class="studio-row anime-row" id="anime-row2" hidden>
+          <span class="studio-label">Тон</span>
+          <input type="range" id="anime-toon" min="0" max="8" step="1" value="3" title="Число ступеней тона: 0 — без ступеней" />
+          <span class="studio-value" id="anime-toon-val">3</span>
+          <label class="anime-check" title="Растр манги или точки комикса"><input type="checkbox" id="anime-tone-on" /> растр</label>
+          <input type="range" id="anime-tone" min="0" max="1" step="0.05" value="0.75" title="Сила растра" />
+          <span class="studio-value" id="anime-tone-val">0.75</span>
+          <span class="studio-label">Бумага</span>
+          <input type="color" id="anime-paper" value="#f4f6fa" title="Цвет фона-бумаги" />
+          <label class="anime-check" title="Фон сцены вместо бумаги"><input type="checkbox" id="anime-paper-scene" /> фон сцены</label>
+        </div>
+        <div class="studio-row">
           <span class="studio-label">Экспозиция</span>
           <input type="range" id="exposure" min="0.3" max="2.5" step="0.05" value="1.05" />
           <span class="studio-value" id="exposure-val">1.05</span>

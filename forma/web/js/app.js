@@ -2253,6 +2253,13 @@ function updatePolyBadge() {
 
 function applyViewSettings(payload) {
   const s = payload.settings || {};
+  // Пустой объект = в сценарии стиля нет: выбор пользователя в окне не трогаем,
+  // иначе стиль сбрасывался бы при каждой пересборке модели.
+  if (s.anime !== undefined && s.anime && Object.keys(s.anime).length) {
+    state.anime = (s.anime.mode && s.anime.mode !== 'выкл')
+      ? Object.assign({}, s.anime) : { mode: 'выкл' };
+    syncAnimeControls();
+  }
   state.viewer?.applySettings(s);
   const chips = $('env-chips');
   if (chips) {
@@ -2344,6 +2351,137 @@ $('bg-color')?.addEventListener('input', (e) => {
   $('bg-swatches')?.querySelectorAll('.swatch').forEach((c) => c.classList.remove('active'));
   state.viewer?.setBackground(e.target.value);
 });
+/* ---------------- аниме/манга-стиль: живая настройка в окне ---------------- */
+const ANIME_MODES = {
+  'выкл': { mode: 'выкл' },
+  'аниме': { mode: 'аниме', line: 1.6, crease: 32, toon: 3, tone: 0, paper: '#f4f6fa' },
+  'манга': { mode: 'манга', line: 1.8, crease: 30, toon: 3, tone: 0.75, paper: '#fbfbf7' },
+  'комикс': { mode: 'комикс', line: 2.6, crease: 38, toon: 2, tone: 0.6, paper: '#fdf4e3' },
+  'линия': { mode: 'линия', line: 1.4, crease: 28, toon: 0, tone: 0, paper: '#ffffff', shade: false },
+};
+state.anime = state.anime || { mode: 'выкл' };
+
+function animeUiValues() {
+  const a = state.anime || {};
+  return {
+    line: Number(a.line ?? 1.6),
+    crease: Number(a.crease ?? 32),
+    toon: Number(a.toon ?? 3),
+    tone: Number(a.tone ?? 0),
+    inner: a.inner !== false,
+    seams: a.seams !== false,
+    paper: a.paper === null ? '#ffffff' : (a.paper || '#f4f6fa'),
+    paperScene: a.paper === null,
+  };
+}
+
+function syncAnimeControls() {
+  const a = state.anime || { mode: 'выкл' };
+  const v = animeUiValues();
+  document.querySelectorAll('#anime-chips .chip').forEach((c) => {
+    c.classList.toggle('active', (c.dataset.anime || '') === (a.mode || 'выкл'));
+  });
+  const on = (a.mode || 'выкл') !== 'выкл';
+  ['anime-row', 'anime-row2'].forEach((id) => {
+    const row = $(id);
+    if (row) row.hidden = !on;
+  });
+  if ($('anime-line')) $('anime-line').value = String(v.line);
+  if ($('anime-line-val')) $('anime-line-val').textContent = `${v.line.toFixed(1)} px`;
+  if ($('anime-crease')) $('anime-crease').value = String(v.crease);
+  if ($('anime-crease-val')) $('anime-crease-val').textContent = `${Math.round(v.crease)}°`;
+  if ($('anime-toon')) $('anime-toon').value = String(v.toon);
+  if ($('anime-toon-val')) $('anime-toon-val').textContent = String(v.toon);
+  if ($('anime-tone')) $('anime-tone').value = String(v.tone);
+  if ($('anime-tone-val')) $('anime-tone-val').textContent = v.tone.toFixed(2);
+  if ($('anime-tone-on')) $('anime-tone-on').checked = v.tone > 0.001;
+  if ($('anime-inner')) $('anime-inner').checked = v.inner;
+  if ($('anime-seams')) $('anime-seams').checked = v.seams;
+  if ($('anime-paper')) $('anime-paper').value = v.paper;
+  if ($('anime-paper-scene')) $('anime-paper-scene').checked = v.paperScene;
+}
+
+function applyAnime(patch) {
+  const base = Object.assign({}, state.anime || {});
+  const next = Object.assign(base, patch || {});
+  if (!next.mode || next.mode === 'выкл') {
+    state.anime = { mode: 'выкл' };
+  } else {
+    state.anime = next;
+  }
+  if (state.viewer) {
+    state.viewer.setAnime(state.anime.mode === 'выкл' ? null : state.anime);
+  }
+  syncAnimeControls();
+}
+
+document.querySelectorAll('#anime-chips .chip').forEach((chip) => {
+  chip.addEventListener('click', () => {
+    const mode = chip.dataset.anime || 'выкл';
+    if (mode === 'выкл') {
+      applyAnime({ mode: 'выкл' });
+      toast('Обычный вид');
+      return;
+    }
+    const preset = Object.assign({}, ANIME_MODES[mode] || { mode });
+    if (state.anime && state.anime.mode === mode) {
+      // повторный щелчок по активному стилю не сбрасывает настройки
+      applyAnime({ mode });
+      return;
+    }
+    applyAnime(preset);
+    toast(`Стиль «${mode}»`);
+  });
+});
+$('anime-line')?.addEventListener('input', (e) => {
+  applyAnime({ line: Number(e.target.value) });
+  if ($('anime-line-val')) $('anime-line-val').textContent = `${Number(e.target.value).toFixed(1)} px`;
+});
+$('anime-crease')?.addEventListener('input', (e) => {
+  applyAnime({ crease: Number(e.target.value) });
+  if ($('anime-crease-val')) $('anime-crease-val').textContent = `${Math.round(Number(e.target.value))}°`;
+});
+$('anime-inner')?.addEventListener('change', (e) => applyAnime({ inner: e.target.checked }));
+$('anime-seams')?.addEventListener('change', (e) => applyAnime({ seams: e.target.checked }));
+$('anime-toon')?.addEventListener('input', (e) => {
+  applyAnime({ toon: Number(e.target.value) });
+  if ($('anime-toon-val')) $('anime-toon-val').textContent = String(e.target.value);
+});
+$('anime-tone')?.addEventListener('input', (e) => {
+  const v = Number(e.target.value);
+  applyAnime({ tone: v });
+  if ($('anime-tone-val')) $('anime-tone-val').textContent = v.toFixed(2);
+  if ($('anime-tone-on')) $('anime-tone-on').checked = v > 0.001;
+});
+$('anime-tone-on')?.addEventListener('change', (e) => {
+  applyAnime({ tone: e.target.checked ? 0.75 : 0 });
+});
+$('anime-paper')?.addEventListener('input', (e) => applyAnime({ paper: e.target.value }));
+$('anime-paper-scene')?.addEventListener('change', (e) => {
+  applyAnime({ paper: e.target.checked ? null : ($('anime-paper')?.value || '#ffffff') });
+});
+
+/** Строка сценария для текущих настроек стиля. */
+function animeCommand() {
+  const a = state.anime || { mode: 'выкл' };
+  if (!a.mode || a.mode === 'выкл') return 'anime off=да';
+  const v = animeUiValues();
+  const parts = [`mode=${a.mode}`, `line=${v.line.toFixed(1)}`, `crease=${Math.round(v.crease)}`,
+    `toon=${Math.round(v.toon)}`];
+  if (v.tone > 0.001) parts.push(`tone=${v.tone.toFixed(2)}`);
+  if (!v.inner) parts.push('inner=нет');
+  if (!v.seams) parts.push('seams=нет');
+  if (a.shade === false) parts.push('shade=нет');
+  parts.push(v.paperScene ? 'paper=сцена' : `paper=${v.paper}`);
+  return 'anime ' + parts.join(' ');
+}
+
+$('anime-insert')?.addEventListener('click', () => {
+  insertTool(animeCommand(), 'аниме-стиль');
+});
+
+syncAnimeControls();
+
 $('exposure')?.addEventListener('input', (e) => {
   const v = Number(e.target.value);
   $('exposure-val').textContent = v.toFixed(2);
@@ -4160,6 +4298,20 @@ const TOOL_SHAPES = [
       { k: 'angle', label: 'угол', v: 0, step: 5 },
     ],
   },
+  {
+    op: 'anime', name: 'аниме-стиль', title: 'Аниме / манга', group: 'Покраска',
+    noTarget: true,
+    base: 'ваза = lathe points=[[0,0],[26,0],[40,30],[30,62],[16,90],[0,92]]',
+    desc: 'Чёрные контуры по форме: силуэт, рёбра и стыки деталей. Плюс ступени '
+      + 'тона, растр и бумага — и в окне, и на снимках.',
+    params: [
+      { k: 'mode', label: 'стиль', v: 'аниме', kind: 'raw' },
+      { k: 'line', label: 'контур', v: 1.8, step: 0.1 },
+      { k: 'crease', label: 'излом', v: 32, step: 1 },
+      { k: 'toon', label: 'ступени', v: 3, step: 1 },
+      { k: 'tone', label: 'растр', v: 0, step: 0.05 },
+    ],
+  },
 ];
 
 const TOOL_RECIPES = [
@@ -4565,6 +4717,11 @@ function addShapeTool(tool, card) {
     // команда работает по готовому телу: сначала кладём заготовку
     const baseName = uniqueObjectName(tool.baseName || 'заготовка', currentScript());
     const tail = parts.length ? ' ' + parts.join(' ') : '';
+    if (tool.noTarget) {
+      // стилю имя объекта не нужно: anime mode=… line=…
+      insertTool(`${baseName} = ${tool.base}\n${tool.op}${tail}`, tool.title);
+      return;
+    }
     insertTool(`${baseName} = ${tool.base}\n${tool.op} ${baseName}${tail}`, tool.title);
     return;
   }

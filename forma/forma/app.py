@@ -343,6 +343,34 @@ def _run_uistest(report_path: str | None) -> int:
                       len(parts) == len(clock_build.get("objects") or [])
                       and all(o.get("area_mm2", 0) > 0 for o in parts),
                       f"{len(parts)} деталей")
+                # 0.26: аниме/манга-стиль — команда, снимок и панель в окне
+                anime_build = post("/api/build", {"script": (
+                    "ш = sphere radius=30\nку = box size=[48,48,48] at=[58,0,0]\n"
+                    "anime mode=манга line=2 tone=0.8")})
+                style = (anime_build.get("settings") or {}).get("anime") or {}
+                check("команда anime в сценарии",
+                      anime_build.get("ok") is True and style.get("mode") == "манга"
+                      and float(style.get("line") or 0) > 0,
+                      str(style.get("mode")))
+                anime_render = post("/api/render", {})
+                first = (anime_render.get("files") or [{}])[0].get("url")
+                if first:
+                    import tempfile
+                    from .geometry import read_png_gray
+                    png = get(first, raw=True)
+                    with tempfile.TemporaryDirectory() as tmp:
+                        shot = Path(tmp) / "shot.png"
+                        shot.write_bytes(png)
+                        gray = read_png_gray(shot)
+                    ink = float((gray < 0.2).mean())
+                    paper = float(gray.mean())
+                    check("снимок в аниме-стиле", 0.0005 < ink < 0.35 and paper > 0.6,
+                          f"контура {ink * 100:.1f}%, фон {paper:.2f}")
+                else:
+                    check("снимок в аниме-стиле", False, "нет файла")
+                check("панель стиля в интерфейсе",
+                      b'id="anime-chips"' in html and b'id="anime-line"' in html
+                      and b'id="anime-insert"' in html and b'id="anime-paper"' in html)
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

@@ -261,14 +261,24 @@ class AppState:
                 self.gl_cache = (self.last_build.script_hash, self.last_build.glb())
             return self.gl_cache[1]
 
+    def _anime_style(self) -> dict | None:
+        """Стиль аниме/манга из сценария (команда anime) — для снимков."""
+        try:
+            scene = self.last_build.scene if self.last_build else None
+            style = (scene.settings or {}).get("anime") if scene else None
+            return dict(style) if style else None
+        except Exception:
+            return None
+
     def render(self) -> dict:
         with self.lock:
             if not self.last_build or not self.last_build.ok:
                 raise FormaError("Сначала постройте модель.")
             out = self.data_dir / "renders"
             stamp = time.strftime("%H%M%S")
+            style = self._anime_style()
             result = render_views(self.last_build.visible_solids(), out,
-                                  prefix=f"view_{stamp}", size=640, ss=2)
+                                  prefix=f"view_{stamp}", size=640, ss=2, style=style)
             files = []
             for item in result["files"]:
                 name = Path(item["path"]).name
@@ -336,7 +346,8 @@ class AppState:
                     return {"path": str(self._to_downloads(out_dir / name)),
                             "url": file_url("exports", name), "name": name}
             elif fmt == "png":
-                result = render_views(solids, out_dir, prefix=base, size=900, ss=2)
+                result = render_views(solids, out_dir, prefix=base, size=900, ss=2,
+                                      style=self._anime_style())
                 name = Path(result.get("combined") or result["files"][0]["path"]).name
                 data = Path(out_dir / name).read_bytes()
             elif fmt in ("dxf", "svg"):
@@ -374,7 +385,8 @@ class AppState:
                     zf.writestr("OTCHET.txt", (self.last_build.analysis or {}).get("text", ""))
                     zf.writestr("SPRAVKA.md", command_reference_md())
                     tmp = out_dir / "_views"
-                    render_views(solids, tmp, prefix=base, size=800, ss=2)
+                    render_views(solids, tmp, prefix=base, size=800, ss=2,
+                                 style=self._anime_style())
                     for png in sorted(tmp.glob("*.png")):
                         zf.write(png, f"views/{png.name}")
                     shutil.rmtree(tmp, ignore_errors=True)
