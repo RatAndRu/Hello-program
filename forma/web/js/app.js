@@ -466,6 +466,8 @@ function applyBuild(payload, elapsed) {
   if (state.anim.mode === 'frames' && !state.anim.frames.length) state.anim.mode = 'clips';
   refreshAnimSelectors();
   updateAnimState();
+  // бюджет кубической сетки: после сборки подсвечиваем, вписались ли в него
+  if (state.spaceMode && state.space) updateSpaceUI(state.space);
 }
 
 function fmt(v, digits = 2) {
@@ -3222,10 +3224,36 @@ function updateSpaceUI(sel) {
   }
   const c = sel.script_center.map((v) => fmt(v)).join(', ');
   const sz = sel.script_size.map((v) => fmt(v)).join(' × ');
+  const budget = fmt(sel.budget_cm3 ?? sel.volume_cm3);
+  const grid = state.payload?.grid;
+  let status = '';
+  if (grid) {
+    const warn = (state.payload?.analysis?.warnings || []).find((w) => w.includes('Вне кубической сетки'));
+    const gridCells = Number(grid.cells?.length || 0);
+    status = warn
+      ? `<br><span class="budget-bad">⚠ ${escapeHtml(warn)}</span>`
+      : `<br><span class="budget-ok">Сценарий уже в бюджете: ${gridCells} куб.`
+        + ` (${fmt((grid.volume_mm3 || 0) / 1000)} см³)</span>`;
+  }
   info.innerHTML = `секторов: <b>${sel.cells}</b> · куб <b>${fmt(sel.cell)}</b> мм<br>`
     + `индексы: <b>${escapeHtml(sel.indices || '')}</b><br>`
     + `центр сцены: <b>(${escapeHtml(c)})</b> мм · размер <b>${escapeHtml(sz)}</b> мм<br>`
-    + `<span class="dim">${fmt(sel.volume_cm3)} см³ · Shift — добавить, Ctrl — убрать</span>`;
+    + `бюджет объёма: <b>${escapeHtml(budget)} см³</b>`
+    + `<span class="dim"> · Shift — добавить, Ctrl — убрать</span>`
+    + status;
+  const card = $('space-card');
+  if (card) card.classList.toggle('budget-alert', Boolean(status.includes('budget-bad')));
+}
+
+/** Записать выбранные кубы в сценарий как кубическую сетку-бюджет. */
+function applyGridScript() {
+  const sel = state.space || state.viewer?.spaceSelection();
+  if (!sel || !sel.cells) { toast('Сначала выделите кубы', 'bad'); return; }
+  if (!sel.script) { toast('Не удалось построить команду сетки', 'bad'); return; }
+  const script = currentScript().replace(/\s+$/, '');
+  setScript(script ? `${script}\n${sel.script}\n` : `${sel.script}\n`,
+    { label: 'бюджет кубов' });
+  toast(`Бюджет записан: ${sel.cells} куб. по ${fmt(sel.cell)} мм`);
 }
 
 async function saveSpaceNote() {
@@ -3281,6 +3309,7 @@ $('space-clear')?.addEventListener('click', () => {
   updateSpaceUI(null);
 });
 $('space-save')?.addEventListener('click', saveSpaceNote);
+$('space-budget')?.addEventListener('click', applyGridScript);
 
 function showSelection(list) {
   const selections = Array.isArray(list) ? list : (list ? [list] : []);

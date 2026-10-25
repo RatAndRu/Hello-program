@@ -287,6 +287,21 @@ def _run_uistest(report_path: str | None) -> int:
                       b'id="tools-modal"' in html and b'id="btn-tools"' in html)
                 check("выделение кубических секторов",
                       b'id="space-card"' in html and b'id="btn-space"' in html)
+                check("бюджет кубов записывается в сценарий", b'id="space-budget"' in html)
+                budget = post("/api/build", {"script": (
+                    "сетка cell=20 origin=[-60, -60, 0] size=[6, 4, 3]\n"
+                    "корпус = box size=[300, 300, 40] at=[0, 0, -10]\n"
+                    "вписать корпус\n"
+                    "check корпус в_сетке\n"
+                    "check корпус положение -60 -60 0 допуск=0.6")})
+                budget_checks = (budget.get("analysis") or {}).get("checks") or []
+                check("кубическая сетка ограничивает объём",
+                      budget.get("ok") is True
+                      and bool((budget.get("grid") or {}).get("cells"))
+                      and budget_checks
+                      and all(c.get("ok") for c in budget_checks),
+                      f"кубов {len((budget.get('grid') or {}).get('cells') or [])}, "
+                      f"проверок {len(budget_checks)}")
                 check("переключатель повтора анимации", b'id="anim-loop"' in html)
                 wardrobe = get("/api/example?key=wardrobe")
                 cabinet = post("/api/build", {"script": wardrobe.get("script") or ""})

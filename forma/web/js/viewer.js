@@ -2172,6 +2172,59 @@ export class Viewer {
     this._refreshSpaceVisual();
   }
 
+  /**
+   * Команда `сетка …` для сценария: бюджет объёма из выбранных кубов.
+   * Три координаты three (x, y=вверх, z=глубина) переводятся в сценарные
+   * (x, y=глубина, z=вверх), поэтому индексы по глубине ещё и переворачиваются.
+   */
+  _spaceScript(cell) {
+    const sel = this._spaceSel;
+    if (!sel.size) return null;
+    let i0 = Infinity, i1 = -Infinity, j0 = Infinity, j1 = -Infinity;
+    let k0 = Infinity, k1 = -Infinity;
+    sel.forEach((c) => {
+      i0 = Math.min(i0, c.i); i1 = Math.max(i1, c.i);
+      j0 = Math.min(j0, c.j); j1 = Math.max(j1, c.j);
+      k0 = Math.min(k0, c.k); k1 = Math.max(k1, c.k);
+    });
+    const o = this._spaceOrigin;
+    const ox = o.x + i0 * cell;
+    const oy = -(o.z + (k1 + 1) * cell);
+    const oz = o.y + j0 * cell;
+    const nx = i1 - i0 + 1;
+    const ny = k1 - k0 + 1;
+    const nz = j1 - j0 + 1;
+    const head = `сетка cell=${round3(cell)} origin=[${round3(ox)}, ${round3(oy)}, ${round3(oz)}]`;
+    if (sel.size === nx * ny * nz) {
+      return `${head} size=[${nx}, ${ny}, ${nz}]`;
+    }
+    // строки вдоль X: [si0, si1, sj, sj, sk, sk]
+    const rows = new Map();
+    sel.forEach((c) => {
+      const si = c.i - i0;
+      const sj = k1 - c.k;
+      const sk = c.j - j0;
+      const key = `${sj},${sk}`;
+      if (!rows.has(key)) rows.set(key, []);
+      rows.get(key).push(si);
+    });
+    const ranges = [];
+    [...rows.keys()].sort().forEach((key) => {
+      const xs = rows.get(key).sort((a, b) => a - b);
+      const [sj, sk] = key.split(',').map(Number);
+      let start = xs[0];
+      let prev = xs[0];
+      for (let n = 1; n < xs.length; n += 1) {
+        if (xs[n] === prev + 1) { prev = xs[n]; continue; }
+        ranges.push([start, prev, sj, sj, sk, sk]);
+        start = xs[n];
+        prev = xs[n];
+      }
+      ranges.push([start, prev, sj, sj, sk, sk]);
+    });
+    return `${head} ranges=[${ranges.map((r) => `[${r.join(',')}]`).join(', ')}]`;
+  }
+
   spaceSelection() {
     if (!this._spaceSel.size) return null;
     const cell = this.spaceCell;
@@ -2209,6 +2262,11 @@ export class Viewer {
       // координаты сценария: x, y — горизонт, z — вверх (three: x, y=вверх, z=глубина)
       script_center: [(min.x + max.x) / 2, -(min.z + max.z) / 2, (min.y + max.y) / 2],
       script_size: [size.x, size.z, size.y],
+      // бюджет считается по кубам, а не по габариту: у фигурного выбора
+      // габарит врал бы в большую сторону
+      budget_cm3: (this._spaceSel.size * cell ** 3) / 1000,
+      script: this._spaceScript(cell),
+      gridCells: [...this._spaceSel.values()].map((c) => [c.i, c.j, c.k]),
     };
   }
 
@@ -3524,3 +3582,8 @@ export class Viewer {
     return this.renderer.domElement.toDataURL('image/png');
   }
 }
+
+function round3(v) {
+  return Math.round(Number(v) * 1000) / 1000;
+}
+

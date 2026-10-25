@@ -1391,3 +1391,12 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
   cursor: pointer;
 }
 .tools-thumbs-toggle input { margin: 0; }
+
+/* ---------- 0.33: бюджет кубической сетки ---------- */
+.budget-ok { color: #7ee0c0; }
+.budget-bad { color: #ff8f8f; }
+.space-card.budget-alert {
+  border-color: #a9474f;
+  box-shadow: 0 0 0 1px rgba(255, 110, 118, .35), 0 10px 28px rgba(0, 0, 0, .45);
+}
+.space-card.budget-alert .sel-head strong { color: #ff8f8f; }

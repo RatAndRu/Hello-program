@@ -44,6 +44,7 @@ from . import ops_assembly  # noqa: F401,E402
 from . import ops_parts  # noqa: F401,E402
 from . import ops_fill  # noqa: F401,E402
 from . import ops_sculpt  # noqa: F401,E402
+from . import ops_grid  # noqa: F401,E402
 
 
 # Команды, которые не меняют ни форму, ни видимость: в анимации сборки
@@ -51,6 +52,7 @@ from . import ops_sculpt  # noqa: F401,E402
 FRAME_SKIP_VERBS = {
     "check", "gap", "clearance", "probe", "passport", "note", "param", "help",
     "version", "save", "load", "light", "color", "scene", "comment", "info",
+    "сетка",
 }
 
 
@@ -189,6 +191,7 @@ class Build:
             "probes": list(getattr(scene, "probes", []) or []) if scene else [],
             "passports": list(getattr(scene, "passports", []) or []) if scene else [],
             "mates": list(getattr(scene, "mates", []) or []) if scene else [],
+            "grid": getattr(scene, "grid", None) if scene else None,
             "steps": self.steps,
             "frames": frames,
             "upto": self.upto,
@@ -283,6 +286,22 @@ def _substitute_measures(raw: str, scene: Scene) -> str:
     return out
 
 
+def _apply_measures(cmd, scene: Scene) -> None:
+    """Подставляет меры вида top(кружка) во все параметры команды.
+
+    Раньше это работало только в `let имя = …`. Поэтому понятная запись
+    `at=[0, 0, top(кружка) + 2]` падала с «все элементы должны быть числами»,
+    хотя язык умеет считать выражения. Теперь меры раскрываются до разбора
+    параметров — в любом месте сценария.
+    """
+    for key, raw in list(cmd.kwargs.items()):
+        if isinstance(raw, str) and "(" in raw:
+            cmd.kwargs[key] = _substitute_measures(raw, scene)
+    for i, raw in enumerate(cmd.args):
+        if isinstance(raw, str) and "(" in raw:
+            cmd.args[i] = _substitute_measures(raw, scene)
+
+
 def _handle_let(scene: Scene, cmd) -> None:
     if cmd.kwargs:
         name, raw = next(iter(cmd.kwargs.items()))
@@ -318,6 +337,8 @@ def _handle_check(scene: Scene, cmd) -> None:
         "target": target,
         "rule": rule,
         "args": cmd.args[2:],
+        # именованные уточнения (x=, y=, z=, допуск=) — для проверки положения
+        "kwargs": dict(cmd.kwargs or {}),
         "line": cmd.line,
         "text": cmd.text,
     })
@@ -329,6 +350,8 @@ def _execute(scene: Scene, cmd) -> None:
     scene.command = cmd.text
     verb_raw = cmd.verb or ""
     verb = verb_raw.lower()
+    # меры (top, height, volume…) — до разбора параметров, в любой команде
+    _apply_measures(cmd, scene)
 
     if verb == "let":
         _handle_let(scene, cmd)

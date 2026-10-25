@@ -489,6 +489,29 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
         warnings.append("Модель больше 5 метров — проверьте единицы измерения (в сценарии миллиметры).")
     if ggenus > 0:
         warnings.append(f"В модели есть сквозные отверстия: род {ggenus}.")
+    # ---- кубическая сетка: бюджет объёма -------------------------------
+    grid = getattr(scene, "grid", None)
+    if grid:
+        try:
+            from .ops_grid import overflow_mm3
+            outside = []
+            for solid in visible:
+                over = overflow_mm3(solid.manifold, grid)
+                if over > max(float(solid.manifold.volume()) * 5e-4, 1.0):
+                    outside.append((solid.name, over))
+            if outside:
+                worst = max(outside, key=lambda pair: pair[1])
+                detail = ", ".join(f"«{n}» {fmt(v / 1000)} см³" for n, v in outside[:3])
+                warnings.append(
+                    f"Вне кубической сетки: {detail}. Впишите деталь в бюджет "
+                    f"(`вписать {worst[0]}`) или расширьте сетку.")
+            else:
+                advice.append(
+                    f"Кубический бюджет соблюдён: {len(grid['cells'])} кубов по "
+                    f"{fmt(grid['cell'])} мм, {fmt(grid['volume_mm3'] / 1000)} см³.")
+        except Exception:
+            pass
+
     if gwall is None and max(gsize) > 20:
         advice.append("Если нужна полая деталь, используйте shell thickness=… open=top.")
 

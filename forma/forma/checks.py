@@ -18,7 +18,7 @@ RULE_ALIASES = {
     "герметичность": "watertight", "замкнутость": "watertight", "замкнутая": "watertight",
     "род": "genus", "отверстия": "genus",
     "части": "parts", "частей": "parts",
-    "размер": "size", "размеры": "size",
+    "размер": "size", "размеры": "size", "габариты": "size", "габарит": "size",
     "высота": "height", "ширина": "width", "глубина": "depth",
     "объём": "volume", "объем": "volume",
     "масса": "mass", "вес": "mass",
@@ -35,6 +35,12 @@ RULE_ALIASES = {
     "отклонение": "deviation", "похожесть": "deviation", "эталон": "deviation",
     "hausdorff": "deviation", "гаусдорф": "deviation", "сравнение": "deviation",
     "связь": "связь", "сопряжение": "связь", "петля": "связь", "mate": "связь",
+    # абсолютное положение и кубический бюджет объёма
+    "положение": "position", "место": "position", "позиция": "position",
+    "position": "position", "где": "position", "угол": "position",
+    "центр": "center", "середина": "center", "center": "center",
+    "в_сетке": "grid", "в_кубах": "grid", "в_бюджете": "grid",
+    "внутри_сетки": "grid", "бюджет": "grid", "grid": "grid",
 }
 
 RULE_LABELS = {
@@ -59,6 +65,9 @@ RULE_LABELS = {
     "tri_quality": "качество треугольников",
     "deviation": "отклонение от эталона",
     "связь": "сопряжение",
+    "position": "положение",
+    "center": "центр",
+    "grid": "в пределах кубической сетки",
 }
 
 UNITS = {
@@ -68,6 +77,7 @@ UNITS = {
     "tris": "трис", "genus": "шт", "parts": "шт",
     "wall_min": "мм", "sharp_edge": "°", "tri_quality": "%",
     "deviation": "мм", "связь": "мм",
+    "position": "мм", "center": "мм", "grid": "%",
 }
 
 AXES = {"x": 0, "y": 1, "z": 2, "ширина": 0, "глубина": 1, "высота": 2,
@@ -168,7 +178,7 @@ def _load_reference(path):
 RULES = {"watertight", "genus", "parts", "size", "height", "width", "depth", "volume",
          "mass", "wall", "wall_min", "flat_bottom", "overhang", "symmetric", "gap",
          "clearance", "inside", "tris", "sharp_edge", "tri_quality", "deviation",
-         "связь"}
+         "связь", "position", "center", "grid"}
 
 
 def evaluate_checks(scene, cache) -> list[dict]:
@@ -179,6 +189,7 @@ def evaluate_checks(scene, cache) -> list[dict]:
         rule = RULE_ALIASES.get(rule_raw, rule_raw)
         line = spec.get("line", 0)
         args = spec.get("args", [])
+        kwargs = spec.get("kwargs") or {}
         if rule not in RULES:
             results.append(_result(False, rule_raw or "?", 
                                    f"неизвестное правило «{spec['rule']}» "
@@ -192,7 +203,7 @@ def evaluate_checks(scene, cache) -> list[dict]:
                                    target_name, line))
             continue
         try:
-            results.append(_evaluate_one(solid, rule, args, line, cache))
+            results.append(_evaluate_one(solid, rule, args, line, cache, kwargs))
         except FormaError as exc:
             text = exc.message + (f" {exc.hint}" if exc.hint else "")
             results.append(_result(False, rule, text, target_name, line))
@@ -201,7 +212,9 @@ def evaluate_checks(scene, cache) -> list[dict]:
     return results
 
 
-def _evaluate_one(solid, rule: str, args: list[str], line: int, cache) -> dict:
+def _evaluate_one(solid, rule: str, args: list[str], line: int, cache,
+                  kwargs: dict | None = None) -> dict:
+    kwargs = kwargs or {}
     name = solid.name
     data = cache.get(solid)
     unit = UNITS.get(rule, "")
@@ -377,6 +390,15 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache) -> dict:
                                  f"({'в норме' if ok else 'не в норме'}, нужно {_fmt_range(rng, 'мм')})",
                        name, line, gap, _fmt_range(rng, "мм"), label)
 
+    if rule in ("position", "center"):
+        # Абсолютное место: раньше его нельзя было проверить вообще — только
+        # связи и зазоры. Теперь `check деталь положение 10 20 30` требует,
+        # чтобы угол габарита стоял ровно там (или в диапазоне 9..11).
+        return _check_place(solid, rule, args, line, cache, kwargs)
+
+    if rule == "grid":
+        return _check_grid(solid, line, _scene(cache), cache)
+
     if rule == "связь":
         scene = _scene(cache)
         from .mates import residual_of
@@ -444,6 +466,89 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache) -> dict:
                        name, line, q["bad_pct"], f"≤ {fmt(limit)}%", label)
 
     raise FormaError(f"Правило «{rule}» не поддерживается.")
+
+
+def _axis_ranges(args: list[str], kwargs: dict, scene) -> tuple[list, float]:
+    """Три диапазона осей: `10 20 30` или `x=9..11 y=.. z=..`."""
+    ranges: list = [None, None, None]
+    named = False
+    for i, axis in enumerate("xyz"):
+        raw = kwargs.get(axis)
+        if raw is None:
+            continue
+        named = True
+        ranges[i] = _parse_range(raw, scene)
+    if not named:
+        if len(args) < 3:
+            raise FormaError(
+                "Укажите три числа или диапазона: check объект положение 10 20 30 "
+                "или check объект положение x=9..11 y=19..21 z=0",
+                hint="Это координаты угла (низ габарита) в миллиметрах.")
+        for i in range(3):
+            ranges[i] = _parse_range(args[i], scene)
+    else:
+        for i, axis in enumerate("xyz"):
+            if ranges[i] is None:
+                raise FormaError(f"Не хватает координаты {axis}: нужны все три оси.")
+    tol_raw = kwargs.get("допуск") or kwargs.get("допуск_мм") or kwargs.get("tolerance")
+    tol = 0.5
+    if tol_raw is not None:
+        value = _parse_value(tol_raw, scene)
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            tol = abs(float(value))
+    return ranges, tol
+
+
+def _check_place(solid, rule: str, args: list[str], line: int, cache, kwargs: dict) -> dict:
+    scene = cache_scene(cache)
+    ranges, tol = _axis_ranges(args, kwargs, scene)
+    bb = [float(v) for v in solid.manifold.bounding_box()]
+    point = bb[:3] if rule == "position" else [(bb[0] + bb[3]) / 2,
+                                               (bb[1] + bb[4]) / 2,
+                                               (bb[2] + bb[5]) / 2]
+    bad: list[str] = []
+    for i, axis in enumerate("xyz"):
+        rng = ranges[i]
+        value = point[i]
+        lo = rng.lo - tol if rng.lo is not None else None
+        hi = rng.hi + tol if rng.hi is not None else None
+        if lo is not None and value < lo:
+            bad.append(f"{axis.upper()} {fmt(value)}")
+        elif hi is not None and value > hi:
+            bad.append(f"{axis.upper()} {fmt(value)}")
+    label = "угол габарита" if rule == "position" else "центр габарита"
+    where = f"({fmt(point[0])}, {fmt(point[1])}, {fmt(point[2])}) мм"
+    if not bad:
+        text = f"{label}: {where} — в норме"
+        if tol > 0 and any(r.lo == r.hi for r in ranges):
+            text += f" (допуск {fmt(tol)} мм)"
+        return _result(True, rule, text, solid.name, line, list(point), label=label)
+    want = " · ".join(f"{axis.upper()} {ranges[i].describe()}" for i, axis in enumerate("xyz"))
+    return _result(False, rule,
+                   f"{label}: {where} — не на месте ({', '.join(bad)} вне допуска; нужно {want})",
+                   solid.name, line, list(point), want, label)
+
+
+def _check_grid(solid, line: int, scene, cache) -> dict:
+    from .ops_grid import grid_of, overflow_mm3
+    grid = grid_of(scene)
+    if not grid:
+        raise FormaError(
+            "В сценарии нет кубической сетки.",
+            hint="Сначала задайте бюджет: сетка cell=20 origin=[0,0,0] size=[6,4,3]")
+    over = overflow_mm3(solid.manifold, grid)
+    own = max(float(solid.manifold.volume()), 1e-9)
+    inside = max(own - over, 0.0)
+    allowed = float(grid["volume_mm3"])
+    share = 100.0 * inside / own
+    ok = over <= max(own * 5e-4, 1.0)
+    text = (f"в кубической сетке: {fmt(inside / 1000)} из {fmt(own / 1000)} см³ "
+            f"({fmt(share, 1)}%)"
+            + (" — в норме" if ok else
+               f" — вне бюджета {fmt(over / 1000)} см³ (кубов на {fmt(allowed / 1000)} см³)"))
+    result = _result(ok, "grid", text, solid.name, line, over, "0", "в пределах сетки")
+    result["overflow_mm3"] = round(over, 3)
+    return result
 
 
 def _scene(cache):
