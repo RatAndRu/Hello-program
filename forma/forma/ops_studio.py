@@ -71,13 +71,18 @@ KIND_NAMES_ANIM = {"spin": "вращение", "formation": "формирова�
 
 
 @op("scene", aliases=("сцена", "окружение", "фон", "view"), category="Сцена и материал",
-    summary="Настраивает вид сцены: фон, окружение, экспозицию, тени и сетку.",
-    example='к = box size=[40,40,40]\nscene bg=#0b0e13 env=studio exposure=1.05 shadows=да grid=да',
+    summary="Настраивает вид сцены: фон, окружение, экспозицию, тени, сетку, "
+            "оси, полигонаж и силу свечения. Всё это сохраняется в проекте.",
+    example='к = box size=[40,40,40]\nscene bg=#0b0e13 env=studio exposure=1.05 '
+            'shadows=да grid=да axes=да poly=нет bloom=0.55',
     params={"bg": "цвет фона #RRGGBB или название",
             "env": "студия, солнце, закат, ночь, мягкий, контражур, серый, белый",
             "exposure": "экспозиция (1.0 — нейтрально)",
             "shadows": "тени да/нет", "grid": "сетка да/нет",
-            "ground": "показывать пол да/нет"})
+            "ground": "показывать пол да/нет",
+            "axes": "оси координат да/нет",
+            "poly": "полигонаж (каркас) да/нет",
+            "bloom": "сила свечения светодиодов 0…3 (0 — выключено)"})
 def scene(a, name):
     s = a.scene.settings
     if a.has("bg"):
@@ -91,9 +96,11 @@ def scene(a, name):
         s["env"] = ENVIRONMENTS[raw]
     if a.has("exposure"):
         s["exposure"] = max(0.15, min(4.0, float(a.num("exposure") or 1.0)))
-    for key in ("shadows", "grid", "ground"):
+    for key in ("shadows", "grid", "ground", "axes", "poly"):
         if a.has(key):
             s[key] = a.boolean(key, True)
+    if a.has("bloom"):
+        s["bloom"] = max(0.0, min(3.0, float(a.num("bloom") or 0.0)))
     a.scene.log("info", "вид сцены обновлён", a.cmd.line)
     return None
 

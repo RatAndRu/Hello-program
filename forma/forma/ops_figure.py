@@ -534,9 +534,15 @@ def display(a, name):
     if inset.is_empty() or inset.area() <= 1e-6:
         raise GeometryError("Рамка съела весь экран.", hint="Уменьшите bezel.")
 
-    floor = max(0.8, thick * 0.10)
+    # Ниша под экран — мелкая: панель стоит почти заподлицо со стеклом.
+    # Раньше она уходила на 90 % толщины, и у толстых корпусов цифры прятались
+    # на дне глубокого колодца: стенки срезали их по краям.
     panel_depth = max(0.8, thick * 0.09)
     glass_h = max(0.6, thick * 0.07)
+    gap = max(0.35, thick * 0.03)
+    floor = max(0.6, thick - (panel_depth + glass_h + gap))
+    if floor < thick * 0.45:      # очень толстый корпус: глубже четверти не копаем
+        floor = max(thick * 0.45, panel_depth + glass_h + gap)
     case = body.extrude(thick)
     case = case - inset.extrude(thick - floor + 0.05).translate((0, 0, floor))
     case_parts = [case]
@@ -694,8 +700,8 @@ def _seven_scene(text: str, size: float, max_width: float):
 @op("mirror_plate", aliases=("зеркало", "зеркальная_плита", "mirror_glass"),
     category="Примитивы",
     summary="Зеркало целиком: рама, отражающая пластина и задник с креплением. "
-            "Пластина получает материал mirror (metal=1, rough=0.02) — в окне "
-            "она отражает сцену по-настоящему, в PNG отражает студию. Форма "
+            "Пластина получает материал mirror (metal=1, rough=0.02) и "
+            "отражает соседние детали — и в окне, и на PNG-снимке. Форма "
             "рамы — прямоугольная, круглая или овальная.",
     example="зеркало = mirror_plate width=600 height=900 frame=40\n"
             "круглое = mirror_plate width=500 height=500 shape=круг frame=30",

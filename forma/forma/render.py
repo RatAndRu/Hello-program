@@ -264,6 +264,165 @@ def _draw_shadow(img, cam, bbox):
     img *= (1.0 - alpha)[:, :, None]
 
 
+def _mirror_ids(meshes) -> list[int]:
+    """Индексы зеркальных деталей: гладкий металл, без прозрачности."""
+    ids = []
+    for i, m in enumerate(meshes):
+        if float(m.get("alpha", 1.0)) < 0.999:
+            continue
+        if float(m.get("metal", 0.0)) >= 0.85 and float(m.get("rough", 0.5)) <= 0.12:
+            ids.append(i)
+    return ids
+
+
+def _scene_triangles(meshes, skip: set[int]):
+    """Треугольники сцены одним массивом + цвет грани: для трассировки лучей."""
+    tris, cols = [], []
+    for i, m in enumerate(meshes):
+        if i in skip:
+            continue
+        v = m["verts"]
+        f = m["faces"]
+        if len(f) == 0:
+            continue
+        tris.append(np.asarray(v, dtype=np.float64)[f])
+        cols.append(np.repeat(np.asarray(m["color"], dtype=np.float32)[None, :],
+                              len(f), axis=0))
+    if not tris:
+        return None, None
+    return np.concatenate(tris, axis=0), np.concatenate(cols, axis=0)
+
+
+def _trace_rays(orig, dirs, tri, pix_chunk: int = 48, tri_chunk: int = 1024):
+    """Ближайшее пересечение лучей с треугольниками (Мёллер–Трумберт)."""
+    v0 = tri[:, 0]
+    e1 = tri[:, 1] - v0
+    e2 = tri[:, 2] - v0
+    n_rays = len(orig)
+    best_t = np.full(n_rays, np.inf, dtype=np.float64)
+    best_i = np.full(n_rays, -1, dtype=np.int32)
+    for s in range(0, n_rays, pix_chunk):
+        e = min(n_rays, s + pix_chunk)
+        o = orig[s:e][:, None, :]
+        d = dirs[s:e][:, None, :]
+        local_t = np.full(e - s, np.inf, dtype=np.float64)
+        local_i = np.full(e - s, -1, dtype=np.int32)
+        for c0 in range(0, len(tri), tri_chunk):
+            c1 = min(len(tri), c0 + tri_chunk)
+            v0c, e1c, e2c = v0[c0:c1], e1[c0:c1], e2[c0:c1]
+            pvec = np.cross(d, e2c[None, :, :])
+            det = np.einsum("cik,ik->ci", pvec, e1c)
+            ok = np.abs(det) > 1e-9
+            inv = np.where(ok, 1.0 / np.where(ok, det, 1.0), 0.0)
+            tvec = o - v0c[None, :, :]
+            u = np.einsum("cik,cik->ci", tvec, pvec) * inv
+            qvec = np.cross(tvec, e1c[None, :, :])
+            v = np.einsum("cik,cik->ci", d, qvec) * inv
+            t = np.einsum("cik,ik->ci", qvec, e2c) * inv
+            good = (ok & (u >= 0.0) & (v >= 0.0) & (u + v <= 1.0) & (t > 1e-4))
+            tt = np.where(good, t, np.inf)
+            j = np.argmin(tt, axis=1)
+            tv = tt[np.arange(len(j)), j]
+            better = tv < local_t
+            local_t[better] = tv[better]
+            local_i[better] = j[better] + c0
+        best_t[s:e] = local_t
+        best_i[s:e] = local_i
+    return best_t, best_i
+
+
+def _mirror_pass(img, meshes, cam, nbuf, idbuf, pbuf, mirror_ids, ss: int = 1,
+                 budget: int = 24_000_000):
+    """Настоящее отражение соседей: луч от зеркального пикселя в сцену.
+
+    Без этого металл отражал только «студию» из шейдера, и зеркало рядом с
+    объектом выглядело пустым. Луч пускаем по нормали из G-буфера: попадание
+    красим цветом детали с мягким светом, промах оставляем окружению.
+    """
+    h, w = img.shape[:2]
+    if pbuf is None or nbuf is None or idbuf is None:
+        return img
+    ids = np.array([i + 1 for i in mirror_ids], dtype=np.int32)
+    mask = np.isin(idbuf, ids)
+    if not mask.any():
+        return img
+    ys, xs = np.nonzero(mask)
+    if len(ys) == 0:
+        return img
+    tri, cols = _scene_triangles(meshes, set(mirror_ids))
+    if tri is None:
+        return img
+    # бюджет: если лучей и треугольников слишком много, реже берём пиксели,
+    # а промежутки потом заполняем размытием по покрытию
+    pairs = float(len(ys)) * float(len(tri))
+    stride = 1
+    if pairs > budget:
+        stride = int(np.ceil(np.sqrt(pairs / budget)))
+        keep = (ys % stride == 0) & (xs % stride == 0)
+        ys, xs = ys[keep], xs[keep]
+        if len(ys) == 0:
+            return img
+    n = np.asarray(nbuf[ys, xs], dtype=np.float64)
+    ln = np.linalg.norm(n, axis=1, keepdims=True) + 1e-12
+    n = n / ln
+    orig = np.asarray(pbuf[ys, xs], dtype=np.float64)
+    view_dir = orig - cam["eye"][None, :]
+    vlen = np.linalg.norm(view_dir, axis=1, keepdims=True) + 1e-12
+    view_dir = view_dir / vlen
+    # отражение направления взгляда относительно нормали
+    dots = np.einsum("ij,ij->i", view_dir, n)[:, None]
+    dirs = view_dir - 2.0 * dots * n
+    dlen = np.linalg.norm(dirs, axis=1, keepdims=True) + 1e-12
+    dirs = dirs / dlen
+    eps = max(1e-3, float(np.linalg.norm(cam["up"])) * 0 + 1e-3)
+    orig = orig + n * eps
+    t_hit, i_hit = _trace_rays(orig, dirs, tri)
+
+    hit = i_hit >= 0
+    if not hit.any():
+        return img
+    pix = (ys[hit], xs[hit])
+    # сила отражения как у шейдера: гладкий металл почти зеркало
+    mesh_of = {i + 1: i for i in mirror_ids}
+    strength = np.ones(len(pix[0]), dtype=np.float32)
+    for value, index in mesh_of.items():
+        sel = idbuf[pix] == value
+        if sel.any():
+            m = meshes[index]
+            k = float(m.get("metal", 1.0)) * (1.0 - min(float(m.get("rough", 0.1)), 0.95)) ** 1.4
+            strength[sel] = min(max(k, 0.0), 1.0) * 1.05
+
+    # нормаль грани для мягкого света и цвет детали
+    tsel = tri[i_hit[hit]]
+    fn = np.cross(tsel[:, 1] - tsel[:, 0], tsel[:, 2] - tsel[:, 0])
+    fl = np.linalg.norm(fn, axis=1, keepdims=True) + 1e-12
+    fn = fn / fl
+    key = _normalize(0.42 * cam["right"] - 0.62 * cam["up"] - 0.75 * cam["f"])
+    lam = np.clip(fn @ key, 0, None)[:, None]
+    hit_col = cols[i_hit[hit]]
+    # отражение показывает соседа почти как он есть: лёгкий свет, без затемнения
+    refl = np.clip(hit_col * (0.66 + 0.42 * lam), 0, 1).astype(np.float32)
+    # дальние отражения чуть притухают — так читается глубина сцены
+    fade = np.clip(1.0 - t_hit[hit] / (np.max(t_hit[hit]) * 3.0 + 1e-9), 0.72, 1.0)
+    refl = refl * fade[:, None].astype(np.float32)
+    k = strength[:, None]
+    # раскладываем отражение по кадру и заполняем промежутки, если лучей
+    # считали меньше, чем пикселей зеркала
+    acc = np.zeros_like(img, dtype=np.float32)
+    cov = np.zeros(img.shape[:2], dtype=np.float32)
+    np.add.at(acc, pix, (refl * k).astype(np.float32))
+    np.add.at(cov, pix, k[:, 0])
+    r = max(1, stride)
+    num = _box_blur(acc, r)
+    den = _box_blur(cov[..., None], r)[..., 0]
+    # нормированная свёртка: где луч рядом был, отражение ставим целиком,
+    # иначе разреженные сэмплы давали полупрозрачное «молочное» зеркало
+    filled = np.where(den[..., None] > 1e-4, num / np.maximum(den[..., None], 1e-4), 0.0)
+    where = mask & (den > 1e-4)
+    img[where] = np.clip(filled[where], 0, 1)
+    return img
+
+
 def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
                  shadow=True, bg=None, style=None):
     # Аниме/манга: контуры и тон считаются по буферам глубины и нормалей.
@@ -284,9 +443,20 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
     else:
         img = np.ones((cam["h"], cam["w"], 3), dtype=np.float32) * np.array(bg, dtype=np.float32)
     zbuf = np.full((cam["h"], cam["w"]), np.inf, dtype=np.float64)
-    nbuf = np.zeros((cam["h"], cam["w"], 3), dtype=np.float32) if anime else None
-    idbuf = np.zeros((cam["h"], cam["w"]), dtype=np.int32) if anime else None
-    ebuf = np.zeros((cam["h"], cam["w"]), dtype=bool) if anime else None
+    # зеркала тоже нуждаются в нормалях и позициях — по ним пускаются лучи
+    mirror_ids = _mirror_ids(meshes)
+    geom = anime or bool(mirror_ids)
+    nbuf = np.zeros((cam["h"], cam["w"], 3), dtype=np.float32) if geom else None
+    idbuf = np.zeros((cam["h"], cam["w"]), dtype=np.int32) if geom else None
+    pbuf = (np.zeros((cam["h"], cam["w"], 3), dtype=np.float64)
+            if mirror_ids else None)
+    # маска свечения нужна и без аниме: по ней рисуется ореол светодиодов
+    has_emissive = any(m.get("emissive") is not None for m in meshes)
+    ebuf = (np.zeros((cam["h"], cam["w"]), dtype=bool)
+            if (anime or has_emissive) else None)
+    # цвет источников: ореол строится по нему, а не по уже затемнённому кадру
+    gbuf = (np.zeros((cam["h"], cam["w"], 3), dtype=np.float32)
+            if has_emissive else None)
     if shadow:
         _draw_shadow(img, cam, bbox)
     if grid:
@@ -296,6 +466,8 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
     # прозрачные тела (стекло) рисуем последними и смешиваем с уже готовым
     # кадром: иначе они закрывают то, что должно быть видно сквозь них
     meshes = sorted(meshes, key=lambda m: m.get("alpha", 1.0) < 0.999)
+    mirror_ids = _mirror_ids(meshes)
+    _mirror_set = set(mirror_ids)
     for mesh_index, mesh in enumerate(meshes):
         verts = mesh["verts"]
         faces = mesh["faces"]
@@ -385,19 +557,30 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
                 # градиент по нормали оставляет объём, чтобы грань не «плоскала».
                 ang = np.clip(nn @ _normalize(0.3 * cam["right"] - 0.4 * cam["up"]
                                               - 0.85 * cam["f"]), 0, 1)[:, None]
-                # насыщенность важнее «пересвета»: ярче 0.9 цвет не поднимаем,
-                # иначе зелёный LED выгорает в белый
-                shade = np.clip(emis[None, :] * (0.80 + 0.20 * ang), 0, 0.96)
+                # Источник света: яркость растёт со strength, но оттенок не
+                # выцветает — поднимаем цвет целиком, а не к белому.
+                hot = np.clip(emis * (0.86 + 0.10 * min(float(mesh.get("glow", 1.0)), 5.0)),
+                              0, 1)
+                shade = np.clip(hot[None, :] * (0.80 + 0.20 * ang), 0, 1)
             else:
                 shade = _shade(nn, colors, metal, rough, cam)
             shade = np.clip(shade, 0, 1)
             sub_img = img[miny:maxy + 1, minx:maxx + 1]
-            if nbuf is not None and alpha >= 0.999:
+            if alpha >= 0.999:
                 # G-буфер для контуров: нормаль, номер детали, свечение
-                nbuf[miny:maxy + 1, minx:maxx + 1][front] = nn.astype(np.float32)
-                idbuf[miny:maxy + 1, minx:maxx + 1][front] = mesh_index + 1
+                if nbuf is not None:
+                    nbuf[miny:maxy + 1, minx:maxx + 1][front] = nn.astype(np.float32)
+                if idbuf is not None:
+                    idbuf[miny:maxy + 1, minx:maxx + 1][front] = mesh_index + 1
                 if emis is not None:
-                    ebuf[miny:maxy + 1, minx:maxx + 1][front] = True
+                    if ebuf is not None:
+                        ebuf[miny:maxy + 1, minx:maxx + 1][front] = True
+                    if gbuf is not None:
+                        gbuf[miny:maxy + 1, minx:maxx + 1][front] = hot
+                if pbuf is not None and mesh_index in _mirror_set:
+                    pos = (w0[front, None] * verts[a[0]] + w1[front, None] * verts[a[1]]
+                           + w2[front, None] * verts[a[2]])
+                    pbuf[miny:maxy + 1, minx:maxx + 1][front] = pos
             if alpha < 0.999:
                 # стекло: смешиваем, но глубину не пишем — сквозь него видны
                 # детали, которые лежат глубже
@@ -408,9 +591,14 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
                 sub_z[front] = depth[front]
                 zbuf[miny:maxy + 1, minx:maxx + 1] = sub_z
 
-    # свечение светодиодов: мягкий ореол вокруг ярких мест
-    if any(m.get("emissive") is not None for m in meshes):
-        img = _glow_pass(img, meshes, cam)
+    # отражения в зеркальных деталях: видим в них соседей, а не только студию
+    if mirror_ids:
+        img = _mirror_pass(img, meshes, cam, nbuf, idbuf, pbuf, mirror_ids, ss)
+
+    # свечение светодиодов: мягкий ореол вокруг ярких мест (только там,
+    # где источник реально виден — иначе цифры «просвечивают» сквозь корпус)
+    if has_emissive and ebuf is not None:
+        img = _glow_pass(img, ebuf, cam, source=gbuf)
 
     if anime:
         from .anime import apply_style
@@ -453,50 +641,30 @@ def _box_blur(arr: np.ndarray, radius: int) -> np.ndarray:
     return out
 
 
-def _glow_pass(img: np.ndarray, meshes, cam, radius: int | None = None) -> np.ndarray:
-    """Свечение: размывает только светящиеся пиксели и складывает их с кадром."""
+def _glow_pass(img: np.ndarray, glow: np.ndarray, cam, radius: int | None = None,
+               source: np.ndarray | None = None) -> np.ndarray:
+    """Свечение: размывает только видимые светящиеся пиксели и складывает с кадром.
+
+    Маска ``glow`` берётся из буфера деталей: она уже учитывает перекрытия,
+    поэтому ореол не «просвечивает» сквозь корпус и стекло. ``source`` —
+    собственный цвет источников (яркий), чтобы ореол не бледнел через стекло.
+    """
     h, w = img.shape[:2]
-    bright = np.zeros((h, w, 3), dtype=np.float32)
-    touched = False
-    for mesh in meshes:
-        emis = mesh.get("emissive")
-        if emis is None:
-            continue
-        scr, dep = _project(mesh["verts"], cam)
-        faces = mesh["faces"]
-        tri_scr = scr[faces]
-        # маска: пиксели внутри проекции светящегося тела (приближённо — по
-        # треугольникам, без глубины: ореол и должен «протекать» наружу)
-        for tri in tri_scr:
-            x0, y0 = tri[0]
-            x1, y1 = tri[1]
-            x2, y2 = tri[2]
-            minx = int(max(0, math.floor(min(x0, x1, x2))))
-            maxx = int(min(w - 1, math.ceil(max(x0, x1, x2))))
-            miny = int(max(0, math.floor(min(y0, y1, y2))))
-            maxy = int(min(h - 1, math.ceil(max(y0, y1, y2))))
-            if minx > maxx or miny > maxy:
-                continue
-            area = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
-            if abs(area) < 1e-12:
-                continue
-            xs = np.arange(minx, maxx + 1, dtype=np.float64) + 0.5
-            ys = np.arange(miny, maxy + 1, dtype=np.float64) + 0.5
-            X, Y = np.meshgrid(xs, ys)
-            w0 = ((x1 - X) * (y2 - Y) - (x2 - X) * (y1 - Y)) / area
-            w1 = ((x2 - X) * (y0 - Y) - (x0 - X) * (y2 - Y)) / area
-            inside = (w0 >= 0) & (w1 >= 0) & (w0 + w1 <= 1)
-            if inside.any():
-                bright[miny:maxy + 1, minx:maxx + 1][inside] = mesh["emissive"]
-                touched = True
-    if not touched:
+    mask = np.asarray(glow, dtype=bool)
+    if not mask.any():
         return img
-    r = int(radius or max(3, w // 180))
+    bright = np.asarray(source, dtype=np.float32) * mask[..., None] if source is not None \
+        else img * mask[..., None]
+    r = int(radius or max(5, w // 70))
     halo = _box_blur(bright, r)
     halo = _box_blur(halo, max(1, r // 2))
+    halo = _box_blur(halo, max(1, r // 3))
     # ореол цветной: он подмешивается, но не должен выбеливать сам светодиод
-    halo *= 0.42
-    return np.clip(img + halo, 0, 1)
+    halo *= 1.0
+    out = np.array(img, dtype=np.float32, copy=True)
+    # сам источник оставляем ярким, ореол кладём вокруг
+    out = np.clip(out + halo, 0, 1)
+    return out
 
 
 def _compose(images, gap=8, bg=(0.055, 0.062, 0.078)):

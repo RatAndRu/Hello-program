@@ -20,6 +20,26 @@ def _derived(a, name, manifold, base, kind: str):
     return solid
 
 
+def _parts_follow(a, base, fn) -> None:
+    """Двигает вместе с объектом его составные детали.
+
+    Составные команды (display, mirror_plate, часы…) кладут в сцену не одно
+    тело, а корпус и детали «корпус.экран», «корпус.цифры», «корпус.стекло».
+    Раньше поворот или сдвиг двигал только корпус, и цифры оставались висеть
+    на старом месте. Здесь та же операция применяется к деталям.
+    """
+    prefix = f"{base.name}."
+    for child in list(a.scene.objects.values()):
+        if child is base or not child.name.startswith(prefix):
+            continue
+        if any("использован" in n for n in getattr(child, "notes", []) or []):
+            continue
+        try:
+            child.manifold = fn(child.manifold)
+        except Exception:
+            continue
+
+
 # --------------------------------------------------------------------------- #
 #  Булевы операции
 # --------------------------------------------------------------------------- #
@@ -541,6 +561,7 @@ def translate(a, name):
     if abs(off[0]) + abs(off[1]) + abs(off[2]) < 1e-9:
         return _derived(a, name, base.manifold, base, "translate")
     result = translate_manifold(base.manifold, off)
+    _parts_follow(a, base, lambda m: translate_manifold(m, off))
     return _derived(a, name, result, base, "translate")
 
 
@@ -563,8 +584,10 @@ def rotate(a, name):
     else:
         axis = a.vec("axis", 3, default=(0, 0, 1))
     pivot = a.vec("pivot", 3, default=(0, 0, 0))
-    return _derived(a, name, rotate_manifold(base.manifold, float(angle), axis, pivot),
-                    base, "rotate")
+    turned = rotate_manifold(base.manifold, float(angle), axis, pivot)
+    _parts_follow(a, base,
+                  lambda m: rotate_manifold(m, float(angle), axis, pivot))
+    return _derived(a, name, turned, base, "rotate")
 
 
 @op("scale", aliases=("масштабировать", "увеличить", "size"), category="Массивы и преобразования",
@@ -582,7 +605,9 @@ def scale(a, name):
     if any(f <= 0 for f in factor):
         raise GeometryError("Масштаб должен быть больше нуля.")
     pivot = a.vec("pivot", 3, default=(0, 0, 0))
-    return _derived(a, name, scale_manifold(base.manifold, factor, pivot), base, "scale")
+    scaled = scale_manifold(base.manifold, factor, pivot)
+    _parts_follow(a, base, lambda m: scale_manifold(m, factor, pivot))
+    return _derived(a, name, scaled, base, "scale")
 
 
 @op("place", aliases=("поставить", "позиционировать", "align"), category="Массивы и преобразования",
@@ -626,6 +651,7 @@ def place(a, name):
             target = [hc[0], hb[1] - gap - os_[1] / 2, hc[2]]
         off = (target[0] - oc[0], target[1] - oc[1], target[2] - oc[2])
         a.scene.log("info", f"place: {base.name} → {side} от {host.name}", a.cmd.line)
+        _parts_follow(a, base, lambda m: translate_manifold(m, off))
         return _derived(a, name, translate_manifold(base.manifold, off), base, "place")
     at = a.vec("at", 3, default=(0, 0, 0))
     align = (a.text("align", "bottom", ["bottom", "center", "top"]) or "bottom").lower()
@@ -642,6 +668,7 @@ def place(a, name):
     else:
         target = (tx, ty, at[2])
     off = (target[0] - center[0], target[1] - center[1], target[2] - center[2])
+    _parts_follow(a, base, lambda m: translate_manifold(m, off))
     return _derived(a, name, translate_manifold(base.manifold, off), base, "place")
 
 
@@ -661,6 +688,12 @@ def mirror(a, name):
     keep = a.boolean("keep", True)
     reflected = mirror_manifold(base.manifold, plane, at)
     result = mf.Manifold.batch_boolean([base.manifold, reflected], mf.OpType.Add) if keep else reflected
+
+    def _mirror_part(m):
+        img = mirror_manifold(m, plane, at)
+        return mf.Manifold.batch_boolean([m, img], mf.OpType.Add) if keep else img
+
+    _parts_follow(a, base, _mirror_part)
     return _derived(a, name, result, base, "mirror")
 
 

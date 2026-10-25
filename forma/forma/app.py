@@ -371,6 +371,40 @@ def _run_uistest(report_path: str | None) -> int:
                 check("панель стиля в интерфейсе",
                       b'id="anime-chips"' in html and b'id="anime-line"' in html
                       and b'id="anime-insert"' in html and b'id="anime-paper"' in html)
+                # 0.27: превью в карточках инструментов, отражения, свечение,
+                # честные ползунки и отдельная очистка сценария/сцены
+                preview = post("/api/preview", {"script": (
+                    "ш = sphere radius=24\n"
+                    "к = box size=[30,30,30] at=[40,0,0] color=#e05a3a")})
+                check("превью модели из карточки инструмента",
+                      preview.get("ok") is True and preview.get("tris", 0) > 0,
+                      f"{preview.get('tris', 0)} трис, {preview.get('size')}")
+                preview_glb = get("/api/preview.glb?key=" + str(preview.get("key", "")), raw=True) \
+                    if preview.get("key") else b""
+                check("файл превью — GLB", preview_glb[:4] == b"glTF",
+                      f"{len(preview_glb)} байт")
+                check("окно превью в интерфейсе",
+                      b'id="preview-modal"' in html and b'id="preview-canvas"' in html
+                      and len(get("/js/preview3d.js", raw=True)) > 3000)
+                check("очистка сценария и сцены — отдельные кнопки",
+                      b'id="btn-clear-script"' in html and b'id="btn-clear-scene"' in html)
+                scene_build = post("/api/build", {"script": (
+                    "к = box size=[20,20,20]\n"
+                    "scene bg=#101010 axes=нет poly=да bloom=1.2 exposure=1.3")})
+                sc = scene_build.get("settings") or {}
+                check("настройки вида в сценарии",
+                      sc.get("axes") is False and sc.get("poly") is True
+                      and abs(float(sc.get("bloom") or 0) - 1.2) < 1e-6
+                      and abs(float(sc.get("exposure") or 0) - 1.3) < 1e-6,
+                      f"axes={sc.get('axes')} poly={sc.get('poly')} bloom={sc.get('bloom')}")
+                check("ползунок свечения в панели вида", b'id="bloom"' in html)
+                mirror_build = post("/api/build", {"script": (
+                    "з = mirror_plate width=300 height=220 frame=20 at=[0,120,0]\n"
+                    "з = rotate [з] angle=90 axis=x pivot=[0,120,110]\n"
+                    "ш = sphere radius=40 at=[-30,40,40] color=#e03020")})
+                check("зеркало с отражением соседей: сборка",
+                      mirror_build.get("ok") is True,
+                      f"{mirror_build.get('analysis', {}).get('metrics', {}).get('tris', 0)} трис")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import os
@@ -76,6 +77,9 @@ class AppState:
         self._last_build_hash: str | None = None
         self.frame_cache: dict[str, tuple[dict, bytes | None]] = {}
         self.frame_order: list[str] = []
+        # превью карточек «Инструментов»: отдельная сборка, состояние не трогает
+        self.preview_dir = self.data_dir / "previews"
+        self.preview_cache: dict[str, dict] = {}
 
     def paths_info(self) -> dict:
         """Карта папок рядом с exe — показывается в справке."""
@@ -260,6 +264,55 @@ class AppState:
             if self.gl_cache is None or self.gl_cache[0] != self.last_build.script_hash:
                 self.gl_cache = (self.last_build.script_hash, self.last_build.glb())
             return self.gl_cache[1]
+
+    def preview(self, script: str) -> dict:
+        """Строит модель для превью карточки инструмента, не меняя сцену.
+
+        Кэш по хэшу сценария: одно и то же превью второй раз открывается
+        мгновенно. В ответе — размеры и число треугольников для подписи.
+        """
+        script = (script or "").strip()
+        if not script:
+            raise FormaError("Пустой сценарий превью.")
+        key = hashlib.sha1(script.encode("utf-8")).hexdigest()[:16]
+        cached = self.preview_cache.get(key)
+        if cached and (self.preview_dir / f"{key}.glb").exists():
+            return dict(cached, ok=True, cached=True)
+        b = run_build(script, previous_analysis=None)
+        if not b.ok:
+            err = b.error or {}
+            return {"ok": False, "error": err,
+                    "message": err.get("message") or "Не удалось построить деталь."}
+        solids = b.visible_solids()
+        if not solids:
+            return {"ok": False, "message": "В сценарии нет видимых деталей."}
+        data = export_glb(solids)
+        self.preview_dir.mkdir(parents=True, exist_ok=True)
+        target = self.preview_dir / f"{key}.glb"
+        target.write_bytes(data)
+        meta = b.analysis or {}
+        size = (meta.get("metrics") or {}).get("size") or []
+        info = {
+            "ok": True, "key": key, "url": f"/api/preview.glb?key={key}",
+            "size": size,
+            "tris": int((meta.get("metrics") or {}).get("tris") or 0),
+            "objects": len(solids),
+        }
+        self.preview_cache[key] = info
+        # держим кэш небольшим: превью — вспомогательные файлы
+        if len(self.preview_cache) > 48:
+            for old in list(self.preview_cache)[:-32]:
+                self.preview_cache.pop(old, None)
+                (self.preview_dir / f"{old}.glb").unlink(missing_ok=True)
+        return info
+
+    def preview_glb(self, key: str) -> bytes | None:
+        if not key or not all(c in "0123456789abcdef" for c in key):
+            return None
+        path = self.preview_dir / f"{key}.glb"
+        if not path.exists():
+            return None
+        return path.read_bytes()
 
     def _anime_style(self) -> dict | None:
         """Стиль аниме/манга из сценария (команда anime) — для снимков."""
@@ -682,6 +735,19 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(data)
             return
+        if path == "/api/preview.glb":
+            key = query.get("key", [""])[0]
+            data = st.preview_glb(key)
+            if data is None:
+                self._send_json({"error": {"message": "Превью не найдено — постройте заново."}}, 404)
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "model/gltf-binary")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Cache-Control", "max-age=600")
+            self.end_headers()
+            self.wfile.write(data)
+            return
         if path == "/api/frame.glb":
             key = query.get("key", [""])[0]
             data = st.frame_glb(key)
@@ -757,6 +823,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/build":
             script = body.get("script", "")
             self._send_json(st.build(script, auto=bool(body.get("auto"))))
+            return
+        if path == "/api/preview":
+            self._send_json(st.preview(str(body.get("script") or "")))
             return
         if path == "/api/morph":
             script = body.get("script", st.last_script)

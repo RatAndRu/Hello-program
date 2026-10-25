@@ -119,6 +119,12 @@
       <div class="editor-foot">
         <span id="cursor-pos">стр. 1, кол. 1</span>
         <span id="script-stats"></span>
+        <span class="foot-actions">
+          <button class="mini" id="btn-clear-scene"
+                  title="Убрать все предметы из сцены — свет, фон и стиль останутся в сценарии">очистить сцену</button>
+          <button class="mini" id="btn-clear-script"
+                  title="Удалить весь текст сценария (шаг отменяется кнопкой ↶ или Ctrl+Z)">очистить сценарий</button>
+        </span>
       </div>
     </section>
 
@@ -213,6 +219,10 @@
           <span class="studio-label">Экспозиция</span>
           <input type="range" id="exposure" min="0.3" max="2.5" step="0.05" value="1.05" />
           <span class="studio-value" id="exposure-val">1.05</span>
+          <span class="studio-label">Свечение</span>
+          <input type="range" id="bloom" min="0" max="3" step="0.05" value="0.6"
+                 title="Сила ореола вокруг светящихся деталей (светодиоды, неон)" />
+          <span class="studio-value" id="bloom-val">0.60</span>
         </div>
         <div class="studio-row toggles">
           <label><input type="checkbox" id="opt-shadows" checked /> тени</label>
@@ -669,6 +679,31 @@
         <span class="tools-count" id="tools-count"></span>
       </div>
       <div class="modal-body" id="tools-body"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="preview-modal" hidden>
+    <div class="modal-card preview-card">
+      <div class="modal-head">
+        <strong id="preview-title">Превью детали</strong>
+        <span class="preview-meta" id="preview-meta"></span>
+        <button class="mini" id="preview-close" title="Закрыть (Esc)">✕</button>
+      </div>
+      <div class="preview-stage" id="preview-stage">
+        <div class="preview-canvas" id="preview-canvas"></div>
+        <div class="preview-loading" id="preview-loading">строим деталь…</div>
+        <div class="preview-error" id="preview-error" hidden></div>
+        <div class="preview-tools">
+          <button class="chip active" id="preview-spin" title="Автоповорот модели">⟳ крутить</button>
+          <button class="chip" id="preview-fit" title="Вписать в окно">⌖ вписать</button>
+          <button class="chip" id="preview-wire" title="Показать каркас">полигоны</button>
+          <span class="preview-hint">тяните мышью — модель вращается, колесо — приближает</span>
+        </div>
+      </div>
+      <div class="preview-foot">
+        <button class="small" id="preview-refresh" title="Построить превью заново с текущими полями">Обновить</button>
+        <button class="small primary" id="preview-add">Добавить в сценарий</button>
+      </div>
     </div>
   </div>
 

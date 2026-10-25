@@ -127,6 +127,13 @@ export class Viewer {
     this._animePass = null;
     this._normalRT = null;
     this._normalMat = new THREE.MeshNormalMaterial();
+    // настоящие отражения в зеркальных деталях: своя кубическая карта
+    this._mirrors = [];
+    this._mirrorAt = 0;
+    this._mirrorKey = '';
+    this._mirrorCamPos = new THREE.Vector3(1e9, 1e9, 1e9);
+    this._userMoved = false;
+    this._lastSize = null;
     this._frames = 0;
     this._lastFps = 0;
     this._fpsTime = 0;
@@ -180,6 +187,9 @@ export class Viewer {
     };
     this.controls.screenSpacePanning = true;
     this.controls.enablePan = true;
+    this.controls.addEventListener('start', () => {
+      this._userMoved = true;
+    });
     this.controls.addEventListener('end', () => {
       if (this.highlightName) this.refreshOccluders();
     });
@@ -576,6 +586,7 @@ export class Viewer {
 
   disposeModel() {
     this.clearHighlight();
+    this._disposeMirrors();
     if (!this.model) return;
     this.scene.remove(this.model);
     this.model.traverse((o) => {
@@ -666,6 +677,7 @@ export class Viewer {
     this.scene.add(root);
     this.model = root;
     this.setBloom(this._detectEmissive(root));
+    this._setupMirrors();
     if (this.spaceMode) this._buildSpaceGrid();
     // Модель уже на экране. Дальше — только оформление и анимация: сбой в них
     // не должен выглядеть как «не удалось показать модель».
@@ -1647,7 +1659,16 @@ export class Viewer {
 
     this.scene.fog.near = dist * 2.2;
     this.scene.fog.far = dist * 8;
-    this.setView('iso', true);
+    // Камеру ставим один раз и не сбиваем выбор пользователя: раньше любая
+    // пересборка (например, после ползунка материала) возвращала изометрию,
+    // и правки «не сохранялись» на вид.
+    const prev = this._lastSize;
+    const grew = !prev || !this._userMoved;
+    const resized = prev && (Math.abs(size.x - prev.x) > Math.max(prev.x, 1) * 0.6
+      || Math.abs(size.y - prev.y) > Math.max(prev.y, 1) * 0.6
+      || Math.abs(size.z - prev.z) > Math.max(prev.z, 1) * 0.6);
+    this._lastSize = { x: size.x, y: size.y, z: size.z };
+    if (grew || resized) this.setView('iso', true);
   }
 
   setView(name, animate = true) {
@@ -2661,6 +2682,11 @@ export class Viewer {
             m.emissive.getHex() !== 0x000000) {
           m.emissiveIntensity = Number(emissiveStrength);
         }
+        if (metal !== undefined || rough !== undefined) {
+          // деталь могла стать зеркальной или перестать ею быть
+          clearTimeout(this._mirrorTimer);
+          this._mirrorTimer = setTimeout(() => this._setupMirrors(), 250);
+        }
         if (transmission !== undefined && transmission !== null && 'transmission' in m) {
           m.transmission = Number(transmission);
           m.thickness = Math.max(m.thickness || 0, 2);
@@ -2697,6 +2723,12 @@ export class Viewer {
     this.rimLight.intensity = Number(s.rim ?? 0.5);
     this.bounceLight.intensity = Number(s.bounce ?? 1.15);
     this.renderer.toneMappingExposure = Number(s.exposure ?? 1.05);
+    if (s.axes !== undefined) this.setAxes(s.axes !== false);
+    if (s.poly !== undefined) this.setPolygons(s.poly === true);
+    if (s.bloom !== undefined) {
+      this.bloomStrength = Math.max(0, Math.min(3, Number(s.bloom) || 0));
+      if (this.bloomPass) this.bloomPass.strength = this.bloomStrength;
+    }
     this.renderer.shadowMap.enabled = s.shadows !== false;
     this.keyLight.castShadow = s.shadows !== false;
     this.grid.visible = (s.grid !== false) && this.gridVisible;
@@ -2754,6 +2786,7 @@ export class Viewer {
   /** Кадр: со свечением или в аниме-стиле — через композер. */
   _renderFrame() {
     if (!this.renderer) return;
+    this._refreshMirrors();
     const animeOn = this._animeOn();
     if ((this._bloomOn || animeOn) && this.composer) {
       // буфер нормалей и глубины для контуров — до отрисовки красоты
@@ -2811,6 +2844,99 @@ export class Viewer {
       if (r > 0) return r;
     }
     return 100;
+  }
+
+  /** Зеркальные детали: своя кубическая карта, чтобы в отражении были соседи. */
+  _isMirrorMaterial(m) {
+    if (!m || m.metalness === undefined) return false;
+    const rough = m.roughness === undefined ? 0.5 : m.roughness;
+    return m.metalness >= 0.85 && rough <= 0.12 && !m.transmission;
+  }
+
+  _setupMirrors() {
+    this._disposeMirrors();
+    if (!this.model || !this.renderer) return;
+    const found = [];
+    this.model.traverse((o) => {
+      if (!o.isMesh || !o.visible) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const mirror = mats.find((m) => this._isMirrorMaterial(m));
+      if (mirror) found.push({ mesh: o, mat: mirror });
+    });
+    // больше трёх зеркал не тянем: каждая карта — шесть проходов сцены
+    found.slice(0, 3).forEach(({ mesh, mat }) => {
+      const rt = new THREE.WebGLCubeRenderTarget(256, {
+        generateMipmaps: true,
+        minFilter: THREE.LinearMipmapLinearFilter,
+        type: THREE.HalfFloatType,
+      });
+      const cam = new THREE.CubeCamera(1, 40000, rt);
+      cam.position.set(0, 0, 0);
+      this.scene.add(cam);
+      mat.envMap = rt.texture;
+      mat.envMapIntensity = 1.0;
+      mat.needsUpdate = true;
+      this._mirrors.push({ mesh, mat, rt, cam, center: new THREE.Vector3() });
+    });
+    if (this._mirrors.length) this._updateMirrorCenters();
+  }
+
+  _updateMirrorCenters() {
+    const box = new THREE.Box3();
+    this._mirrors.forEach((item) => {
+      box.setFromObject(item.mesh);
+      if (box.isEmpty()) return;
+      box.getCenter(item.center);
+      item.cam.position.copy(item.center);
+      item.cam.updateMatrixWorld(true);
+    });
+  }
+
+  _disposeMirrors() {
+    this._mirrors.forEach(({ mesh, mat, rt, cam }) => {
+      try { mat.envMap = null; mat.needsUpdate = true; } catch (e) { /* материал мог умереть */ }
+      rt.dispose();
+      cam.parent?.remove(cam);
+      void mesh;
+    });
+    this._mirrors = [];
+    this._mirrorKey = '';
+  }
+
+  /** Обновляет отражения, когда камера или модель сдвинулись. */
+  _refreshMirrors(force = false) {
+    if (!this._mirrors.length) return;
+    const now = performance.now();
+    const moved = this._mirrorCamPos.distanceToSquared(this.camera.position) > 1e-4
+      || !this._mirrorAt;
+    // не чаще пяти раз в секунду и только по факту движения
+    if (!force && (!moved || now - this._mirrorAt < 200)) return;
+    this._mirrorAt = now;
+    this._mirrorCamPos.copy(this.camera.position);
+    this._updateMirrorCenters();
+    const hidden = [];
+    this._mirrors.forEach(({ mesh }) => {
+      hidden.push([mesh, mesh.visible]);
+      mesh.visible = false;
+    });
+    const bg = this.scene.background;
+    this._mirrors.forEach(({ cam }) => {
+      try { cam.update(this.renderer, this.scene); } catch (e) { /* нет WebGL2 — без отражений */ }
+    });
+    this.scene.background = bg;
+    hidden.forEach(([mesh, vis]) => { mesh.visible = vis; });
+  }
+
+  /** Сила свечения: 0 — выключено, 1 — заметный ореол, 2 — «неон». */
+  setBloomStrength(v) {
+    this.bloomStrength = Math.max(0, Math.min(3, Number(v) || 0));
+    if (this.bloomPass) {
+      this.bloomPass.strength = this.bloomStrength;
+    } else if (this._bloomOn) {
+      this._ensureComposer();
+      this._applyAnimeUniforms();
+    }
+    this._renderFrame();
   }
 
   /** Полная настройка аниме-стиля: параметры из сценария (команда anime). */
@@ -2907,7 +3033,8 @@ export class Viewer {
     const size = new THREE.Vector2();
     this.renderer.getSize(size);
     if (this._bloomOn) {
-      const bloom = new UnrealBloomPass(size, 0.55, 0.55, 0.85);
+      const strength = this.bloomStrength ?? Number(this.settings?.bloom ?? 0.55);
+      const bloom = new UnrealBloomPass(size, strength, 0.4, 0.9);
       composer.addPass(bloom);
       this.bloomPass = bloom;
     }

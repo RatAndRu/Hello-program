@@ -1109,3 +1109,59 @@ button.mini:disabled { opacity: .38; cursor: default; }
 #paint-erase.active, #paint-toggle.active {
   background: #2b3d55; color: #d8e6ff; border-color: #4a6b96;
 }
+
+/* ---------- превью детали из «Инструментов» ---------- */
+.tool-actions { display: flex; gap: 6px; align-items: center; }
+.tool-preview-btn { display: inline-flex; align-items: center; gap: 5px; }
+.tool-cube { font-size: 12px; opacity: .85; }
+.preview-card { width: min(760px, 94vw); }
+.preview-meta {
+  margin-left: auto; margin-right: 10px; font-family: var(--mono);
+  font-size: 11px; color: var(--text-faint);
+}
+.preview-stage {
+  position: relative; width: 100%; height: min(56vh, 520px);
+  background: #11161f; border-bottom: 1px solid var(--line-soft);
+}
+.preview-canvas { position: absolute; inset: 0; }
+.preview-canvas canvas { display: block; touch-action: none; }
+.preview-tools {
+  position: absolute; left: 10px; right: 10px; bottom: 10px;
+  display: flex; gap: 6px; align-items: center; flex-wrap: wrap;
+  pointer-events: none;
+}
+.preview-tools > * { pointer-events: auto; }
+.preview-hint {
+  margin-left: auto; font-size: 10.5px; color: #8b98ab;
+  background: rgba(12,16,22,.62); padding: 3px 8px; border-radius: 20px;
+}
+.preview-loading, .preview-error {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  padding: 10px 16px; border-radius: 10px; font-size: 12.5px;
+  background: rgba(12,16,22,.86); border: 1px solid #2a3546; color: #cfdbee;
+  max-width: 80%; text-align: center; line-height: 1.5;
+}
+.preview-error { border-color: #5a2b2b; color: #ffb4b4; }
+.preview-foot {
+  display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px;
+  border-top: 1px solid var(--line-soft);
+}
+
+/* Очистка: сценарий и сцена — разные кнопки, чтобы не путать */
+.editor-foot .foot-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+.editor-foot .foot-actions .mini {
+  font-size: 10px;
+  padding: 1px 7px;
+  height: 18px;
+  line-height: 16px;
+}
+#btn-clear-scene:hover,
+#btn-clear-script:hover {
+  border-color: #7a3b3b;
+  color: #ffd9d9;
+}

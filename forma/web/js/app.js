@@ -1,5 +1,6 @@
 import { Viewer } from './viewer.js';
 import { encodeGif, downloadBlob } from './gif.js';
+import { Preview3D } from './preview3d.js';
 
 const $ = (id) => document.getElementById(id);
 // Токен берём из адреса, а если его нет (обновили страницу, открыли голый
@@ -298,8 +299,10 @@ async function buildNow(silent = false) {
   $('btn-build').disabled = true;
   const t0 = performance.now();
   try {
-    const payload = await api('/api/build', { script: currentScript(), auto: silent });
+    const sent = currentScript();
+    const payload = await api('/api/build', { script: sent, auto: silent });
     state.payload = payload;
+    state.builtScript = payload.ok ? sent : state.builtScript;
     applyBuild(payload, Math.round(performance.now() - t0));
     if (payload.ok) {
       if (payload.empty || !payload.glb_url) {
@@ -2251,6 +2254,88 @@ function updatePolyBadge() {
   badge.textContent = `${fmtInt(tris)} трис`;
 }
 
+/** Текущий вид сцены — то, что живёт в строке scene. */
+function currentViewSettings() {
+  const s = state.viewSettings ? { ...state.viewSettings } : {};
+  return {
+    bg: $('bg-color')?.value || s.bg || '#0b0e13',
+    env: document.querySelector('#env-chips .chip.active')?.dataset.env || s.env || 'studio',
+    exposure: Number($('exposure')?.value ?? s.exposure ?? 1.05),
+    shadows: $('opt-shadows') ? $('opt-shadows').checked : s.shadows !== false,
+    grid: $('opt-grid') ? $('opt-grid').checked : s.grid !== false,
+    ground: $('opt-ground') ? $('opt-ground').checked : s.ground !== false,
+    axes: $('opt-axes') ? $('opt-axes').checked : s.axes !== false,
+    poly: $('opt-poly') ? $('opt-poly').checked : s.poly === true,
+    bloom: Number($('bloom')?.value ?? s.bloom ?? 0.6),
+  };
+}
+
+/** Строка сценария для текущего вида: ползунки не должны слетать. */
+function sceneCommand(v = currentViewSettings()) {
+  const yn = (b) => (b ? 'да' : 'нет');
+  const parts = [`bg=${v.bg}`, `env=${v.env}`, `exposure=${v.exposure.toFixed(2)}`,
+    `shadows=${yn(v.shadows)}`, `grid=${yn(v.grid)}`, `ground=${yn(v.ground)}`,
+    `axes=${yn(v.axes)}`, `poly=${yn(v.poly)}`];
+  if (v.bloom > 0.001) parts.push(`bloom=${v.bloom.toFixed(2)}`);
+  return 'scene ' + parts.join(' ');
+}
+
+/** Переписывает строку scene в сценарии — без пересборки: вид уже на экране. */
+function writeViewScript() {
+  const v = currentViewSettings();
+  state.viewSettings = v;
+  const lines = currentScript().split('\n').filter((l) => {
+    const t = l.trim().toLowerCase();
+    return !['scene', 'сцена', 'окружение', 'фон', 'view'].some(
+      (cmd) => t === cmd || t.startsWith(cmd + ' '));
+  });
+  const body = lines.join('\n').replace(/\s+$/, '');
+  const text = (body ? body + '\n' : '') + sceneCommand(v);
+  if (text === currentScript()) return;
+  // в историю эти правки не пишем: вид не должен забивать отмену
+  setScript(text, { build: false, record: false, label: 'вид сцены' });
+}
+
+function clearScriptNow() {
+  if (!currentScript().trim()) {
+    toast('Сценарий уже пуст');
+    return;
+  }
+  if (!confirm('Удалить весь сценарий? Шаг отменяется кнопкой ↶ или Ctrl+Z.')) return;
+  setScript('', { label: 'очистка сценария' });
+  toast('Сценарий очищен');
+}
+
+function clearSceneNow() {
+  const objects = state.payload?.objects || [];
+  if (!objects.length) {
+    toast('Сцена уже пуста');
+    return;
+  }
+  if (!confirm(`Убрать все предметы (${objects.length})? Свет, фон и стиль останутся.`)) return;
+  const dropLines = new Set(objects.map((o) => Number(o.line) || 0).filter((n) => n > 0));
+  const names = new Set(objects.map((o) => o.name));
+  // номера строк относятся к тому сценарию, который реально собирался
+  const source = (state.builtScript || currentScript());
+  const lines = source.split('\n');
+  const kept = lines.filter((line, i) => {
+    if (dropLines.has(i + 1)) return false;
+    const t = line.trim();
+    const m = /^(color|цвет|texture|material|материал|кисть|brush|ластик|eraser|покраска|paint)\s+(\S+)/i
+      .exec(t);
+    if (!m) return true;
+    const target = m[2].replace(/[,;]$/, '');
+    return !(names.has(target) || names.has(target.split('.')[0]));
+  });
+  const text = kept.join('\n').replace(/\n{3,}/g, '\n\n').trim();
+  if (!text) {
+    setScript('', { label: 'очистка сцены' });
+  } else {
+    setScript(text, { label: 'очистка сцены' });
+  }
+  toast('Сцена очищена — свет и стиль на месте');
+}
+
 function applyViewSettings(payload) {
   const s = payload.settings || {};
   // Пустой объект = в сценарии стиля нет: выбор пользователя в окне не трогаем,
@@ -2260,6 +2345,10 @@ function applyViewSettings(payload) {
       ? Object.assign({}, s.anime) : { mode: 'выкл' };
     syncAnimeControls();
   }
+  state.viewSettings = Object.assign({}, state.viewSettings, {
+    bg: s.bg, env: s.env, exposure: s.exposure, shadows: s.shadows, grid: s.grid,
+    ground: s.ground, axes: s.axes, poly: s.poly, bloom: s.bloom,
+  });
   state.viewer?.applySettings(s);
   const chips = $('env-chips');
   if (chips) {
@@ -2272,10 +2361,17 @@ function applyViewSettings(payload) {
     $('exposure').value = v;
     $('exposure-val').textContent = v.toFixed(2);
   }
-  ['shadows', 'grid', 'ground'].forEach((k) => {
+  ['shadows', 'grid', 'ground', 'axes'].forEach((k) => {
     const el = $('opt-' + k);
     if (el) el.checked = s[k] !== false;
   });
+  if ($('opt-poly')) $('opt-poly').checked = s.poly === true;
+  $('btn-wire')?.classList.toggle('active', s.poly === true);
+  if ($('bloom')) {
+    const b = Number(s.bloom ?? 0.6);
+    $('bloom').value = String(b);
+    $('bloom-val').textContent = b.toFixed(2);
+  }
   if ($('bg-color') && s.bg) $('bg-color').value = s.bg;
   document.querySelectorAll('#bg-swatches .swatch').forEach((sw) => {
     sw.classList.toggle('active', (sw.dataset.bg || '').toLowerCase() === (s.bg || '').toLowerCase());
@@ -2337,6 +2433,16 @@ $('env-chips')?.querySelectorAll('.chip').forEach((chip) => {
     $('env-chips').querySelectorAll('.chip').forEach((c) => c.classList.remove('active'));
     chip.classList.add('active');
     state.viewer?.setEnv(chip.dataset.env);
+    // фон окружения подставляем в поле цвета: иначе в строку scene попадёт
+    // старый цвет и после пересборки фон «откатится»
+    const envBg = state.viewer?.settings?.bg;
+    if (envBg && $('bg-color')) {
+      $('bg-color').value = envBg;
+      $('bg-swatches')?.querySelectorAll('.swatch').forEach((sw) => {
+        sw.classList.toggle('active', (sw.dataset.bg || '').toLowerCase() === envBg.toLowerCase());
+      });
+    }
+    writeViewScript();
   });
 });
 $('bg-swatches')?.querySelectorAll('.swatch').forEach((sw) => {
@@ -2345,12 +2451,20 @@ $('bg-swatches')?.querySelectorAll('.swatch').forEach((sw) => {
     sw.classList.add('active');
     $('bg-color').value = sw.dataset.bg;
     state.viewer?.setBackground(sw.dataset.bg);
+    writeViewScript();
   });
 });
+let viewScriptTimer = 0;
+function scheduleViewScript() {
+  clearTimeout(viewScriptTimer);
+  viewScriptTimer = setTimeout(writeViewScript, 260);
+}
 $('bg-color')?.addEventListener('input', (e) => {
   $('bg-swatches')?.querySelectorAll('.swatch').forEach((c) => c.classList.remove('active'));
   state.viewer?.setBackground(e.target.value);
+  scheduleViewScript();     // цвет тянется мышью — пишем с паузой
 });
+$('bg-color')?.addEventListener('change', writeViewScript);
 /* ---------------- аниме/манга-стиль: живая настройка в окне ---------------- */
 const ANIME_MODES = {
   'выкл': { mode: 'выкл' },
@@ -2491,6 +2605,19 @@ $('exposure')?.addEventListener('input', (e) => {
   $('exposure-val').textContent = v.toFixed(2);
   state.viewer?.setExposure(v);
 });
+// Ползунки вида пишут себя в сценарий: иначе пересборка возвращала старый вид
+$('exposure')?.addEventListener('change', writeViewScript);
+$('bloom')?.addEventListener('input', (e) => {
+  const v = Number(e.target.value);
+  $('bloom-val').textContent = v.toFixed(2);
+  state.viewer?.setBloomStrength(v);
+});
+$('bloom')?.addEventListener('change', writeViewScript);
+['opt-shadows', 'opt-grid', 'opt-ground', 'opt-axes', 'opt-poly'].forEach((id) => {
+  $(id)?.addEventListener('change', writeViewScript);
+});
+$('btn-clear-script')?.addEventListener('click', clearScriptNow);
+$('btn-clear-scene')?.addEventListener('click', clearSceneNow);
 $('shading')?.addEventListener('change', (e) => state.viewer?.setShading(e.target.value));
 $('opt-shadows')?.addEventListener('change', (e) => state.viewer?.applySettings({ shadows: e.target.checked }));
 $('opt-grid')?.addEventListener('change', (e) => state.viewer?.setGrid(e.target.checked));
@@ -4697,7 +4824,8 @@ function insertTool(lines, label) {
   toast(`Добавлено: ${label}`);
 }
 
-function addShapeTool(tool, card) {
+/** Значения полей карточки в строку «ключ=значение». */
+function shapeParams(tool, card) {
   const parts = [];
   tool.params.forEach((p) => {
     const input = card.querySelector(`[data-key="${p.k}"]`);
@@ -4711,27 +4839,118 @@ function addShapeTool(tool, card) {
     if (p.kind === 'vec') {
       const nums = raw.split(/[,\s]+/).filter(Boolean);
       parts.push(`${p.k}=[${nums.join(', ')}]`);
-    } else if (p.kind === 'raw') {
-      parts.push(`${p.k}=${raw}`);
     } else {
       parts.push(`${p.k}=${raw}`);
     }
   });
-  if (tool.base) {
-    // команда работает по готовому телу: сначала кладём заготовку
-    const baseName = uniqueObjectName(tool.baseName || 'заготовка', currentScript());
-    const tail = parts.length ? ' ' + parts.join(' ') : '';
-    if (tool.noTarget) {
-      // стилю имя объекта не нужно: anime mode=… line=…
-      insertTool(`${baseName} = ${tool.base}\n${tool.op}${tail}`, tool.title);
-      return;
-    }
-    insertTool(`${baseName} = ${tool.base}\n${tool.op} ${baseName}${tail}`, tool.title);
-    return;
-  }
-  const name = uniqueObjectName(tool.name, currentScript());
-  insertTool(`${name} = ${tool.op} ${parts.join(' ')}`, tool.title);
+  return parts;
 }
+
+/** Готовый сценарий карточки: заготовка (если нужна) + сама команда. */
+function shapeScript(tool, card, { unique = false } = {}) {
+  const parts = shapeParams(tool, card);
+  const tail = parts.length ? ' ' + parts.join(' ') : '';
+  const script = unique ? currentScript() : '';
+  if (tool.base) {
+    const baseName = unique
+      ? uniqueObjectName(tool.baseName || 'заготовка', script)
+      : (tool.baseName || 'заготовка');
+    if (tool.noTarget) {
+      return `${baseName} = ${tool.base}\n${tool.op}${tail}`;
+    }
+    return `${baseName} = ${tool.base}\n${tool.op} ${baseName}${tail}`;
+  }
+  const name = unique ? uniqueObjectName(tool.name, script) : tool.name;
+  return `${name} = ${tool.op} ${parts.join(' ')}`.trim();
+}
+
+function addShapeTool(tool, card) {
+  insertTool(shapeScript(tool, card, { unique: true }), tool.title);
+}
+
+/* ---------------- 3D-превью детали из «Инструментов» ---------------- */
+let preview3d = null;
+let previewTool = null;
+let previewCard = null;
+
+function previewOpen() {
+  return !$('preview-modal')?.hidden;
+}
+
+async function loadToolPreview() {
+  if (!previewTool || !previewCard) return;
+  const script = shapeScript(previewTool, previewCard);
+  $('preview-loading').hidden = false;
+  $('preview-error').hidden = true;
+  $('preview-meta').textContent = '';
+  try {
+    const res = await api('/api/preview', { script });
+    if (!res.ok) {
+      const err = res.error || { message: res.message || 'Не удалось построить деталь' };
+      throw err;
+    }
+    const url = res.url + (res.url.includes('?') ? '&' : '?') + 'token='
+      + encodeURIComponent(TOKEN);
+    await preview3d.load(url);
+    preview3d.setWire($('preview-wire')?.classList.contains('active'));
+    const size = (res.size || []).map((v) => Math.round(v));
+    const bits = [];
+    if (size.length === 3) bits.push(`${size[0]}×${size[1]}×${size[2]} мм`);
+    if (res.tris) bits.push(`${fmtInt(res.tris)} трис`);
+    $('preview-meta').textContent = bits.join(' · ');
+  } catch (err) {
+    const box = $('preview-error');
+    if (box) {
+      box.textContent = err?.message || 'Не удалось построить превью';
+      box.hidden = false;
+    }
+  } finally {
+    $('preview-loading').hidden = true;
+  }
+}
+
+async function openToolPreview(tool, card) {
+  previewTool = tool;
+  previewCard = card;
+  $('preview-title').textContent = `${tool.title} · ${tool.op}`;
+  $('preview-modal').hidden = false;
+  if (!preview3d) preview3d = new Preview3D($('preview-canvas'));
+  else preview3d.resize();
+  $('preview-spin')?.classList.add('active');
+  preview3d.setSpin(true);
+  await loadToolPreview();
+}
+
+function closeToolPreview() {
+  $('preview-modal').hidden = true;
+  previewTool = null;
+  previewCard = null;
+}
+
+$('preview-close')?.addEventListener('click', closeToolPreview);
+$('preview-modal')?.addEventListener('click', (e) => {
+  if (e.target === $('preview-modal')) closeToolPreview();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && previewOpen()) closeToolPreview();
+});
+$('preview-refresh')?.addEventListener('click', () => loadToolPreview());
+$('preview-add')?.addEventListener('click', () => {
+  if (!previewTool || !previewCard) return;
+  addShapeTool(previewTool, previewCard);
+  closeToolPreview();
+});
+$('preview-spin')?.addEventListener('click', (e) => {
+  const on = !e.currentTarget.classList.contains('active');
+  e.currentTarget.classList.toggle('active', on);
+  preview3d?.setSpin(on);
+});
+$('preview-fit')?.addEventListener('click', () => preview3d?.fit());
+$('preview-wire')?.addEventListener('click', (e) => {
+  const on = !e.currentTarget.classList.contains('active');
+  e.currentTarget.classList.toggle('active', on);
+  preview3d?.setWire(on);
+});
 
 /** Переименовывает объекты примера, чтобы вставка не ломала имена. */
 function uniqueExample(text, script) {
@@ -4841,11 +5060,19 @@ function renderTools() {
       card.appendChild(fields);
       card.dataset.search = [tool.title, tool.op, tool.name, tool.desc, title,
         ...tool.params.map((p) => p.label)].join(' ').toLowerCase();
+      const actions = document.createElement('div');
+      actions.className = 'tool-actions';
+      const view3d = document.createElement('button');
+      view3d.className = 'small tool-preview-btn';
+      view3d.innerHTML = '<span class="tool-cube">◧</span> 3D';
+      view3d.title = 'Посмотреть деталь в объёме и покрутить, не добавляя в сценарий';
+      view3d.addEventListener('click', () => openToolPreview(tool, card));
       const btn = document.createElement('button');
       btn.className = 'small primary';
       btn.textContent = 'Добавить';
       btn.addEventListener('click', () => addShapeTool(tool, card));
-      card.appendChild(btn);
+      actions.append(view3d, btn);
+      card.appendChild(actions);
       grid.appendChild(card);
     });
     body.appendChild(section);
