@@ -27,9 +27,16 @@ def fails(script: str) -> str:
     return (result.error or {}).get("message", "")
 
 
-def gray(path: str) -> np.ndarray:
-    from PIL import Image
-    return np.asarray(Image.open(path).convert("RGB"), dtype=np.float32) / 255.0
+def rgb(path: str) -> np.ndarray:
+    """PNG читаем своим декодером: Pillow в зависимостях нет."""
+    from forma.geometry import read_png
+    arr = read_png(path)
+    if arr is None:
+        raise AssertionError("не удалось прочитать PNG")
+    arr = np.asarray(arr, dtype=np.float32)
+    if arr.max() > 1.5:
+        arr = arr / 255.0
+    return arr[..., :3]
 
 
 class PreviewApi(unittest.TestCase):
@@ -96,7 +103,7 @@ class GlowFix(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = render_single(b.visible_solids(), tmp, filename="led.png",
                                  size=240, ss=1)
-            img = gray(path)
+            img = rgb(path)
         red = img[..., 0] - img[..., 1]
         # корпус белый: красных пикселей немного, но они есть — это цифры
         self.assertGreater(float((red > 0.12).mean()), 0.004)
@@ -142,8 +149,8 @@ class MirrorReflections(unittest.TestCase):
             solid_plain = [s for s in b.visible_solids() if s.name != "з.зеркало"]
             p1 = render_single(solid_plain, tmp, filename="no_mirror.png", size=220, ss=1)
             p2 = render_single(b.visible_solids(), tmp, filename="mirror.png", size=220, ss=1)
-            without = gray(p1)
-            with_mirror = gray(p2)
+            without = rgb(p1)
+            with_mirror = rgb(p2)
         red_without = float(((without[..., 0] - without[..., 1]) > 0.1).mean())
         red_with = float(((with_mirror[..., 0] - with_mirror[..., 1]) > 0.1).mean())
         # в зеркале появилось красное отражение шара
