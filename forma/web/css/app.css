@@ -147,11 +147,88 @@ button.mini:disabled { opacity: .38; cursor: default; }
 /* ---------- сетка ---------- */
 .layout {
   display: grid;
-  grid-template-columns: minmax(320px, 1fr) minmax(420px, 1.45fr) minmax(300px, .98fr);
-  gap: 1px;
+  /* ширины задаёт web/js/panels.js: тяните границы мышью */
+  grid-template-columns:
+    var(--w-editor, minmax(320px, 1fr))
+    var(--splitter, 9px)
+    var(--w-viewer, minmax(420px, 1.45fr))
+    var(--splitter, 9px)
+    var(--w-report, minmax(300px, .98fr));
+  gap: 0;
   background: var(--line-soft);
   min-height: 0;
+  --splitter: 9px;
 }
+/* ---------- границы панелей ---------- */
+.splitter {
+  position: relative;
+  background: var(--line-soft);
+  cursor: col-resize;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 3;
+}
+.splitter:hover, .splitter.dragging { background: #2f4a6e; }
+.splitter-grip {
+  width: 3px;
+  height: 34px;
+  border-radius: 2px;
+  background: #33465e;
+  opacity: .6;
+}
+.splitter:hover .splitter-grip { background: #6b9dff; opacity: 1; }
+.splitter-fold {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 16px;
+  height: 34px;
+  padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--line);
+  background: #141b24;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+.splitter:hover .splitter-fold { opacity: 1; pointer-events: auto; }
+.splitter-fold:hover { color: #fff; border-color: #33506f; background: #1d2836; }
+
+/* свёрнутая панель: узкая полоска с названием */
+.panel.is-collapsed { overflow: hidden; }
+.panel.is-collapsed > *:not(.panel-fold) { display: none !important; }
+.panel-fold {
+  display: none;
+  width: 100%;
+  height: 100%;
+  padding: 8px 0;
+  border: 0;
+  border-radius: 0;
+  background: #10151c;
+  color: var(--text-faint);
+  cursor: pointer;
+  align-items: center;
+  justify-content: flex-start;
+}
+.panel.is-collapsed > .panel-fold { display: flex; }
+.panel-fold span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  font-size: 10px;
+  white-space: nowrap;
+}
+.panel-fold:hover { background: #16202b; color: var(--text); }
+.panel-max { font-size: 12px; }
+.tab-max { margin-left: auto; align-self: center; }
+
 .panel {
   background: var(--bg-soft);
   display: flex;
@@ -409,6 +486,14 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
   font-size: 10.5px; color: var(--text-faint); font-variant-numeric: tabular-nums;
 }
 .status-spacer { flex: 1; }
+.status-btn {
+  border: 1px solid var(--line); background: #151d27; color: var(--text-dim);
+  border-radius: 6px; padding: 1px 8px; font: inherit; font-size: 11px;
+  cursor: pointer; height: 20px;
+}
+.status-btn:hover { color: #fff; border-color: #33506f; background: #1d2836; }
+/* кнопка в строке состояния: «открыть Загрузки» после сохранения файла */
+.statusbar .status-btn { font-size: 10.5px; padding: 0 7px; height: 17px; }
 .status-item.muted { color: #465161; }
 .status-item.ok { color: var(--good); }
 .status-item.err { color: var(--bad); }
@@ -491,6 +576,7 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
   box-shadow: 0 12px 30px rgba(0,0,0,.45);
 }
 .toast.bad { border-color: #5a2b2f; color: #ffc9c9; background: #291619; }
+.toast.warn { border-color: #5a4a24; color: #ffe9b8; background: #292215; }
 
 /* скроллбары */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -499,13 +585,15 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
 ::-webkit-scrollbar-thumb:hover { background: #2f3d4f; }
 
 @media (max-width: 1180px) {
-  .layout { grid-template-columns: minmax(280px, 1fr) minmax(340px, 1.2fr) minmax(260px, .9fr); }
+  /* ширины колонок считает panels.js от фактического размера окна,
+     поэтому жёсткая сетка здесь больше не нужна */
   .brand-text span { display: none; }
 }
 @media (max-width: 900px) {
   body { grid-template-rows: 52px 1fr 28px; }
   .layout { grid-template-columns: 1fr; grid-template-rows: 40% 1fr 45%; overflow: auto; }
   .panel { border-bottom: 1px solid var(--line); }
+  .splitter { display: none; }
 }
 
 /* ---------- полигонаж, статистика, подсказки ---------- */
@@ -1099,8 +1187,11 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
 
 /* контекстное меню по правой кнопке на предмете */
 .ctx-menu {
-  position: absolute;
-  z-index: 40;
+  /* fixed: координаты курсора (clientX/clientY) — экранные. Раньше меню жило
+     внутри панели модели и отсчитывалось от её угла, поэтому появлялось
+     далеко справа и снизу от курсора. */
+  position: fixed;
+  z-index: 120;
   min-width: 220px;
   padding: 6px;
   border: 1px solid #2c3443;

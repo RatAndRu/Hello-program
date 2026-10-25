@@ -1,6 +1,7 @@
 import { Viewer } from './viewer.js';
 import { encodeGif, downloadBlob } from './gif.js';
 import { Preview3D } from './preview3d.js';
+import { installPanelLayout } from './panels.js';
 import { ToolThumbs } from './toolpreview.js';
 
 const $ = (id) => document.getElementById(id);
@@ -16,6 +17,8 @@ const state = {
   script: '',
   payload: null,
   viewer: null,
+  panels: null,
+  lastSaved: null,
   building: false,
   pending: false,
   examples: [],
@@ -81,6 +84,56 @@ async function api(path, body) {
   const data = await res.json().catch(() => ({ error: { message: 'Некорректный ответ сервера' } }));
   if (data.error) throw data.error;
   return data;
+}
+
+/**
+ * Отдаёт готовый файл серверу, чтобы тот положил его в «Загрузки».
+ *
+ * Обычная ссылка `<a download>` кладёт файл туда, куда решит браузер, и
+ * приложение об этом не узнаёт — именно поэтому записи анимации «никуда не
+ * сохранялись». Здесь байты уходят на `/api/save-file`, сервер пишет копию в
+ * папку данных и в «Загрузки», а в ответ приходит точный путь.
+ * Если сервер недоступен, остаётся прежнее скачивание — файл не теряется.
+ */
+async function saveBlob(blob, filename) {
+  try {
+    const url = `/api/save-file?name=${encodeURIComponent(filename)}&token=${encodeURIComponent(TOKEN)}`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: blob,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.error) throw data.error || new Error('Сервер не принял файл');
+    return data;
+  } catch (err) {
+    downloadBlob(blob, filename);
+    toast(`Сохранил через браузер: ${filename}`, 'warn');
+    return { name: filename, browser: true, path: '', error: err?.message || String(err) };
+  }
+}
+
+/**
+ * Экспорт уже лёг в «Загрузки» на стороне сервера — второй раз через браузер
+ * его не скачиваем, иначе рядом появляется копия «имя (1).ext».
+ * Показываем точный путь и кнопку «открыть Загрузки».
+ */
+function exportSaved(res, what = 'Файл сохранён') {
+  const path = res?.path || '';
+  const dir = path ? path.slice(0, Math.max(path.lastIndexOf('/'), path.lastIndexOf(String.fromCharCode(92))) + 1) : (res?.downloads || '');
+  toastSaved({ name: res?.name || '', path, downloads: dir }, what);
+  return res;
+}
+
+/** Пишет в подсказку точный путь и предлагает открыть папку. */
+function toastSaved(res, what = 'Сохранено') {
+  const path = res?.path || res?.downloads || res?.name || '';
+  toast(`${what}: ${path}`);
+  if (res?.downloads || res?.path) {
+    state.lastSaved = res;
+    const btn = $('btn-open-downloads');
+    if (btn) btn.hidden = false;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -2090,9 +2143,22 @@ function openContextMenu(x, y, name) {
   }));
   menu.appendChild(spacer());
   menu.appendChild(item('удалить предмет', () => deleteObject(name), 'danger'));
-  menu.style.left = Math.max(8, Math.min(x, window.innerWidth - 250)) + 'px';
-  menu.style.top = Math.max(8, Math.min(y, window.innerHeight - 240)) + 'px';
+  // Меню живёт прямо в body и позиционируется по экранным координатам курсора.
+  // Раньше оно лежало внутри панели модели и отсчитывалось от её левого
+  // верхнего угла — отсюда «далеко справа и снизу».
   menu.hidden = false;
+  menu.style.visibility = 'hidden';
+  menu.style.left = '0px';
+  menu.style.top = '0px';
+  const rect = menu.getBoundingClientRect();
+  const gap = 6;
+  let left = x + gap;
+  let top = y + gap;
+  if (left + rect.width > window.innerWidth - 8) left = Math.max(8, x - rect.width - gap);
+  if (top + rect.height > window.innerHeight - 8) top = Math.max(8, y - rect.height - gap);
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+  menu.style.visibility = '';
 }
 
 document.addEventListener('pointerdown', (e) => {
@@ -2100,6 +2166,12 @@ document.addEventListener('pointerdown', (e) => {
   if (menu && !menu.hidden && !menu.contains(e.target)) menu.hidden = true;
 });
 window.addEventListener('blur', () => { const m = $('ctx-menu'); if (m) m.hidden = true; });
+window.addEventListener('resize', () => { const m = $('ctx-menu'); if (m) m.hidden = true; });
+document.addEventListener('scroll', (e) => {
+  const m = $('ctx-menu');
+  if (m && !m.hidden) m.hidden = true;
+  void e;
+}, true);
 
 function initViewer() {
   try {
@@ -2224,12 +2296,21 @@ $('btn-spin')?.addEventListener('click', (e) => {
   e.currentTarget.classList.toggle('active', on);
   state.viewer?.setSpin(on);
 });
-$('btn-shot').addEventListener('click', () => {
+$('btn-shot').addEventListener('click', async () => {
   if (!state.viewer) return;
-  const link = document.createElement('a');
-  link.href = state.viewer.screenshot();
-  link.download = 'форма_3d_' + Date.now() + '.png';
-  link.click();
+  const dataUrl = state.viewer.screenshot();
+  if (!dataUrl) { toast('Не удалось снять картинку', 'bad'); return; }
+  const name = 'форма_3d_' + Date.now() + '.png';
+  try {
+    const blob = await (await fetch(dataUrl)).blob();
+    const saved = await saveBlob(blob, name);
+    toastSaved(saved, 'Снимок');
+  } catch (err) {
+    const link = document.createElement('a');
+    link.href = dataUrl;
+    link.download = name;
+    link.click();
+  }
 });
 
 /* ------------------------------------------------------------------ */
@@ -3534,14 +3615,7 @@ document.querySelectorAll('[data-section-export]').forEach((btn) => {
     const fmtName = btn.dataset.sectionExport;
     try {
       const res = await api('/api/export', { format: fmtName });
-      const url = res.url + (res.url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN) + '&download=1';
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = res.name;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      toast(`Сечение сохранено: ${res.name}`);
+      exportSaved(res, `Сечение ${res.name}`);
     } catch (err) {
       toast(err.message || 'Нет сечений: добавьте section z=40 в сценарий', 'bad');
     }
@@ -3616,8 +3690,10 @@ async function exportAnimationGif() {
     toast('GIF: сжимаю кадры…');
     await new Promise((r) => setTimeout(r, 30));
     const data = encodeGif(frames, size.w, size.h, { fps, maxColors: 256, loop: true });
-    downloadBlob(new Blob([data], { type: 'image/gif' }), animExportName('gif'));
-    toast(`GIF сохранён: ${size.w}×${size.h}, ${total} кадров`);
+    const blob = new Blob([data], { type: 'image/gif' });
+    toast('GIF: записываю в «Загрузки»…');
+    const saved = await saveBlob(blob, animExportName('gif'));
+    toastSaved(saved, `GIF ${size.w}×${size.h}, ${total} кадров`);
   } catch (err) {
     toast(err.message || 'Не удалось собрать GIF', 'bad');
   } finally {
@@ -3662,8 +3738,8 @@ async function exportAnimationWebm() {
     await stopped;
     track?.stop?.();
     const blob = new Blob(chunks, { type: mime.split(';')[0] || 'video/webm' });
-    downloadBlob(blob, animExportName('webm'));
-    toast(`Видео сохранено: ${(blob.size / 1024 / 1024).toFixed(1)} МБ`);
+    const saved = await saveBlob(blob, animExportName('webm'));
+    toastSaved(saved, `Видео ${(blob.size / 1024 / 1024).toFixed(1)} МБ`);
   } catch (err) {
     toast(err.message || 'Не удалось записать видео', 'bad');
   } finally {
@@ -3671,6 +3747,19 @@ async function exportAnimationWebm() {
     setAnimExportBusy(false);
   }
 }
+
+$('btn-open-downloads')?.addEventListener('click', async () => {
+  const saved = state.lastSaved;
+  if (!saved) return;
+  try {
+    await api('/api/reveal', { path: saved.path || saved.downloads });
+    toast(`Открыл папку: ${saved.downloads || saved.path}`);
+  } catch (err) {
+    // на другой машине (окно в браузере удалённого сервера) папку не открыть —
+    // показываем адрес, чтобы его можно было скопировать
+    toast(`Папка: ${saved.downloads || saved.path}`, 'warn');
+  }
+});
 
 $('anim-gif')?.addEventListener('click', exportAnimationGif);
 $('anim-webm')?.addEventListener('click', exportAnimationWebm);
@@ -3686,14 +3775,7 @@ $('btn-export').parentElement.querySelector('.menu').addEventListener('click', a
   toast('Экспорт…');
   try {
     const res = await api('/api/export', { format: fmt });
-    const url = res.url + (res.url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN) + '&download=1';
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = res.name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    toast(`Сохранено: ${res.path}`);
+    exportSaved(res, `Экспорт ${res.name || fmt}`);
   } catch (err) {
     toast(err.message || 'Ошибка экспорта', 'bad');
   }
@@ -5888,13 +5970,7 @@ $('btn-prompt-save').addEventListener('click', async () => {
   if (!$('prompt-out').value) { toast('Сначала сформируйте запрос', 'bad'); return; }
   try {
     const res = await api('/api/export', { format: 'prompt' });
-    const link = document.createElement('a');
-    link.href = res.url + '&token=' + encodeURIComponent(TOKEN) + '&download=1';
-    link.download = res.name;
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    toast('Сохранено: ' + res.path);
+    exportSaved(res, `Запрос ${res.name}`);
   } catch (e) { toast(e.message || 'Ошибка', 'bad'); }
 });
 
@@ -5903,6 +5979,10 @@ $('btn-prompt-save').addEventListener('click', async () => {
 /* ------------------------------------------------------------------ */
 async function init() {
   initViewer();
+  // Границы панелей: тянуть мышью, двойной щелчок — свернуть, «⤢» — во всё окно.
+  state.panels = installPanelLayout({
+    onResize: () => state.viewer?.resize(),
+  });
   try {
     const st = await api('/api/state');
     state.examples = st.examples || [];

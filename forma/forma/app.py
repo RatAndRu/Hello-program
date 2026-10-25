@@ -88,6 +88,7 @@ def _utf8_stdout() -> None:
 def _run_uistest(report_path: str | None) -> int:
     """Проверка, что внутри собранного exe работают интерфейс и API."""
     import json
+    import urllib.parse
     import urllib.request
     from pathlib import Path
 
@@ -121,6 +122,15 @@ def _run_uistest(report_path: str | None) -> int:
                 f"{base}{path}?token={token}", data=json.dumps(body).encode("utf-8"),
                 headers={"Content-Type": "application/json"}, method="POST")
             with urllib.request.urlopen(req, timeout=180) as resp:
+                return json.loads(resp.read())
+
+        def post_bytes(name: str, data: bytes):
+            """Приём готового файла (GIF, видео, снимок) — как это делает окно."""
+            query = urllib.parse.quote(name)
+            req = urllib.request.Request(
+                f"{base}/api/save-file?name={query}&token={token}", data=data,
+                headers={"Content-Type": "application/octet-stream"}, method="POST")
+            with urllib.request.urlopen(req, timeout=120) as resp:
                 return json.loads(resp.read())
 
         try:
@@ -503,6 +513,43 @@ def _run_uistest(report_path: str | None) -> int:
                 check("карточки листа, сгиба, гофры и картона",
                       b"op: 'sheet'" in js_app and b"op: 'fold'" in js_app
                       and b"op: 'corrugate'" in js_app and b"op: 'cardboard'" in js_app)
+                # 0.31: меню у курсора, растаскиваемые панели, часы без
+                # фризов, готовые файлы — в «Загрузки»
+                css = get("/css/app.css", raw=True)
+                panels_js = get("/js/panels.js", raw=True)
+                ctx_css = css.split(b".ctx-menu {", 1)[-1][:800]
+                check("меню ПКМ появляется у курсора",
+                      b"position: fixed" in ctx_css
+                      and b"getBoundingClientRect" in js_app
+                      and html.count(b'class="ctx-menu"') == 1,
+                      f"css {len(ctx_css)} байт")
+                check("панели растаскиваются и сворачиваются",
+                      html.count(b'class="splitter"') == 2
+                      and b'id="panel-viewer"' in html
+                      and b"forma3d.panels" in panels_js
+                      and b"installPanelLayout" in js_app
+                      and b"is-collapsed" in css,
+                      f"{len(panels_js)} байт скрипта панелей")
+                clock_script = get("/api/example?key=clock")["script"]
+                clock_payload = post("/api/build", {"script": clock_script})
+                clock_mirrors = [o for o in clock_payload.get("objects", [])
+                                 if o.get("mirror")]
+                check("часы без зеркал — не фризят",
+                      clock_payload.get("ok") is True and not clock_mirrors,
+                      f"{len(clock_payload.get('objects', []))} деталей, "
+                      f"зеркал {len(clock_mirrors)}")
+                media = post_bytes("проверка_анимации.gif", b"GIF89a" + b"\x00" * 32)
+                saved_path = Path(media.get("path") or "")
+                check("GIF попадает в «Загрузки»",
+                      bool(media.get("downloads")) and saved_path.exists()
+                      and saved_path.name == "проверка_анимации.gif"
+                      and b"/api/save-file?" in js_app
+                      and b"btn-open-downloads" in html,
+                      str(media.get("downloads") or ""))
+                try:
+                    saved_path.unlink(missing_ok=True)
+                except OSError:
+                    pass
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

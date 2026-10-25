@@ -452,7 +452,8 @@ def jacket(a, name):
 # --------------------------------------------------------------------------- #
 def _extra(a, base_name: str, suffix: str, m: mf.Manifold, kind: str, *,
            color: str, metal: float = 0.0, rough: float = 0.5,
-           emissive: str = "", glow: float = 1.0, transmission: float = 0.0):
+           emissive: str = "", glow: float = 1.0, transmission: float = 0.0,
+           mirror: bool = False):
     """Добавляет в сцену доп. объект с собственным материалом.
 
     Корпус и «начинка» экрана — разные материалы (пластик, стекло,
@@ -462,8 +463,8 @@ def _extra(a, base_name: str, suffix: str, m: mf.Manifold, kind: str, *,
     from .model import Solid
     solid = Solid(name=f"{base_name}.{suffix}", manifold=m, color=color, metal=metal,
                   rough=rough, emissive=emissive, emissive_strength=glow,
-                  transmission=transmission, kind=kind, op=a.spec.name,
-                  line=a.cmd.line)
+                  transmission=transmission, mirror=mirror, kind=kind,
+                  op=a.spec.name, line=a.cmd.line)
     return a.scene.add(solid)
 
 
@@ -761,7 +762,7 @@ def mirror_plate(a, name):
     placed = _anchor_all(a, [body, plate])
     main = make_solid(a.scene, name, placed[0], a, kind="mirror_plate")
     _extra(a, main.name, "зеркало", placed[1], "mirror",
-           color="#e8f1fb", metal=1.0, rough=0.02)
+           color="#e8f1fb", metal=1.0, rough=0.02, mirror=True)
     a.scene.log("info", f"зеркало: {width:g}×{height:g} мм, рама {frame:g} мм, "
                         f"{body.num_tri():,} трис".replace(",", " "), a.cmd.line)
     return main

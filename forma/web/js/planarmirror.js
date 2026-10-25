@@ -9,6 +9,18 @@
  */
 import * as THREE from 'three';
 
+/**
+ * Плоскость отсечения у зеркала — **одна на всё приложение**.
+ *
+ * three.js собирает программу материала заново, когда меняется *состав*
+ * списка плоскостей: было `[]`, стало `[Plane]` — и все шейдеры сцены
+ * пересобираются. Если дёргать это на каждом кадре, окно встаёт намертво.
+ * Поэтому массив всегда длиной 1, а «отключено» — это плоскость, уведённая
+ * на 1e7 единиц: она ничего не режет, но список остаётся тем же.
+ */
+const CLIP_PLANE = new THREE.Plane(new THREE.Vector3(0, 0, -1), 1e7);
+const CLIP_ARRAY = [CLIP_PLANE];
+
 const VERT = `
   uniform mat4 uTextureMatrix;
   varying vec4 vUv;
@@ -90,6 +102,7 @@ export class PlanarMirror {
     this.virtualCamera = new THREE.PerspectiveCamera();
     this.rt = null;
     this._dirty = true;
+
     this._lastCam = new THREE.Vector3(1e9, 1e9, 1e9);
     this._lastLook = new THREE.Vector3(1e9, 1e9, 1e9);
     const tint = material.color ? material.color.clone() : new THREE.Color(0xffffff);
@@ -137,7 +150,6 @@ export class PlanarMirror {
     if (!plane) return;
     // пластина могла сдвинуться сама (правка ползунка) — следим и за ней
     this.mesh.updateWorldMatrix(true, false);
-    this._lastPos.setFromMatrixPosition(this.mesh.matrixWorld);
     const moved = force || this._dirty
       || this._lastCam.distanceToSquared(camera.position) > 1e-6
       || this._lastLook.distanceToSquared(camera.up) > 1e-6;
@@ -179,7 +191,7 @@ export class PlanarMirror {
 
     // саму пластину и подсказки в отражение не пускаем
     const hidden = [];
-    const hideList = [this.mesh, ...hide];
+    const hideList = [this.mesh, ...hide].filter(Boolean);
     hideList.forEach((o) => {
       if (!o) return;
       hidden.push([o, o.visible]);
@@ -188,12 +200,13 @@ export class PlanarMirror {
     const prevTarget = renderer.getRenderTarget();
     const prevBg = scene.background;
     const prevFog = scene.fog;
-    const prevPlanes = renderer.clippingPlanes;
     scene.fog = null;
     // Срезаем всё, что лежит по другую сторону пластины: иначе детали «под
     // зеркалом» просвечивают в отражении сквозь пол.
-    renderer.clippingPlanes = [new THREE.Plane(
-      normal.clone(), -normal.dot(point))];
+    if (renderer.clippingPlanes !== CLIP_ARRAY) {
+      renderer.clippingPlanes = CLIP_ARRAY;         // длина массива постоянна
+    }
+    CLIP_PLANE.set(normal.clone(), -normal.dot(point));
     renderer.setRenderTarget(this.rt);
     renderer.clear();
     try {
@@ -202,7 +215,10 @@ export class PlanarMirror {
       renderer.setRenderTarget(prevTarget);
       scene.background = prevBg;
       scene.fog = prevFog;
-      renderer.clippingPlanes = prevPlanes;
+      // плоскость не убираем, а уводим бесконечно далеко: состав шейдеров
+      // остаётся тем же, значит пересборки нет
+      CLIP_PLANE.set(new THREE.Vector3(0, 0, -1), 1e7);
+      renderer.clippingPlanes = CLIP_ARRAY;
       hidden.forEach(([o, vis]) => { o.visible = vis; });
     }
   }

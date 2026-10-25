@@ -1019,8 +1019,11 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
         rgba = color_to_gltf(obj.color)
         transmission = float(getattr(obj, "transmission", 0.0) or 0.0)
         uv_mode = getattr(obj, "uv", "auto") or "auto"
+        # Явная метка зеркала: окно строит отражение только для помеченных
+        # материалов, а не для любого «металла с малой шероховатостью»
+        mat_prefix = "mirror__" if getattr(obj, "mirror", False) else ""
         material = PBRMaterial(
-            name=f"mat_{obj.name}",
+            name=f"mat_{mat_prefix}{obj.name}",
             baseColorFactor=rgba,
             metallicFactor=float(obj.metal),
             roughnessFactor=float(obj.rough),
@@ -1109,7 +1112,8 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             pass  # анимация — бонус: без неё файл остаётся корректным
     styles = {obj.name: {"emissive": getattr(obj, "emissive", "") or "",
                          "emissive_strength": float(getattr(obj, "emissive_strength", 1.0) or 1.0),
-                         "transmission": float(getattr(obj, "transmission", 0.0) or 0.0)}
+                         "transmission": float(getattr(obj, "transmission", 0.0) or 0.0),
+                         "mirror": bool(getattr(obj, "mirror", False))}
               for obj in objects}
     if any(st["emissive"] and st["emissive_strength"] > 1.01
            or st["transmission"] > 0.01 for st in styles.values()):
@@ -1134,7 +1138,8 @@ def _glb_patch_materials(data: bytes, styles: dict) -> bytes:
         name = str(mat.get("name") or "")
         if not name.startswith("mat_"):
             continue
-        st = styles.get(name[4:])
+        key = name[4:]
+        st = styles.get(key) or styles.get(key.replace("mirror__", "", 1))
         if not st:
             continue
         ext = mat.setdefault("extensions", {})

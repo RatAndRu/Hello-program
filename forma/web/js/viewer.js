@@ -141,6 +141,10 @@ export class Viewer {
     this._lastSize = null;
     this._frames = 0;
     this._lastFps = 0;
+    // Качество 3 — полное, 2 — бережём слабую видеокарту, 1 — минимум.
+    this.quality = 3;
+    this._fpsHistory = [];
+    this._shadowDirty = true;
     this._fpsTime = 0;
     this._init();
   }
@@ -276,9 +280,14 @@ export class Viewer {
       this._frames += 1;
       this._fpsTime += dt;
       if (this._fpsTime > 0.5) {
-        this._lastFps = Math.round(this._frames / this._fpsTime);
+        // Считаем дробную частоту: если кадр длится несколько секунд,
+        // округление давало 0, и «умное качество» вообще не включалось —
+        // окно продолжало тонуть вместо того, чтобы упроститься.
+        const fps = this._frames / this._fpsTime;
+        this._lastFps = Math.max(1, Math.round(fps));
         this._frames = 0;
         this._fpsTime = 0;
+        this._adaptQuality(fps);
       }
       this._renderFrame();
     };
@@ -286,6 +295,41 @@ export class Viewer {
     this.ready = true;
 
     this._bindPointer();
+  }
+
+  /**
+   * Держит частоту кадров в разумных пределах.
+   *
+   * Тяжёлые вещи (плотный экран, отражения, тени) включаются по очереди и
+   * выключаются, если окно просело. Ориентир — 24 кадра в секунду: ниже
+   * модель уже неудобно крутить, выше 50 — можно вернуть качество.
+   */
+  _adaptQuality(fps) {
+    if (!Number.isFinite(fps) || fps <= 0 || !this.renderer) return;
+    this._fpsHistory.push(fps);
+    if (this._fpsHistory.length > 4) this._fpsHistory.shift();
+    const avg = this._fpsHistory.reduce((a, b) => a + b, 0) / this._fpsHistory.length;
+    const ratio = window.devicePixelRatio || 1;
+    if (avg < 24 && this.quality > 1) {
+      this.quality -= 1;
+      this._fpsHistory = [];
+      if (this.quality === 2) {
+        this.renderer.setPixelRatio(Math.min(ratio, 1.25));
+      } else {
+        this.renderer.setPixelRatio(1);
+        this._shadowDirty = true;
+      }
+      this.resize();
+      this.onQuality?.(this.quality);
+    } else if (avg > 52 && this.quality < 3 && this._fpsHistory.length >= 4) {
+      this.quality += 1;
+      this._fpsHistory = [];
+      if (this.quality === 3) {
+        this.renderer.setPixelRatio(Math.min(ratio, 2));
+        this.resize();
+      }
+      this.onQuality?.(this.quality);
+    }
   }
 
   /** Оси X/Y/Z: стрелки и подписи, длину подбираем под модель. */
@@ -684,6 +728,17 @@ export class Viewer {
     this.model = root;
     this.setBloom(this._detectEmissive(root));
     this._setupMirrors();
+    // Тяжёлая сцена (сотни тысяч треугольников) стартует сразу в экономном
+    // качестве: иначе первые секунды уходят на полноэкранные проходы, и
+    // кажется, что окно зависло. Обратно качество вернётся само, если
+    // частота кадров позволит.
+    const loaded = this.getStats();
+    if (loaded.tris > 200000 && this.quality === 3) {
+      this.quality = 2;
+      this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.25));
+      this.resize();
+      this.onQuality?.(this.quality);
+    }
     if (this.spaceMode) this._buildSpaceGrid();
     // Модель уже на экране. Дальше — только оформление и анимация: сбой в них
     // не должен выглядеть как «не удалось показать модель».
@@ -1242,6 +1297,8 @@ export class Viewer {
       });
       if (this.mixer) this.mixer.update(0);
     }
+    // анимация движет детали — карта теней устарела
+    this._shadowDirty = true;
     this.onTime?.(this.time, total);
   }
 
@@ -2326,6 +2383,7 @@ export class Viewer {
       found += 1;
     });
     if (found && visible) this.model.updateMatrixWorld(true);
+    if (found) this._shadowDirty = true;
     return found;
   }
 
@@ -2693,11 +2751,10 @@ export class Viewer {
             m.emissive.getHex() !== 0x000000) {
           m.emissiveIntensity = Number(emissiveStrength);
         }
-        if (metal !== undefined || rough !== undefined) {
-          // деталь могла стать зеркальной или перестать ею быть
-          clearTimeout(this._mirrorTimer);
-          this._mirrorTimer = setTimeout(() => this._setupMirrors(), 250);
-        }
+        // Металл и шероховатость больше не делают деталь зеркалом: признак
+        // зеркала приходит из сценария (`material=зеркало`) и появляется
+        // после сборки. Пересобирать зеркала на каждое движение ползунка
+        // нельзя — это лишняя компиляция шейдеров и рывки.
         if (transmission !== undefined && transmission !== null && 'transmission' in m) {
           m.transmission = Number(transmission);
           m.thickness = Math.max(m.thickness || 0, 2);
@@ -2797,6 +2854,14 @@ export class Viewer {
   /** Кадр: со свечением или в аниме-стиле — через композер. */
   _renderFrame() {
     if (!this.renderer) return;
+    // Тени зависят от геометрии и света, но не от камеры. Раньше карта теней
+    // перерисовывалась на каждом кадре — на 60 деталях часов это лишний
+    // полный проход сцены. Теперь только когда что-то правда движется.
+    if (this.settings.shadows !== false) {
+      this.renderer.shadowMap.autoUpdate = false;
+      this.renderer.shadowMap.needsUpdate = this._shadowDirty || this.playing === true;
+      if (this.renderer.shadowMap.needsUpdate) this._shadowDirty = false;
+    }
     this._refreshMirrors();
     const animeOn = this._animeOn();
     if ((this._bloomOn || animeOn) && this.composer) {
@@ -2975,11 +3040,18 @@ export class Viewer {
     return 100;
   }
 
-  /** Зеркальные детали: своя кубическая карта, чтобы в отражении были соседи. */
+  /**
+   * Зеркало определяется **только явной меткой** из сценария
+   * (`material=зеркало`, `mirror_plate`): имя материала начинается с
+   * `mat_mirror__`. Раньше признаком считались «металл ≥ 0.85 и
+   * шероховатость ≤ 0.12», и на часах такими оказывались десятки осей —
+   * окно строило три план-зеркала, каждое рисовало сцену заново и роняло
+   * частоту кадров до нуля.
+   */
   _isMirrorMaterial(m) {
-    if (!m || m.metalness === undefined) return false;
-    const rough = m.roughness === undefined ? 0.5 : m.roughness;
-    return m.metalness >= 0.85 && rough <= 0.12 && !m.transmission;
+    if (!m) return false;
+    if (m.userData && m.userData.isMirror) return true;
+    return typeof m.name === 'string' && m.name.includes('mirror__');
   }
 
   _setupMirrors() {
@@ -2993,8 +3065,16 @@ export class Viewer {
       if (mirror) found.push({ mesh: o, mat: mirror });
     });
     // больше трёх зеркал не тянем: каждое — отдельный проход сцены
+    let tris = 0;
+    this.model.traverse((o) => {
+      if (!o.isMesh || !o.geometry) return;
+      const g = o.geometry;
+      tris += Math.floor((g.index ? g.index.count : (g.attributes?.position?.count || 0)) / 3);
+    });
+    // тяжёлая сцена — отражение вдвое дешевле, на глаз это почти не видно
+    const res = (tris > 60000 || found.length > 1) ? 512 : 768;
     found.slice(0, 3).forEach(({ mesh, mat }) => {
-      const mirror = new PlanarMirror(mesh, mat, { resolution: 1024 });
+      const mirror = new PlanarMirror(mesh, mat, { resolution: res });
       this._mirrors.push({ mesh, mat: mirror.material, source: mat, mirror,
                            center: new THREE.Vector3() });
     });
@@ -3008,8 +3088,12 @@ export class Viewer {
       box.setFromObject(item.mesh);
       if (box.isEmpty()) return;
       box.getCenter(item.center);
-      item.cam.position.copy(item.center);
-      item.cam.updateMatrixWorld(true);
+      // у зеркала своя виртуальная камера: раньше здесь стояло `item.cam`,
+      // которого у записи не было, и обновление отражений падало с ошибкой
+      const cam = item.mirror?.virtualCamera;
+      if (!cam) return;
+      cam.position.copy(item.center);
+      cam.updateMatrixWorld(true);
     });
   }
 
@@ -3024,21 +3108,24 @@ export class Viewer {
   /** Обновляет отражения, когда камера или модель сдвинулись. */
   _refreshMirrors(force = false) {
     if (!this._mirrors.length || !this.renderer) return;
-    // Во время проигрывания отражение пересчитываем каждый кадр: предмет над
-    // зеркалом едет, и застывшая картинка сразу выдаёт подделку.
-    const moving = this.playing === true;
-    const moved = force || moving
-      || this._mirrorCamPos.distanceToSquared(this.camera.position) > 1e-4;
-    // стоит камера — отражение не пересчитываем: это лишний проход сцены
-    if (!force && !moved) return;
+    const now = performance.now();
+    const moved = force
+      || this._mirrorCamPos.distanceToSquared(this.camera.position) > 1e-4
+      || this.playing === true;
+    // Отражение — это целый лишний проход сцены на каждое зеркало. Больше
+    // 8 раз в секунду при движении и 4 при анимации не нужно: для глаза
+    // разница незаметна, а частоту кадров это спасает.
+    const gap = this.quality < 2 ? 250 : (this.playing ? 110 : 130);
+    if (!force && (!moved || now - (this._mirrorAt || 0) < gap)) return;
+    this._mirrorAt = now;
     this._mirrorCamPos.copy(this.camera.position);
     this._updateMirrorCenters();
     const hide = [this.axes, this.grid, ...this._overlays, ...this._selOverlays];
-    const big = (this.renderer.getDrawingBufferSize(new THREE.Vector2()).x > 1400);
-    this._mirrors.forEach(({ mirror }, i) => {
+    this._mirrors.forEach(({ mirror, mesh }, i) => {
       // на слабом экране обновляем не все зеркала в одном кадре
-      if (!force && big && i > 0) return;
-      mirror.update(this.renderer, this.scene, this.camera, { hide, force });
+      if (!force && (this.quality < 2 ? i > 0 : false)) return;
+      if (mesh && !mesh.visible) return;
+      mirror.update(this.renderer, this.scene, this.camera, { hide, force, mesh });
     });
   }
 
@@ -3147,7 +3234,17 @@ export class Viewer {
       }
     }
     const composer = this.composer;
-    // пересобираем хвост каждый раз: состав зависит от свечения и стиля
+    // Состав проходов меняется только при включении/выключении свечения и
+    // смене режима рисунка. Если ничего не поменялось — не трогаем цепочку:
+    // каждое удаление прохода освобождает буферы и подвешивает кадр.
+    const key = `${this._bloomOn ? 1 : 0}:${this.anime ? (this.anime.mode || '') : ''}`;
+    if (this._composerKey === key && composer.passes.length > 1) {
+      if (this.bloomPass) {
+        this.bloomPass.strength = this.bloomStrength ?? Number(this.settings?.bloom ?? 0.55);
+      }
+      return;
+    }
+    this._composerKey = key;
     while (composer.passes.length > 1) composer.removePass(composer.passes[composer.passes.length - 1]);
     this.bloomPass = null;
     this._animePass = null;

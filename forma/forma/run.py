@@ -113,6 +113,7 @@ class Build:
                 "emissive": getattr(solid, "emissive", "") or "",
                 "emissive_strength": getattr(solid, "emissive_strength", 1.0),
                 "transmission": getattr(solid, "transmission", 0.0),
+                "mirror": bool(getattr(solid, "mirror", False)),
                 "kind": solid.kind,
                 "op": solid.op,
                 "line": solid.line,

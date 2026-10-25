@@ -27,6 +27,9 @@ from .version import APP_NAME, __version__
 
 MAX_UPLOAD = 300 * 1024 * 1024
 MAX_BODY = 8 * 1024 * 1024
+# Готовые картинки и записи из окна модели: их присылает браузер байтами,
+# чтобы файл попал именно в «Загрузки» на этом компьютере.
+MEDIA_SUFFIXES = (".gif", ".webm", ".mp4", ".png", ".webp", ".apng", ".jpeg", ".jpg")
 
 _TRANSLIT = {
     "а": "a", "б": "b", "в": "v", "г": "g", "д": "d", "е": "e", "ё": "e", "ж": "zh",
@@ -484,6 +487,61 @@ class AppState:
         return {"file": clean, "path": str(target), "size": len(data),
                 "line": line, "suffix": ext, "note": note}
 
+    def save_media(self, data: bytes, filename: str) -> dict:
+        """Кладёт присланный из окна файл (GIF, видео, снимок) в «Загрузки».
+
+        Браузерная ссылка ``<a download>`` не даёт приложению знать, куда
+        попал файл, и в некоторых сборках он молча терялся. Теперь интерфейс
+        присылает байты сюда, а сервер пишет копию в папку данных и
+        переносит её в «Загрузки» — тем же путём, что и остальной экспорт.
+        """
+        from .paths import safe_name
+        raw = Path(str(filename or "")).name
+        clean = safe_name(raw, "анимация.gif")
+        suffix = Path(clean).suffix.lower()
+        if suffix not in MEDIA_SUFFIXES:
+            raise FormaError(f"Такой файл не сохраняем: «{suffix or 'без расширения'}». "
+                             "Нужен GIF, WebM, MP4 или PNG.")
+        if not data:
+            raise FormaError("Пустой файл.")
+        out_dir = self.data_dir / "exports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        target = out_dir / clean
+        target.write_bytes(data)
+        shown = self._to_downloads(target)
+        self.log_action("экспорт", f"{clean} — {len(data) / 1024:.0f} КБ → {shown.parent}")
+        return {"name": clean, "size": len(data), "path": str(shown),
+                "app_path": str(target), "downloads": str(shown.parent),
+                "url": file_url("exports", clean)}
+
+    def reveal_path(self, path: str) -> dict:
+        """Открывает папку с готовым файлом в проводнике (только на этом ПК)."""
+        from .paths import data_root, downloads_dir
+        target = Path(path or "").expanduser()
+        try:
+            target = target.resolve()
+        except OSError:
+            raise FormaError("Такой папки нет.")
+        roots = []
+        for root in (data_root(), downloads_dir()):
+            try:
+                roots.append(Path(root).resolve())
+            except OSError:
+                continue
+        inside = any(root == target or root in target.parents for root in roots)
+        if not inside:
+            raise FormaError("Папка вне данных приложения.")
+        folder = target if target.is_dir() else target.parent
+        if not folder.exists():
+            raise FormaError("Папки ещё нет — сначала сохраните файл.")
+        if sys.platform.startswith("win"):
+            os.startfile(str(folder))  # type: ignore[attr-defined]
+        elif sys.platform == "darwin":
+            os.system(f'open "{folder}"')
+        else:
+            os.system(f'xdg-open "{folder}" >/dev/null 2>&1 &')
+        return {"folder": str(folder), "opened": True}
+
     def save_project(self, name: str, script: str) -> dict:
         display = "".join(c for c in (name or "проект") if c not in '\\/:*?"<>|').strip() or "проект"
         safe = slugify(display)
@@ -687,6 +745,16 @@ class Handler(BaseHTTPRequestHandler):
             if not self._token_ok(query):
                 self._send_json({"error": {"message": "Нет доступа (токен)."}}, 403)
                 return
+            if path == "/api/save-file":
+                length = int(self.headers.get("Content-Length", "0") or 0)
+                if length <= 0:
+                    raise FormaError("Пустой файл.")
+                if length > MAX_UPLOAD:
+                    raise FormaError("Файл больше 300 МБ — уменьшите длительность записи.")
+                data = self.rfile.read(length)
+                name = query.get("name", ["анимация.gif"])[0]
+                self._send_json(self.state.save_media(data, name))
+                return
             if path == "/api/upload":
                 length = int(self.headers.get("Content-Length", "0") or 0)
                 if length <= 0:
@@ -870,6 +938,9 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/export":
             fmt = body.get("format", "glb")
             self._send_json(st.export(fmt, body.get("script")))
+            return
+        if path == "/api/reveal":
+            self._send_json(st.reveal_path(str(body.get("path") or "")))
             return
         if path == "/api/save":
             self._send_json(st.save_project(body.get("name", "проект"), body.get("script", "")))

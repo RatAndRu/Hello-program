@@ -90,8 +90,8 @@
     </div>
   </header>
 
-  <main class="layout">
-    <section class="panel editor-panel">
+  <main class="layout" id="layout">
+    <section class="panel editor-panel" id="panel-editor">
       <div class="panel-head">
         <div class="panel-title">Сценарий</div>
         <div class="panel-tools">
@@ -99,7 +99,8 @@
             <input type="checkbox" id="autobuild" checked />
             <span>авто</span>
           </label>
-          <button id="btn-format" class="mini" title="Выровнять отступы">⤢</button>
+          <button id="btn-format" class="mini" title="Выровнять отступы">≡</button>
+          <button class="mini panel-max" data-panel="editor" title="Развернуть сценарий на всё окно (или вернуть)">⤢</button>
         </div>
       </div>
       <div class="editor-wrap">
@@ -126,9 +127,18 @@
                   title="Удалить весь текст сценария (шаг отменяется кнопкой ↶ или Ctrl+Z)">очистить сценарий</button>
         </span>
       </div>
+      <button class="panel-fold" data-panel="editor" title="Развернуть панель сценария">
+        <span>Сценарий</span>
+      </button>
     </section>
 
-    <section class="panel viewer-panel">
+    <div class="splitter" data-split="editor" role="separator" aria-orientation="vertical"
+         title="Потяните, чтобы изменить ширину · двойной щелчок — свернуть/развернуть">
+      <span class="splitter-grip"></span>
+      <button class="splitter-fold" data-fold="editor" title="Свернуть панель сценария">‹</button>
+    </div>
+
+    <section class="panel viewer-panel" id="panel-viewer">
       <div class="panel-head">
         <div class="panel-title">
           Модель
@@ -147,6 +157,7 @@
           <span class="tool-sep"></span>
           <button class="mini" id="btn-studio" title="Свет, фон, показ, анимация">вид ▾</button>
           <button class="mini icon-only" id="btn-shot" title="Сохранить картинку">⤓</button>
+          <button class="mini panel-max" data-panel="viewer" title="Развернуть модель на всё окно (или вернуть)">⤢</button>
         </div>
       </div>
 
@@ -387,7 +398,6 @@
         <div class="viewer-stats" id="viewer-stats" hidden></div>
         <div class="viewer-hint" id="viewer-hint">ЛКМ — вращать · колесо — масштаб · ПКМ — сдвинуть сцену · в режиме «выбор» ЛКМ тянет рамку</div>
         <div class="drop-zone" id="drop-zone" hidden>Отпустите файл — открою и добавлю в сцену</div>
-        <div class="ctx-menu" id="ctx-menu" hidden></div>
         <div class="loader" id="loader" hidden><div class="spinner"></div><span>Строим…</span></div>
         <div class="sel-card" id="sel-card" hidden>
           <div class="sel-head">
@@ -430,15 +440,26 @@
         </div>
       </div>
       <div class="render-strip" id="render-strip" hidden></div>
+      <button class="panel-fold" data-panel="viewer" title="Развернуть окно модели">
+        <span>Модель</span>
+      </button>
     </section>
 
-    <section class="panel report-panel">
+    <div class="splitter" data-split="viewer" role="separator" aria-orientation="vertical"
+         title="Потяните, чтобы изменить ширину · двойной щелчок — свернуть/развернуть">
+      <span class="splitter-grip"></span>
+      <button class="splitter-fold" data-fold="viewer" title="Свернуть панель отчёта">›</button>
+    </div>
+
+    <section class="panel report-panel" id="panel-report">
       <div class="tabs" id="tabs">
         <button class="tab active" data-tab="report">Отчёт</button>
         <button class="tab" data-tab="checks">Проверки</button>
         <button class="tab" data-tab="objects">Объекты</button>
         <button class="tab" data-tab="links">Связи</button>
         <button class="tab" data-tab="assist">Помощник</button>
+        <button class="mini panel-max tab-max" data-panel="report"
+                title="Развернуть отчёт на всё окно (или вернуть)">⤢</button>
       </div>
       <div class="tab-body">
         <div class="tab-page active" id="page-report">
@@ -601,6 +622,9 @@
           <textarea id="prompt-out" class="prompt-out" readonly placeholder="Здесь появится текст запроса"></textarea>
         </div>
       </div>
+      <button class="panel-fold" data-panel="report" title="Развернуть панель отчёта">
+        <span>Отчёт</span>
+      </button>
     </section>
   </main>
 
@@ -619,6 +643,8 @@
     <span class="status-item" id="status-size"></span>
     <span class="status-item" id="status-parts"></span>
     <span class="status-spacer"></span>
+    <button class="status-item status-btn" id="btn-open-downloads" hidden
+            title="Открыть папку, куда сохраняются готовые файлы">открыть «Загрузки»</button>
     <span class="status-item muted" id="status-blender"></span>
     <span class="status-item muted" id="status-version"></span>
   </footer>
@@ -735,6 +761,8 @@
       </div>
     </div>
   </div>
+
+  <div class="ctx-menu" id="ctx-menu" hidden></div>
 
   <div class="toast" id="toast" hidden></div>
 

@@ -399,6 +399,8 @@ class Args:
                                hint="Доступно: " + ", ".join(sorted(MATERIAL_PRESETS)),
                                line=self.cmd.line, command=self.cmd.text)
             data.update(MATERIAL_PRESETS[key])
+            if key in ("mirror", "зеркало"):
+                data["mirror"] = True
         if "color" in self.kwargs:
             from .geometry import normalize_color
             data["color"] = normalize_color(self.text("color") or "")

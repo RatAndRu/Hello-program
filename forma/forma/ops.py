@@ -181,10 +181,12 @@ def make_solid(scene: Scene, name: str | None, manifold: mf.Manifold, args,
     glow = float(style.get("emissive_strength", base.emissive_strength if base else 1.0))
     transmission = float(style.get("transmission", base.transmission if base else 0.0))
     visible = style.get("visible", True)
+    mirror = bool(style.get("mirror", base.mirror if base else False))
     solid_name = name or scene.auto_name(kind or args.spec.name)
     solid = Solid(name=solid_name, manifold=manifold, color=color, metal=float(metal),
                   rough=float(rough), density=float(density), visible=bool(visible),
                   emissive=emissive, emissive_strength=glow, transmission=transmission,
+                  mirror=mirror,
                   kind=kind or args.spec.name, op=args.spec.name, line=args.cmd.line)
     return scene.add(solid)
 
