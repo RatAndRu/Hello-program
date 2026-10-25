@@ -178,7 +178,7 @@ class CatalogOrderTest(unittest.TestCase):
                     "washer", "disc", "oval"]
         derived = ["hemisphere", "sector", "bracket", "полуовал", "arch", "воронка",
                    "скоба", "lens", "cartridge", "ingot", "paraboloid", "saddle",
-                   "pie", "bead"]
+                   "pie", "bead", "tri_prism", "torus_sector"]
         nature = ["egg", "drop", "crescent", "star", "lightning", "heart", "cloud",
                   "diamond", "horn", "rock", "leaf", "banana"]
         self.assertEqual(self.ops[:len(standard)], standard)
@@ -191,8 +191,8 @@ class CatalogOrderTest(unittest.TestCase):
         ready = ["yin_yang", "crown", "arrow", "tee", "скоба", "yoke", "скоба",
                  "plate", "spring", "gear", "saw", "nut", "bolt", "screw", "pulley",
                  "box_body", "shaft", "wheel", "spiral", "plus", "rope", "цепь",
-                 "крюк", "handle", "cardboard", "swirl", "rail", "stairs", "gusset",
-                 "grommet", "blade"]
+                 "крюк", "handle", "cardboard", "swirl", "rail", "stairs", "ladder",
+                 "lever", "button", "gusset", "grommet", "blade"]
         start = self.ops.index("yin_yang")
         self.assertEqual(self.ops[start:start + len(ready)], ready)
 

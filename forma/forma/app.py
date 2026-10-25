@@ -899,6 +899,50 @@ def _run_uistest(report_path: str | None) -> int:
                           for op in ("disc", "oval", "pie", "ingot", "paraboloid",
                                      "saddle", "stairs", "bead")),
                       "все восемь в инструментах")
+
+                # 0.40: призма с любыми углами, сектор тора, лестница, рычаг,
+                # кнопка из двух деталей
+                prism = post("/api/preview", {"script": (
+                    "п = tri_prism a=120 b=90 c=60 height=80\n"
+                    "у = tri_prism base=100 angle_a=30 angle_b=120 height=50")})
+                check("треугольная призма с произвольными углами",
+                      prism.get("ok") is True and prism.get("objects") == 2,
+                      f"{prism.get('tris', 0)} трис")
+                torus_arc = post("/api/preview", {"script": (
+                    "п = torus_sector major=60 minor=10 angle=200 hole=8")})
+                check("сектор тора с отверстием посередине",
+                      torus_arc.get("ok") is True and torus_arc.get("tris", 0) > 200,
+                      f"{torus_arc.get('tris', 0)} трис")
+                lad = post("/api/preview", {"script": (
+                    "л = ladder length=1800 width=420 rungs=9 tilt=72\n"
+                    "д = ladder length=1500 width=380 rail=брусок rail_d=44 "
+                    "rung=брусок rung_d=34 rungs=7 tilt=84")})
+                lad_size = lad.get("size") or [0, 0, 0]
+                check("лестница: формы реек и перекладин",
+                      lad.get("ok") is True and lad.get("objects") == 2
+                      and float(lad_size[2]) > 1000.0,
+                      f"габарит {lad_size[0]}×{lad_size[2]} мм")
+                lev = post("/api/preview", {"script": (
+                    "р = lever length=180 diameter=14 knob=шар knob_d=34\n"
+                    "п = lever length=140 shaft=брусок size=20 knob=цилиндр "
+                    "knob_d=28 knob_h=60")})
+                check("рычаг: палка и ручка разных форм",
+                      lev.get("ok") is True and lev.get("objects") == 2,
+                      f"{lev.get('tris', 0)} трис")
+                btn = post("/api/preview", {"script": (
+                    "к = button diameter=30 height=10 top=вогнутая base=квадрат "
+                    "fit=зазор gap=3")})
+                check("кнопка — две детали: шляпка и гнездо",
+                      btn.get("ok") is True and btn.get("objects") == 2,
+                      f"{btn.get('tris', 0)} трис, объектов {btn.get('objects')}")
+                mech = get("/api/example?key=mech")
+                check("пример «Механика» собирается",
+                      post("/api/build", {"script": mech.get("script", "")}).get("ok") is True)
+                check("карточки пяти новых предметов",
+                      all(f"op: '{op}'".encode("utf-8") in js_app
+                          for op in ("tri_prism", "torus_sector", "ladder",
+                                     "lever", "button")),
+                      "все пять в инструментах")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

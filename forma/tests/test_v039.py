@@ -186,7 +186,7 @@ class MoreBodiesTest(unittest.TestCase):
     def test_russian_names_resolve(self):
         for word, op in (("слиток", "ingot"), ("параболоид", "paraboloid"),
                          ("гиперболический_параболоид", "saddle"), ("седло", "saddle"),
-                         ("ступеньки", "stairs"), ("лестница", "stairs"),
+                         ("ступеньки", "stairs"), ("лесенка", "stairs"),
                          ("круг", "disc"), ("овал", "oval"), ("бусина", "bead"),
                          ("сектор_круга", "pie")):
             with self.subTest(word=word):

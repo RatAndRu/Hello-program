@@ -503,7 +503,7 @@ def _stairs_profile(steps: int, run: float, rise: float) -> list[tuple[float, fl
     return pts
 
 
-@op("stairs", aliases=("ступеньки", "ступени", "лестница", "лесенка", "staircase"),
+@op("stairs", aliases=("ступеньки", "ступени", "ступеньки_марш", "лесенка", "staircase"),
     category="Примитивы",
     summary="Ступеньки — готовый марш: число ступеней, подъём, глубина проступи "
             "и ширина. shape=прямая — строгие блоки, скруглённая — круглая "
@@ -545,6 +545,130 @@ def stairs(a, name):
                      f"{shape}, габарит {steps * run:g}×{width:g}×{steps * rise:g} мм")
     return out
 
+
+
+# --------------------------------------------------------------------------- #
+#  Треугольная призма с произвольными углами
+# --------------------------------------------------------------------------- #
+@op("tri_prism", aliases=("треугольная_призма", "призма_треугольная", "призма3",
+                          "треугольник_призма", "triangular_prism"),
+    category="Примитивы",
+    summary="Треугольная призма с любым треугольником в основании: стороны "
+            "задаются числами a, b, c — можно сделать равнобедренную, "
+            "прямоугольную или косоугольную. Вместо сторон можно дать основание "
+            "и два угла: base, angle_a, angle_b. Стоит на полу, длина идёт по Y.",
+    example="клин = tri_prism a=120 b=90 c=60 height=80\n"
+            "остроугольная = tri_prism a=100 b=100 c=40 height=50\n"
+            "по_углам = tri_prism base=110 angle_a=55 angle_b=65 height=60",
+    params={"a": "сторона a (низ, вдоль X), мм (100)",
+            "b": "сторона b, мм (по умолчанию равна a)",
+            "c": "сторона c, мм (по умолчанию равна a)",
+            "base": "основание для варианта с углами, мм (a)",
+            "angle_a": "угол при основании слева, градусы (без углов — не задан)",
+            "angle_b": "угол при основании справа, градусы",
+            "height": "высота призмы, мм (100)",
+            "round": "скругление рёбер в основании, мм (0)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"},
+    positional=["a"])
+def tri_prism(a, name):
+    side_a = float(a.num("a", 100.0, minv=1.0))
+    base = a.num("base", None, minv=1.0)
+    ang_a = a.num("angle_a", None, minv=1.0, maxv=179.0)
+    ang_b = a.num("angle_b", None, minv=1.0, maxv=179.0)
+    if base is not None or ang_a is not None or ang_b is not None:
+        # вариант «основание + два угла»
+        side_a = float(base if base is not None else side_a)
+        aa = float(ang_a if ang_a is not None else 60.0)
+        ab = float(ang_b if ang_b is not None else aa)
+        ag = 180.0 - aa - ab
+        if ag <= 0.5:
+            raise GeometryError(
+                f"Углы {aa:g}° + {ab:g}° не оставляют третьего угла ({ag:g}°).",
+                hint="Сумма двух углов при основании должна быть меньше 180°.")
+        k = math.sin(math.radians(ag))
+        side_b = side_a * math.sin(math.radians(ab)) / k
+        side_c = side_a * math.sin(math.radians(aa)) / k
+        # раскладываем углы обратно: A при стороне a слева, B справа
+        aa, ab, _ = aa, ab, ag
+    else:
+        side_b = float(a.num("b", side_a, minv=0.5))
+        side_c = float(a.num("c", side_a, minv=0.5))
+        aa = None
+    height = float(a.num("height", 100.0, minv=0.5))
+    if side_a + side_b <= side_c + 1e-6 or side_a + side_c <= side_b + 1e-6 \
+            or side_b + side_c <= side_a + 1e-6:
+        raise GeometryError(
+            f"Из сторон {side_a:g}, {side_b:g}, {side_c:g} треугольник не сложить.",
+            hint="Каждая сторона должна быть меньше суммы двух других.")
+    x = (side_a ** 2 + side_b ** 2 - side_c ** 2) / (2.0 * side_a)
+    y = math.sqrt(max(1e-9, side_b ** 2 - x ** 2))
+    pts = [(0.0, 0.0), (side_a, 0.0), (x, y)]
+    # основание centred: сдвигаем так, чтобы центр габарита был в нуле
+    xs = [p[0] for p in pts]
+    ys = [p[1] for p in pts]
+    dx, dy = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
+    pts = [(px - dx, py - dy) for px, py in pts]
+    round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    if round_r > 1e-6:
+        pts = _treat_corners(pts, radius=round_r)
+    solid = mf.CrossSection([_profile(pts)]).extrude(height)
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="tri_prism")
+    kind_text = "равносторонняя" if abs(side_a - side_b) < 1e-3 and abs(side_b - side_c) < 1e-3 \
+        else "произвольная"
+    out.notes.append(f"треугольная призма {kind_text}: стороны {side_a:g}×"
+                     f"{side_b:g}×{side_c:g} мм, высота {height:g} мм")
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Сектор тора
+# --------------------------------------------------------------------------- #
+@op("torus_sector", aliases=("сектор_тора", "дуга_тора", "часть_тора", "torus_arc",
+                             "сектор_кольца"),
+    category="Примитивы",
+    summary="Сектор тора — дуга бублика круглого сечения: угол, поворот и "
+            "радиусы. hole>0 сверлит сквозное отверстие по оси Z ровно "
+            "посередине дуги — под подвес, шнур или для облегчения. "
+            "Годится на поручни, серьги, звенья цепи, кольца-полукольца.",
+    example="полукольцо = torus_sector major=60 minor=10 angle=180\n"
+            "подвес = torus_sector major=50 minor=12 angle=200 hole=8\n"
+            "звено = torus_sector major=30 minor=8 angle=180 hole=6",
+    params={"major": "радиус кольца (до центра трубки), мм (50)",
+            "minor": "радиус трубки, мм (10)",
+            "angle": "угол дуги, градусы (180)",
+            "start": "откуда начинать дугу, градусы от +X (0)",
+            "hole": "диаметр сквозного отверстия посередине дуги, мм (0)",
+            "segments": "сегментов по дуге и трубке (по детализации)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"},
+    positional=["major", "minor"])
+def torus_sector(a, name):
+    major = float(a.num("major", 50.0, minv=1.0))
+    minor = float(a.num("minor", 10.0, minv=0.5))
+    angle = float(a.num("angle", 180.0, minv=2.0, maxv=360.0) or 180.0)
+    start = float(a.num("start", 0.0) or 0.0)
+    hole = float(a.num("hole", 0.0, minv=0.0) or 0.0)
+    segments = _segments(a, max(32, int(major * 1.2)), minv=12)
+    prof = [(major + minor * math.cos(t), minor * math.sin(t))
+            for t in np.linspace(0.0, 2.0 * math.pi, max(16, segments // 2),
+                                 endpoint=False)]
+    solid = mf.Manifold.revolve(mf.CrossSection([_profile(prof)]), segments, angle)
+    if abs(start) > 1e-6:
+        solid = solid.rotate((0.0, 0.0, start))
+    if hole > 1e-6:
+        if hole >= minor * 2.0 - 0.1:
+            raise GeometryError(
+                f"Отверстие {hole:g} мм не оставляет стенки трубки: она "
+                f"{minor * 2:g} мм в диаметре.",
+                hint=f"hole должен быть меньше {minor * 2 - 0.1:g} мм.")
+        mid = math.radians(start + angle / 2.0)
+        cutter = mf.Manifold.cylinder(minor * 4.0, hole / 2.0, hole / 2.0, segments)
+        cutter = cutter.translate((major * math.cos(mid), major * math.sin(mid),
+                                   -minor * 2.0))
+        solid = solid - cutter
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="torus_sector")
+    out.notes.append(f"сектор тора {angle:g}°: кольцо R{major:g}, трубка "
+                     f"r{minor:g} мм" + (f", отверстие {hole:g} мм посередине" if hole else ""))
+    return out
 
 def _placed(a, solid: mf.Manifold) -> mf.Manifold:
     return anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))

@@ -4130,6 +4130,32 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'tri_prism', name: 'призма', title: 'Треугольная призма', group: 'Производные примитивы',
+    desc: 'Треугольник в основании с любыми углами: равнобедренный, прямоугольный, '
+      + 'косоугольный. Стороны a, b, c подбираются числами — из них и складывается '
+      + 'наклон граней. round скругляет рёбра основания.',
+    params: [
+      { k: 'a', label: 'сторона a', v: 100, step: 5, min: 1 },
+      { k: 'b', label: 'сторона b', v: 100, step: 5, min: 1 },
+      { k: 'c', label: 'сторона c', v: 40, step: 5, min: 1 },
+      { k: 'height', label: 'высота', v: 70, step: 5, min: 1 },
+      { k: 'round', label: 'скругление', v: 0, step: 0.5, min: 0 },
+    ],
+  },
+  {
+    op: 'torus_sector', name: 'сектор_тора', title: 'Сектор тора', group: 'Производные примитивы',
+    desc: 'Дуга бублика круглого сечения: угол, поворот, радиус кольца и толщина трубки. '
+      + 'hole сверлит отверстие посередине дуги — полое кольцо под подвес. '
+      + 'Обрезки кольца, поручни, серьги, звенья цепи.',
+    params: [
+      { k: 'major', label: 'кольцо', v: 60, step: 5, min: 1 },
+      { k: 'minor', label: 'трубка', v: 10, step: 1, min: 0.5 },
+      { k: 'angle', label: 'угол', v: 180, step: 10, min: 2 },
+      { k: 'start', label: 'начало', v: 0, step: 15 },
+      { k: 'hole', label: 'отверстие', v: 0, step: 1, min: 0 },
+    ],
+  },
+  {
     op: 'egg', name: 'яйцо', title: 'Яйцо', group: 'Природные примитивы',
     desc: 'Настоящее яйцо: тупой конец шире, острый — уже; proportion 0..1, sharp=верх|низ.',
     params: [
@@ -4558,6 +4584,53 @@ const TOOL_SHAPES = [
       { k: 'width', label: 'ширина', v: 120, step: 10, min: 1 },
       { k: 'shape', label: 'форма', v: 'прямая',
         choices: ['прямая', 'скруглённая', 'скошенная'] },
+    ],
+  },
+  {
+    op: 'ladder', name: 'лестница', title: 'Лестница', group: 'Готовые детали',
+    desc: 'Стремянка или приставная: две рейки — капсула, брусок или овал, '
+      + 'перекладины — цилиндр или брусок. Число перекладин, наклон к полу и '
+      + 'отступ от края настраиваются. Одна строка — одна целая лестница.',
+    params: [
+      { k: 'length', label: 'длина', v: 1800, step: 50, min: 50 },
+      { k: 'width', label: 'ширина', v: 420, step: 10, min: 20 },
+      { k: 'rail', label: 'рейка', v: 'капсула', kind: 'raw', choices: ['капсула', 'брусок', 'овал'] },
+      { k: 'rail_d', label: 'толщина рейки', v: 38, step: 2, min: 2 },
+      { k: 'rungs', label: 'перекладин', v: 9, step: 1, min: 1 },
+      { k: 'rung', label: 'перекладина', v: 'цилиндр', kind: 'raw', choices: ['цилиндр', 'брусок'] },
+      { k: 'rung_d', label: 'толщина перекл.', v: 30, step: 2, min: 1 },
+      { k: 'tilt', label: 'наклон', v: 72, step: 3, min: 0, max: 90 },
+    ],
+  },
+  {
+    op: 'lever', name: 'рычаг', title: 'Рычаг', group: 'Готовые детали',
+    desc: 'Палка плюс ручка на конце: палка цилиндрическая или брусок, ручка — '
+      + 'шар, цилиндр или совсем без неё. Джойстик, педаль, защёлка, ворота.',
+    params: [
+      { k: 'length', label: 'длина', v: 180, step: 10, min: 5 },
+      { k: 'shaft', label: 'палка', v: 'цилиндр', kind: 'raw', choices: ['цилиндр', 'брусок'] },
+      { k: 'diameter', label: 'толщина', v: 14, step: 1, min: 0.5 },
+      { k: 'knob', label: 'ручка', v: 'шар', kind: 'raw', choices: ['шар', 'цилиндр', 'нет'] },
+      { k: 'knob_d', label: 'толщина ручки', v: 34, step: 2, min: 1 },
+      { k: 'knob_h', label: 'длина ручки', v: 60, step: 5, min: 1 },
+      { k: 'angle', label: 'наклон', v: 0, step: 5, min: -89, max: 89 },
+    ],
+  },
+  {
+    op: 'button', name: 'кнопка', title: 'Кнопка (2 детали)', group: 'Готовые детали',
+    desc: 'Шляпка с вогнутым, выпуклым или плоским верхом и гнездо-платформа '
+      + '(цилиндр или квадрат). fit=плотно держит шляпку впритык, fit=зазор '
+      + 'даёт кольцевую щель. Шляпка и гнездо создаются как ДВА объекта: '
+      + 'шляпку двигают отдельно — готовая анимация нажатия.',
+    params: [
+      { k: 'diameter', label: '⌀ шляпки', v: 30, step: 1, min: 1 },
+      { k: 'height', label: 'высота шляпки', v: 10, step: 1, min: 0.6 },
+      { k: 'top', label: 'верх', v: 'вогнутая', kind: 'raw', choices: ['плоская', 'вогнутая', 'выпуклая'] },
+      { k: 'base', label: 'гнездо', v: 'цилиндр', kind: 'raw', choices: ['цилиндр', 'квадрат'] },
+      { k: 'base_d', label: 'размер гнезда', v: 66, step: 2, min: 5 },
+      { k: 'base_h', label: 'высота гнезда', v: 8, step: 1, min: 1 },
+      { k: 'fit', label: 'посадка', v: 'плотно', kind: 'raw', choices: ['плотно', 'зазор'] },
+      { k: 'gap', label: 'зазор', v: 3, step: 0.5, min: 0 },
     ],
   },
   {
@@ -6005,12 +6078,14 @@ function renderTools() {
   // Порядок жёсткий: стандартные тела → производные → природные → готовые
   // детали, и только потом инструменты. Иначе список открывается случайной
   // фигурой, а не кубом.
-  const order = PRIMITIVE_GROUPS.filter((g) => groups.has(g))
+  // имя не `order`: ниже в этой же функции уже есть `order` для категорий
+  // справочника — повторное объявление роняло весь модуль
+  const groupOrder = PRIMITIVE_GROUPS.filter((g) => groups.has(g))
     .concat(TOOL_GROUP_ORDER.filter((g) => groups.has(g)))
     .concat([...groups.keys()].filter((g) => !PRIMITIVE_GROUPS.includes(g)
       && !TOOL_GROUP_ORDER.includes(g)));
   let sectionName = '';
-  order.forEach((title) => {
+  groupOrder.forEach((title) => {
     const tools = groups.get(title);
     const wanted = PRIMITIVE_GROUPS.includes(title) ? 'Примитивы' : 'Инструменты и способы';
     if (wanted !== sectionName) {
