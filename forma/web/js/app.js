@@ -5199,7 +5199,7 @@ const TOOL_RECIPES = [
     fields: [
       { k: 'obj', label: 'деталь', v: '', kind: 'raw' },
       { k: 'host', label: 'хозяин', v: '', kind: 'raw' },
-      { k: 'point', label: 'точка', v: '48,0,8', kind: 'vec' },
+      { k: 'point', label: 'точка', v: '60,0,8', kind: 'vec' },
       { k: 'offset', label: 'зазор', v: 0 },
       { k: 'align', label: 'по нормали', v: true, kind: 'bool' },
     ],
@@ -5209,7 +5209,7 @@ const TOOL_RECIPES = [
       let head = '';
       if (!obj) { obj = 'шайба'; head += 'шайба = cylinder radius=6 height=4\n'; }
       if (!host) { host = 'кольцо'; head += 'кольцо = torus major=40 minor=8\n'; }
-      const p = rvec(v.point, [48, 0, 8]);
+      const p = rvec(v.point, [60, 0, 8]);
       const align = v.align ? ' align=нормаль' : '';
       return head + `${obj} = на_границе [${obj}] on=${host} `
         + `point=[${p.map(fnum).join(', ')}] offset=${fnum(rnum(v.offset, 0))}${align}`;
