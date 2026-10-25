@@ -45,6 +45,10 @@ from . import ops_parts  # noqa: F401,E402
 from . import ops_fill  # noqa: F401,E402
 from . import ops_sculpt  # noqa: F401,E402
 from . import ops_grid  # noqa: F401,E402
+from . import ops_hair  # noqa: F401,E402
+from . import ops_face  # noqa: F401,E402
+from . import ops_fold  # noqa: F401,E402
+from . import ops_chain  # noqa: F401,E402
 
 
 # Команды, которые не меняют ни форму, ни видимость: в анимации сборки

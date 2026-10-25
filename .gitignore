@@ -35,3 +35,8 @@ forma/exports/
 forma/prompts/
 forma/textures/
 forma/imports/
+
+# Python
+__pycache__/
+*.pyc
+.venv/

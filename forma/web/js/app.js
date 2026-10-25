@@ -4481,6 +4481,45 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'сгиб', name: 'сгиб_угол', title: 'Сгиб от угла', group: 'Форма',
+    base: 'sheet width=120 length=120 thickness=1', baseName: 'заготовка',
+    desc: 'Складывает лист по произвольной линии: от угла, по диагонали, под '
+      + 'любым углом к краю. dir — куда идёт линия (0 — вдоль X, 45 — от угла), '
+      + 'angle — насколько сложить, side — какая половина подвижная. Бумага не '
+      + 'тянется: это честная изометрия.',
+    params: [
+      { k: 'at', label: 'точка', v: '[0, 0, 1]', kind: 'raw' },
+      { k: 'dir', label: 'линия, °', v: 45, step: 15, min: -180, max: 180 },
+      { k: 'angle', label: 'сложить, °', v: 120, step: 10, min: 1, max: 180 },
+      { k: 'side', label: 'сторона', v: '1', kind: 'raw', choices: ['1', '-1'] },
+    ],
+  },
+  {
+    op: 'складка', name: 'залом', title: 'Складка / залом', group: 'Форма',
+    base: 'box size=[80, 40, 120] round=6', baseName: 'заготовка',
+    desc: 'След сгиба на поверхности: валик или канавка по линии from→to. '
+      + 'Именно это делает одежду одеждой — заломы у локтя, рёбра на бумаге. '
+      + 'bend изгибает линию, taper сужает концы.',
+    params: [
+      { k: 'from', label: 'от', v: '[-30, -20, 60]', kind: 'raw' },
+      { k: 'to', label: 'до', v: '[30, -20, 60]', kind: 'raw' },
+      { k: 'r', label: 'радиус', v: 4, step: 0.5, min: 0.2 },
+      { k: 'mode', label: 'вид', v: 'канавка', kind: 'raw', choices: ['гребень', 'канавка'] },
+      { k: 'bend', label: 'изгиб', v: 0, step: 2, min: -200, max: 200 },
+    ],
+  },
+  {
+    op: 'цепь', name: 'цепочка', title: 'Цепь', group: 'Примитивы',
+    desc: 'Настоящая цепь: звенья вытянутые, соседние повёрнуты на 90° и '
+      + 'зацеплены друг за друга — не ряд колец рядом. Размер звена, толщина '
+      + 'прутка и направление.',
+    params: [
+      { k: 'links', label: 'звеньев', v: 8, step: 1, min: 1, max: 200 },
+      { k: 'size', label: 'звено', v: 24, step: 2, min: 1 },
+      { k: 'wire', label: 'пруток', v: 3, step: 0.5, min: 0.2 },
+    ],
+  },
+  {
     op: 'corrugate', name: 'гофра', title: 'Гофрирование', group: 'Поверхность',
     base: 'sheet width=160 length=220 thickness=1', baseName: 'заготовка',
     desc: 'Гофра, вафля, рифление или зигзаг по готовой детали: шаг узора и высота волны. Валики, рифлёный металл, гофробумага.',
@@ -6168,6 +6207,37 @@ $('btn-copy').addEventListener('click', async () => {
     document.execCommand('copy');
     toast('Скопировано');
   }
+});
+
+async function copyInstruction(kind, label) {
+  try {
+    const res = await api('/api/instruction?kind=' + encodeURIComponent(kind));
+    const text = res.text || '';
+    if (!text) { toast('Пустой справочник', 'bad'); return; }
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      $('prompt-out').value = text;
+      $('prompt-out').select();
+      document.execCommand('copy');
+    }
+    $('prompt-out').value = text;
+    toast(`${label}: ${text.length.toLocaleString('ru-RU')} символов скопировано`);
+  } catch (e) { toast(e.message || 'Ошибка', 'bad'); }
+}
+
+$('btn-copy-instruction')?.addEventListener('click', () => copyInstruction('full', 'Инструкция для ИИ'));
+$('btn-copy-commands')?.addEventListener('click', () => copyInstruction('commands', 'Все команды'));
+
+$('btn-instruction-save')?.addEventListener('click', async () => {
+  try {
+    const full = await api('/api/instruction?kind=full');
+    const commands = await api('/api/instruction?kind=commands');
+    const text = (full.text || '') + '\n\n---\n\n' + (commands.text || '');
+    const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+    const saved = await saveBlob(blob, 'Форма3D_инструкция_и_команды.md');
+    exportSaved(saved, 'Справочник сохранён');
+  } catch (e) { toast(e.message || 'Ошибка', 'bad'); }
 });
 
 $('btn-prompt-save').addEventListener('click', async () => {

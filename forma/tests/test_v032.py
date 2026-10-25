@@ -396,26 +396,41 @@ class SoftnessIsAToolTest(unittest.TestCase):
 
 
 class AnimeExampleTest(unittest.TestCase):
-    """Пример-проект: аниме-портрет на плоскости, один объём."""
+    """Пример-проект: аниме-бюст — объёмный, а не плоская панель."""
 
     @classmethod
     def setUpClass(cls):
         cls.text = load_example("anime_face")
         cls.build = build(cls.text, analyze_model=False)
 
-    def test_builds_one_solid(self):
-        self.assertTrue(self.build.ok, (self.build.error or {}).get("message"))
-        visible = self.build.scene.visible_solids()
-        self.assertEqual(len(visible), 1)
-        self.assertEqual(visible[0].name, "портрет")
+    def _figure(self):
+        for solid in self.build.scene.visible_solids():
+            if solid.name == "фигура":
+                return solid
+        self.fail("в примере нет объёма «фигура»")
 
-    def test_is_a_flat_plaque_with_relief(self):
-        solid = self.build.scene.visible_solids()[0]
-        bb = solid.manifold.bounding_box()
-        self.assertAlmostEqual(bb[3] - bb[0], 220, delta=1.5)
-        self.assertAlmostEqual(bb[4] - bb[1], 300, delta=1.5)
-        self.assertLess(bb[5] - bb[2], 30)          # плоская, рельеф невысокий
-        self.assertGreater(solid.manifold.num_tri(), 1000)
+    def test_builds(self):
+        self.assertTrue(self.build.ok, (self.build.error or {}).get("message"))
+
+    def test_is_a_volume_not_a_plaque(self):
+        bust = self._figure().manifold.bounding_box()
+        head = self.build.scene.objects["голова"].manifold.bounding_box()
+        # у головы глубина (затылок ↔ нос) сравнима с шириной: это объём
+        head_w = head[3] - head[0]
+        head_d = head[4] - head[1]
+        self.assertGreater(head_d, head_w * 0.85)
+        # а весь бюст высокий: голова, шея и плечи
+        self.assertGreater(bust[5] - bust[2], 300)
+
+    def test_head_neck_and_body_are_one_solid(self):
+        figure = self._figure()
+        # голова, шея и плечи сварены: части считаются по отдельным телам
+        self.assertLessEqual(figure.manifold.decompose().__len__(), 2)
+
+    def test_has_hair_and_face_parts(self):
+        names = set(self.build.scene.objects)
+        for part in ("голова", "тело", "волосы", "чёлка", "глаз_п", "губы"):
+            self.assertIn(part, names)
 
     def test_has_anime_style_and_paper(self):
         style = (self.build.scene.settings or {}).get("anime") or {}

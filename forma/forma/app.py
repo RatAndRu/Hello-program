@@ -603,10 +603,11 @@ def _run_uistest(report_path: str | None) -> int:
                       f"{sharp.get('tris', 0)} трис")
                 anime = post("/api/build", {"script": get("/api/example?key=anime_face")["script"]})
                 anime_objs = [o for o in anime.get("objects", []) if o.get("visible")]
-                check("пример «Аниме-портрет на плоскости»",
-                      anime.get("ok") is True and len(anime_objs) == 1
-                      and anime_objs[0].get("tris", 0) > 1000,
-                      f"{anime_objs[0].get('tris', 0) if anime_objs else 0} трис")
+                check("пример «Аниме-бюст» — объём, а не панель",
+                      anime.get("ok") is True and len(anime_objs) >= 1
+                      and any(o.get("size", [0, 0, 0])[2] > 300 for o in anime_objs),
+                      f"{len(anime_objs)} деталей, "
+                      f"{sum(o.get('tris', 0) for o in anime_objs)} трис")
                 cards = js_app.count("group: 'Скульпт'".encode()) if isinstance(js_app, bytes) else 0
                 check("карточки скульпта с живыми превью",
                       cards >= 9 and b"op: 'dent'" in js_app and b"op: 'bore'" in js_app
@@ -631,6 +632,58 @@ def _run_uistest(report_path: str | None) -> int:
                         grown.append(op)
                 check("детализация действительно меняет сетку", not grown,
                       "все, кроме " + ", ".join(grown) if grown else "0 → 5 втрое и больше")
+                # 0.34: волосы, сгиб от угла, складки, цепь и инструкция для ИИ
+                hair = post("/api/preview", {"script": (
+                    "п = волосинки from=[-40,-30,196] to=[40,-30,196] count=30 "
+                    "length=40 thick=1.6 dir=[0,-0.55,-1]\n"
+                    "л = локон at=[0,0,150] length=150 radius=16 turns=0.6 "
+                    "thick=16 thin=6 dir=[0,0,-1]")})
+                check("волосы: волосинки и локон строятся",
+                      hair.get("ok") is True and hair.get("tris", 0) > 300,
+                      f"{hair.get('tris', 0)} трис")
+                corner = post("/api/preview", {"script": (
+                    "л = sheet width=120 length=160 thickness=1\n"
+                    "с = сгиб л at=[0,0,1] dir=45 angle=135")})
+                check("сгиб от угла (оригами по линии)",
+                      corner.get("ok") is True and corner.get("tris", 0) > 100,
+                      f"{corner.get('tris', 0)} трис")
+                crease = post("/api/preview", {"script": (
+                    "к = box size=[80,40,120] round=6\n"
+                    "с = складка к from=[-30,-20,60] to=[30,-20,60] r=5 mode=канавка")})
+                check("складка на одежде",
+                      crease.get("ok") is True and crease.get("tris", 0) > 200,
+                      f"{crease.get('tris', 0)} трис")
+                chain = post("/api/preview", {"script": (
+                    "ц = цепь links=8 size=26 wire=3.4 at=[0,0,80] dir=[1,0,0]")})
+                check("цепь из зацепленных звеньев",
+                      chain.get("ok") is True and chain.get("tris", 0) > 500,
+                      f"{chain.get('tris', 0)} трис")
+                link = post("/api/preview", {"script": (
+                    "крюк = torus major=20 minor=4 at=[0,0,200]\n"
+                    "ведро = cylinder radius=30 height=60 at=[0,0,40]\n"
+                    "ц = соединить [крюк, ведро] size=16 wire=2.4 sag=0.15")})
+                check("соединить две детали цепью",
+                      link.get("ok") is True and link.get("tris", 0) > 400,
+                      f"{link.get('tris', 0)} трис")
+                check("пример «Оригами» собирается",
+                      post("/api/build", {"script": get("/api/example?key=origami")["script"]})
+                      .get("ok") is True)
+                instr = get("/api/instruction?kind=full")
+                cmds = get("/api/instruction?kind=commands")
+                total_ops = len(__import__("forma.ops", fromlist=["OPS"]).OPS)
+                check("инструкция для ИИ: все команды",
+                      bool(instr.get("text")) and bool(cmds.get("text"))
+                      and cmds.get("text", "").count("### ") >= total_ops,
+                      f"{cmds.get('chars', 0)} символов, {total_ops} команд")
+                check("кнопки копирования справочника в окне",
+                      b'id="btn-copy-instruction"' in html
+                      and b'id="btn-copy-commands"' in html,
+                      "инструкция и все команды — отдельно от запроса")
+                check("карточки сгиба от угла, складки и цепи",
+                      "op: 'сгиб'".encode("utf-8") in js_app
+                      and "op: 'складка'".encode("utf-8") in js_app
+                      and "op: 'цепь'".encode("utf-8") in js_app,
+                      "три новые карточки в инструментах")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

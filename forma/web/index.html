@@ -617,8 +617,20 @@
           </label>
           <div class="assist-actions">
             <button id="btn-prompt" class="primary small">Сформировать запрос</button>
-            <button id="btn-copy" class="small">Копировать</button>
+            <button id="btn-copy" class="small">Копировать запрос</button>
             <button id="btn-prompt-save" class="small">Сохранить .md</button>
+          </div>
+          <p class="assist-intro">
+            Отдельно от запроса можно скопировать справочник: <b>инструкцию</b>
+            (правила, оси, материалы, проверки и все команды) или только
+            <b>список всех команд</b> с параметрами и рабочими примерами.
+            Это то, что нужно приложить нейросети, чтобы она не выдумывала
+            параметров.
+          </p>
+          <div class="assist-actions">
+            <button id="btn-copy-instruction" class="small">Скопировать инструкцию для ИИ</button>
+            <button id="btn-copy-commands" class="small">Скопировать все команды</button>
+            <button id="btn-instruction-save" class="small">Сохранить справочник .md</button>
           </div>
           <textarea id="prompt-out" class="prompt-out" readonly placeholder="Здесь появится текст запроса"></textarea>
         </div>

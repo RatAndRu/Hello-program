@@ -19,6 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .agent import build_prompt, command_reference_md
+from .instruction import instruction_text
 from .errors import FormaError
 from .geometry import export_3mf, export_glb, export_obj, export_ply, export_stl
 from .render import render_views
@@ -601,7 +602,9 @@ EXAMPLES = [
     ("Мотоцикл: рама, вилка, езда и прыжок", "motorcycle"),
     ("Скелетон-часы: механизм и ход 10:10:35", "clock"),
     ("Сопряжения: рейка, петля, ось и зазор", "mates"),
-    ("Аниме-портрет на плоскости", "anime_face"),
+    ("Аниме-бюст: голова, шея, плечи, волосы", "anime_face"),
+    ("Оригами: цветок из листов и сгибов", "origami"),
+    ("Цепь и соединение деталей", "chain"),
 ]
 
 
@@ -880,6 +883,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/projects":
             self._send_json({"projects": st.list_projects()})
+            return
+        if path == "/api/instruction":
+            kind = query.get("kind", ["full"])[0]
+            try:
+                text = instruction_text(kind)
+            except Exception as exc:  # pragma: no cover
+                self._send_json({"error": {"message": str(exc)}}, 500)
+                return
+            self._send_json({"kind": kind, "text": text, "chars": len(text)})
             return
         if path == "/api/example":
             key = query.get("key", ["mug"])[0]
