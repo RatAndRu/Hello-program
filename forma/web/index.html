@@ -191,6 +191,7 @@
             <button class="chip" data-anime="аниме" title="Цвет, ступени тона и чёрные контуры по форме">аниме</button>
             <button class="chip" data-anime="манга" title="Чёрно-белый рисунок с растром">манга</button>
             <button class="chip" data-anime="комикс" title="Толстый контур и точки в тенях">комикс</button>
+            <button class="chip" data-anime="скетч" title="Карандаш: штриховка по тени и зерно бумаги">скетч</button>
             <button class="chip" data-anime="линия" title="Только контуры на бумаге, без затенения">линия</button>
           </div>
           <button class="chip" id="anime-insert" title="Добавить команду anime в сценарий, чтобы стиль сохранился в проекте и на снимках">в сценарий</button>
@@ -214,6 +215,22 @@
           <span class="studio-label">Бумага</span>
           <input type="color" id="anime-paper" value="#f4f6fa" title="Цвет фона-бумаги" />
           <label class="anime-check" title="Фон сцены вместо бумаги"><input type="checkbox" id="anime-paper-scene" /> фон сцены</label>
+        </div>
+        <div class="studio-row anime-row" id="anime-row3" hidden>
+          <span class="studio-label">Штрих</span>
+          <input type="range" id="anime-hatch" min="0" max="1" step="0.05" value="0" title="Сила карандашной штриховки в тенях" />
+          <span class="studio-value" id="anime-hatch-val">0.00</span>
+          <input type="range" id="anime-hatch-angle" min="0" max="180" step="1" value="45" title="Наклон штриховки" />
+          <span class="studio-value" id="anime-hatch-angle-val">45°</span>
+          <input type="range" id="anime-hatch-step" min="3" max="24" step="1" value="8" title="Расстояние между штрихами" />
+          <span class="studio-value" id="anime-hatch-step-val">8 px</span>
+          <label class="anime-check" title="Мелкое зерно бумаги"><input type="checkbox" id="anime-paper-tex" /> зерно</label>
+          <label class="studio-label" title="Где рисовать линию на стыке деталей" style="margin-left:6px">Линии</label>
+          <select id="anime-lines" title="Внутренние линии на стыке: все детали, только группы или только разные материалы">
+            <option value="все">по деталям</option>
+            <option value="группы">по группам</option>
+            <option value="материалы">по материалам</option>
+          </select>
         </div>
         <div class="studio-row">
           <span class="studio-label">Экспозиция</span>
@@ -668,14 +685,19 @@
         <button class="mini" id="tools-close">✕</button>
       </div>
       <div class="tools-hint">
-        Задайте параметры и нажмите «Добавить» — строка появится в конце сценария,
-        её можно править как обычную команду. Внизу — карточка на каждую команду
-        справочника: описание, параметры и пример («Вставить пример» подставит
-        уникальные имена, ничего не затерев).
+        Деталь видна сразу в карточке: меняете поле — миниатюра пересобирается.
+        Потяните мышью — повернётся, колесо — приблизит, двойной щелчок —
+        сброс ракурса. Кнопка «3D» открывает крупное окно. «Добавить» вставит
+        строку в конец сценария, «Вставить пример» — готовый пример с
+        уникальными именами.
       </div>
       <div class="tools-search-row">
         <input type="search" id="tools-search" class="tools-search"
                placeholder="поиск: шестерня, панель, ящик, пружина…" />
+        <label class="tools-thumbs-toggle" title="Деталь видна прямо в карточке; поля пересобирают её на лету">
+          <input type="checkbox" id="tools-thumbs" checked />
+          <span>живые превью</span>
+        </label>
         <span class="tools-count" id="tools-count"></span>
       </div>
       <div class="modal-body" id="tools-body"></div>

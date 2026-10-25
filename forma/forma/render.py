@@ -53,7 +53,18 @@ def _load_texture(path: str, size: int = 256):
         return None
 
 
-def _prepare(solids):
+def _prepare(solids, groups=None):
+    """Готовит сетки деталей к отрисовке.
+
+    ``groups`` — словарь сцены {группа: [имена]} из команды group. Нужен
+    аниме-стилю: режим lines=группы рисует стык только между группами,
+    а lines=материалы — только между разными материалами.
+    """
+    group_of: dict[str, int] = {}
+    for gid, (gname, members) in enumerate(sorted((groups or {}).items())):
+        for name in members:
+            group_of.setdefault(name, gid + 1)
+    mat_index: dict[tuple, int] = {}
     meshes = []
     for s in solids:
         v, f = manifold_mesh(s.manifold)
@@ -70,6 +81,8 @@ def _prepare(solids):
             "glow": float(getattr(s, "emissive_strength", 1.0) or 1.0),
             "alpha": 1.0 - 0.8 * float(getattr(s, "transmission", 0.0) or 0.0),
             "uv": None, "tex": None,
+            "gid": group_of.get(s.name, 0),
+            "mid": 0,
         }
         # регионная покраска: цвет каждого треугольника (после расщепления
         # рёбер вершины те же, поэтому классификация по центрам работает)
@@ -80,6 +93,12 @@ def _prepare(solids):
         if getattr(s, "brush", None):
             # мазки кистью и ластика: тоже считаем на каждый пиксель
             item["brush"] = list(s.brush)
+        key = (round(float(item["color"][0]), 3), round(float(item["color"][1]), 3),
+               round(float(item["color"][2]), 3), round(float(s.metal), 2),
+               round(float(s.rough), 2), str(getattr(s, "emissive", "") or ""))
+        if key not in mat_index:
+            mat_index[key] = len(mat_index) + 1
+        item["mid"] = mat_index[key]
         tex = getattr(s, "tex", None)
         if tex and tex.get("path"):
             image = _load_texture(tex["path"])
@@ -464,6 +483,9 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
     idbuf = np.zeros((cam["h"], cam["w"]), dtype=np.int32) if geom else None
     pbuf = (np.zeros((cam["h"], cam["w"], 3), dtype=np.float64)
             if mirror_ids else None)
+    # для режима lines=группы/материалы: чей пиксель — группы и материал
+    gbuf_id = np.zeros((cam["h"], cam["w"]), dtype=np.int32) if anime else None
+    mbuf_id = np.zeros((cam["h"], cam["w"]), dtype=np.int32) if anime else None
     # маска свечения нужна и без аниме: по ней рисуется ореол светодиодов
     has_emissive = any(m.get("emissive") is not None for m in meshes)
     ebuf = (np.zeros((cam["h"], cam["w"]), dtype=bool)
@@ -586,6 +608,10 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
                     nbuf[miny:maxy + 1, minx:maxx + 1][front] = nn.astype(np.float32)
                 if idbuf is not None:
                     idbuf[miny:maxy + 1, minx:maxx + 1][front] = mesh_index + 1
+                if gbuf_id is not None:
+                    gbuf_id[miny:maxy + 1, minx:maxx + 1][front] = int(mesh.get("gid", 0))
+                if mbuf_id is not None:
+                    mbuf_id[miny:maxy + 1, minx:maxx + 1][front] = int(mesh.get("mid", 0))
                 if emis is not None:
                     if ebuf is not None:
                         ebuf[miny:maxy + 1, minx:maxx + 1][front] = True
@@ -616,7 +642,8 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
 
     if anime:
         from .anime import apply_style
-        img = apply_style(img, zbuf, nbuf, idbuf, ebuf, st, ss)
+        img = apply_style(img, zbuf, nbuf, idbuf, ebuf, st, ss,
+                          groups=gbuf_id, mats=mbuf_id)
 
     # контурное затемнение по глубине (обычный вид)
     finite = np.isfinite(zbuf)
@@ -726,9 +753,9 @@ def _to_bytes(img: np.ndarray) -> np.ndarray:
 
 def render_views(solids, out_dir, prefix="model", size=640, ss=2,
                  views=("iso", "front", "right", "top"), combined=True,
-                 style=None) -> dict:
+                 style=None, groups=None) -> dict:
     """Рендерит набор видов. Возвращает пути к PNG и массив общего вида."""
-    meshes = _prepare(solids)
+    meshes = _prepare(solids, groups)
     if not meshes:
         raise ValueError("Нет объектов для рендера.")
     allv = np.concatenate([m["verts"] for m in meshes], axis=0)
@@ -758,8 +785,8 @@ def render_views(solids, out_dir, prefix="model", size=640, ss=2,
 
 
 def render_single(solids, out_dir, filename="preview.png", size=720, ss=2,
-                  view="iso", style=None) -> str:
-    meshes = _prepare(solids)
+                  view="iso", style=None, groups=None) -> str:
+    meshes = _prepare(solids, groups)
     if not meshes:
         raise ValueError("Нет объектов для рендера.")
     allv = np.concatenate([m["verts"] for m in meshes], axis=0)

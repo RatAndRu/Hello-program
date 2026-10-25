@@ -1,6 +1,7 @@
 import { Viewer } from './viewer.js';
 import { encodeGif, downloadBlob } from './gif.js';
 import { Preview3D } from './preview3d.js';
+import { ToolThumbs } from './toolpreview.js';
 
 const $ = (id) => document.getElementById(id);
 // Токен берём из адреса, а если его нет (обновили страницу, открыли голый
@@ -2471,6 +2472,8 @@ const ANIME_MODES = {
   'аниме': { mode: 'аниме', line: 1.6, crease: 32, toon: 3, tone: 0, paper: '#f4f6fa' },
   'манга': { mode: 'манга', line: 1.8, crease: 30, toon: 3, tone: 0.75, paper: '#fbfbf7' },
   'комикс': { mode: 'комикс', line: 2.6, crease: 38, toon: 2, tone: 0.6, paper: '#fdf4e3' },
+  'скетч': { mode: 'скетч', line: 1.5, crease: 26, toon: 0, tone: 0, paper: '#f6f1e6',
+             hatch: 0.85, 'hatch_angle': 52, 'hatch_step': 7, paper_tex: 0.6 },
   'линия': { mode: 'линия', line: 1.4, crease: 28, toon: 0, tone: 0, paper: '#ffffff', shade: false },
 };
 state.anime = state.anime || { mode: 'выкл' };
@@ -2486,6 +2489,11 @@ function animeUiValues() {
     seams: a.seams !== false,
     paper: a.paper === null ? '#ffffff' : (a.paper || '#f4f6fa'),
     paperScene: a.paper === null,
+    hatch: Number(a.hatch ?? 0),
+    hatchAngle: Number(a.hatch_angle ?? 45),
+    hatchStep: Number(a.hatch_step ?? 8),
+    paperTex: Number(a.paper_tex ?? 0),
+    lines: a.lines || 'все',
   };
 }
 
@@ -2496,7 +2504,7 @@ function syncAnimeControls() {
     c.classList.toggle('active', (c.dataset.anime || '') === (a.mode || 'выкл'));
   });
   const on = (a.mode || 'выкл') !== 'выкл';
-  ['anime-row', 'anime-row2'].forEach((id) => {
+  ['anime-row', 'anime-row2', 'anime-row3'].forEach((id) => {
     const row = $(id);
     if (row) row.hidden = !on;
   });
@@ -2513,6 +2521,14 @@ function syncAnimeControls() {
   if ($('anime-seams')) $('anime-seams').checked = v.seams;
   if ($('anime-paper')) $('anime-paper').value = v.paper;
   if ($('anime-paper-scene')) $('anime-paper-scene').checked = v.paperScene;
+  if ($('anime-hatch')) $('anime-hatch').value = String(v.hatch);
+  if ($('anime-hatch-val')) $('anime-hatch-val').textContent = v.hatch.toFixed(2);
+  if ($('anime-hatch-angle')) $('anime-hatch-angle').value = String(Math.round(v.hatchAngle));
+  if ($('anime-hatch-angle-val')) $('anime-hatch-angle-val').textContent = `${Math.round(v.hatchAngle)}°`;
+  if ($('anime-hatch-step')) $('anime-hatch-step').value = String(Math.round(v.hatchStep));
+  if ($('anime-hatch-step-val')) $('anime-hatch-step-val').textContent = `${Math.round(v.hatchStep)} px`;
+  if ($('anime-paper-tex')) $('anime-paper-tex').checked = v.paperTex > 0.001;
+  if ($('anime-lines')) $('anime-lines').value = v.lines;
 }
 
 function applyAnime(patch) {
@@ -2578,6 +2594,25 @@ $('anime-paper')?.addEventListener('input', (e) => applyAnime({ paper: e.target.
 $('anime-paper-scene')?.addEventListener('change', (e) => {
   applyAnime({ paper: e.target.checked ? null : ($('anime-paper')?.value || '#ffffff') });
 });
+$('anime-hatch')?.addEventListener('input', (e) => {
+  const v = Number(e.target.value);
+  applyAnime({ hatch: v });
+  if ($('anime-hatch-val')) $('anime-hatch-val').textContent = v.toFixed(2);
+});
+$('anime-hatch-angle')?.addEventListener('input', (e) => {
+  const v = Number(e.target.value);
+  applyAnime({ hatch_angle: v });
+  if ($('anime-hatch-angle-val')) $('anime-hatch-angle-val').textContent = `${Math.round(v)}°`;
+});
+$('anime-hatch-step')?.addEventListener('input', (e) => {
+  const v = Number(e.target.value);
+  applyAnime({ hatch_step: v });
+  if ($('anime-hatch-step-val')) $('anime-hatch-step-val').textContent = `${Math.round(v)} px`;
+});
+$('anime-paper-tex')?.addEventListener('change', (e) => {
+  applyAnime({ paper_tex: e.target.checked ? 0.6 : 0 });
+});
+$('anime-lines')?.addEventListener('change', (e) => applyAnime({ lines: e.target.value }));
 
 /** Строка сценария для текущих настроек стиля. */
 function animeCommand() {
@@ -2590,6 +2625,13 @@ function animeCommand() {
   if (!v.inner) parts.push('inner=нет');
   if (!v.seams) parts.push('seams=нет');
   if (a.shade === false) parts.push('shade=нет');
+  if (v.hatch > 0.001) {
+    parts.push(`hatch=${v.hatch.toFixed(2)}`);
+    parts.push(`hatch_angle=${Math.round(v.hatchAngle)}`);
+    parts.push(`hatch_step=${Math.round(v.hatchStep)}`);
+  }
+  if (v.paperTex > 0.001) parts.push(`paper_tex=${v.paperTex.toFixed(2)}`);
+  if (v.lines && v.lines !== 'все') parts.push(`lines=${v.lines}`);
   parts.push(v.paperScene ? 'paper=сцена' : `paper=${v.paper}`);
   return 'anime ' + parts.join(' ');
 }
@@ -3894,6 +3936,53 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'crown', name: 'корона', title: 'Корона', group: 'Знаки и фигуры',
+    desc: 'Кольцо с зазубринами сверху: число зубьев, высота, скругление вершин, '
+      + 'форма (треугольные, скруглённые, волна) и бортик по низу.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 150, step: 5 },
+      { k: 'height', label: 'обод', v: 48, step: 2 },
+      { k: 'wall', label: 'стенка', v: 4, step: 0.5 },
+      { k: 'teeth', label: 'зубьев', v: 12, step: 1, min: 3 },
+      { k: 'tooth', label: 'зуб', v: 30, step: 2 },
+      { k: 'tip', label: 'скругл.', v: 0.35, step: 0.05, min: 0, max: 1 },
+      { k: 'rim', label: 'бортик', v: 3, step: 1 },
+    ],
+  },
+  {
+    op: 'yin_yang', name: 'инь_ян', title: 'Инь-ян (запятая)', group: 'Знаки и фигуры',
+    desc: 'Знаменитая «запятая» тайцзи настоящей формы: половина круга с двумя '
+      + 'полукольцами. side=правый — зеркальная вторая половина.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 120, step: 5 },
+      { k: 'thick', label: 'толщина', v: 16, step: 2 },
+      { k: 'round', label: 'скругл.', v: 3, step: 0.5 },
+      { k: 'side', label: 'сторона', v: 'левый', kind: 'raw' },
+    ],
+  },
+  {
+    op: 'lens', name: 'линза', title: 'Линза', group: 'Примитивы',
+    desc: 'Оптическая линза со сферическими поверхностями: выпуклая, вогнутая, '
+      + 'плосковыпуклая, плосковогнутая, мениск. sag — глубина прогиба, '
+      + 'кромка — толщина по краю.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 70, step: 5 },
+      { k: 'sag', label: 'прогиб', v: 12, step: 1 },
+      { k: 'mode', label: 'вид', v: 'выпуклая', kind: 'raw' },
+      { k: 'edge', label: 'кромка', v: '', step: 1, auto: true },
+    ],
+  },
+  {
+    op: 'cartridge', name: 'патрон', title: 'Патрон', group: 'Примитивы',
+    desc: 'Гильза с закраиной и пуля: винтовочный — с плечиком и острым носиком, '
+      + 'пистолетный — прямая гильза и круглая пуля.',
+    params: [
+      { k: 'diameter', label: 'калибр', v: 9, step: 0.5 },
+      { k: 'length', label: 'длина', v: 29, step: 1 },
+      { k: 'kind', label: 'тип', v: 'пистолетный', kind: 'raw' },
+    ],
+  },
+  {
     op: 'arrow', name: 'стрелка', title: 'Стрелка', group: 'Знаки и фигуры',
     desc: 'Указатель остриём вправо: древко, наконечник, вырез в хвосте.',
     params: [
@@ -4868,6 +4957,91 @@ function addShapeTool(tool, card) {
   insertTool(shapeScript(tool, card, { unique: true }), tool.title);
 }
 
+/* ---------------- живые миниатюры в карточках инструментов ---------------- */
+const toolThumbs = new ToolThumbs();
+state.thumbsOn = state.thumbsOn !== false;
+// сценарий → адрес готового GLB: повторные карточки не дёргают сервер
+const thumbUrls = new Map();
+const thumbTimers = new Map();
+let thumbObserver = null;
+const THUMB_W = 480;
+const THUMB_H = 360;
+
+function thumbScript(tool, card) {
+  return shapeScript(tool, card);
+}
+
+async function thumbUrl(script) {
+  if (thumbUrls.has(script)) return thumbUrls.get(script);
+  const res = await api('/api/preview', { script });
+  if (!res.ok) {
+    const err = res.error || {};
+    throw new Error(err.message || res.message || 'не удалось построить');
+  }
+  const url = res.url + (res.url.includes('?') ? '&' : '?')
+    + 'token=' + encodeURIComponent(TOKEN);
+  thumbUrls.set(script, url);
+  return url;
+}
+
+/** Собирает миниатюру карточки. Ракурс не сбрасываем — так видно правку. */
+async function refreshThumb(card) {
+  const canvas = card.querySelector('canvas.tool-shot');
+  if (!canvas || !card.dataset.toolId) return;
+  const tool = (TOOL_SHAPES.find((t, i) => String(i) === card.dataset.toolId));
+  if (!tool) return;
+  if (!state.thumbsOn || !toolThumbs.enabled) return;
+  const script = thumbScript(tool, card);
+  const stamp = String(Date.now());
+  card.dataset.thumbBusy = '1';
+  try {
+    const url = await thumbUrl(script);
+    if (card.dataset.thumbBusy !== '1') return;   // карточку уже перерисовали
+    canvas.dataset.url = url;
+    toolThumbs.show(canvas, url);
+    canvas.classList.add('ready');
+  } catch (err) {
+    if (card.dataset.thumbBusy === '1') toolThumbs.fail(canvas, err?.message || '');
+  } finally {
+    if (card.dataset.thumbBusy === '1') delete card.dataset.thumbBusy;
+    void stamp;
+  }
+}
+
+function scheduleThumb(card, delay = 420) {
+  const id = card.dataset.toolId;
+  if (id === undefined) return;
+  clearTimeout(thumbTimers.get(id));
+  thumbTimers.set(id, setTimeout(() => refreshThumb(card), delay));
+}
+
+/** Следим за видимостью: строим только те карточки, что на экране. */
+function observeThumbs(root) {
+  thumbObserver?.disconnect();
+  if (!('IntersectionObserver' in window)) return;
+  thumbObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const card = entry.target;
+      thumbObserver.unobserve(card);
+      scheduleThumb(card, 30);
+    });
+  }, { root, rootMargin: '260px 0px', threshold: 0.01 });
+  document.querySelectorAll('#tools-body .tool-card[data-tool-id]').forEach((card) => {
+    thumbObserver.observe(card);
+  });
+}
+
+function makeThumbCanvas() {
+  const canvas = document.createElement('canvas');
+  canvas.className = 'tool-shot';
+  canvas.width = THUMB_W;
+  canvas.height = THUMB_H;
+  canvas.title = 'Потяните мышью — деталь повернётся, колесо — приблизит, '
+    + 'двойной щелчок — сброс ракурса';
+  return canvas;
+}
+
 /* ---------------- 3D-превью детали из «Инструментов» ---------------- */
 let preview3d = null;
 let previewTool = null;
@@ -5025,6 +5199,7 @@ function renderTools() {
     tools.forEach((tool) => {
       const card = document.createElement('div');
       card.className = 'tool-card';
+      card.dataset.toolId = String(TOOL_SHAPES.indexOf(tool));
       const cardHead = document.createElement('div');
       cardHead.className = 'tool-card-head';
       cardHead.innerHTML = `<b>${escapeHtml(tool.title)}</b><code>${escapeHtml(tool.op)}</code>`;
@@ -5033,6 +5208,9 @@ function renderTools() {
       desc.className = 'tool-desc';
       desc.textContent = tool.desc;
       card.appendChild(desc);
+      // Живая миниатюра: деталь видно сразу, без отдельного окна. Поля ниже
+      // пересобирают её на лету — правка видна, не отрываясь от карточки.
+      card.appendChild(makeThumbCanvas());
       const fields = document.createElement('div');
       fields.className = 'tool-fields';
       tool.params.forEach((p) => {
@@ -5073,6 +5251,8 @@ function renderTools() {
       btn.addEventListener('click', () => addShapeTool(tool, card));
       actions.append(view3d, btn);
       card.appendChild(actions);
+      fields.addEventListener('input', () => scheduleThumb(card));
+      fields.addEventListener('change', () => scheduleThumb(card, 60));
       grid.appendChild(card);
     });
     body.appendChild(section);
@@ -5138,6 +5318,11 @@ function renderTools() {
     body.appendChild(section);
   });
   applyToolsFilter();
+  document.querySelectorAll('#tools-body canvas.tool-shot').forEach((canvas) => {
+    canvas.hidden = !state.thumbsOn;
+  });
+  // миниатюры строим по мере прокрутки: десятки карточек сразу не нужны
+  requestAnimationFrame(() => observeThumbs(body));
 }
 
 /** Поиск по инструментам: фильтрует карточки и прячет пустые группы. */
@@ -5160,20 +5345,42 @@ function applyToolsFilter() {
   });
   const label = $('tools-count');
   if (label) label.textContent = q ? `нашлось ${shown} из ${total}` : `всего ${total}`;
+  scheduleThumbsReobserve();
 }
 $('tools-search')?.addEventListener('input', applyToolsFilter);
+let thumbObserveTimer = 0;
+function scheduleThumbsReobserve() {
+  clearTimeout(thumbObserveTimer);
+  thumbObserveTimer = setTimeout(() => {
+    if (!$('tools-modal') || $('tools-modal').hidden) return;
+    observeThumbs($('tools-body'));
+  }, 260);
+}
+$('tools-thumbs')?.addEventListener('change', (e) => {
+  state.thumbsOn = e.target.checked;
+  toolThumbs.enabled = state.thumbsOn;
+  document.querySelectorAll('#tools-body .tool-card').forEach((card) => {
+    const canvas = card.querySelector('canvas.tool-shot');
+    if (canvas) canvas.hidden = !state.thumbsOn;
+  });
+  if (state.thumbsOn) observeThumbs($('tools-body'));
+});
 
 function openTools() {
   $('tools-modal').hidden = false;
   renderTools();
 }
 $('btn-tools')?.addEventListener('click', openTools);
-$('tools-close')?.addEventListener('click', () => { $('tools-modal').hidden = true; });
+function closeTools() {
+  $('tools-modal').hidden = true;
+  thumbObserver?.disconnect();
+}
+$('tools-close')?.addEventListener('click', closeTools);
 $('tools-modal')?.addEventListener('click', (e) => {
-  if (e.target === $('tools-modal')) $('tools-modal').hidden = true;
+  if (e.target === $('tools-modal')) closeTools();
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('tools-modal').hidden) $('tools-modal').hidden = true;
+  if (e.key === 'Escape' && !$('tools-modal').hidden) closeTools();
 });
 
 /* ------------------------------------------------------------------ */

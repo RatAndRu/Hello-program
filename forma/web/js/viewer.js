@@ -125,6 +125,10 @@ export class Viewer {
     // аниме/манга-подача: контуры по форме, ступени тона, растр
     this.anime = null;
     this._animePass = null;
+    // буфер «чей пиксель»: по нему рисуются линии между группами и материалами
+    this._idRT = null;
+    this._idMat = null;
+    this._idCache = null;
     this._normalRT = null;
     this._normalMat = new THREE.MeshNormalMaterial();
     // настоящие отражения в зеркальных деталях: своя кубическая карта
@@ -634,6 +638,7 @@ export class Viewer {
     this._focusAll = '';
     this.groupNodes = [];
     this._pendingGroups = {};
+    this._idCache = null;
     this._animCenter = null;
     this._ghosts = [];
     this._ghostNames = [];
@@ -2790,7 +2795,10 @@ export class Viewer {
     const animeOn = this._animeOn();
     if ((this._bloomOn || animeOn) && this.composer) {
       // буфер нормалей и глубины для контуров — до отрисовки красоты
-      if (animeOn) this._renderNormalPass();
+      if (animeOn) {
+        this._renderNormalPass();
+        if (this._idNeeded()) this._renderIdPass();
+      }
       if (animeOn && this._animePass && this._normalRT) {
         const u = this._animePass.uniforms;
         u.tNormal.value = this._normalRT.texture;
@@ -2807,6 +2815,121 @@ export class Viewer {
     } else {
       this.renderer.render(this.scene, this.camera);
     }
+  }
+
+  /** Нужен ли буфер «чей пиксель»: только для линий по группам/материалам. */
+  _idNeeded() {
+    const mode = this.anime && this.anime.lines;
+    return !!(mode && mode !== 'все' && this.model);
+  }
+
+  /**
+   * Паспорт групп и материалов для каждой сетки. Считается один раз на
+   * модель: пересборка сбрасывает кэш.
+   */
+  _idMaps() {
+    if (this._idCache) return this._idCache;
+    const maps = new Map();
+    const spec = this._pendingGroups || {};
+    const gnames = Object.keys(spec);
+    let nextFree = 128;                     // детали вне групп — каждая своя
+    const claim = (mesh, gid) => {
+      if (!maps.has(mesh)) maps.set(mesh, { gid, mid: 0 });
+    };
+    gnames.forEach((gname, i) => {
+      const gid = i + 1;
+      const node = this.model ? this.model.getObjectByName(gname) : null;
+      if (node && node !== this.model) {
+        node.traverse((o) => { if (o.isMesh) claim(o, gid); });
+      }
+      (spec[gname] || []).forEach((mname) => {
+        this.model.traverse((o) => {
+          if (o.isMesh && meshMatches(o, mname)) claim(o, gid);
+        });
+      });
+    });
+    const matKeys = new Map();
+    this.model.traverse((o) => {
+      if (!o.isMesh) return;
+      if (!maps.has(o)) maps.set(o, { gid: nextFree++, mid: 0 });
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      const key = m ? `${m.color?.getHexString?.() || ''}|${m.metalness ?? 0}|`
+        + `${m.roughness ?? 0}|${m.emissive?.getHexString?.() || ''}` : '—';
+      if (!matKeys.has(key)) matKeys.set(key, matKeys.size + 1);
+      maps.get(o).mid = matKeys.get(key);
+    });
+    this._idCache = maps;
+    return maps;
+  }
+
+  _ensureIdTarget() {
+    const size = new THREE.Vector2();
+    this.renderer.getDrawingBufferSize(size);
+    const w = Math.max(2, Math.floor(size.x));
+    const h = Math.max(2, Math.floor(size.y));
+    if (this._idRT && this._idRT.width === w && this._idRT.height === h) return;
+    if (this._idRT) this._idRT.dispose();
+    this._idRT = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.NearestFilter,
+      magFilter: THREE.NearestFilter,
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+  }
+
+  _ensureIdMaterial() {
+    if (this._idMat) return this._idMat;
+    this._idMat = new THREE.ShaderMaterial({
+      uniforms: { uGid: { value: 0 }, uMid: { value: 0 } },
+      vertexShader: `
+        void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: `
+        uniform float uGid, uMid;
+        void main() { gl_FragColor = vec4(uGid / 255.0, uMid / 255.0, 1.0, 1.0); }`,
+      depthTest: true,
+      depthWrite: true,
+    });
+    return this._idMat;
+  }
+
+  /** Рисует номер группы/материала в отдельный буфер. */
+  _renderIdPass() {
+    this._ensureIdTarget();
+    if (!this._idRT || !this.model) return;
+    const maps = this._idMaps();
+    const mat = this._ensureIdMaterial();
+    const mode = (this.anime && this.anime.lines) || 'все';
+    const prevOverride = this.scene.overrideMaterial;
+    const prevBg = this.scene.background;
+    const prevFog = this.scene.fog;
+    const prevClear = this.renderer.getClearAlpha();
+    const prevColor = this.renderer.getClearColor(new THREE.Color());
+    const restore = [];
+    this.model.traverse((o) => {
+      if (!o.isMesh) return;
+      restore.push([o, o.onBeforeRender]);
+      const info = maps.get(o) || { gid: 0, mid: 0 };
+      // id пишется перед каждым вызовом отрисовки: так одна сетка не
+      // «запоминает» номер соседней
+      o.onBeforeRender = () => {
+        mat.uniforms.uGid.value = mode === 'группы' ? (info.gid || 0) : 0;
+        mat.uniforms.uMid.value = mode === 'материалы' ? (info.mid || 0) : 0;
+      };
+    });
+    this.scene.overrideMaterial = mat;
+    this.scene.background = null;
+    this.scene.fog = null;
+    this.renderer.setRenderTarget(this._idRT);
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.clear(true, true, true);
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.setRenderTarget(null);
+    this.renderer.setClearColor(prevColor, prevClear);
+    this.scene.overrideMaterial = prevOverride;
+    this.scene.background = prevBg;
+    this.scene.fog = prevFog;
+    restore.forEach(([o, cb]) => { o.onBeforeRender = cb; });
+    if (this._animePass) this._animePass.uniforms.tIds.value = this._idRT.texture;
   }
 
   _animeOn() {
@@ -2954,7 +3077,7 @@ export class Viewer {
   _applyAnimeUniforms() {
     if (!this._animePass) return;
     const a = this.anime || {};
-    const modeIndex = { 'аниме': 0, 'манга': 1, 'комикс': 2, 'линия': 3 }[a.mode] ?? 0;
+    const modeIndex = { 'аниме': 0, 'манга': 1, 'комикс': 2, 'линия': 3, 'скетч': 4 }[a.mode] ?? 0;
     const u = this._animePass.uniforms;
     u.uMode.value = modeIndex;
     u.uLine.value = Number(a.line ?? 1.6);
@@ -2968,6 +3091,12 @@ export class Viewer {
     u.uCel.value = a.shade === false ? 0 : 1;
     const paper = a.paper === null || a.paper === undefined ? (this.settings.bg || '#ffffff') : a.paper;
     u.uPaper.value = hexVec(paper);
+    u.uHatch.value = Math.max(0, Math.min(1, Number(a.hatch ?? 0)));
+    u.uHatchAngle.value = (Number(a.hatch_angle ?? 45) * Math.PI) / 180;
+    u.uHatchStep.value = Math.max(2, Number(a.hatch_step ?? 8));
+    u.uPaperTex.value = Math.max(0, Math.min(1, Number(a.paper_tex ?? 0)));
+    u.uLines.value = { 'группы': 1, 'материалы': 2 }[a.lines || 'все'] ?? 0;
+    u.tIds.value = this._idRT ? this._idRT.texture : null;
   }
 
   /** Фон-«бумага», пол и сетка прячутся: рисунок не должен пестрить. */
@@ -3095,6 +3224,12 @@ export class Viewer {
         uFar: { value: 40000 },
         uPixelRatio: { value: 1 },
         uWorld: { value: 100 },
+        tIds: { value: null },
+        uLines: { value: 0 },
+        uHatch: { value: 0 },
+        uHatchAngle: { value: 0.785 },
+        uHatchStep: { value: 8 },
+        uPaperTex: { value: 0 },
       },
       vertexShader: `
         varying vec2 vUv;
@@ -3107,10 +3242,12 @@ export class Viewer {
         uniform sampler2D tDiffuse;
         uniform sampler2D tNormal;
         uniform sampler2D tDepth;
+        uniform sampler2D tIds;
         uniform vec2 uResolution;
         uniform float uLine, uInner, uCrease, uDepthTh, uSeams;
         uniform float uToon, uTone, uCel, uMode, uNear, uFar, uPixelRatio, uWorld;
         uniform vec3 uInk, uPaper;
+        uniform float uLines, uHatch, uHatchAngle, uHatchStep, uPaperTex;
         varying vec2 vUv;
 
         float linearDepth(float d) {
@@ -3120,6 +3257,34 @@ export class Viewer {
         }
 
         float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+        float hash21(vec2 p) {
+          p = fract(p * vec2(123.34, 456.21));
+          p += dot(p, p + 45.32);
+          return fract(p.x * p.y);
+        }
+
+        // зерно бумаги: мелкий шум в экранных пикселях, лист не «плывёт»
+        float paperGrain(vec2 uv) {
+          if (uPaperTex < 0.001) return 1.0;
+          vec2 p = uv * uResolution;
+          float fine = hash21(floor(p * 0.9));
+          float fiber = hash21(floor(p * vec2(0.28, 1.6)) + 11.7);
+          float relief = fine * 0.62 + fiber * 0.38 - 0.5;
+          return clamp(1.0 + relief * 0.11 * uPaperTex, 0.90, 1.06);
+        }
+
+        // карандашная штриховка: тонкие линии с шагом, плотность — от тени
+        float hatchLayer(vec2 uv, float ang, float dark, float strength) {
+          float ca = cos(ang), sa = sin(ang);
+          vec2 p = uv * uResolution;
+          float u = (p.x * ca + p.y * sa) / max(uHatchStep * uPixelRatio, 2.0);
+          float f = abs(fract(u) - 0.5);
+          float w = 0.10 + 0.09 * strength;
+          float line = smoothstep(w, w * 0.30, f);
+          float gate = clamp((dark - 0.16) / 0.58, 0.0, 1.0);
+          return line * gate * strength;
+        }
 
         float halftone(vec2 uv, float cell, float dark) {
           float ang = 0.5236;                       // 30° — классический растр
@@ -3142,6 +3307,9 @@ export class Viewer {
           // толщина линии в экранных пикселях (не зависит от плотности экрана)
           float radius = max(uLine * 0.5 * uPixelRatio, 0.6);
 
+          // чей пиксель: группа (r) и материал (g) — для линий по группам
+          vec2 idC = floor(texture2D(tIds, vUv).rg * 255.0 + 0.5);
+
           float edge = 0.0;
           for (int i = 0; i < 8; i++) {
             float ang = float(i) * 0.785398;
@@ -3158,6 +3326,12 @@ export class Viewer {
               if (uInner > 0.5) {
                 vec3 nv = normalize(nN.rgb * 2.0 - 1.0);
                 if (dot(nv, nvC) < uCrease) edge = 1.0;
+              }
+              if (uLines > 0.5) {
+                vec2 idN = floor(texture2D(tIds, vUv + off).rg * 255.0 + 0.5);
+                float same = uLines > 1.5 ? step(0.5, abs(idN.g - idC.g))
+                                          : step(0.5, abs(idN.r - idC.r));
+                if (same > 0.5) edge = 1.0;
               }
             }
           }
@@ -3185,9 +3359,14 @@ export class Viewer {
             float dark = clamp((0.62 - l) / 0.62, 0.0, 1.0) * bodyMask;
             float dots = halftone(vUv, 7.0 * uPixelRatio, dark);
             col = mix(col, uInk, dark * (1.0 - dots) * uTone * 0.8);
-          } else if (uMode > 2.5) {
+          } else if (uMode > 2.5 && uMode < 3.5) {
             // линия: только контуры на бумаге
             col = mix(col, uPaper, bodyMask);
+          } else if (uMode > 3.5) {
+            // скетч: карандашный тон — цвет почти уходит, остаётся графит
+            float l = clamp(luma(col), 0.0, 1.0);
+            vec3 pencil = mix(vec3(l), col, 0.32);
+            col = mix(col, pencil, bodyMask);
           } else {
             // аниме: ступени тона, блики остаются белыми
             if (uCel > 0.5 && bodyMask > 0.5) {
@@ -3200,8 +3379,23 @@ export class Viewer {
             }
           }
 
+          // карандашная штриховка: слой поверх тона, только по телу детали
+          if (uHatch > 0.001 && bodyMask > 0.5) {
+            float l = clamp(luma(col), 0.0, 1.0);
+            float dark = clamp((0.80 - l) / 0.66, 0.0, 1.0);
+            float h = hatchLayer(vUv, uHatchAngle, dark, uHatch);
+            // в плотной тени — второй слой поперёк («перекрёстная штриховка»)
+            if (uHatch > 0.55 && dark > 0.55) {
+              float h2 = hatchLayer(vUv, uHatchAngle + 1.15, (dark - 0.55) / 0.45,
+                                    (uHatch - 0.55) / 0.45);
+              h = max(h, h2 * 0.9);
+            }
+            col = mix(col, uInk, h);
+          }
+
           // контур поверх всего: линия всегда чёрная, даже на светлом
           col = mix(col, uInk, edge * step(0.5, aC));
+          col *= paperGrain(vUv);
           gl_FragColor = vec4(col, base.a);
         }`,
     };

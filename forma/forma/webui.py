@@ -331,7 +331,9 @@ class AppState:
             stamp = time.strftime("%H%M%S")
             style = self._anime_style()
             result = render_views(self.last_build.visible_solids(), out,
-                                  prefix=f"view_{stamp}", size=640, ss=2, style=style)
+                                  prefix=f"view_{stamp}", size=640, ss=2, style=style,
+                                  groups=(self.last_build.scene.groups
+                                          if self.last_build.scene else None))
             files = []
             for item in result["files"]:
                 name = Path(item["path"]).name
@@ -400,7 +402,8 @@ class AppState:
                             "url": file_url("exports", name), "name": name}
             elif fmt == "png":
                 result = render_views(solids, out_dir, prefix=base, size=900, ss=2,
-                                      style=self._anime_style())
+                                      style=self._anime_style(),
+                                      groups=(scene.groups if scene else None))
                 name = Path(result.get("combined") or result["files"][0]["path"]).name
                 data = Path(out_dir / name).read_bytes()
             elif fmt in ("dxf", "svg"):
@@ -439,7 +442,8 @@ class AppState:
                     zf.writestr("SPRAVKA.md", command_reference_md())
                     tmp = out_dir / "_views"
                     render_views(solids, tmp, prefix=base, size=800, ss=2,
-                                 style=self._anime_style())
+                                 style=self._anime_style(),
+                                 groups=(scene.groups if scene else None))
                     for png in sorted(tmp.glob("*.png")):
                         zf.write(png, f"views/{png.name}")
                     shutil.rmtree(tmp, ignore_errors=True)

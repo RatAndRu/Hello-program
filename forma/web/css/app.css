@@ -973,7 +973,7 @@ button.mini:disabled { opacity: .38; cursor: default; }
 }
 .anim-loop.loop-off { border-color: rgba(255, 179, 90, .65); color: #ffcf9a; }
 
-.tools-card { width: min(760px, 94vw); }
+.tools-card { width: min(1040px, 96vw); }
 .tools-hint {
   padding: 8px 16px 0;
   font-size: 11.5px;
@@ -988,7 +988,7 @@ button.mini:disabled { opacity: .38; cursor: default; }
   text-transform: uppercase;
   color: var(--text-faint);
 }
-.tool-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
 @media (max-width: 720px) { .tool-grid { grid-template-columns: 1fr; } }
 .tool-card {
   border: 1px solid var(--line-soft);
@@ -1165,3 +1165,33 @@ button.mini:disabled { opacity: .38; cursor: default; }
   border-color: #7a3b3b;
   color: #ffd9d9;
 }
+
+/* Живые миниатюры в карточках «Инструментов» */
+.tool-shot {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  background:
+    radial-gradient(120% 90% at 50% 8%, #1b2430 0%, #121820 62%, #0d1219 100%);
+  border: 1px solid var(--line-soft);
+  cursor: grab;
+  touch-action: none;
+  transition: border-color .15s ease;
+}
+.tool-shot:hover { border-color: #33506f; }
+.tool-shot:active { cursor: grabbing; }
+.tool-shot[data-failed] { cursor: default; }
+.tool-shot[hidden] { display: none; }
+.tools-thumbs-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  user-select: none;
+  cursor: pointer;
+}
+.tools-thumbs-toggle input { margin: 0; }

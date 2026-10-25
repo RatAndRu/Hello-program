@@ -26,14 +26,16 @@ import numpy as np
 from .errors import GeometryError
 from .geometry import color_to_float_rgb, normalize_color
 
-MODES = ("аниме", "манга", "комикс", "линия", "выкл")
+MODES = ("аниме", "манга", "комикс", "скетч", "линия", "выкл")
 
 MODE_ALIASES = {
     "аниме": "аниме", "anime": "аниме", "мультик": "аниме", "мультяшный": "аниме",
     "cel": "аниме", "toon": "аниме", "тун": "аниме",
     "манга": "манга", "manga": "манга", "чб": "манга", "чёрно-белый": "манга",
     "черно-белый": "манга", "скетч": "манга", "карандаш": "манга",
-    "комикс": "комикс", "comic": "комикс", "комиксы": "комикс",
+    "комикс": "комикс", "comic": "комикс", "комиксы": "комикс", "комиксный": "комикс",
+    "скетч": "скетч", "sketch": "скетч", "карандаш": "скетч", "набросок": "скетч",
+    "штриховка": "скетч", "hatch": "скетч", "рисунок": "скетч",
     "линия": "линия", "линии": "линия", "лайн": "линия", "line": "линия",
     "lineart": "линия", "контур": "линия", "контуры": "линия", "обводка": "линия",
     "выкл": "выкл", "off": "выкл", "нет": "выкл", "обычный": "выкл",
@@ -45,26 +47,43 @@ PRESETS: dict[str, dict[str, Any]] = {
         "mode": "аниме", "line": 1.6, "color": "#101018", "inner": True,
         "crease": 32.0, "depth": 0.035, "seams": True, "toon": 3,
         "tone": 0.0, "paper": "#f4f6fa", "shade": True,
+        "hatch": 0.0, "hatch_angle": 45.0, "hatch_step": 8.0, "paper_tex": 0.0,
+        "lines": "все",
     },
     "манга": {
         "mode": "манга", "line": 1.8, "color": "#0b0b0e", "inner": True,
         "crease": 30.0, "depth": 0.03, "seams": True, "toon": 3,
         "tone": 0.75, "paper": "#fbfbf7", "shade": True,
+        "hatch": 0.0, "hatch_angle": 45.0, "hatch_step": 8.0, "paper_tex": 0.25,
+        "lines": "все",
     },
     "комикс": {
         "mode": "комикс", "line": 2.6, "color": "#0a0a0c", "inner": True,
         "crease": 38.0, "depth": 0.045, "seams": True, "toon": 2,
         "tone": 0.6, "paper": "#fdf4e3", "shade": True,
+        "hatch": 0.0, "hatch_angle": 40.0, "hatch_step": 7.0, "paper_tex": 0.2,
+        "lines": "все",
+    },
+    "скетч": {
+        "mode": "скетч", "line": 1.5, "color": "#22242c", "inner": True,
+        "crease": 26.0, "depth": 0.032, "seams": True, "toon": 0,
+        "tone": 0.0, "paper": "#f6f1e6", "shade": True,
+        "hatch": 0.85, "hatch_angle": 52.0, "hatch_step": 7.0, "paper_tex": 0.6,
+        "lines": "все",
     },
     "линия": {
         "mode": "линия", "line": 1.4, "color": "#101018", "inner": True,
         "crease": 28.0, "depth": 0.03, "seams": True, "toon": 0,
         "tone": 0.0, "paper": "#ffffff", "shade": False,
+        "hatch": 0.0, "hatch_angle": 45.0, "hatch_step": 8.0, "paper_tex": 0.0,
+        "lines": "все",
     },
     "выкл": {
         "mode": "выкл", "line": 1.6, "color": "#101018", "inner": True,
         "crease": 32.0, "depth": 0.035, "seams": True, "toon": 0,
         "tone": 0.0, "paper": None, "shade": True,
+        "hatch": 0.0, "hatch_angle": 45.0, "hatch_step": 8.0, "paper_tex": 0.0,
+        "lines": "все",
     },
 }
 
@@ -93,6 +112,25 @@ def _paper(value: Any, default: str | None) -> str | None:
     except Exception:
         raise GeometryError(f"Непонятный цвет бумаги «{value}».",
                             hint="Например paper=#ffffff или paper=сцена.")
+
+
+_LINE_MODES = {
+    "все": "все", "all": "все", "детали": "все", "по деталям": "все",
+    "группы": "группы", "по группам": "группы", "group": "группы",
+    "groups": "группы", "grouped": "группы",
+    "материалы": "материалы", "по материалам": "материалы", "material": "материалы",
+    "materials": "материалы", "цвет": "материалы",
+}
+
+
+def _line_mode(value: Any) -> str:
+    """Где рисовать линию на стыке: на каждой детали, только между группами
+    или только между разными материалами."""
+    key = str(value or "все").strip().lower()
+    if key not in _LINE_MODES:
+        raise GeometryError(f"Неизвестный режим линий «{value}».",
+                            hint="lines: все, группы или материалы.")
+    return _LINE_MODES[key]
 
 
 def normalize_style(data: dict | None) -> dict:
@@ -145,6 +183,26 @@ def normalize_style(data: dict | None) -> dict:
         if not (0.0 <= tone <= 1.0):
             raise GeometryError("Сила растра должна быть 0…1.")
         out["tone"] = tone
+    if "hatch" in src and src["hatch"] is not None:
+        hatch = float(src["hatch"])
+        if not (0.0 <= hatch <= 1.0):
+            raise GeometryError("Сила штриховки должна быть 0…1.",
+                                hint="0 — без штриховки, 0.85 — плотный карандаш.")
+        out["hatch"] = hatch
+    if "hatch_angle" in src and src["hatch_angle"] is not None:
+        out["hatch_angle"] = float(src["hatch_angle"]) % 180.0
+    if "hatch_step" in src and src["hatch_step"] is not None:
+        step = float(src["hatch_step"])
+        if not (2.0 <= step <= 40.0):
+            raise GeometryError("Шаг штриховки должен быть 2…40 px.")
+        out["hatch_step"] = step
+    if "paper_tex" in src and src["paper_tex"] is not None:
+        tex = float(src["paper_tex"])
+        if not (0.0 <= tex <= 1.0):
+            raise GeometryError("Зерно бумаги должно быть 0…1.")
+        out["paper_tex"] = tex
+    if "lines" in src and src["lines"] is not None:
+        out["lines"] = _line_mode(src["lines"])
     if "paper" in src:
         out["paper"] = _paper(src["paper"], base.get("paper"))
     if out["mode"] == "выкл":
@@ -168,9 +226,12 @@ def style_from_args(a) -> dict:
     for key in ("inner", "seams", "shade"):
         if a.has(key):
             raw[key] = a.boolean(key, True)
-    for key in ("crease", "depth", "toon", "tone"):
+    for key in ("crease", "depth", "toon", "tone", "hatch", "hatch_angle",
+                "hatch_step", "paper_tex"):
         if a.has(key):
-            raw[key] = a.num(key, PRESETS["аниме"][key])
+            raw[key] = a.num(key, PRESETS["аниме"].get(key, 0.0))
+    if a.has("lines"):
+        raw["lines"] = a.text("lines")
     if a.has("paper"):
         raw["paper"] = a.text("paper")
     return normalize_style(raw)
@@ -203,7 +264,8 @@ _DIRS = ((1, 0), (0, 1), (1, 1), (1, -1))
 
 
 def _edge_mask(z: np.ndarray, valid: np.ndarray, nrm: np.ndarray,
-               ids: np.ndarray, style: dict) -> np.ndarray:
+               ids: np.ndarray, style: dict,
+               seam_ids: np.ndarray | None = None) -> np.ndarray:
     """Где рисовать контур: силуэт, перепад глубины, излом, стык деталей."""
     h, w = z.shape
     edge = np.zeros((h, w), dtype=bool)
@@ -222,6 +284,7 @@ def _edge_mask(z: np.ndarray, valid: np.ndarray, nrm: np.ndarray,
     depth_k = float(style["depth"])
     inner = bool(style["inner"])
     seams = bool(style["seams"]) and inner
+    seam_src = ids if seam_ids is None else seam_ids
     # 1) силуэт — граница маски по всем восьми соседям: линия замкнутая,
     # без «штрихов» и разрывов, как у Line Art в Blender
     inner_ok = valid.copy()
@@ -246,8 +309,8 @@ def _edge_mask(z: np.ndarray, valid: np.ndarray, nrm: np.ndarray,
         crease = both & (dot < crease_cos) & ~jump
         edge |= crease
         if seams:
-            ib = _shift(ids, dy, dx, -1)
-            edge |= both & (ids != ib)
+            ib = _shift(seam_src, dy, dx, -1)
+            edge |= both & (seam_src != ib)
     # края кадра не считаем контуром
     edge[0, :] = edge[-1, :] = False
     edge[:, 0] = edge[:, -1] = False
@@ -301,6 +364,67 @@ def _halftone(shape: tuple[int, int], cell: float, darkness: np.ndarray) -> np.n
     return np.clip(dots * 0.92 + np.clip(darkness, 0, 1) * 0.08, 0.0, 1.0)
 
 
+def _paper_grain(shape: tuple[int, int], strength: float, seed: int = 7) -> np.ndarray:
+    """Зерно бумаги: мелкий шум + редкие волокна. 1 — чистая бумага."""
+    if strength <= 0.001:
+        return np.ones(shape, dtype=np.float32)
+    h, w = shape
+    rng = np.random.default_rng(seed)
+    # мелкое зерно — по строкам/столбцам шум дешевле, чем на весь кадр
+    grain = rng.normal(0.0, 1.0, size=(h, w // 2 + 1)).astype(np.float32)
+    grain = np.repeat(grain, 2, axis=1)[:, :w]
+    grain = 0.5 * grain + 0.25 * (np.roll(grain, 1, axis=0) + np.roll(grain, 1, axis=1))
+    # волокна: редкие светлые и тёмные полосы под углом
+    fib = np.zeros((h, w), dtype=np.float32)
+    for _ in range(max(4, (h * w) // 90000)):
+        y0 = int(rng.integers(0, h))
+        x0 = int(rng.integers(0, w))
+        length = int(rng.integers(max(8, w // 12), max(16, w // 3)))
+        thick = int(rng.integers(1, 3))
+        dy = int(rng.integers(-2, 3))
+        sign = 1.0 if rng.random() > 0.5 else -1.0
+        for i in range(length):
+            y = (y0 + (dy * i) // max(1, length // 4)) % h
+            x = (x0 + i) % w
+            fib[y:min(h, y + thick), x:min(w, x + 1)] += sign * 0.35
+    fib = np.clip(fib, -1, 1)
+    # складываем и переводим в множитель яркости
+    relief = 0.55 * grain + 0.45 * fib
+    return np.clip(1.0 + relief * 0.06 * strength, 0.90, 1.06).astype(np.float32)
+
+
+def _hatch_mask(shape: tuple[int, int], darkness: np.ndarray, angle_deg: float,
+                step: float, strength: float) -> np.ndarray:
+    """Карандашная штриховка: тонкие линии под углом, плотность — от тени.
+
+    Возвращает долю краски 0…1 на пиксель (линии мягкие, «карандашом»).
+    """
+    if strength <= 0.001:
+        return np.zeros(shape, dtype=np.float32)
+    h, w = shape
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    ang = math.radians(float(angle_deg))
+    ca, sa = math.cos(ang), math.sin(ang)
+    # координата поперёк штрихов
+    u = (xx * ca + yy * sa) / max(step, 2.0)
+    frac = np.mod(u, 1.0)
+    # линия — узкая полоска в середине периода, мягкий карандашный край
+    line_w = 0.34
+    line = np.clip(1.0 - np.abs(frac - 0.5) / (line_w * 0.5), 0.0, 1.0)
+    line = line ** 0.55
+    # плотность: в тени штрихи есть, на свету — почти нет
+    dark = np.clip(darkness, 0.0, 1.0)
+    gate = np.clip((dark - 0.06) / 0.42, 0.0, 1.0)
+    # «двойная штриховка» в глубокой тени: второй слой поперёк
+    cross = np.zeros_like(line)
+    if strength > 0.55:
+        u2 = (xx * math.cos(ang + 1.15) + yy * math.sin(ang + 1.15)) / max(step * 1.35, 2.0)
+        f2 = np.mod(u2, 1.0)
+        cross_line = np.clip(1.0 - np.abs(f2 - 0.5) / (line_w * 0.5), 0.0, 1.0) ** 0.7
+        cross = cross_line * np.clip((dark - 0.50) / 0.45, 0.0, 1.0) * (strength - 0.55) / 0.45
+    return np.clip(np.maximum(line * gate, cross) * strength, 0.0, 1.0).astype(np.float32)
+
+
 def _luma(img: np.ndarray) -> np.ndarray:
     return img[..., 0] * 0.299 + img[..., 1] * 0.587 + img[..., 2] * 0.114
 
@@ -308,8 +432,13 @@ def _luma(img: np.ndarray) -> np.ndarray:
 def apply_style(img: np.ndarray, z: np.ndarray | None = None,
                 normals: np.ndarray | None = None, ids: np.ndarray | None = None,
                 emissive: np.ndarray | None = None, style: dict | None = None,
-                ss: int = 1) -> np.ndarray:
+                ss: int = 1, groups: np.ndarray | None = None,
+                mats: np.ndarray | None = None) -> np.ndarray:
     """Накладывает стиль на готовый кадр.
+
+    ``groups`` и ``mats`` — номер группы и материала на пиксель: по ним
+    режим ``lines=группы/материалы`` решает, где кончается «своё» и
+    начинается «чужое».
 
     ``img`` — HxWx3 float 0…1, ``z`` — глубина (view depth), ``normals`` —
     мировые нормали, ``ids`` — номер объекта на пиксель, ``emissive`` — маска
@@ -337,6 +466,10 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
         paper = np.array(color_to_float_rgb(st["paper"]), dtype=np.float32)
         out[~valid] = paper
     ink = np.array(color_to_float_rgb(st["color"]), dtype=np.float32)
+    # зерно бумаги: живой лист, а не заливка. Считаем один раз на кадр.
+    grain = None
+    if float(st.get("paper_tex") or 0) > 0.001:
+        grain = _paper_grain((h, w), float(st["paper_tex"]))
 
     body = valid & ~emissive
     # 1) плоская заливка (стиль «линия»): остаётся только контур
@@ -423,9 +556,33 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
         factor = 1.0 - float(st["tone"]) * 0.55 * dark * (1.0 - dots)
         out = np.where(body[..., None], out * factor[..., None], out)
 
+    # 4.5) штриховка карандашом: слой поверх тона, только по телу
+    if float(st.get("hatch") or 0) > 0.001 and st["shade"]:
+        lum = np.clip(_luma(out), 0.0, 1.0)
+        # «темнота» — от общей яркости; в манге удобнее считать от ступеней
+        dark = np.clip((0.80 - lum) / 0.72, 0.0, 1.0)
+        lines = _hatch_mask((h, w), dark, float(st.get("hatch_angle") or 45.0),
+                            float(st.get("hatch_step") or 8.0),
+                            float(st.get("hatch") or 0.0))
+        lines = np.where(body, lines, 0.0)
+        # штрих не должен перекрывать светодиоды
+        lines = np.where(emissive, lines * 0.15, lines)
+        out = out * (1.0 - lines[..., None]) + ink[None, None, :] * lines[..., None]
+
+    # 4.6) режим «скетч»: мягкая бумага и лёгкая пастель вместо чистого цвета
+    if st["mode"] == "скетч" and st["shade"]:
+        gray = _luma(out)[..., None]
+        out = np.where(body[..., None], np.clip(gray * 0.62 + out * 0.42, 0, 1), out)
+
     # 5) контуры
     if st["line"] > 0:
-        edge = _edge_mask(z, valid, normals, ids, st)
+        seam_ids = ids
+        mode_lines = st.get("lines") or "все"
+        if mode_lines == "группы" and groups is not None:
+            seam_ids = np.asarray(groups, dtype=np.int32)
+        elif mode_lines == "материалы" and mats is not None:
+            seam_ids = np.asarray(mats, dtype=np.int32)
+        edge = _edge_mask(z, valid, normals, ids, st, seam_ids)
         radius = float(st["line"]) * max(1, ss) * 0.5
         if radius > 0.2:
             edge = _dilate(edge, radius)
@@ -433,5 +590,9 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
         # контур не должен закрывать светодиоды целиком
         mask = np.where(emissive, mask * 0.35, mask)
         out = out * (1.0 - mask[..., None]) + ink[None, None, :] * mask[..., None]
+
+    # 6) зерно бумаги поверх всего: и фон, и деталь лежат на одном листе
+    if grain is not None:
+        out = out * grain[..., None]
 
     return np.clip(out, 0.0, 1.0)

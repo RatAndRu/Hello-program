@@ -155,7 +155,8 @@ def cmd_render(args) -> int:
         style = normalize_style({"mode": normalize_mode(text, "аниме")}) \
             if text not in ("выкл", "off", "нет") else None
     result = render_views(b.visible_solids(), out, prefix=args.prefix, size=args.size,
-                          ss=args.ss, views=views, combined=True, style=style)
+                          ss=args.ss, views=views, combined=True, style=style,
+                          groups=(b.scene.groups if b.scene else None))
     for item in result["files"]:
         print(item["path"])
     if result.get("combined"):

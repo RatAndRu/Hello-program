@@ -405,6 +405,39 @@ def _run_uistest(report_path: str | None) -> int:
                 check("зеркало с отражением соседей: сборка",
                       mirror_build.get("ok") is True,
                       f"{mirror_build.get('analysis', {}).get('metrics', {}).get('tris', 0)} трис")
+                # 0.28: живые превью прямо в карточках, четыре новые формы
+                # и развитие аниме-подачи (штриховка, бумага, линии по группам)
+                check("живые превью в карточках",
+                      b'id="tools-thumbs"' in html
+                      and len(get("/js/toolpreview.js", raw=True)) > 3000)
+                check("панель стиля 0.28: штриховка и линии",
+                      b'id="anime-row3"' in html and b'id="anime-hatch"' in html
+                      and b'id="anime-paper-tex"' in html and b'id="anime-lines"' in html
+                      and 'data-anime="скетч"'.encode("utf-8") in html)
+                shapes = {
+                    "корона": "к = crown diameter=120 height=40 teeth=10",
+                    "инь-ян": "и = yin_yang diameter=100 thick=12",
+                    "линза": "л = lens diameter=60 sag=10",
+                    "патрон": "п = cartridge diameter=9 length=29",
+                }
+                for label, script in shapes.items():
+                    try:
+                        res = post("/api/preview", {"script": script})
+                        check(f"превью формы «{label}»", res.get("ok") is True,
+                              f"{res.get('tris', 0)} трис, {res.get('size', [])}")
+                    except Exception as exc:
+                        check(f"превью формы «{label}»", False, str(exc))
+                sketch = post("/api/build", {"script": (
+                    "ш = sphere radius=30 color=#dfe6f3\n"
+                    "куб = box size=[36,36,36] at=[44,0,0] color=#f0c674\n"
+                    "anime mode=скетч hatch=0.9 hatch_angle=50 paper_tex=0.6 lines=группы")})
+                st = (sketch.get("settings") or {}).get("anime") or {}
+                check("скетч с штриховкой в сценарии",
+                      sketch.get("ok") is True and abs(float(st.get("hatch") or 0) - 0.9) < 1e-6
+                      and abs(float(st.get("paper_tex") or 0) - 0.6) < 1e-6
+                      and st.get("lines") == "группы",
+                      f"hatch={st.get('hatch')} paper_tex={st.get('paper_tex')} "
+                      f"lines={st.get('lines')}")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:
