@@ -279,6 +279,64 @@ def icosphere(a, name):
     return make_solid(a.scene, name, solid, a, kind="icosphere")
 
 
+@op("octa", aliases=("октаэдр", "октаедр", "восьмигранник", "octahedron"), category="Примитивы",
+    summary="Октаэдр — восемь одинаковых треугольных граней, как две пирамиды, "
+            "сложенные основаниями. Ширина и длина задаются радиусом по X/Y, "
+            "высота — отдельно: можно сделать правильный октаэдр или вытянутый "
+            "ромбический. Стоит на полу.",
+    example="кристалл = octa radius=30 height=80\n"
+            "правильный = octa radius=25 height=50",
+    params={"radius": "полуширина по X и Y, мм (обязательно)",
+            "height": "полная высота, мм (по умолчанию 2·radius)",
+            "depth": "полуширина по Y, если она отличается от X (radius)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"},
+    positional=["radius"])
+def octa(a, name):
+    radius = a.num("radius", required=True, minv=0.01)
+    depth = a.num("depth", None, minv=0.01)
+    depth = float(radius if depth is None else depth)
+    height = a.num("height", None, minv=0.01)
+    height = float(2.0 * radius if height is None else height)
+    half = height / 2.0
+    pts = np.asarray([[radius, 0.0, 0.0], [-radius, 0.0, 0.0],
+                      [0.0, depth, 0.0], [0.0, -depth, 0.0],
+                      [0.0, 0.0, half], [0.0, 0.0, -half]], dtype=np.float64)
+    solid = mf.Manifold.hull_points(np.ascontiguousarray(pts))
+    solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
+    out = make_solid(a.scene, name, solid, a, kind="octa")
+    out.notes.append(f"октаэдр {2 * radius:g}×{2 * depth:g}×{height:g} мм, "
+                     f"{solid.num_tri()} граней")
+    return out
+
+
+@op("ellipsoid", aliases=("эллипсоид", "яйцевидный_шар", "ellipsoid"), category="Примитивы",
+    summary="Эллипсоид — шар, растянутый по осям отдельно. Полуоси задаются "
+            "по X, Y и Z; ровный и гладкий, в отличие от масштабирования шара "
+            "командой scale у него честные полуоси в миллиметрах.",
+    example="дно = ellipsoid x=60 y=40 z=22\n"
+            "капля = ellipsoid x=25 y=25 z=60 at=[0,0,20]",
+    params={"x": "полуось по X, мм (обязательно)",
+            "y": "полуось по Y (по умолчанию — как X)",
+            "z": "полуось по Z (по умолчанию — как X)",
+            "detail": "детализация 0…5 (3): 0 — гранёный, 5 — гладкий",
+            "segments": "сегментов по кругу (по детализации)",
+            "center": "центрировать по высоте",
+            "at": "положение [x,y,z]"},
+    positional=["x"])
+def ellipsoid(a, name):
+    x = a.num("x", required=True, minv=0.01)
+    y = a.num("y", None, minv=0.01)
+    z = a.num("z", None, minv=0.01)
+    y = float(x if y is None else y)
+    z = float(x if z is None else z)
+    segments = _segments(a, a.int("segments", None, minv=8, maxv=512), max(x, y, z))
+    solid = mf.Manifold.sphere(1.0, segments).scale((x, y, z))
+    solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
+    out = make_solid(a.scene, name, solid, a, kind="ellipsoid")
+    out.notes.append(f"полуоси {x:g}×{y:g}×{z:g} мм")
+    return out
+
+
 @op("diamond", aliases=("алмаз", "бриллиант", "кристалл", "diamond_gem"), category="Примитивы",
     summary="Алмаз: снизу конус (павильон), сверху сужающаяся огранка с плоской "
             "площадкой. Параметр sharp=да делает верх острой трапецевидной призмой "

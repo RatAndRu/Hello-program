@@ -1099,6 +1099,22 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
   color: var(--text-dim);
   line-height: 1.45;
 }
+.tool-sec {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 18px 0 2px;
+  padding: 6px 0 4px;
+  border-bottom: 2px solid #d8d2c4;
+}
+.tool-sec h3 {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.tool-sec span { font-size: 11px; opacity: .62; }
 .tool-group { margin-top: 14px; }
 .tool-group h4 {
   margin: 0 0 8px;

@@ -238,7 +238,7 @@ class TestExamplesAndTools(unittest.TestCase):
         from forma.webui import EXAMPLES
         keys = [key for _, key in EXAMPLES]
         self.assertEqual(keys, [
-            "mug", "car", "vase", "bottle", "alien", "gear",
+            "primitives", "mug", "car", "vase", "bottle", "alien", "gear",
             "mannequin", "apple", "human_studio", "animation_tracks", "wardrobe",
             "mechanics", "polygons", "showcase", "units",
             "motorcycle", "clock", "mates", "anime_face", "origami", "chain",

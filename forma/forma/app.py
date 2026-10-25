@@ -808,6 +808,43 @@ def _run_uistest(report_path: str | None) -> int:
                       "op: 'воронка'".encode("utf-8") in js_app
                       and "title: 'Деталь по осям хозяина'".encode("utf-8") in js_app,
                       "две новые карточки в инструментах")
+
+                # 0.38: стандартные тела первыми, новые тела и однозначные имена
+                lead = js_app.split("const TOOL_SHAPES = [".encode("utf-8"), 1)[1]
+                lead = lead.split(b"op: '", 8)[1:]
+                lead_ops = [piece.split(b"'", 1)[0].decode("utf-8") for piece in lead]
+                check("каталог начинается стандартными телами",
+                      lead_ops[:8] == ["sheet", "box", "prism", "octa", "pyramid",
+                                       "cone", "cylinder", "sphere"],
+                      " → ".join(lead_ops[:8]))
+                octa = post("/api/preview", {"script": "к = octa radius=30 height=80"})
+                check("октаэдр: восемь граней одной командой",
+                      octa.get("ok") is True and octa.get("tris") == 8,
+                      f"{octa.get('tris')} граней")
+                ell = post("/api/preview", {"script": "э = ellipsoid x=60 y=40 z=22"})
+                check("эллипсоид: три полуоси, а не scale",
+                      ell.get("ok") is True and ell.get("size", [0, 0, 0])[0] > 119.0,
+                      f"габарит по X {ell.get('size', [0])[0]} мм")
+                u = post("/api/preview", {"script": (
+                    "у = скоба length=120 width=40 height=30 wall=3\n"
+                    "п = скоба length=120 width=40 height=30 wall=3 open=вниз at=[0,120,0]\n"
+                    "р = скоба length=160 width=90 height=60 wall=4 стороны=4 at=[0,-160,0]")})
+                check("скоба: U, П и замкнутая рамка",
+                      u.get("ok") is True and u.get("objects") == 3,
+                      f"{u.get('tris', 0)} трис, объектов {u.get('objects')}")
+                names = post("/api/preview", {"script": (
+                    "лист = sheet width=80 length=120 thickness=2\n"
+                    "листок = leaf length=90 width=45 thickness=2 at=[0,160,0]")})
+                check("лист — плоскость, листок — лист растения",
+                      names.get("ok") is True and names.get("objects") == 2,
+                      f"объектов {names.get('objects')}")
+                one = get("/api/example?key=primitives")
+                check("пример «Стандартные примитивы» собирается",
+                      post("/api/build", {"script": one.get("script", "")}).get("ok") is True)
+                check("карточки октаэдра, эллипсоида и скобы",
+                      b"title: '\xd0\x9e\xd0\xba\xd1\x82\xd0\xb0\xd1\x8d\xd0\xb4\xd1\x80'" in js_app
+                      and b"title: '\xd0\xad\xd0\xbb\xd0\xbb\xd0\xb8\xd0\xbf\xd1\x81\xd0\xbe\xd0\xb8\xd0\xb4'" in js_app,
+                      "новые тела первыми в панели")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

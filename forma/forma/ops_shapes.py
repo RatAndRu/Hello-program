@@ -676,7 +676,7 @@ def drop(a, name):
 # --------------------------------------------------------------------------- #
 #  Арка (полукольцо)
 # --------------------------------------------------------------------------- #
-@op("arch", aliases=("арка", "полукольцо", "дуга", "archway"), category="Примитивы",
+@op("arch", aliases=("арка", "полукольцо", "арка_проём", "archway"), category="Примитивы",
     summary="Арка — половина кольца с прямоугольным сечением: проём окна, "
             "дверной проём, тоннель. Угол задаётся (180° — полукольцо), "
             "сечение — шириной и толщиной, торцы можно скруглить.",
@@ -853,54 +853,6 @@ def cloud(a, name):
     return out
 # --------------------------------------------------------------------------- #
 #  Арка (полукольцо)
-# --------------------------------------------------------------------------- #
-@op("arch", aliases=("арка", "полукольцо", "дуга", "archway"), category="Примитивы",
-    summary="Арка — половина кольца с прямоугольным сечением: проём окна, "
-            "дверной проём, тоннель. Угол задаётся (180° — полукольцо), "
-            "сечение — шириной и толщиной, торцы можно скруглить.",
-    example="арка = arch radius=200 width=60 thickness=40 angle=180\n"
-            "тоннель = arch radius=160 width=30 thickness=25 angle=120",
-    params={"radius": "радиус по средней линии, мм (200)",
-            "width": "ширина сечения вбок (радиально), мм (60)",
-            "thickness": "толщина по оси, мм (40)",
-            "angle": "угол дуги, градусы (180)",
-            "round": "скругление торцов, мм (0)",
-            "segments": "сегментов по дуге (по размеру)",
-            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
-def arch(a, name):
-    radius = float(a.num("radius", 200.0, minv=2.0))
-    width = float(a.num("width", 60.0, minv=1.0))
-    thickness = float(a.num("thickness", 40.0, minv=1.0))
-    angle = float(a.num("angle", 180.0, minv=5.0, maxv=360.0) or 180.0)
-    round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
-    if width >= radius * 1.9:
-        raise GeometryError("Ширина сечения больше диаметра арки.",
-                            hint="width должна быть меньше 2·radius.")
-    r_in = max(0.2, radius - width / 2.0)
-    r_out = radius + width / 2.0
-    round_r = min(round_r, width * 0.45, thickness * 0.45)
-    if round_r > 0.05:
-        prof = _rounded_rect(r_in, r_out, -thickness / 2.0, thickness / 2.0, round_r, steps=4)
-    else:
-        prof = np.array([[r_in, -thickness / 2.0], [r_out, -thickness / 2.0],
-                         [r_out, thickness / 2.0], [r_in, thickness / 2.0]])
-    segments = _segments(a.int("segments", None, minv=8, maxv=360),
-                         max(radius, width) * 2.0)
-    segments = max(6, int(round(segments * angle / 360.0)) + 2)
-    solid = mf.Manifold.revolve(mf.CrossSection([prof]), segments, angle)
-    # арка стоит на полу, как дверной проём: плоскость дуги — XZ,
-    # толщина — по Y, торцы опираются на z = 0
-    solid = solid.rotate([90.0, 0.0, 0.0])
-    at = a.vec("at", 3, default=(0, 0, 0))
-    solid = anchor(solid, at, a.boolean("center", False))
-    out = make_solid(a.scene, name, solid, a, kind="arch")
-    out.notes.append(f"дуга {angle:g}°, радиус {radius:g}, сечение {width:g}×{thickness:g}")
-    return out
-
-
-# --------------------------------------------------------------------------- #
-#  Полусфера и миска
-# --------------------------------------------------------------------------- #
 @op("hemisphere", aliases=("полусфера", "полушар", "миска", "чаша", "bowl"),
     category="Примитивы",
     summary="Полусфера: выпуклая (купол) или вогнутая миска со стенкой. "
@@ -1194,7 +1146,7 @@ def sector(a, name):
 # --------------------------------------------------------------------------- #
 #  Спираль
 # --------------------------------------------------------------------------- #
-@op("spiral", aliases=("спираль", "улитка", "завиток", "helix_flat", "swirl"),
+@op("spiral", aliases=("спираль", "улитка", "спираль_плоская", "helix_flat"),
     category="Примитивы",
     summary="Плоская спираль-улитка (архимедова): от центра наружу с заданным "
             "числом витков. Толщина нити и высота задаются; при height > wire "

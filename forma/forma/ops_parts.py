@@ -199,6 +199,57 @@ def rail(a, name):
     return out
 
 
+@op("скоба", aliases=("скоба_п", "п-образная", "п_образная", "п-профиль", "u-профиль",
+                      "форма_п", "форма_у", "u_channel", "staple"),
+    category="Примитивы",
+    summary="Скоба-профиль: П- или U-образная деталь из листа — две полки и "
+            "стенка между ними. `стороны=3` — открытая скоба (П вниз или U "
+            "вверх, задаётся `открытие`), `стороны=4` — замкнутая прямоугольная "
+            "рамка. Длина идёт по X, сечение — по Y (ширина) и Z (высота).",
+    example="кронштейн = скоба length=120 width=40 height=30 wall=3\n"
+            "рамка = скоба length=160 width=90 height=60 wall=4 стороны=4",
+    params={"length": "длина, мм (120)", "width": "ширина, мм (40)",
+            "height": "высота, мм (30)", "wall": "толщина листа, мм (3)",
+            "sides": "3 — открытая скоба, 4 — замкнутая рамка (3)",
+            "open": "куда открыта скоба: вверх (U) или вниз (П) — «вверх»",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"},
+    positional=["length"])
+def скоба(a, name):
+    length = float(a.num("length", 120.0, minv=1.0))
+    width = float(a.num("width", 40.0, minv=2.0))
+    height = float(a.num("height", 30.0, minv=2.0))
+    wall = float(a.num("wall", 3.0, minv=0.2))
+    sides = int(a.int("sides", 3, minv=3, maxv=4) or 3)
+    opening = (a.text("open") or "вверх").strip().lower()
+    if opening in ("вниз", "п", "вниз", "down", "п-образная"):
+        opening = "вниз"
+    else:
+        opening = "вверх"
+    if wall * 2 >= min(width, height) - 0.5:
+        raise GeometryError(
+            f"Стенка {wall:g} мм не оставляет места: ширина {width:g} и высота "
+            f"{height:g} мм.",
+            hint=f"Стенка должна быть меньше половины меньшего размера "
+                 f"({min(width, height) / 2:g} мм).")
+    outer = mf.Manifold.cube((length, width, height), center=True)
+    if sides >= 4:
+        inner = mf.Manifold.cube((length + 2.0, width - 2 * wall, height - 2 * wall),
+                                 center=True)
+    else:
+        # сдвиг на половину стенки: полка остаётся ровно `wall` мм, а
+        # противоположная сторона выходит вровень с кромкой
+        inner = mf.Manifold.cube((length + 2.0, width - 2 * wall, height - wall),
+                                 center=True)
+        inner = inner.translate((0.0, 0.0, wall / 2.0 if opening == "вверх"
+                                 else -wall / 2.0))
+    solid = (outer - inner).translate((0.0, 0.0, height / 2.0))
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="скоба")
+    where = "замкнутая рамка" if sides >= 4 else ("U, открыта вверх" if opening == "вверх"
+                                                 else "П, открыта вниз")
+    out.notes.append(f"{where}: {length:g}×{width:g}×{height:g} мм, лист {wall:g} мм")
+    return out
+
+
 # --------------------------------------------------------------------------- #
 #  Конструкционный профиль (2020 и его аналоги)
 # --------------------------------------------------------------------------- #
