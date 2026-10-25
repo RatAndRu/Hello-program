@@ -472,6 +472,37 @@ def _run_uistest(report_path: str | None) -> int:
                 check("шапки окон без тесноты",
                       b'class="tool-seg"' in html and b'id="show-chips"' in html
                       and b'id="btn-grid"' not in html)
+                # 0.30: лист как тело, рулон, волнистость, оригами-сгиб, гофра
+                flat = post("/api/preview", {"script": (
+                    "л = sheet width=120 length=200 thickness=1.2")})
+                check("превью формы «плоскость-лист»",
+                      flat.get("ok") is True and flat.get("tris", 0) > 0,
+                      f"{flat.get('tris', 0)} трис, {flat.get('size')}")
+                rolled = post("/api/preview", {"script": (
+                    "л = sheet width=120 length=600 thickness=0.6 roll=6 gap=1.4")})
+                check("лист сворачивается в рулон",
+                      rolled.get("ok") is True and rolled.get("tris", 0) > 1000,
+                      f"{rolled.get('tris', 0)} трис, {rolled.get('size')}")
+                folded = post("/api/preview", {"script": (
+                    "л = sheet width=100 length=200 thickness=1\n"
+                    "fold л parts=2 angle=180 gap=1")})
+                check("сгиб пополам (оригами)",
+                      folded.get("ok") is True and folded.get("tris", 0) > 100,
+                      f"{folded.get('tris', 0)} трис, {folded.get('size')}")
+                corr = post("/api/preview", {"script": (
+                    "л = sheet width=120 length=200 thickness=1\n"
+                    "corrugate л step=22 amp=5 mode=вафля")})
+                check("гофрирование (вафля)",
+                      corr.get("ok") is True and corr.get("tris", 0) > 1000,
+                      f"{corr.get('tris', 0)} трис, {corr.get('size')}")
+                card = post("/api/preview", {"script": (
+                    "к = cardboard width=200 height=300 liner=0.4 flute=3.5 step=8")})
+                check("гофрокартон одним телом",
+                      card.get("ok") is True and card.get("objects") == 1,
+                      f"{card.get('tris', 0)} трис, объектов {card.get('objects')}")
+                check("карточки листа, сгиба, гофры и картона",
+                      b"op: 'sheet'" in js_app and b"op: 'fold'" in js_app
+                      and b"op: 'corrugate'" in js_app and b"op: 'cardboard'" in js_app)
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

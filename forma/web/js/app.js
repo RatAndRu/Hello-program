@@ -4329,6 +4329,54 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'sheet', name: 'лист', title: 'Плоскость-лист', group: 'Примитивы',
+    desc: 'Тонкий параллелепипед с объёмом: бумага, металл, картон. Волнистость с шагом и амплитудой, свёртка в рулон с зазором между витками.',
+    params: [
+      { k: 'width', label: 'ширина', v: 120, step: 10, min: 0.5 },
+      { k: 'length', label: 'длина', v: 200, step: 10, min: 0.5 },
+      { k: 'thickness', label: 'толщина', v: 1.2, step: 0.2, min: 0.2 },
+      { k: 'step', label: 'шаг волны', v: 0, step: 2, min: 0 },
+      { k: 'amp', label: 'амплитуда', v: 0, step: 1, min: 0 },
+      { k: 'wave', label: 'волна', v: 'вдоль', kind: 'raw', choices: ['вдоль', 'поперёк', 'крест'] },
+      { k: 'roll', label: 'оборотов', v: 0, step: 1, min: 0 },
+      { k: 'gap', label: 'зазор', v: 0, step: 0.2, min: 0 },
+    ],
+  },
+  {
+    op: 'fold', name: 'сложенный', title: 'Сложить (оригами)', group: 'Форма',
+    base: 'sheet width=120 length=240 thickness=1', baseName: 'заготовка',
+    desc: 'Складывает деталь как бумагу: пополам, на треть, гармошкой. gap — просвет между слоями; поверхность не пересекает себя.',
+    params: [
+      { k: 'parts', label: 'на части', v: 2, step: 1, min: 2, max: 12 },
+      { k: 'angle', label: 'угол', v: 180, step: 10, min: 1, max: 180 },
+      { k: 'gap', label: 'просвет', v: 0.5, step: 0.25, min: 0.02 },
+      { k: 'axis', label: 'вдоль', v: 'x', kind: 'raw', choices: ['x', 'y'] },
+    ],
+  },
+  {
+    op: 'corrugate', name: 'гофра', title: 'Гофрирование', group: 'Поверхность',
+    base: 'sheet width=160 length=220 thickness=1', baseName: 'заготовка',
+    desc: 'Гофра, вафля, рифление или зигзаг по готовой детали: шаг узора и высота волны. Валики, рифлёный металл, гофробумага.',
+    params: [
+      { k: 'step', label: 'шаг', v: 22, step: 2, min: 0.2 },
+      { k: 'amp', label: 'высота', v: 5, step: 0.5, min: 0 },
+      { k: 'mode', label: 'узор', v: 'гофра', kind: 'raw', choices: ['гофра', 'вафля', 'рифление', 'зигзаг'] },
+      { k: 'angle', label: 'поворот', v: 0, step: 15, min: -180, max: 180 },
+    ],
+  },
+  {
+    op: 'cardboard', name: 'картон', title: 'Гофрокартон', group: 'Примитивы',
+    desc: 'Гофрированный картон одним телом: плоские линеры и гофра между ними. 2 слоя — линер и гофра, 3 — с обеих сторон.',
+    params: [
+      { k: 'width', label: 'ширина', v: 200, step: 10, min: 2 },
+      { k: 'height', label: 'высота', v: 300, step: 10, min: 2 },
+      { k: 'liner', label: 'линер', v: 0.4, step: 0.1, min: 0.1 },
+      { k: 'flute', label: 'гофра', v: 3.5, step: 0.5, min: 0.4 },
+      { k: 'step', label: 'шаг', v: 8, step: 1, min: 1 },
+      { k: 'layer', label: 'слоёв', v: 3, step: 1, min: 2, max: 3 },
+    ],
+  },
+  {
     op: 'saw', name: 'пила', title: 'Дисковая пила', group: 'Механика',
     desc: 'Плоское полотно с зубьями и посадочным отверстием. Зубья: треугольные, трапеция-карбид, крюк, волна; передний угол rake.',
     params: [

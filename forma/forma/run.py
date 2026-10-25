@@ -36,6 +36,7 @@ from . import ops_form  # noqa: F401,E402
 from . import ops_glyphs  # noqa: F401,E402
 from . import ops_surface  # noqa: F401,E402
 from . import ops_blade  # noqa: F401,E402
+from . import ops_sheet  # noqa: F401,E402
 from . import ops_figure  # noqa: F401,E402
 from . import ops_hardware  # noqa: F401,E402
 from . import ops_kit  # noqa: F401,E402
