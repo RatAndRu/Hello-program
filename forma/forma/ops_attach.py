@@ -17,7 +17,7 @@ from __future__ import annotations
 import manifold3d as mf
 import numpy as np
 
-from . import cuts
+from . import cuts, orient
 from .errors import GeometryError
 from .ops import make_solid, op, rotate as rotate_manifold, translate as translate_manifold
 
@@ -68,16 +68,33 @@ def _closest_on_triangle(p: np.ndarray, a: np.ndarray, b: np.ndarray,
 
 
 def _nearest_surface(manifold: mf.Manifold,
-                     probe: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Ближайшая точка поверхности и её внешняя нормаль."""
+                     probe: np.ndarray,
+                     side: str = "любая") -> tuple[np.ndarray, np.ndarray]:
+    """Ближайшая точка поверхности и её внешняя нормаль.
+
+    side — ограничить поиск одной стороной: «верх» ищет только в верхней
+    половине детали. Это нужно, когда ближайшая точка неоднозначна: у тора
+    из центра отверстия одинаково близки все внутренние стенки.
+    """
     verts, tris = _mesh(manifold)
     if len(verts) == 0 or len(tris) == 0:
         raise GeometryError("на_границе: у детали нет поверхности.",
                             hint="Проверьте, что деталь построилась.")
+    key = orient.side_key(side) if side and side not in ("любая", "any", "anywhere") else ""
+    if key and key in orient.SIDE_VECTORS and key != "center":
+        d = orient.SIDE_VECTORS[key]
+        proj = verts @ d
+        mid = (float(proj.min()) + float(proj.max())) / 2.0
+        centroids = verts[tris].mean(axis=1)
+        allowed = (centroids @ d) >= mid
+        if allowed.any():
+            tris = tris[allowed]
     d2 = np.einsum("ij,ij->i", verts - probe, verts - probe)
     nearest = np.argsort(d2)[:24]
     mask = np.isin(tris, nearest).any(axis=1)
     cand = tris[mask]
+    if len(cand) == 0:
+        cand = tris
     if len(cand) > 4000:                      # тяжёлая деталь — берём ближние
         centres = verts[cand].mean(axis=1)
         keep = np.argsort(np.einsum("ij,ij->i", centres - probe, centres - probe))[:4000]
@@ -172,6 +189,9 @@ def _apply(m: mf.Manifold, matrix: np.ndarray, shift: np.ndarray) -> mf.Manifold
                      "(по умолчанию центр детали); пишется и как точка=", 
             "offset": "зазор от поверхности, мм (0)",
             "align": "нет или нормаль — развернуть деталь по нормали (нет)",
+            "сторона": "искать только на этой стороне: верх, низ, лево, право, "
+                       "перёд, зад или любая",
+            "sides": "то же, что сторона",
             "at": "сдвиг после посадки [x,y,z]"},
     positional=["objects"])
 def snap_to_surface(a, name):
@@ -196,8 +216,9 @@ def snap_to_surface(a, name):
              if probe is not None else part_centre)
     offset = float(a.num("offset", 0.0, minv=-1e6, maxv=1e6) or 0.0)
     align = (a.text("align", "нет") or "нет").strip().lower()
+    side = (a.text("сторона") or a.text("sides") or "любая")
 
-    point, normal = _nearest_surface(host.manifold, probe)
+    point, normal = _nearest_surface(host.manifold, probe, side)
     matrix = np.eye(3)
     if align in ("нормаль", "normal", "да", "yes", "1"):
         matrix = _rotation_to(np.array([0.0, 0.0, 1.0]), normal)
@@ -211,8 +232,11 @@ def snap_to_surface(a, name):
     if a.has("at"):
         moved = translate_manifold(moved, np.asarray(a.vec("at", 3), dtype=np.float64))
 
+    part_axes = orient.axes_of(part)
     a.scene.consume(part)
     made = make_solid(a.scene, name, moved, a, base=part, kind="на_границе")
+    if align in ("нормаль", "normal", "да", "yes", "1"):
+        orient.set_axes(made, matrix @ part_axes)
     made.notes.append(f"на границе {host.name}: точка "
                       f"({point[0]:.1f}, {point[1]:.1f}, {point[2]:.1f})")
     a.scene.log("info", f"на_границе: {part.name} → поверхность {host.name}, "

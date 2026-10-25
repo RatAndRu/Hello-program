@@ -243,6 +243,7 @@ class TestExamplesAndTools(unittest.TestCase):
             "mechanics", "polygons", "showcase", "units",
             "motorcycle", "clock", "mates", "anime_face", "origami", "chain",
             "wifi", "graded", "hook", "half_oval", "surface",
+            "funnel", "orientation",
         ])
 
     def test_removed_examples_are_gone(self):

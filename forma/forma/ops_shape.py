@@ -8,6 +8,7 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import DslError, GeometryError
+from . import orient
 from .geometry import fibonacci_sphere
 from .ops import (anchor, ensure_solid, make_solid, mirror as mirror_manifold,
                   merge_solids, op, rotate as rotate_manifold, scale as scale_manifold,
@@ -58,7 +59,12 @@ def union(a, name):
         raise GeometryError(f"Не удалось объединить объекты: {exc}") from exc
     for s in solids:
         a.scene.consume(s)
-    return make_solid(a.scene, name, merged, a, base=solids[0], kind="union")
+    made = make_solid(a.scene, name, merged, a, base=solids[0], kind="union")
+    # объединение деталей с разными осями теряет общую ориентацию
+    frames = [orient.axes_of(s) for s in solids]
+    if any(not np.allclose(f, frames[0], atol=1e-6) for f in frames[1:]):
+        orient.set_axes(made, np.eye(3))
+    return made
 
 
 @op("difference", aliases=("вычесть", "минус", "subtract", "отверстие"), category="Булевы операции",
@@ -536,7 +542,10 @@ def array(a, name):
     if merged.num_tri() > 1_500_000:
         a.scene.log("warn", "Массив получился очень тяжёлым — уменьшите количество копий.",
                     a.cmd.line)
-    return make_solid(a.scene, name, merged, a, base=base, kind="array")
+    made = make_solid(a.scene, name, merged, a, base=base, kind="array")
+    # у копий разные повороты — общей ориентации у массива нет
+    orient.set_axes(made, np.eye(3))
+    return made
 
 
 # --------------------------------------------------------------------------- #
@@ -587,7 +596,16 @@ def rotate(a, name):
     turned = rotate_manifold(base.manifold, float(angle), axis, pivot)
     _parts_follow(a, base,
                   lambda m: rotate_manifold(m, float(angle), axis, pivot))
-    return _derived(a, name, turned, base, "rotate")
+    axes_before = orient.axes_of(base)
+    made = _derived(a, name, turned, base, "rotate")
+    # памятка «где теперь верх» поворачивается вместе с деталью
+    orient.set_axes(made, orient.rotate_axes(axes_before, float(angle), axis))
+    prefix = f"{base.name}."
+    for child in a.scene.objects.values():
+        if child.name.startswith(prefix) and child.name != made.name:
+            orient.set_axes(child, orient.rotate_axes(orient.axes_of(child),
+                                                     float(angle), axis))
+    return made
 
 
 @op("scale", aliases=("масштабировать", "увеличить", "size"), category="Массивы и преобразования",
@@ -611,15 +629,36 @@ def scale(a, name):
 
 
 @op("place", aliases=("поставить", "позиционировать", "align"), category="Массивы и преобразования",
-    summary="Ставит объект в точку или прикрепляет к другому объекту: сверху, снизу, "
-            "слева, справа, спереди, сзади — без вычисления координат вручную.",
-    example='крышка = plate diameter=90 depth=10\nкружка = cylinder radius=40 height=95\nкрышка = place [крышка] on=кружка side=top offset=2',
-    params={"objects": "объект", "at": "точка [x,y,z]",
-            "align": "bottom (по умолчанию), center или top",
-            "center_xy": "центрировать по X и Y (true)",
-            "on": "к какому объекту прикрепить (имя)",
-            "side": "top, bottom, left, right, front, back или center",
-            "offset": "зазор от поверхности, мм (0)"},
+    summary="Ставит деталь к другой: сверху, снизу, слева, справа, спереди, сзади "
+            "или по центру. Зазор отсчитывается от крайней границы хозяина, а не "
+            "от его центра. Осями=хозяина — ставит по собственным осям хозяина: "
+            "если хозяин повёрнут, «верх» едет вместе с ним, и деталь тоже "
+            "разворачивается по этим осям.",
+    example="крышка = plate diameter=90 depth=10\n"
+            "кружка = cylinder radius=40 height=95\n"
+            "крышка = place [крышка] on=кружка side=top offset=2\n"
+            "# слева от ящика, на расстоянии одной его длины, по осям ящика:\n"
+            "ящик = box size=[80,50,30]\n"
+            "ручка = cylinder radius=5 height=40\n"
+            "ручка = place [ручка] on=ящик side=left offset=length(ящик) осями=хозяина",
+    params={"objects": "деталь",
+            "at": "точка [x,y,z] (режим без on)",
+            "align": "bottom (по умолчанию), center или top; в режиме осями=хозяина — "
+                     "разворачивать ли деталь по осям хозяина (да)",
+            "center_xy": "центрировать по X и Y (да)",
+            "on": "к какому объекту приставить (имя)",
+            "side": "top/сверху, bottom/снизу, left/слева, right/справа, "
+                    "front/спереди, back/сзади, center/по центру",
+            "offset": "зазор от крайней границы хозяина, мм (0); можно меркой — "
+                      "offset=length(хозяин)",
+            "gap": "то же, что offset (удобная запись)",
+            "центр": "габарит (по умолчанию) или масса — какой центр считать "
+                     "центром хозяина и детали",
+            "осями": "мир (по умолчанию) или хозяина — чьи оси считать верхом "
+                     "и левом",
+            "axes": "то же, что осями (мир или хозяина)",
+            "sides": "то же, что side (синоним для «сторона»)",
+            "center": "то же, что центр: габарит или масса"},
     positional=["objects"])
 def place(a, name):
     solids = a.solids()
@@ -628,31 +667,110 @@ def place(a, name):
     base = solids[0]
     if a.has("on"):
         host = a.scene.resolve(a.text("on") or "")
-        side = (a.text("side", "top", ["top", "bottom", "left", "right",
-                                       "front", "back", "center"]) or "top").lower()
-        gap = float(a.num("offset", 0.0) or 0.0)
-        hb = host.manifold.bounding_box()
-        ob = base.manifold.bounding_box()
-        hc = [(hb[0] + hb[3]) / 2, (hb[1] + hb[4]) / 2, (hb[2] + hb[5]) / 2]
-        oc = [(ob[0] + ob[3]) / 2, (ob[1] + ob[4]) / 2, (ob[2] + ob[5]) / 2]
-        os_ = [ob[3] - ob[0], ob[4] - ob[1], ob[5] - ob[2]]
-        target = list(hc)
-        if side == "top":
-            target = [hc[0], hc[1], hb[5] + gap + os_[2] / 2]
-        elif side == "bottom":
-            target = [hc[0], hc[1], hb[2] - gap - os_[2] / 2]
-        elif side == "right":
-            target = [hb[3] + gap + os_[0] / 2, hc[1], hc[2]]
-        elif side == "left":
-            target = [hb[0] - gap - os_[0] / 2, hc[1], hc[2]]
-        elif side == "back":
-            target = [hc[0], hb[4] + gap + os_[1] / 2, hc[2]]
-        elif side == "front":
-            target = [hc[0], hb[1] - gap - os_[1] / 2, hc[2]]
-        off = (target[0] - oc[0], target[1] - oc[1], target[2] - oc[2])
-        a.scene.log("info", f"place: {base.name} → {side} от {host.name}", a.cmd.line)
-        _parts_follow(a, base, lambda m: translate_manifold(m, off))
-        return _derived(a, name, translate_manifold(base.manifold, off), base, "place")
+        side_raw = a.text("side") or a.text("sides") or "top"
+        side = orient.side_key(side_raw)
+        if side not in orient.SIDE_VECTORS:
+            raise GeometryError(f"place: неизвестная сторона «{side_raw}».",
+                                hint="Стороны: top/сверху, bottom/снизу, left/слева, "
+                                     "right/справа, front/спереди, back/сзади, "
+                                     "center/по центру.")
+        gap = a.num("offset", None)
+        if gap is None:
+            gap = a.num("gap", 0.0)
+        gap = float(gap or 0.0)
+        mode = (a.text("center") or a.text("центр") or "габарит").strip().lower()
+        by_mass = mode in ("масса", "mass", "центр_масс", "центр_массы", "масс")
+        frame = (a.text("осями") or a.text("axes") or "мир").strip().lower()
+        host_frame = frame in ("хозяина", "хозяин", "host", "детали", "деталь",
+                               "своими", "своя", "свои")
+
+        if not host_frame:
+            hb = host.manifold.bounding_box()
+            ob = base.manifold.bounding_box()
+            if by_mass:
+                hc = orient.mass_center(host.manifold)
+                oc = orient.mass_center(base.manifold)
+            else:
+                hc = np.array([(hb[0] + hb[3]) / 2, (hb[1] + hb[4]) / 2,
+                               (hb[2] + hb[5]) / 2])
+                oc = np.array([(ob[0] + ob[3]) / 2, (ob[1] + ob[4]) / 2,
+                               (ob[2] + ob[5]) / 2])
+            os_ = [ob[3] - ob[0], ob[4] - ob[1], ob[5] - ob[2]]
+            target = list(hc)
+            if side == "top":
+                target = [hc[0], hc[1], hb[5] + gap + os_[2] / 2]
+            elif side == "bottom":
+                target = [hc[0], hc[1], hb[2] - gap - os_[2] / 2]
+            elif side == "right":
+                target = [hb[3] + gap + os_[0] / 2, hc[1], hc[2]]
+            elif side == "left":
+                target = [hb[0] - gap - os_[0] / 2, hc[1], hc[2]]
+            elif side == "back":
+                target = [hc[0], hb[4] + gap + os_[1] / 2, hc[2]]
+            elif side == "front":
+                target = [hc[0], hb[1] - gap - os_[1] / 2, hc[2]]
+            off = (target[0] - oc[0], target[1] - oc[1], target[2] - oc[2])
+            a.scene.log("info", f"place: {base.name} → {orient.SIDE_RU.get(side, side)} "
+                                f"от {host.name}, зазор {gap:g} мм", a.cmd.line)
+            _parts_follow(a, base, lambda m: translate_manifold(m, off))
+            return _derived(a, name, translate_manifold(base.manifold, off), base, "place")
+
+        # ---- по осям хозяина: верх/лево — его собственные, с учётом поворота ----
+        A = orient.axes_of(host)
+        align = a.boolean("align", True)
+        R = A @ orient.axes_of(base).T if align else np.eye(3)
+        pb = base.manifold.bounding_box()
+        pc = np.array([(pb[0] + pb[3]) / 2, (pb[1] + pb[4]) / 2, (pb[2] + pb[5]) / 2])
+        mat = np.hstack([R, (pc - R @ pc).reshape(3, 1)])
+        turned = base.manifold.transform(np.ascontiguousarray(mat, dtype=np.float64))
+
+        shift = np.zeros(3)
+        if side == "center":
+            if by_mass:
+                hc = orient.mass_center(host.manifold)
+                cc = orient.mass_center(turned)
+            else:
+                hc = orient.bbox_center(host.manifold)
+                cc = orient.bbox_center(turned)
+            for k in range(3):
+                u = A[:, k]
+                shift += (float(hc @ u) - float(cc @ u)) * u
+        else:
+            local = orient.SIDE_VECTORS[side]
+            k = int(np.argmax(np.abs(local)))
+            sign = float(np.sign(local[k]))
+            for axis_k in range(3):
+                u = A[:, axis_k]
+                hmin, hmax = orient.extent_along(host.manifold, u)
+                pmin, pmax = orient.extent_along(turned, u)
+                if axis_k == k:
+                    # деталь целиком за границей хозяина: её ближняя к хозяину
+                    # точка — на зазоре от его крайней точки вдоль этой оси
+                    if sign > 0:
+                        shift += (hmax + gap - pmin) * u
+                    else:
+                        shift += (hmin - gap - pmax) * u
+                elif by_mass:
+                    shift += (float(orient.mass_center(host.manifold) @ u)
+                              - float(orient.mass_center(turned) @ u)) * u
+                else:
+                    shift += ((hmin + hmax) / 2 - (pmin + pmax) / 2) * u
+
+        def _move(m):
+            return translate_manifold(m.transform(np.ascontiguousarray(mat, dtype=np.float64)),
+                                      shift)
+
+        moved = translate_manifold(turned, shift)
+        _parts_follow(a, base, _move)
+        made = _derived(a, name, moved, base, "place")
+        if align:
+            orient.set_axes(made, A)
+        a.scene.log("info",
+                    f"place: {base.name} → {orient.SIDE_RU.get(side, side)} от {host.name} "
+                    f"по осям хозяина, зазор {gap:g} мм"
+                    + ("; деталь развёрнута по этим осям" if align else ""), a.cmd.line)
+        return made
+
     at = a.vec("at", 3, default=(0, 0, 0))
     align = (a.text("align", "bottom", ["bottom", "center", "top"]) or "bottom").lower()
     bb = base.manifold.bounding_box()
@@ -693,8 +811,22 @@ def mirror(a, name):
         img = mirror_manifold(m, plane, at)
         return mf.Manifold.batch_boolean([m, img], mf.OpType.Add) if keep else img
 
+    axes_before = orient.axes_of(base)
     _parts_follow(a, base, _mirror_part)
-    return _derived(a, name, result, base, "mirror")
+    made = _derived(a, name, result, base, "mirror")
+    # при keep=да в детали и оригинал, и отражение — ориентация неоднозначна
+    # и остаётся мировой; при keep=нет деталь действительно зеркальная
+    mirrored_axes = orient.mirror_axes(axes_before, plane)
+    if keep:
+        made.meta.pop("axes", None)
+        made.meta["axes"] = np.eye(3).tolist()
+    else:
+        orient.set_axes(made, mirrored_axes)
+        prefix = f"{base.name}."
+        for child in a.scene.objects.values():
+            if child.name.startswith(prefix) and child.name != made.name:
+                orient.set_axes(child, orient.mirror_axes(orient.axes_of(child), plane))
+    return made
 
 
 @op("refine", aliases=("уточнить", "подразбить", "subdivide", "полигонаж",

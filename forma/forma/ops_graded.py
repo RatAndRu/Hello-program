@@ -230,6 +230,9 @@ def graded(a, name):
         a.scene.log("warn", "ряд получился очень тяжёлым — уменьшите count.",
                     a.cmd.line)
     made = make_solid(a.scene, name, solid, a, base=base, kind="ряд")
+    # копии повёрнуты по-разному — общей ориентации у ряда нет
+    from . import orient as _orient
+    _orient.set_axes(made, np.eye(3))
     what = f"ряд: {count} копий, рост {grow:g}"
     if tool and strength:
         what += f", {tool_raw} {strength:g}×{step_strength:g} за копию"

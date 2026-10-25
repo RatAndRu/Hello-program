@@ -52,6 +52,8 @@ from . import ops_chain  # noqa: F401,E402
 from . import ops_graded  # noqa: F401,E402
 from . import ops_mount  # noqa: F401,E402
 from . import ops_attach  # noqa: F401,E402
+from . import ops_vessel  # noqa: F401,E402
+from . import ops_orient  # noqa: F401,E402
 
 
 # Команды, которые не меняют ни форму, ни видимость: в анимации сборки
@@ -261,6 +263,10 @@ MEASURES = {
     "cz": lambda bb, st: (bb[2] + bb[5]) / 2,
     "высота_об": None, "ширина_об": None, "объём": None, "объем": None,
     "верх": None, "низ": None, "лево": None, "право": None,
+    # центр массы: у тора и воронки центр габарита пустой, а центр массы — нет
+    "mx": None, "my": None, "mz": None,
+    "центр_масс": None, "центр_масс_x": None, "центр_масс_y": None,
+    "центр_масс_z": None,
     # русские имена мерок: писать проще, чем вспоминать английские
     "ширина": None, "высота": None, "глубина": None, "толщина": None,
 }
@@ -271,16 +277,22 @@ def _measure(name: str, obj: str, scene: Scene) -> float:
     aliases = {"высота_об": "height", "ширина_об": "width", "объём": "volume",
                "объем": "volume", "верх": "top", "низ": "bottom", "лево": "left",
                "право": "right", "ширина": "width", "высота": "height",
-               "глубина": "depth", "толщина": "depth"}
+               "глубина": "depth", "толщина": "depth",
+               "центр_масс_x": "mx", "центр_масс_y": "my", "центр_масс_z": "mz",
+               "mass_x": "mx", "mass_y": "my", "mass_z": "mz"}
     name = aliases.get(name, name)
-    fn = MEASURES.get(name)
-    if fn is None:
-        raise DslError(f"Неизвестная функция «{name}».", line=scene.line)
     target = (obj or "").strip().strip("\"'")
     if not target:
         raise DslError(f"Функции {name}() нужно имя объекта: {name}(кружка)",
                        line=scene.line, command=scene.command)
     solid = scene.resolve(target)
+    if name in ("mx", "my", "mz"):
+        from . import orient
+        center = orient.mass_center(solid.manifold)
+        return float(center["xyz".index(name[1])])
+    fn = MEASURES.get(name)
+    if fn is None:
+        raise DslError(f"Неизвестная функция «{name}».", line=scene.line)
     stats = solid.stats()
     return float(fn(stats["bbox"], stats))
 

@@ -768,6 +768,46 @@ def _run_uistest(report_path: str | None) -> int:
                       and "op: 'полуовал'".encode("utf-8") in js_app
                       and b"\xd0\xbd\xd0\xb0_\xd0\xb3\xd1\x80\xd0\xb0\xd0\xbd\xd0\xb8\xd1\x86\xd0\xb5" in js_app,
                       "три новые карточки в инструментах")
+
+                # 0.37: воронка, ориентация и посадка по осям хозяина
+                fun = post("/api/preview", {"script": (
+                    "в = воронка top=120 bottom=16 height=80 spout=40 wall=3")})
+                check("воронка: конус, носок и стенка одной деталью",
+                      fun.get("ok") is True and fun.get("tris", 0) > 800,
+                      f"{fun.get('tris', 0)} трис")
+                host = post("/api/preview", {"script": (
+                    "корпус = box size=[140,40,40]\n"
+                    "корпус = rotate [корпус] angle=90 axis=y\n"
+                    "крышка = cylinder radius=18 height=6\n"
+                    "крышка = place [крышка] on=корпус side=top осями=хозяина")})
+                host_size = host.get("size") or [0, 0, 0]
+                check("посадка по осям хозяина: крышка на настоящем верху",
+                      host.get("ok") is True and float(host_size[0]) > 44.0,
+                      f"габарит по X {host_size[0]} мм")
+                far = post("/api/preview", {"script": (
+                    "ящик = box size=[80,50,30]\n"
+                    "ш = cylinder radius=5 height=40\n"
+                    "ш = place [ш] on=ящик side=left offset=length(ящик)")})
+                far_size = far.get("size") or [0, 0, 0]
+                check("зазор от крайней границы: слева на одну длину",
+                      far.get("ok") is True and abs(float(far_size[0]) - 170.0) < 1.0,
+                      f"габарит по X {far_size[0]} мм")
+                ori = post("/api/preview", {"script": (
+                    "к = torus major=40 minor=8\n"
+                    "к = rotate [к] angle=90 axis=x\n"
+                    "ориентация к")})
+                check("ориентация: стороны и центр массы в отчёте",
+                      ori.get("ok") is True and ori.get("tris", 0) > 100,
+                      f"{ori.get('tris', 0)} трис")
+                for key in ("funnel", "orientation"):
+                    one = get(f"/api/example?key={key}")
+                    check(f"пример «{key}» собирается",
+                          post("/api/build", {"script": one.get("script", "")})
+                          .get("ok") is True)
+                check("карточки воронки и посадки по осям",
+                      "op: 'воронка'".encode("utf-8") in js_app
+                      and "title: 'Деталь по осям хозяина'".encode("utf-8") in js_app,
+                      "две новые карточки в инструментах")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

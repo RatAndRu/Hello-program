@@ -1,0 +1,17 @@
+# Воронка — конус, трубка-носок и стенка заданной толщины одной деталью.
+# Профиль вращается целиком: кромка сверху открыта, канал в носке сквозной,
+# поэтому деталь герметична и печатается без поддержек внутри.
+
+кухонная = воронка top=140 bottom=18 height=80 spout=40 wall=2.5 lip=3
+маслёнка = воронка top=70 bottom=10 height=50 spout=30 wall=2 lip=2 at=[-140,0,0]
+сопло = воронка top=45 bottom=6 height=35 spout=20 wall=1.5 lip=0 at=[140,0,0]
+
+# горловина под широкую воронку: та же команда, только стенка толще
+подставка = воронка top=90 bottom=26 height=20 spout=0 wall=4 lip=0 at=[0,0,0]
+подставка = rotate [подставка] angle=180 axis=x
+подставка = place [подставка] on=кухонная side=bottom offset=0
+
+color кухонная color=#cfd6e2 metal=0.3 rough=0.35
+color маслёнка color=#d8b06a metal=0.6 rough=0.4
+color сопло color=#9aa3ad metal=0.8 rough=0.25
+color подставка color=#3ac07a metal=0.2 rough=0.6

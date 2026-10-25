@@ -207,6 +207,13 @@ def make_solid(scene: Scene, name: str | None, manifold: mf.Manifold, args,
                   emissive=emissive, emissive_strength=glow, transmission=transmission,
                   mirror=mirror,
                   kind=kind or args.spec.name, op=args.spec.name, line=args.cmd.line)
+    # Памятка об ориентации: куда смотрят локальные верх/перёд/право после
+    # поворотов. Наследуется от основы, `rotate` и `mirror` её обновляют.
+    axes = (getattr(base, "meta", None) or {}).get("axes") if base is not None else None
+    try:
+        solid.meta["axes"] = np.asarray(axes, dtype=np.float64).reshape(3, 3).tolist()
+    except Exception:
+        solid.meta["axes"] = np.eye(3).tolist()
     return scene.add(solid)
 
 

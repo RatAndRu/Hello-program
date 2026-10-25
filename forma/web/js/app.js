@@ -4242,6 +4242,19 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'воронка', name: 'воронка', title: 'Воронка', group: 'Примитивы',
+    desc: 'Широкий конус, трубка-носок и стенка заданной толщины. Кромка сверху '
+      + 'открыта, канал сквозной — деталь печатается. Для кухни, засыпки, сопла.',
+    params: [
+      { k: 'top', label: 'верх', v: 120, step: 5 },
+      { k: 'bottom', label: 'носок', v: 16, step: 1 },
+      { k: 'height', label: 'высота', v: 80, step: 5 },
+      { k: 'spout', label: 'трубка', v: 40, step: 2 },
+      { k: 'wall', label: 'стенка', v: 3, step: 0.5, min: 0.2 },
+      detailParam(3, 'детализация: сколько граней у конуса'),
+    ],
+  },
+  {
     op: 'cone', name: 'конус', title: 'Конус', group: 'Примитивы',
     desc: 'Конус с вершиной вверх — воронки, ножки, сопла.',
     params: [
@@ -5191,6 +5204,20 @@ const TOOL_RECIPES = [
     fields: [],
     build: () => 'деталь_паспорта = cube_hole size=[60,60,20] hole=16\n'
       + 'passport деталь_паспорта',
+  },
+  {
+    title: 'Деталь по осям хозяина',
+    desc: 'Корпус повёрнут — и его верх больше не +Z. place осями=хозяина ставит '
+      + 'деталь на настоящий верх корпуса и разворачивает её вместе с ним.',
+    fields: [
+      { k: 'angle', label: 'поворот', v: 90 },
+      { k: 'side', label: 'сторона', v: 'top', kind: 'raw',
+        choices: ['top', 'bottom', 'left', 'right', 'front', 'back'] },
+    ],
+    build: (v) => `корпус = box size=[140,40,40] round=3\n`
+      + `корпус = rotate [корпус] angle=${fnum(rnum(v.angle, 90))} axis=y\n`
+      + 'крышка = cylinder radius=18 height=6\n'
+      + `крышка = place [крышка] on=корпус side=${v.side || 'top'} осями=хозяина`,
   },
   {
     title: 'Деталь на границу',
