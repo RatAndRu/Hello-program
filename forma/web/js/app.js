@@ -4174,6 +4174,30 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'крюк', name: 'крюк', title: 'Крюк', group: 'Примитивы',
+    desc: 'Гнутый пруток с ушком: крючок для сумки, вешалка, кронштейн. '
+      + 'Ползунок загиба — от крючка-кронштейна до вешалки.',
+    params: [
+      { k: 'wire', label: 'пруток', v: 6, step: 0.5, min: 0.4 },
+      { k: 'radius', label: 'изгиб', v: 22, step: 1 },
+      { k: 'length', label: 'хвост', v: 70, step: 5 },
+      { k: 'open', label: 'загиб', v: 240, min: 90, max: 330, step: 15,
+        kind: 'slider', suffix: '°' },
+      { k: 'eye', label: 'ушко', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'полуовал', name: 'полуовал', title: 'Полуовал', group: 'Примитивы',
+    desc: 'Пластина-полуовал: подвес, накладка, подпятник, ушко. '
+      + 'Отверстие по центру есть или его нет — ползунок «отверстие» в ноль.',
+    params: [
+      { k: 'width', label: 'ширина', v: 90, step: 2 },
+      { k: 'height', label: 'высота', v: 55, step: 2 },
+      { k: 'thickness', label: 'толщина', v: 8, step: 0.5, min: 0.2 },
+      { k: 'hole', label: 'отверстие', v: 16, step: 1, min: 0, auto: true },
+    ],
+  },
+  {
     op: 'hemisphere', name: 'полусфера', title: 'Полусфера', group: 'Примитивы',
     desc: 'Купол или миска со стенкой — mode=купол|миска.',
     params: [
@@ -5167,6 +5191,29 @@ const TOOL_RECIPES = [
     fields: [],
     build: () => 'деталь_паспорта = cube_hole size=[60,60,20] hole=16\n'
       + 'passport деталь_паспорта',
+  },
+  {
+    title: 'Деталь на границу',
+    desc: 'на_границе ищет не центр габарита, а настоящую поверхность: шайба садится '
+      + 'на кольцо тора, шарик — на его бок. align=нормаль разворачивает деталь по нормали.',
+    fields: [
+      { k: 'obj', label: 'деталь', v: '', kind: 'raw' },
+      { k: 'host', label: 'хозяин', v: '', kind: 'raw' },
+      { k: 'point', label: 'точка', v: '48,0,8', kind: 'vec' },
+      { k: 'offset', label: 'зазор', v: 0 },
+      { k: 'align', label: 'по нормали', v: true, kind: 'bool' },
+    ],
+    build: (v) => {
+      let obj = String(v.obj || '').trim();
+      let host = String(v.host || '').trim();
+      let head = '';
+      if (!obj) { obj = 'шайба'; head += 'шайба = cylinder radius=6 height=4\n'; }
+      if (!host) { host = 'кольцо'; head += 'кольцо = torus major=40 minor=8\n'; }
+      const p = rvec(v.point, [48, 0, 8]);
+      const align = v.align ? ' align=нормаль' : '';
+      return head + `${obj} = на_границе [${obj}] on=${host} `
+        + `point=[${p.map(fnum).join(', ')}] offset=${fnum(rnum(v.offset, 0))}${align}`;
+    },
   },
 ];
 

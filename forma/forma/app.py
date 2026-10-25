@@ -732,6 +732,42 @@ def _run_uistest(report_path: str | None) -> int:
                       "op: 'ряд'".encode("utf-8") in js_app
                       and "op: 'размер'".encode("utf-8") in js_app,
                       "две новые карточки в инструментах")
+
+                # 0.36: крюк, полуовал и посадка на настоящую границу
+                hook = post("/api/preview", {"script": (
+                    "к = крюк wire=6 radius=22 length=70 open=240 eye=да")})
+                check("крюк: пруток, загиб и ушко одной деталью",
+                      hook.get("ok") is True and hook.get("tris", 0) > 1000,
+                      f"{hook.get('tris', 0)} трис")
+                oval = post("/api/preview", {"script": (
+                    "п = полуовал width=90 height=55 thickness=8 hole=16")})
+                check("полуовал: пластина со сквозным отверстием",
+                      oval.get("ok") is True and oval.get("tris", 0) > 300,
+                      f"{oval.get('tris', 0)} трис")
+                oval_plain = post("/api/preview", {"script": (
+                    "п = полуовал width=90 height=55 thickness=8 hole=0")})
+                check("полуовал: без отверстия — тоже можно",
+                      oval_plain.get("ok") is True
+                      and oval_plain.get("tris", 0) < oval.get("tris", 0),
+                      f"{oval_plain.get('tris', 0)} трис без дырки")
+                snap = post("/api/preview", {"script": (
+                    "т = torus major=40 minor=8 at=[0,0,40]\n"
+                    "ш = cylinder radius=6 height=4\n"
+                    "ш = на_границе [ш] on=т point=[60,0,40] offset=1 align=нормаль")})
+                snap_bb = snap.get("size") or [0, 0, 0]
+                check("на_границе: шайба садится на кольцо тора",
+                      snap.get("ok") is True and float(snap_bb[0]) > 60,
+                      f"габарит по X {snap_bb[0]} мм")
+                for key in ("hook", "half_oval", "surface"):
+                    one = get(f"/api/example?key={key}")
+                    check(f"пример «{key}» собирается",
+                          post("/api/build", {"script": one.get("script", "")})
+                          .get("ok") is True)
+                check("карточки крюка, полуовала и посадки на границу",
+                      "op: 'крюк'".encode("utf-8") in js_app
+                      and "op: 'полуовал'".encode("utf-8") in js_app
+                      and b"\xd0\xbd\xd0\xb0_\xd0\xb3\xd1\x80\xd0\xb0\xd0\xbd\xd0\xb8\xd1\x86\xd0\xb5" in js_app,
+                      "три новые карточки в инструментах")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

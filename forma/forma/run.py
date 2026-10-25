@@ -50,6 +50,8 @@ from . import ops_face  # noqa: F401,E402
 from . import ops_fold  # noqa: F401,E402
 from . import ops_chain  # noqa: F401,E402
 from . import ops_graded  # noqa: F401,E402
+from . import ops_mount  # noqa: F401,E402
+from . import ops_attach  # noqa: F401,E402
 
 
 # Команды, которые не меняют ни форму, ни видимость: в анимации сборки
