@@ -679,6 +679,14 @@ def _run_uistest(report_path: str | None) -> int:
                       b'id="btn-copy-instruction"' in html
                       and b'id="btn-copy-commands"' in html,
                       "инструкция и все команды — отдельно от запроса")
+                # справочник копируется в СВОЁ поле: запрос не затирается
+                copy_body = js_app.decode("utf-8", "ignore").split(
+                    "async function copyInstruction", 1)[-1].split("btn-copy-instruction", 1)[0]
+                check("справочник копируется отдельно от запроса",
+                      b'id="instruction-out"' in html
+                      and "instruction-out" in copy_body
+                      and "$('prompt-out')" not in copy_body,
+                      "своё поле, поле запроса не трогается")
                 check("карточки сгиба от угла, складки и цепи",
                       "op: 'сгиб'".encode("utf-8") in js_app
                       and "op: 'складка'".encode("utf-8") in js_app

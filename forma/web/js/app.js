@@ -6239,14 +6239,21 @@ async function copyInstruction(kind, label) {
     const res = await api('/api/instruction?kind=' + encodeURIComponent(kind));
     const text = res.text || '';
     if (!text) { toast('Пустой справочник', 'bad'); return; }
+    // Справочник — отдельно от запроса: поле запроса не трогаем,
+    // иначе скопированная инструкция затрёт уже сформированный текст.
     try {
       await navigator.clipboard.writeText(text);
     } catch {
-      $('prompt-out').value = text;
-      $('prompt-out').select();
-      document.execCommand('copy');
+      const tmp = document.createElement('textarea');
+      tmp.value = text;
+      tmp.style.position = 'fixed';
+      tmp.style.opacity = '0';
+      document.body.appendChild(tmp);
+      tmp.select();
+      try { document.execCommand('copy'); } finally { tmp.remove(); }
     }
-    $('prompt-out').value = text;
+    const out = $('instruction-out');
+    if (out) { out.value = text; out.hidden = false; }
     toast(`${label}: ${text.length.toLocaleString('ru-RU')} символов скопировано`);
   } catch (e) { toast(e.message || 'Ошибка', 'bad'); }
 }
