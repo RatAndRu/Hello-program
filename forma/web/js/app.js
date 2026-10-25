@@ -2429,7 +2429,11 @@ document.querySelectorAll('#anime-chips .chip').forEach((chip) => {
       applyAnime({ mode });
       return;
     }
-    applyAnime(preset);
+    // смена режима начинается с его пресета: «линия» не должна оставлять
+    // после себя выключенное затенение у «аниме»
+    state.anime = preset;
+    state.viewer?.setAnime(state.anime);
+    syncAnimeControls();
     toast(`Стиль «${mode}»`);
   });
 });
