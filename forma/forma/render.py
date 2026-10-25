@@ -332,7 +332,7 @@ def _trace_rays(orig, dirs, tri, pix_chunk: int = 48, tri_chunk: int = 1024):
 
 
 def _mirror_pass(img, meshes, cam, nbuf, idbuf, pbuf, mirror_ids, ss: int = 1,
-                 budget: int = 24_000_000):
+                 budget: int = 32_000_000):
     """Настоящее отражение соседей: луч от зеркального пикселя в сцену.
 
     Без этого металл отражал только «студию» из шейдера, и зеркало рядом с
@@ -406,20 +406,34 @@ def _mirror_pass(img, meshes, cam, nbuf, idbuf, pbuf, mirror_ids, ss: int = 1,
     fade = np.clip(1.0 - t_hit[hit] / (np.max(t_hit[hit]) * 3.0 + 1e-9), 0.72, 1.0)
     refl = refl * fade[:, None].astype(np.float32)
     k = strength[:, None]
-    # раскладываем отражение по кадру и заполняем промежутки, если лучей
-    # считали меньше, чем пикселей зеркала
-    acc = np.zeros_like(img, dtype=np.float32)
-    cov = np.zeros(img.shape[:2], dtype=np.float32)
-    np.add.at(acc, pix, (refl * k).astype(np.float32))
-    np.add.at(cov, pix, k[:, 0])
-    r = max(1, stride)
-    num = _box_blur(acc, r)
-    den = _box_blur(cov[..., None], r)[..., 0]
-    # нормированная свёртка: где луч рядом был, отражение ставим целиком,
-    # иначе разреженные сэмплы давали полупрозрачное «молочное» зеркало
-    filled = np.where(den[..., None] > 1e-4, num / np.maximum(den[..., None], 1e-4), 0.0)
-    where = mask & (den > 1e-4)
-    img[where] = np.clip(filled[where], 0, 1)
+    colored = (refl * k).astype(np.float32)
+    if stride <= 1:
+        # лучей столько же, сколько пикселей: ставим отражение как есть
+        img[pix] = np.clip(colored + img[pix] * (1.0 - k), 0, 1)
+        return img
+    # лучей меньше, чем пикселей: собираем карту низкого разрешения и тянем
+    # её билинейно — разреженная сетка иначе выглядит квадратиками
+    lh = (h + stride - 1) // stride
+    lw = (w + stride - 1) // stride
+    gy = ys[hit] // stride
+    gx = xs[hit] // stride
+    low_acc = np.zeros((lh, lw, 3), dtype=np.float32)
+    low_cov = np.zeros((lh, lw), dtype=np.float32)
+    np.add.at(low_acc, (gy, gx), colored)
+    np.add.at(low_cov, (gy, gx), 1.0)
+    holes = low_cov <= 0
+    if holes.any():
+        # одиночные дырки в карте заполняем соседями
+        num = _box_blur(low_acc, 1)
+        den = _box_blur(low_cov[..., None], 1)[..., 0]
+        soft = num / np.maximum(den[..., None], 1e-6)
+        low_acc = np.where(holes[..., None], soft, low_acc)
+        low_cov = np.where(holes, np.minimum(den, 1.0), low_cov)
+    low = low_acc / np.maximum(low_cov[..., None], 1e-6)
+    up = _upsample_bilinear(low, h, w, stride)
+    cov_up = _upsample_bilinear(low_cov[..., None], h, w, stride)[..., 0]
+    where = mask & (cov_up > 0.25)
+    img[where] = np.clip(up[where], 0, 1)
     return img
 
 
@@ -639,6 +653,22 @@ def _box_blur(arr: np.ndarray, radius: int) -> np.ndarray:
         lo = np.take(prof, np.arange(0, n), axis=axis)
         out = ((hi - lo) / (2 * r + 1)).astype(np.float32)
     return out
+
+
+def _upsample_bilinear(low: np.ndarray, h: int, w: int, stride: int) -> np.ndarray:
+    """Растягивает карту низкого разрешения билинейно — без «квадратиков»."""
+    lh, lw = low.shape[:2]
+    ys = np.clip((np.arange(h) + 0.5) / stride - 0.5, 0, lh - 1)
+    xs = np.clip((np.arange(w) + 0.5) / stride - 0.5, 0, lw - 1)
+    y0 = np.floor(ys).astype(np.int32)
+    x0 = np.floor(xs).astype(np.int32)
+    y1 = np.minimum(y0 + 1, lh - 1)
+    x1 = np.minimum(x0 + 1, lw - 1)
+    fy = (ys - y0)[:, None, None]
+    fx = (xs - x0)[None, :, None]
+    top = low[y0][:, x0] * (1.0 - fx) + low[y0][:, x1] * fx
+    bottom = low[y1][:, x0] * (1.0 - fx) + low[y1][:, x1] * fx
+    return (top * (1.0 - fy) + bottom * fy).astype(np.float32)
 
 
 def _glow_pass(img: np.ndarray, glow: np.ndarray, cam, radius: int | None = None,
