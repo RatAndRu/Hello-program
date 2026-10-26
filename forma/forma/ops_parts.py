@@ -12,27 +12,79 @@ from .geometry import manifold_mesh
 from .ops import anchor, make_solid, op
 from .ops_kit import (_dedupe, _one, _pair, _placed, _profile, _rect_profile,
                       _revolve_profile, _seg, _shifted, _triple, _tube_mesh)
-from .shape_features import apply_smooth
+from .shape_features import apply_smooth, rounded_extrude, transition_radius
 
 
 @op("gusset", aliases=("косынка", "усилитель_угла", "треугольник_жесткости"),
     category="Примитивы",
-    summary="Косынка — ровный прямоугольный треугольный лист. Катеты идут "
-            "по +X и +Z, прямой угол находится в начале координат, гипотенуза "
-            "— одна чистая прямая без впадин, фасок и лишних вершин.",
-    example="косынка = gusset leg=70 height=55 thickness=6",
+    summary="Косынка — прямоугольный треугольный лист. shape=прямо даёт "
+            "чистую гипотенузу; shape=горка возвращает круговую выпуклость "
+            "с одним прямоугольным вогнутым вырезом, глубина и ширина "
+            "которого настраиваются отдельно. Катеты идут по +X и +Z.",
+    example="косынка = gusset leg=70 height=55 thickness=6\n"
+            "горка = gusset leg=70 height=55 thickness=6 shape=горка notch=8 notch_width=24",
     params={"leg": "горизонтальный катет по X, мм (60)",
             "height": "вертикальный катет по Z, мм (60)",
             "thickness": "толщина листа по Y, мм (6)",
+            "shape": "прямо — чистый треугольник; горка — круглая дуга "
+                     "с одним прямоугольным вырезом (прямо)",
+            "notch": "глубина прямоугольного выреза от его плеч, мм (8)",
+            "notch_width": "ширина одного выреза вдоль исходной гипотенузы, мм (24)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def gusset(a, name):
     leg = float(a.num("leg", 60.0, minv=0.2, maxv=10000.0))
     height = float(a.num("height", 60.0, minv=0.2, maxv=10000.0))
     thick = float(a.num("thickness", 6.0, minv=0.05, maxv=2000.0))
-    triangle = mf.CrossSection([_profile([(0.0, 0.0), (leg, 0.0), (0.0, height)])])
+    shape = (a.text("shape", "прямо") or "прямо").strip().lower()
+    if shape in ("прямо", "прямая", "треугольник", "straight"):
+        shape = "прямо"
+    elif shape in ("горка", "круглая", "дуга", "hill", "arc"):
+        shape = "горка"
+    else:
+        raise GeometryError("gusset: shape=прямо или горка.")
+    points = [(0.0, 0.0), (leg, 0.0)]
+    if shape == "горка":
+        hyp = math.hypot(leg, height)
+        hill = min(leg, height) * 0.14
+        notch = float(a.num("notch", 8.0, minv=0.0, maxv=min(leg, height) * 0.6) or 0.0)
+        notch_w = float(a.num("notch_width", 24.0, minv=0.2, maxv=hyp * 0.8))
+        normal = np.asarray([height / hyp, leg / hyp])
+        radius = hyp * hyp / (8.0 * hill) + hill / 2.0
+
+        def point(t, offset):
+            base = np.asarray([leg * (1.0 - t), height * t])
+            return tuple(base + normal * offset)
+
+        def arc_offset(t):
+            q = (t - 0.5) * hyp
+            return math.sqrt(max(0.0, radius * radius - q * q)) - (radius - hill)
+
+        t0 = 0.5 - notch_w / (2.0 * hyp)
+        t1 = 0.5 + notch_w / (2.0 * hyp)
+        edge = []
+        for i in range(1, 65):
+            t = i / 64.0
+            if t >= t0:
+                break
+            edge.append(point(t, arc_offset(t)))
+        edge.append(point(t0, arc_offset(t0)))
+        if notch > 1e-6:
+            # Два вертикальных плеча и одно прямое дно в локальных осях
+            # гипотенузы: именно один прямоугольный вогнутый вырез.
+            bottom = arc_offset(t0) - notch
+            edge.append(point(t0, bottom))
+            edge.append(point(t1, bottom))
+        edge.append(point(t1, arc_offset(t1)))
+        for i in range(1, 65):
+            t = i / 64.0
+            if t > t1 and t < 1.0 - 1e-9:
+                edge.append(point(t, arc_offset(t)))
+        points.extend(edge)
+    points.append((0.0, height))
+    triangle = mf.CrossSection([_profile(points)])
     solid = mf.Manifold.extrude(triangle, thick).rotate((90.0, 0.0, 0.0))
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="gusset")
-    out.notes.append(f"прямоугольный треугольник {leg:g}×{height:g} мм, лист {thick:g} мм")
+    out.notes.append(f"косынка {shape}: катеты {leg:g}×{height:g} мм, лист {thick:g} мм")
     return out
 
 
@@ -41,8 +93,9 @@ def gusset(a, name):
     category="Примитивы",
     summary="Единая скоба: прямоугольная П/U или овальная U с круглым дном. "
             "shape=овал задаёт настоящее овальное сечение, open переворачивает "
-            "его. sides=4 — прямоугольная замкнутая рамка. smooth сглаживает "
-            "всю деталь. Длина идёт по X, сечение — по Y и Z.",
+            "его. sides=4 — прямоугольная замкнутая рамка. smooth скругляет "
+            "только переходные рёбра, не стягивая широкие полки. Длина идёт "
+            "по X, сечение — по Y и Z.",
     example="кронштейн = скоба length=120 width=40 height=30 wall=3\n"
             "овальная = скоба length=120 width=40 height=35 wall=3 shape=овал smooth=1\n"
             "рамка = скоба length=160 width=90 height=60 wall=4 стороны=4",
@@ -51,7 +104,8 @@ def gusset(a, name):
             "sides": "3 — открытая скоба, 4 — замкнутая рамка (3)",
             "shape": "прямоугольная или овал/U — круглое дно и прямые полки",
             "open": "куда открыта скоба: вверх (U) или вниз (П) — «вверх»",
-            "smooth": "уровни Loop-сглаживания всей скобы 0…4 (0)",
+            "smooth": "ступени скругления переходных рёбер 0…4 (0), "
+                      "без Loop-деформации и сколов полок",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["length"])
 def скоба(a, name):
@@ -100,26 +154,31 @@ def скоба(a, name):
             t = -math.pi * i / n
             prof.append((ri * math.cos(t), radius + ri * math.sin(t)))
         prof.append((-ri, height))
-        solid = mf.CrossSection([_profile(prof)]).extrude(length)
-        # (u,v,l) → (l,u,v): циклическая перестановка, ориентация сохраняется.
-        matrix = np.array([[0.0, 0.0, 1.0, -length / 2.0],
-                           [1.0, 0.0, 0.0, 0.0],
-                           [0.0, 1.0, 0.0, 0.0]])
-        solid = solid.transform(matrix)
-        if opening == "вниз":
-            solid = solid.rotate((180.0, 0.0, 0.0))
+        cross = mf.CrossSection([_profile(prof)])
     else:
-        outer = mf.Manifold.cube((length, width, height), center=True)
+        hx, hz = width / 2.0, height / 2.0
+        outer = mf.CrossSection([_profile([(-hx, -hz), (hx, -hz),
+                                          (hx, hz), (-hx, hz)])])
         if sides >= 4:
-            inner = mf.Manifold.cube((length + 2.0, width - 2 * wall, height - 2 * wall),
-                                     center=True)
+            inner_pts = [(-hx + wall, -hz + wall), (hx - wall, -hz + wall),
+                         (hx - wall, hz - wall), (-hx + wall, hz - wall)]
+        elif opening == "вверх":
+            inner_pts = [(-hx + wall, -hz + wall), (hx - wall, -hz + wall),
+                         (hx - wall, hz + wall), (-hx + wall, hz + wall)]
         else:
-            inner = mf.Manifold.cube((length + 2.0, width - 2 * wall, height - wall),
-                                     center=True)
-            inner = inner.translate((0.0, 0.0, wall / 2.0 if opening == "вверх"
-                                     else -wall / 2.0))
-        solid = outer - inner
-    solid = apply_smooth(solid, a, "скоба")
+            inner_pts = [(-hx + wall, -hz - wall), (hx - wall, -hz - wall),
+                         (hx - wall, hz - wall), (-hx + wall, hz - wall)]
+        inner = mf.CrossSection([_profile(inner_pts)])
+        cross = mf.CrossSection.batch_boolean([outer, inner], mf.OpType.Subtract)
+    edge_r = transition_radius(a, min(length * 0.45, wall * 0.45))
+    solid = rounded_extrude(cross, length, edge_r, "скоба")
+    # (u,v,l) → (l,u,v): единое сечение не даёт сколов на стыке полок.
+    matrix = np.array([[0.0, 0.0, 1.0, -length / 2.0],
+                       [1.0, 0.0, 0.0, 0.0],
+                       [0.0, 1.0, 0.0, 0.0]])
+    solid = solid.transform(matrix)
+    if shape == "овал" and opening == "вниз":
+        solid = solid.rotate((180.0, 0.0, 0.0))
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="скоба")
     where = ("овальная U" if shape == "овал" else
              "замкнутая рамка" if sides >= 4 else

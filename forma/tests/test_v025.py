@@ -7,6 +7,7 @@ import unittest
 
 import numpy as np
 
+from forma.ops_blade import KINDS, _hook_path
 from forma.run import build
 
 
@@ -146,7 +147,14 @@ class TestBlade(unittest.TestCase):
                 self.assertEqual(parts(m), 1)
                 w, d, h = size(m)
                 longest = max(w, d, h)
-                self.assertAlmostEqual(longest, 600.0, delta=30.0)
+                if kind == "серп":
+                    # length — длина центральной дуги крюка, а не её хорда.
+                    path = _hook_path(600.0, KINDS[kind]["curve"] * 600.0, 100)
+                    arc_length = float(np.linalg.norm(np.diff(path, axis=0), axis=1).sum())
+                    self.assertAlmostEqual(arc_length, 600.0, delta=2.0)
+                    self.assertGreater(longest, 0.65 * 600.0)
+                else:
+                    self.assertAlmostEqual(longest, 600.0, delta=30.0)
                 # клинок плоский: самый тонкий габарит много меньше длины
                 self.assertLess(min(w, d, h), 0.2 * longest)
 

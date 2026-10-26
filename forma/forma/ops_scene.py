@@ -17,7 +17,9 @@ from .ops import op
             "density": "плотность г/см³ (для оценки массы)",
             "emissive": "цвет свечения (#rrggbb) — для LED, неона, ламп",
             "emissive_strength": "яркость свечения 0…20 (1)",
-            "transmission": "прозрачность стекла 0…1 (0)"},
+            "transmission": "прозрачность стекла 0…1 (0)",
+            "mirror": "степень зеркальности 0…1 (0); да/нет тоже принимаются",
+            "зеркальность": "то же, что mirror"},
     positional=["target", "color"])
 def color(a, name):
     target = (a.text("target") or "all").strip()

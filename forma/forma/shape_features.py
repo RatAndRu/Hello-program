@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 import manifold3d as mf
 import numpy as np
 
@@ -17,6 +19,16 @@ def smooth_level(a, default: int = 0) -> int:
 def apply_smooth(solid: mf.Manifold, a, what: str) -> mf.Manifold:
     """Loop-сглаживание целыми уровнями, без подмены радиусом кромки."""
     return loop_smooth(solid, smooth_level(a), what)
+
+
+def transition_radius(a, limit: float) -> float:
+    """Радиус четырёх ступеней скругления переходных рёбер.
+
+    Некоторым деталям нужен именно ``smooth`` как уровень кромки, а не Loop
+    всей сетки. Предел выбирает конструктор из толщины/стенки; функция лишь
+    равномерно переводит в него ступени 0…4.
+    """
+    return smooth_level(a) * max(0.0, float(limit)) / 4.0
 
 
 def rounded_extrude(cross: mf.CrossSection, depth: float, radius: float,
@@ -72,6 +84,25 @@ def cut_center_hole(solid: mf.Manifold, depth: float, diameter: float,
 def circle_contour(radius: float, center=(0.0, 0.0), segments: int = 64) -> np.ndarray:
     pts = np.asarray(circle_profile(float(radius), int(segments)), dtype=np.float64)
     return pts + np.asarray(center, dtype=np.float64)
+
+
+def slot_contour(length: float, width: float, segments: int = 24) -> np.ndarray:
+    """Прямой овал (капсула) с точными общими длиной и шириной."""
+    length, width = float(length), float(width)
+    if length < width - 1e-9 or width <= 0.0:
+        raise GeometryError("Для прямого овала длина должна быть не меньше ширины.")
+    if abs(length - width) < 1e-9:
+        return circle_contour(width / 2.0, segments=max(16, segments * 2))
+    radius = width / 2.0
+    center = (length - width) / 2.0
+    pts = []
+    for i in range(segments + 1):
+        angle = -math.pi / 2.0 + math.pi * i / segments
+        pts.append((center + radius * math.cos(angle), radius * math.sin(angle)))
+    for i in range(segments + 1):
+        angle = math.pi / 2.0 + math.pi * i / segments
+        pts.append((-center + radius * math.cos(angle), radius * math.sin(angle)))
+    return np.asarray(pts, dtype=np.float64)
 
 
 def rect_between(p0, p1, width: float) -> np.ndarray:

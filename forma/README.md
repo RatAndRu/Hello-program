@@ -44,6 +44,105 @@ check кружка symmetric y
 | **Витрина инструментов: 44 предмета** | |
 | ![витрина](docs/showcase_all.png) | |
 
+## Что нового в 0.45 — полости, рельефные грани и сгибаемый лист
+
+**1. Непрерывная зеркальность и исправленная топология.** Любой предмет
+получает `mirror=0…1` с шагом 0,01: значение непрерывно меняет металличность и
+шероховатость материала, отдельный предмет «зеркало» не требуется. Значение
+сохраняется в проекте и GLB. У икосферы режим `mode=сота` снова содержит
+12 пятиугольников наряду с шестиугольниками. У октаэдра `faces` задаёт число
+исходных граней, а `divisions` отдельно дробит их без изменения формы.
+Сектор шара и локальные кромки уголка, полуовала, U-скобы, слитка, сектора
+круга и кнопки сглаживаются без Loop-деформации широких граней.
+
+```forma
+деталь = box size=[80,60,30] round=3
+цвет деталь #b8c6d8 mirror=0.35
+соты = icosphere radius=40 mode=сота divisions=1 at=[140,0,0]
+```
+
+**2. Рамка с настоящей сквозной полостью — `cavity_frame`.** Наружный контур
+`outer=квадрат|круг`, толщина `depth`, размеры `size=[X,Y]`. Полость
+`cavity=Г|линия|квадрат|круг|овал` вычитается насквозь. У Г-канала две ветви
+имеют ширину `line_width`; `cavity_size`, `margin` и `corner` настраивают
+габарит, поле и угол. В круглой рамке `линия` становится прямым овалом,
+угловой `квадрат` — кругом; полость автоматически сдвигается по диагонали,
+чтобы не выйти за круглый край. `round` скругляет кромки, `plane=фронт|плашмя`
+выбирает ориентацию.
+
+```forma
+г = cavity_frame size=[100,90] depth=8 cavity=Г cavity_size=[50,40] line_width=6 margin=8
+окно = cavity_frame outer=круг size=[100,100] cavity=квадрат cavity_size=[20,20] margin=10
+паз = cavity_frame outer=круг size=[100,100] cavity=линия cavity_size=[60,6]
+```
+
+**3. Куб с рельефными гранями и срезами — `face_box`.** `mode=ровный|выпуклый|вогнутый`
+и `profile=линза|трапеция|квадрат` задают настоящий объём шести граней;
+`relief`, `margin`, `taper` и `faces` управляют высотой и выбором граней.
+`faces` принимает `все`, `верх`, `низ`, `перед`, `зад`, `право`, `лево` или
+список в квадратных скобках. `corner_cut` делает плоский треугольный срез;
+`corners=один|верх|низ|все|нет` выбирает один угол, четыре верхних/нижних или
+все восемь. Для `corners=один` параметр `corner` точно называет угол, например
+`перед_право_верх`.
+
+```forma
+линза = face_box size=[80,80,70] mode=выпуклый profile=линза relief=6
+срез = face_box size=[80,80,80] corner_cut=18 corners=один corner=перед_право_верх
+восемь = face_box size=[80,80,80] corner_cut=12 corners=все
+```
+
+**4. Отдельный сгибаемый лист — `fold_sheet`.** Прежний `sheet` остаётся
+плоскостью с волной и рулоном, прежняя команда `fold` не изменена. Новый
+примитив строит один сгиб при `parts=2` или гармошку при `parts=3…12`.
+`angle=1…180` — угол поворота каждой части от почти плоского состояния до
+обратного сложения; `gap` — просвет, `sharp=0…1` — от круглой кривой до
+острого пресс-бигового ребра. `axis=x|y|диагональ`, произвольный `direction`
+и `offset` задают направление и место сгиба. Лист остаётся одним объёмным телом.
+
+```forma
+сгиб = fold_sheet width=120 length=200 thickness=1.2 parts=2 angle=110 gap=2
+гармошка = fold_sheet width=120 length=300 parts=5 angle=120 gap=1 sharp=0.4
+диагональ = fold_sheet width=120 length=180 parts=2 axis=диагональ angle=90
+```
+
+**5. Независимые отверстия куба и плоские формочки.** У `box` одновременно
+работают `hole_x`, `hole_y`, `hole_z`; каждое имеет собственный
+`hole_x_shape/hole_y_shape/hole_z_shape=круг|квадрат|овал`. Прямой овал —
+капсула с независимой `oval_aspect`, ноль отключает только названное отверстие.
+`egg` и `drop` сохраняют объём по умолчанию, а `flat=да` даёт силуэт толщиной
+`depth`; `wall>0` превращает его в сквозную формочку, `round` и `plane`
+настраивают кромки и ориентацию. Тот же режим формочки получен стрелкой через
+`arrow.wall`. Дисковая пила допускает `saw.hole=0`.
+
+**6. Ветви T/Y и доработанные детали.** `tee.shape=бруски|капсулы` выбирает
+те же типы ветвей, что и Y; прежние `bar` и `stem` сохраняют независимую
+толщину. `yoke.smooth` фактически сглаживает геометрию соединения. Воронка и
+тарелка допускают вертикальный `rim_height` при `rim=0`; луна и половина
+инь-яна используют `wall` для формочки. Облако собирается плавным полем,
+кленовый лист имеет собственный узнаваемый контур.
+
+**7. Крепёж, ручка, завиток, крюк и косынка.** `screw.drive=звезда` вырезает
+слепой шестилопастной Torx; при `neck=0` полный виток начинается непосредственно
+у головки. `pulley.bore=0` оставляет сплошную ось. У `handle` формы
+`bar_shape/post_shape`, `posts=1|2`, `post_mode=стык|сквозь` и точный `post_top`
+работают независимо. `swirl.merge=да` разрешает слитные витки, `base=да`
+полностью скрывает начало в плоском основании. У крюка `offset`, `aspect` и
+`curve` плавно сдвигают дугу. `gusset.shape=горка` строит круговую дугу с одним
+прямоугольным углублением `notch/notch_width`.
+
+**8. Клинок изгибается в плоскости ширины.** `curve>0` и `curve<0` дают
+зеркальные направления без подмены стороны кромки и спинки. `kind=катана|танто|ятоган|нож`
+сохраняет одностороннюю заточку и толстую спинку, `стилет|двуручник` — две
+кромки, `серп` — настоящий продолжающийся крюк даже при `curve=0`.
+
+Текущий реестр — **198 команд, из них 104 примитива**. Три новых примитива
+имеют карточки с живым превью; у **539 числовых полей** есть явные границы.
+Добавлены 46 регрессий `tests/test_v045.py` и `tests/test_v045b.py`, полный
+набор — **1013 тестов**. Пример `examples/cavity_folds.forma` содержит 16 тел
+и 16 проверок; подробные сценарии — в рецептах §38. Разделы 0.44 и ниже
+сохранены как история версий; при расхождении используйте актуальную справку
+и примеры 0.45.
+
 ## Что нового в 0.44 — полосы, решётки и конструкционные формы
 
 **1. Полоса с независимыми кромками.** `strip` строит тонкое объёмное тело,
@@ -1962,7 +2061,7 @@ python -m forma reference --out СПРАВКА.md
 
 | Категория | Команды |
 |---|---|
-| Примитивы (101) | `arch`, `arc_prism`, `arrow`, `banana`, `bark`, `bead`, `blade`, `bolt`, `box`, `box_body`, `bracket`, `bricks`, `button`, `capsule`, `cardboard`, `cloud`, `column`, `cone`, `crescent`, `crown`, `cube_hole`, `cylinder`, `diamond`, `disc`, `display`, `drive`, `drop`, `egg`, `ellipsoid`, `gear`, `grommet`, `grating`, `gusset`, `hair`, `handle`, `heart`, `hemisphere`, `horn`, `hull`, `icosphere`, `ingot`, `jacket`, `ladder`, `leaf`, `lens`, `lever`, `lightning`, `mirror_plate`, `nail`, `nut`, `octa`, `oval`, `paraboloid`, `pie`, `plate`, `plus`, `prism`, `profile2020`, `pulley`, `pyramid`, `ring`, `rock`, `rope`, `saddle`, `saw`, `screw`, `sector`, `seven_seg`, `shaft`, `sheet`, `skirt`, `sphere`, `spikes`, `spiral`, `spring`, `stairs`, `star`, `strip`, `swirl`, `tee`, `text`, `torus`, `torus_sector`, `tri_prism`, `washer`, `wheel`, `worm_shaft`, `yin_yang`, `yoke`, `бровь`, `волосинки`, `воронка`, `глаз`, `губы`, `крюк`, `локон`, `полукапсула`, `полуовал`, `скоба`, `цепь`, `чёлка` |
+| Примитивы (104) | `arch`, `arc_prism`, `arrow`, `banana`, `bark`, `bead`, `blade`, `bolt`, `box`, `box_body`, `bracket`, `bricks`, `button`, `capsule`, `cardboard`, `cavity_frame`, `cloud`, `column`, `cone`, `crescent`, `crown`, `cube_hole`, `cylinder`, `diamond`, `disc`, `display`, `drive`, `drop`, `egg`, `ellipsoid`, `face_box`, `fold_sheet`, `gear`, `grommet`, `grating`, `gusset`, `hair`, `handle`, `heart`, `hemisphere`, `horn`, `hull`, `icosphere`, `ingot`, `jacket`, `ladder`, `leaf`, `lens`, `lever`, `lightning`, `mirror_plate`, `nail`, `nut`, `octa`, `oval`, `paraboloid`, `pie`, `plate`, `plus`, `prism`, `profile2020`, `pulley`, `pyramid`, `ring`, `rock`, `rope`, `saddle`, `saw`, `screw`, `sector`, `seven_seg`, `shaft`, `sheet`, `skirt`, `sphere`, `spikes`, `spiral`, `spring`, `stairs`, `star`, `strip`, `swirl`, `tee`, `text`, `torus`, `torus_sector`, `tri_prism`, `washer`, `wheel`, `worm_shaft`, `yin_yang`, `yoke`, `бровь`, `волосинки`, `воронка`, `глаз`, `губы`, `крюк`, `локон`, `полукапсула`, `полуовал`, `скоба`, `цепь`, `чёлка` |
 | Тела вращения и развёртки (5) | `extrude`, `lathe`, `loft`, `pipe`, `sweep` |
 | Булевы операции (8) | `cut`, `difference`, `intersect`, `slice`, `trim`, `union`, `weld`, `вписать` |
 | Форма и деформации (39) | `bend`, `bevel`, `blow`, `bore`, `chamfer`, `clean`, `corrugate`, `dent`, `draft`, `emboss`, `fill`, `fillet`, `flatten`, `fold`, `fuse`, `groove`, `holes`, `knurl`, `lattice`, `offset`, `pile`, `pinch`, `point`, `polish`, `porous`, `refine`, `relief`, `repair`, `scales`, `shave`, `shell`, `simplify`, `smooth`, `taper`, `thread`, `twist`, `wrinkle`, `сгиб`, `складка` |
@@ -1972,7 +2071,7 @@ python -m forma reference --out СПРАВКА.md
 | Проверка (5) | `check`, `passport`, `probe`, `section`, `ориентация` |
 | Сборка (1) | `соединить` |
 
-Все 195 команд перечислены здесь без сокращений; полные описания параметров —
+Все 198 команд перечислены здесь без сокращений; полные описания параметров —
 в справке приложения (кнопка «?») и в файле `СПРАВКА_КОМАНДЫ.md` внутри ZIP.
 У каждой команды в справке есть **запускаемый** пример: его можно скопировать
 в сценарий целиком — он соберётся без правок (кроме `import`, которому нужен
@@ -2113,7 +2212,7 @@ check имя tris ..200000     # число треугольников
 
 ```bash
 cd forma
-python -m unittest discover -s tests -v   # 967 тестов ядра и интерфейса
+python -m unittest discover -s tests -v   # 1013 тестов ядра и интерфейса
 python -m forma selftest                  # мини-сценарии с проверками
 ```
 

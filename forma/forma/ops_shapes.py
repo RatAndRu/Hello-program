@@ -99,6 +99,24 @@ def _revolve(points: list[tuple[float, float]], segments: int, what: str) -> mf.
     return solid
 
 
+def _revolve_or_flat(a, points: list[tuple[float, float]], segments: int,
+                     what: str) -> mf.Manifold:
+    """Тело вращения либо его плоский силуэт/сквозная формочка."""
+    flat = a.boolean("flat", False)
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    if not flat and wall <= 1e-6:
+        return _revolve(points, segments, what)
+    depth = float(a.num("depth", 6.0, minv=0.2, maxv=1000.0))
+    round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    right = [(float(r), float(z)) for r, z in points]
+    left = [(-float(r), float(z)) for r, z in reversed(right[1:-1])]
+    cross = mf.CrossSection([_profile(right + left)])
+    cross = hollow_cross(cross, wall, what)
+    limit = depth * 0.45 if wall <= 1e-6 else min(depth * 0.45, wall * 0.45)
+    solid = rounded_extrude(cross, depth, min(round_r, limit), what)
+    return stand_flat_sign(a, solid)
+
+
 def ensure_volume(m: mf.Manifold, what: str) -> mf.Manifold:
     if m.is_empty() or m.volume() <= 1e-6:
         raise GeometryError(f"{what.capitalize()} получилась пустой.",
@@ -303,7 +321,8 @@ def star(a, name):
             "wall": "толщина стенки и дна, мм (4)",
             "well": "доля плоского дна 0.2..0.9 (0.62)",
             "rim": "радиальный выступ верхнего бортика, мм (0 — без него)",
-            "rim_height": "высота верхнего бортика внутри общей depth, мм",
+            "rim_height": "высота верхнего бортика внутри общей depth, мм; "
+                          "работает и при rim=0 как вертикальная стенка",
             "round": "радиус перехода от дна к стенке, мм (0.35·глубины)",
             "foot": "диаметр кольцевой ножки снизу (0 — нет)",
             "segments": "сегментов по кругу",
@@ -318,7 +337,7 @@ def plate(a, name):
                          minv=0.0) or 0.0)
     if rim_w > 1e-6 and rim_h <= 1e-6:
         rim_h = max(1.0, depth * 0.08)
-    rim_h = min(rim_h, depth * 0.45) if rim_w > 1e-6 else 0.0
+    rim_h = min(rim_h, depth * 0.45) if rim_h > 1e-6 else 0.0
     round_r = float(a.num("round", depth * 0.35, minv=0.0) or 0.0)
     foot = float(a.num("foot", 0.0, minv=0.0) or 0.0)
     r = diameter / 2.0
@@ -346,7 +365,7 @@ def plate(a, name):
         x = x0 + (r - x0) * (0.35 * f + 0.65 * f * f)
         wall_pts.append((x, z))
     prof += wall_pts
-    if rim_w > 1e-6:
+    if rim_h > 1e-6:
         prof += [(r + rim_w, z_top), (r + rim_w, depth)]
     else:
         prof.append((r, depth))
@@ -676,13 +695,19 @@ def ring(a, name):
 # --------------------------------------------------------------------------- #
 @op("egg", aliases=("яйцо", "яичко", "овоид"), category="Примитивы",
     summary="Настоящее яйцо: широкий тупой низ, узкий острый верх, самая широкая "
-            "точка ниже середины. proportion — насколько яйцо «яйцевидное»: "
-            "0 — симметричный овоид, 0.5 — куриное яйцо, 1 — острое.",
+            "точка ниже середины. proportion — насколько яйцо «яйцевидное». "
+            "flat=да строит плоский силуэт, wall>0 — сквозную формочку.",
     example="яйцо = egg height=60 diameter=42 proportion=0.55\n"
             "перепелиное = egg height=32 diameter=26 proportion=0.6",
     params={"height": "высота, мм (60)", "diameter": "наибольший диаметр, мм (42)",
             "proportion": "яйцевидность 0..1 (0.55)",
             "sharp": "какой конец острый: верх или низ (верх)",
+            "flat": "да — плоский силуэт вместо тела вращения (нет)",
+            "depth": "толщина плоского силуэта, мм (6)",
+            "wall": "стенка сквозной формочки; wall>0 включает плоский режим (0)",
+            "round": "скругление кромок плоского режима, мм (0)",
+            "plane": "фронт или плашмя для плоского режима — «фронт»",
+            "stand": "то же, что plane=фронт: да/нет",
             "segments": "сегментов по кругу (по размеру)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def egg(a, name):
@@ -733,18 +758,25 @@ def egg(a, name):
         prof = sorted(prof, key=lambda p: p[1])
         prof[0] = (0.0, 0.0)
         prof[-1] = (0.0, height)
-    solid = _revolve(prof, segments, "яйца")
+    solid = _revolve_or_flat(a, prof, segments, "яйца")
     return make_solid(a.scene, name, _placed(a, solid), a, kind="egg")
 
 
 @op("drop", aliases=("капля", "дроп", "слеза", "teardrop"), category="Примитивы",
     summary="Капля: круглое дно и плавно сходящий на нет хвост — вода, слеза, стекло. "
-            "tip задаёт остроту: 0 — почти сфера, 1 — длинная острая капля.",
+            "tip задаёт остроту. flat=да — плоский силуэт, wall>0 — сквозная "
+            "формочка с равномерной стенкой.",
     example="капля = drop radius=14 height=40 tip=0.5\n"
             "стекло = drop radius=9 height=52 tip=0.8",
     params={"radius": "радиус круглой части, мм (14)",
             "height": "полная высота, мм (36)",
             "tip": "острота хвоста 0…1 (0.5)",
+            "flat": "да — плоский силуэт вместо тела вращения (нет)",
+            "depth": "толщина плоского силуэта, мм (6)",
+            "wall": "стенка сквозной формочки; wall>0 включает плоский режим (0)",
+            "round": "скругление кромок плоского режима, мм (0)",
+            "plane": "фронт или плашмя для плоского режима — «фронт»",
+            "stand": "то же, что plane=фронт: да/нет",
             "segments": "сегментов по кругу (по размеру)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def drop(a, name):
@@ -781,7 +813,7 @@ def drop(a, name):
         z = (mt ** 3 * p0[1] + 3 * mt * mt * t * p1[1]
              + 3 * mt * t * t * p2[1] + t ** 3 * p3[1])
         prof.append((max(0.0, r), z))
-    solid = _revolve(prof, segments, "капли")
+    solid = _revolve_or_flat(a, prof, segments, "капли")
     return make_solid(a.scene, name, _placed(a, solid), a, kind="drop")
 
 
@@ -947,21 +979,26 @@ def hemisphere(a, name):
 # --------------------------------------------------------------------------- #
 @op("cloud", aliases=("облако", "вата", "облачко", "туча", "cloud_puff"),
     category="Примитивы",
-    summary="Облако-вата: несколько сфер, сплавленных в одно пушистое тело. "
-            "size — габарит, puffs — сколько шаров, seed повторяет форму, "
-            "flat — подрезанное снизу дно, чтобы облако лежало на полке.",
+    summary="Облако-вата: вытянутое основание и круглые доли, плавно "
+            "сросшиеся в одно тело без рваных булевых швов. size — точный "
+            "габарит, puffs — число долей, seed повторяет форму, flat — "
+            "плоское дно, чтобы облако лежало на полке.",
     example="облако = cloud size=[180,90,70] puffs=9 seed=3\n"
             "вата = cloud size=[120,120,90] puffs=12 seed=7 flat=нет",
-    params={"size": "габарит [x,y,z], мм (160,90,70)",
-            "puffs": "число сфер (8)",
+    params={"size": "точный габарит [x,y,z], мм (160,90,70)",
+            "puffs": "общее число объёмных долей 3…40 (8)",
             "seed": "зерно формы (1)",
-            "rough": "разброс размеров 0..1 (0.35)",
+            "rough": "разброс размеров и положения долей 0..1 (0.35)",
             "flat": "плоское дно да/нет (да)",
-            "segments": "сегментов сферы (по размеру)",
+            "segments": "плотность поверхности 8…64 (по размеру)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def cloud(a, name):
+    from .sdf import Ellipsoid, Field
+
     size = a.vec("size", 3, default=(160.0, 90.0, 70.0))
-    sx, sy, sz = float(size[0]), float(size[1]), float(size[2])
+    sx, sy, sz = (float(v) for v in size)
+    if min(sx, sy, sz) < 2.0:
+        raise GeometryError("cloud: каждая сторона size должна быть не меньше 2 мм.")
     puffs = int(a.num("puffs", 8, minv=3, maxv=40) or 8)
     seed = int(a.num("seed", 1, minv=0) or 0)
     rough = float(a.num("rough", 0.35, minv=0.0, maxv=1.0) or 0.0)
@@ -969,102 +1006,58 @@ def cloud(a, name):
     seg = int(a.num("segments", max(12, min(32, int(8 + max(sx, sy, sz) / 8))),
                     minv=8, maxv=64) or 20)
     rng = np.random.default_rng(seed)
-    # Шары должны ПЕРЕКРЫВАТЬСЯ, иначе это не облако, а гроздь шариков.
-    # Кладём «грядку» перекрывающихся сфер по осям X и Y, сверху — бугры.
-    unit = min(sx, sy, sz)
-    base_r = unit * 0.45
-    parts = []
-    # нижний ряд: 3–5 шаров вдоль X, чтобы облако было вытянутым, а не шаром
-    nx = max(3, min(6, int(round(sx / max(unit * 0.7, 1.0))) + 1))
-    for i in range(nx):
-        t = (i / (nx - 1)) - 0.5 if nx > 1 else 0.0
-        r = base_r * (1.0 - 0.10 * abs(t) * 2.0)
-        parts.append(mf.Manifold.sphere(r, seg).translate((sx * 0.42 * t, 0.0, r * 0.55)))
-    # средний слой: бугры сбоку и сверху со случайным смещением
-    bumps = max(3, puffs - nx)
-    for i in range(bumps):
-        ang = 2.0 * math.pi * i / bumps + float(rng.uniform(-0.3, 0.3))
-        rad = float(rng.uniform(0.45, 0.72))
-        k = 1.0 - rough * 0.25 * float(rng.random())
-        r = base_r * 0.82 * k
-        px = math.cos(ang) * sx * 0.30 * rad
-        py = math.sin(ang) * sy * 0.34 * rad
-        pz = base_r * (0.55 + 0.45 * float(rng.random()))
-        parts.append(mf.Manifold.sphere(r, seg).translate((px, py, pz)))
-    solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
-    if solid.is_empty():
-        raise GeometryError("Облако не собралось: увеличьте size или число сфер.")
-    bb = solid.bounding_box()
-    solid = solid.translate((0.0, 0.0, -bb[2]))
+
+    # Широкое нижнее тело связывает все доли. Боковые и верхние эллипсоиды
+    # распределены по длине облака, а не случайной россыпью шаров вокруг оси.
+    prims = [Ellipsoid((0.0, 0.0, sz * 0.30),
+                       (sx * 0.36, sy * 0.34, sz * 0.24))]
+    for i in range(1, puffs):
+        t = (i - 1) / max(1, puffs - 2)
+        upper = i % 3 != 0
+        x = ((t - 0.5) * sx * 0.64
+             + float(rng.uniform(-1.0, 1.0)) * sx * 0.025 * rough)
+        y = (math.sin(i * 2.17) * sy * 0.10
+             + float(rng.uniform(-1.0, 1.0)) * sy * 0.035 * rough)
+        z = sz * (0.34 + (0.16 if upper else 0.0) + 0.05 * math.sin(math.pi * t)
+                  + float(rng.uniform(-1.0, 1.0)) * 0.025 * rough)
+        rx = sx * (0.14 + 0.035 * float(rng.random()))
+        ry = sy * (0.24 + 0.06 * float(rng.random()))
+        rz = sz * (0.20 + 0.06 * float(rng.random()))
+        prims.append(Ellipsoid((x, y, z), (rx, ry, rz)))
+
+    blend = min(sx, sy, sz) * 0.11
+    resolution = max(0.2, min(sx, sy, sz) / max(18.0, seg * 0.9))
+    margin = blend * 1.6 + resolution * 4.0
+    bounds = [min(float(p.lo[i]) for p in prims) - margin for i in range(3)]
+    bounds += [max(float(p.hi[i]) for p in prims) + margin for i in range(3)]
+    field = Field(bounds, resolution)
+    for prim in prims:
+        field.add(prim, blend=blend)
+    solid = field.mesh(smooth_iters=2, simplify=resolution * 0.05,
+                       clean=0.001, what="облака")
     if flat:
+        # Режем ДО приведения габарита и по фактическому низу. Старый резец
+        # после переноса объекта оставался ниже пола и не делал ничего.
+        bb = solid.bounding_box()
+        floor = bb[2] + sz * 0.10
         cutter = mf.Manifold.cube([sx * 4.0, sy * 4.0, sz * 2.0], True)
-        cutter = cutter.translate((0.0, 0.0, -sz * 0.10 - sz))
+        cutter = cutter.translate((0.0, 0.0, floor - sz))
         solid = solid - cutter
-    out = make_solid(a.scene, name, _placed(a, solid), a, kind="cloud")
-    out.notes.append(f"облако из {puffs} сфер, seed {seed}")
-    return out
-# --------------------------------------------------------------------------- #
-#  Арка (полукольцо)
-# --------------------------------------------------------------------------- #
-#  Облако / вата
-# --------------------------------------------------------------------------- #
-@op("cloud", aliases=("облако", "вата", "облачко", "туча", "cloud_puff"),
-    category="Примитивы",
-    summary="Облако-вата: несколько сфер, сплавленных в одно пушистое тело. "
-            "size — габарит, puffs — сколько шаров, seed повторяет форму, "
-            "flat — подрезанное снизу дно, чтобы облако лежало на полке.",
-    example="облако = cloud size=[180,90,70] puffs=9 seed=3\n"
-            "вата = cloud size=[120,120,90] puffs=12 seed=7 flat=нет",
-    params={"size": "габарит [x,y,z], мм (160,90,70)",
-            "puffs": "число сфер (8)",
-            "seed": "зерно формы (1)",
-            "rough": "разброс размеров 0..1 (0.35)",
-            "flat": "плоское дно да/нет (да)",
-            "segments": "сегментов сферы (по размеру)",
-            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
-def cloud(a, name):
-    size = a.vec("size", 3, default=(160.0, 90.0, 70.0))
-    sx, sy, sz = float(size[0]), float(size[1]), float(size[2])
-    puffs = int(a.num("puffs", 8, minv=3, maxv=40) or 8)
-    seed = int(a.num("seed", 1, minv=0) or 0)
-    rough = float(a.num("rough", 0.35, minv=0.0, maxv=1.0) or 0.0)
-    flat = a.boolean("flat", True)
-    seg = int(a.num("segments", max(12, min(32, int(8 + max(sx, sy, sz) / 8))),
-                    minv=8, maxv=64) or 20)
-    rng = np.random.default_rng(seed)
-    # Шары должны ПЕРЕКРЫВАТЬСЯ, иначе это не облако, а гроздь шариков.
-    # Кладём «грядку» перекрывающихся сфер по осям X и Y, сверху — бугры.
-    unit = min(sx, sy, sz)
-    base_r = unit * 0.45
-    parts = []
-    # нижний ряд: 3–5 шаров вдоль X, чтобы облако было вытянутым, а не шаром
-    nx = max(3, min(6, int(round(sx / max(unit * 0.7, 1.0))) + 1))
-    for i in range(nx):
-        t = (i / (nx - 1)) - 0.5 if nx > 1 else 0.0
-        r = base_r * (1.0 - 0.10 * abs(t) * 2.0)
-        parts.append(mf.Manifold.sphere(r, seg).translate((sx * 0.42 * t, 0.0, r * 0.55)))
-    # средний слой: бугры сбоку и сверху со случайным смещением
-    bumps = max(3, puffs - nx)
-    for i in range(bumps):
-        ang = 2.0 * math.pi * i / bumps + float(rng.uniform(-0.3, 0.3))
-        rad = float(rng.uniform(0.45, 0.72))
-        k = 1.0 - rough * 0.25 * float(rng.random())
-        r = base_r * 0.82 * k
-        px = math.cos(ang) * sx * 0.30 * rad
-        py = math.sin(ang) * sy * 0.34 * rad
-        pz = base_r * (0.55 + 0.45 * float(rng.random()))
-        parts.append(mf.Manifold.sphere(r, seg).translate((px, py, pz)))
-    solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
-    if solid.is_empty():
-        raise GeometryError("Облако не собралось: увеличьте size или число сфер.")
+    if solid.is_empty() or solid.volume() <= 1e-6:
+        raise GeometryError("Облако не собралось: проверьте size и число долей.")
+
+    # size — не пожелание, а точный итоговый габарит. Центрируем по XY и
+    # ставим низ на ноль до общего anchor, чтобы at/center работали как всегда.
     bb = solid.bounding_box()
-    solid = solid.translate((0.0, 0.0, -bb[2]))
-    if flat:
-        cutter = mf.Manifold.cube([sx * 4.0, sy * 4.0, sz * 2.0], True)
-        cutter = cutter.translate((0.0, 0.0, -sz * 0.10 - sz))
-        solid = solid - cutter
+    spans = np.asarray([bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2]])
+    matrix = np.diag([sx / spans[0], sy / spans[1], sz / spans[2], 1.0])[:3]
+    solid = solid.transform(np.asarray(matrix, dtype=np.float64))
+    bb = solid.bounding_box()
+    solid = solid.translate((-(bb[0] + bb[3]) * 0.5,
+                             -(bb[1] + bb[4]) * 0.5, -bb[2]))
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="cloud")
-    out.notes.append(f"облако из {puffs} сфер, seed {seed}")
+    out.notes.append(f"облако: {puffs} плавно слитых долей, seed {seed}, "
+                     f"flat={'да' if flat else 'нет'}")
     return out
 
 
@@ -1201,7 +1194,9 @@ def plus(a, name):
             "купол = sector radius=80 angle=180 thickness=6",
     params={"radius": "радиус шара, мм (50)", "angle": "угол сектора, ° (90)",
             "start": "откуда начинать угол, ° (0)", "thickness": "толщина стенки; "
-            "0 — сплошной сектор (0)", "segments": "сегментов по дуге (по размеру)",
+            "0 — сплошной сектор (0)",
+            "smooth": "уровни Loop-сглаживания сектора 0…4 (0)",
+            "segments": "сегментов по дуге (по размеру)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте",
             "up": "какая половина: верх, низ или обе (верх)"})
 def sector(a, name):
@@ -1246,6 +1241,7 @@ def sector(a, name):
             .translate((0, 0, -radius * 2.0))
         body = mf.Manifold.batch_boolean([body, wedge], mf.OpType.Intersect)
     solid = ensure_volume(body, "сектора")
+    solid = apply_smooth(solid, a, "сектор шара")
     return make_solid(a.scene, name, _placed(a, solid), a, kind="sector")
 
 

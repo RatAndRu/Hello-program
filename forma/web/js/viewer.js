@@ -2842,7 +2842,7 @@ export class Viewer {
     if (this.highlightName) this.refreshOccluders();
   }
 
-  applyMaterial(name, { color, metal, rough, emissive, emissiveStrength, transmission }) {
+  applyMaterial(name, { color, metal, rough, emissive, emissiveStrength, transmission, mirror }) {
     if (!this.model || !name) return;
     this.model.traverse((o) => {
       if (!o.isMesh) return;
@@ -2853,9 +2853,13 @@ export class Viewer {
         if (!m.userData.base) {
           m.userData.base = { color: m.color?.clone() || null, metal: m.metalness, rough: m.roughness, map: m.map };
         }
+        if (m.userData.mirrorStrength === undefined) {
+          const mark = /^mat_mirror([0-9.]+)__/.exec(m.name || '');
+          m.userData.mirrorStrength = mark ? Number(mark[1]) : 0;
+        }
         if (color) m.color?.set(color);
-        if (metal !== undefined && metal !== null) m.metalness = metal;
-        if (rough !== undefined && rough !== null) m.roughness = rough;
+        if (metal !== undefined && metal !== null) m.userData.base.metal = Number(metal);
+        if (rough !== undefined && rough !== null) m.userData.base.rough = Number(rough);
         if (color) m.userData.base.color = new THREE.Color(color);
         if (emissive !== undefined) {
           if (m.emissive) {
@@ -2884,6 +2888,15 @@ export class Viewer {
           m.opacity = 1;
           m.depthWrite = Number(transmission) <= 0.02;
         }
+        if (mirror !== undefined && mirror !== null) {
+          m.userData.mirrorStrength = Math.max(0, Math.min(1, Number(mirror)));
+        }
+        const strength = m.userData.mirrorStrength || 0;
+        const rawMetal = Number(m.userData.base.metal ?? 0);
+        const rawRough = Number(m.userData.base.rough ?? 0.5);
+        m.metalness = Math.max(rawMetal, strength);
+        m.roughness = Math.max(0.02, rawRough * (1 - strength));
+        m.envMapIntensity = 1 + 2 * strength;
         m.needsUpdate = true;
       });
     });

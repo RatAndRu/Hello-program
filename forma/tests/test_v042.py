@@ -230,11 +230,11 @@ class IcosphereTopologyTest(unittest.TestCase):
     def test_honeycomb_has_twelve_pentagons_and_hexagons(self):
         b = ok("д = icosphere radius=40 mode=сота divisions=1")
         topology = b.scene.objects["д"].meta["topology"]
-        self.assertEqual(topology["panels"], 42)
+        self.assertEqual(topology["panels"], 122)
         self.assertEqual(topology["pentagons"], 12)
-        self.assertEqual(topology["hexagons"], 30)
+        self.assertEqual(topology["hexagons"], 110)
         payload = b.payload()["objects"][0]["topology"]
-        self.assertEqual(payload["hexagons"], 30)
+        self.assertEqual(payload["hexagons"], 110)
         watertight(self, b)
 
     def test_unknown_icosphere_mode_is_explained(self):

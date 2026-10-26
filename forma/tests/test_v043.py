@@ -57,7 +57,7 @@ class RemovedObjectsTest(unittest.TestCase):
         self.assertIsNone(lookup("форма_у"))
         for script in ("о = arrow feathers=да", "о = cartridge kind=пистолетный",
                        "о = hemisphere mode=миска", "о = крюк eye=да",
-                       "о = stairs shape=скошенная", "о = gusset notch=4"):
+                       "о = stairs shape=скошенная"):
             with self.subTest(script=script):
                 self.assertFalse(build(script, analyze_model=False).ok)
 
@@ -168,9 +168,11 @@ class BladeTest(unittest.TestCase):
     def test_arc_has_exact_requested_sagitta_and_direction(self):
         for curve in (20.0, -20.0, 0.0):
             path = _arc_path(400.0, curve, 41)
-            self.assertAlmostEqual(float(path[len(path) // 2, 2]), curve, places=7)
-            self.assertAlmostEqual(float(path[0, 2]), 0.0, places=7)
-            self.assertAlmostEqual(float(path[-1, 2]), 0.0, places=7)
+            # 0.45: сгиб в плоскости ШИРИНЫ XY, а не через толщину Z.
+            self.assertAlmostEqual(float(path[len(path) // 2, 1]), curve, places=7)
+            self.assertAlmostEqual(float(path[0, 1]), 0.0, places=7)
+            self.assertAlmostEqual(float(path[-1, 1]), 0.0, places=7)
+            self.assertTrue(np.allclose(path[:, 2], 0.0))
 
     def test_profile_and_section_change_whole_blade(self):
         straight = solid(ok("о = blade profile=прямой section=клин tip=тупое curve=0"))
@@ -210,7 +212,7 @@ class FirstBatchRegressionTest(unittest.TestCase):
         for script in ("о = lightning wall=2", "о = heart wall=2",
                        "о = plus wall=2", "о = horn wall=2",
                        "о = star outer=50 inner=20 depth=10 bevel=2 twist=25 blade=0.2 hole=8 wall=2",
-                       "о = yin_yang hole=12", "о = yin_yang mode=рамка wall=4"):
+                       "о = yin_yang hole=12", "о = yin_yang wall=4"):
             with self.subTest(script=script):
                 self.assertEqual(len(solid(ok(script)).decompose()), 1)
         for kind in ("овал", "липа", "дуб", "клен", "заострённый"):
@@ -230,7 +232,7 @@ class FirstBatchRegressionTest(unittest.TestCase):
 class HelpExamplesTest(unittest.TestCase):
     def test_every_primitive_help_example_builds(self):
         specs = [c for c in commands_help() if c["category"] == "Примитивы"]
-        self.assertEqual(len(specs), 101)
+        self.assertEqual(len(specs), 104)
         for spec in specs:
             with self.subTest(command=spec["name"]):
                 result = build(spec["example"], analyze_model=False)

@@ -176,3 +176,82 @@ def dual_sphere(radius: float, divisions: int):
             {"panels": len(panels), "quads": 0,
              "pentagons": sizes.count(5), "hexagons": sizes.count(6),
              "grid": 2 ** int(divisions)})
+
+
+def pentagon_sphere(radius: float, divisions: int):
+    """Двенадцать пятиугольных панелей на каждом уровне дробления.
+
+    Раньше ``pentagon`` и ``honeycomb`` после нулевого уровня молча
+    превращались в одно и то же тело. Здесь дробятся только треугольники
+    внутри исходных панелей: форма и число пятиугольников не меняются.
+    """
+    verts, faces, topology = dual_sphere(radius, 0)
+    verts, faces = linear_subdivide(verts, faces, divisions)
+    topology["grid"] = 2 ** int(divisions)
+    return verts, faces, topology
+
+
+def honeycomb_sphere(radius: float, divisions: int):
+    """Усечённая икосфера с настоящими шестиугольными панелями.
+
+    Каждая исходная треугольная грань становится шестиугольником, каждая
+    исходная вершина — панелью по числу сходящихся рёбер. Уже на нулевом
+    уровне получается усечённый икосаэдр: 20 шестиугольников и неизбежные
+    12 пятиугольников, а не один додекаэдр из режима ``pentagon``.
+    """
+    import trimesh
+
+    base = trimesh.creation.icosphere(subdivisions=int(divisions), radius=1.0)
+    source_v = np.asarray(base.vertices, dtype=np.float64)
+    source_f = np.asarray(base.faces, dtype=np.int64)
+    directed: dict[tuple[int, int], int] = {}
+    verts: list[np.ndarray] = []
+
+    def near(u: int, v: int) -> int:
+        """Точка усечения на трети ребра рядом с вершиной ``u``."""
+        key = (int(u), int(v))
+        if key not in directed:
+            directed[key] = len(verts)
+            verts.append((2.0 * source_v[key[0]] + source_v[key[1]]) / 3.0)
+        return directed[key]
+
+    panels: list[list[int]] = []
+    # Старая треугольная грань → новая шестиугольная. Порядок сохраняет
+    # наружную ориентацию исходной сетки.
+    for a, b, c in source_f:
+        panels.append([near(a, b), near(b, a), near(b, c),
+                       near(c, b), near(c, a), near(a, c)])
+
+    incident: list[set[int]] = [set() for _ in range(len(source_v))]
+    for tri in source_f:
+        for u, v in ((tri[0], tri[1]), (tri[1], tri[2]), (tri[2], tri[0])):
+            incident[int(u)].add(int(v))
+            incident[int(v)].add(int(u))
+
+    # Старая вершина → пяти-/шестиугольная панель из ближних точек усечения.
+    for vi, neighbours in enumerate(incident):
+        normal = source_v[vi] / max(float(np.linalg.norm(source_v[vi])), 1e-12)
+        ref = np.array([0.0, 0.0, 1.0])
+        if abs(float(np.dot(normal, ref))) > 0.9:
+            ref = np.array([0.0, 1.0, 0.0])
+        e1 = np.cross(normal, ref)
+        e1 /= max(float(np.linalg.norm(e1)), 1e-12)
+        e2 = np.cross(normal, e1)
+        ids = [near(vi, other) for other in neighbours]
+        middle = np.asarray([verts[i] for i in ids]).mean(axis=0)
+        ids.sort(key=lambda pi: math.atan2(
+            float(np.dot(verts[pi] - middle, e2)),
+            float(np.dot(verts[pi] - middle, e1))))
+        p = np.asarray([verts[i] for i in ids])
+        face_normal = np.cross(p[1] - p[0], p[2] - p[0])
+        if float(np.dot(face_normal, normal)) < 0.0:
+            ids.reverse()
+        panels.append(ids)
+
+    points = np.asarray(verts, dtype=np.float64)
+    points *= float(radius) / max(float(np.linalg.norm(points, axis=1).max()), 1e-12)
+    sizes = [len(p) for p in panels]
+    return (points, _triangulate_panels(panels),
+            {"panels": len(panels), "quads": 0,
+             "pentagons": sizes.count(5), "hexagons": sizes.count(6),
+             "grid": 2 ** int(divisions)})

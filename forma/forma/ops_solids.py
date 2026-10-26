@@ -15,10 +15,12 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
+from .geometry import circle_profile
 from .ops import anchor, make_solid, op
-from .ops_basic import _sliced_sphere
+from .ops_basic import _rounded_convex, _sliced_sphere
 from .ops_shapes import _profile, _revolve
-from .shape_features import apply_smooth, cut_center_hole
+from .shape_features import (apply_smooth, cut_center_hole, rounded_extrude,
+                             transition_radius)
 
 
 # --------------------------------------------------------------------------- #
@@ -225,7 +227,8 @@ def disc(a, name):
             "start": "откуда начинать, градусы от +X (0)",
             "thickness": "толщина, мм (6)",
             "hole": "центральное сквозное отверстие у вершины сектора, мм (0 — сплошной)",
-            "smooth": "уровни Loop-сглаживания всего сектора 0…4 (0)",
+            "smooth": "ступени скругления переходных рёбер 0…4 (0); "
+                      "верх, низ и радиальные плоскости остаются плоскими",
             "segments": "сегментов по дуге (по детализации)",
             "detail": "детализация 0…5 (3)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -240,19 +243,21 @@ def pie(a, name):
     if hole >= diameter - 0.4:
         raise GeometryError("Сектор круга: hole не оставляет дуги вокруг отверстия.",
                             hint="Уменьшите hole хотя бы на 0.4 мм ниже diameter.")
+    full = _segments(a, max(24, int(diameter * 1.2)), minv=12)
     if angle < 359.5:
-        full = _segments(a, max(24, int(diameter * 1.2)), minv=12)
         n = max(4, int(round(full * angle / 360.0)))
         pts = [(0.0, 0.0)]
         for k in range(n + 1):
             ang = math.radians(start + angle * k / n)
             pts.append((radius * math.cos(ang), radius * math.sin(ang)))
-        solid = mf.CrossSection([_profile(pts)]).extrude(thickness)
+        cross = mf.CrossSection([_profile(pts)])
     else:
-        full = _segments(a, max(24, int(diameter * 1.2)), minv=12)
-        solid = mf.Manifold.cylinder(thickness, radius, radius, full).translate((0, 0, 0))
+        cross = mf.CrossSection([circle_profile(radius, full)])
+    edge_r = transition_radius(a, min(thickness * 0.45, radius * 0.04))
+    solid = rounded_extrude(cross, thickness, edge_r, "сектор круга")
+    # Скругление выполнено до сверления: широкие грани и стенка отверстия
+    # не раздуваются и не стягиваются Loop-сеткой.
     solid = cut_center_hole(solid, thickness, hole, what="сектор круга")
-    solid = apply_smooth(solid, a, "сектор круга")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="pie")
     out.notes.append(f"сектор {angle:g}° от {start:g}°, ø{diameter:g}×{thickness:g} мм")
     return out
@@ -445,7 +450,8 @@ def bead(a, name):
     summary="Слиток — объёмная трапеция с независимой верхней площадкой. "
             "taper_mode=бока скашивает только лево/право и оставляет перёд/зад "
             "параллельными; top_size/top_offset задают верх напрямую. round "
-            "округляет углы контура, smooth сглаживает всё тело.",
+            "округляет углы контура, smooth скругляет только переходные рёбра, "
+            "сохраняя широкие грани плоскими.",
     example="слиток = ingot length=100 width=50 height=22 taper=8\n"
             "груз = ingot length=60 width=40 height=30 taper_mode=бока taper=8 smooth=1\n"
             "верх = ingot length=100 width=50 height=22 top_size=[70,35] top_offset=[8,0]",
@@ -456,7 +462,8 @@ def bead(a, name):
             "top_size": "независимые размеры верха [X,Y]; перекрывает taper",
             "top_offset": "сдвиг верхней плоскости [dx,dy], мм",
             "round": "скругление только углов контура в плане, мм (0)",
-            "smooth": "Loop-сглаживание всех граней 0…4 (0)",
+            "smooth": "ступени скругления переходных рёбер 0…4 (0), "
+                      "без Loop-стягивания широких граней",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["length"])
 def ingot(a, name):
@@ -487,7 +494,11 @@ def ingot(a, name):
     top = [(x + float(offset[0]), y + float(offset[1])) for x, y in top]
     pts = [(x, y, 0.0) for x, y in bottom] + [(x, y, height) for x, y in top]
     solid = mf.Manifold.hull_points(np.ascontiguousarray(pts, dtype=np.float64))
-    solid = apply_smooth(solid, a, "слиток")
+    edge_r = transition_radius(a, min(height, tx, ty) * 0.18)
+    if edge_r > 1e-6:
+        # Эрозия по исходным плоскостям + сфера: настоящие радиусы только
+        # на рёбрах, широкие верх/низ и скошенные бока остаются плоскими.
+        solid = _rounded_convex(solid, edge_r, a, "слиток")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="ingot")
     out.notes.append(f"слиток {length:g}×{width:g}×{height:g} мм, скос {taper:g} мм "
                      f"({mode}), верх {2*tx:g}×{2*ty:g}, сдвиг {offset.tolist()}")

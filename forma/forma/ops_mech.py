@@ -18,7 +18,7 @@ from .errors import GeometryError
 from .model import Solid
 from .ops import detail_factor, op
 from .ops_shapes import _profile
-from .shape_features import apply_smooth
+from .shape_features import transition_radius
 
 
 def _segments(a, default: int, minv: int = 12, maxv: int = 256) -> int:
@@ -288,7 +288,8 @@ def lever(a, name):
             "base_h": "высота гнезда, мм (8)",
             "fit": "плотно или зазор — «плотно»",
             "gap": "зазор по кругу при fit=зазор, мм (3)",
-            "smooth": "уровни Loop-сглаживания шляпки и гнезда 0…4 (0)",
+            "smooth": "ступени скругления переходных кромок шляпки и гнезда "
+                      "0…4 (0); рабочие плоскости и посадка не деформируются",
             "segments": "сегментов у круглых частей (по детализации)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def button(a, name):
@@ -344,19 +345,42 @@ def button(a, name):
             prof.append((max(0.0, r), z))
     else:
         prof.append((0.0, height))
-    cap = mf.Manifold.revolve(mf.CrossSection([_profile(prof)]), segments)
+    cap_cross = mf.CrossSection([_profile(prof)])
+    edge_r = transition_radius(a, min(height * 0.22, radius * 0.12))
+    if edge_r > 1e-6:
+        core = cap_cross.offset(-edge_r, mf.JoinType.Round, 2.0, 20)
+        if core.is_empty() or core.area() <= 1e-9:
+            raise GeometryError("Скругление шляпки кнопки слишком велико.")
+        cap = mf.Manifold.revolve(core, segments).minkowski_sum(
+            mf.Manifold.sphere(edge_r, max(12, segments // 4)))
+    else:
+        cap = mf.Manifold.revolve(cap_cross, segments)
 
     # --- гнездо: платформа с вырезом под шляпку
     clearance = 0.3 if fit == "плотно" else gap
     socket_r = radius + clearance
     socket_depth = min(height * 0.35, 2.5) if fit == "плотно" else min(
         height * 0.5, 4.0)
+    base_edge = min(edge_r, base_h * 0.45, base_d * 0.08)
     if base_shape == "цилиндр":
-        plate = mf.Manifold.cylinder(base_h, base_d / 2.0, base_d / 2.0, segments)
+        if base_edge > 1e-6:
+            plate = mf.Manifold.cylinder(base_h - 2 * base_edge,
+                                         base_d / 2.0 - base_edge,
+                                         base_d / 2.0 - base_edge, segments,
+                                         center=True).minkowski_sum(
+                mf.Manifold.sphere(base_edge, max(12, segments // 4)))
+            plate = plate.translate((0.0, 0.0, base_h / 2.0))
+        else:
+            plate = mf.Manifold.cylinder(base_h, base_d / 2.0, base_d / 2.0, segments)
     else:
-        # куб по умолчанию растёт от угла — центрируем по XY и поднимаем на base_h
-        plate = mf.Manifold.cube((base_d, base_d, base_h), center=True).translate(
-            (0.0, 0.0, base_h / 2.0))
+        # Скругляется только наружная платформа; посадочный вырез делается
+        # позже и потому сохраняет точные размеры и ровную цилиндрическую стенку.
+        plate = mf.Manifold.cube((base_d - 2 * base_edge,
+                                  base_d - 2 * base_edge,
+                                  base_h - 2 * base_edge), center=True)
+        if base_edge > 1e-6:
+            plate = plate.minkowski_sum(mf.Manifold.sphere(base_edge, 16))
+        plate = plate.translate((0.0, 0.0, base_h / 2.0))
     # вырез ровно socket_depth глубиной: от base_h - socket_depth и выше
     cutter = mf.Manifold.cylinder(socket_depth + 1.0, socket_r, socket_r, segments)
     cutter = cutter.translate((0.0, 0.0, base_h - socket_depth))
@@ -365,8 +389,6 @@ def button(a, name):
         raise GeometryError("Гнездо кнопки получилось пустым: вырез съел платформу.",
                             hint="Увеличьте base_d или уменьшите diameter.")
     cap = cap.translate((0.0, 0.0, base_h - socket_depth))
-    plate = apply_smooth(plate, a, "гнездо кнопки")
-    cap = apply_smooth(cap, a, "шляпка кнопки")
     placed = _placed_all(a, [plate, cap])
     # главный объект — шляпка: её и анимируют; гнездо живёт отдельно
     main = _make(a, name, placed[1], "button")

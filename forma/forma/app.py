@@ -811,12 +811,13 @@ def _run_uistest(report_path: str | None) -> int:
 
                 # 0.38: стандартные тела первыми, новые тела и однозначные имена
                 lead = js_app.split("const TOOL_SHAPES = [".encode("utf-8"), 1)[1]
-                lead = lead.split(b"op: '", 8)[1:]
+                lead = lead.split(b"op: '", 10)[1:]
                 lead_ops = [piece.split(b"'", 1)[0].decode("utf-8") for piece in lead]
                 check("каталог начинается стандартными телами",
-                      lead_ops[:8] == ["sheet", "box", "prism", "octa", "pyramid",
-                                       "cone", "cylinder", "sphere"],
-                      " → ".join(lead_ops[:8]))
+                      lead_ops[:10] == ["sheet", "fold_sheet", "box", "face_box",
+                                        "prism", "octa", "pyramid", "cone",
+                                        "cylinder", "sphere"],
+                      " → ".join(lead_ops[:10]))
                 octa = post("/api/preview", {"script": "к = octa radius=30 height=80"})
                 check("октаэдр: восемь граней одной командой",
                       octa.get("ok") is True and octa.get("tris") == 8,
@@ -1031,6 +1032,38 @@ def _run_uistest(report_path: str | None) -> int:
                               for op in ("strip", "grating", "spikes", "column",
                                          "arc_prism", "profile2020")),
                       f"{ribbon_count} объектов в примере")
+
+                # 0.45: полости, рельефные грани, срезы и настоящий сгиб листа
+                cavity = post("/api/preview", {"script": (
+                    "р = cavity_frame outer=круг size=[100,100] depth=8 "
+                    "cavity=квадрат cavity_size=[20,20] margin=10\n"
+                    "к = face_box size=[70,70,70] mode=выпуклый profile=линза "
+                    "corner_cut=10 corners=один at=[140,0,0]\n"
+                    "л = fold_sheet width=100 length=140 parts=4 angle=120 "
+                    "gap=1 sharp=0.3 at=[280,0,0]\n"
+                    "б = box size=[60,50,40] hole_x=10 hole_y=12 hole_y_shape=квадрат "
+                    "hole_z=16 hole_z_shape=овал at=[420,0,0]")})
+                check("0.45: рамка, рельефный срез, гармошка и три отверстия",
+                      cavity.get("ok") is True and cavity.get("objects") == 4,
+                      f"{cavity.get('tris', 0)} трис, {cavity.get('objects', 0)} объектов")
+                revised45 = post("/api/preview", {"script": (
+                    "я = egg flat=да wall=3 depth=6 plane=плашмя\n"
+                    "к = drop flat=да wall=2 depth=6 plane=плашмя at=[100,0,0]\n"
+                    "т = tee shape=капсулы at=[200,0,0]\n"
+                    "ы = yoke shape=бруски smooth=1 at=[350,0,0]\n"
+                    "п = saw hole=0 at=[500,0,0]\n"
+                    "б = blade curve=-40 at=[650,0,0]")})
+                check("0.45: формочки, ветви T/Y, сплошная пила и обратный изгиб",
+                      revised45.get("ok") is True and revised45.get("objects") == 6,
+                      f"{revised45.get('tris', 0)} трис, {revised45.get('objects', 0)} объектов")
+                folds = get("/api/example?key=cavity_folds")
+                folds_built = post("/api/build", {"script": folds.get("script", "")})
+                folds_count = len(folds_built.get("objects") or [])
+                check("0.45: проект из 16 тел и карточки новых примитивов",
+                      folds_built.get("ok") is True and folds_count == 16
+                      and all(f"op: '{op}'".encode("utf-8") in js_app
+                              for op in ("cavity_frame", "face_box", "fold_sheet")),
+                      f"{folds_count} объектов в примере")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

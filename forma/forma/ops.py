@@ -239,9 +239,10 @@ STAND_PARAMS = {
 _SIGN_PLANE_OPS = {
     "star", "heart", "plus", "spiral", "yin_yang", "seven_seg", "arrow",
     "tee", "crescent", "lightning", "yoke", "blade", "saw", "leaf",
-    "display", "mirror_plate", "полуовал",
+    "display", "mirror_plate", "полуовал", "cavity_frame", "egg", "drop",
 }
-_SIGN_STAND_OPS = {"arrow", "tee", "crescent", "lightning", "yoke"}
+_SIGN_STAND_OPS = {"arrow", "tee", "crescent", "lightning", "yoke",
+                   "cavity_frame", "egg", "drop"}
 
 
 def _constructor_axes(args) -> np.ndarray:
@@ -254,7 +255,8 @@ def _constructor_axes(args) -> np.ndarray:
         if plane == "yz":
             return rotation_matrix(90.0, (0, 0, 1))[:, :3]
         return np.eye(3)
-    if name in _SIGN_PLANE_OPS:
+    if name in _SIGN_PLANE_OPS and (name not in {"egg", "drop"}
+                                    or args.boolean("flat", False)):
         plane = ((args.text("plane") or "").strip().lower()
                  if args.has("plane") else "")
         flat = plane in PLANE_FLAT
@@ -290,7 +292,7 @@ def make_solid(scene: Scene, name: str | None, manifold: mf.Manifold, args,
     glow = float(style.get("emissive_strength", base.emissive_strength if base else 1.0))
     transmission = float(style.get("transmission", base.transmission if base else 0.0))
     visible = style.get("visible", True)
-    mirror = bool(style.get("mirror", base.mirror if base else False))
+    mirror = float(style.get("mirror", base.mirror if base else 0.0) or 0.0)
     solid_name = name or scene.auto_name(kind or args.spec.name)
     solid = Solid(name=solid_name, manifold=manifold, color=color, metal=float(metal),
                   rough=float(rough), density=float(density), visible=bool(visible),

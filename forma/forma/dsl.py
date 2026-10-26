@@ -450,6 +450,19 @@ class Args:
                 raise DslError("Прозрачность должна быть от 0 до 1.",
                                line=self.cmd.line, command=self.cmd.text)
             data["transmission"] = v
+        if "mirror" in self.kwargs or "зеркальность" in self.kwargs:
+            key = "mirror" if "mirror" in self.kwargs else "зеркальность"
+            raw = (self.text(key) or "").strip().lower()
+            if raw in ("да", "yes", "true", "вкл"):
+                value = 1.0
+            elif raw in ("нет", "no", "false", "выкл", ""):
+                value = 0.0
+            else:
+                value = float(self.num(key))
+            if not (0.0 <= value <= 1.0):
+                raise DslError("Зеркальность должна быть от 0 до 1.",
+                               line=self.cmd.line, command=self.cmd.text)
+            data["mirror"] = value
         if "visible" in self.kwargs:
             data["visible"] = self.boolean("visible", True)
         return data

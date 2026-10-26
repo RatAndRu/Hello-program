@@ -20,6 +20,7 @@ from .values import numeric_issue, parse_value
 
 # регистрируем команды
 from . import ops_basic  # noqa: F401,E402
+from . import ops_cavity  # noqa: F401,E402
 from . import ops_curves  # noqa: F401,E402
 from . import ops_shape  # noqa: F401,E402
 from . import ops_scene  # noqa: F401,E402
@@ -129,7 +130,7 @@ class Build:
                 "emissive": getattr(solid, "emissive", "") or "",
                 "emissive_strength": getattr(solid, "emissive_strength", 1.0),
                 "transmission": getattr(solid, "transmission", 0.0),
-                "mirror": bool(getattr(solid, "mirror", False)),
+                "mirror": float(getattr(solid, "mirror", 0.0) or 0.0),
                 "kind": solid.kind,
                 "op": solid.op,
                 "line": solid.line,

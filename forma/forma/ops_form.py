@@ -182,17 +182,16 @@ def crown(a, name):
     summary="Одна отдельная «шестёрка» инь-ян площадью в половину исходного "
             "круга, а не две соединённые половины. Внутренние дуги идут в разные "
             "стороны; round — плавное скругление. hole делает отверстие в точке, "
-            "mode=рамка/wall — контурную рамку.",
+            "wall>0 — контурную рамку; отдельного mode больше нет.",
     example="инь = yin_yang diameter=120 thick=16 round=3 hole=16\n"
-            "рамка = yin_yang diameter=120 thick=10 mode=рамка wall=4\n"
+            "рамка = yin_yang diameter=120 thick=10 wall=4\n"
             "зеркало = yin_yang diameter=120 thick=16 side=правый",
     params={"diameter": "диаметр исходного круга, мм (120)",
             "thick": "толщина, мм (16)",
             "round": "плавное скругление кромки, мм (0 — точное совмещение половин)",
             "side": "левый (по умолчанию) или правый — зеркальная одиночная фигура",
             "hole": "отверстие в центре точки этой половины, мм (0)",
-            "mode": "фигура — сплошная; рамка — полый контур",
-            "wall": "толщина рамки, мм; wall>0 тоже включает режим рамки",
+            "wall": "толщина рамки, мм; 0 — сплошная фигура, wall>0 — рамка",
             "segments": "точек на дугу (по размеру)",
             "plane": "фронт — знак стоит в XZ лицом −Y; плашмя — лежит в XY "
                      "лицом +Z (фронт)",
@@ -205,11 +204,6 @@ def yin_yang(a, name):
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
     hole = float(a.num("hole", 0.0, minv=0.0) or 0.0)
     wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
-    mode = (a.text("mode") or "фигура").strip().lower()
-    if mode not in ("фигура", "форма", "сплошная", "рамка", "frame"):
-        raise GeometryError("yin_yang: mode=фигура или рамка.")
-    if mode in ("рамка", "frame") and wall <= 1e-6:
-        wall = max(1.0, diameter * 0.04)
     side_raw = (a.text("side") or "левый").strip().lower()
     if side_raw in ("правый", "правая", "right", "право"):
         side = "правый"

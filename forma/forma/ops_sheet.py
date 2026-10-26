@@ -283,6 +283,139 @@ def sheet(a, name):
 
 
 # --------------------------------------------------------------------------- #
+#  Сгибаемый лист: одиночный сгиб и гармошка в любом направлении
+# --------------------------------------------------------------------------- #
+
+def _accordion_path(span: float, parts: int, angle_deg: float, gap: float,
+                    sharp: float, thickness: float, offset: float):
+    radius = thickness + gap / 2.0 * (1.0 - 0.9 * sharp)
+    turn = math.radians(angle_deg)
+    arc_len = radius * turn
+    panel = span / parts
+    if panel <= arc_len * 1.15:
+        raise GeometryError(
+            f"На часть листа приходится {panel:.1f} мм, а сгиб занимает {arc_len:.1f} мм.",
+            hint="Уменьшите gap, angle или parts; либо увеличьте лист.")
+    lines = ([span * offset] if parts == 2 else
+             [span * i / parts for i in range(1, parts)])
+    pts = [(0.0, 0.0, 0.0, 0.0)]  # u, z, угол, длина исходного листа
+
+    def arc_step(x, z, ang, sign, d_ang):
+        cx = x + sign * radius * (-math.sin(ang))
+        cz = z + sign * radius * math.cos(ang)
+        a = ang + d_ang
+        return (cx + sign * radius * math.sin(a),
+                cz - sign * radius * math.cos(a), a)
+
+    x = z = ang = current = 0.0
+    half = arc_len / 2.0
+    for index, line in enumerate(lines):
+        sign = (-1.0) ** index
+        start = line - half
+        if start < current - 1e-9:
+            raise GeometryError("Сгибы стоят слишком близко.", hint="Уменьшите gap или parts.")
+        x += (start - current) * math.cos(ang)
+        z += (start - current) * math.sin(ang)
+        current = start
+        pts.append((x, z, ang, current))
+        n = (max(3, int(round(turn / math.radians(6.0) * (1.0 - 0.86 * sharp))))
+             if sharp > 0.01 else max(10, int(turn / math.radians(6.0))))
+        for _ in range(n):
+            x, z, ang = arc_step(x, z, ang, sign, sign * turn / n)
+            current += arc_len / n
+            pts.append((x, z, ang, current))
+    x += (span - current) * math.cos(ang)
+    z += (span - current) * math.sin(ang)
+    pts.append((x, z, ang, span))
+    arr = np.asarray(pts, dtype=np.float64)
+    return arr[:, 3], arr[:, 0], arr[:, 1], arr[:, 2], radius, panel
+
+
+@op("fold_sheet", aliases=("сгибаемый_лист", "лист_гармошка", "гармошка",
+                           "folding_sheet", "bend_sheet"), category="Примитивы",
+    summary="Сгибаемый лист с постоянной толщиной: parts=2 — один сгиб в "
+            "выбранном месте, parts>2 — гармошка с чередованием сторон. axis "
+            "задаёт X, Y или диагональ, direction — произвольный угол линии "
+            "сгиба в плоскости. gap — просвет слоёв, sharp — от округлой "
+            "кривой до острого пресс-бигового ребра.",
+    example="сгиб = fold_sheet length=240 width=160 thickness=1 parts=2 angle=110 gap=2\n"
+            "гармошка = fold_sheet length=360 width=160 thickness=1 parts=5 angle=135 gap=2 sharp=.4\n"
+            "диагональ = fold_sheet length=200 width=140 parts=2 axis=диагональ angle=90",
+    params={"width": "ширина по Y, мм (120)",
+            "length": "длина по X, мм (200)",
+            "thickness": "толщина листа, мм (1.2)",
+            "parts": "2 — один сгиб; 3…12 — гармошка (2)",
+            "angle": "угол каждого сгиба 1…180° (120)",
+            "gap": "просвет между слоями, мм; 0 — касание (0.5·толщины)",
+            "sharp": "острота сгиба 0…1: 0 — округлый, 1 — пресс-биг (0)",
+            "axis": "x, y или диагональ — направление длины до сгиба (x)",
+            "direction": "необязательный угол направления в плоскости, °; перекрывает axis",
+            "offset": "место одиночного сгиба 0.1…0.9 от длины (0.5)",
+            "segments": "предельная плотность исходной сетки (авто)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def fold_sheet(a, name):
+    width = float(a.num("width", 120.0, minv=0.5, maxv=5000.0))
+    length = float(a.num("length", 200.0, minv=0.5, maxv=8000.0))
+    thickness = float(a.num("thickness", 1.2, minv=0.2, maxv=80.0))
+    parts = int(a.num("parts", 2, minv=2, maxv=12) or 2)
+    angle_deg = float(a.num("angle", 120.0, minv=1.0, maxv=180.0))
+    gap = float(a.num("gap", thickness * 0.5, minv=0.0, maxv=400.0) or 0.0)
+    sharp = float(a.num("sharp", 0.0, minv=0.0, maxv=1.0) or 0.0)
+    offset = float(a.num("offset", 0.5, minv=0.1, maxv=0.9))
+    axis = (a.text("axis", "x") or "x").strip().lower()
+    direction = a.num("direction", None, minv=-180.0, maxv=180.0)
+    if direction is None:
+        if axis in ("x", "х", "вдоль"):
+            direction = 0.0
+        elif axis in ("y", "у", "поперёк", "поперек"):
+            direction = 90.0
+        elif axis in ("диагональ", "угол", "diag", "diagonal"):
+            direction = 45.0
+        else:
+            raise GeometryError("fold_sheet: axis=x, y или диагональ.")
+    phi = math.radians(float(direction))
+    ca, sa = math.cos(phi), math.sin(phi)
+    span = abs(length * ca) + abs(width * sa)
+    ps, pu, pz, pt, radius, panel = _accordion_path(
+        span, parts, angle_deg, gap, sharp, thickness, offset)
+
+    solid = mf.Manifold.cube((length, width, thickness), True)
+    segments = int(a.num("segments", 0, minv=0, maxv=MAX_CELLS) or 0)
+    refine = max(0.2, min(radius / 2.5, panel / 12.0))
+    if segments:
+        refine = min(refine, max(length, width) / segments)
+    solid = solid.refine_to_length(refine)
+    verts, faces = manifold_mesh(solid)
+    u = verts[:, 0] * ca + verts[:, 1] * sa
+    v = -verts[:, 0] * sa + verts[:, 1] * ca
+    lo = float(u.min())
+    along = np.clip(u - lo, 0.0, ps[-1])
+    new_u = np.interp(along, ps, pu) + lo
+    tau = np.interp(along, ps, pt)
+    new_z = np.interp(along, ps, pz)
+    off = verts[:, 2]
+    mapped_u = new_u - np.sin(tau) * off
+    mapped_z = new_z + np.cos(tau) * off
+    moved = np.empty_like(verts)
+    moved[:, 0] = mapped_u * ca - v * sa
+    moved[:, 1] = mapped_u * sa + v * ca
+    moved[:, 2] = mapped_z
+    folded = manifold_from_arrays(moved, faces, "сгибаемый лист")
+    folded = folded.simplify(max(0.01, min(radius, panel) * 0.02))
+    before = float(solid.volume())
+    after = float(folded.volume())
+    tolerance = min(0.25, 0.02 + len(ps) * thickness / max(span, 1e-6))
+    if before > 1e-6 and abs(after - before) / before > tolerance:
+        raise GeometryError("Сгиб замкнул лист в себя.",
+                            hint="Увеличьте gap или уменьшите angle/parts.")
+    folded = anchor(folded, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
+    out = make_solid(a.scene, name, folded, a, kind="fold_sheet")
+    out.notes.append(f"сгибаемый лист: parts={parts}, angle={angle_deg:g}°, "
+                     f"direction={float(direction):g}°, gap={gap:g}, sharp={sharp:g}")
+    return out
+
+
+# --------------------------------------------------------------------------- #
 #  Гофрирование: смещение по оси как функция от двух других
 # --------------------------------------------------------------------------- #
 

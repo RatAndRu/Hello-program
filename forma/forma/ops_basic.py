@@ -11,8 +11,9 @@ from .errors import GeometryError
 from .geometry import (FINENESS_MM, auto_segments, circle_profile, hull_of_manifolds,
                        limit_segments, manifold_from_arrays, manifold_mesh)
 from .ops import anchor, detail_factor, detail_level, ensure_solid, make_solid, op
-from .primitive_topology import (cube_sphere, dual_sphere, linear_subdivide,
-                                 loop_smooth)
+from .primitive_topology import (cube_sphere, honeycomb_sphere, linear_subdivide,
+                                 loop_smooth, pentagon_sphere)
+from .shape_features import slot_contour
 
 
 def _top_offset(a) -> np.ndarray:
@@ -181,12 +182,41 @@ def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
     return int(got)
 
 
+def _axis_hole_cutter(axis: str, shape: str, diameter: float,
+                      oval_aspect: float, span: float) -> mf.Manifold:
+    """Центрированный сквозной резец: локальные u/v — поперёк оси, w — ось."""
+    shape = {"круг": "круг", "круглое": "круг", "circle": "круг",
+             "квадрат": "квадрат", "square": "квадрат",
+             "овал": "овал", "капсула": "овал", "slot": "овал",
+             "oval": "овал"}.get(shape.strip().lower())
+    if shape is None:
+        raise GeometryError("Форма отверстия: круг, квадрат или овал.")
+    if shape == "круг":
+        profile = np.asarray(circle_profile(diameter / 2.0, 64), dtype=np.float64)
+    elif shape == "квадрат":
+        h = diameter / 2.0
+        profile = np.asarray([(-h, -h), (h, -h), (h, h), (-h, h)], dtype=np.float64)
+    else:
+        profile = slot_contour(diameter, diameter / oval_aspect, 24)
+    cutter = mf.Manifold.extrude(mf.CrossSection([profile]), span).translate((0, 0, -span / 2))
+    matrices = {
+        "z": np.eye(3, 4),
+        # u→Z, v→−Y, w→X (определитель +1)
+        "x": np.asarray([[0, 0, 1, 0], [0, -1, 0, 0], [1, 0, 0, 0]], dtype=float),
+        # u→Z, v→X, w→Y (циклический поворот)
+        "y": np.asarray([[0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, 0]], dtype=float),
+    }
+    return cutter.transform(np.asarray(matrices[axis], dtype=np.float64))
+
+
 @op("box", aliases=("куб", "коробка", "cube", "параллелепипед", "брусок", "блок"),
     category="Примитивы",
     summary="Параллелепипед с независимой верхней плоскостью. top_size меняет её "
             "стороны, top_offset сдвигает центр, base_angle=не 90 делает в основании "
             "параллелограмм. Сильный round, близкий к половине меньшей стороны, "
-            "превращает коробку в овальную/круглую форму. По умолчанию стоит на полу.",
+            "превращает коробку в овальную/круглую форму. hole_x/hole_y/hole_z "
+            "пробивают одновременно по любым осям; форма каждого отверстия "
+            "независима: круг, квадрат или прямой овал. По умолчанию стоит на полу.",
     example="блок = box size=[120,80,50] top_size=[80,50] top_offset=[15,-5]\n"
             "скошенный = box size=[100,70,40] base_angle=65",
     params={"size": "стороны нижнего основания и высота [x,y,z], мм (обязательно)",
@@ -195,6 +225,13 @@ def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
             "base_angle": "угол между сторонами основания 15…165° (90 — прямоугольник)",
             "round": "радиус рёбер; у квадратной коробки около половины стороны — "
                      "овальная/круглая форма",
+            "hole_x": "сквозное отверстие по X: диаметр/сторона/длина, мм; 0 — нет",
+            "hole_y": "сквозное отверстие по Y: диаметр/сторона/длина, мм; 0 — нет",
+            "hole_z": "сквозное отверстие по Z: диаметр/сторона/длина, мм; 0 — нет",
+            "hole_x_shape": "форма отверстия X: круг, квадрат или овал",
+            "hole_y_shape": "форма отверстия Y: круг, квадрат или овал",
+            "hole_z_shape": "форма отверстия Z: круг, квадрат или овал",
+            "oval_aspect": "отношение длины овала к ширине 1…8 (1.8)",
             "detail": "детализация скругления 0…5 (3): больше — глаже и тяжелее",
             "center": "центрировать в точке at (по умолчанию — низ на at)",
             "at": "положение [x,y,z]"},
@@ -235,10 +272,24 @@ def box(a, name):
                     f"Скругление {r:g} мм слишком велико для высоты {height:g} мм.",
                     hint="round не должен превышать половину высоты.")
             solid = _rounded_convex(solid, r, a, "блок")
+    oval_aspect = float(a.num("oval_aspect", 1.8, minv=1.0, maxv=8.0) or 1.0)
+    span = max(x, y, height, tx, ty, float(np.linalg.norm(offset))) * 3.0 + 20.0
+    holes = []
+    for axis in ("x", "y", "z"):
+        diameter = float(a.num(f"hole_{axis}", 0.0, minv=0.0, maxv=10000.0) or 0.0)
+        if diameter <= 1e-6:
+            continue
+        shape = a.text(f"hole_{axis}_shape", "круг") or "круг"
+        solid = solid - _axis_hole_cutter(axis, shape, diameter, oval_aspect, span)
+        holes.append(f"{axis}:{shape} {diameter:g}")
+    if solid.is_empty() or solid.volume() <= 1e-6:
+        raise GeometryError("Отверстия удалили весь блок.", hint="Уменьшите hole_x/hole_y/hole_z.")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="box")
     if custom:
         out.notes.append(f"верх {tx:g}×{ty:g}, сдвиг {offset.tolist()}, угол основания {angle:g}°")
+    if holes:
+        out.notes.append("сквозные отверстия: " + ", ".join(holes))
     return out
 
 
@@ -558,8 +609,8 @@ def pyramid(a, name):
     params={"radius": "радиус описанной сферы, мм (обязательно)",
             "mode": "triangle/треугольный, quad/квадратный, pentagon/пятиугольник, "
                     "honeycomb/сота/шестиугольник (triangle)",
-            "divisions": "уровень 0…5 (2): 0 — базовые 20 треугольников, 6 квадратов "
-                         "или 12 пятиугольников; каждый уровень делит панели на 4",
+            "divisions": "уровень 0…5 (2): дробит панели выбранного типа; сота уже "
+                         "на уровне 0 содержит 20 шестиугольников и 12 пятиугольников",
             "at": "центр [x,y,z]"},
     positional=["radius"])
 def icosphere(a, name):
@@ -573,11 +624,11 @@ def icosphere(a, name):
         "треугольники": "triangle", "три": "triangle",
         "quad": "quad", "square": "quad", "квадратный": "quad",
         "квадрат": "quad", "квадраты": "quad",
-        "pentagon": "dual", "pentagonal": "dual", "пятиугольник": "dual",
-        "пятиугольный": "dual", "додекаэдр": "dual",
-        "honeycomb": "dual", "hex": "dual", "hexagon": "dual",
-        "сота": "dual", "соты": "dual", "шестиугольник": "dual",
-        "шестиугольный": "dual",
+        "pentagon": "pentagon", "pentagonal": "pentagon", "пятиугольник": "pentagon",
+        "пятиугольный": "pentagon", "додекаэдр": "pentagon",
+        "honeycomb": "honeycomb", "hex": "honeycomb", "hexagon": "honeycomb",
+        "сота": "honeycomb", "соты": "honeycomb", "шестиугольник": "honeycomb",
+        "шестиугольный": "honeycomb",
     }
     if raw_mode not in modes:
         raise GeometryError("mode икосферы: triangle, quad, pentagon или honeycomb (сота).")
@@ -589,8 +640,10 @@ def icosphere(a, name):
                     "pentagons": 0, "hexagons": 0, "grid": 2 ** divisions}
     elif mode == "quad":
         verts, faces, topology = cube_sphere(radius, divisions)
+    elif mode == "pentagon":
+        verts, faces, topology = pentagon_sphere(radius, divisions)
     else:
-        verts, faces, topology = dual_sphere(radius, divisions)
+        verts, faces, topology = honeycomb_sphere(radius, divisions)
     solid = manifold_from_arrays(verts, faces, "икосферы")
     at = a.vec("at", 3, default=(0, 0, 0))
     solid = anchor(solid, at, center=True)
@@ -604,17 +657,20 @@ def icosphere(a, name):
 
 
 @op("octa", aliases=("октаэдр", "октаедр", "восьмигранник", "octahedron"), category="Примитивы",
-    summary="Октаэдр с наращиваемой сеткой: divisions=0…4 делит каждую грань "
-            "на 4^N треугольников без изменения формы, smooth=0…4 выполняет "
-            "настоящее Loop-сглаживание с сохранением габарита. Стоит на полу.",
+    summary="Октаэдр и симметричные двойные пирамиды: faces задаёт чётное "
+            "число исходных треугольных граней (8 — обычный октаэдр), а "
+            "divisions отдельно дробит каждую из них на 4^N без изменения "
+            "формы. smooth=0…4 выполняет Loop-сглаживание. Стоит на полу.",
     example="кристалл = octa radius=30 height=80\n"
-            "подробный = octa radius=30 height=80 divisions=2\n"
-            "гладкий = octa radius=30 height=80 divisions=1 smooth=1",
+            "десятигранник = octa radius=30 height=80 faces=10\n"
+            "подробный = octa radius=30 height=80 faces=8 divisions=2",
     params={"radius": "полуширина по X и Y, мм (обязательно)",
             "height": "полная высота, мм (по умолчанию 2·radius)",
             "depth": "полуширина по Y, если она отличается от X (radius)",
-            "divisions": "дополнительные вершины 0…4 (0): 6 вершин/8 граней, "
-                         "далее каждая грань делится на 4 без скругления",
+            "faces": "чётное число исходных граней 6…64 (8 — октаэдр); "
+                     "это НЕ дробление сетки",
+            "divisions": "дробление каждой исходной грани 0…4 (0): "
+                         "faces·4^N треугольников без скругления",
             "smooth": "уровни Loop-сглаживания 0…4 (0 — исходные плоские грани)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["radius"])
@@ -624,21 +680,39 @@ def octa(a, name):
     depth = float(radius if depth is None else depth)
     height = a.num("height", None, minv=0.01)
     height = float(2.0 * radius if height is None else height)
+    face_count = int(a.int("faces", 8, minv=6, maxv=64))
+    if face_count % 2:
+        raise GeometryError("octa: faces должно быть чётным: 6, 8, 10 … 64.",
+                            hint="Каждая сторона экватора даёт по одной верхней и нижней грани.")
     divisions = int(a.int("divisions", 0, minv=0, maxv=4))
     half = height / 2.0
-    pts = np.asarray([[radius, 0.0, 0.0], [-radius, 0.0, 0.0],
-                      [0.0, depth, 0.0], [0.0, -depth, 0.0],
-                      [0.0, 0.0, half], [0.0, 0.0, -half]], dtype=np.float64)
-    faces = np.asarray([(4, 0, 2), (4, 2, 1), (4, 1, 3), (4, 3, 0),
-                        (5, 2, 0), (5, 1, 2), (5, 3, 1), (5, 0, 3)], dtype=np.int64)
+    sides = face_count // 2
+    angles = np.arange(sides, dtype=np.float64) * (2.0 * math.pi / sides)
+    ring = np.column_stack([radius * np.cos(angles), depth * np.sin(angles),
+                            np.zeros(sides)])
+    # У нечётного числа экваториальных вершин диаметр не совпадает с
+    # габаритом: центрируем и нормируем X/Y, чтобы radius/depth оставались
+    # честными полуширинами и для треугольной двойной пирамиды.
+    lo = ring[:, :2].min(axis=0)
+    hi = ring[:, :2].max(axis=0)
+    ring[:, :2] = ((ring[:, :2] - (lo + hi) * 0.5)
+                   / np.maximum((hi - lo) * 0.5, 1e-12)) * [radius, depth]
+    pts = np.vstack([ring, [[0.0, 0.0, half], [0.0, 0.0, -half]]])
+    top, bottom = sides, sides + 1
+    triangles = []
+    for i in range(sides):
+        j = (i + 1) % sides
+        triangles.extend(((top, i, j), (bottom, j, i)))
+    faces = np.asarray(triangles, dtype=np.int64)
     pts, faces = linear_subdivide(pts, faces, divisions)
     solid = manifold_from_arrays(pts, faces, "октаэдра")
     solid = _smooth_primitive(solid, a, "октаэдр")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="octa")
-    out.notes.append(f"октаэдр {2 * radius:g}×{2 * depth:g}×{height:g} мм, "
-                     f"{solid.num_tri()} треугольников, divisions={divisions}, "
-                     f"smooth={_smooth_level(a)}")
+    out.meta["faces"] = face_count
+    out.notes.append(f"двойная пирамида {2 * radius:g}×{2 * depth:g}×{height:g} мм, "
+                     f"исходных граней {face_count}, треугольников {solid.num_tri()}, "
+                     f"divisions={divisions}, smooth={_smooth_level(a)}")
     return out
 
 

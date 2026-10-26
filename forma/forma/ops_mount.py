@@ -20,7 +20,7 @@ import numpy as np
 from .errors import GeometryError
 from .geometry import circle_profile, sweep_solid
 from .ops import anchor, make_solid, op, stand_flat_sign
-from .shape_features import apply_smooth
+from .shape_features import rounded_extrude, transition_radius
 
 
 @op("крюк", aliases=("крючок", "hook", "крюк_подвес", "вешалка_крюк"),
@@ -75,13 +75,28 @@ def hook(a, name):
         path = [tail_top * (i / (tail_count - 1)) for i in range(tail_count)]
     else:
         path = [tail_top.copy()]
-    # Эллиптическая дуга начинается в точке tail_top+offset. Соединитель
-    # является частью того же sweep, поэтому смещение не разрывает деталь.
+    # Эллиптическая дуга начинается в точке tail_top+offset. Соединитель —
+    # кубическая кривая с касательными хвостика и дуги, а не короткая
+    # диагональ: даже большой offset не даёт скоса и излома у начала дуги.
     centre = np.array([bend + offset[0], 0.0, length + offset[1]])
     arc_start = np.array([offset[0], 0.0, length + offset[1]])
-    if np.linalg.norm(arc_start - tail_top) > 1e-8:
-        for i in range(1, 5):
-            path.append(tail_top + (arc_start - tail_top) * (i / 4.0))
+    delta = arc_start - tail_top
+    if np.linalg.norm(delta) > 1e-8:
+        distance = float(np.linalg.norm(delta))
+        handle = max(wire * 1.5, min(distance * 0.55, bend * 0.75))
+        end_tangent = np.array([0.0, curve * math.pi,
+                                bend * aspect * math.radians(opening)])
+        end_tangent /= max(float(np.linalg.norm(end_tangent)), 1e-12)
+        p0 = tail_top
+        p1 = tail_top + np.array([0.0, 0.0, handle])
+        p2 = arc_start - end_tangent * handle
+        p3 = arc_start
+        count = int(np.clip(12 + distance / max(wire, 0.1), 12, 40))
+        for i in range(1, count + 1):
+            t = i / count
+            q = 1.0 - t
+            path.append(q ** 3 * p0 + 3 * q * q * t * p1
+                        + 3 * q * t * t * p2 + t ** 3 * p3)
     arc_index = len(path) - 1
     for i in range(1, steps_arc + 1):
         u = i / steps_arc
@@ -126,7 +141,8 @@ def hook(a, name):
             "hole_y": "где отверстие по высоте, 0…1 от низа (0.45)",
             "segments": "сегментов по дуге (по размеру)",
             "detail": "детализация дуги 0…5 (3)",
-            "smooth": "уровни Loop-сглаживания всей пластины 0…4 (0)",
+            "smooth": "ступени скругления наружных рёбер 0…4 (0); "
+                      "широкие лицевые плоскости остаются плоскими",
             "plane": "фронт — стоит лицом к зрителю (дуга вверх), плашмя — "
                      "лежит лицом вверх — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по толщине"})
@@ -144,7 +160,10 @@ def half_oval(a, name):
     ts = np.linspace(0.0, math.pi, steps)
     arc = np.stack([width * 0.5 * np.cos(ts), height * np.sin(ts)], axis=1)
     cs = mf.CrossSection([arc])
-    solid = cs.extrude(thickness)
+    edge_r = transition_radius(a, min(thickness * 0.45, height * 0.08, width * 0.04))
+    # Скругляем только наружный контур до сверления: отверстие и обе
+    # широкие лицевые плоскости не подвергаются Loop-деформации.
+    solid = rounded_extrude(cs, thickness, edge_r, "полуовал")
 
     if hole > 1e-6:
         # отверстие не должно выходить за кромку: держим стенку не меньше
@@ -162,7 +181,6 @@ def half_oval(a, name):
             cutter = cutter.translate((0.0, cy, -thickness * 0.5 - 2.0))
             solid = solid - cutter
 
-    solid = apply_smooth(solid, a, "полуовал")
     solid = stand_flat_sign(a, solid)     # по правилу: лицо −Y, купол вверх +Z
     solid = anchor(solid, at, center)
     a.scene.log("info", f"полуовал: {width:g}×{height:g}×{thickness:g} мм, "

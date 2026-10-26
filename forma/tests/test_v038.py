@@ -156,7 +156,7 @@ class CatalogOrderTest(unittest.TestCase):
         cls.groups = [c[3] for c in cls.cards]
 
     def test_standard_bodies_go_first(self):
-        standard = ["sheet", "box", "prism", "octa", "pyramid", "cone", "cylinder",
+        standard = ["sheet", "fold_sheet", "box", "face_box", "prism", "octa", "pyramid", "cone", "cylinder",
                     "sphere", "icosphere", "ellipsoid", "capsule", "torus", "ring",
                     "washer"]
         self.assertEqual(self.ops[:len(standard)], standard)
@@ -173,10 +173,10 @@ class CatalogOrderTest(unittest.TestCase):
                                  "Люди и вещи", "Покраска"])
 
     def test_derived_and_nature_follow_user_list(self):
-        standard = ["sheet", "box", "prism", "octa", "pyramid", "cone", "cylinder",
+        standard = ["sheet", "fold_sheet", "box", "face_box", "prism", "octa", "pyramid", "cone", "cylinder",
                     "sphere", "icosphere", "ellipsoid", "capsule", "torus", "ring",
                     "washer", "disc", "oval", "strip"]
-        derived = ["grating", "spikes", "hemisphere", "sector", "bracket", "полуовал",
+        derived = ["grating", "spikes", "hemisphere", "cavity_frame", "sector", "bracket", "полуовал",
                    "arch", "воронка", "скоба", "lens", "полукапсула", "ingot",
                    "paraboloid", "saddle", "pie", "bead", "tri_prism", "arc_prism",
                    "torus_sector"]

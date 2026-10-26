@@ -16,7 +16,7 @@ import numpy as np
 from . import orient
 from .errors import GeometryError
 from .ops import anchor, make_solid, op
-from .shape_features import apply_smooth
+from .shape_features import rounded_extrude, transition_radius
 from .ops_tech import _helix_ridge
 
 
@@ -173,9 +173,10 @@ def bolt(a, name):
 #  Винт / саморез
 # --------------------------------------------------------------------------- #
 @op("screw", aliases=("винт", "саморез", "шуруп"), category="Примитивы",
-    summary="Саморез: слепой крестовой карман с регулируемой глубиной, шейка "
-            "под головкой и резьба, которая плавно нарастает прямо от конусного "
-            "острия без цилиндров-переходников. Вершина резьбы не выходит за d.",
+    summary="Саморез: слепой крестовой или шестилопастной Torx-карман с "
+            "регулируемой глубиной. По умолчанию резьба доходит непосредственно "
+            "до головки без гладкой шейки; neck>0 возвращает шейку. Вершина "
+            "резьбы не выходит за d.",
     example="саморез = screw d=4 length=25 head=потай drive=крест",
     params={"d": "диаметр резьбы, мм (4)",
             "length": "длина стержня без головки, мм (25)",
@@ -186,7 +187,7 @@ def bolt(a, name):
             "drive": "шлиц: крест, шлиц, звезда, шестигранник или нет (крест)",
             "drive_size": "размер шлица, мм (0.42 × head_d)",
             "drive_depth": "глубина слепого шлица, мм; автоматически не сквозь головку",
-            "neck": "гладкая шейка ПОД ГОЛОВКОЙ, мм (0.6 × d)",
+            "neck": "гладкая шейка ПОД ГОЛОВКОЙ, мм (0 — резьба сразу от головки)",
             "pitch": "шаг резьбы, мм (0.45 × d)",
             "thread": "нарезать резьбу (да)",
             "tip": "длина острия, мм (1.3 × d)",
@@ -222,7 +223,7 @@ def screw(a, name):
     pitch = float(a.num("pitch", max(0.3, 0.45 * d), minv=0.1, maxv=10.0))
     thread = a.boolean("thread", True)
     tip_len = float(a.num("tip", 1.3 * d, minv=0.1, maxv=6 * d))
-    neck = float(a.num("neck", 0.6 * d, minv=0.0, maxv=length * 0.6))
+    neck = float(a.num("neck", 0.0, minv=0.0, maxv=length * 0.6) or 0.0)
     head_h = float(a.num("head_h", 0.0, minv=0.0) or 0.0)
     if a.has("full"):
         full = float(a.num("full", length + 2.0 * d, minv=2.0))
@@ -249,7 +250,9 @@ def screw(a, name):
     if thread:
         ridge = _helix_ridge(core_r, thread_len, pitch, d / 2.0 - core_r,
                              pitch * 0.52, steps_per_turn=44, inset=0.5,
-                             fade=min(pitch, thread_len * 0.45))
+                             fade=min(pitch, thread_len * 0.45),
+                             fade_top=(0.0 if neck <= 0.05
+                                       else min(pitch, thread_len * 0.45)))
         shank = shank + ridge.translate((0, 0, tip_len))
     # Гладкая шейка находится сверху, под головкой, а не между резьбой и жалом.
     if neck > 0.05:
@@ -279,9 +282,9 @@ def screw(a, name):
     body = body + cap if cap is not None else body
     # --- шлиц ---------------------------------------------------------------
     if drive != "нет" and head != "нет":
-        # верх головки: у потайной — ровно length (её верх заподлицо),
-        # у остальных — площадка над стержнем
-        top = length if head == "потай" else body_len + head_h
+        # Реальная вершина после сборки: у полукруглой головки это купол,
+        # а не воображаемая плоскость body_len+head_h внутри него.
+        top = float(body.bounding_box()[5])
         size = float(a.num("drive_size", 0.42 * head_d, minv=0.3, maxv=head_d * 0.8))
         available = max(0.2, top - body_len)
         deep_req = float(a.num("drive_depth", max(0.4, min(head_h * 0.55, size * 0.75)),
@@ -300,10 +303,17 @@ def screw(a, name):
                 (0, 0, z_tool))
             body = body - slot
         elif drive == "звезда":
-            for i in range(6):
-                slot = _box((size * 2.6, size * 0.30, deep + 1.0))
-                slot = slot.rotate((0, 0, i * 30.0)).translate((0, 0, z_tool))
-                body = body - slot
+            # Torx: ШЕСТЬ плавных лопастей вокруг одного слепого кармана.
+            # Шесть повёрнутых брусков давали двенадцатилучевую решётку,
+            # непохожую на реальный шлиц и оставлявшую острые перемычки.
+            pts = []
+            for i in range(96):
+                ang = 2.0 * math.pi * i / 96.0
+                radius = size * 0.5 * (0.80 + 0.20 * math.cos(6.0 * ang))
+                pts.append((radius * math.cos(ang), radius * math.sin(ang)))
+            pocket = mf.CrossSection([np.asarray(pts, dtype=np.float64)])
+            tool = mf.Manifold.extrude(pocket, deep + 1.0).translate((0, 0, top - deep))
+            body = body - tool
         else:
             body = body - _hex_prism(size, deep + 1.0).translate((0, 0, top - deep))
     total = body_len + (head_h if cap is not None else 0.0)
@@ -314,7 +324,8 @@ def screw(a, name):
     out.meta.update({"screw": True, "head": head,
                      "head_h": head_h if cap is not None else 0.0,
                      "drive_depth": deep if drive != "нет" and head != "нет" else 0.0,
-                     "length": length, "tip": tip_len, "d": d})
+                     "length": length, "tip": tip_len, "d": d,
+                     "neck": neck, "thread_length": thread_len if thread else 0.0})
     return out
 
 
@@ -429,7 +440,8 @@ def drive(a, name):
     summary="Крепёжный уголок с произвольным раскрытием 0…180°: 90° — "
             "привычные полки, 0° — одна плоская деталь, 180° — плоская полоса "
             "в разные стороны. Отверстия следуют за полками, round добавляет "
-            "радиус шарнира, smooth сглаживает всю деталь.",
+            "радиус шарнира, corner=заполненный закрывает наружный угол без "
+            "зазора, smooth скругляет только переходные рёбра.",
     example="уголок = bracket width=60 depth=40 height=40 thickness=3 angle=90\n"
             "тупой = bracket width=60 depth=40 height=40 thickness=3 angle=135 smooth=1",
     params={"width": "ширина по X, мм (60)", "depth": "длина базовой полки (40)",
@@ -437,7 +449,9 @@ def drive(a, name):
             "angle": "угол между полками 0…180° (90)",
             "holes": "отверстий на полку (0 — без отверстий)",
             "round": "радиус цилиндрического шарнира в месте сгиба, мм (0)",
-            "smooth": "уровни Loop-сглаживания всего уголка 0…4 (0)",
+            "corner": "обычный или заполненный — сплошной наружный угол без зазора",
+            "smooth": "ступени скругления переходных рёбер 0…4 (0), "
+                      "без Loop-стягивания широких полок",
             "at": "положение", "center": "центрировать в at"})
 def bracket(a, name):
     w = float(a.num("width", 60.0, minv=5.0, maxv=600.0))
@@ -447,12 +461,46 @@ def bracket(a, name):
     angle = float(a.num("angle", 90.0, minv=0.0, maxv=180.0) or 0.0)
     theta = math.radians(angle)
     direction = np.array([0.0, math.cos(theta), math.sin(theta)])
-    horz = _box((w, depth, t)).translate((0.0, depth / 2.0, 0.0))
-    # Вторая полка симметрична по толщине. Поэтому при 0° она точно
-    # совпадает с базовой, при 180° — продолжает её в −Y без ступеньки.
-    vert = _box((w, height, t)).rotate((angle, 0.0, 0.0))
-    vert = vert.translate(tuple(direction * (height / 2.0)))
-    body = horz + vert
+
+    def cross_poly(points):
+        pts = [(float(p[0]), float(p[1])) for p in points]
+        area = sum(pts[i][0] * pts[(i + 1) % len(pts)][1]
+                   - pts[(i + 1) % len(pts)][0] * pts[i][1]
+                   for i in range(len(pts)))
+        return mf.CrossSection([pts if area > 0 else pts[::-1]])
+
+    def strip(p0, p1, thickness):
+        p0, p1 = np.asarray(p0, dtype=float), np.asarray(p1, dtype=float)
+        vec = p1 - p0
+        normal = np.array([-vec[1], vec[0]]) / max(float(np.linalg.norm(vec)), 1e-12)
+        side = normal * (thickness / 2.0)
+        return cross_poly([p0 - side, p1 - side, p1 + side, p0 + side])
+
+    # Обе полки — одно двумерное сечение, выдавленное по X. Никаких
+    # совпадающих торцов и непредсказуемого Loop на стыке.
+    horz = strip((0.0, 0.0), (depth, 0.0), t)
+    vert = strip((0.0, 0.0), (float(direction[1]) * height,
+                              float(direction[2]) * height), t)
+    cross = mf.CrossSection.batch_boolean([horz, vert], mf.OpType.Add)
+    corner = (a.text("corner", "обычный") or "обычный").strip().lower()
+    if corner in ("заполненный", "заполнить", "сплошной", "filled", "solid"):
+        filled = cross_poly([(-t / 2, -t / 2), (t / 2, -t / 2),
+                             (t / 2, t / 2), (-t / 2, t / 2)])
+        cross = mf.CrossSection.batch_boolean([cross, filled], mf.OpType.Add)
+    elif corner not in ("обычный", "пустой", "open", "normal"):
+        raise GeometryError("bracket: corner=обычный или заполненный.")
+    r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    if r > 0.0 and 1e-6 < angle < 180.0 - 1e-6:
+        r = min(r, min(depth, height) * 0.45, t * 2.5)
+        angles = np.arange(48, dtype=float) * (2.0 * math.pi / 48.0)
+        hinge = cross_poly(np.column_stack([r * np.cos(angles), r * np.sin(angles)]))
+        cross = mf.CrossSection.batch_boolean([cross, hinge], mf.OpType.Add)
+    edge_r = transition_radius(a, min(w * 0.45, t * 0.45))
+    body = rounded_extrude(cross, w, edge_r, "уголок")
+    matrix = np.array([[0.0, 0.0, 1.0, -w / 2.0],
+                       [1.0, 0.0, 0.0, 0.0],
+                       [0.0, 1.0, 0.0, 0.0]])
+    body = body.transform(matrix)
     holes = int(a.num("holes", 0, minv=0, maxv=10) or 0)
     if holes:
         rr = max(0.9, min(t * 1.2, 2.4))
@@ -464,12 +512,6 @@ def bracket(a, name):
             pos = direction * (height * 0.62)
             cutter = cutter.translate((x, float(pos[1]), float(pos[2])))
             body = body - cutter
-    r = float(a.num("round", 0.0, minv=0.0) or 0.0)
-    if r > 0.0 and 1e-6 < angle < 180.0 - 1e-6:
-        r = min(r, min(depth, height) * 0.45, t * 2.5)
-        hinge = mf.Manifold.cylinder(w, r, r, 32).rotate((0.0, 90.0, 0.0))
-        body = body + hinge.translate((-w / 2.0, 0.0, 0.0))
-    body = apply_smooth(body, a, "уголок")
     return _finish(a, name, body, "bracket",
                    f"уголок {angle:g}° · {w:g}×{height:g}×{depth:g} · сталь {t:g} мм")
 
@@ -485,7 +527,7 @@ def bracket(a, name):
     example="шкив = pulley diameter=80 width=20 bore=10 groove=6 groove_depth=3\n"
             "двойной = pulley diameter=90 width=32 bore=12 grooves=2 groove=7 groove_depth=3",
     params={"diameter": "наружный диаметр (80)", "width": "ширина обода (20)",
-            "bore": "диаметр отверстия под вал (10)",
+            "bore": "диаметр отверстия под вал (10); 0 — сплошной шкив",
             "grooves": "число симметричных ручьёв 1…8 (1)",
             "groove": "ширина каждого ручья (6)",
             "groove_depth": "глубина каждого ручья (2.4)",
@@ -494,7 +536,7 @@ def bracket(a, name):
 def pulley(a, name):
     d = float(a.num("diameter", 80.0, minv=10.0, maxv=1000.0))
     width = float(a.num("width", 20.0, minv=4.0, maxv=300.0))
-    bore = float(a.num("bore", 10.0, minv=1.0, maxv=d * 0.7))
+    bore = float(a.num("bore", 10.0, minv=0.0, maxv=d * 0.7) or 0.0)
     grooves = int(a.int("grooves", 1, minv=1, maxv=8) or 1)
     groove = float(a.num("groove", 6.0, minv=1.0, maxv=width * 0.8))
     gdepth = float(a.num("groove_depth", 2.4, minv=0.2, maxv=d * 0.25))

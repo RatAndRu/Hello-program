@@ -19,8 +19,13 @@ from .ops import make_solid, op
 
 def _helix_ridge(radius: float, length: float, pitch: float, depth: float,
                  width: float, steps_per_turn: int = 48, right: bool = True,
-                 inset: float = 0.8, fade: float = 0.0) -> mf.Manifold:
-    """Винтовой гребень; fade>0 плавно сводит виток к стержню на концах."""
+                 inset: float = 0.8, fade: float = 0.0,
+                 fade_top: float | None = None) -> mf.Manifold:
+    """Винтовой гребень; fade/fade_top задают затухание внизу/вверху.
+
+    Без fade_top сохраняется прежнее симметричное поведение. Нулевой
+    fade_top нужен саморезу без шейки: резьба доходит до головки целиком.
+    """
     if pitch <= 1e-6 or length <= 1e-6:
         raise GeometryError("Шаг и длина резьбы должны быть положительными.")
     if width > 0.9 * pitch:
@@ -29,6 +34,7 @@ def _helix_ridge(radius: float, length: float, pitch: float, depth: float,
     steps = max(12, min(int(turns * steps_per_turn) + 1, 40000))
     profile = [(-inset, -width / 2.0), (depth, 0.0), (-inset, width / 2.0)]
     sign = 1.0 if right else -1.0
+    top_fade = fade if fade_top is None else max(0.0, float(fade_top))
     verts = []
     for i in range(steps):
         t = i / (steps - 1)
@@ -36,8 +42,12 @@ def _helix_ridge(radius: float, length: float, pitch: float, depth: float,
         z = t * length
         c, s = math.cos(theta), math.sin(theta)
         factor = 1.0
-        if fade > 1e-9:
-            u = min(1.0, t * length / fade, (1.0 - t) * length / fade)
+        if fade > 1e-9 or top_fade > 1e-9:
+            u = 1.0
+            if fade > 1e-9:
+                u = min(u, t * length / fade)
+            if top_fade > 1e-9:
+                u = min(u, (1.0 - t) * length / top_fade)
             u = max(0.02, u)
             factor = u * u * (3.0 - 2.0 * u)
         for dr, dz in profile:

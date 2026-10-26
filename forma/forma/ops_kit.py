@@ -542,8 +542,8 @@ def shaft(a, name):
 @op("handle", aliases=("мебельная_ручка", "ручка_скоба"), category="Примитивы",
     summary="Мебельная ручка-скоба с независимыми формами перекладины и стоек: "
             "bar_shape/post_shape=цилиндр, капсула или брусок. Перекладина не "
-            "выступает за наружные грани стоек. plates=нет полностью убирает "
-            "площадки; у капсульных стоек монтажный низ остаётся плоским.",
+            "выступает за наружные грани стоек. post_mode=сквозь продолжает "
+            "одну или обе стойки над перекладиной; plates=нет убирает площадки.",
     example="ручка = handle length=160 height=34 diameter=10 bar_shape=капсула post_shape=капсула\n"
             "брусок = handle length=160 height=34 diameter=10 bar_shape=брусок post_shape=брусок plates=нет",
     params={"length": "длина по наружным граням стоек, мм (160)",
@@ -552,6 +552,10 @@ def shaft(a, name):
             "bar_shape": "перекладина: цилиндр, капсула или брусок",
             "post_shape": "стойки: цилиндр, капсула или брусок",
             "posts": "стоек: 1 по центру или 2 по краям (2)",
+            "post_mode": "стык — заканчиваются в перекладине; сквозь — "
+                         "непрерывные стойки видны над ней (стык)",
+            "post_top": "видимый выход стойки над перекладиной при post_mode=сквозь, "
+                        "мм (diameter)",
             "plates": "площадки-основания да/нет; нет полностью убирает их (да)",
             "plate_d": "диаметр площадки (2.4 × diameter)",
             "segments": "сегментов 8…96 (32)", "at": "положение [x,y,z]",
@@ -573,9 +577,20 @@ def handle(a, name):
     bar_shape = shape_of("bar_shape")
     post_shape = shape_of("post_shape")
     posts = int(a.num("posts", 2, minv=1, maxv=2) or 2)
+    post_mode = (a.text("post_mode", "стык") or "стык").strip().lower()
+    if post_mode in ("сквозь", "сквозные", "непрерывные", "through", "continuous"):
+        post_mode = "сквозь"
+    elif post_mode in ("стык", "скрытые", "joint", "flush"):
+        post_mode = "стык"
+    else:
+        raise GeometryError("handle: post_mode=стык или сквозь.")
+    post_top = float(a.num("post_top", wire, minv=0.0, maxv=2000.0) or 0.0)
+    if post_mode == "стык":
+        post_top = 0.0
     plates = a.boolean("plates", True)
     segments = _seg(a, "segments", 32, 8, 96)
     r = wire / 2.0
+    post_height = height + (r + post_top if post_mode == "сквозь" else 0.0)
     if length <= wire * 2.0:
         raise GeometryError("Длина ручки должна быть больше двух диаметров.")
     if height < wire * 1.2:
@@ -603,14 +618,14 @@ def handle(a, name):
                            maxv=wire * 20.0)) / 2.0
     for dx in offsets:
         if post_shape == "брусок":
-            post = mf.Manifold.cube((wire, wire, height), center=True).translate(
-                (dx, 0.0, height / 2.0))
+            post = mf.Manifold.cube((wire, wire, post_height), center=True).translate(
+                (dx, 0.0, post_height / 2.0))
         elif post_shape == "цилиндр":
-            post = mf.Manifold.cylinder(height, r, r, segments).translate((dx, 0.0, 0.0))
+            post = mf.Manifold.cylinder(post_height, r, r, segments).translate((dx, 0.0, 0.0))
         else:
             # Нижний торец плоский на z=0, круглая только верхняя капсула.
-            post = mf.Manifold.cylinder(height - r, r, r, segments).translate((dx, 0.0, 0.0))
-            cap = mf.Manifold.sphere(r, max(8, segments // 2)).translate((dx, 0.0, height - r))
+            post = mf.Manifold.cylinder(post_height - r, r, r, segments).translate((dx, 0.0, 0.0))
+            cap = mf.Manifold.sphere(r, max(8, segments // 2)).translate((dx, 0.0, post_height - r))
             post = post + cap
         parts.append(post)
         if plates:
@@ -619,6 +634,7 @@ def handle(a, name):
     solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="handle")
     out.notes.append(f"ручка: перекладина {bar_shape}, стойки {post_shape}, "
+                     f"post_mode={post_mode}, выход {post_top:g} мм, "
                      f"площадки={'да' if plates else 'нет'}")
     return out
 
@@ -769,21 +785,35 @@ def _leaf_outline(kind: str, length: float, width: float, count: int):
                         (0.30 * length, 0.16 * width), tip, n)
         upper.append(tip)
         points = upper + [(x, -y) for x, y in reversed(upper[1:-1])]
-    else:  # клен: две лопасти с каждой стороны и центральная вершина
-        control = [(-0.38, 0.0), (-0.48, 0.12), (-0.40, 0.16),
-                   (-0.50, 0.25), (-0.35, 0.22), (-0.25, 0.20),
-                   (-0.20, 0.35), (-0.05, 0.50), (0.00, 0.32),
-                   (0.12, 0.25), (0.25, 0.22), (0.50, 0.0)]
-        upper = []
-        sub = max(2, count // 18)
-        for i in range(len(control) - 1):
-            p0, p1 = control[i], control[i + 1]
+    else:  # клен: пальчатые лопасти и настоящий черенок, не радиальная звезда
+        # Канонический силуэт нарисован вертикально: центральная лопасть
+        # вверх, две боковые и две базальные по сторонам, черенок вниз.
+        # Мелкие зубцы не равны главным лопастям — так читается именно клён.
+        right = [
+            (0.00, 0.58),                  # длинная центральная лопасть
+            (0.055, 0.40), (0.125, 0.45), (0.105, 0.32),
+            (0.055, 0.17),                 # глубокая пазуха, а не луч звезды
+            (0.19, 0.25), (0.25, 0.38), (0.29, 0.31),
+            (0.38, 0.34),                  # широкая боковая лопасть
+            (0.29, 0.18), (0.42, 0.17),
+            (0.31, 0.06), (0.44, 0.02),    # базальная лопасть
+            (0.24, -0.035), (0.27, -0.15),
+            (0.12, -0.10),                 # вторая глубокая пазуха
+            (0.10, -0.22), (0.055, -0.22), (0.055, -0.31),
+            (0.026, -0.31), (0.026, -0.62),  # тонкий черенок
+        ]
+        canonical = right + [(-0.026, -0.62)] + [
+            (-x, y) for x, y in reversed(right[1:-1])]
+        # Поворот: остриё +X, черенок −X, как и у остальных видов leaf.
+        rotated = [(y, -x) for x, y in canonical]
+        points = []
+        sub = max(1, count // len(rotated))
+        for i, p0 in enumerate(rotated):
+            p1 = rotated[(i + 1) % len(rotated)]
             for j in range(sub):
                 t = j / sub
-                upper.append(((p0[0] * (1 - t) + p1[0] * t) * length,
-                              (p0[1] * (1 - t) + p1[1] * t) * width))
-        upper.append((0.50 * length, 0.0))
-        points = upper + [(x, -y) for x, y in reversed(upper[1:-1])]
+                points.append((p0[0] * (1 - t) + p1[0] * t,
+                               p0[1] * (1 - t) + p1[1] * t))
     # Новые виды нормируются по фактическому контуру: length/width точные.
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]

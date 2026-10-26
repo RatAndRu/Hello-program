@@ -58,12 +58,18 @@ def _section(w: float, t: float, edges: str, spine: float, dol: float,
             else:
                 h = math.sin(math.pi * u) ** 0.62
         else:
-            if profile == "плоский":
-                h = min(1.0, u / max(0.12, 1.0 - spine))
+            # Односторонняя заточка заканчивается у спинки, а не только в
+            # одной математической точке: за пределом spine остаётся полная
+            # толщина и замкнутый контур даёт прямоугольную тупую спинку.
+            bevel_u = min(1.0, u / max(0.12, spine))
+            if u >= spine:
+                h = 1.0
+            elif profile == "плоский":
+                h = bevel_u
             elif profile == "алмаз":
-                h = float(u)
+                h = bevel_u
             else:
-                h = math.sin(math.pi * 0.5 * u) ** (0.8 + spine)
+                h = math.sin(math.pi * 0.5 * bevel_u) ** (0.8 + spine)
         if dol > 1e-6:
             h *= 1.0 - dol * math.exp(-((u - 0.5) / 0.18) ** 2)
         y = edge + (half_t - edge) * max(0.0, h)
@@ -75,7 +81,12 @@ def _section(w: float, t: float, edges: str, spine: float, dol: float,
 
 
 def _arc_path(length: float, sagitta: float, n: int) -> np.ndarray:
-    """Дуга XZ с точной стрелой прогиба и нулевой высотой на концах."""
+    """Дуга в плоскости ШИРИНЫ заготовки, а не через её толщину.
+
+    До stand_flat_sign клинок лежит плашмя: ширина идёт по Y, толщина по Z.
+    Поэтому сгиб обязан быть по Y; после установки фронтом он становится
+    видимым движением кромки вверх/вниз, как сгиб пальца, а не сносом вбок.
+    """
     n = max(3, int(n))
     if abs(sagitta) <= 1e-6:
         xs = np.linspace(0.0, length, n)
@@ -85,10 +96,26 @@ def _arc_path(length: float, sagitta: float, n: int) -> np.ndarray:
     half = math.asin(min(1.0, (length / 2.0) / radius))
     theta = np.linspace(-half, half, n)
     xs = radius * np.sin(theta) + length / 2.0
-    zs = radius * (np.cos(theta) - math.cos(half))
+    ys = radius * (np.cos(theta) - math.cos(half))
     if sagitta < 0.0:
-        zs = -zs
-    return np.stack([xs, np.zeros_like(xs), zs], axis=1)
+        ys = -ys
+    return np.stack([xs, ys, np.zeros_like(xs)], axis=1)
+
+
+def _hook_path(length: float, curve: float, n: int) -> np.ndarray:
+    """Дуга серпа/пиратского крюка с касательной +X у основания.
+
+    В отличие от обычной сагитты конец не возвращается к исходной оси:
+    последняя часть продолжает заворачиваться. curve меняет раствор дуги,
+    но даже curve=0 не превращает выбранный kind=серп в прямую палку.
+    """
+    sign = -1.0 if curve < 0.0 else 1.0
+    angle = min(4.35, max(1.55, 2.05 + 2.0 * abs(curve) / length))
+    radius = length / angle
+    theta = np.linspace(0.0, angle, max(3, int(n)))
+    xs = radius * np.sin(theta)
+    ys = sign * radius * (1.0 - np.cos(theta))
+    return np.stack([xs, ys, np.zeros_like(xs)], axis=1)
 
 
 def _rings_along(path: np.ndarray, sections: list[np.ndarray]) -> list[np.ndarray]:
@@ -104,9 +131,15 @@ def _rings_along(path: np.ndarray, sections: list[np.ndarray]) -> list[np.ndarra
             t = pts[i + 1] - pts[i - 1]
         n = np.linalg.norm(t)
         tangents[i] = t / max(n, 1e-12)
-    # До финального поворота заготовка лежит плашмя: ширина — по Y,
-    # толщина и стрела изгиба — по Z. stand_flat_sign ниже ставит её в XZ.
+    # До финального поворота заготовка лежит плашмя: локальная ширина и
+    # стрела изгиба лежат в XY, толщина — по Z. stand_flat_sign ставит её
+    # в XZ, сохраняя сгиб именно в плоскости ширины.
     up = np.array([0.0, 0.0, 1.0])
+    # Векторное произведение — псевдовектор: при зеркальном пути оно само
+    # разворачивает сечение и меняет спинку с кромкой местами. Фиксируем
+    # сторону сечения относительно знака прогиба; одновременный разворот up
+    # сохраняет правую ориентацию каркаса (толщина сечения симметрична).
+    bend_sign = -1.0 if pts[len(pts) // 2, 1] < -1e-9 else 1.0
     rings = []
     for i, (p, tan) in enumerate(zip(pts, tangents)):
         up = up - tan * float(np.dot(up, tan))
@@ -117,9 +150,13 @@ def _rings_along(path: np.ndarray, sections: list[np.ndarray]) -> list[np.ndarra
         up = up / max(un, 1e-12)
         right = np.cross(up, tan)
         right /= max(np.linalg.norm(right), 1e-12)
+        frame_up = up
+        if bend_sign < 0.0:
+            right = -right
+            frame_up = -frame_up
         sec = sections[i]
         rings.append(p[None, :] + right[None, :] * sec[:, 0][:, None]
-                     + up[None, :] * sec[:, 1][:, None])
+                     + frame_up[None, :] * sec[:, 1][:, None])
     return rings
 
 
@@ -156,17 +193,20 @@ def _close_blade(rings: list[np.ndarray], profile: np.ndarray,
 @op("blade", aliases=("клинок", "клинка", "лезвие", "меч", "катана", "сабля", "sword", "knife"),
     category="Примитивы",
     summary="Клинок-лофт с независимыми силуэтом, сечением и остриём. kind "
-            "задаёт готовый тип, profile меняет ширину по всей длине, section — "
-            "сечение каждого кольца, tip — заострение. curve — signed стрела "
-            "сгиба в мм: знак меняет направление, 0 делает клинок прямым.",
+            "задаёт геометрию: односторонние виды имеют квадратную тупую "
+            "спинку, стилет/двуручник — две кромки, серп — продолжающийся "
+            "крюк даже при curve=0. profile меняет ширину, section — сечение, "
+            "tip — остриё. curve изгибает клинок вверх/вниз в его плоскости.",
     example="катана = blade length=700 width=32 thick=7 kind=катана curve=22 profile=прямой tip=киссаки\n"
             "стилет = blade length=280 kind=стилет section=алмаз tip=острое curve=0\n"
             "нож = blade length=300 kind=нож profile=листовой section=плоский tip=закруглённое",
     params={"length": "длина по X, мм (400)",
             "width": "ширина у основания, мм (по kind)",
             "thick": "толщина у основания, мм (по kind)",
-            "curve": "стрела сгиба −0.5·length…0.5·length, мм; знак задаёт сторону",
-            "kind": "катана, танто, ятоган, стилет, двуручник, серп или нож",
+            "curve": "сгиб в плоскости ширины, мм; + вверх, − вниз; у серпа "
+                     "задаёт раствор крюка, но 0 не убирает его форму",
+            "kind": "катана/танто/ятоган/нож — одна кромка и прямая толстая "
+                    "спинка; стилет/двуручник — две кромки; серп — крюк",
             "edges": "одна или две кромки (по kind)",
             "profile": "силуэт всей длины: прямой, суженный или листовой",
             "section": "сечение всего клинка: линза, клин, плоский или алмаз",
@@ -228,7 +268,8 @@ def blade(a, name):
     if thick >= width * 0.7:
         raise GeometryError("thick должен быть меньше 0.7 × width.")
     n_sec = a.int("detail", None, minv=8, maxv=200) or max(24, int(length / 12))
-    path = _arc_path(length, curve, n_sec)
+    path = (_hook_path(length, curve, n_sec) if kind_raw == "серп"
+            else _arc_path(length, curve, n_sec))
     sections = []
     for i in range(n_sec):
         u = i / (n_sec - 1)
@@ -373,7 +414,7 @@ def _disc_solid(outer: list[tuple[float, float]], thickness: float,
             "gullet": "глубина пазухи между зубьями, мм (2 % диаметра)",
             "taper": "утоньшение наружной кромки 0…0.9; 0 — плоская пила (0)",
             "kerf": "толщина режущей зоны, мм (по умолчанию = thickness, без венца)",
-            "hole": "посадочное отверстие под вал, мм (11 % диаметра)",
+            "hole": "посадочное отверстие под вал, мм; 0 — сплошной диск",
             "windows": "число круглых отверстий в полотне 0…12 (0)",
             "detail": "точек на зуб, 4…40 (16)",
             "plane": "фронт — пила стоит на ребре лицом к зрителю, "
@@ -395,7 +436,7 @@ def saw(a, name):
                          maxv=diameter * 0.08))
     kerf = float(a.num("kerf", thickness, minv=thickness, maxv=thickness * 4.0))
     taper = float(a.num("taper", 0.0, minv=0.0, maxv=0.9) or 0.0)
-    hole = float(a.num("hole", diameter * 0.11, minv=1.0, maxv=r_out * 1.2))
+    hole = float(a.num("hole", diameter * 0.11, minv=0.0, maxv=r_out * 1.2) or 0.0)
     windows = int(a.num("windows", 0, minv=0, maxv=12))
     detail = int(a.num("detail", 16, minv=4, maxv=40))
 

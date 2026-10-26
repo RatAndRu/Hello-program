@@ -1039,14 +1039,19 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
         rgba = color_to_gltf(obj.color)
         transmission = float(getattr(obj, "transmission", 0.0) or 0.0)
         uv_mode = getattr(obj, "uv", "auto") or "auto"
-        # Явная метка зеркала: окно строит отражение только для помеченных
-        # материалов, а не для любого «металла с малой шероховатостью»
-        mat_prefix = "mirror__" if getattr(obj, "mirror", False) else ""
+        # Зеркальность — непрерывное свойство материала. Промежуточные
+        # значения остаются обычным PBR с усиленным отражением среды; полное
+        # значение сохраняет явную метку плоского отражения в окне.
+        mirror = float(getattr(obj, "mirror", 0.0) or 0.0)
+        mat_prefix = ("mirror__" if mirror >= 0.999 else
+                      f"mirror{mirror:.2f}__" if mirror > 1e-6 else "")
+        metal = max(float(obj.metal), mirror)
+        rough = max(0.02, float(obj.rough) * (1.0 - mirror))
         material = PBRMaterial(
             name=f"mat_{mat_prefix}{obj.name}",
             baseColorFactor=rgba,
-            metallicFactor=float(obj.metal),
-            roughnessFactor=float(obj.rough),
+            metallicFactor=metal,
+            roughnessFactor=rough,
             doubleSided=False,
         )
         emissive = getattr(obj, "emissive", "") or ""
@@ -1133,7 +1138,7 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
     styles = {obj.name: {"emissive": getattr(obj, "emissive", "") or "",
                          "emissive_strength": float(getattr(obj, "emissive_strength", 1.0) or 1.0),
                          "transmission": float(getattr(obj, "transmission", 0.0) or 0.0),
-                         "mirror": bool(getattr(obj, "mirror", False))}
+                         "mirror": float(getattr(obj, "mirror", 0.0) or 0.0)}
               for obj in objects}
     if any(st["emissive"] and st["emissive_strength"] > 1.01
            or st["transmission"] > 0.01 for st in styles.values()):
@@ -1160,6 +1165,8 @@ def _glb_patch_materials(data: bytes, styles: dict) -> bytes:
             continue
         key = name[4:]
         st = styles.get(key) or styles.get(key.replace("mirror__", "", 1))
+        if not st and key.startswith("mirror") and "__" in key:
+            st = styles.get(key.split("__", 1)[1])
         if not st:
             continue
         ext = mat.setdefault("extensions", {})

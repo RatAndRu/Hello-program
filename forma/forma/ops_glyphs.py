@@ -122,7 +122,8 @@ def _segments_for(radius: float, asked: int | None, lo: int = 48, hi: int = 512)
     category="Примитивы",
     summary="Стрелка остриём +X. head_width=width делает наконечник без "
             "выступающих краёв; tail — "
-            "отдельный V-вырез хвоста. Одна деталь с настоящей толщиной.",
+            "отдельный V-вырез хвоста. Одна деталь с настоящей толщиной; "
+            "wall>0 делает сквозную формочку по всему контуру.",
     example="стрелка = arrow length=120 width=26 head=42 head_width=68 depth=12 round=2\n"
             "тонкая = arrow length=120 width=26 head_width=26",
     params={"length": "полная длина, мм (120)",
@@ -132,6 +133,7 @@ def _segments_for(radius: float, asked: int | None, lo: int = 48, hi: int = 512)
             "tail": "глубина V-выреза в хвосте, мм: 0 — прямой срез (0)",
             "depth": "толщина по глубине, мм (12); у стоящего знака — по Y",
             "round": "скругление кромок, мм (0)",
+            "wall": "стенка сквозной формочки, мм; 0 — сплошная стрелка (0)",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом вверх — «фронт»",
             "stand": "то же, что plane=фронт: да — стоит, нет — лежит (да)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -144,6 +146,7 @@ def arrow(a, name):
     tail = float(a.num("tail", 0.0, minv=0.0) or 0.0)
     depth = float(a.num("depth", 12.0, minv=0.1))
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
     if head >= length * 0.95:
         raise GeometryError(f"Наконечник {head:g} мм не оставляет древка при длине {length:g} мм.",
                             hint="head ≈ 0.25…0.4 от length.")
@@ -164,9 +167,9 @@ def arrow(a, name):
     pts += [(x_head, hw), (x_tail, hw)]
     if tail > 1e-6:
         pts.append((x_tail + tail, 0.0))
-    cross = _poly_cross(pts)
+    cross = hollow_cross(_poly_cross(pts), wall, "стрелка")
     overall_height = head_width
-    solid = _flat(cross, depth, round_r, min(width, head),
+    solid = _flat(cross, depth, round_r, wall if wall > 1e-6 else min(width, head),
                   size=(length, overall_height))
     return make_solid(a.scene, name, _place_glyph(a, solid), a, kind="arrow")
 
@@ -192,12 +195,14 @@ def _place_glyph(a, solid: mf.Manifold) -> mf.Manifold:
             "деталью. arm — полная ширина перекладины, bar — её толщина, "
             "stem — ширина ножки, leg — длина ножки под перекладиной. "
             "Стоит в XZ лицом −Y: перекладина сверху (+Z), ножка вниз (−Z), "
-            "толщина depth по Y; опирается на нижний срез ножки.",
+            "толщина depth по Y; опирается на нижний срез ножки. shape=бруски "
+            "или капсулы выбирает прямые/круглые торцы всех ветвей, как у Y.",
     example="тавр = tee arm=90 bar=20 stem=22 leg=60 depth=14 round=2",
     params={"arm": "ширина перекладины, мм (90)",
             "bar": "толщина перекладины, мм (20)",
             "stem": "ширина ножки, мм (20)",
             "leg": "длина ножки под перекладиной, мм (60)",
+            "shape": "бруски — плоские торцы; капсулы — круглые торцы всех ветвей",
             "depth": "толщина по глубине, мм (14); у стоящего знака — по Y",
             "round": "скругление кромок, мм (0)",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом вверх — «фронт»",
@@ -211,6 +216,13 @@ def tee(a, name):
     leg = float(a.num("leg", 60.0, minv=0.4))
     depth = float(a.num("depth", 14.0, minv=0.1))
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    shape = (a.text("shape", "бруски") or "бруски").strip().lower()
+    if shape in ("капсула", "капсулы", "круглые", "capsule", "capsules"):
+        shape = "капсулы"
+    elif shape in ("брусок", "бруски", "прямоугольные", "box", "rect"):
+        shape = "бруски"
+    else:
+        raise GeometryError("tee: shape=бруски или капсулы.")
     if stem >= arm:
         raise GeometryError(f"Ножка {stem:g} мм не уже перекладины {arm:g} мм — это уже не Т.",
                             hint="stem ≈ 0.2…0.35 от arm.")
@@ -219,11 +231,17 @@ def tee(a, name):
                             hint="bar ≈ 0.15…0.3 от arm.")
     total = bar + leg
     half = total / 2.0
-    bar_cs = mf.CrossSection([_profile([(-arm / 2, half - bar), (arm / 2, half - bar),
-                                       (arm / 2, half), (-arm / 2, half)])])
-    stem_cs = mf.CrossSection([_profile([(-stem / 2, -half), (stem / 2, -half),
-                                        (stem / 2, half - bar * 0.5),
-                                        (-stem / 2, half - bar * 0.5)])])
+    if shape == "капсулы":
+        bar_cs = mf.CrossSection([_stadium((-arm / 2 + bar / 2, half - bar / 2),
+                                          (arm / 2 - bar / 2, half - bar / 2), bar)])
+        stem_cs = mf.CrossSection([_stadium((0.0, -half + stem / 2),
+                                           (0.0, half - bar * 0.5), stem)])
+    else:
+        bar_cs = mf.CrossSection([_profile([(-arm / 2, half - bar), (arm / 2, half - bar),
+                                           (arm / 2, half), (-arm / 2, half)])])
+        stem_cs = mf.CrossSection([_profile([(-stem / 2, -half), (stem / 2, -half),
+                                            (stem / 2, half - bar * 0.5),
+                                            (-stem / 2, half - bar * 0.5)])])
     cross = mf.CrossSection.batch_boolean([bar_cs, stem_cs], mf.OpType.Add)
     solid = _flat(cross, depth, round_r, min(stem, bar), size=(arm, total))
     return make_solid(a.scene, name, _place_glyph(a, solid), a, kind="tee")
@@ -240,7 +258,8 @@ def tee(a, name):
             "1.0 — классический месяц (оба круга равны), меньше 1 — крутые "
             "толстые рога, больше 1 — длинные тонкие рога, загнутые дугой. "
             "Стоит в XZ лицом −Y: материал смещён в −X, вырез и рога — в +X, "
-            "толщина depth по Y.",
+            "толщина depth по Y. wall>0 делает сквозную формочку по контуру "
+            "серпа с равномерной стенкой.",
     example="луна = crescent radius=50 thickness=18 depth=12 round=1.5\n"
             "полумесяц = crescent radius=40 thickness=8 bite=1.25 depth=8",
     params={"radius": "радиус внешнего круга, мм (50)",
@@ -249,6 +268,7 @@ def tee(a, name):
                     "месяц, 0.8 — толстый, 1.3 — тонкие длинные рога (1.0)",
             "depth": "толщина по глубине, мм (12); у стоящего знака — по Y",
             "round": "скругление кромок, мм (0)",
+            "wall": "стенка сквозной формочки, мм; 0 — сплошной серп (0)",
             "segments": "точек по дуге (по размеру)",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом вверх — «фронт»",
             "stand": "то же, что plane=фронт: да — стоит, нет — лежит (да)",
@@ -260,6 +280,7 @@ def crescent(a, name):
     bite = float(a.num("bite", 1.0, minv=0.5, maxv=1.6))
     depth = float(a.num("depth", 12.0, minv=0.1))
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
     if thickness >= radius * 1.6:
         raise GeometryError(f"Серп толщиной {thickness:g} мм не влезает в круг "
                             f"радиусом {radius:g} мм.", hint="thickness ≈ 0.15…0.5 от radius.")
@@ -283,7 +304,9 @@ def crescent(a, name):
     if cross.is_empty() or cross.area() <= 1e-9:
         raise GeometryError("От круга ничего не осталось: уменьшите thickness.",
                             hint="thickness < radius.")
-    solid = _flat(cross, depth, round_r, min(thickness, radius))
+    cross = hollow_cross(cross, wall, "луна")
+    thin = min(thickness, radius) if wall <= 1e-6 else wall
+    solid = _flat(cross, depth, round_r, thin)
     return make_solid(a.scene, name, _place_glyph(a, solid), a, kind="crescent")
 
 
@@ -295,9 +318,9 @@ def crescent(a, name):
     category="Примитивы",
     summary="Непрерывный завиток: одна гибкая труба идёт по трёхмерной "
             "спирали, как свиной хвостик или мягкое мороженое. Это не стопка "
-            "дисков: витки плавно сужаются и заканчиваются остриём. wire — "
-            "диаметр трубы в основании, coils — число витков, taper — сужение "
-            "спирали к оси.",
+            "дисков: витки плавно сужаются и заканчиваются остриём. merge "
+            "сращивает витки общим телом, base скрывает начало в плоском "
+            "основании, как у крема.",
     example="хвостик = swirl radius=40 height=64 coils=3 wire=16 taper=0.25\n"
             "мороженое = swirl radius=34 height=96 coils=4 wire=20 taper=0.7",
     params={"radius": "наружный радиус основания, мм (40)",
@@ -305,6 +328,10 @@ def crescent(a, name):
             "coils": "число непрерывных витков 1…12 (3)",
             "wire": "диаметр трубы у основания, мм (авто, без касания витков)",
             "taper": "сужение радиуса спирали 0…0.92 (0.62)",
+            "merge": "да — общее тело без промежутков между витками; "
+                     "разрешает wire не меньше шага (нет)",
+            "base": "да — плоское основание высотой wire, полностью скрывающее "
+                    "начало витка (нет)",
             "segments": "сегментов сечения трубы 12…64 (20)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["radius", "height"])
@@ -312,14 +339,18 @@ def swirl(a, name):
     radius = float(a.num("radius", 40.0, minv=2.0, maxv=5000.0))
     height = float(a.num("height", 64.0, minv=3.0, maxv=10000.0))
     coils = int(a.num("coils", 3, minv=1, maxv=12) or 3)
+    merge = a.boolean("merge", False)
+    base = a.boolean("base", False)
     pitch = height / coils
-    auto_wire = min(radius * 0.42, pitch * 0.78)
+    auto_wire = min(radius * 0.42, pitch * (1.04 if merge else 0.78))
     wire = float(a.num("wire", auto_wire, minv=0.2, maxv=radius * 1.2))
     taper = float(a.num("taper", 0.62, minv=0.0, maxv=0.92))
     sides = int(a.num("segments", 20, minv=12, maxv=64) or 20)
-    if wire >= pitch * 0.96:
+    if wire >= pitch * 0.96 and not merge:
         raise GeometryError("Труба завитка слишком толстая: соседние витки сольются.",
-                            hint=f"wire должен быть меньше {pitch * 0.96:g} мм.")
+                            hint=f"Задайте wire меньше {pitch * 0.96:g} мм или merge=да.")
+    if base and wire >= height:
+        raise GeometryError("Для плоского основания height должен быть больше wire.")
     if wire >= radius * 1.15:
         raise GeometryError("Труба толще основания завитка.",
                             hint="Уменьшите wire или увеличьте radius.")
@@ -344,9 +375,30 @@ def swirl(a, name):
         scales.append(tube_r)
     solid = sweep_solid(np.asarray(path, dtype=np.float64), circle_profile(1.0, sides),
                         what="непрерывного завитка", scale_curve=scales)
+    if merge:
+        # Общая сужающаяся сердцевина пересекает трубу на каждом шаге и
+        # закрывает сквозные промежутки, оставляя снаружи спиральный рельеф.
+        profile = [(0.0, 0.0)]
+        for i in range(0, n + 1, max(1, n // 48)):
+            cx, cy, z = path[i]
+            rr = math.hypot(cx, cy) + scales[i] * 0.65
+            profile.append((max(0.005, rr), max(0.0, z)))
+        if profile[-1][1] < height:
+            cx, cy, z = path[-1]
+            profile.append((max(0.005, math.hypot(cx, cy) + scales[-1] * 0.65), height))
+        profile.append((0.0, height))
+        core = mf.Manifold.revolve(mf.CrossSection([np.asarray(profile, dtype=np.float64)]),
+                                   max(48, sides * 3))
+        solid = solid + core
+    if base:
+        # Начальное сечение лежит между z=0 и z=wire целиком внутри этого
+        # цилиндра: снаружи остаётся ровная площадка без хвостика.
+        pad = mf.Manifold.cylinder(wire, radius, radius, max(48, sides * 3))
+        solid = solid + pad
     solid = ensure_volume(solid, "завитка")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="swirl")
-    out.notes.append(f"непрерывная спираль: {coils} витков, труба ø{wire:g} мм")
+    out.notes.append(f"непрерывная спираль: {coils} витков, труба ø{wire:g} мм, "
+                     f"merge={'да' if merge else 'нет'}, base={'да' if base else 'нет'}")
     return out
 
 
@@ -459,7 +511,8 @@ def banana(a, name):
     category="Примитивы",
     summary="Буква Y / рогатка с одинаковыми ветвями. shape=капсулы — все "
             "наружные торцы круглые, включая низ; shape=бруски — все ветви "
-            "прямоугольные с плоскими торцами. Тип не смешивается между ветвями.",
+            "прямоугольные с плоскими торцами. Тип не смешивается между ветвями. "
+            "smooth округляет внутренние стыки развилки, round — кромки толщины.",
     example="рогатка = yoke height=110 spread=64 arm=16 fork=0.38 depth=14 round=2\n"
             "игрек = yoke height=110 spread=64 arm=16 shape=бруски",
     params={"height": "высота до концов ветвей, мм (110)",
@@ -469,6 +522,7 @@ def banana(a, name):
             "fork": "доля высоты, где начинается развилка: 0.2…0.7 (0.38)",
             "depth": "толщина по глубине, мм (14); у стоящего знака — по Y",
             "round": "скругление кромок, мм (0)",
+            "smooth": "сглаживание внутренних стыков ветвей 0…4 (0)",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом вверх — «фронт»",
             "stand": "то же, что plane=фронт: да — стоит, нет — лежит (да)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -480,6 +534,7 @@ def yoke(a, name):
     fork = float(a.num("fork", 0.38, minv=0.1, maxv=0.9))
     depth = float(a.num("depth", 14.0, minv=0.1))
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    smooth = int(a.num("smooth", 0, minv=0, maxv=4) or 0)
     shape = (a.text("shape") or "капсулы").strip().lower()
     if shape in ("капсула", "капсулы", "capsule", "capsules", "круглые"):
         shape = "капсулы"
@@ -512,6 +567,12 @@ def yoke(a, name):
     cross = mf.CrossSection.batch_boolean(
         [mf.CrossSection([stem]), mf.CrossSection([l_arm]), mf.CrossSection([r_arm])],
         mf.OpType.Add)
+    if smooth > 0:
+        # Морфологическое замыкание заполняет только острые внутренние
+        # пазухи развилки; наружные торцы и толщина ветвей сохраняются.
+        rr = arm * 0.35 * smooth / 4.0
+        cross = cross.offset(rr, mf.JoinType.Round, 2.0, 20)
+        cross = cross.offset(-rr, mf.JoinType.Round, 2.0, 20)
     if cross.is_empty() or cross.area() <= 1e-9:
         raise GeometryError("Форма Y получилась пустой.",
                             hint="Проверьте height, spread и arm.")
