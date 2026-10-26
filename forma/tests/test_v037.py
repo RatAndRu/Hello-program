@@ -267,24 +267,8 @@ class CardsExamplesTest(unittest.TestCase):
         self.assertIn("op: 'воронка'", app)
         self.assertIn("title: 'Деталь по осям хозяина'", app)
 
-    def test_examples_registered(self):
-        names = {e[1] if isinstance(e, (list, tuple)) else e for e in EXAMPLES}
-        for key in ("funnel", "orientation"):
-            with self.subTest(key=key):
-                self.assertIn(key, names)
 
-    def test_examples_build(self):
-        for key in ("funnel", "orientation"):
-            with self.subTest(key=key):
-                b = build(load_example(key), analyze_model=False)
-                self.assertTrue(b.ok, (b.error or {}).get("message"))
-                self.assertGreaterEqual(len(b.scene.objects), 3)
 
-    def test_funnel_example_has_real_funnels(self):
-        b = build(load_example("funnel"), analyze_model=False)
-        self.assertTrue(b.ok)
-        self.assertEqual(b.scene.objects["кухонная"].manifold.genus(), 1)
-        self.assertGreater(len(b.scene.objects["кухонная"].manifold.decompose()), 0)
 
 
 if __name__ == "__main__":

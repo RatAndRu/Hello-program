@@ -243,18 +243,20 @@ class TestExamplesAndTools(unittest.TestCase):
         from forma.webui import EXAMPLES
         keys = [key for _, key in EXAMPLES]
         self.assertEqual(keys, [
-            "primitives", "shape_controls", "ribbon_grids", "cavity_folds", "more_solids", "mech", "mug", "car", "vase", "bottle", "alien", "gear",
-            "mannequin", "apple", "human_studio", "animation_tracks", "wardrobe",
-            "mechanics", "polygons", "showcase", "units",
-            "motorcycle", "clock", "mates", "anime_face", "origami", "chain",
-            "wifi", "graded", "hook", "half_oval", "surface",
-            "funnel", "orientation",
+            "tools_gallery", "ribbon_grids", "cavity_folds", "more_solids",
+            "mug", "car", "vase", "bottle", "alien", "gear", "mannequin",
+            "apple", "human_studio", "animation_tracks", "wardrobe",
+            "mechanics", "showcase", "units", "motorcycle", "clock",
+            "clock_led", "anime_face", "snack", "blob",
         ])
 
     def test_removed_examples_are_gone(self):
         from forma.webui import load_example
         for key in ("banana", "mushroom", "cube_hole", "mug_studio",
-                    "animation", "tech", "tools"):
+                    "animation", "tech", "tools", "funnel", "orientation",
+                    "surface", "half_oval", "hook", "graded", "wifi", "chain",
+                    "origami", "mates", "primitives", "shape_controls", "mech",
+                    "polygons"):
             with self.subTest(key=key):
                 with self.assertRaises(Exception):
                     load_example(key)

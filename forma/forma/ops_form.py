@@ -26,7 +26,8 @@ from .geometry import manifold_from_arrays
 from .ops import make_solid, op, stand_flat_sign
 from .ops_shapes import (_chamfered_prism, _cross, _placed, _revolve,
                          _segments, ensure_volume)
-from .shape_features import cut_center_hole, hollow_cross, rounded_extrude
+from .shape_features import (cut_center_hole, hollow_cross, rounded_extrude,
+                             varied_edge_thickness)
 
 
 def _closed(verts, faces, what: str) -> mf.Manifold:
@@ -180,15 +181,16 @@ def crown(a, name):
                          "comma", "запятая", "инь"),
     category="Примитивы",
     summary="Одна отдельная «шестёрка» инь-ян площадью в половину исходного "
-            "круга, а не две соединённые половины. Внутренние дуги идут в разные "
-            "стороны; round — плавное скругление. hole делает отверстие в точке, "
-            "wall>0 — контурную рамку; отдельного mode больше нет.",
-    example="инь = yin_yang diameter=120 thick=16 round=3 hole=16\n"
-            "рамка = yin_yang diameter=120 thick=10 wall=4\n"
-            "зеркало = yin_yang diameter=120 thick=16 side=правый",
+            "круга. Основной form=объёмная плавно надувает обе стороны, как "
+            "каплю; form=плоская сохраняет ровную пластину. hole делает "
+            "отверстие в точке, wall>0 — контурную рамку.",
+    example="инь = yin_yang diameter=120 thick=16 hole=16\n"
+            "плоская = yin_yang diameter=120 thick=10 form=плоская round=2\n"
+            "рамка = yin_yang diameter=120 thick=10 wall=4 form=плоская",
     params={"diameter": "диаметр исходного круга, мм (120)",
-            "thick": "толщина, мм (16)",
-            "round": "плавное скругление кромки, мм (0 — точное совмещение половин)",
+            "thick": "максимальная толщина, мм (16)",
+            "form": "объёмная — выпуклые стороны (по умолчанию); плоская — ровная пластина",
+            "round": "скругление кромки плоской формы, мм (0)",
             "side": "левый (по умолчанию) или правый — зеркальная одиночная фигура",
             "hole": "отверстие в центре точки этой половины, мм (0)",
             "wall": "толщина рамки, мм; 0 — сплошная фигура, wall>0 — рамка",
@@ -201,6 +203,12 @@ def crown(a, name):
 def yin_yang(a, name):
     diameter = float(a.num("diameter", 120.0, minv=6.0))
     thick = float(a.num("thick", 16.0, minv=0.4))
+    form = (a.text("form", "объёмная") or "объёмная").strip().lower()
+    form = {"объёмная": "объёмная", "объемная": "объёмная", "объём": "объёмная",
+            "выпуклая": "объёмная", "volume": "объёмная",
+            "плоская": "плоская", "плоско": "плоская", "flat": "плоская"}.get(form)
+    if form is None:
+        raise GeometryError("yin_yang: form=объёмная или плоская.")
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
     hole = float(a.num("hole", 0.0, minv=0.0) or 0.0)
     wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
@@ -237,8 +245,36 @@ def yin_yang(a, name):
     bevel = min(round_r, thick / 2.0 - 1e-3, R * 0.15)
     if wall > 1e-6:
         bevel = min(bevel, wall / 2.0 - 1e-3)
-    solid = rounded_extrude(cross, thick, max(0.0, bevel), "инь-ян",
-                            sphere_segments=18)
+    if form == "объёмная":
+        solid = cross.extrude(thick)
+        contours = [np.asarray(pts, dtype=np.float64)]
+        if wall > 1e-6:
+            inner = _cross(pts).offset(-wall, mf.JoinType.Miter, 3.0, 16)
+            contours.extend(np.asarray(p, dtype=np.float64) for p in inner.to_polygons())
+        band = R * 1.35
+
+        def pillow(points_xyz):
+            xy = points_xyz[:, :2]
+            distance = np.full(len(xy), band, dtype=np.float64)
+            for contour in contours:
+                for i in range(len(contour)):
+                    p0 = contour[i]
+                    p1 = contour[(i + 1) % len(contour)]
+                    d = p1 - p0
+                    denom = float(np.dot(d, d))
+                    if denom < 1e-16:
+                        continue
+                    q = np.clip(((xy - p0) @ d) / denom, 0.0, 1.0)
+                    nearest = p0 + q[:, None] * d
+                    distance = np.minimum(distance, np.linalg.norm(xy - nearest, axis=1))
+            return np.clip(1.0 - distance / band, 0.0, 1.0)
+
+        solid = varied_edge_thickness(solid, thick, max(0.05, thick * 0.12),
+                                      band, pillow, "объёмная инь-ян",
+                                      center_z=thick / 2.0)
+    else:
+        solid = rounded_extrude(cross, thick, max(0.0, bevel), "инь-ян",
+                                sphere_segments=18)
     # У левой половины точка внизу; поворот правой переносит её вверх.
     if hole >= R * 0.95:
         raise GeometryError("hole слишком велико для точки инь-ян.",
@@ -246,6 +282,15 @@ def yin_yang(a, name):
     dot_y = R / 2.0 if side == "правый" else -R / 2.0
     solid = cut_center_hole(solid, thick, hole, center=(0.0, dot_y),
                             segments=n, what="инь-ян")
+    if form == "объёмная":
+        # Отверстие может удалить единственную самую высокую вершину подушки.
+        # Нормализуем после него, чтобы thick оставался точным габаритом.
+        bb = solid.bounding_box()
+        zspan = max(bb[5] - bb[2], 1e-9)
+        matrix = np.eye(3, 4)
+        matrix[2, 2] = thick / zspan
+        matrix[2, 3] = -bb[2] * matrix[2, 2]
+        solid = solid.transform(matrix)
     solid = ensure_volume(solid, "инь-ян")
     # Общий канон плоских знаков: по умолчанию стоит в XZ лицом −Y.
     # Поворот делаем ДО сдвига: начало координат остаётся центром всего знака.

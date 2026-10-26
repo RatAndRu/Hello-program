@@ -19,8 +19,8 @@ from .geometry import circle_profile
 from .ops import anchor, make_solid, op
 from .ops_basic import _rounded_convex, _sliced_sphere
 from .ops_shapes import _profile, _revolve
-from .shape_features import (apply_smooth, cut_center_hole, rounded_extrude,
-                             transition_radius)
+from .shape_features import (apply_smooth, cut_center_hole, ellipse_edge_influence,
+                             rounded_extrude, transition_radius, varied_edge_thickness)
 
 
 # --------------------------------------------------------------------------- #
@@ -168,7 +168,9 @@ def _curved_plate(hx: float, hy: float, thickness: float, sag: float,
     category="Примитивы",
     summary="Круг с плоской, параболически вогнутой или выпуклой верхней "
             "поверхностью. sag — стрела кривизны в мм как у кнопки; низ всегда "
-            "плоский. round скругляет кромку плоского варианта.",
+            "плоский. round скругляет кромку плоского варианта. edge задаёт "
+            "точную толщину наружной кромки: меньше thickness — истончение, "
+            "больше — утолщение; edge_band — ширина плавного перехода.",
     example="блин = disc diameter=120 thickness=8\n"
             "чаша = disc diameter=100 thickness=8 top=вогнутая sag=3\n"
             "линза = disc diameter=90 thickness=6 top=выпуклая sag=4",
@@ -176,6 +178,8 @@ def _curved_plate(hx: float, hy: float, thickness: float, sag: float,
             "top": "верх: плоская, вогнутая или выпуклая",
             "sag": "стрела верхней кривизны, мм (авто: 25% толщины)",
             "round": "скругление кромки, мм (0; только top=плоская)",
+            "edge": "толщина наружной кромки, мм (по умолчанию = thickness)",
+            "edge_band": "ширина перехода к кромке, мм (25% радиуса)",
             "segments": "сегментов по кругу (по детализации)",
             "detail": "детализация 0…5 (3)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -185,6 +189,8 @@ def disc(a, name):
     thickness = float(a.num("thickness", 6.0, minv=0.1))
     radius = diameter / 2.0
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    edge = float(a.num("edge", thickness, minv=0.05))
+    edge_band = float(a.num("edge_band", radius * 0.25, minv=0.05))
     segments = _segments(a, max(24, int(diameter * 1.2)), minv=12)
     top = _top_kind(a, "круг")
     if top != "плоская":
@@ -206,8 +212,15 @@ def disc(a, name):
         solid = solid.minkowski_sum(mf.Manifold.sphere(round_r, max(12, segments // 4)))
     else:
         solid = mf.Manifold.cylinder(thickness, radius, radius, segments, center=True)
+    if abs(edge - thickness) > 1e-9:
+        solid = varied_edge_thickness(
+            solid, thickness, edge, edge_band,
+            ellipse_edge_influence(radius, radius, edge_band), "круг с профилем кромки",
+            center_z=thickness / 2.0 if top != "плоская" else 0.0)
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="disc")
     out.notes.append(f"круг ø{diameter:g}×{thickness:g} мм, верх {top}")
+    if abs(edge - thickness) > 1e-9:
+        out.notes.append(f"кромка {edge:g} мм на полосе {edge_band:g} мм")
     return out
 
 
@@ -227,6 +240,8 @@ def disc(a, name):
             "start": "откуда начинать, градусы от +X (0)",
             "thickness": "толщина, мм (6)",
             "hole": "центральное сквозное отверстие у вершины сектора, мм (0 — сплошной)",
+            "edge": "толщина только круглой дуги, мм (= thickness)",
+            "edge_band": "ширина перехода от дуги, мм (25% радиуса)",
             "smooth": "ступени скругления переходных рёбер 0…4 (0); "
                       "верх, низ и радиальные плоскости остаются плоскими",
             "segments": "сегментов по дуге (по детализации)",
@@ -240,6 +255,8 @@ def pie(a, name):
     thickness = float(a.num("thickness", 6.0, minv=0.1))
     hole = float(a.num("hole", 0.0, minv=0.0) or 0.0)
     radius = diameter / 2.0
+    edge = float(a.num("edge", thickness, minv=0.05))
+    edge_band = float(a.num("edge_band", radius * 0.25, minv=0.05))
     if hole >= diameter - 0.4:
         raise GeometryError("Сектор круга: hole не оставляет дуги вокруг отверстия.",
                             hint="Уменьшите hole хотя бы на 0.4 мм ниже diameter.")
@@ -255,6 +272,22 @@ def pie(a, name):
         cross = mf.CrossSection([circle_profile(radius, full)])
     edge_r = transition_radius(a, min(thickness * 0.45, radius * 0.04))
     solid = rounded_extrude(cross, thickness, edge_r, "сектор круга")
+    if abs(edge - thickness) > 1e-9:
+        start_rad = math.radians(start)
+        angle_rad = math.radians(angle)
+
+        def only_arc(points):
+            x, y = points[:, 0], points[:, 1]
+            radial = np.clip(1.0 - (radius - np.hypot(x, y)) / edge_band, 0.0, 1.0)
+            if angle >= 359.5:
+                return radial
+            u = ((np.arctan2(y, x) - start_rad) % (2.0 * math.pi)) / angle_rad
+            # Радиальные плоскости остаются с исходной толщиной.
+            fade = np.clip(np.sin(np.pi * u) * 5.0, 0.0, 1.0)
+            return radial * fade
+
+        solid = varied_edge_thickness(solid, thickness, edge, edge_band,
+                                      only_arc, "сектор с профилем дуги")
     # Скругление выполнено до сверления: широкие грани и стенка отверстия
     # не раздуваются и не стягиваются Loop-сеткой.
     solid = cut_center_hole(solid, thickness, hole, what="сектор круга")
@@ -282,6 +315,8 @@ def pie(a, name):
             "top": "верх: плоская, вогнутая или выпуклая",
             "sag": "стрела верхней кривизны, мм (авто: 25% толщины)",
             "round": "скругление кромки, мм (0; только top=плоская)",
+            "edge": "толщина наружной кромки, мм (= thickness)",
+            "edge_band": "ширина перехода к кромке, мм (25% меньшей полуоси)",
             "segments": "точек по контуру (по детализации)",
             "detail": "детализация 0…5 (3)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -296,6 +331,8 @@ def oval(a, name):
     thickness = float(a.num("thickness", 6.0, minv=0.1))
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
     hx, hy = width / 2.0, length / 2.0
+    edge = float(a.num("edge", thickness, minv=0.05))
+    edge_band = float(a.num("edge_band", min(hx, hy) * 0.25, minv=0.05))
     segments = _segments(a, max(32, int(max(width, length) * 1.1)), minv=16)
     top = _top_kind(a, "овал")
     if top != "плоская":
@@ -322,8 +359,15 @@ def oval(a, name):
         solid = mf.CrossSection([_profile(pts)]).extrude(body).translate((0, 0, -body / 2))
         if round_r > 1e-6:
             solid = solid.minkowski_sum(mf.Manifold.sphere(round_r, max(12, segments // 4)))
+    if abs(edge - thickness) > 1e-9:
+        solid = varied_edge_thickness(
+            solid, thickness, edge, edge_band,
+            ellipse_edge_influence(hx, hy, edge_band), "овал с профилем кромки",
+            center_z=thickness / 2.0 if top != "плоская" else 0.0)
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="oval")
     out.notes.append(f"овал {width:g}×{length:g}×{thickness:g} мм, верх {top}")
+    if abs(edge - thickness) > 1e-9:
+        out.notes.append(f"кромка {edge:g} мм на полосе {edge_band:g} мм")
     return out
 
 

@@ -193,19 +193,50 @@ def ladder(a, name):
 # --------------------------------------------------------------------------- #
 #  Рычаг
 # --------------------------------------------------------------------------- #
+def _cap_sag(r: float, radius: float, sag: float) -> float:
+    """Эллиптическая капля: ровно 0 в центре и sag на окружности radius.
+
+    Формула остаётся корректной и для глубокой линзы (sag>radius), где
+    сферическая капля меняет сторону центра и ломает заданную длину.
+    """
+    q = min(1.0, max(0.0, float(r) / max(float(radius), 1e-9)))
+    return float(sag) * (1.0 - math.sqrt(max(0.0, 1.0 - q * q)))
+
+
+def _lever_lens(length: float, diameter: float, concave: bool,
+                segments: int) -> mf.Manifold:
+    """Линза вдоль +X; у concave только наружная сторона вогнутая."""
+    radius = diameter / 2.0
+    n = max(8, segments // 3)
+    inner_sag = length if concave else length / 2.0
+    depression = length * 0.30
+    points = []
+    for i in range(n + 1):
+        r = radius * i / n
+        points.append((r, _cap_sag(r, radius, inner_sag)))
+    for i in range(n - 1, -1, -1):
+        r = radius * i / n
+        z = (length - depression + _cap_sag(r, radius, depression) if concave
+             else length - _cap_sag(r, radius, inner_sag))
+        points.append((r, z))
+    lens = mf.Manifold.revolve(mf.CrossSection([_profile(points)]), segments)
+    return lens.rotate((0.0, 90.0, 0.0))
+
+
 @op("lever", aliases=("рычаг", "ручка_рычаг", "рычажок", "lever_handle"),
     category="Примитивы",
-    summary="Рычаг с палкой и наконечником на конце. knob=шар даёт "
-            "продолговатый шар, knob=цилиндр — втулку; knob_h задаёт длину "
-            "обоих наконечников. Палка состыкована с поверхностью и не "
-            "торчит сквозь него.",
+    summary="Рычаг с палкой и наконечником: шар, цилиндр, выпуклая линза "
+            "или вогнутая снаружи линза. У вогнутой сторона стыка остаётся "
+            "выпуклой. Палка подрезана по внутренней поверхности и нигде "
+            "не торчит сквозь наконечник.",
     example="рычаг = lever length=180 diameter=14 knob=шар knob_d=34 knob_h=60\n"
             "брусок = lever length=140 shaft=брусок size=20 knob=цилиндр knob_d=30 knob_h=70",
     params={"length": "общая длина с наконечником по X, мм (180)",
             "shaft": "палка: цилиндр или брусок — «цилиндр»",
             "diameter": "диаметр палки, мм (14)",
             "size": "сечение палки-бруска, мм (равно diameter)",
-            "knob": "наконечник: шар или цилиндр — «шар»",
+            "knob": "шар, цилиндр, линза (выпуклая) или вогнутая "
+                    "(снаружи вогнутая, у стыка выпуклая) — «шар»",
             "knob_d": "толщина наконечника, мм (34)",
             "knob_h": "длина наконечника вдоль X, мм; работает и для шара (60)",
             "angle": "наклон вверх, градусы −89…89 (0)",
@@ -223,9 +254,12 @@ def lever(a, name):
     size = float(a.num("size", diameter, minv=0.5, maxv=1000.0))
     knob_shape = (a.text("knob", "шар") or "шар").strip().lower()
     knob_shape = {"шар": "шар", "сфера": "шар", "круглая": "шар",
-                  "цилиндр": "цилиндр", "труба": "цилиндр"}.get(knob_shape)
+                  "цилиндр": "цилиндр", "труба": "цилиндр",
+                  "линза": "линза", "выпуклая": "линза", "выпуклая_линза": "линза",
+                  "convex": "линза", "вогнутая": "вогнутая",
+                  "вогнутая_линза": "вогнутая", "concave": "вогнутая"}.get(knob_shape)
     if knob_shape is None:
-        raise GeometryError("knob=шар или цилиндр; режима «нет» больше нет.")
+        raise GeometryError("knob=шар, цилиндр, линза или вогнутая; режима «нет» больше нет.")
     knob_d = float(a.num("knob_d", 34.0, minv=1.0, maxv=2000.0))
     knob_h = float(a.num("knob_h", 60.0, minv=1.0, maxv=5000.0))
     angle = float(a.num("angle", 0.0, minv=-89.0, maxv=89.0))
@@ -237,7 +271,12 @@ def lever(a, name):
         raise GeometryError("Наконечник тоньше палки: чистый стык невозможен.",
                             hint=f"knob_d должен быть не меньше {needed:g} мм.")
 
-    shaft_length = length - knob_h / 2.0  # заготовка до центра наконечника
+    if knob_shape in ("линза", "вогнутая"):
+        inner_sag = knob_h if knob_shape == "вогнутая" else knob_h / 2.0
+        reach = _cap_sag(needed / 2.0, knob_d / 2.0, inner_sag)
+        shaft_length = length - knob_h + reach + min(0.05, knob_h * 0.01)
+    else:
+        shaft_length = length - knob_h / 2.0  # заготовка до центра наконечника
     if shaft_shape == "цилиндр":
         shaft = mf.Manifold.cylinder(shaft_length, diameter / 2.0, diameter / 2.0,
                                      segments).rotate((0.0, 90.0, 0.0))
@@ -248,13 +287,16 @@ def lever(a, name):
         knob = mf.Manifold.sphere(1.0, segments).scale(
             (knob_h / 2.0, knob_d / 2.0, knob_d / 2.0))
         knob = knob.translate((length - knob_h / 2.0, 0.0, 0.0))
-    else:
+    elif knob_shape == "цилиндр":
         knob = mf.Manifold.cylinder(knob_h, knob_d / 2.0, knob_d / 2.0,
                                     segments).rotate((0.0, 90.0, 0.0))
         knob = knob.translate((length - knob_h, 0.0, 0.0))
-    # Убрать всю заготовку палки изнутри наконечника. Внешняя поверхность
-    # наконечника остаётся чистой, а стык повторяет её форму.
-    shaft = shaft - knob
+    else:
+        knob = _lever_lens(knob_h, knob_d, knob_shape == "вогнутая", segments)
+        knob = knob.translate((length - knob_h, 0.0, 0.0))
+    # Палка заканчивается на 0.05 мм внутри наконечника. Небольшой объёмный
+    # стык обязателен: вычитание наконечника из палки оставляло лишь
+    # совпадающие поверхности, и вогнутая линза распадалась на компоненты.
     solid = shaft + knob
     if abs(angle) > 1e-6:
         solid = solid.rotate((0.0, -angle, 0.0))

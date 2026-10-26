@@ -146,6 +146,145 @@ def _clump(start, direction, length, width, thin, bend, curl, side,
     return sweep_solid(path, prof, what="пряди", scale_curve=curve, round_caps=1.0)
 
 
+@op("hair", aliases=("волосы", "причёска", "прическа", "мех", "шерсть",
+                     "hair_style", "fur"),
+    category="Форма и деформации",
+    summary="Наращивает иголки, волоски, локоны или мех на поверхности "
+            "выбранного существующего объекта и сваривает корни с ним в одно "
+            "тело. Не создаёт голову, сферу или шапочку-основу. surface выбирает "
+            "каноническую сторону, at+radius ограничивают пятно; style=иголки, "
+            "волоски, локоны или мех. thick — толщина корня в миллиметрах.",
+    example="ёж = sphere radius=35 segments=48\n"
+            "hair ёж style=иголки surface=вся count=90 length=24 thick=2 seed=4\n"
+            "шкура = box size=[100,70,18] round=5\n"
+            "hair шкура style=мех surface=верх count=140 length=9 thick=.8",
+    params={"objects": "существующий объект [a] или a (обязательно)",
+            "style": "иголки, волоски, локоны или мех — «волоски»",
+            "surface": "верх, низ, право, лево, перёд, зад или вся",
+            "at": "необязательный центр пятна [x,y,z]",
+            "radius": "радиус пятна на поверхности, мм; 0 — вся выбранная сторона",
+            "length": "максимальная длина, мм (24)",
+            "thick": "толщина корня, мм (по стилю)",
+            "count": "число корней; clumps/density — совместимые синонимы",
+            "spread": "разброс направлений и длин 0…1 (0.25)",
+            "bend": "изгиб волосков и меха 0…3 (0.25)",
+            "turns": "витки локона 0.2…8 (1.2)",
+            "curl_radius": "радиус локона, мм (0.12·length)",
+            "seed": "повторяемая раскладка (7)"},
+    positional=["objects"])
+def hair(a, name):
+    from .ops_extra import _derived, _one
+    from .ops_surface import _frame, _surface_samples
+    from .ops_shapes import ensure_volume
+
+    base = _one(a, "hair")
+    style = (a.text("style", "волоски") or "волоски").strip().lower()
+    style = {"иголки": "иголки", "иглы": "иголки", "needles": "иголки", "spikes": "иголки",
+             "волоски": "волоски", "волосы": "волоски", "пряди": "волоски", "hair": "волоски",
+             "аниме": "волоски", "anime": "волоски", "хвост": "волоски", "tail": "волоски",
+             "короткий": "волоски", "short": "волоски",
+             "локоны": "локоны", "кудри": "локоны", "curls": "локоны",
+             "мех": "мех", "шерсть": "мех", "fur": "мех"}.get(style)
+    if style is None:
+        raise GeometryError(f"Неизвестный стиль hair «{a.text('style')}».",
+                            hint="style: иголки, волоски, локоны или мех.")
+    surface_raw = a.text("surface", None)
+    surface = (surface_raw or ("вся" if style == "мех" else "верх")).strip().lower()
+    sides = {"верх": (0, 0, 1), "низ": (0, 0, -1), "право": (1, 0, 0),
+             "лево": (-1, 0, 0), "перёд": (0, -1, 0), "перед": (0, -1, 0),
+             "зад": (0, 1, 0)}
+    if surface in ("все", "всё", "all"):
+        surface = "вся"
+    if surface != "вся" and surface not in sides:
+        raise GeometryError("hair: surface=верх, низ, право, лево, перёд, зад или вся.")
+    length = float(a.num("length", 24.0, minv=0.5, maxv=5000.0))
+    default_thick = {"иголки": 1.8, "волоски": 1.2, "локоны": 5.0, "мех": 0.9}[style]
+    thick = float(a.num("thick", default_thick, minv=0.08, maxv=100.0))
+    count_value = a.num("count", None, minv=1, maxv=400)
+    if count_value is None:
+        count_value = a.num("clumps", None, minv=1, maxv=400)
+    if count_value is None:
+        count_value = a.num("density", 120 if style == "мех" else 48, minv=1, maxv=400)
+    count = int(count_value)
+    spread = float(a.num("spread", 0.25, minv=0.0, maxv=1.0))
+    bend = float(a.num("bend", 0.45 if style == "мех" else 0.25, minv=0.0, maxv=3.0))
+    turns = float(a.num("turns", 1.2, minv=0.2, maxv=8.0))
+    curl_radius = float(a.num("curl_radius", length * 0.12, minv=0.1, maxv=1000.0))
+    seed = int(a.num("seed", 7, minv=0, maxv=1_000_000))
+    patch_at = a.vec("at", 3, default=None)
+    patch_radius = float(a.num("radius", 0.0, minv=0.0, maxv=5000.0) or 0.0)
+    rng = np.random.default_rng(seed)
+
+    mesh = base.manifold.to_mesh()
+    verts = np.asarray(mesh.vert_properties, dtype=np.float64)[:, :3]
+    faces = np.asarray(mesh.tri_verts, dtype=np.int64).reshape(-1, 3)
+    points, normals = _surface_samples(verts, faces, max(count * 14, count + 1), rng)
+    mask = np.ones(len(points), dtype=bool)
+    if surface != "вся":
+        side = np.asarray(sides[surface], dtype=np.float64)
+        mask &= (normals @ side) > 0.25
+    if patch_at is not None and patch_radius > 0:
+        centre = np.asarray(patch_at, dtype=np.float64).reshape(3)
+        mask &= np.linalg.norm(points - centre, axis=1) <= patch_radius
+    indices = np.flatnonzero(mask)
+    if len(indices) < count:
+        raise GeometryError(f"На выбранной поверхности найдено только {len(indices)} из {count} корней.",
+                            hint="Увеличьте surface/radius или уменьшите count.")
+    # Берём равномерно по всему отфильтрованному массиву, а не только его
+    # начало: seed влияет и на точки, и на направления.
+    selected = rng.choice(indices, size=count, replace=False)
+    points, normals = points[selected], normals[selected]
+
+    pieces: list[mf.Manifold] = []
+    root = max(0.25, thick * 0.65)
+    for p, normal in zip(points, normals):
+        normal = normal / max(float(np.linalg.norm(normal)), 1e-12)
+        tangent = rng.normal(0.0, 1.0, 3)
+        tangent -= normal * float(np.dot(tangent, normal))
+        if float(np.linalg.norm(tangent)) < 1e-8:
+            tangent = np.cross(normal, np.array([1.0, 0.0, 0.0]))
+        tangent /= max(float(np.linalg.norm(tangent)), 1e-12)
+        direction = normal + tangent * float(rng.normal(0.0, spread * 0.55))
+        direction /= max(float(np.linalg.norm(direction)), 1e-12)
+        ln = length * (1.0 - spread * 0.55 * rng.random())
+        start = p - normal * root
+        if style == "иголки":
+            piece = mf.Manifold.cylinder(ln + root, thick * 0.5, 0.0, 8, False)
+            frame = _frame(direction)
+            frame[:, 3] = start
+            pieces.append(piece.transform(frame))
+        elif style in ("волоски", "мех"):
+            pieces.append(_single_strand(start, direction, ln, thick, bend, 0.0,
+                                         tangent, sharp=1.0))
+        else:
+            steps = int(np.clip(24 + turns * 18, 28, 180))
+            t = np.linspace(0.0, 1.0, steps)
+            other = np.cross(direction, tangent)
+            other /= max(float(np.linalg.norm(other)), 1e-12)
+            angle = 2.0 * math.pi * turns * t
+            rr = curl_radius * (1.0 - np.exp(-8.0 * t)) * (1.0 - 0.35 * t)
+            path = (start[None, :] + direction[None, :] * (ln * t)[:, None]
+                    + tangent[None, :] * (rr * np.sin(angle))[:, None]
+                    + other[None, :] * (rr * (np.cos(angle) - 1.0))[:, None])
+            profile = ellipse_profile(thick, thick * 0.55, 10)
+            curve = list(np.linspace(1.0, 0.06, steps) ** 0.65)
+            curve[-1] = 0.02
+            pieces.append(sweep_solid(path, profile, what="локона на поверхности",
+                                      scale_curve=curve, round_caps=0.5))
+
+    solid = mf.Manifold.batch_boolean([base.manifold] + pieces, mf.OpType.Add)
+    solid = ensure_volume(solid, "волос на поверхности")
+    parts = len([p for p in solid.decompose() if p.volume() > 1e-6])
+    if parts != 1:
+        raise GeometryError(f"Волосы не сварились с объектом: получилось {parts} частей.",
+                            hint="Увеличьте thick, уменьшите spread или выберите другую surface.")
+    a.scene.log("info", f"hair: {style}, surface={surface}, корней {count}, "
+                        f"length={length:g}, thick={thick:g}, одно тело", a.cmd.line)
+    out = _derived(a, name, solid, base, "hair")
+    out.notes.append(f"наращено на исходном объекте: {style}, корней {count}, surface={surface}")
+    return out
+
+
 @op("волосинки", aliases=("strands", "волоски", "пряди", "волосы_пучок", "hair_strands",
                         "пух", "ворс"),
     category="Примитивы",

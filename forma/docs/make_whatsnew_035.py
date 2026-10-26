@@ -18,7 +18,6 @@ from PIL import Image, ImageDraw, ImageFont
 from forma.geometry import write_png
 from forma.render import _prepare, _render_view
 from forma.run import build
-from forma.webui import load_example
 
 ROOT = Path(__file__).resolve().parent
 FONTS = Path("/usr/share/fonts/truetype/dejavu")
@@ -38,15 +37,20 @@ HEAD = 88
 COLS, ROWS = 3, 2
 DARK_BG = (0.055, 0.062, 0.075)
 
-WIFI = load_example("wifi")
-GRADED = load_example("graded")
+RINGS = ("к = torus major=12 minor=2\n"
+         "к = rotate [к] angle=90 axis=x\n"
+         "р = ряд [к] count=4 step=[115,0,0] grow=1.5\n")
+TWISTED = ("б = box size=[20,20,80]\n"
+          "б = refine [б] length=8\n"
+          "р = ряд [б] count=5 step=[32,0,0] инструмент=скрутка "
+          "сила=15 шаг_силы=1.35 axis=z\n")
 
 # (подпись, мелкая подпись, сценарий, вид, приближение, сдвиг камеры)
 CASES = [
-    ("Wi-Fi: кольца всё больше", "ряд из колец: каждое следующее в 1.5 раза",
-     WIFI, "front", 1.0, (0, 0, 0.1)),
-    ("градация крутки", "шесть брусков, крутка сильнее на 35% за копию",
-     GRADED, "iso", 1.05, (0, 0, 0.05)),
+    ("кольца всё больше", "ряд из колец: каждое следующее в 1.5 раза",
+     RINGS, "front", 1.0, (0, 0, 0.1)),
+    ("градация крутки", "пять брусков, крутка сильнее на 35% за копию",
+     TWISTED, "iso", 1.05, (0, 0, 0.05)),
     ("сила инструмента ступенями", "вмятины всё глубже: шаг_силы=1.6",
      "ш = sphere radius=16 segments=64\n"
      "р = ряд [ш] count=5 step=[42,0,0] инструмент=вмятина сила=4 "

@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import math
+import sys
 from pathlib import Path
 
 import manifold3d as mf
@@ -43,7 +44,7 @@ def _vertex_normals(verts: np.ndarray, faces: np.ndarray) -> np.ndarray:
     return vn / np.maximum(ln, 1e-12)
 
 
-def _refine_for(m: mf.Manifold, refine: float, cap: int = 140_000) -> float:
+def _refine_for(m: mf.Manifold, refine: float, cap: int = 300_000) -> float:
     """Подбирает шаг дробления так, чтобы после деформации не было миллиона граней.
 
     Площадь поверхности известна, поэтому ожидаемое число треугольников
@@ -71,7 +72,11 @@ def _deform(m: mf.Manifold, fn, what: str = "деформации",
             hint="Сначала упростите деталь командой simplify.")
     normals = _vertex_normals(verts, faces)
     offs = np.asarray(fn(verts, normals), dtype=np.float64).reshape(-1)
+    if len(offs) != len(verts) or not np.all(np.isfinite(offs)):
+        raise GeometryError(f"{what.capitalize()}: функция деформации дала неверные смещения.")
     moved = verts + normals * offs[:, None]
+    if not np.all(np.isfinite(moved)):
+        raise GeometryError(f"{what.capitalize()}: в сетке появились нечисловые координаты.")
     return manifold_from_arrays(moved, faces, what)
 
 
@@ -156,24 +161,26 @@ def _frame(normal: np.ndarray, hint=(0.0, 0.0, 1.0)) -> np.ndarray:
 # --------------------------------------------------------------------------- #
 @op("wrinkle", aliases=("складки", "гофра", "мятая", "морщины", "рябь", "crumple"),
     category="Форма и деформации",
-    summary="Волна по поверхности готового тела: складки ткани, гофра, плиссе, "
-            "рябь, кора, мятая поверхность. Смещает вершины по нормали на "
-            "функцию от координат. mode=радиус — волны вокруг оси Z (плиссе), "
-            "высота — кольца по высоте, шум — нерегулярная мятость, клетка — "
-            "стёганый узор, трещины — глубокие борозды. Тело остаётся "
-            "замкнутым, размер меняется на доли amp.",
+    summary="Деформирует наружную поверхность готового тела: mode=радиус — "
+            "плиссе вокруг выбранной оси, высота — кольца вдоль неё, шум — "
+            "нерегулярная мятость, клетка — стёганый узор, трещины — узкие "
+            "борозды. surface=наружная оставляет внутреннюю стенку рукава "
+            "неподвижной, surface=вся деформирует обе. Сетка автоматически "
+            "разбивается минимум на десять отрезков на волну, без диагональных "
+            "полос от слишком крупных треугольников.",
     example="ваза = cylinder radius=40 height=90\n"
-            "wrinkle ваза amp=2 freq=14 mode=радиус\n"
+            "wrinkle ваза amp=2 freq=14 mode=радиус axis=z surface=наружная\n"
             "сосуд = cylinder radius=40 height=90\n"
             "wrinkle сосуд amp=3 freq=20 mode=высота seed=3",
     params={"objects": "объект [a] или a",
-            "amp": "амплитуда, мм (2): на сколько выступают складки",
-            "freq": "частота: сколько волн по кругу или по высоте (12)",
-            "mode": "радиус (вокруг оси), высота (кольца), шум (мятость), "
-                    "клетка (стёганая), трещины (борозды) — «радиус»",
+            "amp": "амплитуда, мм (2)",
+            "freq": "число волн по кругу/вдоль оси или масштаб шума (12)",
+            "mode": "радиус, высота, шум, клетка или трещины — «радиус»",
+            "axis": "ось рукава и колец: x, y или z (z)",
+            "surface": "наружная — только внешняя стенка; вся — включая внутреннюю",
             "seed": "сдвиг узора, целое (0)",
-            "detail": "длина ребра перед деформацией, мм (авто amp/2.5)",
-            "twist": "закрутка волн по высоте, градусы на всю высоту (0)"},
+            "detail": "явная длина ребра, мм (авто: длина волны/10…12)",
+            "twist": "закрутка волн вдоль оси, градусы на всю длину (0)"},
     positional=["objects"])
 def wrinkle(a, name):
     base = _one(a, "wrinkle")
@@ -187,52 +194,260 @@ def wrinkle(a, name):
     if mode is None:
         raise GeometryError(f"Неизвестный режим складок «{a.text('mode')}».",
                             hint="mode: радиус, высота, шум, клетка или трещины.")
+    axis_raw = (a.text("axis", "z") or "z").strip().lower()
+    axis_raw = {"х": "x", "у": "y", "з": "z"}.get(axis_raw, axis_raw)
+    if axis_raw not in ("x", "y", "z"):
+        raise GeometryError("wrinkle: axis=x, y или z.")
+    axis = "xyz".index(axis_raw)
+    others = [i for i in range(3) if i != axis]
+    surface = (a.text("surface", "наружная") or "наружная").strip().lower()
+    if surface in ("все", "всё", "all", "обе"):
+        surface = "вся"
+    elif surface in ("outer", "снаружи", "внешняя"):
+        surface = "наружная"
+    if surface not in ("наружная", "вся"):
+        raise GeometryError("wrinkle: surface=наружная или вся.")
     if amp <= 1e-6:
         return _derived(a, name, base.manifold, base, "wrinkle")
     seed = int(a.num("seed", 0) or 0)
     twist = math.radians(float(a.num("twist", 0.0) or 0.0))
     m = base.manifold
     bb = m.bounding_box()
-    cx, cy = (bb[0] + bb[3]) / 2.0, (bb[1] + bb[4]) / 2.0
-    height = max(bb[5] - bb[2], 1e-6)
-    # шаг сетки — от длины волны узора, а не от амплитуды: иначе на крупном
-    # теле получается сотня тысяч лишних треугольников
-    span = max(bb[3] - bb[0], bb[4] - bb[1], height)
+    ext = np.array([bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2]])
+    c0 = (bb[others[0]] + bb[others[0] + 3]) * 0.5
+    c1 = (bb[others[1]] + bb[others[1] + 3]) * 0.5
+    z0, height = bb[axis], max(float(ext[axis]), 1e-6)
+    radial_span = max(float(ext[others[0]]), float(ext[others[1]]), 1e-6)
+    waves = max(1, int(round(freq)))
     if mode == "радиус":
-        wavelength = 2.0 * math.pi * (span / 2.0) / max(freq, 0.5)
+        wavelength = math.pi * radial_span / waves
     elif mode == "высота":
         wavelength = height / max(freq, 0.5)
     elif mode == "клетка":
-        wavelength = span / max(freq, 0.5)
-    else:                       # шум и трещины
-        wavelength = span / max(freq, 0.5) * 0.7
-    auto_refine = max(0.1, min(amp / 2.0, wavelength / 5.0))
+        wavelength = radial_span / max(freq, 0.5)
+    else:
+        wavelength = max(radial_span, height) / max(freq, 0.5) * 0.7
+    auto_refine = max(0.05, wavelength / (12.0 if mode in ("радиус", "трещины") else 10.0))
     detail = a.num("detail", None, minv=0.02)
     refine = float(detail) if detail else auto_refine
 
     def offsets(verts: np.ndarray, normals: np.ndarray) -> np.ndarray:
-        x, y, z = verts[:, 0] - cx, verts[:, 1] - cy, verts[:, 2] - bb[2]
-        phi = np.arctan2(y, x)
+        u = verts[:, others[0]] - c0
+        v = verts[:, others[1]] - c1
+        z = verts[:, axis] - z0
+        phi = np.arctan2(v, u)
         if mode == "радиус":
             ang = phi + twist * (z / height)
-            return amp * np.cos(freq * ang)
-        if mode == "высота":
-            return amp * np.cos(2.0 * math.pi * freq * z / height)
-        if mode == "шум":
-            return amp * _fbm(verts * (freq / 40.0), 3, seed)
-        if mode == "клетка":
-            k = 2.0 * math.pi * freq / max(bb[3] - bb[0], bb[4] - bb[1], 1e-6)
-            return amp * 0.5 * (np.cos(k * x) * np.cos(k * y) + np.cos(k * z * 1.0))
-        # трещины: узкие борозды с рваным краем
-        wobble = 0.35 * _fbm(np.stack([phi * 6.0, z / 12.0, phi * 2.0], axis=1), 2, seed)
-        ridge = np.abs(np.cos(math.pi * freq * (phi / (2.0 * math.pi)) + wobble))
-        return -amp * (1.0 - np.power(np.clip(ridge, 0.0, 1.0), 0.35))
+            off = amp * np.cos(waves * ang)
+        elif mode == "высота":
+            off = amp * np.cos(2.0 * math.pi * freq * z / height)
+        elif mode == "шум":
+            scale = freq / max(float(ext.max()), 1.0)
+            off = amp * _fbm(verts * scale, 4, seed)
+        elif mode == "клетка":
+            k = 2.0 * math.pi * freq / radial_span
+            off = amp * 0.5 * (np.cos(k * u) * np.cos(k * v) + np.cos(k * z))
+        else:
+            # Целое waves — периодический шов отсутствует. Узкий профиль
+            # делает именно впадины, а не выпуклые вертикальные рейки.
+            wobble = 0.28 * _fbm(np.stack([np.cos(phi) * 3.0, np.sin(phi) * 3.0,
+                                           z / max(height / 8.0, 1.0)], axis=1), 2, seed)
+            ridge = np.abs(np.sin(0.5 * waves * (phi + wobble)))
+            off = -amp * (1.0 - np.power(np.clip(ridge, 0.0, 1.0), 0.42))
+        if mode in ("радиус", "трещины"):
+            # Угловой узор определён на боковой стенке. На торцевом веере он
+            # превращался в звезду и радиальные сектора. Плавное затухание по
+            # координате (не по усреднённой нормали) сохраняет торец и кромку
+            # исходными и не оставляет зубцов на первом ряде треугольников.
+            edge = np.clip(np.minimum(z, height - z) / (height * 0.08), 0.0, 1.0)
+            edge = edge * edge * (3.0 - 2.0 * edge)
+            off = off * edge
+        if surface == "наружная":
+            radial = np.stack([u, v], axis=1)
+            length = np.linalg.norm(radial, axis=1)
+            radial /= np.maximum(length, 1e-12)[:, None]
+            dot = normals[:, others[0]] * radial[:, 0] + normals[:, others[1]] * radial[:, 1]
+            # Торцы не отсекаем. Отсекаются только боковые нормали, смотрящие
+            # к оси: это внутренняя стенка рукава или внутренняя сторона кольца.
+            inner = (np.abs(normals[:, axis]) < 0.85) & (dot < -0.15)
+            off = np.where(inner, 0.0, off)
+        return off
 
     solid = _deform(m, offsets, "складки", refine=refine)
-    a.scene.log("info", f"складки: {mode}, амплитуда {amp:g} мм, "
-                        f"частота {freq:g}, {solid.num_tri():,} трис".replace(",", " "),
-                a.cmd.line)
+    a.scene.log("info", f"складки: {mode}, axis={axis_raw}, surface={surface}, "
+                        f"амплитуда {amp:g} мм, частота {freq:g}, ребро {refine:g} мм, "
+                        f"{solid.num_tri():,} трис".replace(",", " "), a.cmd.line)
     return _derived(a, name, solid, base, "wrinkle")
+
+
+# --------------------------------------------------------------------------- #
+#  Трещины: удар, разлом и продольные ложбинки древесины
+# --------------------------------------------------------------------------- #
+@op("crack", aliases=("трещина", "трещины", "потрескивание", "разлом", "fracture",
+                      "wood_grain", "растрескивание"),
+    category="Форма и деформации",
+    summary="Вдавливает настоящие трещины в выбранную поверхность. mode=удар — "
+            "радиальные ветви от at; разлом — длинная неровная трещина с "
+            "ответвлениями; дерево — ровные продольные ложбинки вдоль волокон. "
+            "at и dir выбирают грань, radius — размер области, width/depth — "
+            "ширину и глубину борозды. Линии проецируются на реальную сетку "
+            "лучами, поэтому работают и на плоскости, и на выпуклом теле.",
+    example="плита = box size=[100,80,16]\n"
+            "crack плита mode=удар at=[0,0,16] dir=[0,0,1] count=8 radius=35 width=1.4 depth=1.2\n"
+            "доска = box size=[140,60,12]\n"
+            "crack доска mode=дерево count=14 width=1 depth=.7 angle=0",
+    params={"objects": "объект [a] или a",
+            "mode": "удар, разлом или дерево — «удар»",
+            "at": "центр сети/области [x,y,z] (центр верхней грани)",
+            "dir": "наружная нормаль выбранной поверхности [x,y,z]",
+            "radius": "полуразмер области, мм (по габариту и режиму)",
+            "count": "лучей удара, ветвей разлома или линий дерева",
+            "width": "полная ширина борозды, мм (1.4)",
+            "depth": "глубина борозды, мм (1.2)",
+            "angle": "поворот направления в касательной плоскости, ° (0)",
+            "seed": "повторяемая форма ветвей (0)",
+            "detail": "явная длина ребра, мм (авто width/4)"},
+    positional=["objects"])
+def crack(a, name):
+    base = _one(a, "crack")
+    mode = (a.text("mode", "удар") or "удар").strip().lower()
+    mode = {"удар": "удар", "impact": "удар", "разлом": "разлом", "землетрясение": "разлом",
+            "fracture": "разлом", "дерево": "дерево", "волокна": "дерево",
+            "древесина": "дерево", "wood": "дерево"}.get(mode)
+    if mode is None:
+        raise GeometryError("crack: mode=удар, разлом или дерево.")
+    m = base.manifold
+    bb = m.bounding_box()
+    centre = np.array([(bb[i] + bb[i + 3]) * 0.5 for i in range(3)])
+    at_raw = a.vec("at", 3, default=None)
+    at = (np.array([centre[0], centre[1], bb[5]]) if at_raw is None
+          else np.asarray(at_raw, dtype=np.float64).reshape(3))
+    dir_raw = a.vec("dir", 3, default=None)
+    normal = (np.asarray(dir_raw, dtype=np.float64).reshape(3) if dir_raw is not None
+              else at - centre)
+    if float(np.linalg.norm(normal)) < 1e-9:
+        normal = np.array([0.0, 0.0, 1.0])
+    normal /= float(np.linalg.norm(normal))
+    ext = np.array([bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2]])
+    default_count = 12 if mode == "дерево" else 5 if mode == "разлом" else 8
+    count = int(a.num("count", default_count, minv=1, maxv=80))
+    width = float(a.num("width", 1.4, minv=0.05, maxv=1000.0))
+    depth = float(a.num("depth", 1.2, minv=0.02, maxv=1000.0))
+    radius_default = float(ext.max()) * (0.60 if mode == "дерево" else 0.36)
+    radius = float(a.num("radius", radius_default, minv=0.5, maxv=10_000.0))
+    seed = int(a.num("seed", 0) or 0)
+    rng = np.random.default_rng(seed)
+
+    grain = np.array([0.0, 0.0, 1.0]) if abs(normal[2]) < 0.85 else np.array([1.0, 0.0, 0.0])
+    e1 = grain - normal * float(np.dot(grain, normal))
+    e1 /= max(float(np.linalg.norm(e1)), 1e-12)
+    e2 = np.cross(normal, e1)
+    e2 /= max(float(np.linalg.norm(e2)), 1e-12)
+    angle = math.radians(float(a.num("angle", 0.0, minv=-180.0, maxv=180.0)))
+    e1, e2 = (e1 * math.cos(angle) + e2 * math.sin(angle),
+              -e1 * math.sin(angle) + e2 * math.cos(angle))
+
+    paths2: list[np.ndarray] = []
+    if mode == "удар":
+        for i in range(count):
+            phi = 2.0 * math.pi * (i + rng.uniform(-0.16, 0.16)) / count
+            direction = np.array([math.cos(phi), math.sin(phi)])
+            side = np.array([-direction[1], direction[0]])
+            length = radius * rng.uniform(0.68, 1.12)
+            t = np.linspace(0.0, 1.0, 10)
+            jitter = np.cumsum(rng.normal(0.0, width * 0.55, len(t)))
+            jitter -= jitter[0]
+            jitter *= np.sin(math.pi * t)
+            line = direction[None, :] * (length * t)[:, None] + side[None, :] * jitter[:, None]
+            paths2.append(line)
+            # Каждая вторая главная трещина даёт короткое боковое ответвление.
+            if i % 2 == 0:
+                start = line[5]
+                branch_phi = phi + rng.choice([-1.0, 1.0]) * rng.uniform(0.55, 1.0)
+                bd = np.array([math.cos(branch_phi), math.sin(branch_phi)])
+                bt = np.linspace(0.0, 1.0, 6)
+                branch = start[None, :] + bd[None, :] * (radius * 0.36 * bt)[:, None]
+                branch += rng.normal(0.0, width * 0.30, branch.shape) * np.sin(math.pi * bt)[:, None]
+                paths2.append(branch)
+    elif mode == "разлом":
+        t = np.linspace(-1.0, 1.0, 21)
+        jitter = np.cumsum(rng.normal(0.0, width * 0.75 + radius * 0.008, len(t)))
+        jitter -= np.linspace(jitter[0], jitter[-1], len(t))
+        paths2.append(np.stack([radius * t, jitter], axis=1))
+        for _ in range(count):
+            start_t = rng.uniform(-0.72, 0.72)
+            start = np.array([radius * start_t,
+                              float(np.interp(start_t, t, jitter))])
+            phi = rng.choice([-1.0, 1.0]) * rng.uniform(0.55, 1.15)
+            if rng.random() < 0.5:
+                phi += math.pi
+            direction = np.array([math.cos(phi), math.sin(phi)])
+            bt = np.linspace(0.0, 1.0, 8)
+            branch = start[None, :] + direction[None, :] * (radius * rng.uniform(0.22, 0.48) * bt)[:, None]
+            branch += rng.normal(0.0, width * 0.35, branch.shape) * np.sin(math.pi * bt)[:, None]
+            paths2.append(branch)
+    else:
+        for i in range(count):
+            across = 0.0 if count == 1 else -radius + 2.0 * radius * i / (count - 1)
+            t = np.linspace(-1.0, 1.0, 13)
+            wobble = width * 0.30 * np.sin(t * math.pi * 2.0 + rng.uniform(0.0, 2.0 * math.pi))
+            paths2.append(np.stack([radius * t, across + wobble], axis=1))
+
+    reach = float(np.linalg.norm(ext)) * 1.5 + 10.0
+    paths3: list[np.ndarray] = []
+
+    def project(line: np.ndarray):
+        current = []
+        for uv in line:
+            q = at + e1 * float(uv[0]) + e2 * float(uv[1])
+            start = q + normal * reach
+            end = q - normal * reach
+            hits = m.ray_cast([float(v) for v in start], [float(v) for v in end])
+            if not hits:
+                if len(current) >= 2:
+                    paths3.append(np.asarray(current))
+                current = []
+                continue
+            hit = min(hits, key=lambda h: float(np.linalg.norm(np.asarray(h.position) - start)))
+            current.append(np.asarray(hit.position, dtype=np.float64))
+        if len(current) >= 2:
+            paths3.append(np.asarray(current))
+
+    for line in paths2:
+        project(line)
+    if not paths3:
+        raise GeometryError("Трещины не попали на поверхность.",
+                            hint="Проверьте at/dir и увеличьте radius.")
+    segments = [(path[i], path[i + 1]) for path in paths3 for i in range(len(path) - 1)
+                if float(np.linalg.norm(path[i + 1] - path[i])) > 1e-8]
+    detail = a.num("detail", None, minv=0.02)
+    refine = float(detail) if detail else max(0.03, width / 4.0)
+
+    def offsets(verts: np.ndarray, normals: np.ndarray) -> np.ndarray:
+        best = np.full(len(verts), np.inf)
+        for p0, p1 in segments:
+            vector = p1 - p0
+            denom = max(float(vector @ vector), 1e-18)
+            t = np.clip(((verts - p0) @ vector) / denom, 0.0, 1.0)
+            delta = verts - (p0[None, :] + t[:, None] * vector[None, :])
+            best = np.minimum(best, np.sum(delta * delta, axis=1))
+        q = np.clip(np.sqrt(best) / (width * 0.5), 0.0, 1.0)
+        if mode == "дерево":
+            profile = (1.0 - q * q) ** 2
+        else:
+            # V-образная трещина с коротким сглаживанием самой кромки.
+            profile = 1.0 - q
+            profile = profile * profile * (3.0 - 2.0 * profile)
+        return -depth * profile
+
+    solid = _deform(m, offsets, "трещин", refine=refine)
+    if solid.volume() >= m.volume() - 1e-7:
+        raise GeometryError("Трещины не углубили поверхность: увеличьте depth или уменьшите detail.")
+    a.scene.log("info", f"crack: {mode}, линий {len(paths3)}, сегментов {len(segments)}, "
+                        f"width={width:g}, depth={depth:g}, seed={seed}", a.cmd.line)
+    out = _derived(a, name, solid, base, "crack")
+    out.notes.append(f"трещины: {mode}, линий {len(paths3)}, width={width:g}, depth={depth:g}")
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -241,9 +456,17 @@ def wrinkle(a, name):
 def _load_heightmap(path: str) -> np.ndarray:
     """Картинка → массив 0…1 (яркость), строки снизу вверх."""
     p = Path(path)
+    if not p.exists() and not p.is_absolute():
+        # Встроенный пример обязан открываться из любой рабочей папки и из
+        # однофайлового EXE, а не только из корня исходников.
+        resource_root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+        candidate = resource_root / p
+        if candidate.exists():
+            p = candidate
     if not p.exists():
         raise GeometryError(f"Не найден файл карты высот: {path}.",
-                            hint="Положите картинку рядом с проектом и укажите путь.")
+                            hint="Положите картинку рядом с проектом и укажите путь; "
+                                 "либо используйте встроенную docs/pattern.png.")
     from .geometry import read_png_gray
     if p.suffix.lower() == ".png":
         arr = read_png_gray(p)                  # свой декодер: без Pillow
@@ -281,14 +504,15 @@ def _sample_map(arr: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.ndarray:
             "рельеф коры. Читает файл в градациях серого (белое — выступ) и "
             "смещает вершины по нормали. mode=обёртка оборачивает картинку "
             "вокруг оси Z без шва (ваза, кружка, стакан), mode=плоскость кладёт "
-            "её на грань в плоскости XY. Для тонкого узора тело дробится до "
-            "шага depth/2 — без этого рельеф «поплывёт».",
+            "её на грань в плоскости XY. Встроенная карта docs/pattern.png "
+            "подставляется без image и упаковывается в EXE: готовый пример "
+            "доступен всегда. Своя картинка задаётся image=путь.png.",
     example='ваза = cylinder radius=40 height=90\n'
             'relief ваза image=docs/pattern.png depth=2 mode=обёртка\n'
             'плита = box size=[120,80,10]\n'
             'relief плита image=docs/pattern.png depth=1 mode=плоскость',
     params={"objects": "объект [a] или a",
-            "image": "путь к картинке (обязательно)",
+            "image": "путь к PNG; без параметра — встроенная docs/pattern.png",
             "depth": "глубина рельефа, мм (2)",
             "mode": "обёртка (вокруг оси Z) или плоскость (по XY) — «обёртка»",
             "invert": "поменять местами выступы и впадины (нет)",
@@ -298,9 +522,7 @@ def _sample_map(arr: np.ndarray, u: np.ndarray, v: np.ndarray) -> np.ndarray:
     positional=["objects"])
 def relief(a, name):
     base = _one(a, "relief")
-    image = (a.text("image") or "").strip()
-    if not image:
-        raise GeometryError("Укажите картинку: relief [ваза] image=pattern.png depth=2")
+    image = (a.text("image") or "docs/pattern.png").strip()
     depth = float(a.num("depth", 2.0, minv=0.01))
     mode = (a.text("mode") or "обёртка").strip().lower()
     if mode in ("обертка", "wrap", "круг", "цилиндр"):
@@ -346,90 +568,207 @@ def relief(a, name):
 # --------------------------------------------------------------------------- #
 #  Пористые: пемза, губка, шоколад, сыр
 # --------------------------------------------------------------------------- #
+def _pit_tool(radius: float, depth: float, cylindrical: bool, smooth: float,
+              rough: float, uneven: float, segments: int,
+              rng: np.random.Generator) -> mf.Manifold:
+    """Резец ямы с точным раскрытием radius и глубиной depth.
+
+    Локальная ось Z смотрит наружу, плоскость поверхности — z=0. Профиль
+    вращения задаёт нижнюю стенку и продолжается над поверхностью. Поэтому
+    кромка не зависит от исходной триангуляции, а smooth/rough/uneven меняют
+    саму геометрию резца, а не материал.
+    """
+    r, d = float(radius), float(depth)
+    over = max(r, d) * 0.6 + 1.0
+    nr = max(6, int(segments))
+    if not cylindrical:
+        # Сферический сегмент: r² = 2·R·d − d². Это верно и для глубокой
+        # ямы (тогда у раскрытия есть вертикальный участок стенки).
+        sphere_r = (r * r + d * d) / (2.0 * d)
+        qs = np.linspace(0.0, 1.0, nr + 1)[1:]
+        rho = r * qs
+        z = sphere_r - d - np.sqrt(np.maximum(sphere_r * sphere_r - rho * rho, 0.0))
+        if smooth > 1e-9:
+            band = max(0.05, 0.5 * smooth)
+            w = np.clip((1.0 - qs) / band, 0.0, 1.0)
+            w = w * w * (3.0 - 2.0 * w)
+            z = z * w
+        profile = [(0.0, -d)] + [(float(rr), float(zz)) for rr, zz in zip(rho, z)]
+    else:
+        # Цилиндр с плоским дном. smooth закругляет только входную кромку;
+        # основная стенка остаётся цилиндрической, а не становится конусом.
+        shaft = r * (1.0 - 0.30 * smooth)
+        bevel = min(d * 0.65, r * 0.9) * smooth
+        profile = [(0.0, -d), (shaft, -d)]
+        if bevel > 1e-6:
+            for t in np.linspace(0.0, 1.0, nr + 1)[1:]:
+                ang = float(t) * math.pi * 0.5
+                rr = shaft + (r - shaft) * math.sin(ang)
+                zz = -bevel + bevel * (1.0 - math.cos(ang))
+                profile.append((float(rr), float(zz)))
+        else:
+            profile.append((r, 0.0))
+    profile += [(r, over), (0.0, over)]
+    tool = mf.Manifold.revolve(_cross(profile), max(12, segments * 2))
+    if rough <= 1e-9 and uneven <= 1e-9:
+        return tool
+
+    verts, faces = manifold_mesh(tool)
+    rho = np.linalg.norm(verts[:, :2], axis=1)
+    phi = np.arctan2(verts[:, 1], verts[:, 0])
+    phase = rng.uniform(0.0, 2.0 * math.pi, 3)
+    radial_scale = 1.0 + uneven * (0.16 * np.sin(3.0 * phi + phase[0])
+                                   + 0.10 * np.sin(5.0 * phi + phase[1])
+                                   + 0.06 * np.sin(7.0 * phi + phase[2]))
+    verts[:, 0] *= radial_scale
+    verts[:, 1] *= radial_scale
+    if rough > 1e-9:
+        scale = max(r / 3.0, 0.05)
+        noise = _fbm(verts / scale, 3, int(rng.integers(0, 2**31 - 1)))
+        fade = np.clip(rho / max(r, 1e-9), 0.0, 1.0)
+        mask = verts[:, 2] < -1e-6
+        delta = rough * min(d, r) * 0.16 * noise * fade * mask
+        verts[:, 2] = np.where(mask, np.minimum(verts[:, 2] + delta, -1e-5), verts[:, 2])
+    return manifold_from_arrays(verts, faces, "резца поры")
+
+
+def _spaced_surface_points(verts, faces, count: int, radius: float,
+                           rng: np.random.Generator):
+    """Ровно count неперекрывающихся раскрытий либо понятный отказ.
+
+    Расстояние 2.05·max_radius гарантирует, что круги раскрытия не сливаются
+    даже на соседних гранях. Жадный выбор самой удалённой точки (farthest
+    point) даёт равномерную повторяемую раскладку вместо случайных скоплений.
+    """
+    pool = max(4000, int(count) * 80)
+    pts, nor = _surface_samples(verts, faces, pool, rng)
+    minimum = max(float(radius) * 2.05, 1e-6)
+    chosen = [int(rng.integers(0, len(pts)))]
+    best = np.sum((pts - pts[chosen[0]]) ** 2, axis=1)
+    best[chosen[0]] = -1.0
+    while len(chosen) < count:
+        index = int(np.argmax(best))
+        if best[index] < minimum * minimum:
+            raise GeometryError(
+                f"На поверхности не помещаются {count} неперекрывающихся ям "
+                f"радиуса {radius:g} мм (размещено {len(chosen)}).",
+                hint="Уменьшите size/width, spread или count; либо увеличьте деталь.")
+        chosen.append(index)
+        best = np.minimum(best, np.sum((pts - pts[index]) ** 2, axis=1))
+        best[chosen] = -1.0
+    idx = np.asarray(chosen, dtype=np.int64)
+    return pts[idx], nor[idx]
+
+
 @op("porous", aliases=("поры", "пористый", "губка", "пемза", "сыр", "sponge"),
     category="Форма и деформации",
-    summary="Дырявит тело как пемзу, губку, воздушный шоколад или сыр. "
-            "mode=поры — мелкие выбоины у поверхности; ячеи — крупные "
-            "сообщающиеся каверны (губка); пузыри — полости внутри, снаружи "
-            "поверхность гладкая (шоколад); глазки — редкие крупные круглые "
-            "дырки (эмменталь). Всегда одно тело, дырки не касаются краёв "
-            "без нужды.",
+    summary="Сферические ямы, цилиндрические отверстия и внутренние пузыри "
+            "с повторяемой раскладкой. size — радиус раскрытия, width — его "
+            "диаметр (если задан, имеет приоритет), depth — точная глубина от "
+            "поверхности. mode=поры/ячеи — сферические ямы; отверстия/глазки — "
+            "цилиндры с плоским дном; пузыри — полости внутри. Раскрытия не "
+            "перекрываются: невозможный count отклоняется. smooth закругляет "
+            "переход к яме, uneven делает кромку неровной, rough добавляет "
+            "шероховатость стенок, seed повторяет весь узор.",
     example="камень = rock size=90 rough=0.4 seed=2\n"
-            "porous камень mode=поры size=4 count=90\n"
-            "губка = box size=[90,60,30]\n"
-            "porous губка mode=ячеи size=12 count=35",
+            "porous камень mode=поры size=4 depth=2 count=30 smooth=.35 seed=4\n"
+            "плита = box size=[90,60,20]\n"
+            "porous плита mode=отверстия width=8 depth=6 count=12 smooth=.2",
     params={"objects": "объект [a] или a",
-            "mode": "поры, ячеи, пузыри или глазки — «поры»",
-            "size": "радиус дырки, мм (4)",
-            "count": "сколько дырок (60)",
-            "seed": "число для повторяемого узора (0)",
-            "spread": "разброс размеров 0…1: 0 — все одинаковые (0.45)",
-            "detail": "качество сфер 6…24 (12)"},
+            "mode": "поры, ячеи, отверстия, глазки или пузыри — «поры»",
+            "size": "радиус раскрытия, мм (4)",
+            "width": "диаметр раскрытия, мм; перекрывает size",
+            "depth": "глубина от исходной поверхности, мм (по режиму)",
+            "count": "число неперекрывающихся ям/отверстий; отказ, если не помещаются (60)",
+            "seed": "повторяемый seed раскладки и неровностей (0)",
+            "spread": "случайный разброс радиусов 0…0.9 (0 — одинаковые)",
+            "smooth": "плавный переход к яме 0…1 (0.25)",
+            "rough": "шероховатость стенок 0…1 (0); синоним roughness",
+            "uneven": "неровность кромки 0…1 (0)",
+            "through": "для цилиндров: сквозное отверстие (нет)",
+            "detail": "радиальное разбиение профиля 6…24 (12)"},
     positional=["objects"])
 def porous(a, name):
     base = _one(a, "porous")
     mode = (a.text("mode") or "поры").strip().lower()
-    mode = {"поры": "поры", "пемза": "поры", "pores": "поры",
+    mode = {"поры": "поры", "пемза": "поры", "pores": "поры", "сфера": "поры",
             "ячеи": "ячеи", "губка": "ячеи", "cells": "ячеи",
-            "пузыри": "пузыри", "шоколад": "пузыри", "bubbles": "пузыри",
-            "глазки": "пузыри", "сыр": "пузыри", "eyes": "пузыри"}.get(mode)
+            "отверстия": "отверстия", "отверстие": "отверстия", "цилиндры": "отверстия",
+            "цилиндрические": "отверстия", "holes": "отверстия", "глазки": "отверстия",
+            "сыр": "отверстия", "eyes": "отверстия",
+            "пузыри": "пузыри", "шоколад": "пузыри", "bubbles": "пузыри"}.get(mode)
     if mode is None:
         raise GeometryError(f"Неизвестный режим пор «{a.text('mode')}».",
-                            hint="mode: поры, ячеи, пузыри или глазки.")
+                            hint="mode: поры, ячеи, отверстия, глазки или пузыри.")
     size = float(a.num("size", 4.0, minv=0.2))
+    width = a.num("width", None, minv=0.4)
+    if width is not None:
+        size = float(width) * 0.5
     count = int(a.num("count", 60, minv=1, maxv=600))
     seed = int(a.num("seed", 0) or 0)
-    spread = float(a.num("spread", 0.45, minv=0.0, maxv=0.9))
+    spread = float(a.num("spread", 0.0, minv=0.0, maxv=0.9))
+    smooth = float(a.num("smooth", 0.25, minv=0.0, maxv=1.0))
+    rough_value = a.num("rough", None, minv=0.0, maxv=1.0)
+    rough = float(rough_value if rough_value is not None else
+                  a.num("roughness", 0.0, minv=0.0, maxv=1.0))
+    uneven = float(a.num("uneven", 0.0, minv=0.0, maxv=1.0))
     seg = int(a.num("detail", 12, minv=6, maxv=24))
+    through = a.boolean("through", False)
+    default_depth = size * (0.55 if mode == "поры" else 1.0 if mode == "ячеи" else 1.5)
+    depth = float(a.num("depth", default_depth, minv=0.05))
     rng = np.random.default_rng(seed)
     m = base.manifold
     bb = m.bounding_box()
     verts, faces = manifold_mesh(m)
-    holes: list[mf.Manifold] = []
     radii = size * (1.0 - spread + 2.0 * spread * rng.random(count))
+    holes: list[mf.Manifold] = []
 
-    if mode in ("поры", "ячеи"):
-        want = count * (3 if mode == "поры" else 1)
-        pts, nor = _surface_samples(verts, faces, max(want, count * 2), rng)
-        used = 0
+    if mode != "пузыри":
+        pts, nor = _spaced_surface_points(verts, faces, count, float(radii.max()), rng)
+        if through and mode == "отверстия":
+            depth = float(max(bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2])) * 2.5
         for i in range(count):
-            r = float(radii[i])
-            # центр чуть снаружи: сфера выкусывает лунку глубиной ~0.45 r
-            lift = r * (0.55 if mode == "поры" else 0.15)
-            c = pts[i * (max(want, count * 2) // count)] + nor[i * (max(want, count * 2) // count)] * lift
-            holes.append(mf.Manifold.sphere(r, seg).translate(tuple(float(v) for v in c)))
-            used += 1
-        a.scene.log("info", f"поры: {used} лунок по {size:g} мм", a.cmd.line)
+            tool = _pit_tool(float(radii[i]), depth, mode == "отверстия",
+                             smooth, rough, uneven, seg, rng)
+            frame = _frame(nor[i])
+            frame[:, 3] = pts[i]
+            holes.append(tool.transform(frame))
+        a.scene.log("info", f"porous: {count} шт., mode={mode}, радиус {size:g}, "
+                            f"глубина {depth:g}, smooth={smooth:g}, rough={rough:g}, "
+                            f"uneven={uneven:g}", a.cmd.line)
     else:
-        # пузыри и глазки — внутри тела, чтобы снаружи не осталось вмятин
         lo = np.array([bb[0], bb[1], bb[2]])
         hi = np.array([bb[3], bb[4], bb[5]])
         tries = 0
-        while len(holes) < count and tries < count * 40:
+        while len(holes) < count and tries < count * 60:
             tries += 1
             p = lo + (hi - lo) * rng.random(3)
             r = float(radii[len(holes)])
-            # расстояние до поверхности: ближайшее попадание луча в 6 сторон
             near = np.inf
-            for d in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)):
+            for d in ((1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, 0, 1), (0, 0, -1), (0, -1, 0)):
                 end = p + np.asarray(d, dtype=np.float64) * (max(hi - lo) * 2 + 10)
                 hits = m.ray_cast([float(v) for v in p], [float(v) for v in end])
                 if hits:
                     near = min(near, float(np.linalg.norm(np.asarray(hits[0].position) - p)))
             if np.isfinite(near) and near > r * 1.15:
-                holes.append(mf.Manifold.sphere(r, seg).translate(
-                    tuple(float(v) for v in p)))
-        if not holes:
-            raise GeometryError("Не удалось разместить пузыри: деталь слишком тонкая.",
-                                hint="Уменьшите size или возьмите mode=поры.")
-        a.scene.log("info", f"пузыри: {len(holes)} полостей по {size:g} мм", a.cmd.line)
+                holes.append(mf.Manifold.sphere(r, seg).translate(tuple(float(v) for v in p)))
+        if len(holes) != count:
+            raise GeometryError(f"Размещено только {len(holes)} из {count} пузырей: "
+                                "деталь слишком тонкая для такого размера.",
+                                hint="Уменьшите size/count или выберите mode=поры.")
 
     solid = mf.Manifold.batch_boolean([m] + holes, mf.OpType.Subtract)
     solid = ensure_volume(solid, "пористой детали")
-    if len(solid.decompose()) > 40:
-        a.scene.log("warn", f"пористость развалила тело на {len(solid.decompose())} частей — "
-                            f"уменьшите size или count", a.cmd.line)
-    return _derived(a, name, solid, base, "porous")
+    if solid.volume() >= m.volume() - 1e-7:
+        raise GeometryError("Поры не изменили объём: проверьте size/depth и поверхность.")
+    parts = len([p for p in solid.decompose() if p.volume() > 1e-6])
+    if parts > 1:
+        a.scene.log("warn", f"пористость разделила тело на {parts} частей — "
+                            "уменьшите size/depth или count", a.cmd.line)
+    out = _derived(a, name, solid, base, "porous")
+    out.notes.append(f"поры: mode={mode}, count={count}, size={size:g}, depth={depth:g}, "
+                     f"seed={seed}, smooth={smooth:g}, rough={rough:g}, uneven={uneven:g}")
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -648,25 +987,51 @@ def bark(a, name):
     if depth >= radius * 0.45:
         raise GeometryError(f"Борозда {depth:g} мм глубже трети радиуса {radius:g} мм.",
                             hint="depth ≈ 0.08…0.2 от radius.")
-    n_phi = int(a.num("segments", 0) or 0) or max(72, grooves * 8)
-    n_phi = int(max(24, min(256, n_phi)))
-    n_z = max(12, int(height / 12.0))
+    n_phi = int(a.num("segments", 0) or 0) or max(96, grooves * 14)
+    n_phi = int(max(48, min(512, n_phi)))
+    n_z = int(max(24, min(240, height / 7.0)))
     phis = np.linspace(0.0, 2.0 * math.pi, n_phi, endpoint=False)
     zs = np.linspace(0.0, height, n_z + 1)
 
+    rng = np.random.default_rng(seed)
+    spacing = 2.0 * math.pi / grooves
+    main = (np.arange(grooves) + rng.uniform(-0.30, 0.30, grooves)) * spacing
+    # Между главными трещинами проходят более короткие и тонкие вторичные.
+    angles = np.concatenate([main, main + spacing * rng.uniform(0.22, 0.46, grooves)])
+    widths = np.concatenate([spacing * rng.uniform(0.035, 0.075, grooves),
+                             spacing * rng.uniform(0.018, 0.045, grooves)])
+    strengths = np.concatenate([rng.uniform(0.68, 1.18, grooves),
+                                rng.uniform(0.22, 0.55, grooves)])
+    phases = rng.uniform(0.0, 2.0 * math.pi, (len(angles), 3))
+    frequencies = rng.uniform(1.2, 3.8, (len(angles), 2))
+
     def radius_at(phi: np.ndarray, z: float) -> np.ndarray:
-        """Радиус ствола по кругу на высоте z: сбег + борозды + шум коры."""
+        """Нерегулярные продольные трещины и чешуйки, бесшовные по окружности."""
         phi = np.asarray(phi, dtype=np.float64).reshape(-1)
-        base = radius * (1.0 - taper * (z / height))
-        # борозды: узкие впадины, слегка вихляющие по высоте
-        wobble = 0.22 * _fbm(np.stack([phi * 2.5, np.full_like(phi, z / 40.0),
-                                       np.zeros_like(phi)], axis=1), 2, seed)
-        groove = np.abs(np.cos(0.5 * grooves * phi + wobble))
-        base = base - depth * (1.0 - np.power(np.clip(groove, 0.0, 1.0), 0.4))
-        # мелкая кора: шум по всей поверхности
-        noise = _fbm(np.stack([phi * 3.0, np.full_like(phi, z / 9.0),
-                               phi * z / 500.0], axis=1), 3, seed + 5)
-        return np.clip(base + depth * 0.22 * noise, radius * 0.05, None)
+        t = z / height
+        base = radius * (1.0 - taper * t)
+        centres = (angles + spacing * 0.12 * (
+            np.sin(2.0 * math.pi * frequencies[:, 0] * t + phases[:, 0])
+            + 0.42 * np.sin(2.0 * math.pi * frequencies[:, 1] * t + phases[:, 1])))
+        delta = (phi[None, :] - centres[:, None] + math.pi) % (2.0 * math.pi) - math.pi
+        local_w = widths * (0.82 + 0.18 * np.sin(2.0 * math.pi * t + phases[:, 2]))
+        # Глубина меняется по высоте, но трещина не исчезает целиком: кора
+        # остаётся связной, без отдельных пятен и висячих чешуек.
+        local_d = strengths * (0.74 + 0.26 * np.sin(
+            2.0 * math.pi * frequencies[:, 1] * t + phases[:, 2]))
+        groove = np.exp(-np.power(np.abs(delta) / np.maximum(local_w[:, None], 1e-6), 1.35))
+        cut = np.sum(groove * local_d[:, None], axis=0)
+        cut = np.clip(cut, 0.0, 1.35)
+        # Периодические координаты cos/sin исключают вертикальный шов на
+        # стыке 0/2π; разные масштабы дают пластины и мелкую шелуху.
+        coarse = _fbm(np.stack([np.cos(phi) * grooves / 3.0,
+                                np.sin(phi) * grooves / 3.0,
+                                np.full_like(phi, z / 22.0)], axis=1), 3, seed + 5)
+        fine = _fbm(np.stack([np.cos(phi) * grooves,
+                              np.sin(phi) * grooves,
+                              np.full_like(phi, z / 4.5)], axis=1), 2, seed + 19)
+        return np.clip(base - depth * cut + depth * (0.20 * coarse + 0.07 * fine),
+                       radius * 0.05, None)
 
     rings = []
     for z in zs:

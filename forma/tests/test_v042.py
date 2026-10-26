@@ -162,8 +162,11 @@ class PyramidTest(unittest.TestCase):
     def test_pyramid_smooth_levels_are_real(self):
         plain = ok("д = pyramid sides=4 radius=40 height=70")
         smooth = ok("д = pyramid sides=4 radius=40 height=70 smooth=2")
-        self.assertEqual(solid(smooth).num_tri(), solid(plain).num_tri() * 16)
-        self.assertTrue(np.allclose(size(plain), size(smooth), atol=1e-5))
+        self.assertGreater(solid(smooth).num_tri(), solid(plain).num_tri())
+        self.assertLess(solid(smooth).volume(), solid(plain).volume())
+        pb, rb = solid(plain).bounding_box(), solid(smooth).bounding_box()
+        self.assertTrue(all(rb[i] >= pb[i] - 1e-5 for i in (0, 1)))
+        self.assertTrue(all(rb[i] <= pb[i] + 1e-5 for i in (3, 4)))
         watertight(self, smooth)
 
 

@@ -146,7 +146,6 @@ SECTIONS = """\
 АНИМАЦИЯ
   keyframe имя at=0 rotate=[0,0,0] move=[0,0,0] scale=1
   animate имя period=4 ease=плавно
-  display имя fps=24 frames=48        — сколько кадров в проигрывании
 
 ЭКСПОРТ
   /экспорт glb | stl | obj | ply | dxf | step | 3mf

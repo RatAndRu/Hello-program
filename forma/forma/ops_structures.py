@@ -10,7 +10,9 @@ import numpy as np
 from .errors import GeometryError
 from .geometry import circle_profile, loft_solid
 from .ops import anchor, make_solid, op
-from .shape_features import apply_smooth
+from .ops_basic import _rounded_convex
+from .ops_solids import _rounded_rect
+from .shape_features import rounded_extrude, transition_radius
 
 
 def _placed(a, solid: mf.Manifold) -> mf.Manifold:
@@ -52,9 +54,12 @@ def _prism_section(width: float, depth: float, height: float, kind: str,
     category="Примитивы",
     summary="Колонна с нижней площадкой и верхним бортиком. form=ровная, "
             "песочные (параболическое сужение посередине) или конус; section — "
-            "цилиндр или брусок. Высота включает площадку и бортик.",
+            "цилиндр или брусок. Высота включает площадку и бортик. smooth "
+            "скругляет рёбра радиусом, не деформируя широкие грани Loop-сглаживанием. "
+            "base_size=0 убирает площадку без переключателя; base_h и rim_h "
+            "остаются независимыми высотами зон. Отрицательный taper расширяет конус.",
     example="колонна = column height=180 width=42 form=песочные waist=0.55 "
-            "section=цилиндр base=да base_size=72 base_h=12 rim=8 rim_h=10\n"
+            "section=цилиндр base_size=72 base_h=12 rim=8 rim_h=10\n"
             "стойка = column height=150 width=36 depth=28 form=конус taper=0.45 "
             "section=брусок smooth=1 at=[130,0,0]",
     params={"height": "полная высота с площадкой и бортиком, мм (180)",
@@ -62,14 +67,13 @@ def _prism_section(width: float, depth: float, height: float, kind: str,
             "depth": "глубина бруска Y; у цилиндра не используется (42)",
             "form": "ровная, песочные или конус",
             "waist": "доля ширины в середине песочных часов 0.2…1 (0.55)",
-            "taper": "сужение верха конуса 0…0.85 (0.35)",
+            "taper": "конус: + сужает верх 0…0.85; − расширяет до −3 (0.35)",
             "section": "сечение: цилиндр или брусок",
-            "base": "нижняя площадка да/нет (да)",
-            "base_size": "диаметр/сторона нижней площадки, мм (72)",
-            "base_h": "высота нижней площадки, мм (12)",
-            "rim": "вылет верхнего бортика над стойкой; 0 — без бортика, мм (8)",
-            "rim_h": "высота верхнего бортика, мм (10)",
-            "smooth": "уровни Loop-сглаживания 0…4 (0)",
+            "base_size": "диаметр/сторона нижней площадки, мм; 0 — без площадки (72)",
+            "base_h": "высота нижней зоны, мм; работает и при base_size=0 (12)",
+            "rim": "вылет верхнего бортика над стойкой, мм (8)",
+            "rim_h": "высота верхней зоны/бортика, мм; работает и при rim=0 (10)",
+            "smooth": "ступени радиуса скругления рёбер 0…4 (0), не Loop граней",
             "segments": "сегментов цилиндра (48)",
             "at": "положение [x,y,z]", "center": "центрировать по габариту"})
 def column(a, name):
@@ -84,18 +88,20 @@ def column(a, name):
                       {"цилиндр": "цилиндр", "круг": "цилиндр", "брусок": "брусок",
                        "параллелепипед": "брусок", "квадрат": "брусок"}, "column.section")
     waist = float(a.num("waist", 0.55, minv=0.2, maxv=1.0))
-    taper = float(a.num("taper", 0.35, minv=0.0, maxv=0.85) or 0.0)
-    base = a.boolean("base", True)
-    base_size = float(a.num("base_size", 72.0, minv=1.0, maxv=5000.0))
-    base_h = float(a.num("base_h", 12.0, minv=0.0, maxv=5000.0) or 0.0) if base else 0.0
+    taper = float(a.num("taper", 0.35, minv=-3.0, maxv=0.85) or 0.0)
+    base_size = float(a.num("base_size", 72.0, minv=0.0, maxv=5000.0))
+    base_h = float(a.num("base_h", 12.0, minv=0.0, maxv=5000.0) or 0.0)
     rim = float(a.num("rim", 8.0, minv=0.0, maxv=1000.0) or 0.0)
-    rim_h = float(a.num("rim_h", 10.0, minv=0.0, maxv=5000.0) or 0.0) if rim > 0 else 0.0
+    rim_h = float(a.num("rim_h", 10.0, minv=0.0, maxv=5000.0) or 0.0)
     if base_h + rim_h >= height - 1.0:
         raise GeometryError("Площадка и бортик не оставляют высоты самой колонне.")
     segments = int(a.int("segments", 48, minv=12, maxv=128) or 48)
     overlap = min(0.05, height * 0.001)
-    z0 = max(0.0, base_h - overlap)
-    z1 = min(height, height - rim_h + overlap) if rim_h else height
+    edge_r = transition_radius(a, min(width, depth) * 0.18)
+    has_base = base_size > 1e-9 and base_h > 1e-9
+    has_cap = rim_h > 1e-9
+    z0 = max(0.0, base_h - overlap) if has_base else base_h
+    z1 = min(height, height - rim_h + overlap) if has_cap else height
     steps = 24 if form != "ровная" else 1
     sections, positions = [], []
     for i in range(steps + 1):
@@ -106,25 +112,50 @@ def column(a, name):
             factor = 1.0 - taper * u
         else:
             factor = 1.0
-        sections.append(_section(width * factor, depth * factor, section, segments))
+        if section == "брусок" and edge_r > 1e-6:
+            sections.append(np.asarray(_rounded_rect(
+                width * factor / 2.0, depth * factor / 2.0,
+                min(edge_r * factor, width * factor * 0.45, depth * factor * 0.45),
+                steps=6), dtype=float))
+        else:
+            sections.append(_section(width * factor, depth * factor, section, segments))
         positions.append(z0 + (z1 - z0) * u)
+    if not has_base and base_h > 1e-9:
+        # Без площадки base_h не исчезает и не обрезает общую высоту:
+        # это ровная нижняя зона самого стержня от пола до начала формы.
+        sections.insert(0, sections[0].copy())
+        positions.insert(0, 0.0)
     shaft = loft_solid(sections, positions, axis="z", what="колонна")
+    if edge_r > 1e-6 and form != "песочные":
+        shaft = _rounded_convex(shaft, min(edge_r, (z1 - z0) * 0.2,
+                                           width * 0.12, depth * 0.12), a, "колонна")
     parts = [shaft]
-    if base:
-        plate = _prism_section(base_size, base_size, base_h, section, segments)
+    if has_base:
+        r = min(edge_r, base_h * 0.45, base_size * 0.12)
+        if r > 1e-6:
+            plate = rounded_extrude(mf.CrossSection([
+                _section(base_size, base_size, section, segments).tolist()]),
+                base_h, r, "площадка колонны")
+        else:
+            plate = _prism_section(base_size, base_size, base_h, section, segments)
         parts.append(plate)
-    if rim > 0:
+    if has_cap:
         top_factor = 1.0 if form != "конус" else 1.0 - taper
         rim_w = width * top_factor + 2 * rim
         rim_d = depth * top_factor + 2 * rim
-        cap = _prism_section(rim_w, rim_d, rim_h, section, segments).translate(
-            (0, 0, height - rim_h))
+        r = min(edge_r, rim_h * 0.45, rim_w * 0.12, rim_d * 0.12)
+        if r > 1e-6:
+            cap = rounded_extrude(mf.CrossSection([
+                _section(rim_w, rim_d, section, segments).tolist()]),
+                rim_h, r, "бортик колонны")
+        else:
+            cap = _prism_section(rim_w, rim_d, rim_h, section, segments)
+        cap = cap.translate((0, 0, height - rim_h))
         parts.append(cap)
     solid = _one(mf.Manifold.batch_boolean(parts, mf.OpType.Add), "колонна")
-    solid = apply_smooth(solid, a, "колонна")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="column")
     out.notes.append(f"колонна {form}/{section}, высота {height:g} мм; площадка "
-                     f"{'да' if base else 'нет'}, бортик {rim:g} мм")
+                     f"{base_size:g}×{base_h:g} мм, бортик {rim:g}×{rim_h:g} мм")
     return out
 
 

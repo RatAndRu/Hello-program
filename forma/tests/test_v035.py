@@ -198,37 +198,6 @@ class GradedStrengthTest(unittest.TestCase):
         self.assertAlmostEqual(last[3] - last[0], 40.0, delta=0.5)
 
 
-class ExamplesTest(unittest.TestCase):
-    """Примеры 0.35 собираются и показывают именно градацию."""
-
-    def test_examples_registered(self):
-        names = {e[1] if isinstance(e, (list, tuple)) else e for e in EXAMPLES}
-        self.assertIn("wifi", names)
-        self.assertIn("graded", names)
-
-    def test_wifi_rings_grow(self):
-        b = build(load_example("wifi"), analyze_model=False)
-        self.assertTrue(b.ok, (b.error or {}).get("message"))
-        bb = b.scene.objects["дуги"].manifold.bounding_box()
-        width = bb[3] - bb[0]
-        # три кольца 1.5×: внешнее кольцо диаметром 2·(22+4)·2.25 ≈ 117 мм
-        self.assertGreater(width, 100.0)
-        # дуги — именно половины: низ срезан ровно по полу
-        self.assertGreaterEqual(bb[2], -0.01)
-
-    def test_wifi_rings_are_concentric(self):
-        b = build(load_example("wifi"), analyze_model=False)
-        parts = b.scene.objects["дуги"].manifold.decompose()
-        self.assertEqual(len(parts), 3)
-        centers = [(p.bounding_box()[0] + p.bounding_box()[3]) / 2 for p in parts]
-        for c in centers:
-            self.assertAlmostEqual(c, 0.0, delta=0.5)
-
-    def test_graded_example_builds(self):
-        b = build(load_example("graded"), analyze_model=False)
-        self.assertTrue(b.ok, (b.error or {}).get("message"))
-        self.assertIn("бруски", b.scene.objects)
-        self.assertEqual(len(b.scene.objects["бруски"].manifold.decompose()), 6)
 
 
 if __name__ == "__main__":

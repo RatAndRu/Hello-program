@@ -13,7 +13,7 @@ from .geometry import (FINENESS_MM, auto_segments, circle_profile, hull_of_manif
 from .ops import anchor, detail_factor, detail_level, ensure_solid, make_solid, op
 from .primitive_topology import (cube_sphere, honeycomb_sphere, linear_subdivide,
                                  loop_smooth, pentagon_sphere)
-from .shape_features import slot_contour
+from .shape_features import transition_radius
 
 
 def _top_offset(a) -> np.ndarray:
@@ -182,41 +182,14 @@ def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
     return int(got)
 
 
-def _axis_hole_cutter(axis: str, shape: str, diameter: float,
-                      oval_aspect: float, span: float) -> mf.Manifold:
-    """Центрированный сквозной резец: локальные u/v — поперёк оси, w — ось."""
-    shape = {"круг": "круг", "круглое": "круг", "circle": "круг",
-             "квадрат": "квадрат", "square": "квадрат",
-             "овал": "овал", "капсула": "овал", "slot": "овал",
-             "oval": "овал"}.get(shape.strip().lower())
-    if shape is None:
-        raise GeometryError("Форма отверстия: круг, квадрат или овал.")
-    if shape == "круг":
-        profile = np.asarray(circle_profile(diameter / 2.0, 64), dtype=np.float64)
-    elif shape == "квадрат":
-        h = diameter / 2.0
-        profile = np.asarray([(-h, -h), (h, -h), (h, h), (-h, h)], dtype=np.float64)
-    else:
-        profile = slot_contour(diameter, diameter / oval_aspect, 24)
-    cutter = mf.Manifold.extrude(mf.CrossSection([profile]), span).translate((0, 0, -span / 2))
-    matrices = {
-        "z": np.eye(3, 4),
-        # u→Z, v→−Y, w→X (определитель +1)
-        "x": np.asarray([[0, 0, 1, 0], [0, -1, 0, 0], [1, 0, 0, 0]], dtype=float),
-        # u→Z, v→X, w→Y (циклический поворот)
-        "y": np.asarray([[0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, 0]], dtype=float),
-    }
-    return cutter.transform(np.asarray(matrices[axis], dtype=np.float64))
-
-
 @op("box", aliases=("куб", "коробка", "cube", "параллелепипед", "брусок", "блок"),
     category="Примитивы",
     summary="Параллелепипед с независимой верхней плоскостью. top_size меняет её "
             "стороны, top_offset сдвигает центр, base_angle=не 90 делает в основании "
             "параллелограмм. Сильный round, близкий к половине меньшей стороны, "
-            "превращает коробку в овальную/круглую форму. hole_x/hole_y/hole_z "
-            "пробивают одновременно по любым осям; форма каждого отверстия "
-            "независима: круг, квадрат или прямой овал. По умолчанию стоит на полу.",
+            "превращает коробку в овальную/круглую форму. Отверстий у обычного "
+            "блока нет: для центральных сквозных отверстий используется cube_hole. "
+            "По умолчанию стоит на полу.",
     example="блок = box size=[120,80,50] top_size=[80,50] top_offset=[15,-5]\n"
             "скошенный = box size=[100,70,40] base_angle=65",
     params={"size": "стороны нижнего основания и высота [x,y,z], мм (обязательно)",
@@ -225,13 +198,6 @@ def _axis_hole_cutter(axis: str, shape: str, diameter: float,
             "base_angle": "угол между сторонами основания 15…165° (90 — прямоугольник)",
             "round": "радиус рёбер; у квадратной коробки около половины стороны — "
                      "овальная/круглая форма",
-            "hole_x": "сквозное отверстие по X: диаметр/сторона/длина, мм; 0 — нет",
-            "hole_y": "сквозное отверстие по Y: диаметр/сторона/длина, мм; 0 — нет",
-            "hole_z": "сквозное отверстие по Z: диаметр/сторона/длина, мм; 0 — нет",
-            "hole_x_shape": "форма отверстия X: круг, квадрат или овал",
-            "hole_y_shape": "форма отверстия Y: круг, квадрат или овал",
-            "hole_z_shape": "форма отверстия Z: круг, квадрат или овал",
-            "oval_aspect": "отношение длины овала к ширине 1…8 (1.8)",
             "detail": "детализация скругления 0…5 (3): больше — глаже и тяжелее",
             "center": "центрировать в точке at (по умолчанию — низ на at)",
             "at": "положение [x,y,z]"},
@@ -272,24 +238,16 @@ def box(a, name):
                     f"Скругление {r:g} мм слишком велико для высоты {height:g} мм.",
                     hint="round не должен превышать половину высоты.")
             solid = _rounded_convex(solid, r, a, "блок")
-    oval_aspect = float(a.num("oval_aspect", 1.8, minv=1.0, maxv=8.0) or 1.0)
-    span = max(x, y, height, tx, ty, float(np.linalg.norm(offset))) * 3.0 + 20.0
-    holes = []
-    for axis in ("x", "y", "z"):
-        diameter = float(a.num(f"hole_{axis}", 0.0, minv=0.0, maxv=10000.0) or 0.0)
-        if diameter <= 1e-6:
-            continue
-        shape = a.text(f"hole_{axis}_shape", "круг") or "круг"
-        solid = solid - _axis_hole_cutter(axis, shape, diameter, oval_aspect, span)
-        holes.append(f"{axis}:{shape} {diameter:g}")
-    if solid.is_empty() or solid.volume() <= 1e-6:
-        raise GeometryError("Отверстия удалили весь блок.", hint="Уменьшите hole_x/hole_y/hole_z.")
+    hole_params = [f"hole_{axis}{suffix}" for axis in ("x", "y", "z")
+                   for suffix in ("", "_shape")] + ["oval_aspect"]
+    if any(a.has(key) for key in hole_params):
+        raise GeometryError("У обычного box отверстий больше нет.",
+                            hint="Используйте cube_hole: отверстия остаются по центру, "
+                                 "поддерживаются hole_x/hole_y/hole_z и их формы.")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="box")
     if custom:
         out.notes.append(f"верх {tx:g}×{ty:g}, сдвиг {offset.tolist()}, угол основания {angle:g}°")
-    if holes:
-        out.notes.append("сквозные отверстия: " + ", ".join(holes))
     return out
 
 
@@ -340,25 +298,38 @@ def sphere(a, name):
     return out
 
 
+def _cavity_choice(raw: str) -> str:
+    value = {"верх": "верх", "сверху": "верх", "top": "верх",
+             "низ": "низ", "снизу": "низ", "bottom": "низ"}.get(
+                 (raw or "верх").strip().lower())
+    if value is None:
+        raise GeometryError("cavity: верх или низ — сторона слепой полости.")
+    return value
+
+
 @op("cylinder", aliases=("цилиндр", "труба", "стакан"),
     category="Примитивы",
-    summary="Цилиндр или усечённый конус с независимой верхней плоскостью: "
-            "r2 и top_scale меняют её полуоси, top_offset сдвигает центр. "
-            "По умолчанию стоит на полу.",
+    summary="Цилиндр или усечённый конус с независимой верхней плоскостью. "
+            "wall>0 создаёт НЕСКВОЗНУЮ полость: cavity выбирает открытый верх "
+            "или низ, cavity_depth — глубину, а противоположное дно остаётся "
+            "не тоньше wall. По умолчанию тело сплошное и стоит на полу.",
     example="корпус = cylinder radius=40 height=90 segments=128 round=3\n"
-            "наклонный = cylinder radius=40 r2=30 height=70 top_offset=[18,-8]\n"
+            "стакан = cylinder radius=40 height=90 wall=3 cavity=верх\n"
+            "колпак = cylinder radius=40 height=70 wall=2 cavity=низ cavity_depth=55\n"
             "эллипс = cylinder radius=40 height=60 top_scale=[1.3,0.7]",
     params={"radius": "радиус снизу, мм (обязательно)",
             "height": "высота, мм (обязательно)",
             "r2": "радиус сверху до top_scale (по умолчанию равен нижнему)",
             "top_scale": "независимые множители верхней плоскости [sx,sy] (1,1)",
             "top_offset": "сдвиг центра верхней плоскости [dx,dy], мм (0,0)",
+            "wall": "стенка и минимальное дно слепой полости, мм; 0 — сплошной (0)",
+            "cavity": "открытая сторона при wall>0: верх или низ (верх)",
+            "cavity_depth": "глубина от открытой стороны, мм (height−wall); "
+                            "не пробивает противоположное дно",
             "segments": "число сегментов (по умолчанию — по детализации)",
             "detail": "детализация 0…5 (3): больше — глаже и тяжелее",
-            "round": "скругление верхней и нижней кромки, мм; со сдвигом/эллипсом "
-                     "верха применяется общее скругление тела",
-            "center": "центрировать по высоте",
-            "at": "положение [x,y,z]"},
+            "round": "скругление верхней и нижней кромки, мм",
+            "center": "центрировать по высоте", "at": "положение [x,y,z]"},
     positional=["radius", "height"])
 def cylinder(a, name):
     radius = float(a.num("radius", required=True, minv=0.01))
@@ -392,27 +363,136 @@ def cylinder(a, name):
             if height <= 2 * r + 1e-6:
                 raise GeometryError("round слишком велик для высоты цилиндра.")
             solid = _rounded_convex(solid, r, a, "цилиндр")
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    if wall > 1e-6:
+        if wall >= height - 0.1:
+            raise GeometryError("wall не оставляет высоты для слепой полости.")
+        side = _cavity_choice(a.text("cavity", "верх"))
+        depth = float(a.num("cavity_depth", height - wall,
+                            minv=0.1, maxv=height - wall))
+        angles = np.linspace(0.0, 2.0 * math.pi, segments, endpoint=False)
+
+        def inner_ring(z):
+            t = float(z) / height
+            center = offset * t
+            rx = (1.0 - t) * radius + t * r2 * float(scale[0]) - wall
+            ry = (1.0 - t) * radius + t * r2 * float(scale[1]) - wall
+            if min(rx, ry) <= 0.05:
+                raise GeometryError("wall слишком велик для радиуса на дне полости.",
+                                    hint="Уменьшите wall или cavity_depth.")
+            return np.column_stack([rx * np.cos(angles), ry * np.sin(angles)]) + center
+
+        z0, z1 = ((height - depth, height + 1.0) if side == "верх"
+                  else (-1.0, depth))
+        tool = _two_ring_hull(inner_ring(z0), inner_ring(z1), height,
+                              z_bottom=z0, z_top=z1)
+        before = solid.volume()
+        solid = solid - tool
+        if solid.is_empty() or len(solid.decompose()) != 1 or solid.volume() >= before - 1e-6:
+            raise GeometryError("Не удалось вырезать слепую полость цилиндра.")
+    elif a.has("cavity_depth"):
+        raise GeometryError("cavity_depth работает при wall>0.")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="cylinder")
     if custom:
         out.notes.append(f"верх: полуоси {(r2 * scale).tolist()}, сдвиг {offset.tolist()}")
+    if wall > 1e-6:
+        out.meta.update({"wall": wall, "cavity": side, "cavity_depth": depth})
+        out.notes.append(f"слепая полость: {side}, глубина {depth:g}, стенка {wall:g} мм")
     return out
 
 
+def _cone_radius(radius: float, t: float, form: str) -> float:
+    t = min(1.0, max(0.0, float(t)))
+    if form == "парабола":
+        return radius * (1.0 - t * t)
+    if form == "холмик":
+        return radius * math.sqrt(max(0.0, 1.0 - t * t))
+    return radius * (1.0 - t)
+
+
+def _cone_profile(radius: float, height: float, form: str,
+                  samples: int = 32) -> list[tuple[float, float]]:
+    count = 1 if form == "прямой" else max(12, int(samples))
+    pts = [(0.0, 0.0)]
+    for i in range(count + 1):
+        t = i / count
+        pts.append((_cone_radius(radius, t, form), height * t))
+    return pts
+
+
+def _cone_solid(radius: float, height: float, form: str,
+                segments: int, samples: int = 32) -> mf.Manifold:
+    profile = _cone_profile(radius, height, form, samples)
+    solid = mf.Manifold.revolve(mf.CrossSection([profile]), int(segments))
+    if solid.is_empty() or solid.volume() <= 1e-8:
+        raise GeometryError("Не удалось построить профиль конуса.")
+    return solid
+
+
 @op("cone", aliases=("конус",), category="Примитивы",
-    summary="Конус с вершиной вверх, стоит на полу.",
-    example="воронка = cone radius=30 height=60",
+    summary="Конус/горка на полу. form=прямой — линейный профиль; парабола — "
+            "R·(1−t²); холмик — R·√(1−t²) с округлой вершиной. wall>0 "
+            "открывает полость снизу и оставляет вершину; smooth сглаживает "
+            "боковую поверхность с восстановлением наружных габаритов.",
+    example="конус = cone radius=30 height=60\n"
+            "горка = cone radius=40 height=55 form=парабола\n"
+            "холм = cone radius=40 height=45 form=холмик smooth=1\n"
+            "оболочка = cone radius=35 height=70 wall=2.5 cavity_depth=60",
     params={"radius": "радиус основания, мм", "height": "высота, мм",
+            "form": "прямой, парабола или холмик (прямой)",
+            "wall": "радиальная стенка и минимальная толщина вершины, мм; "
+                    "0 — сплошной, >0 — полость открыта снизу (0)",
+            "cavity_depth": "глубина полости от основания, мм (height−wall)",
+            "smooth": "Loop-сглаживание 0…4; габариты сохраняются (0)",
             "detail": "детализация 0…5 (3)", "segments": "сегментов (по детализации)",
             "center": "центрировать", "at": "положение"},
     positional=["radius", "height"])
 def cone(a, name):
-    radius = a.num("radius", required=True, minv=0.01)
-    height = a.num("height", required=True, minv=0.01)
+    radius = float(a.num("radius", required=True, minv=0.01))
+    height = float(a.num("height", required=True, minv=0.01))
+    raw_form = (a.text("form", "прямой") or "прямой").strip().lower()
+    form = {"прямой": "прямой", "конус": "прямой", "straight": "прямой",
+            "парабола": "парабола", "параболический": "парабола",
+            "параболическая": "парабола", "горка": "парабола",
+            "холмик": "холмик", "холм": "холмик", "купол": "холмик",
+            "dome": "холмик"}.get(raw_form)
+    if form is None:
+        raise GeometryError("cone: form=прямой, парабола или холмик.")
     segments = _segments(a, a.int("segments", None, minv=8, maxv=1024), radius)
-    solid = mf.Manifold.cylinder(height, radius, 0.0, segments)
+    solid = _cone_solid(radius, height, form, segments)
+    if _smooth_level(a):
+        solid = _smooth_primitive(solid, a, "конус")
+        bb = solid.bounding_box()
+        sx = 2.0 * radius / max(bb[3] - bb[0], 1e-9)
+        sy = 2.0 * radius / max(bb[4] - bb[1], 1e-9)
+        sz = height / max(bb[5] - bb[2], 1e-9)
+        matrix = np.eye(3, 4)
+        matrix[0, 0], matrix[1, 1], matrix[2, 2] = sx, sy, sz
+        matrix[2, 3] = -bb[2] * sz
+        solid = solid.transform(matrix)
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    if wall > 1e-6:
+        if wall >= radius - 0.05 or wall >= height - 0.1:
+            raise GeometryError("wall слишком велик для полого конуса.")
+        depth = float(a.num("cavity_depth", height - wall,
+                            minv=0.1, maxv=height - wall))
+        inner = _cone_solid(radius - wall, depth, form, segments)
+        opening = mf.Manifold.cylinder(1.2, radius - wall, radius - wall,
+                                       segments).translate((0.0, 0.0, -1.05))
+        before = solid.volume()
+        solid = solid - (inner + opening)
+        if solid.is_empty() or len(solid.decompose()) != 1 or solid.volume() >= before - 1e-6:
+            raise GeometryError("Не удалось вырезать полость конуса.")
+    elif a.has("cavity_depth"):
+        raise GeometryError("cavity_depth работает при wall>0.")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
-    return make_solid(a.scene, name, solid, a, kind="cone")
+    out = make_solid(a.scene, name, solid, a, kind="cone")
+    out.meta["form"] = form
+    if wall > 1e-6:
+        out.meta.update({"wall": wall, "cavity": "низ", "cavity_depth": depth})
+        out.notes.append(f"полость снизу: глубина {depth:g}, стенка {wall:g} мм")
+    return out
 
 
 @op("torus", aliases=("тор", "бублик", "кольцо_тор", "torus_ring"), category="Примитивы",
@@ -536,10 +616,13 @@ def prism(a, name):
 @op("pyramid", aliases=("пирамида", "tetra", "пирамидка"), category="Примитивы",
     summary="N-угольная пирамида с вершиной в произвольной точке, над стороной "
             "или углом основания. При sides=4 base_angle делает основание "
-            "параллелограммом; smooth=0…4 сглаживает тело с сохранением габарита.",
+            "параллелограммом; smooth=0…4 скругляет именно рёбра эрозией и "
+            "Minkowski-суммой, не деформируя широкие грани Loop-сеткой. "
+            "wall>0 вырезает слепую полость снизу, сохраняя вершину.",
     example="пирамида = pyramid sides=4 radius=60 height=90\n"
             "на_угол = pyramid sides=4 radius=60 height=90 tip_at=corner tip_index=0\n"
-            "ромб = pyramid sides=4 radius=60 height=80 base_angle=60 tip_at=edge",
+            "ромб = pyramid sides=4 radius=60 height=80 base_angle=60 tip_at=edge\n"
+            "полая = pyramid sides=4 radius=60 height=90 wall=3 cavity_depth=72",
     params={"sides": "число сторон основания (4)",
             "radius": "радиус описанной окружности основания, мм; для ромба "
                       "сторона равна √2·radius",
@@ -550,7 +633,10 @@ def prism(a, name):
             "tip_index": "номер стороны/угла 0…sides−1 (0); сторона идёт от "
                          "вершины i к i+1",
             "base_angle": "угол параллелограмма при sides=4, 15…165° (90 — обычное основание)",
-            "smooth": "уровни Loop-сглаживания 0…4 (0 — плоские грани); габарит сохраняется",
+            "wall": "стенка по основанию и минимальная толщина вершины, мм; "
+                    "0 — сплошная, >0 — полость открыта снизу (0)",
+            "cavity_depth": "глубина полости от основания, мм (height−wall)",
+            "smooth": "радиусное скругление рёбер, ступени 0…4 (0 — острые)",
             "center": "центрировать по высоте", "at": "положение [x,y,z]"},
     positional=["radius", "height"])
 def pyramid(a, name):
@@ -590,12 +676,48 @@ def pyramid(a, name):
     ring = np.column_stack([base, np.zeros(len(base))])
     pts = np.vstack([ring, np.asarray([[tip[0], tip[1], height]])])
     solid = mf.Manifold.hull_points(np.ascontiguousarray(pts, dtype=np.float64))
-    solid = _smooth_primitive(solid, a, "пирамида")
+    edge_r = transition_radius(a, min(height, radius) * 0.12)
+    if edge_r > 1e-6:
+        solid = _rounded_convex(solid, edge_r, a, "пирамида")
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    if wall > 1e-6:
+        if wall >= height - 0.1:
+            raise GeometryError("wall не оставляет толщины у вершины пирамиды.")
+        center2 = base.mean(axis=0)
+        distances = []
+        for i in range(sides):
+            p, q = base[i], base[(i + 1) % sides]
+            edge = q - p
+            delta = center2 - p
+            distances.append(abs(float(edge[0] * delta[1] - edge[1] * delta[0])) /
+                             max(float(np.linalg.norm(edge)), 1e-9))
+        inradius = min(distances)
+        if wall >= inradius - 0.05:
+            raise GeometryError("wall слишком велик для основания пирамиды.")
+        depth = float(a.num("cavity_depth", height - wall,
+                            minv=0.1, maxv=height - wall))
+        inner_base = center2 + (base - center2) * ((inradius - wall) / inradius)
+        inner_tip = center2 + (tip - center2) * (depth / height)
+        inner_ring = np.column_stack([inner_base, np.zeros(sides)])
+        inner = mf.Manifold.hull_points(np.ascontiguousarray(np.vstack([
+            inner_ring, np.asarray([[inner_tip[0], inner_tip[1], depth]])]), dtype=np.float64))
+        opening = mf.CrossSection([inner_base]).extrude(1.2).translate((0.0, 0.0, -1.05))
+        before = solid.volume()
+        solid = solid - (inner + opening)
+        if solid.is_empty() or len(solid.decompose()) != 1 or solid.volume() >= before - 1e-6:
+            raise GeometryError("Не удалось вырезать полость пирамиды.")
+    elif a.has("cavity_depth"):
+        raise GeometryError("cavity_depth работает при wall>0.")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="pyramid")
     out.meta["tip"] = {"mode": tip_mode, "xy_before_anchor": tip.tolist()}
     if tip_mode != "center":
         out.notes.append(f"вершина: {tip_mode}, XY {tip.tolist()}")
+    if edge_r > 1e-6:
+        out.notes.append(f"скруглены рёбра R{edge_r:g} мм; грани не подразделяются Loop")
+    if wall > 1e-6:
+        out.meta.update({"wall": wall, "cavity": "низ", "cavity_depth": depth})
+        out.notes.append(f"слепая полость снизу: глубина {depth:g}, стенка {wall:g} мм")
     return out
 
 

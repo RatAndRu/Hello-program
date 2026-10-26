@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 from forma.geometry import write_png
 from forma.render import _prepare, _render_view
 from forma.run import build
+from forma.webui import load_example
 
 ROOT = Path(__file__).resolve().parent
 FONTS = Path("/usr/share/fonts/truetype/dejavu")
@@ -37,11 +38,13 @@ MIRROR = ("зеркало = mirror_plate width=340 height=250 frame=24 at=[0,150
           "куб = box size=[66,66,66] at=[42,40,33] round=4 color=#3aa9e0\n"
           "конус = cone radius=30 height=92 at=[104,-46,46] color=#e0c23a")
 
-CLOCK = ("ч = display width=180 height=90 thick=45 style=будильник content=led "
-         "text=\"21:38\"")
+CLOCK = load_example("clock_led")
 
-# часы, повёрнутые целиком: корпус, панель, цифры и стекло едут вместе
-CLOCK_TURN = (CLOCK + "\nч = rotate [ч] angle=24 axis=z pivot=[0,0,0]")
+# Готовый проект поворачивается по объектам: все детали остаются вместе.
+CLOCK_TURN = CLOCK + "\n" + "\n".join(
+    f"{name} = rotate [{name}] angle=24 axis=z pivot=[0,0,0]"
+    for name in ("корпус", "экран", "стекло", "цифры", "точка", "крышка",
+                 "ножка_1", "ножка_2"))
 
 # тот же кадр, что показывает превью в карточке инструмента
 GEAR = ("ш = gear teeth=20 module=2 thickness=8 bore=6\n"

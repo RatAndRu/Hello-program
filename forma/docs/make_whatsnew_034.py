@@ -68,8 +68,8 @@ CASES = [
      "г = translate [г] offset=[75,0,0]\n"
      "color б color=#f3ecdf\ncolor г color=#dfe3cf", "iso", 1.0, None),
     ("складки на одежде", "гребни-складки и канавка на юбке",
-     "юбка = cylinder radius=56 r2=34 height=140 segments=160\n"
-     "с1 = складка юбка from=[-40,-24,132] to=[-55,-14,12] r=5 mode=гребень taper=0.55 bend=3\n"
+     "чехол = cylinder radius=56 r2=34 height=140 segments=160\n"
+     "с1 = складка чехол from=[-40,-24,132] to=[-55,-14,12] r=5 mode=гребень taper=0.55 bend=3\n"
      "с2 = складка с1 from=[-16,-35,136] to=[-22,-52,10] r=5 mode=гребень taper=0.55 bend=-3\n"
      "с3 = складка с2 from=[6,-37,136] to=[10,-55,10] r=5.5 mode=гребень taper=0.55 bend=3\n"
      "с4 = складка с3 from=[26,-30,132] to=[36,-40,12] r=5 mode=гребень taper=0.55 bend=-3\n"

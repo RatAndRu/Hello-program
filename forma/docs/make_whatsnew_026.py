@@ -18,6 +18,7 @@ from forma.anime import normalize_style
 from forma.geometry import write_png
 from forma.render import _prepare, _render_view
 from forma.run import build
+from forma.webui import load_example
 
 ROOT = Path(__file__).resolve().parent
 FONTS = Path("/usr/share/fonts/truetype/dejavu")
@@ -35,7 +36,7 @@ BASE = ("ваза = lathe points=[[0,0],[26,0],[40,30],[30,62],[16,90],[0,92]]\n
         "куб = box size=[56,56,56] at=[78,0,28] round=4\n"
         "шар = sphere radius=26 at=[-64,0,26]")
 
-CLOCK = "ч = display width=180 height=90 thick=45 style=будильник content=led"
+CLOCK = load_example("clock_led")
 BRICKS = "стена = bricks width=280 height=190 thick=42 brick=[76,36] joint=6"
 GEAR = ("ш = gear teeth=18 module=3 thickness=12 bore=12 hub=24 hub_height=4\n"
         "к = gear teeth=10 module=3 thickness=12 bore=8")

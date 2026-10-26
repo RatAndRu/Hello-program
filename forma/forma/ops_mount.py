@@ -20,7 +20,7 @@ import numpy as np
 from .errors import GeometryError
 from .geometry import circle_profile, sweep_solid
 from .ops import anchor, make_solid, op, stand_flat_sign
-from .shape_features import rounded_extrude, transition_radius
+from .shape_features import rounded_extrude, transition_radius, varied_edge_thickness
 
 
 @op("крюк", aliases=("крючок", "hook", "крюк_подвес", "вешалка_крюк"),
@@ -34,7 +34,8 @@ from .shape_features import rounded_extrude, transition_radius
             "смещённый = крюк wire=6 radius=22 length=70 offset=[12,8] curve=10 aspect=.8",
     params={"wire": "диаметр прутка, мм (6)",
             "radius": "радиус дуги по средней линии, мм (22)",
-            "length": "длина прямого хвостика, мм (70)",
+            "length": "высота хвостика до начала дуги, мм (70); при offset "
+                      "его верхняя часть становится плавным сопряжением",
             "open": "угол дуги 45…350° (240)",
             "offset": "смещение начала дуги относительно хвостика [dx,dz], мм (0,0)",
             "aspect": "овальность дуги: радиус Z / радиус X, 0.35…2.5 (1)",
@@ -70,33 +71,52 @@ def hook(a, name):
     center = a.boolean("center", False)
 
     tail_top = np.array([0.0, 0.0, length])
-    if length > 1e-9:
-        tail_count = max(2, int(np.clip(6 + length / max(wire, 0.1), 4, 60)))
-        path = [tail_top * (i / (tail_count - 1)) for i in range(tail_count)]
-    else:
-        path = [tail_top.copy()]
-    # Эллиптическая дуга начинается в точке tail_top+offset. Соединитель —
-    # кубическая кривая с касательными хвостика и дуги, а не короткая
-    # диагональ: даже большой offset не даёт скоса и излома у начала дуги.
     centre = np.array([bend + offset[0], 0.0, length + offset[1]])
     arc_start = np.array([offset[0], 0.0, length + offset[1]])
     delta = arc_start - tail_top
+    end_tangent = np.array([0.0, curve * math.pi,
+                            bend * aspect * math.radians(opening)])
+    end_tangent /= max(float(np.linalg.norm(end_tangent)), 1e-12)
     if np.linalg.norm(delta) > 1e-8:
+        # Не втискиваем S-образное сопряжение в короткую диагональ над
+        # хвостиком. Для него резервируем достаточную часть length: обе
+        # управляющие точки идут по возрастанию Z, поэтому петли и острого
+        # перелома у начала дуги не возникает даже при почти нулевом dz.
         distance = float(np.linalg.norm(delta))
         handle = max(wire * 1.5, min(distance * 0.55, bend * 0.75))
-        end_tangent = np.array([0.0, curve * math.pi,
-                                bend * aspect * math.radians(opening)])
-        end_tangent /= max(float(np.linalg.norm(end_tangent)), 1e-12)
-        p0 = tail_top
-        p1 = tail_top + np.array([0.0, 0.0, handle])
+        if length > 1e-9:
+            required = handle * (1.0 + end_tangent[2]) - delta[2] + wire * 0.35
+            join_h = min(length, max(2.0 * wire, abs(delta[0]) * 0.9, required))
+            denominator = 1.0 + end_tangent[2]
+            if denominator > 0.1:
+                handle = min(handle, max(0.05,
+                    (join_h + delta[2] - wire * 0.35) / denominator))
+            straight = length - join_h
+            p0 = np.array([0.0, 0.0, straight])
+            if straight > 1e-9:
+                tail_count = max(2, int(np.clip(6 + straight / max(wire, 0.1), 4, 60)))
+                path = [p0 * (i / (tail_count - 1)) for i in range(tail_count)]
+            else:
+                path = [p0.copy()]
+            p1 = p0 + np.array([0.0, 0.0, handle])
+        else:
+            p0 = tail_top
+            path = [p0.copy()]
+            p1 = p0 + delta / distance * handle
         p2 = arc_start - end_tangent * handle
         p3 = arc_start
-        count = int(np.clip(12 + distance / max(wire, 0.1), 12, 40))
+        count = int(np.clip(16 + (distance + abs(delta[2])) / max(wire, 0.1), 16, 56))
         for i in range(1, count + 1):
             t = i / count
             q = 1.0 - t
             path.append(q ** 3 * p0 + 3 * q * q * t * p1
                         + 3 * q * t * t * p2 + t ** 3 * p3)
+    else:
+        if length > 1e-9:
+            tail_count = max(2, int(np.clip(6 + length / max(wire, 0.1), 4, 60)))
+            path = [tail_top * (i / (tail_count - 1)) for i in range(tail_count)]
+        else:
+            path = [tail_top.copy()]
     arc_index = len(path) - 1
     for i in range(1, steps_arc + 1):
         u = i / steps_arc
@@ -139,6 +159,8 @@ def hook(a, name):
             "thickness": "толщина пластины, мм (8)",
             "hole": "диаметр отверстия, мм (0 — без отверстия)",
             "hole_y": "где отверстие по высоте, 0…1 от низа (0.45)",
+            "edge": "толщина только эллиптической дуги, мм (= thickness)",
+            "edge_band": "ширина перехода от дуги, мм (25% высоты)",
             "segments": "сегментов по дуге (по размеру)",
             "detail": "детализация дуги 0…5 (3)",
             "smooth": "ступени скругления наружных рёбер 0…4 (0); "
@@ -150,6 +172,8 @@ def half_oval(a, name):
     width = float(a.num("width", 120.0, minv=0.5, maxv=5000.0))
     height = float(a.num("height", 70.0, minv=0.5, maxv=5000.0))
     thickness = float(a.num("thickness", 8.0, minv=0.2, maxv=1000.0))
+    edge = float(a.num("edge", thickness, minv=0.05))
+    edge_band = float(a.num("edge_band", height * 0.25, minv=0.05))
     hole = float(a.num("hole", 0.0, minv=0.0, maxv=max(width, height)))
     hole_y = float(a.num("hole_y", 0.45, minv=0.12, maxv=0.88))
     detail = int(a.num("detail", 3, minv=0, maxv=5))
@@ -164,6 +188,20 @@ def half_oval(a, name):
     # Скругляем только наружный контур до сверления: отверстие и обе
     # широкие лицевые плоскости не подвергаются Loop-деформации.
     solid = rounded_extrude(cs, thickness, edge_r, "полуовал")
+    if abs(edge - thickness) > 1e-9:
+        def only_ellipse_arc(points):
+            x, y = points[:, 0], points[:, 1]
+            q = np.sqrt((x / (width * 0.5)) ** 2 + (y / height) ** 2)
+            ray_radius = np.where(q > 1e-12, np.hypot(x, y) / np.maximum(q, 1e-12),
+                                  max(width * 0.5, height))
+            distance = np.maximum(0.0, 1.0 - q) * ray_radius
+            radial = np.clip(1.0 - distance / edge_band, 0.0, 1.0)
+            theta = np.arctan2(y / height, x / (width * 0.5))
+            fade = np.clip(np.sin(theta) * 5.0, 0.0, 1.0)
+            return radial * fade
+
+        solid = varied_edge_thickness(solid, thickness, edge, edge_band,
+                                      only_ellipse_arc, "полуовал с профилем дуги")
 
     if hole > 1e-6:
         # отверстие не должно выходить за кромку: держим стенку не меньше

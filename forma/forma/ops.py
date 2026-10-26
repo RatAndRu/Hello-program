@@ -239,7 +239,7 @@ STAND_PARAMS = {
 _SIGN_PLANE_OPS = {
     "star", "heart", "plus", "spiral", "yin_yang", "seven_seg", "arrow",
     "tee", "crescent", "lightning", "yoke", "blade", "saw", "leaf",
-    "display", "mirror_plate", "полуовал", "cavity_frame", "egg", "drop",
+    "mirror_plate", "полуовал", "cavity_frame", "egg", "drop",
 }
 _SIGN_STAND_OPS = {"arrow", "tee", "crescent", "lightning", "yoke",
                    "cavity_frame", "egg", "drop"}

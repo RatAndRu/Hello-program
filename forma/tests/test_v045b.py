@@ -53,7 +53,7 @@ class CavityFrameTest(unittest.TestCase):
         rectangular = solid(ok("о = cavity_frame size=[100,90] depth=8 cavity=линия "
                                "cavity_size=[60,6]"))
         circular = solid(ok("о = cavity_frame outer=круг size=[100,100] depth=8 "
-                            "cavity=линия cavity_size=[60,6]"))
+                            "cavity=овал cavity_size=[60,6]"))
         one(rectangular)
         one(circular)
         self.assertAlmostEqual(rectangular.volume(), (100 * 90 - 60 * 6) * 8, delta=1e-5)
@@ -199,28 +199,28 @@ class BoxHoleTest(unittest.TestCase):
     def test_each_axis_has_an_independent_through_hole(self):
         for axis in "xyz":
             with self.subTest(axis=axis):
-                m = solid(ok(f"о = box size=[60,50,40] round=0 hole_{axis}=12"))
+                m = solid(ok(f"о = cube_hole size=[60,50,40] round=0 hole_{axis}=12"))
                 one(m)
                 self.assertEqual(m.genus(), 1)
                 self.assertFalse(inside(m, (0, 0, 20)))
                 self.assertTrue(inside(m, (25, 20, 35)))
 
     def test_all_axes_and_shapes_work_simultaneously(self):
-        m = solid(ok("о = box size=[60,50,40] round=0 hole_x=12 hole_x_shape=круг "
+        m = solid(ok("о = cube_hole size=[60,50,40] round=0 hole_x=12 hole_x_shape=круг "
                      "hole_y=14 hole_y_shape=квадрат hole_z=20 hole_z_shape=овал oval_aspect=2"))
         one(m)
         self.assertEqual(m.genus(), 5)
         self.assertFalse(inside(m, (0, 0, 20)))
-        square = solid(ok("о = box size=[60,50,40] round=0 hole_z=14 hole_z_shape=квадрат"))
-        circle = solid(ok("о = box size=[60,50,40] round=0 hole_z=14 hole_z_shape=круг"))
+        square = solid(ok("о = cube_hole size=[60,50,40] round=0 hole_z=14 hole_z_shape=квадрат"))
+        circle = solid(ok("о = cube_hole size=[60,50,40] round=0 hole_z=14 hole_z_shape=круг"))
         self.assertLess(square.volume(), circle.volume())
 
     def test_oval_is_straight_oriented_and_aspect_is_effective(self):
-        m = solid(ok("о = box size=[60,50,40] round=0 hole_z=12 hole_z_shape=овал oval_aspect=2"))
+        m = solid(ok("о = cube_hole size=[60,50,40] round=0 hole_z=12 hole_z_shape=овал oval_aspect=2"))
         one(m)
         self.assertFalse(inside(m, (5, 0, 20)))
         self.assertTrue(inside(m, (0, 5, 20)))
-        circular = solid(ok("о = box size=[60,50,40] round=0 hole_z=12 hole_z_shape=овал oval_aspect=1"))
+        circular = solid(ok("о = cube_hole size=[60,50,40] round=0 hole_z=12 hole_z_shape=овал oval_aspect=1"))
         self.assertGreater(m.volume(), circular.volume())
 
 

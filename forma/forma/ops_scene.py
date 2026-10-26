@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import math
+
 from .errors import DslError
 from .geometry import normalize_color
 from .ops import op
@@ -151,6 +153,20 @@ def _paint_region(a, shape_default: str):
         if isinstance(offset, (list, tuple)) and len(offset) == 2:
             pat["offset"] = [float(offset[0]), float(offset[1])]
         spec["pattern"] = pat
+        # Краску получает каждый треугольник. На исходных 12 треугольниках
+        # куба круг превращался в две большие цветные заплатки, поэтому перед
+        # узором сетку разбиваем без изменения формы: шесть и более рёбер на
+        # фигуру, с ограничением общего бюджета для крупных моделей.
+        target = max(0.05, min(size, step) / 6.0)
+        area = float(solid.manifold.surface_area())
+        needed = 2.0 * area / max(target * target, 1e-9)
+        if needed > 160_000:
+            target = math.sqrt(2.0 * area / 160_000)
+            needed = 160_000
+        if needed > solid.manifold.num_tri() * 1.15:
+            solid.manifold = solid.manifold.refine_to_length(target)
+            a.scene.log("info", f"pattern: сетка разбита до {solid.manifold.num_tri()} "
+                                "треугольников без изменения формы", a.cmd.line)
 
     if len(spec) == 1:
         # без условия это просто цвет всего предмета

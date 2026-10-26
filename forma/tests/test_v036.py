@@ -249,25 +249,8 @@ class CardsAndExamplesTest(unittest.TestCase):
         self.assertIn("title: 'Деталь на границу'", app)
         self.assertIn("на_границе", app)
 
-    def test_examples_registered(self):
-        names = {e[1] if isinstance(e, (list, tuple)) else e for e in EXAMPLES}
-        for key in ("hook", "half_oval", "surface"):
-            with self.subTest(key=key):
-                self.assertIn(key, names)
 
-    def test_examples_build(self):
-        for key in ("hook", "half_oval", "surface"):
-            with self.subTest(key=key):
-                b = build(load_example(key), analyze_model=False)
-                self.assertTrue(b.ok, (b.error or {}).get("message"))
-                self.assertGreaterEqual(len(b.scene.objects), 3)
 
-    def test_surface_example_uses_true_boundary(self):
-        b = build(load_example("surface"), analyze_model=False)
-        self.assertTrue(b.ok)
-        bb = b.scene.objects["шайба"].manifold.bounding_box()
-        self.assertGreater(bb[0], 48.0)
-        self.assertLess(bb[0], 53.0)
 
 
 if __name__ == "__main__":

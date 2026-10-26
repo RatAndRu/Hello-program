@@ -8,7 +8,7 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import circle_profile
+from .geometry import circle_profile, manifold_from_arrays, manifold_mesh
 from .primitive_topology import loop_smooth
 
 
@@ -50,6 +50,51 @@ def rounded_extrude(cross: mf.CrossSection, depth: float, radius: float,
                             hint="Уменьшите round или увеличьте толщину стенки.")
     solid = core.extrude(float(depth) - 2.0 * r).translate((0.0, 0.0, r))
     return solid.minkowski_sum(mf.Manifold.sphere(r, int(sphere_segments)))
+
+
+def varied_edge_thickness(solid: mf.Manifold, thickness: float, edge: float,
+                          band: float, influence, what: str,
+                          center_z: float | None = None) -> mf.Manifold:
+    """Плавно меняет толщину только у заданной кромки исходной сетки.
+
+    ``influence(xyz) -> 0…1`` выбирает полосу кромки. Сетка предварительно
+    дробится по ширине этой полосы, поэтому верх/низ не натягиваются одной
+    большой диагональю. При edge>thickness кромка утолщается, при меньшем
+    значении — истончается. Прямые торцы можно исключить функцией influence.
+    """
+    thickness, edge, band = float(thickness), float(edge), float(band)
+    if abs(edge - thickness) <= 1e-9:
+        return solid
+    if edge < 0.05:
+        raise GeometryError(f"{what}: толщина кромки должна быть не меньше 0.05 мм.")
+    if band <= 1e-6:
+        raise GeometryError(f"{what}: edge_band должен быть больше нуля.")
+    area = float(solid.surface_area())
+    # Не меньше семи рядов в переходе и не более ~180 тысяч треугольников.
+    step = max(0.08, band / 7.0, math.sqrt(2.0 * area / 180_000.0))
+    refined = solid.refine_to_length(step)
+    verts, faces = manifold_mesh(refined)
+    verts = np.asarray(verts, dtype=np.float64).copy()
+    weight = np.clip(np.asarray(influence(verts), dtype=np.float64), 0.0, 1.0)
+    weight = weight * weight * (3.0 - 2.0 * weight)
+    local = thickness + (edge - thickness) * weight
+    if np.any(local < 0.049):
+        raise GeometryError(f"{what}: переход дал почти нулевую толщину.")
+    mid = thickness / 2.0 if center_z is None else float(center_z)
+    verts[:, 2] = mid + (verts[:, 2] - mid) * (local / thickness)
+    return manifold_from_arrays(verts, faces, what)
+
+
+def ellipse_edge_influence(hx: float, hy: float, band: float):
+    """Полоса постоянной радиальной ширины у эллиптической наружной кромки."""
+    def influence(points: np.ndarray) -> np.ndarray:
+        x, y = points[:, 0], points[:, 1]
+        q = np.sqrt((x / hx) ** 2 + (y / hy) ** 2)
+        ray_radius = np.where(q > 1e-12, np.hypot(x, y) / np.maximum(q, 1e-12),
+                              max(hx, hy))
+        radial_distance = np.maximum(0.0, 1.0 - q) * ray_radius
+        return np.clip(1.0 - radial_distance / band, 0.0, 1.0)
+    return influence
 
 
 def hollow_cross(cross: mf.CrossSection, wall: float, what: str) -> mf.CrossSection:
@@ -103,6 +148,31 @@ def slot_contour(length: float, width: float, segments: int = 24) -> np.ndarray:
         angle = math.pi / 2.0 + math.pi * i / segments
         pts.append((-center + radius * math.cos(angle), radius * math.sin(angle)))
     return np.asarray(pts, dtype=np.float64)
+
+
+def axis_hole_cutter(axis: str, shape: str, diameter: float,
+                     oval_aspect: float, span: float) -> mf.Manifold:
+    """Центрированный сквозной резец круга, квадрата или прямого овала."""
+    shape = {"круг": "круг", "круглое": "круг", "circle": "круг",
+             "квадрат": "квадрат", "square": "квадрат",
+             "овал": "овал", "капсула": "овал", "slot": "овал",
+             "oval": "овал"}.get(shape.strip().lower())
+    if shape is None:
+        raise GeometryError("Форма отверстия: круг, квадрат или овал.")
+    if shape == "круг":
+        profile = np.asarray(circle_profile(diameter / 2.0, 64), dtype=np.float64)
+    elif shape == "квадрат":
+        h = diameter / 2.0
+        profile = np.asarray([(-h, -h), (h, -h), (h, h), (-h, h)], dtype=np.float64)
+    else:
+        profile = slot_contour(diameter, diameter / oval_aspect, 24)
+    cutter = mf.Manifold.extrude(mf.CrossSection([profile]), span).translate((0, 0, -span / 2))
+    matrices = {
+        "z": np.eye(3, 4),
+        "x": np.asarray([[0, 0, 1, 0], [0, -1, 0, 0], [1, 0, 0, 0]], dtype=float),
+        "y": np.asarray([[0, 1, 0, 0], [0, 0, 1, 0], [1, 0, 0, 0]], dtype=float),
+    }
+    return cutter.transform(np.asarray(matrices[axis], dtype=np.float64))
 
 
 def rect_between(p0, p1, width: float) -> np.ndarray:

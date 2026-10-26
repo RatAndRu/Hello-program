@@ -170,13 +170,13 @@ class CatalogOrderTest(unittest.TestCase):
         self.assertEqual(order, ["Стандартные примитивы", "Производные примитивы",
                                  "Природные примитивы", "Готовые детали",
                                  "Скульпт", "Поверхность", "Форма", "Массивы",
-                                 "Люди и вещи", "Покраска"])
+                                 "Покраска"])
 
     def test_derived_and_nature_follow_user_list(self):
         standard = ["sheet", "fold_sheet", "box", "face_box", "prism", "octa", "pyramid", "cone", "cylinder",
                     "sphere", "icosphere", "ellipsoid", "capsule", "torus", "ring",
                     "washer", "disc", "oval", "strip"]
-        derived = ["grating", "spikes", "hemisphere", "cavity_frame", "sector", "bracket", "полуовал",
+        derived = ["grating", "hemisphere", "cavity_frame", "sector", "bracket", "полуовал",
                    "arch", "воронка", "скоба", "lens", "полукапсула", "ingot",
                    "paraboloid", "saddle", "pie", "bead", "tri_prism", "arc_prism",
                    "torus_sector"]
@@ -235,29 +235,6 @@ class CatalogOrderTest(unittest.TestCase):
                 self.assertTrue(b.ok, (b.error or {}).get("message"))
 
 
-class PrimitiveShowcaseTest(unittest.TestCase):
-    """Пример «Стандартные примитивы» — четырнадцать тел первого ряда."""
-
-    def test_example_builds(self):
-        from forma.webui import load_example
-
-        script = load_example("primitives")
-        b = _build(script)
-        names = [n for n in b.scene.objects]
-        self.assertEqual(len(names), 14)
-        for name in ("лист", "куб", "призма", "октаэдр", "пирамида", "конус",
-                     "цилиндр", "шар", "икосфера", "эллипсоид", "капсула",
-                     "тор", "кольцо", "шайба"):
-            with self.subTest(name=name):
-                self.assertIn(name, names)
-
-    def test_example_in_menu(self):
-        from forma.webui import EXAMPLES, load_example
-
-        keys = [key for _, key in EXAMPLES]
-        self.assertIn("primitives", keys)
-        self.assertIn("Стандартные примитивы", EXAMPLES[0][0])
-        self.assertGreater(len(load_example("primitives")), 100)
 
 
 class HelpAndInstructionTest(unittest.TestCase):

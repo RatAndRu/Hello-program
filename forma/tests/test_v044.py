@@ -50,10 +50,13 @@ class RegistryTest(unittest.TestCase):
     def test_cards_and_orientation_notes_exist(self):
         text = (ROOT / "web/js/app.js").read_text(encoding="utf-8")
         notes = (ROOT / "forma/orient_notes.py").read_text(encoding="utf-8")
-        for op in ("strip", "grating", "spikes", "column", "arc_prism", "profile2020"):
+        for op in ("strip", "grating", "column", "arc_prism", "profile2020"):
             with self.subTest(op=op):
                 self.assertIn(f"op: '{op}'", text)
                 self.assertIn(f'"{op}"', notes)
+        # spikes теперь инструмент над объектом, а не примитив: карточка есть,
+        # записи в перечне исходных ориентаций примитивов быть не должно.
+        self.assertIn("op: 'spikes'", text)
         self.assertNotIn("op: 'leg'", text)
 
 
@@ -121,16 +124,19 @@ class GratingTest(unittest.TestCase):
 
 class SpikesTest(unittest.TestCase):
     def test_array_is_connected_and_dimensions_are_true(self):
-        b = ok("о = spikes width=120 length=80 base_h=4 cols=4 rows=3 height=28 "
-               "base_d=12 tip_d=0.8")
+        b = ok("о = box size=[120,80,4] round=0\n"
+               "о = spikes [о] surface=верх cols=4 rows=3 height=28 base_d=12 tip_d=0.8")
         self.assertEqual(len(solid(b).decompose()), 1)
         self.assertEqual(b.scene.objects["о"].meta["spikes"], 12)
         np.testing.assert_allclose(size(b), (120, 80, 32), atol=1e-5)
 
     def test_tip_sides_and_lean_change_shape(self):
-        pointed = ok("о = spikes tip_d=0 sides=3 lean=0")
-        blunt = ok("о = spikes tip_d=5 sides=24 lean=0")
-        leaned = ok("о = spikes tip_d=0.8 sides=12 lean=20 direction=90")
+        pointed = ok("о = box size=[120,80,4] round=0\n"
+                         "о = spikes [о] surface=верх tip_d=0 sides=3 lean=0")
+        blunt = ok("о = box size=[120,80,4] round=0\n"
+                       "о = spikes [о] surface=верх tip_d=5 sides=24 lean=0")
+        leaned = ok("о = box size=[120,80,4] round=0\n"
+                        "о = spikes [о] surface=верх tip_d=0.8 sides=12 lean=20 direction=90")
         self.assertLess(solid(pointed).volume(), solid(blunt).volume())
         self.assertGreater(size(leaned)[1], 80.0)
         self.assertEqual(len(solid(leaned).decompose()), 1)
@@ -157,7 +163,7 @@ class ColumnTest(unittest.TestCase):
             self.assertAlmostEqual(size(b)[0], 72.0, delta=1e-5)
 
     def test_square_section_optional_plates_and_smoothing(self):
-        b = ok("о = column section=брусок width=40 depth=26 base=нет rim=0 "
+        b = ok("о = column section=брусок width=40 depth=26 base_size=0 rim=0 "
                "form=ровная height=100 smooth=1")
         self.assertEqual(len(solid(b).decompose()), 1)
         self.assertAlmostEqual(size(b)[2], 100.0, delta=1e-4)

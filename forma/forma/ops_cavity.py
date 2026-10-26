@@ -41,9 +41,9 @@ def _add_cs(a: mf.CrossSection, b: mf.CrossSection) -> mf.CrossSection:
                              "cavity_plate", "полостная_рамка"), category="Примитивы",
     summary="Пластина-рамка с одной сквозной полостью. outer=квадрат или круг; "
             "cavity=Г — два соединённых прямоугольных канала у выбранного угла, "
-            "линия — прямой прямоугольный паз, квадрат/круг — полость у угла, "
-            "овал — прямая капсула. У круглой рамки линия автоматически овальная, "
-            "угловой квадрат — круглый. Все размеры, поля и кромки настраиваются.",
+            "линия — центральный прямоугольный паз, овал — та же центральная "
+            "линия с полукруглыми концами и шириной line_width. квадрат остаётся "
+            "квадратным при любой внешней рамке, круг — эллиптическим по cavity_size.",
     example="угловая = cavity_frame size=[100,90] depth=8 cavity=Г corner=право_верх\n"
             "паз = cavity_frame outer=круг size=[100,100] cavity=линия cavity_size=[60,6]\n"
             "окно = cavity_frame size=[100,90] cavity=квадрат cavity_size=[28,24] margin=9",
@@ -51,8 +51,8 @@ def _add_cs(a: mf.CrossSection, b: mf.CrossSection) -> mf.CrossSection:
             "depth": "толщина пластины, мм (8)",
             "outer": "квадрат — прямоугольная рамка; круг — круг/эллипс",
             "cavity": "Г, линия, квадрат, круг или овал",
-            "cavity_size": "габарит полости [X,Y], мм (50,40); для линии важна длина X",
-            "line_width": "ширина линии и каждой ветви Г, мм (6)",
+            "cavity_size": "габарит полости [X,Y], мм (50,40); у линии/овала важна длина X",
+            "line_width": "ширина линии, овала и каждой ветви Г, мм (6)",
             "margin": "материал от угловой полости до наружного края, мм (8)",
             "corner": "право_верх, лево_верх, право_низ или лево_низ",
             "round": "радиус скругления переходных кромок, мм (0)",
@@ -97,9 +97,10 @@ def cavity_frame(a, name):
     outer_cs = _cs(_rect(width, height) if outer == "квадрат" else _ellipse(width, height))
     centered = cavity in ("линия", "овал")
     if centered:
-        if cavity == "линия":
-            cw, ch = cw, line_w
-        if cavity == "овал" or (cavity == "линия" and outer == "круг"):
+        # Овал — частный случай центральной линии: та же длина и ширина,
+        # но полукруглые концы. Внешняя форма не подменяет выбранную полость.
+        ch = line_w
+        if cavity == "овал":
             tool = _cs(slot_contour(cw, ch, 24))
         else:
             tool = _cs(_rect(cw, ch))
@@ -121,7 +122,7 @@ def cavity_frame(a, name):
             vertical = _cs(_rect(vx1 - vx0, vy1 - vy0,
                                  (vx0 + vx1) / 2.0, (vy0 + vy1) / 2.0))
             tool = _add_cs(horizontal, vertical)
-        elif cavity == "круг" or (cavity == "квадрат" and outer == "круг"):
+        elif cavity == "круг":
             tool = _cs(_ellipse(cw, ch, cx, cy))
         else:
             tool = _cs(_rect(cw, ch, cx, cy))

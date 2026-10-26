@@ -3872,20 +3872,13 @@ const TOOL_SHAPES = [
   },
   {
     op: 'box', name: 'куб', title: 'Куб / параллелепипед', group: 'Стандартные примитивы',
-    desc: 'Независимый верх и параллелограмм; одновременные отверстия по X/Y/Z: круг, квадрат или прямой овал.',
+    desc: 'Независимый верх и параллелограмм. Отверстий нет: для центральных отверстий используется отдельный кубик с отверстием.',
     params: [
       { k: 'size', label: 'размер низа', v: '120,80,60', kind: 'vec' },
       { k: 'top_size', label: 'размер верха', v: '120,80', kind: 'vec' },
       { k: 'top_offset', label: 'сдвиг верха', v: '0,0', kind: 'vec' },
       { k: 'base_angle', label: 'угол основ.', v: 90, step: 5, min: 15, max: 165 },
       { k: 'round', label: 'скругл.', v: 3, step: 1, min: 0, max: 1000 },
-      { k: 'hole_x', label: 'отверстие X', v: 0, step: 1, min: 0, max: 10000 },
-      { k: 'hole_x_shape', label: 'форма X', v: 'круг', kind: 'raw', choices: ['круг', 'квадрат', 'овал'] },
-      { k: 'hole_y', label: 'отверстие Y', v: 0, step: 1, min: 0, max: 10000 },
-      { k: 'hole_y_shape', label: 'форма Y', v: 'круг', kind: 'raw', choices: ['круг', 'квадрат', 'овал'] },
-      { k: 'hole_z', label: 'отверстие Z', v: 0, step: 1, min: 0, max: 10000 },
-      { k: 'hole_z_shape', label: 'форма Z', v: 'круг', kind: 'raw', choices: ['круг', 'квадрат', 'овал'] },
-      { k: 'oval_aspect', label: 'овальность', v: 1.8, step: 0.1, min: 1, max: 8 },
       detailParam(3, 'детализация скругления: 0 — гранёные углы, 5 — гладкие'),
     ],
   },
@@ -3935,7 +3928,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'pyramid', name: 'пирамида', title: 'Пирамида', group: 'Стандартные примитивы',
-    desc: 'Пирамида с вершиной над центром, ребром или углом; параллелограмм и сглаживание.',
+    desc: 'Пирамида с вершиной над центром, ребром или углом; wall>0 открывает слепую полость снизу, не пробивая вершину.',
     params: [
       { k: 'sides', label: 'сторон', v: 4, step: 1, min: 3, max: 64 },
       { k: 'radius', label: 'радиус', v: 60, step: 2, min: 0.1, max: 5000 },
@@ -3945,28 +3938,37 @@ const TOOL_SHAPES = [
       { k: 'tip_index', label: 'индекс грани', v: 0, step: 1, min: 0, max: 63,
         hint: 'для center не участвует; edge/corner — номер ребра или угла' },
       { k: 'base_angle', label: 'угол основ.', v: 90, step: 5, min: 15, max: 165 },
+      { k: 'wall', label: 'стенка полости', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'cavity_depth', label: 'глубина полости', v: '', auto: true, step: 1, min: 0.1, max: 5000 },
       { k: 'smooth', label: 'сглаживание', v: 0, min: 0, max: 4, step: 1,
-        kind: 'slider', hint: 'Loop: скругляет форму; 0 — плоские грани' },
+        kind: 'slider', hint: 'Радиусное скругление рёбер; широкие грани не деформируются' },
     ],
   },
   {
     op: 'cone', name: 'конус', title: 'Конус', group: 'Стандартные примитивы',
-    desc: 'Конус с вершиной вверх — воронки, ножки, сопла.',
+    desc: 'Прямой конус, квадратичная парабола или округлый холмик; wall>0 открывает полость снизу, smooth сглаживает бок.',
     params: [
       { k: 'radius', label: 'радиус', v: 45, step: 1, min: 0.01, max: 5000 },
       { k: 'height', label: 'высота', v: 90, step: 1, min: 0.01, max: 5000 },
+      { k: 'form', label: 'профиль', v: 'прямой', kind: 'raw', choices: ['прямой', 'парабола', 'холмик'] },
+      { k: 'wall', label: 'стенка', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'cavity_depth', label: 'глубина полости', v: '', auto: true, step: 1, min: 0.1, max: 5000 },
+      { k: 'smooth', label: 'сглаживание', v: 0, step: 1, min: 0, max: 4, kind: 'slider' },
       detailParam(3, 'детализация: сколько граней по кругу'),
     ],
   },
   {
     op: 'cylinder', name: 'цилиндр', title: 'Цилиндр', group: 'Стандартные примитивы',
-    desc: 'Цилиндр с отдельным радиусом, эллиптическим масштабом и сдвигом верхней плоскости.',
+    desc: 'Цилиндр с настраиваемым верхом; wall>0 создаёт несквозную полость сверху или снизу и оставляет дно.',
     params: [
       { k: 'radius', label: 'радиус низа', v: 40, step: 1, min: 0.1, max: 5000 },
       { k: 'r2', label: 'радиус верха', v: 40, step: 1, min: 0, max: 5000 },
       { k: 'height', label: 'высота', v: 100, step: 1, min: 0.1, max: 5000 },
       { k: 'top_scale', label: 'масштаб верха', v: '1,1', kind: 'vec' },
       { k: 'top_offset', label: 'сдвиг верха', v: '0,0', kind: 'vec' },
+      { k: 'wall', label: 'стенка', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'cavity', label: 'полость открыта', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+      { k: 'cavity_depth', label: 'глубина полости', v: '', auto: true, step: 1, min: 0.1, max: 5000 },
       detailParam(3, 'детализация: сколько граней у бока'),
     ],
   },
@@ -4026,11 +4028,12 @@ const TOOL_SHAPES = [
   },
   {
     op: 'ring', name: 'кольцо', title: 'Кольцо', group: 'Стандартные примитивы',
-    desc: 'Обод с плоскими сторонами и скруглёнными краями.',
+    desc: 'Обод со скруглёнными краями; cavity>0 создаёт закрытый канал внутри самого обода и задаёт его наружные стенки.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 20, step: 1, min: 1, max: 5000 },
       { k: 'width', label: 'ширина', v: 6, step: 0.5, min: 0.4, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 2.2, step: 0.2, min: 0.2, max: 5000 },
+      { k: 'cavity', label: 'стенка канала', v: 0, step: 0.2, min: 0, max: 1000 },
       { k: 'round', label: 'скругл.', v: 0.6, step: 0.1, min: 0, max: 1000 },
     ],
   },
@@ -4045,10 +4048,12 @@ const TOOL_SHAPES = [
   },
   {
     op: 'disc', name: 'круг', title: 'Круг', group: 'Стандартные примитивы',
-    desc: 'Круг с плоским, вогнутым или выпуклым параболическим верхом; низ плоский.',
+    desc: 'Круг с плоским, вогнутым или выпуклым верхом. Толщина круглой кромки регулируется отдельно: тоньше лезвия или толще диска.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 120, step: 5, min: 0.5, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 8, step: 1, min: 0.2, max: 5000 },
+      { k: 'edge', label: 'кромка', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
+      { k: 'edge_band', label: 'переход кромки', v: 15, step: 1, min: 0.05, max: 5000 },
       { k: 'top', label: 'верх', v: 'плоская', kind: 'raw', choices: ['плоская', 'вогнутая', 'выпуклая'] },
       { k: 'sag', label: 'кривизна', v: 2, step: 0.5, min: 0.01, max: 1000 },
       { k: 'round', label: 'кромка', v: 0, step: 0.5, min: 0, max: 1000 },
@@ -4056,11 +4061,13 @@ const TOOL_SHAPES = [
   },
   {
     op: 'oval', name: 'овал', title: 'Овал', group: 'Стандартные примитивы',
-    desc: 'Овальная плита с плоским, вогнутым или выпуклым верхом и плоским низом.',
+    desc: 'Овальная плита с независимой толщиной эллиптической кромки и плавным переходом к основной толщине.',
     params: [
       { k: 'width', label: 'ширина', v: 200, step: 10, min: 1, max: 5000 },
       { k: 'length', label: 'длина', v: 120, step: 10, min: 1, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 8, step: 1, min: 0.2, max: 5000 },
+      { k: 'edge', label: 'кромка', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
+      { k: 'edge_band', label: 'переход кромки', v: 15, step: 1, min: 0.05, max: 5000 },
       { k: 'top', label: 'верх', v: 'плоская', kind: 'raw', choices: ['плоская', 'вогнутая', 'выпуклая'] },
       { k: 'sag', label: 'кривизна', v: 2, step: 0.5, min: 0.01, max: 1000 },
       { k: 'round', label: 'кромка', v: 0, step: 0.5, min: 0, max: 1000 },
@@ -4068,7 +4075,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'strip', name: 'полоса', title: 'Полоса', group: 'Стандартные примитивы',
-    desc: 'Тонкая объёмная лента: концы, независимые кромки, S/зигзаг, выемка и дуга.',
+    desc: 'Тонкая объёмная лента: прямая, S, зигзаг или подкова; у подковы length — длина линии, curve — радиус.',
     params: [
       { k: 'length', label: 'длина', v: 200, step: 10, min: 10, max: 10000 },
       { k: 'width', label: 'ширина', v: 40, step: 2, min: 1, max: 5000 },
@@ -4078,44 +4085,29 @@ const TOOL_SHAPES = [
       { k: 'collapse_right', label: 'правая кромка', v: 0, step: 0.05, min: 0, max: 0.95 },
       { k: 'smooth', label: 'сглаживание', v: 0, step: 1, min: 0, max: 4 },
       { k: 'bend', label: 'угол дуги°', v: 0, step: 5, min: -180, max: 180 },
-      { k: 'path', label: 'контур', v: 'прямая', kind: 'raw', choices: ['прямая', 'S', 'зигзаг'] },
-      { k: 'curve', label: 'амплитуда', v: 30, step: 5, min: 0.1, max: 5000 },
-      { k: 'recess', label: 'выемка', v: 'нет', kind: 'raw', choices: ['нет', 'круг', 'прямоугольник', 'квадрат', 'треугольник'] },
-      { k: 'recess_size', label: 'ширина выемки', v: 16, step: 1, min: 0.5, max: 5000 },
-      { k: 'recess_length', label: 'длина выемки', v: 24, step: 1, min: 0.5, max: 5000 },
+      { k: 'path', label: 'контур XY', v: 'прямая', kind: 'raw', choices: ['прямая', 'S', 'зигзаг', 'подкова'] },
+      { k: 'curve', label: 'амплитуда/радиус', v: 30, step: 5, min: 0.1, max: 5000 },
+      { k: 'path_z', label: 'контур XZ', v: 'прямая', kind: 'raw', choices: ['прямая', 'S', 'зигзаг'] },
+      { k: 'curve_z', label: 'амплитуда Z', v: 30, step: 5, min: 0.1, max: 5000 },
+      { k: 'recess', label: 'отверстие', v: 'нет', kind: 'raw', choices: ['нет', 'круг', 'прямоугольник', 'квадрат', 'треугольник'] },
+      { k: 'recess_size', label: 'ширина отверстия', v: 16, step: 1, min: 0.5, max: 5000 },
+      { k: 'recess_length', label: 'длина отверстия', v: 24, step: 1, min: 0.5, max: 5000 },
     ],
   },
   {
     op: 'grating', name: 'решётка', title: 'Решётка', group: 'Производные примитивы',
-    desc: 'Рамка и рейки одним телом; планки, квадратная клетка или настоящие сквозные соты.',
+    desc: 'Рамка и рейки одним телом; планки, квадратная клетка, круглые/треугольные отверстия или соты.',
     params: [
       { k: 'width', label: 'ширина', v: 200, step: 10, min: 10, max: 10000 },
       { k: 'height', label: 'высота', v: 120, step: 10, min: 10, max: 10000 },
       { k: 'depth', label: 'толщина', v: 4, step: 0.5, min: 0.2, max: 1000 },
-      { k: 'pattern', label: 'ячейки', v: 'планки', kind: 'raw', choices: ['планки', 'клетка', 'соты'] },
+      { k: 'pattern', label: 'ячейки', v: 'планки', kind: 'raw', choices: ['планки', 'клетка', 'круги', 'треугольники', 'соты'] },
       { k: 'bar', label: 'рейки', v: 3, step: 0.5, min: 0.2, max: 1000 },
       { k: 'frame', label: 'рамка', v: 6, step: 1, min: 0.4, max: 2000 },
       { k: 'bars', label: 'число реек', v: 7, step: 1, min: 1, max: 200 },
       { k: 'cols', label: 'ячеек X', v: 5, step: 1, min: 1, max: 100 },
       { k: 'rows', label: 'ячеек Y', v: 4, step: 1, min: 1, max: 100 },
       { k: 'cell', label: 'сота', v: 22, step: 1, min: 2, max: 5000 },
-    ],
-  },
-  {
-    op: 'spikes', name: 'шипы', title: 'Шипы', group: 'Производные примитивы',
-    desc: 'Общая площадка и настраиваемые шипы: форма, высота, остриё, наклон и ряды.',
-    params: [
-      { k: 'width', label: 'ширина', v: 120, step: 5, min: 5, max: 10000 },
-      { k: 'length', label: 'длина', v: 80, step: 5, min: 5, max: 10000 },
-      { k: 'base_h', label: 'площадка', v: 4, step: 0.5, min: 0.2, max: 1000 },
-      { k: 'cols', label: 'шипов X', v: 4, step: 1, min: 1, max: 100 },
-      { k: 'rows', label: 'шипов Y', v: 3, step: 1, min: 1, max: 100 },
-      { k: 'height', label: 'высота шипа', v: 28, step: 1, min: 0.5, max: 5000 },
-      { k: 'base_d', label: 'основание', v: 12, step: 1, min: 0.4, max: 5000 },
-      { k: 'tip_d', label: 'остриё', v: 0.8, step: 0.2, min: 0, max: 5000 },
-      { k: 'sides', label: 'граней', v: 24, step: 1, min: 3, max: 64 },
-      { k: 'lean', label: 'наклон°', v: 0, step: 1, min: -45, max: 45 },
-      { k: 'direction', label: 'азимут°', v: 0, step: 5, min: -360, max: 360 },
     ],
   },
   {
@@ -4129,7 +4121,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'cavity_frame', name: 'рамка_полость', title: 'Рамка с полостью', group: 'Производные примитивы',
-    desc: 'Сквозная Г-полость, линия или угловое окно; у круглой рамки линия становится овалом, угловой квадрат — кругом.',
+    desc: 'Сквозная Г-полость, центральная линия или овал с полукруглыми концами; квадратная полость остаётся квадратной при любой внешней рамке.',
     params: [
       { k: 'size', label: 'наружный размер', v: '100,90', kind: 'vec' },
       { k: 'depth', label: 'толщина', v: 8, step: 1, min: 0.2, max: 1000 },
@@ -4145,12 +4137,13 @@ const TOOL_SHAPES = [
   },
   {
     op: 'sector', name: 'сектор', title: 'Сектор шара', group: 'Производные примитивы',
-    desc: 'Долька шара с любым углом: 90° — четвертинка, 180° — полусфера.',
+    desc: 'Долька шара с любым углом. Срезы остаются плоскими; сглаживание повышает разрешение сферы без выступов.',
     params: [
       { k: 'radius', label: 'радиус', v: 50, step: 2, min: 0.5, max: 5000 },
       { k: 'angle', label: 'угол°', v: 90, step: 5, min: 1, max: 360 },
       { k: 'thickness', label: 'стенка', v: 0, step: 1, min: 0, max: 5000 },
-      { k: 'smooth', label: 'сглаж.', v: 0, step: 1, min: 0, max: 4 },
+      { k: 'smooth', label: 'детализация', v: 0, step: 1, min: 0, max: 4,
+        hint: 'сглаживает сферическую поверхность, не деформируя радиальные срезы' },
     ],
   },
   {
@@ -4169,23 +4162,26 @@ const TOOL_SHAPES = [
   },
   {
     op: 'полуовал', name: 'полуовал', title: 'Полуовал', group: 'Производные примитивы',
-    desc: 'Пластина-полуовал: подвес, накладка, подпятник, ушко. '
-      + 'Отверстие по центру есть или его нет — ползунок «отверстие» в ноль.',
+    desc: 'Пластина-полуовал с отдельной толщиной только эллиптической дуги; прямая нижняя кромка не изменяется.',
     params: [
       { k: 'width', label: 'ширина', v: 90, step: 2, min: 0.5, max: 5000 },
       { k: 'height', label: 'высота', v: 55, step: 2, min: 0.5, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 8, step: 0.5, min: 0.2, max: 1000 },
+      { k: 'edge', label: 'кромка дуги', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
+      { k: 'edge_band', label: 'переход дуги', v: 14, step: 1, min: 0.05, max: 5000 },
       { k: 'hole', label: 'отверстие', v: 16, step: 1, min: 0, auto: true, max: 1000 },
       { k: 'smooth', label: 'сглаж.', v: 0, step: 1, min: 0, max: 4 },
     ],
   },
   {
     op: 'arch', name: 'арка', title: 'Арка', group: 'Производные примитивы',
-    desc: 'Полукольцо с прямоугольным сечением: проём, свод, тоннель.',
+    desc: 'Полукольцо с прямоугольным сечением. Кромка меняет толщину только у внутренней и наружной дуг, не у торцов.',
     params: [
       { k: 'radius', label: 'радиус', v: 200, step: 10, min: 2, max: 5000 },
       { k: 'width', label: 'сечение', v: 60, step: 5, min: 1, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 40, step: 5, min: 1, max: 5000 },
+      { k: 'edge', label: 'кромка дуг', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
+      { k: 'edge_band', label: 'переход дуг', v: 15, step: 1, min: 0.05, max: 5000 },
       { k: 'angle', label: 'угол', v: 180, step: 15, min: 5, max: 360 },
       { k: 'smooth', label: 'сглаж.', v: 0, step: 1, min: 0, max: 4 },
     ],
@@ -4281,13 +4277,14 @@ const TOOL_SHAPES = [
   },
   {
     op: 'pie', name: 'сектор_круга', title: 'Сектор круга', group: 'Производные примитивы',
-    desc: 'Кусок пирога с объёмом: угол, поворот и толщина. Стрелки-указатели, '
-      + 'козырьки, сегменты диаграмм. angle=360 даёт целый круг.',
+    desc: 'Кусок пирога с объёмом. Отдельная кромка меняет только круглую дугу; радиальные срезы сохраняют основную толщину.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 140, step: 5, min: 1, max: 5000 },
       { k: 'angle', label: 'угол', v: 90, step: 5, min: 1, max: 360 },
       { k: 'start', label: 'начало', v: 0, step: 5, min: -360, max: 360 },
       { k: 'thickness', label: 'толщина', v: 8, step: 1, min: 0.2, max: 5000 },
+      { k: 'edge', label: 'кромка дуги', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
+      { k: 'edge_band', label: 'переход дуги', v: 18, step: 1, min: 0.05, max: 5000 },
       { k: 'hole', label: 'отверстие', v: 0, step: 1, min: 0, max: 1000 },
       { k: 'smooth', label: 'сглаж.', v: 0, step: 1, min: 0, max: 4 },
     ],
@@ -4486,10 +4483,11 @@ const TOOL_SHAPES = [
   },
   {
     op: 'yin_yang', name: 'инь_ян', title: 'Инь-ян (запятая)', group: 'Готовые детали',
-    desc: 'Одна отдельная «шестёрка» площадью в половину круга; wall=0 — фигура, wall>0 — рамка.',
+    desc: 'Одна половина инь-ян; основной режим объёмный, как капля, плоский остаётся настройкой; wall>0 — рамка.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 120, step: 5, min: 6, max: 5000 },
       { k: 'thick', label: 'толщина', v: 16, step: 2, min: 0.4, max: 5000 },
+      { k: 'form', label: 'форма', v: 'объёмная', kind: 'raw', choices: ['объёмная', 'плоская'] },
       { k: 'round', label: 'скругл.', v: 0, step: 0.5, min: 0, max: 1000 },
       { k: 'side', label: 'сторона', v: 'левый', kind: 'raw', choices: ['левый', 'правый'] },
       { k: 'hole', label: 'точка-отверстие', v: 0, step: 1, min: 0, max: 1000 },
@@ -4527,7 +4525,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'tee', name: 'тавр', title: 'Форма Т', group: 'Готовые детали',
-    desc: 'Буква Т: капсулы или бруски как у Y, одинаковая ширина всех ветвей, слитная развилка.',
+    desc: 'Буква Т: бруски, прежние овальные ветви или настоящие капсулы с полукруглыми торцами.',
     params: [
       { k: 'arm', label: 'переклад.', v: 90, step: 5, min: 1, max: 5000 },
       { k: 'bar', label: 'толщина', v: 20, step: 2, min: 0.4, max: 5000 },
@@ -4535,17 +4533,17 @@ const TOOL_SHAPES = [
       { k: 'leg', label: 'длина нож.', v: 60, step: 5, min: 0.4, max: 5000 },
       { k: 'depth', label: 'толщина Z', v: 14, step: 1, min: 0.1, max: 1000 },
       { k: 'round', label: 'скругл.', v: 2, step: 0.5, min: 0, max: 1000 },
-      { k: 'shape', label: 'ветви', v: 'бруски', kind: 'raw', choices: ['бруски', 'капсулы'] },
+      { k: 'shape', label: 'ветви', v: 'бруски', kind: 'raw', choices: ['бруски', 'овалы', 'капсулы'] },
     ],
   },
   {
     op: 'yoke', name: 'рогатка', title: 'Форма Y', group: 'Готовые детали',
-    desc: 'Буква Y: капсулы/бруски и фактическое сглаживание кромок в месте слияния ветвей.',
+    desc: 'Буква Y: бруски, прежние овалы или настоящие капсулы; стыки и кромки сглаживаются независимо.',
     params: [
       { k: 'height', label: 'высота', v: 110, step: 5, min: 2, max: 5000 },
       { k: 'spread', label: 'размах', v: 64, step: 4, min: 0, max: 5000 },
       { k: 'arm', label: 'ветвь', v: 16, step: 1, min: 0.4, max: 5000 },
-      { k: 'shape', label: 'ветви', v: 'капсулы', kind: 'raw', choices: ['капсулы', 'бруски'] },
+      { k: 'shape', label: 'ветви', v: 'капсулы', kind: 'raw', choices: ['капсулы', 'овалы', 'бруски'] },
       { k: 'fork', label: 'развилка', v: 0.38, step: 0.02, min: 0.1, max: 0.9 },
       { k: 'depth', label: 'толщина Z', v: 14, step: 1, min: 0.1, max: 1000 },
       { k: 'smooth', label: 'сглаживание', v: 0, step: 1, min: 0, max: 4 },
@@ -4565,10 +4563,11 @@ const TOOL_SHAPES = [
   },
   {
     op: 'spring', name: 'пружина', title: 'Пружина', group: 'Готовые детали',
-    desc: 'Винтовая пружина: средний диаметр, проволока, витки и шаг.',
+    desc: 'Винтовая пружина; hole>0 делает канал внутри проволоки по всей длине, как у полого провода.',
     params: [
       { k: 'diameter', label: 'виток', v: 22, step: 1, min: 1, max: 5000 },
       { k: 'wire', label: 'провол.', v: 3, step: 0.2, min: 0.2, max: 5000 },
+      { k: 'hole', label: 'канал ⌀', v: 0, step: 0.2, min: 0, max: 5000 },
       { k: 'turns', label: 'витки', v: 8, step: 1, min: 0.5, max: 200 },
       { k: 'pitch', label: 'шаг', v: 6, step: 0.5, min: 0.2, max: 5000 },
       { k: 'right', label: 'правая', v: true, kind: 'bool' },
@@ -4769,6 +4768,7 @@ const TOOL_SHAPES = [
       { k: 'height', label: 'высота', v: 64, step: 4, min: 3, max: 10000 },
       { k: 'coils', label: 'витков', v: 3, step: 1, min: 1, max: 12 },
       { k: 'wire', label: 'Ø трубы', v: 16, step: 1, min: 0.2, max: 20 },
+      { k: 'root_d', label: 'Ø начала', v: '', auto: true, step: 0.5, min: 0.1, max: 20 },
       { k: 'taper', label: 'сужение', v: 0.62, step: 0.05, min: 0, max: 0.92 },
       { k: 'merge', label: 'слить витки', v: false, kind: 'bool' },
       { k: 'base', label: 'плоское основание', v: false, kind: 'bool' },
@@ -4805,12 +4805,12 @@ const TOOL_SHAPES = [
   },
   {
     op: 'lever', name: 'рычаг', title: 'Рычаг', group: 'Готовые детали',
-    desc: 'Палка и шар или цилиндр на конце. Длина наконечника работает и для шара; палка не проходит сквозь него.',
+    desc: 'Палка и наконечник: шар, цилиндр, выпуклая линза или вогнутая снаружи линза с выпуклым стыком.',
     params: [
       { k: 'length', label: 'общая длина', v: 180, step: 10, min: 60, max: 10000 },
       { k: 'shaft', label: 'палка', v: 'цилиндр', kind: 'raw', choices: ['цилиндр', 'брусок'] },
       { k: 'diameter', label: 'толщина', v: 14, step: 1, min: 0.5, max: 34 },
-      { k: 'knob', label: 'наконечник', v: 'шар', kind: 'raw', choices: ['шар', 'цилиндр'] },
+      { k: 'knob', label: 'наконечник', v: 'шар', kind: 'raw', choices: ['шар', 'цилиндр', 'линза', 'вогнутая'] },
       { k: 'knob_d', label: 'толщина наконечника', v: 34, step: 2, min: 20, max: 2000 },
       { k: 'knob_h', label: 'длина наконечника', v: 60, step: 5, min: 1, max: 180 },
       { k: 'angle', label: 'наклон', v: 0, step: 5, min: -89, max: 89 },
@@ -4833,24 +4833,26 @@ const TOOL_SHAPES = [
   },
   {
     op: 'gusset', name: 'косынка', title: 'Косынка', group: 'Готовые детали',
-    desc: 'Прямой треугольник или прежняя круглая горка с одним прямоугольным вырезом настраиваемой глубины и ширины.',
+    desc: 'Шесть независимых контуров: прямая, выпуклая или вогнутая горка, каждая с пазом или без.',
     params: [
       { k: 'leg', label: 'катет', v: 70, step: 5, min: 0.2, max: 10000 },
       { k: 'height', label: 'высота', v: 55, step: 5, min: 0.2, max: 10000 },
       { k: 'thickness', label: 'толщина', v: 6, step: 1, min: 0.05, max: 2000 },
-      { k: 'shape', label: 'форма', v: 'прямо', kind: 'raw', choices: ['прямо', 'горка'] },
+      { k: 'shape', label: 'форма', v: 'прямая', kind: 'raw', choices: ['прямая', 'прямая_с_пазом', 'выпуклая', 'выпуклая_с_пазом', 'вогнутая', 'вогнутая_с_пазом'] },
       { k: 'notch', label: 'глубина выреза', v: 8, step: 1, min: 0, max: 1000 },
       { k: 'notch_width', label: 'ширина выреза', v: 24, step: 1, min: 0.2, max: 5000 },
     ],
   },
   {
     op: 'grommet', name: 'люверс', title: 'Люверс', group: 'Готовые детали',
-    desc: 'Втулка с бортиком под шнур или провод, с необязательным Loop-сглаживанием.',
+    desc: 'Втулка с бортиком; отверстие можно оставить, заполнить заподлицо, выпуклой или вогнутой линзой сверху.',
     params: [
       { k: 'diameter', label: 'внутри', v: 12, step: 1, min: 1, max: 5000 },
       { k: 'height', label: 'высота', v: 8, step: 1, min: 1, max: 2000 },
       { k: 'wall', label: 'стенка', v: 1.6, step: 0.2, min: 0.3, max: 1000 },
       { k: 'flange', label: 'борт', v: 3, step: 0.5, min: 0.2, max: 1000 },
+      { k: 'fill', label: 'заполнение', v: 'нет', kind: 'raw', choices: ['нет', 'ровно', 'выпуклая', 'вогнутая'] },
+      { k: 'fill_h', label: 'прогиб заполнения', v: 1, step: 0.2, min: 0.05, max: 1000 },
       { k: 'smooth', label: 'сглаживание', v: 0, step: 1, min: 0, max: 4 },
     ],
   },
@@ -4871,18 +4873,40 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'turbine_blade', name: 'лопасть', title: 'Лопасть турбины', group: 'Готовые детали',
+    desc: 'Одна аэродинамическая лопасть: несимметричное сечение, рост хорды, крутка, стреловидность и изгиб; ротор собирается массивом.',
+    params: [
+      { k: 'length', label: 'длина', v: 180, step: 5, min: 10, max: 5000 },
+      { k: 'chord', label: 'хорда макс.', v: 70, step: 2, min: 2, max: 2000 },
+      { k: 'root_chord', label: 'хорда корня', v: 20, step: 1, min: 0.5, max: 2000 },
+      { k: 'tip_chord', label: 'хорда конца', v: 42, step: 1, min: 0.5, max: 2000 },
+      { k: 'thick', label: 'толщина корня', v: 7, step: 0.5, min: 0.1, max: 1000 },
+      { k: 'tip_thick', label: 'толщина конца', v: 2.5, step: 0.2, min: 0.05, max: 1000 },
+      { k: 'camber', label: 'кэмбер', v: 0.09, step: 0.01, min: -0.3, max: 0.3 },
+      { k: 'stagger', label: 'угол корня°', v: 25, step: 5, min: -80, max: 80 },
+      { k: 'twist', label: 'крутка°', v: 55, step: 5, min: -120, max: 120 },
+      { k: 'twist_exp', label: 'кривая крутки', v: 1, step: 0.1, min: 0.4, max: 3 },
+      { k: 'sweep', label: 'стреловидность', v: 28, step: 2, min: -2000, max: 2000 },
+      { k: 'lean', label: 'осевой изгиб', v: 0, step: 2, min: -2000, max: 2000 },
+      { k: 'root_at', label: 'ось профиля', v: 0.35, step: 0.05, min: 0.1, max: 0.9 },
+      { k: 'root_h', label: 'зона корня', v: 0, step: 1, min: 0, max: 5000 },
+      { k: 'tip', label: 'окончание', v: 'срез', kind: 'raw', choices: ['срез', 'скругление', 'острый'] },
+      { k: 'segments', label: 'сечений', v: 36, step: 1, min: 12, max: 96 },
+      { k: 'foil', label: 'точек профиля', v: 18, step: 1, min: 8, max: 48 },
+    ],
+  },
+  {
     op: 'column', name: 'колонна', title: 'Колонна', group: 'Готовые детали',
-    desc: 'Площадка, вертикальный стержень и бортик: ровный, конус или песочные часы.',
+    desc: 'Стержень и независимые площадка/бортик; base_size=0 убирает площадку, отрицательный taper расширяет верх.',
     params: [
       { k: 'height', label: 'высота', v: 180, step: 5, min: 10, max: 10000 },
       { k: 'width', label: 'ширина', v: 42, step: 2, min: 1, max: 5000 },
       { k: 'depth', label: 'глубина', v: 42, step: 2, min: 1, max: 5000 },
       { k: 'form', label: 'стержень', v: 'ровная', kind: 'raw', choices: ['ровная', 'конус', 'песочные'] },
       { k: 'waist', label: 'талия', v: 0.55, step: 0.05, min: 0.2, max: 1 },
-      { k: 'taper', label: 'сужение', v: 0.35, step: 0.05, min: 0, max: 0.85 },
+      { k: 'taper', label: 'сужение', v: 0.35, step: 0.05, min: -0.85, max: 0.85 },
       { k: 'section', label: 'сечение', v: 'цилиндр', kind: 'raw', choices: ['цилиндр', 'брусок'] },
-      { k: 'base', label: 'площадка', v: 'да', kind: 'raw', choices: ['да', 'нет'] },
-      { k: 'base_size', label: 'размер площадки', v: 72, step: 2, min: 1, max: 5000 },
+      { k: 'base_size', label: 'размер площадки', v: 72, step: 2, min: 0, max: 5000 },
       { k: 'base_h', label: 'высота площадки', v: 12, step: 1, min: 0, max: 5000 },
       { k: 'rim', label: 'вылет бортика', v: 8, step: 1, min: 0, max: 1000 },
       { k: 'rim_h', label: 'высота бортика', v: 10, step: 1, min: 0, max: 5000 },
@@ -4939,13 +4963,33 @@ const TOOL_SHAPES = [
 
 
   {
+    op: 'nail', name: 'гвоздь', title: 'Гвоздь', group: 'Готовые детали',
+    desc: 'Простой гвоздь без резьбы: круглая шляпка, гладкий стержень и остриё.',
+    params: [
+      { k: 'd', label: 'стержень ⌀', v: 2, step: 0.2, min: 0.3, max: 20 },
+      { k: 'length', label: 'длина', v: 20, step: 1, min: 2, max: 500 },
+      { k: 'head_d', label: 'шляпка ⌀', v: 4.4, step: 0.2, min: 0.36, max: 160 },
+      { k: 'head_h', label: 'высота шляпки', v: 0.8, step: 0.1, min: 0.15, max: 60 },
+      { k: 'tip', label: 'остриё', v: 6, step: 0.5, min: 0.2, max: 16 },
+    ],
+  },
+  {
     op: 'worm_shaft', name: 'червяк', title: 'Червячный вал', group: 'Готовые детали',
-    desc: 'Цилиндр с настоящим винтовым витком: шаг, глубина, заходы.',
+    desc: 'Винтовой виток с профилем и концами; bore — ось вала, channel — канал внутри самого витка.',
     params: [
       { k: 'length', label: 'длина', v: 90, step: 5, min: 6, max: 5000 },
       { k: 'diameter', label: 'диаметр', v: 30, step: 2, min: 4, max: 5000 },
       { k: 'pitch', label: 'шаг', v: 8, step: 1, min: 1, max: 5000 },
       { k: 'depth', label: 'виток', v: 4, step: 0.5, min: 0.4, max: 1000 },
+      { k: 'starts', label: 'заходов', v: 1, step: 1, min: 1, max: 4 },
+      { k: 'profile', label: 'профиль', v: 'круглый', kind: 'raw', choices: ['круглый', 'трапеция', 'прямоугольник', 'треугольник'] },
+      { k: 'thread_w', label: 'ширина витка', v: '', auto: true, step: 0.5, min: 0.1, max: 1000 },
+      { k: 'tip_w', label: 'вершина трапеции', v: '', auto: true, step: 0.5, min: 0.05, max: 1000 },
+      { k: 'end', label: 'концы', v: 'срез', kind: 'raw', choices: ['срез', 'конус', 'скругление'] },
+      { k: 'end_h', label: 'переход концов', v: '', auto: true, step: 0.5, min: 0.05, max: 1000 },
+      { k: 'bore', label: 'ось ⌀', v: 0, step: 0.5, min: 0, max: 5000 },
+      { k: 'channel', label: 'канал витка ⌀', v: 0, step: 0.2, min: 0, max: 1000 },
+      { k: 'sides', label: 'сегментов витка', v: 10, step: 1, min: 6, max: 32 },
     ],
   },
   {
@@ -4958,21 +5002,7 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'display', name: 'экран', title: 'Экран', group: 'Готовые детали',
-    group: 'Люди и вещи',
-    desc: 'Смартфон, будильник, монитор: корпус, тёмная панель, горящие цифры и стекло.',
-    params: [
-      { k: 'width', label: 'ширина', v: 160, step: 5, min: 6, max: 5000 },
-      { k: 'height', label: 'высота', v: 90, step: 5, min: 6, max: 5000 },
-      { k: 'thick', label: 'толщина', v: 40, step: 2, min: 1, max: 5000 },
-      { k: 'style', label: 'вид', v: 'будильник', kind: 'raw', choices: ['смартфон', 'будильник', 'монитор'] },
-      { k: 'content', label: 'на экране', v: 'led', kind: 'raw' },
-      { k: 'text', label: 'надпись', v: '21:38', kind: 'raw' },
-    ],
-  },
-  {
     op: 'mirror_plate', name: 'зеркало', title: 'Зеркало', group: 'Готовые детали',
-    group: 'Люди и вещи',
     desc: 'Рама, отражающая пластина и подвес: прямоугольное, круглое или овальное.',
     params: [
       { k: 'width', label: 'ширина', v: 600, step: 20, min: 20, max: 5000 },
@@ -5040,12 +5070,16 @@ const TOOL_SHAPES = [
   },
   {
     op: 'shave', name: 'стёсанная', title: 'Стесать поверхность', group: 'Скульпт',
-    base: 'box size=[50, 50, 90] round=3', baseName: 'заготовка',
-    desc: 'Снимает слой ровной фасеткой под любым углом — как ножом или '
-      + 'наждаком. Круг ограничивает пятно, 0 — вся поверхность.',
+    base: 'box size=[70, 60, 40] round=3', baseName: 'заготовка',
+    desc: 'Снимает слой именно плоскостью. По периметру полученного среза можно '
+      + 'провести прямоугольную, овальную или треугольную канавку с настоящим профилем.',
     params: [
-      { k: 'depth', label: 'снять', v: 12, step: 1, min: 0.1, max: 1000 },
+      { k: 'depth', label: 'снять', v: 8, step: 1, min: 0.1, max: 1000 },
       { k: 'radius', label: 'пятно', v: 0, step: 2, min: 0, max: 5000 },
+      { k: 'groove', label: 'канавка', v: 'нет', kind: 'raw', choices: ['нет', 'прямоугольная', 'овальная', 'треугольная'] },
+      { k: 'groove_width', label: 'ширина', v: 4, step: 0.5, min: 0.2, max: 1000 },
+      { k: 'groove_depth', label: 'глубина', v: 2, step: 0.5, min: 0.05, max: 1000 },
+      { k: 'groove_offset', label: 'от края', v: 3, step: 0.5, min: 0, max: 1000 },
     ],
   },
   {
@@ -5080,19 +5114,69 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'spikes', name: 'шипы', title: 'Шипы на объекте', group: 'Поверхность',
+    base: 'box size=[120,80,12]', baseName: 'заготовка',
+    desc: 'Наращивает шипы на выбранной стороне существующего объекта. Без собственной площадки: корни входят в тело и образуют с ним одно целое.',
+    params: [
+      { k: 'surface', label: 'поверхность', v: 'верх', kind: 'raw', choices: ['верх', 'низ', 'право', 'лево', 'перёд', 'зад', 'вся'] },
+      { k: 'count', label: 'шипов', v: 12, step: 1, min: 1, max: 400 },
+      { k: 'height', label: 'высота шипа', v: 28, step: 1, min: 0.5, max: 5000 },
+      { k: 'base_d', label: 'основание', v: 12, step: 1, min: 0.4, max: 5000 },
+      { k: 'tip_d', label: 'остриё', v: 0.8, step: 0.2, min: 0, max: 5000 },
+      { k: 'sides', label: 'граней', v: 24, step: 1, min: 3, max: 64 },
+      { k: 'lean', label: 'наклон°', v: 0, step: 1, min: -45, max: 45 },
+      { k: 'direction', label: 'азимут°', v: 0, step: 5, min: -360, max: 360 },
+      { k: 'seed', label: 'seed', v: 1, step: 1, min: 0, max: 1000000 },
+    ],
+  },
+  {
+    op: 'hair', name: 'ворс', title: 'Волосы / иголки / мех', group: 'Поверхность',
+    base: 'box size=[80, 70, 18] round=5', baseName: 'заготовка',
+    desc: 'Наращивает выбранный существующий объект, не создаёт голову или '
+      + 'шапочку. Иголки, волоски, локоны и мех входят корнями в поверхность '
+      + 'и образуют с ней одно тело.',
+    params: [
+      { k: 'style', label: 'тип', v: 'волоски', kind: 'raw', choices: ['иголки', 'волоски', 'локоны', 'мех'] },
+      { k: 'surface', label: 'сторона', v: 'верх', kind: 'raw', choices: ['верх', 'низ', 'право', 'лево', 'перёд', 'зад', 'вся'] },
+      { k: 'length', label: 'длина', v: 24, step: 2, min: 0.5, max: 5000 },
+      { k: 'thick', label: 'толщина', v: 1.4, step: 0.2, min: 0.08, max: 100 },
+      { k: 'count', label: 'корней', v: 48, step: 4, min: 1, max: 400 },
+      { k: 'spread', label: 'разброс', v: 0.25, step: 0.05, min: 0, max: 1 },
+      { k: 'seed', label: 'seed', v: 7, step: 1, min: 0, max: 1000000 },
+    ],
+  },
+  {
     op: 'wrinkle', name: 'складки', title: 'Складки и мятая поверхность', group: 'Поверхность',
-    group: 'Поверхность', base: 'box size=[80,80,80]',
-    desc: 'Волны по поверхности: ткань, гофра, кора, пемза. Режимы: радиус, высота, шум, клетка, трещины.',
+    base: 'cylinder radius=35 height=90 segments=64', baseName: 'заготовка',
+    desc: 'Настоящая деформация наружной сетки: радиус, высота, шум, клетка и '
+      + 'трещины. У рукава можно не трогать внутреннюю стенку; плотность сетки '
+      + 'подбирается по длине волны, без диагональных артефактов.',
     params: [
       { k: 'amp', label: 'высота', v: 3, step: 0.5, min: 0, max: 1000 },
-      { k: 'freq', label: 'частота', v: 6, step: 1, min: 0.5, max: 1000 },
+      { k: 'freq', label: 'частота', v: 10, step: 1, min: 0.5, max: 1000 },
       { k: 'mode', label: 'режим', v: 'радиус', kind: 'raw', choices: ['радиус', 'высота', 'шум', 'клетка', 'трещины'] },
+      { k: 'axis', label: 'ось', v: 'z', kind: 'raw', choices: ['x', 'y', 'z'] },
+      { k: 'surface', label: 'поверхность', v: 'наружная', kind: 'raw', choices: ['наружная', 'вся'] },
+      { k: 'seed', label: 'seed', v: 3, step: 1, min: 0, max: 1000000 },
+    ],
+  },
+  {
+    op: 'crack', name: 'треснувшая', title: 'Трещины и разломы', group: 'Поверхность',
+    base: 'box size=[90, 70, 16]', baseName: 'заготовка',
+    desc: 'Удар даёт ветвящиеся лучи, разлом — длинную трещину, дерево — ровные '
+      + 'ложбинки вдоль волокон. Линии проецируются на исходную поверхность и вдавливаются.',
+    params: [
+      { k: 'mode', label: 'режим', v: 'удар', kind: 'raw', choices: ['удар', 'разлом', 'дерево'] },
+      { k: 'width', label: 'ширина', v: 2, step: 0.2, min: 0.05, max: 1000 },
+      { k: 'depth', label: 'глубина', v: 1.2, step: 0.2, min: 0.02, max: 1000 },
+      { k: 'count', label: 'линий', v: 7, step: 1, min: 1, max: 80 },
+      { k: 'seed', label: 'seed', v: 4, step: 1, min: 0, max: 1000000 },
     ],
   },
   {
     op: 'relief', name: 'рельеф', title: 'Рельеф по картинке', group: 'Поверхность',
     group: 'Поверхность', base: 'box size=[120,80,10]',
-    desc: 'Выдавливает карту высот (PNG) на поверхность: логотип, узор, текст. Обёртка вокруг тела или плоскость.',
+    desc: 'Выдавливает карту высот PNG на поверхность. Встроенная docs/pattern.png доступна всегда, включая EXE; своя картинка задаётся путём.',
     params: [
       { k: 'image', label: 'карта', v: 'docs/pattern.png', kind: 'raw' },
       { k: 'depth', label: 'глубина', v: 2, step: 0.5, min: 0.01, max: 1000 },
@@ -5100,13 +5184,20 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'porous', name: 'пористый', title: 'Поры и губка', group: 'Поверхность',
-    group: 'Поверхность', base: 'sphere radius=40',
-    desc: 'Поры, ячеи, пузыри и глазки настоящими углублениями — пемза, губка, сыр.',
+    op: 'porous', name: 'пористый', title: 'Поры и отверстия', group: 'Поверхность',
+    base: 'box size=[90, 70, 30] round=3', baseName: 'заготовка',
+    desc: 'Сферические ямы, цилиндрические отверстия и внутренние пузыри. '
+      + 'Размер, глубина, число и seed повторяемы; кромка, неровность и шероховатость '
+      + 'меняют настоящую геометрию.',
     params: [
-      { k: 'mode', label: 'режим', v: 'поры', kind: 'raw', choices: ['поры', 'ячеи', 'пузыри', 'глазки'] },
-      { k: 'size', label: 'размер', v: 4, step: 0.5, min: 0.2, max: 5000 },
-      { k: 'count', label: 'сколько', v: 60, step: 5, min: 1, max: 600 },
+      { k: 'mode', label: 'режим', v: 'поры', kind: 'raw', choices: ['поры', 'ячеи', 'отверстия', 'пузыри'] },
+      { k: 'size', label: 'радиус', v: 5, step: 0.5, min: 0.2, max: 5000 },
+      { k: 'depth', label: 'глубина', v: 2.5, step: 0.5, min: 0.05, max: 5000 },
+      { k: 'count', label: 'сколько', v: 24, step: 1, min: 1, max: 600 },
+      { k: 'smooth', label: 'переход', v: 0.35, step: 0.05, min: 0, max: 1 },
+      { k: 'uneven', label: 'неровность', v: 0.15, step: 0.05, min: 0, max: 1 },
+      { k: 'rough', label: 'шероховатость', v: 0.1, step: 0.05, min: 0, max: 1 },
+      { k: 'seed', label: 'seed', v: 3, step: 1, min: 0, max: 1000000 },
     ],
   },
   {
@@ -5131,13 +5222,14 @@ const TOOL_SHAPES = [
   },
   {
     op: 'bark', name: 'кора', title: 'Кора дерева', group: 'Поверхность',
-    group: 'Поверхность',
-    desc: 'Ствол с бороздами коры и сужением кверху — сразу готовое тело.',
+    desc: 'Нерегулярные извилистые трещины разной ширины и глубины, вторичные '
+      + 'разломы и мелкие пластины коры; повторяемый seed и бесшовная окружность.',
     params: [
       { k: 'height', label: 'высота', v: 600, step: 20, min: 5, max: 5000 },
       { k: 'radius', label: 'радиус', v: 90, step: 5, min: 1, max: 5000 },
-      { k: 'grooves', label: 'борозд', v: 14, step: 1, min: 3, max: 64 },
+      { k: 'grooves', label: 'главных борозд', v: 14, step: 1, min: 3, max: 64 },
       { k: 'depth', label: 'глубина', v: 9, step: 1, min: 0, max: 1000 },
+      { k: 'seed', label: 'seed', v: 2, step: 1, min: 0, max: 1000000 },
     ],
   },
   {
@@ -5184,17 +5276,19 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'сгиб', name: 'сгиб_угол', title: 'Сгиб от угла', group: 'Форма',
-    base: 'sheet width=120 length=120 thickness=1', baseName: 'заготовка',
-    desc: 'Складывает лист по произвольной линии: от угла, по диагонали, под '
-      + 'любым углом к краю. dir — куда идёт линия (0 — вдоль X, 45 — от угла), '
-      + 'angle — насколько сложить, side — какая половина подвижная. Бумага не '
-      + 'тянется: это честная изометрия.',
+    op: 'сгиб', name: 'сгиб_угол', title: 'Сгиб от угла / гармошка', group: 'Форма',
+    base: 'sheet width=120 length=240 thickness=1', baseName: 'заготовка',
+    desc: 'Сгибает собственную сетку исходного листа по любой линии, включая '
+      + 'диагональ и угол. parts=2 — один сгиб, больше — гармошка с равными '
+      + 'плоскими полотнищами. Никакой новой плоскости сверху.',
     params: [
       { k: 'at', label: 'точка', v: '[0, 0, 1]', kind: 'raw' },
-      { k: 'dir', label: 'линия, °', v: 45, step: 15, min: -180, max: 180 },
-      { k: 'angle', label: 'сложить, °', v: 120, step: 10, min: 1, max: 180 },
+      { k: 'dir', label: 'линия, °', v: 90, step: 15, min: -180, max: 180 },
+      { k: 'angle', label: 'сложить, °', v: 150, step: 10, min: 1, max: 180 },
+      { k: 'parts', label: 'полотнищ', v: 5, step: 1, min: 2, max: 12 },
       { k: 'side', label: 'сторона', v: '1', kind: 'raw', choices: ['1', '-1'] },
+      { k: 'gap', label: 'просвет', v: 0.5, step: 0.25, min: 0, max: 5000 },
+      { k: 'sharp', label: 'острота', v: 0.1, step: 0.1, min: 0, max: 1 },
     ],
   },
   {
@@ -5237,44 +5331,9 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'hair', name: 'волосы', title: 'Волосы', group: 'Люди и вещи',
-    group: 'Люди и вещи',
-    desc: 'Причёска из прядей одним телом: аниме, хвост, короткий, мех. Пряди, рваность, толщина.',
-    params: [
-      { k: 'length', label: 'длина', v: 200, step: 10, min: 2, max: 5000 },
-      { k: 'radius', label: 'голова', v: 65, step: 5, min: 3, max: 5000 },
-      { k: 'style', label: 'стиль', v: 'аниме', kind: 'raw', choices: ['аниме', 'хвост', 'короткий', 'мех'] },
-      { k: 'clumps', label: 'прядей', v: 24, step: 2, min: 3, max: 400 },
-    ],
-  },
-  {
-    op: 'skirt', name: 'юбка', title: 'Юбка', group: 'Люди и вещи',
-    group: 'Люди и вещи',
-    desc: 'Юбка со складками: пояс, подол, толщина ткани — полая, её можно надеть на фигуру.',
-    params: [
-      { k: 'waist', label: 'пояс', v: 76, step: 2, min: 5, max: 5000 },
-      { k: 'hem', label: 'подол', v: 190, step: 5, min: 5, max: 5000 },
-      { k: 'length', label: 'длина', v: 240, step: 10, min: 3, max: 5000 },
-      { k: 'pleats', label: 'складок', v: 12, step: 2, min: 0, max: 120 },
-      { k: 'depth', label: 'глубина', v: 10, step: 1, min: 0, max: 1000 },
-      { k: 'thick', label: 'ткань', v: 3, step: 0.5, min: 0.2, max: 5000 },
-    ],
-  },
-  {
-    op: 'jacket', name: 'пиджак', title: 'Пиджак', group: 'Люди и вещи',
-    group: 'Люди и вещи',
-    desc: 'Пиджак с рукавами, лацканами и пуговицами: обхваты в миллиметрах, силуэт по талии.',
-    params: [
-      { k: 'height', label: 'высота', v: 740, step: 20, min: 50, max: 5000 },
-      { k: 'chest', label: 'грудь', v: 1040, step: 20, min: 100, max: 5000 },
-      { k: 'waist', label: 'талия', v: 920, step: 20, min: 100, max: 5000 },
-      { k: 'buttons', label: 'пуговиц', v: 2, step: 1, min: 0, max: 4 },
-    ],
-  },
-  {
     op: 'pattern', name: 'узор', title: 'Покраска узором', group: 'Покраска',
     group: 'Покраска', base: 'box size=[60,60,60]',
-    desc: 'Фигуры на поверхности: круги (горошек), кольца, полосы, клетка, треугольники, ромбы, волны.',
+    desc: 'Фигуры на поверхности: круги, кольца, полосы, клетка, треугольники, ромбы и волны. Сетка автоматически разбивается под размер узора, форма не меняется.',
     params: [
       { k: 'color', label: 'цвет', v: '#d94f3d', kind: 'raw' },
       { k: 'shape', label: 'фигура', v: 'круги', kind: 'raw', choices: ['круги', 'кольца', 'полосы', 'клетка', 'треугольники', 'ромбы', 'волны'] },
@@ -5286,7 +5345,7 @@ const TOOL_SHAPES = [
   {
     op: 'anime', name: 'аниме-стиль', title: 'Аниме / манга', group: 'Покраска',
     noTarget: true,
-    base: 'ваза = lathe points=[[0,0],[26,0],[40,30],[30,62],[16,90],[0,92]]',
+    base: 'lathe points=[[0,0],[26,0],[40,30],[30,62],[16,90],[0,92]]',
     desc: 'Чёрные контуры по форме: силуэт, рёбра и стыки деталей. Плюс ступени '
       + 'тона, растр и бумага — и в окне, и на снимках.',
     params: [
@@ -5304,8 +5363,7 @@ const TOOL_SHAPES = [
    групп в панели — карточки внутри группы идут в порядке массива. */
 const PRIMITIVE_GROUPS = ['Стандартные примитивы', 'Производные примитивы',
   'Природные примитивы', 'Готовые детали'];
-const TOOL_GROUP_ORDER = ['Скульпт', 'Поверхность', 'Форма', 'Массивы',
-  'Люди и вещи', 'Покраска'];
+const TOOL_GROUP_ORDER = ['Скульпт', 'Поверхность', 'Форма', 'Массивы', 'Покраска'];
 const TOOL_RECIPES = [
   {
     title: 'Наполнение',

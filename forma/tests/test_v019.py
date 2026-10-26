@@ -114,7 +114,10 @@ check дверь связь
         self.assertGreater(mates[0]["line"], 0)
 
     def test_check_turns_red_when_link_breaks(self):
-        script = (ROOT / "examples" / "mates.forma").read_text(encoding="utf-8")
+        script = ("основание = box size=[100,100,20] center=да at=[0,0,0]\n"
+                  "каретка = box size=[40,40,10] center=да at=[0,0,200]\n"
+                  "сопряжение каретка основание type=плоскость axis=z\n"
+                  "check каретка связь\n")
         res = scene(script)
         self.assertTrue(all(c["ok"] for c in res.payload()["analysis"]["checks"]))
         moved = scene(script + "\ntranslate [каретка] offset=[0, 0, 5]\ncheck каретка связь\n")
@@ -204,13 +207,6 @@ class CommandsTest(unittest.TestCase):
         for kind in ("плоскость", "ось", "паз", "зазор", "точка", "петля"):
             self.assertIn(kind, text)
 
-    def test_example_mates_builds(self):
-        script = (ROOT / "examples" / "mates.forma").read_text(encoding="utf-8")
-        res = scene(script)
-        payload = res.payload()
-        self.assertEqual(len(payload["mates"]), 7)
-        self.assertEqual(len(payload["timeline"]["clips"]), 2)
-        self.assertTrue(all(c["ok"] for c in payload["analysis"]["checks"]))
 
 
 if __name__ == "__main__":

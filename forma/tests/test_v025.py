@@ -89,9 +89,10 @@ class TestSurfaceTools(unittest.TestCase):
         self.assertEqual(arr.shape, (64, 64))
         self.assertAlmostEqual(float(arr.mean()), 0.5, delta=0.25)
 
-    def test_relief_needs_image(self):
-        message = fails("в = cylinder radius=30 height=70\nrelief в depth=4")
-        self.assertIn("image", message.lower())
+    def test_relief_has_builtin_image(self):
+        s = last(ok("в = box size=[60,50,12]\nrelief в depth=2"))
+        self.assertEqual(s.manifold.status(), s.manifold.status().NoError)
+        self.assertGreater(s.manifold.num_tri(), 1000)
 
     def test_porous_modes(self):
         for mode in ("поры", "ячеи", "пузыри", "глазки"):
@@ -172,84 +173,24 @@ class TestBlade(unittest.TestCase):
 
 
 class TestFigure(unittest.TestCase):
-    """Волосы, юбка, пиджак, экран, зеркало."""
+    """Наращивание волос на исходной поверхности и готовое зеркало."""
 
     def test_hair_styles_are_single_bodies(self):
-        cases = {
-            "аниме": "в = hair length=200 style=аниме clumps=24",
-            "хвост": "в = hair length=240 style=хвост radius=80",
-            "короткий": "в = hair length=120 style=короткий clumps=18",
-            "мех": "в = hair radius=60 length=14 style=мех density=80",
-        }
-        for style, script in cases.items():
+        for style in ("иголки", "волоски", "локоны", "мех"):
             with self.subTest(style=style):
-                s = last(ok(script))
+                s = last(ok("о = box size=[50,40,14]\n"
+                            f"в = hair [о] style={style} surface=верх count=12 length=12"))
+                self.assertEqual(s.manifold.status(), s.manifold.status().NoError)
                 self.assertEqual(parts(s.manifold), 1, f"{style}: одно тело")
-                self.assertGreater(s.manifold.volume(), 500.0)
+                self.assertGreater(size(s.manifold)[2], 20.0)
+
+    def test_hair_needs_an_existing_object(self):
+        message = fails("в = hair style=мех")
+        self.assertIn("объект", message.lower())
 
     def test_hair_asks_for_known_style(self):
-        message = fails("в = hair style=ирокез")
-        self.assertIn("причёск", message.lower())
+        message = fails("о = box size=[30,30,10]\nв = hair [о] style=ирокез")
         self.assertIn("ирокез", message)
-
-    def test_skirt_is_hollow_and_flares(self):
-        s = last(ok("ю = skirt waist=76 hem=200 length=240 pleats=12 depth=10 thick=3"))
-        w, d, h = size(s.manifold)
-        self.assertAlmostEqual(h, 240.0, delta=1.0)
-        self.assertAlmostEqual(max(w, d), 200.0, delta=4.0)
-        self.assertEqual(parts(s.manifold), 1)
-        # внутри пусто: объём куда меньше «цилиндра» по подолу
-        self.assertLess(s.manifold.volume(), 3.14159 * 100 ** 2 * 240 * 0.35)
-
-    def test_skirt_pleats_add_geometry(self):
-        smooth = last(ok("ю = skirt waist=76 hem=200 length=240 pleats=0"))
-        pleated = last(ok("ю = skirt waist=76 hem=200 length=240 pleats=24"))
-        self.assertGreater(pleated.manifold.num_tri(), smooth.manifold.num_tri())
-
-    def test_skirt_rejects_too_thick_cloth(self):
-        self.assertIn("толст", fails("ю = skirt waist=70 hem=180 thick=40"))
-
-    def test_jacket_has_shoulders_and_opening(self):
-        s = last(ok("п = jacket height=740"))
-        w, d, h = size(s.manifold)
-        self.assertAlmostEqual(h, 740.0, delta=2.0)
-        self.assertGreater(w, 400.0)          # плечи с рукавами
-        self.assertGreater(d, 200.0)
-        self.assertEqual(parts(s.manifold), 1)
-        # это одежда, а не брусок: объём меньше 20 % габаритного
-        self.assertLess(s.manifold.volume(), w * d * h * 0.20)
-
-    def test_display_builds_case_screen_and_glass(self):
-        b = ok('д = display width=160 height=90 thick=40 style=будильник content=led text="21:38"')
-        names = [o.name for o in b.scene.objects.values()]
-        self.assertIn("д", names)
-        self.assertIn("д.экран", names)
-        self.assertIn("д.цифры", names)
-        self.assertIn("д.стекло", names)
-        case = b.scene.resolve("д")
-        self.assertEqual(parts(case.manifold), 1)
-        self.assertEqual(size(case.manifold)[0], 160.0)
-        digits = b.scene.resolve("д.цифры")
-        self.assertTrue(digits.emissive)
-        self.assertGreater(digits.emissive_strength, 1.0)
-        glass = b.scene.resolve("д.стекло")
-        self.assertGreater(glass.transmission, 0.5)
-
-    def test_display_styles_stand_differently(self):
-        # с 0.41 экран у всех видов смотрит в −Y: телефон тоже стоит
-        phone = ok("д = display width=80 height=160 thick=8 style=смартфон").scene.resolve("д")
-        monitor = ok("д = display width=300 height=200 thick=16 style=монитор").scene.resolve("д")
-        self.assertGreater(size(phone.manifold)[2], 150.0)
-        self.assertLess(size(phone.manifold)[1], 20.0)     # толщина по Y
-        self.assertAlmostEqual(size(monitor.manifold)[2], 200.0, delta=2.0)
-        flat = ok("д = display width=80 height=160 thick=8 style=смартфон "
-                  "plane=плашмя").scene.resolve("д")
-        self.assertLess(size(flat.manifold)[2], 20.0)      # плашмя — лежит
-
-    def test_display_rejects_unknown_style(self):
-        message = fails("д = display style=телевизор")
-        self.assertIn("экрана", message.lower())
-        self.assertIn("телевизор", message)
 
     def test_mirror_has_frame_and_reflecting_plate(self):
         b = ok("з = mirror_plate width=200 height=300 frame=14")
@@ -325,8 +266,7 @@ class TestHelpAndRegistry(unittest.TestCase):
     """Новые команды есть в справке и объяснены по-русски."""
 
     NEW = ("wrinkle", "relief", "porous", "scales", "lattice", "bark", "bricks",
-           "repair", "blade", "hair", "skirt", "jacket", "display", "mirror_plate",
-           "pattern")
+           "repair", "blade", "hair", "crack", "mirror_plate", "pattern")
 
     def test_registered_with_examples_and_params(self):
         import forma.run  # noqa: F401 — реестр наполняется при импорте

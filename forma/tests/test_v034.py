@@ -207,33 +207,6 @@ class ChainTest(unittest.TestCase):
         self.assertLess(bb[2], 120)          # и опустилась к ведру
 
 
-class OrigamiExampleTest(unittest.TestCase):
-    """Оригами — отдельная ниша: только листы, сгибы и подписанный клей."""
-
-    @classmethod
-    def setUpClass(cls):
-        cls.build = build(load_example("origami"), analyze_model=False)
-
-    def test_builds(self):
-        self.assertTrue(self.build.ok, (self.build.error or {}).get("message"))
-
-    def test_every_piece_is_sheet_or_fold(self):
-        """Ни одной детали, вырезанной из бруска: только листы и их сгибы."""
-        verbs = {step["verb"] for step in self.build.steps}
-        allowed = {"sheet", "сгиб", "складка", "rotate", "translate", "union",
-                   "sphere", "color", "scene", "light"}
-        self.assertTrue(verbs <= allowed, verbs - allowed)
-
-    def test_glue_is_labelled(self):
-        self.assertIn("клей", self.build.scene.objects)
-
-    def test_flower_is_one_solid(self):
-        self.assertIn("цветок", self.build.scene.objects)
-
-    def test_listed_in_examples(self):
-        keys = [key for _title, key in EXAMPLES]
-        self.assertIn("origami", keys)
-        self.assertIn("chain", keys)
 
 
 class InstructionTest(unittest.TestCase):

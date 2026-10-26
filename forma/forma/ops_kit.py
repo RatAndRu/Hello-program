@@ -16,6 +16,7 @@ import numpy as np
 from .errors import GeometryError
 from .geometry import manifold_from_arrays, manifold_mesh
 from .ops import anchor, make_solid, op, stand_flat_sign
+from .shape_features import varied_edge_thickness
 
 
 # --------------------------------------------------------------------------- #
@@ -138,8 +139,9 @@ def _revolve_profile(points, segments: int, what: str) -> mf.Manifold:
     return solid
 
 
-def _tube_mesh(pts: np.ndarray, radius, sides: int, what: str) -> mf.Manifold:
-    """Труба переменного радиуса по пути: кольца по касательным, митры, торцы."""
+def _tube_mesh(pts: np.ndarray, radius, sides: int, what: str,
+               wall: float | None = None) -> mf.Manifold:
+    """Труба по пути; при wall сразу строит полое тело с кольцевыми торцами."""
     pts = np.asarray(pts, dtype=np.float64)
     radii = np.asarray(radius if isinstance(radius, (list, tuple, np.ndarray))
                        else [radius] * len(pts), dtype=np.float64)
@@ -161,6 +163,7 @@ def _tube_mesh(pts: np.ndarray, radius, sides: int, what: str) -> mf.Manifold:
     if abs(float(np.dot(tangents[0], ref))) > 0.9:
         ref = np.array([1.0, 0.0, 0.0])
     rings = []
+    frames = []
     prev_n = None
     for p, t in zip(pts, tangents):
         if prev_n is None:
@@ -177,7 +180,43 @@ def _tube_mesh(pts: np.ndarray, radius, sides: int, what: str) -> mf.Manifold:
                                          + math.sin(2 * math.pi * j / sides) * bvec)
                 for j in range(sides)]
         rings.append(ring)
+        frames.append((p, nvec.copy(), bvec.copy()))
         prev_n = nvec
+    if wall is not None:
+        inner = []
+        for i, (p, nvec, bvec) in enumerate(frames):
+            r = radii[i] - wall
+            if r <= 0.0:
+                raise GeometryError(f"Стенка {what} не оставляет просвета.")
+            inner.append([p + r * (math.cos(2 * math.pi * j / sides) * nvec
+                                   + math.sin(2 * math.pi * j / sides) * bvec)
+                          for j in range(sides)])
+        verts = []
+        for outer_ring, inner_ring in zip(rings, inner):
+            verts.extend(tuple(v) for v in outer_ring)
+            verts.extend(tuple(v) for v in inner_ring)
+        faces = []
+        stride = sides * 2
+        for i in range(len(rings) - 1):
+            b0, b1 = i * stride, (i + 1) * stride
+            for j in range(sides):
+                j2 = (j + 1) % sides
+                # Наружная поверхность.
+                faces.append((b0 + j, b0 + j2, b1 + j2))
+                faces.append((b0 + j, b1 + j2, b1 + j))
+                # Внутренняя поверхность с противоположной ориентацией.
+                faces.append((b0 + sides + j, b1 + sides + j2, b0 + sides + j2))
+                faces.append((b0 + sides + j, b1 + sides + j, b1 + sides + j2))
+        last = (len(rings) - 1) * stride
+        for j in range(sides):
+            j2 = (j + 1) % sides
+            # Оба торца — плоские кольца, без центральных вершин и boolean.
+            faces.append((j, sides + j, sides + j2))
+            faces.append((j, sides + j2, j2))
+            faces.append((last + j, last + j2, last + sides + j2))
+            faces.append((last + j, last + sides + j2, last + sides + j))
+        return manifold_from_arrays(np.asarray(verts, dtype=np.float64),
+                                    np.asarray(faces, dtype=np.int64), what)
     verts = [tuple(v) for ring in rings for v in ring]
     faces = []
     for i in range(len(rings) - 1):
@@ -291,7 +330,8 @@ def _simple_pipe_path(length: float, angle: float, radius: float,
     category="Тела вращения и развёртки",
     summary="Труба с настоящей стенкой. Без path достаточно length, diameter "
             "и wall: angle −180…180° задаёт сгиб в XZ, joint=плавный/острый, "
-            "radius — радиус центральной дуги. Старый path=[[x,y,z],…] сохранён.",
+            "radius — радиус центральной дуги. Оба открытых торца — плоские "
+            "кольца одной сетки, без булева вычитания. Старый path сохранён.",
     example="прямая = pipe length=180 diameter=24 wall=2\n"
             "плавная = pipe length=220 angle=90 radius=70 joint=плавный diameter=24 wall=2\n"
             "острая = pipe length=180 angle=60 joint=острый diameter=20 wall=1.5",
@@ -327,9 +367,7 @@ def pipe(a, name):
         if joint is None:
             raise GeometryError("pipe.joint=плавный или острый.")
         pts = _simple_pipe_path(length, angle, radius, joint, diameter)
-    outer = _tube_mesh(pts, diameter / 2.0, sides, "труба")
-    inner = _tube_mesh(pts, diameter / 2.0 - wall, sides, "труба")
-    solid = outer - inner
+    solid = _tube_mesh(pts, diameter / 2.0, sides, "труба", wall=wall)
     if solid.is_empty() or solid.volume() <= 1e-6 or len(solid.decompose()) != 1:
         raise GeometryError("Труба получилась пустой или распалась на части.")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="pipe")
@@ -744,7 +782,8 @@ def rock(a, name):
     return make_solid(a.scene, name, _placed(a, hull), a, kind="rock")
 
 
-def _leaf_outline(kind: str, length: float, width: float, count: int):
+def _leaf_outline(kind: str, length: float, width: float, count: int,
+                  seed: int = 1, jitter: float = 0.0):
     """Контуры видов листа; ось длины X, черенок слева, кончик справа."""
     if kind in ("овал", "заострённый", "дуб"):
         upper = []
@@ -807,13 +846,28 @@ def _leaf_outline(kind: str, length: float, width: float, count: int):
         # Поворот: остриё +X, черенок −X, как и у остальных видов leaf.
         rotated = [(y, -x) for x, y in canonical]
         points = []
-        sub = max(1, count // len(rotated))
+        rng = np.random.default_rng(seed)
+        area2 = sum(rotated[i][0] * rotated[(i + 1) % len(rotated)][1]
+                    - rotated[(i + 1) % len(rotated)][0] * rotated[i][1]
+                    for i in range(len(rotated)))
+        orient = 1.0 if area2 > 0.0 else -1.0
+        sub = max(6, int(math.ceil(count / len(rotated))))
         for i, p0 in enumerate(rotated):
             p1 = rotated[(i + 1) % len(rotated)]
+            dx, dy = p1[0] - p0[0], p1[1] - p0[1]
+            seg_len = math.hypot(dx, dy)
+            outward = np.asarray([orient * dy, -orient * dx]) / max(seg_len, 1e-12)
+            stem = (p0[0] + p1[0]) * 0.5 < -0.30
+            teeth = 2 if seg_len > 0.075 else 1
+            amplitude = min(0.007 + jitter * 0.024, seg_len * 0.17)
+            random_gain = 1.0 + float(rng.uniform(-0.8, 0.8)) * jitter
             for j in range(sub):
                 t = j / sub
-                points.append((p0[0] * (1 - t) + p1[0] * t,
-                               p0[1] * (1 - t) + p1[1] * t))
+                phase = (t * teeth) % 1.0
+                tooth = 1.0 - abs(2.0 * phase - 1.0)
+                shift = 0.0 if stem else amplitude * random_gain * tooth
+                points.append((p0[0] * (1 - t) + p1[0] * t + outward[0] * shift,
+                               p0[1] * (1 - t) + p1[1] * t + outward[1] * shift))
     # Новые виды нормируются по фактическому контуру: length/width точные.
     xs = [p[0] for p in points]
     ys = [p[1] for p in points]
@@ -827,15 +881,20 @@ def _leaf_outline(kind: str, length: float, width: float, count: int):
     category="Примитивы",
     summary="Лист растения с толщиной и изгибом. kind/shape: овал, "
             "липа/сердцевидный, дуб, клен или заострённый — контуры действительно "
-            "различаются выемками и лопастями.",
+            "различаются выемками и лопастями. У клёна мелкие зубцы повторяются "
+            "по seed, jitter меняет их разброс, edge сужает наружную кромку.",
     example="лист = leaf length=90 width=45 thickness=2 curl=0.25\n"
             "клен = leaf length=90 width=70 kind=клен\n"
             "липа = leaf length=80 width=65 kind=липа",
     params={"length": "длина, мм (90)", "width": "ширина, мм (45)",
             "kind": "овал, липа/сердцевидный, дуб, клен, заострённый",
             "shape": "синоним kind; если задан, перекрывает kind",
-            "thickness": "толщина, мм (2)", "curl": "изгиб 0..1 (0.25)",
-            "segments": "точек контура (48)",
+            "thickness": "основная толщина, мм (2)", "curl": "изгиб 0..1 (0.25)",
+            "edge": "толщина наружной кромки, мм (= thickness); меньше — сужение",
+            "edge_band": "ширина перехода от кромки к полной толщине, мм (8% размера)",
+            "seed": "зерно случайной кромки клёна (1)",
+            "jitter": "случайная амплитуда мелких зубцов клёна 0..1 (0.18)",
+            "segments": "детализация контура (48); у клёна добавляются мелкие зубцы",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом "
                      "вверх — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
@@ -858,8 +917,34 @@ def leaf(a, name):
     }.get(raw_kind)
     if kind is None:
         raise GeometryError("leaf: kind=овал, липа, дуб, клен или заострённый.")
-    points = _leaf_outline(kind, length, width, count)
+    seed = int(a.num("seed", 1, minv=0) or 0)
+    jitter = float(a.num("jitter", 0.18 if kind == "клен" else 0.0,
+                         minv=0.0, maxv=1.0) or 0.0)
+    edge = float(a.num("edge", thickness, minv=0.05, maxv=thickness))
+    edge_band = float(a.num("edge_band", min(length, width) * 0.08, minv=0.05))
+    points = _leaf_outline(kind, length, width, count, seed=seed, jitter=jitter)
     body = mf.Manifold.extrude(mf.CrossSection([_profile(points)]), float(thickness))
+    if edge < thickness - 1e-9:
+        contour = np.asarray(points, dtype=np.float64)
+
+        def rim(points_xyz):
+            # Точное расстояние до исходного контура в плоскости листа.
+            xy = points_xyz[:, :2]
+            result = np.full(len(xy), float(edge_band), dtype=np.float64)
+            for i in range(len(contour)):
+                p0 = contour[i]
+                p1 = contour[(i + 1) % len(contour)]
+                d = p1 - p0
+                denom = float(np.dot(d, d))
+                if denom < 1e-16:
+                    continue
+                t = np.clip(((xy - p0) @ d) / denom, 0.0, 1.0)
+                nearest = p0 + t[:, None] * d
+                result = np.minimum(result, np.linalg.norm(xy - nearest, axis=1))
+            return np.clip(1.0 - result / edge_band, 0.0, 1.0)
+
+        body = varied_edge_thickness(body, thickness, edge, edge_band, rim, "лист",
+                                     center_z=thickness / 2.0)
     if curl > 0:
         verts, faces = manifold_mesh(body)
         out = verts.copy()

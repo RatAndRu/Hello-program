@@ -8,7 +8,8 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import manifold_mesh
+from .geometry import (ensure_ccw, manifold_from_arrays, manifold_mesh,
+                       _rings_to_arrays)
 from .ops import anchor, make_solid, op
 from .ops_kit import (_dedupe, _one, _pair, _placed, _profile, _rect_profile,
                       _revolve_profile, _seg, _shifted, _triple, _tube_mesh)
@@ -17,50 +18,74 @@ from .shape_features import apply_smooth, rounded_extrude, transition_radius
 
 @op("gusset", aliases=("косынка", "усилитель_угла", "треугольник_жесткости"),
     category="Примитивы",
-    summary="Косынка — прямоугольный треугольный лист. shape=прямо даёт "
-            "чистую гипотенузу; shape=горка возвращает круговую выпуклость "
-            "с одним прямоугольным вогнутым вырезом, глубина и ширина "
-            "которого настраиваются отдельно. Катеты идут по +X и +Z.",
+    summary="Косынка с шестью точно названными контурами: прямая, "
+            "прямая_с_пазом, выпуклая, выпуклая_с_пазом, вогнутая и "
+            "вогнутая_с_пазом. Паз прямоугольный; дуга и его наличие "
+            "выбираются независимо. Старые прямо и горка сохранены как алиасы.",
     example="косынка = gusset leg=70 height=55 thickness=6\n"
-            "горка = gusset leg=70 height=55 thickness=6 shape=горка notch=8 notch_width=24",
+            "паз = gusset leg=70 height=55 thickness=6 shape=прямая_с_пазом notch=8\n"
+            "впадина = gusset leg=70 height=55 thickness=6 shape=вогнутая",
     params={"leg": "горизонтальный катет по X, мм (60)",
             "height": "вертикальный катет по Z, мм (60)",
             "thickness": "толщина листа по Y, мм (6)",
-            "shape": "прямо — чистый треугольник; горка — круглая дуга "
-                     "с одним прямоугольным вырезом (прямо)",
-            "notch": "глубина прямоугольного выреза от его плеч, мм (8)",
-            "notch_width": "ширина одного выреза вдоль исходной гипотенузы, мм (24)",
+            "shape": "прямая, прямая_с_пазом, выпуклая, выпуклая_с_пазом, "
+                     "вогнутая или вогнутая_с_пазом",
+            "notch": "глубина паза для режима с_пазом, мм (8)",
+            "notch_width": "ширина паза вдоль исходной гипотенузы, мм (24)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def gusset(a, name):
     leg = float(a.num("leg", 60.0, minv=0.2, maxv=10000.0))
     height = float(a.num("height", 60.0, minv=0.2, maxv=10000.0))
     thick = float(a.num("thickness", 6.0, minv=0.05, maxv=2000.0))
-    shape = (a.text("shape", "прямо") or "прямо").strip().lower()
-    if shape in ("прямо", "прямая", "треугольник", "straight"):
-        shape = "прямо"
-    elif shape in ("горка", "круглая", "дуга", "hill", "arc"):
-        shape = "горка"
-    else:
-        raise GeometryError("gusset: shape=прямо или горка.")
+    raw = (a.text("shape", "прямая") or "прямая").strip().lower()
+    shape = {
+        "прямо": "прямая", "прямая": "прямая", "треугольник": "прямая", "straight": "прямая",
+        "прямая_с_пазом": "прямая_с_пазом", "прямо_с_пазом": "прямая_с_пазом",
+        "прямая_с_вырезом": "прямая_с_пазом",
+        "горка": "выпуклая_с_пазом", "круглая": "выпуклая_с_пазом", "дуга": "выпуклая_с_пазом",
+        "hill": "выпуклая_с_пазом", "arc": "выпуклая_с_пазом",
+        "горка_без_выреза": "выпуклая", "выпуклая": "выпуклая",
+        "выпуклая_без_паза": "выпуклая",
+        "выпуклая_с_пазом": "выпуклая_с_пазом", "горка_с_пазом": "выпуклая_с_пазом",
+        "вогнутая": "вогнутая", "лодка": "вогнутая", "впадина": "вогнутая",
+        "вогнутая_без_паза": "вогнутая",
+        "вогнутая_с_пазом": "вогнутая_с_пазом", "лодка_с_пазом": "вогнутая_с_пазом",
+    }.get(raw)
+    if shape is None:
+        raise GeometryError("gusset: shape=прямая, прямая_с_пазом, выпуклая, "
+                            "выпуклая_с_пазом, вогнутая или вогнутая_с_пазом.")
+    arc_kind = "прямая" if shape.startswith("прямая") else ("выпуклая" if shape.startswith("выпуклая") else "вогнутая")
+    with_notch = shape.endswith("_с_пазом")
     points = [(0.0, 0.0), (leg, 0.0)]
-    if shape == "горка":
-        hyp = math.hypot(leg, height)
-        hill = min(leg, height) * 0.14
-        notch = float(a.num("notch", 8.0, minv=0.0, maxv=min(leg, height) * 0.6) or 0.0)
-        notch_w = float(a.num("notch_width", 24.0, minv=0.2, maxv=hyp * 0.8))
-        normal = np.asarray([height / hyp, leg / hyp])
-        radius = hyp * hyp / (8.0 * hill) + hill / 2.0
+    hyp = math.hypot(leg, height)
+    hill = min(leg, height) * 0.14 if arc_kind != "прямая" else 0.0
+    notch = float(a.num("notch", 8.0, minv=0.0,
+                        maxv=min(leg, height) * 0.6) or 0.0) if with_notch else 0.0
+    notch_w = float(a.num("notch_width", 24.0, minv=0.2,
+                          maxv=hyp * 0.8)) if with_notch else 0.0
+    normal = np.asarray([height / hyp, leg / hyp])
+    radius = hyp * hyp / (8.0 * hill) + hill / 2.0 if hill > 1e-9 else 1.0
 
-        def point(t, offset):
-            base = np.asarray([leg * (1.0 - t), height * t])
-            return tuple(base + normal * offset)
+    def point(t, offset):
+        base = np.asarray([leg * (1.0 - t), height * t])
+        return tuple(base + normal * offset)
 
-        def arc_offset(t):
-            q = (t - 0.5) * hyp
-            return math.sqrt(max(0.0, radius * radius - q * q)) - (radius - hill)
+    def arc_offset(t):
+        if hill <= 1e-9:
+            return 0.0
+        q = (t - 0.5) * hyp
+        value = math.sqrt(max(0.0, radius * radius - q * q)) - (radius - hill)
+        return value if arc_kind == "выпуклая" else -value
 
-        t0 = 0.5 - notch_w / (2.0 * hyp)
-        t1 = 0.5 + notch_w / (2.0 * hyp)
+    t0 = 0.5 - notch_w / (2.0 * hyp)
+    t1 = 0.5 + notch_w / (2.0 * hyp)
+    if arc_kind == "прямая":
+        # У прямой гипотенузы промежуточные коллинеарные вершины не нужны:
+        # они засоряли сетку даже у обычного прямоугольного треугольника.
+        if with_notch and notch > 1e-6:
+            points.extend([point(t0, 0.0), point(t0, -notch),
+                           point(t1, -notch), point(t1, 0.0)])
+    else:
         edge = []
         for i in range(1, 65):
             t = i / 64.0
@@ -69,8 +94,6 @@ def gusset(a, name):
             edge.append(point(t, arc_offset(t)))
         edge.append(point(t0, arc_offset(t0)))
         if notch > 1e-6:
-            # Два вертикальных плеча и одно прямое дно в локальных осях
-            # гипотенузы: именно один прямоугольный вогнутый вырез.
             bottom = arc_offset(t0) - notch
             edge.append(point(t0, bottom))
             edge.append(point(t1, bottom))
@@ -84,6 +107,7 @@ def gusset(a, name):
     triangle = mf.CrossSection([_profile(points)])
     solid = mf.Manifold.extrude(triangle, thick).rotate((90.0, 0.0, 0.0))
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="gusset")
+    out.meta["gusset_shape"] = shape
     out.notes.append(f"косынка {shape}: катеты {leg:g}×{height:g} мм, лист {thick:g} мм")
     return out
 
@@ -190,13 +214,24 @@ def скоба(a, name):
 # --------------------------------------------------------------------------- #
 #  Люверс
 # --------------------------------------------------------------------------- #
+def _fill_cap(r: float, radius: float, sag: float) -> float:
+    sphere_r = (radius * radius + sag * sag) / (2.0 * sag)
+    return sag - (math.sqrt(max(0.0, sphere_r * sphere_r - r * r))
+                  - math.sqrt(max(0.0, sphere_r * sphere_r - radius * radius)))
+
+
 @op("grommet", aliases=("люверс", "втулка_с_бортиком", "блочка"),
     category="Примитивы",
-    summary="Люверс (блочка): втулка с бортиком под шнур или провод. "
-            "Внутренний диаметр, стенка, высота и ширина бортика.",
-    example="люверс = grommet diameter=12 height=8 wall=1.6 flange=3",
+    summary="Люверс (блочка): втулка с бортиком. fill заполняет верхнее "
+            "отверстие заподлицо, выпуклым куполом или вогнутой чашей; "
+            "заполнение и втулка остаются одним телом.",
+    example="люверс = grommet diameter=12 height=8 wall=1.6 flange=3\n"
+            "кнопка = grommet diameter=12 height=8 fill=выпуклая fill_h=2\n"
+            "чаша = grommet diameter=12 height=8 fill=вогнутая fill_h=1.5",
     params={"diameter": "внутренний диаметр (12)", "height": "высота втулки (8)",
             "wall": "толщина стенки (1.6)", "flange": "вылет бортика (3)",
+            "fill": "нет, ровно, выпуклая или вогнутая верхняя крышка (нет)",
+            "fill_h": "толщина ровной крышки / стрелка купола или чаши, мм (0.75 wall)",
             "smooth": "уровни Loop-сглаживания всего люверса 0…4 (0)",
             "segments": "сегментов (48)", "at": "положение [x,y,z]",
             "center": "центрировать по высоте"})
@@ -205,6 +240,13 @@ def grommet(a, name):
     height = float(a.num("height", 8.0, minv=1.0))
     wall = float(a.num("wall", 1.6, minv=0.3))
     flange = float(a.num("flange", 3.0, minv=0.2))
+    fill = (a.text("fill", "нет") or "нет").strip().lower()
+    fill = {"нет": "нет", "0": "нет", "ровно": "ровно", "плоско": "ровно",
+            "плоская": "ровно", "выпуклая": "выпуклая", "линза": "выпуклая",
+            "купол": "выпуклая", "вогнутая": "вогнутая", "чаша": "вогнутая"}.get(fill)
+    if fill is None:
+        raise GeometryError("grommet: fill=нет, ровно, выпуклая или вогнутая.")
+    fill_h = float(a.num("fill_h", wall * 0.75, minv=0.1, maxv=1000.0))
     seg = _seg(a, "segments", 48, 12, 160)
     ri = d / 2.0
     ro = ri + wall
@@ -212,8 +254,25 @@ def grommet(a, name):
            (ro + flange, max(0.6, height - wall * 2.0)),
            (ro + flange, height), (ri, height)]
     solid = _revolve_profile(pts, seg, "люверса")
+    if fill != "нет":
+        radius = ri + min(0.05, wall * 0.05)
+        if fill == "ровно":
+            plug = mf.Manifold.cylinder(fill_h, radius, radius, seg).translate(
+                (0.0, 0.0, height - fill_h))
+        else:
+            base = height - (max(wall, 0.4) if fill == "выпуклая"
+                             else max(wall, fill_h + 0.3))
+            profile = [(0.0, base), (radius, base), (radius, height)]
+            for i in range(23, -1, -1):
+                r = radius * i / 24.0
+                cap = _fill_cap(r, radius, fill_h)
+                z = height + fill_h - cap if fill == "выпуклая" else height - fill_h + cap
+                profile.append((r, z))
+            plug = _revolve_profile(profile, seg, "заполнения люверса")
+        solid = solid + plug
     solid = apply_smooth(solid, a, "люверс")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="grommet")
+    out.meta["fill"] = fill
     out.notes.append(f"внутри ø{d:g} мм, борт {flange:g} мм")
     return out
 
@@ -221,15 +280,46 @@ def grommet(a, name):
 # --------------------------------------------------------------------------- #
 #  Червяк
 # --------------------------------------------------------------------------- #
+def _worm_thread(zs, phases, center_r, profile_ru, scales, what, root_radial=None):
+    """Виток в рамке ось–радиус, без вращения профиля вокруг своей оси."""
+    # Базис (ось Z, радиус er) имеет нормаль +e_theta — по направлению
+    # обхода витка. Поэтому и крышки, и боковые грани получают одинаковую
+    # наружную ориентацию; исходный профиль задан как (радиус, ось).
+    profile = ensure_ccw(np.asarray([(v, u) for u, v in profile_ru], dtype=np.float64))
+    rings = []
+    for z, ang, scale in zip(zs, phases, scales):
+        er = np.asarray([math.cos(ang), math.sin(ang), 0.0])
+        center = np.asarray([center_r * er[0], center_r * er[1], z])
+        rings.append(np.asarray([
+            center + np.asarray([0.0, 0.0, axial * scale])
+            + er * (radial * scale if root_radial is None else
+                    root_radial + (radial - root_radial) * scale)
+            for axial, radial in profile]))
+    verts, faces = _rings_to_arrays(rings, profile)
+    return manifold_from_arrays(verts, faces, what)
+
+
 @op("worm_shaft", aliases=("червяк", "червячный_вал", "червячная_передача", "worm"),
     category="Примитивы",
-    summary="Червячный вал (по-простому «червяк») — винт, который крутит "
-            "червячное колесо. Это не крепёж и не шнек: виток непрерывный, "
-            "шаг и число заходов задаются, как у настоящей передачи.",
-    example="червяк = worm length=90 diameter=30 pitch=8 depth=4",
+    summary="Червячный вал с непрерывным витком. Профиль круглый, "
+            "трапециевидный, прямоугольный или треугольный; концы срезанные, "
+            "конусные или скруглённые. bore — осевое отверстие, channel — "
+            "канал внутри самого витка, как у полого провода.",
+    example="червяк = worm length=90 diameter=30 pitch=8 depth=4\n"
+            "трапеция = worm length=90 diameter=30 pitch=8 depth=4 profile=трапеция thread_w=5 tip_w=2 end=конус\n"
+            "полый = worm length=90 diameter=30 pitch=8 depth=4 bore=6 channel=1.2",
     params={"length": "длина, мм (90)", "diameter": "наружный диаметр (30)",
-            "pitch": "шаг витка, мм (8)", "depth": "глубина витка (4)",
-            "starts": "число заходов (1)", "sides": "сегментов витка (10)",
+            "pitch": "шаг витка, мм (8)", "depth": "радиальная глубина витка (4)",
+            "starts": "число заходов (1)",
+            "profile": "круглый, трапеция, прямоугольник или треугольник",
+            "thread_w": "ширина витка у основания по оси, мм (0.5 pitch)",
+            "tip_w": "ширина вершины трапеции, мм (0.45 thread_w)",
+            "end": "срез, конус или скругление обоих концов витка",
+            "end_h": "длина перехода на каждом конце, мм (до 20% length)",
+            "bore": "осевое отверстие вала, мм; 0 — сплошной (0)",
+            "channel": "диаметр канала внутри винтового витка, мм; 0 — сплошной (0)",
+            "sides": "сегментов круглого профиля и канала (10)",
+            "segments": "сегментов сердечника (48)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def worm(a, name):
     length = float(a.num("length", 90.0, minv=6.0))
@@ -237,30 +327,109 @@ def worm(a, name):
     pitch = float(a.num("pitch", 8.0, minv=1.0))
     depth = float(a.num("depth", 4.0, minv=0.4))
     starts = int(a.int("starts", 1, minv=1, maxv=4) or 1)
-    sides = _seg(a, "sides", 10, 6, 24)
+    sides = _seg(a, "sides", 10, 6, 32)
+    profile_kind = (a.text("profile", "круглый") or "круглый").strip().lower()
+    profile_kind = {"круг": "круглый", "круглый": "круглый", "round": "круглый",
+                    "трапеция": "трапеция", "трапециевидный": "трапеция",
+                    "прямоугольник": "прямоугольник", "прямоугольный": "прямоугольник",
+                    "брусок": "прямоугольник", "треугольник": "треугольник",
+                    "треугольный": "треугольник", "острый": "треугольник"}.get(profile_kind)
+    if profile_kind is None:
+        raise GeometryError("worm: profile=круглый, трапеция, прямоугольник или треугольник.")
+    thread_w = float(a.num("thread_w", pitch * 0.5, minv=0.1, maxv=pitch * 2.0))
+    tip_w = float(a.num("tip_w", thread_w * 0.45, minv=0.05, maxv=thread_w))
+    end = (a.text("end", "срез") or "срез").strip().lower()
+    end = {"срез": "срез", "плоский": "срез", "конус": "конус",
+           "конический": "конус", "скругление": "скругление",
+           "круглый": "скругление", "round": "скругление"}.get(end)
+    if end is None:
+        raise GeometryError("worm: end=срез, конус или скругление.")
+    end_h = float(a.num("end_h", min(pitch, length * 0.2),
+                        minv=0.05, maxv=length * 0.5))
+    bore = float(a.num("bore", 0.0, minv=0.0) or 0.0)
+    channel = float(a.num("channel", 0.0, minv=0.0) or 0.0)
     if depth >= d / 2.0 - 0.5:
         raise GeometryError("Виток глубже радиуса червяка.")
-    core_r = d / 2.0 - depth * 0.9
-    ridge_r = depth * 0.62
-    core = mf.Manifold.cylinder(length, core_r, core_r, max(24, _seg(a, "segments", 48, 16, 96)))
+    core_r = d / 2.0 - depth
+    if core_r <= 0.3:
+        raise GeometryError("Сердечник червяка слишком тонкий.")
+    if bore >= core_r * 2.0 - 0.2:
+        raise GeometryError("bore не оставляет стенки сердечника.")
+    center_r = core_r + depth * 0.45
+    if profile_kind == "круглый":
+        rr = depth * 0.55
+        profile_ru = [(rr * math.cos(2 * math.pi * i / sides),
+                       rr * math.sin(2 * math.pi * i / sides)) for i in range(sides)]
+        available = 2.0 * rr
+    else:
+        outer_w = thread_w if profile_kind == "прямоугольник" else (0.0 if profile_kind == "треугольник" else tip_w)
+        if outer_w <= 1e-9:
+            profile_ru = [(-depth * 0.50, -thread_w / 2.0),
+                          (depth * 0.55, 0.0),
+                          (-depth * 0.50, thread_w / 2.0)]
+        else:
+            profile_ru = [(-depth * 0.50, -thread_w / 2.0),
+                          (depth * 0.55, -outer_w / 2.0),
+                          (depth * 0.55, outer_w / 2.0),
+                          (-depth * 0.50, thread_w / 2.0)]
+        available = thread_w + (outer_w - thread_w) * (0.50 / 1.05)
+    if channel >= min(depth * 0.9, available * 0.85):
+        raise GeometryError("channel не помещается внутри витка.",
+                            hint=f"Для этого профиля нужен канал меньше {min(depth * 0.9, available * 0.85):g} мм.")
+    segments = max(24, _seg(a, "segments", 48, 16, 96))
+    core = mf.Manifold.cylinder(length, core_r, core_r, segments)
+    turns = max(1.0, length / pitch)
+    steps = max(24, int(math.ceil(turns * 32)))
+    zs = np.linspace(0.0, length, steps + 1)
+    scales = np.ones(len(zs))
+    if end != "срез":
+        for i, z in enumerate(zs):
+            q = min(1.0, z / end_h, (length - z) / end_h)
+            if q < 1.0:
+                q = max(0.0, q)
+                scales[i] = max(0.06, q if end == "конус" else math.sqrt(max(0.0, 1.0 - (1.0 - q) ** 2)))
     parts = [core]
-    turns = max(1, int(round(length / pitch)))
-    steps = max(12, turns * 20)
-    for s in range(starts):
-        phase = 2.0 * math.pi * s / starts
-        pts = []
-        for i in range(steps + 1):
-            t = i / steps
-            z = depth * 0.8 + t * (length - depth * 1.6)
-            ang = phase + 2.0 * math.pi * z / pitch
-            r = core_r + ridge_r * 0.55
-            pts.append((r * math.cos(ang), r * math.sin(ang), z))
-        parts.append(_tube_mesh(np.asarray(pts), ridge_r, sides, "витка"))
-    solid = parts[0]
-    for part in parts[1:]:
-        solid = solid + part
+    for start in range(starts):
+        phase = 2.0 * math.pi * start / starts
+        angles = phase + 2.0 * math.pi * zs / pitch
+        parts.append(_worm_thread(zs, angles, center_r, profile_ru, scales, "витка",
+                                  root_radial=min(u for u, _ in profile_ru)))
+    solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
+    # Виток имеет осевую ширину: без этого среза его торцы увеличивали length.
+    clip = mf.Manifold.cube((d * 2.0 + 4.0, d * 2.0 + 4.0, length), True).translate(
+        (0.0, 0.0, length / 2.0))
+    solid = solid ^ clip
+    if bore > 1e-6:
+        tool = mf.Manifold.cylinder(length + 2.0, bore / 2.0, bore / 2.0, segments).translate((0, 0, -1))
+        solid = solid - tool
+    if channel > 1e-6:
+        cz = np.linspace(-0.75, length + 0.75, steps + 9)
+        # Канал сужается вместе с витком, иначе на конусных концах резец
+        # шире самого витка и разрезает его на отдельные куски.
+        channel_scales = np.ones(len(cz))
+        if end != "срез":
+            for i, z in enumerate(cz):
+                q = min(1.0, max(0.0, z) / end_h, max(0.0, length - z) / end_h)
+                if 0.0 <= z <= length and q < 1.0:
+                    q = max(0.0, q)
+                    channel_scales[i] = max(0.06, q if end == "конус" else
+                                            math.sqrt(max(0.0, 1.0 - (1.0 - q) ** 2)))
+        circle = [(channel / 2.0 * math.cos(2.0 * math.pi * i / max(12, sides)),
+                   channel / 2.0 * math.sin(2.0 * math.pi * i / max(12, sides)))
+                  for i in range(max(12, sides))]
+        for start in range(starts):
+            phase = 2.0 * math.pi * start / starts
+            angles = phase + 2.0 * math.pi * cz / pitch
+            cutter = _worm_thread(cz, angles, center_r, circle, channel_scales,
+                                  "канала витка")
+            solid = solid - cutter
+    solid = solid ^ clip
+    if solid.is_empty() or solid.volume() <= 1e-6 or len(solid.decompose()) != 1:
+        raise GeometryError("Червяк пуст или распался: проверьте bore/channel и размеры витка.")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="worm")
-    out.notes.append(f"шаг {pitch:g} мм, виток {depth:g} мм, заходов {starts}")
+    out.meta.update({"profile": profile_kind, "end": end, "bore": bore, "channel": channel})
+    out.notes.append(f"шаг {pitch:g} мм, виток {profile_kind}, заходов {starts}, "
+                     f"концы {end}, bore {bore:g}, channel {channel:g}")
     return out
 
 

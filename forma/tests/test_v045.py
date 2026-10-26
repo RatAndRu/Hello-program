@@ -277,6 +277,14 @@ class SpiralGussetBladeTest(unittest.TestCase):
         np.testing.assert_allclose(size(base)[:2], (60, 60), atol=1e-5)
         verts, _ = manifold_mesh(solid(base))
         self.assertGreater(np.count_nonzero(np.isclose(verts[:, 2], 0.0, atol=1e-6)), 30)
+        thin_root = solid(ok("о = swirl radius=40 height=64 coils=3 wire=16 root_d=3"))
+        thick_root = solid(ok("о = swirl radius=40 height=64 coils=3 wire=16 root_d=16"))
+        one(thin_root)
+        self.assertLess(thin_root.volume(), thick_root.volume() * 0.95)
+        tip_vertices, _ = manifold_mesh(thin_root)
+        z_top = tip_vertices[:, 2].max()
+        tip = tip_vertices[tip_vertices[:, 2] >= z_top - 0.05]
+        self.assertLess(float(np.ptp(tip[:, :2], axis=0).max()), 0.1)
 
     def test_gusset_hill_has_one_adjustable_rectangular_recess(self):
         straight = solid(ok("о = gusset leg=70 height=55 thickness=6"))

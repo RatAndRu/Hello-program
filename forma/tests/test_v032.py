@@ -581,6 +581,8 @@ def _card_tail(block: str) -> str:
     parts = []
     for k, v in re.findall(r"\{ k: '([\w]+)', label: '[^']*', v: ('[^']*'|[\d.]+)", block):
         v = v.strip("'")
+        if not v:
+            continue  # auto: пустое поле интерфейс не добавляет в команду
         parts.append(f"{k}=[{v}]" if "," in v else f"{k}={v}")
     return " ".join(parts)
 

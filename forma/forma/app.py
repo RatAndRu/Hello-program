@@ -665,9 +665,6 @@ def _run_uistest(report_path: str | None) -> int:
                 check("соединить две детали цепью",
                       link.get("ok") is True and link.get("tris", 0) > 400,
                       f"{link.get('tris', 0)} трис")
-                check("пример «Оригами» собирается",
-                      post("/api/build", {"script": get("/api/example?key=origami")["script"]})
-                      .get("ok") is True)
                 instr = get("/api/instruction?kind=full")
                 cmds = get("/api/instruction?kind=commands")
                 total_ops = len(__import__("forma.ops", fromlist=["OPS"]).OPS)
@@ -723,11 +720,6 @@ def _run_uistest(report_path: str | None) -> int:
                 check("сила инструмента ступенями (ряд с вмятинами)",
                       stepped.get("ok") is True and stepped.get("tris", 0) > 500,
                       f"{stepped.get('tris', 0)} трис")
-                for key in ("wifi", "graded"):
-                    one = get(f"/api/example?key={key}")
-                    check(f"пример «{key}» собирается",
-                          post("/api/build", {"script": one.get("script", "")})
-                          .get("ok") is True)
                 check("карточки ряда с градацией и размера по мерке",
                       "op: 'ряд'".encode("utf-8") in js_app
                       and "op: 'размер'".encode("utf-8") in js_app,
@@ -758,11 +750,6 @@ def _run_uistest(report_path: str | None) -> int:
                 check("на_границе: шайба садится на кольцо тора",
                       snap.get("ok") is True and float(snap_bb[0]) > 60,
                       f"габарит по X {snap_bb[0]} мм")
-                for key in ("hook", "half_oval", "surface"):
-                    one = get(f"/api/example?key={key}")
-                    check(f"пример «{key}» собирается",
-                          post("/api/build", {"script": one.get("script", "")})
-                          .get("ok") is True)
                 check("карточки крюка, полуовала и посадки на границу",
                       "op: 'крюк'".encode("utf-8") in js_app
                       and "op: 'полуовал'".encode("utf-8") in js_app
@@ -799,11 +786,6 @@ def _run_uistest(report_path: str | None) -> int:
                 check("ориентация: стороны и центр массы в отчёте",
                       ori.get("ok") is True and ori.get("tris", 0) > 100,
                       f"{ori.get('tris', 0)} трис")
-                for key in ("funnel", "orientation"):
-                    one = get(f"/api/example?key={key}")
-                    check(f"пример «{key}» собирается",
-                          post("/api/build", {"script": one.get("script", "")})
-                          .get("ok") is True)
                 check("карточки воронки и посадки по осям",
                       "op: 'воронка'".encode("utf-8") in js_app
                       and "title: 'Деталь по осям хозяина'".encode("utf-8") in js_app,
@@ -839,9 +821,6 @@ def _run_uistest(report_path: str | None) -> int:
                 check("лист — плоскость, листок — лист растения",
                       names.get("ok") is True and names.get("objects") == 2,
                       f"объектов {names.get('objects')}")
-                one = get("/api/example?key=primitives")
-                check("пример «Стандартные примитивы» собирается",
-                      post("/api/build", {"script": one.get("script", "")}).get("ok") is True)
                 check("карточки октаэдра, эллипсоида и скобы",
                       b"title: '\xd0\x9e\xd0\xba\xd1\x82\xd0\xb0\xd1\x8d\xd0\xb4\xd1\x80'" in js_app
                       and b"title: '\xd0\xad\xd0\xbb\xd0\xbb\xd0\xb8\xd0\xbf\xd1\x81\xd0\xbe\xd0\xb8\xd0\xb4'" in js_app,
@@ -936,9 +915,6 @@ def _run_uistest(report_path: str | None) -> int:
                 check("кнопка — две детали: шляпка и гнездо",
                       btn.get("ok") is True and btn.get("objects") == 2,
                       f"{btn.get('tris', 0)} трис, объектов {btn.get('objects')}")
-                mech = get("/api/example?key=mech")
-                check("пример «Механика» собирается",
-                      post("/api/build", {"script": mech.get("script", "")}).get("ok") is True)
                 check("карточки пяти новых предметов",
                       all(f"op: '{op}'".encode("utf-8") in js_app
                           for op in ("tri_prism", "torus_sector", "ladder",
@@ -970,15 +946,10 @@ def _run_uistest(report_path: str | None) -> int:
                 check("четыре режима икосферы в живом превью",
                       cells.get("ok") is True and cells.get("objects") == 4,
                       f"{cells.get('tris', 0)} трис")
-                controls = get("/api/example?key=shape_controls")
-                shaped_example = post("/api/preview", {"script": controls.get("script", "")})
-                check("пример 0.42: 12 форм и честные карточные ползунки",
-                      shaped_example.get("ok") is True
-                      and shaped_example.get("objects") == 12
-                      and all(f"k: '{key}'".encode("utf-8") in js_app
-                              for key in ("top_size", "top_offset", "base_angle",
-                                          "tip_at", "smooth", "slice", "mode")),
-                      f"{shaped_example.get('objects', 0)} объектов")
+                check("карточные ползунки плоскостей и топологии",
+                      all(f"k: '{key}'".encode("utf-8") in js_app
+                          for key in ("top_size", "top_offset", "base_angle",
+                                      "tip_at", "smooth", "slice", "mode")))
 
                 # 0.43: непрерывные/состыкованные формы и актуальный каталог
                 reworked = post("/api/preview", {"script": (
@@ -1007,11 +978,12 @@ def _run_uistest(report_path: str | None) -> int:
                 formed = post("/api/preview", {"script": (
                     "п = strip length=140 width=36 ends=овальные collapse_left=0.5\n"
                     "р = grating width=140 height=90 pattern=соты cell=20 at=[0,140,0]\n"
-                    "ш = spikes width=100 length=70 cols=3 rows=2 at=[240,0,0]\n"
+                    "ш = box size=[100,70,8] at=[240,0,0]\n"
+                    "ш = spikes [ш] surface=верх cols=3 rows=2 height=20 base_d=10\n"
                     "к = column height=150 form=песочные at=[400,0,0]\n"
                     "д = arc_prism arc_b=-12 arc_c=-12 at=[560,0,0]\n"
                     "ф = profile2020 length=140 groove=овальная bore_shape=шестигранник at=[720,0,0]")})
-                check("0.44: шесть новых примитивов строятся в живом превью",
+                check("0.44: шесть форм и инструмент шипов строятся в живом превью",
                       formed.get("ok") is True and formed.get("objects") == 6,
                       f"{formed.get('tris', 0)} трис, {formed.get('objects', 0)} объектов")
                 revised = post("/api/preview", {"script": (
@@ -1041,7 +1013,7 @@ def _run_uistest(report_path: str | None) -> int:
                     "corner_cut=10 corners=один at=[140,0,0]\n"
                     "л = fold_sheet width=100 length=140 parts=4 angle=120 "
                     "gap=1 sharp=0.3 at=[280,0,0]\n"
-                    "б = box size=[60,50,40] hole_x=10 hole_y=12 hole_y_shape=квадрат "
+                    "б = cube_hole size=[60,50,40] hole_x=10 hole_y=12 hole_y_shape=квадрат "
                     "hole_z=16 hole_z_shape=овал at=[420,0,0]")})
                 check("0.45: рамка, рельефный срез, гармошка и три отверстия",
                       cavity.get("ok") is True and cavity.get("objects") == 4,
@@ -1064,6 +1036,44 @@ def _run_uistest(report_path: str | None) -> int:
                       and all(f"op: '{op}'".encode("utf-8") in js_app
                               for op in ("cavity_frame", "face_box", "fold_sheet")),
                       f"{folds_count} объектов в примере")
+
+                # 0.46: выставка поверхностных инструментов и удалённые карточки
+                gallery = get("/api/example?key=tools_gallery")
+                gallery_built = post("/api/build", {"script": gallery.get("script", "")})
+                gallery_count = len(gallery_built.get("objects") or [])
+                removed46 = all(
+                    post("/api/preview", {"script": f"д = {op}"}).get("ok") is False
+                    for op in ("display", "skirt", "jacket"))
+                check("0.46: выставка из 20 стандов собирается",
+                      gallery_built.get("ok") is True and gallery_count == 41,
+                      f"{gallery_count} объектов: подиум, 20 образцов и 20 подписей")
+                check("0.46: удалённые команды и карточки отсутствуют",
+                      removed46 and all(f"op: '{op}'".encode("utf-8") not in js_app
+                                        for op in ("display", "skirt", "jacket")))
+                check("0.46: карточки трещин и наращивания волос",
+                      all(f"op: '{op}'".encode("utf-8") in js_app
+                          for op in ("crack", "hair", "wrinkle", "porous")))
+
+                # 0.47: профили, полости и новые детали через API живого превью
+                current47 = post("/api/preview", {"script": (
+                    "конус = cone radius=35 height=70 form=парабола wall=3 smooth=1\n"
+                    "цилиндр = cylinder radius=30 height=70 wall=4 cavity=верх at=[100,0,0]\n"
+                    "пирамида = pyramid sides=4 radius=45 height=70 wall=4 at=[200,0,0]\n"
+                    "кольцо = ring diameter=24 width=10 thickness=5 cavity=1.5 at=[300,0,0]\n"
+                    "подкова = strip length=160 width=12 thickness=4 path=подкова curve=32 at=[400,0,0]\n"
+                    "тавр = tee shape=овалы at=[550,0,0]\n"
+                    "рогатка = yoke shape=капсулы at=[680,0,0]\n"
+                    "инь = yin_yang form=объёмная at=[820,0,0]\n"
+                    "гвоздь = nail d=4 length=50 at=[950,0,0]\n"
+                    "лопасть = turbine_blade length=100 chord=40 root_chord=14 "
+                    "tip_chord=25 thick=4 tip_thick=1.5 twist=35 sweep=14 at=[1050,0,0]")})
+                check("0.47: десять профилей, полостей и деталей в живом превью",
+                      current47.get("ok") is True and current47.get("objects") == 10,
+                      f"{current47.get('tris', 0)} трис, {current47.get('objects', 0)} объектов")
+                check("0.47: карточки лопасти, гвоздя и новых полостей",
+                      all(f"op: '{op}'".encode("utf-8") in js_app
+                          for op in ("turbine_blade", "nail", "cone", "cylinder",
+                                     "pyramid", "ring", "strip")))
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

@@ -1,0 +1,192 @@
+# ============================================================================
+#  ВЫСТАВКА ИНСТРУМЕНТОВ 0.46 — 20 стандов, 5 × 4
+# ----------------------------------------------------------------------------
+#  Каждый станд — готовый рецепт: какой инструмент, на какой заготовке и с
+#  какими настройками применять. Все предметы стоят на общем подиуме, подписи
+#  лежат в плоскости XY. Это не текстуры: рельеф, отверстия, складки и волосы
+#  являются настоящей геометрией; pattern — единственный станд-покраска.
+# ============================================================================
+scene bg=#eef1f4 env=studio shadows=да grid=нет
+light preset=студия strength=1.1
+
+подиум = box size=[1500,1250,20] round=8
+color подиум #d7dde3 rough=0.72
+
+# ---------- РЯД 1: ПОРЫ И ДЕФОРМАЦИЯ НАРУЖНОЙ ПОВЕРХНОСТИ ----------
+# 1. porous / сферические ямы: радиус 5, глубина 2.5, мягкая кромка.
+ямки = box size=[110,90,30] round=4
+ямки = porous [ямки] mode=поры size=5 depth=2.5 count=22 smooth=.35 uneven=.12 rough=.08 seed=3
+ямки = translate [ямки] offset=[-520,450,20]
+color ямки #d9b58c rough=0.7
+подпись_ямки = text "ПОРЫ" size=15 depth=1 plane=xy at=[-520,355,20] color=#33404d
+
+# 2. porous / цилиндры: плоское дно на глубине 7, вход со скруглением.
+отверстия = box size=[110,90,30] round=4
+отверстия = porous [отверстия] mode=отверстия size=5 depth=7 count=18 smooth=.25 seed=8
+отверстия = translate [отверстия] offset=[-260,450,20]
+color отверстия #b9c7d8 rough=0.55
+подпись_отверстия = text "ОТВЕРСТИЯ" size=15 depth=1 plane=xy at=[-260,355,20] color=#33404d
+
+# 3. wrinkle / радиус на полом рукаве: только наружная стенка, торцы ровные.
+рукав_наружный = cylinder radius=40 height=90 segments=64
+рукав_внутренний = cylinder radius=28 height=90 segments=64
+рукав = difference [рукав_наружный,рукав_внутренний]
+delete рукав_наружный
+delete рукав_внутренний
+рукав = wrinkle [рукав] mode=радиус amp=2.5 freq=12 axis=z surface=наружная
+рукав = translate [рукав] offset=[0,450,20]
+color рукав #c9d1e3 rough=0.5
+подпись_рукав = text "WRINKLE" size=15 depth=1 plane=xy at=[0,355,20] color=#33404d
+
+# 4. wrinkle / шум на камне: объёмная мятость, seed=5, без потери тела.
+мятый = sphere radius=46 segments=48
+мятый = wrinkle [мятый] mode=шум amp=3 freq=9 seed=5 surface=наружная
+мятый = translate [мятый] offset=[260,450,66]
+color мятый #b9b2a7 rough=0.85
+подпись_мятый = text "ШУМ" size=15 depth=1 plane=xy at=[260,355,20] color=#33404d
+
+# 5. bark: 12 главных неодинаковых борозд, глубина 5, сбег .25.
+ствол = bark height=115 radius=43 grooves=12 depth=5 taper=.25 seed=2
+ствол = translate [ствол] offset=[520,450,20]
+color ствол #8a6242 rough=0.9
+подпись_ствол = text "КОРА" size=15 depth=1 plane=xy at=[520,355,20] color=#33404d
+
+# ---------- РЯД 2: ТРЕЩИНЫ, СРЕЗ И ЗАОСТРЕНИЕ ----------
+# 6. crack / удар: 8 лучей от центра верхней грани, ширина 2, глубина 1.2.
+удар = box size=[125,100,16]
+удар = crack [удар] mode=удар at=[0,0,16] dir=[0,0,1] count=8 radius=43 width=2 depth=1.2 detail=.65 seed=4
+удар = translate [удар] offset=[-520,150,20]
+color удар #c8c2b8 rough=0.75
+подпись_удар = text "УДАР" size=15 depth=1 plane=xy at=[-520,55,20] color=#33404d
+
+# 7. crack / разлом: длинная трещина и 5 ответвлений, seed=9.
+разлом = box size=[125,100,16]
+разлом = crack [разлом] mode=разлом count=5 radius=48 width=2 depth=1.2 detail=.65 seed=9
+разлом = translate [разлом] offset=[-260,150,20]
+color разлом #b9c0c8 rough=0.7
+подпись_разлом = text "РАЗЛОМ" size=15 depth=1 plane=xy at=[-260,55,20] color=#33404d
+
+# 8. crack / дерево: 13 ровных ложбинок вдоль X, angle=0.
+волокна = box size=[135,90,16]
+волокна = crack [волокна] mode=дерево count=13 radius=48 width=1.7 depth=.8 detail=.6 angle=0 seed=2
+волокна = translate [волокна] offset=[0,150,20]
+color волокна #b98b5a rough=0.85
+подпись_волокна = text "ДЕРЕВО" size=15 depth=1 plane=xy at=[0,55,20] color=#33404d
+
+# 9. shave: плоский срез 6 мм и овальная канавка 5 × 2.5 по периметру.
+фасетка = box size=[105,90,40] round=4
+фасетка = shave [фасетка] depth=6 groove=овальная groove_width=5 groove_depth=2.5 groove_offset=4
+фасетка = translate [фасетка] offset=[260,150,20]
+color фасетка #c6d2d8 rough=0.45 metal=.15
+подпись_фасетка = text "SHAVE" size=15 depth=1 plane=xy at=[260,55,20] color=#33404d
+
+# 10. point: конус 25 мм на верхнем торце цилиндра, итог — одно тело.
+остриё = cylinder radius=12 height=90 segments=64
+остриё = point [остриё] length=25 side=верх segments=64
+остриё = translate [остриё] offset=[520,150,20]
+color остриё #d5b47a rough=0.55
+подпись_остриё = text "POINT" size=15 depth=1 plane=xy at=[520,55,20] color=#33404d
+
+# ---------- РЯД 3: ЛИСТ, ГАРМОШКА, ГРЕБЕНЬ И КАНАВКА ----------
+# 11. fold: 5 равных полотнищ, поворот 150°, просвет .8, острота .15.
+гармошка = sheet width=105 length=190 thickness=1
+гармошка = fold [гармошка] parts=5 angle=150 gap=.8 sharp=.15 axis=x
+гармошка = translate [гармошка] offset=[-520,-150,20]
+color гармошка #e2d7b8 rough=0.65
+подпись_гармошка = text "FOLD ×5" size=15 depth=1 plane=xy at=[-520,-245,20] color=#33404d
+
+# 12. сгиб: диагональ исходного квадрата, никакой добавленной плоскости.
+угол = sheet width=125 length=125 thickness=1
+угол = сгиб [угол] at=[0,0,1] dir=45 angle=120 side=1 gap=.5
+угол = translate [угол] offset=[-260,-150,20]
+color угол #d7e0e8 rough=0.55
+подпись_угол = text "СГИБ" size=15 depth=1 plane=xy at=[-260,-245,20] color=#33404d
+
+# 13. складка / гребень: настоящий подъём листа, полуширина 6, высота 5.
+гребень = sheet width=125 length=105 thickness=1
+гребень = складка [гребень] from=[-52,0,1] to=[52,0,1] r=6 depth=5 mode=гребень taper=.3
+гребень = translate [гребень] offset=[0,-150,20]
+color гребень #d9c8d9 rough=0.7
+подпись_гребень = text "ГРЕБЕНЬ" size=15 depth=1 plane=xy at=[0,-245,20] color=#33404d
+
+# 14. складка / канавка: вдавленная исходная поверхность блока, не вырез-трубка.
+канавка = box size=[120,90,30] round=3
+канавка = складка [канавка] from=[-48,0,30] to=[48,0,30] r=6 depth=4 mode=канавка taper=.3
+канавка = translate [канавка] offset=[260,-150,20]
+color канавка #c3ccd5 rough=0.55
+подпись_канавка = text "КАНАВКА" size=15 depth=1 plane=xy at=[260,-245,20] color=#33404d
+
+# 15. corrugate / рифление: прямые параллельные рёбра, шаг 18, высота 5.
+рифление = sheet width=105 length=145 thickness=1
+рифление = corrugate [рифление] mode=рифление step=18 amp=5 angle=0
+рифление = translate [рифление] offset=[520,-150,20]
+color рифление #b8c9d2 metal=.35 rough=0.4
+подпись_рифление = text "РИФЛЕНИЕ" size=15 depth=1 plane=xy at=[520,-245,20] color=#33404d
+
+# ---------- РЯД 4: ВАФЛЯ, ВОЛОСЫ, РЕЛЬЕФ И ПОКРАСКА ----------
+# 16. corrugate / вафля: двумерный узор, тем же шагом отличается от рифления.
+вафля = sheet width=105 length=145 thickness=1
+вафля = corrugate [вафля] mode=вафля step=18 amp=5 angle=0
+вафля = translate [вафля] offset=[-520,-450,20]
+color вафля #d5c9a8 metal=.15 rough=0.5
+подпись_вафля = text "ВАФЛЯ" size=15 depth=1 plane=xy at=[-520,-545,20] color=#33404d
+
+# 17. hair / иголки: корни только на верхней грани цилиндра, головы нет.
+иголки = cylinder radius=43 height=28 segments=56
+иголки = hair [иголки] style=иголки surface=верх count=65 length=22 thick=1.6 spread=.18 seed=4
+иголки = translate [иголки] offset=[-260,-450,20]
+color иголки #8797a5 rough=0.5
+подпись_иголки = text "ИГОЛКИ" size=15 depth=1 plane=xy at=[-260,-545,20] color=#33404d
+
+# 18. hair / локоны: 14 витых прядей на выбранной поверхности, одно тело.
+локоны = cylinder radius=43 height=28 segments=56
+локоны = hair [локоны] style=локоны surface=верх count=14 length=24 thick=2.2 turns=1.3 seed=5
+локоны = translate [локоны] offset=[0,-450,20]
+color локоны #8e7466 rough=0.65
+подпись_локоны = text "ЛОКОНЫ" size=15 depth=1 plane=xy at=[0,-545,20] color=#33404d
+
+# 19. relief: встроенная docs/pattern.png, image специально не задан.
+рельеф = box size=[125,100,12]
+рельеф = relief [рельеф] depth=2 mode=плоскость
+рельеф = translate [рельеф] offset=[260,-450,20]
+color рельеф #c8d1c4 rough=0.6
+подпись_рельеф = text "RELIEF" size=15 depth=1 plane=xy at=[260,-545,20] color=#33404d
+
+# 20. pattern: покраска, не рельеф; куб сам разбивается под круги 10 мм.
+узор = box size=[80,80,80]
+color узор #f0e6cf rough=0.55
+pattern узор #b44b3e shape=круги size=10 step=20
+узор = translate [узор] offset=[520,-450,60]
+подпись_узор = text "PATTERN" size=15 depth=1 plane=xy at=[520,-545,20] color=#33404d
+
+# Подписи — тёмные, предметы остаются самостоятельными замкнутыми телами.
+
+check ямки watertight
+check отверстия watertight
+check рукав watertight
+check рукав parts 1
+check мятый watertight
+check мятый parts 1
+check ствол watertight
+check удар watertight
+check разлом watertight
+check волокна watertight
+check фасетка watertight
+check остриё watertight
+check остриё parts 1
+check гармошка watertight
+check гармошка parts 1
+check угол watertight
+check угол parts 1
+check гребень watertight
+check гребень parts 1
+check канавка watertight
+check рифление watertight
+check вафля watertight
+check иголки watertight
+check иголки parts 1
+check локоны watertight
+check локоны parts 1
+check рельеф watertight
+check узор watertight
+check узор parts 1

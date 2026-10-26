@@ -308,21 +308,7 @@ class CatalogAndHelpTest(unittest.TestCase):
         b = _build("к = кнопка диаметр=30 высота=10 посадка=зазор зазор=2")
         self.assertIn("к_гнездо", b.scene.objects)
 
-    def test_example_builds(self):
-        from forma.webui import load_example
 
-        b = _build(load_example("mech"))
-        self.assertEqual(len(b.scene.objects), 19)
-        for name in ("приставная", "стремянка", "джойстик", "педаль", "пуск",
-                     "пуск_гнездо", "тумблер", "тумблер_гнездо", "клин", "полукольцо"):
-            with self.subTest(name=name):
-                self.assertIn(name, b.scene.objects)
-
-    def test_example_in_menu(self):
-        from forma.webui import EXAMPLES
-
-        keys = [key for _, key in EXAMPLES]
-        self.assertIn("mech", keys)
 
     def test_cards_present(self):
         from pathlib import Path

@@ -12,7 +12,8 @@ scene bg=#10121f grid=нет
 планки = grating width=140 height=90 depth=4 pattern=планки bars=5 bar=3 frame=6 at=[-240,-30,0] color=steel
 клетка = grating width=140 height=90 depth=4 pattern=клетка cols=4 rows=3 bar=3 frame=6 at=[-80,-30,0] color=mint
 соты = grating width=150 height=100 depth=4 pattern=соты cell=20 bar=3 frame=6 at=[80,-30,0] color=green
-шипы = spikes width=120 length=80 base_h=4 cols=4 rows=3 height=24 base_d=11 tip_d=0.5 sides=16 at=[240,-30,0] color=red
+шипы = box size=[120,80,4] round=0 at=[240,-30,0] color=red
+шипы = spikes [шипы] surface=верх cols=4 rows=3 height=24 base_d=11 tip_d=0.5 sides=16 color=red
 
 # Новые конструкционные формы и простая труба без координат path.
 колонна = column height=150 width=34 form=песочные waist=0.55 base_size=60 base_h=10 rim=6 rim_h=8 at=[-240,-190,0] color=copper

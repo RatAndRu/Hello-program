@@ -10,7 +10,7 @@ import numpy as np
 
 from forma.render import _box_blur, _glow_pass, _mirror_ids, _prepare, render_single
 from forma.run import build
-from forma.webui import AppState
+from forma.webui import AppState, load_example
 
 
 def ok(script: str):
@@ -97,29 +97,27 @@ class GlowFix(unittest.TestCase):
         self.assertGreater(float(out[40, 47, 0]), float(out[40, 47, 1]))
 
     def test_led_clock_halo_stays_on_screen(self):
-        script = ("ч = display width=180 height=90 thick=45 style=будильник "
-                  "content=led text=\"21:38\"")
-        b = ok(script)
+        b = ok(load_example("clock_led"))
         with tempfile.TemporaryDirectory() as tmp:
             path = render_single(b.visible_solids(), tmp, filename="led.png",
                                  size=240, ss=1)
             img = rgb(path)
-        red = img[..., 0] - img[..., 1]
-        # корпус белый: красных пикселей немного, но они есть — это цифры
-        self.assertGreater(float((red > 0.12).mean()), 0.004)
-        self.assertLess(float((red > 0.12).mean()), 0.35)
+        green = img[..., 1] - img[..., 0]
+        # корпус тёмный: зелёных пикселей немного, но они есть — это цифры
+        self.assertGreater(float((green > 0.12).mean()), 0.004)
+        self.assertLess(float((green > 0.12).mean()), 0.35)
 
-    def test_display_panel_sits_near_glass(self):
-        """Экран не должен прятаться на дне глубокой ниши: его срезали стенки."""
-        b = ok("ч = display width=180 height=90 thick=45 style=будильник content=led")
-        panel = b.scene.resolve("ч.экран").manifold.bounding_box()
-        glass = b.scene.resolve("ч.стекло").manifold.bounding_box()
-        body = b.scene.resolve("ч").manifold.bounding_box()
-        # экран у передней стенки: до стекла меньше 8 мм из 45
+    def test_led_panel_sits_near_glass(self):
+        """В готовом проекте экран не прячется на дне глубокой ниши."""
+        b = ok(load_example("clock_led"))
+        panel = b.scene.resolve("экран").manifold.bounding_box()
+        glass = b.scene.resolve("стекло").manifold.bounding_box()
+        body = b.scene.resolve("корпус").manifold.bounding_box()
+        # экран у передней стенки: до стекла меньше 8 мм
         gap = abs(glass[1] - panel[1])
         self.assertLess(gap, 8.0)
         # и цифры целиком на панели
-        digits = b.scene.resolve("ч.цифры").manifold.bounding_box()
+        digits = b.scene.resolve("цифры").manifold.bounding_box()
         self.assertGreaterEqual(digits[0], panel[0] - 0.01)
         self.assertLessEqual(digits[3], panel[3] + 0.01)
         self.assertGreaterEqual(digits[2], panel[2] - 0.01)

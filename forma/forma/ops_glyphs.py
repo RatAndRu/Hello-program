@@ -92,8 +92,12 @@ def _circle_cs(radius: float, cx: float, cy: float, sides: int) -> mf.CrossSecti
 
 
 def _stadium(p0: tuple[float, float], p1: tuple[float, float],
-             width: float, arc_pts: int = 16) -> np.ndarray:
-    """Стадион (капсула) между двумя точками — ровный брус с круглыми торцами."""
+             width: float, arc_pts: int = 16, exact: bool = True) -> np.ndarray:
+    """Стадион между точками; exact сохраняет экстремумы круглых торцов.
+
+    Старые овальные ветви используют exact=False: их последующая подгонка
+    намеренно даёт эллиптические торцы и не должна подменяться капсулой.
+    """
     a = np.asarray(p0, dtype=np.float64)
     b = np.asarray(p1, dtype=np.float64)
     d = b - a
@@ -103,11 +107,48 @@ def _stadium(p0: tuple[float, float], p1: tuple[float, float],
     d = d / length
     n = np.array([-d[1], d[0]])
     r = float(width) / 2.0
-    phi_a = np.linspace(-math.pi / 2, math.pi / 2, arc_pts)
-    phi_b = np.linspace(math.pi / 2, 3 * math.pi / 2, arc_pts)
+    if not exact:
+        phi_a = np.linspace(-math.pi / 2, math.pi / 2, arc_pts)
+        phi_b = np.linspace(math.pi / 2, 3 * math.pi / 2, arc_pts)
+    else:
+        steps = max(4, int(arc_pts))
+        if steps % 2:
+            steps += 1
+
+        def angles(lo, hi):
+            values = list(np.linspace(lo, hi, steps + 1))
+            # У наклонной капсулы габарит достигается не обязательно в
+            # середине локальной дуги: добавляем мировые ±X и ±Y.
+            for base in (math.atan2(n[0], d[0]), math.atan2(n[1], d[1])):
+                for k in range(-4, 5):
+                    t = base + k * math.pi
+                    if lo + 1e-10 < t < hi - 1e-10:
+                        values.append(t)
+            return np.asarray(sorted(set(round(float(t), 12) for t in values)))
+
+        phi_a = angles(-math.pi / 2, math.pi / 2)
+        phi_b = angles(math.pi / 2, 3 * math.pi / 2)
     pts = [b + r * (math.cos(t) * d + math.sin(t) * n) for t in phi_a]
     pts += [a + r * (math.cos(t) * d + math.sin(t) * n) for t in phi_b]
     return np.asarray(pts, dtype=np.float64)
+
+
+def _ellipse_between(p0: tuple[float, float], p1: tuple[float, float],
+                     width: float, segments: int = 96) -> np.ndarray:
+    """Цельный эллипс между двумя остриями, а не капсула с другой сеткой."""
+    a, b = np.asarray(p0, dtype=float), np.asarray(p1, dtype=float)
+    delta = b - a
+    length = float(np.linalg.norm(delta))
+    if length < 1e-9:
+        raise GeometryError("Концы овальной ветви совпали.")
+    direction = delta / length
+    normal = np.asarray([-direction[1], direction[0]])
+    center = (a + b) / 2.0
+    points = []
+    for t in np.linspace(0.0, 2.0 * math.pi, segments, endpoint=False):
+        points.append(center + direction * (length * 0.5 * math.cos(t))
+                      + normal * (width * 0.5 * math.sin(t)))
+    return np.asarray(points, dtype=np.float64)
 
 
 def _segments_for(radius: float, asked: int | None, lo: int = 48, hi: int = 512) -> int:
@@ -195,14 +236,16 @@ def _place_glyph(a, solid: mf.Manifold) -> mf.Manifold:
             "деталью. arm — полная ширина перекладины, bar — её толщина, "
             "stem — ширина ножки, leg — длина ножки под перекладиной. "
             "Стоит в XZ лицом −Y: перекладина сверху (+Z), ножка вниз (−Z), "
-            "толщина depth по Y; опирается на нижний срез ножки. shape=бруски "
-            "или капсулы выбирает прямые/круглые торцы всех ветвей, как у Y.",
+            "толщина depth по Y; опирается на нижний срез ножки. shape=бруски, "
+            "овалы или капсулы: овалы — цельные эллиптические ветви, капсулы "
+            "имеют прямые стороны и истинные полукруглые торцы.",
     example="тавр = tee arm=90 bar=20 stem=22 leg=60 depth=14 round=2",
     params={"arm": "ширина перекладины, мм (90)",
             "bar": "толщина перекладины, мм (20)",
             "stem": "ширина ножки, мм (20)",
             "leg": "длина ножки под перекладиной, мм (60)",
-            "shape": "бруски — плоские торцы; капсулы — круглые торцы всех ветвей",
+            "shape": "бруски — плоские торцы; овалы — эллиптические; "
+                     "капсулы — прямые стороны и полукруглые торцы",
             "depth": "толщина по глубине, мм (14); у стоящего знака — по Y",
             "round": "скругление кромок, мм (0)",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом вверх — «фронт»",
@@ -219,10 +262,12 @@ def tee(a, name):
     shape = (a.text("shape", "бруски") or "бруски").strip().lower()
     if shape in ("капсула", "капсулы", "круглые", "capsule", "capsules"):
         shape = "капсулы"
+    elif shape in ("овал", "овалы", "овальные", "эллипс", "ellipse", "oval"):
+        shape = "овалы"
     elif shape in ("брусок", "бруски", "прямоугольные", "box", "rect"):
         shape = "бруски"
     else:
-        raise GeometryError("tee: shape=бруски или капсулы.")
+        raise GeometryError("tee: shape=бруски, овалы или капсулы.")
     if stem >= arm:
         raise GeometryError(f"Ножка {stem:g} мм не уже перекладины {arm:g} мм — это уже не Т.",
                             hint="stem ≈ 0.2…0.35 от arm.")
@@ -231,11 +276,25 @@ def tee(a, name):
                             hint="bar ≈ 0.15…0.3 от arm.")
     total = bar + leg
     half = total / 2.0
-    if shape == "капсулы":
-        bar_cs = mf.CrossSection([_stadium((-arm / 2 + bar / 2, half - bar / 2),
-                                          (arm / 2 - bar / 2, half - bar / 2), bar)])
-        stem_cs = mf.CrossSection([_stadium((0.0, -half + stem / 2),
-                                           (0.0, half - bar * 0.5), stem)])
+    if shape in ("капсулы", "овалы"):
+        if shape == "овалы":
+            bar_cs = mf.CrossSection([_ellipse_between(
+                (-arm / 2, half - bar / 2), (arm / 2, half - bar / 2), bar)])
+            stem_cs = mf.CrossSection([_ellipse_between(
+                (0.0, -half), (0.0, half - bar * 0.5), stem)])
+        else:
+            bar_cs = mf.CrossSection([_stadium((-arm / 2 + bar / 2, half - bar / 2),
+                                              (arm / 2 - bar / 2, half - bar / 2), bar)])
+            stem_cs = mf.CrossSection([_stadium((0.0, -half + stem / 2),
+                                               (0.0, half - bar * 0.5), stem)])
+        # Капсульная ножка не должна проходить сквозь перекладину, даже если
+        # stem>bar. Подрезаем её чуть выше нижней плоскости перекладины:
+        # остаётся надёжный захлёст, а верхняя плоскость остаётся ровной.
+        if shape == "капсулы":
+            joint = half - bar + min(0.05, bar * 0.1)
+            clip = mf.CrossSection([_profile([(-stem, -half - 1.0), (stem, -half - 1.0),
+                                             (stem, joint), (-stem, joint)])])
+            stem_cs = mf.CrossSection.batch_boolean([stem_cs, clip], mf.OpType.Intersect)
     else:
         bar_cs = mf.CrossSection([_profile([(-arm / 2, half - bar), (arm / 2, half - bar),
                                            (arm / 2, half), (-arm / 2, half)])])
@@ -243,8 +302,11 @@ def tee(a, name):
                                             (stem / 2, half - bar * 0.5),
                                             (-stem / 2, half - bar * 0.5)])])
     cross = mf.CrossSection.batch_boolean([bar_cs, stem_cs], mf.OpType.Add)
-    solid = _flat(cross, depth, round_r, min(stem, bar), size=(arm, total))
-    return make_solid(a.scene, name, _place_glyph(a, solid), a, kind="tee")
+    fit_size = (arm, total) if shape != "капсулы" or round_r > 1e-6 else None
+    solid = _flat(cross, depth, round_r, min(stem, bar), size=fit_size)
+    out = make_solid(a.scene, name, _place_glyph(a, solid), a, kind="tee")
+    out.meta["branch_shape"] = shape
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -320,13 +382,15 @@ def crescent(a, name):
             "спирали, как свиной хвостик или мягкое мороженое. Это не стопка "
             "дисков: витки плавно сужаются и заканчиваются остриём. merge "
             "сращивает витки общим телом, base скрывает начало в плоском "
-            "основании, как у крема.",
+            "основании, как у крема. root_d независимо сужает самый нижний "
+            "конец, не меняя основной диаметр wire.",
     example="хвостик = swirl radius=40 height=64 coils=3 wire=16 taper=0.25\n"
             "мороженое = swirl radius=34 height=96 coils=4 wire=20 taper=0.7",
     params={"radius": "наружный радиус основания, мм (40)",
             "height": "высота до острия, мм (64)",
             "coils": "число непрерывных витков 1…12 (3)",
-            "wire": "диаметр трубы у основания, мм (авто, без касания витков)",
+            "wire": "основной диаметр трубы витка, мм (авто, без касания витков)",
+            "root_d": "диаметр самого начала витка, мм (= wire); меньше — тонкий скрытый конец",
             "taper": "сужение радиуса спирали 0…0.92 (0.62)",
             "merge": "да — общее тело без промежутков между витками; "
                      "разрешает wire не меньше шага (нет)",
@@ -344,6 +408,7 @@ def swirl(a, name):
     pitch = height / coils
     auto_wire = min(radius * 0.42, pitch * (1.04 if merge else 0.78))
     wire = float(a.num("wire", auto_wire, minv=0.2, maxv=radius * 1.2))
+    root_d = float(a.num("root_d", wire, minv=0.1, maxv=wire))
     taper = float(a.num("taper", 0.62, minv=0.0, maxv=0.92))
     sides = int(a.num("segments", 20, minv=12, maxv=64) or 20)
     if wire >= pitch * 0.96 and not merge:
@@ -357,6 +422,8 @@ def swirl(a, name):
 
     base_r = radius - wire / 2.0
     base_tube = wire / 2.0
+    root_tube = root_d / 2.0
+    root_ramp = 0.12
     n = max(96, coils * 56)
     path: list[tuple[float, float, float]] = []
     scales: list[float] = []
@@ -369,7 +436,15 @@ def swirl(a, name):
         if u > 0.78:
             q = (u - 0.78) / 0.22
             center_r *= 1.0 - (q * q * (3.0 - 2.0 * q))
-        tube_r = max(0.015, base_tube * (1.0 - u) ** 0.9)
+        if u < root_ramp:
+            q = u / root_ramp
+            q = q * q * (3.0 - 2.0 * q)
+            tube_r = root_tube + (base_tube - root_tube) * q
+        else:
+            tube_r = base_tube * ((1.0 - u) / (1.0 - root_ramp)) ** 0.9
+        tube_r = max(0.015, tube_r)
+        # Центральная линия не опускается вслед за тонким root_d: начало
+        # остаётся внутри нижнего витка, а толстая часть не торчит под ним.
         z = base_tube + (height - base_tube) * u
         path.append((center_r * math.cos(angle), center_r * math.sin(angle), z))
         scales.append(tube_r)
@@ -398,7 +473,8 @@ def swirl(a, name):
     solid = ensure_volume(solid, "завитка")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="swirl")
     out.notes.append(f"непрерывная спираль: {coils} витков, труба ø{wire:g} мм, "
-                     f"merge={'да' if merge else 'нет'}, base={'да' if base else 'нет'}")
+                     f"начало ø{root_d:g} мм, merge={'да' if merge else 'нет'}, "
+                     f"base={'да' if base else 'нет'}")
     return out
 
 
@@ -509,16 +585,17 @@ def banana(a, name):
 # --------------------------------------------------------------------------- #
 @op("yoke", aliases=("форма_y", "рогатка", "игрек", "y_shape", "slingshot"),
     category="Примитивы",
-    summary="Буква Y / рогатка с одинаковыми ветвями. shape=капсулы — все "
-            "наружные торцы круглые, включая низ; shape=бруски — все ветви "
-            "прямоугольные с плоскими торцами. Тип не смешивается между ветвями. "
-            "smooth округляет внутренние стыки развилки, round — кромки толщины.",
+    summary="Буква Y / рогатка с одинаковыми ветвями. shape=капсулы — прямые "
+            "стороны и истинные полукруглые торцы; овалы — цельные эллиптические "
+            "ветви; бруски — плоские торцы. smooth округляет внутренние стыки "
+            "развилки, round — кромки толщины.",
     example="рогатка = yoke height=110 spread=64 arm=16 fork=0.38 depth=14 round=2\n"
             "игрек = yoke height=110 spread=64 arm=16 shape=бруски",
     params={"height": "высота до концов ветвей, мм (110)",
-            "spread": "расстояние между концами ветвей, мм (64)",
+            "spread": "размах без толщины ветви; полный габарит spread+arm, мм (64)",
             "arm": "толщина ветвей и ствола, мм (16)",
-            "shape": "капсулы — круглые торцы; бруски/параллелепипеды — плоские",
+            "shape": "капсулы — полукруглые торцы; овалы — эллиптические; "
+                     "бруски/параллелепипеды — плоские",
             "fork": "доля высоты, где начинается развилка: 0.2…0.7 (0.38)",
             "depth": "толщина по глубине, мм (14); у стоящего знака — по Y",
             "round": "скругление кромок, мм (0)",
@@ -538,11 +615,13 @@ def yoke(a, name):
     shape = (a.text("shape") or "капсулы").strip().lower()
     if shape in ("капсула", "капсулы", "capsule", "capsules", "круглые"):
         shape = "капсулы"
+    elif shape in ("овал", "овалы", "овальные", "эллипс", "ellipse", "oval"):
+        shape = "овалы"
     elif shape in ("бруски", "брусок", "параллелепипеды", "прямоугольные",
                    "box", "rect", "плоские"):
         shape = "бруски"
     else:
-        raise GeometryError("yoke: shape=капсулы или бруски.")
+        raise GeometryError("yoke: shape=капсулы, овалы или бруски.")
     if spread <= arm * 1.2:
         raise GeometryError(f"Ветви не разошлись: spread {spread:g} мм при толщине {arm:g} мм.",
                             hint="spread ≈ 3…6 толщин ветви.")
@@ -550,7 +629,17 @@ def yoke(a, name):
         raise GeometryError("Развилка слишком высоко: ветвям не хватает длины.",
                             hint="fork ≈ 0.3…0.5.")
     crotch = (0.0, height * fork)
-    if shape == "капсулы":
+    if shape == "овалы":
+        # Три настоящих эллипса, а не иная дискретизация капсул. Ствол и
+        # ветви заходят друг в друга выше/ниже развилки: соединение объёмное,
+        # а не контакт трёх остриёв в одной точке.
+        left = (-(spread + arm) / 2.0, height)
+        right = ((spread + arm) / 2.0, height)
+        inner = (0.0, crotch[1] - arm * 0.75)
+        stem = _ellipse_between((0.0, 0.0), (0.0, crotch[1] + arm * 0.75), arm)
+        l_arm = _ellipse_between(inner, left, arm)
+        r_arm = _ellipse_between(inner, right, arm)
+    elif shape == "капсулы":
         # Центры торцевых дуг отступают на arm/2: габарит остаётся height,
         # а все три наружных окончания одинаково круглые.
         left = (-spread / 2.0, height - arm / 2.0)
@@ -576,6 +665,9 @@ def yoke(a, name):
     if cross.is_empty() or cross.area() <= 1e-9:
         raise GeometryError("Форма Y получилась пустой.",
                             hint="Проверьте height, spread и arm.")
-    solid = _flat(cross, depth, round_r, arm, size=(spread + arm, height))
-    return make_solid(a.scene, name, _place_glyph(a, solid), a, kind="yoke")
+    fit_size = (spread + arm, height) if shape != "капсулы" or round_r > 1e-6 else None
+    solid = _flat(cross, depth, round_r, arm, size=fit_size)
+    out = make_solid(a.scene, name, _place_glyph(a, solid), a, kind="yoke")
+    out.meta["branch_shape"] = shape
+    return out
 

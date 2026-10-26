@@ -15,7 +15,7 @@ scene bg=#10121f grid=нет
 восемь_срезов = face_box size=[80,80,80] corner_cut=12 corners=все at=[270,70,0] color=red
 
 # Три независимых отверстия и три режима нового сгибаемого листа.
-три_отверстия = box size=[70,60,50] round=0 hole_x=12 hole_x_shape=круг hole_y=12 hole_y_shape=квадрат hole_z=18 hole_z_shape=овал oval_aspect=2 at=[-270,-70,0] color=copper
+три_отверстия = cube_hole size=[70,60,50] round=0 hole_x=12 hole_x_shape=круг hole_y=12 hole_y_shape=квадрат hole_z=18 hole_z_shape=овал oval_aspect=2 at=[-270,-70,0] color=copper
 один_сгиб = fold_sheet width=100 length=120 thickness=1.2 parts=2 angle=105 gap=1 sharp=0.2 at=[-90,-70,0] color=blue
 гармошка = fold_sheet width=100 length=140 thickness=1.2 parts=5 angle=120 gap=1 sharp=0.35 at=[90,-70,0] color=pink
 диагональный_сгиб = fold_sheet width=100 length=120 thickness=1.2 parts=2 axis=диагональ angle=90 gap=1 at=[270,-70,0] color=gold

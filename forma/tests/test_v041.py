@@ -49,7 +49,7 @@ class OrientationNotesTest(unittest.TestCase):
     def test_every_primitive_has_own_orientation_note(self):
         primitives = {c["name"] for c in commands_help()
                       if c["category"] == "Примитивы"}
-        self.assertEqual(len(primitives), 104)
+        self.assertEqual(len(primitives), 100)
         self.assertEqual(primitives, set(PRIMITIVE_ORIENTATIONS))
         for command in commands_help():
             if command["name"] in primitives:
@@ -110,8 +110,8 @@ class CanonicalConstructorsTest(unittest.TestCase):
 
     def test_yin_yang_matching_halves_make_one_disc(self):
         # round=0 сохраняет общую S-кромку без скруглённого зазора.
-        result = _build("а = yin_yang diameter=120 thick=16\n"
-                        "б = yin_yang diameter=120 thick=16 side=правый\n"
+        result = _build("а = yin_yang diameter=120 thick=16 form=плоская\n"
+                        "б = yin_yang diameter=120 thick=16 side=правый form=плоская\n"
                         "в = union [а, б]")
         joined = _solid(result, "в")
         self.assertEqual(len(joined.decompose()), 1)
@@ -230,19 +230,17 @@ class ContactPlacementTest(unittest.TestCase):
 
 
 class CompositeAxesAndPayloadTest(unittest.TestCase):
-    def test_display_flat_without_stand_and_children_share_axes(self):
-        result = _build("э = display width=180 height=90 style=будильник "
-                        "content=led plane=плашмя stand=нет")
-        self.assertGreaterEqual(len(result.scene.objects), 3)
+    def test_mirror_flat_and_children_share_axes(self):
+        result = _build("э = mirror_plate width=180 height=90 plane=плашмя")
+        self.assertGreaterEqual(len(result.scene.objects), 2)
         for obj in result.scene.objects.values():
             self.assertEqual(orient.faces(obj)["перед"], "+Z", obj.name)
             self.assertEqual(orient.faces(obj)["верх"], "+Y", obj.name)
-        rejected = build("э = display plane=диагональ", analyze_model=False)
+        rejected = build("э = mirror_plate plane=диагональ", analyze_model=False)
         self.assertFalse(rejected.ok)
-        self.assertIn("плоскость экрана", (rejected.error or {}).get("message", ""))
 
     def test_rotate_moves_children_and_their_axes_together(self):
-        result = _build("э = display width=180 height=90 style=будильник content=led\n"
+        result = _build("э = mirror_plate width=180 height=90\n"
                         "э = rotate [э] angle=90 axis=z")
         body_axes = orient.axes_of(result.scene.objects["э"])
         for obj in result.scene.objects.values():

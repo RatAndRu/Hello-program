@@ -55,8 +55,9 @@ hiddenimports += [
     "trimesh.visual", "trimesh.visual.material",
 ]
 
-# интерфейс и примеры кладём внутрь exe
-datas += [(str(ROOT / "web"), "web"), (str(ROOT / "examples"), "examples")]
+# интерфейс, примеры и встроенная карта рельефа кладём внутрь exe
+datas += [(str(ROOT / "web"), "web"), (str(ROOT / "examples"), "examples"),
+          (str(ROOT / "docs" / "pattern.png"), "docs")]
 icon_png = ROOT / "packaging" / "icon_256.png"
 if icon_png.exists():
     datas += [(str(icon_png), ".")]

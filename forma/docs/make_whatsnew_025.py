@@ -48,14 +48,14 @@ CASES = [
      "iso", "кирпич, шов, глубина"),
     ("blade — клинок", "к = blade length=700 width=44 thick=7 kind=катана curve=70", "iso",
      "катана · танто · серп"),
-    ("hair · волосы", "в = hair length=170 style=аниме clumps=26 radius=60", "iso",
-     "аниме · хвост · мех"),
-    ("skirt · юбка", "ю = skirt waist=70 hem=190 length=220 pleats=14 depth=10 thick=3", "iso",
-     "складки и толщина ткани"),
-    ("jacket · пиджак", "п = jacket height=700 chest=1040 waist=920", "iso",
-     "обхваты в мм, рукава"),
-    ("display · часы", 'ч = display width=180 height=90 thick=45 style=будильник content=led',
-     "iso", "led-цифры, стекло, подставка"),
+    ("hair · волосы", "о = sphere radius=35 segments=48\nв = hair [о] style=волоски surface=вся count=48 length=18", "iso",
+     "иголки · волоски · локоны · мех"),
+    ("crack · трещины", "о = box size=[90,70,16]\nт = crack [о] mode=удар count=8 radius=32 width=2 depth=1.2", "iso",
+     "удар · разлом · дерево"),
+    ("shave · срез", "о = box size=[70,60,40]\nс = shave [о] depth=8 groove=овальная groove_width=5 groove_depth=2", "iso",
+     "плоскость и канавка по периметру"),
+    ("point · остриё", "о = cylinder radius=10 height=90 segments=64\nз = point [о] length=25", "iso",
+     "одно тело, вершина на прежнем торце"),
     ("зеркало", "з = mirror_plate width=240 height=340 frame=16", "iso",
      "рама + отражающая пластина"),
     ("pattern · горошек", "куб = box size=[60,60,60]\npattern куб #d94f3d shape=круги size=12 step=24",
@@ -95,10 +95,10 @@ def main() -> None:
     height = HEAD + ROWS * (TILE + PAD)
     sheet = Image.new("RGB", (width, height), (13, 15, 20))
     dr = ImageDraw.Draw(sheet)
-    dr.text((28, 22), "ФОРМА 3D 0.25 — поверхность, одежда, экраны, узоры", font=F_TITLE,
+    dr.text((28, 22), "ФОРМА 3D — поверхность, скульпт, узоры", font=F_TITLE,
             fill=(240, 243, 248))
     dr.text((28, 58), "wrinkle · relief · porous · scales · lattice · bark · bricks · blade · "
-                      "hair · skirt · jacket · display · mirror_plate · pattern",
+                      "hair · crack · shave · point · mirror_plate · pattern",
             font=F_TEXT, fill=(120, 128, 144))
 
     for i, (name, script, view, note) in enumerate(CASES):

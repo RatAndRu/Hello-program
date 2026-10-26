@@ -21,24 +21,32 @@ from .ops import anchor, make_solid, op, stand_flat_sign
 # Пропорции и характер разных клинков: длина, ширина, толщина, изгиб, кромки.
 KINDS = {
     "катана": dict(width=32.0, thick=7.0, curve=0.032, edges="одна",
-                   kissaki=0.06, spine=0.62, dol=0.0),
+                   kissaki=0.06, spine=0.62, dol=0.0,
+                   grooves=((0.62, 0.12, 0.16),)),
     "танто": dict(width=30.0, thick=8.0, curve=0.006, edges="одна",
-                  kissaki=0.10, spine=0.66, dol=0.0),
+                  kissaki=0.10, spine=0.66, dol=0.0,
+                  grooves=((0.70, 0.065, 0.44),)),
     "ятоган": dict(width=42.0, thick=7.5, curve=0.028, edges="одна",
-                   kissaki=0.05, spine=0.6, dol=0.18),
+                   kissaki=0.05, spine=0.6, dol=0.18,
+                  grooves=((0.48, 0.17, 0.30), (0.76, 0.07, 0.18))),
     "стилет": dict(width=14.0, thick=5.0, curve=0.0, edges="две",
-                   kissaki=0.08, spine=0.5, dol=0.0),
+                   kissaki=0.08, spine=0.5, dol=0.0,
+                   grooves=((0.28, 0.065, 0.34), (0.72, 0.065, 0.34))),
     "двуручник": dict(width=52.0, thick=9.0, curve=0.004, edges="две",
-                      kissaki=0.07, spine=0.5, dol=0.22),
+                      kissaki=0.07, spine=0.5, dol=0.22,
+                      grooves=((0.30, 0.13, 0.24), (0.70, 0.13, 0.24))),
     "серп": dict(width=46.0, thick=6.0, curve=0.16, edges="одна",
-                 kissaki=0.03, spine=0.55, dol=0.0),
+                 kissaki=0.03, spine=0.55, dol=0.0,
+                 grooves=((0.78, 0.09, 0.30),)),
     "нож": dict(width=28.0, thick=4.0, curve=0.0, edges="одна",
-                kissaki=0.12, spine=0.7, dol=0.0),
+                kissaki=0.12, spine=0.7, dol=0.0,
+                grooves=((0.56, 0.075, 0.27),)),
 }
 
 
 def _section(w: float, t: float, edges: str, spine: float, dol: float,
-             n: int = 9, profile: str = "линза") -> np.ndarray:
+             n: int = 9, profile: str = "линза", grooves=(),
+             groove_gain: float = 1.0) -> np.ndarray:
     """Замкнутое несамопересекающееся сечение всей длины клинка.
 
     X — от режущей кромки (−w/2) к спинке (+w/2), Y — толщина.
@@ -72,6 +80,11 @@ def _section(w: float, t: float, edges: str, spine: float, dol: float,
                 h = math.sin(math.pi * 0.5 * bevel_u) ** (0.8 + spine)
         if dol > 1e-6:
             h *= 1.0 - dol * math.exp(-((u - 0.5) / 0.18) ** 2)
+        # Ложбины — реальное изменение толщины обеих сторон сечения.
+        # Центр, ширина и глубина зависят от kind; gain гасит их у торцов.
+        for center, channel_width, depth in grooves:
+            q = (u - center) / max(channel_width, 1e-6)
+            h *= 1.0 - depth * groove_gain * math.exp(-(q * q))
         y = edge + (half_t - edge) * max(0.0, h)
         upper.append((-half_w + w * u, y))
     # X сохраняется! Зеркалить нужно только толщину; старый (-x, -y)
@@ -196,7 +209,9 @@ def _close_blade(rings: list[np.ndarray], profile: np.ndarray,
             "задаёт геометрию: односторонние виды имеют квадратную тупую "
             "спинку, стилет/двуручник — две кромки, серп — продолжающийся "
             "крюк даже при curve=0. profile меняет ширину, section — сечение, "
-            "tip — остриё. curve изгибает клинок вверх/вниз в его плоскости.",
+            "tip — остриё. У каждого kind своё число, положение, ширина и "
+            "глубина боковых ложбин; они плавно сходят на нет у основания и "
+            "кончика. curve изгибает клинок вверх/вниз в его плоскости.",
     example="катана = blade length=700 width=32 thick=7 kind=катана curve=22 profile=прямой tip=киссаки\n"
             "стилет = blade length=280 kind=стилет section=алмаз tip=острое curve=0\n"
             "нож = blade length=300 kind=нож profile=листовой section=плоский tip=закруглённое",
@@ -206,14 +221,15 @@ def _close_blade(rings: list[np.ndarray], profile: np.ndarray,
             "curve": "сгиб в плоскости ширины, мм; + вверх, − вниз; у серпа "
                      "задаёт раствор крюка, но 0 не убирает его форму",
             "kind": "катана/танто/ятоган/нож — одна кромка и прямая толстая "
-                    "спинка; стилет/двуручник — две кромки; серп — крюк",
+                    "спинка; стилет/двуручник — две кромки; серп — крюк; "
+                    "каждый вид имеет свои боковые ложбины",
             "edges": "одна или две кромки (по kind)",
             "profile": "силуэт всей длины: прямой, суженный или листовой",
             "section": "сечение всего клинка: линза, клин, плоский или алмаз",
             "tip": "заострение: острое, киссаки, закруглённое или тупое",
             "taper": "сила сужения профиля 0…0.9 (0.55)",
             "kissaki": "доля длины, занятая остриём, 0.01…0.35 (по kind)",
-            "dol": "глубина дола 0…0.35 (по kind)",
+            "dol": "глубина дополнительного центрального дола 0…0.35 (по kind)",
             "detail": "колец по длине 8…200 (авто)",
             "plane": "фронт или плашмя — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -291,7 +307,10 @@ def blade(a, name):
             tip_factor = max(0.025, 1.0 - v)
         w = max(width * 0.01, width * longitudinal * tip_factor)
         t = max(0.2, thick * (1.0 - 0.35 * u) * (0.45 + 0.55 * min(1.0, longitudinal)))
-        sec = _section(w, t, edges, preset["spine"], dol, profile=section)
+        groove_gain = math.sin(math.pi * u) ** 0.65
+        sec = _section(w, t, edges, preset["spine"], dol, n=25,
+                       profile=section, grooves=preset["grooves"],
+                       groove_gain=groove_gain)
         if tip == "киссаки" and v > 0.0:
             # Смещение к спинке даёт характерную диагональ киссаки.
             sec = sec + np.asarray([width * 0.22 * v * v, 0.0])
@@ -306,6 +325,112 @@ def blade(a, name):
     a.scene.log("info", f"клинок: {kind_raw}, profile={profile}, section={section}, "
                         f"tip={tip}, прогиб {curve:g} мм", a.cmd.line)
     return make_solid(a.scene, name, solid, a, kind="blade")
+
+
+def _turbine_foil(chord: float, thickness: float, camber: float,
+                  root_at: float, samples: int) -> np.ndarray:
+    """Закрытый аэродинамический профиль с кэмбером и тонкой кромкой."""
+    xs = 0.5 - 0.5 * np.cos(np.linspace(0.0, math.pi, samples))
+    upper, lower = [], []
+    for x in xs:
+        # Замкнутая задняя кромка NACA; масштаб thickness — полная толщина.
+        yt = 5.0 * thickness * (0.2969 * math.sqrt(max(0.0, x)) - 0.1260 * x
+                               - 0.3516 * x * x + 0.2843 * x ** 3 - 0.1036 * x ** 4)
+        yc = camber * chord * 4.0 * x * (1.0 - x)
+        xx = (float(x) - root_at) * chord
+        upper.append((xx, yc + yt))
+        if 0.0 < x < 1.0:
+            lower.append((xx, yc - yt))
+    return ensure_ccw(np.asarray(upper + lower[::-1], dtype=np.float64))
+
+
+@op("turbine_blade", aliases=("лопасть_турбины", "лопасть", "турбинная_лопасть",
+                              "fan_blade", "impeller_blade"),
+    category="Примитивы",
+    summary="Одна лопасть турбины/вентилятора с аэродинамическим сечением, "
+            "а не изогнутой пластиной. Хорда растёт от корня, верх и низ "
+            "различаются кэмбером, крутка и стреловидность независимы. "
+            "Ось лопасти +Z, корень снизу; можно собрать ротор командой array.",
+    example="лопасть = turbine_blade length=180 chord=70 root_chord=20 tip_chord=42 thick=7 twist=55 sweep=28 camber=.09\n"
+            "острая = turbine_blade length=160 chord=60 twist=-35 lean=12 tip=острый\n"
+            "круглая = turbine_blade length=150 chord=64 root_h=12 tip=скругление",
+    params={"length": "радиальная длина от корня до конца по Z, мм (180)",
+            "chord": "максимальная хорда лопасти, мм (70)",
+            "root_chord": "хорда у корня, мм (20)",
+            "tip_chord": "хорда перед окончанием, мм (42)",
+            "thick": "полная толщина профиля у корня, мм (7)",
+            "tip_thick": "полная толщина у конца, мм (2.5)",
+            "camber": "кривизна средней линии в долях хорды −0.3…0.3 (0.09)",
+            "stagger": "угол профиля у корня, градусы (25)",
+            "twist": "дополнительная крутка к концу −120…120° (55)",
+            "twist_exp": "неравномерность крутки 0.4…3 (1)",
+            "sweep": "осевой изгиб по Y к концу, мм (28)",
+            "lean": "боковое смещение по X к концу, мм (0)",
+            "root_at": "ось вращения профиля вдоль хорды 0.1…0.9 (0.35)",
+            "root_h": "длина узкой зоны корня с постоянной хордой, мм (0)",
+            "tip": "срез, скругление или острый",
+            "segments": "сечений по длине 12…96 (36)",
+            "foil": "точек на сторону профиля 8…48 (18)",
+            "at": "положение [x,y,z]", "center": "центрировать по габариту"})
+def turbine_blade(a, name):
+    length = float(a.num("length", 180.0, minv=10.0, maxv=5000.0))
+    chord = float(a.num("chord", 70.0, minv=2.0, maxv=2000.0))
+    root_chord = float(a.num("root_chord", 20.0, minv=0.5, maxv=chord))
+    tip_chord = float(a.num("tip_chord", 42.0, minv=0.5, maxv=chord))
+    thick = float(a.num("thick", 7.0, minv=0.1, maxv=root_chord * 0.8))
+    tip_thick = float(a.num("tip_thick", 2.5, minv=0.05, maxv=tip_chord * 0.8))
+    camber = float(a.num("camber", 0.09, minv=-0.3, maxv=0.3) or 0.0)
+    stagger = float(a.num("stagger", 25.0, minv=-80.0, maxv=80.0) or 0.0)
+    twist = float(a.num("twist", 55.0, minv=-120.0, maxv=120.0) or 0.0)
+    twist_exp = float(a.num("twist_exp", 1.0, minv=0.4, maxv=3.0))
+    sweep = float(a.num("sweep", 28.0, minv=-2000.0, maxv=2000.0) or 0.0)
+    lean = float(a.num("lean", 0.0, minv=-2000.0, maxv=2000.0) or 0.0)
+    root_at = float(a.num("root_at", 0.35, minv=0.1, maxv=0.9))
+    root_h = float(a.num("root_h", 0.0, minv=0.0, maxv=length * 0.45) or 0.0)
+    tip = (a.text("tip", "срез") or "срез").strip().lower()
+    tip = {"срез": "срез", "плоский": "срез", "скругление": "скругление",
+           "круглый": "скругление", "round": "скругление",
+           "острый": "острый", "остриё": "острый", "point": "острый"}.get(tip)
+    if tip is None:
+        raise GeometryError("turbine_blade: tip=срез, скругление или острый.")
+    n = int(a.int("segments", 36, minv=12, maxv=96) or 36)
+    foil = int(a.int("foil", 18, minv=8, maxv=48) or 18)
+    rings, sections = [], []
+    for i in range(n):
+        u = i / (n - 1)
+        growth_u = min(1.0, u / 0.75)
+        c = root_chord + (chord - root_chord) * math.sin(math.pi * 0.5 * growth_u) ** 0.72
+        if u > 0.75:
+            q = (u - 0.75) / 0.25
+            q = q * q * (3.0 - 2.0 * q)
+            c = c * (1.0 - q) + tip_chord * q
+        if root_h > 1e-9 and u * length < root_h:
+            c = root_chord
+        elif root_h > 1e-9:
+            # Плавный выход из цилиндрической по смыслу зоны корня.
+            q = min(1.0, (u * length - root_h) / max(chord * 0.25, 1e-6))
+            c = root_chord * (1.0 - q) + c * q
+        if tip != "срез" and u > 0.88:
+            q = (u - 0.88) / 0.12
+            factor = max(0.035, math.sqrt(max(0.0, 1.0 - q * q))) if tip == "скругление" else max(0.025, 1.0 - q)
+            c *= factor
+        t = thick * (1.0 - u) + tip_thick * u
+        sec = _turbine_foil(c, min(t, c * 0.75), camber, root_at, foil)
+        angle = math.radians(stagger + twist * u ** twist_exp)
+        ca, sa = math.cos(angle), math.sin(angle)
+        x = sec[:, 0] * ca - sec[:, 1] * sa + lean * u ** 1.35
+        y = sec[:, 0] * sa + sec[:, 1] * ca + sweep * u ** 1.35
+        rings.append(np.column_stack([x, y, np.full(len(sec), length * u)]))
+        sections.append(sec)
+    solid = _close_blade(rings, sections[0], pointed=False)
+    if str(solid.status()) != "Error.NoError" or len(solid.decompose()) != 1:
+        raise GeometryError("Лопасть не собралась в одно тело: уменьшите крутку или изгиб.")
+    solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
+    out = make_solid(a.scene, name, solid, a, kind="turbine_blade")
+    out.meta.update({"chord": chord, "twist": twist, "sweep": sweep, "tip": tip})
+    out.notes.append(f"лопасть: хорда {root_chord:g}→{chord:g}→{tip_chord:g} мм, "
+                     f"крутка {twist:g}°, sweep {sweep:g}, camber {camber:g}")
+    return out
 
 
 # --------------------------------------------------------------------------- #

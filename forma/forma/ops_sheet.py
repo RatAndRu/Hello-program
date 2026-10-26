@@ -291,13 +291,25 @@ def _accordion_path(span: float, parts: int, angle_deg: float, gap: float,
     radius = thickness + gap / 2.0 * (1.0 - 0.9 * sharp)
     turn = math.radians(angle_deg)
     arc_len = radius * turn
-    panel = span / parts
-    if panel <= arc_len * 1.15:
+    half = arc_len / 2.0
+    if parts == 2:
+        # Одиночный сгиб можно сместить от центра. Обе дуговые половины
+        # относятся к своим полотнищам, поэтому offset по-прежнему задаёт
+        # именно положение середины сгиба на исходном листе.
+        lines = [span * offset]
+        panel = max(0.0, min(lines[0], span - lines[0]) - half)
+    else:
+        # Все ПЛОСКИЕ полотнища одинаковы. Старая раскладка ставила центры
+        # дуг на i·span/parts: крайние полотнища получались длиннее средних
+        # на половину дуги, что на гармошке выглядело как уширение каждой
+        # второй складки. Сначала вычитаем дуги из исходной длины, а уже
+        # остаток делим поровну между всеми parts полотнищами.
+        panel = (span - (parts - 1) * arc_len) / parts
+        lines = [(i + 1) * panel + arc_len * (i + 0.5) for i in range(parts - 1)]
+    if panel <= max(0.02, thickness * 0.05):
         raise GeometryError(
-            f"На часть листа приходится {panel:.1f} мм, а сгиб занимает {arc_len:.1f} мм.",
+            f"На плоскую часть листа остаётся {panel:.1f} мм, а сгиб занимает {arc_len:.1f} мм.",
             hint="Уменьшите gap, angle или parts; либо увеличьте лист.")
-    lines = ([span * offset] if parts == 2 else
-             [span * i / parts for i in range(1, parts)])
     pts = [(0.0, 0.0, 0.0, 0.0)]  # u, z, угол, длина исходного листа
 
     def arc_step(x, z, ang, sign, d_ang):
@@ -473,7 +485,9 @@ def corrugate(a, name):
 
     m = base.manifold
     detail = a.num("detail", None, minv=0.02)
-    refine = float(detail) if detail else max(0.2, step / 8.0)
+    # Не меньше двенадцати рёбер на волну: восьми было недостаточно — на
+    # крутых рифлях и вафле проступала диагональ триангуляции.
+    refine = float(detail) if detail else max(0.08, step / 12.0)
     m = m.refine_to_length(_refine_for(m, refine))
     verts, faces = manifold_mesh(m)
     if len(verts) > MAX_TRIS:
@@ -492,7 +506,12 @@ def corrugate(a, name):
     elif mode == "вафля":
         off = np.sin(k * x1) * np.sin(k * y1)
     elif mode == "рифление":
-        off = 0.5 * np.sin(k * (x1 + y1)) + 0.5 * np.sin(k * (x1 - y1))
+        # Параллельные рёбра с пологой вершиной и крутыми боками. Прежняя
+        # сумма двух косых синусов была тождественна sin(x)·cos(y): на листе
+        # она давала почти ту же двумерную вафлю. Здесь координата y1 не
+        # участвует вовсе — рифление действительно идёт прямыми полосами.
+        wave = np.sin(k * x1)
+        off = np.sign(wave) * np.power(np.abs(wave), 0.45)
     else:                                        # зигзаг
         off = 2.0 / math.pi * np.arcsin(np.sin(k * x1))
     moved = verts.copy()
@@ -562,19 +581,26 @@ def fold(a, name):
     radius = thin + gap / 2.0 * (1.0 - 0.9 * sharp)
     turn = math.radians(angle_deg)
     arc_len = radius * turn
-    panel = span / parts
-    if panel <= arc_len * 1.15:
+    half = arc_len / 2.0
+    # Для гармошки сначала убираем из исходной длины все дуги, а остаток
+    # делим на равные плоские полотнища. Поэтому parts=5 даёт пять одинаковых
+    # по ширине участков, а не длинные края и короткую середину.
+    if parts == 2:
+        centre = span * offset
+        panel = max(0.0, min(centre, span - centre) - half)
+        local_lines = [centre]
+    else:
+        panel = (span - (parts - 1) * arc_len) / parts
+        local_lines = [(i + 1) * panel + arc_len * (i + 0.5) for i in range(parts - 1)]
+    if panel <= max(0.02, thin * 0.05):
         raise GeometryError(
-            f"На часть приходится {panel:.1f} мм, а сгиб занимает {arc_len:.1f} мм: "
+            f"На плоскую часть приходится {panel:.1f} мм, а сгиб занимает {arc_len:.1f} мм: "
             "деталь коротка для такого радиуса.",
             hint="Уменьшите gap, angle или число частей parts.")
 
     # Положения линий сгиба вдоль оси (в локальных координатах от левого края)
     lo = bb[axis]            # минимум по оси = bb[0..2]
-    if parts == 2:
-        lines = [lo + span * offset]
-    else:
-        lines = [lo + span * i / parts for i in range(1, parts)]
+    lines = [lo + line for line in local_lines]
     signs = [(-1.0) ** i for i in range(len(lines))]   # первый сгиб — вверх
 
     # Центральная линия: прямые участки и дуги, полная длина = длина детали.
