@@ -23,7 +23,7 @@ import numpy as np
 
 from .errors import GeometryError
 from .geometry import manifold_from_arrays
-from .ops import make_solid, op
+from .ops import make_solid, op, stand_flat_sign
 from .ops_shapes import (_chamfered_prism, _cross, _placed, _revolve,
                          _segments, ensure_volume)
 
@@ -183,13 +183,17 @@ def crown(a, name):
             "настоящей толщиной и скруглением кромки; side=правый даёт "
             "зеркальную половину, вместе они складываются в целый знак.",
     example="инь = yin_yang diameter=120 thick=16 round=3\n"
-            "ян = yin_yang diameter=120 thick=16 side=правый at=[0,0,16]",
+            "ян = yin_yang diameter=120 thick=16 round=3 side=правый\n"
+            "знак = union [инь, ян]",
     params={"diameter": "диаметр знака, мм (120)",
             "thick": "толщина, мм (16)",
             "round": "скругление кромки, мм (2)",
             "side": "левый (по умолчанию) или правый — зеркальная половина",
             "segments": "точек на дугу (по размеру)",
-            "at": "сдвиг от центра знака [x,y,z]",
+            "plane": "фронт — знак стоит в XZ лицом −Y; плашмя — лежит в XY "
+                     "лицом +Z (фронт)",
+            "at": "сдвиг от центра всего знака [x,y,z]; половины не привязываются "
+                  "к полу по отдельности",
             "center": "центрировать по габариту (обычно не нужно)"})
 def yin_yang(a, name):
     diameter = float(a.num("diameter", 120.0, minv=6.0))
@@ -226,9 +230,12 @@ def yin_yang(a, name):
     solid = _chamfered_prism(cross, thick, max(0.0, bevel), 3) if bevel > 1e-3 \
         else cross.extrude(thick)
     solid = ensure_volume(solid, "инь-ян")
+    # Общий канон плоских знаков: по умолчанию стоит в XZ лицом −Y.
+    # Поворот делаем ДО сдвига: начало координат остаётся центром всего знака.
+    solid = stand_flat_sign(a, solid)
     # Половинки знака не центрируем по габариту: у «запятой» габарит не
     # симметричен, и две половинки разъехались бы. Начало координат — центр
-    # самого знака, поэтому at=[0,0,thick] складывает целый инь-ян.
+    # самого знака; at одинаково сдвигает обе половины и не привязывает их к полу.
     at = a.vec("at", 3, default=(0, 0, 0))
     if a.boolean("center", False):
         solid = _placed(a, solid)
@@ -258,8 +265,9 @@ _LENS_MODES = {
     summary="Оптическая линза с настоящими сферическими поверхностями: "
             "двояковыпуклая (увеличительная), двояковогнутая, плосковыпуклая, "
             "плосковогнутая и мениск. sag — глубина прогиба (стрела), edge — "
-            "толщина по краю, rim — плоская шлифованная кромка. Линза лежит "
-            "на боку, оптическая ось — Z.",
+            "толщина по краю, rim — плоская шлифованная кромка. Плоскость "
+            "линзы — XY, оптическая ось — Z: лицевые оптические стороны +Z и −Z; "
+            "диаметр занимает X/Y, толщина — Z.",
     example="линза = lens diameter=70 sag=12 edge=4 mode=выпуклая\n"
             "вогнутая = lens diameter=60 sag=8 edge=6 mode=вогнутая rim=2",
     params={"diameter": "диаметр, мм (70)",

@@ -13,6 +13,7 @@ import math
 import manifold3d as mf
 import numpy as np
 
+from . import orient
 from .errors import GeometryError
 from .ops import anchor, make_solid, op
 from .ops_tech import _helix_ridge
@@ -315,8 +316,10 @@ def screw(a, name):
     out = _finish(a, name, body, "screw",
                   f"саморез Ø{d:g}×{length:g} (полная {total:g}) · головка {head}"
                   f" · шлиц {drive}")
-    out.meta = {"screw": True, "head": head, "head_h": head_h if cap is not None else 0.0,
-                "length": length, "tip": tip_len, "d": d}
+    # update, а не замена словаря: make_solid уже записал локальные axes.
+    out.meta.update({"screw": True, "head": head,
+                     "head_h": head_h if cap is not None else 0.0,
+                     "length": length, "tip": tip_len, "d": d})
     return out
 
 
@@ -345,8 +348,8 @@ def nail(a, name):
     solid = shank + point + head
     out = _finish(a, name, solid, "nail",
                   f"гвоздь Ø{d:g}×{length:g} мм · шляпка Ø{head_d:g}")
-    out.meta = {"nail": True, "head": "полукруг", "head_h": head_h,
-                "length": length, "d": d}
+    out.meta.update({"nail": True, "head": "полукруг", "head_h": head_h,
+                     "length": length, "d": d})
     return out
 
 
@@ -417,6 +420,8 @@ def drive(a, name):
             hint=f"Кончик уходит на {depth:.1f} мм от поверхности, а доска тоньше. "
                  "Уменьшите length или точку ставьте ближе к центру доски.")
     placed = make_solid(a.scene, name, solid, a, kind="drive")
+    rotation = _axis_matrix(-direction)[:, :3]
+    orient.set_axes(placed, rotation @ orient.axes_of(screw_obj))
     placed.notes.append(f"{target} в {body_name}: голова утоплена {sink:g} мм")
     a.scene.consume(screw_obj)
     return placed

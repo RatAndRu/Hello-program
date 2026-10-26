@@ -25,7 +25,7 @@ class OpSpec:
     positional: list[str] | str | None = None
 
     def help_dict(self) -> dict:
-        return {
+        data = {
             "name": self.name,
             "aliases": list(self.aliases),
             "category": self.category,
@@ -33,6 +33,12 @@ class OpSpec:
             "example": self.example,
             "params": [{"name": k, "desc": v} for k, v in self.params.items()],
         }
+        if self.category == "Примитивы":
+            from .orient_notes import orientation_for
+            note = orientation_for(self.name)
+            if note:
+                data["orientation"] = note
+        return data
 
 
 OPS: dict[str, OpSpec] = {}
@@ -175,6 +181,90 @@ def anchor(m: mf.Manifold, at=None, center: bool = False) -> mf.Manifold:
     return translate(m, (tx - cx, ty - cy, tz - cz))
 
 
+# --------------------------------------------------------------------------- #
+#  Единая ориентация плоских знаков
+# --------------------------------------------------------------------------- #
+#  Правило проекта (одно на все примитивы):
+#    • верх — +Z, низ — −Z, предмет стоит на полу z = 0;
+#    • лицо (лицевая сторона знака, панели, зеркала, надписи) — −Y, то есть
+#      смотрит на зрителя в виде «спереди»;
+#    • право и длина вытянутых деталей — +X.
+#  Плоские силуэты рождаются в плоскости XY (X — длина, Y — «верх» силуэта,
+#  Z — толщина). Поворот на +90° вокруг X переводит Y → +Z, а Z → −Y, то есть
+#  автоматически даёт канон: длина по X, верх +Z, лицо −Y.
+PLANE_FRONT = ("фронт", "стена", "face", "front", "xz")
+PLANE_FLAT = ("плашмя", "лежит", "лечь", "flat", "xy", "горизонт", "пол")
+
+
+def face_front(m: mf.Manifold, angle: float = 90.0) -> mf.Manifold:
+    """Поворачивает плоский силуэт из XY в вертикальную плоскость XZ.
+
+    После поворота длина остаётся по X, «верх» силуэта смотрит в +Z, а лицо —
+    в −Y: знак видно в виде «спереди», как табличку.
+    """
+    return m.rotate((float(angle), 0.0, 0.0))
+
+
+def stand_flat_sign(a, m: mf.Manifold) -> mf.Manifold:
+    """Ставит плоский знак по правилу проекта.
+
+    По умолчанию знак **стоит** лицом в −Y (табличка). ``plane=плашмя``
+    (или ``stand=нет``) кладёт его на пол, лицом вверх: тогда, например,
+    звезду можно врезать в крышку.
+    """
+    plane = (a.text("plane") or "").strip().lower() if a.has("plane") else ""
+    stand = True
+    if plane in PLANE_FLAT:
+        stand = False
+    elif plane in PLANE_FRONT:
+        stand = True
+    elif plane:
+        raise GeometryError(
+            f"Неизвестная плоскость знака: «{a.text('plane')}».",
+            hint="plane=фронт (стоит лицом к зрителю) или plane=плашмя (лежит).")
+    if a.has("stand"):
+        stand = a.boolean("stand", True)
+    return face_front(m) if stand else m
+
+
+STAND_PARAMS = {
+    "plane": "фронт — стоит лицом к зрителю (−Y), плашмя — лежит лицом вверх "
+             "(+Z) — «фронт»",
+}
+
+
+# У этих команд plane=плашмя — настоящий поворот канонической стоящей
+# детали на −90° вокруг X. Поэтому вместе с сеткой поворачиваем и памятку
+# локальных сторон: верх нарисованного знака после укладки смотрит в +Y.
+_SIGN_PLANE_OPS = {
+    "star", "heart", "plus", "spiral", "yin_yang", "seven_seg", "arrow",
+    "tee", "crescent", "lightning", "yoke", "blade", "saw", "leaf",
+    "display", "mirror_plate", "полуовал",
+}
+_SIGN_STAND_OPS = {"arrow", "tee", "crescent", "lightning", "yoke"}
+
+
+def _constructor_axes(args) -> np.ndarray:
+    """Исходная матрица «мир ← деталь» для вариантов ориентации конструктора."""
+    name = args.spec.name
+    if name == "text":
+        plane = (args.text("plane", "xz") or "xz").strip().lower()
+        if plane in ("xy", "плашмя", "лежит", "горизонт"):
+            return rotation_matrix(-90.0, (1, 0, 0))[:, :3]
+        if plane == "yz":
+            return rotation_matrix(90.0, (0, 0, 1))[:, :3]
+        return np.eye(3)
+    if name in _SIGN_PLANE_OPS:
+        plane = ((args.text("plane") or "").strip().lower()
+                 if args.has("plane") else "")
+        flat = plane in PLANE_FLAT
+        if name in _SIGN_STAND_OPS and args.has("stand"):
+            flat = not args.boolean("stand", True)
+        if flat:
+            return rotation_matrix(-90.0, (1, 0, 0))[:, :3]
+    return np.eye(3)
+
+
 def ensure_solid(m: mf.Manifold | None, what: str = "объект") -> mf.Manifold:
     if m is None or not isinstance(m, mf.Manifold):
         raise GeometryError(f"Не удалось построить {what}.")
@@ -213,7 +303,7 @@ def make_solid(scene: Scene, name: str | None, manifold: mf.Manifold, args,
     try:
         solid.meta["axes"] = np.asarray(axes, dtype=np.float64).reshape(3, 3).tolist()
     except Exception:
-        solid.meta["axes"] = np.eye(3).tolist()
+        solid.meta["axes"] = _constructor_axes(args).tolist()
     return scene.add(solid)
 
 

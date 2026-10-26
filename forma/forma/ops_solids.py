@@ -378,8 +378,9 @@ def ingot(a, name):
     category="Примитивы",
     summary="Параболоид вращения — гладкая чаша или купол: антенна, плафон, "
             "миска, купол башни. wall=0 даёт сплошное тело, wall>0 — настоящую "
-            "чашу со стенкой (стенка меряется по высоте). В отличие от полусферы "
-            "склон у чаши выполаживается к краю.",
+            "чашу со стенкой (стенка меряется по высоте). Сплошной купол "
+            "направлен вершиной +Z; полая чаша стоит дном вниз и открыта +Z. "
+            "В отличие от полусферы склон у чаши выполаживается к краю.",
     example="чаша = paraboloid diameter=140 height=34\n"
             "миска = paraboloid diameter=120 height=40 wall=3\n"
             "плафон = paraboloid diameter=90 height=60",
@@ -424,8 +425,12 @@ def paraboloid(a, name):
     if cs.is_empty():
         raise GeometryError("Профиль параболоида не замкнулся.")
     solid = mf.Manifold.revolve(cs, segments)
+    # Сплошной профиль — купол вершиной +Z. У полой чаши дно и раскрытие
+    # меняются местами: после переворота дно остаётся внизу, полость открыта +Z.
+    if wall > 1e-6:
+        solid = solid.rotate((180.0, 0.0, 0.0))
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="paraboloid")
-    kind_text = "чаша со стенкой" if wall > 1e-6 else "сплошной купол"
+    kind_text = "чаша со стенкой, раскрытие +Z" if wall > 1e-6 else "сплошной купол"
     out.notes.append(f"параболоид ø{diameter:g}×{height:g} мм, {kind_text}"
                      + (f" {wall:g} мм" if wall > 1e-6 else ""))
     return out
@@ -556,7 +561,9 @@ def stairs(a, name):
     summary="Треугольная призма с любым треугольником в основании: стороны "
             "задаются числами a, b, c — можно сделать равнобедренную, "
             "прямоугольную или косоугольную. Вместо сторон можно дать основание "
-            "и два угла: base, angle_a, angle_b. Стоит на полу, длина идёт по Y.",
+            "и два угла: base, angle_a, angle_b. Основание лежит в XY: сторона "
+            "a идёт по X, третья вершина смещена в +Y; height — выдавливание "
+            "призмы по +Z.",
     example="клин = tri_prism a=120 b=90 c=60 height=80\n"
             "остроугольная = tri_prism a=100 b=100 c=40 height=50\n"
             "по_углам = tri_prism base=110 angle_a=55 angle_b=65 height=60",

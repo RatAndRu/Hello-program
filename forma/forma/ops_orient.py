@@ -23,6 +23,7 @@ import numpy as np
 from . import orient
 from .errors import GeometryError
 from .ops import make_solid, op
+from .ops_shape import _parts_follow
 
 _WORDS = {
     "x": (1.0, 0.0, 0.0), "+x": (1.0, 0.0, 0.0), "-x": (-1.0, 0.0, 0.0),
@@ -108,3 +109,144 @@ def orientation(a, name):
         text += (f"; центр массы ({mass[0]:g}, {mass[1]:g}, {mass[2]:g})")
         a.scene.log("info", text, a.cmd.line)
     return made
+
+
+# --------------------------------------------------------------------------- #
+#  Отношения осей двух деталей
+# --------------------------------------------------------------------------- #
+def _local_axis(a, key: str, default: str = "top") -> np.ndarray:
+    """Ось в ЛОКАЛЬНЫХ координатах: x/y/z, верх/перёд/право или вектор."""
+    if not a.has(key):
+        return np.asarray(orient.SIDE_VECTORS[default], dtype=np.float64)
+    raw = (a.text(key) or "").strip().lower()
+    side = orient.side_key(raw)
+    if side in orient.SIDE_VECTORS and side != "center":
+        return np.asarray(orient.SIDE_VECTORS[side], dtype=np.float64)
+    vec = _direction(a, key)
+    if vec is None or float(np.linalg.norm(vec)) < 1e-9:
+        raise GeometryError(f"{key}: направление не задано или нулевое.",
+                            hint="Например: axis=top, axis=x или axis=[1,0,1].")
+    return np.asarray(vec, dtype=np.float64)
+
+
+def _unit(vec, what: str) -> np.ndarray:
+    arr = np.asarray(vec, dtype=np.float64)
+    norm = float(np.linalg.norm(arr))
+    if norm < 1e-9:
+        raise GeometryError(f"{what}: нулевое направление.")
+    return arr / norm
+
+
+def _perpendicular_target(host_direction: np.ndarray, requested) -> np.ndarray:
+    """Направление в плоскости, перпендикулярной оси хозяина.
+
+    По умолчанию берём проекцию мирового +Z («как можно ближе к верху»).
+    Если ось вертикальна, последовательно пробуем перед −Y и право +X.
+    """
+    if requested is not None:
+        candidates = [_unit(requested, "direction")]
+    else:
+        candidates = [np.array([0.0, 0.0, 1.0]),
+                      np.array([0.0, -1.0, 0.0]),
+                      np.array([1.0, 0.0, 0.0])]
+    for candidate in candidates:
+        projected = candidate - host_direction * float(np.dot(candidate, host_direction))
+        if float(np.linalg.norm(projected)) > 1e-8:
+            return _unit(projected, "перпендикуляр")
+    raise GeometryError("direction параллелен оси хозяина: перпендикуляр не определён.",
+                        hint="Задайте другое direction, например direction=+x.")
+
+
+def _align_axes(a, name, relation: str):
+    solids = a.solids()
+    if len(solids) != 1:
+        raise GeometryError(f"{relation} работает с одной деталью за раз.")
+    part = solids[0]
+    host_name = (a.text("on") or "").strip()
+    if not host_name:
+        raise GeometryError(f"{relation}: укажите on=имя_хозяина.")
+    host = a.scene.resolve(host_name)
+    if host is part:
+        raise GeometryError(f"{relation}: деталь и хозяин должны быть разными.")
+
+    part_axis = _local_axis(a, "axis", "top")
+    host_axis = _local_axis(a, "host_axis", "top")
+    A = orient.axes_of(part)
+    H = orient.axes_of(host)
+    source = _unit(A @ part_axis, "axis детали")
+    host_direction = _unit(H @ host_axis, "ось хозяина")
+    if relation == "parallel":
+        target = host_direction
+    else:
+        target = _perpendicular_target(host_direction, _direction(a, "direction"))
+    if a.boolean("flip", False):
+        target = -target
+    R = orient.rotation_between(source, target)
+
+    pivot = orient.bbox_center(part.manifold)
+    mat = np.hstack([R, (pivot - R @ pivot).reshape(3, 1)])
+
+    def _turn(m):
+        return m.transform(np.ascontiguousarray(mat, dtype=np.float64))
+
+    moved = _turn(part.manifold)
+    _parts_follow(a, part, _turn, rotation=R)
+    made = make_solid(a.scene, name, moved, a, base=part, kind=relation)
+    a.scene.consume(part)
+    orient.set_axes(made, R @ A)
+    made.meta["axis_relation"] = {
+        "kind": relation, "host": host.name,
+        "axis": (a.text("axis") or "top"),
+        "host_axis": (a.text("host_axis") or "top"),
+        "direction": [float(x) for x in target],
+    }
+    check = float(np.dot(_unit((R @ A) @ part_axis, "результат"), host_direction))
+    if relation == "parallel" and abs(abs(check) - 1.0) > 1e-6:
+        raise GeometryError("parallel: не удалось совместить оси.")
+    if relation == "perpendicular" and abs(check) > 1e-6:
+        raise GeometryError("perpendicular: оси не получились перпендикулярными.")
+    a.scene.log("info", f"{relation}: {part.name} относительно {host.name}; "
+                        f"центр детали сохранён, ось → "
+                        f"{orient.describe_direction(target)}", a.cmd.line)
+    return made
+
+
+@op("parallel", aliases=("параллельно", "параллельность", "align_parallel"),
+    category="Массивы и преобразования",
+    summary="Разворачивает выбранную локальную ось детали параллельно локальной "
+            "оси другой детали. axis — ось детали, host_axis — ось хозяина; "
+            "можно писать x/y/z, верх/перёд/право или вектор. Центр не двигается, "
+            "лишний оборот вокруг оси не добавляется; flip=да даёт антипараллельность.",
+    example="стойка = cylinder radius=8 height=80\n"
+            "стойка = rotate [стойка] angle=90 axis=x\n"
+            "рейка = box size=[60,12,12]\n"
+            "рейка = parallel [рейка] on=стойка axis=top host_axis=top",
+    params={"objects": "деталь", "on": "объект-хозяин",
+            "axis": "локальная ось детали: top/верх (по умолчанию), front/перёд, "
+                    "right/право, x/y/z или [x,y,z]",
+            "host_axis": "локальная ось хозяина, те же значения (top)",
+            "flip": "направить против оси хозяина, да/нет (нет)"},
+    positional=["objects"])
+def parallel(a, name):
+    return _align_axes(a, name, "parallel")
+
+
+@op("perpendicular", aliases=("перпендикулярно", "перпендикулярность",
+                              "align_perpendicular"),
+    category="Массивы и преобразования",
+    summary="Разворачивает локальную ось детали перпендикулярно локальной оси "
+            "другой детали. direction задаёт мировое направление результата и "
+            "проецируется в перпендикулярную плоскость. Без direction выбирается "
+            "проекция +Z; для вертикальной оси — −Y, затем +X. Центр сохраняется.",
+    example="основа = cylinder radius=20 height=80\n"
+            "планка = box size=[70,10,16] at=[100,0,40]\n"
+            "планка = perpendicular [планка] on=основа axis=top host_axis=top direction=+x",
+    params={"objects": "деталь", "on": "объект-хозяин",
+            "axis": "локальная ось детали (top/верх)",
+            "host_axis": "локальная ось хозяина (top/верх)",
+            "direction": "мировое направление результата: +x, −y, +z или [x,y,z]; "
+                         "проецируется в плоскость, перпендикулярную оси хозяина",
+            "flip": "обратить полученное направление, да/нет (нет)"},
+    positional=["objects"])
+def perpendicular(a, name):
+    return _align_axes(a, name, "perpendicular")

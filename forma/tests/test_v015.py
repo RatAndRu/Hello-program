@@ -55,13 +55,14 @@ class TestShapes(unittest.TestCase):
                 self.assertTrue(all(c["ok"] for c in result), result)
 
     def test_star_dimensions(self):
+        # с 0.41 звезда стоит: X — ширина, Y — толщина, Z — высота
         b = ok("ф = star points=5 outer=60 inner=25 depth=12", analyze_model=False)
         bb = b.scene.objects["ф"].manifold.bounding_box()
-        width, depth, height = bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2]
-        self.assertAlmostEqual(height, 12.0, places=3)
+        width, thick, height = bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2]
+        self.assertAlmostEqual(thick, 12.0, places=3)
         self.assertGreater(width, 110.0)
-        self.assertGreater(depth, 100.0)
-        self.assertLess(max(width, depth), 2 * 60.0 + 0.5)
+        self.assertGreater(height, 100.0)
+        self.assertLess(max(width, height), 2 * 60.0 + 0.5)
 
     def test_star_bevel_keeps_size(self):
         plain = ok("ф = star points=5 outer=60 inner=25 depth=12", analyze_model=False)
@@ -103,12 +104,16 @@ class TestShapes(unittest.TestCase):
 
     def test_leaf_has_pointed_ends(self):
         leaf = ok("ф = leaf length=90 width=45 thickness=2", analyze_model=False)
-        v, _ = manifold_mesh(leaf.scene.objects["ф"].manifold)
-        # у концов листа вершины сходятся в остриё, а не в плоскую кромку
-        self.assertAlmostEqual(float(v[:, 0].min()), -45.0, delta=0.6)
-        self.assertAlmostEqual(float(v[:, 0].max()), 45.0, delta=0.6)
-        near = v[np.abs(v[:, 0] - float(v[:, 0].max())) < 0.35]
-        self.assertLess(float(np.abs(near[:, 1]).max()), 1.2)
+        mesh = manifold_mesh(leaf.scene.objects["ф"].manifold)
+        v = mesh[0] if isinstance(mesh, tuple) else mesh
+        # кончик листа — остриё: длина идёт по X, изгиб — по Y (толщина)
+        xs = v[:, 0] if v.shape[1] == 3 else v[:, 0]
+        self.assertAlmostEqual(float(xs.min()), -45.0, delta=0.6)
+        self.assertAlmostEqual(float(xs.max()), 45.0, delta=0.6)
+        near = v[np.abs(xs - float(xs.max())) < 0.35]
+        # лист стоит: ширина ушла в высоту, поэтому у кончика сходится Z
+        mid_z = float((v[:, 2].min() + v[:, 2].max()) / 2.0)
+        self.assertLess(float(np.abs(near[:, 2] - mid_z).max()), 1.5)
 
     def test_spring_height_follows_turns_and_pitch(self):
         b = ok("ф = spring diameter=22 wire=3 turns=10 pitch=7", analyze_model=False)

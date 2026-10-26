@@ -15,7 +15,7 @@ import numpy as np
 
 from .errors import GeometryError
 from .geometry import manifold_from_arrays
-from .ops import anchor, make_solid, op
+from .ops import anchor, face_front, make_solid, op, stand_flat_sign
 
 
 # --------------------------------------------------------------------------- #
@@ -179,6 +179,8 @@ def _placed(a, solid: mf.Manifold) -> mf.Manifold:
             "depth": "толщина, мм (12)", "bevel": "фаска верхних и нижних кромок, мм",
             "smooth": "плавность фаски 0..1 (вместе с bevel)",
             "twist": "закрутка, градусы (вместо фаски)",
+            "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом "
+                     "вверх — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def star(a, name):
     points = int(a.num("points", 5, minv=3, maxv=64))
@@ -204,7 +206,8 @@ def star(a, name):
     else:
         stages = 2 + int(round(smooth * 5))
         solid = _chamfered_prism(cross, depth, bevel, stages=stages)
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="star")
+    return make_solid(a.scene, name, _placed(a, stand_flat_sign(a, solid)), a,
+                      kind="star")
 
 
 # --------------------------------------------------------------------------- #
@@ -727,7 +730,8 @@ def arch(a, name):
     category="Примитивы",
     summary="Полусфера: выпуклая (купол) или вогнутая миска со стенкой. "
             "Купол — половина шара со ровным сечением; миска — та же половина, "
-            "выдолбленная с заданной толщиной стенки и кромкой.",
+            "выдолбленная с заданной толщиной стенки и кромкой. Купол стоит на "
+            "плоском основании, миска — дном вниз, раскрытием +Z.",
     example="купол = hemisphere radius=60\n"
             "миска = hemisphere radius=70 mode=миска wall=4",
     params={"radius": "радиус, мм (50)",
@@ -751,42 +755,44 @@ def hemisphere(a, name):
                          max(48, min(160, int(radius * 3))))
     steps = max(16, int(segments * 0.6))
     if mode == "купол":
-        prof = [(0.0, 0.0)]
+        # Оба полюса должны быть в профиле явно. Без (0,R) revolve
+        # оставлял крошечный осевой канал и род 1 у сплошного купола.
+        prof = [(0.0, 0.0), (0.0, radius)]
         for i in range(1, steps + 1):
             ang = math.pi / 2.0 * i / steps
             prof.append((radius * math.sin(ang), radius * math.cos(ang)))
-        prof.append((radius, 0.0))
-        # закрываем плоское дно
-        prof = [(0.0, 0.0)] + [(p[0], p[1]) for p in prof[1:]]
         solid = _revolve(prof, segments, "купол")
         # купол стоит плоско: дно — плоскость z=0, вершина вверху
         return make_solid(a.scene, name, _placed(a, solid), a, kind="hemisphere")
-    # миска: внешняя полусфера + кромка, внутренняя — со стенкой
+    # Миска строится сразу раскрытием +Z одним замкнутым профилем:
+    # наружная НИЖНЯЯ полусфера от дна к борту, горизонтальная кромка,
+    # затем внутренняя полусфера обратно к дну. Старый профиль описывал
+    # купол с переведённой вверх полостью и после вычитания оставлял не чашу,
+    # а почти пустую кромку.
     if wall >= radius * 0.8:
         raise GeometryError("Стенка миски слишком толстая для этого радиуса.")
-    outer = [(0.0, 0.0)]
-    for i in range(1, steps + 1):
-        ang = math.pi / 2.0 * i / steps
-        outer.append((radius * math.sin(ang), radius * math.cos(ang)))
-    outer.append((0.0, radius))
-    solid = _revolve(outer, segments, "миска")
     inner_r = radius - wall
-    inner = [(0.0, wall)]
-    for i in range(1, steps + 1):
+    outer = []
+    for i in range(steps + 1):
         ang = math.pi / 2.0 * i / steps
-        inner.append((inner_r * math.sin(ang), wall + inner_r * math.cos(ang)))
-    cavity = _revolve(inner, segments, "полость миски")
-    solid = solid - cavity
+        outer.append((radius * math.sin(ang), radius * (1.0 - math.cos(ang))))
+    inner = []
+    for i in range(steps, -1, -1):
+        ang = math.pi / 2.0 * i / steps
+        inner.append((inner_r * math.sin(ang),
+                      wall + inner_r * (1.0 - math.cos(ang))))
+    solid = _revolve(outer + inner, segments, "миска")
     if rim_w > 0:
         rim_w = min(rim_w, radius * 0.25)
-        band = (mf.Manifold.cylinder(float(wall * 1.4), float(radius + rim_w),
-                                     float(radius + rim_w), int(segments))
-                - mf.Manifold.cylinder(float(wall * 1.4 + 1.0), float(radius - wall * 0.5),
-                                       float(radius - wall * 0.5), int(segments))
+        band_h = wall * 1.4
+        band = (mf.Manifold.cylinder(band_h, float(radius + rim_w),
+                                    float(radius + rim_w), int(segments))
+                - mf.Manifold.cylinder(band_h + 1.0, float(radius - wall * 0.5),
+                                      float(radius - wall * 0.5), int(segments))
                 .translate((0.0, 0.0, -0.5)))
-        solid = solid + band.translate((0, 0, wall * 0.15))
+        solid = solid + band.translate((0, 0, radius - band_h))
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="hemisphere")
-    out.notes.append(f"миска R{radius:g}, стенка {wall:g} мм")
+    out.notes.append(f"миска R{radius:g}, стенка {wall:g} мм, раскрытие +Z")
     return out
 
 
@@ -857,7 +863,8 @@ def cloud(a, name):
     category="Примитивы",
     summary="Полусфера: выпуклая (купол) или вогнутая миска со стенкой. "
             "Купол — половина шара со ровным сечением; миска — та же половина, "
-            "выдолбленная с заданной толщиной стенки и кромкой.",
+            "выдолбленная с заданной толщиной стенки и кромкой. Купол стоит на "
+            "плоском основании, миска — дном вниз, раскрытием +Z.",
     example="купол = hemisphere radius=60\n"
             "миска = hemisphere radius=70 mode=миска wall=4",
     params={"radius": "радиус, мм (50)",
@@ -881,42 +888,44 @@ def hemisphere(a, name):
                          max(48, min(160, int(radius * 3))))
     steps = max(16, int(segments * 0.6))
     if mode == "купол":
-        prof = [(0.0, 0.0)]
+        # Оба полюса должны быть в профиле явно. Без (0,R) revolve
+        # оставлял крошечный осевой канал и род 1 у сплошного купола.
+        prof = [(0.0, 0.0), (0.0, radius)]
         for i in range(1, steps + 1):
             ang = math.pi / 2.0 * i / steps
             prof.append((radius * math.sin(ang), radius * math.cos(ang)))
-        prof.append((radius, 0.0))
-        # закрываем плоское дно
-        prof = [(0.0, 0.0)] + [(p[0], p[1]) for p in prof[1:]]
         solid = _revolve(prof, segments, "купол")
         # купол стоит плоско: дно — плоскость z=0, вершина вверху
         return make_solid(a.scene, name, _placed(a, solid), a, kind="hemisphere")
-    # миска: внешняя полусфера + кромка, внутренняя — со стенкой
+    # Миска строится сразу раскрытием +Z одним замкнутым профилем:
+    # наружная НИЖНЯЯ полусфера от дна к борту, горизонтальная кромка,
+    # затем внутренняя полусфера обратно к дну. Старый профиль описывал
+    # купол с переведённой вверх полостью и после вычитания оставлял не чашу,
+    # а почти пустую кромку.
     if wall >= radius * 0.8:
         raise GeometryError("Стенка миски слишком толстая для этого радиуса.")
-    outer = [(0.0, 0.0)]
-    for i in range(1, steps + 1):
-        ang = math.pi / 2.0 * i / steps
-        outer.append((radius * math.sin(ang), radius * math.cos(ang)))
-    outer.append((0.0, radius))
-    solid = _revolve(outer, segments, "миска")
     inner_r = radius - wall
-    inner = [(0.0, wall)]
-    for i in range(1, steps + 1):
+    outer = []
+    for i in range(steps + 1):
         ang = math.pi / 2.0 * i / steps
-        inner.append((inner_r * math.sin(ang), wall + inner_r * math.cos(ang)))
-    cavity = _revolve(inner, segments, "полость миски")
-    solid = solid - cavity
+        outer.append((radius * math.sin(ang), radius * (1.0 - math.cos(ang))))
+    inner = []
+    for i in range(steps, -1, -1):
+        ang = math.pi / 2.0 * i / steps
+        inner.append((inner_r * math.sin(ang),
+                      wall + inner_r * (1.0 - math.cos(ang))))
+    solid = _revolve(outer + inner, segments, "миска")
     if rim_w > 0:
         rim_w = min(rim_w, radius * 0.25)
-        band = (mf.Manifold.cylinder(float(wall * 1.4), float(radius + rim_w),
-                                     float(radius + rim_w), int(segments))
-                - mf.Manifold.cylinder(float(wall * 1.4 + 1.0), float(radius - wall * 0.5),
-                                       float(radius - wall * 0.5), int(segments))
+        band_h = wall * 1.4
+        band = (mf.Manifold.cylinder(band_h, float(radius + rim_w),
+                                    float(radius + rim_w), int(segments))
+                - mf.Manifold.cylinder(band_h + 1.0, float(radius - wall * 0.5),
+                                      float(radius - wall * 0.5), int(segments))
                 .translate((0.0, 0.0, -0.5)))
-        solid = solid + band.translate((0, 0, wall * 0.15))
+        solid = solid + band.translate((0, 0, radius - band_h))
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="hemisphere")
-    out.notes.append(f"миска R{radius:g}, стенка {wall:g} мм")
+    out.notes.append(f"миска R{radius:g}, стенка {wall:g} мм, раскрытие +Z")
     return out
 
 
@@ -1009,13 +1018,16 @@ def _heart_points(r: float, samples: int = 220) -> list[tuple[float, float]]:
 @op("heart", aliases=("сердце", "сердечко", "heart_shape"), category="Примитивы",
     summary="Сердце настоящей формы: два плавных лепестка сверху и остриё снизу. "
             "Ширина, высота, толщина и скругление рёбер задаются отдельно. "
-            "Плоскость — XY, остриё вниз, стоит на полу.",
+            "По умолчанию стоит в плоскости XZ лицом −Y: лепестки сверху (+Z), "
+            "остриё снизу (−Z), толщина по Y; plane=плашмя кладёт лицом +Z.",
     example="сердце = heart width=60 depth=20 round=2\n" +
             "кулон = heart width=24 depth=8 round=1",
     params={"width": "полная ширина, мм (60)", "depth": "толщина, мм (18)",
             "height": "высота, мм (по форме ≈ 0.9 ширины)",
             "round": "радиус настоящего скругления кромок, мм (0); 0.2–0.5 от depth — "
                      "заметное округление, стоит ≈1 с",
+            "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом "
+                     "вверх — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def heart(a, name):
     width = float(a.num("width", 60.0, minv=1.0))
@@ -1044,7 +1056,8 @@ def heart(a, name):
             solid = cross.extrude(depth)
     else:
         solid = cross.extrude(depth)
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="heart")
+    return make_solid(a.scene, name, _placed(a, stand_flat_sign(a, solid)), a,
+                      kind="heart")
 
 
 # --------------------------------------------------------------------------- #
@@ -1053,12 +1066,16 @@ def heart(a, name):
 @op("plus", aliases=("плюс", "плюсик", "перекрестие", "крест", "cross_plus"),
     category="Примитивы",
     summary="Знак «плюс»: два пересекающихся бруса одинаковой толщины. "
-            "Арм — полная длина луча, thick — толщина бруса, depth — толщина "
-            "по Z. Скругление скругляет внутренние углы и кромки.",
+            "По умолчанию стоит в XZ лицом −Y: arm задаёт оба размера в плоскости, "
+            "thick — ширину бруса, depth — толщину по Y. Скругление скругляет "
+            "внутренние углы и кромки.",
     example="плюс = plus arm=60 thick=18 depth=14 round=2\n" +
             "аптечка = plus arm=120 thick=40 depth=20",
-    params={"arm": "полная длина луча, мм (60)", "thick": "толщина бруса, мм (18)",
-            "depth": "толщина по Z, мм (14)", "round": "скругление, мм (0)",
+    params={"plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом "
+                     "вверх — «фронт»",
+            "arm": "полная длина луча, мм (60)", "thick": "толщина бруса, мм (18)",
+            "depth": "толщина по глубине, мм (14); у стоящего знака — по Y",
+            "round": "скругление, мм (0)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def plus(a, name):
     arm = float(a.num("arm", 60.0, minv=1.0))
@@ -1080,7 +1097,8 @@ def plus(a, name):
         solid = solid.minkowski_sum(mf.Manifold.sphere(r, 24))
     else:
         solid = cross.extrude(depth)
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="plus")
+    return make_solid(a.scene, name, _placed(a, stand_flat_sign(a, solid)), a,
+                      kind="plus")
 
 
 # --------------------------------------------------------------------------- #
@@ -1149,14 +1167,18 @@ def sector(a, name):
 @op("spiral", aliases=("спираль", "улитка", "спираль_плоская", "helix_flat"),
     category="Примитивы",
     summary="Плоская спираль-улитка (архимедова): от центра наружу с заданным "
-            "числом витков. Толщина нити и высота задаются; при height > wire "
-            "получается объёмный завиток, при равных — плоская лента.",
+            "числом витков. По умолчанию стоит в плоскости XZ лицом −Y; "
+            "plane=плашмя кладёт её в XY лицом +Z. wire — ширина нити в плоскости, "
+            "height — её толщина по глубине (ось Y у стоящей спирали).",
     example="спираль = spiral radius=60 turns=3 wire=6 height=6\n" +
             "завиток = spiral radius=80 turns=4 wire=8 height=16 segments=48",
     params={"radius": "внешний радиус, мм (60)", "turns": "число витков (3)",
-            "wire": "толщина нити, мм (6)", "height": "высота стенки, мм (6)",
+            "wire": "ширина нити в плоскости спирали, мм (6)",
+            "height": "толщина по глубине, мм (6); у стоящей спирали — по Y",
             "gap": "зазор между витками, мм (авто)",
             "segments": "точек по витку (96)", "start": "угол начала, ° (0)",
+            "plane": "фронт — стоит в XZ лицом −Y; плашмя — лежит в XY лицом +Z "
+                     "(фронт)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def spiral(a, name):
     radius = float(a.num("radius", 60.0, minv=1.0))
@@ -1200,8 +1222,7 @@ def spiral(a, name):
     pts = outer_pts + cap + inner_pts[::-1]
     cross = _cross([(x, y) for x, y in pts])
     solid = cross.extrude(height)
-    if abs(height - wire) > 1e-6 and height > 1e-6:
-        pass
+    solid = stand_flat_sign(a, solid)
     return make_solid(a.scene, name, _placed(a, solid), a, kind="spiral")
 
 
@@ -1319,6 +1340,8 @@ def _seg_polygon(length: float, thick: float, vertical: bool) -> list[tuple[floa
             "gap": "зазор между цифрами, мм (0.32 × height)",
             "depth": "высота штриха над панелью, мм (2)",
             "slant": "наклон курсивом, градусы (0)",
+            "plane": "фронт — цифры стоят лицом к зрителю, плашмя — лежат "
+                     "лицом вверх — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["text"])
 def seven_seg(a, name):
@@ -1402,4 +1425,5 @@ def seven_seg(a, name):
         shear[0, 1] = math.tan(math.radians(slant))
         solid = solid.transform(shear)
     solid = ensure_volume(solid, "индикатора")
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="seven_seg")
+    return make_solid(a.scene, name, _placed(a, stand_flat_sign(a, solid)), a,
+                      kind="seven_seg")

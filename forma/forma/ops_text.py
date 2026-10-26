@@ -17,7 +17,8 @@ from .fonts import text_solid
 from .geometry import manifold_from_arrays, manifold_mesh
 from .ops import make_solid, op
 
-PLANES = {"xy": "xy", "xz": "xz", "yz": "yz", "горизонт": "xy", "стена": "xz"}
+PLANES = {"xy": "xy", "xz": "xz", "yz": "yz", "горизонт": "xy", "плашмя": "xy",
+          "лежит": "xy", "стена": "xz", "фронт": "xz", "перед": "xz"}
 
 
 def _anchor_bbox(a, at) -> mf.Manifold:
@@ -37,17 +38,21 @@ def _stand(m: mf.Manifold, plane: str) -> mf.Manifold:
                         [0.0, 0.0, -1.0, 0.0],
                         [0.0, 1.0, 0.0, 0.0]])
         return m.transform(rot)
-    # yz: поворот вокруг Y: (x,y,z) → (z, y, −x)
+    # yz: сначала лицо −Y (как xz), затем +90° вокруг Z.
+    # (x,y,z) → (z,x,y): чтение слева направо идёт в +Y,
+    # высота букв остаётся вертикальной (+Z), лицо смотрит в +X.
     rot = np.array([[0.0, 0.0, 1.0, 0.0],
-                    [0.0, 1.0, 0.0, 0.0],
-                    [-1.0, 0.0, 0.0, 0.0]])
+                    [1.0, 0.0, 0.0, 0.0],
+                    [0.0, 1.0, 0.0, 0.0]])
     return m.transform(rot)
 
 
 @op("text", aliases=("текст", "надпись", "буквы", "надписать", "label", "надпись3d"),
     category="Примитивы",
     summary="Создаёт объёмную надпись своим векторным шрифтом (латиница, кириллица, "
-            "цифры). Без сторонних файлов: буквы гладкие, с ровными торцами.",
+            "цифры). По умолчанию стоит в XZ лицом −Y: текст читается слева "
+            "направо в +X, высота букв +Z, толщина по Y. plane=xy кладёт лицом "
+            "+Z; plane=yz ставит боком лицом +X, сохраняя высоту по Z.",
     example='надпись = text "ФОРМА 3D" size=20 depth=3',
     params={"text": "текст в кавычках",
             "size": "высота заглавных букв, мм (20)",
@@ -55,7 +60,8 @@ def _stand(m: mf.Manifold, plane: str) -> mf.Manifold:
             "weight": "толщина штриха, мм (size × 0.095)",
             "align": "left, center или right",
             "spacing": "расстояние между буквами (1.1)",
-            "plane": "как стоит: xy (лежит), xz (стоит стеной), yz (сбоку)",
+            "plane": "xz — стоит лицом −Y (по умолчанию); xy — лежит лицом +Z, "
+                     "верх букв +Y; yz — стоит боком лицом +X, чтение +Y, высота +Z",
             "at": "положение: центр по X/Y и низ по Z"},
     positional=["text"])
 def text(a, name):
@@ -73,9 +79,10 @@ def text(a, name):
                        line=a.cmd.line, command=a.cmd.text)
     align = {"лево": "left", "центр": "center", "право": "right"}.get(align, align)
     spacing = float(a.num("spacing", 1.1, minv=0.2, maxv=3.0))
-    plane = PLANES.get((a.text("plane", "xy") or "xy").lower())
+    plane = PLANES.get((a.text("plane", "xz") or "xz").lower())
     if plane is None:
-        raise DslError("Плоскость надписи — xy, xz или yz.", line=a.cmd.line, command=a.cmd.text)
+        raise DslError("Плоскость надписи — xz (стоит, по умолчанию), xy (лежит) "
+                       "или yz (боком).", line=a.cmd.line, command=a.cmd.text)
     solid, width = text_solid(raw, size=size, depth=depth, weight=weight,
                               align=align, spacing=spacing)
     solid = _stand(solid, plane)

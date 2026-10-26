@@ -154,7 +154,8 @@ class TestBlade(unittest.TestCase):
         wide = last(ok("к = blade length=500 width=60"))
         narrow = last(ok("к = blade length=500 width=20"))
         self.assertGreater(max(size(wide.manifold)), max(size(narrow.manifold)) - 1.0)
-        self.assertLess(size(narrow.manifold)[1], size(wide.manifold)[1])
+        # клинок стоит: ширина по X, толщина по Y, высота полосы по Z
+        self.assertLess(size(narrow.manifold)[2], size(wide.manifold)[2])
 
     def test_unknown_kind_explains_itself(self):
         message = fails("к = blade length=400 kind=ложка")
@@ -227,10 +228,15 @@ class TestFigure(unittest.TestCase):
         self.assertGreater(glass.transmission, 0.5)
 
     def test_display_styles_stand_differently(self):
+        # с 0.41 экран у всех видов смотрит в −Y: телефон тоже стоит
         phone = ok("д = display width=80 height=160 thick=8 style=смартфон").scene.resolve("д")
         monitor = ok("д = display width=300 height=200 thick=16 style=монитор").scene.resolve("д")
-        self.assertLess(size(phone.manifold)[2], 20.0)      # телефон лежит
+        self.assertGreater(size(phone.manifold)[2], 150.0)
+        self.assertLess(size(phone.manifold)[1], 20.0)     # толщина по Y
         self.assertAlmostEqual(size(monitor.manifold)[2], 200.0, delta=2.0)
+        flat = ok("д = display width=80 height=160 thick=8 style=смартфон "
+                  "plane=плашмя").scene.resolve("д")
+        self.assertLess(size(flat.manifold)[2], 20.0)      # плашмя — лежит
 
     def test_display_rejects_unknown_style(self):
         message = fails("д = display style=телевизор")

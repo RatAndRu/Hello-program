@@ -125,17 +125,19 @@ class TestNewPrimitives(unittest.TestCase):
         self.assertEqual(len(o.manifold.decompose()), 1)
 
     def test_heart_height(self):
+        # с 0.41 сердце стоит: высота по Z, толщина по Y
         b = ok("сердце = heart width=80 depth=20 height=40")
         bb = last(b).stats()["bbox"]
-        self.assertAlmostEqual(bb[4] - bb[1], 40.0, delta=0.6)
-        self.assertAlmostEqual(bb[5] - bb[2], 20.0, delta=0.3)
+        self.assertAlmostEqual(bb[5] - bb[2], 40.0, delta=0.6)
+        self.assertAlmostEqual(bb[4] - bb[1], 20.0, delta=0.3)
+        self.assertAlmostEqual(bb[2], 0.0, delta=0.01)
 
     def test_plus_has_four_arms(self):
         b = ok("плюс = plus arm=60 thick=18 depth=14")
         o = last(b)
         bb = o.stats()["bbox"]
         self.assertAlmostEqual(bb[3] - bb[0], 60.0, delta=0.3)
-        self.assertAlmostEqual(bb[4] - bb[1], 60.0, delta=0.3)
+        self.assertAlmostEqual(bb[5] - bb[2], 60.0, delta=0.3)
         # объём ≈ два бруса минус пересечение
         expect = (60 * 18 + 60 * 18 - 18 * 18) * 14 / 1000.0
         self.assertAlmostEqual(o.volume_cm3, expect, delta=expect * 0.03)
@@ -189,7 +191,7 @@ class TestSevenSeg(unittest.TestCase):
         # штрихи внутри цифры сварены в одно тело, а цифры разделены зазором
         self.assertGreaterEqual(len(o.manifold.decompose()), 5)
         bb = o.stats()["bbox"]
-        self.assertAlmostEqual(bb[4] - bb[1], 54.0, delta=0.3)
+        self.assertAlmostEqual(bb[5] - bb[2], 54.0, delta=0.3)   # высота по Z
         self.assertEqual(o.emissive, "")
 
     def test_unknown_char(self):

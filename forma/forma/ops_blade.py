@@ -16,7 +16,7 @@ import numpy as np
 
 from .errors import GeometryError
 from .geometry import manifold_from_arrays, triangulate_2d, ensure_ccw
-from .ops import anchor, make_solid, op
+from .ops import anchor, make_solid, op, stand_flat_sign
 
 # Пропорции и характер разных клинков: длина, ширина, толщина, изгиб, кромки.
 KINDS = {
@@ -96,8 +96,8 @@ def _rings_along(path: np.ndarray, sections: list[np.ndarray]) -> list[np.ndarra
             t = pts[i + 1] - pts[i - 1]
         n = np.linalg.norm(t)
         tangents[i] = t / max(n, 1e-12)
-    # Клинок лежит плашмя: ширина — по Y, толщина — по Z. Тогда вид сверху
-    # показывает силуэт целиком (с изгибом), а в профиль видна тонкая кромка.
+    # До финального поворота заготовка лежит плашмя: ширина — по Y,
+    # толщина и стрела изгиба — по Z. stand_flat_sign ниже ставит её в XZ.
     up = np.array([0.0, 0.0, 1.0])
     rings = []
     for i, (p, tan) in enumerate(zip(pts, tangents)):
@@ -149,8 +149,9 @@ def _close_blade(rings: list[np.ndarray], profile: np.ndarray) -> mf.Manifold:
             "(шире), танто, стилет (две кромки, без изгиба), двуручник (широкий, "
             "с долом), серп (сильный изгиб, кромка внутри), нож. Длина, ширина, "
             "толщина и стрела прогиба задаются отдельно, так что можно сделать "
-            "и прямую финку, и кривой ятаган. Лежит плашмя вдоль X: ширина по Y, "
-            "толщина по Z, изгиб уходит вверх.",
+            "и прямую финку, и кривой ятаган. По умолчанию стоит вдоль X "
+            "лицом −Y: остриё +X, ширина по Z, толщина по Y, изгиб уходит "
+            "к передней стороне (−Y); plane=плашмя возвращает заготовку в XY.",
     example="катана = blade length=700 width=32 thick=7 kind=катана\n"
             "стилет = blade length=280 width=14 thick=5 kind=стилет\n"
             "серп = blade length=300 width=46 kind=серп curve=90",
@@ -164,6 +165,8 @@ def _close_blade(rings: list[np.ndarray], profile: np.ndarray) -> mf.Manifold:
             "kissaki": "длина скоса у острия в долях длины (по kind)",
             "dol": "глубина дола 0…0.35 (по kind)",
             "detail": "плотность сетки по длине (авто)",
+            "plane": "фронт — клинок стоит на кромке лицом к зрителю, "
+                     "плашмя — лежит на боку — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["length"])
 def blade(a, name):
@@ -211,6 +214,7 @@ def blade(a, name):
                                  preset["spine"], dol))
     rings = _rings_along(path, sections)
     solid = _close_blade(rings, sections[0])
+    solid = stand_flat_sign(a, solid)      # лицо −Y, кромка вниз, длина по X
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     parts = len([p for p in solid.decompose() if p.volume() > 0])
     if parts != 1:
@@ -284,7 +288,9 @@ def _disc_solid(outer: list[tuple[float, float]], thickness: float,
             "отверстием под вал. Зубья настраиваются отдельно — число, высота, "
             "форма (треугольные, трапеция-карбид, крюк, волна), передний угол "
             "rake и глубина пазухи gullet. По желанию — компенсационные "
-            "отверстия windows и расширенный пропил kerf. Лежит плашмя, ось — Z.",
+            "отверстия windows и расширенный пропил kerf. По умолчанию стоит "
+            "в плоскости XZ лицом −Y: толщина по Y, ось вала и всех отверстий — Y; "
+            "plane=плашмя кладёт пилу в XY, тогда ось — Z.",
     example="пила = saw diameter=200 thickness=2.5 teeth=24 tooth=6 hole=22\n"
             "настольная = saw diameter=150 teeth=40 shape=трапеция windows=5 kerf=3.2",
     params={"diameter": "наружный диаметр по зубьям, мм (200)",
@@ -298,6 +304,8 @@ def _disc_solid(outer: list[tuple[float, float]], thickness: float,
             "hole": "посадочное отверстие под вал, мм (11 % диаметра)",
             "windows": "число круглых отверстий в полотне 0…12 (0)",
             "detail": "точек на зуб, 4…40 (16)",
+            "plane": "фронт — пила стоит на ребре лицом к зрителю, "
+                     "плашмя — лежит — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def saw(a, name):
     diameter = float(a.num("diameter", 200.0, minv=20.0, maxv=4000.0))
@@ -368,6 +376,8 @@ def saw(a, name):
             holes = cut if holes is None else holes + cut
         solid = solid - holes
 
+    # пила — как колесо: ось по Y, лицо в −Y, катится вдоль X
+    solid = stand_flat_sign(a, solid)
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     parts = len([p for p in solid.decompose() if p.volume() > 0])
     if parts != 1:

@@ -15,7 +15,7 @@ import numpy as np
 
 from .errors import GeometryError
 from .geometry import manifold_from_arrays, manifold_mesh
-from .ops import anchor, make_solid, op
+from .ops import anchor, make_solid, op, stand_flat_sign
 
 
 # --------------------------------------------------------------------------- #
@@ -731,6 +731,8 @@ def rock(a, name):
     params={"length": "длина, мм (90)", "width": "ширина, мм (45)",
             "thickness": "толщина, мм (2)", "curl": "изгиб 0..1 (0.25)",
             "segments": "точек контура (48)",
+            "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом "
+                     "вверх — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def leaf(a, name):
     length = float(a.num("length", 90.0, minv=5.0))
@@ -758,7 +760,8 @@ def leaf(a, name):
         out = verts.copy()
         out[:, 2] += curl * (out[:, 0] / max(length, 1e-6) + 0.5) ** 2 * (width * 0.5)
         body = manifold_from_arrays(out, faces, "лист")
-    return make_solid(a.scene, name, _placed(a, body), a, kind="leaf")
+    return make_solid(a.scene, name, _placed(a, stand_flat_sign(a, body)), a,
+                      kind="leaf")
 
 
 # --------------------------------------------------------------------------- #

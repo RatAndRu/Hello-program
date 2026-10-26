@@ -137,6 +137,10 @@ class Build:
                 "mass_g": round(st["volume"] / 1000.0 * solid.density, 2),
                 "bbox": st["bbox"],
                 "size": st["size"],
+                # Матрица «мир ← деталь»: столбцы right/back/up. Нужна окну
+                # для личных стрелок выделенного предмета, а не для новой панели.
+                "axes": (getattr(solid, "meta", None) or {}).get("axes")
+                        or [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
                 "genus": st["genus"],
                 "parts": _part_count(solid.manifold),
                 "area_mm2": round(st["area"], 1),

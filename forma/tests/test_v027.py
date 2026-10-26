@@ -130,7 +130,10 @@ class GlowFix(unittest.TestCase):
 class MirrorReflections(unittest.TestCase):
     """Зеркало показывает соседей, а не только «студию»."""
 
-    SCRIPT = ("з = mirror_plate width=300 height=220 frame=20 at=[0,120,0]\n"
+    # зеркало кладём плашмя и поднимаем поворотом — так проверяется, что
+    # поворот составного объекта двигает и раму, и отражающую пластину
+    SCRIPT = ("з = mirror_plate width=300 height=220 frame=20 at=[0,120,0] "
+              "plane=плашмя\n"
               "з = rotate [з] angle=90 axis=x pivot=[0,120,110]\n"
               "ш = sphere radius=40 at=[-30,40,40] color=#e03020")
 

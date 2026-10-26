@@ -38,7 +38,8 @@ HEADER = """\
 
 ЕДИНИЦЫ И ОСИ
   * всё в миллиметрах; угол — в градусах, 0…360;
-  * Z — вверх, пол на z = 0, лицо/передняя сторона смотрит в −Y;
+  * верх +Z, низ −Z, право +X, лево −X, перёд/лицо −Y, зад +Y;
+    пол обычно на z = 0; локальные стороны повёрнутой детали едут с ней;
   * шестигранные габариты — [xmin, ymin, zmin, xmax, ymax, zmax];
   * цвета — #rrggbb; флаги — да/нет (или true/false);
   * векторы — [x, y, z], 2D-контуры — [[x, y], …].
@@ -135,6 +136,9 @@ SECTIONS = """\
   ориентация деталь                  — куда смотрят верх/низ/бока, где центр массы
   place [a] on=б side=left offset=length(б)      — слева от крайней границы б
   place [a] on=б side=top осями=хозяина          — на настоящий верх повёрнутого б
+  place [a] on=б side=front face=top gap=2       — СВОИМ верхом к переду б, зазор 2
+  parallel [a] on=б axis=top host_axis=top       — оси параллельны, центр a сохранён
+  perpendicular [a] on=б axis=top host_axis=top direction=+x
   place [a] on=б side=center центр=масса         — в центр материала, а не коробки
   на_границе [a] on=б point=[x,y,z] align=нормаль сторона=верх
   мерки: width/ширина, depth/глубина, height/высота, length/длина,
@@ -202,6 +206,8 @@ def commands_catalog() -> str:
             summary = (spec.get("summary") or "").strip().replace("\n", " ")
             if summary:
                 out.append(summary)
+            if spec.get("orientation"):
+                out.append("  исходная ориентация: " + spec["orientation"])
             out.append(f"  вызов: {_signature(spec).strip()}")
             params = spec.get("params") or []
             if params:

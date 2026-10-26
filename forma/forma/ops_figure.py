@@ -16,7 +16,8 @@ import numpy as np
 from .errors import GeometryError
 from .geometry import (circle_profile, ellipse_profile, manifold_from_arrays,
                        sweep_solid, limit_segments, FINENESS_MM)
-from .ops import anchor, make_solid, op
+from .ops import (PLANE_FLAT, PLANE_FRONT, anchor, make_solid, op,
+                  stand_flat_sign)
 from .ops_extra import _fuse_surface
 from .ops_shape import shell_manifold
 from .ops_shapes import _cross, _profile, ensure_volume
@@ -465,6 +466,10 @@ def _extra(a, base_name: str, suffix: str, m: mf.Manifold, kind: str, *,
                   rough=rough, emissive=emissive, emissive_strength=glow,
                   transmission=transmission, mirror=mirror, kind=kind,
                   op=a.spec.name, line=a.cmd.line)
+    base = a.scene.get(base_name)
+    if base is not None:
+        solid.meta["axes"] = [list(row) for row in
+                              (base.meta.get("axes") or np.eye(3).tolist())]
     return a.scene.add(solid)
 
 
@@ -490,6 +495,8 @@ def _extra(a, base_name: str, suffix: str, m: mf.Manifold, kind: str, *,
             "bezel": "ширина рамки вокруг экрана, мм (авто)",
             "glass": "делать стекло поверх панели (да)",
             "stand": "подставка: да/нет (да у будильника и монитора)",
+            "plane": "фронт — экран смотрит в −Y, плашмя — лежит "
+                     "экраном вверх — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["width", "height"])
 def display(a, name):
@@ -511,9 +518,16 @@ def display(a, name):
     text = a.text("text") or "21:38"
     bezel = float(a.num("bezel", max(3.0, min(width, height) * 0.05), minv=0.5))
     do_glass = a.boolean("glass", True)
-    # смартфон лежит экраном вверх, часы и монитор стоят на подставке
-    upright = style != "смартфон"
-    stand = a.boolean("stand", upright)
+    # По правилу проекта экран смотрит в −Y у всех видов: и телефон,
+    # и часы, и монитор стоят, а не лежат экраном вверх.
+    plane = (a.text("plane") or "фронт").strip().lower()
+    if plane not in PLANE_FRONT + PLANE_FLAT:
+        raise GeometryError(
+            f"Неизвестная плоскость экрана: «{a.text('plane')}».",
+            hint="plane=фронт (экран −Y) или plane=плашмя (экран +Z).")
+    upright = plane not in PLANE_FLAT
+    # подставка-нога есть у часов и монитора; телефон стоит сам
+    stand = a.boolean("stand", style != "смартфон")
     if bezel * 2 >= min(width, height) * 0.8:
         raise GeometryError(f"Рамка {bezel:g} мм не оставляет места экрану.",
                             hint="bezel ≈ 3–8 % от меньшей стороны.")
@@ -659,7 +673,14 @@ def _seven_scene(text: str, size: float, max_width: float):
             return {}
 
         def text(self, key, default=None, choices=None):
-            return text if key == "text" else default
+            if key == "text":
+                return text
+            # Внутри корпуса цифры нужны ещё плоскими: общий place() ниже
+            # повернёт их вместе с панелью. Иначе seven_seg встаёт здесь,
+            # а потом поворачивается второй раз и ложится поперёк экрана.
+            if key == "plane":
+                return "плашмя"
+            return default
 
         def num(self, key, default=None, required=False, minv=None, maxv=None):
             table = {"height": h, "width": w, "thick": t, "gap": gap,
@@ -673,7 +694,7 @@ def _seven_scene(text: str, size: float, max_width: float):
             return default
 
         def has(self, key):
-            return False
+            return key == "plane"
 
     class _NullScene:
         def log(self, *args, **kwargs):
@@ -710,6 +731,8 @@ def _seven_scene(text: str, size: float, max_width: float):
             "frame": "ширина рамы, мм (35)",
             "depth": "толщина, мм (24)",
             "shape": "прямоуг, круг или овал — «прямоуг»",
+            "plane": "фронт — зеркало стоит лицом к зрителю, плашмя — "
+                     "лежит — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["width", "height"])
 def mirror_plate(a, name):
@@ -755,10 +778,13 @@ def mirror_plate(a, name):
     except Exception:
         pass
     body = ensure_volume(body, "рамы зеркала")
+    # зеркало — табличка: по правилу лицо в −Y, ширина по X, высота по Z
+    body = stand_flat_sign(a, body)
     # отражающая пластина — отдельный материал (metal=1, rough≈0)
     plate = inner.offset(0.6, mf.JoinType.Round, 1.0, 8).extrude(max(1.2, depth * 0.08))
     plate = plate.translate((0, 0, depth * 0.55))
     plate = ensure_volume(plate, "зеркальной пластины")
+    plate = stand_flat_sign(a, plate)
     placed = _anchor_all(a, [body, plate])
     main = make_solid(a.scene, name, placed[0], a, kind="mirror_plate")
     _extra(a, main.name, "зеркало", placed[1], "mirror",

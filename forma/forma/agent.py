@@ -15,8 +15,8 @@ from pathlib import Path
 from .run import Build, commands_help
 
 DOCS_INDEX = """СПРАВКА ФОРМА 3D (кратко)
-Единицы: миллиметры. Ось Z — вверх, пол по z=0. Файл проекта — обычный текст,
-одна команда на строку. Цикл работы: строим → читаем отчёт и PNG-виды → правим → снова.
+Единицы: миллиметры. Верх +Z, право +X, перёд −Y; пол обычно по z=0.
+Файл проекта — обычный текст, одна команда на строку. Цикл работы: строим → читаем отчёт и PNG-виды → правим → снова.
 
 БАЗОВЫЕ ПРИМИТИВЫ
   имя = box size=[x,y,z] [round=r] [at=[x,y,z]]
@@ -56,6 +56,9 @@ DOCS_INDEX = """СПРАВКА ФОРМА 3D (кратко)
   имя = translate [a] offset=[dx,dy,dz]     имя = rotate [a] angle=deg axis=z
   имя = scale [a] factor=2 | factor=[sx,sy,sz]
   имя = mirror [a] plane=x [keep=true]      имя = place [a] at=[x,y,z] align=bottom
+  имя = place [a] on=б side=front face=top gap=2 — своей стороной к стороне б
+  имя = parallel [a] on=б axis=top host_axis=top
+  имя = perpendicular [a] on=б axis=top host_axis=top direction=+x
   имя = twist [a] angle=deg | taper [a] factor=0.6 | bend [a] angle=deg
   имя = refine [a] length=1.5 | simplify [a] tolerance=0.3
   имя = ряд [a] count=6 step=[dx,dy,dz] grow=1.15 turn=0 axis=z
@@ -364,6 +367,9 @@ def command_reference_md() -> str:
             out.append("")
             out.append(s.get("summary", ""))
             out.append("")
+            if s.get("orientation"):
+                out.append("**Исходная ориентация:** " + s["orientation"])
+                out.append("")
             if s.get("params"):
                 out.append("| Параметр | Описание |")
                 out.append("|---|---|")

@@ -1123,6 +1123,10 @@ async function loadModel(url, animation = null) {
   state.anim.frameTimer = 0;
   if (!url) return;
   $('viewer-empty').hidden = true;
+  if (state.viewer) {
+    state.viewer.objectAxes = Object.fromEntries((state.payload?.objects || [])
+      .map((o) => [o.name, o.axes || null]));
+  }
   try {
     await state.viewer.load(url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN), animation);
     // мгновенная проверка видимости и текстур (не зависит от того, что попало в GLB)
@@ -2944,6 +2948,7 @@ function selectObject(name) {
   // Подсветка прямо в окне: выбранный в списке объект видно на модели.
   // Заодно прозрачным каркасом показываются детали, которые его закрывают.
   state.occludersNow = [];
+  if (state.viewer) state.viewer.objectAxes[name] = obj.axes || null;
   if (!state.hidden.has(name)) state.viewer?.setHighlight(name);
   if (state.viewer?.paintMode) {
     state.viewer.setPaintMode(true, null, name, state.viewer.eraseMode);
@@ -6038,6 +6043,12 @@ function commandCard(c) {
   desc.className = 'tool-desc';
   desc.textContent = c.summary || '';
   card.append(head, desc);
+  if (c.orientation) {
+    const orientation = document.createElement('div');
+    orientation.className = 'tool-desc';
+    orientation.textContent = 'Исходная ориентация: ' + c.orientation;
+    card.appendChild(orientation);
+  }
   const params = document.createElement('div');
   params.className = 'tool-params';
   (c.params || []).forEach((p) => {
@@ -6052,7 +6063,8 @@ function commandCard(c) {
     card.appendChild(pre);
   }
   card.dataset.search = [c.name, (c.aliases || []).join(' '), c.category, c.summary,
-    ...(c.params || []).map((p) => p.name + ' ' + p.desc)].join(' ').toLowerCase();
+    c.orientation || '', ...(c.params || []).map((p) => p.name + ' ' + p.desc)]
+    .join(' ').toLowerCase();
   if (c.example) {
     const btn = document.createElement('button');
     btn.className = 'small primary';
@@ -6495,6 +6507,7 @@ function renderHelp(filter = '') {
   const groups = {};
   commands.forEach((c) => {
     const hay = (c.name + ' ' + (c.aliases || []).join(' ') + ' ' + c.summary + ' ' +
+      (c.orientation || '') + ' ' +
       (c.params || []).map((p) => p.name + ' ' + p.desc).join(' ')).toLowerCase();
     if (q && !hay.includes(q)) return;
     (groups[c.category] = groups[c.category] || []).push(c);
@@ -6519,6 +6532,7 @@ function renderHelp(filter = '') {
         <div><span class="cmd-name">${escapeHtml(c.name)}</span>
           <span class="cmd-aliases">${(c.aliases || []).map(escapeHtml).join(', ')}</span></div>
         <div class="cmd-summary">${escapeHtml(c.summary)}</div>
+        ${c.orientation ? `<div class="cmd-summary"><b>Исходная ориентация:</b> ${escapeHtml(c.orientation)}</div>` : ''}
         ${params ? `<div class="cmd-params">${params}</div>` : ''}
         ${c.example ? `<div class="cmd-example"><pre>${escapeHtml(c.example)}</pre>
           <button class="mini cmd-copy" title="Скопировать пример">⧉</button></div>` : ''}`;

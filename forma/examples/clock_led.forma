@@ -29,8 +29,8 @@ scene bg=#0a0c10 env=studio shadows=да grid=нет
 color стекло #7fd6e8 transmission=0.72 rough=0.04 metal=0
 
 # ---------- ЦИФРЫ ----------
+# цифры уже стоят лицом к зрителю (−Y) — поворачивать не нужно
 цифры = seven_seg text="21:38" height=54 width=26 thick=8.2 gap=11 depth=2.2
-цифры = rotate [цифры] angle=90 axis=x
 цифры = place [цифры] at=[0,-25.4,66] align=center
 color цифры #2bff72 emissive=#2bff72 emissive_strength=4.5
 

@@ -52,6 +52,9 @@ export class Viewer {
     this.container = container;
     this.renderer = null;
     this.model = null;
+    // Локальные оси из Python payload, по имени объекта (матрица мир ← деталь).
+    this.objectAxes = {};
+    this._localAxes = null;
     this.wireframe = false;
     this.polygons = false;
     this.gridVisible = true;
@@ -371,7 +374,8 @@ export class Viewer {
     ctx.arc(64, 64, 58, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#' + color.toString(16).padStart(6, '0');
-    ctx.font = 'bold 74px system-ui, sans-serif';
+    const fontSize = String(text).length > 3 ? 28 : (String(text).length > 1 ? 42 : 74);
+    ctx.font = `bold ${fontSize}px system-ui, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText(text, 64, 70);
@@ -2587,7 +2591,65 @@ export class Viewer {
     return false;
   }
 
-  /** Подсветка выбранного объекта: свечение + рамка вокруг детали. */
+  _clearLocalAxes() {
+    const group = this._localAxes;
+    if (!group) return;
+    group.parent?.remove(group);
+    group.traverse((o) => {
+      o.geometry?.dispose?.();
+      const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+      mats.forEach((m) => {
+        m.map?.dispose?.();
+        m.dispose?.();
+      });
+    });
+    this._localAxes = null;
+  }
+
+  /** Личные стороны выбранного: право +X, перёд −Y, верх +Z детали. */
+  _showLocalAxes(name, box, rawAxes) {
+    const fallback = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    const a = Array.isArray(rawAxes) && rawAxes.length === 3 ? rawAxes : fallback;
+    const at = (r, c) => Number(a[r]?.[c]);
+    const valid = [0, 1, 2].every((r) => [0, 1, 2].every((c) => Number.isFinite(at(r, c))));
+    const m = valid ? a : fallback;
+    const scriptToView = (v) => new THREE.Vector3(v[0], v[2], -v[1]);
+    const directions = [
+      { key: 'ПРАВО', color: 0xff5a5a,
+        dir: scriptToView([m[0][0], m[1][0], m[2][0]]) },
+      { key: 'ПЕРЁД', color: 0x3ddc84,
+        dir: scriptToView([-m[0][1], -m[1][1], -m[2][1]]) },
+      { key: 'ВЕРХ', color: 0x4a9bff,
+        dir: scriptToView([m[0][2], m[1][2], m[2][2]]) },
+    ];
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const length = Math.max(1, size.length() * 0.58);
+    const group = new THREE.Group();
+    group.name = 'FormaLocalAxes';
+    group.userData.objectName = name;
+    directions.forEach(({ key, color, dir }) => {
+      if (dir.lengthSq() < 1e-10) return;
+      dir.normalize();
+      const arrow = new THREE.ArrowHelper(dir, center, length, color,
+                                          length * 0.16, length * 0.065);
+      arrow.renderOrder = 995;
+      [arrow.line, arrow.cone].forEach((part) => {
+        part.renderOrder = 995;
+        part.material.depthTest = false;
+        part.material.depthWrite = false;
+      });
+      const label = this._axisLabel(key, color);
+      label.position.copy(center).addScaledVector(dir, length * 1.12);
+      label.scale.setScalar(length * 0.24);
+      label.renderOrder = 996;
+      group.add(arrow, label);
+    });
+    this._localAxes = group;
+    this.scene.add(group);
+  }
+
+  /** Подсветка выбранного объекта: свечение + рамка + его локальные оси. */
   setHighlight(name, options = {}) {
     this.clearHighlight();
     if (!name || !this.model) return false;
@@ -2622,6 +2684,7 @@ export class Viewer {
       this._highlightBox.material.opacity = 0.75;
       this._highlightBox.material.depthWrite = false;
       this.scene.add(this._highlightBox);
+      this._showLocalAxes(name, box, options.axes || this.objectAxes?.[name]);
     }
     if (options.occluders !== false) this.refreshOccluders();
     return true;
@@ -2641,6 +2704,7 @@ export class Viewer {
       this._highlightBox.material?.dispose?.();
       this._highlightBox = null;
     }
+    this._clearLocalAxes();
     this.highlightName = null;
     this._ghostNames = [];
     this._clearGhosts();
@@ -3178,7 +3242,9 @@ export class Viewer {
     this._mirrorAt = now;
     this._mirrorCamPos.copy(this.camera.position);
     this._updateMirrorCenters();
-    const hide = [this.axes, this.grid, ...this._overlays, ...this._selOverlays];
+    const hide = [this.axes, this.grid, ...this._overlays, ...this._selOverlays,
+                  ...(this._localAxes ? [this._localAxes] : []),
+                  ...(this._highlightBox ? [this._highlightBox] : [])];
     this._mirrors.forEach(({ mirror, mesh }, i) => {
       // на слабом экране обновляем не все зеркала в одном кадре
       if (!force && (this.quality < 2 ? i > 0 : false)) return;

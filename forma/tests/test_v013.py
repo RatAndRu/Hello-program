@@ -145,13 +145,19 @@ class TestSimplifyDeviation(unittest.TestCase):
 
 class TestText(unittest.TestCase):
     def test_text_height_and_width(self):
+        # с 0.41 надпись по умолчанию стоит лицом к зрителю (−Y):
+        # X — длина, Y — толщина, Z — высота
         b = ok('надпись = text "ФОРМА" size=20 depth=3', analyze_model=False)
         s = b.scene.objects["надпись"]
         size = s.stats()["size"]
-        self.assertAlmostEqual(size[2], 3, delta=0.01)
-        self.assertGreater(size[1], 16)
-        self.assertLess(size[1], 24)
+        self.assertAlmostEqual(size[1], 3, delta=0.01)
+        self.assertGreater(size[2], 16)
+        self.assertLess(size[2], 24)
         self.assertGreater(size[0], 40)
+        # plane=xy по-прежнему кладёт надпись лицом вверх
+        flat = ok('надпись = text "ФОРМА" size=20 depth=3 plane=xy',
+                  analyze_model=False).scene.objects["надпись"]
+        self.assertAlmostEqual(flat.stats()["size"][2], 3, delta=0.01)
 
     def test_text_standing(self):
         b = ok('надпись = text "AAA" size=10 depth=2 plane=xz at=[0, 0, 5]', analyze_model=False)

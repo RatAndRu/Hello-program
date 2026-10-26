@@ -69,27 +69,28 @@ class TestExactSizes(unittest.TestCase):
         m = last(ok("с = arrow length=120 width=26 head=42 head_width=68 depth=12 "
                     "round=2")).manifold
         dx, dy, dz = size(m)
+        # с 0.41 знак стоит: длина по X, толщина по Y, высота наконечника по Z
         self.assertAlmostEqual(dx, 120.0, places=3)
-        self.assertAlmostEqual(dy, 68.0, places=3)
-        self.assertAlmostEqual(dz, 12.0, places=3)
+        self.assertAlmostEqual(dy, 12.0, places=3)
+        self.assertAlmostEqual(dz, 68.0, places=3)
 
     def test_tee_total_height_is_bar_plus_leg(self):
         m = last(ok("т = tee arm=90 bar=20 stem=22 leg=60 depth=14 round=2")).manifold
         dx, dy, dz = size(m)
         self.assertAlmostEqual(dx, 90.0, places=3)
-        self.assertAlmostEqual(dy, 80.0, places=3)
+        self.assertAlmostEqual(dz, 80.0, places=3)
 
     def test_lightning_keeps_size_with_round(self):
         m = last(ok("м = lightning height=90 width=44 depth=10 round=1.5")).manifold
-        dx, dy, _ = size(m)
+        dx, _, dz = size(m)
         self.assertAlmostEqual(dx, 44.0, places=3)
-        self.assertAlmostEqual(dy, 90.0, places=3)
+        self.assertAlmostEqual(dz, 90.0, places=3)
 
     def test_yoke_spread_is_outer_width(self):
         m = last(ok("р = yoke height=110 spread=64 arm=16 depth=14 round=2")).manifold
-        dx, dy, _ = size(m)
+        dx, _, dz = size(m)
         self.assertAlmostEqual(dx, 80.0, places=3)   # spread + толщина ветви
-        self.assertAlmostEqual(dy, 110.0, places=3)
+        self.assertAlmostEqual(dz, 110.0, places=3)
 
 
 class TestCrescent(unittest.TestCase):
@@ -113,9 +114,9 @@ class TestLightningShape(unittest.TestCase):
     def test_has_two_sharp_tips(self):
         """Молния — не прямоугольник: площадь заметно меньше габарита."""
         m = last(ok("м = lightning height=90 width=44 depth=10")).manifold
-        dx, dy, _ = size(m)
-        self.assertLess(m.volume() / (dx * dy * 10.0), 0.45)
-        self.assertGreater(m.volume() / (dx * dy * 10.0), 0.15)
+        dx, _, dz = size(m)
+        self.assertLess(m.volume() / (dx * dz * 10.0), 0.45)
+        self.assertGreater(m.volume() / (dx * dz * 10.0), 0.15)
 
     def test_size_validation(self):
         self.assertIn("height", fails("м = lightning height=1 width=44"))
@@ -151,13 +152,18 @@ class TestBanana(unittest.TestCase):
 
 class TestStand(unittest.TestCase):
     def test_stand_turns_sign_upright(self):
-        flat = last(ok("с = arrow length=120 width=26 head=42 head_width=68 depth=12")).manifold
-        up = last(ok("с = arrow length=120 width=26 head=42 head_width=68 depth=12 "
-                     "stand=да")).manifold
+        # с 0.41 знаки по умолчанию стоят; plane=плашмя кладёт их на пол
+        up = last(ok("с = arrow length=120 width=26 head=42 head_width=68 depth=12")).manifold
+        flat = last(ok("с = arrow length=120 width=26 head=42 head_width=68 depth=12 "
+                       "plane=плашмя")).manifold
         self.assertLess(size(flat)[2], 15.0)
         self.assertAlmostEqual(size(up)[2], 68.0, places=3)
         self.assertAlmostEqual(size(up)[0], 120.0, places=3)
         self.assertAlmostEqual(up.bounding_box()[2], 0.0, places=4)
+        # старое «stand=нет» тоже кладёт знак
+        old_style = last(ok("с = arrow length=120 width=26 head=42 head_width=68 depth=12 "
+                            "stand=нет")).manifold
+        self.assertLess(size(old_style)[2], 15.0)
 
 
 class TestValidation(unittest.TestCase):

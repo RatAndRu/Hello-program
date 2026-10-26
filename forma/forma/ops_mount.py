@@ -21,7 +21,7 @@ import numpy as np
 
 from .errors import GeometryError
 from .geometry import circle_profile, sweep_solid
-from .ops import anchor, make_solid, op
+from .ops import anchor, make_solid, op, stand_flat_sign
 
 
 def _ring(major: float, minor: float, seg: int, mseg: int) -> mf.Manifold:
@@ -113,6 +113,8 @@ def hook(a, name):
             "hole_y": "где отверстие по высоте, 0…1 от низа (0.45)",
             "segments": "сегментов по дуге (по размеру)",
             "detail": "детализация дуги 0…5 (3)",
+            "plane": "фронт — стоит лицом к зрителю (дуга вверх), плашмя — "
+                     "лежит лицом вверх — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по толщине"})
 def half_oval(a, name):
     width = float(a.num("width", 120.0, minv=0.5, maxv=5000.0))
@@ -146,6 +148,7 @@ def half_oval(a, name):
             cutter = cutter.translate((0.0, cy, -thickness * 0.5 - 2.0))
             solid = solid - cutter
 
+    solid = stand_flat_sign(a, solid)     # по правилу: лицо −Y, купол вверх +Z
     solid = anchor(solid, at, center)
     a.scene.log("info", f"полуовал: {width:g}×{height:g}×{thickness:g} мм, "
                         f"отверстие {hole:g} мм", a.cmd.line)

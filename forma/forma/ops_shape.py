@@ -21,8 +21,11 @@ def _derived(a, name, manifold, base, kind: str):
     return solid
 
 
-def _parts_follow(a, base, fn) -> None:
+def _parts_follow(a, base, fn, rotation=None) -> None:
     """Двигает вместе с объектом его составные детали.
+
+    Если задана матрица поворота 3×3, тем же преобразованием обновляются и
+    локальные оси каждой детали — корпус не расходится с экраном и кнопками.
 
     Составные команды (display, mirror_plate, часы…) кладут в сцену не одно
     тело, а корпус и детали «корпус.экран», «корпус.цифры», «корпус.стекло».
@@ -37,6 +40,10 @@ def _parts_follow(a, base, fn) -> None:
             continue
         try:
             child.manifold = fn(child.manifold)
+            child._stats = None
+            if rotation is not None:
+                orient.set_axes(child, np.asarray(rotation, dtype=np.float64).reshape(3, 3)
+                                @ orient.axes_of(child))
         except Exception:
             continue
 
@@ -594,17 +601,14 @@ def rotate(a, name):
         axis = a.vec("axis", 3, default=(0, 0, 1))
     pivot = a.vec("pivot", 3, default=(0, 0, 0))
     turned = rotate_manifold(base.manifold, float(angle), axis, pivot)
-    _parts_follow(a, base,
-                  lambda m: rotate_manifold(m, float(angle), axis, pivot))
     axes_before = orient.axes_of(base)
+    rotation = orient.rotate_axes(np.eye(3), float(angle), axis)
+    _parts_follow(a, base,
+                  lambda m: rotate_manifold(m, float(angle), axis, pivot),
+                  rotation=rotation)
     made = _derived(a, name, turned, base, "rotate")
     # памятка «где теперь верх» поворачивается вместе с деталью
-    orient.set_axes(made, orient.rotate_axes(axes_before, float(angle), axis))
-    prefix = f"{base.name}."
-    for child in a.scene.objects.values():
-        if child.name.startswith(prefix) and child.name != made.name:
-            orient.set_axes(child, orient.rotate_axes(orient.axes_of(child),
-                                                     float(angle), axis))
+    orient.set_axes(made, rotation @ axes_before)
     return made
 
 
@@ -633,10 +637,15 @@ def scale(a, name):
             "или по центру. Зазор отсчитывается от крайней границы хозяина, а не "
             "от его центра. Осями=хозяина — ставит по собственным осям хозяина: "
             "если хозяин повёрнут, «верх» едет вместе с ним, и деталь тоже "
-            "разворачивается по этим осям.",
+            "разворачивается по этим осям. face=низ/верх/перед/зад/лево/право "
+            "выбирает СВОЮ контактную сторону: деталь сама разворачивается ей "
+            "к локальной стороне side хозяина, затем устанавливается с точным "
+            "зазором от крайних точек объёма.",
     example="крышка = plate diameter=90 depth=10\n"
             "кружка = cylinder radius=40 height=95\n"
             "крышка = place [крышка] on=кружка side=top offset=2\n"
+            "панель = box size=[50,4,30]\n"
+            "панель = place [панель] on=кружка side=front face=front gap=1\n"
             "# слева от ящика, на расстоянии одной его длины, по осям ящика:\n"
             "ящик = box size=[80,50,30]\n"
             "ручка = cylinder radius=5 height=40\n"
@@ -648,7 +657,14 @@ def scale(a, name):
             "center_xy": "центрировать по X и Y (да)",
             "on": "к какому объекту приставить (имя)",
             "side": "top/сверху, bottom/снизу, left/слева, right/справа, "
-                    "front/спереди, back/сзади, center/по центру",
+                    "front/спереди, back/сзади, center/по центру; с face= это "
+                    "локальная сторона хозяина",
+            "face": "своя контактная сторона: top/верх, bottom/низ, left/лево, "
+                    "right/право, front/перёд, back/зад; автоматически разворачивает "
+                    "деталь этой стороной к хозяину",
+            "own_side": "то же, что face",
+            "своей": "то же, что face (например: своей=низ)",
+            "стороной": "то же, что face (например: стороной=перёд)",
             "offset": "зазор от крайней границы хозяина, мм (0); можно меркой — "
                       "offset=length(хозяин)",
             "gap": "то же, что offset (удобная запись)",
@@ -683,6 +699,18 @@ def place(a, name):
         frame = (a.text("осями") or a.text("axes") or "мир").strip().lower()
         host_frame = frame in ("хозяина", "хозяин", "host", "детали", "деталь",
                                "своими", "своя", "свои")
+        face_raw = (a.text("face") or a.text("own_side") or a.text("своей")
+                    or a.text("стороной") or "").strip()
+        face = orient.side_key(face_raw) if face_raw else None
+        if face is not None:
+            if face not in orient.SIDE_VECTORS or face == "center":
+                raise GeometryError(f"place: неизвестная своя сторона «{face_raw}».",
+                                    hint="face: верх, низ, лево, право, перёд или зад.")
+            if side == "center":
+                raise GeometryError("place: face задаёт контакт со стороной, "
+                                    "поэтому side=center с ним не используется.")
+            # Контактная посадка всегда говорит о ЛОКАЛЬНОЙ стороне хозяина.
+            host_frame = True
 
         if not host_frame:
             hb = host.manifold.bounding_box()
@@ -717,8 +745,16 @@ def place(a, name):
 
         # ---- по осям хозяина: верх/лево — его собственные, с учётом поворота ----
         A = orient.axes_of(host)
+        B = orient.axes_of(base)
         align = a.boolean("align", True)
-        R = A @ orient.axes_of(base).T if align else np.eye(3)
+        if face is not None:
+            # Наружная нормаль своей контактной стороны смотрит ПРОТИВ
+            # наружной нормали хозяина: две стороны обращены друг к другу.
+            host_normal = A @ orient.SIDE_VECTORS[side]
+            own_normal = B @ orient.SIDE_VECTORS[face]
+            R = orient.rotation_between(own_normal, -host_normal)
+        else:
+            R = A @ B.T if align else np.eye(3)
         pb = base.manifold.bounding_box()
         pc = np.array([(pb[0] + pb[3]) / 2, (pb[1] + pb[4]) / 2, (pb[2] + pb[5]) / 2])
         mat = np.hstack([R, (pc - R @ pc).reshape(3, 1)])
@@ -761,14 +797,19 @@ def place(a, name):
                                       shift)
 
         moved = translate_manifold(turned, shift)
-        _parts_follow(a, base, _move)
+        _parts_follow(a, base, _move, rotation=R)
         made = _derived(a, name, moved, base, "place")
-        if align:
+        if face is not None:
+            orient.set_axes(made, R @ B)
+            made.meta["contact"] = {"host": host.name, "host_side": side,
+                                    "own_side": face, "gap": gap}
+        elif align:
             orient.set_axes(made, A)
         a.scene.log("info",
                     f"place: {base.name} → {orient.SIDE_RU.get(side, side)} от {host.name} "
                     f"по осям хозяина, зазор {gap:g} мм"
-                    + ("; деталь развёрнута по этим осям" if align else ""), a.cmd.line)
+                    + (f"; к хозяину развёрнута своя сторона {face}" if face is not None
+                       else "; деталь развёрнута по этим осям" if align else ""), a.cmd.line)
         return made
 
     at = a.vec("at", 3, default=(0, 0, 0))
@@ -812,20 +853,21 @@ def mirror(a, name):
         return mf.Manifold.batch_boolean([m, img], mf.OpType.Add) if keep else img
 
     axes_before = orient.axes_of(base)
-    _parts_follow(a, base, _mirror_part)
+    reflection = orient.mirror_axes(np.eye(3), plane)
+    _parts_follow(a, base, _mirror_part,
+                  rotation=None if keep else reflection)
     made = _derived(a, name, result, base, "mirror")
     # при keep=да в детали и оригинал, и отражение — ориентация неоднозначна
     # и остаётся мировой; при keep=нет деталь действительно зеркальная
-    mirrored_axes = orient.mirror_axes(axes_before, plane)
+    mirrored_axes = reflection @ axes_before
+    prefix = f"{base.name}."
     if keep:
-        made.meta.pop("axes", None)
-        made.meta["axes"] = np.eye(3).tolist()
-    else:
-        orient.set_axes(made, mirrored_axes)
-        prefix = f"{base.name}."
+        orient.set_axes(made, np.eye(3))
         for child in a.scene.objects.values():
             if child.name.startswith(prefix) and child.name != made.name:
-                orient.set_axes(child, orient.mirror_axes(orient.axes_of(child), plane))
+                orient.set_axes(child, np.eye(3))
+    else:
+        orient.set_axes(made, mirrored_axes)
     return made
 
 

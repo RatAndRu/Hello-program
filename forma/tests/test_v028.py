@@ -98,11 +98,12 @@ class YinYang(unittest.TestCase):
     def test_form_is_half_of_the_sign(self):
         left = ok("и = yin_yang diameter=120 thick=16")
         w, d, h = size_of(left, "и")
-        self.assertAlmostEqual(h, 16.0, places=1)
-        # «запятая» — половина круга: по Y весь диаметр, по X радиус плюс
+        # С 0.41 знак стоит в XZ: толщина по Y, диаметр по Z.
+        self.assertAlmostEqual(h, 120.0, places=1)
+        # «запятая» — половина круга: по Z весь диаметр, по X радиус плюс
         # малый полукруг (R + R/2 = 0.75 диаметра)
         self.assertAlmostEqual(w, 90.0, places=1)
-        self.assertAlmostEqual(d, 120.0, places=1)
+        self.assertAlmostEqual(d, 16.0, places=1)
 
     def test_right_half_is_mirror(self):
         left = ok("и = yin_yang diameter=100 thick=10")
@@ -114,12 +115,13 @@ class YinYang(unittest.TestCase):
 
     def test_left_and_right_add_up_to_full_disc(self):
         b = ok("и = yin_yang diameter=100 thick=10\n"
-               "я = yin_yang diameter=100 thick=10 side=правый at=[0,0,10]")
+               "я = yin_yang diameter=100 thick=10 side=правый")
         m = b.scene.objects["и"].manifold + b.scene.objects["я"].manifold
         self.assertEqual(str(m.status()), "Error.NoError")
         bb = m.bounding_box()
         self.assertAlmostEqual(float(bb[3] - bb[0]), 100.0, places=1)
-        self.assertAlmostEqual(float(bb[5] - bb[2]), 20.0, places=1)
+        self.assertAlmostEqual(float(bb[4] - bb[1]), 10.0, places=1)
+        self.assertAlmostEqual(float(bb[5] - bb[2]), 100.0, places=1)
 
     def test_bad_side_is_reported(self):
         self.assertIn("сторона", fails("и = yin_yang side=середина").lower())

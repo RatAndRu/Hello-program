@@ -45,17 +45,24 @@ class SawShapeTest(unittest.TestCase):
     def test_default_disc_flat_and_round(self):
         m, _ = _solid("п = saw diameter=200 thickness=2.5 teeth=24")
         bb = m.bounding_box()
-        width, depth, height = (bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2])
-        # плоское полотно: толщина — единицы миллиметров, а не «лепестки»
-        self.assertLess(height, 5.0)
+        width, thick, height = (bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2])
+        # с 0.41 пила стоит на ребре лицом к зрителю (−Y): толщина идёт по Y,
+        # полотно круглое в XZ, а не «лепестки» по высоте
+        self.assertLess(thick, 5.0)
         self.assertGreater(width, 190.0)
-        self.assertAlmostEqual(width, depth, delta=0.8)
+        self.assertAlmostEqual(width, height, delta=0.8)
+        # плашмя — лежит, как раньше
+        flat, _ = _solid("п = saw diameter=200 thickness=2.5 teeth=24 plane=плашмя")
+        fb = flat.bounding_box()
+        self.assertLess(fb[5] - fb[2], 5.0)
+        self.assertAlmostEqual(fb[3] - fb[0], fb[4] - fb[1], delta=0.8)
         self.assertEqual(m.genus(), 1)          # одно сквозное отверстие
         self.assertLess(m.num_tri(), 12000)
 
     def test_outer_diameter_is_exact(self):
         for teeth in (12, 24, 40):
-            m, _ = _solid(f"п = saw diameter=160 thickness=2 teeth={teeth}")
+            m, _ = _solid(f"п = saw diameter=160 thickness=2 teeth={teeth} "
+                          "plane=плашмя")
             verts, _ = manifold_mesh(m)
             r = float(np.linalg.norm(verts[:, :2], axis=1).max())
             self.assertAlmostEqual(r, 80.0, delta=0.4,
@@ -64,7 +71,8 @@ class SawShapeTest(unittest.TestCase):
     def test_four_tooth_shapes_build(self):
         out = {}
         for shape in ("треугольные", "трапеция", "крюк", "волна"):
-            m, _ = _solid(f"п = saw diameter=150 teeth=18 shape={shape}")
+            m, _ = _solid(f"п = saw diameter=150 teeth=18 shape={shape} "
+                          "plane=плашмя")
             verts, _ = manifold_mesh(m)
             radii = np.linalg.norm(verts[:, :2], axis=1)
             out[shape] = (float(radii.max()), float(radii.min()), m.genus())
@@ -74,8 +82,8 @@ class SawShapeTest(unittest.TestCase):
         self.assertGreater(out["волна"][1], out["треугольные"][1] - 1e-6)
 
     def test_rake_moves_the_tip(self):
-        a, _ = _solid("п = saw diameter=160 teeth=16 rake=30")
-        b, _ = _solid("п = saw diameter=160 teeth=16 rake=-30")
+        a, _ = _solid("п = saw diameter=160 teeth=16 rake=30 plane=плашмя")
+        b, _ = _solid("п = saw diameter=160 teeth=16 rake=-30 plane=плашмя")
         va, _ = manifold_mesh(a)
         vb, _ = manifold_mesh(b)
         # у положительного переднего угла вершина смещена вперёд по ходу
@@ -87,8 +95,10 @@ class SawShapeTest(unittest.TestCase):
         self.assertAlmostEqual(float(np.linalg.norm(tip_a)), 80.0, delta=0.4)
 
     def test_kerf_widens_only_teeth(self):
-        thin, _ = _solid("п = saw diameter=200 thickness=2 teeth=24 kerf=3.6")
-        plain, _ = _solid("п = saw diameter=200 thickness=2 teeth=24 kerf=2")
+        thin, _ = _solid("п = saw diameter=200 thickness=2 teeth=24 kerf=3.6 "
+                         "plane=плашмя")
+        plain, _ = _solid("п = saw diameter=200 thickness=2 teeth=24 kerf=2 "
+                          "plane=плашмя")
         thin_bb = thin.bounding_box()
         plain_bb = plain.bounding_box()
         self.assertAlmostEqual(thin_bb[5] - thin_bb[2], 3.6, delta=0.05)
@@ -101,7 +111,7 @@ class SawShapeTest(unittest.TestCase):
         self.assertEqual(none.genus(), 1)
 
     def test_hole_and_thickness(self):
-        m, _ = _solid("п = saw diameter=200 thickness=3 hole=22")
+        m, _ = _solid("п = saw diameter=200 thickness=3 hole=22 plane=плашмя")
         verts, _ = manifold_mesh(m)
         radii = np.linalg.norm(verts[:, :2], axis=1)
         self.assertAlmostEqual(float(radii.min()), 11.0, delta=0.3)

@@ -107,11 +107,17 @@ class HalfOvalTest(unittest.TestCase):
         self.assertIn("hole", spec.params)
 
     def test_size_follows_width_and_height(self):
+        # с 0.41 полуовал стоит: X — ширина, Y — толщина, Z — высота
         b = _build("п = полуовал width=90 height=55 thickness=8 hole=0")
         w, d, h = _size(b, "п")
         self.assertAlmostEqual(w, 90.0, delta=0.05)
-        self.assertAlmostEqual(d, 55.0, delta=0.05)
-        self.assertAlmostEqual(h, 8.0, places=3)
+        self.assertAlmostEqual(d, 8.0, delta=0.05)
+        self.assertAlmostEqual(h, 55.0, delta=0.05)
+        # плашмя лежит, как раньше
+        flat = _build("п = полуовал width=90 height=55 thickness=8 hole=0 plane=плашмя")
+        fw, fd, fh = _size(flat, "п")
+        self.assertAlmostEqual(fd, 55.0, delta=0.05)
+        self.assertAlmostEqual(fh, 8.0, places=3)
 
     def test_half_oval_is_one_piece_on_the_floor(self):
         b = _build("п = полуовал width=90 height=55 thickness=8 hole=0")
@@ -139,7 +145,7 @@ class HalfOvalTest(unittest.TestCase):
     def test_thickness_and_center(self):
         thin = _build("п = полуовал width=80 height=40 thickness=2 hole=0")
         thick = _build("п = полуовал width=80 height=40 thickness=20 hole=0")
-        self.assertGreater(_size(thick, "п")[2], _size(thin, "п")[2] + 17.0)
+        self.assertGreater(_size(thick, "п")[1], _size(thin, "п")[1] + 17.0)
 
 
 class BoundaryPlacementTest(unittest.TestCase):
@@ -174,8 +180,9 @@ class BoundaryPlacementTest(unittest.TestCase):
         self.assertAlmostEqual(math.hypot(cx, cy), 28.0, delta=1.2)
 
     def test_snaps_to_top_of_box(self):
+        # полуовал лежит плашмя, чтобы «на границе» прижимало его плоскостью
         b = _build("к = box size=[80,80,80]\n"
-                   "н = полуовал width=40 height=20 thickness=4 hole=0\n"
+                   "н = полуовал width=40 height=20 thickness=4 hole=0 plane=плашмя\n"
                    "н = на_границе [н] on=к point=[0,0,100] offset=0.5")
         bb = _solid(b, "н").bounding_box()
         self.assertAlmostEqual(bb[2], 80.5, places=3)

@@ -21,6 +21,8 @@ import math
 import manifold3d as mf
 import numpy as np
 
+from .errors import GeometryError
+
 AXIS_LETTERS = ("X", "Y", "Z")
 
 # Локальные оси детали: право +X, перёд −Y, верх +Z (как у примитивов).
@@ -90,6 +92,38 @@ def rotate_axes(axes, angle_deg: float, axis) -> np.ndarray:
         [z * x * (1 - c) - y * s, z * y * (1 - c) + x * s, c + z * z * (1 - c)],
     ])
     return r @ np.asarray(axes, dtype=np.float64)
+
+
+def rotation_between(vec_from, vec_to) -> np.ndarray:
+    """Кратчайший поворот, переводящий одно направление в другое.
+
+    Нужен для посадки локальной стороной и отношений осей: не добавляет
+    самопроизвольного оборота вокруг получившегося направления.
+    """
+    a = np.asarray(vec_from, dtype=np.float64)
+    b = np.asarray(vec_to, dtype=np.float64)
+    na = float(np.linalg.norm(a))
+    nb = float(np.linalg.norm(b))
+    if na < 1e-12 or nb < 1e-12:
+        raise GeometryError("Направление разворота не может быть нулевым.")
+    a = a / na
+    b = b / nb
+    v = np.cross(a, b)
+    c = float(np.dot(a, b))
+    if float(np.linalg.norm(v)) < 1e-9:
+        if c > 0:
+            return np.eye(3)
+        axis = np.array([1.0, 0.0, 0.0])
+        if abs(float(np.dot(axis, a))) > 0.9:
+            axis = np.array([0.0, 1.0, 0.0])
+        axis = np.cross(a, axis)
+        axis /= max(float(np.linalg.norm(axis)), 1e-12)
+        return rotate_axes(np.eye(3), 180.0, axis)
+    skew = np.array([[0.0, -v[2], v[1]],
+                     [v[2], 0.0, -v[0]],
+                     [-v[1], v[0], 0.0]])
+    return np.eye(3) + skew + skew @ skew * ((1.0 - c) /
+            max(float(np.dot(v, v)), 1e-12))
 
 
 def mirror_axes(axes, plane: str) -> np.ndarray:
