@@ -142,6 +142,9 @@ class Build:
                 "axes": (getattr(solid, "meta", None) or {}).get("axes")
                         or [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
                 "genus": st["genus"],
+                # Логические панели икосферы: ядро триангулирует квадраты и
+                # соты, но исходная топология остаётся доступной отчёту и ИИ.
+                "topology": (getattr(solid, "meta", None) or {}).get("topology"),
                 "parts": _part_count(solid.manifold),
                 "area_mm2": round(st["area"], 1),
                 "tex": ({"kind": solid.tex.get("kind"), "label": solid.tex.get("label"),

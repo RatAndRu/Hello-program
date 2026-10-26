@@ -11,6 +11,143 @@ from .errors import GeometryError
 from .geometry import (FINENESS_MM, auto_segments, circle_profile, hull_of_manifolds,
                        limit_segments, manifold_from_arrays, manifold_mesh)
 from .ops import anchor, detail_factor, detail_level, ensure_solid, make_solid, op
+from .primitive_topology import (cube_sphere, dual_sphere, linear_subdivide,
+                                 loop_smooth)
+
+
+def _top_offset(a) -> np.ndarray:
+    return np.asarray(a.vec("top_offset", 2, default=(0.0, 0.0)), dtype=np.float64)
+
+
+def _top_scale(a) -> np.ndarray:
+    scale = np.asarray(a.vec("top_scale", 2, default=(1.0, 1.0)), dtype=np.float64)
+    if np.any(scale <= 0.0):
+        raise GeometryError("top_scale: оба множителя верхней плоскости должны быть больше нуля.")
+    return scale
+
+
+def _base_angle(a) -> float:
+    return float(a.num("base_angle", 90.0, minv=15.0, maxv=165.0))
+
+
+def _parallelogram(x: float, y: float, angle_deg: float) -> np.ndarray:
+    """Центрированный параллелограмм со сторонами x/y и углом между ними."""
+    angle = math.radians(angle_deg)
+    u = np.array([float(x), 0.0])
+    v = np.array([float(y) * math.cos(angle), float(y) * math.sin(angle)])
+    return np.asarray([-(u + v) / 2, (u - v) / 2,
+                       (u + v) / 2, (-u + v) / 2], dtype=np.float64)
+
+
+def _base_profile(radius: float, sides: int, angle_deg: float) -> np.ndarray:
+    if abs(angle_deg - 90.0) < 1e-9:
+        return np.asarray(circle_profile(radius, sides), dtype=np.float64)
+    if sides != 4:
+        raise GeometryError("Параллелограмм в основании возможен только при sides=4.",
+                            hint="Для многоугольника оставьте base_angle=90.")
+    # Сторона исходного квадрата с описанным радиусом radius равна √2·radius.
+    return _parallelogram(math.sqrt(2.0) * radius, math.sqrt(2.0) * radius,
+                          angle_deg)
+
+
+def _rounded_convex(solid: mf.Manifold, radius: float, a, what: str) -> mf.Manifold:
+    """Настоящее скругление выпуклого тела: эрозия плоскостей + шар.
+
+    Каждая исходная грань n·x≤c переносится внутрь до n·x≤c−r.
+    Пересечение этих полупространств — точная эрозия тела шаром радиуса r;
+    последующая Minkowski-сумма скругляет рёбра, не добавляя объём снаружи
+    исходной формы. В отличие от уменьшения габаритной коробки это корректно
+    и для наклонных боковых граней.
+    """
+    vertices, faces = manifold_mesh(solid)
+    vertices = np.asarray(vertices, dtype=np.float64)[:, :3]
+    faces = np.asarray(faces, dtype=np.int64)
+    planes = {}
+    for ia, ib, ic in faces:
+        p0, p1, p2 = vertices[ia], vertices[ib], vertices[ic]
+        normal = np.cross(p1 - p0, p2 - p0)
+        length = float(np.linalg.norm(normal))
+        if length < 1e-10:
+            continue
+        normal /= length
+        offset = float(np.dot(normal, p0))
+        key = tuple(np.round(normal, 5)) + (round(offset, 4),)
+        planes[key] = (normal, offset)
+    inner = solid
+    for normal, offset in planes.values():
+        # trim_by_plane оставляет сторону normal·x ≥ origin_offset.
+        inner = inner.trim_by_plane(tuple(-normal), -(offset - radius))
+        if inner.is_empty() or inner.volume() <= 1e-8:
+            raise GeometryError(f"{what}: round={radius:g} мм стирает тело.",
+                                hint="Уменьшите round или увеличьте размеры/высоту.")
+    result = inner.minkowski_sum(
+        mf.Manifold.sphere(radius, _sphere_segments(radius, detail_factor(a))))
+    if result.is_empty() or result.volume() <= 1e-8:
+        raise GeometryError(f"{what}: не удалось скруглить тело.")
+    return result
+
+
+def _two_ring_hull(bottom: np.ndarray, top: np.ndarray, height: float,
+                   z_bottom: float = 0.0, z_top: float | None = None) -> mf.Manifold:
+    if len(bottom) != len(top) or len(bottom) < 3:
+        raise GeometryError("Верхнее и нижнее сечения должны иметь одинаковое число точек.")
+    z_top = float(height if z_top is None else z_top)
+    points = np.vstack([
+        np.column_stack([bottom, np.full(len(bottom), float(z_bottom))]),
+        np.column_stack([top, np.full(len(top), z_top)]),
+    ])
+    solid = mf.Manifold.hull_points(np.ascontiguousarray(points, dtype=np.float64))
+    if solid.is_empty() or solid.volume() <= 1e-9:
+        raise GeometryError("Верхнее и нижнее сечения образуют вырожденное тело.")
+    return solid
+
+
+def _smooth_level(a) -> int:
+    return int(a.int("smooth", 0, minv=0, maxv=4) or 0)
+
+
+def _smooth_primitive(solid: mf.Manifold, a, what: str) -> mf.Manifold:
+    return loop_smooth(solid, _smooth_level(a), what)
+
+
+def _sliced_sphere(radius: float, cut: float, round_r: float,
+                   segments: int) -> mf.Manifold:
+    """Сфера без верхней шапки; срез и фаска строятся одним профилем."""
+    h = float(radius - cut)
+    profile = [(0.0, -float(radius))]
+    arc_steps = max(8, int(segments) // 2)
+    if round_r <= 1e-9:
+        beta = math.asin(max(-1.0, min(1.0, h / radius)))
+        for i in range(1, arc_steps + 1):
+            phi = -math.pi / 2 + (beta + math.pi / 2) * i / arc_steps
+            profile.append((radius * math.cos(phi), radius * math.sin(phi)))
+    else:
+        # Центр дуги фаски находится на расстоянии r и от сферы, и от среза.
+        max_round = (radius + h) / 2.0
+        if round_r >= max_round - 1e-9:
+            raise GeometryError(
+                f"round={round_r:g} мм слишком велик для этого среза.",
+                hint=f"При такой глубине среза радиус должен быть меньше {max_round:g} мм.")
+        inner_r = radius - round_r
+        zc = h - round_r
+        alpha = math.asin(max(-1.0, min(1.0, zc / inner_r)))
+        xc = inner_r * math.cos(alpha)
+        for i in range(1, arc_steps + 1):
+            phi = -math.pi / 2 + (alpha + math.pi / 2) * i / arc_steps
+            profile.append((radius * math.cos(phi), radius * math.sin(phi)))
+        fillet_steps = max(3, min(32, int(segments) // 8))
+        for i in range(1, fillet_steps + 1):
+            theta = alpha + (math.pi / 2 - alpha) * i / fillet_steps
+            profile.append((xc + round_r * math.cos(theta),
+                            zc + round_r * math.sin(theta)))
+    profile.append((0.0, h))
+    cross = mf.CrossSection([profile])
+    if cross.is_empty() or cross.area() <= 0.0:
+        raise GeometryError("Не удалось построить профиль срезанной сферы.")
+    solid = mf.Manifold.revolve(cross, int(segments))
+    if solid.is_empty() or solid.volume() <= 1e-9:
+        raise GeometryError("Срезанная сфера получилась пустой.")
+    return solid
 
 
 def _round_value(a) -> float:
@@ -46,9 +183,15 @@ def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
 
 @op("box", aliases=("куб", "коробка", "cube", "параллелепипед", "брусок", "блок"),
     category="Примитивы",
-    summary="Прямоугольный блок. По умолчанию стоит на полу: центр по XY, низ на z=0.",
-    example="стол = box size=[1200,700,40]",
-    params={"size": "размер [x,y,z], мм (обязательно)",
+    summary="Параллелепипед с независимой верхней плоскостью. top_size меняет её "
+            "стороны, top_offset сдвигает центр, base_angle=не 90 делает в основании "
+            "параллелограмм вместо прямоугольника. По умолчанию стоит на полу.",
+    example="блок = box size=[120,80,50] top_size=[80,50] top_offset=[15,-5]\n"
+            "скошенный = box size=[100,70,40] base_angle=65",
+    params={"size": "стороны нижнего основания и высота [x,y,z], мм (обязательно)",
+            "top_size": "стороны верхней плоскости [x,y], мм (по умолчанию как снизу)",
+            "top_offset": "сдвиг центра верхней плоскости относительно нижней [dx,dy], мм",
+            "base_angle": "угол между сторонами основания 15…165° (90 — прямоугольник)",
             "round": "радиус скругления рёбер, мм",
             "detail": "детализация скругления 0…5 (3): больше — глаже и тяжелее",
             "center": "центрировать в точке at (по умолчанию — низ на at)",
@@ -58,77 +201,149 @@ def box(a, name):
     size = a.vec("size", 3, required=True)
     if any(s <= 0 for s in size):
         raise GeometryError("Размеры блока должны быть больше нуля.")
+    x, y, height = map(float, size)
+    top_size = a.vec("top_size", 2, default=(x, y))
+    if any(s <= 0 for s in top_size):
+        raise GeometryError("top_size: стороны верхней плоскости должны быть больше нуля.")
+    tx, ty = map(float, top_size)
+    offset = _top_offset(a)
+    angle = _base_angle(a)
+    custom = (abs(angle - 90.0) > 1e-9 or a.has("top_size")
+              or float(np.linalg.norm(offset)) > 1e-12)
     r = _round_value(a)
-    solid = None
-    if r > 1e-6:
-        if min(size) < 2 * r - 1e-6:
-            raise GeometryError(
-                f"Скругление {r:g} мм слишком велико для блока {size}.",
-                hint=f"Максимум — {min(size) / 2:.2f} мм (половина самой тонкой стороны).",
-            )
-        # ровно половина толщины — допустимый предельный случай:
-        # средняя часть вырождается в плоскость, скругление даёт «таблетку»
-        inner = [max(s - 2 * r, 1e-3) for s in size]
-        solid = mf.Manifold.cube(inner, True).minkowski_sum(
-            mf.Manifold.sphere(r, _sphere_segments(r, detail_factor(a))))
+    if not custom:
+        # Старый путь сохраняет точную геометрию и быстродействие обычного box.
+        if r > 1e-6:
+            if min(size) < 2 * r - 1e-6:
+                raise GeometryError(
+                    f"Скругление {r:g} мм слишком велико для блока {size}.",
+                    hint=f"Максимум — {min(size) / 2:.2f} мм (половина самой тонкой стороны).")
+            inner = [max(s - 2 * r, 1e-3) for s in size]
+            solid = mf.Manifold.cube(inner, True).minkowski_sum(
+                mf.Manifold.sphere(r, _sphere_segments(r, detail_factor(a))))
+        else:
+            solid = mf.Manifold.cube(size, True)
     else:
-        solid = mf.Manifold.cube(size, True)
+        bottom = _parallelogram(x, y, angle)
+        top = _parallelogram(tx, ty, angle) + offset
+        solid = _two_ring_hull(bottom, top, height)
+        if r > 1e-6:
+            if height < 2 * r - 1e-6:
+                raise GeometryError(
+                    f"Скругление {r:g} мм слишком велико для высоты {height:g} мм.",
+                    hint="round не должен превышать половину высоты.")
+            solid = _rounded_convex(solid, r, a, "блок")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
-    return make_solid(a.scene, name, solid, a, kind="box")
+    out = make_solid(a.scene, name, solid, a, kind="box")
+    if custom:
+        out.notes.append(f"верх {tx:g}×{ty:g}, сдвиг {offset.tolist()}, угол основания {angle:g}°")
+    return out
 
 
 @op("sphere", aliases=("сфера", "шар", "ball"),
     category="Примитивы",
-    summary="Сфера. Центр — в точке at (по умолчанию в начале координат).",
-    example="шар = sphere radius=40 at=[0,0,40]",
+    summary="Сфера с плоским срезом сверху. slice задаёт срезаемую долю радиуса "
+            "0…1 (1 — полусфера), cut — ту же глубину в миллиметрах; round "
+            "скругляет переход между сферической стенкой и плоскостью среза.",
+    example="шар = sphere radius=40 at=[0,0,40]\n"
+            "полусфера = sphere radius=40 slice=1 round=3\n"
+            "срез = sphere radius=40 cut=12 round=2",
     params={"radius": "радиус, мм (обязательно)",
+            "slice": "сколько отсечь сверху, доля радиуса 0…1 (0; 1 — полусфера)",
+            "cut": "глубина среза сверху, мм 0…radius; нельзя вместе с slice",
+            "round": "радиус скругления новой кромки, мм (0 — острый срез)",
             "detail": "детализация 0…5 (3): 0 — гранёный шар, 5 — гладкий",
             "segments": "число сегментов (по умолчанию — по детализации)",
-            "at": "центр сферы [x,y,z]"},
+            "at": "центр ИСХОДНОЙ сферы [x,y,z]; срез не перецентрирует деталь"},
     positional=["radius"])
 def sphere(a, name):
-    radius = a.num("radius", required=True, minv=0.01)
+    radius = float(a.num("radius", required=True, minv=0.01))
     segments = _segments(a, a.int("segments", None, minv=8, maxv=512), radius)
-    solid = mf.Manifold.sphere(radius, segments)
+    slice_share = float(a.num("slice", 0.0, minv=0.0, maxv=1.0) or 0.0)
+    cut_mm = a.num("cut", None, minv=0.0)
+    if cut_mm is not None and a.has("slice"):
+        raise GeometryError("Задайте только один размер среза: slice ИЛИ cut.")
+    cut = float(cut_mm) if cut_mm is not None else slice_share * radius
+    if cut > radius + 1e-9:
+        raise GeometryError(f"Срез {cut:g} мм глубже радиуса {radius:g} мм.",
+                            hint="Можно отсечь не больше верхней половины: cut≤radius, slice≤1.")
+    cut = min(radius, max(0.0, cut))
+    round_r = _round_value(a)
+    if round_r > 1e-9 and cut <= 1e-9:
+        raise GeometryError("round относится к кромке среза: задайте slice>0 или cut>0.")
+    if cut > 1e-9:
+        solid = _sliced_sphere(radius, cut, round_r, segments)
+    else:
+        solid = mf.Manifold.sphere(radius, segments)
     at = a.vec("at", 3, default=(0, 0, 0))
-    solid = anchor(solid, at, center=True)
-    return make_solid(a.scene, name, solid, a, kind="sphere")
+    # at остаётся центром исходного шара, поэтому slice=1 даёт ровную
+    # нижнюю полусферу z∈[at.z-radius, at.z], а не перецентрированный обрезок.
+    solid = solid.translate(tuple(float(v) for v in at))
+    out = make_solid(a.scene, name, solid, a, kind="sphere")
+    if cut > 1e-9:
+        out.meta["slice"] = {"cut_mm": cut, "plane_z": float(at[2] + radius - cut),
+                             "round": round_r}
+        out.notes.append(f"срез сверху {cut:g} мм, кромка round={round_r:g}")
+    return out
 
 
 @op("cylinder", aliases=("цилиндр", "труба", "стакан"),
     category="Примитивы",
-    summary="Цилиндр или усечённый конус. По умолчанию стоит на полу.",
-    example="корпус = cylinder radius=40 height=90 segments=128 round=3",
+    summary="Цилиндр или усечённый конус с независимой верхней плоскостью: "
+            "r2 и top_scale меняют её полуоси, top_offset сдвигает центр. "
+            "По умолчанию стоит на полу.",
+    example="корпус = cylinder radius=40 height=90 segments=128 round=3\n"
+            "наклонный = cylinder radius=40 r2=30 height=70 top_offset=[18,-8]\n"
+            "эллипс = cylinder radius=40 height=60 top_scale=[1.3,0.7]",
     params={"radius": "радиус снизу, мм (обязательно)",
             "height": "высота, мм (обязательно)",
-            "r2": "радиус сверху (по умолчанию равен нижнему)",
+            "r2": "радиус сверху до top_scale (по умолчанию равен нижнему)",
+            "top_scale": "независимые множители верхней плоскости [sx,sy] (1,1)",
+            "top_offset": "сдвиг центра верхней плоскости [dx,dy], мм (0,0)",
             "segments": "число сегментов (по умолчанию — по детализации)",
             "detail": "детализация 0…5 (3): больше — глаже и тяжелее",
-            "round": "скругление верхней и нижней кромки, мм",
+            "round": "скругление верхней и нижней кромки, мм; со сдвигом/эллипсом "
+                     "верха применяется общее скругление тела",
             "center": "центрировать по высоте",
             "at": "положение [x,y,z]"},
     positional=["radius", "height"])
 def cylinder(a, name):
-    radius = a.num("radius", required=True, minv=0.01)
-    height = a.num("height", required=True, minv=0.01)
-    r2 = a.num("r2", radius, minv=0.0)
-    if r2 is None:
-        r2 = radius
-    segments = _segments(a, a.int("segments", None, minv=8, maxv=1024), max(radius, r2))
+    radius = float(a.num("radius", required=True, minv=0.01))
+    height = float(a.num("height", required=True, minv=0.01))
+    r2 = float(a.num("r2", radius, minv=0.0) or 0.0)
+    scale = _top_scale(a)
+    offset = _top_offset(a)
+    custom = a.has("top_scale") or float(np.linalg.norm(offset)) > 1e-12
+    segments = _segments(a, a.int("segments", None, minv=8, maxv=1024),
+                         max(radius, r2 * float(scale.max())))
     r = _round_value(a)
-    if r > 1e-6:
-        if height <= 2 * r + 1e-6:
-            raise GeometryError(f"Скругление {r:g} мм больше половины высоты {height:g} мм.")
-        if min(radius, r2) <= r + 1e-6:
-            raise GeometryError(f"Скругление {r:g} мм больше радиуса {min(radius, r2):g} мм.")
-        inner_h = height - 2 * r
-        solid = mf.Manifold.cylinder(inner_h, radius - r, r2 - r, segments)
-        solid = solid.minkowski_sum(
-            mf.Manifold.sphere(r, _sphere_segments(r, detail_factor(a))))
+    if not custom:
+        if r > 1e-6:
+            if height <= 2 * r + 1e-6:
+                raise GeometryError(f"Скругление {r:g} мм больше половины высоты {height:g} мм.")
+            if min(radius, r2) <= r + 1e-6:
+                raise GeometryError(f"Скругление {r:g} мм больше радиуса {min(radius, r2):g} мм.")
+            inner_h = height - 2 * r
+            solid = mf.Manifold.cylinder(inner_h, radius - r, r2 - r, segments)
+            solid = solid.minkowski_sum(
+                mf.Manifold.sphere(r, _sphere_segments(r, detail_factor(a))))
+        else:
+            solid = mf.Manifold.cylinder(height, radius, r2, segments)
     else:
-        solid = mf.Manifold.cylinder(height, radius, r2, segments)
+        angles = np.linspace(0.0, 2.0 * math.pi, segments, endpoint=False)
+        bottom = np.column_stack([radius * np.cos(angles), radius * np.sin(angles)])
+        top = np.column_stack([r2 * scale[0] * np.cos(angles),
+                               r2 * scale[1] * np.sin(angles)]) + offset
+        solid = _two_ring_hull(bottom, top, height)
+        if r > 1e-6:
+            if height <= 2 * r + 1e-6:
+                raise GeometryError("round слишком велик для высоты цилиндра.")
+            solid = _rounded_convex(solid, r, a, "цилиндр")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
-    return make_solid(a.scene, name, solid, a, kind="cylinder")
+    out = make_solid(a.scene, name, solid, a, kind="cylinder")
+    if custom:
+        out.notes.append(f"верх: полуоси {(r2 * scale).tolist()}, сдвиг {offset.tolist()}")
+    return out
 
 
 @op("cone", aliases=("конус",), category="Примитивы",
@@ -213,99 +428,215 @@ def torus(a, name):
 
 
 @op("prism", aliases=("призма", "многоугольник", "гайка"), category="Примитивы",
-    summary="Правильная призма с n сторонами (по умолчанию стоит на полу).",
-    example="гайка = prism sides=6 radius=20 height=12",
-    params={"sides": "число сторон (6)", "radius": "радиус описанной окружности, мм",
-            "r2": "радиус верхней грани — сужение к концу (по умолчанию равен нижнему)",
+    summary="N-угольная призма с независимой верхней гранью: r2/top_scale меняют "
+            "размер, top_offset сдвигает, twist поворачивает. При sides=4 "
+            "base_angle делает ромб/параллелограмм. smooth=0…4 — Loop-сглаживание.",
+    example="гайка = prism sides=6 radius=20 height=12\n"
+            "наклонная = prism sides=6 radius=30 r2=20 height=50 top_offset=[12,5]\n"
+            "ромб = prism sides=4 radius=30 height=35 base_angle=60 smooth=1",
+    params={"sides": "число сторон (6)", "radius": "радиус описанной окружности, мм; "
+            "для ромба sides=4 сторона равна √2·radius",
+            "r2": "радиус верхней грани до top_scale (по умолчанию равен нижнему)",
+            "top_scale": "независимые множители верхней грани [sx,sy] (1,1)",
+            "top_offset": "сдвиг центра верхней грани [dx,dy], мм (0,0)",
+            "base_angle": "угол ромба при sides=4, 15…165° (90 — обычная призма)",
             "twist": "закрутка верхней грани, градусы",
+            "smooth": "уровни Loop-сглаживания 0…4 (0 — плоские грани); габарит сохраняется",
             "height": "высота, мм", "center": "центрировать", "at": "положение"},
     positional=["radius", "height"])
 def prism(a, name):
-    sides = a.int("sides", 6, minv=3, maxv=256)
-    radius = a.num("radius", required=True, minv=0.01)
-    height = a.num("height", required=True, minv=0.01)
-    r2 = a.num("r2", radius, minv=0.0)
-    twist = a.num("twist", 0.0)
-    prof = circle_profile(radius, sides)
-    if (r2 is None or abs(r2 - radius) < 1e-9) and abs(twist) < 1e-9:
-        solid = mf.CrossSection([prof]).extrude(height)
+    sides = int(a.int("sides", 6, minv=3, maxv=256))
+    radius = float(a.num("radius", required=True, minv=0.01))
+    height = float(a.num("height", required=True, minv=0.01))
+    r2 = float(a.num("r2", radius, minv=0.0) or 0.0)
+    twist = float(a.num("twist", 0.0) or 0.0)
+    scale = _top_scale(a)
+    offset = _top_offset(a)
+    angle = _base_angle(a)
+    custom = (a.has("top_scale") or float(np.linalg.norm(offset)) > 1e-12
+              or abs(angle - 90.0) > 1e-9)
+    prof = _base_profile(radius, sides, angle)
+    if not custom:
+        if abs(r2 - radius) < 1e-9 and abs(twist) < 1e-9:
+            solid = mf.CrossSection([prof]).extrude(height)
+        else:
+            solid = mf.CrossSection([prof]).extrude(
+                height, 0, twist, (r2 / radius,) * 2)
     else:
-        solid = mf.CrossSection([prof]).extrude(
-            float(height), 0, float(twist), (float(r2) / float(radius),) * 2)
+        top = prof * (r2 / radius) * scale + offset
+        if abs(twist) > 1e-9:
+            theta = math.radians(twist)
+            rot = np.array([[math.cos(theta), -math.sin(theta)],
+                            [math.sin(theta), math.cos(theta)]])
+            top = (top - offset) @ rot.T + offset
+        solid = _two_ring_hull(prof, top, height)
+    solid = _smooth_primitive(solid, a, "призма")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
-    return make_solid(a.scene, name, solid, a, kind="prism")
+    out = make_solid(a.scene, name, solid, a, kind="prism")
+    if custom:
+        out.notes.append(f"верх: r2={r2:g}, scale={scale.tolist()}, сдвиг {offset.tolist()}")
+    if _smooth_level(a):
+        out.notes.append(f"Loop-сглаживание, уровень {_smooth_level(a)}")
+    return out
 
 
 @op("pyramid", aliases=("пирамида", "tetra", "пирамидка"), category="Примитивы",
-    summary="Правильная n-угольная пирамида: основание в плоскости XY, вершина вверху. "
-            "Отдельный примитив, а не конус — грани плоские, рёбра читаются.",
-    example="пирамида = pyramid sides=4 radius=60 height=90",
+    summary="N-угольная пирамида с вершиной в произвольной точке, над стороной "
+            "или углом основания. При sides=4 base_angle делает основание "
+            "параллелограммом; smooth=0…4 сглаживает тело с сохранением габарита.",
+    example="пирамида = pyramid sides=4 radius=60 height=90\n"
+            "на_угол = pyramid sides=4 radius=60 height=90 tip_at=corner tip_index=0\n"
+            "ромб = pyramid sides=4 radius=60 height=80 base_angle=60 tip_at=edge",
     params={"sides": "число сторон основания (4)",
-            "radius": "радиус описанной окружности основания, мм (обязательно)",
+            "radius": "радиус описанной окружности основания, мм; для ромба "
+                      "сторона равна √2·radius",
             "height": "высота, мм (обязательно)",
-            "tip": "смещение вершины от центра [x,y], мм — наклонная пирамида",
+            "tip": "точное смещение вершины от центра [x,y], мм; нельзя вместе с tip_at",
+            "tip_at": "center — над центром, edge — над серединой стороны, "
+                      "corner — над углом (center)",
+            "tip_index": "номер стороны/угла 0…sides−1 (0); сторона идёт от "
+                         "вершины i к i+1",
+            "base_angle": "угол параллелограмма при sides=4, 15…165° (90 — обычное основание)",
+            "smooth": "уровни Loop-сглаживания 0…4 (0 — плоские грани); габарит сохраняется",
             "center": "центрировать по высоте", "at": "положение [x,y,z]"},
     positional=["radius", "height"])
 def pyramid(a, name):
-    sides = a.int("sides", 4, minv=3, maxv=128)
-    radius = a.num("radius", required=True, minv=0.01)
-    height = a.num("height", required=True, minv=0.01)
-    tip = a.vec("tip", 2, default=(0.0, 0.0))
-    base = circle_profile(radius, sides)
+    sides = int(a.int("sides", 4, minv=3, maxv=128))
+    radius = float(a.num("radius", required=True, minv=0.01))
+    height = float(a.num("height", required=True, minv=0.01))
+    angle = _base_angle(a)
+    base = _base_profile(radius, sides, angle)
+    if a.has("tip") and a.has("tip_at"):
+        raise GeometryError("Задайте вершину одним способом: tip=[x,y] ИЛИ tip_at.")
+    if a.has("tip") and a.has("tip_index"):
+        raise GeometryError("tip_index относится к tip_at, а не к числовому tip=[x,y].")
+    if a.has("tip"):
+        tip = np.asarray(a.vec("tip", 2), dtype=np.float64)
+        tip_mode = "custom"
+    else:
+        raw_mode = (a.text("tip_at", "center") or "center").strip().lower()
+        aliases = {"центр": "center", "центра": "center",
+                   "сторона": "edge", "грань": "edge", "ребро": "edge",
+                   "край": "edge", "boundary": "edge", "side": "edge",
+                   "угол": "corner", "вершина": "corner", "vertex": "corner"}
+        tip_mode = aliases.get(raw_mode, raw_mode)
+        if tip_mode not in ("center", "edge", "corner"):
+            raise GeometryError("tip_at: center, edge (сторона) или corner (угол).")
+        index = int(a.int("tip_index", 0, minv=0, maxv=sides - 1))
+        if tip_mode == "corner":
+            tip = base[index].copy()
+        elif tip_mode == "edge":
+            tip = (base[index] + base[(index + 1) % sides]) * 0.5
+        else:
+            # Карточка держит tip_index видимым и при center: в этом режиме
+            # индекс просто не участвует. Без явного tip_at такая команда
+            # по-прежнему считается ошибочной, чтобы не скрывать опечатку.
+            if a.has("tip_index") and not a.has("tip_at"):
+                raise GeometryError("tip_index нужен только при tip_at=edge или corner.")
+            tip = np.zeros(2, dtype=np.float64)
     ring = np.column_stack([base, np.zeros(len(base))])
     pts = np.vstack([ring, np.asarray([[tip[0], tip[1], height]])])
     solid = mf.Manifold.hull_points(np.ascontiguousarray(pts, dtype=np.float64))
+    solid = _smooth_primitive(solid, a, "пирамида")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
-    return make_solid(a.scene, name, solid, a, kind="pyramid")
+    out = make_solid(a.scene, name, solid, a, kind="pyramid")
+    out.meta["tip"] = {"mode": tip_mode, "xy_before_anchor": tip.tolist()}
+    if tip_mode != "center":
+        out.notes.append(f"вершина: {tip_mode}, XY {tip.tolist()}")
+    return out
 
 
 @op("icosphere", aliases=("икосфера", "ико", "ico"), category="Примитивы",
-    summary="Икосфера — сфера из одинаковых треугольников, как в Blender. "
-            "Ровный полигонаж без «полюсов»: удобно для камней, мячей и стеков.",
-    example="шар = icosphere radius=40 divisions=2",
-    params={"radius": "радиус, мм (обязательно)",
-            "divisions": "уровень подразбиения 1..4 (2): 20 → 80 → 320 → 1280 граней",
+    summary="Геодезическая сфера с четырьмя топологиями: triangle — треугольники, "
+            "quad — квадратные панели куб-сферы, pentagon — додекаэдр на уровне 0, "
+            "honeycomb — соты из шестиугольников и неизбежных 12 пятиугольников.",
+    example="гранёный = icosphere radius=40 divisions=0\n"
+            "квадраты = icosphere radius=40 mode=quad divisions=2\n"
+            "сота = icosphere radius=40 mode=сота divisions=2",
+    params={"radius": "радиус описанной сферы, мм (обязательно)",
+            "mode": "triangle/треугольный, quad/квадратный, pentagon/пятиугольник, "
+                    "honeycomb/сота/шестиугольник (triangle)",
+            "divisions": "уровень 0…5 (2): 0 — базовые 20 треугольников, 6 квадратов "
+                         "или 12 пятиугольников; каждый уровень делит панели на 4",
             "at": "центр [x,y,z]"},
     positional=["radius"])
 def icosphere(a, name):
     import trimesh
 
-    radius = a.num("radius", required=True, minv=0.01)
-    divisions = int(a.int("divisions", 2, minv=1, maxv=5) or 2)
-    mesh = trimesh.creation.icosphere(subdivisions=divisions, radius=float(radius))
-    solid = manifold_from_arrays(mesh.vertices, mesh.faces, "икосферы")
+    radius = float(a.num("radius", required=True, minv=0.01))
+    divisions = int(a.int("divisions", 2, minv=0, maxv=5))
+    raw_mode = (a.text("mode", "triangle") or "triangle").strip().lower()
+    modes = {
+        "triangle": "triangle", "tri": "triangle", "треугольный": "triangle",
+        "треугольники": "triangle", "три": "triangle",
+        "quad": "quad", "square": "quad", "квадратный": "quad",
+        "квадрат": "quad", "квадраты": "quad",
+        "pentagon": "dual", "pentagonal": "dual", "пятиугольник": "dual",
+        "пятиугольный": "dual", "додекаэдр": "dual",
+        "honeycomb": "dual", "hex": "dual", "hexagon": "dual",
+        "сота": "dual", "соты": "dual", "шестиугольник": "dual",
+        "шестиугольный": "dual",
+    }
+    if raw_mode not in modes:
+        raise GeometryError("mode икосферы: triangle, quad, pentagon или honeycomb (сота).")
+    mode = modes[raw_mode]
+    if mode == "triangle":
+        mesh = trimesh.creation.icosphere(subdivisions=divisions, radius=radius)
+        verts, faces = mesh.vertices, mesh.faces
+        topology = {"panels": len(faces), "quads": 0,
+                    "pentagons": 0, "hexagons": 0, "grid": 2 ** divisions}
+    elif mode == "quad":
+        verts, faces, topology = cube_sphere(radius, divisions)
+    else:
+        verts, faces, topology = dual_sphere(radius, divisions)
+    solid = manifold_from_arrays(verts, faces, "икосферы")
     at = a.vec("at", 3, default=(0, 0, 0))
     solid = anchor(solid, at, center=True)
-    return make_solid(a.scene, name, solid, a, kind="icosphere")
+    out = make_solid(a.scene, name, solid, a, kind="icosphere")
+    topology.update({"mode": raw_mode, "family": mode, "divisions": divisions,
+                     "triangles": int(solid.num_tri())})
+    out.meta["topology"] = topology
+    out.notes.append(f"икосфера {raw_mode}: панелей {topology['panels']}, "
+                     f"треугольников ядра {solid.num_tri()}")
+    return out
 
 
 @op("octa", aliases=("октаэдр", "октаедр", "восьмигранник", "octahedron"), category="Примитивы",
-    summary="Октаэдр — восемь одинаковых треугольных граней, как две пирамиды, "
-            "сложенные основаниями. Ширина и длина задаются радиусом по X/Y, "
-            "высота — отдельно: можно сделать правильный октаэдр или вытянутый "
-            "ромбический. Стоит на полу.",
+    summary="Октаэдр с наращиваемой сеткой: divisions=0…4 делит каждую грань "
+            "на 4^N треугольников без изменения формы, smooth=0…4 выполняет "
+            "настоящее Loop-сглаживание с сохранением габарита. Стоит на полу.",
     example="кристалл = octa radius=30 height=80\n"
-            "правильный = octa radius=25 height=50",
+            "подробный = octa radius=30 height=80 divisions=2\n"
+            "гладкий = octa radius=30 height=80 divisions=1 smooth=1",
     params={"radius": "полуширина по X и Y, мм (обязательно)",
             "height": "полная высота, мм (по умолчанию 2·radius)",
             "depth": "полуширина по Y, если она отличается от X (radius)",
+            "divisions": "дополнительные вершины 0…4 (0): 6 вершин/8 граней, "
+                         "далее каждая грань делится на 4 без скругления",
+            "smooth": "уровни Loop-сглаживания 0…4 (0 — исходные плоские грани)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["radius"])
 def octa(a, name):
-    radius = a.num("radius", required=True, minv=0.01)
+    radius = float(a.num("radius", required=True, minv=0.01))
     depth = a.num("depth", None, minv=0.01)
     depth = float(radius if depth is None else depth)
     height = a.num("height", None, minv=0.01)
     height = float(2.0 * radius if height is None else height)
+    divisions = int(a.int("divisions", 0, minv=0, maxv=4))
     half = height / 2.0
     pts = np.asarray([[radius, 0.0, 0.0], [-radius, 0.0, 0.0],
                       [0.0, depth, 0.0], [0.0, -depth, 0.0],
                       [0.0, 0.0, half], [0.0, 0.0, -half]], dtype=np.float64)
-    solid = mf.Manifold.hull_points(np.ascontiguousarray(pts))
+    faces = np.asarray([(4, 0, 2), (4, 2, 1), (4, 1, 3), (4, 3, 0),
+                        (5, 2, 0), (5, 1, 2), (5, 3, 1), (5, 0, 3)], dtype=np.int64)
+    pts, faces = linear_subdivide(pts, faces, divisions)
+    solid = manifold_from_arrays(pts, faces, "октаэдра")
+    solid = _smooth_primitive(solid, a, "октаэдр")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="octa")
     out.notes.append(f"октаэдр {2 * radius:g}×{2 * depth:g}×{height:g} мм, "
-                     f"{solid.num_tri()} граней")
+                     f"{solid.num_tri()} треугольников, divisions={divisions}, "
+                     f"smooth={_smooth_level(a)}")
     return out
 
 
@@ -314,26 +645,44 @@ def octa(a, name):
             "по X, Y и Z; ровный и гладкий, в отличие от масштабирования шара "
             "командой scale у него честные полуоси в миллиметрах.",
     example="дно = ellipsoid x=60 y=40 z=22\n"
-            "капля = ellipsoid x=25 y=25 z=60 at=[0,0,20]",
+            "капля = ellipsoid x=25 y=25 z=60 at=[0,0,20]\n"
+            "геодезический = ellipsoid x=60 y=40 z=22 divisions=2",
     params={"x": "полуось по X, мм (обязательно)",
             "y": "полуось по Y (по умолчанию — как X)",
             "z": "полуось по Z (по умолчанию — как X)",
-            "detail": "детализация 0…5 (3): 0 — гранёный, 5 — гладкий",
-            "segments": "сегментов по кругу (по детализации)",
+            "divisions": "геодезические уровни 0…5: 20 → 80 → 320… треугольников; "
+                         "альтернатива detail/segments",
+            "detail": "детализация UV-сферы 0…5 (3): 0 — гранёный, 5 — гладкий",
+            "segments": "сегментов UV-сферы по кругу (по детализации)",
             "center": "центрировать по высоте",
             "at": "положение [x,y,z]"},
     positional=["x"])
 def ellipsoid(a, name):
-    x = a.num("x", required=True, minv=0.01)
+    x = float(a.num("x", required=True, minv=0.01))
     y = a.num("y", None, minv=0.01)
     z = a.num("z", None, minv=0.01)
     y = float(x if y is None else y)
     z = float(x if z is None else z)
-    segments = _segments(a, a.int("segments", None, minv=8, maxv=512), max(x, y, z))
-    solid = mf.Manifold.sphere(1.0, segments).scale((x, y, z))
+    if a.has("divisions"):
+        if a.has("detail") or a.has("segments"):
+            raise GeometryError("Эллипсоид: выберите divisions ИЛИ detail/segments, не оба способа.")
+        import trimesh
+        divisions = int(a.int("divisions", 2, minv=0, maxv=5))
+        mesh = trimesh.creation.icosphere(subdivisions=divisions, radius=1.0)
+        unit = np.asarray(mesh.vertices, dtype=np.float64)
+        # Даже у грубого икосаэдра полуоси остаются честными миллиметрами:
+        # нормируем фактические границы до ±1 перед анизотропным масштабом.
+        unit /= np.maximum(np.abs(unit).max(axis=0), 1e-12)
+        solid = manifold_from_arrays(unit, mesh.faces, "эллипсоида")
+        solid = solid.scale((x, y, z))
+        detail_note = f"divisions={divisions}"
+    else:
+        segments = _segments(a, a.int("segments", None, minv=8, maxv=512), max(x, y, z))
+        solid = mf.Manifold.sphere(1.0, segments).scale((x, y, z))
+        detail_note = f"segments={segments}"
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="ellipsoid")
-    out.notes.append(f"полуоси {x:g}×{y:g}×{z:g} мм")
+    out.notes.append(f"полуоси {x:g}×{y:g}×{z:g} мм, {detail_note}")
     return out
 
 

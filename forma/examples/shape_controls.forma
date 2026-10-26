@@ -1,0 +1,31 @@
+# 0.42 — плоскости, вершины, срезы и топология
+# Каждая фигура стоит отдельно; миллиметры, верх +Z, перёд −Y.
+scene bg=#10121f grid=нет
+
+блок = box size=[70,50,45] top_size=[45,30] top_offset=[10,0] round=2 at=[-180,80,0] color=steel
+ромб = box size=[60,45,35] base_angle=65 at=[-80,80,0] color=gold
+призма = prism sides=6 radius=32 r2=20 height=50 top_offset=[10,0] smooth=1 at=[20,80,0] color=violet
+цилиндр = cylinder radius=28 r2=22 height=55 top_scale=[1.25,0.75] top_offset=[8,0] at=[110,80,0] color=cyan
+
+пирамида = pyramid sides=4 radius=38 height=65 tip_at=corner tip_index=0 at=[-180,-40,0] color=copper
+окта = octa radius=32 height=70 divisions=1 smooth=1 at=[-80,-40,0] color=gold
+срез = sphere radius=38 slice=0.65 round=3 at=[20,-40,38] color=red
+эллипс = ellipsoid x=40 y=28 z=32 divisions=2 at=[110,-40,0] color=green
+
+треугольники = icosphere radius=32 mode=triangle divisions=1 at=[-180,-150,32] color=orange
+квадраты = icosphere radius=32 mode=quad divisions=1 at=[-80,-150,32] color=cyan
+пятиугольники = icosphere radius=32 mode=pentagon divisions=0 at=[20,-150,32] color=pink
+сота = icosphere radius=32 mode=сота divisions=1 at=[110,-150,32] color=mint
+
+check блок watertight
+check ромб watertight
+check призма watertight
+check цилиндр watertight
+check пирамида watertight
+check окта watertight
+check срез watertight
+check эллипс watertight
+check треугольники watertight
+check квадраты watertight
+check пятиугольники watertight
+check сота watertight

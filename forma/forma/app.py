@@ -943,6 +943,41 @@ def _run_uistest(report_path: str | None) -> int:
                           for op in ("tri_prism", "torus_sector", "ladder",
                                      "lever", "button")),
                       "все пять в инструментах")
+
+                # 0.42: независимые плоскости, срез сферы и четыре топологии
+                shaped = post("/api/preview", {"script": (
+                    "б = box size=[100,80,50] top_size=[60,40] "
+                    "top_offset=[10,-5] base_angle=70 round=2\n"
+                    "ц = cylinder radius=40 r2=30 height=60 "
+                    "top_scale=[1.2,0.7] top_offset=[10,-5]\n"
+                    "п = pyramid radius=40 height=70 tip_at=corner smooth=1")})
+                check("карточные параметры плоскостей и вершины строятся",
+                      shaped.get("ok") is True and shaped.get("objects") == 3,
+                      f"{shaped.get('tris', 0)} трис")
+                sliced = post("/api/preview", {"script": (
+                    "с = sphere radius=40 slice=0.65 round=3\n"
+                    "о = octa radius=30 height=80 divisions=1 smooth=1\n"
+                    "э = ellipsoid x=60 y=40 z=22 divisions=2")})
+                check("срез сферы, сглаживание октаэдра и детализация эллипсоида",
+                      sliced.get("ok") is True and sliced.get("objects") == 3,
+                      f"{sliced.get('tris', 0)} трис")
+                cells = post("/api/preview", {"script": (
+                    "т = icosphere radius=40 mode=triangle divisions=0\n"
+                    "к = icosphere radius=40 mode=quad divisions=1\n"
+                    "п = icosphere radius=40 mode=pentagon divisions=0\n"
+                    "с = icosphere radius=40 mode=сота divisions=1")})
+                check("четыре режима икосферы в живом превью",
+                      cells.get("ok") is True and cells.get("objects") == 4,
+                      f"{cells.get('tris', 0)} трис")
+                controls = get("/api/example?key=shape_controls")
+                shaped_example = post("/api/preview", {"script": controls.get("script", "")})
+                check("пример 0.42: 12 форм и честные карточные ползунки",
+                      shaped_example.get("ok") is True
+                      and shaped_example.get("objects") == 12
+                      and all(f"k: '{key}'".encode("utf-8") in js_app
+                              for key in ("top_size", "top_offset", "base_angle",
+                                          "tip_at", "smooth", "slice", "mode")),
+                      f"{shaped_example.get('objects', 0)} объектов")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:
