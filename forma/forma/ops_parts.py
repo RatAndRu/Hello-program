@@ -222,14 +222,16 @@ def _fill_cap(r: float, radius: float, sag: float) -> float:
 
 @op("grommet", aliases=("люверс", "втулка_с_бортиком", "блочка"),
     category="Примитивы",
-    summary="Люверс (блочка): втулка с бортиком. fill заполняет верхнее "
-            "отверстие заподлицо, выпуклым куполом или вогнутой чашей; "
-            "заполнение и втулка остаются одним телом.",
+    summary="Люверс (блочка): втулка с бортиком. transition=вогнутая заменяет "
+            "прямой уступ плавной вогнутой горкой от трубки к бортику. Независимый "
+            "fill заполняет верх заподлицо, куполом или чашей; всё остаётся одним телом.",
     example="люверс = grommet diameter=12 height=8 wall=1.6 flange=3\n"
-            "кнопка = grommet diameter=12 height=8 fill=выпуклая fill_h=2\n"
-            "чаша = grommet diameter=12 height=8 fill=вогнутая fill_h=1.5",
+            "горка = grommet diameter=12 height=10 wall=1.6 flange=4 transition=вогнутая transition_h=5\n"
+            "кнопка = grommet diameter=12 height=8 fill=выпуклая fill_h=2",
     params={"diameter": "внутренний диаметр (12)", "height": "высота втулки (8)",
             "wall": "толщина стенки (1.6)", "flange": "вылет бортика (3)",
+            "transition": "прямой уступ или вогнутая горка наружного перехода (прямой)",
+            "transition_h": "высота вогнутого перехода, мм (по умолчанию 2 wall)",
             "fill": "нет, ровно, выпуклая или вогнутая верхняя крышка (нет)",
             "fill_h": "толщина ровной крышки / стрелка купола или чаши, мм (0.75 wall)",
             "smooth": "уровни Loop-сглаживания всего люверса 0…4 (0)",
@@ -240,6 +242,16 @@ def grommet(a, name):
     height = float(a.num("height", 8.0, minv=1.0))
     wall = float(a.num("wall", 1.6, minv=0.3))
     flange = float(a.num("flange", 3.0, minv=0.2))
+    transition = (a.text("transition", "прямой") or "прямой").strip().lower()
+    transition = {"прямой": "прямой", "прямая": "прямой", "ступень": "прямой",
+                  "уступ": "прямой", "straight": "прямой", "вогнутая": "вогнутая",
+                  "вогнутый": "вогнутая", "горка": "вогнутая", "плавная": "вогнутая",
+                  "concave": "вогнутая"}.get(transition)
+    if transition is None:
+        raise GeometryError("grommet: transition=прямой или вогнутая.")
+    straight_base = max(0.6, height - wall * 2.0)
+    transition_h = float(a.num("transition_h", height - straight_base,
+                               minv=0.1, maxv=max(0.1, height - 0.2)))
     fill = (a.text("fill", "нет") or "нет").strip().lower()
     fill = {"нет": "нет", "0": "нет", "ровно": "ровно", "плоско": "ровно",
             "плоская": "ровно", "выпуклая": "выпуклая", "линза": "выпуклая",
@@ -250,9 +262,19 @@ def grommet(a, name):
     seg = _seg(a, "segments", 48, 12, 160)
     ri = d / 2.0
     ro = ri + wall
-    pts = [(ri, 0.0), (ro, 0.0), (ro, max(0.6, height - wall * 2.0)),
-           (ro + flange, max(0.6, height - wall * 2.0)),
-           (ro + flange, height), (ri, height)]
+    if transition == "вогнутая":
+        z0 = height - transition_h
+        pts = [(ri, 0.0), (ro, 0.0), (ro, z0)]
+        # Четверть эллипса: касательная вертикальна у трубки и
+        # горизонтальна у бортика. Это вогнутая стенка, а не прямой скос.
+        for i in range(1, 17):
+            theta = math.pi * 0.5 * i / 16.0
+            pts.append((ro + flange * (1.0 - math.cos(theta)),
+                        z0 + transition_h * math.sin(theta)))
+        pts.append((ri, height))
+    else:
+        pts = [(ri, 0.0), (ro, 0.0), (ro, straight_base),
+               (ro + flange, straight_base), (ro + flange, height), (ri, height)]
     solid = _revolve_profile(pts, seg, "люверса")
     if fill != "нет":
         radius = ri + min(0.05, wall * 0.05)
@@ -272,8 +294,8 @@ def grommet(a, name):
         solid = solid + plug
     solid = apply_smooth(solid, a, "люверс")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="grommet")
-    out.meta["fill"] = fill
-    out.notes.append(f"внутри ø{d:g} мм, борт {flange:g} мм")
+    out.meta.update(fill=fill, transition=transition, transition_h=transition_h)
+    out.notes.append(f"внутри ø{d:g} мм, борт {flange:g} мм, переход {transition}")
     return out
 
 

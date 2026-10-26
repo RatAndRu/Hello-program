@@ -191,7 +191,7 @@ def evaluate_checks(scene, cache) -> list[dict]:
         args = spec.get("args", [])
         kwargs = spec.get("kwargs") or {}
         if rule not in RULES:
-            results.append(_result(False, rule_raw or "?", 
+            results.append(_result(False, rule_raw or "?",
                                    f"неизвестное правило «{spec['rule']}» "
                                    f"(доступно: {', '.join(sorted(RULES))})",
                                    target_name, line))

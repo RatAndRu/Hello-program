@@ -15,12 +15,13 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import circle_profile, manifold_from_arrays
-from .ops import anchor, make_solid, op
-from .ops_basic import _rounded_convex, _sliced_sphere
+from .geometry import circle_profile, manifold_from_arrays, manifold_mesh
+from .ops import anchor, make_solid, op, rotate
+from .ops_basic import _cavity_choice, _rounded_convex, _sliced_sphere
 from .ops_shapes import _profile, _revolve
 from .shape_features import (apply_smooth, cut_center_hole, ellipse_edge_influence,
-                             rounded_extrude, transition_radius, varied_edge_thickness)
+                             open_top_cavity, rounded_extrude, transition_radius,
+                             varied_edge_thickness)
 
 
 # --------------------------------------------------------------------------- #
@@ -42,6 +43,57 @@ def _segments(a, default: int, minv: int = 16, maxv: int = 512) -> int:
 def segments_at(a, diameter: float, minv: int = 16) -> int:
     """Сегментов по кругу — от диаметра и детализации."""
     return _segments(a, max(minv, int(diameter * 1.5)), minv=minv)
+
+
+def _blind_cavity(a, solid: mf.Manifold, height: float, section, what: str):
+    """Вырезает слепую полость по двум внутренним сечениям.
+
+    ``section(z)`` возвращает наружный контур исходного тела на высоте z.
+    Отступ контура на wall сохраняет форму стенок: у слитка они повторяют
+    скос/смещение верха, у треугольной призмы — её углы и скругления.
+    Инструмент немного выходит за открытый торец, но не достигает
+    противоположного: там остаётся дно не тоньше wall.
+    """
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    if wall <= 1e-6:
+        if a.has("cavity_depth"):
+            raise GeometryError(f"{what}: cavity_depth работает при wall>0.")
+        return solid, None
+    if wall >= height - 0.1:
+        raise GeometryError(f"{what}: wall не оставляет высоты для слепой полости.")
+    side = _cavity_choice(a.text("cavity", "верх"))
+    depth = float(a.num("cavity_depth", height - wall,
+                        minv=0.1, maxv=height - wall))
+    pad = max(1.0, height * 0.02)
+    z0, z1 = ((height - depth, height + pad) if side == "верх"
+              else (-pad, depth))
+    rings = []
+    for z in (z0, z1):
+        outer = np.asarray(section(float(z)), dtype=np.float64)
+        if outer.ndim != 2 or outer.shape[0] < 3 or outer.shape[1] != 2:
+            raise GeometryError(f"{what}: некорректное сечение для полости.")
+        inner = mf.CrossSection([outer]).offset(
+            -wall, mf.JoinType.Miter, 3.0, 16)
+        polygons = inner.to_polygons()
+        if inner.is_empty() or len(polygons) != 1 or inner.area() <= 1e-7:
+            raise GeometryError(
+                f"{what}: wall={wall:g} мм не оставляет одну внутреннюю полость.",
+                hint="Уменьшите wall или cavity_depth либо увеличьте размер основания.")
+        rings.append(np.asarray(polygons[0], dtype=np.float64))
+    points = np.vstack([
+        np.column_stack([rings[0], np.full(len(rings[0]), z0)]),
+        np.column_stack([rings[1], np.full(len(rings[1]), z1)]),
+    ])
+    tool = mf.Manifold.hull_points(np.ascontiguousarray(points, dtype=np.float64))
+    if tool.is_empty() or tool.volume() <= 1e-8:
+        raise GeometryError(f"{what}: не удалось построить внутренний контур полости.")
+    before = float(solid.volume())
+    result = solid - tool
+    positive = [p for p in result.decompose() if p.volume() > 1e-6]
+    if (result.is_empty() or result.status() != mf.Error.NoError
+            or len(positive) != 1 or result.volume() >= before - 1e-6):
+        raise GeometryError(f"{what}: не удалось вырезать слепую полость.")
+    return result, {"wall": wall, "cavity": side, "cavity_depth": depth}
 
 
 def _rounded_rect(hx: float, hy: float, r: float, steps: int = 6) -> list[tuple[float, float]]:
@@ -170,10 +222,91 @@ def _outline_kind(a, what: str) -> str:
              "ровная": "обычная", "plain": "обычная",
              "вогнутая4": "вогнутая4", "вогнутый4": "вогнутая4",
              "звезда4": "вогнутая4", "звёздочка4": "вогнутая4",
-             "concave4": "вогнутая4"}.get(raw)
+             "concave4": "вогнутая4",
+             # Короткие имена теперь означают непрерывный профиль бортика,
+             # а не четырёхлучевую звёздочку. Старое имя оставлено для
+             # совместимости уже сохранённых сцен.
+             "вогнутая": "вогнутая", "вогнутый": "вогнутая",
+             "выпуклая": "выпуклая", "выпуклый": "выпуклая",
+             "concave": "вогнутая", "convex": "выпуклая"}.get(raw)
     if value is None:
-        raise GeometryError(f"{what}: outline=обычная или вогнутая4.")
+        raise GeometryError(f"{what}: outline=обычная, вогнутая, выпуклая или вогнутая4.")
     return value
+
+
+def _rim_kind(a) -> str:
+    raw = (a.text("rim_profile", "нет") or "нет").strip().lower()
+    value = {"нет": "нет", "без": "нет", "none": "нет",
+             "вогнутый": "вогнутый", "вогнутая": "вогнутый", "concave": "вогнутый",
+             "выпуклый": "выпуклый", "выпуклая": "выпуклый", "convex": "выпуклый"}.get(raw)
+    if value is None:
+        raise GeometryError("rim_profile: нет, вогнутый или выпуклый.")
+    return value
+
+
+def _continuous_rim(solid: mf.Manifold, hx: float, hy: float, thickness: float,
+                    profile: str, height: float, width: float, offset: float,
+                    side: str, contour=None, what: str = "бортик") -> mf.Manifold:
+    """Плавный кольцевой бортик/желоб на исходной сетке, без звёздчатого контура.
+
+    ``offset`` — плоская полоса от наружного края до начала профиля,
+    ``width`` — радиальная ширина самой дуги. Полусинус даёт непрерывную
+    касательную на обеих границах; вогнутый профиль уходит внутрь тела,
+    выпуклый — наружу. Низ и верх можно выбрать независимо.
+    """
+    if profile == "нет" or height <= 1e-9:
+        return solid
+    if width <= 0.05 or offset < 0:
+        raise GeometryError(f"{what}: rim_width>0 и rim_offset≥0.")
+    if offset + width >= min(hx, hy) * 0.95:
+        raise GeometryError(f"{what}: бортик не оставляет плоского центрального поля.",
+                            hint="Уменьшите rim_offset/rim_width.")
+    if side in ("верх", "низ") and height >= thickness * 0.9:
+        raise GeometryError(f"{what}: rim_height почти прорезает пластину.")
+    if side == "обе" and height >= thickness * 0.45:
+        raise GeometryError(f"{what}: для двух сторон rim_height должен быть меньше 45% толщины.")
+    # Дробим именно исходную сетку: дуга не должна превращаться в одну
+    # диагональ между редкими вершинами крышки.
+    area = float(solid.surface_area())
+    step = max(0.12, width / 8.0, math.sqrt(2.0 * area / 220_000.0))
+    refined = solid.refine_to_length(step)
+    verts, faces = manifold_mesh(refined)
+    verts = np.asarray(verts, dtype=np.float64).copy()
+    x, y, z = verts[:, 0], verts[:, 1], verts[:, 2]
+    if contour is None:
+        q = np.sqrt((x / hx) ** 2 + (y / hy) ** 2)
+        ray_radius = np.where(q > 1e-12, np.hypot(x, y) / np.maximum(q, 1e-12), max(hx, hy))
+        distance = np.maximum(0.0, (1.0 - q) * ray_radius)
+    else:
+        c = np.asarray(_profile(contour), dtype=np.float64)
+        angles = np.arctan2(c[:, 1], c[:, 0])
+        radii = np.linalg.norm(c, axis=1)
+        order = np.argsort(angles)
+        angles, radii = angles[order], radii[order]
+        angles = np.concatenate([angles[-1:] - 2 * math.pi, angles, angles[:1] + 2 * math.pi])
+        radii = np.concatenate([radii[-1:], radii, radii[:1]])
+        boundary = np.interp(np.arctan2(y, x), angles, radii)
+        distance = np.maximum(0.0, boundary - np.hypot(x, y))
+    t = np.clip((distance - offset) / width, 0.0, 1.0)
+    # Нулевая амплитуда на границах, плавный максимум в середине полосы.
+    envelope = np.sin(math.pi * t) ** 2
+    envelope[(distance < offset) | (distance > offset + width)] = 0.0
+    z0, z1 = float(np.min(z)), float(np.max(z))
+    span = max(z1 - z0, 1e-6)
+    top_w = np.clip((z - z0) / span, 0.0, 1.0)
+    bottom_w = 1.0 - top_w
+    if side == "верх":
+        weights = top_w
+    elif side == "низ":
+        weights = -bottom_w
+    else:
+        weights = top_w - bottom_w
+    direction = -1.0 if profile == "вогнутый" else 1.0
+    verts[:, 2] += direction * height * envelope * weights
+    result = manifold_from_arrays(verts, faces, what)
+    if result.is_empty() or result.status() != mf.Error.NoError:
+        raise GeometryError(f"{what}: профиль бортика дал некорректную сетку.")
+    return result
 
 
 def _concave_outline(hx: float, hy: float, segments: int,
@@ -262,15 +395,22 @@ def _outline_edge_influence(outline: np.ndarray, band: float):
             "плоский. round скругляет кромку плоского варианта. edge задаёт "
             "точную толщину наружной кромки: меньше thickness — истончение, "
             "больше — утолщение; edge_band — ширина плавного перехода. "
-            "outline=вогнутая4 заменяет окружность четырьмя вогнутыми "
-            "сторонами с кончиками на осях; indent задаёт их глубину.",
+            "rim_profile=вогнутый|выпуклый добавляет непрерывный кольцевой "
+            "бортик с плавной дугой; rim_offset и rim_width задают отступ "
+            "от края и ширину профиля, rim_height — глубину/высоту. "
+            "Старое outline=вогнутая4 сохранено только для совместимости.",
     example="блин = disc diameter=120 thickness=8\n"
             "чаша = disc diameter=100 thickness=8 top=вогнутая sag=3\n"
             "линза = disc diameter=90 thickness=6 top=выпуклая sag=4\n"
             "звёздочка = disc diameter=100 thickness=5 outline=вогнутая4 indent=.25",
     params={"diameter": "диаметр, мм (100)", "thickness": "толщина у кромки, мм (6)",
-            "outline": "обычная окружность или вогнутая4 — четыре вогнутые стороны",
-            "indent": "глубина вогнутого контура 0…0.8 (0.25; 0 — окружность)",
+            "outline": "обычная; вогнутая/выпуклая — непрерывный бортик; вогнутая4 — старый контур",
+            "indent": "глубина старого контура вогнутая4 0…0.8 (0.25)",
+            "rim_profile": "профиль бортика: нет, вогнутый или выпуклый (нет)",
+            "rim_height": "глубина/высота дуги бортика, мм (30% толщины)",
+            "rim_width": "радиальная ширина дуги, мм (22% меньшей полуоси)",
+            "rim_offset": "плоский отступ от наружного края до дуги, мм (0)",
+            "rim_side": "сторона бортика: верх, низ или обе (верх)",
             "top": "верх: плоская, вогнутая или выпуклая",
             "sag": "стрела верхней кривизны, мм (авто: 25% толщины)",
             "round": "скругление кромки, мм (0; только top=плоская)",
@@ -291,6 +431,18 @@ def disc(a, name):
     top = _top_kind(a, "круг")
     outline_kind = _outline_kind(a, "круг")
     indent = float(a.num("indent", 0.25, minv=0.0, maxv=0.8) or 0.0)
+    rim_profile = _rim_kind(a)
+    if outline_kind in ("вогнутая", "выпуклая") and rim_profile == "нет":
+        rim_profile = "вогнутый" if outline_kind == "вогнутая" else "выпуклый"
+    rim_height = float(a.num("rim_height", thickness * 0.30, minv=0.0) or 0.0)
+    rim_width = float(a.num("rim_width", radius * 0.22, minv=0.05))
+    rim_offset = float(a.num("rim_offset", a.num("rim_inset", 0.0, minv=0.0), minv=0.0) or 0.0)
+    rim_side = (a.text("rim_side", "верх") or "верх").strip().lower()
+    rim_side = {"верх": "верх", "сверху": "верх", "top": "верх",
+                "низ": "низ", "снизу": "низ", "bottom": "низ",
+                "обе": "обе", "обеих": "обе", "both": "обе"}.get(rim_side)
+    if rim_side is None:
+        raise GeometryError("rim_side: верх, низ или обе.")
     concave4 = outline_kind == "вогнутая4" and indent > 1e-9
     contour = None
     if concave4:
@@ -324,6 +476,10 @@ def disc(a, name):
         solid = solid.minkowski_sum(mf.Manifold.sphere(round_r, max(12, segments // 4)))
     else:
         solid = mf.Manifold.cylinder(thickness, radius, radius, segments, center=True)
+    solid = _continuous_rim(solid, radius, radius, thickness, rim_profile,
+                            rim_height, rim_width, rim_offset, rim_side,
+                            contour=contour if concave4 else None,
+                            what="круг с непрерывным бортиком")
     if abs(edge - thickness) > 1e-9:
         influence = (_outline_edge_influence(contour, edge_band) if concave4
                      else ellipse_edge_influence(radius, radius, edge_band))
@@ -333,6 +489,11 @@ def disc(a, name):
             center_z=thickness / 2.0 if top != "плоская" else 0.0)
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="disc")
     out.notes.append(f"круг ø{diameter:g}×{thickness:g} мм, верх {top}")
+    if rim_profile != "нет":
+        out.meta.update(rim_profile=rim_profile, rim_height=rim_height,
+                        rim_width=rim_width, rim_offset=rim_offset, rim_side=rim_side)
+        out.notes.append(f"непрерывный {rim_profile} бортик: h={rim_height:g}, "
+                         f"ширина={rim_width:g}, отступ={rim_offset:g}, сторона={rim_side}")
     if concave4:
         out.notes.append(f"контур: четыре вогнутые стороны, indent={indent:g}")
     if abs(edge - thickness) > 1e-9:
@@ -347,14 +508,17 @@ def disc(a, name):
                     "сектор_диска", "pie_slice"),
     category="Примитивы",
     summary="Сектор круга — «кусок пирога» с объёмом: угол, поворот и толщина. "
-            "Годится для стрелок-указателей, козырьков, сегментов диаграмм и "
-            "секторных подставок. angle=360 даёт целый круг.",
+            "wall>0 вырезает сверху настоящую полость с ровными стенками и дном, "
+            "получается секторная форма-лодочка. angle=360 даёт целый круг.",
     example="кусок = pie diameter=140 angle=90 thickness=8\n"
+            "форма = pie diameter=180 angle=240 thickness=24 wall=3 cavity_depth=18\n"
             "стрелка = pie diameter=120 angle=60 start=30 thickness=6",
     params={"diameter": "диаметр, мм (120)",
             "angle": "угол сектора, градусы (90)",
             "start": "откуда начинать, градусы от +X (0)",
             "thickness": "толщина, мм (6)",
+            "wall": "толщина стенки и минимального дна, мм (0 — сплошной)",
+            "cavity_depth": "глубина полости от верха, мм (thickness − wall)",
             "hole": "центральное сквозное отверстие у вершины сектора, мм (0 — сплошной)",
             "edge": "толщина только круглой дуги, мм (= thickness)",
             "edge_band": "ширина перехода от дуги, мм (25% радиуса)",
@@ -369,6 +533,11 @@ def pie(a, name):
     angle = float(a.num("angle", 90.0, minv=1.0, maxv=360.0) or 90.0)
     start = float(a.num("start", 0.0) or 0.0)
     thickness = float(a.num("thickness", 6.0, minv=0.1))
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    cavity_depth = float(a.num("cavity_depth", thickness - wall if wall > 0 else 0.0,
+                               minv=0.0) or 0.0)
+    if wall <= 1e-9 and cavity_depth > 1e-9:
+        raise GeometryError("Сектор круга: cavity_depth требует wall>0.")
     hole = float(a.num("hole", 0.0, minv=0.0) or 0.0)
     radius = diameter / 2.0
     edge = float(a.num("edge", thickness, minv=0.05))
@@ -388,6 +557,7 @@ def pie(a, name):
         cross = mf.CrossSection([circle_profile(radius, full)])
     edge_r = transition_radius(a, min(thickness * 0.45, radius * 0.04))
     solid = rounded_extrude(cross, thickness, edge_r, "сектор круга")
+    solid = open_top_cavity(solid, cross, thickness, wall, cavity_depth, "сектор круга")
     if abs(edge - thickness) > 1e-9:
         start_rad = math.radians(start)
         angle_rad = math.radians(angle)
@@ -409,6 +579,9 @@ def pie(a, name):
     solid = cut_center_hole(solid, thickness, hole, what="сектор круга")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="pie")
     out.notes.append(f"сектор {angle:g}° от {start:g}°, ø{diameter:g}×{thickness:g} мм")
+    if wall > 0:
+        out.meta.update(wall=wall, cavity_depth=cavity_depth, cavity="открыта сверху")
+        out.notes.append(f"полость {cavity_depth:g} мм, стенка/дно ≥ {wall:g} мм")
     return out
 
 
@@ -430,8 +603,13 @@ def pie(a, name):
             "length": "длина по Y, мм (100)",
             "diameter": "если задан — круг этого диаметра вместо овала",
             "thickness": "толщина у кромки, мм (6)",
-            "outline": "обычный эллипс или вогнутая4 — четыре вогнутые стороны",
-            "indent": "глубина вогнутого контура 0…0.8 (0.25; 0 — эллипс)",
+            "outline": "обычная; вогнутая/выпуклая — непрерывный бортик; вогнутая4 — старый контур",
+            "indent": "глубина старого контура вогнутая4 0…0.8 (0.25)",
+            "rim_profile": "профиль бортика: нет, вогнутый или выпуклый (нет)",
+            "rim_height": "глубина/высота дуги бортика, мм (30% толщины)",
+            "rim_width": "радиальная ширина дуги, мм (22% меньшей полуоси)",
+            "rim_offset": "плоский отступ от наружного края до дуги, мм (0)",
+            "rim_side": "сторона бортика: верх, низ или обе (верх)",
             "top": "верх: плоская, вогнутая или выпуклая",
             "sag": "стрела верхней кривизны, мм (авто: 25% толщины)",
             "round": "скругление кромки, мм (0; только top=плоская)",
@@ -457,6 +635,18 @@ def oval(a, name):
     top = _top_kind(a, "овал")
     outline_kind = _outline_kind(a, "овал")
     indent = float(a.num("indent", 0.25, minv=0.0, maxv=0.8) or 0.0)
+    rim_profile = _rim_kind(a)
+    if outline_kind in ("вогнутая", "выпуклая") and rim_profile == "нет":
+        rim_profile = "вогнутый" if outline_kind == "вогнутая" else "выпуклый"
+    rim_height = float(a.num("rim_height", thickness * 0.30, minv=0.0) or 0.0)
+    rim_width = float(a.num("rim_width", min(hx, hy) * 0.22, minv=0.05))
+    rim_offset = float(a.num("rim_offset", a.num("rim_inset", 0.0, minv=0.0), minv=0.0) or 0.0)
+    rim_side = (a.text("rim_side", "верх") or "верх").strip().lower()
+    rim_side = {"верх": "верх", "сверху": "верх", "top": "верх",
+                "низ": "низ", "снизу": "низ", "bottom": "низ",
+                "обе": "обе", "обеих": "обе", "both": "обе"}.get(rim_side)
+    if rim_side is None:
+        raise GeometryError("rim_side: верх, низ или обе.")
     concave4 = outline_kind == "вогнутая4" and indent > 1e-9
     contour = None
     if concave4:
@@ -495,6 +685,10 @@ def oval(a, name):
         solid = mf.CrossSection([_profile(pts)]).extrude(body).translate((0, 0, -body / 2))
         if round_r > 1e-6:
             solid = solid.minkowski_sum(mf.Manifold.sphere(round_r, max(12, segments // 4)))
+    solid = _continuous_rim(solid, hx, hy, thickness, rim_profile,
+                            rim_height, rim_width, rim_offset, rim_side,
+                            contour=contour if concave4 else None,
+                            what="овал с непрерывным бортиком")
     if abs(edge - thickness) > 1e-9:
         influence = (_outline_edge_influence(contour, edge_band) if concave4
                      else ellipse_edge_influence(hx, hy, edge_band))
@@ -504,6 +698,11 @@ def oval(a, name):
             center_z=thickness / 2.0 if top != "плоская" else 0.0)
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="oval")
     out.notes.append(f"овал {width:g}×{length:g}×{thickness:g} мм, верх {top}")
+    if rim_profile != "нет":
+        out.meta.update(rim_profile=rim_profile, rim_height=rim_height,
+                        rim_width=rim_width, rim_offset=rim_offset, rim_side=rim_side)
+        out.notes.append(f"непрерывный {rim_profile} бортик: h={rim_height:g}, "
+                         f"ширина={rim_width:g}, отступ={rim_offset:g}, сторона={rim_side}")
     if concave4:
         out.notes.append(f"контур: четыре вогнутые стороны, indent={indent:g}")
     if abs(edge - thickness) > 1e-9:
@@ -780,10 +979,12 @@ def bead(a, name):
             "taper_mode=бока скашивает только лево/право и оставляет перёд/зад "
             "параллельными; top_size/top_offset задают верх напрямую. round "
             "округляет углы контура, smooth скругляет только переходные рёбра, "
-            "сохраняя широкие грани плоскими.",
+            "сохраняя широкие грани плоскими. wall>0 вырезает слепую полость "
+            "сверху или снизу; внутренние стенки повторяют скос и сдвиг верха.",
     example="слиток = ingot length=100 width=50 height=22 taper=8\n"
             "груз = ingot length=60 width=40 height=30 taper_mode=бока taper=8 smooth=1\n"
-            "верх = ingot length=100 width=50 height=22 top_size=[70,35] top_offset=[8,0]",
+            "верх = ingot length=100 width=50 height=22 top_size=[70,35] top_offset=[8,0]\n"
+            "форма = ingot length=100 width=50 height=30 wall=3 cavity=верх cavity_depth=20",
     params={"length": "длина низа по X, мм (100)", "width": "ширина низа по Y, мм (50)",
             "height": "высота, мм (22)",
             "taper": "скос верхней площадки относительно низа, мм (8)",
@@ -793,6 +994,9 @@ def bead(a, name):
             "round": "скругление только углов контура в плане, мм (0)",
             "smooth": "ступени скругления переходных рёбер 0…4 (0), "
                       "без Loop-стягивания широких граней",
+            "wall": "стенка и минимальное дно слепой полости, мм; 0 — сплошной (0)",
+            "cavity": "открытая сторона при wall>0: верх или низ (верх)",
+            "cavity_depth": "глубина от открытой стороны, мм (height−wall)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["length"])
 def ingot(a, name):
@@ -828,9 +1032,22 @@ def ingot(a, name):
         # Эрозия по исходным плоскостям + сфера: настоящие радиусы только
         # на рёбрах, широкие верх/низ и скошенные бока остаются плоскими.
         solid = _rounded_convex(solid, edge_r, a, "слиток")
+    bottom_arr = np.asarray(bottom, dtype=np.float64)
+    top_arr = np.asarray(top, dtype=np.float64)
+
+    def outer_section(z):
+        t = z / height
+        return (1.0 - t) * bottom_arr + t * top_arr
+
+    solid, cavity_info = _blind_cavity(a, solid, height, outer_section, "слиток")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="ingot")
     out.notes.append(f"слиток {length:g}×{width:g}×{height:g} мм, скос {taper:g} мм "
                      f"({mode}), верх {2*tx:g}×{2*ty:g}, сдвиг {offset.tolist()}")
+    if cavity_info:
+        out.meta.update(cavity_info)
+        out.notes.append(f"слепая полость: {cavity_info['cavity']}, "
+                         f"глубина {cavity_info['cavity_depth']:g}, "
+                         f"стенка {cavity_info['wall']:g} мм")
     return out
 
 
@@ -904,7 +1121,7 @@ def paraboloid(a, name):
 #  Гиперболический параболоид — седло
 # --------------------------------------------------------------------------- #
 @op("saddle", aliases=("гиперболический_параболоид", "гиперпараболоид", "седло",
-                       "гиперболоид", "hyperbolic_paraboloid", "hypar"),
+                       "hyperbolic_paraboloid", "hypar"),
     category="Примитивы",
     summary="Гиперболический параболоид — седло: в одну сторону поверхность "
             "поднимается, в другую опускается. mode=гипар — классическая "
@@ -917,7 +1134,9 @@ def paraboloid(a, name):
             "rise": "перепад высот между верхом и низом, мм (40)",
             "thickness": "толщина плиты, мм (4)",
             "mode": "гипар (крыша) или седло (чипс) — «гипар»",
-            "segments": "точек по стороне (по детализации)",
+            "segments": "точек по обеим сторонам сетки, до 512",
+            "nu": "отдельное число отрезков по X (перекрывает segments)",
+            "nv": "отдельное число отрезков по Y (перекрывает segments)",
             "detail": "детализация 0…5 (3)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["length"])
@@ -938,7 +1157,9 @@ def saddle(a, name):
                             hint="mode=гипар (крыша с прямыми рёбрами) или "
                                  "mode=седло (чипс).")
     segments = _segments(a, max(16, min(64, int(max(length, width) * 0.3))),
-                         minv=8, maxv=64)
+                         minv=8, maxv=512)
+    nu = int(a.int("nu", segments, minv=4, maxv=512) or segments)
+    nv = int(a.int("nv", segments, minv=4, maxv=512) or segments)
 
     def point(s, t):
         x = (np.asarray(s, dtype=float) - 0.5) * length
@@ -950,11 +1171,90 @@ def saddle(a, name):
             z = rise * 0.5 * (u * v)
         return np.stack([x, y, z], axis=-1)
 
-    solid = _thick_surface(point, segments, segments, thickness, "седла")
+    solid = _thick_surface(point, nu, nv, thickness, "седла")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="saddle")
     word = "седло-чипс" if mode == "седло" else "гипар (крыша)"
+    out.meta.update(nu=nu, nv=nv)
     out.notes.append(f"гиперболический параболоид {length:g}×{width:g} мм, "
-                     f"перепад {rise:g} мм, толщина {thickness:g} мм — {word}")
+                     f"перепад {rise:g} мм, толщина {thickness:g} мм — {word}; сетка {nu}×{nv}")
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Гиперболоид вращения и песочные часы
+# --------------------------------------------------------------------------- #
+@op("hyperboloid", aliases=("гиперболоид", "песочные_часы", "hourglass",
+                            "hyperboloid_of_revolution"), category="Примитивы",
+    summary="Гиперболоид вращения с регулируемым центральным радиусом. "
+            "hourglass=да (или upper=да) добавляет зеркальную верхнюю часть "
+            "и оставляет круглое сквозное отверстие в месте талии; center_hole "
+            "и wall управляют отверстием и стенкой. Без hourglass строится "
+            "одна нижняя ветвь с плоскими торцами.",
+    example="ветвь = hyperboloid radius=70 height=100 center_radius=25\n"
+            "часы = hyperboloid radius=70 height=160 center_radius=24 hourglass=да center_hole=18\n"
+            "оболочка = hyperboloid radius=70 height=160 center_radius=24 hourglass=да wall=3",
+    params={"radius": "радиус основания/торцов, мм (70)",
+            "base_radius": "синоним radius",
+            "height": "высота одной ветви или всей фигуры hourglass, мм (120)",
+            "center_radius": "радиус талии посередине, мм (0.35·radius)",
+            "waist": "синоним center_radius",
+            "mid_radius": "синоним center_radius",
+            "hourglass": "да — добавить верхнюю зеркальную ветвь",
+            "upper": "синоним hourglass",
+            "double": "синоним hourglass",
+            "two": "синоним hourglass",
+            "center_hole": "диаметр сквозного отверстия в талии, мм; 0 — без отверстия",
+            "hole": "синоним center_hole",
+            "wall": "толщина стенки оболочки, мм (0 — сплошное тело)",
+            "segments": "сегментов по окружности (64)",
+            "rings": "отрезков профиля на одну ветвь (24)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"},
+    positional=["radius", "height"])
+def hyperboloid(a, name):
+    radius = float(a.num("radius", a.num("base_radius", 70.0, minv=1.0), minv=1.0))
+    height = float(a.num("height", 120.0, minv=1.0))
+    center_radius = float(a.num("center_radius", a.num("waist", a.num("mid_radius", radius * 0.35, minv=0.1), minv=0.1), minv=0.1))
+    if center_radius > radius:
+        raise GeometryError("center_radius не должен быть больше радиуса основания гиперболоида.")
+    hourglass = (a.boolean("hourglass", False) or a.boolean("upper", False)
+                 or a.boolean("double", False) or a.boolean("two", False))
+    segments = int(a.int("segments", 64, minv=12, maxv=512) or 64)
+    rings = int(a.int("rings", 24, minv=4, maxv=256) or 24)
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    hole_value = a.num("center_hole", None, minv=0.0)
+    if hole_value is None:
+        hole_value = a.num("hole", None, minv=0.0)
+    # У песочных часов отверстие является частью формы, а не случайным
+    # следом булева: его можно убрать явным center_hole=0.
+    hole_d = float(hole_value) if hole_value is not None else (center_radius * 0.55 if hourglass else 0.0)
+    if hole_d >= 2.0 * center_radius - 1e-6:
+        raise GeometryError("center_hole должен оставлять кольцо материала в талии.")
+    if wall >= center_radius and wall > 1e-9:
+        raise GeometryError("wall должен быть меньше center_radius.")
+    half_h = height * 0.5 if hourglass else height
+    k = math.sqrt(max(0.0, radius * radius - center_radius * center_radius)) / half_h
+    if hourglass:
+        zs = np.linspace(-half_h, half_h, 2 * rings + 1)
+    else:
+        zs = np.linspace(0.0, height, rings + 1)
+    outer = [(float(math.sqrt(center_radius * center_radius + (k * float(z)) ** 2)), float(z))
+             for z in zs]
+    hollow = hole_d > 1e-9 or wall > 1e-9
+    if hollow:
+        hole_r = hole_d * 0.5
+        inner = [(max(hole_r, r - wall) if wall > 1e-9 else hole_r, z) for r, z in outer]
+        if any(r <= 1e-6 for r, _ in inner):
+            raise GeometryError("Внутренний профиль гиперболоида вырожден.")
+        profile = outer + list(reversed(inner))
+    else:
+        profile = outer + [(0.0, float(zs[-1])), (0.0, float(zs[0]))]
+    solid = _revolve(profile, segments, "гиперболоида")
+    solid = _placed(a, solid)
+    out = make_solid(a.scene, name, solid, a, kind="hyperboloid")
+    out.meta.update(hourglass=hourglass, center_radius=center_radius,
+                    center_hole=hole_d, wall=wall)
+    out.notes.append(f"гиперболоид: торцы R{radius:g}, талия R{center_radius:g}, "
+                     f"hourglass={'да' if hourglass else 'нет'}, отверстие ø{hole_d:g}")
     return out
 
 
@@ -1008,13 +1308,16 @@ def _stairs_profile(steps: int, run: float, rise: float,
 
 @op("stairs", aliases=("ступеньки", "ступени", "ступеньки_марш", "лесенка", "staircase"),
     category="Примитивы",
-    summary="Прямой лестничный марш без скошенных ступеней. Наружная кромка "
-            "и внутренний угол настраиваются отдельно: shape=прямая/скруглённая, "
-            "inner=прямой/скруглённый. Подъём идёт в +X.",
+    summary="Лестничный марш без скошенных ступеней. turn поворачивает каждую "
+            "ступень вокруг её собственного центра в плане, создавая диагональную "
+            "схему, а не вращая всю лестницу. Наружная кромка и внутренний угол "
+            "независимо бывают прямыми или скруглёнными. Подъём идёт в +X.",
     example="марш = stairs steps=6 rise=18 run=28 width=120\n"
+            "диагональ = stairs steps=7 rise=18 run=28 width=120 turn=30\n"
             "мягкий = stairs steps=6 rise=18 run=28 width=120 shape=скруглённая inner=скруглённый",
     params={"steps": "число ступеней 1…120 (6)", "rise": "высота ступени, мм (18)",
             "run": "глубина проступи, мм (28)", "width": "ширина марша, мм (120)",
+            "turn": "поворот каждой ступени вокруг её центра в XY, ° (−60…60; 0)",
             "shape": "наружная кромка: прямая или скруглённая — «прямая»",
             "round": "радиус наружной кромки, мм (авто)",
             "inner": "внутренний угол: прямой или скруглённый — «прямой»",
@@ -1026,6 +1329,7 @@ def stairs(a, name):
     rise = float(a.num("rise", 18.0, minv=0.5, maxv=2000.0))
     run = float(a.num("run", 28.0, minv=0.5, maxv=5000.0))
     width = float(a.num("width", 120.0, minv=1.0, maxv=10000.0))
+    turn = float(a.num("turn", 0.0, minv=-60.0, maxv=60.0) or 0.0)
     shape = (a.text("shape", "прямая") or "прямая").strip().lower()
     shape = {"прямая": "прямая", "прямые": "прямая", "блок": "прямая",
              "скруглённая": "скруглённая", "скругленная": "скруглённая",
@@ -1047,9 +1351,32 @@ def stairs(a, name):
                           outer_r=edge if shape == "скруглённая" else 0.0,
                           inner_r=inner_r if inner == "скруглённый" else 0.0)
     solid = _extrude_xz(pts, width)
+    if abs(turn) > 1e-9:
+        # Сначала разрезаем исходный марш на отдельные ступени-колонны: так
+        # дуги наружных и внутренних углов сохраняются. Затем каждую ступень
+        # вращаем вокруг ЕЁ центра, а не вокруг центра всей лестницы.
+        pieces = []
+        total_h = steps * rise
+        for i in range(steps):
+            cx = (i + 0.5) * run
+            slab = mf.Manifold.cube((run, width + 4.0, total_h + 2.0), True).translate(
+                (cx, 0.0, total_h / 2.0))
+            piece = solid ^ slab
+            if not piece.is_empty() and piece.volume() > 1e-8:
+                pieces.append(rotate(piece, turn, (0.0, 0.0, 1.0), (cx, 0.0, 0.0)))
+        solid = mf.Manifold.batch_boolean(pieces, mf.OpType.Add)
+        # После вращения соседние проступи встречаются не по осевым плоскостям.
+        # Убираем только численно вырожденные осколки на этих стыках: иначе
+        # обязательная сварка GLB может склеить четыре полуребра в non-manifold.
+        solid = solid.simplify(1e-7)
+        if len([p for p in solid.decompose() if p.volume() > 1e-7]) != 1:
+            raise GeometryError(
+                f"stairs: turn={turn:g}° разъединил соседние ступени.",
+                hint="Уменьшите |turn| или увеличьте width: повёрнутые проступи должны пересекаться.")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="stairs")
+    out.meta["turn"] = turn
     out.notes.append(f"{steps} ступеней {rise:g}×{run:g} мм, ширина {width:g} мм; "
-                     f"кромка {shape}, внутренний угол {inner}")
+                     f"кромка {shape}, внутренний угол {inner}, turn={turn:g}°")
     return out
 
 
@@ -1064,10 +1391,12 @@ def stairs(a, name):
             "прямоугольную или косоугольную. Вместо сторон можно дать основание "
             "и два угла: base, angle_a, angle_b. Основание лежит в XY: сторона "
             "a идёт по X, третья вершина смещена в +Y; height — выдавливание "
-            "призмы по +Z.",
+            "призмы по +Z. wall>0 вырезает слепую полость сверху или снизу "
+            "с внутренним контуром, параллельным трём сторонам.",
     example="клин = tri_prism a=120 b=90 c=60 height=80\n"
             "остроугольная = tri_prism a=100 b=100 c=40 height=50\n"
-            "по_углам = tri_prism base=110 angle_a=55 angle_b=65 height=60",
+            "по_углам = tri_prism base=110 angle_a=55 angle_b=65 height=60\n"
+            "форма = tri_prism a=100 b=90 c=80 height=60 wall=3 cavity=верх",
     params={"a": "сторона a (низ, вдоль X), мм (100)",
             "b": "сторона b, мм (по умолчанию равна a)",
             "c": "сторона c, мм (по умолчанию равна a)",
@@ -1076,6 +1405,9 @@ def stairs(a, name):
             "angle_b": "угол при основании справа, градусы",
             "height": "высота призмы, мм (100)",
             "round": "скругление рёбер в основании, мм (0)",
+            "wall": "стенка и минимальное дно слепой полости, мм; 0 — сплошная (0)",
+            "cavity": "открытая сторона при wall>0: верх или низ (верх)",
+            "cavity_depth": "глубина от открытой стороны, мм (height−wall)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["a"])
 def tri_prism(a, name):
@@ -1120,11 +1452,18 @@ def tri_prism(a, name):
     if round_r > 1e-6:
         pts = _treat_corners(pts, radius=round_r)
     solid = mf.CrossSection([_profile(pts)]).extrude(height)
+    solid, cavity_info = _blind_cavity(
+        a, solid, height, lambda _z: pts, "треугольная призма")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="tri_prism")
     kind_text = "равносторонняя" if abs(side_a - side_b) < 1e-3 and abs(side_b - side_c) < 1e-3 \
         else "произвольная"
     out.notes.append(f"треугольная призма {kind_text}: стороны {side_a:g}×"
                      f"{side_b:g}×{side_c:g} мм, высота {height:g} мм")
+    if cavity_info:
+        out.meta.update(cavity_info)
+        out.notes.append(f"слепая полость: {cavity_info['cavity']}, "
+                         f"глубина {cavity_info['cavity_depth']:g}, "
+                         f"стенка {cavity_info['wall']:g} мм")
     return out
 
 

@@ -232,7 +232,7 @@ class FirstBatchRegressionTest(unittest.TestCase):
 class HelpExamplesTest(unittest.TestCase):
     def test_every_primitive_help_example_builds(self):
         specs = [c for c in commands_help() if c["category"] == "Примитивы"]
-        self.assertEqual(len(specs), 101)
+        self.assertEqual(len(specs), 105)
         for spec in specs:
             with self.subTest(command=spec["name"]):
                 result = build(spec["example"], analyze_model=False)

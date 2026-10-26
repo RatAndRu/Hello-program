@@ -90,15 +90,74 @@ def _strand_path(start: np.ndarray, direction: np.ndarray, length: float,
     return np.asarray(pts)
 
 
+def _strand_from_path(path: np.ndarray, thick: float, sharp: float = 1.0,
+                      thin_ratio: float | None = None, what: str = "волоса") -> mf.Manifold:
+    """Замкнутая волосинка/лист по уже построенной центральной линии."""
+    w = max(float(thick), 0.08)
+    ratio = (0.45 + 0.25 * (1.0 - sharp)) if thin_ratio is None else float(thin_ratio)
+    prof = ellipse_profile(w, max(0.035, w * ratio), 8)
+    n = len(path)
+    curve = list(np.linspace(1.0, 0.025, n) ** 0.72)
+    curve[0] = 1.0
+    curve[-1] = 0.025
+    return sweep_solid(np.asarray(path, dtype=np.float64), prof, what=what,
+                       scale_curve=curve, round_caps=1.0)
+
+
 def _single_strand(start, direction, length, thick, bend, curl, side,
                    sharp: float = 1.0) -> mf.Manifold:
     """Один волос: плоское веретено с остриём на конце."""
     path = _strand_path(start, direction, length, bend, curl, side)
-    w = max(thick, 0.12)
-    prof = ellipse_profile(w, w * (0.45 + 0.25 * (1.0 - sharp)), 6)
-    # у корня полная толщина, к кончику — остриё
-    curve = [1.0, 0.96, 0.88, 0.74, 0.56, 0.36, 0.2, 0.08, 0.02]
-    return sweep_solid(path, prof, what="волоса", scale_curve=curve, round_caps=1.0)
+    return _strand_from_path(path, thick, sharp)
+
+
+def _guided_strand_path(start: np.ndarray, direction: np.ndarray, flow: np.ndarray,
+                        length: float, bend: float, side: np.ndarray,
+                        align: float, steps: int, base=None, centre=None,
+                        thick: float = 1.0, drape: bool = False) -> np.ndarray:
+    """Путь с общим направлением кончиков и (при drape) огибанием носителя.
+
+    Кубический участок даёт корню нормальное направление, а кончику — общий
+    поток. До свободного свисания точки проецируются обратно на реальную
+    поверхность лучами; поэтому длинный волос не остаётся прямым отрезком.
+    """
+    d0 = direction / max(float(np.linalg.norm(direction)), 1e-9)
+    f = flow / max(float(np.linalg.norm(flow)), 1e-9)
+    s = side - d0 * float(np.dot(side, d0))
+    s /= max(float(np.linalg.norm(s)), 1e-9)
+    align = float(np.clip(align, 0.0, 1.0))
+    end = start + d0 * (length * (1.0 - align)) + f * (length * align)
+    c1 = start + d0 * (length * 0.32)
+    c2 = end - f * (length * 0.32 * align) - d0 * (length * 0.32 * (1.0 - align))
+    ts = np.linspace(0.0, 1.0, max(9, int(steps)))
+    path = []
+    reach = length * 2.0 + 10.0
+    for t in ts:
+        q = 1.0 - t
+        point = (q ** 3 * start + 3.0 * q * q * t * c1
+                 + 3.0 * q * t * t * c2 + t ** 3 * end)
+        point = point + s * (length * bend * 0.10 * math.sin(math.pi * t) * t)
+        if drape and base is not None and centre is not None and 0.08 < t < 0.78:
+            toward = np.asarray(centre) - point
+            norm = float(np.linalg.norm(toward))
+            if norm > 1e-8:
+                toward /= norm
+                hits = base.ray_cast([float(v) for v in (point - toward * reach)],
+                                     [float(v) for v in (point + toward * reach)])
+                if hits:
+                    hit = min(hits, key=lambda h: float(np.linalg.norm(
+                        np.asarray(h.position, dtype=np.float64) - point)))
+                    hp = np.asarray(hit.position, dtype=np.float64)
+                    hn = np.asarray(hit.normal, dtype=np.float64)
+                    hn /= max(float(np.linalg.norm(hn)), 1e-9)
+                    if float(np.dot(hn, hp - np.asarray(centre))) < 0:
+                        hn = -hn
+                    projected = hp + hn * (thick * 0.52)
+                    weight = math.sin(math.pi * (t - 0.08) / 0.70)
+                    weight = max(0.0, min(1.0, weight))
+                    point = point * (1.0 - weight) + projected * weight
+        path.append(point)
+    return np.asarray(path, dtype=np.float64)
 
 
 def _base_strip(path, width: float, thick: float) -> mf.Manifold:
@@ -159,8 +218,16 @@ def _clump(start, direction, length, width, thin, bend, curl, side,
             "шкура = box size=[100,70,18] round=5\n"
             "hair шкура style=мех surface=верх count=140 length=9 thick=.8",
     params={"objects": "существующий объект [a] или a (обязательно)",
-            "style": "иголки, волоски, локоны или мех — «волоски»",
+            "style": "иголки, волоски, пряди, локоны, мех или водоросли — «волоски»",
             "surface": "верх, низ, право, лево, перёд, зад или вся",
+            "growth": "нормаль, вниз или авто (длинные волосы в авто свисают вниз)",
+            "dir": "общее направление потока [x,y,z]; например [0,0,-1]",
+            "tip_align": "сонаправленность кончиков 0…1 (авто)",
+            "drape": "да — огибать поверхность перед свободным свисанием",
+            "density": "заполнение доступной площади 0…100% без count",
+            "fill": "синоним density",
+            "width": "ширина пряди/листа, мм (авто от thick)",
+            "thin": "толщина сечения пряди/листа, мм (авто)",
             "at": "необязательный центр пятна [x,y,z]",
             "radius": "радиус пятна на поверхности, мм; 0 — вся выбранная сторона",
             "length": "максимальная длина, мм (24)",
@@ -180,11 +247,14 @@ def hair(a, name):
     base = _one(a, "hair")
     style = (a.text("style", "волоски") or "волоски").strip().lower()
     style = {"иголки": "иголки", "иглы": "иголки", "needles": "иголки", "spikes": "иголки",
-             "волоски": "волоски", "волосы": "волоски", "пряди": "волоски", "hair": "волоски",
+             "волоски": "волоски", "волосы": "волоски", "hair": "волоски",
+             "пряди": "пряди", "прядь": "пряди", "locks": "пряди", "strands": "пряди",
              "аниме": "волоски", "anime": "волоски", "хвост": "волоски", "tail": "волоски",
              "короткий": "волоски", "short": "волоски",
              "локоны": "локоны", "кудри": "локоны", "curls": "локоны",
-             "мех": "мех", "шерсть": "мех", "fur": "мех"}.get(style)
+             "мех": "мех", "шерсть": "мех", "fur": "мех",
+             "водоросли": "водоросли", "листья": "водоросли", "seaweed": "водоросли",
+             "leaves": "водоросли", "leaf": "водоросли"}.get(style)
     if style is None:
         raise GeometryError(f"Неизвестный стиль hair «{a.text('style')}».",
                             hint="style: иголки, волоски, локоны или мех.")
@@ -198,13 +268,22 @@ def hair(a, name):
     if surface != "вся" and surface not in sides:
         raise GeometryError("hair: surface=верх, низ, право, лево, перёд, зад или вся.")
     length = float(a.num("length", 24.0, minv=0.5, maxv=5000.0))
-    default_thick = {"иголки": 1.8, "волоски": 1.2, "локоны": 5.0, "мех": 0.9}[style]
+    default_thick = {"иголки": 1.8, "волоски": 1.2, "пряди": 3.8,
+                     "локоны": 5.0, "мех": 0.9, "водоросли": 1.0}[style]
     thick = float(a.num("thick", default_thick, minv=0.08, maxv=100.0))
-    count_value = a.num("count", None, minv=1, maxv=400)
+    strand_width = float(a.num("width", thick * (2.8 if style == "водоросли" else 1.9),
+                               minv=0.08, maxv=300.0))
+    strand_thin = float(a.num("thin", thick * (0.16 if style == "водоросли" else 0.45),
+                              minv=0.03, maxv=100.0))
+    density = a.num("density", None, minv=0.0, maxv=100.0)
+    if density is None:
+        density = a.num("fill", None, minv=0.0, maxv=100.0)
+    density_mode = density is not None and not a.has("count") and not a.has("clumps")
+    count_value = a.num("count", None, minv=1, maxv=800)
     if count_value is None:
-        count_value = a.num("clumps", None, minv=1, maxv=400)
+        count_value = a.num("clumps", None, minv=1, maxv=800)
     if count_value is None:
-        count_value = a.num("density", 120 if style == "мех" else 48, minv=1, maxv=400)
+        count_value = a.num("roots", 120 if style == "мех" else 48, minv=1, maxv=800)
     count = int(count_value)
     spread = float(a.num("spread", 0.25, minv=0.0, maxv=1.0))
     bend = float(a.num("bend", 0.45 if style == "мех" else 0.25, minv=0.0, maxv=3.0))
@@ -214,11 +293,35 @@ def hair(a, name):
     patch_at = a.vec("at", 3, default=None)
     patch_radius = float(a.num("radius", 0.0, minv=0.0, maxv=5000.0) or 0.0)
     rng = np.random.default_rng(seed)
+    growth = (a.text("growth", "авто") or "авто").strip().lower()
+    growth = {"normal": "нормаль", "нормаль": "нормаль", "наружу": "нормаль",
+              "вниз": "вниз", "down": "вниз", "свисание": "вниз",
+              "авто": "авто", "auto": "авто"}.get(growth)
+    if growth is None:
+        raise GeometryError("hair: growth=нормаль, вниз или авто.")
+    dir_raw = a.vec("dir", 3, default=None)
+    flow = (np.asarray(dir_raw, dtype=np.float64).reshape(3) if dir_raw is not None
+            else np.asarray([0.0, 0.0, -1.0]))
+    if float(np.linalg.norm(flow)) < 1e-9:
+        raise GeometryError("hair: dir не должен быть нулевым.")
+    flow /= float(np.linalg.norm(flow))
+    align_raw = a.num("tip_align", None, minv=0.0, maxv=1.0)
+    if align_raw is None:
+        align_raw = a.num("align", None, minv=0.0, maxv=1.0)
 
     mesh = base.manifold.to_mesh()
     verts = np.asarray(mesh.vert_properties, dtype=np.float64)[:, :3]
     faces = np.asarray(mesh.tri_verts, dtype=np.int64).reshape(-1, 3)
-    points, normals = _surface_samples(verts, faces, max(count * 14, count + 1), rng)
+    bb = base.manifold.bounding_box()
+    ext = np.asarray([bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2]])
+    base_centre = np.asarray([(bb[i] + bb[i + 3]) * 0.5 for i in range(3)])
+    down_mode = growth == "вниз" or dir_raw is not None
+    if growth == "авто" and style in ("волоски", "пряди", "водоросли"):
+        down_mode = length > max(30.0, float(ext.min()) * 1.5)
+    tip_align = float(align_raw) if align_raw is not None else (0.85 if down_mode else 0.0)
+    drape = a.boolean("drape", down_mode)
+    points, normals = _surface_samples(
+        verts, faces, max(3000, min(40000, count * (40 if density_mode else 14))), rng)
     mask = np.ones(len(points), dtype=bool)
     if surface != "вся":
         side = np.asarray(sides[surface], dtype=np.float64)
@@ -227,13 +330,38 @@ def hair(a, name):
         centre = np.asarray(patch_at, dtype=np.float64).reshape(3)
         mask &= np.linalg.norm(points - centre, axis=1) <= patch_radius
     indices = np.flatnonzero(mask)
-    if len(indices) < count:
+    if len(indices) == 0 or (not density_mode and len(indices) < count):
         raise GeometryError(f"На выбранной поверхности найдено только {len(indices)} из {count} корней.",
                             hint="Увеличьте surface/radius или уменьшите count.")
-    # Берём равномерно по всему отфильтрованному массиву, а не только его
-    # начало: seed влияет и на точки, и на направления.
-    selected = rng.choice(indices, size=count, replace=False)
+    points, normals = points[indices], normals[indices]
+    available_area = float(base.manifold.surface_area()) * len(indices) / len(mask)
+    # Сначала раскладываем корни с реальным зазором. Для широких прядей и
+    # листьев используется их ширина, а не только тонкое сечение.
+    root_gap = (max(thick * 1.25, strand_width * 1.05)
+                if style in ("пряди", "водоросли") else thick * 1.25)
+    chosen = ([] if density_mode and float(density) <= 0.0
+              else [int(rng.integers(0, len(points)))])
+    best = (np.full(len(points), -1.0) if not chosen else
+            np.sum((points - points[chosen[0]]) ** 2, axis=1))
+    if chosen:
+        best[chosen[0]] = -1.0
+    while (density_mode and float(density) > 0.0 and len(chosen) < 800) or (not density_mode and len(chosen) < count):
+        index = int(np.argmax(best))
+        if best[index] < root_gap * root_gap:
+            if density_mode:
+                break
+            raise GeometryError(f"На поверхности не помещаются {count} корней без пересечений.",
+                                hint="Уменьшите count/thick/width или выберите больший объект.")
+        chosen.append(index)
+        best = np.minimum(best, np.sum((points - points[index]) ** 2, axis=1))
+        best[chosen] = -1.0
+    packing_capacity = len(chosen)
+    if density_mode:
+        count = max(0, int(round(packing_capacity * float(density) / 100.0)))
+        chosen = chosen[:count]
+    selected = np.asarray(chosen, dtype=np.int64)
     points, normals = points[selected], normals[selected]
+    count = len(selected)
 
     pieces: list[mf.Manifold] = []
     root = max(0.25, thick * 0.65)
@@ -253,10 +381,7 @@ def hair(a, name):
             frame = _frame(direction)
             frame[:, 3] = start
             pieces.append(piece.transform(frame))
-        elif style in ("волоски", "мех"):
-            pieces.append(_single_strand(start, direction, ln, thick, bend, 0.0,
-                                         tangent, sharp=1.0))
-        else:
+        elif style == "локоны":
             steps = int(np.clip(24 + turns * 18, 28, 180))
             t = np.linspace(0.0, 1.0, steps)
             other = np.cross(direction, tangent)
@@ -271,6 +396,24 @@ def hair(a, name):
             curve[-1] = 0.02
             pieces.append(sweep_solid(path, profile, what="локона на поверхности",
                                       scale_curve=curve, round_caps=0.5))
+        elif down_mode or tip_align > 1e-9:
+            steps = int(np.clip(9 + ln / 22.0, 9, 20))
+            path = _guided_strand_path(start, direction, flow, ln, bend, tangent,
+                                       tip_align, steps,
+                                       base=base.manifold if drape else None,
+                                       centre=base_centre, thick=thick, drape=drape)
+            if style in ("пряди", "водоросли"):
+                pieces.append(_strand_from_path(
+                    path, strand_width, thin_ratio=strand_thin / max(strand_width, 1e-9),
+                    what="пряди" if style == "пряди" else "тонкого листа водоросли"))
+            else:
+                pieces.append(_strand_from_path(path, thick, what="волоса с огибанием"))
+        elif style in ("пряди", "водоросли"):
+            pieces.append(_clump(start, direction, ln, strand_width, strand_thin,
+                                 bend, 0.0, tangent, wobble=0.35))
+        else:
+            pieces.append(_single_strand(start, direction, ln, thick, bend, 0.0,
+                                         tangent, sharp=1.0))
 
     solid = mf.Manifold.batch_boolean([base.manifold] + pieces, mf.OpType.Add)
     solid = ensure_volume(solid, "волос на поверхности")
@@ -281,7 +424,14 @@ def hair(a, name):
     a.scene.log("info", f"hair: {style}, surface={surface}, корней {count}, "
                         f"length={length:g}, thick={thick:g}, одно тело", a.cmd.line)
     out = _derived(a, name, solid, base, "hair")
-    out.notes.append(f"наращено на исходном объекте: {style}, корней {count}, surface={surface}")
+    out.meta.update(hair_style=style, roots=count, growth="вниз" if down_mode else "нормаль",
+                    tip_align=tip_align, drape=bool(drape))
+    if density_mode:
+        out.meta.update(density_requested=float(density), packing_capacity=packing_capacity,
+                        available_area=available_area,
+                        density_actual=100.0 * count / max(packing_capacity, 1))
+    out.notes.append(f"наращено на исходном объекте: {style}, корней {count}, surface={surface}, "
+                     f"growth={'вниз' if down_mode else 'нормаль'}, tip_align={tip_align:g}")
     return out
 
 

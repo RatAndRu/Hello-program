@@ -151,6 +151,54 @@ def _sliced_sphere(radius: float, cut: float, round_r: float,
     return solid
 
 
+def _expansion_options(a):
+    amount = float(a.num("expand", a.num("expansion", a.num("expand_degree", 0.0,
+                         minv=0.0, maxv=2.0), minv=0.0, maxv=2.0), minv=0.0, maxv=2.0) or 0.0)
+    raw = (a.text("expand_side", a.text("expanded_half", "верх")) or "верх").strip().lower()
+    side = {"верх": 1.0, "верхняя": 1.0, "top": 1.0, "да": 1.0,
+            "низ": -1.0, "нижняя": -1.0, "bottom": -1.0,
+            "нет": 0.0, "none": 0.0, "no": 0.0}.get(raw)
+    if side is None:
+        raise GeometryError("expand_side/expanded_half: верх, низ или нет.")
+    if side == 0.0:
+        amount = 0.0
+    smooth = float(a.num("expand_smooth", a.num("expand_transition", 0.65,
+                         minv=0.0, maxv=1.0), minv=0.0, maxv=1.0))
+    return amount, side, smooth
+
+
+def _expand_half(solid: mf.Manifold, amount: float, side: float, smooth: float,
+                 what: str) -> mf.Manifold:
+    """Расширяет одну половину тела по радиусу, сохраняя исходную топологию.
+
+    Переход начинается на экваторе и плавно занимает долю ``smooth`` выбранной
+    половины. Вторая половина не масштабируется, поэтому это именно настройка
+    формы, а не обычный uniform scale всего объекта.
+    """
+    if amount <= 1e-9 or side == 0.0:
+        return solid
+    verts, faces = manifold_mesh(solid)
+    verts = np.asarray(verts, dtype=np.float64)[:, :3].copy()
+    bb = solid.bounding_box()
+    mid = (bb[2] + bb[5]) * 0.5
+    span = max((bb[5] - bb[2]) * 0.5, 1e-9)
+    q = side * (verts[:, 2] - mid) / span
+    if smooth <= 1e-9:
+        weight = (q > 0.0).astype(float)
+    else:
+        u = np.clip(q / smooth, 0.0, 1.0)
+        weight = u * u * (3.0 - 2.0 * u)
+    cx = (bb[0] + bb[3]) * 0.5
+    cy = (bb[1] + bb[4]) * 0.5
+    factor = 1.0 + amount * weight
+    verts[:, 0] = cx + (verts[:, 0] - cx) * factor
+    verts[:, 1] = cy + (verts[:, 1] - cy) * factor
+    result = manifold_from_arrays(verts, faces, what)
+    if result.is_empty() or result.status() != mf.Error.NoError or result.volume() <= 1e-8:
+        raise GeometryError(f"{what}: расширение половины нарушило тело.")
+    return result
+
+
 def _round_value(a) -> float:
     return float(a.num("round", 0.0, minv=0.0) or 0.0)
 
@@ -265,6 +313,13 @@ def box(a, name):
             "round": "радиус скругления новой кромки, мм (0 — острый срез)",
             "detail": "детализация 0…5 (3): 0 — гранёный шар, 5 — гладкий",
             "segments": "число сегментов (по умолчанию — по детализации)",
+            "expand": "расширение выбранной половины по радиусу 0…2 (0 — нет)",
+            "expansion": "синоним expand",
+            "expand_degree": "синоним expand",
+            "expand_side": "расширяемая половина: верх или низ (верх)",
+            "expanded_half": "синоним expand_side",
+            "expand_smooth": "плавность перехода к расширенной части 0…1 (0.65)",
+            "expand_transition": "синоним expand_smooth",
             "at": "центр ИСХОДНОЙ сферы [x,y,z]; срез не перецентрирует деталь"},
     positional=["radius"])
 def sphere(a, name):
@@ -286,6 +341,8 @@ def sphere(a, name):
         solid = _sliced_sphere(radius, cut, round_r, segments)
     else:
         solid = mf.Manifold.sphere(radius, segments)
+    expand, expand_side, expand_smooth = _expansion_options(a)
+    solid = _expand_half(solid, expand, expand_side, expand_smooth, "сферы")
     at = a.vec("at", 3, default=(0, 0, 0))
     # at остаётся центром исходного шара, поэтому slice=1 даёт ровную
     # нижнюю полусферу z∈[at.z-radius, at.z], а не перецентрированный обрезок.
@@ -295,6 +352,11 @@ def sphere(a, name):
         out.meta["slice"] = {"cut_mm": cut, "plane_z": float(at[2] + radius - cut),
                              "round": round_r}
         out.notes.append(f"срез сверху {cut:g} мм, кромка round={round_r:g}")
+    if expand > 1e-9:
+        out.meta.update(expanded_half="верх" if expand_side > 0 else "низ",
+                        expand=expand, expand_smooth=expand_smooth)
+        out.notes.append(f"расширенная половина {'верх' if expand_side > 0 else 'низ'}: "
+                         f"+{expand * 100:g}%, переход {expand_smooth:g}")
     return out
 
 
@@ -896,6 +958,13 @@ def octa(a, name):
                          "альтернатива detail/segments",
             "detail": "детализация UV-сферы 0…5 (3): 0 — гранёный, 5 — гладкий",
             "segments": "сегментов UV-сферы по кругу (по детализации)",
+            "expand": "расширение выбранной половины по радиусу 0…2 (0 — нет)",
+            "expansion": "синоним expand",
+            "expand_degree": "синоним expand",
+            "expand_side": "расширяемая половина: верх или низ (верх)",
+            "expanded_half": "синоним expand_side",
+            "expand_smooth": "плавность перехода к расширенной части 0…1 (0.65)",
+            "expand_transition": "синоним expand_smooth",
             "center": "центрировать по высоте",
             "at": "положение [x,y,z]"},
     positional=["x"])
@@ -922,9 +991,16 @@ def ellipsoid(a, name):
         segments = _segments(a, a.int("segments", None, minv=8, maxv=512), max(x, y, z))
         solid = mf.Manifold.sphere(1.0, segments).scale((x, y, z))
         detail_note = f"segments={segments}"
+    expand, expand_side, expand_smooth = _expansion_options(a)
+    solid = _expand_half(solid, expand, expand_side, expand_smooth, "эллипсоида")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="ellipsoid")
     out.notes.append(f"полуоси {x:g}×{y:g}×{z:g} мм, {detail_note}")
+    if expand > 1e-9:
+        out.meta.update(expanded_half="верх" if expand_side > 0 else "низ",
+                        expand=expand, expand_smooth=expand_smooth)
+        out.notes.append(f"расширенная половина {'верх' if expand_side > 0 else 'низ'}: "
+                         f"+{expand * 100:g}%, переход {expand_smooth:g}")
     return out
 
 
@@ -975,6 +1051,12 @@ def diamond(a, name):
     example="палец = capsule radius=9 height=70",
     params={"radius": "радиус, мм", "height": "полная высота, мм",
             "detail": "детализация 0…5 (3)", "segments": "сегментов (по детализации)",
+            "expand": "расширение выбранной половины по радиусу 0…2 (0 — нет)",
+            "expansion": "синоним expand", "expand_degree": "синоним expand",
+            "expand_side": "расширяемая половина: верх или низ (верх)",
+            "expanded_half": "синоним expand_side",
+            "expand_smooth": "плавность перехода к расширенной части 0…1 (0.65)",
+            "expand_transition": "синоним expand_smooth",
             "center": "центрировать", "at": "положение"},
     positional=["radius", "height"])
 def capsule(a, name):
@@ -992,8 +1074,16 @@ def capsule(a, name):
     top = mf.Manifold.sphere(radius, segments).translate((0, 0, inner_h))
     bottom = mf.Manifold.sphere(radius, segments)
     solid = body + top + bottom
+    expand, expand_side, expand_smooth = _expansion_options(a)
+    solid = _expand_half(solid, expand, expand_side, expand_smooth, "капсулы")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
-    return make_solid(a.scene, name, solid, a, kind="capsule")
+    out = make_solid(a.scene, name, solid, a, kind="capsule")
+    if expand > 1e-9:
+        out.meta.update(expanded_half="верх" if expand_side > 0 else "низ",
+                        expand=expand, expand_smooth=expand_smooth)
+        out.notes.append(f"расширенная половина {'верх' if expand_side > 0 else 'низ'}: "
+                         f"+{expand * 100:g}%, переход {expand_smooth:g}")
+    return out
 
 
 @op("hull", aliases=("оболочка", "выпуклая_оболочка", "обернуть"), category="Примитивы",

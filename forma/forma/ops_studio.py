@@ -587,5 +587,3 @@ def keyframe(a, name):
     a.scene.add_key(solid.name, spec)
     a.scene.log("info", f"ключ: {solid.name} @ {at:g} с", a.cmd.line)
     return None
-
-

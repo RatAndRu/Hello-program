@@ -8,6 +8,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/RoomEnvironment.js';
+import { loadGlb } from './glb.js';
 
 export class Preview3D {
   constructor(container) {
@@ -109,9 +110,7 @@ export class Preview3D {
   /** Загружает GLB, вписывает в кадр и запускает показ. */
   async load(url) {
     const loader = new GLTFLoader();
-    const gltf = await new Promise((resolve, reject) => {
-      loader.load(url, resolve, undefined, reject);
-    });
+    const gltf = await loadGlb(loader, url);
     if (this._dead) return;
     this.clear();
     const root = gltf.scene;

@@ -1,0 +1,58 @@
+# ============================================================================
+#  ВЫСТАВКА ИНСТРУМЕНТОВ 0.49 — ЧАСТЬ 3/4: ЛИСТ И ГАРМОШКА
+#  Пять стендов из прежнего четырёхрядного проекта; упрощена только
+#  учебная тесселяция/плотность, не геометрические возможности инструментов.
+# ============================================================================
+scene bg=#eef1f4 env=studio shadows=да grid=нет
+light preset=студия strength=1.1
+
+подиум = box size=[1400,330,20] round=8 at=[0,-150,0]
+color подиум #d7dde3 rough=0.72
+
+# ---------- РЯД 3: ЛИСТ, ГАРМОШКА, ГРЕБЕНЬ И КАНАВКА ----------
+# 11. fold: 5 равных полотнищ, поворот 150°, просвет .8, острота .15.
+гармошка = sheet width=105 length=190 thickness=1
+гармошка = fold [гармошка] parts=5 angle=150 gap=.8 sharp=.15 axis=x
+гармошка = translate [гармошка] offset=[-520,-150,20]
+color гармошка #e2d7b8 rough=0.65
+подпись_гармошка = text "FOLD ×5" size=15 depth=1 plane=xy at=[-520,-245,20] color=#33404d
+
+# 12. сгиб: диагональ исходного квадрата, никакой добавленной плоскости.
+угол = sheet width=125 length=125 thickness=1
+угол = сгиб [угол] at=[0,0,1] dir=45 angle=120 side=1 gap=.5
+угол = translate [угол] offset=[-260,-150,20]
+color угол #d7e0e8 rough=0.55
+подпись_угол = text "СГИБ" size=15 depth=1 plane=xy at=[-260,-245,20] color=#33404d
+
+# 13. складка / гребень: настоящий подъём листа, полуширина 6, высота 5.
+гребень = sheet width=125 length=105 thickness=1
+гребень = складка [гребень] from=[-52,0,1] to=[52,0,1] r=6 depth=5 mode=гребень taper=.3 detail=3
+гребень = translate [гребень] offset=[0,-150,20]
+color гребень #d9c8d9 rough=0.7
+подпись_гребень = text "ГРЕБЕНЬ" size=15 depth=1 plane=xy at=[0,-245,20] color=#33404d
+
+# 14. складка / канавка: вдавленная исходная поверхность блока, не вырез-трубка.
+канавка = box size=[120,90,30] round=3
+канавка = складка [канавка] from=[-48,0,30] to=[48,0,30] r=6 depth=4 mode=канавка taper=.3 detail=3
+канавка = translate [канавка] offset=[260,-150,20]
+color канавка #c3ccd5 rough=0.55
+подпись_канавка = text "КАНАВКА" size=15 depth=1 plane=xy at=[260,-245,20] color=#33404d
+
+# 15. corrugate / рифление: прямые параллельные рёбра, шаг 18, высота 5.
+рифление = sheet width=105 length=145 thickness=1
+рифление = corrugate [рифление] mode=рифление step=18 amp=5 angle=0 detail=4
+рифление = translate [рифление] offset=[520,-150,20]
+color рифление #b8c9d2 metal=.35 rough=0.4
+подпись_рифление = text "РИФЛЕНИЕ" size=15 depth=1 plane=xy at=[520,-245,20] color=#33404d
+
+# Проверяются реальные тела этого ряда и его подиум.
+check подиум watertight
+check подиум parts 1
+check гармошка watertight
+check гармошка parts 1
+check угол watertight
+check угол parts 1
+check гребень watertight
+check гребень parts 1
+check канавка watertight
+check рифление watertight

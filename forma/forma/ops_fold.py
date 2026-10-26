@@ -223,7 +223,9 @@ def crease(a, name):
     detail = a.num("detail", None, minv=0.02)
     # Двенадцать и более рёбер на полную ширину — канавка не распадается на
     # диагональные треугольники, а концы taper остаются плавными.
-    refine = float(detail) if detail else max(0.05, 4.0 * r / smooth)
+    # Шесть рёбер на полуширину дают гладкий профиль; прежние четыре
+    # дополнительных ряда почти не меняли форму, но заметно раздували сетку.
+    refine = float(detail) if detail else max(0.08, 6.0 * r / smooth)
     fine = m.refine_to_length(_refine_for(m, refine, cap=300_000))
     verts, faces = manifold_mesh(fine)
     normals = _vertex_normals(verts, faces)
@@ -249,6 +251,23 @@ def crease(a, name):
         centre_bb = np.array([(bb[i] + bb[i + 3]) * 0.5 for i in range(3)])
         if float(np.dot(middle - centre_bb, direction)) < 0:
             direction = -direction
+    else:
+        # У тонкого рукава габарит не «тонкий», поэтому старая проверка
+        # выбирала normals[] и сдвигала только видимую стенку. Ищем пару
+        # стенок лучом через линию складки: четыре пересечения означают
+        # наружную и внутреннюю поверхности. Для них используем одно поле
+        # смещения, а не противоположные вершинные нормали.
+        middle = (p0 + p1) * 0.5
+        nearest = int(np.argmin(np.linalg.norm(verts - middle, axis=1)))
+        candidate = normals[nearest].copy()
+        candidate -= d * float(np.dot(candidate, d))
+        if float(np.linalg.norm(candidate)) > 1e-8:
+            candidate = _unit(candidate)
+            reach = float(np.linalg.norm(ext)) * 1.5 + 1.0
+            hits = m.ray_cast([float(v) for v in (middle + candidate * 0.05)],
+                              [float(v) for v in (middle - candidate * reach)])
+            if len(hits) >= 3:
+                direction = candidate
     if direction is not None:
         # На тонком листе верх и низ движем вместе: толщина не прокалывается,
         # а гребень/канавка виден как настоящий изгиб материала.
@@ -263,6 +282,9 @@ def crease(a, name):
     moved = (verts + direction[None, :] * amount[:, None] if direction is not None
              else verts + normals * amount[:, None])
     solid = manifold_from_arrays(moved, faces, "складки")
+    # Убираем только почти компланарные треугольники, не сглаживая саму
+    # складку и не заменяя её Loop-сглаживанием.
+    solid = solid.simplify(max(0.005, refine * 0.018))
     a.scene.log("info", f"складка: {length:.1f} мм, r={r:g}, depth={depth:g}, "
                         f"{'канавка' if groove else 'гребень'}", a.cmd.line)
     out = _derived(a, name, solid, base, "crease")

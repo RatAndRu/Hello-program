@@ -243,11 +243,11 @@ class TestExamplesAndTools(unittest.TestCase):
         from forma.webui import EXAMPLES
         keys = [key for _, key in EXAMPLES]
         self.assertEqual(keys, [
-            "tools_gallery", "ribbon_grids", "cavity_folds", "more_solids",
+            "tools_gallery_1", "tools_gallery_2", "tools_gallery_3", "tools_gallery_4",
             "mug", "car", "vase", "bottle", "alien", "gear", "mannequin",
             "apple", "human_studio", "animation_tracks", "wardrobe",
-            "mechanics", "showcase", "units", "motorcycle", "clock",
-            "clock_led", "anime_face", "snack", "blob",
+            "mechanics", "showcase", "motorcycle", "clock",
+            "clock_led", "anime_face",
         ])
 
     def test_removed_examples_are_gone(self):

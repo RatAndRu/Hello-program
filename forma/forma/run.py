@@ -55,10 +55,13 @@ from . import ops_mount  # noqa: F401,E402
 from . import ops_attach  # noqa: F401,E402
 from . import ops_vessel  # noqa: F401,E402
 from . import ops_solids  # noqa: F401,E402
+from . import ops_barrel  # noqa: F401,E402
 from . import ops_mech  # noqa: F401,E402
 from . import ops_ribbon  # noqa: F401,E402
 from . import ops_structures  # noqa: F401,E402
 from . import ops_orient  # noqa: F401,E402
+from . import ops_eye  # noqa: F401,E402
+from . import ops_web  # noqa: F401,E402
 
 
 # Команды, которые не меняют ни форму, ни видимость: в анимации сборки

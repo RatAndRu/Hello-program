@@ -11,6 +11,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/GLTFLoader.js';
 import { RoomEnvironment } from 'three/addons/RoomEnvironment.js';
 import { wheelZoom } from './viewzoom.js';
+import { loadGlb } from './glb.js';
 
 const CARD_W = 480;
 const CARD_H = 360;
@@ -99,18 +100,16 @@ export class ToolThumbs {
   _loadModel(url) {
     if (this._models.has(url)) return Promise.resolve(this._models.get(url));
     if (this._pending.has(url)) return this._pending.get(url);
-    const job = new Promise((resolve) => {
-      this.loader.load(url, (gltf) => {
-        const root = gltf.scene;
-        root.traverse((o) => {
-          if (!o.isMesh) return;
-          const mats = Array.isArray(o.material) ? o.material : [o.material];
-          mats.forEach((m) => { if (m) m.envMapIntensity = 1.2; });
-        });
-        this._models.set(url, root);
-        resolve(root);
-      }, undefined, () => resolve(null));
-    }).finally(() => this._pending.delete(url));
+    const job = loadGlb(this.loader, url).then((gltf) => {
+      const root = gltf.scene;
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => { if (m) m.envMapIntensity = 1.2; });
+      });
+      this._models.set(url, root);
+      return root;
+    }).catch(() => null).finally(() => this._pending.delete(url));
     this._pending.set(url, job);
     return job;
   }
@@ -235,6 +234,7 @@ export class ToolThumbs {
   async _drain() {
     this._busy = true;
     while (this._queue.length) {
+      if (!this.enabled) { this._queue.length = 0; break; }
       const canvas = this._queue.shift();
       const view = this._views.get(canvas);
       if (!view || !view.url) continue;
@@ -243,6 +243,7 @@ export class ToolThumbs {
       const renderer = this._ensure();
       if (!renderer) { this.fail(canvas); continue; }
       const model = await this._loadModel(view.url);
+      if (!this.enabled || !canvas.offsetParent) continue;
       if (!model) { this.fail(canvas); continue; }
       this._paint(canvas, view, model);
       // даём браузеру вздохнуть между миниатюрами

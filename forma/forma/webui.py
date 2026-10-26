@@ -23,6 +23,7 @@ from .instruction import instruction_text
 from .errors import FormaError
 from .geometry import export_3mf, export_glb, export_obj, export_ply, export_stl
 from .render import render_views
+from .resources import resource_warning
 from .run import build as run_build
 from .version import APP_NAME, __version__
 
@@ -156,7 +157,20 @@ class AppState:
         self.log_action("вырезание", f"«{name}»: сфера r={r:.1f} мм в ({cx:.1f}, {cy:.1f}, {cz:.1f})")
         return {"script": "\n".join(lines), "tool": tool, "radius": r}
 
-    def build(self, script: str, auto: bool = False) -> dict:
+    def build(self, script: str, auto: bool = False, allow_heavy: bool = False) -> dict:
+        # Предупреждение делается ДО run_build: ни одна тяжёлая команда ещё
+        # не создала сетку и не заняла процессор. Старая сцена остаётся на
+        # экране, поэтому «отменить» действительно отменяет последнее действие.
+        if not allow_heavy:
+            warning = resource_warning(script)
+            if warning is not None:
+                warning.update({
+                    "version": __version__, "server": {"token": self.token},
+                    "script_hash": hashlib.sha1((script or "").encode("utf-8")).hexdigest(),
+                    "actions": list(self.actions), "notes": list(self.notes),
+                    "paused": True,
+                })
+                return warning
         with self.lock:
             previous = self.last_build.analysis if self.last_build and self.last_build.ok else None
             b = run_build(script, previous_analysis=previous)
@@ -193,9 +207,15 @@ class AppState:
             payload["notes"] = list(self.notes)
             return payload
 
-    def frame(self, script: str, upto: int, light: bool = True) -> dict:
+    def frame(self, script: str, upto: int, light: bool = True,
+              allow_heavy: bool = False) -> dict:
         """Кадр сборки: сцена после первых ``upto`` команд сценария."""
         upto = max(0, min(int(upto), 4000))
+        if not allow_heavy:
+            warning = resource_warning(script, upto=upto)
+            if warning is not None:
+                warning.update(paused=True, action="frame", upto=upto)
+                return warning
         import hashlib
         key = f"{hashlib.sha1((script or '').encode('utf-8')).hexdigest()[:12]}_{upto}"
         cached = self.frame_cache.get(key)
@@ -226,7 +246,8 @@ class AppState:
         item = self.frame_cache.get(key)
         return item[1] if item else None
 
-    def morph(self, script: str, param: str, value: float) -> dict:
+    def morph(self, script: str, param: str, value: float,
+              allow_heavy: bool = False) -> dict:
         """Кадр морфинга: та же модель, но параметр сценария подменён.
 
         Так анимация меняет геометрию во времени: кадры строятся по запросу и
@@ -237,6 +258,11 @@ class AppState:
         if not param:
             raise FormaError("Морфинг: не указан параметр сценария.")
         value = round(float(value), 4)
+        if not allow_heavy:
+            warning = resource_warning(script, overrides={param: value})
+            if warning is not None:
+                warning.update(paused=True, action="morph", param=param, value=value)
+                return warning
         key = f"morph_{hashlib.sha1((script or '').encode('utf-8')).hexdigest()[:12]}_{param}_{value:g}"
         cached = self.frame_cache.get(key)
         if cached is None:
@@ -269,7 +295,7 @@ class AppState:
                 self.gl_cache = (self.last_build.script_hash, self.last_build.glb())
             return self.gl_cache[1]
 
-    def preview(self, script: str) -> dict:
+    def preview(self, script: str, allow_heavy: bool = False) -> dict:
         """Строит модель для превью карточки инструмента, не меняя сцену.
 
         Кэш по хэшу сценария: одно и то же превью второй раз открывается
@@ -278,6 +304,11 @@ class AppState:
         script = (script or "").strip()
         if not script:
             raise FormaError("Пустой сценарий превью.")
+        if not allow_heavy:
+            warning = resource_warning(script)
+            if warning is not None:
+                warning["paused"] = True
+                return warning
         key = hashlib.sha1(script.encode("utf-8")).hexdigest()[:16]
         cached = self.preview_cache.get(key)
         if cached and (self.preview_dir / f"{key}.glb").exists():
@@ -584,10 +615,10 @@ class AppState:
 
 
 EXAMPLES = [
-    ("Выставка инструментов 0.46: 20 стандов", "tools_gallery"),
-    ("Полосы, решётки и профиль 2020 (0.44)", "ribbon_grids"),
-    ("Рамки, рельефные кубы и сгибы (0.45)", "cavity_folds"),
-    ("Новые тела: слиток, седло, ступеньки", "more_solids"),
+    ("Выставка 1/4: поры и деформация", "tools_gallery_1"),
+    ("Выставка 2/4: трещины и срезы", "tools_gallery_2"),
+    ("Выставка 3/4: лист и гармошка", "tools_gallery_3"),
+    ("Выставка 4/4: вафля, волосы и рельеф", "tools_gallery_4"),
     ("Кружка", "mug"),
     ("Кузов машины", "car"),
     ("Ваза", "vase"),
@@ -601,13 +632,10 @@ EXAMPLES = [
     ("Шкаф: дверь, ящик, колёсики", "wardrobe"),
     ("Механика: вентилятор, прыжок, падение", "mechanics"),
     ("Витрина инструментов: 49 предметов", "showcase"),
-    ("Узлы и крепёж: шкив, болт и втулки", "units"),
     ("Мотоцикл: рама, вилка, езда и прыжок", "motorcycle"),
     ("Скелетон-часы: механизм и ход 10:10:35", "clock"),
     ("Часы с LED-экраном", "clock_led"),
     ("Аниме-бюст: голова, шея, плечи, волосы", "anime_face"),
-    ("Закуска: текстуры и материалы", "snack"),
-    ("Капля и органические формы", "blob"),
 ]
 
 
@@ -910,15 +938,18 @@ class Handler(BaseHTTPRequestHandler):
         st = self.state
         if path == "/api/build":
             script = body.get("script", "")
-            self._send_json(st.build(script, auto=bool(body.get("auto"))))
+            self._send_json(st.build(script, auto=bool(body.get("auto")),
+                                     allow_heavy=bool(body.get("allow_heavy"))))
             return
         if path == "/api/preview":
-            self._send_json(st.preview(str(body.get("script") or "")))
+            self._send_json(st.preview(str(body.get("script") or ""),
+                                       allow_heavy=bool(body.get("allow_heavy"))))
             return
         if path == "/api/morph":
             script = body.get("script", st.last_script)
             self._send_json(st.morph(script, body.get("param", ""),
-                                     body.get("value", 0)))
+                                     body.get("value", 0),
+                                     allow_heavy=bool(body.get("allow_heavy"))))
             return
         if path == "/api/frame":
             script = body.get("script", st.last_script)
@@ -926,7 +957,8 @@ class Handler(BaseHTTPRequestHandler):
                 upto = int(body.get("upto") or 0)
             except (TypeError, ValueError):
                 raise FormaError("Номер кадра должен быть числом.")
-            self._send_json(st.frame(script, upto))
+            self._send_json(st.frame(script, upto,
+                                     allow_heavy=bool(body.get("allow_heavy"))))
             return
         if path == "/api/action":
             self._send_json({"action": st.log_action(body.get("kind", "действие"),

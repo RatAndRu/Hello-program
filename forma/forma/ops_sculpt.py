@@ -566,26 +566,57 @@ def _shave_perimeter_groove(result: mf.Manifold, frame: np.ndarray, cut_z: float
         section = section ^ mf.CrossSection.circle(radius, segments)
     if section.is_empty() or section.area() <= 1e-8:
         raise GeometryError("Не удалось найти контур плоского среза для канавки.")
-    centreline = section.offset(-(offset + width * 0.5), mf.JoinType.Round, 2.0, segments)
+    # offset задаёт внутренний край канавки. Центр поэтому смещён на
+    # width/2 назад к наружной стенке: наружная половина профиля обязана
+    # выйти из тела, иначе булева операция создаст скрытый замкнутый туннель.
+    # Небольшой open_overlap оставляет надёжную глубину у внутреннего края.
+    open_overlap = max(0.05, min(0.5, width * 0.06))
+    centreline = section.offset(-offset + width / 2.0 - open_overlap,
+                                mf.JoinType.Round, 2.0, segments)
     if centreline.is_empty() or centreline.num_contour() == 0:
         raise GeometryError("Канавка не помещается внутрь плоского среза.",
                             hint="Уменьшите groove_width/groove_offset или увеличьте деталь.")
     over = max(0.05, depth * 0.08)
     if shape == "овальная":
-        # Полный эллипс: верхняя половина над поверхностью не участвует в
-        # вычитании, нижняя даёт овальное дно ровно на depth.
-        profile = ellipse_profile(width, depth * 2.0, max(12, segments // 2))
+        # U-образная канавка: устье на плоскости и овальное дно ровно на
+        # −depth. Полный эллипс здесь непригоден: без обрезки тела он резал
+        # бы материал и выше плоскости, удваивая заданную глубину.
+        arc = []
+        for i in range(max(12, segments // 2) + 1):
+            theta = math.pi * i / max(12, segments // 2)
+            arc.append((width / 2.0 * math.cos(theta), -depth * math.sin(theta)))
+        profile = np.asarray([(-width / 2.0, over), (width / 2.0, over)]
+                             + arc, dtype=np.float64)
     elif shape == "треугольная":
+        # Настоящий V-профиль: две наклонные стенки сходятся в одной
+        # вершине на глубине depth.
         profile = np.array([[-width / 2.0, over], [width / 2.0, over],
                             [width / 2.0, 0.0], [0.0, -depth], [-width / 2.0, 0.0]])
+    elif shape == "трапециевидная":
+        # Отдельный профиль с плоским дном, а не переименованный треугольник.
+        bottom = width * 0.42
+        profile = np.array([[-width / 2.0, over], [width / 2.0, over],
+                            [width / 2.0, 0.0], [bottom / 2.0, -depth],
+                            [-bottom / 2.0, -depth], [-width / 2.0, 0.0]])
     else:
         profile = np.array([[-width / 2.0, over], [width / 2.0, over],
                             [width / 2.0, -depth], [-width / 2.0, -depth]])
     cutters = []
     for polygon in centreline.to_polygons():
-        points = np.asarray(polygon, dtype=np.float64)
-        if len(points) < 3:
+        raw_points = np.asarray(polygon, dtype=np.float64)
+        if len(raw_points) < 3:
             continue
+        # CrossSection.offset возвращает у прямоугольника только четыре
+        # угла. Без продольных колец sweep соединяет их диагоналями и
+        # оставляет скрытую полость вместо открытой канавки на стенках.
+        dense = []
+        step = max(0.20, min(2.0, width * 0.45))
+        for i, p0 in enumerate(raw_points):
+            p1 = raw_points[(i + 1) % len(raw_points)]
+            count = max(1, int(math.ceil(float(np.linalg.norm(p1 - p0)) / step)))
+            for j in range(count):
+                dense.append(p0 + (p1 - p0) * (j / count))
+        points = np.asarray(dense, dtype=np.float64)
         signed = float(np.sum(points[:, 0] * np.roll(points[:, 1], -1)
                               - np.roll(points[:, 0], -1) * points[:, 1]))
         if signed < 0:
@@ -601,17 +632,18 @@ def _shave_perimeter_groove(result: mf.Manifold, frame: np.ndarray, cut_z: float
 
 @op("shave", aliases=("стесать", "стёсывание", "срезать_слой", "фасетка", "shave", "whittle"),
     category="Форма и деформации",
-    summary="Стёсывает слой именно плоскостью под любым углом. Дополнительно "
-            "groove проводит по всему периметру полученного плоского среза "
-            "прямоугольную, овальную или треугольную канавку; ширина, глубина "
-            "и отступ от края задаются независимо.",
+    summary="Проводит форменную канавку по всему периметру сечения заданной "
+            "плоскостью. Это НЕ обрезка: материал по одну сторону плоскости "
+            "остаётся на месте. groove выбирает прямоугольную, овальную, "
+            "настоящую треугольную или трапециевидную канавку; ширина, глубина "
+            "и отступ от края независимы. Полное отсечение — cut_plane.",
     example="брусок = box size=[60, 40, 120] round=3\n"
-            "брусок = shave [брусок] at=[0, 0, 120] dir=[0, 1, 1] depth=12 radius=26",
-    params={"objects": "объект", "at": "точка на поверхности [x,y,z] (верх детали)",
-            "dir": "наружу от среза [x,y,z] (от центра к at)",
-            "depth": "сколько снять от at, мм (5)",
-            "radius": "радиус пятна, мм (0 — вся поверхность)",
-            "groove": "нет, прямоугольная, овальная или треугольная канавка (нет)",
+            "брусок = shave [брусок] at=[0, 0, 100] dir=[0, 0, 1] depth=0 groove=треугольная groove_width=5 groove_depth=2",
+    params={"objects": "объект", "at": "точка на секущей плоскости [x,y,z] (верх детали)",
+            "dir": "нормаль секущей плоскости [x,y,z] (от центра к at)",
+            "depth": "сдвиг плоскости внутрь от at по −dir, мм (5); ничего не обрезает",
+            "radius": "ограничить сечение кругом, мм (0 — весь контур)",
+            "groove": "прямоугольная, овальная, треугольная или трапециевидная (прямоугольная)",
             "groove_width": "ширина канавки, мм (4)",
             "groove_depth": "глубина канавки, мм (2)",
             "groove_offset": "отступ канавки внутрь от края среза, мм (2)",
@@ -623,39 +655,99 @@ def shave(a, name):
     center = _center(bb)
     at = np.array(a.vec("at", 3, default=(center[0], center[1], bb[5])), dtype=np.float64)
     dirv = _dir_of(a, at, center)
-    depth = float(a.num("depth", 5.0, minv=0.01))
+    depth = float(a.num("depth", 5.0, minv=0.0) or 0.0)
     radius = float(a.num("radius", 0.0, minv=0.0) or 0.0)
     seg = int(a.int("segments", 64, minv=8, maxv=192))
-    groove = (a.text("groove", "нет") or "нет").strip().lower()
+    groove = (a.text("groove", "прямоугольная") or "прямоугольная").strip().lower()
     groove = {"no": "нет", "none": "нет", "прямоуг": "прямоугольная",
-              "прямоугольный": "прямоугольная", "rect": "прямоугольная",
-              "овал": "овальная", "овальный": "овальная", "oval": "овальная",
-              "треугольный": "треугольная", "v": "треугольная",
-              "triangle": "треугольная"}.get(groove, groove)
-    if groove not in ("нет", "прямоугольная", "овальная", "треугольная"):
-        raise GeometryError("shave: groove=нет, прямоугольная, овальная или треугольная.")
+              "прямоугольный": "прямоугольная", "прямоугольная": "прямоугольная",
+              "rect": "прямоугольная", "овал": "овальная", "овальный": "овальная",
+              "овальная": "овальная", "oval": "овальная",
+              "треугольный": "треугольная", "треугольная": "треугольная", "v": "треугольная",
+              "triangle": "треугольная", "трапеция": "трапециевидная",
+              "трапециевидная": "трапециевидная", "трапециевидный": "трапециевидная",
+              "trapezoid": "трапециевидная"}.get(groove, groove)
+    if groove not in ("нет", "прямоугольная", "овальная", "треугольная", "трапециевидная"):
+        raise GeometryError("shave: groove=прямоугольная, овальная, треугольная или трапециевидная.")
     groove_width = float(a.num("groove_width", 4.0, minv=0.2, maxv=1000.0))
     groove_depth = float(a.num("groove_depth", 2.0, minv=0.05, maxv=1000.0))
     groove_offset = float(a.num("groove_offset", 2.0, minv=0.0, maxv=1000.0))
-    size = _diag(bb) * 2.0 + depth * 4.0 + 20.0
     frame = _frame(dirv, at)
-    # в локальных координатах наружу — +Z: срез идёт по плоскости z = −depth,
-    # всё, что выше, снимаем
-    cutter = mf.Manifold.cube([size, size, size], True).translate(
-        (0.0, 0.0, -depth + size / 2.0))
-    if radius > 0:
-        cyl = mf.Manifold.cylinder(size * 2.0, radius, radius, seg, True)
-        cutter = cutter ^ cyl
-    cutter = cutter.transform(frame)
-    result = base.manifold - cutter
-    result = _shave_perimeter_groove(result, frame, -depth, radius, seg, groove,
+    # Плоскость только задаёт сечение. В отличие от прежнего shave здесь нет
+    # режущего полупространства: канавка вычитается из исходного тела.
+    result = _shave_perimeter_groove(base.manifold, frame, -depth, radius, seg, groove,
                                      groove_width, groove_depth, groove_offset)
     if result.status() != mf.Error.NoError or result.is_empty() or result.volume() <= 1e-9:
-        raise GeometryError("Стёсывание срезало всю деталь или канавка разрушила сетку.",
+        raise GeometryError("shave: канавка разрушила сетку или удалила всю деталь.",
                             hint="Уменьшите depth/groove_depth или groove_width.")
+    before_parts = base.manifold.decompose()
+    after_parts = result.decompose()
+    positive_before = sum(1 for part in before_parts if part.volume() > 1e-6)
+    positive_after = sum(1 for part in after_parts if part.volume() > 1e-6)
+    negative_before = sum(-part.volume() for part in before_parts if part.volume() < -1e-6)
+    negative_after = sum(-part.volume() for part in after_parts if part.volume() < -1e-6)
+    if positive_after != positive_before or negative_after > negative_before + 1e-5:
+        raise GeometryError(
+            "shave: профиль образовал скрытую полость или отделил часть тела, а не открытую канавку.",
+            hint="Уменьшите groove_offset/depth; для внутреннего круглого контура используйте depth=0.")
     solid = _derived(a, name, result, base, "shave")
-    solid.notes.append(f"снято {depth:g} мм" + (f" в круге ø{radius * 2:g} мм" if radius else "")
-                       + (f", канавка {groove} {groove_width:g}×{groove_depth:g}" if groove != "нет" else ""))
+    solid.notes.append(f"канавка по сечению, сдвиг плоскости {depth:g} мм"
+                       + (f" в круге ø{radius * 2:g} мм" if radius else "")
+                       + (f", профиль {groove} {groove_width:g}×{groove_depth:g}" if groove != "нет" else ""))
+    return solid
+
+
+@op("cut_plane", aliases=("plane_cut", "стесать_углы", "стесать_плоскостью",
+                           "отсечь_плоскостью", "срезать_плоскостью", "clip_plane"),
+    category="Форма и деформации",
+    summary="Полностью отсекает материал по одну сторону произвольной секущей "
+            "плоскости. at задаёт точку плоскости, dir — нормаль в сторону "
+            "удаляемого материала; depth сдвигает плоскость по −dir. "
+            "keep=обратная оставляет противоположную сторону. В отличие от "
+            "shave, здесь нет канавки: удаляется вся часть тела за плоскостью.",
+    example="деталь = box size=[60,40,100]\n"
+            "деталь = cut_plane [деталь] at=[0,0,80] dir=[0,1,1] depth=0",
+    params={"objects": "объект", "at": "точка секущей плоскости [x,y,z] (верх детали)",
+            "dir": "нормаль в сторону удаляемого материала [x,y,z]",
+            "depth": "сдвиг плоскости по −dir, мм (0)",
+            "keep": "обычная — оставить сторону −dir; обратная — оставить +dir",
+            "size": "запас размера режущего полупространства, мм (авто)"},
+    positional=["objects"])
+def cut_plane(a, name):
+    base = _one(a, "cut_plane")
+    bb = base.manifold.bounding_box()
+    center = _center(bb)
+    at = np.array(a.vec("at", 3, default=(center[0], center[1], bb[5])), dtype=np.float64)
+    dirv = _dir_of(a, at, center)
+    depth = float(a.num("depth", 0.0, minv=0.0))
+    keep = (a.text("keep", "обычная") or "обычная").strip().lower()
+    if keep in ("обратная", "обратно", "reverse", "+", "выше", "плюс"):
+        reverse = True
+    elif keep in ("обычная", "обычно", "normal", "-", "ниже", "минус"):
+        reverse = False
+    else:
+        raise GeometryError("cut_plane: keep=обычная или обратная.")
+    frame = _frame(dirv, at)
+    size = float(a.num("size", _diag(bb) * 3.0 + depth * 2.0 + 40.0, minv=1.0))
+    # Локальная +Z направлена по dir. По умолчанию удаляем +Z; при
+    # keep=обратная удаляем −Z и оставляем противоположную половину.
+    z = -depth
+    if not reverse:
+        cutter = mf.Manifold.cube([size, size, size], True).translate((0, 0, z + size / 2.0))
+    else:
+        cutter = mf.Manifold.cube([size, size, size], True).translate((0, 0, z - size / 2.0))
+    result = base.manifold - cutter.transform(frame)
+    if result.status() != mf.Error.NoError or result.is_empty() or result.volume() <= 1e-9:
+        raise GeometryError("cut_plane: плоскость удалила всю деталь.",
+                            hint="Измените at/depth или keep=обратная.")
+    if result.volume() >= base.manifold.volume() - 1e-7:
+        raise GeometryError("cut_plane: плоскость не пересекает материал.",
+                            hint="Проверьте at, dir и depth.")
+    solid = _derived(a, name, result, base, "cut_plane")
+    solid.meta.update(plane_at=[float(v) for v in at], plane_dir=[float(v) for v in dirv],
+                      plane_depth=depth, keep="обратная" if reverse else "обычная")
+    solid.notes.append(f"отсечение плоскостью, сдвиг {depth:g} мм, "
+                       f"удалена сторона {'−dir' if reverse else '+dir'}")
     return solid
 
 

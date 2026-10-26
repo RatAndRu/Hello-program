@@ -175,21 +175,116 @@ def crown(a, name):
 
 
 # --------------------------------------------------------------------------- #
-#  Инь-ян (тайцзи)
+#  Инь-ян (тайцзи) и цельный fireball
 # --------------------------------------------------------------------------- #
+def _fireball(radius: float, tail_length: float, tail_angle: float,
+              straighten: float, segments: int, what: str = "fireball") -> mf.Manifold:
+    """Одна сетка сферы и хвоста с общим кольцом, без булева стыка.
+
+    Задняя часть — настоящая сфера. В сечении ``x_join`` её кольцо напрямую
+    продолжается кольцами хвоста; общие вершины исключают щель и второй объект.
+    Хвост изгибается дугой в XY, а straighten=1 превращает его в прямой конус.
+    """
+    R = float(radius)
+    L = float(tail_length)
+    if L <= R * 0.08:
+        raise GeometryError("fireball: tail_length слишком мал; задайте хотя бы 8% радиуса сферы.")
+    s = float(np.clip(straighten, 0.0, 1.0))
+    theta = math.radians(float(tail_angle))
+    n = max(24, int(segments))
+    # Сфера продолжается чуть дальше экватора: широкое основание хвоста
+    # не превращается в отдельную «пуговицу» на поверхности шара.
+    x_join = R * 0.38
+    r_join = math.sqrt(max(R * R - x_join * x_join, 1e-9))
+    sphere_steps = max(16, n // 2)
+    tail_steps = max(20, n)
+    verts: list[tuple[float, float, float]] = [(-R, 0.0, 0.0)]
+    rings: list[list[int]] = []
+    phis = np.linspace(0.0, 2.0 * math.pi, n, endpoint=False)
+
+    def add_ring(center, e1, e2, r):
+        ids = []
+        for phi in phis:
+            p = np.asarray(center) + float(r) * (math.cos(phi) * e1 + math.sin(phi) * e2)
+            ids.append(len(verts))
+            verts.append(tuple(float(v) for v in p))
+        rings.append(ids)
+
+    # Полюс и кольца задней сферы; последнее кольцо является общим с хвостом.
+    for j in range(1, sphere_steps + 1):
+        lat = -math.pi / 2.0 + (math.asin(x_join / R) + math.pi / 2.0) * j / sphere_steps
+        x = R * math.sin(lat)
+        r = R * math.cos(lat)
+        add_ring((x, 0.0, 0.0), np.asarray([0.0, 1.0, 0.0]),
+                 np.asarray([0.0, 0.0, 1.0]), r)
+
+    def center_at(t):
+        if abs(theta) < 1e-9:
+            curved = np.asarray([x_join + L * t, 0.0, 0.0])
+        else:
+            k = theta / L
+            curved = np.asarray([x_join + math.sin(theta * t) / k,
+                                 (1.0 - math.cos(theta * t)) / k, 0.0])
+        straight = np.asarray([x_join + L * t, 0.0, 0.0])
+        return (1.0 - s) * curved + s * straight
+
+    for j in range(1, tail_steps):
+        t = j / tail_steps
+        c = center_at(t)
+        eps = 1e-4
+        tangent = center_at(min(1.0, t + eps)) - center_at(max(0.0, t - eps))
+        tangent /= max(float(np.linalg.norm(tangent)), 1e-12)
+        e2 = np.asarray([0.0, 0.0, 1.0])
+        e1 = np.cross(e2, tangent)
+        e1 /= max(float(np.linalg.norm(e1)), 1e-12)
+        # Плавное сужение у изогнутого хвоста и точная линейная конусность
+        # при straighten=1. Общий корень имеет радиус сферического сечения.
+        curved_r = r_join * max(0.0, 1.0 - t) ** (0.82 + 0.28 * (1.0 - s))
+        cone_r = r_join * (1.0 - t)
+        r = (1.0 - s) * curved_r + s * cone_r
+        add_ring(c, e1, e2, max(0.001, r))
+    tip = len(verts)
+    verts.append(tuple(float(v) for v in center_at(1.0)))
+    faces: list[tuple[int, int, int]] = []
+    first = rings[0]
+    for j in range(n):
+        j2 = (j + 1) % n
+        faces.append((0, first[j], first[j2]))
+    for k in range(len(rings) - 1):
+        a0, b0 = rings[k], rings[k + 1]
+        for j in range(n):
+            j2 = (j + 1) % n
+            faces.extend(((a0[j], b0[j], b0[j2]), (a0[j], b0[j2], a0[j2])))
+    last = rings[-1]
+    for j in range(n):
+        j2 = (j + 1) % n
+        faces.append((last[j], tip, last[j2]))
+    solid = _closed(verts, faces, what)
+    if solid.is_empty() or solid.status() != mf.Error.NoError or len(solid.decompose()) != 1:
+        raise GeometryError("fireball: не удалось построить единую сетку сферы и хвоста.")
+    return solid
+
+
 @op("yin_yang", aliases=("инь_ян", "инь-ян", "иньянь", "тайцзи", "тайцзиту",
-                         "comma", "запятая", "инь"),
+                         "comma", "запятая", "инь", "fireball", "огненный_шар"),
     category="Примитивы",
-    summary="Одна отдельная «шестёрка» инь-ян площадью в половину исходного "
-            "круга. Основной form=объёмная плавно надувает обе стороны, как "
-            "каплю; form=плоская сохраняет ровную пластину. hole делает "
-            "отверстие в точке, wall>0 — контурную рамку.",
+    summary="form=объёмная — цельный fireball: сфера с плавно продолжающимся "
+            "хвостом в одной сетке, без отдельных деталей и стыков. tail_length "
+            "задаёт длину хвоста, tail_angle — его изгиб, straighten=1 — прямой "
+            "конус. form=плоская сохраняет прежнюю пластину инь-ян.",
     example="инь = yin_yang diameter=120 thick=16 hole=16\n"
             "плоская = yin_yang diameter=120 thick=10 form=плоская round=2\n"
             "рамка = yin_yang diameter=120 thick=10 wall=4 form=плоская",
     params={"diameter": "диаметр исходного круга, мм (120)",
             "thick": "максимальная толщина, мм (16)",
-            "form": "объёмная — выпуклые стороны (по умолчанию); плоская — ровная пластина",
+            "form": "объёмная/fireball — сфера с хвостом (по умолчанию); плоская — инь-ян",
+            "tail_length": "длина хвоста от сферического кольца, мм (1.5 × радиус)",
+            "tail": "синоним tail_length",
+            "tail_angle": "полный угол изгиба хвоста, градусы (30; 0 — прямой)",
+            "angle": "синоним tail_angle",
+            "straighten": "выпрямление 0…1: 0 — изогнутый хвост, 1 — конус (0)",
+            "straight": "синоним straighten",
+            "cone": "да — то же, что straighten=1",
             "round": "скругление кромки плоской формы, мм (0)",
             "side": "левый (по умолчанию) или правый — зеркальная одиночная фигура",
             "hole": "отверстие в центре точки этой половины, мм (0)",
@@ -205,13 +300,18 @@ def yin_yang(a, name):
     thick = float(a.num("thick", 16.0, minv=0.4))
     form = (a.text("form", "объёмная") or "объёмная").strip().lower()
     form = {"объёмная": "объёмная", "объемная": "объёмная", "объём": "объёмная",
-            "выпуклая": "объёмная", "volume": "объёмная",
+            "выпуклая": "объёмная", "volume": "объёмная", "огонь": "объёмная",
+            "fireball": "объёмная", "файрбол": "объёмная",
             "плоская": "плоская", "плоско": "плоская", "flat": "плоская"}.get(form)
     if form is None:
         raise GeometryError("yin_yang: form=объёмная или плоская.")
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
     hole = float(a.num("hole", 0.0, minv=0.0) or 0.0)
     wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    # Старые сцены с wall не указывали form: рамка однозначно относится к
+    # плоскому тайцзи, поэтому сохраняем их без возврата старой объёмной формы.
+    if wall > 1e-6 and form == "объёмная" and not a.has("form"):
+        form = "плоская"
     side_raw = (a.text("side") or "левый").strip().lower()
     if side_raw in ("правый", "правая", "right", "право"):
         side = "правый"
@@ -223,6 +323,34 @@ def yin_yang(a, name):
     R = diameter / 2.0
     n = _segments(a.int("segments", None, minv=12, maxv=256),
                   max(24, min(128, int(R * 1.4))))
+    if form == "объёмная":
+        if wall > 1e-6:
+            raise GeometryError("fireball не имеет контурной рамки: wall доступен только у form=плоская.")
+        tail_length = float(a.num("tail_length", a.num("tail", R * 1.5, minv=0.1), minv=0.1))
+        tail_angle = float(a.num("tail_angle", a.num("angle", 30.0), minv=-170.0, maxv=170.0) or 0.0)
+        straighten = float(a.num("straighten", a.num("straight", 0.0), minv=0.0, maxv=1.0) or 0.0)
+        if a.boolean("cone", False):
+            straighten = 1.0
+        solid = _fireball(R, tail_length, tail_angle, straighten, n)
+        if hole > 1e-6:
+            if hole >= R * 0.95:
+                raise GeometryError("hole слишком велико для сферы fireball.")
+            solid = cut_center_hole(solid, 2.0 * R, hole, segments=n, what="fireball")
+        if side == "правый":
+            solid = solid.rotate((0.0, 0.0, 180.0))
+        solid = ensure_volume(solid, "fireball")
+        solid = stand_flat_sign(a, solid)
+        at = a.vec("at", 3, default=(0, 0, 0))
+        if a.boolean("center", False):
+            solid = _placed(a, solid)
+        else:
+            solid = solid.translate([float(at[0]), float(at[1]), float(at[2])])
+        out = make_solid(a.scene, name, solid, a, kind="yin_yang")
+        out.meta.update(fireball=True, tail_length=tail_length,
+                        tail_angle=tail_angle, straighten=straighten)
+        out.notes.append(f"цельный fireball: сфера ø{diameter:g}, хвост {tail_length:g} мм, "
+                         f"угол {tail_angle:g}°, straighten={straighten:g}")
+        return out
     pts: list[tuple[float, float]] = []
     # левая половина внешней окружности: сверху вниз через левый край
     for i in range(n + 1):

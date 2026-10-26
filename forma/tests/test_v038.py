@@ -175,10 +175,10 @@ class CatalogOrderTest(unittest.TestCase):
     def test_derived_and_nature_follow_user_list(self):
         standard = ["sheet", "fold_sheet", "box", "face_box", "prism", "octa", "pyramid", "cone", "cylinder",
                     "sphere", "icosphere", "ellipsoid", "capsule", "torus", "ring",
-                    "washer", "disc", "oval", "strip"]
+                    "washer", "barrel", "disc", "oval", "strip"]
         derived = ["grating", "hemisphere", "cavity_frame", "sector", "bracket", "полуовал",
                    "arch", "воронка", "скоба", "lens", "полукапсула", "ingot",
-                   "paraboloid", "saddle", "pie", "bead", "tri_prism", "arc_prism",
+                   "paraboloid", "hyperboloid", "saddle", "pie", "eyeball", "web", "bead", "tri_prism", "arc_prism",
                    "torus_sector"]
         nature = ["egg", "drop", "crescent", "star", "lightning", "heart", "cloud",
                   "diamond", "horn", "rock", "leaf", "banana"]

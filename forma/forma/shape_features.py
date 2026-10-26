@@ -52,6 +52,36 @@ def rounded_extrude(cross: mf.CrossSection, depth: float, radius: float,
     return solid.minkowski_sum(mf.Manifold.sphere(r, int(sphere_segments)))
 
 
+def open_top_cavity(solid: mf.Manifold, cross: mf.CrossSection, thickness: float,
+                    wall: float, depth: float, what: str) -> mf.Manifold:
+    """Вырезает настоящую открытую сверху полость, оставляя дно и стенки.
+
+    Внутренний контур получается отступом исходного силуэта, а не масштабом:
+    поэтому на прямых и дуговых участках стенка имеет одинаковую ширину.
+    Вырез выполняется до профильной деформации кромки, чтобы она не прорезала
+    дно утоньшением наружной дуги.
+    """
+    wall, depth, thickness = float(wall), float(depth), float(thickness)
+    if wall <= 1e-9 or depth <= 1e-9:
+        return solid
+    if wall >= thickness - 0.05 or depth > thickness - wall + 1e-7:
+        raise GeometryError(
+            f"{what}: для полости нужны 0 < wall < thickness и "
+            "cavity_depth ≤ thickness − wall.",
+            hint="Уменьшите wall/cavity_depth: снизу должно остаться дно не тоньше wall.")
+    inner = cross.offset(-wall, mf.JoinType.Round, 2.0, 16)
+    if inner.is_empty() or inner.area() <= 1e-7:
+        raise GeometryError(f"{what}: стенка {wall:g} мм не оставляет внутренней полости.",
+                            hint="Уменьшите wall или увеличьте размер контура.")
+    bottom = thickness - depth
+    tool = inner.extrude(depth + max(1.0, thickness * 0.1)).translate((0.0, 0.0, bottom))
+    before = float(solid.volume())
+    result = solid - tool
+    if result.is_empty() or result.volume() <= 1e-8 or result.volume() >= before - 1e-7:
+        raise GeometryError(f"{what}: не удалось вырезать полость заданной глубины.")
+    return result
+
+
 def varied_edge_thickness(solid: mf.Manifold, thickness: float, edge: float,
                           band: float, influence, what: str,
                           center_z: float | None = None) -> mf.Manifold:
@@ -152,18 +182,26 @@ def slot_contour(length: float, width: float, segments: int = 24) -> np.ndarray:
 
 def axis_hole_cutter(axis: str, shape: str, diameter: float,
                      oval_aspect: float, span: float) -> mf.Manifold:
-    """Центрированный сквозной резец круга, квадрата или прямого овала."""
+    """Центрированный сквозной резец для всех поддерживаемых контуров."""
     shape = {"круг": "круг", "круглое": "круг", "circle": "круг",
              "квадрат": "квадрат", "square": "квадрат",
-             "овал": "овал", "капсула": "овал", "slot": "овал",
-             "oval": "овал"}.get(shape.strip().lower())
+             "треугольник": "треугольник", "треугольное": "треугольник",
+             "triangle": "треугольник", "шестигранник": "шестигранник",
+             "шестиугольник": "шестигранник", "hex": "шестигранник",
+             "hexagon": "шестигранник", "овал": "овал", "капсула": "овал",
+             "slot": "овал", "oval": "овал"}.get(shape.strip().lower())
     if shape is None:
-        raise GeometryError("Форма отверстия: круг, квадрат или овал.")
+        raise GeometryError("Форма отверстия: круг, квадрат, треугольник, шестигранник или овал.")
     if shape == "круг":
         profile = np.asarray(circle_profile(diameter / 2.0, 64), dtype=np.float64)
     elif shape == "квадрат":
         h = diameter / 2.0
         profile = np.asarray([(-h, -h), (h, -h), (h, h), (-h, h)], dtype=np.float64)
+    elif shape in ("треугольник", "шестигранник"):
+        count = 3 if shape == "треугольник" else 6
+        profile = np.asarray([(diameter * 0.5 * math.cos(math.radians(90 + 360 * i / count)),
+                               diameter * 0.5 * math.sin(math.radians(90 + 360 * i / count)))
+                              for i in range(count)], dtype=np.float64)
     else:
         profile = slot_contour(diameter, diameter / oval_aspect, 24)
     cutter = mf.Manifold.extrude(mf.CrossSection([profile]), span).translate((0, 0, -span / 2))

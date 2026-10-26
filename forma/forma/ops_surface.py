@@ -24,7 +24,7 @@ from .errors import GeometryError
 from .geometry import manifold_from_arrays, manifold_mesh
 from .ops_shape import shell_manifold
 from .ops import make_solid, op
-from .ops_extra import _derived, _one
+from .ops_extra import _derived, _fuse_surface, _one
 from .ops_shapes import _cross, _profile, ensure_volume
 
 MAX_DEFORM_TRIS = 400_000
@@ -219,6 +219,10 @@ def wrinkle(a, name):
     z0, height = bb[axis], max(float(ext[axis]), 1e-6)
     radial_span = max(float(ext[others[0]]), float(ext[others[1]]), 1e-6)
     waves = max(1, int(round(freq)))
+    # Ненулевая фаза и второй, несинхронный гармонический компонент ломают
+    # зеркальную симметрию даже при seed=0. Seed меняет не только поворот
+    # узора, но и его фазу/нерегулярность, поэтому действительно работает.
+    phase = 0.23 + 0.61803398875 * seed
     if mode == "радиус":
         wavelength = math.pi * radial_span / waves
     elif mode == "высота":
@@ -238,21 +242,26 @@ def wrinkle(a, name):
         phi = np.arctan2(v, u)
         if mode == "радиус":
             ang = phi + twist * (z / height)
-            off = amp * np.cos(waves * ang)
+            ang += 0.075 * np.sin(3.0 * phi + phase) + 0.035 * np.sin(5.0 * phi - phase)
+            off = amp * (0.86 * np.cos(waves * ang + phase)
+                         + 0.14 * np.sin((waves + 1) * ang - 0.7 * phase))
         elif mode == "высота":
-            off = amp * np.cos(2.0 * math.pi * freq * z / height)
+            off = amp * (0.86 * np.cos(2.0 * math.pi * freq * z / height + phase)
+                         + 0.14 * np.sin(2.0 * math.pi * (freq + 1.0) * z / height - phase))
         elif mode == "шум":
             scale = freq / max(float(ext.max()), 1.0)
-            off = amp * _fbm(verts * scale, 4, seed)
+            shift = np.asarray([0.37 * seed, -0.19 * seed, 0.23 * seed])
+            off = amp * _fbm(verts * scale + shift, 4, seed)
         elif mode == "клетка":
             k = 2.0 * math.pi * freq / radial_span
-            off = amp * 0.5 * (np.cos(k * u) * np.cos(k * v) + np.cos(k * z))
+            off = amp * 0.5 * (np.cos(k * u + phase) * np.cos(k * v - 0.4 * phase)
+                               + np.cos(k * z + 0.7 * phase))
         else:
             # Целое waves — периодический шов отсутствует. Узкий профиль
             # делает именно впадины, а не выпуклые вертикальные рейки.
             wobble = 0.28 * _fbm(np.stack([np.cos(phi) * 3.0, np.sin(phi) * 3.0,
                                            z / max(height / 8.0, 1.0)], axis=1), 2, seed)
-            ridge = np.abs(np.sin(0.5 * waves * (phi + wobble)))
+            ridge = np.abs(np.sin(0.5 * waves * (phi + wobble) + 0.37 * phase))
             off = -amp * (1.0 - np.power(np.clip(ridge, 0.0, 1.0), 0.42))
         if mode in ("радиус", "трещины"):
             # Угловой узор определён на боковой стенке. На торцевом веере он
@@ -354,7 +363,7 @@ def crack(a, name):
             direction = np.array([math.cos(phi), math.sin(phi)])
             side = np.array([-direction[1], direction[0]])
             length = radius * rng.uniform(0.68, 1.12)
-            t = np.linspace(0.0, 1.0, 10)
+            t = np.linspace(0.0, 1.0, 8)
             jitter = np.cumsum(rng.normal(0.0, width * 0.55, len(t)))
             jitter -= jitter[0]
             jitter *= np.sin(math.pi * t)
@@ -362,15 +371,15 @@ def crack(a, name):
             paths2.append(line)
             # Каждая вторая главная трещина даёт короткое боковое ответвление.
             if i % 2 == 0:
-                start = line[5]
+                start = line[len(line) // 2]
                 branch_phi = phi + rng.choice([-1.0, 1.0]) * rng.uniform(0.55, 1.0)
                 bd = np.array([math.cos(branch_phi), math.sin(branch_phi)])
-                bt = np.linspace(0.0, 1.0, 6)
+                bt = np.linspace(0.0, 1.0, 5)
                 branch = start[None, :] + bd[None, :] * (radius * 0.36 * bt)[:, None]
                 branch += rng.normal(0.0, width * 0.30, branch.shape) * np.sin(math.pi * bt)[:, None]
                 paths2.append(branch)
     elif mode == "разлом":
-        t = np.linspace(-1.0, 1.0, 21)
+        t = np.linspace(-1.0, 1.0, 17)
         jitter = np.cumsum(rng.normal(0.0, width * 0.75 + radius * 0.008, len(t)))
         jitter -= np.linspace(jitter[0], jitter[-1], len(t))
         paths2.append(np.stack([radius * t, jitter], axis=1))
@@ -382,14 +391,14 @@ def crack(a, name):
             if rng.random() < 0.5:
                 phi += math.pi
             direction = np.array([math.cos(phi), math.sin(phi)])
-            bt = np.linspace(0.0, 1.0, 8)
+            bt = np.linspace(0.0, 1.0, 6)
             branch = start[None, :] + direction[None, :] * (radius * rng.uniform(0.22, 0.48) * bt)[:, None]
             branch += rng.normal(0.0, width * 0.35, branch.shape) * np.sin(math.pi * bt)[:, None]
             paths2.append(branch)
     else:
         for i in range(count):
             across = 0.0 if count == 1 else -radius + 2.0 * radius * i / (count - 1)
-            t = np.linspace(-1.0, 1.0, 13)
+            t = np.linspace(-1.0, 1.0, 11)
             wobble = width * 0.30 * np.sin(t * math.pi * 2.0 + rng.uniform(0.0, 2.0 * math.pi))
             paths2.append(np.stack([radius * t, across + wobble], axis=1))
 
@@ -421,7 +430,9 @@ def crack(a, name):
     segments = [(path[i], path[i + 1]) for path in paths3 for i in range(len(path) - 1)
                 if float(np.linalg.norm(path[i + 1] - path[i])) > 1e-8]
     detail = a.num("detail", None, minv=0.02)
-    refine = float(detail) if detail else max(0.03, width / 4.0)
+    # Три сегмента на ширину достаточно для V-профиля; четвёртый ранее
+    # почти удваивал полигонаж без заметного выигрыша на печатной детали.
+    refine = float(detail) if detail else max(0.05, width / 3.0)
 
     def offsets(verts: np.ndarray, normals: np.ndarray) -> np.ndarray:
         best = np.full(len(verts), np.inf)
@@ -441,6 +452,7 @@ def crack(a, name):
         return -depth * profile
 
     solid = _deform(m, offsets, "трещин", refine=refine)
+    solid = solid.simplify(max(0.005, refine * 0.018))
     if solid.volume() >= m.volume() - 1e-7:
         raise GeometryError("Трещины не углубили поверхность: увеличьте depth или уменьшите detail.")
     a.scene.log("info", f"crack: {mode}, линий {len(paths3)}, сегментов {len(segments)}, "
@@ -772,60 +784,328 @@ def porous(a, name):
 
 
 # --------------------------------------------------------------------------- #
+#  Shrinkwrap — проекция сетки на поверхность другого тела
+# --------------------------------------------------------------------------- #
+def _shrink_direction(a) -> tuple[str, np.ndarray | None]:
+    raw = (a.text("direction", "ближняя") or "ближняя").strip().lower()
+    values = {
+        "ближняя": ("ближняя", None), "nearest": ("ближняя", None),
+        "нормаль": ("нормаль", None), "normal": ("нормаль", None),
+        "вниз": ("вниз", np.asarray([0.0, 0.0, -1.0])),
+        "-z": ("-Z", np.asarray([0.0, 0.0, -1.0])),
+        "вверх": ("вверх", np.asarray([0.0, 0.0, 1.0])),
+        "+z": ("+Z", np.asarray([0.0, 0.0, 1.0])),
+        "право": ("+X", np.asarray([1.0, 0.0, 0.0])),
+        "+x": ("+X", np.asarray([1.0, 0.0, 0.0])),
+        "лево": ("-X", np.asarray([-1.0, 0.0, 0.0])),
+        "-x": ("-X", np.asarray([-1.0, 0.0, 0.0])),
+        "зад": ("+Y", np.asarray([0.0, 1.0, 0.0])),
+        "+y": ("+Y", np.asarray([0.0, 1.0, 0.0])),
+        "перед": ("-Y", np.asarray([0.0, -1.0, 0.0])),
+        "перёд": ("-Y", np.asarray([0.0, -1.0, 0.0])),
+        "-y": ("-Y", np.asarray([0.0, -1.0, 0.0])),
+    }
+    if raw not in values:
+        raise GeometryError("shrinkwrap: direction=ближняя, нормаль, вверх, вниз, ±X или ±Y.")
+    return values[raw]
+
+
+def _ray_on(m: mf.Manifold, point: np.ndarray, direction: np.ndarray,
+            reach: float):
+    norm = float(np.linalg.norm(direction))
+    if norm < 1e-10:
+        return None
+    d = np.asarray(direction, dtype=np.float64) / norm
+    end = np.asarray(point, dtype=np.float64) + d * reach
+    hits = m.ray_cast([float(v) for v in point], [float(v) for v in end])
+    if not hits:
+        return None
+    hit = hits[0]
+    p = np.asarray(hit.position, dtype=np.float64)
+    n = np.asarray(hit.normal, dtype=np.float64)
+    n /= max(float(np.linalg.norm(n)), 1e-12)
+    return p, n
+
+
+@op("shrinkwrap", aliases=("обтянуть", "шринкwrap", "shrink_wrap",
+                           "проекция_на_поверхность", "спроецировать_на"),
+    category="Форма и деформации",
+    summary="Настоящий Shrinkwrap: вершины ВТОРОГО объекта проецируются лучами "
+            "на сетку ПЕРВОГО. gap>0 приподнимает над поверхностью, gap<0 "
+            "погружает внутрь. Замкнутая деталь сохраняет локальную толщину: "
+            "ближняя сторона получает gap, дальняя — gap плюс толщина. "
+            "transition плавно возвращает удалённые вершины к исходной форме; "
+            "join=сгладить дополнительно округляет вогнутый стык с целью.",
+    example="цель = sphere radius=35\n"
+            "плёнка = box size=[65,65,2] at=[0,0,34]\n"
+            "плёнка = shrinkwrap [цель, плёнка] gap=0.4 detail=2\n"
+            "врезка = shrinkwrap [цель, плёнка] gap=-1 direction=вниз",
+    params={"objects": "[цель, деформируемый объект] — строго в этом порядке",
+            "gap": "зазор по нормали цели, мм: + нависание, − погружение (0)",
+            "direction": "ближняя, нормаль, вверх, вниз, ±X, ±Y (ближняя)",
+            "amount": "сила проецирования 0…1 (1)",
+            "transition": "ширина плавного затухания по расстоянию до цели, мм (0 — вся сетка)",
+            "detail": "шаг дробления исходной сетки, мм (авто; меньше — точнее)",
+            "join": "нет — оставить два объекта; слить — boolean; сгладить — слить и скруглить стык",
+            "weld": "радиус сглаживания стыка для join=сгладить, мм (2)"},
+    positional=["objects"])
+def shrinkwrap(a, name):
+    solids = a.solids()
+    if len(solids) != 2:
+        raise GeometryError("shrinkwrap требует ровно два объекта: [цель, объект].")
+    target, source = solids
+    gap = float(a.num("gap", 0.0) or 0.0)
+    amount = float(a.num("amount", 1.0, minv=0.0, maxv=1.0))
+    transition = float(a.num("transition", 0.0, minv=0.0) or 0.0)
+    join = (a.text("join", "нет") or "нет").strip().lower()
+    join = {"нет": "нет", "раздельно": "нет", "none": "нет",
+            "слить": "слить", "union": "слить", "сгладить": "сгладить",
+            "плавно": "сгладить", "smooth": "сгладить"}.get(join)
+    if join is None:
+        raise GeometryError("shrinkwrap: join=нет, слить или сгладить.")
+    weld = float(a.num("weld", 2.0, minv=0.05))
+    direction_name, fixed = _shrink_direction(a)
+    source_m = source.manifold
+    source_bb = source_m.bounding_box()
+    source_size = np.asarray([source_bb[3] - source_bb[0],
+                              source_bb[4] - source_bb[1],
+                              source_bb[5] - source_bb[2]], dtype=np.float64)
+    detail = a.num("detail", None, minv=0.02)
+    step = float(detail) if detail is not None else max(0.25, float(np.max(source_size)) / 55.0)
+    step = _refine_for(source_m, step, cap=60_000)
+    refined = source_m.refine_to_length(step)
+    verts, faces = manifold_mesh(refined)
+    if len(verts) == 0 or len(faces) == 0:
+        raise GeometryError("shrinkwrap: у деформируемого объекта нет сетки.")
+    if len(verts) > MAX_DEFORM_TRIS:
+        raise GeometryError("shrinkwrap: сетка слишком плотная; увеличьте detail или примените simplify.")
+    normals = _vertex_normals(verts, faces)
+    target_bb = target.manifold.bounding_box()
+    center = np.asarray([(target_bb[0] + target_bb[3]) / 2.0,
+                         (target_bb[1] + target_bb[4]) / 2.0,
+                         (target_bb[2] + target_bb[5]) / 2.0])
+    target_size = np.asarray(target_bb[3:], dtype=np.float64) - np.asarray(target_bb[:3], dtype=np.float64)
+    reach = float(np.linalg.norm(target_size) + np.linalg.norm(source_size) +
+                  abs(gap) * 4.0 + step * 4.0 + 10.0)
+    hp = np.zeros_like(verts)
+    hn = np.zeros_like(verts)
+    weight = np.zeros(len(verts), dtype=np.float64)
+    hits_count = 0
+    axes = (np.asarray([1.0, 0.0, 0.0]), np.asarray([-1.0, 0.0, 0.0]),
+            np.asarray([0.0, 1.0, 0.0]), np.asarray([0.0, -1.0, 0.0]),
+            np.asarray([0.0, 0.0, 1.0]), np.asarray([0.0, 0.0, -1.0]))
+    for i, (point, normal) in enumerate(zip(verts, normals)):
+        if fixed is not None:
+            candidates = (_ray_on(target.manifold, point, fixed, reach),)
+        else:
+            dirs = [-normal, normal] if direction_name == "нормаль" else [-normal, normal, center - point]
+            found = [_ray_on(target.manifold, point, d, reach) for d in dirs]
+            found = [hit for hit in found if hit is not None]
+            if not found and direction_name == "ближняя":
+                found = [_ray_on(target.manifold, point, d, reach) for d in axes]
+                found = [hit for hit in found if hit is not None]
+            candidates = found
+        best = None
+        best_dist = math.inf
+        for hit in candidates:
+            if hit is None:
+                continue
+            dist = float(np.linalg.norm(hit[0] - point))
+            if dist < best_dist:
+                best, best_dist = hit, dist
+        if best is None:
+            continue
+        hp[i], hn[i] = best
+        w = 1.0
+        if transition > 1e-9:
+            w = float(np.clip(1.0 - best_dist / transition, 0.0, 1.0))
+            w = w * w * (3.0 - 2.0 * w)
+        weight[i] = w
+        if w > 1e-9:
+            hits_count += 1
+    if hits_count == 0:
+        raise GeometryError("shrinkwrap: лучи не нашли поверхность цели.",
+                            hint="Поменяйте direction, придвиньте объект или увеличьте transition=0.")
+    # Толщина измеряется ВДОЛЬ проекционного луча в обе стороны. У боковой
+    # грани пластины луч по нормали ушёл бы вдоль листа и дал десятки мм —
+    # отсюда ложные «лепестки». Сумма двух проб даёт настоящую толщину и на
+    # верхней/нижней стороне, и на ребре, даже где нормали усреднены.
+    thickness = np.zeros(len(verts), dtype=np.float64)
+    valid_thickness = []
+    eps = max(1e-4, step * 1e-3)
+    source_reach = float(np.max(source_size)) * 2.0 + step * 4.0
+    for i in np.nonzero(weight > 1e-9)[0]:
+        ray = hp[i] - verts[i]
+        if np.linalg.norm(ray) < 1e-9:
+            ray = -normals[i]
+        ray = ray / max(float(np.linalg.norm(ray)), 1e-12)
+        distances = []
+        for sign in (-1.0, 1.0):
+            direction = ray * sign
+            start = verts[i] + direction * eps
+            hit = _ray_on(refined, start, direction, source_reach)
+            if hit is not None:
+                distance = float(np.linalg.norm(hit[0] - verts[i]))
+                if distance > eps * 0.5:
+                    distances.append(distance)
+        if distances:
+            value = float(sum(distances))
+            thickness[i] = value
+            valid_thickness.append(value)
+    fallback = float(np.median(valid_thickness)) if valid_thickness else float(np.min(source_size))
+    thickness[thickness <= 1e-9] = max(fallback, 0.02)
+    # Редкий касательный луч не должен вытянуть ребро вдоль всей детали.
+    if valid_thickness:
+        thickness = np.minimum(thickness, max(fallback * 3.0, 0.02))
+    facing = np.clip(0.5 + 0.5 * np.einsum("ij,ij->i", normals, hn), 0.0, 1.0)
+    facing = facing * facing * (3.0 - 2.0 * facing)
+    projected = hp + hn * (gap + facing * thickness)[:, None]
+    moved = verts + (projected - verts) * (weight * amount)[:, None]
+    result = manifold_from_arrays(moved, faces, "shrinkwrap")
+    if result.is_empty() or result.volume() <= 1e-7:
+        raise GeometryError("shrinkwrap: проекция схлопнула объём; измените direction/gap.")
+    if join != "нет":
+        result = result + target.manifold
+        if join == "сгладить":
+            if len([p for p in result.decompose() if p.volume() > 1e-7]) != 1:
+                raise GeometryError("shrinkwrap: при положительном gap объекты не пересекаются, стык сглаживать нечего.",
+                                    hint="Для join=сгладить используйте gap≤0 или join=нет.")
+            result = _fuse_surface(result, weld, 34.0, "вогнутые")
+    out = _derived(a, name, result, source, "shrinkwrap")
+    if join != "нет":
+        a.scene.consume(target)
+    out.meta.update(shrinkwrap_target=target.name, gap=gap, direction=direction_name,
+                    transition=transition, detail=step, join=join, projected_vertices=hits_count)
+    a.scene.log("info", f"shrinkwrap: {hits_count}/{len(verts)} вершин, gap={gap:g} мм, "
+                        f"шаг {step:g} мм, join={join}", a.cmd.line)
+    return out
+
+
+# --------------------------------------------------------------------------- #
 #  Чешуя
 # --------------------------------------------------------------------------- #
-def _scale_tile(w: float, l: float, t: float) -> mf.Manifold:
-    """Одна чешуйка: выпуклая пластинка-капля, около 40 треугольников."""
-    n = 9
-    phi = np.linspace(-math.pi * 0.92, math.pi * 0.92, n)
-    ring = np.stack([0.5 * w * np.sin(phi), 0.5 * l * (np.cos(phi) * 0.5 + 0.5)], axis=1)
-    ring[:, 1] = ring[:, 1] - 0.5 * l * 0.5      # хвост чешуйки вниз
-    cross = _cross([tuple(p) for p in ring])
-    h = max(t, 0.05)
-    core = cross.scale((0.94, 0.94)).extrude(h * 0.6)
-    return core.minkowski_sum(mf.Manifold.sphere(h * 0.5, 2)).translate((0, 0, h * 0.35))
+def _scale_tile(w: float, l: float, t: float, kind: str = "рыба",
+                tilt: float = 18.0, tile_variant: str = "волна") -> mf.Manifold:
+    """Плоская наклонная чешуйка; корень +Y, свободный конец −Y.
+
+    Никакого minkowski/эллипсоида: две плоские параллельные стороны и
+    силуэт рыбьего веера или острого драконьего листа. Наклон выполнен shear-
+    преобразованием, поэтому проекция длины остаётся точно равной ``l`` — ею
+    можно честно управлять перекрытием следующего корня.
+    """
+    if kind == "черепица":
+        if tile_variant == "плоская":
+            outline = [(-0.50 * w, 0.50 * l), (0.50 * w, 0.50 * l),
+                       (0.50 * w, -0.34 * l), (0.40 * w, -0.50 * l),
+                       (-0.40 * w, -0.50 * l), (-0.50 * w, -0.34 * l)]
+        elif tile_variant == "ромб":
+            outline = [(-0.32 * w, 0.50 * l), (0.32 * w, 0.50 * l),
+                       (0.50 * w, 0.08 * l), (0.0, -0.50 * l),
+                       (-0.50 * w, 0.08 * l)]
+        else:
+            # Волна/испанская: прямая прикладная кромка и дуговой свободный
+            # край. У испанской плитки середина чуть приподнята — это не
+            # копия рыбьего веера и не выпуклая капля.
+            outline = [(-0.50 * w, 0.50 * l), (0.50 * w, 0.50 * l),
+                       (0.50 * w, -0.10 * l)]
+            for i in range(1, 17):
+                theta = math.pi * i / 16.0
+                x = 0.50 * w * math.cos(theta)
+                y = -0.10 * l - 0.40 * l * math.sin(theta)
+                if tile_variant == "испанская":
+                    y += 0.10 * l * math.sin(2.0 * theta) ** 2
+                outline.append((x, y))
+            outline.append((-0.50 * w, -0.10 * l))
+    elif kind == "дракон":
+        outline = [(-0.22 * w, 0.50 * l), (0.22 * w, 0.50 * l),
+                   (0.50 * w, 0.10 * l), (0.34 * w, -0.20 * l),
+                   (0.0, -0.50 * l), (-0.34 * w, -0.20 * l), (-0.50 * w, 0.10 * l)]
+    else:
+        outline = [(-0.23 * w, 0.50 * l), (0.23 * w, 0.50 * l),
+                   (0.43 * w, 0.10 * l)]
+        # Нижний эллиптический веер: широкий округлый конечный сектор.
+        for i in range(13):
+            theta = -math.pi * i / 12.0
+            outline.append((0.50 * w * math.cos(theta),
+                            -0.12 * l + 0.38 * l * math.sin(theta)))
+        outline.append((-0.43 * w, 0.10 * l))
+    cross = mf.CrossSection([_profile(outline)])
+    plate = cross.extrude(t).translate((0.0, 0.0, -t / 2.0))
+    slope = math.tan(math.radians(tilt))
+    embed = t * 0.65
+    shear = np.asarray([[1.0, 0.0, 0.0, 0.0],
+                        [0.0, 1.0, 0.0, 0.0],
+                        [0.0, -slope, 1.0, slope * l / 2.0 - embed]], dtype=np.float64)
+    return plate.transform(shear)
 
 
-@op("scales", aliases=("чешуя", "чешуйки", "рыба_чешуя", "scales_tile"),
+@op("scales", aliases=("чешуя", "чешуйки", "рыба_чешуя", "драконья_чешуя"),
     category="Форма и деформации",
-    summary="Покрывает тело чешуёй: лучи изнутри находят поверхность, на ней "
-            "раскладываются черепицей выпуклые пластинки. Рыба, дракон, "
-            "шишка, кольчуга. Ряды перекрываются на overlap, каждая чешуйка "
-            "приподнята на lift — получается настоящая черепица, а не рисунок.",
+    summary="Плоская чешуя и черепица вместо старых выпуклых капель. kind=рыба "
+            "даёт округлый веер, дракон — заострённый лист, черепица — кровельные "
+            "варианты tile=плоская, волна, ромб или испанская. Каждая пластинка "
+            "наклонена от погружённого корня к приподнятому концу; верхний "
+            "конечный сектор на overlap перекрывает корень следующей нижней. "
+            "Шаг рядов равен length·(1−overlap), поэтому перекрытие реальное.",
     example="рыба = lathe points=[[0,0],[10,0],[26,30],[22,90],[8,120],[0,120]]\n"
-            "scales рыба rows=9 per_row=16 length=16 lift=0.6\n"
-            "шар = sphere radius=50\n"
-            "scales шар rows=14 per_row=22 length=12 overlap=0.55",
+            "scales рыба kind=рыба rows=9 per_row=16 length=16 tilt=18 overlap=.45\n"
+            "дракон = sphere radius=50\n"
+            "scales дракон kind=дракон rows=10 per_row=20 length=14 width=9 tilt=28",
     params={"objects": "объект [a] или a",
+            "kind": "рыба, дракон или черепица (рыба)",
+            "tile": "вариант черепицы: плоская, волна, ромб или испанская (волна)",
+            "tile_style": "синоним tile",
+            "variant": "синоним tile",
             "rows": "рядов по высоте (8)",
-            "per_row": "чешуек в ряду (14); в нечётных рядах сдвиг на полшага",
-            "length": "длина чешуйки, мм (14)",
-            "width": "ширина; по умолчанию 0.8 длины",
-            "thick": "толщина чешуйки, мм (0.22 длины)",
-            "lift": "насколько приподнята над кожей, мм (0.5)",
-            "overlap": "перекрытие рядов 0…0.8 (0.45)",
+            "per_row": "чешуек в ряду (14); чётные ряды сдвинуты на полшага",
+            "length": "длина от корня до конца, мм (14)",
+            "width": "ширина; рыба 0.9 length, дракон 0.65 length",
+            "thick": "толщина плоской пластинки, мм (0.08 length)",
+            "tilt": "наклон плоскости от корня к концу, ° 0…45 (18; дракон 28)",
+            "overlap": "перекрытие корня следующей чешуйки 0.05…0.85 (0.45)",
             "seed": "сдвиг раскладки (0)"},
     positional=["objects"])
 def scales(a, name):
     base = _one(a, "scales")
+    kind = (a.text("kind", "рыба") or "рыба").strip().lower()
+    kind = {"рыба": "рыба", "рыбья": "рыба", "fish": "рыба",
+            "дракон": "дракон", "драконья": "дракон", "dragon": "дракон",
+            "черепица": "черепица", "черепичная": "черепица", "tile": "черепица",
+            "roof": "черепица", "кровля": "черепица"}.get(kind)
+    if kind is None:
+        raise GeometryError("scales: kind=рыба, дракон или черепица.")
+    tile_raw = (a.text("tile", a.text("tile_style", a.text("variant", "волна"))) or "волна").strip().lower()
+    tile_variant = {"плоская": "плоская", "плоский": "плоская", "flat": "плоская",
+                    "волна": "волна", "волнистая": "волна", "wave": "волна",
+                    "ромб": "ромб", "ромбовидная": "ромб", "diamond": "ромб",
+                    "испанская": "испанская", "испанский": "испанская", "spanish": "испанская",
+                    "голландская": "волна", "dutch": "волна"}.get(tile_raw)
+    if tile_variant is None:
+        raise GeometryError("scales: tile=плоская, волна, ромб или испанская.")
     rows = int(a.num("rows", 8, minv=1, maxv=60))
     per_row = int(a.num("per_row", 14, minv=3, maxv=120))
     length = float(a.num("length", 14.0, minv=0.3))
-    width = float(a.num("width", length * 0.8, minv=0.2))
-    thick = float(a.num("thick", length * 0.22, minv=0.05))
-    lift = float(a.num("lift", length * 0.04, minv=0.0))
-    overlap = float(a.num("overlap", 0.45, minv=0.0, maxv=0.8))
+    width = float(a.num("width", length * (0.65 if kind == "дракон" else 0.9), minv=0.2))
+    thick = float(a.num("thick", length * 0.08, minv=0.03))
+    tilt = float(a.num("tilt", 28.0 if kind == "дракон" else (12.0 if kind == "черепица" else 18.0),
+                       minv=0.0, maxv=45.0) or 0.0)
+    overlap = float(a.num("overlap", 0.45, minv=0.05, maxv=0.85))
     seed = int(a.num("seed", 0) or 0)
     m = base.manifold
     bb = m.bounding_box()
-    cx, cy = (bb[0] + bb[3]) / 2.0, (bb[1] + bb[4]) / 2.0
+    cx, cy, cz = (bb[0] + bb[3]) / 2.0, (bb[1] + bb[4]) / 2.0, (bb[2] + bb[5]) / 2.0
     z0, z1 = bb[2], bb[5]
     reach = max(bb[3] - bb[0], bb[4] - bb[1], z1 - z0) * 2.0 + 10.0
-    step_z = (z1 - z0) / max(rows, 1) * (1.0 - overlap * 0.6)
+    step_z = length * (1.0 - overlap)
+    centre_span = (rows - 1) * step_z
+    if centre_span > (z1 - z0) + 1e-7:
+        raise GeometryError("scales: ряды с такой length/overlap не помещаются по высоте тела.",
+                            hint="Уменьшите rows/length или увеличьте overlap; не растягивайте перекрытие.")
+    bottom = cz - centre_span / 2.0
     tiles: list[mf.Manifold] = []
-    tile = _scale_tile(width, length, thick)
+    tile = _scale_tile(width, length, thick, kind, tilt, tile_variant)
     for r in range(rows):
-        z = z0 + (z1 - z0) * (r + 0.5) / rows
+        z = bottom + r * step_z
         offset = 0.5 * (r % 2)
         for j in range(per_row):
             ang = 2.0 * math.pi * (j + offset + 0.13 * seed) / per_row
@@ -841,17 +1121,19 @@ def scales(a, name):
             if np.linalg.norm(n) < 1e-9:
                 n = d
             mat = _frame(n)
-            # низ чешуйки уходит внутрь кожи: иначе часть пластинок
-            # останется висеть отдельными телами
-            mat[:, 3] = p + n * (lift - thick * 0.55)
+            mat[:, 3] = p
             tiles.append(tile.transform(mat.tolist()))
     if not tiles:
         raise GeometryError("Чешуя не нашла поверхность: деталь слишком тонкая или "
                             "луч идёт мимо.", hint="Уменьшите rows и per_row.")
     solid = mf.Manifold.batch_boolean([m] + tiles, mf.OpType.Add)
-    a.scene.log("info", f"чешуя: {len(tiles)} пластинок, шаг по высоте {step_z:.1f} мм",
-                a.cmd.line)
-    return _derived(a, name, solid, base, "scales")
+    out = _derived(a, name, solid, base, "scales")
+    out.meta.update(scale_kind=kind, tile_variant=tile_variant if kind == "черепица" else None,
+                    tiles=len(tiles), row_step=step_z,
+                    overlap=overlap, tilt=tilt, flat=True, root_direction="+Y / верх")
+    a.scene.log("info", f"чешуя ({kind}): {len(tiles)} плоских пластинок, "
+                        f"перекрытие {overlap * 100:g}%, шаг {step_z:.2f} мм", a.cmd.line)
+    return out
 
 
 # --------------------------------------------------------------------------- #

@@ -22,7 +22,7 @@ from .errors import GeometryError
 from .geometry import (circle_profile, ellipse_profile, sweep_solid, limit_segments,
                        FINENESS_MM)
 from .ops import anchor, make_solid, op, stand_flat_sign
-from .ops_shapes import _cross, _profile, ensure_volume
+from .ops_shapes import _cross, _profile, ensure_volume, volumetric_cross
 from .shape_features import hollow_cross, rect_between
 
 
@@ -133,22 +133,60 @@ def _stadium(p0: tuple[float, float], p1: tuple[float, float],
     return np.asarray(pts, dtype=np.float64)
 
 
-def _ellipse_between(p0: tuple[float, float], p1: tuple[float, float],
-                     width: float, segments: int = 96) -> np.ndarray:
-    """Цельный эллипс между двумя остриями, а не капсула с другой сеткой."""
-    a, b = np.asarray(p0, dtype=float), np.asarray(p1, dtype=float)
+def _capsule_between(p0: tuple[float, float], p1: tuple[float, float],
+                     width: float, depth: float) -> mf.Manifold:
+    """Настоящая объёмная капсула между центрами полусферических торцов.
+
+    Во фронтальной XY-плоскости сохраняются прямые стороны и круглые торцы.
+    Независимая толщина получается масштабированием только локальной оси
+    глубины; ветвь не подменяется выдавленным стадионом или эллипсом.
+    """
+    a = np.asarray(p0, dtype=np.float64)
+    b = np.asarray(p1, dtype=np.float64)
     delta = b - a
     length = float(np.linalg.norm(delta))
-    if length < 1e-9:
-        raise GeometryError("Концы овальной ветви совпали.")
-    direction = delta / length
-    normal = np.asarray([-direction[1], direction[0]])
-    center = (a + b) / 2.0
-    points = []
-    for t in np.linspace(0.0, 2.0 * math.pi, segments, endpoint=False):
-        points.append(center + direction * (length * 0.5 * math.cos(t))
-                      + normal * (width * 0.5 * math.sin(t)))
-    return np.asarray(points, dtype=np.float64)
+    radius = float(width) / 2.0
+    if length <= 1e-7 or radius <= 1e-7:
+        raise GeometryError("Капсульная ветвь слишком коротка для заданной ширины.")
+    d = delta / length
+    segments = _segments_for(radius, None, lo=32, hi=96)
+    body = mf.Manifold.cylinder(length, radius, radius, segments)
+    cap0 = mf.Manifold.sphere(radius, segments)
+    cap1 = cap0.translate((0.0, 0.0, length))
+    capsule = mf.Manifold.batch_boolean([body, cap0, cap1], mf.OpType.Add)
+    normal = np.asarray([-d[1], d[0], 0.0])
+    direction = np.asarray([d[0], d[1], 0.0])
+    # Локальная Z — вдоль ветви, X — поперёк неё в XY, Y — глубина Z.
+    transform = np.column_stack((normal, np.asarray([0.0, 0.0, depth / width]),
+                                 direction, np.asarray([a[0], a[1], 0.0])))
+    solid = capsule.transform(transform)
+    if solid.status() != mf.Error.NoError or solid.is_empty() or solid.volume() <= 1e-8:
+        raise GeometryError("Не удалось построить объёмную капсульную ветвь.")
+    return solid
+
+
+def _fit_solid_xy(solid: mf.Manifold, width: float, height: float) -> mf.Manifold:
+    """Возвращает точные габариты после дискретизации сферических торцов."""
+    bb = solid.bounding_box()
+    sx = float(width) / max(bb[3] - bb[0], 1e-9)
+    sy = float(height) / max(bb[4] - bb[1], 1e-9)
+    cx, cy = (bb[0] + bb[3]) / 2.0, (bb[1] + bb[4]) / 2.0
+    mat = np.asarray([[sx, 0.0, 0.0, cx - sx * cx],
+                      [0.0, sy, 0.0, cy - sy * cy],
+                      [0.0, 0.0, 1.0, 0.0]], dtype=np.float64)
+    return solid.transform(mat)
+
+
+def _rounded_joint(center: tuple[float, float], width: float, depth: float,
+                   extra: float) -> mf.Manifold:
+    """Небольшое объёмное заполнение стыка, управляемое round/smooth."""
+    radius = width / 2.0 + max(0.0, float(extra))
+    segments = _segments_for(radius, None, lo=32, hi=96)
+    ball = mf.Manifold.sphere(radius, segments)
+    mat = np.asarray([[1.0, 0.0, 0.0, float(center[0])],
+                      [0.0, 1.0, 0.0, float(center[1])],
+                      [0.0, 0.0, depth / (2.0 * radius), 0.0]], dtype=np.float64)
+    return ball.transform(mat)
 
 
 def _segments_for(radius: float, asked: int | None, lo: int = 48, hi: int = 512) -> int:
@@ -237,17 +275,18 @@ def _place_glyph(a, solid: mf.Manifold) -> mf.Manifold:
             "stem — ширина ножки, leg — длина ножки под перекладиной. "
             "Стоит в XZ лицом −Y: перекладина сверху (+Z), ножка вниз (−Z), "
             "толщина depth по Y; опирается на нижний срез ножки. shape=бруски, "
-            "овалы или капсулы: овалы — цельные эллиптические ветви, капсулы "
-            "имеют прямые стороны и истинные полукруглые торцы.",
+            "овалы или капсулы: овалы — прежняя мягкая капсульная сетка с "
+            "подгонкой габарита, капсулы — настоящие объёмные цилиндры с "
+            "полусферическими торцами и округлой глубиной.",
     example="тавр = tee arm=90 bar=20 stem=22 leg=60 depth=14 round=2",
     params={"arm": "ширина перекладины, мм (90)",
             "bar": "толщина перекладины, мм (20)",
             "stem": "ширина ножки, мм (20)",
             "leg": "длина ножки под перекладиной, мм (60)",
-            "shape": "бруски — плоские торцы; овалы — эллиптические; "
-                     "капсулы — прямые стороны и полукруглые торцы",
+            "shape": "бруски — плоские торцы; овалы — прежняя мягкая капсульная сетка; "
+                     "капсулы — объёмные ветви с полусферическими торцами",
             "depth": "толщина по глубине, мм (14); у стоящего знака — по Y",
-            "round": "скругление кромок, мм (0)",
+            "round": "скругление кромок; у капсул — добавочное округление стыка, мм (0)",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом вверх — «фронт»",
             "stand": "то же, что plane=фронт: да — стоит, нет — лежит (да)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -276,25 +315,40 @@ def tee(a, name):
                             hint="bar ≈ 0.15…0.3 от arm.")
     total = bar + leg
     half = total / 2.0
-    if shape in ("капсулы", "овалы"):
-        if shape == "овалы":
-            bar_cs = mf.CrossSection([_ellipse_between(
-                (-arm / 2, half - bar / 2), (arm / 2, half - bar / 2), bar)])
-            stem_cs = mf.CrossSection([_ellipse_between(
-                (0.0, -half), (0.0, half - bar * 0.5), stem)])
-        else:
-            bar_cs = mf.CrossSection([_stadium((-arm / 2 + bar / 2, half - bar / 2),
-                                              (arm / 2 - bar / 2, half - bar / 2), bar)])
-            stem_cs = mf.CrossSection([_stadium((0.0, -half + stem / 2),
-                                               (0.0, half - bar * 0.5), stem)])
-        # Капсульная ножка не должна проходить сквозь перекладину, даже если
-        # stem>bar. Подрезаем её чуть выше нижней плоскости перекладины:
-        # остаётся надёжный захлёст, а верхняя плоскость остаётся ровной.
-        if shape == "капсулы":
-            joint = half - bar + min(0.05, bar * 0.1)
-            clip = mf.CrossSection([_profile([(-stem, -half - 1.0), (stem, -half - 1.0),
-                                             (stem, joint), (-stem, joint)])])
-            stem_cs = mf.CrossSection.batch_boolean([stem_cs, clip], mf.OpType.Intersect)
+    if shape == "капсулы":
+        bar_solid = _capsule_between((-arm / 2 + bar / 2, half - bar / 2),
+                                     (arm / 2 - bar / 2, half - bar / 2), bar, depth)
+        joint = half - bar + min(0.5, bar * 0.15)
+        stem_solid = _capsule_between((0.0, -half + stem / 2),
+                                      (0.0, joint), stem, depth)
+        # Верхний конец ножки спрятан в перекладине: наружу не выступает ни
+        # сфера стыка, ни отдельная площадка.
+        clip_low = -half - stem
+        clip = mf.Manifold.cube((max(arm, stem) * 4.0, joint - clip_low,
+                                 max(depth, stem) * 4.0), True).translate(
+                                     (0.0, (joint + clip_low) / 2.0, 0.0))
+        stem_solid = stem_solid ^ clip
+        pieces = [bar_solid, stem_solid]
+        if round_r > 1e-6:
+            pieces.append(_rounded_joint((0.0, joint), min(bar, stem), depth,
+                                         min(round_r, min(bar, stem) * 0.5)))
+        solid = mf.Manifold.batch_boolean(pieces, mf.OpType.Add)
+        if solid.status() != mf.Error.NoError or len(solid.decompose()) != 1:
+            raise GeometryError("Капсульные ветви T не соединились в одно тело.")
+        solid = _fit_solid_xy(solid, arm, total)
+        out = make_solid(a.scene, name, _place_glyph(a, solid), a, kind="tee")
+        out.meta.update(branch_shape=shape, solid_capsules=True)
+        return out
+    if shape == "овалы":
+        # Прежняя капсульная сетка — это теперь режим «овалы».
+        # exact=False сохраняет её исходную дискретизацию; последующая
+        # подгонка габарита даёт мягкие овальные торцы, а не эллипс-
+        # заготовку с заострёнными концами.
+        bar_cs = mf.CrossSection([_stadium(
+            (-arm / 2, half - bar / 2), (arm / 2, half - bar / 2), bar,
+            exact=False)])
+        stem_cs = mf.CrossSection([_stadium(
+            (0.0, -half), (0.0, half - bar * 0.5), stem, exact=False)])
     else:
         bar_cs = mf.CrossSection([_profile([(-arm / 2, half - bar), (arm / 2, half - bar),
                                            (arm / 2, half), (-arm / 2, half)])])
@@ -321,16 +375,21 @@ def tee(a, name):
             "толстые рога, больше 1 — длинные тонкие рога, загнутые дугой. "
             "Стоит в XZ лицом −Y: материал смещён в −X, вырез и рога — в +X, "
             "толщина depth по Y. wall>0 делает сквозную формочку по контуру "
-            "серпа с равномерной стенкой.",
+            "серпа с равномерной стенкой. volume=да сохраняет C-образный контур "
+            "и делает обе стороны выпуклыми по толщине depth (не плоскую вытяжку); "
+            "round дополнительно скругляет рога и кромку.",
     example="луна = crescent radius=50 thickness=18 depth=12 round=1.5\n"
-            "полумесяц = crescent radius=40 thickness=8 bite=1.25 depth=8",
-    params={"radius": "радиус внешнего круга, мм (50)",
+            "полумесяц = crescent radius=40 thickness=8 bite=1.25 depth=8\n"
+            "объёмная_луна = crescent radius=40 thickness=12 volume=да round=1",
+    params={"radius": "радиус внешнего круга/сферы, мм (50)",
             "thickness": "толщина серпа в широком месте, мм (0.36 радиуса)",
             "bite": "радиус второго круга в долях radius: 1 — классический "
                     "месяц, 0.8 — толстый, 1.3 — тонкие длинные рога (1.0)",
-            "depth": "толщина по глубине, мм (12); у стоящего знака — по Y",
-            "round": "скругление кромок, мм (0)",
-            "wall": "стенка сквозной формочки, мм; 0 — сплошной серп (0)",
+            "depth": "толщина серпа по глубине, мм (12); в volume=да задаёт "
+                     "полную толщину выпуклого тела",
+            "volume": "да — объёмный C-образный серп с выпуклыми сторонами; нет — плоская вытяжка (нет)",
+            "round": "скругление кромок/рогов, мм (0)",
+            "wall": "стенка сквозной формочки, мм; только плоский режим (0)",
             "segments": "точек по дуге (по размеру)",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом вверх — «фронт»",
             "stand": "то же, что plane=фронт: да — стоит, нет — лежит (да)",
@@ -343,6 +402,11 @@ def crescent(a, name):
     depth = float(a.num("depth", 12.0, minv=0.1))
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
     wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    volume_mode = a.boolean("volume", False)
+    if volume_mode and wall > 1e-9:
+        raise GeometryError("wall относится к плоской формочке и не совместим с volume=да.",
+                            hint="Используйте wall в плоском режиме или volume=да с wall=0: "
+                                 "объёмный серп уже является сплошным телом с C-образным контуром.")
     if thickness >= radius * 1.6:
         raise GeometryError(f"Серп толщиной {thickness:g} мм не влезает в круг "
                             f"радиусом {radius:g} мм.", hint="thickness ≈ 0.15…0.5 от radius.")
@@ -366,10 +430,21 @@ def crescent(a, name):
     if cross.is_empty() or cross.area() <= 1e-9:
         raise GeometryError("От круга ничего не осталось: уменьшите thickness.",
                             hint="thickness < radius.")
+    if volume_mode:
+        # C-образное сечение сохраняется на всех слоях. Выпуклость идёт
+        # по толщине, а не заменой луны разностью сфер: у последней проекция
+        # закрывает вогнутость и визуально превращается в лист/чашу.
+        solid = volumetric_cross(cross, depth, "луна", round_r)
+        out = make_solid(a.scene, name, _place_glyph(a, solid), a, kind="crescent")
+        out.meta["crescent_mode"] = "объёмный"
+        out.notes.append(f"объёмный серп: C-контур, выпуклые стороны, глубина {depth:g}")
+        return out
     cross = hollow_cross(cross, wall, "луна")
     thin = min(thickness, radius) if wall <= 1e-6 else wall
     solid = _flat(cross, depth, round_r, thin)
-    return make_solid(a.scene, name, _place_glyph(a, solid), a, kind="crescent")
+    out = make_solid(a.scene, name, _place_glyph(a, solid), a, kind="crescent")
+    out.meta["crescent_mode"] = "плоский"
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -494,6 +569,8 @@ def swirl(a, name):
             "depth": "толщина по глубине, мм (10); у стоящего знака — по Y",
             "round": "скругление кромок, мм (0)",
             "wall": "стенка сквозной формочки/рамки, мм; 0 — сплошная (0)",
+            "volume": "да — объёмная молния с выпуклыми сторонами (нет)",
+            "solid": "синоним volume=да",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом вверх — «фронт»",
             "stand": "то же, что plane=фронт: да — стоит, нет — лежит (да)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -504,6 +581,9 @@ def lightning(a, name):
     depth = float(a.num("depth", 10.0, minv=0.1))
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
     wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    volume_mode = a.boolean("volume", False) or a.boolean("solid", False)
+    if volume_mode and wall > 1e-6:
+        raise GeometryError("volume=да у молнии несовместим с wall: используйте сплошной объём или плоскую формочку.")
     # Классический силуэт молнии: 6 вершин, остриё сверху и снизу, ступенька
     # в середине. Координаты — доли габарита, y вверх. Проверено: контур
     # простой (не самопересекается), поэтому extrude и скругление работают.
@@ -519,8 +599,15 @@ def lightning(a, name):
     cross = hollow_cross(cross, wall, "молния")
     # самый узкий размер — толщина ступеньки (0.2 ширины), по ней и ограничиваем
     thin = min(width * 0.28, wall) if wall > 1e-6 else width * 0.28
-    solid = _flat(cross, depth, round_r, thin, size=(width, height))
-    return make_solid(a.scene, name, _place_glyph(a, solid), a, kind="lightning")
+    if volume_mode:
+        solid = volumetric_cross(cross, depth, "объёмная молния", round_r=round_r)
+    else:
+        solid = _flat(cross, depth, round_r, thin, size=(width, height))
+    out = make_solid(a.scene, name, _place_glyph(a, solid), a, kind="lightning")
+    out.meta["volume_mode"] = bool(volume_mode)
+    out.notes.append("объёмная молния с выпуклыми сторонами" if volume_mode
+                     else "плоская молния с заданной толщиной")
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -586,16 +673,17 @@ def banana(a, name):
 @op("yoke", aliases=("форма_y", "рогатка", "игрек", "y_shape", "slingshot"),
     category="Примитивы",
     summary="Буква Y / рогатка с одинаковыми ветвями. shape=капсулы — прямые "
-            "стороны и истинные полукруглые торцы; овалы — цельные эллиптические "
-            "ветви; бруски — плоские торцы. smooth округляет внутренние стыки "
-            "развилки, round — кромки толщины.",
+            "стороны и полусферические торцы настоящих объёмных капсул; "
+            "овалы — прежняя мягкая капсульная сетка с подгонкой габарита; "
+            "бруски — плоские торцы. smooth округляет внутренние стыки "
+            "развилки, round — кромки толщины или стык капсул.",
     example="рогатка = yoke height=110 spread=64 arm=16 fork=0.38 depth=14 round=2\n"
             "игрек = yoke height=110 spread=64 arm=16 shape=бруски",
     params={"height": "высота до концов ветвей, мм (110)",
             "spread": "размах без толщины ветви; полный габарит spread+arm, мм (64)",
             "arm": "толщина ветвей и ствола, мм (16)",
-            "shape": "капсулы — полукруглые торцы; овалы — эллиптические; "
-                     "бруски/параллелепипеды — плоские",
+            "shape": "капсулы — объёмные ветви с полусферическими торцами; "
+                     "овалы — прежняя мягкая капсульная сетка; бруски — плоские",
             "fork": "доля высоты, где начинается развилка: 0.2…0.7 (0.38)",
             "depth": "толщина по глубине, мм (14); у стоящего знака — по Y",
             "round": "скругление кромок, мм (0)",
@@ -629,24 +717,35 @@ def yoke(a, name):
         raise GeometryError("Развилка слишком высоко: ветвям не хватает длины.",
                             hint="fork ≈ 0.3…0.5.")
     crotch = (0.0, height * fork)
+    if shape == "капсулы":
+        # Три настоящие капсулы имеют общий объёмный стык. Их наружные
+        # полусферические торцы не срезаются и сохраняют точный габарит.
+        left = (-spread / 2.0, height - arm / 2.0)
+        right = (spread / 2.0, height - arm / 2.0)
+        pieces = [
+            _capsule_between((0.0, arm / 2.0), crotch, arm, depth),
+            _capsule_between(crotch, left, arm, depth),
+            _capsule_between(crotch, right, arm, depth),
+        ]
+        joint_extra = arm * 0.35 * smooth / 4.0 + min(round_r, arm * 0.5)
+        if joint_extra > 1e-6:
+            pieces.append(_rounded_joint(crotch, arm, depth, joint_extra))
+        solid = mf.Manifold.batch_boolean(pieces, mf.OpType.Add)
+        if solid.status() != mf.Error.NoError or len(solid.decompose()) != 1:
+            raise GeometryError("Капсульные ветви Y не соединились в одно тело.")
+        solid = _fit_solid_xy(solid, spread + arm, height)
+        out = make_solid(a.scene, name, _place_glyph(a, solid), a, kind="yoke")
+        out.meta.update(branch_shape=shape, solid_capsules=True)
+        return out
     if shape == "овалы":
-        # Три настоящих эллипса, а не иная дискретизация капсул. Ствол и
-        # ветви заходят друг в друга выше/ниже развилки: соединение объёмное,
-        # а не контакт трёх остриёв в одной точке.
+        # Овалы используют прежнюю капсульную геометрию (с мягкой
+        # подгонкой габарита), а не отдельные эллипсы с заострёнными концами.
         left = (-(spread + arm) / 2.0, height)
         right = ((spread + arm) / 2.0, height)
         inner = (0.0, crotch[1] - arm * 0.75)
-        stem = _ellipse_between((0.0, 0.0), (0.0, crotch[1] + arm * 0.75), arm)
-        l_arm = _ellipse_between(inner, left, arm)
-        r_arm = _ellipse_between(inner, right, arm)
-    elif shape == "капсулы":
-        # Центры торцевых дуг отступают на arm/2: габарит остаётся height,
-        # а все три наружных окончания одинаково круглые.
-        left = (-spread / 2.0, height - arm / 2.0)
-        right = (spread / 2.0, height - arm / 2.0)
-        stem = _stadium((0.0, arm / 2.0), crotch, arm)
-        l_arm = _stadium(crotch, left, arm)
-        r_arm = _stadium(crotch, right, arm)
+        stem = _stadium((0.0, 0.0), (0.0, crotch[1] + arm * 0.75), arm, exact=False)
+        l_arm = _stadium(inner, left, arm, exact=False)
+        r_arm = _stadium(inner, right, arm, exact=False)
     else:
         left = (-spread / 2.0, height)
         right = (spread / 2.0, height)
@@ -670,4 +769,3 @@ def yoke(a, name):
     out = make_solid(a.scene, name, _place_glyph(a, solid), a, kind="yoke")
     out.meta["branch_shape"] = shape
     return out
-

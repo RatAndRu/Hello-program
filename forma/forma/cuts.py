@@ -387,4 +387,3 @@ def hausdorff(a: mf.Manifold, b: mf.Manifold, samples: int = 1200) -> dict:
         "back": float(da.max()) if len(da) else None,
         "forward": float(db.max()) if len(db) else None,
     }
-

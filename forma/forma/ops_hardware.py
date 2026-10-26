@@ -182,6 +182,8 @@ def bolt(a, name):
             "length": "длина стержня без головки, мм (25)",
             "full": "полная длина с головкой — перекрывает length",
             "head": "потай, полукруг, шестигранник или нет (потай)",
+            "head_only": "да — оставить только головку без стержня и острия (нет)",
+            "only_head": "синоним head_only",
             "head_d": "диаметр головки (2 × d)",
             "head_h": "высота головки (у потайной считается по 90°)",
             "drive": "шлиц: крест, шлиц, звезда, шестигранник или нет (крест)",
@@ -206,6 +208,9 @@ def screw(a, name):
         head = "нет"
     else:
         raise GeometryError("Головка винта: потай, полукруг, шестигранник или нет.")
+    head_only = a.boolean("head_only", False) or a.boolean("only_head", False)
+    if head_only and head == "нет":
+        raise GeometryError("head_only=да требует головку: выберите потай, полукруг или шестигранник.")
     drive = (a.text("drive") or "крест").strip().lower()
     if drive in ("phillips", "ph", "крестовая", "крест", "philips"):
         drive = "крест"
@@ -234,39 +239,44 @@ def screw(a, name):
     # ГОСТ/DIN: у потайного самореза длина — полная, вместе с головкой;
     # у полукруглой и шестигранной головка считается отдельно. Остриё входит
     # в длину всегда, поэтому 16-мм саморез не выйдет из 18-мм доски.
-    body_len = length - (head_h + 0.35 if head == "потай" else 0.0)
-    if body_len < max(2.0, d):
+    body_len = 0.0 if head_only else length - (head_h + 0.35 if head == "потай" else 0.0)
+    if not head_only and body_len < max(2.0, d):
         raise GeometryError(
             "Саморез короче своей головки.",
             hint=f"Для головки Ø{head_d:g} мм нужна длина больше {head_h * 2 + d:g} мм.")
-    tip_len = min(tip_len, max(0.5, body_len * 0.45))
-    neck = min(neck, max(0.0, body_len - tip_len - pitch * 1.2))
-    thread_len = max(0.0, body_len - tip_len - neck)
-    if thread and thread_len < pitch * 1.5:
+    tip_len = 0.0 if head_only else min(tip_len, max(0.5, body_len * 0.45))
+    neck = 0.0 if head_only else min(neck, max(0.0, body_len - tip_len - pitch * 1.2))
+    thread_len = 0.0 if head_only else max(0.0, body_len - tip_len - neck)
+    if thread and not head_only and thread_len < pitch * 1.5:
         thread = False
-    # --- стержень -----------------------------------------------------------
-    core_r = max(0.25, d / 2.0 - min(pitch * 0.5, d * 0.14))
-    shank = _cyl(max(0.1, thread_len), core_r, 56).translate((0, 0, tip_len))
-    if thread:
-        ridge = _helix_ridge(core_r, thread_len, pitch, d / 2.0 - core_r,
-                             pitch * 0.52, steps_per_turn=44, inset=0.5,
-                             fade=min(pitch, thread_len * 0.45),
-                             fade_top=(0.0 if neck <= 0.05
-                                       else min(pitch, thread_len * 0.45)))
-        shank = shank + ridge.translate((0, 0, tip_len))
-    # Гладкая шейка находится сверху, под головкой, а не между резьбой и жалом.
-    if neck > 0.05:
-        shank = shank + _cyl(neck, d / 2.0 - (d / 2.0 - core_r) * 0.35, 56).translate(
-            (0, 0, body_len - neck))
-    # --- остриё: жало с небольшим плоским кончиком --------------------------
-    tip = mf.Manifold.cylinder(float(tip_len), float(max(core_r, 0.35)), 0.16, 40)
-    tip = tip.rotate((180, 0, 0)).translate((0, 0, tip_len))
-    body = shank + tip
+    if head_only:
+        thread = False
+        body = mf.Manifold()
+    else:
+        # --- стержень -------------------------------------------------------
+        core_r = max(0.25, d / 2.0 - min(pitch * 0.5, d * 0.14))
+        shank = _cyl(max(0.1, thread_len), core_r, 56).translate((0, 0, tip_len))
+        if thread:
+            ridge = _helix_ridge(core_r, thread_len, pitch, d / 2.0 - core_r,
+                                 pitch * 0.52, steps_per_turn=44, inset=0.5,
+                                 fade=min(pitch, thread_len * 0.45),
+                                 fade_top=(0.0 if neck <= 0.05
+                                           else min(pitch, thread_len * 0.45)))
+            shank = shank + ridge.translate((0, 0, tip_len))
+        # Гладкая шейка находится сверху, под головкой, а не между резьбой и жалом.
+        if neck > 0.05:
+            shank = shank + _cyl(neck, d / 2.0 - (d / 2.0 - core_r) * 0.35, 56).translate(
+                (0, 0, body_len - neck))
+        # --- остриё: жало с небольшим плоским кончиком ----------------------
+        tip = mf.Manifold.cylinder(float(tip_len), float(max(core_r, 0.35)), 0.16, 40)
+        tip = tip.rotate((180, 0, 0)).translate((0, 0, tip_len))
+        body = shank + tip
     # --- головка ------------------------------------------------------------
     if head == "потай":
         cap = mf.Manifold.cylinder(float(head_h), float(d / 2.0), float(head_d / 2.0), 56)
         cap = cap.translate((0, 0, body_len))
-        rim = _cyl(0.35, head_d / 2.0, 56).translate((0, 0, length - 0.35))
+        rim = _cyl(0.35, head_d / 2.0, 56).translate(
+            (0, 0, (head_h if head_only else length) - 0.35))
         cap = cap + rim
     elif head == "полукруг":
         cap = _cyl(head_h, head_d / 2.0, 56).translate((0, 0, body_len))
@@ -279,7 +289,7 @@ def screw(a, name):
         cap = _hex_prism(head_d, head_h).translate((0, 0, body_len))
     else:
         cap = None
-    body = body + cap if cap is not None else body
+    body = (cap if head_only else body + cap) if cap is not None else body
     # --- шлиц ---------------------------------------------------------------
     if drive != "нет" and head != "нет":
         # Реальная вершина после сборки: у полукруглой головки это купол,
@@ -321,10 +331,10 @@ def screw(a, name):
                   f"саморез Ø{d:g}×{length:g} (полная {total:g}) · головка {head}"
                   f" · шлиц {drive}")
     # update, а не замена словаря: make_solid уже записал локальные axes.
-    out.meta.update({"screw": True, "head": head,
+    out.meta.update({"screw": True, "head": head, "head_only": bool(head_only),
                      "head_h": head_h if cap is not None else 0.0,
                      "drive_depth": deep if drive != "нет" and head != "нет" else 0.0,
-                     "length": length, "tip": tip_len, "d": d,
+                     "length": 0.0 if head_only else length, "tip": tip_len, "d": d,
                      "neck": neck, "thread_length": thread_len if thread else 0.0})
     return out
 

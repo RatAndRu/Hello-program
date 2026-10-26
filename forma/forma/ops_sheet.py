@@ -300,7 +300,12 @@ def _fold_joint(a) -> str:
 def _accordion_path(span: float, parts: int, angle_deg: float, gap: float,
                     sharp: float, thickness: float, offset: float,
                     joint: str = "круг"):
-    radius = thickness + gap / 2.0 * (1.0 - 0.9 * sharp)
+    # Острота должна менять именно радиус, а не только число сегментов.
+    # Минимум чуть больше половины толщины: внутренняя сторона листа не
+    # проходит через центр кривизны и не заворачивается сама в себя.
+    base_radius = thickness + gap / 2.0
+    min_radius = thickness * 0.52
+    radius = min_radius + (base_radius - min_radius) * (1.0 - sharp) ** 2
     if joint == "широкая":
         radius *= 2.5
     turn = math.radians(angle_deg)
@@ -403,7 +408,9 @@ def _accordion_path(span: float, parts: int, angle_deg: float, gap: float,
             "выбранном месте, parts>2 — гармошка с чередованием сторон. axis "
             "задаёт X, Y или диагональ, direction — произвольный угол линии "
             "сгиба в плоскости. gap — просвет слоёв, sharp — от округлой "
-            "кривой до острого пресс-бигового ребра. joint добавляет три "
+            "кривой до острого пресс-бигового ребра: радиус уменьшается "
+            "квадратично до 0.52·толщины, поэтому высокая острота видна на "
+            "самой сетке. joint добавляет три "
             "более плавных профиля: широкая, сплайн и фаска.",
     example="сгиб = fold_sheet length=240 width=160 thickness=1 parts=2 angle=110 gap=2\n"
             "гармошка = fold_sheet length=360 width=160 thickness=1 parts=5 angle=135 gap=2 sharp=.4\n"
@@ -481,6 +488,8 @@ def fold_sheet(a, name):
                             hint="Увеличьте gap или уменьшите angle/parts.")
     folded = anchor(folded, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, folded, a, kind="fold_sheet")
+    out.meta["fold_radius"] = float(radius)
+    out.meta["fold_sharp"] = float(sharp)
     out.notes.append(f"сгибаемый лист: parts={parts}, angle={angle_deg:g}°, "
                      f"direction={float(direction):g}°, gap={gap:g}, sharp={sharp:g}, joint={joint}")
     return out

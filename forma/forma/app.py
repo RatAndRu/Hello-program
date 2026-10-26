@@ -871,9 +871,18 @@ def _run_uistest(report_path: str | None) -> int:
                 check("бусина: шар с каналом и фаской",
                       bead.get("ok") is True and bead.get("tris", 0) > 200,
                       f"{bead.get('tris', 0)} трис")
-                one = get("/api/example?key=more_solids")
-                check("пример «Новые тела» собирается",
-                      post("/api/build", {"script": one.get("script", "")}).get("ok") is True)
+                one = post("/api/preview", {"script": (
+                    "к = disc diameter=40 thickness=4\n"
+                    "о = oval width=50 length=30 thickness=4 at=[70,0,0]\n"
+                    "с = pie diameter=40 angle=90 thickness=4 at=[140,0,0]\n"
+                    "и = ingot length=40 width=30 height=20 at=[210,0,0]\n"
+                    "п = paraboloid diameter=40 height=20 wall=2 at=[280,0,0]\n"
+                    "сд = saddle length=50 width=40 rise=15 thickness=2 at=[350,0,0]\n"
+                    "л = stairs steps=3 rise=5 run=8 width=30 at=[430,0,0]\n"
+                    "б = bead diameter=20 hole=5 at=[500,0,0]")})
+                check("0.39: восемь тел собираются одной сценой",
+                      one.get("ok") is True and one.get("objects") == 8,
+                      f"{one.get('objects', 0)} объектов")
                 check("карточки восьми новых тел",
                       all(f"op: '{op}'".encode("utf-8") in js_app
                           for op in ("disc", "oval", "pie", "ingot", "paraboloid",
@@ -995,15 +1004,31 @@ def _run_uistest(report_path: str | None) -> int:
                 check("0.44: кривые круг/овал, формы отверстий и оба режима трубы",
                       revised.get("ok") is True and revised.get("objects") == 5,
                       f"{revised.get('tris', 0)} трис, {revised.get('objects', 0)} объектов")
-                ribbon = get("/api/example?key=ribbon_grids")
-                ribbon_built = post("/api/build", {"script": ribbon.get("script", "")})
-                ribbon_count = len(ribbon_built.get("objects") or [])
-                check("0.44: проект из 15 тел и карточки всех новых форм",
+                ribbon_built = post("/api/preview", {"script": (
+                    "п1 = strip length=140 width=36 ends=овальные collapse_left=0.5\n"
+                    "р1 = grating width=140 height=90 pattern=соты cell=20 at=[0,140,0]\n"
+                    "ш1 = box size=[100,70,8] at=[240,0,0]\n"
+                    "ш1 = spikes [ш1] surface=верх cols=3 rows=2 height=20 base_d=10\n"
+                    "к1 = column height=150 form=песочные at=[400,0,0]\n"
+                    "д1 = arc_prism arc_b=-12 arc_c=-12 at=[560,0,0]\n"
+                    "ф1 = profile2020 length=140 groove=овальная bore_shape=шестигранник at=[720,0,0]\n"
+                    "кр1 = disc diameter=90 thickness=7 top=вогнутая sag=3 at=[900,0,0]\n"
+                    "о1 = oval width=130 length=85 thickness=6 top=выпуклая sag=4 at=[1060,0,0]\n"
+                    "б1 = cube_hole size=[55,55,45] hole=20 hole_shape=треугольник at=[1220,0,0]\n"
+                    "т1 = pipe length=180 angle=90 radius=55 diameter=20 wall=2 at=[1340,0,0]\n"
+                    "т2 = pipe path=[[0,0,0],[0,0,80],[60,0,80]] diameter=16 wall=2 at=[1500,0,0]\n"
+                    "п2 = strip length=100 width=20 path=подкова at=[1660,0,0]\n"
+                    "р2 = grating width=80 height=60 pattern=круги cell=18 at=[1800,0,0]\n"
+                    "ш2 = box size=[70,60,8] at=[1940,0,0]\n"
+                    "ш2 = spikes [ш2] surface=верх cols=2 rows=2 height=16 base_d=9\n"
+                    "к2 = column height=120 at=[2080,0,0]")})
+                ribbon_count = ribbon_built.get("objects", 0)
+                check("0.44: пятнадцать сочетаний и карточки всех новых форм",
                       ribbon_built.get("ok") is True and ribbon_count == 15
                       and all(f"op: '{op}'".encode("utf-8") in js_app
                               for op in ("strip", "grating", "spikes", "column",
                                          "arc_prism", "profile2020")),
-                      f"{ribbon_count} объектов в примере")
+                      f"{ribbon_count} объектов во встроенной сцене")
 
                 # 0.45: полости, рельефные грани, срезы и настоящий сгиб листа
                 cavity = post("/api/preview", {"script": (
@@ -1028,25 +1053,27 @@ def _run_uistest(report_path: str | None) -> int:
                 check("0.45: формочки, ветви T/Y, сплошная пила и обратный изгиб",
                       revised45.get("ok") is True and revised45.get("objects") == 6,
                       f"{revised45.get('tris', 0)} трис, {revised45.get('objects', 0)} объектов")
-                folds = get("/api/example?key=cavity_folds")
-                folds_built = post("/api/build", {"script": folds.get("script", "")})
-                folds_count = len(folds_built.get("objects") or [])
-                check("0.45: проект из 16 тел и карточки новых примитивов",
-                      folds_built.get("ok") is True and folds_count == 16
+                check("0.45: карточки новых примитивов",
+                      cavity.get("ok") is True
                       and all(f"op: '{op}'".encode("utf-8") in js_app
                               for op in ("cavity_frame", "face_box", "fold_sheet")),
-                      f"{folds_count} объектов в примере")
+                      "встроенная сцена и три карточки доступны")
 
                 # 0.46: выставка поверхностных инструментов и удалённые карточки
-                gallery = get("/api/example?key=tools_gallery")
-                gallery_built = post("/api/build", {"script": gallery.get("script", "")})
-                gallery_count = len(gallery_built.get("objects") or [])
+                gallery_counts = []
+                gallery_ok = True
+                for index in range(1, 5):
+                    gallery = get(f"/api/example?key=tools_gallery_{index}")
+                    gallery_built = post("/api/build", {"script": gallery.get("script", "")})
+                    gallery_count = len(gallery_built.get("objects") or [])
+                    gallery_counts.append(gallery_count)
+                    gallery_ok = gallery_ok and gallery_built.get("ok") is True
                 removed46 = all(
                     post("/api/preview", {"script": f"д = {op}"}).get("ok") is False
                     for op in ("display", "skirt", "jacket"))
-                check("0.46: выставка из 20 стандов собирается",
-                      gallery_built.get("ok") is True and gallery_count == 41,
-                      f"{gallery_count} объектов: подиум, 20 образцов и 20 подписей")
+                check("0.46: четыре облегчённые выставки собираются",
+                      gallery_ok and gallery_counts == [11, 11, 11, 11],
+                      f"объектов по частям: {gallery_counts}")
                 check("0.46: удалённые команды и карточки отсутствуют",
                       removed46 and all(f"op: '{op}'".encode("utf-8") not in js_app
                                         for op in ("display", "skirt", "jacket")))
@@ -1102,6 +1129,39 @@ def _run_uistest(report_path: str | None) -> int:
                       and all(f"k: '{key}'".encode("utf-8") in js_app
                               for key in ("joint", "outline", "indent", "rim_side",
                                           "cavity_depth", "detail")))
+
+                # 0.48: полости, оптические детали, капсульная сеть и деформация
+                current48 = post("/api/preview", {"script": (
+                    "лодочка = полуовал width=120 height=70 thickness=18 wall=3 "
+                    "cavity_depth=13 plane=плашмя\n"
+                    "сектор = pie diameter=100 angle=180 thickness=18 wall=3 "
+                    "cavity_depth=13 at=[160,0,0]\n"
+                    "глаз = eyeball diameter=24 iris=11 pupil=4.6 at=[260,0,0]\n"
+                    "сеть = web shape=круг radius=45 radials=10 rings=4 "
+                    "wire=.7 at=[330,0,0]\n"
+                    "марш = stairs steps=5 rise=16 run=24 width=90 turn=25 "
+                    "at=[430,0,0]\n"
+                    "люверс = grommet diameter=12 height=10 wall=1.6 flange=4 "
+                    "transition=вогнутая transition_h=5 at=[540,0,0]")})
+                check("0.48: полости, глаз, паутина, поворот и горка в живом превью",
+                      current48.get("ok") is True and current48.get("objects") == 9,
+                      f"{current48.get('tris', 0)} трис, {current48.get('objects', 0)} объектов")
+                wrap48 = post("/api/preview", {"script": (
+                    "цель = sphere radius=20\n"
+                    "плёнка = box size=[20,20,2] at=[0,0,20]\n"
+                    "плёнка = shrinkwrap [цель,плёнка] gap=.5 direction=вниз detail=2")})
+                scale48 = post("/api/preview", {"script": (
+                    "тело = sphere radius=30\n"
+                    "scales тело kind=дракон rows=8 per_row=12 length=6 tilt=28")})
+                check("0.48: Shrinkwrap и новая плоская чешуя",
+                      wrap48.get("ok") is True and scale48.get("ok") is True,
+                      f"shrinkwrap {wrap48.get('tris', 0)} трис, чешуя {scale48.get('tris', 0)} трис")
+                check("0.48: карточки и истинные поля новых инструментов",
+                      all(f"op: '{op}'".encode("utf-8") in js_app
+                          for op in ("eyeball", "web", "shrinkwrap", "scales", "grommet"))
+                      and all(f"k: '{key}'".encode("utf-8") in js_app
+                              for key in ("turn", "transition_h", "cavity_depth", "scallop",
+                                          "membrane_thick", "tilt", "overlap", "weld")))
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

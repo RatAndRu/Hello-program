@@ -308,7 +308,15 @@ def face_box(a, name):
         raise GeometryError("face_box: неизвестный corner.", hint="Например, перед_право_верх.")
     if corners_mode not in ("один", "верх", "низ", "все", "нет"):
         raise GeometryError("face_box: corners=один, верх, низ, все или нет.")
-    if corner_cut > 1e-6 and corners_mode != "нет":
+    def cut_corners(body):
+        """Срез выполняется последним: выпуклая капа тоже обрезается.
+
+        Раньше капы добавлялись уже после среза и возвращали материал за
+        плоскость фаски. Теперь режущие полупространства проходят по готовому
+        телу со всеми выпуклостями и вогнутостями.
+        """
+        if corner_cut <= 1e-6 or corners_mode == "нет":
+            return body
         limit = min(dims) * (0.95 if corners_mode == "один" else 0.48)
         if corner_cut > limit:
             raise GeometryError(f"corner_cut не должен превышать {limit:g} мм для этого режима.")
@@ -319,14 +327,35 @@ def face_box(a, name):
         for signs in selected:
             signs = np.asarray(signs, dtype=float)
             corner = signs * dims / 2.0
-            inward = []
-            for axis in range(3):
-                p = corner.copy()
-                p[axis] -= signs[axis] * corner_cut
-                inward.append(p)
-            outside = corner + signs * 0.05
-            cutter = mf.Manifold.hull_points(np.asarray([outside, *inward], dtype=np.float64))
-            solid = solid - cutter
+            # Пересекаем большой ограничивающий бокс с полупространством
+            # среза. Одного тетраэдра «наружный угол + три точки» мало:
+            # выпуклая капа выходит за исходные грани и могла остаться над
+            # фаской. Здесь в режущий hull попадают и точки пересечения всех
+            # рёбер бокса с плоскостью, поэтому обрезается вся капа.
+            pad = float(np.max(dims) * 2.0 + relief * 4.0 + corner_cut * 2.0 + 1.0)
+            lo = -dims / 2.0 - pad
+            hi = dims / 2.0 + pad
+            box_points = []
+            values = []
+            for mask in range(8):
+                p = np.asarray([hi[axis] if mask & (1 << axis) else lo[axis]
+                                for axis in range(3)], dtype=np.float64)
+                box_points.append(p)
+                values.append(float(np.dot(signs, p - corner) + corner_cut))
+            hull_points = [p for p, value in zip(box_points, values) if value >= -1e-8]
+            for i in range(8):
+                for axis in range(3):
+                    j = i ^ (1 << axis)
+                    if j <= i:
+                        continue
+                    f0, f1 = values[i], values[j]
+                    if f0 * f1 < 0.0 and abs(f0 - f1) > 1e-12:
+                        t = f0 / (f0 - f1)
+                        hull_points.append(box_points[i] * (1.0 - t) + box_points[j] * t)
+            if hull_points:
+                cutter = mf.Manifold.hull_points(np.asarray(hull_points, dtype=np.float64))
+                body = body - cutter
+        return body
 
     if mode != "ровный" and faces:
         face_dims = {
@@ -348,6 +377,7 @@ def face_box(a, name):
                 solid = solid - _on_face(feature, face, dims[axis] / 2.0)
             else:
                 solid = solid + _on_face(feature, face, dims[axis] / 2.0)
+    solid = cut_corners(solid)
     if solid.is_empty() or solid.volume() <= 1e-6:
         raise GeometryError("face_box: операции удалили всё тело.")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))

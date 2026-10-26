@@ -20,7 +20,8 @@ import numpy as np
 from .errors import GeometryError
 from .geometry import circle_profile, sweep_solid
 from .ops import anchor, make_solid, op, stand_flat_sign
-from .shape_features import rounded_extrude, transition_radius, varied_edge_thickness
+from .shape_features import (open_top_cavity, rounded_extrude, transition_radius,
+                             varied_edge_thickness)
 
 
 @op("крюк", aliases=("крючок", "hook", "крюк_подвес", "вешалка_крюк"),
@@ -148,15 +149,18 @@ def hook(a, name):
 @op("полуовал", aliases=("полуовальный", "полуэллипс", "half_oval", "semioval",
                         "пластина_полуовал", "ушко_пластина"),
     category="Примитивы",
-    summary="Плоская пластина-полуовал: снизу прямая кромка, сверху дуга "
-            "эллипса; по центру можно сделать круглое отверстие, а можно "
-            "оставить сплошной. Подвес, накладка, подпятник, ушко, шильдик.",
+    summary="Пластина-полуовал: снизу прямая кромка, сверху дуга эллипса. "
+            "wall>0 вырезает объём изнутри и открывает полость с лицевой "
+            "стороны: получается форма-лодочка, а не нарисованное углубление. "
+            "отверстие hole остаётся независимым.",
     example="подвес = полуовал width=90 height=55 thickness=8 hole=16\n"
-            "накладка = полуовал width=140 height=60 thickness=5 hole=0\n"
-            "ушко = полуовал width=40 height=24 thickness=4 hole=10 at=[0,0,80]",
+            "лодочка = полуовал width=160 height=90 thickness=24 wall=3 cavity_depth=19 plane=плашмя\n"
+            "накладка = полуовал width=140 height=60 thickness=5 hole=0",
     params={"width": "ширина по прямой кромке, мм (120)",
             "height": "высота полуовала, мм (70)",
             "thickness": "толщина пластины, мм (8)",
+            "wall": "толщина стенки и минимального дна, мм (0 — сплошной)",
+            "cavity_depth": "глубина полости, мм (thickness − wall)",
             "hole": "диаметр отверстия, мм (0 — без отверстия)",
             "hole_y": "где отверстие по высоте, 0…1 от низа (0.45)",
             "edge": "толщина только эллиптической дуги, мм (= thickness)",
@@ -172,6 +176,11 @@ def half_oval(a, name):
     width = float(a.num("width", 120.0, minv=0.5, maxv=5000.0))
     height = float(a.num("height", 70.0, minv=0.5, maxv=5000.0))
     thickness = float(a.num("thickness", 8.0, minv=0.2, maxv=1000.0))
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    cavity_depth = float(a.num("cavity_depth", thickness - wall if wall > 0 else 0.0,
+                               minv=0.0) or 0.0)
+    if wall <= 1e-9 and cavity_depth > 1e-9:
+        raise GeometryError("полуовал: cavity_depth требует wall>0.")
     edge = float(a.num("edge", thickness, minv=0.05))
     edge_band = float(a.num("edge_band", height * 0.25, minv=0.05))
     hole = float(a.num("hole", 0.0, minv=0.0, maxv=max(width, height)))
@@ -188,6 +197,7 @@ def half_oval(a, name):
     # Скругляем только наружный контур до сверления: отверстие и обе
     # широкие лицевые плоскости не подвергаются Loop-деформации.
     solid = rounded_extrude(cs, thickness, edge_r, "полуовал")
+    solid = open_top_cavity(solid, cs, thickness, wall, cavity_depth, "полуовал")
     if abs(edge - thickness) > 1e-9:
         def only_ellipse_arc(points):
             x, y = points[:, 0], points[:, 1]
@@ -225,4 +235,7 @@ def half_oval(a, name):
                         f"отверстие {hole:g} мм", a.cmd.line)
     saved = make_solid(a.scene, name, solid, a, kind="полуовал")
     saved.notes.append(f"полуовал {width:g}×{height:g}, отверстие {hole:g} мм")
+    if wall > 0:
+        saved.meta.update(wall=wall, cavity_depth=cavity_depth, cavity="открыта с лицевой стороны")
+        saved.notes.append(f"полость {cavity_depth:g} мм, стенка/дно ≥ {wall:g} мм")
     return saved

@@ -55,19 +55,21 @@ class RemovedCatalogTest(unittest.TestCase):
             self.assertNotIn(f"op: '{name}'", app)
 
     def test_removed_projects_are_absent(self):
-        self.assertEqual(len(EXAMPLES), 24)
+        self.assertEqual(len(EXAMPLES), 21)
         for key in REMOVED_PROJECTS:
             with self.subTest(key=key):
                 self.assertFalse((ROOT / "examples" / f"{key}.forma").exists())
                 with self.assertRaises(Exception):
                     load_example(key)
 
-    def test_tool_gallery_builds_and_checks_itself(self):
-        result = ok(load_example("tools_gallery"), analyze=True)
-        self.assertEqual(len(result.scene.objects), 41)
-        checks = result.analysis["checks"]
-        self.assertEqual(len(checks), 29)
-        self.assertTrue(all(c["ok"] for c in checks))
+    def test_tool_galleries_build_and_check_themselves(self):
+        for index, check_count in enumerate((9, 8, 10, 10), 1):
+            with self.subTest(gallery=index):
+                result = ok(load_example(f"tools_gallery_{index}"), analyze=True)
+                self.assertEqual(len(result.scene.objects), 11)
+                checks = result.analysis["checks"]
+                self.assertEqual(len(checks), check_count)
+                self.assertTrue(all(c["ok"] for c in checks))
 
 
 class PorousGeometryTest(unittest.TestCase):
@@ -123,22 +125,26 @@ class PorousGeometryTest(unittest.TestCase):
 
 
 class ShavePointTest(unittest.TestCase):
-    def test_shave_is_a_plane(self):
-        m = one("о = box size=[80,60,40]\nр = shave [о] depth=8\n")
+    def test_cut_plane_is_a_plane(self):
+        m = one("о = box size=[80,60,40]\nр = cut_plane [о] depth=8\n")
         self.assertTrue(valid(m))
         self.assertAlmostEqual(m.bounding_box()[5], 32.0, delta=1e-6)
         self.assertAlmostEqual(m.slice(32.0 - 1e-4).area(), 80.0 * 60.0, delta=0.1)
 
     def test_perimeter_groove_profiles_are_distinct(self):
         volumes = {}
-        for profile in ("прямоугольная", "овальная", "треугольная"):
+        for profile in ("прямоугольная", "овальная", "треугольная", "трапециевидная"):
             m = one("о = box size=[80,60,40]\n"
                     f"р = shave [о] depth=8 groove={profile} "
                     "groove_width=5 groove_depth=2 groove_offset=4 segments=64\n")
             self.assertTrue(valid(m))
+            self.assertEqual(len([p for p in m.decompose() if p.volume() > 1e-6]), 1)
+            self.assertFalse(any(p.volume() < -1e-6 for p in m.decompose()))
+            self.assertAlmostEqual(m.bounding_box()[5], 40.0, delta=1e-6)
             volumes[profile] = m.volume()
         self.assertLess(volumes["прямоугольная"], volumes["овальная"])
-        self.assertLess(volumes["овальная"], volumes["треугольная"])
+        self.assertLess(volumes["овальная"], volumes["трапециевидная"])
+        self.assertLess(volumes["трапециевидная"], volumes["треугольная"])
 
     def test_point_is_one_valid_body_with_one_tip(self):
         m = one("о = cylinder radius=10 height=90 segments=64\n"

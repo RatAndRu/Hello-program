@@ -812,6 +812,42 @@ def _leaf_outline(kind: str, length: float, width: float, count: int,
         points += [(x, -w) for x, w in reversed(upper)]
         if kind == "овал":
             return _dedupe(points, 1e-5)
+    elif kind == "сакура":
+        # Лепесток вишни: широкие округлые лопасти и характерная выемка
+        # на кончике. Это не ещё один овал с другим именем: две вершины
+        # кончика разнесены, а между ними контур действительно входит внутрь.
+        def bezier(p0, p1, p2, p3, n):
+            out = []
+            for i in range(n):
+                t = i / n
+                u = 1.0 - t
+                out.append((u ** 3 * p0[0] + 3 * u * u * t * p1[0]
+                            + 3 * u * t * t * p2[0] + t ** 3 * p3[0],
+                            u ** 3 * p0[1] + 3 * u * u * t * p1[1]
+                            + 3 * u * t * t * p2[1] + t ** 3 * p3[1]))
+            return out
+
+        n = max(8, count // 3)
+        root = (-0.50 * length, 0.0)
+        upper_mid = (-0.02 * length, 0.50 * width)
+        upper_tip = (0.48 * length, 0.16 * width)
+        notch = (0.40 * length, 0.0)
+        lower_tip = (0.48 * length, -0.16 * width)
+        lower_mid = (-0.02 * length, -0.50 * width)
+        points = [root]
+        points += bezier(root, (-0.36 * length, 0.04 * width),
+                         (-0.22 * length, 0.56 * width), upper_mid, n)
+        points += bezier(upper_mid, (0.22 * length, 0.54 * width),
+                         (0.46 * length, 0.30 * width), upper_tip, n)
+        points += bezier(upper_tip, (0.54 * length, 0.10 * width),
+                         (0.50 * length, 0.025 * width), notch, max(5, n // 2))
+        points += bezier(notch, (0.50 * length, -0.025 * width),
+                         (0.54 * length, -0.10 * width), lower_tip, max(5, n // 2))
+        points += bezier(lower_tip, (0.46 * length, -0.30 * width),
+                         (0.22 * length, -0.54 * width), lower_mid, n)
+        points += bezier(lower_mid, (-0.22 * length, -0.56 * width),
+                         (-0.36 * length, -0.04 * width), root, n)
+        points.append(root)
     elif kind == "липа":
         def bezier(p0, p1, p2, p3, n):
             out = []
@@ -888,15 +924,16 @@ def _leaf_outline(kind: str, length: float, width: float, count: int,
 
 @op("leaf", aliases=("листок", "лист_растения", "лист_дерева", "leaf_plant"),
     category="Примитивы",
-    summary="Лист растения с толщиной и изгибом. kind/shape: овал, "
-            "липа/сердцевидный, дуб, клен или заострённый — контуры действительно "
-            "различаются выемками и лопастями. У клёна мелкие зубцы повторяются "
-            "по seed, jitter меняет их разброс, edge сужает наружную кромку.",
+    summary="Лист растения или лепесток с толщиной и изгибом. kind/shape: овал, "
+            "липа/сердцевидный, дуб, клен, заострённый или сакура — контуры "
+            "действительно различаются выемками и лопастями. У сакуры на кончике "
+            "две округлые лопасти и входящая внутрь выемка. У клёна мелкие зубцы "
+            "повторяются по seed, jitter меняет их разброс, edge сужает кромку.",
     example="лист = leaf length=90 width=45 thickness=2 curl=0.25\n"
             "клен = leaf length=90 width=70 kind=клен\n"
-            "липа = leaf length=80 width=65 kind=липа",
+            "лепесток = leaf length=42 width=30 kind=сакура curl=0.12",
     params={"length": "длина, мм (90)", "width": "ширина, мм (45)",
-            "kind": "овал, липа/сердцевидный, дуб, клен, заострённый",
+            "kind": "овал, липа/сердцевидный, дуб, клен, заострённый, сакура",
             "shape": "синоним kind; если задан, перекрывает kind",
             "thickness": "основная толщина, мм (2)", "curl": "изгиб 0..1 (0.25)",
             "edge": "толщина наружной кромки, мм (= thickness); меньше — сужение",
@@ -923,9 +960,11 @@ def leaf(a, name):
         "maple": "клен", "заострённый": "заострённый",
         "заостренный": "заострённый", "острый": "заострённый",
         "pointed": "заострённый", "lance": "заострённый",
+        "сакура": "сакура", "sakura": "сакура", "вишня": "сакура",
+        "cherry": "сакура", "лепесток": "сакура", "petal": "сакура",
     }.get(raw_kind)
     if kind is None:
-        raise GeometryError("leaf: kind=овал, липа, дуб, клен или заострённый.")
+        raise GeometryError("leaf: kind=овал, липа, дуб, клен, заострённый или сакура.")
     seed = int(a.num("seed", 1, minv=0) or 0)
     jitter = float(a.num("jitter", 0.18 if kind == "клен" else 0.0,
                          minv=0.0, maxv=1.0) or 0.0)
@@ -961,6 +1000,244 @@ def leaf(a, name):
         body = manifold_from_arrays(out, faces, "лист")
     return make_solid(a.scene, name, _placed(a, stand_flat_sign(a, body)), a,
                       kind="leaf")
+
+
+# --------------------------------------------------------------------------- #
+#  Филлотаксис: бутон, листья на стебле и сердцевина
+# --------------------------------------------------------------------------- #
+def _flower_canonical(base):
+    """Приводит выбранную деталь к виду «корень в нуле, длина по +X».
+
+    Лист и лепесток уже имеют такую ось. Для цилиндра или другого выбранного
+    объекта самая длинная ось становится осью роста; это позволяет использовать
+    один и тот же инструмент и для лепестков, и для тычинок, не угадывая форму
+    за пользователя. Перестановки осей — proper rotation, поэтому ориентация
+    треугольников и объём исходной сетки сохраняются.
+    """
+    verts, faces = manifold_mesh(base.manifold)
+    verts = np.asarray(verts, dtype=np.float64).copy()
+    if not len(verts):
+        raise GeometryError("Для компоновки нужен непустой объект.")
+    bb = base.manifold.bounding_box()
+    dims = np.asarray([bb[3] - bb[0], bb[4] - bb[1], bb[5] - bb[2]])
+    axis = int(np.argmax(dims))
+    if axis == 1:
+        # old +Y -> new +X, old +X -> new −Y
+        verts = verts[:, [1, 0, 2]] * np.asarray([1.0, -1.0, 1.0])
+    elif axis == 2:
+        # old +Z -> new +X, old +X -> new −Z
+        verts = verts[:, [2, 1, 0]] * np.asarray([1.0, 1.0, -1.0])
+    lo = verts.min(axis=0)
+    hi = verts.max(axis=0)
+    verts[:, 0] -= lo[0]
+    verts[:, 1] -= (lo[1] + hi[1]) / 2.0
+    verts[:, 2] -= (lo[2] + hi[2]) / 2.0
+    return manifold_from_arrays(verts, faces, "компоновка цветка"), dims[axis], max(dims)
+
+
+def _flower_layout(value):
+    raw = (value or "золотой").strip().lower()
+    if raw in ("золотой", "золотое", "золотого", "golden", "spiral", "филлотаксис"):
+        return "золотой"
+    if raw in ("кольца", "кольцо", "rings", "ring", "равномерно", "ровно"):
+        return "кольца"
+    raise GeometryError("layout=золотой (угол 137.508°) или кольца.")
+
+
+def _flower_add_copies(a, name, base, pieces, root, kind):
+    """Создаёт отдельные тела, а не склеивает лепестки в нечитаемый ком."""
+    if not pieces:
+        raise GeometryError("Компоновка не создала ни одной копии.")
+    if a.boolean("center", False):
+        lo = min(float(p.bounding_box()[2]) for p in pieces)
+        hi = max(float(p.bounding_box()[5]) for p in pieces)
+        at_z = float(a.vec("at", 3, default=(0, 0, 0))[2])
+        dz = at_z - (lo + hi) / 2.0
+        pieces = [p.translate((0.0, 0.0, dz)) for p in pieces]
+    made = []
+    for i, piece in enumerate(pieces):
+        obj_name = root if i == 0 else f"{root}_{i + 1:02d}"
+        out = make_solid(a.scene, obj_name, piece, a, base=base, kind=kind)
+        made.append(out)
+    a.scene.consume(base)
+    return made
+
+
+@op("flower", aliases=("цветок", "бутон", "лепестки", "филлотаксис",
+                       "phyllotaxis", "arrange_flower", "flower_arrange"),
+    category="Массивы и преобразования",
+    summary="Компоновка выбранного объекта в бутон/цветок или вдоль стебля. "
+            "Каждая копия остаётся отдельным телом: count — элементов в ряду, "
+            "rows — рядов/узлов. Золотое расположение использует угол "
+            "137.508°; openness=0 — закрытый ночной бутон, openness=1 — "
+            "раскрытый дневной цветок. Для mode=стебель листья идут по узлам "
+            "вверх по +Z. Корень детали определяется по её самой длинной оси.",
+    example="лепесток = leaf kind=сакура length=42 width=30 curl=0.12\n"
+            "бутон = flower [лепесток] mode=бутон count=5 rows=3 openness=0.85\n"
+            "лист = leaf length=55 width=22\n"
+            "стебель_листья = flower [лист] mode=стебель count=1 rows=7 openness=0.65",
+    params={"objects": "один выбранный объект — лепесток или лист",
+            "mode": "бутон/цветок или стебель (бутон)",
+            "count": "элементов в каждом ряду/узле (5; для стебля 1)",
+            "rows": "рядов бутона или узлов стебля (3; для стебля 7)",
+            "layout": "золотой — шаг 137.508°, кольца — равномерные ряды",
+            "openness": "раскрытость 0..1 (0.85): 0 — ночной закрытый, 1 — дневной",
+            "radius": "радиальный разброс от оси, мм (по размеру детали)",
+            "row_gap": "расстояние между рядами/узлами по Z, мм (по длине детали)",
+            "scale": "единый масштаб каждой копии (1)",
+            "phase": "поворот всего расположения, градусы (0)",
+            "at": "положение основания компоновки [x,y,z]",
+            "center": "центрировать всю компоновку по Z относительно at"},
+    positional=["objects"])
+def flower(a, name):
+    base = _one(a, "flower")
+    mode_raw = (a.text("mode") or "бутон").strip().lower()
+    if mode_raw in ("бутон", "цветок", "bud", "flower", "petals", "лепестки"):
+        mode = "бутон"
+    elif mode_raw in ("стебель", "stem", "листья", "leaves"):
+        mode = "стебель"
+    else:
+        raise GeometryError("flower: mode=бутон или стебель.")
+    count_default = 5 if mode == "бутон" else 1
+    rows_default = 3 if mode == "бутон" else 7
+    count = int(a.num("count", count_default, minv=1, maxv=64) or count_default)
+    rows = int(a.num("rows", rows_default, minv=1, maxv=24) or rows_default)
+    if count * rows > 400:
+        raise GeometryError("В одной компоновке не больше 400 копий.",
+                            hint="Уменьшите count или rows; для больших массивов используйте несколько групп.")
+    layout = _flower_layout(a.text("layout"))
+    openness = float(a.num("openness", 0.85, minv=0.0, maxv=1.0) or 0.0)
+    scale = float(a.num("scale", 1.0, minv=0.01) or 1.0)
+    phase = float(a.num("phase", 0.0) or 0.0)
+    canonical, length, width = _flower_canonical(base)
+    radius_default = max(0.0, width * (0.52 if mode == "бутон" else 0.38))
+    radius = float(a.num("radius", radius_default, minv=0.0) or 0.0)
+    gap_default = length * (0.18 if mode == "бутон" else 0.65)
+    row_gap = float(a.num("row_gap", gap_default, minv=0.0) or 0.0)
+    at = np.asarray(a.vec("at", 3, default=(0, 0, 0)), dtype=np.float64)
+    golden = 137.50776405003785
+    pieces = []
+    for row in range(rows):
+        for j in range(count):
+            n = row * count + j
+            if layout == "золотой":
+                phi = phase + golden * n
+            else:
+                phi = phase + 360.0 * j / count + (180.0 / count if row % 2 else 0.0)
+            if mode == "бутон":
+                # Внутренние ряды ниже и закрыты сильнее; наружные раскрываются
+                # шире, но при openness=0 всё равно остаются почти вертикальными.
+                row_factor = 0.60 + 0.40 * (row + 1) / rows
+                radial = radius * row_factor * (0.30 + 0.70 * openness)
+                tilt = (7.0 + 78.0 * openness) * (0.82 + 0.18 * (row + 1) / rows)
+                z = row * row_gap
+            else:
+                radial = radius * (0.72 + 0.28 * openness)
+                tilt = 18.0 + 62.0 * openness
+                z = row * row_gap
+            piece = canonical.scale((scale, scale, scale))
+            # Длина +X -> ось роста +Z, затем наклон наружу и азимут вокруг Z.
+            piece = piece.rotate((0.0, -90.0, 0.0)).rotate((0.0, tilt, 0.0))
+            piece = piece.rotate((0.0, 0.0, phi))
+            angle = math.radians(phi)
+            piece = piece.translate((float(at[0] + radial * math.cos(angle)),
+                                     float(at[1] + radial * math.sin(angle)),
+                                     float(at[2] + z)))
+            pieces.append(piece)
+    root = name or a.scene.unique_name("бутон" if mode == "бутон" else "листья")
+    made = _flower_add_copies(a, name, base, pieces, root, "flower")
+    for i, out in enumerate(made):
+        row, j = divmod(i, count)
+        n = i
+        phi = phase + (golden * n if layout == "золотой" else
+                       360.0 * j / count + (180.0 / count if row % 2 else 0.0))
+        out.meta["flower"] = {"mode": mode, "row": row, "index": j,
+                               "angle_deg": phi % 360.0, "golden_angle_deg": golden,
+                               "openness": openness, "layout": layout}
+        out.notes.append(f"филлотаксис: {mode}, ряд {row + 1}, угол {phi % 360.0:.3f}°, "
+                         f"openness={openness:g}")
+    return made[0]
+
+
+@op("flower_center", aliases=("тычинки", "пестики", "stamens", "pistils",
+                              "flower_stamens", "flower_pistils"),
+    category="Массивы и преобразования",
+    summary="Размещает выбранный объект как тычинки или пестики внутри бутона. "
+            "Копии не склеиваются: count задаёт число в кольце, rows — кольца, "
+            "radius и height — радиус и шаг по высоте. В режиме тычинок "
+            "openness наклоняет элементы наружу; пестики остаются почти вертикальными. "
+            "Золотой шаг между элементами — 137.508°.",
+    example="тычинка = cylinder radius=1.2 height=24 segments=12\n"
+            "сердцевина = flower_center [тычинка] kind=тычинки count=12 rows=2 radius=12 openness=0.8",
+    params={"objects": "один выбранный объект для копирования",
+            "kind": "тычинки или пестики (тычинки)",
+            "count": "элементов в кольце (12; для пестиков 1)",
+            "rows": "колец (2; для пестиков 1)",
+            "layout": "золотой — 137.508°, кольца — равномерно",
+            "radius": "радиус размещения, мм (по размеру детали; пестики ближе к оси)",
+            "height": "шаг колец по Z, мм (по длине детали)",
+            "openness": "раскрытость 0..1 (0.8), влияет на наклон и разброс",
+            "scale": "единый масштаб каждой копии (1)",
+            "phase": "поворот всего расположения, градусы (0)",
+            "at": "положение основания [x,y,z]", "center": "центрировать по Z"},
+    positional=["objects"])
+def flower_center(a, name):
+    base = _one(a, "flower_center")
+    raw_kind = (a.text("kind") or a.text("role") or "тычинки").strip().lower()
+    if raw_kind in ("тычинки", "тычинка", "stamen", "stamens"):
+        role = "тычинки"
+    elif raw_kind in ("пестики", "пестик", "pistil", "pistils"):
+        role = "пестики"
+    else:
+        raise GeometryError("flower_center: kind=тычинки или пестики.")
+    count_default = 12 if role == "тычинки" else 1
+    rows_default = 2 if role == "тычинки" else 1
+    count = int(a.num("count", count_default, minv=1, maxv=96) or count_default)
+    rows = int(a.num("rows", rows_default, minv=1, maxv=16) or rows_default)
+    if count * rows > 400:
+        raise GeometryError("В сердцевине не больше 400 копий.")
+    layout = _flower_layout(a.text("layout"))
+    openness = float(a.num("openness", 0.8, minv=0.0, maxv=1.0) or 0.0)
+    scale = float(a.num("scale", 1.0, minv=0.01) or 1.0)
+    phase = float(a.num("phase", 0.0) or 0.0)
+    canonical, length, width = _flower_canonical(base)
+    radius_default = width * (0.60 if role == "тычинки" else 0.18)
+    radius = float(a.num("radius", radius_default, minv=0.0) or 0.0)
+    height = float(a.num("height", length * 0.24, minv=0.0) or 0.0)
+    at = np.asarray(a.vec("at", 3, default=(0, 0, 0)), dtype=np.float64)
+    golden = 137.50776405003785
+    pieces = []
+    for row in range(rows):
+        for j in range(count):
+            n = row * count + j
+            phi = phase + (golden * n if layout == "золотой" else
+                           360.0 * j / count + (180.0 / count if row % 2 else 0.0))
+            ring = (row + 1) / rows
+            radial = radius * ring * (0.35 + 0.65 * openness)
+            if role == "пестики":
+                radial *= 0.35
+                tilt = 8.0 * openness
+            else:
+                tilt = 4.0 + 34.0 * openness
+            piece = canonical.scale((scale, scale, scale))
+            piece = piece.rotate((0.0, -90.0, 0.0)).rotate((0.0, tilt, 0.0))
+            piece = piece.rotate((0.0, 0.0, phi))
+            angle = math.radians(phi)
+            piece = piece.translate((float(at[0] + radial * math.cos(angle)),
+                                     float(at[1] + radial * math.sin(angle)),
+                                     float(at[2] + row * height)))
+            pieces.append(piece)
+    root = name or a.scene.unique_name("тычинки" if role == "тычинки" else "пестики")
+    made = _flower_add_copies(a, name, base, pieces, root, "flower_center")
+    for i, out in enumerate(made):
+        row, j = divmod(i, count)
+        phi = phase + (golden * i if layout == "золотой" else
+                       360.0 * j / count + (180.0 / count if row % 2 else 0.0))
+        out.meta["flower_center"] = {"kind": role, "row": row, "index": j,
+                                      "angle_deg": phi % 360.0,
+                                      "golden_angle_deg": golden, "openness": openness}
+        out.notes.append(f"{role}: кольцо {row + 1}, угол {phi % 360.0:.3f}°")
+    return made[0]
 
 
 # --------------------------------------------------------------------------- #

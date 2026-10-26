@@ -102,9 +102,11 @@ class TestSurfaceTools(unittest.TestCase):
                 self.assertLess(s.manifold.volume(), 4 / 3 * 3.14159 * 35 ** 3)
 
     def test_scales_lie_on_surface(self):
-        s = last(ok("ш = sphere radius=30\nscales ш rows=8 per_row=12 length=6"))
+        s = last(ok("ш = sphere radius=30\nscales ш kind=рыба rows=8 per_row=12 length=6 overlap=.45"))
         self.assertEqual(parts(s.manifold), 1)
         self.assertGreater(s.manifold.volume(), 4 / 3 * 3.14159 * 30 ** 3 * 0.95)
+        self.assertTrue(s.meta["flat"])
+        self.assertAlmostEqual(s.meta["row_step"], 6 * (1 - .45))
 
     def test_lattice_modes(self):
         for mode in ("прямоуг", "ромб", "соты"):

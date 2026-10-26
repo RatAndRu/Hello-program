@@ -191,27 +191,78 @@ def _placed(a, solid: mf.Manifold) -> mf.Manifold:
 # --------------------------------------------------------------------------- #
 #  Звезда
 # --------------------------------------------------------------------------- #
+def volumetric_cross(cross: mf.CrossSection, depth: float, what: str,
+                     round_r: float = 0.0) -> mf.Manifold:
+    """Настоящий объёмный значок: выпуклые лицевые стороны, а не только extrude.
+
+    Тонкая сердцевина сохраняет исходный контур, а эллипсоидное преобразование
+    Минковского формирует две плавные выпуклые стороны. После операции габарит
+    XY возвращается к габариту контура, поэтому width/height остаются честными.
+    """
+    depth = float(depth)
+    if depth <= 0.1:
+        raise GeometryError(f"{what}: depth должен быть больше 0.1 мм для объёмного режима.")
+    rz = depth * 0.45
+    core_depth = depth - 2.0 * rz
+    rxy = max(depth * 0.20, float(round_r or 0.0))
+    # Не даём радиусу стереть тонкие ступени молнии/лучи звезды.
+    rxy = min(rxy, depth * 0.42)
+    core = cross.extrude(core_depth).translate((0.0, 0.0, rz))
+    ball = mf.Manifold.sphere(1.0, 32).transform(np.asarray(
+        [[rxy, 0.0, 0.0, 0.0], [0.0, rxy, 0.0, 0.0], [0.0, 0.0, rz, 0.0]], dtype=float))
+    solid = core.minkowski_sum(ball)
+    bb0 = cross.bounds()
+    bb = solid.bounding_box()
+    sx = (bb0[2] - bb0[0]) / max(bb[3] - bb[0], 1e-9)
+    sy = (bb0[3] - bb0[1]) / max(bb[4] - bb[1], 1e-9)
+    cx0, cy0 = (bb0[0] + bb0[2]) / 2.0, (bb0[1] + bb0[3]) / 2.0
+    cx, cy = (bb[0] + bb[3]) / 2.0, (bb[1] + bb[4]) / 2.0
+    mat = np.asarray([[sx, 0.0, 0.0, cx0 - sx * cx],
+                      [0.0, sy, 0.0, cy0 - sy * cy], [0.0, 0.0, 1.0, 0.0]], dtype=float)
+    return ensure_volume(solid.transform(mat), what)
+
+
 def _star_loft(points, depth: float, twist: float, bevel: float, smooth: float,
                outer: float, blade_weights=None, blade: float = 0.0,
-               pad: float = 0.0) -> mf.Manifold:
-    """Единый триангулированный loft без ступенчатых булевых слоёв."""
+               pad: float = 0.0, volume: bool = False) -> mf.Manifold:
+    """Единый триангулированный loft без ступенчатых булевых слоёв.
+
+    В объёмном режиме кромка получает выпуклый профиль даже при bevel=0.
+    Профиль, закрутка и blade применяются к одним и тем же кольцам сетки,
+    поэтому параметры не исчезают при переключении volume.
+    """
     pts = np.asarray(points, dtype=np.float64)
     if _signed_area([tuple(p) for p in pts]) < 0.0:
         pts = pts[::-1]
     n = len(pts)
     weights = np.zeros(n) if blade_weights is None else np.asarray(blade_weights, dtype=float)
-    layers = max(18, min(72, 18 + int(abs(twist) / 8.0)))
-    ratio = max(0.08, 1.0 - bevel / max(outer, 1e-6))
-    bevel_z = min(bevel, depth * 0.45)
+    if volume:
+        # Нечётное число колец оставляет точное экваториальное сечение с
+        # исходным outer. Частая закрутка автоматически получает больше колец.
+        layers = max(25, min(97, 25 + 2 * int(abs(twist) / 12.0)))
+        auto_bevel = min(outer * 0.42, max(depth * 1.25, outer * 0.08))
+        ratio = max(0.08, 1.0 - (auto_bevel + bevel) / max(outer, 1e-6))
+        bevel_z = depth * 0.48
+    else:
+        layers = max(18, min(72, 18 + int(abs(twist) / 8.0)))
+        ratio = max(0.08, 1.0 - bevel / max(outer, 1e-6))
+        bevel_z = min(bevel, depth * 0.45)
     verts: list[tuple[float, float, float]] = []
     for i in range(layers):
         actual_z = -pad + (depth + 2.0 * pad) * i / (layers - 1)
         t = min(1.0, max(0.0, actual_z / depth))
         scale = 1.0
-        if bevel > 1e-9 and bevel_z > 1e-9:
+        if (volume or bevel > 1e-9) and bevel_z > 1e-9:
             d = min(t, 1.0 - t) * depth
             q = max(0.0, 1.0 - d / bevel_z)
-            q = (1.0 - smooth) * q + smooth * math.sin(q * math.pi / 2.0)
+            if volume:
+                # Даже smooth=0 остаётся геометрически выпуклым smoothstep;
+                # smooth=1 переводит его в более круглый синусоидальный борт.
+                curved = q * q * (3.0 - 2.0 * q)
+                circular = math.sin(q * math.pi / 2.0)
+                q = (1.0 - smooth) * curved + smooth * circular
+            else:
+                q = (1.0 - smooth) * q + smooth * math.sin(q * math.pi / 2.0)
             scale = 1.0 - (1.0 - ratio) * q
         ang = math.radians(twist * (t - 0.5))
         ca, sa = math.cos(ang), math.sin(ang)
@@ -248,7 +299,8 @@ def _star_loft(points, depth: float, twist: float, bevel: float, smooth: float,
     summary="Звезда и сюрикен: единый плавный loft вместо ступенчатой фаски. "
             "twist закручивает всё тело, bevel сужает кромки, blade утоньшает "
             "кончики лучей. hole делает центральное отверстие, wall — сквозную "
-            "формочку/рамку с равномерной стенкой.",
+            "формочку/рамку с равномерной стенкой. volume=да делает кромку "
+            "выпуклой и сохраняет действие twist, smooth, bevel и blade.",
     example="звезда = star points=5 outer=60 inner=25 depth=12 bevel=1.5\n"
             "сюрикен = star points=4 outer=70 inner=30 depth=8 twist=65 bevel=2 blade=.7 hole=12\n"
             "формочка = star points=6 outer=60 inner=35 depth=10 wall=3",
@@ -261,6 +313,8 @@ def _star_loft(points, depth: float, twist: float, bevel: float, smooth: float,
             "blade": "утоньшение кончиков 0…0.9 от полутолщины (0)",
             "hole": "центральное сквозное отверстие, мм (0)",
             "wall": "стенка сквозной формочки/рамки, мм; 0 — сплошная (0)",
+            "volume": "да — объёмная звезда с выпуклыми сторонами, нет — loft (нет)",
+            "solid": "синоним volume=да",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит вверх",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def star(a, name):
@@ -279,6 +333,9 @@ def star(a, name):
     blade = float(a.num("blade", 0.0, minv=0.0, maxv=0.9) or 0.0)
     hole = float(a.num("hole", 0.0, minv=0.0) or 0.0)
     wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    volume_mode = a.boolean("volume", False) or a.boolean("solid", False)
+    if volume_mode and wall > 1e-6:
+        raise GeometryError("volume=да у звезды несовместим с wall: используйте сплошной объём или плоскую формочку.")
     pts = []
     for k in range(2 * points):
         angle = math.pi / 2 + k * math.pi / points
@@ -286,7 +343,8 @@ def star(a, name):
         pts.append((radius * math.cos(angle), radius * math.sin(angle)))
     cross = _cross(pts)
     weights = [1.0 if k % 2 == 0 else 0.0 for k in range(2 * points)]
-    solid = _star_loft(pts, depth, twist, bevel, smooth, outer, weights, blade)
+    solid = _star_loft(pts, depth, twist, bevel, smooth, outer, weights, blade,
+                       volume=volume_mode)
     if wall > 1e-6:
         cavity_cross = cross.offset(-wall, mf.JoinType.Miter, 3.0, 16)
         polygons = cavity_cross.to_polygons()
@@ -303,8 +361,9 @@ def star(a, name):
     solid = ensure_volume(solid, "звезда")
     out = make_solid(a.scene, name, _placed(a, stand_flat_sign(a, solid)), a,
                      kind="star")
+    out.meta["volume_mode"] = bool(volume_mode)
     out.notes.append(f"звезда: twist={twist:g}°, bevel={bevel:g}, blade={blade:g}, "
-                     f"hole={hole:g}, wall={wall:g}")
+                     f"hole={hole:g}, wall={wall:g}, volume={'да' if volume_mode else 'нет'}")
     return out
 
 
@@ -508,7 +567,7 @@ def gear(a, name):
             if h <= 0.05:
                 continue
             ring = mf.Manifold.cylinder(h + 0.4, r_root - 0.4, r_root - 0.4, 96)
-            ring = ring - mf.Manifold.cylinder(h + 1.0, max(1.0, r_root - rim_w), 
+            ring = ring - mf.Manifold.cylinder(h + 1.0, max(1.0, r_root - rim_w),
                                               max(1.0, r_root - rim_w), 96).translate((0, 0, -0.5))
             solid = solid - ring.translate((0, 0, z0 - 0.2))
     if spokes > 0:
@@ -591,22 +650,25 @@ def washer(a, name):
 @op("cube_hole", aliases=("кубик_с_отверстием", "блок_с_отверстием", "брусок_с_отверстием"),
     category="Примитивы",
     summary="Брусок с центральными сквозными отверстиями. hole/axis/hole_shape "
-            "задают одно отверстие (круг, квадрат или треугольник); "
-            "hole_x/hole_y/hole_z и независимые формы работают одновременно, "
-            "включая прямой овал. Все резцы проходят строго через центр блока.",
+            "задают одно отверстие; hole_x/hole_y/hole_z и независимые формы "
+            "работают одновременно по всем осям. Поддерживаются круг, квадрат, "
+            "треугольник, шестигранник и прямой овал. Все резцы проходят строго "
+            "через центр блока.",
     example="кубик = cube_hole size=[40,40,40] hole=16 hole_shape=круг\n"
             "квадратный = cube_hole size=[45,45,35] hole=15 hole_shape=квадрат\n"
             "треугольный = cube_hole size=[50,45,40] hole=18 hole_shape=треугольник axis=y",
     params={"size": "размер [x,y,z], мм (40,40,40)",
-            "hole": "размер отверстия, мм (40% размера)",
-            "hole_shape": "форма отверстия: круг, квадрат или треугольник",
+            "hole": "размер одиночного отверстия, мм (40% размера)",
+            "hole_all": "один диаметр сразу для X, Y и Z, мм",
+            "all_axes": "да — применить hole/hole_shape одновременно ко всем осям",
+            "hole_shape": "форма отверстия: круг, квадрат, треугольник, шестигранник или овал",
             "axis": "ось одиночного отверстия: z, x или y (z)",
             "hole_x": "центральное отверстие по X, мм; 0 — нет",
             "hole_y": "центральное отверстие по Y, мм; 0 — нет",
             "hole_z": "центральное отверстие по Z, мм; 0 — нет",
-            "hole_x_shape": "форма X: круг, квадрат или овал",
-            "hole_y_shape": "форма Y: круг, квадрат или овал",
-            "hole_z_shape": "форма Z: круг, квадрат или овал",
+            "hole_x_shape": "форма X: круг, квадрат, треугольник, шестигранник или овал",
+            "hole_y_shape": "форма Y: круг, квадрат, треугольник, шестигранник или овал",
+            "hole_z_shape": "форма Z: круг, квадрат, треугольник, шестигранник или овал",
             "oval_aspect": "отношение длины прямого овала к ширине 1…8 (1.8)",
             "round": "скругление рёбер, мм",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
@@ -614,10 +676,13 @@ def cube_hole(a, name):
     size = a.vec("size", 3, default=(40.0, 40.0, 40.0))
     if any(v <= 0 for v in size):
         raise GeometryError("Размеры бруска должны быть больше нуля.")
-    axis_specific = any(a.has(f"hole_{axis}{suffix}")
-                        for axis in ("x", "y", "z") for suffix in ("", "_shape"))
-    if axis_specific and any(a.has(key) for key in ("hole", "hole_shape", "axis")):
+    all_axes = a.boolean("all_axes", False) or a.has("hole_all")
+    axis_specific = (all_axes or any(a.has(f"hole_{axis}{suffix}")
+                        for axis in ("x", "y", "z") for suffix in ("", "_shape")))
+    if axis_specific and not all_axes and any(a.has(key) for key in ("hole", "hole_shape", "axis")):
         raise GeometryError("Задайте отверстия одним способом: hole/axis ИЛИ hole_x/hole_y/hole_z.")
+    common_hole = float(a.num("hole", min(size) * 0.4, minv=0.2))
+    hole_all = a.num("hole_all", None, minv=0.2)
     box = mf.Manifold.cube(size, True)
     rnd = float(a.num("round", 0.0, minv=0.0) or 0.0)
     if rnd > 1e-6:
@@ -631,10 +696,13 @@ def cube_hole(a, name):
     if axis_specific:
         oval_aspect = float(a.num("oval_aspect", 1.8, minv=1.0, maxv=8.0) or 1.0)
         for axis_index, axis in enumerate(("x", "y", "z")):
-            diameter = float(a.num(f"hole_{axis}", 0.0, minv=0.0, maxv=10000.0) or 0.0)
+            default_diameter = (float(hole_all) if hole_all is not None
+                                else (common_hole if all_axes else 0.0))
+            diameter = float(a.num(f"hole_{axis}", default_diameter, minv=0.0, maxv=10000.0) or 0.0)
             if diameter <= 1e-6:
                 continue
-            shape = a.text(f"hole_{axis}_shape", "круг") or "круг"
+            default_shape = a.text("hole_shape", "круг") if all_axes else "круг"
+            shape = a.text(f"hole_{axis}_shape", default_shape) or "круг"
             room = min(v for i, v in enumerate(size) if i != axis_index)
             if diameter >= room - 1.0:
                 raise GeometryError(f"Отверстие {diameter:g} мм по {axis.upper()} не оставляет стенки.")
@@ -644,7 +712,7 @@ def cube_hole(a, name):
         if not cutters:
             raise GeometryError("Для cube_hole задайте ненулевой hole_x, hole_y или hole_z.")
     else:
-        hole = float(a.num("hole", min(size) * 0.4, minv=0.2))
+        hole = common_hole
         axis = (a.text("axis", "z") or "z").strip().lower()
         if axis not in ("x", "y", "z"):
             raise GeometryError("Ось отверстия: z, x или y.")
@@ -656,22 +724,13 @@ def cube_hole(a, name):
         shape = {"круг": "круг", "круглое": "круг", "круглый": "круг",
                  "квадрат": "квадрат", "квадратное": "квадрат", "квадратный": "квадрат",
                  "треугольник": "треугольник", "треугольное": "треугольник",
-                 "треугольный": "треугольник"}.get(shape)
+                 "треугольный": "треугольник", "шестигранник": "шестигранник",
+                 "шестиугольник": "шестигранник", "hex": "шестигранник",
+                 "овал": "овал", "овальный": "овал", "oval": "овал"}.get(shape)
         if shape is None:
-            raise GeometryError("hole_shape=круг, квадрат или треугольник.")
-        if shape == "круг":
-            cutter = mf.Manifold.cylinder(length, hole / 2.0, hole / 2.0, 64, center=True)
-        elif shape == "квадрат":
-            cutter = mf.Manifold.cube((hole, hole, length), True)
-        else:
-            radius = hole / 2.0
-            pts = [(radius * math.cos(math.radians(90 + 120 * i)),
-                    radius * math.sin(math.radians(90 + 120 * i))) for i in range(3)]
-            cutter = mf.CrossSection([_profile(pts)]).extrude(length).translate((0, 0, -length / 2))
-        if axis == "x":
-            cutter = cutter.rotate((0, 90, 0))
-        elif axis == "y":
-            cutter = cutter.rotate((90, 0, 0))
+            raise GeometryError("hole_shape=круг, квадрат, треугольник, шестигранник или овал.")
+        oval_aspect = float(a.num("oval_aspect", 1.8, minv=1.0, maxv=8.0) or 1.0)
+        cutter = axis_hole_cutter(axis, shape, hole, oval_aspect, length)
         cutters.append(cutter)
         labels.append(f"{axis.upper()}:{shape} {hole:g}")
         shapes.append(shape)
@@ -708,18 +767,29 @@ def _rounded_rect(r0: float, r1: float, z0: float, z1: float, rad: float,
 
 @op("ring", aliases=("кольцо", "обручальное_кольцо", "band"), category="Примитивы",
     summary="Кольцо с плоским ободом и скруглёнными краями. cavity>0 создаёт "
-            "закрытый канал внутри самого обода; число задаёт толщину наружных "
-            "стенок канала. Центральное отверстие остаётся сквозным.",
+            "канал внутри обода (cavity_side=верх/низ делает его открытым и "
+            "видимым). groove добавляет настоящие кольцевые канавки на одной "
+            "или обеих сторонах: форма, ширина, глубина и число независимы. "
+            "Центральное отверстие остаётся сквозным.",
     example="кольцо = ring diameter=20 width=6 thickness=2.2\n"
-            "полое = ring diameter=30 width=10 thickness=6 cavity=1.2",
+            "полое = ring diameter=30 width=10 thickness=6 cavity=1.2 cavity_side=верх\n"
+            "канавки = ring diameter=30 width=10 thickness=6 groove=круглая "
+            "groove_width=2 groove_depth=1.2 groove_side=обе groove_count=2",
     params={"diameter": "внутренний диаметр, мм (20)",
             "outer": "наружный диаметр, мм — если задан, толщина считается сама",
             "inner": "внутренний диаметр (синоним diameter)",
             "width": "ширина обода (высота кольца), мм (6)",
             "height": "синоним width",
             "thickness": "толщина обода по радиусу, мм (2.2)",
-            "cavity": "стенка вокруг закрытой полости внутри обода, мм; "
-                      "0 — сплошной обод (0)",
+            "cavity": "стенка вокруг полости внутри обода, мм; 0 — сплошной обод (0)",
+            "cavity_side": "закрытая — скрытый канал; верх/низ — открытая полость (закрытая)",
+            "groove": "форма канавки: нет, круглая, прямоугольная, треугольная или трапециевидная",
+            "groove_width": "радиальная ширина каждой канавки, мм (2)",
+            "groove_depth": "глубина канавки от выбранной стороны, мм (1)",
+            "groove_side": "верх, низ или обе (верх)",
+            "groove_count": "число концентрических канавок на каждой стороне (1)",
+            "groove_offset": "отступ первой канавки от внутреннего края обода, мм (0.5)",
+            "groove_spacing": "шаг между канавками, мм; 0 — равномерно по ободу (0)",
             "round": "скругление краёв (наружного и внутреннего), мм",
             "segments": "сегментов по кругу", "at": "положение [x,y,z]",
             "center": "центрировать по высоте"})
@@ -753,25 +823,108 @@ def ring(a, name):
     profile = _rounded_rect(r_in, r_out, -width / 2.0, width / 2.0, rnd, steps=5)
     solid = _revolve(profile, segments, "кольцо")
     cavity = float(a.num("cavity", 0.0, minv=0.0) or 0.0)
+    cavity_side = (a.text("cavity_side", "закрытая") or "закрытая").strip().lower()
+    cavity_side = {"закрытая": "закрытая", "закрытый": "закрытая", "closed": "закрытая",
+                   "верх": "верх", "сверху": "верх", "top": "верх",
+                   "низ": "низ", "снизу": "низ", "bottom": "низ"}.get(cavity_side)
+    if cavity_side is None:
+        raise GeometryError("ring: cavity_side=закрытая, верх или низ.")
     if cavity > 1e-6:
         if 2.0 * cavity >= min(thickness, width) - 0.1:
-            raise GeometryError("cavity не оставляет места для закрытого канала кольца.",
+            raise GeometryError("cavity не оставляет места для канала кольца.",
                                 hint="cavity — стенка вокруг канала; уменьшите её или увеличьте обод.")
+        z0, z1 = -width / 2.0 + cavity, width / 2.0 - cavity
+        if cavity_side == "верх":
+            z1 = width / 2.0 + max(0.2, cavity * 0.25)
+        elif cavity_side == "низ":
+            z0 = -width / 2.0 - max(0.2, cavity * 0.25)
         inner_profile = _rounded_rect(
-            r_in + cavity, r_out - cavity,
-            -width / 2.0 + cavity, width / 2.0 - cavity,
+            r_in + cavity, r_out - cavity, z0, z1,
             min(rnd, (thickness - 2.0 * cavity) * 0.45,
-                (width - 2.0 * cavity) * 0.45), steps=5)
+                max(0.1, (z1 - z0) * 0.45)), steps=5)
         channel = _revolve(inner_profile, segments, "внутреннего канала кольца")
         before = solid.volume()
         solid = solid - channel
         positive = [part for part in solid.decompose() if part.volume() > 1e-6]
         if solid.is_empty() or len(positive) != 1 or solid.volume() >= before - 1e-6:
-            raise GeometryError("Не удалось построить закрытую полость кольца.")
+            raise GeometryError("Не удалось построить полость кольца.")
+
+    # Канавки — открытые резцы, а не закрытая полость внутри материала.
+    groove_raw = (a.text("groove", "нет") or "нет").strip().lower()
+    groove = {"нет": "нет", "no": "нет", "none": "нет", "да": "прямоугольная",
+              "круглая": "круглая", "круглый": "круглая", "round": "круглая",
+              "овальная": "круглая", "oval": "круглая",
+              "прямоугольная": "прямоугольная", "прямоугольный": "прямоугольная",
+              "rect": "прямоугольная", "треугольная": "треугольная",
+              "треугольный": "треугольная", "triangle": "треугольная",
+              "трапеция": "трапециевидная", "трапециевидная": "трапециевидная",
+              "трапецивидная": "трапециевидная", "trapezoid": "трапециевидная"}.get(groove_raw)
+    if groove is None:
+        raise GeometryError("ring: groove=нет, круглая, прямоугольная, треугольная или трапециевидная.")
+    groove_count = int(a.int("groove_count", 1, minv=1, maxv=32) or 1)
+    groove_width = float(a.num("groove_width", 2.0, minv=0.05, maxv=1000.0))
+    groove_depth = float(a.num("groove_depth", 1.0, minv=0.02, maxv=1000.0))
+    groove_offset = float(a.num("groove_offset", 0.5, minv=0.0, maxv=1000.0) or 0.0)
+    groove_spacing = float(a.num("groove_spacing", 0.0, minv=0.0, maxv=1000.0) or 0.0)
+    groove_side = (a.text("groove_side", "верх") or "верх").strip().lower()
+    groove_side = {"верх": "верх", "сверху": "верх", "top": "верх",
+                   "низ": "низ", "снизу": "низ", "bottom": "низ",
+                   "обе": "обе", "обе_стороны": "обе", "both": "обе"}.get(groove_side)
+    if groove_side is None:
+        raise GeometryError("ring: groove_side=верх, низ или обе.")
+    if groove != "нет":
+        if groove_width >= thickness - 2.0 * groove_offset - 0.05:
+            raise GeometryError("groove_width не помещается в обод кольца.",
+                                hint="Уменьшите groove_width/groove_offset или увеличьте thickness.")
+        if groove_side == "обе" and 2.0 * groove_depth >= width - 0.1:
+            raise GeometryError("Две канавки съедают всю ширину кольца.",
+                                hint="Уменьшите groove_depth или увеличьте width.")
+        if groove_depth >= width - 0.05:
+            raise GeometryError("groove_depth должна оставлять дно канавки.")
+        spacing = groove_spacing or ((thickness - 2.0 * groove_offset) / groove_count)
+        if spacing < groove_width * 1.05 and groove_count > 1:
+            raise GeometryError("Канавки перекрываются: увеличьте groove_spacing или уменьшите ширину.")
+        if groove_offset + groove_width / 2.0 + spacing * (groove_count - 1) + groove_width / 2.0 > thickness + 1e-6:
+            raise GeometryError("Канавки не помещаются по радиусу обода.")
+        cutters = []
+        for i in range(groove_count):
+            rc = r_in + groove_offset + groove_width / 2.0 + spacing * i
+            r0, r1 = rc - groove_width / 2.0, rc + groove_width / 2.0
+            for side in (("верх", "низ") if groove_side == "обе" else (groove_side,)):
+                sign = 1.0 if side == "верх" else -1.0
+                surface = sign * width / 2.0
+                over = max(0.05, groove_depth * 0.08)
+                # Профиль в (радиус, высота), затем вращение вокруг Z.
+                if groove == "круглая":
+                    pts = [(r0, surface + sign * over), (r1, surface + sign * over)]
+                    for k in range(17):
+                        theta = math.pi * k / 16.0
+                        rr = rc + groove_width * 0.5 * math.cos(theta)
+                        zz = surface - sign * groove_depth * math.sin(theta)
+                        pts.append((rr, zz))
+                elif groove == "треугольная":
+                    pts = [(r0, surface + sign * over), (r1, surface + sign * over),
+                           (r1, surface), (rc, surface - sign * groove_depth), (r0, surface)]
+                elif groove == "трапециевидная":
+                    inset = groove_width * 0.22
+                    pts = [(r0, surface + sign * over), (r1, surface + sign * over),
+                           (r1, surface), (r1 - inset, surface - sign * groove_depth),
+                           (r0 + inset, surface - sign * groove_depth), (r0, surface)]
+                else:
+                    pts = [(r0, surface + sign * over), (r1, surface + sign * over),
+                           (r1, surface - sign * groove_depth), (r0, surface - sign * groove_depth)]
+                cutters.append(_revolve(pts, segments, f"канавки {side}"))
+        if cutters:
+            solid = solid - (cutters[0] if len(cutters) == 1 else
+                             mf.Manifold.batch_boolean(cutters, mf.OpType.Add))
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="ring")
     if cavity > 1e-6:
-        out.meta["cavity_wall"] = cavity
-        out.notes.append(f"закрытый канал внутри обода, наружные стенки {cavity:g} мм")
+        out.meta.update(cavity_wall=cavity, cavity_side=cavity_side)
+        out.notes.append(f"{cavity_side} канал внутри обода, наружные стенки {cavity:g} мм")
+    if groove != "нет":
+        out.meta.update(groove=groove, groove_width=groove_width, groove_depth=groove_depth,
+                        groove_side=groove_side, groove_count=groove_count)
+        out.notes.append(f"канавки {groove}: {groove_count} × {groove_width:g}×{groove_depth:g} мм, {groove_side}")
     return out
 
 
@@ -1212,6 +1365,8 @@ def _heart_points(r: float, samples: int = 220) -> list[tuple[float, float]]:
     params={"width": "полная ширина, мм (60)", "depth": "толщина, мм (18)",
             "height": "высота, мм (по форме ≈ 0.9 ширины)",
             "wall": "стенка сквозной формочки/рамки, мм; 0 — сплошное (0)",
+            "volume": "да — настоящее объёмное сердце с выпуклыми сторонами (нет)",
+            "solid": "синоним volume=да",
             "round": "радиус настоящего скругления кромок, мм (0); 0.2–0.5 от depth — "
                      "заметное округление, стоит ≈1 с",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом "
@@ -1223,13 +1378,18 @@ def heart(a, name):
     height = a.num("height", None, minv=0.5)
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
     wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    volume_mode = a.boolean("volume", False) or a.boolean("solid", False)
+    if volume_mode and wall > 1e-6:
+        raise GeometryError("volume=да у сердца несовместим с wall: используйте сплошной объём или плоскую формочку.")
     pts = _heart_points(width / 2.0)
     if height:
         cur = max(p[1] for p in pts)
         k = float(height) / max(cur, 1e-9)
         pts = [(x * k, y * k) for x, y in pts]
     cross = hollow_cross(_cross(pts), wall, "сердце")
-    if round_r > 1e-3:
+    if volume_mode:
+        solid = volumetric_cross(cross, depth, "объёмное сердце", round_r=round_r)
+    elif round_r > 1e-3:
         # Скругление кромок: сжимаем контур на r и «надуваем» шаром радиуса r.
         # Кривая сердца на 220 точках — избыточно: 110 точек дают ту же форму,
         # а minkowski считается вдвое быстрее (1.0 с вместо 2.3 с).
@@ -1248,8 +1408,12 @@ def heart(a, name):
             solid = cross.extrude(depth)
     else:
         solid = cross.extrude(depth)
-    return make_solid(a.scene, name, _placed(a, stand_flat_sign(a, solid)), a,
-                      kind="heart")
+    out = make_solid(a.scene, name, _placed(a, stand_flat_sign(a, solid)), a,
+                     kind="heart")
+    out.meta["volume_mode"] = bool(volume_mode)
+    out.notes.append("объёмное сердце с выпуклыми сторонами" if volume_mode
+                     else "плоское сердце с заданной толщиной")
+    return out
 
 
 # --------------------------------------------------------------------------- #

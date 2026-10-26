@@ -106,7 +106,15 @@ def _strip_mesh(path: np.ndarray, width: float, thickness: float, ends: str,
     tangents[0] = path[1] - path[0]
     tangents[-1] = path[-1] - path[-2]
     tangents /= np.maximum(np.linalg.norm(tangents, axis=1)[:, None], 1e-12)
-    sides = np.cross(np.broadcast_to(np.array([0.0, 0.0, 1.0]), tangents.shape), tangents)
+    vertical_xz = (np.ptp(path[:, 1]) < 1e-7 and np.ptp(path[:, 2]) > 1e-7)
+    if vertical_xz:
+        # XZ-вариант — поворот той же ленты, а не перестановка width и
+        # thickness. Ширина идёт поперёк касательной внутри XZ, толщина —
+        # по стабильной нормали Y. cross(Y, tangent) не вырождается на дуге.
+        reference = np.broadcast_to(np.array([0.0, 1.0, 0.0]), tangents.shape)
+        sides = np.cross(reference, tangents)
+    else:
+        sides = np.cross(np.broadcast_to(np.array([0.0, 0.0, 1.0]), tangents.shape), tangents)
     sides /= np.maximum(np.linalg.norm(sides, axis=1)[:, None], 1e-12)
     ups = np.cross(tangents, sides)
     ups /= np.maximum(np.linalg.norm(ups, axis=1)[:, None], 1e-12)
@@ -209,8 +217,9 @@ def _bend_strip(solid: mf.Manifold, length: float, angle: float) -> mf.Manifold:
             "bend": "общий угол дуги −180…180°, знак задаёт сторону (0)",
             "path": "контур центральной линии: прямая, S, зигзаг, подкова или J",
             "curve": "амплитуда S/зигзага по Y; радиус дуги подковы/J, мм (30)",
-            "path_z": "второй контур в XZ: прямая, S или зигзаг",
-            "curve_z": "амплитуда второго контура по Z, мм (30)",
+            "path_z": "второй контур в XZ: прямая, S, зигзаг, подкова или J",
+            "curve_z": "амплитуда второго контура по Z; радиус подковы/J, мм (30)",
+            "plane": "XY — обычная полоса; XZ — path=подкова/J строится в вертикальной плоскости",
             "recess": "центральное сквозное отверстие: нет, круг, прямоугольник, квадрат, треугольник",
             "recess_size": "диаметр круга, ширина прямоугольника или сторона квадрата/треугольника, мм (16)",
             "recess_length": "длина прямоугольной выемки по X, мм (24)",
@@ -234,8 +243,20 @@ def strip(a, name):
     curve = float(a.num("curve", 30.0, minv=0.1, maxv=5000.0))
     kind_z = _choice(a.text("path_z", "прямая"),
                      {"прямая": "прямая", "прямой": "прямая", "s": "s", "с": "s",
-                      "зигзаг": "зигзаг", "z": "зигзаг", "з": "зигзаг"}, "strip.path_z")
+                      "зигзаг": "зигзаг", "z": "зигзаг", "з": "зигзаг",
+                      "подкова": "подкова", "u": "подкова", "horseshoe": "подкова",
+                      "j": "J", "й": "J", "крючок": "J", "крюк": "J", "hook": "J"},
+                     "strip.path_z")
     curve_z = float(a.num("curve_z", 30.0, minv=0.1, maxv=5000.0))
+    plane = (a.text("plane", "XY") or "XY").strip().lower()
+    if plane in ("xz", "вертикаль", "вертикальная", "стена"):
+        # Короткая и понятная форма записи: path=подкова plane=XZ.
+        if kind in ("подкова", "J"):
+            if kind_z != "прямая":
+                raise GeometryError("Задайте изгиб либо path+plane=XZ, либо path_z, не оба сразу.")
+            kind_z, kind, curve_z = kind, "прямая", curve
+    elif plane not in ("xy", "плоскость", "горизонт", "плашмя"):
+        raise GeometryError("strip: plane=XY или XZ.")
     bend = float(a.num("bend", 0.0, minv=-180.0, maxv=180.0) or 0.0)
     if kind in ("подкова", "J"):
         if width >= 2.0 * curve:
@@ -251,12 +272,25 @@ def strip(a, name):
         horizontal = _strip_path(kind, length, curve)
         tx = (horizontal[:, 0] + length / 2.0) / length
         tv = None
-    vertical = _strip_path(kind_z, length, curve_z)
-    if kind in ("подкова", "J"):
-        tv = np.linspace(0.0, 1.0, len(vertical))
-    elif tv is None:
-        tv = (vertical[:, 0] + length / 2.0) / length
-    centers = np.column_stack([horizontal, np.interp(tx, tv, vertical[:, 1])])
+    if kind_z in ("подкова", "J"):
+        if width >= 2.0 * curve_z:
+            raise GeometryError("Ширина полосы не оставляет внутреннего радиуса XZ-дуги.",
+                                hint="width должен быть меньше 2·curve_z.")
+        if kind != "прямая":
+            raise GeometryError("Подкова/J в XZ задаётся при path=прямая; не складывайте два изгиба.")
+        if abs(bend) > 1e-9:
+            raise GeometryError("У подковы/J в XZ не используйте bend.")
+        vertical = (_horseshoe_path(length, curve_z) if kind_z == "подкова"
+                    else _j_path(length, curve_z))
+        # Здесь вторая координата пути — именно Z, а ширина ленты идёт по Y.
+        centers = np.column_stack([vertical[:, 0], np.zeros(len(vertical)), vertical[:, 1]])
+    else:
+        vertical = _strip_path(kind_z, length, curve_z)
+        if kind in ("подкова", "J"):
+            tv = np.linspace(0.0, 1.0, len(vertical))
+        elif tv is None:
+            tv = (vertical[:, 0] + length / 2.0) / length
+        centers = np.column_stack([horizontal, np.interp(tx, tv, vertical[:, 1])])
     solid = _strip_mesh(centers, width, thickness, ends, left, right)
     solid = apply_smooth(solid, a, "полоса")
     recess = _choice(a.text("recess", "нет"),
@@ -417,6 +451,33 @@ def grating(a, name):
 # --------------------------------------------------------------------------- #
 #  Шипы
 # --------------------------------------------------------------------------- #
+def _segment_distance(p0, p1, q0, q1) -> float:
+    """Кратчайшее расстояние между двумя отрезками (для запрета пересечений)."""
+    p0, p1, q0, q1 = (np.asarray(v, dtype=np.float64) for v in (p0, p1, q0, q1))
+    d1, d2, r = p1 - p0, q1 - q0, p0 - q0
+    a, e, f = float(d1 @ d1), float(d2 @ d2), float(d2 @ r)
+    if a < 1e-12 and e < 1e-12:
+        return float(np.linalg.norm(r))
+    if a < 1e-12:
+        s = 0.0
+        t = np.clip(f / e, 0.0, 1.0)
+    else:
+        c = float(d1 @ r)
+        if e < 1e-12:
+            t = 0.0
+            s = np.clip(-c / a, 0.0, 1.0)
+        else:
+            b = float(d1 @ d2)
+            denom = a * e - b * b
+            s = np.clip((b * f - c * e) / denom, 0.0, 1.0) if abs(denom) > 1e-12 else 0.0
+            t = (b * s + f) / e
+            if t < 0.0:
+                t, s = 0.0, np.clip(-c / a, 0.0, 1.0)
+            elif t > 1.0:
+                t, s = 1.0, np.clip((b - c) / a, 0.0, 1.0)
+    return float(np.linalg.norm((p0 + d1 * s) - (q0 + d2 * t)))
+
+
 @op("spikes", aliases=("шипы", "шип", "spike", "spike_array", "нарастить_шипы"),
     category="Форма и деформации",
     summary="Наращивает шипы на выбранной поверхности существующего тела, "
@@ -429,7 +490,9 @@ def grating(a, name):
             "ёж = spikes [ёж] surface=вся count=70 height=22 base_d=7 tip_d=0 seed=4",
     params={"objects": "существующий объект [a] или a (обязательно)",
             "surface": "верх, низ, право, лево, перёд, зад или вся",
-            "count": "число шипов 1…400; если не задано — cols×rows",
+            "count": "число шипов 1…2000; если не задано — cols×rows",
+            "density": "заполнение доступной площади 0…100%; работает без count",
+            "fill": "синоним density, процент площади",
             "cols": "условных колонок для count=cols×rows (4)",
             "rows": "условных строк для count=cols×rows (3)",
             "height": "высота каждого шипа над поверхностью, мм (28)",
@@ -457,7 +520,11 @@ def spikes(a, name):
         raise GeometryError("spikes: surface=верх, низ, право, лево, перёд, зад или вся.")
     cols = int(a.int("cols", 4, minv=1, maxv=100) or 4)
     rows = int(a.int("rows", 3, minv=1, maxv=100) or 3)
-    count = int(a.num("count", cols * rows, minv=1, maxv=400))
+    density = a.num("density", None, minv=0.0, maxv=100.0)
+    if density is None:
+        density = a.num("fill", None, minv=0.0, maxv=100.0)
+    density_mode = density is not None and not a.has("count")
+    count = int(a.num("count", cols * rows, minv=1, maxv=2000))
     height = float(a.num("height", 28.0, minv=0.5, maxv=5000.0))
     base_d = float(a.num("base_d", 12.0, minv=0.4, maxv=5000.0))
     tip_d = float(a.num("tip_d", 0.8, minv=0.0, maxv=5000.0) or 0.0)
@@ -469,7 +536,8 @@ def spikes(a, name):
         raise GeometryError("tip_d не может быть больше base_d.")
     rng = np.random.default_rng(seed)
     verts, faces = manifold_mesh(base.manifold)
-    points, normals = _surface_samples(verts, faces, max(4000, count * 80), rng)
+    sample_count = max(8000, min(60000, (count if not density_mode else 800) * 50))
+    points, normals = _surface_samples(verts, faces, sample_count, rng)
     mask = np.ones(len(points), dtype=bool)
     if surface != "вся":
         side = np.asarray(sides_map[surface], dtype=np.float64)
@@ -484,28 +552,70 @@ def spikes(a, name):
             mask &= points[:, coordinate] >= bb[coordinate] + margin
             mask &= points[:, coordinate] <= bb[coordinate + 3] - margin
     indices = np.flatnonzero(mask)
-    if len(indices) < count:
+    if len(indices) == 0:
+        raise GeometryError("На выбранной стороне недостаточно поверхности для шипов.")
+    if density_mode:
+        available_area = float(base.manifold.surface_area()) * len(indices) / len(points)
+        cell_area = max(0.05, math.sqrt(3.0) * 0.5 * base_d * base_d)
+    elif len(indices) < count:
         raise GeometryError("На выбранной стороне недостаточно поверхности для шипов.")
     points, normals = points[indices], normals[indices]
     # Farthest-point: равномерная повторяемая раскладка без слипшихся оснований.
-    chosen = [int(rng.integers(0, len(points)))]
-    best = np.sum((points - points[chosen[0]]) ** 2, axis=1)
-    best[chosen[0]] = -1.0
-    minimum = base_d * 1.05
-    while len(chosen) < count:
-        index = int(np.argmax(best))
-        if best[index] < minimum * minimum:
-            raise GeometryError(f"На поверхности не помещаются {count} шипов с base_d={base_d:g}.",
-                                hint="Уменьшите count/base_d или выберите больший объект.")
-        chosen.append(index)
-        best = np.minimum(best, np.sum((points - points[index]) ** 2, axis=1))
-        best[chosen] = -1.0
-    selected = np.asarray(chosen, dtype=np.int64)
-    points, normals = points[selected], normals[selected]
     slope = math.tan(math.radians(lean))
     azimuth = np.array([math.cos(math.radians(direction)),
                         math.sin(math.radians(direction)), 0.0])
     root = max(0.08, min(0.5, base_d * 0.08))
+
+    def spike_segment(point, normal):
+        normal = normal / max(float(np.linalg.norm(normal)), 1e-12)
+        tangent = azimuth - normal * float(np.dot(azimuth, normal))
+        if np.linalg.norm(tangent) < 1e-8:
+            tangent = np.cross(normal, np.array([0.0, 0.0, 1.0]))
+        tangent /= max(float(np.linalg.norm(tangent)), 1e-12)
+        grow = normal + tangent * slope
+        grow /= max(float(np.linalg.norm(grow)), 1e-12)
+        start = point - normal * root
+        return start, start + grow * (height + root)
+
+    chosen = ([] if density_mode and float(density) <= 0.0
+              else [int(rng.integers(0, len(points)))])
+    best = (np.full(len(points), -1.0) if not chosen else
+            np.sum((points - points[chosen[0]]) ** 2, axis=1))
+    if chosen:
+        best[chosen[0]] = -1.0
+    minimum = base_d * 1.05
+    segments = ([spike_segment(points[chosen[0]], normals[chosen[0]])] if chosen else [])
+    while (density_mode and float(density) > 0.0 and len(chosen) < 2000) or (not density_mode and len(chosen) < count):
+        index = int(np.argmax(best))
+        if best[index] < minimum * minimum:
+            if density_mode:
+                break
+            raise GeometryError(f"На поверхности не помещаются {count} шипов с base_d={base_d:g}.",
+                                hint="Уменьшите count/base_d или выберите больший объект.")
+        candidate = spike_segment(points[index], normals[index])
+        # Проверяем не только корни: наклонные стволы могут пересечься
+        # даже при большом расстоянии между точками посадки.
+        if any(_segment_distance(candidate[0], candidate[1], old[0], old[1]) < base_d * 0.98
+               for old in segments):
+            best[index] = -1.0
+            continue
+        chosen.append(index)
+        segments.append(candidate)
+        best = np.minimum(best, np.sum((points - points[index]) ** 2, axis=1))
+        best[chosen] = -1.0
+    packing_capacity = len(chosen)
+    if density_mode:
+        # Сначала находим реальную ёмкость именно с запретом пересечений,
+        # затем берём из неё запрошенный процент. Иначе формальная площадь
+        # круга обещала бы 100%, а случайная раскладка останавливалась на
+        # половине и density=60/100 почти не отличались.
+        count = max(0, int(round(packing_capacity * float(density) / 100.0)))
+        chosen = chosen[:count]
+    selected = np.asarray(chosen, dtype=np.int64)
+    points, normals = points[selected], normals[selected]
+    count = len(selected)
+    if count == 0 and not density_mode:
+        raise GeometryError("При таком base_d/зазоре на поверхности не помещается ни одного шипа.")
     pieces = []
     for point, normal in zip(points, normals):
         normal = normal / max(float(np.linalg.norm(normal)), 1e-12)
@@ -525,5 +635,11 @@ def spikes(a, name):
         raise GeometryError("Шипы не сварились с исходным объектом.")
     out = _derived(a, name, solid, base, "spikes")
     out.meta["spikes"] = count
-    out.notes.append(f"шипов на исходной поверхности {count}, surface={surface}, seed={seed}")
+    if density_mode:
+        out.meta["density_requested"] = float(density)
+        out.meta["packing_capacity"] = packing_capacity
+        out.meta["available_area"] = available_area
+        out.meta["density_actual"] = 100.0 * count / max(packing_capacity, 1)
+    out.notes.append(f"шипов на исходной поверхности {count}, surface={surface}, seed={seed}"
+                     + (f", заполнение запрошено {density:g}%" if density_mode else ""))
     return out

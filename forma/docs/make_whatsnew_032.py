@@ -63,9 +63,9 @@ CASES = [
     ("щипок", "сжали по X — материал вышел вбок",
      "ш = sphere radius=32 segments=48\n"
      "ш = pinch [ш] axis=z amount=0.35 radius=22 bulge=0.6", "iso", 1.0, None),
-    ("стёсывание", "слой снят фасеткой под углом",
+    ("отсечение плоскостью", "вся часть за плоскостью удалена",
      "б = box size=[54,54,88] round=3\n"
-     "б = shave [б] at=[0,0,88] dir=[0,0.55,1] depth=20 radius=0", "iso", 1.0, None),
+     "б = cut_plane [б] at=[0,0,88] dir=[0,0.55,1] depth=20", "iso", 1.0, None),
     ("заострение", "как точилка: конус с торца",
      "к = cylinder radius=9 height=88 segments=48\n"
      "к = point [к] length=26", "iso", 1.0, None),

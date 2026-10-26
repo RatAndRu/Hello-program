@@ -21,6 +21,7 @@ const state = {
   lastSaved: null,
   building: false,
   pending: false,
+  heavyApproved: new Set(),
   examples: [],
   projects: [],
   help: null,
@@ -48,7 +49,7 @@ const state = {
   hidden: new Set(),
   userHidden: new Set(),
   editBaseline: null,
-  lastSaved: '', 
+  lastSaved: '',
   material: { color: '#c9d1e3', metal: 0, rough: 0.5 },
   anim: {
     mode: 'clips', time: 0, duration: 0, playing: false,
@@ -57,6 +58,14 @@ const state = {
     seqKey: null, morphPending: null,
   },
 };
+const heavyPrompts = new Map();
+
+/** Полноэкранные панели закрывают WebGL-viewport: сцену под ними не рисуем. */
+function syncViewportSuspension() {
+  const covered = ['tools-modal', 'preview-modal', 'help-modal', 'tex-modal']
+    .some((id) => { const el = $(id); return el && !el.hidden; });
+  state.viewer?.setSceneSuspended?.(covered);
+}
 
 function readLoopMode() {
   try { return localStorage.getItem('forma_loop_mode') || 'auto'; } catch (e) { return 'auto'; }
@@ -84,6 +93,45 @@ async function api(path, body) {
   const data = await res.json().catch(() => ({ error: { message: 'Некорректный ответ сервера' } }));
   if (data.error) throw data.error;
   return data;
+}
+
+function resourceCancelError(message = 'Тяжёлое действие отменено; расчёт не запускался.') {
+  const error = new Error(message);
+  error.resourceCancelled = true;
+  return error;
+}
+
+/**
+ * Общий preflight для кадров и морфинга. До подтверждения на сервер уходит
+ * только статическая оценка. Фоновый prefetch не открывает диалог: тяжёлый
+ * кадр будет запрошен интерактивно, когда пользователь действительно его
+ * выберет. Одновременные запросы делят один диалог, а не открывают очередь.
+ */
+async function apiWithResourcePause(path, body, approvalKey, label, interactive = true) {
+  const res = await api(path, {
+    ...body, allow_heavy: state.heavyApproved.has(approvalKey),
+  });
+  if (!res.resource_warning) return res;
+  if (!interactive) throw resourceCancelError('Тяжёлый фоновый кадр пропущен до подтверждения.');
+  let prompt = heavyPrompts.get(approvalKey);
+  if (!prompt) {
+    prompt = Promise.resolve().then(() => window.confirm(
+      `Пауза перед тяжёлым действием: ${label}.\n\n`
+      + `Оценка: ${fmtInt(res.estimated_tris || 0)} трис `
+      + `(лимит ${fmtInt(res.limit || 500000)}).\n`
+      + 'Геометрия ещё не строилась, текущая сцена сохранена.\n\n'
+      + 'ОК — продолжить. Отмена — отменить последнее действие.'));
+    heavyPrompts.set(approvalKey, prompt);
+  }
+  let proceed = false;
+  try {
+    proceed = await prompt;
+  } finally {
+    if (heavyPrompts.get(approvalKey) === prompt) heavyPrompts.delete(approvalKey);
+  }
+  if (!proceed) throw resourceCancelError();
+  state.heavyApproved.add(approvalKey);
+  return api(path, { ...body, allow_heavy: true });
 }
 
 /**
@@ -333,7 +381,7 @@ document.addEventListener('keydown', (e) => {
   }
   if (e.key === 'Escape') {
     document.querySelectorAll('.menu.open').forEach((m) => m.classList.remove('open'));
-    $('help-modal').hidden = true;
+    closeHelp();
     const studio = $('studio-panel');
     if (studio && !studio.hidden) toggleStudio(false);
     const mat = $('material-panel');
@@ -354,7 +402,27 @@ async function buildNow(silent = false) {
   const t0 = performance.now();
   try {
     const sent = currentScript();
-    const payload = await api('/api/build', { script: sent, auto: silent });
+    let payload = await api('/api/build', {
+      script: sent, auto: silent, allow_heavy: state.heavyApproved.has(sent),
+    });
+    if (payload.resource_warning) {
+      const estimate = fmtInt(payload.estimated_tris || 0);
+      const limit = fmtInt(payload.limit || 500000);
+      const proceed = window.confirm(
+        `Пауза перед тяжёлым действием.\n\nОценка: ${estimate} трис (лимит ${limit}).\n`
+        + 'Сетка ещё не строилась и старая сцена сохранена.\n\n'
+        + 'ОК — продолжить построение.\nОтмена — отменить последнее действие.');
+      if (!proceed) {
+        if (currentScript() === sent && state.history.length) undo();
+        else if (currentScript() === sent && state.builtScript !== undefined) {
+          setScript(state.builtScript, { record: false, build: false });
+        }
+        toast('Тяжёлое действие отменено; сцена не изменена.', 'warn');
+        return;
+      }
+      state.heavyApproved.add(sent);
+      payload = await api('/api/build', { script: sent, auto: silent, allow_heavy: true });
+    }
     state.payload = payload;
     state.builtScript = payload.ok ? sent : state.builtScript;
     applyBuild(payload, Math.round(performance.now() - t0));
@@ -1842,13 +1910,21 @@ function showMorph(clip, value) {
   const script = currentScript();
   const pending = 'm' + value.toFixed(3) + clip.param;
   state.anim.morphPending = pending;
-  api('/api/morph', { script, param: clip.param, value })
+  apiWithResourcePause('/api/morph', { script, param: clip.param, value },
+    `morph:${script}:${clip.param}`, 'морфинг')
     .then((res) => {
       if (!res.glb || state.anim.morphPending !== pending) return;
       state.viewer?.loadFrame(res.key, '/api/frame.glb?key=' + encodeURIComponent(res.key)
         + '&token=' + encodeURIComponent(TOKEN)).catch(() => {});
     })
-    .catch(() => {});
+    .catch((err) => {
+      if (!err.resourceCancelled) return;
+      if (state.anim.morphPending === pending) state.anim.morphPending = null;
+      state.anim.seqKey = null;
+      pauseAnim();
+      state.viewer?.showFinalModel();
+      toast('Тяжёлый морфинг отменён; сцена не изменена.', 'warn');
+    });
 }
 
 function morphValueAt(clip, index) {
@@ -1865,7 +1941,8 @@ function prefetchMorph(clip, index) {
   const key = `pf_m_${clip.param}_${value}`;
   if (state.anim.cache.has(key)) return;
   state.anim.cache.set(key, true);
-  api('/api/morph', { script, param: clip.param, value })
+  apiWithResourcePause('/api/morph', { script, param: clip.param, value },
+    `morph:${script}:${clip.param}`, 'морфинг', false)
     .then((res) => {
       if (res.glb) state.viewer?.preloadFrame(res.key,
         '/api/frame.glb?key=' + encodeURIComponent(res.key) + '&token=' + encodeURIComponent(TOKEN));
@@ -1880,7 +1957,9 @@ function prefetchFrame(index) {
   const key = `pf_${state.payload?.script_hash || ''}_${frame.n}`;
   if (state.anim.cache.has(key)) return;
   state.anim.cache.set(key, true);
-  api('/api/frame', { script: currentScript(), upto: frame.n })
+  const script = currentScript();
+  apiWithResourcePause('/api/frame', { script, upto: frame.n },
+    `frame:${script}`, 'кадр сборки', false)
     .then((res) => {
       if (res.glb) state.viewer?.preloadFrame(res.key,
         '/api/frame.glb?key=' + encodeURIComponent(res.key) + '&token=' + encodeURIComponent(TOKEN));
@@ -1941,7 +2020,8 @@ async function showFrame(index) {
   if (a.busy) { a.next = index; return; }
   a.busy = true;
   try {
-    const res = await api('/api/frame', { script, upto: frame.n });
+    const res = await apiWithResourcePause('/api/frame', { script, upto: frame.n },
+      `frame:${script}`, 'кадр сборки');
     if (!res.glb) { toast('Этот шаг не даёт геометрии — выберите другой', 'bad'); return; }
     const url = '/api/frame.glb?key=' + encodeURIComponent(res.key)
       + '&token=' + encodeURIComponent(TOKEN);
@@ -1950,7 +2030,15 @@ async function showFrame(index) {
     await state.viewer.loadFrame(res.key, url);
     focusFrameObject(frame);
   } catch (e) {
-    toast('Не удалось показать кадр: ' + (e.message || e), 'bad');
+    if (e.resourceCancelled) {
+      a.seqKey = null;
+      a.next = undefined;
+      pauseAnim();
+      state.viewer?.showFinalModel();
+      toast('Тяжёлый кадр отменён; сцена не изменена.', 'warn');
+    } else {
+      toast('Не удалось показать кадр: ' + (e.message || e), 'bad');
+    }
   } finally {
     a.busy = false;
     if (a.next !== undefined && a.next !== index) {
@@ -3109,12 +3197,14 @@ function openTexSandbox() {
   const modal = $('tex-modal');
   if (!modal) return;
   modal.hidden = false;
+  syncViewportSuspension();
   updateSandboxPreview();
 }
 
 function closeTexSandbox() {
   const modal = $('tex-modal');
   if (modal) modal.hidden = true;
+  syncViewportSuspension();
 }
 
 function applySandboxTexture() {
@@ -3987,6 +4077,9 @@ const TOOL_SHAPES = [
       { k: 'round', label: 'кромка', v: 0, step: 0.5, min: 0, max: 1000,
         hint: 'радиус скругления плоского среза; работает при slice>0' },
       detailParam(4, 'детализация: 0 — гранёный шар, 5 — максимально гладкий'),
+      { k: 'expand', label: 'расширение половины', v: 0, step: 0.05, min: 0, max: 2, kind: 'slider' },
+      { k: 'expand_side', label: 'расширяемая половина', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+      { k: 'expand_smooth', label: 'плавный переход', v: 0.65, step: 0.05, min: 0, max: 1, kind: 'slider' },
     ],
   },
   {
@@ -4011,6 +4104,9 @@ const TOOL_SHAPES = [
       { k: 'z', label: 'полуось Z', v: 22, step: 1, min: 0.1, max: 5000 },
       { k: 'divisions', label: 'геодетализация', v: 2, min: 0, max: 5, step: 1,
         kind: 'slider', hint: '20 → 80 → 320… треугольников; полуоси сохраняются на каждом уровне' },
+      { k: 'expand', label: 'расширение половины', v: 0, step: 0.05, min: 0, max: 2, kind: 'slider' },
+      { k: 'expand_side', label: 'расширяемая половина', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+      { k: 'expand_smooth', label: 'плавный переход', v: 0.65, step: 0.05, min: 0, max: 1, kind: 'slider' },
     ],
   },
   {
@@ -4020,6 +4116,9 @@ const TOOL_SHAPES = [
       { k: 'radius', label: 'радиус', v: 18, step: 1, min: 0.01, max: 5000 },
       { k: 'height', label: 'длина', v: 90, step: 5, min: 0.02, max: 5000 },
       detailParam(3, 'детализация скруглений'),
+      { k: 'expand', label: 'расширение половины', v: 0, step: 0.05, min: 0, max: 2, kind: 'slider' },
+      { k: 'expand_side', label: 'расширяемая половина', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+      { k: 'expand_smooth', label: 'плавный переход', v: 0.65, step: 0.05, min: 0, max: 1, kind: 'slider' },
     ],
   },
   {
@@ -4033,12 +4132,19 @@ const TOOL_SHAPES = [
   },
   {
     op: 'ring', name: 'кольцо', title: 'Кольцо', group: 'Стандартные примитивы',
-    desc: 'Обод со скруглёнными краями; cavity>0 создаёт закрытый канал внутри самого обода и задаёт его наружные стенки.',
+    desc: 'Обод со сквозным центром, открытой или закрытой полостью внутри и независимыми кольцевыми канавками на одной/двух сторонах.',
     params: [
-      { k: 'diameter', label: 'диаметр', v: 20, step: 1, min: 1, max: 5000 },
-      { k: 'width', label: 'ширина', v: 6, step: 0.5, min: 0.4, max: 5000 },
-      { k: 'thickness', label: 'толщина', v: 2.2, step: 0.2, min: 0.2, max: 5000 },
-      { k: 'cavity', label: 'стенка канала', v: 0, step: 0.2, min: 0, max: 1000 },
+      { k: 'diameter', label: 'внутренний диаметр', v: 30, step: 1, min: 1, max: 5000 },
+      { k: 'width', label: 'ширина', v: 10, step: 0.5, min: 0.4, max: 5000 },
+      { k: 'thickness', label: 'толщина обода', v: 6, step: 0.2, min: 0.2, max: 5000 },
+      { k: 'cavity', label: 'стенка полости', v: 0, step: 0.2, min: 0, max: 1000 },
+      { k: 'cavity_side', label: 'полость', v: 'закрытая', kind: 'raw', choices: ['закрытая', 'верх', 'низ'] },
+      { k: 'groove', label: 'канавка', v: 'нет', kind: 'raw', choices: ['нет', 'круглая', 'прямоугольная', 'треугольная', 'трапециевидная'] },
+      { k: 'groove_width', label: 'ширина канавки', v: 2, step: 0.2, min: 0.05, max: 1000 },
+      { k: 'groove_depth', label: 'глубина канавки', v: 1, step: 0.2, min: 0.02, max: 1000 },
+      { k: 'groove_count', label: 'число канавок', v: 1, step: 1, min: 1, max: 32 },
+      { k: 'groove_side', label: 'сторона канавок', v: 'верх', kind: 'raw', choices: ['верх', 'низ', 'обе'] },
+      { k: 'groove_offset', label: 'отступ канавки', v: 0.5, step: 0.1, min: 0, max: 1000 },
       { k: 'round', label: 'скругл.', v: 0.6, step: 0.1, min: 0, max: 1000 },
     ],
   },
@@ -4052,13 +4158,40 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'barrel', name: 'бочка', title: 'Бочка', group: 'Стандартные примитивы',
+    desc: 'Геометрическая выпуклая бочка с плоскими торцами. Сплошные или пунктирные борозды/холмики и независимые бортики входят в одну сетку.',
+    params: [
+      { k: 'radius', label: 'радиус середины', v: 60, step: 1, min: 1, max: 5000 },
+      { k: 'height', label: 'высота', v: 120, step: 2, min: 1, max: 5000 },
+      { k: 'end_radius', label: 'радиус торцов', v: 46.8, step: 1, min: 0.2, max: 5000 },
+      { k: 'bulge', label: 'выпуклость', v: 1, step: 0.05, min: 0.35, max: 3 },
+      { k: 'relief', label: 'боковой рельеф', v: 'нет', kind: 'raw', choices: ['нет', 'борозды', 'холмики'] },
+      { k: 'shape', label: 'профиль', v: 'круглые', kind: 'raw', choices: ['круглые', 'прямоугольные', 'треугольные', 'трапециевидные'] },
+      { k: 'groove_count', label: 'линий по кругу', v: 12, step: 1, min: 1, max: 256 },
+      { k: 'groove_depth', label: 'глубина/высота', v: 1.5, step: 0.2, min: 0, max: 1000 },
+      { k: 'groove_width', label: 'ширина в ячейке', v: 0.42, step: 0.02, min: 0.02, max: 0.98, kind: 'slider' },
+      { k: 'dashed', label: 'пунктир', v: false, kind: 'bool' },
+      { k: 'dash_count', label: 'периодов по высоте', v: 4, step: 1, min: 1, max: 128 },
+      { k: 'dash_duty', label: 'доля штриха', v: 0.58, step: 0.02, min: 0.05, max: 1, kind: 'slider' },
+      { k: 'rim_top', label: 'бортик сверху', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'rim_bottom', label: 'бортик снизу', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'rim_height', label: 'высота бортиков', v: 6, step: 0.5, min: 0.1, max: 1000 },
+      { k: 'segments', label: 'сегментов', v: 64, step: 4, min: 12, max: 512 },
+    ],
+  },
+  {
     op: 'disc', name: 'круг', title: 'Круг', group: 'Стандартные примитивы',
-    desc: 'Круг с плоским, вогнутым или выпуклым верхом, независимой кромкой и четырёхлучевым вогнутым контуром.',
+    desc: 'Круг с плоским, вогнутым или выпуклым верхом, независимой кромкой и непрерывным тороидальным бортиком с регулируемым отступом.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 120, step: 5, min: 0.5, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 8, step: 1, min: 0.2, max: 5000 },
-      { k: 'outline', label: 'контур', v: 'обычная', kind: 'raw', choices: ['обычная', 'вогнутая4'] },
-      { k: 'indent', label: 'вогнутость', v: 0.25, step: 0.05, min: 0, max: 0.8 },
+      { k: 'outline', label: 'контур (совместимость)', v: 'обычная', kind: 'raw', choices: ['обычная', 'вогнутая4'] },
+      { k: 'indent', label: 'вдавленность контура', v: 0.25, step: 0.05, min: 0, max: 0.8 },
+      { k: 'rim_profile', label: 'бортик', v: 'нет', kind: 'raw', choices: ['нет', 'вогнутый', 'выпуклый'] },
+      { k: 'rim_height', label: 'глубина/высота бортика', v: 2.4, step: 0.2, min: 0, max: 1000 },
+      { k: 'rim_width', label: 'ширина бортика', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
+      { k: 'rim_offset', label: 'отступ от края', v: 0, step: 0.5, min: 0, max: 5000 },
+      { k: 'rim_side', label: 'сторона бортика', v: 'верх', kind: 'raw', choices: ['верх', 'низ', 'обе'] },
       { k: 'edge', label: 'кромка', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
       { k: 'edge_band', label: 'переход кромки', v: 15, step: 1, min: 0.05, max: 5000 },
       { k: 'top', label: 'верх', v: 'плоская', kind: 'raw', choices: ['плоская', 'вогнутая', 'выпуклая'] },
@@ -4068,13 +4201,18 @@ const TOOL_SHAPES = [
   },
   {
     op: 'oval', name: 'овал', title: 'Овал', group: 'Стандартные примитивы',
-    desc: 'Овальная плита с независимой кромкой, куполом/чашей и четырьмя вогнутыми сторонами между кончиками на осях.',
+    desc: 'Овальная плита с независимой кромкой, куполом/чашей и непрерывным вогнутым или выпуклым бортиком с регулируемым отступом.',
     params: [
       { k: 'width', label: 'ширина', v: 200, step: 10, min: 1, max: 5000 },
       { k: 'length', label: 'длина', v: 120, step: 10, min: 1, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 8, step: 1, min: 0.2, max: 5000 },
-      { k: 'outline', label: 'контур', v: 'обычная', kind: 'raw', choices: ['обычная', 'вогнутая4'] },
-      { k: 'indent', label: 'вогнутость', v: 0.25, step: 0.05, min: 0, max: 0.8 },
+      { k: 'outline', label: 'контур (совместимость)', v: 'обычная', kind: 'raw', choices: ['обычная', 'вогнутая4'] },
+      { k: 'indent', label: 'вдавленность контура', v: 0.25, step: 0.05, min: 0, max: 0.8 },
+      { k: 'rim_profile', label: 'бортик', v: 'нет', kind: 'raw', choices: ['нет', 'вогнутый', 'выпуклый'] },
+      { k: 'rim_height', label: 'глубина/высота бортика', v: 2.4, step: 0.2, min: 0, max: 1000 },
+      { k: 'rim_width', label: 'ширина бортика', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
+      { k: 'rim_offset', label: 'отступ от края', v: 0, step: 0.5, min: 0, max: 5000 },
+      { k: 'rim_side', label: 'сторона бортика', v: 'верх', kind: 'raw', choices: ['верх', 'низ', 'обе'] },
       { k: 'edge', label: 'кромка', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
       { k: 'edge_band', label: 'переход кромки', v: 15, step: 1, min: 0.05, max: 5000 },
       { k: 'top', label: 'верх', v: 'плоская', kind: 'raw', choices: ['плоская', 'вогнутая', 'выпуклая'] },
@@ -4096,8 +4234,9 @@ const TOOL_SHAPES = [
       { k: 'bend', label: 'угол дуги°', v: 0, step: 5, min: -180, max: 180 },
       { k: 'path', label: 'контур XY', v: 'прямая', kind: 'raw', choices: ['прямая', 'S', 'зигзаг', 'подкова', 'J'] },
       { k: 'curve', label: 'амплитуда/радиус', v: 30, step: 5, min: 0.1, max: 5000 },
-      { k: 'path_z', label: 'контур XZ', v: 'прямая', kind: 'raw', choices: ['прямая', 'S', 'зигзаг'] },
+      { k: 'path_z', label: 'контур XZ', v: 'прямая', kind: 'raw', choices: ['прямая', 'S', 'зигзаг', 'подкова', 'J'] },
       { k: 'curve_z', label: 'амплитуда Z', v: 30, step: 5, min: 0.1, max: 5000 },
+      { k: 'plane', label: 'плоскость path', v: 'XY', kind: 'raw', choices: ['XY', 'XZ'] },
       { k: 'recess', label: 'отверстие', v: 'нет', kind: 'raw', choices: ['нет', 'круг', 'прямоугольник', 'квадрат', 'треугольник'] },
       { k: 'recess_size', label: 'ширина отверстия', v: 16, step: 1, min: 0.5, max: 5000 },
       { k: 'recess_length', label: 'длина отверстия', v: 24, step: 1, min: 0.5, max: 5000 },
@@ -4171,14 +4310,16 @@ const TOOL_SHAPES = [
   },
   {
     op: 'полуовал', name: 'полуовал', title: 'Полуовал', group: 'Производные примитивы',
-    desc: 'Пластина-полуовал с отдельной толщиной только эллиптической дуги; прямая нижняя кромка не изменяется.',
+    desc: 'Полуовал с независимой дугой и настоящей открытой полостью: wall задаёт стенку и дно, cavity_depth — глубину формы-лодочки.',
     params: [
       { k: 'width', label: 'ширина', v: 90, step: 2, min: 0.5, max: 5000 },
       { k: 'height', label: 'высота', v: 55, step: 2, min: 0.5, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 8, step: 0.5, min: 0.2, max: 1000 },
+      { k: 'wall', label: 'стенка и дно', v: 2, step: 0.5, min: 0, max: 1000 },
+      { k: 'cavity_depth', label: 'глубина полости', v: 5, step: 0.5, min: 0, max: 1000 },
       { k: 'edge', label: 'кромка дуги', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
       { k: 'edge_band', label: 'переход дуги', v: 14, step: 1, min: 0.05, max: 5000 },
-      { k: 'hole', label: 'отверстие', v: 16, step: 1, min: 0, auto: true, max: 1000 },
+      { k: 'hole', label: 'отверстие', v: 0, step: 1, min: 0, auto: true, max: 1000 },
       { k: 'smooth', label: 'сглаж.', v: 0, step: 1, min: 0, max: 4 },
     ],
   },
@@ -4248,8 +4389,8 @@ const TOOL_SHAPES = [
   },
   {
     op: 'ingot', name: 'слиток', title: 'Слиток', group: 'Производные примитивы',
-    desc: 'Объёмная трапеция: нижняя площадка больше верхней, бока скошены. '
-      + 'Слиток металла, груз, кирпич-трапеция, основание под наклонные стенки.',
+    desc: 'Объёмная трапеция со скошенными боками и слепой полостью сверху/снизу. '
+      + 'Внутренние стенки повторяют скос и сдвиг верха, противоположное дно сохраняется.',
     params: [
       { k: 'length', label: 'длина', v: 100, step: 5, min: 1, max: 5000 },
       { k: 'width', label: 'ширина', v: 50, step: 5, min: 1, max: 5000 },
@@ -4260,6 +4401,9 @@ const TOOL_SHAPES = [
       { k: 'top_offset', label: 'сдвиг верха', v: '0,0', kind: 'vec' },
       { k: 'round', label: 'углы', v: 0, step: 1, min: 0, max: 1000 },
       { k: 'smooth', label: 'кромки', v: 0, step: 1, min: 0, max: 4 },
+      { k: 'wall', label: 'стенка полости', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'cavity', label: 'открыть', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+      { k: 'cavity_depth', label: 'глубина полости', v: '', auto: true, step: 1, min: 0.1, max: 5000 },
     ],
   },
   {
@@ -4273,6 +4417,20 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'hyperboloid', name: 'гиперболоид', title: 'Гиперболоид / песочные часы', group: 'Производные примитивы',
+    desc: 'Ветвь гиперболоида вращения или двойная фигура с регулируемой талией и настоящим сквозным отверстием посередине.',
+    params: [
+      { k: 'radius', label: 'радиус торцов', v: 70, step: 1, min: 1, max: 5000 },
+      { k: 'height', label: 'полная высота', v: 160, step: 2, min: 1, max: 5000 },
+      { k: 'center_radius', label: 'радиус талии', v: 24, step: 1, min: 0.1, max: 5000 },
+      { k: 'hourglass', label: 'верхняя ветвь', v: true, kind: 'bool' },
+      { k: 'center_hole', label: 'отверстие талии Ø', v: 13.2, step: 0.5, min: 0, max: 5000 },
+      { k: 'wall', label: 'стенка', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'segments', label: 'сегментов', v: 64, step: 4, min: 12, max: 512 },
+      { k: 'rings', label: 'рядов на ветвь', v: 24, step: 1, min: 4, max: 256 },
+    ],
+  },
+  {
     op: 'saddle', name: 'седло', title: 'Седло (гипар)', group: 'Производные примитивы',
     desc: 'Гиперболический параболоид: в одну сторону вверх, в другую вниз. '
       + 'гипар — крыша с прямыми рёбрами, седло — чаша-чипс. Толщина делает плиту.',
@@ -4282,20 +4440,61 @@ const TOOL_SHAPES = [
       { k: 'rise', label: 'перепад', v: 40, step: 5, min: 1, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 4, step: 0.5, min: 0.3, max: 5000 },
       { k: 'mode', label: 'форма', v: 'гипар', choices: ['гипар', 'седло'] },
+      { k: 'segments', label: 'сетка по сторонам', v: 64, step: 4, min: 8, max: 512 },
+      { k: 'nu', label: 'граней X (авто)', v: '', auto: true, step: 4, min: 4, max: 512 },
+      { k: 'nv', label: 'граней Y (авто)', v: '', auto: true, step: 4, min: 4, max: 512 },
     ],
   },
   {
     op: 'pie', name: 'сектор_круга', title: 'Сектор круга', group: 'Производные примитивы',
-    desc: 'Кусок пирога с объёмом. Отдельная кромка меняет только круглую дугу; радиальные срезы сохраняют основную толщину.',
+    desc: 'Сектор с отдельной кромкой дуги и настоящей полостью: внутренний контур смещён на wall, сверху открыта форма-лодочка.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 140, step: 5, min: 1, max: 5000 },
       { k: 'angle', label: 'угол', v: 90, step: 5, min: 1, max: 360 },
       { k: 'start', label: 'начало', v: 0, step: 5, min: -360, max: 360 },
-      { k: 'thickness', label: 'толщина', v: 8, step: 1, min: 0.2, max: 5000 },
+      { k: 'thickness', label: 'толщина', v: 18, step: 1, min: 0.2, max: 5000 },
+      { k: 'wall', label: 'стенка и дно', v: 2.5, step: 0.5, min: 0, max: 5000 },
+      { k: 'cavity_depth', label: 'глубина полости', v: 13, step: 1, min: 0, max: 5000 },
       { k: 'edge', label: 'кромка дуги', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
       { k: 'edge_band', label: 'переход дуги', v: 18, step: 1, min: 0.05, max: 5000 },
       { k: 'hole', label: 'отверстие', v: 0, step: 1, min: 0, max: 1000 },
       { k: 'smooth', label: 'сглаж.', v: 0, step: 1, min: 0, max: 4 },
+    ],
+  },
+  {
+    op: 'eyeball', name: 'глазное_яблоко', title: 'Глазное яблоко', group: 'Производные примитивы',
+    desc: 'Склера, сферические радужка и зрачок, выпуклая прозрачная роговица — четыре объёма без мерцающих совпадающих граней.',
+    params: [
+      { k: 'diameter', label: 'Ø склеры', v: 24, step: 1, min: 2, max: 5000 },
+      { k: 'iris', label: 'Ø радужки', v: 11, step: 0.5, min: 0.2, max: 4500 },
+      { k: 'pupil', label: 'Ø зрачка', v: 4.6, step: 0.2, min: 0.1, max: 4500 },
+      { k: 'cornea', label: 'Ø роговицы', v: '', auto: true, step: 0.5, min: 0.2, max: 4800 },
+      { k: 'bulge', label: 'выпуклость', v: '', auto: true, step: 0.1, min: 0.05, max: 2500 },
+      { k: 'cornea_t', label: 'кромка роговицы', v: 0.26, step: 0.02, min: 0.03, max: 1000 },
+      { k: 'iris_color', label: 'цвет радужки', v: '#467fa6', kind: 'raw' },
+      { k: 'segments', label: 'сегменты', v: 64, step: 4, min: 24, max: 192 },
+    ],
+  },
+  {
+    op: 'web', name: 'паутина', title: 'Паутина / мембрана', group: 'Производные примитивы',
+    desc: 'Капсульные нити и сквозные ячейки; крыло и плавник могут иметь тонкую мембрану с вогнутыми промежутками между рёбрами.',
+    params: [
+      { k: 'shape', label: 'форма', v: 'круг', kind: 'raw', choices: ['круг', 'сектор', 'угол', 'треугольник', 'крыло', 'плавник'] },
+      { k: 'radius', label: 'радиус', v: 70, step: 5, min: 2, max: 10000 },
+      { k: 'aspect', label: 'ширина веера', v: 1, step: 0.05, min: 0.15, max: 4 },
+      { k: 'angle', label: 'раствор°', v: 145, step: 5, min: 10, max: 360 },
+      { k: 'start', label: 'поворот°', v: 0, step: 5, min: -360, max: 360 },
+      { k: 'radials', label: 'нитей/рёбер', v: 12, step: 1, min: 2, max: 80 },
+      { k: 'rings', label: 'колец', v: 5, step: 1, min: 0, max: 30 },
+      { k: 'wire', label: 'Ø нитей', v: 0.8, step: 0.1, min: 0.05, max: 1000 },
+      { k: 'ring_wire', label: 'Ø колец', v: 0.6, step: 0.1, min: 0.04, max: 1000 },
+      { k: 'sag', label: 'провисание', v: 0.12, step: 0.02, min: 0, max: 0.45 },
+      { k: 'bend', label: 'изгиб нитей', v: 0, step: 1, min: -10000, max: 10000 },
+      { k: 'frame', label: 'контур', v: true, kind: 'bool' },
+      { k: 'membrane', label: 'мембрана', v: false, kind: 'bool' },
+      { k: 'membrane_thick', label: 'толщина мембраны', v: 0.28, step: 0.05, min: 0.02, max: 1000 },
+      { k: 'scallop', label: 'вогнутость края', v: 0.34, step: 0.02, min: 0, max: 0.75 },
+      { k: 'plane', label: 'плоскость', v: 'плашмя', kind: 'raw', choices: ['плашмя', 'фронт'] },
     ],
   },
   {
@@ -4313,15 +4512,17 @@ const TOOL_SHAPES = [
   },
   {
     op: 'tri_prism', name: 'призма', title: 'Треугольная призма', group: 'Производные примитивы',
-    desc: 'Треугольник в основании с любыми углами: равнобедренный, прямоугольный, '
-      + 'косоугольный. Стороны a, b, c подбираются числами — из них и складывается '
-      + 'наклон граней. round скругляет рёбра основания.',
+    desc: 'Треугольник в основании с любыми углами и слепой полостью сверху/снизу. '
+      + 'wall сохраняет три стенки и противоположное дно, round скругляет рёбра основания.',
     params: [
       { k: 'a', label: 'сторона a', v: 100, step: 5, min: 1, max: 5000 },
       { k: 'b', label: 'сторона b', v: 100, step: 5, min: 1, max: 5000 },
       { k: 'c', label: 'сторона c', v: 40, step: 5, min: 1, max: 5000 },
       { k: 'height', label: 'высота', v: 70, step: 5, min: 1, max: 5000 },
       { k: 'round', label: 'скругление', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'wall', label: 'стенка полости', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'cavity', label: 'открыть', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+      { k: 'cavity_depth', label: 'глубина полости', v: '', auto: true, step: 1, min: 0.1, max: 5000 },
     ],
   },
   {
@@ -4380,13 +4581,15 @@ const TOOL_SHAPES = [
   },
   {
     op: 'crescent', name: 'полумесяц', title: 'Полумесяц', group: 'Природные примитивы',
-    desc: 'Серп: из круга выкушен второй круг; wall>0 делает сквозную формочку по контуру.',
+    desc: 'Плоский серп или объёмное C-образное тело с выпуклыми сторонами; выкус, толщина и скругление работают в обоих режимах.',
     params: [
       { k: 'radius', label: 'радиус', v: 50, step: 5, min: 0.5, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 18, step: 2, min: 0.1, max: 5000 },
       { k: 'bite', label: 'выкус', v: 1, step: 0.05, min: 0.5, max: 1.6 },
-      { k: 'depth', label: 'толщина Z', v: 12, step: 1, min: 0.1, max: 1000 },
-      { k: 'wall', label: 'формочка', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'depth', label: 'толщина', v: 12, step: 1, min: 0.1, max: 1000 },
+      { k: 'volume', label: 'объёмные стороны', v: false, kind: 'bool' },
+      { k: 'round', label: 'кромка/рога', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'wall', label: 'формочка (плоский)', v: 0, step: 0.5, min: 0, max: 1000 },
     ],
   },
   {
@@ -4397,6 +4600,7 @@ const TOOL_SHAPES = [
       { k: 'outer', label: 'радиус', v: 55, step: 1, min: 0.5, max: 5000 },
       { k: 'inner', label: 'впадина', v: 22, step: 1, min: 0.1, max: 5000 },
       { k: 'depth', label: 'толщина', v: 12, step: 1, min: 0.2, max: 1000 },
+      { k: 'volume', label: 'объёмные стороны', v: false, kind: 'bool' },
       { k: 'bevel', label: 'фаска', v: 2, step: 0.5, min: 0, max: 1000 },
       { k: 'smooth', label: 'сглаж.', v: 0.4, step: 0.1, min: 0, max: 1 },
       { k: 'twist', label: 'закрутка', v: 0, step: 5, min: -360, max: 360 },
@@ -4412,6 +4616,7 @@ const TOOL_SHAPES = [
       { k: 'height', label: 'высота', v: 90, step: 5, min: 2, max: 5000 },
       { k: 'width', label: 'ширина', v: 44, step: 2, min: 1, max: 5000 },
       { k: 'depth', label: 'толщина Z', v: 10, step: 1, min: 0.1, max: 1000 },
+      { k: 'volume', label: 'объёмные стороны', v: false, kind: 'bool' },
       { k: 'round', label: 'скругл.', v: 1.5, step: 0.5, min: 0, max: 1000 },
       { k: 'wall', label: 'формочка', v: 0, step: 0.5, min: 0, max: 1000 },
     ],
@@ -4422,6 +4627,7 @@ const TOOL_SHAPES = [
     params: [
       { k: 'width', label: 'ширина', v: 60, step: 2, min: 1, max: 5000 },
       { k: 'depth', label: 'толщина', v: 18, step: 1, min: 0.2, max: 1000 },
+      { k: 'volume', label: 'объёмные стороны', v: false, kind: 'bool' },
       { k: 'round', label: 'скругл.', v: 2, step: 0.5, min: 0, max: 1000 },
       { k: 'wall', label: 'формочка', v: 0, step: 0.5, min: 0, max: 1000 },
     ],
@@ -4470,12 +4676,12 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'leaf', name: 'листок', title: 'Лист растения', group: 'Природные примитивы',
-    desc: 'Лист с изгибом; у клёна — глубокие пазухи, разнесённые лопасти и зубчатая центральная вершина.',
+    op: 'leaf', name: 'листок', title: 'Лист растения / лепесток', group: 'Природные примитивы',
+    desc: 'Лист или лепесток с изгибом; сакура имеет две округлые лопасти и настоящую выемку на кончике, у клёна — пазухи и зубцы.',
     params: [
       { k: 'length', label: 'длина', v: 90, step: 5, min: 5, max: 5000 },
       { k: 'width', label: 'ширина', v: 45, step: 5, min: 3, max: 5000 },
-      { k: 'kind', label: 'вид', v: 'овал', kind: 'raw', choices: ['овал', 'липа', 'дуб', 'клен', 'заострённый'] },
+      { k: 'kind', label: 'вид', v: 'овал', kind: 'raw', choices: ['овал', 'липа', 'дуб', 'клен', 'заострённый', 'сакура'] },
       { k: 'curl', label: 'изгиб', v: 0.25, step: 0.05, min: 0, max: 1 },
     ],
   },
@@ -4491,12 +4697,15 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'yin_yang', name: 'инь_ян', title: 'Инь-ян (запятая)', group: 'Готовые детали',
-    desc: 'Одна половина инь-ян; основной режим объёмный, как капля, плоский остаётся настройкой; wall>0 — рамка.',
+    op: 'yin_yang', name: 'инь_ян', title: 'Fireball / инь-ян', group: 'Готовые детали',
+    desc: 'Объёмный режим — цельная сфера с плавным хвостом fireball без булева стыка; плоский режим сохраняет половину инь-ян и рамку.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 120, step: 5, min: 6, max: 5000 },
       { k: 'thick', label: 'толщина', v: 16, step: 2, min: 0.4, max: 5000 },
       { k: 'form', label: 'форма', v: 'объёмная', kind: 'raw', choices: ['объёмная', 'плоская'] },
+      { k: 'tail_length', label: 'длина хвоста', v: 90, step: 2, min: 0.1, max: 5000 },
+      { k: 'tail_angle', label: 'изгиб хвоста°', v: 30, step: 5, min: -170, max: 170 },
+      { k: 'straighten', label: 'выпрямление', v: 0, step: 0.05, min: 0, max: 1, kind: 'slider', hint: '1 — прямой конус' },
       { k: 'round', label: 'скругл.', v: 0, step: 0.5, min: 0, max: 1000 },
       { k: 'side', label: 'сторона', v: 'левый', kind: 'raw', choices: ['левый', 'правый'] },
       { k: 'hole', label: 'точка-отверстие', v: 0, step: 1, min: 0, max: 1000 },
@@ -4633,6 +4842,7 @@ const TOOL_SHAPES = [
       { k: 'd', label: 'диаметр', v: 4, step: 0.5, min: 0.5, max: 100 },
       { k: 'length', label: 'длина', v: 25, step: 1, min: 1, max: 1000 },
       { k: 'head', label: 'головка', v: 'потай', kind: 'raw', choices: ['потай', 'полукруг', 'шестигранник', 'нет'] },
+      { k: 'head_only', label: 'только головка', v: false, kind: 'bool' },
       { k: 'drive', label: 'шлиц', v: 'крест', kind: 'raw', choices: ['крест', 'шлиц', 'звезда', 'шестигранник', 'нет'] },
       { k: 'drive_depth', label: 'глубина шлица', v: '', step: 0.2, min: 0.1, auto: true },
       { k: 'neck', label: 'гладкая шейка', v: 0, step: 0.5, min: 0, max: 1000 },
@@ -4786,12 +4996,13 @@ const TOOL_SHAPES = [
 
   {
     op: 'stairs', name: 'ступеньки', title: 'Ступеньки', group: 'Готовые детали',
-    desc: 'Прямой марш без скосов. Наружная кромка и внутренний угол независимо бывают прямыми или скруглёнными.',
+    desc: 'Марш без скосов; turn поворачивает каждую ступень вокруг её центра. Кромка и внутренний угол скругляются независимо.',
     params: [
       { k: 'steps', label: 'ступеней', v: 6, step: 1, min: 1, max: 120 },
       { k: 'rise', label: 'подъём', v: 18, step: 1, min: 0.5, max: 2000 },
       { k: 'run', label: 'проступь', v: 28, step: 1, min: 0.5, max: 5000 },
       { k: 'width', label: 'ширина', v: 120, step: 10, min: 1, max: 10000 },
+      { k: 'turn', label: 'поворот ступеней°', v: 30, step: 5, min: -60, max: 60 },
       { k: 'shape', label: 'наружная кромка', v: 'прямая', kind: 'raw', choices: ['прямая', 'скруглённая'] },
       { k: 'round', label: 'радиус кромки', v: 4.5, step: 0.5, min: 0, max: 8.1 },
       { k: 'inner', label: 'внутренний угол', v: 'прямой', kind: 'raw', choices: ['прямой', 'скруглённый'] },
@@ -4876,12 +5087,14 @@ const TOOL_SHAPES = [
   },
   {
     op: 'grommet', name: 'люверс', title: 'Люверс', group: 'Готовые детали',
-    desc: 'Втулка с бортиком; отверстие можно оставить, заполнить заподлицо, выпуклой или вогнутой линзой сверху.',
+    desc: 'Втулка с бортиком и независимым заполнением; transition=вогнутая заменяет прямой уступ плавной вогнутой горкой.',
     params: [
       { k: 'diameter', label: 'внутри', v: 12, step: 1, min: 1, max: 5000 },
       { k: 'height', label: 'высота', v: 8, step: 1, min: 1, max: 2000 },
       { k: 'wall', label: 'стенка', v: 1.6, step: 0.2, min: 0.3, max: 1000 },
       { k: 'flange', label: 'борт', v: 3, step: 0.5, min: 0.2, max: 1000 },
+      { k: 'transition', label: 'переход', v: 'вогнутая', kind: 'raw', choices: ['прямой', 'вогнутая'] },
+      { k: 'transition_h', label: 'высота перехода', v: 3.2, step: 0.2, min: 0.1, max: 2000 },
       { k: 'fill', label: 'заполнение', v: 'нет', kind: 'raw', choices: ['нет', 'ровно', 'выпуклая', 'вогнутая'] },
       { k: 'fill_h', label: 'прогиб заполнения', v: 1, step: 0.2, min: 0.05, max: 1000 },
       { k: 'smooth', label: 'сглаживание', v: 0, step: 1, min: 0, max: 4 },
@@ -4928,7 +5141,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'column', name: 'колонна', title: 'Колонна', group: 'Готовые детали',
-    desc: 'Стержень и независимые площадка/бортик; base_size=0 убирает площадку, отрицательный taper расширяет верх.',
+    desc: 'Стержень и независимые площадка/бортик; форма основания отдельна от сечения столба: брусок, цилиндр, тор, катушка или конус.',
     params: [
       { k: 'height', label: 'высота', v: 180, step: 5, min: 10, max: 10000 },
       { k: 'width', label: 'ширина', v: 42, step: 2, min: 1, max: 5000 },
@@ -4938,6 +5151,9 @@ const TOOL_SHAPES = [
       { k: 'taper', label: 'сужение', v: 0.35, step: 0.05, min: -0.85, max: 0.85 },
       { k: 'section', label: 'сечение', v: 'цилиндр', kind: 'raw', choices: ['цилиндр', 'брусок'] },
       { k: 'base_size', label: 'размер площадки', v: 72, step: 2, min: 0, max: 5000 },
+      { k: 'base_shape', label: 'форма основания', v: 'авто', kind: 'raw', choices: ['авто', 'брусок', 'цилиндр', 'тор', 'катушка', 'конус'] },
+      { k: 'base_depth', label: 'глубина основания', v: 72, step: 2, min: 0, max: 5000 },
+      { k: 'base_top', label: 'верх конуса', v: 52, step: 2, min: 0, max: 5000 },
       { k: 'base_h', label: 'высота площадки', v: 12, step: 1, min: 0, max: 5000 },
       { k: 'rim', label: 'вылет бортика', v: 8, step: 1, min: 0, max: 1000 },
       { k: 'rim_h', label: 'высота бортика', v: 10, step: 1, min: 0, max: 5000 },
@@ -4963,12 +5179,13 @@ const TOOL_SHAPES = [
   },
   {
     op: 'cube_hole', name: 'кубик', title: 'Кубик с отверстием', group: 'Готовые детали',
-    desc: 'Брусок со сквозным круглым, квадратным или треугольным отверстием.',
+    desc: 'Брусок со сквозными отверстиями: одно по выбранной оси или одинаковые/независимые сразу по X, Y и Z; включая шестигранник.',
     params: [
       { k: 'size', label: 'размер', v: '40,40,40', kind: 'vec' },
       { k: 'hole', label: 'отверстие', v: 16, step: 1, min: 0.2, max: 1000 },
-      { k: 'hole_shape', label: 'форма', v: 'круг', kind: 'raw', choices: ['круг', 'квадрат', 'треугольник'] },
-      { k: 'axis', label: 'ось', v: 'z', kind: 'raw', choices: ['z', 'x', 'y'] },
+      { k: 'all_axes', label: 'по всем осям', v: false, kind: 'bool' },
+      { k: 'hole_shape', label: 'форма', v: 'круг', kind: 'raw', choices: ['круг', 'квадрат', 'треугольник', 'шестигранник', 'овал'] },
+      { k: 'axis', label: 'ось одиночного', v: 'z', kind: 'raw', choices: ['z', 'x', 'y'] },
       { k: 'round', label: 'скругл.', v: 2, step: 0.5, min: 0, max: 1000 },
     ],
   },
@@ -5101,17 +5318,27 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'shave', name: 'стёсанная', title: 'Стесать поверхность', group: 'Скульпт',
+    op: 'shave', name: 'стёсанная', title: 'Канавка по сечению', group: 'Скульпт',
     base: 'box size=[70, 60, 40] round=3', baseName: 'заготовка',
-    desc: 'Снимает слой именно плоскостью. По периметру полученного среза можно '
-      + 'провести прямоугольную, овальную или треугольную канавку с настоящим профилем.',
+    desc: 'Не обрезает деталь: проводит выбранную форменную канавку по всему периметру сечения заданной плоскостью.',
     params: [
-      { k: 'depth', label: 'снять', v: 8, step: 1, min: 0.1, max: 1000 },
-      { k: 'radius', label: 'пятно', v: 0, step: 2, min: 0, max: 5000 },
-      { k: 'groove', label: 'канавка', v: 'нет', kind: 'raw', choices: ['нет', 'прямоугольная', 'овальная', 'треугольная'] },
+      { k: 'depth', label: 'сдвиг плоскости', v: 8, step: 1, min: 0, max: 1000 },
+      { k: 'radius', label: 'ограничить кругом', v: 0, step: 2, min: 0, max: 5000 },
+      { k: 'groove', label: 'канавка', v: 'прямоугольная', kind: 'raw', choices: ['прямоугольная', 'овальная', 'треугольная', 'трапециевидная', 'нет'] },
       { k: 'groove_width', label: 'ширина', v: 4, step: 0.5, min: 0.2, max: 1000 },
       { k: 'groove_depth', label: 'глубина', v: 2, step: 0.5, min: 0.05, max: 1000 },
       { k: 'groove_offset', label: 'от края', v: 3, step: 0.5, min: 0, max: 1000 },
+    ],
+  },
+  {
+    op: 'cut_plane', name: 'стесать_углы', title: 'Стесать углы плоскостью', group: 'Скульпт',
+    base: 'box size=[70, 60, 40] round=0', baseName: 'заготовка',
+    desc: 'Полностью удаляет материал по одну сторону секущей плоскости. dir смотрит в удаляемую сторону; это отдельный инструмент, не канавка shave.',
+    params: [
+      { k: 'at', label: 'точка плоскости', v: '0,0,32', kind: 'vec' },
+      { k: 'dir', label: 'нормаль удаления', v: '0,0,1', kind: 'vec' },
+      { k: 'depth', label: 'сдвиг по −dir', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'keep', label: 'оставить', v: 'обычная', kind: 'raw', choices: ['обычная', 'обратная'] },
     ],
   },
   {
@@ -5151,7 +5378,8 @@ const TOOL_SHAPES = [
     desc: 'Наращивает шипы на выбранной стороне существующего объекта. Без собственной площадки: корни входят в тело и образуют с ним одно целое.',
     params: [
       { k: 'surface', label: 'поверхность', v: 'верх', kind: 'raw', choices: ['верх', 'низ', 'право', 'лево', 'перёд', 'зад', 'вся'] },
-      { k: 'count', label: 'шипов', v: 12, step: 1, min: 1, max: 400 },
+      { k: 'count', label: 'шипов', v: 12, step: 1, min: 1, max: 2000 },
+      { k: 'density', label: 'площадь % (вместо числа)', v: '', auto: true, step: 1, min: 0, max: 100 },
       { k: 'height', label: 'высота шипа', v: 28, step: 1, min: 0.5, max: 5000 },
       { k: 'base_d', label: 'основание', v: 12, step: 1, min: 0.4, max: 5000 },
       { k: 'tip_d', label: 'остриё', v: 0.8, step: 0.2, min: 0, max: 5000 },
@@ -5168,11 +5396,19 @@ const TOOL_SHAPES = [
       + 'шапочку. Иголки, волоски, локоны и мех входят корнями в поверхность '
       + 'и образуют с ней одно тело.',
     params: [
-      { k: 'style', label: 'тип', v: 'волоски', kind: 'raw', choices: ['иголки', 'волоски', 'локоны', 'мех'] },
+      { k: 'style', label: 'тип', v: 'волоски', kind: 'raw', choices: ['иголки', 'волоски', 'локоны', 'мех', 'пряди', 'водоросли'] },
       { k: 'surface', label: 'сторона', v: 'верх', kind: 'raw', choices: ['верх', 'низ', 'право', 'лево', 'перёд', 'зад', 'вся'] },
       { k: 'length', label: 'длина', v: 24, step: 2, min: 0.5, max: 5000 },
       { k: 'thick', label: 'толщина', v: 1.4, step: 0.2, min: 0.08, max: 100 },
-      { k: 'count', label: 'корней', v: 48, step: 4, min: 1, max: 400 },
+      { k: 'width', label: 'ширина пряди/листа', v: '', auto: true, step: 0.5, min: 0.01, max: 1000 },
+      { k: 'thin', label: 'тонкость листа', v: '', auto: true, step: 0.01, min: 0.0001, max: 1 },
+      { k: 'count', label: 'корней', v: 48, step: 4, min: 1, max: 800 },
+      { k: 'density', label: 'площадь % (вместо числа)', v: '', auto: true, step: 1, min: 0, max: 100 },
+      { k: 'growth', label: 'рост', v: 'авто', kind: 'raw', choices: ['авто', 'нормаль', 'направление', 'вниз', 'огибание', 'свисание'] },
+      { k: 'dir', label: 'направление XYZ', v: '', auto: true, kind: 'vec' },
+      { k: 'tip_align', label: 'сонаправленные кончики', v: '', auto: true, kind: 'vec' },
+      { k: 'drape', label: 'огибать и свисать', v: true, kind: 'bool' },
+      { k: 'bend', label: 'изгиб локона', v: 1.8, step: 0.1, min: 0, max: 20 },
       { k: 'spread', label: 'разброс', v: 0.25, step: 0.05, min: 0, max: 1 },
       { k: 'seed', label: 'seed', v: 7, step: 1, min: 0, max: 1000000 },
     ],
@@ -5233,13 +5469,35 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'scales', name: 'чешуя', title: 'Чешуя', group: 'Поверхность',
-    group: 'Поверхность', base: 'sphere radius=40',
-    desc: 'Наложенные чешуйки: рыба, дракон, шишка. Ряды, шаг и подъём задаются числами.',
+    op: 'shrinkwrap', name: 'обтянуть', title: 'Shrinkwrap', group: 'Поверхность',
+    baseScript: '{target} = sphere radius=35\n{source} = box size=[65,65,2] at=[0,0,34]',
+    baseName: 'плёнка', targetName: 'цель',
+    desc: 'Настоящая проекция вершин второго объекта на первый. gap задаёт нависание/погружение; замкнутая толщина сохраняется.',
     params: [
+      { k: 'gap', label: 'зазор ±', v: 0.4, step: 0.2, min: -1000, max: 1000 },
+      { k: 'direction', label: 'направление', v: 'ближняя', kind: 'raw', choices: ['ближняя', 'нормаль', 'вверх', 'вниз', '+x', '-x', '+y', '-y'] },
+      { k: 'amount', label: 'сила', v: 1, step: 0.05, min: 0, max: 1 },
+      { k: 'transition', label: 'плавное затухание', v: 0, step: 1, min: 0, max: 5000 },
+      { k: 'detail', label: 'шаг сетки', v: 2, step: 0.5, min: 0.02, max: 5000 },
+      { k: 'join', label: 'соединение', v: 'нет', kind: 'raw', choices: ['нет', 'слить', 'сгладить'] },
+      { k: 'weld', label: 'радиус стыка', v: 2, step: 0.5, min: 0.05, max: 1000 },
+    ],
+  },
+  {
+    op: 'scales', name: 'чешуя', title: 'Чешуя / черепица', group: 'Поверхность',
+    base: 'sphere radius=40',
+    desc: 'Плоские наклонные пластинки: рыбий веер, острый драконий лист или четыре варианта кровельной черепицы; верхний ряд перекрывает корни нижнего.',
+    params: [
+      { k: 'kind', label: 'форма', v: 'рыба', kind: 'raw', choices: ['рыба', 'дракон', 'черепица'] },
+      { k: 'tile', label: 'вариант черепицы', v: 'волна', kind: 'raw', choices: ['плоская', 'волна', 'ромб', 'испанская'] },
       { k: 'rows', label: 'рядов', v: 10, step: 1, min: 1, max: 60 },
       { k: 'per_row', label: 'в ряду', v: 16, step: 1, min: 3, max: 120 },
-      { k: 'length', label: 'размер', v: 8, step: 1, min: 0.3, max: 5000 },
+      { k: 'length', label: 'длина', v: 14, step: 1, min: 0.3, max: 5000 },
+      { k: 'width', label: 'ширина', v: '', auto: true, step: 0.5, min: 0.2, max: 5000 },
+      { k: 'thick', label: 'толщина', v: 1.1, step: 0.1, min: 0.03, max: 1000 },
+      { k: 'tilt', label: 'наклон°', v: 18, step: 1, min: 0, max: 45 },
+      { k: 'overlap', label: 'перекрытие', v: 0.45, step: 0.05, min: 0.05, max: 0.85 },
+      { k: 'seed', label: 'seed', v: 0, step: 1, min: 0, max: 1000000 },
     ],
   },
   {
@@ -5364,6 +5622,48 @@ const TOOL_SHAPES = [
       { k: 'height', label: 'высота, мм', v: 30, step: 5, min: 0.1, max: 5000 },
     ],
   },
+];
+
+
+/* Отдельные компоновки — не примитивы: у них есть своя заготовка и,
+   как у тел, обязательная живая миниатюра. Не смешиваем их с TOOL_SHAPES,
+   чтобы счётчик примитивов и порядок старых карточек не менялись. */
+const TOOL_LAYOUTS = [
+  {
+    op: 'flower', name: 'бутон', title: 'Бутон / листья по золотому углу', group: 'Массивы',
+    base: 'leaf kind=сакура length=42 width=30 curl=0.12', baseName: 'лепесток',
+    desc: 'Выбранный лепесток или лист раскладывается отдельными телами: золотой угол 137.508°, ряды, узлы стебля и раскрытость от ночного бутона до дневного цветка.',
+    params: [
+      { k: 'mode', label: 'компоновка', v: 'бутон', kind: 'raw', choices: ['бутон', 'стебель'] },
+      { k: 'count', label: 'в ряду/узле', v: 5, step: 1, min: 1, max: 64 },
+      { k: 'rows', label: 'рядов/узлов', v: 3, step: 1, min: 1, max: 24 },
+      { k: 'layout', label: 'раскладка', v: 'золотой', kind: 'raw', choices: ['золотой', 'кольца'] },
+      { k: 'openness', label: 'раскрытость', v: 0.85, step: 0.05, min: 0, max: 1 },
+      { k: 'radius', label: 'радиус', v: 18, step: 1, min: 0, max: 5000 },
+      { k: 'row_gap', label: 'шаг рядов', v: 8, step: 1, min: 0, max: 5000 },
+      { k: 'scale', label: 'масштаб', v: 1, step: 0.05, min: 0.01, max: 100 },
+      { k: 'phase', label: 'фаза°', v: 0, step: 5, min: -360, max: 360 },
+    ],
+  },
+  {
+    op: 'flower_center', name: 'сердцевина', title: 'Тычинки и пестики в бутоне', group: 'Массивы',
+    base: 'cylinder radius=1.2 height=24 segments=12', baseName: 'тычинка',
+    desc: 'Отдельное размещение выбранного объекта внутри цветка: кольца, высота, радиус, золотой угол и наклон тычинок; пестики держатся ближе к оси.',
+    params: [
+      { k: 'kind', label: 'элементы', v: 'тычинки', kind: 'raw', choices: ['тычинки', 'пестики'] },
+      { k: 'count', label: 'в кольце', v: 12, step: 1, min: 1, max: 96 },
+      { k: 'rows', label: 'колец', v: 2, step: 1, min: 1, max: 16 },
+      { k: 'layout', label: 'раскладка', v: 'золотой', kind: 'raw', choices: ['золотой', 'кольца'] },
+      { k: 'radius', label: 'радиус', v: 12, step: 1, min: 0, max: 5000 },
+      { k: 'height', label: 'шаг высоты', v: 6, step: 1, min: 0, max: 5000 },
+      { k: 'openness', label: 'раскрытость', v: 0.8, step: 0.05, min: 0, max: 1 },
+      { k: 'scale', label: 'масштаб', v: 1, step: 0.05, min: 0.01, max: 100 },
+      { k: 'phase', label: 'фаза°', v: 0, step: 5, min: -360, max: 360 },
+    ],
+  },
+];
+
+const TOOL_PAINT = [
   {
     op: 'pattern', name: 'узор', title: 'Покраска узором', group: 'Покраска',
     group: 'Покраска', base: 'box size=[60,60,60]',
@@ -5391,7 +5691,7 @@ const TOOL_SHAPES = [
     ],
   },
 ];
-
+const ALL_TOOL_SHAPES = [...TOOL_SHAPES, ...TOOL_LAYOUTS, ...TOOL_PAINT];
 
 /* Ступени каталога: сначала тела, потом приёмы. Списки заодно задают порядок
    групп в панели — карточки внутри группы идут в порядке массива. */
@@ -5947,6 +6247,38 @@ function sliderText(p, value) {
   return String(value);
 }
 
+// Значения карточки переживают закрытие/повторное открытие инструментов.
+// Состояние держим у самого описания инструмента: фильтрация и перерисовка
+// списка не должны молча возвращать ползунки к исходным числам. В проект
+// значения дополнительно сохраняются как обычные параметры вставленной строки.
+const toolControlValues = new Map();
+
+function rememberToolControls(tool, card) {
+  const values = {};
+  tool.params.forEach((p) => {
+    const input = card.querySelector(`[data-key="${p.k}"]`);
+    if (!input) return;
+    values[p.k] = p.kind === 'bool' ? input.checked : input.value;
+  });
+  toolControlValues.set(tool, values);
+}
+
+function restoreToolControls(tool, card) {
+  const values = toolControlValues.get(tool);
+  if (!values) return;
+  tool.params.forEach((p) => {
+    if (!(p.k in values)) return;
+    const input = card.querySelector(`[data-key="${p.k}"]`);
+    if (!input) return;
+    if (p.kind === 'bool') input.checked = Boolean(values[p.k]);
+    else input.value = String(values[p.k]);
+    if (p.kind === 'slider') {
+      const out = input.closest('.tool-slider-wrap')?.querySelector('output');
+      if (out) out.textContent = sliderText(p, input.value);
+    }
+  });
+}
+
 /** Поля рецепта — те же, что у фигур: подпись, поле ввода и стрелки шага. */
 function recipeFields(params) {
   const wrap = document.createElement('div');
@@ -6007,6 +6339,13 @@ function shapeParams(tool, card) {
       parts.push(`${p.k}=${raw}`);
     }
   });
+  if ((tool.op === 'spikes' || tool.op === 'hair')
+      && card.querySelector('[data-key="density"]')?.value.trim()) {
+    // Процент и count — два взаимоисключающих способа. В текстовом DSL явный
+    // count по-прежнему имеет приоритет; карточка просто не отправляет его,
+    // когда пользователь заполнил процент доступной площади.
+    return parts.filter((part) => !part.startsWith('count=') && !part.startsWith('clumps='));
+  }
   return parts;
 }
 
@@ -6015,6 +6354,18 @@ function shapeScript(tool, card, { unique = false } = {}) {
   const parts = shapeParams(tool, card);
   const tail = parts.length ? ' ' + parts.join(' ') : '';
   const script = unique ? currentScript() : '';
+  if (tool.baseScript) {
+    const sourceName = unique
+      ? uniqueObjectName(tool.baseName || 'плёнка', script)
+      : (tool.baseName || 'плёнка');
+    const targetName = unique
+      ? uniqueObjectName(tool.targetName || 'цель', script)
+      : (tool.targetName || 'цель');
+    const base = tool.baseScript
+      .replaceAll('{target}', targetName)
+      .replaceAll('{source}', sourceName);
+    return `${base}\n${tool.op} [${targetName}, ${sourceName}]${tail}`;
+  }
   if (tool.base) {
     const baseName = unique
       ? uniqueObjectName(tool.baseName || 'заготовка', script)
@@ -6046,11 +6397,28 @@ function thumbScript(tool, card) {
   return shapeScript(tool, card);
 }
 
+async function previewRequest(script) {
+  const approvalKey = 'preview:' + script;
+  let res = await api('/api/preview', {
+    script, allow_heavy: state.heavyApproved.has(approvalKey),
+  });
+  if (res.resource_warning) {
+    const proceed = window.confirm(
+      `Превью оценено в ${fmtInt(res.estimated_tris || 0)} трис — больше лимита `
+      + `${fmtInt(res.limit || 500000)}. Оно ещё не строилось.\n\n`
+      + 'ОК — продолжить. Отмена — не запускать тяжёлое превью.');
+    if (!proceed) throw new Error('Тяжёлое превью отменено; сцена не изменена.');
+    state.heavyApproved.add(approvalKey);
+    res = await api('/api/preview', { script, allow_heavy: true });
+  }
+  return res;
+}
+
 async function thumbUrl(script) {
   if (thumbUrls.has(script)) return thumbUrls.get(script);
   // Деталь миниатюры сервер уже построил: берём из ответа и число
   // треугольников — карточка сразу пишет, сколько будет «весить» примитив.
-  const res = await api('/api/preview', { script });
+  const res = await previewRequest(script);
   if (!res.ok) {
     const err = res.error || {};
     // Причину не теряем: имя параметра и его рамки едут в интерфейс
@@ -6111,8 +6479,8 @@ function markToolFieldError(card, err) {
 
 async function refreshThumb(card) {
   const canvas = card.querySelector('canvas.tool-shot');
-  if (!canvas || !card.dataset.toolId) return;
-  const tool = (TOOL_SHAPES.find((t, i) => String(i) === card.dataset.toolId));
+  if (!canvas || !card.dataset.toolId || card.dataset.thumbVisible !== '1') return;
+  const tool = (ALL_TOOL_SHAPES.find((t, i) => String(i) === card.dataset.toolId));
   if (!tool) return;
   if (!state.thumbsOn || !toolThumbs.enabled) return;
   const script = thumbScript(tool, card);
@@ -6121,6 +6489,7 @@ async function refreshThumb(card) {
   try {
     const info = await thumbUrl(script);
     if (card.dataset.thumbBusy !== '1') return;   // карточку уже перерисовали
+    if (card.dataset.thumbVisible !== '1') { delete card.dataset.thumbBusy; return; }
     canvas.dataset.url = info.url;
     toolThumbs.show(canvas, info.url);
     canvas.classList.add('ready');
@@ -6144,9 +6513,11 @@ async function refreshThumb(card) {
 
 function scheduleThumb(card, delay = 420) {
   const id = card.dataset.toolId;
-  if (id === undefined) return;
+  if (id === undefined || card.dataset.thumbVisible !== '1') return;
   clearTimeout(thumbTimers.get(id));
-  thumbTimers.set(id, setTimeout(() => refreshThumb(card), delay));
+  thumbTimers.set(id, setTimeout(() => {
+    if (card.dataset.thumbVisible === '1') refreshThumb(card);
+  }, delay));
 }
 
 /** Следим за видимостью: строим только те карточки, что на экране. */
@@ -6155,12 +6526,20 @@ function observeThumbs(root) {
   if (!('IntersectionObserver' in window)) return;
   thumbObserver = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
-      if (!entry.isIntersecting) return;
       const card = entry.target;
-      thumbObserver.unobserve(card);
+      const visible = entry.isIntersecting && entry.intersectionRatio > 0 && !card.hidden;
+      card.dataset.thumbVisible = visible ? '1' : '0';
+      if (!visible) {
+        clearTimeout(thumbTimers.get(card.dataset.toolId));
+        if (card.dataset.thumbBusy) card.dataset.thumbBusy = '0';
+        return;
+      }
+      // Никакого prefetch за пределами экрана. Наблюдение не снимаем:
+      // при прокрутке назад карточка снова становится видимой, а ушедшая
+      // из viewport больше не ставит ни серверную сборку, ни WebGL-кадр.
       scheduleThumb(card, 30);
     });
-  }, { root, rootMargin: '260px 0px', threshold: 0.01 });
+  }, { root, rootMargin: '0px', threshold: 0.01 });
   document.querySelectorAll('#tools-body .tool-card[data-tool-id]').forEach((card) => {
     thumbObserver.observe(card);
   });
@@ -6192,7 +6571,7 @@ async function loadToolPreview() {
   $('preview-error').hidden = true;
   $('preview-meta').textContent = '';
   try {
-    const res = await api('/api/preview', { script });
+    const res = await previewRequest(script);
     if (!res.ok) {
       const err = res.error || { message: res.message || 'Не удалось построить деталь' };
       throw err;
@@ -6243,6 +6622,7 @@ async function openToolPreview(tool, card) {
   previewCard = card;
   $('preview-title').textContent = `${tool.title} · ${tool.op}`;
   $('preview-modal').hidden = false;
+  syncViewportSuspension();
   if (!preview3d) preview3d = new Preview3D($('preview-canvas'));
   else preview3d.resize();
   $('preview-spin')?.classList.add('active');
@@ -6254,6 +6634,7 @@ function closeToolPreview() {
   $('preview-modal').hidden = true;
   previewTool = null;
   previewCard = null;
+  syncViewportSuspension();
 }
 
 $('preview-close')?.addEventListener('click', closeToolPreview);
@@ -6344,7 +6725,7 @@ function renderTools() {
   if (!body) return;
   body.innerHTML = '';
   const groups = new Map();
-  TOOL_SHAPES.forEach((tool) => {
+  ALL_TOOL_SHAPES.forEach((tool) => {
     const key = tool.group || 'Готовые детали';
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(tool);
@@ -6382,7 +6763,7 @@ function renderTools() {
     tools.forEach((tool) => {
       const card = document.createElement('div');
       card.className = 'tool-card';
-      card.dataset.toolId = String(TOOL_SHAPES.indexOf(tool));
+      card.dataset.toolId = String(ALL_TOOL_SHAPES.indexOf(tool));
       const cardHead = document.createElement('div');
       cardHead.className = 'tool-card-head';
       cardHead.innerHTML = `<b>${escapeHtml(tool.title)}</b><code>${escapeHtml(tool.op)}</code>`;
@@ -6404,6 +6785,7 @@ function renderTools() {
       fields.className = 'tool-fields';
       tool.params.forEach((p) => fields.appendChild(buildToolField(p)));
       card.appendChild(fields);
+      restoreToolControls(tool, card);
       card.dataset.search = [tool.title, tool.op, tool.name, tool.desc, title,
         ...tool.params.map((p) => p.label)].join(' ').toLowerCase();
       const actions = document.createElement('div');
@@ -6419,8 +6801,14 @@ function renderTools() {
       btn.addEventListener('click', () => addShapeTool(tool, card));
       actions.append(view3d, btn);
       card.appendChild(actions);
-      fields.addEventListener('input', () => scheduleThumb(card));
-      fields.addEventListener('change', () => scheduleThumb(card, 60));
+      fields.addEventListener('input', () => {
+        rememberToolControls(tool, card);
+        scheduleThumb(card);
+      });
+      fields.addEventListener('change', () => {
+        rememberToolControls(tool, card);
+        scheduleThumb(card, 60);
+      });
       grid.appendChild(card);
     });
     body.appendChild(section);
@@ -6546,12 +6934,22 @@ $('tools-thumbs')?.addEventListener('change', (e) => {
 
 function openTools() {
   $('tools-modal').hidden = false;
+  toolThumbs.enabled = state.thumbsOn;
   renderTools();
+  syncViewportSuspension();
 }
 $('btn-tools')?.addEventListener('click', openTools);
 function closeTools() {
   $('tools-modal').hidden = true;
   thumbObserver?.disconnect();
+  thumbTimers.forEach((timer) => clearTimeout(timer));
+  thumbTimers.clear();
+  document.querySelectorAll('#tools-body .tool-card[data-tool-id]').forEach((card) => {
+    card.dataset.thumbVisible = '0';
+    if (card.dataset.thumbBusy) card.dataset.thumbBusy = '0';
+  });
+  toolThumbs.enabled = false;
+  syncViewportSuspension();
 }
 $('tools-close')?.addEventListener('click', closeTools);
 $('tools-modal')?.addEventListener('click', (e) => {
@@ -6717,10 +7115,15 @@ document.querySelectorAll('.tab').forEach((tab) => {
 
 function openHelp() {
   $('help-modal').hidden = false;
+  syncViewportSuspension();
   $('help-search').focus();
 }
+function closeHelp() {
+  $('help-modal').hidden = true;
+  syncViewportSuspension();
+}
 $('btn-help').addEventListener('click', openHelp);
-$('help-close').addEventListener('click', () => { $('help-modal').hidden = true; });
+$('help-close').addEventListener('click', closeHelp);
 // Закрываем только если и нажали, и отпустили на затемнении: иначе выделение
 // текста мышью с «вылетом» за карточку закрывало справочник.
 let helpBackdropDown = false;
@@ -6728,11 +7131,11 @@ $('help-modal').addEventListener('mousedown', (e) => {
   helpBackdropDown = (e.target === $('help-modal'));
 });
 $('help-modal').addEventListener('mouseup', (e) => {
-  if (helpBackdropDown && e.target === $('help-modal')) $('help-modal').hidden = true;
+  if (helpBackdropDown && e.target === $('help-modal')) closeHelp();
   helpBackdropDown = false;
 });
 document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && !$('help-modal').hidden) $('help-modal').hidden = true;
+  if (e.key === 'Escape' && !$('help-modal').hidden) closeHelp();
 });
 
 async function copyText(text, okMsg = 'Скопировано') {

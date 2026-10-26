@@ -1,0 +1,60 @@
+# ============================================================================
+#  ВЫСТАВКА ИНСТРУМЕНТОВ 0.49 — ЧАСТЬ 1/4: ПОРЫ И ДЕФОРМАЦИЯ
+#  Пять стендов из прежнего четырёхрядного проекта; упрощена только
+#  учебная тесселяция/плотность, не геометрические возможности инструментов.
+# ============================================================================
+scene bg=#eef1f4 env=studio shadows=да grid=нет
+light preset=студия strength=1.1
+
+подиум = box size=[1400,330,20] round=8 at=[0,450,0]
+color подиум #d7dde3 rough=0.72
+
+# ---------- РЯД 1: ПОРЫ И ДЕФОРМАЦИЯ НАРУЖНОЙ ПОВЕРХНОСТИ ----------
+# 1. porous / сферические ямы: радиус 5, глубина 2.5, мягкая кромка.
+ямки = box size=[110,90,30] round=4
+ямки = porous [ямки] mode=поры size=5 depth=2.5 count=14 smooth=.35 uneven=.12 rough=.08 seed=3
+ямки = translate [ямки] offset=[-520,450,20]
+color ямки #d9b58c rough=0.7
+подпись_ямки = text "ПОРЫ" size=15 depth=1 plane=xy at=[-520,355,20] color=#33404d
+
+# 2. porous / цилиндры: плоское дно на глубине 7, вход со скруглением.
+отверстия = box size=[110,90,30] round=4
+отверстия = porous [отверстия] mode=отверстия size=5 depth=7 count=12 smooth=.25 seed=8
+отверстия = translate [отверстия] offset=[-260,450,20]
+color отверстия #b9c7d8 rough=0.55
+подпись_отверстия = text "ОТВЕРСТИЯ" size=15 depth=1 plane=xy at=[-260,355,20] color=#33404d
+
+# 3. wrinkle / радиус на полом рукаве: только наружная стенка, торцы ровные.
+рукав_наружный = cylinder radius=40 height=90 segments=32
+рукав_внутренний = cylinder radius=28 height=90 segments=32
+рукав = difference [рукав_наружный,рукав_внутренний]
+delete рукав_наружный
+delete рукав_внутренний
+рукав = wrinkle [рукав] mode=радиус amp=2.5 freq=12 axis=z surface=наружная detail=3
+рукав = translate [рукав] offset=[0,450,20]
+color рукав #c9d1e3 rough=0.5
+подпись_рукав = text "WRINKLE" size=15 depth=1 plane=xy at=[0,355,20] color=#33404d
+
+# 4. wrinkle / шум на камне: объёмная мятость, seed=5, без потери тела.
+мятый = sphere radius=46 segments=32
+мятый = wrinkle [мятый] mode=шум amp=3 freq=9 seed=5 surface=наружная detail=3
+мятый = translate [мятый] offset=[260,450,66]
+color мятый #b9b2a7 rough=0.85
+подпись_мятый = text "ШУМ" size=15 depth=1 plane=xy at=[260,355,20] color=#33404d
+
+# 5. bark: 12 главных неодинаковых борозд, глубина 5, сбег .25.
+ствол = bark height=115 radius=43 grooves=12 depth=5 taper=.25 seed=2
+ствол = translate [ствол] offset=[520,450,20]
+color ствол #8a6242 rough=0.9
+подпись_ствол = text "КОРА" size=15 depth=1 plane=xy at=[520,355,20] color=#33404d
+
+# Проверяются реальные тела этого ряда и его подиум.
+check подиум watertight
+check подиум parts 1
+check ямки watertight
+check отверстия watertight
+check рукав watertight
+check рукав parts 1
+check мятый watertight
+check мятый parts 1
+check ствол watertight

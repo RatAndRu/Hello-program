@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/OrbitControls.js';
 import { GLTFLoader } from 'three/addons/GLTFLoader.js';
+import { loadGlb } from './glb.js';
 import { RoomEnvironment } from 'three/addons/RoomEnvironment.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
@@ -18,10 +19,13 @@ function hexVec(hex) {
   return new THREE.Vector3(((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255);
 }
 
+// Экспорт переводит сценарий (X,Y,Z) в glTF (X,Z,−Y). Поэтому
+// канонический перёд сценария −Y находится здесь со стороны +Z камеры.
+// Не меняем местами лицо и тыл ни в предустановленных видах, ни в изометрии.
 const VIEW_DIRS = {
-  iso: new THREE.Vector3(0.95, 0.72, -1.0),
-  front: new THREE.Vector3(0, 0.18, -1),
-  back: new THREE.Vector3(0, 0.18, 1),
+  iso: new THREE.Vector3(0.95, 0.72, 1.0),
+  front: new THREE.Vector3(0, 0.18, 1),
+  back: new THREE.Vector3(0, 0.18, -1),
   right: new THREE.Vector3(1, 0.18, 0),
   left: new THREE.Vector3(-1, 0.18, 0),
   top: new THREE.Vector3(0, 1, 0.001),
@@ -103,6 +107,7 @@ export class Viewer {
     this._animCenter = null;
     this._items = [];          // детали: базовые поза/поворот/масштаб + центр
     this._keyTracks = [];      // ключевые кадры по объектам
+    this._instanceBatches = []; // повторяющиеся статические меши → InstancedMesh
     this._overlays = [];
     this._selOverlays = [];
     this.selectMode = false;
@@ -149,6 +154,7 @@ export class Viewer {
     this._fpsHistory = [];
     this._shadowDirty = true;
     this._fpsTime = 0;
+    this._sceneSuspended = false; // полноэкранная панель или скрытая вкладка
     this._init();
   }
 
@@ -277,6 +283,13 @@ export class Viewer {
     const loop = () => {
       requestAnimationFrame(loop);
       const dt = clock.getDelta();
+      // RAF нужен для быстрого пробуждения, но скрытая панелью сцена не
+      // проходит ни animation/mixer, ни shadow/normal/bloom, ни WebGL-render.
+      if (this._sceneSuspended || (typeof document !== 'undefined' && document.hidden)) {
+        this._frames = 0;
+        this._fpsTime = 0;
+        return;
+      }
       this.controls.update();
       this._animateTiming(dt);
       this._tickAnimation(dt);
@@ -683,6 +696,7 @@ export class Viewer {
     this.duration = 0;
     this._items = [];
     this._keyTracks = [];
+    this._instanceBatches = [];
     this._focusName = '';
     this._focusAll = '';
     this.groupNodes = [];
@@ -710,9 +724,7 @@ export class Viewer {
   async load(url, animation = null) {
     this.lastUrl = url;
     const loader = new GLTFLoader();
-    const gltf = await new Promise((resolve, reject) => {
-      loader.load(url, resolve, undefined, reject);
-    });
+    const gltf = await loadGlb(loader, url);
     this.disposeModel();
     const root = gltf.scene;
     root.traverse((o) => {
@@ -762,6 +774,10 @@ export class Viewer {
       this.setShading(this.shading);
       this.applySettings(this.settings);
       this.setPolygons(this.polygons);
+      // В статической сцене одинаковые геометрия+материал уходят в один
+      // instanced draw call. Анимированные сцены не трогаем: там важны
+      // независимые исходные узлы и дорожки.
+      this._instanceRepeatedMeshes();
       // Скрытые объекты остаются скрытыми и после пересборки: состояние живёт
       // в вьюере, а не только в списке объектов.
       this.hidden.forEach((name) => this.setObjectVisible(name, false));
@@ -1049,13 +1065,24 @@ export class Viewer {
     const ghosts = new Set(this._ghostNames || []);
     for (const hit of hits) {
       if (!hit.object.visible || hit.object.userData?.paintPreview) continue;
-      const hitName = hit.object.name || hit.object.parent?.name || '';
+      let picked = hit.object;
+      let hitName = picked.name || picked.parent?.name || '';
+      if (picked.isInstancedMesh && hit.instanceId !== undefined) {
+        const entry = picked.userData.instanceSources?.[hit.instanceId];
+        if (entry?.mesh) {
+          picked = entry.mesh;
+          hitName = picked.name || picked.parent?.name || '';
+          // Для выделения и кисти возвращаем настоящий исходный меш;
+          // остальные одинаковые копии остаются в общем draw call.
+          this._detachInstances(hitName);
+        }
+      }
       // прозрачный каркас заслонок не должен перехватывать клик: сквозь него
       // выбирается тот предмет, который за ним
       if (ghosts.has(hitName) && hitName !== this.highlightName) continue;
       return {
         name: hitName,
-        mesh: hit.object, point: hit.point,
+        mesh: picked, point: hit.point,
         faceIndex: hit.faceIndex, face: hit.face,
       };
     }
@@ -1065,6 +1092,7 @@ export class Viewer {
   /** Полигонаж только для одного предмета (или сплошной вид обратно). */
   setObjectPolygons(name, on) {
     if (!name) return 0;
+    this._detachInstances(name);
     const meshes = this.objectMeshes(name);
     meshes.forEach((o) => {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -1616,9 +1644,7 @@ export class Viewer {
       return;
     }
     const loader = new GLTFLoader();
-    const gltf = await new Promise((resolve, reject) => {
-      loader.load(url, resolve, undefined, reject);
-    });
+    const gltf = await loadGlb(loader, url);
     const root = gltf.scene;
     root.traverse((o) => {
       if (!o.isMesh) return;
@@ -1639,9 +1665,7 @@ export class Viewer {
   async preloadFrame(key, url) {
     if (!key || !url || this._frameCache.has(key)) return;
     const loader = new GLTFLoader();
-    const gltf = await new Promise((resolve, reject) => {
-      loader.load(url, resolve, undefined, reject);
-    });
+    const gltf = await loadGlb(loader, url);
     const root = gltf.scene;
     root.traverse((o) => {
       if (!o.isMesh) return;
@@ -1738,6 +1762,18 @@ export class Viewer {
     if (grew || resized) this.setView('iso', true);
   }
 
+  /** Пауза основного viewport, пока его целиком закрывает модальная панель. */
+  setSceneSuspended(suspended) {
+    const next = Boolean(suspended);
+    if (this._sceneSuspended === next) return this._sceneSuspended;
+    this._sceneSuspended = next;
+    if (!next) {
+      this._shadowDirty = true;
+      this.resize();
+    }
+    return this._sceneSuspended;
+  }
+
   setView(name, animate = true) {
     if (!this._home) return;
     const dir = (VIEW_DIRS[name] || VIEW_DIRS.iso).clone().normalize();
@@ -1810,6 +1846,7 @@ export class Viewer {
   /** Показывает каркас поверх поверхности (полигонаж). */
   setPolygons(on) {
     this.polygons = on;
+    if (on) this._detachAllInstances();
     this._clearOverlays();
     if (!on) {
       this.setWireframe(false);
@@ -2435,6 +2472,7 @@ export class Viewer {
   /** Скрыть/показать объект сцены по имени. */
   setObjectVisible(name, visible) {
     if (!name) return;
+    this._detachInstances(name);
     if (visible) this.hidden.delete(name);
     else this.hidden.add(name);
     if (!this.model) return;
@@ -2562,6 +2600,7 @@ export class Viewer {
   /** Заслонки: прозрачный каркас (true) или ничего не делать (false). */
   setOccluders(on) {
     this.ghostOccluders = Boolean(on);
+    if (on) this._detachAllInstances();
     return this.refreshOccluders();
   }
 
@@ -2652,6 +2691,7 @@ export class Viewer {
   /** Подсветка выбранного объекта: свечение + рамка + его локальные оси. */
   setHighlight(name, options = {}) {
     this.clearHighlight();
+    if (name) this._detachInstances(name);
     if (!name || !this.model) return false;
     const meshes = this.objectMeshes(name);
     if (!meshes.length) return false;
@@ -2736,6 +2776,7 @@ export class Viewer {
   /** Наложить текстуру на объект; normalUrl — карта рельефа (необязательно). */
   setTexture(name, url, normalUrl = '') {
     if (!this.model || !name) return;
+    this._detachInstances(name);
     new THREE.TextureLoader().load(url, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
       tex.wrapS = THREE.RepeatWrapping;
@@ -2780,6 +2821,7 @@ export class Viewer {
 
   clearTexture(name) {
     if (!this.model || !name) return;
+    this._detachInstances(name);
     this.model.traverse((o) => {
       if (!meshMatches(o, name)) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
@@ -2968,19 +3010,163 @@ export class Viewer {
     this.applySettings({ env: name, bg: env.bg, ambient: env.hemi });
   }
 
+  /** Переписывает матрицы и консервативные bounds после отсоединения копий. */
+  _writeInstanceBatch(batch, sources) {
+    batch.userData.instanceSources = sources;
+    batch.count = sources.length;
+    sources.forEach((entry, i) => batch.setMatrixAt(i, entry.matrix));
+    batch.instanceMatrix.needsUpdate = true;
+    // InstancedMesh учитывает все матрицы при frustum/shadow culling. Без
+    // пересчёта после detach он либо мигал, либо рисовал лишний диапазон.
+    batch.computeBoundingBox();
+    batch.computeBoundingSphere();
+    batch.frustumCulled = true;
+  }
+
+  _removeInstanceBatch(batch) {
+    batch.parent?.remove(batch);
+    batch.dispose?.(); // geometry/material общие с исходными мешами: их не dispose
+    this._instanceBatches = this._instanceBatches.filter((b) => b !== batch);
+  }
+
+  /**
+   * Одинаковые неподвижные модели рисуются пачкой, но остаются доступными
+   * по исходным именам. При выборе/покраске нужная копия отсоединяется —
+   * поэтому независимые материалы, скрытие и редактирование не ломаются.
+   */
+  _instanceRepeatedMeshes() {
+    if (!this.model || this.hasAnimation() || this.polygons) return 0;
+    this.model.updateMatrixWorld(true);
+    const inverse = this.model.matrixWorld.clone().invert();
+    const groups = new Map();
+    this.model.traverse((o) => {
+      if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || !o.visible) return;
+      if (!o.geometry || Array.isArray(o.material) || !o.material) return;
+      if (o.material.transparent || Number(o.material.transmission) > 0
+          || this._isMirrorMaterial(o.material)) return;
+      if (o.geometry.morphAttributes && Object.keys(o.geometry.morphAttributes).length) return;
+      const key = `${o.geometry.uuid}/${o.material.uuid}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push(o);
+    });
+    let made = 0;
+    groups.forEach((meshes) => {
+      // Две копии оставляем как есть: лишний объект не окупает отсоединение
+      // при редактировании. Три и больше — уже заметная экономия draw calls.
+      if (meshes.length < 3) return;
+      const first = meshes[0];
+      const sources = meshes.map((mesh) => ({
+        mesh,
+        matrix: inverse.clone().multiply(mesh.matrixWorld),
+      }));
+      const batch = new THREE.InstancedMesh(first.geometry, first.material, sources.length);
+      batch.name = `FormaInstances_${made + 1}`;
+      batch.castShadow = meshes.some((m) => m.castShadow);
+      batch.receiveShadow = meshes.some((m) => m.receiveShadow);
+      batch.userData.baseCastShadow = batch.castShadow;
+      batch.matrixAutoUpdate = false;
+      batch.matrix.identity();
+      batch.updateMatrix();
+      sources.forEach(({ mesh }) => {
+        mesh.userData.formaInstanced = true;
+        mesh.visible = false;
+      });
+      this._writeInstanceBatch(batch, sources);
+      this.model.add(batch);
+      this._instanceBatches.push(batch);
+      made += 1;
+    });
+    if (made) this._shadowDirty = true;
+    return made;
+  }
+
+  /** Возвращает выбранные копии к самостоятельным мешам, остальные — в пачке. */
+  _detachInstances(name) {
+    if (!name || !this._instanceBatches.length || !this.model) return 0;
+    let detached = 0;
+    [...this._instanceBatches].forEach((batch) => {
+      const sources = batch.userData.instanceSources || [];
+      const keep = [];
+      const restore = [];
+      sources.forEach((entry) => {
+        if (meshMatches(entry.mesh, name)) restore.push(entry);
+        else keep.push(entry);
+      });
+      if (!restore.length) return;
+      restore.forEach(({ mesh }) => {
+        mesh.visible = true;
+        delete mesh.userData.formaInstanced;
+        detached += 1;
+      });
+      if (keep.length < 2) {
+        keep.forEach(({ mesh }) => {
+          mesh.visible = true;
+          delete mesh.userData.formaInstanced;
+        });
+        this._removeInstanceBatch(batch);
+      } else {
+        this._writeInstanceBatch(batch, keep);
+      }
+    });
+    if (detached) this._shadowDirty = true;
+    return detached;
+  }
+
+  _detachAllInstances() {
+    if (!this._instanceBatches.length) return 0;
+    let count = 0;
+    [...this._instanceBatches].forEach((batch) => {
+      (batch.userData.instanceSources || []).forEach(({ mesh }) => {
+        mesh.visible = true;
+        delete mesh.userData.formaInstanced;
+        count += 1;
+      });
+      this._removeInstanceBatch(batch);
+    });
+    this._shadowDirty = true;
+    return count;
+  }
+
+  /**
+   * Тени обновляются редко; при их обновлении отсекаем источники вне
+   * frustum теневой камеры. Камеру основного вида здесь deliberately не
+   * используем: предмет за кадром всё ещё может бросать тень в кадр.
+   */
+  _cullShadowCasters() {
+    if (!this.model || !this.keyLight) return;
+    const light = this.keyLight;
+    light.updateMatrixWorld(true);
+    light.shadow.camera.updateMatrixWorld(true);
+    const projection = new THREE.Matrix4().multiplyMatrices(
+      light.shadow.camera.projectionMatrix, light.shadow.camera.matrixWorldInverse);
+    const frustum = new THREE.Frustum().setFromProjectionMatrix(projection);
+    this.model.traverse((o) => {
+      if (!o.isMesh || o.userData.formaInstanced) return;
+      if (o.userData.baseCastShadow === undefined) o.userData.baseCastShadow = o.castShadow;
+      let visibleInShadow = o.visible;
+      if (visibleInShadow && o.frustumCulled && o.geometry) {
+        if (o.isInstancedMesh && !o.boundingSphere) o.computeBoundingSphere();
+        if (!o.isInstancedMesh && !o.geometry.boundingSphere) o.geometry.computeBoundingSphere();
+        visibleInShadow = frustum.intersectsObject(o);
+      }
+      o.castShadow = Boolean(o.userData.baseCastShadow && visibleInShadow);
+    });
+  }
+
   getStats() {
     let tris = 0;
     let verts = 0;
     let meshes = 0;
     if (this.model) {
       this.model.traverse((o) => {
-        if (!o.isMesh) return;
+        if (!o.isMesh || o.userData.formaInstanced) return;
         meshes += 1;
         const g = o.geometry;
         if (!g) return;
+        const instances = o.isInstancedMesh ? o.count : 1;
         const count = g.index ? g.index.count : (g.attributes?.position?.count || 0);
-        tris += Math.floor(count / 3);
-        verts += g.attributes?.position?.count || 0;
+        tris += Math.floor(count / 3) * instances;
+        verts += (g.attributes?.position?.count || 0) * instances;
       });
     }
     return { tris, verts, meshes, fps: this._lastFps };
@@ -2988,12 +3174,14 @@ export class Viewer {
 
   /** Кадр: со свечением или в аниме-стиле — через композер. */
   _renderFrame() {
-    if (!this.renderer) return;
+    if (!this.renderer || this._sceneSuspended
+        || (typeof document !== 'undefined' && document.hidden)) return;
     // Тени зависят от геометрии и света, но не от камеры. Раньше карта теней
     // перерисовывалась на каждом кадре — на 60 деталях часов это лишний
     // полный проход сцены. Теперь только когда что-то правда движется.
     if (this.settings.shadows !== false) {
       this.renderer.shadowMap.autoUpdate = false;
+      if (this._shadowDirty || this.playing === true) this._cullShadowCasters();
       this.renderer.shadowMap.needsUpdate = this._shadowDirty || this.playing === true;
       if (this.renderer.shadowMap.needsUpdate) this._shadowDirty = false;
     }
@@ -3665,4 +3853,3 @@ export class Viewer {
 function round3(v) {
   return Math.round(Number(v) * 1000) / 1000;
 }
-

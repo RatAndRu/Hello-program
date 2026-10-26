@@ -47,6 +47,45 @@ def _prism_section(width: float, depth: float, height: float, kind: str,
     return mf.CrossSection([_section(width, depth, kind, segments).tolist()]).extrude(height)
 
 
+def _column_base(shape: str, size: float, depth: float, height: float,
+                 top: float, section: str, segments: int, edge_r: float, a) -> mf.Manifold:
+    """Независимая площадка колонны; её сечение не наследует форму стойки."""
+    if shape == "авто":
+        shape = section
+    if shape == "тор":
+        # Полнотелый цилиндр с выпуклыми верхней и нижней кромками, без
+        # центрального отверстия: это основание, а не отдельный торус.
+        r = min(height * 0.42, size * 0.18)
+        return rounded_extrude(mf.CrossSection([
+            _section(size, size, "цилиндр", segments).tolist()]),
+            height, r, "выпуклая площадка колонны")
+    if shape == "катушка":
+        # Вогнутая боковая поверхность: широкие торцы и суженная середина.
+        # Профиль вращается вокруг Z, поэтому это единое тело без стыков.
+        r = size / 2.0
+        profile = [(0.0, 0.0), (r, 0.0), (r, height * 0.12)]
+        for i in range(1, 17):
+            t = i / 16.0
+            z = height * (0.12 + 0.76 * t)
+            rr = r * (1.0 - 0.22 * math.sin(math.pi * t) ** 0.85)
+            profile.append((rr, z))
+        profile += [(r, height), (0.0, height)]
+        return mf.Manifold.revolve(mf.CrossSection([profile]), segments)
+    if shape == "конус":
+        cone = mf.Manifold.cylinder(height, size / 2.0, top / 2.0, segments)
+        if edge_r > 1e-6:
+            cone = _rounded_convex(cone, min(edge_r, height * 0.2, size * 0.08,
+                                            top * 0.08), a, "конусная площадка")
+        return cone
+    kind = "брусок" if shape == "брусок" else "цилиндр"
+    cross = _section(size, depth if kind == "брусок" else size, kind, segments)
+    r = min(edge_r, height * 0.45, size * 0.12)
+    if r > 1e-6:
+        return rounded_extrude(mf.CrossSection([cross.tolist()]), height, r,
+                               "площадка колонны")
+    return mf.CrossSection([cross.tolist()]).extrude(height)
+
+
 # --------------------------------------------------------------------------- #
 #  Колонна
 # --------------------------------------------------------------------------- #
@@ -57,11 +96,15 @@ def _prism_section(width: float, depth: float, height: float, kind: str,
             "цилиндр или брусок. Высота включает площадку и бортик. smooth "
             "скругляет рёбра радиусом, не деформируя широкие грани Loop-сглаживанием. "
             "base_size=0 убирает площадку без переключателя; base_h и rim_h "
-            "остаются независимыми высотами зон. Отрицательный taper расширяет конус.",
+            "остаются независимыми высотами зон. base_shape отдельно задаёт "
+            "основание: брусок, цилиндр, выпуклый тор, вогнутую катушку или "
+            "усечённый конус; base_top — второй радиус/диаметр конуса. "
+            "Отрицательный taper расширяет конус стойки.",
     example="колонна = column height=180 width=42 form=песочные waist=0.55 "
             "section=цилиндр base_size=72 base_h=12 rim=8 rim_h=10\n"
             "стойка = column height=150 width=36 depth=28 form=конус taper=0.45 "
-            "section=брусок smooth=1 at=[130,0,0]",
+            "section=брусок base_shape=катушка base_size=64 base_h=16\n"
+            "конусная = column section=цилиндр base_shape=конус base_size=70 base_top=44",
     params={"height": "полная высота с площадкой и бортиком, мм (180)",
             "width": "диаметр цилиндра или ширина бруска X, мм (42)",
             "depth": "глубина бруска Y; у цилиндра не используется (42)",
@@ -70,6 +113,9 @@ def _prism_section(width: float, depth: float, height: float, kind: str,
             "taper": "конус: + сужает верх 0…0.85; − расширяет до −3 (0.35)",
             "section": "сечение: цилиндр или брусок",
             "base_size": "диаметр/сторона нижней площадки, мм; 0 — без площадки (72)",
+            "base_shape": "авто (по section), брусок, цилиндр, тор, катушка или конус",
+            "base_depth": "глубина основания-бруска Y, мм (= base_size)",
+            "base_top": "диаметр верхней плоскости усечённого конуса, мм (0.72·base_size)",
             "base_h": "высота нижней зоны, мм; работает и при base_size=0 (12)",
             "rim": "вылет верхнего бортика над стойкой, мм (8)",
             "rim_h": "высота верхней зоны/бортика, мм; работает и при rim=0 (10)",
@@ -90,6 +136,16 @@ def column(a, name):
     waist = float(a.num("waist", 0.55, minv=0.2, maxv=1.0))
     taper = float(a.num("taper", 0.35, minv=-3.0, maxv=0.85) or 0.0)
     base_size = float(a.num("base_size", 72.0, minv=0.0, maxv=5000.0))
+    base_shape = _choice(a.text("base_shape", "авто"),
+                         {"авто": "авто", "как стойка": "авто", "auto": "авто",
+                          "брусок": "брусок", "параллелепипед": "брусок", "box": "брусок",
+                          "цилиндр": "цилиндр", "круг": "цилиндр", "cylinder": "цилиндр",
+                          "тор": "тор", "выпуклый": "тор", "tor": "тор",
+                          "катушка": "катушка", "вогнутая": "катушка", "spool": "катушка",
+                          "конус": "конус", "усечённый": "конус", "усеченный": "конус",
+                          "cone": "конус"}, "column.base_shape")
+    base_depth = float(a.num("base_depth", base_size, minv=0.0, maxv=5000.0) or 0.0)
+    base_top = float(a.num("base_top", base_size * 0.72, minv=0.0, maxv=5000.0) or 0.0)
     base_h = float(a.num("base_h", 12.0, minv=0.0, maxv=5000.0) or 0.0)
     rim = float(a.num("rim", 8.0, minv=0.0, maxv=1000.0) or 0.0)
     rim_h = float(a.num("rim_h", 10.0, minv=0.0, maxv=5000.0) or 0.0)
@@ -131,13 +187,8 @@ def column(a, name):
                                            width * 0.12, depth * 0.12), a, "колонна")
     parts = [shaft]
     if has_base:
-        r = min(edge_r, base_h * 0.45, base_size * 0.12)
-        if r > 1e-6:
-            plate = rounded_extrude(mf.CrossSection([
-                _section(base_size, base_size, section, segments).tolist()]),
-                base_h, r, "площадка колонны")
-        else:
-            plate = _prism_section(base_size, base_size, base_h, section, segments)
+        plate = _column_base(base_shape, base_size, base_depth or base_size,
+                             base_h, base_top, section, segments, edge_r, a)
         parts.append(plate)
     if has_cap:
         top_factor = 1.0 if form != "конус" else 1.0 - taper
@@ -154,8 +205,10 @@ def column(a, name):
         parts.append(cap)
     solid = _one(mf.Manifold.batch_boolean(parts, mf.OpType.Add), "колонна")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="column")
+    out.meta["base_shape"] = base_shape
+    out.meta["base_top"] = base_top
     out.notes.append(f"колонна {form}/{section}, высота {height:g} мм; площадка "
-                     f"{base_size:g}×{base_h:g} мм, бортик {rim:g}×{rim_h:g} мм")
+                     f"{base_shape} {base_size:g}×{base_h:g} мм, бортик {rim:g}×{rim_h:g} мм")
     return out
 
 

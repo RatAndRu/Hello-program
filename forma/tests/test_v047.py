@@ -124,12 +124,13 @@ class AdditionalPackageTest(unittest.TestCase):
                 one(m)
                 self.assertEqual(m.genus(), 24)
 
-    def test_volume_yin_yang_is_default_and_thick_is_exact(self):
+    def test_fireball_is_default_and_flat_thick_is_exact(self):
         volume = solid("о = yin_yang diameter=120 thick=16 hole=16")
         flat = solid("о = yin_yang diameter=120 thick=16 form=плоская hole=16")
         one(volume)
-        self.assertLess(volume.volume(), flat.volume())
-        self.assertAlmostEqual(size(volume)[1], 16.0, delta=1e-6)
+        self.assertGreater(volume.volume(), flat.volume())
+        self.assertGreater(size(volume)[0], size(flat)[0])
+        self.assertAlmostEqual(size(flat)[1], 16.0, delta=1e-6)
 
     def test_tee_and_yoke_keep_ovals_distinct_from_capsules(self):
         for op, dims in (("tee", [90, 14, 80]), ("yoke", [80, 14, 110])):
@@ -138,9 +139,11 @@ class AdditionalPackageTest(unittest.TestCase):
                 oval = solid(f"о = {op} shape=овалы" + (" stem=22" if op == "tee" else ""))
                 one(capsule)
                 one(oval)
-                # Цельные эллипсы заметно легче капсул с прямыми сторонами;
-                # отличие только в дискретизации здесь больше не засчитывается.
-                self.assertLess(oval.volume(), capsule.volume() * 0.95)
+                # Овалы сохраняют прежнюю выдавленную сетку. Настоящие
+                # капсулы округлены ещё и по глубине, поэтому заметно легче
+                # и имеют собственную сферическую тесселяцию торцов.
+                self.assertLess(capsule.volume(), oval.volume() * 0.95)
+                self.assertGreater(capsule.num_tri(), oval.num_tri())
                 np.testing.assert_allclose(size(capsule), dims, atol=1e-6)
                 np.testing.assert_allclose(size(oval), dims, atol=1e-6)
 

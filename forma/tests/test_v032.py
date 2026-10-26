@@ -204,28 +204,37 @@ class PolishTest(unittest.TestCase):
 
 
 class ShaveTest(unittest.TestCase):
-    """Стёсывание: снимается ровно слой до плоскости среза."""
+    """shave — открытая канавка; полное отсечение — отдельный cut_plane."""
 
-    def test_whole_surface_layer(self):
+    def test_cut_plane_whole_surface_layer(self):
         solid = _last(_build(
-            "ц = cylinder radius=20 height=60 segments=96\nц = shave [ц] depth=10"))
+            "ц = cylinder radius=20 height=60 segments=96\nц = cut_plane [ц] depth=10"))
         self.assertAlmostEqual(_volume(solid), np.pi * 400 * 50, delta=np.pi * 400 * 0.6)
 
-    def test_round_spot(self):
+    def test_round_spot_is_open_groove(self):
+        base = _last(_build("ц = cylinder radius=20 height=60 segments=96"))
         solid = _last(_build(
             "ц = cylinder radius=20 height=60 segments=96\n"
-            "ц = shave [ц] depth=10 radius=8"))
-        self.assertAlmostEqual(_volume(solid), np.pi * 400 * 60 - np.pi * 64 * 10,
-                               delta=np.pi * 400 * 0.6)
+            "ц = shave [ц] depth=0 radius=8 groove=овальная groove_width=3 groove_depth=1"))
+        self.assertLess(_volume(solid), _volume(base))
+        self.assertAlmostEqual(solid.manifold.bounding_box()[5], 60.0, delta=1e-6)
+        self.assertEqual(len([p for p in solid.manifold.decompose() if p.volume() > 1e-6]), 1)
+        self.assertFalse(any(p.volume() < -1e-6 for p in solid.manifold.decompose()))
 
     def test_angled_cut_is_not_horizontal(self):
         solid = _last(_build(
-            "б = box size=[60,60,60]\nб = shave [б] at=[0,0,60] dir=[0.6,0,1] depth=6 radius=0"))
+            "б = box size=[60,60,60]\nб = cut_plane [б] at=[0,0,60] dir=[0.6,0,1] depth=6"))
         self.assertGreater(solid.manifold.num_tri(), 12)
 
     def test_alias_works(self):
         solid = _last(_build("б = box size=[50,50,50]\nб = стесать [б] depth=5"))
-        self.assertIn("снято 5 мм", solid.notes[-1])
+        self.assertIn("сдвиг плоскости 5 мм", solid.notes[-1])
+        self.assertAlmostEqual(solid.manifold.bounding_box()[5], 50.0, delta=1e-6)
+
+    def test_cut_alias_works(self):
+        solid = _last(_build("б = box size=[50,50,50]\nб = стесать_углы [б] depth=5"))
+        self.assertIn("отсечение плоскостью", solid.notes[-1])
+        self.assertAlmostEqual(solid.manifold.bounding_box()[5], 45.0, delta=1e-6)
 
 
 class PointTest(unittest.TestCase):
@@ -470,7 +479,16 @@ class ToolCardsTest(unittest.TestCase):
         self.assertGreaterEqual(len(cards), 9)
         for op, name, base, base_name, rest in cards:
             params = re.findall(r"\{ k: '(\w+)', label: '[^']+', v: ('[^']*'|[\d.]+)", rest)
-            tail = " ".join(f"{k}={v.strip(chr(39))}" for k, v in params)
+            values = []
+            for k, v in params:
+                value = v.strip(chr(39))
+                # Повторяем shapeParams: числовые vec-поля карточки
+                # сериализуются как at=[x,y,z], а не как три токена.
+                if "," in value and all(part.strip().replace(".", "", 1).replace("-", "", 1).isdigit()
+                                       for part in value.split(",")):
+                    value = f"[{value}]"
+                values.append(f"{k}={value}")
+            tail = " ".join(values)
             script = f"{base_name} = {base}\n{name} = {op} {base_name} {tail}"
             b = build(script, analyze_model=False)
             self.assertTrue(b.ok, f"{op}: {(b.error or {}).get('message')}")

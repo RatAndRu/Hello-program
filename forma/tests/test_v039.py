@@ -208,19 +208,18 @@ class ExamplesAndHelpTest(unittest.TestCase):
     def test_example_builds(self):
         from forma.webui import load_example
 
-        script = load_example("more_solids")
-        b = _build(script)
-        self.assertEqual(len(b.scene.objects), 14)
-        for name in ("блин", "плита", "кусок", "чаша", "купол", "крыша", "чипс",
-                     "слиток", "груз", "бусина", "башня", "марш", "мягкий"):
-            with self.subTest(name=name):
-                self.assertIn(name, b.scene.objects)
+        for index in range(1, 5):
+            with self.subTest(gallery=index):
+                b = _build(load_example(f"tools_gallery_{index}"))
+                self.assertEqual(len(b.scene.objects), 11)
 
     def test_example_in_menu(self):
         from forma.webui import EXAMPLES
 
         keys = [key for _, key in EXAMPLES]
-        self.assertIn("more_solids", keys)
+        for index in range(1, 5):
+            self.assertIn(f"tools_gallery_{index}", keys)
+        self.assertNotIn("more_solids", keys)
 
     def test_cards_present(self):
         from pathlib import Path

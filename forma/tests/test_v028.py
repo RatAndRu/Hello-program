@@ -96,7 +96,7 @@ class Crown(unittest.TestCase):
 
 class YinYang(unittest.TestCase):
     def test_form_is_half_of_the_sign(self):
-        left = ok("и = yin_yang diameter=120 thick=16")
+        left = ok("и = yin_yang diameter=120 thick=16 form=плоская")
         w, d, h = size_of(left, "и")
         # С 0.41 знак стоит в XZ: толщина по Y, диаметр по Z.
         self.assertAlmostEqual(h, 120.0, places=1)
@@ -106,16 +106,16 @@ class YinYang(unittest.TestCase):
         self.assertAlmostEqual(d, 16.0, places=1)
 
     def test_right_half_is_mirror(self):
-        left = ok("и = yin_yang diameter=100 thick=10")
-        right = ok("и = yin_yang diameter=100 thick=10 side=правый")
+        left = ok("и = yin_yang diameter=100 thick=10 form=плоская")
+        right = ok("и = yin_yang diameter=100 thick=10 form=плоская side=правый")
         bl = left.scene.objects["и"].manifold.bounding_box()
         br = right.scene.objects["и"].manifold.bounding_box()
         self.assertAlmostEqual(float(bl[0]), -float(br[3]), places=6)
         self.assertAlmostEqual(float(bl[3]), -float(br[0]), places=6)
 
     def test_left_and_right_add_up_to_full_disc(self):
-        b = ok("и = yin_yang diameter=100 thick=10\n"
-               "я = yin_yang diameter=100 thick=10 side=правый")
+        b = ok("и = yin_yang diameter=100 thick=10 form=плоская\n"
+               "я = yin_yang diameter=100 thick=10 form=плоская side=правый")
         m = b.scene.objects["и"].manifold + b.scene.objects["я"].manifold
         self.assertEqual(str(m.status()), "Error.NoError")
         bb = m.bounding_box()
