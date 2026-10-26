@@ -44,8 +44,10 @@ jobs:
       - name: Прогнать тесты ядра
         working-directory: forma
         run: |
+          set +e
           python -m unittest discover -s tests -v 2>&1 | tee tests.log
           rc=${PIPESTATUS[0]}
+          set -e
           if [ "$rc" -ne 0 ]; then
             # публикуем имена упавших тестов аннотациями: логи иногда недоступны
             grep -E "^(FAIL|ERROR):" tests.log | while read -r line; do
