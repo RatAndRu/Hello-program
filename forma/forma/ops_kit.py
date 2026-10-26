@@ -479,43 +479,87 @@ def shaft(a, name):
 #  Ручка мебельная
 # --------------------------------------------------------------------------- #
 @op("handle", aliases=("мебельная_ручка", "ручка_скоба"), category="Примитивы",
-    summary="Мебельная ручка-скоба (П-образная): перекладина-штанга, две "
-            "стойки и круглые площадки-основания под винты. Снизу площадки "
-            "лежат на фасаде, поэтому ручка не висит в воздухе. Настройки: "
-            "длина по центрам стоек, вынос, толщина стержня, диаметр площадок.",
-    example="ручка = handle length=160 height=34 diameter=10\n"
-            "тонкая = handle length=128 height=26 diameter=8 plates=нет",
-    params={"length": "длина по центрам стоек, мм (160)", "height": "вынос, мм (34)",
-            "diameter": "толщина стержня, мм (10)",
+    summary="Мебельная ручка-скоба с независимыми формами перекладины и стоек: "
+            "bar_shape/post_shape=цилиндр, капсула или брусок. Перекладина не "
+            "выступает за наружные грани стоек. plates=нет полностью убирает "
+            "площадки; у капсульных стоек монтажный низ остаётся плоским.",
+    example="ручка = handle length=160 height=34 diameter=10 bar_shape=капсула post_shape=капсула\n"
+            "брусок = handle length=160 height=34 diameter=10 bar_shape=брусок post_shape=брусок plates=нет",
+    params={"length": "длина по наружным граням стоек, мм (160)",
+            "height": "высота оси перекладины над площадкой, мм (34)",
+            "diameter": "толщина перекладины и стоек, мм (10)",
+            "bar_shape": "перекладина: цилиндр, капсула или брусок",
+            "post_shape": "стойки: цилиндр, капсула или брусок",
             "posts": "стоек: 1 по центру или 2 по краям (2)",
-            "plates": "круглые площадки-основания да/нет (да)",
-            "plate_d": "диаметр площадки (2.4 × диаметр стержня)",
-            "segments": "сегментов (32)", "at": "положение [x,y,z]",
+            "plates": "площадки-основания да/нет; нет полностью убирает их (да)",
+            "plate_d": "диаметр площадки (2.4 × diameter)",
+            "segments": "сегментов 8…96 (32)", "at": "положение [x,y,z]",
             "center": "центрировать по высоте"})
 def handle(a, name):
-    length = float(a.num("length", 160.0, minv=10.0))
-    height = float(a.num("height", 34.0, minv=2.0))
-    wire = float(a.num("diameter", 10.0, minv=1.0))
+    def shape_of(key):
+        raw = (a.text(key) or "цилиндр").strip().lower()
+        got = {"цилиндр": "цилиндр", "труба": "цилиндр", "cylinder": "цилиндр",
+               "капсула": "капсула", "capsule": "капсула",
+               "брусок": "брусок", "параллелепипед": "брусок",
+               "прямоугольный": "брусок", "box": "брусок"}.get(raw)
+        if got is None:
+            raise GeometryError(f"handle: {key}=цилиндр, капсула или брусок.")
+        return got
+
+    length = float(a.num("length", 160.0, minv=10.0, maxv=5000.0))
+    height = float(a.num("height", 34.0, minv=2.0, maxv=2000.0))
+    wire = float(a.num("diameter", 10.0, minv=1.0, maxv=500.0))
+    bar_shape = shape_of("bar_shape")
+    post_shape = shape_of("post_shape")
     posts = int(a.num("posts", 2, minv=1, maxv=2) or 2)
+    plates = a.boolean("plates", True)
     segments = _seg(a, "segments", 32, 8, 96)
     r = wire / 2.0
-    if length <= wire * 2:
-        raise GeometryError("Длина ручки меньше её толщины.")
-    bar_len = length - wire
-    parts = [mf.Manifold.cylinder(bar_len, r, r, segments)
-             .rotate([0.0, 90.0, 0.0]).translate((-bar_len / 2.0, 0.0, height)),
-             mf.Manifold.sphere(r, max(8, segments // 2)).translate((-bar_len / 2.0, 0.0, height)),
-             mf.Manifold.sphere(r, max(8, segments // 2)).translate((bar_len / 2.0, 0.0, height))]
+    if length <= wire * 2.0:
+        raise GeometryError("Длина ручки должна быть больше двух диаметров.")
+    if height < wire * 1.2:
+        raise GeometryError("height слишком мал для выбранной толщины стоек.")
+
+    # Общий наружный габарит по X: от −length/2 до +length/2. Ни одна
+    # форма перекладины не выходит за наружные плоскости боковых стоек.
+    if bar_shape == "брусок":
+        bar = mf.Manifold.cube((length, wire, wire), center=True).translate(
+            (0.0, 0.0, height))
+    elif bar_shape == "цилиндр":
+        bar = mf.Manifold.cylinder(length, r, r, segments).rotate((0.0, 90.0, 0.0))
+        bar = bar.translate((-length / 2.0, 0.0, height))
+    else:
+        middle = length - wire
+        bar = mf.Manifold.cylinder(middle, r, r, segments).rotate((0.0, 90.0, 0.0))
+        bar = bar.translate((-middle / 2.0, 0.0, height))
+        caps = [mf.Manifold.sphere(r, max(8, segments // 2)).translate((x, 0.0, height))
+                for x in (-middle / 2.0, middle / 2.0)]
+        bar = mf.Manifold.batch_boolean([bar, *caps], mf.OpType.Add)
+    parts = [bar]
+
     offsets = [0.0] if posts == 1 else [-(length / 2.0 - r), length / 2.0 - r]
+    plate_r = float(a.num("plate_d", wire * 2.4, minv=wire * 1.2,
+                           maxv=wire * 20.0)) / 2.0
     for dx in offsets:
-        parts.append(mf.Manifold.cylinder(height + r, r, r, segments)
-                     .translate((dx, 0.0, 0.0)))
-        if a.boolean("plates", True):
-            plate_r = float(a.num("plate_d", wire * 2.4, minv=wire * 1.2)) / 2.0
+        if post_shape == "брусок":
+            post = mf.Manifold.cube((wire, wire, height), center=True).translate(
+                (dx, 0.0, height / 2.0))
+        elif post_shape == "цилиндр":
+            post = mf.Manifold.cylinder(height, r, r, segments).translate((dx, 0.0, 0.0))
+        else:
+            # Нижний торец плоский на z=0, круглая только верхняя капсула.
+            post = mf.Manifold.cylinder(height - r, r, r, segments).translate((dx, 0.0, 0.0))
+            cap = mf.Manifold.sphere(r, max(8, segments // 2)).translate((dx, 0.0, height - r))
+            post = post + cap
+        parts.append(post)
+        if plates:
             parts.append(mf.Manifold.cylinder(2.0, plate_r, plate_r, segments)
                          .translate((dx, 0.0, 0.0)))
     solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="handle")
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="handle")
+    out.notes.append(f"ручка: перекладина {bar_shape}, стойки {post_shape}, "
+                     f"площадки={'да' if plates else 'нет'}")
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -586,106 +630,6 @@ def wheel(a, name):
 # --------------------------------------------------------------------------- #
 #  Рейка, муфта, радиатор
 # --------------------------------------------------------------------------- #
-@op("rack", aliases=("рейка", "зубчатая_рейка", "gear_rack"), category="Примитивы",
-    summary="Зубчатая рейка в паре с gear: длина, число зубьев, модуль. "
-            "Основание (тело под зубьями) задаётся отдельно: его высота не "
-            "входит в высоту зуба, поэтому рейку можно поставить на любую раму "
-            "и подогнать по высоте оси колеса.",
-    example="рейка = rack length=200 teeth=20 module=2 base=8 tooth=4.5",
-    params={"length": "длина, мм (200)", "teeth": "число зубьев (20)",
-            "module": "модуль, мм (2)", "thickness": "толщина, мм (8)",
-            "height": "высота основания под зубьями, мм (10)",
-            "base": "то же, что height — высота основания",
-            "tooth": "высота зуба над основанием (2.25·m)",
-            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
-def rack(a, name):
-    length = float(a.num("length", 200.0, minv=10.0))
-    teeth = int(a.num("teeth", 20, minv=2, maxv=400) or 20)
-    module = float(a.num("module", 2.0, minv=0.2))
-    thickness = float(a.num("thickness", 8.0, minv=1.0))
-    height = float(a.num("height", a.num("base", 10.0, minv=1.0) or 10.0, minv=1.0))
-    tooth_h = float(a.num("tooth", module * 2.25, minv=0.3))
-    pitch = length / teeth
-    base = mf.Manifold.cube([length, thickness, height], True)
-    base = base.translate((0.0, 0.0, height / 2.0))
-    profile = [(-pitch * 0.38, 0.0), (pitch * 0.38, 0.0),
-               (pitch * 0.22, tooth_h), (-pitch * 0.22, tooth_h)]
-    tooth = mf.Manifold.extrude(mf.CrossSection([profile]), thickness)
-    tooth = tooth.rotate([90.0, 0.0, 0.0]).translate((0.0, 0.0, height - 0.2))
-    parts = [base]
-    for i in range(teeth):
-        parts.append(tooth.translate((-length / 2.0 + pitch * (i + 0.5), 0.0, 0.0)))
-    solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="rack")
-
-
-@op("coupling", aliases=("муфта", "соединительная_муфта"), category="Примитивы",
-    summary="Муфта для двух валов: корпус, буртик и сквозное посадочное отверстие.",
-    example="муфта = coupling diameter=40 length=60 bore=12",
-    params={"diameter": "диаметр, мм (40)", "length": "длина, мм (60)",
-            "bore": "отверстие под вал, мм (12)", "flange": "ширина буртика (6)",
-            "segments": "сегментов (48)", "axis": "ось: x, y или z (z)",
-            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
-def coupling(a, name):
-    diameter = float(a.num("diameter", 40.0, minv=6.0))
-    length = float(a.num("length", 60.0, minv=6.0))
-    bore = float(a.num("bore", 12.0, minv=0.5))
-    flange = float(a.num("flange", 6.0, minv=1.0))
-    segments = _seg(a, "segments", 48, 16, 128)
-    if bore >= diameter - 6.0:
-        raise GeometryError("Отверстие не оставляет стенки муфты.")
-    r = diameter / 2.0
-    body = mf.Manifold.cylinder(length, r, r, segments)
-    hole = mf.Manifold.cylinder(length + 2.0, bore / 2.0, bore / 2.0, segments)
-    hole = hole.translate((0.0, 0.0, -1.0))
-    solid = body - hole
-    band = mf.Manifold.cylinder(flange, r * 1.12, r * 1.12, segments)
-    band = band.translate((0.0, 0.0, (length - flange) / 2.0))
-    solid = solid + (band - hole)
-    solid = _axis_rotate(solid, a.text("axis", "z") or "z")
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="coupling")
-
-
-@op("heatsink", aliases=("радиатор", "охладитель", "радиатор_ребристый"),
-    category="Примитивы",
-    summary="Радиатор охлаждения: плита-основание и рёбра с шагом. Полезен там, "
-            "где нужен честный теплоотвод — на плате, корпусе мотора, блоке "
-            "питания; для декора обычно проще box + array. Площадь рёбер и "
-            "толщину можно подобрать под реальный размер.",
-    example="радиатор = heatsink size=[80,60,30] fins=9 fin=2\n"
-            "мелкий = heatsink size=[40,40,18] fins=12 fin=1.2 base=3",
-    params={"size": "размер [x,y,z], мм (80,60,30)",
-            "fins": "число рёбер (8)", "base": "толщина основания (5)",
-            "fin": "толщина ребра (2)", "round": "скругление кромок рёбер (0.4)",
-            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
-def heatsink(a, name):
-    sx, sy, sz = _triple(a, "size", (80.0, 60.0, 30.0))
-    fins = int(a.num("fins", 8, minv=1, maxv=80) or 8)
-    base_h = float(a.num("base", 5.0, minv=1.0))
-    fin_t = float(a.num("fin", 2.0, minv=0.4))
-    if base_h >= sz - 1.0:
-        raise GeometryError("Основание выше радиатора.")
-    round_r = float(a.num("round", min(fin_t * 0.25, 0.6), minv=0.0) or 0.0)
-    base = mf.Manifold.cube([sx, sy, base_h], True).translate((0.0, 0.0, base_h / 2.0))
-    fin_h = sz - base_h
-    if round_r > 1e-3 and fin_t > 2 * round_r + 1e-3:
-        fin = mf.Manifold.cube([fin_t - 2 * round_r, sy - 2 * round_r, fin_h - round_r],
-                               True).minkowski_sum(
-            mf.Manifold.sphere(round_r, max(8, int(10 + round_r))))
-    else:
-        fin = mf.Manifold.cube([fin_t, sy, fin_h], True)
-    fin = fin.translate((0.0, 0.0, base_h + fin_h / 2.0))
-    step = sx / max(1, fins)
-    parts = [base]
-    for i in range(fins):
-        parts.append(fin.translate((-sx / 2.0 + step * (i + 0.5), 0.0, 0.0)))
-    solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="heatsink")
-
-
-# --------------------------------------------------------------------------- #
-#  Природа: камень, лист, ветка
-# --------------------------------------------------------------------------- #
 @op("rock", aliases=("камень", "валун", "булыжник"), category="Примитивы",
     summary="Камень выпуклой оболочкой: всегда замкнутый. Форма задаётся "
             "размером, шероховатостью и seed — повторяемая.",
@@ -723,12 +667,82 @@ def rock(a, name):
     return make_solid(a.scene, name, _placed(a, hull), a, kind="rock")
 
 
+def _leaf_outline(kind: str, length: float, width: float, count: int):
+    """Контуры видов листа; ось длины X, черенок слева, кончик справа."""
+    if kind in ("овал", "заострённый", "дуб"):
+        upper = []
+        samples = max(count, 72) if kind == "дуб" else count
+        for i in range(1, samples):
+            t = 0.5 - 0.5 * math.cos(math.pi * i / samples)
+            x = -length / 2.0 + length * t
+            base = math.sin(math.pi * t)
+            if kind == "дуб":
+                w = width / 2.0 * base ** 0.56 * (0.72 + 0.28 * math.cos(8.0 * math.pi * t))
+            elif kind == "заострённый":
+                w = width / 2.0 * base ** 1.28 * (1.16 - 0.32 * t)
+            else:
+                w = width / 2.0 * base ** 0.62
+            upper.append((x, w))
+        points = [(-length / 2.0, 0.0)] + upper + [(length / 2.0, 0.0)]
+        points += [(x, -w) for x, w in reversed(upper)]
+        if kind == "овал":
+            return _dedupe(points, 1e-5)
+    elif kind == "липа":
+        def bezier(p0, p1, p2, p3, n):
+            out = []
+            for i in range(n):
+                t = i / n
+                u = 1.0 - t
+                out.append((u ** 3 * p0[0] + 3 * u * u * t * p1[0]
+                            + 3 * u * t * t * p2[0] + t ** 3 * p3[0],
+                            u ** 3 * p0[1] + 3 * u * u * t * p1[1]
+                            + 3 * u * t * t * p2[1] + t ** 3 * p3[1]))
+            return out
+        n = max(8, count // 2)
+        notch = (-0.34 * length, 0.0)
+        middle = (-0.08 * length, 0.42 * width)
+        tip = (0.50 * length, 0.0)
+        upper = bezier(notch, (-0.58 * length, 0.08 * width),
+                       (-0.36 * length, 0.58 * width), middle, n)
+        upper += bezier(middle, (0.10 * length, 0.38 * width),
+                        (0.30 * length, 0.16 * width), tip, n)
+        upper.append(tip)
+        points = upper + [(x, -y) for x, y in reversed(upper[1:-1])]
+    else:  # клен: две лопасти с каждой стороны и центральная вершина
+        control = [(-0.38, 0.0), (-0.48, 0.12), (-0.40, 0.16),
+                   (-0.50, 0.25), (-0.35, 0.22), (-0.25, 0.20),
+                   (-0.20, 0.35), (-0.05, 0.50), (0.00, 0.32),
+                   (0.12, 0.25), (0.25, 0.22), (0.50, 0.0)]
+        upper = []
+        sub = max(2, count // 18)
+        for i in range(len(control) - 1):
+            p0, p1 = control[i], control[i + 1]
+            for j in range(sub):
+                t = j / sub
+                upper.append(((p0[0] * (1 - t) + p1[0] * t) * length,
+                              (p0[1] * (1 - t) + p1[1] * t) * width))
+        upper.append((0.50 * length, 0.0))
+        points = upper + [(x, -y) for x, y in reversed(upper[1:-1])]
+    # Новые виды нормируются по фактическому контуру: length/width точные.
+    xs = [p[0] for p in points]
+    ys = [p[1] for p in points]
+    cx, cy = (min(xs) + max(xs)) / 2.0, (min(ys) + max(ys)) / 2.0
+    sx = length / max(max(xs) - min(xs), 1e-9)
+    sy = width / max(max(ys) - min(ys), 1e-9)
+    return _dedupe([((x - cx) * sx, (y - cy) * sy) for x, y in points], 1e-5)
+
+
 @op("leaf", aliases=("листок", "лист_растения", "лист_дерева", "leaf_plant"),
     category="Примитивы",
-    summary="Лист растения: контур с прожилкой, толщиной и изгибом. Годится для "
-            "и декора.",
-    example="лист = leaf length=90 width=45 thickness=2 curl=0.25",
+    summary="Лист растения с толщиной и изгибом. kind/shape: овал, "
+            "липа/сердцевидный, дуб, клен или заострённый — контуры действительно "
+            "различаются выемками и лопастями.",
+    example="лист = leaf length=90 width=45 thickness=2 curl=0.25\n"
+            "клен = leaf length=90 width=70 kind=клен\n"
+            "липа = leaf length=80 width=65 kind=липа",
     params={"length": "длина, мм (90)", "width": "ширина, мм (45)",
+            "kind": "овал, липа/сердцевидный, дуб, клен, заострённый",
+            "shape": "синоним kind; если задан, перекрывает kind",
             "thickness": "толщина, мм (2)", "curl": "изгиб 0..1 (0.25)",
             "segments": "точек контура (48)",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом "
@@ -740,20 +754,20 @@ def leaf(a, name):
     thickness = float(a.num("thickness", 2.0, minv=0.3))
     curl = float(a.num("curl", 0.25, minv=0.0, maxv=1.0) or 0.0)
     count = int(a.num("segments", 48, minv=12, maxv=120) or 48)
-    # Контур листа строится от точного острия к острию: у концов шаг мельче,
-    # поэтому нет ни плоской «обрезанной» кромки, ни заломов. Раньше у концов
-    # принудительно ставилась ширина 0.6 мм — на стыке с дугой получался
-    # заметный излом; теперь ширина плавно сходит в ноль.
-    upper = []
-    for i in range(1, count):
-        # косинусный шаг: узлы сгущаются у обоих концов
-        t = 0.5 - 0.5 * math.cos(math.pi * i / count)
-        x = -length / 2.0 + length * t
-        w = width / 2.0 * math.sin(math.pi * t) ** 0.62
-        upper.append((x, w))
-    points = [(-length / 2.0, 0.0)] + upper + [(length / 2.0, 0.0)]
-    points += [(x, -w) for x, w in reversed(upper)]
-    points = _dedupe(points, 1e-5)
+    raw_kind = (a.text("shape") or a.text("kind") or "овал").strip().lower()
+    kind = {
+        "овал": "овал", "овальный": "овал", "oval": "овал",
+        "липа": "липа", "сердцевидный": "липа", "сердце": "липа",
+        "linden": "липа", "heart": "липа",
+        "дуб": "дуб", "дубовый": "дуб", "oak": "дуб",
+        "клен": "клен", "клён": "клен", "кленовый": "клен", "клёновый": "клен",
+        "maple": "клен", "заострённый": "заострённый",
+        "заостренный": "заострённый", "острый": "заострённый",
+        "pointed": "заострённый", "lance": "заострённый",
+    }.get(raw_kind)
+    if kind is None:
+        raise GeometryError("leaf: kind=овал, липа, дуб, клен или заострённый.")
+    points = _leaf_outline(kind, length, width, count)
     body = mf.Manifold.extrude(mf.CrossSection([_profile(points)]), float(thickness))
     if curl > 0:
         verts, faces = manifold_mesh(body)
@@ -815,5 +829,5 @@ def scatter(a, name):
     return out
 
 
-__all__ = ["box_body", "pipe", "holes", "shaft", "handle", "wheel", "rack",
-           "coupling", "heatsink", "rock", "leaf", "branch", "scatter"]
+__all__ = ["box_body", "pipe", "holes", "shaft", "handle", "wheel",
+           "rock", "leaf", "branch", "scatter"]

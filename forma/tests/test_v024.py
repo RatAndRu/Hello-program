@@ -124,17 +124,19 @@ class TestLightningShape(unittest.TestCase):
 
 class TestSwirl(unittest.TestCase):
     def test_coils_change_silhouette(self):
-        one = last(ok("к = swirl radius=40 height=60 coils=1 groove=0")).manifold
-        four = last(ok("к = swirl radius=40 height=60 coils=4 groove=0")).manifold
+        one = last(ok("к = swirl radius=40 height=60 coils=1")).manifold
+        four = last(ok("к = swirl radius=40 height=60 coils=4")).manifold
         self.assertGreater(four.num_tri(), one.num_tri())
 
-    def test_groove_is_carved(self):
-        smooth = last(ok("к = swirl radius=40 height=70 coils=3 groove=0")).manifold
-        carved = last(ok("к = swirl radius=40 height=70 coils=3 groove=4")).manifold
-        self.assertLess(carved.volume(), smooth.volume(), "канавка должна снимать материал")
+    def test_wire_changes_real_tube_volume(self):
+        thin = last(ok("к = swirl radius=40 height=70 coils=3 wire=8")).manifold
+        thick = last(ok("к = swirl radius=40 height=70 coils=3 wire=16")).manifold
+        self.assertGreater(thick.volume(), thin.volume() * 1.5)
+        self.assertEqual(len(thick.decompose()), 1)
 
-    def test_too_deep_groove_is_rejected(self):
-        self.assertIn("радиус", fails("к = swirl radius=10 height=50 groove=8"))
+    def test_touching_coils_and_old_groove_are_rejected(self):
+        self.assertIn("витки", fails("к = swirl radius=40 height=60 coils=3 wire=20"))
+        self.assertIn("groove", fails("к = swirl groove=4"))
 
 
 class TestBanana(unittest.TestCase):

@@ -26,8 +26,6 @@ class NewPartsTest(unittest.TestCase):
     CASES = {
         "корпус = box_body size=[240,160,200] wall=3": (240, 160, 200),
         "косынка = gusset leg=70 height=55 thickness=6": (70, 6, 55),
-        "ножка = leg height=90 top=34 bottom=22 flange=8": (34, 34, 90),
-        "профиль = profile2020 length=300 size=20": (20, 20, 300),
         "люверс = grommet diameter=12 height=8 wall=1.6 flange=3": (21.2, 21.2, 8),
         "червяк = worm length=90 diameter=30 pitch=8 depth=4": (30, 30, 90),
         "рог = horn length=160 radius=22 tip=3 bend=55": (160, 44, 79),
@@ -57,8 +55,8 @@ class NewPartsTest(unittest.TestCase):
         self.assertLess(obj.manifold.volume(), 3.14159 * 16 * 16 * 70)
         self.assertGreater(obj.manifold.volume(), 3.14159 * 14 * 14 * 70)
 
-    def test_rail_is_channel(self):
-        res = scene("рельс = rail length=400 width=30 height=14 wall=2")
+    def test_bracket_is_channel(self):
+        res = scene("швеллер = скоба length=400 width=30 height=14 wall=2")
         obj = res.scene.visible_solids()[-1]
         solid_box = 400 * 30 * 14
         self.assertLess(obj.manifold.volume(), solid_box * 0.75)
@@ -150,8 +148,8 @@ class ExamplesTest(unittest.TestCase):
     def test_showcase_has_many_tools(self):
         res = self._example("showcase")
         names = {o.name for o in res.visible_solids()}
-        for part in ("турбина", "плитки", "ряд_штифтов", "листва", "профиль",
-                     "червяк", "направляющая", "панель"):
+        for part in ("турбина", "плитки", "ряд_штифтов", "листва", "крюк_пример",
+                     "червяк", "скоба_длинная", "панель"):
             self.assertIn(part, names)
         self.assertGreaterEqual(len(res.visible_solids()), 30)
 
@@ -171,8 +169,8 @@ class InterfaceTest(unittest.TestCase):
         self.assertIn("clearSpaceSelection", self.app)
 
     def test_tool_cards(self):
-        for op in ("profile2020", "worm_shaft", "horn", "grommet", "leg",
-                   "rail", "gusset", "bracket", "bearing", "caster"):
+        for op in ("worm_shaft", "horn", "grommet", "gusset", "bracket",
+                   "handle", "swirl", "blade"):
             self.assertIn(f"op: '{op}'", self.app)
         blocks = self.app.split("const TOOL_SHAPES = [", 1)[1].split("const TOOL_RECIPES", 1)[0]
         self.assertGreaterEqual(blocks.count("op: '"), 40)

@@ -195,31 +195,35 @@ class LeverTest(unittest.TestCase):
         self.assertAlmostEqual(_size(b, "р")[0], 180.0, delta=0.5)
 
     def test_knob_shapes(self):
-        ball = _build("р = lever length=180 diameter=14 knob=шар knob_d=40")
-        tube = _build("р = lever length=180 diameter=14 knob=цилиндр knob_d=40 knob_h=40")
-        none = _build("р = lever length=180 diameter=14 knob=нет")
-        self.assertGreater(_solid(ball, "р").volume(), _solid(none, "р").volume())
-        self.assertGreater(_solid(tube, "р").volume(), _solid(none, "р").volume())
-        self.assertAlmostEqual(_size(none, "р")[1], 14.0, delta=0.2)
+        ball = _build("р = lever length=180 diameter=14 knob=шар knob_d=40 knob_h=50")
+        tube = _build("р = lever length=180 diameter=14 knob=цилиндр knob_d=40 knob_h=50")
+        self.assertEqual(len(_solid(ball, "р").decompose()), 1)
+        self.assertEqual(len(_solid(tube, "р").decompose()), 1)
         self.assertAlmostEqual(_size(ball, "р")[1], 40.0, delta=0.2)
+        self.assertAlmostEqual(_size(tube, "р")[1], 40.0, delta=0.2)
+        self.assertNotAlmostEqual(_solid(ball, "р").volume(), _solid(tube, "р").volume(), delta=1.0)
 
     def test_square_shaft(self):
-        b = _build("р = lever length=140 shaft=брусок size=20 knob=нет")
+        b = _build("р = lever length=140 shaft=брусок size=20 knob=цилиндр knob_d=30 knob_h=40")
         self.assertAlmostEqual(_size(b, "р")[0], 140.0, delta=0.2)
-        self.assertAlmostEqual(_size(b, "р")[1], 20.0, delta=0.2)
-        self.assertAlmostEqual(_size(b, "р")[2], 20.0, delta=0.2)
+        self.assertAlmostEqual(_size(b, "р")[1], 30.0, delta=0.2)
         self.assertEqual(len(_solid(b, "р").decompose()), 1)
 
     def test_angle_lifts_the_tip(self):
-        flat = _build("р = lever length=200 diameter=12 knob=нет")
-        up = _build("р = lever length=200 diameter=12 knob=нет angle=30")
-        self.assertAlmostEqual(_size(flat, "р")[2], 12.0, delta=0.3)
+        flat = _build("р = lever length=200 diameter=12 knob=шар knob_d=26 knob_h=40")
+        up = _build("р = lever length=200 diameter=12 knob=шар knob_d=26 knob_h=40 angle=30")
+        self.assertAlmostEqual(_size(flat, "р")[2], 26.0, delta=0.3)
         self.assertGreater(_size(up, "р")[2], 90.0)
+
+    def test_none_knob_is_removed(self):
+        b = build("р = lever knob=нет", analyze_model=False)
+        self.assertFalse(b.ok)
+        self.assertIn("больше нет", (b.error or {}).get("message", ""))
 
     def test_bad_knob_is_reported(self):
         b = build("р = lever knob=грабли", analyze_model=False)
         self.assertFalse(b.ok)
-        self.assertIn("ручка", (b.error or {}).get("message", ""))
+        self.assertIn("knob", (b.error or {}).get("message", ""))
 
 
 class ButtonTest(unittest.TestCase):

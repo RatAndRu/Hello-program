@@ -84,7 +84,7 @@ light preset=студия strength=1.35
 # ---------- ДВИГАТЕЛЬ ----------
 блок = box size=[400, 300, 300] round=54 center=да at=[700, 0, 490]
 поддон = box size=[330, 250, 66] round=16 center=да at=[690, 0, 340]
-головка = heatsink size=[330, 270, 130] fins=7 center=да at=[720, 0, 700]
+головка = box size=[330, 270, 130] round=18 center=да at=[720, 0, 700]
 цилиндр_л = cylinder radius=58 height=140 segments=48 center=да at=[742, -112, 800]
 цилиндры = mirror_copy [цилиндр_л] plane=y
 крышка_цилиндра = box size=[210, 260, 46] round=14 center=да at=[742, 0, 872]

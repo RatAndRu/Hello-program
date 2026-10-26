@@ -8,7 +8,7 @@
 3. **гиперболический параболоид** — седло: `mode=гипар` (крыша с прямыми
    рёбрами) и `mode=седло` (чипс), толщина делает плиту, а не лист;
 4. **ступеньки** — марш одной деталью: число ступеней, подъём, проступь,
-   ширина и форма кромки (прямая, скруглённая, скошенная);
+   ширина и независимые наружная/внутренняя кромки;
 5. **круг** и **овал** — плоские тела с объёмом, а не плоские фигуры;
 6. **сектор круга** — кусок пирога с углом, поворотом и толщиной;
 7. **бусина** — шар с каналом под шнур; фаска у входа, точная ширина.
@@ -154,7 +154,7 @@ class MoreBodiesTest(unittest.TestCase):
         # марш — сплошной блок под ступенями: сумма столбиков 1+2+…+n
         expect = 18 * 28 * 120 * (6 * 7 / 2)
         self.assertAlmostEqual(_solid(b, "л").volume(), expect, delta=1.0)
-        for shape in ("прямая", "скруглённая", "скошенная"):
+        for shape in ("прямая", "скруглённая"):
             with self.subTest(shape=shape):
                 s = _build(f"л = stairs steps=5 rise=16 run=30 width=100 shape={shape}")
                 self.assertTrue(np.allclose(_size(s, "л"), [150.0, 100.0, 80.0], atol=0.6))
@@ -162,17 +162,17 @@ class MoreBodiesTest(unittest.TestCase):
     def test_stairs_round_softens_steps(self):
         sharp = _build("л = stairs steps=5 rise=16 run=30 width=100")
         soft = _build("л = stairs steps=5 rise=16 run=30 width=100 shape=скруглённая")
-        cut = _build("л = stairs steps=5 rise=16 run=30 width=100 shape=скошенная")
-        # скругление и фаска снимают материал с кромок, а не добавляют
+        inner = _build("л = stairs steps=5 rise=16 run=30 width=100 inner=скруглённый")
         self.assertLess(_solid(soft, "л").volume(), _solid(sharp, "л").volume())
-        self.assertLess(_solid(cut, "л").volume(), _solid(soft, "л").volume())
-        # габарит не растёт
+        self.assertGreater(_solid(inner, "л").volume(), _solid(sharp, "л").volume())
         self.assertTrue(np.allclose(_size(soft, "л"), [150.0, 100.0, 80.0], atol=0.05))
+        rejected = build("л = stairs shape=скошенная", analyze_model=False)
+        self.assertFalse(rejected.ok)
 
     def test_stairs_refuses_bad_shape(self):
         bad = build("л = stairs shape=винтовая", analyze_model=False)
         self.assertFalse(bad.ok)
-        self.assertIn("Неизвестная форма", (bad.error or {}).get("message", ""))
+        self.assertIn("shape", (bad.error or {}).get("message", ""))
 
     def test_new_bodies_registered_and_explained(self):
         for op in ("ingot", "paraboloid", "saddle", "stairs", "disc", "pie", "oval", "bead"):

@@ -118,10 +118,7 @@ class TestHardwareShapes(unittest.TestCase):
         "гайка": "g = nut d=8",
         "болт": "g = bolt d=8 length=30",
         "винт": "g = screw d=4 length=25",
-        "петля": "g = hinge width=45 height=35",
         "уголок": "g = bracket width=60 depth=40 height=40",
-        "подшипник": "g = bearing outer=40 inner=17 width=12",
-        "ролик": "g = caster wheel=50 width=18",
         "шкив": "g = pulley diameter=80 width=20 bore=10",
     }
 
@@ -153,7 +150,7 @@ class TestHardwareShapes(unittest.TestCase):
 
     def test_hardware_in_tools_library(self):
         app = (ROOT / "web/js/app.js").read_text(encoding="utf-8")
-        for op in ("nut", "bolt", "screw", "hinge", "bracket", "bearing", "caster", "pulley"):
+        for op in ("nut", "bolt", "screw", "bracket", "pulley"):
             with self.subTest(op=op):
                 self.assertIn(f"op: '{op}'", app)
 

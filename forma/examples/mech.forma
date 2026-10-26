@@ -4,12 +4,12 @@
 # --- лестница: форма реек и перекладин настраивается ---
 приставная = ladder length=1800 width=420 rungs=9 tilt=72 at=[-900,0,0]
 деревянная = ladder length=1500 width=380 rail=брусок rail_d=44 rung=брусок rung_d=34 rungs=7 tilt=84 at=[-300,0,0]
-стремянка = ladder length=1200 width=340 rail=овал rail_d=26 rungs=6 tilt=90 at=[300,0,0]
+стремянка = ladder length=1200 width=340 rail=овал rail_d=32 rungs=6 tilt=90 at=[300,0,0]
 
 # --- рычаг: палка и ручка разных форм ---
 джойстик = lever length=180 diameter=14 knob=шар knob_d=34 at=[-900,0,2100]
-педаль = lever length=260 shaft=брусок size=20 knob=нет angle=18 at=[-600,0,2100]
-ворот = lever length=140 shaft=брусок size=20 knob=цилиндр knob_d=28 knob_h=60 at=[-250,0,2100]
+педаль = lever length=260 shaft=брусок size=20 knob=цилиндр knob_d=30 knob_h=70 angle=18 at=[-600,0,2100]
+ворот = lever length=140 shaft=брусок size=20 knob=цилиндр knob_d=30 knob_h=60 at=[-250,0,2100]
 флажок = lever length=200 diameter=10 knob=шар knob_d=26 angle=35 at=[100,0,2100]
 
 # --- кнопка: шляпка + гнездо, две отдельные детали ---

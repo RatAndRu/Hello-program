@@ -38,48 +38,56 @@ KINDS = {
 
 
 def _section(w: float, t: float, edges: str, spine: float, dol: float,
-             n: int = 9) -> np.ndarray:
-    """Сечение клинка: X — от кромки (−w/2) к спинке (+w/2), Y — толщина.
+             n: int = 9, profile: str = "линза") -> np.ndarray:
+    """Замкнутое несамопересекающееся сечение всей длины клинка.
 
-    Кромка сходится почти в ноль (0.5 % ширины), спинка скруглённая.
-    ``dol`` — дол: неглубокая канавка вдоль клинка.
+    X — от режущей кромки (−w/2) к спинке (+w/2), Y — толщина.
     """
     half_w = max(w, 1e-3) / 2.0
     half_t = max(t, 1e-3) / 2.0
-    us = np.linspace(0.0, 1.0, n)
+    edge = min(half_t * 0.5, max(0.03, t * 0.004))
+    us = np.linspace(0.0, 1.0, max(4, n))
     upper = []
     for u in us:
         if edges == "две":
-            h = math.sin(math.pi * u) ** 0.62
+            if profile == "плоский":
+                bevel = 0.18 + 0.16 * (1.0 - spine)
+                h = min(1.0, u / bevel, (1.0 - u) / bevel)
+            elif profile == "алмаз":
+                h = 1.0 - abs(2.0 * u - 1.0)
+            else:
+                h = math.sin(math.pi * u) ** 0.62
         else:
-            # одна кромка: у кромки ноль, у спинки — почти полная толщина
-            h = math.sin(math.pi * (0.16 + 0.72 * u)) ** 0.55
+            if profile == "плоский":
+                h = min(1.0, u / max(0.12, 1.0 - spine))
+            elif profile == "алмаз":
+                h = float(u)
+            else:
+                h = math.sin(math.pi * 0.5 * u) ** (0.8 + spine)
         if dol > 1e-6:
-            # дол: плавная канавка от 30 % до 70 % ширины
             h *= 1.0 - dol * math.exp(-((u - 0.5) / 0.18) ** 2)
-        upper.append(((-half_w + w * u), half_t * h))
-    lower = [(-x, -y) for x, y in reversed(upper[1:-1])]
-    pts = upper + lower
-    arr = np.asarray(pts, dtype=np.float64)
-    # кромка не должна быть идеально нулевой: ядро требует объём
-    arr[:, 1] = np.where(np.abs(arr[:, 0] + half_w) < 1e-9,
-                         np.sign(arr[:, 1] + 1e-12) * max(0.03, t * 0.004), arr[:, 1])
-    return ensure_ccw(arr)
+        y = edge + (half_t - edge) * max(0.0, h)
+        upper.append((-half_w + w * u, y))
+    # X сохраняется! Зеркалить нужно только толщину; старый (-x, -y)
+    # перекрещивал контур и ломал изгиб/объём клинка.
+    lower = [(x, -y) for x, y in reversed(upper)]
+    return ensure_ccw(np.asarray(upper + lower, dtype=np.float64))
 
 
 def _arc_path(length: float, sagitta: float, n: int) -> np.ndarray:
-    """Дуга в плоскости XZ: от начала в 0 до конца в (length, 0), прогиб вверх."""
+    """Дуга XZ с точной стрелой прогиба и нулевой высотой на концах."""
     n = max(3, int(n))
-    if sagitta <= 1e-6:
+    if abs(sagitta) <= 1e-6:
         xs = np.linspace(0.0, length, n)
         return np.stack([xs, np.zeros_like(xs), np.zeros_like(xs)], axis=1)
-    # радиус по стреле прогиба: R = L²/(8c) + c/2
-    R = length * length / (8.0 * sagitta) + sagitta / 2.0
-    half = math.asin(min(1.0, (length / 2.0) / R))
+    c = abs(sagitta)
+    radius = length * length / (8.0 * c) + c / 2.0
+    half = math.asin(min(1.0, (length / 2.0) / radius))
     theta = np.linspace(-half, half, n)
-    xs = R * np.sin(theta) + length / 2.0
-    zs = R * (math.cos(0.0) - np.cos(theta))
-    zs -= zs[0]
+    xs = radius * np.sin(theta) + length / 2.0
+    zs = radius * (np.cos(theta) - math.cos(half))
+    if sagitta < 0.0:
+        zs = -zs
     return np.stack([xs, np.zeros_like(xs), zs], axis=1)
 
 
@@ -115,8 +123,9 @@ def _rings_along(path: np.ndarray, sections: list[np.ndarray]) -> list[np.ndarra
     return rings
 
 
-def _close_blade(rings: list[np.ndarray], profile: np.ndarray) -> mf.Manifold:
-    """Сшивает кольца, закрывает основание и сводит кончик в одну точку."""
+def _close_blade(rings: list[np.ndarray], profile: np.ndarray,
+                 pointed: bool = True) -> mf.Manifold:
+    """Сшивает кольца, закрывает основание и остриё/плоский конец."""
     n = len(rings[0])
     verts = [v for ring in rings for v in ring]
     faces: list[tuple[int, int, int]] = []
@@ -126,102 +135,135 @@ def _close_blade(rings: list[np.ndarray], profile: np.ndarray) -> mf.Manifold:
             j2 = (j + 1) % n
             faces.append((a + j, a + j2, b + j2))
             faces.append((a + j, b + j2, b + j))
-    # основание — плоская крышка
     tris = triangulate_2d(profile)
-    for t in tris:
-        faces.append((int(t[2]), int(t[1]), int(t[0])))
-    # кончик — веер к одной точке (середина последнего кольца)
+    for tri in tris:
+        faces.append((int(tri[2]), int(tri[1]), int(tri[0])))
     last = (len(rings) - 1) * n
-    tip = np.mean(np.asarray(rings[-1]), axis=0)
-    ti = len(verts)
-    verts.append(tuple(float(c) for c in tip))
-    for j in range(n):
-        j2 = (j + 1) % n
-        faces.append((last + j, last + j2, ti))
+    if pointed:
+        tip = np.mean(np.asarray(rings[-1]), axis=0)
+        ti = len(verts)
+        verts.append(tuple(float(c) for c in tip))
+        for j in range(n):
+            j2 = (j + 1) % n
+            faces.append((last + j, last + j2, ti))
+    else:
+        for tri in tris:
+            faces.append((last + int(tri[0]), last + int(tri[1]), last + int(tri[2])))
     return manifold_from_arrays(np.asarray(verts, dtype=np.float64),
                                 np.asarray(faces, dtype=np.int64), "клинка")
 
 
 @op("blade", aliases=("клинок", "клинка", "лезвие", "меч", "катана", "сабля", "sword", "knife"),
     category="Примитивы",
-    summary="Клинок: лофт линзовидного сечения по изогнутой оси. kind выбирает "
-            "характер — катана (одна кромка, изгиб, остриё киссаки), ятоган "
-            "(шире), танто, стилет (две кромки, без изгиба), двуручник (широкий, "
-            "с долом), серп (сильный изгиб, кромка внутри), нож. Длина, ширина, "
-            "толщина и стрела прогиба задаются отдельно, так что можно сделать "
-            "и прямую финку, и кривой ятаган. По умолчанию стоит вдоль X "
-            "лицом −Y: остриё +X, ширина по Z, толщина по Y, изгиб уходит "
-            "к передней стороне (−Y); plane=плашмя возвращает заготовку в XY.",
-    example="катана = blade length=700 width=32 thick=7 kind=катана\n"
-            "стилет = blade length=280 width=14 thick=5 kind=стилет\n"
-            "серп = blade length=300 width=46 kind=серп curve=90",
-    params={"length": "длина, мм (400)",
-            "width": "ширина клинка у основания, мм (по kind)",
-            "thick": "толщина у спинки, мм (по kind)",
-            "curve": "стрела прогиба, мм (по kind): 0 — прямая, 25 — катана, 90 — серп",
+    summary="Клинок-лофт с независимыми силуэтом, сечением и остриём. kind "
+            "задаёт готовый тип, profile меняет ширину по всей длине, section — "
+            "сечение каждого кольца, tip — заострение. curve — signed стрела "
+            "сгиба в мм: знак меняет направление, 0 делает клинок прямым.",
+    example="катана = blade length=700 width=32 thick=7 kind=катана curve=22 profile=прямой tip=киссаки\n"
+            "стилет = blade length=280 kind=стилет section=алмаз tip=острое curve=0\n"
+            "нож = blade length=300 kind=нож profile=листовой section=плоский tip=закруглённое",
+    params={"length": "длина по X, мм (400)",
+            "width": "ширина у основания, мм (по kind)",
+            "thick": "толщина у основания, мм (по kind)",
+            "curve": "стрела сгиба −0.5·length…0.5·length, мм; знак задаёт сторону",
             "kind": "катана, танто, ятоган, стилет, двуручник, серп или нож",
             "edges": "одна или две кромки (по kind)",
-            "taper": "насколько сужается к кончику, 0…0.9 (0.55)",
-            "kissaki": "длина скоса у острия в долях длины (по kind)",
+            "profile": "силуэт всей длины: прямой, суженный или листовой",
+            "section": "сечение всего клинка: линза, клин, плоский или алмаз",
+            "tip": "заострение: острое, киссаки, закруглённое или тупое",
+            "taper": "сила сужения профиля 0…0.9 (0.55)",
+            "kissaki": "доля длины, занятая остриём, 0.01…0.35 (по kind)",
             "dol": "глубина дола 0…0.35 (по kind)",
-            "detail": "плотность сетки по длине (авто)",
-            "plane": "фронт — клинок стоит на кромке лицом к зрителю, "
-                     "плашмя — лежит на боку — «фронт»",
+            "detail": "колец по длине 8…200 (авто)",
+            "plane": "фронт или плашмя — «фронт»",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["length"])
 def blade(a, name):
-    length = float(a.num("length", 400.0, minv=10.0))
+    length = float(a.num("length", 400.0, minv=10.0, maxv=10000.0))
     kind_raw = (a.text("kind") or "катана").strip().lower()
     if kind_raw not in KINDS:
-        raise GeometryError(f"Неизвестный вид клинка «{kind_raw}».",
-                            hint="kind: " + ", ".join(KINDS) + ".")
+        raise GeometryError(f"Неизвестный вид клинка «{kind_raw}». "
+                            "kind: " + ", ".join(KINDS) + ".")
     preset = KINDS[kind_raw]
     scale = length / 400.0
-    width = float(a.num("width", preset["width"] * max(scale, 0.55), minv=2.0))
-    thick = float(a.num("thick", preset["thick"] * max(scale ** 0.6, 0.7), minv=0.6))
-    curve_preset = preset["curve"] * length
-    curve = float(a.num("curve", curve_preset, minv=0.0))
+    width = float(a.num("width", preset["width"] * max(scale, 0.55),
+                        minv=2.0, maxv=2000.0))
+    thick = float(a.num("thick", preset["thick"] * max(scale ** 0.6, 0.7),
+                        minv=0.6, maxv=500.0))
+    curve = float(a.num("curve", preset["curve"] * length,
+                        minv=-length * 0.5, maxv=length * 0.5) or 0.0)
     edges = (a.text("edges") or preset["edges"]).strip().lower()
-    if edges in ("1", "одна", "одна кромка", "single"):
-        edges = "одна"
-    elif edges in ("2", "две", "обе", "double"):
-        edges = "две"
+    edges = {"1": "одна", "одна": "одна", "одна кромка": "одна", "single": "одна",
+             "2": "две", "две": "две", "обе": "две", "double": "две"}.get(edges, edges)
     if edges not in ("одна", "две"):
-        raise GeometryError("edges: одна или две.")
+        raise GeometryError("edges=одна или две.")
+    profile = (a.text("profile") or ("листовой" if kind_raw in ("нож", "ятоган")
+                                      else "суженный" if kind_raw in ("танто", "стилет")
+                                      else "прямой")).strip().lower()
+    profile = {"прямой": "прямой", "прямая": "прямой", "straight": "прямой",
+               "суженный": "суженный", "суженная": "суженный", "tapered": "суженный",
+               "листовой": "листовой", "листовидный": "листовой", "leaf": "листовой"}.get(profile)
+    if profile is None:
+        raise GeometryError("profile=прямой, суженный или листовой.")
+    section = (a.text("section") or ("алмаз" if kind_raw == "стилет" else
+                                      "плоский" if kind_raw in ("танто", "нож") else
+                                      "линза" if edges == "две" else "клин")).strip().lower()
+    section = {"линза": "линза", "lenticular": "линза", "клин": "клин",
+               "wedge": "клин", "плоский": "плоский", "плоская": "плоский",
+               "flat": "плоский", "алмаз": "алмаз", "ромб": "алмаз", "diamond": "алмаз"}.get(section)
+    if section is None:
+        raise GeometryError("section=линза, клин, плоский или алмаз.")
+    tip = (a.text("tip") or ("киссаки" if kind_raw in ("катана", "ятоган") else
+                              "закруглённое" if kind_raw == "нож" else "острое")).strip().lower()
+    tip = {"острое": "острое", "острый": "острое", "point": "острое",
+           "киссаки": "киссаки", "kissaki": "киссаки",
+           "закруглённое": "закруглённое", "закругленное": "закруглённое",
+           "круглое": "закруглённое", "round": "закруглённое",
+           "тупое": "тупое", "плоское": "тупое", "blunt": "тупое"}.get(tip)
+    if tip is None:
+        raise GeometryError("tip=острое, киссаки, закруглённое или тупое.")
     taper = float(a.num("taper", 0.55, minv=0.0, maxv=0.9))
     kissaki = float(a.num("kissaki", preset["kissaki"], minv=0.01, maxv=0.35))
     dol = float(a.num("dol", preset["dol"], minv=0.0, maxv=0.35))
     if thick >= width * 0.7:
-        raise GeometryError(f"Клинок толщиной {thick:g} мм при ширине {width:g} мм "
-                            f"не может быть тонким.", hint="thick ≈ 0.1…0.3 от width.")
-    if curve > length * 1.2:
-        raise GeometryError("Стрела прогиба больше длины: это уже кольцо.",
-                            hint="curve ≤ 0.5 × length.")
+        raise GeometryError("thick должен быть меньше 0.7 × width.")
     n_sec = a.int("detail", None, minv=8, maxv=200) or max(24, int(length / 12))
-    # профиль по длине: ширина почти постоянна, к острию — скос
     path = _arc_path(length, curve, n_sec)
     sections = []
     for i in range(n_sec):
         u = i / (n_sec - 1)
-        narrow = 1.0 - taper * (u ** 1.6)
-        if u > 1.0 - kissaki:
-            k = (u - (1.0 - kissaki)) / max(kissaki, 1e-6)
-            narrow *= max(0.06, 1.0 - k ** 0.85)
-        thin = 1.0 - 0.45 * u
-        w = width * narrow
-        t = thick * thin * (0.35 + 0.65 * min(1.0, narrow * 1.6))
-        sections.append(_section(max(w, width * 0.01), max(t, 0.2), edges,
-                                 preset["spine"], dol))
+        # Силуэт действует от самого основания, а не только у кончика.
+        if profile == "суженный":
+            longitudinal = 1.0 - taper * u
+        elif profile == "листовой":
+            longitudinal = (1.0 + 0.30 * math.sin(math.pi * u)) * (1.0 - 0.65 * taper * u)
+        else:
+            longitudinal = 1.0 - 0.15 * taper * u
+        v = max(0.0, (u - (1.0 - kissaki)) / max(kissaki, 1e-6))
+        if tip == "закруглённое":
+            tip_factor = max(0.025, math.sqrt(max(0.0, 1.0 - v * v)))
+        elif tip == "тупое":
+            tip_factor = 1.0 - 0.25 * v
+        elif tip == "киссаки":
+            tip_factor = max(0.025, 1.0 - v ** 0.75)
+        else:
+            tip_factor = max(0.025, 1.0 - v)
+        w = max(width * 0.01, width * longitudinal * tip_factor)
+        t = max(0.2, thick * (1.0 - 0.35 * u) * (0.45 + 0.55 * min(1.0, longitudinal)))
+        sec = _section(w, t, edges, preset["spine"], dol, profile=section)
+        if tip == "киссаки" and v > 0.0:
+            # Смещение к спинке даёт характерную диагональ киссаки.
+            sec = sec + np.asarray([width * 0.22 * v * v, 0.0])
+        sections.append(sec)
     rings = _rings_along(path, sections)
-    solid = _close_blade(rings, sections[0])
-    solid = stand_flat_sign(a, solid)      # лицо −Y, кромка вниз, длина по X
+    solid = _close_blade(rings, sections[0], pointed=tip != "тупое")
+    solid = stand_flat_sign(a, solid)
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     parts = len([p for p in solid.decompose() if p.volume() > 0])
     if parts != 1:
         raise GeometryError(f"Клинок распался на {parts} частей: уменьшите изгиб.")
-    a.scene.log("info", f"клинок: {kind_raw}, {length:g} мм, прогиб {curve:g} мм, "
-                        f"кромок {edges}, {solid.num_tri():,} трис".replace(",", " "),
-                a.cmd.line)
+    a.scene.log("info", f"клинок: {kind_raw}, profile={profile}, section={section}, "
+                        f"tip={tip}, прогиб {curve:g} мм", a.cmd.line)
     return make_solid(a.scene, name, solid, a, kind="blade")
 
 
@@ -245,12 +287,12 @@ def _saw_tooth(u: float, shape: str, rake: float) -> float:
     (спуск), поэтому вершина стоит не в середине шага. ``rake`` — передний
     угол: положительный сдвигает вершину вперёд по ходу реза.
     """
-    peak = min(0.88, max(0.35, 0.70 - rake / 130.0))
+    peak = min(0.92, max(0.12, 0.70 - rake / 130.0))
     if shape == "треугольные":
         return (u / peak) if u <= peak else (1.0 - u) / max(1.0 - peak, 1e-6)
     if shape == "трапеция":
         # карбидная пластина: плоская площадка на вершине
-        half = 0.09
+        half = min(0.09, peak * 0.45, (1.0 - peak) * 0.45)
         left, right = peak - half, peak + half
         if u <= left:
             return (u / max(left, 1e-6)) ** 0.85
@@ -267,40 +309,70 @@ def _saw_tooth(u: float, shape: str, rake: float) -> float:
 
 
 def _disc_solid(outer: list[tuple[float, float]], thickness: float,
-                r_hole: float = 0.0) -> mf.Manifold:
-    """Плоский диск по 2D-контуру с настоящим сквозным отверстием."""
+                r_hole: float = 0.0, radii=None, kerf: float | None = None,
+                taper: float = 0.0, band_r: float = 0.0) -> mf.Manifold:
+    """Единая сетка диска; никакого второго наложенного зубчатого венца."""
     pts = ensure_ccw(np.asarray(outer, dtype=np.float64))
-    cs = mf.CrossSection([pts])
-    if cs.is_empty():
-        raise GeometryError("Контур пилы не замкнулся: уменьшите пазуху gullet.")
-    solid = cs.extrude(thickness)
+    if radii is None:
+        cs = mf.CrossSection([pts])
+        if cs.is_empty():
+            raise GeometryError("Контур пилы не замкнулся: уменьшите пазуху gullet.")
+        solid = cs.extrude(thickness)
+    else:
+        rr = np.asarray(radii, dtype=np.float64)
+        kerf = thickness if kerf is None else float(kerf)
+        n = len(pts)
+        local = []
+        for r in rr:
+            s = min(1.0, max(0.0, (float(r) - band_r) / max(1e-9, float(rr.max()) - band_r)))
+            t = thickness + (kerf - thickness) * s
+            t *= 1.0 - taper * s
+            local.append(max(0.05, t))
+        # При taper=0 и kerf=thickness все Z остаются строго 0/thickness.
+        verts = []
+        for i, (x, y) in enumerate(pts):
+            z0 = (thickness - local[i]) / 2.0
+            verts.append((float(x), float(y), z0))
+        for i, (x, y) in enumerate(pts):
+            z1 = (thickness + local[i]) / 2.0
+            verts.append((float(x), float(y), z1))
+        faces: list[tuple[int, int, int]] = []
+        for i in range(n):
+            j = (i + 1) % n
+            faces.append((i, j, n + j))
+            faces.append((i, n + j, n + i))
+        for tri in triangulate_2d(pts):
+            a0, b0, c0 = (int(v) for v in tri)
+            faces.append((c0, b0, a0))
+            faces.append((n + a0, n + b0, n + c0))
+        solid = manifold_from_arrays(np.asarray(verts, dtype=np.float64),
+                                     np.asarray(faces, dtype=np.int64), "пилы")
     if r_hole > 0.5:
-        shaft = mf.Manifold.cylinder(thickness * 6.0, r_hole, r_hole,
+        tall = max(thickness, thickness if kerf is None else kerf) * 8.0
+        shaft = mf.Manifold.cylinder(tall, r_hole, r_hole,
                                      max(48, int(r_hole * 6)), False)
-        solid = solid - shaft.translate((0, 0, -thickness * 3.0))
+        solid = solid - shaft.translate((0, 0, thickness / 2.0 - tall / 2.0))
     return solid
 
 
 @op("saw", aliases=("пила", "дисковая_пила", "дисковая пила", "циркулярка", "saw_blade",
                     "circular_saw"),
     category="Примитивы",
-    summary="Дисковая пила: плоское полотно с зубьями по кругу и посадочным "
-            "отверстием под вал. Зубья настраиваются отдельно — число, высота, "
-            "форма (треугольные, трапеция-карбид, крюк, волна), передний угол "
-            "rake и глубина пазухи gullet. По желанию — компенсационные "
-            "отверстия windows и расширенный пропил kerf. По умолчанию стоит "
-            "в плоскости XZ лицом −Y: толщина по Y, ось вала и всех отверстий — Y; "
-            "plane=плашмя кладёт пилу в XY, тогда ось — Z.",
+    summary="Дисковая пила одной сеткой: диск и зубья имеют одинаковую плоскую "
+            "толщину по умолчанию, без наложенного круга. rake до ±75° даёт "
+            "острые зубья; taper плавно утоньшает режущую кромку. kerf>thickness "
+            "меняет толщину только внутри той же сетки, не добавляя венец.",
     example="пила = saw diameter=200 thickness=2.5 teeth=24 tooth=6 hole=22\n"
-            "настольная = saw diameter=150 teeth=40 shape=трапеция windows=5 kerf=3.2",
+            "острая = saw diameter=150 teeth=40 shape=треугольные rake=65 taper=.4",
     params={"diameter": "наружный диаметр по зубьям, мм (200)",
             "thickness": "толщина полотна, мм (2.5)",
             "teeth": "число зубьев по кругу (24)",
             "tooth": "высота зуба над полотном, мм (5 % диаметра)",
             "shape": "треугольные, трапеция, крюк или волна — «трапеция»",
-            "rake": "передний угол зуба, градусы: + вперёд, − назад (10)",
+            "rake": "передний угол зуба −75…75°: + вперёд, − назад (10)",
             "gullet": "глубина пазухи между зубьями, мм (2 % диаметра)",
-            "kerf": "ширина пропила по зубьям, мм (толщина × 1.4)",
+            "taper": "утоньшение наружной кромки 0…0.9; 0 — плоская пила (0)",
+            "kerf": "толщина режущей зоны, мм (по умолчанию = thickness, без венца)",
             "hole": "посадочное отверстие под вал, мм (11 % диаметра)",
             "windows": "число круглых отверстий в полотне 0…12 (0)",
             "detail": "точек на зуб, 4…40 (16)",
@@ -318,10 +390,11 @@ def saw(a, name):
                             hint="shape: треугольные, трапеция, крюк или волна.")
     r_out = diameter / 2.0
     tooth = float(a.num("tooth", diameter * 0.05, minv=0.2, maxv=diameter * 0.16))
-    rake = float(a.num("rake", 10.0, minv=-45.0, maxv=45.0))
+    rake = float(a.num("rake", 10.0, minv=-75.0, maxv=75.0))
     gullet = float(a.num("gullet", max(0.4, diameter * 0.02), minv=0.05,
                          maxv=diameter * 0.08))
-    kerf = float(a.num("kerf", thickness * 1.4, minv=thickness, maxv=thickness * 4.0))
+    kerf = float(a.num("kerf", thickness, minv=thickness, maxv=thickness * 4.0))
+    taper = float(a.num("taper", 0.0, minv=0.0, maxv=0.9) or 0.0)
     hole = float(a.num("hole", diameter * 0.11, minv=1.0, maxv=r_out * 1.2))
     windows = int(a.num("windows", 0, minv=0, maxv=12))
     detail = int(a.num("detail", 16, minv=4, maxv=40))
@@ -337,7 +410,7 @@ def saw(a, name):
     # Высоты зубьев по кругу; вершину ставим ровно на точку выборки, иначе
     # остриё «срезается» и зуб выглядит лепестком.
     steps = teeth * detail
-    peak_u = min(0.88, max(0.35, 0.70 - rake / 130.0))
+    peak_u = min(0.92, max(0.12, 0.70 - rake / 130.0))
     heights = []
     for i in range(steps):
         u = (i * teeth / steps) % 1.0
@@ -349,16 +422,9 @@ def saw(a, name):
 
     angles = [2.0 * math.pi * i / steps for i in range(steps)]
     outline = [(r * math.cos(t), r * math.sin(t)) for r, t in zip(radii, angles)]
-    solid = _disc_solid(outline, thickness, r_in)
-
-    # Пропил: венчик по зубьям чуть толще полотна — так пилит настоящий диск.
-    if kerf > thickness * 1.02:
-        # венчик держим только у зубьев: глубже в полотне пропил не нужен
-        band_r = max(r_gullet - tooth * 0.4, r_in + 2.0)
-        inner_band = [(min(r, band_r) * math.cos(t), min(r, band_r) * math.sin(t))
-                      for r, t in zip(radii, angles)]
-        rim = _disc_solid(outline + list(reversed(inner_band)), kerf)
-        solid = solid + rim
+    band_r = max(r_gullet - tooth * 0.4, r_in + 2.0)
+    solid = _disc_solid(outline, thickness, r_in, radii=radii, kerf=kerf,
+                        taper=taper, band_r=band_r)
 
     if windows > 0:
         r_win = max(r_in + 3.0, (r_in + r_gullet) / 2.0)

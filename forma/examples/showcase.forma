@@ -3,7 +3,7 @@
 # ============================================================================
 #  Каждый предмет сделан своим инструментом: примитив, тело вращения,
 #  протяжка, массив (линейный, круговой, сеткой), оболочка, отверстия,
-#  готовые узлы (колесо, вал, муфта, радиатор, рейка, ручка, коробка).
+#  готовые узлы (колесо, вал, полукапсула, косынка, звезда, ручка, коробка).
 #  Один и тот же редактор закрывает посуду, механику, крепёж, мебель и
 #  природу — без сторонних моделей.
 # ----------------------------------------------------------------------------
@@ -70,12 +70,12 @@ light preset=студия strength=1.05
 плитка = holes [плитка] grid=[3,4] diameter=8 pitch=[28,30]
 плитки = array [плитка] count=1 mode=grid counts=[3,2,1] spacing=[112, 150, 0]
 плитки = translate [плитки] offset=[-540, -140, 102]
-рейка = rack length=210 teeth=21 module=2 thickness=10 height=14
-рейка = translate [рейка] offset=[0, -140, 86]
-муфта = coupling diameter=64 length=76 bore=20
-муфта = translate [муфта] offset=[540, -140, 94]
-радиатор = heatsink size=[150, 96, 58] fins=11
-радиатор = translate [радиатор] offset=[270, -140, 86]
+звезда_малая = star outer=80 inner=34 depth=12 points=7 bevel=2
+звезда_малая = translate [звезда_малая] offset=[0, -140, 86]
+полукапсула = полукапсула diameter=64 length=76 rim=3 rim_height=5
+полукапсула = translate [полукапсула] offset=[540, -140, 94]
+косынка = gusset leg=120 height=70 thickness=8
+косынка = translate [косынка] offset=[270, -140, 86]
 камень = rock size=[170, 130, 78] seed=7 rough=0.42
 камень = translate [камень] offset=[0, -450, 86]
 ветка = sweep path=[[0, 0, 0], [8, 5, 60], [24, 12, 120], [44, 18, 180]] radius=10 smooth=14 scale_curve=[1.0, 0.85, 0.65, 0.45]
@@ -103,11 +103,11 @@ light preset=студия strength=1.05
 призма = prism sides=6 radius=56 height=140 center=да at=[540, -420, 96]
 
 # ---------- НОВЫЕ ИНСТРУМЕНТЫ (0.17) ----------
-направляющая = rail length=300 width=30 height=14 wall=2
-направляющая = translate [направляющая] offset=[180, -470, 96]
-профиль = profile2020 length=280 size=20
-профиль = rotate [профиль] angle=90 axis=x
-профиль = translate [профиль] offset=[330, -240, 86]
+скоба_длинная = скоба length=300 width=30 height=14 wall=2
+скоба_длинная = translate [скоба_длинная] offset=[180, -470, 96]
+крюк_пример = крюк wire=8 radius=60 length=180 open=240
+крюк_пример = rotate [крюк_пример] angle=90 axis=x
+крюк_пример = translate [крюк_пример] offset=[330, -240, 86]
 панель_внеш = box size=[200, 140, 22] round=8 center=да
 панель_полость = box size=[194, 134, 26] round=6 center=да
 панель_полость = translate [панель_полость] offset=[0, 0, 3]
@@ -143,10 +143,10 @@ check турбина parts 1
 check колесо parts 1
 check вал parts 1
 check плитки parts 6
-check муфта watertight
-check муфта parts 1
-check рейка parts 1
-check радиатор parts 1
+check полукапсула watertight
+check полукапсула parts 1
+check звезда_малая parts 1
+check косынка parts 1
 check труба watertight
 check труба parts 1
 check камень watertight
@@ -157,10 +157,10 @@ check призма parts 1
 check призма watertight
 check ящик watertight
 check ящик parts 1
-check направляющая parts 1
-check направляющая watertight
-check профиль parts 1
-check профиль watertight
+check скоба_длинная parts 1
+check скоба_длинная watertight
+check крюк_пример parts 1
+check крюк_пример watertight
 check панель parts 1
 check панель watertight
 check люверс parts 1
@@ -191,9 +191,9 @@ color турбина #c98f4e metal=0.7 rough=0.3
 color колесо #23252a metal=0.4 rough=0.7
 color вал #aeb4ba metal=0.9 rough=0.22
 color плитки #7d8288 metal=0.5 rough=0.4
-color муфта #7d838a metal=0.85 rough=0.3
-color рейка #9aa0a6 metal=0.8 rough=0.3
-color радиатор #b7bdc4 metal=0.9 rough=0.24
+color полукапсула #7d838a metal=0.85 rough=0.3
+color звезда_малая #9aa0a6 metal=0.8 rough=0.3
+color косынка #b7bdc4 metal=0.9 rough=0.24
 color труба #6f8f9c metal=0.7 rough=0.3
 color камень #77726a rough=0.85
 color ветка #6b4a2f rough=0.75
@@ -202,8 +202,8 @@ color листва #4f7f45 rough=0.7
 color ящик #a8794a rough=0.6
 color скульптура #b9c2c9 metal=0.3 rough=0.35
 color призма #cfd6dc metal=0.2 rough=0.4
-color направляющая #9aa0a6 metal=0.85 rough=0.28
-color профиль #b9c0c8 metal=0.9 rough=0.24
+color скоба_длинная #9aa0a6 metal=0.85 rough=0.28
+color крюк_пример #b9c0c8 metal=0.9 rough=0.24
 color панель #7d8288 metal=0.5 rough=0.4
 color люверс #c9a45c metal=0.9 rough=0.2
 color червяк #b0b6bd metal=0.9 rough=0.22

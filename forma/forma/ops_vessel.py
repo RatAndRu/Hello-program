@@ -16,6 +16,7 @@ import numpy as np
 
 from .errors import GeometryError
 from .ops import anchor, make_solid, op
+from .shape_features import apply_smooth
 
 
 @op("воронка", aliases=("funnel", "лейка_воронка", "конус_воронка", "сыпучка"),
@@ -33,7 +34,10 @@ from .ops import anchor, make_solid, op
             "height": "высота конуса, мм (80)",
             "wall": "толщина стенки, мм (3)",
             "spout": "длина трубки-носка, мм (40)",
-            "lip": "буртик по кромке сверху, мм (2.5; 0 — без буртика)",
+            "lip": "выступ верхнего бортика наружу, мм (2.5; 0 — без бортика)",
+            "rim": "то же, что lip — как у короны",
+            "rim_height": "высота верхнего бортика, мм (0.5·lip), как у короны",
+            "smooth": "уровни Loop-сглаживания всей воронки 0…4 (0)",
             "segments": "сегментов по кругу (по детализации)",
             "detail": "детализация 0…5 (3)",
             "at": "положение [x,y,z]: низ носка на z=0",
@@ -45,6 +49,13 @@ def funnel(a, name):
     wall = float(a.num("wall", 3.0, minv=0.2, maxv=1000.0))
     spout = float(a.num("spout", 40.0, minv=0.0, maxv=5000.0))
     lip = float(a.num("lip", 2.5, minv=0.0, maxv=1000.0))
+    rim_value = a.num("rim", None, minv=0.0, maxv=1000.0)
+    if rim_value is not None:
+        lip = float(rim_value)
+    rim_h = float(a.num("rim_height", max(0.0, lip * 0.5), minv=0.0,
+                         maxv=1000.0) or 0.0)
+    if lip > 1e-6 and rim_h <= 1e-6:
+        rim_h = lip * 0.5
     detail = int(a.num("detail", 3, minv=0, maxv=5))
     at = a.vec("at", 3, default=(0.0, 0.0, 0.0))
     center = a.boolean("center", False)
@@ -69,9 +80,14 @@ def funnel(a, name):
 
     profile = [[r_out, 0.0], [r_out, spout], [R_out, H]]
     if lip > 1e-6:
-        profile += [[R_out + lip, H], [R_out + lip, H + lip * 0.5],
-                    [R_out + lip - wall, H + lip * 0.5]]
-    profile += [[Ri, H], [ri, spout], [ri, 0.0]]
+        # Прямой бортик как у короны: наружный выступ и плоская верхняя
+        # кромка на H+rim_height; полость доходит до той же плоскости.
+        profile += [[R_out + lip, H], [R_out + lip, H + rim_h],
+                    [Ri, H + rim_h], [Ri, H]]
+    else:
+        rim_h = 0.0
+        profile.append([Ri, H])
+    profile += [[ri, spout], [ri, 0.0]]
 
     segments = a.int("segments", None, minv=12, maxv=512)
     if segments is None:
@@ -80,6 +96,7 @@ def funnel(a, name):
 
     cs = mf.CrossSection([np.asarray(profile, dtype=np.float64)])
     solid = mf.Manifold.revolve(cs, int(segments))
+    solid = apply_smooth(solid, a, "воронка")
     if solid.is_empty() or solid.volume() <= 0:
         raise GeometryError("воронка не построилась.", hint="Проверьте top/bottom/wall.")
 

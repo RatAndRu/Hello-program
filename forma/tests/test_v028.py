@@ -155,33 +155,28 @@ class Lens(unittest.TestCase):
         self.assertIn("линз", fails("л = lens mode=взгляд").lower())
 
 
-class Cartridge(unittest.TestCase):
-    def test_length_is_exact_for_rifle(self):
-        for diameter, length in ((7.62, 56), (5.56, 45), (12.7, 99)):
-            b = ok(f"п = cartridge diameter={diameter} length={length} kind=винтовочный")
+class HalfCapsule(unittest.TestCase):
+    def test_length_is_exact(self):
+        for diameter, length in ((7.62, 56), (9, 29), (12.7, 99)):
+            b = ok(f"п = полукапсула diameter={diameter} length={length} rim=0")
             self.assertAlmostEqual(size_of(b, "п")[2], float(length), places=2)
 
-    def test_length_is_exact_for_pistol(self):
-        for diameter, length in ((9, 29), (11.43, 23), (9, 19)):
-            b = ok(f"п = cartridge diameter={diameter} length={length} kind=пистолетный")
-            self.assertAlmostEqual(size_of(b, "п")[2], float(length), places=2)
+    def test_rim_widens_base_not_modes(self):
+        plain = ok("п = полукапсула diameter=20 length=50 rim=0")
+        rim = ok("п = полукапсула diameter=20 length=50 rim=2 rim_height=3")
+        self.assertAlmostEqual(size_of(plain, "п")[0], 20.0, delta=0.1)
+        self.assertAlmostEqual(size_of(rim, "п")[0], 24.0, delta=0.1)
 
-    def test_rifle_rim_is_wider_than_pistol(self):
-        rifle = ok("п = cartridge diameter=9 length=40 kind=винтовочный")
-        pistol = ok("п = cartridge diameter=9 length=40 kind=пистолетный")
-        # у винтовочной гильзы выраженная закраина и плечико, у пистолетной
-        # стенка почти прямая
-        self.assertGreater(size_of(rifle, "п")[0] / 9.0,
-                           size_of(pistol, "п")[0] / 9.0)
-
-    def test_cartridge_is_one_solid(self):
-        b = ok("п = cartridge diameter=9 length=29 kind=пистолетный")
+    def test_cartridge_is_only_an_alias(self):
+        b = ok("п = cartridge diameter=9 length=29 rim=0")
         m = b.scene.objects["п"].manifold
         self.assertEqual(str(m.status()), "Error.NoError")
         self.assertEqual(m.genus(), 0)
 
-    def test_bad_kind_is_explained(self):
-        self.assertIn("патрон", fails("п = cartridge kind=артиллерийский").lower())
+    def test_old_kind_is_rejected(self):
+        message = fails("п = cartridge kind=артиллерийский").lower()
+        self.assertIn("kind", message)
+        self.assertIn("полукапсула", message)
 
 
 class NewShapesInCatalog(unittest.TestCase):

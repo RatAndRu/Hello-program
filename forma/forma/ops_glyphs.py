@@ -23,6 +23,7 @@ from .geometry import (circle_profile, ellipse_profile, sweep_solid, limit_segme
                        FINENESS_MM)
 from .ops import anchor, make_solid, op, stand_flat_sign
 from .ops_shapes import _cross, _profile, ensure_volume
+from .shape_features import hollow_cross, rect_between
 
 
 # --------------------------------------------------------------------------- #
@@ -119,18 +120,16 @@ def _segments_for(radius: float, asked: int | None, lo: int = 48, hi: int = 512)
 # --------------------------------------------------------------------------- #
 @op("arrow", aliases=("стрелка", "стрела", "указатель", "arrow_sign"),
     category="Примитивы",
-    summary="Стрелка-указатель остриём вправо (по +X): древко, наконечник и "
-            "необязательный вырез в хвосте. Одна деталь, годится для табличек, "
-            "вывесок, маркеров и как «перо» для моделей. По умолчанию стоит "
-            "в XZ лицом −Y: длина и размах наконечника — X/Z, толщина — Y; "
-            "round скругляет кромки настоящим радиусом.",
-    example="стрелка = arrow length=120 width=26 head=42 head_width=68 depth=12 round=2",
+    summary="Стрелка остриём +X. head_width=width делает наконечник без "
+            "выступающих краёв; tail — "
+            "отдельный V-вырез хвоста. Одна деталь с настоящей толщиной.",
+    example="стрелка = arrow length=120 width=26 head=42 head_width=68 depth=12 round=2\n"
+            "тонкая = arrow length=120 width=26 head_width=26",
     params={"length": "полная длина, мм (120)",
             "width": "толщина древка, мм (26)",
             "head": "длина наконечника, мм (0.32 длины)",
-            "head_width": "размах наконечника, мм (2.6 ширины)",
-            "tail": "глубина выреза в хвосте, мм: 0 — прямой срез, 0.3 ширины — "
-                    "оперение стрелы (0)",
+            "head_width": "размах наконечника; может быть равен width",
+            "tail": "глубина V-выреза в хвосте, мм: 0 — прямой срез (0)",
             "depth": "толщина по глубине, мм (12); у стоящего знака — по Y",
             "round": "скругление кромок, мм (0)",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом вверх — «фронт»",
@@ -148,21 +147,27 @@ def arrow(a, name):
     if head >= length * 0.95:
         raise GeometryError(f"Наконечник {head:g} мм не оставляет древка при длине {length:g} мм.",
                             hint="head ≈ 0.25…0.4 от length.")
-    if head_width <= width:
-        raise GeometryError(f"Размах наконечника {head_width:g} мм должен быть больше "
-                            f"древка {width:g} мм — иначе это не стрелка.",
-                            hint="head_width ≈ 2…3 ширины древка.")
+    if head_width < width - 1e-9:
+        raise GeometryError("Наконечник: head_width не может быть меньше древка width.",
+                            hint="Для наконечника без выступов задайте head_width=width.")
     if tail > length * 0.45:
         raise GeometryError("Вырез хвоста не может занимать почти половину стрелки.",
                             hint="tail ≈ 0.2…0.35 от width.")
     x_tail, x_head, x_tip = -length / 2.0, length / 2.0 - head, length / 2.0
     hw, hh = width / 2.0, head_width / 2.0
-    pts = [(x_tail, -hw), (x_head, -hw), (x_head, -hh), (x_tip, 0.0),
-           (x_head, hh), (x_head, hw), (x_tail, hw)]
+    pts = [(x_tail, -hw), (x_head, -hw)]
+    if hh > hw + 1e-9:
+        pts.append((x_head, -hh))
+    pts.append((x_tip, 0.0))
+    if hh > hw + 1e-9:
+        pts.append((x_head, hh))
+    pts += [(x_head, hw), (x_tail, hw)]
     if tail > 1e-6:
         pts.append((x_tail + tail, 0.0))
-    solid = _flat(_poly_cross(pts), depth, round_r, min(width, head),
-                  size=(length, head_width))
+    cross = _poly_cross(pts)
+    overall_height = head_width
+    solid = _flat(cross, depth, round_r, min(width, head),
+                  size=(length, overall_height))
     return make_solid(a.scene, name, _place_glyph(a, solid), a, kind="arrow")
 
 
@@ -286,86 +291,63 @@ def crescent(a, name):
 #  Завиток (мягкое мороженое / «смайлик-какашка»)
 # --------------------------------------------------------------------------- #
 @op("swirl", aliases=("завиток", "какашка", "мороженое", "рожок", "soft_serve",
-                      "curl_pile"),
+                      "curl_pile", "свиной_хвостик"),
     category="Примитивы",
-    summary="Завиток-наплыв: тело вращения из наклонных колец-наплывов со "
-            "спиральной канавкой и заострённой верхушкой — «мягкое мороженое», "
-            "куча, спиральный столбик. Стоит на плоском дне, одно тело. "
-            "radius — радиус у основания, height — высота, coils — число "
-            "наплывов, groove — глубина спиральной канавки.",
-    example="куча = swirl radius=42 height=70 coils=3\n"
-            "мороженое = swirl radius=34 height=96 coils=4 groove=3",
-    params={"radius": "радиус у основания, мм (40)",
-            "height": "высота, мм (64)",
-            "coils": "число наплывов-колец (3)",
-            "groove": "глубина спиральной канавки, мм (0.1 радиуса); 0 — гладкий",
-            "taper": "насколько сужается кверху: 0 — цилиндр, 0.85 — конус (0.62)",
-            "segments": "точек по кругу (по размеру)",
+    summary="Непрерывный завиток: одна гибкая труба идёт по трёхмерной "
+            "спирали, как свиной хвостик или мягкое мороженое. Это не стопка "
+            "дисков: витки плавно сужаются и заканчиваются остриём. wire — "
+            "диаметр трубы в основании, coils — число витков, taper — сужение "
+            "спирали к оси.",
+    example="хвостик = swirl radius=40 height=64 coils=3 wire=16 taper=0.25\n"
+            "мороженое = swirl radius=34 height=96 coils=4 wire=20 taper=0.7",
+    params={"radius": "наружный радиус основания, мм (40)",
+            "height": "высота до острия, мм (64)",
+            "coils": "число непрерывных витков 1…12 (3)",
+            "wire": "диаметр трубы у основания, мм (авто, без касания витков)",
+            "taper": "сужение радиуса спирали 0…0.92 (0.62)",
+            "segments": "сегментов сечения трубы 12…64 (20)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["radius", "height"])
 def swirl(a, name):
-    radius = float(a.num("radius", 40.0, minv=1.0))
-    height = float(a.num("height", 64.0, minv=1.0))
-    coils = int(a.num("coils", 3, minv=1, maxv=12))
-    groove = float(a.num("groove", radius * 0.10, minv=0.0))
+    radius = float(a.num("radius", 40.0, minv=2.0, maxv=5000.0))
+    height = float(a.num("height", 64.0, minv=3.0, maxv=10000.0))
+    coils = int(a.num("coils", 3, minv=1, maxv=12) or 3)
+    pitch = height / coils
+    auto_wire = min(radius * 0.42, pitch * 0.78)
+    wire = float(a.num("wire", auto_wire, minv=0.2, maxv=radius * 1.2))
     taper = float(a.num("taper", 0.62, minv=0.0, maxv=0.92))
-    sides = _segments_for(radius, a.int("segments", None, minv=24, maxv=384))
-    if groove >= radius * 0.45:
-        raise GeometryError("Канавка глубже радиуса: завиток развалится.",
-                            hint=f"groove ≤ {radius * 0.35:g} мм.")
+    sides = int(a.num("segments", 20, minv=12, maxv=64) or 20)
+    if wire >= pitch * 0.96:
+        raise GeometryError("Труба завитка слишком толстая: соседние витки сольются.",
+                            hint=f"wire должен быть меньше {pitch * 0.96:g} мм.")
+    if wire >= radius * 1.15:
+        raise GeometryError("Труба толще основания завитка.",
+                            hint="Уменьшите wire или увеличьте radius.")
 
-    def outer_r(u: float) -> float:
-        """Радиус поверхности на высоте u ∈ [0, 1] с наплывами и остриём."""
-        base = radius * (1.0 - taper * u)
-        wave = 1.0 + 0.16 * math.cos(2 * math.pi * coils * u - math.pi * 0.5)
-        tip = min(1.0, (1.0 - u) / 0.10)          # верхушка сходит в точку
-        return max(0.0, base * wave * tip)
-
-    # профиль вращения (r, z): плоское дно → волнистая стенка → остриё
-    steps = max(48, coils * 18)
-    pts = [(0.0, 0.0), (outer_r(0.0), 0.0)]
-    for i in range(1, steps + 1):
-        u = i / steps
-        pts.append((outer_r(u), height * u))
-    pts.append((0.0, height))
-    prof = np.asarray(pts, dtype=np.float64)
-    prof[:, 0] = np.clip(prof[:, 0], 0.0, None)
-    solid = mf.Manifold.revolve(mf.CrossSection([prof]), sides)
+    base_r = radius - wire / 2.0
+    base_tube = wire / 2.0
+    n = max(96, coils * 56)
+    path: list[tuple[float, float, float]] = []
+    scales: list[float] = []
+    for i in range(n + 1):
+        u = i / n
+        angle = 2.0 * math.pi * coils * u
+        center_r = base_r * (1.0 - taper * u)
+        # Последняя часть витка мягко сворачивается к оси и образует остриё,
+        # а не обрезанный цилиндр на вершине.
+        if u > 0.78:
+            q = (u - 0.78) / 0.22
+            center_r *= 1.0 - (q * q * (3.0 - 2.0 * q))
+        tube_r = max(0.015, base_tube * (1.0 - u) ** 0.9)
+        z = base_tube + (height - base_tube) * u
+        path.append((center_r * math.cos(angle), center_r * math.sin(angle), z))
+        scales.append(tube_r)
+    solid = sweep_solid(np.asarray(path, dtype=np.float64), circle_profile(1.0, sides),
+                        what="непрерывного завитка", scale_curve=scales)
     solid = ensure_volume(solid, "завитка")
-
-    if groove > 1e-3:
-        # Винтовая канавка: труба по поверхности, вычитается из тела.
-        # Важно не довести её до верхушки: там радиус стремится к нулю, и
-        # труба пропорола бы остриё, оставив «кратер». Поэтому канавка идёт
-        # только там, где тело ещё толще 1.8 глубины, и сходит на нет с концов.
-        u_lo, u_hi = 0.035, 0.97
-        for i in range(1, 200):
-            u = 1.0 - i / 200.0
-            if outer_r(u) >= groove * 1.8:
-                u_hi = min(u_hi, u)
-                break
-        else:
-            u_hi = 0.75
-        if u_hi <= u_lo + 0.05:
-            raise GeometryError("Канавка не помещается: завиток слишком тонкий.",
-                                hint="Уменьшите groove или увеличьте radius.")
-        n = max(64, int(coils * 40))
-        path = []
-        fade = []
-        for i in range(n + 1):
-            t = i / n
-            u = u_lo + (u_hi - u_lo) * t
-            ang = 2 * math.pi * coils * t
-            r = outer_r(u) + groove * 0.45
-            path.append((r * math.cos(ang), r * math.sin(ang), height * u))
-            # плавное начало и конец канавки — без «обрыва» на поверхности
-            fade.append(min(1.0, t / 0.08 + 0.25, (1.0 - t) / 0.10 + 0.25))
-        path = np.asarray(path, dtype=np.float64)
-        tube = sweep_solid(path, circle_profile(groove, 10), what="канавки",
-                           scale_curve=fade)
-        solid = solid - tube
-        solid = ensure_volume(solid, "завитка")
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="swirl")
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="swirl")
+    out.notes.append(f"непрерывная спираль: {coils} витков, труба ø{wire:g} мм")
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -377,10 +359,13 @@ def swirl(a, name):
             "середине. По умолчанию стоит в XZ лицом −Y: height — высота по Z, "
             "width — ширина по X, depth — толщина по Y. Нижнее остриё смотрит "
             "в −Z; round скругляет кромки, чтобы не резало руки.",
-    example="молния = lightning height=90 width=44 depth=10 round=1.5",
+    example="молния = lightning height=90 width=44 depth=10 round=1.5\n"
+            "формочка = lightning height=90 width=44 depth=10 wall=3",
     params={"height": "высота, мм (90)",
             "width": "ширина по X, мм (0.49 высоты)",
-            "depth": "толщина по глубине, мм (10); у стоящего знака — по Y", "round": "скругление кромок, мм (0)",
+            "depth": "толщина по глубине, мм (10); у стоящего знака — по Y",
+            "round": "скругление кромок, мм (0)",
+            "wall": "стенка сквозной формочки/рамки, мм; 0 — сплошная (0)",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит лицом вверх — «фронт»",
             "stand": "то же, что plane=фронт: да — стоит, нет — лежит (да)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -390,6 +375,7 @@ def lightning(a, name):
     width = float(a.num("width", height * 0.49, minv=1.0))
     depth = float(a.num("depth", 10.0, minv=0.1))
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
     # Классический силуэт молнии: 6 вершин, остриё сверху и снизу, ступенька
     # в середине. Координаты — доли габарита, y вверх. Проверено: контур
     # простой (не самопересекается), поэтому extrude и скругление работают.
@@ -402,8 +388,10 @@ def lightning(a, name):
     pts = [(x * width, y * height) for x, y in shape]
     cross = _poly_cross(pts)
     cross = _fit(cross, width, height, "молнии")
+    cross = hollow_cross(cross, wall, "молния")
     # самый узкий размер — толщина ступеньки (0.2 ширины), по ней и ограничиваем
-    solid = _flat(cross, depth, round_r, width * 0.28, size=(width, height))
+    thin = min(width * 0.28, wall) if wall > 1e-6 else width * 0.28
+    solid = _flat(cross, depth, round_r, thin, size=(width, height))
     return make_solid(a.scene, name, _place_glyph(a, solid), a, kind="lightning")
 
 
@@ -469,14 +457,15 @@ def banana(a, name):
 # --------------------------------------------------------------------------- #
 @op("yoke", aliases=("форма_y", "рогатка", "игрек", "y_shape", "slingshot"),
     category="Примитивы",
-    summary="Буква Y / рогатка: ствол снизу, две ветви вверх и в стороны, "
-            "круглые концы. height — высота, spread — расстояние между верхними "
-            "концами, arm — толщина ветвей, fork — на какой доле высоты "
-            "расходятся ветви. Стоит на плоском дне.",
-    example="рогатка = yoke height=110 spread=64 arm=16 fork=0.38 depth=14 round=2",
+    summary="Буква Y / рогатка с одинаковыми ветвями. shape=капсулы — все "
+            "наружные торцы круглые, включая низ; shape=бруски — все ветви "
+            "прямоугольные с плоскими торцами. Тип не смешивается между ветвями.",
+    example="рогатка = yoke height=110 spread=64 arm=16 fork=0.38 depth=14 round=2\n"
+            "игрек = yoke height=110 spread=64 arm=16 shape=бруски",
     params={"height": "высота до концов ветвей, мм (110)",
             "spread": "расстояние между концами ветвей, мм (64)",
             "arm": "толщина ветвей и ствола, мм (16)",
+            "shape": "капсулы — круглые торцы; бруски/параллелепипеды — плоские",
             "fork": "доля высоты, где начинается развилка: 0.2…0.7 (0.38)",
             "depth": "толщина по глубине, мм (14); у стоящего знака — по Y",
             "round": "скругление кромок, мм (0)",
@@ -491,6 +480,14 @@ def yoke(a, name):
     fork = float(a.num("fork", 0.38, minv=0.1, maxv=0.9))
     depth = float(a.num("depth", 14.0, minv=0.1))
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    shape = (a.text("shape") or "капсулы").strip().lower()
+    if shape in ("капсула", "капсулы", "capsule", "capsules", "круглые"):
+        shape = "капсулы"
+    elif shape in ("бруски", "брусок", "параллелепипеды", "прямоугольные",
+                   "box", "rect", "плоские"):
+        shape = "бруски"
+    else:
+        raise GeometryError("yoke: shape=капсулы или бруски.")
     if spread <= arm * 1.2:
         raise GeometryError(f"Ветви не разошлись: spread {spread:g} мм при толщине {arm:g} мм.",
                             hint="spread ≈ 3…6 толщин ветви.")
@@ -498,18 +495,23 @@ def yoke(a, name):
         raise GeometryError("Развилка слишком высоко: ветвям не хватает длины.",
                             hint="fork ≈ 0.3…0.5.")
     crotch = (0.0, height * fork)
-    left = (-spread / 2.0, height)
-    right = (spread / 2.0, height)
-    stem = _stadium((0.0, -arm), crotch, arm)
-    l_arm = _stadium(crotch, left, arm)
-    r_arm = _stadium(crotch, right, arm)
+    if shape == "капсулы":
+        # Центры торцевых дуг отступают на arm/2: габарит остаётся height,
+        # а все три наружных окончания одинаково круглые.
+        left = (-spread / 2.0, height - arm / 2.0)
+        right = (spread / 2.0, height - arm / 2.0)
+        stem = _stadium((0.0, arm / 2.0), crotch, arm)
+        l_arm = _stadium(crotch, left, arm)
+        r_arm = _stadium(crotch, right, arm)
+    else:
+        left = (-spread / 2.0, height)
+        right = (spread / 2.0, height)
+        stem = rect_between((0.0, 0.0), crotch, arm)
+        l_arm = rect_between(crotch, left, arm)
+        r_arm = rect_between(crotch, right, arm)
     cross = mf.CrossSection.batch_boolean(
         [mf.CrossSection([stem]), mf.CrossSection([l_arm]), mf.CrossSection([r_arm])],
         mf.OpType.Add)
-    # плоское дно: отрезаем всё, что ниже y = 0
-    floor = mf.CrossSection([_profile([(-height * 3, 0.0), (height * 3, 0.0),
-                                       (height * 3, height * 3), (-height * 3, height * 3)])])
-    cross = mf.CrossSection.batch_boolean([cross, floor], mf.OpType.Intersect)
     if cross.is_empty() or cross.area() <= 1e-9:
         raise GeometryError("Форма Y получилась пустой.",
                             hint="Проверьте height, spread и arm.")

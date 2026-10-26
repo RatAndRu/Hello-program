@@ -19,8 +19,8 @@ from .ops import make_solid, op
 
 def _helix_ridge(radius: float, length: float, pitch: float, depth: float,
                  width: float, steps_per_turn: int = 48, right: bool = True,
-                 inset: float = 0.8) -> mf.Manifold:
-    """Винтовой гребень: треугольный профиль, обведённый вокруг оси Z."""
+                 inset: float = 0.8, fade: float = 0.0) -> mf.Manifold:
+    """Винтовой гребень; fade>0 плавно сводит виток к стержню на концах."""
     if pitch <= 1e-6 or length <= 1e-6:
         raise GeometryError("Шаг и длина резьбы должны быть положительными.")
     if width > 0.9 * pitch:
@@ -35,9 +35,14 @@ def _helix_ridge(radius: float, length: float, pitch: float, depth: float,
         theta = sign * 2.0 * math.pi * turns * t
         z = t * length
         c, s = math.cos(theta), math.sin(theta)
+        factor = 1.0
+        if fade > 1e-9:
+            u = min(1.0, t * length / fade, (1.0 - t) * length / fade)
+            u = max(0.02, u)
+            factor = u * u * (3.0 - 2.0 * u)
         for dr, dz in profile:
-            r = radius + dr
-            verts.append((r * c, r * s, z + dz))
+            r = radius + dr * factor
+            verts.append((r * c, r * s, z + dz * factor))
     verts = np.asarray(verts, dtype=np.float64)
     faces = []
     n = len(profile)

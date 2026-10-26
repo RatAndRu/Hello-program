@@ -16,6 +16,7 @@ import numpy as np
 from . import orient
 from .errors import GeometryError
 from .ops import anchor, make_solid, op
+from .shape_features import apply_smooth
 from .ops_tech import _helix_ridge
 
 
@@ -172,9 +173,9 @@ def bolt(a, name):
 #  Винт / саморез
 # --------------------------------------------------------------------------- #
 @op("screw", aliases=("винт", "саморез", "шуруп"), category="Примитивы",
-    summary="Саморез как настоящий: потайная головка с крестовым шлицем, гладкая "
-            "шейка, частая резьба и острое жало. Длина — стержень без головки, "
-            "full= — полная длина с головкой. Вершина резьбы не выходит за d.",
+    summary="Саморез: слепой крестовой карман с регулируемой глубиной, шейка "
+            "под головкой и резьба, которая плавно нарастает прямо от конусного "
+            "острия без цилиндров-переходников. Вершина резьбы не выходит за d.",
     example="саморез = screw d=4 length=25 head=потай drive=крест",
     params={"d": "диаметр резьбы, мм (4)",
             "length": "длина стержня без головки, мм (25)",
@@ -184,7 +185,8 @@ def bolt(a, name):
             "head_h": "высота головки (у потайной считается по 90°)",
             "drive": "шлиц: крест, шлиц, звезда, шестигранник или нет (крест)",
             "drive_size": "размер шлица, мм (0.42 × head_d)",
-            "neck": "гладкая шейка под головкой, мм (0.6 × d)",
+            "drive_depth": "глубина слепого шлица, мм; автоматически не сквозь головку",
+            "neck": "гладкая шейка ПОД ГОЛОВКОЙ, мм (0.6 × d)",
             "pitch": "шаг резьбы, мм (0.45 × d)",
             "thread": "нарезать резьбу (да)",
             "tip": "длина острия, мм (1.3 × d)",
@@ -243,16 +245,16 @@ def screw(a, name):
         thread = False
     # --- стержень -----------------------------------------------------------
     core_r = max(0.25, d / 2.0 - min(pitch * 0.5, d * 0.14))
-    shank = _cyl(max(0.1, body_len - tip_len - neck), core_r, 56).translate(
-        (0, 0, tip_len + neck))
+    shank = _cyl(max(0.1, thread_len), core_r, 56).translate((0, 0, tip_len))
     if thread:
         ridge = _helix_ridge(core_r, thread_len, pitch, d / 2.0 - core_r,
-                             pitch * 0.52, steps_per_turn=44, inset=0.5)
-        shank = shank + ridge.translate((0, 0, tip_len + neck))
-    # гладкая шейка — чуть тоньше резьбы
+                             pitch * 0.52, steps_per_turn=44, inset=0.5,
+                             fade=min(pitch, thread_len * 0.45))
+        shank = shank + ridge.translate((0, 0, tip_len))
+    # Гладкая шейка находится сверху, под головкой, а не между резьбой и жалом.
     if neck > 0.05:
         shank = shank + _cyl(neck, d / 2.0 - (d / 2.0 - core_r) * 0.35, 56).translate(
-            (0, 0, tip_len))
+            (0, 0, body_len - neck))
     # --- остриё: жало с небольшим плоским кончиком --------------------------
     tip = mf.Manifold.cylinder(float(tip_len), float(max(core_r, 0.35)), 0.16, 40)
     tip = tip.rotate((180, 0, 0)).translate((0, 0, tip_len))
@@ -281,37 +283,29 @@ def screw(a, name):
         # у остальных — площадка над стержнем
         top = length if head == "потай" else body_len + head_h
         size = float(a.num("drive_size", 0.42 * head_d, minv=0.3, maxv=head_d * 0.8))
-        deep = max(0.5, min(head_h * 0.9, max(0.6, size * 1.1)))
+        available = max(0.2, top - body_len)
+        deep_req = float(a.num("drive_depth", max(0.4, min(head_h * 0.55, size * 0.75)),
+                                minv=0.1))
+        deep = min(deep_req, available * 0.65)
+        z_tool = top + 0.5 - deep / 2.0
         if drive == "крест":
-            # настоящий Phillips: два паза под 90°, немного не доходя до края,
-            # и в центре — неглубокий конус под жало отвёртки
-            # клин: у центра паз шире, к краю головки сходит на нет
-            inner_w = max(0.7, size * 0.46)
-            outer_w = max(0.35, size * 0.16)
-            reach = head_d * 0.46
-            for ang in (0.0, 90.0):
-                wide = _box((inner_w * 2.2, inner_w, deep * 2))
-                narrow = _box((outer_w * 2.2, outer_w, deep * 1.1)).translate((reach, 0, 0))
-                slot = mf.Manifold.batch_boolean([wide, narrow], mf.OpType.Add).hull()
-                for flip in (1.0, -1.0):
-                    tool = slot if flip > 0 else slot.rotate((0, 0, 180.0))
-                    tool = tool.rotate((0, 0, ang)).translate((0, 0, top + 1.0 - deep))
-                    body = body - tool
-            body = body - mf.Manifold.cylinder(deep * 1.35, size * 0.42, 0.0, 28).rotate(
-                (180, 0, 0)).translate((0, 0, top + 0.01))
+            # Два кармана с общим дном top−deep; верхний запас +1 мм нужен
+            # только для чистого булева реза. Размер меньше радиуса головки.
+            slot_a = _box((size, size * 0.24, deep + 1.0)).translate((0, 0, z_tool))
+            slot_b = _box((size, size * 0.24, deep + 1.0)).rotate((0, 0, 90)).translate(
+                (0, 0, z_tool))
+            body = body - (slot_a + slot_b)
         elif drive == "шлиц":
-            slot = _box((head_d * 1.02, max(0.5, size * 0.3), deep * 2)).translate(
-                (0, 0, top + 1.0 - deep))
+            slot = _box((head_d * 1.02, max(0.5, size * 0.3), deep + 1.0)).translate(
+                (0, 0, z_tool))
             body = body - slot
         elif drive == "звезда":
             for i in range(6):
-                slot = _box((size * 2.6, size * 0.30, deep * 2))
-                slot = slot.rotate((0, 0, i * 30.0)).translate(
-                    (0, 0, top + 1.0 - deep))
+                slot = _box((size * 2.6, size * 0.30, deep + 1.0))
+                slot = slot.rotate((0, 0, i * 30.0)).translate((0, 0, z_tool))
                 body = body - slot
         else:
-            body = body - _hex_prism(size, deep * 2).translate(
-                (0, 0, top + 1.0 - deep))
+            body = body - _hex_prism(size, deep + 1.0).translate((0, 0, top - deep))
     total = body_len + (head_h if cap is not None else 0.0)
     out = _finish(a, name, body, "screw",
                   f"саморез Ø{d:g}×{length:g} (полная {total:g}) · головка {head}"
@@ -319,6 +313,7 @@ def screw(a, name):
     # update, а не замена словаря: make_solid уже записал локальные axes.
     out.meta.update({"screw": True, "head": head,
                      "head_h": head_h if cap is not None else 0.0,
+                     "drive_depth": deep if drive != "нет" and head != "нет" else 0.0,
                      "length": length, "tip": tip_len, "d": d})
     return out
 
@@ -430,166 +425,77 @@ def drive(a, name):
 # --------------------------------------------------------------------------- #
 #  Петля
 # --------------------------------------------------------------------------- #
-@op("hinge", aliases=("петля", "шарнир", "hinge"), category="Примитивы",
-    summary="Мебельная петля: две пластины, шарнир и ось. Отверстия под "
-            "саморезы уже просверлены — деталь готова к сборке.",
-    example="петля = hinge width=45 height=35 thickness=2",
-    params={"width": "ширина одной пластины (45)", "height": "высота пластины (35)",
-            "thickness": "толщина пластины (2)", "pin": "диаметр шарнира (8)",
-            "holes": "отверстий на пластину (2)", "at": "положение",
-            "center": "центрировать в at"})
-def hinge(a, name):
-    width = float(a.num("width", 45.0, minv=5.0, maxv=500.0))
-    height = float(a.num("height", 35.0, minv=5.0, maxv=500.0))
-    thick = float(a.num("thickness", 2.0, minv=0.3, maxv=20.0))
-    pin = float(a.num("pin", 8.0, minv=1.0, maxv=80.0))
-    holes = int(a.num("holes", 2, minv=0, maxv=12))
-    barrel = _cyl(height, pin / 2.0, 48).translate((0, 0, 0))
-    # пластины заходят в шарнир — иначе лежат на нём по касательной и деталь
-    # распадается на отдельные тела
-    overlap = pin * 0.45
-    leaf_l = _box((width, thick, height)).translate(
-        (-pin / 2.0 - width / 2.0 + overlap, 0, height / 2.0))
-    leaf_r = _box((width, thick, height)).translate(
-        (pin / 2.0 + width / 2.0 - overlap, 0, height / 2.0))
-    # ось шарнира выступает сверху и снизу
-    pin_h = height + pin * 0.5
-    pin_m = _cyl(pin_h, pin * 0.22, 32).translate((0, 0, -pin * 0.25))
-    body = barrel + leaf_l + leaf_r + pin_m
-    if holes:
-        r = max(0.8, pin * 0.22)
-        for side in (-1.0, 1.0):
-            for i in range(holes):
-                z = height * (i + 1) / (holes + 1)
-                body = body - _hole_y(side * (pin / 2.0 + width * 0.55), z,
-                                      -thick, thick * 2.0, r)
-    return _finish(a, name, body, "hinge",
-                   f"петля {width:g}×{height:g} мм · шарнир Ø{pin:g} · отверстий {holes * 2}")
-
-
-# --------------------------------------------------------------------------- #
-#  Уголок
-# --------------------------------------------------------------------------- #
 @op("bracket", aliases=("уголок", "крепежный_уголок", "bracket"), category="Примитивы",
-    summary="Крепёжный уголок: две полки под 90° одним телом, при желании — "
-            "с отверстиями под саморезы, внешнее ребро можно скруглить.",
-    example="уголок = bracket width=60 depth=40 height=40 thickness=3",
-    params={"width": "ширина, мм (60)", "depth": "глубина полки (40)",
-            "height": "высота полки (40)", "thickness": "толщина стали (3)",
+    summary="Крепёжный уголок с произвольным раскрытием 0…180°: 90° — "
+            "привычные полки, 0° — одна плоская деталь, 180° — плоская полоса "
+            "в разные стороны. Отверстия следуют за полками, round добавляет "
+            "радиус шарнира, smooth сглаживает всю деталь.",
+    example="уголок = bracket width=60 depth=40 height=40 thickness=3 angle=90\n"
+            "тупой = bracket width=60 depth=40 height=40 thickness=3 angle=135 smooth=1",
+    params={"width": "ширина по X, мм (60)", "depth": "длина базовой полки (40)",
+            "height": "длина поворачиваемой полки (40)", "thickness": "толщина стали (3)",
+            "angle": "угол между полками 0…180° (90)",
             "holes": "отверстий на полку (0 — без отверстий)",
-            "round": "скругление внешнего ребра сгиба, мм (0)",
+            "round": "радиус цилиндрического шарнира в месте сгиба, мм (0)",
+            "smooth": "уровни Loop-сглаживания всего уголка 0…4 (0)",
             "at": "положение", "center": "центрировать в at"})
 def bracket(a, name):
     w = float(a.num("width", 60.0, minv=5.0, maxv=600.0))
     depth = float(a.num("depth", 40.0, minv=3.0, maxv=600.0))
     height = float(a.num("height", 40.0, minv=3.0, maxv=600.0))
     t = float(a.num("thickness", 3.0, minv=0.4, maxv=30.0))
-    vert = _box((w, t, height)).translate((0, t / 2.0, height / 2.0))
-    horz = _box((w, depth, t)).translate((0, depth / 2.0, t / 2.0))
-    body = vert + horz
+    angle = float(a.num("angle", 90.0, minv=0.0, maxv=180.0) or 0.0)
+    theta = math.radians(angle)
+    direction = np.array([0.0, math.cos(theta), math.sin(theta)])
+    horz = _box((w, depth, t)).translate((0.0, depth / 2.0, 0.0))
+    # Вторая полка симметрична по толщине. Поэтому при 0° она точно
+    # совпадает с базовой, при 180° — продолжает её в −Y без ступеньки.
+    vert = _box((w, height, t)).rotate((angle, 0.0, 0.0))
+    vert = vert.translate(tuple(direction * (height / 2.0)))
+    body = horz + vert
     holes = int(a.num("holes", 0, minv=0, maxv=10) or 0)
     if holes:
         rr = max(0.9, min(t * 1.2, 2.4))
         for i in range(holes):
             x = -w / 2.0 + w * (i + 1) / (holes + 1)
-            body = body - _hole_y(x, height * 0.62, -t, t * 3.0, rr)
-            body = body - _hole_z(x, depth * 0.62, -t, t * 3.0, rr)
+            body = body - _hole_z(x, depth * 0.62, -2.0 * t, 4.0 * t, rr)
+            cutter = mf.Manifold.cylinder(4.0 * t, rr, rr, 32, center=True)
+            cutter = cutter.rotate((angle, 0.0, 0.0))
+            pos = direction * (height * 0.62)
+            cutter = cutter.translate((x, float(pos[1]), float(pos[2])))
+            body = body - cutter
     r = float(a.num("round", 0.0, minv=0.0) or 0.0)
-    if r > 0:
-        # внешнее ребро сгиба — четверть цилиндра, без острия
+    if r > 0.0 and 1e-6 < angle < 180.0 - 1e-6:
         r = min(r, min(depth, height) * 0.45, t * 2.5)
-        fillet = mf.Manifold.cylinder(t, r, r, 24).rotate((90, 0, 0))
-        fillet = fillet.translate((0.0, t + r, t + r)) - _box((w * 2, t + r, t + r)).translate(
-            (0.0, (t + r) / 2.0, (t + r) / 2.0))
-        body = body + fillet
+        hinge = mf.Manifold.cylinder(w, r, r, 32).rotate((0.0, 90.0, 0.0))
+        body = body + hinge.translate((-w / 2.0, 0.0, 0.0))
+    body = apply_smooth(body, a, "уголок")
     return _finish(a, name, body, "bracket",
-                   f"уголок {w:g}×{height:g}×{depth:g} · сталь {t:g} мм")
+                   f"уголок {angle:g}° · {w:g}×{height:g}×{depth:g} · сталь {t:g} мм")
 
 
 # --------------------------------------------------------------------------- #
 #  Подшипник
 # --------------------------------------------------------------------------- #
-@op("bearing", aliases=("подшипник", "bearing_ring"), category="Примитивы",
-    summary="Шариковый подшипник: наружное и внутреннее кольца, шарики и "
-            "посадочное отверстие под вал.",
-    example="подшипник = bearing outer=40 inner=17 width=12",
-    params={"outer": "наружный диаметр (40)", "inner": "диаметр вала (17)",
-            "width": "ширина (12)", "balls": "число шариков (9)",
-            "at": "положение [x,y,z]", "center": "центрировать в at"})
-def bearing(a, name):
-    outer = float(a.num("outer", 40.0, minv=6.0, maxv=1000.0))
-    inner = float(a.num("inner", 17.0, minv=1.0, maxv=900.0))
-    width = float(a.num("width", 12.0, minv=2.0, maxv=300.0))
-    count = int(a.num("balls", 9, minv=6, maxv=40))
-    if inner >= outer * 0.75:
-        raise GeometryError("Внутренний диаметр должен быть заметно меньше наружного.")
-    ring = (outer - inner) * 0.22          # толщина кольца
-    outer_ring = _cyl(width, outer / 2.0, 80) - _cyl(width + 0.2, outer / 2.0 - ring, 80)
-    inner_ring = _cyl(width, inner / 2.0 + ring * 1.4, 64) - _cyl(width + 0.2, inner / 2.0, 64)
-    body = outer_ring + inner_ring
-    gap = (outer / 2.0 - ring) - (inner / 2.0 + ring * 1.4)
-    ball_r = max(0.4, min(gap * 0.42, width * 0.35))
-    mid = (outer / 2.0 - ring + inner / 2.0 + ring * 1.4) / 2.0
-    for i in range(count):
-        ang = 2.0 * math.pi * i / count
-        body = body + mf.Manifold.sphere(ball_r, 20).translate(
-            (mid * math.cos(ang), mid * math.sin(ang), width / 2.0))
-    return _finish(a, name, body, "bearing",
-                   f"подшипник {outer:g}×{inner:g}×{width:g} · шариков {count}")
-
-
-# --------------------------------------------------------------------------- #
-#  Ролик (колесо с вилкой)
-# --------------------------------------------------------------------------- #
-@op("caster", aliases=("ролик", "колесо_с_вилкой", "caster_wheel"), category="Примитивы",
-    summary="Мебельный ролик: колесо, вилка, площадка и ось. Колёсико уже "
-            "смотрит осью по X — можно сразу ставить под шкаф и анимировать качение.",
-    example="ролик = caster wheel=50 width=18",
-    params={"wheel": "диаметр колеса (50)", "width": "ширина колеса (18)",
-            "plate": "размер площадки (45)", "at": "положение",
-            "center": "центрировать в at"})
-def caster(a, name):
-    wheel = float(a.num("wheel", 50.0, minv=8.0, maxv=400.0))
-    width = float(a.num("width", 18.0, minv=4.0, maxv=200.0))
-    plate = float(a.num("plate", 45.0, minv=12.0, maxv=300.0))
-    r = wheel / 2.0
-    t = max(1.5, r * 0.12)
-    wheel_m = _cyl(width, r, 64).rotate((0, 90, 0)).translate((0, 0, r))
-    axle = _cyl(width + 2.0 * t + 2.0, max(1.0, r * 0.14), 24).rotate((0, 90, 0)).translate(
-        (0, 0, r))
-    fork_h = r * 0.95
-    fork_l = _box((t, width * 0.6 + t, fork_h)).translate(
-        (-(width / 2.0 + t / 2.0), 0, r + fork_h / 2.0 - t))
-    fork_r = _box((t, width * 0.6 + t, fork_h)).translate(
-        ((width / 2.0 + t / 2.0), 0, r + fork_h / 2.0 - t))
-    top = _cyl(max(2.0, t), plate * 0.32, 48).translate((0, 0, r + fork_h - t))
-    plate_m = _box((plate, plate, max(2.0, t))).translate((0, 0, r + fork_h - t
-                                                         + max(2.0, t) / 2.0))
-    body = wheel_m + axle + fork_l + fork_r + top + plate_m
-    return _finish(a, name, body, "caster",
-                   f"ролик Ø{wheel:g} · ширина {width:g} · площадка {plate:g} мм")
-
-
-# --------------------------------------------------------------------------- #
-#  Шкив
-# --------------------------------------------------------------------------- #
 @op("pulley", aliases=("шкив", "шкиф", "шкив_ручья", "pulley_wheel"),
     category="Примитивы",
-    summary="Шкив под ремень: обод с внешним ручьём и посадочным отверстием. "
-            "Ручей настраивается отдельно — ширина, глубина и угол стенки; "
-            "для клинового ремня достаточно deepen и groove.",
+    summary="Шкив с одним или несколькими симметричными ручьями. grooves "
+            "задаёт число канавок, groove/groove_depth/groove_angle — ширину, "
+            "глубину и угол каждой; все они повторяются в одном профиле.",
     example="шкив = pulley diameter=80 width=20 bore=10 groove=6 groove_depth=3\n"
-            "узкий = pulley diameter=60 width=14 bore=8 groove=4 groove_depth=2.4",
+            "двойной = pulley diameter=90 width=32 bore=12 grooves=2 groove=7 groove_depth=3",
     params={"diameter": "наружный диаметр (80)", "width": "ширина обода (20)",
             "bore": "диаметр отверстия под вал (10)",
-            "groove": "ширина внешнего ручья (6)",
-            "groove_depth": "глубина ручья (2.4)",
+            "grooves": "число симметричных ручьёв 1…8 (1)",
+            "groove": "ширина каждого ручья (6)",
+            "groove_depth": "глубина каждого ручья (2.4)",
             "groove_angle": "угол раскрытия ручья, градусы (30)",
             "at": "положение", "center": "центрировать в at"})
 def pulley(a, name):
     d = float(a.num("diameter", 80.0, minv=10.0, maxv=1000.0))
     width = float(a.num("width", 20.0, minv=4.0, maxv=300.0))
     bore = float(a.num("bore", 10.0, minv=1.0, maxv=d * 0.7))
+    grooves = int(a.int("grooves", 1, minv=1, maxv=8) or 1)
     groove = float(a.num("groove", 6.0, minv=1.0, maxv=width * 0.8))
     gdepth = float(a.num("groove_depth", 2.4, minv=0.2, maxv=d * 0.25))
     gangle = float(a.num("groove_angle", 30.0, minv=5.0, maxv=90.0))
@@ -598,20 +504,27 @@ def pulley(a, name):
     R = d / 2.0
     h = width / 2.0
     half = groove / 2.0
+    if R - gdepth <= bore / 2.0 + 0.5:
+        raise GeometryError("groove_depth почти достигает отверстия под вал.")
+    pitch = groove * 1.35
+    total = groove + pitch * (grooves - 1)
+    if total > width - 1.0:
+        raise GeometryError(
+            f"{grooves} ручьёв по {groove:g} мм не помещаются на ширине {width:g} мм.",
+            hint="Увеличьте width или уменьшите groove/число grooves.")
+    centers = [h + (i - (grooves - 1) / 2.0) * pitch for i in range(grooves)]
     # стенка ручья наклонена: у поверхности шире, к дну уже
     slope = math.tan(math.radians(gangle / 2.0)) * gdepth
-    half_bottom = max(0.4, half - slope)
-    profile = [
-        (bore / 2.0, 0.0),
-        (R, 0.0),
-        (R, h - half),
-        (R - gdepth, h - half_bottom),
-        (R - gdepth, h + half_bottom),
-        (R, h + half),
-        (R, width),
-        (bore / 2.0, width),
-    ]
+    half_bottom = min(half * 0.8, max(0.05, half - slope))
+    profile: list[tuple[float, float]] = [(bore / 2.0, 0.0), (R, 0.0)]
+    for center in centers:
+        profile += [(R, center - half),
+                    (R - gdepth, center - half_bottom),
+                    (R - gdepth, center + half_bottom),
+                    (R, center + half)]
+    profile += [(R, width), (bore / 2.0, width)]
     cs = mf.CrossSection([profile])
     body = mf.Manifold.revolve(cs, 96)
     return _finish(a, name, body, "pulley",
-                   f"шкив Ø{d:g}×{width:g} · вал Ø{bore:g} · ручей {groove:g}×{gdepth:g} мм")
+                   f"шкив Ø{d:g}×{width:g} · вал Ø{bore:g} · ручьёв {grooves}, "
+                   f"{groove:g}×{gdepth:g} мм")

@@ -126,7 +126,7 @@ class NamesAreUnambiguousTest(unittest.TestCase):
     def test_common_misspellings_resolve(self):
         self.assertEqual(lookup("шкиф").name, "pulley")
         self.assertEqual(lookup("иньянь").name, "yin_yang")
-        self.assertEqual(lookup("форма_п").name, "скоба")
+        self.assertEqual(lookup("п_образная").name, "скоба")
         self.assertEqual(lookup("u-профиль").name, "скоба")
 
     def test_verbs_are_not_shapes(self):
@@ -177,7 +177,7 @@ class CatalogOrderTest(unittest.TestCase):
                     "sphere", "icosphere", "ellipsoid", "capsule", "torus", "ring",
                     "washer", "disc", "oval"]
         derived = ["hemisphere", "sector", "bracket", "полуовал", "arch", "воронка",
-                   "скоба", "lens", "cartridge", "ingot", "paraboloid", "saddle",
+                   "скоба", "lens", "полукапсула", "ingot", "paraboloid", "saddle",
                    "pie", "bead", "tri_prism", "torus_sector"]
         nature = ["egg", "drop", "crescent", "star", "lightning", "heart", "cloud",
                   "diamond", "horn", "rock", "leaf", "banana"]
@@ -188,10 +188,10 @@ class CatalogOrderTest(unittest.TestCase):
         self.assertEqual(self.ops[start:start + len(nature)], nature)
 
     def test_ready_made_follow_user_list(self):
-        ready = ["yin_yang", "crown", "arrow", "tee", "скоба", "yoke", "скоба",
-                 "plate", "spring", "gear", "saw", "nut", "bolt", "screw", "pulley",
+        ready = ["yin_yang", "crown", "arrow", "tee", "yoke", "plate",
+                 "spring", "gear", "saw", "nut", "bolt", "screw", "pulley",
                  "box_body", "shaft", "wheel", "spiral", "plus", "rope", "цепь",
-                 "крюк", "handle", "cardboard", "swirl", "rail", "stairs", "ladder",
+                 "крюк", "handle", "cardboard", "swirl", "stairs", "ladder",
                  "lever", "button", "gusset", "grommet", "blade"]
         start = self.ops.index("yin_yang")
         self.assertEqual(self.ops[start:start + len(ready)], ready)
@@ -213,8 +213,8 @@ class CatalogOrderTest(unittest.TestCase):
         self.assertEqual(titles.get("Октаэдр"), "octa")
         self.assertEqual(titles.get("Эллипсоид"), "ellipsoid")
         self.assertEqual(titles.get("Скоба (П / U)"), "скоба")
-        self.assertEqual(titles.get("Форма П"), "скоба")
-        self.assertEqual(titles.get("Форма U"), "скоба")
+        self.assertNotIn("Форма П", titles)
+        self.assertNotIn("Форма U", titles)
 
     def test_card_scripts_build(self):
         """Каждая новая карточка даёт исполнимый сценарий."""
@@ -222,8 +222,7 @@ class CatalogOrderTest(unittest.TestCase):
             "октаэдр": "октаэдр = octa radius=30 height=80",
             "эллипсоид": "эллипсоид = ellipsoid x=60 y=40 z=22",
             "скоба": "скоба = скоба length=120 width=40 height=30 wall=3 open=вверх",
-            "форма_п": "форма_п = скоба length=120 width=40 height=30 wall=3 open=вниз",
-            "форма_у": "форма_у = скоба length=120 width=40 height=30 wall=3 open=вверх",
+            "скоба_п": "скоба_п = скоба length=120 width=40 height=30 wall=3 open=вниз",
             "лист": "лист = sheet width=120 length=200 thickness=1.2",
             "листок": "листок = leaf length=90 width=45 thickness=2",
             "шкиф": "шкиф = pulley diameter=80",

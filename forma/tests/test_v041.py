@@ -49,7 +49,7 @@ class OrientationNotesTest(unittest.TestCase):
     def test_every_primitive_has_own_orientation_note(self):
         primitives = {c["name"] for c in commands_help()
                       if c["category"] == "Примитивы"}
-        self.assertEqual(len(primitives), 104)
+        self.assertEqual(len(primitives), 95)
         self.assertEqual(primitives, set(PRIMITIVE_ORIENTATIONS))
         for command in commands_help():
             if command["name"] in primitives:
@@ -109,8 +109,9 @@ class CanonicalConstructorsTest(unittest.TestCase):
         self.assertEqual(faces["верх"], "+Z")
 
     def test_yin_yang_matching_halves_make_one_disc(self):
-        result = _build("а = yin_yang diameter=120 thick=16 round=3\n"
-                        "б = yin_yang diameter=120 thick=16 round=3 side=правый\n"
+        # round=0 сохраняет общую S-кромку без скруглённого зазора.
+        result = _build("а = yin_yang diameter=120 thick=16\n"
+                        "б = yin_yang diameter=120 thick=16 side=правый\n"
                         "в = union [а, б]")
         joined = _solid(result, "в")
         self.assertEqual(len(joined.decompose()), 1)
@@ -124,17 +125,17 @@ class CanonicalConstructorsTest(unittest.TestCase):
 
 class BowlOrientationTest(unittest.TestCase):
     def test_hemisphere_bowl_has_bottom_and_open_top(self):
-        result = _build("м = hemisphere radius=50 mode=миска wall=4")
+        result = _build("м = hemisphere radius=50 wall=4")
         bowl = _solid(result, "м")
         self.assertEqual(len(bowl.decompose()), 1)
         self.assertEqual(bowl.genus(), 0)
         self.assertTrue(_inside(bowl, (0, 0, 2)))       # дно
         self.assertFalse(_inside(bowl, (0, 0, 30)))     # полость
         self.assertTrue(_inside(bowl, (47, 0, 48)))     # верхний борт
-        rejected = build("м = hemisphere radius=10 mode=миска wall=9",
+        rejected = build("м = hemisphere radius=10 wall=9",
                          analyze_model=False)
         self.assertFalse(rejected.ok)
-        self.assertIn("Стенка миски", (rejected.error or {}).get("message", ""))
+        self.assertIn("Стенка чаши", (rejected.error or {}).get("message", ""))
 
     def test_paraboloid_bowl_has_bottom_and_open_top(self):
         result = _build("ч = paraboloid diameter=100 height=40 wall=3")
@@ -144,7 +145,7 @@ class BowlOrientationTest(unittest.TestCase):
         self.assertTrue(_inside(bowl, (47, 0, 38)))
 
     def test_dome_still_points_up(self):
-        result = _build("к = hemisphere radius=50 mode=купол")
+        result = _build("к = hemisphere radius=50")
         dome = _solid(result, "к")
         self.assertAlmostEqual(dome.bounding_box()[2], 0.0, places=4)
         self.assertAlmostEqual(dome.bounding_box()[5], 50.0, delta=0.1)

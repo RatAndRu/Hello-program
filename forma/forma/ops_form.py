@@ -1,4 +1,4 @@
-"""0.28: корона, инь-ян, линза и патрон — формы «по образу и подобию».
+"""Корона, инь-ян, линза и полукапсула — формы «по образу и подобию».
 
 Все четыре — настоящие замкнутые тела (их можно резать, склеивать,
 проверять и печатать), а не картинки:
@@ -10,8 +10,8 @@
   двумя полукругами. Не рисунок, а именно форма;
 * `lens` — оптическая линза: двояковыпуклая, двояковогнутая, плосковыпуклая,
   плосковогнутая и мениск;
-* `cartridge` — патрон: гильза с закраиной и пуля. Винтовочный — с плечиком
-  и заострённым носиком, пистолетный — прямая гильза и круглая пуля.
+* `полукапсула` — цилиндр с одним полусферическим окончанием и
+  необязательным бортиком у плоского основания.
 """
 
 from __future__ import annotations
@@ -26,6 +26,7 @@ from .geometry import manifold_from_arrays
 from .ops import make_solid, op, stand_flat_sign
 from .ops_shapes import (_chamfered_prism, _cross, _placed, _revolve,
                          _segments, ensure_volume)
+from .shape_features import cut_center_hole, hollow_cross, rounded_extrude
 
 
 def _closed(verts, faces, what: str) -> mf.Manifold:
@@ -178,17 +179,20 @@ def crown(a, name):
 @op("yin_yang", aliases=("инь_ян", "инь-ян", "иньянь", "тайцзи", "тайцзиту",
                          "comma", "запятая", "инь"),
     category="Примитивы",
-    summary="Знаменитая «запятая» инь-ян (тайцзи): половина круга, разрезанная "
-            "двумя полукругами. Это форма, а не рисунок — плоское тело с "
-            "настоящей толщиной и скруглением кромки; side=правый даёт "
-            "зеркальную половину, вместе они складываются в целый знак.",
-    example="инь = yin_yang diameter=120 thick=16 round=3\n"
-            "ян = yin_yang diameter=120 thick=16 round=3 side=правый\n"
-            "знак = union [инь, ян]",
-    params={"diameter": "диаметр знака, мм (120)",
+    summary="Одна отдельная «шестёрка» инь-ян площадью в половину исходного "
+            "круга, а не две соединённые половины. Внутренние дуги идут в разные "
+            "стороны; round — плавное скругление. hole делает отверстие в точке, "
+            "mode=рамка/wall — контурную рамку.",
+    example="инь = yin_yang diameter=120 thick=16 round=3 hole=16\n"
+            "рамка = yin_yang diameter=120 thick=10 mode=рамка wall=4\n"
+            "зеркало = yin_yang diameter=120 thick=16 side=правый",
+    params={"diameter": "диаметр исходного круга, мм (120)",
             "thick": "толщина, мм (16)",
-            "round": "скругление кромки, мм (2)",
-            "side": "левый (по умолчанию) или правый — зеркальная половина",
+            "round": "плавное скругление кромки, мм (0 — точное совмещение половин)",
+            "side": "левый (по умолчанию) или правый — зеркальная одиночная фигура",
+            "hole": "отверстие в центре точки этой половины, мм (0)",
+            "mode": "фигура — сплошная; рамка — полый контур",
+            "wall": "толщина рамки, мм; wall>0 тоже включает режим рамки",
             "segments": "точек на дугу (по размеру)",
             "plane": "фронт — знак стоит в XZ лицом −Y; плашмя — лежит в XY "
                      "лицом +Z (фронт)",
@@ -198,7 +202,14 @@ def crown(a, name):
 def yin_yang(a, name):
     diameter = float(a.num("diameter", 120.0, minv=6.0))
     thick = float(a.num("thick", 16.0, minv=0.4))
-    round_r = float(a.num("round", 2.0, minv=0.0) or 0.0)
+    round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    hole = float(a.num("hole", 0.0, minv=0.0) or 0.0)
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    mode = (a.text("mode") or "фигура").strip().lower()
+    if mode not in ("фигура", "форма", "сплошная", "рамка", "frame"):
+        raise GeometryError("yin_yang: mode=фигура или рамка.")
+    if mode in ("рамка", "frame") and wall <= 1e-6:
+        wall = max(1.0, diameter * 0.04)
     side_raw = (a.text("side") or "левый").strip().lower()
     if side_raw in ("правый", "правая", "right", "право"):
         side = "правый"
@@ -219,16 +230,28 @@ def yin_yang(a, name):
     for i in range(1, n + 1):
         t = math.radians(-90.0 + 180.0 * i / n)
         pts.append((R / 2.0 * math.cos(t), -R / 2.0 + R / 2.0 * math.sin(t)))
-    # верхний малый полукруг: от (0,0) к (0,R) через (-R/2, R/2)
+    # Верхняя дуга идёт через ЛЕВУЮ сторону: знак минус принципиален.
+    # При одинаковом знаке площадь ошибочно становилась 3/4 круга.
     for i in range(1, n):
         t = math.radians(-90.0 + 180.0 * i / n)
-        pts.append((R / 2.0 * math.cos(t), R / 2.0 + R / 2.0 * math.sin(t)))
+        pts.append((-R / 2.0 * math.cos(t), R / 2.0 + R / 2.0 * math.sin(t)))
     if side == "правый":
-        pts = [(-x, y) for x, y in pts]
+        # Вторая половина — поворот на 180°, а не зеркало: знак хирален.
+        # Зеркальная копия перекрывает исходную на четверть круга.
+        pts = [(-x, -y) for x, y in pts]
+    cross = hollow_cross(_cross(pts), wall, "инь-ян")
     bevel = min(round_r, thick / 2.0 - 1e-3, R * 0.15)
-    cross = _cross(pts)
-    solid = _chamfered_prism(cross, thick, max(0.0, bevel), 3) if bevel > 1e-3 \
-        else cross.extrude(thick)
+    if wall > 1e-6:
+        bevel = min(bevel, wall / 2.0 - 1e-3)
+    solid = rounded_extrude(cross, thick, max(0.0, bevel), "инь-ян",
+                            sphere_segments=18)
+    # У левой половины точка внизу; поворот правой переносит её вверх.
+    if hole >= R * 0.95:
+        raise GeometryError("hole слишком велико для точки инь-ян.",
+                            hint="Диаметр отверстия должен быть меньше R=diameter/2.")
+    dot_y = R / 2.0 if side == "правый" else -R / 2.0
+    solid = cut_center_hole(solid, thick, hole, center=(0.0, dot_y),
+                            segments=n, what="инь-ян")
     solid = ensure_volume(solid, "инь-ян")
     # Общий канон плоских знаков: по умолчанию стоит в XZ лицом −Y.
     # Поворот делаем ДО сдвига: начало координат остаётся центром всего знака.
@@ -269,7 +292,7 @@ _LENS_MODES = {
             "линзы — XY, оптическая ось — Z: лицевые оптические стороны +Z и −Z; "
             "диаметр занимает X/Y, толщина — Z.",
     example="линза = lens diameter=70 sag=12 edge=4 mode=выпуклая\n"
-            "вогнутая = lens diameter=60 sag=8 edge=6 mode=вогнутая rim=2",
+            "вогнутая = lens diameter=60 sag=8 edge=20 mode=вогнутая rim=2",
     params={"diameter": "диаметр, мм (70)",
             "sag": "глубина прогиба, мм (12)",
             "edge": "толщина по краю, мм (4)",
@@ -362,140 +385,54 @@ def lens(a, name):
 
 
 # --------------------------------------------------------------------------- #
-#  Патрон
+#  Полукапсула
 # --------------------------------------------------------------------------- #
-_BULLET_KINDS = {
-    "пистолетный": "пистолетный", "пистолетная": "пистолетный", "пистолет": "пистолетный",
-    "pistol": "пистолетный", "тупой": "пистолетный", "круглый": "пистолетный",
-    "винтовочный": "винтовочный", "винтовка": "винтовочный", "винтовочная": "винтовочный",
-    "rifle": "винтовочный", "острый": "винтовочный", "заострённый": "винтовочный",
-    "пуля": "винтовочный", "bullet": "винтовочный",
-}
-
-
-@op("cartridge", aliases=("патрон", "пуля", "bullet", "ammo", "patron"),
+@op("полукапсула", aliases=("half_capsule", "halfcapsule", "cartridge",
+                             "патрон", "patron"),
     category="Примитивы",
-    summary="Патрон целиком: гильза с закраиной и пуля. kind=винтовочный — "
-            "бутылочная гильза с плечиком и заострённый носик (оживало), "
-            "kind=пистолетный — прямая гильза и круглая пуля-полусфера. "
-            "Один замкнутый объём, стоящий на донце.",
-    example="винтовка = cartridge diameter=7.62 length=56 kind=винтовочный\n"
-            "пистолет = cartridge diameter=9 length=29 kind=пистолетный",
-    params={"diameter": "калибр (диаметр пули), мм (9)",
-            "length": "полная длина патрона, мм (29)",
-            "kind": "винтовочный или пистолетный",
-            "nose": "длина носика, мм (по типу)",
-            "round": "скругление вершинки, мм (12 % калибра)",
-            "rim": "выступ закраины, мм (8 % калибра)",
-            "rim_height": "толщина закраины, мм (1.4)",
-            "case": "толщина стенки гильзы от калибра, мм (авто)",
+    summary="Полукапсула: плоское основание, цилиндр и одно полусферическое "
+            "окончание. Никаких пистолетного/винтовочного режимов. rim и "
+            "rim_height добавляют прямой бортик у основания, как у короны.",
+    example="деталь = полукапсула diameter=20 length=50\n"
+            "с_бортом = полукапсула diameter=20 length=50 rim=2 rim_height=3",
+    params={"diameter": "диаметр цилиндра и полусферы, мм (9)",
+            "length": "полная длина от плоского низа до вершины, мм (29)",
+            "rim": "радиальный выступ бортика у основания, мм (0 — без него)",
+            "rim_height": "высота бортика, мм",
             "segments": "точек по кругу (по размеру)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
-def cartridge(a, name):
-    diameter = float(a.num("diameter", 9.0, minv=1.0))
-    length = float(a.num("length", 29.0, minv=3.0))
-    kind_raw = (a.text("kind") or "пистолетный").strip().lower()
-    kind = _BULLET_KINDS.get(kind_raw)
-    if kind is None:
-        raise GeometryError(f"Неизвестный вид патрона «{a.text('kind')}».",
-                            hint="kind: винтовочный или пистолетный.")
+def half_capsule(a, name):
+    diameter = float(a.num("diameter", 9.0, minv=0.6))
+    length = float(a.num("length", 29.0, minv=0.6))
     r0 = diameter / 2.0
-    if length < diameter * 1.2:
-        raise GeometryError(
-            f"Длина {length:g} мм мала для калибра {diameter:g} мм.",
-            hint="Патрон длиннее своего диаметра в 1.5–7 раз.")
-    tip_r = float(a.num("round", diameter * 0.12, minv=0.0) or 0.0)
-    tip_r = min(tip_r, r0 * 0.9)
     rim = float(a.num("rim", diameter * 0.08, minv=0.0) or 0.0)
-    rim_h = float(a.num("rim_height", max(0.8, diameter * 0.16), minv=0.2))
+    rim_h = float(a.num("rim_height", max(0.8, diameter * 0.08) if rim > 0 else 0.0,
+                         minv=0.0) or 0.0)
+    if rim <= 1e-6:
+        rim_h = 0.0
+    elif rim_h <= 1e-6:
+        rim_h = max(0.8, diameter * 0.08)
+    equator = length - r0
+    if equator < rim_h - 1e-9 or equator <= 1e-9:
+        raise GeometryError(
+            "Полукапсула: length должен оставить место полусфере над бортиком.",
+            hint="Нужно length ≥ diameter/2 + rim_height.")
     segments = _segments(a.int("segments", None, minv=16, maxv=256),
                          max(48, min(160, int(r0 * 6))))
-
-    # Раскладка по длине строго равна length: гильза + плечико + носик.
-    min_case = max(rim_h * 1.6, diameter * 1.1)
-    if kind == "винтовочный":
-        # гильза бутылочная: тело шире калибра, у шейки сужение
-        case_r = r0 * 1.28
-        neck_r = r0 * 1.02
-        shoulder = max(0.6, diameter * 0.22)
-        nose = float(a.num("nose", length * 0.42, minv=0.5))
-        nose = min(nose, length - min_case - shoulder)
-        nose = max(nose, length * 0.12)
-        body_len = length - nose - shoulder
-        if body_len < min_case:
-            # не влезает — жертвуем плечиком, затем носиком
-            shoulder = max(0.4, min(shoulder, length - nose - min_case))
-            body_len = max(min_case, length - nose - shoulder)
-            if body_len + nose + shoulder > length:
-                nose = max(length * 0.1, length - body_len - shoulder)
-    else:
-        case_r = r0 * 1.06
-        neck_r = case_r
-        shoulder = 0.0
-        nose = float(a.num("nose", r0, minv=0.5))
-        nose = min(nose, length - min_case)
-        nose = max(nose, length * 0.1)
-        body_len = length - nose
-    if body_len <= rim_h * 1.2:
-        raise GeometryError("Гильза короче закраины — увеличьте length.")
-    neck_top = body_len + (shoulder if shoulder > 1e-6 else 0.0)
-
     prof: list[tuple[float, float]] = [(0.0, 0.0)]
-    # закраина: донце шире гильзы, с маленькой фаской
-    if rim > 1e-3:
-        prof.append((case_r + rim, 0.0))
-        prof.append((case_r + rim, rim_h))
-        prof.append((case_r, rim_h))
+    if rim > 1e-6:
+        prof += [(r0 + rim, 0.0), (r0 + rim, rim_h), (r0, rim_h)]
     else:
-        prof.append((case_r, 0.0))
-    # тело гильзы
-    prof.append((case_r, body_len))
-    if shoulder > 1e-3:
-        # плечико: плавное сужение от тела к шейке
-        n_sh = 6
-        for i in range(1, n_sh + 1):
-            t = i / n_sh
-            prof.append((case_r + (neck_r - case_r) * t, body_len + shoulder * t))
-    # шейка (у пистолетного её нет: neck_top == body_len)
-    if neck_top > body_len + 1e-6:
-        prof.append((neck_r, neck_top))
-
-    z0 = neck_top
-    # Носик строим в долях (0…1) и растягиваем ровно на nose: длина патрона
-    # должна совпадать с параметром length, а не «примерно».
-    nose_prof: list[tuple[float, float]] = []
-    if kind == "пистолетный":
-        # круглая пуля: эллипс от радиуса шейки к носику
-        steps = 18
-        for i in range(1, steps + 1):
-            u = i / steps
-            nose_prof.append((neck_r * math.sqrt(max(0.0, 1.0 - u * u)), u))
-    else:
-        # оживало (spitzer): быстро сужается и заканчивается скруглением
-        steps = 22
-        rr = max(tip_r, neck_r * 0.02)
-        u_tip = 1.0
-        for i in range(1, steps + 1):
-            u = i / steps
-            r = neck_r * max(0.0, 1.0 - u ** 1.7) ** (1.0 / 1.15)
-            if r <= rr:
-                u_tip = u
-                break
-            nose_prof.append((r, u))
-        cap_steps = 6
-        for i in range(1, cap_steps + 1):
-            a_ang = (math.pi / 2.0) * i / cap_steps
-            nose_prof.append((max(0.0, rr * math.cos(a_ang)),
-                              u_tip + (1.0 - u_tip) * math.sin(a_ang) / max(
-                                  math.sin(math.pi / 2.0), 1e-9)))
-    top_t = nose_prof[-1][1] if nose_prof else 1.0
-    scale_t = nose / max(top_t, 1e-9)
-    for r, t in nose_prof:
-        prof.append((r, z0 + t * scale_t))
-    if prof[-1][0] > 1e-6:
-        prof.append((0.0, prof[-1][1]))
-    solid = _revolve(prof, segments, "патрона")
-    solid = ensure_volume(solid, "патрон")
-    a.scene.log("info", f"патрон {diameter:g}×{length:g} мм, {kind}, "
-                        f"{solid.num_tri():,} трис".replace(",", " "), a.cmd.line)
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="cartridge")
+        prof.append((r0, 0.0))
+    if equator > rim_h + 1e-9:
+        prof.append((r0, equator))
+    steps = max(16, segments // 4)
+    for i in range(1, steps + 1):
+        theta = math.pi / 2.0 * i / steps
+        prof.append((r0 * math.cos(theta), equator + r0 * math.sin(theta)))
+    solid = _revolve(prof, segments, "полукапсулы")
+    solid = ensure_volume(solid, "полукапсула")
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="half_capsule")
+    out.notes.append(f"полукапсула ø{diameter:g}×{length:g}, rim={rim:g}, "
+                     f"rim_height={rim_h:g}")
+    return out

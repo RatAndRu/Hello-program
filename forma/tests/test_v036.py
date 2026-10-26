@@ -2,8 +2,8 @@
 
 Проверки держат просьбы пользователя:
 
-1. **крюк** — новая деталь: пруток, дуга загиба и ушко; это одна связная
-   деталь, а не «палка + тор»; загиб задаётся углом, ушко отключается;
+1. **крюк** — одна непрерывная деталь без ушка: хвостик, соединитель
+   и дуга; загиб задаётся углом, свободный кончик — капсулой или остриём;
 2. **полуовал** — пластина с прямой кромкой и дугой; отверстие по центру
    есть или его нет (`hole=0`), слишком большое отверстие подрезается,
    чтобы не выйти за кромку;
@@ -44,7 +44,7 @@ def _size(build_result, name: str):
 
 
 class HookTest(unittest.TestCase):
-    """Крюк: пруток, загиб и ушко одной деталью."""
+    """Крюк: непрерывная дуга и хвостик без отдельного ушка."""
 
     def test_hook_registered_with_aliases(self):
         for name in ("крюк", "крючок", "hook"):
@@ -52,47 +52,50 @@ class HookTest(unittest.TestCase):
                 self.assertIsNotNone(lookup(name))
         spec = lookup("крюк")
         self.assertEqual(spec.name, "крюк")
-        self.assertIn("ушко", spec.summary)
+        self.assertIn("без кольца", spec.summary)
         self.assertIn("open", spec.params)
 
     def test_hook_is_one_solid_piece(self):
-        b = _build("к = крюк wire=6 radius=22 length=70 open=240 eye=да")
+        b = _build("к = крюк wire=6 radius=22 length=70 open=240")
         part = b.scene.objects["к"]
         self.assertEqual(len(part.manifold.decompose()), 1)
         self.assertFalse(part.manifold.is_empty())
         self.assertGreater(part.manifold.volume(), 1000.0)
         self.assertEqual(part.manifold.status(), mf.Error.NoError)
 
-    def test_hook_eye_makes_hole(self):
-        with_eye = _build("к = крюк wire=6 radius=22 length=70 open=240 eye=да")
-        without = _build("к = крюк wire=6 radius=22 length=70 open=240 eye=нет")
-        self.assertEqual(_solid(with_eye, "к").genus(), 1)
-        self.assertEqual(_solid(without, "к").genus(), 0)
-        # ушко удлиняет деталь вниз и делает её шире
-        self.assertGreater(_size(with_eye, "к")[2], _size(without, "к")[2])
+    def test_hook_has_no_eye_and_tip_changes_end(self):
+        capsule = _build("к = крюк wire=6 radius=22 length=70 open=240 tip=капсула")
+        sharp = _build("к = крюк wire=6 radius=22 length=70 open=240 tip=острый")
+        self.assertEqual(_solid(capsule, "к").genus(), 0)
+        self.assertEqual(_solid(sharp, "к").genus(), 0)
+        self.assertLess(_solid(sharp, "к").volume(), _solid(capsule, "к").volume())
+        rejected = build("к = крюк eye=да", analyze_model=False)
+        self.assertFalse(rejected.ok)
+        self.assertIn("eye", (rejected.error or {}).get("message", ""))
 
     def test_bend_angle_changes_reach(self):
         # загиб на 90° уводит конец вверх, на 180° — вбок: размах больше
-        quarter = _build("к = крюк radius=18 length=70 open=90 eye=нет")
-        half = _build("к = крюк radius=18 length=70 open=180 eye=нет")
+        quarter = _build("к = крюк radius=18 length=70 open=90")
+        half = _build("к = крюк radius=18 length=70 open=180")
         self.assertGreater(_size(half, "к")[0], _size(quarter, "к")[0] + 15.0)
 
     def test_length_grows_upward(self):
-        low = _build("к = крюк radius=20 length=50 open=240 eye=нет")
-        high = _build("к = крюк radius=20 length=130 open=240 eye=нет")
+        low = _build("к = крюк radius=20 length=50 open=240")
+        high = _build("к = крюк radius=20 length=130 open=240")
         self.assertGreater(_size(high, "к")[2], _size(low, "к")[2] + 70.0)
         # низ остаётся на полу: крюк стоит на z=0, а не висит в воздухе
         self.assertAlmostEqual(_solid(low, "к").bounding_box()[2], 0.0, places=3)
 
     def test_wire_controls_thickness(self):
-        thin = _build("к = крюк wire=3 radius=20 length=60 eye=нет")
-        thick = _build("к = крюк wire=12 radius=20 length=60 eye=нет")
+        thin = _build("к = крюк wire=3 radius=20 length=60")
+        thick = _build("к = крюк wire=12 radius=20 length=60")
         self.assertGreater(_size(thick, "к")[1], _size(thin, "к")[1] * 3.0)
 
-    def test_zero_tail_without_eye_is_refused(self):
-        b = build("к = крюк length=0 eye=нет", analyze_model=False)
-        self.assertFalse(b.ok)
-        self.assertIn("нечего строить", (b.error or {}).get("message", ""))
+    def test_zero_tail_keeps_the_hook_arc(self):
+        b = _build("к = крюк length=0")
+        self.assertEqual(len(_solid(b, "к").decompose()), 1)
+        self.assertGreater(_solid(b, "к").volume(), 0.0)
+        self.assertEqual(_solid(b, "к").genus(), 0)
 
 
 class HalfOvalTest(unittest.TestCase):

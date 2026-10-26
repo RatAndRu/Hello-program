@@ -16,7 +16,9 @@ import numpy as np
 
 from .errors import GeometryError
 from .ops import anchor, make_solid, op
+from .ops_basic import _sliced_sphere
 from .ops_shapes import _profile
+from .shape_features import apply_smooth, cut_center_hole
 
 
 # --------------------------------------------------------------------------- #
@@ -180,6 +182,8 @@ def disc(a, name):
             "angle": "угол сектора, градусы (90)",
             "start": "откуда начинать, градусы от +X (0)",
             "thickness": "толщина, мм (6)",
+            "hole": "центральное сквозное отверстие у вершины сектора, мм (0 — сплошной)",
+            "smooth": "уровни Loop-сглаживания всего сектора 0…4 (0)",
             "segments": "сегментов по дуге (по детализации)",
             "detail": "детализация 0…5 (3)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -189,7 +193,11 @@ def pie(a, name):
     angle = float(a.num("angle", 90.0, minv=1.0, maxv=360.0) or 90.0)
     start = float(a.num("start", 0.0) or 0.0)
     thickness = float(a.num("thickness", 6.0, minv=0.1))
+    hole = float(a.num("hole", 0.0, minv=0.0) or 0.0)
     radius = diameter / 2.0
+    if hole >= diameter - 0.4:
+        raise GeometryError("Сектор круга: hole не оставляет дуги вокруг отверстия.",
+                            hint="Уменьшите hole хотя бы на 0.4 мм ниже diameter.")
     if angle < 359.5:
         full = _segments(a, max(24, int(diameter * 1.2)), minv=12)
         n = max(4, int(round(full * angle / 360.0)))
@@ -201,6 +209,8 @@ def pie(a, name):
     else:
         full = _segments(a, max(24, int(diameter * 1.2)), minv=12)
         solid = mf.Manifold.cylinder(thickness, radius, radius, full).translate((0, 0, 0))
+    solid = cut_center_hole(solid, thickness, hole, what="сектор круга")
+    solid = apply_smooth(solid, a, "сектор круга")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="pie")
     out.notes.append(f"сектор {angle:g}° от {start:g}°, ø{diameter:g}×{thickness:g} мм")
     return out
@@ -265,16 +275,18 @@ def oval(a, name):
 @op("bead", aliases=("бусина", "бусинка", "бусик", "bead"),
     category="Примитивы",
     summary="Бусина — шар с отверстием под шнур (ось Z). Диаметр и высота "
-            "задаются отдельно: высота меньше диаметра — сплюснутая бусина, "
-            "больше — бочонок. hole — отверстие, chamfer снимает фаску у входа, "
-            "поэтому шнур не режет кромку. Тело строится вращением профиля, "
-            "поэтому ширина точная; сквозной канал и фаска срезают полюса — "
-            "фактическую высоту команда пишет в отчёте.",
+            "независимы. slice/cut отсекают верх как у шара (cut=slice·radius), "
+            "round скругляет плоскую кромку среза; chamfer раскрывает вход "
+            "отверстия. Канал вырезается после масштаба высоты и остаётся круглым.",
     example="бус = bead diameter=16 hole=4\n"
-            "кольцо_бус = bead diameter=24 height=14 hole=6 chamfer=1.2",
+            "кольцо_бус = bead diameter=24 height=14 hole=6 chamfer=1.2\n"
+            "срез = bead diameter=24 height=18 hole=6 slice=0.5 round=1",
     params={"diameter": "наружный диаметр, мм (16)",
             "height": "полная высота по оси Z (равна диаметру)",
             "hole": "диаметр отверстия, мм (4)",
+            "slice": "срез сверху, доля radius=diameter/2, 0…1 (0)",
+            "cut": "срез сверху в мм; альтернатива slice, не одновременно",
+            "round": "скругление новой кромки среза, мм; требует slice/cut (0)",
             "chamfer": "фаска у входа в отверстие, мм (0)",
             "segments": "сегментов по кругу (по детализации)",
             "detail": "детализация 0…5 (3)",
@@ -291,6 +303,45 @@ def bead(a, name):
             hint=f"hole должен быть меньше {min(diameter, height) * 0.85:g} мм.")
     radius, half = diameter / 2.0, height / 2.0
     hole_r = hole / 2.0
+    slice_share = float(a.num("slice", 0.0, minv=0.0, maxv=1.0) or 0.0)
+    cut_mm = a.num("cut", None, minv=0.0)
+    if cut_mm is not None and a.has("slice"):
+        raise GeometryError("Бусина: задайте slice ИЛИ cut, не оба сразу.")
+    cut = float(cut_mm) if cut_mm is not None else slice_share * radius
+    if cut > radius + 1e-9:
+        raise GeometryError("Бусина: cut не может быть больше radius=diameter/2.")
+    if cut >= height - 0.05 and cut > 1e-9:
+        raise GeometryError("Срез бусины должен оставить нижнюю часть тела.",
+                            hint="Уменьшите slice/cut или увеличьте height.")
+    round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    if round_r > 1e-9 and cut <= 1e-9:
+        raise GeometryError("Бусина: round относится к срезу — задайте slice>0 или cut>0.")
+    if cut > 1e-9:
+        # Сферический профиль даёт ту же кромку, что sphere. Масштаб только
+        # по Z сохраняет круглое отверстие в плане; абсолютный cut остаётся мм.
+        source_cut = radius * cut / half
+        segments = segments_at(a, diameter)
+        solid = _sliced_sphere(radius, source_cut, round_r, segments)
+        sz = half / radius
+        solid = solid.transform(np.array([[1.0, 0.0, 0.0, 0.0],
+                                          [0.0, 1.0, 0.0, 0.0],
+                                          [0.0, 0.0, sz, 0.0]]))
+        channel = mf.Manifold.cylinder(2.0 * height + 4.0, hole_r, hole_r,
+                                       segments, center=True)
+        solid = solid - channel
+        top_z = half - cut
+        if chamfer > 1e-6:
+            flare = mf.Manifold.cylinder(chamfer + 1.0, hole_r,
+                                         hole_r + chamfer + 1.0, segments)
+            solid = solid - flare.translate((0.0, 0.0, top_z - chamfer))
+        solid = _placed(a, solid)
+        out = make_solid(a.scene, name, solid, a, kind="bead")
+        bb = solid.bounding_box()
+        out.meta["slice"] = {"cut_mm": cut, "plane_z": float(bb[5]),
+                             "round": round_r}
+        out.notes.append(f"бусина ø{diameter:g}×{height:g}, срез {cut:g} мм, "
+                         f"кромка round={round_r:g}, отверстие {hole:g}")
+        return out
     # высота, на которой отверстие выходит на поверхность
     z_s = half * math.sqrt(max(0.0, 1.0 - (hole_r / radius) ** 2))
     z_f, r_f = z_s, hole_r
@@ -338,15 +389,21 @@ def bead(a, name):
 @op("ingot", aliases=("слиток", "слиток_золота", "брусок_трапеция",
                       "трапеция_объёмная", "ingot_bar"),
     category="Примитивы",
-    summary="Слиток — объёмная трапеция: нижняя площадка больше верхней, бока "
-            "скошены, углы скруглены. Классический слиток металла, груз, "
-            "кирпич-«трапеция», основание под наклонные стенки.",
+    summary="Слиток — объёмная трапеция с независимой верхней площадкой. "
+            "taper_mode=бока скашивает только лево/право и оставляет перёд/зад "
+            "параллельными; top_size/top_offset задают верх напрямую. round "
+            "округляет углы контура, smooth сглаживает всё тело.",
     example="слиток = ingot length=100 width=50 height=22 taper=8\n"
-            "груз = ingot length=60 width=40 height=30 taper=12 round=6",
-    params={"length": "длина по X, мм (100)", "width": "ширина по Y, мм (50)",
+            "груз = ingot length=60 width=40 height=30 taper_mode=бока taper=8 smooth=1\n"
+            "верх = ingot length=100 width=50 height=22 top_size=[70,35] top_offset=[8,0]",
+    params={"length": "длина низа по X, мм (100)", "width": "ширина низа по Y, мм (50)",
             "height": "высота, мм (22)",
-            "taper": "скос: насколько верхняя площадка меньше нижней, мм (8)",
-            "round": "скругление углов в плане, мм (0)",
+            "taper": "скос верхней площадки относительно низа, мм (8)",
+            "taper_mode": "все — скос со всех сторон; бока/sides — только ±X, перёд/зад параллельны",
+            "top_size": "независимые размеры верха [X,Y]; перекрывает taper",
+            "top_offset": "сдвиг верхней плоскости [dx,dy], мм",
+            "round": "скругление только углов контура в плане, мм (0)",
+            "smooth": "Loop-сглаживание всех граней 0…4 (0)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["length"])
 def ingot(a, name):
@@ -355,18 +412,32 @@ def ingot(a, name):
     height = float(a.num("height", 22.0, minv=0.5))
     taper = float(a.num("taper", 8.0, minv=0.0) or 0.0)
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
+    mode = (a.text("taper_mode") or "все").strip().lower()
+    if mode in ("бока", "боковые", "sides", "side", "x"):
+        mode = "бока"
+    elif mode in ("все", "все_стороны", "all", "полный"):
+        mode = "все"
+    else:
+        raise GeometryError("ingot: taper_mode=все или бока.")
     hx, hy = length / 2.0, width / 2.0
-    taper = min(taper, min(hx, hy) * 0.9)
+    taper = min(taper, (hx if mode == "бока" else min(hx, hy)) * 0.9)
+    tx = hx - taper
+    ty = hy if mode == "бока" else hy - taper
+    top_size = a.vec("top_size", 2, default=None)
+    if top_size is not None:
+        if any(float(v) <= 0.2 for v in top_size):
+            raise GeometryError("ingot: стороны top_size должны быть больше 0.2 мм.")
+        tx, ty = float(top_size[0]) / 2.0, float(top_size[1]) / 2.0
+    offset = np.asarray(a.vec("top_offset", 2, default=(0.0, 0.0)), dtype=np.float64)
     bottom = _rounded_rect(hx, hy, round_r)
-    top = _rounded_rect(hx - taper, hy - taper, round_r)
+    top = _rounded_rect(tx, ty, round_r)
+    top = [(x + float(offset[0]), y + float(offset[1])) for x, y in top]
     pts = [(x, y, 0.0) for x, y in bottom] + [(x, y, height) for x, y in top]
     solid = mf.Manifold.hull_points(np.ascontiguousarray(pts, dtype=np.float64))
-    # объём усечённой пирамиды: h/3·(S1 + S2 + √(S1·S2))
-    s1, s2 = length * width, (length - 2 * taper) * (width - 2 * taper)
-    expect = height / 3.0 * (s1 + s2 + math.sqrt(s1 * s2))
+    solid = apply_smooth(solid, a, "слиток")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="ingot")
-    out.notes.append(f"слиток {length:g}×{width:g}×{height:g} мм, скос {taper:g} мм, "
-                     f"объём {solid.volume():.0f} мм³ (у трапеции {expect:.0f})")
+    out.notes.append(f"слиток {length:g}×{width:g}×{height:g} мм, скос {taper:g} мм "
+                     f"({mode}), верх {2*tx:g}×{2*ty:g}, сдвиг {offset.tolist()}")
     return out
 
 
@@ -497,59 +568,96 @@ def saddle(a, name):
 # --------------------------------------------------------------------------- #
 #  Ступеньки
 # --------------------------------------------------------------------------- #
-def _stairs_profile(steps: int, run: float, rise: float) -> list[tuple[float, float]]:
-    """Контур лестницы в плоскости XZ: подъём идёт в +X."""
-    pts = [(0.0, 0.0), (steps * run, 0.0), (steps * run, steps * rise)]
+def _stairs_profile(steps: int, run: float, rise: float,
+                    outer_r: float = 0.0, inner_r: float = 0.0) -> list[tuple[float, float]]:
+    """Контур марша XZ с независимыми дугами наружных/внутренних углов."""
+    base = [(0.0, 0.0), (steps * run, 0.0), (steps * run, steps * rise)]
     for i in range(steps, 0, -1):
-        pts.append(((i - 1) * run, i * rise))
-        pts.append(((i - 1) * run, (i - 1) * rise))
-    if len(pts) > 1 and abs(pts[-1][0]) < 1e-9 and abs(pts[-1][1]) < 1e-9:
-        pts.pop()
-    return pts
+        base.append(((i - 1) * run, i * rise))
+        base.append(((i - 1) * run, (i - 1) * rise))
+    if abs(base[-1][0]) < 1e-9 and abs(base[-1][1]) < 1e-9:
+        base.pop()
+    outer = {(round(j * run, 9), round((j + 1) * rise, 9)) for j in range(steps)}
+    inner = {(round(j * run, 9), round(j * rise, 9)) for j in range(1, steps)}
+    out: list[tuple[float, float]] = []
+    for i, cur in enumerate(base):
+        prev = base[i - 1]
+        nxt = base[(i + 1) % len(base)]
+        key = (round(cur[0], 9), round(cur[1], 9))
+        radius = outer_r if key in outer else inner_r if key in inner else 0.0
+        if radius <= 1e-9 or i == 0 or i + 1 >= len(base):
+            out.append(cur)
+            continue
+        u0 = np.asarray(prev) - np.asarray(cur)
+        u1 = np.asarray(nxt) - np.asarray(cur)
+        u0 /= np.linalg.norm(u0)
+        u1 /= np.linalg.norm(u1)
+        p0 = np.asarray(cur) + u0 * radius
+        p1 = np.asarray(cur) + u1 * radius
+        center = p0 + p1 - np.asarray(cur)
+        v0, v1 = p0 - center, p1 - center
+        cross = float(v0[0] * v1[1] - v0[1] * v1[0])
+        a0 = math.atan2(float(v0[1]), float(v0[0]))
+        a1 = math.atan2(float(v1[1]), float(v1[0]))
+        if cross > 0.0:
+            while a1 <= a0:
+                a1 += 2.0 * math.pi
+        else:
+            while a1 >= a0:
+                a1 -= 2.0 * math.pi
+        for k in range(9):
+            q = k / 8.0
+            ang = a0 + (a1 - a0) * q
+            pt = center + radius * np.asarray([math.cos(ang), math.sin(ang)])
+            out.append((float(pt[0]), float(pt[1])))
+    return out
 
 
 @op("stairs", aliases=("ступеньки", "ступени", "ступеньки_марш", "лесенка", "staircase"),
     category="Примитивы",
-    summary="Ступеньки — готовый марш: число ступеней, подъём, глубина проступи "
-            "и ширина. shape=прямая — строгие блоки, скруглённая — круглая "
-            "кромка-носик, скошенная — фаска на кромке. Подъём идёт в +X: "
-            "низкая ступень слева, высокая справа.",
+    summary="Прямой лестничный марш без скошенных ступеней. Наружная кромка "
+            "и внутренний угол настраиваются отдельно: shape=прямая/скруглённая, "
+            "inner=прямой/скруглённый. Подъём идёт в +X.",
     example="марш = stairs steps=6 rise=18 run=28 width=120\n"
-            "мягкий = stairs steps=5 rise=16 run=30 width=100 shape=скруглённая\n"
-            "камень = stairs steps=7 rise=15 run=32 width=140 shape=скошенная",
-    params={"steps": "число ступеней (6)", "rise": "высота ступени, мм (18)",
+            "мягкий = stairs steps=6 rise=18 run=28 width=120 shape=скруглённая inner=скруглённый",
+    params={"steps": "число ступеней 1…120 (6)", "rise": "высота ступени, мм (18)",
             "run": "глубина проступи, мм (28)", "width": "ширина марша, мм (120)",
-            "shape": "прямая · скруглённая · скошенная — «прямая»",
-            "round": "радиус скругления/фаски кромки, мм (авто)",
+            "shape": "наружная кромка: прямая или скруглённая — «прямая»",
+            "round": "радиус наружной кромки, мм (авто)",
+            "inner": "внутренний угол: прямой или скруглённый — «прямой»",
+            "inner_r": "радиус внутреннего угла, мм (авто)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["steps", "rise", "run"])
 def stairs(a, name):
     steps = int(a.int("steps", 6, minv=1, maxv=120) or 6)
-    rise = float(a.num("rise", 18.0, minv=0.5))
-    run = float(a.num("run", 28.0, minv=0.5))
-    width = float(a.num("width", 120.0, minv=1.0))
+    rise = float(a.num("rise", 18.0, minv=0.5, maxv=2000.0))
+    run = float(a.num("run", 28.0, minv=0.5, maxv=5000.0))
+    width = float(a.num("width", 120.0, minv=1.0, maxv=10000.0))
     shape = (a.text("shape", "прямая") or "прямая").strip().lower()
     shape = {"прямая": "прямая", "прямые": "прямая", "блок": "прямая",
              "скруглённая": "скруглённая", "скругленная": "скруглённая",
-             "круглая": "скруглённая", "мягкая": "скруглённая",
-             "скошенная": "скошенная", "фаска": "скошенная",
-             "скошеные": "скошенная"}.get(shape)
+             "круглая": "скруглённая", "мягкая": "скруглённая"}.get(shape)
     if shape is None:
-        raise GeometryError(
-            f"Неизвестная форма ступеней: «{a.text('shape')}».",
-            hint="shape=прямая, скруглённая или скошенная.")
-    edge = float(a.num("round", min(run, rise) * 0.35, minv=0.0) or 0.0)
-    pts = _stairs_profile(steps, run, rise)
-    if shape == "скруглённая":
-        pts = _treat_corners(pts, radius=max(edge, 0.05))
-    elif shape == "скошенная":
-        pts = _treat_corners(pts, chamfer=max(edge, 0.05))
+        raise GeometryError("shape=прямая или скруглённая; скошенного режима нет.")
+    inner = (a.text("inner", "прямой") or "прямой").strip().lower()
+    inner = {"прямой": "прямой", "прямые": "прямой", "острый": "прямой",
+             "скруглённый": "скруглённый", "скругленный": "скруглённый",
+             "круглый": "скруглённый", "мягкий": "скруглённый"}.get(inner)
+    if inner is None:
+        raise GeometryError("inner=прямой или скруглённый.")
+    max_r = min(run, rise) * 0.45
+    edge = float(a.num("round", min(run, rise) * 0.25,
+                       minv=0.0, maxv=max_r) or 0.0)
+    inner_r = float(a.num("inner_r", min(run, rise) * 0.25,
+                          minv=0.0, maxv=max_r) or 0.0)
+    pts = _stairs_profile(steps, run, rise,
+                          outer_r=edge if shape == "скруглённая" else 0.0,
+                          inner_r=inner_r if inner == "скруглённый" else 0.0)
     solid = _extrude_xz(pts, width)
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="stairs")
-    out.notes.append(f"{steps} ступеней {rise:g}×{run:g} мм, ширина {width:g} мм — "
-                     f"{shape}, габарит {steps * run:g}×{width:g}×{steps * rise:g} мм")
+    out.notes.append(f"{steps} ступеней {rise:g}×{run:g} мм, ширина {width:g} мм; "
+                     f"кромка {shape}, внутренний угол {inner}")
     return out
-
 
 
 # --------------------------------------------------------------------------- #
@@ -633,18 +741,17 @@ def tri_prism(a, name):
 @op("torus_sector", aliases=("сектор_тора", "дуга_тора", "часть_тора", "torus_arc",
                              "сектор_кольца"),
     category="Примитивы",
-    summary="Сектор тора — дуга бублика круглого сечения: угол, поворот и "
-            "радиусы. hole>0 сверлит сквозное отверстие по оси Z ровно "
-            "посередине дуги — под подвес, шнур или для облегчения. "
-            "Годится на поручни, серьги, звенья цепи, кольца-полукольца.",
+    summary="Сектор тора — дуга бублика круглого сечения. hole>0 делает "
+            "продольный туннель ВДОЛЬ всей дуги, как в полом проводе: канал "
+            "открыт на обоих торцах и не сверлит трубку поперёк.",
     example="полукольцо = torus_sector major=60 minor=10 angle=180\n"
-            "подвес = torus_sector major=50 minor=12 angle=200 hole=8\n"
+            "трубка = torus_sector major=50 minor=12 angle=200 hole=8\n"
             "звено = torus_sector major=30 minor=8 angle=180 hole=6",
     params={"major": "радиус кольца (до центра трубки), мм (50)",
             "minor": "радиус трубки, мм (10)",
             "angle": "угол дуги, градусы (180)",
             "start": "откуда начинать дугу, градусы от +X (0)",
-            "hole": "диаметр сквозного отверстия посередине дуги, мм (0)",
+            "hole": "диаметр продольного канала по всей дуге, мм (0 — сплошной)",
             "segments": "сегментов по дуге и трубке (по детализации)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
     positional=["major", "minor"])
@@ -655,26 +762,28 @@ def torus_sector(a, name):
     start = float(a.num("start", 0.0) or 0.0)
     hole = float(a.num("hole", 0.0, minv=0.0) or 0.0)
     segments = _segments(a, max(32, int(major * 1.2)), minv=12)
+    nprof = max(16, segments // 2)
     prof = [(major + minor * math.cos(t), minor * math.sin(t))
-            for t in np.linspace(0.0, 2.0 * math.pi, max(16, segments // 2),
-                                 endpoint=False)]
-    solid = mf.Manifold.revolve(mf.CrossSection([_profile(prof)]), segments, angle)
-    if abs(start) > 1e-6:
-        solid = solid.rotate((0.0, 0.0, start))
+            for t in np.linspace(0.0, 2.0 * math.pi, nprof, endpoint=False)]
+    paths = [_profile(prof)]
     if hole > 1e-6:
         if hole >= minor * 2.0 - 0.1:
             raise GeometryError(
-                f"Отверстие {hole:g} мм не оставляет стенки трубки: она "
+                f"Канал {hole:g} мм не оставляет стенки трубки: она "
                 f"{minor * 2:g} мм в диаметре.",
                 hint=f"hole должен быть меньше {minor * 2 - 0.1:g} мм.")
-        mid = math.radians(start + angle / 2.0)
-        cutter = mf.Manifold.cylinder(minor * 4.0, hole / 2.0, hole / 2.0, segments)
-        cutter = cutter.translate((major * math.cos(mid), major * math.sin(mid),
-                                   -minor * 2.0))
-        solid = solid - cutter
+        inner = hole / 2.0
+        paths.append(_profile([(major + inner * math.cos(t), inner * math.sin(t))
+                               for t in np.linspace(0.0, 2.0 * math.pi, nprof,
+                                                    endpoint=False)]))
+    cross = mf.CrossSection(paths, fillrule=mf.FillRule.EvenOdd)
+    solid = mf.Manifold.revolve(cross, segments, angle)
+    if abs(start) > 1e-6:
+        solid = solid.rotate((0.0, 0.0, start))
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="torus_sector")
     out.notes.append(f"сектор тора {angle:g}°: кольцо R{major:g}, трубка "
-                     f"r{minor:g} мм" + (f", отверстие {hole:g} мм посередине" if hole else ""))
+                     f"r{minor:g} мм" +
+                     (f", продольный канал ø{hole:g} мм" if hole else ""))
     return out
 
 def _placed(a, solid: mf.Manifold) -> mf.Manifold:

@@ -158,7 +158,7 @@ def _clump(start, direction, length, width, thin, bend, curl, side,
     example="чёлка = волосинки from=[-52,-36,196] to=[52,-36,196] count=46 "
             "length=44 thick=1.6 bend=0.6 curl=0.4 dir=[0,-0.55,-1] base=да\n"
             "мех = волосинки from=[-40,0,20] to=[40,0,20] count=120 length=18 "
-            "thick=1.1 bend=0.3 curl=0 thick=1.1",
+            "thick=1.1 bend=0.3 curl=0",
     params={"from": "начало линии роста [x,y,z]",
             "to": "конец линии роста [x,y,z]",
             "count": "сколько волосков (40)",

@@ -450,7 +450,7 @@ def _run_uistest(report_path: str | None) -> int:
                     "корона": "к = crown diameter=120 height=40 teeth=10",
                     "инь-ян": "и = yin_yang diameter=100 thick=12",
                     "линза": "л = lens diameter=60 sag=10",
-                    "патрон": "п = cartridge diameter=9 length=29",
+                    "полукапсула": "п = полукапсула diameter=20 length=50 rim=2 rim_height=3",
                 }
                 for label, script in shapes.items():
                     try:
@@ -735,8 +735,8 @@ def _run_uistest(report_path: str | None) -> int:
 
                 # 0.36: крюк, полуовал и посадка на настоящую границу
                 hook = post("/api/preview", {"script": (
-                    "к = крюк wire=6 radius=22 length=70 open=240 eye=да")})
-                check("крюк: пруток, загиб и ушко одной деталью",
+                    "к = крюк wire=6 radius=22 length=70 open=240 tip=капсула")})
+                check("крюк: непрерывный пруток без кольца",
                       hook.get("ok") is True and hook.get("tris", 0) > 1000,
                       f"{hook.get('tris', 0)} трис")
                 oval = post("/api/preview", {"script": (
@@ -925,7 +925,7 @@ def _run_uistest(report_path: str | None) -> int:
                 lev = post("/api/preview", {"script": (
                     "р = lever length=180 diameter=14 knob=шар knob_d=34\n"
                     "п = lever length=140 shaft=брусок size=20 knob=цилиндр "
-                    "knob_d=28 knob_h=60")})
+                    "knob_d=30 knob_h=60")})
                 check("рычаг: палка и ручка разных форм",
                       lev.get("ok") is True and lev.get("objects") == 2,
                       f"{lev.get('tris', 0)} трис")
@@ -978,6 +978,29 @@ def _run_uistest(report_path: str | None) -> int:
                               for key in ("top_size", "top_offset", "base_angle",
                                           "tip_at", "smooth", "slice", "mode")),
                       f"{shaped_example.get('objects', 0)} объектов")
+
+                # 0.43: непрерывные/состыкованные формы и актуальный каталог
+                reworked = post("/api/preview", {"script": (
+                    "р = handle length=160 height=34 diameter=10 "
+                    "bar_shape=капсула post_shape=капсула plates=нет\n"
+                    "з = swirl radius=40 height=64 coils=3 wire=16\n"
+                    "л = ladder length=600 width=300 rail=овал rail_d=38 "
+                    "rung=цилиндр rung_d=30 rungs=4 tilt=0\n"
+                    "с = stairs steps=6 rise=18 run=28 width=120 "
+                    "shape=скруглённая inner=скруглённый\n"
+                    "ы = lever length=180 knob=шар knob_d=34 knob_h=60\n"
+                    "к = gusset leg=70 height=55 thickness=6\n"
+                    "б = blade length=400 profile=листовой section=плоский "
+                    "tip=закруглённое curve=20")})
+                check("0.43: ручка, завиток, лестница, ступени, рычаг, косынка и клинок",
+                      reworked.get("ok") is True and reworked.get("objects") == 7,
+                      f"{reworked.get('tris', 0)} трис, {reworked.get('objects', 0)} объектов")
+                removed = post("/api/preview", {"script": "н = rail length=400"})
+                check("0.43: удалённые предметы не строятся и исчезли из карточек",
+                      removed.get("ok") is False
+                      and all(f"op: '{op}'".encode("utf-8") not in js_app
+                              for op in ("rail", "rack", "coupling", "heatsink",
+                                         "profile2020", "hinge", "bearing", "caster", "leg")))
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

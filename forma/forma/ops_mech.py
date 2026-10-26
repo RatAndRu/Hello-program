@@ -18,6 +18,7 @@ from .errors import GeometryError
 from .model import Solid
 from .ops import detail_factor, op
 from .ops_shapes import _profile
+from .shape_features import apply_smooth
 
 
 def _segments(a, default: int, minv: int = 12, maxv: int = 256) -> int:
@@ -69,9 +70,21 @@ def _cross_section_rail(length: float, size: float, shape: str,
                 for x in (half, length - half)]
         return mf.Manifold.batch_boolean([body, *caps], mf.OpType.Add)
     if shape == "овал":
-        body = mf.Manifold.sphere(1.0, segments).scale(
-            (length / 2.0, half, half))
-        return body.translate((length / 2.0, 0.0, 0.0))
+        # Плоская stadium-рейка, не вытянутый эллипсоид: две плоские
+        # боковые грани ±Y, прямые участки сверху/снизу и полукруглые торцы.
+        if length <= size + 0.2:
+            raise GeometryError("Овальная рейка короче своего диаметра.")
+        pts = [(half, -half), (length - half, -half)]
+        arc_steps = max(8, segments // 2)
+        for i in range(1, arc_steps + 1):
+            ang = -math.pi / 2.0 + math.pi * i / arc_steps
+            pts.append((length - half + half * math.cos(ang), half * math.sin(ang)))
+        pts.append((half, half))
+        for i in range(1, arc_steps + 1):
+            ang = math.pi / 2.0 + math.pi * i / arc_steps
+            pts.append((half + half * math.cos(ang), half * math.sin(ang)))
+        body = mf.Manifold.extrude(mf.CrossSection([_profile(pts)]), size)
+        return body.rotate((90.0, 0.0, 0.0)).translate((0.0, half, 0.0))
     # брусок: небольшое скругление рёбер по размеру рейки
     return mf.Manifold.cube((length, size, size), center=True).translate(
         (length / 2.0, 0.0, 0.0))
@@ -101,7 +114,7 @@ def _rung(length: float, size: float, shape: str, segments: int) -> mf.Manifold:
     example="приставная = ladder length=1800 width=420 rungs=9 tilt=72\n"
             "деревянная = ladder length=1500 width=380 rail=брусок rail_d=44 "
             "rung=брусок rung_d=34 rungs=7 tilt=75\n"
-            "канатная = ladder length=1200 width=300 rail=овал rail_d=22 rungs=6",
+            "канатная = ladder length=1200 width=300 rail=овал rail_d=22 rung_d=16 rungs=6",
     params={"length": "длина реек, мм (1800)",
             "width": "расстояние между рейками, мм (420)",
             "rail": "форма рейки: капсула, брусок или овал — «капсула»",
@@ -151,7 +164,12 @@ def ladder(a, name):
     for side in (-1.0, 1.0):
         rail = _cross_section_rail(length, rail_d, rail_shape, segments)
         rails.append(rail.translate((0.0, side * width / 2.0, 0.0)))
-    rung_length = width + rail_d * 0.6      # входит в рейки — сборка одним телом
+    if rung_d > rail_d + 1e-6:
+        raise GeometryError("Перекладина толще рейки: её нельзя чисто состыковать.",
+                            hint="Уменьшите rung_d или увеличьте rail_d.")
+    # Торец заходит в рейку лишь на 0.05 мм для гарантированно слитного
+    # булева стыка; наружу он не проходит и сквозь рейку не торчит.
+    rung_length = width - rail_d + 0.1
     span = length - 2.0 * margin
     positions = [margin] if rungs == 1 else [
         margin + span * i / (rungs - 1) for i in range(rungs)]
@@ -166,9 +184,6 @@ def ladder(a, name):
         solid = solid.rotate((0.0, -tilt, 0.0))
     placed = _placed_all(a, [solid])[0]
     out = _make(a, name, placed, "ladder")
-    if rung_d > rail_d + 0.01:
-        out.notes.append(f"перекладина {rung_d:g} мм толще рейки {rail_d:g} мм — "
-                         f"её торцы выступают по бокам")
     out.notes.append(f"лестница {length:g} мм, {rungs} перекладин, рейка "
                      f"{rail_shape} {rail_d:g} мм, перекладина {rung_shape} "
                      f"{rung_d:g} мм, наклон {tilt:g}°")
@@ -180,71 +195,73 @@ def ladder(a, name):
 # --------------------------------------------------------------------------- #
 @op("lever", aliases=("рычаг", "ручка_рычаг", "рычажок", "lever_handle"),
     category="Примитивы",
-    summary="Рычаг: палка плюс ручка на конце. Палка — цилиндр или брусок, "
-            "ручка — шар, цилиндр или её может не быть. Годится для джойстика, "
-            "педали, защёлки, ворота, ковша — там, где нужна палка с набалдашником.",
-    example="рычаг = lever length=180 diameter=14 knob=шар knob_d=34\n"
-            "брусок = lever length=140 shaft=брусок size=20 knob=цилиндр knob_d=28 knob_h=70\n"
-            "флажок = lever length=200 diameter=10 knob=шар knob_d=26 angle=35",
-    params={"length": "длина палки по X, мм (180)",
+    summary="Рычаг с палкой и наконечником на конце. knob=шар даёт "
+            "продолговатый шар, knob=цилиндр — втулку; knob_h задаёт длину "
+            "обоих наконечников. Палка состыкована с поверхностью и не "
+            "торчит сквозь него.",
+    example="рычаг = lever length=180 diameter=14 knob=шар knob_d=34 knob_h=60\n"
+            "брусок = lever length=140 shaft=брусок size=20 knob=цилиндр knob_d=30 knob_h=70",
+    params={"length": "общая длина с наконечником по X, мм (180)",
             "shaft": "палка: цилиндр или брусок — «цилиндр»",
             "diameter": "диаметр палки, мм (14)",
             "size": "сечение палки-бруска, мм (равно diameter)",
-            "knob": "ручка: шар, цилиндр или нет — «шар»",
-            "knob_d": "толщина ручки, мм (34)",
-            "knob_h": "длина ручки-цилиндра, мм (60)",
-            "angle": "наклон вверх, градусы (0)",
+            "knob": "наконечник: шар или цилиндр — «шар»",
+            "knob_d": "толщина наконечника, мм (34)",
+            "knob_h": "длина наконечника вдоль X, мм; работает и для шара (60)",
+            "angle": "наклон вверх, градусы −89…89 (0)",
             "segments": "сегментов у круглых частей (по детализации)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def lever(a, name):
-    length = float(a.num("length", 180.0, minv=5.0))
+    length = float(a.num("length", 180.0, minv=5.0, maxv=10000.0))
     shaft_shape = (a.text("shaft", "цилиндр") or "цилиндр").strip().lower()
     shaft_shape = {"цилиндр": "цилиндр", "труба": "цилиндр", "круглый": "цилиндр",
                    "брусок": "брусок", "квадрат": "брусок",
                    "параллелепипед": "брусок"}.get(shaft_shape)
     if shaft_shape is None:
-        raise GeometryError(f"Неизвестная форма палки: «{a.text('shaft')}».",
-                            hint="shaft=цилиндр или брусок.")
-    diameter = float(a.num("diameter", 14.0, minv=0.5))
-    size = float(a.num("size", diameter, minv=0.5))
+        raise GeometryError("shaft=цилиндр или брусок.")
+    diameter = float(a.num("diameter", 14.0, minv=0.5, maxv=1000.0))
+    size = float(a.num("size", diameter, minv=0.5, maxv=1000.0))
     knob_shape = (a.text("knob", "шар") or "шар").strip().lower()
     knob_shape = {"шар": "шар", "сфера": "шар", "круглая": "шар",
-                  "цилиндр": "цилиндр", "труба": "цилиндр",
-                  "нет": "нет", "без": "нет", "0": "нет"}.get(knob_shape)
+                  "цилиндр": "цилиндр", "труба": "цилиндр"}.get(knob_shape)
     if knob_shape is None:
-        raise GeometryError(f"Неизвестная ручка: «{a.text('knob')}».",
-                            hint="knob=шар, цилиндр или нет.")
-    knob_d = float(a.num("knob_d", 34.0, minv=1.0))
-    knob_h = float(a.num("knob_h", 60.0, minv=1.0))
+        raise GeometryError("knob=шар или цилиндр; режима «нет» больше нет.")
+    knob_d = float(a.num("knob_d", 34.0, minv=1.0, maxv=2000.0))
+    knob_h = float(a.num("knob_h", 60.0, minv=1.0, maxv=5000.0))
     angle = float(a.num("angle", 0.0, minv=-89.0, maxv=89.0))
     segments = _segments(a, 40, minv=12)
+    if knob_h > length:
+        raise GeometryError("knob_h не может быть больше общей длины рычага.")
+    needed = diameter if shaft_shape == "цилиндр" else size * math.sqrt(2.0)
+    if knob_d + 1e-6 < needed:
+        raise GeometryError("Наконечник тоньше палки: чистый стык невозможен.",
+                            hint=f"knob_d должен быть не меньше {needed:g} мм.")
+
+    shaft_length = length - knob_h / 2.0  # заготовка до центра наконечника
     if shaft_shape == "цилиндр":
-        shaft = mf.Manifold.cylinder(length, diameter / 2.0, diameter / 2.0, segments)
-        shaft = shaft.rotate((0.0, 90.0, 0.0))
+        shaft = mf.Manifold.cylinder(shaft_length, diameter / 2.0, diameter / 2.0,
+                                     segments).rotate((0.0, 90.0, 0.0))
     else:
-        shaft = mf.Manifold.cube((length, size, size)).translate(
+        shaft = mf.Manifold.cube((shaft_length, size, size)).translate(
             (0.0, -size / 2.0, -size / 2.0))
-    parts = [shaft]
     if knob_shape == "шар":
-        # шар сидит на самом конце, не выходя за length
-        knob = mf.Manifold.sphere(knob_d / 2.0, segments)
-        knob = knob.translate((length - knob_d / 2.0, 0.0, 0.0))
-        parts.append(knob)
-    elif knob_shape == "цилиндр":
-        knob_h = min(knob_h, length)     # втулка не длиннее самой палки
-        knob = mf.Manifold.cylinder(knob_h, knob_d / 2.0, knob_d / 2.0, segments)
-        knob = knob.rotate((0.0, 90.0, 0.0))
-        # втулка на конце палки, целиком внутри length (после поворота она идёт 0…knob_h)
+        knob = mf.Manifold.sphere(1.0, segments).scale(
+            (knob_h / 2.0, knob_d / 2.0, knob_d / 2.0))
+        knob = knob.translate((length - knob_h / 2.0, 0.0, 0.0))
+    else:
+        knob = mf.Manifold.cylinder(knob_h, knob_d / 2.0, knob_d / 2.0,
+                                    segments).rotate((0.0, 90.0, 0.0))
         knob = knob.translate((length - knob_h, 0.0, 0.0))
-        parts.append(knob)
-    solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
+    # Убрать всю заготовку палки изнутри наконечника. Внешняя поверхность
+    # наконечника остаётся чистой, а стык повторяет её форму.
+    shaft = shaft - knob
+    solid = shaft + knob
     if abs(angle) > 1e-6:
         solid = solid.rotate((0.0, -angle, 0.0))
     placed = _placed_all(a, [solid])[0]
     out = _make(a, name, placed, "lever")
-    out.notes.append(f"рычаг {length:g} мм, палка {shaft_shape} {diameter:g} мм, "
-                     f"ручка {knob_shape}"
-                     + (f" {knob_d:g} мм" if knob_shape != "нет" else ""))
+    out.notes.append(f"рычаг {length:g} мм, палка {shaft_shape}, наконечник "
+                     f"{knob_shape} {knob_d:g}×{knob_h:g} мм")
     return out
 
 
@@ -271,6 +288,7 @@ def lever(a, name):
             "base_h": "высота гнезда, мм (8)",
             "fit": "плотно или зазор — «плотно»",
             "gap": "зазор по кругу при fit=зазор, мм (3)",
+            "smooth": "уровни Loop-сглаживания шляпки и гнезда 0…4 (0)",
             "segments": "сегментов у круглых частей (по детализации)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def button(a, name):
@@ -347,6 +365,8 @@ def button(a, name):
         raise GeometryError("Гнездо кнопки получилось пустым: вырез съел платформу.",
                             hint="Увеличьте base_d или уменьшите diameter.")
     cap = cap.translate((0.0, 0.0, base_h - socket_depth))
+    plate = apply_smooth(plate, a, "гнездо кнопки")
+    cap = apply_smooth(cap, a, "шляпка кнопки")
     placed = _placed_all(a, [plate, cap])
     # главный объект — шляпка: её и анимируют; гнездо живёт отдельно
     main = _make(a, name, placed[1], "button")
