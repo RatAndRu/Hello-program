@@ -99,10 +99,10 @@ class StepperChoices(unittest.TestCase):
             self.assertIn(marker, text)
 
     def test_free_text_fields_stay_free(self):
-        """Путь к картинке и вектор шагать нечем — стрелок там быть не должно."""
+        """Путь к картинке и свободный текст шагать нечем — стрелок там не должно."""
         text = APP_JS.read_text(encoding="utf-8")
         self.assertIn("k: 'image', label: 'карта', v: 'docs/pattern.png', kind: 'raw' }", text)
-        self.assertIn("k: 'path', label: 'путь'", text)
+        self.assertIn("k: 'text', label: 'текст'", text)
 
 
 if __name__ == "__main__":

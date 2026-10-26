@@ -44,6 +44,70 @@ check кружка symmetric y
 | **Витрина инструментов: 44 предмета** | |
 | ![витрина](docs/showcase_all.png) | |
 
+## Что нового в 0.44 — полосы, решётки и конструкционные формы
+
+**1. Полоса с независимыми кромками.** `strip` строит тонкое объёмное тело,
+а не плоскую картинку. `ends=прямоугольные|треугольные|овальные` меняет концы;
+`collapse_left` и `collapse_right` независимо истончают кромки +Y и −Y,
+оставляя сердцевину заданной толщины. `path=прямая|S|зигзаг` и `curve`
+задают контур, `bend=-180…180` изгибает полосу дугой в XZ, `smooth=0…4`
+сглаживает сетку. У прямой полосы `recess=круг|прямоугольник|квадрат|треугольник`
+вычитает центральную сквозную выемку; `recess_size` задаёт ширину, а
+`recess_length` — независимую длину прямоугольника.
+
+```forma
+лента = strip length=200 width=40 thickness=4 ends=овальные collapse_left=0.55 collapse_right=0.25
+зигзаг = strip length=180 width=30 thickness=3 path=зигзаг curve=40 at=[0,120,0]
+окно = strip length=180 width=50 thickness=4 recess=круг recess_size=20 at=[0,240,0]
+```
+
+**2. Настоящие сквозные решётки и шипы.** `grating` имеет режимы
+`pattern=планки|клетка|соты`; `bar` задаёт рейки, `frame` — наружную рамку,
+`depth` — толщину панели. Для планок используется `bars`, для клетки — `cols/rows`,
+для сот — `cell`. Все ячейки вычитаются насквозь, а рамка и рейки остаются одним
+телом. `spikes` создаёт общую площадку и массив шипов: `cols/rows`, `height`,
+`base_d`, `tip_d` (ноль — остриё), `sides`, `lean` и `direction`.
+
+**3. Колонна и дуговая треугольная призма.** `column` объединяет нижнюю
+площадку, стержень и верхний бортик. `form=ровная|конус|песочные` выбирает
+прямой, сужающийся или параболически стянутый посередине профиль;
+`section=цилиндр|брусок`, `waist`, `taper`, `base/base_size/base_h`,
+`rim/rim_h` и `smooth` настраиваются независимо. Старый `leg` не возвращается.
+У `arc_prism` три стороны обычной треугольной призмы изгибаются независимо:
+`arc_a/arc_b/arc_c=0` — плоско, положительное число — выпуклость наружу,
+отрицательное — вогнутость внутрь. Значения являются стрелами парабол в мм.
+
+```forma
+колонна = column height=180 width=42 form=песочные waist=0.55 base_size=72 base_h=12 rim=8 rim_h=10
+палатка = arc_prism a=100 b=90 c=90 height=120 arc_a=0 arc_b=-16 arc_c=-16 at=[160,0,0]
+```
+
+**4. Доработаны круг, овал, кубик и труба.** У `disc` и `oval` появились
+`top=плоская|вогнутая|выпуклая` и параболическая стрела `sag`, как у кнопки;
+низ остаётся плоским. `round` относится к плоскому варианту, для кривого верха
+его задают равным нулю. `cube_hole hole_shape=круг|квадрат|треугольник`
+вырезает сквозной канал по любой из осей `axis=x|y|z`.
+
+`pipe` больше не требует координат: `length`, `diameter`, `wall`, `angle`,
+`radius` и `joint=плавный|острый` достаточно для прямой или согнутой трубы.
+`length` — развёрнутая длина центральной линии, угол задаётся в диапазоне
+−180…180°. Старый `path=[[x,y,z],…]` полностью сохранён и при явном указании
+имеет приоритет над простым режимом.
+
+**5. Возвращён только `profile2020`.** Четыре продольных углубления имеют
+`groove=прямоугольная|треугольная|овальная`, ширину горловины `slot`, ширину
+канала `channel` и глубину `depth`. `rail=прямая|скруглённая|фаска` и `rail_r`
+задают угловые рейки. Осевое отверстие `bore` бывает
+`bore_shape=круг|квадрат|треугольник|шестигранник`; `bore=0` убирает его.
+Остальные удалённые предметы и `leg` не восстановлены.
+
+Текущий реестр — **195 команд, из них 101 примитив**. Все шесть новых форм
+имеют карточки с живым превью; теперь у **501 числового поля** есть явные
+границы. Добавлены 22 регрессии `tests/test_v044.py`, полный набор — **967
+тестов**. Пример `examples/ribbon_grids.forma` содержит 15 тел и 15 проверок;
+подробные сценарии — в рецептах §37. Разделы 0.43 и ниже сохранены как история
+версий; при расхождении используйте актуальную справку и примеры 0.44.
+
 ## Что нового в 0.43 — непрерывные формы и честные границы инструментов
 
 **1. Ручка, завиток, лестница и ступени.** У `handle` площадки снимаются
@@ -1898,7 +1962,7 @@ python -m forma reference --out СПРАВКА.md
 
 | Категория | Команды |
 |---|---|
-| Примитивы (95) | `arch`, `arrow`, `banana`, `bark`, `bead`, `blade`, `bolt`, `box`, `box_body`, `bracket`, `bricks`, `button`, `capsule`, `cardboard`, `cloud`, `cone`, `crescent`, `crown`, `cube_hole`, `cylinder`, `diamond`, `disc`, `display`, `drive`, `drop`, `egg`, `ellipsoid`, `gear`, `grommet`, `gusset`, `hair`, `handle`, `heart`, `hemisphere`, `horn`, `hull`, `icosphere`, `ingot`, `jacket`, `ladder`, `leaf`, `lens`, `lever`, `lightning`, `mirror_plate`, `nail`, `nut`, `octa`, `oval`, `paraboloid`, `pie`, `plate`, `plus`, `prism`, `pulley`, `pyramid`, `ring`, `rock`, `rope`, `saddle`, `saw`, `screw`, `sector`, `seven_seg`, `shaft`, `sheet`, `skirt`, `sphere`, `spiral`, `spring`, `stairs`, `star`, `swirl`, `tee`, `text`, `torus`, `torus_sector`, `tri_prism`, `washer`, `wheel`, `worm_shaft`, `yin_yang`, `yoke`, `бровь`, `волосинки`, `воронка`, `глаз`, `губы`, `крюк`, `локон`, `полукапсула`, `полуовал`, `скоба`, `цепь`, `чёлка` |
+| Примитивы (101) | `arch`, `arc_prism`, `arrow`, `banana`, `bark`, `bead`, `blade`, `bolt`, `box`, `box_body`, `bracket`, `bricks`, `button`, `capsule`, `cardboard`, `cloud`, `column`, `cone`, `crescent`, `crown`, `cube_hole`, `cylinder`, `diamond`, `disc`, `display`, `drive`, `drop`, `egg`, `ellipsoid`, `gear`, `grommet`, `grating`, `gusset`, `hair`, `handle`, `heart`, `hemisphere`, `horn`, `hull`, `icosphere`, `ingot`, `jacket`, `ladder`, `leaf`, `lens`, `lever`, `lightning`, `mirror_plate`, `nail`, `nut`, `octa`, `oval`, `paraboloid`, `pie`, `plate`, `plus`, `prism`, `profile2020`, `pulley`, `pyramid`, `ring`, `rock`, `rope`, `saddle`, `saw`, `screw`, `sector`, `seven_seg`, `shaft`, `sheet`, `skirt`, `sphere`, `spikes`, `spiral`, `spring`, `stairs`, `star`, `strip`, `swirl`, `tee`, `text`, `torus`, `torus_sector`, `tri_prism`, `washer`, `wheel`, `worm_shaft`, `yin_yang`, `yoke`, `бровь`, `волосинки`, `воронка`, `глаз`, `губы`, `крюк`, `локон`, `полукапсула`, `полуовал`, `скоба`, `цепь`, `чёлка` |
 | Тела вращения и развёртки (5) | `extrude`, `lathe`, `loft`, `pipe`, `sweep` |
 | Булевы операции (8) | `cut`, `difference`, `intersect`, `slice`, `trim`, `union`, `weld`, `вписать` |
 | Форма и деформации (39) | `bend`, `bevel`, `blow`, `bore`, `chamfer`, `clean`, `corrugate`, `dent`, `draft`, `emboss`, `fill`, `fillet`, `flatten`, `fold`, `fuse`, `groove`, `holes`, `knurl`, `lattice`, `offset`, `pile`, `pinch`, `point`, `polish`, `porous`, `refine`, `relief`, `repair`, `scales`, `shave`, `shell`, `simplify`, `smooth`, `taper`, `thread`, `twist`, `wrinkle`, `сгиб`, `складка` |
@@ -1908,7 +1972,7 @@ python -m forma reference --out СПРАВКА.md
 | Проверка (5) | `check`, `passport`, `probe`, `section`, `ориентация` |
 | Сборка (1) | `соединить` |
 
-Все 189 команд перечислены здесь без сокращений; полные описания параметров —
+Все 195 команд перечислены здесь без сокращений; полные описания параметров —
 в справке приложения (кнопка «?») и в файле `СПРАВКА_КОМАНДЫ.md` внутри ZIP.
 У каждой команды в справке есть **запускаемый** пример: его можно скопировать
 в сценарий целиком — он соберётся без правок (кроме `import`, которому нужен
@@ -2049,7 +2113,7 @@ check имя tris ..200000     # число треугольников
 
 ```bash
 cd forma
-python -m unittest discover -s tests -v   # 945 тестов ядра и интерфейса
+python -m unittest discover -s tests -v   # 967 тестов ядра и интерфейса
 python -m forma selftest                  # мини-сценарии с проверками
 ```
 

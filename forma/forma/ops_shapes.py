@@ -550,9 +550,15 @@ def washer(a, name):
 # --------------------------------------------------------------------------- #
 @op("cube_hole", aliases=("кубик_с_отверстием", "блок_с_отверстием", "брусок_с_отверстием"),
     category="Примитивы",
-    summary="Брусок с круглым отверстием по центру — учебная деталь и заготовка.",
-    example="кубик = cube_hole size=[40,40,40] hole=16",
-    params={"size": "размер [x,y,z], мм (40,40,40)", "hole": "диаметр отверстия, мм (40% размера)",
+    summary="Брусок с центральным сквозным отверстием по X, Y или Z. "
+            "hole_shape=круг, квадрат или треугольник; hole — диаметр круга, "
+            "сторона квадрата или диаметр описанной окружности треугольника.",
+    example="кубик = cube_hole size=[40,40,40] hole=16 hole_shape=круг\n"
+            "квадратный = cube_hole size=[45,45,35] hole=15 hole_shape=квадрат\n"
+            "треугольный = cube_hole size=[50,45,40] hole=18 hole_shape=треугольник axis=y",
+    params={"size": "размер [x,y,z], мм (40,40,40)",
+            "hole": "размер отверстия, мм (40% размера)",
+            "hole_shape": "форма отверстия: круг, квадрат или треугольник",
             "axis": "ось отверстия: z, x или y (z)", "round": "скругление рёбер, мм",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def cube_hole(a, name):
@@ -561,10 +567,17 @@ def cube_hole(a, name):
         raise GeometryError("Размеры бруска должны быть больше нуля.")
     hole = float(a.num("hole", min(size) * 0.4, minv=0.2))
     if hole >= min(size) - 1.0:
-        raise GeometryError(f"Отверстие ø{hole:g} мм не помещается в брусок {size}.")
+        raise GeometryError(f"Отверстие {hole:g} мм не помещается в брусок {size}.")
     axis = (a.text("axis", "z") or "z").strip().lower()
     if axis not in ("x", "y", "z"):
         raise GeometryError("Ось отверстия: z, x или y.")
+    shape = (a.text("hole_shape", "круг") or "круг").strip().lower()
+    shape = {"круг": "круг", "круглое": "круг", "круглый": "круг",
+             "квадрат": "квадрат", "квадратное": "квадрат", "квадратный": "квадрат",
+             "треугольник": "треугольник", "треугольное": "треугольник",
+             "треугольный": "треугольник"}.get(shape)
+    if shape is None:
+        raise GeometryError("hole_shape=круг, квадрат или треугольник.")
     box = mf.Manifold.cube(size, True)
     rnd = float(a.num("round", 0.0, minv=0.0) or 0.0)
     if rnd > 1e-6:
@@ -572,13 +585,24 @@ def cube_hole(a, name):
         inner = [max(s - 2 * rnd, 1e-3) for s in size]
         box = mf.Manifold.cube(inner, True).minkowski_sum(mf.Manifold.sphere(rnd, 24))
     length = max(size) + 10
-    cyl = mf.Manifold.cylinder(length, hole / 2.0, hole / 2.0, 64).translate((0, 0, -length / 2))
+    if shape == "круг":
+        cutter = mf.Manifold.cylinder(length, hole / 2.0, hole / 2.0, 64, center=True)
+    elif shape == "квадрат":
+        cutter = mf.Manifold.cube((hole, hole, length), True)
+    else:
+        radius = hole / 2.0
+        pts = [(radius * math.cos(math.radians(90 + 120 * i)),
+                radius * math.sin(math.radians(90 + 120 * i))) for i in range(3)]
+        cutter = mf.CrossSection([_profile(pts)]).extrude(length).translate((0, 0, -length / 2))
     if axis == "x":
-        cyl = cyl.rotate((0, 90, 0))
+        cutter = cutter.rotate((0, 90, 0))
     elif axis == "y":
-        cyl = cyl.rotate((90, 0, 0))
-    solid = ensure_volume(box - cyl, "брусок с отверстием")
-    return make_solid(a.scene, name, _placed(a, solid), a, kind="cube_hole")
+        cutter = cutter.rotate((90, 0, 0))
+    solid = ensure_volume(box - cutter, "брусок с отверстием")
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="cube_hole")
+    out.meta["hole_shape"] = shape
+    out.notes.append(f"сквозное отверстие {shape} по {axis.upper()}, {hole:g} мм")
+    return out
 
 
 # --------------------------------------------------------------------------- #

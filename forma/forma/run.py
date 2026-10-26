@@ -55,6 +55,8 @@ from . import ops_attach  # noqa: F401,E402
 from . import ops_vessel  # noqa: F401,E402
 from . import ops_solids  # noqa: F401,E402
 from . import ops_mech  # noqa: F401,E402
+from . import ops_ribbon  # noqa: F401,E402
+from . import ops_structures  # noqa: F401,E402
 from . import ops_orient  # noqa: F401,E402
 
 

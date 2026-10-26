@@ -175,10 +175,11 @@ class CatalogOrderTest(unittest.TestCase):
     def test_derived_and_nature_follow_user_list(self):
         standard = ["sheet", "box", "prism", "octa", "pyramid", "cone", "cylinder",
                     "sphere", "icosphere", "ellipsoid", "capsule", "torus", "ring",
-                    "washer", "disc", "oval"]
-        derived = ["hemisphere", "sector", "bracket", "полуовал", "arch", "воронка",
-                   "скоба", "lens", "полукапсула", "ingot", "paraboloid", "saddle",
-                   "pie", "bead", "tri_prism", "torus_sector"]
+                    "washer", "disc", "oval", "strip"]
+        derived = ["grating", "spikes", "hemisphere", "sector", "bracket", "полуовал",
+                   "arch", "воронка", "скоба", "lens", "полукапсула", "ingot",
+                   "paraboloid", "saddle", "pie", "bead", "tri_prism", "arc_prism",
+                   "torus_sector"]
         nature = ["egg", "drop", "crescent", "star", "lightning", "heart", "cloud",
                   "diamond", "horn", "rock", "leaf", "banana"]
         self.assertEqual(self.ops[:len(standard)], standard)

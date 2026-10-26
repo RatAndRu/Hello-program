@@ -246,35 +246,96 @@ def box_body(a, name):
 
 
 # --------------------------------------------------------------------------- #
-#  Труба по ломаной
+#  Труба: простой прямой/согнутый режим и совместимый path
 # --------------------------------------------------------------------------- #
+def _simple_pipe_path(length: float, angle: float, radius: float,
+                      joint: str, diameter: float) -> np.ndarray:
+    """Центральная линия в XZ; length — развёрнутая длина прямых и дуги."""
+    if abs(angle) < 1e-9:
+        return np.asarray([[0.0, 0.0, 0.0], [length, 0.0, 0.0]])
+    if joint == "острый":
+        if abs(angle) >= 179.5:
+            raise GeometryError("Острый стык на 180° вырождается в нулевую митру.",
+                                hint="Используйте joint=плавный или уменьшите angle.")
+        leg = length / 2.0
+        theta = math.radians(angle)
+        return np.asarray([[0.0, 0.0, 0.0], [leg, 0.0, 0.0],
+                           [leg + leg * math.cos(theta), 0.0,
+                            math.copysign(leg * math.sin(abs(theta)), angle)]])
+    theta = math.radians(abs(angle))
+    if radius <= diameter / 2.0 + 0.05:
+        raise GeometryError("radius слишком мал: внутренняя сторона сгиба схлопнется.",
+                            hint=f"Задайте radius больше {diameter / 2 + 0.05:g} мм.")
+    arc_length = radius * theta
+    if arc_length >= length - 0.05:
+        raise GeometryError("Дуга не помещается в заданную length.",
+                            hint="Увеличьте length, уменьшите radius или angle.")
+    tail = (length - arc_length) / 2.0
+    sign = 1.0 if angle > 0 else -1.0
+    points = [[0.0, 0.0, 0.0]]
+    if tail > 1e-8:
+        points.append([tail, 0.0, 0.0])
+    steps = max(8, min(180, int(math.ceil(abs(angle) / 4.0))))
+    for i in range(1, steps + 1):
+        phi = theta * i / steps
+        points.append([tail + radius * math.sin(phi), 0.0,
+                       sign * radius * (1.0 - math.cos(phi))])
+    if tail > 1e-8:
+        end = np.asarray(points[-1])
+        tangent = np.asarray([math.cos(theta), 0.0, sign * math.sin(theta)])
+        points.append((end + tail * tangent).tolist())
+    return np.asarray(points, dtype=float)
+
+
 @op("pipe", aliases=("трубка", "трубопровод", "tube"),
     category="Тела вращения и развёртки",
-    summary="Труба с настоящей стенкой по ломаной: митры на поворотах и "
-            "заглушки-кольца на концах. Одно замкнутое тело.",
-    example="труба = pipe path=[[0,0,0],[0,0,400],[300,0,400]] diameter=32 wall=2",
-    params={"path": "точки пути [[x,y,z], …], мм (обязательно)",
+    summary="Труба с настоящей стенкой. Без path достаточно length, diameter "
+            "и wall: angle −180…180° задаёт сгиб в XZ, joint=плавный/острый, "
+            "radius — радиус центральной дуги. Старый path=[[x,y,z],…] сохранён.",
+    example="прямая = pipe length=180 diameter=24 wall=2\n"
+            "плавная = pipe length=220 angle=90 radius=70 joint=плавный diameter=24 wall=2\n"
+            "острая = pipe length=180 angle=60 joint=острый diameter=20 wall=1.5",
+    params={"length": "развёрнутая длина простой трубы, мм (200)",
+            "angle": "угол сгиба −180…180°; знак задаёт сторону в XZ (0)",
+            "radius": "радиус центральной линии плавного сгиба, мм (80)",
+            "joint": "плавный или острый сгиб (плавный)",
+            "path": "старое совместимое задание точками [[x,y,z],…]; отключает простой режим",
             "diameter": "наружный диаметр (32)", "wall": "толщина стенки (2)",
             "sides": "сегментов по кругу (24)", "at": "положение [x,y,z]",
             "center": "центрировать по высоте"})
 def pipe(a, name):
-    path = a.points("path", 3)
-    if len(path) < 2:
-        raise GeometryError("Для трубы нужны хотя бы две точки пути.",
-                            hint="Например: труба = pipe path=[[0,0,0],[0,0,400]] diameter=32")
     diameter = float(a.num("diameter", 32.0, minv=1.0))
     wall = float(a.num("wall", 2.0, minv=0.2))
     if wall * 2 >= diameter - 0.4:
         raise GeometryError("Стенка не оставляет просвета в трубе.")
     sides = _seg(a, "sides", 24, 8, 96)
-    pts = np.asarray(path, dtype=np.float64)
+    legacy = a.has("path")
+    if legacy:
+        path = a.points("path", 3)
+        if len(path) < 2:
+            raise GeometryError("Для трубы нужны хотя бы две точки пути.",
+                                hint="Например: труба = pipe path=[[0,0,0],[0,0,400]] diameter=32")
+        pts = np.asarray(path, dtype=np.float64)
+        joint = "path"
+    else:
+        length = float(a.num("length", 200.0, minv=1.0, maxv=100000.0))
+        angle = float(a.num("angle", 0.0, minv=-180.0, maxv=180.0) or 0.0)
+        radius = float(a.num("radius", 80.0, minv=0.5, maxv=100000.0))
+        joint = (a.text("joint", "плавный") or "плавный").strip().lower()
+        joint = {"плавный": "плавный", "плавная": "плавный", "скруглённый": "плавный",
+                 "острый": "острый", "острая": "острый", "митра": "острый"}.get(joint)
+        if joint is None:
+            raise GeometryError("pipe.joint=плавный или острый.")
+        pts = _simple_pipe_path(length, angle, radius, joint, diameter)
     outer = _tube_mesh(pts, diameter / 2.0, sides, "труба")
     inner = _tube_mesh(pts, diameter / 2.0 - wall, sides, "труба")
     solid = outer - inner
-    if solid.is_empty() or solid.volume() <= 1e-6:
-        raise GeometryError("Труба получилась пустой.")
+    if solid.is_empty() or solid.volume() <= 1e-6 or len(solid.decompose()) != 1:
+        raise GeometryError("Труба получилась пустой или распалась на части.")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="pipe")
-    out.notes.append(f"ø{diameter:g}×{wall:g} мм, длина {_path_length(pts):.0f} мм")
+    out.meta["path_mode"] = "legacy" if legacy else "simple"
+    out.meta["joint"] = joint
+    out.notes.append(f"ø{diameter:g}×{wall:g} мм, длина {_path_length(pts):.0f} мм, режим {joint}")
     return out
 
 

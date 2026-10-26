@@ -1000,7 +1000,37 @@ def _run_uistest(report_path: str | None) -> int:
                       removed.get("ok") is False
                       and all(f"op: '{op}'".encode("utf-8") not in js_app
                               for op in ("rail", "rack", "coupling", "heatsink",
-                                         "profile2020", "hinge", "bearing", "caster", "leg")))
+                                         "hinge", "bearing", "caster", "leg")))
+
+                # 0.44: полосы, решётки, шипы, колонна, дуговая призма, профиль
+                formed = post("/api/preview", {"script": (
+                    "п = strip length=140 width=36 ends=овальные collapse_left=0.5\n"
+                    "р = grating width=140 height=90 pattern=соты cell=20 at=[0,140,0]\n"
+                    "ш = spikes width=100 length=70 cols=3 rows=2 at=[240,0,0]\n"
+                    "к = column height=150 form=песочные at=[400,0,0]\n"
+                    "д = arc_prism arc_b=-12 arc_c=-12 at=[560,0,0]\n"
+                    "ф = profile2020 length=140 groove=овальная bore_shape=шестигранник at=[720,0,0]")})
+                check("0.44: шесть новых примитивов строятся в живом превью",
+                      formed.get("ok") is True and formed.get("objects") == 6,
+                      f"{formed.get('tris', 0)} трис, {formed.get('objects', 0)} объектов")
+                revised = post("/api/preview", {"script": (
+                    "к = disc diameter=90 thickness=7 top=вогнутая sag=3\n"
+                    "о = oval width=130 length=85 thickness=6 top=выпуклая sag=4 at=[160,0,0]\n"
+                    "б = cube_hole size=[55,55,45] hole=20 hole_shape=треугольник at=[320,0,0]\n"
+                    "т = pipe length=180 angle=90 radius=55 diameter=20 wall=2 at=[440,0,0]\n"
+                    "с = pipe path=[[0,0,0],[0,0,80],[60,0,80]] diameter=16 wall=2 at=[600,0,0]")})
+                check("0.44: кривые круг/овал, формы отверстий и оба режима трубы",
+                      revised.get("ok") is True and revised.get("objects") == 5,
+                      f"{revised.get('tris', 0)} трис, {revised.get('objects', 0)} объектов")
+                ribbon = get("/api/example?key=ribbon_grids")
+                ribbon_built = post("/api/build", {"script": ribbon.get("script", "")})
+                ribbon_count = len(ribbon_built.get("objects") or [])
+                check("0.44: проект из 15 тел и карточки всех новых форм",
+                      ribbon_built.get("ok") is True and ribbon_count == 15
+                      and all(f"op: '{op}'".encode("utf-8") in js_app
+                              for op in ("strip", "grating", "spikes", "column",
+                                         "arc_prism", "profile2020")),
+                      f"{ribbon_count} объектов в примере")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

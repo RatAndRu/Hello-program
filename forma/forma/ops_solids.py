@@ -17,7 +17,7 @@ import numpy as np
 from .errors import GeometryError
 from .ops import anchor, make_solid, op
 from .ops_basic import _sliced_sphere
-from .ops_shapes import _profile
+from .ops_shapes import _profile, _revolve
 from .shape_features import apply_smooth, cut_center_hole
 
 
@@ -128,17 +128,52 @@ def _extrude_xz(pts: list[tuple[float, float]], width: float) -> mf.Manifold:
 
 
 # --------------------------------------------------------------------------- #
-#  Круг — плоский цилиндр с объёмом
+#  Круг — плоский, вогнутый или выпуклый цилиндр с объёмом
 # --------------------------------------------------------------------------- #
+def _top_kind(a, what: str) -> str:
+    raw = (a.text("top", "плоская") or "плоская").strip().lower()
+    value = {"плоская": "плоская", "плоский": "плоская",
+             "вогнутая": "вогнутая", "вогнутый": "вогнутая",
+             "выпуклая": "выпуклая", "выпуклый": "выпуклая"}.get(raw)
+    if value is None:
+        raise GeometryError(f"{what}: top=плоская, вогнутая или выпуклая.")
+    return value
+
+
+def _curved_plate(hx: float, hy: float, thickness: float, sag: float,
+                  top: str, segments: int, what: str) -> mf.Manifold:
+    """Параболическая верхняя поверхность при идеально плоском низе."""
+    if top == "вогнутая" and sag >= thickness - 0.05:
+        raise GeometryError(f"{what}: sag почти прорезает вогнутую пластину.",
+                            hint=f"sag должна быть меньше {thickness - 0.05:g} мм.")
+    sign = 1.0 if top == "выпуклая" else -1.0
+    profile = [(0.0, 0.0), (1.0, 0.0), (1.0, thickness)]
+    for i in range(1, 25):
+        r = 1.0 - i / 24.0
+        z = thickness + sign * sag * (1.0 - r * r)
+        profile.append((r, z))
+    # revolve замыкает профиль по оси; четвёрки сегментов дают точные полуоси.
+    segments = max(12, int(segments))
+    segments += (-segments) % 4
+    solid = _revolve(profile, segments, what)
+    if abs(hx - hy) > 1e-9 or abs(hx - 1.0) > 1e-9:
+        solid = solid.transform(np.asarray([[hx, 0, 0, 0], [0, hy, 0, 0], [0, 0, 1, 0]],
+                                           dtype=float))
+    return solid
+
+
 @op("disc", aliases=("круг", "кружок", "круглый_диск", "диск", "disk"),
     category="Примитивы",
-    summary="Круг — плоский цилиндр с объёмом: подставка, медаль, крышка, блин, "
-            "шайба без дырки. Диаметр и толщина в миллиметрах; round скругляет "
-            "кромку по всему кругу, поэтому край не режет.",
+    summary="Круг с плоской, параболически вогнутой или выпуклой верхней "
+            "поверхностью. sag — стрела кривизны в мм как у кнопки; низ всегда "
+            "плоский. round скругляет кромку плоского варианта.",
     example="блин = disc diameter=120 thickness=8\n"
-            "медаль = disc diameter=80 thickness=6 round=2.5",
-    params={"diameter": "диаметр, мм (100)", "thickness": "толщина, мм (6)",
-            "round": "скругление кромки, мм (0)",
+            "чаша = disc diameter=100 thickness=8 top=вогнутая sag=3\n"
+            "линза = disc diameter=90 thickness=6 top=выпуклая sag=4",
+    params={"diameter": "диаметр, мм (100)", "thickness": "толщина у кромки, мм (6)",
+            "top": "верх: плоская, вогнутая или выпуклая",
+            "sag": "стрела верхней кривизны, мм (авто: 25% толщины)",
+            "round": "скругление кромки, мм (0; только top=плоская)",
             "segments": "сегментов по кругу (по детализации)",
             "detail": "детализация 0…5 (3)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -149,7 +184,14 @@ def disc(a, name):
     radius = diameter / 2.0
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
     segments = _segments(a, max(24, int(diameter * 1.2)), minv=12)
-    if round_r > 1e-6:
+    top = _top_kind(a, "круг")
+    if top != "плоская":
+        if round_r > 1e-6:
+            raise GeometryError("Круг: round совместим только с top=плоская.",
+                                hint="Для вогнутого/выпуклого верха задайте round=0.")
+        sag = float(a.num("sag", max(0.1, thickness * 0.25), minv=0.01))
+        solid = _curved_plate(radius, radius, thickness, sag, top, segments, "круг")
+    elif round_r > 1e-6:
         if round_r >= radius - 1e-3:
             raise GeometryError(f"Скругление {round_r:g} мм больше радиуса {radius:g} мм.",
                                 hint=f"round должен быть меньше {radius:g} мм.")
@@ -163,7 +205,7 @@ def disc(a, name):
     else:
         solid = mf.Manifold.cylinder(thickness, radius, radius, segments, center=True)
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="disc")
-    out.notes.append(f"круг ø{diameter:g}×{thickness:g} мм")
+    out.notes.append(f"круг ø{diameter:g}×{thickness:g} мм, верх {top}")
     return out
 
 
@@ -222,16 +264,19 @@ def pie(a, name):
 @op("oval", aliases=("овал", "овальная_плита", "эллипс_плита", "овальный_диск",
                      "ellipse_plate"),
     category="Примитивы",
-    summary="Овал — плоская плита эллиптической формы с объёмом: стол, зеркало, "
-            "поднос, площадка. width по X, length по Y, thickness по Z; round "
-            "скругляет кромку. diameter делает из овала круг.",
+    summary="Овальная плита с плоской, параболически вогнутой или выпуклой "
+            "верхней поверхностью. width по X, length по Y, thickness у кромки "
+            "по Z; sag — стрела кривизны. Низ плоский, diameter делает круг.",
     example="поднос = oval width=200 length=120 thickness=8\n"
-            "зеркало = oval width=90 length=140 thickness=6 round=2",
+            "вогнутый = oval width=160 length=100 thickness=7 top=вогнутая sag=3\n"
+            "купол = oval width=150 length=100 thickness=5 top=выпуклая sag=5",
     params={"width": "ширина по X, мм (160)",
             "length": "длина по Y, мм (100)",
             "diameter": "если задан — круг этого диаметра вместо овала",
-            "thickness": "толщина, мм (6)",
-            "round": "скругление кромки, мм (0)",
+            "thickness": "толщина у кромки, мм (6)",
+            "top": "верх: плоская, вогнутая или выпуклая",
+            "sag": "стрела верхней кривизны, мм (авто: 25% толщины)",
+            "round": "скругление кромки, мм (0; только top=плоская)",
             "segments": "точек по контуру (по детализации)",
             "detail": "детализация 0…5 (3)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -247,25 +292,33 @@ def oval(a, name):
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
     hx, hy = width / 2.0, length / 2.0
     segments = _segments(a, max(32, int(max(width, length) * 1.1)), minv=16)
-    if round_r > 1e-6:
-        if round_r >= min(hx, hy) - 1e-3:
-            raise GeometryError(f"Скругление {round_r:g} мм больше полуширины овала.",
-                                hint=f"round должен быть меньше {min(hx, hy):g} мм.")
-        if round_r * 2.0 >= thickness - 1e-3:
-            raise GeometryError(
-                f"Скругление {round_r:g} мм не оставляет толщины: она {thickness:g} мм.",
-                hint=f"round должен быть меньше {thickness / 2:g} мм.")
-        ax, by = hx - round_r, hy - round_r
+    top = _top_kind(a, "овал")
+    if top != "плоская":
+        if round_r > 1e-6:
+            raise GeometryError("Овал: round совместим только с top=плоская.",
+                                hint="Для вогнутого/выпуклого верха задайте round=0.")
+        sag = float(a.num("sag", max(0.1, thickness * 0.25), minv=0.01))
+        solid = _curved_plate(hx, hy, thickness, sag, top, segments, "овал")
     else:
-        ax, by = hx, hy
-    ang = np.linspace(0.0, 2.0 * math.pi, segments, endpoint=False)
-    pts = [(float(ax * math.cos(t)), float(by * math.sin(t))) for t in ang]
-    body = thickness - 2 * round_r if round_r > 1e-6 else thickness
-    solid = mf.CrossSection([_profile(pts)]).extrude(body).translate((0, 0, -body / 2))
-    if round_r > 1e-6:
-        solid = solid.minkowski_sum(mf.Manifold.sphere(round_r, max(12, segments // 4)))
+        if round_r > 1e-6:
+            if round_r >= min(hx, hy) - 1e-3:
+                raise GeometryError(f"Скругление {round_r:g} мм больше полуширины овала.",
+                                    hint=f"round должен быть меньше {min(hx, hy):g} мм.")
+            if round_r * 2.0 >= thickness - 1e-3:
+                raise GeometryError(
+                    f"Скругление {round_r:g} мм не оставляет толщины: она {thickness:g} мм.",
+                    hint=f"round должен быть меньше {thickness / 2:g} мм.")
+            ax, by = hx - round_r, hy - round_r
+        else:
+            ax, by = hx, hy
+        ang = np.linspace(0.0, 2.0 * math.pi, segments, endpoint=False)
+        pts = [(float(ax * math.cos(t)), float(by * math.sin(t))) for t in ang]
+        body = thickness - 2 * round_r if round_r > 1e-6 else thickness
+        solid = mf.CrossSection([_profile(pts)]).extrude(body).translate((0, 0, -body / 2))
+        if round_r > 1e-6:
+            solid = solid.minkowski_sum(mf.Manifold.sphere(round_r, max(12, segments // 4)))
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="oval")
-    out.notes.append(f"овал {width:g}×{length:g}×{thickness:g} мм")
+    out.notes.append(f"овал {width:g}×{length:g}×{thickness:g} мм, верх {top}")
     return out
 
 
