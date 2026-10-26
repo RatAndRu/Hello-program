@@ -3,7 +3,9 @@
 const fs = require('fs');
 const path = require('path');
 const root = path.resolve(__dirname, '..');
-const source = fs.readFileSync(path.join(root, 'web/js/app.js'), 'utf8');
+// Git for Windows может выгрузить исходник с CRLF: синтаксис функций тот же,
+// но поиск закрывающей скобки не должен зависеть от типа перевода строки.
+const source = fs.readFileSync(path.join(root, 'web/js/app.js'), 'utf8').replace(/\r\n?/g, '\n');
 
 function functionSource(name) {
   const start = source.indexOf(`function ${name}(`);
