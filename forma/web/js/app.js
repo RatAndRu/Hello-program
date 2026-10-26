@@ -3865,6 +3865,7 @@ const TOOL_SHAPES = [
       { k: 'angle', label: 'угол сгиба°', v: 120, step: 5, min: 1, max: 180 },
       { k: 'gap', label: 'зазор слоёв', v: 0.6, step: 0.2, min: 0, max: 400 },
       { k: 'sharp', label: 'острота', v: 0, step: 0.1, min: 0, max: 1 },
+      { k: 'joint', label: 'профиль сгиба', v: 'круг', kind: 'raw', choices: ['круг', 'широкая', 'сплайн', 'фаска'] },
       { k: 'axis', label: 'направление', v: 'x', kind: 'raw', choices: ['x', 'y', 'диагональ'] },
       { k: 'direction', label: 'свой угол°', v: '', step: 5, min: -180, max: 180, auto: true },
       { k: 'offset', label: 'место сгиба', v: 0.5, step: 0.05, min: 0.1, max: 0.9 },
@@ -3893,6 +3894,7 @@ const TOOL_SHAPES = [
       { k: 'relief', label: 'высота/глубина', v: 7, step: 1, min: 0.1, max: 1000 },
       { k: 'margin', label: 'поле грани', v: 8, step: 1, min: 0, max: 1000 },
       { k: 'taper', label: 'сужение', v: 0.35, step: 0.05, min: 0, max: 0.9 },
+      detailParam(3, 'радиальная сетка линзовых выпуклостей и вмятин'),
       { k: 'corner_cut', label: 'срез угла', v: 0, step: 1, min: 0, max: 10000 },
       { k: 'corners', label: 'какие углы', v: 'один', kind: 'raw', choices: ['один', 'верх', 'низ', 'все', 'нет'] },
       { k: 'corner', label: 'один угол', v: 'перед_право_верх', kind: 'raw', choices: ['перед_право_верх', 'перед_лево_верх', 'зад_право_верх', 'зад_лево_верх', 'перед_право_низ', 'перед_лево_низ', 'зад_право_низ', 'зад_лево_низ'] },
@@ -3900,7 +3902,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'prism', name: 'призма', title: 'Призма', group: 'Стандартные примитивы',
-    desc: 'Призма со сдвигом и масштабом верха, параллелограммом и Loop-сглаживанием.',
+    desc: 'Призма со сдвигом и масштабом верха, параллелограммом, Loop-сглаживанием и слепой полостью сверху/снизу.',
     params: [
       { k: 'sides', label: 'сторон', v: 6, step: 1, min: 3, max: 64 },
       { k: 'radius', label: 'радиус низа', v: 40, step: 1, min: 0.1, max: 5000 },
@@ -3909,6 +3911,9 @@ const TOOL_SHAPES = [
       { k: 'top_scale', label: 'масштаб верха', v: '1,1', kind: 'vec' },
       { k: 'top_offset', label: 'сдвиг верха', v: '0,0', kind: 'vec' },
       { k: 'base_angle', label: 'угол основ.', v: 90, step: 5, min: 15, max: 165 },
+      { k: 'wall', label: 'стенка полости', v: 0, step: 0.5, min: 0, max: 1000 },
+      { k: 'cavity', label: 'открыть', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+      { k: 'cavity_depth', label: 'глубина полости', v: '', auto: true, step: 1, min: 0.1, max: 5000 },
       { k: 'smooth', label: 'сглаживание', v: 0, min: 0, max: 4, step: 1,
         kind: 'slider', hint: 'Loop: реально скругляет форму; 0 — плоские грани' },
     ],
@@ -4048,10 +4053,12 @@ const TOOL_SHAPES = [
   },
   {
     op: 'disc', name: 'круг', title: 'Круг', group: 'Стандартные примитивы',
-    desc: 'Круг с плоским, вогнутым или выпуклым верхом. Толщина круглой кромки регулируется отдельно: тоньше лезвия или толще диска.',
+    desc: 'Круг с плоским, вогнутым или выпуклым верхом, независимой кромкой и четырёхлучевым вогнутым контуром.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 120, step: 5, min: 0.5, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 8, step: 1, min: 0.2, max: 5000 },
+      { k: 'outline', label: 'контур', v: 'обычная', kind: 'raw', choices: ['обычная', 'вогнутая4'] },
+      { k: 'indent', label: 'вогнутость', v: 0.25, step: 0.05, min: 0, max: 0.8 },
       { k: 'edge', label: 'кромка', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
       { k: 'edge_band', label: 'переход кромки', v: 15, step: 1, min: 0.05, max: 5000 },
       { k: 'top', label: 'верх', v: 'плоская', kind: 'raw', choices: ['плоская', 'вогнутая', 'выпуклая'] },
@@ -4061,11 +4068,13 @@ const TOOL_SHAPES = [
   },
   {
     op: 'oval', name: 'овал', title: 'Овал', group: 'Стандартные примитивы',
-    desc: 'Овальная плита с независимой толщиной эллиптической кромки и плавным переходом к основной толщине.',
+    desc: 'Овальная плита с независимой кромкой, куполом/чашей и четырьмя вогнутыми сторонами между кончиками на осях.',
     params: [
       { k: 'width', label: 'ширина', v: 200, step: 10, min: 1, max: 5000 },
       { k: 'length', label: 'длина', v: 120, step: 10, min: 1, max: 5000 },
       { k: 'thickness', label: 'толщина', v: 8, step: 1, min: 0.2, max: 5000 },
+      { k: 'outline', label: 'контур', v: 'обычная', kind: 'raw', choices: ['обычная', 'вогнутая4'] },
+      { k: 'indent', label: 'вогнутость', v: 0.25, step: 0.05, min: 0, max: 0.8 },
       { k: 'edge', label: 'кромка', v: '', auto: true, step: 0.5, min: 0.05, max: 5000 },
       { k: 'edge_band', label: 'переход кромки', v: 15, step: 1, min: 0.05, max: 5000 },
       { k: 'top', label: 'верх', v: 'плоская', kind: 'raw', choices: ['плоская', 'вогнутая', 'выпуклая'] },
@@ -4075,7 +4084,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'strip', name: 'полоса', title: 'Полоса', group: 'Стандартные примитивы',
-    desc: 'Тонкая объёмная лента: прямая, S, зигзаг или подкова; у подковы length — длина линии, curve — радиус.',
+    desc: 'Тонкая объёмная лента: прямая, S, зигзаг, подкова или J-крючок; у дуговых форм length — длина линии, curve — радиус.',
     params: [
       { k: 'length', label: 'длина', v: 200, step: 10, min: 10, max: 10000 },
       { k: 'width', label: 'ширина', v: 40, step: 2, min: 1, max: 5000 },
@@ -4085,7 +4094,7 @@ const TOOL_SHAPES = [
       { k: 'collapse_right', label: 'правая кромка', v: 0, step: 0.05, min: 0, max: 0.95 },
       { k: 'smooth', label: 'сглаживание', v: 0, step: 1, min: 0, max: 4 },
       { k: 'bend', label: 'угол дуги°', v: 0, step: 5, min: -180, max: 180 },
-      { k: 'path', label: 'контур XY', v: 'прямая', kind: 'raw', choices: ['прямая', 'S', 'зигзаг', 'подкова'] },
+      { k: 'path', label: 'контур XY', v: 'прямая', kind: 'raw', choices: ['прямая', 'S', 'зигзаг', 'подкова', 'J'] },
       { k: 'curve', label: 'амплитуда/радиус', v: 30, step: 5, min: 0.1, max: 5000 },
       { k: 'path_z', label: 'контур XZ', v: 'прямая', kind: 'raw', choices: ['прямая', 'S', 'зигзаг'] },
       { k: 'curve_z', label: 'амплитуда Z', v: 30, step: 5, min: 0.1, max: 5000 },
@@ -4832,6 +4841,28 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'sewing_button', name: 'пуговица', title: 'Пуговица швейная', group: 'Готовые детали',
+    desc: 'Цельная пуговица: 0–8 отверстий в лице, заднее округлое ушко или перфорированная трапеция; односторонний бортик и кривизна лица.',
+    params: [
+      { k: 'diameter', label: 'диаметр', v: 24, step: 1, min: 2, max: 5000 },
+      { k: 'thickness', label: 'толщина', v: 3, step: 0.5, min: 0.4, max: 1000 },
+      { k: 'kind', label: 'вид крепления', v: 'отверстия', kind: 'raw', choices: ['отверстия', 'ушко', 'трапеция'] },
+      { k: 'holes', label: 'отверстий в лице', v: 4, step: 1, min: 0, max: 8 },
+      { k: 'hole_d', label: 'диаметр отверстия', v: 2.9, step: 0.2, min: 0.2, max: 1000 },
+      { k: 'pitch', label: 'шаг/раскладка', v: 7.2, step: 0.5, min: 0.2, max: 2000 },
+      { k: 'top', label: 'лицо', v: 'вогнутая', kind: 'raw', choices: ['плоская', 'вогнутая', 'выпуклая'] },
+      { k: 'sag', label: 'кривизна лица', v: 0.8, step: 0.2, min: 0.01, max: 1000 },
+      { k: 'rim_side', label: 'бортик', v: 'верх', kind: 'raw', choices: ['верх', 'низ', 'нет'] },
+      { k: 'rim', label: 'ширина бортика', v: 1.9, step: 0.2, min: 0, max: 1000 },
+      { k: 'rim_h', label: 'высота бортика', v: 0.9, step: 0.2, min: 0, max: 1000 },
+      { k: 'eye_d', label: 'отверстие ушка', v: 5.3, step: 0.2, min: 0.5, max: 1000 },
+      { k: 'shank_w', label: 'ширина крепления', v: 8.2, step: 0.5, min: 1, max: 2000 },
+      { k: 'shank_h', label: 'высота крепления', v: 9.1, step: 0.5, min: 1, max: 2000 },
+      { k: 'shank_thick', label: 'толщина крепления', v: 1.8, step: 0.2, min: 0.3, max: 1000 },
+      detailParam(3, 'гладкость диска, бортика и заднего отверстия'),
+    ],
+  },
+  {
     op: 'gusset', name: 'косынка', title: 'Косынка', group: 'Готовые детали',
     desc: 'Шесть независимых контуров: прямая, выпуклая или вогнутая горка, каждая с пазом или без.',
     params: [
@@ -4946,7 +4977,7 @@ const TOOL_SHAPES = [
 
   {
     op: 'pipe', name: 'трубка', title: 'Труба со стенкой', group: 'Готовые детали',
-    desc: 'Простая длина и угол без координат; плавный радиус или острый стык, настоящая стенка.',
+    desc: 'Простая длина и угол без координат; плавный радиус или острый стык, настоящая стенка; hole=нет делает сплошной стержень.',
     params: [
       { k: 'length', label: 'длина', v: 200, step: 10, min: 1, max: 100000 },
       { k: 'angle', label: 'сгиб°', v: 90, step: 5, min: -180, max: 180 },
@@ -4954,6 +4985,7 @@ const TOOL_SHAPES = [
       { k: 'joint', label: 'сгиб', v: 'плавный', kind: 'raw', choices: ['плавный', 'острый'] },
       { k: 'diameter', label: 'диаметр', v: 32, step: 1, min: 1, max: 5000 },
       { k: 'wall', label: 'стенка', v: 2, step: 0.5, min: 0.2, max: 1000 },
+      { k: 'hole', label: 'внутр. отверстие', v: 'да', kind: 'raw', choices: ['да', 'нет'] },
       { k: 'sides', label: 'сегментов', v: 24, step: 4, min: 8, max: 96 },
     ],
   },
@@ -5272,6 +5304,7 @@ const TOOL_SHAPES = [
       { k: 'angle', label: 'угол', v: 180, step: 10, min: 1, max: 180 },
       { k: 'gap', label: 'просвет', v: 0.5, step: 0.25, min: 0.02, max: 5000 },
       { k: 'sharp', label: 'жёсткость', v: 0, step: 0.1, min: 0, max: 1 },
+      { k: 'joint', label: 'профиль сгиба', v: 'круг', kind: 'raw', choices: ['круг', 'широкая', 'сплайн', 'фаска'] },
       { k: 'axis', label: 'вдоль', v: 'x', kind: 'raw', choices: ['x', 'y'] },
     ],
   },
@@ -5289,6 +5322,7 @@ const TOOL_SHAPES = [
       { k: 'side', label: 'сторона', v: '1', kind: 'raw', choices: ['1', '-1'] },
       { k: 'gap', label: 'просвет', v: 0.5, step: 0.25, min: 0, max: 5000 },
       { k: 'sharp', label: 'острота', v: 0.1, step: 0.1, min: 0, max: 1 },
+      { k: 'joint', label: 'профиль сгиба', v: 'круг', kind: 'raw', choices: ['круг', 'широкая', 'сплайн', 'фаска'] },
     ],
   },
   {

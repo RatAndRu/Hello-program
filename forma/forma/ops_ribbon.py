@@ -71,6 +71,25 @@ def _horseshoe_path(length: float, radius: float) -> np.ndarray:
     return np.vstack(chunks)
 
 
+def _j_path(length: float, radius: float) -> np.ndarray:
+    """J: длинная нога, полукруглый крюк и короткий подъём с другой стороны."""
+    r = float(radius)
+    remaining = float(length) - math.pi * r
+    if remaining <= 2.0:
+        raise GeometryError("Для J length должен быть больше π·curve + 2 мм.",
+                            hint="Увеличьте length или уменьшите curve — радиус крюка.")
+    leg = remaining * 0.8
+    tip = remaining * 0.2
+    chunks = []
+    stem = np.linspace(0.0, 1.0, 33)
+    chunks.append(np.column_stack([np.full_like(stem, r), leg * (1.0 - stem)]))
+    theta = np.linspace(0.0, -math.pi, 49)[1:]
+    chunks.append(np.column_stack([r * np.cos(theta), r * np.sin(theta)]))
+    short = np.linspace(0.0, 1.0, 13)[1:]
+    chunks.append(np.column_stack([np.full_like(short, -r), tip * short]))
+    return np.vstack(chunks)
+
+
 def _strip_mesh(path: np.ndarray, width: float, thickness: float, ends: str,
                 collapse_left: float, collapse_right: float,
                 across: int = 16) -> mf.Manifold:
@@ -170,15 +189,17 @@ def _bend_strip(solid: mf.Manifold, length: float, angle: float) -> mf.Manifold:
             "центральное ровное отверстие и изгиб как у арки. path/curve задают "
             "контур в XY, path_z/curve_z — независимый контур в XZ. "
             "У подковы length — длина центральной линии, curve — радиус, "
-            "свободные концы смотрят в −Y.",
+            "свободные концы смотрят в −Y. path=J строит длинную ногу, "
+            "полукруглый крюк и короткий противоположный конец.",
     example="полоса = strip length=200 width=40 thickness=4 ends=овальные\n"
             "зигзаг = strip length=180 width=30 thickness=3 path=зигзаг curve=45 "
             "collapse_left=0.6 collapse_right=0.35 at=[0,120,0]\n"
             "с_окном = strip length=180 width=50 thickness=4 recess=круг recess_size=20\n"
             "прямоугольное = strip length=180 width=50 thickness=4 recess=прямоугольник "
             "recess_size=16 recess_length=30\n"
-            "подкова = strip length=200 width=12 thickness=4 path=подкова curve=35",
-    params={"length": "длина по X; у подковы — длина центральной линии, мм (200)",
+            "подкова = strip length=200 width=12 thickness=4 path=подкова curve=35\n"
+            "крючок = strip length=180 width=10 thickness=4 path=J curve=24",
+    params={"length": "длина по X; у подковы/J — длина центральной линии, мм (200)",
             "width": "ширина, мм (40)",
             "thickness": "толщина сердцевины, мм (4)",
             "ends": "концы: прямоугольные, треугольные или овальные",
@@ -186,8 +207,8 @@ def _bend_strip(solid: mf.Manifold, length: float, angle: float) -> mf.Manifold:
             "collapse_right": "истончение правой кромки 0…0.95 (0)",
             "smooth": "уровни Loop-сглаживания 0…4 (0)",
             "bend": "общий угол дуги −180…180°, знак задаёт сторону (0)",
-            "path": "контур центральной линии: прямая, S, зигзаг или подкова",
-            "curve": "амплитуда S/зигзага по Y; радиус дуги подковы, мм (30)",
+            "path": "контур центральной линии: прямая, S, зигзаг, подкова или J",
+            "curve": "амплитуда S/зигзага по Y; радиус дуги подковы/J, мм (30)",
             "path_z": "второй контур в XZ: прямая, S или зигзаг",
             "curve_z": "амплитуда второго контура по Z, мм (30)",
             "recess": "центральное сквозное отверстие: нет, круг, прямоугольник, квадрат, треугольник",
@@ -208,20 +229,22 @@ def strip(a, name):
     kind = _choice(a.text("path", "прямая"),
                    {"прямая": "прямая", "прямой": "прямая", "s": "s", "с": "s",
                     "зигзаг": "зигзаг", "z": "зигзаг", "з": "зигзаг",
-                    "подкова": "подкова", "u": "подкова", "horseshoe": "подкова"}, "strip.path")
+                    "подкова": "подкова", "u": "подкова", "horseshoe": "подкова",
+                    "j": "J", "й": "J", "крючок": "J", "крюк": "J", "hook": "J"}, "strip.path")
     curve = float(a.num("curve", 30.0, minv=0.1, maxv=5000.0))
     kind_z = _choice(a.text("path_z", "прямая"),
                      {"прямая": "прямая", "прямой": "прямая", "s": "s", "с": "s",
                       "зигзаг": "зигзаг", "z": "зигзаг", "з": "зигзаг"}, "strip.path_z")
     curve_z = float(a.num("curve_z", 30.0, minv=0.1, maxv=5000.0))
     bend = float(a.num("bend", 0.0, minv=-180.0, maxv=180.0) or 0.0)
-    if kind == "подкова":
+    if kind in ("подкова", "J"):
         if width >= 2.0 * curve:
-            raise GeometryError("Ширина полосы не оставляет внутреннего радиуса подковы.",
+            raise GeometryError("Ширина полосы не оставляет внутреннего радиуса дуги.",
                                 hint="width должен быть меньше 2·curve.")
         if abs(bend) > 1e-9:
-            raise GeometryError("У подковы используйте path_z для изгиба, а не bend.")
-        horizontal = _horseshoe_path(length, curve)
+            raise GeometryError("У подковы/J используйте path_z для изгиба, а не bend.")
+        horizontal = (_horseshoe_path(length, curve) if kind == "подкова"
+                      else _j_path(length, curve))
         tx = np.linspace(0.0, 1.0, len(horizontal))
         tv = None
     else:
@@ -229,7 +252,7 @@ def strip(a, name):
         tx = (horizontal[:, 0] + length / 2.0) / length
         tv = None
     vertical = _strip_path(kind_z, length, curve_z)
-    if kind == "подкова":
+    if kind in ("подкова", "J"):
         tv = np.linspace(0.0, 1.0, len(vertical))
     elif tv is None:
         tv = (vertical[:, 0] + length / 2.0) / length

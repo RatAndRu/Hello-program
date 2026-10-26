@@ -563,10 +563,13 @@ def torus(a, name):
 @op("prism", aliases=("призма", "многоугольник", "гайка"), category="Примитивы",
     summary="N-угольная призма с независимой верхней гранью: r2/top_scale меняют "
             "размер, top_offset сдвигает, twist поворачивает. При sides=4 "
-            "base_angle делает ромб/параллелограмм. smooth=0…4 — Loop-сглаживание.",
+            "base_angle делает ромб/параллелограмм. smooth=0…4 — Loop-сглаживание. "
+            "wall>0 вырезает слепую полость сверху или снизу с равномерным "
+            "внутренним смещением многоугольных стенок.",
     example="гайка = prism sides=6 radius=20 height=12\n"
             "наклонная = prism sides=6 radius=30 r2=20 height=50 top_offset=[12,5]\n"
-            "ромб = prism sides=4 radius=30 height=35 base_angle=60 smooth=1",
+            "ромб = prism sides=4 radius=30 height=35 base_angle=60 smooth=1\n"
+            "стакан = prism sides=6 radius=35 height=60 wall=3 cavity=верх",
     params={"sides": "число сторон (6)", "radius": "радиус описанной окружности, мм; "
             "для ромба sides=4 сторона равна √2·radius",
             "r2": "радиус верхней грани до top_scale (по умолчанию равен нижнему)",
@@ -574,6 +577,9 @@ def torus(a, name):
             "top_offset": "сдвиг центра верхней грани [dx,dy], мм (0,0)",
             "base_angle": "угол ромба при sides=4, 15…165° (90 — обычная призма)",
             "twist": "закрутка верхней грани, градусы",
+            "wall": "стенка и минимальное дно слепой полости, мм; 0 — сплошная (0)",
+            "cavity": "открытая сторона при wall>0: верх или низ (верх)",
+            "cavity_depth": "глубина полости от открытой стороны, мм (height−wall)",
             "smooth": "уровни Loop-сглаживания 0…4 (0 — плоские грани); габарит сохраняется",
             "height": "высота, мм", "center": "центрировать", "at": "положение"},
     positional=["radius", "height"])
@@ -604,12 +610,50 @@ def prism(a, name):
             top = (top - offset) @ rot.T + offset
         solid = _two_ring_hull(prof, top, height)
     solid = _smooth_primitive(solid, a, "призма")
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    if wall > 1e-6:
+        if wall >= height - 0.1:
+            raise GeometryError("wall не оставляет высоты для слепой полости призмы.")
+        side = _cavity_choice(a.text("cavity", "верх"))
+        depth = float(a.num("cavity_depth", height - wall,
+                            minv=0.1, maxv=height - wall))
+
+        def inner_ring(z):
+            t = float(z) / height
+            center = offset * t
+            ring = prof * ((1.0 - t) + t * (r2 / radius) * scale) + center
+            if abs(twist) > 1e-9:
+                theta = math.radians(twist * t)
+                rot = np.array([[math.cos(theta), -math.sin(theta)],
+                                [math.sin(theta), math.cos(theta)]])
+                ring = (ring - center) @ rot.T + center
+            cross = mf.CrossSection([ring]).offset(
+                -wall, mf.JoinType.Miter, 3.0, 16)
+            polygons = cross.to_polygons()
+            if cross.is_empty() or len(polygons) != 1:
+                raise GeometryError("wall не оставляет одну внутреннюю полость призмы.",
+                                    hint="Уменьшите wall или cavity_depth.")
+            return np.asarray(polygons[0], dtype=np.float64)
+
+        z0, z1 = ((height - depth, height + 1.0) if side == "верх"
+                  else (-1.0, depth))
+        tool = _two_ring_hull(inner_ring(z0), inner_ring(z1), height,
+                              z_bottom=z0, z_top=z1)
+        before = solid.volume()
+        solid = solid - tool
+        if solid.is_empty() or len(solid.decompose()) != 1 or solid.volume() >= before - 1e-6:
+            raise GeometryError("Не удалось вырезать слепую полость призмы.")
+    elif a.has("cavity_depth"):
+        raise GeometryError("cavity_depth работает при wall>0.")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="prism")
     if custom:
         out.notes.append(f"верх: r2={r2:g}, scale={scale.tolist()}, сдвиг {offset.tolist()}")
     if _smooth_level(a):
         out.notes.append(f"Loop-сглаживание, уровень {_smooth_level(a)}")
+    if wall > 1e-6:
+        out.meta.update({"wall": wall, "cavity": side, "cavity_depth": depth})
+        out.notes.append(f"слепая полость: {side}, глубина {depth:g}, стенка {wall:g} мм")
     return out
 
 

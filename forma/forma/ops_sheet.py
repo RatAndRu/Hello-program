@@ -286,11 +286,26 @@ def sheet(a, name):
 #  Сгибаемый лист: одиночный сгиб и гармошка в любом направлении
 # --------------------------------------------------------------------------- #
 
+def _fold_joint(a) -> str:
+    raw = (a.text("joint", "круг") or "круг").strip().lower()
+    value = {"круг": "круг", "дуга": "круг", "round": "круг",
+             "широкая": "широкая", "широкий": "широкая", "wide": "широкая",
+             "сплайн": "сплайн", "плавный": "сплайн", "spline": "сплайн",
+             "фаска": "фаска", "chamfer": "фаска"}.get(raw)
+    if value is None:
+        raise GeometryError("joint: круг, широкая, сплайн или фаска.")
+    return value
+
+
 def _accordion_path(span: float, parts: int, angle_deg: float, gap: float,
-                    sharp: float, thickness: float, offset: float):
+                    sharp: float, thickness: float, offset: float,
+                    joint: str = "круг"):
     radius = thickness + gap / 2.0 * (1.0 - 0.9 * sharp)
+    if joint == "широкая":
+        radius *= 2.5
     turn = math.radians(angle_deg)
-    arc_len = radius * turn
+    curve_len = radius * turn
+    arc_len = curve_len * (1.3 if joint == "фаска" else 1.0)
     half = arc_len / 2.0
     if parts == 2:
         # Одиночный сгиб можно сместить от центра. Обе дуговые половины
@@ -330,12 +345,51 @@ def _accordion_path(span: float, parts: int, angle_deg: float, gap: float,
         z += (start - current) * math.sin(ang)
         current = start
         pts.append((x, z, ang, current))
-        n = (max(3, int(round(turn / math.radians(6.0) * (1.0 - 0.86 * sharp))))
-             if sharp > 0.01 else max(10, int(turn / math.radians(6.0))))
-        for _ in range(n):
-            x, z, ang = arc_step(x, z, ang, sign, sign * turn / n)
-            current += arc_len / n
-            pts.append((x, z, ang, current))
+        if joint == "сплайн":
+            # Угол поворота меняется по smoothstep: кривизна на входе и
+            # выходе равна нулю, поэтому острая складка не упирается в кромку.
+            n = max(24, int(turn / math.radians(6.0) * 2))
+            start_ang = ang
+            ds = arc_len / n
+            for i in range(n):
+                tm = (i + 0.5) / n
+                te = (i + 1.0) / n
+                am = start_ang + sign * turn * (3.0 * tm * tm - 2.0 * tm ** 3)
+                ae = start_ang + sign * turn * (3.0 * te * te - 2.0 * te ** 3)
+                x += math.cos(am) * ds
+                z += math.sin(am) * ds
+                ang = ae
+                current += ds
+                pts.append((x, z, ang, current))
+        elif joint == "фаска":
+            # Две касательные дуги по половине угла и прямой участок между
+            # ними. Общий поворот сохраняется, но острого одиночного ребра нет.
+            n = max(8, int(turn / math.radians(6.0)))
+            for half_arc in range(2):
+                for _ in range(n):
+                    x, z, ang = arc_step(x, z, ang, sign,
+                                         sign * (turn / 2.0) / n)
+                    current += curve_len / (2.0 * n)
+                    pts.append((x, z, ang, current))
+                if half_arc == 0:
+                    flat = curve_len * 0.3
+                    for _ in range(3):
+                        x += math.cos(ang) * flat / 3.0
+                        z += math.sin(ang) * flat / 3.0
+                        current += flat / 3.0
+                        pts.append((x, z, ang, current))
+        else:
+            # Даже пресс-биг не должен собираться из трёх угловатых скачков.
+            # Радиус по-прежнему задаёт sharp, но дуга имеет достаточную
+            # тесселяцию и визуально остаётся плавной.
+            n = (max(8, int(round(turn / math.radians(6.0) * (1.0 - 0.55 * sharp))))
+                 if sharp > 0.01 and joint == "круг"
+                 else max(16 if joint == "широкая" else 10,
+                          int(turn / math.radians(6.0))))
+            for _ in range(n):
+                x, z, ang = arc_step(x, z, ang, sign, sign * turn / n)
+                current += arc_len / n
+                pts.append((x, z, ang, current))
     x += (span - current) * math.cos(ang)
     z += (span - current) * math.sin(ang)
     pts.append((x, z, ang, span))
@@ -349,10 +403,12 @@ def _accordion_path(span: float, parts: int, angle_deg: float, gap: float,
             "выбранном месте, parts>2 — гармошка с чередованием сторон. axis "
             "задаёт X, Y или диагональ, direction — произвольный угол линии "
             "сгиба в плоскости. gap — просвет слоёв, sharp — от округлой "
-            "кривой до острого пресс-бигового ребра.",
+            "кривой до острого пресс-бигового ребра. joint добавляет три "
+            "более плавных профиля: широкая, сплайн и фаска.",
     example="сгиб = fold_sheet length=240 width=160 thickness=1 parts=2 angle=110 gap=2\n"
             "гармошка = fold_sheet length=360 width=160 thickness=1 parts=5 angle=135 gap=2 sharp=.4\n"
-            "диагональ = fold_sheet length=200 width=140 parts=2 axis=диагональ angle=90",
+            "диагональ = fold_sheet length=200 width=140 parts=2 axis=диагональ angle=90\n"
+            "мягкая = fold_sheet length=240 width=160 parts=2 angle=135 sharp=1 joint=сплайн",
     params={"width": "ширина по Y, мм (120)",
             "length": "длина по X, мм (200)",
             "thickness": "толщина листа, мм (1.2)",
@@ -360,6 +416,8 @@ def _accordion_path(span: float, parts: int, angle_deg: float, gap: float,
             "angle": "угол каждого сгиба 1…180° (120)",
             "gap": "просвет между слоями, мм; 0 — касание (0.5·толщины)",
             "sharp": "острота сгиба 0…1: 0 — округлый, 1 — пресс-биг (0)",
+            "joint": "круг — обычная дуга; широкая — радиус ×2.5; "
+                     "сплайн — плавная кривизна у концов; фаска — две дуги и прямой участок",
             "axis": "x, y или диагональ — направление длины до сгиба (x)",
             "direction": "необязательный угол направления в плоскости, °; перекрывает axis",
             "offset": "место одиночного сгиба 0.1…0.9 от длины (0.5)",
@@ -373,6 +431,7 @@ def fold_sheet(a, name):
     angle_deg = float(a.num("angle", 120.0, minv=1.0, maxv=180.0))
     gap = float(a.num("gap", thickness * 0.5, minv=0.0, maxv=400.0) or 0.0)
     sharp = float(a.num("sharp", 0.0, minv=0.0, maxv=1.0) or 0.0)
+    joint = _fold_joint(a)
     offset = float(a.num("offset", 0.5, minv=0.1, maxv=0.9))
     axis = (a.text("axis", "x") or "x").strip().lower()
     direction = a.num("direction", None, minv=-180.0, maxv=180.0)
@@ -389,7 +448,7 @@ def fold_sheet(a, name):
     ca, sa = math.cos(phi), math.sin(phi)
     span = abs(length * ca) + abs(width * sa)
     ps, pu, pz, pt, radius, panel = _accordion_path(
-        span, parts, angle_deg, gap, sharp, thickness, offset)
+        span, parts, angle_deg, gap, sharp, thickness, offset, joint)
 
     solid = mf.Manifold.cube((length, width, thickness), True)
     segments = int(a.num("segments", 0, minv=0, maxv=MAX_CELLS) or 0)
@@ -423,7 +482,7 @@ def fold_sheet(a, name):
     folded = anchor(folded, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, folded, a, kind="fold_sheet")
     out.notes.append(f"сгибаемый лист: parts={parts}, angle={angle_deg:g}°, "
-                     f"direction={float(direction):g}°, gap={gap:g}, sharp={sharp:g}")
+                     f"direction={float(direction):g}°, gap={gap:g}, sharp={sharp:g}, joint={joint}")
     return out
 
 
@@ -538,7 +597,8 @@ def _refine_for(m: mf.Manifold, length: float) -> float:
     summary="Складывает деталь как бумагу: пополам, на треть или мельче, "
             "гармошкой с чередованием сторон. Длина вдоль оси сохраняется "
             "(сгиб изометрический), место сгиба проходится дугой радиуса из "
-            "gap, а gap задаёт, насколько близко лягут слои. Если слои не "
+            "gap, а gap задаёт, насколько близко лягут слои. joint=широкая, "
+            "сплайн или фаска даёт три более плавных профиля. Если слои не "
             "помещаются, команда честно скажет, что увеличить.",
     example="лист = sheet width=160 length=240 thickness=1\n"
             "fold лист parts=2 angle=180 gap=2\n"
@@ -549,6 +609,7 @@ def _refine_for(m: mf.Manifold, length: float) -> float:
             "angle": "угол сгиба в градусах, 180 — совсем пополам (180)",
             "gap": "просвет между слоями после складывания, мм (толщина × 0.5)",
             "sharp": "жёсткость складки 0…1 (0): 1 — пресс-биг, ребро почти острое",
+            "joint": "круг, широкая, сплайн или фаска — профиль дуги сгиба",
             "axis": "вдоль какой оси делить лист: x, y («x»)",
             "offset": "где линия сгиба, 0.1…0.9 от длины (0.5)",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"},
@@ -578,74 +639,12 @@ def fold(a, name):
     # Жёсткая складка: радиус сгиба упирается в толщину листа (внутренний
     # радиус стремится к нулю), а дуга дробится крупно — на рендере ребро
     # читается линией, а не круглой трубой.
-    radius = thin + gap / 2.0 * (1.0 - 0.9 * sharp)
+    joint = _fold_joint(a)
     turn = math.radians(angle_deg)
-    arc_len = radius * turn
-    half = arc_len / 2.0
-    # Для гармошки сначала убираем из исходной длины все дуги, а остаток
-    # делим на равные плоские полотнища. Поэтому parts=5 даёт пять одинаковых
-    # по ширине участков, а не длинные края и короткую середину.
-    if parts == 2:
-        centre = span * offset
-        panel = max(0.0, min(centre, span - centre) - half)
-        local_lines = [centre]
-    else:
-        panel = (span - (parts - 1) * arc_len) / parts
-        local_lines = [(i + 1) * panel + arc_len * (i + 0.5) for i in range(parts - 1)]
-    if panel <= max(0.02, thin * 0.05):
-        raise GeometryError(
-            f"На плоскую часть приходится {panel:.1f} мм, а сгиб занимает {arc_len:.1f} мм: "
-            "деталь коротка для такого радиуса.",
-            hint="Уменьшите gap, angle или число частей parts.")
-
-    # Положения линий сгиба вдоль оси (в локальных координатах от левого края)
-    lo = bb[axis]            # минимум по оси = bb[0..2]
-    lines = [lo + line for line in local_lines]
-    signs = [(-1.0) ** i for i in range(len(lines))]   # первый сгиб — вверх
-
-    # Центральная линия: прямые участки и дуги, полная длина = длина детали.
-    # Идём строго по длине дуги, поэтому сгиб изометрический: лист не тянется.
-    s_folds = [(line - lo, sign) for line, sign in zip(lines, signs)]
-    pts: list[tuple[float, float, float, float]] = []   # x, z, угол, длина дуги
-
-    def arc_step(x, z, ang, sign, d_ang, rs, ds):
-        cx = x + sign * rs * (-math.sin(ang))
-        cz = z + sign * rs * math.cos(ang)
-        a = ang + d_ang
-        nx = cx + sign * rs * math.sin(a)
-        nz = cz - sign * rs * math.cos(a)
-        return nx, nz, a
-
-    x, z, ang, s_cur = 0.0, 0.0, 0.0, 0.0
-    pts.append((x, z, ang, s_cur))
-    half = arc_len / 2.0
-    for s_line, sign in s_folds:
-        a0 = s_line - half
-        if a0 < s_cur + 1e-9:
-            raise GeometryError(
-                "Сгибы стоят слишком близко друг к другу.",
-                hint="Уменьшите gap, angle или число частей parts.")
-        x += (a0 - s_cur) * math.cos(ang)
-        z += (a0 - s_cur) * math.sin(ang)
-        s_cur = a0
-        pts.append((x, z, ang, s_cur))
-        if sharp > 0.01:
-            n = max(3, int(round(abs(turn) / math.radians(6.0) * (1.0 - 0.86 * sharp))))
-        else:
-            n = max(10, int(abs(turn) / math.radians(6)))
-        for i in range(n):
-            x, z, ang = arc_step(x, z, ang, sign, sign * turn / n, radius, arc_len / n)
-            s_cur += arc_len / n
-            pts.append((x, z, ang, s_cur))
-    x += (span - s_cur) * math.cos(ang)
-    z += (span - s_cur) * math.sin(ang)
-    s_cur = span
-    pts.append((x, z, ang, s_cur))
-
-    px = np.asarray([p[0] for p in pts]) + lo
-    pz = np.asarray([p[1] for p in pts])
-    pt = np.asarray([p[2] for p in pts])
-    ps = np.asarray([p[3] for p in pts])
+    lo = bb[axis]
+    ps, px, pz, pt, radius, panel = _accordion_path(
+        span, parts, angle_deg, gap, sharp, thin, offset, joint)
+    px = px + lo
     # Сетку дробим под сгиб: иначе один большой треугольник на всю деталь
     # «срезает» дугу и объём уезжает.
     m = m.refine_to_length(_refine_for(m, max(0.25, min(radius / 2.5, panel / 12.0))))
@@ -672,7 +671,7 @@ def fold(a, name):
     # изгиб честно теряет объём на внутренней стороне сгиба: t²θ/2 на каждый
     # сгиб. Разрешаем втрое больше — этого хватает на погрешность сетки, но
     # самопересечение всё равно видно.
-    tol = min(0.25, 0.01 + 3.0 * len(lines) * turn * thin / (2.0 * max(span, 1e-6)))
+    tol = min(0.25, 0.01 + 3.0 * (parts - 1) * turn * thin / (2.0 * max(span, 1e-6)))
     if before > 1e-6 and abs(after - before) / before > tol:
         raise GeometryError(
             "Сгиб замкнул деталь в себя: слои не помещаются.",

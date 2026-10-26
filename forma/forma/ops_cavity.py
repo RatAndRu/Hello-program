@@ -192,12 +192,25 @@ _CORNERS = {
 }
 
 
-def _lens_cap(width: float, height: float, relief: float) -> mf.Manifold:
+def _lens_cap(width: float, height: float, relief: float,
+              segments: int = 96, rings: int = 20) -> mf.Manifold:
+    """Сферическая капа с собственной радиальной сеткой.
+
+    У мелкой капы, отрезанной от целой UV-сферы, внутри оказывались всего два-
+    три кольца: на вмятине были видны фасетки и диагонали. Здесь число колец
+    задаётся независимо от окружности, поэтому даже малый relief остаётся
+    плавным и при выпуклой, и при вычитаемой вогнутой грани.
+    """
     base_r = min(width, height) / 2.0
     radius = (base_r * base_r + relief * relief) / (2.0 * relief)
-    sphere = mf.Manifold.sphere(radius, 48).translate((0, 0, relief - radius))
-    clip = mf.Manifold.cube((radius * 4.0, radius * 4.0, relief + 0.05), True)
-    cap = sphere ^ clip.translate((0, 0, (relief - 0.05) / 2.0))
+    profile = [(0.0, -0.05), (base_r, -0.05)]
+    for i in range(max(4, int(rings)) + 1):
+        r = base_r * (1.0 - i / max(4, int(rings)))
+        z = relief - radius + math.sqrt(max(0.0, radius * radius - r * r))
+        profile.append((r, z))
+    segments = max(12, int(segments))
+    segments += (-segments) % 4
+    cap = mf.Manifold.revolve(mf.CrossSection([profile]), segments)
     matrix = np.eye(3, 4)
     matrix[0, 0] = width / (2.0 * base_r)
     matrix[1, 1] = height / (2.0 * base_r)
@@ -205,9 +218,9 @@ def _lens_cap(width: float, height: float, relief: float) -> mf.Manifold:
 
 
 def _face_feature(width: float, height: float, relief: float, profile: str,
-                  taper: float) -> mf.Manifold:
+                  taper: float, segments: int = 96, rings: int = 20) -> mf.Manifold:
     if profile == "линза":
-        return _lens_cap(width, height, relief)
+        return _lens_cap(width, height, relief, segments, rings)
     if profile == "квадрат":
         return mf.Manifold.cube((width, height, relief + 0.05), True).translate(
             (0, 0, (relief - 0.05) / 2.0))
@@ -239,6 +252,8 @@ def _face_feature(width: float, height: float, relief: float, profile: str,
             "relief": "высота выпуклости или глубина вогнутости, мм (7)",
             "margin": "поле от края грани до рельефа, мм (8)",
             "taper": "сужение вершины трапеции 0…0.9 (0.35)",
+            "detail": "детализация линзовых граней 0…5 (3): радиальные кольца и окружность",
+            "segments": "явное число сегментов линзы по окружности (по detail)",
             "corner_cut": "срез вдоль каждого из трёх рёбер, мм; 0 — нет",
             "corners": "один, верх, низ, все или нет",
             "corner": "какой один угол: перед_право_верх и т. п.",
@@ -263,6 +278,10 @@ def face_box(a, name):
     relief = float(a.num("relief", 7.0, minv=0.1, maxv=1000.0))
     margin = float(a.num("margin", 8.0, minv=0.0, maxv=1000.0) or 0.0)
     taper = float(a.num("taper", 0.35, minv=0.0, maxv=0.9) or 0.0)
+    detail = int(a.int("detail", 3, minv=0, maxv=5) or 0)
+    lens_segments = int(a.int("segments", 48 + 16 * detail,
+                              minv=24, maxv=256) or 96)
+    lens_rings = 8 + 4 * detail
     raw_faces = (a.text("faces", "все") or "все").strip().lower()
     if raw_faces.startswith("[") and raw_faces.endswith("]"):
         raw_faces = raw_faces[1:-1].strip()
@@ -322,7 +341,8 @@ def face_box(a, name):
                 raise GeometryError(f"margin не оставляет рельефа на грани {face}.")
             if relief > min(fu, fv) * (0.9 if profile == "линза" else 1.5):
                 raise GeometryError(f"relief слишком велик для грани {face}.")
-            feature = _face_feature(fu, fv, relief, profile, taper)
+            feature = _face_feature(fu, fv, relief, profile, taper,
+                                    lens_segments, lens_rings)
             if mode == "вогнутый":
                 feature = feature.rotate((180, 0, 0))
                 solid = solid - _on_face(feature, face, dims[axis] / 2.0)

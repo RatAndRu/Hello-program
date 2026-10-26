@@ -1074,6 +1074,34 @@ def _run_uistest(report_path: str | None) -> int:
                       all(f"op: '{op}'".encode("utf-8") in js_app
                           for op in ("turbine_blade", "nail", "cone", "cylinder",
                                      "pyramid", "ring", "strip")))
+                addition47 = post("/api/preview", {"script": (
+                    "вмятина = face_box size=[60,50,40] mode=вогнутый "
+                    "profile=линза relief=8 margin=5 faces=верх detail=4\n"
+                    "призма = prism sides=6 radius=32 height=60 wall=3 "
+                    "cavity=верх cavity_depth=42 at=[100,0,0]\n"
+                    "стержень = pipe diameter=20 wall=2 hole=нет length=90 "
+                    "angle=70 radius=45 at=[180,0,0]\n"
+                    "сгиб = fold_sheet width=70 length=150 parts=3 angle=115 "
+                    "joint=сплайн at=[260,0,0]\n"
+                    "звезда = disc diameter=80 thickness=6 outline=вогнутая4 "
+                    "indent=.35 at=[380,0,0]\n"
+                    "овал = oval width=100 length=70 thickness=6 "
+                    "outline=вогнутая4 indent=.3 top=выпуклая at=[500,0,0]\n"
+                    "крючок = strip length=160 width=10 thickness=4 "
+                    "path=J curve=24 at=[620,0,0]\n"
+                    "пуговица = sewing_button diameter=30 holes=4 "
+                    "rim_side=верх top=вогнутая at=[720,0,0]\n"
+                    "ушко = sewing_button diameter=30 kind=ушко "
+                    "top=выпуклая at=[780,0,0]")})
+                check("0.47: дополнение с новыми полостями, сгибами и пуговицей",
+                      addition47.get("ok") is True and addition47.get("objects") == 9,
+                      f"{addition47.get('tris', 0)} трис, "
+                      f"{addition47.get('objects', 0)} объектов")
+                check("0.47: карточка пуговицы и поля дополнительных режимов",
+                      b"op: 'sewing_button'" in js_app
+                      and all(f"k: '{key}'".encode("utf-8") in js_app
+                              for key in ("joint", "outline", "indent", "rim_side",
+                                          "cavity_depth", "detail")))
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

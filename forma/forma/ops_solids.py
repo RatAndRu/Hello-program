@@ -15,7 +15,7 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import circle_profile
+from .geometry import circle_profile, manifold_from_arrays
 from .ops import anchor, make_solid, op
 from .ops_basic import _rounded_convex, _sliced_sphere
 from .ops_shapes import _profile, _revolve
@@ -164,17 +164,113 @@ def _curved_plate(hx: float, hy: float, thickness: float, sag: float,
     return solid
 
 
+def _outline_kind(a, what: str) -> str:
+    raw = (a.text("outline", "обычная") or "обычная").strip().lower()
+    value = {"обычная": "обычная", "круг": "обычная", "овал": "обычная",
+             "ровная": "обычная", "plain": "обычная",
+             "вогнутая4": "вогнутая4", "вогнутый4": "вогнутая4",
+             "звезда4": "вогнутая4", "звёздочка4": "вогнутая4",
+             "concave4": "вогнутая4"}.get(raw)
+    if value is None:
+        raise GeometryError(f"{what}: outline=обычная или вогнутая4.")
+    return value
+
+
+def _concave_outline(hx: float, hy: float, segments: int,
+                     indent: float) -> np.ndarray:
+    """Четыре вогнутые стороны между точными кончиками на осях X/Y."""
+    count = max(16, int(segments))
+    count += (-count) % 4
+    per_side = count // 4
+    # p=2 дал бы прямой ромб, p>2 — именно вогнутые дуги между кончиками.
+    exponent = 2.0 + 4.0 * float(indent)
+    points = []
+    for side in range(4):
+        for t in np.linspace(0.0, math.pi / 2.0, per_side, endpoint=False):
+            angle = side * math.pi / 2.0 + t
+            c, s = math.cos(angle), math.sin(angle)
+            points.append((math.copysign(hx * abs(c) ** exponent, c),
+                           math.copysign(hy * abs(s) ** exponent, s)))
+    return np.asarray(_profile(points), dtype=np.float64)
+
+
+def _curved_outline_plate(outline: np.ndarray, thickness: float, sag: float,
+                          top: str, what: str) -> mf.Manifold:
+    """Параболический верх над произвольным звёздчатым контуром и плоский низ."""
+    if top == "вогнутая" and sag >= thickness - 0.05:
+        raise GeometryError(f"{what}: sag почти прорезает вогнутую пластину.")
+    outline = np.asarray(_profile(outline), dtype=np.float64)
+    n = len(outline)
+    rings = 24
+    sign = 1.0 if top == "выпуклая" else -1.0
+    verts = [(float(x), float(y), 0.0) for x, y in outline]
+    bottom_center = len(verts)
+    verts.append((0.0, 0.0, 0.0))
+    top_start = len(verts)
+    for i in range(rings):
+        q = 1.0 - i / rings
+        z = thickness + sign * sag * (1.0 - q * q)
+        verts.extend((float(q * x), float(q * y), z) for x, y in outline)
+    top_center = len(verts)
+    verts.append((0.0, 0.0, thickness + sign * sag))
+    faces = []
+    for j in range(n):
+        j2 = (j + 1) % n
+        faces.append((bottom_center, j2, j))
+        outer = top_start + j
+        outer2 = top_start + j2
+        faces.append((j, j2, outer2))
+        faces.append((j, outer2, outer))
+    for i in range(rings - 1):
+        a0, b0 = top_start + i * n, top_start + (i + 1) * n
+        for j in range(n):
+            j2 = (j + 1) % n
+            faces.append((a0 + j, a0 + j2, b0 + j2))
+            faces.append((a0 + j, b0 + j2, b0 + j))
+    last = top_start + (rings - 1) * n
+    for j in range(n):
+        j2 = (j + 1) % n
+        faces.append((last + j, last + j2, top_center))
+    return manifold_from_arrays(np.asarray(verts, dtype=np.float64),
+                                np.asarray(faces, dtype=np.int64), what)
+
+
+def _outline_edge_influence(outline: np.ndarray, band: float):
+    """Расстояние до фактической вогнутой кромки вдоль луча из центра."""
+    contour = np.asarray(_profile(outline), dtype=np.float64)
+    angles = np.arctan2(contour[:, 1], contour[:, 0])
+    radii = np.linalg.norm(contour, axis=1)
+    order = np.argsort(angles)
+    angles, radii = angles[order], radii[order]
+    angles = np.concatenate([angles[-1:] - 2 * math.pi, angles,
+                             angles[:1] + 2 * math.pi])
+    radii = np.concatenate([radii[-1:], radii, radii[:1]])
+
+    def influence(points):
+        x, y = points[:, 0], points[:, 1]
+        theta = np.arctan2(y, x)
+        boundary = np.interp(theta, angles, radii)
+        distance = np.maximum(0.0, boundary - np.hypot(x, y))
+        return np.clip(1.0 - distance / band, 0.0, 1.0)
+    return influence
+
+
 @op("disc", aliases=("круг", "кружок", "круглый_диск", "диск", "disk"),
     category="Примитивы",
     summary="Круг с плоской, параболически вогнутой или выпуклой верхней "
             "поверхностью. sag — стрела кривизны в мм как у кнопки; низ всегда "
             "плоский. round скругляет кромку плоского варианта. edge задаёт "
             "точную толщину наружной кромки: меньше thickness — истончение, "
-            "больше — утолщение; edge_band — ширина плавного перехода.",
+            "больше — утолщение; edge_band — ширина плавного перехода. "
+            "outline=вогнутая4 заменяет окружность четырьмя вогнутыми "
+            "сторонами с кончиками на осях; indent задаёт их глубину.",
     example="блин = disc diameter=120 thickness=8\n"
             "чаша = disc diameter=100 thickness=8 top=вогнутая sag=3\n"
-            "линза = disc diameter=90 thickness=6 top=выпуклая sag=4",
+            "линза = disc diameter=90 thickness=6 top=выпуклая sag=4\n"
+            "звёздочка = disc diameter=100 thickness=5 outline=вогнутая4 indent=.25",
     params={"diameter": "диаметр, мм (100)", "thickness": "толщина у кромки, мм (6)",
+            "outline": "обычная окружность или вогнутая4 — четыре вогнутые стороны",
+            "indent": "глубина вогнутого контура 0…0.8 (0.25; 0 — окружность)",
             "top": "верх: плоская, вогнутая или выпуклая",
             "sag": "стрела верхней кривизны, мм (авто: 25% толщины)",
             "round": "скругление кромки, мм (0; только top=плоская)",
@@ -193,7 +289,23 @@ def disc(a, name):
     edge_band = float(a.num("edge_band", radius * 0.25, minv=0.05))
     segments = _segments(a, max(24, int(diameter * 1.2)), minv=12)
     top = _top_kind(a, "круг")
-    if top != "плоская":
+    outline_kind = _outline_kind(a, "круг")
+    indent = float(a.num("indent", 0.25, minv=0.0, maxv=0.8) or 0.0)
+    concave4 = outline_kind == "вогнутая4" and indent > 1e-9
+    contour = None
+    if concave4:
+        if round_r > 1e-6:
+            raise GeometryError("У вогнутого контура круга используйте round=0.",
+                                hint="Кромку можно настроить параметрами edge/edge_band.")
+        contour = _concave_outline(radius, radius, segments, indent)
+        if top == "плоская":
+            solid = mf.CrossSection([contour]).extrude(thickness).translate(
+                (0, 0, -thickness / 2.0))
+        else:
+            sag = float(a.num("sag", max(0.1, thickness * 0.25), minv=0.01))
+            solid = _curved_outline_plate(contour, thickness, sag, top,
+                                          "круг с вогнутым контуром")
+    elif top != "плоская":
         if round_r > 1e-6:
             raise GeometryError("Круг: round совместим только с top=плоская.",
                                 hint="Для вогнутого/выпуклого верха задайте round=0.")
@@ -213,12 +325,16 @@ def disc(a, name):
     else:
         solid = mf.Manifold.cylinder(thickness, radius, radius, segments, center=True)
     if abs(edge - thickness) > 1e-9:
+        influence = (_outline_edge_influence(contour, edge_band) if concave4
+                     else ellipse_edge_influence(radius, radius, edge_band))
         solid = varied_edge_thickness(
             solid, thickness, edge, edge_band,
-            ellipse_edge_influence(radius, radius, edge_band), "круг с профилем кромки",
+            influence, "круг с профилем кромки",
             center_z=thickness / 2.0 if top != "плоская" else 0.0)
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="disc")
     out.notes.append(f"круг ø{diameter:g}×{thickness:g} мм, верх {top}")
+    if concave4:
+        out.notes.append(f"контур: четыре вогнутые стороны, indent={indent:g}")
     if abs(edge - thickness) > 1e-9:
         out.notes.append(f"кромка {edge:g} мм на полосе {edge_band:g} мм")
     return out
@@ -304,14 +420,18 @@ def pie(a, name):
     category="Примитивы",
     summary="Овальная плита с плоской, параболически вогнутой или выпуклой "
             "верхней поверхностью. width по X, length по Y, thickness у кромки "
-            "по Z; sag — стрела кривизны. Низ плоский, diameter делает круг.",
+            "по Z; sag — стрела кривизны. Низ плоский, diameter делает круг. "
+            "outline=вогнутая4 строит четырёхлучевой вогнутый контур.",
     example="поднос = oval width=200 length=120 thickness=8\n"
             "вогнутый = oval width=160 length=100 thickness=7 top=вогнутая sag=3\n"
-            "купол = oval width=150 length=100 thickness=5 top=выпуклая sag=5",
+            "купол = oval width=150 length=100 thickness=5 top=выпуклая sag=5\n"
+            "звёздочка = oval width=160 length=100 outline=вогнутая4 indent=.3",
     params={"width": "ширина по X, мм (160)",
             "length": "длина по Y, мм (100)",
             "diameter": "если задан — круг этого диаметра вместо овала",
             "thickness": "толщина у кромки, мм (6)",
+            "outline": "обычный эллипс или вогнутая4 — четыре вогнутые стороны",
+            "indent": "глубина вогнутого контура 0…0.8 (0.25; 0 — эллипс)",
             "top": "верх: плоская, вогнутая или выпуклая",
             "sag": "стрела верхней кривизны, мм (авто: 25% толщины)",
             "round": "скругление кромки, мм (0; только top=плоская)",
@@ -335,7 +455,23 @@ def oval(a, name):
     edge_band = float(a.num("edge_band", min(hx, hy) * 0.25, minv=0.05))
     segments = _segments(a, max(32, int(max(width, length) * 1.1)), minv=16)
     top = _top_kind(a, "овал")
-    if top != "плоская":
+    outline_kind = _outline_kind(a, "овал")
+    indent = float(a.num("indent", 0.25, minv=0.0, maxv=0.8) or 0.0)
+    concave4 = outline_kind == "вогнутая4" and indent > 1e-9
+    contour = None
+    if concave4:
+        if round_r > 1e-6:
+            raise GeometryError("У вогнутого контура овала используйте round=0.",
+                                hint="Кромку можно настроить параметрами edge/edge_band.")
+        contour = _concave_outline(hx, hy, segments, indent)
+        if top == "плоская":
+            solid = mf.CrossSection([contour]).extrude(thickness).translate(
+                (0, 0, -thickness / 2.0))
+        else:
+            sag = float(a.num("sag", max(0.1, thickness * 0.25), minv=0.01))
+            solid = _curved_outline_plate(contour, thickness, sag, top,
+                                          "овал с вогнутым контуром")
+    elif top != "плоская":
         if round_r > 1e-6:
             raise GeometryError("Овал: round совместим только с top=плоская.",
                                 hint="Для вогнутого/выпуклого верха задайте round=0.")
@@ -360,14 +496,163 @@ def oval(a, name):
         if round_r > 1e-6:
             solid = solid.minkowski_sum(mf.Manifold.sphere(round_r, max(12, segments // 4)))
     if abs(edge - thickness) > 1e-9:
+        influence = (_outline_edge_influence(contour, edge_band) if concave4
+                     else ellipse_edge_influence(hx, hy, edge_band))
         solid = varied_edge_thickness(
             solid, thickness, edge, edge_band,
-            ellipse_edge_influence(hx, hy, edge_band), "овал с профилем кромки",
+            influence, "овал с профилем кромки",
             center_z=thickness / 2.0 if top != "плоская" else 0.0)
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="oval")
     out.notes.append(f"овал {width:g}×{length:g}×{thickness:g} мм, верх {top}")
+    if concave4:
+        out.notes.append(f"контур: четыре вогнутые стороны, indent={indent:g}")
     if abs(edge - thickness) > 1e-9:
         out.notes.append(f"кромка {edge:g} мм на полосе {edge_band:g} мм")
+    return out
+
+
+# --------------------------------------------------------------------------- #
+#  Швейная пуговица — лицевые отверстия или заднее крепление
+# --------------------------------------------------------------------------- #
+@op("sewing_button", aliases=("пуговица", "пуговка", "sew_button", "clothes_button"),
+    category="Примитивы",
+    summary="Швейная пуговица одним телом. kind=отверстия — 0…8 сквозных "
+            "отверстий в лице; ушко — округлое заднее крепление; трапеция — "
+            "задняя перфорированная трапециевидная ножка. rim_side ставит "
+            "бортик только сверху или только снизу. Верх плоский, выпуклый "
+            "или вогнутый; sag — высота/глубина кривизны.",
+    example="четыре = sewing_button diameter=24 holes=4 rim_side=верх top=вогнутая\n"
+            "две = sewing_button diameter=22 holes=2 rim_side=нет top=плоская\n"
+            "с_ушком = sewing_button diameter=24 kind=ушко top=выпуклая sag=3\n"
+            "трапеция = sewing_button diameter=24 kind=трапеция top=выпуклая",
+    params={"diameter": "наружный диаметр лицевого диска, мм (24)",
+            "thickness": "толщина диска у наружной кромки, мм (3)",
+            "kind": "отверстия — в лице; ушко или трапеция — крепление сзади",
+            "holes": "число лицевых отверстий 0…8 для kind=отверстия (4)",
+            "hole_d": "диаметр каждого лицевого отверстия, мм (12% диаметра)",
+            "pitch": "шаг соседних отверстий для 2/4; диаметр окружности раскладки для 3/5…8",
+            "top": "плоская, выпуклая или вогнутая лицевая сторона",
+            "sag": "высота купола/глубина чаши, мм (25% толщины)",
+            "rim_side": "верх, низ или нет — односторонний бортик (верх)",
+            "rim": "радиальная ширина бортика, мм (8% диаметра)",
+            "rim_h": "высота бортика над выбранной стороной, мм (30% толщины)",
+            "eye_d": "диаметр отверстия заднего ушка/трапеции, мм (22% диаметра)",
+            "shank_w": "наружная ширина заднего крепления, мм (34% диаметра)",
+            "shank_h": "высота крепления ниже диска, мм (38% диаметра)",
+            "shank_thick": "толщина крепления по Y, мм (60% толщины диска)",
+            "segments": "сегментов по окружности (по детализации)",
+            "detail": "детализация 0…5 (3)",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+def sewing_button(a, name):
+    diameter = float(a.num("diameter", 24.0, minv=2.0, maxv=5000.0))
+    thickness = float(a.num("thickness", 3.0, minv=0.4, maxv=1000.0))
+    radius = diameter / 2.0
+    kind = (a.text("kind", "отверстия") or "отверстия").strip().lower()
+    kind = {"отверстия": "отверстия", "дырки": "отверстия", "holes": "отверстия",
+            "ушко": "ушко", "дуга": "ушко", "loop": "ушко", "shank": "ушко",
+            "трапеция": "трапеция", "trapezoid": "трапеция"}.get(kind)
+    if kind is None:
+        raise GeometryError("sewing_button.kind: отверстия, ушко или трапеция.")
+    top = _top_kind(a, "пуговица")
+    sag = float(a.num("sag", max(0.1, thickness * 0.25), minv=0.01))
+    segments = _segments(a, max(48, int(diameter * 3)), minv=24)
+    segments += (-segments) % 4
+    if top == "плоская":
+        solid = mf.Manifold.cylinder(thickness, radius, radius, segments, center=True).translate(
+            (0, 0, thickness / 2.0))
+    else:
+        solid = _curved_plate(radius, radius, thickness, sag, top, segments,
+                              "пуговица")
+
+    rim_side = (a.text("rim_side", "верх") or "верх").strip().lower()
+    rim_side = {"верх": "верх", "сверху": "верх", "top": "верх",
+                "низ": "низ", "снизу": "низ", "bottom": "низ",
+                "нет": "нет", "без": "нет", "none": "нет"}.get(rim_side)
+    if rim_side is None:
+        raise GeometryError("rim_side: верх, низ или нет.")
+    rim = float(a.num("rim", diameter * 0.08, minv=0.0) or 0.0)
+    rim_h = float(a.num("rim_h", thickness * 0.3, minv=0.0) or 0.0)
+    if rim_side != "нет" and rim > 1e-9 and rim_h > 1e-9:
+        if rim >= radius * 0.8:
+            raise GeometryError("rim слишком широк: бортик не оставляет лицевого поля.")
+        height = rim_h + 0.1
+        center_z = (thickness + (rim_h - 0.1) / 2.0 if rim_side == "верх"
+                    else (0.1 - rim_h) / 2.0)
+        outer = mf.Manifold.cylinder(height, radius, radius, segments, True).translate(
+            (0, 0, center_z))
+        inner = mf.Manifold.cylinder(height + 0.2, radius - rim, radius - rim,
+                                     segments, True).translate((0, 0, center_z))
+        solid = solid + (outer - inner)
+
+    holes = 0
+    if kind == "отверстия":
+        holes = int(a.int("holes", 4, minv=0, maxv=8) or 0)
+        hole_d = float(a.num("hole_d", diameter * 0.12, minv=0.2))
+        pitch = float(a.num("pitch", diameter * 0.3, minv=0.2))
+        positions = []
+        if holes == 1:
+            positions = [(0.0, 0.0)]
+        elif holes == 2:
+            positions = [(-pitch / 2.0, 0.0), (pitch / 2.0, 0.0)]
+        elif holes == 4:
+            positions = [(sx * pitch / 2.0, sy * pitch / 2.0)
+                         for sx, sy in ((-1, -1), (-1, 1), (1, -1), (1, 1))]
+        elif holes > 0:
+            positions = [(pitch / 2.0 * math.cos(2 * math.pi * i / holes),
+                          pitch / 2.0 * math.sin(2 * math.pi * i / holes))
+                         for i in range(holes)]
+        clearance = rim if rim_side == "верх" else 0.0
+        for x, y in positions:
+            if math.hypot(x, y) + hole_d / 2.0 >= radius - clearance - 0.25:
+                raise GeometryError("Лицевые отверстия задевают наружный край или бортик.",
+                                    hint="Уменьшите hole_d/pitch или увеличьте diameter.")
+        z0 = -rim_h - 1.0 if rim_side == "низ" else -1.0
+        z1 = thickness + sag + rim_h + 1.0
+        for x, y in positions:
+            tool = mf.Manifold.cylinder(z1 - z0, hole_d / 2.0, hole_d / 2.0,
+                                        max(24, segments // 2)).translate((x, y, z0))
+            solid = solid - tool
+    else:
+        eye_d = float(a.num("eye_d", diameter * 0.22, minv=0.5))
+        shank_w = float(a.num("shank_w", diameter * 0.34, minv=1.0))
+        shank_h = float(a.num("shank_h", diameter * 0.38, minv=1.0))
+        shank_thick = float(a.num("shank_thick", max(0.6, thickness * 0.6), minv=0.3))
+        eye_z = -shank_h * 0.58
+        eye_r = eye_d / 2.0
+        if eye_z - eye_r <= -shank_h + 0.25 or eye_z + eye_r >= -0.25:
+            raise GeometryError("eye_d не оставляет материала в заднем креплении.")
+        if kind == "ушко":
+            half = shank_w / 2.0
+            center_z = -shank_h + half
+            points = [(-half, 0.2), (half, 0.2), (half, center_z)]
+            for theta in np.linspace(0.0, -math.pi, 25)[1:]:
+                points.append((half * math.cos(theta), center_z + half * math.sin(theta)))
+            available = math.sqrt(max(0.0, half * half -
+                                      (max(0.0, center_z - eye_z)) ** 2)) \
+                if eye_z < center_z else half
+        else:
+            half = shank_w / 2.0
+            top_half = shank_w * 0.36
+            points = [(-top_half, 0.2), (top_half, 0.2),
+                      (half, -shank_h), (-half, -shank_h)]
+            points = _treat_corners(points, radius=min(shank_w, shank_h) * 0.06,
+                                    steps=5)
+            available = top_half + (half - top_half) * (-eye_z / shank_h)
+        if available - eye_r <= 0.25:
+            raise GeometryError("eye_d слишком велик для shank_w/shank_h.")
+        shank = _extrude_xz(points, shank_thick)
+        height = shank_thick + 2.0
+        eye = mf.Manifold.cylinder(height, eye_r, eye_r,
+                                   max(24, segments // 2)).rotate((90, 0, 0)).translate(
+                                       (0, height / 2.0, eye_z))
+        solid = solid + (shank - eye)
+
+    if solid.is_empty() or solid.volume() <= 1e-6 or len(solid.decompose()) != 1:
+        raise GeometryError("Пуговица распалась на части или потеряла объём.")
+    out = make_solid(a.scene, name, _placed(a, solid), a, kind="sewing_button")
+    out.meta.update({"button_kind": kind, "holes": holes, "rim_side": rim_side})
+    out.notes.append(f"пуговица ø{diameter:g} мм, kind={kind}, верх {top}, "
+                     f"отверстий в лице {holes}, бортик {rim_side}")
     return out
 
 

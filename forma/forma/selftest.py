@@ -53,6 +53,33 @@ check кузов height 33..38
 check кузов watertight
 """,
     },
+    {
+        "name": "Детальные вмятины, полости и пуговица",
+        "script": """вмятина = face_box size=[60,50,40] mode=вогнутый profile=линза relief=8 margin=5 faces=верх detail=4
+check вмятина size 60..60 50..50 40..40
+check вмятина watertight
+check вмятина parts 1
+полая = prism sides=6 radius=35 height=60 wall=3 cavity=верх cavity_depth=40
+check полая watertight
+check полая parts 1
+стержень = pipe diameter=20 wall=2 hole=нет length=80 angle=65 radius=40
+check стержень watertight
+check стержень parts 1
+сгиб = fold_sheet width=80 length=180 thickness=1.2 parts=3 angle=115 joint=сплайн
+check сгиб watertight
+check сгиб parts 1
+звезда = disc diameter=100 thickness=5 outline=вогнутая4 indent=.35
+check звезда size 100..100 100..100 5..5
+check звезда watertight
+крючок = strip length=180 width=10 thickness=4 path=J curve=24
+check крючок watertight
+check крючок parts 1
+пуговица = sewing_button diameter=30 thickness=4 holes=4 hole_d=3 pitch=8 rim_side=верх top=вогнутая
+check пуговица watertight
+check пуговица parts 1
+check пуговица genus 4
+""",
+    },
 ]
 
 

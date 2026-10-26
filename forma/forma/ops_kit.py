@@ -331,23 +331,28 @@ def _simple_pipe_path(length: float, angle: float, radius: float,
     summary="Труба с настоящей стенкой. Без path достаточно length, diameter "
             "и wall: angle −180…180° задаёт сгиб в XZ, joint=плавный/острый, "
             "radius — радиус центральной дуги. Оба открытых торца — плоские "
-            "кольца одной сетки, без булева вычитания. Старый path сохранён.",
+            "кольца одной сетки, без булева вычитания. hole=нет делает сплошной "
+            "стержень с закрытыми торцами. Старый path сохранён.",
     example="прямая = pipe length=180 diameter=24 wall=2\n"
             "плавная = pipe length=220 angle=90 radius=70 joint=плавный diameter=24 wall=2\n"
-            "острая = pipe length=180 angle=60 joint=острый diameter=20 wall=1.5",
+            "острая = pipe length=180 angle=60 joint=острый diameter=20 wall=1.5\n"
+            "сплошная = pipe length=180 diameter=24 hole=нет",
     params={"length": "развёрнутая длина простой трубы, мм (200)",
             "angle": "угол сгиба −180…180°; знак задаёт сторону в XZ (0)",
             "radius": "радиус центральной линии плавного сгиба, мм (80)",
             "joint": "плавный или острый сгиб (плавный)",
             "path": "старое совместимое задание точками [[x,y,z],…]; отключает простой режим",
             "diameter": "наружный диаметр (32)", "wall": "толщина стенки (2)",
+            "hole": "да — полая труба; нет — сплошной стержень без канала (да)",
             "sides": "сегментов по кругу (24)", "at": "положение [x,y,z]",
             "center": "центрировать по высоте"})
 def pipe(a, name):
     diameter = float(a.num("diameter", 32.0, minv=1.0))
     wall = float(a.num("wall", 2.0, minv=0.2))
-    if wall * 2 >= diameter - 0.4:
-        raise GeometryError("Стенка не оставляет просвета в трубе.")
+    hole = a.boolean("hole", True)
+    if hole and wall * 2 >= diameter - 0.4:
+        raise GeometryError("Стенка не оставляет просвета в трубе.",
+                            hint="Уменьшите wall или задайте hole=нет для сплошного стержня.")
     sides = _seg(a, "sides", 24, 8, 96)
     legacy = a.has("path")
     if legacy:
@@ -367,13 +372,17 @@ def pipe(a, name):
         if joint is None:
             raise GeometryError("pipe.joint=плавный или острый.")
         pts = _simple_pipe_path(length, angle, radius, joint, diameter)
-    solid = _tube_mesh(pts, diameter / 2.0, sides, "труба", wall=wall)
+    solid = _tube_mesh(pts, diameter / 2.0, sides, "труба",
+                       wall=wall if hole else None)
     if solid.is_empty() or solid.volume() <= 1e-6 or len(solid.decompose()) != 1:
         raise GeometryError("Труба получилась пустой или распалась на части.")
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="pipe")
     out.meta["path_mode"] = "legacy" if legacy else "simple"
     out.meta["joint"] = joint
-    out.notes.append(f"ø{diameter:g}×{wall:g} мм, длина {_path_length(pts):.0f} мм, режим {joint}")
+    out.meta["hole"] = hole
+    out.notes.append((f"ø{diameter:g}×{wall:g} мм" if hole else
+                      f"сплошной стержень ø{diameter:g} мм")
+                     + f", длина {_path_length(pts):.0f} мм, режим {joint}")
     return out
 
 

@@ -71,12 +71,13 @@ def _unit(v) -> np.ndarray:
             "side": "при одиночном сгибе подвижная сторона: 1 или −1 (1)",
             "gap": "просвет между слоями, мм (половина толщины листа)",
             "sharp": "острота сгиба 0…1 (0)",
+            "joint": "круг, широкая, сплайн или фаска — профиль дуги сгиба",
             "normal": "нормаль листа [x,y,z] (тонкая сторона габарита)"},
     positional=["objects"])
 def fold_along(a, name):
     # Импорт локальный: ops_sheet содержит общий проверенный путь гармошки,
     # а модуль складок загружается после него.
-    from .ops_sheet import _accordion_path, _refine_for
+    from .ops_sheet import _accordion_path, _fold_joint, _refine_for
 
     base = _one(a, "сгиб")
     m = base.manifold
@@ -117,6 +118,7 @@ def fold_along(a, name):
     thin = max(float(ext[up]), 1e-3)
     gap = float(a.num("gap", thin * 0.5, minv=0.0) or 0.0)
     sharp = float(a.num("sharp", 0.0, minv=0.0, maxv=1.0) or 0.0)
+    joint = _fold_joint(a)
 
     # Проецируем углы габарита на нормаль к линии: так проверка пересечения
     # работает и для диагонали, и для произвольно повёрнутого листа.
@@ -134,7 +136,7 @@ def fold_along(a, name):
     offset = float(np.clip(-lo / span, 0.0, 1.0))
 
     ps, pu, pz, pt, radius, panel = _accordion_path(
-        span, parts, angle, gap, sharp, thin, offset)
+        span, parts, angle, gap, sharp, thin, offset, joint)
     refine = max(0.08, min(radius / 2.5, max(panel, radius) / 14.0))
     fine = m.refine_to_length(_refine_for(m, refine))
     verts, faces = manifold_mesh(fine)
@@ -163,7 +165,8 @@ def fold_along(a, name):
     a.scene.log("info", f"сгиб: линия {deg:g}°, parts={parts}, поворот {angle:g}°, "
                         f"толщина {thin:g} мм", a.cmd.line)
     out = _derived(a, name, solid, base, "fold")
-    out.notes.append(f"сгиб исходной сетки: parts={parts}, dir={deg:g}°, angle={angle:g}°")
+    out.notes.append(f"сгиб исходной сетки: parts={parts}, dir={deg:g}°, "
+                     f"angle={angle:g}°, joint={joint}")
     return out
 
 

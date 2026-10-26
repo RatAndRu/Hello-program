@@ -256,12 +256,13 @@ class FoldCorrugationTest(unittest.TestCase):
 class SurfaceAssetsHairTest(unittest.TestCase):
     def test_builtin_relief_works_outside_repository_cwd(self):
         old = os.getcwd()
-        try:
-            with tempfile.TemporaryDirectory() as tmp:
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
                 os.chdir(tmp)
                 m = one("о = box size=[60,50,12]\nр = relief [о] depth=2 mode=плоскость\n")
-        finally:
-            os.chdir(old)
+            finally:
+                # Windows не удаляет временный каталог, пока он остаётся cwd.
+                os.chdir(old)
         self.assertTrue(valid(m))
         self.assertGreater(m.num_tri(), 1000)
         spec = (ROOT / "packaging/forma.spec").read_text(encoding="utf-8")

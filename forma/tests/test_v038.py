@@ -193,7 +193,7 @@ class CatalogOrderTest(unittest.TestCase):
                  "spring", "gear", "saw", "nut", "bolt", "screw", "pulley",
                  "box_body", "shaft", "wheel", "spiral", "plus", "rope", "цепь",
                  "крюк", "handle", "cardboard", "swirl", "stairs", "ladder",
-                 "lever", "button", "gusset", "grommet", "blade"]
+                 "lever", "button", "sewing_button", "gusset", "grommet", "blade"]
         start = self.ops.index("yin_yang")
         self.assertEqual(self.ops[start:start + len(ready)], ready)
 
