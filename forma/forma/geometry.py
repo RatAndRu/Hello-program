@@ -1056,8 +1056,8 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
         )
         emissive = getattr(obj, "emissive", "") or ""
         if emissive:
-            # Цвет свечения — как есть; яркость больше 1 уходит в расширение
-            # KHR_materials_emissive_strength (постобработка ниже).
+            # Цвет свечения — как есть; яркость, отличная от 1 (в том числе
+            # приглушённая), уходит в KHR_materials_emissive_strength ниже.
             e_rgb = color_to_gltf(emissive)[:3]
             material.emissiveFactor = [round(c, 4) for c in e_rgb]
         uv = uv_for(verts, uv_mode)
@@ -1136,11 +1136,11 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
         except Exception:
             pass  # анимация — бонус: без неё файл остаётся корректным
     styles = {obj.name: {"emissive": getattr(obj, "emissive", "") or "",
-                         "emissive_strength": float(getattr(obj, "emissive_strength", 1.0) or 1.0),
+                         "emissive_strength": float(getattr(obj, "emissive_strength", 1.0)),
                          "transmission": float(getattr(obj, "transmission", 0.0) or 0.0),
                          "mirror": float(getattr(obj, "mirror", 0.0) or 0.0)}
               for obj in objects}
-    if any(st["emissive"] and st["emissive_strength"] > 1.01
+    if any(st["emissive"] and abs(st["emissive_strength"] - 1.0) > 0.001
            or st["transmission"] > 0.01 for st in styles.values()):
         try:
             data = _glb_patch_materials(bytes(data), styles)
@@ -1170,8 +1170,8 @@ def _glb_patch_materials(data: bytes, styles: dict) -> bytes:
         if not st:
             continue
         ext = mat.setdefault("extensions", {})
-        glow = float(st.get("emissive_strength") or 1.0)
-        if st.get("emissive") and glow > 1.01:
+        glow = float(st.get("emissive_strength", 1.0))
+        if st.get("emissive") and abs(glow - 1.0) > 0.001:
             ext["KHR_materials_emissive_strength"] = {"emissiveStrength": round(glow, 4)}
             if "KHR_materials_emissive_strength" not in used:
                 used.append("KHR_materials_emissive_strength")

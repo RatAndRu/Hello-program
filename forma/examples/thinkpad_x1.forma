@@ -1,0 +1,450 @@
+# Lenovo ThinkPad X1 Carbon Gen 11 — цельный ноутбук с рабочими анимациями.
+# Референс: Lenovo PSREF, 315.6×222.5×15.36 мм, 14 дюймов, 16:10.
+# https://psref.lenovo.com/product/ThinkPad/ThinkPad_X1_Carbon_Gen_11
+# Активная матрица 14″ 16:10: 301.7×188.6 мм; боковые рамки около 7 мм.
+# Все размеры в мм. Перёд −Y, шарниры на +Y, верх +Z.
+scene bg=#11161d env=studio exposure=0.9 shadows=да grid=нет ground=да axes=нет poly=нет bloom=0.2
+
+# ---------- Нижний корпус: алюминий, настоящие углубления портов и вентиляции ----------
+base_blank = box size=[315.6,222.5,8.1] at=[0,0,1] round=3 detail=3
+usb_c_1_cut = box size=[7,9,3.4] at=[-157,70,4.1] round=0.65 detail=1
+usb_c_2_cut = box size=[7,9,3.4] at=[-157,48,4.1] round=0.65 detail=1
+usb_a_left_cut = box size=[7,13.5,5] at=[-157,18,4.1] round=0.65 detail=1
+hdmi_cut = box size=[7,15,5.2] at=[-157,-12,4.1] round=0.65 detail=1
+usb_a_right_cut = box size=[7,13.5,5] at=[157,28,4.1] round=0.65 detail=1
+nano_sim_cut = box size=[7,12,1.8] at=[157,2,5] round=0.45 detail=1
+kensington_cut = box size=[7,8,3.2] at=[157,-22,4.5] round=0.55 detail=1
+audio_cut_raw = cylinder radius=1.75 height=8 segments=32 at=[0,0,0]
+audio_cut_raw = rotate [audio_cut_raw] angle=90 axis=y
+audio_cut = translate [audio_cut_raw] offset=[154,60,5.9]
+rear_vent_seed = box size=[4.5,6,3.4] at=[-67.5,109,4] round=0.55 detail=1
+rear_vents = array [rear_vent_seed] count=16 mode=linear offset=[9,0,0]
+bottom_vent_seed = box size=[3.2,14,2] at=[-44,-27,0.5] round=0.7 detail=1
+bottom_vents = array [bottom_vent_seed] mode=grid counts=[12,4,1] spacing=[8,18,0]
+port_cutters = union [
+    usb_c_1_cut, usb_c_2_cut, usb_a_left_cut, hdmi_cut, usb_a_right_cut, nano_sim_cut, kensington_cut, audio_cut,
+    rear_vents, bottom_vents]
+base_lower = difference [base_blank, port_cutters]
+color base_lower #010202 metal=0.0 rough=0.68
+
+# ---------- Верхняя дека, клавиатурный колодец, тачпад и динамики ----------
+deck_blank = ingot length=313.6 width=220.5 height=1.75 taper=0 round=2.2 smooth=0 at=[0,0,8.95]
+keyboard_recess = ingot length=276 width=110 height=1.9 taper=0 round=1.4 smooth=0 at=[0,18,9.35]
+trackpad_recess = ingot length=112 width=58 height=1.55 taper=0 round=1.6 smooth=0 at=[0,-79,9.7]
+speaker_hole_seed = cylinder radius=0.65 height=1.4 segments=8 at=[-148.2,-22,10]
+speaker_left_holes = array [speaker_hole_seed] mode=grid counts=[3,14,1] spacing=[3.2,4.8,0]
+speaker_hole_seed_r = cylinder radius=0.65 height=1.4 segments=8 at=[141.8,-22,10]
+speaker_right_holes = array [speaker_hole_seed_r] mode=grid counts=[3,14,1] spacing=[3.2,4.8,0]
+deck = difference [deck_blank, keyboard_recess, trackpad_recess, speaker_left_holes, speaker_right_holes]
+color deck #020304 metal=0.0 rough=0.66
+keyboard_bed = box size=[274,108,0.3] at=[0,18,9.35] round=0.135 detail=1
+color keyboard_bed #010202 rough=0.74
+trackpad = ingot length=110 width=56 height=0.5 taper=0 round=1.5 smooth=0 at=[0,-79,10.2]
+color trackpad #080b0e metal=0.0 rough=0.62
+track_btn_left = ingot length=44 width=10 height=0.65 taper=0 round=0.65 smooth=0 at=[-32,-43.5,10.45]
+color track_btn_left #020304 rough=0.66
+track_btn_mid = ingot length=18 width=10 height=0.65 taper=0 round=0.65 smooth=0 at=[0,-43.5,10.45]
+color track_btn_mid #020304 rough=0.66
+track_btn_right = ingot length=44 width=10 height=0.65 taper=0 round=0.65 smooth=0 at=[32,-43.5,10.45]
+color track_btn_right #020304 rough=0.66
+track_btn_accent = box size=[108,0.55,0.25] at=[0,-49,10.47] round=0.1 detail=1
+color track_btn_accent #a92432 rough=0.5
+track_mid_rib_0 = box size=[0.65,5.5,0.18] at=[-4.5,-43.5,11.1] round=0.08 detail=1
+color track_mid_rib_0 #353c42 rough=0.55
+track_mid_rib_1 = box size=[0.65,5.5,0.18] at=[-3,-43.5,11.1] round=0.08 detail=1
+color track_mid_rib_1 #353c42 rough=0.55
+track_mid_rib_2 = box size=[0.65,5.5,0.18] at=[-1.5,-43.5,11.1] round=0.08 detail=1
+color track_mid_rib_2 #353c42 rough=0.55
+track_mid_rib_3 = box size=[0.65,5.5,0.18] at=[0,-43.5,11.1] round=0.08 detail=1
+color track_mid_rib_3 #353c42 rough=0.55
+track_mid_rib_4 = box size=[0.65,5.5,0.18] at=[1.5,-43.5,11.1] round=0.08 detail=1
+color track_mid_rib_4 #353c42 rough=0.55
+track_mid_rib_5 = box size=[0.65,5.5,0.18] at=[3,-43.5,11.1] round=0.08 detail=1
+color track_mid_rib_5 #353c42 rough=0.55
+track_mid_rib_6 = box size=[0.65,5.5,0.18] at=[4.5,-43.5,11.1] round=0.08 detail=1
+color track_mid_rib_6 #353c42 rough=0.55
+power_button = ingot length=25 width=6.5 height=0.65 taper=0 round=1.4 smooth=0 at=[0,84.5,10.65]
+color power_button #020304 metal=0.0 rough=0.6
+power_led = cylinder radius=0.55 height=0.2 segments=16 at=[-8.5,84.5,11.3]
+color power_led #b9d7d0 emissive=#8adfce emissive_strength=0.5 rough=0.3
+
+# ---------- Петли и резиновые ножки ----------
+hinge_left_raw = cylinder radius=2.8 height=45 segments=48 at=[0,0,0]
+hinge_left_raw = rotate [hinge_left_raw] angle=90 axis=y
+hinge_left = translate [hinge_left_raw] offset=[-130,96,12.4]
+color hinge_left #101418 metal=0.35 rough=0.5
+hinge_right_raw = cylinder radius=2.8 height=45 segments=48 at=[0,0,0]
+hinge_right_raw = rotate [hinge_right_raw] angle=90 axis=y
+hinge_right = translate [hinge_right_raw] offset=[85,96,12.4]
+color hinge_right #101418 metal=0.35 rough=0.5
+foot_front_left = ingot length=44 width=7 height=1.15 taper=0 round=1.0 smooth=0 at=[-112,-94,0]
+color foot_front_left #020304 rough=0.86
+foot_front_right = ingot length=44 width=7 height=1.15 taper=0 round=1.0 smooth=0 at=[112,-94,0]
+color foot_front_right #020304 rough=0.86
+foot_rear_left = ingot length=38 width=7 height=1.15 taper=0 round=1.0 smooth=0 at=[-112,86,0]
+color foot_rear_left #020304 rough=0.86
+foot_rear_right = ingot length=38 width=7 height=1.15 taper=0 round=1.0 smooth=0 at=[112,86,0]
+color foot_rear_right #020304 rough=0.86
+
+# ---------- Клавиатура: отдельные скошенные клавиши и объёмные обозначения ----------
+cap_0_0 = box size=[13.72,8.5,0.85] at=[-128,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_0 = text "ESC" size=1.65 depth=0.2 plane=xy align=center at=[-128,67,11.31]
+cap_0_1 = box size=[13.72,8.5,0.85] at=[-112,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_1 = text "F1" size=1.65 depth=0.2 plane=xy align=center at=[-112,67,11.31]
+cap_0_2 = box size=[13.72,8.5,0.85] at=[-96,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_2 = text "F2" size=1.65 depth=0.2 plane=xy align=center at=[-96,67,11.31]
+cap_0_3 = box size=[13.72,8.5,0.85] at=[-80,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_3 = text "F3" size=1.65 depth=0.2 plane=xy align=center at=[-80,67,11.31]
+cap_0_4 = box size=[13.72,8.5,0.85] at=[-64,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_4 = text "F4" size=1.65 depth=0.2 plane=xy align=center at=[-64,67,11.31]
+cap_0_5 = box size=[13.72,8.5,0.85] at=[-48,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_5 = text "F5" size=1.65 depth=0.2 plane=xy align=center at=[-48,67,11.31]
+cap_0_6 = box size=[13.72,8.5,0.85] at=[-32,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_6 = text "F6" size=1.65 depth=0.2 plane=xy align=center at=[-32,67,11.31]
+cap_0_7 = box size=[13.72,8.5,0.85] at=[-16,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_7 = text "F7" size=1.65 depth=0.2 plane=xy align=center at=[-16,67,11.31]
+cap_0_8 = box size=[13.72,8.5,0.85] at=[0,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_8 = text "F8" size=1.65 depth=0.2 plane=xy align=center at=[0,67,11.31]
+cap_0_9 = box size=[13.72,8.5,0.85] at=[16,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_9 = text "F9" size=1.65 depth=0.2 plane=xy align=center at=[16,67,11.31]
+cap_0_10 = box size=[13.72,8.5,0.85] at=[32,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_10 = text "F10" size=1.65 depth=0.2 plane=xy align=center at=[32,67,11.31]
+cap_0_11 = box size=[13.72,8.5,0.85] at=[48,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_11 = text "F11" size=1.65 depth=0.2 plane=xy align=center at=[48,67,11.31]
+cap_0_12 = box size=[13.72,8.5,0.85] at=[64,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_12 = text "F12" size=1.65 depth=0.2 plane=xy align=center at=[64,67,11.31]
+cap_0_13 = box size=[13.72,8.5,0.85] at=[80,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_13 = text "HOME" size=1.65 depth=0.2 plane=xy align=center at=[80,67,11.31]
+cap_0_14 = box size=[13.72,8.5,0.85] at=[96,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_14 = text "END" size=1.65 depth=0.2 plane=xy align=center at=[96,67,11.31]
+cap_0_15 = box size=[13.72,8.5,0.85] at=[112,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_15 = text "INS" size=1.65 depth=0.2 plane=xy align=center at=[112,67,11.31]
+cap_0_16 = box size=[13.72,8.5,0.85] at=[128,67,10.45] round=0.32 detail=1 top_size=[12.72,7.6]
+txt_0_16 = text "DEL" size=1.65 depth=0.2 plane=xy align=center at=[128,67,11.31]
+cap_1_0 = box size=[16.6,16.2,1.05] at=[-126,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_0 = text "`" size=2.75 depth=0.2 plane=xy align=center at=[-126,49,11.51]
+cap_1_1 = box size=[16.6,16.2,1.05] at=[-108,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_1 = text "1" size=2.75 depth=0.2 plane=xy align=center at=[-108,49,11.51]
+cap_1_2 = box size=[16.6,16.2,1.05] at=[-90,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_2 = text "2" size=2.75 depth=0.2 plane=xy align=center at=[-90,49,11.51]
+cap_1_3 = box size=[16.6,16.2,1.05] at=[-72,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_3 = text "3" size=2.75 depth=0.2 plane=xy align=center at=[-72,49,11.51]
+cap_1_4 = box size=[16.6,16.2,1.05] at=[-54,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_4 = text "4" size=2.75 depth=0.2 plane=xy align=center at=[-54,49,11.51]
+cap_1_5 = box size=[16.6,16.2,1.05] at=[-36,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_5 = text "5" size=2.75 depth=0.2 plane=xy align=center at=[-36,49,11.51]
+cap_1_6 = box size=[16.6,16.2,1.05] at=[-18,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_6 = text "6" size=2.75 depth=0.2 plane=xy align=center at=[-18,49,11.51]
+cap_1_7 = box size=[16.6,16.2,1.05] at=[0,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_7 = text "7" size=2.75 depth=0.2 plane=xy align=center at=[0,49,11.51]
+cap_1_8 = box size=[16.6,16.2,1.05] at=[18,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_8 = text "8" size=2.75 depth=0.2 plane=xy align=center at=[18,49,11.51]
+cap_1_9 = box size=[16.6,16.2,1.05] at=[36,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_9 = text "9" size=2.75 depth=0.2 plane=xy align=center at=[36,49,11.51]
+cap_1_10 = box size=[16.6,16.2,1.05] at=[54,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_10 = text "0" size=2.75 depth=0.2 plane=xy align=center at=[54,49,11.51]
+cap_1_11 = box size=[16.6,16.2,1.05] at=[72,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_11 = text "-" size=2.75 depth=0.2 plane=xy align=center at=[72,49,11.51]
+cap_1_12 = box size=[16.6,16.2,1.05] at=[90,49,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_1_12 = text "=" size=2.75 depth=0.2 plane=xy align=center at=[90,49,11.51]
+cap_1_13 = box size=[34.6,16.2,1.05] at=[117,49,10.45] round=0.32 detail=1 top_size=[33.6,15.3]
+txt_1_13 = text "BACK" size=2 depth=0.2 plane=xy align=center at=[117,49,11.51]
+cap_2_0 = box size=[25.6,16.2,1.05] at=[-121.5,31,10.45] round=0.32 detail=1 top_size=[24.6,15.3]
+txt_2_0 = text "TAB" size=2 depth=0.2 plane=xy align=center at=[-121.5,31,11.51]
+cap_2_1 = box size=[16.6,16.2,1.05] at=[-99,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_1 = text "Q" size=2.75 depth=0.2 plane=xy align=center at=[-99,31,11.51]
+cap_2_2 = box size=[16.6,16.2,1.05] at=[-81,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_2 = text "W" size=2.75 depth=0.2 plane=xy align=center at=[-81,31,11.51]
+cap_2_3 = box size=[16.6,16.2,1.05] at=[-63,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_3 = text "E" size=2.75 depth=0.2 plane=xy align=center at=[-63,31,11.51]
+cap_2_4 = box size=[16.6,16.2,1.05] at=[-45,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_4 = text "R" size=2.75 depth=0.2 plane=xy align=center at=[-45,31,11.51]
+cap_2_5 = box size=[16.6,16.2,1.05] at=[-27,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_5 = text "T" size=2.75 depth=0.2 plane=xy align=center at=[-27,31,11.51]
+cap_2_6 = box size=[16.6,16.2,1.05] at=[-9,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_6 = text "Y" size=2.75 depth=0.2 plane=xy align=center at=[-9,31,11.51]
+cap_2_7 = box size=[16.6,16.2,1.05] at=[9,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_7 = text "U" size=2.75 depth=0.2 plane=xy align=center at=[9,31,11.51]
+cap_2_8 = box size=[16.6,16.2,1.05] at=[27,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_8 = text "I" size=2.75 depth=0.2 plane=xy align=center at=[27,31,11.51]
+cap_2_9 = box size=[16.6,16.2,1.05] at=[45,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_9 = text "O" size=2.75 depth=0.2 plane=xy align=center at=[45,31,11.51]
+cap_2_10 = box size=[16.6,16.2,1.05] at=[63,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_10 = text "P" size=2.75 depth=0.2 plane=xy align=center at=[63,31,11.51]
+cap_2_11 = box size=[16.6,16.2,1.05] at=[81,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_11 = text "[" size=2.75 depth=0.2 plane=xy align=center at=[81,31,11.51]
+cap_2_12 = box size=[16.6,16.2,1.05] at=[99,31,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_2_12 = text "]" size=2.75 depth=0.2 plane=xy align=center at=[99,31,11.51]
+cap_2_13 = box size=[25.6,16.2,1.05] at=[121.5,31,10.45] round=0.32 detail=1 top_size=[24.6,15.3]
+txt_2_13 = text "\\" size=2.75 depth=0.2 plane=xy align=center at=[121.5,31,11.51]
+cap_3_0 = box size=[30.1,16.2,1.05] at=[-119.25,13,10.45] round=0.32 detail=1 top_size=[29.1,15.3]
+txt_3_0 = text "CAPS" size=2 depth=0.2 plane=xy align=center at=[-119.25,13,11.51]
+cap_3_1 = box size=[16.6,16.2,1.05] at=[-94.5,13,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_3_1 = text "A" size=2.75 depth=0.2 plane=xy align=center at=[-94.5,13,11.51]
+cap_3_2 = box size=[16.6,16.2,1.05] at=[-76.5,13,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_3_2 = text "S" size=2.75 depth=0.2 plane=xy align=center at=[-76.5,13,11.51]
+cap_3_3 = box size=[16.6,16.2,1.05] at=[-58.5,13,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_3_3 = text "D" size=2.75 depth=0.2 plane=xy align=center at=[-58.5,13,11.51]
+cap_3_4 = box size=[16.6,16.2,1.05] at=[-40.5,13,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_3_4 = text "F" size=2.75 depth=0.2 plane=xy align=center at=[-40.5,13,11.51]
+cap_3_5 = box size=[16.6,16.2,1.05] at=[-22.5,13,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_3_5 = text "G" size=2.75 depth=0.2 plane=xy align=center at=[-22.5,13,11.51]
+key_h = box size=[16.6,16.2,1.05] at=[-4.5,13,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+key_h_text = text "H" size=2.75 depth=0.2 plane=xy align=center at=[-4.5,13,11.51]
+color key_h #020304 rough=0.72
+color key_h_text #9aa4ab rough=0.55 emissive=#89959e emissive_strength=0.04
+key_j = box size=[16.6,16.2,1.05] at=[13.5,13,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+key_j_text = text "J" size=2.75 depth=0.2 plane=xy align=center at=[13.5,13,11.51]
+color key_j #020304 rough=0.72
+color key_j_text #9aa4ab rough=0.55 emissive=#89959e emissive_strength=0.04
+key_k = box size=[16.6,16.2,1.05] at=[31.5,13,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+key_k_text = text "K" size=2.75 depth=0.2 plane=xy align=center at=[31.5,13,11.51]
+color key_k #020304 rough=0.72
+color key_k_text #9aa4ab rough=0.55 emissive=#89959e emissive_strength=0.04
+cap_3_9 = box size=[16.6,16.2,1.05] at=[49.5,13,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_3_9 = text "L" size=2.75 depth=0.2 plane=xy align=center at=[49.5,13,11.51]
+cap_3_10 = box size=[16.6,16.2,1.05] at=[67.5,13,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_3_10 = text ";" size=2.75 depth=0.2 plane=xy align=center at=[67.5,13,11.51]
+cap_3_11 = box size=[16.6,16.2,1.05] at=[85.5,13,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_3_11 = text "'" size=2.75 depth=0.2 plane=xy align=center at=[85.5,13,11.51]
+cap_3_12 = box size=[39.1,16.2,1.05] at=[114.75,13,10.45] round=0.32 detail=1 top_size=[38.1,15.3]
+txt_3_12 = text "ENTER" size=2 depth=0.2 plane=xy align=center at=[114.75,13,11.51]
+cap_4_0 = box size=[39.1,16.2,1.05] at=[-114.75,-5,10.45] round=0.32 detail=1 top_size=[38.1,15.3]
+txt_4_0 = text "SHIFT" size=2 depth=0.2 plane=xy align=center at=[-114.75,-5,11.51]
+cap_4_1 = box size=[16.6,16.2,1.05] at=[-85.5,-5,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_4_1 = text "Z" size=2.75 depth=0.2 plane=xy align=center at=[-85.5,-5,11.51]
+cap_4_2 = box size=[16.6,16.2,1.05] at=[-67.5,-5,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_4_2 = text "X" size=2.75 depth=0.2 plane=xy align=center at=[-67.5,-5,11.51]
+cap_4_3 = box size=[16.6,16.2,1.05] at=[-49.5,-5,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_4_3 = text "C" size=2.75 depth=0.2 plane=xy align=center at=[-49.5,-5,11.51]
+cap_4_4 = box size=[16.6,16.2,1.05] at=[-31.5,-5,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_4_4 = text "V" size=2.75 depth=0.2 plane=xy align=center at=[-31.5,-5,11.51]
+cap_4_5 = box size=[16.6,16.2,1.05] at=[-13.5,-5,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_4_5 = text "B" size=2.75 depth=0.2 plane=xy align=center at=[-13.5,-5,11.51]
+cap_4_6 = box size=[16.6,16.2,1.05] at=[4.5,-5,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_4_6 = text "N" size=2.75 depth=0.2 plane=xy align=center at=[4.5,-5,11.51]
+cap_4_7 = box size=[16.6,16.2,1.05] at=[22.5,-5,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_4_7 = text "M" size=2.75 depth=0.2 plane=xy align=center at=[22.5,-5,11.51]
+cap_4_8 = box size=[16.6,16.2,1.05] at=[40.5,-5,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_4_8 = text "," size=2.75 depth=0.2 plane=xy align=center at=[40.5,-5,11.51]
+cap_4_9 = box size=[16.6,16.2,1.05] at=[58.5,-5,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_4_9 = text "." size=2.75 depth=0.2 plane=xy align=center at=[58.5,-5,11.51]
+cap_4_10 = box size=[16.6,16.2,1.05] at=[76.5,-5,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_4_10 = text "/" size=2.75 depth=0.2 plane=xy align=center at=[76.5,-5,11.51]
+cap_4_11 = box size=[48.1,16.2,1.05] at=[110.25,-5,10.45] round=0.32 detail=1 top_size=[47.1,15.3]
+txt_4_11 = text "SHIFT" size=2 depth=0.2 plane=xy align=center at=[110.25,-5,11.51]
+cap_5_0 = box size=[16.6,16.2,1.05] at=[-126,-25,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_5_0 = text "FN" size=2.75 depth=0.2 plane=xy align=center at=[-126,-25,11.51]
+cap_5_1 = box size=[16.6,16.2,1.05] at=[-108,-25,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_5_1 = text "CTRL" size=2 depth=0.2 plane=xy align=center at=[-108,-25,11.51]
+cap_5_2 = box size=[16.6,16.2,1.05] at=[-90,-25,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_5_2 = text "WIN" size=2 depth=0.2 plane=xy align=center at=[-90,-25,11.51]
+cap_5_3 = box size=[16.6,16.2,1.05] at=[-72,-25,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_5_3 = text "ALT" size=2 depth=0.2 plane=xy align=center at=[-72,-25,11.51]
+key_space = box size=[97.6,16.2,1.05] at=[-13.5,-25,10.45] round=0.32 detail=1 top_size=[96.6,15.3]
+key_space_text = text "SPACE" size=2 depth=0.2 plane=xy align=center at=[-13.5,-25,11.51]
+color key_space #020304 rough=0.72
+color key_space_text #9aa4ab rough=0.55 emissive=#89959e emissive_strength=0.04
+cap_5_5 = box size=[16.6,16.2,1.05] at=[45,-25,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_5_5 = text "ALT" size=2 depth=0.2 plane=xy align=center at=[45,-25,11.51]
+cap_5_6 = box size=[16.6,16.2,1.05] at=[63,-25,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_5_6 = text "PRT" size=2 depth=0.2 plane=xy align=center at=[63,-25,11.51]
+cap_5_7 = box size=[16.6,16.2,1.05] at=[81,-25,10.45] round=0.32 detail=1 top_size=[15.6,15.3]
+txt_5_7 = text "CTRL" size=2 depth=0.2 plane=xy align=center at=[81,-25,11.51]
+cap_6_0 = box size=[13.6,8,0.85] at=[112.5,-19.5,10.45] round=0.32 detail=1 top_size=[12.6,7.1]
+txt_6_0 = text "UP" size=1.65 depth=0.2 plane=xy align=center at=[112.5,-19.5,11.31]
+cap_6_1 = box size=[13.6,8,0.85] at=[97.5,-29.5,10.45] round=0.32 detail=1 top_size=[12.6,7.1]
+txt_6_1 = text "LT" size=1.65 depth=0.2 plane=xy align=center at=[97.5,-29.5,11.31]
+cap_6_2 = box size=[13.6,8,0.85] at=[112.5,-29.5,10.45] round=0.32 detail=1 top_size=[12.6,7.1]
+txt_6_2 = text "DN" size=1.65 depth=0.2 plane=xy align=center at=[112.5,-29.5,11.31]
+cap_6_3 = box size=[13.6,8,0.85] at=[127.5,-29.5,10.45] round=0.32 detail=1 top_size=[12.6,7.1]
+txt_6_3 = text "RT" size=1.65 depth=0.2 plane=xy align=center at=[127.5,-29.5,11.31]
+keyboard_caps = union [
+    cap_0_0, cap_0_1, cap_0_2, cap_0_3, cap_0_4, cap_0_5, cap_0_6, cap_0_7,
+    cap_0_8, cap_0_9, cap_0_10, cap_0_11, cap_0_12, cap_0_13, cap_0_14, cap_0_15,
+    cap_0_16, cap_1_0, cap_1_1, cap_1_2, cap_1_3, cap_1_4, cap_1_5, cap_1_6,
+    cap_1_7, cap_1_8, cap_1_9, cap_1_10, cap_1_11, cap_1_12, cap_1_13, cap_2_0,
+    cap_2_1, cap_2_2, cap_2_3, cap_2_4, cap_2_5, cap_2_6, cap_2_7, cap_2_8,
+    cap_2_9, cap_2_10, cap_2_11, cap_2_12, cap_2_13, cap_3_0, cap_3_1, cap_3_2,
+    cap_3_3, cap_3_4, cap_3_5, cap_3_9, cap_3_10, cap_3_11, cap_3_12, cap_4_0,
+    cap_4_1, cap_4_2, cap_4_3, cap_4_4, cap_4_5, cap_4_6, cap_4_7, cap_4_8,
+    cap_4_9, cap_4_10, cap_4_11, cap_5_0, cap_5_1, cap_5_2, cap_5_3, cap_5_5,
+    cap_5_6, cap_5_7, cap_6_0, cap_6_1, cap_6_2, cap_6_3]
+color keyboard_caps #020304 rough=0.72
+keyboard_legends = union [
+    txt_0_0, txt_0_1, txt_0_2, txt_0_3, txt_0_4, txt_0_5, txt_0_6, txt_0_7,
+    txt_0_8, txt_0_9, txt_0_10, txt_0_11, txt_0_12, txt_0_13, txt_0_14, txt_0_15,
+    txt_0_16, txt_1_0, txt_1_1, txt_1_2, txt_1_3, txt_1_4, txt_1_5, txt_1_6,
+    txt_1_7, txt_1_8, txt_1_9, txt_1_10, txt_1_11, txt_1_12, txt_1_13, txt_2_0,
+    txt_2_1, txt_2_2, txt_2_3, txt_2_4, txt_2_5, txt_2_6, txt_2_7, txt_2_8,
+    txt_2_9, txt_2_10, txt_2_11, txt_2_12, txt_2_13, txt_3_0, txt_3_1, txt_3_2,
+    txt_3_3, txt_3_4, txt_3_5, txt_3_9, txt_3_10, txt_3_11, txt_3_12, txt_4_0,
+    txt_4_1, txt_4_2, txt_4_3, txt_4_4, txt_4_5, txt_4_6, txt_4_7, txt_4_8,
+    txt_4_9, txt_4_10, txt_4_11, txt_5_0, txt_5_1, txt_5_2, txt_5_3, txt_5_5,
+    txt_5_6, txt_5_7, txt_6_0, txt_6_1, txt_6_2, txt_6_3]
+color keyboard_legends #9aa4ab rough=0.55 emissive=#89959e emissive_strength=0.04
+trackpoint_raw = sphere radius=2.05 segments=32
+trackpoint_raw = scale [trackpoint_raw] factor=[1,1,0.32]
+trackpoint = translate [trackpoint_raw] offset=[-23.5,6,11.45]
+color trackpoint #b82232 rough=0.62
+
+# ---------- Маркировка на пalmrest ----------
+palm_logo = text "ThinkPad" size=5.5 depth=0.2 plane=xy align=center at=[117,-91,10.72]
+color palm_logo #69737b metal=0.2 rough=0.45
+palm_x1 = text "X1" size=10.5 depth=0.2 plane=xy align=center at=[137,-103,10.72]
+color palm_x1 #8b959d metal=0.2 rough=0.42
+palm_red_dot = cylinder radius=0.85 height=0.2 segments=20 at=[108,-88,10.72]
+color palm_red_dot #d6424f emissive=#b82c38 emissive_strength=0.15 rough=0.45
+
+# ---------- Крышка в закрытой системе координат ----------
+lid_shell = ingot length=315.6 width=207.25 height=2.96 taper=0 round=1.45 smooth=0 at=[0,-7.625,12.4]
+color lid_shell #010202 metal=0.0 rough=0.66
+lid_inner = box size=[313.6,205.25,0.2] at=[0,-7.625,12.2] round=0.09 detail=1
+color lid_inner #010204 rough=0.72
+screen_active = box size=[301.7,188.6,0.14] at=[0,-8.7,12] round=0.06 detail=1
+color screen_active #01050c emissive=#020817 emissive_strength=0.18 rough=0.82
+windows_0 = box size=[20,20,0.04] at=[-11,-21,11.9]
+color windows_0 #087db8 emissive=#087db8 emissive_strength=0.35 rough=0.75
+windows_1 = box size=[20,20,0.04] at=[11,-21,11.9]
+color windows_1 #087db8 emissive=#087db8 emissive_strength=0.35 rough=0.75
+windows_2 = box size=[20,20,0.04] at=[-11,1,11.9]
+color windows_2 #087db8 emissive=#087db8 emissive_strength=0.35 rough=0.75
+windows_3 = box size=[20,20,0.04] at=[11,1,11.9]
+color windows_3 #087db8 emissive=#087db8 emissive_strength=0.35 rough=0.75
+screen_taskbar = box size=[296,11,0.04] at=[0,77.5,11.9]
+color screen_taskbar #07111d emissive=#07111d emissive_strength=0.2 rough=0.8
+task_icon_0 = box size=[6,6,0.04] at=[-28,77.5,11.86]
+color task_icon_0 #3d9bd6 emissive=#3d9bd6 emissive_strength=0.35 rough=0.8
+task_icon_1 = box size=[6,6,0.04] at=[-16,77.5,11.86]
+color task_icon_1 #e3b341 emissive=#e3b341 emissive_strength=0.35 rough=0.8
+task_icon_2 = box size=[6,6,0.04] at=[-4,77.5,11.86]
+color task_icon_2 #4ba66a emissive=#4ba66a emissive_strength=0.35 rough=0.8
+task_icon_3 = box size=[6,6,0.04] at=[8,77.5,11.86]
+color task_icon_3 #697dd8 emissive=#697dd8 emissive_strength=0.35 rough=0.8
+task_icon_4 = box size=[6,6,0.04] at=[20,77.5,11.86]
+color task_icon_4 #9b6cc4 emissive=#9b6cc4 emissive_strength=0.35 rough=0.8
+desktop_icon_0 = box size=[9,9,0.04] at=[-135,-79,11.88]
+color desktop_icon_0 #4aa7dc emissive=#4aa7dc emissive_strength=0.32 rough=0.8
+desktop_icon_1 = box size=[9,9,0.04] at=[-135,-50,11.88]
+color desktop_icon_1 #d6b44c emissive=#d6b44c emissive_strength=0.32 rough=0.8
+desktop_icon_2 = box size=[9,9,0.04] at=[-135,-21,11.88]
+color desktop_icon_2 #66a876 emissive=#66a876 emissive_strength=0.32 rough=0.8
+screen_caption_raw = text "Windows 11 Pro" size=3.2 depth=0.2 plane=xy align=center at=[0,0,0]
+screen_caption_raw = rotate [screen_caption_raw] angle=180 axis=x
+screen_caption = translate [screen_caption_raw] offset=[0,31,11.98]
+color screen_caption #9fb4c4 emissive=#9fb4c4 emissive_strength=0.25 rough=0.8
+screen_clock_raw = text "10:10" size=2.2 depth=0.2 plane=xy align=center at=[0,0,0]
+screen_clock_raw = rotate [screen_clock_raw] angle=180 axis=x
+screen_clock = translate [screen_clock_raw] offset=[132,77.5,11.98]
+color screen_clock #9fb4c4 emissive=#9fb4c4 emissive_strength=0.25 rough=0.8
+desktop_label_0_raw = text "PC" size=1.8 depth=0.2 plane=xy align=center at=[0,0,0]
+desktop_label_0_raw = rotate [desktop_label_0_raw] angle=180 axis=x
+desktop_label_0 = translate [desktop_label_0_raw] offset=[-135,-68,11.94]
+color desktop_label_0 #9fb4c4 emissive=#9fb4c4 emissive_strength=0.25 rough=0.8
+desktop_label_1_raw = text "FILES" size=1.8 depth=0.2 plane=xy align=center at=[0,0,0]
+desktop_label_1_raw = rotate [desktop_label_1_raw] angle=180 axis=x
+desktop_label_1 = translate [desktop_label_1_raw] offset=[-135,-39,11.94]
+color desktop_label_1 #9fb4c4 emissive=#9fb4c4 emissive_strength=0.25 rough=0.8
+desktop_label_2_raw = text "WEB" size=1.8 depth=0.2 plane=xy align=center at=[0,0,0]
+desktop_label_2_raw = rotate [desktop_label_2_raw] angle=180 axis=x
+desktop_label_2 = translate [desktop_label_2_raw] offset=[-135,-10,11.94]
+color desktop_label_2 #9fb4c4 emissive=#9fb4c4 emissive_strength=0.25 rough=0.8
+camera_module = box size=[43,9.5,0.45] at=[0,-106.2,11.86] round=0.2025 detail=1
+color camera_module #030507 rough=0.7
+camera_lens = cylinder radius=1.55 height=0.22 segments=32 at=[-5,-106.2,11.64]
+color camera_lens #152b42 metal=0.15 rough=0.16
+camera_ir = cylinder radius=1.15 height=0.22 segments=32 at=[4,-106.2,11.64]
+color camera_ir #241b28 metal=0.15 rough=0.16
+think_shutter = box size=[5.5,2.2,0.25] at=[12,-106.2,11.61] round=0.1 detail=1
+color think_shutter #8c959c metal=0.35 rough=0.4
+bezel_label_raw = text "X1 Carbon" size=3 depth=0.2 plane=xy align=center at=[0,0,0]
+bezel_label_raw = rotate [bezel_label_raw] angle=180 axis=x
+bezel_label = translate [bezel_label_raw] offset=[124,90.5,12.0]
+color bezel_label #4e5962 emissive=#4e5962 emissive_strength=0.25 rough=0.8
+lid_logo = text "ThinkPad" size=6 depth=0.2 plane=xy align=center at=[112,67,15.16]
+color lid_logo #7c868e metal=0.2 rough=0.4
+lid_x1 = text "X1" size=12 depth=0.2 plane=xy align=center at=[-124,67,15.16]
+color lid_x1 #8e989f metal=0.2 rough=0.4
+lid_red_dot = cylinder radius=0.9 height=0.2 segments=20 at=[101,70,15.16]
+color lid_red_dot #d6424f emissive=#b82c38 emissive_strength=0.15 rough=0.4
+
+# Открытая исходная поза 110°. Все детали крышки поворачиваются вместе.
+lid_shell = rotate [lid_shell] angle=-110 axis=x pivot=[0,96,12.4]
+lid_inner = rotate [lid_inner] angle=-110 axis=x pivot=[0,96,12.4]
+screen_active = rotate [screen_active] angle=-110 axis=x pivot=[0,96,12.4]
+windows_0 = rotate [windows_0] angle=-110 axis=x pivot=[0,96,12.4]
+windows_1 = rotate [windows_1] angle=-110 axis=x pivot=[0,96,12.4]
+windows_2 = rotate [windows_2] angle=-110 axis=x pivot=[0,96,12.4]
+windows_3 = rotate [windows_3] angle=-110 axis=x pivot=[0,96,12.4]
+screen_taskbar = rotate [screen_taskbar] angle=-110 axis=x pivot=[0,96,12.4]
+task_icon_0 = rotate [task_icon_0] angle=-110 axis=x pivot=[0,96,12.4]
+task_icon_1 = rotate [task_icon_1] angle=-110 axis=x pivot=[0,96,12.4]
+task_icon_2 = rotate [task_icon_2] angle=-110 axis=x pivot=[0,96,12.4]
+task_icon_3 = rotate [task_icon_3] angle=-110 axis=x pivot=[0,96,12.4]
+task_icon_4 = rotate [task_icon_4] angle=-110 axis=x pivot=[0,96,12.4]
+desktop_icon_0 = rotate [desktop_icon_0] angle=-110 axis=x pivot=[0,96,12.4]
+desktop_icon_1 = rotate [desktop_icon_1] angle=-110 axis=x pivot=[0,96,12.4]
+desktop_icon_2 = rotate [desktop_icon_2] angle=-110 axis=x pivot=[0,96,12.4]
+screen_caption = rotate [screen_caption] angle=-110 axis=x pivot=[0,96,12.4]
+screen_clock = rotate [screen_clock] angle=-110 axis=x pivot=[0,96,12.4]
+desktop_label_0 = rotate [desktop_label_0] angle=-110 axis=x pivot=[0,96,12.4]
+desktop_label_1 = rotate [desktop_label_1] angle=-110 axis=x pivot=[0,96,12.4]
+desktop_label_2 = rotate [desktop_label_2] angle=-110 axis=x pivot=[0,96,12.4]
+camera_module = rotate [camera_module] angle=-110 axis=x pivot=[0,96,12.4]
+camera_lens = rotate [camera_lens] angle=-110 axis=x pivot=[0,96,12.4]
+camera_ir = rotate [camera_ir] angle=-110 axis=x pivot=[0,96,12.4]
+think_shutter = rotate [think_shutter] angle=-110 axis=x pivot=[0,96,12.4]
+bezel_label = rotate [bezel_label] angle=-110 axis=x pivot=[0,96,12.4]
+lid_logo = rotate [lid_logo] angle=-110 axis=x pivot=[0,96,12.4]
+lid_x1 = rotate [lid_x1] angle=-110 axis=x pivot=[0,96,12.4]
+lid_red_dot = rotate [lid_red_dot] angle=-110 axis=x pivot=[0,96,12.4]
+
+# ---------- Рабочие анимации: петли, клавиши и тачпад ----------
+lid_assembly = group [lid_shell, lid_inner, screen_active, windows_0, windows_1, windows_2, windows_3, screen_taskbar, task_icon_0, task_icon_1, task_icon_2, task_icon_3, task_icon_4, desktop_icon_0, desktop_icon_1, desktop_icon_2, screen_caption, screen_clock, desktop_label_0, desktop_label_1, desktop_label_2, camera_module, camera_lens, camera_ir, think_shutter, bezel_label, lid_logo, lid_x1, lid_red_dot]
+key_h_assembly = group [key_h, key_h_text]
+key_j_assembly = group [key_j, key_j_text]
+key_k_assembly = group [key_k, key_k_text]
+key_space_assembly = group [key_space, key_space_text]
+trackpad_assembly = group [trackpad]
+заготовка крышка, клавиши
+animate lid_assembly wait seconds=0.5 scene=крышка
+animate lid_assembly turn angle=110 axis=x pivot=[0,96,12.4] seconds=2.4 scene=крышка
+animate lid_assembly wait seconds=0.5 scene=крышка
+animate lid_assembly turn angle=-110 axis=x pivot=[0,96,12.4] seconds=2.4 scene=крышка
+animate lid_assembly wait seconds=0.5 scene=крышка
+animate key_h_assembly move dz=-0.55 seconds=0.18 start=0 scene=клавиши
+animate key_h_assembly move dz=0.55 seconds=0.22 start=0.2 scene=клавиши
+animate key_j_assembly move dz=-0.55 seconds=0.18 start=0.5 scene=клавиши
+animate key_j_assembly move dz=0.55 seconds=0.22 start=0.7 scene=клавиши
+animate key_k_assembly move dz=-0.55 seconds=0.18 start=1 scene=клавиши
+animate key_k_assembly move dz=0.55 seconds=0.22 start=1.2 scene=клавиши
+animate key_space_assembly move dz=-0.55 seconds=0.18 start=1.5 scene=клавиши
+animate key_space_assembly move dz=0.55 seconds=0.22 start=1.7 scene=клавиши
+animate trackpad_assembly move dz=-0.3 seconds=0.2 start=2.0 scene=клавиши
+animate trackpad_assembly move dz=0.3 seconds=0.25 start=2.2 scene=клавиши
+
+# ---------- Самопроверка проекта ----------
+check base_lower watertight
+check base_lower parts 1
+check base_lower size 315.5..315.7 222.4..222.6 8.0..8.2
+check base_lower tris ..40000
+check deck watertight
+check deck parts 1
+check deck size 313.5..313.7 220.4..220.6 1.7..1.8
+check keyboard_caps watertight
+check keyboard_caps parts 78
+check keyboard_caps tris ..50000
+check keyboard_legends watertight
+check keyboard_legends tris ..60000
+check trackpad watertight
+check trackpad size 109.9..110.1 55.9..56.1 0.45..0.55
+check lid_shell watertight
+check lid_shell parts 1
+check lid_shell width 315.5..315.7
+check screen_active watertight
+check screen_active width 301.6..301.8
+check hinge_left watertight
+check hinge_right watertight
+check trackpoint watertight
+
+# Клавиш всего: 82; статических объединено: 78; анимированных: 4.

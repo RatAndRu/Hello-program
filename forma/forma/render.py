@@ -78,7 +78,7 @@ def _prepare(solids, groups=None):
             "metal": float(s.metal), "rough": float(s.rough),
             "emissive": (np.array(color_to_float_rgb(s.emissive), dtype=np.float32)
                          if getattr(s, "emissive", "") else None),
-            "glow": float(getattr(s, "emissive_strength", 1.0) or 1.0),
+            "glow": float(getattr(s, "emissive_strength", 1.0)),
             "alpha": 1.0 - 0.8 * float(getattr(s, "transmission", 0.0) or 0.0),
             "uv": None, "tex": None,
             "gid": group_of.get(s.name, 0),

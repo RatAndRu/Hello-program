@@ -108,6 +108,16 @@ class TestStyles(unittest.TestCase):
         glass = mats["mat_с"]
         self.assertIn("KHR_materials_transmission", glass["extensions"])
 
+    def test_glb_preserves_dim_emissive_strength(self):
+        for strength in (0.18, 0.0):
+            with self.subTest(strength=strength):
+                b = ok(f"экран = box size=[20,2,10] emissive=#020817 emissive_strength={strength}")
+                doc = gltf_json(b.glb())
+                self.assertIn("KHR_materials_emissive_strength", set(doc.get("extensionsUsed") or []))
+                material = {m["name"]: m for m in doc["materials"]}["mat_экран"]
+                self.assertEqual(material["extensions"]["KHR_materials_emissive_strength"],
+                                 {"emissiveStrength": strength})
+
     def test_payload_carries_style(self):
         b = build("л = box size=[20,2,10] material=led", analyze_model=False)
         payload = b.payload()

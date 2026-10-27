@@ -1350,6 +1350,13 @@ function animClips() {
 function animDuration() {
   const own = Number(state.viewer?.duration) || 0;
   const all = Number(animPlan()?.duration) || Number(state.anim.preview?.duration) || 0;
+  // У самостоятельной заготовки своя длительность: короткое нажатие не
+  // растягивается до самой длинной сцены проекта. Для режима «все сцены»
+  // по-прежнему нужен общий максимум, включая GLB-клипы без timeline.
+  if (activeScene()) {
+    const named = Number(animPlan()?.scene_durations?.[activeScene()]) || 0;
+    return own || named || all;
+  }
   return Math.max(own, all);
 }
 function animKeys() { return animPlan()?.keys || []; }

@@ -769,7 +769,9 @@ export class Viewer {
         : (animation && animation.kind ? [animation] : []);
       this.setTimeline({ clips, keys: animation?.keys || [],
                          duration: Number(animation?.duration) || 0,
-                         assembly: animation?.assembly || null });
+                         assembly: animation?.assembly || null,
+                         scenes: animation?.scenes || [],
+                         scene_durations: animation?.scene_durations || {} });
       this.setAxes(this.axesVisible);
       this.setShading(this.shading);
       this.applySettings(this.settings);

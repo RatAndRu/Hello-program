@@ -245,7 +245,7 @@ class TestExamplesAndTools(unittest.TestCase):
         self.assertEqual(keys, [
             "tools_gallery_1", "tools_gallery_2", "tools_gallery_3", "tools_gallery_4",
             "mug", "car", "vase", "bottle", "alien", "gear", "mannequin",
-            "apple", "human_studio", "animation_tracks", "wardrobe",
+            "apple", "human_studio", "animation_tracks", "wardrobe", "thinkpad_x1",
             "furniture_hardware", "mechanics", "showcase", "motorcycle", "clock",
             "clock_led", "anime_face",
         ])
