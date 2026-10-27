@@ -1006,7 +1006,7 @@ def _glb_geometry(m: mf.Manifold, max_tris: int = 4_000_000):
 
 def export_glb(objects, with_normals: bool = True, animation: dict | None = None,
                animations: list[dict] | None = None, keys: dict | None = None,
-               groups: dict | None = None) -> bytes:
+               groups: dict | None = None, metadata: dict | None = None) -> bytes:
     """Собирает GLB с отдельным материалом на каждый объект.
 
     Поддерживает текстуры (UV-развёртка + baseColorTexture) и анимацию
@@ -1146,6 +1146,18 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             data = _glb_patch_materials(bytes(data), styles)
         except Exception:
             pass
+    if metadata:
+        # Авторство и лицензия не должны исчезать при экспорте адаптированной
+        # модели в Blender или другую программу.
+        doc, binary = _glb_read(bytes(data))
+        asset = doc.setdefault("asset", {})
+        if metadata.get("copyright"):
+            asset["copyright"] = str(metadata["copyright"])
+        extras = {key: str(value) for key, value in metadata.items()
+                  if key != "copyright" and value not in (None, "")}
+        if extras:
+            asset.setdefault("extras", {}).update(extras)
+        data = _glb_write(doc, binary)
     return bytes(data)
 
 

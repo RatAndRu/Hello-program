@@ -1,0 +1,690 @@
+{
+  "build": {
+    "visible": 206,
+    "analysis_tris": 400168,
+    "actual_tris": 400168,
+    "checks": [
+      412,
+      412
+    ],
+    "bbox": [
+      -346.21343994140625,
+      -141.4268341064453,
+      0.0,
+      346.21343994140625,
+      120.86023712158203,
+      1749.9881591796875
+    ]
+  },
+  "groups": {
+    "череп": 29,
+    "позвоночник": 26,
+    "грудная_клетка": 25,
+    "верхние_конечности": 64,
+    "нижние_конечности": 62
+  },
+  "mesh": {
+    "objects": 206,
+    "tris": 400168,
+    "bad": []
+  },
+  "voids": {
+    "right_orbit": {
+      "point": [
+        30,
+        -65,
+        1640
+      ],
+      "hits": []
+    },
+    "left_orbit": {
+      "point": [
+        -30,
+        -65,
+        1640
+      ],
+      "hits": []
+    },
+    "thoracic_cavity": {
+      "point": [
+        0,
+        -20,
+        1350
+      ],
+      "hits": []
+    },
+    "pelvic_cavity": {
+      "point": [
+        0,
+        -20,
+        930
+      ],
+      "hits": []
+    },
+    "right_obturator_foramen": {
+      "point": [
+        45,
+        -15,
+        875
+      ],
+      "hits": []
+    },
+    "left_obturator_foramen": {
+      "point": [
+        -45,
+        -15,
+        875
+      ],
+      "hits": []
+    }
+  },
+  "solid_probes": [
+    {
+      "object": "sternum",
+      "point": [
+        0,
+        -80,
+        1350
+      ],
+      "volume_mm3": 0.26808117368491546
+    },
+    {
+      "object": "fifth_thoracic_vertebra",
+      "point": [
+        0,
+        45,
+        1380
+      ],
+      "volume_mm3": 1.0000000000000568
+    },
+    {
+      "object": "right_hip",
+      "point": [
+        70,
+        -15,
+        875
+      ],
+      "volume_mm3": 1.0000000000000022
+    },
+    {
+      "object": "left_hip",
+      "point": [
+        -70,
+        -15,
+        875
+      ],
+      "volume_mm3": 1.0000000000000004
+    }
+  ],
+  "intersections": {
+    "aabb_candidates": 680,
+    "positive_count": 92,
+    "rows": [
+      {
+        "a": "occipital",
+        "b": "sphenoid",
+        "volume_mm3": 200.2165540112617,
+        "fraction_of_smaller": 0.0040487963056824805
+      },
+      {
+        "a": "right_parietal",
+        "b": "occipital",
+        "volume_mm3": 129.5254680741851,
+        "fraction_of_smaller": 0.0016377316961552783
+      },
+      {
+        "a": "left_maxilla",
+        "b": "right_maxilla",
+        "volume_mm3": 127.57824800772026,
+        "fraction_of_smaller": 0.005401362796242067
+      },
+      {
+        "a": "frontal",
+        "b": "ethmoid",
+        "volume_mm3": 123.20094589802108,
+        "fraction_of_smaller": 0.007484465828102539
+      },
+      {
+        "a": "left_parietal",
+        "b": "occipital",
+        "volume_mm3": 107.22473359430266,
+        "fraction_of_smaller": 0.0013504804526339427
+      },
+      {
+        "a": "right_maxilla",
+        "b": "right_palatine",
+        "volume_mm3": 100.70890478008116,
+        "fraction_of_smaller": 0.03754721192226732
+      },
+      {
+        "a": "left_maxilla",
+        "b": "left_palatine",
+        "volume_mm3": 100.17081734381634,
+        "fraction_of_smaller": 0.03734898187430642
+      },
+      {
+        "a": "left_parietal",
+        "b": "left_temporal",
+        "volume_mm3": 91.0314199165673,
+        "fraction_of_smaller": 0.002545117147112303
+      },
+      {
+        "a": "frontal",
+        "b": "left_parietal",
+        "volume_mm3": 88.07798903422206,
+        "fraction_of_smaller": 0.0011093298953586198
+      },
+      {
+        "a": "left_parietal",
+        "b": "right_parietal",
+        "volume_mm3": 78.89574370025814,
+        "fraction_of_smaller": 0.0009975648964700241
+      },
+      {
+        "a": "sphenoid",
+        "b": "right_incus",
+        "volume_mm3": 72.73644476241348,
+        "fraction_of_smaller": 0.563868857676336
+      },
+      {
+        "a": "sphenoid",
+        "b": "left_incus",
+        "volume_mm3": 71.86195466352707,
+        "fraction_of_smaller": 0.5616872866282923
+      },
+      {
+        "a": "left_temporal",
+        "b": "left_malleus",
+        "volume_mm3": 56.90064263666747,
+        "fraction_of_smaller": 0.5492518737688107
+      },
+      {
+        "a": "right_temporal",
+        "b": "right_malleus",
+        "volume_mm3": 56.89886987836828,
+        "fraction_of_smaller": 0.5489055419427736
+      },
+      {
+        "a": "frontal",
+        "b": "sphenoid",
+        "volume_mm3": 55.99775481973128,
+        "fraction_of_smaller": 0.0011323913947089942
+      },
+      {
+        "a": "right_temporal",
+        "b": "right_incus",
+        "volume_mm3": 41.39043636965508,
+        "fraction_of_smaller": 0.3208677321350573
+      },
+      {
+        "a": "left_temporal",
+        "b": "left_incus",
+        "volume_mm3": 40.795645909906675,
+        "fraction_of_smaller": 0.31886685750024657
+      },
+      {
+        "a": "first_lumbar_vertebra",
+        "b": "second_lumbar_vertebra",
+        "volume_mm3": 38.92464995119802,
+        "fraction_of_smaller": 0.0007756524750423993
+      },
+      {
+        "a": "frontal",
+        "b": "right_parietal",
+        "volume_mm3": 38.01077494100165,
+        "fraction_of_smaller": 0.0004806116653494659
+      },
+      {
+        "a": "left_maxilla",
+        "b": "left_lacrimal",
+        "volume_mm3": 36.301544722525925,
+        "fraction_of_smaller": 0.06128509985541734
+      },
+      {
+        "a": "right_maxilla",
+        "b": "right_lacrimal",
+        "volume_mm3": 35.63035608691261,
+        "fraction_of_smaller": 0.060324893792490876
+      },
+      {
+        "a": "sphenoid",
+        "b": "ethmoid",
+        "volume_mm3": 33.14927833099494,
+        "fraction_of_smaller": 0.0020138209092969046
+      },
+      {
+        "a": "sphenoid",
+        "b": "vomer",
+        "volume_mm3": 32.95939897563792,
+        "fraction_of_smaller": 0.01821379063342313
+      },
+      {
+        "a": "occipital",
+        "b": "left_temporal",
+        "volume_mm3": 32.403055649119786,
+        "fraction_of_smaller": 0.0009059462395181189
+      },
+      {
+        "a": "right_malleus",
+        "b": "right_incus",
+        "volume_mm3": 30.86996392759948,
+        "fraction_of_smaller": 0.29780370533993455
+      },
+      {
+        "a": "left_malleus",
+        "b": "left_incus",
+        "volume_mm3": 30.662821266861183,
+        "fraction_of_smaller": 0.2959828089008032
+      },
+      {
+        "a": "right_maxilla",
+        "b": "right_zygomatic",
+        "volume_mm3": 27.378484138530702,
+        "fraction_of_smaller": 0.005151196257292931
+      },
+      {
+        "a": "ethmoid",
+        "b": "right_lacrimal",
+        "volume_mm3": 26.912465507085056,
+        "fraction_of_smaller": 0.04556484418648021
+      },
+      {
+        "a": "ethmoid",
+        "b": "left_lacrimal",
+        "volume_mm3": 26.845188679200636,
+        "fraction_of_smaller": 0.04532066283728803
+      },
+      {
+        "a": "occipital",
+        "b": "right_temporal",
+        "volume_mm3": 25.82844808145167,
+        "fraction_of_smaller": 0.0007221289765187853
+      },
+      {
+        "a": "ethmoid",
+        "b": "left_maxilla",
+        "volume_mm3": 24.525757373725014,
+        "fraction_of_smaller": 0.0014899414256439342
+      },
+      {
+        "a": "ethmoid",
+        "b": "right_maxilla",
+        "volume_mm3": 23.781592571896415,
+        "fraction_of_smaller": 0.0014447333634073575
+      },
+      {
+        "a": "left_maxilla",
+        "b": "left_zygomatic",
+        "volume_mm3": 21.651853117388043,
+        "fraction_of_smaller": 0.004066525867307621
+      },
+      {
+        "a": "right_parietal",
+        "b": "right_temporal",
+        "volume_mm3": 21.54205821259802,
+        "fraction_of_smaller": 0.0006022872299610956
+      },
+      {
+        "a": "sphenoid",
+        "b": "left_zygomatic",
+        "volume_mm3": 20.855777275179737,
+        "fraction_of_smaller": 0.003917011505320794
+      },
+      {
+        "a": "sphenoid",
+        "b": "left_palatine",
+        "volume_mm3": 20.67080764685969,
+        "fraction_of_smaller": 0.007707171016484629
+      },
+      {
+        "a": "sphenoid",
+        "b": "right_palatine",
+        "volume_mm3": 20.173459811641354,
+        "fraction_of_smaller": 0.00752125318418571
+      },
+      {
+        "a": "sphenoid",
+        "b": "right_zygomatic",
+        "volume_mm3": 20.07331619863335,
+        "fraction_of_smaller": 0.003776746395113124
+      },
+      {
+        "a": "left_temporal",
+        "b": "sphenoid",
+        "volume_mm3": 19.499823027191002,
+        "fraction_of_smaller": 0.0005451890566756594
+      },
+      {
+        "a": "ethmoid",
+        "b": "right_palatine",
+        "volume_mm3": 17.601177710817648,
+        "fraction_of_smaller": 0.006562231522949402
+      },
+      {
+        "a": "sphenoid",
+        "b": "left_malleus",
+        "volume_mm3": 17.458606984462723,
+        "fraction_of_smaller": 0.16852485587623253
+      },
+      {
+        "a": "ethmoid",
+        "b": "left_palatine",
+        "volume_mm3": 16.463917192718505,
+        "fraction_of_smaller": 0.006138619621125458
+      },
+      {
+        "a": "sphenoid",
+        "b": "right_malleus",
+        "volume_mm3": 16.305188347380074,
+        "fraction_of_smaller": 0.1572967664459757
+      },
+      {
+        "a": "frontal",
+        "b": "left_maxilla",
+        "volume_mm3": 14.843445078659013,
+        "fraction_of_smaller": 0.0006284365341894292
+      },
+      {
+        "a": "right_temporal",
+        "b": "sphenoid",
+        "volume_mm3": 14.314517477013657,
+        "fraction_of_smaller": 0.0004002148260103732
+      },
+      {
+        "a": "frontal",
+        "b": "right_maxilla",
+        "volume_mm3": 12.848992693790322,
+        "fraction_of_smaller": 0.0005427215336252558
+      },
+      {
+        "a": "left_temporal",
+        "b": "left_stapes",
+        "volume_mm3": 12.316187472372729,
+        "fraction_of_smaller": 0.627920128092116
+      },
+      {
+        "a": "right_temporal",
+        "b": "right_stapes",
+        "volume_mm3": 12.291196278030997,
+        "fraction_of_smaller": 0.6235443163190654
+      },
+      {
+        "a": "right_third_metatarsal",
+        "b": "right_fourth_metatarsal",
+        "volume_mm3": 11.555038206571648,
+        "fraction_of_smaller": 0.0018734703251749763
+      },
+      {
+        "a": "left_third_metatarsal",
+        "b": "left_fourth_metatarsal",
+        "volume_mm3": 11.497872960264704,
+        "fraction_of_smaller": 0.0018682084130722568
+      },
+      {
+        "a": "right_palatine",
+        "b": "right_inferior_nasal_concha",
+        "volume_mm3": 6.690611320092833,
+        "fraction_of_smaller": 0.008904669055515617
+      },
+      {
+        "a": "left_nasal",
+        "b": "right_nasal",
+        "volume_mm3": 6.614401754225828,
+        "fraction_of_smaller": 0.013547966589513601
+      },
+      {
+        "a": "left_palatine",
+        "b": "left_inferior_nasal_concha",
+        "volume_mm3": 6.46268120627205,
+        "fraction_of_smaller": 0.008624764162085656
+      },
+      {
+        "a": "right_incus",
+        "b": "right_stapes",
+        "volume_mm3": 6.066891559230588,
+        "fraction_of_smaller": 0.30777929697892387
+      },
+      {
+        "a": "left_incus",
+        "b": "left_stapes",
+        "volume_mm3": 5.9630585591864005,
+        "fraction_of_smaller": 0.30401652318984745
+      },
+      {
+        "a": "right_malleus",
+        "b": "right_stapes",
+        "volume_mm3": 5.938944494504309,
+        "fraction_of_smaller": 0.30128841820723123
+      },
+      {
+        "a": "left_malleus",
+        "b": "left_stapes",
+        "volume_mm3": 5.872318662456573,
+        "fraction_of_smaller": 0.2993903019906762
+      },
+      {
+        "a": "right_temporal",
+        "b": "right_zygomatic",
+        "volume_mm3": 4.946524793271825,
+        "fraction_of_smaller": 0.0009306767998104353
+      },
+      {
+        "a": "right_parietal",
+        "b": "sphenoid",
+        "volume_mm3": 3.695908356334492,
+        "fraction_of_smaller": 7.473897537176877e-05
+      },
+      {
+        "a": "left_temporal",
+        "b": "left_zygomatic",
+        "volume_mm3": 3.6473251061702556,
+        "fraction_of_smaller": 0.0006850195135866089
+      },
+      {
+        "a": "left_maxilla",
+        "b": "left_inferior_nasal_concha",
+        "volume_mm3": 3.528458412355027,
+        "fraction_of_smaller": 0.004708900329596148
+      },
+      {
+        "a": "right_maxilla",
+        "b": "right_inferior_nasal_concha",
+        "volume_mm3": 3.448549171848867,
+        "fraction_of_smaller": 0.004589743392321367
+      },
+      {
+        "a": "right_maxilla",
+        "b": "right_nasal",
+        "volume_mm3": 3.2774118328088933,
+        "fraction_of_smaller": 0.006712967802810521
+      },
+      {
+        "a": "left_maxilla",
+        "b": "left_nasal",
+        "volume_mm3": 2.655064487599903,
+        "fraction_of_smaller": 0.005425825964310365
+      },
+      {
+        "a": "left_palatine",
+        "b": "right_palatine",
+        "volume_mm3": 2.243135609990326,
+        "fraction_of_smaller": 0.0008363596650268495
+      },
+      {
+        "a": "sphenoid",
+        "b": "left_stapes",
+        "volume_mm3": 2.0047322218695887,
+        "fraction_of_smaller": 0.10220790454598631
+      },
+      {
+        "a": "right_palatine",
+        "b": "vomer",
+        "volume_mm3": 1.7907391809540427,
+        "fraction_of_smaller": 0.0009895856579506476
+      },
+      {
+        "a": "right_lacrimal",
+        "b": "right_inferior_nasal_concha",
+        "volume_mm3": 1.78306594118353,
+        "fraction_of_smaller": 0.0030188658026466734
+      },
+      {
+        "a": "left_lacrimal",
+        "b": "left_inferior_nasal_concha",
+        "volume_mm3": 1.7268953635758695,
+        "fraction_of_smaller": 0.0029153843343457686
+      },
+      {
+        "a": "frontal",
+        "b": "left_zygomatic",
+        "volume_mm3": 1.5012740343389155,
+        "fraction_of_smaller": 0.00028196060916623004
+      },
+      {
+        "a": "frontal",
+        "b": "right_zygomatic",
+        "volume_mm3": 1.302349654499709,
+        "fraction_of_smaller": 0.00024503397017895206
+      },
+      {
+        "a": "sphenoid",
+        "b": "right_stapes",
+        "volume_mm3": 1.225236724020648,
+        "fraction_of_smaller": 0.062157448154497676
+      },
+      {
+        "a": "left_palatine",
+        "b": "vomer",
+        "volume_mm3": 0.7230502340323449,
+        "fraction_of_smaller": 0.0003995669214067589
+      },
+      {
+        "a": "frontal",
+        "b": "left_lacrimal",
+        "volume_mm3": 0.43031411257125823,
+        "fraction_of_smaller": 0.000726466147920161
+      },
+      {
+        "a": "frontal",
+        "b": "right_lacrimal",
+        "volume_mm3": 0.42445437735103336,
+        "fraction_of_smaller": 0.0007186334363597328
+      },
+      {
+        "a": "left_parietal",
+        "b": "sphenoid",
+        "volume_mm3": 0.4136589447657976,
+        "fraction_of_smaller": 8.365046614907127e-06
+      },
+      {
+        "a": "right_second_metatarsal",
+        "b": "right_third_metatarsal",
+        "volume_mm3": 0.3599333325814549,
+        "fraction_of_smaller": 5.573960326440699e-05
+      },
+      {
+        "a": "right_maxilla",
+        "b": "vomer",
+        "volume_mm3": 0.2919427136428968,
+        "fraction_of_smaller": 0.00016133132364384107
+      },
+      {
+        "a": "left_second_metatarsal",
+        "b": "left_third_metatarsal",
+        "volume_mm3": 0.2731014495305216,
+        "fraction_of_smaller": 4.2326250582934476e-05
+      },
+      {
+        "a": "fifth_lumbar_vertebra",
+        "b": "sacrum",
+        "volume_mm3": 0.2258654245868248,
+        "fraction_of_smaller": 3.3637256893951925e-06
+      },
+      {
+        "a": "right_calcaneus",
+        "b": "right_talus",
+        "volume_mm3": 0.20329790722013757,
+        "fraction_of_smaller": 5.808674673406461e-06
+      },
+      {
+        "a": "right_trapezium",
+        "b": "right_second_metacarpal",
+        "volume_mm3": 0.07774616121306951,
+        "fraction_of_smaller": 4.22354666443641e-05
+      },
+      {
+        "a": "frontal",
+        "b": "left_nasal",
+        "volume_mm3": 0.06500739638714774,
+        "fraction_of_smaller": 0.00013284755260632069
+      },
+      {
+        "a": "left_trapezium",
+        "b": "left_second_metacarpal",
+        "volume_mm3": 0.06076865659419946,
+        "fraction_of_smaller": 3.3012466835155726e-05
+      },
+      {
+        "a": "left_maxilla",
+        "b": "vomer",
+        "volume_mm3": 0.04489965261940298,
+        "fraction_of_smaller": 2.4812129399802145e-05
+      },
+      {
+        "a": "right_fourth_metacarpal",
+        "b": "right_fifth_metacarpal",
+        "volume_mm3": 0.03824555794255735,
+        "fraction_of_smaller": 9.673653214709906e-06
+      },
+      {
+        "a": "ethmoid",
+        "b": "right_inferior_nasal_concha",
+        "volume_mm3": 0.034222799411048395,
+        "fraction_of_smaller": 4.554781145237001e-05
+      },
+      {
+        "a": "frontal",
+        "b": "right_nasal",
+        "volume_mm3": 0.014895006442787517,
+        "fraction_of_smaller": 3.0508737923055614e-05
+      },
+      {
+        "a": "ethmoid",
+        "b": "left_inferior_nasal_concha",
+        "volume_mm3": 0.012091164585100067,
+        "fraction_of_smaller": 1.613625052249877e-05
+      },
+      {
+        "a": "ethmoid",
+        "b": "vomer",
+        "volume_mm3": 0.008383874973177052,
+        "fraction_of_smaller": 4.633037864892902e-06
+      },
+      {
+        "a": "right_fifth_metacarpal",
+        "b": "proximal_phalanx_of_right_little_finger",
+        "volume_mm3": 0.0035025023665250614,
+        "fraction_of_smaller": 1.941780714783522e-06
+      },
+      {
+        "a": "left_intermediate_cuneiform",
+        "b": "left_lateral_cuneiform",
+        "volume_mm3": 0.00014328193010273126,
+        "fraction_of_smaller": 4.19769407787506e-08
+      }
+    ]
+  },
+  "export_metadata": {
+    "asset": {
+      "version": "2.0",
+      "generator": "https://github.com/mikedh/trimesh",
+      "copyright": "AnatomyTOOL / Z-Anatomy; адаптация Forma 3D — CC BY-SA 4.0; ossicles neurothing/McGill и BodyParts3D/DBCLS — CC BY 4.0",
+      "extras": {
+        "license": "CC BY-SA 4.0; компоненты CC BY 4.0",
+        "source": "https://github.com/dreamrain314/human-skeleton-3d/tree/b78fc8e711dac5809a35f16209dc27a3df9f054d"
+      }
+    },
+    "nodes": 206,
+    "animations": 0
+  }
+}

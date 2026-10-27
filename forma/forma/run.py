@@ -114,7 +114,10 @@ class Build:
                                    animation=scene.animation if scene else None,
                                    animations=list(scene.animations) if scene else None,
                                    keys=dict(scene.keys) if scene else None,
-                                   groups=dict(scene.groups) if scene else None)
+                                   groups=dict(scene.groups) if scene else None,
+                                   metadata={key: scene.settings.get(key)
+                                             for key in ("copyright", "license", "source")
+                                             if scene and scene.settings.get(key)})
         return self._glb
 
     def objects_payload(self) -> list[dict]:

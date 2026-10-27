@@ -1,0 +1,31 @@
+{
+  "date": "2026-10-27",
+  "renderer": "Forma Three.js viewport, headless Chromium with SwiftShader",
+  "build": {
+    "visible": 206,
+    "analysis_tris": 400168,
+    "actual_tris": 400168,
+    "checks": [412, 412],
+    "bbox_mm": [-346.21343994140625, -141.4268341064453, 0.0, 346.21343994140625, 120.86023712158203, 1749.9881591796875]
+  },
+  "console_errors": [],
+  "failed_requests": [],
+  "page_errors": [],
+  "shots": {
+    "front": "docs/human_skeleton/front.png",
+    "back": "docs/human_skeleton/back.png",
+    "right": "docs/human_skeleton/right.png",
+    "iso": "docs/human_skeleton/iso.png",
+    "skull_close": "docs/human_skeleton/skull-close.png",
+    "pelvis_close": "docs/human_skeleton/pelvis-close.png",
+    "hand_close": "docs/human_skeleton/hand-close.png",
+    "foot_close": "docs/human_skeleton/foot-close.png"
+  },
+  "visual_review": {
+    "front_back_side_iso": "Полный скелет виден целиком; читаются грудная клетка, таз, конечности, кисти и стопы.",
+    "skull": "Видны отдельные кости и швы черепа, глазничная область, нижняя челюсть без зубов и шейные позвонки.",
+    "pelvis": "Видны крестец, тазовые кости, запирательные отверстия и проксимальные отделы бедренных костей; платформа/подставка отсутствует.",
+    "hand": "Кисть показана целиком, включая запястье, пясть и все фаланги пяти лучей.",
+    "foot": "Различимы предплюсна, плюсна и фаланги; показаны обе стопы без дополнительных объектов."
+  }
+}

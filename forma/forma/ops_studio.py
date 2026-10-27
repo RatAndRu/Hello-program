@@ -82,7 +82,10 @@ KIND_NAMES_ANIM = {"spin": "вращение", "formation": "формирова�
             "ground": "показывать пол да/нет",
             "axes": "оси координат да/нет",
             "poly": "полигонаж (каркас) да/нет",
-            "bloom": "сила свечения светодиодов 0…3 (0 — выключено)"})
+            "bloom": "сила свечения светодиодов 0…3 (0 — выключено)",
+            "copyright": "строка авторства для метаданных GLB",
+            "license": "лицензия модели для метаданных GLB",
+            "source": "URL исходной модели для метаданных GLB"})
 def scene(a, name):
     s = a.scene.settings
     if a.has("bg"):
@@ -101,6 +104,9 @@ def scene(a, name):
             s[key] = a.boolean(key, True)
     if a.has("bloom"):
         s["bloom"] = max(0.0, min(3.0, float(a.num("bloom") or 0.0)))
+    for key in ("copyright", "license", "source"):
+        if a.has(key):
+            s[key] = (a.text(key) or "").strip()
     a.scene.log("info", "вид сцены обновлён", a.cmd.line)
     return None
 

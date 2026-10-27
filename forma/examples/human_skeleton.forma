@@ -1,0 +1,700 @@
+# ЧЕЛОВЕЧЕСКИЙ СКЕЛЕТ — 206 отдельных анатомических костей, рост 1750 мм.
+# Источник геометрии: AnatomyTOOL Open 3D Anatomical Model / Z-Anatomy;
+# адаптация dreamrain314/human-skeleton-3d, commit b78fc8e.
+# Лицензии и полное авторство: examples/assets/human_skeleton.LICENSE.txt.
+# Образовательная модель взрослого человека, не клинический/хирургический инструмент.
+# Канон Forma: +Z вверх, +X анатомическое право, −Y перёд; низ стоп Z=0.
+# 80 осевых костей = 29 череп/гортань + 26 позвоночник + 25 грудная клетка.
+# 126 аппендикулярных = 64 верхний пояс/конечности + 62 таз/нижние конечности.
+# Зубы, хрящи и две необязательные сесамовидные кости не входят в счёт 206.
+# Грудина — один объект FMA7371 с тремя разделёнными суставами частями.
+
+scene bg=#11161d env=studio exposure=0.85 shadows=да grid=нет ground=нет axes=нет poly=нет bloom=0.03
+light preset=портрет strength=0.9
+scene copyright="AnatomyTOOL / Z-Anatomy; адаптация Forma 3D — CC BY-SA 4.0; ossicles neurothing/McGill и BodyParts3D/DBCLS — CC BY 4.0" license="CC BY-SA 4.0; компоненты CC BY 4.0" source="https://github.com/dreamrain314/human-skeleton-3d/tree/b78fc8e711dac5809a35f16209dc27a3df9f054d"
+
+# ============================================================================
+# ЧЕРЕП: 22 кости черепа + 6 слуховых косточек + подъязычная кость
+# ============================================================================
+
+# мозговой череп
+frontal = import file=examples/assets/human_skeleton.glb node=FMA52734 unit=m  # FMA52734; frontal bone
+left_parietal = import file=examples/assets/human_skeleton.glb node=FMA52789 unit=m  # FMA52789; left parietal bone
+right_parietal = import file=examples/assets/human_skeleton.glb node=FMA52788 unit=m  # FMA52788; right parietal bone
+occipital = import file=examples/assets/human_skeleton.glb node=FMA52735 unit=m  # FMA52735; occipital bone
+left_temporal = import file=examples/assets/human_skeleton.glb node=FMA52739 unit=m  # FMA52739; left temporal bone
+right_temporal = import file=examples/assets/human_skeleton.glb node=FMA52738 unit=m  # FMA52738; right temporal bone
+sphenoid = import file=examples/assets/human_skeleton.glb node=FMA52736 unit=m  # FMA52736; sphenoid bone
+ethmoid = import file=examples/assets/human_skeleton.glb node=FMA52740 unit=m  # FMA52740; ethmoid
+# лицевой череп
+left_maxilla = import file=examples/assets/human_skeleton.glb node=FMA53650 unit=m  # FMA53650; left maxilla
+right_maxilla = import file=examples/assets/human_skeleton.glb node=FMA53649 unit=m  # FMA53649; right maxilla
+left_palatine = import file=examples/assets/human_skeleton.glb node=FMA53656 unit=m  # FMA53656; left palatine bone
+right_palatine = import file=examples/assets/human_skeleton.glb node=FMA53655 unit=m  # FMA53655; right palatine bone
+left_zygomatic = import file=examples/assets/human_skeleton.glb node=FMA52893 unit=m  # FMA52893; left zygomatic bone
+right_zygomatic = import file=examples/assets/human_skeleton.glb node=FMA52892 unit=m  # FMA52892; right zygomatic bone
+left_nasal = import file=examples/assets/human_skeleton.glb node=FMA53648 unit=m  # FMA53648; left nasal bone
+right_nasal = import file=examples/assets/human_skeleton.glb node=FMA53647 unit=m  # FMA53647; right nasal bone
+left_lacrimal = import file=examples/assets/human_skeleton.glb node=FMA53646 unit=m  # FMA53646; left lacrimal bone
+right_lacrimal = import file=examples/assets/human_skeleton.glb node=FMA53645 unit=m  # FMA53645; right lacrimal bone
+left_inferior_nasal_concha = import file=examples/assets/human_skeleton.glb node=FMA54738 unit=m  # FMA54738; left inferior nasal concha
+right_inferior_nasal_concha = import file=examples/assets/human_skeleton.glb node=FMA54737 unit=m  # FMA54737; right inferior nasal concha
+vomer = import file=examples/assets/human_skeleton.glb node=FMA9710 unit=m  # FMA9710; vomer
+mandible = import file=examples/assets/human_skeleton.glb node=FMA52748 unit=m  # FMA52748; mandible
+# подъязычная кость
+hyoid = import file=examples/assets/human_skeleton.glb node=FMA52749 unit=m  # FMA52749; hyoid bone
+# слуховые косточки
+right_malleus = import file=examples/assets/human_skeleton.glb node=FMA74052 unit=m  # FMA74052; right malleus
+left_malleus = import file=examples/assets/human_skeleton.glb node=FMA74053 unit=m  # FMA74053; left malleus
+right_incus = import file=examples/assets/human_skeleton.glb node=FMA74050 unit=m  # FMA74050; right incus
+left_incus = import file=examples/assets/human_skeleton.glb node=FMA74051 unit=m  # FMA74051; left incus
+right_stapes = import file=examples/assets/human_skeleton.glb node=FMA74048 unit=m  # FMA74048; right stapes
+left_stapes = import file=examples/assets/human_skeleton.glb node=FMA74049 unit=m  # FMA74049; left stapes
+
+череп = group [frontal, left_parietal, right_parietal, occipital, left_temporal, right_temporal, sphenoid, ethmoid, left_maxilla, right_maxilla, left_palatine, right_palatine, left_zygomatic, right_zygomatic, left_nasal, right_nasal, left_lacrimal, right_lacrimal, left_inferior_nasal_concha, right_inferior_nasal_concha, vomer, mandible, hyoid, right_malleus, left_malleus, right_incus, left_incus, right_stapes, left_stapes]
+
+# ============================================================================
+# ПОЗВОНОЧНЫЙ СТОЛБ: C1–C7, T1–T12, L1–L5, крестец, копчик
+# ============================================================================
+
+# шейный отдел
+atlas = import file=examples/assets/human_skeleton.glb node=FMA12519 unit=m  # FMA12519; atlas
+axis = import file=examples/assets/human_skeleton.glb node=FMA12520 unit=m  # FMA12520; axis
+third_cervical_vertebra = import file=examples/assets/human_skeleton.glb node=FMA12521 unit=m  # FMA12521; third cervical vertebra
+fourth_cervical_vertebra = import file=examples/assets/human_skeleton.glb node=FMA12522 unit=m  # FMA12522; fourth cervical vertebra
+fifth_cervical_vertebra = import file=examples/assets/human_skeleton.glb node=FMA12523 unit=m  # FMA12523; fifth cervical vertebra
+sixth_cervical_vertebra = import file=examples/assets/human_skeleton.glb node=FMA12524 unit=m  # FMA12524; sixth cervical vertebra
+seventh_cervical_vertebra = import file=examples/assets/human_skeleton.glb node=FMA12525 unit=m  # FMA12525; seventh cervical vertebra
+# грудной отдел
+first_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA9165 unit=m  # FMA9165; first thoracic vertebra
+second_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA9187 unit=m  # FMA9187; second thoracic vertebra
+third_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA9209 unit=m  # FMA9209; third thoracic vertebra
+fourth_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA9248 unit=m  # FMA9248; fourth thoracic vertebra
+fifth_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA9922 unit=m  # FMA9922; fifth thoracic vertebra
+sixth_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA9945 unit=m  # FMA9945; sixth thoracic vertebra
+seventh_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA9968 unit=m  # FMA9968; seventh thoracic vertebra
+eighth_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA9991 unit=m  # FMA9991; eighth thoracic vertebra
+ninth_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA10014 unit=m  # FMA10014; ninth thoracic vertebra
+tenth_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA10037 unit=m  # FMA10037; tenth thoracic vertebra
+eleventh_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA10059 unit=m  # FMA10059; eleventh thoracic vertebra
+twelfth_thoracic_vertebra = import file=examples/assets/human_skeleton.glb node=FMA10081 unit=m  # FMA10081; twelfth thoracic vertebra
+# поясничный отдел
+first_lumbar_vertebra = import file=examples/assets/human_skeleton.glb node=FMA13072 unit=m  # FMA13072; first lumbar vertebra
+second_lumbar_vertebra = import file=examples/assets/human_skeleton.glb node=FMA13073 unit=m  # FMA13073; second lumbar vertebra
+third_lumbar_vertebra = import file=examples/assets/human_skeleton.glb node=FMA13074 unit=m  # FMA13074; third lumbar vertebra
+fourth_lumbar_vertebra = import file=examples/assets/human_skeleton.glb node=FMA13075 unit=m  # FMA13075; fourth lumbar vertebra
+fifth_lumbar_vertebra = import file=examples/assets/human_skeleton.glb node=FMA13076 unit=m  # FMA13076; fifth lumbar vertebra
+# крестец
+sacrum = import file=examples/assets/human_skeleton.glb node=FMA16202 unit=m  # FMA16202; sacrum
+# копчик
+coccyx = import file=examples/assets/human_skeleton.glb node=FMA20377 unit=m  # FMA20377; coccyx
+
+позвоночник = group [atlas, axis, third_cervical_vertebra, fourth_cervical_vertebra, fifth_cervical_vertebra, sixth_cervical_vertebra, seventh_cervical_vertebra, first_thoracic_vertebra, second_thoracic_vertebra, third_thoracic_vertebra, fourth_thoracic_vertebra, fifth_thoracic_vertebra, sixth_thoracic_vertebra, seventh_thoracic_vertebra, eighth_thoracic_vertebra, ninth_thoracic_vertebra, tenth_thoracic_vertebra, eleventh_thoracic_vertebra, twelfth_thoracic_vertebra, first_lumbar_vertebra, second_lumbar_vertebra, third_lumbar_vertebra, fourth_lumbar_vertebra, fifth_lumbar_vertebra, sacrum, coccyx]
+
+# ============================================================================
+# ГРУДНАЯ КЛЕТКА: 24 ребра и одна грудина из трёх анатомических частей
+# ============================================================================
+
+# грудина
+sternum = import file=examples/assets/human_skeleton.glb node=FMA7371 unit=m  # FMA7371; sternum
+# истинные рёбра
+left_first_rib = import file=examples/assets/human_skeleton.glb node=FMA7987 unit=m  # FMA7987; left first rib
+right_first_rib = import file=examples/assets/human_skeleton.glb node=FMA7857 unit=m  # FMA7857; right first rib
+left_second_rib = import file=examples/assets/human_skeleton.glb node=FMA8012 unit=m  # FMA8012; left second rib
+right_second_rib = import file=examples/assets/human_skeleton.glb node=FMA7882 unit=m  # FMA7882; right second rib
+left_third_rib = import file=examples/assets/human_skeleton.glb node=FMA8039 unit=m  # FMA8039; left third rib
+right_third_rib = import file=examples/assets/human_skeleton.glb node=FMA7909 unit=m  # FMA7909; right third rib
+left_fifth_rib = import file=examples/assets/human_skeleton.glb node=FMA8093 unit=m  # FMA8093; left fifth rib
+right_fifth_rib = import file=examples/assets/human_skeleton.glb node=FMA8066 unit=m  # FMA8066; right fifth rib
+left_fourth_rib = import file=examples/assets/human_skeleton.glb node=FMA8148 unit=m  # FMA8148; left fourth rib
+right_fourth_rib = import file=examples/assets/human_skeleton.glb node=FMA7957 unit=m  # FMA7957; right fourth rib
+left_sixth_rib = import file=examples/assets/human_skeleton.glb node=FMA8202 unit=m  # FMA8202; left sixth rib
+right_sixth_rib = import file=examples/assets/human_skeleton.glb node=FMA8175 unit=m  # FMA8175; right sixth rib
+left_seventh_rib = import file=examples/assets/human_skeleton.glb node=FMA8256 unit=m  # FMA8256; left seventh rib
+right_seventh_rib = import file=examples/assets/human_skeleton.glb node=FMA8229 unit=m  # FMA8229; right seventh rib
+# ложные рёбра
+left_eighth_rib = import file=examples/assets/human_skeleton.glb node=FMA8310 unit=m  # FMA8310; left eighth rib
+right_eighth_rib = import file=examples/assets/human_skeleton.glb node=FMA8283 unit=m  # FMA8283; right eighth rib
+left_ninth_rib = import file=examples/assets/human_skeleton.glb node=FMA8391 unit=m  # FMA8391; left ninth rib
+right_ninth_rib = import file=examples/assets/human_skeleton.glb node=FMA8364 unit=m  # FMA8364; right ninth rib
+left_tenth_rib = import file=examples/assets/human_skeleton.glb node=FMA8472 unit=m  # FMA8472; left tenth rib
+right_tenth_rib = import file=examples/assets/human_skeleton.glb node=FMA8445 unit=m  # FMA8445; right tenth rib
+# колеблющиеся рёбра
+left_eleventh_rib = import file=examples/assets/human_skeleton.glb node=FMA8532 unit=m  # FMA8532; left eleventh rib
+right_eleventh_rib = import file=examples/assets/human_skeleton.glb node=FMA8531 unit=m  # FMA8531; right eleventh rib
+left_twelfth_rib = import file=examples/assets/human_skeleton.glb node=FMA8534 unit=m  # FMA8534; left twelfth rib
+right_twelfth_rib = import file=examples/assets/human_skeleton.glb node=FMA8533 unit=m  # FMA8533; right twelfth rib
+
+грудная_клетка = group [sternum, left_first_rib, right_first_rib, left_second_rib, right_second_rib, left_third_rib, right_third_rib, left_fifth_rib, right_fifth_rib, left_fourth_rib, right_fourth_rib, left_sixth_rib, right_sixth_rib, left_seventh_rib, right_seventh_rib, left_eighth_rib, right_eighth_rib, left_ninth_rib, right_ninth_rib, left_tenth_rib, right_tenth_rib, left_eleventh_rib, right_eleventh_rib, left_twelfth_rib, right_twelfth_rib]
+
+# ============================================================================
+# ВЕРХНИЕ КОНЕЧНОСТИ: плечевой пояс, плечо, предплечье и кисть
+# ============================================================================
+
+# плечевой пояс
+left_clavicle = import file=examples/assets/human_skeleton.glb node=FMA13323 unit=m  # FMA13323; left clavicle
+right_clavicle = import file=examples/assets/human_skeleton.glb node=FMA13322 unit=m  # FMA13322; right clavicle
+left_scapula = import file=examples/assets/human_skeleton.glb node=FMA13396 unit=m  # FMA13396; left scapula
+right_scapula = import file=examples/assets/human_skeleton.glb node=FMA13395 unit=m  # FMA13395; right scapula
+# плечо
+left_humerus = import file=examples/assets/human_skeleton.glb node=FMA23131 unit=m  # FMA23131; left humerus
+right_humerus = import file=examples/assets/human_skeleton.glb node=FMA23130 unit=m  # FMA23130; right humerus
+# предплечье
+left_radius = import file=examples/assets/human_skeleton.glb node=FMA23465 unit=m  # FMA23465; left radius
+right_radius = import file=examples/assets/human_skeleton.glb node=FMA23464 unit=m  # FMA23464; right radius
+left_ulna = import file=examples/assets/human_skeleton.glb node=FMA23468 unit=m  # FMA23468; left ulna
+right_ulna = import file=examples/assets/human_skeleton.glb node=FMA23467 unit=m  # FMA23467; right ulna
+# запястье
+left_scaphoid = import file=examples/assets/human_skeleton.glb node=FMA24436 unit=m  # FMA24436; left scaphoid
+right_scaphoid = import file=examples/assets/human_skeleton.glb node=FMA24435 unit=m  # FMA24435; right scaphoid
+left_lunate = import file=examples/assets/human_skeleton.glb node=FMA24438 unit=m  # FMA24438; left lunate
+right_lunate = import file=examples/assets/human_skeleton.glb node=FMA24437 unit=m  # FMA24437; right lunate
+left_triquetral = import file=examples/assets/human_skeleton.glb node=FMA24440 unit=m  # FMA24440; left triquetral
+right_triquetral = import file=examples/assets/human_skeleton.glb node=FMA24439 unit=m  # FMA24439; right triquetral
+left_pisiform = import file=examples/assets/human_skeleton.glb node=FMA24442 unit=m  # FMA24442; left pisiform
+right_pisiform = import file=examples/assets/human_skeleton.glb node=FMA24441 unit=m  # FMA24441; right pisiform
+left_trapezium = import file=examples/assets/human_skeleton.glb node=FMA24444 unit=m  # FMA24444; left trapezium
+right_trapezium = import file=examples/assets/human_skeleton.glb node=FMA24443 unit=m  # FMA24443; right trapezium
+left_trapezoid = import file=examples/assets/human_skeleton.glb node=FMA24445 unit=m  # FMA24445; left trapezoid
+right_trapezoid = import file=examples/assets/human_skeleton.glb node=FMA23725 unit=m  # FMA23725; right trapezoid
+left_capitate = import file=examples/assets/human_skeleton.glb node=FMA24447 unit=m  # FMA24447; left capitate
+right_capitate = import file=examples/assets/human_skeleton.glb node=FMA24446 unit=m  # FMA24446; right capitate
+left_hamate = import file=examples/assets/human_skeleton.glb node=FMA24449 unit=m  # FMA24449; left hamate
+right_hamate = import file=examples/assets/human_skeleton.glb node=FMA24448 unit=m  # FMA24448; right hamate
+# пясть
+left_first_metacarpal = import file=examples/assets/human_skeleton.glb node=FMA24465 unit=m  # FMA24465; left first metacarpal bone
+left_second_metacarpal = import file=examples/assets/human_skeleton.glb node=FMA24467 unit=m  # FMA24467; left second metacarpal bone
+left_third_metacarpal = import file=examples/assets/human_skeleton.glb node=FMA24469 unit=m  # FMA24469; left third metacarpal bone
+left_fourth_metacarpal = import file=examples/assets/human_skeleton.glb node=FMA24471 unit=m  # FMA24471; left fourth metacarpal bone
+left_fifth_metacarpal = import file=examples/assets/human_skeleton.glb node=FMA24473 unit=m  # FMA24473; left fifth metacarpal bone
+right_first_metacarpal = import file=examples/assets/human_skeleton.glb node=FMA24464 unit=m  # FMA24464; right first metacarpal bone
+right_second_metacarpal = import file=examples/assets/human_skeleton.glb node=FMA24466 unit=m  # FMA24466; right second metacarpal bone
+right_third_metacarpal = import file=examples/assets/human_skeleton.glb node=FMA24468 unit=m  # FMA24468; right third metacarpal bone
+right_fourth_metacarpal = import file=examples/assets/human_skeleton.glb node=FMA24470 unit=m  # FMA24470; right fourth metacarpal bone
+right_fifth_metacarpal = import file=examples/assets/human_skeleton.glb node=FMA24472 unit=m  # FMA24472; right fifth metacarpal bone
+# фаланги пальцев
+proximal_phalanx_of_left_thumb = import file=examples/assets/human_skeleton.glb node=FMA65470 unit=m  # FMA65470; proximal phalanx of left thumb
+distal_phalanx_of_left_thumb = import file=examples/assets/human_skeleton.glb node=FMA23951 unit=m  # FMA23951; distal phalanx of left thumb
+proximal_phalanx_of_left_index_finger = import file=examples/assets/human_skeleton.glb node=FMA71915 unit=m  # FMA71915; proximal phalanx of left index finger
+middle_phalanx_of_left_index_finger = import file=examples/assets/human_skeleton.glb node=FMA23938 unit=m  # FMA23938; middle phalanx of left index finger
+distal_phalanx_of_left_index_finger = import file=examples/assets/human_skeleton.glb node=FMA23953 unit=m  # FMA23953; distal phalanx of left index finger
+proximal_phalanx_of_left_middle_finger = import file=examples/assets/human_skeleton.glb node=FMA71908 unit=m  # FMA71908; proximal phalanx of left middle finger
+middle_phalanx_of_left_middle_finger = import file=examples/assets/human_skeleton.glb node=FMA23940 unit=m  # FMA23940; middle phalanx of left middle finger
+distal_phalanx_of_left_middle_finger = import file=examples/assets/human_skeleton.glb node=FMA23955 unit=m  # FMA23955; distal phalanx of left middle finger
+proximal_phalanx_of_left_ring_finger = import file=examples/assets/human_skeleton.glb node=FMA71916 unit=m  # FMA71916; proximal phalanx of left ring finger
+middle_phalanx_of_left_ring_finger = import file=examples/assets/human_skeleton.glb node=FMA23942 unit=m  # FMA23942; middle phalanx of left ring finger
+distal_phalanx_of_left_ring_finger = import file=examples/assets/human_skeleton.glb node=FMA23957 unit=m  # FMA23957; distal phalanx of left ring finger
+proximal_phalanx_of_left_little_finger = import file=examples/assets/human_skeleton.glb node=FMA66791 unit=m  # FMA66791; proximal phalanx of left little finger
+middle_phalanx_of_left_little_finger = import file=examples/assets/human_skeleton.glb node=FMA23944 unit=m  # FMA23944; middle phalanx of left little finger
+distal_phalanx_of_left_little_finger = import file=examples/assets/human_skeleton.glb node=FMA23959 unit=m  # FMA23959; distal phalanx of left little finger
+proximal_phalanx_of_right_thumb = import file=examples/assets/human_skeleton.glb node=FMA24450 unit=m  # FMA24450; proximal phalanx of right thumb
+distal_phalanx_of_right_thumb = import file=examples/assets/human_skeleton.glb node=FMA24459 unit=m  # FMA24459; distal phalanx of right thumb
+proximal_phalanx_of_right_index_finger = import file=examples/assets/human_skeleton.glb node=FMA24451 unit=m  # FMA24451; proximal phalanx of right index finger
+middle_phalanx_of_right_index_finger = import file=examples/assets/human_skeleton.glb node=FMA24455 unit=m  # FMA24455; middle phalanx of right index finger
+distal_phalanx_of_right_index_finger = import file=examples/assets/human_skeleton.glb node=FMA24460 unit=m  # FMA24460; distal phalanx of right index finger
+proximal_phalanx_of_right_middle_finger = import file=examples/assets/human_skeleton.glb node=FMA24452 unit=m  # FMA24452; proximal phalanx of right middle finger
+middle_phalanx_of_right_middle_finger = import file=examples/assets/human_skeleton.glb node=FMA24456 unit=m  # FMA24456; middle phalanx of right middle finger
+distal_phalanx_of_right_middle_finger = import file=examples/assets/human_skeleton.glb node=FMA24461 unit=m  # FMA24461; distal phalanx of right middle finger
+proximal_phalanx_of_right_ring_finger = import file=examples/assets/human_skeleton.glb node=FMA24453 unit=m  # FMA24453; proximal phalanx of right ring finger
+middle_phalanx_of_right_ring_finger = import file=examples/assets/human_skeleton.glb node=FMA24457 unit=m  # FMA24457; middle phalanx of right ring finger
+distal_phalanx_of_right_ring_finger = import file=examples/assets/human_skeleton.glb node=FMA24462 unit=m  # FMA24462; distal phalanx of right ring finger
+proximal_phalanx_of_right_little_finger = import file=examples/assets/human_skeleton.glb node=FMA24454 unit=m  # FMA24454; proximal phalanx of right little finger
+middle_phalanx_of_right_little_finger = import file=examples/assets/human_skeleton.glb node=FMA24458 unit=m  # FMA24458; middle phalanx of right little finger
+distal_phalanx_of_right_little_finger = import file=examples/assets/human_skeleton.glb node=FMA24463 unit=m  # FMA24463; distal phalanx of right little finger
+
+верхние_конечности = group [left_clavicle, right_clavicle, left_scapula, right_scapula, left_humerus, right_humerus, left_radius, right_radius, left_ulna, right_ulna, left_scaphoid, right_scaphoid, left_lunate, right_lunate, left_triquetral, right_triquetral, left_pisiform, right_pisiform, left_trapezium, right_trapezium, left_trapezoid, right_trapezoid, left_capitate, right_capitate, left_hamate, right_hamate, left_first_metacarpal, left_second_metacarpal, left_third_metacarpal, left_fourth_metacarpal, left_fifth_metacarpal, right_first_metacarpal, right_second_metacarpal, right_third_metacarpal, right_fourth_metacarpal, right_fifth_metacarpal, proximal_phalanx_of_left_thumb, distal_phalanx_of_left_thumb, proximal_phalanx_of_left_index_finger, middle_phalanx_of_left_index_finger, distal_phalanx_of_left_index_finger, proximal_phalanx_of_left_middle_finger, middle_phalanx_of_left_middle_finger, distal_phalanx_of_left_middle_finger, proximal_phalanx_of_left_ring_finger, middle_phalanx_of_left_ring_finger, distal_phalanx_of_left_ring_finger, proximal_phalanx_of_left_little_finger, middle_phalanx_of_left_little_finger, distal_phalanx_of_left_little_finger, proximal_phalanx_of_right_thumb, distal_phalanx_of_right_thumb, proximal_phalanx_of_right_index_finger, middle_phalanx_of_right_index_finger, distal_phalanx_of_right_index_finger, proximal_phalanx_of_right_middle_finger, middle_phalanx_of_right_middle_finger, distal_phalanx_of_right_middle_finger, proximal_phalanx_of_right_ring_finger, middle_phalanx_of_right_ring_finger, distal_phalanx_of_right_ring_finger, proximal_phalanx_of_right_little_finger, middle_phalanx_of_right_little_finger, distal_phalanx_of_right_little_finger]
+
+# ============================================================================
+# НИЖНИЕ КОНЕЧНОСТИ: таз, бедро, голень и стопа
+# ============================================================================
+
+# тазовый пояс
+left_hip = import file=examples/assets/human_skeleton.glb node=FMA16587 unit=m  # FMA16587; left hip bone
+right_hip = import file=examples/assets/human_skeleton.glb node=FMA16586 unit=m  # FMA16586; right hip bone
+# бедро и надколенник
+left_femur = import file=examples/assets/human_skeleton.glb node=FMA24475 unit=m  # FMA24475; left femur
+right_femur = import file=examples/assets/human_skeleton.glb node=FMA24474 unit=m  # FMA24474; right femur
+left_patella = import file=examples/assets/human_skeleton.glb node=FMA24487 unit=m  # FMA24487; left patella
+right_patella = import file=examples/assets/human_skeleton.glb node=FMA24486 unit=m  # FMA24486; right patella
+# голень
+left_tibia = import file=examples/assets/human_skeleton.glb node=FMA24478 unit=m  # FMA24478; left tibia
+right_tibia = import file=examples/assets/human_skeleton.glb node=FMA24477 unit=m  # FMA24477; right tibia
+left_fibula = import file=examples/assets/human_skeleton.glb node=FMA24481 unit=m  # FMA24481; left fibula
+right_fibula = import file=examples/assets/human_skeleton.glb node=FMA24480 unit=m  # FMA24480; right fibula
+# предплюсна
+left_calcaneus = import file=examples/assets/human_skeleton.glb node=FMA24498 unit=m  # FMA24498; left calcaneus
+right_calcaneus = import file=examples/assets/human_skeleton.glb node=FMA24497 unit=m  # FMA24497; right calcaneus
+left_talus = import file=examples/assets/human_skeleton.glb node=FMA24483 unit=m  # FMA24483; left talus
+right_talus = import file=examples/assets/human_skeleton.glb node=FMA24482 unit=m  # FMA24482; right talus
+navicular_of_left_foot = import file=examples/assets/human_skeleton.glb node=FMA24501 unit=m  # FMA24501; navicular bone of left foot
+navicular_of_right_foot = import file=examples/assets/human_skeleton.glb node=FMA24500 unit=m  # FMA24500; navicular bone of right foot
+left_cuboid = import file=examples/assets/human_skeleton.glb node=FMA24529 unit=m  # FMA24529; left cuboid bone
+right_cuboid = import file=examples/assets/human_skeleton.glb node=FMA24528 unit=m  # FMA24528; right cuboid bone
+left_medial_cuneiform = import file=examples/assets/human_skeleton.glb node=FMA24522 unit=m  # FMA24522; left medial cuneiform bone
+right_medial_cuneiform = import file=examples/assets/human_skeleton.glb node=FMA24521 unit=m  # FMA24521; right medial cuneiform bone
+left_intermediate_cuneiform = import file=examples/assets/human_skeleton.glb node=FMA24524 unit=m  # FMA24524; left intermediate cuneiform bone
+right_intermediate_cuneiform = import file=examples/assets/human_skeleton.glb node=FMA24523 unit=m  # FMA24523; right intermediate cuneiform bone
+left_lateral_cuneiform = import file=examples/assets/human_skeleton.glb node=FMA24526 unit=m  # FMA24526; left lateral cuneiform bone
+right_lateral_cuneiform = import file=examples/assets/human_skeleton.glb node=FMA24525 unit=m  # FMA24525; right lateral cuneiform bone
+# плюсна
+left_first_metatarsal = import file=examples/assets/human_skeleton.glb node=FMA24508 unit=m  # FMA24508; left first metatarsal bone
+left_second_metatarsal = import file=examples/assets/human_skeleton.glb node=FMA24510 unit=m  # FMA24510; left second metatarsal bone
+left_third_metatarsal = import file=examples/assets/human_skeleton.glb node=FMA24512 unit=m  # FMA24512; left third metatarsal bone
+left_fourth_metatarsal = import file=examples/assets/human_skeleton.glb node=FMA24514 unit=m  # FMA24514; left fourth metatarsal bone
+left_fifth_metatarsal = import file=examples/assets/human_skeleton.glb node=FMA24516 unit=m  # FMA24516; left fifth metatarsal bone
+right_first_metatarsal = import file=examples/assets/human_skeleton.glb node=FMA24507 unit=m  # FMA24507; right first metatarsal bone
+right_second_metatarsal = import file=examples/assets/human_skeleton.glb node=FMA24509 unit=m  # FMA24509; right second metatarsal bone
+right_third_metatarsal = import file=examples/assets/human_skeleton.glb node=FMA24511 unit=m  # FMA24511; right third metatarsal bone
+right_fourth_metatarsal = import file=examples/assets/human_skeleton.glb node=FMA24513 unit=m  # FMA24513; right fourth metatarsal bone
+right_fifth_metatarsal = import file=examples/assets/human_skeleton.glb node=FMA24515 unit=m  # FMA24515; right fifth metatarsal bone
+# фаланги пальцев стопы
+proximal_phalanx_of_left_big_toe = import file=examples/assets/human_skeleton.glb node=FMA43254 unit=m  # FMA43254; proximal phalanx of left big toe
+distal_phalanx_of_left_big_toe = import file=examples/assets/human_skeleton.glb node=FMA32651 unit=m  # FMA32651; distal phalanx of left big toe
+proximal_phalanx_of_left_second_toe = import file=examples/assets/human_skeleton.glb node=FMA32635 unit=m  # FMA32635; proximal phalanx of left second toe
+middle_phalanx_of_left_second_toe = import file=examples/assets/human_skeleton.glb node=FMA32643 unit=m  # FMA32643; middle phalanx of left second toe
+distal_phalanx_of_left_second_toe = import file=examples/assets/human_skeleton.glb node=FMA32653 unit=m  # FMA32653; distal phalanx of left second toe
+proximal_phalanx_of_left_third_toe = import file=examples/assets/human_skeleton.glb node=FMA32637 unit=m  # FMA32637; proximal phalanx of left third toe
+middle_phalanx_of_left_third_toe = import file=examples/assets/human_skeleton.glb node=FMA32645 unit=m  # FMA32645; middle phalanx of left third toe
+distal_phalanx_of_left_third_toe = import file=examples/assets/human_skeleton.glb node=FMA32655 unit=m  # FMA32655; distal phalanx of left third toe
+proximal_phalanx_of_left_fourth_toe = import file=examples/assets/human_skeleton.glb node=FMA32639 unit=m  # FMA32639; proximal phalanx of left fourth toe
+middle_phalanx_of_left_fourth_toe = import file=examples/assets/human_skeleton.glb node=FMA32647 unit=m  # FMA32647; middle phalanx of left fourth toe
+distal_phalanx_of_left_fourth_toe = import file=examples/assets/human_skeleton.glb node=FMA32657 unit=m  # FMA32657; distal phalanx of left fourth toe
+proximal_phalanx_of_left_little_toe = import file=examples/assets/human_skeleton.glb node=FMA32641 unit=m  # FMA32641; proximal phalanx of left little toe
+middle_phalanx_of_left_little_toe = import file=examples/assets/human_skeleton.glb node=FMA230988 unit=m  # FMA230988; middle phalanx of left little toe
+distal_phalanx_of_left_little_toe = import file=examples/assets/human_skeleton.glb node=FMA32659 unit=m  # FMA32659; distal phalanx of left little toe
+proximal_phalanx_of_right_big_toe = import file=examples/assets/human_skeleton.glb node=FMA43253 unit=m  # FMA43253; proximal phalanx of right big toe
+distal_phalanx_of_right_big_toe = import file=examples/assets/human_skeleton.glb node=FMA32650 unit=m  # FMA32650; distal phalanx of right big toe
+proximal_phalanx_of_right_second_toe = import file=examples/assets/human_skeleton.glb node=FMA32634 unit=m  # FMA32634; proximal phalanx of right second toe
+middle_phalanx_of_right_second_toe = import file=examples/assets/human_skeleton.glb node=FMA32642 unit=m  # FMA32642; middle phalanx of right second toe
+distal_phalanx_of_right_second_toe = import file=examples/assets/human_skeleton.glb node=FMA32652 unit=m  # FMA32652; distal phalanx of right second toe
+proximal_phalanx_of_right_third_toe = import file=examples/assets/human_skeleton.glb node=FMA32636 unit=m  # FMA32636; proximal phalanx of right third toe
+middle_phalanx_of_right_third_toe = import file=examples/assets/human_skeleton.glb node=FMA32644 unit=m  # FMA32644; middle phalanx of right third toe
+distal_phalanx_of_right_third_toe = import file=examples/assets/human_skeleton.glb node=FMA32654 unit=m  # FMA32654; distal phalanx of right third toe
+proximal_phalanx_of_right_fourth_toe = import file=examples/assets/human_skeleton.glb node=FMA32638 unit=m  # FMA32638; proximal phalanx of right fourth toe
+middle_phalanx_of_right_fourth_toe = import file=examples/assets/human_skeleton.glb node=FMA32646 unit=m  # FMA32646; middle phalanx of right fourth toe
+distal_phalanx_of_right_fourth_toe = import file=examples/assets/human_skeleton.glb node=FMA32656 unit=m  # FMA32656; distal phalanx of right fourth toe
+proximal_phalanx_of_right_little_toe = import file=examples/assets/human_skeleton.glb node=FMA32640 unit=m  # FMA32640; proximal phalanx of right little toe
+middle_phalanx_of_right_little_toe = import file=examples/assets/human_skeleton.glb node=FMA230986 unit=m  # FMA230986; middle phalanx of right little toe
+distal_phalanx_of_right_little_toe = import file=examples/assets/human_skeleton.glb node=FMA32658 unit=m  # FMA32658; distal phalanx of right little toe
+
+нижние_конечности = group [left_hip, right_hip, left_femur, right_femur, left_patella, right_patella, left_tibia, right_tibia, left_fibula, right_fibula, left_calcaneus, right_calcaneus, left_talus, right_talus, navicular_of_left_foot, navicular_of_right_foot, left_cuboid, right_cuboid, left_medial_cuneiform, right_medial_cuneiform, left_intermediate_cuneiform, right_intermediate_cuneiform, left_lateral_cuneiform, right_lateral_cuneiform, left_first_metatarsal, left_second_metatarsal, left_third_metatarsal, left_fourth_metatarsal, left_fifth_metatarsal, right_first_metatarsal, right_second_metatarsal, right_third_metatarsal, right_fourth_metatarsal, right_fifth_metatarsal, proximal_phalanx_of_left_big_toe, distal_phalanx_of_left_big_toe, proximal_phalanx_of_left_second_toe, middle_phalanx_of_left_second_toe, distal_phalanx_of_left_second_toe, proximal_phalanx_of_left_third_toe, middle_phalanx_of_left_third_toe, distal_phalanx_of_left_third_toe, proximal_phalanx_of_left_fourth_toe, middle_phalanx_of_left_fourth_toe, distal_phalanx_of_left_fourth_toe, proximal_phalanx_of_left_little_toe, middle_phalanx_of_left_little_toe, distal_phalanx_of_left_little_toe, proximal_phalanx_of_right_big_toe, distal_phalanx_of_right_big_toe, proximal_phalanx_of_right_second_toe, middle_phalanx_of_right_second_toe, distal_phalanx_of_right_second_toe, proximal_phalanx_of_right_third_toe, middle_phalanx_of_right_third_toe, distal_phalanx_of_right_third_toe, proximal_phalanx_of_right_fourth_toe, middle_phalanx_of_right_fourth_toe, distal_phalanx_of_right_fourth_toe, proximal_phalanx_of_right_little_toe, middle_phalanx_of_right_little_toe, distal_phalanx_of_right_little_toe]
+
+# Единый костный материал; никаких дополнительных стоек, платформ или декораций.
+color all #cdbc97 material=ceramic rough=0.72 metal=0
+
+# Геометрическая приёмка каждой кости: замкнутость и число связных частей.
+# Грудина намеренно имеет 3 части; остальные 205 объектов — по одной.
+check frontal watertight
+check frontal parts 1
+check left_parietal watertight
+check left_parietal parts 1
+check right_parietal watertight
+check right_parietal parts 1
+check occipital watertight
+check occipital parts 1
+check left_temporal watertight
+check left_temporal parts 1
+check right_temporal watertight
+check right_temporal parts 1
+check sphenoid watertight
+check sphenoid parts 1
+check ethmoid watertight
+check ethmoid parts 1
+check left_maxilla watertight
+check left_maxilla parts 1
+check right_maxilla watertight
+check right_maxilla parts 1
+check left_palatine watertight
+check left_palatine parts 1
+check right_palatine watertight
+check right_palatine parts 1
+check left_zygomatic watertight
+check left_zygomatic parts 1
+check right_zygomatic watertight
+check right_zygomatic parts 1
+check left_nasal watertight
+check left_nasal parts 1
+check right_nasal watertight
+check right_nasal parts 1
+check left_lacrimal watertight
+check left_lacrimal parts 1
+check right_lacrimal watertight
+check right_lacrimal parts 1
+check left_inferior_nasal_concha watertight
+check left_inferior_nasal_concha parts 1
+check right_inferior_nasal_concha watertight
+check right_inferior_nasal_concha parts 1
+check vomer watertight
+check vomer parts 1
+check mandible watertight
+check mandible parts 1
+check hyoid watertight
+check hyoid parts 1
+check right_malleus watertight
+check right_malleus parts 1
+check left_malleus watertight
+check left_malleus parts 1
+check right_incus watertight
+check right_incus parts 1
+check left_incus watertight
+check left_incus parts 1
+check right_stapes watertight
+check right_stapes parts 1
+check left_stapes watertight
+check left_stapes parts 1
+check atlas watertight
+check atlas parts 1
+check axis watertight
+check axis parts 1
+check third_cervical_vertebra watertight
+check third_cervical_vertebra parts 1
+check fourth_cervical_vertebra watertight
+check fourth_cervical_vertebra parts 1
+check fifth_cervical_vertebra watertight
+check fifth_cervical_vertebra parts 1
+check sixth_cervical_vertebra watertight
+check sixth_cervical_vertebra parts 1
+check seventh_cervical_vertebra watertight
+check seventh_cervical_vertebra parts 1
+check first_thoracic_vertebra watertight
+check first_thoracic_vertebra parts 1
+check second_thoracic_vertebra watertight
+check second_thoracic_vertebra parts 1
+check third_thoracic_vertebra watertight
+check third_thoracic_vertebra parts 1
+check fourth_thoracic_vertebra watertight
+check fourth_thoracic_vertebra parts 1
+check fifth_thoracic_vertebra watertight
+check fifth_thoracic_vertebra parts 1
+check sixth_thoracic_vertebra watertight
+check sixth_thoracic_vertebra parts 1
+check seventh_thoracic_vertebra watertight
+check seventh_thoracic_vertebra parts 1
+check eighth_thoracic_vertebra watertight
+check eighth_thoracic_vertebra parts 1
+check ninth_thoracic_vertebra watertight
+check ninth_thoracic_vertebra parts 1
+check tenth_thoracic_vertebra watertight
+check tenth_thoracic_vertebra parts 1
+check eleventh_thoracic_vertebra watertight
+check eleventh_thoracic_vertebra parts 1
+check twelfth_thoracic_vertebra watertight
+check twelfth_thoracic_vertebra parts 1
+check first_lumbar_vertebra watertight
+check first_lumbar_vertebra parts 1
+check second_lumbar_vertebra watertight
+check second_lumbar_vertebra parts 1
+check third_lumbar_vertebra watertight
+check third_lumbar_vertebra parts 1
+check fourth_lumbar_vertebra watertight
+check fourth_lumbar_vertebra parts 1
+check fifth_lumbar_vertebra watertight
+check fifth_lumbar_vertebra parts 1
+check sacrum watertight
+check sacrum parts 1
+check coccyx watertight
+check coccyx parts 1
+check sternum watertight
+check sternum parts 3
+check left_first_rib watertight
+check left_first_rib parts 1
+check right_first_rib watertight
+check right_first_rib parts 1
+check left_second_rib watertight
+check left_second_rib parts 1
+check right_second_rib watertight
+check right_second_rib parts 1
+check left_third_rib watertight
+check left_third_rib parts 1
+check right_third_rib watertight
+check right_third_rib parts 1
+check left_fifth_rib watertight
+check left_fifth_rib parts 1
+check right_fifth_rib watertight
+check right_fifth_rib parts 1
+check left_fourth_rib watertight
+check left_fourth_rib parts 1
+check right_fourth_rib watertight
+check right_fourth_rib parts 1
+check left_sixth_rib watertight
+check left_sixth_rib parts 1
+check right_sixth_rib watertight
+check right_sixth_rib parts 1
+check left_seventh_rib watertight
+check left_seventh_rib parts 1
+check right_seventh_rib watertight
+check right_seventh_rib parts 1
+check left_eighth_rib watertight
+check left_eighth_rib parts 1
+check right_eighth_rib watertight
+check right_eighth_rib parts 1
+check left_ninth_rib watertight
+check left_ninth_rib parts 1
+check right_ninth_rib watertight
+check right_ninth_rib parts 1
+check left_tenth_rib watertight
+check left_tenth_rib parts 1
+check right_tenth_rib watertight
+check right_tenth_rib parts 1
+check left_eleventh_rib watertight
+check left_eleventh_rib parts 1
+check right_eleventh_rib watertight
+check right_eleventh_rib parts 1
+check left_twelfth_rib watertight
+check left_twelfth_rib parts 1
+check right_twelfth_rib watertight
+check right_twelfth_rib parts 1
+check left_clavicle watertight
+check left_clavicle parts 1
+check right_clavicle watertight
+check right_clavicle parts 1
+check left_scapula watertight
+check left_scapula parts 1
+check right_scapula watertight
+check right_scapula parts 1
+check left_humerus watertight
+check left_humerus parts 1
+check right_humerus watertight
+check right_humerus parts 1
+check left_radius watertight
+check left_radius parts 1
+check right_radius watertight
+check right_radius parts 1
+check left_ulna watertight
+check left_ulna parts 1
+check right_ulna watertight
+check right_ulna parts 1
+check left_scaphoid watertight
+check left_scaphoid parts 1
+check right_scaphoid watertight
+check right_scaphoid parts 1
+check left_lunate watertight
+check left_lunate parts 1
+check right_lunate watertight
+check right_lunate parts 1
+check left_triquetral watertight
+check left_triquetral parts 1
+check right_triquetral watertight
+check right_triquetral parts 1
+check left_pisiform watertight
+check left_pisiform parts 1
+check right_pisiform watertight
+check right_pisiform parts 1
+check left_trapezium watertight
+check left_trapezium parts 1
+check right_trapezium watertight
+check right_trapezium parts 1
+check left_trapezoid watertight
+check left_trapezoid parts 1
+check right_trapezoid watertight
+check right_trapezoid parts 1
+check left_capitate watertight
+check left_capitate parts 1
+check right_capitate watertight
+check right_capitate parts 1
+check left_hamate watertight
+check left_hamate parts 1
+check right_hamate watertight
+check right_hamate parts 1
+check left_first_metacarpal watertight
+check left_first_metacarpal parts 1
+check left_second_metacarpal watertight
+check left_second_metacarpal parts 1
+check left_third_metacarpal watertight
+check left_third_metacarpal parts 1
+check left_fourth_metacarpal watertight
+check left_fourth_metacarpal parts 1
+check left_fifth_metacarpal watertight
+check left_fifth_metacarpal parts 1
+check right_first_metacarpal watertight
+check right_first_metacarpal parts 1
+check right_second_metacarpal watertight
+check right_second_metacarpal parts 1
+check right_third_metacarpal watertight
+check right_third_metacarpal parts 1
+check right_fourth_metacarpal watertight
+check right_fourth_metacarpal parts 1
+check right_fifth_metacarpal watertight
+check right_fifth_metacarpal parts 1
+check proximal_phalanx_of_left_thumb watertight
+check proximal_phalanx_of_left_thumb parts 1
+check distal_phalanx_of_left_thumb watertight
+check distal_phalanx_of_left_thumb parts 1
+check proximal_phalanx_of_left_index_finger watertight
+check proximal_phalanx_of_left_index_finger parts 1
+check middle_phalanx_of_left_index_finger watertight
+check middle_phalanx_of_left_index_finger parts 1
+check distal_phalanx_of_left_index_finger watertight
+check distal_phalanx_of_left_index_finger parts 1
+check proximal_phalanx_of_left_middle_finger watertight
+check proximal_phalanx_of_left_middle_finger parts 1
+check middle_phalanx_of_left_middle_finger watertight
+check middle_phalanx_of_left_middle_finger parts 1
+check distal_phalanx_of_left_middle_finger watertight
+check distal_phalanx_of_left_middle_finger parts 1
+check proximal_phalanx_of_left_ring_finger watertight
+check proximal_phalanx_of_left_ring_finger parts 1
+check middle_phalanx_of_left_ring_finger watertight
+check middle_phalanx_of_left_ring_finger parts 1
+check distal_phalanx_of_left_ring_finger watertight
+check distal_phalanx_of_left_ring_finger parts 1
+check proximal_phalanx_of_left_little_finger watertight
+check proximal_phalanx_of_left_little_finger parts 1
+check middle_phalanx_of_left_little_finger watertight
+check middle_phalanx_of_left_little_finger parts 1
+check distal_phalanx_of_left_little_finger watertight
+check distal_phalanx_of_left_little_finger parts 1
+check proximal_phalanx_of_right_thumb watertight
+check proximal_phalanx_of_right_thumb parts 1
+check distal_phalanx_of_right_thumb watertight
+check distal_phalanx_of_right_thumb parts 1
+check proximal_phalanx_of_right_index_finger watertight
+check proximal_phalanx_of_right_index_finger parts 1
+check middle_phalanx_of_right_index_finger watertight
+check middle_phalanx_of_right_index_finger parts 1
+check distal_phalanx_of_right_index_finger watertight
+check distal_phalanx_of_right_index_finger parts 1
+check proximal_phalanx_of_right_middle_finger watertight
+check proximal_phalanx_of_right_middle_finger parts 1
+check middle_phalanx_of_right_middle_finger watertight
+check middle_phalanx_of_right_middle_finger parts 1
+check distal_phalanx_of_right_middle_finger watertight
+check distal_phalanx_of_right_middle_finger parts 1
+check proximal_phalanx_of_right_ring_finger watertight
+check proximal_phalanx_of_right_ring_finger parts 1
+check middle_phalanx_of_right_ring_finger watertight
+check middle_phalanx_of_right_ring_finger parts 1
+check distal_phalanx_of_right_ring_finger watertight
+check distal_phalanx_of_right_ring_finger parts 1
+check proximal_phalanx_of_right_little_finger watertight
+check proximal_phalanx_of_right_little_finger parts 1
+check middle_phalanx_of_right_little_finger watertight
+check middle_phalanx_of_right_little_finger parts 1
+check distal_phalanx_of_right_little_finger watertight
+check distal_phalanx_of_right_little_finger parts 1
+check left_hip watertight
+check left_hip parts 1
+check right_hip watertight
+check right_hip parts 1
+check left_femur watertight
+check left_femur parts 1
+check right_femur watertight
+check right_femur parts 1
+check left_patella watertight
+check left_patella parts 1
+check right_patella watertight
+check right_patella parts 1
+check left_tibia watertight
+check left_tibia parts 1
+check right_tibia watertight
+check right_tibia parts 1
+check left_fibula watertight
+check left_fibula parts 1
+check right_fibula watertight
+check right_fibula parts 1
+check left_calcaneus watertight
+check left_calcaneus parts 1
+check right_calcaneus watertight
+check right_calcaneus parts 1
+check left_talus watertight
+check left_talus parts 1
+check right_talus watertight
+check right_talus parts 1
+check navicular_of_left_foot watertight
+check navicular_of_left_foot parts 1
+check navicular_of_right_foot watertight
+check navicular_of_right_foot parts 1
+check left_cuboid watertight
+check left_cuboid parts 1
+check right_cuboid watertight
+check right_cuboid parts 1
+check left_medial_cuneiform watertight
+check left_medial_cuneiform parts 1
+check right_medial_cuneiform watertight
+check right_medial_cuneiform parts 1
+check left_intermediate_cuneiform watertight
+check left_intermediate_cuneiform parts 1
+check right_intermediate_cuneiform watertight
+check right_intermediate_cuneiform parts 1
+check left_lateral_cuneiform watertight
+check left_lateral_cuneiform parts 1
+check right_lateral_cuneiform watertight
+check right_lateral_cuneiform parts 1
+check left_first_metatarsal watertight
+check left_first_metatarsal parts 1
+check left_second_metatarsal watertight
+check left_second_metatarsal parts 1
+check left_third_metatarsal watertight
+check left_third_metatarsal parts 1
+check left_fourth_metatarsal watertight
+check left_fourth_metatarsal parts 1
+check left_fifth_metatarsal watertight
+check left_fifth_metatarsal parts 1
+check right_first_metatarsal watertight
+check right_first_metatarsal parts 1
+check right_second_metatarsal watertight
+check right_second_metatarsal parts 1
+check right_third_metatarsal watertight
+check right_third_metatarsal parts 1
+check right_fourth_metatarsal watertight
+check right_fourth_metatarsal parts 1
+check right_fifth_metatarsal watertight
+check right_fifth_metatarsal parts 1
+check proximal_phalanx_of_left_big_toe watertight
+check proximal_phalanx_of_left_big_toe parts 1
+check distal_phalanx_of_left_big_toe watertight
+check distal_phalanx_of_left_big_toe parts 1
+check proximal_phalanx_of_left_second_toe watertight
+check proximal_phalanx_of_left_second_toe parts 1
+check middle_phalanx_of_left_second_toe watertight
+check middle_phalanx_of_left_second_toe parts 1
+check distal_phalanx_of_left_second_toe watertight
+check distal_phalanx_of_left_second_toe parts 1
+check proximal_phalanx_of_left_third_toe watertight
+check proximal_phalanx_of_left_third_toe parts 1
+check middle_phalanx_of_left_third_toe watertight
+check middle_phalanx_of_left_third_toe parts 1
+check distal_phalanx_of_left_third_toe watertight
+check distal_phalanx_of_left_third_toe parts 1
+check proximal_phalanx_of_left_fourth_toe watertight
+check proximal_phalanx_of_left_fourth_toe parts 1
+check middle_phalanx_of_left_fourth_toe watertight
+check middle_phalanx_of_left_fourth_toe parts 1
+check distal_phalanx_of_left_fourth_toe watertight
+check distal_phalanx_of_left_fourth_toe parts 1
+check proximal_phalanx_of_left_little_toe watertight
+check proximal_phalanx_of_left_little_toe parts 1
+check middle_phalanx_of_left_little_toe watertight
+check middle_phalanx_of_left_little_toe parts 1
+check distal_phalanx_of_left_little_toe watertight
+check distal_phalanx_of_left_little_toe parts 1
+check proximal_phalanx_of_right_big_toe watertight
+check proximal_phalanx_of_right_big_toe parts 1
+check distal_phalanx_of_right_big_toe watertight
+check distal_phalanx_of_right_big_toe parts 1
+check proximal_phalanx_of_right_second_toe watertight
+check proximal_phalanx_of_right_second_toe parts 1
+check middle_phalanx_of_right_second_toe watertight
+check middle_phalanx_of_right_second_toe parts 1
+check distal_phalanx_of_right_second_toe watertight
+check distal_phalanx_of_right_second_toe parts 1
+check proximal_phalanx_of_right_third_toe watertight
+check proximal_phalanx_of_right_third_toe parts 1
+check middle_phalanx_of_right_third_toe watertight
+check middle_phalanx_of_right_third_toe parts 1
+check distal_phalanx_of_right_third_toe watertight
+check distal_phalanx_of_right_third_toe parts 1
+check proximal_phalanx_of_right_fourth_toe watertight
+check proximal_phalanx_of_right_fourth_toe parts 1
+check middle_phalanx_of_right_fourth_toe watertight
+check middle_phalanx_of_right_fourth_toe parts 1
+check distal_phalanx_of_right_fourth_toe watertight
+check distal_phalanx_of_right_fourth_toe parts 1
+check proximal_phalanx_of_right_little_toe watertight
+check proximal_phalanx_of_right_little_toe parts 1
+check middle_phalanx_of_right_little_toe watertight
+check middle_phalanx_of_right_little_toe parts 1
+check distal_phalanx_of_right_little_toe watertight
+check distal_phalanx_of_right_little_toe parts 1
+
+# Итог: 412 встроенных проверок; региональные и анатомические приёмки — tests/test_skeleton.py.

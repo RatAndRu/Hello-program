@@ -1,0 +1,1238 @@
+{
+  "FMA52734": {
+    "object": "frontal",
+    "english": "frontal bone",
+    "region": "череп",
+    "subregion": "мозговой череп"
+  },
+  "FMA52789": {
+    "object": "left_parietal",
+    "english": "left parietal bone",
+    "region": "череп",
+    "subregion": "мозговой череп"
+  },
+  "FMA52788": {
+    "object": "right_parietal",
+    "english": "right parietal bone",
+    "region": "череп",
+    "subregion": "мозговой череп"
+  },
+  "FMA52735": {
+    "object": "occipital",
+    "english": "occipital bone",
+    "region": "череп",
+    "subregion": "мозговой череп"
+  },
+  "FMA52739": {
+    "object": "left_temporal",
+    "english": "left temporal bone",
+    "region": "череп",
+    "subregion": "мозговой череп"
+  },
+  "FMA52738": {
+    "object": "right_temporal",
+    "english": "right temporal bone",
+    "region": "череп",
+    "subregion": "мозговой череп"
+  },
+  "FMA52736": {
+    "object": "sphenoid",
+    "english": "sphenoid bone",
+    "region": "череп",
+    "subregion": "мозговой череп"
+  },
+  "FMA52740": {
+    "object": "ethmoid",
+    "english": "ethmoid",
+    "region": "череп",
+    "subregion": "мозговой череп"
+  },
+  "FMA53650": {
+    "object": "left_maxilla",
+    "english": "left maxilla",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA53649": {
+    "object": "right_maxilla",
+    "english": "right maxilla",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA53656": {
+    "object": "left_palatine",
+    "english": "left palatine bone",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA53655": {
+    "object": "right_palatine",
+    "english": "right palatine bone",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA52893": {
+    "object": "left_zygomatic",
+    "english": "left zygomatic bone",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA52892": {
+    "object": "right_zygomatic",
+    "english": "right zygomatic bone",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA53648": {
+    "object": "left_nasal",
+    "english": "left nasal bone",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA53647": {
+    "object": "right_nasal",
+    "english": "right nasal bone",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA53646": {
+    "object": "left_lacrimal",
+    "english": "left lacrimal bone",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA53645": {
+    "object": "right_lacrimal",
+    "english": "right lacrimal bone",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA54738": {
+    "object": "left_inferior_nasal_concha",
+    "english": "left inferior nasal concha",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA54737": {
+    "object": "right_inferior_nasal_concha",
+    "english": "right inferior nasal concha",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA9710": {
+    "object": "vomer",
+    "english": "vomer",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA52748": {
+    "object": "mandible",
+    "english": "mandible",
+    "region": "череп",
+    "subregion": "лицевой череп"
+  },
+  "FMA52749": {
+    "object": "hyoid",
+    "english": "hyoid bone",
+    "region": "череп",
+    "subregion": "подъязычная кость"
+  },
+  "FMA74052": {
+    "object": "right_malleus",
+    "english": "right malleus",
+    "region": "череп",
+    "subregion": "слуховые косточки"
+  },
+  "FMA74053": {
+    "object": "left_malleus",
+    "english": "left malleus",
+    "region": "череп",
+    "subregion": "слуховые косточки"
+  },
+  "FMA74050": {
+    "object": "right_incus",
+    "english": "right incus",
+    "region": "череп",
+    "subregion": "слуховые косточки"
+  },
+  "FMA74051": {
+    "object": "left_incus",
+    "english": "left incus",
+    "region": "череп",
+    "subregion": "слуховые косточки"
+  },
+  "FMA74048": {
+    "object": "right_stapes",
+    "english": "right stapes",
+    "region": "череп",
+    "subregion": "слуховые косточки"
+  },
+  "FMA74049": {
+    "object": "left_stapes",
+    "english": "left stapes",
+    "region": "череп",
+    "subregion": "слуховые косточки"
+  },
+  "FMA12519": {
+    "object": "atlas",
+    "english": "atlas",
+    "region": "позвоночник",
+    "subregion": "шейный отдел"
+  },
+  "FMA12520": {
+    "object": "axis",
+    "english": "axis",
+    "region": "позвоночник",
+    "subregion": "шейный отдел"
+  },
+  "FMA12521": {
+    "object": "third_cervical_vertebra",
+    "english": "third cervical vertebra",
+    "region": "позвоночник",
+    "subregion": "шейный отдел"
+  },
+  "FMA12522": {
+    "object": "fourth_cervical_vertebra",
+    "english": "fourth cervical vertebra",
+    "region": "позвоночник",
+    "subregion": "шейный отдел"
+  },
+  "FMA12523": {
+    "object": "fifth_cervical_vertebra",
+    "english": "fifth cervical vertebra",
+    "region": "позвоночник",
+    "subregion": "шейный отдел"
+  },
+  "FMA12524": {
+    "object": "sixth_cervical_vertebra",
+    "english": "sixth cervical vertebra",
+    "region": "позвоночник",
+    "subregion": "шейный отдел"
+  },
+  "FMA12525": {
+    "object": "seventh_cervical_vertebra",
+    "english": "seventh cervical vertebra",
+    "region": "позвоночник",
+    "subregion": "шейный отдел"
+  },
+  "FMA9165": {
+    "object": "first_thoracic_vertebra",
+    "english": "first thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA9187": {
+    "object": "second_thoracic_vertebra",
+    "english": "second thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA9209": {
+    "object": "third_thoracic_vertebra",
+    "english": "third thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA9248": {
+    "object": "fourth_thoracic_vertebra",
+    "english": "fourth thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA9922": {
+    "object": "fifth_thoracic_vertebra",
+    "english": "fifth thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA9945": {
+    "object": "sixth_thoracic_vertebra",
+    "english": "sixth thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA9968": {
+    "object": "seventh_thoracic_vertebra",
+    "english": "seventh thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA9991": {
+    "object": "eighth_thoracic_vertebra",
+    "english": "eighth thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA10014": {
+    "object": "ninth_thoracic_vertebra",
+    "english": "ninth thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA10037": {
+    "object": "tenth_thoracic_vertebra",
+    "english": "tenth thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA10059": {
+    "object": "eleventh_thoracic_vertebra",
+    "english": "eleventh thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA10081": {
+    "object": "twelfth_thoracic_vertebra",
+    "english": "twelfth thoracic vertebra",
+    "region": "позвоночник",
+    "subregion": "грудной отдел"
+  },
+  "FMA13072": {
+    "object": "first_lumbar_vertebra",
+    "english": "first lumbar vertebra",
+    "region": "позвоночник",
+    "subregion": "поясничный отдел"
+  },
+  "FMA13073": {
+    "object": "second_lumbar_vertebra",
+    "english": "second lumbar vertebra",
+    "region": "позвоночник",
+    "subregion": "поясничный отдел"
+  },
+  "FMA13074": {
+    "object": "third_lumbar_vertebra",
+    "english": "third lumbar vertebra",
+    "region": "позвоночник",
+    "subregion": "поясничный отдел"
+  },
+  "FMA13075": {
+    "object": "fourth_lumbar_vertebra",
+    "english": "fourth lumbar vertebra",
+    "region": "позвоночник",
+    "subregion": "поясничный отдел"
+  },
+  "FMA13076": {
+    "object": "fifth_lumbar_vertebra",
+    "english": "fifth lumbar vertebra",
+    "region": "позвоночник",
+    "subregion": "поясничный отдел"
+  },
+  "FMA16202": {
+    "object": "sacrum",
+    "english": "sacrum",
+    "region": "позвоночник",
+    "subregion": "крестец"
+  },
+  "FMA20377": {
+    "object": "coccyx",
+    "english": "coccyx",
+    "region": "позвоночник",
+    "subregion": "копчик"
+  },
+  "FMA7371": {
+    "object": "sternum",
+    "english": "sternum",
+    "region": "грудная_клетка",
+    "subregion": "грудина"
+  },
+  "FMA7987": {
+    "object": "left_first_rib",
+    "english": "left first rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA7857": {
+    "object": "right_first_rib",
+    "english": "right first rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA8012": {
+    "object": "left_second_rib",
+    "english": "left second rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA7882": {
+    "object": "right_second_rib",
+    "english": "right second rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA8039": {
+    "object": "left_third_rib",
+    "english": "left third rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA7909": {
+    "object": "right_third_rib",
+    "english": "right third rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA8093": {
+    "object": "left_fifth_rib",
+    "english": "left fifth rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA8066": {
+    "object": "right_fifth_rib",
+    "english": "right fifth rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA8148": {
+    "object": "left_fourth_rib",
+    "english": "left fourth rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA7957": {
+    "object": "right_fourth_rib",
+    "english": "right fourth rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA8202": {
+    "object": "left_sixth_rib",
+    "english": "left sixth rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA8175": {
+    "object": "right_sixth_rib",
+    "english": "right sixth rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA8256": {
+    "object": "left_seventh_rib",
+    "english": "left seventh rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA8229": {
+    "object": "right_seventh_rib",
+    "english": "right seventh rib",
+    "region": "грудная_клетка",
+    "subregion": "истинные рёбра"
+  },
+  "FMA8310": {
+    "object": "left_eighth_rib",
+    "english": "left eighth rib",
+    "region": "грудная_клетка",
+    "subregion": "ложные рёбра"
+  },
+  "FMA8283": {
+    "object": "right_eighth_rib",
+    "english": "right eighth rib",
+    "region": "грудная_клетка",
+    "subregion": "ложные рёбра"
+  },
+  "FMA8391": {
+    "object": "left_ninth_rib",
+    "english": "left ninth rib",
+    "region": "грудная_клетка",
+    "subregion": "ложные рёбра"
+  },
+  "FMA8364": {
+    "object": "right_ninth_rib",
+    "english": "right ninth rib",
+    "region": "грудная_клетка",
+    "subregion": "ложные рёбра"
+  },
+  "FMA8472": {
+    "object": "left_tenth_rib",
+    "english": "left tenth rib",
+    "region": "грудная_клетка",
+    "subregion": "ложные рёбра"
+  },
+  "FMA8445": {
+    "object": "right_tenth_rib",
+    "english": "right tenth rib",
+    "region": "грудная_клетка",
+    "subregion": "ложные рёбра"
+  },
+  "FMA8532": {
+    "object": "left_eleventh_rib",
+    "english": "left eleventh rib",
+    "region": "грудная_клетка",
+    "subregion": "колеблющиеся рёбра"
+  },
+  "FMA8531": {
+    "object": "right_eleventh_rib",
+    "english": "right eleventh rib",
+    "region": "грудная_клетка",
+    "subregion": "колеблющиеся рёбра"
+  },
+  "FMA8534": {
+    "object": "left_twelfth_rib",
+    "english": "left twelfth rib",
+    "region": "грудная_клетка",
+    "subregion": "колеблющиеся рёбра"
+  },
+  "FMA8533": {
+    "object": "right_twelfth_rib",
+    "english": "right twelfth rib",
+    "region": "грудная_клетка",
+    "subregion": "колеблющиеся рёбра"
+  },
+  "FMA13323": {
+    "object": "left_clavicle",
+    "english": "left clavicle",
+    "region": "верхние_конечности",
+    "subregion": "плечевой пояс"
+  },
+  "FMA13322": {
+    "object": "right_clavicle",
+    "english": "right clavicle",
+    "region": "верхние_конечности",
+    "subregion": "плечевой пояс"
+  },
+  "FMA13396": {
+    "object": "left_scapula",
+    "english": "left scapula",
+    "region": "верхние_конечности",
+    "subregion": "плечевой пояс"
+  },
+  "FMA13395": {
+    "object": "right_scapula",
+    "english": "right scapula",
+    "region": "верхние_конечности",
+    "subregion": "плечевой пояс"
+  },
+  "FMA23131": {
+    "object": "left_humerus",
+    "english": "left humerus",
+    "region": "верхние_конечности",
+    "subregion": "плечо"
+  },
+  "FMA23130": {
+    "object": "right_humerus",
+    "english": "right humerus",
+    "region": "верхние_конечности",
+    "subregion": "плечо"
+  },
+  "FMA23465": {
+    "object": "left_radius",
+    "english": "left radius",
+    "region": "верхние_конечности",
+    "subregion": "предплечье"
+  },
+  "FMA23464": {
+    "object": "right_radius",
+    "english": "right radius",
+    "region": "верхние_конечности",
+    "subregion": "предплечье"
+  },
+  "FMA23468": {
+    "object": "left_ulna",
+    "english": "left ulna",
+    "region": "верхние_конечности",
+    "subregion": "предплечье"
+  },
+  "FMA23467": {
+    "object": "right_ulna",
+    "english": "right ulna",
+    "region": "верхние_конечности",
+    "subregion": "предплечье"
+  },
+  "FMA24436": {
+    "object": "left_scaphoid",
+    "english": "left scaphoid",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24435": {
+    "object": "right_scaphoid",
+    "english": "right scaphoid",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24438": {
+    "object": "left_lunate",
+    "english": "left lunate",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24437": {
+    "object": "right_lunate",
+    "english": "right lunate",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24440": {
+    "object": "left_triquetral",
+    "english": "left triquetral",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24439": {
+    "object": "right_triquetral",
+    "english": "right triquetral",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24442": {
+    "object": "left_pisiform",
+    "english": "left pisiform",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24441": {
+    "object": "right_pisiform",
+    "english": "right pisiform",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24444": {
+    "object": "left_trapezium",
+    "english": "left trapezium",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24443": {
+    "object": "right_trapezium",
+    "english": "right trapezium",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24445": {
+    "object": "left_trapezoid",
+    "english": "left trapezoid",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA23725": {
+    "object": "right_trapezoid",
+    "english": "right trapezoid",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24447": {
+    "object": "left_capitate",
+    "english": "left capitate",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24446": {
+    "object": "right_capitate",
+    "english": "right capitate",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24449": {
+    "object": "left_hamate",
+    "english": "left hamate",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24448": {
+    "object": "right_hamate",
+    "english": "right hamate",
+    "region": "верхние_конечности",
+    "subregion": "запястье"
+  },
+  "FMA24465": {
+    "object": "left_first_metacarpal",
+    "english": "left first metacarpal bone",
+    "region": "верхние_конечности",
+    "subregion": "пясть"
+  },
+  "FMA24467": {
+    "object": "left_second_metacarpal",
+    "english": "left second metacarpal bone",
+    "region": "верхние_конечности",
+    "subregion": "пясть"
+  },
+  "FMA24469": {
+    "object": "left_third_metacarpal",
+    "english": "left third metacarpal bone",
+    "region": "верхние_конечности",
+    "subregion": "пясть"
+  },
+  "FMA24471": {
+    "object": "left_fourth_metacarpal",
+    "english": "left fourth metacarpal bone",
+    "region": "верхние_конечности",
+    "subregion": "пясть"
+  },
+  "FMA24473": {
+    "object": "left_fifth_metacarpal",
+    "english": "left fifth metacarpal bone",
+    "region": "верхние_конечности",
+    "subregion": "пясть"
+  },
+  "FMA24464": {
+    "object": "right_first_metacarpal",
+    "english": "right first metacarpal bone",
+    "region": "верхние_конечности",
+    "subregion": "пясть"
+  },
+  "FMA24466": {
+    "object": "right_second_metacarpal",
+    "english": "right second metacarpal bone",
+    "region": "верхние_конечности",
+    "subregion": "пясть"
+  },
+  "FMA24468": {
+    "object": "right_third_metacarpal",
+    "english": "right third metacarpal bone",
+    "region": "верхние_конечности",
+    "subregion": "пясть"
+  },
+  "FMA24470": {
+    "object": "right_fourth_metacarpal",
+    "english": "right fourth metacarpal bone",
+    "region": "верхние_конечности",
+    "subregion": "пясть"
+  },
+  "FMA24472": {
+    "object": "right_fifth_metacarpal",
+    "english": "right fifth metacarpal bone",
+    "region": "верхние_конечности",
+    "subregion": "пясть"
+  },
+  "FMA65470": {
+    "object": "proximal_phalanx_of_left_thumb",
+    "english": "proximal phalanx of left thumb",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA23951": {
+    "object": "distal_phalanx_of_left_thumb",
+    "english": "distal phalanx of left thumb",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA71915": {
+    "object": "proximal_phalanx_of_left_index_finger",
+    "english": "proximal phalanx of left index finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA23938": {
+    "object": "middle_phalanx_of_left_index_finger",
+    "english": "middle phalanx of left index finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA23953": {
+    "object": "distal_phalanx_of_left_index_finger",
+    "english": "distal phalanx of left index finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA71908": {
+    "object": "proximal_phalanx_of_left_middle_finger",
+    "english": "proximal phalanx of left middle finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA23940": {
+    "object": "middle_phalanx_of_left_middle_finger",
+    "english": "middle phalanx of left middle finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA23955": {
+    "object": "distal_phalanx_of_left_middle_finger",
+    "english": "distal phalanx of left middle finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA71916": {
+    "object": "proximal_phalanx_of_left_ring_finger",
+    "english": "proximal phalanx of left ring finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA23942": {
+    "object": "middle_phalanx_of_left_ring_finger",
+    "english": "middle phalanx of left ring finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA23957": {
+    "object": "distal_phalanx_of_left_ring_finger",
+    "english": "distal phalanx of left ring finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA66791": {
+    "object": "proximal_phalanx_of_left_little_finger",
+    "english": "proximal phalanx of left little finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA23944": {
+    "object": "middle_phalanx_of_left_little_finger",
+    "english": "middle phalanx of left little finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA23959": {
+    "object": "distal_phalanx_of_left_little_finger",
+    "english": "distal phalanx of left little finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24450": {
+    "object": "proximal_phalanx_of_right_thumb",
+    "english": "proximal phalanx of right thumb",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24459": {
+    "object": "distal_phalanx_of_right_thumb",
+    "english": "distal phalanx of right thumb",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24451": {
+    "object": "proximal_phalanx_of_right_index_finger",
+    "english": "proximal phalanx of right index finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24455": {
+    "object": "middle_phalanx_of_right_index_finger",
+    "english": "middle phalanx of right index finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24460": {
+    "object": "distal_phalanx_of_right_index_finger",
+    "english": "distal phalanx of right index finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24452": {
+    "object": "proximal_phalanx_of_right_middle_finger",
+    "english": "proximal phalanx of right middle finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24456": {
+    "object": "middle_phalanx_of_right_middle_finger",
+    "english": "middle phalanx of right middle finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24461": {
+    "object": "distal_phalanx_of_right_middle_finger",
+    "english": "distal phalanx of right middle finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24453": {
+    "object": "proximal_phalanx_of_right_ring_finger",
+    "english": "proximal phalanx of right ring finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24457": {
+    "object": "middle_phalanx_of_right_ring_finger",
+    "english": "middle phalanx of right ring finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24462": {
+    "object": "distal_phalanx_of_right_ring_finger",
+    "english": "distal phalanx of right ring finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24454": {
+    "object": "proximal_phalanx_of_right_little_finger",
+    "english": "proximal phalanx of right little finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24458": {
+    "object": "middle_phalanx_of_right_little_finger",
+    "english": "middle phalanx of right little finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA24463": {
+    "object": "distal_phalanx_of_right_little_finger",
+    "english": "distal phalanx of right little finger",
+    "region": "верхние_конечности",
+    "subregion": "фаланги пальцев"
+  },
+  "FMA16587": {
+    "object": "left_hip",
+    "english": "left hip bone",
+    "region": "нижние_конечности",
+    "subregion": "тазовый пояс"
+  },
+  "FMA16586": {
+    "object": "right_hip",
+    "english": "right hip bone",
+    "region": "нижние_конечности",
+    "subregion": "тазовый пояс"
+  },
+  "FMA24475": {
+    "object": "left_femur",
+    "english": "left femur",
+    "region": "нижние_конечности",
+    "subregion": "бедро и надколенник"
+  },
+  "FMA24474": {
+    "object": "right_femur",
+    "english": "right femur",
+    "region": "нижние_конечности",
+    "subregion": "бедро и надколенник"
+  },
+  "FMA24487": {
+    "object": "left_patella",
+    "english": "left patella",
+    "region": "нижние_конечности",
+    "subregion": "бедро и надколенник"
+  },
+  "FMA24486": {
+    "object": "right_patella",
+    "english": "right patella",
+    "region": "нижние_конечности",
+    "subregion": "бедро и надколенник"
+  },
+  "FMA24478": {
+    "object": "left_tibia",
+    "english": "left tibia",
+    "region": "нижние_конечности",
+    "subregion": "голень"
+  },
+  "FMA24477": {
+    "object": "right_tibia",
+    "english": "right tibia",
+    "region": "нижние_конечности",
+    "subregion": "голень"
+  },
+  "FMA24481": {
+    "object": "left_fibula",
+    "english": "left fibula",
+    "region": "нижние_конечности",
+    "subregion": "голень"
+  },
+  "FMA24480": {
+    "object": "right_fibula",
+    "english": "right fibula",
+    "region": "нижние_конечности",
+    "subregion": "голень"
+  },
+  "FMA24498": {
+    "object": "left_calcaneus",
+    "english": "left calcaneus",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24497": {
+    "object": "right_calcaneus",
+    "english": "right calcaneus",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24483": {
+    "object": "left_talus",
+    "english": "left talus",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24482": {
+    "object": "right_talus",
+    "english": "right talus",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24501": {
+    "object": "navicular_of_left_foot",
+    "english": "navicular bone of left foot",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24500": {
+    "object": "navicular_of_right_foot",
+    "english": "navicular bone of right foot",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24529": {
+    "object": "left_cuboid",
+    "english": "left cuboid bone",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24528": {
+    "object": "right_cuboid",
+    "english": "right cuboid bone",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24522": {
+    "object": "left_medial_cuneiform",
+    "english": "left medial cuneiform bone",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24521": {
+    "object": "right_medial_cuneiform",
+    "english": "right medial cuneiform bone",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24524": {
+    "object": "left_intermediate_cuneiform",
+    "english": "left intermediate cuneiform bone",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24523": {
+    "object": "right_intermediate_cuneiform",
+    "english": "right intermediate cuneiform bone",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24526": {
+    "object": "left_lateral_cuneiform",
+    "english": "left lateral cuneiform bone",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24525": {
+    "object": "right_lateral_cuneiform",
+    "english": "right lateral cuneiform bone",
+    "region": "нижние_конечности",
+    "subregion": "предплюсна"
+  },
+  "FMA24508": {
+    "object": "left_first_metatarsal",
+    "english": "left first metatarsal bone",
+    "region": "нижние_конечности",
+    "subregion": "плюсна"
+  },
+  "FMA24510": {
+    "object": "left_second_metatarsal",
+    "english": "left second metatarsal bone",
+    "region": "нижние_конечности",
+    "subregion": "плюсна"
+  },
+  "FMA24512": {
+    "object": "left_third_metatarsal",
+    "english": "left third metatarsal bone",
+    "region": "нижние_конечности",
+    "subregion": "плюсна"
+  },
+  "FMA24514": {
+    "object": "left_fourth_metatarsal",
+    "english": "left fourth metatarsal bone",
+    "region": "нижние_конечности",
+    "subregion": "плюсна"
+  },
+  "FMA24516": {
+    "object": "left_fifth_metatarsal",
+    "english": "left fifth metatarsal bone",
+    "region": "нижние_конечности",
+    "subregion": "плюсна"
+  },
+  "FMA24507": {
+    "object": "right_first_metatarsal",
+    "english": "right first metatarsal bone",
+    "region": "нижние_конечности",
+    "subregion": "плюсна"
+  },
+  "FMA24509": {
+    "object": "right_second_metatarsal",
+    "english": "right second metatarsal bone",
+    "region": "нижние_конечности",
+    "subregion": "плюсна"
+  },
+  "FMA24511": {
+    "object": "right_third_metatarsal",
+    "english": "right third metatarsal bone",
+    "region": "нижние_конечности",
+    "subregion": "плюсна"
+  },
+  "FMA24513": {
+    "object": "right_fourth_metatarsal",
+    "english": "right fourth metatarsal bone",
+    "region": "нижние_конечности",
+    "subregion": "плюсна"
+  },
+  "FMA24515": {
+    "object": "right_fifth_metatarsal",
+    "english": "right fifth metatarsal bone",
+    "region": "нижние_конечности",
+    "subregion": "плюсна"
+  },
+  "FMA43254": {
+    "object": "proximal_phalanx_of_left_big_toe",
+    "english": "proximal phalanx of left big toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32651": {
+    "object": "distal_phalanx_of_left_big_toe",
+    "english": "distal phalanx of left big toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32635": {
+    "object": "proximal_phalanx_of_left_second_toe",
+    "english": "proximal phalanx of left second toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32643": {
+    "object": "middle_phalanx_of_left_second_toe",
+    "english": "middle phalanx of left second toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32653": {
+    "object": "distal_phalanx_of_left_second_toe",
+    "english": "distal phalanx of left second toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32637": {
+    "object": "proximal_phalanx_of_left_third_toe",
+    "english": "proximal phalanx of left third toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32645": {
+    "object": "middle_phalanx_of_left_third_toe",
+    "english": "middle phalanx of left third toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32655": {
+    "object": "distal_phalanx_of_left_third_toe",
+    "english": "distal phalanx of left third toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32639": {
+    "object": "proximal_phalanx_of_left_fourth_toe",
+    "english": "proximal phalanx of left fourth toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32647": {
+    "object": "middle_phalanx_of_left_fourth_toe",
+    "english": "middle phalanx of left fourth toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32657": {
+    "object": "distal_phalanx_of_left_fourth_toe",
+    "english": "distal phalanx of left fourth toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32641": {
+    "object": "proximal_phalanx_of_left_little_toe",
+    "english": "proximal phalanx of left little toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA230988": {
+    "object": "middle_phalanx_of_left_little_toe",
+    "english": "middle phalanx of left little toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32659": {
+    "object": "distal_phalanx_of_left_little_toe",
+    "english": "distal phalanx of left little toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA43253": {
+    "object": "proximal_phalanx_of_right_big_toe",
+    "english": "proximal phalanx of right big toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32650": {
+    "object": "distal_phalanx_of_right_big_toe",
+    "english": "distal phalanx of right big toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32634": {
+    "object": "proximal_phalanx_of_right_second_toe",
+    "english": "proximal phalanx of right second toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32642": {
+    "object": "middle_phalanx_of_right_second_toe",
+    "english": "middle phalanx of right second toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32652": {
+    "object": "distal_phalanx_of_right_second_toe",
+    "english": "distal phalanx of right second toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32636": {
+    "object": "proximal_phalanx_of_right_third_toe",
+    "english": "proximal phalanx of right third toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32644": {
+    "object": "middle_phalanx_of_right_third_toe",
+    "english": "middle phalanx of right third toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32654": {
+    "object": "distal_phalanx_of_right_third_toe",
+    "english": "distal phalanx of right third toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32638": {
+    "object": "proximal_phalanx_of_right_fourth_toe",
+    "english": "proximal phalanx of right fourth toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32646": {
+    "object": "middle_phalanx_of_right_fourth_toe",
+    "english": "middle phalanx of right fourth toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32656": {
+    "object": "distal_phalanx_of_right_fourth_toe",
+    "english": "distal phalanx of right fourth toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32640": {
+    "object": "proximal_phalanx_of_right_little_toe",
+    "english": "proximal phalanx of right little toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA230986": {
+    "object": "middle_phalanx_of_right_little_toe",
+    "english": "middle phalanx of right little toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  },
+  "FMA32658": {
+    "object": "distal_phalanx_of_right_little_toe",
+    "english": "distal phalanx of right little toe",
+    "region": "нижние_конечности",
+    "subregion": "фаланги пальцев стопы"
+  }
+}

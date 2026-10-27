@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import tempfile
+import sys
+from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +26,10 @@ def resolve_file(raw: str) -> Path:
     candidates.append(user_data_dir() / "imports" / raw)
     candidates.append(user_data_dir() / "imports" / Path(raw).name)
     candidates.append(user_data_dir() / "exports" / Path(raw).name)
+    # Встроенные ресурсы доступны и вне исходного каталога, в том числе
+    # внутри собранного Windows EXE (sys._MEIPASS).
+    bundled = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    candidates.append(bundled / raw)
     for path in candidates:
         if path.exists():
             return path
@@ -32,9 +38,32 @@ def resolve_file(raw: str) -> Path:
                              "импорта (она показана в справке).")
 
 
+@lru_cache(maxsize=4)
+def _glb_scene_cached(filename: str, modified_ns: int):
+    """Один раз читает GLB-сцену; именованные импорты не декодируют её 206 раз."""
+    del modified_ns  # часть ключа кэша: изменение файла делает старую сцену недействительной
+    import trimesh
+    return trimesh.load(filename, force=None, process=False)
+
+
+@lru_cache(maxsize=512)
+def _glb_node_cached(filename: str, modified_ns: int, node: str):
+    scene = _glb_scene_cached(filename, modified_ns)
+    if node not in scene.graph.nodes_geometry:
+        examples = ", ".join(list(scene.graph.nodes_geometry)[:5])
+        raise GeometryError(f"В GLB нет узла {node}",
+                            hint=f"Имена чувствительны к регистру. Примеры: {examples}")
+    transform, geometry = scene.graph[node]
+    mesh = scene.geometry[geometry].copy()
+    mesh.apply_transform(transform)
+    if np.linalg.det(transform) < 0:
+        mesh.invert()
+    return np.asarray(mesh.vertices, dtype=np.float64), np.asarray(mesh.faces, dtype=np.int32)
+
+
 def load_any(path: Path, scale: float | None = 1.0,
-             repair: bool = False) -> tuple[np.ndarray, np.ndarray]:
-    """Читает любой поддерживаемый файл в (вершины, грани) без внешних конвертеров."""
+             repair: bool = False, node: str | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Читает файл в (вершины, грани); для GLB можно выбрать один именованный узел."""
     suffix = path.suffix.lower()
     source = path
     temp = None
@@ -49,7 +78,19 @@ def load_any(path: Path, scale: float | None = 1.0,
                                  "(если установлен Blender).")
     try:
         import trimesh
-        loaded = trimesh.load(str(source), force=None)
+        if node:
+            if suffix not in {".glb", ".gltf"}:
+                raise GeometryError("Параметр node поддерживается только для GLB/glTF/BLEND",
+                                    hint="Например: import бедро file=скелет.glb node=FMA24474")
+            v, f = _glb_node_cached(str(source), source.stat().st_mtime_ns, node)
+            # Кэш хранит исходные массивы; repair/scale не должны менять его содержимое.
+            v = np.array(v, dtype=np.float64, copy=True)
+            f = np.array(f, dtype=np.int32, copy=True)
+            loaded = None
+        else:
+            loaded = trimesh.load(str(source), force=None)
+    except GeometryError:
+        raise
     except Exception as exc:
         raise GeometryError(f"Не удалось прочитать файл: {exc}") from exc
     finally:
@@ -58,7 +99,9 @@ def load_any(path: Path, scale: float | None = 1.0,
                 temp.unlink()
             except OSError:
                 pass
-    if hasattr(loaded, "dump"):
+    if node:
+        pass  # v/f уже извлечены из выбранного узла до удаления временного .glb
+    elif hasattr(loaded, "dump"):
         try:
             merged = loaded.dump(concatenate=True)
         except Exception:
@@ -150,6 +193,7 @@ LIMITS: list[str] = []
             "file": "путь к файлу (можно перетащить в окно)",
             "unit": "mm, cm, m, inch или auto (= мм, без догадок)",
             "scale": "дополнительный множитель", "repair": "починить сетку да/нет (по умолчанию нет)",
+            "node": "для GLB/glTF: имя одного узла; без него импортируется вся сцена",
             "pos": "смещение [x, y, z]", "material": "материал для импорта"},
     positional=["target"])
 def import_mesh(a, name):
@@ -171,7 +215,8 @@ def import_mesh(a, name):
                             "(уточните unit=cm|m|inch, если это не так)", a.cmd.line)
     repair = a.boolean("repair", False)
     LIMITS.clear()
-    verts, faces = load_any(path, scale=base_scale * extra, repair=repair)
+    node = (a.text("node") or "").strip() or None
+    verts, faces = load_any(path, scale=base_scale * extra, repair=repair, node=node)
     for note in LIMITS:
         a.scene.log("warn", f"импорт: {note}; проверьте объём и стенки", a.cmd.line)
     pos = a.vec("pos", dims=3, default=[0.0, 0.0, 0.0])

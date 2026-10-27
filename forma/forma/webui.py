@@ -628,6 +628,7 @@ EXAMPLES = [
     ("Манекен в T-позе", "mannequin"),
     ("Яблоко", "apple"),
     ("Анатомическая фигура", "human_studio"),
+    ("Скелет взрослого человека: 206 костей", "human_skeleton"),
     ("Анимация по дорожкам и ключи", "animation_tracks"),
     ("Шкаф: дверь, ящик, колёсики", "wardrobe"),
     ("Ноутбук ThinkPad X1 Carbon Gen 11", "thinkpad_x1"),
