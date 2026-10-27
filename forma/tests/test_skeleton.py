@@ -219,13 +219,14 @@ class SkeletonImportTest(unittest.TestCase):
 
     def test_bundled_asset_resolves_outside_source_checkout(self):
         old = Path.cwd()
-        try:
-            with tempfile.TemporaryDirectory() as temp:
-                os.chdir(temp)
+        with tempfile.TemporaryDirectory() as temp:
+            os.chdir(temp)
+            try:
                 with patch.object(sys, "_MEIPASS", str(ROOT), create=True):
                     self.assertEqual(resolve_file("examples/assets/human_skeleton.glb"), ASSET)
-        finally:
-            os.chdir(old)
+            finally:
+                # Windows не удаляет временный каталог, пока он является cwd.
+                os.chdir(old)
 
 
 if __name__ == "__main__":
