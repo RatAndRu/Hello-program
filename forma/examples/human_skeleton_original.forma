@@ -1,0 +1,31 @@
+# ОРИГИНАЛЬНЫЙ ЧЕЛОВЕЧЕСКИЙ СКЕЛЕТ — 206 костей, параметрическая геометрия Forma.
+# Построено с пустой сцены без import, готовых GLB/OBJ/STL и заимствованных mesh-данных.
+# 80 осевых + 126 аппендикулярных; взрослый человек, анатомическая позиция.
+# Канон: +Z верх, +X анатомическое право, −Y перёд; размеры в миллиметрах.
+# Зубы, хрящи, связки и необязательные сесамовидные кости не входят в счёт 206.
+# Грудина — одна анатомическая кость с тремя разделёнными костными частями.
+# Образовательная параметрическая модель, не клинический или хирургический инструмент.
+
+скелет = skeleton_original height=1750 color=#d9cfb6
+
+scene bg=#11161d env=studio exposure=0.85 shadows=да grid=нет ground=нет axes=нет poly=нет bloom=0.03
+light preset=портрет strength=0.9
+scene copyright="Forma 3D — оригинальная параметрическая геометрия; сторонние сетки не используются"
+
+# Проверки записаны в самом проекте; полный аудит всех костей — tests/test_skeleton_original.py.
+check скелет_001_frontal watertight
+check скелет_022_mandible watertight
+check скелет_022_mandible parts 1
+check скелет_030_c1 watertight
+check скелет_030_c1 parts 1
+check скелет_054_sacrum watertight
+check скелет_054_sacrum parts 1
+check скелет_080_sternum watertight
+check скелет_080_sternum parts 3
+check скелет_145_hip_r watertight
+check скелет_145_hip_r parts 1
+check скелет_147_femur_r watertight
+check скелет_147_femur_r parts 1
+check скелет_147_femur_r height 370..430
+check скелет_091_scaphoid_r watertight
+check скелет_155_talus_r watertight

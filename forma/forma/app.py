@@ -1162,6 +1162,17 @@ def _run_uistest(report_path: str | None) -> int:
                       and all(f"k: '{key}'".encode("utf-8") in js_app
                               for key in ("turn", "transition_h", "cavity_depth", "scallop",
                                           "membrane_thick", "tilt", "overlap", "weld")))
+
+                # 0.49: отдельный проект доступен в меню и строится через живой API.
+                original49 = post("/api/preview", {"script": (
+                    "скелет = skeleton_original height=1750 color=#d9cfb6")})
+                check("0.49: оригинальный скелет в живом превью — 206 костей без импорта",
+                      original49.get("ok") is True and original49.get("objects") == 206
+                      and original49.get("tris", 0) > 100000,
+                      f"{original49.get('tris', 0)} трис, {original49.get('objects', 0)} объектов")
+                check("0.49: новый проект присутствует в меню примеров",
+                      any(item.get("key") == "human_skeleton_original"
+                          for item in state.get("examples", [])))
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

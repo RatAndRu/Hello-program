@@ -70,7 +70,8 @@ def _prepare(solids, groups=None):
         v, f = manifold_mesh(s.manifold)
         if len(f) == 0:
             continue
-        nv, nn, nf = crease_normals(v, f, 38.0)
+        nv, nn, nf = crease_normals(
+            v, f, 120.0 if getattr(s, "meta", {}).get("smooth_normals") else 38.0)
         item = {
             "verts": nv, "faces": nf, "normals": nn,
             "color": np.array(color_to_float_rgb(s.color), dtype=np.float32),

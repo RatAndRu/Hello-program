@@ -46,7 +46,7 @@ hiddenimports += [
     "forma.ops_basic", "forma.ops_curves", "forma.ops_shape", "forma.ops_scene",
     "forma.ops_sdf", "forma.render", "forma.webui", "forma.cli", "forma.checks",
     "forma.metrics", "forma.agent", "forma.geometry", "forma.values",
-    "forma.mesher", "forma.sdf", "forma.anatomy", "forma.textures",
+    "forma.mesher", "forma.sdf", "forma.anatomy", "forma.skeleton_original", "forma.ops_skeleton", "forma.textures",
     "forma.blender", "forma.paths", "forma.ops_human", "forma.ops_studio",
     "forma.ops_io", "forma.ops_extra",
     "numpy", "manifold3d", "trimesh",

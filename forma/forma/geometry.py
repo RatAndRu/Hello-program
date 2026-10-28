@@ -995,9 +995,9 @@ def crease_normals(verts: np.ndarray, faces: np.ndarray, angle_deg: float = 38.0
 #  Экспорт
 # --------------------------------------------------------------------------- #
 
-def _glb_geometry(m: mf.Manifold, max_tris: int = 4_000_000):
+def _glb_geometry(m: mf.Manifold, max_tris: int = 4_000_000, crease_angle: float = 38.0):
     verts, faces = manifold_mesh(m)
-    nv, normals, nf = crease_normals(verts, faces, 38.0)
+    nv, normals, nf = crease_normals(verts, faces, crease_angle)
     # Z-up -> Y-up
     nv_y = np.stack([nv[:, 0], nv[:, 2], -nv[:, 1]], axis=1)
     nrm_y = np.stack([normals[:, 0], normals[:, 2], -normals[:, 1]], axis=1)
@@ -1031,7 +1031,8 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
         if obj.manifold.is_empty():
             continue
         if with_normals:
-            verts, normals, faces = _glb_geometry(obj.manifold)
+            verts, normals, faces = _glb_geometry(
+                obj.manifold, crease_angle=120.0 if obj.meta.get("smooth_normals") else 38.0)
         else:
             verts, faces = manifold_mesh(obj.manifold)
             verts = np.stack([verts[:, 0], verts[:, 2], -verts[:, 1]], axis=1)

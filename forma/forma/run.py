@@ -25,6 +25,7 @@ from . import ops_curves  # noqa: F401,E402
 from . import ops_shape  # noqa: F401,E402
 from . import ops_scene  # noqa: F401,E402
 from . import ops_sdf  # noqa: F401,E402
+from . import ops_skeleton  # noqa: F401,E402
 from . import ops_human  # noqa: F401,E402
 from . import ops_studio  # noqa: F401,E402
 from . import ops_io  # noqa: F401,E402

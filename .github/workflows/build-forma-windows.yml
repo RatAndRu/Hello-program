@@ -61,6 +61,11 @@ jobs:
           fi
           exit "$rc"
 
+      - name: Проверить и экспортировать оригинальный параметрический скелет
+        working-directory: forma
+        run: |
+          python tools/build_skeleton_original.py
+
       - name: Подготовить иконку и версию
         working-directory: forma
         run: |
@@ -142,6 +147,8 @@ jobs:
           cp packaging/README_FIRST.txt release/ЧИТАЙ_МЕНЯ.txt
           cp packaging/icon_256.png release/icon.png
           cp examples/assets/human_skeleton.LICENSE.txt release/ЛИЦЕНЗИЯ_СКЕЛЕТ.txt
+          cp docs/human_skeleton_original.md release/ОРИГИНАЛЬНЫЙ_СКЕЛЕТ.md
+          cp examples/assets/human_skeleton_original.audit.json release/АУДИТ_ОРИГИНАЛЬНОГО_СКЕЛЕТА.json
           python - <<'PY'
           from pathlib import Path
           import zipfile, sys
@@ -177,6 +184,8 @@ jobs:
             forma/dist/Forma3D.exe
             forma/examples/assets/human_skeleton.glb
             forma/examples/assets/human_skeleton.LICENSE.txt
+            forma/examples/assets/human_skeleton_original.glb
+            forma/examples/assets/human_skeleton_original.audit.json
             forma/selftest.txt
             forma/uitest.txt
           if-no-files-found: error
@@ -192,9 +201,18 @@ jobs:
 
             * `Forma3D-…-windows.zip` — распакуй и запусти `Forma3D.exe` (рекомендуется).
             * `Forma3D.exe` — то же приложение одним файлом.
-            * `human_skeleton.glb` — готовый скелет из 206 отдельных костей для Blender и других GLB-совместимых программ; рядом публикуется файл лицензии.
+            * `human_skeleton.glb` — прежняя адаптация сторонней анатомической модели из 206 костей; рядом публикуется её файл лицензии.
+            * `human_skeleton_original.glb` — новый самостоятельный параметрический скелет Forma, построенный без сторонних сеток; рядом JSON-аудит.
 
-            **Новый анатомический проект — скелет взрослого человека**
+            **Что нового в 0.49 — оригинальный параметрический скелет**
+
+            * новый `human_skeleton_original.forma`: **206 костей** (80 осевых + 126 аппендикулярных) из собственных сечений, пластин, SDF и булевых операций, без `import` и чужих mesh-данных;
+            * **185 998 треугольников**, 206 meshes/nodes в GLB, **16/16 проверок проекта**, 0 пересечений более 1 мм³; 7 новых тестов, включая меню примеров и повторное открытие GLB;
+            * истинный рост `height=1200…2200`, отдельные кости и группа; фронтальный, задний, боковой и увеличенные виды проверены; прежний проект и его лицензии сохранены без изменений;
+            * локальный регресс: **1107/1107 unittest**, **25/25 проектов**, `--selftest` и `--uistest` успешны; Windows CI повторяет тесты и экспорт;
+            * это учебная параметрическая аппроксимация, а не аттестованная медицинская анатомическая модель.
+
+            **Прежний адаптированный анатомический проект — скелет взрослого человека**
 
             * ровно **206 костей** (80 осевых + 126 аппендикулярных), **400 168 трис**, номинальный рост 1750 мм; источник AnatomyTOOL/Z-Anatomy, лицензии CC BY-SA 4.0/CC BY 4.0 сохранены в GLB;
             * 5 анатомических групп, **412/412 проверок**, 8 специальных автотестов; фронтальный, задний, боковой и увеличенные виды проверены в Three.js;
@@ -373,3 +391,5 @@ jobs:
             forma/dist/Forma3D.exe
             forma/examples/assets/human_skeleton.glb
             forma/examples/assets/human_skeleton.LICENSE.txt
+            forma/examples/assets/human_skeleton_original.glb
+            forma/examples/assets/human_skeleton_original.audit.json
