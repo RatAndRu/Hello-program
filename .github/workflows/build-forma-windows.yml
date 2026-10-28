@@ -26,6 +26,9 @@ jobs:
     steps:
       - name: Получить код
         uses: actions/checkout@v4
+        with:
+          # Нужны прежние release-теги для ZIP только с изменёнными файлами.
+          fetch-depth: 0
 
       - name: Установить Python 3.12
         uses: actions/setup-python@v5
@@ -175,12 +178,39 @@ jobs:
           print('ZIP:', zip_path, zip_path.stat().st_size, 'байт')
           PY
 
+      - name: Подготовить ZIP только с изменёнными файлами
+        working-directory: forma
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Старые release-теги могли указывать на main. Точная база — SHA
+          # предыдущего успешного запуска этого workflow на той же ветке.
+          base=""
+          while IFS= read -r run_sha; do
+            if [ -n "$run_sha" ] && [ "$run_sha" != "$GITHUB_SHA" ]; then
+              base="$run_sha"
+              break
+            fi
+          done < <(gh run list --workflow build-forma-windows.yml \
+            --branch "$GITHUB_REF_NAME" --limit 30 \
+            --json headSha,status,conclusion \
+            --jq '.[] | select(.status == "completed" and .conclusion == "success") | .headSha')
+          if [ -z "$base" ]; then
+            base="$(git rev-parse HEAD^ 2>/dev/null || git mktree </dev/null)"
+          fi
+          version="$(python -c 'from forma.version import __version__; print(__version__)')"
+          short_base="${base:0:12}"
+          echo "Delta base: $base"
+          python tools/build_update_zip.py --base "$base" --head HEAD \
+            --output "Forma3D-${version}-update-from-${short_base}.zip"
+
       - name: Загрузить в Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: Forma3D-windows
           path: |
             forma/Forma3D-*-windows.zip
+            forma/Forma3D-*-update-from-*.zip
             forma/dist/Forma3D.exe
             forma/examples/assets/human_skeleton.glb
             forma/examples/assets/human_skeleton.LICENSE.txt
@@ -195,14 +225,22 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: forma3d-exe-${{ github.run_number }}-${{ github.run_attempt }}
+          target_commitish: ${{ github.sha }}
           name: Форма 3D — Windows EXE (сборка ${{ github.run_number }})
           body: |
             **Форма 3D** — параметрический 3D-редактор, которым управляют текстом.
 
             * `Forma3D-…-windows.zip` — распакуй и запусти `Forma3D.exe` (рекомендуется).
             * `Forma3D.exe` — то же приложение одним файлом.
+            * `Forma3D-…-update-from-….zip` — **только изменённые с прошлого релиза исходники и ресурсы** + манифест; это не бинарный патч EXE. Для обновления готовой программы после изменения кода нужен новый EXE.
             * `human_skeleton.glb` — прежняя адаптация сторонней анатомической модели из 206 костей; рядом публикуется её файл лицензии.
             * `human_skeleton_original.glb` — новый самостоятельный параметрический скелет Forma, построенный без сторонних сеток; рядом JSON-аудит.
+
+            **Что нового в 0.50 — лёгкие пакеты обновлений**
+
+            * отдельный `update-from` ZIP содержит только дельту файлов между предыдущим Forma-релизом и текущим коммитом, манифест и список удалений;
+            * оригинальный GLB/аудит не дублируются внутри EXE, потому что проект генерирует модель кодом; старый импортированный проект сохраняет работоспособность;
+            * добавлен воспроизводимый `tools/build_update_zip.py` и его автотест; локальный регресс **1108/1108 unittest** успешен.
 
             **Что нового в 0.49 — оригинальный параметрический скелет**
 
@@ -388,6 +426,7 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             forma/Forma3D-*-windows.zip
+            forma/Forma3D-*-update-from-*.zip
             forma/dist/Forma3D.exe
             forma/examples/assets/human_skeleton.glb
             forma/examples/assets/human_skeleton.LICENSE.txt

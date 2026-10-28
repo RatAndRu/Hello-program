@@ -1,0 +1,57 @@
+name: Опубликовать ZIP изменённых файлов Forma
+
+# Ручной режим для перевыпуска дельты между любыми ревизиями без сборки EXE.
+on:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Прежний commit или tag'
+        required: true
+        type: string
+      head:
+        description: 'Новый commit или tag'
+        required: true
+        type: string
+      release_tag:
+        description: 'Существующий release, к которому прикрепить ZIP'
+        required: true
+        type: string
+      archive_name:
+        description: 'Имя ZIP (латиница, цифры, точка, _ и -)'
+        required: true
+        default: 'Forma3D-changed-files.zip'
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  publish-delta:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Получить ревизии
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Проверить имя и собрать дельту
+        env:
+          BASE: ${{ inputs.base }}
+          HEAD: ${{ inputs.head }}
+          ARCHIVE_NAME: ${{ inputs.archive_name }}
+        run: |
+          python - <<'PY'
+          import os, re
+          name = os.environ['ARCHIVE_NAME']
+          if not re.fullmatch(r'[A-Za-z0-9._-]+\.zip', name):
+              raise SystemExit('Небезопасное имя архива: ' + name)
+          PY
+          python forma/tools/build_update_zip.py \
+            --base "$BASE" --head "$HEAD" --output "forma/$ARCHIVE_NAME"
+
+      - name: Прикрепить ZIP к указанному релизу
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          files: forma/${{ inputs.archive_name }}
+          fail_on_unmatched_files: true

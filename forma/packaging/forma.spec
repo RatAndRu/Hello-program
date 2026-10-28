@@ -101,6 +101,10 @@ _DROP_EXT = (".c", ".h", ".hpp", ".cpp", ".cc", ".pyx", ".pxd", ".pyi",
 
 def _keep(entry):
     name = entry[0].replace("\\", "/").lower()
+    # Оригинальный скелет генерируется кодом и не импортирует свой GLB.
+    # Экспорт/аудит публикуются отдельно; не дублируем их внутри EXE.
+    if name.startswith("examples/assets/human_skeleton_original."):
+        return False
     if any(part in name for part in _DROP_DIRS):
         return False
     return not name.endswith(_DROP_EXT)
