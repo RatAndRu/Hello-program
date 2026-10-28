@@ -63,6 +63,7 @@ from . import ops_structures  # noqa: F401,E402
 from . import ops_orient  # noqa: F401,E402
 from . import ops_eye  # noqa: F401,E402
 from . import ops_web  # noqa: F401,E402
+from . import ops_organic  # noqa: F401,E402
 
 
 # Команды, которые не меняют ни форму, ни видимость: в анимации сборки

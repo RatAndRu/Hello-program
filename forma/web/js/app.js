@@ -4558,6 +4558,33 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'blot', name: 'клякса', title: 'Клякса / брызги', group: 'Производные примитивы',
+    desc: 'Объёмная клякса со сплайновым контуром, выпуклым верхом и отдельными брызгами. Один seed повторяет ту же форму, другой — новую.',
+    params: [
+      { k: 'radius', label: 'радиус', v: 45, step: 5, min: 0.2, max: 5000 },
+      { k: 'thickness', label: 'толщина', v: 4, step: 0.5, min: 0.05, max: 1000 },
+      { k: 'dome', label: 'выпуклость', v: 1.2, step: 0.2, min: 0, max: 1000 },
+      { k: 'lobes', label: 'выступов', v: 9, step: 1, min: 3, max: 32 },
+      { k: 'irregularity', label: 'нерегулярн.', v: 0.85, step: 0.05, min: 0, max: 1, kind: 'slider' },
+      { k: 'droplets', label: 'брызг', v: 6, step: 1, min: 0, max: 64 },
+      { k: 'spread', label: 'разброс ×R', v: 1.35, step: 0.05, min: 0.8, max: 4 },
+      { k: 'seed', label: 'seed', v: 0, step: 1, min: 0, max: 999999 },
+      detailParam(3, 'гладкость контура и круглых брызг'),
+    ],
+  },
+  {
+    op: 'knot', name: 'узел', title: 'Узлы / верёвка и лента', group: 'Производные примитивы',
+    desc: 'Настоящие 3D-переплетения со свободными концами: простой узел, восьмёрка, бант и галстучная заготовка. Не плоские значки.',
+    params: [
+      { k: 'kind', label: 'заготовка', v: 'восьмерка', kind: 'raw', choices: ['простой', 'восьмерка', 'бант', 'галстук'] },
+      { k: 'size', label: 'размер узла', v: 100, step: 5, min: 10, max: 5000 },
+      { k: 'radius', label: 'радиус верёвки', v: 2.5, step: 0.2, min: 0.1, max: 1000 },
+      { k: 'height', label: 'над/под мм', v: 0, step: 1, min: 0, max: 1000, hint: '0 — автоматический просвет между ветвями' },
+      { k: 'tail', label: 'свободный конец', v: 15, step: 1, min: 0, max: 5000 },
+      detailParam(3, 'гладкость сплайна пути и круглого сечения'),
+    ],
+  },
+  {
     op: 'egg', name: 'яйцо', title: 'Яйцо', group: 'Природные примитивы',
     desc: 'Объёмное яйцо или плоский силуэт; wall>0 делает сквозную формочку с равномерной стенкой.',
     params: [
@@ -5558,6 +5585,23 @@ const TOOL_SHAPES = [
       { k: 'amp', label: 'высота', v: 5, step: 0.5, min: 0, max: 500 },
       { k: 'mode', label: 'узор', v: 'гофра', kind: 'raw', choices: ['гофра', 'вафля', 'рифление', 'зигзаг'] },
       { k: 'angle', label: 'поворот', v: 0, step: 15, min: -180, max: 180 },
+    ],
+  },
+  {
+    op: 'sauce', name: 'соус', title: 'Соус / растекание', group: 'Поверхность',
+    desc: 'Круглая объёмная полоса: зигзаг, волна и боковые ветви. В сценарии sauce [объект] проецирует соус на верхнюю поверхность носителя.',
+    params: [
+      { k: 'length', label: 'длина', v: 120, step: 5, min: 1, max: 5000 },
+      { k: 'amplitude', label: 'размах', v: 18, step: 1, min: 0, max: 5000 },
+      { k: 'radius', label: 'радиус полосы', v: 2.4, step: 0.2, min: 0.05, max: 1000 },
+      { k: 'waves', label: 'колебаний', v: 5, step: 0.5, min: 0, max: 100 },
+      { k: 'pattern', label: 'рисунок', v: 'зигзаг', kind: 'raw', choices: ['зигзаг', 'волна', 'прямая'] },
+      { k: 'axis', label: 'направление', v: 'x', kind: 'raw', choices: ['x', 'y'] },
+      { k: 'jitter', label: 'неровность', v: 0.12, step: 0.02, min: 0, max: 1, kind: 'slider' },
+      { k: 'drips', label: 'ветвей', v: 0, step: 1, min: 0, max: 24 },
+      { k: 'drip_length', label: 'длина ветви', v: 16.2, step: 1, min: 0.05, max: 5000 },
+      { k: 'seed', label: 'seed', v: 0, step: 1, min: 0, max: 999999 },
+      detailParam(3, 'число точек пути и сторон круглого сечения'),
     ],
   },
   {

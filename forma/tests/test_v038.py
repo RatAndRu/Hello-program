@@ -179,7 +179,7 @@ class CatalogOrderTest(unittest.TestCase):
         derived = ["grating", "hemisphere", "cavity_frame", "sector", "bracket", "полуовал",
                    "arch", "воронка", "скоба", "lens", "полукапсула", "ingot",
                    "paraboloid", "hyperboloid", "saddle", "pie", "eyeball", "web", "bead", "tri_prism", "arc_prism",
-                   "torus_sector"]
+                   "torus_sector", "blot", "knot"]
         nature = ["egg", "drop", "crescent", "star", "lightning", "heart", "cloud",
                   "diamond", "horn", "rock", "leaf", "banana"]
         self.assertEqual(self.ops[:len(standard)], standard)

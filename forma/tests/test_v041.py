@@ -49,7 +49,7 @@ class OrientationNotesTest(unittest.TestCase):
     def test_every_primitive_has_own_orientation_note(self):
         primitives = {c["name"] for c in commands_help()
                       if c["category"] == "Примитивы"}
-        self.assertEqual(len(primitives), 105)
+        self.assertEqual(len(primitives), 107)
         self.assertEqual(primitives, set(PRIMITIVE_ORIENTATIONS))
         for command in commands_help():
             if command["name"] in primitives:
