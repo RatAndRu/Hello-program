@@ -225,7 +225,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: forma3d-exe-${{ github.run_number }}-${{ github.run_attempt }}
-          target_commitish: ${{ github.sha }}
           name: Форма 3D — Windows EXE (сборка ${{ github.run_number }})
           body: |
             **Форма 3D** — параметрический 3D-редактор, которым управляют текстом.
