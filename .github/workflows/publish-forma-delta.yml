@@ -2,6 +2,10 @@ name: Опубликовать ZIP изменённых файлов Forma
 
 # Ручной режим для перевыпуска дельты между любыми ревизиями без сборки EXE.
 on:
+  # Push-запрос работает и тогда, когда workflow ещё существует только ветке.
+  push:
+    paths:
+      - '.github/delta-request.json'
   workflow_dispatch:
     inputs:
       base:
@@ -28,17 +32,33 @@ permissions:
 jobs:
   publish-delta:
     runs-on: ubuntu-latest
+    env:
+      BASE: ${{ inputs.base }}
+      HEAD: ${{ inputs.head }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      ARCHIVE_NAME: ${{ inputs.archive_name }}
     steps:
       - name: Получить ревизии
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
+      - name: Прочитать push-запрос
+        if: github.event_name == 'push'
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          request = json.loads(Path('.github/delta-request.json').read_text(encoding='utf-8'))
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as out:
+              for key in ('BASE', 'HEAD', 'RELEASE_TAG', 'ARCHIVE_NAME'):
+                  value = str(request.get(key, '')).strip()
+                  if not value or '\n' in value or '\r' in value:
+                      raise SystemExit(f'Некорректное поле {key}')
+                  out.write(f'{key}={value}\n')
+          PY
+
       - name: Проверить имя и собрать дельту
-        env:
-          BASE: ${{ inputs.base }}
-          HEAD: ${{ inputs.head }}
-          ARCHIVE_NAME: ${{ inputs.archive_name }}
         run: |
           python - <<'PY'
           import os, re
@@ -52,6 +72,6 @@ jobs:
       - name: Прикрепить ZIP к указанному релизу
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ inputs.release_tag }}
-          files: forma/${{ inputs.archive_name }}
+          tag_name: ${{ env.RELEASE_TAG }}
+          files: forma/${{ env.ARCHIVE_NAME }}
           fail_on_unmatched_files: true
