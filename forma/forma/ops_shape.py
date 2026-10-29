@@ -11,8 +11,8 @@ from .errors import DslError, GeometryError
 from . import orient
 from .geometry import fibonacci_sphere
 from .ops import (anchor, ensure_solid, make_solid, mirror as mirror_manifold,
-                  merge_solids, op, rotate as rotate_manifold, scale as scale_manifold,
-                  translate as translate_manifold)
+                  merge_solids, make_object_copies, op, rotate as rotate_manifold,
+                  scale as scale_manifold, translate as translate_manifold)
 
 
 def _derived(a, name, manifold, base, kind: str):
@@ -46,6 +46,35 @@ def _parts_follow(a, base, fn, rotation=None) -> None:
                                 @ orient.axes_of(child))
         except Exception:
             continue
+
+
+def _group_target(a):
+    """Возвращает членов группы только для команд преобразования."""
+    value = a.value("objects")
+    if isinstance(value, (list, tuple)) and len(value) == 1:
+        value = value[0]
+    if isinstance(value, str) and value.strip() in a.scene.groups:
+        return a.scene.expand(value.strip())
+    return None
+
+
+def _group_pivot(members):
+    bounds = [s.manifold.bounding_box() for s in members]
+    lo = np.min(np.asarray([b[:3] for b in bounds], dtype=float), axis=0)
+    hi = np.max(np.asarray([b[3:] for b in bounds], dtype=float), axis=0)
+    return (lo + hi) * 0.5
+
+
+def _transform_group(a, members, fn, rotation=None):
+    for member in members:
+        member.manifold = fn(member.manifold)
+        member._stats = None
+        if rotation is not None:
+            orient.set_axes(member, np.asarray(rotation, dtype=float).reshape(3, 3)
+                            @ orient.axes_of(member))
+    a.scene.log("info", f"Группа преобразована целиком: {len(members)} объектов",
+                a.cmd.line)
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -454,17 +483,117 @@ def _rotate_about(m, axis: str, angle: float, center) -> mf.Manifold:
     return rotate_manifold(m, angle, axis_vec, center)
 
 
+def _copy_scale_turn(a, manifold, rng):
+    scale_range = a.vec("scale", 2, default=(1.0, 1.0))
+    lo, hi = sorted((float(scale_range[0]), float(scale_range[1])))
+    if lo <= 0:
+        raise GeometryError("scale копий должен быть больше нуля.")
+    factor = float(rng.uniform(lo, hi))
+    turn = float(a.num("turn", 0.0, minv=0.0) or 0.0)
+    angle = float(rng.uniform(0.0, turn)) if turn else 0.0
+    bb = manifold.bounding_box()
+    center = np.asarray([(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2,
+                         (bb[2] + bb[5]) / 2])
+    if abs(factor - 1.0) > 1e-9:
+        manifold = scale_manifold(manifold, (factor, factor, factor), center)
+    if angle:
+        manifold = rotate_manifold(manifold, angle, (0, 0, 1), center)
+    return manifold
+
+
+def _array_pack(a, name, sources):
+    """Укладка произвольных прототипов в ряд без пересечений."""
+    axis_name = (a.text("axis", "x", ["x", "y", "z"]) or "x").lower()
+    axis = {"x": 0, "y": 1, "z": 2}[axis_name]
+    gap = float(a.num("gap", 1.0, minv=0.0) or 0.0)
+    inset = float(a.num("inset", 0.0, minv=0.0) or 0.0)
+    host_name = (a.text("on") or "").strip()
+    host = a.scene.resolve(host_name) if host_name else None
+    if host in sources:
+        raise GeometryError("array mode=pack: хозяин не может одновременно быть прототипом.")
+    reference = host.manifold.bounding_box() if host else sources[0].manifold.bounding_box()
+    lo = float(reference[axis]) + inset
+    hi = float(reference[axis + 3]) - inset
+    if a.has("length"):
+        length = float(a.num("length", 1.0, minv=0.01)) - 2 * inset
+        if length <= 0:
+            raise GeometryError("array mode=pack: inset съел всю заданную length.")
+        middle = (lo + hi) * 0.5
+        lo, hi = middle - length / 2, middle + length / 2
+    if hi <= lo:
+        raise GeometryError("array mode=pack: область слишком мала после inset.")
+    count = a.int("count", 0, minv=0, maxv=400)
+    if count is None:
+        count = 0
+    seed = int(a.num("seed", 1) or 0)
+    rng = np.random.default_rng(seed)
+    sequence = (a.text("sequence", "loop", ["loop", "random"]) or "loop")
+    justify = (a.text("justify", "start", ["start", "center", "end"]) or "start")
+    align = (a.text("align", "bottom", ["bottom", "center", "none"]) or "bottom")
+    if axis == 2 and align != "none":
+        raise GeometryError("array mode=pack: для вертикального ряда axis=z задайте align=none.",
+                            hint="Иначе посадка низом/центром заменила бы координаты самой упаковки.")
+    records = []
+    spans = []
+    cursor = lo
+    max_count = count if count else 400
+    for index in range(max_count):
+        source = sources[index % len(sources)] if sequence == "loop" else \
+            sources[int(rng.integers(0, len(sources)))]
+        moved = _copy_scale_turn(a, source.manifold, rng)
+        bb = moved.bounding_box()
+        span = float(bb[axis + 3] - bb[axis])
+        if cursor + span > hi + 1e-7:
+            if count:
+                raise GeometryError(
+                    "array mode=pack: копии не помещаются без пересечений.",
+                    hint="Уменьшите count/scale, увеличьте length или уменьшите gap/inset.")
+            break
+        records.append([moved, source, bb, span])
+        spans.append(span)
+        cursor += span + gap
+    if not records:
+        raise GeometryError("array mode=pack: ни один прототип не помещается в область.")
+    used = sum(spans) + gap * max(0, len(records) - 1)
+    free = (hi - lo) - used
+    shift = 0.0 if justify == "start" else (free * 0.5 if justify == "center" else free)
+    cursor = lo + shift
+    other = [i for i in range(3) if i != axis]
+    output = []
+    at = np.asarray(a.vec("at", 3, default=(0, 0, 0)), dtype=float)
+    for moved, source, bb, span in records:
+        center = np.asarray([(bb[0] + bb[3]) / 2, (bb[1] + bb[4]) / 2,
+                             (bb[2] + bb[5]) / 2])
+        delta = np.zeros(3)
+        delta[axis] = cursor + span / 2 - center[axis]
+        for idx in other:
+            delta[idx] = (reference[idx] + reference[idx + 3]) / 2 - center[idx]
+        if align == "bottom":
+            support_z = float(reference[5] if host else reference[2])
+            delta[2] = support_z - float(bb[2])
+        elif align == "center":
+            delta[2] = (float(reference[2]) + float(reference[5])) / 2 - center[2]
+        output.append((translate_manifold(moved, delta + at), source))
+        cursor += span + gap
+    as_mode = (a.text("as", "objects", ["objects", "merged"]) or "objects")
+    if as_mode == "objects":
+        return make_object_copies(a.scene, name, output, a, kind="array_pack")
+    for source in sources:
+        a.scene.consume(source)
+    merged = mf.Manifold.batch_boolean([m for m, _ in output], mf.OpType.Add)
+    return make_solid(a.scene, name, merged, a, base=sources[0], kind="array_pack")
+
+
 @op("array", aliases=("массив", "копии", "повторить", "размножить"), category="Массивы и преобразования",
-    summary="Создаёт копии объекта: линейно, по кругу или сеткой. Радиальный массив "
-            "ставит копии на окружность радиуса radius, поворачивает каждую вокруг "
-            "своей оси или распределяет по сектору angle.",
+    summary="Создаёт копии линейно, по кругу, сеткой или упаковкой pack без пересечений. "
+            "as=objects сохраняет отдельные прототипы, материалы и редактирование.",
     example='стойка = cylinder radius=6 height=60\n'
             'кольцо = array [стойка] count=8 mode=radial radius=60 around=z\n'
             'деталь = box size=[24,10,8]\n'
             'веер = array [деталь] count=5 mode=radial radius=80 angle=180 spin=да',
-    params={"objects": "исходный объект (или несколько — они объединяются)",
+    params={"objects": "прототипы; merged объединяет, objects сохраняет по sequence",
             "count": "количество копий (включая исходную)",
-            "mode": "linear (по умолчанию), radial (по кругу), grid (сетка)",
+            "mode": "linear, radial, grid или pack — упаковка в ряд без пересечений",
             "offset": "шаг для linear [dx,dy,dz]",
             "around": "ось вращения для radial: x, y или z",
             "radius": "радиус окружности для radial, мм (0 — вращать на месте)",
@@ -474,21 +603,38 @@ def _rotate_about(m, axis: str, angle: float, center) -> mf.Manifold:
             "center": "центр вращения / точка отсчёта сетки",
             "counts": "для grid: [nx,ny,nz]",
             "spacing": "для grid: шаг [dx,dy,dz]",
+            "as": "merged — одно тело; objects — отдельные копии и группа",
+            "scale": "случайный масштаб копий [min,max] (1,1)",
+            "turn": "случайный поворот копий до угла, градусов (0)",
+            "seed": "зерно повторяемого разброса (1)",
+            "axis": "для pack: ось ряда x/y/z",
+            "on": "для pack: хозяин, по габариту которого задаются ряд и опора",
+            "length": "для pack: длина области вдоль axis",
+            "gap": "для pack: зазор между копиями (1)",
+            "inset": "отступ от границ области (0)",
+            "sequence": "loop — прототипы по кругу; random — случайный выбор",
+            "justify": "для pack: start, center или end",
+            "align": "bottom — низом на верх хозяина; center или none",
             "at": "сдвиг готового массива [x,y,z]"},
     positional=["objects"])
 def array(a, name):
     sources = a.solids()
     base = sources[0]
     source = merge_solids(sources) if len(sources) > 1 else sources[0].manifold
-    mode = a.text("mode", "linear", ["linear", "radial", "grid"]) or "linear"
+    mode = a.text("mode", "linear", ["linear", "radial", "grid", "pack"]) or "linear"
+    if mode == "pack":
+        return _array_pack(a, name, sources)
+    as_mode = (a.text("as", "merged", ["merged", "objects"]) or "merged")
+    sequence = (a.text("sequence", "loop", ["loop", "random"]) or "loop")
+    rng = np.random.default_rng(int(a.num("seed", 1) or 0))
     count = a.int("count", 2, minv=1, maxv=400)
     if count is None:
         count = 2
-    copies = [source]
+    transforms = []
     if mode == "linear":
-        offset = a.vec("offset", 3, default=(20.0, 0.0, 0.0))
-        for i in range(1, count):
-            copies.append(translate_manifold(source, np.array(offset) * i))
+        offset = np.asarray(a.vec("offset", 3, default=(20.0, 0.0, 0.0)))
+        for i in range(count):
+            transforms.append(lambda m, i=i: translate_manifold(m, offset * i))
     elif mode == "radial":
         axis = (a.text("around", "z", ["x", "y", "z"]) or "z").lower()
         center = np.asarray(a.vec("center", 3, default=(0.0, 0.0, 0.0)),
@@ -498,16 +644,13 @@ def array(a, name):
         radius = float(a.num("radius", 0.0, minv=0.0) or 0.0)
         spin = a.boolean("spin", True)
         full = abs(abs(total) - 360.0) < 1e-6
-        if count > 1:
-            step = total / count if full else total / (count - 1)
-        else:
-            step = 0.0
+        step = (total / count if full else total / (count - 1)) if count > 1 else 0.0
         if radius <= 1e-9:
+            transforms.append(lambda m: m)
             for i in range(1, count):
-                copies.append(_rotate_about(source, axis, start + step * i, center))
+                transforms.append(lambda m, i=i: _rotate_about(
+                    m, axis, start + step * i, center))
         else:
-            # окружность в плоскости, перпендикулярной оси; по умолчанию она
-            # охватывает сам предмет, а не начало координат
             if axis == "x":
                 u, v = np.array([0.0, 1.0, 0.0]), np.array([0.0, 0.0, 1.0])
             elif axis == "y":
@@ -515,32 +658,56 @@ def array(a, name):
             else:
                 u, v = np.array([1.0, 0.0, 0.0]), np.array([0.0, 1.0, 0.0])
             sb = source.bounding_box()
-            own = np.array([(sb[0] + sb[3]) / 2.0, (sb[1] + sb[4]) / 2.0,
-                            (sb[2] + sb[5]) / 2.0])
-            hub = center if a.has("center") else own
-            copies = []                     # все копии встают на окружность
-            for i in range(count):
+            own_source = np.array([(sb[0] + sb[3]) / 2.0, (sb[1] + sb[4]) / 2.0,
+                                   (sb[2] + sb[5]) / 2.0])
+            hub = center if a.has("center") else own_source
+
+            def on_circle(m, i):
                 az = start + step * i
                 ang = math.radians(az)
                 point = hub + radius * (math.cos(ang) * u + math.sin(ang) * v)
-                copy = translate_manifold(source, point - own)
-                if spin:
-                    copy = _rotate_about(copy, axis, az, point)
-                copies.append(copy)
+                bb = m.bounding_box()
+                own = np.array([(bb[0] + bb[3]) / 2.0, (bb[1] + bb[4]) / 2.0,
+                                (bb[2] + bb[5]) / 2.0])
+                copy = translate_manifold(m, point - own)
+                return _rotate_about(copy, axis, az, point) if spin else copy
+
+            for i in range(count):
+                transforms.append(lambda m, i=i: on_circle(m, i))
     else:
         counts = a.vec("counts", 3, default=(2.0, 1.0, 1.0))
         counts_i = [max(1, int(round(c))) for c in counts]
         spacing = a.vec("spacing", 3, default=(20.0, 0.0, 0.0))
-        center = a.vec("center", 3, default=(0.0, 0.0, 0.0))
+        center = np.asarray(a.vec("center", 3, default=(0.0, 0.0, 0.0)))
         if counts_i[0] * counts_i[1] * counts_i[2] > 500:
             raise GeometryError("Слишком много копий в сетке (максимум 500).")
+        transforms.append(lambda m: m)
         for ix in range(counts_i[0]):
             for iy in range(counts_i[1]):
                 for iz in range(counts_i[2]):
                     if ix == 0 and iy == 0 and iz == 0:
                         continue
                     off = np.array([ix * spacing[0], iy * spacing[1], iz * spacing[2]])
-                    copies.append(translate_manifold(source, np.array(center) + off))
+                    transforms.append(lambda m, off=off: translate_manifold(m, center + off))
+    copies = []
+    copy_sources = []
+    separate = as_mode == "objects" and len(sources) > 1
+    for index, transform in enumerate(transforms):
+        if separate:
+            prototype = (sources[index % len(sources)] if sequence == "loop" else
+                         sources[int(rng.integers(0, len(sources)))])
+            geometry = prototype.manifold
+        else:
+            prototype = base
+            geometry = source
+        copies.append(transform(geometry))
+        copy_sources.append(prototype)
+    copies = [_copy_scale_turn(a, copy, rng) for copy in copies]
+    if as_mode == "objects":
+        at = np.asarray(a.vec("at", 3, default=(0, 0, 0)), dtype=float)
+        records = [(translate_manifold(copy, at), prototype)
+                   for copy, prototype in zip(copies, copy_sources)]
+        return make_object_copies(a.scene, name, records, a, kind="array_copy")
     for s in sources:
         a.scene.consume(s)
     merged = mf.Manifold.batch_boolean(copies, mf.OpType.Add)
@@ -550,7 +717,6 @@ def array(a, name):
         a.scene.log("warn", "Массив получился очень тяжёлым — уменьшите количество копий.",
                     a.cmd.line)
     made = make_solid(a.scene, name, merged, a, base=base, kind="array")
-    # у копий разные повороты — общей ориентации у массива нет
     orient.set_axes(made, np.eye(3))
     return made
 
@@ -560,20 +726,27 @@ def array(a, name):
 # --------------------------------------------------------------------------- #
 
 @op("translate", aliases=("сдвинуть", "переместить", "move", "сдвиг"), category="Массивы и преобразования",
-    summary="Сдвигает объект на вектор.",
-    example='шкив = cylinder radius=30 height=14\nдеталь = translate [шкив] offset=[0,0,20]',
-    params={"objects": "объект", "offset": "вектор [dx,dy,dz] или число",
+    summary="Сдвигает объект или все члены группы на вектор; детали группы не объединяются.",
+    example='a = box size=[20,20,20]\nb = cylinder radius=8 height=30 at=[40,0,0]\n'
+            'g = group [a,b]\ntranslate [g] offset=[10,0,0]',
+    params={"objects": "объект или группа", "offset": "вектор [dx,dy,dz] или число",
             "x": "сдвиг по X", "y": "сдвиг по Y", "z": "сдвиг по Z"},
     positional=["objects"])
 def translate(a, name):
-    solids = a.solids()
-    if len(solids) != 1:
-        raise GeometryError("translate работает с одним объектом.")
-    base = solids[0]
     if a.has("offset"):
         off = a.vec("offset", 3, default=(0, 0, 0))
     else:
         off = [a.num("x", 0.0) or 0.0, a.num("y", 0.0) or 0.0, a.num("z", 0.0) or 0.0]
+    group = _group_target(a)
+    if group is not None:
+        if name:
+            raise GeometryError("При преобразовании группы присваивание не нужно.",
+                                hint="Пишите: translate [группа] offset=[...] — имена деталей сохранятся.")
+        return _transform_group(a, group, lambda m: translate_manifold(m, off))
+    solids = a.solids()
+    if len(solids) != 1:
+        raise GeometryError("translate работает с одним объектом или одной группой.")
+    base = solids[0]
     if abs(off[0]) + abs(off[1]) + abs(off[2]) < 1e-9:
         return _derived(a, name, base.manifold, base, "translate")
     result = translate_manifold(base.manifold, off)
@@ -582,23 +755,34 @@ def translate(a, name):
 
 
 @op("rotate", aliases=("повернуть", "вращать", "поворот"), category="Массивы и преобразования",
-    summary="Поворачивает объект вокруг оси (по умолчанию Z) на угол в градусах.",
-    example='деталь = box size=[60,20,20]\nдеталь = rotate [деталь] angle=90 axis=z',
-    params={"objects": "объект", "angle": "угол, градусы",
+    summary="Поворачивает объект или группу вокруг оси; для группы pivot по умолчанию — общий центр AABB.",
+    example='a = box size=[60,20,20]\nb = sphere radius=10 at=[80,0,0]\n'
+            'g = group [a,b]\nrotate [g] angle=90 axis=z',
+    params={"objects": "объект или группа", "angle": "угол, градусы",
             "axis": "x, y, z или вектор [x,y,z]",
-            "pivot": "точка, вокруг которой вращать"},
+            "pivot": "точка вращения; для группы по умолчанию центр общего AABB"},
     positional=["objects"])
 def rotate(a, name):
-    solids = a.solids()
-    if len(solids) != 1:
-        raise GeometryError("rotate работает с одним объектом.")
-    base = solids[0]
     angle = a.num("angle", required=True)
     axis_raw = a.text("axis", "z")
     if axis_raw in ("x", "y", "z"):
         axis = {"x": (1, 0, 0), "y": (0, 1, 0), "z": (0, 0, 1)}[axis_raw]
     else:
         axis = a.vec("axis", 3, default=(0, 0, 1))
+    group = _group_target(a)
+    if group is not None:
+        if name:
+            raise GeometryError("При преобразовании группы присваивание не нужно.",
+                                hint="Пишите: rotate [группа] angle=30 — имена деталей сохранятся.")
+        pivot = (a.vec("pivot", 3, default=(0, 0, 0)) if a.has("pivot")
+                 else _group_pivot(group))
+        rotation = orient.rotate_axes(np.eye(3), float(angle), axis)
+        return _transform_group(
+            a, group, lambda m: rotate_manifold(m, float(angle), axis, pivot), rotation)
+    solids = a.solids()
+    if len(solids) != 1:
+        raise GeometryError("rotate работает с одним объектом или одной группой.")
+    base = solids[0]
     pivot = a.vec("pivot", 3, default=(0, 0, 0))
     turned = rotate_manifold(base.manifold, float(angle), axis, pivot)
     axes_before = orient.axes_of(base)
@@ -613,19 +797,28 @@ def rotate(a, name):
 
 
 @op("scale", aliases=("масштабировать", "увеличить", "size"), category="Массивы и преобразования",
-    summary="Масштабирует объект: равномерно (factor=2) или по осям (factor=[1,2,1]).",
-    example='деталь = box size=[20,20,40]\nдеталь = scale [деталь] factor=[1,1,1.5]',
-    params={"objects": "объект", "factor": "число или [sx,sy,sz]",
-            "pivot": "точка отсчёта масштаба"},
+    summary="Масштабирует объект или группу: равномерно или по осям; для группы pivot — общий центр AABB.",
+    example='a = box size=[20,20,40]\nb = sphere radius=10 at=[50,0,0]\n'
+            'g = group [a,b]\nscale [g] factor=[1,1,1.5]',
+    params={"objects": "объект или группа", "factor": "число или [sx,sy,sz]",
+            "pivot": "точка масштабирования; для группы по умолчанию центр общего AABB"},
     positional=["objects"])
 def scale(a, name):
-    solids = a.solids()
-    if len(solids) != 1:
-        raise GeometryError("scale работает с одним объектом.")
-    base = solids[0]
     factor = a.vec("factor", 3, required=True)
     if any(f <= 0 for f in factor):
         raise GeometryError("Масштаб должен быть больше нуля.")
+    group = _group_target(a)
+    if group is not None:
+        if name:
+            raise GeometryError("При преобразовании группы присваивание не нужно.",
+                                hint="Пишите: scale [группа] factor=2 — имена деталей сохранятся.")
+        pivot = (a.vec("pivot", 3, default=(0, 0, 0)) if a.has("pivot")
+                 else _group_pivot(group))
+        return _transform_group(a, group, lambda m: scale_manifold(m, factor, pivot))
+    solids = a.solids()
+    if len(solids) != 1:
+        raise GeometryError("scale работает с одним объектом или одной группой.")
+    base = solids[0]
     pivot = a.vec("pivot", 3, default=(0, 0, 0))
     scaled = scale_manifold(base.manifold, factor, pivot)
     _parts_follow(a, base, lambda m: scale_manifold(m, factor, pivot))

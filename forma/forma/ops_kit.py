@@ -15,7 +15,7 @@ import numpy as np
 
 from .errors import GeometryError
 from .geometry import manifold_from_arrays, manifold_mesh
-from .ops import anchor, make_solid, op, stand_flat_sign
+from .ops import anchor, make_object_copies, make_solid, op, stand_flat_sign
 from .shape_features import varied_edge_thickness
 
 
@@ -1245,49 +1245,101 @@ def flower_center(a, name):
 # --------------------------------------------------------------------------- #
 @op("scatter", aliases=("разброс", "рассыпать", "scatter_copy"),
     category="Массивы и преобразования",
-    summary="Детерминированный разброс копий по площади: камни, трава, листва. "
-            "seed повторяет узор, k — разброс масштаба.",
-    example='камень = rock size=[80,60,40]\nкамни = scatter [камень] count=24 area=[400,300] seed=5',
-    params={"objects": "объект, который разбрасываем",
+    summary="Детерминированный разброс прототипов по площади или на хозяине: "
+            "seed, масштаб, поворот, gap без пересечений и отдельные копии as=objects.",
+    example='камень = rock size=[80,60,40]\n'
+            'камни = scatter [камень] count=24 area=[400,300] seed=5 gap=0.5 as=objects',
+    params={"objects": "один или несколько прототипов",
             "count": "сколько копий (20)", "area": "площадь [x,y], мм (300,300)",
+            "on": "хозяин: area берётся из его XY-габарита, z — из верха",
             "seed": "зерно (1)", "scale": "масштаб [min,max] (0.8,1.2)",
             "turn": "случайный поворот до, градусы (360)",
-            "z": "высота пола (0)", "avoid": "не ставить в круг радиусом, мм (0)",
+            "z": "высота опоры (0; с on — верх хозяина)",
+            "align": "bottom — низом на z; center — центром; none — исходная высота",
+            "gap": "если задан — минимальный зазор; 0 запрещает пересечения",
+            "inset": "отступ от границ области (0)",
+            "sequence": "loop — прототипы по кругу; random — случайный выбор",
+            "as": "merged — одно тело; objects — отдельные копии с материалами",
+            "avoid": "не ставить в круг радиусом, мм (0)",
             "at": "сдвиг центра [x,y,z]", "center": "не используется"},
     positional=["objects"])
 def scatter(a, name):
-    base = _one(a, "scatter")
+    sources = a.solids()
+    if not sources:
+        raise GeometryError("scatter: укажите хотя бы один прототип.")
+    base = sources[0]
     count = int(a.num("count", 20, minv=1, maxv=400) or 20)
-    ax, ay = _pair(a, "area", (300.0, 300.0))
-    seed = int(a.num("seed", 1, minv=0) or 0)
+    host_name = (a.text("on") or "").strip()
+    host = a.scene.resolve(host_name) if host_name else None
+    if host in sources:
+        raise GeometryError("scatter: хозяин не может одновременно быть прототипом.")
+    hb = host.manifold.bounding_box() if host else None
+    if a.has("area"):
+        ax, ay = _pair(a, "area", (300.0, 300.0))
+    elif hb:
+        ax, ay = hb[3] - hb[0], hb[4] - hb[1]
+    else:
+        ax, ay = 300.0, 300.0
+    inset = float(a.num("inset", 0.0, minv=0.0) or 0.0)
+    ax, ay = max(0.01, ax - 2 * inset), max(0.01, ay - 2 * inset)
+    center_x = (hb[0] + hb[3]) / 2 if hb else 0.0
+    center_y = (hb[1] + hb[4]) / 2 if hb else 0.0
+    seed = int(a.num("seed", 1) or 0)
     smin, smax = _pair(a, "scale", (0.8, 1.2))
     smin, smax = max(0.05, min(smin, smax)), max(0.05, max(smin, smax))
     turn = float(a.num("turn", 360.0, minv=0.0, maxv=360.0) or 0.0)
-    z = float(a.num("z", 0.0) or 0.0)
+    z = float(a.num("z", hb[5] if hb else 0.0) or 0.0)
     avoid = float(a.num("avoid", 0.0, minv=0.0) or 0.0)
+    gap = a.num("gap", None, minv=0.0)
+    align = (a.text("align", "bottom", ["bottom", "center", "none"]) or "bottom")
+    sequence = (a.text("sequence", "loop", ["loop", "random"]) or "loop")
     rng = np.random.default_rng(seed)
-    copies = []
+    records = []
+    circles = []
     tries = 0
-    while len(copies) < count and tries < count * 20:
+    at = np.asarray(a.vec("at", 3, default=(0, 0, 0)), dtype=float)
+    while len(records) < count and tries < count * 80:
         tries += 1
-        x = float(rng.uniform(-ax / 2.0, ax / 2.0))
-        y = float(rng.uniform(-ay / 2.0, ay / 2.0))
-        if avoid > 0 and math.hypot(x, y) < avoid:
+        source = sources[len(records) % len(sources)] if sequence == "loop" else \
+            sources[int(rng.integers(0, len(sources)))]
+        x = float(rng.uniform(center_x - ax / 2, center_x + ax / 2))
+        y = float(rng.uniform(center_y - ay / 2, center_y + ay / 2))
+        if avoid > 0 and math.hypot(x - center_x, y - center_y) < avoid:
             continue
         k = float(rng.uniform(smin, smax))
         angle = float(rng.uniform(0.0, turn)) if turn > 0 else 0.0
-        piece = base.manifold.scale((k, k, k)).rotate([0.0, 0.0, angle])
+        piece = source.manifold.scale((k, k, k)).rotate([0.0, 0.0, angle])
         pb = piece.bounding_box()
-        piece = piece.translate((x - (pb[0] + pb[3]) / 2.0,
-                                 y - (pb[1] + pb[4]) / 2.0,
-                                 z - pb[2]))
-        copies.append(piece)
-    if not copies:
-        raise GeometryError("Не удалось разложить копии — уменьшите avoid.")
-    solid = copies[0] if len(copies) == 1 else mf.Manifold.batch_boolean(copies, mf.OpType.Add)
-    out = make_solid(a.scene, name, _shifted(a, solid), a, base=base, kind="scatter")
-    a.scene.consume(base)
-    out.notes.append(f"разброс: {len(copies)} копий")
+        radius = 0.5 * math.hypot(pb[3] - pb[0], pb[4] - pb[1])
+        if gap is not None:
+            if any(math.hypot(x - px, y - py) < radius + pr + float(gap)
+                   for px, py, pr in circles):
+                continue
+        delta = [x - (pb[0] + pb[3]) / 2.0,
+                 y - (pb[1] + pb[4]) / 2.0, 0.0]
+        if align == "bottom":
+            delta[2] = z - pb[2]
+        elif align == "center":
+            delta[2] = z - (pb[2] + pb[5]) / 2.0
+        else:
+            delta[2] = z
+        piece = piece.translate(tuple(delta + at))
+        records.append((piece, source))
+        circles.append((x, y, radius))
+    if len(records) != count:
+        raise GeometryError(
+            f"scatter: удалось разместить только {len(records)} из {count} копий.",
+            hint="Увеличьте area, уменьшите scale/gap/avoid или уменьшите count.")
+    as_default = "objects" if len(sources) > 1 else "merged"
+    as_mode = (a.text("as", as_default, ["merged", "objects"]) or as_default)
+    if as_mode == "objects":
+        return make_object_copies(a.scene, name, records, a, kind="scatter_copy")
+    solid = (records[0][0] if len(records) == 1 else
+             mf.Manifold.batch_boolean([m for m, _ in records], mf.OpType.Add))
+    out = make_solid(a.scene, name, solid, a, base=base, kind="scatter")
+    for source in sources:
+        a.scene.consume(source)
+    out.notes.append(f"разброс: {len(records)} копий")
     return out
 
 

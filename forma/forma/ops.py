@@ -313,3 +313,41 @@ def merge_solids(solids: list[Solid], op_type: mf.OpType = mf.OpType.Add) -> mf.
     if len(solids) == 1:
         return solids[0].manifold
     return mf.Manifold.batch_boolean([s.manifold for s in solids], op_type)
+
+
+def make_object_copies(scene: Scene, root: str | None, records: list[tuple], args,
+                       kind: str = "copy"):
+    """Создаёт редактируемые копии и группу, не смешивая их материалы.
+
+    ``records`` содержит пары ``(manifold, исходная_деталь)``. Имя слева от
+    команды становится именем группы, а не именем первой случайной копии.
+    Исходные детали скрываются, как и у объединённого массива.
+    """
+    if not records:
+        raise GeometryError("Не создано ни одной копии.")
+    group_name = (root or scene.auto_name(kind)).strip()
+    if group_name in scene.objects or group_name in scene.groups:
+        raise GeometryError(f"Имя копий «{group_name}» уже занято.",
+                            hint="Задайте другое имя слева от команды.")
+    occupied = [f"{group_name}_{index:03d}" for index in range(1, len(records) + 1)
+                if f"{group_name}_{index:03d}" in scene.objects or
+                f"{group_name}_{index:03d}" in scene.groups]
+    if occupied:
+        raise GeometryError(f"Имя копии «{occupied[0]}» уже занято.",
+                            hint="Задайте другое имя группы слева от команды.")
+    sources = []
+    names = []
+    for index, (manifold, base) in enumerate(records, 1):
+        child_name = f"{group_name}_{index:03d}"
+        made = make_solid(scene, child_name, manifold, args, base=base, kind=kind)
+        made.meta["copy_index"] = index
+        made.meta["copy_group"] = group_name
+        names.append(child_name)
+        if base not in sources:
+            sources.append(base)
+    for source in sources:
+        scene.consume(source)
+    scene.groups[group_name] = names
+    scene.log("info", f"{kind}: группа «{group_name}», отдельных копий {len(names)}",
+              args.cmd.line)
+    return None

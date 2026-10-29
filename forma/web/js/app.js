@@ -582,11 +582,17 @@ function renderReport(payload) {
   const checks = a.checks || [];
   const failed = checks.filter((c) => !c.ok).length;
   const warnings = a.warnings || [];
+  const interferenceReports = payload.interferences || [];
+  const interferenceCount = interferenceReports.length
+    ? (interferenceReports[interferenceReports.length - 1].count || 0) : 0;
   const verdict = $('verdict');
   verdict.hidden = false;
   if (failed > 0) {
     verdict.className = 'verdict bad';
     verdict.textContent = `✗ ${failed} из ${checks.length} проверок не пройдено — посмотрите вкладку «Проверки».`;
+  } else if (interferenceCount > 0) {
+    verdict.className = 'verdict bad';
+    verdict.textContent = `✗ Пакетный отчёт: пересечений ${interferenceCount} — пары показаны во вкладке «Проверки».`;
   } else if (warnings.length) {
     verdict.className = 'verdict warn';
     verdict.textContent = `✓ Проверки пройдены (${checks.length}), есть замечания: ${warnings.length}.`;
@@ -663,6 +669,20 @@ function fullReportText() {
       }
     });
   }
+  const interferenceReports = state.payload?.interferences || [];
+  if (interferenceReports.length) {
+    parts.push('', 'ПАКЕТНЫЙ ОТЧЁТ ПЕРЕСЕЧЕНИЙ');
+    interferenceReports.forEach((report, index) => {
+      parts.push(`Отчёт ${index + 1} (строка ${report.line || 0}): объектов ${report.objects || 0}, `
+        + `AABB-кандидатов ${report.candidates || 0}, пересечений ${report.count || 0}, `
+        + `разрешено ${report.allowed || 0}, порог ${fmt(report.tolerance || 0)} мм³.`);
+      (report.pairs || []).forEach((pair) => {
+        parts.push(`• ${pair.a} ↔ ${pair.b}: ${fmt(pair.volume_mm3 || 0)} мм³; `
+          + `габарит контакта [${(pair.bbox || []).map((v) => fmt(v)).join(', ')}]`);
+      });
+      if (report.truncated) parts.push(`• ещё скрыто limit: ${report.truncated} пар`);
+    });
+  }
   if (state.actions.length) {
     parts.push('', 'ХОД РАБОТЫ');
     state.actions.slice(-20).forEach((x) => {
@@ -686,6 +706,15 @@ async function copyReport() {
     document.execCommand('copy');
     ta.remove();
     toast('Отчёт скопирован');
+  }
+}
+
+function showInterferencePair(first, second) {
+  if (!state.viewer?.setInterferencePair) return;
+  if (state.viewer.setInterferencePair(first, second)) {
+    state.selected = null;
+    $('material-panel').hidden = true;
+    toast(`Подсвечена пара: ${first} ↔ ${second}`, 'warn');
   }
 }
 
@@ -714,6 +743,35 @@ function renderChecks(payload) {
   if (!checks.length) {
     list.innerHTML = '<div class="hint-box">Нет ни одной проверки. Пример: ' +
       '<code>check кружка height 90..110</code></div>';
+  }
+  const reports = payload.interferences || [];
+  if (reports.length) {
+    const report = reports[reports.length - 1];
+    const box = document.createElement('div');
+    box.className = 'hint-box interference-report';
+    const pairs = report.pairs || [];
+    box.innerHTML = `<b>Пакетный отчёт пересечений</b><br>`
+      + `Объектов ${report.objects || 0} · AABB-кандидатов ${report.candidates || 0} · `
+      + `разрешено ${report.allowed || 0} · пропущено деталей сборок ${report.skipped_parts || 0}<br>`
+      + `<span style="color:${pairs.length ? 'var(--bad)' : 'var(--good)'}">`
+      + `${pairs.length ? `Найдено пересечений: ${report.count || pairs.length}` : 'Проблемных пересечений нет'}</span>`;
+    list.appendChild(box);
+    pairs.forEach((pair) => {
+      const el = document.createElement('div');
+      el.className = 'check-item bad interference-pair';
+      el.innerHTML = `<div class="mark">!</div><div class="check-body">`
+        + `<div class="check-label">${escapeHtml(pair.a)} ↔ ${escapeHtml(pair.b)}</div>`
+        + `<div class="check-text">Объём ${fmt(pair.volume_mm3 || 0)} мм³ · щёлкните, чтобы подсветить обе детали</div>`
+        + `</div>`;
+      el.addEventListener('click', () => showInterferencePair(pair.a, pair.b));
+      list.appendChild(el);
+    });
+    if (report.truncated) {
+      const more = document.createElement('div');
+      more.className = 'hint-box';
+      more.textContent = `Ещё ${report.truncated} пар скрыто параметром limit.`;
+      list.appendChild(more);
+    }
   }
 }
 
@@ -4731,6 +4789,121 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'table', name: 'стол', title: 'Стол — отдельные детали', group: 'Готовые детали',
+    desc: 'Столешница, ножки и полка остаются отдельными. Форма и кромка столешницы, раскладка, сечение и разнос ножек сохраняются в строке сцены.',
+    params: [
+      { k: 'width', label: 'ширина', v: 180, step: 10, min: 10, max: 1000 },
+      { k: 'length', label: 'глубина', v: 100, step: 10, min: 10, max: 1000 },
+      { k: 'height', label: 'высота', v: 75, step: 5, min: 5, max: 300 },
+      { k: 'thickness', label: 'столешница', v: 5, step: 0.5, min: 0.3, max: 30 },
+      { k: 'shape', label: 'форма', v: 'rounded', kind: 'raw', choices: ['rect', 'rounded', 'ellipse'] },
+      { k: 'corner', label: 'углы', v: 8, step: 1, min: 0, max: 100 },
+      { k: 'legs', label: 'ножек', v: 4, step: 1, min: 1, max: 16 },
+      { k: 'layout', label: 'раскладка', v: 'inset', kind: 'raw', choices: ['inset', 'corners', 'circle', 'pedestal'] },
+      { k: 'leg_radius', label: 'сечение', v: 4, step: 0.5, min: 0.2, max: 30 },
+      { k: 'splay', label: 'разнос°', v: 3, step: 1, min: -30, max: 30 },
+      { k: 'shelf', label: 'полка', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'door', name: 'дверь', title: 'Дверь — полотно и фурнитура', group: 'Готовые детали',
+    desc: 'Коробка, полотно, филёнки, петли, ручка и замок редактируются отдельно. Поворот door.leaf двигает полотно вместе с фурнитурой вокруг оси петель.',
+    params: [
+      { k: 'width', label: 'ширина', v: 90, step: 5, min: 30, max: 300 },
+      { k: 'height', label: 'высота', v: 210, step: 5, min: 50, max: 400 },
+      { k: 'thickness', label: 'полотно', v: 4.5, step: 0.5, min: 1, max: 20 },
+      { k: 'panels', label: 'филёнок', v: 4, step: 1, min: 0, max: 24 },
+      { k: 'columns', label: 'колонок', v: 2, step: 1, min: 1, max: 6 },
+      { k: 'hinges', label: 'петель', v: 3, step: 1, min: 1, max: 6 },
+      { k: 'handle_height', label: 'ручка Z', v: 105, step: 5, min: 10, max: 300 },
+      { k: 'lock', label: 'замок', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'curtain', name: 'штора', title: 'Штора — объёмные складки', group: 'Готовые детали',
+    desc: 'Настоящая замкнутая сетка ткани с толщиной, объёмными складками и волнистым низом. Карниз и кольца создаются отдельными деталями.',
+    params: [
+      { k: 'width', label: 'ширина', v: 140, step: 10, min: 5, max: 1000 },
+      { k: 'height', label: 'высота', v: 220, step: 10, min: 5, max: 1000 },
+      { k: 'folds', label: 'складок', v: 8, step: 1, min: 1, max: 24 },
+      { k: 'fold_depth', label: 'глубина', v: 7, step: 1, min: 0.05, max: 50 },
+      { k: 'thickness', label: 'ткань', v: 0.18, step: 0.02, min: 0.01, max: 2 },
+      { k: 'wave', label: 'низ', v: 2, step: 0.5, min: 0, max: 30 },
+      { k: 'detail', label: 'на складку', v: 8, step: 1, min: 4, max: 16 },
+      { k: 'rod', label: 'карниз', v: true, kind: 'bool' },
+      { k: 'rings', label: 'кольца', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'drape', name: 'драпировка', title: 'Драпировка — сетка и опора', group: 'Готовые детали',
+    desc: 'Гравитация, сохранение длин, изгиб, закрепления и контакт с верхней высотной картой опоры. Не shrinkwrap; самопересечения и поднутрения не моделируются.',
+    baseScript: '{target} = box size=[90,70,20]\n{source} = box size=[140,110,0.4] at=[0,0,35]',
+    baseName: 'ткань', targetName: 'опора',
+    template: '{source} = drape [{source}] on={target}{params}',
+    params: [
+      { k: 'detail', label: 'сетка', v: 24, step: 2, min: 2, max: 64 },
+      { k: 'iterations', label: 'шагов', v: 60, step: 10, min: 1, max: 500 },
+      { k: 'constraints', label: 'длин/шаг', v: 8, step: 1, min: 1, max: 30 },
+      { k: 'pin', label: 'закрепить', v: 'none', kind: 'raw', choices: ['none', 'corners', 'edges', 'front', 'back', 'left', 'right'] },
+      { k: 'gap', label: 'зазор', v: 0.05, step: 0.05, min: 0, max: 5 },
+      { k: 'thickness', label: 'толщина', v: 0.25, step: 0.05, min: 0.005, max: 5 },
+    ],
+  },
+  {
+    op: 'rug', name: 'ковёр', title: 'Ковёр — слои и бахрома', group: 'Готовые детали',
+    desc: 'Волнистая основа, кайма, верхний узор, подложка, окантовка, стежки, бахрома и приподнятый угол. Плотность ограничена, узор экспортируется цветом граней.',
+    params: [
+      { k: 'width', label: 'ширина', v: 180, step: 10, min: 10, max: 1000 },
+      { k: 'length', label: 'длина', v: 120, step: 10, min: 10, max: 1000 },
+      { k: 'thickness', label: 'основа', v: 1.2, step: 0.2, min: 0.05, max: 20 },
+      { k: 'shape', label: 'форма', v: 'rounded', kind: 'raw', choices: ['rect', 'rounded', 'ellipse'] },
+      { k: 'corner', label: 'углы', v: 12, step: 1, min: 0, max: 100 },
+      { k: 'border', label: 'кайма', v: 8, step: 1, min: 0, max: 50 },
+      { k: 'pattern', label: 'узор', v: 'полосы', kind: 'raw', choices: ['none', 'полосы', 'круги', 'клетка', 'ромбы', 'волны'] },
+      { k: 'wave', label: 'волна', v: 0.35, step: 0.05, min: 0, max: 10 },
+      { k: 'lift', label: 'угол', v: 6, step: 1, min: 0, max: 50 },
+      { k: 'fringe', label: 'бахрома', v: 'ends', kind: 'raw', choices: ['none', 'ends', 'all'] },
+      { k: 'stitches', label: 'стежки', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'socket', name: 'розетка', title: 'Розетка — сквозные отверстия', group: 'Готовые детали',
+    desc: 'Пластина, вставки, рамки, заземление и винты — отдельно. Отверстия штырей проходят через вставку и пластину; лицевая сторона −Y.',
+    params: [
+      { k: 'sockets', label: 'мест', v: 2, step: 1, min: 1, max: 3 },
+      { k: 'pitch', label: 'шаг мест', v: 72, step: 2, min: 45, max: 150 },
+      { k: 'depth', label: 'пластина', v: 10, step: 1, min: 3, max: 30 },
+      { k: 'holes', label: 'отверстия', v: 6, step: 0.5, min: 2, max: 12 },
+      { k: 'ground', label: 'земля', v: true, kind: 'bool' },
+      { k: 'screws', label: 'винты', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'switch', name: 'выключатель', title: 'Выключатель — клавиши', group: 'Готовые детали',
+    desc: 'Отдельные клавиши сидят в настоящих вырезах пластины. Состояние меняет их наклон, подсветка и винты не объединяются с клавишами.',
+    params: [
+      { k: 'rockers', label: 'клавиш', v: 2, step: 1, min: 1, max: 3 },
+      { k: 'state', label: 'состояние', v: 'on', kind: 'raw', choices: ['on', 'off'] },
+      { k: 'angle', label: 'наклон°', v: 6, step: 1, min: 0, max: 20 },
+      { k: 'led', label: 'подсветка', v: true, kind: 'bool' },
+      { k: 'screws', label: 'винты', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'bulb', name: 'лампочка', title: 'Лампочка — полое стекло', group: 'Готовые детали',
+    desc: 'Полая колба пяти форм, цоколь E27/E14, контакт, изолятор и отдельное свечение. Резьба строится спиралью либо отключается для упрощённого режима.',
+    params: [
+      { k: 'shape', label: 'колба', v: 'a60', kind: 'raw', choices: ['a60', 'globe', 'candle', 'tube', 'pear'] },
+      { k: 'base', label: 'цоколь', v: 'E27', kind: 'raw', choices: ['E27', 'E14'] },
+      { k: 'diameter', label: 'диаметр', v: 60, step: 2, min: 15, max: 200 },
+      { k: 'height', label: 'высота', v: 110, step: 5, min: 30, max: 300 },
+      { k: 'glass_wall', label: 'стекло', v: 0.6, step: 0.1, min: 0.08, max: 5 },
+      { k: 'thread', label: 'резьба', v: true, kind: 'bool' },
+      { k: 'glow', label: 'свечение', v: true, kind: 'bool' },
+      { k: 'glow_strength', label: 'яркость', v: 3, step: 0.5, min: 0, max: 30 },
+    ],
+  },
+  {
     op: 'yin_yang', name: 'инь_ян', title: 'Fireball / инь-ян', group: 'Готовые детали',
     desc: 'Объёмный режим — цельная сфера с плавным хвостом fireball без булева стыка; плоский режим сохраняет половину инь-ян и рамку.',
     params: [
@@ -5890,13 +6063,13 @@ const TOOL_RECIPES = [
   },
   {
     title: 'Надпись',
-    desc: 'Объёмный текст своим шрифтом — без сторонних файлов и шрифтов в системе.',
+    desc: 'Объёмный текст: все печатные символы ASCII, латиница и кириллица двух регистров. Кавычки и обратная косая черта сохраняются.',
     fields: [
-      { k: 'word', label: 'текст', v: 'ПРИВЕТ', kind: 'raw' },
+      { k: 'word', label: 'текст', v: 'Форма 3D', kind: 'text' },
       { k: 'size', label: 'высота', v: 10 },
       { k: 'depth', label: 'толщина', v: 2 },
     ],
-    build: (v) => `надпись = text "${String(v.word || 'ПРИВЕТ').replace(/"/g, '')}" `
+    build: (v) => `надпись = text ${JSON.stringify(String(v.word || 'Форма 3D'))} `
       + `size=${fnum(rnum(v.size, 10))} depth=${fnum(rnum(v.depth, 2))}\n`
       + 'color надпись #e8c27a',
   },
@@ -6126,6 +6299,7 @@ function numFromText(raw) {
  * null — шагать нечем, стрелки у такого поля не показываем.
  */
 function stepToolValue(p, raw, dir) {
+  if (p.kind === 'text') return null;
   const text = String(raw ?? '').trim();
   const choices = Array.isArray(p.choices) ? p.choices : null;
   if (choices && choices.length > 1) {
@@ -6274,7 +6448,7 @@ function buildToolField(p) {
   const input = document.createElement('input');
   input.type = 'text';
   input.value = String(p.v ?? '');
-  const wide = p.kind === 'vec' || p.kind === 'raw';
+  const wide = p.kind === 'vec' || p.kind === 'raw' || p.kind === 'text';
   if (!wide && !p.choices) input.inputMode = 'decimal';
   // ширина — по сетке карточки: вектору даём две колонки
   if (wide) row.style.gridColumn = 'span 2';
@@ -6344,7 +6518,8 @@ function recipeValues(recipe, card) {
   (recipe.fields || []).forEach((p) => {
     const input = card.querySelector(`[data-key="${p.k}"]`);
     if (!input) return;
-    values[p.k] = p.kind === 'bool' ? input.checked : input.value.trim();
+    values[p.k] = p.kind === 'bool' ? input.checked
+      : (p.kind === 'text' ? input.value : input.value.trim());
   });
   return values;
 }
@@ -6415,6 +6590,12 @@ function shapeScript(tool, card, { unique = false } = {}) {
     const base = tool.baseScript
       .replaceAll('{target}', targetName)
       .replaceAll('{source}', sourceName);
+    if (tool.template) {
+      return `${base}\n` + tool.template
+        .replaceAll('{target}', targetName)
+        .replaceAll('{source}', sourceName)
+        .replaceAll('{params}', tail);
+    }
     return `${base}\n${tool.op} [${targetName}, ${sourceName}]${tail}`;
   }
   if (tool.base) {

@@ -100,6 +100,8 @@ class Scene:
         self.params: dict[str, float] = {}
         self.vars: dict[str, Any] = {}
         self.checks: list[dict] = []
+        # пакетные отчёты точных пересечений, выполненные по требованию
+        self.interferences: list[dict] = []
         # кубическая сетка-бюджет: какие кубы модель имеет право занимать
         self.grid: dict | None = None
         # сечения, пробы материала и паспорта деталей

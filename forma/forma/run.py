@@ -45,6 +45,7 @@ from . import ops_kit  # noqa: F401,E402
 from . import ops_assembly  # noqa: F401,E402
 from . import ops_parts  # noqa: F401,E402
 from . import ops_fill  # noqa: F401,E402
+from . import ops_interior  # noqa: F401,E402
 from . import ops_sculpt  # noqa: F401,E402
 from . import ops_grid  # noqa: F401,E402
 from . import ops_hair  # noqa: F401,E402
@@ -71,7 +72,7 @@ from . import ops_organic  # noqa: F401,E402
 FRAME_SKIP_VERBS = {
     "check", "gap", "clearance", "probe", "passport", "note", "param", "help",
     "version", "save", "load", "light", "color", "scene", "comment", "info",
-    "сетка",
+    "сетка", "interference", "пересечения", "коллизии", "collision_report",
 }
 
 
@@ -219,6 +220,7 @@ class Build:
             "sections": _sections_payload(scene),
             "probes": list(getattr(scene, "probes", []) or []) if scene else [],
             "passports": list(getattr(scene, "passports", []) or []) if scene else [],
+            "interferences": list(getattr(scene, "interferences", []) or []) if scene else [],
             "mates": list(getattr(scene, "mates", []) or []) if scene else [],
             "grid": getattr(scene, "grid", None) if scene else None,
             "steps": self.steps,

@@ -2733,6 +2733,48 @@ export class Viewer {
     return true;
   }
 
+  /** Подсветка пары из пакетного отчёта пересечений без смены материала сцены. */
+  setInterferencePair(first, second) {
+    this.clearHighlight();
+    if (!this.model) return false;
+    const names = [first, second].filter(Boolean);
+    const box = new THREE.Box3();
+    this._highlight = [];
+    let found = false;
+    names.forEach((name, index) => {
+      this._detachInstances(name);
+      this.objectMeshes(name).forEach((o) => {
+        found = true;
+        box.expandByObject(o);
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => {
+          if (!m) return;
+          if (!m.userData.baseEmissive) {
+            m.userData.baseEmissive = {
+              color: m.emissive ? m.emissive.clone() : null,
+              intensity: m.emissiveIntensity ?? 1,
+            };
+          }
+          if (m.emissive) {
+            m.emissive.setHex(index ? 0xff9f36 : 0xff3648);
+            m.emissiveIntensity = 0.7;
+          }
+          this._highlight.push(m);
+        });
+      });
+    });
+    if (!found) return false;
+    if (!box.isEmpty()) {
+      box.expandByScalar(Math.max(0.4, box.getSize(new THREE.Vector3()).length() * 0.008));
+      this._highlightBox = new THREE.Box3Helper(box, 0xff4c59);
+      this._highlightBox.material.transparent = true;
+      this._highlightBox.material.opacity = 0.9;
+      this._highlightBox.material.depthWrite = false;
+      this.scene.add(this._highlightBox);
+    }
+    return true;
+  }
+
   clearHighlight() {
     (this._highlight || []).forEach((m) => {
       const base = m.userData.baseEmissive;

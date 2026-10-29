@@ -1,188 +1,149 @@
-# ГОСТИНАЯ 1:20 — собственная параметрическая диорамма
+# ГОСТИНАЯ 1:20 — пересобранная параметрическая диорамма Forma 0.52
 # Канон: +Z вверх, +X вправо, -Y вперёд. Все размеры в мм.
-# Полные задняя и левая стены; передняя и правая показаны низким архитектурным срезом.
+# Панели не заходят друг в друга; новые узлы остаются отдельными и редактируемыми.
 
-# --- Витринное основание и деревянный пол ---
+# --- Основание, смешанный текст на табличке и отдельные планки пола ---
 display_base = box size=[350, 270, 8] center=да at=[0, 0, -12.8] round=1.8 color=#26333a
 floor_substrate = box size=[340, 260, 8] center=да at=[0, 0, -4.8] round=0.8 color=#5c3d2d
-name_plate = box size=[126, 1.2, 7] center=да at=[0, -135.2, -12.8] round=0.35 color=#c7a968
-name_text = text "ГОСТИНАЯ  1:20" size=6 depth=0.6 align=center plane=xz at=[0,-136,-15.5] color=#26333a
-floor_00_0 = box size=[26.34583333333333, 97.82, 0.8] center=да at=[-146.82708333333335, -71.09, -0.4] color=#a97850
-floor_00_1 = box size=[26.34583333333333, 141.82, 0.8] center=да at=[-146.82708333333335, 49.09, -0.4] color=#b38358
-floor_01_0 = box size=[26.34583333333333, 143.82, 0.8] center=да at=[-120.13125000000001, -48.09, -0.4] color=#b38358
-floor_01_1 = box size=[26.34583333333333, 95.82, 0.8] center=да at=[-120.13125000000001, 72.09, -0.4] color=#ad7b50
-floor_02_0 = box size=[26.34583333333333, 97.82, 0.8] center=да at=[-93.43541666666667, -71.09, -0.4] color=#ad7b50
-floor_02_1 = box size=[26.34583333333333, 141.82, 0.8] center=да at=[-93.43541666666667, 49.09, -0.4] color=#b9895e
-floor_03_0 = box size=[26.34583333333333, 143.82, 0.8] center=да at=[-66.73958333333333, -48.09, -0.4] color=#b9895e
-floor_03_1 = box size=[26.34583333333333, 95.82, 0.8] center=да at=[-66.73958333333333, 72.09, -0.4] color=#a97850
-floor_04_0 = box size=[26.34583333333333, 97.82, 0.8] center=да at=[-40.04375, -71.09, -0.4] color=#a97850
-floor_04_1 = box size=[26.34583333333333, 141.82, 0.8] center=да at=[-40.04375, 49.09, -0.4] color=#b38358
-floor_05_0 = box size=[26.34583333333333, 143.82, 0.8] center=да at=[-13.347916666666677, -48.09, -0.4] color=#b38358
-floor_05_1 = box size=[26.34583333333333, 95.82, 0.8] center=да at=[-13.347916666666677, 72.09, -0.4] color=#ad7b50
-floor_06_0 = box size=[26.34583333333333, 97.82, 0.8] center=да at=[13.347916666666677, -71.09, -0.4] color=#ad7b50
-floor_06_1 = box size=[26.34583333333333, 141.82, 0.8] center=да at=[13.347916666666677, 49.09, -0.4] color=#b9895e
-floor_07_0 = box size=[26.34583333333333, 143.82, 0.8] center=да at=[40.04375, -48.09, -0.4] color=#b9895e
-floor_07_1 = box size=[26.34583333333333, 95.82, 0.8] center=да at=[40.04375, 72.09, -0.4] color=#a97850
-floor_08_0 = box size=[26.34583333333333, 97.82, 0.8] center=да at=[66.73958333333333, -71.09, -0.4] color=#a97850
-floor_08_1 = box size=[26.34583333333333, 141.82, 0.8] center=да at=[66.73958333333333, 49.09, -0.4] color=#b38358
-floor_09_0 = box size=[26.34583333333333, 143.82, 0.8] center=да at=[93.43541666666665, -48.09, -0.4] color=#b38358
-floor_09_1 = box size=[26.34583333333333, 95.82, 0.8] center=да at=[93.43541666666665, 72.09, -0.4] color=#ad7b50
-floor_10_0 = box size=[26.34583333333333, 97.82, 0.8] center=да at=[120.13124999999998, -71.09, -0.4] color=#ad7b50
-floor_10_1 = box size=[26.34583333333333, 141.82, 0.8] center=да at=[120.13124999999998, 49.09, -0.4] color=#b9895e
-floor_11_0 = box size=[26.34583333333333, 143.82, 0.8] center=да at=[146.8270833333333, -48.09, -0.4] color=#b9895e
-floor_11_1 = box size=[26.34583333333333, 95.82, 0.8] center=да at=[146.8270833333333, 72.09, -0.4] color=#a97850
+name_plate = box size=[110, 1.2, 6.5] center=да at=[0, -135.6, -12.8] round=0.35 color=#c7a968
+name_text = text "Гостиная 1:20" size=3.2 depth=0.3 align=center plane=xz at=[0,-136.35,-13.2] color=#26333a
+name_subtext = text "FORMA 3D" size=1.8 depth=0.3 align=center plane=xz at=[0,-136.35,-15.5] color=#26333a
+floor_a = box size=[26.3, 240, 0.8] center=да at=[-146.85, 0, -0.4] color=#ad7b50
+floor_b = box size=[26.3, 240, 0.8] center=да at=[-146.85, 0, -0.4] color=#bd8b60
+floorboards = array [floor_a,floor_b] mode=linear count=12 offset=[26.7,0,0] sequence=loop as=objects
 
-# --- Стены с настоящими сквозными проёмами ---
-wall_back = box size=[332, 6, 140] center=да at=[0, 123, 70] round=0.45 color=#e7dfcf
+# --- Стены: стыки без наложения объёмов, настоящие сквозные проёмы ---
+wall_back = box size=[332, 6, 140.8] center=да at=[0, 123, 70] round=0.4 color=#e7dfcf
 window_cut = box size=[184, 12, 58] center=да at=[20, 123, 98] color=#ffffff
 wall_back = difference [wall_back,window_cut]
-wall_left = box size=[6, 252, 140] center=да at=[-163, 0, 70] round=0.45 color=#e7dfcf
-door_cut = box size=[12, 70, 114] center=да at=[-163, -72, 57] color=#ffffff
+wall_left = box size=[6, 240, 140.8] center=да at=[-163, 0, 70] round=0.4 color=#e7dfcf
+door_cut = box size=[12, 79, 119] center=да at=[-163, -72, 58.7] color=#ffffff
 wall_left = difference [wall_left,door_cut]
-wall_front_cutaway = box size=[332, 6, 10] center=да at=[0, -123, 5] round=0.45 color=#e7dfcf
-wall_right_cutaway = box size=[6, 240, 14] center=да at=[163, 0, 7] round=0.45 color=#e7dfcf
-walls = union [wall_back,wall_left,wall_front_cutaway,wall_right_cutaway]
-baseboard_back = box size=[320, 2, 7] center=да at=[0, 119, 3.5] round=0.25 color=#f5f0e6
-baseboard_left_front = box size=[2, 13, 7] center=да at=[-159, -113.5, 3.5] round=0.25 color=#f5f0e6
-baseboard_left_rear = box size=[2, 157, 7] center=да at=[-159, 41.5, 3.5] round=0.25 color=#f5f0e6
+wall_front_cutaway = box size=[320, 6, 10.8] center=да at=[0, -123, 4.6] round=0.4 color=#e7dfcf
+wall_right_cutaway = box size=[6, 240, 14.8] center=да at=[163, 0, 6.6] round=0.4 color=#e7dfcf
+baseboard_back = box size=[318, 2, 7] center=да at=[1, 119, 3.5] round=0.2 color=#f5f0e6
+baseboard_left_front = box size=[2, 9, 7] center=да at=[-159, -115.5, 3.5] round=0.2 color=#f5f0e6
+baseboard_left_rear = box size=[2, 151, 7] center=да at=[-159, 42.5, 3.5] round=0.2 color=#f5f0e6
 
-# --- Двухстворчатое окно: четыре стекла, рама, ручка, подоконник ---
-window_jamb_l = box size=[4, 5, 58] center=да at=[-70, 122.5, 98] round=0.3 color=#f6f3e9
-window_jamb_r = box size=[4, 5, 58] center=да at=[110, 122.5, 98] round=0.3 color=#f6f3e9
-window_mullion = box size=[3.5, 5, 58] center=да at=[20, 122.5, 98] round=0.3 color=#f6f3e9
-window_rail_bottom = box size=[184, 5, 4] center=да at=[20, 122.5, 71] round=0.3 color=#f6f3e9
-window_rail_top = box size=[184, 5, 4] center=да at=[20, 122.5, 125] round=0.3 color=#f6f3e9
-window_crossbar = box size=[184, 5, 3.5] center=да at=[20, 122.5, 98] round=0.3 color=#f6f3e9
-window_glass_0_0 = box size=[84, 1, 22] center=да at=[-24, 123.5, 85] round=0.15 color=#b9e2e8
-color window_glass_0_0 #b9e2e8 material=glass transmission=0.55 rough=0.08
-window_glass_0_1 = box size=[84, 1, 22] center=да at=[64, 123.5, 85] round=0.15 color=#b9e2e8
-color window_glass_0_1 #b9e2e8 material=glass transmission=0.55 rough=0.08
-window_glass_1_0 = box size=[84, 1, 22] center=да at=[-24, 123.5, 111] round=0.15 color=#b9e2e8
-color window_glass_1_0 #b9e2e8 material=glass transmission=0.55 rough=0.08
-window_glass_1_1 = box size=[84, 1, 22] center=да at=[64, 123.5, 111] round=0.15 color=#b9e2e8
-color window_glass_1_1 #b9e2e8 material=glass transmission=0.55 rough=0.08
-window_handle = box size=[2, 3, 10] center=да at=[23, 118.8, 96] round=0.6 color=#c8b078
-window_sill = box size=[190, 16, 4] center=да at=[15, 114, 67] round=0.8 color=#f6f3e9
-window_trim_l = box size=[5, 3, 64] center=да at=[-75, 118.5, 98] round=0.35 color=#f8f4eb
-window_trim_r = box size=[5, 3, 64] center=да at=[115, 118.5, 98] round=0.35 color=#f8f4eb
-window_trim_top = box size=[190, 3, 4] center=да at=[20, 118.5, 129] round=0.35 color=#f8f4eb
-window_trim_bottom = box size=[190, 3, 4] center=да at=[20, 118.5, 67] round=0.35 color=#f8f4eb
-curtain_rod = cylinder radius=1.5 height=210 segments=32 center=да
-curtain_rod = rotate [curtain_rod] angle=90 axis=y
-curtain_rod = translate [curtain_rod] offset=[20,104,135]
+# --- Окно: распределённые без внутренних наложений рама, переплёт и стёкла ---
+window_jamb_l = box size=[4, 5, 58] center=да at=[-70, 122.5, 98] round=0.25 color=#f6f3e9
+window_jamb_r = box size=[4, 5, 58] center=да at=[110, 122.5, 98] round=0.25 color=#f6f3e9
+window_rail_bottom = box size=[176, 5, 4] center=да at=[20, 122.5, 71] round=0.25 color=#f6f3e9
+window_rail_top = box size=[176, 5, 4] center=да at=[20, 122.5, 125] round=0.25 color=#f6f3e9
+window_mullion_low = box size=[3, 5, 23.5] center=да at=[20, 122.5, 84.75] round=0.2 color=#f6f3e9
+window_mullion_high = box size=[3, 5, 23.5] center=да at=[20, 122.5, 111.25] round=0.2 color=#f6f3e9
+window_crossbar = box size=[176, 5, 3] center=да at=[20, 122.5, 98] round=0.2 color=#f6f3e9
+window_glass_left_low = box size=[85.5, 1, 22.5] center=да at=[-24.75, 123.5, 84.75] round=0.1 color=#b9e2e8
+color window_glass_left_low #b9e2e8 material=glass transmission=0.55 rough=0.08
+window_glass_left_high = box size=[85.5, 1, 22.5] center=да at=[-24.75, 123.5, 111.25] round=0.1 color=#b9e2e8
+color window_glass_left_high #b9e2e8 material=glass transmission=0.55 rough=0.08
+window_glass_right_low = box size=[85.0, 1, 22.5] center=да at=[65.0, 123.5, 84.75] round=0.1 color=#b9e2e8
+color window_glass_right_low #b9e2e8 material=glass transmission=0.55 rough=0.08
+window_glass_right_high = box size=[85.0, 1, 22.5] center=да at=[65.0, 123.5, 111.25] round=0.1 color=#b9e2e8
+color window_glass_right_high #b9e2e8 material=glass transmission=0.55 rough=0.08
+window_handle = box size=[2, 3, 9] center=да at=[23, 118.5, 96] round=0.5 color=#c8b078
+window_sill = box size=[190, 14, 4] center=да at=[20, 113, 67] round=0.7 color=#f6f3e9
+window_trim_l = box size=[5, 3, 60] center=да at=[-75, 118.5, 99] round=0.3 color=#f8f4eb
+window_trim_r = box size=[5, 3, 60] center=да at=[115, 118.5, 99] round=0.3 color=#f8f4eb
+window_trim_top = box size=[185, 3, 3] center=да at=[20, 118.5, 130.5] round=0.25 color=#f8f4eb
+
+# --- Две объёмные шторы 0.52; карниз и кольца — отдельные копии ---
+curtain_left = curtain width=28 height=63 folds=4 fold_depth=2.2 thickness=0.12 wave=0.45 billow=0.5 detail=8 rows=24 rod=нет rings=нет at=[-66,104,69] color=#c98568
+curtain_right = curtain width=28 height=63 folds=4 fold_depth=2.2 thickness=0.12 wave=0.45 billow=0.5 detail=8 rows=24 rod=нет rings=нет at=[102,104,69] color=#c98568
+curtain_rod = cylinder radius=1.2 height=216 segments=40 center=да
+rotate [curtain_rod] angle=90 axis=y
+translate [curtain_rod] offset=[20,104,135]
 color curtain_rod #b89b62 metal=0.65 rough=0.28
-curtain_left = box size=[14, 2.5, 62] center=да at=[-64, 107, 101] round=1 color=#c98568
-curtain_left_pleat_0 = cylinder radius=1.15 height=62 segments=24 at=[-68, 105.4, 70] color=#d7987b
-curtain_left_pleat_1 = cylinder radius=1.15 height=62 segments=24 at=[-64, 105.4, 70] color=#d7987b
-curtain_left_pleat_2 = cylinder radius=1.15 height=62 segments=24 at=[-60, 105.4, 70] color=#d7987b
-curtain_right = box size=[14, 2.5, 62] center=да at=[104, 107, 101] round=1 color=#c98568
-curtain_right_pleat_0 = cylinder radius=1.15 height=62 segments=24 at=[100, 105.4, 70] color=#d7987b
-curtain_right_pleat_1 = cylinder radius=1.15 height=62 segments=24 at=[104, 105.4, 70] color=#d7987b
-curtain_right_pleat_2 = cylinder radius=1.15 height=62 segments=24 at=[108, 105.4, 70] color=#d7987b
-curtain_finial_0 = sphere radius=3 at=[-85,104,135] color=#b89b62
-curtain_finial_1 = sphere radius=3 at=[125,104,135] color=#b89b62
+curtain_ring_proto = torus major=2.4 minor=0.22 segments=40
+rotate [curtain_ring_proto] angle=90 axis=y
+translate [curtain_ring_proto] offset=[-78,104,135]
+curtain_rings = array [curtain_ring_proto] mode=linear count=12 offset=[18,0,0] as=objects
+curtain_finial_0 = sphere radius=2.6 segments=32 at=[-90.6,104,135] color=#b89b62
+curtain_finial_1 = sphere radius=2.6 segments=32 at=[130.6,104,135] color=#b89b62
 
-# --- Открытая дверь, наличники, петли и фурнитура ---
-door_slab = box size=[4, 70, 112] center=да at=[-2, 35, 56] round=0.65 color=#9a6b48
-door_panel_cut_0 = box size=[1.5, 46, 34] center=да at=[0.5, 35, 30] round=0.675 color=#ffffff
-door_slab = difference [door_slab,door_panel_cut_0]
-door_panel_cut_1 = box size=[1.5, 46, 34] center=да at=[0.5, 35, 79] round=0.675 color=#ffffff
-door_slab = difference [door_slab,door_panel_cut_1]
-door_slab = rotate [door_slab] angle=-30 axis=z
-door_slab = translate [door_slab] offset=[-160,-107,0]
-door_trim_front = box size=[4, 4, 116] center=да at=[-159, -109, 58] round=0.45 color=#f8f4eb
-door_trim_back = box size=[4, 4, 116] center=да at=[-159, -35, 58] round=0.45 color=#f8f4eb
-door_trim_top = box size=[4, 78, 4] center=да at=[-159, -72, 116] round=0.45 color=#f8f4eb
-door_handle_plate = box size=[1.2, 5, 14] center=да at=[0.8, 61, 56] round=0.45 color=#c8a75f
-door_handle_plate = rotate [door_handle_plate] angle=-30 axis=z
-door_handle_plate = translate [door_handle_plate] offset=[-160,-107,0]
-door_handle_knob = sphere radius=2.2 at=[2.2,61,56] color=#d7b76e
-door_handle_knob = rotate [door_handle_knob] angle=-30 axis=z
-door_handle_knob = translate [door_handle_knob] offset=[-160,-107,0]
-door_handle_lever = box size=[2, 11, 2] center=да at=[3.3, 56.5, 56] round=0.7 color=#d7b76e
-door_handle_lever = rotate [door_handle_lever] angle=-30 axis=z
-door_handle_lever = translate [door_handle_lever] offset=[-160,-107,0]
-door_hinge_0 = cylinder radius=1.8 height=10 segments=32 at=[-159.5, -106.5, 23] color=#b99a5e
-door_hinge_1 = cylinder radius=1.8 height=10 segments=32 at=[-159.5, -106.5, 87] color=#b99a5e
-light_switch = box size=[1.2, 8, 12] center=да at=[-159.2, -25, 55] round=0.54 color=#f7f3ea
-light_switch_toggle = box size=[1.0, 3, 5] center=да at=[-158.3, -25, 55] round=0.45 color=#d4cec2
+# --- Дверь 0.52: коробка, филёнки, петли, ручка и замок раздельны ---
+entry = door width=70 height=114 thickness=3.5 frame=4 frame_depth=8 gap=0.5 panels=2 columns=1 panel_margin=7 panel_depth=0.35 hinges=3 lock=да handle_height=57 handle_offset=9 handle_length=8 handle_radius=0.7 backset=3
+rotate [entry] angle=90 axis=z
+translate [entry] offset=[-162,-72,0]
+rotate [entry.leaf] angle=-35 axis=z pivot=[-160.25,-106,0]
 
-# --- ТВ-тумба с настоящей открытой нишей и ящиками ---
-media_body = box size=[30, 110, 26] center=да at=[-140, 25, 20] round=1 color=#6f4c38
-media_recess_cut = box size=[30, 34, 11] center=да at=[-120, 25, 20] color=#ffffff
-media_body = difference [media_body,media_recess_cut]
-media_leg_0 = box size=[4, 4, 7] center=да at=[-150, -20, 3.5] round=0.6 color=#3d3430
-media_leg_1 = box size=[4, 4, 7] center=да at=[-130, -20, 3.5] round=0.6 color=#3d3430
-media_leg_2 = box size=[4, 4, 7] center=да at=[-150, 70, 3.5] round=0.6 color=#3d3430
-media_leg_3 = box size=[4, 4, 7] center=да at=[-130, 70, 3.5] round=0.6 color=#3d3430
-media_drawer_0 = box size=[1.5, 32, 10] center=да at=[-124.2, -11, 20] round=0.55 color=#8a6248
-media_handle_0 = box size=[2, 14, 2] center=да at=[-122.8, -11, 20] round=0.75 color=#c9aa6d
-media_drawer_1 = box size=[1.5, 32, 10] center=да at=[-124.2, 61, 20] round=0.55 color=#8a6248
-media_handle_1 = box size=[2, 14, 2] center=да at=[-122.8, 61, 20] round=0.75 color=#c9aa6d
-media_receiver = box size=[8, 28, 7] center=да at=[-131, 25, 20] round=0.5 color=#252a2d
-media_receiver_led = sphere radius=0.8 at=[-126.5,15,20] color=#78d9b4
+# --- Настенные электрика 0.52 и рама с настоящим смешанным текстом ---
+wall_switch = switch rockers=1 width=50 height=50 depth=10 state=on angle=7 led=да screws=да
+scale [wall_switch] factor=0.2
+rotate [wall_switch] angle=90 axis=z
+translate [wall_switch] offset=[-159,-24,48]
+wall_socket = socket sockets=1 width=50 height=50 depth=10 insert_radius=20 holes=2 pin_pitch=10 ground=да screws=да
+scale [wall_socket] factor=0.2
+translate [wall_socket] offset=[-105,119,24]
+art_back = box size=[0.8, 70, 30] center=да at=[-159.6, 20, 116] round=0.15 color=#29434a
+art_side_0 = box size=[1, 2, 32] center=да at=[-159.1, -16, 116] round=0.15 color=#c7a968
+art_side_1 = box size=[1, 2, 32] center=да at=[-159.1, 56, 116] round=0.15 color=#c7a968
+art_rail_0 = box size=[1, 68, 2] center=да at=[-159.1, 20, 100] round=0.15 color=#c7a968
+art_rail_1 = box size=[1, 68, 2] center=да at=[-159.1, 20, 132] round=0.15 color=#c7a968
+art_text = text "Forma & 3D" size=5 depth=0.2 plane=yz at=[-159.1,20,113] color=#eadfbe
+art_subtext = text "living / 02" size=2.8 depth=0.2 plane=yz at=[-159.1,20,106] color=#eadfbe
+
+# --- ТВ-тумба: видимые панели и ниша, без скрытого массивного корпуса ---
+media_back = box size=[3, 100, 23] center=да at=[-153.5, 20, 17.5] round=0.5 color=#6f4c38
+media_top = box size=[28, 100, 3] center=да at=[-141, 20, 30.5] round=0.5 color=#7c573f
+media_bottom = box size=[25, 94, 3] center=да at=[-139.5, 20, 7.5] round=0.45 color=#6f4c38
+media_side_0 = box size=[25, 3, 20] center=да at=[-139.5, -28.5, 19] round=0.45 color=#6f4c38
+media_side_1 = box size=[25, 3, 20] center=да at=[-139.5, 68.5, 19] round=0.45 color=#6f4c38
+media_stile_0 = box size=[4, 2, 20] center=да at=[-129, -3, 19] round=0.35 color=#6f4c38
+media_stile_1 = box size=[4, 2, 20] center=да at=[-129, 43, 19] round=0.35 color=#6f4c38
+media_drawer_0 = box size=[1.5, 22, 16] center=да at=[-127.75, -15, 19] round=0.45 color=#8a6248
+media_drawer_1 = box size=[1.5, 22, 16] center=да at=[-127.75, 55, 19] round=0.45 color=#8a6248
+media_handle_0 = box size=[1.5, 10, 1.2] center=да at=[-126.2, -15, 19] round=0.45 color=#c9aa6d
+media_handle_1 = box size=[1.5, 10, 1.2] center=да at=[-126.2, 55, 19] round=0.45 color=#c9aa6d
+media_leg_0 = box size=[4, 4, 6] center=да at=[-148, -23, 3] round=0.5 color=#3d3430
+media_leg_2 = box size=[4, 4, 6] center=да at=[-133, -23, 3] round=0.5 color=#3d3430
+media_leg_1 = box size=[4, 4, 6] center=да at=[-148, 63, 3] round=0.5 color=#3d3430
+media_leg_3 = box size=[4, 4, 6] center=да at=[-133, 63, 3] round=0.5 color=#3d3430
+media_receiver = box size=[8, 28, 8] center=да at=[-140, 20, 13] round=0.45 color=#252a2d
+media_receiver_led = sphere radius=0.65 segments=20 at=[-135.35,10,13] color=#78d9b4
 color media_receiver_led #78d9b4 emissive=#78d9b4 emissive_strength=2
-soundbar = box size=[4, 70, 5] center=да at=[-127, 25, 35.5] round=1.4 color=#252a2e
-soundbar_slot_0 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, -2, 35.5] round=0.2 color=#0e1519
-soundbar_slot_1 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, 3, 35.5] round=0.2 color=#0e1519
-soundbar_slot_2 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, 8, 35.5] round=0.2 color=#0e1519
-soundbar_slot_3 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, 13, 35.5] round=0.2 color=#0e1519
-soundbar_slot_4 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, 18, 35.5] round=0.2 color=#0e1519
-soundbar_slot_5 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, 23, 35.5] round=0.2 color=#0e1519
-soundbar_slot_6 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, 28, 35.5] round=0.2 color=#0e1519
-soundbar_slot_7 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, 33, 35.5] round=0.2 color=#0e1519
-soundbar_slot_8 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, 38, 35.5] round=0.2 color=#0e1519
-soundbar_slot_9 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, 43, 35.5] round=0.2 color=#0e1519
-soundbar_slot_10 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, 48, 35.5] round=0.2 color=#0e1519
-soundbar_slot_11 = box size=[0.5, 1.5, 2.2] center=да at=[-124.8, 53, 35.5] round=0.2 color=#0e1519
+soundbar = box size=[4, 60, 4] center=да at=[-136, 20, 34] round=1.2 color=#252a2e
+soundbar_slot_proto = box size=[0.4, 1.5, 1.8] center=да at=[-133.8, -2, 34] round=0.15 color=#0e1519
+soundbar_slots = array [soundbar_slot_proto] mode=linear count=12 offset=[0,4,0] as=objects
 
-# --- Телевизор на двух ножках; экран обращён в комнату (+X) ---
-tv_frame = box size=[5, 104, 66] center=да at=[-132, 25, 75] round=1.6 color=#171d22
-tv_screen = box size=[0.8, 96, 58] center=да at=[-129.1, 25, 75] round=0.36 color=#17394b
+# --- Телевизор: экран и текст обращены в комнату (+X) ---
+tv_frame = box size=[4, 96, 58] center=да at=[-140, 20, 66] round=1.2 color=#171d22
+tv_screen = box size=[0.6, 88, 50] center=да at=[-137.7, 20, 66] round=0.25 color=#17394b
 color tv_screen #17394b metal=0.25 rough=0.08
-tv_stand_0 = box size=[4, 8, 9] center=да at=[-132, 0, 37.5] round=0.7 color=#20272c
-tv_stand_1 = box size=[4, 8, 9] center=да at=[-132, 50, 37.5] round=0.7 color=#20272c
-tv_status = box size=[0.5, 5, 0.8] center=да at=[-128.6, 25, 44.5] round=0.2 color=#80c9b0
+tv_stand_0 = box size=[4, 7, 5] center=да at=[-140, -10, 34.5] round=0.5 color=#20272c
+tv_stand_1 = box size=[4, 7, 5] center=да at=[-140, 50, 34.5] round=0.5 color=#20272c
+tv_status = box size=[0.3, 4, 0.6] center=да at=[-137.25, 20, 40] round=0.12 color=#80c9b0
+tv_text = text "FORMA" size=7 depth=0.2 plane=yz at=[-137.3,20,63] color=#8fc6c8
 
-# --- Диван: основание, три посадочных места, подушки, плед ---
-sofa_base = box size=[170, 48, 16] center=да at=[20, 94, 14] round=3 color=#657d78
-sofa_back = box size=[170, 10, 42] center=да at=[20, 113, 43] round=3.5 color=#5c7570
-sofa_seat_0 = box size=[48, 38, 10] center=да at=[-30, 85, 27] round=3.2 color=#78928a
-sofa_back_cushion_0 = box size=[48, 8, 30] center=да at=[-30, 105.5, 45] round=3 color=#708a82
-sofa_seat_1 = box size=[48, 38, 10] center=да at=[20, 85, 27] round=3.2 color=#78928a
-sofa_back_cushion_1 = box size=[48, 8, 30] center=да at=[20, 105.5, 45] round=3 color=#708a82
-sofa_seat_2 = box size=[48, 38, 10] center=да at=[70, 85, 27] round=3.2 color=#78928a
-sofa_back_cushion_2 = box size=[48, 8, 30] center=да at=[70, 105.5, 45] round=3 color=#708a82
-sofa_arm_0 = box size=[10, 52, 32] center=да at=[-65, 92, 32] round=3.2 color=#607973
-sofa_arm_1 = box size=[10, 52, 32] center=да at=[105, 92, 32] round=3.2 color=#607973
-sofa_leg_0 = box size=[4, 4, 6] center=да at=[-55, 78, 3] round=0.6 color=#3c3430
-sofa_leg_1 = box size=[4, 4, 6] center=да at=[95, 78, 3] round=0.6 color=#3c3430
-sofa_leg_2 = box size=[4, 4, 6] center=да at=[-55, 108, 3] round=0.6 color=#3c3430
-sofa_leg_3 = box size=[4, 4, 6] center=да at=[95, 108, 3] round=0.6 color=#3c3430
-sofa_pillow_mustard = box size=[22, 10, 24] center=да at=[-45, 98, 47] round=3.4 color=#d2a84f
-sofa_pillow_rust = box size=[22, 10, 24] center=да at=[75, 98, 47] round=3.4 color=#b96f55
-sofa_throw_top = box size=[16, 44, 2] center=да at=[105, 90, 49] round=0.7 color=#e4d4b7
-sofa_throw_drop = box size=[2, 44, 28] center=да at=[111, 90, 35] round=0.7 color=#e4d4b7
-sofa_throw_fringe_0 = cylinder radius=0.55 height=4 segments=16 at=[111, 72, 17] color=#e4d4b7
-sofa_throw_fringe_1 = cylinder radius=0.55 height=4 segments=16 at=[111, 79, 17] color=#e4d4b7
-sofa_throw_fringe_2 = cylinder radius=0.55 height=4 segments=16 at=[111, 86, 17] color=#e4d4b7
-sofa_throw_fringe_3 = cylinder radius=0.55 height=4 segments=16 at=[111, 93, 17] color=#e4d4b7
-sofa_throw_fringe_4 = cylinder radius=0.55 height=4 segments=16 at=[111, 100, 17] color=#e4d4b7
-sofa_throw_fringe_5 = cylinder radius=0.55 height=4 segments=16 at=[111, 107, 17] color=#e4d4b7
+# --- Диван: панели и подушки разделены зазорами, складка пледа рассчитывается ---
+sofa_base = box size=[170, 43.85, 12] center=да at=[0, 85.925, 12] round=2.5 color=#657d78
+sofa_back = box size=[170, 10, 58] center=да at=[0, 113, 35] round=2.5 color=#5c7570
+sofa_seat_0 = box size=[46, 35.85, 10] center=да at=[-50, 82.075, 23] round=2.8 color=#78928a
+sofa_back_cushion_0 = box size=[46, 8, 30] center=да at=[-50, 104, 43] round=2.4 color=#708a82
+sofa_seat_1 = box size=[46, 35.85, 10] center=да at=[0, 82.075, 23] round=2.8 color=#78928a
+sofa_back_cushion_1 = box size=[46, 8, 30] center=да at=[0, 104, 43] round=2.4 color=#708a82
+sofa_seat_2 = box size=[46, 35.85, 10] center=да at=[50, 82.075, 23] round=2.8 color=#78928a
+sofa_back_cushion_2 = box size=[46, 8, 30] center=да at=[50, 104, 43] round=2.4 color=#708a82
+sofa_arm_0 = box size=[10, 43.85, 32] center=да at=[-80, 85.925, 34] round=2.8 color=#607973
+sofa_arm_1 = box size=[10, 43.85, 32] center=да at=[80, 85.925, 34] round=2.8 color=#607973
+sofa_leg_0 = box size=[4, 4, 6] center=да at=[-72, 73, 3] round=0.5 color=#3c3430
+sofa_leg_1 = box size=[4, 4, 6] center=да at=[72, 73, 3] round=0.5 color=#3c3430
+sofa_leg_2 = box size=[4, 4, 6] center=да at=[-72, 102, 3] round=0.5 color=#3c3430
+sofa_leg_3 = box size=[4, 4, 6] center=да at=[72, 102, 3] round=0.5 color=#3c3430
+sofa_pillow_mustard = box size=[22, 8, 22] center=да at=[-58, 96, 39] round=3.2 color=#d2a84f
+sofa_pillow_rust = box size=[22, 8, 22] center=да at=[58, 96, 39] round=3.2 color=#b96f55
+throw_sheet = box size=[34,24,0.3] at=[0,82,30] color=#e4d4b7
+throw = drape [throw_sheet] on=sofa_seat_1 detail=24 iterations=70 constraints=10 stiffness=0.9 bend=0.12 damping=0.86 gravity=0.2 pin=back gap=0.3 thickness=0.15
 
-# --- Ковёр и овальный журнальный стол ---
-rug_base = box size=[180, 115, 1] center=да at=[5, 15, 0.5] round=0.3 color=#a95f4b
-rug_inner = box size=[170, 105, 0.25] center=да at=[5, 15, 1.125] round=0.08 color=#c77d61
-coffee_top = oval width=82 length=54 thickness=4 round=1 at=[5,10,23] color=#7b523a
-coffee_shelf = oval width=64 length=40 thickness=2 round=0.5 at=[5,10,8] color=#624432
-coffee_leg_0 = cylinder radius=2 height=21.75 segments=32 at=[-20, -5, 1.25] color=#3b3430
-coffee_leg_1 = cylinder radius=2 height=21.75 segments=32 at=[30, -5, 1.25] color=#3b3430
-coffee_leg_2 = cylinder radius=2 height=21.75 segments=32 at=[-20, 25, 1.25] color=#3b3430
-coffee_leg_3 = cylinder radius=2 height=21.75 segments=32 at=[30, 25, 1.25] color=#3b3430
+# --- Ковёр 0.52 и овальный стол с пользовательскими прототипами ---
+living_rug = rug width=180 length=110 shape=rounded corner=10 thickness=1.2 pad=0.25 border=7 pattern=полосы pattern_size=2.5 pattern_step=12 wave=0.12 lift=2.5 lift_corner=front_right binding=0.25 stitches=да fringe=ends fringe_length=6 fringe_count=20 detail=64 rings=8 at=[0,-5,1.49] color=#a95f4b border_color=#dfc39f
+coffee_top_proto = oval width=82 length=54 thickness=4 round=1 color=#7b523a
+coffee_leg_proto = lathe points=[[0,0],[2.2,0],[2.2,0.8],[1.5,20],[1.8,22],[0,22]] segments=40 color=#3b3430
+coffee = table [coffee_top_proto] leg_object=coffee_leg_proto height=28 shape=ellipse legs=3 layout=circle inset=10 splay=0 at=[5,-5,1.6]
 
-# --- Пульт именно лежит на столешнице: низ корпуса z=27 ---
+# --- Пульт перемещается группой; чашка имеет полость и sweep-ручку ---
 remote_body = box size=[8, 24, 2.2] center=да at=[0, 0, 1.1] round=0.8 color=#20262b
-remote_button_0 = cylinder radius=1.0 height=0.45 segments=24 at=[0, 8, 2.2] color=#b95648
+remote_button_0 = cylinder radius=1 height=0.45 segments=24 at=[0, 8, 2.2] color=#b95648
 remote_button_1 = cylinder radius=0.8 height=0.45 segments=24 at=[-2, 4, 2.2] color=#8b969d
 remote_button_2 = cylinder radius=0.8 height=0.45 segments=24 at=[2, 4, 2.2] color=#8b969d
 remote_button_3 = cylinder radius=0.8 height=0.45 segments=24 at=[-2, 0, 2.2] color=#8b969d
@@ -190,153 +151,123 @@ remote_button_4 = cylinder radius=0.8 height=0.45 segments=24 at=[2, 0, 2.2] col
 remote_button_5 = cylinder radius=0.8 height=0.45 segments=24 at=[-2, -4, 2.2] color=#8b969d
 remote_button_6 = cylinder radius=0.8 height=0.45 segments=24 at=[2, -4, 2.2] color=#8b969d
 remote_button_7 = cylinder radius=1.4 height=0.45 segments=24 at=[0, -8, 2.2] color=#8b969d
-remote_body = rotate [remote_body] angle=-12 axis=z
-remote_body = translate [remote_body] offset=[8,5,27]
-remote_button_0 = rotate [remote_button_0] angle=-12 axis=z
-remote_button_0 = translate [remote_button_0] offset=[8,5,27]
-remote_button_1 = rotate [remote_button_1] angle=-12 axis=z
-remote_button_1 = translate [remote_button_1] offset=[8,5,27]
-remote_button_2 = rotate [remote_button_2] angle=-12 axis=z
-remote_button_2 = translate [remote_button_2] offset=[8,5,27]
-remote_button_3 = rotate [remote_button_3] angle=-12 axis=z
-remote_button_3 = translate [remote_button_3] offset=[8,5,27]
-remote_button_4 = rotate [remote_button_4] angle=-12 axis=z
-remote_button_4 = translate [remote_button_4] offset=[8,5,27]
-remote_button_5 = rotate [remote_button_5] angle=-12 axis=z
-remote_button_5 = translate [remote_button_5] offset=[8,5,27]
-remote_button_6 = rotate [remote_button_6] angle=-12 axis=z
-remote_button_6 = translate [remote_button_6] offset=[8,5,27]
-remote_button_7 = rotate [remote_button_7] angle=-12 axis=z
-remote_button_7 = translate [remote_button_7] offset=[8,5,27]
+remote = group [remote_body,remote_button_0,remote_button_1,remote_button_2,remote_button_3,remote_button_4,remote_button_5,remote_button_6,remote_button_7]
+rotate [remote] angle=-12
+translate [remote] offset=[18,-8,29.6]
+cup_body = lathe points=[[0,0],[4,0],[4.5,1],[4.5,7],[3.5,7],[3.5,1.5],[0,1.5]] segments=48 fillet=0.2 color=#e6ded0
+cup_handle = sweep path=[[-4,0,5],[-7,0,5.5],[-8,0,3],[-7,0,1],[-4,0,1.5]] radius=0.65 smooth=8 color=#e6ded0
+cup_coffee = cylinder radius=3.4 height=0.25 segments=48 at=[0, 0, 6.4] color=#4b2d21
+cup = group [cup_body,cup_handle,cup_coffee]
+translate [cup] offset=[-10,3,29.6]
 
-# --- Чашка с полостью, кофе и ручкой ---
-cup_body = lathe points=[[0,0],[4,0],[4.5,1],[4.5,7],[3.5,7],[3.5,1.5],[0,1.5],[0,0]] segments=48 fillet=0.25 color=#e6ded0
-cup_body = translate [cup_body] offset=[-15,12,27]
-cup_coffee = cylinder radius=3.4 height=0.3 segments=48 at=[-15, 12, 32.7] color=#4b2d21
-cup_handle = torus major=3 minor=0.7 segments=48
-cup_handle = rotate [cup_handle] angle=90 axis=x
-cup_handle = translate [cup_handle] offset=[-20,12,30.5]
-color cup_handle #e6ded0
+# --- Пуф и трёхногий придиванный столик с книгой ---
+pouf_body = cylinder radius=20 height=17 segments=64 at=[125, -65, 0] color=#d0a34f
+pouf_top = oval diameter=40 thickness=4 top=выпуклая sag=1.2 at=[125,-65,17] color=#ddb45f
+side_table = table width=32 length=32 height=26 thickness=3 shape=ellipse legs=3 layout=circle inset=6 leg_shape=round leg_radius=1.3 at=[-108,72,0]
+side_book_bottom = box size=[16.4, 11.4, 0.25] center=да at=[-108, 72, 26.125] round=0.1 color=#3f6d72
+side_book_pages = box size=[16, 11, 1.4] center=да at=[-108, 72, 26.95] round=0.2 color=#e8dfc9
+side_book_top = box size=[16.4, 11.4, 0.25] center=да at=[-108, 72, 27.775] round=0.1 color=#3f6d72
 
-# --- Пуф и придиванный столик с книгой ---
-pouf_body = cylinder radius=22 height=18 segments=64 at=[80, -65, 0] color=#d0a34f
-pouf_top = oval diameter=44 thickness=5 top=выпуклая sag=1.5 at=[80,-65,17] color=#ddb45f
-side_top = cylinder radius=18 height=3 segments=64 at=[-92, 85, 25] color=#7b523a
-side_leg_0 = cylinder radius=1.5 height=25 segments=32 at=[-80.0, 85.0, 0] color=#3b3430
-side_leg_1 = cylinder radius=1.5 height=25 segments=32 at=[-98.0, 95.392, 0] color=#3b3430
-side_leg_2 = cylinder radius=1.5 height=25 segments=32 at=[-98.0, 74.608, 0] color=#3b3430
-side_book_pages = box size=[18, 12, 1.6] center=да at=[-92, 85, 28.8] round=0.25 color=#e8dfc9
-side_book_cover = box size=[18.5, 12.5, 0.4] center=да at=[-92, 85, 29.8] round=0.15 color=#3f6d72
+# --- Шкаф: каждая панель занимает собственный объём, без скрытых нахлёстов ---
+bookcase_side_l = box size=[2, 22, 108] center=да at=[125, 107, 54] round=0.35 color=#72513d
+bookcase_side_r = box size=[2, 22, 108] center=да at=[155, 107, 54] round=0.35 color=#72513d
+bookcase_back = box size=[28, 2, 103.2] center=да at=[140, 117, 54] round=0.25 color=#624534
+bookcase_bottom = box size=[28, 18, 2.4] center=да at=[140, 106, 1.2] round=0.3 color=#72513d
+bookcase_top = box size=[28, 18, 2.4] center=да at=[140, 106, 106.8] round=0.3 color=#72513d
+bookcase_shelf_0 = box size=[27.84, 17.84, 1.8] center=да at=[140, 106, 26] round=0.25 color=#806047
+bookcase_shelf_1 = box size=[27.84, 17.84, 1.8] center=да at=[140, 106, 55] round=0.25 color=#806047
+bookcase_shelf_2 = box size=[27.84, 17.84, 1.8] center=да at=[140, 106, 82] round=0.25 color=#806047
+bookcase_basket = box size=[22, 14, 17] center=да at=[140, 105.8, 10.9] round=1.2 color=#b58a59
+basket_inner_cut = box size=[19, 11, 17] center=да at=[140, 105.8, 12.5] round=0.8 color=#ffffff
+bookcase_basket = difference [bookcase_basket,basket_inner_cut]
+basket_handle_cut = box size=[8, 4, 3] center=да at=[140, 99.5, 16] round=0.7 color=#ffffff
+bookcase_basket = difference [bookcase_basket,basket_handle_cut]
+book_a = box size=[4, 12, 18] center=да at=[0, 0, 9] color=#416b70
+book_b = box size=[5, 12, 20] center=да at=[0, 0, 10] color=#b96b52
+book_c = box size=[3.5, 12, 16] center=да at=[0, 0, 8] color=#d0a34f
+books_0 = array [book_a,book_b,book_c] mode=pack on=bookcase_shelf_0 count=5 gap=0.5 inset=1.2 sequence=loop justify=center align=bottom as=objects
+books_1 = array [book_a,book_b,book_c] mode=pack on=bookcase_shelf_1 count=5 gap=0.5 inset=1.2 sequence=loop justify=center align=bottom as=objects
+books_2 = array [book_a,book_b,book_c] mode=pack on=bookcase_shelf_2 count=5 gap=0.5 inset=1.2 sequence=loop justify=center align=bottom as=objects
 
-# --- Книжный шкаф: четыре яруса, корзина и отдельные книги ---
-bookcase_side_l = box size=[3, 20, 100] center=да at=[121.5, 108, 50] round=0.55 color=#72513d
-bookcase_side_r = box size=[3, 20, 100] center=да at=[153.5, 108, 50] round=0.55 color=#72513d
-bookcase_back = box size=[35, 2, 100] center=да at=[137.5, 117, 50] round=0.35 color=#624534
-bookcase_bottom = box size=[35, 20, 3] center=да at=[137.5, 108, 1.5] round=0.55 color=#72513d
-bookcase_top = box size=[35, 20, 3] center=да at=[137.5, 108, 98.5] round=0.55 color=#72513d
-bookcase_shelf_0 = box size=[32, 18, 2] center=да at=[137.5, 107, 25] round=0.4 color=#806047
-bookcase_shelf_1 = box size=[32, 18, 2] center=да at=[137.5, 107, 50] round=0.4 color=#806047
-bookcase_shelf_2 = box size=[32, 18, 2] center=да at=[137.5, 107, 75] round=0.4 color=#806047
-bookcase_basket = box size=[25, 14, 16] center=да at=[137.5, 106, 11] round=1.4 color=#b58a59
-bookcase_basket_cut = box size=[8, 3, 3] center=да at=[137.5, 98.5, 15] round=0.8 color=#ffffff
-bookcase_basket = difference [bookcase_basket,bookcase_basket_cut]
-book_0_0 = box size=[3.6, 12, 19] center=да at=[125.8, 106, 35.5] round=0.25 color=#416b70
-book_band_0_0 = box size=[2.3400000000000003, 0.35, 0.7] center=да at=[125.8, 99.85, 42] round=0.1 color=#d6bc7d
-book_0_1 = box size=[4.2, 12, 17] center=да at=[130.45, 106, 34.5] round=0.25 color=#b96b52
-book_band_0_1 = box size=[2.7300000000000004, 0.35, 0.7] center=да at=[130.45, 99.85, 40] round=0.1 color=#d6bc7d
-book_0_2 = box size=[3.4, 12, 20] center=да at=[134.99999999999997, 106, 36.0] round=0.25 color=#d0a34f
-book_band_0_2 = box size=[2.21, 0.35, 0.7] center=да at=[134.99999999999997, 99.85, 43] round=0.1 color=#d6bc7d
-book_0_3 = box size=[4.6, 12, 18] center=да at=[139.75, 106, 35.0] round=0.25 color=#6e7f61
-book_band_0_3 = box size=[2.9899999999999998, 0.35, 0.7] center=да at=[139.75, 99.85, 41] round=0.1 color=#d6bc7d
-book_0_4 = box size=[3.8, 12, 19] center=да at=[144.7, 106, 35.5] round=0.25 color=#dfd2b4
-book_band_0_4 = box size=[2.4699999999999998, 0.35, 0.7] center=да at=[144.7, 99.85, 42] round=0.1 color=#d6bc7d
-book_0_5 = box size=[4.0, 12, 16] center=да at=[149.35, 106, 34.0] round=0.25 color=#47546a
-book_band_0_5 = box size=[2.6, 0.35, 0.7] center=да at=[149.35, 99.85, 39] round=0.1 color=#d6bc7d
-book_1_0 = box size=[3.6, 12, 17] center=да at=[125.8, 106, 59.5] round=0.25 color=#d0a34f
-book_band_1_0 = box size=[2.3400000000000003, 0.35, 0.7] center=да at=[125.8, 99.85, 65] round=0.1 color=#d6bc7d
-book_1_1 = box size=[4.2, 12, 20] center=да at=[130.45, 106, 61.0] round=0.25 color=#6e7f61
-book_band_1_1 = box size=[2.7300000000000004, 0.35, 0.7] center=да at=[130.45, 99.85, 68] round=0.1 color=#d6bc7d
-book_1_2 = box size=[3.4, 12, 18] center=да at=[134.99999999999997, 106, 60.0] round=0.25 color=#dfd2b4
-book_band_1_2 = box size=[2.21, 0.35, 0.7] center=да at=[134.99999999999997, 99.85, 66] round=0.1 color=#d6bc7d
-book_1_3 = box size=[4.6, 12, 19] center=да at=[139.75, 106, 60.5] round=0.25 color=#47546a
-book_band_1_3 = box size=[2.9899999999999998, 0.35, 0.7] center=да at=[139.75, 99.85, 67] round=0.1 color=#d6bc7d
-book_1_4 = box size=[3.8, 12, 16] center=да at=[144.7, 106, 59.0] round=0.25 color=#416b70
-book_band_1_4 = box size=[2.4699999999999998, 0.35, 0.7] center=да at=[144.7, 99.85, 64] round=0.1 color=#d6bc7d
-book_1_5 = box size=[4.0, 12, 19] center=да at=[149.35, 106, 60.5] round=0.25 color=#b96b52
-book_band_1_5 = box size=[2.6, 0.35, 0.7] center=да at=[149.35, 99.85, 67] round=0.1 color=#d6bc7d
-book_2_0 = box size=[3.6, 12, 20] center=да at=[125.8, 106, 86.0] round=0.25 color=#dfd2b4
-book_band_2_0 = box size=[2.3400000000000003, 0.35, 0.7] center=да at=[125.8, 99.85, 93] round=0.1 color=#d6bc7d
-book_2_1 = box size=[4.2, 12, 18] center=да at=[130.45, 106, 85.0] round=0.25 color=#47546a
-book_band_2_1 = box size=[2.7300000000000004, 0.35, 0.7] center=да at=[130.45, 99.85, 91] round=0.1 color=#d6bc7d
-book_2_2 = box size=[3.4, 12, 19] center=да at=[134.99999999999997, 106, 85.5] round=0.25 color=#416b70
-book_band_2_2 = box size=[2.21, 0.35, 0.7] center=да at=[134.99999999999997, 99.85, 92] round=0.1 color=#d6bc7d
-book_2_3 = box size=[4.6, 12, 16] center=да at=[139.75, 106, 84.0] round=0.25 color=#b96b52
-book_band_2_3 = box size=[2.9899999999999998, 0.35, 0.7] center=да at=[139.75, 99.85, 89] round=0.1 color=#d6bc7d
-book_2_4 = box size=[3.8, 12, 19] center=да at=[144.7, 106, 85.5] round=0.25 color=#d0a34f
-book_band_2_4 = box size=[2.4699999999999998, 0.35, 0.7] center=да at=[144.7, 99.85, 92] round=0.1 color=#d6bc7d
-book_2_5 = box size=[4.0, 12, 17] center=да at=[149.35, 106, 84.5] round=0.25 color=#6e7f61
-book_band_2_5 = box size=[2.6, 0.35, 0.7] center=да at=[149.35, 99.85, 90] round=0.1 color=#d6bc7d
+# --- Ваза и тор наверху шкафа ---
+decor_vase = lathe points=[[0,0],[4,0],[5,2],[4,8],[2.5,12],[2.5,14],[1.7,14],[1.7,12],[3.2,8],[3.8,2],[0,1.2]] segments=48 color=#557a78
+translate [decor_vase] offset=[132,106,108]
+decor_base = box size=[10, 6, 1] center=да at=[148, 106, 108.5] round=0.25 color=#c7a968
+decor_torus = torus major=4 minor=0.8 segments=48
+rotate [decor_torus] angle=90 axis=x
+translate [decor_torus] offset=[148,106,113.8]
+color decor_torus #c7a968 metal=0.45 rough=0.3
 
-# --- Торшер с полым абажуром и тёплой лампой ---
-lamp_base = cylinder radius=12 height=2 segments=64 at=[125, 55, 0] color=#3a4242
-lamp_stem = cylinder radius=1.3 height=92 segments=32 at=[125, 55, 2] color=#b69a62
-lamp_shade = lathe points=[[17,0],[11,18],[9.5,18],[15.5,0],[17,0]] segments=64 color=#eadcbe
-lamp_shade = translate [lamp_shade] offset=[125,55,90]
-lamp_bulb = sphere radius=4 segments=32 at=[125,55,99] color=#ffd58a
-color lamp_bulb #ffd58a emissive=#ffd58a emissive_strength=3
+# --- Дуговой торшер, полый абажур и перевернутая лампочка E14 0.52 ---
+lamp_base = cylinder radius=11 height=2 segments=64 at=[116, 46, 0] color=#3a4242
+lamp_arc = sweep path=[[116,46,2.2],[116,46,45],[112,46,82],[106,46,112],[96,46,112],[96,46,110]] radius=1.2 smooth=8 color=#b69a62
+lamp_mount = cylinder radius=1.2 height=6 segments=32 at=[96, 46, 104] color=#b69a62
+lamp_socket = cylinder radius=3 height=4 segments=40 at=[96, 46, 100] color=#4a4540
+lamp_shade = lathe points=[[13,0],[9,18],[7.8,18],[11.5,0],[13,0]] segments=64 color=#eadcbe
+translate [lamp_shade] offset=[96,46,90]
+lamp_spider = torus major=8 minor=0.3 segments=48
+translate [lamp_spider] offset=[96,46,106]
+color lamp_spider #b69a62 metal=0.55 rough=0.3
+lamp_spoke_proto = box size=[8, 0.6, 0.6] center=да at=[4, 0, 106] round=0.2 color=#b69a62
+lamp_spokes = array [lamp_spoke_proto] mode=radial count=3 radius=0 angle=360 spin=да as=objects at=[96,46,0]
+lamp_bulb = bulb shape=candle base=E14 diameter=18 height=32 glass_wall=0.3 thread=да glow=да glow_color=#ffd7a0 glow_strength=3 segments=48
+scale [lamp_bulb] factor=0.5
+rotate [lamp_bulb] angle=180 axis=x
+translate [lamp_bulb] offset=[96,46,102]
 
-# --- Растение: полый горшок, грунт, стебель и объёмные листья ---
-plant_pot = lathe points=[[0,0],[11,0],[12,2],[16,21],[16,23],[13.5,23],[12.5,20],[9.5,4],[0,4],[0,0]] segments=64 fillet=0.35 color=#b96f50
-plant_pot = translate [plant_pot] offset=[-130,102,0]
-plant_soil = cylinder radius=12.5 height=1.5 segments=48 at=[-130, 102, 19] color=#4b3829
-plant_stem = cylinder radius=1.2 height=43 segments=24 at=[-130, 102, 20] color=#55704b
-plant_leaf_0 = leaf length=30 width=16 thickness=1 curl=0.18 plane=плашмя segments=36 color=#4f7b55
-plant_leaf_0 = rotate [plant_leaf_0] angle=-18 axis=y
-plant_leaf_0 = rotate [plant_leaf_0] angle=0 axis=z
-plant_leaf_0 = translate [plant_leaf_0] offset=[-130,102,39]
-plant_leaf_1 = leaf length=28 width=15 thickness=1 curl=0.18 plane=плашмя segments=36 color=#4f7b55
-plant_leaf_1 = rotate [plant_leaf_1] angle=22 axis=y
-plant_leaf_1 = rotate [plant_leaf_1] angle=55 axis=z
-plant_leaf_1 = translate [plant_leaf_1] offset=[-130,102,45]
-plant_leaf_2 = leaf length=30 width=17 thickness=1 curl=0.18 plane=плашмя segments=36 color=#4f7b55
-plant_leaf_2 = rotate [plant_leaf_2] angle=-20 axis=y
-plant_leaf_2 = rotate [plant_leaf_2] angle=115 axis=z
-plant_leaf_2 = translate [plant_leaf_2] offset=[-130,102,50]
-plant_leaf_3 = leaf length=27 width=15 thickness=1 curl=0.18 plane=плашмя segments=36 color=#4f7b55
-plant_leaf_3 = rotate [plant_leaf_3] angle=18 axis=y
-plant_leaf_3 = rotate [plant_leaf_3] angle=175 axis=z
-plant_leaf_3 = translate [plant_leaf_3] offset=[-130,102,55]
-plant_leaf_4 = leaf length=25 width=14 thickness=1 curl=0.18 plane=плашмя segments=36 color=#4f7b55
-plant_leaf_4 = rotate [plant_leaf_4] angle=-16 axis=y
-plant_leaf_4 = rotate [plant_leaf_4] angle=230 axis=z
-plant_leaf_4 = translate [plant_leaf_4] offset=[-130,102,59]
-plant_leaf_5 = leaf length=23 width=13 thickness=1 curl=0.18 plane=плашмя segments=36 color=#4f7b55
-plant_leaf_5 = rotate [plant_leaf_5] angle=20 axis=y
-plant_leaf_5 = rotate [plant_leaf_5] angle=295 axis=z
-plant_leaf_5 = translate [plant_leaf_5] offset=[-130,102,63]
-plant_leaf_6 = leaf length=20 width=12 thickness=1 curl=0.18 plane=плашмя segments=36 color=#4f7b55
-plant_leaf_6 = rotate [plant_leaf_6] angle=-12 axis=y
-plant_leaf_6 = rotate [plant_leaf_6] angle=35 axis=z
-plant_leaf_6 = translate [plant_leaf_6] offset=[-130,102,67]
+# --- Растение: полый горшок, видимый грунт и объёмные листья ---
+plant_pot = lathe points=[[0,0],[10,0],[11,2],[14,21],[14,23],[12,23],[11.5,20],[8.5,4],[0,4]] segments=64 fillet=0.25 color=#b96f50
+translate [plant_pot] offset=[-130,95,0]
+plant_soil = cylinder radius=10.8 height=0.8 segments=48 at=[-130, 95, 20] color=#4b3829
+plant_stem = cylinder radius=1 height=55 segments=24 at=[-130, 95, 20.8] color=#55704b
+plant_leaf_0 = leaf length=26 width=13 thickness=0.8 curl=0.18 plane=плашмя segments=36 color=#4f7b55
+rotate [plant_leaf_0] angle=-10 axis=y
+rotate [plant_leaf_0] angle=0 axis=z
+translate [plant_leaf_0] offset=[-130,95,30]
+plant_leaf_1 = leaf length=25 width=12 thickness=0.8 curl=0.18 plane=плашмя segments=36 color=#4f7b55
+rotate [plant_leaf_1] angle=10 axis=y
+rotate [plant_leaf_1] angle=55 axis=z
+translate [plant_leaf_1] offset=[-130,95,37]
+plant_leaf_2 = leaf length=26 width=13 thickness=0.8 curl=0.18 plane=плашмя segments=36 color=#4f7b55
+rotate [plant_leaf_2] angle=-10 axis=y
+rotate [plant_leaf_2] angle=115 axis=z
+translate [plant_leaf_2] offset=[-130,95,44]
+plant_leaf_3 = leaf length=24 width=12 thickness=0.8 curl=0.18 plane=плашмя segments=36 color=#4f7b55
+rotate [plant_leaf_3] angle=10 axis=y
+rotate [plant_leaf_3] angle=175 axis=z
+translate [plant_leaf_3] offset=[-130,95,51]
+plant_leaf_4 = leaf length=22 width=11 thickness=0.8 curl=0.18 plane=плашмя segments=36 color=#4f7b55
+rotate [plant_leaf_4] angle=-10 axis=y
+rotate [plant_leaf_4] angle=230 axis=z
+translate [plant_leaf_4] offset=[-130,95,58]
+plant_leaf_5 = leaf length=20 width=10 thickness=0.8 curl=0.18 plane=плашмя segments=36 color=#4f7b55
+rotate [plant_leaf_5] angle=10 axis=y
+rotate [plant_leaf_5] angle=295 axis=z
+translate [plant_leaf_5] offset=[-130,95,65]
+plant_leaf_6 = leaf length=18 width=9 thickness=0.8 curl=0.18 plane=плашмя segments=36 color=#4f7b55
+rotate [plant_leaf_6] angle=-8 axis=y
+rotate [plant_leaf_6] angle=35 axis=z
+translate [plant_leaf_6] offset=[-130,95,72]
 
-# --- Настенные часы над книжным шкафом ---
-clock_body = cylinder radius=12 height=3 segments=64 center=да
-clock_body = rotate [clock_body] angle=90 axis=x
-clock_body = translate [clock_body] offset=[137,118,120]
+# --- Часы на свободном участке задней стены ---
+clock_body = cylinder radius=10 height=3 segments=64 center=да
+rotate [clock_body] angle=90 axis=x
+translate [clock_body] offset=[140,118.5,124]
 color clock_body #b89459
-clock_face = cylinder radius=10 height=0.5 segments=64 center=да
-clock_face = rotate [clock_face] angle=90 axis=x
-clock_face = translate [clock_face] offset=[137,116.2,120]
+clock_face = cylinder radius=8.7 height=0.5 segments=64 center=да
+rotate [clock_face] angle=90 axis=x
+translate [clock_face] offset=[140,116.75,124]
 color clock_face #eee6d4
-clock_hand_hour = box size=[1, 0.7, 6] center=да at=[137, 115.6, 122.5] round=0.3 color=#344044
-clock_hand_minute = box size=[7, 0.7, 1] center=да at=[140, 115.5, 120] round=0.3 color=#344044
-clock_mark_0 = sphere radius=0.8 segments=16 at=[137,115.4,128] color=#7d684b
-clock_mark_1 = sphere radius=0.8 segments=16 at=[137,115.4,112] color=#7d684b
-clock_mark_2 = sphere radius=0.8 segments=16 at=[129,115.4,120] color=#7d684b
-clock_mark_3 = sphere radius=0.8 segments=16 at=[145,115.4,120] color=#7d684b
+clock_hand_hour = box size=[0.8, 0.4, 5] center=да at=[140, 116.3, 126.5] round=0.18 color=#344044
+clock_hand_minute = box size=[6, 0.4, 0.8] center=да at=[143, 116.3, 124] round=0.18 color=#344044
+clock_mark_0 = sphere radius=0.6 segments=16 at=[140,115.9,131.5] color=#7d684b
+clock_mark_1 = sphere radius=0.6 segments=16 at=[140,115.9,116.5] color=#7d684b
+clock_mark_2 = sphere radius=0.6 segments=16 at=[132.5,115.9,124] color=#7d684b
+clock_mark_3 = sphere radius=0.6 segments=16 at=[147.5,115.9,124] color=#7d684b
 
-# Проверки ключевых тел выполняются также внешним сценарием сборки.
-check walls watertight
-check door_slab watertight
-check media_body watertight
-check remote_body watertight
+check wall_back watertight
+check wall_left watertight
+check entry.leaf watertight
+check living_rug watertight
+check coffee watertight
+# По требованию: interference tolerance=0.01 limit=200
