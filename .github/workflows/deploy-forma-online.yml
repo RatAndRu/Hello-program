@@ -119,12 +119,19 @@ jobs:
             flyctl apps create "$FLY_APP_NAME" --org "${FLY_ORG:-personal}"
           fi
 
+      - name: Verify Fly app access
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -o pipefail
+          flyctl apps show "$FLY_APP_NAME" 2>&1 | tee /tmp/forma-fly-app.log
+
       - name: Deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           set -o pipefail
-          flyctl deploy --app "$FLY_APP_NAME" --remote-only --build-arg "FORMA_REVISION=$GITHUB_SHA" 2>&1 | tee /tmp/forma-fly-deploy.log
+          flyctl deploy --app "$FLY_APP_NAME" --local-only --build-arg "FORMA_REVISION=$GITHUB_SHA" 2>&1 | tee /tmp/forma-fly-deploy.log
 
       - name: Report sanitized Fly error
         if: failure()
@@ -132,8 +139,9 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import re
-          path = Path('/tmp/forma-fly-deploy.log')
-          text = path.read_text(encoding='utf-8', errors='replace') if path.exists() else 'Нет журнала flyctl.'
+          paths = [Path('/tmp/forma-fly-app.log'), Path('/tmp/forma-fly-deploy.log')]
+          text = '\n'.join(path.read_text(encoding='utf-8', errors='replace')
+                            for path in paths if path.exists()) or 'Нет журнала flyctl.'
           text = re.sub(r'FlyV1\s+\S+', '[REDACTED FLY TOKEN]', text)
           text = re.sub(r'fm2_[A-Za-z0-9_.-]+', '[REDACTED FLY TOKEN]', text)
           text = re.sub(r'(?i)(authorization:\s*bearer\s+)\S+', r'\1[REDACTED]', text)
