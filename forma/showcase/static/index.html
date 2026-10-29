@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0b1117">
+  <meta name="description" content="Лёгкий стенд версий Forma: изменения, готовые GLB и исходники .forma без серверной пересборки.">
+  <title>Forma — стенд версий</title>
+  <link rel="stylesheet" href="./app.css">
+  <script type="importmap">
+    {"imports":{"three":"/assets/vendor/three.module.js","three/addons/":"/assets/vendor/"}}
+  </script>
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="./" aria-label="Forma — на главную стенда">
+      <span class="brand-mark">Ф</span>
+      <span><strong>FORMA</strong><small>стенд версий</small></span>
+    </a>
+    <div class="header-note"><span class="status-dot"></span> готовые модели · без серверной сборки</div>
+  </header>
+
+  <main class="layout">
+    <aside class="sidebar" aria-label="Версии">
+      <p class="eyebrow">Версии и проекты</p>
+      <nav id="version-nav" class="version-nav"></nav>
+      <div class="sidebar-note">
+        <strong>Только результат</strong>
+        <p>3D загружается по кнопке. Скрытые модели и превью инструментов не расходуют ресурсы.</p>
+      </div>
+    </aside>
+
+    <section id="content" class="content" aria-live="polite">
+      <div class="loading-page">
+        <span class="loader"></span>
+        <p>Открываю каталог версий…</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <span>Forma · готовые <code>.forma</code> и <code>.glb</code></span>
+    <a id="revision-link" href="https://github.com/RatAndRu/Hello-program" target="_blank" rel="noreferrer">revision …</a>
+  </footer>
+
+  <dialog id="viewer-dialog" class="viewer-dialog" aria-labelledby="viewer-title">
+    <section class="viewer-shell">
+      <header class="viewer-header">
+        <div>
+          <p class="eyebrow">Интерактивный просмотр</p>
+          <h2 id="viewer-title">Модель</h2>
+        </div>
+        <button id="viewer-close" class="icon-button" type="button" aria-label="Закрыть 3D">×</button>
+      </header>
+      <div id="viewer-stage" class="viewer-stage">
+        <div id="viewer-progress" class="viewer-progress" role="status">
+          <span class="loader"></span>
+          <strong id="viewer-progress-title">Подготовка просмотра…</strong>
+          <span id="viewer-progress-detail"></span>
+          <div class="progress-track"><i id="viewer-progress-bar"></i></div>
+        </div>
+      </div>
+      <div class="viewer-toolbar" aria-label="Управление видом">
+        <div class="view-buttons">
+          <button type="button" data-view="iso">Изометрия</button>
+          <button type="button" data-view="front">Спереди</button>
+          <button type="button" data-view="side">Сбоку</button>
+          <button type="button" data-view="top">Сверху</button>
+        </div>
+        <div class="view-options">
+          <button type="button" id="viewer-wire" aria-pressed="false">Каркас</button>
+          <button type="button" id="viewer-spin" aria-pressed="false">Вращать</button>
+        </div>
+      </div>
+      <footer class="viewer-footer">
+        <span id="viewer-stats"></span>
+        <div class="viewer-downloads">
+          <a id="viewer-forma" href="#" download>Скачать .forma</a>
+          <a id="viewer-glb" href="#" download>Полный .glb</a>
+        </div>
+      </footer>
+    </section>
+  </dialog>
+
+  <noscript>
+    <section class="noscript">
+      Для каталога и 3D нужен JavaScript. Файлы также доступны напрямую:
+      <a href="/assets/models/train_carriage.forma">вагон .forma</a>,
+      <a href="/assets/models/train_carriage.glb">вагон .glb</a>,
+      <a href="/assets/models/living_room_diorama.forma">гостиная .forma</a>,
+      <a href="/assets/models/living_room_diorama.glb">гостиная .glb</a>.
+    </section>
+  </noscript>
+  <script type="module" src="./app.js"></script>
+</body>
+</html>

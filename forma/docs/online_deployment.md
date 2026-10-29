@@ -1,104 +1,87 @@
-# Постоянная Forma Online с автоматическим деплоем
+# Постоянный статический стенд Forma с автоматическим деплоем
 
 ## Целевая конфигурация
 
-- **Платформа:** Fly.io, контейнер Docker.
-- **Постоянный адрес:** `https://forma3d-ratandru.fly.dev` (опубликован).
+- **Постоянный адрес:** <https://forma3d-ratandru.fly.dev>.
+- **Назначение:** версии, их изменения и готовые модели; полный Web UI здесь не публикуется.
+- **Платформа:** Fly.io, двухстадийный Docker-образ со статическим Nginx.
 - **Регион:** Амстердам (`ams`).
-- **Ресурсы:** 1 shared CPU, 2 GB RAM.
+- **Ресурсы:** 1 shared CPU, 512 MB RAM, ровно одна машина.
 - **Постоянная работа:** `min_machines_running = 1`, `auto_stop_machines = 'off'`.
-- **Стартовый проект:** плацкартный вагон 61-4194; гостиная доступна в списке проектов.
-- **Health-check:** `https://forma3d-ratandru.fly.dev/healthz`.
+- **Health-check:** <https://forma3d-ratandru.fly.dev/healthz>.
 - **CI:** `.github/workflows/deploy-forma-online.yml`.
 
-Always-on машина является платной конфигурацией Fly.io. Стоимость зависит от выбранного тарифа и региона; отключение автоматической остановки здесь сделано намеренно, чтобы адрес всегда был доступен.
+Always-on машина является платной конфигурацией Fly.io. Статический стенд не требует volume, серверной сборки или Python в конечном контейнере.
 
-## Что уже находится в репозитории
+## Состав решения
 
 | Файл | Назначение |
 |---|---|
-| `forma/Dockerfile` | Production-образ Python 3.11, непривилегированный пользователь, health-check |
-| `fly.toml` | HTTPS, европейский регион, постоянная машина и проверки доступности |
-| `.dockerignore` | Исключает Git, референсы, тесты, рендеры и архивы из образа |
-| `.github/workflows/deploy-forma-online.yml` | Тесты, Docker smoke-test, деплой и проверка публичного revision |
-| `forma/tests/test_online_demo.py` | Проверки demo-режима и стартового проекта |
-| `forma/forma/webui.py` | `/healthz`, revision, demo-ограничения и выбор стартового проекта |
-| `forma/web/index.html`, `app.js`, `app.css` | Значок онлайн-демо и короткий commit в интерфейсе |
+| `forma/showcase/catalog.source.json` | Версии, нововведения, описания и исходники моделей |
+| `forma/showcase/build_showcase.py` | Offline-сборка `.forma`, полного/preview GLB, WebP, каталога и gzip |
+| `forma/showcase/static/` | Лёгкий каталог и 3D-viewer, загружаемый по требованию |
+| `forma/showcase/Dockerfile` | Сборка assets в Python и production на непривилегированном Nginx |
+| `forma/showcase/nginx.conf` | Кеширование, precompressed gzip, healthz и запрет editor API |
+| `forma/showcase/acceptance.py` | Одинаковая внешняя приёмка контейнера и публичного адреса |
+| `forma/tests/test_showcase.py` | Регрессии ленивой загрузки, геометрии и production-конфигурации |
+| `fly.toml` | HTTPS, регион, 512 MB и постоянная машина |
+| `.github/workflows/deploy-forma-online.yml` | Тесты, Docker, деплой и внешняя приёмка |
 
-## Один обязательный шаг перед первым деплоем
+Подробности генератора и оптимизации описаны в [`forma/showcase/README.md`](../showcase/README.md).
 
-1. Создайте аккаунт Fly.io и войдите в его панель.
-2. В переключателе организаций выберите **Personal**, откройте **Tokens** и создайте **Org deploy token** (не read-only). Org-scope нужен для первого запуска: CI сначала создаст приложение, а затем будет им управлять. Скопируйте токен целиком; префикс `FlyV1` и следующий за ним пробел, если они есть, являются частью значения.
-3. Откройте [настройки Actions-секретов репозитория](https://github.com/RatAndRu/Hello-program/settings/secrets/actions).
-4. Нажмите **New repository secret** и добавьте секрет **`FLY_API_TOKEN`** с этим токеном.
-5. Если приложение должно принадлежать командной организации Fly, добавьте переменную **`FLY_ORG`** с её slug. Без неё CI использует `personal`.
-6. Откройте **Actions → Deploy Forma online → Run workflow** и выберите `arena/4e4defc4-hello-program`.
+## Что видит посетитель
 
-**Токен не нужно присылать в чат или записывать в репозиторий.** Workflow получит его только через `${{ secrets.FLY_API_TOKEN }}`.
+- список конкретных версий и их изменений;
+- готовые WebP-превью и понятные параметры каждой модели;
+- скачивание исходника `.forma` и полного `.glb` с отдельными деталями;
+- интерактивный просмотр только по явной кнопке;
+- после закрытия просмотра — освобождение WebGL и скрытых ресурсов.
 
-Если имя `forma3d-ratandru` уже занято другим пользователем Fly.io, измените его одновременно в `fly.toml` и в `FLY_APP_NAME` внутри workflow.
+Three.js не загружается на первом экране. Сервер не выполняет пользовательские сценарии и не пересобирает модели. `/api/*` возвращает `410 Gone`; это проверяется автоматически.
 
-## Автоматический процесс после каждого push
+## Автоматический процесс после push
 
-При изменении `forma/**`, `fly.toml`, Dockerfile или самого workflow на ветке `arena/4e4defc4-hello-program`:
+При изменении `forma/**`, `fly.toml`, `.dockerignore` или workflow на ветке `arena/4e4defc4-hello-program`:
 
-1. Устанавливаются зависимости.
-2. Запускаются `test_online_demo`, `test_train_carriage`, `test_living_room_052`, `test_text_ascii`.
-3. Собирается production Docker-образ с полным SHA текущего commit.
-4. Контейнер запускается в CI; проверяются `/healthz`, demo-режим и стартовый вагон.
-5. При наличии `FLY_API_TOKEN` создаётся Fly-приложение, если его ещё нет.
-6. Выполняется `flyctl deploy --local-only`: образ собирает Docker на GitHub runner, отдельный remote-builder Fly не требуется.
-7. `flyctl scale count 1` оставляет ровно одну машину: состояние сборки находится в памяти процесса, а две реплики для этого demo не нужны.
-8. Публичный `/healthz` обязан вернуть SHA того же commit. Затем через внешний HTTPS API строится вагон, скачивается и проверяется GLB, подтверждается наличие гостиной и запрет серверного сохранения. Иначе деплой считается неуспешным.
+1. Запускаются `test_showcase`, `test_train_carriage`, `test_living_room_052`.
+2. Собирается статический production-образ с полным SHA текущего commit.
+3. Внутри build stage заранее строятся обе модели, проверяются GLB round-trip, создаются WebP и gzip.
+4. Контейнер запускается в CI. `acceptance.py` проверяет healthz, версии, файлы, SHA-256, GLB2, узлы, треугольники, gzip и `410` у editor API.
+5. При наличии `FLY_API_TOKEN` приложение Fly создаётся, если его ещё нет.
+6. `flyctl deploy --local-only` публикует образ без отдельного remote-builder.
+7. `flyctl scale count 1` оставляет одну машину.
+8. Публичный `/healthz?revision=SHA` обязан подтвердить новый commit.
+9. Та же внешняя приёмка выполняется через HTTPS против постоянного адреса. При ошибке workflow считается неуспешным.
 
-Короткий revision также виден в значке **«ОНЛАЙН-ДЕМО»** в левом верхнем углу интерфейса. Это позволяет сразу понять, обновился ли сервер.
+Токен полного Web UI больше не нужен: публичный стенд не содержит editor API. `FLY_API_TOKEN` по-прежнему хранится только в GitHub Actions Secrets и не выводится в журнал или чат.
 
-Во время rolling-деплоя старая и новая машины недолго работают одновременно. Поэтому `FORMA_TOKEN` в production задан общий для реплик. Это не секрет и не замена `FLY_API_TOKEN`: UI-токен и так выдаётся каждому посетителю в HTML, а все операции записи и локального импорта в demo отключены. В обычном локальном режиме без `FORMA_TOKEN` по-прежнему создаётся случайный токен.
+## Локальная проверка
 
-## Что разрешено в публичном демо
-
-- открывать готовые проекты и примеры;
-- редактировать текст `.forma`;
-- строить модели и осматривать их в 3D;
-- использовать кадры, морфинг, превью инструментов и PNG-виды в пределах общего лимита;
-- экспортировать `.forma`, GLB и другие поддерживаемые результаты.
-
-Ограничения до начала построения:
-
-- не более 1 000 000 символов и 4000 команд в сценарии;
-- существующий общий предохранитель на 500 000 оценочных треугольников нельзя обойти через `allow_heavy`;
-- импорт внешних файлов отключён;
-- загрузка файлов на сервер, сохранение общих проектов, открытие серверных папок и серверный prompt-файл отключены;
-- проекты и экспорт на контейнере временные; для сохранения работы используйте скачивание `.forma` через браузер.
-
-Вагон и гостиная находятся внутри лимита и строятся без диалога подтверждения тяжёлой операции.
-
-## Локальная проверка production-режима
-
-Без Docker:
+Быстрый статический просмотр:
 
 ```bash
-FORMA_DEMO=1 \
-FORMA_START_PROJECT=train_carriage \
-FORMA_REVISION=local \
-FORMA_DATA=/tmp/forma-online \
-PYTHONPATH=forma \
-python forma/run_forma.py --host 0.0.0.0 --port 8000 --no-open
+python -m pip install -r forma/requirements.txt Pillow
+PYTHONPATH=forma python forma/showcase/build_showcase.py \
+  --repo-root "$PWD" --output /tmp/forma-showcase-site --revision local
+python -m http.server 8000 --bind 0.0.0.0 --directory /tmp/forma-showcase-site
 ```
 
-С Docker:
+Полная production-проверка:
 
 ```bash
-docker build --build-arg FORMA_REVISION=local -t forma3d-online -f forma/Dockerfile .
-docker run --rm -p 8000:8000 forma3d-online
-curl http://127.0.0.1:8000/healthz
+docker build --build-arg FORMA_REVISION=local \
+  -t forma3d-showcase -f forma/showcase/Dockerfile .
+docker run --rm -p 8000:8000 forma3d-showcase
+python forma/showcase/acceptance.py \
+  --base http://127.0.0.1:8000 --revision local
 ```
 
 ## Обновление и откат
 
-- **Обновление:** обычный push в рабочую ветку; ничего вручную скачивать или распаковывать не нужно.
+- **Обновление:** обычный push в рабочую ветку; assets пересобираются в CI, не на запросах посетителей.
 - **Проверка версии:** открыть `/healthz` и сравнить `revision` с SHA commit.
-- **Откат:** выбрать предыдущий успешный release в панели Fly.io либо повторно запустить workflow для предыдущего commit.
-- **После переноса в `main`:** измените список веток в `on.push.branches` workflow на `main`, чтобы production обновлялся только из стабильной ветки.
+- **Внешняя приёмка вручную:** `python forma/showcase/acceptance.py --base https://forma3d-ratandru.fly.dev --revision SHA`.
+- **Откат:** выбрать предыдущий успешный release в панели Fly.io либо повторно опубликовать предыдущий проверенный commit.
+- **После переноса в `main`:** изменить список веток в `on.push.branches` workflow на стабильную ветку.
 
-Текущая конфигурация не создаёт постоянного диска: это намеренный общий демонстрационный сервер без пользовательских аккаунтов и сохранения чужих проектов. Постоянное хранение и приватные проекты следует добавлять отдельной, защищённой конфигурацией, а не открывать записи в общий контейнер.
+Локальный полный редактор остаётся частью Forma, но не является production-конфигурацией этого адреса.

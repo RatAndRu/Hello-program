@@ -2,13 +2,7 @@ app = 'forma3d-ratandru'
 primary_region = 'ams'
 
 [build]
-  dockerfile = 'forma/Dockerfile'
-
-[env]
-  FORMA_DEMO = '1'
-  FORMA_START_PROJECT = 'train_carriage'
-  FORMA_TOKEN = 'forma3d-public-demo-v1'
-  FORMA_DATA = '/app/data'
+  dockerfile = 'forma/showcase/Dockerfile'
 
 [http_service]
   internal_port = 8000
@@ -27,4 +21,4 @@ primary_region = 'ams'
 
 [[vm]]
   size = 'shared-cpu-1x'
-  memory = '2gb'
+  memory = '512mb'

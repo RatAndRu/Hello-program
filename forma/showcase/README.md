@@ -1,0 +1,70 @@
+# Статический стенд версий Forma
+
+Публичный стенд показывает **изменения конкретной версии и её готовые модели**, а не полный редактор. Постоянный адрес: <https://forma3d-ratandru.fly.dev>.
+
+## Принцип работы
+
+1. `catalog.source.json` описывает версии, список изменений, исходники `.forma` и ракурсы.
+2. `build_showcase.py` один раз при сборке Docker-образа выполняет исходники, экспортирует GLB и создаёт WebP-постеры.
+3. В production остаётся только Nginx и готовые файлы. Python, Manifold и сервер построения в конечный образ не входят.
+4. Первый экран загружает HTML, CSS, небольшой JS, каталог и WebP. Three.js и preview GLB запрашиваются только после нажатия **«Смотреть в 3D»**.
+5. Полные `.glb` и `.forma` доступны прямыми ссылками независимо от WebGL.
+
+`/api/*` намеренно возвращает `410 Gone`. Фоновых пересборок, пользовательских проектов и скрытых 3D-сцен на публичном стенде нет.
+
+## Два вида GLB
+
+- **Полный GLB** сохраняет отдельные именованные детали, материалы, покраску и текстуры. Это файл для дальнейшей работы и экспорта.
+- **Preview GLB** служит только интерактивному просмотру. Для обычных PBR-деталей с одинаковыми материалами сохранённые vertices, normals и faces пакетируются без boolean-операций и повторной триангуляции. Число треугольников и AABB полного и preview GLB проверяются автоматически.
+
+`Manifold.compose` для этого не используется: он может изменить тесселяцию даже без явного boolean. Для сцен с регионной покраской или текстурами генератор выбирает полный GLB как preview, чтобы не потерять внешний вид. Поэтому у гостиной 0.52 preview остаётся неоптимизированным, а у вагона 1186 узлов объединяются в 140 материальных пакетов.
+
+Файлы `.html`, `.css`, `.js`, `.json`, `.forma` и `.glb` заранее сжимаются в `.gz`; production Nginx отдаёт их через `gzip_static`.
+
+## Локальная сборка
+
+Нужны Python 3.11, зависимости Forma и Pillow:
+
+```bash
+python -m pip install -r forma/requirements.txt Pillow
+PYTHONPATH=forma python forma/showcase/build_showcase.py \
+  --repo-root "$PWD" --output /tmp/forma-showcase-site --revision local
+python -m http.server 8000 --bind 0.0.0.0 --directory /tmp/forma-showcase-site
+```
+
+Простой `http.server` подходит для визуальной проверки, но не эмулирует production gzip и правила API. Полная HTTP-приёмка выполняется в Docker или CI.
+
+## Production-контейнер
+
+```bash
+docker build --build-arg FORMA_REVISION=local \
+  -t forma3d-showcase -f forma/showcase/Dockerfile .
+docker run --rm -p 8000:8000 forma3d-showcase
+python forma/showcase/acceptance.py \
+  --base http://127.0.0.1:8000 --revision local
+```
+
+Образ двухстадийный: Python используется только на этапе `assets`; конечный образ — `nginxinc/nginx-unprivileged`, внутренний порт 8000.
+
+## Тесты и приёмка
+
+```bash
+PYTHONPATH=forma:forma/tests python -m unittest -v test_showcase
+python forma/showcase/acceptance.py \
+  --base https://forma3d-ratandru.fly.dev --revision EXPECTED_GIT_SHA
+```
+
+`acceptance.py` использует только стандартную библиотеку и проверяет по внешнему HTTP:
+
+- точный revision в `/healthz` и каталоге;
+- обе версии, их изменения и модели;
+- SHA-256 и размеры `.forma`, полного GLB, preview GLB и WebP;
+- GLB2 magic bytes, отдельные узлы полного GLB, число узлов preview и треугольников;
+- фактическую выдачу precompressed gzip;
+- отсутствие токена редактора и `410 Gone` у `/api/build`.
+
+Workflow запускает эту же приёмку сначала против production-контейнера, затем после деплоя против публичного Fly.io-адреса. Задача публикации не считается успешной при расхождении любого из этих условий.
+
+## Добавление версии
+
+Добавьте запись в `catalog.source.json`: человекочитаемые изменения, существующий `.forma`, имя скачиваемых файлов и хотя бы один poster view. Не вписывайте размеры и хеши вручную — генератор вычислит их. После этого обновите ожидаемые структурные параметры в `acceptance.py`, если добавляется новый тип модели, и расширьте тесты.

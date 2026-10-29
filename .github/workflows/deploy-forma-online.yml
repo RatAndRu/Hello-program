@@ -23,7 +23,7 @@ env:
 
 jobs:
   verify:
-    name: Tests and production container
+    name: Tests and static production container
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -37,60 +37,48 @@ jobs:
           cache-dependency-path: forma/requirements.txt
 
       - name: Install dependencies
-        run: pip install -r forma/requirements.txt
+        run: pip install -r forma/requirements.txt Pillow
 
       - name: Focused regression
         env:
           PYTHONPATH: forma:forma/tests
-        run: python -m unittest -v test_online_demo test_train_carriage test_living_room_052 test_text_ascii
+        run: python -m unittest -v test_showcase test_train_carriage test_living_room_052
 
-      - name: Build production image
-        run: docker build --build-arg "FORMA_REVISION=$GITHUB_SHA" -t "forma3d-online:$GITHUB_SHA" -f forma/Dockerfile .
+      - name: Build static production image
+        run: docker build --build-arg "FORMA_REVISION=$GITHUB_SHA" -t "forma3d-showcase:$GITHUB_SHA" -f forma/showcase/Dockerfile .
 
       - name: Start production container
-        run: docker run -d --name forma-online -p 8000:8000 "forma3d-online:$GITHUB_SHA"
+        run: docker run -d --name forma-showcase -p 8000:8000 "forma3d-showcase:$GITHUB_SHA"
 
-      - name: Verify container and start project
-        env:
-          PYTHONPATH: forma:forma/tests
+      - name: Wait for production health
         run: |
           set -e
           for attempt in $(seq 1 30); do
             if curl -fsS http://127.0.0.1:8000/healthz > /tmp/forma-health.json; then
-              break
+              if grep -q "$GITHUB_SHA" /tmp/forma-health.json; then
+                cat /tmp/forma-health.json
+                exit 0
+              fi
             fi
             sleep 2
           done
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
-          health = json.load(open('/tmp/forma-health.json', encoding='utf-8'))
-          assert health['ok'] is True, health
-          assert health['demo'] is True, health
-          assert health['revision'] == os.environ['GITHUB_SHA'], health
-          with urllib.request.urlopen('http://127.0.0.1:8000/', timeout=20) as response:
-              html = response.read().decode('utf-8')
-          token = html.split('name="forma-token" content="', 1)[1].split('"', 1)[0]
-          with urllib.request.urlopen('http://127.0.0.1:8000/api/state?token=' + token, timeout=30) as response:
-              state = json.load(response)
-          assert state['demo'] is True, state
-          assert state['project'] == 'train_carriage', state.get('project')
-          assert 'ПЛАЦКАРТНЫЙ ВАГОН 61-4194' in state['script']
-          assert len(state['script']) > 190000
-          print('Container OK:', health['revision'], state['project'], len(state['script']))
-          PY
+          echo '::error::Static production container did not become healthy.'
+          cat /tmp/forma-health.json 2>/dev/null || true
+          exit 1
+
+      - name: Verify static assets, GLB structure and disabled API
+        run: python forma/showcase/acceptance.py --base http://127.0.0.1:8000 --revision "$GITHUB_SHA"
 
       - name: Container logs on failure
         if: failure()
-        run: docker logs forma-online
+        run: docker logs forma-showcase
 
       - name: Stop container
         if: always()
-        run: docker rm -f forma-online || true
+        run: docker rm -f forma-showcase || true
 
   deploy:
-    name: Fly.io always-on deployment
+    name: Fly.io always-on static showcase
     needs: verify
     runs-on: ubuntu-latest
     steps:
@@ -129,7 +117,7 @@ jobs:
           set -o pipefail
           flyctl deploy --app "$FLY_APP_NAME" --local-only --build-arg "FORMA_REVISION=$GITHUB_SHA" 2>&1 | tee /tmp/forma-fly-deploy.log
 
-      - name: Keep exactly one demo machine
+      - name: Keep exactly one showcase machine
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
@@ -140,70 +128,21 @@ jobs:
         run: |
           set -e
           for attempt in $(seq 1 18); do
-            if curl -fsS "https://$FLY_APP_NAME.fly.dev/healthz" > /tmp/forma-public-health.json \
+            if curl -fsS "https://$FLY_APP_NAME.fly.dev/healthz?revision=$GITHUB_SHA" > /tmp/forma-public-health.json \
                 && grep -q "$GITHUB_SHA" /tmp/forma-public-health.json; then
               cat /tmp/forma-public-health.json
               exit 0
             fi
             sleep 10
           done
-          echo '::error::Публичный health-check не подтвердил новый revision.'
+          echo '::error::Публичный health-check не подтвердил новый revision статического стенда.'
           cat /tmp/forma-public-health.json 2>/dev/null || true
           exit 1
 
-      - name: Verify public train, GLB and demo policy
+      - name: External public acceptance
         run: |
           set -o pipefail
-          python - <<'PY' 2>&1 | tee /tmp/forma-public-acceptance.log
-          import json
-          import os
-          import urllib.error
-          import urllib.request
-
-          base = 'https://' + os.environ['FLY_APP_NAME'] + '.fly.dev'
-
-          def get(path, timeout=60):
-              with urllib.request.urlopen(base + path, timeout=timeout) as response:
-                  return response.read()
-
-          html = get('/', 30).decode('utf-8')
-          token = html.split('name="forma-token" content="', 1)[1].split('"', 1)[0]
-          state = json.loads(get('/api/state?token=' + token, 30))
-          assert state['demo'] is True
-          assert state['project'] == 'train_carriage'
-          assert 'living_room_diorama' in {item['key'] for item in state['projects']}
-          request = urllib.request.Request(
-              base + '/api/build?token=' + token,
-              data=json.dumps({'script': state['script'], 'allow_heavy': True}).encode('utf-8'),
-              headers={'Content-Type': 'application/json'},
-              method='POST',
-          )
-          try:
-              with urllib.request.urlopen(request, timeout=180) as response:
-                  build = json.load(response)
-          except urllib.error.HTTPError as exc:
-              body = exc.read().decode('utf-8', errors='replace')
-              raise AssertionError(f'Build HTTP {exc.code}: {body[:1000]}') from exc
-          assert build['ok'] is True, build.get('error')
-          tris = build['analysis']['metrics']['tris']
-          assert tris == 336536, tris
-          glb = get('/api/model.glb?token=' + token, 90)
-          assert glb[:4] == b'glTF'
-          assert len(glb) == 7191920, len(glb)
-          request = urllib.request.Request(
-              base + '/api/save?token=' + token,
-              data=json.dumps({'name': 'public-write-check', 'script': 'a = box size=[1,1,1]'}).encode('utf-8'),
-              headers={'Content-Type': 'application/json'},
-              method='POST',
-          )
-          try:
-              urllib.request.urlopen(request, timeout=30)
-          except urllib.error.HTTPError as exc:
-              assert exc.code == 400, exc.code
-          else:
-              raise AssertionError('Публичное сохранение не заблокировано')
-          print(f'::notice::Public OK: train={tris} tris, GLB={len(glb)} bytes, living room present, demo writes blocked')
-          PY
+          python forma/showcase/acceptance.py --base "https://$FLY_APP_NAME.fly.dev" --revision "$GITHUB_SHA" 2>&1 | tee /tmp/forma-public-acceptance.log
 
       - name: Report sanitized deployment error
         if: failure()
