@@ -80,6 +80,7 @@ class ShowcaseTest(unittest.TestCase):
         nginx = (SHOWCASE / "nginx.conf").read_text(encoding="utf-8")
         docker = (SHOWCASE / "Dockerfile").read_text(encoding="utf-8")
         self.assertIn("gzip_static on", nginx)
+        self.assertIn("no-transform", nginx)
         self.assertIn("listen 8000", nginx)
         self.assertIn("return 410", nginx)
         self.assertIn("AS assets", docker)

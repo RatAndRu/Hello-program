@@ -60,7 +60,9 @@ class Acceptance:
             if compressed and response_headers.get("content-encoding", "").lower() == "gzip":
                 payload = gzip.decompress(payload)
             elif compressed:
-                raise AssertionError(f"{path}: сервер не вернул precompressed gzip")
+                details = {key: response_headers.get(key) for key in
+                           ("content-type", "content-length", "cache-control", "via")}
+                raise AssertionError(f"{path}: сервер не вернул precompressed gzip; headers={details}")
             return payload, response_headers, wire_bytes
 
     def check_asset(self, asset: dict, suffix: str) -> bytes:
