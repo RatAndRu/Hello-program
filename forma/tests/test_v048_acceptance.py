@@ -131,15 +131,17 @@ class VolumeGlyphsTest(unittest.TestCase):
         blade = valid(solid(prefix + "bevel=0 blade=.7"))
         bevel = valid(solid(prefix + "bevel=8"))
         twist = valid(solid(prefix + "bevel=0 twist=45"))
-        vb, vs, vbl, vbe = map(vertices, (base, smooth, blade, bevel))
+        vb, vs, vbl = map(vertices, (base, smooth, blade))
         self.assertEqual(vb.shape, vs.shape)
         self.assertEqual(vb.shape, vbl.shape)
-        self.assertEqual(vb.shape, vbe.shape)
         self.assertGreater(float(np.max(np.abs(vs - vb))), 1e-3)
         self.assertGreater(float(np.max(np.abs(vbl[:, 2] - vb[:, 2]))), 1e-3)
-        self.assertGreater(float(np.max(np.abs(vbe - vb))), 1e-3)
-        self.assertGreater(twist.num_tri(), base.num_tri())
-        self.assertNotAlmostEqual(twist.volume(), base.volume(), places=3)
+        # Скругление силуэта законно добавляет точки дуг; важна геометрия,
+        # а не прежнее число вершин Minkowski-оболочки.
+        self.assertNotAlmostEqual(bevel.volume(), base.volume(), places=3)
+        self.assertGreater(bevel.num_tri(), base.num_tri())
+        self.assertGreater(float(np.max(np.abs(vertices(twist) - vb))), 1e-3)
+        self.assertEqual(twist.genus(), 0)
         # Закрутка видна на торцевом кольце, а не только в числе треугольников.
         def bottom_angles(m):
             v = vertices(m)
@@ -169,7 +171,9 @@ class VolumeGlyphsTest(unittest.TestCase):
         flat = valid(solid("о = crescent radius=50 thickness=18 depth=12 volume=нет"))
         volume = valid(solid("о = crescent radius=50 thickness=18 depth=12 volume=да"))
         self.assertGreater(volume.num_tri(), flat.num_tri())
-        self.assertGreater(volume.volume(), flat.volume())
+        # Надутое тело остаётся внутри исходной призмы: выпуклые стороны
+        # не обязаны добавлять объём к плоской вытяжке.
+        self.assertLess(volume.volume(), flat.volume())
         np.testing.assert_allclose(size(volume), size(flat), atol=1e-4)
         # Лучи через раскрытие справа не должны попадать в переднюю или
         # заднюю стенку: объём не разрешено получать заполнением вогнутости.
@@ -377,27 +381,37 @@ class BarrelTilesExpansionTest(unittest.TestCase):
     def test_expanded_half_preserves_the_other_half(self):
         cases = (("sphere", "radius=30 segments=32"),
                  ("ellipsoid", "x=35 y=25 z=30 segments=32"),
-                 ("capsule", "radius=12 height=70 segments=32"))
+                 ("capsule", "radius=12 height=70 segments=32"),
+                 ("box", "size=[50,40,55]"))
         for op, dims in cases:
             with self.subTest(op=op):
                 base = valid(solid(f"о = {op} {dims}"))
+                bb = base.bounding_box()
+                mid, span = (bb[2] + bb[5]) / 2.0, (bb[5] - bb[2]) / 2.0
                 for side in ("верх", "низ"):
-                    expanded = valid(solid(f"о = {op} {dims} expand=.5 expand_side={side}"))
+                    expanded = valid(solid(
+                        f"о = {op} {dims} expand=.2 expand_side={side} expand_seat=1"))
                     self.assertGreater(expanded.volume(), base.volume())
-                    vb, ve = vertices(base), vertices(expanded)
-                    self.assertEqual(vb.shape, ve.shape)
-                    mid = (base.bounding_box()[2] + base.bounding_box()[5]) / 2.0
-                    # Manifold волен перенумеровать вершины: сравниваем
-                    # отсортированные геометрические множества, не индексы.
-                    def unchanged_half(v):
-                        mask = v[:, 2] < mid - 1e-5 if side == "верх" else v[:, 2] > mid + 1e-5
-                        selected = v[mask]
-                        order = np.lexsort((selected[:, 2], selected[:, 1], selected[:, 0]))
-                        return selected[order]
-                    np.testing.assert_allclose(unchanged_half(ve), unchanged_half(vb), atol=2e-5)
-        sharp = vertices(solid("о = sphere radius=30 segments=32 expand=.5 expand_smooth=0"))
-        smooth = vertices(solid("о = sphere radius=30 segments=32 expand=.5 expand_smooth=1"))
-        self.assertGreater(float(np.max(np.abs(sharp - smooth))), 1e-3)
+                    self.assertAlmostEqual(size(expanded)[2], size(base)[2], delta=1e-4)
+
+                    def x_at(m, z):
+                        hit = m.ray_cast([200, 0, z], [-200, 0, z])[0]
+                        return float(hit.position[0])
+
+                    unchanged_z = mid - span * 0.75 if side == "верх" else mid + span * 0.75
+                    enlarged_z = mid + span * 0.75 if side == "верх" else mid - span * 0.75
+                    self.assertAlmostEqual(x_at(expanded, unchanged_z), x_at(base, unchanged_z),
+                                           delta=2e-4)
+                    self.assertGreater(x_at(expanded, enlarged_z), x_at(base, enlarged_z) + 0.1)
+                    flush = valid(solid(
+                        f"о = {op} {dims} expand=.2 expand_side={side} expand_joint=стык"))
+                    self.assertGreater(flush.volume(), base.volume())
+        sharp = valid(solid("о = sphere radius=30 segments=32 expand=.2 expand_smooth=0"))
+        smooth_obj = obj("о = sphere radius=30 segments=32 expand=.2 expand_smooth=1")
+        smooth = valid(smooth_obj.manifold)
+        self.assertGreater(smooth_obj.meta["expand_transition_mm"], 0.0)
+        self.assertGreater(smooth.num_tri(), sharp.num_tri())
+        self.assertNotAlmostEqual(smooth.volume(), sharp.volume(), places=3)
 
 
 class HyperbolicTessellationTest(unittest.TestCase):

@@ -14,6 +14,8 @@ import urllib.request
 
 EXPECTED = {
     "train_carriage": {"objects": 1186, "triangles": 336536, "preview_nodes": 140},
+    "fittings_053": {"objects": 9, "triangles": 22096, "preview_nodes": 6},
+    "glyphs_expansion_053": {"objects": 7, "triangles": 66988, "preview_nodes": 5},
     "living_room_diorama": {"objects": 233, "triangles": 94608, "preview_nodes": 233},
 }
 
@@ -107,7 +109,7 @@ class Acceptance:
         if self.revision and catalog.get("revision") != self.revision:
             raise AssertionError("Revision каталога не совпал")
         versions = {version["id"]: version for version in catalog.get("versions", [])}
-        if set(versions) != {"train-2026-10", "0.52"}:
+        if set(versions) != {"train-2026-10", "0.53", "0.52"}:
             raise AssertionError(f"Неожиданный список версий: {sorted(versions)}")
 
         for version in catalog["versions"]:

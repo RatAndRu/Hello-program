@@ -1,0 +1,13 @@
+# Forma 0.53 — надутые значки, фасеточная звезда и посадка половин
+# Все контуры и размеры редактируются параметрами этой сцены.
+
+сердце = heart width=60 depth=18 volume=да round=0 at=[-180,120,0] color=#d95f75
+полумесяц = crescent radius=45 thickness=16 depth=16 volume=да round=0 at=[-60,120,0] color=#e5c56f
+молния = lightning height=100 width=70 depth=16 zigzags=3 volume=да round=0 at=[60,120,0] color=#e5c56f
+звезда_надутая = star points=5 outer=45 inner=18 depth=20 volume=да bevel=1.5 smooth=.65 at=[180,120,0] color=#e5c56f
+звезда_фасеточная = star points=5 outer=45 inner=18 depth=22 volume_style=фасеточный bevel=1 at=[300,120,0] color=#d9a957
+
+# Верхняя половина шара увеличена и плавно переходит в посадочный пояс.
+шар_колпачок = sphere radius=35 segments=48 expand=.16 expand_side=верх expand_joint=посадка expand_seat=4 expand_smooth=.65 at=[-100,-80,35] color=#7ab3d8
+# У блока показан другой режим: увеличенная верхняя половина на ровном стыке.
+блок_стык = box size=[60,50,60] expand=.18 expand_side=верх expand_joint=стык expand_smooth=0 at=[80,-80,0] color=#c6a572

@@ -4112,13 +4112,18 @@ const TOOL_SHAPES = [
   },
   {
     op: 'box', name: 'куб', title: 'Куб / параллелепипед', group: 'Стандартные примитивы',
-    desc: 'Независимый верх и параллелограмм. Отверстий нет: для центральных отверстий используется отдельный кубик с отверстием.',
+    desc: 'Независимый верх, параллелограмм и посадка половин: ровный стык или большая часть колпачком поверх меньшей. Отверстий нет: для них используется отдельный кубик с отверстием.',
     params: [
       { k: 'size', label: 'размер низа', v: '120,80,60', kind: 'vec' },
       { k: 'top_size', label: 'размер верха', v: '120,80', kind: 'vec' },
       { k: 'top_offset', label: 'сдвиг верха', v: '0,0', kind: 'vec' },
       { k: 'base_angle', label: 'угол основ.', v: 90, step: 5, min: 15, max: 165 },
       { k: 'round', label: 'скругл.', v: 3, step: 1, min: 0, max: 1000 },
+      { k: 'expand', label: 'расширение половины', v: 0, step: 0.05, min: 0, max: 2, kind: 'slider' },
+      { k: 'expand_side', label: 'большая половина', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+      { k: 'expand_joint', label: 'соединение', v: 'посадка', kind: 'raw', choices: ['посадка', 'стык'] },
+      { k: 'expand_seat', label: 'заход пояса', v: '', auto: true, step: 0.5, min: 0, max: 5000 },
+      { k: 'expand_smooth', label: 'плавный переход', v: 0, step: 0.05, min: 0, max: 1, kind: 'slider' },
       detailParam(3, 'детализация скругления: 0 — гранёные углы, 5 — гладкие'),
     ],
   },
@@ -4218,7 +4223,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'sphere', name: 'шар', title: 'Шар (сфера)', group: 'Стандартные примитивы',
-    desc: 'Шар с плоским срезом сверху; slice=1 — полусфера, round скругляет новую кромку.',
+    desc: 'Шар со срезом и настраиваемыми половинами: выбранная увеличивается только по X/Y; посадка даёт колпачок с заходом пояса, стык — ровное соединение.',
     params: [
       { k: 'radius', label: 'радиус', v: 50, step: 1, min: 0.1, max: 5000 },
       { k: 'slice', label: 'срез сверху', v: 0, step: 0.05, min: 0, max: 1,
@@ -4228,6 +4233,8 @@ const TOOL_SHAPES = [
       detailParam(4, 'детализация: 0 — гранёный шар, 5 — максимально гладкий'),
       { k: 'expand', label: 'расширение половины', v: 0, step: 0.05, min: 0, max: 2, kind: 'slider' },
       { k: 'expand_side', label: 'расширяемая половина', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+      { k: 'expand_joint', label: 'соединение', v: 'посадка', kind: 'raw', choices: ['посадка', 'стык'] },
+      { k: 'expand_seat', label: 'заход пояса', v: '', auto: true, step: 0.5, min: 0, max: 5000 },
       { k: 'expand_smooth', label: 'плавный переход', v: 0.65, step: 0.05, min: 0, max: 1, kind: 'slider' },
     ],
   },
@@ -4245,8 +4252,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'ellipsoid', name: 'эллипсоид', title: 'Эллипсоид', group: 'Стандартные примитивы',
-    desc: 'Шар, растянутый по каждой оси отдельно: полуоси в миллиметрах, без команды scale. '
-      + 'Основа для голов, камней, капель и посуды.',
+    desc: 'Шар, растянутый по каждой оси отдельно. Увеличение половины имеет режимы точного стыка, колпачка и плавного перехода; дальняя часть не деформируется.',
     params: [
       { k: 'x', label: 'полуось X', v: 60, step: 1, min: 0.1, max: 5000 },
       { k: 'y', label: 'полуось Y', v: 40, step: 1, min: 0.1, max: 5000 },
@@ -4255,18 +4261,22 @@ const TOOL_SHAPES = [
         kind: 'slider', hint: '20 → 80 → 320… треугольников; полуоси сохраняются на каждом уровне' },
       { k: 'expand', label: 'расширение половины', v: 0, step: 0.05, min: 0, max: 2, kind: 'slider' },
       { k: 'expand_side', label: 'расширяемая половина', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+      { k: 'expand_joint', label: 'соединение', v: 'посадка', kind: 'raw', choices: ['посадка', 'стык'] },
+      { k: 'expand_seat', label: 'заход пояса', v: '', auto: true, step: 0.5, min: 0, max: 5000 },
       { k: 'expand_smooth', label: 'плавный переход', v: 0.65, step: 0.05, min: 0, max: 1, kind: 'slider' },
     ],
   },
   {
     op: 'capsule', name: 'капсула', title: 'Капсула', group: 'Стандартные примитивы',
-    desc: 'Цилиндр с полусферическими концами.',
+    desc: 'Цилиндр с полусферическими концами и посадкой увеличенных половин: ровный стык, колпачок с контролируемым заходом или плавный переход.',
     params: [
       { k: 'radius', label: 'радиус', v: 18, step: 1, min: 0.01, max: 5000 },
       { k: 'height', label: 'длина', v: 90, step: 5, min: 0.02, max: 5000 },
       detailParam(3, 'детализация скруглений'),
       { k: 'expand', label: 'расширение половины', v: 0, step: 0.05, min: 0, max: 2, kind: 'slider' },
       { k: 'expand_side', label: 'расширяемая половина', v: 'верх', kind: 'raw', choices: ['верх', 'низ'] },
+      { k: 'expand_joint', label: 'соединение', v: 'посадка', kind: 'raw', choices: ['посадка', 'стык'] },
+      { k: 'expand_seat', label: 'заход пояса', v: '', auto: true, step: 0.5, min: 0, max: 5000 },
       { k: 'expand_smooth', label: 'плавный переход', v: 0.65, step: 0.05, min: 0, max: 1, kind: 'slider' },
     ],
   },
@@ -4770,14 +4780,15 @@ const TOOL_SHAPES = [
   },
   {
     op: 'star', name: 'звезда', title: 'Звезда', group: 'Природные примитивы',
-    desc: 'Лучи, глубина впадин, фаска и плавное скругление кромки.',
+    desc: 'Плоская, надувная или фасеточная звезда. Объёмные стороны не имеют плоской центральной крышки; bevel скругляет силуэт, twist и blade меняют саму сетку.',
     params: [
       { k: 'points', label: 'лучи', v: 5, step: 1, min: 3, max: 64 },
       { k: 'outer', label: 'радиус', v: 55, step: 1, min: 0.5, max: 5000 },
       { k: 'inner', label: 'впадина', v: 22, step: 1, min: 0.1, max: 5000 },
       { k: 'depth', label: 'толщина', v: 12, step: 1, min: 0.2, max: 1000 },
       { k: 'volume', label: 'объёмные стороны', v: false, kind: 'bool' },
-      { k: 'bevel', label: 'фаска', v: 2, step: 0.5, min: 0, max: 1000 },
+      { k: 'facet', label: 'фасеточные грани', v: false, kind: 'bool' },
+      { k: 'bevel', label: 'скругл. силуэта', v: 2, step: 0.5, min: 0, max: 1000 },
       { k: 'smooth', label: 'сглаж.', v: 0.4, step: 0.1, min: 0, max: 1 },
       { k: 'twist', label: 'закрутка', v: 0, step: 5, min: -360, max: 360 },
       { k: 'blade', label: 'лезвия', v: 0, step: 0.1, min: 0, max: 0.9 },
@@ -4787,11 +4798,12 @@ const TOOL_SHAPES = [
   },
   {
     op: 'lightning', name: 'молния', title: 'Молния', group: 'Природные примитивы',
-    desc: 'Классический зигзаг с двумя остриями.',
+    desc: 'Классическая молния или вариант с дополнительными зубцами диагональных сторон. Объёмный режим сохраняет острия и надувает обе стороны без плоской середины.',
     params: [
       { k: 'height', label: 'высота', v: 90, step: 5, min: 2, max: 5000 },
       { k: 'width', label: 'ширина', v: 44, step: 2, min: 1, max: 5000 },
-      { k: 'depth', label: 'толщина Z', v: 10, step: 1, min: 0.1, max: 1000 },
+      { k: 'depth', label: 'толщина', v: 10, step: 1, min: 0.1, max: 1000 },
+      { k: 'zigzags', label: 'зигзагов', v: 1, step: 1, min: 1, max: 5 },
       { k: 'volume', label: 'объёмные стороны', v: false, kind: 'bool' },
       { k: 'round', label: 'скругл.', v: 1.5, step: 0.5, min: 0, max: 1000 },
       { k: 'wall', label: 'формочка', v: 0, step: 0.5, min: 0, max: 1000 },
@@ -4799,7 +4811,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'heart', name: 'сердце', title: 'Сердце', group: 'Природные примитивы',
-    desc: 'Настоящая форма сердца: два лепестка и остриё. Ширина, толщина, скругление.',
+    desc: 'Сердце с двумя лепестками и сохранённым нижним остриём. Объёмный режим строит выпуклые лицевую и заднюю стороны, а не плоскую вытяжку с фаской.',
     params: [
       { k: 'width', label: 'ширина', v: 60, step: 2, min: 1, max: 5000 },
       { k: 'depth', label: 'толщина', v: 18, step: 1, min: 0.2, max: 1000 },
@@ -4870,6 +4882,73 @@ const TOOL_SHAPES = [
       { k: 'thick', label: 'толщина', v: 28, step: 2, min: 0.4, max: 5000 },
       { k: 'flat', label: 'плоскость', v: 0.75, step: 0.05, min: 0.15, max: 1 },
       { k: 'taper', label: 'кончики', v: 0.32, step: 0.05, min: 0.03, max: 0.95 },
+    ],
+  },
+  {
+    op: 'track', name: 'путь', title: 'Рельсовый путь', group: 'Готовые детали',
+    desc: 'Одна или две рельсы с настоящим профилем по длине. Фасонные шпалы имеют посадочные карманы; подкладки, прижимы и гайки не пересекаются с ними. Шпалы и крепления можно отключать.',
+    params: [
+      { k: 'length', label: 'длина пути', v: 390, step: 10, min: 40, max: 100000 },
+      { k: 'rails', label: 'рельс', v: 2, step: 1, min: 1, max: 2 },
+      { k: 'gauge', label: 'колея', v: 180, step: 5, min: 30, max: 10000 },
+      { k: 'rail_profile', label: 'профиль', v: 'рельса', kind: 'raw', choices: ['рельса', 'двутавр', 'т', 'брусок'] },
+      { k: 'rail_height', label: 'высота рельсы', v: 28, step: 1, min: 5, max: 1000 },
+      { k: 'head_width', label: 'головка ⌀', v: 14, step: 1, min: 2, max: 500 },
+      { k: 'head_height', label: 'высота головки', v: 7, step: 1, min: 1, max: 500 },
+      { k: 'web', label: 'стенка', v: 3, step: 0.5, min: 0.4, max: 200 },
+      { k: 'foot_width', label: 'подошва', v: 24, step: 1, min: 2, max: 500 },
+      { k: 'foot_height', label: 'высота подошвы', v: 4, step: 0.5, min: 0.4, max: 500 },
+      { k: 'rail_fillet', label: 'сопряжение', v: 1.2, step: 0.2, min: 0, max: 100 },
+      { k: 'sleepers', label: 'шпалы', v: true, kind: 'bool' },
+      { k: 'sleeper_shape', label: 'форма шпалы', v: 'скошенная', kind: 'raw', choices: ['скошенная', 'бетонная', 'брусок'] },
+      { k: 'sleeper_count', label: 'число шпал (0 — авто)', v: 0, step: 1, min: 0, max: 1000 },
+      { k: 'sleeper_step', label: 'шаг шпал', v: 65, step: 5, min: 10, max: 10000 },
+      { k: 'sleeper_length', label: 'длина шпалы', v: 250, step: 10, min: 30, max: 10000 },
+      { k: 'sleeper_width', label: 'ширина шпалы', v: 32, step: 2, min: 5, max: 1000 },
+      { k: 'sleeper_height', label: 'высота шпалы', v: 16, step: 1, min: 2, max: 1000 },
+      { k: 'sleeper_bevel', label: 'скругление шпалы', v: 2, step: 0.5, min: 0, max: 100 },
+      { k: 'fasteners', label: 'крепления', v: true, kind: 'bool' },
+      { k: 'plate_thickness', label: 'подкладка', v: 1.2, step: 0.2, min: 0.2, max: 100 },
+      { k: 'segments', label: 'сегменты дуг', v: 32, step: 4, min: 12, max: 64 },
+    ],
+  },
+  {
+    op: 'hinge', name: 'петля', title: 'Дверная петля — две створки', group: 'Готовые детали',
+    desc: 'Ровно два редактируемых объекта. Чередующиеся кулаки имеют зазоры и посадку на палец; отверстия и зенковки сквозные. Угол поворачивает только правую створку без столкновений.',
+    params: [
+      { k: 'height', label: 'высота', v: 90, step: 5, min: 20, max: 3000 },
+      { k: 'leaf_width', label: 'ширина створки', v: 38, step: 2, min: 10, max: 1000 },
+      { k: 'thickness', label: 'толщина', v: 2.2, step: 0.2, min: 0.4, max: 100 },
+      { k: 'corner', label: 'углы', v: 4, step: 0.5, min: 0, max: 100 },
+      { k: 'barrel_d', label: '⌀ кулака', v: 11, step: 0.5, min: 4, max: 300 },
+      { k: 'pin_d', label: '⌀ пальца', v: '', auto: true, step: 0.2, min: 0.8, max: 255 },
+      { k: 'knuckles', label: 'кулаков (нечётно)', v: 5, step: 2, min: 3, max: 15 },
+      { k: 'knuckle_gap', label: 'осевой зазор', v: 0.25, step: 0.05, min: 0.02, max: 5 },
+      { k: 'clearance', label: 'зазор пальца', v: 0.18, step: 0.02, min: 0.02, max: 2 },
+      { k: 'barrel_overhang', label: 'выход кулаков', v: 1, step: 0.5, min: 0, max: 50 },
+      { k: 'holes', label: 'отверстий', v: 3, step: 1, min: 0, max: 8 },
+      { k: 'hole_d', label: '⌀ отверстий', v: 5, step: 0.5, min: 1, max: 30 },
+      { k: 'countersink', label: 'зенковка', v: true, kind: 'bool' },
+      { k: 'open_angle', label: 'угол правой', v: 0, step: 5, min: 0, max: 180 },
+      { k: 'segments', label: 'сегменты', v: 48, step: 8, min: 16, max: 96 },
+    ],
+  },
+  {
+    op: 'door_handle', name: 'ручка', title: 'Дверная ручка', group: 'Готовые детали',
+    desc: 'Четыре разные конструкции на розетке: изогнутый Г-образный рычаг, рельефный рычаг с продольным ребром, сфера и диск. Вынос, сечение, длина и сторона меняют настоящую геометрию.',
+    params: [
+      { k: 'form', label: 'форма', v: 'изогнутая', kind: 'raw', choices: ['изогнутая', 'рельефная', 'сферическая', 'дисковая'] },
+      { k: 'rosette_d', label: '⌀ розетки', v: 52, step: 2, min: 16, max: 500 },
+      { k: 'rosette_t', label: 'толщина розетки', v: 6, step: 1, min: 1, max: 100 },
+      { k: 'neck_d', label: '⌀ шейки', v: 16, step: 1, min: 3, max: 100 },
+      { k: 'projection', label: 'вынос', v: 45, step: 5, min: 12, max: 500 },
+      { k: 'lever_length', label: 'длина рычага', v: 115, step: 5, min: 35, max: 1000 },
+      { k: 'lever_d', label: 'сечение рычага', v: 17, step: 1, min: 4, max: 100 },
+      { k: 'relief', label: 'рельеф', v: 0.55, step: 0.05, min: 0, max: 1, kind: 'slider' },
+      { k: 'knob_d', label: '⌀ шара/диска', v: 56, step: 2, min: 16, max: 300 },
+      { k: 'disk_t', label: 'толщина диска', v: 18, step: 1, min: 4, max: 100 },
+      { k: 'hand', label: 'сторона', v: 'право', kind: 'raw', choices: ['право', 'лево'] },
+      { k: 'segments', label: 'сегменты', v: 48, step: 8, min: 24, max: 96 },
     ],
   },
   {
@@ -6649,6 +6728,12 @@ function shapeParams(tool, card) {
       parts.push(`${p.k}=${raw}`);
     }
   });
+  if (tool.op === 'track'
+      && card.querySelector('[data-key="sleepers"]')?.checked === false) {
+    // Без шпал креплениям не на чем стоять. Не отправляем противоречащий
+    // fasteners=да: переключатель шпал должен сразу давать рабочее превью.
+    return parts.filter((part) => !part.startsWith('fasteners='));
+  }
   if ((tool.op === 'spikes' || tool.op === 'hair')
       && card.querySelector('[data-key="density"]')?.value.trim()) {
     // Процент и count — два взаимоисключающих способа. В текстовом DSL явный

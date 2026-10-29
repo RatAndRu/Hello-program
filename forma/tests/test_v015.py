@@ -247,8 +247,8 @@ class TestExamplesAndTools(unittest.TestCase):
             "mug", "car", "vase", "bottle", "alien", "gear", "mannequin",
             "apple", "human_studio", "human_skeleton", "human_skeleton_original",
             "animation_tracks", "wardrobe", "thinkpad_x1",
-            "furniture_hardware", "mechanics", "showcase", "motorcycle", "clock",
-            "clock_led", "anime_face",
+            "furniture_hardware", "fittings_053", "glyphs_expansion_053",
+            "mechanics", "showcase", "motorcycle", "clock", "clock_led", "anime_face",
         ])
 
     def test_removed_examples_are_gone(self):

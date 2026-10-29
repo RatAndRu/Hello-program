@@ -1,0 +1,12 @@
+# Forma 0.53 — путь и редактируемая фурнитура
+# Канон: верх +Z, право +X, перед −Y. Все детали созданы без импортов.
+
+путь = track length=340 rails=2 gauge=150 rail_profile=рельса rail_height=28 head_width=14 head_height=7 web=3 foot_width=24 foot_height=4 rail_fillet=1.2 sleepers=да sleeper_shape=скошенная sleeper_count=6 sleeper_step=60 sleeper_length=220 sleeper_width=32 sleeper_height=16 sleeper_bevel=2 fasteners=да plate_thickness=1.2 segments=32 at=[-300,0,0]
+
+# Ровно два scene-объекта: петля и петля.right.
+петля = hinge height=90 leaf_width=38 thickness=2.2 corner=4 barrel_d=11 knuckles=5 knuckle_gap=.25 clearance=.18 barrel_overhang=1 holes=3 hole_d=5 countersink=да open_angle=35 segments=48 at=[-40,-100,1.9]
+
+ручка_изогнутая = door_handle form=изогнутая rosette_d=52 rosette_t=6 neck_d=16 projection=45 lever_length=115 lever_d=17 hand=право segments=48 at=[80,-100,0] color=#b8c3cc
+ручка_рельефная = door_handle form=рельефная rosette_d=52 rosette_t=6 neck_d=16 projection=45 lever_length=115 lever_d=17 relief=.7 hand=право segments=48 at=[80,80,0] color=#c4a46f
+ручка_сферическая = door_handle form=сферическая rosette_d=52 rosette_t=6 neck_d=16 projection=45 knob_d=56 segments=48 at=[-40,100,0] color=#b8c3cc
+ручка_дисковая = door_handle form=дисковая rosette_d=52 rosette_t=6 neck_d=16 projection=45 knob_d=58 disk_t=18 segments=48 at=[-40,280,0] color=#c4a46f

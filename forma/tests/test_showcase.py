@@ -25,7 +25,8 @@ SHOWCASE = ROOT / "showcase"
 class ShowcaseTest(unittest.TestCase):
     def test_catalog_has_versioned_changes_and_existing_sources(self):
         catalog = json.loads((SHOWCASE / "catalog.source.json").read_text(encoding="utf-8"))
-        self.assertEqual([v["id"] for v in catalog["versions"]], ["train-2026-10", "0.52"])
+        self.assertEqual([v["id"] for v in catalog["versions"]],
+                         ["train-2026-10", "0.53", "0.52"])
         for version in catalog["versions"]:
             self.assertGreaterEqual(len(version["changes"]), 4)
             self.assertTrue(version["title"])

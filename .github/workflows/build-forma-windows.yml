@@ -71,11 +71,36 @@ jobs:
           node --check web/js/viewer.js
           node tests/editor_regression_test.js
           node tests/occluders_test.js
+          node tests/ui_bounds_test.js
+          node tests/interior_tools_test.js
+          node tests/primitive_cards_test.js
 
       - name: Проверить и экспортировать оригинальный параметрический скелет
         working-directory: forma
         run: |
           python tools/build_skeleton_original.py
+
+      - name: Экспортировать модели 0.53 в GLB и Forma
+        working-directory: forma
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from forma.run import build
+          from forma.version import __version__
+          output = Path('release/models')
+          output.mkdir(parents=True, exist_ok=True)
+          for stem, suffix in (('fittings_053', 'fittings'),
+                               ('glyphs_expansion_053', 'glyphs-expansion')):
+              source = Path('examples') / f'{stem}.forma'
+              script = source.read_text(encoding='utf-8')
+              result = build(script, analyze_model=False)
+              if not result.ok:
+                  raise SystemExit(f'{stem}: {result.error}')
+              base = output / f'Forma3D-{__version__}-{suffix}'
+              Path(str(base) + '.glb').write_bytes(result.glb())
+              Path(str(base) + '.forma').write_text(script, encoding='utf-8')
+              print(base, len(result.visible_solids()), 'objects')
+          PY
 
       - name: Подготовить иконку и версию
         working-directory: forma
@@ -228,6 +253,8 @@ jobs:
             forma/examples/assets/human_skeleton.LICENSE.txt
             forma/examples/assets/human_skeleton_original.glb
             forma/examples/assets/human_skeleton_original.audit.json
+            forma/release/models/*.glb
+            forma/release/models/*.forma
             forma/selftest.txt
             forma/uitest.txt
           if-no-files-found: error
@@ -255,6 +282,15 @@ jobs:
             * `Forma3D-…-update-from-….zip` — **только изменённые с прошлого релиза исходники и ресурсы** + манифест; это не бинарный патч EXE. Для обновления готовой программы после изменения кода нужен новый EXE.
             * `human_skeleton.glb` — прежняя адаптация сторонней анатомической модели из 206 костей; рядом публикуется её файл лицензии.
             * `human_skeleton_original.glb` — новый самостоятельный параметрический скелет Forma, построенный без сторонних сеток; рядом JSON-аудит.
+
+            **Что нового в 0.53 — путь, фурнитура, объёмные значки и половины**
+
+            * `track`: одна/две рельсы, четыре профиля, фасонные шпалы с карманами, отдельные подкладки/прижимы/гайки и запрет перекрытия шпал;
+            * `hinge`: ровно два scene-объекта, чередующиеся кулаки, палец, зазоры, сквозные отверстия и 0…180° без столкновений; `door_handle`: четыре настоящие конструкции;
+            * `heart`/`crescent`/`star`/`lightning volume=да`: выпуклые стороны без плоской середины, сохранённые острия и габариты; фасеточная звезда и `zigzags=1…5`;
+            * `sphere`/`ellipsoid`/`capsule`/`box`: `expand_side`, `expand_joint=посадка|стык`, `expand_seat`, `expand_smooth`; 32 сочетания проверены как единые замкнутые тела;
+            * новые и изменённые карточки содержат истинные сохраняемые параметры и живые превью; справка и ориентация обновлены; актуальный реестр — **222 команды, 117 примитивов**; локальный регресс — **1183/1183 unittest** и все пять JS-наборов;
+            * готовые модели приложены в обоих форматах: `Forma3D-0.53-fittings.glb/.forma` и `Forma3D-0.53-glyphs-expansion.glb/.forma`; статический стенд 0.53 использует лёгкие WebP и preview с сохранённой тесселяцией.
 
             **Что нового в 0.52 — группы, копии, интерьер и первый уровень ткани**
 
@@ -471,6 +507,8 @@ jobs:
             forma/examples/assets/human_skeleton.LICENSE.txt
             forma/examples/assets/human_skeleton_original.glb
             forma/examples/assets/human_skeleton_original.audit.json
+            forma/release/models/*.glb
+            forma/release/models/*.forma
 
       - name: Прикрепить необязательный source-delta к релизу
         if: steps.update-zip.outcome == 'success'

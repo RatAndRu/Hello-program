@@ -162,41 +162,124 @@ def _expansion_options(a):
         raise GeometryError("expand_side/expanded_half: верх, низ или нет.")
     if side == 0.0:
         amount = 0.0
-    smooth = float(a.num("expand_smooth", a.num("expand_transition", 0.65,
+    smooth = float(a.num("expand_smooth", a.num("expand_transition", 0.0,
                          minv=0.0, maxv=1.0), minv=0.0, maxv=1.0))
-    return amount, side, smooth
+    raw_joint = (a.text("expand_joint", "посадка") or "посадка").strip().lower()
+    joint = {"посадка": "посадка", "колпачок": "посадка", "таблетка": "посадка",
+             "нахлест": "посадка", "нахлёст": "посадка", "cap": "посадка",
+             "стык": "стык", "точный": "стык", "ровный": "стык",
+             "flush": "стык", "butt": "стык"}.get(raw_joint)
+    if joint is None:
+        raise GeometryError("expand_joint: посадка (колпачок) или стык (без нахлёста).")
+    seat = a.num("expand_seat", None, minv=0.0)
+    if joint == "стык" and seat is not None and float(seat) > 1e-9:
+        raise GeometryError("expand_seat работает только при expand_joint=посадка.",
+                            hint="Для точного стыка задайте expand_seat=0 или уберите параметр.")
+    return amount, side, smooth, joint, None if seat is None else float(seat)
+
+
+def _expansion_transition(cross: mf.CrossSection, center: tuple[float, float],
+                          z0: float, z1: float, factor: float,
+                          reverse: bool, what: str) -> mf.Manifold:
+    """Гладкий loft от исходного сечения к увеличенному, с нулевым уклоном на концах."""
+    polygons = cross.to_polygons()
+    if len(polygons) != 1:
+        raise GeometryError(f"{what}: посадка требует сплошное сечение без отверстий")
+    ring = np.asarray(polygons[0], dtype=float)
+    area = float(np.sum(ring[:, 0] * np.roll(ring[:, 1], -1)
+                        - ring[:, 1] * np.roll(ring[:, 0], -1)))
+    if area < 0.0:
+        ring = ring[::-1]
+    cx, cy = center
+    steps = 20
+    verts = []
+    for i in range(steps + 1):
+        t = i / steps
+        w = t * t * (3.0 - 2.0 * t)
+        if reverse:
+            w = 1.0 - w
+        scale = 1.0 + (factor - 1.0) * w
+        xy = (ring - np.asarray([cx, cy])) * scale + np.asarray([cx, cy])
+        verts.extend((float(x), float(y), z0 + (z1 - z0) * t) for x, y in xy)
+    n = len(ring)
+    faces: list[tuple[int, int, int]] = []
+    for i in range(steps):
+        for j in range(n):
+            j2 = (j + 1) % n
+            a0, b0 = i * n, (i + 1) * n
+            faces.extend(((a0 + j, a0 + j2, b0 + j2),
+                          (a0 + j, b0 + j2, b0 + j)))
+    for tri in np.asarray(mf.triangulate([ring]), dtype=np.int64):
+        i, j, k = (int(v) for v in tri)
+        faces.append((k, j, i))
+        faces.append((steps * n + i, steps * n + j, steps * n + k))
+    varr = np.asarray(verts, dtype=float)
+    farr = np.asarray(faces, dtype=np.int64)
+    p0, p1, p2 = varr[farr[:, 0]], varr[farr[:, 1]], varr[farr[:, 2]]
+    if float(np.einsum("ij,ij->i", p0, np.cross(p1, p2)).sum()) < 0.0:
+        farr = farr[:, ::-1]
+    return manifold_from_arrays(varr, farr, what)
 
 
 def _expand_half(solid: mf.Manifold, amount: float, side: float, smooth: float,
-                 what: str) -> mf.Manifold:
-    """Расширяет одну половину тела по радиусу, сохраняя исходную топологию.
+                 what: str, joint: str = "посадка",
+                 seat: float | None = None) -> tuple[mf.Manifold, dict]:
+    """Собирает две половины с точным стыком или посадкой типа колпачка.
 
-    Переход начинается на экваторе и плавно занимает долю ``smooth`` выбранной
-    половины. Вторая половина не масштабируется, поэтому это именно настройка
-    формы, а не обычный uniform scale всего объекта.
+    Большая половина масштабируется только по X/Y. При посадке её пояс
+    заходит на меньшую часть на ``seat`` миллиметров; объединение удаляет
+    скрытые общие грани. При smooth>0 внешняя ступень заменяется гладким
+    loft-переходом. Противоположная часть вне этой зоны не деформируется.
     """
+    info = {"expand_joint": joint, "expand_seat": 0.0, "expand_transition_mm": 0.0}
     if amount <= 1e-9 or side == 0.0:
-        return solid
-    verts, faces = manifold_mesh(solid)
-    verts = np.asarray(verts, dtype=np.float64)[:, :3].copy()
+        return solid, info
     bb = solid.bounding_box()
     mid = (bb[2] + bb[5]) * 0.5
     span = max((bb[5] - bb[2]) * 0.5, 1e-9)
-    q = side * (verts[:, 2] - mid) / span
-    if smooth <= 1e-9:
-        weight = (q > 0.0).astype(float)
-    else:
-        u = np.clip(q / smooth, 0.0, 1.0)
-        weight = u * u * (3.0 - 2.0 * u)
-    cx = (bb[0] + bb[3]) * 0.5
-    cy = (bb[1] + bb[4]) * 0.5
-    factor = 1.0 + amount * weight
-    verts[:, 0] = cx + (verts[:, 0] - cx) * factor
-    verts[:, 1] = cy + (verts[:, 1] - cy) * factor
-    result = manifold_from_arrays(verts, faces, what)
-    if result.is_empty() or result.status() != mf.Error.NoError or result.volume() <= 1e-8:
-        raise GeometryError(f"{what}: расширение половины нарушило тело.")
-    return result
+    seat = (span * 0.12 if joint == "посадка" else 0.0) if seat is None else float(seat)
+    if seat > span * 0.45 + 1e-9:
+        raise GeometryError(f"{what}: expand_seat не должен превышать {span * 0.45:g} мм.",
+                            hint="Уменьшите посадочный пояс, чтобы оставить меньшую половину открытой.")
+    transition = min(smooth * span * 0.55, max(0.0, span - seat - 1e-5))
+    info.update(expand_seat=seat, expand_transition_mm=transition)
+    upper = solid.trim_by_plane((0.0, 0.0, 1.0), mid)
+    lower = solid.trim_by_plane((0.0, 0.0, -1.0), -mid)
+    cx, cy = (bb[0] + bb[3]) * 0.5, (bb[1] + bb[4]) * 0.5
+    factor = 1.0 + amount
+    matrix = np.asarray([[factor, 0.0, 0.0, cx * (1.0 - factor)],
+                         [0.0, factor, 0.0, cy * (1.0 - factor)],
+                         [0.0, 0.0, 1.0, 0.0]], dtype=float)
+    larger = (upper if side > 0 else lower).transform(matrix)
+    smaller = lower if side > 0 else upper
+    cross = solid.slice(mid)
+    if cross.is_empty() or cross.area() <= 1e-9:
+        raise GeometryError(f"{what}: не удалось получить сечение посадки")
+    scaled_cross = cross.translate((-cx, -cy)).scale((factor, factor)).translate((cx, cy))
+    parts = [smaller, larger]
+    if seat > 1e-9:
+        collar_z = mid - seat if side > 0 else mid
+        parts.append(scaled_cross.extrude(seat).translate((0.0, 0.0, collar_z)))
+    if transition > 1e-9:
+        if side > 0:
+            z1 = mid - seat
+            z0 = z1 - transition
+        else:
+            z0 = mid + seat
+            z1 = z0 + transition
+        parts.append(_expansion_transition(cross, (cx, cy), z0, z1, factor,
+                                           reverse=side < 0, what=what))
+    elif seat <= 1e-9:
+        # Точный стык: тонкая перемычка целиком находится внутри обеих
+        # половин. Она даёт булеву объём пересечения, не меняя наружную форму.
+        eps = max(1e-4, span * 1e-4)
+        parts.append(cross.extrude(2.0 * eps).translate((0.0, 0.0, mid - eps)))
+    result = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
+    positive = [p for p in result.decompose() if p.volume() > 1e-7]
+    if (result.is_empty() or result.status() != mf.Error.NoError
+            or result.volume() <= solid.volume() or len(positive) != 1):
+        raise GeometryError(f"{what}: половины не образовали единое замкнутое тело.")
+    return result, info
 
 
 def _round_value(a) -> float:
@@ -232,9 +315,11 @@ def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
 
 @op("box", aliases=("куб", "коробка", "cube", "параллелепипед", "брусок", "блок"),
     category="Примитивы",
-    summary="Параллелепипед с независимой верхней плоскостью. top_size меняет её "
-            "стороны, top_offset сдвигает центр, base_angle=не 90 делает в основании "
-            "параллелограмм. Сильный round, близкий к половине меньшей стороны, "
+    summary="Параллелепипед с независимой верхней плоскостью и посадкой половин. "
+            "top_size меняет верх, expand увеличивает выбранную половину по X/Y; "
+            "expand_joint=посадка добавляет скрытый пояс колпачка, стык соединяет "
+            "без нахлёста, expand_smooth сглаживает внешний переход. "
+            "base_angle=не 90 делает в основании параллелограмм. Сильный round "
             "превращает коробку в овальную/круглую форму. Отверстий у обычного "
             "блока нет: для центральных сквозных отверстий используется cube_hole. "
             "По умолчанию стоит на полу.",
@@ -243,6 +328,11 @@ def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
     params={"size": "стороны нижнего основания и высота [x,y,z], мм (обязательно)",
             "top_size": "стороны верхней плоскости [x,y], мм (по умолчанию как снизу)",
             "top_offset": "сдвиг центра верхней плоскости относительно нижней [dx,dy], мм",
+            "expand": "увеличение выбранной половины по X/Y 0…2 (0 — обычные половины)",
+            "expand_side": "большая половина: верх или низ (верх)",
+            "expand_joint": "посадка — колпачок с поясом; стык — без нахлёста (посадка)",
+            "expand_seat": "скрытый заход пояса на меньшую половину, мм (авто: 12% полувысоты)",
+            "expand_smooth": "плавный внешний переход 0…1; 0 — чёткая кромка (0)",
             "base_angle": "угол между сторонами основания 15…165° (90 — прямоугольник)",
             "round": "радиус рёбер; у квадратной коробки около половины стороны — "
                      "овальная/круглая форма",
@@ -292,10 +382,19 @@ def box(a, name):
         raise GeometryError("У обычного box отверстий больше нет.",
                             hint="Используйте cube_hole: отверстия остаются по центру, "
                                  "поддерживаются hole_x/hole_y/hole_z и их формы.")
+    expand, expand_side, expand_smooth, expand_joint, expand_seat = _expansion_options(a)
+    solid, expand_info = _expand_half(solid, expand, expand_side, expand_smooth, "блока",
+                                      expand_joint, expand_seat)
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="box")
     if custom:
         out.notes.append(f"верх {tx:g}×{ty:g}, сдвиг {offset.tolist()}, угол основания {angle:g}°")
+    if expand > 1e-9:
+        out.meta.update(expanded_half="верх" if expand_side > 0 else "низ",
+                        expand=expand, expand_smooth=expand_smooth, **expand_info)
+        out.notes.append(f"половина {'верх' if expand_side > 0 else 'низ'} +{expand * 100:g}%, "
+                         f"{expand_joint}, пояс {expand_info['expand_seat']:g} мм, "
+                         f"переход {expand_info['expand_transition_mm']:g} мм")
     return out
 
 
@@ -318,8 +417,10 @@ def box(a, name):
             "expand_degree": "синоним expand",
             "expand_side": "расширяемая половина: верх или низ (верх)",
             "expanded_half": "синоним expand_side",
-            "expand_smooth": "плавность перехода к расширенной части 0…1 (0.65)",
+            "expand_smooth": "плавность внешнего перехода 0…1; 0 — чёткая кромка (0)",
             "expand_transition": "синоним expand_smooth",
+            "expand_joint": "посадка — колпачок с поясом; стык — без нахлёста (посадка)",
+            "expand_seat": "заход пояса на меньшую половину, мм (авто: 12% полувысоты)",
             "at": "центр ИСХОДНОЙ сферы [x,y,z]; срез не перецентрирует деталь"},
     positional=["radius"])
 def sphere(a, name):
@@ -341,8 +442,9 @@ def sphere(a, name):
         solid = _sliced_sphere(radius, cut, round_r, segments)
     else:
         solid = mf.Manifold.sphere(radius, segments)
-    expand, expand_side, expand_smooth = _expansion_options(a)
-    solid = _expand_half(solid, expand, expand_side, expand_smooth, "сферы")
+    expand, expand_side, expand_smooth, expand_joint, expand_seat = _expansion_options(a)
+    solid, expand_info = _expand_half(solid, expand, expand_side, expand_smooth, "сферы",
+                                      expand_joint, expand_seat)
     at = a.vec("at", 3, default=(0, 0, 0))
     # at остаётся центром исходного шара, поэтому slice=1 даёт ровную
     # нижнюю полусферу z∈[at.z-radius, at.z], а не перецентрированный обрезок.
@@ -354,9 +456,10 @@ def sphere(a, name):
         out.notes.append(f"срез сверху {cut:g} мм, кромка round={round_r:g}")
     if expand > 1e-9:
         out.meta.update(expanded_half="верх" if expand_side > 0 else "низ",
-                        expand=expand, expand_smooth=expand_smooth)
+                        expand=expand, expand_smooth=expand_smooth, **expand_info)
         out.notes.append(f"расширенная половина {'верх' if expand_side > 0 else 'низ'}: "
-                         f"+{expand * 100:g}%, переход {expand_smooth:g}")
+                         f"+{expand * 100:g}%, {expand_joint}, пояс {expand_info['expand_seat']:g} мм, "
+                         f"переход {expand_info['expand_transition_mm']:g} мм")
     return out
 
 
@@ -963,8 +1066,10 @@ def octa(a, name):
             "expand_degree": "синоним expand",
             "expand_side": "расширяемая половина: верх или низ (верх)",
             "expanded_half": "синоним expand_side",
-            "expand_smooth": "плавность перехода к расширенной части 0…1 (0.65)",
+            "expand_smooth": "плавность внешнего перехода 0…1; 0 — чёткая кромка (0)",
             "expand_transition": "синоним expand_smooth",
+            "expand_joint": "посадка — колпачок с поясом; стык — без нахлёста (посадка)",
+            "expand_seat": "заход пояса на меньшую половину, мм (авто: 12% полувысоты)",
             "center": "центрировать по высоте",
             "at": "положение [x,y,z]"},
     positional=["x"])
@@ -991,16 +1096,18 @@ def ellipsoid(a, name):
         segments = _segments(a, a.int("segments", None, minv=8, maxv=512), max(x, y, z))
         solid = mf.Manifold.sphere(1.0, segments).scale((x, y, z))
         detail_note = f"segments={segments}"
-    expand, expand_side, expand_smooth = _expansion_options(a)
-    solid = _expand_half(solid, expand, expand_side, expand_smooth, "эллипсоида")
+    expand, expand_side, expand_smooth, expand_joint, expand_seat = _expansion_options(a)
+    solid, expand_info = _expand_half(solid, expand, expand_side, expand_smooth, "эллипсоида",
+                                      expand_joint, expand_seat)
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="ellipsoid")
     out.notes.append(f"полуоси {x:g}×{y:g}×{z:g} мм, {detail_note}")
     if expand > 1e-9:
         out.meta.update(expanded_half="верх" if expand_side > 0 else "низ",
-                        expand=expand, expand_smooth=expand_smooth)
+                        expand=expand, expand_smooth=expand_smooth, **expand_info)
         out.notes.append(f"расширенная половина {'верх' if expand_side > 0 else 'низ'}: "
-                         f"+{expand * 100:g}%, переход {expand_smooth:g}")
+                         f"+{expand * 100:g}%, {expand_joint}, пояс {expand_info['expand_seat']:g} мм, "
+                         f"переход {expand_info['expand_transition_mm']:g} мм")
     return out
 
 
@@ -1055,8 +1162,10 @@ def diamond(a, name):
             "expansion": "синоним expand", "expand_degree": "синоним expand",
             "expand_side": "расширяемая половина: верх или низ (верх)",
             "expanded_half": "синоним expand_side",
-            "expand_smooth": "плавность перехода к расширенной части 0…1 (0.65)",
+            "expand_smooth": "плавность внешнего перехода 0…1; 0 — чёткая кромка (0)",
             "expand_transition": "синоним expand_smooth",
+            "expand_joint": "посадка — колпачок с поясом; стык — без нахлёста (посадка)",
+            "expand_seat": "заход пояса на меньшую половину, мм (авто: 12% полувысоты)",
             "center": "центрировать", "at": "положение"},
     positional=["radius", "height"])
 def capsule(a, name):
@@ -1074,15 +1183,17 @@ def capsule(a, name):
     top = mf.Manifold.sphere(radius, segments).translate((0, 0, inner_h))
     bottom = mf.Manifold.sphere(radius, segments)
     solid = body + top + bottom
-    expand, expand_side, expand_smooth = _expansion_options(a)
-    solid = _expand_half(solid, expand, expand_side, expand_smooth, "капсулы")
+    expand, expand_side, expand_smooth, expand_joint, expand_seat = _expansion_options(a)
+    solid, expand_info = _expand_half(solid, expand, expand_side, expand_smooth, "капсулы",
+                                      expand_joint, expand_seat)
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="capsule")
     if expand > 1e-9:
         out.meta.update(expanded_half="верх" if expand_side > 0 else "низ",
-                        expand=expand, expand_smooth=expand_smooth)
+                        expand=expand, expand_smooth=expand_smooth, **expand_info)
         out.notes.append(f"расширенная половина {'верх' if expand_side > 0 else 'низ'}: "
-                         f"+{expand * 100:g}%, переход {expand_smooth:g}")
+                         f"+{expand * 100:g}%, {expand_joint}, пояс {expand_info['expand_seat']:g} мм, "
+                         f"переход {expand_info['expand_transition_mm']:g} мм")
     return out
 
 

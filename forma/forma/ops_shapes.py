@@ -14,7 +14,7 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import manifold_from_arrays
+from .geometry import manifold_from_arrays, manifold_mesh
 from .ops import anchor, face_front, make_solid, op, stand_flat_sign
 from .shape_features import (apply_smooth, axis_hole_cutter, cut_center_hole,
                              hollow_cross, rounded_extrude, transition_radius,
@@ -191,35 +191,183 @@ def _placed(a, solid: mf.Manifold) -> mf.Manifold:
 # --------------------------------------------------------------------------- #
 #  Звезда
 # --------------------------------------------------------------------------- #
-def volumetric_cross(cross: mf.CrossSection, depth: float, what: str,
-                     round_r: float = 0.0) -> mf.Manifold:
-    """Настоящий объёмный значок: выпуклые лицевые стороны, а не только extrude.
+def _volume_contour(cross: mf.CrossSection, round_r: float,
+                    what: str) -> tuple[mf.CrossSection, tuple[float, ...]]:
+    """Скруглённый силуэт и исходный габарит, который нужно сохранить."""
+    original = tuple(float(v) for v in cross.bounds())
+    r = float(round_r or 0.0)
+    if r <= 1e-7:
+        return cross, original
+    # Сжатие и обратное расширение кругом скругляет выпуклые углы самого
+    # силуэта. Это происходит до построения выпуклых сторон и не заменяется
+    # сглаживанием треугольников. Слишком большой радиус не должен молча
+    # уничтожить тонкие лучи: уменьшаем его до первого живого контура.
+    for attempt in range(8):
+        rr = r * (0.72 ** attempt)
+        candidate = cross.offset(-rr, mf.JoinType.Round, 3.0, 20).offset(
+            rr, mf.JoinType.Round, 3.0, 20)
+        if not candidate.is_empty() and candidate.area() > 1e-7 \
+                and len(candidate.to_polygons()) == 1:
+            return candidate, original
+    raise GeometryError(f"{what}: round={r:g} стирает объёмный контур.",
+                        hint="Уменьшите round/bevel или сделайте элементы шире.")
 
-    Тонкая сердцевина сохраняет исходный контур, а эллипсоидное преобразование
-    Минковского формирует две плавные выпуклые стороны. После операции габарит
-    XY возвращается к габариту контура, поэтому width/height остаются честными.
+
+def volumetric_cross(cross: mf.CrossSection, depth: float, what: str,
+                     round_r: float = 0.0, smooth: float = 0.0) -> mf.Manifold:
+    """Двусторонний надутый значок без плоской центральной «крышки».
+
+    Лицевая и задняя стороны — единая замкнутая height-field сетка, соединённая
+    тонкой боковой кромкой. Высота меняется по всей площади, поэтому объём не
+    сводится к скруглённой кромке вокруг плоской вытяжки. Контур и габарит XY
+    остаются заданными; depth — точный полный габарит по толщине.
     """
     depth = float(depth)
     if depth <= 0.1:
         raise GeometryError(f"{what}: depth должен быть больше 0.1 мм для объёмного режима.")
-    rz = depth * 0.45
-    core_depth = depth - 2.0 * rz
-    rxy = max(depth * 0.20, float(round_r or 0.0))
-    # Не даём радиусу стереть тонкие ступени молнии/лучи звезды.
-    rxy = min(rxy, depth * 0.42)
-    core = cross.extrude(core_depth).translate((0.0, 0.0, rz))
-    ball = mf.Manifold.sphere(1.0, 32).transform(np.asarray(
-        [[rxy, 0.0, 0.0, 0.0], [0.0, rxy, 0.0, 0.0], [0.0, 0.0, rz, 0.0]], dtype=float))
-    solid = core.minkowski_sum(ball)
-    bb0 = cross.bounds()
-    bb = solid.bounding_box()
-    sx = (bb0[2] - bb0[0]) / max(bb[3] - bb[0], 1e-9)
-    sy = (bb0[3] - bb0[1]) / max(bb[4] - bb[1], 1e-9)
-    cx0, cy0 = (bb0[0] + bb0[2]) / 2.0, (bb0[1] + bb0[3]) / 2.0
-    cx, cy = (bb[0] + bb[3]) / 2.0, (bb[1] + bb[4]) / 2.0
-    mat = np.asarray([[sx, 0.0, 0.0, cx0 - sx * cx],
-                      [0.0, sy, 0.0, cy0 - sy * cy], [0.0, 0.0, 1.0, 0.0]], dtype=float)
-    return ensure_volume(solid.transform(mat), what)
+    cross, original = _volume_contour(cross, round_r, what)
+    polygons = cross.to_polygons()
+    if len(polygons) != 1:
+        raise GeometryError(f"{what}: объёмный режим требует один контур без отверстий")
+    outer = _profile([(float(p[0]), float(p[1])) for p in polygons[0]])
+    if len(outer) < 3:
+        raise GeometryError(f"{what}: пустой контур")
+    cap_tris = np.asarray(mf.triangulate([outer]), dtype=np.int64)
+    points: list[tuple[float, float]] = []
+    triangles: list[tuple[int, int, int]] = []
+    index: dict[tuple[float, float], int] = {}
+
+    def point_id(p) -> int:
+        key = (round(float(p[0]), 9), round(float(p[1]), 9))
+        got = index.get(key)
+        if got is None:
+            got = len(points)
+            index[key] = got
+            points.append(key)
+        return got
+
+    def subdivide(pa, pb, pc, level: int) -> None:
+        if level <= 0:
+            tri = (point_id(pa), point_id(pb), point_id(pc))
+            if len(set(tri)) != 3:
+                return
+            a0, b0, c0 = (np.asarray(points[i]) for i in tri)
+            area2 = float((b0[0] - a0[0]) * (c0[1] - a0[1])
+                          - (b0[1] - a0[1]) * (c0[0] - a0[0]))
+            triangles.append((tri[0], tri[2], tri[1]) if area2 < 0.0 else tri)
+            return
+        ab = (np.asarray(pa) + np.asarray(pb)) * 0.5
+        bc = (np.asarray(pb) + np.asarray(pc)) * 0.5
+        ca = (np.asarray(pc) + np.asarray(pa)) * 0.5
+        subdivide(pa, ab, ca, level - 1)
+        subdivide(ab, pb, bc, level - 1)
+        subdivide(ca, bc, pc, level - 1)
+        subdivide(ab, bc, ca, level - 1)
+
+    level = 4 if len(outer) <= 48 else 3
+    for tri in cap_tris:
+        subdivide(outer[int(tri[0])], outer[int(tri[1])], outer[int(tri[2])], level)
+    xy = np.asarray(points, dtype=float)
+    distances2 = np.full(len(xy), np.inf)
+    for i, pa in enumerate(outer):
+        pb = np.asarray(outer[(i + 1) % len(outer)])
+        edge = pb - np.asarray(pa)
+        denom = max(float(np.dot(edge, edge)), 1e-18)
+        rel = xy - np.asarray(pa)[None, :]
+        t = np.clip(np.sum(rel * edge[None, :], axis=1) / denom, 0.0, 1.0)
+        nearest = np.asarray(pa)[None, :] + t[:, None] * edge[None, :]
+        distances2 = np.minimum(distances2, np.sum((xy - nearest) ** 2, axis=1))
+    distances = np.sqrt(np.maximum(distances2, 0.0))
+    max_distance = float(distances.max())
+    if max_distance <= 1e-8:
+        raise GeometryError(f"{what}: контур не имеет внутренней площади")
+    # Экспонента не имеет центрального плато. Показатель слегка меняется
+    # параметром smooth, а нормировка сохраняет точный заданный depth.
+    power = 1.45 + 0.75 * min(1.0, max(0.0, float(smooth)))
+    raw = 1.0 - np.exp(-((distances / max_distance) * 2.15) ** power)
+    raw[distances <= 1e-8] = 0.0
+    raw /= max(float(raw.max()), 1e-12)
+    # Тонкая конечная кромка сохраняет острые кончики: нулевая толщина на
+    # вершине создаёт вырожденные треугольники, которые CAD-ядра удаляют.
+    edge_half = depth * 0.025
+    heights = edge_half + (depth * 0.5 - edge_half) * raw
+    vertices: list[tuple[float, float, float]] = []
+    top_ids = np.zeros(len(xy), dtype=np.int64)
+    bottom_ids = np.zeros(len(xy), dtype=np.int64)
+    for i, (x, y) in enumerate(xy):
+        top_ids[i] = len(vertices)
+        vertices.append((float(x), float(y), depth * 0.5 + float(heights[i])))
+        bottom_ids[i] = len(vertices)
+        vertices.append((float(x), float(y), depth * 0.5 - float(heights[i])))
+    faces: list[tuple[int, int, int]] = []
+    edge_uses: dict[tuple[int, int], list] = {}
+    for ia, ib, ic in triangles:
+        faces.append((int(top_ids[ia]), int(top_ids[ib]), int(top_ids[ic])))
+        faces.append((int(bottom_ids[ic]), int(bottom_ids[ib]), int(bottom_ids[ia])))
+        for u, v in ((ia, ib), (ib, ic), (ic, ia)):
+            key = (min(u, v), max(u, v))
+            if key in edge_uses:
+                edge_uses[key][0] += 1
+            else:
+                edge_uses[key] = [1, u, v]
+    for count, u, v in edge_uses.values():
+        if count != 1:
+            continue
+        tu, tv = int(top_ids[u]), int(top_ids[v])
+        bu, bv = int(bottom_ids[u]), int(bottom_ids[v])
+        faces.extend(((tu, bu, bv), (tu, bv, tv)))
+    varr = np.asarray(vertices, dtype=float)
+    farr = np.asarray(faces, dtype=np.int64)
+    # Восстанавливаем габарит исходного контура после его скругления.
+    lo = varr[:, :2].min(axis=0)
+    hi = varr[:, :2].max(axis=0)
+    target_lo = np.asarray(original[:2])
+    target_hi = np.asarray(original[2:4])
+    scale = (target_hi - target_lo) / np.maximum(hi - lo, 1e-12)
+    center = (lo + hi) * 0.5
+    target_center = (target_lo + target_hi) * 0.5
+    varr[:, :2] = (varr[:, :2] - center) * scale + target_center
+    zlo, zhi = float(varr[:, 2].min()), float(varr[:, 2].max())
+    varr[:, 2] = (varr[:, 2] - zlo) * (depth / max(zhi - zlo, 1e-12))
+    p0, p1, p2 = varr[farr[:, 0]], varr[farr[:, 1]], varr[farr[:, 2]]
+    signed = float(np.einsum("ij,ij->i", p0, np.cross(p1, p2)).sum() / 6.0)
+    if signed < 0.0:
+        farr = farr[:, ::-1]
+    solid = manifold_from_arrays(varr, farr, what)
+    if solid.status() != mf.Error.NoError or solid.is_empty() or solid.volume() <= 1e-7:
+        raise GeometryError(f"{what}: выпуклые стороны не образовали замкнутое тело")
+    return solid
+
+
+def _faceted_star(cross: mf.CrossSection, depth: float, round_r: float) -> mf.Manifold:
+    """Классическая фасеточная звезда: плоский низ и треугольные грани сверху."""
+    cross, original = _volume_contour(cross, round_r, "фасеточная звезда")
+    polygons = cross.to_polygons()
+    if len(polygons) != 1:
+        raise GeometryError("Фасеточная звезда требует один внешний контур")
+    outer = _profile([(float(p[0]), float(p[1])) for p in polygons[0]])
+    ring = np.asarray(outer, dtype=float)
+    lo, hi = ring.min(axis=0), ring.max(axis=0)
+    target_lo = np.asarray(original[:2])
+    target_hi = np.asarray(original[2:4])
+    ring = ((ring - (lo + hi) * 0.5)
+            * (target_hi - target_lo) / np.maximum(hi - lo, 1e-12)
+            + (target_lo + target_hi) * 0.5)
+    center = (target_lo + target_hi) * 0.5
+    verts = np.vstack((np.column_stack((ring, np.zeros(len(ring)))),
+                       np.asarray([[center[0], center[1], depth]])))
+    peak = len(ring)
+    faces: list[tuple[int, int, int]] = []
+    for j in range(len(ring)):
+        faces.append((peak, j, (j + 1) % len(ring)))
+    for tri in np.asarray(mf.triangulate([ring]), dtype=np.int64):
+        i, j, k = (int(v) for v in tri)
+        faces.append((k, j, i))
+    farr = np.asarray(faces, dtype=np.int64)
+    p0, p1, p2 = verts[farr[:, 0]], verts[farr[:, 1]], verts[farr[:, 2]]
+    if float(np.einsum("ij,ij->i", p0, np.cross(p1, p2)).sum()) < 0.0:
+        farr = farr[:, ::-1]
+    return manifold_from_arrays(verts, farr, "фасеточная звезда")
 
 
 def _star_loft(points, depth: float, twist: float, bevel: float, smooth: float,
@@ -296,25 +444,28 @@ def _star_loft(points, depth: float, twist: float, bevel: float, smooth: float,
 
 
 @op("star", aliases=("звезда", "звёздочка", "звездочка"), category="Примитивы",
-    summary="Звезда и сюрикен: единый плавный loft вместо ступенчатой фаски. "
-            "twist закручивает всё тело, bevel сужает кромки, blade утоньшает "
-            "кончики лучей. hole делает центральное отверстие, wall — сквозную "
-            "формочку/рамку с равномерной стенкой. volume=да делает кромку "
-            "выпуклой и сохраняет действие twist, smooth, bevel и blade.",
+    summary="Звезда и сюрикен: плоский loft, надутый объём или настоящая "
+            "фасеточная звезда с треугольными гранями. volume_style=надутый "
+            "убирает плоскую середину; volume_style=фасеточный строит плоский "
+            "низ и грани от контура к приподнятому центру. twist и blade "
+            "работают в обоих объёмных режимах, bevel скругляет силуэт.",
     example="звезда = star points=5 outer=60 inner=25 depth=12 bevel=1.5\n"
-            "сюрикен = star points=4 outer=70 inner=30 depth=8 twist=65 bevel=2 blade=.7 hole=12\n"
-            "формочка = star points=6 outer=60 inner=35 depth=10 wall=3",
+            "надутая = star outer=60 inner=25 depth=24 volume=да bevel=3 smooth=.7\n"
+            "гранёная = star outer=60 inner=25 depth=24 volume_style=фасеточный\n"
+            "сюрикен = star points=4 outer=70 inner=30 depth=8 twist=65 bevel=2 blade=.7 hole=12",
     params={"points": "число лучей (5)", "outer": "радиус кончика, мм (60)",
             "inner": "радиус впадины, мм (0.45 × outer)",
             "depth": "толщина, мм (12)",
-            "bevel": "плавное сужение верхней и нижней кромок, мм (0)",
-            "smooth": "плавность кромочного перехода 0…1 (0)",
+            "bevel": "скругление силуэта; в плоском loft также сужение кромок, мм (0)",
+            "smooth": "плавность выпуклых сторон/кромочного перехода 0…1 (0)",
             "twist": "закрутка всей звезды, градусы; работает вместе с bevel",
             "blade": "утоньшение кончиков 0…0.9 от полутолщины (0)",
             "hole": "центральное сквозное отверстие, мм (0)",
             "wall": "стенка сквозной формочки/рамки, мм; 0 — сплошная (0)",
-            "volume": "да — объёмная звезда с выпуклыми сторонами, нет — loft (нет)",
+            "volume": "да — надутый объём без плоской середины; нет — обычный loft (нет)",
             "solid": "синоним volume=да",
+            "volume_style": "надутый или фасеточный; фасеточный сам включает объём (надутый)",
+            "facet": "да — синоним volume_style=фасеточный (нет)",
             "plane": "фронт — стоит лицом к зрителю, плашмя — лежит вверх",
             "at": "положение [x,y,z]", "center": "центрировать по высоте"})
 def star(a, name):
@@ -333,9 +484,20 @@ def star(a, name):
     blade = float(a.num("blade", 0.0, minv=0.0, maxv=0.9) or 0.0)
     hole = float(a.num("hole", 0.0, minv=0.0) or 0.0)
     wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
-    volume_mode = a.boolean("volume", False) or a.boolean("solid", False)
+    raw_style = (a.text("volume_style", "надутый") or "надутый").strip().lower()
+    if a.boolean("facet", False):
+        raw_style = "фасеточный"
+    volume_style = {"надутый": "надутый", "надутая": "надутый", "плавный": "надутый",
+                    "puffy": "надутый", "inflated": "надутый",
+                    "фасеточный": "фасеточный", "фасеточная": "фасеточный",
+                    "гранёный": "фасеточный", "граненый": "фасеточный",
+                    "faceted": "фасеточный", "facet": "фасеточный"}.get(raw_style)
+    if volume_style is None:
+        raise GeometryError("star: volume_style=надутый или фасеточный.")
+    volume_mode = (a.boolean("volume", False) or a.boolean("solid", False)
+                   or volume_style == "фасеточный" or a.has("volume_style"))
     if volume_mode and wall > 1e-6:
-        raise GeometryError("volume=да у звезды несовместим с wall: используйте сплошной объём или плоскую формочку.")
+        raise GeometryError("Объёмная звезда несовместима с wall: используйте сплошной объём или плоскую формочку.")
     pts = []
     for k in range(2 * points):
         angle = math.pi / 2 + k * math.pi / points
@@ -343,8 +505,29 @@ def star(a, name):
         pts.append((radius * math.cos(angle), radius * math.sin(angle)))
     cross = _cross(pts)
     weights = [1.0 if k % 2 == 0 else 0.0 for k in range(2 * points)]
-    solid = _star_loft(pts, depth, twist, bevel, smooth, outer, weights, blade,
-                       volume=volume_mode)
+    if volume_mode:
+        if volume_style == "фасеточный":
+            solid = _faceted_star(cross, depth, bevel)
+        else:
+            solid = volumetric_cross(cross, depth, "надутый объём звезды",
+                                     round_r=bevel, smooth=smooth)
+        if abs(twist) > 1e-9 or blade > 1e-9:
+            verts, faces = manifold_mesh(solid)
+            verts = np.asarray(verts, dtype=float)[:, :3].copy()
+            if abs(twist) > 1e-9:
+                angles = np.radians(twist * (verts[:, 2] / depth - 0.5))
+                ca, sa = np.cos(angles), np.sin(angles)
+                x, y = verts[:, 0].copy(), verts[:, 1].copy()
+                verts[:, 0] = ca * x - sa * y
+                verts[:, 1] = sa * x + ca * y
+            if blade > 1e-9:
+                radial = np.hypot(verts[:, 0], verts[:, 1])
+                tip_weight = np.clip((radial - inner) / max(outer - inner, 1e-6), 0.0, 1.0) ** 2
+                verts[:, 2] = depth * 0.5 + (verts[:, 2] - depth * 0.5) * (1.0 - blade * tip_weight)
+            solid = manifold_from_arrays(verts, faces, "объёмная звезда: twist/blade")
+    else:
+        solid = _star_loft(pts, depth, twist, bevel, smooth, outer, weights, blade,
+                           volume=False)
     if wall > 1e-6:
         cavity_cross = cross.offset(-wall, mf.JoinType.Miter, 3.0, 16)
         polygons = cavity_cross.to_polygons()
@@ -362,8 +545,10 @@ def star(a, name):
     out = make_solid(a.scene, name, _placed(a, stand_flat_sign(a, solid)), a,
                      kind="star")
     out.meta["volume_mode"] = bool(volume_mode)
+    out.meta["volume_style"] = volume_style if volume_mode else "нет"
     out.notes.append(f"звезда: twist={twist:g}°, bevel={bevel:g}, blade={blade:g}, "
-                     f"hole={hole:g}, wall={wall:g}, volume={'да' if volume_mode else 'нет'}")
+                     f"hole={hole:g}, wall={wall:g}, "
+                     f"volume={volume_style if volume_mode else 'нет'}")
     return out
 
 
