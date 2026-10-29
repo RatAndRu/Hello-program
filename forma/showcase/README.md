@@ -51,7 +51,7 @@ python forma/showcase/acceptance.py \
 ```bash
 PYTHONPATH=forma:forma/tests python -m unittest -v test_showcase
 python forma/showcase/acceptance.py \
-  --base https://forma3d-ratandru.fly.dev --revision EXPECTED_GIT_SHA
+  --base https://forma3d-ratandru.fly.dev --revision EXPECTED_GIT_SHA --allow-proxy-decode
 ```
 
 `acceptance.py` использует только стандартную библиотеку и проверяет по внешнему HTTP:
@@ -60,10 +60,10 @@ python forma/showcase/acceptance.py \
 - обе версии, их изменения и модели;
 - SHA-256 и размеры `.forma`, полного GLB, preview GLB и WebP;
 - GLB2 magic bytes, отдельные узлы полного GLB, число узлов preview и треугольников;
-- фактическую выдачу precompressed gzip;
+- фактическую выдачу precompressed gzip в production-контейнере;
 - отсутствие токена редактора и `410 Gone` у `/api/build`.
 
-Workflow запускает эту же приёмку сначала против production-контейнера, затем после деплоя против публичного Fly.io-адреса. Задача публикации не считается успешной при расхождении любого из этих условий.
+Workflow запускает строгую gzip-приёмку против production-контейнера, затем после деплоя проверяет публичный Fly.io-адрес. Для внешнего адреса используется `--allow-proxy-decode`: если proxy раскодировал большой ответ, это явно записывается в notice, но raw bytes, размер и SHA-256 всё равно обязаны совпасть. Задача публикации не считается успешной при расхождении любого из этих условий.
 
 ## Добавление версии
 

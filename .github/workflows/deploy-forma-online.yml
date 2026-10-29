@@ -142,7 +142,7 @@ jobs:
       - name: External public acceptance
         run: |
           set -o pipefail
-          python forma/showcase/acceptance.py --base "https://$FLY_APP_NAME.fly.dev" --revision "$GITHUB_SHA" 2>&1 | tee /tmp/forma-public-acceptance.log
+          python forma/showcase/acceptance.py --base "https://$FLY_APP_NAME.fly.dev" --revision "$GITHUB_SHA" --allow-proxy-decode 2>&1 | tee /tmp/forma-public-acceptance.log
 
       - name: Report sanitized deployment error
         if: failure()

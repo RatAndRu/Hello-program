@@ -41,9 +41,11 @@ def glb_summary(data: bytes) -> dict[str, int]:
 
 
 class Acceptance:
-    def __init__(self, base: str, revision: str | None):
+    def __init__(self, base: str, revision: str | None, *, strict_gzip: bool = True):
         self.base = base.rstrip("/")
         self.revision = revision
+        self.strict_gzip = strict_gzip
+        self.identity_responses: list[str] = []
         self.notices: list[str] = []
 
     def get(self, path: str, *, compressed: bool = False, timeout: int = 120) -> tuple[bytes, dict, int]:
@@ -60,13 +62,19 @@ class Acceptance:
             if compressed and response_headers.get("content-encoding", "").lower() == "gzip":
                 payload = gzip.decompress(payload)
             elif compressed:
-                details = {key: response_headers.get(key) for key in
-                           ("content-type", "content-length", "cache-control", "via")}
-                raise AssertionError(f"{path}: сервер не вернул precompressed gzip; headers={details}")
+                if self.strict_gzip:
+                    details = {key: response_headers.get(key) for key in
+                               ("content-type", "content-length", "cache-control", "via")}
+                    raise AssertionError(f"{path}: сервер не вернул precompressed gzip; headers={details}")
+                # Некоторые внешние proxy раскодируют большой ответ перед
+                # передачей клиенту. Это допустимо только внешней проверкой:
+                # production-контейнер выше обязан пройти строгий gzip-тест.
+                self.identity_responses.append(path)
             return payload, response_headers, wire_bytes
 
     def check_asset(self, asset: dict, suffix: str) -> bytes:
-        data, _, wire_bytes = self.get("/" + asset["url"], compressed=True)
+        data, headers, wire_bytes = self.get("/" + asset["url"], compressed=True)
+        encoding = headers.get("content-encoding", "identity")
         if len(data) != asset["bytes"]:
             raise AssertionError(f"{asset['url']}: размер {len(data)} != {asset['bytes']}")
         digest = hashlib.sha256(data).hexdigest()
@@ -74,7 +82,9 @@ class Acceptance:
             raise AssertionError(f"{asset['url']}: SHA-256 не совпал")
         if not asset["file_name"].endswith(suffix):
             raise AssertionError(f"{asset['file_name']}: неверное расширение")
-        self.notices.append(f"{asset['file_name']}: {len(data)} B, gzip {wire_bytes} B, SHA OK")
+        self.notices.append(
+            f"{asset['file_name']}: {len(data)} B, transport={encoding} {wire_bytes} B, SHA OK"
+        )
         return data
 
     def run(self) -> None:
@@ -145,6 +155,8 @@ class Acceptance:
         else:
             raise AssertionError("Editor API не должен существовать на статическом стенде")
 
+        if self.identity_responses:
+            print(f"::notice::Proxy returned identity for {len(self.identity_responses)} asset responses; raw bytes and SHA-256 verified")
         for notice in self.notices:
             print(f"::notice::{notice}")
         print(f"::notice::Static showcase OK: {self.base}, revision={health['revision']}, editor API=410")
@@ -154,9 +166,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--base", required=True, help="Например https://forma3d-ratandru.fly.dev")
     parser.add_argument("--revision", help="Обязательный ожидаемый Git SHA")
+    parser.add_argument("--allow-proxy-decode", action="store_true",
+                        help="Разрешить внешнему proxy вернуть identity после строгой проверки контейнера")
     args = parser.parse_args()
     try:
-        Acceptance(args.base, args.revision).run()
+        Acceptance(args.base, args.revision, strict_gzip=not args.allow_proxy_decode).run()
     except Exception as exc:
         print(f"::error::Showcase acceptance: {type(exc).__name__}: {exc}", file=sys.stderr)
         raise SystemExit(1) from exc

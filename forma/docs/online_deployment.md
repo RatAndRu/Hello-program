@@ -51,7 +51,7 @@ Three.js не загружается на первом экране. Серве�
 6. `flyctl deploy --local-only` публикует образ без отдельного remote-builder.
 7. `flyctl scale count 1` оставляет одну машину.
 8. Публичный `/healthz?revision=SHA` обязан подтвердить новый commit.
-9. Та же внешняя приёмка выполняется через HTTPS против постоянного адреса. При ошибке workflow считается неуспешным.
+9. Та же внешняя приёмка выполняется через HTTPS против постоянного адреса с `--allow-proxy-decode`: proxy может раскодировать транспорт, но все raw bytes, хеши и структурные проверки остаются обязательными. При ошибке workflow считается неуспешным.
 
 Токен полного Web UI больше не нужен: публичный стенд не содержит editor API. `FLY_API_TOKEN` по-прежнему хранится только в GitHub Actions Secrets и не выводится в журнал или чат.
 
@@ -80,7 +80,7 @@ python forma/showcase/acceptance.py \
 
 - **Обновление:** обычный push в рабочую ветку; assets пересобираются в CI, не на запросах посетителей.
 - **Проверка версии:** открыть `/healthz` и сравнить `revision` с SHA commit.
-- **Внешняя приёмка вручную:** `python forma/showcase/acceptance.py --base https://forma3d-ratandru.fly.dev --revision SHA`.
+- **Внешняя приёмка вручную:** `python forma/showcase/acceptance.py --base https://forma3d-ratandru.fly.dev --revision SHA --allow-proxy-decode`.
 - **Откат:** выбрать предыдущий успешный release в панели Fly.io либо повторно опубликовать предыдущий проверенный commit.
 - **После переноса в `main`:** изменить список веток в `on.push.branches` workflow на стабильную ветку.
 
