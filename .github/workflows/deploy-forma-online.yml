@@ -129,23 +129,6 @@ jobs:
           set -o pipefail
           flyctl deploy --app "$FLY_APP_NAME" --local-only --build-arg "FORMA_REVISION=$GITHUB_SHA" 2>&1 | tee /tmp/forma-fly-deploy.log
 
-      - name: Report sanitized Fly error
-        if: failure()
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          paths = [Path('/tmp/forma-fly-app.log'), Path('/tmp/forma-fly-deploy.log')]
-          text = '\n'.join(path.read_text(encoding='utf-8', errors='replace')
-                            for path in paths if path.exists()) or 'Нет журнала flyctl.'
-          text = re.sub(r'FlyV1\s+\S+', '[REDACTED FLY TOKEN]', text)
-          text = re.sub(r'fm2_[A-Za-z0-9_.-]+', '[REDACTED FLY TOKEN]', text)
-          text = re.sub(r'(?i)(authorization:\s*bearer\s+)\S+', r'\1[REDACTED]', text)
-          tail = '\n'.join(text.splitlines()[-30:])
-          message = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
-          print('::error::Fly deploy: ' + message)
-          PY
-
       - name: Verify public revision
         run: |
           set -e
@@ -163,7 +146,8 @@ jobs:
 
       - name: Verify public train, GLB and demo policy
         run: |
-          python - <<'PY'
+          set -o pipefail
+          python - <<'PY' 2>&1 | tee /tmp/forma-public-acceptance.log
           import json
           import os
           import urllib.error
@@ -208,4 +192,26 @@ jobs:
           else:
               raise AssertionError('Публичное сохранение не заблокировано')
           print(f'::notice::Public OK: train={tris} tris, GLB={len(glb)} bytes, living room present, demo writes blocked')
+          PY
+
+      - name: Report sanitized deployment error
+        if: failure()
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          paths = [
+              Path('/tmp/forma-fly-app.log'),
+              Path('/tmp/forma-fly-deploy.log'),
+              Path('/tmp/forma-public-acceptance.log'),
+          ]
+          text = '\n'.join(path.read_text(encoding='utf-8', errors='replace')
+                            for path in paths if path.exists()) or 'Нет журнала деплоя.'
+          text = re.sub(r'FlyV1\s+\S+', '[REDACTED FLY TOKEN]', text)
+          text = re.sub(r'fm2_[A-Za-z0-9_.-]+', '[REDACTED FLY TOKEN]', text)
+          text = re.sub(r'([?&]token=)[^&\s]+', r'\1[REDACTED]', text)
+          text = re.sub(r'(?i)(authorization:\s*bearer\s+)\S+', r'\1[REDACTED]', text)
+          tail = '\n'.join(text.splitlines()[-40:])
+          message = tail.replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::error::Deployment: ' + message)
           PY
