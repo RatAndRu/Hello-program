@@ -160,3 +160,52 @@ jobs:
           echo '::error::Публичный health-check не подтвердил новый revision.'
           cat /tmp/forma-public-health.json 2>/dev/null || true
           exit 1
+
+      - name: Verify public train, GLB and demo policy
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          base = 'https://' + os.environ['FLY_APP_NAME'] + '.fly.dev'
+
+          def get(path, timeout=60):
+              with urllib.request.urlopen(base + path, timeout=timeout) as response:
+                  return response.read()
+
+          html = get('/', 30).decode('utf-8')
+          token = html.split('name="forma-token" content="', 1)[1].split('"', 1)[0]
+          state = json.loads(get('/api/state?token=' + token, 30))
+          assert state['demo'] is True
+          assert state['project'] == 'train_carriage'
+          assert 'living_room_diorama' in {item['key'] for item in state['projects']}
+          request = urllib.request.Request(
+              base + '/api/build?token=' + token,
+              data=json.dumps({'script': state['script'], 'allow_heavy': True}).encode('utf-8'),
+              headers={'Content-Type': 'application/json'},
+              method='POST',
+          )
+          with urllib.request.urlopen(request, timeout=180) as response:
+              build = json.load(response)
+          assert build['ok'] is True, build.get('error')
+          tris = build['analysis']['metrics']['tris']
+          assert tris == 336536, tris
+          glb = get('/api/model.glb?token=' + token, 90)
+          assert glb[:4] == b'glTF'
+          assert len(glb) == 7191920, len(glb)
+          request = urllib.request.Request(
+              base + '/api/save?token=' + token,
+              data=json.dumps({'name': 'public-write-check', 'script': 'a = box size=[1,1,1]'}).encode('utf-8'),
+              headers={'Content-Type': 'application/json'},
+              method='POST',
+          )
+          try:
+              urllib.request.urlopen(request, timeout=30)
+          except urllib.error.HTTPError as exc:
+              assert exc.code == 400, exc.code
+          else:
+              raise AssertionError('Публичное сохранение не заблокировано')
+          print(f'::notice::Public OK: train={tris} tris, GLB={len(glb)} bytes, living room present, demo writes blocked')
+          PY
