@@ -27,11 +27,12 @@ Always-on машина является платной конфигурацие�
 
 ## Один обязательный шаг перед первым деплоем
 
-1. Создайте аккаунт Fly.io и deploy-токен в его панели либо через официальный `flyctl` на своём компьютере.
-2. Откройте [настройки Actions-секретов репозитория](https://github.com/RatAndRu/Hello-program/settings/secrets/actions).
-3. Добавьте секрет **`FLY_API_TOKEN`** с этим токеном.
-4. Если приложение должно принадлежать командной организации Fly, добавьте переменную **`FLY_ORG`** с её slug. Без неё CI использует `personal`.
-5. Откройте **Actions → Deploy Forma online → Run workflow** и выберите `arena/4e4defc4-hello-program`.
+1. Создайте аккаунт Fly.io и войдите в его панель.
+2. В переключателе организаций выберите **Personal**, откройте **Tokens** и создайте **Org deploy token** (не read-only). Org-scope нужен для первого запуска: CI сначала создаст приложение, а затем будет им управлять. Скопируйте токен целиком; префикс `FlyV1` и следующий за ним пробел, если они есть, являются частью значения.
+3. Откройте [настройки Actions-секретов репозитория](https://github.com/RatAndRu/Hello-program/settings/secrets/actions).
+4. Нажмите **New repository secret** и добавьте секрет **`FLY_API_TOKEN`** с этим токеном.
+5. Если приложение должно принадлежать командной организации Fly, добавьте переменную **`FLY_ORG`** с её slug. Без неё CI использует `personal`.
+6. Откройте **Actions → Deploy Forma online → Run workflow** и выберите `arena/4e4defc4-hello-program`.
 
 **Токен не нужно присылать в чат или записывать в репозиторий.** Workflow получит его только через `${{ secrets.FLY_API_TOKEN }}`.
 
