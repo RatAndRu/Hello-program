@@ -1,0 +1,80 @@
+name: Упаковать только Forma EXE в ZIP
+
+# Повторная упаковка уже собранного CI исполняемого файла. Исходный EXE не
+# пересобирается и не заменяется: архив содержит ровно его копию.
+on:
+  push:
+    paths:
+      - '.github/forma-exe-zip-request.json'
+  workflow_dispatch:
+    inputs:
+      source_release:
+        description: 'Release с готовым Forma3D.exe'
+        required: true
+        type: string
+      version:
+        description: 'Версия в имени архива, например 0.51'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  package-exe-only:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_RELEASE: ${{ inputs.source_release }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Прочитать push-запрос
+        if: github.event_name == 'push'
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          request = json.loads(Path('.github/forma-exe-zip-request.json').read_text(encoding='utf-8'))
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as out:
+              for key in ('SOURCE_RELEASE', 'VERSION'):
+                  value = str(request.get(key.lower(), '')).strip()
+                  if not value or '\n' in value or '\r' in value:
+                      raise SystemExit(f'Некорректное поле {key}')
+                  out.write(f'{key}={value}\n')
+          PY
+
+      - name: Скачать готовый CI EXE и собрать ZIP
+        run: |
+          python - <<'PY'
+          import os, re
+          tag = os.environ['SOURCE_RELEASE']
+          version = os.environ['VERSION']
+          if not re.fullmatch(r'[A-Za-z0-9._-]+', tag):
+              raise SystemExit('Некорректный release tag')
+          if not re.fullmatch(r'[0-9]+[A-Za-z0-9._-]*', version):
+              raise SystemExit('Некорректная версия')
+          PY
+          gh release download "$SOURCE_RELEASE" --pattern Forma3D.exe --clobber
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, os, zipfile
+          exe = Path('Forma3D.exe')
+          if not exe.is_file() or exe.stat().st_size < 1000000:
+              raise SystemExit('Forma3D.exe не скачан или повреждён')
+          if exe.read_bytes()[:2] != b'MZ':
+              raise SystemExit('Скачанный файл не является Windows EXE')
+          archive = Path(f"Forma3D-{os.environ['VERSION']}-exe.zip")
+          with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+              zf.write(exe, 'Forma3D.exe')
+          exe_hash = hashlib.sha256(exe.read_bytes()).hexdigest()
+          with zipfile.ZipFile(archive) as zf:
+              assert zf.namelist() == ['Forma3D.exe'], zf.namelist()
+              assert zf.testzip() is None
+              assert hashlib.sha256(zf.read('Forma3D.exe')).hexdigest() == exe_hash
+          print(f'EXE SHA-256: {exe_hash}')
+          print(f'ZIP: {archive} — {archive.stat().st_size} байт, только Forma3D.exe')
+          PY
+
+      - name: Прикрепить ZIP к исходному релизу
+        run: gh release upload "$SOURCE_RELEASE" "Forma3D-${VERSION}-exe.zip" --clobber
