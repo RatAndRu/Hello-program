@@ -223,7 +223,6 @@ jobs:
           name: Forma3D-windows
           path: |
             forma/Forma3D-*-windows.zip
-            forma/Forma3D-*-update-from-*.zip
             forma/dist/Forma3D.exe
             forma/examples/assets/human_skeleton.glb
             forma/examples/assets/human_skeleton.LICENSE.txt
@@ -231,6 +230,15 @@ jobs:
             forma/examples/assets/human_skeleton_original.audit.json
             forma/selftest.txt
             forma/uitest.txt
+          if-no-files-found: error
+          retention-days: 60
+
+      - name: Загрузить необязательный source-delta в Artifacts
+        if: steps.update-zip.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Forma3D-source-delta
+          path: forma/Forma3D-*-update-from-*.zip
           if-no-files-found: error
           retention-days: 60
 
@@ -458,9 +466,17 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             forma/Forma3D-*-windows.zip
-            forma/Forma3D-*-update-from-*.zip
             forma/dist/Forma3D.exe
             forma/examples/assets/human_skeleton.glb
             forma/examples/assets/human_skeleton.LICENSE.txt
             forma/examples/assets/human_skeleton_original.glb
             forma/examples/assets/human_skeleton_original.audit.json
+
+      - name: Прикрепить необязательный source-delta к релизу
+        if: steps.update-zip.outcome == 'success'
+        working-directory: forma
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "forma3d-exe-${GITHUB_RUN_NUMBER}-${GITHUB_RUN_ATTEMPT}" \
+            Forma3D-*-update-from-*.zip --clobber
