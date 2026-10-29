@@ -26,6 +26,8 @@ const state = {
   projects: [],
   help: null,
   projectName: 'проект',
+  demo: false,
+  revision: '',
   autobuildTimer: null,
   lastBuildAt: 0,
   selected: null,
@@ -7284,6 +7286,10 @@ async function askName(defaultName) {
 }
 
 async function saveProject() {
+  if (state.demo) {
+    toast('Онлайн-демо не сохраняет проекты на сервере. Используйте экспорт .forma.', 'warn');
+    return;
+  }
   const name = await askName(state.projectName || 'проект');
   if (!name) return;
   try {
@@ -7533,6 +7539,19 @@ async function init() {
     state.examples = st.examples || [];
     state.projects = st.projects || [];
     state.projectName = st.project || 'проект';
+    state.demo = Boolean(st.demo);
+    state.revision = st.revision || '';
+    if (state.demo) {
+      const badge = $('demo-badge');
+      badge.hidden = false;
+      badge.textContent = 'ОНЛАЙН-ДЕМО' + (state.revision && state.revision !== 'local'
+        ? ' · ' + state.revision.slice(0, 7) : '');
+      badge.title = 'Общий сервер: проекты не сохраняются; экспорт .forma доступен.';
+      $('btn-save').disabled = true;
+      $('btn-save').title = 'На общем сервере сохранение отключено; используйте экспорт .forma';
+      $('btn-open-file').disabled = true;
+      $('btn-open-file').title = 'Импорт файлов отключён в публичном демо';
+    }
     state.help = (await api('/api/commands')).commands || [];
     state.notes = st.notes || [];
     state.actions = st.actions || [];

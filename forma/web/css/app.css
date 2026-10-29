@@ -64,6 +64,21 @@ body {
 .brand-text { display: flex; flex-direction: column; line-height: 1.25; min-width: 0; }
 .brand-text strong { letter-spacing: .12em; font-size: 13px; }
 .brand-text span { color: var(--text-faint); font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand-text .demo-badge {
+  display: inline-flex;
+  align-items: center;
+  align-self: flex-start;
+  margin-top: 3px;
+  padding: 2px 7px;
+  border: 1px solid #6f9f87;
+  border-radius: 999px;
+  color: #b9e5ca;
+  background: #173528;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+.brand-text .demo-badge[hidden] { display: none; }
 
 .actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
 

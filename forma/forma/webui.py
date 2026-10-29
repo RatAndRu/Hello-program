@@ -29,6 +29,18 @@ from .version import APP_NAME, __version__
 
 MAX_UPLOAD = 300 * 1024 * 1024
 MAX_BODY = 8 * 1024 * 1024
+DEMO_MAX_SCRIPT_CHARS = 1_000_000
+DEMO_MAX_COMMANDS = 4000
+DEMO_DISABLED_POSTS = {
+    "/api/save-file", "/api/upload", "/api/save", "/api/reveal",
+    "/api/import", "/api/prompt",
+}
+
+
+def env_flag(name: str) -> bool:
+    return (os.environ.get(name) or "").strip().lower() in {"1", "true", "yes", "да", "on"}
+
+
 # Готовые картинки и записи из окна модели: их присылает браузер байтами,
 # чтобы файл попал именно в «Загрузки» на этом компьютере.
 MEDIA_SUFFIXES = (".gif", ".webm", ".mp4", ".png", ".webp", ".apng", ".jpeg", ".jpg")
@@ -74,7 +86,9 @@ class AppState:
         self.last_render: dict | None = None
         self.last_png_cache: dict[str, bytes] = {}
         self.gl_cache: tuple[str, bytes] | None = None
-        self.project_name = "проект"
+        self.project_name = os.environ.get("FORMA_START_PROJECT") or "проект"
+        self.demo = env_flag("FORMA_DEMO")
+        self.revision = os.environ.get("FORMA_REVISION") or "local"
         self.started = time.time()
         self.actions: list[dict] = []
         self.notes: list[dict] = []
@@ -157,7 +171,31 @@ class AppState:
         self.log_action("вырезание", f"«{name}»: сфера r={r:.1f} мм в ({cx:.1f}, {cy:.1f}, {cz:.1f})")
         return {"script": "\n".join(lines), "tool": tool, "radius": r}
 
+    def demo_policy(self, script: str, overrides: dict | None = None,
+                    upto: int | None = None) -> None:
+        """Жёсткие границы публичного сервера до создания любой геометрии."""
+        if not self.demo:
+            return
+        script = script or ""
+        if len(script) > DEMO_MAX_SCRIPT_CHARS:
+            raise FormaError("Публичное демо: сценарий больше 1 000 000 символов.")
+        from .dsl import parse_script
+        commands = parse_script(script)
+        if len(commands) > DEMO_MAX_COMMANDS:
+            raise FormaError("Публичное демо: не больше 4000 команд в одном сценарии.")
+        for command in commands:
+            if command.verb.strip().lower() in {"import", "импорт", "open", "открыть"}:
+                raise FormaError("Публичное демо: импорт внешних файлов отключён. "
+                                 "Используйте готовые проекты и команды Forma.")
+        warning = resource_warning(script, overrides=overrides, upto=upto)
+        if warning is not None:
+            estimate = int(warning.get("estimated_tris") or 0)
+            limit = int(warning.get("limit") or 500000)
+            raise FormaError(f"Публичное демо: оценка {estimate:,} трис превышает "
+                             f"общий лимит {limit:,}. Уменьшите сцену.".replace(",", " "))
+
     def build(self, script: str, auto: bool = False, allow_heavy: bool = False) -> dict:
+        self.demo_policy(script)
         # Предупреждение делается ДО run_build: ни одна тяжёлая команда ещё
         # не создала сетку и не заняла процессор. Старая сцена остаётся на
         # экране, поэтому «отменить» действительно отменяет последнее действие.
@@ -211,6 +249,7 @@ class AppState:
               allow_heavy: bool = False) -> dict:
         """Кадр сборки: сцена после первых ``upto`` команд сценария."""
         upto = max(0, min(int(upto), 4000))
+        self.demo_policy(script, upto=upto)
         if not allow_heavy:
             warning = resource_warning(script, upto=upto)
             if warning is not None:
@@ -258,6 +297,7 @@ class AppState:
         if not param:
             raise FormaError("Морфинг: не указан параметр сценария.")
         value = round(float(value), 4)
+        self.demo_policy(script, overrides={param: value})
         if not allow_heavy:
             warning = resource_warning(script, overrides={param: value})
             if warning is not None:
@@ -304,6 +344,7 @@ class AppState:
         script = (script or "").strip()
         if not script:
             raise FormaError("Пустой сценарий превью.")
+        self.demo_policy(script)
         if not allow_heavy:
             warning = resource_warning(script)
             if warning is not None:
@@ -727,6 +768,13 @@ class Handler(BaseHTTPRequestHandler):
         path = urllib.parse.unquote(parsed.path)
         query = urllib.parse.parse_qs(parsed.query)
         try:
+            if path == "/healthz":
+                self._send_json({
+                    "ok": True, "app": APP_NAME, "version": __version__,
+                    "revision": self.state.revision, "demo": self.state.demo,
+                    "uptime_seconds": round(time.time() - self.state.started, 3),
+                })
+                return
             if path.startswith("/api/"):
                 if not self._token_ok(query):
                     self._send_json({"error": {"message": "Нет доступа (токен)."}}, 403)
@@ -784,6 +832,9 @@ class Handler(BaseHTTPRequestHandler):
             if not self._token_ok(query):
                 self._send_json({"error": {"message": "Нет доступа (токен)."}}, 403)
                 return
+            if self.state.demo and path in DEMO_DISABLED_POSTS:
+                raise FormaError("Публичное демо: запись и локальные операции на сервере отключены. "
+                                 "Экспорт доступен через кнопки скачивания.")
             if path == "/api/save-file":
                 length = int(self.headers.get("Content-Length", "0") or 0)
                 if length <= 0:
@@ -825,6 +876,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({
                 "app": APP_NAME,
                 "version": __version__,
+                "revision": st.revision,
+                "demo": st.demo,
                 "script": script,
                 "project": st.project_name,
                 "examples": [{"name": n, "key": k} for n, k in EXAMPLES],

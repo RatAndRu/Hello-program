@@ -1,0 +1,140 @@
+name: Deploy Forma online
+
+on:
+  push:
+    branches:
+      - arena/4e4defc4-hello-program
+    paths:
+      - 'forma/**'
+      - 'fly.toml'
+      - '.dockerignore'
+      - '.github/workflows/deploy-forma-online.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: forma-online-production
+  cancel-in-progress: false
+
+env:
+  FLY_APP_NAME: forma3d-ratandru
+
+jobs:
+  verify:
+    name: Tests and production container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: forma/requirements.txt
+
+      - name: Install dependencies
+        run: pip install -r forma/requirements.txt
+
+      - name: Focused regression
+        env:
+          PYTHONPATH: forma:forma/tests
+        run: python -m unittest -v test_online_demo test_train_carriage test_living_room_052 test_text_ascii
+
+      - name: Build production image
+        run: docker build --build-arg "FORMA_REVISION=$GITHUB_SHA" -t "forma3d-online:$GITHUB_SHA" -f forma/Dockerfile .
+
+      - name: Start production container
+        run: docker run -d --name forma-online -p 8000:8000 "forma3d-online:$GITHUB_SHA"
+
+      - name: Verify container and start project
+        env:
+          PYTHONPATH: forma:forma/tests
+        run: |
+          set -e
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/healthz > /tmp/forma-health.json; then
+              break
+            fi
+            sleep 2
+          done
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+          health = json.load(open('/tmp/forma-health.json', encoding='utf-8'))
+          assert health['ok'] is True, health
+          assert health['demo'] is True, health
+          assert health['revision'] == os.environ['GITHUB_SHA'], health
+          with urllib.request.urlopen('http://127.0.0.1:8000/', timeout=20) as response:
+              html = response.read().decode('utf-8')
+          token = html.split('name="forma-token" content="', 1)[1].split('"', 1)[0]
+          with urllib.request.urlopen('http://127.0.0.1:8000/api/state?token=' + token, timeout=30) as response:
+              state = json.load(response)
+          assert state['demo'] is True, state
+          assert state['project'] == 'train_carriage', state.get('project')
+          assert 'ПЛАЦКАРТНЫЙ ВАГОН 61-4194' in state['script']
+          assert len(state['script']) > 190000
+          print('Container OK:', health['revision'], state['project'], len(state['script']))
+          PY
+
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs forma-online
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f forma-online || true
+
+  deploy:
+    name: Fly.io always-on deployment
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check deployment credentials
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo '::error::Добавьте FLY_API_TOKEN в Settings → Secrets and variables → Actions. Токен в логи и чат не выводим.'
+            exit 1
+          fi
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Ensure Fly application
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ vars.FLY_ORG }}
+        run: |
+          set -e
+          if ! flyctl apps show "$FLY_APP_NAME" >/dev/null 2>&1; then
+            flyctl apps create "$FLY_APP_NAME" --org "${FLY_ORG:-personal}"
+          fi
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --app "$FLY_APP_NAME" --remote-only --build-arg "FORMA_REVISION=$GITHUB_SHA"
+
+      - name: Verify public revision
+        run: |
+          set -e
+          for attempt in $(seq 1 18); do
+            if curl -fsS "https://$FLY_APP_NAME.fly.dev/healthz" > /tmp/forma-public-health.json \
+                && grep -q "$GITHUB_SHA" /tmp/forma-public-health.json; then
+              cat /tmp/forma-public-health.json
+              exit 0
+            fi
+            sleep 10
+          done
+          echo '::error::Публичный health-check не подтвердил новый revision.'
+          cat /tmp/forma-public-health.json 2>/dev/null || true
+          exit 1
