@@ -14,7 +14,11 @@ function occludingMethod() {
   const end = source.indexOf('\n  _clearGhosts()', start);
   if (start < 0 || end < 0) throw new Error('Не найден метод _occludingNames');
   const method = source.slice(start, end);
-  return new Function('THREE', `return { ${method} };`);
+  const visibleStart = source.indexOf('function effectivelyVisible(');
+  const visibleEnd = source.indexOf('\nconst ENV_PRESETS', visibleStart);
+  if (visibleStart < 0 || visibleEnd < 0) throw new Error('Не найден effectivelyVisible');
+  const visible = source.slice(visibleStart, visibleEnd);
+  return new Function('THREE', `${visible}\nreturn { ${method} };`);
 }
 
 async function main() {

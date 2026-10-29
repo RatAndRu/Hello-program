@@ -1,6 +1,6 @@
 # ГОСТИНАЯ 1:20 — пересобранная параметрическая диорамма Forma 0.52
 # Канон: +Z вверх, +X вправо, -Y вперёд. Все размеры в мм.
-# Панели не заходят друг в друга; новые узлы остаются отдельными и редактируемыми.
+# Стыки панелей — контролируемое скрытое вхождение; детали остаются отдельными и редактируемыми.
 
 # --- Основание, смешанный текст на табличке и отдельные планки пола ---
 display_base = box size=[350, 270, 8] center=да at=[0, 0, -12.8] round=1.8 color=#26333a
@@ -13,10 +13,10 @@ floor_b = box size=[26.3, 240, 0.8] center=да at=[-146.85, 0, -0.4] color=#bd8
 floorboards = array [floor_a,floor_b] mode=linear count=12 offset=[26.7,0,0] sequence=loop as=objects
 
 # --- Стены: стыки без наложения объёмов, настоящие сквозные проёмы ---
-wall_back = box size=[332, 6, 140.8] center=да at=[0, 123, 70] round=0.4 color=#e7dfcf
+wall_back = box size=[332, 6, 141.2] center=да at=[0, 123, 69.8] round=0.4 color=#e7dfcf
 window_cut = box size=[184, 12, 58] center=да at=[20, 123, 98] color=#ffffff
 wall_back = difference [wall_back,window_cut]
-wall_left = box size=[6, 240, 140.8] center=да at=[-163, 0, 70] round=0.4 color=#e7dfcf
+wall_left = box size=[6, 240, 141.2] center=да at=[-163, 0, 69.8] round=0.4 color=#e7dfcf
 door_cut = box size=[12, 79, 119] center=да at=[-163, -72, 58.7] color=#ffffff
 wall_left = difference [wall_left,door_cut]
 wall_front_cutaway = box size=[320, 6, 10.8] center=да at=[0, -123, 4.6] round=0.4 color=#e7dfcf
@@ -87,8 +87,8 @@ art_subtext = text "living / 02" size=2.8 depth=0.2 plane=yz at=[-159.1,20,106] 
 media_back = box size=[3, 100, 23] center=да at=[-153.5, 20, 17.5] round=0.5 color=#6f4c38
 media_top = box size=[28, 100, 3] center=да at=[-141, 20, 30.5] round=0.5 color=#7c573f
 media_bottom = box size=[25, 94, 3] center=да at=[-139.5, 20, 7.5] round=0.45 color=#6f4c38
-media_side_0 = box size=[25, 3, 20] center=да at=[-139.5, -28.5, 19] round=0.45 color=#6f4c38
-media_side_1 = box size=[25, 3, 20] center=да at=[-139.5, 68.5, 19] round=0.45 color=#6f4c38
+media_side_0 = box size=[25, 3, 21] center=да at=[-139.5, -28.5, 18.5] round=0.45 color=#6f4c38
+media_side_1 = box size=[25, 3, 21] center=да at=[-139.5, 68.5, 18.5] round=0.45 color=#6f4c38
 media_stile_0 = box size=[4, 2, 20] center=да at=[-129, -3, 19] round=0.35 color=#6f4c38
 media_stile_1 = box size=[4, 2, 20] center=да at=[-129, 43, 19] round=0.35 color=#6f4c38
 media_drawer_0 = box size=[1.5, 22, 16] center=да at=[-127.75, -15, 19] round=0.45 color=#8a6248
@@ -168,15 +168,15 @@ side_book_bottom = box size=[16.4, 11.4, 0.25] center=да at=[-108, 72, 26.125]
 side_book_pages = box size=[16, 11, 1.4] center=да at=[-108, 72, 26.95] round=0.2 color=#e8dfc9
 side_book_top = box size=[16.4, 11.4, 0.25] center=да at=[-108, 72, 27.775] round=0.1 color=#3f6d72
 
-# --- Шкаф: каждая панель занимает собственный объём, без скрытых нахлёстов ---
+# --- Шкаф: редактируемые панели с контролируемым вхождением 0.05 мм в стыках ---
 bookcase_side_l = box size=[2, 22, 108] center=да at=[125, 107, 54] round=0.35 color=#72513d
 bookcase_side_r = box size=[2, 22, 108] center=да at=[155, 107, 54] round=0.35 color=#72513d
-bookcase_back = box size=[28, 2, 103.2] center=да at=[140, 117, 54] round=0.25 color=#624534
-bookcase_bottom = box size=[28, 18, 2.4] center=да at=[140, 106, 1.2] round=0.3 color=#72513d
-bookcase_top = box size=[28, 18, 2.4] center=да at=[140, 106, 106.8] round=0.3 color=#72513d
-bookcase_shelf_0 = box size=[27.84, 17.84, 1.8] center=да at=[140, 106, 26] round=0.25 color=#806047
-bookcase_shelf_1 = box size=[27.84, 17.84, 1.8] center=да at=[140, 106, 55] round=0.25 color=#806047
-bookcase_shelf_2 = box size=[27.84, 17.84, 1.8] center=да at=[140, 106, 82] round=0.25 color=#806047
+bookcase_back = box size=[28.3, 4, 103.6] center=да at=[140, 116, 54] round=0.25 color=#624534
+bookcase_bottom = box size=[28.1, 18.1, 2.4] center=да at=[140, 106, 1.2] round=0.3 color=#72513d
+bookcase_top = box size=[28.1, 18.1, 2.4] center=да at=[140, 106, 106.8] round=0.3 color=#72513d
+bookcase_shelf_0 = box size=[28.1, 18.1, 1.8] center=да at=[140, 106, 26] round=0.25 color=#806047
+bookcase_shelf_1 = box size=[28.1, 18.1, 1.8] center=да at=[140, 106, 55] round=0.25 color=#806047
+bookcase_shelf_2 = box size=[28.1, 18.1, 1.8] center=да at=[140, 106, 82] round=0.25 color=#806047
 bookcase_basket = box size=[22, 14, 17] center=да at=[140, 105.8, 10.9] round=1.2 color=#b58a59
 basket_inner_cut = box size=[19, 11, 17] center=да at=[140, 105.8, 12.5] round=0.8 color=#ffffff
 bookcase_basket = difference [bookcase_basket,basket_inner_cut]

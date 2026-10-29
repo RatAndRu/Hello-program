@@ -72,6 +72,14 @@ class TrainCarriageTest(unittest.TestCase):
             with self.subTest(check=key):
                 self.assertEqual(self.report[key], [])
 
+    def test_structural_contacts_include_gap_acceptance(self):
+        self.assertEqual(self.report["problems"], [])
+        self.assertGreaterEqual(len(self.report["structural_gaps"]), 20)
+        self.assertTrue(all(x["gap_mm"] <= 0.02 for x in self.report["structural_gaps"]))
+        # Контрольные соединения крыши/стен остаются явными в отчёте, а не
+        # исчезают под общим разрешением на пересечения.
+        self.assertTrue(self.report["structural_contacts"])
+
     def test_reference_dimensions_and_rotated_text_placement(self):
         expected = {"body_width_mm": 155.25, "coupler_axes_mm": 1226.85,
                     "wagon_base_mm": 850.0, "bogie_base_mm": 120.0,

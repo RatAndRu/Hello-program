@@ -49,7 +49,7 @@ def cylinder(name: str, radius: float, height: float, at, color: str,
 
 add("# ГОСТИНАЯ 1:20 — пересобранная параметрическая диорамма Forma 0.52")
 add("# Канон: +Z вверх, +X вправо, -Y вперёд. Все размеры в мм.")
-add("# Панели не заходят друг в друга; новые узлы остаются отдельными и редактируемыми.")
+add("# Стыки панелей — контролируемое скрытое вхождение; детали остаются отдельными и редактируемыми.")
 add()
 add("# --- Основание, смешанный текст на табличке и отдельные планки пола ---")
 box("display_base", (350, 270, 8), (0, 0, -12.8), "#26333a", 1.8)
@@ -65,10 +65,10 @@ add("floorboards = array [floor_a,floor_b] mode=linear count=12 "
     "offset=[26.7,0,0] sequence=loop as=objects")
 add()
 add("# --- Стены: стыки без наложения объёмов, настоящие сквозные проёмы ---")
-box("wall_back", (332, 6, 140.8), (0, 123, 70), "#e7dfcf", 0.4)
+box("wall_back", (332, 6, 141.2), (0, 123, 69.8), "#e7dfcf", 0.4)
 box("window_cut", (184, 12, 58), (20, 123, 98), "#ffffff")
 add("wall_back = difference [wall_back,window_cut]")
-box("wall_left", (6, 240, 140.8), (-163, 0, 70), "#e7dfcf", 0.4)
+box("wall_left", (6, 240, 141.2), (-163, 0, 69.8), "#e7dfcf", 0.4)
 box("door_cut", (12, 79, 119), (-163, -72, 58.7), "#ffffff")
 add("wall_left = difference [wall_left,door_cut]")
 box("wall_front_cutaway", (320, 6, 10.8), (0, -123, 4.6), "#e7dfcf", 0.4)
@@ -147,8 +147,8 @@ add("# --- ТВ-тумба: видимые панели и ниша, без ск
 box("media_back", (3, 100, 23), (-153.5, 20, 17.5), "#6f4c38", 0.5)
 box("media_top", (28, 100, 3), (-141, 20, 30.5), "#7c573f", 0.5)
 box("media_bottom", (25, 94, 3), (-139.5, 20, 7.5), "#6f4c38", 0.45)
-box("media_side_0", (25, 3, 20), (-139.5, -28.5, 19), "#6f4c38", 0.45)
-box("media_side_1", (25, 3, 20), (-139.5, 68.5, 19), "#6f4c38", 0.45)
+box("media_side_0", (25, 3, 21), (-139.5, -28.5, 18.5), "#6f4c38", 0.45)
+box("media_side_1", (25, 3, 21), (-139.5, 68.5, 18.5), "#6f4c38", 0.45)
 box("media_stile_0", (4, 2, 20), (-129, -3, 19), "#6f4c38", 0.35)
 box("media_stile_1", (4, 2, 20), (-129, 43, 19), "#6f4c38", 0.35)
 box("media_drawer_0", (1.5, 22, 16), (-127.75, -15, 19), "#8a6248", 0.45)
@@ -233,14 +233,16 @@ box("side_book_bottom", (16.4, 11.4, 0.25), (-108, 72, 26.125), "#3f6d72", 0.1)
 box("side_book_pages", (16, 11, 1.4), (-108, 72, 26.95), "#e8dfc9", 0.2)
 box("side_book_top", (16.4, 11.4, 0.25), (-108, 72, 27.775), "#3f6d72", 0.1)
 add()
-add("# --- Шкаф: каждая панель занимает собственный объём, без скрытых нахлёстов ---")
+add("# --- Шкаф: редактируемые панели с контролируемым вхождением 0.05 мм в стыках ---")
 box("bookcase_side_l", (2, 22, 108), (125, 107, 54), "#72513d", 0.35)
 box("bookcase_side_r", (2, 22, 108), (155, 107, 54), "#72513d", 0.35)
-box("bookcase_back", (28, 2, 103.2), (140, 117, 54), "#624534", 0.25)
-box("bookcase_bottom", (28, 18, 2.4), (140, 106, 1.2), "#72513d", 0.3)
-box("bookcase_top", (28, 18, 2.4), (140, 106, 106.8), "#72513d", 0.3)
+box("bookcase_back", (28.3, 4, 103.6), (140, 116, 54), "#624534", 0.25)
+box("bookcase_bottom", (28.1, 18.1, 2.4), (140, 106, 1.2), "#72513d", 0.3)
+box("bookcase_top", (28.1, 18.1, 2.4), (140, 106, 106.8), "#72513d", 0.3)
 for index, z in enumerate((26, 55, 82)):
-    box(f"bookcase_shelf_{index}", (27.84, 17.84, 1.8), (140, 106, z), "#806047", 0.25)
+    # 0.05 мм скрытого вхождения в боковины и заднюю панель убирает
+    # щели, но не выводит полку через наружные грани корпуса.
+    box(f"bookcase_shelf_{index}", (28.1, 18.1, 1.8), (140, 106, z), "#806047", 0.25)
 box("bookcase_basket", (22, 14, 17), (140, 105.8, 10.9), "#b58a59", 1.2)
 box("basket_inner_cut", (19, 11, 17), (140, 105.8, 12.5), "#ffffff", 0.8)
 add("bookcase_basket = difference [bookcase_basket,basket_inner_cut]")
@@ -356,9 +358,31 @@ ALLOWED_CONTACTS = (
     ("lamp_spokes_*", "lamp_spokes_*"),
 )
 
+# Это не общая маска «мебель можно пересекать»: перечислены только стыки,
+# где небольшой скрытый заход является частью конструкции. Объём каждого
+# такого контакта отдельно попадает в отчёт; превышение лимита — ошибка.
+CONTROLLED_EMBED_LIMIT = 80.0  # мм³ на одну пару деталей
+CONTROLLED_EMBED_PAIRS = set()
+for side in ("bookcase_side_l", "bookcase_side_r"):
+    for other in ("bookcase_back", "bookcase_bottom", "bookcase_top",
+                  "bookcase_shelf_0", "bookcase_shelf_1", "bookcase_shelf_2"):
+        CONTROLLED_EMBED_PAIRS.add(frozenset((side, other)))
+for other in ("bookcase_bottom", "bookcase_top", "bookcase_shelf_0",
+              "bookcase_shelf_1", "bookcase_shelf_2"):
+    CONTROLLED_EMBED_PAIRS.add(frozenset(("bookcase_back", other)))
+for panel in ("media_back", "media_top", "media_bottom"):
+    for other in ("media_side_0", "media_side_1"):
+        CONTROLLED_EMBED_PAIRS.add(frozenset((panel, other)))
+CONTROLLED_EMBED_PAIRS.add(frozenset(("media_top", "media_back")))
+CONTROLLED_EMBED_PAIRS.add(frozenset(("media_bottom", "media_back")))
+
+
+def controlled_embed(a: str, b: str) -> bool:
+    return frozenset((a, b)) in CONTROLLED_EMBED_PAIRS
+
 
 def allowed_contact(a: str, b: str) -> bool:
-    if assembly_root(a) == assembly_root(b):
+    if assembly_root(a) == assembly_root(b) or controlled_embed(a, b):
         return True
     return any((fnmatch.fnmatch(a, left) and fnmatch.fnmatch(b, right)) or
                (fnmatch.fnmatch(a, right) and fnmatch.fnmatch(b, left))
@@ -409,7 +433,10 @@ def validate(result):
         if volume <= 0.01:
             continue
         record = {"a": a.name, "b": b.name, "volume_mm3": round(volume, 6)}
-        if allowed_contact(a.name, b.name):
+        if controlled_embed(a.name, b.name) and volume > CONTROLLED_EMBED_LIMIT:
+            record["reason"] = "превышен допустимый скрытый заход"
+            collisions.append(record)
+        elif allowed_contact(a.name, b.name):
             intentional.append(record)
         else:
             collisions.append(record)
@@ -419,12 +446,32 @@ def validate(result):
     frame_names = ["bookcase_side_l", "bookcase_side_r", "bookcase_back",
                    "bookcase_bottom", "bookcase_top"] + [f"bookcase_shelf_{i}" for i in range(3)]
     frame_overlaps = []
+    frame_contacts = []
     for left, right in combinations(frame_names, 2):
         volume = abs(float((objects[left].manifold ^ objects[right].manifold).volume()))
-        if volume > 1e-5:
+        controlled = controlled_embed(left, right)
+        if controlled:
+            gap = float(objects[left].manifold.min_gap(objects[right].manifold, 2.0))
+            frame_contacts.append({"a": left, "b": right,
+                                   "volume_mm3": round(volume, 6), "gap_mm": round(gap, 6)})
+            if gap > 0.02:
+                problems.append(f"Щель в стыке шкафа {left} ↔ {right}: {gap:.3f} мм")
+        if volume > 1e-5 and not controlled:
             frame_overlaps.append({"a": left, "b": right, "volume_mm3": volume})
     if frame_overlaps:
         problems.append(f"Пересечения каркаса шкафа: {len(frame_overlaps)}")
+
+    # Несущие стены должны касаться основания, а не висеть над ним. Для
+    # контакта допускаем и нулевой зазор, и небольшой controlled embed.
+    support_contacts = []
+    for left, right in (("wall_back", "floor_substrate"),
+                        ("wall_left", "floor_substrate"),
+                        ("wall_front_cutaway", "floor_substrate"),
+                        ("wall_right_cutaway", "floor_substrate")):
+        gap = float(objects[left].manifold.min_gap(objects[right].manifold, 1.0))
+        support_contacts.append({"a": left, "b": right, "gap_mm": round(gap, 6)})
+        if gap > 0.02:
+            problems.append(f"Стена не касается основания {left}: {gap:.3f} мм")
 
     cloth = objects["throw"].meta.get("cloth", {})
     if not cloth.get("contacts") or cloth.get("free", 0) <= 0:
@@ -443,6 +490,8 @@ def validate(result):
         "unexpected_collisions": collisions,
         "allowed_contacts": intentional,
         "bookcase_frame_overlaps": frame_overlaps,
+        "bookcase_frame_contacts": frame_contacts,
+        "support_contacts": support_contacts,
         "cloth": cloth,
         "problems": problems,
     }

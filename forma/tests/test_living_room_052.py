@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import json
+import struct
 import unittest
 from pathlib import Path
 
@@ -40,6 +42,20 @@ class LivingRoom052Test(unittest.TestCase):
         self.assertEqual(self.report["door_opening_residual_mm3"], 0)
         self.assertEqual(self.report["window_opening_residual_mm3"], 0)
 
+    def test_structural_joints_are_contacts_not_hidden_gaps(self):
+        self.assertEqual(self.report["problems"], [])
+        self.assertGreaterEqual(len(self.report["bookcase_frame_contacts"]), 17)
+        self.assertTrue(all(x["gap_mm"] <= 0.02
+                            for x in self.report["bookcase_frame_contacts"]))
+        self.assertTrue(all(x["gap_mm"] <= 0.02 for x in self.report["support_contacts"]))
+        self.assertTrue(all(x["volume_mm3"] <= 80.0
+                            for x in self.report["bookcase_frame_contacts"]))
+        objects = self.result.scene.objects
+        for name in ("bookcase_shelf_0", "bookcase_shelf_1", "bookcase_shelf_2"):
+            with self.subTest(shelf=name):
+                self.assertLessEqual(objects[name].manifold.min_gap(
+                    objects["bookcase_back"].manifold, 1.0), 0.02)
+
     def test_new_tools_are_real_editable_parts_of_the_room(self):
         objects = self.result.scene.objects
         for name in ("entry.leaf", "entry.leaf.lock", "curtain_left", "curtain_right",
@@ -61,6 +77,14 @@ class LivingRoom052Test(unittest.TestCase):
         self.assertIn('text "Гостиная 1:20"', self.script)
         self.assertIn('text "Forma & 3D"', self.script)
         self.assertIn('text "living / 02"', self.script)
+
+    def test_glb_preserves_editable_composite_names(self):
+        data = self.result.glb()
+        json_length = struct.unpack_from('<I', data, 12)[0]
+        document = json.loads(data[20:20 + json_length])
+        names = {node.get('name', '') for node in document.get('nodes', [])}
+        self.assertTrue({'entry', 'entry.leaf', 'wall_socket',
+                         'wall_socket.insert_1', 'wall_switch', 'bookcase_back'} <= names)
 
     def test_glb_scene_reimports_with_finite_geometry(self):
         data = self.result.glb()

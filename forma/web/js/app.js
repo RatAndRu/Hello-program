@@ -57,6 +57,9 @@ const state = {
     mode: 'clips', time: 0, duration: 0, playing: false,
     frames: [], frameIndex: 0, frameTimer: 0, hold: 0.8, fps: 24,
     cache: new Map(), pending: null, timer: null, busy: false, preview: null,
+    // Эпоха отделяет ответы старой модели от текущей; serial — последний
+    // запрошенный кадр, чтобы медленный ответ не перекрыл новый.
+    epoch: 0, frameSerial: 0, framePending: new Map(),
     seqKey: null, morphPending: null,
   },
 };
@@ -452,6 +455,9 @@ async function buildNow(silent = false) {
 /** Чистая сцена: убираем модель, подсветку, кисть и надпись «пусто». */
 function clearSceneView() {
   const v = state.viewer;
+  state.anim.epoch += 1;
+  state.anim.next = undefined;
+  state.anim.framePending.clear();
   if (!v) return;
   v.setPaintMode(false, null, '', false);
   v.disposeModel();
@@ -1159,7 +1165,10 @@ function highlightScriptLine(line, { scroll = false, follow = true, soft = [] } 
       el.classList.toggle('run-soft', softSet.has(i + 1));
     });
   }
-  placeRunHighlight(follow);
+  // scroll — явное разрешение на автопрокрутку. Раньше follow=true
+  // прокручивал редактор даже при scroll=false, поэтому кадровая подсветка
+  // дёргала текст и мешала сравнивать соседние команды.
+  placeRunHighlight(follow && scroll);
   if (state.runSoft.length) {
     // вторая полоса — на самом раннем из параллельных клипов
     const lines = [...state.runSoft, n].sort((x, y) => x - y);
@@ -1210,11 +1219,33 @@ function pickClosest(list) {
   }, null);
 }
 
+/** Номер кадра assembly в момент t; -1 означает, что сборка не играет. */
+function assemblyFrameIndexAt(time) {
+  const t = Number(time) || 0;
+  const clip = animClips().find((c) => c.kind === 'assembly'
+    && t >= (Number(c.start) || 0) - 1e-6
+    && t <= (Number(c.start) || 0) + (Number(c.length) || 0) + 1e-6);
+  const frames = animFrames();
+  if (!clip || !frames.length) return -1;
+  const hold = Math.max(0.1, Number(clip.hold) || 0.8);
+  return Math.max(0, Math.min(frames.length - 1,
+    Math.floor((t - (Number(clip.start) || 0)) / hold)));
+}
+
 /** Какая строка сценария соответствует моменту t: клипы или кадр сборки. */
 function highlightFromTime(t, { scroll = false } = {}) {
   const a = state.anim;
   if (a.mode === 'frames') {
     const frame = animFrames()[a.frameIndex];
+    if (frame) highlightScriptLine(frame.line, { scroll });
+    return;
+  }
+  // В clips-режиме assembly тоже показывает кадры /api/frame. Поэтому
+  // подсвечиваем строку породившей видимый кадр команды, а не строку
+  // `animate kind=assembly`, которая сама геометрию не создаёт.
+  const assemblyIndex = assemblyFrameIndexAt(t);
+  if (assemblyIndex >= 0) {
+    const frame = animFrames()[assemblyIndex];
     if (frame) highlightScriptLine(frame.line, { scroll });
     return;
   }
@@ -1245,6 +1276,9 @@ function escapeHtml(s) {
 /*  Просмотр                                                          */
 /* ------------------------------------------------------------------ */
 async function loadModel(url, animation = null) {
+  const epoch = ++state.anim.epoch;
+  state.anim.next = undefined;
+  state.anim.framePending.clear();
   state.anim.preview = null;
   state.anim.cache.clear();
   state.anim.pending = null;
@@ -1257,6 +1291,7 @@ async function loadModel(url, animation = null) {
   }
   try {
     await state.viewer.load(url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN), animation);
+    if (epoch !== state.anim.epoch) return;
     // мгновенная проверка видимости и текстур (не зависит от того, что попало в GLB)
     applyLoopMode();
     state.viewer.setAxes($('opt-axes')?.checked !== false);
@@ -1313,6 +1348,7 @@ async function loadModel(url, animation = null) {
       }
     }
   } catch (e) {
+    if (epoch !== state.anim.epoch) return;
     toast('Не удалось показать модель: ' + (e?.message || e), 'bad');
   }
 }
@@ -1928,12 +1964,14 @@ function updateSequence(t) {
   const assembly = active.find((c) => c.kind === 'assembly');
   const morph = active.find((c) => c.kind === 'morph');
   if (assembly && animFrames().length) {
-    const hold = Math.max(0.1, Number(assembly.hold) || 0.8);
-    const idx = Math.max(0, Math.min(animFrames().length - 1,
-      Math.floor((t - (Number(assembly.start) || 0)) / hold)));
+    const idx = assemblyFrameIndexAt(t);
+    if (idx < 0) return;
     if (a.seqKey !== 'a' + idx) {
       a.seqKey = 'a' + idx;
       a.frameIndex = idx;
+      const frame = animFrames()[idx];
+      // Видимый кадр и строка сценария меняются атомарно с точки зрения UI.
+      highlightScriptLine(frame.line, { scroll: false });
       showFrame(idx);
       prefetchFrame(idx + 1);
     }
@@ -1960,6 +1998,7 @@ function updateSequence(t) {
   }
   if (a.seqKey) {
     a.seqKey = null;
+    invalidateFrameQueue();
     state.viewer?.showFinalModel();
     if (state.selected?.name && !state.hidden.has(state.selected.name)) {
       state.viewer?.setHighlight(state.selected.name);
@@ -2017,21 +2056,50 @@ function prefetchMorph(clip, index) {
     .catch(() => { state.anim.cache.delete(key); });
 }
 
+function frameCacheKey(frame) {
+  return `${state.payload?.script_hash || 'x'}_${frame.n}`;
+}
+
+function frameUrl(key) {
+  return '/api/frame.glb?key=' + encodeURIComponent(key)
+    + '&token=' + encodeURIComponent(TOKEN);
+}
+
+function frameScript() {
+  // Пока старая сборка на экране, редактор мог уже измениться. Кадр должен
+  // соответствовать payload/script_hash, а не новому, ещё не собранному тексту.
+  return state.builtScript ?? currentScript();
+}
+
+function invalidateFrameQueue() {
+  const a = state.anim;
+  a.frameSerial += 1;
+  a.next = undefined;
+}
+
 function prefetchFrame(index) {
-  const frames = animFrames();
-  const frame = frames[index];
+  const a = state.anim;
+  const frame = animFrames()[index];
   if (!frame) return;
-  const key = `pf_${state.payload?.script_hash || ''}_${frame.n}`;
-  if (state.anim.cache.has(key)) return;
-  state.anim.cache.set(key, true);
-  const script = currentScript();
-  apiWithResourcePause('/api/frame', { script, upto: frame.n },
+  const key = frameCacheKey(frame);
+  if (a.cache.has(key) || a.framePending.has(key)) return;
+  const epoch = a.epoch;
+  const script = frameScript();
+  const promise = apiWithResourcePause('/api/frame', { script, upto: frame.n },
     `frame:${script}`, 'кадр сборки', false)
-    .then((res) => {
-      if (res.glb) state.viewer?.preloadFrame(res.key,
-        '/api/frame.glb?key=' + encodeURIComponent(res.key) + '&token=' + encodeURIComponent(TOKEN));
+    .then(async (res) => {
+      if (a.epoch !== epoch || !res.glb) return;
+      const entry = { key: res.key, url: frameUrl(res.key) };
+      a.cache.set(key, entry);
+      // Ждём именно viewer-кеш: иначе showFrame мог бы повторно скачать GLB,
+      // хотя prefetch уже получил его.
+      await state.viewer?.preloadFrame(res.key, entry.url);
     })
-    .catch(() => { state.anim.cache.delete(key); });
+    .catch(() => { if (a.epoch === epoch) a.cache.delete(key); });
+  a.framePending.set(key, { epoch, promise });
+  promise.finally(() => {
+    if (a.framePending.get(key)?.promise === promise) a.framePending.delete(key);
+  });
 }
 
 /* --- транспорт и прокрутка ------------------------------------------ */
@@ -2068,7 +2136,9 @@ function seekFrame(index) {
   if (!frames.length) return;
   a.frameIndex = Math.max(0, Math.min(index, frames.length - 1));
   syncAnimUI();
-  highlightScriptLine(frames[a.frameIndex].line);
+  // Ручной переход к кадру — явное действие пользователя, поэтому строку
+  // можно показать; автоматическое проигрывание использует scroll=false.
+  highlightScriptLine(frames[a.frameIndex].line, { scroll: true });
   showFrame(a.frameIndex);
 }
 
@@ -2076,30 +2146,38 @@ async function showFrame(index) {
   const a = state.anim;
   const frame = animFrames()[index];
   if (!frame || !state.viewer) return;
-  const script = currentScript();
-  const key = `${state.payload?.script_hash || 'x'}_${frame.n}`;
-  const cached = a.cache.get(key);
-  if (cached) {
-    await state.viewer.loadFrame(cached.key, cached.url).catch(() => {});
-    focusFrameObject(frame);
-    return;
-  }
+  const epoch = a.epoch;
+  const serial = ++a.frameSerial;
+  const current = () => a.epoch === epoch && a.frameSerial === serial;
   if (a.busy) { a.next = index; return; }
   a.busy = true;
+  const key = frameCacheKey(frame);
   try {
+    // Prefetch и обычный показ используют один ключ и один pending-запрос.
+    const pending = a.framePending.get(key);
+    if (pending?.epoch === epoch) await pending.promise;
+    if (!current()) return;
+    const cached = a.cache.get(key);
+    if (cached?.key && cached.url) {
+      await state.viewer.loadFrame(cached.key, cached.url);
+      if (current()) focusFrameObject(frame);
+      return;
+    }
+    const script = frameScript();
     const res = await apiWithResourcePause('/api/frame', { script, upto: frame.n },
       `frame:${script}`, 'кадр сборки');
+    if (!current()) return;
     if (!res.glb) { toast('Этот шаг не даёт геометрии — выберите другой', 'bad'); return; }
-    const url = '/api/frame.glb?key=' + encodeURIComponent(res.key)
-      + '&token=' + encodeURIComponent(TOKEN);
-    a.cache.set(key, { key: res.key, url });
+    const entry = { key: res.key, url: frameUrl(res.key) };
+    a.cache.set(key, entry);
     while (a.cache.size > 24) a.cache.delete(a.cache.keys().next().value);
-    await state.viewer.loadFrame(res.key, url);
-    focusFrameObject(frame);
+    await state.viewer.loadFrame(res.key, entry.url);
+    if (current()) focusFrameObject(frame);
   } catch (e) {
+    if (!current()) return;
     if (e.resourceCancelled) {
       a.seqKey = null;
-      a.next = undefined;
+      invalidateFrameQueue();
       pauseAnim();
       state.viewer?.showFinalModel();
       toast('Тяжёлый кадр отменён; сцена не изменена.', 'warn');
@@ -2108,11 +2186,9 @@ async function showFrame(index) {
     }
   } finally {
     a.busy = false;
-    if (a.next !== undefined && a.next !== index) {
-      const next = a.next;
-      a.next = undefined;
-      showFrame(next);
-    }
+    const next = a.next;
+    a.next = undefined;
+    if (next !== undefined) showFrame(next);
   }
 }
 
@@ -2120,13 +2196,15 @@ async function showFrame(index) {
 function focusFrameObject(frame) {
   const objects = new Set((state.payload?.objects || []).map((o) => o.name));
   const added = (frame?.added || []).filter((n) => !state.hidden.has(n));
+  const affected = (frame?.affected || []).filter((n) => objects.has(n) && !state.hidden.has(n));
   const changed = frame?.target && objects.has(frame.target)
     && !state.hidden.has(frame.target) ? frame.target : '';
-  const name = added[0] || changed;
+  const name = added[0] || changed || affected[0];
   const label = $('anim-focus');
   if (name) {
     state.viewer?.setHighlight(name);
-    if (label) label.textContent = (added.length ? 'появился: ' : 'меняется: ') + name;
+    const changing = affected.length > 1 ? affected.join(', ') : name;
+    if (label) label.textContent = (added.length ? 'появился: ' : 'меняется: ') + changing;
   } else if (state.selected?.name && !state.hidden.has(state.selected.name)) {
     state.viewer?.setHighlight(state.selected.name);
     if (label) label.textContent = '';
@@ -2137,6 +2215,7 @@ function focusFrameObject(frame) {
 
 function setAnimMode(mode) {
   const a = state.anim;
+  invalidateFrameQueue();
   a.mode = mode;
   a.seqKey = null;
   a.playing = false;
@@ -2343,16 +2422,19 @@ function initViewer() {
     let lastClock = 0;
     let lastLine = 0;
     state.viewer.onTime = (t) => {
-      if (state.anim.mode !== 'clips') return;
+      // onTime приходит и при ручном seek, и во время клипов. Не выходим
+      // раньше времени для frames: иначе ветка подсветки кадра была мёртвой.
       state.anim.time = t;
-      updateSequence(t);
+      if (state.anim.mode === 'clips') updateSequence(t);
       const now = performance.now();
       if (now - lastClock > 60) {
         lastClock = now;
         syncAnimClock();
-        // Подсветка строки нужна только сборке по шагам. Во время обычной
-        // анимации сценарий не дёргается и не подкручивается.
-        if (state.anim.mode === 'frames' && now - lastLine > 90) {
+        // Обычные клипы не дёргают редактор. Для покадровой сборки и
+        // assembly-клипа подсвечиваем именно строку текущего кадра.
+        const assembly = state.anim.mode === 'frames'
+          || animClips().some((c) => c.kind === 'assembly');
+        if (assembly && now - lastLine > 90) {
           lastLine = now;
           highlightFromTime(t, { scroll: false });
         }

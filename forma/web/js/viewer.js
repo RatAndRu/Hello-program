@@ -39,6 +39,12 @@ function meshMatches(o, name) {
   return candidates.some((c) => c && c === name);
 }
 
+/** Raycast в Three.js не обязан учитывать visible родителя — учитываем сами. */
+function effectivelyVisible(object) {
+  for (let n = object; n; n = n.parent) if (!n.visible) return false;
+  return true;
+}
+
 const ENV_PRESETS = {
   studio: { bg: '#0b0e13', key: '#ffffff', fill: '#9dbcff', rim: '#ffe6c4', ground: '#11161d', hemi: 0.55, fog: true },
   sun: { bg: '#1b2733', key: '#fff2d8', fill: '#a8c8ff', rim: '#ffd9a0', ground: '#20262b', hemi: 0.35, fog: true },
@@ -102,6 +108,8 @@ export class Viewer {
     this.onEnd = null;           // достигнут конец без зацикливания
     this.frameRoot = null;
     this.frameKey = null;
+    this._frameSerial = 0;   // отменяет показ устаревшего асинхронного кадра
+    this._loadSerial = 0;    // отменяет устаревшую полную загрузку GLB
     this._frameCache = new Map();
     this._animWrap = null;
     this._animCenter = null;
@@ -543,12 +551,13 @@ export class Viewer {
         if (this.onSelection) this.onSelection(this.selections);
         return;
       }
-      if (hits.length && this.onSelect) {
-        const mesh = hits[0].object;
-        this.onSelect(mesh.name || mesh.parent?.name || '');
-      } else if (!hits.length && this.onSelect) {
-        this.onSelect('');
-      }
+      // Обычный клик использует тот же конвейер, что кисть и контекстное
+      // меню: instanced-копии, заслонки и составные GLB-узлы нельзя
+      // разрешать через первый попавшийся mesh.name. Иначе клик по
+      // розетке/двери либо теряется, либо выделяет служебный узел, которого
+      // нет в списке объектов.
+      const picked = this.pickAt(e.clientX, e.clientY);
+      if (this.onSelect) this.onSelect(picked?.name || '');
     });
 
     el.addEventListener('pointercancel', () => {
@@ -608,7 +617,7 @@ export class Viewer {
       box.getSize(size);
       box.getCenter(ctr);
       const radius = Math.max(2, size.length() * 0.5);
-      this._commitRegion(mesh.name || mesh.parent?.name || 'деталь', out, count, area, box,
+        this._commitRegion(this._objectName(mesh) || 'деталь', out, count, area, box,
                          ctr, radius, additive || !first);
       first = false;
     });
@@ -651,21 +660,24 @@ export class Viewer {
   }
 
   disposeModel() {
+    this._loadSerial += 1;
+    this._frameSerial += 1;
     this.clearHighlight();
     this._disposeMirrors();
-    if (!this.model) return;
-    this.scene.remove(this.model);
-    this.model.traverse((o) => {
-      if (o.isMesh) {
-        o.geometry?.dispose();
-        const mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach((m) => {
-          if (!m) return;
-          ['map', 'normalMap', 'roughnessMap', 'metalnessMap'].forEach((k) => m[k]?.dispose?.());
-          m.dispose?.();
-        });
-      }
-    });
+    if (this.model) {
+      this.scene.remove(this.model);
+      this.model.traverse((o) => {
+        if (o.isMesh) {
+          o.geometry?.dispose();
+          const mats = Array.isArray(o.material) ? o.material : [o.material];
+          mats.forEach((m) => {
+            if (!m) return;
+            ['map', 'normalMap', 'roughnessMap', 'metalnessMap'].forEach((k) => m[k]?.dispose?.());
+            m.dispose?.();
+          });
+        }
+      });
+    }
     if (this._animWrap) {
       this.scene.remove(this._animWrap);
       this._animWrap = null;
@@ -722,11 +734,21 @@ export class Viewer {
   }
 
   async load(url, animation = null) {
+    const serial = ++this._loadSerial;
     this.lastUrl = url;
     const loader = new GLTFLoader();
     const gltf = await loadGlb(loader, url);
-    this.disposeModel();
     const root = gltf.scene;
+    if (serial !== this._loadSerial) {
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        o.geometry?.dispose();
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => m?.dispose?.());
+      });
+      return this.bbox;
+    }
+    this.disposeModel();
     root.traverse((o) => {
       if (o.isMesh) {
         o.castShadow = true;
@@ -1066,19 +1088,22 @@ export class Viewer {
     const hits = ray.intersectObject(this.model, true);
     const ghosts = new Set(this._ghostNames || []);
     for (const hit of hits) {
-      if (!hit.object.visible || hit.object.userData?.paintPreview) continue;
+      if (!effectivelyVisible(hit.object) || hit.object.userData?.paintPreview) continue;
       let picked = hit.object;
-      let hitName = picked.name || picked.parent?.name || '';
       if (picked.isInstancedMesh && hit.instanceId !== undefined) {
         const entry = picked.userData.instanceSources?.[hit.instanceId];
         if (entry?.mesh) {
           picked = entry.mesh;
-          hitName = picked.name || picked.parent?.name || '';
           // Для выделения и кисти возвращаем настоящий исходный меш;
           // остальные одинаковые копии остаются в общем draw call.
-          this._detachInstances(hitName);
+          this._detachInstances(this._objectName(picked));
         }
       }
+      // Имя всегда разрешаем после выбора исходного меша. У GLTFLoader
+      // составной узел может быть Group с безымянным/дочерним Mesh; ближайший
+      // предок, известный payload, и есть редактируемый объект Forma.
+      const hitName = this._objectName(picked);
+      if (!hitName) continue;
       // прозрачный каркас заслонок не должен перехватывать клик: сквозь него
       // выбирается тот предмет, который за ним
       if (ghosts.has(hitName) && hitName !== this.highlightName) continue;
@@ -1640,10 +1665,13 @@ export class Viewer {
   /*  Кадры сборки: промежуточные модели по шагам сценария              */
   /* ------------------------------------------------------------------ */
   async loadFrame(key, url) {
-    if (this.frameKey === key) return;
+    const serial = ++this._frameSerial;
+    if (!key || !url) return false;
+    if (this.frameKey === key) return true;
     if (this._frameCache.has(key)) {
+      if (serial !== this._frameSerial) return false;
       this._showFrameObject(key, this._frameCache.get(key));
-      return;
+      return true;
     }
     const loader = new GLTFLoader();
     const gltf = await loadGlb(loader, url);
@@ -1655,20 +1683,42 @@ export class Viewer {
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       mats.forEach((m) => { if (m) { m.envMapIntensity = 1.15; m.side = THREE.FrontSide; } });
     });
+    // Пользователь мог уже перейти к другому кадру или вернуться к финальной
+    // модели. Старый GLB не должен внезапно появиться поверх нового состояния.
+    if (serial !== this._frameSerial) {
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        o.geometry?.dispose();
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => m?.dispose?.());
+      });
+      return false;
+    }
     this._frameCache.set(key, root);
     while (this._frameCache.size > 20) {
       const oldest = this._frameCache.keys().next().value;
       this._frameCache.delete(oldest);
     }
     this._showFrameObject(key, root);
+    return true;
   }
 
   /** Предзагрузка кадра, чтобы проигрывание «сборки по шагам» не спотыкалось. */
   async preloadFrame(key, url) {
     if (!key || !url || this._frameCache.has(key)) return;
+    const serial = this._frameSerial;
     const loader = new GLTFLoader();
     const gltf = await loadGlb(loader, url);
     const root = gltf.scene;
+    if (serial !== this._frameSerial) {
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        o.geometry?.dispose();
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => m?.dispose?.());
+      });
+      return;
+    }
     root.traverse((o) => {
       if (!o.isMesh) return;
       o.castShadow = true;
@@ -1694,6 +1744,7 @@ export class Viewer {
   }
 
   showFinalModel() {
+    this._frameSerial += 1;
     if (this.frameRoot) this.scene.remove(this.frameRoot);
     this.frameRoot = null;
     this.frameKey = null;
@@ -2358,7 +2409,7 @@ export class Viewer {
       count += 1;
     }
     if (!count) return null;
-    return this._commitRegion(mesh.name || mesh.parent?.name || 'деталь', out, count, area,
+    return this._commitRegion(this._objectName(mesh) || 'деталь', out, count, area,
                               box, center, radius, additive);
   }
 
@@ -2503,14 +2554,19 @@ export class Viewer {
   /** Имя объекта по мешу: ближайший предок, который сценарий знает как деталь. */
   _objectName(mesh) {
     if (!mesh) return '';
-    if (mesh.userData?.formaName) return mesh.userData.formaName;
     const known = this._itemByName;
     const hasKnown = Boolean(known && known.size);
+    // formaName может быть записан не только на Mesh, но и на его Group.
+    // Проверяем его вместе с именами предков, не возвращая технические
+    // имена вроде __instances_* или FormaAnimWrap.
     for (let n = mesh; n; n = n.parent) {
-      if (!n.name) continue;
-      if (!hasKnown || known.has(n.name)) return n.name;
+      if (n.userData?.formaName) return n.userData.formaName;
+      if (n.name && (!hasKnown || known.has(n.name))) return n.name;
     }
-    return mesh.name || mesh.parent?.name || '';
+    // Если payload ещё не построен (например, во время раннего pick),
+    // сохраняем прежнее поведение, но всё равно поднимаемся по иерархии.
+    for (let n = mesh; n; n = n.parent) if (n.name) return n.name;
+    return '';
   }
 
   /** Все объекты, которые закрывают выделенный от камеры (по 9 лучам). */
@@ -2539,7 +2595,7 @@ export class Viewer {
       ray.far = Math.max(0, dist - 0.5);
       const hits = ray.intersectObject(this.model, true);
       for (const hit of hits) {
-        if (!hit.object.visible) continue;
+        if (!effectivelyVisible(hit.object)) continue;
         const hitName = this._objectName(hit.object);
         if (!hitName) continue;
         if (hitName === name) break;          // добрались до самого предмета
@@ -2571,7 +2627,7 @@ export class Viewer {
     const set = new Set(names);
     const seen = new Set();
     this.model.traverse((o) => {
-      if (!o.isMesh || !o.visible) return;
+      if (!o.isMesh || !effectivelyVisible(o)) return;
       if (!set.has(this._objectName(o))) return;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
       mats.forEach((m) => {

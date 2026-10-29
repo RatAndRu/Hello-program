@@ -75,12 +75,43 @@ FRAME_SKIP_VERBS = {
     "сетка", "interference", "пересечения", "коллизии", "collision_report",
 }
 
+# Эти команды могут менять группу in-place, не увеличивая Scene.op_count.
+# Если не сохранить такой шаг, сборка перескакивает через перемещение/поворот
+# всей группы и показывает ложную паузу на прежней геометрии.
+FRAME_IN_PLACE_VERBS = {"translate", "rotate", "scale"}
+
 
 def _part_count(manifold) -> int:
     try:
         return 0 if manifold.is_empty() else len(manifold.decompose())
     except Exception:
         return 0
+
+
+def _affected_names(scene: Scene, cmd) -> list[str]:
+    """Имена деталей, к которым относится команда (включая членов группы).
+
+    ``target`` у ``translate [группа]`` пуст, поэтому одного поля target
+    недостаточно для подсветки кадра. Разбираем только первый позиционный
+    аргумент и не делаем геометрических вычислений.
+    """
+    candidates: list[str] = []
+    if cmd.target:
+        candidates.append(str(cmd.target))
+    if cmd.args:
+        try:
+            value = parse_value(cmd.args[0], scene.params, scene.vars)
+            values = value if isinstance(value, (list, tuple)) else [value]
+            candidates.extend(v.strip() for v in values if isinstance(v, str))
+        except Exception:
+            pass
+    out: list[str] = []
+    for name in candidates:
+        names = scene.groups.get(name, [name])
+        for member in names:
+            if member in scene.objects and member not in out:
+                out.append(member)
+    return out
 
 
 @dataclass
@@ -182,13 +213,23 @@ class Build:
         prev = None
         prev_names: set[str] = set()
         for step in self.steps:
-            if (step.get("verb") or "").lower() in FRAME_SKIP_VERBS:
+            raw_verb = (step.get("verb") or "").lower()
+            spec = lookup(raw_verb)
+            verb = spec.name if spec else raw_verb
+            if verb in FRAME_SKIP_VERBS or raw_verb in FRAME_SKIP_VERBS:
                 continue
             sig = (tuple(step.get("objects") or []), step.get("ops"))
-            if not step.get("objects") or sig == prev:
+            names = list(step.get("objects") or [])
+            # In-place преобразование видимой детали принимаем даже при том же
+            # op_count. Преобразование скрытой детали кадром не является:
+            # иначе между видимыми шагами снова появляется ложная пауза.
+            affected = set(step.get("affected") or [])
+            in_place = verb in FRAME_IN_PLACE_VERBS and bool(affected.intersection(names))
+            # Для остальных команд сравниваем только базовую сигнатуру. Иначе
+            # специальная метка преобразования ошибочно делала animate кадром.
+            if not names or (sig == prev and not in_place):
                 continue
             prev = sig
-            names = list(step.get("objects") or [])
             added = [n for n in names if n not in prev_names]
             removed = [n for n in prev_names if n not in names]
             prev_names = set(names)
@@ -534,6 +575,7 @@ def build(script: str, previous_analysis: dict | None = None,
             result.steps.append({"n": index + 1, "line": cmd.line, "text": cmd.text,
                                  "verb": (cmd.verb or "").lower(),
                                  "target": cmd.target or "",
+                                 "affected": _affected_names(scene, cmd),
                                  "objects": names, "ops": scene.op_count})
         visible = scene.visible_solids()
         if not visible:

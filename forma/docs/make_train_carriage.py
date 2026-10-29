@@ -896,6 +896,27 @@ def validate(result):
     if service_panel_hits:
         problems.append(f"Дубли/пересечения служебных перегородок: {len(service_panel_hits)}")
 
+    # Проверяем не только отсутствие объёмных коллизий, но и наличие самого
+    # стыка. Иначе «чистый» NoError легко получить разведением панелей на
+    # несколько миллиметров с видимой щелью.
+    contact_pairs = [
+        ("car_floor", "car_wall_far"), ("car_floor", "car_wall_near"),
+        ("car_floor", "car_end_left"), ("car_floor", "car_end_right"),
+        ("car_roof", "car_wall_far"), ("car_roof", "car_wall_near"),
+        ("car_roof", "car_end_left"), ("car_roof", "car_end_right"),
+        ("car_end_left", "car_wall_far"), ("car_end_left", "car_wall_near"),
+        ("car_end_right", "car_wall_far"), ("car_end_right", "car_wall_near"),
+    ]
+    for room, _, _ in rooms:
+        contact_pairs.extend(((f"int_{room}_partition", "car_floor"),
+                              (f"int_{room}_ceiling", f"int_{room}_partition")))
+    structural_gaps = []
+    for left, right in contact_pairs:
+        gap = float(objects[left].manifold.min_gap(objects[right].manifold, 1.0))
+        structural_gaps.append({"a": left, "b": right, "gap_mm": round(gap, 6)})
+        if gap > 0.02:
+            problems.append(f"Щель в несущем стыке {left} ↔ {right}: {gap:.3f} мм")
+
     support_counts = {
         "luggage_brackets": len([s for s in solids if s.name.startswith("luggage_main_") and "_bracket_" in s.name]),
         "side_rail_posts": len([s for s in solids if s.name.startswith("berth_side_") and "_railpost_" in s.name]),
@@ -931,6 +952,7 @@ def validate(result):
         "aisle_obstructions": aisle_hits, "wheel_rail_intersections": wheel_rail_hits,
         "underfloor_running_intersections": under_hits,
         "structural_contacts": structural_hits,
+        "structural_gaps": structural_gaps,
         "unexpected_structural_intersections": unexpected_structural,
         "service_panel_intersections": service_panel_hits,
         "furniture_intersections": furniture_hits,
