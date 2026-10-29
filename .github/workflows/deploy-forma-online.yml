@@ -114,17 +114,13 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
           FLY_ORG: ${{ vars.FLY_ORG }}
         run: |
-          set -e
-          if ! flyctl apps show "$FLY_APP_NAME" >/dev/null 2>&1; then
-            flyctl apps create "$FLY_APP_NAME" --org "${FLY_ORG:-personal}"
+          set -euo pipefail
+          flyctl apps list 2>&1 | tee /tmp/forma-fly-app.log
+          if ! awk 'NR > 1 {print $1}' /tmp/forma-fly-app.log | grep -Fxq "$FLY_APP_NAME"; then
+            flyctl apps create "$FLY_APP_NAME" --org "${FLY_ORG:-personal}" 2>&1 | tee -a /tmp/forma-fly-app.log
+            flyctl apps list 2>&1 | tee -a /tmp/forma-fly-app.log
           fi
-
-      - name: Verify Fly app access
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          set -o pipefail
-          flyctl apps show "$FLY_APP_NAME" 2>&1 | tee /tmp/forma-fly-app.log
+          awk 'NR > 1 {print $1}' /tmp/forma-fly-app.log | grep -Fxq "$FLY_APP_NAME"
 
       - name: Deploy
         env:
