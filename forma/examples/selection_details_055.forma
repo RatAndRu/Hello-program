@@ -1,0 +1,5 @@
+# Forma 0.55 — каждая видимая часть доступна для выбора и выделения.
+# Две рельсы, четыре шпалы, восемь точек крепления и две створки петли.
+
+путь = track length=240 rails=2 gauge=150 sleeper_count=4 sleeper_step=65 sleeper_length=220 sleeper_width=32 sleeper_height=16 fasteners=да at=[-100,0,0]
+петля = hinge height=90 leaf_width=38 barrel_d=11 knuckles=5 holes=3 countersink=да open_angle=35 at=[0,300,0]

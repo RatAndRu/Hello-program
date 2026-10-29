@@ -1159,6 +1159,25 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
         if extras:
             asset.setdefault("extras", {}).update(extras)
         data = _glb_write(doc, binary)
+    # GLTFLoader очищает node.name через PropertyBinding: точки и другие
+    # служебные символы исчезают (door.leaf.handle → doorleafhandle).  Для
+    # обычного просмотра это безразлично, но редактор теряет связь клика с
+    # исходным объектом Forma.  Сохраняем каноническое имя в extras каждого
+    # узла; Blender его игнорирует, а three.js переносит в userData.formaName.
+    # Это общий инвариант для ВСЕХ составных примитивов, а не частный обход
+    # для петли или железнодорожного пути.
+    doc, binary = _glb_read(bytes(data))
+    names_changed = False
+    for node in doc.get("nodes", []) or []:
+        canonical = str(node.get("name") or "")
+        if not canonical:
+            continue
+        extras = node.setdefault("extras", {})
+        if extras.get("formaName") != canonical:
+            extras["formaName"] = canonical
+            names_changed = True
+    if names_changed:
+        data = _glb_write(doc, binary)
     return bytes(data)
 
 

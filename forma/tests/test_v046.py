@@ -55,7 +55,7 @@ class RemovedCatalogTest(unittest.TestCase):
             self.assertNotIn(f"op: '{name}'", app)
 
     def test_removed_projects_are_absent(self):
-        self.assertEqual(len(EXAMPLES), 27)
+        self.assertEqual(len(EXAMPLES), 31)
         for key in REMOVED_PROJECTS:
             with self.subTest(key=key):
                 self.assertFalse((ROOT / "examples" / f"{key}.forma").exists())

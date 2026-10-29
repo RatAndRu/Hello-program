@@ -1,0 +1,2 @@
+# Лёгкий preview стенда 0.55: только двусторонняя дверь из полной сцены.
+дверь = door width=90 height=210 thickness=4.5 panels=4 columns=2 hinges=3 handle_form=прямоугольная handle_rosette=овальная handle_resolution=.20 lock=да lock_plug=да at=[0,0,0] wood=#9b724c panel_color=#a98057 metal_color=#b7a36a

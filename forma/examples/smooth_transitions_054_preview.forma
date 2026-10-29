@@ -1,0 +1,3 @@
+# Лёгкий интерактивный preview для статического стенда 0.54.
+# Полная сцена — smooth_transitions_054.forma; здесь только главная ручка.
+ручка = door_handle form=рельефная rosette_d=52 rosette_t=6 neck_d=16 projection=45 lever_length=115 lever_d=17 relief=.72 hand=право segments=48 blend=3.5 resolution=.52 color=#c4a46f

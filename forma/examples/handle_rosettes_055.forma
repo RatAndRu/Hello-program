@@ -1,0 +1,9 @@
+# Forma 0.55 — пять форм ручек и реальные варианты розеток/замка.
+# Скважины являются геометрическими отверстиями; цилиндры отдельны.
+
+изогнутая = door_handle form=изогнутая rosette=круглая lever_length=85 resolution=.65 at=[-180,0,0] color=#b8c3cc
+рельефная = door_handle form=рельефная rosette=овальная lever_length=85 relief=.7 lock=да lock_plug=да resolution=.65 at=[0,0,0] color=#c4a46f
+прямоугольная = door_handle form=прямоугольная rosette=прямоугольная lever_length=85 lock=да resolution=.65 at=[180,0,0] color=#b8c3cc
+сферическая = door_handle form=сферическая rosette=нет resolution=.65 at=[-180,0,190] color=#c4a46f
+дисковая = door_handle form=дисковая rosette=круглая lock=да resolution=.65 at=[0,0,190] color=#b8c3cc
+без_розетки = door_handle form=прямоугольная rosette=нет lever_length=85 lock=нет resolution=.65 at=[180,0,190] color=#c4a46f

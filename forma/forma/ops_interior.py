@@ -119,6 +119,30 @@ def _emit(a, name, parts, params=None):
     return root
 
 
+def _ready_handle(form: str, cfg: dict, segments: int, blend: float,
+                  resolution: float | None, hand: str = "право"):
+    """Геометрия готовой door_handle, центрированная на оси крепления.
+
+    Используется дверью и окном: здесь нет второй упрощённой реализации
+    рычага. Возвращаются все части (включая замок), нормализованные так, что
+    ось ручки находится в (0,0,0), задняя плоскость — на y=0, вынос — в −Y.
+    """
+    from .ops_fittings import _handle_sdf
+
+    main, extras, actual_resolution, _join, _estimate = _handle_sdf(
+        form, cfg, segments, blend, resolution)
+    items = [("", main), *extras]
+    if hand in ("лево", "левый", "left"):
+        items = [(suffix, part.mirror((-1.0, 0.0, 0.0))) for suffix, part in items]
+    min_z = min(float(part.bounding_box()[2]) for _, part in items)
+    is_knob = form in ("сферическая", "дисковая")
+    axis_before_shift = max(cfg["rosette_h"] * 0.5 if cfg["rosette"] != "нет" else 0.0,
+                            cfg["knob_d"] * 0.5 if is_knob else cfg["lever_d"])
+    axis_z = axis_before_shift - min_z
+    normalized = [(suffix, part.translate((0.0, 0.0, -axis_z))) for suffix, part in items]
+    return normalized, actual_resolution
+
+
 def _targets(a):
     value = a.value("objects")
     if value is None or value == "":
@@ -357,25 +381,44 @@ def table(a, name):
 
 
 @op("door", aliases=("дверь", "дверь_сборка"), category="Примитивы",
-    summary="Составная дверь: коробка, полотно, филёнки, петли, ручка и замок "
-            "остаются отдельными. rotate [door.leaf] вращает полотно с фурнитурой.",
-    example='door = door width=90 height=210 thickness=4.5 panels=4 columns=2\n'
-            'rotate [door.leaf] angle=35 axis=z pivot=[-44.4,-2.25,0]',
+    summary="Двусторонняя составная дверь на готовых hinge и door_handle: коробка, "
+            "полотно, симметричные филёнки, обе ручки, замок и обе створки каждой "
+            "петли остаются отдельными selectable-объектами.",
+    example='door = door width=90 height=210 panels=4 columns=2 handle_form=прямоугольная\n'
+            'rotate [door.leaf] angle=35 axis=z pivot=[-44.4,-2.69,0]\n'
+            'без_замка = door handle_rosette=овальная lock=нет at=[150,0,0]',
     params={"width": "ширина проёма/полотна X, мм (90)",
             "height": "высота полотна, мм (210)", "thickness": "толщина полотна (4.5)",
             "frame": "ширина коробки (5)", "frame_depth": "глубина коробки Y (10)",
             "gap": "зазор полотна в коробке (0.6)",
-            "panels": "число филёнок (4)", "columns": "число колонок филёнок (2)",
+            "panels": "число филёнок на КАЖДОЙ стороне (4)", "columns": "число колонок (2)",
             "panel_margin": "поле вокруг филёнок (9)", "panel_gap": "промежуток (4)",
-            "panel_depth": "выступ филёнки к переду −Y (0.5)",
-            "hinges": "число петель (3)", "hinge_radius": "радиус петли (1.4)",
-            "handle_height": "высота ручки (105)", "handle_offset": "от правого края (12)",
-            "handle_length": "длина рычага (11)", "handle_radius": "радиус рычага (1)",
-            "backset": "вынос ручки от полотна (4)", "lock": "да — отдельный замок с отверстием",
+            "panel_depth": "выступ филёнки на каждой стороне (0.5)",
+            "hinges": "число петель (3)", "hinge_radius": "радиус кулака (1.4)",
+            "hinge_height": "высота готовой петли; 0 — автоматически (0)",
+            "hinge_leaf_width": "ширина каждой створки петли (4)",
+            "hinge_thickness": "толщина створки петли (0.8)",
+            "hinge_holes": "отверстий на каждой створке 0…4 (0)",
+            "handle_height": "высота оси ручки (105)", "handle_offset": "от правого края (12)",
+            "handle_length": "длина рычага (11)", "handle_radius": "половина толщины (1)",
+            "backset": "вынос ручки от полотна (4)",
+            "handle_form": "изогнутая, рельефная, прямоугольная, сферическая или дисковая",
+            "handle_rosette": "круглая, овальная, прямоугольная или нет (круглая)",
+            "handle_rosette_h": "высота розетки; 0 — автоматически (0)",
+            "handle_hand": "лево или право; на второй стороне зеркально по Y (лево)",
+            "handle_segments": "детализация готовой ручки 24…96 (32)",
+            "handle_blend": "SDF-сопряжение ручки (0.8)",
+            "handle_resolution": "шаг SDF; 0 — автоматически (0)",
+            "lock": "да — сквозная скважина и замочные элементы на обеих сторонах (да)",
+            "lock_plug": "да — отдельные цилиндры замка с двух сторон (нет)",
+            "lock_offset": "замок ниже ручки; 0 — автоматически (0)",
+            "lock_d": "диаметр скважины; 0 — автоматически (0)",
             "wood": "цвет полотна", "panel_color": "цвет филёнок",
             "frame_color": "цвет коробки", "metal_color": "цвет фурнитуры",
             "at": "положение сборки", "center": "центрировать по высоте"})
 def door(a, name):
+    from .ops_fittings import _hinge_geometry
+
     width = float(a.num("width", 90.0, minv=30.0))
     height = float(a.num("height", 210.0, minv=50.0))
     thickness = float(a.num("thickness", 4.5, minv=1.0, maxv=width * 0.2))
@@ -389,20 +432,65 @@ def door(a, name):
     frame_color = _color(a, "frame_color", "#725137")
     metal = _color(a, "metal_color", "#b7a36a")
     metal_style = {"metal": 0.75, "rough": 0.25}
-    parts = [(".frame_left", _box((frame, frame_depth, height + frame),
-                                  (-width / 2 - frame / 2, 0, (height + frame) / 2), 0.25),
+    parts = [("", _box((frame, frame_depth, height + frame),
+                        (-width / 2 - frame / 2, 0, (height + frame) / 2), 0.25),
+              frame_color, "door_frame", {"rough": 0.48}),
+             (".frame_right", _box((frame, frame_depth, height + frame),
+                                   (width / 2 + frame / 2, 0, (height + frame) / 2), 0.25),
+              frame_color, "door_frame", {"rough": 0.48}),
+             (".frame_top", _box((width, frame_depth, frame),
+                                 (0, 0, height + frame / 2), 0.25),
               frame_color, "door_frame", {"rough": 0.48})]
-    # Корень должен быть первым: вместо левой стойки создаём её как root ниже.
-    parts[0] = ("", parts[0][1], frame_color, "door_frame", {"rough": 0.48})
-    parts += [
-        (".frame_right", _box((frame, frame_depth, height + frame),
-                              (width / 2 + frame / 2, 0, (height + frame) / 2), 0.25),
-         frame_color, "door_frame", {"rough": 0.48}),
-        (".frame_top", _box((width, frame_depth, frame), (0, 0, height + frame / 2), 0.25),
-         frame_color, "door_frame", {"rough": 0.48}),
-        (".leaf", _box((leaf_w, thickness, leaf_h), (0, 0, gap + leaf_h / 2),
-                       min(0.18, thickness * 0.12)), wood, "door_leaf", {"rough": 0.46}),
-    ]
+
+    # Сначала параметры фурнитуры: скважина должна быть вырезана из полотна
+    # до регистрации детали, а не нарисована поверх него.
+    handle_h = float(a.num("handle_height", 105.0, minv=10.0, maxv=height - 5))
+    handle_x = width / 2 - float(a.num("handle_offset", 12.0, minv=4.0))
+    handle_r = float(a.num("handle_radius", 1.0, minv=0.2))
+    backset = float(a.num("backset", 4.0, minv=1.0))
+    handle_len = float(a.num("handle_length", 11.0, minv=3.0))
+    handle_form = (a.text("handle_form", "изогнутая", ["изогнутая", "рельефная",
+                   "прямоугольная", "сферическая", "дисковая"]) or "изогнутая")
+    handle_rosette = (a.text("handle_rosette", "круглая",
+                      ["круглая", "овальная", "прямоугольная", "нет"]) or "круглая")
+    handle_hand = (a.text("handle_hand", "лево") or "лево").lower()
+    if handle_hand not in ("лево", "право", "left", "right"):
+        raise GeometryError("door: handle_hand=лево или право")
+    lock = a.boolean("lock", True)
+    lock_plug = a.boolean("lock_plug", False)
+    if lock_plug and not lock:
+        raise GeometryError("door: lock_plug=да требует lock=да")
+    lock_offset = float(a.num("lock_offset", 0.0, minv=0.0) or 0.0) or handle_r * 8.0
+    lock_d = float(a.num("lock_d", 0.0, minv=0.0) or 0.0) or handle_r * 2.4
+    if lock and (lock_z := handle_h - lock_offset) <= lock_d:
+        raise GeometryError("door: замок слишком низко; увеличьте handle_height или уменьшите lock_offset")
+    rosette_d = handle_r * 4.0
+    rosette_t = max(0.35, handle_r * 0.45)
+    if handle_rosette == "круглая":
+        rosette_h = rosette_d
+    elif handle_rosette == "нет":
+        rosette_h = 0.0
+    else:
+        requested_h = float(a.num("handle_rosette_h", 0.0, minv=0.0) or 0.0)
+        automatic = rosette_d * 1.7
+        if lock:
+            automatic = max(automatic, 2.0 * lock_offset + 3.0 * lock_d)
+        rosette_h = requested_h or automatic
+    if lock and handle_rosette in ("овальная", "прямоугольная"):
+        integrated_z = rosette_h * 0.5 - lock_offset
+        if integrated_z - lock_d * 0.65 <= lock_d * 0.75 or integrated_z + lock_d * 0.65 >= rosette_h - 0.1:
+            raise GeometryError("door: скважина не помещается в handle_rosette_h")
+    leaf = _box((leaf_w, thickness, leaf_h), (0, 0, gap + leaf_h / 2),
+                min(0.18, thickness * 0.12))
+    if lock:
+        bore = _between((handle_x, front + 1.0, lock_z + lock_d * 0.12),
+                        (handle_x, -front - 1.0, lock_z + lock_d * 0.12),
+                        lock_d * 0.52, segments=32)
+        slot = _box((lock_d * 0.25, thickness + 2.0, lock_d * 0.75),
+                    (handle_x, 0, lock_z - lock_d * 0.25))
+        leaf = leaf - bore - slot
+    parts.append((".leaf", leaf, wood, "door_leaf", {"rough": 0.46}))
+
     panel_count = int(a.num("panels", 4, minv=0, maxv=24) or 0)
     columns = int(a.num("columns", 2, minv=1, maxv=6) or 1)
     if panel_count:
@@ -410,57 +498,317 @@ def door(a, name):
         margin = float(a.num("panel_margin", 9.0, minv=1.0))
         panel_gap = float(a.num("panel_gap", 4.0, minv=0.0) or 0.0)
         depth = float(a.num("panel_depth", 0.5, minv=0.1, maxv=thickness))
-        cell_w = (leaf_w - 2 * margin - (columns - 1) * panel_gap) / columns
+        # Ручка и замок принадлежат стойке, а не филёнке. Резервируем правую
+        # стойку до булевых/размещения: иначе отдельная филёнка закрывает
+        # сквозную скважину полотна и перехватывает raycast цилиндра.
+        hardware_r = max(rosette_d, handle_r * 5.0
+                         if handle_form in ("сферическая", "дисковая") else 0.0) * 0.5
+        panel_left = -leaf_w / 2 + margin
+        panel_right = min(leaf_w / 2 - margin, handle_x - hardware_r - 1.0)
+        cell_w = (panel_right - panel_left - (columns - 1) * panel_gap) / columns
         cell_h = (leaf_h - 2 * margin - (rows - 1) * panel_gap) / rows
         if min(cell_w, cell_h) <= 1:
             raise GeometryError("door: филёнки не помещаются; уменьшите panels/columns/margin.")
         for index in range(panel_count):
             row, col = divmod(index, columns)
-            x = -leaf_w / 2 + margin + cell_w / 2 + col * (cell_w + panel_gap)
+            x = panel_left + cell_w / 2 + col * (cell_w + panel_gap)
             z = gap + leaf_h - margin - cell_h / 2 - row * (cell_h + panel_gap)
-            panel = _box((cell_w, depth, cell_h), (x, front - depth / 2, z),
-                         min(0.35, depth * 0.4))
+            panel = _box((cell_w, depth, cell_h),
+                         (x, front - depth / 2 + 0.05, z), min(0.35, depth * 0.4))
             parts.append((f".leaf.panel_{index + 1:02d}", panel, panel_color,
                           "door_panel", {"rough": 0.43}))
+            parts.append((f".leaf.panel_back_{index + 1:02d}", panel.mirror((0.0, 1.0, 0.0)),
+                          panel_color, "door_panel_back", {"rough": 0.43}))
+
+    # Настоящие готовые петли: левая створка закреплена на коробке, правая
+    # принадлежит door.leaf и следует за его поворотом.
     hinge_count = int(a.num("hinges", 3, minv=1, maxv=6) or 3)
     hinge_r = float(a.num("hinge_radius", 1.4, minv=0.3))
+    hinge_h = float(a.num("hinge_height", 0.0, minv=0.0) or 0.0) or min(18.0, max(8.0, height * 0.10))
+    hinge_leaf_w = float(a.num("hinge_leaf_width", 4.0, minv=1.5))
+    hinge_t = float(a.num("hinge_thickness", 0.8, minv=0.2))
+    hinge_holes = int(a.num("hinge_holes", 0, minv=0, maxv=4) or 0)
+    if hinge_count * hinge_h > height * 0.9:
+        raise GeometryError("door: петли перекрываются; уменьшите hinge_height или hinges")
     hinge_x = -width / 2 + gap
-    hinge_y = front
+    plate_y = hinge_t * 0.65 + 0.12
+    hinge_y = front - plate_y + hinge_t * 0.25
     for index in range(hinge_count):
-        z = height * (index + 1) / (hinge_count + 1)
-        barrel = _cylinder(hinge_r, height * 0.055, (hinge_x, hinge_y, z - height * 0.0275),
-                           segments=32)
-        parts.append((f".hinge_{index + 1:02d}", barrel, metal, "door_hinge", metal_style))
-    handle_h = float(a.num("handle_height", 105.0, minv=10.0, maxv=height - 5))
-    handle_x = width / 2 - float(a.num("handle_offset", 12.0, minv=4.0))
-    handle_r = float(a.num("handle_radius", 1.0, minv=0.2))
-    backset = float(a.num("backset", 4.0, minv=1.0))
-    handle_len = float(a.num("handle_length", 11.0, minv=3.0))
-    rosette = _between((handle_x, front, handle_h), (handle_x, front - 0.8, handle_h),
-                       handle_r * 2.0, segments=40)
-    neck = _between((handle_x, front - 0.5, handle_h),
-                    (handle_x, front - backset, handle_h), handle_r, segments=32)
-    lever = _between((handle_x, front - backset, handle_h),
-                     (handle_x - handle_len, front - backset, handle_h), handle_r, segments=32)
-    parts += [(".leaf.handle_rose", rosette, metal, "door_handle", metal_style),
-              (".leaf.handle_neck", neck, metal, "door_handle", metal_style),
-              (".leaf.handle", lever, metal, "door_handle", metal_style)]
-    if a.boolean("lock", True):
-        lock_z = handle_h - 12.0
-        lock_plate = _box((handle_r * 3.2, 0.8, handle_r * 6.0),
-                          (handle_x, front - 0.4, lock_z), 0.25)
-        key_round = _between((handle_x, front + 0.2, lock_z + handle_r),
-                             (handle_x, front - 1.2, lock_z + handle_r),
-                             handle_r * 0.55, segments=24)
-        key_slot = _box((handle_r * 0.55, 1.6, handle_r * 1.4),
-                        (handle_x, front - 0.4, lock_z), 0)
-        lock_plate = lock_plate - key_round - key_slot
-        parts.append((".leaf.lock", lock_plate, metal, "door_lock", metal_style))
-    root = _emit(a, name, parts, {"width": width, "height": height, "thickness": thickness,
-                                  "frame": frame, "gap": gap, "panels": panel_count,
-                                  "columns": columns, "hinges": hinge_count})
+        z_center = height * (index + 1) / (hinge_count + 1)
+        left_hinge, right_hinge = _hinge_geometry(dict(
+            height=hinge_h, leaf_width=hinge_leaf_w, thickness=hinge_t,
+            corner=min(0.6, hinge_leaf_w * 0.15), holes=hinge_holes,
+            hole_d=min(1.0, hinge_leaf_w * 0.20), countersink=True, segments=32,
+            barrel_d=2.0 * hinge_r, pin_d=2.0 * hinge_r * 0.44, knuckles=5,
+            knuckle_gap=min(0.08, hinge_h * 0.002), clearance=min(0.08, hinge_r * 0.08),
+            barrel_overhang=min(0.3, hinge_h * 0.01), open_angle=0.0))
+        shift = (hinge_x, hinge_y, z_center - hinge_h * 0.5)
+        parts.append((f".hinge_{index + 1:02d}", left_hinge.translate(shift), metal,
+                      "door_hinge", metal_style))
+        parts.append((f".leaf.hinge_{index + 1:02d}", right_hinge.translate(shift), metal,
+                      "door_hinge_leaf", metal_style))
+
+    handle_segments = int(a.num("handle_segments", 32, minv=24, maxv=96) or 32)
+    handle_blend = float(a.num("handle_blend", 0.8, minv=0.0))
+    requested_resolution = a.num("handle_resolution", 0.0, minv=0.0) or None
+    cfg = dict(rosette=handle_rosette, rosette_d=rosette_d, rosette_h=rosette_h,
+               rosette_t=rosette_t, rosette_corner=min(0.5, handle_r * 0.3),
+               neck_d=handle_r * 1.6, projection=backset,
+               lever_d=handle_r * 2.0, lever_length=handle_len,
+               lever_corner=min(0.25, handle_r * 0.2), relief=0.55,
+               knob_d=handle_r * 5.0, disk_t=handle_r * 1.8,
+               lock=lock, lock_plug=lock_plug, lock_offset=lock_offset,
+               lock_d=lock_d, lock_slot=lock_d * 0.22,
+               lock_plate_r=handle_r * 2.2, lock_plug_t=max(0.3, rosette_t * 0.65))
+    handle_items, actual_handle_resolution = _ready_handle(
+        handle_form, cfg, handle_segments, handle_blend, requested_resolution, handle_hand)
+    for suffix, part in handle_items:
+        if not suffix:
+            front_name, back_name = ".leaf.handle", ".leaf.handle_back"
+        elif suffix == ".lock_plate":
+            front_name, back_name = ".leaf.lock", ".leaf.lock_back"
+        else:
+            front_name, back_name = ".leaf.lock_plug", ".leaf.lock_plug_back"
+        parts.append((front_name, part.translate((handle_x, front, handle_h)), metal,
+                      "door_handle" if not suffix else "door_lock", metal_style))
+        parts.append((back_name, part.mirror((0.0, 1.0, 0.0)).translate(
+            (handle_x, -front, handle_h)), metal,
+            "door_handle_back" if not suffix else "door_lock_back", metal_style))
+
+    params = {"width": width, "height": height, "thickness": thickness,
+              "frame": frame, "gap": gap, "panels": panel_count, "columns": columns,
+              "hinges": hinge_count, "hinge_height": hinge_h,
+              "handle_form": handle_form, "handle_rosette": handle_rosette,
+              "handle_resolution": actual_handle_resolution,
+              "lock": lock, "lock_plug": lock_plug, "both_sides": True,
+              "objects": len(parts)}
+    root = _emit(a, name, parts, params)
     root.meta["hinge_pivot_local"] = [hinge_x, hinge_y, 0.0]
     root.meta["leaf_object"] = f"{name}.leaf"
+    root.meta["handle_objects"] = [f"{name}.leaf.handle", f"{name}.leaf.handle_back"]
+    return root
+
+
+@op("window", aliases=("окно", "оконный_блок", "window_unit"), category="Примитивы",
+    summary="Настраиваемое окно из отдельных рам, створок, стёкол, импостов, "
+            "трансомов, ручек, наличников и подоконника. Обычное, панорамное "
+            "и составное; открываемые створки вращаются вместе с фурнитурой.",
+    example='окно = window width=120 height=140 sections=2 casing=да sill=да\n'
+            'панорама = window type=панорамное width=260 height=210 sections=3 opening=нет at=[300,0,0]\n'
+            'составное = window type=составное width=220 height=150 sections=3 rows=2 open_angle=20',
+    params={"type": "обычное, панорамное или составное (обычное)",
+            "width": "наружная ширина X, мм (120)", "height": "высота Z, мм (140)",
+            "depth": "глубина наружной рамы Y, мм (8)",
+            "frame": "ширина наружной рамы; 0 — по типу (0)",
+            "sash": "ширина профиля створки; 0 — по типу (0)",
+            "sections": "вертикальных секций; 0 — по типу (0)", "rows": "рядов по высоте 1…4 (1)",
+            "mullion": "ширина вертикального импоста; 0 — автоматически (0)",
+            "transom": "высота горизонтального трансома; 0 — автоматически (0)",
+            "opening": "все, крайние или нет; определяет наличие ручек и open_angle",
+            "open_angle": "открытие наружу/внутрь по Z, 0…120° (0)",
+            "handle": "да — ручки на открываемых створках (да)",
+            "handle_form": "форма готовой ручки (изогнутая)",
+            "handle_length": "длина оконной ручки; 0 — автоматически (0)",
+            "handle_d": "толщина оконной ручки; 0 — автоматически (0)",
+            "handle_side": "авто, лево или право (авто)",
+            "handle_resolution": "шаг SDF ручки; 0 — автоматически (0)",
+            "glass_t": "толщина стекла (1.6)", "glass_color": "цвет стекла",
+            "casing": "наличники с двух сторон; по умолчанию зависят от типа",
+            "casing_width": "ширина наличника (5)", "casing_depth": "толщина наличника (1)",
+            "sill": "подоконник; по умолчанию зависит от типа",
+            "sill_depth": "глубина подоконника (16)", "sill_thickness": "толщина (2)",
+            "sill_overhang": "боковой выступ подоконника (4)",
+            "frame_color": "цвет наружной рамы", "sash_color": "цвет створок",
+            "casing_color": "цвет наличников", "sill_color": "цвет подоконника",
+            "handle_color": "цвет фурнитуры", "at": "положение сборки",
+            "center": "центрировать по высоте"})
+def window(a, name):
+    raw_type = (a.text("type", "обычное") or "обычное").strip().lower()
+    kind = {"обычное": "обычное", "обычный": "обычное", "casement": "обычное",
+            "панорамное": "панорамное", "панорамный": "панорамное",
+            "panoramic": "панорамное", "составное": "составное",
+            "составной": "составное", "composite": "составное"}.get(raw_type)
+    if kind is None:
+        raise GeometryError("window: type=обычное, панорамное или составное")
+    width = float(a.num("width", 120.0, minv=30.0))
+    height = float(a.num("height", 140.0, minv=30.0))
+    depth = float(a.num("depth", 8.0, minv=2.0))
+    frame = float(a.num("frame", 0.0, minv=0.0) or 0.0) or (2.6 if kind == "панорамное" else 4.5)
+    sash = float(a.num("sash", 0.0, minv=0.0) or 0.0) or (1.4 if kind == "панорамное" else 2.8)
+    sections = int(a.num("sections", 0, minv=0, maxv=8) or 0)
+    if not sections:
+        sections = 3 if kind in ("панорамное", "составное") else 2
+    rows = int(a.num("rows", 1, minv=1, maxv=4) or 1)
+    mullion = float(a.num("mullion", 0.0, minv=0.0) or 0.0) or max(1.8, frame * 0.72)
+    transom = float(a.num("transom", 0.0, minv=0.0) or 0.0) or max(1.8, frame * 0.72)
+    if sections == 1:
+        mullion = 0.0
+    if rows == 1:
+        transom = 0.0
+    inner_w, inner_h = width - 2 * frame, height - 2 * frame
+    cell_w = (inner_w - (sections - 1) * mullion) / sections
+    cell_h = (inner_h - (rows - 1) * transom) / rows
+    if min(cell_w, cell_h) <= 2 * sash + 2.0:
+        raise GeometryError("window: секции не помещаются; уменьшите sections/rows/frame/sash")
+    default_opening = "нет" if kind == "панорамное" else ("крайние" if kind == "составное" else "все")
+    opening = (a.text("opening", default_opening, ["все", "крайние", "нет"]) or default_opening)
+    open_angle = float(a.num("open_angle", 0.0, minv=0.0, maxv=120.0) or 0.0)
+    handles = a.boolean("handle", True)
+    handle_form = (a.text("handle_form", "изогнутая", ["изогнутая", "рельефная",
+                   "прямоугольная", "сферическая", "дисковая"]) or "изогнутая")
+    handle_len = float(a.num("handle_length", 0.0, minv=0.0) or 0.0) or max(10.0, min(28.0, height * 0.12))
+    handle_d = float(a.num("handle_d", 0.0, minv=0.0) or 0.0) or max(2.0, min(4.0, height * 0.018))
+    handle_side = (a.text("handle_side", "авто", ["авто", "лево", "право"]) or "авто")
+    handle_resolution = a.num("handle_resolution", 0.0, minv=0.0) or None
+    glass_t = float(a.num("glass_t", 1.6, minv=0.2, maxv=depth * 0.6))
+    casing = a.boolean("casing", kind != "панорамное")
+    sill = a.boolean("sill", kind != "панорамное")
+    casing_w = float(a.num("casing_width", 5.0, minv=0.5))
+    casing_t = float(a.num("casing_depth", 1.0, minv=0.2))
+    sill_depth = float(a.num("sill_depth", 16.0, minv=2.0))
+    sill_t = float(a.num("sill_thickness", 2.0, minv=0.3))
+    sill_overhang = float(a.num("sill_overhang", 4.0, minv=0.0) or 0.0)
+    frame_color = _color(a, "frame_color", "#e3e6e4")
+    sash_color = _color(a, "sash_color", frame_color)
+    glass_color = _color(a, "glass_color", "#b7d7e2")
+    casing_color = _color(a, "casing_color", frame_color)
+    sill_color = _color(a, "sill_color", "#d2c5b2")
+    handle_color = _color(a, "handle_color", "#aab4ba")
+    frame_style = {"rough": 0.34, "metal": 0.08}
+    glass_style = {"rough": 0.07, "metal": 0.0, "transmission": 0.96}
+    handle_style = {"rough": 0.24, "metal": 0.78}
+
+    parts = [("", _box((frame, depth, height), (-width / 2 + frame / 2, 0, height / 2)),
+              frame_color, "window_frame", frame_style),
+             (".frame_right", _box((frame, depth, height),
+                                   (width / 2 - frame / 2, 0, height / 2)),
+              frame_color, "window_frame", frame_style),
+             (".frame_bottom", _box((inner_w, depth, frame), (0, 0, frame / 2)),
+              frame_color, "window_frame", frame_style),
+             (".frame_top", _box((inner_w, depth, frame), (0, 0, height - frame / 2)),
+              frame_color, "window_frame", frame_style)]
+
+    # Импосты и трансомы не пересекаются: трансомы разрезаны на участки между
+    # вертикальными стойками и плотно упираются в них торцами.
+    x_cursor = -inner_w / 2
+    cell_x = []
+    for col in range(sections):
+        center_x = x_cursor + cell_w / 2
+        cell_x.append(center_x)
+        x_cursor += cell_w
+        if col < sections - 1:
+            x = x_cursor + mullion / 2
+            parts.append((f".mullion_{col + 1:02d}",
+                          _box((mullion, depth * 0.90, inner_h), (x, 0, frame + inner_h / 2)),
+                          frame_color, "window_mullion", frame_style))
+            x_cursor += mullion
+    z_cursor = frame
+    cell_z = []
+    for row in range(rows):
+        center_z = z_cursor + cell_h / 2
+        cell_z.append(center_z)
+        z_cursor += cell_h
+        if row < rows - 1:
+            z = z_cursor + transom / 2
+            for col, x in enumerate(cell_x):
+                parts.append((f".transom_{row + 1:02d}_{col + 1:02d}",
+                              _box((cell_w, depth * 0.90, transom), (x, 0, z)),
+                              frame_color, "window_transom", frame_style))
+            z_cursor += transom
+
+    # Одна готовая ручка-мас­тер копируется на все открываемые створки.
+    rosette_d = handle_d * 2.2
+    handle_cfg = dict(rosette="круглая", rosette_d=rosette_d, rosette_h=rosette_d,
+                      rosette_t=max(0.35, handle_d * 0.18), rosette_corner=0.3,
+                      neck_d=handle_d * 0.75, projection=handle_d * 1.8,
+                      lever_d=handle_d, lever_length=handle_len,
+                      lever_corner=handle_d * 0.10, relief=0.45,
+                      knob_d=handle_d * 2.5, disk_t=handle_d,
+                      lock=False, lock_plug=False, lock_offset=0.0,
+                      lock_d=1.0, lock_slot=0.2)
+    handle_items = []
+    if handles and opening != "нет":
+        handle_items, actual_handle_resolution = _ready_handle(
+            handle_form, handle_cfg, 24, min(0.5, handle_d * 0.18), handle_resolution)
+    else:
+        actual_handle_resolution = 0.0
+    sash_depth = depth * 0.64
+    sash_gap = min(0.35, cell_w * 0.01, cell_h * 0.01)
+    pivots = {}
+    sash_objects = []
+    for row, cz in enumerate(cell_z):
+        for col, cx in enumerate(cell_x):
+            index = row * sections + col + 1
+            base = f".sash_{index:02d}"
+            sash_w, sash_h = cell_w - 2 * sash_gap, cell_h - 2 * sash_gap
+            outer = _box((sash_w, sash_depth, sash_h), (cx, 0, cz))
+            inner = _box((sash_w - 2 * sash, sash_depth + 1.0, sash_h - 2 * sash), (cx, 0, cz))
+            sash_solid = outer - inner
+            openable = opening == "все" or (opening == "крайние" and col in (0, sections - 1))
+            if handle_side == "лево":
+                sign = -1.0
+            elif handle_side == "право":
+                sign = 1.0
+            else:
+                sign = 1.0 if col % 2 == 0 else -1.0
+            hinge_x = cx - sign * sash_w / 2
+            angle = -sign * open_angle if openable else 0.0
+
+            def place_sash(solid):
+                if abs(angle) < 1e-9:
+                    return solid
+                return solid.translate((-hinge_x, 0.0, 0.0)).rotate(
+                    (0.0, 0.0, angle)).translate((hinge_x, 0.0, 0.0))
+
+            parts.append((base, place_sash(sash_solid), sash_color, "window_sash", frame_style))
+            glass_w = sash_w - 2 * sash + 0.5
+            glass_h = sash_h - 2 * sash + 0.5
+            glass = _box((glass_w, glass_t, glass_h), (cx, -sash_depth * 0.08, cz))
+            parts.append((base + ".glass", place_sash(glass), glass_color,
+                          "window_glass", glass_style))
+            sash_objects.append(f"{name}{base}")
+            if openable:
+                pivots[f"{name}{base}"] = [hinge_x, 0.0, cz - sash_h / 2]
+            if openable and handles:
+                hx = cx + sign * (sash_w / 2 - sash * 0.55)
+                for suffix, handle_part in handle_items:
+                    # Рычаг направлен вниз вдоль стойки, круглая розетка не
+                    # меняет силуэт при повороте вокруг Y.
+                    placed = handle_part.rotate((0.0, 90.0, 0.0)).translate(
+                        (hx, -sash_depth / 2, cz))
+                    parts.append((base + (".handle" if not suffix else suffix),
+                                  place_sash(placed), handle_color, "window_handle", handle_style))
+
+    if casing:
+        front_y = -depth / 2 - casing_t / 2 + 0.10
+        casing_parts = [
+            ("left", _box((casing_w, casing_t, height + 2 * casing_w),
+                          (-width / 2 - casing_w / 2, front_y, height / 2))),
+            ("right", _box((casing_w, casing_t, height + 2 * casing_w),
+                           (width / 2 + casing_w / 2, front_y, height / 2))),
+            ("bottom", _box((width, casing_t, casing_w), (0, front_y, -casing_w / 2))),
+            ("top", _box((width, casing_t, casing_w), (0, front_y, height + casing_w / 2))),
+        ]
+        for side, solid in casing_parts:
+            parts.append((f".casing_front_{side}", solid, casing_color,
+                          "window_casing", {"rough": 0.42}))
+            parts.append((f".casing_back_{side}", solid.mirror((0.0, 1.0, 0.0)),
+                          casing_color, "window_casing_back", {"rough": 0.42}))
+    if sill:
+        board = _box((width + 2 * sill_overhang, sill_depth, sill_t),
+                     (0, -depth / 2 - sill_depth / 2 + 0.5, -sill_t / 2),
+                     min(0.25, sill_t * 0.15))
+        parts.append((".sill", board, sill_color, "window_sill", {"rough": 0.40}))
+
+    params = {"type": kind, "width": width, "height": height, "depth": depth,
+              "frame": frame, "sash": sash, "sections": sections, "rows": rows,
+              "mullion": mullion, "transom": transom, "opening": opening,
+              "open_angle": open_angle, "handle": handles, "handle_form": handle_form,
+              "handle_resolution": actual_handle_resolution, "glass_t": glass_t,
+              "casing": casing, "sill": sill, "objects": len(parts)}
+    root = _emit(a, name, parts, params)
+    root.meta["sash_objects"] = sash_objects
+    root.meta["sash_pivots"] = pivots
     return root
 
 

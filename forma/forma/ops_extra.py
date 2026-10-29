@@ -14,6 +14,7 @@ import numpy as np
 
 from .errors import GeometryError
 from .ops import make_solid, merge_solids, op
+from .ops_sculpt import _relax_triangles
 
 MAX_TRIS = 1_600_000
 
@@ -280,7 +281,9 @@ def _edge_map(verts: np.ndarray, tris: np.ndarray):
 
 
 def _fuse_surface(m: mf.Manifold, radius: float, angle: float = 34.0,
-                  mode: str = "concave", detail: float | None = None) -> mf.Manifold:
+                  mode: str = "concave", detail: float | None = None,
+                  max_tris: int = 400_000, polish: float = 1.0,
+                  stats: dict | None = None) -> mf.Manifold:
     """Сглаживает стыки прямо по сетке: тянет вершины к соседям у вогнутых рёбер.
 
     Почему так, а не minkowski: морфологическое скругление на 50 000
@@ -290,16 +293,41 @@ def _fuse_surface(m: mf.Manifold, radius: float, angle: float = 34.0,
     замкнутым (status NoError), форма — та же, но без «шва».
     """
     radius = max(0.05, float(radius))
-    if m.num_tri() > 400_000:
+    max_tris = max(1_000, min(int(max_tris), MAX_TRIS))
+    polish = float(np.clip(polish, 0.0, 1.0))
+    if m.num_tri() > max_tris:
         raise GeometryError(
-            f"Слишком подробная сетка для слияния: {m.num_tri():,} трис.".replace(",", " "),
-            hint="Сначала упростите объект: simplify [объект] tolerance=0.5")
-    step = float(detail) if detail else max(0.25, min(radius / 4.0, radius * 0.5))
-    # дробим только настолько, насколько нужно для радиуса слияния
-    need = m.num_tri() * max(1.0, (min(step * 4.0, radius * 2.0) / step) ** 2)
-    if need > MAX_TRIS * 0.9:
-        step = max(step, radius / 3.0)
+            f"Слишком подробная сетка для слияния: {m.num_tri():,} трис "
+            f"при max_tris={max_tris}.".replace(",", " "),
+            hint="Увеличьте max_tris или сначала выполните simplify.")
+    step = float(detail) if detail else max(0.05, radius / 4.0)
+    # Оцениваем будущий полигонаж по площади ДО refine_to_length. Старое
+    # ограничение зависело только от исходного числа треугольников и могло
+    # неожиданно создать в десятки раз больше геометрии на простых фигурах.
+    area = max(float(m.surface_area()), 1e-9)
+    estimate = area / max(step * step * 0.43, 1e-12)
+    target = max(1_000, int(max_tris * 0.92))
+    if estimate > target:
+        step *= math.sqrt(estimate / target)
     refined = m.refine_to_length(step)
+    if refined.num_tri() > max_tris:
+        # Оценка по площади консервативна не для всех развёрток. Одно
+        # повторное дробление из ИСХОДНОЙ сетки с большим шагом безопаснее,
+        # чем молча превысить бюджет или дробить уже дроблённую геометрию.
+        step *= math.sqrt(refined.num_tri() / target) * 1.02
+        refined = m.refine_to_length(step)
+    if refined.num_tri() > max_tris:
+        raise GeometryError(
+            f"fuse: после дробления {refined.num_tri():,} трис при max_tris={max_tris}.".replace(",", " "),
+            hint="Увеличьте detail/max_tris или упростите исходные детали.")
+    # Выравнивание треугольников — подготовка к polish, а не подмена фаски:
+    # острые рёбра внутри _relax_triangles специально фиксируются.
+    refined = _relax_triangles(refined, iters=2, weight=0.45)
+    if stats is not None:
+        stats.update(detail=step, estimated=estimate, refined=refined.num_tri(),
+                     max_tris=max_tris, polish=polish)
+    if polish <= 1e-9:
+        return refined
     mesh = refined.to_mesh()
     verts = np.asarray(mesh.vert_properties, dtype=np.float64)[:, :3].copy()
     tris = np.asarray(mesh.tri_verts, dtype=np.int64)
@@ -349,12 +377,15 @@ def _fuse_surface(m: mf.Manifold, radius: float, angle: float = 34.0,
         for axis in range(3):
             acc[:, axis] = np.bincount(src, weights=moved[dst, axis], minlength=n)
         avg = acc / deg[:, None]
-        delta = (avg - moved) * (weight[:, None] * 0.55)
+        delta = (avg - moved) * (weight[:, None] * (0.55 * polish))
         norm = np.linalg.norm(delta, axis=1, keepdims=True)
         scale = np.where(norm > limit, limit / np.maximum(norm, 1e-12), 1.0)
         moved += delta * scale
     from .geometry import manifold_from_arrays
-    return manifold_from_arrays(moved, tris, "слияние")
+    result = manifold_from_arrays(moved, tris, "слияние")
+    if stats is not None:
+        stats.update(seams=len(sharp), final=result.num_tri())
+    return result
 
 
 @op("fuse", aliases=("слить", "слияние", "сварить", "спаять", "smooth_union"),
@@ -366,12 +397,14 @@ def _fuse_surface(m: mf.Manifold, radius: float, angle: float = 34.0,
             "10…25 мм для крупных.",
     example='голова = sphere radius=40 at=[0,0,40]\n'
             'шея = cylinder radius=16 height=40 at=[0,0,0]\n'
-            'бюст = fuse [голова, шея] radius=8 edges=все',
+            'бюст = fuse [голова, шея] radius=8 edges=вогнутые detail=2 max_tris=250000',
     params={"objects": "детали [a, b, …] (можно одну составную)",
             "radius": "радиус слияния, мм (4)",
             "angle": "угол стыка, ниже которого ребро считается острым, ° (34)",
             "edges": "вогнутые (только стыки, по умолчанию) или все (плюс внешние рёбра)",
-            "detail": "шаг сетки для сглаживания, мм (авто ≈ radius/4)"},
+            "detail": "шаг сетки для сглаживания, мм (авто ≈ radius/4; ограничен max_tris)",
+            "max_tris": "бюджет треугольников после дробления 1000…1600000 (400000)",
+            "polish": "сила локальной полировки стыка 0…1 (1; внешняя форма вдали не меняется)"},
     positional=["objects"])
 def fuse(a, name):
     solids = a.solids()
@@ -381,18 +414,29 @@ def fuse(a, name):
     angle = a.num("angle", 34.0, minv=1.0, maxv=179.0)
     edges = (a.text("edges") or "вогнутые").strip().lower()
     detail = a.num("detail", None, minv=0.05)
+    max_tris = int(a.int("max_tris", 400_000, minv=1_000, maxv=MAX_TRIS) or 400_000)
+    polish = float(a.num("polish", 1.0, minv=0.0, maxv=1.0))
     try:
         joined = merge_solids(solids, mf.OpType.Add)
     except Exception as exc:
         raise GeometryError(f"Не удалось объединить детали: {exc}") from exc
-    result = _fuse_surface(joined, radius, angle, edges, detail)
+    stats: dict = {}
+    result = _fuse_surface(joined, radius, angle, edges, detail,
+                           max_tris=max_tris, polish=polish, stats=stats)
     if result.is_empty() or result.volume() <= 1e-9:
         raise GeometryError("После слияния объект исчез — уменьшите радиус.")
     for s in solids:
         a.scene.consume(s)
     a.scene.log("info", f"слияние: {len(solids)} дет., радиус {radius:g} мм, "
+                        f"шаг {stats.get('detail', detail or 0):.3f} мм, "
                         f"{result.num_tri():,} трис".replace(",", " "), a.cmd.line)
-    return make_solid(a.scene, name, result, a, base=solids[0], kind="fuse")
+    out = make_solid(a.scene, name, result, a, base=solids[0], kind="fuse")
+    out.meta.update(fuse_radius=float(radius), fuse_detail=float(stats.get("detail", detail or 0)),
+                    fuse_max_tris=max_tris, fuse_polish=polish,
+                    fuse_seams=int(stats.get("seams", 0)))
+    out.notes.append(f"локальная полировка стыков: {stats.get('seams', 0)} рёбер, "
+                     f"бюджет {max_tris} трис")
+    return out
 
 
 @op("bevel", aliases=("фаска", "скос", "округление", "кромка"), category="Форма и деформации",

@@ -354,6 +354,155 @@ class Cone(Prim):
 
 
 @dataclass
+class RoundedCylinder(Prim):
+    """Цилиндр с настоящими дуговыми кромками вокруг одной из осей."""
+
+    c: tuple
+    radius: float
+    length: float
+    edge: float = 0.0
+    axis: str = "z"
+
+    def __post_init__(self):
+        c = np.asarray(self.c, dtype=np.float64)
+        self.c = tuple(float(v) for v in c)
+        self.axis = str(self.axis).lower()
+        if self.axis not in ("x", "y", "z"):
+            raise GeometryError("RoundedCylinder: axis должен быть x, y или z")
+        self.radius = float(self.radius)
+        self.length = float(self.length)
+        self.edge = min(max(0.0, float(self.edge)), self.radius * 0.499,
+                        self.length * 0.499)
+        ext = np.asarray([self.radius] * 3, dtype=np.float64)
+        ext["xyz".index(self.axis)] = self.length * 0.5
+        self.lo = c - ext
+        self.hi = c + ext
+
+    def sdf(self, x, y, z):
+        p = (x - self.c[0], y - self.c[1], z - self.c[2])
+        axis = "xyz".index(self.axis)
+        radial_axes = [i for i in range(3) if i != axis]
+        radial = np.sqrt(p[radial_axes[0]] ** 2 + p[radial_axes[1]] ** 2)
+        # Ядро — цилиндр радиуса R-edge и длины L-2*edge. Его
+        # Минковски-сумма со сферой edge даёт плоские торцы и дуговые кромки.
+        qr = radial - (self.radius - self.edge)
+        qa = np.abs(p[axis]) - (self.length * 0.5 - self.edge)
+        outside = np.sqrt(np.maximum(qr, 0.0) ** 2 + np.maximum(qa, 0.0) ** 2)
+        inside = np.minimum(np.maximum(qr, qa), 0.0)
+        return outside + inside - self.edge
+
+
+@dataclass
+class EllipseCylinder(Prim):
+    """Плоская эллиптическая пластина вдоль Y с дуговой кромкой.
+
+    В отличие от Ellipsoid имеет плоские торцы: обратная сторона розетки
+    действительно прилегает к двери всей площадью, а не одной точкой.
+    """
+
+    c: tuple
+    rx: float
+    rz: float
+    length: float
+    edge: float = 0.0
+
+    def __post_init__(self):
+        c = np.asarray(self.c, dtype=np.float64)
+        self.c = tuple(float(v) for v in c)
+        self.rx = float(self.rx)
+        self.rz = float(self.rz)
+        self.length = float(self.length)
+        self.edge = min(max(0.0, float(self.edge)), self.rx * 0.499,
+                        self.rz * 0.499, self.length * 0.499)
+        ext = np.asarray([self.rx, self.length * 0.5, self.rz], dtype=np.float64)
+        self.lo = c - ext
+        self.hi = c + ext
+
+    def sdf(self, x, y, z):
+        rx = self.rx - self.edge
+        rz = self.rz - self.edge
+        px = x - self.c[0]
+        py = y - self.c[1]
+        pz = z - self.c[2]
+        k0 = np.sqrt((px / rx) ** 2 + (pz / rz) ** 2)
+        gradient = np.sqrt((px / (rx * rx)) ** 2 + (pz / (rz * rz)) ** 2)
+        # Регуляризованное расстояние до эллипса. В центре градиент
+        # вырождается, поэтому там явно задаём отрицательное расстояние.
+        planar = np.where(k0 > 1e-10,
+                          (k0 - 1.0) * k0 / np.maximum(gradient, 1e-12),
+                          -min(rx, rz))
+        axial = np.abs(py) - (self.length * 0.5 - self.edge)
+        outside = np.sqrt(np.maximum(planar, 0.0) ** 2 + np.maximum(axial, 0.0) ** 2)
+        inside = np.minimum(np.maximum(planar, axial), 0.0)
+        return outside + inside - self.edge
+
+
+@dataclass
+class Tube(Prim):
+    """Скруглённая переменная трубка по polyline как единый SDF-примитив.
+
+    Все сегменты вычисляются внутри одного поля. Поэтому smooth union соединяет
+    всю трубку с соседней деталью, а не склеивает каждый её сегмент заново.
+    z_scale сохраняет эллиптическое сечение рычагов без потери центральной линии.
+    """
+
+    points: object
+    radii: object
+    z_scale: float = 1.0
+    joint: float = 0.12
+
+    def __post_init__(self):
+        points = np.asarray(self.points, dtype=np.float64).reshape(-1, 3)
+        if len(points) == 0:
+            raise GeometryError("Tube: нужна хотя бы одна точка")
+        radii = np.asarray(self.radii, dtype=np.float64)
+        if radii.ndim == 0:
+            radii = np.full(len(points), float(radii))
+        radii = radii.reshape(-1)
+        if len(radii) != len(points) or np.any(radii <= 0):
+            raise GeometryError("Tube: radii должны быть положительными и совпадать с points")
+        self.points = points
+        self.radii = radii
+        self.z_scale = float(self.z_scale)
+        if self.z_scale <= 0:
+            raise GeometryError("Tube: z_scale должен быть положительным")
+        self.joint = float(np.clip(self.joint, 0.0, 0.5))
+        pad = np.column_stack((radii, radii, radii * self.z_scale)) * (1.0 + self.joint * 0.25)
+        self.lo = np.min(points - pad, axis=0)
+        self.hi = np.max(points + pad, axis=0)
+
+    def sdf(self, x, y, z):
+        px = np.asarray(x, dtype=np.float64)
+        py = np.asarray(y, dtype=np.float64)
+        pz = np.asarray(z, dtype=np.float64) / self.z_scale
+        best = np.full_like(px, BIG, dtype=np.float64)
+        points = self.points
+        for i in range(max(1, len(points) - 1)):
+            a = points[min(i, len(points) - 1)]
+            b = points[min(i + 1, len(points) - 1)]
+            ax, ay, az = a[0], a[1], a[2] / self.z_scale
+            bx, by, bz = b[0], b[1], b[2] / self.z_scale
+            ex, ey, ez = bx - ax, by - ay, bz - az
+            denom = ex * ex + ey * ey + ez * ez
+            qx, qy, qz = px - ax, py - ay, pz - az
+            t = np.clip((qx * ex + qy * ey + qz * ez) / max(denom, 1e-12), 0.0, 1.0)
+            dx, dy, dz = qx - ex * t, qy - ey * t, qz - ez * t
+            ra = self.radii[min(i, len(points) - 1)]
+            rb = self.radii[min(i + 1, len(points) - 1)]
+            distance = np.sqrt(dx * dx + dy * dy + dz * dz) - (ra + (rb - ra) * t)
+            if i == 0 or self.joint <= 1e-9:
+                best = distance if i == 0 else np.minimum(best, distance)
+            else:
+                # Маленький smooth min только внутри ОДНОГО поля убирает
+                # касательный излом polyline. Отдельные меши/булевы операции
+                # для сегментов по-прежнему не создаются.
+                k = min(float(ra), float(rb)) * self.joint
+                h = np.clip(0.5 + 0.5 * (best - distance) / max(k, 1e-12), 0.0, 1.0)
+                best = best + (distance - best) * h - k * h * (1.0 - h)
+        return best * self.z_scale
+
+
+@dataclass
 class Torus(Prim):
     c: tuple
     R: float
@@ -408,6 +557,14 @@ def round_box(c, size, r=0.0, rot=None) -> RoundBox:
 
 def cone(a, b, ra, rb=None) -> Cone:
     return Cone(a, b, ra, ra if rb is None else rb)
+
+
+def rounded_cylinder(c, radius, length, edge=0.0, axis="z"):
+    return RoundedCylinder(c, radius, length, edge, axis)
+
+
+def tube(points, radii, z_scale=1.0, joint=0.12):
+    return Tube(points, radii, z_scale, joint)
 
 
 def lerp(a, b, t):

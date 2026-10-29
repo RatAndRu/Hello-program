@@ -14,9 +14,15 @@ import urllib.request
 
 EXPECTED = {
     "train_carriage": {"objects": 1186, "triangles": 336536, "preview_nodes": 140},
-    "fittings_053": {"objects": 9, "triangles": 22096, "preview_nodes": 6},
+    "architecture_selectable_055": {"objects": 88, "triangles": 49424, "preview_nodes": 4,
+                                     "preview_triangles": 17988},
+    "handle_rosettes_055": {"objects": 8, "triangles": 94308, "preview_nodes": 4},
+    "selection_details_055": {"objects": 16, "triangles": 7328, "preview_nodes": 4},
+    "fittings_053": {"objects": 26, "triangles": 116518, "preview_nodes": 6},
+    "smooth_transitions_054": {"objects": 3, "triangles": 109280, "preview_nodes": 1,
+                                "preview_triangles": 26104},
     "glyphs_expansion_053": {"objects": 7, "triangles": 66988, "preview_nodes": 5},
-    "living_room_diorama": {"objects": 233, "triangles": 94608, "preview_nodes": 233},
+    "living_room_diorama": {"objects": 238, "triangles": 140016, "preview_nodes": 238},
 }
 
 
@@ -109,12 +115,17 @@ class Acceptance:
         if self.revision and catalog.get("revision") != self.revision:
             raise AssertionError("Revision каталога не совпал")
         versions = {version["id"]: version for version in catalog.get("versions", [])}
-        if set(versions) != {"train-2026-10", "0.53", "0.52"}:
+        if set(versions) != {"train-2026-10", "0.55", "0.54", "0.53", "0.52"}:
             raise AssertionError(f"Неожиданный список версий: {sorted(versions)}")
 
         for version in catalog["versions"]:
             if not version.get("changes") or not version.get("models"):
                 raise AssertionError(f"{version['id']}: пустые изменения или модели")
+            for change in version["changes"]:
+                if change.get("image"):
+                    data, _, _ = self.get("/" + change["image"], timeout=30)
+                    if data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+                        raise AssertionError(f"{change['image']}: сравнение не является WebP")
             for model in version["models"]:
                 expected = EXPECTED[model["id"]]
                 stats = model["stats"]
@@ -131,8 +142,13 @@ class Acceptance:
                     raise AssertionError(f"{model['id']}: полный GLB потерял отдельные детали")
                 if full_summary["triangles"] != expected["triangles"]:
                     raise AssertionError(f"{model['id']}: неверное число треугольников полного GLB")
-                if preview_summary != {"nodes": expected["preview_nodes"], "triangles": expected["triangles"]}:
+                preview_triangles = expected.get("preview_triangles", expected["triangles"])
+                if preview_summary != {"nodes": expected["preview_nodes"], "triangles": preview_triangles}:
                     raise AssertionError(f"{model['id']}: preview {preview_summary} != {expected}")
+                if stats.get("preview_triangles") != preview_triangles:
+                    raise AssertionError(f"{model['id']}: неверный preview_triangles в каталоге")
+                if "preview_triangles" in expected and model.get("preview_kind") != "subset":
+                    raise AssertionError(f"{model['id']}: облегчённый preview не обозначен как subset")
                 for poster in model["posters"]:
                     data, _, _ = self.get("/" + poster["url"], timeout=30)
                     if len(data) != poster["bytes"] or hashlib.sha256(data).hexdigest() != poster["sha256"]:

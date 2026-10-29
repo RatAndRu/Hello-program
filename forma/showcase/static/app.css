@@ -69,6 +69,7 @@ button:focus-visible, a:focus-visible { outline: 2px solid var(--mint); outline-
 .change::before { content: ""; position: absolute; left: 23px; top: 28px; width: 9px; height: 9px; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 5px rgba(141,224,189,.08); }
 .change h3 { margin: 0 0 8px; font-size: 14px; line-height: 1.4; }
 .change p { margin: 0; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.change-image { display: block; width: 100%; height: auto; margin-top: 16px; border: 1px solid var(--line); border-radius: 10px; background: #e5e7e9; }
 .models { display: grid; gap: 26px; }
 .model-card { overflow: hidden; border: 1px solid var(--line); border-radius: 22px; background: linear-gradient(145deg, rgba(21,33,43,.96), rgba(14,23,31,.96)); box-shadow: 0 24px 70px rgba(0,0,0,.16); }
 .model-main { display: grid; grid-template-columns: minmax(300px, .95fr) minmax(330px, 1.05fr); min-height: 420px; }

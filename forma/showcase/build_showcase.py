@@ -245,8 +245,20 @@ def _render_posters(model, solids, groups, output: Path) -> list[dict]:
     posters = []
     for poster in model.get("posters", [{"view": "iso", "label": "Общий вид"}]):
         view = poster.get("view", "iso")
-        selected = train_interior_solids(solids) if view == "train_interior" else solids
-        render_view = "iso" if view == "train_interior" else view
+        if poster.get("objects"):
+            wanted = set(poster["objects"])
+            selected = [solid for solid in solids if solid.name in wanted]
+            if len(selected) != len(wanted):
+                raise RuntimeError(f"{model['id']}: poster {view} не нашёл объекты {sorted(wanted)}")
+        elif poster.get("object_prefix"):
+            prefix = poster["object_prefix"]
+            selected = [solid for solid in solids
+                        if solid.name == prefix or solid.name.startswith(prefix + ".")]
+            if not selected:
+                raise RuntimeError(f"{model['id']}: poster {view} не нашёл префикс {prefix}")
+        else:
+            selected = train_interior_solids(solids) if view == "train_interior" else solids
+        render_view = poster.get("camera", "iso" if view == "train_interior" else view)
         stem = f"{model['id']}_{view}"
         png_path = output / "posters" / f"{stem}.png"
         render_single(selected, output / "posters", f"{stem}.png", size=960, ss=1,
@@ -282,18 +294,39 @@ def build_model(model, repo_root: Path, output: Path) -> dict:
         raise RuntimeError(f"{model['id']}: пустая сцена")
 
     full_glb = result.glb()
-    if has_special_surface(solids):
-        # Честный fallback: ничего не теряем, просто не объединяем такую сцену.
-        preview_glb = full_glb
-        optimization = {
-            "optimized": False,
-            "source_meshes": len(solids),
-            "preview_draw_calls": len(solids),
-            "reason": "Покраска/текстуры сохранены в исходных узлах без пакетирования.",
-        }
+    if model.get("preview_source"):
+        # Явно облегчённый preview — отдельная самостоятельная сцена, а не
+        # скрытое упрощение полного GLB. Обе сцены проходят тот же round-trip.
+        preview_path = repo_root / model["preview_source"]
+        preview_result = build(preview_path.read_text(encoding="utf-8"), analyze_model=False)
+        if not preview_result.ok:
+            raise RuntimeError(f"{model['id']} preview: {preview_result.error}")
+        preview_solids = preview_result.visible_solids()
+        if not preview_solids:
+            raise RuntimeError(f"{model['id']}: пустая preview-сцена")
+        preview_full_glb = preview_result.glb()
+        preview_glb, optimization = export_preview_glb(preview_solids)
+        full_geometry = validate_glb_pair(full_glb, full_glb, solids)
+        preview_geometry = validate_glb_pair(preview_full_glb, preview_glb, preview_solids)
+        geometry = dict(full_geometry)
+        geometry.update(preview_vertices=preview_geometry["preview_vertices"],
+                        preview_nodes=preview_geometry["preview_nodes"],
+                        preview_triangles=preview_geometry["triangles"],
+                        preview_bounds_deviation_mm=preview_geometry["bounds_deviation_mm"])
     else:
-        preview_glb, optimization = export_preview_glb(solids)
-    geometry = validate_glb_pair(full_glb, preview_glb, solids)
+        if has_special_surface(solids):
+            # Честный fallback: ничего не теряем, просто не объединяем такую сцену.
+            preview_glb = full_glb
+            optimization = {
+                "optimized": False,
+                "source_meshes": len(solids),
+                "preview_draw_calls": len(solids),
+                "reason": "Покраска/текстуры сохранены в исходных узлах без пакетирования.",
+            }
+        else:
+            preview_glb, optimization = export_preview_glb(solids)
+        geometry = validate_glb_pair(full_glb, preview_glb, solids)
+        geometry["preview_triangles"] = geometry["triangles"]
     if geometry["preview_nodes"] != optimization["preview_draw_calls"]:
         raise RuntimeError(f"{model['id']}: число preview-узлов не совпадает с экспортом")
 
@@ -303,9 +336,10 @@ def build_model(model, repo_root: Path, output: Path) -> dict:
     preview_info = _write(models_dir / f"{model['id']}.preview.glb", preview_glb)
     posters = _render_posters(model, solids, result.scene.groups, output)
 
-    excluded = {"source", "posters"}
+    excluded = {"source", "preview_source", "posters"}
     manifest = {key: value for key, value in model.items() if key not in excluded}
     manifest.update({
+        "preview_kind": "subset" if model.get("preview_source") else "full",
         "forma": {
             "url": f"assets/models/{model['id']}.forma",
             "file_name": f"{model.get('download_base', model['id'])}.forma",
@@ -325,6 +359,7 @@ def build_model(model, repo_root: Path, output: Path) -> dict:
         "stats": {
             "objects": len(solids),
             "triangles": geometry["triangles"],
+            "preview_triangles": geometry["preview_triangles"],
             "full_vertices": geometry["full_vertices"],
             "preview_vertices": geometry["preview_vertices"],
             "preview_draw_calls": geometry["preview_nodes"],
@@ -335,7 +370,8 @@ def build_model(model, repo_root: Path, output: Path) -> dict:
     elapsed = time.perf_counter() - started
     print(
         f"{model['id']}: {len(solids)} objects -> {geometry['preview_nodes']} draw calls; "
-        f"{geometry['triangles']} tris; full={len(full_glb)} B; preview={len(preview_glb)} B; "
+        f"{geometry['triangles']} tris (preview {geometry['preview_triangles']}); "
+        f"full={len(full_glb)} B; preview={len(preview_glb)} B; "
         f"{elapsed:.1f}s",
         flush=True,
     )

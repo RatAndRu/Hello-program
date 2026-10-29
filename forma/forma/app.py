@@ -1183,7 +1183,7 @@ def _run_uistest(report_path: str | None) -> int:
                     "ручка = door_handle form=рельефная lever_length=95 relief=.7 "
                     "at=[180,350,40]")})
                 check("0.53: путь, двухстворчатая петля и ручка в живом превью",
-                      fittings53.get("ok") is True and fittings53.get("objects") == 6,
+                      fittings53.get("ok") is True and fittings53.get("objects") == 17,
                       f"{fittings53.get('tris', 0)} трис, {fittings53.get('objects', 0)} объектов")
                 glyphs53 = post("/api/preview", {"script": (
                     "молния = lightning width=70 height=120 zigzags=4 volume=да\n"
@@ -1203,6 +1203,53 @@ def _run_uistest(report_path: str | None) -> int:
                       and all(any(item.get("key") == key
                                   for item in state.get("examples", []))
                               for key in ("fittings_053", "glyphs_expansion_053")))
+
+                # 0.54: в собранном EXE должны работать именно новые SDF/C1
+                # переходы и управляемый бюджет fuse, а не только справка.
+                smooth54 = post("/api/preview", {"script": (
+                    "ручка = door_handle form=рельефная lever_length=95 relief=.7 "
+                    "blend=4 resolution=.55\n"
+                    "инь = yin_yang form=объёмная at=[180,0,0]")})
+                check("0.54: цельная SDF-ручка и C1-fireball в живом превью",
+                      smooth54.get("ok") is True and smooth54.get("objects") == 2
+                      and smooth54.get("tris", 0) > 30000,
+                      f"{smooth54.get('tris', 0)} трис, {smooth54.get('objects', 0)} объектов")
+                fuse54 = post("/api/preview", {"script": (
+                    "а = sphere radius=30 at=[0,0,30]\n"
+                    "б = cylinder radius=12 height=35\n"
+                    "в = fuse [а,б] radius=6 detail=1.5 max_tris=50000 polish=.8")})
+                check("0.54: fuse с бюджетом и локальной полировкой",
+                      fuse54.get("ok") is True and fuse54.get("objects") == 1
+                      and 0 < fuse54.get("tris", 0) <= 50000,
+                      f"{fuse54.get('tris', 0)} трис")
+                check("0.54: карточки SDF и демонстрационный проект доступны в EXE",
+                      all(f"k: '{key}'".encode("utf-8") in js_app
+                          for key in ("blend", "resolution"))
+                      and any(item.get("key") == "smooth_transitions_054"
+                              for item in state.get("examples", [])))
+
+                # 0.55: живая сборка двусторонней двери, окна и новых розеток.
+                architecture55 = post("/api/preview", {"script": (
+                    "д = door panels=1 columns=1 hinges=1 handle_resolution=.25 lock=да\n"
+                    "о = window sections=2 casing=нет sill=нет handle_resolution=.25 "
+                    "at=[150,0,0]")})
+                check("0.55: двусторонняя дверь и окно в живом превью",
+                      architecture55.get("ok") is True and architecture55.get("objects") == 23,
+                      f"{architecture55.get('tris', 0)} трис, {architecture55.get('objects', 0)} объектов")
+                handle55 = post("/api/preview", {"script": (
+                    "р = door_handle form=прямоугольная rosette=овальная "
+                    "lock=да lock_plug=да resolution=.7")})
+                check("0.55: прямоугольная ручка, овальная розетка и цилиндр",
+                      handle55.get("ok") is True and handle55.get("objects") == 2
+                      and handle55.get("tris", 0) > 2500,
+                      f"{handle55.get('tris', 0)} трис, {handle55.get('objects', 0)} объектов")
+                check("0.55: карточки и три новых проекта доступны в EXE",
+                      all(f"op: '{op}'".encode("utf-8") in js_app for op in ("door", "window", "door_handle"))
+                      and all(f"k: '{key}'".encode("utf-8") in js_app
+                              for key in ("rosette", "lock_plug", "sections", "casing", "sill"))
+                      and all(any(item.get("key") == key for item in state.get("examples", []))
+                              for key in ("architecture_selectable_055", "handle_rosettes_055",
+                                          "selection_details_055")))
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

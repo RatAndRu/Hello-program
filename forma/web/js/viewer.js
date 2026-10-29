@@ -36,8 +36,14 @@ const VIEW_DIRS = {
 /** Совпадает ли меш с именем объекта из сценария. */
 function meshMatches(o, name) {
   if (!o || !o.isMesh || !name) return false;
-  const candidates = [o.name, o.parent?.name, o.userData?.formaName];
-  for (let n = o.parent; n && n !== o; n = n.parent) candidates.push(n.name);
+  const candidates = [o.name, o.parent?.name, o.userData?.formaName,
+    o.parent?.userData?.formaName];
+  // GLTFLoader может поставить исходное имя на Group, а очищенное от точек —
+  // на дочерний Mesh. Проверяем formaName на всей цепочке предков, чтобы
+  // pick/highlight/visibility использовали один и тот же канонический объект.
+  for (let n = o.parent; n && n !== o; n = n.parent) {
+    candidates.push(n.name, n.userData?.formaName);
+  }
   return candidates.some((c) => c && c === name);
 }
 
@@ -881,7 +887,7 @@ export class Viewer {
       const box = new THREE.Box3().setFromObject(node);
       const wc = box.isEmpty() ? new THREE.Vector3() : box.getCenter(new THREE.Vector3());
       const item = {
-        node, name: node.name, kind: 'group',
+        node, name: node.userData?.formaName || node.name, kind: 'group',
         base: node.position.clone(), baseQ: node.quaternion.clone(), baseS: node.scale.clone(),
         dir: new THREE.Vector3(0, 1, 0), reach: 0,
         parentInv: pInv,
@@ -902,8 +908,12 @@ export class Viewer {
       const pInv = new THREE.Matrix4();
       if (o.parent) pInv.copy(o.parent.matrixWorld).invert();
       const wbox = new THREE.Box3().setFromObject(o);
+      let canonicalName = '';
+      for (let n = o; n; n = n.parent) {
+        if (n.userData?.formaName) { canonicalName = n.userData.formaName; break; }
+      }
       const item = {
-        node: o, name: o.name || o.parent?.name || '', kind: 'mesh',
+        node: o, name: canonicalName || o.name || o.parent?.name || '', kind: 'mesh',
         base: o.position.clone(), baseQ: o.quaternion.clone(), baseS: o.scale.clone(),
         dir: local, reach: Math.min(1, len / 120),
         parentInv: pInv,

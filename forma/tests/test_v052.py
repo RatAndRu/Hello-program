@@ -142,7 +142,7 @@ t = table [top] leg_object=leg height=50 legs=4 layout=inset""")
 
     def test_door_leaf_moves_only_leaf_and_hardware(self):
         result = ok("""door = door width=90 height=210 panels=2 columns=1 hinges=2
-rotate [door.leaf] angle=30 axis=z pivot=[-44.4,-2.25,0]""")
+rotate [door.leaf] angle=30 axis=z pivot=[-44.4,-2.69,0]""")
         scene = result.scene
         for name in ("door.frame_right", "door.frame_top", "door.leaf",
                      "door.leaf.panel_01", "door.hinge_01", "door.leaf.handle",
@@ -153,7 +153,7 @@ rotate [door.leaf] angle=30 axis=z pivot=[-44.4,-2.25,0]""")
         self.assertAlmostEqual(leaf_bb[2], 0.6, places=5)
         self.assertAlmostEqual(leaf_bb[5], 210.0, places=5)
         moved = ok("""door = door width=90 height=210 panels=2 columns=1 hinges=2
-rotate [door.leaf] angle=30 axis=z pivot=[-44.4,-2.25,0]""")
+rotate [door.leaf] angle=30 axis=z pivot=[-44.4,-2.69,0]""")
         # Корневая стойка и правая коробка не изменились; полотно и ручка повернуты.
         reference = ok("door = door width=90 height=210 panels=2 columns=1 hinges=2")
         for name in ("door", "door.frame_right", "door.frame_top"):
@@ -272,7 +272,7 @@ class LiveToolCardsTest(unittest.TestCase):
         completed = subprocess.run([node, str(script), "--json"], check=True,
                                    capture_output=True, text=True, timeout=30)
         scripts = json.loads(completed.stdout)
-        self.assertEqual(set(scripts), {"table", "door", "curtain", "drape",
+        self.assertEqual(set(scripts), {"table", "door", "window", "curtain", "drape",
                                        "rug", "socket", "switch", "bulb"})
         for op, source in scripts.items():
             with self.subTest(op=op):

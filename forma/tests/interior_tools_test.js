@@ -21,7 +21,7 @@ const tools = eval(`(${source.slice(start, end)})`);
 const { shapeScript } = new Function(
   ['shapeParams', 'shapeScript'].map(functionSource).join('\n') + '\nreturn { shapeScript };'
 )();
-const wanted = ['table', 'door', 'curtain', 'drape', 'rug', 'socket', 'switch', 'bulb'];
+const wanted = ['table', 'door', 'window', 'curtain', 'drape', 'rug', 'socket', 'switch', 'bulb'];
 const output = {};
 for (const op of wanted) {
   const tool = tools.find((item) => item.op === op);
@@ -41,6 +41,27 @@ for (const op of wanted) {
 }
 if ((output.drape.match(/\n/g) || []).length !== 2) {
   throw new Error('drape: карточка должна построить опору, ткань и выполнить drape');
+}
+// Авто-поля окна не должны перекрывать defaults выбранного типа. Иначе карточка
+// панорамы молча отправляла opening=все casing=да sill=да вместо неподвижного
+// панорамного блока. Явные пользовательские значения по-прежнему сохраняются.
+for (const key of ['sections', 'opening', 'casing', 'sill']) {
+  if (output.window.includes(`${key}=`)) throw new Error(`window: авто ${key} попало в команду`);
+}
+const windowTool = tools.find((item) => item.op === 'window');
+const overrides = { type: 'панорамное', sections: '4', opening: 'все', casing: 'да', sill: 'нет' };
+const explicitParams = windowTool.params.map((p) => ({ ...p, v: overrides[p.k] ?? p.v }));
+const explicitTool = { ...windowTool, params: explicitParams };
+const explicitCard = {
+  querySelector(selector) {
+    const match = selector.match(/data-key="([^"]+)/);
+    const param = explicitParams.find((item) => item.k === match[1]);
+    return param ? { value: String(param.v ?? ''), checked: param.v !== false } : null;
+  },
+};
+const explicit = shapeScript(explicitTool, explicitCard);
+for (const part of ['type=панорамное', 'sections=4', 'opening=все', 'casing=да', 'sill=нет']) {
+  if (!explicit.includes(part)) throw new Error(`window: потерян явный параметр ${part}`);
 }
 if (process.argv.includes('--json')) console.log(JSON.stringify(output));
 else console.log(`Сценарии ${wanted.length} интерьерных карточек сформированы без подмен параметров.`);

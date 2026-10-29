@@ -12,9 +12,9 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import (circle_profile, manifold_from_arrays, manifold_mesh,
-                       normalize_color, sweep_solid)
+from .geometry import manifold_from_arrays, manifold_mesh, normalize_color
 from .ops import make_solid, op
+from .sdf import EllipseCylinder, Field, RoundBox, RoundedCylinder, Sphere, Tube
 from .shape_features import rounded_extrude
 
 
@@ -180,8 +180,8 @@ def _rail_solid(cross: mf.CrossSection, length: float, x: float,
     category="Примитивы",
     summary="Железнодорожный путь вдоль Y: одна или две рельсы с настоящим "
             "профилем, отключаемые фасонные шпалы, подкладки и крепления. "
-            "Рельс стоит на подкладке в углублении шпалы. Детали сборки "
-            "остаются отдельными: <имя>, <имя>.sleepers и <имя>.fasteners.",
+            "Рельс стоит на подкладке в углублении шпалы. Каждая рельса, шпала "
+            "sleeper_NN и точка крепления fastener_left|right_NN — отдельный объект.",
     example="путь = track length=720 rails=2 gauge=180 sleepers=да fasteners=да\n"
             "одна = track length=500 rails=1 sleepers=нет rail_profile=двутавр\n"
             "бетон = track length=900 sleeper_shape=бетонная sleeper_step=75",
@@ -259,8 +259,14 @@ def track(a, name):
     rail_z = sleeper_h - seat_depth + plate_t if sleepers_on else 0.0
     cross = _rail_cross(profile, height, head_w, head_h, web, foot_w, foot_h, fillet)
     rail_parts = [_rail_solid(cross, length, x, rail_z) for x in centers]
-    rail_solid = _compound(rail_parts, "рельсы")
-    parts = [("", rail_solid, "rail_color", "#78828b", 0.78, 0.30, "track")]
+    # Каждая физическая деталь — отдельный объект Forma. Compound из всех
+    # рельс/шпал выглядел компактно в списке, но делал отдельную шпалу
+    # недоступной для pick, скрытия, покраски и точечного экспорта.
+    rail_names = ["left", "right"] if rails == 2 else ["single"]
+    parts = [("" if index == 0 else f".rail_{rail_names[index]}", rail,
+              "rail_color", "#78828b", 0.78, 0.30,
+              "track" if index == 0 else "track_rail")
+             for index, rail in enumerate(rail_parts)]
     positions = []
     if sleepers_on:
         if count <= 0:
@@ -294,9 +300,9 @@ def track(a, name):
                 (x, 0.0, sleeper_h - seat_depth / 2.0 + 0.3))
             master = master - cutter
         _one(master, "шпала")
-        sleepers = _compound([master.translate((0.0, y, 0.0)) for y in positions], "шпалы")
-        parts.append((".sleepers", sleepers, "sleeper_color", "#62534a", 0.0, 0.82,
-                      "track_sleepers"))
+        for index, y in enumerate(positions):
+            parts.append((f".sleeper_{index + 1:02d}", master.translate((0.0, y, 0.0)),
+                          "sleeper_color", "#62534a", 0.0, 0.82, "track_sleeper"))
     if fasteners:
         per_rail = []
         bolt_r = max(1.2, min(2.2, foot_w * 0.085))
@@ -318,13 +324,12 @@ def track(a, name):
                     (bolt_x, 0.0, rail_z + 0.8))
                 pieces.extend((clip, shank, head))
             per_rail.append(mf.Manifold.batch_boolean(pieces, mf.OpType.Add))
-        fastener_parts = []
-        for master in per_rail:
+        for rail_index, master in enumerate(per_rail):
             _one(master, "крепление рельсы")
-            fastener_parts.extend(master.translate((0.0, y, 0.0)) for y in positions)
-        fasteners_solid = _compound(fastener_parts, "крепления пути")
-        parts.append((".fasteners", fasteners_solid, "fastener_color", "#454c53", 0.72, 0.38,
-                      "track_fasteners"))
+            for position_index, y in enumerate(positions):
+                parts.append((f".fastener_{rail_names[rail_index]}_{position_index + 1:02d}",
+                              master.translate((0.0, y, 0.0)), "fastener_color",
+                              "#454c53", 0.72, 0.38, "track_fastener"))
     params = dict(length=length, rails=rails, gauge=gauge if rails == 2 else 0.0,
                   rail_profile=profile, rail_height=height, head_width=head_w,
                   head_height=head_h, web=web, foot_width=foot_w, foot_height=foot_h,
@@ -334,7 +339,8 @@ def track(a, name):
                   sleeper_step_requested=step,
                   sleeper_length=sleeper_l, sleeper_width=sleeper_w,
                   sleeper_height=sleeper_h, sleeper_bevel=sleeper_bevel,
-                  fasteners=fasteners, plate_thickness=plate_t, segments=segments)
+                  fasteners=fasteners, plate_thickness=plate_t, segments=segments,
+                  objects=len(parts))
     root = _assembly(a, name, parts, params, "track")
     root.notes.append(f"путь: {rails} рельс(ы), длина {length:g}, колея {params['gauge']:g}, "
                       f"шпал {len(positions)}, крепления={'да' if fasteners else 'нет'}")
@@ -359,6 +365,73 @@ def _hinge_leaf(width: float, height: float, thickness: float, corner: float,
                     (0.0, z, thickness - depth))
                 leaf = leaf - cone
     return leaf.rotate((90.0, 0.0, 0.0)).translate((0.0, thickness / 2.0, 0.0))
+
+
+def _hinge_geometry(p: dict) -> tuple[mf.Manifold, mf.Manifold]:
+    """Общий генератор standalone-петли и петель внутри двери."""
+    height = p["height"]
+    leaf_w = p["leaf_width"]
+    thickness = p["thickness"]
+    corner = p["corner"]
+    holes = p["holes"]
+    hole_d = p["hole_d"]
+    countersink = p["countersink"]
+    segments = p["segments"]
+    barrel_r = p["barrel_d"] * 0.5
+    pin_r = p["pin_d"] * 0.5
+    knuckles = p["knuckles"]
+    gap = p["knuckle_gap"]
+    clearance = p["clearance"]
+    overhang = p["barrel_overhang"]
+    open_angle = p["open_angle"]
+    barrel_h = height + 2.0 * overhang
+    leaf = _hinge_leaf(leaf_w, height, thickness, corner, holes, hole_d,
+                       countersink, segments)
+    inner = barrel_r * 0.55
+    # Ось вынесена от средней плоскости створок: при закрытии на 180° листы
+    # занимают параллельные плоскости с зазором, а не входят друг в друга.
+    plate_y = thickness * 0.65 + 0.12
+    left_plate = leaf.translate((-inner - leaf_w / 2.0, plate_y, 0.0))
+    right_plate = leaf.translate((inner + leaf_w / 2.0, plate_y, 0.0))
+    left_knuckles, right_knuckles = [], []
+    step = barrel_h / knuckles
+    for i in range(knuckles):
+        z0 = -overhang + i * step + gap / 2.0
+        z1 = -overhang + (i + 1) * step - gap / 2.0
+        knuckle = mf.Manifold.cylinder(z1 - z0, barrel_r, barrel_r, segments).translate(
+            (0.0, 0.0, z0))
+        # В реальной петле край створки не проходит сквозь чужие кулаки.
+        # Вырезаем их с небольшим радиальным зазором до объединения.
+        relief = mf.Manifold.cylinder(z1 - z0, barrel_r + 0.08, barrel_r + 0.08,
+                                      segments).translate((0.0, 0.0, z0))
+        if i % 2 == 0:
+            left_knuckles.append(knuckle)
+            right_plate = right_plate - relief
+        else:
+            right_knuckles.append(knuckle)
+            left_plate = left_plate - relief
+    pin = mf.Manifold.cylinder(barrel_h + 0.4, pin_r, pin_r, segments).translate(
+        (0.0, 0.0, -overhang - 0.2))
+    head_h = min(0.9, barrel_r * 0.22)
+    bottom_head = mf.Manifold.cylinder(head_h + 0.2, barrel_r * 0.94, barrel_r * 0.94,
+                                      segments).translate((0.0, 0.0, -overhang - head_h))
+    top_head = mf.Manifold.cylinder(head_h + 0.2, barrel_r * 0.94, barrel_r * 0.94,
+                                   segments).translate((0.0, 0.0, height + overhang - 0.2))
+    for head in (bottom_head, top_head):
+        head_relief = mf.Manifold.cylinder(head_h + 0.2, barrel_r * 0.94 + 0.08,
+                                           barrel_r * 0.94 + 0.08, segments)
+        head_bb = head.bounding_box()
+        right_plate = right_plate - head_relief.translate((0.0, 0.0, head_bb[2]))
+    left_parts = [left_plate, *left_knuckles, pin, bottom_head, top_head]
+    right_parts = [right_plate, *right_knuckles]
+    left = _one(mf.Manifold.batch_boolean(left_parts, mf.OpType.Add), "левая створка петли")
+    right = mf.Manifold.batch_boolean(right_parts, mf.OpType.Add)
+    bore = mf.Manifold.cylinder(barrel_h + 2.0, pin_r + clearance, pin_r + clearance,
+                                segments).translate((0.0, 0.0, -overhang - 1.0))
+    right = _one(right - bore, "правая створка петли")
+    if abs(open_angle) > 1e-9:
+        right = right.rotate((0.0, 0.0, -open_angle))
+    return left, right
 
 
 @op("hinge", aliases=("петля", "дверная_петля", "мебельная_петля", "butt_hinge"),
@@ -417,52 +490,11 @@ def hinge(a, name):
     barrel_h = height + 2.0 * overhang
     if barrel_h / knuckles <= gap + 0.2:
         raise GeometryError("hinge: knuckle_gap съедает кулаки")
-    leaf = _hinge_leaf(leaf_w, height, thickness, corner, holes, hole_d,
-                       countersink, segments)
-    inner = barrel_r * 0.55
-    # Ось вынесена от средней плоскости створок: при закрытии на 180° листы
-    # занимают параллельные плоскости с зазором, а не входят друг в друга.
-    plate_y = thickness * 0.65 + 0.12
-    left_plate = leaf.translate((-inner - leaf_w / 2.0, plate_y, 0.0))
-    right_plate = leaf.translate((inner + leaf_w / 2.0, plate_y, 0.0))
-    left_knuckles, right_knuckles = [], []
-    step = barrel_h / knuckles
-    for i in range(knuckles):
-        z0 = -overhang + i * step + gap / 2.0
-        z1 = -overhang + (i + 1) * step - gap / 2.0
-        knuckle = mf.Manifold.cylinder(z1 - z0, barrel_r, barrel_r, segments).translate(
-            (0.0, 0.0, z0))
-        # В реальной петле край створки не проходит сквозь чужие кулаки.
-        # Вырезаем их с небольшим радиальным зазором до объединения.
-        relief = mf.Manifold.cylinder(z1 - z0, barrel_r + 0.08, barrel_r + 0.08,
-                                      segments).translate((0.0, 0.0, z0))
-        if i % 2 == 0:
-            left_knuckles.append(knuckle)
-            right_plate = right_plate - relief
-        else:
-            right_knuckles.append(knuckle)
-            left_plate = left_plate - relief
-    pin = mf.Manifold.cylinder(barrel_h + 0.4, pin_r, pin_r, segments).translate(
-        (0.0, 0.0, -overhang - 0.2))
-    head_h = min(0.9, barrel_r * 0.22)
-    bottom_head = mf.Manifold.cylinder(head_h + 0.2, barrel_r * 0.94, barrel_r * 0.94,
-                                      segments).translate((0.0, 0.0, -overhang - head_h))
-    top_head = mf.Manifold.cylinder(head_h + 0.2, barrel_r * 0.94, barrel_r * 0.94,
-                                   segments).translate((0.0, 0.0, height + overhang - 0.2))
-    for head in (bottom_head, top_head):
-        head_relief = mf.Manifold.cylinder(head_h + 0.2, barrel_r * 0.94 + 0.08,
-                                           barrel_r * 0.94 + 0.08, segments)
-        head_bb = head.bounding_box()
-        right_plate = right_plate - head_relief.translate((0.0, 0.0, head_bb[2]))
-    left_parts = [left_plate, *left_knuckles, pin, bottom_head, top_head]
-    right_parts = [right_plate, *right_knuckles]
-    left = _one(mf.Manifold.batch_boolean(left_parts, mf.OpType.Add), "левая створка петли")
-    right = mf.Manifold.batch_boolean(right_parts, mf.OpType.Add)
-    bore = mf.Manifold.cylinder(barrel_h + 2.0, pin_r + clearance, pin_r + clearance,
-                                segments).translate((0.0, 0.0, -overhang - 1.0))
-    right = _one(right - bore, "правая створка петли")
-    if abs(open_angle) > 1e-9:
-        right = right.rotate((0.0, 0.0, -open_angle))
+    left, right = _hinge_geometry(dict(
+        height=height, leaf_width=leaf_w, thickness=thickness, corner=corner,
+        holes=holes, hole_d=hole_d, countersink=countersink, segments=segments,
+        barrel_d=barrel_d, pin_d=pin_d, knuckles=knuckles, knuckle_gap=gap,
+        clearance=clearance, barrel_overhang=overhang, open_angle=open_angle))
     params = dict(height=height, leaf_width=leaf_w, thickness=thickness, corner=corner,
                   barrel_d=barrel_d, pin_d=pin_d, knuckles=knuckles, knuckle_gap=gap,
                   clearance=clearance, barrel_overhang=overhang, holes=holes,
@@ -476,23 +508,6 @@ def hinge(a, name):
     return root
 
 
-def _rounded_cylinder(radius: float, height: float, edge: float,
-                      segments: int) -> mf.Manifold:
-    r = min(max(0.0, edge), radius * 0.45, height * 0.45)
-    if r <= 1e-7:
-        return mf.Manifold.cylinder(height, radius, radius, segments)
-    profile = [(0.0, 0.0), (radius - r, 0.0)]
-    _arc(profile, (radius - r, r), r, -90.0, 0.0, 5)
-    profile.append((radius, height - r))
-    _arc(profile, (radius - r, height - r), r, 0.0, 90.0, 5)
-    profile.append((0.0, height))
-    return mf.Manifold.revolve(mf.CrossSection([np.asarray(profile, dtype=float)]), segments)
-
-
-def _y_solid(solid: mf.Manifold, depth: float, z: float) -> mf.Manifold:
-    return solid.rotate((90.0, 0.0, 0.0)).translate((0.0, -depth, z))
-
-
 def _bezier(points: list[tuple[float, float, float]], samples: int) -> np.ndarray:
     p = np.asarray(points, dtype=float)
     t = np.linspace(0.0, 1.0, samples)[:, None]
@@ -500,30 +515,233 @@ def _bezier(points: list[tuple[float, float, float]], samples: int) -> np.ndarra
             + 3 * (1 - t) * t ** 2 * p[2] + t ** 3 * p[3])
 
 
+def _smooth_control_values(values: np.ndarray, samples: int) -> np.ndarray:
+    """C1-интерполяция толщины без ступеней производной np.interp."""
+    values = np.asarray(values, dtype=np.float64)
+    if len(values) < 2:
+        return np.full(samples, float(values[0]))
+    u = np.linspace(0.0, 1.0, samples) * (len(values) - 1)
+    i = np.minimum(np.floor(u).astype(int), len(values) - 2)
+    t = u - i
+    p0 = values[np.maximum(i - 1, 0)]
+    p1 = values[i]
+    p2 = values[i + 1]
+    p3 = values[np.minimum(i + 2, len(values) - 1)]
+    return 0.5 * (2.0 * p1 + (-p0 + p2) * t
+                  + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t * t
+                  + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t * t * t)
+
+
+def _keyhole_prims(p: dict, z: float, thickness: float) -> list[object]:
+    """Евро-профиль скважины: круглая камера и узкий паз ниже."""
+    d = p["lock_d"]
+    y = -thickness * 0.5
+    return [
+        RoundedCylinder((0.0, y, z + d * 0.12), d * 0.5,
+                        thickness + 4.0, 0.0, "y"),
+        RoundBox((0.0, y, z - d * 0.25),
+                 (p["lock_slot"], thickness + 4.0, d * 0.75),
+                 min(0.45, p["lock_slot"] * 0.12)),
+    ]
+
+
+def _lock_plug(p: dict, z: float, segments: int) -> mf.Manifold:
+    """Отдельный цилиндр замка с настоящим узким ключевым пазом."""
+    d = p["lock_d"]
+    clearance = min(0.35, d * 0.025)
+    thickness = float(p.get("lock_plug_t", max(1.2, p["rosette_t"] * 0.65)))
+    back = -min(0.35, thickness * 0.20)
+    radius = d * 0.5 - clearance
+    round_part = mf.Manifold.cylinder(thickness, radius, radius, segments).rotate(
+        (90.0, 0.0, 0.0)).translate((0.0, back, z + d * 0.12))
+    stem = mf.Manifold.cube((max(0.8, p["lock_slot"] - 2 * clearance),
+                             thickness, d * 0.75 - 2 * clearance), True).translate(
+        (0.0, back - thickness * 0.5, z - d * 0.25))
+    plug = mf.Manifold.batch_boolean([round_part, stem], mf.OpType.Add)
+    slot_depth = min(1.6, thickness * 0.9)
+    slot_width = min(max(0.8, p["lock_slot"] * 0.30), p["lock_slot"] * 0.5)
+    key_slot = mf.Manifold.cube((slot_width, slot_depth, d * 0.32), True).translate(
+        (0.0, back - thickness + slot_depth * 0.20, z + d * 0.12))
+    return _one(plug - key_slot, "цилиндр замка")
+
+
+def _handle_sdf(form: str, p: dict, segments: int, blend: float,
+                resolution: float | None) -> tuple[mf.Manifold, list[tuple[str, mf.Manifold]],
+                                                   float, float, int]:
+    """Единое SDF-поле ручки и независимые детали замка.
+
+    Розетка, шейка и рычаг/шар остаются аналитическими примитивами до самой
+    polygonization. Скважина вычитается из того же поля, поэтому это не
+    нарисованный значок. Цилиндр и отдельная замочная планка — самостоятельные
+    selectable-объекты, а не спрятанные в compound куски.
+    """
+    rosette_kind = p["rosette"]
+    has_rosette = rosette_kind != "нет"
+    rosette_r = p["rosette_d"] * 0.5
+    rosette_t = p["rosette_t"]
+    projection = p["projection"]
+    neck_r = p["neck_d"] * 0.5
+    knob_r = p["knob_d"] * 0.5
+    lever_d = p["lever_d"]
+    lever_l = p["lever_length"]
+    relief = p["relief"]
+    is_knob = form in ("сферическая", "дисковая")
+    zc = max(p["rosette_h"] * 0.5 if has_rosette else 0.0,
+             knob_r if is_knob else lever_d)
+    join_limit = min(p["neck_d"], p["knob_d"] if is_knob else lever_d) * 0.45
+    join = min(float(blend), join_limit)
+
+    prims: list[tuple[object, float]] = []
+    if rosette_kind == "круглая":
+        prims.append((RoundedCylinder((0.0, -rosette_t * 0.5, zc), rosette_r,
+                                      rosette_t, min(1.2, rosette_t * 0.22), "y"), 0.0))
+    elif rosette_kind == "овальная":
+        prims.append((EllipseCylinder((0.0, -rosette_t * 0.5, zc), rosette_r,
+                                      p["rosette_h"] * 0.5, rosette_t,
+                                      min(1.2, rosette_t * 0.22)), 0.0))
+    elif rosette_kind == "прямоугольная":
+        prims.append((RoundBox((0.0, -rosette_t * 0.5, zc),
+                               (p["rosette_d"], rosette_t, p["rosette_h"]),
+                               min(p["rosette_corner"], rosette_t * 0.45,
+                                   rosette_r * 0.45, p["rosette_h"] * 0.1)), 0.0))
+
+    neck_a = -rosette_t + 0.8 if has_rosette else 0.0
+    if is_knob:
+        neck_b = -projection - 0.8
+        neck = RoundedCylinder((0.0, (neck_a + neck_b) * 0.5, zc), neck_r,
+                               abs(neck_b - neck_a), 0.0, "y")
+        prims.append((neck, join))
+        if form == "сферическая":
+            knob = Sphere((0.0, -projection, zc), knob_r)
+        else:
+            disk_t = p["disk_t"]
+            knob = RoundedCylinder((0.0, -projection, zc), knob_r, disk_t,
+                                   min(2.2, disk_t * 0.22), "y")
+        prims.append((knob, join))
+    else:
+        neck_b = -projection + lever_d * 0.20
+        neck = RoundedCylinder((0.0, (neck_a + neck_b) * 0.5, zc), neck_r,
+                               abs(neck_b - neck_a), 0.0, "y")
+        prims.append((neck, join))
+        if form == "прямоугольная":
+            # Длинные кромки остаются прямыми; RoundBox задаёт только малые
+            # intentional-фаски. SDF используется на стыке с шейкой, а не для
+            # превращения всего рычага в эллипсоид.
+            lever = RoundBox((lever_l * 0.5, -projection, zc),
+                             (lever_l + lever_d * 0.35, lever_d * 0.72, lever_d),
+                             min(p["lever_corner"], lever_d * 0.20, lever_l * 0.05))
+            prims.append((lever, join))
+        else:
+            curve = lever_l / 115.0
+            if form == "изогнутая":
+                controls = [(0.0, -projection, zc),
+                            (lever_l * 0.14, -projection - 6.0 * curve, zc + lever_l * 0.055),
+                            (lever_l * 0.58, -projection - 8.0 * curve, zc + lever_l * 0.025),
+                            (lever_l, -projection + 4.0 * curve, zc - lever_l * 0.10)]
+                scales = np.asarray([1.15, 1.04, 0.95, 0.84, 0.72])
+                z_scale = 0.78
+            else:
+                controls = [(0.0, -projection, zc),
+                            (lever_l * 0.16, -projection - 4.0 * curve, zc + lever_l * 0.08),
+                            (lever_l * 0.58, -projection - 10.0 * curve, zc + lever_l * 0.035),
+                            (lever_l, -projection + 2.0 * curve, zc - lever_l * 0.045)]
+                scales = np.asarray([1.20, 1.02, 0.86, 1.06, 0.78])
+                z_scale = 0.62
+            path = _bezier(controls, max(64, segments))
+            scale = _smooth_control_values(scales, len(path))
+            radii = lever_d * 0.5 * scale
+            lever = Tube(path, radii, z_scale=z_scale)
+            prims.append((lever, join))
+            if form == "рельефная" and relief > 1e-9:
+                first, last = 3, len(path) - 2
+                ridge_path = path[first:last].copy()
+                body_z = radii[first:last] * z_scale
+                ridge_path[:, 2] += body_z * 0.92
+                ridge_r = radii[first:last] * (0.08 + 0.14 * relief)
+                ridge = Tube(ridge_path, ridge_r)
+                ridge_join = min(join * 0.55, float(np.min(ridge_r)) * 0.85)
+                prims.append((ridge, ridge_join))
+
+    feature = min(p["neck_d"], p["knob_d"] if is_knob else lever_d)
+    actual_resolution = float(resolution) if resolution is not None else feature / max(10.0, segments * 0.65)
+    actual_resolution = max(0.05, actual_resolution)
+    margin = max(1.0, join * 1.8 + actual_resolution * 3.0)
+    lo = np.min(np.asarray([prim.lo for prim, _ in prims]), axis=0) - margin
+    hi = np.max(np.asarray([prim.hi for prim, _ in prims]), axis=0) + margin
+    # SDF нужен для качества стыка, а не для неограниченного расхода RAM.
+    budget = 8_000_000
+    estimate = int(np.prod(np.ceil((hi - lo) / actual_resolution).astype(np.int64) + 1))
+    if estimate > budget:
+        actual_resolution *= (estimate / budget) ** (1.0 / 3.0) * 1.001
+    field = Field([*lo, *hi], actual_resolution)
+    for prim, amount in prims:
+        field.add(prim, blend=amount)
+
+    lock_z = zc - p["lock_offset"]
+    integrated_lock = p["lock"] and rosette_kind in ("овальная", "прямоугольная")
+    if integrated_lock:
+        for cutter in _keyhole_prims(p, lock_z, rosette_t):
+            field.cut(cutter)
+    solid = field.mesh(smooth_iters=2, simplify=actual_resolution * 0.05,
+                       what=f"дверная ручка {form}")
+    _one(solid, f"дверная ручка {form}")
+
+    extras: list[tuple[str, mf.Manifold]] = []
+    if p["lock"] and not integrated_lock:
+        # Круглая розетка и вариант без розетки получают отдельную планку
+        # ниже ручки: не растягиваем круг в фальшивую «грушу» ради замка.
+        plate_r = float(p.get("lock_plate_r", max(10.0, p["lock_d"] * 0.8)))
+        plate = RoundedCylinder((0.0, -rosette_t * 0.5, lock_z), plate_r,
+                                rosette_t, min(1.0, rosette_t * 0.22), "y")
+        h = max(0.12, actual_resolution)
+        margin = 3.0 * h + 0.5
+        lock_field = Field([*(plate.lo - margin), *(plate.hi + margin)], h)
+        lock_field.add(plate)
+        for cutter in _keyhole_prims(p, lock_z, rosette_t):
+            lock_field.cut(cutter)
+        lock_plate = lock_field.mesh(smooth_iters=1, simplify=h * 0.04,
+                                     what="замочная планка")
+        extras.append((".lock_plate", _one(lock_plate, "замочная планка")))
+    if p["lock_plug"]:
+        extras.append((".lock_plug", _lock_plug(p, lock_z, segments)))
+    return solid, extras, actual_resolution, join, estimate
+
+
 @op("door_handle", aliases=("дверная_ручка", "ручка_двери", "door_knob"),
     category="Примитивы",
-    summary="Дверная ручка на розетке: четыре действительно разные формы. "
-            "form=изогнутая — Г-образный рычаг, рельефная — рычаг с переменным "
-            "сечением и продольным ребром, сферическая — шар, дисковая — "
-            "круглая приплюснутая ручка. Дверь — плоскость XZ, вынос идёт в −Y, "
-            "рычаг по умолчанию направлен +X.",
+    summary="Гладкая SDF-ручка: пять форм рычага/кнопки, круглая, овальная, "
+            "прямоугольная или отсутствующая розетка, настоящая скважина и "
+            "отдельный цилиндр замка. Все видимые детали доступны для выбора.",
     example="ручка = door_handle form=изогнутая lever_length=115 projection=45\n"
-            "лепесток = door_handle form=рельефная lever_length=120 relief=.6\n"
-            "шар = door_handle form=сферическая knob_d=56\n"
+            "лепесток = door_handle form=рельефная rosette=овальная lock=да lock_plug=да\n"
+            "модерн = door_handle form=прямоугольная rosette=прямоугольная rosette_h=160\n"
+            "шар = door_handle form=сферическая rosette=нет\n"
             "диск = door_handle form=дисковая knob_d=58 disk_t=18",
-    params={"form": "изогнутая, рельефная, сферическая или дисковая (изогнутая)",
-            "rosette_d": "диаметр розетки, мм (52)",
+    params={"form": "изогнутая, рельефная, прямоугольная, сферическая или дисковая",
+            "rosette": "круглая, овальная, прямоугольная или нет (круглая)",
+            "rosette_d": "диаметр/ширина розетки, мм (52)",
+            "rosette_h": "высота овала/прямоугольника; 0 — автоматически (0)",
             "rosette_t": "толщина розетки, мм (6)",
+            "rosette_corner": "фаска прямоугольной розетки, мм (3)",
             "neck_d": "диаметр соединительной шейки, мм (16)",
             "projection": "вынос оси ручки от двери в −Y, мм (45)",
-            "lever_length": "длина рычага по X, мм (115; только рычаги)",
-            "lever_d": "толщина рычага, мм (17; только рычаги)",
+            "lever_length": "длина рычага по X, мм (115)",
+            "lever_d": "толщина рычага, мм (17)",
+            "lever_corner": "фаска прямоугольного рычага, мм (1.2)",
             "relief": "высота продольного ребра 0…1 (0.55; только рельефная)",
             "knob_d": "диаметр сферы или диска, мм (56)",
             "disk_t": "толщина диска по Y, мм (18; только дисковая)",
+            "lock": "да — настоящая скважина в розетке/отдельной планке (нет)",
+            "lock_plug": "да — отдельный цилиндр в скважине; требует lock=да (нет)",
+            "lock_offset": "расстояние от оси ручки до замка вниз, мм (55)",
+            "lock_d": "диаметр круглой части скважины, мм (18)",
+            "lock_slot": "ширина нижней части скважины, мм (4)",
             "hand": "направление рычага: право (+X) или лево (−X) (право)",
-            "segments": "сегментов вращения 24…96 (48)",
-            "at": "сдвиг локального начала [x,y,z]; розетка на двери y=0",
+            "segments": "детализация осевой линии и авторазрешения 24…96 (48)",
+            "blend": "радиус плавных SDF-сопряжений частей, мм (3; 0 — острые)",
+            "resolution": "шаг SDF-сетки, мм; не задан — автоматически по segments",
+            "lock_color": "цвет замочной планки и цилиндра (#8f989f)",
+            "at": "сдвиг локального начала [x,y,z]; задняя плоскость на y=0",
             "center": "центрировать всю ручку в at (нет)"},
     positional=["form"])
 def door_handle(a, name):
@@ -531,91 +749,114 @@ def door_handle(a, name):
     form = {"изогнутая": "изогнутая", "г": "изогнутая", "г-образная": "изогнутая",
             "рычаг": "изогнутая", "lever": "изогнутая",
             "рельефная": "рельефная", "лепесток": "рельефная", "sculpted": "рельефная",
+            "прямоугольная": "прямоугольная", "прямоугольный": "прямоугольная",
+            "квадратная": "прямоугольная", "rect": "прямоугольная",
+            "rectangular": "прямоугольная",
             "сферическая": "сферическая", "сфера": "сферическая", "шар": "сферическая",
             "sphere": "сферическая", "дисковая": "дисковая", "диск": "дисковая",
             "disk": "дисковая"}.get(raw)
     if form is None:
-        raise GeometryError("door_handle: form=изогнутая, рельефная, сферическая или дисковая")
+        raise GeometryError("door_handle: form=изогнутая, рельефная, прямоугольная, сферическая или дисковая")
+    raw_rosette = (a.text("rosette", a.text("rosette_shape", "круглая") or "круглая")
+                   or "круглая").strip().lower()
+    rosette = {"круг": "круглая", "круглая": "круглая", "circle": "круглая",
+               "овал": "овальная", "овальная": "овальная", "oval": "овальная",
+               "прямоугольник": "прямоугольная", "прямоугольная": "прямоугольная",
+               "rect": "прямоугольная", "rectangle": "прямоугольная",
+               "нет": "нет", "none": "нет", "без": "нет", "без_розетки": "нет"}.get(raw_rosette)
+    if rosette is None:
+        raise GeometryError("door_handle: rosette=круглая, овальная, прямоугольная или нет")
     rosette_d = float(a.num("rosette_d", 52.0, minv=16.0, maxv=500.0))
     rosette_t = float(a.num("rosette_t", 6.0, minv=1.0, maxv=100.0))
+    rosette_corner = float(a.num("rosette_corner", 3.0, minv=0.0, maxv=100.0) or 0.0)
     neck_d = float(a.num("neck_d", 16.0, minv=3.0, maxv=100.0))
     projection = float(a.num("projection", 45.0, minv=12.0, maxv=500.0))
     lever_l = float(a.num("lever_length", 115.0, minv=35.0, maxv=1000.0))
     lever_d = float(a.num("lever_d", 17.0, minv=4.0, maxv=100.0))
+    lever_corner = float(a.num("lever_corner", 1.2, minv=0.0, maxv=20.0) or 0.0)
     relief = float(a.num("relief", 0.55, minv=0.0, maxv=1.0))
     knob_d = float(a.num("knob_d", 56.0, minv=16.0, maxv=300.0))
     disk_t = float(a.num("disk_t", 18.0, minv=4.0, maxv=100.0))
+    lock = a.boolean("lock", False)
+    lock_plug = a.boolean("lock_plug", False)
+    if lock_plug and not lock:
+        raise GeometryError("door_handle: lock_plug=да требует lock=да")
+    lock_offset = float(a.num("lock_offset", 55.0, minv=12.0, maxv=500.0))
+    lock_d = float(a.num("lock_d", 18.0, minv=6.0, maxv=60.0))
+    lock_slot = float(a.num("lock_slot", 4.0, minv=1.0, maxv=20.0))
+    if lock_slot > lock_d * 0.6:
+        raise GeometryError("door_handle: lock_slot слишком широкий для lock_d")
+    if lock and lock_offset <= (neck_d + lock_d) * 0.5 + 2.0:
+        raise GeometryError("door_handle: lock_offset слишком мал — скважина пересечёт шейку")
+    requested_h = float(a.num("rosette_h", 0.0, minv=0.0, maxv=2000.0) or 0.0)
+    if rosette == "круглая":
+        rosette_h = rosette_d
+    elif rosette == "нет":
+        rosette_h = 0.0
+    else:
+        automatic = rosette_d * (1.5 if rosette == "овальная" else 1.8)
+        if lock:
+            automatic = max(automatic, 2.0 * lock_offset + 3.0 * lock_d)
+        rosette_h = requested_h or automatic
+    if lock and rosette in ("овальная", "прямоугольная"):
+        zc = rosette_h * 0.5
+        lock_z = zc - lock_offset
+        if lock_z - lock_d * 0.65 <= lock_d * 0.75 or lock_z + lock_d * 0.65 >= rosette_h - 0.5:
+            raise GeometryError("door_handle: скважина не помещается в розетку; увеличьте rosette_h или lock_offset")
+    if lock and rosette == "круглая":
+        plate_r = max(10.0, lock_d * 0.8)
+        if lock_offset <= rosette_d * 0.5 + plate_r + 1.0:
+            raise GeometryError("door_handle: увеличьте lock_offset, чтобы замочная планка не пересекала круглую розетку")
     hand = (a.text("hand", "право") or "право").strip().lower()
     if hand not in ("право", "правый", "right", "лево", "левый", "left"):
         raise GeometryError("door_handle: hand=право или лево")
     segments = int(a.int("segments", 48, minv=24, maxv=96) or 48)
-    if projection <= rosette_t + 2.0:
+    if projection <= (rosette_t if rosette != "нет" else 0.0) + 2.0:
         raise GeometryError("door_handle: projection должен быть больше толщины розетки")
-    knob_r = knob_d / 2.0
-    zc = max(rosette_d / 2.0, knob_r if form in ("сферическая", "дисковая") else lever_d)
-    rosette = _y_solid(_rounded_cylinder(rosette_d / 2.0, rosette_t, 1.2, segments), 0.0, zc)
-    parts = [rosette]
-    if form in ("сферическая", "дисковая"):
-        neck = mf.Manifold.cylinder(projection - rosette_t + 0.8, neck_d / 2.0,
-                                    neck_d / 2.0, segments)
-        parts.append(_y_solid(neck, rosette_t - 0.4, zc))
-        if form == "сферическая":
-            parts.append(mf.Manifold.sphere(knob_r, segments).translate((0.0, -projection, zc)))
-        else:
-            disk = _rounded_cylinder(knob_r, disk_t, min(2.2, disk_t * 0.22), segments)
-            parts.append(_y_solid(disk, projection - disk_t / 2.0, zc))
-    else:
-        neck_h = projection - rosette_t + lever_d * 0.25
-        neck = mf.Manifold.cylinder(neck_h, neck_d / 2.0, neck_d / 2.0, segments)
-        parts.append(_y_solid(neck, rosette_t - 0.4, zc))
-        if form == "изогнутая":
-            controls = [(0.0, -projection, zc),
-                        (lever_l * 0.14, -projection - 6.0, zc + lever_l * 0.055),
-                        (lever_l * 0.58, -projection - 8.0, zc + lever_l * 0.025),
-                        (lever_l, -projection + 4.0, zc - lever_l * 0.10)]
-        else:
-            controls = [(0.0, -projection, zc),
-                        (lever_l * 0.16, -projection - 4.0, zc + lever_l * 0.08),
-                        (lever_l * 0.58, -projection - 10.0, zc + lever_l * 0.035),
-                        (lever_l, -projection + 2.0, zc - lever_l * 0.045)]
-        path = _bezier(controls, 42)
-        r = lever_d / 2.0
-        if form == "изогнутая":
-            profile = circle_profile(1.0, 20) * np.asarray([r, r * 0.78])
-            scales = [1.15, 1.04, 0.95, 0.84, 0.72]
-        else:
-            angles = np.linspace(0.0, 2.0 * math.pi, 24, endpoint=False)
-            profile = np.column_stack((np.sign(np.cos(angles)) * np.abs(np.cos(angles)) ** 0.62 * r,
-                                       np.sign(np.sin(angles)) * np.abs(np.sin(angles)) ** 0.62 * r * 0.62))
-            scales = [1.20, 1.02, 0.86, 1.06, 0.78]
-        lever = sweep_solid(path, profile, scale_curve=scales, round_caps=0.85,
-                            what=f"ручка {form}")
-        parts.append(lever)
-        parts.append(mf.Manifold.sphere(r * 1.08, max(24, segments // 2)).translate(tuple(path[0])))
-        if form == "рельефная" and relief > 1e-9:
-            ridge_path = path[4:-3].copy()
-            ridge_path[:, 2] += lever_d * (0.25 + 0.08 * relief)
-            ridge = sweep_solid(ridge_path, circle_profile(lever_d * (0.045 + 0.10 * relief), 14),
-                                scale_end=0.55, round_caps=0.8, what="рельефное ребро ручки")
-            parts.append(ridge)
-    solid = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
+    blend = float(a.num("blend", 3.0, minv=0.0, maxv=100.0))
+    requested_resolution = a.num("resolution", None, minv=0.05, maxv=100.0)
+    cfg = dict(rosette=rosette, rosette_d=rosette_d, rosette_h=rosette_h,
+               rosette_t=rosette_t, rosette_corner=rosette_corner, neck_d=neck_d,
+               projection=projection, lever_d=lever_d, lever_length=lever_l,
+               lever_corner=lever_corner, relief=relief, knob_d=knob_d, disk_t=disk_t,
+               lock=lock, lock_plug=lock_plug, lock_offset=lock_offset,
+               lock_d=lock_d, lock_slot=lock_slot)
+    solid, extras, actual_resolution, join, estimate = _handle_sdf(
+        form, cfg, segments, blend, requested_resolution)
+    if estimate > 8_000_000:
+        a.scene.log("warn", f"door_handle {form}: SDF разрешение ограничено "
+                            f"{actual_resolution:.3f} мм (~{estimate:,} ячеек до ограничения)".replace(",", " "),
+                    a.cmd.line)
+    items = [("", solid), *extras]
     if hand in ("лево", "левый", "left"):
-        solid = solid.mirror((-1.0, 0.0, 0.0))
-    _one(solid, f"дверная ручка {form}")
-    min_z = float(solid.bounding_box()[2])
+        items = [(suffix, part.mirror((-1.0, 0.0, 0.0))) for suffix, part in items]
+    min_z = min(float(part.bounding_box()[2]) for _, part in items)
     if abs(min_z) > 1e-9:
-        solid = solid.translate((0.0, 0.0, -min_z))
-    params = dict(form=form, rosette_d=rosette_d, rosette_t=rosette_t,
+        items = [(suffix, part.translate((0.0, 0.0, -min_z))) for suffix, part in items]
+    lever_forms = ("изогнутая", "рельефная", "прямоугольная")
+    params = dict(form=form, rosette=rosette, rosette_d=rosette_d,
+                  rosette_h=rosette_h, rosette_t=rosette_t, rosette_corner=rosette_corner,
                   neck_d=neck_d, projection=projection,
-                  lever_length=lever_l if form in ("изогнутая", "рельефная") else 0.0,
-                  lever_d=lever_d if form in ("изогнутая", "рельефная") else 0.0,
+                  lever_length=lever_l if form in lever_forms else 0.0,
+                  lever_d=lever_d if form in lever_forms else 0.0,
+                  lever_corner=lever_corner if form == "прямоугольная" else 0.0,
                   relief=relief if form == "рельефная" else 0.0,
                   knob_d=knob_d if form in ("сферическая", "дисковая") else 0.0,
                   disk_t=disk_t if form == "дисковая" else 0.0,
+                  lock=lock, lock_plug=lock_plug, lock_offset=lock_offset if lock else 0.0,
+                  lock_d=lock_d if lock else 0.0, lock_slot=lock_slot if lock else 0.0,
                   hand="лево" if hand in ("лево", "левый", "left") else "право",
-                  segments=segments)
-    parts_out = [("", solid, "color", "#b8bfc6", 0.76, 0.24, "door_handle")]
+                  segments=segments, blend=join, resolution=actual_resolution,
+                  sdf=True, objects=1 + len(extras))
+    parts_out = []
+    for suffix, part in items:
+        if not suffix:
+            parts_out.append(("", part, "color", "#b8bfc6", 0.76, 0.24, "door_handle"))
+        else:
+            parts_out.append((suffix, part, "lock_color", "#8f989f", 0.82, 0.22,
+                              "door_lock_plate" if suffix == ".lock_plate" else "door_lock"))
     root = _assembly(a, name, parts_out, params, "door_handle")
-    root.notes.append(f"дверная ручка: {form}, вынос {projection:g} мм, "
-                      f"направление {params['hand']}")
+    root.notes.append(f"дверная ручка: {form}, розетка {rosette}, вынос {projection:g} мм, "
+                      f"направление {params['hand']}; SDF сопряжение {join:g} мм, "
+                      f"шаг {actual_resolution:.3f} мм; замок={'да' if lock else 'нет'}")
     return root

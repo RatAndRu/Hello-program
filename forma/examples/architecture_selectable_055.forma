@@ -1,0 +1,10 @@
+# Forma 0.55 — двусторонняя дверь и три семейства окон.
+# Канон: верх +Z, право +X, перед −Y. Все части остаются selectable.
+
+дверь = door width=90 height=210 thickness=4.5 panels=4 columns=2 hinges=3 handle_form=прямоугольная handle_rosette=овальная handle_resolution=.20 lock=да lock_plug=да at=[-170,0,0] wood=#9b724c panel_color=#a98057 metal_color=#b7a36a
+
+обычное = window type=обычное width=120 height=140 sections=2 rows=1 opening=все handle_form=изогнутая handle_resolution=.18 casing=да sill=да at=[0,0,45] frame_color=#e3e6e4 glass_color=#b7d7e2
+
+панорама = window type=панорамное width=150 height=210 sections=3 opening=нет casing=нет sill=нет at=[190,0,0] frame_color=#444b50 sash_color=#555e64 glass_color=#a9cbd6
+
+составное = window type=составное width=170 height=150 sections=3 rows=2 opening=крайние open_angle=15 handle_form=прямоугольная handle_resolution=.20 casing=да sill=да at=[390,0,35] frame_color=#e3e6e4 glass_color=#b7d7e2

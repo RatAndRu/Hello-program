@@ -26,6 +26,7 @@ from .geometry import manifold_from_arrays
 from .ops import make_solid, op, stand_flat_sign
 from .ops_shapes import (_chamfered_prism, _cross, _placed, _revolve,
                          _segments, ensure_volume)
+from .ops_sculpt import _preserve_volume, _smooth_vertices
 from .shape_features import (cut_center_hole, hollow_cross, rounded_extrude,
                              varied_edge_thickness)
 
@@ -184,6 +185,8 @@ def _fireball(radius: float, tail_length: float, tail_angle: float,
     Задняя часть — настоящая сфера. В сечении ``x_join`` её кольцо напрямую
     продолжается кольцами хвоста; общие вершины исключают щель и второй объект.
     Хвост изгибается дугой в XY, а straighten=1 превращает его в прямой конус.
+    Производная радиуса в начале хвоста равна производной сферического
+    сечения (C1); локальный polish убирает уже дискретный, а не булев шов.
     """
     R = float(radius)
     L = float(tail_length)
@@ -196,18 +199,23 @@ def _fireball(radius: float, tail_length: float, tail_angle: float,
     # не превращается в отдельную «пуговицу» на поверхности шара.
     x_join = R * 0.38
     r_join = math.sqrt(max(R * R - x_join * x_join, 1e-9))
-    sphere_steps = max(16, n // 2)
-    tail_steps = max(20, n)
+    # Шаг по X у последнего сферического кольца и первого кольца хвоста
+    # должен совпадать: одинаковый segments при разной параметризации сам
+    # по себе создавал видимую полосу даже после выравнивания касательных.
+    sphere_steps = max(24, int(math.ceil(n * 1.25)))
+    tail_steps = max(24, n)
     verts: list[tuple[float, float, float]] = [(-R, 0.0, 0.0)]
+    polish_weights: list[float] = [0.0]
     rings: list[list[int]] = []
     phis = np.linspace(0.0, 2.0 * math.pi, n, endpoint=False)
 
-    def add_ring(center, e1, e2, r):
+    def add_ring(center, e1, e2, r, polish_weight=0.0):
         ids = []
         for phi in phis:
             p = np.asarray(center) + float(r) * (math.cos(phi) * e1 + math.sin(phi) * e2)
             ids.append(len(verts))
             verts.append(tuple(float(v) for v in p))
+            polish_weights.append(float(polish_weight))
         rings.append(ids)
 
     # Полюс и кольца задней сферы; последнее кольцо является общим с хвостом.
@@ -215,17 +223,24 @@ def _fireball(radius: float, tail_length: float, tail_angle: float,
         lat = -math.pi / 2.0 + (math.asin(x_join / R) + math.pi / 2.0) * j / sphere_steps
         x = R * math.sin(lat)
         r = R * math.cos(lat)
+        weight = max(0.0, 1.0 - abs(x - x_join) / (R * 0.16)) ** 2
         add_ring((x, 0.0, 0.0), np.asarray([0.0, 1.0, 0.0]),
-                 np.asarray([0.0, 0.0, 1.0]), r)
+                 np.asarray([0.0, 0.0, 1.0]), r, weight)
 
     def center_at(t):
+        straight = np.asarray([x_join + L * t, 0.0, 0.0])
         if abs(theta) < 1e-9:
-            curved = np.asarray([x_join + L * t, 0.0, 0.0])
+            arc = straight.copy()
         else:
             k = theta / L
-            curved = np.asarray([x_join + math.sin(theta * t) / k,
-                                 (1.0 - math.cos(theta * t)) / k, 0.0])
-        straight = np.asarray([x_join + L * t, 0.0, 0.0])
+            arc = np.asarray([x_join + math.sin(theta * t) / k,
+                              (1.0 - math.cos(theta * t)) / k, 0.0])
+        # Постоянная кривизна дуги, начинающаяся прямо на сфере, давала
+        # разные касательные плоскости даже при совпавшем dr/dx. Плавный
+        # вход сохраняет конечную точку и направление дуги, но имеет нулевые
+        # начальные кривизну и производную moving frame.
+        ease = t * t * (3.0 - 2.0 * t)
+        curved = straight + ease * (arc - straight)
         return (1.0 - s) * curved + s * straight
 
     for j in range(1, tail_steps):
@@ -237,14 +252,24 @@ def _fireball(radius: float, tail_length: float, tail_angle: float,
         e2 = np.asarray([0.0, 0.0, 1.0])
         e1 = np.cross(e2, tangent)
         e1 /= max(float(np.linalg.norm(e1)), 1e-12)
-        # Плавное сужение у изогнутого хвоста и точная линейная конусность
-        # при straighten=1. Общий корень имеет радиус сферического сечения.
-        curved_r = r_join * max(0.0, 1.0 - t) ** (0.82 + 0.28 * (1.0 - s))
+        # Сохраняем прежний силуэт хвоста, но локальной поправкой приравниваем
+        # dr/dt к производной сферы: у сферы dr/dx=-x/r, а dx/dt(0)=L.
+        # Экспоненциальное затухание не даёт поправке изменить длинный хвост
+        # или сделать его радиус отрицательным при большом tail_length.
+        power = 0.82 + 0.28 * (1.0 - s)
+        curved_r = r_join * max(0.0, 1.0 - t) ** power
         cone_r = r_join * (1.0 - t)
-        r = (1.0 - s) * curved_r + s * cone_r
-        add_ring(c, e1, e2, max(0.001, r))
+        base_r = (1.0 - s) * curved_r + s * cone_r
+        base_slope = -r_join * ((1.0 - s) * power + s)
+        sphere_slope = -x_join / r_join * L
+        tau = min(0.25, R / L)
+        correction = (sphere_slope - base_slope) * t * (1.0 - t) * math.exp(-t / tau)
+        r = max(0.001, base_r + correction)
+        weight = max(0.0, 1.0 - t * L / (R * 0.16)) ** 2
+        add_ring(c, e1, e2, r, weight)
     tip = len(verts)
     verts.append(tuple(float(v) for v in center_at(1.0)))
+    polish_weights.append(0.0)
     faces: list[tuple[int, int, int]] = []
     first = rings[0]
     for j in range(n):
@@ -259,7 +284,16 @@ def _fireball(radius: float, tail_length: float, tail_angle: float,
     for j in range(n):
         j2 = (j + 1) % n
         faces.append((last[j], tip, last[j2]))
-    solid = _closed(verts, faces, what)
+    v = np.asarray(verts, dtype=np.float64)
+    f = np.asarray(faces, dtype=np.int64)
+    p0, p1, p2 = v[f[:, 0]], v[f[:, 1]], v[f[:, 2]]
+    target_volume = abs(float(np.einsum("ij,ij->i", p0, np.cross(p1, p2)).sum() / 6.0))
+    # Тот же устойчивый Laplacian, что у кисти polish, но с нулевым весом
+    # вдали от соединения: силуэт, кончик и противоположный полюс не стираются.
+    v = _smooth_vertices(v, f, passes=3, strength=0.45,
+                         weight=np.asarray(polish_weights, dtype=np.float64))
+    solid = _closed(v, f, what)
+    solid, _ = _preserve_volume(solid, target_volume, np.asarray([x_join, 0.0, 0.0]))
     if solid.is_empty() or solid.status() != mf.Error.NoError or len(solid.decompose()) != 1:
         raise GeometryError("fireball: не удалось построить единую сетку сферы и хвоста.")
     return solid

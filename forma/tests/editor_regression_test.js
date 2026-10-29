@@ -25,13 +25,17 @@ async function pickingTest() {
   const objectName = sliceBetween(viewerSource, '  _objectName(mesh) {', '\n  /** Все объекты');
   const pickAt = sliceBetween(viewerSource, '  pickAt(clientX, clientY) {', '\n  /** Полигонаж');
   const visibleSource = sliceBetween(viewerSource, 'function effectivelyVisible(', '\nconst ENV_PRESETS');
+  const matchSource = sliceBetween(viewerSource, 'function meshMatches(', '\n/** Raycast');
+  const meshMatches = new Function(`${matchSource}\nreturn meshMatches;`)();
   const holder = new Function('THREE', `${visibleSource}\nreturn { ${objectName},\n${pickAt} };`)(THREE);
 
   const model = new THREE.Scene();
   const entry = new THREE.Group();
   entry.name = 'entry';
   const leaf = new THREE.Group();
-  leaf.name = 'entry.leaf';
+  // Имитируем GLTFLoader: очищенное node.name + исходное имя в extras.
+  leaf.name = 'entryleaf';
+  leaf.userData.formaName = 'entry.leaf';
   entry.add(leaf);
   model.add(entry);
   const leafMesh = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 4), new THREE.MeshBasicMaterial());
@@ -70,6 +74,9 @@ async function pickingTest() {
 
   if (holder._objectName.call(viewer, leafMesh) !== 'entry.leaf') {
     throw new Error('Безымянный Mesh не разрешился в составной entry.leaf');
+  }
+  if (!meshMatches(leafMesh, 'entry.leaf')) {
+    throw new Error('Подсветка не использует каноническое formaName предка');
   }
   const picked = holder.pickAt.call(viewer, 100, 100);
   if (!picked || picked.name !== 'entry.leaf') {

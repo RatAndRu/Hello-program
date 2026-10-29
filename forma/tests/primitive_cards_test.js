@@ -71,5 +71,24 @@ for (const op of ['track', 'hinge', 'door_handle']) {
   const tool = tools.find((item) => item.op === op);
   if (tool.group !== 'Готовые детали') throw new Error(`${op}: неверная группа`);
 }
+const handle = tools.find((item) => item.op === 'door_handle');
+if (!output.door_handle.includes('blend=3') || output.door_handle.includes('resolution=')) {
+  throw new Error('door_handle: SDF-сопряжение или авторазрешение не сохранены');
+}
+const customHandle = shapeScript(handle, cardFor(handle, { blend: 4.5, resolution: 0.42 }));
+if (!customHandle.includes('blend=4.5') || !customHandle.includes('resolution=0.42')) {
+  throw new Error('door_handle: явные параметры SDF потеряны');
+}
+const lockHandle = shapeScript(handle, cardFor(handle, {
+  form: 'прямоугольная', rosette: 'овальная', lock: true, lock_plug: true,
+}));
+if (!lockHandle.includes('form=прямоугольная') || !lockHandle.includes('rosette=овальная')
+    || !lockHandle.includes('lock=да') || !lockHandle.includes('lock_plug=да')) {
+  throw new Error('door_handle: форма, розетка или замок не сохранены карточкой');
+}
+const noLockHandle = shapeScript(handle, cardFor(handle, { lock: false, lock_plug: true }));
+if (noLockHandle.includes('lock_plug=')) {
+  throw new Error('door_handle: карточка оставила цилиндр без скважины');
+}
 if (process.argv.includes('--json')) console.log(JSON.stringify(output));
 else console.log(`Сценарии ${wanted.length} карточек примитивов сформированы без подмен параметров.`);

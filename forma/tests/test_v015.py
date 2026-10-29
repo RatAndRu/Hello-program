@@ -247,7 +247,8 @@ class TestExamplesAndTools(unittest.TestCase):
             "mug", "car", "vase", "bottle", "alien", "gear", "mannequin",
             "apple", "human_studio", "human_skeleton", "human_skeleton_original",
             "animation_tracks", "wardrobe", "thinkpad_x1",
-            "furniture_hardware", "fittings_053", "glyphs_expansion_053",
+            "furniture_hardware", "architecture_selectable_055", "handle_rosettes_055",
+            "selection_details_055", "smooth_transitions_054", "fittings_053", "glyphs_expansion_053",
             "mechanics", "showcase", "motorcycle", "clock", "clock_led", "anime_face",
         ])
 

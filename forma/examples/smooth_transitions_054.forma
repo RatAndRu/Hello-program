@@ -1,0 +1,14 @@
+# Forma 0.54 — гладкие сопряжения и управляемый полигонаж.
+# Три самостоятельных объекта разнесены по X и не пересекаются.
+
+ручка = door_handle form=рельефная rosette_d=52 rosette_t=6 neck_d=16 projection=45 lever_length=115 lever_d=17 relief=.72 hand=право segments=48 blend=3.5 resolution=.52 color=#c4a46f
+
+инь = yin_yang form=объёмная diameter=120 tail_length=90 tail_angle=30 segments=84 at=[260,0,60] color=#c97945
+
+# Навершенник: плавные вогнутые стыки, но острые наружные кромки диска.
+тело = ellipsoid x=40 y=40 z=24 segments=128 detail=5 at=[480,0,0] color=#b8bfc6
+стержень = cylinder radius=14 height=60 segments=128 detail=5 at=[480,0,30] color=#b8bfc6
+диск = cylinder radius=22 height=4 segments=128 detail=5 at=[480,0,76] color=#b8bfc6
+вершина = sphere radius=18 segments=128 detail=5 at=[480,0,78] color=#b8bfc6
+кольцо = torus major=18 minor=2.5 segments=128 detail=5 minor_segments=32 at=[480,0,78] color=#b8bfc6
+навершенник = fuse [тело,стержень,диск,вершина,кольцо] radius=5 detail=1.5 max_tris=180000 polish=1 color=#b8bfc6

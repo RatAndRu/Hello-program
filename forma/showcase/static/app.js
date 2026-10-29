@@ -54,7 +54,10 @@ function renderNav() {
 }
 
 function changeCard(change) {
-  return `<article class="change"><h3>${esc(change.title)}</h3><p>${esc(change.text)}</p></article>`;
+  const image = change.image
+    ? `<img class="change-image" src="${esc(change.image)}" alt="${esc(change.title)} — сравнение до и после" loading="lazy" decoding="async">`
+    : '';
+  return `<article class="change"><h3>${esc(change.title)}</h3><p>${esc(change.text)}</p>${image}</article>`;
 }
 
 function posterTabs(model) {
@@ -69,9 +72,11 @@ function modelCard(model) {
   const stats = model.stats;
   const firstPoster = model.posters[0];
   const drawLabel = stats.optimized ? 'пакетов в 3D' : 'узлов в 3D';
-  const optimization = stats.optimized
-    ? `Быстрый просмотр: ${formatNumber(stats.preview_draw_calls)} пакетов материалов вместо ${formatNumber(stats.objects)} узлов. Треугольники, нормали и габариты совпадают с полным GLB.`
-    : 'Для этой сцены используется исходный GLB без пакетирования, чтобы полностью сохранить покраску или текстуры.';
+  const optimization = model.preview_kind === 'subset'
+    ? `Лёгкий интерактивный preview: ${formatNumber(stats.preview_triangles)} треугольников вместо ${formatNumber(stats.triangles)}. Полный GLB и исходник содержат все детали; ничего не загружается до нажатия кнопки.`
+    : stats.optimized
+      ? `Быстрый просмотр: ${formatNumber(stats.preview_draw_calls)} пакетов материалов вместо ${formatNumber(stats.objects)} узлов. Треугольники, нормали и габариты совпадают с полным GLB.`
+      : 'Для этой сцены используется исходный GLB без пакетирования, чтобы полностью сохранить покраску или текстуры.';
   return `<article class="model-card" id="model-${esc(model.id)}">
     <div class="model-main">
       <div class="poster-panel">
@@ -175,7 +180,7 @@ function updateProgress(loaded, total, expected) {
 function resetViewerUi(model) {
   document.querySelector('#viewer-title').textContent = model.title;
   document.querySelector('#viewer-stats').textContent =
-    `${formatNumber(model.stats.triangles)} треугольников · ${formatNumber(model.stats.preview_draw_calls)} пакетов`;
+    `${formatNumber(model.stats.preview_triangles ?? model.stats.triangles)} треугольников · ${formatNumber(model.stats.preview_draw_calls)} пакетов`;
   for (const [selector, asset] of [['#viewer-forma', model.forma], ['#viewer-glb', model.full_glb]]) {
     const link = document.querySelector(selector);
     link.href = asset.url;

@@ -26,12 +26,18 @@ class ShowcaseTest(unittest.TestCase):
     def test_catalog_has_versioned_changes_and_existing_sources(self):
         catalog = json.loads((SHOWCASE / "catalog.source.json").read_text(encoding="utf-8"))
         self.assertEqual([v["id"] for v in catalog["versions"]],
-                         ["train-2026-10", "0.53", "0.52"])
+                         ["train-2026-10", "0.55", "0.54", "0.53", "0.52"])
         for version in catalog["versions"]:
             self.assertGreaterEqual(len(version["changes"]), 4)
             self.assertTrue(version["title"])
+            for change in version["changes"]:
+                if change.get("image"):
+                    self.assertTrue((SHOWCASE / "static" / change["image"]).is_file(), change["image"])
             for model in version["models"]:
                 self.assertTrue((ROOT.parent / model["source"]).is_file(), model["source"])
+                if model.get("preview_source"):
+                    self.assertTrue((ROOT.parent / model["preview_source"]).is_file(),
+                                    model["preview_source"])
                 self.assertTrue(model["posters"])
 
     def test_preview_batching_preserves_faces_normals_and_bounds(self):
@@ -67,6 +73,7 @@ class ShowcaseTest(unittest.TestCase):
         self.assertIn("import('./viewer.js')", app)
         self.assertIn('loading="lazy"', app)
         self.assertIn("closeViewer()", app)
+        self.assertIn("model.stats.preview_triangles ?? model.stats.triangles", app)
         self.assertIn("forceContextLoss", viewer)
         self.assertIn("document.hidden", viewer)
         self.assertNotIn("/api/build", app)

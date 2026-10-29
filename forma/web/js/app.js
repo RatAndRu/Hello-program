@@ -4886,7 +4886,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'track', name: 'путь', title: 'Рельсовый путь', group: 'Готовые детали',
-    desc: 'Одна или две рельсы с настоящим профилем по длине. Фасонные шпалы имеют посадочные карманы; подкладки, прижимы и гайки не пересекаются с ними. Шпалы и крепления можно отключать.',
+    desc: 'Каждая рельса, шпала и точка крепления — отдельный выбираемый объект. Фасонные шпалы имеют посадочные карманы; подкладки, прижимы и гайки не пересекаются с ними.',
     params: [
       { k: 'length', label: 'длина пути', v: 390, step: 10, min: 40, max: 100000 },
       { k: 'rails', label: 'рельс', v: 2, step: 1, min: 1, max: 2 },
@@ -4935,20 +4935,31 @@ const TOOL_SHAPES = [
   },
   {
     op: 'door_handle', name: 'ручка', title: 'Дверная ручка', group: 'Готовые детали',
-    desc: 'Четыре разные конструкции на розетке: изогнутый Г-образный рычаг, рельефный рычаг с продольным ребром, сфера и диск. Вынос, сечение, длина и сторона меняют настоящую геометрию.',
+    desc: 'Пять форм в гладком SDF-поле, включая прямоугольный рычаг. Круглая, овальная, прямоугольная или отсутствующая розетка; настоящая скважина и отдельный цилиндр замка доступны для выбора.',
     params: [
-      { k: 'form', label: 'форма', v: 'изогнутая', kind: 'raw', choices: ['изогнутая', 'рельефная', 'сферическая', 'дисковая'] },
-      { k: 'rosette_d', label: '⌀ розетки', v: 52, step: 2, min: 16, max: 500 },
+      { k: 'form', label: 'форма', v: 'изогнутая', kind: 'raw', choices: ['изогнутая', 'рельефная', 'прямоугольная', 'сферическая', 'дисковая'] },
+      { k: 'rosette', label: 'розетка', v: 'круглая', kind: 'raw', choices: ['круглая', 'овальная', 'прямоугольная', 'нет'] },
+      { k: 'rosette_d', label: '⌀/ширина розетки', v: 52, step: 2, min: 16, max: 500 },
+      { k: 'rosette_h', label: 'высота розетки (0 — авто)', v: 0, step: 5, min: 0, max: 2000 },
       { k: 'rosette_t', label: 'толщина розетки', v: 6, step: 1, min: 1, max: 100 },
+      { k: 'rosette_corner', label: 'фаска розетки', v: 3, step: 0.5, min: 0, max: 100 },
       { k: 'neck_d', label: '⌀ шейки', v: 16, step: 1, min: 3, max: 100 },
       { k: 'projection', label: 'вынос', v: 45, step: 5, min: 12, max: 500 },
       { k: 'lever_length', label: 'длина рычага', v: 115, step: 5, min: 35, max: 1000 },
       { k: 'lever_d', label: 'сечение рычага', v: 17, step: 1, min: 4, max: 100 },
+      { k: 'lever_corner', label: 'фаска рычага', v: 1.2, step: 0.2, min: 0, max: 20 },
       { k: 'relief', label: 'рельеф', v: 0.55, step: 0.05, min: 0, max: 1, kind: 'slider' },
       { k: 'knob_d', label: '⌀ шара/диска', v: 56, step: 2, min: 16, max: 300 },
       { k: 'disk_t', label: 'толщина диска', v: 18, step: 1, min: 4, max: 100 },
+      { k: 'lock', label: 'скважина замка', v: false, kind: 'bool' },
+      { k: 'lock_plug', label: 'цилиндр замка', v: false, kind: 'bool' },
+      { k: 'lock_offset', label: 'замок ниже ручки', v: 55, step: 5, min: 12, max: 500 },
+      { k: 'lock_d', label: '⌀ скважины', v: 18, step: 1, min: 6, max: 60 },
       { k: 'hand', label: 'сторона', v: 'право', kind: 'raw', choices: ['право', 'лево'] },
-      { k: 'segments', label: 'сегменты', v: 48, step: 8, min: 24, max: 96 },
+      { k: 'segments', label: 'детализация', v: 48, step: 8, min: 24, max: 96 },
+      { k: 'blend', label: 'сопряжение SDF', v: 3, step: 0.5, min: 0, max: 100 },
+      { k: 'resolution', label: 'шаг SDF, мм', v: '', auto: true, step: 0.05, min: 0.05, max: 100,
+        hint: 'Пусто — автоматически по детализации; слишком мелкий шаг ограничен бюджетом 8 млн ячеек' },
     ],
   },
   {
@@ -4970,7 +4981,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'door', name: 'дверь', title: 'Дверь — полотно и фурнитура', group: 'Готовые детали',
-    desc: 'Коробка, полотно, филёнки, петли, ручка и замок редактируются отдельно. Поворот door.leaf двигает полотно вместе с фурнитурой вокруг оси петель.',
+    desc: 'Двусторонняя дверь на готовых петлях и SDF-ручках. Филёнки, ручки и замок симметричны; обе створки каждой петли и все детали выбираются отдельно. Поворот door.leaf двигает полотно с фурнитурой.',
     params: [
       { k: 'width', label: 'ширина', v: 90, step: 5, min: 30, max: 300 },
       { k: 'height', label: 'высота', v: 210, step: 5, min: 50, max: 400 },
@@ -4979,7 +4990,30 @@ const TOOL_SHAPES = [
       { k: 'columns', label: 'колонок', v: 2, step: 1, min: 1, max: 6 },
       { k: 'hinges', label: 'петель', v: 3, step: 1, min: 1, max: 6 },
       { k: 'handle_height', label: 'ручка Z', v: 105, step: 5, min: 10, max: 300 },
+      { k: 'handle_form', label: 'форма ручки', v: 'изогнутая', kind: 'raw', choices: ['изогнутая', 'рельефная', 'прямоугольная', 'сферическая', 'дисковая'] },
+      { k: 'handle_rosette', label: 'розетка', v: 'круглая', kind: 'raw', choices: ['круглая', 'овальная', 'прямоугольная', 'нет'] },
+      { k: 'handle_length', label: 'длина рычага', v: 11, step: 1, min: 3, max: 100 },
       { k: 'lock', label: 'замок', v: true, kind: 'bool' },
+      { k: 'lock_plug', label: 'цилиндры замка', v: false, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'window', name: 'окно', title: 'Окно — секции и фурнитура', group: 'Готовые детали',
+    desc: 'Обычное, панорамное или составное окно. «Авто» учитывает тип: панорама глухая и без наличников. Рамы, створки, стекла, импосты, трансомы, ручки, наличники и подоконник — отдельные выбираемые детали.',
+    params: [
+      { k: 'type', label: 'тип', v: 'обычное', kind: 'raw', choices: ['обычное', 'панорамное', 'составное'] },
+      { k: 'width', label: 'ширина', v: 120, step: 10, min: 30, max: 1000 },
+      { k: 'height', label: 'высота', v: 140, step: 10, min: 30, max: 1000 },
+      { k: 'depth', label: 'глубина рамы', v: 8, step: 1, min: 2, max: 100 },
+      { k: 'sections', label: 'секций (пусто — по типу)', v: '', auto: true, step: 1, min: 0, max: 8 },
+      { k: 'rows', label: 'рядов', v: 1, step: 1, min: 1, max: 4 },
+      { k: 'opening', label: 'открываемые', v: 'авто', auto: true, kind: 'raw', choices: ['авто', 'все', 'крайние', 'нет'] },
+      { k: 'open_angle', label: 'открытие°', v: 0, step: 5, min: 0, max: 120 },
+      { k: 'handle', label: 'ручки', v: true, kind: 'bool' },
+      { k: 'handle_form', label: 'форма ручки', v: 'изогнутая', kind: 'raw', choices: ['изогнутая', 'рельефная', 'прямоугольная', 'сферическая', 'дисковая'] },
+      { k: 'glass_t', label: 'стекло', v: 1.6, step: 0.2, min: 0.2, max: 20 },
+      { k: 'casing', label: 'наличники', v: 'авто', auto: true, kind: 'raw', choices: ['авто', 'да', 'нет'] },
+      { k: 'sill', label: 'подоконник', v: 'авто', auto: true, kind: 'raw', choices: ['авто', 'да', 'нет'] },
     ],
   },
   {
@@ -5068,7 +5102,7 @@ const TOOL_SHAPES = [
   },
   {
     op: 'yin_yang', name: 'инь_ян', title: 'Fireball / инь-ян', group: 'Готовые детали',
-    desc: 'Объёмный режим — цельная сфера с плавным хвостом fireball без булева стыка; плоский режим сохраняет половину инь-ян и рамку.',
+    desc: 'Объёмный режим — цельная сфера и хвост с C1-сопряжением, согласованной плотностью колец и локальной polish-обработкой; плоский режим сохраняет половину инь-ян и рамку.',
     params: [
       { k: 'diameter', label: 'диаметр', v: 120, step: 5, min: 6, max: 5000 },
       { k: 'thick', label: 'толщина', v: 16, step: 2, min: 0.4, max: 5000 },
@@ -6720,7 +6754,7 @@ function shapeParams(tool, card) {
       return;
     }
     const raw = input.value.trim();
-    if (!raw) return;
+    if (!raw || (p.auto && raw === 'авто')) return;
     if (p.kind === 'vec') {
       const nums = raw.split(/[,\s]+/).filter(Boolean);
       parts.push(`${p.k}=[${nums.join(', ')}]`);
@@ -6733,6 +6767,12 @@ function shapeParams(tool, card) {
     // Без шпал креплениям не на чем стоять. Не отправляем противоречащий
     // fasteners=да: переключатель шпал должен сразу давать рабочее превью.
     return parts.filter((part) => !part.startsWith('fasteners='));
+  }
+  if ((tool.op === 'door_handle' || tool.op === 'door')
+      && card.querySelector('[data-key="lock"]')?.checked === false) {
+    // Без скважины цилиндру негде стоять: карточка не создаёт заведомо
+    // противоречивую комбинацию lock=нет lock_plug=да.
+    return parts.filter((part) => !part.startsWith('lock_plug='));
   }
   if ((tool.op === 'spikes' || tool.op === 'hair')
       && card.querySelector('[data-key="density"]')?.value.trim()) {
