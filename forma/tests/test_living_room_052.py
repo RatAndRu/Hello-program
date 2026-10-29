@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import io
 import unittest
 from pathlib import Path
@@ -9,8 +10,16 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
-from docs.make_living_room import SCENE_PATH, validate
 from forma.run import build
+
+ROOT = Path(__file__).resolve().parents[1]
+GENERATOR = ROOT / "docs" / "make_living_room.py"
+SPEC = importlib.util.spec_from_file_location("living_room_052_generator", GENERATOR)
+assert SPEC is not None and SPEC.loader is not None
+MODULE = importlib.util.module_from_spec(SPEC)
+SPEC.loader.exec_module(MODULE)
+SCENE_PATH = ROOT / "examples" / "living_room_diorama.forma"
+validate = MODULE.validate
 
 
 class LivingRoom052Test(unittest.TestCase):

@@ -16,7 +16,6 @@ from pathlib import Path
 
 import manifold3d as mf
 import numpy as np
-from PIL import Image, ImageDraw, ImageFont
 
 from forma.geometry import manifold_mesh
 from forma.render import _prepare, _render_view
@@ -453,6 +452,8 @@ def validate(result):
 
 
 def render(solids, groups, view: str, path: Path, size: int = 1000) -> None:
+    from PIL import Image
+
     meshes = _prepare(solids, groups)
     vertices = np.concatenate([m["verts"] for m in meshes])
     lo, hi = vertices.min(0), vertices.max(0)
@@ -465,6 +466,8 @@ def render(solids, groups, view: str, path: Path, size: int = 1000) -> None:
 
 
 def contact_sheet(paths: list[tuple[str, Path]], output: Path) -> None:
+    from PIL import Image, ImageDraw, ImageFont
+
     font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     bold_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
     font = ImageFont.truetype(font_path, 24)
