@@ -9,6 +9,8 @@ import { EmissiveBloomPass } from './selectivebloom.js';
 import { PlanarMirror } from './planarmirror.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { cameraClipRange } from './camera_clip.js';
+import { edgeCoverageScale } from './edge_coverage.js';
 
 /** Цвет из #rrggbb в вектор 0…1 — без менеджера цвета three. */
 function hexVec(hex) {
@@ -142,12 +144,19 @@ export class Viewer {
     // аниме/манга-подача: контуры по форме, ступени тона, растр
     this.anime = null;
     this._animePass = null;
+    // Контур считается в отдельном, более плотном буфере и возвращается в
+    // кадр как доля покрытия пикселя, а не как мигающий бинарный пунктир.
+    this._edgePass = null;
+    this._edgeRT = null;
     // буфер «чей пиксель»: по нему рисуются линии между группами и материалами
     this._idRT = null;
     this._idMat = null;
     this._idCache = null;
     this._normalRT = null;
-    this._normalMat = new THREE.MeshNormalMaterial();
+    // Для поиска изломов нужны геометрические нормали граней, а не smooth
+    // normals: на плоской стенке вершины общие с откосами окна, и интерполяция
+    // иначе рисует ложные пятна/пунктир там, где излома вообще нет.
+    this._normalMat = new THREE.MeshNormalMaterial({ flatShading: true });
     // настоящие отражения в зеркальных деталях: своя кубическая карта
     this._mirrors = [];
     this._mirrorAt = 0;
@@ -654,6 +663,8 @@ export class Viewer {
       // depthTexture не меняет размер вместе с целью — проще создать заново
       this._normalRT.dispose();
       this._normalRT = null;
+      this._edgeRT?.dispose();
+      this._edgeRT = null;
       this._ensureNormalTarget();
     }
     if (this._animePass) this._animePass.uniforms.uResolution.value.set(buf.x, buf.y);
@@ -3286,6 +3297,10 @@ export class Viewer {
       this.renderer.shadowMap.needsUpdate = this._shadowDirty || this.playing === true;
       if (this.renderer.shadowMap.needsUpdate) this._shadowDirty = false;
     }
+    // Диапазон глубины следует за камерой и моделью. Постоянный 1…40000 на
+    // отдалённом вагоне делал стенку тоньше кванта depth-буфера: цвет и
+    // нормали z-fight'ились, а контур распадался на пунктир.
+    this._updateCameraClip();
     this._refreshMirrors();
     const animeOn = this._animeOn();
     if ((this._bloomOn || animeOn) && this.composer) {
@@ -3302,9 +3317,19 @@ export class Viewer {
         u.uFar.value = this.camera.far;
         const size = new THREE.Vector2();
         this.renderer.getDrawingBufferSize(size);
+        // Эти два разрешения намеренно разные: красота/растр остаются в
+        // output resolution, а поиск рёбер идёт в плотном буфере.
         u.uResolution.value.set(size.x, size.y);
         u.uPixelRatio.value = this.renderer.getPixelRatio() || 1;
         u.uWorld.value = this._sceneRadius();
+        if (this._edgePass && this._edgeRT) {
+          const eu = this._edgePass.uniforms;
+          eu.uResolution.value.set(this._normalRT.width, this._normalRT.height);
+          eu.uPixelRatio.value = (this.renderer.getPixelRatio() || 1)
+            * ((this._normalRT.width / size.x) + (this._normalRT.height / size.y)) * 0.5;
+          u.tEdge.value = this._edgeRT.texture;
+          this._renderEdgePass();
+        }
       }
       this.composer.render();
     } else {
@@ -3359,7 +3384,13 @@ export class Viewer {
 
   _ensureIdTarget() {
     const size = new THREE.Vector2();
-    this.renderer.getDrawingBufferSize(size);
+    if (this._normalRT) {
+      // ID-паспорт должен совпадать с G-buffer по каждому subpixel-образцу,
+      // иначе линии групп/материалов останутся ступенчатыми при 2× coverage.
+      size.set(this._normalRT.width, this._normalRT.height);
+    } else {
+      this.renderer.getDrawingBufferSize(size);
+    }
     const w = Math.max(2, Math.floor(size.x));
     const h = Math.max(2, Math.floor(size.y));
     if (this._idRT && this._idRT.width === w && this._idRT.height === h) return;
@@ -3453,6 +3484,29 @@ export class Viewer {
     this.scene.overrideMaterial = prevOverride;
     this.scene.background = prevBg;
     this.scene.fog = prevFog;
+  }
+
+  /** Отдельный fullscreen-pass: бинарное ребро в плотном разрешении. */
+  _renderEdgePass() {
+    if (!this._edgePass || !this._edgeRT || !this._normalRT) return;
+    const previous = this.renderer.getRenderTarget();
+    // ShaderPass ожидает readBuffer даже когда его текстура не используется;
+    // normalRT здесь лишь корректный placeholder для tUnused.
+    this._edgePass.render(this.renderer, this._edgeRT, this._normalRT);
+    this.renderer.setRenderTarget(previous);
+  }
+
+  /** Подгоняет near/far под фактическое положение камеры и габариты модели. */
+  _updateCameraClip() {
+    const range = cameraClipRange(this.camera?.position, this.bbox);
+    if (!range || !this.camera) return;
+    const { near, far } = range;
+    const nearChanged = Math.abs(this.camera.near - near) > Math.max(1e-6, near * 1e-5);
+    const farChanged = Math.abs(this.camera.far - far) > Math.max(1e-6, far * 1e-5);
+    if (!nearChanged && !farChanged) return;
+    this.camera.near = near;
+    this.camera.far = far;
+    this.camera.updateProjectionMatrix();
   }
 
   /** Радиус модели в мировых единицах: порог и толщина линий не зависят от масштаба. */
@@ -3644,6 +3698,8 @@ export class Viewer {
     if (!need) {
       this.composer = null;
       this._animePass = null;
+      this._edgePass?.dispose();
+      this._edgePass = null;
       return;
     }
     if (!this.composer) {
@@ -3674,6 +3730,8 @@ export class Viewer {
     while (composer.passes.length > 1) composer.removePass(composer.passes[composer.passes.length - 1]);
     this.bloomPass = null;
     this._animePass = null;
+    this._edgePass?.dispose();
+    this._edgePass = null;
     const size = new THREE.Vector2();
     this.renderer.getSize(size);
     if (this._bloomOn) {
@@ -3691,6 +3749,13 @@ export class Viewer {
     if (this.anime && this.animeSupported) {
       const pass = new ShaderPass(this._animeShader());
       this._animePass = pass;
+      this._edgePass = new ShaderPass(this._edgeShader(), 'tUnused');
+      // Общие настройки двух проходов: стиль меняется один раз и не может
+      // разойтись между геометрическим контуром и финальной краской.
+      for (const key of ('tNormal tDepth tIds uLine uInner uCrease uDepthTh '
+                         + 'uSeams uNear uFar uWorld uLines').split(' ')) {
+        this._edgePass.uniforms[key] = pass.uniforms[key];
+      }
       composer.addPass(pass);
       const buf = new THREE.Vector2();
       this.renderer.getDrawingBufferSize(buf);
@@ -3699,13 +3764,23 @@ export class Viewer {
     }
   }
 
+  _animeBufferScale(size) {
+    // Цель — два samples на CSS-пиксель независимо от DPR. На HiDPI дополнительный
+    // множитель не нужен, на обычном экране он убирает subpixel-пунктир.
+    return edgeCoverageScale(size.x, size.y, this.renderer.getPixelRatio());
+  }
+
   _ensureNormalTarget() {
     const size = new THREE.Vector2();
     this.renderer.getDrawingBufferSize(size);
-    const w = Math.max(2, Math.floor(size.x));
-    const h = Math.max(2, Math.floor(size.y));
-    if (this._normalRT && this._normalRT.width === w && this._normalRT.height === h) return;
-    if (this._normalRT) this._normalRT.dispose();
+    const scale = this._animeBufferScale(size);
+    const w = Math.max(2, Math.floor(size.x * scale));
+    const h = Math.max(2, Math.floor(size.y * scale));
+    if (this._normalRT && this._edgeRT
+        && this._normalRT.width === w && this._normalRT.height === h
+        && this._edgeRT.width === w && this._edgeRT.height === h) return;
+    this._normalRT?.dispose();
+    this._edgeRT?.dispose();
     const depth = new THREE.DepthTexture(w, h);
     depth.type = THREE.UnsignedIntType;
     this._normalRT = new THREE.WebGLRenderTarget(w, h, {
@@ -3715,9 +3790,83 @@ export class Viewer {
       depthTexture: depth,
       stencilBuffer: false,
     });
+    this._edgeRT = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: false,
+      stencilBuffer: false,
+    });
+    this._edgeRT.texture.generateMipmaps = false;
   }
 
-  /** Шейдер контуров: силуэт, изломы, стыки деталей + ступени тона и растр. */
+  /** Геометрический контур в плотном буфере; цвет сюда не входит. */
+  _edgeShader() {
+    return {
+      uniforms: {
+        tNormal: { value: null }, tDepth: { value: null }, tIds: { value: null },
+        uResolution: { value: new THREE.Vector2(1, 1) },
+        uLine: { value: 1.6 }, uInner: { value: 1 },
+        uCrease: { value: Math.cos((32 * Math.PI) / 180) },
+        uDepthTh: { value: 0.035 }, uSeams: { value: 1 },
+        uNear: { value: 1 }, uFar: { value: 40000 },
+        uPixelRatio: { value: 1 }, uWorld: { value: 100 }, uLines: { value: 0 },
+      },
+      vertexShader: `
+        varying vec2 vUv;
+        void main() {
+          vUv = uv;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        precision highp float;
+        uniform sampler2D tNormal, tDepth, tIds;
+        uniform vec2 uResolution;
+        uniform float uLine, uInner, uCrease, uDepthTh, uSeams;
+        uniform float uNear, uFar, uPixelRatio, uWorld, uLines;
+        varying vec2 vUv;
+
+        float linearDepth(float d) {
+          float z = d * 2.0 - 1.0;
+          return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
+        }
+
+        void main() {
+          vec4 nC = texture2D(tNormal, vUv);
+          float aC = nC.a;
+          vec3 nvC = normalize(nC.rgb * 2.0 - 1.0);
+          float dC = linearDepth(texture2D(tDepth, vUv).x);
+          vec2 px = 1.0 / uResolution;
+          float radius = max(uLine * 0.5 * uPixelRatio, 0.6);
+          vec2 idC = floor(texture2D(tIds, vUv).rg * 255.0 + 0.5);
+          float edge = 0.0;
+          for (int i = 0; i < 8; i++) {
+            float ang = float(i) * 0.785398;
+            vec2 off = vec2(cos(ang), sin(ang)) * radius * px;
+            vec4 nN = texture2D(tNormal, vUv + off);
+            float aN = nN.a;
+            if (aC > 0.5 && aN < 0.5) edge = 1.0;
+            if (aC > 0.5 && aN > 0.5) {
+              float dN = linearDepth(texture2D(tDepth, vUv + off).x);
+              float rel = abs(dN - dC) / max(uWorld * 2.0, 1e-3);
+              if (uSeams > 0.5 && rel > uDepthTh) edge = 1.0;
+              if (uInner > 0.5) {
+                vec3 nv = normalize(nN.rgb * 2.0 - 1.0);
+                if (dot(nv, nvC) < uCrease) edge = 1.0;
+              }
+              if (uLines > 0.5) {
+                vec2 idN = floor(texture2D(tIds, vUv + off).rg * 255.0 + 0.5);
+                float different = uLines > 1.5 ? step(0.5, abs(idN.g - idC.g))
+                                                : step(0.5, abs(idN.r - idC.r));
+                if (different > 0.5) edge = 1.0;
+              }
+            }
+          }
+          gl_FragColor = vec4(vec3(edge * step(0.5, aC)), 1.0);
+        }`,
+    };
+  }
+
+  /** Цвет, тон и растр; контур приходит уже как сглаженное покрытие. */
   _animeShader() {
     const viewer = this;
     const shader = {
@@ -3725,6 +3874,8 @@ export class Viewer {
         tDiffuse: { value: null },
         tNormal: { value: null },
         tDepth: { value: null },
+        tIds: { value: null },
+        tEdge: { value: null },
         uResolution: { value: new THREE.Vector2(1, 1) },
         uLine: { value: 1.6 },
         uInk: { value: new THREE.Vector3(0.06, 0.06, 0.09) },
@@ -3741,7 +3892,6 @@ export class Viewer {
         uFar: { value: 40000 },
         uPixelRatio: { value: 1 },
         uWorld: { value: 100 },
-        tIds: { value: null },
         uLines: { value: 0 },
         uHatch: { value: 0 },
         uHatchAngle: { value: 0.785 },
@@ -3760,6 +3910,7 @@ export class Viewer {
         uniform sampler2D tNormal;
         uniform sampler2D tDepth;
         uniform sampler2D tIds;
+        uniform sampler2D tEdge;
         uniform vec2 uResolution;
         uniform float uLine, uInner, uCrease, uDepthTh, uSeams;
         uniform float uToon, uTone, uCel, uMode, uNear, uFar, uPixelRatio, uWorld;
@@ -3818,40 +3969,10 @@ export class Viewer {
           vec3 col = base.rgb;
           vec4 nC = texture2D(tNormal, vUv);
           float aC = nC.a;
-          vec3 nvC = normalize(nC.rgb * 2.0 - 1.0);
-          float dC = linearDepth(texture2D(tDepth, vUv).x);
-          vec2 px = 1.0 / uResolution;
-          // толщина линии в экранных пикселях (не зависит от плотности экрана)
-          float radius = max(uLine * 0.5 * uPixelRatio, 0.6);
-
-          // чей пиксель: группа (r) и материал (g) — для линий по группам
-          vec2 idC = floor(texture2D(tIds, vUv).rg * 255.0 + 0.5);
-
-          float edge = 0.0;
-          for (int i = 0; i < 8; i++) {
-            float ang = float(i) * 0.785398;
-            vec2 off = vec2(cos(ang), sin(ang)) * radius * px;
-            vec4 nN = texture2D(tNormal, vUv + off);
-            float aN = nN.a;
-            if (aC > 0.5 && aN < 0.5) { edge = 1.0; }
-            if (aC > 0.5 && aN > 0.5) {
-              float dN = linearDepth(texture2D(tDepth, vUv + off).x);
-              // перепад глубины меряем долей размера модели: так работает
-              // и на мелкой детали, и на крупной сцене
-              float rel = abs(dN - dC) / max(uWorld * 2.0, 1e-3);
-              if (uSeams > 0.5 && rel > uDepthTh) edge = 1.0;
-              if (uInner > 0.5) {
-                vec3 nv = normalize(nN.rgb * 2.0 - 1.0);
-                if (dot(nv, nvC) < uCrease) edge = 1.0;
-              }
-              if (uLines > 0.5) {
-                vec2 idN = floor(texture2D(tIds, vUv + off).rg * 255.0 + 0.5);
-                float same = uLines > 1.5 ? step(0.5, abs(idN.g - idC.g))
-                                          : step(0.5, abs(idN.r - idC.r));
-                if (same > 0.5) edge = 1.0;
-              }
-            }
-          }
+          // Тонкий subpixel-контур уже найден в плотном G-buffer. Линейная
+          // фильтрация tEdge при даунсэмпле сохраняет покрытие: штрих становится
+          // серым и тонким, а не случайно исчезает между центрами пикселей.
+          float edge = texture2D(tEdge, vUv).r;
 
           // светящееся не тонируем: это блики и экраны
           float bright = step(0.97, max(col.r, max(col.g, col.b))) * step(0.5, aC);

@@ -976,12 +976,12 @@ def _run_uistest(report_path: str | None) -> int:
                 check("0.43: ручка, завиток, лестница, ступени, рычаг, косынка и клинок",
                       reworked.get("ok") is True and reworked.get("objects") == 7,
                       f"{reworked.get('tris', 0)} трис, {reworked.get('objects', 0)} объектов")
-                removed = post("/api/preview", {"script": "н = rail length=400"})
-                check("0.43: удалённые предметы не строятся и исчезли из карточек",
+                removed = post("/api/preview", {"script": "н = rack length=400"})
+                check("0.43: остальные удалённые предметы не строятся и исчезли из карточек",
                       removed.get("ok") is False
                       and all(f"op: '{op}'".encode("utf-8") not in js_app
-                              for op in ("rail", "rack", "coupling", "heatsink",
-                                         "hinge", "bearing", "caster", "leg")))
+                              for op in ("rack", "coupling", "heatsink",
+                                         "bearing", "caster", "leg")))
 
                 # 0.44: полосы, решётки, шипы, колонна, дуговая призма, профиль
                 formed = post("/api/preview", {"script": (
@@ -1173,6 +1173,36 @@ def _run_uistest(report_path: str | None) -> int:
                 check("0.49: новый проект присутствует в меню примеров",
                       any(item.get("key") == "human_skeleton_original"
                           for item in state.get("examples", [])))
+
+                # 0.53: новые команды и их настоящие параметры должны работать
+                # именно внутри собранного EXE, а не только в исходниках.
+                fittings53 = post("/api/preview", {"script": (
+                    "путь = track length=260 rails=2 sleeper_count=4 fasteners=да\n"
+                    "петля = hinge height=60 leaf_width=25 knuckles=5 holes=2 "
+                    "open_angle=35 at=[0,350,0]\n"
+                    "ручка = door_handle form=рельефная lever_length=95 relief=.7 "
+                    "at=[180,350,40]")})
+                check("0.53: путь, двухстворчатая петля и ручка в живом превью",
+                      fittings53.get("ok") is True and fittings53.get("objects") == 6,
+                      f"{fittings53.get('tris', 0)} трис, {fittings53.get('objects', 0)} объектов")
+                glyphs53 = post("/api/preview", {"script": (
+                    "молния = lightning width=70 height=120 zigzags=4 volume=да\n"
+                    "шар = sphere radius=30 expand=1.2 expand_side=верх "
+                    "expand_joint=посадка expand_seat=3 at=[160,0,0]\n"
+                    "блок = box size=[50,40,60] expand=1.2 expand_joint=стык "
+                    "at=[260,0,0]")})
+                check("0.53: объёмная молния и оба стыка увеличенных половин",
+                      glyphs53.get("ok") is True and glyphs53.get("objects") == 3,
+                      f"{glyphs53.get('tris', 0)} трис, {glyphs53.get('objects', 0)} объектов")
+                check("0.53: карточки, параметры и оба проекта доступны в EXE",
+                      all(f"op: '{op}'".encode("utf-8") in js_app
+                          for op in ("track", "hinge", "door_handle"))
+                      and all(f"k: '{key}'".encode("utf-8") in js_app
+                              for key in ("sleeper_shape", "open_angle", "relief",
+                                          "zigzags", "expand_seat", "expand_smooth"))
+                      and all(any(item.get("key") == key
+                                  for item in state.get("examples", []))
+                              for key in ("fittings_053", "glyphs_expansion_053")))
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:
