@@ -7,6 +7,7 @@ primary_region = 'ams'
 [env]
   FORMA_DEMO = '1'
   FORMA_START_PROJECT = 'train_carriage'
+  FORMA_TOKEN = 'forma3d-public-demo-v1'
   FORMA_DATA = '/app/data'
 
 [http_service]

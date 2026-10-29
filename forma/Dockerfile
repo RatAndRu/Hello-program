@@ -9,6 +9,7 @@ ENV PYTHONUNBUFFERED=1 \
     FORMA_DATA=/app/data \
     FORMA_DEMO=1 \
     FORMA_START_PROJECT=train_carriage \
+    FORMA_TOKEN=forma3d-public-demo-v1 \
     FORMA_REVISION=${FORMA_REVISION}
 
 WORKDIR /app

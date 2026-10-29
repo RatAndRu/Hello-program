@@ -129,6 +129,13 @@ jobs:
           set -o pipefail
           flyctl deploy --app "$FLY_APP_NAME" --local-only --build-arg "FORMA_REVISION=$GITHUB_SHA" 2>&1 | tee /tmp/forma-fly-deploy.log
 
+      - name: Keep exactly one demo machine
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -o pipefail
+          flyctl scale count 1 --app "$FLY_APP_NAME" --yes 2>&1 | tee -a /tmp/forma-fly-deploy.log
+
       - name: Verify public revision
         run: |
           set -e
@@ -171,8 +178,12 @@ jobs:
               headers={'Content-Type': 'application/json'},
               method='POST',
           )
-          with urllib.request.urlopen(request, timeout=180) as response:
-              build = json.load(response)
+          try:
+              with urllib.request.urlopen(request, timeout=180) as response:
+                  build = json.load(response)
+          except urllib.error.HTTPError as exc:
+              body = exc.read().decode('utf-8', errors='replace')
+              raise AssertionError(f'Build HTTP {exc.code}: {body[:1000]}') from exc
           assert build['ok'] is True, build.get('error')
           tris = build['analysis']['metrics']['tris']
           assert tris == 336536, tris

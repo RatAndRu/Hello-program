@@ -26,6 +26,7 @@ class OnlineDemoTest(unittest.TestCase):
             "FORMA_DATA": self.tmp.name,
             "FORMA_DEMO": "1",
             "FORMA_START_PROJECT": "train_carriage",
+            "FORMA_TOKEN": "shared-test-demo-token",
             "FORMA_REVISION": "abc1234demo",
         })
         self.env.start()
@@ -75,6 +76,7 @@ class OnlineDemoTest(unittest.TestCase):
         self.assertTrue(health["ok"])
         self.assertTrue(health["demo"])
         self.assertEqual(health["revision"], "abc1234demo")
+        self.assertEqual(self.token, "shared-test-demo-token")
         status, data = self.get("/api/state")
         state = json.loads(data)
         self.assertEqual(status, 200)

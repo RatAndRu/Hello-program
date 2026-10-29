@@ -79,7 +79,7 @@ def user_data_dir() -> Path:
 class AppState:
     def __init__(self):
         self.lock = threading.RLock()
-        self.token = secrets.token_urlsafe(16)
+        self.token = os.environ.get("FORMA_TOKEN") or secrets.token_urlsafe(16)
         self.data_dir = user_data_dir()
         self.last_build = None
         self.last_script = ""
