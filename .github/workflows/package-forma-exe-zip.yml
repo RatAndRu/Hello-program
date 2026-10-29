@@ -29,6 +29,9 @@ jobs:
       SOURCE_RELEASE: ${{ inputs.source_release }}
       VERSION: ${{ inputs.version }}
     steps:
+      - name: Получить запрос
+        uses: actions/checkout@v4
+
       - name: Прочитать push-запрос
         if: github.event_name == 'push'
         run: |
