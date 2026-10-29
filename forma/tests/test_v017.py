@@ -235,6 +235,19 @@ class UiPolishTest(unittest.TestCase):
         # каркас заслонок не перехватывает клик
         self.assertIn("ghosts.has(hitName)", self.viewer)
 
+    def test_every_occluder_is_collected(self):
+        import shutil
+        import subprocess
+
+        node = shutil.which("node")
+        if not node:
+            self.skipTest("Node.js нужен для поведенческой проверки заслонок")
+        result = subprocess.run(
+            [node, str(ROOT / "tests" / "occluders_test.js")],
+            cwd=ROOT, text=True, capture_output=True, timeout=120)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("вся цепочка", result.stdout)
+
     def test_orbit_around_selection(self):
         self.assertIn("setOrbitTarget", self.viewer)
         self.assertIn('id="btn-orbit-sel"', self.html)

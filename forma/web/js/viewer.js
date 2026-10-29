@@ -2513,7 +2513,7 @@ export class Viewer {
     return mesh.name || mesh.parent?.name || '';
   }
 
-  /** Объекты, которые закрывают выделенный от камеры (по 9 лучам). */
+  /** Все объекты, которые закрывают выделенный от камеры (по 9 лучам). */
   _occludingNames(name) {
     if (!this.model || !name) return [];
     const meshes = this.objectMeshes(name);
@@ -2543,8 +2543,9 @@ export class Viewer {
         const hitName = this._objectName(hit.object);
         if (!hitName) continue;
         if (hitName === name) break;          // добрались до самого предмета
+        // Не останавливаемся на ближайшей заслонке: между камерой и целью
+        // может быть несколько объектов, и каждый должен стать прозрачным.
         found.add(hitName);
-        break;                                // первая же заслонка на луче
       }
     }
     found.delete(name);
