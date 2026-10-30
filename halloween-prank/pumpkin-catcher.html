@@ -853,7 +853,11 @@ const real = { x: -999, y: -999 };                                     // нас
 const btn = { x: 0, y: 0, vx: 0, vy: 0, w: 0, h: 0, homeX: 0, homeY: 0 };
 let locked = false, wipeActive = false;
 
+// Устройство: захват курсора и обманные курсоры только на компьютере (мышь), на телефоне их нет
+const IS_DESKTOP = matchMedia('(pointer: fine)').matches && !(navigator.userAgentData && navigator.userAgentData.mobile)
+  && !/Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
 function lockPointer(){
+  if (!IS_DESKTOP) return;
   try { const p = document.documentElement.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
 }
 document.addEventListener('pointerlockchange', () => {
@@ -906,6 +910,7 @@ function clearDecoys(){
   decoys = [];
 }
 function startDecoys(){
+  if (!IS_DESKTOP) return;
   clearDecoys();
   decoyTimer = setInterval(() => {
     if (locked || !wipeActive){ clearDecoys(); return; }   // захватили курсор — декораций не нужно
