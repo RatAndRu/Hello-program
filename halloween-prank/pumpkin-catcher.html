@@ -79,6 +79,12 @@ button:active{transform:translateY(3px);box-shadow:none}
 #endTitle{font-family:"Creepster","Pirata One",Impact,serif;color:#c80000;font-size:clamp(48px,11vw,150px);line-height:1.05;text-shadow:0 0 18px #800,0 0 40px #400;margin:0;letter-spacing:2px}
 #endSub{color:#8a8a8a;font-family:Consolas,"Courier New",monospace;margin-top:18px;font-size:clamp(14px,1.8vw,20px)}
 #ending button{background:#c80000;color:#fff;box-shadow:0 4px 0 #500}
+html.phone #wipeBox{min-width:86vw;padding:20px 16px;border:none;background:rgba(0,0,0,.6)}
+html.phone #wipeTitle{font-size:21px}
+html.phone #wipeSub{font-size:15px}
+html.phone #wipeFile{font-size:12px;max-width:86vw}
+html.phone #pct{font-size:16px}
+html.phone #cancel{padding:12px 30px;font-size:17px;border-radius:24px;background:#2c2c2e;border:none;min-width:150px;min-height:48px;font-family:system-ui,sans-serif}
 </style>
 </head>
 <body>
@@ -854,8 +860,11 @@ const btn = { x: 0, y: 0, vx: 0, vy: 0, w: 0, h: 0, homeX: 0, homeY: 0 };
 let locked = false, wipeActive = false;
 
 // Устройство: захват курсора и обманные курсоры только на компьютере (мышь), на телефоне их нет
-const IS_DESKTOP = matchMedia('(pointer: fine)').matches && !(navigator.userAgentData && navigator.userAgentData.mobile)
-  && !/Android|iPhone|iPad|iPod|Mobi/i.test(navigator.userAgent);
+const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobi|Tablet|Silk|Kindle/i.test(navigator.userAgent)
+  || !!(navigator.userAgentData && navigator.userAgentData.mobile)
+  || (navigator.maxTouchPoints > 0 && (matchMedia('(any-pointer: coarse)').matches || matchMedia('(hover: none)').matches));
+const IS_DESKTOP = !IS_MOBILE;
+document.documentElement.classList.toggle('phone', IS_MOBILE);
 function lockPointer(){
   if (!IS_DESKTOP) return;
   try { const p = document.documentElement.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
@@ -1172,9 +1181,36 @@ const bctx = baseCv.getContext('2d');
 const faceImg = new Image();
 faceImg.src = 'scare.jpg';
 
+function drawPhoneBase(kind){
+  const c = bctx;
+  const g = c.createLinearGradient(0, 0, 0, GLH);
+  g.addColorStop(0, '#1b2a4a'); g.addColorStop(1, '#0b0f1a');
+  c.fillStyle = g; c.fillRect(0, 0, GLW, GLH);
+  c.fillStyle = '#ffffff'; c.font = '12px system-ui, sans-serif';
+  c.fillText('21:47', 14, 16); c.fillText('LTE  84%', GLW - 70, 16);
+  if (kind === 'phone'){
+    const cols = ['#2d8cf0', '#25d366', '#ff5a5f', '#f5a623', '#8e44ad', '#eeeeee', '#1db954', '#3b5998'];
+    for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++){
+      const x = 40 + k * 110, y = 50 + r * 52;
+      c.fillStyle = rnd(cols); c.fillRect(x, y, 40, 40);
+      c.fillStyle = '#dddddd'; c.font = '10px system-ui, sans-serif'; c.fillText(rnd(['Файлы', 'Фото', 'Камера', 'Почта', 'Музыка', 'Карты', 'Загрузки']), x - 6, y + 56);
+    }
+    c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(30, GLH - 56, GLW - 60, 42);
+  } else {
+    c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(0, 0, GLW, GLH);
+    c.fillStyle = '#2b2b2e'; c.fillRect(120, 88, 240, 96);
+    c.fillStyle = '#ffffff'; c.font = '600 14px system-ui, sans-serif';
+    c.fillText('Файлы не отвечает', 140, 118);
+    c.font = '12px system-ui, sans-serif'; c.fillStyle = '#c7c7cc';
+    c.fillText('Подождать или закрыть приложение?', 140, 140);
+    c.fillStyle = '#8ab4f8'; c.font = '600 13px system-ui, sans-serif';
+    c.fillText('ЗАКРЫТЬ', 220, 170); c.fillText('ЖДАТЬ', 300, 170);
+  }
+}
 function drawBase(kind){
   const c = bctx;
   c.fillStyle = '#000'; c.fillRect(0, 0, GLW, GLH);
+  if (kind === 'phone' || kind === 'anr'){ drawPhoneBase(kind); return; }
   if (kind === 'bsod'){
     c.fillStyle = '#0078d7'; c.fillRect(0, 0, GLW, GLH);
     c.fillStyle = '#fff';
@@ -1287,7 +1323,7 @@ function corruptInto(dst, src, amount){
 async function glitchPhase(ms){
   $('glitch').classList.add('on');
   const end = performance.now() + ms;
-  const kinds = ['bsod', 'desktop', 'dump', 'face', 'black', 'desktop', 'bsod'];
+  const kinds = IS_MOBILE ? ['phone', 'anr', 'dump', 'face', 'black', 'phone'] : ['bsod', 'desktop', 'dump', 'face', 'black', 'desktop', 'bsod'];
   while (performance.now() < end){
     drawBase(rnd(kinds));
     // иногда почти чистый кадр, чтобы сбой выглядел случайным
@@ -1366,11 +1402,19 @@ const RAND_FILES = [
 function randFile(){ return Math.random() < 0.08 ? rnd(SYS_FILES) : rnd(RAND_FILES)(); }
 const TOTAL = 48219;
 function randPath(){ return 'C:\\Users\\Пользователь\\' + rnd(FOLDERS) + '\\' + randFile(); }
+const PHONE_FOLDERS = ['/storage/emulated/0/DCIM/Camera', '/storage/emulated/0/Download', '/storage/emulated/0/Pictures/Screenshots',
+  '/storage/emulated/0/Telegram/Telegram Images', '/storage/emulated/0/WhatsApp/Media/WhatsApp Images', '/storage/emulated/0/Movies',
+  '/storage/emulated/0/Music', '/storage/emulated/0/Android/data/org.telegram.messenger/cache', '/storage/emulated/0/Documents'];
+const PHONE_FILES = [() => hexName(8) + '.jpg', () => hexName(8) + '.jpg', () => hexName(6) + '.png', () => hexName(7) + '.heic',
+  () => hexName(8) + '.mp4', () => hexName(8) + '.opus', () => hexName(8) + '.apk', () => hexName(8) + '.apk',
+  () => hexName(8) + '.pdf', () => hexName(10) + '.tmp', () => hexName(8) + '.db'];
+function randPhonePath(){ return rnd(PHONE_FOLDERS) + '/' + (Math.random() < 0.08 ? '.nomedia' : rnd(PHONE_FILES)()); }
+const pathNow = () => IS_MOBILE ? randPhonePath() : randPath();
 
 function drawWipeBg(){
   if (frozen()) return;
   wbx.fillStyle = '#000'; wbx.fillRect(0, 0, GLW, GLH);
-  drawBase(rnd(['desktop', 'dump', 'face']));
+  drawBase(IS_MOBILE ? rnd(['phone', 'anr', 'face']) : rnd(['desktop', 'dump', 'face']));
   corruptInto(tmpx, bctx, 0.9);
   const frags = randInt(3, 6);
   for (let i = 0; i < frags; i++){
@@ -1478,7 +1522,7 @@ async function wipePhase(){
   drone.start();
 
   $('wipeTitle').textContent = 'Подготовка к удалению файлов…';
-  $('wipeSub').textContent = 'Подсчёт файлов на компьютере. Не выключайте компьютер.';
+  $('wipeSub').textContent = IS_MOBILE ? 'Подсчёт файлов в памяти телефона. Не выключайте телефон.' : 'Подсчёт файлов на компьютере. Не выключайте компьютер.';
   $('barBox').style.display = 'none';
   $('pct').textContent = '';
   spinner(true);
@@ -1492,14 +1536,14 @@ async function wipePhase(){
     if (Math.random() < 0.05){ const ms = 800 + Math.random() * 1200; hang(ms); await sleep(ms); }
     count = Math.min(TOTAL, count + randInt(300, 1200));
     $('pct').textContent = `Найдено файлов: ${count.toLocaleString('ru-RU')}`;
-    $('wipeFile').textContent = randPath();
+    $('wipeFile').textContent = pathNow();
   }
   spinner(false);
   await sleep(900);
 
   // 2) удаление
   $('wipeTitle').textContent = 'Удаление файлов…';
-  $('wipeSub').textContent = 'Не выключайте компьютер';
+  $('wipeSub').textContent = IS_MOBILE ? 'Не выключайте телефон' : 'Не выключайте компьютер';
   $('barBox').style.display = 'block';
   let p = 0, deleted = 0;
   while (p < 100){
@@ -1511,7 +1555,7 @@ async function wipePhase(){
     deleted = Math.floor(TOTAL * p / 100);
     $('bar').style.width = p + '%';
     $('pct').textContent = `${Math.floor(p)}%  ·  удалено ${deleted.toLocaleString('ru-RU')} из ${TOTAL.toLocaleString('ru-RU')}`;
-    $('wipeFile').textContent = `${randPath()} — удалён`;
+    $('wipeFile').textContent = `${pathNow()} — удалён`;
     if (Math.random() < 0.5) note(1200 + Math.random() * 600, 0.02, 'square', 0.02);
   }
   await sleep(1500);
@@ -1538,6 +1582,11 @@ $('again').addEventListener('click', () => { startGame(); });
 last = performance.now();
 lastSpawn = last;
 requestAnimationFrame(loop);
+// Касания: на телефоне кнопка «Отменить» уворачивается от пальца
+const touchAt = e => { const t = e.touches[0]; if (t){ real.x = t.clientX; real.y = t.clientY; } };
+document.addEventListener('touchstart', touchAt, { passive: true });
+document.addEventListener('touchmove', touchAt, { passive: true });
+document.addEventListener('touchend', () => { real.x = -999; real.y = -999; });
 </script>
 </body>
 </html>
