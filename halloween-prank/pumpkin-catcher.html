@@ -432,6 +432,7 @@ function skullEat(){
   propState.jawUntil = now + 1400;
   const m = propState.mouth;
   if (m){
+    spawnSparks(m.x, m.y, 10);
     for (let i = 0; i < 18; i++){
       crumbs.push({
         x: m.x + randInt(-10, 10), y: m.y + randInt(-6, 6),
@@ -457,6 +458,18 @@ function eatSound(){
     o.connect(g).connect(out(a));
     o.start(t + i * 0.18); o.stop(t + i * 0.18 + 0.2);
   }
+}
+function healSound(){
+  const a = ac(), t = a.currentTime;
+  [523, 659, 784, 1047].forEach((f, i) => {
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'sine'; o.frequency.setValueAtTime(f, t + i * 0.07);
+    g.gain.setValueAtTime(0.0001, t + i * 0.07);
+    g.gain.linearRampToValueAtTime(0.06, t + i * 0.07 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.07 + 0.35);
+    o.connect(g).connect(out(a));
+    o.start(t + i * 0.07); o.stop(t + i * 0.07 + 0.4);
+  });
 }
 function waveSound(){
   const a = ac(), t = a.currentTime;
@@ -669,8 +682,9 @@ const tiltStep = () => { tiltX += (rawTiltX - tiltX) * 0.08; tiltY += (rawTiltY 
 
 /* ---------- Игра ---------- */
 const MAX_LIVES = 5;
-let pumpkins = [], bats = [], ghosts = [], bursts = [];
+let pumpkins = [], bats = [], ghosts = [], bursts = [], sparks = [];
 let score = 0, lives = MAX_LIVES, eaten = 0;
+let glowNextAt = 50;      // каждые 50 очков падает светящаяся тыква
 let running = false, scareDone = false;
 let playMs = 0, scareMs = 40000 + Math.random() * 40000;   // накопительное время игры
 let scareScoreTarget = randInt(12, 22), scareSoonSet = false;
@@ -688,8 +702,89 @@ window.addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.c
 window.addEventListener('pointerdown', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 
 function spawnGap(){ return Math.max(450, 950 - score * 12); }
+// Искры светящейся тыквы
+function spawnSparks(x, y, n){
+  for (let i = 0; i < n; i++){
+    const a = Math.random() * Math.PI * 2, s = 90 + Math.random() * 260;
+    sparks.push({
+      x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 60,
+      g: 420, r: 1.5 + Math.random() * 3.2, t: 0,
+      life: 420 + Math.random() * 520,
+      color: rnd(['#ffe9a8', '#ffb347', '#ff8a1e', '#fff7d6', '#ff6a00'])
+    });
+  }
+}
+
+// Светящаяся тыква: своя отрисовка — тело, рёбра, пылающие глаза и рот
+function drawGlowPumpkin(x, y, now){
+  const pulse = 0.75 + 0.25 * Math.sin(now / 180);
+  const R = 29;
+  ctx.save();
+  // ореол
+  ctx.globalCompositeOperation = 'lighter';
+  const halo = ctx.createRadialGradient(x, y, R * 0.2, x, y, R * 2.6);
+  halo.addColorStop(0, `rgba(255,170,60,${0.42 * pulse})`);
+  halo.addColorStop(0.45, `rgba(255,110,20,${0.18 * pulse})`);
+  halo.addColorStop(1, 'rgba(255,80,0,0)');
+  ctx.fillStyle = halo;
+  ctx.beginPath(); ctx.arc(x, y, R * 2.6, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+
+  ctx.save();
+  ctx.translate(x, y);
+  // тело
+  const body = ctx.createRadialGradient(-R * 0.3, -R * 0.35, R * 0.15, 0, 0, R);
+  body.addColorStop(0, '#ffb347');
+  body.addColorStop(0.55, '#f07a12');
+  body.addColorStop(1, '#8a3a06');
+  ctx.fillStyle = body;
+  ctx.beginPath(); ctx.ellipse(0, 0, R, R * 0.92, 0, 0, Math.PI * 2); ctx.fill();
+  // рёбра
+  ctx.strokeStyle = 'rgba(120,50,0,0.45)';
+  ctx.lineWidth = 2;
+  for (const k of [-0.45, 0.45]){
+    ctx.beginPath(); ctx.ellipse(0, 0, R * Math.abs(k) + R * 0.18, R * 0.88, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  // черенок
+  ctx.fillStyle = '#4a2a08';
+  ctx.beginPath();
+  ctx.moveTo(-R * 0.12, -R * 0.9);
+  ctx.quadraticCurveTo(-R * 0.05, -R * 1.3, R * 0.16, -R * 1.25);
+  ctx.lineTo(R * 0.2, -R * 1.05);
+  ctx.quadraticCurveTo(R * 0.02, -R * 1.05, R * 0.1, -R * 0.88);
+  ctx.closePath(); ctx.fill();
+
+  // пылающие глаза и рот
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.shadowColor = '#ffdd88';
+  ctx.shadowBlur = 16 * pulse;
+  ctx.fillStyle = '#fff3c4';
+  for (const ex of [-R * 0.36, R * 0.36]){
+    ctx.beginPath();
+    ctx.moveTo(ex - R * 0.22, -R * 0.28);
+    ctx.lineTo(ex + R * 0.22, -R * 0.28);
+    ctx.lineTo(ex, R * 0.02);
+    ctx.closePath(); ctx.fill();
+  }
+  // рот с зубцами
+  ctx.beginPath();
+  ctx.moveTo(-R * 0.44, R * 0.32);
+  ctx.lineTo(R * 0.44, R * 0.32);
+  ctx.lineTo(R * 0.32, R * 0.56);
+  ctx.lineTo(R * 0.16, R * 0.36);
+  ctx.lineTo(0, R * 0.58);
+  ctx.lineTo(-R * 0.16, R * 0.36);
+  ctx.lineTo(-R * 0.32, R * 0.56);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
 function spawnPumpkin(x, y, v){
+  // светящаяся тыква падает только сверху, не при падении украденной
+  const isGlow = y === undefined && score >= glowNextAt;
+  if (isGlow) glowNextAt += 50;
   pumpkins.push({
+    glow: isGlow, faded: false,
     x: x ?? (40 + Math.random() * Math.max(10, W - 80)),
     y: y ?? -40,
     v: v ?? (90 + score * 2.5 + Math.random() * 60),
@@ -744,7 +839,11 @@ function update(dt, now){
     p.x += Math.sin(p.wob) * 0.3;
   }
   for (let i = pumpkins.length - 1; i >= 0; i--){
-    if (pumpkins[i].y > H + 40){ pumpkins.splice(i, 1); loseLife(); if (lives <= 0) return; }
+    if (pumpkins[i].y > H + 40){
+      if (pumpkins[i].glow && !pumpkins[i].faded) spawnSparks(pumpkins[i].x, H - 30, 12);
+      pumpkins.splice(i, 1); loseLife();
+      if (lives <= 0) return;
+    }
   }
 
   // призраки летят за конкретной тыквой быстрее мышей и съедают её
@@ -783,6 +882,11 @@ function update(dt, now){
       if (d < 36){
         // схватил тыкву и понёс к черепу — её ещё можно перехватить
         pumpkins.splice(pumpkins.indexOf(t), 1);
+        if (t.glow && !t.faded){
+          t.faded = true;                 // свечение погашено, тыква стала обычной
+          spawnSparks(t.x, t.y, 14);
+          addBurst(t.x, t.y - 22, '💀 погасла');
+        }
         g.carry = t;
         g.target = null;
         addBurst(t.x, t.y, '👻');
@@ -817,6 +921,16 @@ function update(dt, now){
 
   for (const b of bursts) b.t += dt;
   bursts = bursts.filter(b => b.t < 900);
+
+  // искры светящейся тыквы
+  for (const sp of sparks){
+    sp.t += dt;
+    sp.x += sp.vx * dt / 1000;
+    sp.y += sp.vy * dt / 1000;
+    sp.vy += sp.g * dt / 1000;
+    sp.vx *= 0.99;
+  }
+  sparks = sparks.filter(sp => sp.t < sp.life);
 }
 
 function batFlapY(b){ return b.y + Math.sin(b.phase) * 46; }
@@ -833,6 +947,11 @@ function updateBat(b, dt, now){
     const t = b.target;
     const dx = t.x - b.x, dy = t.y - b.y, d = Math.hypot(dx, dy) || 1;
     if (d < 32){
+      if (t.glow && !t.faded){
+        t.faded = true;
+        spawnSparks(t.x, t.y, 12);
+        addBurst(t.x, t.y - 22, '💀 погасла');
+      }
       pumpkins.splice(pumpkins.indexOf(t), 1);
       b.target = null;
       b.carry++;
@@ -1605,8 +1724,18 @@ function draw(){
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const p of pumpkins){
-    ctx.font = '58px serif';
-    ctx.fillText('🎃', p.x, p.y);
+    if (p.glow && !p.faded){
+      drawGlowPumpkin(p.x, p.y, now);
+    } else {
+      ctx.save();
+      if (p.faded){
+        // свечение погасло — тыква стала обычной, с пеплом
+        ctx.globalAlpha = 0.75;
+      }
+      ctx.font = '58px serif';
+      ctx.fillText('🎃', p.x, p.y);
+      ctx.restore();
+    }
   }
   for (const g2 of ghosts){
     const yy = g2.y + Math.sin(g2.phase) * 8;
@@ -1656,6 +1785,18 @@ function draw(){
       ctx.fillText('❓', b.x + 36, y - 30);
     }
   }
+  // искры
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  for (const sp of sparks){
+    const k = 1 - sp.t / sp.life;
+    ctx.globalAlpha = Math.max(0, k);
+    ctx.fillStyle = sp.color;
+    const r = sp.r * (0.4 + k * 0.9);
+    ctx.beginPath(); ctx.arc(sp.x, sp.y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
+
   ctx.font = '600 22px system-ui, sans-serif';
   for (const b of bursts){
     ctx.save();
@@ -1726,8 +1867,21 @@ function onPointer(e){
       scareSoonSet = true;
       scareMs = Math.min(scareMs, playMs + randInt(2500, 6000));
     }
-    addBurst(best.obj.x, best.obj.y, '+1');
-    popSound();
+    if (best.obj.glow && !best.obj.faded){
+      // светящаяся тыква: взрыв искр и жизнь
+      spawnSparks(best.obj.x, best.obj.y, 30);
+      best.obj.faded = true;
+      if (lives < MAX_LIVES){
+        lives++;
+        addBurst(best.obj.x, best.obj.y - 26, '❤️ +1');
+      } else {
+        addBurst(best.obj.x, best.obj.y - 26, '❤️ полный');
+      }
+      healSound();
+    } else {
+      addBurst(best.obj.x, best.obj.y, '+1');
+      popSound();
+    }
     eyeFlashUntil = performance.now() + 700;   // глаза тыкв заметно мерцают
   } else if (best.kind === 'bat'){
     killBat(best.obj);
@@ -1750,7 +1904,8 @@ function onPointer(e){
 cv.addEventListener('pointerdown', onPointer);
 
 function resetGame(){
-  pumpkins = []; bats = []; ghosts = []; bursts = [];
+  pumpkins = []; bats = []; ghosts = []; bursts = []; sparks = [];
+  glowNextAt = 50;
   score = 0; lives = MAX_LIVES; eaten = 0;
   pendingScare = false;
   const now = performance.now();
