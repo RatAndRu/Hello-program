@@ -298,18 +298,58 @@ function note(freq, dur, type, vol){
   o.connect(g).connect(out(a));
   o.start(t); o.stop(t + dur + 0.05);
 }
-const melody = [523,659,784,659,587,698,880,698,523,659,784,1047,988,784,659,523];
-let melodyIdx = 0, musicTimer = null;
-function startMusic(){
-  stopMusic();
-  musicTimer = setInterval(() => {
-    const f = melody[melodyIdx % melody.length];
-    note(f, 0.2, 'triangle', 0.045);
-    if (melodyIdx % 4 === 0) note(f / 4, 0.5, 'sine', 0.06);
-    melodyIdx++;
-  }, 240);
+/* ---------- Фоновая музыка: spooky.mp3 ---------- */
+const BGM_VOL = 0.42;
+const bgm = new Audio('spooky.mp3');
+bgm.loop = true;
+bgm.preload = 'auto';
+let bgmFade = null, scratchTimer = null, scratchStop = null;
+
+function bgmFadeTo(target, ms){
+  clearInterval(bgmFade);
+  const v0 = bgm.volume, t0 = performance.now();
+  bgmFade = setInterval(() => {
+    const k = Math.min(1, (performance.now() - t0) / ms);
+    bgm.volume = Math.max(0, Math.min(1, v0 + (target - v0) * k));
+    if (k >= 1){
+      clearInterval(bgmFade); bgmFade = null;
+      if (target <= 0.001){ try { bgm.pause(); } catch (e) {} }
+    }
+  }, 40);
 }
-function stopMusic(){ clearInterval(musicTimer); musicTimer = null; }
+function startMusic(){
+  stopScratch();
+  try { bgm.currentTime = 0; } catch (e) {}
+  bgm.volume = 0;
+  try { const p = bgm.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+  bgmFadeTo(BGM_VOL, 1600);
+}
+function stopMusic(){
+  stopScratch();
+  bgmFadeTo(0, 500);
+}
+// мгновенная остановка без затухания — когда пользователь ушёл со страницы
+function stopMusicNow(){
+  stopScratch();
+  clearInterval(bgmFade); bgmFade = null;
+  bgm.volume = 0;
+  try { bgm.pause(); } catch (e) {}
+}
+// «заевшая пластинка»: музыка крутит последние миллисекунды на репите
+function recordScratch(ms){
+  if (bgm.paused) return;
+  clearInterval(scratchTimer);
+  scratchTimer = setInterval(() => {
+    try { bgm.currentTime = Math.max(0, bgm.currentTime - 0.085); } catch (e) {}
+  }, 60);
+  clearTimeout(scratchStop);
+  scratchStop = setTimeout(stopScratch, ms);
+}
+function stopScratch(){
+  clearInterval(scratchTimer); scratchTimer = null;
+  clearTimeout(scratchStop); scratchStop = null;
+}
+
 function popSound(){ note(880, 0.09, 'square', 0.03); }
 function thudSound(){ note(90, 0.3, 'sine', 0.25); }
 function squeakSound(){ note(1500 + Math.random() * 500, 0.1, 'square', 0.03); }
@@ -778,6 +818,304 @@ function drawBgScene(now){
   drawPumpkinSilhouette(W * 0.94, groundY(W * 0.94) + 2, w * 0.34, false);
   // большая тыква-голова
   drawPumpkinSilhouette(cx, gy, w, true);
+  // голова скелета в левом углу
+  drawSkull(now);
+}
+
+
+/* ---------- Голова скелета в левом углу ---------- */
+let skullCv = null, skullKey = '', skullW = 0, skullH = 0, skullSock = [], skullGlowR = 0, skullOx = 0, skullOy = 0;
+
+function rrect(k, x, y, w, h, r){
+  if (k.roundRect){ k.beginPath(); k.roundRect(x, y, w, h, r); return; }
+  const rr = Math.min(r, w / 2, h / 2);
+  k.beginPath();
+  k.moveTo(x + rr, y);
+  k.lineTo(x + w - rr, y); k.quadraticCurveTo(x + w, y, x + w, y + rr);
+  k.lineTo(x + w, y + h - rr); k.quadraticCurveTo(x + w, y + h, x + w - rr, y + h);
+  k.lineTo(x + rr, y + h); k.quadraticCurveTo(x, y + h, x, y + h - rr);
+  k.lineTo(x, y + rr); k.quadraticCurveTo(x, y, x + rr, y);
+  k.closePath();
+}
+
+function buildSkull(){
+  const s = IS_MOBILE ? clamp(W * 0.42, 104, 220) : clamp(Math.min(W, H) * 0.30, 96, 250);
+  const DP = Math.min(DPR, 2);
+  const padL = s * 0.75, padR = s * 0.80, padT = s * 0.75, padB = s * 0.22;
+  const CW = Math.ceil(s * 1.55 + padL + padR);
+  const CH = Math.ceil(s * 1.45 + padT + padB);
+  const c = document.createElement('canvas');
+  c.width = Math.round(CW * DP); c.height = Math.round(CH * DP);
+  const k = c.getContext('2d');
+  k.setTransform(DP, 0, 0, DP, 0, 0);
+
+  const OX = padL + s * 0.78;        // центр черепной коробки
+  const OY = padT + s * 0.55;
+
+  // ---- силуэт черепа (единицы — доля s) ----
+  const skull = new Path2D();
+  skull.moveTo(-0.465, -0.06);
+  skull.bezierCurveTo(-0.485, -0.30, -0.36, -0.50, 0, -0.505);
+  skull.bezierCurveTo(0.36, -0.50, 0.485, -0.30, 0.465, -0.06);
+  skull.bezierCurveTo(0.462, 0.06, 0.44, 0.12, 0.405, 0.175);   // висок и скула
+  skull.bezierCurveTo(0.35, 0.205, 0.315, 0.235, 0.295, 0.285);
+  skull.bezierCurveTo(0.275, 0.335, 0.245, 0.385, 0.215, 0.405); // верхняя челюсть
+  skull.lineTo(-0.215, 0.405);
+  skull.bezierCurveTo(-0.245, 0.385, -0.275, 0.335, -0.295, 0.285);
+  skull.bezierCurveTo(-0.315, 0.235, -0.35, 0.205, -0.405, 0.175);
+  skull.bezierCurveTo(-0.44, 0.12, -0.462, 0.06, -0.465, -0.06);
+  skull.closePath();
+
+  const ROT = -0.17;
+  k.save();
+  k.translate(OX, OY); k.rotate(ROT); k.scale(s, s);   // всё дальнейшее — в долях s
+
+  // тень на земле (в координатах черепа, до масштаба не нужна — снаружи)
+  const shadow = k; // placeholder
+
+  const bone = k.createLinearGradient(-0.42, -0.45, 0.34, 0.40);
+  bone.addColorStop(0, '#fffdf2');
+  bone.addColorStop(0.34, '#f0e5cb');
+  bone.addColorStop(0.66, '#cfc0a0');
+  bone.addColorStop(1, '#9d8b6b');
+  k.fillStyle = bone; k.fill(skull);
+
+  // объём внутри силуэта
+  k.save();
+  k.clip(skull);
+  const dk = k.createLinearGradient(-0.10, -0.20, 0.40, 0.42);
+  dk.addColorStop(0, 'rgba(255,250,235,0)');
+  dk.addColorStop(1, 'rgba(40,24,10,0.50)');
+  k.fillStyle = dk; k.fillRect(-0.6, -0.6, 1.3, 1.3);
+  const lt = k.createRadialGradient(-0.24, -0.30, 0, -0.24, -0.30, 0.72);
+  lt.addColorStop(0, 'rgba(255,255,248,0.55)');
+  lt.addColorStop(0.5, 'rgba(255,255,248,0.14)');
+  lt.addColorStop(1, 'rgba(255,255,248,0)');
+  k.fillStyle = lt; k.fillRect(-0.6, -0.6, 1.3, 1.3);
+  // впадины висков
+  for (const sg of [-1, 1]){
+    const tv = k.createRadialGradient(sg * 0.36, -0.02, 0, sg * 0.36, -0.02, 0.17);
+    tv.addColorStop(0, 'rgba(76,52,26,0.34)');
+    tv.addColorStop(1, 'rgba(76,52,26,0)');
+    k.fillStyle = tv; k.fillRect(-0.6, -0.6, 1.3, 1.3);
+  }
+  // мелкая пористость кости
+  for (let i = 0; i < 90; i++){
+    k.fillStyle = Math.random() < 0.5 ? 'rgba(120,96,64,0.10)' : 'rgba(255,252,240,0.14)';
+    k.beginPath();
+    k.arc(randInt(-46, 46) / 100, randInt(-48, 38) / 100, Math.random() * 0.008 + 0.002, 0, Math.PI * 2);
+    k.fill();
+  }
+  k.restore();
+
+  // тёплый контровой свет справа — от большой тыквы и луны
+  k.save();
+  k.clip(skull);
+  const rim = k.createLinearGradient(0.30, 0, 0.52, 0);
+  rim.addColorStop(0, 'rgba(255,150,70,0)');
+  rim.addColorStop(1, 'rgba(255,150,70,0.42)');
+  k.fillStyle = rim; k.fillRect(-0.6, -0.6, 1.3, 1.3);
+  k.restore();
+
+  k.lineWidth = 0.007;
+  k.strokeStyle = 'rgba(36,22,10,0.62)';
+  k.stroke(skull);
+
+  // ---- глазницы ----
+  const socket = (sx, sy, rx, ry, tilt) => {
+    k.save();
+    k.translate(sx, sy); k.rotate(tilt);
+    const g2 = k.createRadialGradient(0, -ry * 0.30, rx * 0.04, 0, 0, rx * 1.45);
+    g2.addColorStop(0, '#000');
+    g2.addColorStop(0.50, '#070403');
+    g2.addColorStop(0.86, '#180e07');
+    g2.addColorStop(1, '#2e1d10');
+    k.fillStyle = g2;
+    k.beginPath(); k.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2); k.fill();
+    // надбровный валик — светлая дуга сверху
+    k.beginPath();
+    k.ellipse(0, -ry * 1.02, rx * 1.12, ry * 0.30, 0, Math.PI * 1.06, Math.PI * 1.94);
+    k.strokeStyle = 'rgba(255,250,232,0.38)';
+    k.lineWidth = 0.011;
+    k.stroke();
+    // тонкая тень под глазницей
+    k.beginPath();
+    k.ellipse(0, ry * 1.02, rx * 1.02, ry * 0.24, 0, Math.PI * 0.06, Math.PI * 0.94);
+    k.strokeStyle = 'rgba(40,24,12,0.28)';
+    k.lineWidth = 0.009;
+    k.stroke();
+    k.restore();
+  };
+  socket(-0.185, 0.015, 0.132, 0.118, 0.14);
+  socket(0.185, 0.015, 0.132, 0.118, -0.14);
+
+  // ---- носовая полость ----
+  k.fillStyle = '#0a0604';
+  k.beginPath();
+  k.moveTo(0, 0.145);
+  k.bezierCurveTo(-0.055, 0.165, -0.085, 0.235, -0.048, 0.290);
+  k.lineTo(0, 0.262);
+  k.lineTo(0.048, 0.290);
+  k.bezierCurveTo(0.085, 0.235, 0.055, 0.165, 0, 0.145);
+  k.closePath(); k.fill();
+  k.strokeStyle = 'rgba(214,198,166,0.26)';
+  k.lineWidth = 0.005;
+  k.beginPath(); k.moveTo(0, 0.150); k.lineTo(0, 0.258); k.stroke();
+
+  // ---- верхние зубы ----
+  k.fillStyle = '#080504';
+  k.beginPath();
+  k.moveTo(-0.205, 0.348);
+  k.quadraticCurveTo(0, 0.392, 0.205, 0.348);
+  k.lineTo(0.196, 0.402);
+  k.quadraticCurveTo(0, 0.432, -0.196, 0.402);
+  k.closePath(); k.fill();
+  for (let i = 0; i < 7; i++){
+    const t = (i + 0.5) / 7;
+    const tx = -0.172 + t * 0.344;
+    const tw = 0.042, th = 0.048 + (i === 3 ? 0.006 : 0);
+    rrect(k, tx - tw / 2, 0.352, tw, th, 0.010);
+    const tg = k.createLinearGradient(tx, 0.352, tx, 0.352 + th);
+    tg.addColorStop(0, '#fffdf3');
+    tg.addColorStop(1, '#cab890');
+    k.fillStyle = tg; k.fill();
+    k.strokeStyle = 'rgba(60,40,22,0.40)';
+    k.lineWidth = 0.0035; k.stroke();
+  }
+
+  // ---- нижняя челюсть, приоткрыта ----
+  k.save();
+  k.translate(0.015, 0.425);
+  k.rotate(0.07);
+  const jaw = new Path2D();
+  jaw.moveTo(-0.215, 0);
+  jaw.bezierCurveTo(-0.212, 0.075, -0.115, 0.120, 0, 0.122);
+  jaw.bezierCurveTo(0.115, 0.120, 0.212, 0.075, 0.215, 0);
+  jaw.bezierCurveTo(0.140, 0.045, -0.140, 0.045, -0.215, 0);
+  jaw.closePath();
+  const jg = k.createLinearGradient(-0.18, 0, 0.16, 0.12);
+  jg.addColorStop(0, '#f7edd6');
+  jg.addColorStop(1, '#ad9b7c');
+  k.fillStyle = jg; k.fill(jaw);
+  k.lineWidth = 0.006;
+  k.strokeStyle = 'rgba(36,22,10,0.55)';
+  k.stroke(jaw);
+  for (let i = 0; i < 6; i++){
+    const t = (i + 0.5) / 6;
+    const tx = -0.158 + t * 0.316;
+    rrect(k, tx - 0.019, 0.030, 0.038, 0.034, 0.008);
+    k.fillStyle = '#f9f1dc'; k.fill();
+    k.strokeStyle = 'rgba(60,40,22,0.36)';
+    k.lineWidth = 0.003; k.stroke();
+  }
+  k.restore();
+
+  // ---- трещины ----
+  k.strokeStyle = 'rgba(52,32,18,0.46)';
+  k.lineWidth = 0.005;
+  k.beginPath();
+  k.moveTo(-0.08, -0.485);
+  k.bezierCurveTo(-0.04, -0.40, -0.12, -0.34, -0.08, -0.26);
+  k.stroke();
+  k.beginPath();
+  k.moveTo(0.30, -0.27);
+  k.bezierCurveTo(0.25, -0.20, 0.31, -0.15, 0.27, -0.08);
+  k.stroke();
+  k.beginPath();
+  k.moveTo(0.03, -0.49);
+  k.bezierCurveTo(0.07, -0.45, 0.04, -0.42, 0.09, -0.39);
+  k.stroke();
+
+  // ---- грязь и мох снизу ----
+  k.save();
+  k.clip(skull);
+  for (let i = 0; i < 10; i++){
+    const dx = randInt(-42, 40) / 100;
+    const dy = 0.24 + Math.random() * 0.16;
+    k.fillStyle = Math.random() < 0.6 ? 'rgba(44,64,30,0.30)' : 'rgba(58,38,20,0.26)';
+    k.beginPath();
+    k.ellipse(dx, dy, 0.02 + Math.random() * 0.045, 0.008 + Math.random() * 0.012, Math.random() * 3, 0, Math.PI * 2);
+    k.fill();
+  }
+  k.restore();
+
+  k.restore();   // конец системы координат черепа
+
+  // ---- косточка рядом, на земле ----
+  k.save();
+  k.translate(OX + s * 0.66, OY + s * 0.68);
+  k.rotate(0.30);
+  k.scale(s, s);
+  k.fillStyle = '#ddceac';
+  k.strokeStyle = 'rgba(40,26,12,0.42)';
+  k.lineWidth = 0.004;
+  rrect(k, -0.10, -0.012, 0.20, 0.024, 0.012);
+  k.fill(); k.stroke();
+  for (const sg of [-1, 1]) for (const oy of [-0.009, 0.009]){
+    k.beginPath(); k.arc(sg * 0.106, oy, 0.022, 0, Math.PI * 2);
+    k.fill(); k.stroke();
+  }
+  k.restore();
+
+  // ---- мягкая тень под черепом и костью ----
+  k.save();
+  k.translate(OX + s * 0.10, OY + s * 0.66);
+  k.scale(1, 0.15);
+  const shg = k.createRadialGradient(0, 0, 0, 0, 0, s * 0.95);
+  shg.addColorStop(0, 'rgba(0,0,0,0.55)');
+  shg.addColorStop(0.55, 'rgba(0,0,0,0.26)');
+  shg.addColorStop(1, 'rgba(0,0,0,0)');
+  k.fillStyle = shg;
+  k.beginPath(); k.arc(0, 0, s * 0.95, 0, Math.PI * 2); k.fill();
+  k.restore();
+
+  // точки глазниц в координатах холста
+  const rp = (x, y) => ({
+    x: OX + (x * Math.cos(ROT) - y * Math.sin(ROT)) * s,
+    y: OY + (x * Math.sin(ROT) + y * Math.cos(ROT)) * s
+  });
+  skullSock = [rp(-0.185, 0.015), rp(0.185, 0.015)];
+  skullGlowR = s * 0.155;
+  const gp = rp(0, 0.70);
+  skullOx = gp.x; skullOy = gp.y;              // точка на земле
+  skullCv = c; skullW = CW; skullH = CH;
+  skullKey = Math.round(W) + 'x' + Math.round(H) + 'x' + DPR.toFixed(1);
+}
+
+function drawSkull(now){
+  const key = Math.round(W) + 'x' + Math.round(H) + 'x' + DPR.toFixed(1);
+  if (!skullCv || skullKey !== key) buildSkull();
+  const s = IS_MOBILE ? clamp(W * 0.42, 104, 220) : clamp(Math.min(W, H) * 0.30, 96, 250);
+  const px = s * 0.72;                       // ось черепа чуть от края
+  const py = groundY(px) + s * 0.10;         // точка опоры
+  const gx0 = px - skullOx, gy0 = py - skullOy;
+  ctx.drawImage(skullCv, gx0, gy0, skullW, skullH);
+
+  // красные горящие глаза
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  const pulse = 0.66 + 0.26 * Math.sin(now / 320) + (Math.random() < 0.02 ? 0.25 : 0);
+  for (const p of skullSock){
+    const gx = gx0 + p.x, gy = gy0 + p.y;
+    const r = skullGlowR * (1.75 + 0.14 * Math.sin(now / 240));
+    const gr = ctx.createRadialGradient(gx, gy, 0, gx, gy, r);
+    gr.addColorStop(0, 'rgba(255,120,60,' + (0.55 * pulse).toFixed(3) + ')');
+    gr.addColorStop(0.30, 'rgba(230,25,8,' + (0.30 * pulse).toFixed(3) + ')');
+    gr.addColorStop(0.66, 'rgba(150,0,0,' + (0.11 * pulse).toFixed(3) + ')');
+    gr.addColorStop(1, 'rgba(90,0,0,0)');
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.arc(gx, gy, r, 0, Math.PI * 2); ctx.fill();
+    // раскалённое ядро
+    const cr = skullGlowR * 0.62;
+    const cg = ctx.createRadialGradient(gx, gy, 0, gx, gy, cr);
+    cg.addColorStop(0, 'rgba(255,240,220,' + (0.95 * pulse).toFixed(3) + ')');
+    cg.addColorStop(0.22, 'rgba(255,120,60,' + (0.85 * pulse).toFixed(3) + ')');
+    cg.addColorStop(0.55, 'rgba(240,30,10,' + (0.55 * pulse).toFixed(3) + ')');
+    cg.addColorStop(1, 'rgba(150,0,0,0)');
+    ctx.fillStyle = cg;
+    ctx.beginPath(); ctx.arc(gx, gy, cr, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
 }
 
 /* ---------- Луна: кратеры, моря, тень от терминатора ---------- */
@@ -1369,6 +1707,7 @@ function powerOffScreen(){
   return new Promise(resolve => {
     const w = $('wipe'), dot = $('offDot');
     fadeOutAudio(1500);
+    bgmFadeTo(0, 1500);
     w.style.transformOrigin = '50% 50%';
     w.style.animation = 'crtoff 1.15s cubic-bezier(.55,.02,.85,.3) forwards';
     setTimeout(() => { dot.classList.add('on'); }, 690);
@@ -1386,6 +1725,7 @@ function powerOffScreen(){
 function showPerm(x, y){
   return new Promise(resolve => {
     const ov = $('perm'), dlg = $('permDlg'), allow = $('permAllow');
+    recordScratch(780);
     $('permBody').textContent = 'Сайт «Тыквенный ловец» запрашивает доступ к файлам на этом ' + (IS_MOBILE ? 'телефоне.' : 'компьютере.');
     ov.classList.add('on');
     ov.style.opacity = '0';
@@ -1886,6 +2226,7 @@ function showLeave(){
   if (!gameStarted || leaving || $('ending').classList.contains('on')) return;
   leaving = true;
   if (audioCtx && audioCtx.state === 'running') audioCtx.suspend();   // звук сразу останавливается
+  stopMusicNow();
   $('leave').classList.add('on');
   clearTimeout(leaveTimer);
   leaveTimer = setTimeout(finishLeave, 6000);
