@@ -1837,12 +1837,12 @@ function pressCancel(){
   const sub = $('wipeSub'), prev = sub.textContent;
   cancelBtn.classList.remove('deny');
   cancelBtn.classList.add('pressed');
-  cancelBtn.textContent = 'Отменяю...';
+  cancelBtn.textContent = corruptText('Отменяю...', wipeCorrupt);
   try { if (navigator.vibrate) navigator.vibrate(35); } catch (e) {}
   clearTimeout(pressTimer);
   pressTimer = setTimeout(() => {
     cancelBtn.classList.remove('pressed');
-    cancelBtn.textContent = 'Отменить';
+    cancelBtn.textContent = corruptText('Отменить', wipeCorrupt);
     cancelBtn.classList.add('deny');
     setTimeout(() => cancelBtn.classList.remove('deny'), 620);
     sub.textContent = 'Отмена отклонена. Процесс продолжается.';
@@ -2159,6 +2159,7 @@ async function startScare(){
 // Цифры и знаки не трогаем: по ним видно, что процесс идёт.
 const GLYPHS = '⌰⏃⌇⏚⌁⌘⍙⎔⏛⏦⌿⍜⎍⌖⍾⎎ℵ⊕⊗⋔⋉⌷⍋⎌⌾⍚⏥⌻⍟⎓⌑';
 let glyphEpoch = 0, glyphEpochAt = 0;
+let wipeCorrupt = 0;      // сюда пишется сила распада по ходу удаления
 
 function glyphHash(a, b, c){
   let h = (a * 374761393 + b * 668265263 + c * 2147483647) | 0;
@@ -2274,32 +2275,34 @@ function statusRight(){
 }
 function drawPhoneBase(kind){
   const c = bctx;
+  const T = v => corruptText(String(v), wipeCorrupt);
   const g = c.createLinearGradient(0, 0, 0, GLH);
   g.addColorStop(0, '#1b2a4a'); g.addColorStop(1, '#0b0f1a');
   c.fillStyle = g; c.fillRect(0, 0, GLW, GLH);
   c.fillStyle = '#ffffff'; c.font = '12px system-ui, sans-serif';
-  c.fillText(clockText(), 14, 16); c.fillText(statusRight(), GLW - 96, 16);
+  c.fillText(T(clockText()), 14, 16); c.fillText(T(statusRight()), GLW - 96, 16);
   if (kind === 'phone'){
     const cols = ['#2d8cf0', '#25d366', '#ff5a5f', '#f5a623', '#8e44ad', '#eeeeee', '#1db954', '#3b5998'];
     for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++){
       const x = 40 + k * 110, y = 50 + r * 52;
       c.fillStyle = rnd(cols); c.fillRect(x, y, 40, 40);
-      c.fillStyle = '#dddddd'; c.font = '10px system-ui, sans-serif'; c.fillText(rnd(['Файлы', 'Фото', 'Камера', 'Почта', 'Музыка', 'Карты', 'Загрузки']), x - 6, y + 56);
+      c.fillStyle = '#dddddd'; c.font = '10px system-ui, sans-serif'; c.fillText(T(rnd(['Файлы', 'Фото', 'Камера', 'Почта', 'Музыка', 'Карты', 'Загрузки'])), x - 6, y + 56);
     }
     c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(30, GLH - 56, GLW - 60, 42);
   } else {
     c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(0, 0, GLW, GLH);
     c.fillStyle = '#2b2b2e'; c.fillRect(120, 88, 240, 96);
     c.fillStyle = '#ffffff'; c.font = '600 14px system-ui, sans-serif';
-    c.fillText('Файлы не отвечает', 140, 118);
+    c.fillText(T('Файлы не отвечает'), 140, 118);
     c.font = '12px system-ui, sans-serif'; c.fillStyle = '#c7c7cc';
-    c.fillText('Подождать или закрыть приложение?', 140, 140);
+    c.fillText(T('Подождать или закрыть приложение?'), 140, 140);
     c.fillStyle = '#8ab4f8'; c.font = '600 13px system-ui, sans-serif';
-    c.fillText('ЗАКРЫТЬ', 220, 170); c.fillText('ЖДАТЬ', 300, 170);
+    c.fillText(T('ЗАКРЫТЬ'), 220, 170); c.fillText(T('ЖДАТЬ'), 300, 170);
   }
 }
 function drawBase(kind){
   const c = bctx;
+  const T = v => corruptText(String(v), wipeCorrupt);
   c.fillStyle = '#000'; c.fillRect(0, 0, GLW, GLH);
   if (kind === 'phone' || kind === 'anr'){ drawPhoneBase(kind); return; }
   if (kind === 'bsod'){
@@ -2307,27 +2310,27 @@ function drawBase(kind){
     c.fillStyle = '#fff';
     c.font = 'bold 42px Consolas, monospace'; c.fillText(':(', 30, 80);
     c.font = '14px Consolas, monospace';
-    c.fillText('На вашем ПК возникла проблема, и его необходимо перезагрузить.', 30, 115);
-    c.fillText('STOP: 0x' + hex() + '  DELETE_IN_PROGRESS', 30, 150);
-    c.fillText('Сбор данных об ошибке: ' + randInt(0, 100) + '% завершено', 30, 185);
+    c.fillText(T('На вашем ПК возникла проблема, и его необходимо перезагрузить.'), 30, 115);
+    c.fillText(T('STOP: 0x' + hex() + '  DELETE_IN_PROGRESS'), 30, 150);
+    c.fillText(T('Сбор данных об ошибке: ' + randInt(0, 100) + '% завершено'), 30, 185);
   } else if (kind === 'desktop'){
     c.fillStyle = '#008080'; c.fillRect(0, 0, GLW, GLH);
     const names = ['Документы', 'Корзина', 'Пароли', 'Фото', 'Почта', 'Игры'];
     for (let i = 0; i < 6; i++){
       const x = 16 + (i % 3) * 78, y = 16 + Math.floor(i / 3) * 84;
       c.fillStyle = '#e0e0e0'; c.fillRect(x + 12, y, 34, 34);
-      c.fillStyle = '#000'; c.font = '11px sans-serif'; c.fillText(names[i], x, y + 52);
+      c.fillStyle = '#000'; c.font = '11px sans-serif'; c.fillText(T(names[i]), x, y + 52);
     }
     c.fillStyle = '#c0c0c0'; c.fillRect(170, 50, 290, 170);
     c.fillStyle = '#000080'; c.fillRect(174, 54, 282, 18);
-    c.fillStyle = '#fff'; c.font = 'bold 11px sans-serif'; c.fillText('Удаление — Проводник', 180, 67);
+    c.fillStyle = '#fff'; c.font = 'bold 11px sans-serif'; c.fillText(T('Удаление — Проводник'), 180, 67);
     c.fillStyle = '#000'; c.font = '12px sans-serif';
-    for (let i = 0; i < 7; i++) c.fillText('C:\\Users\\Пользователь\\файл_' + randInt(10, 999) + '.dat', 182, 98 + i * 18);
+    for (let i = 0; i < 7; i++) c.fillText(T('C:\\Users\\Пользователь\\файл_' + randInt(10, 999) + '.dat'), 182, 98 + i * 18);
   } else if (kind === 'dump'){
     c.fillStyle = '#000'; c.fillRect(0, 0, GLW, GLH);
     c.fillStyle = '#3f3'; c.font = '11px Consolas, monospace';
     for (let y = 12; y < GLH; y += 12)
-      c.fillText('0x' + hex() + ' ' + rnd(['FAILED', 'NULL', 'ERR', 'DEL', '??']) + ' ' + Math.random().toString(36).slice(2, 14), 8, y);
+      c.fillText(T('0x' + hex() + ' ' + rnd(['FAILED', 'NULL', 'ERR', 'DEL', '??']) + ' ' + Math.random().toString(36).slice(2, 14)), 8, y);
   } else if (kind === 'face'){
     if (faceImg.complete && faceImg.naturalWidth){
       const s = GLH / faceImg.naturalHeight, w = faceImg.naturalWidth * s;
@@ -2573,6 +2576,7 @@ function glitchTick(){
   $('wipeTitle').style.textShadow = rgb;
   $('pct').style.textShadow = rgb;
   $('wipeFile').style.textShadow = rgb;
+  if (!cancelBtn.classList.contains('pressed')) cancelBtn.textContent = corruptText('Отменить', wipeCorrupt);
   cancelBtn.style.transform = `translate(${randInt(-18, 18)}px,${randInt(-6, 6)}px) skewX(${Math.random() < 0.3 ? randInt(-8, 8) : 0}deg)`;
   cancelBtn.style.filter = Math.random() < 0.2 ? 'invert(1)' : 'none';
   cancelBtn.style.opacity = Math.random() < 0.2 ? '0.4' : '1';
@@ -2630,6 +2634,7 @@ function stopWipeFx(){
   bandRects = [];
   cancelBtn.style.transform = ''; cancelBtn.style.filter = ''; cancelBtn.style.opacity = '';
   cancelBtn.classList.remove('pressed', 'deny');
+  wipeCorrupt = 0;
   cancelBtn.textContent = 'Отменить';
   clearTimeout(pressTimer); clearTimeout(pressSubTimer);
   $('wipeTitle').style.textShadow = ''; $('pct').style.textShadow = ''; $('wipeFile').style.textShadow = '';
@@ -2693,6 +2698,7 @@ async function wipePhase(){
     $('bar').style.width = p + '%';
     // ближе к 50% буквы начинают заменяться символами, к 100% распадается всё
     const cs = corruptStrength(p);
+    wipeCorrupt = cs;
     $('wipeTitle').textContent = corruptText(titleBase, cs);
     $('wipeSub').textContent = corruptText(subBase, cs);
     $('pct').textContent = corruptText(
