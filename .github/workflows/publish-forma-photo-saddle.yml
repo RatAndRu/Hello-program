@@ -62,8 +62,11 @@ jobs:
           if len(solids) != 1:
               raise SystemExit(f'Ожидался один solid, получено {len(solids)}')
           body = solids[0].manifold
-          if str(body.status()) != 'Error.NoError' or body.genus() != 2:
-              raise SystemExit(f'Некорректная деталь: {body.status()}, genus={body.genus()}')
+          if str(body.status()) != 'Error.NoError' or body.genus() != 1 or len(body.decompose()) != 1:
+              raise SystemExit(
+                  f'Некорректная деталь: {body.status()}, genus={body.genus()}, '
+                  f'components={len(body.decompose())}'
+              )
 
           release = Path('release')
           release.mkdir()

@@ -231,6 +231,15 @@ jobs:
                   if p.is_file():
                       zf.write(p, p.relative_to(root))
           print('ZIP:', zip_path, zip_path.stat().st_size, 'байт')
+          exe_path = Path('dist/Forma3D.exe')
+          exe_zip = Path(f'Forma3D-{__version__}-exe.zip')
+          with zipfile.ZipFile(exe_zip, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+              zf.write(exe_path, 'Forma3D.exe')
+          with zipfile.ZipFile(exe_zip) as zf:
+              assert zf.namelist() == ['Forma3D.exe'], zf.namelist()
+              assert zf.testzip() is None
+              assert zf.read('Forma3D.exe') == exe_path.read_bytes()
+          print('EXE-only ZIP:', exe_zip, exe_zip.stat().st_size, 'байт; только Forma3D.exe')
           PY
 
       - name: Подготовить ZIP только с изменёнными файлами
@@ -270,6 +279,7 @@ jobs:
           name: Forma3D-windows
           path: |
             forma/Forma3D-*-windows.zip
+            forma/Forma3D-*-exe.zip
             forma/dist/Forma3D.exe
             forma/examples/assets/human_skeleton.glb
             forma/examples/assets/human_skeleton.LICENSE.txt
@@ -301,6 +311,7 @@ jobs:
           fail_on_unmatched_files: true
           files: |
             forma/Forma3D-*-windows.zip
+            forma/Forma3D-*-exe.zip
             forma/dist/Forma3D.exe
             forma/examples/assets/human_skeleton.glb
             forma/examples/assets/human_skeleton.LICENSE.txt

@@ -1,4 +1,4 @@
-"""Геометрическая приёмка кронштейна, построенного по фотографии пользователя."""
+"""Геометрическая приёмка исправленного кронштейна по фотографии пользователя."""
 
 from __future__ import annotations
 
@@ -26,39 +26,42 @@ class PhotoSaddleBracketTest(unittest.TestCase):
         cls.solids = cls.result.visible_solids()
         cls.body = cls.solids[0].manifold
 
-    def test_single_solid_bounds_and_two_through_holes(self):
+    def test_single_connected_solid_bounds_and_hole_topology(self):
         self.assertEqual(len(self.solids), 1)
         self.assertEqual(self.solids[0].name, "корпус")
         self.assertEqual(str(self.body.status()), "Error.NoError")
-        self.assertEqual(self.body.genus(), 2, "ровно два сквозных отверстия; гнездо слепое")
+        self.assertEqual(len(self.body.decompose()), 1, "никаких отдельных микрофрагментов")
+        self.assertEqual(self.body.genus(), 1, "переднее отверстие сквозное; правый канал и гнездо глухие")
         bbox = self.body.bounding_box()
         np.testing.assert_allclose(np.array(bbox[3:]) - np.array(bbox[:3]),
-                                   [251.0, 219.0, 245.0], atol=0.002)
-        self.assertGreater(self.body.volume(), 2_000_000)
+                                   [212.0, 241.0, 245.0], atol=0.002)
+        self.assertGreater(self.body.volume(), 3_000_000)
 
-    def test_slot_holes_shell_and_lugs_are_real_geometry(self):
-        def probe_volume(point):
+    def test_slot_bores_chamfer_shell_and_lugs_are_real_geometry(self):
+        def probe_volume(point, size=2.0):
             x, y, z = point
-            probe = mf.Manifold.cube([2.0, 2.0, 2.0]).translate([x - 1, y - 1, z - 1])
+            half = size / 2
+            probe = mf.Manifold.cube([size, size, size]).translate([x - half, y - half, z - half])
             return (self.body ^ probe).volume()
 
         expectations = [
             ((0, 25, 180), 0.0, "глухое гнездо выше дна"),
             ((0, 25, 170), 8.0, "дно гнезда не пробито"),
-            ((98, -10, 145), 0.0, "горизонтальное отверстие"),
-            ((98, -10, 180), 8.0, "металл правой проушины"),
-            ((-82, -110, 7), 0.0, "вертикальное отверстие"),
-            ((-82, -85, 7), 8.0, "металл малой проушины"),
+            ((90, 15, 145), 0.0, "правый канал вдоль X"),
+            ((40, 15, 145), 8.0, "дно правого канала перед боссом"),
+            ((90, 15, 180), 8.0, "металл правой проушины"),
+            ((-82, -109, 9), 0.0, "сквозное переднее отверстие"),
+            ((-82, -85, 9), 8.0, "металл передней проушины"),
             ((0, 0, 40), 0.0, "открытая полость седла"),
-            ((85, 40, 20), 8.0, "стенка седла"),
+            ((-85, 40, 20), 8.0, "стенка седла"),
         ]
         for point, expected, label in expectations:
             with self.subTest(label=label, point=point):
-                volume = probe_volume(point)
-                if expected == 0:
-                    self.assertAlmostEqual(volume, 0.0, places=6)
-                else:
-                    self.assertAlmostEqual(volume, expected, delta=0.002)
+                self.assertAlmostEqual(probe_volume(point), expected, delta=0.002)
+        with self.subTest("конусная фаска открыта"):
+            self.assertAlmostEqual(probe_volume((-66, -109, 17), 0.5), 0.0, places=6)
+        with self.subTest("под фаской остаётся цилиндрическая стенка"):
+            self.assertAlmostEqual(probe_volume((-66, -109, 10), 0.5), 0.125, delta=0.0001)
 
     def test_glb_is_watertight_and_preserves_source_faces(self):
         data = self.result.glb()
