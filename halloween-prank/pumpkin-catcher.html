@@ -303,7 +303,34 @@ const BGM_VOL = 0.42;
 const bgm = new Audio('spooky.mp3');
 bgm.loop = true;
 bgm.preload = 'auto';
+bgm.crossOrigin = 'anonymous';
 let bgmFade = null, scratchTimer = null, scratchStop = null;
+let bgmWanted = false;         // музыка должна звучать (игра идёт)
+let bgmUnlocked = false;       // звук разрешён браузером после нажатия
+
+// Обход политики автозапуска (в Edge на ПК она строже, чем на телефоне):
+// беззвучную дорожку браузеры запускают всегда, поэтому включаем её заранее,
+// а звук открываем уже по нажатию пользователя.
+function bgmPrime(){
+  bgm.muted = true;
+  bgm.volume = 0;
+  try { bgm.load(); } catch (e) {}
+  try { const p = bgm.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+}
+bgmPrime();
+bgm.addEventListener('error', () => {
+  // сеть подвисла — пробуем ещё раз, когда пользователь что-то нажмёт
+  bgmUnlocked = false;
+});
+// любое нажатие: если браузер не дал звук раньше, даём сейчас
+function bgmTryUnlock(){
+  if (!bgmWanted || bgmUnlocked) return;
+  bgm.muted = false;
+  if (bgm.paused){ try { const p = bgm.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+  bgmUnlocked = true;
+}
+['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
+  document.addEventListener(ev, bgmTryUnlock, { passive: true }));
 
 function bgmFadeTo(target, ms){
   clearInterval(bgmFade);
@@ -319,18 +346,31 @@ function bgmFadeTo(target, ms){
 }
 function startMusic(){
   stopScratch();
+  bgmWanted = true;
+  bgmUnlocked = true;                      // вызов идёт из обработчика нажатия — звук разрешён
+  bgm.muted = false;                        // открываем звук
   try { bgm.currentTime = 0; } catch (e) {}
   bgm.volume = 0;
-  try { const p = bgm.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
+  try {
+    const p = bgm.play();
+    if (p && p.catch) p.catch(() => {
+      // Edge мог отказать: тогда пробуем ещё раз беззвучно и ждём следующего нажатия
+      bgm.muted = true;
+      try { const p2 = bgm.play(); if (p2 && p2.catch) p2.catch(() => {}); } catch (e) {}
+      bgmUnlocked = false;
+    });
+  } catch (e) { bgmUnlocked = false; }
   bgmFadeTo(BGM_VOL, 1600);
 }
 function stopMusic(){
   stopScratch();
+  bgmWanted = false;
   bgmFadeTo(0, 500);
 }
 // мгновенная остановка без затухания — когда пользователь ушёл со страницы
 function stopMusicNow(){
   stopScratch();
+  bgmWanted = false;
   clearInterval(bgmFade); bgmFade = null;
   bgm.volume = 0;
   try { bgm.pause(); } catch (e) {}
@@ -2243,8 +2283,17 @@ function finishLeave(){
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' || e.key === 'Meta' || e.key === 'OS' || e.key === 'Super') showLeave();
 });
-document.addEventListener('fullscreenchange', () => { syncExitBtn(); if (!document.fullscreenElement) showLeave(); });
-document.addEventListener('webkitfullscreenchange', () => { syncExitBtn(); if (!document.webkitFullscreenElement) showLeave(); });
+let wasFullscreen = false;
+// Двойной обработчик давал ложное срабатывание ухода: в Chromium прилетают оба события,
+// а webkit-поле бывает пустым. Считаем состояние по одному источнику.
+function onFsChange(){
+  syncExitBtn();
+  const nowFs = !!fullscreenEl();
+  if (wasFullscreen && !nowFs) showLeave();   // уход только если полный экран был и закончился
+  wasFullscreen = nowFs;
+}
+document.addEventListener('fullscreenchange', onFsChange);
+document.addEventListener('webkitfullscreenchange', onFsChange);
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && wipeActive) showLeave(); });
 window.addEventListener('blur', showLeave);
 // уход со страницы: вкладку свернули или переключились в другое приложение (на телефоне тоже)
