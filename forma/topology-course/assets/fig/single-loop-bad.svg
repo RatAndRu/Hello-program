@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200" role="img"><style>
+.w{fill:none;stroke:#a9a294;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.ws{fill:none;stroke:#cdc6b9;stroke-width:1.2;stroke-linejoin:round}
+.wb{fill:none;stroke:#d1495b;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.wg{fill:none;stroke:#2a9d8f;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.wd{fill:none;stroke:#8a8478;stroke-width:1.2;stroke-dasharray:4 4}
+.fb{fill:#d1495b;fill-opacity:.16;stroke:#d1495b;stroke-width:2}
+.fg{fill:#2a9d8f;fill-opacity:.14;stroke:#2a9d8f;stroke-width:2}
+.fn{fill:#efe9dc;fill-opacity:.85;stroke:#a9a294;stroke-width:1.5}
+.fs{fill:#efe9dc;fill-opacity:.45;stroke:#cdc6b9;stroke-width:1.2}
+.dot{fill:#2b2a27}
+.pb{fill:#d1495b;stroke:#fbfaf6;stroke-width:1.5}
+.pg{fill:#2a9d8f;stroke:#fbfaf6;stroke-width:1.5}
+.pw{fill:#e09f3e;stroke:#fbfaf6;stroke-width:1.5}
+
+.tb{font-family:'DejaVu Sans',sans-serif;font-size:10px;fill:#d1495b;font-weight:bold}
+.tg{font-family:'DejaVu Sans',sans-serif;font-size:10px;fill:#2a9d8f;font-weight:bold}
+.ti{font-family:'DejaVu Sans',sans-serif;font-size:10px;fill:#2b2a27}
+.arrow{fill:none;stroke:#2b2a27;stroke-width:1.3}
+.arw{fill:#2b2a27}
+</style><rect width="320" height="200" fill="#fbfaf6"/><rect x="8" y="8" rx="6" width="72" height="19" class="fb"/><text x="44" y="21" text-anchor="middle" class="tb">ПЛОХО</text><path d="M 44 36 L 69.3 36 L 94.7 36 L 120 36 L 126.2 89 L 131.8 91.8 L 136.2 96.2 L 139 101.8 L 140 108 L 94 121.3 L 94 134.7 L 94 148" class="wb"/><path d="M 44 88 L 69.3 88 L 94.7 88 L 120 88 L 142.2 39.5 L 162.3 49.8 L 178.2 65.7 L 188.5 85.8 L 192 108 L 146 121.3 L 146 134.7 L 146 148" class="wb"/><path d="M 44 50.6 L 69.3 50.6 L 94.7 50.6 L 120 50.6 L 130.7 75.1 L 140.3 80 L 148 87.7 L 152.9 97.3 L 154.6 108 L 108.6 121.3 L 108.6 134.7 L 108.6 148" class="ws"/><path d="M 44 62 L 69.3 62 L 94.7 62 L 120 62 L 134.2 64.3 L 147 70.8 L 157.2 81 L 163.7 93.8 L 166 108 L 120 121.3 L 120 134.7 L 120 148" class="ws"/><path d="M 44 73.4 L 69.3 73.4 L 94.7 73.4 L 120 73.4 L 137.7 53.4 L 153.8 61.5 L 166.5 74.2 L 174.6 90.3 L 177.4 108 L 131.4 121.3 L 131.4 134.7 L 131.4 148" class="ws"/><line x1="136.2" y1="96.2" x2="178.2" y2="65.7" class="wb"/><line x1="44" y1="36" x2="44" y2="88" class="wb"/><line x1="94" y1="148" x2="146" y2="148" class="wb"/><text x="10" y="176" class="ti" text-anchor="start">Весь изгиб на одном ряду граней:</text><text x="10" y="190" class="ti" text-anchor="start">он складывается в ноль.</text></svg>

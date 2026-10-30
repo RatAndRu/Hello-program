@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="190" viewBox="0 0 320 190" role="img"><style>
+.w{fill:none;stroke:#a9a294;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.ws{fill:none;stroke:#cdc6b9;stroke-width:1.2;stroke-linejoin:round}
+.wb{fill:none;stroke:#d1495b;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.wg{fill:none;stroke:#2a9d8f;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.wd{fill:none;stroke:#8a8478;stroke-width:1.2;stroke-dasharray:4 4}
+.fb{fill:#d1495b;fill-opacity:.16;stroke:#d1495b;stroke-width:2}
+.fg{fill:#2a9d8f;fill-opacity:.14;stroke:#2a9d8f;stroke-width:2}
+.fn{fill:#efe9dc;fill-opacity:.85;stroke:#a9a294;stroke-width:1.5}
+.fs{fill:#efe9dc;fill-opacity:.45;stroke:#cdc6b9;stroke-width:1.2}
+.dot{fill:#2b2a27}
+.pb{fill:#d1495b;stroke:#fbfaf6;stroke-width:1.5}
+.pg{fill:#2a9d8f;stroke:#fbfaf6;stroke-width:1.5}
+.pw{fill:#e09f3e;stroke:#fbfaf6;stroke-width:1.5}
+
+.tb{font-family:'DejaVu Sans',sans-serif;font-size:10px;fill:#d1495b;font-weight:bold}
+.tg{font-family:'DejaVu Sans',sans-serif;font-size:10px;fill:#2a9d8f;font-weight:bold}
+.ti{font-family:'DejaVu Sans',sans-serif;font-size:10px;fill:#2b2a27}
+.arrow{fill:none;stroke:#2b2a27;stroke-width:1.3}
+.arw{fill:#2b2a27}
+</style><rect width="320" height="190" fill="#fbfaf6"/><path d="M 36 56 L 140 56 L 140 148 L 36 148 Z" class="fn"/><path d="M 36 56 L 140 56 L 140 148 L 36 148 Z" class="w"/><path d="M 140 56 L 252 78 L 252 148 L 140 148 Z" class="fn"/><path d="M 140 56 L 252 78 L 252 148 L 140 148 Z" class="w"/><line x1="62" y1="56" x2="62" y2="148" class="ws"/><line x1="88" y1="56" x2="88" y2="148" class="ws"/><line x1="114" y1="56" x2="114" y2="148" class="ws"/><line x1="175" y1="70" x2="175" y2="148" class="ws"/><line x1="210" y1="70" x2="210" y2="148" class="ws"/><line x1="236" y1="70" x2="236" y2="148" class="ws"/><circle cx="140" cy="56" r="4.6" class="pg"/><text x="10" y="166" class="ti" text-anchor="start">Замкнутое тело: обход согласован, 2 грани на ребро,</text><text x="10" y="180" class="ti" text-anchor="start">полюса на плоском, острые рёбра поддержаны.</text></svg>

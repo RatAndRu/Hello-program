@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="200" viewBox="0 0 320 200" role="img"><style>
+.w{fill:none;stroke:#a9a294;stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round}
+.ws{fill:none;stroke:#cdc6b9;stroke-width:1.2;stroke-linejoin:round}
+.wb{fill:none;stroke:#d1495b;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.wg{fill:none;stroke:#2a9d8f;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round}
+.wd{fill:none;stroke:#8a8478;stroke-width:1.2;stroke-dasharray:4 4}
+.fb{fill:#d1495b;fill-opacity:.16;stroke:#d1495b;stroke-width:2}
+.fg{fill:#2a9d8f;fill-opacity:.14;stroke:#2a9d8f;stroke-width:2}
+.fn{fill:#efe9dc;fill-opacity:.85;stroke:#a9a294;stroke-width:1.5}
+.fs{fill:#efe9dc;fill-opacity:.45;stroke:#cdc6b9;stroke-width:1.2}
+.dot{fill:#2b2a27}
+.pb{fill:#d1495b;stroke:#fbfaf6;stroke-width:1.5}
+.pg{fill:#2a9d8f;stroke:#fbfaf6;stroke-width:1.5}
+.pw{fill:#e09f3e;stroke:#fbfaf6;stroke-width:1.5}
+
+.tb{font-family:'DejaVu Sans',sans-serif;font-size:10px;fill:#d1495b;font-weight:bold}
+.tg{font-family:'DejaVu Sans',sans-serif;font-size:10px;fill:#2a9d8f;font-weight:bold}
+.ti{font-family:'DejaVu Sans',sans-serif;font-size:10px;fill:#2b2a27}
+.arrow{fill:none;stroke:#2b2a27;stroke-width:1.3}
+.arw{fill:#2b2a27}
+</style><rect width="320" height="200" fill="#fbfaf6"/><rect x="8" y="8" rx="6" width="72" height="19" class="fg"/><text x="44" y="21" text-anchor="middle" class="tg">ЛЕЧЕНИЕ</text><path d="M 40 44 L 88 54 L 136 44 L 184 54 L 232 44 L 280 54" class="w"/><path d="M 40 84 L 88 94 L 136 84 L 184 94 L 232 84 L 280 94" class="w"/><path d="M 40 64 L 88 74 L 136 64 L 184 74 L 232 64 L 280 74" class="wg"/><path d="M 40 44 L 88 54 L 88 74 L 40 64 Z" class="wg"/><path d="M 40 64 L 88 74 L 88 94 L 40 84 Z" class="wg"/><path d="M 88 54 L 136 44 L 136 64 L 88 74 Z" class="wg"/><path d="M 88 74 L 136 64 L 136 84 L 88 94 Z" class="wg"/><path d="M 136 44 L 184 54 L 184 74 L 136 64 Z" class="wg"/><path d="M 136 64 L 184 74 L 184 94 L 136 84 Z" class="wg"/><path d="M 184 54 L 232 44 L 232 64 L 184 74 Z" class="wg"/><path d="M 184 74 L 232 64 L 232 84 L 184 94 Z" class="wg"/><path d="M 232 44 L 280 54 L 280 74 L 232 64 Z" class="wg"/><path d="M 232 64 L 280 74 L 280 94 L 232 84 Z" class="wg"/><text x="40" y="120" class="tg" text-anchor="start">добавлен ряд вершин —</text><text x="40" y="136" class="tg" text-anchor="start">треугольники стали короткими</text><text x="10" y="190" class="ti" text-anchor="start">У длинной тонкой детали добавляют сегменты вдоль оси.</text></svg>

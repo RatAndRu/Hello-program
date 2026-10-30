@@ -1,0 +1,564 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Топология тел в 3D — учебный курс с примерами</title>
+<meta name="description" content="Правила топологии 3D-сеток: квады, полюса, петли, SubD, скиннинг, твёрдые тела. 14 схем «плохо → лечение», каталог 30 случаев, чек-листы и квиз.">
+<meta name="color-scheme" content="light dark">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="progress" id="progress" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="brand"><b>Топология тел</b><span>учебный курс</span></div>
+  <div class="spacer"></div>
+  <a class="btn ghost" href="#gallery">Галерея</a>
+  <a class="btn ghost" href="#quiz">Квиз</a>
+  <button class="btn" id="themeBtn" type="button" aria-label="Переключить тему">☀ Светлая</button>
+</header>
+
+<div class="layout">
+  <nav class="toc" aria-label="Содержание">
+    <h4>Содержание</h4>
+    <ol>
+      <li><a href="#start">С чего начать</a></li>
+      <li><a href="#contexts">Пять контекстов</a></li>
+      <li><a href="#words">Словарь и полюса</a></li>
+      <li><a href="#signs">Признаки нормы</a></li>
+      <li><a href="#tools">Инструменты</a></li>
+      <li><a href="#gallery">Плохо → лечение</a></li>
+      <li><a href="#cases">Каталог случаев</a></li>
+      <li><a href="#myths">Это не ошибка</a></li>
+      <li><a href="#checklists">Чек-листы</a></li>
+      <li><a href="#quiz">Проверь себя</a></li>
+      <li><a href="#audit">Наши цифры</a></li>
+      <li><a href="#sources">Источники</a></li>
+    </ol>
+    <div class="toc-foot">
+      Схемы нарисованы кодом:<br><code>tools/make_topology_figures.py</code>.<br><br>
+      Полный текст курса — <code>docs/topology_guide.md</code>.
+    </div>
+  </nav>
+
+  <main>
+    <!-- ================= 1. HERO ================= -->
+    <section id="start">
+      <div class="hero">
+        <div class="kicker">Практический курс · 30 октября 2026</div>
+        <h1>Топология тел: что считается хорошей сеткой и как починить плохую</h1>
+        <p class="big">Топология — это не «красивая проволочка». Это ответ на вопрос, что с моделью будут делать: подразбивать, сгибать, запекать, печатать или просто поставить в сцену. Здесь — правила для каждого случая, конкретные приёмы в Blender и разбор тридцати типичных поломок с картинками «как было» и «как надо».</p>
+        <div class="stats">
+          <div><b>14</b><span>пар схем «плохо / лечение»</span></div>
+          <div><b>30</b><span>случаев в каталоге</span></div>
+          <div><b>31</b><span>схема, нарисованная кодом</span></div>
+          <div><b>10</b><span>вопросов для самопроверки</span></div>
+        </div>
+        <div class="cta">
+          <a class="btn primary" href="#gallery">Смотреть примеры</a>
+          <a class="btn" href="#quiz">Проверить себя</a>
+          <a class="btn ghost" href="#audit">Цифры нашего экспорта</a>
+        </div>
+      </div>
+
+      <h2 style="margin-top:34px">Как этим пользоваться</h2>
+      <p class="lede">Если вы здесь впервые — читайте подряд, 20–25 минут. Если пришли с конкретной проблемой — откройте <a href="#cases">каталог</a>, найдите симптом и перейдите к паре схем.</p>
+      <div class="grid3">
+        <div class="card teal">
+          <div class="tag">шаг 1</div>
+          <h4>Поймите задачу</h4>
+          <p>Одна и та же сетка идеальна для печати и ужасна для анимации. Сначала <a href="#contexts">определите контекст</a>: SubD, скиннинг, game-ready или твёрдое тело.</p>
+        </div>
+        <div class="card amber">
+          <div class="tag">шаг 2</div>
+          <h4>Найдите симптом</h4>
+          <p>В <a href="#gallery">галерее</a> — 14 пар с перетаскиваемым «до/после». В <a href="#cases">каталоге</a> — 30 случаев с фильтром по причине.</p>
+        </div>
+        <div class="card blue">
+          <div class="tag">шаг 3</div>
+          <h4>Проверьте себя</h4>
+          <p><a href="#quiz">Квиз</a> покажет, где вы пока рассуждаете «на глаз». <a href="#checklists">Чек-листы</a> можно отмечать — галочки сохранятся в браузере.</p>
+        </div>
+      </div>
+
+      <div class="callout">
+        <p><b>Главная мысль курса.</b> Правил топологии много, но все они сводятся к одному вопросу: <em>что произойдёт с этой гранью, когда модель согнут, подразбьют или триангулируют в чужом экспортёре?</em> Если ответ вас устраивает — топология правильная.</p>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- ================= 2. КОНТЕКСТЫ ================= -->
+    <section id="contexts">
+      <div class="sec-head">
+        <span class="eyebrow">Раздел 1</span>
+        <h2>Пять контекстов — пять разных «правильно»</h2>
+        <p class="lede">«Хорошая топология» без контекста — бессмысленное словосочетание. Вот пять ситуаций; в каждой свои критерии и свои смертные грехи.</p>
+      </div>
+
+      <div class="grid2">
+        <div class="card teal">
+          <div class="tag">SubD-клетка</div>
+          <h4>Квадовая сетка под subdivision surface</h4>
+          <p>Сетка — не поверхность, а управляющие точки. Catmull-Clark подразбивает её и сглаживает. Отсюда требования: почти всё квады, мало нерегулярных вершин, поток вдоль формы, поддержанные острые рёбра.</p>
+          <p class="why" style="color:var(--muted);font-size:13.7px">Кого это касается: персонажи, мебель, техника «в стиле Pixar» — всё, что потом подразбивается.</p>
+        </div>
+        <div class="card red">
+          <div class="tag">Анимация</div>
+          <h4>Деформируемая сетка под скиннинг</h4>
+          <p>Сетка обязана двигаться: изгибаться в локтях, сжиматься в уголках рта, тянуться в подмышке. Главное — расположение петель, а не число полигонов.</p>
+          <p class="why" style="color:var(--muted);font-size:13.7px">Смертный грех: одна петля в суставе и полюс на линии сгиба.</p>
+        </div>
+        <div class="card blue">
+          <div class="tag">Real-time</div>
+          <h4>Game-ready и силуэт</h4>
+          <p>Полигоны считаются, силуэт решает, UV-швы и нормали важнее эстетики проволочки. Треугольники допустимы — движок всё равно всё триангулирует, — но каждое ребро должно быть нужно.</p>
+          <p class="why" style="color:var(--muted);font-size:13.7px">Смертный грех: «лестница» из треугольников в зоне деформации.</p>
+        </div>
+        <div class="card amber">
+          <div class="tag">Твёрдое тело</div>
+          <h4>Печать, CAD, булевы операции</h4>
+          <p>«Топология» здесь — корректность тела: замкнутость, согласованные нормали, отсутствие самопересечений, вырожденных граней и мусора. Красота квадовой сетки не цель.</p>
+          <p class="why" style="color:var(--muted);font-size:13.7px">Именно этот контекст ближе всего к параметрическим редакторам вроде <b>forma</b>.</p>
+        </div>
+        <div class="card">
+          <div class="tag">Статика</div>
+          <h4>Пропс, архитектура, скан</h4>
+          <p>Можно позволить себе n-гоны, треугольники и «грязную» триангуляцию — если поверхность плоская, не деформируется и нормально запекается. Правильная топология здесь — та, что держит силуэт.</p>
+          <p class="why" style="color:var(--muted);font-size:13.7px">Половина «ошибок» из интернета — нормальные решения в этом контексте.</p>
+        </div>
+        <div class="card" style="background:var(--sunk)">
+          <div class="tag">Правило выбора</div>
+          <h4>Чем больше движения — тем важнее поток</h4>
+          <p>Чем сильнее объект деформируют и подразбивают, тем важнее регулярность квадов. Чем важнее «тело» (печать, CAD, булевы), тем важнее многообразие и отсутствие мусора.</p>
+          <p class="why" style="color:var(--muted);font-size:13.7px">Эти два требования независимы и иногда конфликтуют.</p>
+        </div>
+      </div>
+
+      <h3>Пятнадцать правил на одну страницу</h3>
+      <div class="grid2">
+        <div class="card">
+          <ol style="margin:0">
+            <li>Топология — ответ на вопрос «что будут делать с сеткой».</li>
+            <li>Квад регулярен при валентности 4, треугольник — при 6.</li>
+            <li>Полюса неизбежны. Их не избегают, а размещают.</li>
+            <li>Поток вдоль формы, петли — поперёк изгиба.</li>
+            <li>Одна петля на сустав — это не сустав.</li>
+            <li>Плотность меняется плавно, через полюса.</li>
+            <li>N-гон на плоскости — нормально, в деформации — нет.</li>
+            <li>Треугольники в game-ready — нормально.</li>
+          </ol>
+        </div>
+        <div class="card">
+          <ol start="9" style="margin:0">
+            <li>Смотрите силуэт и preview SubD, а не только закрашенный вид.</li>
+            <li>Неплоские грани триангулируются по-разному в разных программах.</li>
+            <li>Многообразие — отдельная от эстетики история.</li>
+            <li>Сварка вершин — первая кнопка при странной нормали.</li>
+            <li>Проверяйте на деформации, а не на T-позе.</li>
+            <li>Авто-ретопо не делает финальную топологию для анимации.</li>
+            <li>Любое правило нарушается осознанно — см. <a href="#myths">раздел 8</a>.</li>
+          </ol>
+        </div>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- ================= 3. СЛОВАРЬ ================= -->
+    <section id="words">
+      <div class="sec-head">
+        <span class="eyebrow">Раздел 2</span>
+        <h2>Словарь и немного математики</h2>
+        <p class="lede">Без этих десяти слов разговор о топологии превращается в спор о вкусах.</p>
+      </div>
+
+      <div class="terms">
+        <div class="term"><span>valence</span><b>Валентность</b>Число рёбер в вершине. 4 — норма для квадов, 6 — для треугольников.</div>
+        <div class="term"><span>pole, E/N-pole</span><b>Полюс</b>Вершина валентности 3 или 5. Через неё число петель меняется.</div>
+        <div class="term"><span>star</span><b>Звезда</b>Валентность 6 и выше: сильный щипок и проблемы с GPU-подразбиением.</div>
+        <div class="term"><span>edge loop</span><b>Петля</b>Непрерывная цепочка рёбер. Несущая конструкция формы.</div>
+        <div class="term"><span>edge ring</span><b>Кольцо</b>Полоса квадов между петлями. Управляет плотностью.</div>
+        <div class="term"><span>edge flow</span><b>Поток</b>Направление петель. Именно он «читается» глазом.</div>
+        <div class="term"><span>support loop</span><b>Поддержка</b>Петля рядом с ребром, чтобы SubD не съел острый край.</div>
+        <div class="term"><span>crease</span><b>Крейз</b>Вес жёсткости 0…10. Дешевле поддержки, но хуже переносится.</div>
+        <div class="term"><span>manifold</span><b>Многообразие</b>У каждого ребра ровно две грани, обход согласован.</div>
+        <div class="term"><span>genus</span><b>Род</b>Число сквозных ручек. Замкнутая поверхность: χ = 2 − 2g.</div>
+        <div class="term"><span>non-planar / sliver</span><b>Неплоская грань, игла</b>Грань не в плоскости; треугольник с очень острым углом.</div>
+        <div class="term"><span>T-junction</span><b>T-стык</b>Вершина на ребре соседа. Причина трещин при деформации.</div>
+      </div>
+
+      <figure class="fig">
+        <img src="assets/fig/valence.svg" alt="Схема валентности: 3 и 5 рёбер — полюса, 4 — норма для квадов, 6 и больше — звезда" width="340" height="140">
+        <figcaption>Регулярная вершина квадовой сетки — 4 ребра. Рядом — то, что называют полюсами и звездой.</figcaption>
+      </figure>
+
+      <div class="fig-row">
+        <figure class="fig">
+          <img src="assets/fig/loop-ring.svg" alt="Петля и кольцо на квадратной сетке" width="320" height="160">
+          <figcaption>Петля идёт по рёбрам, кольцо — полоса граней между двумя петлями.</figcaption>
+        </figure>
+        <div class="card">
+          <h4>Почему квад «правильный», а полюс — проблема</h4>
+          <p>Квад — тензорное произведение: у него четыре стороны, и по любой можно продолжить решётку. Отсюда loop cut, выбор петли, Grid Fill, предсказуемое подразбиение и ровная UV.</p>
+          <p>Полюс — место, где решётка не сходится. Catmull-Clark на нерегулярной вершине даёт другую гладкость, и чем выше валентность, тем заметнее искажение. Это и есть механизм «щипка».</p>
+        </div>
+      </div>
+
+      <h3>Почему полюса неизбежны</h3>
+      <p>У замкнутой квадовой поверхности сумма <em>(4 − валентность)</em> по всем вершинам равна <em>8·(1 − g)</em>, где g — род. Для сферы это 8, для тора — 0. То есть «лишние» рёбра где-то обязаны сойтись: сетки без полюсов не существует. Вывод практический: не ищите сетку без полюсов — ищите сетку, где они стоят в правильных местах.</p>
+      <div class="grid3">
+        <div class="card">
+          <h4>χ = V − E + F</h4>
+          <p>Эйлерова характеристика. Для замкнутого куска без ручек χ = 2, для «бублика» χ = 0. Быстрая проверка, что перед вами вообще тело.</p>
+        </div>
+        <div class="card">
+          <h4>E ≈ 3T / 2</h4>
+          <p>Для замкнутой треугольной сетки. Если после сварки рёбер неожиданно меньше, где-то дырка или дубль.</p>
+        </div>
+        <div class="card">
+          <h4>6 сегментов — достаточно</h4>
+          <p>По руководству Pixar OpenSubdiv: шесть «пролётов» хватает, чтобы цилиндр читался круглым, четыре — для фоновых объектов.</p>
+        </div>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- ================= 4. ПРИЗНАКИ ================= -->
+    <section id="signs">
+      <div class="sec-head">
+        <span class="eyebrow">Раздел 3</span>
+        <h2>Признаки правильной топологии</h2>
+        <p class="lede">Четыре набора критериев. Проверяйте по тому, что делаете с моделью.</p>
+      </div>
+
+      <div class="grid2">
+        <div class="card teal">
+          <h4>Квадовая сетка под SubD</h4>
+          <ul>
+            <li>Почти всё — квады; треугольники и n-гоны только там, где не портят подразбиение.</li>
+            <li>Полюса на плоском, вне деформации и вне силуэта.</li>
+            <li>Плотность меняется плавно, через полюса и «grid turn».</li>
+            <li>Острые рёбра поддержаны петлями или крейзами.</li>
+            <li>Preview 0 → 1 → 2 не меняет силуэт, только гладкость.</li>
+            <li>Петли выделяются <span class="kbd">Alt+click</span> и доходят до логического конца.</li>
+          </ul>
+        </div>
+        <div class="card red">
+          <h4>Деформируемая сетка</h4>
+          <ul>
+            <li>Кольцевые петли поперёк оси вращения: 3–4 / 4–6 / 6–8 по классу персонажа.</li>
+            <li>2 кольца вокруг глаза, 2–3 вокруг рта плюс петля по кромке губ.</li>
+            <li>Петля по оси симметрии.</li>
+            <li>Плечо и бедро — самые нагруженные зоны, петли обтекают сустав.</li>
+            <li>Тест деформации на 90° и 135°, а не поза T.</li>
+          </ul>
+        </div>
+        <div class="card blue">
+          <h4>Game-ready</h4>
+          <ul>
+            <li>Силуэт держится минимальным числом полигонов.</li>
+            <li>Швы UV в малоподвижных местах, не поперёк изгиба.</li>
+            <li>Сглаживание задано явно: sharp / smooth / кастомные нормали.</li>
+            <li>Триангуляция одинаковая на всех этапах: модель → бейк → движок.</li>
+          </ul>
+        </div>
+        <div class="card amber">
+          <h4>Твёрдое тело, печать, CAD</h4>
+          <ul>
+            <li>Замкнуто, многообразно, нормали наружу, объём положительный.</li>
+            <li>Нет граней нулевой площади, нулевых рёбер, дублей.</li>
+            <li>Стенка не тоньше технологического минимума (FDM 0.4 мм → 0.8–1.2 мм).</li>
+            <li>Род поверхности — осознанное решение, а не случайность.</li>
+            <li>Наложения деталей либо разрешены явно, либо устранены булевой операцией.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout warn">
+        <p><b>Как смотреть.</b> Возьмите простой риг или хотя бы SubD-модификатор и покрутите объект в каркасе сбоку. Большинство дефектов видно только на силуэте: волны, заломы, «провалы» плотности. Закрашенный вид врёт.</p>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- ================= 5. ИНСТРУМЕНТЫ ================= -->
+    <section id="tools">
+      <div class="sec-head">
+        <span class="eyebrow">Раздел 4</span>
+        <h2>Инструменты: чем именно это делают</h2>
+        <p class="lede">Минимальный рабочий набор операторов и три уровня автоматики — от ремеша до валидации файла.</p>
+      </div>
+
+      <h3>Blender: операторы, которые решают 90 % задач</h3>
+      <div class="table-wrap">
+        <table class="compact">
+          <thead><tr><th>Задача</th><th>Что нажать</th><th>Зачем</th></tr></thead>
+          <tbody>
+            <tr><td>Вставить петлю</td><td><span class="kbd">Ctrl+R</span></td><td>Новая петля, колесом — количество</td></tr>
+            <tr><td>Выбрать петлю / кольцо</td><td><span class="kbd">Alt+click</span> / <span class="kbd">Ctrl+Alt+click</span></td><td>Проверка, что поток доходит до конца</td></tr>
+            <tr><td>Разрезать грань по вершинам</td><td><span class="kbd">J</span></td><td>Закрыть T-стык, довести поток</td></tr>
+            <tr><td>Заполнить контур решёткой</td><td>Face ▸ Grid Fill</td><td>Дырка или разрыв с чётным числом вершин</td></tr>
+            <tr><td>Сшить два контура</td><td>Edge ▸ Bridge Edge Loops</td><td>Переход между разной плотностью (даст полюса)</td></tr>
+            <tr><td>Убрать ребро без дырки</td><td><span class="kbd">X</span> ▸ Dissolve, Limited Dissolve</td><td>Перестроить поток, разредить плоскость</td></tr>
+            <tr><td>Сдвинуть полюс</td><td><span class="kbd">Ctrl+E</span> ▸ Rotate Edge</td><td>Увести особенную вершину с изгиба</td></tr>
+            <tr><td>Поддержать острый край</td><td><span class="kbd">Ctrl+B</span>, support loops, <span class="kbd">Shift+E</span> crease</td><td>Фаска против «мыла» SubD</td></tr>
+            <tr><td>Сварить дубли</td><td><span class="kbd">M</span> ▸ By Distance</td><td>Первое действие при странных нормалях</td></tr>
+            <tr><td>Убрать мусор</td><td>Clean Up ▸ Degenerate Dissolve, Delete Loose</td><td>Нулевые рёбра, висячие вершины</td></tr>
+            <tr><td>Разрезать неплоские грани</td><td>Clean Up ▸ Split Non-Planar Faces</td><td>Чтобы триангуляция была предсказуемой</td></tr>
+            <tr><td>Пересчитать нормали</td><td><span class="kbd">Shift+N</span></td><td>Тёмные пятна, «изнанка»</td></tr>
+            <tr><td>Найти все проблемные рёбра</td><td>Select ▸ All by Trait ▸ Non Manifold</td><td>Дырки и non-manifold сразу</td></tr>
+            <tr><td>Проверить тело</td><td>Sidebar ▸ 3D-Print Toolbox ▸ Check All</td><td>Solid, Intersections, Degenerate, Distorted, Thickness</td></tr>
+            <tr><td>Перестроить «грязную» сетку</td><td>Data ▸ Remesh ▸ Voxel / Quad</td><td>Не для деформируемых сеток — см. ниже</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p style="font-size:13.7px;color:var(--muted);margin-top:8px">Полезные аддоны Blender: LoopTools (Relax, Circle), RetopoFlow (рисование топологии штрихами), PolyQuilt, QuadRemesher.</p>
+
+      <h3>Пакеты и подходы</h3>
+      <div class="grid3">
+        <div class="card">
+          <div class="tag">студийный стандарт</div>
+          <h4>Maya · Quad Draw</h4>
+          <p>Ретопология по «живой» поверхности: Make Live, точки, квады, Relax, Extend, Auto-weld, симметрия. Плюс автоматический Retopologize.</p>
+        </div>
+        <div class="card">
+          <div class="tag">скульпт → база</div>
+          <h4>ZBrush · ZRemesher</h4>
+          <p>Target Polygon Count, Adaptive Size, Freeze Border, Keep Groups, направляющие кривые. Даёт базу, а не финальные петли под мимику.</p>
+        </div>
+        <div class="card">
+          <div class="tag">рисованием</div>
+          <h4>RetopoFlow, CozyBlanket</h4>
+          <p>Топология рисуется штрихами и контурами по поверхности. Быстрее «по вершинам», контроль потока сохраняется.</p>
+        </div>
+      </div>
+
+      <h3>Автоматика: что умеет и чего не умеет</h3>
+      <div class="table-wrap">
+        <table class="compact">
+          <thead><tr><th>Алгоритм</th><th>Что даёт</th><th>Чего не даёт</th></tr></thead>
+          <tbody>
+            <tr><td><b>Voxel remesh</b></td><td>Равномерную замкнутую сетку, убирает самопересечения</td><td>Поток под деформацию, контроль плотности, острые рёбра</td></tr>
+            <tr><td><b>QuadriFlow</b> (2018)</td><td>Квады с заметно меньшим числом полюсов, чем Instant Meshes (≈ в 4 раза), секунды на модель</td><td>Гарантированный поток под анимацию, чистку пересечений</td></tr>
+            <tr><td><b>Instant Meshes</b> (2015)</td><td>Быстрое поле-выровненное ремеширование, сотни миллионов полигонов</td><td>Регулярность и пригодность «под SubD без правок»</td></tr>
+            <tr><td><b>ZRemesher / QuadRemesher</b></td><td>Хорошую базу, управление числом полигонов, направляющие, Freeze Border</td><td>Финальные петли под конкретную мимику и риг</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="callout">
+        <p><b>Общая закономерность.</b> Автоматика минимизирует число особенностей (полюсов), но не знает, где у персонажа будет локоть. Для статики этого достаточно; для анимации — нет. Мануалы Blender прямо пишут, что voxel и quad remesh не годятся для деформируемых сеток.</p>
+      </div>
+
+      <h3>Валидация вне редактора</h3>
+      <div class="grid3">
+        <div class="card"><h4>3D-Print Toolbox</h4><p>Эталон «проверить тело»: Solid, Bad Contiguous, Intersections, Degenerate, Distorted, Thickness, Overhang. В Edit Mode результаты выделяют проблемные элементы.</p></div>
+        <div class="card"><h4>glTF-Validator</h4><p>Формальная проверка GLB на соответствие спецификации Khronos. Не заменяет проверку топологии.</p></div>
+        <div class="card"><h4>Наш аудит</h4><p><code>forma/tools/topology_audit.py</code>: дырки, non-manifold, обход, дубли, вырожденные грани, полюса, плотность, иглы, род оболочек. Без numpy и Blender, с JSON и кодом возврата для CI.</p></div>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- ================= 6. ГАЛЕРЕЯ ================= -->
+    <section id="gallery">
+      <div class="sec-head">
+        <span class="eyebrow">Раздел 5 · главное</span>
+        <h2>Галерея: плохо → лечение</h2>
+        <p class="lede">Четырнадцать пар. Потяните разделитель (или нажмите <span class="kbd">←</span> <span class="kbd">→</span> после клика по схеме) — слева ошибка, справа исправление. Красное — плохо, зелёное — норма.</p>
+      </div>
+      <div class="fig-row" style="margin-bottom:18px">
+        <figure class="fig">
+          <img src="assets/fig/welded-body.svg" alt="Две оболочки с незаваренным швом и одно сшитое тело" width="320" height="150">
+          <figcaption>Слева шов только выглядит закрытым: вершины не слиты, внутри щель. Справа — сварка и одно тело.</figcaption>
+        </figure>
+        <div class="card">
+          <h4>Как читать пары</h4>
+          <p>На каждой схеме красным показано то, что ломается: полюс на изгибе, лишняя петля, дырка, перевёрнутая грань. Зелёным — то же место после лечения.</p>
+          <p>Ось изгиба на схемах — пунктирная линия. Именно поперёк неё должны идти кольцевые петли; если петли идут вдоль, поверхность при сгибе «винтом» уйдёт в сторону.</p>
+          <p style="font-size:13.5px;color:var(--muted)">Схемы не масштабируются: у каждой пары одинаковый размер, чтобы слайдер сравнивал одно и то же место.</p>
+        </div>
+      </div>
+      <div class="filters">
+        <button class="btn" id="revealAll" type="button" aria-pressed="false">Показать все лечения</button>
+        <span style="font-size:13px;color:var(--muted)">двойной клик по схеме возвращает разделитель на середину</span>
+      </div>
+      <div class="gallery" id="galleryList"></div>
+      <div class="callout warn" style="margin-top:20px">
+        <p><b>Читайте подписи.</b> У каждой пары три строки: причина, как найти, лечение. И ещё одна — «не всегда ошибка»: почти каждый приём имеет контекст, где он неуместен.</p>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- ================= 7. КАТАЛОГ ================= -->
+    <section id="cases">
+      <div class="sec-head">
+        <span class="eyebrow">Раздел 6</span>
+        <h2>Каталог тридцати случаев</h2>
+        <p class="lede">Симптом → причина → как найти → лечение. Раскройте строку. Фильтр — по типу проблемы, поиск — по словам.</p>
+      </div>
+      <div class="filters">
+        <div id="caseChips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+        <div class="spacer"></div>
+        <input type="search" id="caseSearch" placeholder="поиск: полюс, normal, иглы…" aria-label="Поиск по каталогу">
+        <span id="caseCount" style="font-size:13px;color:var(--muted)"></span>
+      </div>
+      <div class="cases" id="casesList"></div>
+      <div class="empty" id="casesEmpty" hidden>Ничего не нашлось. Попробуйте другой запрос или сбросьте фильтр.</div>
+    </section>
+
+    <hr>
+
+    <!-- ================= 8. МИФЫ ================= -->
+    <section id="myths">
+      <div class="sec-head">
+        <span class="eyebrow">Раздел 7</span>
+        <h2>Что плохой топологией <em>не</em> является</h2>
+        <p class="lede">Половина «ошибок» в интернете — нормальные решения в другом контексте. Прежде чем чинить, убедитесь, что оно сломано.</p>
+      </div>
+      <div class="myths" id="mythsList"></div>
+      <div class="callout bad" style="margin-top:18px">
+        <p><b>Правило вежливости к чужой сетке.</b> Прежде чем сказать «тут плохая топология», выясните, для чего модель. Для печати и для мимики правильные ответы разные — и оба могут быть верными.</p>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- ================= 9. ЧЕК-ЛИСТЫ ================= -->
+    <section id="checklists">
+      <div class="sec-head">
+        <span class="eyebrow">Раздел 8</span>
+        <h2>Чек-листы</h2>
+        <p class="lede">Галочки сохраняются в браузере — можно закрыть вкладку и вернуться. Отмечайте только то, что проверили руками.</p>
+      </div>
+      <div class="filters">
+        <button class="btn ghost" id="resetChecks" type="button">Сбросить всё</button>
+      </div>
+      <div class="check-groups" id="checklistList"></div>
+    </section>
+
+    <hr>
+
+    <!-- ================= 10. КВИЗ ================= -->
+    <section id="quiz">
+      <div class="sec-head">
+        <span class="eyebrow">Раздел 9</span>
+        <h2>Проверь себя</h2>
+        <p class="lede">Десять вопросов на самые частые заблуждения. После каждого ответа — объяснение, почему так.</p>
+      </div>
+      <div class="quiz" id="quizBox"></div>
+      <p style="font-size:13px;color:var(--muted);margin-top:8px" id="quizBest"></p>
+    </section>
+
+    <hr>
+
+    <!-- ================= 11. НАШИ ЦИФРЫ ================= -->
+    <section id="audit">
+      <div class="sec-head">
+        <span class="eyebrow">Раздел 10</span>
+        <h2>Наши цифры: аудит собственного экспорта</h2>
+        <p class="lede">Сухая теория полезна, пока не применишь к своему файлу. Вот что показал аудит экспорта гостиной из <b>forma</b> — 233 объекта, 94 512 треугольников.</p>
+      </div>
+
+      <div class="verdict">
+        <div class="ok"><b>0</b><span>non-manifold рёбер и граничных рёбер: тело корректно</span></div>
+        <div class="warn"><b>96</b><span>граней схлопнулось после сварки — полюс UV-сферы в лампочке</span></div>
+        <div class="warn"><b>×30 687</b><span>разброс длин рёбер у plant_pot — почти совпадающие кольца</span></div>
+      </div>
+
+      <div class="table-wrap">
+        <table class="compact">
+          <thead><tr><th>Показатель</th><th class="num">Значение</th><th>Как читать</th></tr></thead>
+          <tbody id="auditRows"></tbody>
+        </table>
+      </div>
+
+      <div class="grid2" style="margin-top:16px">
+        <div class="card">
+          <h4>Что это значит</h4>
+          <ul>
+            <li><b style="color:var(--teal)">Корректность тела в порядке:</b> ни одной дырки, ни одного non-manifold, обход согласован, нормали адекватны. Для печати и булевых операций проблем нет.</li>
+            <li><b style="color:var(--amber)">Основная проблема — тесселяция.</b> Четверть треугольников — иглы; на скруглениях они занимают 10 % площади файла.</li>
+            <li><b>У тонких длинных деталей</b> (binding, stitches) иглы — почти 100 % площади, и это неизбежно. Поэтому аудит не объявляет иглы ошибкой, а отделяет «иглы на плавном изгибе».</li>
+            <li><b>Много оболочек у текста</b>: каждая буква — отдельное тело. Для рендера нормально, для печати «одним телом» — нет.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>Как повторить</h4>
+          <p>Скрипт не требует ни numpy, ни Blender — только Python 3.8+:</p>
+          <pre><code>python3 forma/tools/topology_audit.py \
+  forma/exports/living_room/living_room_diorama.glb
+
+# JSON для CI и разбора:
+python3 forma/tools/topology_audit.py файл.glb \
+  --json отчёт.json --quiet</code></pre>
+          <p style="font-size:13.5px;color:var(--muted)">Код возврата 1 — есть грубые дефекты (не замкнуто, non-manifold, перевёрнутые грани, вырожденные элементы). Тесты: <code>python -m unittest tests.test_topology_audit</code> из папки <code>forma</code>.</p>
+        </div>
+      </div>
+
+      <h3>Как лечить в пайплайне</h3>
+      <div class="grid3">
+        <div class="card teal"><h4>На уровне построения</h4><p>Не строить кольца с шагом меньше 0.05 мм; держать одинаковое число сегментов у тела и присоединяемых деталей; для скруглений задавать целевую длину ребра через <code>refine length=…</code>.</p></div>
+        <div class="card amber"><h4>Проверки в сценарии</h4><p><code>check кружка tri_quality 2</code> — не больше 2 % игл; <code>check кружка tris 2000..20000</code> — бюджет полигонов; <code>check watertight</code> и <code>check genus 1</code> — тело.</p></div>
+        <div class="card blue"><h4>Проверка файла в CI</h4><p>После экспорта — аудит GLB. Порог: 0 ошибок. Предупреждения — предмет разбора, а не блокировки: у тонких деталей иглы неизбежны.</p></div>
+      </div>
+    </section>
+
+    <hr>
+
+    <!-- ================= 12. ИСТОЧНИКИ ================= -->
+    <section id="sources">
+      <div class="sec-head">
+        <span class="eyebrow">Раздел 11</span>
+        <h2>Источники</h2>
+        <p class="lede">Уровни доверия: <b>①</b> первоисточник (спецификация, мануал, статья разработчиков), <b>②</b> студийная практика, <b>③</b> вторичные обзоры.</p>
+      </div>
+
+      <div class="grid2">
+        <div class="card">
+          <h4>① Первоисточники</h4>
+          <ul>
+            <li><a href="https://opensubdiv.org/docs/mod_notes.html" target="_blank" rel="noopener">OpenSubdiv — Modeling Tips (Pixar)</a>: свойства SubD-сетки, «6 spans достаточно», высокая валентность, крейзы.</li>
+            <li><a href="https://docs.blender.org/manual/en/latest/modeling/meshes/editing/mesh/cleanup.html" target="_blank" rel="noopener">Blender Manual — Clean Up</a>: точные определения Dissolve, Merge, Split Non-Planar, Fill Holes.</li>
+            <li><a href="https://docs.blender.org/manual/en/latest/modeling/meshes/retopology.html" target="_blank" rel="noopener">Blender Manual — Remeshing</a>: когда voxel и QuadriFlow применять нельзя.</li>
+            <li><a href="https://docs.blender.org/manual/en/4.0/addons/mesh/3d_print_toolbox.html" target="_blank" rel="noopener">Blender Manual — 3D Print Toolbox</a>: список проверок и что каждая значит.</li>
+            <li><a href="https://help.autodesk.com/view/MAYAUL/2024/ENU/?query=Retopology" target="_blank" rel="noopener">Maya — Quad Draw</a>, <a href="https://help.maxon.net/zbr/en-us/Content/html/user-guide/3d-modeling/topology/zremesher/partial-mesh/partial-mesh.html" target="_blank" rel="noopener">ZBrush — ZRemesher</a>.</li>
+            <li><a href="https://rgl.epfl.ch/publications/Jakob2015Instant" target="_blank" rel="noopener">Instant Field-Aligned Meshes (2015)</a> и <a href="https://onlinelibrary.wiley.com/doi/10.1111/cgf.13498" target="_blank" rel="noopener">QuadriFlow (2018)</a>: почему важны сингулярности.</li>
+            <li><a href="https://registry.khronos.org/glTF/specs/2.0/glTF-2.0.html" target="_blank" rel="noopener">glTF 2.0</a>: примитивы — только точки, линии и треугольники.</li>
+          </ul>
+        </div>
+        <div class="card">
+          <h4>② Практика</h4>
+          <ul>
+            <li><a href="http://wiki.polycount.com/wiki/Topology" target="_blank" rel="noopener">Polycount wiki — Topology</a> и разделы Body / Face / Limb / Shoulder / Sphere Topology.</li>
+            <li><a href="https://topologyguides.com/" target="_blank" rel="noopener">Topology Guides</a> (Johnson Martin) — лучшие бесплатные разборы, особенно <a href="https://topologyguides.com/loop-reduction" target="_blank" rel="noopener">loop reduction</a>.</li>
+            <li><a href="https://www.hippydrome.com/" target="_blank" rel="noopener">Hippydrome</a> (Brian Tindall, Pixar) — артикуляция и книга «The Art of Moving Points».</li>
+            <li><a href="https://www.thegnomonworkshop.com/workshops/topology-for-animated-characters" target="_blank" rel="noopener">Gnomon — Topology for Animated Characters</a>.</li>
+            <li><a href="https://blender.stackexchange.com/questions/89/when-should-n-gons-be-used-and-when-shouldnt-they" target="_blank" rel="noopener">Blender SE — про n-гоны</a> и <a href="https://blender.stackexchange.com/questions/2931/why-should-triangle-meshes-be-avoided-for-character-animation" target="_blank" rel="noopener">про треугольники</a>.</li>
+          </ul>
+          <h4 style="margin-top:16px">③ Вторичное, но конкретное</h4>
+          <ul>
+            <li><a href="https://cgtyphoon.com/topology/elbow-topology-explained-for-character-modeling/" target="_blank" rel="noopener">Elbow Topology Explained</a> — число петель в локте по классам персонажей.</li>
+            <li><a href="https://sparseal.com/cozyblanket/" target="_blank" rel="noopener">CozyBlanket</a> — ретопология рисованием на iPad.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="callout" style="margin-top:18px">
+        <p><b>Что дальше.</b> Возьмите свою модель и прогоните три вопроса: (1) замкнуто ли тело, (2) где полюса и стоят ли они на плоском, (3) что покажет preview подразбиения на силуэте. Если все три ответа вас устраивают — топология в порядке, и никакие правила из интернета этого не отменят.</p>
+      </div>
+    </section>
+  </main>
+</div>
+
+<footer>
+  <p>Учебный сайт к материалам курса. Схемы сгенерированы скриптом <code>forma/tools/make_topology_figures.py</code>, полный текст — <code>forma/docs/topology_guide.md</code>, проверка файлов — <code>forma/tools/topology_audit.py</code>.</p>
+  <p>Открывается без сборки: достаточно положить папку на статический сервер (<code>python3 -m http.server</code>) или открыть <code>index.html</code> напрямую.</p>
+</footer>
+
+<script src="app.js"></script>
+</body>
+</html>

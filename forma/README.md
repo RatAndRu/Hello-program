@@ -863,6 +863,11 @@ python3 forma/tools/topology_audit.py файл.glb --json отчёт.json --quie
 топологии, инструменты Blender/Maya/ZBrush и каталог плохих случаев с
 исправлениями: [docs/topology_guide.md](docs/topology_guide.md).
 
+Учебный сайт по тем же материалам — с интерактивными схемами «плохо → лечение»,
+каталогом из 30 случаев, чек-листами и квизом: [topology-course/index.html](topology-course/index.html)
+(один самодостаточный файл, открывается двойным кликом, без сети и сборки;
+исходники и пересборка — [topology-course/README.md](topology-course/README.md)).
+
 ---
 
 ## 10. Инструкция для нейросети
