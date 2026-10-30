@@ -392,6 +392,31 @@ function stopScratch(){
 
 function popSound(){ note(880, 0.09, 'square', 0.03); }
 function thudSound(){ note(90, 0.3, 'sine', 0.25); }
+function waveSound(){
+  const a = ac(), t = a.currentTime;
+  for (let i = 0; i < 4; i++){
+    const f = 320 + i * 90;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'triangle'; o.frequency.setValueAtTime(f, t + i * 0.5);
+    o.frequency.linearRampToValueAtTime(f * 1.15, t + i * 0.5 + 0.12);
+    g.gain.setValueAtTime(0.0001, t + i * 0.5);
+    g.gain.linearRampToValueAtTime(0.05, t + i * 0.5 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.5 + 0.25);
+    o.connect(g).connect(out(a));
+    o.start(t + i * 0.5); o.stop(t + i * 0.5 + 0.3);
+  }
+}
+function skullSound(){
+  const a = ac(), t = a.currentTime;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = 'sawtooth'; o.frequency.setValueAtTime(140, t);
+  o.frequency.exponentialRampToValueAtTime(70, t + 0.45);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(0.09, t + 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.5);
+  o.connect(g).connect(out(a));
+  o.start(t); o.stop(t + 0.55);
+}
 function squeakSound(){ note(1500 + Math.random() * 500, 0.1, 'square', 0.03); }
 
 function distortionCurve(k){
@@ -587,6 +612,8 @@ let pendingScare = false, pendingSince = 0;
 let lastSpawn = 0, nextBatAt = 0, nextGhostAt = 0, last = 0;
 
 const mouse = { x: innerWidth / 2, y: innerHeight / 2 };
+const propState = { handUntil: 0, handStart: 0, handHit: null, skullUntil: 0, skullStart: 0, skullHit: null };
+let eyeFlashUntil = 0;      // глаза всех тыкв заметно мерцают после каждого пойманного нажатия
 const look = { x: innerWidth / 2, y: innerHeight / 2 };   // куда смотрят глаза тыкв (плавно догоняет касание)
 function updateLook(){ look.x += (mouse.x - look.x) * 0.12; look.y += (mouse.y - look.y) * 0.12; }
 window.addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
@@ -786,7 +813,9 @@ function drawPumpkinSilhouette(cx, gy, w, eyes){
   if (!eyes) return;
   // глазницы и светящиеся зрачки строго внутри глазниц
   const ey = cy - h * 0.1, es = w * 0.11;
-  const flick = 0.85 + 0.15 * Math.sin(performance.now() / 90);
+  const pnow = performance.now();
+  const flash = pnow < eyeFlashUntil ? Math.min(1, (eyeFlashUntil - pnow) / 650) : 0;
+  const flick = 0.85 + 0.15 * Math.sin(pnow / 90) + flash * (0.55 + 0.45 * Math.sin(pnow / 26));
   for (const ex of [cx - w * 0.17, cx + w * 0.17]){
     const sock = new Path2D();
     sock.moveTo(ex - es, ey - es * 0.6);
@@ -803,8 +832,8 @@ function drawPumpkinSilhouette(cx, gy, w, eyes){
     ctx.globalAlpha = flick;
     ctx.fillStyle = '#ffb000';
     ctx.shadowColor = '#ff8a00';
-    ctx.shadowBlur = es * 1.2;
-    ctx.beginPath(); ctx.arc(ox, oy, es * 0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = es * (1.2 + flash * 2.2);
+    ctx.beginPath(); ctx.arc(ox, oy, es * (0.4 + flash * 0.30), 0, Math.PI * 2); ctx.fill();
     ctx.restore();
   }
   // рот: симметричный, с зубами
@@ -860,6 +889,7 @@ function drawBgScene(now){
   drawPumpkinSilhouette(cx, gy, w, true);
   // голова скелета в левом углу
   drawSkull(now);
+  drawHand(now);
 }
 
 
@@ -879,7 +909,7 @@ function rrect(k, x, y, w, h, r){
 }
 
 function buildSkull(){
-  const s = IS_MOBILE ? clamp(W * 0.42, 104, 220) : clamp(Math.min(W, H) * 0.30, 96, 250);
+  const s = IS_MOBILE ? clamp(W * 0.40, 96, 190) : clamp(Math.min(W, H) * 0.23, 84, 190);
   const DP = Math.min(DPR, 2);
   const padL = s * 0.75, padR = s * 0.80, padT = s * 0.75, padB = s * 0.22;
   const CW = Math.ceil(s * 1.55 + padL + padR);
@@ -1125,10 +1155,21 @@ function buildSkull(){
 function drawSkull(now){
   const key = Math.round(W) + 'x' + Math.round(H) + 'x' + DPR.toFixed(1);
   if (!skullCv || skullKey !== key) buildSkull();
-  const s = IS_MOBILE ? clamp(W * 0.42, 104, 220) : clamp(Math.min(W, H) * 0.30, 96, 250);
+  const s = IS_MOBILE ? clamp(W * 0.40, 96, 190) : clamp(Math.min(W, H) * 0.23, 84, 190);
   const px = s * 0.72;                       // ось черепа чуть от края
   const py = groundY(px) + s * 0.10;         // точка опоры
   const gx0 = px - skullOx, gy0 = py - skullOy;
+  // покачивание головы после нажатия, 3 секунды
+  let sway = 0;
+  if (now < propState.skullUntil){
+    const t = (now - propState.skullStart) / 1000;
+    const env = Math.min(1, (propState.skullUntil - now) / 500);
+    sway = Math.sin(t * Math.PI * 2 * 1.6) * 0.13 * (0.4 + 0.6 * env);
+  }
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(sway);
+  ctx.translate(-px, -py);
   ctx.drawImage(skullCv, gx0, gy0, skullW, skullH);
 
   // красные горящие глаза
@@ -1156,6 +1197,185 @@ function drawSkull(now){
     ctx.beginPath(); ctx.arc(gx, gy, cr, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
+  ctx.restore();
+  propState.skullHit = { x: px, y: py - s * 0.62, r: s * 0.78 };
+}
+
+/* ---------- Костяная рука из земли ---------- */
+let handCv = null, handKey = '', handW = 0, handH = 0, handOx = 0, handOy = 0, handR = 0;
+
+function buildHand(){
+  const s = IS_MOBILE ? clamp(W * 0.28, 70, 130) : clamp(Math.min(W, H) * 0.17, 70, 140);
+  const DP = Math.min(DPR, 2);
+  const padL = s * 0.55, padR = s * 0.60, padT = s * 0.30, padB = s * 0.18;
+  const CW = Math.ceil(s * 1.15 + padL + padR);
+  const CH = Math.ceil(s * 1.75 + padT + padB);
+  const c = document.createElement('canvas');
+  c.width = Math.round(CW * DP); c.height = Math.round(CH * DP);
+  const k = c.getContext('2d');
+  k.setTransform(DP, 0, 0, DP, 0, 0);
+
+  const AX = padL + s * 0.575;
+  const AY = CH - padB;
+
+  const boneG = (x0, y0, x1, y1) => {
+    const gr = k.createLinearGradient(x0, y0, x1, y1);
+    gr.addColorStop(0, '#f6ecd4');
+    gr.addColorStop(0.45, '#ded0ae');
+    gr.addColorStop(1, '#b9a684');
+    return gr;
+  };
+
+  k.save();
+  k.translate(AX, AY);
+  k.scale(s, s);
+
+  k.lineWidth = 0.007;
+  k.strokeStyle = 'rgba(40,26,12,0.55)';
+
+  // предплечье: две кости
+  for (const dx of [-0.062, 0.062]){
+    k.beginPath();
+    k.moveTo(dx - 0.062, 0);
+    k.lineTo(dx - 0.050, -0.52);
+    k.quadraticCurveTo(dx - 0.048, -0.60, dx, -0.612);
+    k.quadraticCurveTo(dx + 0.048, -0.60, dx + 0.050, -0.52);
+    k.lineTo(dx + 0.062, 0);
+    k.closePath();
+    k.fillStyle = boneG(dx - 0.06, 0, dx + 0.06, -0.6);
+    k.fill(); k.stroke();
+  }
+
+  // запястье: несколько косточек
+  for (const [wx, wy, wr] of [[-0.055, -0.632, 0.042], [0.055, -0.632, 0.042], [-0.062, -0.706, 0.038], [0.0, -0.716, 0.036], [0.062, -0.70, 0.038]]){
+    k.beginPath(); k.arc(wx, wy, wr, 0, Math.PI * 2);
+    k.fillStyle = boneG(wx - wr, wy - wr, wx + wr, wy + wr);
+    k.fill(); k.stroke();
+  }
+
+  // ладонь — единая костная масса от запястья к пальцам
+  const palm = new Path2D();
+  palm.moveTo(-0.085, -0.795);
+  palm.quadraticCurveTo(-0.215, -0.855, -0.225, -1.010);
+  palm.quadraticCurveTo(-0.205, -1.085, -0.055, -1.105);
+  palm.quadraticCurveTo(0.085, -1.115, 0.195, -1.055);
+  palm.quadraticCurveTo(0.225, -0.975, 0.115, -0.870);
+  palm.quadraticCurveTo(0.020, -0.792, -0.085, -0.795);
+  palm.closePath();
+  k.fillStyle = boneG(-0.20, -1.12, 0.20, -0.80);
+  k.fill(palm);
+  k.stroke(palm);
+  // тень внутри ладони, чтобы читалась впадина
+  k.save();
+  k.clip(palm);
+  const pg = k.createLinearGradient(-0.05, -0.86, -0.10, -1.12);
+  pg.addColorStop(0, 'rgba(90,66,38,0.30)');
+  pg.addColorStop(1, 'rgba(255,250,236,0.20)');
+  k.fillStyle = pg; k.fillRect(-0.4, -1.2, 0.8, 0.5);
+  k.restore();
+
+  // пальцы: у каждого свой сгиб, средние выпрямлены, крайние поджаты
+  const fingers = [
+    { kx: -0.190, ky: -1.040, lens: [0.165, 0.112, 0.076], base: -0.48, curl: 0.34 },
+    { kx: -0.055, ky: -1.098, lens: [0.200, 0.135, 0.086], base: -0.15, curl: 0.14 },
+    { kx: 0.080, ky: -1.092, lens: [0.188, 0.126, 0.082], base: 0.13, curl: 0.18 },
+    { kx: 0.185, ky: -1.030, lens: [0.148, 0.100, 0.070], base: 0.42, curl: 0.38 }
+  ];
+  for (const f of fingers){
+    let x = f.kx, y = f.ky, a = f.base;
+    for (let i = 0; i < f.lens.length; i++){
+      const len = f.lens[i];
+      a += f.curl * (0.6 + i * 0.5);
+      const nx = x + Math.sin(a) * len;
+      const ny = y - Math.cos(a) * len;
+      const wdt = 0.086 - i * 0.016;
+      k.save();
+      k.translate(x, y); k.rotate(a);
+      k.beginPath();
+      rrect(k, -wdt / 2, -len, wdt, len, wdt / 2);
+      k.fillStyle = boneG(-wdt / 2, 0, wdt / 2, -len);
+      k.fill(); k.stroke();
+      k.restore();
+      k.beginPath(); k.arc(nx, ny, wdt * 0.60, 0, Math.PI * 2);
+      k.fillStyle = boneG(nx - wdt, ny - wdt, nx + wdt, ny + wdt);
+      k.fill(); k.stroke();
+      x = nx; y = ny;
+    }
+  }
+
+  // большой палец
+  {
+    let x = -0.165, y = -0.845, a = -1.02;
+    for (const len of [0.155, 0.125]){
+      const nx = x + Math.sin(a) * len, ny = y - Math.cos(a) * len;
+      const wdt = 0.082;
+      k.save();
+      k.translate(x, y); k.rotate(a);
+      k.beginPath();
+      rrect(k, -wdt / 2, -len, wdt, len, wdt / 2);
+      k.fillStyle = boneG(-wdt / 2, 0, wdt / 2, -len);
+      k.fill(); k.stroke();
+      k.restore();
+      k.beginPath(); k.arc(nx, ny, wdt * 0.6, 0, Math.PI * 2);
+      k.fillStyle = boneG(nx - wdt, ny - wdt, nx + wdt, ny + wdt);
+      k.fill(); k.stroke();
+      x = nx; y = ny; a += 0.25;
+    }
+  }
+
+  k.restore();
+
+  // холмик земли у основания
+  k.save();
+  k.translate(AX, AY + s * 0.02);
+  k.scale(1, 0.30);
+  const mg = k.createRadialGradient(0, 0, 0, 0, 0, s * 0.46);
+  mg.addColorStop(0, 'rgba(40,24,10,0.96)');
+  mg.addColorStop(0.62, 'rgba(30,18,8,0.86)');
+  mg.addColorStop(1, 'rgba(22,12,5,0)');
+  k.fillStyle = mg;
+  k.beginPath(); k.arc(0, 0, s * 0.46, 0, Math.PI * 2); k.fill();
+  k.restore();
+  // камешки
+  for (let i = 0; i < 7; i++){
+    const dx = (Math.random() - 0.5) * s * 0.75;
+    const dy = s * (0.02 + Math.random() * 0.05);
+    k.fillStyle = Math.random() < 0.5 ? 'rgba(58,42,24,0.85)' : 'rgba(84,62,36,0.7)';
+    k.beginPath();
+    k.ellipse(AX + dx, AY + dy, s * (0.012 + Math.random() * 0.018), s * (0.008 + Math.random() * 0.012), 0, 0, Math.PI * 2);
+    k.fill();
+  }
+
+  handCv = c; handW = CW; handH = CH;
+  handOx = AX; handOy = AY;
+  handR = s * 0.62;
+  handKey = Math.round(W) + 'x' + Math.round(H) + 'x' + DPR.toFixed(1);
+}
+
+function drawHand(now){
+  const key = Math.round(W) + 'x' + Math.round(H) + 'x' + DPR.toFixed(1);
+  if (!handCv || handKey !== key) buildHand();
+  const s = IS_MOBILE ? clamp(W * 0.28, 70, 130) : clamp(Math.min(W, H) * 0.17, 70, 140);
+  const px = IS_MOBILE ? W * 0.64 : W * 0.58;
+  const py = groundY(px) + s * 0.16;
+  const gx0 = px - handOx, gy0 = py - handOy;
+
+  // машет «под бит», пока активна
+  let ang = 0;
+  if (now < propState.handUntil){
+    const t = (now - propState.handStart) / 1000;
+    const beat = 0.5;
+    const env = Math.min(1, (propState.handUntil - now) / 400);
+    ang = Math.sin(t * Math.PI * 2 / beat) * 0.30 * (0.35 + 0.65 * env);
+  }
+  ctx.save();
+  ctx.translate(px, py);
+  ctx.rotate(ang);
+  ctx.translate(-px, -py);
+  ctx.drawImage(handCv, gx0, gy0, handW, handH);
+  ctx.restore();
+
+  propState.handHit = { x: px, y: py - s * 0.55, r: s * 0.72 };
 }
 
 /* ---------- Луна: кратеры, моря, тень от терминатора ---------- */
@@ -1315,7 +1535,23 @@ function onPointer(e){
   pumpkins.forEach(p => consider(p, p.x, p.y, 36, 'pumpkin'));
   bats.forEach(b => consider(b, b.x, batFlapY(b), 44, 'bat'));
   ghosts.forEach(g => consider(g, g.x, g.y, 42, 'ghost'));
-  if (!best) return;
+  if (!best){
+    // нажатие по руке или черепу
+    const hitProp = (h) => h && Math.hypot(h.x - e.clientX, h.y - e.clientY) < h.r;
+    if (hitProp(propState.handHit)){
+      propState.handStart = now; propState.handUntil = now + 3000;
+      waveSound();
+      addBurst(propState.handHit.x, propState.handHit.y - 30, '👋');
+      return;
+    }
+    if (hitProp(propState.skullHit)){
+      propState.skullStart = now; propState.skullUntil = now + 3000;
+      skullSound();
+      addBurst(propState.skullHit.x, propState.skullHit.y - 40, '💀');
+      return;
+    }
+    return;
+  }
   if (best.kind === 'pumpkin'){
     pumpkins.splice(pumpkins.indexOf(best.obj), 1);
     score++;
@@ -1325,6 +1561,7 @@ function onPointer(e){
     }
     addBurst(best.obj.x, best.obj.y, '+1');
     popSound();
+    eyeFlashUntil = performance.now() + 700;   // глаза тыкв заметно мерцают
   } else if (best.kind === 'bat'){
     killBat(best.obj);
   } else {
