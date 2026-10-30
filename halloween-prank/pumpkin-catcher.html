@@ -1069,7 +1069,7 @@ function drawCursors(now){
 }
 
 /* ---------- Скример: лицо дёргается, текст на весь экран, обрыв ---------- */
-const SENTENCES = ['Нейросеть захватила твой компьютер.', 'Все твои личные файлы будут собраны и разосланы всем твоим знакомым.', 'Не оборачивайся, иначе....'];
+const SENTENCES = ['Нейросеть захватила твой ' + (IS_MOBILE ? 'телефон.' : 'компьютер.'), 'Все твои личные файлы будут собраны и разосланы всем твоим знакомым.', 'Не оборачивайся, иначе....'];
 const FONTS = ['Pirata One', 'Georgia', 'Impact', 'Courier New', 'Arial Black', 'Creepster'];
 const COLS = ['#ffffff', '#ffffff', '#ff2a2a', '#ffd400'];
 const SUBST = { 'а': '@', 'о': '0', 'е': '3', 'т': '†' };
@@ -1414,6 +1414,51 @@ const PHONE_FILES = [() => hexName(8) + '.jpg', () => hexName(8) + '.jpg', () =>
 function randPhonePath(){ return rnd(PHONE_FOLDERS) + '/' + (Math.random() < 0.08 ? '.nomedia' : rnd(PHONE_FILES)()); }
 const pathNow = () => IS_MOBILE ? randPhonePath() : randPath();
 
+let crackCv = null;
+// Трещины на стекле телефона: из точки удара расходятся лучи и неполные кольца. Рисунок один раз на экран удаления.
+function makeCrack(){
+  crackCv = document.createElement('canvas');
+  crackCv.width = GLW; crackCv.height = GLH;
+  const k = crackCv.getContext('2d');
+  const ix = randInt(Math.floor(GLW * 0.3), Math.floor(GLW * 0.7)), iy = randInt(Math.floor(GLH * 0.25), Math.floor(GLH * 0.7));
+  const rays = randInt(14, 20);
+  for (let pass = 0; pass < 2; pass++){
+    k.strokeStyle = pass === 0 ? 'rgba(0,0,0,0.6)' : 'rgba(255,255,255,0.8)';
+    k.lineWidth = pass === 0 ? 2 : 1;
+    for (let r = 0; r < rays; r++){
+      let a = (r / rays) * Math.PI * 2 + (Math.random() - 0.5) * 0.25;
+      let x = ix, y = iy, len = 0;
+      k.beginPath(); k.moveTo(x + pass, y + pass);
+      while (len < 420 && x > -10 && x < GLW + 10 && y > -10 && y < GLH + 10){
+        const seg = randInt(12, 30);
+        a += (Math.random() - 0.5) * 0.14;
+        x += Math.cos(a) * seg; y += Math.sin(a) * seg; len += seg;
+        k.lineTo(x + pass, y + pass);
+        if (Math.random() < 0.07){
+          const bx = x, by = y, ba = a + (Math.random() < 0.5 ? 0.5 : -0.5);
+          k.moveTo(bx + pass, by + pass); k.lineTo(bx + Math.cos(ba) * 40 + pass, by + Math.sin(ba) * 40 + pass);
+          k.moveTo(x + pass, y + pass);
+        }
+      }
+      k.stroke();
+    }
+    for (let ring = 1; ring <= 4; ring++){
+      const R = ring * randInt(16, 28) + Math.random() * 6;
+      let started = false;
+      k.beginPath();
+      for (let t = 0; t <= Math.PI * 2 + 0.01; t += 0.12){
+        const rr = R * (1 + (Math.random() - 0.5) * 0.18);
+        const px = ix + Math.cos(t) * rr + pass, py = iy + Math.sin(t) * rr * 0.9 + pass;
+        if (Math.random() < 0.12){ started = false; continue; }
+        if (!started){ k.moveTo(px, py); started = true; } else k.lineTo(px, py);
+      }
+      k.stroke();
+    }
+  }
+  k.fillStyle = 'rgba(255,255,255,0.35)';
+  k.beginPath(); k.arc(ix, iy, 4, 0, Math.PI * 2); k.fill();
+}
+
 function drawWipeBg(){
   if (frozen()) return;
   wbx.fillStyle = '#000'; wbx.fillRect(0, 0, GLW, GLH);
@@ -1431,6 +1476,7 @@ function drawWipeBg(){
     wbx.drawImage(tmpCv, fx, fy, fw, fh, fx, fy, fw, fh);
   }
   // постоянно негативные участки: дрейфуют и инвертируют картинку под собой
+  if (IS_MOBILE && crackCv) wbx.drawImage(crackCv, 0, 0);
   if (negCv.width !== W || negCv.height !== H){ negCv.width = W; negCv.height = H; }
   negCtx.clearRect(0, 0, W, H);
   const sx = W / GLW, sy = H / GLH;
@@ -1487,6 +1533,7 @@ function refreshTear(){
 }
 
 function startWipeFx(){
+  if (IS_MOBILE) makeCrack();
   negRegions = [0, 1].map(() => { const h = randInt(Math.floor(GLH * 0.6), GLH); return { x: randInt(0, GLW - 90), y: randInt(0, GLH - h), w: randInt(24, 90), h }; });
   drawWipeBg();
   wipeBgTimer = setInterval(drawWipeBg, 200);
