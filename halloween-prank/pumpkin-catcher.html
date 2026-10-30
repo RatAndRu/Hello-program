@@ -60,7 +60,7 @@ button:active{transform:translateY(3px);box-shadow:none}
 #spinner.run{display:block;animation:spin 1s linear infinite}
 #spinner i{position:absolute;left:10px;top:10px;width:4px;height:4px;border-radius:50%;background:#e8e8e8}
 #btnWrap{position:fixed;left:0;top:0;z-index:24;pointer-events:none}
-#wneg{position:absolute;left:0;top:0;width:100%;height:100%;z-index:31;pointer-events:none;mix-blend-mode:difference}
+#wneg{position:absolute;left:0;top:0;width:100%;height:100%;z-index:31;pointer-events:none}
 
 #cancel:active{box-shadow:none}
 #cursors{position:fixed;left:0;top:0;width:100%;height:100%;z-index:99;pointer-events:none;display:none}
@@ -1308,7 +1308,36 @@ tmpCv.width = GLW; tmpCv.height = GLH;
 const tmpx = tmpCv.getContext('2d');
 let wipeBgTimer = null, glitchTimer = null, tearTimer = null, negRegions = [], bandRects = [];
 const tearLayer = $('tear');
-const negCtx = $('wneg').getContext('2d');
+const negCv = $('wneg'), negCtx = negCv.getContext('2d');
+const LCD_COLORS = ['#ff2a2a', '#2aff4a', '#2a6bff', '#ffffff', '#ffe14a', '#ff4af0', '#2affff'];
+
+// Битый ЖК-экран: серо-голубая сетка точек, цветные вертикальные линии, тёмные и светлые горизонтальные полосы
+function drawLcdZone(x, y, w, h){
+  negCtx.fillStyle = rnd(['#9fb7c4', '#b8c7d0', '#8ea3ad', '#c9d6dd']);
+  negCtx.fillRect(x, y, w, h);
+  negCtx.fillStyle = 'rgba(20,30,40,0.35)';
+  for (let yy = y; yy < y + h; yy += 2) negCtx.fillRect(x, yy, w, 1);
+  for (let xx = x; xx < x + w; xx += 3){
+    negCtx.globalAlpha = 0.25; negCtx.fillStyle = '#1a2a33'; negCtx.fillRect(xx, y, 1, h);
+  }
+  negCtx.globalAlpha = 1;
+  const cols = randInt(6, 18);
+  for (let i = 0; i < cols; i++){
+    negCtx.globalAlpha = 0.5 + Math.random() * 0.5;
+    negCtx.fillStyle = rnd(LCD_COLORS);
+    negCtx.fillRect(x + Math.random() * w, y, randInt(1, 3), h);
+  }
+  negCtx.globalAlpha = 1;
+  const rows = randInt(2, 6);
+  for (let i = 0; i < rows; i++){
+    negCtx.fillStyle = Math.random() < 0.6 ? '#000' : '#fff';
+    negCtx.fillRect(x, y + Math.random() * h, w, randInt(1, 2));
+  }
+  if (Math.random() < 0.3){
+    negCtx.fillStyle = '#000';
+    negCtx.fillRect(x + Math.random() * w * 0.5, y + Math.random() * h * 0.5, w * 0.4, h * 0.3);
+  }
+}
 const btnWrapEl = $('btnWrap');
 const cancelBtn = $('cancel');
 
@@ -1360,14 +1389,13 @@ function drawWipeBg(){
     wbx.drawImage(tmpCv, fx, fy, fw, fh, fx, fy, fw, fh);
   }
   // постоянно негативные участки: дрейфуют и инвертируют картинку под собой
-  negCtx.clearRect(0, 0, GLW, GLH);
-  negCtx.fillStyle = '#fff';
+  if (negCv.width !== W || negCv.height !== H){ negCv.width = W; negCv.height = H; }
+  negCtx.clearRect(0, 0, W, H);
+  const sx = W / GLW, sy = H / GLH;
   for (const r of negRegions){
     r.x = clamp(r.x + (Math.random() - 0.5) * 6, 0, GLW - r.w);
     r.y = clamp(r.y + (Math.random() - 0.5) * 4, 0, GLH - r.h);
-    for (let yy = r.y; yy < r.y + r.h; yy += randInt(1, 3)){
-      negCtx.fillRect(Math.round(r.x + randInt(-12, 12)), Math.round(yy), r.w, randInt(1, 3));
-    }
+    drawLcdZone(r.x * sx, r.y * sy, r.w * sx, r.h * sy);
   }
 }
 
