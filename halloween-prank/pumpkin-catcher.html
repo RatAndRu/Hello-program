@@ -89,6 +89,13 @@ html.phone #scare,html.phone #scareImg{height:100%;height:100dvh}
 html.phone #scareImg{object-position:50% 35%}
 html.phone #text{padding:5vh 6vw;gap:3.2vh;justify-content:space-evenly}
 html.phone .srow{gap:.1em .3em}
+#scare{perspective:900px}
+#scareImg{transform-origin:50% 45%;will-change:transform;backface-visibility:hidden}
+#text{will-change:transform}
+html.phone #scareImg{object-position:50% 38%}
+html.phone.landscape #text{padding:2vh 4vw;gap:1.6vh}
+html.phone.landscape .srow{gap:.05em .25em}
+html.phone #wipeBox{max-height:calc(var(--app-h, 100vh) - 24px);overflow:hidden}
 </style>
 </head>
 <body>
@@ -165,13 +172,32 @@ function goFullscreen(){
 /* ---------- Canvas игры ---------- */
 const cv = $('c'), ctx = cv.getContext('2d');
 let W = 0, H = 0, DPR = 1;
+let ORIENT = 'portrait';
+function syncViewport(){
+  const vv = window.visualViewport;
+  const h = Math.round(vv ? vv.height : window.innerHeight);
+  const w = Math.round(vv ? vv.width : window.innerWidth);
+  document.documentElement.style.setProperty('--app-h', h + 'px');
+  const land = w > h;
+  ORIENT = land ? 'landscape' : 'portrait';
+  document.documentElement.classList.toggle('portrait', !land);
+  document.documentElement.classList.toggle('landscape', land);
+}
 function resize(){
-  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  // плотность пикселей: чётче рисуем на экранах с высокой плотностью, но не выше 3
+  DPR = Math.min(window.devicePixelRatio || 1, 3);
+  syncViewport();
   W = window.innerWidth; H = window.innerHeight;
   cv.width = W * DPR; cv.height = H * DPR;
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 }
 window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 120));
+if (window.visualViewport){
+  visualViewport.addEventListener('resize', () => { syncViewport(); });
+  visualViewport.addEventListener('scroll', () => { syncViewport(); });
+}
+syncViewport();
 resize();
 
 /* ---------- Звук (Web Audio, без внешних файлов) ---------- */
@@ -365,6 +391,29 @@ function glitchSound(){
   else clickTick();
   if (Math.random() < 0.35) bitcrushBurst();
 }
+
+/* ---------- Наклон телефона: скример следит за экраном ---------- */
+let motionOn = false, tiltX = 0, tiltY = 0, rawTiltX = 0, rawTiltY = 0, tiltBase = null;
+function onTilt(e){
+  if (e.beta == null && e.gamma == null) return;
+  const b = e.beta || 0, g = e.gamma || 0;
+  if (!tiltBase) tiltBase = { b, g };
+  rawTiltX = clamp(g - tiltBase.g, -32, 32);   // влево-вправо
+  rawTiltY = clamp(b - tiltBase.b, -32, 32);   // от себя-к себе
+}
+async function enableMotion(){
+  if (motionOn || !IS_MOBILE) return;
+  try {
+    if (window.DeviceOrientationEvent && typeof DeviceOrientationEvent.requestPermission === 'function'){
+      const r = await DeviceOrientationEvent.requestPermission();
+      if (r !== 'granted') return;
+    }
+  } catch (err) { return; }
+  motionOn = true;
+  tiltBase = null;
+  window.addEventListener('deviceorientation', onTilt);
+}
+const tiltStep = () => { tiltX += (rawTiltX - tiltX) * 0.08; tiltY += (rawTiltY - tiltY) * 0.08; };
 
 /* ---------- Игра ---------- */
 const MAX_LIVES = 5;
@@ -860,7 +909,7 @@ function gameOver(){
   $('startHint').textContent = '';
   $('start').classList.add('on');
 }
-$('startBtn').addEventListener('click', () => { goFullscreen(); startGame(); });
+$('startBtn').addEventListener('click', () => { goFullscreen(); enableMotion(); startGame(); });
 
 /* ---------- Захват курсора и отталкивание ---------- */
 const cur = { x: innerWidth / 2, y: innerHeight / 2, vx: 0, vy: 0 };   // виртуальный курсор (при захвате)
@@ -1096,7 +1145,7 @@ function buildSpeech(container){
       const color = rnd(COLS);
       w.style.fontFamily = `'${font}', serif`;
       w.style.fontSize = IS_MOBILE
-        ? `clamp(26px, ${(size / 5.2).toFixed(2)}vw, ${size + 70}px)`
+        ? `clamp(22px, ${(size / 4.6).toFixed(2)}vmin, ${size + 60}px)`
         : `clamp(20px, ${(size / 14).toFixed(2)}vw, ${size + 26}px)`;
       w.style.color = color;
       w.style.fontWeight = rnd(['400', '700', '900']);
@@ -1136,6 +1185,8 @@ function animateFace(){
   const img = $('scareImg');
   const start = performance.now();
   let jx = 0, jy = 0, extra = 1, skew = 0, nextJump = 0;
+  const txt = $('text');
+  tiltX = tiltY = 0;
   const tick = now => {
     if (!$('scare').classList.contains('on')) { img.style.clipPath = 'none'; return; }
     const t = (now - start) / 1000;
@@ -1147,7 +1198,13 @@ function animateFace(){
       skew = Math.random() < 0.25 ? randInt(-7, 7) : 0;
       nextJump = now + randInt(40, 160);
     }
-    img.style.transform = `translate(${jx}px,${jy}px) scale(${(zoom * extra).toFixed(3)}) skewX(${skew}deg)`;
+    tiltStep();
+    // лицо сдвигается и доворачивается против наклона: кажется, что оно держит взгляд на пользователе
+    const px = -tiltX * 0.9, py = -tiltY * 0.7;
+    const ry = tiltX * 0.75, rx = -tiltY * 0.5;
+    const lean = 1 + Math.min(0.10, (Math.abs(tiltX) + Math.abs(tiltY)) / 600);
+    img.style.transform = `translate(${(jx + px).toFixed(1)}px,${(jy + py).toFixed(1)}px) scale(${(zoom * extra * lean).toFixed(3)}) skewX(${skew}deg) rotateX(${rx.toFixed(2)}deg) rotateY(${ry.toFixed(2)}deg)`;
+    txt.style.transform = `translate(${(-tiltX * 0.22).toFixed(1)}px,${(-tiltY * 0.14).toFixed(1)}px)`;
     if (Math.random() < 0.14){
       const y = Math.random() * 90;
       img.style.clipPath = `inset(${y.toFixed(1)}% 0 ${(100 - y - randInt(3, 10)).toFixed(1)}% 0)`;
@@ -1664,7 +1721,7 @@ function showEnding(){
   $('glitch').classList.remove('on');
   $('ending').classList.add('on');
 }
-$('again').addEventListener('click', () => { startGame(); });
+$('again').addEventListener('click', () => { enableMotion(); startGame(); });
 
 last = performance.now();
 lastSpawn = last;
