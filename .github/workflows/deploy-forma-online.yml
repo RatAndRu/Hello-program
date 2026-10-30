@@ -152,7 +152,17 @@ jobs:
       - name: External public acceptance
         run: |
           set -o pipefail
-          python forma/showcase/acceptance.py --base "https://$FLY_APP_NAME.fly.dev" --revision "$GITHUB_SHA" --allow-proxy-decode 2>&1 | tee /tmp/forma-public-acceptance.log
+          # После rolling deploy отдельное соединение к большому GLB может быть
+          # разорвано proxy. Проверку не ослабляем: повторяем её целиком, а
+          # постоянное расхождение SHA/GLB/revision по-прежнему даёт failure.
+          for attempt in 1 2 3; do
+            echo "External acceptance attempt ${attempt}/3"
+            if python forma/showcase/acceptance.py --base "https://$FLY_APP_NAME.fly.dev" --revision "$GITHUB_SHA" --allow-proxy-decode 2>&1 | tee /tmp/forma-public-acceptance.log; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          exit 1
 
       - name: Report sanitized deployment error
         if: failure()
