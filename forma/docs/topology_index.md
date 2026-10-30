@@ -26,6 +26,7 @@
 | 7 | [editor_geometry_audit.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/editor_geometry_audit.md) | как устроен редактор геометрии | — |
 | 8 | [smoothing_transitions.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/smoothing_transitions.md) | скругления и переходы | — |
 | 9 | [modeling_prompt_ru.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/modeling_prompt_ru.md) | действующий промпт ИИ-моделировщика | — |
+| 10 | [photo_to_model.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/photo_to_model.md) | воспроизведение объекта по фотографии: паспорт кадра, ракурс рендером, число вместо «похоже» | 12 |
 
 Схемы (SVG, встраиваются в документы):
 
