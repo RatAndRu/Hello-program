@@ -24,6 +24,10 @@ button:active{transform:translateY(3px);box-shadow:none}
 #start h1{font-size:34px;margin:0 0 10px}
 #start p{max-width:460px;color:#f3e3c3;line-height:1.5}
 #start small{color:#c9a777;margin-top:12px}
+#shareGame{display:none}
+#shareGame.on{display:inline-block}
+#shareGame{margin-top:12px;background:#3a2412!important;color:#ffd8a8!important;box-shadow:0 4px 0 #24160a!important;border:1px solid #6b4a28!important;font-size:17px;padding:12px 24px}
+#shareMsgGame{margin-top:10px;min-height:18px;color:#a9d99f;font-family:Consolas,"Courier New",monospace;font-size:13px;max-width:460px;word-break:break-word}
 #langSw{display:flex;gap:6px;margin-top:16px;z-index:2}
 #langSw button{all:unset;cursor:pointer;color:#8a7050;font:600 12px/1 ui-monospace,monospace;padding:5px 9px;border:1px solid #4a3a26;border-radius:6px}
 #langSw button.on{color:#ffd27a;border-color:#ffd27a;background:rgba(255,210,122,.12)}
@@ -135,6 +139,8 @@ html.phone #permDlg{width:min(320px,84vw);border-radius:16px;background:#ffffff}
   <p id="startText">Лови тыквы кликом. Летучие мыши воруют тыквы — сбей мышь, и тыква выпадет. Призраки съедают тыквы — их тоже можно сбить. Пять жизней.</p>
   <button id="startBtn">Полный экран и играть</button>
   <small id="startHint">Игра идёт в полноэкранном режиме — кнопка выше сделает это сама.</small>
+  <button id="shareGame" type="button">Отправить другу</button>
+  <div id="shareMsgGame"></div>
   <div id="langSw" role="group" aria-label="Язык / Language">
     <button type="button" data-lang="ru">RU</button>
     <button type="button" data-lang="en">EN</button>
@@ -355,6 +361,7 @@ function applyStaticText(){
   $('endSub').textContent = L10N('endSub');
   $('again').textContent = L10N('again');
   $('share').textContent = L10N('shareBtn');
+  $('shareGame').textContent = L10N('shareBtn');
   $('exitFs').textContent = L10N('exitFs');
   $('leaveText').innerHTML = L10N('leaveText');
   if (overScreen){
@@ -2094,6 +2101,8 @@ function resetGame(){
 }
 function startGame(){
   overScreen = false;
+  $('shareGame').classList.remove('on');
+  $('shareMsgGame').textContent = '';
   ac();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   restoreAudio();
@@ -2112,6 +2121,8 @@ function gameOver(){
   running = false;
   stopMusic();
   overScreen = true;
+  $('shareGame').classList.add('on');
+  $('shareMsgGame').textContent = '';
   $('startTitle').textContent = L10N('gameOverTitle');
   $('startText').textContent = L10N('gameOverText', score, eaten);
   $('startBtn').textContent = L10N('playAgain');
@@ -3270,8 +3281,7 @@ function shareTextNow(){
   if (score <= 0) return L10N('shareNoScore');
   return L10N('shareScore', score);
 }
-$('share').addEventListener('click', async () => {
-  const msg = $('shareMsg');
+async function doShare(msg){
   msg.textContent = '';
   try {
     if (navigator.share){
@@ -3288,7 +3298,9 @@ $('share').addEventListener('click', async () => {
   } catch (e) {
     msg.textContent = shareUrl;
   }
-});
+}
+$('share').addEventListener('click', () => doShare($('shareMsg')));
+$('shareGame').addEventListener('click', () => doShare($('shareMsgGame')));
 
 applyStaticText();
 
