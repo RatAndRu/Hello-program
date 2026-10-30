@@ -971,9 +971,23 @@ function repelFrame(){
     if (btn.x > b.maxX){ btn.x = b.maxX; btn.vx = -Math.abs(btn.vx) * 0.5; }
     if (btn.y < b.minY){ btn.y = b.minY; btn.vy = Math.abs(btn.vy) * 0.5; }
     if (btn.y > b.maxY){ btn.y = b.maxY; btn.vy = -Math.abs(btn.vy) * 0.5; }
+    if (real.x > -900 && d < 160 && now > (btn.nextJump || 0)){
+      let best = null, bd = -1;
+      for (let k = 0; k < 16; k++){
+        const px = b.minX + Math.random() * (b.maxX - b.minX), py = b.minY + Math.random() * (b.maxY - b.minY);
+        const dd = Math.hypot(px + btn.w / 2 - real.x, py + btn.h / 2 - real.y);
+        if (dd > bd){ bd = dd; best = { x: px, y: py }; }
+      }
+      btn.tx = best.x; btn.ty = best.y; btn.nextJump = now + 500;
+    }
+    if (real.x > -900 && d < 160 && btn.tx !== undefined){
+      btn.x += (btn.tx - btn.x) * 0.3; btn.y += (btn.ty - btn.y) * 0.3;
+      btn.vx = btn.vy = 0;
+    }
     applyBtn();
   }
   drawCursors(now);
+  requestAnimationFrame(repelFrame);
   requestAnimationFrame(repelFrame);
 }
 
@@ -1327,6 +1341,7 @@ const RAND_FILES = [
   () => hexName(10) + '.tmp', () => hexName(8) + '.docx', () => hexName(8) + '.pdf', () => hexName(6) + '.zip'
 ];
 function randFile(){ return Math.random() < 0.08 ? rnd(SYS_FILES) : rnd(RAND_FILES)(); }
+const TOTAL = 48219;
 function randPath(){ return `C:\Users\Пользователь\${rnd(FOLDERS)}\${randFile()}`; }
 
 function drawWipeBg(){
@@ -1350,7 +1365,9 @@ function drawWipeBg(){
   for (const r of negRegions){
     r.x = clamp(r.x + (Math.random() - 0.5) * 6, 0, GLW - r.w);
     r.y = clamp(r.y + (Math.random() - 0.5) * 4, 0, GLH - r.h);
-    negCtx.fillRect(Math.round(r.x), Math.round(r.y), r.w, r.h);
+    for (let yy = r.y; yy < r.y + r.h; yy += randInt(1, 3)){
+      negCtx.fillRect(Math.round(r.x + randInt(-12, 12)), Math.round(yy), r.w, randInt(1, 3));
+    }
   }
 }
 
@@ -1365,8 +1382,9 @@ function glitchTick(){
   $('wipeTitle').style.textShadow = rgb;
   $('pct').style.textShadow = rgb;
   $('wipeFile').style.textShadow = rgb;
-  cancelBtn.style.transform = `translate(${randInt(-10, 10)}px,${randInt(-5, 5)}px)`;
-  cancelBtn.style.filter = Math.random() < 0.3 ? rnd(['invert(1)', 'hue-rotate(160deg)', 'contrast(3)']) : 'none';
+  cancelBtn.style.transform = `translate(${randInt(-18, 18)}px,${randInt(-6, 6)}px) skewX(${Math.random() < 0.3 ? randInt(-8, 8) : 0}deg)`;
+  cancelBtn.style.filter = rnd(['none', 'none', 'invert(1)', 'hue-rotate(180deg)', 'contrast(2.5) brightness(1.4)', 'invert(1) hue-rotate(40deg)']);
+  cancelBtn.style.opacity = Math.random() < 0.2 ? '0.4' : '1';
   glitchTimer = setTimeout(glitchTick, randInt(40, 180));
 }
 
@@ -1409,7 +1427,7 @@ function stopWipeFx(){
   const scene = document.querySelector('.scene');
   scene.style.transform = ''; scene.style.filter = ''; scene.style.opacity = '';
   bandRects = [];
-  cancelBtn.style.transform = ''; cancelBtn.style.filter = '';
+  cancelBtn.style.transform = ''; cancelBtn.style.filter = ''; cancelBtn.style.opacity = '';
   $('wipeTitle').style.textShadow = ''; $('pct').style.textShadow = ''; $('wipeFile').style.textShadow = '';
 }
 
