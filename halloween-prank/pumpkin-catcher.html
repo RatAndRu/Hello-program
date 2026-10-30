@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Тыквенный ловец 🎃</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:#1b0f05;font-family:system-ui,"Segoe UI",Arial,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none}
+#game{position:fixed;inset:0}
+#c{display:block;width:100%;height:100%}
+#hud{position:fixed;top:14px;left:0;right:0;text-align:center;color:#ffe2a8;font-size:24px;font-weight:700;text-shadow:0 2px 4px #000;pointer-events:none}
+#start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(27,15,5,.85);color:#ffd27a;text-align:center;padding:20px;z-index:3}
+#start h1{font-size:34px;margin:0 0 10px}
+#start p{max-width:420px;color:#f3e3c3;line-height:1.5}
+button{background:#ff7a18;color:#2a1200;border:0;border-radius:14px;padding:14px 30px;font-size:20px;font-weight:700;cursor:pointer;margin-top:16px;box-shadow:0 4px 0 #b84d00;font-family:inherit}
+button:active{transform:translateY(3px);box-shadow:none}
+#scare{position:fixed;inset:0;background:#000;display:none;z-index:10;overflow:hidden;cursor:pointer}
+#scare.on{display:block}
+#face{position:absolute;inset:0;width:100%;height:100%;transition:opacity 2s}
+#face.flick{animation:flick .09s steps(2) infinite}
+@keyframes flick{0%{opacity:1}50%{opacity:.82}100%{opacity:1}}
+#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
+#text{position:absolute;left:0;right:0;bottom:10%;text-align:center;color:#c10000;font-family:Georgia,"Times New Roman",serif;font-size:clamp(20px,4vw,34px);line-height:1.45;padding:0 20px;text-shadow:0 0 14px #600;min-height:6em;transition:opacity 2s}
+#ending{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:#ff7a18;color:#2a1200;text-align:center;font-size:clamp(22px,4.5vw,40px);font-weight:700;padding:20px}
+#ending.on{display:flex}
+#vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 35%,#000 100%);opacity:0;transition:opacity 1.5s;z-index:5}
+.shake{animation:shake .1s infinite}
+@keyframes shake{0%{transform:translate(0,0)}25%{transform:translate(-9px,4px)}50%{transform:translate(8px,-5px)}75%{transform:translate(-4px,-8px)}100%{transform:translate(0,0)}}
+.hit{animation:hit .25s}
+@keyframes hit{0%,100%{transform:translate(0,0)}25%{transform:translate(3px,0)}75%{transform:translate(-3px,0)}}
+</style>
+</head>
+<body>
+
+<div id="game">
+  <canvas id="c"></canvas>
+</div>
+<div id="hud" style="display:none">🎃 <span id="score">0</span></div>
+<div id="vignette"></div>
+
+<div id="start">
+  <h1>🎃 Тыквенный ловец</h1>
+  <p>Тыквы, конфеты, призраки и летучие мыши падают сверху. Лови их кликом или тапом. Сколько поймаешь — твои очки. Рекорд запоминать не обязательно 🦇</p>
+  <button id="go">Начать</button>
+</div>
+
+<div id="scare">
+  <svg id="face" viewBox="0 0 400 600" preserveAspectRatio="xMidYMid slice">
+    <defs>
+      <radialGradient id="sk" cx="50%" cy="40%" r="62%">
+        <stop offset="0" stop-color="#e4dfd2"/>
+        <stop offset="0.7" stop-color="#7d7770"/>
+        <stop offset="1" stop-color="#1d1a18"/>
+      </radialGradient>
+    </defs>
+    <rect width="400" height="600" fill="#000"/>
+    <!-- волосы -->
+    <path d="M70 230 C40 60 150 -10 200 14 C260 -10 370 60 330 230 L320 150 L300 240 L280 130 L255 215 L230 110 L200 205 L170 110 L145 215 L120 130 L100 240 L80 150 Z" fill="#030303"/>
+    <!-- лицо -->
+    <path d="M200 60 C300 60 330 190 322 310 C312 450 272 565 200 585 C128 565 88 450 78 310 C70 190 100 60 200 60 Z" fill="url(#sk)"/>
+    <!-- трещины -->
+    <path d="M120 120 L140 165 L128 200 M285 330 L268 370 L282 420 M90 400 L112 380" stroke="#2a2420" stroke-width="3" fill="none"/>
+    <!-- глаза -->
+    <ellipse cx="150" cy="255" rx="36" ry="56" fill="#000"/>
+    <ellipse cx="252" cy="250" rx="34" ry="52" fill="#000"/>
+    <circle cx="160" cy="240" r="5" fill="#fff" opacity=".85"/>
+    <circle cx="262" cy="236" r="5" fill="#fff" opacity=".85"/>
+    <!-- рот -->
+    <path d="M108 392 Q200 376 292 392 Q306 478 200 530 Q94 478 108 392 Z" fill="#000"/>
+    <path d="M114 394 L130 436 L146 396 L162 446 L180 400 L200 452 L220 400 L238 446 L254 396 L270 436 L286 394 Z" fill="#e8e2d0"/>
+    <path d="M124 500 L140 470 L156 498 L172 466 L190 496 L210 466 L228 496 L244 468 L262 498 L278 472 L290 500 Q200 520 124 500 Z" fill="#d6cfbb"/>
+  </svg>
+  <div id="flash"></div>
+  <div id="text"></div>
+  <div id="ending">
+    <div>🎃 С Хэллоуином!<br>Это был розыгрыш 😈</div>
+    <button id="again">Ещё раз</button>
+  </div>
+</div>
+
+<script>
+/* ---------- Canvas ---------- */
+const cv = document.getElementById('c');
+const ctx = cv.getContext('2d');
+let W = 0, H = 0, DPR = 1;
+function resize(){
+  DPR = Math.min(window.devicePixelRatio || 1, 2);
+  W = window.innerWidth; H = window.innerHeight;
+  cv.width = W * DPR; cv.height = H * DPR;
+  ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+}
+window.addEventListener('resize', resize);
+resize();
+
+/* ---------- Звук (Web Audio, без внешних файлов) ---------- */
+let audioCtx = null;
+function ac(){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function note(freq, dur, type, vol){
+  const a = ac(), t = a.currentTime;
+  const o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.value = freq;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.linearRampToValueAtTime(vol, t + 0.02);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(a.destination);
+  o.start(t); o.stop(t + dur + 0.05);
+}
+const melody = [523,659,784,659,587,698,880,698,523,659,784,1047,988,784,659,523];
+let melodyIdx = 0, musicTimer = null;
+function startMusic(){
+  stopMusic();
+  musicTimer = setInterval(() => {
+    const f = melody[melodyIdx % melody.length];
+    note(f, 0.2, 'triangle', 0.045);
+    if (melodyIdx % 4 === 0) note(f / 4, 0.5, 'sine', 0.06);
+    melodyIdx++;
+  }, 240);
+}
+function stopMusic(){ clearInterval(musicTimer); musicTimer = null; }
+function popSound(){ note(880, 0.09, 'square', 0.03); }
+
+function hum(ms){
+  const a = ac(), t = a.currentTime, d = ms / 1000;
+  const o = a.createOscillator(), g = a.createGain(), lp = a.createBiquadFilter();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(38, t);
+  o.frequency.linearRampToValueAtTime(92, t + d);
+  lp.type = 'lowpass'; lp.frequency.value = 320;
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(0.14, t + d);
+  o.connect(lp).connect(g).connect(a.destination);
+  o.start(t); o.stop(t + d + 0.1);
+}
+function distortionCurve(k){
+  const n = 2048, c = new Float32Array(n);
+  for (let i = 0; i < n; i++){
+    const x = i * 2 / n - 1;
+    c[i] = (3 + k) * x * 20 * Math.PI / 180 / (Math.PI + k * Math.abs(x));
+  }
+  return c;
+}
+function scream(){
+  const a = ac(), t = a.currentTime, dur = 1.8;
+  const master = a.createGain();
+  master.gain.setValueAtTime(0.0001, t);
+  master.gain.exponentialRampToValueAtTime(0.85, t + 0.03);
+  master.gain.exponentialRampToValueAtTime(0.45, t + 0.7);
+  master.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  const shaper = a.createWaveShaper();
+  shaper.curve = distortionCurve(60);
+  shaper.oversample = '4x';
+  master.connect(shaper).connect(a.destination);
+
+  // "голос": несколько пилообразных осцилляторов с расстройкой и взлётом частоты
+  [0, 9, -7].forEach((det, i) => {
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(240, t);
+    o.frequency.exponentialRampToValueAtTime(960 + i * 70, t + 0.45);
+    o.frequency.linearRampToValueAtTime(680, t + dur);
+    o.detune.value = det * 12;
+    g.gain.value = 0.22;
+    o.connect(g).connect(master);
+    o.start(t); o.stop(t + dur + 0.05);
+  });
+  // дрожание
+  const lfo = a.createOscillator(), lg = a.createGain();
+  lfo.frequency.value = 26; lg.gain.value = 60;
+  lfo.connect(lg);
+  lfo.start(t); lfo.stop(t + dur);
+
+  // шум (крик/хрип)
+  const buf = a.createBuffer(1, a.sampleRate * dur, a.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+  const n = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
+  n.buffer = buf;
+  bp.type = 'bandpass'; bp.Q.value = 2.5;
+  bp.frequency.setValueAtTime(1400, t);
+  bp.frequency.linearRampToValueAtTime(3600, t + 0.4);
+  ng.gain.value = 0.45;
+  n.connect(bp).connect(ng).connect(master);
+  n.start(t);
+
+  // удар баса в момент скримера
+  note(55, 0.7, 'sine', 0.5);
+}
+
+/* ---------- Игра ---------- */
+const KINDS = [
+  { e: '🎃', pts: 1 },
+  { e: '🍬', pts: 2 },
+  { e: '👻', pts: 3 },
+  { e: '🦇', pts: 1 },
+];
+let items = [];
+let score = 0;
+let running = false, scared = false;
+let startedAt = 0, scareAt = Infinity, scareScoreTarget = 0, scareSoon = false;
+let lastSpawn = 0, last = 0;
+let freezeDark = 0;      // прозрачность тёмной тыквы перед скримером
+let shakeTimer = 0;
+
+function spawnGap(){ return Math.max(380, 820 - score * 12); }
+function spawnItem(){
+  const roll = Math.random();
+  // редкая «тёмная» тыква — ничего не даёт, просто выглядит странно
+  const dark = roll < 0.05;
+  const k = dark ? { e: '🎃', pts: 0, dark: true } : KINDS[Math.floor(Math.random() * KINDS.length)];
+  items.push({
+    x: 40 + Math.random() * Math.max(10, W - 80),
+    y: -40,
+    v: 110 + score * 4 + Math.random() * 90,
+    r: 30,
+    wob: Math.random() * 6,
+    k
+  });
+}
+function update(dt, now){
+  if (now - lastSpawn > spawnGap()) { lastSpawn = now; spawnItem(); }
+  for (const it of items){
+    it.y += it.v * dt / 1000;
+    it.wob += dt / 400;
+    it.x += Math.sin(it.wob) * 0.5;
+  }
+  items = items.filter(it => it.y < H + 60);
+}
+
+function draw(){
+  ctx.clearRect(0, 0, W, H);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, '#2b1640');
+  g.addColorStop(0.6, '#8a3a2a');
+  g.addColorStop(1, '#ff7a18');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+
+  // луна
+  ctx.fillStyle = '#ffe9b0';
+  ctx.beginPath(); ctx.arc(W * 0.8, H * 0.15, 36, 0, Math.PI * 2); ctx.fill();
+
+  // земля
+  ctx.fillStyle = '#1b0f05';
+  ctx.beginPath();
+  ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 20) ctx.lineTo(x, H - 40 - Math.sin(x / 60) * 12);
+  ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  for (const it of items){
+    ctx.font = (it.r * 2) + 'px serif';
+    if (it.k.dark){
+      ctx.save();
+      ctx.filter = 'grayscale(1) brightness(0.35)';
+      ctx.fillText(it.k.e, it.x, it.y);
+      ctx.restore();
+    } else {
+      ctx.fillText(it.k.e, it.x, it.y);
+    }
+  }
+
+  if (freezeDark > 0){
+    ctx.save();
+    ctx.globalAlpha = freezeDark;
+    ctx.filter = 'grayscale(1) brightness(0.3)';
+    ctx.font = '240px serif';
+    ctx.fillText('🎃', W / 2, H / 2);
+    ctx.restore();
+  }
+}
+
+function loop(now){
+  const dt = Math.min(50, now - last); last = now;
+  if (running){
+    update(dt, now);
+    document.getElementById('score').textContent = score;
+    if (!scared && now >= scareAt){ running = false; startScare(); }
+  }
+  draw();
+  requestAnimationFrame(loop);
+}
+last = performance.now();
+requestAnimationFrame(loop);
+
+// клики по тыквам/конфетам
+function onPointer(e){
+  if (!running) return;
+  const x = e.clientX, y = e.clientY;
+  let best = -1, bestD = Infinity;
+  items.forEach((it, i) => {
+    const d = Math.hypot(it.x - x, it.y - y);
+    if (d < it.r + 16 && d < bestD){ best = i; bestD = d; }
+  });
+  if (best < 0) return;
+  const it = items[best];
+  items.splice(best, 1);
+  if (it.k.dark){
+    // ничего не даёт, только лёгкая дрожь экрана
+    cv.classList.remove('hit'); void cv.offsetWidth; cv.classList.add('hit');
+    return;
+  }
+  score += it.k.pts;
+  popSound();
+  const now = performance.now();
+  if (!scareSoon && score >= scareScoreTarget){
+    scareSoon = true;
+    scareAt = Math.min(scareAt, now + 2500 + Math.random() * 3500);
+  }
+}
+cv.addEventListener('pointerdown', onPointer);
+
+function startGame(){
+  ac();
+  document.getElementById('start').style.display = 'none';
+  document.getElementById('hud').style.display = 'block';
+  items = []; score = 0; scared = false; scareSoon = false;
+  freezeDark = 0;
+  const now = performance.now();
+  startedAt = now;
+  // случайное время — заранее неизвестно, когда (40–80 с)
+  scareAt = now + 40000 + Math.random() * 40000;
+  // случайный порог очков — тоже неизвестен
+  scareScoreTarget = 12 + Math.floor(Math.random() * 11);
+  lastSpawn = now;
+  running = true;
+  startMusic();
+}
+document.getElementById('go').addEventListener('click', startGame);
+
+/* ---------- Скример ---------- */
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+const LINES = [
+  'Ты думал, это просто тыквы?',
+  'Я смотрю на тебя через экран.',
+  'Не оборачивайся. Ты уже не один(а).',
+];
+
+async function typeLines(el, lines){
+  el.textContent = '';
+  for (const line of lines){
+    const span = document.createElement('div');
+    el.appendChild(span);
+    for (const ch of line){
+      span.textContent += ch;
+      await sleep(70);
+    }
+    await sleep(1200);
+  }
+}
+
+async function startScare(){
+  scared = true;
+  stopMusic();
+  const vignette = document.getElementById('vignette');
+  vignette.style.opacity = '1';
+
+  // 1) тишина и «замершая» тёмная тыква
+  freezeDark = 0.9;
+  await sleep(1000 + Math.random() * 1400);
+
+  // 2) нарастающий гул
+  hum(1700);
+  await sleep(1700 + Math.random() * 500);
+
+  // 3) скример
+  jumpScare();
+}
+
+let jumpEnded = false;
+function jumpScare(){
+  const scare = document.getElementById('scare');
+  const face = document.getElementById('face');
+  const flash = document.getElementById('flash');
+  const text = document.getElementById('text');
+  const ending = document.getElementById('ending');
+
+  document.getElementById('game').style.display = 'none';
+  document.getElementById('hud').style.display = 'none';
+  document.getElementById('vignette').style.opacity = '0';
+  scare.classList.add('on');
+  scare.classList.add('shake');
+  face.classList.add('flick');
+  face.style.opacity = '1';
+  text.style.opacity = '1';
+  ending.classList.remove('on');
+
+  scream();
+  flash.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300 });
+  setTimeout(() => scare.classList.remove('shake'), 1000);
+
+  typeLines(text, LINES).then(() => {
+    if (!jumpEnded) showEnding();
+  });
+
+  // выход из скримера по клику — через 3 секунды
+  scare.dataset.ready = '';
+  scare.onclick = () => { if (scare.dataset.ready === '1' && !jumpEnded) showEnding(); };
+  setTimeout(() => { scare.dataset.ready = '1'; }, 3000);
+}
+
+function showEnding(){
+  if (jumpEnded) return;
+  jumpEnded = true;
+  const face = document.getElementById('face');
+  const text = document.getElementById('text');
+  const ending = document.getElementById('ending');
+  face.style.opacity = '0';
+  text.style.opacity = '0';
+  setTimeout(() => ending.classList.add('on'), 1200);
+}
+
+document.getElementById('again').addEventListener('click', () => location.reload());
+</script>
+</body>
+</html>
