@@ -1305,18 +1305,20 @@ function spinner(on){
   sp.style.display = on ? 'block' : 'none';
 }
 
-// Правдоподобные папки и файлы Windows
-const FOLDERS = ['Documents', 'Pictures', 'Downloads', 'Desktop', 'Music', 'Videos', 'Telegram Desktop',
-  'OneDrive\\Документы', 'OneDrive\\Изображения', 'Учёба', 'Работа', 'Фото с телефона', 'Новая папка (2)',
-  'AppData\\Local\\Temp', 'AppData\\Roaming\\Telegram Desktop\\tdata', 'Семья'];
-const FILES = ['Отчёт_за_квартал.docx', 'IMG_20241215_183022.jpg', 'Скриншот 2026-08-14 201133.png',
-  'Диплом_финал_v3.docx', 'Налоговая_декларация_2025.pdf', 'VID_20250603_142210.mp4', 'Резюме_2026.pdf',
-  'Бюджет_семья.xlsx', 'Договор_аренды.pdf', 'Фото_с_отпуска (14).jpg', 'Заметки.txt', 'desktop.ini',
-  'Thumbs.db', 'Презентация1.pptx', 'Курсовая_работа_черновик.docx', '~$Курсовая.docx',
-  'WhatsApp Image 2026-03-02.jpeg', 'Выписка_банк_сентябрь.pdf', 'Чек_оплата_2026-05.pdf', 'ddd3f2a1.tmp',
-  'Плейлист_лето.m3u', 'Новый документ.txt', 'Рецепты_бабушки.docx', 'Фото_Новый_год_2025.heic'];
-const TOTAL = 48219;
-function randPath(){ return `C:\\Users\\Пользователь\\${rnd(FOLDERS)}\\${rnd(FILES)}`; }
+// Папки и файлы Windows: общие папки, а имена файлов случайные, как у реального пользователя.
+// Точные названия только у системных файлов, которые есть на любом компьютере.
+const FOLDERS = ['Documents', 'Pictures', 'Downloads', 'Desktop', 'Music', 'Videos', 'Games',
+  'Telegram Desktop', 'AppData\\Local\\Temp', 'AppData\\Roaming\\Telegram Desktop\\tdata', 'Program Files\\Games'];
+const SYS_FILES = ['desktop.ini', 'Thumbs.db', 'NTUSER.DAT', 'pagefile.sys'];
+function hexName(n){ let r = ''; for (let k = 0; k < n; k++) r += '0123456789abcdef'[randInt(0, 15)]; return r; }
+const RAND_FILES = [
+  () => hexName(8) + '.jpg', () => hexName(8) + '.jpg', () => hexName(6) + '.png', () => hexName(7) + '.heic',
+  () => hexName(8) + '.mp4', () => hexName(8) + '.torrent', () => hexName(8) + '.torrent',
+  () => hexName(6) + '.exe', () => 'setup_' + hexName(6) + '.exe', () => hexName(5) + '.exe',
+  () => hexName(10) + '.tmp', () => hexName(8) + '.docx', () => hexName(8) + '.pdf', () => hexName(6) + '.zip'
+];
+function randFile(){ return Math.random() < 0.08 ? rnd(SYS_FILES) : rnd(RAND_FILES)(); }
+function randPath(){ return `C:\Users\Пользователь\${rnd(FOLDERS)}\${randFile()}`; }
 
 function drawWipeBg(){
   wbx.fillStyle = '#000'; wbx.fillRect(0, 0, GLW, GLH);
