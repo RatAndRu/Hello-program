@@ -100,6 +100,17 @@ jobs:
           done
           exit 1
 
+      - name: Показать лог деплоя при ошибке
+        if: failure()
+        run: |
+          if [ -f /tmp/topo-fly-deploy.log ]; then
+            tail -n 25 /tmp/topo-fly-deploy.log | while IFS= read -r line; do
+              echo "::error title=flyctl::$line"
+            done
+          else
+            echo '::error title=flyctl::лог деплоя не создан'
+          fi
+
       - name: Verify public site
         run: |
           set -euo pipefail
