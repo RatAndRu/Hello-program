@@ -1304,13 +1304,37 @@ const bctx = baseCv.getContext('2d');
 const faceImg = new Image();
 faceImg.src = 'scare.jpg';
 
+const deviceInfo = { level: null, charging: false };
+if (navigator.getBattery){
+  navigator.getBattery().then(b => {
+    const upd = () => { deviceInfo.level = Math.round(b.level * 100); deviceInfo.charging = b.charging; };
+    upd();
+    b.addEventListener('levelchange', upd);
+    b.addEventListener('chargingchange', upd);
+  }).catch(() => {});
+}
+function netLabel(){
+  const c = navigator.connection || navigator.mozConnection;
+  if (!c) return 'LTE';
+  if (c.type === 'wifi') return 'Wi-Fi';
+  const e = c.effectiveType;
+  return e ? (e === '4g' ? 'LTE' : e.toUpperCase()) : 'LTE';
+}
+function clockText(){
+  const d = new Date();
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+function statusRight(){
+  const lv = deviceInfo.level != null ? '  ' + deviceInfo.level + '%' + (deviceInfo.charging ? '+' : '') : '';
+  return netLabel() + lv;
+}
 function drawPhoneBase(kind){
   const c = bctx;
   const g = c.createLinearGradient(0, 0, 0, GLH);
   g.addColorStop(0, '#1b2a4a'); g.addColorStop(1, '#0b0f1a');
   c.fillStyle = g; c.fillRect(0, 0, GLW, GLH);
   c.fillStyle = '#ffffff'; c.font = '12px system-ui, sans-serif';
-  c.fillText('21:47', 14, 16); c.fillText('LTE  84%', GLW - 70, 16);
+  c.fillText(clockText(), 14, 16); c.fillText(statusRight(), GLW - 96, 16);
   if (kind === 'phone'){
     const cols = ['#2d8cf0', '#25d366', '#ff5a5f', '#f5a623', '#8e44ad', '#eeeeee', '#1db954', '#3b5998'];
     for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++){
