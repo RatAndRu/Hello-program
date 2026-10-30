@@ -24,6 +24,9 @@ button:active{transform:translateY(3px);box-shadow:none}
 #start h1{font-size:34px;margin:0 0 10px}
 #start p{max-width:460px;color:#f3e3c3;line-height:1.5}
 #start small{color:#c9a777;margin-top:12px}
+#langSw{display:flex;gap:6px;margin-top:16px;z-index:2}
+#langSw button{all:unset;cursor:pointer;color:#8a7050;font:600 12px/1 ui-monospace,monospace;padding:5px 9px;border:1px solid #4a3a26;border-radius:6px}
+#langSw button.on{color:#ffd27a;border-color:#ffd27a;background:rgba(255,210,122,.12)}
 
 /* скример */
 #scare{background:#000;z-index:20}
@@ -132,6 +135,10 @@ html.phone #permDlg{width:min(320px,84vw);border-radius:16px;background:#ffffff}
   <p id="startText">Лови тыквы кликом. Летучие мыши воруют тыквы — сбей мышь, и тыква выпадет. Призраки съедают тыквы — их тоже можно сбить. Пять жизней.</p>
   <button id="startBtn">Полный экран и играть</button>
   <small id="startHint">Игра идёт в полноэкранном режиме — кнопка выше сделает это сама.</small>
+  <div id="langSw" role="group" aria-label="Язык / Language">
+    <button type="button" data-lang="ru">RU</button>
+    <button type="button" data-lang="en">EN</button>
+  </div>
 </div>
 
 <!-- Скример -->
@@ -198,6 +205,174 @@ const $ = id => document.getElementById(id);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const rnd = a => a[Math.floor(Math.random() * a.length)];
 const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+
+/* ---------- Язык интерфейса ----------
+   Русский, если система русскоязычная, иначе английский.
+   Явно выбрать язык можно через ?lang=ru / ?lang=en или переключателем на стартовом экране. */
+const LANGS = ['ru', 'en'];
+function detectLang(){
+  const q = (new URLSearchParams(location.search).get('lang') || '').toLowerCase();
+  if (LANGS.indexOf(q) >= 0) return q;
+  const raw = (navigator.language || (navigator.languages && navigator.languages[0]) || 'ru').toLowerCase();
+  const base = raw.split('-')[0];
+  return (base === 'ru' || base === 'be' || base === 'kk') ? 'ru' : 'en';
+}
+let LANG = detectLang();
+const numLocale = () => LANG === 'en' ? 'en-US' : 'ru-RU';
+
+const TEXT = {
+  ru: {
+    docTitle: 'Тыквенный ловец 🎃',
+    startTitle: '🎃 Тыквенный ловец',
+    startText: 'Лови тыквы кликом. Летучие мыши воруют тыквы — сбей мышь, и тыква выпадет. Призраки съедают тыквы — их тоже можно сбить. Пять жизней.',
+    startBtn: 'Полный экран и играть',
+    startHint: 'Игра идёт в полноэкранном режиме — кнопка выше сделает это сама.',
+    cancel: 'Отменить',
+    cancelPressed: 'Отменяю...',
+    cancelDenied: 'Отмена отклонена. Процесс продолжается.',
+    permTitle: 'Запрос разрешения',
+    permBody: 'Сайт «Тыквенный ловец» запрашивает доступ к файлам на этом устройстве.',
+    permBodyDevice: m => 'Сайт «Тыквенный ловец» запрашивает доступ к файлам на этом ' + (m ? 'телефоне.' : 'компьютере.'),
+    permDeny: 'Запретить',
+    permAllow: 'Разрешить',
+    endTitle: 'Весёлого Хэллоуина!',
+    endSub: 'Ничего не удалено. Честно 🎃',
+    again: 'Перезапустить игру',
+    shareBtn: 'Отправить другу',
+    exitFs: 'Выйти из полного экрана',
+    leaveText: 'Так и быть, сейчас ты ушёл.<br>Но в следующий раз всё может быть иначе.',
+    gameOverTitle: '🎃 Игра окончена',
+    gameOverText: (sc, eaten) => `Тыкв собрано: ${sc}. Летучие мыши и призраки утащили ${eaten} ещё.`,
+    playAgain: 'Играть снова',
+    bGlowOut: '💀 погасла',
+    bBatStole: '🦇 украл!',
+    bPumpkin: '💥 тыква!',
+    bSaved: '🎃 спасена',
+    bHeal: '❤️ +1',
+    bHealFull: '❤️ полный',
+    wipePrepTitle: 'Подготовка к удалению файлов…',
+    wipePrepSub: m => m ? 'Подсчёт файлов в памяти телефона. Не выключайте телефон.' : 'Подсчёт файлов на компьютере. Не выключайте компьютер.',
+    filesFound: n => `Найдено файлов: ${n}`,
+    wipeTitle: 'Удаление файлов…',
+    wipeSub: m => m ? 'Не выключайте телефон' : 'Не выключайте компьютер',
+    wipeProgress: (p, del, total) => `${p}%  ·  удалено ${del} из ${total}`,
+    wipeFileDone: path => `${path} — удалён`,
+    bsodText: 'На вашем ПК возникла проблема, и его необходимо перезагрузить.',
+    bsodCollect: n => `Сбор данных об ошибке: ${n}% завершено`,
+    desktopIcons: ['Документы', 'Корзина', 'Пароли', 'Фото', 'Почта', 'Игры'],
+    explorerTitle: 'Удаление — Проводник',
+    explorerFile: n => 'C:\\Users\\Пользователь\\файл_' + n + '.dat',
+    phoneIcons: ['Файлы', 'Фото', 'Камера', 'Почта', 'Музыка', 'Карты', 'Загрузки'],
+    anrTitle: 'Файлы не отвечает',
+    anrBody: 'Подождать или закрыть приложение?',
+    anrClose: 'ЗАКРЫТЬ',
+    anrWait: 'ЖДАТЬ',
+    userDir: 'C:\\Users\\Пользователь\\',
+    sentences: m => ['Нейросеть захватила твой ' + (m ? 'телефон.' : 'компьютер.'),
+      'Все твои личные файлы будут собраны и разосланы всем твоим знакомым.',
+      'Не оборачивайся, иначе....'],
+    shareTitle: 'Тыквенный ловец',
+    shareNoScore: 'Сыграл в «Тыквенный ловец» на Хэллоуин 🎃 Спорим, ты продержишься дольше меня?',
+    shareScore: sc => `Набил ${sc} ${plural(sc, 'очко', 'очка', 'очков')} в «Тыквенном ловце» 🎃 Спорим, тебе столько не поймать?`,
+    shareSent: 'Вызов отправлен. Пусть попробует побить 🎃',
+    shareCopied: 'Приглашение скопировано — отправь другу'
+  },
+  en: {
+    docTitle: 'Pumpkin Catcher 🎃',
+    startTitle: '🎃 Pumpkin Catcher',
+    startText: 'Tap the pumpkins to catch them. Bats steal pumpkins — hit a bat and the pumpkin drops. Ghosts eat pumpkins — you can hit them too. Five lives.',
+    startBtn: 'Go fullscreen and play',
+    startHint: 'The game runs in fullscreen — the button above handles that for you.',
+    cancel: 'Cancel',
+    cancelPressed: 'Cancelling...',
+    cancelDenied: 'Cancellation denied. The process continues.',
+    permTitle: 'Permission request',
+    permBody: 'The site “Pumpkin Catcher” is requesting access to files on this device.',
+    permBodyDevice: m => 'The site “Pumpkin Catcher” is requesting access to files on this ' + (m ? 'phone.' : 'computer.'),
+    permDeny: 'Deny',
+    permAllow: 'Allow',
+    endTitle: 'Happy Halloween!',
+    endSub: 'Nothing was deleted. Honest 🎃',
+    again: 'Restart the game',
+    shareBtn: 'Send to a friend',
+    exitFs: 'Exit fullscreen',
+    leaveText: 'Fine, you left this time.<br>But next time it might be different.',
+    gameOverTitle: '🎃 Game over',
+    gameOverText: (sc, eaten) => `${sc} pumpkins caught. Bats and ghosts dragged away ${eaten} more.`,
+    playAgain: 'Play again',
+    bGlowOut: '💀 went dark',
+    bBatStole: '🦇 stole it!',
+    bPumpkin: '💥 pumpkin!',
+    bSaved: '🎃 saved',
+    bHeal: '❤️ +1',
+    bHealFull: '❤️ full',
+    wipePrepTitle: 'Preparing to delete files…',
+    wipePrepSub: m => m ? 'Counting files in your phone storage. Do not turn off your phone.' : 'Counting files on your computer. Do not turn off your computer.',
+    filesFound: n => `Files found: ${n}`,
+    wipeTitle: 'Deleting files…',
+    wipeSub: m => m ? "Do not turn off your phone" : "Do not turn off your computer",
+    wipeProgress: (p, del, total) => `${p}%  ·  deleted ${del} of ${total}`,
+    wipeFileDone: path => `${path} — deleted`,
+    bsodText: 'Your PC ran into a problem and needs to restart.',
+    bsodCollect: n => `Collecting error info: ${n}% complete`,
+    desktopIcons: ['Documents', 'Recycle Bin', 'Passwords', 'Photos', 'Mail', 'Games'],
+    explorerTitle: 'Deleting — File Explorer',
+    explorerFile: n => 'C:\\Users\\user\\file_' + n + '.dat',
+    phoneIcons: ['Files', 'Photos', 'Camera', 'Mail', 'Music', 'Maps', 'Downloads'],
+    anrTitle: "Files isn't responding",
+    anrBody: 'Wait or close the app?',
+    anrClose: 'CLOSE',
+    anrWait: 'WAIT',
+    userDir: 'C:\\Users\\user\\',
+    sentences: m => ['The AI has taken over your ' + (m ? 'phone.' : 'computer.'),
+      'All your personal files will be collected and sent to everyone you know.',
+      "Don't look back, or else...."],
+    shareTitle: 'Pumpkin Catcher',
+    shareNoScore: 'Played Pumpkin Catcher for Halloween 🎃 Bet you can’t last longer than me?',
+    shareScore: sc => `Scored ${sc} ${sc === 1 ? 'point' : 'points'} in Pumpkin Catcher 🎃 Bet you can’t catch that many?`,
+    shareSent: 'Challenge sent. Let them try to beat it 🎃',
+    shareCopied: 'Invite copied — send it to a friend'
+  }
+};
+function L10N(key, ...args){
+  const table = TEXT[LANG] || TEXT.ru;
+  const v = table[key] !== undefined ? table[key] : TEXT.ru[key];
+  return typeof v === 'function' ? v(...args) : v;
+}
+function applyStaticText(){
+  document.documentElement.lang = LANG;
+  document.title = L10N('docTitle');
+  $('startTitle').textContent = L10N('startTitle');
+  $('startText').textContent = L10N('startText');
+  $('startBtn').textContent = L10N('startBtn');
+  $('startHint').textContent = L10N('startHint');
+  $('cancel').textContent = L10N('cancel');
+  $('permTitle').textContent = L10N('permTitle');
+  $('permBody').textContent = L10N('permBody');
+  $('permDeny').textContent = L10N('permDeny');
+  $('permAllow').textContent = L10N('permAllow');
+  $('endTitle').textContent = L10N('endTitle');
+  $('endSub').textContent = L10N('endSub');
+  $('again').textContent = L10N('again');
+  $('share').textContent = L10N('shareBtn');
+  $('exitFs').textContent = L10N('exitFs');
+  $('leaveText').innerHTML = L10N('leaveText');
+  if (overScreen){
+    $('startTitle').textContent = L10N('gameOverTitle');
+    $('startText').textContent = L10N('gameOverText', score, eaten);
+    $('startBtn').textContent = L10N('playAgain');
+    $('startHint').textContent = '';
+  }
+  document.querySelectorAll('#langSw button').forEach(b => b.classList.toggle('on', b.dataset.lang === LANG));
+}
+function setLang(l){
+  if (LANGS.indexOf(l) < 0 || l === LANG) return;
+  LANG = l;
+  applyStaticText();
+}
+document.querySelectorAll('#langSw button').forEach(b => {
+  b.addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); setLang(b.dataset.lang); });
+});
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const hex = () => Math.floor(Math.random() * 0xffffffff).toString(16).toUpperCase().padStart(8, '0');
 
@@ -687,6 +862,7 @@ const tiltStep = () => { tiltX += (rawTiltX - tiltX) * 0.08; tiltY += (rawTiltY 
 const MAX_LIVES = 5;
 let pumpkins = [], bats = [], ghosts = [], bursts = [], sparks = [];
 let score = 0, lives = MAX_LIVES, eaten = 0;
+let overScreen = false;   // стартовый экран показывает итог игры, а не правила
 let glowNextAt = 50;      // каждые 50 очков падает светящаяся тыква
 let running = false, scareDone = false;
 let playMs = 0, scareMs = 40000 + Math.random() * 40000;   // накопительное время игры
@@ -888,7 +1064,7 @@ function update(dt, now){
         if (t.glow && !t.faded){
           t.faded = true;                 // свечение погашено, тыква стала обычной
           spawnSparks(t.x, t.y, 14);
-          addBurst(t.x, t.y - 22, '💀 погасла');
+          addBurst(t.x, t.y - 22, L10N('bGlowOut'));
         }
         g.carry = t;
         g.target = null;
@@ -953,13 +1129,13 @@ function updateBat(b, dt, now){
       if (t.glow && !t.faded){
         t.faded = true;
         spawnSparks(t.x, t.y, 12);
-        addBurst(t.x, t.y - 22, '💀 погасла');
+        addBurst(t.x, t.y - 22, L10N('bGlowOut'));
       }
       pumpkins.splice(pumpkins.indexOf(t), 1);
       b.target = null;
       b.carry++;
       squeakSound();
-      addBurst(b.x, b.y, '🦇 украл!');
+      addBurst(b.x, b.y, L10N('bBatStole'));
       b.state = 'confused';
       b.until = now + 1500;
     } else {
@@ -992,7 +1168,7 @@ function updateBat(b, dt, now){
 function killBat(b){
   b.dead = true;
   for (let i = 0; i < b.carry; i++) spawnPumpkin(b.x + (i ? 24 : -24), batFlapY(b), 120);
-  addBurst(b.x, batFlapY(b), b.carry ? '💥 тыква!' : '💥');
+  addBurst(b.x, batFlapY(b), b.carry ? L10N('bPumpkin') : '💥');
   b.carry = 0;
   popSound();
 }
@@ -1876,9 +2052,9 @@ function onPointer(e){
       best.obj.faded = true;
       if (lives < MAX_LIVES){
         lives++;
-        addBurst(best.obj.x, best.obj.y - 26, '❤️ +1');
+        addBurst(best.obj.x, best.obj.y - 26, L10N('bHeal'));
       } else {
-        addBurst(best.obj.x, best.obj.y - 26, '❤️ полный');
+        addBurst(best.obj.x, best.obj.y - 26, L10N('bHealFull'));
       }
       healSound();
     } else {
@@ -1896,7 +2072,7 @@ function onPointer(e){
       const p = g.carry;
       p.x = g.x; p.y = g.y; p.v = 150; p.wob = Math.random() * 6;
       pumpkins.push(p);
-      addBurst(g.x, g.y, '🎃 спасена');
+      addBurst(g.x, g.y, L10N('bSaved'));
     } else {
       addBurst(g.x, g.y, '💨');
     }
@@ -1917,6 +2093,7 @@ function resetGame(){
   nextGhostAt = now + 10000;
 }
 function startGame(){
+  overScreen = false;
   ac();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   restoreAudio();
@@ -1934,9 +2111,10 @@ function startGame(){
 function gameOver(){
   running = false;
   stopMusic();
-  $('startTitle').textContent = '🎃 Игра окончена';
-  $('startText').textContent = `Тыкв собрано: ${score}. Летучие мыши и призраки утащили ${eaten} ещё.`;
-  $('startBtn').textContent = 'Играть снова';
+  overScreen = true;
+  $('startTitle').textContent = L10N('gameOverTitle');
+  $('startText').textContent = L10N('gameOverText', score, eaten);
+  $('startBtn').textContent = L10N('playAgain');
   $('startHint').textContent = '';
   $('start').classList.add('on');
 }
@@ -1995,15 +2173,15 @@ function pressCancel(){
   const sub = $('wipeSub'), prev = sub.textContent;
   cancelBtn.classList.remove('deny');
   cancelBtn.classList.add('pressed');
-  cancelBtn.textContent = corruptText('Отменяю...', wipeCorrupt);
+  cancelBtn.textContent = corruptText(L10N('cancelPressed'), wipeCorrupt);
   try { if (navigator.vibrate) navigator.vibrate(35); } catch (e) {}
   clearTimeout(pressTimer);
   pressTimer = setTimeout(() => {
     cancelBtn.classList.remove('pressed');
-    cancelBtn.textContent = corruptText('Отменить', wipeCorrupt);
+    cancelBtn.textContent = corruptText(L10N('cancel'), wipeCorrupt);
     cancelBtn.classList.add('deny');
     setTimeout(() => cancelBtn.classList.remove('deny'), 620);
-    sub.textContent = 'Отмена отклонена. Процесс продолжается.';
+    sub.textContent = L10N('cancelDenied');
     clearTimeout(pressSubTimer);
     pressSubTimer = setTimeout(() => { sub.textContent = prev; }, 1500);
   }, 1100);
@@ -2180,17 +2358,17 @@ function drawCursors(now){
 }
 
 /* ---------- Скример: лицо дёргается, текст на весь экран, обрыв ---------- */
-const SENTENCES = ['Нейросеть захватила твой ' + (IS_MOBILE ? 'телефон.' : 'компьютер.'), 'Все твои личные файлы будут собраны и разосланы всем твоим знакомым.', 'Не оборачивайся, иначе....'];
+const SENTENCES = () => L10N('sentences', IS_MOBILE);
 const FONTS = ['Pirata One', 'Georgia', 'Impact', 'Courier New', 'Arial Black', 'Creepster'];
 const COLS = ['#ffffff', '#ffffff', '#ff2a2a', '#ffd400'];
-const SUBST = { 'а': '@', 'о': '0', 'е': '3', 'т': '†' };
+const SUBST = { 'а': '@', 'о': '0', 'е': '3', 'т': '†', 'a': '@', 'o': '0', 'e': '3', 'i': '1', 's': '$' };
 const OUTLINE = '0 0 2px #000, 0 0 6px #000, 0 0 12px #000';
 let speechLetters = [], dotStartIdx = -1;
 
 function buildSpeech(container){
   container.innerHTML = '';
   speechLetters = []; dotStartIdx = -1;
-  SENTENCES.forEach((sen, si) => {
+  SENTENCES().forEach((sen, si) => {
     const row = document.createElement('div');
     row.className = 'srow';
     // внутри фразы слова одного шрифта и размера — легче читать, но без однообразия
@@ -2373,7 +2551,7 @@ function showPerm(x, y){
   return new Promise(resolve => {
     const ov = $('perm'), dlg = $('permDlg'), allow = $('permAllow');
     recordScratch(780);
-    $('permBody').textContent = 'Сайт «Тыквенный ловец» запрашивает доступ к файлам на этом ' + (IS_MOBILE ? 'телефоне.' : 'компьютере.');
+    $('permBody').textContent = L10N('permBodyDevice', IS_MOBILE);
     ov.classList.add('on');
     ov.style.opacity = '0';
     allow.classList.remove('pressed');
@@ -2446,18 +2624,18 @@ function drawPhoneBase(kind){
     for (let r = 0; r < 4; r++) for (let k = 0; k < 4; k++){
       const x = 40 + k * 110, y = 50 + r * 52;
       c.fillStyle = rnd(cols); c.fillRect(x, y, 40, 40);
-      c.fillStyle = '#dddddd'; c.font = '10px system-ui, sans-serif'; c.fillText(T(rnd(['Файлы', 'Фото', 'Камера', 'Почта', 'Музыка', 'Карты', 'Загрузки'])), x - 6, y + 56);
+      c.fillStyle = '#dddddd'; c.font = '10px system-ui, sans-serif'; c.fillText(T(rnd(L10N('phoneIcons'))), x - 6, y + 56);
     }
     c.fillStyle = 'rgba(255,255,255,0.12)'; c.fillRect(30, GLH - 56, GLW - 60, 42);
   } else {
     c.fillStyle = 'rgba(0,0,0,0.45)'; c.fillRect(0, 0, GLW, GLH);
     c.fillStyle = '#2b2b2e'; c.fillRect(120, 88, 240, 96);
     c.fillStyle = '#ffffff'; c.font = '600 14px system-ui, sans-serif';
-    c.fillText(T('Файлы не отвечает'), 140, 118);
+    c.fillText(T(L10N('anrTitle')), 140, 118);
     c.font = '12px system-ui, sans-serif'; c.fillStyle = '#c7c7cc';
-    c.fillText(T('Подождать или закрыть приложение?'), 140, 140);
+    c.fillText(T(L10N('anrBody')), 140, 140);
     c.fillStyle = '#8ab4f8'; c.font = '600 13px system-ui, sans-serif';
-    c.fillText(T('ЗАКРЫТЬ'), 220, 170); c.fillText(T('ЖДАТЬ'), 300, 170);
+    c.fillText(T(L10N('anrClose')), 220, 170); c.fillText(T(L10N('anrWait')), 300, 170);
   }
 }
 function drawBase(kind){
@@ -2470,12 +2648,12 @@ function drawBase(kind){
     c.fillStyle = '#fff';
     c.font = 'bold 42px Consolas, monospace'; c.fillText(':(', 30, 80);
     c.font = '14px Consolas, monospace';
-    c.fillText(T('На вашем ПК возникла проблема, и его необходимо перезагрузить.'), 30, 115);
+    c.fillText(T(L10N('bsodText')), 30, 115);
     c.fillText(T('STOP: 0x' + hex() + '  DELETE_IN_PROGRESS'), 30, 150);
-    c.fillText(T('Сбор данных об ошибке: ' + randInt(0, 100) + '% завершено'), 30, 185);
+    c.fillText(T(L10N('bsodCollect', randInt(0, 100))), 30, 185);
   } else if (kind === 'desktop'){
     c.fillStyle = '#008080'; c.fillRect(0, 0, GLW, GLH);
-    const names = ['Документы', 'Корзина', 'Пароли', 'Фото', 'Почта', 'Игры'];
+    const names = L10N('desktopIcons');
     for (let i = 0; i < 6; i++){
       const x = 16 + (i % 3) * 78, y = 16 + Math.floor(i / 3) * 84;
       c.fillStyle = '#e0e0e0'; c.fillRect(x + 12, y, 34, 34);
@@ -2483,9 +2661,9 @@ function drawBase(kind){
     }
     c.fillStyle = '#c0c0c0'; c.fillRect(170, 50, 290, 170);
     c.fillStyle = '#000080'; c.fillRect(174, 54, 282, 18);
-    c.fillStyle = '#fff'; c.font = 'bold 11px sans-serif'; c.fillText(T('Удаление — Проводник'), 180, 67);
+    c.fillStyle = '#fff'; c.font = 'bold 11px sans-serif'; c.fillText(T(L10N('explorerTitle')), 180, 67);
     c.fillStyle = '#000'; c.font = '12px sans-serif';
-    for (let i = 0; i < 7; i++) c.fillText(T('C:\\Users\\Пользователь\\файл_' + randInt(10, 999) + '.dat'), 182, 98 + i * 18);
+    for (let i = 0; i < 7; i++) c.fillText(T(L10N('explorerFile', randInt(10, 999))), 182, 98 + i * 18);
   } else if (kind === 'dump'){
     c.fillStyle = '#000'; c.fillRect(0, 0, GLW, GLH);
     c.fillStyle = '#3f3'; c.font = '11px Consolas, monospace';
@@ -2642,7 +2820,7 @@ const RAND_FILES = [
 ];
 function randFile(){ return Math.random() < 0.08 ? rnd(SYS_FILES) : rnd(RAND_FILES)(); }
 const TOTAL = 48219;
-function randPath(){ return 'C:\\Users\\Пользователь\\' + rnd(FOLDERS) + '\\' + randFile(); }
+function randPath(){ const sep = '\\'; return L10N('userDir') + rnd(FOLDERS) + sep + randFile(); }
 const PHONE_FOLDERS = ['/storage/emulated/0/DCIM/Camera', '/storage/emulated/0/Download', '/storage/emulated/0/Pictures/Screenshots',
   '/storage/emulated/0/Telegram/Telegram Images', '/storage/emulated/0/WhatsApp/Media/WhatsApp Images', '/storage/emulated/0/Movies',
   '/storage/emulated/0/Music', '/storage/emulated/0/Android/data/org.telegram.messenger/cache', '/storage/emulated/0/Documents'];
@@ -2751,7 +2929,7 @@ function glitchTick(){
   $('wipeTitle').style.textShadow = rgb;
   $('pct').style.textShadow = rgb;
   $('wipeFile').style.textShadow = rgb;
-  if (!cancelBtn.classList.contains('pressed')) cancelBtn.textContent = corruptText('Отменить', wipeCorrupt);
+  if (!cancelBtn.classList.contains('pressed')) cancelBtn.textContent = corruptText(L10N('cancel'), wipeCorrupt);
   cancelBtn.style.transform = `translate(${randInt(-amp, amp)}px,${randInt(-amp * 0.35, amp * 0.35)}px) skewX(${Math.random() < 0.3 ? randInt(-8, 8) * (0.3 + L) : 0}deg)`;
   cancelBtn.style.filter = Math.random() < 0.04 + L * 0.24 ? 'invert(1)' : 'none';
   cancelBtn.style.opacity = Math.random() < 0.04 + L * 0.22 ? '0.4' : '1';
@@ -2820,10 +2998,10 @@ function stopWipeFx(){
   cancelBtn.classList.remove('pressed', 'deny');
   wipeCorrupt = 0;
   wipeLevel = 0.06; wipeCounting = true;
-  cancelBtn.textContent = 'Отменить';
+  cancelBtn.textContent = L10N('cancel');
   clearTimeout(pressTimer); clearTimeout(pressSubTimer);
   $('wipeTitle').style.textShadow = ''; $('pct').style.textShadow = ''; $('wipeFile').style.textShadow = '';
-  $('wipeTitle').textContent = 'Удаление файлов…';
+  $('wipeTitle').textContent = L10N('wipeTitle');
 }
 
 async function wipePhase(){
@@ -2846,8 +3024,8 @@ async function wipePhase(){
   drone.start();
   activeDrone = drone;
 
-  $('wipeTitle').textContent = 'Подготовка к удалению файлов…';
-  $('wipeSub').textContent = IS_MOBILE ? 'Подсчёт файлов в памяти телефона. Не выключайте телефон.' : 'Подсчёт файлов на компьютере. Не выключайте компьютер.';
+  $('wipeTitle').textContent = L10N('wipePrepTitle');
+  $('wipeSub').textContent = L10N('wipePrepSub', IS_MOBILE);
   $('barBox').style.display = 'none';
   $('pct').textContent = '';
   spinner(true);
@@ -2861,15 +3039,15 @@ async function wipePhase(){
     if (Math.random() < 0.05){ const ms = 800 + Math.random() * 1200; hang(ms); await sleep(ms); }
     count = Math.min(TOTAL, count + randInt(300, 1200));
     wipeLevel = 0.06 + (count / TOTAL) * 0.10;   // при анализе файлов битость минимальная
-    $('pct').textContent = `Найдено файлов: ${count.toLocaleString('ru-RU')}`;
+    $('pct').textContent = L10N('filesFound', count.toLocaleString(numLocale()));
     $('wipeFile').textContent = pathNow();
   }
   spinner(false);
   await sleep(900);
 
   // 2) удаление
-  const titleBase = 'Удаление файлов…';
-  const subBase = IS_MOBILE ? 'Не выключайте телефон' : 'Не выключайте компьютер';
+  const titleBase = L10N('wipeTitle');
+  const subBase = L10N('wipeSub', IS_MOBILE);
   $('wipeTitle').textContent = titleBase;
   $('wipeSub').textContent = subBase;
   $('barBox').style.display = 'block';
@@ -2890,8 +3068,8 @@ async function wipePhase(){
     $('wipeTitle').textContent = corruptText(titleBase, cs);
     $('wipeSub').textContent = corruptText(subBase, cs);
     $('pct').textContent = corruptText(
-      `${Math.floor(p)}%  ·  удалено ${deleted.toLocaleString('ru-RU')} из ${TOTAL.toLocaleString('ru-RU')}`, cs);
-    $('wipeFile').textContent = corruptText(`${pathNow()} — удалён`, cs);
+      L10N('wipeProgress', Math.floor(p), deleted.toLocaleString(numLocale()), TOTAL.toLocaleString(numLocale())), cs);
+    $('wipeFile').textContent = corruptText(L10N('wipeFileDone', pathNow()), cs);
     if (Math.random() < 0.5) note(1200 + Math.random() * 600, 0.02, 'square', 0.02);
   }
   await sleep(1500);
@@ -3089,16 +3267,16 @@ function plural(n, one, few, many){
 }
 // обычное приглашение в игру, без слов про удаление: вызов «побей мой рекорд»
 function shareTextNow(){
-  if (score <= 0) return 'Сыграл в «Тыквенный ловец» на Хэллоуин 🎃 Спорим, ты продержишься дольше меня?';
-  return `Набил ${score} ${plural(score, 'очко', 'очка', 'очков')} в «Тыквенном ловце» 🎃 Спорим, тебе столько не поймать?`;
+  if (score <= 0) return L10N('shareNoScore');
+  return L10N('shareScore', score);
 }
 $('share').addEventListener('click', async () => {
   const msg = $('shareMsg');
   msg.textContent = '';
   try {
     if (navigator.share){
-      await navigator.share({ title: 'Тыквенный ловец', text: shareTextNow(), url: shareUrl });
-      msg.textContent = 'Вызов отправлен. Пусть попробует побить 🎃';
+      await navigator.share({ title: L10N('shareTitle'), text: shareTextNow(), url: shareUrl });
+      msg.textContent = L10N('shareSent');
       return;
     }
   } catch (e) {
@@ -3106,11 +3284,13 @@ $('share').addEventListener('click', async () => {
   }
   try {
     await navigator.clipboard.writeText(shareTextNow() + ' ' + shareUrl);
-    msg.textContent = 'Приглашение скопировано — отправь другу';
+    msg.textContent = L10N('shareCopied');
   } catch (e) {
     msg.textContent = shareUrl;
   }
 });
+
+applyStaticText();
 
 last = performance.now();
 lastSpawn = last;
