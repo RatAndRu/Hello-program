@@ -303,6 +303,7 @@ const BGM_VOL = 0.42;
 const bgm = new Audio('spooky.mp3');
 bgm.loop = true;
 bgm.preload = 'auto';
+try { bgm.load(); } catch (e) {}
 let bgmFade = null, scratchTimer = null, scratchStop = null, lastMusicCheck = 0;
 let bgmWanted = false;         // музыка должна звучать (игра идёт)
 let bgmUnlocked = false;       // звук разрешён браузером после нажатия
@@ -317,6 +318,15 @@ function bgmPrime(){
   try { const p = bgm.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
 }
 bgmPrime();
+// Пока файл не догрузился, play() отклоняется. Как только браузер сообщает,
+// что данные есть, пробуем снова — музыка не должна ждать «полной загрузки страницы».
+['canplay', 'canplaythrough', 'loadeddata', 'playing', 'stalled', 'suspend'].forEach(ev =>
+  bgm.addEventListener(ev, () => {
+    if (ev === 'playing'){ bgmUnlocked = true; return; }
+    ensureMusic();
+  }));
+// отдельный сторож: раз в 800 мс поднимаем музыку, если она должна звучать, но стоит
+setInterval(() => { if (bgmWanted && bgm.paused) ensureMusic(); }, 800);
 let bgmRetried = false;
 bgm.addEventListener('error', () => {
   // файл не загрузился: один раз пробуем ещё, затем ждём нажатия пользователя
@@ -1663,10 +1673,6 @@ function loop(now){
     update(dt, now);
     if (running) $('hud').textContent = hudText();
     playMs += dt;
-    if (now - (lastMusicCheck || 0) > 1000){
-      lastMusicCheck = now;
-      if (bgmWanted && bgm.paused) ensureMusic();   // музыка встала — поднимаем
-    }
     if (!scareDone && playMs >= scareMs && !pendingScare){ pendingScare = true; pendingSince = now; }
     if (pendingScare && !scareDone && now - pendingSince > 12000){
       running = false;
