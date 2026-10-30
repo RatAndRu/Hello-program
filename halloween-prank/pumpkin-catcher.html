@@ -96,6 +96,12 @@ html.phone #scareImg{object-position:50% 38%}
 html.phone.landscape #text{padding:2vh 4vw;gap:1.6vh}
 html.phone.landscape .srow{gap:.05em .25em}
 html.phone #wipeBox{max-height:calc(var(--app-h, 100vh) - 24px);overflow:hidden}
+#share{margin-top:14px;background:#1f1f1f!important;color:#d8d8d8!important;box-shadow:0 4px 0 #111!important;border:1px solid #555!important}
+#shareMsg{margin-top:12px;min-height:20px;color:#7fbf7f;font-family:Consolas,"Courier New",monospace;font-size:clamp(12px,1.5vw,16px)}
+/* нажатие кнопки «Отменить»: видно, что нажали, но ничего не отменяется */
+#cancel.pressed{background:#5a5a5a!important;color:#cfcfcf!important;box-shadow:inset 0 4px 12px rgba(0,0,0,.95)!important;transform:scale(.94)!important}
+#cancel.deny{animation:deny .26s steps(2) 2}
+@keyframes deny{0%{margin-left:-7px}50%{margin-left:7px}100%{margin-left:0}}
 </style>
 </head>
 <body>
@@ -146,6 +152,8 @@ html.phone #wipeBox{max-height:calc(var(--app-h, 100vh) - 24px);overflow:hidden}
   <h1 id="endTitle">Весёлого Хэллоуина!</h1>
   <div id="endSub">Ничего не удалено. Честно 🎃</div>
   <button id="again">Перезапустить игру</button>
+  <button id="share">Отправить другу</button>
+  <div id="shareMsg"></div>
 </div>
 
 <!-- Сообщение об уходе -->
@@ -960,7 +968,28 @@ function btnBounds(){
     minY: innerHeight * 0.66, maxY: innerHeight * 0.92 - btn.h
   };
 }
-$('cancel').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
+let pressTimer = null, pressSubTimer = null;
+// Кнопка нажимается, текст меняется на «Отменяю...», но удаление продолжается
+function pressCancel(auto){
+  if (!wipeActive) return;
+  if (auto && cancelBtn.classList.contains('pressed')) return;   // самопрожатие не перезапускает уже начатое
+  const sub = $('wipeSub'), prev = sub.textContent;
+  cancelBtn.classList.remove('deny');
+  cancelBtn.classList.add('pressed');
+  cancelBtn.textContent = 'Отменяю...';
+  try { if (navigator.vibrate) navigator.vibrate(35); } catch (e) {}
+  clearTimeout(pressTimer);
+  pressTimer = setTimeout(() => {
+    cancelBtn.classList.remove('pressed');
+    cancelBtn.textContent = 'Отменить';
+    cancelBtn.classList.add('deny');
+    setTimeout(() => cancelBtn.classList.remove('deny'), 620);
+    sub.textContent = 'Отмена отклонена. Процесс продолжается.';
+    clearTimeout(pressSubTimer);
+    pressSubTimer = setTimeout(() => { sub.textContent = prev; }, 1500);
+  }, auto ? 1700 : 1100);
+}
+$('cancel').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); pressCancel(false); });
 
 /* Обманные курсоры: появляются постепенно, только если захвата курсора нет */
 const DECOY_SVG = {
@@ -1029,7 +1058,12 @@ function repelFrame(){
     // без захвата: кнопка убегает от настоящего курсора, но тянется к центру полосы — в углы не загнать
     const b = btnBounds();
     const dx = bx - real.x, dy = by - real.y, d = Math.hypot(dx, dy) || 1;
-    if (real.x > -900 && d < RANGE){
+    // на телефоне иногда «замирает», чтобы палец успел дотянуться до кнопки
+    if (IS_MOBILE && real.x > -900 && d < RANGE && now > nextDodgePause){
+      dodgePauseUntil = now + randInt(700, 1100);
+      nextDodgePause = now + randInt(3800, 7500);
+    }
+    if (real.x > -900 && d < RANGE && now > dodgePauseUntil){
       const s = (RANGE - d) / RANGE, k = 2 + s * s * 38;
       btn.vx += dx / d * k; btn.vy += dy / d * k;
     }
@@ -1627,6 +1661,9 @@ function stopWipeFx(){
   scene.style.transform = ''; scene.style.filter = ''; scene.style.opacity = '';
   bandRects = [];
   cancelBtn.style.transform = ''; cancelBtn.style.filter = ''; cancelBtn.style.opacity = '';
+  cancelBtn.classList.remove('pressed', 'deny');
+  cancelBtn.textContent = 'Отменить';
+  clearTimeout(pressTimer); clearTimeout(pressSubTimer);
   $('wipeTitle').style.textShadow = ''; $('pct').style.textShadow = ''; $('wipeFile').style.textShadow = '';
 }
 
@@ -1666,6 +1703,7 @@ async function wipePhase(){
     count = Math.min(TOTAL, count + randInt(300, 1200));
     $('pct').textContent = `Найдено файлов: ${count.toLocaleString('ru-RU')}`;
     $('wipeFile').textContent = pathNow();
+    if (Math.random() < 0.03) pressCancel(true);
   }
   spinner(false);
   await sleep(900);
@@ -1685,6 +1723,7 @@ async function wipePhase(){
     $('bar').style.width = p + '%';
     $('pct').textContent = `${Math.floor(p)}%  ·  удалено ${deleted.toLocaleString('ru-RU')} из ${TOTAL.toLocaleString('ru-RU')}`;
     $('wipeFile').textContent = `${pathNow()} — удалён`;
+    if (Math.random() < 0.05) pressCancel(true);
     if (Math.random() < 0.5) note(1200 + Math.random() * 600, 0.02, 'square', 0.02);
   }
   await sleep(1500);
@@ -1696,6 +1735,7 @@ async function wipePhase(){
 }
 
 /* ---------- Уход: Esc, Windows, выход из полного экрана, смена окна или вкладки ---------- */
+let dodgePauseUntil = 0, nextDodgePause = 0;
 let gameStarted = false, leaveTimer = null, leftPage = false;
 let runAborted = false, leaving = false, activeDrone = null;
 function showLeave(){
@@ -1743,6 +1783,28 @@ function showEnding(){
   $('ending').classList.add('on');
 }
 $('again').addEventListener('click', () => { enableMotion(); startGame(); });
+
+const shareUrl = 'https://ratandru-tykvenny-lovec.fly.dev/';
+const shareText = 'Мне пришло странное «удаление файлов» на Хэллоуин. Проверь, придёт ли тебе 🎃';
+$('share').addEventListener('click', async () => {
+  const msg = $('shareMsg');
+  msg.textContent = '';
+  try {
+    if (navigator.share){
+      await navigator.share({ title: 'Весёлого Хэллоуина!', text: shareText, url: shareUrl });
+      msg.textContent = 'Отправлено. Пусть тоже поверит 🎃';
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === 'AbortError') return;
+  }
+  try {
+    await navigator.clipboard.writeText(shareUrl);
+    msg.textContent = 'Ссылка скопирована — отправь другу';
+  } catch (e) {
+    msg.textContent = shareUrl;
+  }
+});
 
 last = performance.now();
 lastSpawn = last;
