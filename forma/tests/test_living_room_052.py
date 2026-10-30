@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import trimesh
 
+from forma.geometry import _glb_valid_faces, manifold_mesh
 from forma.run import build
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -91,8 +92,14 @@ class LivingRoom052Test(unittest.TestCase):
         self.assertGreater(len(data), 1_000_000)
         scene = trimesh.load(io.BytesIO(data), file_type="glb", process=False)
         self.assertGreaterEqual(len(scene.geometry), len(self.solids))
+        # GLB законно не содержит нулевые boolean-следы. Сравниваем с исходником,
+        # очищенным тем же узким фильтром, а не возвращаем вырожденные грани.
+        source_triangles = 0
+        for obj in self.solids:
+            verts, faces = manifold_mesh(obj.manifold)
+            source_triangles += len(_glb_valid_faces(verts, faces))
         self.assertEqual(sum(len(mesh.faces) for mesh in scene.geometry.values()),
-                         sum(obj.stats()["tris"] for obj in self.solids))
+                         source_triangles)
         for name, mesh in scene.geometry.items():
             with self.subTest(mesh=name):
                 self.assertTrue(np.isfinite(mesh.vertices).all())
