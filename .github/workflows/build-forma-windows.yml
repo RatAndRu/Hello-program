@@ -81,7 +81,7 @@ jobs:
         run: |
           python tools/build_skeleton_original.py
 
-      - name: Экспортировать модели 0.53–0.58 в GLB и Forma
+      - name: Экспортировать модели 0.53–0.59 в GLB и Forma
         working-directory: forma
         run: |
           python - <<'PY'
@@ -91,6 +91,7 @@ jobs:
           output = Path('release/models')
           output.mkdir(parents=True, exist_ok=True)
           for stem, suffix in (('thinkpad_x1', 'thinkpad-x1'),
+                               ('alien', 'alien-topology'),
                                ('architecture_selectable_055', 'architecture'),
                                ('architecture_selectable_055_preview', 'architecture-preview'),
                                ('handle_rosettes_055', 'handles-rosettes'),
@@ -112,7 +113,7 @@ jobs:
                                ('living_room_diorama', 'living-room'),
                                ('train_carriage', 'train-carriage')):
               source_dir = Path('examples') if stem in (
-                  'thinkpad_x1', 'living_room_diorama', 'train_carriage') else Path('showcase/sources')
+                  'thinkpad_x1', 'alien', 'living_room_diorama', 'train_carriage') else Path('showcase/sources')
               source = source_dir / f'{stem}.forma'
               script = source.read_text(encoding='utf-8')
               result = build(script, analyze_model=False)

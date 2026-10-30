@@ -16,6 +16,14 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
+from .topology import (
+    STRUCTURAL_KEYS,
+    analyze_topology,
+    clean_export_arrays,
+    compact_arrays,
+    structural_summary,
+    weld_arrays,
+)
 
 Vec3 = tuple[float, float, float]
 EPS = 1e-9
@@ -996,29 +1004,96 @@ def crease_normals(verts: np.ndarray, faces: np.ndarray, angle_deg: float = 38.0
 # --------------------------------------------------------------------------- #
 
 def _glb_valid_faces(verts: np.ndarray, faces: np.ndarray) -> np.ndarray:
-    """Убирает нулевые треугольники boolean-пересечений перед записью GLB.
-
-    Manifold допускает такие топологические следы на стыках винтового гребня
-    и горловины. После сварки одинаковых координат в Blender/trimesh они дают
-    рёбра с четырьмя гранями, хотя видимая форма и объём правильные. Порог на
-    несколько порядков ниже самого малого полезного треугольника и не меняет
-    силуэт: удаляются только вырожденные грани.
-    """
+    """Совместимый фильтр граней, вырожденных уже в точности float32."""
+    verts32 = np.asarray(verts, dtype=np.float32).astype(np.float64)
     if not len(faces):
         return faces
-    cross = np.cross(verts[faces[:, 1]] - verts[faces[:, 0]],
-                     verts[faces[:, 2]] - verts[faces[:, 0]])
+    tri = verts32[faces]
+    cross = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
     area2 = np.linalg.norm(cross, axis=1)
     return faces[np.isfinite(area2) & (area2 > 1e-12)]
 
 
-def _glb_geometry(m: mf.Manifold, max_tris: int = 4_000_000, crease_angle: float = 38.0):
+def _clean_manifold_arrays(m: mf.Manifold) -> tuple[np.ndarray, np.ndarray]:
+    """Безопасная экспортная копия: точная очистка + guarded weld при нужде.
+
+    Диагностическая сварка сама по себе не является разрешением удалить грань.
+    Кандидат принимается только как заново замкнутое Manifold-тело с прежними
+    родом и числом частей, почти теми же объёмом/площадью и сдвигом габаритов
+    не больше допуска сварки. Иначе остаётся точная исходная сетка, а export
+    gate сообщит об ошибке вместо скрытого разрушения формы.
+    """
     verts, faces = manifold_mesh(m)
-    faces = _glb_valid_faces(verts, faces)
+    base_verts, base_faces = clean_export_arrays(verts, faces)
+    base_report = analyze_topology(base_verts, base_faces, include_quality=False)
+    degenerate = base_report["degenerate_index"] or base_report["degenerate_area"]
+    other_errors = any(
+        base_report[key] for key in STRUCTURAL_KEYS
+        if key not in {"degenerate_index", "degenerate_area"}
+    )
+    if not degenerate or other_errors:
+        return base_verts, base_faces
+
+    welded_verts, welded_faces, _merged, eps = weld_arrays(base_verts, base_faces)
+    tri = welded_verts[welded_faces]
+    cross = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
+    area2 = np.linalg.norm(cross, axis=1)
+    distinct = (
+        (welded_faces[:, 0] != welded_faces[:, 1])
+        & (welded_faces[:, 1] != welded_faces[:, 2])
+        & (welded_faces[:, 2] != welded_faces[:, 0])
+    )
+    keep = np.isfinite(area2) & (area2 > 1e-12) & distinct
+    candidate_verts, candidate_faces = compact_arrays(welded_verts, welded_faces[keep])
+    candidate_report = analyze_topology(candidate_verts, candidate_faces, include_quality=False)
+    if not candidate_report["ok"] or candidate_report["loose_vertices"]:
+        return base_verts, base_faces
+
+    try:
+        candidate_mesh = mf.Mesh(
+            vert_properties=np.ascontiguousarray(candidate_verts, dtype=np.float32),
+            tri_verts=np.ascontiguousarray(candidate_faces, dtype=np.uint32),
+        )
+        candidate = mf.Manifold(candidate_mesh)
+        if candidate.status() != mf.Error.NoError or candidate.is_empty() or candidate.volume() <= 0:
+            return base_verts, base_faces
+        if int(candidate.genus()) != int(m.genus()) or int(solid_parts(candidate)) != int(solid_parts(m)):
+            return base_verts, base_faces
+        volume_delta_pct = abs(float(candidate.volume() / m.volume() - 1.0) * 100.0)
+        area_delta_pct = abs(float(candidate.surface_area() / m.surface_area() - 1.0) * 100.0)
+        bbox_delta = float(np.max(np.abs(
+            np.asarray(candidate.bounding_box(), dtype=np.float64)
+            - np.asarray(m.bounding_box(), dtype=np.float64)
+        )))
+        # 0.0001% объёма, 0.001% площади и один допуск сварки по габаритам.
+        # На практике исправленные fixtures изменяются ещё на порядки меньше.
+        if (volume_delta_pct <= 0.0001 and area_delta_pct <= 0.001
+                and bbox_delta <= eps * 1.01 + 1e-9):
+            return candidate_verts, candidate_faces
+    except Exception:
+        pass
+    return base_verts, base_faces
+
+
+def _validate_export_arrays(verts: np.ndarray, faces: np.ndarray, what: str) -> None:
+    """Export gate: не выдавать заведомо битый файл за успешный результат."""
+    report = analyze_topology(verts, faces, include_quality=False)
+    if not report["ok"]:
+        raise GeometryError(
+            f"Экспорт «{what}» остановлен: {structural_summary(report)}.",
+            hint="Проверьте исходную сетку командой check <объект> topology. "
+                 "Forma не склеивает неоднозначные рёбра и не закрывает отверстия автоматически.",
+        )
+
+
+def _glb_geometry(m: mf.Manifold, max_tris: int = 4_000_000, crease_angle: float = 38.0,
+                  what: str = "деталь"):
+    verts, faces = _clean_manifold_arrays(m)
     nv, normals, nf = crease_normals(verts, faces, crease_angle)
     # Z-up -> Y-up
     nv_y = np.stack([nv[:, 0], nv[:, 2], -nv[:, 1]], axis=1)
     nrm_y = np.stack([normals[:, 0], normals[:, 2], -normals[:, 1]], axis=1)
+    _validate_export_arrays(nv_y, nf, what)
     return nv_y, nrm_y, nf
 
 
@@ -1050,11 +1125,12 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             continue
         if with_normals:
             verts, normals, faces = _glb_geometry(
-                obj.manifold, crease_angle=120.0 if obj.meta.get("smooth_normals") else 38.0)
+                obj.manifold, crease_angle=120.0 if obj.meta.get("smooth_normals") else 38.0,
+                what=obj.name)
         else:
-            verts, faces = manifold_mesh(obj.manifold)
-            faces = _glb_valid_faces(verts, faces)
+            verts, faces = _clean_manifold_arrays(obj.manifold)
             verts = np.stack([verts[:, 0], verts[:, 2], -verts[:, 1]], axis=1)
+            _validate_export_arrays(verts, faces, obj.name)
             normals = None
         rgba = color_to_gltf(obj.color)
         transmission = float(getattr(obj, "transmission", 0.0) or 0.0)
@@ -1697,7 +1773,8 @@ def export_stl(objects) -> bytes:
     """Бинарный STL (Z-up, мм) — для 3D-печати."""
     chunks = []
     for obj in objects:
-        verts, faces = manifold_mesh(obj.manifold)
+        verts, faces = _clean_manifold_arrays(obj.manifold)
+        _validate_export_arrays(verts, faces, obj.name)
         tri = verts[faces]
         n = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
         ln = np.linalg.norm(n, axis=1)
@@ -1723,7 +1800,7 @@ def export_3mf(objects) -> bytes:
     offset = 0
     names = []
     for obj in objects:
-        verts, _normals, faces = _glb_geometry(obj.manifold)
+        verts, _normals, faces = _glb_geometry(obj.manifold, what=obj.name)
         verts_all.append(verts)
         faces_all.append(faces + offset)
         offset += len(verts)
@@ -1773,7 +1850,7 @@ def export_ply(objects) -> bytes:
     verts_all, normals_all, faces_all = [], [], []
     offset = 0
     for obj in objects:
-        verts, normals, faces = _glb_geometry(obj.manifold)
+        verts, normals, faces = _glb_geometry(obj.manifold, what=obj.name)
         verts_all.append(verts)
         normals_all.append(normals)
         faces_all.append(faces + offset)
@@ -1801,7 +1878,8 @@ def export_obj(objects) -> bytes:
     lines = ["# Forma3D export (mm, Z-up)"]
     offset = 1
     for obj in objects:
-        verts, faces = manifold_mesh(obj.manifold)
+        verts, faces = _clean_manifold_arrays(obj.manifold)
+        _validate_export_arrays(verts, faces, obj.name)
         lines.append(f"o {obj.name}")
         for v in verts:
             lines.append(f"v {v[0]:.6f} {v[1]:.6f} {v[2]:.6f}")

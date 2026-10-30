@@ -221,18 +221,123 @@ def surface_from_field(field, bounds: list[float], res: float,
 
 
 def finalize_sdf(verts: np.ndarray, faces: np.ndarray, step: float,
-                 what: str = "поверхность"):
-    """Собирает поверхность и чистит «строчку» marching cubes (лишние трис)."""
-    solid = mesh_to_manifold(verts, faces, what)
+                 what: str = "поверхность", report: dict | None = None):
+    """Собирает SDF и убирает лишние трис без скрытого перестроения формы.
+
+    Базовый допуск прежний — 0.06 шага. Если диагностическая сварка всё же
+    находит non-manifold рёбра, перебираются несколько чуть больших допусков
+    ядерного simplify. Кандидат принимается только при исчезновении дефекта и
+    одновременном сохранении объёма, площади, габаритов, частей и рода.
+    """
+    from .geometry import manifold_mesh, solid_parts
+    from .topology import analyze_topology
+
+    raw = mesh_to_manifold(verts, faces, what)
+    baseline_tolerance = max(float(step) * 0.06, 0.01)
+    baseline = raw
     try:
-        simplified = solid.simplify(max(float(step) * 0.06, 0.01))
+        simplified = raw.simplify(baseline_tolerance)
         if not simplified.is_empty():
-            before, after = solid.volume(), simplified.volume()
+            before, after = raw.volume(), simplified.volume()
             if before > 0 and 0.97 < after / before < 1.03:
-                solid = simplified
+                baseline = simplified
     except Exception:
         pass
-    return solid
+
+    def topology(solid):
+        return analyze_topology(*manifold_mesh(solid), include_quality=False)
+
+    baseline_topology = topology(baseline)
+    chosen = baseline
+    chosen_topology = baseline_topology
+    candidates: list[dict] = []
+    if baseline_topology["non_manifold_edges"]:
+        base_volume = float(baseline.volume())
+        base_area = float(baseline.surface_area())
+        base_bbox = np.asarray(baseline.bounding_box(), dtype=np.float64)
+        base_genus = int(baseline.genus())
+        base_parts = int(solid_parts(baseline))
+        for factor in (0.065, 0.070, 0.075, 0.080, 0.100, 0.120):
+            tolerance = max(float(step) * factor, 0.01)
+            if tolerance <= baseline_tolerance * (1.0 + 1e-9):
+                continue
+            entry: dict = {"factor": factor, "tolerance_mm": float(tolerance)}
+            try:
+                candidate = raw.simplify(tolerance)
+                if candidate.is_empty() or candidate.status() != mf.Error.NoError:
+                    entry["rejected"] = "пустое или невалидное тело"
+                    candidates.append(entry)
+                    continue
+                candidate_topology = topology(candidate)
+                volume_delta = (float(candidate.volume()) / base_volume - 1.0) * 100.0
+                area_delta = (float(candidate.surface_area()) / base_area - 1.0) * 100.0 \
+                    if base_area > 0 else 0.0
+                bbox_delta = float(np.max(np.abs(
+                    np.asarray(candidate.bounding_box(), dtype=np.float64) - base_bbox
+                )))
+                same_genus = int(candidate.genus()) == base_genus
+                same_parts = int(solid_parts(candidate)) == base_parts
+                guards = (
+                    abs(volume_delta) <= 0.2
+                    and abs(area_delta) <= 1.0
+                    and bbox_delta <= float(step) * 0.1 + 1e-9
+                    and same_genus
+                    and same_parts
+                )
+                topology_clean = (
+                    candidate_topology["non_manifold_edges"] == 0
+                    and candidate_topology["boundary_edges"] == 0
+                    and candidate_topology["inconsistent_winding"] == 0
+                    and candidate_topology["duplicate_faces"] == 0
+                    and candidate_topology["nonfinite_values"] == 0
+                )
+                entry.update({
+                    "non_manifold_edges": candidate_topology["non_manifold_edges"],
+                    "volume_delta_pct": float(volume_delta),
+                    "area_delta_pct": float(area_delta),
+                    "bbox_delta_mm": bbox_delta,
+                    "genus_preserved": bool(same_genus),
+                    "parts_preserved": bool(same_parts),
+                })
+                if guards and topology_clean:
+                    entry["accepted"] = True
+                    candidates.append(entry)
+                    chosen = candidate
+                    chosen_topology = candidate_topology
+                    break
+                entry["rejected"] = "guard" if not guards else "топологический дефект остался"
+            except Exception as exc:
+                entry["rejected"] = str(exc)
+            candidates.append(entry)
+
+    base_volume = float(baseline.volume())
+    base_area = float(baseline.surface_area())
+    base_bbox = np.asarray(baseline.bounding_box(), dtype=np.float64)
+    final_bbox = np.asarray(chosen.bounding_box(), dtype=np.float64)
+    if report is not None:
+        report.clear()
+        report.update({
+            "step_mm": float(step),
+            "simplify_tolerance_mm": float(
+                baseline_tolerance if chosen is baseline else
+                next(c["tolerance_mm"] for c in candidates if c.get("accepted"))
+            ),
+            "adaptive": bool(chosen is not baseline),
+            "non_manifold_before": int(baseline_topology["non_manifold_edges"]),
+            "non_manifold_after": int(chosen_topology["non_manifold_edges"]),
+            "volume_delta_pct": float((chosen.volume() / base_volume - 1.0) * 100.0),
+            "area_delta_pct": float((chosen.surface_area() / base_area - 1.0) * 100.0)
+                if base_area > 0 else 0.0,
+            "bbox_delta_mm": float(np.max(np.abs(final_bbox - base_bbox))),
+            "genus_before": int(baseline.genus()),
+            "genus_after": int(chosen.genus()),
+            "parts_before": int(solid_parts(baseline)),
+            "parts_after": int(solid_parts(chosen)),
+            "raw_triangles": int(raw.num_tri()),
+            "triangles": int(chosen.num_tri()),
+            "candidates": candidates,
+        })
+    return chosen
 
 
 def mesh_to_manifold(verts: np.ndarray, faces: np.ndarray, what: str = "поверхность"):
@@ -307,9 +412,23 @@ def from_sdf(a, name):
             "Поверхность пуста — функция нигде не становится отрицательной внутри bounds.",
             hint="Проверьте формулу и границы: внутри области должно быть f < 0.",
         )
-    solid = finalize_sdf(verts, faces, step, f"SDF «{name or 'фигура'}»")
+    meshing: dict = {}
+    solid = finalize_sdf(verts, faces, step, f"SDF «{name or 'фигура'}»", report=meshing)
     a.scene.log("info", f"from_sdf: сетка {step:g} мм, {solid.num_tri()} треугольников", a.cmd.line)
-    return make_solid(a.scene, name, solid, a, kind="sdf")
+    result = make_solid(a.scene, name, solid, a, kind="sdf")
+    result.meta["meshing"] = meshing
+    if meshing.get("adaptive"):
+        a.scene.log(
+            "info",
+            f"from_sdf: адаптивная очистка {meshing['simplify_tolerance_mm']:.3g} мм; "
+            f"non-manifold {meshing['non_manifold_before']} → "
+            f"{meshing['non_manifold_after']}, объём {meshing['volume_delta_pct']:+.3f}%",
+            a.cmd.line,
+        )
+    elif meshing.get("non_manifold_after"):
+        a.scene.log("warn", "from_sdf: non-manifold сварка осталась; экспорт будет остановлен",
+                    a.cmd.line)
+    return result
 
 
 @op("blob", aliases=("метаболы", "органика", "слепить", "капля"), category="Математические поверхности",
@@ -381,6 +500,20 @@ def blob(a, name):
         raise GeometryError(f"Не удалось слепить форму: {exc}") from exc
     if verts is None:
         raise GeometryError("Форма пуста — проверьте координаты и радиусы.")
-    solid = finalize_sdf(verts, faces, step, "капля")
+    meshing: dict = {}
+    solid = finalize_sdf(verts, faces, step, "капля", report=meshing)
     a.scene.log("info", f"blob: сетка {step:g} мм, {solid.num_tri()} треугольников", a.cmd.line)
-    return make_solid(a.scene, name, solid, a, kind="blob")
+    result = make_solid(a.scene, name, solid, a, kind="blob")
+    result.meta["meshing"] = meshing
+    if meshing.get("adaptive"):
+        a.scene.log(
+            "info",
+            f"blob: адаптивная очистка {meshing['simplify_tolerance_mm']:.3g} мм; "
+            f"non-manifold {meshing['non_manifold_before']} → "
+            f"{meshing['non_manifold_after']}, объём {meshing['volume_delta_pct']:+.3f}%",
+            a.cmd.line,
+        )
+    elif meshing.get("non_manifold_after"):
+        a.scene.log("warn", "blob: non-manifold сварка осталась; экспорт будет остановлен",
+                    a.cmd.line)
+    return result

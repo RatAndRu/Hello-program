@@ -8,9 +8,10 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import (FINENESS_MM, auto_segments, circle_profile, hull_of_manifolds,
-                       limit_segments, manifold_from_arrays, manifold_mesh)
+from .geometry import (FINENESS_MM, _clean_manifold_arrays, auto_segments, circle_profile,
+                       hull_of_manifolds, limit_segments, manifold_from_arrays, manifold_mesh)
 from .ops import anchor, detail_factor, detail_level, ensure_solid, make_solid, op
+from .topology import analyze_topology
 from .primitive_topology import (cube_sphere, honeycomb_sphere, linear_subdivide,
                                  loop_smooth, pentagon_sphere)
 from .shape_features import transition_radius
@@ -250,7 +251,19 @@ def _expand_half(solid: mf.Manifold, amount: float, side: float, smooth: float,
     matrix = np.asarray([[factor, 0.0, 0.0, cx * (1.0 - factor)],
                          [0.0, factor, 0.0, cy * (1.0 - factor)],
                          [0.0, 0.0, 1.0, 0.0]], dtype=float)
-    larger = (upper if side > 0 else lower).transform(matrix)
+    larger_source = upper if side > 0 else lower
+    if seat > 1e-9:
+        # Пояс и увеличенная половина не должны встречаться двумя совпадающими
+        # крышками: после экспортной сварки такой стык даёт четыре грани на
+        # ребре. Продлим большую половину внутрь пояса. Её сечение в этом слое
+        # меньше сечения на средней плоскости, поэтому слой скрыт поясом и не
+        # меняет наружную форму. Меньшая половина остаётся нетронутой.
+        overlap = min(seat * 0.5, max(1e-4, span * 1e-4))
+        larger_source = solid.trim_by_plane(
+            (0.0, 0.0, 1.0 if side > 0 else -1.0),
+            mid - overlap if side > 0 else -(mid + overlap),
+        )
+    larger = larger_source.transform(matrix)
     smaller = lower if side > 0 else upper
     cross = solid.slice(mid)
     if cross.is_empty() or cross.area() <= 1e-9:
@@ -269,12 +282,51 @@ def _expand_half(solid: mf.Manifold, amount: float, side: float, smooth: float,
             z1 = z0 + transition
         parts.append(_expansion_transition(cross, (cx, cy), z0, z1, factor,
                                            reverse=side < 0, what=what))
-    elif seat <= 1e-9:
-        # Точный стык: тонкая перемычка целиком находится внутри обеих
-        # половин. Она даёт булеву объём пересечения, не меняя наружную форму.
+    alternative = None
+    if seat <= 1e-9:
         eps = max(1e-4, span * 1e-4)
-        parts.append(cross.extrude(2.0 * eps).translate((0.0, 0.0, mid - eps)))
+        if transition > 1e-9:
+            # У гладкого точного стыка иногда требуется тонкая перемычка по
+            # увеличенному сечению. Сначала пробуем чистое прямое объединение:
+            # лишняя совпадающая геометрия сама может дать микрограницы.
+            bridge = scaled_cross.extrude(2.0 * eps).translate((0.0, 0.0, mid - eps))
+            alternative = parts + [bridge]
+        else:
+            bridge = cross.extrude(2.0 * eps).translate((0.0, 0.0, mid - eps))
+            if side < 0:
+                alternative = parts.copy()
+                parts.append(bridge)
+            else:
+                alternative = parts + [bridge]
     result = mf.Manifold.batch_boolean(parts, mf.OpType.Add)
+
+    def clean_expansion(candidate: mf.Manifold) -> bool:
+        if (candidate.is_empty() or candidate.status() != mf.Error.NoError
+                or candidate.genus() != solid.genus()
+                or len([p for p in candidate.decompose() if p.volume() > 1e-7]) != 1):
+            return False
+        try:
+            verts, faces = _clean_manifold_arrays(candidate)
+            return (analyze_topology(verts, faces, include_quality=False)["ok"]
+                    and analyze_topology(verts, faces, tolerance=1e-12,
+                                         include_quality=False)["ok"])
+        except Exception:
+            return False
+
+    if alternative is not None and not clean_expansion(result):
+        candidate = mf.Manifold.batch_boolean(alternative, mf.OpType.Add)
+        if clean_expansion(candidate) and result.volume() > 1e-9 and result.surface_area() > 1e-9:
+            volume_delta = abs(float(candidate.volume() / result.volume() - 1.0))
+            # У бракованной сборки площадь может включать дубли внутренних
+            # крышек. Их удаление уменьшает площадь на десятки процентов при
+            # неизменных объёме и bbox; увеличение внешней площади запрещаем.
+            area_delta = float(candidate.surface_area() / result.surface_area() - 1.0)
+            bbox_delta = float(np.max(np.abs(
+                np.asarray(candidate.bounding_box(), dtype=np.float64)
+                - np.asarray(result.bounding_box(), dtype=np.float64)
+            )))
+            if volume_delta <= 1e-6 and area_delta <= 1e-5 and bbox_delta <= 1e-4:
+                result = candidate
     positive = [p for p in result.decompose() if p.volume() > 1e-7]
     if (result.is_empty() or result.status() != mf.Error.NoError
             or result.volume() <= solid.volume() or len(positive) != 1):

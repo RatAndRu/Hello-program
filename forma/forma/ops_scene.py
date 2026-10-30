@@ -281,7 +281,7 @@ def group(a, name):
     params={"object": "имя объекта",
             "rule": "watertight, genus, parts, size, height, width, depth, volume, mass, "
                     "wall, wall_min, flat_bottom, overhang, symmetric, gap, inside, tris, "
-                    "sharp_edge, tri_quality, deviation",
+                    "sharp_edge, tri_quality, topology, deviation",
             "args": "параметры правила, например 90..110 или x"},
     positional="*")
 def check(a, name):

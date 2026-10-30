@@ -305,6 +305,8 @@ def collect_solid(solid, wall: bool = True, symmetry: bool = False,
         "flat_bottom_pct": flat_bottom_percent(m),
         "overhang_pct": overhang_percent(m),
     }
+    from .topology import manifold_topology
+    data["topology"] = manifold_topology(m)
     try:
         data["parts"] = solid_parts(m)
     except Exception:
@@ -489,6 +491,14 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
         warnings.append("Модель больше 5 метров — проверьте единицы измерения (в сценарии миллиметры).")
     if ggenus > 0:
         warnings.append(f"В модели есть сквозные отверстия: род {ggenus}.")
+    bad_topology = [o for o in objects if not o["topology"]["ok"]]
+    if bad_topology:
+        names = ", ".join(o["name"] for o in bad_topology[:4])
+        more = f" и ещё {len(bad_topology) - 4}" if len(bad_topology) > 4 else ""
+        warnings.append(
+            f"Топологическая сварка нашла структурные ошибки: {names}{more}. "
+            "Экспорт будет остановлен до исправления исходной сетки."
+        )
     # ---- кубическая сетка: бюджет объёма -------------------------------
     grid = getattr(scene, "grid", None)
     if grid:

@@ -10,7 +10,7 @@ import manifold3d as mf
 import numpy as np
 import trimesh
 
-from forma.geometry import _glb_valid_faces, manifold_mesh
+from forma.geometry import _clean_manifold_arrays
 from forma.run import build
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,9 +77,11 @@ class PhotoSaddleBracketTest(unittest.TestCase):
         self.assertTrue(mesh.is_watertight)
         self.assertTrue(mesh.is_winding_consistent)
         self.assertGreater(float(mesh.volume), 0)
-        vertices, faces = manifold_mesh(self.body)
-        self.assertEqual(len(mesh.faces), len(_glb_valid_faces(vertices, faces)))
-        self.assertEqual(len(mesh.faces), 413346)
+        _vertices, faces = _clean_manifold_arrays(self.body)
+        self.assertEqual(len(mesh.faces), len(faces))
+        # 36 граней схлопывались после сварки близких вершин. Guarded export
+        # объединяет такие вершины и сохраняет замкнутость, род и объём.
+        self.assertEqual(len(mesh.faces), 413310)
         self.assertAlmostEqual(float(mesh.volume), self.body.volume(), delta=0.02)
 
 

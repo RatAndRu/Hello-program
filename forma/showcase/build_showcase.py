@@ -28,7 +28,7 @@ from trimesh.visual.material import PBRMaterial
 from forma.geometry import (
     _glb_geometry,
     _glb_patch_materials,
-    _glb_valid_faces,
+    _clean_manifold_arrays,
     color_to_gltf,
     manifold_mesh,
 )
@@ -206,12 +206,13 @@ def validate_glb_pair(full_glb: bytes, preview_glb: bytes, solids) -> dict:
     raw_faces = 0
     expected_faces = 0
     for solid in solids:
-        vertices, faces = manifold_mesh(solid.manifold)
+        _vertices, faces = manifold_mesh(solid.manifold)
         raw_faces += len(faces)
-        expected_faces += len(_glb_valid_faces(vertices, faces))
-    # Сравниваем с тем же очищенным источником, который использует GLB:
-    # нулевые boolean-грани не являются полезной тесселяцией, но любое
-    # расхождение остальных треугольников по-прежнему запрещено.
+        _clean_vertices, clean_faces = _clean_manifold_arrays(solid.manifold)
+        expected_faces += len(clean_faces)
+    # Сравниваем с той же guarded-export копией, которая используется GLB:
+    # вырожденные грани не являются полезной тесселяцией, а guarded weld
+    # допустим только после проверки замкнутости, рода, объёма и габаритов.
     if full["faces"] != expected_faces or preview["faces"] != expected_faces:
         raise RuntimeError(
             f"Тесселяция изменилась: source={expected_faces}, full={full['faces']}, "

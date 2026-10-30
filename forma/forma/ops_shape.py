@@ -17,6 +17,10 @@ from .ops import (anchor, ensure_solid, make_solid, mirror as mirror_manifold,
 
 def _derived(a, name, manifold, base, kind: str):
     solid = make_solid(a.scene, name or base.name, manifold, a, base=base, kind=kind)
+    # Параметры и guard-результаты SDF-очистки — провенанс геометрии, а не
+    # временный стиль. Перенос/поворот не должны стирать этот отчёт.
+    if base.meta.get("meshing"):
+        solid.meta["meshing"] = dict(base.meta["meshing"])
     a.scene.consume(base)
     return solid
 

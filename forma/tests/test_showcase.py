@@ -26,7 +26,7 @@ class ShowcaseTest(unittest.TestCase):
     def test_catalog_has_versioned_changes_and_existing_sources(self):
         catalog = json.loads((SHOWCASE / "catalog.source.json").read_text(encoding="utf-8"))
         self.assertEqual([v["id"] for v in catalog["versions"]],
-                         ["photo-2026-10", "0.58", "0.57", "train-2026-10", "0.56", "0.55", "0.54", "0.53", "0.52"])
+                         ["0.59", "photo-2026-10", "0.58", "0.57", "train-2026-10", "0.56", "0.55", "0.54", "0.53", "0.52"])
         for version in catalog["versions"]:
             self.assertGreaterEqual(len(version["changes"]), 4)
             self.assertTrue(version["title"])
@@ -50,9 +50,13 @@ class ShowcaseTest(unittest.TestCase):
         self.assertEqual([model["source"] for model in current["models"][3:]],
                          ["forma/examples/living_room_diorama.forma",
                           "forma/examples/train_carriage.forma"])
+        topology = next(v for v in catalog["versions"] if v["id"] == "0.59")
+        self.assertEqual(len(topology["models"]), 1)
+        self.assertEqual(topology["models"][0]["source"], "forma/examples/alien.forma")
         from forma.webui import EXAMPLES
-        self.assertFalse(set(model["id"] for model in current["models"])
-                         & set(key for _, key in EXAMPLES))
+        example_keys = set(key for _, key in EXAMPLES)
+        self.assertFalse(set(model["id"] for model in current["models"]) & example_keys)
+        self.assertNotIn(topology["models"][0]["id"], example_keys)
 
     def test_preview_batching_preserves_faces_normals_and_bounds(self):
         first = Solid("a", mf.Manifold.cube([10, 10, 10]), color="#aabbcc")

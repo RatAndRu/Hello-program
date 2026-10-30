@@ -13,20 +13,21 @@ import urllib.error
 import urllib.request
 
 EXPECTED = {
-    "saddle_bracket_photo": {"objects": 1, "triangles": 413346, "preview_nodes": 1},
+    "alien_topology_059": {"objects": 3, "triangles": 16224, "preview_nodes": 2},
+    "saddle_bracket_photo": {"objects": 1, "triangles": 413310, "preview_nodes": 1},
     "bottle_styles_058": {"objects": 5, "triangles": 156008, "preview_nodes": 5},
     "petaloid_bottom_058": {"objects": 1, "triangles": 36720, "preview_nodes": 1},
-    "jar_styles_058": {"objects": 3, "triangles": 82798, "preview_nodes": 3},
-    "living_room_058": {"objects": 238, "triangles": 140264, "preview_nodes": 238},
-    "train_carriage_058": {"objects": 1186, "triangles": 336788, "preview_nodes": 140},
+    "jar_styles_058": {"objects": 3, "triangles": 82650, "preview_nodes": 3},
+    "living_room_058": {"objects": 238, "triangles": 140168, "preview_nodes": 238},
+    "train_carriage_058": {"objects": 1186, "triangles": 336784, "preview_nodes": 140},
     "track_holes_057": {"objects": 1, "triangles": 1236, "preview_nodes": 1},
     "lightning_057": {"objects": 1, "triangles": 7232, "preview_nodes": 1},
     "bicycle_chain_057": {"objects": 58, "triangles": 28840, "preview_nodes": 4},
-    "jar_057": {"objects": 2, "triangles": 29804, "preview_nodes": 2},
+    "jar_057": {"objects": 2, "triangles": 29744, "preview_nodes": 2},
     "bottle_057": {"objects": 4, "triangles": 63820, "preview_nodes": 4},
     "lids_057": {"objects": 8, "triangles": 14076, "preview_nodes": 5},
-    "switch_057": {"objects": 9, "triangles": 3166, "preview_nodes": 3},
-    "train_carriage": {"objects": 1186, "triangles": 336788, "preview_nodes": 140},
+    "switch_057": {"objects": 9, "triangles": 3158, "preview_nodes": 3},
+    "train_carriage": {"objects": 1186, "triangles": 336784, "preview_nodes": 140},
     "thinkpad_x1_056": {"objects": 66, "triangles": 76418, "preview_nodes": 38, "full_nodes": 73},
     "architecture_selectable_055": {"objects": 88, "triangles": 49424, "preview_nodes": 4,
                                      "preview_triangles": 17988},
@@ -35,8 +36,8 @@ EXPECTED = {
     "fittings_053": {"objects": 26, "triangles": 116518, "preview_nodes": 6},
     "smooth_transitions_054": {"objects": 3, "triangles": 109280, "preview_nodes": 1,
                                 "preview_triangles": 26104},
-    "glyphs_expansion_053": {"objects": 7, "triangles": 57162, "preview_nodes": 5},
-    "living_room_diorama": {"objects": 238, "triangles": 140264, "preview_nodes": 238},
+    "glyphs_expansion_053": {"objects": 7, "triangles": 56950, "preview_nodes": 5},
+    "living_room_diorama": {"objects": 238, "triangles": 140168, "preview_nodes": 238},
 }
 
 
@@ -129,7 +130,7 @@ class Acceptance:
         if self.revision and catalog.get("revision") != self.revision:
             raise AssertionError("Revision каталога не совпал")
         versions = {version["id"]: version for version in catalog.get("versions", [])}
-        if set(versions) != {"photo-2026-10", "0.58", "0.57", "train-2026-10", "0.56", "0.55", "0.54", "0.53", "0.52"}:
+        if set(versions) != {"0.59", "photo-2026-10", "0.58", "0.57", "train-2026-10", "0.56", "0.55", "0.54", "0.53", "0.52"}:
             raise AssertionError(f"Неожиданный список версий: {sorted(versions)}")
 
         for version in catalog["versions"]:

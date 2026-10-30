@@ -29,6 +29,7 @@ RULE_ALIASES = {
     "зазор": "gap", "расстояние": "gap", "clearance": "gap", "посадка": "gap",
     "острота": "sharp_edge", "острые_рёбра": "sharp_edge",
     "качество_сетки": "tri_quality", "иглы": "tri_quality",
+    "топология": "topology", "топологическая_сетка": "topology",
     "мин_стенка": "wall_min", "стенка_мин": "wall_min",
     "внутри": "inside",
     "треугольники": "tris", "трис": "tris",
@@ -63,6 +64,7 @@ RULE_LABELS = {
     "wall_min": "минимальная стенка",
     "sharp_edge": "острые рёбра",
     "tri_quality": "качество треугольников",
+    "topology": "топология экспортной сетки",
     "deviation": "отклонение от эталона",
     "связь": "сопряжение",
     "position": "положение",
@@ -177,7 +179,7 @@ def _load_reference(path):
 
 RULES = {"watertight", "genus", "parts", "size", "height", "width", "depth", "volume",
          "mass", "wall", "wall_min", "flat_bottom", "overhang", "symmetric", "gap",
-         "clearance", "inside", "tris", "sharp_edge", "tri_quality", "deviation",
+         "clearance", "inside", "tris", "sharp_edge", "tri_quality", "topology", "deviation",
          "связь", "position", "center", "grid"}
 
 
@@ -464,6 +466,24 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache,
                        f"({q['bad']} из {q['total']}), самый острый угол "
                        f"{fmt(q['min_angle'], 1)}° ({'в норме' if ok else 'нарушено'})",
                        name, line, q["bad_pct"], f"≤ {fmt(limit)}%", label)
+
+    if rule == "topology":
+        from .topology import STRUCTURAL_KEYS, manifold_topology, structural_summary
+        report = manifold_topology(solid.manifold)
+        errors = int(sum(report[key] for key in STRUCTURAL_KEYS))
+        ok = bool(report["ok"])
+        return _result(
+            ok,
+            rule,
+            f"{label}: {structural_summary(report)}; иглы на плавном изгибе "
+            f"{fmt(report['bend_sliver_area_pct'], 2)}% площади "
+            f"({report['bend_slivers']} шт.)",
+            name,
+            line,
+            errors,
+            "0 структурных ошибок",
+            label,
+        )
 
     raise FormaError(f"Правило «{rule}» не поддерживается.")
 
