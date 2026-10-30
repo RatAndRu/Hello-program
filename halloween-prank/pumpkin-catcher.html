@@ -2154,6 +2154,39 @@ async function startScare(){
   await wipePhase();
 }
 
+/* ---------- Распад текста по мере удаления ---------- */
+// Чем ближе к 100%, тем больше букв заменяется непонятными символами.
+// Цифры и знаки не трогаем: по ним видно, что процесс идёт.
+const GLYPHS = '⌰⏃⌇⏚⌁⌘⍙⎔⏛⏦⌿⍜⎍⌖⍾⎎ℵ⊕⊗⋔⋉⌷⍋⎌⌾⍚⏥⌻⍟⎓⌑';
+let glyphEpoch = 0, glyphEpochAt = 0;
+
+function glyphHash(a, b, c){
+  let h = (a * 374761393 + b * 668265263 + c * 2147483647) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return (h ^ (h >>> 16)) >>> 0;
+}
+// доля испорченных букв: до 28% — чисто, к 50% половина, к 100% всё
+function corruptStrength(p){
+  if (p < 30) return 0;
+  if (p < 55) return (p - 30) / 25 * 0.45;
+  if (p < 80) return 0.45 + (p - 55) / 25 * 0.30;
+  if (p < 96) return 0.75 + (p - 80) / 16 * 0.25;
+  return 1;
+}
+function corruptText(str, strength){
+  if (strength <= 0) return str;
+  const now = performance.now();
+  if (now - glyphEpochAt > 430){ glyphEpochAt = now; glyphEpoch++; }
+  let out = '';
+  for (let i = 0; i < str.length; i++){
+    const ch = str[i];
+    if (!/[А-Яа-яЁёA-Za-z]/.test(ch)){ out += ch; continue; }
+    const h = glyphHash(i, glyphEpoch, ch.charCodeAt(0));
+    out += (h % 1000) / 1000 < strength ? GLYPHS[(h >>> 10) % GLYPHS.length] : ch;
+  }
+  return out;
+}
+
 /* ---------- Выключение экрана после удаления ---------- */
 // Экран сжимается в линию, затем в точку и гаснет; звук плавно уходит в тишину.
 function powerOffScreen(){
@@ -2600,6 +2633,7 @@ function stopWipeFx(){
   cancelBtn.textContent = 'Отменить';
   clearTimeout(pressTimer); clearTimeout(pressSubTimer);
   $('wipeTitle').style.textShadow = ''; $('pct').style.textShadow = ''; $('wipeFile').style.textShadow = '';
+  $('wipeTitle').textContent = 'Удаление файлов…';
 }
 
 async function wipePhase(){
@@ -2643,8 +2677,10 @@ async function wipePhase(){
   await sleep(900);
 
   // 2) удаление
-  $('wipeTitle').textContent = 'Удаление файлов…';
-  $('wipeSub').textContent = IS_MOBILE ? 'Не выключайте телефон' : 'Не выключайте компьютер';
+  const titleBase = 'Удаление файлов…';
+  const subBase = IS_MOBILE ? 'Не выключайте телефон' : 'Не выключайте компьютер';
+  $('wipeTitle').textContent = titleBase;
+  $('wipeSub').textContent = subBase;
   $('barBox').style.display = 'block';
   let p = 0, deleted = 0;
   while (p < 100 && !runAborted){
@@ -2655,8 +2691,13 @@ async function wipePhase(){
     p = Math.min(100, p + Math.random() * 0.9 + 0.15);
     deleted = Math.floor(TOTAL * p / 100);
     $('bar').style.width = p + '%';
-    $('pct').textContent = `${Math.floor(p)}%  ·  удалено ${deleted.toLocaleString('ru-RU')} из ${TOTAL.toLocaleString('ru-RU')}`;
-    $('wipeFile').textContent = `${pathNow()} — удалён`;
+    // ближе к 50% буквы начинают заменяться символами, к 100% распадается всё
+    const cs = corruptStrength(p);
+    $('wipeTitle').textContent = corruptText(titleBase, cs);
+    $('wipeSub').textContent = corruptText(subBase, cs);
+    $('pct').textContent = corruptText(
+      `${Math.floor(p)}%  ·  удалено ${deleted.toLocaleString('ru-RU')} из ${TOTAL.toLocaleString('ru-RU')}`, cs);
+    $('wipeFile').textContent = corruptText(`${pathNow()} — удалён`, cs);
     if (Math.random() < 0.5) note(1200 + Math.random() * 600, 0.02, 'square', 0.02);
   }
   await sleep(1500);
