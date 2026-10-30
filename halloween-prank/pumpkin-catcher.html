@@ -9,80 +9,112 @@
 html,body{margin:0;height:100%;background:#1b0f05;font-family:system-ui,"Segoe UI",Arial,sans-serif;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none}
 #game{position:fixed;inset:0}
 #c{display:block;width:100%;height:100%}
-#hud{position:fixed;top:14px;left:0;right:0;text-align:center;color:#ffe2a8;font-size:24px;font-weight:700;text-shadow:0 2px 4px #000;pointer-events:none}
-#start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(27,15,5,.85);color:#ffd27a;text-align:center;padding:20px;z-index:3}
-#start h1{font-size:34px;margin:0 0 10px}
-#start p{max-width:420px;color:#f3e3c3;line-height:1.5}
+#hud{position:fixed;top:14px;left:0;right:0;text-align:center;color:#ffe2a8;font-size:24px;font-weight:700;text-shadow:0 2px 4px #000;pointer-events:none;display:none}
+.overlay{position:fixed;inset:0;display:none;z-index:10;overflow:hidden}
+.overlay.on{display:block}
 button{background:#ff7a18;color:#2a1200;border:0;border-radius:14px;padding:14px 30px;font-size:20px;font-weight:700;cursor:pointer;margin-top:16px;box-shadow:0 4px 0 #b84d00;font-family:inherit}
 button:active{transform:translateY(3px);box-shadow:none}
-#scare{position:fixed;inset:0;background:#000;display:none;z-index:10;overflow:hidden;cursor:pointer}
-#scare.on{display:block}
-#face{position:absolute;inset:0;width:100%;height:100%;transition:opacity 2s}
-#face.flick{animation:flick .09s steps(2) infinite}
-@keyframes flick{0%{opacity:1}50%{opacity:.82}100%{opacity:1}}
-#flash{position:absolute;inset:0;background:#fff;opacity:0;pointer-events:none}
-#text{position:absolute;left:0;right:0;bottom:10%;text-align:center;color:#c10000;font-family:Georgia,"Times New Roman",serif;font-size:clamp(20px,4vw,34px);line-height:1.45;padding:0 20px;text-shadow:0 0 14px #600;min-height:6em;transition:opacity 2s}
-#ending{position:absolute;inset:0;display:none;flex-direction:column;align-items:center;justify-content:center;background:#ff7a18;color:#2a1200;text-align:center;font-size:clamp(22px,4.5vw,40px);font-weight:700;padding:20px}
-#ending.on{display:flex}
-#vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 35%,#000 100%);opacity:0;transition:opacity 1.5s;z-index:5}
+
+#start.on{display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(27,15,5,.9);color:#ffd27a;text-align:center;padding:20px;z-index:3}
+#start h1{font-size:34px;margin:0 0 10px}
+#start p{max-width:440px;color:#f3e3c3;line-height:1.5}
+#start small{color:#c9a777;margin-top:12px}
+
+/* скример */
+#scare{background:#000;z-index:11;cursor:default}
+#scareImg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;filter:contrast(1.2)}
+#scareImg.flick{animation:flick .08s steps(2) infinite}
+@keyframes flick{0%{opacity:1}50%{opacity:.75}100%{opacity:1}}
+#text{position:absolute;left:0;right:0;bottom:9%;text-align:center;color:#d40000;font-family:Georgia,"Times New Roman",serif;font-size:clamp(20px,4vw,34px);line-height:1.45;padding:0 20px;text-shadow:0 0 14px #600;min-height:6em}
+#vignette{position:fixed;inset:0;pointer-events:none;background:radial-gradient(ellipse at center,transparent 35%,#000 100%);opacity:0;transition:opacity 1.5s;z-index:9}
 .shake{animation:shake .1s infinite}
 @keyframes shake{0%{transform:translate(0,0)}25%{transform:translate(-9px,4px)}50%{transform:translate(8px,-5px)}75%{transform:translate(-4px,-8px)}100%{transform:translate(0,0)}}
-.hit{animation:hit .25s}
-@keyframes hit{0%,100%{transform:translate(0,0)}25%{transform:translate(3px,0)}75%{transform:translate(-3px,0)}}
+
+/* глитч */
+#glitch{background:#000;z-index:12;cursor:none}
+#gstatic{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;display:none}
+#gscreen{position:absolute;inset:0;overflow:hidden;font-family:Consolas,"Courier New",monospace;display:none}
+#gscreen pre{margin:0;padding:24px;font-size:clamp(12px,1.8vw,20px);line-height:1.35;white-space:pre-wrap}
+#gscreen > div{position:absolute}
+
+/* удаление */
+#wipe{background:#000;color:#e8e8e8;font-family:Consolas,"Courier New",monospace;text-align:center;z-index:13;display:none;flex-direction:column;align-items:center;justify-content:center;cursor:default}
+#wipe.on{display:flex}
+#wipeTitle{font-size:clamp(18px,2.6vw,28px);margin-bottom:18px}
+#wipeFile{font-size:clamp(12px,1.4vw,16px);color:#9a9a9a;height:1.6em;margin-bottom:22px;max-width:90vw;overflow:hidden;white-space:nowrap}
+#barBox{width:min(60vw,560px);height:22px;border:1px solid #ccc;padding:2px}
+#bar{height:100%;width:0;background:#e8e8e8}
+#pct{margin-top:12px;font-size:clamp(14px,1.8vw,20px)}
+#cancel{position:fixed;left:0;top:0;margin:0;padding:12px 26px;background:#2a2a2a;color:#eee;box-shadow:none;border:1px solid #888;border-radius:6px;font-size:16px;font-weight:400;transform:translate(-200px,-200px);z-index:14;will-change:transform}
+
+/* финал */
+#ending{background:#ff7a18;color:#2a1200;flex-direction:column;align-items:center;justify-content:center;text-align:center;font-size:clamp(22px,4.5vw,40px);font-weight:700;padding:20px;z-index:15;display:none}
+#ending.on{display:flex}
+#ending small{font-size:60%;font-weight:400;margin-top:12px;color:#4a2100}
 </style>
 </head>
 <body>
 
-<div id="game">
-  <canvas id="c"></canvas>
-</div>
-<div id="hud" style="display:none">🎃 <span id="score">0</span></div>
+<div id="game"><canvas id="c"></canvas></div>
+<div id="hud">🎃 <span id="score">0</span></div>
 <div id="vignette"></div>
 
-<div id="start">
+<!-- Старт -->
+<div id="start" class="overlay on">
   <h1>🎃 Тыквенный ловец</h1>
-  <p>Тыквы, конфеты, призраки и летучие мыши падают сверху. Лови их кликом или тапом. Сколько поймаешь — твои очки. Рекорд запоминать не обязательно 🦇</p>
-  <button id="go">Начать</button>
+  <p>Тыквы, конфеты, призраки и летучие мыши падают сверху. Лови их кликом или тапом. Сколько поймаешь — твои очки.</p>
+  <button id="go">Полный экран и играть</button>
+  <small>Игра лучше всего в полноэкранном режиме — кнопка выше сделает это сама.</small>
 </div>
 
-<div id="scare">
-  <svg id="face" viewBox="0 0 400 600" preserveAspectRatio="xMidYMid slice">
-    <defs>
-      <radialGradient id="sk" cx="50%" cy="40%" r="62%">
-        <stop offset="0" stop-color="#e4dfd2"/>
-        <stop offset="0.7" stop-color="#7d7770"/>
-        <stop offset="1" stop-color="#1d1a18"/>
-      </radialGradient>
-    </defs>
-    <rect width="400" height="600" fill="#000"/>
-    <!-- волосы -->
-    <path d="M70 230 C40 60 150 -10 200 14 C260 -10 370 60 330 230 L320 150 L300 240 L280 130 L255 215 L230 110 L200 205 L170 110 L145 215 L120 130 L100 240 L80 150 Z" fill="#030303"/>
-    <!-- лицо -->
-    <path d="M200 60 C300 60 330 190 322 310 C312 450 272 565 200 585 C128 565 88 450 78 310 C70 190 100 60 200 60 Z" fill="url(#sk)"/>
-    <!-- трещины -->
-    <path d="M120 120 L140 165 L128 200 M285 330 L268 370 L282 420 M90 400 L112 380" stroke="#2a2420" stroke-width="3" fill="none"/>
-    <!-- глаза -->
-    <ellipse cx="150" cy="255" rx="36" ry="56" fill="#000"/>
-    <ellipse cx="252" cy="250" rx="34" ry="52" fill="#000"/>
-    <circle cx="160" cy="240" r="5" fill="#fff" opacity=".85"/>
-    <circle cx="262" cy="236" r="5" fill="#fff" opacity=".85"/>
-    <!-- рот -->
-    <path d="M108 392 Q200 376 292 392 Q306 478 200 530 Q94 478 108 392 Z" fill="#000"/>
-    <path d="M114 394 L130 436 L146 396 L162 446 L180 400 L200 452 L220 400 L238 446 L254 396 L270 436 L286 394 Z" fill="#e8e2d0"/>
-    <path d="M124 500 L140 470 L156 498 L172 466 L190 496 L210 466 L228 496 L244 468 L262 498 L278 472 L290 500 Q200 520 124 500 Z" fill="#d6cfbb"/>
-  </svg>
-  <div id="flash"></div>
+<!-- Скример -->
+<div id="scare" class="overlay">
+  <img id="scareImg" src="scare.jpg" alt="">
   <div id="text"></div>
-  <div id="ending">
-    <div>🎃 С Хэллоуином!<br>Это был розыгрыш 😈</div>
-    <button id="again">Ещё раз</button>
-  </div>
+</div>
+
+<!-- Глитч -->
+<div id="glitch" class="overlay">
+  <canvas id="gstatic"></canvas>
+  <div id="gscreen"></div>
+</div>
+
+<!-- Фальшивое удаление -->
+<div id="wipe" class="overlay">
+  <div id="wipeTitle">Удаление данных…</div>
+  <div id="wipeFile"></div>
+  <div id="barBox"><div id="bar"></div></div>
+  <div id="pct">0%</div>
+  <button id="cancel" type="button">Отменить</button>
+</div>
+
+<!-- Финал -->
+<div id="ending" class="overlay">
+  <div>🎃 С Хэллоуином!<br>Это был розыгрыш 😈</div>
+  <small>Ничего не удалено. Честно.</small>
+  <button id="again">Ещё раз</button>
 </div>
 
 <script>
-/* ---------- Canvas ---------- */
-const cv = document.getElementById('c');
-const ctx = cv.getContext('2d');
+const $ = id => document.getElementById(id);
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+const rnd = a => a[Math.floor(Math.random() * a.length)];
+const randInt = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const hex = () => Math.floor(Math.random() * 0xffffffff).toString(16).toUpperCase().padStart(8, '0');
+
+/* ---------- Полный экран ---------- */
+function goFullscreen(){
+  const el = document.documentElement;
+  const f = el.requestFullscreen || el.webkitRequestFullscreen;
+  if (!f) return;
+  try {
+    const p = f.call(el);
+    if (p && p.catch) p.catch(() => {});
+  } catch (e) {}
+}
+
+/* ---------- Canvas игры ---------- */
+const cv = $('c'), ctx = cv.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 function resize(){
   DPR = Math.min(window.devicePixelRatio || 1, 2);
@@ -96,8 +128,8 @@ resize();
 /* ---------- Звук (Web Audio, без внешних файлов) ---------- */
 let audioCtx = null;
 function ac(){
-  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if(audioCtx.state === 'suspended') audioCtx.resume();
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
   return audioCtx;
 }
 function note(freq, dur, type, vol){
@@ -155,8 +187,6 @@ function scream(){
   shaper.curve = distortionCurve(60);
   shaper.oversample = '4x';
   master.connect(shaper).connect(a.destination);
-
-  // "голос": несколько пилообразных осцилляторов с расстройкой и взлётом частоты
   [0, 9, -7].forEach((det, i) => {
     const o = a.createOscillator(), g = a.createGain();
     o.type = 'sawtooth';
@@ -168,13 +198,6 @@ function scream(){
     o.connect(g).connect(master);
     o.start(t); o.stop(t + dur + 0.05);
   });
-  // дрожание
-  const lfo = a.createOscillator(), lg = a.createGain();
-  lfo.frequency.value = 26; lg.gain.value = 60;
-  lfo.connect(lg);
-  lfo.start(t); lfo.stop(t + dur);
-
-  // шум (крик/хрип)
   const buf = a.createBuffer(1, a.sampleRate * dur, a.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -186,9 +209,22 @@ function scream(){
   ng.gain.value = 0.45;
   n.connect(bp).connect(ng).connect(master);
   n.start(t);
-
-  // удар баса в момент скримера
   note(55, 0.7, 'sine', 0.5);
+}
+// короткий хрип/треск для глитч-экранов
+function glitchSound(){
+  const a = ac(), t = a.currentTime;
+  const dur = 0.05 + Math.random() * 0.18;
+  const buf = a.createBuffer(1, Math.floor(a.sampleRate * dur), a.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = buf;
+  bp.type = 'bandpass'; bp.frequency.value = 300 + Math.random() * 3700; bp.Q.value = 1 + Math.random() * 4;
+  g.gain.value = 0.5;
+  src.connect(bp).connect(g).connect(a.destination);
+  src.start(t);
+  if (Math.random() < 0.5) note(200 + Math.random() * 1800, dur, 'square', 0.05);
 }
 
 /* ---------- Игра ---------- */
@@ -198,27 +234,21 @@ const KINDS = [
   { e: '👻', pts: 3 },
   { e: '🦇', pts: 1 },
 ];
-let items = [];
-let score = 0;
+let items = [], score = 0;
 let running = false, scared = false;
-let startedAt = 0, scareAt = Infinity, scareScoreTarget = 0, scareSoon = false;
+let scareAt = Infinity, scareScoreTarget = 0, scareSoon = false;
 let lastSpawn = 0, last = 0;
-let freezeDark = 0;      // прозрачность тёмной тыквы перед скримером
-let shakeTimer = 0;
+let freezeDark = 0;
 
 function spawnGap(){ return Math.max(380, 820 - score * 12); }
 function spawnItem(){
-  const roll = Math.random();
-  // редкая «тёмная» тыква — ничего не даёт, просто выглядит странно
-  const dark = roll < 0.05;
+  const dark = Math.random() < 0.05;   // редкая тёмная тыква: 0 очков, просто странная
   const k = dark ? { e: '🎃', pts: 0, dark: true } : KINDS[Math.floor(Math.random() * KINDS.length)];
   items.push({
     x: 40 + Math.random() * Math.max(10, W - 80),
     y: -40,
     v: 110 + score * 4 + Math.random() * 90,
-    r: 30,
-    wob: Math.random() * 6,
-    k
+    r: 30, wob: Math.random() * 6, k
   });
 }
 function update(dt, now){
@@ -230,7 +260,6 @@ function update(dt, now){
   }
   items = items.filter(it => it.y < H + 60);
 }
-
 function draw(){
   ctx.clearRect(0, 0, W, H);
   const g = ctx.createLinearGradient(0, 0, 0, H);
@@ -239,184 +268,274 @@ function draw(){
   g.addColorStop(1, '#ff7a18');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
-
-  // луна
   ctx.fillStyle = '#ffe9b0';
   ctx.beginPath(); ctx.arc(W * 0.8, H * 0.15, 36, 0, Math.PI * 2); ctx.fill();
-
-  // земля
   ctx.fillStyle = '#1b0f05';
-  ctx.beginPath();
-  ctx.moveTo(0, H);
+  ctx.beginPath(); ctx.moveTo(0, H);
   for (let x = 0; x <= W; x += 20) ctx.lineTo(x, H - 40 - Math.sin(x / 60) * 12);
   ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
 
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const it of items){
     ctx.font = (it.r * 2) + 'px serif';
     if (it.k.dark){
-      ctx.save();
-      ctx.filter = 'grayscale(1) brightness(0.35)';
-      ctx.fillText(it.k.e, it.x, it.y);
-      ctx.restore();
-    } else {
-      ctx.fillText(it.k.e, it.x, it.y);
-    }
+      ctx.save(); ctx.filter = 'grayscale(1) brightness(0.35)';
+      ctx.fillText(it.k.e, it.x, it.y); ctx.restore();
+    } else ctx.fillText(it.k.e, it.x, it.y);
   }
-
   if (freezeDark > 0){
-    ctx.save();
-    ctx.globalAlpha = freezeDark;
-    ctx.filter = 'grayscale(1) brightness(0.3)';
-    ctx.font = '240px serif';
-    ctx.fillText('🎃', W / 2, H / 2);
-    ctx.restore();
+    ctx.save(); ctx.globalAlpha = freezeDark; ctx.filter = 'grayscale(1) brightness(0.3)';
+    ctx.font = '240px serif'; ctx.fillText('🎃', W / 2, H / 2); ctx.restore();
   }
 }
-
 function loop(now){
   const dt = Math.min(50, now - last); last = now;
   if (running){
     update(dt, now);
-    document.getElementById('score').textContent = score;
+    $('score').textContent = score;
     if (!scared && now >= scareAt){ running = false; startScare(); }
   }
   draw();
   requestAnimationFrame(loop);
 }
-last = performance.now();
-requestAnimationFrame(loop);
 
-// клики по тыквам/конфетам
 function onPointer(e){
   if (!running) return;
-  const x = e.clientX, y = e.clientY;
   let best = -1, bestD = Infinity;
   items.forEach((it, i) => {
-    const d = Math.hypot(it.x - x, it.y - y);
+    const d = Math.hypot(it.x - e.clientX, it.y - e.clientY);
     if (d < it.r + 16 && d < bestD){ best = i; bestD = d; }
   });
   if (best < 0) return;
   const it = items[best];
   items.splice(best, 1);
   if (it.k.dark){
-    // ничего не даёт, только лёгкая дрожь экрана
     cv.classList.remove('hit'); void cv.offsetWidth; cv.classList.add('hit');
     return;
   }
   score += it.k.pts;
   popSound();
-  const now = performance.now();
   if (!scareSoon && score >= scareScoreTarget){
     scareSoon = true;
-    scareAt = Math.min(scareAt, now + 2500 + Math.random() * 3500);
+    scareAt = Math.min(scareAt, performance.now() + 2500 + Math.random() * 3500);
   }
 }
 cv.addEventListener('pointerdown', onPointer);
 
 function startGame(){
   ac();
-  document.getElementById('start').style.display = 'none';
-  document.getElementById('hud').style.display = 'block';
-  items = []; score = 0; scared = false; scareSoon = false;
-  freezeDark = 0;
+  goFullscreen();
+  $('start').classList.remove('on');
+  $('hud').style.display = 'block';
+  items = []; score = 0; scared = false; scareSoon = false; freezeDark = 0;
   const now = performance.now();
-  startedAt = now;
-  // случайное время — заранее неизвестно, когда (40–80 с)
-  scareAt = now + 40000 + Math.random() * 40000;
-  // случайный порог очков — тоже неизвестен
-  scareScoreTarget = 12 + Math.floor(Math.random() * 11);
+  scareAt = now + 40000 + Math.random() * 40000;      // 40–80 с — неизвестно заранее
+  scareScoreTarget = randInt(12, 22);                  // порог очков тоже случайный
   lastSpawn = now;
   running = true;
   startMusic();
 }
-document.getElementById('go').addEventListener('click', startGame);
+$('go').addEventListener('click', startGame);
 
-/* ---------- Скример ---------- */
-const sleep = ms => new Promise(r => setTimeout(r, ms));
-
+/* ---------- Скример: тишина → гул → крик → картинка ---------- */
 const LINES = [
   'Ты думал, это просто тыквы?',
   'Я смотрю на тебя через экран.',
   'Не оборачивайся. Ты уже не один(а).',
 ];
-
 async function typeLines(el, lines){
   el.textContent = '';
   for (const line of lines){
-    const span = document.createElement('div');
-    el.appendChild(span);
-    for (const ch of line){
-      span.textContent += ch;
-      await sleep(70);
-    }
-    await sleep(1200);
+    const div = document.createElement('div');
+    el.appendChild(div);
+    for (const ch of line){ div.textContent += ch; await sleep(55); }
+    await sleep(900);
   }
 }
 
 async function startScare(){
   scared = true;
   stopMusic();
-  const vignette = document.getElementById('vignette');
-  vignette.style.opacity = '1';
-
-  // 1) тишина и «замершая» тёмная тыква
+  $('vignette').style.opacity = '1';
   freezeDark = 0.9;
-  await sleep(1000 + Math.random() * 1400);
-
-  // 2) нарастающий гул
+  await sleep(1000 + Math.random() * 1400);   // тишина
   hum(1700);
-  await sleep(1700 + Math.random() * 500);
+  await sleep(1700 + Math.random() * 500);    // гул
 
-  // 3) скример
-  jumpScare();
-}
-
-let jumpEnded = false;
-function jumpScare(){
-  const scare = document.getElementById('scare');
-  const face = document.getElementById('face');
-  const flash = document.getElementById('flash');
-  const text = document.getElementById('text');
-  const ending = document.getElementById('ending');
-
-  document.getElementById('game').style.display = 'none';
-  document.getElementById('hud').style.display = 'none';
-  document.getElementById('vignette').style.opacity = '0';
-  scare.classList.add('on');
-  scare.classList.add('shake');
-  face.classList.add('flick');
-  face.style.opacity = '1';
-  text.style.opacity = '1';
-  ending.classList.remove('on');
-
-  scream();
-  flash.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300 });
+  // скример
+  $('game').style.display = 'none';
+  $('hud').style.display = 'none';
+  $('vignette').style.opacity = '0';
+  const scare = $('scare');
+  scare.classList.add('on', 'shake');
+  $('scareImg').classList.add('flick');
   setTimeout(() => scare.classList.remove('shake'), 1000);
+  scream();
+  await sleep(1800);
 
-  typeLines(text, LINES).then(() => {
-    if (!jumpEnded) showEnding();
-  });
+  // текст поверх картинки
+  await typeLines($('text'), LINES);
+  await sleep(500);
 
-  // выход из скримера по клику — через 3 секунды
-  scare.dataset.ready = '';
-  scare.onclick = () => { if (scare.dataset.ready === '1' && !jumpEnded) showEnding(); };
-  setTimeout(() => { scare.dataset.ready = '1'; }, 3000);
+  // глитч
+  scare.classList.remove('on');
+  await glitchPhase(4200);
+
+  // фальшивое удаление
+  await wipePhase();
 }
 
+/* ---------- Глитч-экраны ---------- */
+const GS = $('gstatic'), GD = $('gscreen');
+function drawStatic(){
+  const w = 160, h = 90;
+  GS.width = w; GS.height = h;
+  const x = GS.getContext('2d');
+  const im = x.createImageData(w, h);
+  for (let i = 0; i < im.data.length; i += 4){
+    const v = Math.random() * 255;
+    im.data[i] = im.data[i + 1] = im.data[i + 2] = v;
+    im.data[i + 3] = 255;
+  }
+  x.putImageData(im, 0, 0);
+}
+const GSCREENS = {
+  bsod(){
+    GD.style.background = '#0a5bd6'; GD.style.color = '#fff';
+    GD.innerHTML = `<pre>:(\n\nНа вашем ПК возникла проблема, и его необходимо перезагрузить.\n\nSTOP: 0x${hex()}\nDELETE_IN_PROGRESS\n\nСбор данных об ошибке: ${randInt(0, 100)}% завершено</pre>`;
+  },
+  dump(){
+    GD.style.background = '#000'; GD.style.color = rnd(['#0f0', '#fff', '#f44']);
+    let s = '';
+    for (let i = 0; i < 26; i++)
+      s += `0x${hex()} ${rnd(['FAILED','NULL','ERR','??','DEL'])} ${rnd(['sector','block','file','cluster'])} ${Math.random().toString(36).slice(2, 12)}\n`;
+    GD.innerHTML = `<pre>${s}</pre>`;
+  },
+  blocks(){
+    GD.style.background = '#000'; GD.innerHTML = '';
+    for (let i = 0; i < 40; i++){
+      const d = document.createElement('div');
+      d.style.cssText = `left:${Math.random()*100}%;top:${Math.random()*100}%;width:${rnd([4,20,120,300])}px;height:${rnd([2,8,40])}px;background:${rnd(['#f0f','#0ff','#fff','#f00','#00f','#ff0'])}`;
+      GD.appendChild(d);
+    }
+  },
+  flash(){ GD.style.background = rnd(['#fff', '#f00', '#0ff']); GD.innerHTML = ''; },
+  face(){ GD.style.background = '#000'; GD.innerHTML = '<img src="scare.jpg" alt="" style="width:100%;height:100%;object-fit:cover;filter:invert(1) hue-rotate(180deg)">'; }
+};
+async function glitchPhase(ms){
+  $('glitch').classList.add('on');
+  const end = performance.now() + ms;
+  const keys = Object.keys(GSCREENS);
+  while (performance.now() < end){
+    if (Math.random() < 0.35){
+      GS.style.display = 'block'; GD.style.display = 'none';
+      drawStatic();
+    } else {
+      GS.style.display = 'none'; GD.style.display = 'block';
+      GSCREENS[rnd(keys)]();
+    }
+    glitchSound();
+    await sleep(60 + Math.random() * 220);
+  }
+  $('glitch').classList.remove('on');
+  GD.style.display = 'none'; GS.style.display = 'none';
+}
+
+/* ---------- Фальшивое удаление с баром ---------- */
+const NAMES = ['Фото_2019', 'Диплом', 'Семейный_архив', 'Курсовая', 'Музыка', 'Видео_отпуск', 'Документы', 'Проекты'];
+const EXTS = ['jpg', 'docx', 'mp4', 'pdf', 'zip', 'psd'];
+let wipeCancelled = false, repelOn = false;
+let cbX = 0, cbY = 0, cbVX = 0, cbVY = 0;
+
+// Кнопка «Отменить» отталкивается от курсора
+window.addEventListener('pointermove', e => {
+  if (!repelOn) return;
+  const cb = $('cancel');
+  const r = cb.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const dx = cx - e.clientX, dy = cy - e.clientY;
+  const d = Math.hypot(dx, dy), R = 260;
+  if (d < R){
+    const s = (R - d) / R;
+    const ux = d > 0.01 ? dx / d : Math.random() * 2 - 1;
+    const uy = d > 0.01 ? dy / d : Math.random() * 2 - 1;
+    const k = 4 + s * 40;
+    cbVX += ux * k; cbVY += uy * k;
+  }
+});
+function repelLoop(){
+  if (!repelOn) return;
+  const cb = $('cancel');
+  cbVX *= 0.88; cbVY *= 0.88;
+  cbX += cbVX; cbY += cbVY;
+  const m = 12, w = cb.offsetWidth, h = cb.offsetHeight;
+  if (cbX < m){ cbX = m; cbVX = Math.abs(cbVX); }
+  if (cbX > W - w - m){ cbX = W - w - m; cbVX = -Math.abs(cbVX); }
+  if (cbY < m){ cbY = m; cbVY = Math.abs(cbVY); }
+  if (cbY > H - h - m){ cbY = H - h - m; cbVY = -Math.abs(cbVY); }
+  cb.style.transform = `translate(${cbX}px,${cbY}px)`;
+  requestAnimationFrame(repelLoop);
+}
+
+async function wipePhase(){
+  const wipe = $('wipe');
+  wipe.classList.add('on');
+  const bar = $('bar'), pct = $('pct'), file = $('wipeFile');
+  let droneOsc = null;
+  {
+    const a = ac();
+    droneOsc = a.createOscillator();
+    const g = a.createGain();
+    droneOsc.type = 'sawtooth'; droneOsc.frequency.value = 48;
+    g.gain.value = 0.05;
+    droneOsc.connect(g).connect(a.destination);
+    droneOsc.start();
+  }
+  cbX = W / 2 - 80; cbY = H * 0.7; cbVX = 0; cbVY = 0;
+  $('cancel').style.transform = `translate(${cbX}px,${cbY}px)`;
+  await sleep(800);
+  repelOn = true;
+  requestAnimationFrame(repelLoop);
+
+  const total = 48219;
+  let p = 0, count = 0, started = performance.now();
+  while (p < 100 && !wipeCancelled){
+    await sleep(120);
+    if (wipeCancelled) break;
+    if (Math.random() < 0.08) await sleep(600 + Math.random() * 1000);   // зависания
+    if (p > 97 && Math.random() < 0.5) await sleep(900 + Math.random() * 1200);
+    p = Math.min(100, p + Math.random() * 0.9 + 0.15);
+    count = Math.floor(total * p / 100);
+    bar.style.width = p + '%';
+    pct.textContent = `${Math.floor(p)}%  ·  удалено ${count.toLocaleString('ru-RU')} из ${total.toLocaleString('ru-RU')}`;
+    file.textContent = `C:\\Users\\Пользователь\\${rnd(NAMES)}\\${rnd(NAMES)}_${randInt(1, 999)}.${rnd(EXTS)} — удалён`;
+    if (Math.random() < 0.5) note(1200 + Math.random() * 600, 0.02, 'square', 0.02);
+    if (performance.now() - started > 75000) break;   // страховка
+  }
+  repelOn = false;
+  droneOsc.stop();
+  if (wipeCancelled){ showEnding(); return; }
+
+  $('wipeTitle').textContent = 'Удаление завершено.';
+  file.textContent = '';
+  pct.textContent = '100%';
+  await sleep(2000);
+  showEnding();
+}
+
+// Клавиатурный «выход» из кнопки (мышью её не достать)
+$('cancel').addEventListener('click', () => { wipeCancelled = true; });
+
+/* ---------- Финал ---------- */
 function showEnding(){
-  if (jumpEnded) return;
-  jumpEnded = true;
-  const face = document.getElementById('face');
-  const text = document.getElementById('text');
-  const ending = document.getElementById('ending');
-  face.style.opacity = '0';
-  text.style.opacity = '0';
-  setTimeout(() => ending.classList.add('on'), 1200);
+  $('wipe').classList.remove('on');
+  $('scare').classList.remove('on');
+  $('glitch').classList.remove('on');
+  $('ending').classList.add('on');
 }
+$('again').addEventListener('click', () => location.reload());
 
-document.getElementById('again').addEventListener('click', () => location.reload());
+requestAnimationFrame(t => { last = t; lastSpawn = t; requestAnimationFrame(loop); });
 </script>
 </body>
 </html>

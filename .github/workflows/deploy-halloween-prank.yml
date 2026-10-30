@@ -1,0 +1,21 @@
+name: Деплой Хэллоуин-розыгрыша на Fly.io
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'halloween-prank/**'
+      - '.github/workflows/deploy-halloween-prank.yml'
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Создать приложение (если его ещё нет)
+        run: flyctl apps create ratandru-pumpkin-prank --org personal || true
+        working-directory: halloween-prank
+      - name: Деплой
+        run: flyctl deploy --remote-only --config fly.toml --ha=false
+        working-directory: halloween-prank
