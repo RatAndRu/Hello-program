@@ -2499,8 +2499,17 @@ async function wipePhase(){
 let dodgePauseUntil = 0, nextDodgePause = 0;
 let gameStarted = false, leaveTimer = null, leftPage = false;
 let runAborted = false, leaving = false, activeDrone = null;
+// Триггер ухода нужен только там, где игрок пытается вырваться из происходящего:
+// во время самой игры и во время скримера. На стартовом экране и на экране
+// «Игра окончена» (выход из игры до скримера) он не срабатывает.
+function leaveArmed(){
+  if (!gameStarted) return false;
+  if ($('ending').classList.contains('on')) return false;
+  if ($('start').classList.contains('on')) return false;   // стартовый экран и «Игра окончена»
+  return running || scareDone;
+}
 function showLeave(){
-  if (!gameStarted || leaving || $('ending').classList.contains('on')) return;
+  if (!leaveArmed() || leaving) return;
   leaving = true;
   if (audioCtx && audioCtx.state === 'running') audioCtx.suspend();   // звук сразу останавливается
   stopMusicNow();
@@ -2531,7 +2540,7 @@ function onFsChange(){
 }
 document.addEventListener('fullscreenchange', onFsChange);
 document.addEventListener('webkitfullscreenchange', onFsChange);
-document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && wipeActive) showLeave(); });
+document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && wipeActive && leaveArmed()) showLeave(); });
 window.addEventListener('blur', showLeave);
 // уход со страницы: вкладку свернули или переключились в другое приложение (на телефоне тоже)
 document.addEventListener('visibilitychange', () => {
@@ -2554,7 +2563,7 @@ function showEnding(){
   $('ending').classList.add('on');
   syncExitBtn();
 }
-$('again').addEventListener('click', () => { enableMotion(); startGame(); });
+$('again').addEventListener('click', () => { goFullscreen(); enableMotion(); startGame(); });
 $('exitFs').addEventListener('click', () => { exitFullscreen(); setTimeout(syncExitBtn, 150); });
 
 const shareUrl = 'https://ratandru-tykvenny-lovec.fly.dev/';
