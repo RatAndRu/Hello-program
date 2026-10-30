@@ -1860,22 +1860,33 @@ function showEnding(){
 $('again').addEventListener('click', () => { enableMotion(); startGame(); });
 
 const shareUrl = 'https://ratandru-tykvenny-lovec.fly.dev/';
-const shareText = 'Мне пришло странное «удаление файлов» на Хэллоуин. Проверь, придёт ли тебе 🎃';
+function plural(n, one, few, many){
+  const a = Math.abs(n) % 100, b = a % 10;
+  if (a > 10 && a < 20) return many;
+  if (b > 1 && b < 5) return few;
+  if (b === 1) return one;
+  return many;
+}
+// обычное приглашение в игру, без слов про удаление: вызов «побей мой рекорд»
+function shareTextNow(){
+  if (score <= 0) return 'Сыграл в «Тыквенный ловец» на Хэллоуин 🎃 Спорим, ты продержишься дольше меня?';
+  return `Набил ${score} ${plural(score, 'очко', 'очка', 'очков')} в «Тыквенном ловце» 🎃 Спорим, тебе столько не поймать?`;
+}
 $('share').addEventListener('click', async () => {
   const msg = $('shareMsg');
   msg.textContent = '';
   try {
     if (navigator.share){
-      await navigator.share({ title: 'Весёлого Хэллоуина!', text: shareText, url: shareUrl });
-      msg.textContent = 'Отправлено. Пусть тоже поверит 🎃';
+      await navigator.share({ title: 'Тыквенный ловец', text: shareTextNow(), url: shareUrl });
+      msg.textContent = 'Вызов отправлен. Пусть попробует побить 🎃';
       return;
     }
   } catch (e) {
     if (e && e.name === 'AbortError') return;
   }
   try {
-    await navigator.clipboard.writeText(shareUrl);
-    msg.textContent = 'Ссылка скопирована — отправь другу';
+    await navigator.clipboard.writeText(shareTextNow() + ' ' + shareUrl);
+    msg.textContent = 'Приглашение скопировано — отправь другу';
   } catch (e) {
     msg.textContent = shareUrl;
   }
