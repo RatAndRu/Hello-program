@@ -50,8 +50,11 @@ button:active{transform:translateY(3px);box-shadow:none}
 #barBox{width:min(60vw,560px);height:22px;border:1px solid #ccc;padding:2px;display:none}
 #bar{height:100%;width:0;background:#e8e8e8}
 #pct{margin-top:12px;font-size:clamp(14px,1.8vw,20px);min-height:1.5em}
-#cancel{position:fixed;left:50%;top:62%;transform:translate(-50%,-50%);margin:0;padding:12px 26px;background:#2a2a2a;color:#eee;box-shadow:none;border:1px solid #888;border-radius:6px;font-size:16px;font-weight:400;pointer-events:none;z-index:24}
-#cancel:active{transform:translate(-50%,-50%);box-shadow:none}
+#cancel{position:fixed;left:0;top:0;margin:0;padding:12px 26px;background:#2a2a2a;color:#eee;box-shadow:none;border:1px solid #888;border-radius:6px;font-size:16px;font-weight:400;pointer-events:none;z-index:24}
+.decoy{position:fixed;left:0;top:0;pointer-events:none;z-index:98;will-change:transform}
+.decoy svg{display:block}
+.decoy svg.spin{animation:spin 1s linear infinite;transform-origin:12px 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
 #fake{position:fixed;left:0;top:0;width:26px;height:26px;pointer-events:none;z-index:99;display:none}
 #fake.on{display:block}
 
@@ -276,7 +279,8 @@ const MAX_LIVES = 5;
 let pumpkins = [], bats = [], ghosts = [], bursts = [];
 let score = 0, lives = MAX_LIVES, eaten = 0;
 let running = false, scareDone = false;
-let scareAt = Infinity, scareScoreTarget = 0;
+let playMs = 0, scareMs = 40000 + Math.random() * 40000;   // накопительное время игры (80 с максимум)
+let scareScoreTarget = randInt(12, 22), scareSoonSet = false;
 let pendingScare = false, pendingSince = 0;
 let lastSpawn = 0, nextBatAt = 0, nextGhostAt = 0, last = 0;
 
@@ -317,14 +321,12 @@ function pickTarget(exclude){
 }
 function spawnGhost(){
   const fromLeft = Math.random() < 0.5;
-  const speed = 240 + Math.random() * 80 + score * 2;
-  ghosts.push({
-    x: fromLeft ? -80 : W + 80,
-    y: H * (0.1 + Math.random() * 0.6),
-    vx: (fromLeft ? 1 : -1) * speed,
-    vy: (Math.random() * 2 - 1) * 70,
-    phase: Math.random() * 6, r: 34
-  });
+  const speed = 260 + Math.random() * 50 + score * 2;
+  const x = fromLeft ? -80 : W + 80;
+  const y = H * (0.1 + Math.random() * 0.5);
+  const g = { x, y, vx: (fromLeft ? 1 : -1) * speed, vy: 0, speed, target: null, phase: Math.random() * 6, r: 34 };
+  g.target = pickTarget(null);
+  ghosts.push(g);
 }
 
 function addBurst(x, y, text){ bursts.push({ x, y, text, t: 0 }); }
@@ -341,24 +343,36 @@ function update(dt, now){
     if (pumpkins[i].y > H + 40){ pumpkins.splice(i, 1); loseLife(); }
   }
 
-  // призраки: прямой полёт, съедают тыквы на пути
+  // призраки: летят за конкретной тыквой быстрее мышей, съедают её
   if (now >= nextGhostAt){
     spawnGhost();
     nextGhostAt = now + randInt(9000, 14000) - Math.min(score * 80, 4000);
   }
   for (const g of ghosts){
-    g.x += g.vx * dt / 1000;
-    g.y += g.vy * dt / 1000;
     g.phase += dt / 200;
-    for (let i = pumpkins.length - 1; i >= 0; i--){
-      const p = pumpkins[i];
-      if (Math.hypot(p.x - g.x, p.y - g.y) < 52){
-        pumpkins.splice(i, 1);
+    if (!g.target || !pumpkins.includes(g.target)){
+      g.target = pickTarget(null);
+    }
+    if (g.target){
+      const t = g.target;
+      const dx = t.x - g.x, dy = t.y - g.y, d = Math.hypot(dx, dy) || 1;
+      const sp = g.speed * dt / 1000;
+      if (d < 36){
+        // съел тыкву
+        pumpkins.splice(pumpkins.indexOf(t), 1);
         eaten++;
-        addBurst(p.x, p.y, '👻 −1');
+        addBurst(t.x, t.y, '👻 −1');
+        g.target = null;
         loseLife();
         if (lives <= 0) return;
+      } else {
+        g.x += dx / d * Math.min(sp, d);
+        g.y += dy / d * Math.min(sp, d);
       }
+    } else {
+      // цели нет — летит по прямой и улетает
+      g.x += g.vx * dt / 1000;
+      g.y += g.vy * dt / 1000;
     }
   }
   ghosts = ghosts.filter(g => g.x > -120 && g.x < W + 120 && g.y > -120 && g.y < H + 120);
@@ -493,7 +507,8 @@ function loop(now){
   if (running){
     update(dt, now);
     if (running) $('hud').textContent = hudText();
-    if (!scareDone && now >= scareAt && !pendingScare){ pendingScare = true; pendingSince = now; }
+    playMs += dt;
+    if (!scareDone && playMs >= scareMs && !pendingScare){ pendingScare = true; pendingSince = now; }
     if (pendingScare && !scareDone && now - pendingSince > 12000){
       // если не кликали — всё равно запускаем (без захвата курсора)
       running = false;
@@ -526,6 +541,10 @@ function onPointer(e){
   if (best.kind === 'pumpkin'){
     pumpkins.splice(pumpkins.indexOf(best.obj), 1);
     score++;
+    if (!scareSoonSet && score >= scareScoreTarget){
+      scareSoonSet = true;
+      scareMs = Math.min(scareMs, playMs + randInt(2500, 6000));
+    }
     addBurst(best.obj.x, best.obj.y, '+1');
     popSound();
   } else if (best.kind === 'bat'){
@@ -548,10 +567,6 @@ function resetGame(){
   lastSpawn = now;
   nextBatAt = now + 6000;
   nextGhostAt = now + 10000;
-  if (!scareDone){
-    scareAt = now + 40000 + Math.random() * 40000;   // 40–80 с, заранее неизвестно
-    scareScoreTarget = randInt(12, 22);              // и случайный порог очков
-  } else scareAt = Infinity;
 }
 function startGame(){
   ac();
@@ -575,9 +590,12 @@ function gameOver(){
 }
 $('startBtn').addEventListener('click', () => { goFullscreen(); startGame(); });
 
-/* ---------- Захват курсора и «отталкивание» ---------- */
-const cur = { x: innerWidth / 2, y: innerHeight / 2, vx: 0, vy: 0 };
+/* ---------- Захват курсора, отталкивание, обманные курсоры ---------- */
+const cur = { x: innerWidth / 2, y: innerHeight / 2, vx: 0, vy: 0 };   // виртуальный курсор (при захвате)
+const real = { x: -999, y: -999 };                                     // настоящий курсор (без захвата)
+const btn = { x: 0, y: 0, vx: 0, vy: 0, w: 0, h: 0 };                 // кнопка «Отменить»
 let locked = false, wipeActive = false;
+
 function lockPointer(){
   try { const p = document.documentElement.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
 }
@@ -587,28 +605,76 @@ document.addEventListener('pointerlockchange', () => {
   $('fake').classList.toggle('on', locked && wipeActive);
 });
 document.addEventListener('mousemove', e => {
-  if (!locked) return;
-  cur.x = clamp(cur.x + e.movementX, 0, W);
-  cur.y = clamp(cur.y + e.movementY, 0, H);
+  if (locked){
+    cur.x = clamp(cur.x + e.movementX, 0, W);
+    cur.y = clamp(cur.y + e.movementY, 0, H);
+  } else {
+    real.x = e.clientX; real.y = e.clientY;
+  }
 });
+
+function placeButton(){
+  const b = $('cancel');
+  btn.w = b.offsetWidth; btn.h = b.offsetHeight;
+  btn.x = innerWidth / 2 - btn.w / 2;
+  btn.y = innerHeight * 0.6 - btn.h / 2;
+  btn.vx = btn.vy = 0;
+  applyBtn();
+}
+function applyBtn(){ $('cancel').style.transform = `translate(${btn.x}px,${btn.y}px)`; }
+
+/* Обманные курсоры: стандартные формы Windows, сами шевелятся, не кликаются */
+const DECOY_SVG = {
+  arrow: '<svg width="26" height="26" viewBox="0 0 24 24"><path d="M3 2 L3 19 L8 14.5 L11 21 L14 19.8 L11 13.5 L17.5 13.5 Z" fill="#fff" stroke="#000" stroke-width="1.2"/></svg>',
+  hand: '<svg width="26" height="26" viewBox="0 0 24 24"><path d="M9 2.5a1.6 1.6 0 0 1 3.2 0V10l.6-.1a1.8 1.8 0 0 1 2 1.5l.4-.1a1.7 1.7 0 0 1 2 1.4l.3-.1a1.6 1.6 0 0 1 1.9 1.4V17c0 3-2.2 5-5.2 5h-1.2c-2 0-3.2-1-4.4-2.6L3.6 14.5a1.6 1.6 0 0 1 2.3-2.2L9 15z" fill="#fff" stroke="#000" stroke-width="1.1"/></svg>',
+  ibeam: '<svg width="20" height="26" viewBox="0 0 20 26"><path d="M4 1h12M4 25h12M10 1v24" stroke="#fff" stroke-width="4"/><path d="M4 1h12M4 25h12M10 1v24" stroke="#000" stroke-width="1.6"/></svg>',
+  busy: '<svg width="26" height="26" viewBox="0 0 24 24" class="spin"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="4"/><circle cx="12" cy="12" r="9" fill="none" stroke="#000" stroke-width="1.5" stroke-dasharray="14 42"/></svg>',
+  resize: '<svg width="28" height="20" viewBox="0 0 28 20"><path d="M2 10h24M2 10l6-6M2 10l6 6M26 10l-6-6M26 10l-6 6" stroke="#fff" stroke-width="4" fill="none"/><path d="M2 10h24M2 10l6-6M2 10l6 6M26 10l-6-6M26 10l-6 6" stroke="#000" stroke-width="1.5" fill="none"/></svg>'
+};
+let decoys = [];
+function makeDecoys(n){
+  clearDecoys();
+  const kinds = ['arrow','arrow','arrow','arrow','hand','hand','ibeam','busy','resize'];
+  for (let i = 0; i < n; i++){
+    const el = document.createElement('div');
+    el.className = 'decoy';
+    el.innerHTML = DECOY_SVG[rnd(kinds)];
+    $('wipe').appendChild(el);
+    decoys.push({ el, x: Math.random() * innerWidth, y: Math.random() * innerHeight, tx: 0, ty: 0, next: 0 });
+  }
+}
+function clearDecoys(){ decoys.forEach(d => d.el.remove()); decoys = []; }
+function updateDecoys(now){
+  for (const d of decoys){
+    if (now > d.next){
+      d.tx = Math.random() * innerWidth;
+      d.ty = Math.random() * innerHeight;
+      d.next = now + randInt(400, 2200);
+      if (Math.random() < 0.25){ d.x = d.tx; d.y = d.ty; }   // иногда дёргается
+    }
+    d.x += (d.tx - d.x) * 0.04;
+    d.y += (d.ty - d.y) * 0.04;
+    d.el.style.transform = `translate(${d.x}px,${d.y}px)`;
+  }
+}
+
 function repelFrame(){
   if (!wipeActive) return;
+  const now = performance.now();
+  updateDecoys(now);
+  const RANGE = 340;
+  const bx = btn.x + btn.w / 2, by = btn.y + btn.h / 2;
+
   if (locked){
-    const r = $('cancel').getBoundingClientRect();
-    const pad = 24;
-    const L = r.left - pad, R = r.right + pad, T = r.top - pad, B = r.bottom + pad;
-    const bx = (r.left + r.right) / 2, by = (r.top + r.bottom) / 2;
+    // курсор отлетает от кнопки, сама кнопка на месте
     const dx = cur.x - bx, dy = cur.y - by, d = Math.hypot(dx, dy) || 1;
-    const RANGE = 340;
     if (d < RANGE){
-      const s = (RANGE - d) / RANGE;
-      const k = 3 + s * s * 40;
-      cur.vx += dx / d * k;
-      cur.vy += dy / d * k;
+      const s = (RANGE - d) / RANGE, k = 3 + s * s * 40;
+      cur.vx += dx / d * k; cur.vy += dy / d * k;
     }
     cur.vx *= 0.86; cur.vy *= 0.86;
     cur.x += cur.vx; cur.y += cur.vy;
-    // жёсткая граница вокруг кнопки: курсор не может в неё войти
+    const L = btn.x - 24, R = btn.x + btn.w + 24, T = btn.y - 24, B = btn.y + btn.h + 24;
     if (cur.x > L && cur.x < R && cur.y > T && cur.y < B){
       const m = Math.min(cur.x - L, R - cur.x, cur.y - T, B - cur.y);
       if (m === cur.x - L){ cur.x = L; cur.vx = -(Math.abs(cur.vx) + 4); }
@@ -618,6 +684,19 @@ function repelFrame(){
     }
     cur.x = clamp(cur.x, 0, W); cur.y = clamp(cur.y, 0, H);
     $('fake').style.transform = `translate(${cur.x}px,${cur.y}px)`;
+  } else {
+    // без захвата: кнопка убегает от настоящего курсора
+    const dx = bx - real.x, dy = by - real.y;
+    const d = Math.hypot(dx, dy) || 1;
+    if (real.x > -900 && d < RANGE){
+      const s = (RANGE - d) / RANGE, k = 2 + s * s * 38;
+      btn.vx += dx / d * k; btn.vy += dy / d * k;
+    }
+    btn.vx *= 0.88; btn.vy *= 0.88;
+    btn.x += btn.vx; btn.y += btn.vy;
+    btn.x = clamp(btn.x, 8, innerWidth - btn.w - 8);
+    btn.y = clamp(btn.y, 8, innerHeight - btn.h - 8);
+    applyBtn();
   }
   requestAnimationFrame(repelFrame);
 }
@@ -726,6 +805,8 @@ async function wipePhase(){
   wipeActive = true;
   cur.x = innerWidth / 2; cur.y = innerHeight / 2; cur.vx = 0; cur.vy = 0;
   $('fake').classList.toggle('on', locked);
+  placeButton();
+  makeDecoys(14);
   requestAnimationFrame(repelFrame);
 
   // дрон во время всей загрузки (монотонный)
@@ -779,6 +860,8 @@ async function wipePhase(){
 /* ---------- Финал ---------- */
 function showEnding(){
   if (document.pointerLockElement) document.exitPointerLock();
+  wipeActive = false;
+  clearDecoys();
   $('wipe').classList.remove('on');
   $('scare').classList.remove('on');
   $('glitch').classList.remove('on');
