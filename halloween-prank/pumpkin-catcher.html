@@ -2314,7 +2314,9 @@ async function startScare(){
 // Цифры и знаки не трогаем: по ним видно, что процесс идёт.
 const GLYPHS = '⌰⏃⌇⏚⌁⌘⍙⎔⏛⏦⌿⍜⎍⌖⍾⎎ℵ⊕⊗⋔⋉⌷⍋⎌⌾⍚⏥⌻⍟⎓⌑';
 let glyphEpoch = 0, glyphEpochAt = 0;
-let wipeCorrupt = 0;      // сюда пишется сила распада по ходу удаления
+let wipeCorrupt = 0;      // сила распада текста по ходу удаления
+let wipeLevel = 0.06;     // общий уровень битости: 0 — чисто, 1 — максимум
+let wipeCounting = true;  // идёт подсчёт файлов (минимум битости, на фоне лицо)
 
 function glyphHash(a, b, c){
   let h = (a * 374761393 + b * 668265263 + c * 2147483647) | 0;
@@ -2695,15 +2697,22 @@ function makeCrack(){
 function drawWipeBg(){
   if (frozen()) return;
   wbx.fillStyle = '#000'; wbx.fillRect(0, 0, GLW, GLH);
-  drawBase(IS_MOBILE ? rnd(['phone', 'anr', 'face']) : rnd(['desktop', 'dump', 'face']));
-  corruptInto(tmpx, bctx, 0.9);
-  const frags = randInt(3, 6);
+  // при подсчёте файлов на фоне лицо скримера и почти нет сбоев
+  const L = wipeLevel;
+  const kind = wipeCounting
+    ? 'face'
+    : (Math.random() < Math.max(0.10, 0.45 - L * 0.35) ? 'face'
+      : (IS_MOBILE ? rnd(['phone', 'anr', 'dump']) : rnd(['desktop', 'dump', 'bsod'])));
+  drawBase(kind);
+  corruptInto(tmpx, bctx, 0.08 + L * 0.92);
+  const frags = 1 + Math.round(L * 6) + randInt(0, 1);
   for (let i = 0; i < frags; i++){
     const fw = randInt(40, 180), fh = randInt(20, 90);
     const fx = randInt(0, GLW - fw), fy = randInt(0, GLH - fh);
     wbx.drawImage(tmpCv, fx, fy, fw, fh, fx, fy, fw, fh);
   }
-  for (let i = 0; i < 10; i++){
+  const smalls = 2 + Math.round(L * 12);
+  for (let i = 0; i < smalls; i++){
     const fw = randInt(4, 30), fh = randInt(2, 8);
     const fx = randInt(0, GLW - fw), fy = randInt(0, GLH - fh);
     wbx.drawImage(tmpCv, fx, fy, fw, fh, fx, fy, fw, fh);
@@ -2717,25 +2726,33 @@ function drawWipeBg(){
     r.y = clamp(r.y + (Math.random() - 0.5) * 4, 0, GLH - r.h);
     drawLcdZone(r.x * sx, r.y * sy, r.w * sx, r.h * sy);
   }
+  // ближе к 100% появляются дополнительные вспышки битых зон
+  const extra = L > 0.85 ? 2 : (L > 0.55 ? 1 : 0);
+  for (let i = 0; i < extra; i++){
+    const ew = randInt(20, 80), eh = randInt(Math.floor(GLH * 0.3), GLH);
+    drawLcdZone(randInt(0, GLW - ew) * sx, randInt(0, GLH - eh) * sy, ew * sx, eh * sy);
+  }
 }
 
 // Весь экран дёргается: сдвиги, инверсия, RGB-разрывы, полупрозрачность кнопки
 function glitchTick(){
   if (frozen()){ glitchTimer = setTimeout(glitchTick, 120); return; }
   const scene = document.querySelector('.scene');
-  scene.style.transform = `translate(${Math.random() < 0.5 ? randInt(-18, 18) : 0}px,${Math.random() < 0.3 ? randInt(-6, 6) : 0}px) skewX(${Math.random() < 0.2 ? randInt(-6, 6) : 0}deg)`;
-  scene.style.filter = Math.random() < 0.15 ? 'invert(1)' : 'none';
-  scene.style.opacity = Math.random() < 0.15 ? '0.55' : '1';
-  const rgb = Math.random() < 0.4
+  const L = wipeLevel;
+  const amp = 3 + L * 20;
+  scene.style.transform = `translate(${Math.random() < 0.5 ? randInt(-amp, amp) : 0}px,${Math.random() < 0.3 ? randInt(-amp * 0.35, amp * 0.35) : 0}px) skewX(${Math.random() < 0.2 ? randInt(-12, 12) * (0.3 + L) : 0}deg)`;
+  scene.style.filter = Math.random() < 0.03 + L * 0.2 ? 'invert(1)' : 'none';
+  scene.style.opacity = Math.random() < 0.03 + L * 0.18 ? String(1 - 0.45 * L) : '1';
+  const rgb = Math.random() < 0.1 + L * 0.5
     ? `${randInt(-6, 6)}px 0 rgba(255,0,0,.8), ${randInt(-6, 6)}px 0 rgba(0,255,255,.8)` : 'none';
   $('wipeTitle').style.textShadow = rgb;
   $('pct').style.textShadow = rgb;
   $('wipeFile').style.textShadow = rgb;
   if (!cancelBtn.classList.contains('pressed')) cancelBtn.textContent = corruptText('Отменить', wipeCorrupt);
-  cancelBtn.style.transform = `translate(${randInt(-18, 18)}px,${randInt(-6, 6)}px) skewX(${Math.random() < 0.3 ? randInt(-8, 8) : 0}deg)`;
-  cancelBtn.style.filter = Math.random() < 0.2 ? 'invert(1)' : 'none';
-  cancelBtn.style.opacity = Math.random() < 0.2 ? '0.4' : '1';
-  glitchTimer = setTimeout(glitchTick, randInt(80, 220));
+  cancelBtn.style.transform = `translate(${randInt(-amp, amp)}px,${randInt(-amp * 0.35, amp * 0.35)}px) skewX(${Math.random() < 0.3 ? randInt(-8, 8) * (0.3 + L) : 0}deg)`;
+  cancelBtn.style.filter = Math.random() < 0.04 + L * 0.24 ? 'invert(1)' : 'none';
+  cancelBtn.style.opacity = Math.random() < 0.04 + L * 0.22 ? '0.4' : '1';
+  glitchTimer = setTimeout(glitchTick, randInt(Math.round(240 - L * 160), Math.round(420 - L * 260)));
 }
 
 // Полосы разрыва: копии всего экрана, сдвинутые и с битыми цветами
@@ -2744,26 +2761,27 @@ function refreshTear(){
   tearLayer.innerHTML = '';
   bandRects = [];
   const scene = document.querySelector('.scene');
-  const N = randInt(4, 9);
+  const L = wipeLevel;
+  const N = clamp(1 + Math.round(L * 11) + randInt(0, 1), 1, 12);
   for (let i = 0; i < N; i++){
     const c = scene.cloneNode(true);
     const bc = btnWrapEl.cloneNode(true);
     bc.style.position = 'absolute';
     // в основном узкие, иногда широкие
-    const wP = Math.random() < 0.25 ? randInt(12, 26) : randInt(1, 8);
+    const wP = Math.random() < 0.15 + L * 0.3 ? randInt(12, 26) : randInt(1, 8);
     const leftP = Math.random() * (100 - wP);
     // почти на всю высоту, иногда короче и с рваным обрезом сверху или снизу
     const full = Math.random() < 0.6;
     const topP = full ? 0 : Math.random() * 40;
     const bottomP = full ? 0 : Math.random() * 30;
-    const dy = Math.random() < 0.5 ? 0 : randInt(-26, 26);
+    const dy = Math.random() < 0.5 ? 0 : randInt(-Math.round(8 + L * 26), Math.round(8 + L * 26));
     const tx = randInt(-6, 6);
     const band = document.createElement('div');
     band.className = 'tband';
     band.style.clipPath = `inset(${topP.toFixed(1)}% ${(100 - leftP - wP).toFixed(1)}% ${bottomP.toFixed(1)}% ${leftP.toFixed(1)}%)`;
     band.style.transform = `translate(${tx}px, ${dy}px)`;
     band.style.background = Math.random() < 0.5 ? '#000' : 'transparent';
-    band.style.filter = Math.random() < 0.15 ? 'invert(1)' : 'none';
+    band.style.filter = Math.random() < 0.05 + L * 0.25 ? 'invert(1)' : 'none';
     band.appendChild(c);
     band.appendChild(bc);
     tearLayer.appendChild(band);
@@ -2773,16 +2791,24 @@ function refreshTear(){
 
 function startWipeFx(){
   negRegions = [0, 1].map(() => { const h = randInt(Math.floor(GLH * 0.6), GLH); return { x: randInt(0, GLW - 90), y: randInt(0, GLH - h), w: randInt(24, 90), h }; });
+  wipeLevel = 0.06; wipeCounting = true;
   drawWipeBg();
-  wipeBgTimer = setInterval(drawWipeBg, 200);
+  // частота обновления фона растёт вместе с битостью
+  const bgLoop = () => {
+    wipeBgTimer = setTimeout(() => { drawWipeBg(); bgLoop(); }, Math.round(340 - wipeLevel * 220));
+  };
+  bgLoop();
   glitchTick();
   refreshTear();
-  tearTimer = setInterval(refreshTear, 260);
+  const tearLoop = () => {
+    tearTimer = setTimeout(() => { refreshTear(); tearLoop(); }, Math.round(420 - wipeLevel * 300));
+  };
+  tearLoop();
 }
 function stopWipeFx(){
-  clearInterval(wipeBgTimer); wipeBgTimer = null;
+  clearTimeout(wipeBgTimer); wipeBgTimer = null;
   clearTimeout(glitchTimer); glitchTimer = null;
-  clearInterval(tearTimer); tearTimer = null;
+  clearTimeout(tearTimer); tearTimer = null;
   tearLayer.innerHTML = '';
   const scene = document.querySelector('.scene');
   scene.style.transform = ''; scene.style.filter = ''; scene.style.opacity = '';
@@ -2790,6 +2816,7 @@ function stopWipeFx(){
   cancelBtn.style.transform = ''; cancelBtn.style.filter = ''; cancelBtn.style.opacity = '';
   cancelBtn.classList.remove('pressed', 'deny');
   wipeCorrupt = 0;
+  wipeLevel = 0.06; wipeCounting = true;
   cancelBtn.textContent = 'Отменить';
   clearTimeout(pressTimer); clearTimeout(pressSubTimer);
   $('wipeTitle').style.textShadow = ''; $('pct').style.textShadow = ''; $('wipeFile').style.textShadow = '';
@@ -2830,6 +2857,7 @@ async function wipePhase(){
     if (Math.random() < 0.1) await sleep(500 + Math.random() * 900);
     if (Math.random() < 0.05){ const ms = 800 + Math.random() * 1200; hang(ms); await sleep(ms); }
     count = Math.min(TOTAL, count + randInt(300, 1200));
+    wipeLevel = 0.06 + (count / TOTAL) * 0.10;   // при анализе файлов битость минимальная
     $('pct').textContent = `Найдено файлов: ${count.toLocaleString('ru-RU')}`;
     $('wipeFile').textContent = pathNow();
   }
@@ -2854,6 +2882,8 @@ async function wipePhase(){
     // ближе к 50% буквы начинают заменяться символами, к 100% распадается всё
     const cs = corruptStrength(p);
     wipeCorrupt = cs;
+    wipeCounting = false;
+    wipeLevel = 0.16 + (p / 100) * 0.94;          // к 100% битость доходит до максимума и выше
     $('wipeTitle').textContent = corruptText(titleBase, cs);
     $('wipeSub').textContent = corruptText(subBase, cs);
     $('pct').textContent = corruptText(
@@ -2931,7 +2961,7 @@ window.addEventListener('pageshow', () => { if (leftPage){ leftPage = false; sho
 function showEnding(withMusic){
   if (document.pointerLockElement) document.exitPointerLock();
   wipeActive = false;
-  clearInterval(wipeBgTimer); wipeBgTimer = null;
+  clearTimeout(wipeBgTimer); wipeBgTimer = null;
   clearDecoys();
   $('cursors').classList.remove('on');
   $('wipe').classList.remove('on');
