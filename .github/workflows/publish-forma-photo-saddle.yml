@@ -1,0 +1,108 @@
+name: Опубликовать кронштейн по фотографии
+
+on:
+  push:
+    branches:
+      - arena/4e4defc4-hello-program
+    paths:
+      - 'forma/showcase/sources/photo/saddle_bracket.forma'
+      - '.github/workflows/publish-forma-photo-saddle.yml'
+      - '.github/forma-photo-saddle-readme.txt'
+      - '.github/forma-photo-saddle-release-notes.md'
+      - '.github/forma-photo-saddle-reference.png'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: forma-photo-saddle-release
+  cancel-in-progress: false
+
+jobs:
+  package-and-release:
+    name: GLB + Forma + ZIP
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: forma-photo-saddle-bracket-1
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: forma/requirements.txt
+
+      - name: Install geometry dependencies
+        run: pip install -r forma/requirements.txt
+
+      - name: Build and package only the requested model
+        env:
+          PYTHONPATH: forma
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+          import shutil
+          import zipfile
+
+          from forma.run import build
+
+          source = Path('forma/showcase/sources/photo/saddle_bracket.forma')
+          result = build(source.read_text(encoding='utf-8'), analyze_model=False)
+          if not result.ok:
+              raise SystemExit(f'{result.error}\n{result.log}')
+          solids = result.visible_solids()
+          if len(solids) != 1:
+              raise SystemExit(f'Ожидался один solid, получено {len(solids)}')
+          body = solids[0].manifold
+          if str(body.status()) != 'Error.NoError' or body.genus() != 2:
+              raise SystemExit(f'Некорректная деталь: {body.status()}, genus={body.genus()}')
+
+          release = Path('release')
+          release.mkdir()
+          base = 'Forma3D-photo-saddle-bracket'
+          glb = release / f'{base}.glb'
+          forma = release / f'{base}.forma'
+          glb.write_bytes(result.glb())
+          shutil.copy2(source, forma)
+          archive = release / f'{base}.zip'
+          with zipfile.ZipFile(archive, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+              zf.write(glb, glb.name)
+              zf.write(forma, forma.name)
+              zf.write('.github/forma-photo-saddle-reference.png', 'reference.png')
+              zf.write('.github/forma-photo-saddle-readme.txt', 'README_RU.txt')
+          with zipfile.ZipFile(archive) as zf:
+              assert zf.testzip() is None
+              assert zf.namelist() == [glb.name, forma.name, 'reference.png', 'README_RU.txt']
+              assert zf.read(glb.name) == glb.read_bytes()
+              assert zf.read(forma.name) == forma.read_bytes()
+          for path in sorted(release.iterdir()):
+              digest = hashlib.sha256(path.read_bytes()).hexdigest()
+              print(f'{path.name}: {path.stat().st_size} B; SHA-256 {digest}')
+          PY
+
+      - name: Create or update the stable release
+        run: |
+          set -euo pipefail
+          cp .github/forma-photo-saddle-release-notes.md /tmp/forma-photo-notes.md
+          printf '\nИсходники: commit `%s`.\n' "$GITHUB_SHA" >> /tmp/forma-photo-notes.md
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title 'Кронштейн по фотографии — GLB + Forma' \
+              --notes-file /tmp/forma-photo-notes.md
+            gh release upload "$RELEASE_TAG" release/* --clobber
+          else
+            gh release create "$RELEASE_TAG" release/* \
+              --target "$GITHUB_SHA" \
+              --title 'Кронштейн по фотографии — GLB + Forma' \
+              --notes-file /tmp/forma-photo-notes.md
+          fi
+          gh release view "$RELEASE_TAG" --json url,assets \
+            --jq '{url, assets: [.assets[] | {name, size}]}'
