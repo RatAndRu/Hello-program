@@ -610,6 +610,34 @@ function stopScratch(){
 
 function popSound(){ note(880, 0.09, 'square', 0.03); }
 function thudSound(){ note(90, 0.3, 'sine', 0.25); }
+// Хруст ломающейся тыквы: затухающий шум через полосовой фильтр и пара щелчков корки
+function crunchSound(){
+  const a = ac(), t = a.currentTime;
+  const len = Math.max(1, Math.floor(a.sampleRate * 0.22));
+  const buf = a.createBuffer(1, len, a.sampleRate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.2);
+  const src = a.createBufferSource(), bp = a.createBiquadFilter(), g = a.createGain();
+  src.buffer = buf;
+  bp.type = 'bandpass'; bp.frequency.value = 1700; bp.Q.value = 0.9;
+  g.gain.setValueAtTime(0.14, t);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + 0.22);
+  src.connect(bp).connect(g).connect(out(a));
+  if (src.start) src.start(t);
+  // треск корки: короткие щелчки поверх шума
+  for (let i = 0; i < 3; i++){
+    const o = a.createOscillator(), gg = a.createGain();
+    const st = t + 0.012 + Math.random() * 0.09;
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(300 + Math.random() * 500, st);
+    o.frequency.exponentialRampToValueAtTime(90, st + 0.05);
+    gg.gain.setValueAtTime(0.0001, st);
+    gg.gain.linearRampToValueAtTime(0.08, st + 0.004);
+    gg.gain.exponentialRampToValueAtTime(0.0001, st + 0.07);
+    o.connect(gg).connect(out(a));
+    o.start(st); o.stop(st + 0.09);
+  }
+}
 // Голова скелета жуёт тыкву: челюсть, крошки, хруст
 function skullEat(){
   const now = performance.now();
@@ -1047,6 +1075,7 @@ function update(dt, now){
       const lit = pk.glow && !pk.faded;
       if (lit) spawnSparks(pk.x, H - 30, 12);
       spawnShards(pk.x, H - 6, lit ? 16 : 11, lit ? 1.25 : 1);
+      crunchSound();
       pumpkins.splice(i, 1); loseLife();
       if (lives <= 0) return;
     }
