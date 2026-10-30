@@ -1539,13 +1539,15 @@ function onPointer(e){
     // нажатие по руке или черепу
     const hitProp = (h) => h && Math.hypot(h.x - e.clientX, h.y - e.clientY) < h.r;
     if (hitProp(propState.handHit)){
-      propState.handStart = now; propState.handUntil = now + 3000;
+      const t = performance.now();
+      propState.handStart = t; propState.handUntil = t + 3000;
       waveSound();
       addBurst(propState.handHit.x, propState.handHit.y - 30, '👋');
       return;
     }
     if (hitProp(propState.skullHit)){
-      propState.skullStart = now; propState.skullUntil = now + 3000;
+      const t = performance.now();
+      propState.skullStart = t; propState.skullUntil = t + 3000;
       skullSound();
       addBurst(propState.skullHit.x, propState.skullHit.y - 40, '💀');
       return;
