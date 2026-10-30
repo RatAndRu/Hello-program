@@ -1,0 +1,119 @@
+name: Опубликовать готовые CI-артефакты Forma
+
+# Публикация уже собранного и проверенного Windows-прогона без повторной
+# сборки EXE. Нужна также при восстановлении после сетевого/релизного сбоя.
+on:
+  push:
+    paths:
+      - '.github/forma-release-publish-request.json'
+  workflow_dispatch:
+    inputs:
+      source_run:
+        description: 'ID успешно собранного Windows-прогона'
+        required: true
+        type: string
+      release_tag:
+        description: 'Новый release tag'
+        required: true
+        type: string
+      version:
+        description: 'Версия Forma'
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      SOURCE_RUN: ${{ inputs.source_run }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Получить запрос и notes
+        uses: actions/checkout@v4
+
+      - name: Прочитать push-запрос
+        if: github.event_name == 'push'
+        run: |
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+          request = json.loads(Path('.github/forma-release-publish-request.json').read_text(encoding='utf-8'))
+          values = {key: str(request.get(key, '')).strip()
+                    for key in ('source_run', 'release_tag', 'version')}
+          if not values['source_run'].isdigit():
+              raise SystemExit('source_run должен быть числовым ID')
+          for key in ('release_tag', 'version'):
+              if not re.fullmatch(r'[A-Za-z0-9._-]+', values[key]):
+                  raise SystemExit(f'Некорректное поле {key}')
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as out:
+              for key, value in values.items():
+                  out.write(f'{key.upper()}={value}\n')
+          PY
+
+      - name: Скачать готовый CI-артефакт без пересборки
+        uses: actions/download-artifact@v4
+        with:
+          name: Forma3D-windows
+          path: artifact
+          run-id: ${{ env.SOURCE_RUN }}
+          repository: ${{ github.repository }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Собрать плоский набор релизных файлов
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import shutil
+          source = Path('artifact')
+          target = Path('release')
+          target.mkdir()
+          def wanted(path):
+              name = path.name
+              return (name == 'Forma3D.exe'
+                      or (name.startswith('Forma3D-') and name.endswith('-windows.zip'))
+                      or name.endswith(('.glb', '.forma'))
+                      or name in {'human_skeleton.LICENSE.txt',
+                                  'human_skeleton_original.audit.json'})
+          files = [p for p in source.rglob('*') if p.is_file() and wanted(p)]
+          for path in files:
+              destination = target / path.name
+              if destination.exists():
+                  raise SystemExit(f'Дублирующееся имя в артефакте: {path.name}')
+              shutil.copy2(path, destination)
+          missing = [name for name in ('Forma3D.exe',) if not (target / name).is_file()]
+          if not list(target.glob('*.glb')):
+              missing.append('GLB')
+          if not list(target.glob('*.forma')):
+              missing.append('Forma')
+          windows = list(target.glob('Forma3D-*-windows.zip'))
+          if len(windows) != 1:
+              missing.append('ровно один Forma3D-*-windows.zip')
+          if missing:
+              raise SystemExit('В CI-артефакте отсутствует: ' + ', '.join(missing))
+          print(f'Подготовлено {len(files)} файлов из проверенного CI-артефакта')
+          for path in sorted(target.iterdir()):
+              print(f'{path.name}: {path.stat().st_size} B')
+          PY
+
+      - name: Создать релиз или докачать недостающие assets
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --title "Форма 3D ${VERSION} — Windows EXE (CI ${SOURCE_RUN})" \
+              --notes-file .github/forma-release-notes.md
+            gh release upload "$RELEASE_TAG" release/* --clobber
+          else
+            gh release create "$RELEASE_TAG" release/* \
+              --prerelease \
+              --title "Форма 3D ${VERSION} — Windows EXE (CI ${SOURCE_RUN})" \
+              --notes-file .github/forma-release-notes.md
+          fi
+          gh release view "$RELEASE_TAG" --json url,assets \
+            --jq '{url, assets: [.assets[].name]}'
