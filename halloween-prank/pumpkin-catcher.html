@@ -835,6 +835,8 @@ function resetGame(){
 }
 function startGame(){
   ac();
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  runAborted = false; leaving = false;
   gameStarted = true;
   $('start').classList.remove('on');
   $('ending').classList.remove('on');
@@ -1545,6 +1547,7 @@ function stopWipeFx(){
 }
 
 async function wipePhase(){
+  if (runAborted) return;
   $('wipe').classList.add('on');
   wipeActive = true;
   cur.x = innerWidth / 2; cur.y = innerHeight / 2; cur.vx = 0; cur.vy = 0;
@@ -1561,6 +1564,7 @@ async function wipePhase(){
   dg.gain.value = 0.05;
   drone.connect(dg).connect(a.destination);
   drone.start();
+  activeDrone = drone;
 
   $('wipeTitle').textContent = 'Подготовка к удалению файлов…';
   $('wipeSub').textContent = IS_MOBILE ? 'Подсчёт файлов в памяти телефона. Не выключайте телефон.' : 'Подсчёт файлов на компьютере. Не выключайте компьютер.';
@@ -1571,7 +1575,7 @@ async function wipePhase(){
 
   // 1) подсчёт файлов — с кружочком загрузки
   let count = 0;
-  while (count < TOTAL){
+  while (count < TOTAL && !runAborted){
     await sleep(90);
     if (Math.random() < 0.1) await sleep(500 + Math.random() * 900);
     if (Math.random() < 0.05){ const ms = 800 + Math.random() * 1200; hang(ms); await sleep(ms); }
@@ -1587,7 +1591,7 @@ async function wipePhase(){
   $('wipeSub').textContent = IS_MOBILE ? 'Не выключайте телефон' : 'Не выключайте компьютер';
   $('barBox').style.display = 'block';
   let p = 0, deleted = 0;
-  while (p < 100){
+  while (p < 100 && !runAborted){
     await sleep(120);
     if (Math.random() < 0.08) await sleep(600 + Math.random() * 1000);
     if (Math.random() < 0.04){ const ms = 800 + Math.random() * 1400; hang(ms); await sleep(ms); }
@@ -1600,6 +1604,7 @@ async function wipePhase(){
     if (Math.random() < 0.5) note(1200 + Math.random() * 600, 0.02, 'square', 0.02);
   }
   await sleep(1500);
+  if (runAborted) return;
 
   drone.stop();
   stopWipeFx();
@@ -1608,11 +1613,23 @@ async function wipePhase(){
 
 /* ---------- Уход: Esc, Windows, выход из полного экрана, смена окна или вкладки ---------- */
 let gameStarted = false, leaveTimer = null, leftPage = false;
+let runAborted = false, leaving = false, activeDrone = null;
 function showLeave(){
-  if (!gameStarted || $('ending').classList.contains('on')) return;
+  if (!gameStarted || leaving || $('ending').classList.contains('on')) return;
+  leaving = true;
+  if (audioCtx && audioCtx.state === 'running') audioCtx.suspend();   // звук сразу останавливается
   $('leave').classList.add('on');
   clearTimeout(leaveTimer);
-  leaveTimer = setTimeout(() => $('leave').classList.remove('on'), 6000);
+  leaveTimer = setTimeout(finishLeave, 6000);
+}
+// после экрана ухода — классическая концовка; всё недоигранное останавливается
+function finishLeave(){
+  runAborted = true;
+  if (activeDrone){ try { activeDrone.stop(); } catch (e) {} activeDrone = null; }
+  try { stopWipeFx(); } catch (e) {}
+  $('leave').classList.remove('on');
+  showEnding();
+  leaving = false;
 }
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' || e.key === 'Meta' || e.key === 'OS' || e.key === 'Super') showLeave();
