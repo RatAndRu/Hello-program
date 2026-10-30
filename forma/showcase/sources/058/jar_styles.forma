@@ -1,0 +1,4 @@
+# Веб-стенд 0.58: классический, конический и амфорный силуэты.
+классическая = jar style=классическая form=округлая diameter=80 height=110 bottom=углубление ribs=40 thread=да cap=нет transmission=0 color=#9fb8b0
+коническая = jar style=коническая form=цилиндр diameter=80 height=110 bottom=углубление ribs=40 thread=да cap=нет transmission=0 at=[110,0,0] color=#b4a58e
+амфора = jar style=амфора form=округлая diameter=80 height=110 bottom=углубление ribs=40 thread=да cap=нет transmission=0 at=[220,0,0] color=#a99aab

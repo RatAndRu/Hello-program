@@ -81,7 +81,7 @@ jobs:
         run: |
           python tools/build_skeleton_original.py
 
-      - name: Экспортировать модели 0.53–0.57 в GLB и Forma
+      - name: Экспортировать модели 0.53–0.58 в GLB и Forma
         working-directory: forma
         run: |
           python - <<'PY'
@@ -105,8 +105,14 @@ jobs:
                                ('057/jar', 'jar'),
                                ('057/bottle', 'bottle'),
                                ('057/lids', 'lids'),
-                               ('057/switch', 'switch')):
-              source_dir = Path('examples') if stem == 'thinkpad_x1' else Path('showcase/sources')
+                               ('057/switch', 'switch'),
+                               ('058/bottle_styles', 'bottle-styles'),
+                               ('058/petaloid_bottom', 'petaloid-bottom'),
+                               ('058/jar_styles', 'jar-styles'),
+                               ('living_room_diorama', 'living-room'),
+                               ('train_carriage', 'train-carriage')):
+              source_dir = Path('examples') if stem in (
+                  'thinkpad_x1', 'living_room_diorama', 'train_carriage') else Path('showcase/sources')
               source = source_dir / f'{stem}.forma'
               script = source.read_text(encoding='utf-8')
               result = build(script, analyze_model=False)
@@ -298,6 +304,16 @@ jobs:
             * `Forma3D-…-update-from-….zip` — **только изменённые с прошлого релиза исходники и ресурсы** + манифест; это не бинарный патч EXE. Для обновления готовой программы после изменения кода нужен новый EXE.
             * `human_skeleton.glb` — прежняя адаптация сторонней анатомической модели из 206 костей; рядом публикуется её файл лицензии.
             * `human_skeleton_original.glb` — новый самостоятельный параметрический скелет Forma, построенный без сторонних сеток; рядом JSON-аудит.
+
+            **Что нового в 0.58 — силуэты сосудов, цельное petaloid-дно и два проекта**
+
+            * в основной список добавлены только прямо запрошенные `living_room_diorama` и `train_carriage`: теперь 20 готовых проектов, без возврата версионных выставок;
+            * `bottle style=универсальная|винная|бургундская|пивная|спортивная` и `jar style=классическая|коническая|амфора` имеют действительно разные профили и пропорции;
+            * `bottom=ножки feet_count=3…8` — цельная литая оболочка с внутренним дном, а не отдельные эллипсоиды; срезы, двугранные углы и реальный WebGL проверены;
+            * `kind`/`material` бутылки не ограничивают геометрические настройки, явные материальные параметры сохраняются; добавлен пресет `металл`;
+            * проверены 122 примитива, 142 карточных сценария и 543 choice-сочетания; исправлены карточки `spikes`, `hair`, `shrinkwrap`, `lid` и гладкое горло пробки;
+            * GLB-экспорт удаляет нулевые треугольники boolean-стыков до разбиения нормалей: резьбовые банки после повторного импорта замкнуты, winding согласован, силуэт сохранён;
+            * пять результатов приложены в GLB+Forma: `bottle-styles`, `petaloid-bottom`, `jar-styles`, `living-room`, `train-carriage`; стенд только изменений: <https://forma3d-ratandru.fly.dev/?v=0.58>.
 
             **Что нового в 0.57 — сосуды, велосипедная цепь и исправленные силуэты**
 

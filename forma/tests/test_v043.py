@@ -241,6 +241,9 @@ class HelpExamplesTest(unittest.TestCase):
                 for object_name, obj in result.scene.objects.items():
                     self.assertFalse(obj.manifold.is_empty(), object_name)
                     self.assertEqual(str(obj.manifold.status()), "Error.NoError", object_name)
+                    self.assertGreater(obj.manifold.volume(), 0.0, object_name)
+                    self.assertGreater(obj.manifold.num_tri(), 0, object_name)
+                    self.assertTrue(np.isfinite(obj.manifold.bounding_box()).all(), object_name)
 
 
 class NumericBoundsTest(unittest.TestCase):

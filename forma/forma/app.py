@@ -1282,6 +1282,33 @@ def _run_uistest(report_path: str | None) -> int:
                       and all(f"op: '{op}'".encode("utf-8") in js_app
                               for op in ("jar", "bottle", "lid", "bicycle_chain"))
                       and b"'/bottle': 'bottle'" not in js_app)
+
+                # 0.58: самостоятельные силуэты, исправленный material и два
+                # проекта, которые пользователь прямо попросил вернуть в меню.
+                revised58 = post("/api/preview", {"script": (
+                    "материальная = bottle style=универсальная material=пластик bottom=ножки\n"
+                    "винная = bottle style=винная at=[90,0,0]\n"
+                    "бургундская = bottle style=бургундская at=[180,0,0]\n"
+                    "пивная = bottle style=пивная at=[270,0,0]\n"
+                    "спортивная = bottle style=спортивная at=[360,0,0]\n"
+                    "классическая = jar style=классическая at=[0,120,0]\n"
+                    "коническая = jar style=коническая at=[100,120,0]\n"
+                    "амфора = jar style=амфора at=[200,120,0]\n"
+                    "крышка = lid kind=банка material=металл at=[300,120,0]")})
+                check("0.58: силуэты, petaloid-дно и material в живом EXE",
+                      revised58.get("ok") is True and revised58.get("objects") == 9,
+                      f"{revised58.get('tris', 0)} трис, {revised58.get('objects', 0)} объектов")
+                for key, marker, minimum in (
+                        ("living_room_diorama", "ГОСТИНАЯ 1:20", 200),
+                        ("train_carriage", "ПЛАЦКАРТНЫЙ ВАГОН 61-4194", 1100)):
+                    example = get("/api/example?key=" + key)
+                    script = example.get("script") or ""
+                    check(f"0.58: готовый проект {key} в ресурсах EXE", marker in script,
+                          f"{len(script)} символов")
+                    built = post("/api/build", {"script": script})
+                    check(f"0.58: готовый проект {key} строится в EXE",
+                          built.get("ok") is True and len(built.get("objects", [])) > minimum,
+                          f"{len(built.get('objects', []))} объектов")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

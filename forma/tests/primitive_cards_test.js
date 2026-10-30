@@ -78,6 +78,25 @@ if (!output.jar.includes('ribs=40') || !output.bottle.includes('closure=нет')
     || !output.lid.includes('kind=банка') || !output.bicycle_chain.includes('pitch=12.7')) {
   throw new Error('новые карточки: истинные параметры потеряны');
 }
+if (!output.jar.includes('style=классическая')
+    || !output.bottle.includes('style=универсальная')
+    || !output.bottle.includes('feet_count=5')) {
+  throw new Error('контейнеры: силуэт или petaloid-настройка не сохранены карточкой');
+}
+if (/material=|handle=|vent=/.test(output.lid)) {
+  throw new Error('lid: баночная крышка получила кастрюльные параметры');
+}
+const bottleTool = tools.find((item) => item.op === 'bottle');
+const corkBottle = shapeScript(bottleTool, cardFor(bottleTool, { closure: 'пробка' }));
+if (corkBottle.includes('thread=') || !corkBottle.includes('closure=пробка')) {
+  throw new Error('bottle: карточка пробки явно оставила резьбу');
+}
+const lidTool = tools.find((item) => item.op === 'lid');
+const potLid = shapeScript(lidTool, cardFor(lidTool, { kind: 'кастрюля' }));
+if (!potLid.includes('material=металл') || !potLid.includes('handle=кнопка')
+    || !potLid.includes('vent=да') || /ribs=|thread=/.test(potLid)) {
+  throw new Error('lid: карточка кастрюльной крышки содержит чужие параметры');
+}
 const track = tools.find((item) => item.op === 'track');
 const noSleepers = shapeScript(track, cardFor(track, { sleepers: false }));
 if (!noSleepers.includes('sleepers=нет') || noSleepers.includes('fasteners=')) {
@@ -105,6 +124,20 @@ if (!lockHandle.includes('form=прямоугольная') || !lockHandle.inclu
 const noLockHandle = shapeScript(handle, cardFor(handle, { lock: false, lock_plug: true }));
 if (noLockHandle.includes('lock_plug=')) {
   throw new Error('door_handle: карточка оставила цилиндр без скважины');
+}
+const spikesTool = tools.find((item) => item.op === 'spikes');
+if (!spikesTool.base.includes('size=[140,140,40]')) {
+  throw new Error('spikes: исходная площадка не вмещает все стороны');
+}
+const hairTool = tools.find((item) => item.op === 'hair');
+const growthChoices = hairTool.params.find((item) => item.k === 'growth').choices;
+if (growthChoices.includes('направление') || growthChoices.includes('огибание')) {
+  throw new Error('hair: карточка содержит несуществующие режимы growth');
+}
+const shrinkwrapTool = tools.find((item) => item.op === 'shrinkwrap');
+const shrinkwrapScript = shapeScript(shrinkwrapTool, cardFor(shrinkwrapTool));
+if (!shrinkwrapScript.includes('gap=-1')) {
+  throw new Error('shrinkwrap: исходный gap несовместим с join=сгладить');
 }
 if (process.argv.includes('--json')) console.log(JSON.stringify(output));
 else console.log(`Сценарии ${wanted.length} карточек примитивов сформированы без подмен параметров.`);

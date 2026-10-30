@@ -5091,9 +5091,10 @@ const TOOL_SHAPES = [
   },
   {
     op: 'jar', name: 'банка', title: 'Банка — стекло и резьба', group: 'Готовые детали',
-    desc: 'Настоящая полость, три формы корпуса, винтовое горлышко, центральное углубление и круговое рифление дна. Крышка — отдельный выбираемый объект.',
+    desc: 'Классический, конический или амфорный силуэт с настоящей полостью, винтовым горлышком, центральным углублением и рифлением дна. Крышка выбирается отдельно.',
     params: [
-      { k: 'form', label: 'корпус', v: 'округлая', kind: 'raw', choices: ['цилиндр', 'округлая', 'квадратная'] },
+      { k: 'style', label: 'силуэт', v: 'классическая', kind: 'raw', choices: ['классическая', 'коническая', 'амфора'] },
+      { k: 'form', label: 'сечение', v: 'округлая', kind: 'raw', choices: ['цилиндр', 'округлая', 'квадратная'] },
       { k: 'diameter', label: '⌀ корпуса', v: 80, step: 2, min: 20, max: 500 },
       { k: 'height', label: 'высота', v: 110, step: 5, min: 30, max: 1000 },
       { k: 'neck_d', label: '⌀ горлышка', v: 58, step: 1, min: 10, max: 250 },
@@ -5105,17 +5106,19 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'bottle', name: 'бутылка', title: 'Бутылка — стекло / пластик', group: 'Готовые детали',
-    desc: 'Стеклянная или пластиковая бутылка с полостью, длинным либо округлым горлом, punt или пятью лапками. Резьбу можно отключить; крышка и пробка выбираются отдельно.',
+    op: 'bottle', name: 'бутылка', title: 'Бутылка — силуэт и цельное дно', group: 'Готовые детали',
+    desc: 'Пять самостоятельных силуэтов, настоящая полость и литое petaloid-дно без приклеенных элементов. Материал меняет только отделку и не ограничивает форму, горло или ножки.',
     params: [
-      { k: 'kind', label: 'материал', v: 'стекло', kind: 'raw', choices: ['стекло', 'пластик'] },
-      { k: 'form', label: 'корпус', v: 'округлая', kind: 'raw', choices: ['цилиндр', 'округлая', 'квадратная'] },
+      { k: 'kind', label: 'отделка', v: 'стекло', kind: 'raw', choices: ['стекло', 'пластик'] },
+      { k: 'style', label: 'силуэт', v: 'универсальная', kind: 'raw', choices: ['универсальная', 'винная', 'бургундская', 'пивная', 'спортивная'] },
+      { k: 'form', label: 'сечение', v: 'округлая', kind: 'raw', choices: ['цилиндр', 'округлая', 'квадратная'] },
       { k: 'neck', label: 'горло', v: 'длинная', kind: 'raw', choices: ['длинная', 'округлая'] },
       { k: 'diameter', label: '⌀ корпуса', v: 70, step: 2, min: 20, max: 500 },
       { k: 'height', label: 'высота', v: 220, step: 5, min: 30, max: 1000 },
       { k: 'neck_d', label: '⌀ горлышка', v: 28, step: 1, min: 10, max: 250 },
       { k: 'wall', label: 'стенка', v: 1, step: 0.1, min: 0.35, max: 8 },
       { k: 'bottom', label: 'дно', v: 'углубление', kind: 'raw', choices: ['плоское', 'углубление', 'ножки'] },
+      { k: 'feet_count', label: 'лепестков дна', v: 5, step: 1, min: 3, max: 8 },
       { k: 'thread', label: 'резьба', v: true, kind: 'bool' },
       { k: 'closure', label: 'закрытие', v: 'нет', kind: 'raw', choices: ['нет', 'крышка', 'пробка'] },
     ],
@@ -5838,8 +5841,8 @@ const TOOL_SHAPES = [
   },
   {
     op: 'spikes', name: 'шипы', title: 'Шипы на объекте', group: 'Поверхность',
-    base: 'box size=[120,80,12]', baseName: 'заготовка',
-    desc: 'Наращивает шипы на выбранной стороне существующего объекта. Без собственной площадки: корни входят в тело и образуют с ним одно целое.',
+    base: 'box size=[140,140,40]', baseName: 'заготовка',
+    desc: 'Наращивает шипы на выбранной стороне существующего объекта. Без собственной площадки: корни входят в тело и образуют с ним одно целое. Основа имеет достаточную площадь для всех сторон при исходных count/base_d.',
     params: [
       { k: 'surface', label: 'поверхность', v: 'верх', kind: 'raw', choices: ['верх', 'низ', 'право', 'лево', 'перёд', 'зад', 'вся'] },
       { k: 'count', label: 'шипов', v: 12, step: 1, min: 1, max: 2000 },
@@ -5868,7 +5871,7 @@ const TOOL_SHAPES = [
       { k: 'thin', label: 'тонкость листа', v: '', auto: true, step: 0.01, min: 0.0001, max: 1 },
       { k: 'count', label: 'корней', v: 48, step: 4, min: 1, max: 800 },
       { k: 'density', label: 'площадь % (вместо числа)', v: '', auto: true, step: 1, min: 0, max: 100 },
-      { k: 'growth', label: 'рост', v: 'авто', kind: 'raw', choices: ['авто', 'нормаль', 'направление', 'вниз', 'огибание', 'свисание'] },
+      { k: 'growth', label: 'рост', v: 'авто', kind: 'raw', choices: ['авто', 'нормаль', 'вниз', 'свисание'] },
       { k: 'dir', label: 'направление XYZ', v: '', auto: true, kind: 'vec' },
       { k: 'tip_align', label: 'сонаправленные кончики', v: '', auto: true, kind: 'vec' },
       { k: 'drape', label: 'огибать и свисать', v: true, kind: 'bool' },
@@ -5938,7 +5941,7 @@ const TOOL_SHAPES = [
     baseName: 'плёнка', targetName: 'цель',
     desc: 'Настоящая проекция вершин второго объекта на первый. gap задаёт нависание/погружение; замкнутая толщина сохраняется.',
     params: [
-      { k: 'gap', label: 'зазор ±', v: 0.4, step: 0.2, min: -1000, max: 1000 },
+      { k: 'gap', label: 'зазор ±', v: -1, step: 0.2, min: -1000, max: 1000 },
       { k: 'direction', label: 'направление', v: 'ближняя', kind: 'raw', choices: ['ближняя', 'нормаль', 'вверх', 'вниз', '+x', '-x', '+y', '-y'] },
       { k: 'amount', label: 'сила', v: 1, step: 0.05, min: 0, max: 1 },
       { k: 'transition', label: 'плавное затухание', v: 0, step: 1, min: 0, max: 5000 },
@@ -6822,6 +6825,20 @@ function shapeParams(tool, card) {
       parts.push(`${p.k}=${raw}`);
     }
   });
+  if (tool.op === 'bottle'
+      && card.querySelector('[data-key="closure"]')?.value.trim() === 'пробка') {
+    // В DSL closure=пробка сам выбирает гладкое горло, если thread не задан.
+    // Не отправляем включённый по умолчанию переключатель как явный thread=да.
+    return parts.filter((part) => !part.startsWith('thread='));
+  }
+  if (tool.op === 'lid') {
+    const kind = card.querySelector('[data-key="kind"]')?.value.trim() || 'банка';
+    return parts.filter((part) => {
+      const key = part.split('=', 1)[0];
+      if (kind !== 'кастрюля') return !['material', 'handle', 'vent'].includes(key);
+      return !['ribs', 'thread'].includes(key);
+    });
+  }
   if (tool.op === 'track'
       && card.querySelector('[data-key="sleepers"]')?.checked === false) {
     // Без шпал креплениям не на чем стоять. Не отправляем противоречащий

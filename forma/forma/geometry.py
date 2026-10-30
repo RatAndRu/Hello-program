@@ -995,8 +995,26 @@ def crease_normals(verts: np.ndarray, faces: np.ndarray, angle_deg: float = 38.0
 #  Экспорт
 # --------------------------------------------------------------------------- #
 
+def _glb_valid_faces(verts: np.ndarray, faces: np.ndarray) -> np.ndarray:
+    """Убирает нулевые треугольники boolean-пересечений перед записью GLB.
+
+    Manifold допускает такие топологические следы на стыках винтового гребня
+    и горловины. После сварки одинаковых координат в Blender/trimesh они дают
+    рёбра с четырьмя гранями, хотя видимая форма и объём правильные. Порог на
+    несколько порядков ниже самого малого полезного треугольника и не меняет
+    силуэт: удаляются только вырожденные грани.
+    """
+    if not len(faces):
+        return faces
+    cross = np.cross(verts[faces[:, 1]] - verts[faces[:, 0]],
+                     verts[faces[:, 2]] - verts[faces[:, 0]])
+    area2 = np.linalg.norm(cross, axis=1)
+    return faces[np.isfinite(area2) & (area2 > 1e-12)]
+
+
 def _glb_geometry(m: mf.Manifold, max_tris: int = 4_000_000, crease_angle: float = 38.0):
     verts, faces = manifold_mesh(m)
+    faces = _glb_valid_faces(verts, faces)
     nv, normals, nf = crease_normals(verts, faces, crease_angle)
     # Z-up -> Y-up
     nv_y = np.stack([nv[:, 0], nv[:, 2], -nv[:, 1]], axis=1)
@@ -1035,6 +1053,7 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
                 obj.manifold, crease_angle=120.0 if obj.meta.get("smooth_normals") else 38.0)
         else:
             verts, faces = manifold_mesh(obj.manifold)
+            faces = _glb_valid_faces(verts, faces)
             verts = np.stack([verts[:, 0], verts[:, 2], -verts[:, 1]], axis=1)
             normals = None
         rgba = color_to_gltf(obj.color)
@@ -1815,6 +1834,7 @@ MATERIAL_PRESETS = {
     "ceramic": {"color": "#dfe4ec", "metal": 0.0, "rough": 0.35, "density": 2.5},
     "керамика": {"color": "#dfe4ec", "metal": 0.0, "rough": 0.35, "density": 2.5},
     "metal": {"color": "#c3c9d4", "metal": 1.0, "rough": 0.28, "density": 7.8},
+    "металл": {"color": "#c3c9d4", "metal": 1.0, "rough": 0.28, "density": 7.8},
     "steel": {"color": "#b9c1cd", "metal": 1.0, "rough": 0.3, "density": 7.85},
     "сталь": {"color": "#b9c1cd", "metal": 1.0, "rough": 0.3, "density": 7.85},
     "aluminum": {"color": "#cdd3dc", "metal": 1.0, "rough": 0.35, "density": 2.7},

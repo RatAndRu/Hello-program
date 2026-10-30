@@ -1,8 +1,8 @@
 """Банки, бутылки и отдельные крышки.
 
 Сосуды строятся одной замкнутой оболочкой с настоящей внутренней полостью,
-а не прозрачным цилиндром.  Профили дна задают внешний punt (углубление),
-пластиковые лапки сплавляются с корпусом, резьба является винтовым объёмом.
+а не прозрачным цилиндром.  Профили дна задают внешний punt (углубление) и литое petaloid-дно,
+резьба является винтовым объёмом.
 Крышка и пробка — самостоятельно выбираемые физические детали.
 """
 
@@ -29,12 +29,16 @@ def _emit(a, name: str, parts: list[tuple], params: dict):
         "pot_lid": "#c5c9ca", "lid_rim": "#9da6ab", "lid_handle": "#343a3e",
         "lid_fastener": "#9da6ab", "lid_vent": "#9da6ab",
     }
+    preset = {}
+    if a.has("material"):
+        from .geometry import MATERIAL_PRESETS
+        preset = MATERIAL_PRESETS.get((a.text("material") or "").strip().lower(), {})
     full = []
     for suffix, manifold, color_key, kind in parts:
-        metal = 0.72 if kind == "jar_lid" else 0.0
-        rough = 0.28 if kind == "jar_lid" else 0.5
-        full.append((suffix, manifold, color_key, colors.get(kind, "#c5c9ca"),
-                     metal, rough, kind))
+        metal = preset.get("metal", 0.72 if kind == "jar_lid" else 0.0)
+        rough = preset.get("rough", 0.28 if kind == "jar_lid" else 0.5)
+        default_color = preset.get("color", colors.get(kind, "#c5c9ca"))
+        full.append((suffix, manifold, color_key, default_color, metal, rough, kind))
     return _assembly(a, name, full, params, "containers")
 
 
@@ -49,33 +53,44 @@ def _xy(radius: float, theta: float, exponent: float) -> tuple[float, float]:
 def _open_vessel_mesh(outer_center_z: float, outer: list[tuple[float, float, float]],
                       inner_center_z: float, inner: list[tuple[float, float, float]],
                       segments: int, ribs: int, rib_depth: float,
-                      rib_height: float) -> mf.Manifold:
-    """Замкнутая стенка открытого сосуда с двумя отдельными донными вершинами.
+                      rib_height: float, petaloid: dict | None = None) -> mf.Manifold:
+    """Одна замкнутая оболочка с полостью и, при необходимости, литым дном.
 
-    Кольца идут от дна ко рту.  Между наружным и внутренним верхними кольцами
-    строится кромка; внутренняя оболочка имеет обратную ориентацию.  Никаких
-    совпадающих осевых колец и вырожденных треугольников здесь нет.
+    Petaloid-лапки задаются высотой точек наружных и внутренних колец дна.
+    Поэтому они являются непрерывной частью корпуса: здесь нет приклеенных
+    сфер, отдельных островов или стыков между разными примитивами.
     """
     if not outer or not inner or len(outer) != len(inner):
         raise GeometryError("Профили сосуда должны содержать одинаковое число колец.")
     verts: list[tuple[float, float, float]] = []
 
-    def add_ring(radius: float, z: float, exponent: float, fluted: bool) -> None:
+    def add_ring(radius: float, z: float, exponent: float, fluted: bool,
+                 ring_index: int) -> None:
         for j in range(segments):
             theta = 2.0 * math.pi * j / segments
             rr = radius
-            if fluted and ribs > 0 and rib_depth > 0 and rib_height > 0 and z <= rib_height:
+            if (fluted and ribs > 0 and rib_depth > 0 and rib_height > 0
+                    and z <= rib_height
+                    and (not petaloid or ring_index >= petaloid["rings"] - 1)):
                 weight = max(0.0, 1.0 - z / rib_height)
                 # Впадины уходят внутрь от исходного профиля: гребни не
                 # выходят за номинальный габарит корпуса.
                 rr += rib_depth * weight * (math.cos(ribs * theta) - 1.0)
             x, y = _xy(rr, theta, exponent)
-            verts.append((x, y, z))
+            zz = z
+            if petaloid and ring_index < petaloid["rings"]:
+                # Вершина лепестка остаётся на исходном профиле, а впадина
+                # между лепестками поднимается. Внутренняя поверхность дна
+                # повторяет ту же волну: толщина не исчезает и оболочки не
+                # пересекаются даже на верхних участках впадин.
+                wave = (0.5 + 0.5 * math.cos(petaloid["count"] * theta)) ** 1.35
+                zz += petaloid["valley"][ring_index] * (1.0 - wave)
+            verts.append((x, y, zz))
 
-    for radius, z, exponent in outer:
-        add_ring(radius, z, exponent, True)
-    for radius, z, exponent in inner:
-        add_ring(radius, z, exponent, False)
+    for ring_index, (radius, z, exponent) in enumerate(outer):
+        add_ring(radius, z, exponent, True, ring_index)
+    for ring_index, (radius, z, exponent) in enumerate(inner):
+        add_ring(radius, z, exponent, False, ring_index)
     outer_center = len(verts)
     verts.append((0.0, 0.0, outer_center_z))
     inner_center = len(verts)
@@ -134,73 +149,177 @@ def _closed_radial(radius: float, height: float, segments: int, ribs: int = 0,
     return manifold_from_arrays(np.asarray(verts), np.asarray(faces), "крышка")
 
 
+def _grow_profile(outer: list[tuple[float, float, float]], radius: float, z: float,
+                  steps: int, curve: str = "smooth", exponent: float | None = None) -> None:
+    """Добавляет плавный участок вращения без дублирующихся колец."""
+    start_r, start_z, start_exp = outer[-1]
+    if z <= start_z + 1e-7:
+        raise GeometryError("Высота дна и корпуса оставила слишком мало места профилю.")
+    target_exp = start_exp if exponent is None else float(exponent)
+    for i in range(1, steps + 1):
+        t = i / steps
+        if curve == "linear":
+            s = t
+        elif curve == "smooth_start":
+            # Нулевой уклон в начале и единичный в конце: сопрягает дно с
+            # последующим прямым участком без ступеньки направления.
+            s = t * t * (2.0 - t)
+        elif curve == "sine":
+            s = math.sin(t * math.pi * 0.5)
+        else:
+            s = t * t * (3.0 - 2.0 * t)
+        outer.append((start_r + (radius - start_r) * s,
+                      start_z + (z - start_z) * t,
+                      start_exp + (target_exp - start_exp) * s))
+
+
 def _vessel_profiles(height: float, diameter: float, neck_d: float, wall: float,
                      base: float, form: str, neck: str, bottom: str,
-                     vessel: str) -> tuple[float, list, float, list, float]:
-    """Общий профиль банки/бутылки; возвращает также высоту пластиковых лапок."""
+                     vessel: str, style: str, feet_count: int) -> tuple:
+    """Строит действительно разные силуэты банок и бутылок.
+
+    ``form`` задаёт сечение корпуса, а ``style`` — его пропорции и плечо.
+    Материал сюда намеренно не передаётся: ни одна геометрическая настройка
+    не включается и не отключается от выбора стекла/пластика.
+    """
     r, nr = diameter * 0.5, neck_d * 0.5
     exponent = 4.5 if form == "квадратная" else 2.0
     feet_h = height * 0.035 if bottom == "ножки" else 0.0
     punt = min(diameter * 0.13, height * 0.045) if bottom == "углубление" else feet_h * 1.25
-    edge_z = feet_h if feet_h else 0.0
-    outer: list[tuple[float, float, float]] = [
-        (r * 0.25, punt * 0.82 + edge_z * 0.18, exponent),
-        (r * 0.56, punt * 0.35 + edge_z * 0.65, exponent),
-        (r * 0.86, edge_z, exponent),
-        (r, edge_z + max(0.8, base * 0.35), exponent),
-    ]
-    if vessel == "jar":
-        body_top = height * 0.72
-        shoulder_end = height * 0.86
-        if form == "округлая":
-            outer.extend(((r * 0.99, height * 0.20, exponent),
-                          (r, height * 0.43, exponent),
-                          (r * 0.98, body_top, exponent)))
-        else:
-            outer.extend(((r, height * 0.22, exponent), (r, body_top, exponent)))
-        for i in range(1, 7):
-            t = i / 6.0
+
+    base_scale = 1.0
+    if vessel == "jar" and style == "амфора":
+        base_scale = 0.82
+    elif vessel == "bottle":
+        base_scale = {"бургундская": 0.94, "пивная": 0.90,
+                      "спортивная": 0.92}.get(style, 1.0)
+    base_r = r * base_scale
+    petaloid = None
+    if feet_h:
+        # Гладкое литое дно: девять радиальных колец центрального подъёма и
+        # восемь колец перехода в корпус. Это не сглаживание грубой сетки —
+        # сама поверхность сразу строится плотной и без крупных треугольников.
+        petal_height = feet_h * 1.55
+        max_valley = feet_h * 1.15
+        bottom_count = 9
+        outer = []
+        valley = []
+        for i in range(bottom_count):
+            t = (i + 1) / bottom_count
             s = t * t * (3.0 - 2.0 * t)
-            outer.append((r + (nr - r) * s,
-                          body_top + (shoulder_end - body_top) * t,
-                          exponent + (2.0 - exponent) * s))
-        outer.extend(((nr, height - 3.0, 2.0), (nr, height, 2.0)))
+            outer.append((base_r * (0.10 + 0.78 * t),
+                          punt * (1.0 - s), exponent))
+            valley.append(max_valley * s)
+        # На боковом переходе радиус и обе высотные кривые согласованы по
+        # касательным с дном и стенкой, чтобы не было тёмной кромки излома.
+        # Вершина и впадина задаются двумя кубическими профилями с общей
+        # конечной касательной. Впадина не проворачивается через промежуточный
+        # минимум, а на последнем кольце обе кривые сливаются без угла.
+        rise = petal_height - max_valley
+        end_slope = petal_height * 0.5
+        crest_quadratic = 3.0 * petal_height - end_slope
+        crest_cubic = end_slope - 2.0 * petal_height
+        valley_quadratic = 3.0 * rise - end_slope
+        valley_cubic = end_slope - 2.0 * rise
+        for s in (0.04, 0.12, 0.24, 0.38, 0.54, 0.70, 0.85, 1.0):
+            radial = s * (2.0 - s)  # касательная дна в начале
+            crest_z = crest_quadratic * s * s + crest_cubic * s ** 3
+            valley_z = (max_valley + valley_quadratic * s * s
+                        + valley_cubic * s ** 3)
+            outer.append((base_r * (0.88 + 0.12 * radial), crest_z, exponent))
+            valley.append(valley_z - crest_z)
+        petaloid = {
+            "count": feet_count,
+            "valley": valley,
+            "rings": len(outer),
+            # Внутренняя оболочка повторяет со смещением base всю нижнюю
+            # форму, включая переход, а не только центральный подъём.
+            "offset_rings": len(outer),
+            "height": petal_height,
+        }
+    else:
+        outer = [
+            (base_r * 0.25, punt * 0.82, exponent),
+            (base_r * 0.56, punt * 0.35, exponent),
+            (base_r * 0.86, 0.0, exponent),
+            (base_r, max(0.8, base * 0.35), exponent),
+        ]
+
+    linear_start = "smooth_start" if petaloid else "linear"
+    if vessel == "jar":
+        if style == "коническая":
+            body_top, shoulder_end = height * 0.74, height * 0.89
+            _grow_profile(outer, r * 0.96, height * 0.20, 4, "linear")
+            _grow_profile(outer, r * 0.74, body_top, 12, "linear")
+        elif style == "амфора":
+            body_top, shoulder_end = height * 0.72, height * 0.90
+            _grow_profile(outer, r, height * 0.38, 10)
+            _grow_profile(outer, r * 0.80, body_top, 10)
+        else:
+            body_top, shoulder_end = height * 0.72, height * 0.86
+            if form == "округлая":
+                _grow_profile(outer, r * 0.97, height * 0.20, 4)
+                _grow_profile(outer, r, height * 0.43, 6)
+                _grow_profile(outer, r * 0.98, body_top, 5)
+            else:
+                _grow_profile(outer, r, body_top, 12, "linear")
+        _grow_profile(outer, nr, shoulder_end, 10, "smooth", 2.0)
     else:
         long_neck = neck == "длинная"
-        body_top = height * (0.62 if long_neck else 0.70)
-        shoulder_end = height * (0.79 if long_neck else 0.90)
-        if form == "округлая":
-            outer.extend(((r * 0.98, height * 0.18, exponent),
-                          (r, height * 0.40, exponent),
-                          (r * 0.99, body_top, exponent)))
+        if style == "винная":
+            body_top = height * (0.68 if long_neck else 0.72)
+            shoulder_end = height * (0.84 if long_neck else 0.89)
+            _grow_profile(outer, r, body_top, 14, linear_start)
+        elif style == "бургундская":
+            body_top = height * (0.48 if long_neck else 0.56)
+            shoulder_end = height * (0.84 if long_neck else 0.90)
+            _grow_profile(outer, r, height * 0.34, 8)
+            _grow_profile(outer, r, body_top, 4, "linear")
+        elif style == "пивная":
+            body_top = height * (0.52 if long_neck else 0.60)
+            shoulder_end = height * (0.72 if long_neck else 0.82)
+            _grow_profile(outer, r, height * 0.26, 7)
+            _grow_profile(outer, r * 0.90, body_top, 8)
+        elif style == "спортивная":
+            body_top = height * (0.64 if long_neck else 0.68)
+            shoulder_end = height * (0.82 if long_neck else 0.88)
+            _grow_profile(outer, r, height * 0.24, 7)
+            _grow_profile(outer, r * 0.78, height * 0.46, 8)
+            _grow_profile(outer, r * 0.88, body_top, 7)
         else:
-            outer.extend(((r, height * 0.22, exponent), (r, body_top, exponent)))
-        for i in range(1, 9):
-            t = i / 8.0
-            # Округлое горло имеет более плавный, выпуклый переход.
-            s = t * t * (3.0 - 2.0 * t) if long_neck else math.sin(t * math.pi * 0.5)
-            outer.append((r + (nr - r) * s,
-                          body_top + (shoulder_end - body_top) * t,
-                          exponent + (2.0 - exponent) * s))
-        outer.extend(((nr, height - 2.2, 2.0), (nr, height, 2.0)))
+            body_top = height * (0.62 if long_neck else 0.70)
+            shoulder_end = height * (0.80 if long_neck else 0.90)
+            if form == "округлая":
+                _grow_profile(outer, r * 0.96, height * 0.18, 4)
+                _grow_profile(outer, r, height * 0.40, 6)
+                _grow_profile(outer, r * 0.99, body_top, 5)
+            else:
+                _grow_profile(outer, r, body_top, 12, linear_start)
+        _grow_profile(outer, nr, shoulder_end,
+                      14 if style == "бургундская" else 10, "smooth", 2.0)
 
-    inner_center = outer_center = punt
-    if feet_h:
-        outer_center = punt
-    inner_center += base
+    # Короткое горло всегда имеет два отдельных кольца, даже при малой высоте.
+    neck_mid = shoulder_end + (height - shoulder_end) * 0.55
+    outer.extend(((nr, neck_mid, 2.0), (nr, height, 2.0)))
+
+    outer_center = punt
+    inner_center = outer_center + base
     inner: list[tuple[float, float, float]] = []
-    # Внутреннее дно повторяет внешний punt с подъёмом на толщину дна.
-    for radius, z, exp in outer[:4]:
+    # Внутреннее дно повторяет центральный подъём и весь petaloid-переход.
+    # Общая волна добавляется к обеим оболочкам в _open_vessel_mesh, поэтому
+    # между ними сохраняется заданная вертикальная толщина дна.
+    offset_rings = petaloid["offset_rings"] if petaloid else 4
+    for radius, z, exp in outer[:offset_rings]:
         inner.append((max(0.2, radius - wall), z + base, exp))
-    floor_side_z = outer[3][1] + base
-    for radius, z, exp in outer[4:]:
-        if z < floor_side_z - 1e-7:
-            continue
-        inner.append((max(0.2, radius - wall), z, exp))
-    # После четырёх донных колец обязательно должна быть внутренняя стенка.
+    floor_side_z = outer[offset_rings - 1][1] + base
+    for radius, z, exp in outer[offset_rings:]:
+        # Ранние кольца плавного petaloid-перехода могут лежать ниже base.
+        # Внутренняя поверхность продолжает дно горизонтально, а не удаляет
+        # кольца: нумерация оболочек и их неразрывность сохраняются.
+        inner.append((max(0.2, radius - wall), max(z, floor_side_z), exp))
     if len(inner) != len(outer):
-        raise GeometryError("Не удалось согласовать внутренний профиль сосуда.")
-    return outer_center, outer, inner_center, inner, feet_h
+        raise GeometryError("Не удалось согласовать внутренний профиль сосуда: уменьшите base.")
+    return outer_center, outer, inner_center, inner, petaloid
 
 
 def _vessel_body(a, vessel: str) -> tuple[mf.Manifold, dict]:
@@ -211,14 +330,20 @@ def _vessel_body(a, vessel: str) -> tuple[mf.Manifold, dict]:
     wall = float(a.num("wall", 1.4 if is_jar else 1.0, minv=0.35, maxv=8.0))
     base = float(a.num("base", 3.0 if is_jar else 3.5, minv=0.8, maxv=20.0))
     form = a.text("form", "округлая", choices=["цилиндр", "округлая", "квадратная"])
+    if is_jar:
+        style = a.text("style", "классическая",
+                       choices=["классическая", "коническая", "амфора"])
+    else:
+        style = a.text("style", "универсальная",
+                       choices=["универсальная", "винная", "бургундская", "пивная", "спортивная"])
+    # kind — только материал бутылки. Он не меняет ни силуэт, ни значения
+    # геометрических параметров по умолчанию, ни доступность petaloid-дна.
     kind = "банка" if is_jar else a.text("kind", "стекло", choices=["стекло", "пластик"])
     neck = "короткая" if is_jar else a.text("neck", "длинная", choices=["длинная", "округлая"])
-    default_bottom = "углубление" if is_jar or kind == "стекло" else "ножки"
-    bottom = a.text("bottom", default_bottom, choices=["плоское", "углубление", "ножки"])
+    bottom = a.text("bottom", "углубление", choices=["плоское", "углубление", "ножки"])
     if is_jar and bottom == "ножки":
-        raise GeometryError("Лапки относятся к пластиковой бутылке, а не к банке.")
-    if not is_jar and bottom == "ножки" and kind != "пластик":
-        raise GeometryError("Пять лапок формируются на пластиковой бутылке: выберите kind=пластик.")
+        raise GeometryError("Лапки относятся к бутылке, а не к банке.")
+    feet_count = int(a.num("feet_count", 5, minv=3, maxv=8))
     if neck_d >= diameter * 0.94:
         raise GeometryError("Горлышко должно быть уже корпуса: уменьшите neck_d.")
     if wall * 2.2 >= neck_d:
@@ -228,23 +353,18 @@ def _vessel_body(a, vessel: str) -> tuple[mf.Manifold, dict]:
     rib_depth = float(a.num("rib_depth", 0.45, minv=0.0, maxv=2.0)) if ribs else 0.0
     if ribs and segments < ribs * 3:
         segments = ribs * 4
-    outer_center, outer, inner_center, inner, feet_h = _vessel_profiles(
-        height, diameter, neck_d, wall, base, form, neck, bottom, vessel)
+    if not is_jar and bottom == "ножки":
+        # Целое число одинаковых секторов на каждую долю: силуэт не зависит
+        # от случайного сдвига сегментов относительно petaloid-волны.
+        sector = feet_count * 4
+        segments = max(feet_count * 16, segments // sector * sector)
+    outer_center, outer, inner_center, inner, petaloid = _vessel_profiles(
+        height, diameter, neck_d, wall, base, form, neck, bottom, vessel,
+        style, feet_count)
+    petal_height = petaloid["height"] if petaloid else 0.0
     body = _open_vessel_mesh(outer_center, outer, inner_center, inner, segments,
-                             ribs, rib_depth, max(4.0, height * 0.045))
-    if feet_h:
-        # Пять настоящих petaloid-лапок.  Это части литого корпуса, поэтому
-        # они сплавляются с ним, а не превращаются в искусственные объекты.
-        feet = []
-        for i in range(5):
-            theta = 2.0 * math.pi * i / 5.0
-            rr = diameter * 0.5 * 0.61
-            foot = mf.Manifold.sphere(1.0, 40).scale(
-                (diameter * 0.145, diameter * 0.115, feet_h * 0.78))
-            foot = foot.rotate((0.0, 0.0, math.degrees(theta))).translate(
-                (rr * math.cos(theta), rr * math.sin(theta), feet_h * 0.78))
-            feet.append(foot)
-        body = body + mf.Manifold.compose(feet)
+                             ribs, rib_depth,
+                             max(4.0, height * 0.045) + petal_height, petaloid)
     thread = a.boolean("thread", True)
     thread_pitch = float(a.num("thread_pitch", 3.0, minv=1.2, maxv=8.0))
     thread_depth = float(a.num("thread_depth", 0.65, minv=0.2, maxv=1.5))
@@ -260,7 +380,8 @@ def _vessel_body(a, vessel: str) -> tuple[mf.Manifold, dict]:
         raise GeometryError("Корпус сосуда должен остаться одной замкнутой деталью.")
     return body, {
         "height": height, "diameter": diameter, "neck_d": neck_d, "wall": wall,
-        "base": base, "form": form, "kind": kind, "neck": neck, "bottom": bottom,
+        "base": base, "form": form, "style": style, "kind": kind,
+        "neck": neck, "bottom": bottom, "feet_count": feet_count,
         "ribs": ribs, "rib_depth": rib_depth, "segments": segments, "thread": thread,
         "thread_pitch": thread_pitch, "thread_depth": thread_depth,
         "thread_length": thread_length,
@@ -302,15 +423,31 @@ def _cork(neck_inner_d: float, height: float, segments: int) -> mf.Manifold:
     return mf.Manifold.revolve(mf.CrossSection([profile]), segments)
 
 
+def _vessel_finish(a, root, kind: str) -> None:
+    """Применяет стекло/пластик, не затирая явный material-пресет DSL."""
+    if a.has("material"):
+        # material, transmission, rough и density уже обработаны Args.style().
+        # Ветка kind здесь ничего не должна перезаписывать.
+        return
+    is_glass = kind in ("стекло", "банка")
+    root.transmission = float(a.num("transmission", 0.82 if is_glass else 0.25,
+                                    minv=0.0, maxv=1.0))
+    if not a.has("rough"):
+        root.rough = 0.16 if is_glass else 0.30
+    if not a.has("density"):
+        root.density = 2.5 if is_glass else 1.05
+
+
 @op("jar", aliases=("банка", "jar_glass"), category="Примитивы",
-    summary="Стеклянная банка с выбранной формой корпуса, настоящей полостью, "
-            "округлой винтовой резьбой, углублением и круговым рифлением дна. "
-            "Необязательная крышка остаётся отдельным выбираемым объектом.",
-    example="банка = jar form=округлая diameter=80 height=110 ribs=40 cap=да",
+    summary="Стеклянная банка с классическим, коническим или амфорным силуэтом, "
+            "настоящей полостью, округлой винтовой резьбой, углублением и "
+            "круговым рифлением дна. Крышка выбирается отдельно.",
+    example="банка = jar style=амфора form=округлая diameter=80 height=110 ribs=40 cap=да",
     params={
         "height": "высота корпуса, мм (110)", "diameter": "диаметр корпуса, мм (80)",
         "neck_d": "наружный диаметр горлышка, мм (58)",
-        "form": "цилиндр, округлая или квадратная (округлая)",
+        "form": "сечение: цилиндр, округлая или квадратная (округлая)",
+        "style": "силуэт: классическая, коническая или амфора (классическая)",
         "wall": "толщина стенки, мм (1.4)", "base": "толщина дна, мм (3)",
         "bottom": "плоское или углубление (углубление)",
         "ribs": "число вертикальных рёбер по дну 0…80 (40)",
@@ -334,29 +471,32 @@ def jar(a, name):
         lid = lid.translate((0.0, 0.0, p["height"] - 3.5))
         parts.append((".lid", lid, "cap_color", "jar_lid"))
     root = _emit(a, name, parts, dict(p, cap=cap))
-    root.transmission = float(a.num("transmission", 0.82, minv=0.0, maxv=1.0))
-    root.rough = 0.16
-    root.density = 2.5
+    _vessel_finish(a, root, "банка")
     root.notes.append("открытая полость; центральный punt и рифление дна — геометрия")
-    if cap:
+    if cap and not a.has("material"):
         lid_obj = a.scene.objects[f"{name}.lid"]
-        lid_obj.metal = 0.72
-        lid_obj.rough = 0.28
+        if not a.has("metal"):
+            lid_obj.metal = 0.72
+        if not a.has("rough"):
+            lid_obj.rough = 0.28
     return root
 
 
 @op("bottle", aliases=("бутылка", "bottle_glass", "bottle_plastic"), category="Примитивы",
-    summary="Стеклянная или пластиковая бутылка: длинное либо округлое горло, "
-            "три формы корпуса, punt или пять лапок, настоящая резьба и отдельные "
-            "необязательные крышка/пробка.",
-    example="бутылка = bottle kind=пластик form=округлая neck=округлая bottom=ножки closure=крышка",
+    summary="Бутылка с пятью самостоятельными силуэтами: универсальная, винная, "
+            "бургундская, пивная или спортивная. Petaloid-лапки литые и непрерывные; "
+            "материал не ограничивает геометрию. Резьба, крышка и пробка настраиваются.",
+    example="бутылка = bottle style=спортивная kind=пластик form=округлая neck=округлая bottom=ножки closure=крышка",
     params={
-        "kind": "стекло или пластик (стекло)",
+        "kind": "отделка: стекло или пластик; не меняет геометрию (стекло)",
+        "material": "необязательный общий пресет DSL; также не меняет геометрию",
         "height": "высота корпуса, мм (220)", "diameter": "диаметр корпуса, мм (70)",
         "neck_d": "наружный диаметр горлышка, мм (28)",
-        "form": "цилиндр, округлая или квадратная (округлая)",
+        "form": "сечение: цилиндр, округлая или квадратная (округлая)",
+        "style": "силуэт: универсальная, винная, бургундская, пивная или спортивная",
         "neck": "длинная или округлая (длинная)",
-        "bottom": "плоское, углубление или ножки (по kind)",
+        "bottom": "плоское, углубление или литые ножки (углубление)",
+        "feet_count": "число petaloid-лепестков 3…8 (5)",
         "wall": "толщина стенки, мм (1)", "base": "толщина дна, мм (3.5)",
         "ribs": "рёбра по нижнему пояску 0…80 (0)",
         "rib_depth": "глубина рифления, мм (0.45)",
@@ -390,15 +530,12 @@ def bottle(a, name):
         cork = cork.translate((0.0, 0.0, p["height"] - cork_h + 8.0))
         parts.append((".cork", cork, "cap_color", "cork"))
     root = _emit(a, name, parts, dict(p, closure=closure))
-    is_glass = p["kind"] == "стекло"
-    root.transmission = float(a.num("transmission", 0.82 if is_glass else 0.25,
-                                    minv=0.0, maxv=1.0))
-    root.rough = 0.16 if is_glass else 0.3
-    root.density = 2.5 if is_glass else 1.05
-    root.notes.append("реальная полость и дно; closure — отдельная выбираемая деталь")
+    _vessel_finish(a, root, p["kind"])
+    root.notes.append("реальная полость и цельное дно; closure — отдельная выбираемая деталь")
     if closure == "крышка":
         cap_obj = a.scene.objects[f"{name}.cap"]
-        cap_obj.rough = 0.36
+        if not a.has("material") and not a.has("rough"):
+            cap_obj.rough = 0.36
     elif closure == "пробка":
         cork_obj = a.scene.objects[f"{name}.cork"]
         cork_obj.rough = 0.88
@@ -459,10 +596,14 @@ def lid(a, name):
         root = _emit(a, name, [("", cap, "color", "lid")], {
             "kind": kind, "diameter": diameter, "neck_d": neck_d, "height": height,
             "ribs": ribs, "thread": thread, "thread_pitch": pitch, "segments": segments})
-        if kind == "банка":
-            root.metal, root.rough = 0.72, 0.28
-        else:
-            root.rough = 0.36
+        if not a.has("material"):
+            if kind == "банка":
+                if not a.has("metal"):
+                    root.metal = 0.72
+                if not a.has("rough"):
+                    root.rough = 0.28
+            elif not a.has("rough"):
+                root.rough = 0.36
         return root
 
     material = a.text("material", "металл", choices=["металл", "стекло"])

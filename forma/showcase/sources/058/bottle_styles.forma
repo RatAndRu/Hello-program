@@ -1,0 +1,6 @@
+# Веб-стенд 0.58: пять самостоятельных силуэтов, а не смена материала.
+универсальная = bottle style=универсальная kind=пластик form=округлая neck=длинная bottom=ножки feet_count=5 thread=да closure=нет transmission=0 color=#7f9eaa
+винная = bottle style=винная kind=пластик form=цилиндр neck=длинная bottom=углубление thread=да closure=нет transmission=0 at=[95,0,0] color=#879b8d
+бургундская = bottle style=бургундская kind=пластик form=округлая neck=длинная bottom=углубление thread=да closure=нет transmission=0 at=[190,0,0] color=#9a8f98
+пивная = bottle style=пивная kind=пластик form=округлая neck=длинная bottom=плоское thread=да closure=нет transmission=0 at=[285,0,0] color=#aa9879
+спортивная = bottle style=спортивная kind=пластик form=округлая neck=округлая bottom=ножки feet_count=5 thread=да closure=нет transmission=0 at=[380,0,0] color=#7896ad

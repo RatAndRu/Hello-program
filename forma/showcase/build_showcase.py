@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Собирает статический стенд: GLB, лёгкий preview, WebP и каталог версий.
 
-Preview не упрощает геометрию. Нормали и треугольники полного экспорта
-сохраняются; узлы лишь пакетируются по одинаковым материалам. Полный GLB
+Preview не упрощает геометрию. Нормали и полезные треугольники полного
+экспорта сохраняются; нулевые boolean-грани удаляются одинаково в обоих
+файлах, а узлы пакетируются по одинаковым материалам. Полный GLB
 с отдельными деталями всегда остаётся отдельным файлом для скачивания.
 """
 
@@ -27,6 +28,7 @@ from trimesh.visual.material import PBRMaterial
 from forma.geometry import (
     _glb_geometry,
     _glb_patch_materials,
+    _glb_valid_faces,
     color_to_gltf,
     manifold_mesh,
 )
@@ -201,7 +203,15 @@ def validate_glb_pair(full_glb: bytes, preview_glb: bytes, solids) -> dict:
     """Независимый round-trip обоих файлов и сравнение с исходными solids."""
     full = _scene_metrics(full_glb)
     preview = _scene_metrics(preview_glb)
-    expected_faces = int(sum(len(manifold_mesh(solid.manifold)[1]) for solid in solids))
+    raw_faces = 0
+    expected_faces = 0
+    for solid in solids:
+        vertices, faces = manifold_mesh(solid.manifold)
+        raw_faces += len(faces)
+        expected_faces += len(_glb_valid_faces(vertices, faces))
+    # Сравниваем с тем же очищенным источником, который использует GLB:
+    # нулевые boolean-грани не являются полезной тесселяцией, но любое
+    # расхождение остальных треугольников по-прежнему запрещено.
     if full["faces"] != expected_faces or preview["faces"] != expected_faces:
         raise RuntimeError(
             f"Тесселяция изменилась: source={expected_faces}, full={full['faces']}, "
@@ -225,6 +235,8 @@ def validate_glb_pair(full_glb: bytes, preview_glb: bytes, solids) -> dict:
         raise RuntimeError(f"Габариты GLB изменились: {deviations}")
     return {
         "triangles": expected_faces,
+        "source_triangles": raw_faces,
+        "degenerate_triangles_removed": raw_faces - expected_faces,
         "full_vertices": full["vertices"],
         "preview_vertices": preview["vertices"],
         "full_nodes": full["nodes"],
