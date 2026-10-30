@@ -91,7 +91,7 @@ jobs:
           for attempt in 1 2 3; do
             echo "Deploy attempt ${attempt}/3"
             if flyctl deploy "$SITE_DIR" \
-                 --config "$SITE_DIR/fly.toml" \
+                 --config "$PWD/$SITE_DIR/fly.toml" \
                  --app "$FLY_APP_NAME" \
                  --local-only 2>&1 | tee -a /tmp/topo-fly-deploy.log; then
               exit 0
