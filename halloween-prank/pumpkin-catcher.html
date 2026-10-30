@@ -41,8 +41,8 @@ button:active{transform:translateY(3px);box-shadow:none}
 #gstatic{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
 
 /* удаление */
-#wipe{background:#000;color:#e8e8e8;font-family:Consolas,"Courier New",monospace;text-align:center;z-index:22;display:none;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14vh}
-#wipe.on{display:flex}
+#wipe{background:#000;color:#e8e8e8;font-family:Consolas,"Courier New",monospace;text-align:center;z-index:22;display:none}
+#wipe.on{display:block}
 #wbg{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;z-index:0}
 #wipeBox{position:relative;z-index:1;background:#000;padding:22px 34px;border:1px solid #1a1a1a;min-width:min(80vw,620px)}
 #wipeTitle{font-size:clamp(18px,2.6vw,28px);margin-bottom:8px}
@@ -51,7 +51,16 @@ button:active{transform:translateY(3px);box-shadow:none}
 #barBox{width:100%;height:22px;border:1px solid #ccc;padding:2px;display:none}
 #bar{height:100%;width:0;background:#e8e8e8}
 #pct{margin-top:12px;font-size:clamp(14px,1.8vw,20px);min-height:1.5em}
-#cancel{position:fixed;left:0;top:0;margin:0;padding:12px 26px;background:#2a2a2a;color:#eee;box-shadow:none;border:1px solid #888;border-radius:6px;font-size:16px;font-weight:400;z-index:24}
+#cancel{pointer-events:auto;margin:0;padding:12px 26px;background:#2a2a2a;color:#eee;border:1px solid #888;border-radius:6px;font-size:16px;font-weight:400;box-shadow:none;font-family:inherit;cursor:default;display:block}
+.scene{position:absolute;left:0;top:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14vh;z-index:1;pointer-events:none}
+#tear{position:absolute;left:0;top:0;width:100%;height:100%;z-index:2;pointer-events:none;overflow:hidden}
+.tband{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
+#spinRow{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:8px}
+#spinner{position:relative;width:24px;height:24px;display:none;flex:0 0 24px}
+#spinner.run{display:block;animation:spin 1s linear infinite}
+#spinner i{position:absolute;left:10px;top:10px;width:4px;height:4px;border-radius:50%;background:#e8e8e8}
+#btnWrap{position:fixed;left:0;top:0;z-index:24;pointer-events:none}
+
 #cancel:active{box-shadow:none}
 #fake{position:fixed;left:0;top:0;width:26px;height:26px;pointer-events:none;z-index:99;display:none}
 #fake.on{display:block}
@@ -99,14 +108,17 @@ button:active{transform:translateY(3px);box-shadow:none}
 <!-- Фальшивое удаление -->
 <div id="wipe" class="overlay">
   <canvas id="wbg"></canvas>
-  <div id="wipeBox">
-    <div id="wipeTitle"></div>
-    <div id="wipeSub"></div>
-    <div id="wipeFile"></div>
-    <div id="barBox"><div id="bar"></div></div>
-    <div id="pct"></div>
+  <div class="scene">
+    <div id="wipeBox">
+      <div id="spinRow"><div id="spinner"></div><div id="wipeTitle"></div></div>
+      <div id="wipeSub"></div>
+      <div id="wipeFile"></div>
+      <div id="barBox"><div id="bar"></div></div>
+      <div id="pct"></div>
+    </div>
   </div>
-  <button id="cancel" type="button">Отменить</button>
+  <div id="tear"></div>
+  <div id="btnWrap"><button id="cancel" type="button">Отменить</button></div>
   <div id="fake"><svg width="26" height="26" viewBox="0 0 24 24"><path d="M3 2 L3 19 L8 14.5 L11 21 L14 19.8 L11 13.5 L17.5 13.5 Z" fill="#fff" stroke="#000" stroke-width="1.2"/></svg></div>
 </div>
 
@@ -866,7 +878,7 @@ function placeButton(){
   btn.vx = btn.vy = 0;
   applyBtn();
 }
-function applyBtn(){ $('cancel').style.transform = `translate(${btn.x}px,${btn.y}px)`; }
+function applyBtn(){ $('btnWrap').style.transform = `translate(${btn.x}px,${btn.y}px)`; }
 function btnBounds(){
   return {
     minX: 8, maxX: innerWidth - btn.w - 8,
@@ -1207,17 +1219,49 @@ async function glitchPhase(ms){
   $('glitch').classList.remove('on');
 }
 
-/* ---------- Экран удаления: битые фрагменты, нормальные — тёмные ---------- */
+/* ---------- Экран удаления: весь экран битый, часть постоянно в негативе ---------- */
 const WB = $('wbg');
 WB.width = GLW; WB.height = GLH;
 const wbx = WB.getContext('2d');
 const tmpCv = document.createElement('canvas');
 tmpCv.width = GLW; tmpCv.height = GLH;
 const tmpx = tmpCv.getContext('2d');
-let wipeBgTimer = null;
+let wipeBgTimer = null, glitchTimer = null, tearTimer = null, negRegions = [];
+const tearLayer = $('tear');
+const cancelBtn = $('cancel');
+
+// точки спиннера «кружочек загрузки»
+(function buildSpinner(){
+  const sp = $('spinner');
+  for (let k = 0; k < 8; k++){
+    const d = document.createElement('i');
+    d.style.transform = `rotate(${k * 45}deg) translateY(-9px)`;
+    d.style.opacity = (0.15 + 0.85 * k / 7).toFixed(2);
+    sp.appendChild(d);
+  }
+})();
+function spinner(on){
+  const sp = $('spinner');
+  sp.classList.toggle('run', on);
+  sp.style.display = on ? 'block' : 'none';
+}
+
+// Правдоподобные папки и файлы Windows
+const FOLDERS = ['Documents', 'Pictures', 'Downloads', 'Desktop', 'Music', 'Videos', 'Telegram Desktop',
+  'OneDrive\\Документы', 'OneDrive\\Изображения', 'Учёба', 'Работа', 'Фото с телефона', 'Новая папка (2)',
+  'AppData\\Local\\Temp', 'AppData\\Roaming\\Telegram Desktop\\tdata', 'Семья'];
+const FILES = ['Отчёт_за_квартал.docx', 'IMG_20241215_183022.jpg', 'Скриншот 2026-08-14 201133.png',
+  'Диплом_финал_v3.docx', 'Налоговая_декларация_2025.pdf', 'VID_20250603_142210.mp4', 'Резюме_2026.pdf',
+  'Бюджет_семья.xlsx', 'Договор_аренды.pdf', 'Фото_с_отпуска (14).jpg', 'Заметки.txt', 'desktop.ini',
+  'Thumbs.db', 'Презентация1.pptx', 'Курсовая_работа_черновик.docx', '~$Курсовая.docx',
+  'WhatsApp Image 2026-03-02.jpeg', 'Выписка_банк_сентябрь.pdf', 'Чек_оплата_2026-05.pdf', 'ddd3f2a1.tmp',
+  'Плейлист_лето.m3u', 'Новый документ.txt', 'Рецепты_бабушки.docx', 'Фото_Новый_год_2025.heic'];
+const TOTAL = 48219;
+function randPath(){ return `C:\\Users\\Пользователь\\${rnd(FOLDERS)}\\${rnd(FILES)}`; }
+
 function drawWipeBg(){
   wbx.fillStyle = '#000'; wbx.fillRect(0, 0, GLW, GLH);
-  drawBase(rnd(['desktop', 'dump', 'bsod']));
+  drawBase(rnd(['desktop', 'dump', 'bsod', 'face']));
   corruptInto(tmpx, bctx, 0.9);
   const frags = randInt(3, 6);
   for (let i = 0; i < frags; i++){
@@ -1225,18 +1269,78 @@ function drawWipeBg(){
     const fx = randInt(0, GLW - fw), fy = randInt(0, GLH - fh);
     wbx.drawImage(tmpCv, fx, fy, fw, fh, fx, fy, fw, fh);
   }
-  // мелкие фрагменты-«шум» по всему полю
   for (let i = 0; i < 10; i++){
     const fw = randInt(4, 30), fh = randInt(2, 8);
     const fx = randInt(0, GLW - fw), fy = randInt(0, GLH - fh);
     wbx.drawImage(tmpCv, fx, fy, fw, fh, fx, fy, fw, fh);
   }
+  // постоянно негативные участки: дрейфуют и инвертируют картинку под собой
+  for (const r of negRegions){
+    r.x = clamp(r.x + (Math.random() - 0.5) * 6, 0, GLW - r.w);
+    r.y = clamp(r.y + (Math.random() - 0.5) * 4, 0, GLH - r.h);
+    wbx.drawImage(tmpCv, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+    wbx.save();
+    wbx.globalCompositeOperation = 'difference';
+    wbx.fillStyle = '#fff';
+    wbx.fillRect(r.x, r.y, r.w, r.h);
+    wbx.restore();
+  }
 }
 
-/* ---------- Фальшивое удаление: подсчёт → удаление ---------- */
-const NAMES = ['Фото_2019', 'Диплом', 'Семейный_архив', 'Курсовая', 'Музыка', 'Видео_отпуск', 'Документы', 'Проекты', 'Пароли', 'Почта'];
-const EXTS = ['jpg', 'docx', 'mp4', 'pdf', 'zip', 'psd', 'xlsx', 'dat'];
-const TOTAL = 48219;
+// Весь экран дёргается: сдвиги, инверсия, RGB-разрывы, полупрозрачность кнопки
+function glitchTick(){
+  const scene = document.querySelector('.scene');
+  scene.style.transform = `translate(${Math.random() < 0.5 ? randInt(-18, 18) : 0}px,${Math.random() < 0.3 ? randInt(-6, 6) : 0}px) skewX(${Math.random() < 0.2 ? randInt(-6, 6) : 0}deg)`;
+  scene.style.filter = rnd(['none', 'none', 'invert(1)', 'hue-rotate(180deg)', 'hue-rotate(90deg) saturate(3)', 'contrast(2.5) brightness(1.4)', 'invert(1) hue-rotate(40deg)']);
+  scene.style.opacity = Math.random() < 0.15 ? '0.55' : '1';
+  const rgb = Math.random() < 0.4
+    ? `${randInt(-6, 6)}px 0 rgba(255,0,0,.8), ${randInt(-6, 6)}px 0 rgba(0,255,255,.8)` : 'none';
+  $('wipeTitle').style.textShadow = rgb;
+  $('pct').style.textShadow = rgb;
+  $('wipeFile').style.textShadow = rgb;
+  cancelBtn.style.transform = `translate(${randInt(-10, 10)}px,${randInt(-5, 5)}px)`;
+  cancelBtn.style.filter = Math.random() < 0.3 ? rnd(['invert(1)', 'hue-rotate(160deg)', 'contrast(3)']) : 'none';
+  glitchTimer = setTimeout(glitchTick, randInt(40, 180));
+}
+
+// Полосы разрыва: копии всего экрана, сдвинутые и с битыми цветами
+function refreshTear(){
+  tearLayer.innerHTML = '';
+  const scene = document.querySelector('.scene');
+  const N = randInt(4, 7);
+  for (let i = 0; i < N; i++){
+    const c = scene.cloneNode(true);
+    c.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
+    c.removeAttribute('id');
+    const top = Math.random() * 90, h = randInt(3, 14);
+    const band = document.createElement('div');
+    band.className = 'tband';
+    band.style.clipPath = `inset(${top.toFixed(1)}% 0 ${(100 - top - h).toFixed(1)}% 0)`;
+    band.style.transform = `translateX(${randInt(-40, 40)}px)`;
+    band.style.filter = rnd(['invert(1)', 'hue-rotate(200deg) saturate(4)', 'contrast(3)', 'none']);
+    band.appendChild(c);
+    tearLayer.appendChild(band);
+  }
+}
+
+function startWipeFx(){
+  negRegions = [0, 1, 2].map(() => ({ x: randInt(0, GLW - 160), y: randInt(0, GLH - 70), w: randInt(60, 160), h: randInt(20, 70) }));
+  drawWipeBg();
+  wipeBgTimer = setInterval(drawWipeBg, 130);
+  glitchTick();
+  refreshTear();
+  tearTimer = setInterval(refreshTear, 150);
+}
+function stopWipeFx(){
+  clearInterval(wipeBgTimer); wipeBgTimer = null;
+  clearTimeout(glitchTimer); glitchTimer = null;
+  clearInterval(tearTimer); tearTimer = null;
+  tearLayer.innerHTML = '';
+  const scene = document.querySelector('.scene');
+  scene.style.transform = ''; scene.style.filter = ''; scene.style.opacity = '';
+  cancelBtn.style.transform = ''; cancelBtn.style.filter = '';
+  $('wipeTitle').style.textShadow = ''; $('pct').style.textShadow = ''; $('wipeFile').style.textShadow = '';
+}
 
 async function wipePhase(){
   $('wipe').classList.add('on');
@@ -1244,8 +1348,7 @@ async function wipePhase(){
   cur.x = innerWidth / 2; cur.y = innerHeight / 2; cur.vx = 0; cur.vy = 0;
   $('fake').classList.toggle('on', locked);
   placeButton();
-  drawWipeBg();
-  wipeBgTimer = setInterval(drawWipeBg, 130);
+  startWipeFx();
   startDecoys();
   requestAnimationFrame(repelFrame);
 
@@ -1258,20 +1361,22 @@ async function wipePhase(){
   drone.start();
 
   $('wipeTitle').textContent = 'Подготовка к удалению файлов…';
-  $('wipeSub').textContent = 'Подсчёт файлов на компьютере';
+  $('wipeSub').textContent = 'Подсчёт файлов на компьютере. Не выключайте компьютер.';
   $('barBox').style.display = 'none';
   $('pct').textContent = '';
+  spinner(true);
   await sleep(600);
 
-  // 1) подсчёт
+  // 1) подсчёт файлов — с кружочком загрузки
   let count = 0;
   while (count < TOTAL){
     await sleep(90);
     if (Math.random() < 0.1) await sleep(500 + Math.random() * 900);
     count = Math.min(TOTAL, count + randInt(180, 1000));
     $('pct').textContent = `Найдено файлов: ${count.toLocaleString('ru-RU')}`;
-    $('wipeFile').textContent = `C:\\Users\\Пользователь\\${rnd(NAMES)}\\${rnd(NAMES)}_${randInt(1, 999)}.${rnd(EXTS)}`;
+    $('wipeFile').textContent = randPath();
   }
+  spinner(false);
   await sleep(900);
 
   // 2) удаление
@@ -1287,29 +1392,15 @@ async function wipePhase(){
     deleted = Math.floor(TOTAL * p / 100);
     $('bar').style.width = p + '%';
     $('pct').textContent = `${Math.floor(p)}%  ·  удалено ${deleted.toLocaleString('ru-RU')} из ${TOTAL.toLocaleString('ru-RU')}`;
-    $('wipeFile').textContent = `C:\\Users\\Пользователь\\${rnd(NAMES)}\\${rnd(NAMES)}_${randInt(1, 999)}.${rnd(EXTS)} — удалён`;
+    $('wipeFile').textContent = `${randPath()} — удалён`;
     if (Math.random() < 0.5) note(1200 + Math.random() * 600, 0.02, 'square', 0.02);
   }
   await sleep(1500);
 
   drone.stop();
+  stopWipeFx();
   showEnding();
 }
-
-/* ---------- Уход: Esc, Windows, смена окна ---------- */
-let gameStarted = false, leaveTimer = null;
-function showLeave(){
-  if (!gameStarted || $('ending').classList.contains('on')) return;
-  $('leave').classList.add('on');
-  clearTimeout(leaveTimer);
-  leaveTimer = setTimeout(() => $('leave').classList.remove('on'), 6000);
-}
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape' || e.key === 'Meta' || e.key === 'OS' || e.key === 'Super') showLeave();
-});
-document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) showLeave(); });
-document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && wipeActive) showLeave(); });
-window.addEventListener('blur', showLeave);
 
 /* ---------- Финал ---------- */
 function showEnding(){
