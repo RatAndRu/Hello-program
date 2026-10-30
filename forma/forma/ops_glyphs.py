@@ -558,18 +558,16 @@ def swirl(a, name):
 # --------------------------------------------------------------------------- #
 @op("lightning", aliases=("молния", "зигзаг", "thunderbolt", "lightning_bolt"),
     category="Примитивы",
-    summary="Молния с настраиваемым числом зигзагов: zigzags=1 — классический "
-            "силуэт, 2…5 — дополнительные зубцы на диагональных сторонах. По умолчанию "
-            "стоит в XZ лицом −Y. volume=да строит надутые стороны без плоской "
-            "середины, а round скругляет сам силуэт и его кромку.",
+    summary="Молния с одним ясным центральным зигзагом силуэта: верхняя кромка "
+            "плоская и горизонтальная, остриё только снизу. Дополнительных зубцов "
+            "на длинных диагоналях нет. Стоит в XZ лицом −Y; volume=да строит "
+            "выпуклые стороны, round скругляет силуэт и кромку.",
     example="молния = lightning height=90 width=44 depth=10 round=1.5\n"
             "надутая = lightning height=90 width=48 depth=20 volume=да round=3\n"
-            "многоступенчатая = lightning height=110 width=55 depth=12 zigzags=3 round=1\n"
             "формочка = lightning height=90 width=44 depth=10 wall=3",
     params={"height": "высота, мм (90)",
             "width": "ширина по X, мм (0.49 высоты)",
             "depth": "толщина по глубине, мм (10); у стоящего знака — по Y",
-            "zigzags": "число ступеней на каждой стороне 1…5 (1 — классика)",
             "round": "скругление силуэта и кромок, мм (0)",
             "wall": "стенка сквозной формочки/рамки, мм; 0 — сплошная (0)",
             "volume": "да — объёмная молния с выпуклыми сторонами (нет)",
@@ -584,46 +582,31 @@ def lightning(a, name):
     depth = float(a.num("depth", 10.0, minv=0.1))
     round_r = float(a.num("round", 0.0, minv=0.0) or 0.0)
     wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
-    zigzags = int(a.int("zigzags", 1, minv=1, maxv=5) or 1)
     volume_mode = a.boolean("volume", False) or a.boolean("solid", False)
     if volume_mode and wall > 1e-6:
         raise GeometryError("volume=да у молнии несовместим с wall: используйте сплошной объём или плоскую формочку.")
-    # Классический контур не меняется. Дополнительные зигзаги — зубцы на
-    # четырёх длинных диагоналях, а не повторные встречные ступени: последние
-    # могли совпасть в центре и разрезать молнию на отдельные куски.
-    base_shape = [(0.556, 1.000), (0.0, 0.4), (0.5, 0.4),
-                  (0.444, 0.0), (1.0, 0.6), (0.5, 0.6)]
-    shape = []
-    steps = 2 * zigzags
-    for edge_index, p0 in enumerate(base_shape):
-        shape.append(p0)
-        p1 = base_shape[(edge_index + 1) % len(base_shape)]
-        if zigzags == 1 or edge_index not in (0, 2, 3, 5):
-            continue
-        dx, dy = p1[0] - p0[0], p1[1] - p0[1]
-        length = max(math.hypot(dx, dy), 1e-9)
-        nx, ny = -dy / length, dx / length
-        for j in range(1, steps):
-            t = j / steps
-            offset = 0.028 * (1.0 if j % 2 else -1.0)
-            shape.append((p0[0] + dx * t + nx * offset,
-                          p0[1] + dy * t + ny * offset))
+    # Восемь вершин — это сам силуэт, а не зубцы, добавленные на его стороны.
+    # Верх задаёт отдельный горизонтальный отрезок; вниз сходит только один
+    # угол. Центральные встречные ступени образуют узнаваемый знак молнии.
+    shape = [(0.30, 1.00), (0.82, 1.00),
+             (0.56, 0.60), (1.00, 0.60),
+             (0.22, 0.00), (0.40, 0.40),
+             (0.00, 0.40), (0.35, 0.78)]
     pts = [(x * width, y * height) for x, y in shape]
     cross = _poly_cross(pts)
     cross = _fit(cross, width, height, "молнии")
     cross = hollow_cross(cross, wall, "молния")
-    # самый узкий размер — толщина ступеньки (0.2 ширины), по ней и ограничиваем
-    thin = min(width * 0.28, wall) if wall > 1e-6 else width * 0.28
+    thin = min(width * 0.22, wall) if wall > 1e-6 else width * 0.22
     if volume_mode:
         solid = volumetric_cross(cross, depth, "объёмная молния", round_r=round_r)
     else:
         solid = _flat(cross, depth, round_r, thin, size=(width, height))
     out = make_solid(a.scene, name, _place_glyph(a, solid), a, kind="lightning")
     out.meta["volume_mode"] = bool(volume_mode)
-    out.meta["zigzags"] = zigzags
+    out.meta["silhouette"] = "flat_top_single_bottom_point"
     out.notes.append(("объёмная молния с выпуклыми сторонами" if volume_mode
                       else "плоская молния с заданной толщиной")
-                     + f", зигзагов {zigzags}")
+                     + ", плоский верх и одно нижнее остриё")
     return out
 
 

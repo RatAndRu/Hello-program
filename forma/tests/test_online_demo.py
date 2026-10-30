@@ -117,7 +117,8 @@ class OnlineDemoTest(unittest.TestCase):
         script = (ROOT / "examples" / "train_carriage.forma").read_text(encoding="utf-8")
         result = self.server.forma_state.build(script, allow_heavy=True)
         self.assertTrue(result["ok"], result.get("error"))
-        self.assertEqual(result["analysis"]["metrics"]["tris"], 336536)
+        # 0.57: обновлённая ступенчатая клавиша service_switch добавляет 252 треугольника.
+        self.assertEqual(result["analysis"]["metrics"]["tris"], 336788)
 
     def test_normal_mode_keeps_heavy_confirmation(self):
         with tempfile.TemporaryDirectory() as directory, \

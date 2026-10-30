@@ -1,0 +1,2 @@
+# Веб-стенд 0.57: каждая пластина, ролик, втулка и пин выбираются отдельно.
+велоцепь = bicycle_chain links=12 pitch=12.7 width=10.2 plate_color=#b7c0c6 roller_color=#818b92 pin_color=#c9ced1

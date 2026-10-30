@@ -1,6 +1,209 @@
 {
   "versions": [
     {
+      "id": "0.57",
+      "label": "Forma 0.57",
+      "kicker": "Версия программы",
+      "date": "30 октября 2026",
+      "title": "Сосуды, велосипедная цепь и исправленные силуэты",
+      "summary": "Семь небольших стендов показывают только изменения этой версии. У сосудов настоящие полости, резьба и формы дна; у составных деталей сохранены независимые имена. GLB и Forma можно скачать напрямую, 3D загружается только по кнопке. В основное меню приложения эти примеры не добавляются.",
+      "changes": [
+        {
+          "title": "Сквозные отверстия в рельсе",
+          "text": "rail_holes, rail_hole_d и rail_hole_pitch сверлят стенку каждой рельсы по X. Проверены пустота канала, материал рядом и независимый выбор рельс, шпал и креплений."
+        },
+        {
+          "title": "Молния без дополнительных зубцов",
+          "text": "Удалён прежний параметр zigzags. Центральный зигзаг является самим силуэтом: верх плоский и горизонтальный, единственное остриё находится снизу."
+        },
+        {
+          "title": "Велосипедная цепь по элементам",
+          "text": "Чередующиеся фигурные пластины имеют два отверстия; полые ролики и втулки посажены с зазором на отдельные клепаные пины. Каждая физическая деталь доступна для выбора и экспорта."
+        },
+        {
+          "title": "Банка с настоящим дном и горлышком",
+          "text": "Три формы корпуса, открытая полость, винтовая резьба, центральный punt и круговое рифление нижнего пояска. Крышка является отдельным объектом."
+        },
+        {
+          "title": "Стеклянные и пластиковые бутылки",
+          "text": "Длинное или округлое горло, три формы корпуса, центральное углубление или пять пластиковых лапок. Резьбу можно отключить, крышка и пробка не объединяются с корпусом."
+        },
+        {
+          "title": "Отдельные крышки трёх типов",
+          "text": "Баночная twist-off, рифлёная бутылочная и кастрюльная. У кастрюльной доступны металл/стекло, кнопка, плоская скоба или дуга, паровое отверстие; обод и крепёж выбираются отдельно."
+        },
+        {
+          "title": "Двойная и старая клавиши выключателя",
+          "text": "Современная клавиша получила нижнюю ступеньку, двойной вариант помещается в рамку 86 мм. Старый вариант имеет более толстую выпуклую форму; наклон продолжает менять геометрию."
+        },
+        {
+          "title": "Проекты вынесены из приложения",
+          "text": "Удалены проект «Бутылка», «Мебельная фурнитура», все выставки и проекты с версиями 0.53 и далее. Исторические и новые примеры остались только на этом сайте-стенде."
+        }
+      ],
+      "models": [
+        {
+          "id": "track_holes_057",
+          "title": "Рельса со сквозными отверстиями",
+          "description": "Одиночная рельса без шпал: четыре отверстия в стенке видны без посторонних деталей.",
+          "source": "forma/showcase/sources/057/track_holes.forma",
+          "download_base": "forma-0-57-track-holes",
+          "tags": [
+            "4 сквозных отверстия",
+            "Настоящий профиль",
+            "GLB + Forma"
+          ],
+          "posters": [
+            {
+              "view": "iso",
+              "label": "Изометрия"
+            },
+            {
+              "view": "front",
+              "label": "Стенка"
+            }
+          ]
+        },
+        {
+          "id": "lightning_057",
+          "title": "Молния с плоским верхом",
+          "description": "Объёмный силуэт с центральным зигзагом и одним нижним остриём; дополнительных зубцов нет.",
+          "source": "forma/showcase/sources/057/lightning.forma",
+          "download_base": "forma-0-57-lightning",
+          "tags": [
+            "Плоский верх",
+            "Одно нижнее остриё",
+            "GLB + Forma"
+          ],
+          "posters": [
+            {
+              "view": "front",
+              "label": "Силуэт"
+            },
+            {
+              "view": "iso",
+              "label": "Объём"
+            }
+          ]
+        },
+        {
+          "id": "bicycle_chain_057",
+          "title": "Велосипедная цепь",
+          "description": "Двенадцать шагов с чередованием внутренних и внешних пластин, отдельными роликами, втулками и пинами.",
+          "source": "forma/showcase/sources/057/bicycle_chain.forma",
+          "download_base": "forma-0-57-bicycle-chain",
+          "tags": [
+            "Шаг 12,7 мм",
+            "Все детали выбираются",
+            "GLB + Forma"
+          ],
+          "posters": [
+            {
+              "view": "iso",
+              "label": "Изометрия"
+            },
+            {
+              "view": "front",
+              "label": "Пластины"
+            }
+          ]
+        },
+        {
+          "id": "jar_057",
+          "title": "Банка и отдельная крышка",
+          "description": "Открытая банка показана без крышки на горлышке, поэтому видны резьба и полость. Крышка стоит рядом отдельным объектом.",
+          "source": "forma/showcase/sources/057/jar.forma",
+          "download_base": "forma-0-57-jar",
+          "tags": [
+            "Винтовая резьба",
+            "Punt и рифление",
+            "GLB + Forma"
+          ],
+          "posters": [
+            {
+              "view": "iso",
+              "label": "Изометрия"
+            },
+            {
+              "view": "top",
+              "label": "Полость"
+            },
+            {
+              "view": "bottom",
+              "label": "Дно"
+            }
+          ]
+        },
+        {
+          "id": "bottle_057",
+          "title": "Две бутылки: стекло и пластик",
+          "description": "Стеклянная бутылка с пробкой и пластиковая с крышкой, округлым горлом и пятью лапками.",
+          "source": "forma/showcase/sources/057/bottle.forma",
+          "download_base": "forma-0-57-bottle",
+          "tags": [
+            "2 материала",
+            "Пробка и крышка",
+            "5 лапок",
+            "GLB + Forma"
+          ],
+          "posters": [
+            {
+              "view": "iso",
+              "label": "Изометрия"
+            },
+            {
+              "view": "bottom",
+              "label": "Варианты дна"
+            }
+          ]
+        },
+        {
+          "id": "lids_057",
+          "title": "Баночная, бутылочная и кастрюльная крышки",
+          "description": "Три самостоятельных примитива. У кастрюльной крышки стеклянный диск, металлический обод, плоская дуга, крепёж и паровая втулка остаются отдельными.",
+          "source": "forma/showcase/sources/057/lids.forma",
+          "download_base": "forma-0-57-lids",
+          "tags": [
+            "3 типа",
+            "Отдельная ручка и крепёж",
+            "GLB + Forma"
+          ],
+          "posters": [
+            {
+              "view": "iso",
+              "label": "Изометрия"
+            },
+            {
+              "view": "top",
+              "label": "Сверху"
+            }
+          ]
+        },
+        {
+          "id": "switch_057",
+          "title": "Современный двойной и старый выключатели",
+          "description": "Две клавиши с нижними ступеньками в одной рамке 86 мм и отдельный старый выпуклый вариант.",
+          "source": "forma/showcase/sources/057/switch.forma",
+          "download_base": "forma-0-57-switch",
+          "tags": [
+            "Двойная клавиша",
+            "Старый выпуклый вариант",
+            "GLB + Forma"
+          ],
+          "posters": [
+            {
+              "view": "front",
+              "label": "Спереди"
+            },
+            {
+              "view": "iso",
+              "label": "Объём"
+            }
+          ]
+        }
+      ]
+    },
+    {
       "id": "train-2026-10",
       "label": "Вагон · 2026.10",
       "kicker": "Проектный стенд",
@@ -32,10 +235,21 @@
           "description": "Полная модель с отдельными деталями в исходнике и GLB. Для интерактивного просмотра используется версия с пакетированием одинаковых материалов; геометрия та же.",
           "source": "forma/examples/train_carriage.forma",
           "download_base": "vagon-61-4194-1-20",
-          "tags": ["1:20", "54+2 места", "9 секций", "76 мм колея"],
+          "tags": [
+            "1:20",
+            "54+2 места",
+            "9 секций",
+            "76 мм колея"
+          ],
           "posters": [
-            {"view": "iso", "label": "Экстерьер"},
-            {"view": "train_interior", "label": "Салон"}
+            {
+              "view": "iso",
+              "label": "Экстерьер"
+            },
+            {
+              "view": "train_interior",
+              "label": "Салон"
+            }
           ]
         }
       ]
@@ -115,11 +329,25 @@
           "description": "Исходная модель со всех сравнений: 66 объектов и 76 418 треугольников, геометрия не изменена. Полный GLB и Forma доступны для скачивания; интерактивный preview загружается только по явной кнопке.",
           "source": "forma/examples/thinkpad_x1.forma",
           "download_base": "forma-0-56-thinkpad-x1",
-          "tags": ["66 объектов", "76 418 треугольников", "7 ракурсов", "GLB + Forma"],
+          "tags": [
+            "66 объектов",
+            "76 418 треугольников",
+            "7 ракурсов",
+            "GLB + Forma"
+          ],
           "posters": [
-            {"view": "iso", "label": "Изометрия"},
-            {"view": "front", "label": "Спереди"},
-            {"view": "top", "label": "Сверху"}
+            {
+              "view": "iso",
+              "label": "Изометрия"
+            },
+            {
+              "view": "front",
+              "label": "Спереди"
+            },
+            {
+              "view": "top",
+              "label": "Сверху"
+            }
           ]
         }
       ]
@@ -154,42 +382,108 @@
           "id": "architecture_selectable_055",
           "title": "Дверь и три окна · 0.55",
           "description": "Двусторонняя дверь, обычное, панорамное и составное окна. Полный GLB содержит все редактируемые части; лёгкий preview по кнопке включает только дверь.",
-          "source": "forma/examples/architecture_selectable_055.forma",
-          "preview_source": "forma/examples/architecture_selectable_055_preview.forma",
+          "source": "forma/showcase/sources/architecture_selectable_055.forma",
+          "preview_source": "forma/showcase/sources/architecture_selectable_055_preview.forma",
           "download_base": "forma-0-55-architecture",
-          "tags": ["2 стороны двери", "3 типа окон", "GLB + Forma"],
+          "tags": [
+            "2 стороны двери",
+            "3 типа окон",
+            "GLB + Forma"
+          ],
           "posters": [
-            {"view": "iso", "label": "Общий вид"},
-            {"view": "door", "camera": "iso", "object_prefix": "дверь", "label": "Дверь"},
-            {"view": "ordinary", "camera": "iso", "object_prefix": "обычное", "label": "Обычное окно"},
-            {"view": "panoramic", "camera": "iso", "object_prefix": "панорама", "label": "Панорамное окно"},
-            {"view": "composite", "camera": "iso", "object_prefix": "составное", "label": "Составное окно"}
+            {
+              "view": "iso",
+              "label": "Общий вид"
+            },
+            {
+              "view": "door",
+              "camera": "iso",
+              "object_prefix": "дверь",
+              "label": "Дверь"
+            },
+            {
+              "view": "ordinary",
+              "camera": "iso",
+              "object_prefix": "обычное",
+              "label": "Обычное окно"
+            },
+            {
+              "view": "panoramic",
+              "camera": "iso",
+              "object_prefix": "панорама",
+              "label": "Панорамное окно"
+            },
+            {
+              "view": "composite",
+              "camera": "iso",
+              "object_prefix": "составное",
+              "label": "Составное окно"
+            }
           ]
         },
         {
           "id": "handle_rosettes_055",
           "title": "Ручки, розетки и замки · 0.55",
           "description": "Пять форм ручек, круглые, овальные и прямоугольные розетки, вариант без розетки, настоящие скважины и отдельные цилиндры замка.",
-          "source": "forma/examples/handle_rosettes_055.forma",
+          "source": "forma/showcase/sources/handle_rosettes_055.forma",
           "download_base": "forma-0-55-handles-rosettes",
-          "tags": ["5 форм", "4 основания", "Настоящие скважины", "GLB + Forma"],
+          "tags": [
+            "5 форм",
+            "4 основания",
+            "Настоящие скважины",
+            "GLB + Forma"
+          ],
           "posters": [
-            {"view": "iso", "label": "Общий вид"},
-            {"view": "front", "label": "Спереди"},
-            {"view": "rectangular", "camera": "iso", "objects": ["прямоугольная"], "label": "Прямоугольная ручка"},
-            {"view": "relief", "camera": "iso", "objects": ["рельефная", "рельефная.lock_plug"], "label": "Овал и цилиндр"}
+            {
+              "view": "iso",
+              "label": "Общий вид"
+            },
+            {
+              "view": "front",
+              "label": "Спереди"
+            },
+            {
+              "view": "rectangular",
+              "camera": "iso",
+              "objects": [
+                "прямоугольная"
+              ],
+              "label": "Прямоугольная ручка"
+            },
+            {
+              "view": "relief",
+              "camera": "iso",
+              "objects": [
+                "рельефная",
+                "рельефная.lock_plug"
+              ],
+              "label": "Овал и цилиндр"
+            }
           ]
         },
         {
           "id": "selection_details_055",
           "title": "Путь и петля · полный выбор",
           "description": "Две рельсы, четыре отдельные шпалы, восемь отдельных точек крепления и две редактируемые створки петли. Все имена сохранены в GLB.",
-          "source": "forma/examples/selection_details_055.forma",
+          "source": "forma/showcase/sources/selection_details_055.forma",
           "download_base": "forma-0-55-selection-details",
-          "tags": ["16 объектов", "4 шпалы отдельно", "2 створки", "GLB + Forma"],
+          "tags": [
+            "16 объектов",
+            "4 шпалы отдельно",
+            "2 створки",
+            "GLB + Forma"
+          ],
           "posters": [
-            {"view": "iso", "label": "Общий вид"},
-            {"view": "hinge", "camera": "iso", "object_prefix": "петля", "label": "Две створки петли"}
+            {
+              "view": "iso",
+              "label": "Общий вид"
+            },
+            {
+              "view": "hinge",
+              "camera": "iso",
+              "object_prefix": "петля",
+              "label": "Две створки петли"
+            }
           ]
         }
       ]
@@ -227,15 +521,44 @@
           "id": "smooth_transitions_054",
           "title": "Гладкие сопряжения · 0.54",
           "description": "Рельефная SDF-ручка, C1-fireball и навершенник после fuse. Полная сцена — три отдельных объекта без попарных пересечений; интерактивный preview содержит только ручку.",
-          "source": "forma/examples/smooth_transitions_054.forma",
-          "preview_source": "forma/examples/smooth_transitions_054_preview.forma",
+          "source": "forma/showcase/sources/smooth_transitions_054.forma",
+          "preview_source": "forma/showcase/sources/smooth_transitions_054_preview.forma",
           "download_base": "forma-0-54-smooth-transitions",
-          "tags": ["3 объекта", "109 280 треугольников", "26 104 в preview", "GLB + Forma"],
+          "tags": [
+            "3 объекта",
+            "109 280 треугольников",
+            "26 104 в preview",
+            "GLB + Forma"
+          ],
           "posters": [
-            {"view": "iso", "label": "Общий вид"},
-            {"view": "handle", "camera": "iso", "objects": ["ручка"], "label": "Ручка"},
-            {"view": "fireball", "camera": "iso", "objects": ["инь"], "label": "Fireball"},
-            {"view": "finial", "camera": "iso", "objects": ["навершенник"], "label": "Навершенник"}
+            {
+              "view": "iso",
+              "label": "Общий вид"
+            },
+            {
+              "view": "handle",
+              "camera": "iso",
+              "objects": [
+                "ручка"
+              ],
+              "label": "Ручка"
+            },
+            {
+              "view": "fireball",
+              "camera": "iso",
+              "objects": [
+                "инь"
+              ],
+              "label": "Fireball"
+            },
+            {
+              "view": "finial",
+              "camera": "iso",
+              "objects": [
+                "навершенник"
+              ],
+              "label": "Навершенник"
+            }
           ]
         }
       ]
@@ -266,7 +589,7 @@
         },
         {
           "title": "Молния с дополнительными зигзагами",
-          "text": "Параметр zigzags добавляет настоящие зубцы диагональных сторон. Варианты 1…5 остаются одним телом в плоском и объёмном режимах."
+          "text": "Молния показана в актуальной редакции силуэта: плоская горизонтальная верхняя кромка, центральный зигзаг и одно остриё только снизу; дополнительные зубцы удалены."
         },
         {
           "title": "Стык, колпачок и плавный переход",
@@ -278,22 +601,38 @@
           "id": "fittings_053",
           "title": "Путь и фурнитура · 0.53",
           "description": "Девять редактируемых scene-объектов: трёхчастный путь, две створки петли и четыре ручки. Попарные пересечения отдельных деталей проверены.",
-          "source": "forma/examples/fittings_053.forma",
+          "source": "forma/showcase/sources/fittings_053.forma",
           "download_base": "forma-0-53-fittings",
-          "tags": ["9 объектов", "2 створки петли", "4 формы ручек", "GLB + Forma"],
+          "tags": [
+            "9 объектов",
+            "2 створки петли",
+            "4 формы ручек",
+            "GLB + Forma"
+          ],
           "posters": [
-            {"view": "iso", "label": "Общий вид"}
+            {
+              "view": "iso",
+              "label": "Общий вид"
+            }
           ]
         },
         {
           "id": "glyphs_expansion_053",
           "title": "Значки и половины · 0.53",
           "description": "Сердце, серп, молния и два вида объёмной звезды рядом с посадкой шара колпачком и ровным стыком блока. Семь отдельных объектов без взаимных пересечений.",
-          "source": "forma/examples/glyphs_expansion_053.forma",
+          "source": "forma/showcase/sources/glyphs_expansion_053.forma",
           "download_base": "forma-0-53-glyphs-expansion",
-          "tags": ["7 объектов", "Без плоских середин", "zigzags=3", "GLB + Forma"],
+          "tags": [
+            "7 объектов",
+            "Без плоских середин",
+            "Плоский верх молнии",
+            "GLB + Forma"
+          ],
           "posters": [
-            {"view": "iso", "label": "Общий вид"}
+            {
+              "view": "iso",
+              "label": "Общий вид"
+            }
           ]
         }
       ]
@@ -338,9 +677,17 @@
           "description": "В одной сцене применены новые группы, копии, столы, дверь, шторы, драпировка, ковёр и электрика вместе с существующими примитивами Forma.",
           "source": "forma/examples/living_room_diorama.forma",
           "download_base": "forma-0-52-living-room-1-20",
-          "tags": ["Forma 0.52", "1:20", "20 типов операций", "Без импортов"],
+          "tags": [
+            "Forma 0.52",
+            "1:20",
+            "20 типов операций",
+            "Без импортов"
+          ],
           "posters": [
-            {"view": "iso", "label": "Общий вид"}
+            {
+              "view": "iso",
+              "label": "Общий вид"
+            }
           ]
         }
       ]

@@ -243,13 +243,10 @@ class TestExamplesAndTools(unittest.TestCase):
         from forma.webui import EXAMPLES
         keys = [key for _, key in EXAMPLES]
         self.assertEqual(keys, [
-            "tools_gallery_1", "tools_gallery_2", "tools_gallery_3", "tools_gallery_4",
-            "mug", "car", "vase", "bottle", "alien", "gear", "mannequin",
+            "mug", "car", "vase", "alien", "gear", "mannequin",
             "apple", "human_studio", "human_skeleton", "human_skeleton_original",
             "animation_tracks", "wardrobe", "thinkpad_x1",
-            "furniture_hardware", "architecture_selectable_055", "handle_rosettes_055",
-            "selection_details_055", "smooth_transitions_054", "fittings_053", "glyphs_expansion_053",
-            "mechanics", "showcase", "motorcycle", "clock", "clock_led", "anime_face",
+            "mechanics", "motorcycle", "clock", "clock_led", "anime_face",
         ])
 
     def test_removed_examples_are_gone(self):
@@ -258,7 +255,10 @@ class TestExamplesAndTools(unittest.TestCase):
                     "animation", "tech", "tools", "funnel", "orientation",
                     "surface", "half_oval", "hook", "graded", "wifi", "chain",
                     "origami", "mates", "primitives", "shape_controls", "mech",
-                    "polygons"):
+                    "polygons", "bottle", "furniture_hardware", "showcase",
+                    "tools_gallery_1", "tools_gallery_2", "tools_gallery_3", "tools_gallery_4",
+                    "architecture_selectable_055", "handle_rosettes_055", "selection_details_055",
+                    "smooth_transitions_054", "fittings_053", "glyphs_expansion_053"):
             with self.subTest(key=key):
                 with self.assertRaises(Exception):
                     load_example(key)

@@ -196,6 +196,9 @@ def _rail_solid(cross: mf.CrossSection, length: float, x: float,
             "foot_width": "ширина подошвы, мм (24)",
             "foot_height": "высота подошвы, мм (4)",
             "rail_fillet": "радиусы сопряжения профиля, мм (1.2)",
+            "rail_holes": "сквозные отверстия в стенке каждой рельсы 0…64 (0)",
+            "rail_hole_d": "диаметр сквозного отверстия стенки, мм (8)",
+            "rail_hole_pitch": "шаг отверстий по Y; 0 — равномерно по длине (0)",
             "sleepers": "шпалы да/нет (да)",
             "sleeper_shape": "скошенная, бетонная или брусок (скошенная)",
             "sleeper_count": "число шпал; 0 — автоматически по шагу (0)",
@@ -230,6 +233,9 @@ def track(a, name):
     foot_w = float(a.num("foot_width", 24.0, minv=2.0, maxv=500.0))
     foot_h = float(a.num("foot_height", 4.0, minv=0.4, maxv=500.0))
     fillet = float(a.num("rail_fillet", 1.2, minv=0.0, maxv=100.0) or 0.0)
+    rail_holes = int(a.int("rail_holes", 0, minv=0, maxv=64) or 0)
+    rail_hole_d = float(a.num("rail_hole_d", 8.0, minv=1.0, maxv=200.0))
+    rail_hole_pitch = float(a.num("rail_hole_pitch", 0.0, minv=0.0, maxv=10000.0) or 0.0)
     sleepers_on = a.boolean("sleepers", True)
     raw_sleeper = (a.text("sleeper_shape", "скошенная") or "скошенная").strip().lower()
     sleeper_shape = {"скошенная": "скошенная", "скруглённая": "скошенная",
@@ -259,6 +265,33 @@ def track(a, name):
     rail_z = sleeper_h - seat_depth + plate_t if sleepers_on else 0.0
     cross = _rail_cross(profile, height, head_w, head_h, web, foot_w, foot_h, fillet)
     rail_parts = [_rail_solid(cross, length, x, rail_z) for x in centers]
+    hole_positions = []
+    if rail_holes:
+        if profile == "брусок":
+            raise GeometryError("track: rail_holes предназначены для профиля со стенкой, не для бруска")
+        web_height = height - head_h - foot_h
+        if web_height <= 0.0 or rail_hole_d > web_height - 2.0 * max(0.5, fillet):
+            raise GeometryError("track: rail_hole_d не помещается в стенку между головкой и подошвой")
+        if rail_hole_pitch > 0.0:
+            if (rail_holes - 1) * rail_hole_pitch + rail_hole_d + 4.0 > length:
+                raise GeometryError("track: отверстия с заданным rail_hole_pitch не помещаются по длине")
+            hole_positions = [(i - (rail_holes - 1) / 2.0) * rail_hole_pitch
+                              for i in range(rail_holes)]
+        else:
+            hole_positions = [-length / 2.0 + length * (i + 1) / (rail_holes + 1)
+                              for i in range(rail_holes)]
+        hole_z = rail_z + foot_h + web_height / 2.0
+        drilled = []
+        for x, rail in zip(centers, rail_parts):
+            for y in hole_positions:
+                tool = mf.Manifold.cylinder(max(head_w, foot_w, web) + 2.0,
+                                            rail_hole_d / 2.0, rail_hole_d / 2.0,
+                                            max(24, segments * 2)).rotate((0.0, 90.0, 0.0))
+                tool = tool.translate((x - (max(head_w, foot_w, web) + 2.0) / 2.0,
+                                       y, hole_z))
+                rail = rail - tool
+            drilled.append(_one(rail, "рельса со сквозными отверстиями"))
+        rail_parts = drilled
     # Каждая физическая деталь — отдельный объект Forma. Compound из всех
     # рельс/шпал выглядел компактно в списке, но делал отдельную шпалу
     # недоступной для pick, скрытия, покраски и точечного экспорта.
@@ -333,7 +366,9 @@ def track(a, name):
     params = dict(length=length, rails=rails, gauge=gauge if rails == 2 else 0.0,
                   rail_profile=profile, rail_height=height, head_width=head_w,
                   head_height=head_h, web=web, foot_width=foot_w, foot_height=foot_h,
-                  rail_fillet=fillet, sleepers=sleepers_on, sleeper_shape=sleeper_shape,
+                  rail_fillet=fillet, rail_holes=rail_holes, rail_hole_d=rail_hole_d,
+                  rail_hole_pitch=rail_hole_pitch, rail_hole_positions=hole_positions,
+                  sleepers=sleepers_on, sleeper_shape=sleeper_shape,
                   sleeper_count=len(positions),
                   sleeper_step=actual_step if sleepers_on and len(positions) > 1 else step,
                   sleeper_step_requested=step,

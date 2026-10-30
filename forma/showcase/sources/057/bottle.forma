@@ -1,0 +1,3 @@
+# Веб-стенд 0.57: стекло с пробкой и пластик с пятью лапками и крышкой.
+стеклянная = bottle kind=стекло form=округлая neck=длинная bottom=углубление closure=пробка color=#c1dcd7 cap_color=#b78c5d
+пластиковая = bottle kind=пластик form=округлая neck=округлая bottom=ножки closure=крышка at=[105,0,0] color=#d8e7df cap_color=#e1e2dd

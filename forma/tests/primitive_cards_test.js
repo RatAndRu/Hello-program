@@ -39,7 +39,8 @@ function cardFor(tool, overrides = {}) {
 }
 
 const wanted = ['box', 'sphere', 'ellipsoid', 'capsule', 'heart', 'crescent',
-  'star', 'lightning', 'track', 'hinge', 'door_handle'];
+  'star', 'lightning', 'track', 'hinge', 'door_handle', 'switch', 'jar', 'bottle',
+  'lid', 'bicycle_chain'];
 const output = {};
 for (const op of wanted) {
   const tool = tools.find((item) => item.op === op);
@@ -61,7 +62,22 @@ for (const op of ['box', 'sphere', 'ellipsoid', 'capsule']) {
   if (output[op].includes('expand_seat=')) throw new Error(`${op}: авто-заход не должен становиться 0`);
 }
 if (!output.star.includes('facet=нет')) throw new Error('star: режим граней не сохранён');
-if (!output.lightning.includes('zigzags=1')) throw new Error('lightning: число зигзагов не сохранено');
+if (output.lightning.includes('zigzags=')) throw new Error('lightning: удалённые дополнительные зубцы вернулись');
+if (!output.track.includes('rail_holes=0') || !output.track.includes('rail_hole_d=8')) {
+  throw new Error('track: настройки сквозных отверстий стенки не сохранены');
+}
+if (!output.switch.includes('style=современная') || !output.switch.includes('rockers=2')) {
+  throw new Error('switch: тип или раздвоенная клавиша не сохранены');
+}
+for (const op of ['jar', 'bottle', 'lid', 'bicycle_chain']) {
+  if (tools.find((item) => item.op === op).group !== 'Готовые детали') {
+    throw new Error(`${op}: неверная группа карточки`);
+  }
+}
+if (!output.jar.includes('ribs=40') || !output.bottle.includes('closure=нет')
+    || !output.lid.includes('kind=банка') || !output.bicycle_chain.includes('pitch=12.7')) {
+  throw new Error('новые карточки: истинные параметры потеряны');
+}
 const track = tools.find((item) => item.op === 'track');
 const noSleepers = shapeScript(track, cardFor(track, { sleepers: false }));
 if (!noSleepers.includes('sleepers=нет') || noSleepers.includes('fasteners=')) {

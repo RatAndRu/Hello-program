@@ -12,7 +12,7 @@ from pathlib import Path
 import manifold3d as mf
 import numpy as np
 
-from forma.ops import lookup
+from forma.ops import OPS, lookup
 from forma.run import build
 
 
@@ -73,15 +73,21 @@ class InflatedGlyphGeometryTest(unittest.TestCase):
                 self.assertAlmostEqual(float(size(m)[axis]), depth, delta=2e-4)
                 self.assertEqual(m.genus(), 0)
 
-    def test_lightning_has_real_additional_zigzags(self):
-        classic = valid(obj("о = lightning height=110 width=55 depth=12 zigzags=1").manifold)
-        stepped_obj = obj("о = lightning height=110 width=55 depth=12 zigzags=4 volume=да")
-        stepped = valid(stepped_obj.manifold)
-        flat_stepped = valid(obj("о = lightning height=110 width=55 depth=12 zigzags=4").manifold)
-        np.testing.assert_allclose(size(stepped), size(flat_stepped), atol=2e-4)
-        self.assertNotAlmostEqual(flat_stepped.volume(), classic.volume(), places=3)
-        self.assertGreater(flat_stepped.num_tri(), classic.num_tri())
-        self.assertEqual(stepped_obj.meta.get("zigzags"), 4)
+    def test_lightning_has_flat_top_central_zigzag_and_one_bottom_point(self):
+        bolt = obj("о = lightning height=110 width=55 depth=12")
+        flat = valid(bolt.manifold)
+        vertices = np.asarray(flat.to_mesh().vert_properties)[:, :3]
+        top = np.unique(np.round(vertices[vertices[:, 2] == vertices[:, 2].max()][:, [0, 2]], 5), axis=0)
+        bottom = np.unique(np.round(vertices[vertices[:, 2] == vertices[:, 2].min()][:, [0, 2]], 5), axis=0)
+        self.assertEqual(len(top), 2, "верх обязан быть отрезком, а не остриём")
+        self.assertGreater(np.ptp(top[:, 0]), 20)
+        self.assertEqual(len(bottom), 1, "остриё должно быть только одно и только снизу")
+        self.assertEqual(bolt.meta.get("silhouette"), "flat_top_single_bottom_point")
+        self.assertNotIn("zigzags", bolt.meta)
+        volumetric = valid(obj("о = lightning height=110 width=55 depth=12 volume=да").manifold)
+        np.testing.assert_allclose(size(volumetric), size(flat), atol=2e-4)
+        self.assertFalse(build("о = lightning zigzags=4").ok)
+        self.assertNotIn("zigzags", OPS["lightning"].params)
 
     def test_faceted_star_keeps_requested_bounds(self):
         plain = valid(obj("о = star outer=60 inner=25 depth=20 volume_style=фасеточный").manifold)
@@ -255,7 +261,7 @@ class PrimitiveExportAndHelpTest(unittest.TestCase):
     SCRIPT = ("петля = hinge height=70 leaf_width=36 open_angle=45\n"
               "ручка = door_handle form=рельефная relief=.7 at=[100,0,0]\n"
               "звезда = star outer=35 inner=15 depth=16 volume=да at=[0,100,0]\n"
-              "молния = lightning height=80 width=40 depth=12 zigzags=3 volume=да at=[80,100,0]\n")
+              "молния = lightning height=80 width=40 depth=12 volume=да at=[80,100,0]\n")
 
     def test_glb_and_forma_roundtrip(self):
         result = ok(self.SCRIPT)

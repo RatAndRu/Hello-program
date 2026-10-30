@@ -23,8 +23,9 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import circle_profile, sweep_solid
+from .geometry import circle_profile, ensure_ccw, solid_parts, sweep_solid
 from .ops import make_solid, op
+from .ops_fittings import _assembly
 
 
 def _unit(v) -> np.ndarray:
@@ -232,3 +233,142 @@ def chain_between(a, name):
                 f"соединить: цепь {length:.0f} мм между «{solids[0].name}» "
                 f"и «{solids[1].name}»", a.cmd.line)
     return made
+
+
+def _bike_cylinder_y(radius: float, length: float, x: float, y: float, z: float,
+                     segments: int) -> mf.Manifold:
+    return mf.Manifold.cylinder(length, radius, radius, segments).rotate(
+        (90.0, 0.0, 0.0)).translate((x, y + length * 0.5, z))
+
+
+def _bike_plate(pitch: float, height: float, thickness: float, hole_r: float,
+                y: float, z: float, segments: int) -> mf.Manifold:
+    """Фигурная пластина с вогнутой талией и двумя настоящими отверстиями."""
+    half = pitch * 0.5
+    radius = height * 0.5
+    waist = height * 0.29
+    curve_steps = max(10, segments // 2)
+    arc_steps = max(8, segments // 2)
+    points = []
+    for i in range(curve_steps + 1):
+        x = -half + pitch * i / curve_steps
+        u = abs(x / half)
+        points.append((x, waist + (radius - waist) * u * u))
+    for i in range(1, arc_steps + 1):
+        angle = math.pi * 0.5 - math.pi * i / arc_steps
+        points.append((half + radius * math.cos(angle), radius * math.sin(angle)))
+    for i in range(1, curve_steps + 1):
+        x = half - pitch * i / curve_steps
+        u = abs(x / half)
+        points.append((x, -waist - (radius - waist) * u * u))
+    for i in range(1, arc_steps):
+        angle = -math.pi * 0.5 - math.pi * i / arc_steps
+        points.append((-half + radius * math.cos(angle), radius * math.sin(angle)))
+    cross = mf.CrossSection([np.asarray(ensure_ccw(points), dtype=float)])
+    plate = cross.extrude(thickness).rotate((90.0, 0.0, 0.0)).translate(
+        (0.0, y + thickness * 0.5, z))
+    for x in (-half, half):
+        tool = _bike_cylinder_y(hole_r, thickness + 1.0, x, y, z, segments * 2)
+        plate = plate - tool
+    return plate
+
+
+def _bike_tube(outer_r: float, inner_r: float, length: float, x: float, z: float,
+               segments: int) -> mf.Manifold:
+    outer = _bike_cylinder_y(outer_r, length, x, 0.0, z, segments * 2)
+    inner = _bike_cylinder_y(inner_r, length + 1.0, x, 0.0, z, segments * 2)
+    return outer - inner
+
+
+@op("bicycle_chain", aliases=("велоцепь", "велосипедная_цепь", "bike_chain"),
+    category="Примитивы",
+    summary="Прямая велосипедная цепь из чередующихся внутренних и внешних "
+            "фигурных пластин. Ролики, втулки и пины с проушинами являются "
+            "настоящими отдельными деталями; каждая пластина выбирается.",
+    example="цепь = bicycle_chain links=12 pitch=12.7 width=10.2",
+    params={
+        "links": "число роликов/шагов 3…64 (12)",
+        "pitch": "шаг цепи, мм (12.7; стандарт 1/2 дюйма)",
+        "roller_d": "наружный диаметр ролика, мм (7.7)",
+        "pin_d": "диаметр пина, мм (3.3)",
+        "width": "ширина по внешним пластинам, мм (10.2)",
+        "plate_height": "высота фигурной пластины, мм (8)",
+        "plate_thickness": "толщина внешней пластины, мм (1.2)",
+        "clearance": "ходовой зазор ролика/пластин, мм (0.12)",
+        "segments": "сегментов дуг 12…48 (24)",
+        "at": "положение [x,y,z], низ на z=0", "center": "центрировать всю цепь",
+        "color": "общий цвет", "plate_color": "цвет пластин",
+        "roller_color": "цвет роликов", "bushing_color": "цвет втулок",
+        "pin_color": "цвет пинов"})
+def bicycle_chain(a, name):
+    links = int(a.int("links", 12, minv=3, maxv=64) or 12)
+    pitch = float(a.num("pitch", 12.7, minv=6.0, maxv=40.0))
+    roller_d = float(a.num("roller_d", 7.7, minv=3.0, maxv=20.0))
+    pin_d = float(a.num("pin_d", 3.3, minv=1.2, maxv=8.0))
+    width = float(a.num("width", 10.2, minv=5.0, maxv=30.0))
+    plate_h = float(a.num("plate_height", 8.0, minv=4.0, maxv=20.0))
+    outer_t = float(a.num("plate_thickness", 1.2, minv=0.45, maxv=3.0))
+    clearance = float(a.num("clearance", 0.12, minv=0.03, maxv=0.5))
+    segments = int(a.int("segments", 24, minv=12, maxv=48) or 24)
+    inner_t = outer_t * 0.83
+    if plate_h < roller_d * 0.92:
+        raise GeometryError("bicycle_chain: пластина слишком низкая для ролика.")
+    if pitch < plate_h * 1.25:
+        raise GeometryError("bicycle_chain: шаг слишком мал для фигурных пластин.")
+    if pin_d >= roller_d * 0.62:
+        raise GeometryError("bicycle_chain: пин не оставляет стенки ролика и втулки.")
+    outer_y = width * 0.5 - outer_t * 0.5
+    inner_y = width * 0.5 - outer_t - clearance - inner_t * 0.5
+    roller_length = 2.0 * (inner_y - inner_t * 0.5 - clearance)
+    if roller_length <= 1.0 or inner_y <= inner_t:
+        raise GeometryError("bicycle_chain: width слишком мала для пластин и ролика.")
+    pin_r = pin_d * 0.5
+    bushing_r = roller_d * 0.34
+    bushing_inner = pin_r + clearance * 0.55
+    roller_inner = bushing_r + clearance * 0.65
+    if roller_inner >= roller_d * 0.5 - 0.25:
+        raise GeometryError("bicycle_chain: стенка ролика стала слишком тонкой.")
+    z = plate_h * 0.5
+    x_shift = -(links - 1) * pitch * 0.5
+    parts = []
+    # Первый объект получает короткое имя root; остальные имеют явные
+    # физические suffix'ы и одинаково доступны для picking и экспорта.
+    for span in range(links - 1):
+        x = x_shift + (span + 0.5) * pitch
+        outer = span % 2 == 0
+        thickness = outer_t if outer else inner_t
+        y = outer_y if outer else inner_y
+        hole = pin_r + clearance * 0.35 if outer else bushing_r + clearance * 0.35
+        family = "outer" if outer else "inner"
+        for side, sign in (("a", -1.0), ("b", 1.0)):
+            plate = _bike_plate(pitch, plate_h, thickness, hole, sign * y, z, segments)
+            plate = plate.translate((x, 0.0, 0.0))
+            suffix = "" if not parts else f".{family}_plate_{span + 1}_{side}"
+            parts.append((suffix, plate, "plate_color", "bicycle_plate"))
+    for i in range(links):
+        x = x_shift + i * pitch
+        roller = _bike_tube(roller_d * 0.5, roller_inner, roller_length, x, z, segments)
+        bushing_len = 2.0 * (inner_y + inner_t * 0.5) + 0.08
+        bushing = _bike_tube(bushing_r, bushing_inner, bushing_len, x, z, segments)
+        pin = _bike_cylinder_y(pin_r, width + 0.5, x, 0.0, z, segments * 2)
+        # Небольшие клепаные головки — часть того же физического пина.
+        for sign in (-1.0, 1.0):
+            head = _bike_cylinder_y(pin_r * 1.28, 0.28, x,
+                                    sign * (width * 0.5 + 0.14), z, segments * 2)
+            pin = pin + head
+        parts.extend(((f".roller_{i + 1}", roller, "roller_color", "bicycle_roller"),
+                      (f".bushing_{i + 1}", bushing, "bushing_color", "bicycle_bushing"),
+                      (f".pin_{i + 1}", pin, "pin_color", "bicycle_pin")))
+    full = []
+    colors = {"bicycle_plate": "#aeb6bc", "bicycle_roller": "#858f96",
+              "bicycle_bushing": "#747e85", "bicycle_pin": "#c1c7cb"}
+    for suffix, solid, color_key, kind in parts:
+        if solid_parts(solid) != 1:
+            raise GeometryError(f"bicycle_chain: {kind} должен быть одной деталью.")
+        full.append((suffix, solid, color_key, colors[kind], 0.82, 0.27, kind))
+    root = _assembly(a, name, full, {
+        "links": links, "pitch": pitch, "roller_d": roller_d, "pin_d": pin_d,
+        "width": width, "plate_height": plate_h, "plate_thickness": outer_t,
+        "clearance": clearance, "segments": segments}, "bicycle_chain")
+    root.notes.append("чередование outer/inner; каждая пластина, ролик, втулка и пин выбираются")
+    return root

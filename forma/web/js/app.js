@@ -3735,7 +3735,7 @@ function runCommand() {
   }
   const RECIPES = { '/кружка': 'mug', '/mug': 'mug', '/ваза': 'vase', '/vase': 'vase',
     '/шестерня': 'gear', '/gear': 'gear', '/кузов': 'car', '/car': 'car',
-    '/бутылка': 'bottle', '/bottle': 'bottle', '/пришелец': 'alien', '/alien': 'alien',
+    '/пришелец': 'alien', '/alien': 'alien',
     '/манекен': 'mannequin', '/mannequin': 'mannequin', '/яблоко': 'apple', '/apple': 'apple',
     '/шкаф': 'wardrobe', '/wardrobe': 'wardrobe',
     '/механика': 'mechanics', '/mechanics': 'mechanics',
@@ -3744,7 +3744,7 @@ function runCommand() {
     $('cmd-input').value = '';
     if (RECIPES[low]) { loadExample(RECIPES[low]); return; }
     if (low === '/инструменты' || low === '/tools') { openTools(); return; }
-    toast('Рецепты: /кружка, /яблоко, /ваза, /бутылка, /шестерня, /кузов, /пришелец, /манекен, /шкаф, /механика, /дорожки, /инструменты');
+    toast('Рецепты: /кружка, /яблоко, /ваза, /шестерня, /кузов, /пришелец, /манекен, /шкаф, /механика, /дорожки, /инструменты');
     return;
   }
   if (low === '/очистить' || low === '/clear') {
@@ -4798,12 +4798,11 @@ const TOOL_SHAPES = [
   },
   {
     op: 'lightning', name: 'молния', title: 'Молния', group: 'Природные примитивы',
-    desc: 'Классическая молния или вариант с дополнительными зубцами диагональных сторон. Объёмный режим сохраняет острия и надувает обе стороны без плоской середины.',
+    desc: 'Центральный зигзаг самого силуэта: плоская горизонтальная верхняя кромка и одно остриё только снизу. Дополнительных зубцов на диагоналях нет; объёмный режим надувает обе стороны.',
     params: [
       { k: 'height', label: 'высота', v: 90, step: 5, min: 2, max: 5000 },
       { k: 'width', label: 'ширина', v: 44, step: 2, min: 1, max: 5000 },
       { k: 'depth', label: 'толщина', v: 10, step: 1, min: 0.1, max: 1000 },
-      { k: 'zigzags', label: 'зигзагов', v: 1, step: 1, min: 1, max: 5 },
       { k: 'volume', label: 'объёмные стороны', v: false, kind: 'bool' },
       { k: 'round', label: 'скругл.', v: 1.5, step: 0.5, min: 0, max: 1000 },
       { k: 'wall', label: 'формочка', v: 0, step: 0.5, min: 0, max: 1000 },
@@ -4899,6 +4898,9 @@ const TOOL_SHAPES = [
       { k: 'foot_width', label: 'подошва', v: 24, step: 1, min: 2, max: 500 },
       { k: 'foot_height', label: 'высота подошвы', v: 4, step: 0.5, min: 0.4, max: 500 },
       { k: 'rail_fillet', label: 'сопряжение', v: 1.2, step: 0.2, min: 0, max: 100 },
+      { k: 'rail_holes', label: 'отверстия стенки', v: 0, step: 1, min: 0, max: 64 },
+      { k: 'rail_hole_d', label: '⌀ отверстий', v: 8, step: 0.5, min: 1, max: 200 },
+      { k: 'rail_hole_pitch', label: 'шаг отверстий (0 — авто)', v: 0, step: 5, min: 0, max: 10000 },
       { k: 'sleepers', label: 'шпалы', v: true, kind: 'bool' },
       { k: 'sleeper_shape', label: 'форма шпалы', v: 'скошенная', kind: 'raw', choices: ['скошенная', 'бетонная', 'брусок'] },
       { k: 'sleeper_count', label: 'число шпал (0 — авто)', v: 0, step: 1, min: 0, max: 1000 },
@@ -5077,13 +5079,58 @@ const TOOL_SHAPES = [
   },
   {
     op: 'switch', name: 'выключатель', title: 'Выключатель — клавиши', group: 'Готовые детали',
-    desc: 'Отдельные клавиши сидят в настоящих вырезах пластины. Состояние меняет их наклон, подсветка и винты не объединяются с клавишами.',
+    desc: 'Современная клавиша имеет плоскость и нижнюю ступеньку, старая — выпуклый толстый корпус. Две клавиши помещаются в одну рамку 86 мм; все детали выбираются отдельно.',
     params: [
       { k: 'rockers', label: 'клавиш', v: 2, step: 1, min: 1, max: 3 },
+      { k: 'style', label: 'тип клавиши', v: 'современная', kind: 'raw', choices: ['современная', 'старая'] },
       { k: 'state', label: 'состояние', v: 'on', kind: 'raw', choices: ['on', 'off'] },
       { k: 'angle', label: 'наклон°', v: 6, step: 1, min: 0, max: 20 },
       { k: 'led', label: 'подсветка', v: true, kind: 'bool' },
       { k: 'screws', label: 'винты', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'jar', name: 'банка', title: 'Банка — стекло и резьба', group: 'Готовые детали',
+    desc: 'Настоящая полость, три формы корпуса, винтовое горлышко, центральное углубление и круговое рифление дна. Крышка — отдельный выбираемый объект.',
+    params: [
+      { k: 'form', label: 'корпус', v: 'округлая', kind: 'raw', choices: ['цилиндр', 'округлая', 'квадратная'] },
+      { k: 'diameter', label: '⌀ корпуса', v: 80, step: 2, min: 20, max: 500 },
+      { k: 'height', label: 'высота', v: 110, step: 5, min: 30, max: 1000 },
+      { k: 'neck_d', label: '⌀ горлышка', v: 58, step: 1, min: 10, max: 250 },
+      { k: 'wall', label: 'стенка', v: 1.4, step: 0.1, min: 0.35, max: 8 },
+      { k: 'bottom', label: 'дно', v: 'углубление', kind: 'raw', choices: ['плоское', 'углубление'] },
+      { k: 'ribs', label: 'рёбра дна', v: 40, step: 2, min: 0, max: 80 },
+      { k: 'thread', label: 'резьба', v: true, kind: 'bool' },
+      { k: 'cap', label: 'крышка', v: false, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'bottle', name: 'бутылка', title: 'Бутылка — стекло / пластик', group: 'Готовые детали',
+    desc: 'Стеклянная или пластиковая бутылка с полостью, длинным либо округлым горлом, punt или пятью лапками. Резьбу можно отключить; крышка и пробка выбираются отдельно.',
+    params: [
+      { k: 'kind', label: 'материал', v: 'стекло', kind: 'raw', choices: ['стекло', 'пластик'] },
+      { k: 'form', label: 'корпус', v: 'округлая', kind: 'raw', choices: ['цилиндр', 'округлая', 'квадратная'] },
+      { k: 'neck', label: 'горло', v: 'длинная', kind: 'raw', choices: ['длинная', 'округлая'] },
+      { k: 'diameter', label: '⌀ корпуса', v: 70, step: 2, min: 20, max: 500 },
+      { k: 'height', label: 'высота', v: 220, step: 5, min: 30, max: 1000 },
+      { k: 'neck_d', label: '⌀ горлышка', v: 28, step: 1, min: 10, max: 250 },
+      { k: 'wall', label: 'стенка', v: 1, step: 0.1, min: 0.35, max: 8 },
+      { k: 'bottom', label: 'дно', v: 'углубление', kind: 'raw', choices: ['плоское', 'углубление', 'ножки'] },
+      { k: 'thread', label: 'резьба', v: true, kind: 'bool' },
+      { k: 'closure', label: 'закрытие', v: 'нет', kind: 'raw', choices: ['нет', 'крышка', 'пробка'] },
+    ],
+  },
+  {
+    op: 'lid', name: 'крышка', title: 'Крышка — банка / бутылка / кастрюля', group: 'Готовые детали',
+    desc: 'Баночная twist-off, рифлёная пластиковая или кастрюльная крышка. У последней обод, ручка, крепёж и втулка парового отверстия остаются отдельными деталями.',
+    params: [
+      { k: 'kind', label: 'вид', v: 'банка', kind: 'raw', choices: ['банка', 'бутылка', 'кастрюля'] },
+      { k: 'diameter', label: 'посадочный ⌀', v: 58, step: 2, min: 16, max: 500 },
+      { k: 'material', label: 'материал кастрюли', v: 'металл', kind: 'raw', choices: ['металл', 'стекло'] },
+      { k: 'handle', label: 'ручка кастрюли', v: 'кнопка', kind: 'raw', choices: ['кнопка', 'скоба', 'дуга', 'нет'] },
+      { k: 'ribs', label: 'рёбра (0 — гладко)', v: 8, step: 2, min: 0, max: 80 },
+      { k: 'thread', label: 'резьба', v: true, kind: 'bool' },
+      { k: 'vent', label: 'паровое отверстие', v: true, kind: 'bool' },
     ],
   },
   {
@@ -5337,6 +5384,19 @@ const TOOL_SHAPES = [
       { k: 'links', label: 'звеньев', v: 8, step: 1, min: 1, max: 200 },
       { k: 'size', label: 'звено', v: 24, step: 2, min: 1, max: 2000 },
       { k: 'wire', label: 'пруток', v: 3, step: 0.5, min: 0.2, max: 5000 },
+    ],
+  },
+  {
+    op: 'bicycle_chain', name: 'велоцепь', title: 'Велосипедная цепь', group: 'Готовые детали',
+    desc: 'Чередующиеся фигурные внутренние и внешние пластины с двумя отверстиями, полые ролики и втулки, отдельные клепаные пины. Каждая физическая деталь доступна для выбора.',
+    params: [
+      { k: 'links', label: 'роликов', v: 12, step: 1, min: 3, max: 64 },
+      { k: 'pitch', label: 'шаг', v: 12.7, step: 0.1, min: 6, max: 40 },
+      { k: 'roller_d', label: '⌀ ролика', v: 7.7, step: 0.1, min: 3, max: 20 },
+      { k: 'pin_d', label: '⌀ пина', v: 3.3, step: 0.1, min: 1.2, max: 8 },
+      { k: 'width', label: 'ширина', v: 10.2, step: 0.2, min: 5, max: 30 },
+      { k: 'plate_height', label: 'высота пластины', v: 8, step: 0.5, min: 4, max: 20 },
+      { k: 'plate_thickness', label: 'толщина пластины', v: 1.2, step: 0.1, min: 0.45, max: 3 },
     ],
   },
   {

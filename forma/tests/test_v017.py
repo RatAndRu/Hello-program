@@ -111,7 +111,7 @@ class TextureSeamTest(unittest.TestCase):
 
 
 class ExamplesTest(unittest.TestCase):
-    """Витрина, мотоцикл и часы: собираются без ошибок и проходят проверки."""
+    """Мотоцикл и часы собираются; удалённая выставка не возвращается."""
 
     def _example(self, name):
         res = scene((ROOT / "examples" / f"{name}.forma").read_text(encoding="utf-8"))
@@ -145,13 +145,13 @@ class ExamplesTest(unittest.TestCase):
         self.assertEqual({c.get("scene") for c in plan["clips"]}, {"ход"})
         self.assertEqual({c["kind"] for c in plan["clips"]}, {"turn"})
 
-    def test_showcase_has_many_tools(self):
-        res = self._example("showcase")
-        names = {o.name for o in res.visible_solids()}
-        for part in ("турбина", "плитки", "ряд_штифтов", "листва", "крюк_пример",
-                     "червяк", "скоба_длинная", "панель"):
-            self.assertIn(part, names)
-        self.assertGreaterEqual(len(res.visible_solids()), 30)
+    def test_showcase_project_is_removed(self):
+        # 0.57: выставка не возвращается в основной проект/меню. Геометрия
+        # её инструментов проверяется отдельными тестами выше и не требует
+        # демонстрационного .forma среди пользовательских проектов.
+        self.assertFalse((ROOT / "examples" / "showcase.forma").exists())
+        from forma.webui import EXAMPLES
+        self.assertNotIn("showcase", {item[0] for item in EXAMPLES})
 
 
 class InterfaceTest(unittest.TestCase):

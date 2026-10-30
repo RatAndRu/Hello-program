@@ -19,7 +19,10 @@ ROOT = Path(__file__).resolve().parents[1]
 REMOVED_PROJECTS = (
     "funnel", "orientation", "surface", "half_oval", "hook", "graded",
     "wifi", "chain", "origami", "mates", "primitives", "shape_controls",
-    "mech", "polygons",
+    "mech", "polygons", "bottle", "furniture_hardware", "showcase",
+    "tools_gallery_1", "tools_gallery_2", "tools_gallery_3", "tools_gallery_4",
+    "architecture_selectable_055", "handle_rosettes_055", "selection_details_055",
+    "smooth_transitions_054", "fittings_053", "glyphs_expansion_053",
 )
 
 
@@ -55,21 +58,21 @@ class RemovedCatalogTest(unittest.TestCase):
             self.assertNotIn(f"op: '{name}'", app)
 
     def test_removed_projects_are_absent(self):
-        self.assertEqual(len(EXAMPLES), 31)
+        self.assertEqual(len(EXAMPLES), 18)
         for key in REMOVED_PROJECTS:
             with self.subTest(key=key):
                 self.assertFalse((ROOT / "examples" / f"{key}.forma").exists())
                 with self.assertRaises(Exception):
                     load_example(key)
 
-    def test_tool_galleries_build_and_check_themselves(self):
-        for index, check_count in enumerate((9, 8, 10, 10), 1):
+    def test_tool_galleries_are_not_in_the_application(self):
+        app = (ROOT / "web/js/app.js").read_text(encoding="utf-8")
+        for index in range(1, 5):
             with self.subTest(gallery=index):
-                result = ok(load_example(f"tools_gallery_{index}"), analyze=True)
-                self.assertEqual(len(result.scene.objects), 11)
-                checks = result.analysis["checks"]
-                self.assertEqual(len(checks), check_count)
-                self.assertTrue(all(c["ok"] for c in checks))
+                key = f"tools_gallery_{index}"
+                self.assertNotIn(key, app)
+                with self.assertRaises(Exception):
+                    load_example(key)
 
 
 class PorousGeometryTest(unittest.TestCase):

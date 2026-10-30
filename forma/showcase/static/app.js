@@ -31,6 +31,15 @@ function formatBytes(bytes) {
   return `${Math.max(1, Math.round(value / 1000))} КБ`;
 }
 
+function modelCountLabel(count) {
+  const mod100 = count % 100;
+  const mod10 = count % 10;
+  if (mod100 >= 11 && mod100 <= 14) return 'готовых моделей';
+  if (mod10 === 1) return 'готовая модель';
+  if (mod10 >= 2 && mod10 <= 4) return 'готовые модели';
+  return 'готовых моделей';
+}
+
 function versionFromUrl() {
   return new URLSearchParams(location.search).get('v');
 }
@@ -116,7 +125,7 @@ function renderVersion(id, updateUrl = true) {
       <div class="release-meta">
         <span class="pill accent">${esc(version.kicker)}</span>
         <span class="pill">${esc(version.date)}</span>
-        <span class="pill">${version.models.length} ${version.models.length === 1 ? 'готовая модель' : 'готовые модели'}</span>
+        <span class="pill">${version.models.length} ${modelCountLabel(version.models.length)}</span>
       </div>
       <h1>${esc(version.title)}</h1>
       <p class="release-summary">${esc(version.summary)}</p>

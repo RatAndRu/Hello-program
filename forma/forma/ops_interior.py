@@ -1471,11 +1471,15 @@ def socket(a, name):
 
 
 @op("switch", aliases=("выключатель", "light_switch"), category="Примитивы",
-    summary="Выключатель с отдельной пластиной, настоящими вырезами, клавишами, "
-            "наклоном состояния, подсветкой и винтами.",
-    example='выключатель = switch rockers=2 state=on angle=7 led=да',
+    summary="Выключатель с настоящими вырезами и отдельными клавишами. Современная "
+            "клавиша имеет наклонную плоскость и нижнюю ступеньку; старая — более "
+            "толстую выпуклую форму. Двойные/тройные клавиши, подсветка и винты "
+            "остаются независимо выбираемыми деталями.",
+    example='выключатель = switch rockers=2 style=современная state=on angle=7 led=да\n'
+            'старый = switch style=старая state=off',
     params={"rockers": "число клавиш 1…3 (1)", "width": "ширина пластины; 0 = по числу клавиш",
             "height": "высота (86)", "depth": "толщина пластины (10)",
+            "style": "современная или старая выпуклая клавиша (современная)",
             "state": "on/off — меняет наклон клавиш", "angle": "наклон клавиши, градусы (6)",
             "led": "да — отдельный светящийся индикатор", "screws": "да — винты",
             "corner": "скругление пластины (5)", "color": "цвет пластины",
@@ -1484,20 +1488,30 @@ def socket(a, name):
             "at": "положение; лицевая сторона −Y", "center": "центрировать по Z"})
 def switch(a, name):
     count = int(a.num("rockers", 1, minv=1, maxv=3) or 1)
+    style = a.text("style", "современная", ["современная", "старая"])
     width_value = float(a.num("width", 0.0, minv=0.0) or 0.0)
-    width = width_value or (86 + (count - 1) * 62)
+    # Двойной выключатель по референсу остаётся на стандартной рамке 86 мм,
+    # а не превращается в две отдельные одиночные пластины.
+    width = width_value or (86.0 if count <= 2 else 128.0)
     if width < 50:
         raise GeometryError("switch: width=0 (авто) или не меньше 50 мм.")
     height = float(a.num("height", 86.0, minv=50.0))
     depth = float(a.num("depth", 10.0, minv=3.0))
     front = -depth / 2
     plate = _wall_plate(width, height, depth, float(a.num("corner", 5.0, minv=0.0) or 0.0))
-    margin, gap = 11.0, 4.0
-    rocker_w = (width - 2 * margin - (count - 1) * gap) / count
-    rocker_h = height - 2 * margin
+    margin_x = 14.0 if count == 1 else (10.0 if count == 2 else 8.0)
+    margin_z, gap = 9.0, 4.0
+    rocker_w = (width - 2 * margin_x - (count - 1) * gap) / count
+    rocker_h = height - 2 * margin_z
+    if rocker_w < 14:
+        raise GeometryError("switch: клавиши не помещаются в заданную ширину пластины.")
     centers = [(i - (count - 1) / 2) * (rocker_w + gap) for i in range(count)]
+    old_w = min(rocker_w * 0.58, 26.0)
+    old_h = rocker_h * 0.76
+    opening_w = rocker_w + 1.2 if style == "современная" else old_w + 3.0
+    opening_h = rocker_h + 1.2 if style == "современная" else old_h + 4.0
     for x in centers:
-        opening = _box((rocker_w + 1.2, depth * 0.65, rocker_h + 1.2),
+        opening = _box((opening_w, depth * 0.65, opening_h),
                        (x, front + depth * 0.2, height / 2), 1.2)
         plate = plate - opening
     color = _color(a, "color", "#e7e2d8")
@@ -1507,7 +1521,17 @@ def switch(a, name):
     state = (a.text("state", "off", ["on", "off"]) or "off")
     angle = float(a.num("angle", 6.0, minv=0.0, maxv=20.0) or 0.0) * (1 if state == "on" else -1)
     for index, x in enumerate(centers, 1):
-        rocker = _box((rocker_w, 2.8, rocker_h), (0, 0, 0), 1.0)
+        if style == "современная":
+            # Большая плоскость и более выступающая нижняя полка — это один
+            # физический rocker, а не две независимо случайно склеенные детали.
+            main = _box((rocker_w, 2.6, rocker_h - 5.0), (0, 0, 2.3), 1.0)
+            lip = _box((rocker_w, 3.8, 5.4), (0, -0.3, -rocker_h / 2 + 2.7), 0.9)
+            rocker = main + lip
+        else:
+            body = _box((old_w, 5.8, old_h), (0, 0, 0), 2.4)
+            bulge = mf.Manifold.sphere(1.0, 40).scale(
+                (old_w * 0.48, 3.0, old_h * 0.46)).translate((0, -2.0, 0))
+            rocker = body + bulge
         rocker = rocker.rotate((angle, 0, 0)).translate((x, front + 0.2, height / 2))
         parts.append((f".rocker_{index}", rocker, rocker_color, "switch_rocker", {"rough": 0.3}))
         if a.boolean("led", False):
@@ -1517,12 +1541,14 @@ def switch(a, name):
             parts.append((f".led_{index}", led, led_color, "switch_led",
                           {"emissive": led_color, "emissive_strength": 1.8, "rough": 0.25}))
     if a.boolean("screws", True):
-        for index, z in enumerate((6.0, height - 6.0), 1):
-            parts.append((f".screw_{index}", _screw_y(0, front - 0.1, z), metal,
+        screw_positions = ((0.0, 6.0), (0.0, height - 6.0)) if style == "современная" else (
+            (-opening_w / 2 - 12.0, height / 2), (opening_w / 2 + 12.0, height / 2))
+        for index, (sx, sz) in enumerate(screw_positions, 1):
+            parts.append((f".screw_{index}", _screw_y(sx, front - 0.1, sz), metal,
                           "switch_screw", {"metal": 0.7, "rough": 0.3}))
     return _emit(a, name, parts, {"rockers": count, "width": width, "height": height,
-                                  "depth": depth, "state": state, "angle": angle,
-                                  "led": a.boolean("led", False)})
+                                  "depth": depth, "style": style, "state": state,
+                                  "angle": angle, "led": a.boolean("led", False)})
 
 
 def _bulb_outer(shape, neck, radius, base_z, height):

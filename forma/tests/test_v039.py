@@ -205,20 +205,16 @@ class ExamplesAndHelpTest(unittest.TestCase):
                 self.assertTrue(spec.example)
                 self.assertEqual(spec.category, "Примитивы")
 
-    def test_example_builds(self):
-        from forma.webui import load_example
-
-        for index in range(1, 5):
-            with self.subTest(gallery=index):
-                b = _build(load_example(f"tools_gallery_{index}"))
-                self.assertEqual(len(b.scene.objects), 11)
-
-    def test_example_in_menu(self):
-        from forma.webui import EXAMPLES
+    def test_gallery_projects_are_absent(self):
+        from forma.webui import EXAMPLES, load_example
 
         keys = [key for _, key in EXAMPLES]
         for index in range(1, 5):
-            self.assertIn(f"tools_gallery_{index}", keys)
+            with self.subTest(gallery=index):
+                key = f"tools_gallery_{index}"
+                self.assertNotIn(key, keys)
+                with self.assertRaises(Exception):
+                    load_example(key)
         self.assertNotIn("more_solids", keys)
 
     def test_cards_present(self):

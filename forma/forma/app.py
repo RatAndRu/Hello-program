@@ -1059,24 +1059,16 @@ def _run_uistest(report_path: str | None) -> int:
                               for op in ("cavity_frame", "face_box", "fold_sheet")),
                       "встроенная сцена и три карточки доступны")
 
-                # 0.46: выставка поверхностных инструментов и удалённые карточки
-                gallery_counts = []
-                gallery_ok = True
-                for index in range(1, 5):
-                    gallery = get(f"/api/example?key=tools_gallery_{index}")
-                    gallery_built = post("/api/build", {"script": gallery.get("script", "")})
-                    gallery_count = len(gallery_built.get("objects") or [])
-                    gallery_counts.append(gallery_count)
-                    gallery_ok = gallery_ok and gallery_built.get("ok") is True
+                # 0.46: выставки удалены из приложения; команды поверхностей остаются.
                 removed46 = all(
                     post("/api/preview", {"script": f"д = {op}"}).get("ok") is False
                     for op in ("display", "skirt", "jacket"))
-                check("0.46: четыре облегчённые выставки собираются",
-                      gallery_ok and gallery_counts == [11, 11, 11, 11],
-                      f"объектов по частям: {gallery_counts}")
-                check("0.46: удалённые команды и карточки отсутствуют",
+                check("0.46: выставки и удалённые карточки отсутствуют",
                       removed46 and all(f"op: '{op}'".encode("utf-8") not in js_app
-                                        for op in ("display", "skirt", "jacket")))
+                                        for op in ("display", "skirt", "jacket"))
+                      and all(not any(item.get("key") == f"tools_gallery_{index}"
+                                      for item in state.get("examples", []))
+                              for index in range(1, 5)))
                 check("0.46: карточки трещин и наращивания волос",
                       all(f"op: '{op}'".encode("utf-8") in js_app
                           for op in ("crack", "hair", "wrinkle", "porous")))
@@ -1186,7 +1178,7 @@ def _run_uistest(report_path: str | None) -> int:
                       fittings53.get("ok") is True and fittings53.get("objects") == 17,
                       f"{fittings53.get('tris', 0)} трис, {fittings53.get('objects', 0)} объектов")
                 glyphs53 = post("/api/preview", {"script": (
-                    "молния = lightning width=70 height=120 zigzags=4 volume=да\n"
+                    "молния = lightning width=70 height=120 volume=да\n"
                     "шар = sphere radius=30 expand=1.2 expand_side=верх "
                     "expand_joint=посадка expand_seat=3 at=[160,0,0]\n"
                     "блок = box size=[50,40,60] expand=1.2 expand_joint=стык "
@@ -1194,14 +1186,14 @@ def _run_uistest(report_path: str | None) -> int:
                 check("0.53: объёмная молния и оба стыка увеличенных половин",
                       glyphs53.get("ok") is True and glyphs53.get("objects") == 3,
                       f"{glyphs53.get('tris', 0)} трис, {glyphs53.get('objects', 0)} объектов")
-                check("0.53: карточки, параметры и оба проекта доступны в EXE",
+                check("0.53: карточки и параметры доступны без версионных проектов",
                       all(f"op: '{op}'".encode("utf-8") in js_app
                           for op in ("track", "hinge", "door_handle"))
                       and all(f"k: '{key}'".encode("utf-8") in js_app
                               for key in ("sleeper_shape", "open_angle", "relief",
-                                          "zigzags", "expand_seat", "expand_smooth"))
-                      and all(any(item.get("key") == key
-                                  for item in state.get("examples", []))
+                                          "expand_seat", "expand_smooth"))
+                      and all(not any(item.get("key") == key
+                                      for item in state.get("examples", []))
                               for key in ("fittings_053", "glyphs_expansion_053")))
 
                 # 0.54: в собранном EXE должны работать именно новые SDF/C1
@@ -1222,11 +1214,11 @@ def _run_uistest(report_path: str | None) -> int:
                       fuse54.get("ok") is True and fuse54.get("objects") == 1
                       and 0 < fuse54.get("tris", 0) <= 50000,
                       f"{fuse54.get('tris', 0)} трис")
-                check("0.54: карточки SDF и демонстрационный проект доступны в EXE",
+                check("0.54: карточки SDF доступны без демонстрационного проекта",
                       all(f"k: '{key}'".encode("utf-8") in js_app
                           for key in ("blend", "resolution"))
-                      and any(item.get("key") == "smooth_transitions_054"
-                              for item in state.get("examples", [])))
+                      and not any(item.get("key") == "smooth_transitions_054"
+                                  for item in state.get("examples", [])))
 
                 # 0.55: живая сборка двусторонней двери, окна и новых розеток.
                 architecture55 = post("/api/preview", {"script": (
@@ -1243,11 +1235,11 @@ def _run_uistest(report_path: str | None) -> int:
                       handle55.get("ok") is True and handle55.get("objects") == 2
                       and handle55.get("tris", 0) > 2500,
                       f"{handle55.get('tris', 0)} трис, {handle55.get('objects', 0)} объектов")
-                check("0.55: карточки и три новых проекта доступны в EXE",
+                check("0.55: карточки доступны, версионные проекты удалены из EXE",
                       all(f"op: '{op}'".encode("utf-8") in js_app for op in ("door", "window", "door_handle"))
                       and all(f"k: '{key}'".encode("utf-8") in js_app
                               for key in ("rosette", "lock_plug", "sections", "casing", "sill"))
-                      and all(any(item.get("key") == key for item in state.get("examples", []))
+                      and all(not any(item.get("key") == key for item in state.get("examples", []))
                               for key in ("architecture_selectable_055", "handle_rosettes_055",
                                           "selection_details_055")))
 
@@ -1266,6 +1258,30 @@ def _run_uistest(report_path: str | None) -> int:
                       )) and b"edgeCoverageToInk" in js_coverage56
                       and b"col = mix(col, uInk, edge * step(0.5, aC))" not in js_viewer56,
                       f"viewer={len(js_viewer56)} байт, coverage={len(js_coverage56)} байт")
+
+                # 0.57: новые физические примитивы внутри EXE и запрет возврата
+                # удалённых демонстрационных проектов в основной список.
+                primitives57 = post("/api/preview", {"script": (
+                    "путь = track length=300 rails=1 sleepers=нет rail_holes=3\n"
+                    "молния = lightning width=55 height=100 volume=да\n"
+                    "выключатель = switch rockers=2 style=современная\n"
+                    "велоцепь = bicycle_chain links=3\n"
+                    "банка = jar cap=да\n"
+                    "бутылка = bottle kind=пластик bottom=ножки closure=крышка\n"
+                    "крышка = lid kind=кастрюля material=стекло handle=скоба")})
+                check("0.57: семь исправленных и новых примитивов в живом EXE",
+                      primitives57.get("ok") is True and primitives57.get("objects") == 30,
+                      f"{primitives57.get('tris', 0)} трис, {primitives57.get('objects', 0)} объектов")
+                removed57 = ("bottle", "furniture_hardware", "showcase",
+                             "tools_gallery_1", "tools_gallery_2", "tools_gallery_3", "tools_gallery_4",
+                             "architecture_selectable_055", "handle_rosettes_055", "selection_details_055",
+                             "smooth_transitions_054", "fittings_053", "glyphs_expansion_053")
+                check("0.57: выставки, бутылка-проект и версионные сцены удалены",
+                      all(not any(item.get("key") == key for item in state.get("examples", []))
+                          for key in removed57)
+                      and all(f"op: '{op}'".encode("utf-8") in js_app
+                              for op in ("jar", "bottle", "lid", "bicycle_chain"))
+                      and b"'/bottle': 'bottle'" not in js_app)
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

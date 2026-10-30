@@ -1,0 +1,4 @@
+# Веб-стенд 0.57: три независимых типа крышек.
+баночная = lid kind=банка diameter=58 ribs=8 color=#b8bab5
+бутылочная = lid kind=бутылка diameter=28 ribs=36 at=[95,0,0] color=#e0e1dc
+кастрюльная = lid kind=кастрюля material=стекло diameter=160 handle=дуга vent=да at=[285,0,0] color=#c4dcd8 metal_color=#a4afb5 handle_color=#a4afb5

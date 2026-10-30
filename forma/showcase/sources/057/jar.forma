@@ -1,0 +1,3 @@
+# Веб-стенд 0.57: открытая банка и отдельная крышка рядом, чтобы видна резьба.
+банка = jar form=округлая diameter=80 height=110 bottom=углубление ribs=40 thread=да cap=нет color=#c2ded9
+крышка = lid kind=банка diameter=58 ribs=8 thread=да at=[105,0,0] color=#b8bab5

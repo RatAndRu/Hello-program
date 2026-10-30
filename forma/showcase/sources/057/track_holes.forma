@@ -1,0 +1,2 @@
+# Веб-стенд 0.57: в основное приложение этот пример не добавляется.
+рельса = track length=320 rails=1 sleepers=нет rail_profile=рельса rail_holes=4 rail_hole_d=8 rail_color=#87939c
