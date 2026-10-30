@@ -1873,7 +1873,7 @@ async function wipePhase(){
   await powerOffScreen();          // экран гаснет, звук уходит
   drone.stop();
   if (runAborted) return;
-  await sleep(1150);               // чёрный экран без всего
+  await sleep(3000);               // чёрный экран без всего
   if (runAborted) return;
   showEnding();
 }
