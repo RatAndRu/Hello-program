@@ -13,7 +13,7 @@ import urllib.error
 import urllib.request
 
 EXPECTED = {
-    "saddle_bracket_photo": {"objects": 1, "triangles": 368134, "preview_nodes": 1},
+    "saddle_bracket_photo": {"objects": 1, "triangles": 413346, "preview_nodes": 1},
     "bottle_styles_058": {"objects": 5, "triangles": 156008, "preview_nodes": 5},
     "petaloid_bottom_058": {"objects": 1, "triangles": 36720, "preview_nodes": 1},
     "jar_styles_058": {"objects": 3, "triangles": 82798, "preview_nodes": 3},

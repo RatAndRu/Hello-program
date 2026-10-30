@@ -1,4 +1,4 @@
-"""Геометрическая приёмка исправленного кронштейна по фотографии пользователя."""
+"""Геометрическая приёмка кронштейна, перестроенного по фотографии пользователя."""
 
 from __future__ import annotations
 
@@ -24,20 +24,22 @@ class PhotoSaddleBracketTest(unittest.TestCase):
         if not cls.result.ok:
             raise AssertionError(f"{cls.result.error}\n{cls.result.log}")
         cls.solids = cls.result.visible_solids()
-        cls.body = cls.solids[0].manifold
+        cls.body = next(s for s in cls.solids if s.name == "корпус").manifold
 
     def test_single_connected_solid_bounds_and_hole_topology(self):
         self.assertEqual(len(self.solids), 1)
-        self.assertEqual(self.solids[0].name, "корпус")
         self.assertEqual(str(self.body.status()), "Error.NoError")
         self.assertEqual(len(self.body.decompose()), 1, "никаких отдельных микрофрагментов")
-        self.assertEqual(self.body.genus(), 1, "переднее отверстие сквозное; правый канал и гнездо глухие")
+        # Сквозное ø30 и два открытых промежутка между ребром/полкой,
+        # боссом и седлом. Правый канал и верхнее гнездо остаются глухими.
+        self.assertEqual(self.body.genus(), 3)
         bbox = self.body.bounding_box()
         np.testing.assert_allclose(np.array(bbox[3:]) - np.array(bbox[:3]),
-                                   [212.0, 241.0, 245.0], atol=0.002)
-        self.assertGreater(self.body.volume(), 3_000_000)
+                                   [222.4878006, 214.1732330, 285.2991958], atol=0.002)
+        self.assertGreater(self.body.volume(), 3_800_000)
+        self.assertLess(self.body.volume(), 3_900_000)
 
-    def test_slot_bores_chamfer_shell_and_lugs_are_real_geometry(self):
+    def test_reference_layout_slot_bores_chamfer_shell_and_gusset(self):
         def probe_volume(point, size=2.0):
             x, y, z = point
             half = size / 2
@@ -45,23 +47,26 @@ class PhotoSaddleBracketTest(unittest.TestCase):
             return (self.body ^ probe).volume()
 
         expectations = [
-            ((0, 25, 180), 0.0, "глухое гнездо выше дна"),
-            ((0, 25, 170), 8.0, "дно гнезда не пробито"),
-            ((90, 15, 145), 0.0, "правый канал вдоль X"),
-            ((40, 15, 145), 8.0, "дно правого канала перед боссом"),
-            ((90, 15, 180), 8.0, "металл правой проушины"),
-            ((-82, -109, 9), 0.0, "сквозное переднее отверстие"),
-            ((-82, -85, 9), 8.0, "металл передней проушины"),
-            ((0, 0, 40), 0.0, "открытая полость седла"),
-            ((-85, 40, 20), 8.0, "стенка седла"),
+            ((0, 25, 220), 0.0, "глухое гнездо выше дна"),
+            ((0, 25, 205), 8.0, "дно гнезда не пробито"),
+            ((80, 53.8007, 185.6362), 0.0, "правый канал вдоль X"),
+            ((59, 53.8007, 185.6362), 8.0, "дно правого канала перед боссом"),
+            ((80, 53.8007, 220), 8.0, "металл правой проушины"),
+            ((-9.5267, -93.2069, 6.4833), 0.0, "сквозное малое отверстие"),
+            ((2.9733, -71.5559, 6.4833), 8.0, "шейка малой проушины"),
+            ((-38.7028, 7.0646, 20), 0.0, "открытая полость седла"),
+            ((-98.7028, 7.0646, 20), 0.0, "полость проходит вдоль X слева"),
+            ((21.2972, 7.0646, 20), 0.0, "полость проходит вдоль X справа"),
+            ((-38.7028, -75.5164, 20), 8.0, "передняя стенка седла"),
+            ((-30.4506, -45.1622, 127.3668), 8.0, "длинный видимый гуссет"),
         ]
         for point, expected, label in expectations:
             with self.subTest(label=label, point=point):
                 self.assertAlmostEqual(probe_volume(point), expected, delta=0.002)
         with self.subTest("конусная фаска открыта"):
-            self.assertAlmostEqual(probe_volume((-66, -109, 17), 0.5), 0.0, places=6)
+            self.assertAlmostEqual(probe_volume((7.4733, -93.2069, 16), 0.5), 0.0, places=6)
         with self.subTest("под фаской остаётся цилиндрическая стенка"):
-            self.assertAlmostEqual(probe_volume((-66, -109, 10), 0.5), 0.125, delta=0.0001)
+            self.assertAlmostEqual(probe_volume((7.4733, -93.2069, 10), 0.5), 0.125, delta=0.0001)
 
     def test_glb_is_watertight_and_preserves_source_faces(self):
         data = self.result.glb()
@@ -74,6 +79,7 @@ class PhotoSaddleBracketTest(unittest.TestCase):
         self.assertGreater(float(mesh.volume), 0)
         vertices, faces = manifold_mesh(self.body)
         self.assertEqual(len(mesh.faces), len(_glb_valid_faces(vertices, faces)))
+        self.assertEqual(len(mesh.faces), 413346)
         self.assertAlmostEqual(float(mesh.volume), self.body.volume(), delta=0.02)
 
 
