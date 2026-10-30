@@ -53,13 +53,14 @@ button:active{transform:translateY(3px);box-shadow:none}
 #pct{margin-top:12px;font-size:clamp(14px,1.8vw,20px);min-height:1.5em}
 #cancel{pointer-events:auto;margin:0;padding:12px 26px;background:#2a2a2a;color:#eee;border:1px solid #888;border-radius:6px;font-size:16px;font-weight:400;box-shadow:none;font-family:inherit;cursor:default;display:block}
 .scene{position:absolute;left:0;top:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14vh;z-index:1;pointer-events:none}
-#tear{position:absolute;left:0;top:0;width:100%;height:100%;z-index:2;pointer-events:none;overflow:hidden}
+#tear{position:absolute;left:0;top:0;width:100%;height:100%;z-index:30;pointer-events:none;overflow:hidden}
 .tband{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
 #spinRow{display:flex;align-items:center;justify-content:center;gap:12px;margin-bottom:8px}
 #spinner{position:relative;width:24px;height:24px;display:none;flex:0 0 24px}
 #spinner.run{display:block;animation:spin 1s linear infinite}
 #spinner i{position:absolute;left:10px;top:10px;width:4px;height:4px;border-radius:50%;background:#e8e8e8}
 #btnWrap{position:fixed;left:0;top:0;z-index:24;pointer-events:none}
+#wneg{position:absolute;left:0;top:0;width:100%;height:100%;z-index:31;pointer-events:none;mix-blend-mode:difference}
 
 #cancel:active{box-shadow:none}
 #cursors{position:fixed;left:0;top:0;width:100%;height:100%;z-index:99;pointer-events:none;display:none}
@@ -118,6 +119,7 @@ button:active{transform:translateY(3px);box-shadow:none}
     </div>
   </div>
   <div id="tear"></div>
+  <canvas id="wneg" width="480" height="270"></canvas>
   <div id="btnWrap"><button id="cancel" type="button">Отменить</button></div>
   <canvas id="cursors"></canvas>
 </div>
@@ -1287,6 +1289,8 @@ tmpCv.width = GLW; tmpCv.height = GLH;
 const tmpx = tmpCv.getContext('2d');
 let wipeBgTimer = null, glitchTimer = null, tearTimer = null, negRegions = [], bandRects = [];
 const tearLayer = $('tear');
+const negCtx = $('wneg').getContext('2d');
+const btnWrapEl = $('btnWrap');
 const cancelBtn = $('cancel');
 
 // точки спиннера «кружочек загрузки»
@@ -1336,15 +1340,12 @@ function drawWipeBg(){
     wbx.drawImage(tmpCv, fx, fy, fw, fh, fx, fy, fw, fh);
   }
   // постоянно негативные участки: дрейфуют и инвертируют картинку под собой
+  negCtx.clearRect(0, 0, GLW, GLH);
+  negCtx.fillStyle = '#fff';
   for (const r of negRegions){
     r.x = clamp(r.x + (Math.random() - 0.5) * 6, 0, GLW - r.w);
     r.y = clamp(r.y + (Math.random() - 0.5) * 4, 0, GLH - r.h);
-    wbx.drawImage(tmpCv, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
-    wbx.save();
-    wbx.globalCompositeOperation = 'difference';
-    wbx.fillStyle = '#fff';
-    wbx.fillRect(r.x, r.y, r.w, r.h);
-    wbx.restore();
+    negCtx.fillRect(Math.round(r.x), Math.round(r.y), r.w, r.h);
   }
 }
 
@@ -1372,8 +1373,8 @@ function refreshTear(){
   const N = randInt(4, 7);
   for (let i = 0; i < N; i++){
     const c = scene.cloneNode(true);
-    c.querySelectorAll('[id]').forEach(e => e.removeAttribute('id'));
-    c.removeAttribute('id');
+    const bc = btnWrapEl.cloneNode(true);
+    bc.style.position = 'absolute';
     const topP = Math.random() * 90, hP = randInt(3, 14), dx = randInt(-40, 40);
     const band = document.createElement('div');
     band.className = 'tband';
@@ -1381,6 +1382,7 @@ function refreshTear(){
     band.style.transform = `translateX(${dx}px)`;
     band.style.filter = rnd(['invert(1)', 'hue-rotate(200deg) saturate(4)', 'contrast(3)', 'none']);
     band.appendChild(c);
+    band.appendChild(bc);
     tearLayer.appendChild(band);
     bandRects.push({ x: dx, y: topP / 100 * H, w: W, h: hP / 100 * H });
   }
