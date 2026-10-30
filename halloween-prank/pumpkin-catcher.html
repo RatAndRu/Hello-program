@@ -425,6 +425,19 @@ function eatSound(){
     o.start(t + i * 0.18); o.stop(t + i * 0.18 + 0.2);
   }
 }
+function reviveSound(){
+  const a = ac(), t = a.currentTime;
+  for (let i = 0; i < 3; i++){
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'triangle';
+    o.frequency.setValueAtTime(420 + i * 160, t + i * 0.09);
+    g.gain.setValueAtTime(0.0001, t + i * 0.09);
+    g.gain.linearRampToValueAtTime(0.05, t + i * 0.09 + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.09 + 0.22);
+    o.connect(g).connect(out(a));
+    o.start(t + i * 0.09); o.stop(t + i * 0.09 + 0.25);
+  }
+}
 function waveSound(){
   const a = ac(), t = a.currentTime;
   for (let i = 0; i < 4; i++){
@@ -663,13 +676,23 @@ function spawnPumpkin(x, y, v){
     r: 30, wob: Math.random() * 6
   });
 }
+let reviveMs = 0;
 function loseLife(){
   lives--;
   thudSound();
+  if (lives <= 0){
+    // Игра бесконечная: вместо конца — короткая пауза и полный запас сердец
+    lives = MAX_LIVES;
+    reviveMs = 1500;
+    addBurst(W / 2, H * 0.55, '🎃 Новая попытка');
+    reviveSound();
+  }
   $('hud').textContent = hudText();
-  if (lives <= 0) gameOver();
 }
-function hudText(){ return `🎃 ${score}     ${'❤️'.repeat(Math.max(0, lives))}`; }
+function hudText(){
+  const hearts = '❤️'.repeat(Math.max(0, lives));
+  return `🎃 ${score}     ${hearts}${reviveMs > 0 ? '     ♻️' : ''}`;
+}
 
 function spawnBat(){
   const fromLeft = Math.random() < 0.5;
@@ -704,6 +727,10 @@ function spawnGhost(){
 function addBurst(x, y, text){ bursts.push({ x, y, text, t: 0 }); }
 
 function update(dt, now){
+  if (reviveMs > 0){
+    reviveMs -= dt;
+    if (reviveMs <= 0){ reviveMs = 0; $('hud').textContent = hudText(); }
+  }
   if (now - lastSpawn > spawnGap()){ lastSpawn = now; spawnPumpkin(); }
   for (const p of pumpkins){
     p.y += p.v * dt / 1000;
@@ -711,7 +738,7 @@ function update(dt, now){
     p.x += Math.sin(p.wob) * 0.3;
   }
   for (let i = pumpkins.length - 1; i >= 0; i--){
-    if (pumpkins[i].y > H + 40){ pumpkins.splice(i, 1); loseLife(); if (lives <= 0) return; }
+    if (pumpkins[i].y > H + 40){ pumpkins.splice(i, 1); loseLife(); }
   }
 
   // призраки летят за конкретной тыквой быстрее мышей и съедают её
@@ -735,7 +762,6 @@ function update(dt, now){
         g.target = null;        // отдал — летит за следующей
         g.x = m.x + 40; g.y = m.y - 40;
         loseLife();
-        if (lives <= 0) return;
       } else {
         g.x += dx / d * Math.min(sp, d);
         g.y += dy / d * Math.min(sp, d);
