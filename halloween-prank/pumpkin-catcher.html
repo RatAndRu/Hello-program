@@ -1316,56 +1316,20 @@ const LCD_COLORS = ['#ff2a2a', '#2aff4a', '#2a6bff', '#ffffff', '#ffe14a', '#ff4
 
 // Битый ЖК-экран: серо-голубая сетка точек, цветные вертикальные линии, тёмные и светлые горизонтальные полосы
 function drawLcdZone(x, y, w, h){
-  const steps = Math.max(4, Math.floor(h / 4));
   negCtx.save();
-  negCtx.beginPath();
-  const L = [], R = [];
-  for (let k = 0; k <= steps; k++){
-    const yy = y + h * k / steps;
-    L.push([x + Math.random() * w * 0.18, yy]);
-    R.push([x + w - Math.random() * w * 0.18, yy]);
-  }
-  negCtx.moveTo(L[0][0], L[0][1]);
-  for (const p of L) negCtx.lineTo(p[0], p[1]);
-  for (let k = R.length - 1; k >= 0; k--) negCtx.lineTo(R[k][0], R[k][1]);
-  negCtx.closePath();
-  negCtx.clip();
-  negCtx.globalAlpha = 0.7;
-  negCtx.fillStyle = rnd(['#c9c3ea', '#d8d0f0', '#b9c6d6', '#e4e0f5']);
-  negCtx.fillRect(x, y, w, h);
-  const cols = randInt(20, 40);
+  const cols = randInt(Math.floor(w / 4), Math.floor(w / 1.5));
   for (let i = 0; i < cols; i++){
-    negCtx.globalAlpha = 0.4 + Math.random() * 0.5;
-    negCtx.fillStyle = rnd(LCD_COLORS.concat(['#7a2fd6', '#b49cff', '#ff1ea8', '#2b1a55', '#101018']));
-    negCtx.fillRect(x + Math.random() * w, y, randInt(1, 2), h);
+    negCtx.globalAlpha = 0.35 + Math.random() * 0.6;
+    negCtx.fillStyle = rnd(LCD_COLORS.concat(['#7a2fd6', '#b49cff', '#ff1ea8', '#2b1a55', '#101018', '#c9c3ea']));
+    negCtx.fillRect(x + Math.random() * w, y + Math.random() * h * 0.04, Math.random() < 0.3 ? 2 : 1, h * (0.92 + Math.random() * 0.08));
   }
   negCtx.globalAlpha = 0.7;
-  const smears = randInt(2, 4);
-  for (let i = 0; i < smears; i++){
+  for (let i = 0; i < randInt(2, 4); i++){
     negCtx.fillStyle = 'rgba(10,5,25,0.7)';
-    const sw = w * (0.3 + Math.random() * 0.6);
-    negCtx.fillRect(x + Math.random() * (w - sw), y + Math.random() * h, sw, randInt(2, 4));
+    const sw = w * (0.5 + Math.random() * 0.5);
+    negCtx.fillRect(x + Math.random() * (w - sw), y + Math.random() * h, sw, randInt(2, 3));
   }
-  if (Math.random() < 0.5){
-    negCtx.globalAlpha = 0.95;
-    negCtx.fillStyle = '#000';
-    const fromTop = Math.random() < 0.5;
-    const ax = x + w * (0.35 + Math.random() * 0.6), ay = fromTop ? y : y + h * (0.2 + Math.random() * 0.5);
-    const bx = x + w, by = fromTop ? y + h * (0.2 + Math.random() * 0.6) : y + h;
-    const len = Math.hypot(bx - ax, by - ay), n = Math.max(4, Math.floor(len / 4));
-    negCtx.beginPath();
-    negCtx.moveTo(ax, ay);
-    for (let k = 1; k <= n; k++){
-      const t = k / n;
-      const px = Math.round((ax + (bx - ax) * t + randInt(-5, 5)) / 3) * 3;
-      const py = Math.round((ay + (by - ay) * t) / 2) * 2;
-      negCtx.lineTo(px, py);
-    }
-    negCtx.lineTo(bx, fromTop ? y : y + h);
-    negCtx.lineTo(ax, fromTop ? y : y + h);
-    negCtx.closePath();
-    negCtx.fill();
-  }
+  negCtx.globalAlpha = 1;
   negCtx.restore();
 }
 const btnWrapEl = $('btnWrap');
@@ -1459,22 +1423,24 @@ function refreshTear(){
     const c = scene.cloneNode(true);
     const bc = btnWrapEl.cloneNode(true);
     bc.style.position = 'absolute';
-    const topP = Math.random() * 90, hP = randInt(3, 14), dx = randInt(-40, 40);
+    const wP = randInt(4, 16), leftP = Math.random() * (100 - wP);
+    const topP = Math.random() * 6, bottomP = Math.random() * 6;
+    const dy = randInt(-8, 8);
     const band = document.createElement('div');
     band.className = 'tband';
-    band.style.clipPath = `inset(${topP.toFixed(1)}% 0 ${(100 - topP - hP).toFixed(1)}% 0)`;
-    band.style.transform = `translateX(${dx}px)`;
+    band.style.clipPath = `inset(${topP.toFixed(1)}% ${(100 - leftP - wP).toFixed(1)}% ${bottomP.toFixed(1)}% ${leftP.toFixed(1)}%)`;
+    band.style.transform = `translateY(${dy}px)`;
     band.style.background = '#000';
     band.style.filter = Math.random() < 0.12 ? 'invert(1)' : 'none';
     band.appendChild(c);
     band.appendChild(bc);
     tearLayer.appendChild(band);
-    bandRects.push({ x: dx, y: topP / 100 * H, w: W, h: hP / 100 * H });
+    bandRects.push({ x: leftP / 100 * W, y: dy + topP / 100 * H, w: wP / 100 * W, h: (100 - topP - bottomP) / 100 * H });
   }
 }
 
 function startWipeFx(){
-  negRegions = [0, 1].map(() => ({ x: randInt(0, GLW - 160), y: randInt(0, GLH - 70), w: randInt(60, 160), h: randInt(20, 70) }));
+  negRegions = [0, 1].map(() => { const h = randInt(Math.floor(GLH * 0.6), GLH); return { x: randInt(0, GLW - 90), y: randInt(0, GLH - h), w: randInt(24, 90), h }; });
   drawWipeBg();
   wipeBgTimer = setInterval(drawWipeBg, 200);
   glitchTick();
