@@ -40,6 +40,27 @@ jobs:
           set -euo pipefail
           python "$SITE_DIR/build.py" --check
 
+      - name: Образ собирается и отдаёт страницу
+        run: |
+          set -euo pipefail
+          docker build -t topology-course:ci -f "$SITE_DIR/deploy/Dockerfile" "$SITE_DIR"
+          docker run -d --name topology-ci -p 8081:80 topology-course:ci
+          for attempt in $(seq 1 20); do
+            if body=$(curl -fsS http://127.0.0.1:8081/); then
+              printf '%s' "$body" | grep -q "Топология тел" || { echo '::error::Контейнер отдал не ту страницу'; exit 1; }
+              echo "Контейнер отдаёт страницу: $(printf '%s' "$body" | wc -c) байт"
+              exit 0
+            fi
+            sleep 1
+          done
+          docker logs topology-ci || true
+          echo '::error::Контейнер не поднялся'
+          exit 1
+
+      - name: Убрать тестовый контейнер
+        if: always()
+        run: docker rm -f topology-ci || true
+
       - name: Собранный файл не отличается от закоммиченного
         run: |
           set -euo pipefail
@@ -115,14 +136,25 @@ jobs:
         run: |
           set -euo pipefail
           url="https://${FLY_APP_NAME}.fly.dev/"
-          for attempt in $(seq 1 30); do
-            if body=$(curl -fsS --max-time 10 "$url"); then
-              if printf '%s' "$body" | grep -q "Топология тел"; then
-                echo "Сайт доступен: $url ($(printf '%s' "$body" | wc -c) байт)"
-                exit 0
-              fi
+          status=000
+          for attempt in $(seq 1 60); do
+            status=$(curl -sS -o /tmp/site.html -w '%{http_code}' --max-time 15 "$url" || true)
+            size=$(wc -c < /tmp/site.html 2>/dev/null || echo 0)
+            echo "attempt ${attempt}: HTTP ${status}, ${size} байт"
+            if [ "$status" = "200" ] && [ "$size" -gt 100000 ] && grep -q "Топология тел" /tmp/site.html; then
+              echo "Сайт доступен: $url (${size} байт)"
+              exit 0
             fi
             sleep 5
           done
-          echo "::error::Сайт не ответил ожидаемым содержимым: $url"
+          echo "::error title=flyctl::Сайт не ответил ожидаемым содержимым: $url"
           exit 1
+
+      - name: Диагностика при сбое проверки
+        if: failure()
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          flyctl status --app "$FLY_APP_NAME" || true
+          flyctl machines list --app "$FLY_APP_NAME" || true
+          flyctl logs --app "$FLY_APP_NAME" --no-tail || true
