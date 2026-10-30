@@ -51,7 +51,7 @@ button:active{transform:translateY(3px);box-shadow:none}
 #barBox{width:100%;height:22px;border:1px solid #ccc;padding:2px;display:none}
 #bar{height:100%;width:0;background:#e8e8e8}
 #pct{margin-top:12px;font-size:clamp(14px,1.8vw,20px);min-height:1.5em}
-#cancel{pointer-events:auto;margin:0;padding:12px 26px;background:#2a2a2a;color:#eee;border:1px solid #888;border-radius:6px;font-size:16px;font-weight:400;box-shadow:none;font-family:inherit;cursor:default;display:block}
+#cancel{pointer-events:auto;margin:0;padding:7px 20px;background:#1f1f1f;color:#e6e6e6;border:1px solid #6b6b6b;border-radius:0;font-size:14px;font-weight:400;box-shadow:none;font-family:'Segoe UI',Tahoma,Arial,sans-serif;cursor:default;display:block;min-width:112px}
 .scene{position:absolute;left:0;top:0;width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14vh;z-index:1;pointer-events:none}
 #tear{position:absolute;left:0;top:0;width:100%;height:100%;z-index:30;pointer-events:none;overflow:hidden}
 .tband{position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none}
@@ -988,7 +988,6 @@ function repelFrame(){
   }
   drawCursors(now);
   requestAnimationFrame(repelFrame);
-  requestAnimationFrame(repelFrame);
 }
 
 // Курсоры (захваченный и обманные) рисуются на холсте; внутри битых зон — инверсия и разрывы
@@ -1347,13 +1346,23 @@ function drawLcdZone(x, y, w, h){
     const sw = w * (0.3 + Math.random() * 0.6);
     negCtx.fillRect(x + Math.random() * (w - sw), y + Math.random() * h, sw, randInt(2, 4));
   }
-  if (Math.random() < 0.4){
-    negCtx.globalAlpha = 0.9;
+  if (Math.random() < 0.5){
+    negCtx.globalAlpha = 0.95;
     negCtx.fillStyle = '#000';
+    const fromTop = Math.random() < 0.5;
+    const ax = x + w * (0.35 + Math.random() * 0.6), ay = fromTop ? y : y + h * (0.2 + Math.random() * 0.5);
+    const bx = x + w, by = fromTop ? y + h * (0.2 + Math.random() * 0.6) : y + h;
+    const len = Math.hypot(bx - ax, by - ay), n = Math.max(4, Math.floor(len / 4));
     negCtx.beginPath();
-    negCtx.moveTo(x + w * (0.5 + Math.random() * 0.5), y);
-    negCtx.lineTo(x + w, y + h * (0.3 + Math.random() * 0.5));
-    negCtx.lineTo(x + w, y);
+    negCtx.moveTo(ax, ay);
+    for (let k = 1; k <= n; k++){
+      const t = k / n;
+      const px = Math.round((ax + (bx - ax) * t + randInt(-5, 5)) / 3) * 3;
+      const py = Math.round((ay + (by - ay) * t) / 2) * 2;
+      negCtx.lineTo(px, py);
+    }
+    negCtx.lineTo(bx, fromTop ? y : y + h);
+    negCtx.lineTo(ax, fromTop ? y : y + h);
     negCtx.closePath();
     negCtx.fill();
   }
@@ -1426,7 +1435,7 @@ function glitchTick(){
   if (frozen()){ glitchTimer = setTimeout(glitchTick, 120); return; }
   const scene = document.querySelector('.scene');
   scene.style.transform = `translate(${Math.random() < 0.5 ? randInt(-18, 18) : 0}px,${Math.random() < 0.3 ? randInt(-6, 6) : 0}px) skewX(${Math.random() < 0.2 ? randInt(-6, 6) : 0}deg)`;
-  scene.style.filter = rnd(['none', 'none', 'invert(1)', 'hue-rotate(180deg)', 'hue-rotate(90deg) saturate(3)', 'contrast(2.5) brightness(1.4)', 'invert(1) hue-rotate(40deg)']);
+  scene.style.filter = Math.random() < 0.15 ? 'invert(1)' : 'none';
   scene.style.opacity = Math.random() < 0.15 ? '0.55' : '1';
   const rgb = Math.random() < 0.4
     ? `${randInt(-6, 6)}px 0 rgba(255,0,0,.8), ${randInt(-6, 6)}px 0 rgba(0,255,255,.8)` : 'none';
@@ -1434,7 +1443,7 @@ function glitchTick(){
   $('pct').style.textShadow = rgb;
   $('wipeFile').style.textShadow = rgb;
   cancelBtn.style.transform = `translate(${randInt(-18, 18)}px,${randInt(-6, 6)}px) skewX(${Math.random() < 0.3 ? randInt(-8, 8) : 0}deg)`;
-  cancelBtn.style.filter = rnd(['none', 'none', 'invert(1)', 'hue-rotate(180deg)', 'contrast(2.5) brightness(1.4)', 'invert(1) hue-rotate(40deg)']);
+  cancelBtn.style.filter = Math.random() < 0.2 ? 'invert(1)' : 'none';
   cancelBtn.style.opacity = Math.random() < 0.2 ? '0.4' : '1';
   glitchTimer = setTimeout(glitchTick, randInt(80, 220));
 }
@@ -1455,7 +1464,8 @@ function refreshTear(){
     band.className = 'tband';
     band.style.clipPath = `inset(${topP.toFixed(1)}% 0 ${(100 - topP - hP).toFixed(1)}% 0)`;
     band.style.transform = `translateX(${dx}px)`;
-    band.style.filter = rnd(['invert(1)', 'hue-rotate(200deg) saturate(4)', 'contrast(3)', 'none']);
+    band.style.background = '#000';
+    band.style.filter = Math.random() < 0.12 ? 'invert(1)' : 'none';
     band.appendChild(c);
     band.appendChild(bc);
     tearLayer.appendChild(band);
@@ -1513,8 +1523,8 @@ async function wipePhase(){
   while (count < TOTAL){
     await sleep(90);
     if (Math.random() < 0.1) await sleep(500 + Math.random() * 900);
-    if (Math.random() < 0.12) hang(1500 + Math.random() * 2500);
-    count = Math.min(TOTAL, count + randInt(180, 1000));
+    if (Math.random() < 0.05) hang(800 + Math.random() * 1200);
+    count = Math.min(TOTAL, count + randInt(300, 1200));
     $('pct').textContent = `Найдено файлов: ${count.toLocaleString('ru-RU')}`;
     $('wipeFile').textContent = randPath();
   }
@@ -1529,7 +1539,7 @@ async function wipePhase(){
   while (p < 100){
     await sleep(120);
     if (Math.random() < 0.08) await sleep(600 + Math.random() * 1000);
-    if (Math.random() < 0.07) hang(1200 + Math.random() * 2600);
+    if (Math.random() < 0.04) hang(800 + Math.random() * 1400);
     if (p > 97 && Math.random() < 0.5) await sleep(900 + Math.random() * 1200);
     p = Math.min(100, p + Math.random() * 0.9 + 0.15);
     deleted = Math.floor(TOTAL * p / 100);
