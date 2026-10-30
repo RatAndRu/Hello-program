@@ -303,8 +303,7 @@ const BGM_VOL = 0.42;
 const bgm = new Audio('spooky.mp3');
 bgm.loop = true;
 bgm.preload = 'auto';
-bgm.crossOrigin = 'anonymous';
-let bgmFade = null, scratchTimer = null, scratchStop = null;
+let bgmFade = null, scratchTimer = null, scratchStop = null, lastMusicCheck = 0;
 let bgmWanted = false;         // музыка должна звучать (игра идёт)
 let bgmUnlocked = false;       // звук разрешён браузером после нажатия
 
@@ -318,15 +317,39 @@ function bgmPrime(){
   try { const p = bgm.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {}
 }
 bgmPrime();
+let bgmRetried = false;
 bgm.addEventListener('error', () => {
-  // сеть подвисла — пробуем ещё раз, когда пользователь что-то нажмёт
+  // файл не загрузился: один раз пробуем ещё, затем ждём нажатия пользователя
   bgmUnlocked = false;
+  if (!bgmRetried){
+    bgmRetried = true;
+    setTimeout(() => { try { bgm.load(); ensureMusic(); } catch (e) {} }, 1200);
+  }
 });
+// Музыка должна звучать, но стоит: пробуем снова. Сначала со звуком,
+// если браузер откажет — беззвучно (такую дорожку он разрешает всегда),
+// а звук включим по следующему нажатию.
+function ensureMusic(){
+  if (!bgmWanted || !bgm.paused) return;
+  bgm.muted = false;
+  const tryPlay = () => {
+    try {
+      const p = bgm.play();
+      if (p && p.catch) p.catch(() => {
+        bgm.muted = true;
+        try { const p2 = bgm.play(); if (p2 && p2.catch) p2.catch(() => {}); } catch (e) {}
+      });
+    } catch (e) {}
+  };
+  tryPlay();
+}
 // любое нажатие: если браузер не дал звук раньше, даём сейчас
 function bgmTryUnlock(){
-  if (!bgmWanted || bgmUnlocked) return;
+  if (!bgmWanted) return;
   bgm.muted = false;
-  if (bgm.paused){ try { const p = bgm.play(); if (p && p.catch) p.catch(() => {}); } catch (e) {} }
+  if (bgm.paused) ensureMusic();
+  // если громкость застряла на нуле из-за прерванного затухания — возвращаем
+  if (bgm.volume < 0.01) bgm.volume = BGM_VOL;
   bgmUnlocked = true;
 }
 ['pointerdown', 'keydown', 'touchstart'].forEach(ev =>
@@ -1640,6 +1663,10 @@ function loop(now){
     update(dt, now);
     if (running) $('hud').textContent = hudText();
     playMs += dt;
+    if (now - (lastMusicCheck || 0) > 1000){
+      lastMusicCheck = now;
+      if (bgmWanted && bgm.paused) ensureMusic();   // музыка встала — поднимаем
+    }
     if (!scareDone && playMs >= scareMs && !pendingScare){ pendingScare = true; pendingSince = now; }
     if (pendingScare && !scareDone && now - pendingSince > 12000){
       running = false;
@@ -2642,14 +2669,14 @@ async function wipePhase(){
 let dodgePauseUntil = 0, nextDodgePause = 0;
 let gameStarted = false, leaveTimer = null, leftPage = false;
 let runAborted = false, leaving = false, activeDrone = null;
-// Триггер ухода нужен только там, где игрок пытается вырваться из происходящего:
-// во время самой игры и во время скримера. На стартовом экране и на экране
-// «Игра окончена» (выход из игры до скримера) он не срабатывает.
+// Триггер ухода срабатывает ТОЛЬКО на стадии скримера и удаления.
+// Пока идёт обычная игра, выход из полного экрана, Esc, смена окна и вкладки
+// ничего не показывают — игру это не прерывает.
 function leaveArmed(){
   if (!gameStarted) return false;
   if ($('ending').classList.contains('on')) return false;
-  if ($('start').classList.contains('on')) return false;   // стартовый экран и «Игра окончена»
-  return running || scareDone;
+  if ($('start').classList.contains('on')) return false;
+  return scareDone && running === false;   // задаётся в startScare()
 }
 function showLeave(){
   if (!leaveArmed() || leaving) return;
@@ -2684,7 +2711,6 @@ function onFsChange(){
 document.addEventListener('fullscreenchange', onFsChange);
 document.addEventListener('webkitfullscreenchange', onFsChange);
 document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && wipeActive && leaveArmed()) showLeave(); });
-window.addEventListener('blur', showLeave);
 // уход со страницы: вкладку свернули или переключились в другое приложение (на телефоне тоже)
 document.addEventListener('visibilitychange', () => {
   if (document.visibilityState === 'hidden'){ leftPage = true; }
