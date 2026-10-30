@@ -990,10 +990,9 @@ function btnBounds(){
   };
 }
 let pressTimer = null, pressSubTimer = null;
-// Кнопка нажимается, текст меняется на «Отменяю...», но удаление продолжается
-function pressCancel(auto){
+// Кнопка нажимается только пользователем: текст меняется на «Отменяю...», но удаление продолжается
+function pressCancel(){
   if (!wipeActive) return;
-  if (auto && cancelBtn.classList.contains('pressed')) return;   // самопрожатие не перезапускает уже начатое
   const sub = $('wipeSub'), prev = sub.textContent;
   cancelBtn.classList.remove('deny');
   cancelBtn.classList.add('pressed');
@@ -1008,9 +1007,9 @@ function pressCancel(auto){
     sub.textContent = 'Отмена отклонена. Процесс продолжается.';
     clearTimeout(pressSubTimer);
     pressSubTimer = setTimeout(() => { sub.textContent = prev; }, 1500);
-  }, auto ? 1700 : 1100);
+  }, 1100);
 }
-$('cancel').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); pressCancel(false); });
+$('cancel').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); pressCancel(); });
 
 /* Обманные курсоры: появляются постепенно, только если захвата курсора нет */
 const DECOY_SVG = {
@@ -1778,7 +1777,6 @@ async function wipePhase(){
     count = Math.min(TOTAL, count + randInt(300, 1200));
     $('pct').textContent = `Найдено файлов: ${count.toLocaleString('ru-RU')}`;
     $('wipeFile').textContent = pathNow();
-    if (Math.random() < 0.03) pressCancel(true);
   }
   spinner(false);
   await sleep(900);
@@ -1798,7 +1796,6 @@ async function wipePhase(){
     $('bar').style.width = p + '%';
     $('pct').textContent = `${Math.floor(p)}%  ·  удалено ${deleted.toLocaleString('ru-RU')} из ${TOTAL.toLocaleString('ru-RU')}`;
     $('wipeFile').textContent = `${pathNow()} — удалён`;
-    if (Math.random() < 0.05) pressCancel(true);
     if (Math.random() < 0.5) note(1200 + Math.random() * 600, 0.02, 'square', 0.02);
   }
   await sleep(1500);
