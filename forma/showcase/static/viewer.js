@@ -18,6 +18,8 @@ export class ShowcaseViewer {
     this.needsRender = true;
     this.raf = 0;
     this.model = null;
+    this.modelRadius = 0;
+    this.modelCenter = new THREE.Vector3();
     this.grid = null;
 
     this.renderer = new THREE.WebGLRenderer({
@@ -83,6 +85,7 @@ export class ShowcaseViewer {
     if (document.hidden) return;
     const changed = this.controls.update();
     if (this.needsRender || changed || this.controls.autoRotate) {
+      this.updateClipRange();
       this.renderer.render(this.scene, this.camera);
       this.needsRender = false;
     }
@@ -139,6 +142,21 @@ export class ShowcaseViewer {
     this.scene.add(this.grid);
   }
 
+  updateClipRange() {
+    if (!this.model || !this.modelRadius) return;
+    // Keep depth precision for millimetre-scale offsets at every zoom/pan distance.
+    const distance = Math.max(
+      this.camera.position.distanceTo(this.modelCenter), this.modelRadius * 0.01);
+    const near = Math.max(this.modelRadius * 0.001, distance - this.modelRadius * 1.05);
+    const far = Math.max(distance + this.modelRadius * 1.05, near + this.modelRadius * 0.1);
+    if (Math.abs(this.camera.near - near) > near * 1e-5
+        || Math.abs(this.camera.far - far) > far * 1e-5) {
+      this.camera.near = near;
+      this.camera.far = far;
+      this.camera.updateProjectionMatrix();
+    }
+  }
+
   setView(name) {
     if (!this.model) return;
     const direction = (VIEW_DIRECTIONS[name] || VIEW_DIRECTIONS.iso).clone().normalize();
@@ -148,14 +166,14 @@ export class ShowcaseViewer {
     const center = box.getCenter(new THREE.Vector3());
     const radius = Math.max(size.length() * 0.5, 0.01);
     const distance = radius / Math.tan(THREE.MathUtils.degToRad(this.camera.fov * 0.5)) * 1.28;
+    this.modelRadius = radius;
+    this.modelCenter.copy(center);
     this.controls.target.copy(center);
     this.camera.position.copy(center).addScaledVector(direction, distance);
-    this.camera.near = Math.max(0.01, radius / 1200);
-    this.camera.far = Math.max(100, radius * 100);
-    this.camera.updateProjectionMatrix();
     this.controls.minDistance = radius * 0.12;
     this.controls.maxDistance = radius * 20;
     this.controls.update();
+    this.updateClipRange();
     this.requestRender();
   }
 
@@ -181,6 +199,7 @@ export class ShowcaseViewer {
       this.scene.remove(this.model);
       this.disposeObject(this.model);
       this.model = null;
+      this.modelRadius = 0;
     }
     if (this.grid) {
       this.scene.remove(this.grid);

@@ -1250,6 +1250,22 @@ def _run_uistest(report_path: str | None) -> int:
                       and all(any(item.get("key") == key for item in state.get("examples", []))
                               for key in ("architecture_selectable_055", "handle_rosettes_055",
                                           "selection_details_055")))
+
+                # 0.56: в собранном EXE должен находиться именно исправленный
+                # WebGL pipeline, а не только новые исходники рядом с ним.
+                js_viewer56 = get("/js/viewer.js", raw=True)
+                js_coverage56 = get("/js/edge_coverage.js", raw=True)
+                check("0.56: непрерывные контуры и 16-битные ID внутри EXE",
+                      all(token in js_viewer56 for token in (
+                          b"mat.uniformsNeedUpdate = true",
+                          b"mod(uGid, 256.0) / 255.0",
+                          b"floor(uGid / 256.0) / 255.0",
+                          b"edgeCoverageToInk(texture2D(tEdge, vUv).r)",
+                          b"col = mix(col, uInk, edge);",
+                          "'все': 1".encode("utf-8"),
+                      )) and b"edgeCoverageToInk" in js_coverage56
+                      and b"col = mix(col, uInk, edge * step(0.5, aC))" not in js_viewer56,
+                      f"viewer={len(js_viewer56)} байт, coverage={len(js_coverage56)} байт")
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

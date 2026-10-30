@@ -10,7 +10,7 @@ import { PlanarMirror } from './planarmirror.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { cameraClipRange } from './camera_clip.js';
-import { edgeCoverageScale } from './edge_coverage.js';
+import { edgeCoverageScale, EDGE_COVERAGE_TO_INK_GLSL } from './edge_coverage.js';
 
 /** Цвет из #rrggbb в вектор 0…1 — без менеджера цвета three. */
 function hexVec(hex) {
@@ -154,7 +154,7 @@ export class Viewer {
     // кадр как доля покрытия пикселя, а не как мигающий бинарный пунктир.
     this._edgePass = null;
     this._edgeRT = null;
-    // буфер «чей пиксель»: по нему рисуются линии между группами и материалами
+    // буфер «чей пиксель»: линии между объектами, группами и материалами
     this._idRT = null;
     this._idMat = null;
     this._idCache = null;
@@ -3347,14 +3347,13 @@ export class Viewer {
     }
   }
 
-  /** Нужен ли буфер «чей пиксель»: только для линий по группам/материалам. */
+  /** Буфер «чей пиксель»: границы объектов нужны и в режиме всех линий. */
   _idNeeded() {
-    const mode = this.anime && this.anime.lines;
-    return !!(mode && mode !== 'все' && this.model);
+    return !!this.model;
   }
 
   /**
-   * Паспорт групп и материалов для каждой сетки. Считается один раз на
+   * Паспорт объектов, групп и материалов для каждой сетки. Считается один раз на
    * модель: пересборка сбрасывает кэш.
    */
   _idMaps() {
@@ -3421,14 +3420,19 @@ export class Viewer {
         void main() { gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
       fragmentShader: `
         uniform float uGid, uMid;
-        void main() { gl_FragColor = vec4(uGid / 255.0, uMid / 255.0, 1.0, 1.0); }`,
+        void main() {
+          // 16-битный object id: младший байт в R, старший в B. В сценах
+          // со 128+ mesh старая запись только в R упиралась в одинаковый 255.
+          gl_FragColor = vec4(mod(uGid, 256.0) / 255.0, uMid / 255.0,
+                              floor(uGid / 256.0) / 255.0, 1.0);
+        }`,
       depthTest: true,
       depthWrite: true,
     });
     return this._idMat;
   }
 
-  /** Рисует номер группы/материала в отдельный буфер. */
+  /** Рисует номер объекта/группы/материала в отдельный буфер. */
   _renderIdPass() {
     this._ensureIdTarget();
     if (!this._idRT || !this.model) return;
@@ -3448,8 +3452,11 @@ export class Viewer {
       // id пишется перед каждым вызовом отрисовки: так одна сетка не
       // «запоминает» номер соседней
       o.onBeforeRender = () => {
-        mat.uniforms.uGid.value = mode === 'группы' ? (info.gid || 0) : 0;
+        mat.uniforms.uGid.value = mode === 'материалы' ? 0 : (info.gid || 0);
         mat.uniforms.uMid.value = mode === 'материалы' ? (info.mid || 0) : 0;
+        // Один override-material обслуживает все mesh: без принудительного
+        // refresh WebGLRenderer оставлял uniform первого объекта на весь кадр.
+        mat.uniformsNeedUpdate = true;
       };
     });
     this.scene.overrideMaterial = mat;
@@ -3664,7 +3671,7 @@ export class Viewer {
     u.uHatchAngle.value = (Number(a.hatch_angle ?? 45) * Math.PI) / 180;
     u.uHatchStep.value = Math.max(2, Number(a.hatch_step ?? 8));
     u.uPaperTex.value = Math.max(0, Math.min(1, Number(a.paper_tex ?? 0)));
-    u.uLines.value = { 'группы': 1, 'материалы': 2 }[a.lines || 'все'] ?? 0;
+    u.uLines.value = { 'все': 1, 'группы': 1, 'материалы': 2 }[a.lines || 'все'] ?? 1;
     u.tIds.value = this._idRT ? this._idRT.texture : null;
   }
 
@@ -3809,7 +3816,7 @@ export class Viewer {
     this._edgeRT.texture.generateMipmaps = false;
   }
 
-  /** Геометрический контур в плотном буфере; цвет сюда не входит. */
+  /** Контур формы и границ объектов в плотном буфере; цвет сюда не входит. */
   _edgeShader() {
     return {
       uniforms: {
@@ -3847,7 +3854,7 @@ export class Viewer {
           float dC = linearDepth(texture2D(tDepth, vUv).x);
           vec2 px = 1.0 / uResolution;
           float radius = max(uLine * 0.5 * uPixelRatio, 0.6);
-          vec2 idC = floor(texture2D(tIds, vUv).rg * 255.0 + 0.5);
+          vec3 idC = floor(texture2D(tIds, vUv).rgb * 255.0 + 0.5);
           float edge = 0.0;
           for (int i = 0; i < 8; i++) {
             float ang = float(i) * 0.785398;
@@ -3863,10 +3870,11 @@ export class Viewer {
                 vec3 nv = normalize(nN.rgb * 2.0 - 1.0);
                 if (dot(nv, nvC) < uCrease) edge = 1.0;
               }
-              if (uLines > 0.5) {
-                vec2 idN = floor(texture2D(tIds, vUv + off).rg * 255.0 + 0.5);
+              if (uLines > 0.5 && uInner > 0.5 && uSeams > 0.5) {
+                vec3 idN = floor(texture2D(tIds, vUv + off).rgb * 255.0 + 0.5);
                 float different = uLines > 1.5 ? step(0.5, abs(idN.g - idC.g))
-                                                : step(0.5, abs(idN.r - idC.r));
+                    : max(step(0.5, abs(idN.r - idC.r)),
+                          step(0.5, abs(idN.b - idC.b)));
                 if (different > 0.5) edge = 1.0;
               }
             }
@@ -3934,6 +3942,8 @@ export class Viewer {
           return (2.0 * uNear * uFar) / (uFar + uNear - z * (uFar - uNear));
         }
 
+        ${EDGE_COVERAGE_TO_INK_GLSL}
+
         float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 
         float hash21(vec2 p) {
@@ -3979,10 +3989,10 @@ export class Viewer {
           vec3 col = base.rgb;
           vec4 nC = texture2D(tNormal, vUv);
           float aC = nC.a;
-          // Тонкий subpixel-контур уже найден в плотном G-buffer. Линейная
-          // фильтрация tEdge при даунсэмпле сохраняет покрытие: штрих становится
-          // серым и тонким, а не случайно исчезает между центрами пикселей.
-          float edge = texture2D(tEdge, vUv).r;
+          // Тонкий subpixel-контур уже найден в плотном G-buffer. После
+          // даунсэмпла даже один покрытый образец обязан дать видимый штрих:
+          // линейное 0.25 на белой бумаге выглядело серым пунктиром.
+          float edge = edgeCoverageToInk(texture2D(tEdge, vUv).r);
 
           // светящееся не тонируем: это блики и экраны
           float bright = step(0.97, max(col.r, max(col.g, col.b))) * step(0.5, aC);
@@ -4041,8 +4051,10 @@ export class Viewer {
             col = mix(col, uInk, h);
           }
 
-          // контур поверх всего: линия всегда чёрная, даже на светлом
-          col = mix(col, uInk, edge * step(0.5, aC));
+          // Контур поверх всего. Не умножаем его на nearest-маску тела:
+          // на границе output pixel и dense sample могут относиться к разным
+          // сторонам силуэта, а найденная линия не должна при этом исчезать.
+          col = mix(col, uInk, edge);
           col *= paperGrain(vUv);
           gl_FragColor = vec4(col, base.a);
         }`,

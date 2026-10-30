@@ -55,7 +55,7 @@ function renderNav() {
 
 function changeCard(change) {
   const image = change.image
-    ? `<img class="change-image" src="${esc(change.image)}" alt="${esc(change.title)} — сравнение до и после" loading="lazy" decoding="async">`
+    ? `<a class="change-image-link" href="${esc(change.image)}" target="_blank" rel="noreferrer" aria-label="${esc(change.title)} — открыть сравнение полностью"><img class="change-image" src="${esc(change.image)}" alt="${esc(change.title)} — сравнение до и после" loading="lazy" decoding="async"></a>`
     : '';
   return `<article class="change"><h3>${esc(change.title)}</h3><p>${esc(change.text)}</p>${image}</article>`;
 }

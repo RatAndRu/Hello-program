@@ -81,7 +81,7 @@ jobs:
         run: |
           python tools/build_skeleton_original.py
 
-      - name: Экспортировать модели 0.53–0.55 в GLB и Forma
+      - name: Экспортировать модели 0.53–0.56 в GLB и Forma
         working-directory: forma
         run: |
           python - <<'PY'
@@ -90,7 +90,8 @@ jobs:
           from forma.version import __version__
           output = Path('release/models')
           output.mkdir(parents=True, exist_ok=True)
-          for stem, suffix in (('architecture_selectable_055', 'architecture'),
+          for stem, suffix in (('thinkpad_x1', 'thinkpad-x1'),
+                               ('architecture_selectable_055', 'architecture'),
                                ('architecture_selectable_055_preview', 'architecture-preview'),
                                ('handle_rosettes_055', 'handles-rosettes'),
                                ('selection_details_055', 'selection-details'),
@@ -289,6 +290,14 @@ jobs:
             * `Forma3D-…-update-from-….zip` — **только изменённые с прошлого релиза исходники и ресурсы** + манифест; это не бинарный патч EXE. Для обновления готовой программы после изменения кода нужен новый EXE.
             * `human_skeleton.glb` — прежняя адаптация сторонней анатомической модели из 206 костей; рядом публикуется её файл лицензии.
             * `human_skeleton_original.glb` — новый самостоятельный параметрический скелет Forma, построенный без сторонних сеток; рядом JSON-аудит.
+
+            **Что нового в 0.56 — сплошные контуры с любого ракурса**
+
+            * `аниме`, `манга`, `комикс`, `линия` и `скетч` используют настоящие границы объектов в ID-pass: uniform обновляется для каждого mesh, а 16-битный ID не теряет детали в сценах со 128+ meshes;
+            * слабое покрытие после downsample превращается в видимую непрерывную линию; nearest-маска тела больше не затирает уже найденный силуэт. Supersampling и бюджет 8 Мп сохранены;
+            * ThinkPad X1 проверен в семи ракурсах, включая низкие и дальние виды, при DPR=1/2 и во всех пяти линейных стилях. На контрольных прямых участках покрытие стало 100%, максимальный разрыв — 0 px; дополнительный стенд из 140 сопланарных meshes подтвердил 140 различимых ID;
+            * локальный регресс: **1197/1197 unittest**, **7/7 JS-наборов**, `--selftest` и **170/170 UI/API-проверок**; версионный стенд дополнительно прошёл HTTP и браузерную приёмку;
+            * исходная геометрия не изменена: **66 объектов / 76 418 треугольников**. Модель `Forma3D-0.56-thinkpad-x1` приложена в GLB+Forma, а стенд <https://forma3d-ratandru.fly.dev/?v=0.56> содержит соответствующие сравнения «до/после» без загрузки полного приложения.
 
             **Что нового в 0.55 — все детали выбираются, двусторонняя дверь и окна**
 

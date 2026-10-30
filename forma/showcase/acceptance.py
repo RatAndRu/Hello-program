@@ -14,6 +14,7 @@ import urllib.request
 
 EXPECTED = {
     "train_carriage": {"objects": 1186, "triangles": 336536, "preview_nodes": 140},
+    "thinkpad_x1_056": {"objects": 66, "triangles": 76418, "preview_nodes": 38, "full_nodes": 73},
     "architecture_selectable_055": {"objects": 88, "triangles": 49424, "preview_nodes": 4,
                                      "preview_triangles": 17988},
     "handle_rosettes_055": {"objects": 8, "triangles": 94308, "preview_nodes": 4},
@@ -115,7 +116,7 @@ class Acceptance:
         if self.revision and catalog.get("revision") != self.revision:
             raise AssertionError("Revision каталога не совпал")
         versions = {version["id"]: version for version in catalog.get("versions", [])}
-        if set(versions) != {"train-2026-10", "0.55", "0.54", "0.53", "0.52"}:
+        if set(versions) != {"train-2026-10", "0.56", "0.55", "0.54", "0.53", "0.52"}:
             raise AssertionError(f"Неожиданный список версий: {sorted(versions)}")
 
         for version in catalog["versions"]:
@@ -138,8 +139,10 @@ class Acceptance:
                 preview = self.check_asset(model["preview_glb"], ".glb")
                 full_summary = glb_summary(full)
                 preview_summary = glb_summary(preview)
-                if full_summary["nodes"] != expected["objects"]:
-                    raise AssertionError(f"{model['id']}: полный GLB потерял отдельные детали")
+                full_nodes = expected.get("full_nodes", expected["objects"])
+                if full_summary["nodes"] != full_nodes:
+                    raise AssertionError(
+                        f"{model['id']}: полный GLB nodes={full_summary['nodes']} != {full_nodes}")
                 if full_summary["triangles"] != expected["triangles"]:
                     raise AssertionError(f"{model['id']}: неверное число треугольников полного GLB")
                 preview_triangles = expected.get("preview_triangles", expected["triangles"])

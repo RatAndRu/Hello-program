@@ -26,7 +26,7 @@ class ShowcaseTest(unittest.TestCase):
     def test_catalog_has_versioned_changes_and_existing_sources(self):
         catalog = json.loads((SHOWCASE / "catalog.source.json").read_text(encoding="utf-8"))
         self.assertEqual([v["id"] for v in catalog["versions"]],
-                         ["train-2026-10", "0.55", "0.54", "0.53", "0.52"])
+                         ["train-2026-10", "0.56", "0.55", "0.54", "0.53", "0.52"])
         for version in catalog["versions"]:
             self.assertGreaterEqual(len(version["changes"]), 4)
             self.assertTrue(version["title"])
@@ -39,6 +39,11 @@ class ShowcaseTest(unittest.TestCase):
                     self.assertTrue((ROOT.parent / model["preview_source"]).is_file(),
                                     model["preview_source"])
                 self.assertTrue(model["posters"])
+        latest = catalog["versions"][1]
+        self.assertEqual(latest["id"], "0.56")
+        self.assertEqual(sum(bool(change.get("image")) for change in latest["changes"]), 11,
+                         "все ракурсы и пять стилей имеют парные кадры")
+        self.assertEqual(latest["models"][0]["source"], "forma/examples/thinkpad_x1.forma")
 
     def test_preview_batching_preserves_faces_normals_and_bounds(self):
         first = Solid("a", mf.Manifold.cube([10, 10, 10]), color="#aabbcc")
@@ -76,6 +81,9 @@ class ShowcaseTest(unittest.TestCase):
         self.assertIn("model.stats.preview_triangles ?? model.stats.triangles", app)
         self.assertIn("forceContextLoss", viewer)
         self.assertIn("document.hidden", viewer)
+        self.assertIn("this.updateClipRange()", viewer)
+        self.assertIn("distance - this.modelRadius * 1.05", viewer)
+        self.assertNotIn("this.camera.far = Math.max(100, radius * 100)", viewer)
         self.assertNotIn("/api/build", app)
 
     @unittest.skipUnless(shutil.which("node"), "Node.js не установлен")

@@ -10,7 +10,8 @@ const root = path.resolve(__dirname, '..');
 
 async function main() {
   const { cameraClipRange } = await import(pathToFileURL(path.join(root, 'web/js/camera_clip.js')));
-  const { edgeCoverageScale } = await import(pathToFileURL(path.join(root, 'web/js/edge_coverage.js')));
+  const { edgeCoverageScale, edgeCoverageToInk, EDGE_COVERAGE_TO_INK_GLSL } = await import(
+    pathToFileURL(path.join(root, 'web/js/edge_coverage.js')));
 
   const bbox = { min: { x: -50, y: -20, z: -10 }, max: { x: 50, y: 20, z: 10 } };
   const center = { x: 0, y: 0, z: 0 };
@@ -62,19 +63,47 @@ async function main() {
   assert.strictEqual(edgeCoverageScale(1100, 700, NaN), 2);
   assert.strictEqual(edgeCoverageScale(1100, 700, 0), 2, 'некорректный DPR не отключает сглаживание');
 
+  // При 2×2 coverage один из четырёх subpixel-образцов даёт coverage=0.25.
+  // Он должен стать видимой линией, а не почти белым пунктирным фрагментом.
+  assert.strictEqual(edgeCoverageToInk(0), 0);
+  assert.strictEqual(edgeCoverageToInk(0.025), 0);
+  assert(edgeCoverageToInk(0.25) > 0.5, 'один subpixel сохраняет больше 50% чернил');
+  assert.strictEqual(edgeCoverageToInk(0.45), 1);
+  assert.strictEqual(edgeCoverageToInk(1), 1);
+  let previousInk = 0;
+  for (let i = 0; i <= 100; i += 1) {
+    const ink = edgeCoverageToInk(i / 100);
+    assert(ink >= previousInk && ink <= 1, 'coverage → ink монотонно и ограничено');
+    previousInk = ink;
+  }
+  assert(EDGE_COVERAGE_TO_INK_GLSL.includes('smoothstep(0.025, 0.45, coverage)'));
+
   // Чистые функции должны быть реально подключены к renderer, а не остаться
   // неиспользуемым эталонным кодом.
   const viewer = fs.readFileSync(path.join(root, 'web/js/viewer.js'), 'utf8');
   for (const token of [
     "import { cameraClipRange } from './camera_clip.js'",
-    "import { edgeCoverageScale } from './edge_coverage.js'",
+    "import { edgeCoverageScale, EDGE_COVERAGE_TO_INK_GLSL } from './edge_coverage.js'",
     'this._edgePass = new ShaderPass',
     'this._renderEdgePass();',
     'u.tEdge.value = this._edgeRT.texture',
-    'float edge = texture2D(tEdge, vUv).r',
+    '${EDGE_COVERAGE_TO_INK_GLSL}',
+    'float edge = edgeCoverageToInk(texture2D(tEdge, vUv).r)',
+    'col = mix(col, uInk, edge);',
+    'mat.uniformsNeedUpdate = true;',
+    "mat.uniforms.uGid.value = mode === 'материалы' ? 0 : (info.gid || 0);",
+    "'все': 1",
+    'if (uLines > 0.5 && uInner > 0.5 && uSeams > 0.5)',
+    'mod(uGid, 256.0) / 255.0',
+    'floor(uGid / 256.0) / 255.0',
+    'abs(idN.b - idC.b)',
   ]) assert(viewer.includes(token), `viewer не подключён: ${token}`);
+  assert(/_idNeeded\(\)\s*\{\s*return !!this\.model;\s*\}/.test(viewer),
+    'ID-границы обязаны работать и при lines=все');
+  assert(!viewer.includes('col = mix(col, uInk, edge * step(0.5, aC))'),
+    'nearest-маска тела не должна занулять найденный контур');
 
-  console.log('Линейный render: 4 ракурса clip, вырожденный AABB, DPR и лимит coverage проверены.');
+  console.log('Линейный render: clip, DPR, subpixel-чернила и ID-границы всех объектов проверены.');
 }
 
 main().catch((error) => {
