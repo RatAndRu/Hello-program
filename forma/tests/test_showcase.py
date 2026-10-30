@@ -26,7 +26,7 @@ class ShowcaseTest(unittest.TestCase):
     def test_catalog_has_versioned_changes_and_existing_sources(self):
         catalog = json.loads((SHOWCASE / "catalog.source.json").read_text(encoding="utf-8"))
         self.assertEqual([v["id"] for v in catalog["versions"]],
-                         ["0.58", "0.57", "train-2026-10", "0.56", "0.55", "0.54", "0.53", "0.52"])
+                         ["photo-2026-10", "0.58", "0.57", "train-2026-10", "0.56", "0.55", "0.54", "0.53", "0.52"])
         for version in catalog["versions"]:
             self.assertGreaterEqual(len(version["changes"]), 4)
             self.assertTrue(version["title"])
@@ -43,8 +43,7 @@ class ShowcaseTest(unittest.TestCase):
         self.assertEqual(sum(bool(change.get("image")) for change in latest["changes"]), 11,
                          "все ракурсы и пять стилей имеют парные кадры")
         self.assertEqual(latest["models"][0]["source"], "forma/examples/thinkpad_x1.forma")
-        current = catalog["versions"][0]
-        self.assertEqual(current["id"], "0.58")
+        current = next(v for v in catalog["versions"] if v["id"] == "0.58")
         self.assertEqual(len(current["models"]), 5)
         self.assertTrue(all(model["source"].startswith("forma/showcase/sources/058/")
                             for model in current["models"][:3]))

@@ -42,7 +42,7 @@ jobs:
       - name: Focused regression
         env:
           PYTHONPATH: forma:forma/tests
-        run: python -m unittest -v test_showcase test_train_carriage test_living_room_052
+          run: python -m unittest -v test_showcase test_photo_saddle_bracket test_train_carriage test_living_room_052
 
       - name: Build static production image
         run: docker build --build-arg "FORMA_REVISION=$GITHUB_SHA" -t "forma3d-showcase:$GITHUB_SHA" -f forma/showcase/Dockerfile .

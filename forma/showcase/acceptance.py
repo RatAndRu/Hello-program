@@ -13,6 +13,7 @@ import urllib.error
 import urllib.request
 
 EXPECTED = {
+    "saddle_bracket_photo": {"objects": 1, "triangles": 352700, "preview_nodes": 1},
     "bottle_styles_058": {"objects": 5, "triangles": 156008, "preview_nodes": 5},
     "petaloid_bottom_058": {"objects": 1, "triangles": 36720, "preview_nodes": 1},
     "jar_styles_058": {"objects": 3, "triangles": 82798, "preview_nodes": 3},
@@ -128,7 +129,7 @@ class Acceptance:
         if self.revision and catalog.get("revision") != self.revision:
             raise AssertionError("Revision каталога не совпал")
         versions = {version["id"]: version for version in catalog.get("versions", [])}
-        if set(versions) != {"0.58", "0.57", "train-2026-10", "0.56", "0.55", "0.54", "0.53", "0.52"}:
+        if set(versions) != {"photo-2026-10", "0.58", "0.57", "train-2026-10", "0.56", "0.55", "0.54", "0.53", "0.52"}:
             raise AssertionError(f"Неожиданный список версий: {sorted(versions)}")
 
         for version in catalog["versions"]:
