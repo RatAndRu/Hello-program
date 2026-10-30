@@ -1511,24 +1511,30 @@ function refreshTear(){
   tearLayer.innerHTML = '';
   bandRects = [];
   const scene = document.querySelector('.scene');
-  const N = randInt(3, 5);
+  const N = randInt(4, 9);
   for (let i = 0; i < N; i++){
     const c = scene.cloneNode(true);
     const bc = btnWrapEl.cloneNode(true);
     bc.style.position = 'absolute';
-    const wP = randInt(4, 16), leftP = Math.random() * (100 - wP);
-    const topP = Math.random() * 6, bottomP = Math.random() * 6;
-    const dy = randInt(-8, 8);
+    // в основном узкие, иногда широкие
+    const wP = Math.random() < 0.25 ? randInt(12, 26) : randInt(1, 8);
+    const leftP = Math.random() * (100 - wP);
+    // почти на всю высоту, иногда короче и с рваным обрезом сверху или снизу
+    const full = Math.random() < 0.6;
+    const topP = full ? 0 : Math.random() * 40;
+    const bottomP = full ? 0 : Math.random() * 30;
+    const dy = Math.random() < 0.5 ? 0 : randInt(-26, 26);
+    const tx = randInt(-6, 6);
     const band = document.createElement('div');
     band.className = 'tband';
     band.style.clipPath = `inset(${topP.toFixed(1)}% ${(100 - leftP - wP).toFixed(1)}% ${bottomP.toFixed(1)}% ${leftP.toFixed(1)}%)`;
-    band.style.transform = `translateY(${dy}px)`;
-    band.style.background = '#000';
-    band.style.filter = Math.random() < 0.12 ? 'invert(1)' : 'none';
+    band.style.transform = `translate(${tx}px, ${dy}px)`;
+    band.style.background = Math.random() < 0.5 ? '#000' : 'transparent';
+    band.style.filter = Math.random() < 0.15 ? 'invert(1)' : 'none';
     band.appendChild(c);
     band.appendChild(bc);
     tearLayer.appendChild(band);
-    bandRects.push({ x: leftP / 100 * W, y: dy + topP / 100 * H, w: wP / 100 * W, h: (100 - topP - bottomP) / 100 * H });
+    bandRects.push({ x: leftP / 100 * W + tx, y: dy + topP / 100 * H, w: wP / 100 * W, h: (100 - topP - bottomP) / 100 * H });
   }
 }
 
@@ -1614,6 +1620,29 @@ async function wipePhase(){
   stopWipeFx();
   showEnding();
 }
+
+/* ---------- Уход: Esc, Windows, выход из полного экрана, смена окна или вкладки ---------- */
+let gameStarted = false, leaveTimer = null, leftPage = false;
+function showLeave(){
+  if (!gameStarted || $('ending').classList.contains('on')) return;
+  $('leave').classList.add('on');
+  clearTimeout(leaveTimer);
+  leaveTimer = setTimeout(() => $('leave').classList.remove('on'), 6000);
+}
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' || e.key === 'Meta' || e.key === 'OS' || e.key === 'Super') showLeave();
+});
+document.addEventListener('fullscreenchange', () => { if (!document.fullscreenElement) showLeave(); });
+document.addEventListener('webkitfullscreenchange', () => { if (!document.webkitFullscreenElement) showLeave(); });
+document.addEventListener('pointerlockchange', () => { if (!document.pointerLockElement && wipeActive) showLeave(); });
+window.addEventListener('blur', showLeave);
+// уход со страницы: вкладку свернули или переключились в другое приложение (на телефоне тоже)
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden'){ leftPage = true; }
+  else if (leftPage){ leftPage = false; showLeave(); }
+});
+window.addEventListener('pagehide', () => { leftPage = true; });
+window.addEventListener('pageshow', () => { if (leftPage){ leftPage = false; showLeave(); } });
 
 /* ---------- Финал ---------- */
 function showEnding(){
