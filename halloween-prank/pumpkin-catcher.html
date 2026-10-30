@@ -96,6 +96,10 @@ html.phone #scareImg{object-position:50% 38%}
 html.phone.landscape #text{padding:2vh 4vw;gap:1.6vh}
 html.phone.landscape .srow{gap:.05em .25em}
 html.phone #wipeBox{max-height:calc(var(--app-h, 100vh) - 24px);overflow:hidden}
+#offDot{position:fixed;left:50%;top:50%;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;background:#fff;box-shadow:0 0 18px 9px rgba(255,255,255,.85),0 0 70px 28px rgba(150,200,255,.35);opacity:0;pointer-events:none;z-index:24}
+#offDot.on{animation:dotfade .8s ease-out forwards}
+@keyframes dotfade{0%{opacity:0;transform:scale(.15)}22%{opacity:1;transform:scale(1)}100%{opacity:0;transform:scale(.5)}}
+@keyframes crtoff{0%{transform:scale(1,1);filter:brightness(1)}30%{transform:scale(1.03,.012);filter:brightness(2.4)}50%{transform:scale(1.03,.012);filter:brightness(3.2)}72%{transform:scale(.012,.012);filter:brightness(5)}86%{transform:scale(.006,.006);filter:brightness(7);opacity:1}100%{transform:scale(.004,.004);filter:brightness(9);opacity:0}}
 #perm{background:rgba(0,0,0,.42);z-index:19;pointer-events:none}
 #perm.on{display:block}
 #permDlg{position:absolute;left:0;top:0;width:min(340px,86vw);background:#f8f9fa;color:#202124;border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.6);padding:16px 16px 12px;font-family:system-ui,"Segoe UI",sans-serif;text-align:left}
@@ -156,6 +160,8 @@ html.phone #permDlg{width:min(320px,84vw);border-radius:16px;background:#ffffff}
   <div id="btnWrap"><button id="cancel" type="button">Отменить</button></div>
   <canvas id="cursors"></canvas>
 </div>
+
+<div id="offDot"></div>
 
 <!-- Ложное окно разрешения: мелькает меньше секунды, кнопка «Разрешить» оказывается ровно под пальцем -->
 <div id="perm" class="overlay">
@@ -255,6 +261,33 @@ function ac(){
   if (audioCtx.state === 'suspended') audioCtx.resume();
   return audioCtx;
 }
+// общий усилитель: к нему подключены все звуки, поэтому громкость можно увести целиком
+function out(a){
+  if (!a.__out){
+    const g = a.createGain();
+    g.gain.value = 1;
+    g.connect(a.destination);
+    a.__out = g;
+  }
+  return a.__out;
+}
+function fadeOutAudio(ms){
+  if (!audioCtx) return;
+  try {
+    const a = audioCtx, m = out(a);
+    m.gain.cancelScheduledValues(a.currentTime);
+    m.gain.setValueAtTime(m.gain.value, a.currentTime);
+    m.gain.linearRampToValueAtTime(0.0001, a.currentTime + ms / 1000);
+  } catch (e) {}
+}
+function restoreAudio(){
+  if (!audioCtx) return;
+  try {
+    const a = audioCtx, m = out(a);
+    m.gain.cancelScheduledValues(a.currentTime);
+    m.gain.setValueAtTime(1, a.currentTime);
+  } catch (e) {}
+}
 function note(freq, dur, type, vol){
   const a = ac(), t = a.currentTime;
   const o = a.createOscillator(), g = a.createGain();
@@ -262,7 +295,7 @@ function note(freq, dur, type, vol){
   g.gain.setValueAtTime(0.0001, t);
   g.gain.linearRampToValueAtTime(vol, t + 0.01);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(a.destination);
+  o.connect(g).connect(out(a));
   o.start(t); o.stop(t + dur + 0.05);
 }
 const melody = [523,659,784,659,587,698,880,698,523,659,784,1047,988,784,659,523];
@@ -301,7 +334,7 @@ function scream(){
   master.gain.exponentialRampToValueAtTime(0.9, t + 0.12);
   master.gain.setValueAtTime(0.9, t + dur - 2.2);
   master.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  master.connect(shaper).connect(a.destination);
+  master.connect(shaper).connect(out(a));
 
   // слоги «а-а-а»: громкость пульсирует, в басовой части медленнее
   const syl = a.createGain();
@@ -388,7 +421,7 @@ function digitalZap(){
   o.frequency.exponentialRampToValueAtTime(40 + Math.random() * 120, t + dur);
   g.gain.setValueAtTime(0.09, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(a.destination);
+  o.connect(g).connect(out(a));
   o.start(t); o.stop(t + dur + 0.02);
 }
 function bitcrushBurst(){
@@ -403,7 +436,7 @@ function bitcrushBurst(){
   const src = a.createBufferSource(), g = a.createGain();
   src.buffer = buf;
   g.gain.value = 0.5;
-  src.connect(g).connect(a.destination);
+  src.connect(g).connect(out(a));
   src.start();
 }
 function dataStutter(){
@@ -417,7 +450,7 @@ function dataStutter(){
     o.frequency.setValueAtTime(300 + Math.random() * 2700, t);
     g.gain.setValueAtTime(0.05, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(a.destination);
+    o.connect(g).connect(out(a));
     o.start(t); o.stop(t + dur + 0.01);
     t += dur + Math.random() * 0.02;
   }
@@ -428,7 +461,7 @@ function clickTick(){
   for (let i = 0; i < len; i++) d[i] = (i === 0 ? 1 : (Math.random() * 2 - 1) * Math.pow(1 - i / len, 6));
   const src = a.createBufferSource(), g = a.createGain();
   src.buffer = buf; g.gain.value = 0.6;
-  src.connect(g).connect(a.destination);
+  src.connect(g).connect(out(a));
   src.start();
 }
 function glitchSound(){
@@ -937,6 +970,7 @@ function resetGame(){
 function startGame(){
   ac();
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  restoreAudio();
   runAborted = false; leaving = false;
   gameStarted = true;
   $('start').classList.remove('on');
@@ -1327,6 +1361,24 @@ async function startScare(){
   $('scareImg').classList.remove('flick');
   await glitchPhase(4500);
   await wipePhase();
+}
+
+/* ---------- Выключение экрана после удаления ---------- */
+// Экран сжимается в линию, затем в точку и гаснет; звук плавно уходит в тишину.
+function powerOffScreen(){
+  return new Promise(resolve => {
+    const w = $('wipe'), dot = $('offDot');
+    fadeOutAudio(1500);
+    w.style.transformOrigin = '50% 50%';
+    w.style.animation = 'crtoff 1.15s cubic-bezier(.55,.02,.85,.3) forwards';
+    setTimeout(() => { dot.classList.add('on'); }, 690);
+    setTimeout(() => {
+      w.classList.remove('on');
+      w.style.animation = ''; w.style.transform = ''; w.style.opacity = ''; w.style.filter = '';
+      resolve();
+    }, 1180);
+    setTimeout(() => { dot.classList.remove('on'); }, 1560);
+  });
 }
 
 /* ---------- Ложное окно разрешения ---------- */
@@ -1773,7 +1825,7 @@ async function wipePhase(){
   const drone = a.createOscillator(), dg = a.createGain();
   drone.type = 'sawtooth'; drone.frequency.value = 48;
   dg.gain.value = 0.05;
-  drone.connect(dg).connect(a.destination);
+  drone.connect(dg).connect(out(a));
   drone.start();
   activeDrone = drone;
 
@@ -1817,8 +1869,12 @@ async function wipePhase(){
   await sleep(1500);
   if (runAborted) return;
 
-  drone.stop();
   stopWipeFx();
+  await powerOffScreen();          // экран гаснет, звук уходит
+  drone.stop();
+  if (runAborted) return;
+  await sleep(1150);               // чёрный экран без всего
+  if (runAborted) return;
   showEnding();
 }
 
