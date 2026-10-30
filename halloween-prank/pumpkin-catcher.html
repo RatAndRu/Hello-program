@@ -2709,7 +2709,7 @@ async function wipePhase(){
   if (runAborted) return;
   await sleep(3000);               // чёрный экран без всего
   if (runAborted) return;
-  showEnding();
+  showEnding(true);                // финал с музыкой с нуля
 }
 
 /* ---------- Уход: Esc, Windows, выход из полного экрана, смена окна или вкладки ---------- */
@@ -2767,7 +2767,7 @@ window.addEventListener('pagehide', () => { leftPage = true; });
 window.addEventListener('pageshow', () => { if (leftPage){ leftPage = false; showLeave(); } });
 
 /* ---------- Финал ---------- */
-function showEnding(){
+function showEnding(withMusic){
   if (document.pointerLockElement) document.exitPointerLock();
   wipeActive = false;
   clearInterval(wipeBgTimer); wipeBgTimer = null;
@@ -2778,6 +2778,11 @@ function showEnding(){
   $('glitch').classList.remove('on');
   $('ending').classList.add('on');
   syncExitBtn();
+  // после выключения экрана музыка возвращается с самого начала
+  if (withMusic){
+    restoreAudio();       // общий усилитель был уведён в тишину при выключении
+    startMusic();
+  }
 }
 $('again').addEventListener('click', () => { goFullscreen(); enableMotion(); startGame(); });
 $('exitFs').addEventListener('click', () => { exitFullscreen(); setTimeout(syncExitBtn, 150); });
