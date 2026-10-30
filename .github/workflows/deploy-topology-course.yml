@@ -45,17 +45,23 @@ jobs:
           set -euo pipefail
           docker build -t topology-course:ci -f "$SITE_DIR/deploy/Dockerfile" "$SITE_DIR"
           docker run -d --name topology-ci -p 8081:80 topology-course:ci
-          for attempt in $(seq 1 20); do
-            if body=$(curl -fsS http://127.0.0.1:8081/); then
-              printf '%s' "$body" | grep -q "Топология тел" || { echo '::error::Контейнер отдал не ту страницу'; exit 1; }
-              echo "Контейнер отдаёт страницу: $(printf '%s' "$body" | wc -c) байт"
-              exit 0
-            fi
+          code=000
+          for attempt in $(seq 1 30); do
+            code=$(curl -sS -o /tmp/ci.html -w '%{http_code}' http://127.0.0.1:8081/ || true)
+            if [ "$code" = "200" ]; then break; fi
             sleep 1
           done
-          docker logs topology-ci || true
-          echo '::error::Контейнер не поднялся'
-          exit 1
+          size=$(wc -c < /tmp/ci.html 2>/dev/null || echo 0)
+          echo "HTTP $code, ${size} байт"
+          head -c 400 /tmp/ci.html || true
+          echo
+          if [ "$code" != "200" ] || [ "$size" -lt 100000 ]; then
+            docker logs topology-ci || true
+            echo "::error::Контейнер не отдал собранную страницу (HTTP $code, ${size} байт)"
+            exit 1
+          fi
+          grep -q "Топология тел" /tmp/ci.html || { echo "::error::В ответе нет заголовка курса"; exit 1; }
+          echo "Контейнер отдаёт страницу: ${size} байт"
 
       - name: Убрать тестовый контейнер
         if: always()
