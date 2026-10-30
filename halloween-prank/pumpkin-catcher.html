@@ -75,6 +75,8 @@ button:active{transform:translateY(3px);box-shadow:none}
 #leaveText{font-family:"Pirata One",Georgia,serif;color:#e00000;font-size:clamp(24px,4.4vw,52px);line-height:1.45;text-shadow:0 0 14px #600}
 /* финал */
 #ending{background:#000;z-index:25;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px}
+#endCv{position:absolute;inset:0;width:100%;height:100%;z-index:0;pointer-events:none}
+#ending > h1,#ending > div,#ending > button{position:relative;z-index:1}
 #ending.on{display:flex}
 #endTitle{font-family:"Creepster","Pirata One",Impact,serif;color:#c80000;font-size:clamp(48px,11vw,150px);line-height:1.05;text-shadow:0 0 18px #800,0 0 40px #400;margin:0;letter-spacing:2px}
 #endSub{color:#8a8a8a;font-family:Consolas,"Courier New",monospace;margin-top:18px;font-size:clamp(14px,1.8vw,20px)}
@@ -177,6 +179,7 @@ html.phone #permDlg{width:min(320px,84vw);border-radius:16px;background:#ffffff}
 
 <!-- Финал -->
 <div id="ending" class="overlay">
+  <canvas id="endCv"></canvas>
   <h1 id="endTitle">Весёлого Хэллоуина!</h1>
   <div id="endSub">Ничего не удалено. Честно 🎃</div>
   <button id="again">Перезапустить игру</button>
@@ -2957,6 +2960,103 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', () => { leftPage = true; });
 window.addEventListener('pageshow', () => { if (leftPage){ leftPage = false; showLeave(); } });
 
+/* ---------- Финал: череп и рука качаются под музыку ---------- */
+let endFxRaf = null;
+
+// фаза в такт дорожке: 120 ударов в минуту
+function endBeat(){
+  if (!bgm.paused && bgmWanted) return bgm.currentTime * 2;
+  return performance.now() / 500;
+}
+
+function drawEndingProps(){
+  const w = innerWidth, h = innerHeight;
+  const cv = $('endCv');
+  const pw = Math.round(w * DPR), ph = Math.round(h * DPR);
+  if (cv.width !== pw || cv.height !== ph){ cv.width = pw; cv.height = ph; }
+  const c = cv.getContext('2d');
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.clearRect(0, 0, w, h);
+
+  if (!skullCv) buildSkullLayers();
+  if (!handCv) buildHandLayers();
+
+  const beat = endBeat();
+  const amp = Math.sin(beat * Math.PI);        // такт
+  const pulse = 0.70 + 0.30 * Math.sin(beat * Math.PI * 2);
+
+  // ---- череп в левом нижнем углу ----
+  const s = Math.max(skullSize(), Math.min(w, h) * 0.34);
+  const px = s * 0.80;
+  const py = h * 0.90;
+  const gx0 = px - skullOx, gy0 = py - skullOy;
+
+  c.globalAlpha = 0.95;
+  c.drawImage(skullGroundCv, gx0, gy0, skullW, skullH);
+
+  const sway = amp * 0.13;
+  const chomp = (0.5 + 0.5 * Math.sin(beat * Math.PI * 2)) * 0.20;
+
+  c.save();
+  c.translate(px, py); c.rotate(sway); c.translate(-px, -py);
+  c.drawImage(skullCv, gx0, gy0, skullW, skullH);
+  const hx = gx0 + jawHinge.x, hy = gy0 + jawHinge.y;
+  c.save();
+  c.translate(hx, hy); c.rotate(chomp); c.translate(-hx, -hy);
+  c.drawImage(jawCv, gx0, gy0, skullW, skullH);
+  c.restore();
+
+  // глаза горят в такт
+  c.save();
+  c.globalCompositeOperation = 'lighter';
+  for (const p of skullSock){
+    const ex = gx0 + p.x, ey = gy0 + p.y;
+    const r = skullGlowR * (1.7 + 0.35 * Math.max(0, amp));
+    const gr = c.createRadialGradient(ex, ey, 0, ex, ey, r);
+    gr.addColorStop(0, 'rgba(255,120,60,' + (0.55 * pulse).toFixed(3) + ')');
+    gr.addColorStop(0.30, 'rgba(230,25,8,' + (0.30 * pulse).toFixed(3) + ')');
+    gr.addColorStop(0.66, 'rgba(150,0,0,' + (0.11 * pulse).toFixed(3) + ')');
+    gr.addColorStop(1, 'rgba(90,0,0,0)');
+    c.fillStyle = gr;
+    c.beginPath(); c.arc(ex, ey, r, 0, Math.PI * 2); c.fill();
+    const cr = skullGlowR * 0.62;
+    const cg = c.createRadialGradient(ex, ey, 0, ex, ey, cr);
+    cg.addColorStop(0, 'rgba(255,240,220,' + (0.95 * pulse).toFixed(3) + ')');
+    cg.addColorStop(0.22, 'rgba(255,120,60,' + (0.85 * pulse).toFixed(3) + ')');
+    cg.addColorStop(0.55, 'rgba(240,30,10,' + (0.55 * pulse).toFixed(3) + ')');
+    cg.addColorStop(1, 'rgba(150,0,0,0)');
+    c.fillStyle = cg;
+    c.beginPath(); c.arc(ex, ey, cr, 0, Math.PI * 2); c.fill();
+  }
+  c.restore();
+  c.restore();
+
+  // ---- рука в правом нижнем углу, машет в противофазе ----
+  const hpx = w * (IS_MOBILE ? 0.84 : 0.84);
+  const hpy = h * 0.90;
+  const hgx = hpx - handOx, hgy = hpy - handOy;
+
+  c.drawImage(handGroundCv, hgx, hgy, handW, handH);
+  c.save();
+  c.translate(hpx, hpy);
+  c.rotate(-amp * 0.34);                       // качается в другую сторону
+  c.translate(-hpx, -hpy);
+  c.drawImage(handCv, hgx, hgy, handW, handH);
+  c.restore();
+
+  c.globalAlpha = 1;
+}
+
+function endFxLoop(){
+  endFxRaf = null;
+  if (!$('ending').classList.contains('on')) return;
+  drawEndingProps();
+  endFxRaf = requestAnimationFrame(endFxLoop);
+}
+function startEndingFx(){
+  if (!endFxRaf) endFxRaf = requestAnimationFrame(endFxLoop);
+}
+
 /* ---------- Финал ---------- */
 function showEnding(withMusic){
   if (document.pointerLockElement) document.exitPointerLock();
@@ -2969,6 +3069,7 @@ function showEnding(withMusic){
   $('glitch').classList.remove('on');
   $('ending').classList.add('on');
   syncExitBtn();
+  startEndingFx();
   // после выключения экрана музыка возвращается с самого начала
   if (withMusic){
     restoreAudio();       // общий усилитель был уведён в тишину при выключении
