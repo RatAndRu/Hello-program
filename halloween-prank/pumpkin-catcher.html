@@ -30,7 +30,9 @@ button:active{transform:translateY(3px);box-shadow:none}
 #scareImg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 #scareImg.flick{animation:flick .03s steps(1) infinite}
 @keyframes flick{0%{opacity:1;filter:contrast(1.3)}50%{opacity:.35;filter:contrast(1.6) brightness(1.4)}100%{opacity:1}}
-#text{position:absolute;left:0;right:0;bottom:8%;text-align:center;color:#e00000;font-family:Georgia,"Times New Roman",serif;font-size:clamp(20px,4vw,36px);line-height:1.45;padding:0 20px;text-shadow:0 0 14px #600,0 0 4px #000;min-height:6em}
+#text{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3vh;padding:4vh 4vw;background:rgba(0,0,0,.6);text-align:center;overflow:hidden;color:#e00000}
+.srow{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;max-width:100%}
+.sword{display:inline-block;white-space:nowrap;margin:0 .1em}
 .shake{animation:shake .08s infinite}
 @keyframes shake{0%{transform:translate(0,0)}25%{transform:translate(-10px,5px)}50%{transform:translate(9px,-6px)}75%{transform:translate(-5px,-9px)}100%{transform:translate(0,0)}}
 
@@ -182,96 +184,148 @@ function distortionCurve(k){
   return c;
 }
 
-// Крик: пилообразный «голос» с вибрато, формантами, шумом и перегрузом
+// Крик: долгий, с дыханием, дрожью, срывом голоса и хрипотой
 function scream(){
-  const a = ac(), t = a.currentTime, dur = 2.1;
+  const a = ac(), t = a.currentTime, dur = 5.4;
   const shaper = a.createWaveShaper();
-  shaper.curve = distortionCurve(90);
+  shaper.curve = distortionCurve(120);
   shaper.oversample = '4x';
   const master = a.createGain();
   master.gain.setValueAtTime(0.0001, t);
-  master.gain.exponentialRampToValueAtTime(1.0, t + 0.025);
-  master.gain.exponentialRampToValueAtTime(0.6, t + 0.8);
-  master.gain.exponentialRampToValueAtTime(0.25, t + 1.6);
+  master.gain.exponentialRampToValueAtTime(0.9, t + 0.15);
+  master.gain.setValueAtTime(0.9, t + dur - 1.4);
   master.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   master.connect(shaper).connect(a.destination);
 
+  // голос: пилообразные осцилляторы с расстройкой и дрожью
   const voice = a.createGain();
-  voice.gain.value = 0.35;
+  voice.gain.setValueAtTime(0.0001, t);
+  voice.gain.linearRampToValueAtTime(0.3, t + 0.35);
+  const trem = a.createOscillator(), tg = a.createGain();
+  trem.frequency.value = 22; tg.gain.value = 0.12;
+  trem.connect(tg).connect(voice.gain);
+  trem.start(t); trem.stop(t + dur);
   const oscs = [];
-  [0, 12, -10].forEach(det => {
+  for (const det of [0, 9, -11, 17]){
     const o = a.createOscillator();
     o.type = 'sawtooth';
-    o.frequency.setValueAtTime(230, t);
-    o.frequency.exponentialRampToValueAtTime(660, t + 0.25);
-    o.frequency.exponentialRampToValueAtTime(430, t + dur);
     o.detune.value = det;
     o.connect(voice);
     o.start(t); o.stop(t + dur + 0.05);
     oscs.push(o);
-  });
-  const lfo = a.createOscillator(), lg = a.createGain();
-  lfo.frequency.value = 7; lg.gain.value = 40;
-  lfo.connect(lg);
-  oscs.forEach(o => lg.connect(o.frequency));
-  lfo.start(t); lfo.stop(t + dur);
-
-  [[800, 9, 1.4], [1300, 7, 1.0], [2700, 6, 0.6]].forEach(([f, q, gn]) => {
-    const bp = a.createBiquadFilter(), g = a.createGain();
-    bp.type = 'bandpass'; bp.frequency.value = f; bp.Q.value = q;
-    g.gain.value = gn;
-    voice.connect(bp).connect(g).connect(master);
-  });
-
-  const buf = a.createBuffer(1, a.sampleRate * dur, a.sampleRate);
-  const d = buf.getChannelData(0);
-  for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
-  const n = a.createBufferSource(), bp = a.createBiquadFilter(), ng = a.createGain();
-  n.buffer = buf;
-  bp.type = 'bandpass'; bp.Q.value = 1.5;
-  bp.frequency.setValueAtTime(2200, t);
-  bp.frequency.linearRampToValueAtTime(4200, t + 0.5);
-  ng.gain.value = 0.5;
-  n.connect(bp).connect(ng).connect(master);
-  n.start(t);
-
-  note(48, 0.9, 'sine', 0.7);
-}
-
-// Битый треск: шум с пониженной битностью
-function crackle(){
-  const a = ac(), t = a.currentTime;
-  const dur = 0.04 + Math.random() * 0.16;
-  const len = Math.floor(a.sampleRate * dur);
-  const buf = a.createBuffer(1, len, a.sampleRate);
-  const d = buf.getChannelData(0);
-  const hold = randInt(8, 48);
-  let v = 0;
-  for (let i = 0; i < len; i++){
-    if (i % hold === 0) v = Math.round((Math.random() * 2 - 1) * 4) / 4;
-    d[i] = v * (1 - i / len);
   }
-  const src = a.createBufferSource(), g = a.createGain();
-  src.buffer = buf;
-  g.gain.value = 0.6;
-  src.connect(g).connect(a.destination);
-  src.start(t);
+  // контур высоты: подъём → удержание с дрожью → срыв → падение
+  for (let s = 0; s <= dur; s += 0.02){
+    const k = s / dur;
+    let f;
+    if (k < 0.12) f = 260 + (k / 0.12) * 560;
+    else if (k < 0.8) f = 820 - (k - 0.12) * 260;
+    else f = 650 - (k - 0.8) * 900;
+    const vib = 1 + 0.045 * Math.sin(2 * Math.PI * 6.8 * s) + (Math.random() - 0.5) * 0.08;
+    const brk = (s > 2.2 && s < 2.45) ? 0.55 + Math.random() * 0.3 : 1;
+    const val = Math.max(90, f * vib * brk);
+    for (const o of oscs) o.frequency.setValueAtTime(val, t + s);
+  }
+
+  // форманты: «а» → «и» (рот растягивается)
+  const fg = a.createGain();
+  fg.gain.value = 1.2;
+  fg.connect(master);
+  const f1 = a.createBiquadFilter(), f2 = a.createBiquadFilter(), f3 = a.createBiquadFilter();
+  [f1, f2, f3].forEach(f => { f.type = 'bandpass'; voice.connect(f); f.connect(fg); });
+  f1.frequency.setValueAtTime(800, t); f1.frequency.linearRampToValueAtTime(420, t + dur);
+  f2.frequency.setValueAtTime(1250, t); f2.frequency.linearRampToValueAtTime(2300, t + dur);
+  f3.frequency.setValueAtTime(2800, t); f3.frequency.linearRampToValueAtTime(3200, t + dur);
+  f1.Q.value = 8; f2.Q.value = 7; f3.Q.value = 6;
+
+  // дыхание и хрип: шум, пульсирующий в такт дрожи
+  const nb = a.createBuffer(1, Math.floor(a.sampleRate * dur), a.sampleRate);
+  const nd = nb.getChannelData(0);
+  for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+  const ns = a.createBufferSource(); ns.buffer = nb;
+  const nbp = a.createBiquadFilter();
+  nbp.type = 'bandpass'; nbp.Q.value = 0.9;
+  nbp.frequency.setValueAtTime(1800, t); nbp.frequency.linearRampToValueAtTime(3600, t + dur * 0.6);
+  const ng = a.createGain();
+  ng.gain.setValueAtTime(0.0001, t);
+  ng.gain.linearRampToValueAtTime(0.35, t + 0.3);
+  ng.gain.linearRampToValueAtTime(0.5, t + dur - 1);
+  ng.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  ns.connect(nbp).connect(ng).connect(master);
+  ns.start(t);
+
+  // низкий рёв под криком
+  const sub = a.createOscillator(), sg = a.createGain();
+  sub.type = 'sine';
+  sub.frequency.setValueAtTime(130, t); sub.frequency.linearRampToValueAtTime(90, t + dur);
+  sg.gain.setValueAtTime(0.0001, t);
+  sg.gain.linearRampToValueAtTime(0.35, t + 0.2);
+  sg.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  sub.connect(sg).connect(master);
+  sub.start(t); sub.stop(t + dur + 0.05);
+
+  note(48, 0.9, 'sine', 0.5);   // удар
 }
-// Визг: квадратный сигнал со скачком частоты
-function squeal(){
-  const a = ac(), t = a.currentTime, dur = 0.08 + Math.random() * 0.25;
+
+// Цифровые сбои: короткий «зап», битые семплы, рваные писки, щелчки
+function digitalZap(){
+  const a = ac(), t = a.currentTime, dur = 0.05 + Math.random() * 0.12;
   const o = a.createOscillator(), g = a.createGain();
-  o.type = 'square';
-  o.frequency.setValueAtTime(800 + Math.random() * 2800, t);
-  o.frequency.exponentialRampToValueAtTime(90 + Math.random() * 300, t + dur);
-  g.gain.setValueAtTime(0.05, t);
+  o.type = rnd(['square', 'sawtooth']);
+  o.frequency.setValueAtTime(rnd([1800, 2600, 3400]), t);
+  o.frequency.exponentialRampToValueAtTime(40 + Math.random() * 120, t + dur);
+  g.gain.setValueAtTime(0.09, t);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   o.connect(g).connect(a.destination);
   o.start(t); o.stop(t + dur + 0.02);
 }
+function bitcrushBurst(){
+  const a = ac(), len = Math.floor(a.sampleRate * (0.04 + Math.random() * 0.2));
+  const buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+  const hold = randInt(12, 90), q = Math.pow(2, rnd([2, 3, 4])) / 2;
+  let v = 0;
+  for (let i = 0; i < len; i++){
+    if (i % hold === 0) v = Math.round((Math.random() * 2 - 1) * q) / q;
+    d[i] = v * (1 - i / len) * 0.8;
+  }
+  const src = a.createBufferSource(), g = a.createGain();
+  src.buffer = buf;
+  g.gain.value = 0.5;
+  src.connect(g).connect(a.destination);
+  src.start();
+}
+function dataStutter(){
+  const a = ac();
+  let t = a.currentTime;
+  const n = randInt(3, 8);
+  for (let i = 0; i < n; i++){
+    const dur = 0.012 + Math.random() * 0.02;
+    const o = a.createOscillator(), g = a.createGain();
+    o.type = 'square';
+    o.frequency.setValueAtTime(300 + Math.random() * 2700, t);
+    g.gain.setValueAtTime(0.05, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(a.destination);
+    o.start(t); o.stop(t + dur + 0.01);
+    t += dur + Math.random() * 0.02;
+  }
+}
+function clickTick(){
+  const a = ac(), len = 60;
+  const buf = a.createBuffer(1, len, a.sampleRate), d = buf.getChannelData(0);
+  for (let i = 0; i < len; i++) d[i] = (i === 0 ? 1 : (Math.random() * 2 - 1) * Math.pow(1 - i / len, 6));
+  const src = a.createBufferSource(), g = a.createGain();
+  src.buffer = buf; g.gain.value = 0.6;
+  src.connect(g).connect(a.destination);
+  src.start();
+}
 function glitchSound(){
-  if (Math.random() < 0.7) crackle();
-  if (Math.random() < 0.4) squeal();
+  const r = Math.random();
+  if (r < 0.3) digitalZap();
+  else if (r < 0.55) bitcrushBurst();
+  else if (r < 0.75) dataStutter();
+  else clickTick();
+  if (Math.random() < 0.35) bitcrushBurst();
 }
 
 /* ---------- Игра ---------- */
@@ -556,6 +610,77 @@ function drawBgScene(now){
   drawPumpkinSilhouette(cx, gy, w, true);
 }
 
+/* ---------- Луна: кратеры, моря, тень от терминатора ---------- */
+let moonCv = null, moonKey = '';
+function seeded(seed){
+  let x = seed >>> 0;
+  return () => { x ^= x << 13; x ^= x >>> 17; x ^= x << 5; return ((x >>> 0) % 100000) / 100000; };
+}
+function buildMoon(R, pad){
+  const S = 2 * (R + pad);
+  moonCv = document.createElement('canvas');
+  moonCv.width = Math.ceil(S * DPR); moonCv.height = Math.ceil(S * DPR);
+  const m = moonCv.getContext('2d');
+  m.setTransform(DPR, 0, 0, DPR, 0, 0);
+  const c = R + pad;
+  // ореол
+  const halo = m.createRadialGradient(c, c, R * 0.9, c, c, R + pad);
+  halo.addColorStop(0, 'rgba(255,240,200,0.32)');
+  halo.addColorStop(1, 'rgba(255,240,200,0)');
+  m.fillStyle = halo; m.fillRect(0, 0, S, S);
+
+  m.save();
+  m.beginPath(); m.arc(c, c, R, 0, Math.PI * 2); m.clip();
+  // базовый диск
+  const disk = m.createRadialGradient(c - R * 0.35, c - R * 0.4, R * 0.05, c, c, R);
+  disk.addColorStop(0, '#fffdf3');
+  disk.addColorStop(0.65, '#e6dfc8');
+  disk.addColorStop(1, '#a9a18a');
+  m.fillStyle = disk; m.fillRect(0, 0, S, S);
+  // моря (тёмные равнины)
+  const seas = [[-0.28, -0.22, 0.36, 0.28], [0.22, 0.02, 0.28, 0.38], [-0.04, 0.36, 0.32, 0.2],
+                [0.38, -0.36, 0.18, 0.16], [-0.42, 0.18, 0.16, 0.13], [0.05, -0.5, 0.22, 0.1]];
+  for (const [x, y, rx, ry] of seas){
+    m.fillStyle = 'rgba(120,112,95,0.38)';
+    m.beginPath(); m.ellipse(c + x * R, c + y * R, rx * R, ry * R, 0.3, 0, Math.PI * 2); m.fill();
+  }
+  // кратеры: тёмное дно, светлый край снизу-справа, тень сверху-слева
+  const rnd2 = seeded(20261030);
+  for (let i = 0; i < 34; i++){
+    const ang = rnd2() * Math.PI * 2, dist = Math.sqrt(rnd2()) * R * 0.86;
+    const x = c + Math.cos(ang) * dist, y = c + Math.sin(ang) * dist;
+    const r = R * (0.025 + Math.pow(rnd2(), 2) * 0.12);
+    const cg = m.createRadialGradient(x - r * 0.2, y - r * 0.2, r * 0.1, x, y, r);
+    cg.addColorStop(0, 'rgba(120,110,92,0.65)');
+    cg.addColorStop(0.8, 'rgba(150,140,118,0.45)');
+    cg.addColorStop(1, 'rgba(255,255,250,0)');
+    m.fillStyle = cg;
+    m.beginPath(); m.arc(x, y, r, 0, Math.PI * 2); m.fill();
+    m.strokeStyle = 'rgba(255,255,248,0.55)';
+    m.lineWidth = Math.max(0.6, r * 0.22);
+    m.beginPath(); m.arc(x, y, r * 0.96, 0.15 * Math.PI, 0.85 * Math.PI); m.stroke();
+    m.strokeStyle = 'rgba(70,64,52,0.45)';
+    m.beginPath(); m.arc(x, y, r * 0.96, 1.15 * Math.PI, 1.85 * Math.PI); m.stroke();
+  }
+  // терминатор: правая нижняя часть в тени
+  const shade = m.createLinearGradient(c - R, c - R, c + R, c + R);
+  shade.addColorStop(0, 'rgba(255,255,255,0)');
+  shade.addColorStop(0.55, 'rgba(60,52,40,0)');
+  shade.addColorStop(1, 'rgba(40,34,26,0.55)');
+  m.fillStyle = shade; m.fillRect(0, 0, S, S);
+  m.restore();
+  // тонкая кромка
+  m.strokeStyle = 'rgba(255,250,230,0.45)';
+  m.lineWidth = 1.2;
+  m.beginPath(); m.arc(c, c, R - 0.5, 0, Math.PI * 2); m.stroke();
+}
+function drawMoon(){
+  const R = 46, pad = 30, key = R + 'x' + DPR;
+  if (!moonCv || moonKey !== key){ buildMoon(R, pad); moonKey = key; }
+  const cx = W * 0.8, cy = H * 0.15;
+  ctx.drawImage(moonCv, cx - (R + pad), cy - (R + pad), 2 * (R + pad), 2 * (R + pad));
+}
+
 /* ---------- Отрисовка игры ---------- */
 function draw(){
   const now = performance.now();
@@ -566,8 +691,7 @@ function draw(){
   g.addColorStop(1, '#ff7a18');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, W, H);
-  ctx.fillStyle = '#ffe9b0';
-  ctx.beginPath(); ctx.arc(W * 0.8, H * 0.15, 36, 0, Math.PI * 2); ctx.fill();
+  drawMoon();
   drawBgScene(now);
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -825,19 +949,60 @@ function repelFrame(){
   requestAnimationFrame(repelFrame);
 }
 
-/* ---------- Скример ---------- */
-const LINES = [
-  'Ты думал, это просто тыквы?',
-  'Я смотрю на тебя через экран.',
-  'Не оборачивайся. Ты уже не один(а).',
-];
-async function typeLines(el, lines){
-  el.textContent = '';
-  for (const line of lines){
-    const div = document.createElement('div');
-    el.appendChild(div);
-    for (const ch of line){ div.textContent += ch; await sleep(40); }
-    await sleep(700);
+/* ---------- Скример: текст на весь экран, обрыв фразы ---------- */
+const SPEECH = 'Я захватил твой компьютер. И скоро приду за тобой. Не оборачивайся иначе';
+const SPEECH_CUT = SPEECH.slice(0, SPEECH.indexOf('иначе') + 3).replace(/\s/g, '').length;   // фраза обрывается на «ина»
+const FONTS = ['Creepster', 'Pirata One', 'Impact', 'Georgia', 'Courier New', 'Times New Roman', 'Arial Black', 'Comic Sans MS'];
+const COLS = ['#e00000', '#ff2a2a', '#ffffff', '#a00000', '#ffcc00', '#9a9a9a'];
+const SUBST = { 'а': '@', 'о': '0', 'е': '3', 'т': '†', 'с': '¢', 'у': '¥', 'и': 'ɪ' };
+let speechLetters = [];
+
+function makeLetter(ch){
+  const s = document.createElement('span');
+  const sub = SUBST[ch.toLowerCase()];
+  s.textContent = sub && Math.random() < 0.7 ? sub : ch;
+  s.style.fontFamily = `'${rnd(FONTS)}', serif`;
+  s.style.fontSize = `clamp(${randInt(22, 40)}px, ${randInt(5, 13)}vw, ${randInt(90, 170)}px)`;
+  s.style.fontWeight = rnd(['400', '700', '900']);
+  s.style.color = rnd(COLS);
+  s.style.transform = `translateY(${randInt(-24, 24)}px) rotate(${randInt(-16, 16)}deg) scale(${(0.7 + Math.random() * 0.7).toFixed(2)})`;
+  s.style.textShadow = Math.random() < 0.5
+    ? `${randInt(-5, 5)}px 0 #f00, ${randInt(-5, 5)}px 0 #0ff`
+    : `0 0 ${randInt(8, 22)}px #900`;
+  s.style.display = 'inline-block';
+  s.style.lineHeight = '1';
+  s.style.verticalAlign = 'middle';
+  s.style.opacity = '0';
+  return s;
+}
+function buildSpeech(container){
+  container.innerHTML = '';
+  speechLetters = [];
+  const sentences = ['Я захватил твой компьютер.', 'И скоро приду за тобой.', 'Не оборачивайся иначе'];
+  for (const sen of sentences){
+    const row = document.createElement('div');
+    row.className = 'srow';
+    for (const word of sen.split(' ')){
+      const w = document.createElement('span');
+      w.className = 'sword';
+      w.style.transform = `rotate(${randInt(-6, 6)}deg) translateY(${randInt(-16, 16)}px)`;
+      w.style.margin = `0 ${randInt(0, 18)}px`;
+      for (const ch of word){
+        const el = makeLetter(ch);
+        w.appendChild(el);
+        speechLetters.push({ el, ch });
+      }
+      row.appendChild(w);
+    }
+    container.appendChild(row);
+  }
+}
+async function typeSpeech(){
+  for (let i = 0; i < SPEECH_CUT && i < speechLetters.length; i++){
+    const { el, ch } = speechLetters[i];
+    el.style.opacity = '1';
+    await sleep(randInt(45, 95));
+    if (ch === '.') await sleep(380);
   }
 }
 
@@ -853,10 +1018,11 @@ async function startScare(){
   $('scareImg').classList.add('flick');
   setTimeout(() => scare.classList.remove('shake'), 1000);
   try { if (navigator.vibrate) navigator.vibrate([300, 120, 500, 120, 900]); } catch (e) {}
+  buildSpeech($('text'));
   scream();
-  await sleep(1600);
-  typeLines($('text'), LINES);
-  await sleep(4200);
+  await sleep(500);
+  await typeSpeech();
+  // фраза обрывается — сразу битый экран
   scare.classList.remove('on');
   $('scareImg').classList.remove('flick');
   await glitchPhase(4500);
