@@ -1,0 +1,117 @@
+name: Deploy topology course site
+
+# Публикует forma/topology-course/index.html на Fly.io отдельным приложением.
+# Секрет FLY_API_TOKEN тот же, что у deploy-forma-online.yml (Settings → Secrets).
+on:
+  push:
+    branches:
+      - arena/4e8fdd4f-hello-program
+    paths:
+      - 'forma/topology-course/**'
+      - '.github/workflows/deploy-topology-course.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: topology-course-site
+  cancel-in-progress: true
+
+env:
+  FLY_APP_NAME: topology-course-ratandru
+  SITE_DIR: forma/topology-course
+
+jobs:
+  check:
+    name: Сборка страницы и проверки
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Пересобрать index.html и проверить целостность
+        run: |
+          set -euo pipefail
+          python "$SITE_DIR/build.py" --check
+
+      - name: Собранный файл не отличается от закоммиченного
+        run: |
+          set -euo pipefail
+          cp "$SITE_DIR/index.html" /tmp/before.html
+          python "$SITE_DIR/build.py"
+          if ! cmp -s /tmp/before.html "$SITE_DIR/index.html"; then
+            echo '::error::index.html устарел: запустите python forma/topology-course/build.py и закоммитьте результат.'
+            exit 1
+          fi
+
+  deploy:
+    name: Fly.io
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check deployment credentials
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo '::error::Добавьте FLY_API_TOKEN в Settings → Secrets and variables → Actions. Токен в логи и чат не выводим.'
+            exit 1
+          fi
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Ensure Fly application
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ vars.FLY_ORG }}
+        run: |
+          set -euo pipefail
+          flyctl apps list 2>&1 | tee /tmp/topo-fly-app.log
+          if ! awk 'NR > 1 {print $1}' /tmp/topo-fly-app.log | grep -Fxq "$FLY_APP_NAME"; then
+            flyctl apps create "$FLY_APP_NAME" --org "${FLY_ORG:-personal}" 2>&1 | tee -a /tmp/topo-fly-app.log
+            flyctl apps list 2>&1 | tee -a /tmp/topo-fly-app.log
+          fi
+          awk 'NR > 1 {print $1}' /tmp/topo-fly-app.log | grep -Fxq "$FLY_APP_NAME"
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            echo "Deploy attempt ${attempt}/3"
+            if flyctl deploy "$SITE_DIR" \
+                 --config "$SITE_DIR/fly.toml" \
+                 --app "$FLY_APP_NAME" \
+                 --local-only 2>&1 | tee -a /tmp/topo-fly-deploy.log; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          exit 1
+
+      - name: Verify public site
+        run: |
+          set -euo pipefail
+          url="https://${FLY_APP_NAME}.fly.dev/"
+          for attempt in $(seq 1 30); do
+            if body=$(curl -fsS --max-time 10 "$url"); then
+              if printf '%s' "$body" | grep -q "Топология тел"; then
+                echo "Сайт доступен: $url ($(printf '%s' "$body" | wc -c) байт)"
+                exit 0
+              fi
+            fi
+            sleep 5
+          done
+          echo "::error::Сайт не ответил ожидаемым содержимым: $url"
+          exit 1
