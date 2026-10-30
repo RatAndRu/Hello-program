@@ -34,29 +34,29 @@ button:active{transform:translateY(3px);box-shadow:none}
 .shake{animation:shake .08s infinite}
 @keyframes shake{0%{transform:translate(0,0)}25%{transform:translate(-10px,5px)}50%{transform:translate(9px,-6px)}75%{transform:translate(-5px,-9px)}100%{transform:translate(0,0)}}
 
-/* глитч */
+/* глитч: битые экраны */
 #glitch{background:#000;z-index:21}
-#gstatic{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;display:none}
-#gscreen{position:absolute;inset:0;overflow:hidden;font-family:Consolas,"Courier New",monospace;display:none}
-#gscreen pre{margin:0;padding:24px;font-size:clamp(12px,1.8vw,20px);line-height:1.35;white-space:pre-wrap}
-#gscreen > div{position:absolute}
+#gstatic{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated}
 
 /* удаление */
-#wipe{background:#000;color:#e8e8e8;font-family:Consolas,"Courier New",monospace;text-align:center;z-index:22;display:none;flex-direction:column;align-items:center;justify-content:center}
+#wipe{background:#000;color:#e8e8e8;font-family:Consolas,"Courier New",monospace;text-align:center;z-index:22;display:none;flex-direction:column;align-items:center;justify-content:flex-start;padding-top:14vh}
 #wipe.on{display:flex}
+#wbg{position:absolute;inset:0;width:100%;height:100%;image-rendering:pixelated;z-index:0}
+#wipeBox{position:relative;z-index:1;background:#000;padding:22px 34px;border:1px solid #1a1a1a;min-width:min(80vw,620px)}
 #wipeTitle{font-size:clamp(18px,2.6vw,28px);margin-bottom:8px}
 #wipeSub{font-size:clamp(13px,1.6vw,18px);color:#bdbdbd;margin-bottom:18px;min-height:1.4em}
-#wipeFile{font-size:clamp(12px,1.4vw,16px);color:#8a8a8a;height:1.6em;margin-bottom:22px;max-width:90vw;overflow:hidden;white-space:nowrap}
-#barBox{width:min(60vw,560px);height:22px;border:1px solid #ccc;padding:2px;display:none}
+#wipeFile{font-size:clamp(12px,1.4vw,16px);color:#8a8a8a;height:1.6em;margin-bottom:22px;max-width:80vw;overflow:hidden;white-space:nowrap}
+#barBox{width:100%;height:22px;border:1px solid #ccc;padding:2px;display:none}
 #bar{height:100%;width:0;background:#e8e8e8}
 #pct{margin-top:12px;font-size:clamp(14px,1.8vw,20px);min-height:1.5em}
-#cancel{position:fixed;left:0;top:0;margin:0;padding:12px 26px;background:#2a2a2a;color:#eee;box-shadow:none;border:1px solid #888;border-radius:6px;font-size:16px;font-weight:400;pointer-events:none;z-index:24}
+#cancel{position:fixed;left:0;top:0;margin:0;padding:12px 26px;background:#2a2a2a;color:#eee;box-shadow:none;border:1px solid #888;border-radius:6px;font-size:16px;font-weight:400;z-index:24}
+#cancel:active{box-shadow:none}
+#fake{position:fixed;left:0;top:0;width:26px;height:26px;pointer-events:none;z-index:99;display:none}
+#fake.on{display:block}
 .decoy{position:fixed;left:0;top:0;pointer-events:none;z-index:98;will-change:transform}
 .decoy svg{display:block}
 .decoy svg.spin{animation:spin 1s linear infinite;transform-origin:12px 12px}
 @keyframes spin{to{transform:rotate(360deg)}}
-#fake{position:fixed;left:0;top:0;width:26px;height:26px;pointer-events:none;z-index:99;display:none}
-#fake.on{display:block}
 
 /* финал */
 #ending{background:#000;z-index:25;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px}
@@ -89,17 +89,19 @@ button:active{transform:translateY(3px);box-shadow:none}
 <!-- Глитч -->
 <div id="glitch" class="overlay">
   <canvas id="gstatic"></canvas>
-  <div id="gscreen"></div>
 </div>
 
 <!-- Фальшивое удаление -->
 <div id="wipe" class="overlay">
-  <div id="wipeTitle"></div>
-  <div id="wipeSub"></div>
-  <div id="wipeFile"></div>
-  <div id="barBox"><div id="bar"></div></div>
-  <div id="pct"></div>
-  <button id="cancel" type="button" tabindex="-1">Отменить</button>
+  <canvas id="wbg"></canvas>
+  <div id="wipeBox">
+    <div id="wipeTitle"></div>
+    <div id="wipeSub"></div>
+    <div id="wipeFile"></div>
+    <div id="barBox"><div id="bar"></div></div>
+    <div id="pct"></div>
+  </div>
+  <button id="cancel" type="button">Отменить</button>
   <div id="fake"><svg width="26" height="26" viewBox="0 0 24 24"><path d="M3 2 L3 19 L8 14.5 L11 21 L14 19.8 L11 13.5 L17.5 13.5 Z" fill="#fff" stroke="#000" stroke-width="1.2"/></svg></div>
 </div>
 
@@ -126,7 +128,7 @@ function goFullscreen(){
   try { const p = f.call(el); if (p && p.catch) p.catch(() => {}); } catch (e) {}
 }
 
-/* ---------- Canvas ---------- */
+/* ---------- Canvas игры ---------- */
 const cv = $('c'), ctx = cv.getContext('2d');
 let W = 0, H = 0, DPR = 1;
 function resize(){
@@ -180,7 +182,7 @@ function distortionCurve(k){
   return c;
 }
 
-// Крик: пилообразный «голос» с вибрато, формантами (гласная «а»), шумом и перегрузом
+// Крик: пилообразный «голос» с вибрато, формантами, шумом и перегрузом
 function scream(){
   const a = ac(), t = a.currentTime, dur = 2.1;
   const shaper = a.createWaveShaper();
@@ -221,7 +223,6 @@ function scream(){
     voice.connect(bp).connect(g).connect(master);
   });
 
-  // хрип
   const buf = a.createBuffer(1, a.sampleRate * dur, a.sampleRate);
   const d = buf.getChannelData(0);
   for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
@@ -234,11 +235,10 @@ function scream(){
   n.connect(bp).connect(ng).connect(master);
   n.start(t);
 
-  // удар баса
   note(48, 0.9, 'sine', 0.7);
 }
 
-// Битый треск: сэмплированный шум с понижением битности
+// Битый треск: шум с пониженной битностью
 function crackle(){
   const a = ac(), t = a.currentTime;
   const dur = 0.04 + Math.random() * 0.16;
@@ -257,7 +257,7 @@ function crackle(){
   src.connect(g).connect(a.destination);
   src.start(t);
 }
-// Визг/писк: квадратный сигнал со скачком частоты
+// Визг: квадратный сигнал со скачком частоты
 function squeal(){
   const a = ac(), t = a.currentTime, dur = 0.08 + Math.random() * 0.25;
   const o = a.createOscillator(), g = a.createGain();
@@ -279,10 +279,14 @@ const MAX_LIVES = 5;
 let pumpkins = [], bats = [], ghosts = [], bursts = [];
 let score = 0, lives = MAX_LIVES, eaten = 0;
 let running = false, scareDone = false;
-let playMs = 0, scareMs = 40000 + Math.random() * 40000;   // накопительное время игры (80 с максимум)
+let playMs = 0, scareMs = 40000 + Math.random() * 40000;   // накопительное время игры
 let scareScoreTarget = randInt(12, 22), scareSoonSet = false;
 let pendingScare = false, pendingSince = 0;
 let lastSpawn = 0, nextBatAt = 0, nextGhostAt = 0, last = 0;
+
+const mouse = { x: innerWidth / 2, y: innerHeight / 2 };
+window.addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('pointerdown', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
 
 function spawnGap(){ return Math.max(450, 950 - score * 12); }
 function spawnPumpkin(x, y, v){
@@ -301,7 +305,7 @@ function loseLife(){
 }
 function hudText(){ return `🎃 ${score}     ${'❤️'.repeat(Math.max(0, lives))}`; }
 
-function spawnBat(now){
+function spawnBat(){
   const fromLeft = Math.random() < 0.5;
   const bat = {
     x: fromLeft ? -60 : W + 60,
@@ -310,29 +314,30 @@ function spawnBat(now){
     until: 0, phase: Math.random() * 6, dead: false,
     dirX: fromLeft ? 1 : -1
   };
-  bat.target = pickTarget(null);
+  bat.target = pickTarget();
   if (!bat.target) bat.state = 'roam';
   bats.push(bat);
 }
-function pickTarget(exclude){
+function pickTarget(){
   const taken = new Set(bats.map(b => b.target).filter(Boolean));
-  const cand = pumpkins.filter(p => p.y > 0 && p.y < H * 0.85 && !taken.has(p) && p !== exclude);
+  const cand = pumpkins.filter(p => p.y > 0 && p.y < H * 0.85 && !taken.has(p));
   return cand.length ? rnd(cand) : null;
 }
 function spawnGhost(){
   const fromLeft = Math.random() < 0.5;
   const speed = 260 + Math.random() * 50 + score * 2;
-  const x = fromLeft ? -80 : W + 80;
-  const y = H * (0.1 + Math.random() * 0.5);
-  const g = { x, y, vx: (fromLeft ? 1 : -1) * speed, vy: 0, speed, target: null, phase: Math.random() * 6, r: 34 };
-  g.target = pickTarget(null);
+  const g = {
+    x: fromLeft ? -80 : W + 80,
+    y: H * (0.1 + Math.random() * 0.5),
+    vx: (fromLeft ? 1 : -1) * speed, vy: 0,
+    speed, target: null, phase: Math.random() * 6, r: 34
+  };
+  g.target = pickTarget();
   ghosts.push(g);
 }
-
 function addBurst(x, y, text){ bursts.push({ x, y, text, t: 0 }); }
 
 function update(dt, now){
-  // падающие тыквы
   if (now - lastSpawn > spawnGap()){ lastSpawn = now; spawnPumpkin(); }
   for (const p of pumpkins){
     p.y += p.v * dt / 1000;
@@ -340,25 +345,22 @@ function update(dt, now){
     p.x += Math.sin(p.wob) * 0.3;
   }
   for (let i = pumpkins.length - 1; i >= 0; i--){
-    if (pumpkins[i].y > H + 40){ pumpkins.splice(i, 1); loseLife(); }
+    if (pumpkins[i].y > H + 40){ pumpkins.splice(i, 1); loseLife(); if (lives <= 0) return; }
   }
 
-  // призраки: летят за конкретной тыквой быстрее мышей, съедают её
+  // призраки летят за конкретной тыквой быстрее мышей и съедают её
   if (now >= nextGhostAt){
     spawnGhost();
     nextGhostAt = now + randInt(9000, 14000) - Math.min(score * 80, 4000);
   }
   for (const g of ghosts){
     g.phase += dt / 200;
-    if (!g.target || !pumpkins.includes(g.target)){
-      g.target = pickTarget(null);
-    }
+    if (!g.target || !pumpkins.includes(g.target)) g.target = pickTarget();
     if (g.target){
       const t = g.target;
       const dx = t.x - g.x, dy = t.y - g.y, d = Math.hypot(dx, dy) || 1;
       const sp = g.speed * dt / 1000;
       if (d < 36){
-        // съел тыкву
         pumpkins.splice(pumpkins.indexOf(t), 1);
         eaten++;
         addBurst(t.x, t.y, '👻 −1');
@@ -370,16 +372,15 @@ function update(dt, now){
         g.y += dy / d * Math.min(sp, d);
       }
     } else {
-      // цели нет — летит по прямой и улетает
       g.x += g.vx * dt / 1000;
       g.y += g.vy * dt / 1000;
     }
   }
-  ghosts = ghosts.filter(g => g.x > -120 && g.x < W + 120 && g.y > -120 && g.y < H + 120);
+  ghosts = ghosts.filter(g => g.x > -160 && g.x < W + 160 && g.y > -160 && g.y < H + 160);
 
   // летучие мыши
   if (now >= nextBatAt){
-    spawnBat(now);
+    spawnBat();
     nextBatAt = now + randInt(6000, 10000) - Math.min(score * 100, 3000);
   }
   for (const b of bats) updateBat(b, dt, now);
@@ -392,18 +393,17 @@ function update(dt, now){
 function batFlapY(b){ return b.y + Math.sin(b.phase) * 46; }
 
 function updateBat(b, dt, now){
-  b.phase += dt / 1000 * Math.PI * 2 * 2.2;     // машет крыльями ~2 раза в секунду
+  b.phase += dt / 1000 * Math.PI * 2 * 2.2;
   const sp = (170 + score * 2) * dt / 1000;
 
   if (b.state === 'fly'){
     if (!b.target || !pumpkins.includes(b.target)){
-      b.target = pickTarget(null);
+      b.target = pickTarget();
       if (!b.target){ b.state = b.carry > 0 ? 'leave' : 'roam'; return; }
     }
     const t = b.target;
     const dx = t.x - b.x, dy = t.y - b.y, d = Math.hypot(dx, dy) || 1;
     if (d < 32){
-      // хватает тыкву
       pumpkins.splice(pumpkins.indexOf(t), 1);
       b.target = null;
       b.carry++;
@@ -416,24 +416,23 @@ function updateBat(b, dt, now){
       b.y += dy / d * Math.min(sp, d);
     }
   } else if (b.state === 'confused'){
-    // замешательство: мечется на месте, потом выбирает следующую тыкву
     b.x += Math.sin(now / 180) * 0.9;
     b.y += Math.cos(now / 230) * 0.6;
     if (now >= b.until){
-      if (b.carry >= 2){ b.state = 'leave'; }
+      if (b.carry >= 2) b.state = 'leave';
       else {
-        b.target = pickTarget(null);
+        b.target = pickTarget();
         b.state = b.target ? 'fly' : (b.carry > 0 ? 'leave' : 'roam');
       }
     }
   } else if (b.state === 'roam'){
     b.x += b.dirX * sp * 0.9;
-    if (b.x < -80 || b.x > W + 80){ b.dead = true; }
+    if (b.x < -80 || b.x > W + 80) b.dead = true;
   } else if (b.state === 'leave'){
     const dir = b.x < W / 2 ? -1 : 1;
     b.x += dir * sp * 1.3;
     if (b.x < -80 || b.x > W + 80){
-      if (b.carry > 0){ loseLife(); }
+      if (b.carry > 0) loseLife();
       b.dead = true;
     }
   }
@@ -442,87 +441,122 @@ function updateBat(b, dt, now){
 function killBat(b){
   b.dead = true;
   for (let i = 0; i < b.carry; i++) spawnPumpkin(b.x + (i ? 24 : -24), batFlapY(b), 120);
-  if (b.carry) addBurst(b.x, batFlapY(b), '💥 тыква!');
-  else addBurst(b.x, batFlapY(b), '💥');
+  addBurst(b.x, batFlapY(b), b.carry ? '💥 тыква!' : '💥');
   b.carry = 0;
   popSound();
 }
 
-/* ---------- Тыква-голова на фоне: глаза следят за курсором ---------- */
-const mouse = { x: innerWidth / 2, y: innerHeight / 2 };
-window.addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
-window.addEventListener('pointerdown', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+/* ---------- Фон: холмы, тыквы на грядке, тыква-голова ---------- */
 function groundY(x){ return H - 40 - Math.sin(x / 60) * 12; }
-function drawBgPumpkin(now){
-  const w = Math.min(240, W * 0.22), h = w * 0.82;
-  const cx = W * 0.84;
-  const gy = groundY(cx) + 6;          // линия земли под тыквой
-  const cy = gy - h / 2;
-  ctx.save();
-  // тень на земле — тыква стоит на ней
+
+function drawPumpkinSilhouette(cx, gy, w, eyes){
+  const h = w * 0.82, cy = gy - h / 2;
+  // тень на земле
   ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.beginPath(); ctx.ellipse(cx, gy + 2, w * 0.6, 12, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.globalAlpha = 0.85;
-  // тело
-  const bg = ctx.createRadialGradient(cx - w * 0.15, cy - h * 0.2, w * 0.05, cx, cy, w * 0.6);
+  ctx.beginPath(); ctx.ellipse(cx, gy + 2, w * 0.6, Math.max(5, w * 0.05), 0, 0, Math.PI * 2); ctx.fill();
+  // тело (симметричное)
+  const bg = ctx.createRadialGradient(cx + w * 0.08, cy - h * 0.2, w * 0.05, cx, cy, w * 0.6);
   bg.addColorStop(0, '#4a2208');
   bg.addColorStop(1, '#170700');
   ctx.fillStyle = bg;
   ctx.beginPath(); ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.fill();
-  // рёбра
+  // рёбра по бокам, симметрично
   ctx.strokeStyle = 'rgba(255,122,24,0.16)';
-  ctx.lineWidth = 2;
-  for (const k of [0.35, 0.7]){
-    ctx.beginPath(); ctx.ellipse(cx, cy, w / 2 * k, h / 2 - 2, 0, 0, Math.PI * 2); ctx.stroke();
+  ctx.lineWidth = Math.max(1, w * 0.01);
+  for (const k of [0.45, 0.75]){
+    ctx.beginPath(); ctx.ellipse(cx, cy, w / 2 * k, h / 2 - 1, 0, 0, Math.PI * 2); ctx.stroke();
   }
-  // подсветка от луны (луна справа сверху)
-  ctx.strokeStyle = 'rgba(255,150,60,0.4)';
-  ctx.lineWidth = 3;
-  ctx.beginPath(); ctx.ellipse(cx, cy, w / 2 - 3, h / 2 - 3, 0, -1.2, 0.6); ctx.stroke();
+  // подсветка с луны (сверху справа) — тонкий контур
+  ctx.strokeStyle = 'rgba(255,150,60,0.35)';
+  ctx.lineWidth = Math.max(1.5, w * 0.012);
+  ctx.beginPath(); ctx.ellipse(cx, cy, w / 2 - 2, h / 2 - 2, 0, -1.1, -0.2); ctx.stroke();
   // черенок
   ctx.fillStyle = '#1f1004';
   ctx.beginPath();
-  ctx.moveTo(cx - 9, cy - h / 2 + 6);
-  ctx.quadraticCurveTo(cx - 6, cy - h / 2 - 22, cx + 10, cy - h / 2 - 30);
-  ctx.lineTo(cx + 14, cy - h / 2 - 24);
-  ctx.quadraticCurveTo(cx + 4, cy - h / 2 - 8, cx + 9, cy - h / 2 + 6);
+  ctx.moveTo(cx - w * 0.04, cy - h / 2 + 4);
+  ctx.quadraticCurveTo(cx - w * 0.03, cy - h / 2 - h * 0.13, cx + w * 0.05, cy - h / 2 - h * 0.17);
+  ctx.lineTo(cx + w * 0.07, cy - h / 2 - h * 0.12);
+  ctx.quadraticCurveTo(cx + w * 0.02, cy - h / 2 - h * 0.04, cx + w * 0.04, cy - h / 2 + 4);
   ctx.closePath(); ctx.fill();
-  // глаза: чёрная глазница и светящийся зрачок, смещённый к курсору
-  const flick = 0.85 + 0.15 * Math.sin(now / 90);
-  const eyes = [cx - w * 0.17, cx + w * 0.17], ey = cy - h * 0.1, es = w * 0.11;
-  for (const ex of eyes){
+
+  if (!eyes) return;
+  // глазницы и светящиеся зрачки строго внутри глазниц
+  const ey = cy - h * 0.1, es = w * 0.11;
+  const flick = 0.85 + 0.15 * Math.sin(performance.now() / 90);
+  for (const ex of [cx - w * 0.17, cx + w * 0.17]){
+    const sock = new Path2D();
+    sock.moveTo(ex - es, ey - es * 0.6);
+    sock.lineTo(ex + es, ey - es * 0.6);
+    sock.lineTo(ex, ey + es * 1.1);
+    sock.closePath();
     ctx.fillStyle = '#000';
-    ctx.beginPath();
-    ctx.moveTo(ex - es, ey - es * 0.6);
-    ctx.lineTo(ex + es, ey - es * 0.6);
-    ctx.lineTo(ex, ey + es * 1.1);
-    ctx.closePath(); ctx.fill();
+    ctx.fill(sock);
     const dx = mouse.x - ex, dy = mouse.y - ey, d = Math.hypot(dx, dy) || 1;
-    const off = Math.min(es * 0.32, d * 0.02);
+    const off = Math.min(es * 0.3, d * 0.02);
     const ox = ex + dx / d * off, oy = ey + dy / d * off;
-    ctx.globalAlpha = 0.85 * flick;
+    ctx.save();
+    ctx.clip(sock);
+    ctx.globalAlpha = flick;
     ctx.fillStyle = '#ffb000';
     ctx.shadowColor = '#ff8a00';
-    ctx.shadowBlur = 26;
-    ctx.beginPath(); ctx.arc(ox, oy, es * 0.42, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.globalAlpha = 0.85;
+    ctx.shadowBlur = es * 1.2;
+    ctx.beginPath(); ctx.arc(ox, oy, es * 0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
   }
-  // рот с зубами
+  // рот: симметричный, с зубами
+  const mx0 = cx - w * 0.27, mx1 = cx + w * 0.27, my0 = cy + h * 0.16, my1 = cy + h * 0.34;
+  const teeth = 6;
   ctx.fillStyle = '#000';
   ctx.beginPath();
-  const mx0 = cx - w * 0.27, mx1 = cx + w * 0.27, my0 = cy + h * 0.16, my1 = cy + h * 0.34;
   ctx.moveTo(mx0, my0);
   ctx.lineTo(mx1, my0);
-  const teeth = 6;
-  for (let i = 0; i <= teeth; i++){
-    const x = mx1 - (mx1 - mx0) * i / teeth;
-    ctx.lineTo(x, i % 2 ? my0 + (my1 - my0) * 0.45 : my1);
+  for (let i = teeth; i >= 0; i--){
+    const x = mx0 + (mx1 - mx0) * i / teeth;
+    const y = i % 2 === 0 ? my1 : my0 + (my1 - my0) * 0.45;
+    ctx.lineTo(x, y);
   }
   ctx.closePath(); ctx.fill();
-  ctx.restore();
 }
 
+function drawBgScene(now){
+  // дальние холмы
+  ctx.fillStyle = 'rgba(40,12,20,0.5)';
+  ctx.beginPath(); ctx.moveTo(0, H);
+  for (let x = 0; x <= W; x += 20) ctx.lineTo(x, H - 70 - Math.sin(x / 140 + 1) * 18 - Math.sin(x / 37) * 4);
+  ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+
+  // ближняя земля — до самого низа экрана без швов
+  ctx.fillStyle = '#1b0f05';
+  ctx.beginPath(); ctx.moveTo(0, H + 4);
+  for (let x = 0; x <= W; x += 12) ctx.lineTo(x, groundY(x));
+  ctx.lineTo(W, groundY(W)); ctx.lineTo(W, H + 4); ctx.closePath(); ctx.fill();
+
+  // туман у земли
+  const fog = ctx.createLinearGradient(0, H - 130, 0, H - 30);
+  fog.addColorStop(0, 'rgba(255,140,60,0)');
+  fog.addColorStop(1, 'rgba(255,140,60,0.12)');
+  ctx.fillStyle = fog;
+  ctx.fillRect(0, H - 130, W, 100);
+
+  const cx = W * 0.84;
+  const w = Math.min(240, W * 0.22);
+  const gy = groundY(cx) + 4;
+  // ореол луны за большой тыквой
+  const halo = ctx.createRadialGradient(cx, gy - w * 0.55, w * 0.2, cx, gy - w * 0.55, w * 1.4);
+  halo.addColorStop(0, 'rgba(255,170,70,0.2)');
+  halo.addColorStop(1, 'rgba(255,170,70,0)');
+  ctx.fillStyle = halo;
+  ctx.fillRect(cx - w * 1.6, gy - w * 2, w * 3.2, w * 2.2);
+
+  // грядка: маленькие тыквы по бокам
+  drawPumpkinSilhouette(W * 0.66, groundY(W * 0.66) + 2, w * 0.3, false);
+  drawPumpkinSilhouette(W * 0.73, groundY(W * 0.73) + 2, w * 0.42, false);
+  drawPumpkinSilhouette(W * 0.94, groundY(W * 0.94) + 2, w * 0.34, false);
+  // большая тыква-голова
+  drawPumpkinSilhouette(cx, gy, w, true);
+}
+
+/* ---------- Отрисовка игры ---------- */
 function draw(){
   const now = performance.now();
   ctx.clearRect(0, 0, W, H);
@@ -534,11 +568,7 @@ function draw(){
   ctx.fillRect(0, 0, W, H);
   ctx.fillStyle = '#ffe9b0';
   ctx.beginPath(); ctx.arc(W * 0.8, H * 0.15, 36, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#1b0f05';
-  ctx.beginPath(); ctx.moveTo(0, H);
-  for (let x = 0; x <= W; x += 20) ctx.lineTo(x, H - 40 - Math.sin(x / 60) * 12);
-  ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
-  drawBgPumpkin(now);
+  drawBgScene(now);
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const p of pumpkins){
@@ -587,9 +617,8 @@ function loop(now){
     playMs += dt;
     if (!scareDone && playMs >= scareMs && !pendingScare){ pendingScare = true; pendingSince = now; }
     if (pendingScare && !scareDone && now - pendingSince > 12000){
-      // если не кликали — всё равно запускаем (без захвата курсора)
       running = false;
-      startScare(false);
+      startScare();
     }
   }
   draw();
@@ -598,12 +627,11 @@ function loop(now){
 
 // Клики: тыквы, летучие мыши, призраки
 function onPointer(e){
-  if (!running){ return; }
+  if (!running) return;
   if (pendingScare && !scareDone){
-    // скример стартует по клику — так можно захватить курсор (требование браузера)
     running = false;
     lockPointer();
-    startScare(true);
+    startScare();
     return;
   }
   let best = null, bestD = Infinity;
@@ -628,12 +656,11 @@ function onPointer(e){
     killBat(best.obj);
   } else {
     ghosts.splice(ghosts.indexOf(best.obj), 1);
-    addBaddPoof(best.obj.x, best.obj.y);
+    addBurst(best.obj.x, best.obj.y, '💨');
     popSound();
   }
   $('hud').textContent = hudText();
 }
-function addBaddPoof(x, y){ addBurst(x, y, '💨'); }
 cv.addEventListener('pointerdown', onPointer);
 
 function resetGame(){
@@ -667,10 +694,10 @@ function gameOver(){
 }
 $('startBtn').addEventListener('click', () => { goFullscreen(); startGame(); });
 
-/* ---------- Захват курсора, отталкивание, обманные курсоры ---------- */
+/* ---------- Захват курсора и отталкивание ---------- */
 const cur = { x: innerWidth / 2, y: innerHeight / 2, vx: 0, vy: 0 };   // виртуальный курсор (при захвате)
 const real = { x: -999, y: -999 };                                     // настоящий курсор (без захвата)
-const btn = { x: 0, y: 0, vx: 0, vy: 0, w: 0, h: 0 };                 // кнопка «Отменить»
+const btn = { x: 0, y: 0, vx: 0, vy: 0, w: 0, h: 0, homeX: 0, homeY: 0 };
 let locked = false, wipeActive = false;
 
 function lockPointer(){
@@ -690,17 +717,26 @@ document.addEventListener('mousemove', e => {
   }
 });
 
+// Кнопка «Отменить» живёт в нижней полосе экрана, под текстом; ничего не делает при нажатии
 function placeButton(){
   const b = $('cancel');
   btn.w = b.offsetWidth; btn.h = b.offsetHeight;
-  btn.x = innerWidth / 2 - btn.w / 2;
-  btn.y = innerHeight * 0.6 - btn.h / 2;
+  btn.homeX = innerWidth / 2 - btn.w / 2;
+  btn.homeY = innerHeight * 0.8 - btn.h / 2;
+  btn.x = btn.homeX; btn.y = btn.homeY;
   btn.vx = btn.vy = 0;
   applyBtn();
 }
 function applyBtn(){ $('cancel').style.transform = `translate(${btn.x}px,${btn.y}px)`; }
+function btnBounds(){
+  return {
+    minX: 8, maxX: innerWidth - btn.w - 8,
+    minY: innerHeight * 0.66, maxY: innerHeight * 0.92 - btn.h
+  };
+}
+$('cancel').addEventListener('click', e => { e.preventDefault(); e.stopPropagation(); });
 
-/* Обманные курсоры: стандартные формы Windows, сами шевелятся, не кликаются */
+/* Обманные курсоры: появляются постепенно, только если захвата курсора нет */
 const DECOY_SVG = {
   arrow: '<svg width="26" height="26" viewBox="0 0 24 24"><path d="M3 2 L3 19 L8 14.5 L11 21 L14 19.8 L11 13.5 L17.5 13.5 Z" fill="#fff" stroke="#000" stroke-width="1.2"/></svg>',
   hand: '<svg width="26" height="26" viewBox="0 0 24 24"><path d="M9 2.5a1.6 1.6 0 0 1 3.2 0V10l.6-.1a1.8 1.8 0 0 1 2 1.5l.4-.1a1.7 1.7 0 0 1 2 1.4l.3-.1a1.6 1.6 0 0 1 1.9 1.4V17c0 3-2.2 5-5.2 5h-1.2c-2 0-3.2-1-4.4-2.6L3.6 14.5a1.6 1.6 0 0 1 2.3-2.2L9 15z" fill="#fff" stroke="#000" stroke-width="1.1"/></svg>',
@@ -708,26 +744,33 @@ const DECOY_SVG = {
   busy: '<svg width="26" height="26" viewBox="0 0 24 24" class="spin"><circle cx="12" cy="12" r="9" fill="none" stroke="#fff" stroke-width="4"/><circle cx="12" cy="12" r="9" fill="none" stroke="#000" stroke-width="1.5" stroke-dasharray="14 42"/></svg>',
   resize: '<svg width="28" height="20" viewBox="0 0 28 20"><path d="M2 10h24M2 10l6-6M2 10l6 6M26 10l-6-6M26 10l-6 6" stroke="#fff" stroke-width="4" fill="none"/><path d="M2 10h24M2 10l6-6M2 10l6 6M26 10l-6-6M26 10l-6 6" stroke="#000" stroke-width="1.5" fill="none"/></svg>'
 };
-let decoys = [];
-function makeDecoys(n){
-  clearDecoys();
-  const kinds = ['arrow','arrow','arrow','arrow','hand','hand','ibeam','busy','resize'];
-  for (let i = 0; i < n; i++){
-    const el = document.createElement('div');
-    el.className = 'decoy';
-    el.innerHTML = DECOY_SVG[rnd(kinds)];
-    $('wipe').appendChild(el);
-    decoys.push({ el, x: Math.random() * innerWidth, y: Math.random() * innerHeight, tx: 0, ty: 0, next: 0 });
-  }
+const DECOY_KINDS = ['arrow','arrow','arrow','arrow','hand','hand','ibeam','busy','resize'];
+let decoys = [], decoyTimer = null;
+function addDecoy(){
+  const el = document.createElement('div');
+  el.className = 'decoy';
+  el.innerHTML = DECOY_SVG[rnd(DECOY_KINDS)];
+  $('wipe').appendChild(el);
+  decoys.push({ el, x: Math.random() * innerWidth, y: Math.random() * innerHeight, tx: 0, ty: 0, next: 0 });
 }
-function clearDecoys(){ decoys.forEach(d => d.el.remove()); decoys = []; }
+function clearDecoys(){
+  clearInterval(decoyTimer); decoyTimer = null;
+  decoys.forEach(d => d.el.remove()); decoys = [];
+}
+function startDecoys(){
+  clearDecoys();
+  decoyTimer = setInterval(() => {
+    if (locked || !wipeActive){ clearDecoys(); return; }   // захватили курсор — декораций не нужно
+    if (decoys.length < 14) addDecoy();
+  }, 1100);
+}
 function updateDecoys(now){
   for (const d of decoys){
     if (now > d.next){
       d.tx = Math.random() * innerWidth;
       d.ty = Math.random() * innerHeight;
       d.next = now + randInt(400, 2200);
-      if (Math.random() < 0.25){ d.x = d.tx; d.y = d.ty; }   // иногда дёргается
+      if (Math.random() < 0.25){ d.x = d.tx; d.y = d.ty; }
     }
     d.x += (d.tx - d.x) * 0.04;
     d.y += (d.ty - d.y) * 0.04;
@@ -762,17 +805,21 @@ function repelFrame(){
     cur.x = clamp(cur.x, 0, W); cur.y = clamp(cur.y, 0, H);
     $('fake').style.transform = `translate(${cur.x}px,${cur.y}px)`;
   } else {
-    // без захвата: кнопка убегает от настоящего курсора
-    const dx = bx - real.x, dy = by - real.y;
-    const d = Math.hypot(dx, dy) || 1;
+    // без захвата: кнопка убегает от настоящего курсора, но тянется к центру полосы — в углы не загнать
+    const b = btnBounds();
+    const dx = bx - real.x, dy = by - real.y, d = Math.hypot(dx, dy) || 1;
     if (real.x > -900 && d < RANGE){
       const s = (RANGE - d) / RANGE, k = 2 + s * s * 38;
       btn.vx += dx / d * k; btn.vy += dy / d * k;
     }
+    btn.vx += (btn.homeX - btn.x) * 0.004;
+    btn.vy += (btn.homeY - btn.y) * 0.004;
     btn.vx *= 0.88; btn.vy *= 0.88;
     btn.x += btn.vx; btn.y += btn.vy;
-    btn.x = clamp(btn.x, 8, innerWidth - btn.w - 8);
-    btn.y = clamp(btn.y, 8, innerHeight - btn.h - 8);
+    if (btn.x < b.minX){ btn.x = b.minX; btn.vx = Math.abs(btn.vx) * 0.5; }
+    if (btn.x > b.maxX){ btn.x = b.maxX; btn.vx = -Math.abs(btn.vx) * 0.5; }
+    if (btn.y < b.minY){ btn.y = b.minY; btn.vy = Math.abs(btn.vy) * 0.5; }
+    if (btn.y > b.maxY){ btn.y = b.maxY; btn.vy = -Math.abs(btn.vy) * 0.5; }
     applyBtn();
   }
   requestAnimationFrame(repelFrame);
@@ -794,7 +841,7 @@ async function typeLines(el, lines){
   }
 }
 
-async function startScare(capture){
+async function startScare(){
   scareDone = true;
   running = false;
   pendingScare = false;
@@ -806,7 +853,7 @@ async function startScare(capture){
   $('scareImg').classList.add('flick');
   setTimeout(() => scare.classList.remove('shake'), 1000);
   try { if (navigator.vibrate) navigator.vibrate([300, 120, 500, 120, 900]); } catch (e) {}
-  scream();                       // сразу крик, без предвестников
+  scream();
   await sleep(1600);
   typeLines($('text'), LINES);
   await sleep(4200);
@@ -816,60 +863,168 @@ async function startScare(capture){
   await wipePhase();
 }
 
-/* ---------- Глитч-экраны (быстрое мерцание) ---------- */
-const GS = $('gstatic'), GD = $('gscreen');
-function drawStatic(){
-  const w = 160, h = 90;
-  GS.width = w; GS.height = h;
-  const x = GS.getContext('2d');
-  const im = x.createImageData(w, h);
-  for (let i = 0; i < im.data.length; i += 4){
-    const v = Math.random() * 255;
-    im.data[i] = im.data[i + 1] = im.data[i + 2] = v;
-    im.data[i + 3] = 255;
-  }
-  x.putImageData(im, 0, 0);
-}
-const GSCREENS = {
-  bsod(){
-    GD.style.background = '#0a5bd6'; GD.style.color = '#fff';
-    GD.innerHTML = `<pre>:(\n\nНа вашем ПК возникла проблема, и его необходимо перезагрузить.\n\nSTOP: 0x${hex()}\nDELETE_IN_PROGRESS\n\nСбор данных об ошибке: ${randInt(0, 100)}% завершено</pre>`;
-  },
-  dump(){
-    GD.style.background = '#000'; GD.style.color = rnd(['#0f0', '#fff', '#f44']);
-    let s = '';
-    for (let i = 0; i < 26; i++)
-      s += `0x${hex()} ${rnd(['FAILED','NULL','ERR','??','DEL'])} ${rnd(['sector','block','file','cluster'])} ${Math.random().toString(36).slice(2, 12)}\n`;
-    GD.innerHTML = `<pre>${s}</pre>`;
-  },
-  blocks(){
-    GD.style.background = '#000'; GD.innerHTML = '';
-    for (let i = 0; i < 40; i++){
-      const d = document.createElement('div');
-      d.style.cssText = `left:${Math.random()*100}%;top:${Math.random()*100}%;width:${rnd([4,20,120,300])}px;height:${rnd([2,8,40])}px;background:${rnd(['#f0f','#0ff','#fff','#f00','#00f','#ff0'])}`;
-      GD.appendChild(d);
+/* ---------- Битый экран: сдвиги строк, блоки, сбитые цвета, мёртвые пиксели ---------- */
+const GLW = 480, GLH = 270;               // рабочее разрешение: крупные «пиксели»
+const GS = $('gstatic');
+GS.width = GLW; GS.height = GLH;
+const octx = GS.getContext('2d');
+const baseCv = document.createElement('canvas');
+baseCv.width = GLW; baseCv.height = GLH;
+const bctx = baseCv.getContext('2d');
+const faceImg = new Image();
+faceImg.src = 'scare.jpg';
+
+function drawBase(kind){
+  const c = bctx;
+  c.fillStyle = '#000'; c.fillRect(0, 0, GLW, GLH);
+  if (kind === 'bsod'){
+    c.fillStyle = '#0078d7'; c.fillRect(0, 0, GLW, GLH);
+    c.fillStyle = '#fff';
+    c.font = 'bold 42px Consolas, monospace'; c.fillText(':(', 30, 80);
+    c.font = '14px Consolas, monospace';
+    c.fillText('На вашем ПК возникла проблема, и его необходимо перезагрузить.', 30, 115);
+    c.fillText('STOP: 0x' + hex() + '  DELETE_IN_PROGRESS', 30, 150);
+    c.fillText('Сбор данных об ошибке: ' + randInt(0, 100) + '% завершено', 30, 185);
+  } else if (kind === 'desktop'){
+    c.fillStyle = '#008080'; c.fillRect(0, 0, GLW, GLH);
+    const names = ['Документы', 'Корзина', 'Пароли', 'Фото', 'Почта', 'Игры'];
+    for (let i = 0; i < 6; i++){
+      const x = 16 + (i % 3) * 78, y = 16 + Math.floor(i / 3) * 84;
+      c.fillStyle = '#e0e0e0'; c.fillRect(x + 12, y, 34, 34);
+      c.fillStyle = '#000'; c.font = '11px sans-serif'; c.fillText(names[i], x, y + 52);
     }
-  },
-  flash(){ GD.style.background = rnd(['#fff', '#f00', '#0ff']); GD.innerHTML = ''; },
-  face(){ GD.style.background = '#000'; GD.innerHTML = '<img src="scare.jpg" alt="" style="width:100%;height:100%;object-fit:cover;filter:invert(1) hue-rotate(180deg)">'; }
-};
+    c.fillStyle = '#c0c0c0'; c.fillRect(170, 50, 290, 170);
+    c.fillStyle = '#000080'; c.fillRect(174, 54, 282, 18);
+    c.fillStyle = '#fff'; c.font = 'bold 11px sans-serif'; c.fillText('Удаление — Проводник', 180, 67);
+    c.fillStyle = '#000'; c.font = '12px sans-serif';
+    for (let i = 0; i < 7; i++) c.fillText('C:\\Users\\Пользователь\\файл_' + randInt(10, 999) + '.dat', 182, 98 + i * 18);
+  } else if (kind === 'dump'){
+    c.fillStyle = '#000'; c.fillRect(0, 0, GLW, GLH);
+    c.fillStyle = '#3f3'; c.font = '11px Consolas, monospace';
+    for (let y = 12; y < GLH; y += 12)
+      c.fillText('0x' + hex() + ' ' + rnd(['FAILED', 'NULL', 'ERR', 'DEL', '??']) + ' ' + Math.random().toString(36).slice(2, 14), 8, y);
+  } else if (kind === 'face'){
+    if (faceImg.complete && faceImg.naturalWidth){
+      const s = GLH / faceImg.naturalHeight, w = faceImg.naturalWidth * s;
+      c.drawImage(faceImg, (GLW - w) / 2, 0, w, GLH);
+    }
+  }
+  // 'black' — просто чёрный кадр
+}
+
+const COLOR_GARBAGE = [[255,0,255],[0,255,255],[255,255,0],[0,255,0],[255,0,0],[40,40,40],[255,255,255],[0,0,255]];
+// Портим кадр: amount 0..1 — сколько сбоев
+function corruptInto(dst, src, amount){
+  const sw = GLW, sh = GLH;
+  const id = src.getImageData(0, 0, sw, sh);
+  const d = id.data;
+
+  // 1) разрывы строк: полосы сдвинуты по горизонтали
+  const bands = randInt(1, 3 + Math.floor(amount * 8));
+  for (let i = 0; i < bands; i++){
+    const y0 = randInt(0, sh - 1), bh = rnd([1, 2, 3, 6, 12, 22]);
+    const shift = randInt(-160, 160);
+    for (let y = y0; y < Math.min(sh, y0 + bh); y++){
+      const row = d.slice(y * sw * 4, (y + 1) * sw * 4);
+      for (let x = 0; x < sw; x++){
+        const si = ((x - shift + sw) % sw) * 4, di = (y * sw + x) * 4;
+        d[di] = row[si]; d[di + 1] = row[si + 1]; d[di + 2] = row[si + 2];
+      }
+    }
+  }
+
+  // 2) блоки: перенос кусков, сдвиг каналов, заливка мусором, инверсия
+  const blocks = randInt(2, 5) + Math.floor(amount * 14);
+  for (let i = 0; i < blocks; i++){
+    const bw = rnd([8, 12, 16, 24, 40, 64]), bh = rnd([3, 4, 6, 8, 12, 16]);
+    const bx = randInt(0, sw - bw), by = randInt(0, sh - bh);
+    const r = Math.random();
+    if (r < 0.35){
+      const sx = randInt(0, sw - bw), sy = randInt(0, sh - bh);
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++){
+        const si = ((sy + y) * sw + sx + x) * 4, di = ((by + y) * sw + bx + x) * 4;
+        d[di] = d[si]; d[di + 1] = d[si + 1]; d[di + 2] = d[si + 2];
+      }
+    } else if (r < 0.6){
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++){
+        const di = ((by + y) * sw + bx + x) * 4;
+        const R = d[di], G = d[di + 1], B = d[di + 2];
+        d[di] = G; d[di + 1] = B; d[di + 2] = R;
+      }
+    } else if (r < 0.85){
+      const col = rnd(COLOR_GARBAGE);
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++){
+        const di = ((by + y) * sw + bx + x) * 4;
+        d[di] = col[0]; d[di + 1] = col[1]; d[di + 2] = col[2];
+      }
+    } else {
+      for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++){
+        const di = ((by + y) * sw + bx + x) * 4;
+        d[di] = 255 - d[di]; d[di + 1] = 255 - d[di + 1]; d[di + 2] = 255 - d[di + 2];
+      }
+    }
+  }
+
+  // 3) цветовые полосы по вертикали (потерянный канал)
+  const cols = randInt(0, 2 + Math.floor(amount * 3));
+  for (let i = 0; i < cols; i++){
+    const x0 = randInt(0, sw - 6), w = randInt(2, 8), y0 = randInt(0, sh / 2), y1 = randInt(sh / 2, sh);
+    const ch = randInt(0, 2);
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x0 + w; x++){
+      d[(y * sw + x) * 4 + ch] = 0;
+    }
+  }
+
+  // 4) мёртвые и горящие пиксели
+  const dead = Math.floor(randInt(30, 160) * (0.4 + amount));
+  for (let i = 0; i < dead; i++){
+    const p = (randInt(0, sh - 1) * sw + randInt(0, sw - 1)) * 4;
+    if (Math.random() < 0.5){ d[p] = d[p + 1] = d[p + 2] = 0; }
+    else { d[p] = rnd([255, 0]); d[p + 1] = rnd([255, 0]); d[p + 2] = rnd([255, 0]); }
+  }
+
+  dst.putImageData(id, 0, 0);
+}
+
 async function glitchPhase(ms){
   $('glitch').classList.add('on');
   const end = performance.now() + ms;
-  const keys = Object.keys(GSCREENS);
+  const kinds = ['bsod', 'desktop', 'dump', 'face', 'black', 'desktop', 'bsod'];
   while (performance.now() < end){
-    if (Math.random() < 0.4){
-      GS.style.display = 'block'; GD.style.display = 'none';
-      drawStatic();
-    } else {
-      GS.style.display = 'none'; GD.style.display = 'block';
-      GSCREENS[rnd(keys)]();
-    }
+    drawBase(rnd(kinds));
+    // иногда почти чистый кадр, чтобы сбой выглядел случайным
+    const amount = Math.random() < 0.2 ? 0.1 : 0.5 + Math.random() * 0.5;
+    corruptInto(octx, bctx, amount);
     glitchSound();
-    await sleep(30 + Math.random() * 50);   // частая смена кадров
+    await sleep(40 + Math.random() * 70);
   }
   $('glitch').classList.remove('on');
-  GD.style.display = 'none'; GS.style.display = 'none';
+}
+
+/* ---------- Экран удаления: битые фрагменты, нормальные — тёмные ---------- */
+const WB = $('wbg');
+WB.width = GLW; WB.height = GLH;
+const wbx = WB.getContext('2d');
+const tmpCv = document.createElement('canvas');
+tmpCv.width = GLW; tmpCv.height = GLH;
+const tmpx = tmpCv.getContext('2d');
+let wipeBgTimer = null;
+function drawWipeBg(){
+  wbx.fillStyle = '#000'; wbx.fillRect(0, 0, GLW, GLH);
+  drawBase(rnd(['desktop', 'dump', 'bsod']));
+  corruptInto(tmpx, bctx, 0.9);
+  const frags = randInt(3, 6);
+  for (let i = 0; i < frags; i++){
+    const fw = randInt(40, 180), fh = randInt(20, 90);
+    const fx = randInt(0, GLW - fw), fy = randInt(0, GLH - fh);
+    wbx.drawImage(tmpCv, fx, fy, fw, fh, fx, fy, fw, fh);
+  }
+  // мелкие фрагменты-«шум» по всему полю
+  for (let i = 0; i < 10; i++){
+    const fw = randInt(4, 30), fh = randInt(2, 8);
+    const fx = randInt(0, GLW - fw), fy = randInt(0, GLH - fh);
+    wbx.drawImage(tmpCv, fx, fy, fw, fh, fx, fy, fw, fh);
+  }
 }
 
 /* ---------- Фальшивое удаление: подсчёт → удаление ---------- */
@@ -878,16 +1033,17 @@ const EXTS = ['jpg', 'docx', 'mp4', 'pdf', 'zip', 'psd', 'xlsx', 'dat'];
 const TOTAL = 48219;
 
 async function wipePhase(){
-  const wipe = $('wipe');
-  wipe.classList.add('on');
+  $('wipe').classList.add('on');
   wipeActive = true;
   cur.x = innerWidth / 2; cur.y = innerHeight / 2; cur.vx = 0; cur.vy = 0;
   $('fake').classList.toggle('on', locked);
   placeButton();
-  makeDecoys(14);
+  drawWipeBg();
+  wipeBgTimer = setInterval(drawWipeBg, 130);
+  startDecoys();
   requestAnimationFrame(repelFrame);
 
-  // дрон во время всей загрузки (монотонный)
+  // монотонный дрон на всю загрузку
   const a = ac();
   const drone = a.createOscillator(), dg = a.createGain();
   drone.type = 'sawtooth'; drone.frequency.value = 48;
@@ -931,7 +1087,6 @@ async function wipePhase(){
   await sleep(1500);
 
   drone.stop();
-  wipeActive = false;
   showEnding();
 }
 
@@ -939,6 +1094,7 @@ async function wipePhase(){
 function showEnding(){
   if (document.pointerLockElement) document.exitPointerLock();
   wipeActive = false;
+  clearInterval(wipeBgTimer); wipeBgTimer = null;
   clearDecoys();
   $('wipe').classList.remove('on');
   $('scare').classList.remove('on');
