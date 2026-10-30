@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="812" viewBox="0 0 1000 812" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif">
+<title>Карта петель лица</title>
+<rect width="1000" height="812" fill="#ffffff"/>
+<text x="28" y="38" font-size="22" fill="#1f2933" text-anchor="start" font-weight="bold">Карта петель лица: что правильно и что нет</text>
+<text x="28" y="62" font-size="13" fill="#6b7785" text-anchor="start" font-weight="normal">Орбитальная и оральная петли строятся первыми; полюса — только на плоском. Справа — типичные ошибки новичка.</text>
+<ellipse cx="275" cy="340" rx="150.0" ry="200.0" fill="#fbfefc" stroke="#1e8449" stroke-width="2"/>
+<text x="275" y="118" font-size="15" fill="#1e8449" text-anchor="middle" font-weight="bold">правильно</text>
+<ellipse cx="217" cy="280" rx="34" ry="20" fill="none" stroke="#2b6cb0" stroke-width="2"/>
+<ellipse cx="217" cy="280" rx="19" ry="11" fill="none" stroke="#2b6cb0" stroke-width="1.2" stroke-dasharray="3 3"/>
+<circle cx="217" cy="280" r="4" fill="#1f2933"/>
+<ellipse cx="333" cy="280" rx="34" ry="20" fill="none" stroke="#2b6cb0" stroke-width="2"/>
+<ellipse cx="333" cy="280" rx="19" ry="11" fill="none" stroke="#2b6cb0" stroke-width="1.2" stroke-dasharray="3 3"/>
+<circle cx="333" cy="280" r="4" fill="#1f2933"/>
+<ellipse cx="275" cy="412" rx="56" ry="24" fill="none" stroke="#8e44ad" stroke-width="2"/>
+<ellipse cx="275" cy="412" rx="40" ry="15" fill="none" stroke="#8e44ad" stroke-width="1.2"/>
+<ellipse cx="275" cy="412" rx="26" ry="8" fill="none" stroke="#8e44ad" stroke-width="1"/>
+<path d="M 275 316 L 275 364" stroke="#2b6cb0" stroke-width="1.4"/>
+<path d="M 257 372 Q 275 382 293 372" stroke="#2b6cb0" fill="none"/>
+<path d="M 251 370 L 245 374 L 253 384" stroke="#2b6cb0" stroke-width="1.2" fill="none"/>
+<path d="M 245 380 Q 223 396 223 410" stroke="#6b7785" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>
+<path d="M 299 370 L 305 374 L 297 384" stroke="#2b6cb0" stroke-width="1.2" fill="none"/>
+<path d="M 305 380 Q 327 396 327 410" stroke="#6b7785" stroke-width="1.2" fill="none" stroke-dasharray="4 3"/>
+<circle cx="180" cy="266" r="8.5" fill="#1e8449"/>
+<text x="180" y="270" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="bold">5</text>
+<circle cx="370" cy="266" r="8.5" fill="#1e8449"/>
+<text x="370" y="270" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="bold">5</text>
+<circle cx="251" cy="282" r="8.5" fill="#b7791f"/>
+<text x="251" y="286" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+<circle cx="299" cy="282" r="8.5" fill="#b7791f"/>
+<text x="299" y="286" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+<circle cx="211" cy="404" r="8.5" fill="#1e8449"/>
+<text x="211" y="408" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="bold">5</text>
+<circle cx="339" cy="404" r="8.5" fill="#1e8449"/>
+<text x="339" y="408" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="bold">5</text>
+<circle cx="242" cy="364" r="8.5" fill="#b7791f"/>
+<text x="242" y="368" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+<circle cx="308" cy="364" r="8.5" fill="#b7791f"/>
+<text x="308" y="368" font-size="11" fill="#ffffff" text-anchor="middle" font-weight="bold">3</text>
+<text x="275" y="600" font-size="12" fill="#1f2933" text-anchor="middle" font-weight="normal">орбитальная петля + 2 кольца наружу, петля по кромке века</text>
+<text x="275" y="620" font-size="12" fill="#1f2933" text-anchor="middle" font-weight="normal">оральная петля: кромка + 2–3 кольца + ряд внутрь</text>
+<text x="275" y="640" font-size="12" fill="#1f2933" text-anchor="middle" font-weight="normal">петли носа уходят вниз к рту, а не в щёку</text>
+<ellipse cx="720" cy="340" rx="150.0" ry="200.0" fill="#fffafa" stroke="#c0392b" stroke-width="2"/>
+<text x="720" y="118" font-size="15" fill="#c0392b" text-anchor="middle" font-weight="bold">неправильно</text>
+<path d="M 580 200 Q 720 214 860 200" stroke="#c0392b" stroke-width="1.4" fill="none"/>
+<path d="M 580 232 Q 720 246 860 232" stroke="#c0392b" stroke-width="1.4" fill="none"/>
+<path d="M 580 458 Q 720 472 860 458" stroke="#c0392b" stroke-width="1.4" fill="none"/>
+<path d="M 580 486 Q 720 500 860 486" stroke="#c0392b" stroke-width="1.4" fill="none"/>
+<circle cx="662" cy="280" r="11.5" fill="#c0392b"/>
+<text x="662" y="284" font-size="12" fill="#ffffff" text-anchor="middle" font-weight="bold">6</text>
+<circle cx="778" cy="280" r="11.5" fill="#c0392b"/>
+<text x="778" y="284" font-size="12" fill="#ffffff" text-anchor="middle" font-weight="bold">6</text>
+<circle cx="664" cy="412" r="11.5" fill="#c0392b"/>
+<text x="664" y="416" font-size="12" fill="#ffffff" text-anchor="middle" font-weight="bold">6</text>
+<circle cx="776" cy="412" r="11.5" fill="#c0392b"/>
+<text x="776" y="416" font-size="12" fill="#ffffff" text-anchor="middle" font-weight="bold">6</text>
+<circle cx="720" cy="440" r="11.5" fill="#c0392b"/>
+<text x="720" y="444" font-size="12" fill="#ffffff" text-anchor="middle" font-weight="bold">8</text>
+<ellipse cx="720" cy="412" rx="56" ry="24" fill="none" stroke="#c0392b" stroke-width="1.2" stroke-dasharray="4 4"/>
+<text x="720" y="600" font-size="12" fill="#c0392b" text-anchor="middle" font-weight="normal">петли идут поперёк мышц и через глаз / рот</text>
+<text x="720" y="620" font-size="12" fill="#c0392b" text-anchor="middle" font-weight="normal">полюса 6 и 8 — в самых подвижных точках</text>
+<text x="720" y="640" font-size="12" fill="#c0392b" text-anchor="middle" font-weight="normal">плотность ровная «как получилось»</text>
+<line x1="60" y1="686" x2="940" y2="686" stroke="#d5dbe1"/>
+<circle cx="67" cy="710" r="7" fill="#2b6cb0"/>
+<text x="82" y="714" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">орбитальная и носовая петли</text>
+<circle cx="537" cy="710" r="7" fill="#8e44ad"/>
+<text x="552" y="714" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">оральная петля</text>
+<circle cx="67" cy="734" r="7" fill="#6b7785"/>
+<text x="82" y="738" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">носогубная связка</text>
+<circle cx="537" cy="734" r="7" fill="#1e8449"/>
+<text x="552" y="738" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">5-полюс: разводка на скуле и уголке рта</text>
+<circle cx="67" cy="758" r="7" fill="#b7791f"/>
+<text x="82" y="762" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">3-полюс: терминатор у слёзника и ноздри</text>
+<text x="60" y="800" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">6-полюс на деформации запрещён. Полюс в уголке рта неизбежен — его отодвигают на 1–2 квада наружу, а не оставляют в подвижной точке.</text>
+</svg>

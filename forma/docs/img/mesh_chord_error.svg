@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif">
+<title>Сегменты и ошибка хорды</title>
+<rect width="980" height="520" fill="#ffffff"/>
+<text x="28" y="40" font-size="22" fill="#1f2933" text-anchor="start" font-weight="bold">Сегменты и ошибка хорды</text>
+<text x="28" y="66" font-size="13" fill="#6b7785" text-anchor="start" font-weight="normal">s = r·(1 − cos(π/n)) ≈ r·π²/(2n²): чтобы уменьшить ошибку в 4 раза, надо удвоить число сегментов.</text>
+<circle cx="150" cy="240" r="88" fill="none" stroke="#d5dbe1" stroke-width="1.2" stroke-dasharray="3 4"/>
+<polygon points="238.00,240.00 212.23,302.23 150.00,328.00 87.77,302.23 62.00,240.00 87.77,177.77 150.00,152.00 212.23,177.77" fill="rgba(43,108,176,0.10)" stroke="#2b6cb0" stroke-width="2"/>
+<text x="150" y="360" font-size="15" fill="#1f2933" text-anchor="middle" font-weight="bold">n = 8</text>
+<text x="150" y="381" font-size="12" fill="#6b7785" text-anchor="middle" font-weight="normal">ошибка 6.70 ед. при r = 88</text>
+<circle cx="355" cy="240" r="88" fill="none" stroke="#d5dbe1" stroke-width="1.2" stroke-dasharray="3 4"/>
+<polygon points="443.00,240.00 436.30,273.68 417.23,302.23 388.68,321.30 355.00,328.00 321.32,321.30 292.77,302.23 273.70,273.68 267.00,240.00 273.70,206.32 292.77,177.77 321.32,158.70 355.00,152.00 388.68,158.70 417.23,177.77 436.30,206.32" fill="rgba(43,108,176,0.10)" stroke="#2b6cb0" stroke-width="2"/>
+<text x="355" y="360" font-size="15" fill="#1f2933" text-anchor="middle" font-weight="bold">n = 16</text>
+<text x="355" y="381" font-size="12" fill="#6b7785" text-anchor="middle" font-weight="normal">ошибка 1.69 ед. при r = 88</text>
+<circle cx="560" cy="240" r="88" fill="none" stroke="#d5dbe1" stroke-width="1.2" stroke-dasharray="3 4"/>
+<polygon points="648.00,240.00 646.31,257.17 641.30,273.68 633.17,288.89 622.23,302.23 608.89,313.17 593.68,321.30 577.17,326.31 560.00,328.00 542.83,326.31 526.32,321.30 511.11,313.17 497.77,302.23 486.83,288.89 478.70,273.68 473.69,257.17 472.00,240.00 473.69,222.83 478.70,206.32 486.83,191.11 497.77,177.77 511.11,166.83 526.32,158.70 542.83,153.69 560.00,152.00 577.17,153.69 593.68,158.70 608.89,166.83 622.23,177.77 633.17,191.11 641.30,206.32 646.31,222.83" fill="rgba(43,108,176,0.10)" stroke="#2b6cb0" stroke-width="2"/>
+<text x="560" y="360" font-size="15" fill="#1f2933" text-anchor="middle" font-weight="bold">n = 32</text>
+<text x="560" y="381" font-size="12" fill="#6b7785" text-anchor="middle" font-weight="normal">ошибка 0.42 ед. при r = 88</text>
+<text x="790" y="98" font-size="12.5" fill="#2b6cb0" text-anchor="start" font-weight="normal">ошибка при том же радиусе</text>
+<rect x="790" y="120" width="150.0" height="20" rx="3" fill="#2b6cb0" opacity="0.85"/>
+<text x="948.0" y="135" font-size="11.5" fill="#1f2933" text-anchor="start" font-weight="normal">n=8</text>
+<rect x="790" y="154" width="37.9" height="20" rx="3" fill="#2b6cb0" opacity="0.70"/>
+<text x="835.8637708700724" y="169" font-size="11.5" fill="#1f2933" text-anchor="start" font-weight="normal">n=16</text>
+<rect x="790" y="188" width="9.5" height="20" rx="3" fill="#2b6cb0" opacity="0.55"/>
+<text x="807.4887882720578" y="203" font-size="11.5" fill="#1f2933" text-anchor="start" font-weight="normal">n=32</text>
+<rect x="790" y="222" width="2.4" height="20" rx="3" fill="#2b6cb0" opacity="0.40"/>
+<text x="800.3736266366326" y="237" font-size="11.5" fill="#1f2933" text-anchor="start" font-weight="normal">n=64</text>
+<text x="790" y="278" font-size="12" fill="#1e8449" text-anchor="start" font-weight="normal">×2 сегментов → ÷4 ошибки</text>
+<text x="790" y="298" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">×4 сегментов → ÷16 ошибки</text>
+<text x="28" y="462" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="normal">Практика: сегменты задаются допуском n = ⌈π / arccos(1 − s/r)⌉, а не привычным «48 на всё».</text>
+<text x="28" y="486" font-size="13" fill="#6b7785" text-anchor="start" font-weight="normal">Печать FDM: s = 0.1–0.2 мм · SLA: 0.05 мм · рендер крупным планом: 0.05–0.1 мм · фон: 0.3–0.5 мм.</text>
+</svg>
