@@ -448,7 +448,83 @@ function killBat(b){
   popSound();
 }
 
+/* ---------- Тыква-голова на фоне: глаза следят за курсором ---------- */
+const mouse = { x: innerWidth / 2, y: innerHeight / 2 };
+window.addEventListener('pointermove', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+window.addEventListener('pointerdown', e => { mouse.x = e.clientX; mouse.y = e.clientY; });
+function groundY(x){ return H - 40 - Math.sin(x / 60) * 12; }
+function drawBgPumpkin(now){
+  const w = Math.min(240, W * 0.22), h = w * 0.82;
+  const cx = W * 0.84;
+  const gy = groundY(cx) + 6;          // линия земли под тыквой
+  const cy = gy - h / 2;
+  ctx.save();
+  // тень на земле — тыква стоит на ней
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.beginPath(); ctx.ellipse(cx, gy + 2, w * 0.6, 12, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.globalAlpha = 0.85;
+  // тело
+  const bg = ctx.createRadialGradient(cx - w * 0.15, cy - h * 0.2, w * 0.05, cx, cy, w * 0.6);
+  bg.addColorStop(0, '#4a2208');
+  bg.addColorStop(1, '#170700');
+  ctx.fillStyle = bg;
+  ctx.beginPath(); ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2); ctx.fill();
+  // рёбра
+  ctx.strokeStyle = 'rgba(255,122,24,0.16)';
+  ctx.lineWidth = 2;
+  for (const k of [0.35, 0.7]){
+    ctx.beginPath(); ctx.ellipse(cx, cy, w / 2 * k, h / 2 - 2, 0, 0, Math.PI * 2); ctx.stroke();
+  }
+  // подсветка от луны (луна справа сверху)
+  ctx.strokeStyle = 'rgba(255,150,60,0.4)';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.ellipse(cx, cy, w / 2 - 3, h / 2 - 3, 0, -1.2, 0.6); ctx.stroke();
+  // черенок
+  ctx.fillStyle = '#1f1004';
+  ctx.beginPath();
+  ctx.moveTo(cx - 9, cy - h / 2 + 6);
+  ctx.quadraticCurveTo(cx - 6, cy - h / 2 - 22, cx + 10, cy - h / 2 - 30);
+  ctx.lineTo(cx + 14, cy - h / 2 - 24);
+  ctx.quadraticCurveTo(cx + 4, cy - h / 2 - 8, cx + 9, cy - h / 2 + 6);
+  ctx.closePath(); ctx.fill();
+  // глаза: чёрная глазница и светящийся зрачок, смещённый к курсору
+  const flick = 0.85 + 0.15 * Math.sin(now / 90);
+  const eyes = [cx - w * 0.17, cx + w * 0.17], ey = cy - h * 0.1, es = w * 0.11;
+  for (const ex of eyes){
+    ctx.fillStyle = '#000';
+    ctx.beginPath();
+    ctx.moveTo(ex - es, ey - es * 0.6);
+    ctx.lineTo(ex + es, ey - es * 0.6);
+    ctx.lineTo(ex, ey + es * 1.1);
+    ctx.closePath(); ctx.fill();
+    const dx = mouse.x - ex, dy = mouse.y - ey, d = Math.hypot(dx, dy) || 1;
+    const off = Math.min(es * 0.32, d * 0.02);
+    const ox = ex + dx / d * off, oy = ey + dy / d * off;
+    ctx.globalAlpha = 0.85 * flick;
+    ctx.fillStyle = '#ffb000';
+    ctx.shadowColor = '#ff8a00';
+    ctx.shadowBlur = 26;
+    ctx.beginPath(); ctx.arc(ox, oy, es * 0.42, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.globalAlpha = 0.85;
+  }
+  // рот с зубами
+  ctx.fillStyle = '#000';
+  ctx.beginPath();
+  const mx0 = cx - w * 0.27, mx1 = cx + w * 0.27, my0 = cy + h * 0.16, my1 = cy + h * 0.34;
+  ctx.moveTo(mx0, my0);
+  ctx.lineTo(mx1, my0);
+  const teeth = 6;
+  for (let i = 0; i <= teeth; i++){
+    const x = mx1 - (mx1 - mx0) * i / teeth;
+    ctx.lineTo(x, i % 2 ? my0 + (my1 - my0) * 0.45 : my1);
+  }
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
 function draw(){
+  const now = performance.now();
   ctx.clearRect(0, 0, W, H);
   const g = ctx.createLinearGradient(0, 0, 0, H);
   g.addColorStop(0, '#2b1640');
@@ -462,6 +538,7 @@ function draw(){
   ctx.beginPath(); ctx.moveTo(0, H);
   for (let x = 0; x <= W; x += 20) ctx.lineTo(x, H - 40 - Math.sin(x / 60) * 12);
   ctx.lineTo(W, H); ctx.closePath(); ctx.fill();
+  drawBgPumpkin(now);
 
   ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
   for (const p of pumpkins){
@@ -728,6 +805,7 @@ async function startScare(capture){
   scare.classList.add('on', 'shake');
   $('scareImg').classList.add('flick');
   setTimeout(() => scare.classList.remove('shake'), 1000);
+  try { if (navigator.vibrate) navigator.vibrate([300, 120, 500, 120, 900]); } catch (e) {}
   scream();                       // сразу крик, без предвестников
   await sleep(1600);
   typeLines($('text'), LINES);
