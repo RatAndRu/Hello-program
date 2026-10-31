@@ -12,6 +12,7 @@ import numpy as np
 import trimesh
 
 from forma.dsl import parse_script
+from forma.geometry import _clean_manifold_arrays
 from forma.run import build
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -104,7 +105,10 @@ class TrainCarriageTest(unittest.TestCase):
         self.assertGreater(len(data), 1_000_000)
         scene = trimesh.load(io.BytesIO(data), file_type="glb", process=False)
         self.assertGreaterEqual(len(scene.geometry), len(self.solids))
-        self.assertEqual(sum(len(mesh.faces) for mesh in scene.geometry.values()), self.report["triangles"])
+        # report описывает raw-геометрию; GLB сравнивается с той же guarded
+        # копией, которая реально использовалась при экспорте.
+        export_faces = sum(len(_clean_manifold_arrays(obj.manifold)[1]) for obj in self.solids)
+        self.assertEqual(sum(len(mesh.faces) for mesh in scene.geometry.values()), export_faces)
         for name, mesh in scene.geometry.items():
             with self.subTest(mesh=name):
                 self.assertTrue(np.isfinite(mesh.vertices).all())
@@ -114,7 +118,7 @@ class TrainCarriageTest(unittest.TestCase):
             path = Path(directory) / "train.glb"
             path.write_bytes(data)
             roundtrip = MODULE.glb_roundtrip(self.result, path, self.solids)
-        self.assertEqual(roundtrip["faces"], self.report["triangles"])
+        self.assertEqual(roundtrip["faces"], export_faces)
         self.assertLess(roundtrip["max_bounds_deviation_mm"], 0.002)
         self.assertEqual(roundtrip["axis_map"], "glTF(x,y,z) = Forma(x,z,-y)")
 

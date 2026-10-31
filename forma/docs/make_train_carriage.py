@@ -18,7 +18,7 @@ from pathlib import Path
 import manifold3d as mf
 import numpy as np
 
-from forma.geometry import manifold_mesh
+from forma.geometry import _clean_manifold_arrays, manifold_mesh
 from forma.render import _prepare, _render_view
 from forma.run import build
 
@@ -1033,7 +1033,8 @@ def glb_roundtrip(result, glb_path: Path, solids):
     source_hi = np.max([bbox(s)[3:] for s in solids], axis=0)
     source_bounds = np.array([source_lo, source_hi])
     deviation = float(np.max(np.abs(forma_bounds - source_bounds)))
-    expected_faces = sum(len(manifold_mesh(s.manifold)[1]) for s in solids)
+    # GLB содержит guarded export copy, а не обязательно raw-тесселяцию ядра.
+    expected_faces = sum(len(_clean_manifold_arrays(s.manifold)[1]) for s in solids)
     if deviation > 0.002 or len(mesh.faces) != expected_faces:
         raise RuntimeError(f"GLB round-trip: deviation={deviation}, faces={len(mesh.faces)}/{expected_faces}")
     return {"importer": "trimesh", "vertices": int(len(mesh.vertices)),

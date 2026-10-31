@@ -49,6 +49,7 @@ hiddenimports += [
     "forma.mesher", "forma.sdf", "forma.anatomy", "forma.skeleton_original", "forma.ops_skeleton", "forma.ops_organic", "forma.textures",
     "forma.blender", "forma.paths", "forma.ops_human", "forma.ops_studio",
     "forma.ops_io", "forma.ops_extra",
+    "forma.vision", "forma.vision.silhouette", "forma.vision.fit",
     "numpy", "manifold3d", "trimesh",
     "trimesh.exchange.gltf", "trimesh.exchange.stl", "trimesh.exchange.obj",
     "trimesh.exchange.ply", "trimesh.exchange.load",

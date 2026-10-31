@@ -174,6 +174,17 @@ class TopologyExportRegressionTest(unittest.TestCase):
                 self.assertTrue(after["ok"], after)
                 self.assert_clean_glb(result.glb())
 
+    def test_rounded_door_frame_degenerate_cap_is_retriangulated(self):
+        result = built("d = door width=50 height=100 panels=2 at=[150,0,0]")
+        solid = result.scene.objects["d.frame_top"]
+        # Одна нулевая грань rounded_extrude закрывала участок. Простое её
+        # удаление давало 3 boundary-ребра; simplify обязан перетриангулировать
+        # соседние грани без изменения объёма, площади и габаритов.
+        after = manifold_topology(solid.manifold)
+        self.assertTrue(after["ok"], after)
+        self.assertEqual(after["boundary_edges"], 0)
+        self.assert_clean_glb(result.glb())
+
     def test_mug_flat_slivers_are_not_an_export_error(self):
         result = built((ROOT / "examples" / "mug.forma").read_text(encoding="utf-8"))
         report = manifold_topology(result.visible_solids()[0].manifold)

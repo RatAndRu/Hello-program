@@ -1026,6 +1026,43 @@ def _clean_manifold_arrays(m: mf.Manifold) -> tuple[np.ndarray, np.ndarray]:
     verts, faces = manifold_mesh(m)
     base_verts, base_faces = clean_export_arrays(verts, faces)
     base_report = analyze_topology(base_verts, base_faces, include_quality=False)
+    removed_faces = len(faces) - len(base_faces)
+    boundary_after_cleanup = (
+        removed_faces > 0 and base_report["boundary_edges"] > 0
+        and not any(
+            base_report[key] for key in STRUCTURAL_KEYS
+            if key not in {"degenerate_index", "degenerate_area", "boundary_edges"}
+        )
+    )
+    if boundary_after_cleanup:
+        # Нулевая грань может быть топологической «крышкой» трёх рёбер. После
+        # её удаления сваривать нечего: нужна локальная перетриангуляция ядра.
+        # Это НЕ закрытие произвольного отверстия — кандидат принимается только
+        # при точной замкнутости и тех же строгих shape guards, что и weld.
+        eps = float(base_report["weld_tolerance"])
+        try:
+            simplified = m.simplify(eps)
+            simple_verts, simple_faces = clean_export_arrays(*manifold_mesh(simplified))
+            simple_report = analyze_topology(simple_verts, simple_faces, include_quality=False)
+            simple_exact = analyze_topology(
+                simple_verts, simple_faces, tolerance=1e-12, include_quality=False
+            )
+            if (simplified.status() == mf.Error.NoError and not simplified.is_empty()
+                    and simplified.volume() > 0 and simple_report["ok"] and simple_exact["ok"]
+                    and not simple_report["loose_vertices"]
+                    and int(simplified.genus()) == int(m.genus())
+                    and int(solid_parts(simplified)) == int(solid_parts(m))):
+                volume_delta_pct = abs(float(simplified.volume() / m.volume() - 1.0) * 100.0)
+                area_delta_pct = abs(float(simplified.surface_area() / m.surface_area() - 1.0) * 100.0)
+                bbox_delta = float(np.max(np.abs(
+                    np.asarray(simplified.bounding_box(), dtype=np.float64)
+                    - np.asarray(m.bounding_box(), dtype=np.float64)
+                )))
+                if (volume_delta_pct <= 0.0001 and area_delta_pct <= 0.001
+                        and bbox_delta <= eps * 1.01 + 1e-9):
+                    return simple_verts, simple_faces
+        except Exception:
+            pass
     degenerate = base_report["degenerate_index"] or base_report["degenerate_area"]
     other_errors = any(
         base_report[key] for key in STRUCTURAL_KEYS
