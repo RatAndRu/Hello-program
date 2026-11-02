@@ -1,5 +1,6 @@
 {
   "source_run": "41463913085",
   "release_tag": "forma3d-exe-144-1-ad78efb",
-  "version": "0.62"
+  "version": "0.62",
+  "reason": "include the verified EXE-only ZIP from the same CI artifact"
 }
