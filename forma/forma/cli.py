@@ -233,6 +233,11 @@ def cmd_export(args) -> int:
         out.write_bytes(export_3mf(solids))
     elif args.format == "forma":
         out.write_text(script, encoding="utf-8")
+    elif args.format in ("fold", "cp"):
+        from .origami import encode_cp, encode_fold, pattern_from_scene
+        pattern = pattern_from_scene(b.scene)
+        text = encode_fold(pattern) if args.format == "fold" else encode_cp(pattern)
+        out.write_text(text, encoding="utf-8")
     elif args.format == "report":
         out.write_text(b.analysis["text"], encoding="utf-8")
     elif args.format == "prompt":
@@ -352,7 +357,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("export", help="экспортировать модель")
     p.add_argument("script")
     p.add_argument("--format", default="glb",
-                   choices=["glb", "stl", "obj", "ply", "3mf", "forma", "report", "prompt"])
+                   choices=["glb", "stl", "obj", "ply", "3mf", "forma", "fold", "cp", "report", "prompt"])
     p.add_argument("--out", required=True)
     p.add_argument("--goal", default="")
     p.set_defaults(func=cmd_export)

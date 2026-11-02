@@ -297,6 +297,15 @@ def _fold_joint(a) -> str:
     return value
 
 
+def _fold_line_distance(span: float, parts: int, index: int, offset: float,
+                        panel: float, radius: float, angle_deg: float, joint: str) -> float:
+    """Положение центра дуги на исходном плоском листе, а не на bbox."""
+    if parts == 2:
+        return span * offset
+    arc_len = radius * math.radians(angle_deg) * (1.3 if joint == "фаска" else 1.0)
+    return (index + 1) * panel + arc_len * (index + 0.5)
+
+
 def _accordion_path(span: float, parts: int, angle_deg: float, gap: float,
                     sharp: float, thickness: float, offset: float,
                     joint: str = "круг"):
@@ -486,10 +495,30 @@ def fold_sheet(a, name):
     if before > 1e-6 and abs(after - before) / before > tolerance:
         raise GeometryError("Сгиб замкнул лист в себя.",
                             hint="Увеличьте gap или уменьшите angle/parts.")
-    folded = anchor(folded, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
+    at = a.vec("at", 3, default=(0, 0, 0))
+    centered = a.boolean("center", False)
+    flat = anchor(mf.Manifold.cube((length, width, thickness), True), at, centered)
+    folded = anchor(folded, at, centered)
     out = make_solid(a.scene, name, folded, a, kind="fold_sheet")
     out.meta["fold_radius"] = float(radius)
     out.meta["fold_sharp"] = float(sharp)
+    # Только локальная история листа: снимок до складки и линии на его верхней
+    # поверхности. Общее дерево истории всех операций здесь не создаётся.
+    from .origami import record_fold
+    fb = flat.bounding_box()
+    center = np.array([(fb[0] + fb[3]) * 0.5, (fb[1] + fb[4]) * 0.5, fb[5]])
+    along = np.array([ca, sa, 0.0])
+    crease_dir = np.array([-sa, ca, 0.0])
+    lines = []
+    for index in range(parts - 1):
+        distance = _fold_line_distance(span, parts, index, offset, panel, radius, angle_deg, joint)
+        point = center + along * (distance - span * 0.5)
+        sign = 1.0 if index % 2 == 0 else -1.0
+        lines.append({"point": point.tolist(), "dir": crease_dir.tolist(),
+                      "normal": [0.0, 0.0, 1.0], "angle": angle_deg * sign,
+                      "assignment": "M" if sign > 0 else "V"})
+    record_fold(a.scene, out.name, {"kind": "fold_sheet", "source": "fold_sheet",
+                                    "angle": angle_deg, "parts": parts, "lines": lines}, flat)
     out.notes.append(f"сгибаемый лист: parts={parts}, angle={angle_deg:g}°, "
                      f"direction={float(direction):g}°, gap={gap:g}, sharp={sharp:g}, joint={joint}")
     return out
@@ -701,7 +730,27 @@ def fold(a, name):
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     a.scene.log("info", f"сгиб: {parts} части, {angle_deg:g}°, зазор {gap:g} мм, "
                         f"{solid.num_tri():,} трис".replace(",", " "), a.cmd.line)
-    return _derived(a, name, solid, base, "fold")
+    out = _derived(a, name, solid, base, "fold")
+    from .origami import record_fold
+    crease_axis = next(index for index in range(3) if index not in {axis, up})
+    lines = []
+    for index in range(parts - 1):
+        distance = _fold_line_distance(span, parts, index, offset, panel, radius, angle_deg, joint)
+        point = np.zeros(3)
+        point[axis] = lo + distance
+        point[crease_axis] = (bb[crease_axis] + bb[crease_axis + 3]) * 0.5
+        point[up] = bb[up + 3]
+        direction = np.zeros(3)
+        direction[crease_axis] = 1.0
+        normal = np.zeros(3)
+        normal[up] = 1.0
+        sign = 1.0 if index % 2 == 0 else -1.0
+        lines.append({"point": point.tolist(), "dir": direction.tolist(),
+                      "normal": normal.tolist(), "angle": angle_deg * sign,
+                      "assignment": "M" if sign > 0 else "V"})
+    record_fold(a.scene, out.name, {"kind": "fold", "source": "fold", "angle": angle_deg,
+                                    "parts": parts, "lines": lines}, base.manifold)
+    return out
 
 
 # --------------------------------------------------------------------------- #

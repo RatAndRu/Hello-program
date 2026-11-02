@@ -499,6 +499,11 @@ class AppState:
             elif fmt == "forma":
                 data = self.last_script.encode("utf-8")
                 name = f"{base}.forma"
+            elif fmt in ("fold", "cp"):
+                from .origami import encode_cp, encode_fold, pattern_from_scene
+                pattern = pattern_from_scene(scene)
+                data = (encode_fold(pattern) if fmt == "fold" else encode_cp(pattern)).encode("utf-8")
+                name = f"{base}.{fmt}"
             elif fmt == "prompt":
                 text = build_prompt(self.last_build, "")
                 data = text.encode("utf-8")
@@ -679,6 +684,7 @@ EXAMPLES = [
     ("Аниме-бюст: голова, шея, плечи, волосы", "anime_face"),
     ("Комната: гостиная 1:20", "living_room_diorama"),
     ("Поезд: плацкартный вагон 61-4194", "train_carriage"),
+    ("Arte Lamp Banker A2492LT-1AB", "arte_lamp_banker_a2492lt_1ab"),
 ]
 
 

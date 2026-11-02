@@ -54,6 +54,7 @@ from . import ops_grid  # noqa: F401,E402
 from . import ops_hair  # noqa: F401,E402
 from . import ops_face  # noqa: F401,E402
 from . import ops_fold  # noqa: F401,E402
+from . import ops_origami  # noqa: F401,E402
 from . import ops_chain  # noqa: F401,E402
 from . import ops_graded  # noqa: F401,E402
 from . import ops_mount  # noqa: F401,E402

@@ -90,7 +90,7 @@ jobs:
         run: |
           python tools/build_skeleton_original.py
 
-      - name: Экспортировать модели 0.53–0.64 в GLB и Forma
+      - name: Экспортировать модели 0.53–0.65 в GLB и Forma
         working-directory: forma
         run: |
           python - <<'PY'
@@ -120,9 +120,11 @@ jobs:
                                ('058/petaloid_bottom', 'petaloid-bottom'),
                                ('058/jar_styles', 'jar-styles'),
                                ('living_room_diorama', 'living-room'),
-                               ('train_carriage', 'train-carriage')):
+                               ('train_carriage', 'train-carriage'),
+                               ('arte_lamp_banker_a2492lt_1ab', 'arte-lamp-banker-a2492lt-1ab')):
               source_dir = Path('examples') if stem in (
-                  'thinkpad_x1', 'alien', 'living_room_diorama', 'train_carriage') else Path('showcase/sources')
+                  'thinkpad_x1', 'alien', 'living_room_diorama', 'train_carriage',
+                  'arte_lamp_banker_a2492lt_1ab') else Path('showcase/sources')
               source = source_dir / f'{stem}.forma'
               script = source.read_text(encoding='utf-8')
               result = build(script, analyze_model=False)

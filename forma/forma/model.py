@@ -108,6 +108,13 @@ class Scene:
         self.checks: list[dict] = []
         # пакетные отчёты точных пересечений, выполненные по требованию
         self.interferences: list[dict] = []
+        # Этап 3: только ограниченная история складок и кинематические отчёты.
+        # Геометрические снимки приватны и никогда не попадают в JSON/GLB.
+        self.fold_history: list[dict] = []
+        self._fold_snapshots: dict[int, Any] = {}
+        self._fold_sequence = 0
+        self.crease_patterns: dict[str, dict] = {}
+        self.mechanisms: list[dict] = []
         # кубическая сетка-бюджет: какие кубы модель имеет право занимать
         self.grid: dict | None = None
         # сечения, пробы материала и паспорта деталей

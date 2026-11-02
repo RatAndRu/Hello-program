@@ -77,7 +77,7 @@ def _unit(v) -> np.ndarray:
 def fold_along(a, name):
     # Импорт локальный: ops_sheet содержит общий проверенный путь гармошки,
     # а модуль складок загружается после него.
-    from .ops_sheet import _accordion_path, _fold_joint, _refine_for
+    from .ops_sheet import _accordion_path, _fold_joint, _fold_line_distance, _refine_for
 
     base = _one(a, "сгиб")
     m = base.manifold
@@ -174,6 +174,21 @@ def fold_along(a, name):
     a.scene.log("info", f"сгиб: линия {deg:g}°, parts={parts}, поворот {angle:g}°, "
                         f"толщина {thin:g} мм", a.cmd.line)
     out = _derived(a, name, solid, base, "fold")
+    from .origami import record_fold
+    lines = []
+    for index in range(parts - 1):
+        distance = _fold_line_distance(span, parts, index, offset, panel, radius, angle, joint)
+        # q = side * (точка − origin) · nrm; возвращаем центр каждой дуги
+        # в исходную плоскость, включая произвольную точку at и диагональ.
+        line_point = origin + (side * (lo + distance)) * nrm
+        line_point[up] = bb[up + 3]
+        sign = side if index % 2 == 0 else -side
+        lines.append({"point": line_point.tolist(), "dir": d.tolist(),
+                      "normal": up_vec.tolist(), "angle": angle * sign,
+                      "assignment": "M" if sign > 0 else "V"})
+    record_fold(a.scene, out.name, {"kind": "fold_line", "source": "fold_line",
+                                    "angle": angle * side, "parts": parts, "lines": lines},
+                base.manifold)
     out.notes.append(f"сгиб исходной сетки: parts={parts}, dir={deg:g}°, "
                      f"angle={angle:g}°, joint={joint}")
     return out
