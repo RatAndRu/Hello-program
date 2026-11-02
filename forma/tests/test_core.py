@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import unittest
@@ -208,6 +209,22 @@ check ш volume 28..38
 check к parts 1
 """)
         self.assertEqual(b.analysis["metrics"]["parts"], 1)
+
+    def test_blob_diametral_mode_is_tangent_round_cone(self):
+        b = ok("""
+к = blob spheres=[[0,0,20,10],[0,0,50,10]] mode=диаметры resolution=1
+check к parts 1
+""")
+        item = b.scene.objects["к"]
+        self.assertEqual(item.meta["blob_mode"], "диаметры")
+        expected = math.pi * 10 ** 2 * 30 + 4 / 3 * math.pi * 10 ** 3
+        self.assertAlmostEqual(item.manifold.volume(), expected, delta=expected * 0.035)
+        self.assertEqual(item.manifold.genus(), 0)
+        legacy = ok("к = blob spheres=[[0,0,20,10],[0,0,50,10]] resolution=1")
+        self.assertEqual(legacy.scene.objects["к"].meta["blob_mode"], "smin")
+        # Прежний smin строит узкую перемычку между удалёнными шарами,
+        # диаметральный режим — полное касательное сечение.
+        self.assertLess(legacy.scene.objects["к"].manifold.volume(), item.manifold.volume() * 0.85)
 
     def test_sdf_rejects_dangerous_code(self):
         err = fails('x = from_sdf expression="__import__(\'os\').system(\'echo 1\')" bounds=[-1,-1,-1,1,1,1]')

@@ -2,21 +2,20 @@
 # Проектная высота 360 мм; фотограмметрический масштаб не заявляется.
 # Канон: +Z вверх, −Y перед, +X право. Внешние ресурсы не нужны.
 # Пропорции: основание ≈0,61H; крылья ≈1,0H; торс ≈0,36H; голова+шея ≈0,34H.
-scene source=dragon_sovereign_references_33_34_35
-# Ядро: мышцы, шея, открытая пасть, конечности и пальцы — единое SDF-поле.
-body_core = from_sdf expression="smin(smin(smin(smin(smin(smin(smin(smin(smin(sd_capsule(x,y,z,0,8,207,0,30,247,24),sd_capsule(x,y,z,0,30,242,0,2,279,20),8),sd_ellipsoid(x-(0),y-(-10),z-(291),31,30,30),8),sd_ellipsoid(x-(0),y-(-48),z-(285),23,43,12),8),sd_ellipsoid(x-(0),y-(-78),z-(287),24,18,10),8),sd_ellipsoid(x-(0),y-(-44),z-(247),19,40,8),8),sd_ellipsoid(x-(0),y-(-18),z-(260),24,23,20),8),sd_capsule(x,y,z,0,28,116,12,55,98,22),5),smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(-31),y-(13),z-(122),25,29,36),sd_capsule(x,y,z,-34,8,122,-50,-7,86,19),7),sd_ellipsoid(x-(-50),y-(-9),z-(83),20,21,22),7),sd_capsule(x,y,z,-50,-8,81,-45,-23,51,13),7),sd_ellipsoid(x-(-45),y-(-36),z-(40),20,30,10),7),sd_capsule(x,y,z,-55,-49,40,-57.5,-64,36,5.3),7),sd_capsule(x,y,z,-57.5,-64,36,-59.5,-74,34,4.1),7),sd_capsule(x,y,z,-45,-49,40,-45,-66,36,5.3),7),sd_capsule(x,y,z,-45,-66,36,-45,-77,34,4.1),7),sd_capsule(x,y,z,-35,-49,40,-32.5,-64,36,5.3),7),sd_capsule(x,y,z,-32.5,-64,36,-30.5,-74,34,4.1),7),sd_ellipsoid(x-(31),y-(13),z-(122),25,29,36),7),sd_capsule(x,y,z,34,8,122,50,-7,86,19),7),sd_ellipsoid(x-(50),y-(-9),z-(83),20,21,22),7),sd_capsule(x,y,z,50,-8,81,45,-23,51,13),7),sd_ellipsoid(x-(45),y-(-36),z-(40),20,30,10),7),sd_capsule(x,y,z,35,-49,40,32.5,-64,36,5.3),7),sd_capsule(x,y,z,32.5,-64,36,30.5,-74,34,4.1),7),sd_capsule(x,y,z,45,-49,40,45,-66,36,5.3),7),sd_capsule(x,y,z,45,-66,36,45,-77,34,4.1),7),sd_capsule(x,y,z,55,-49,40,57.5,-64,36,5.3),7),sd_capsule(x,y,z,57.5,-64,36,59.5,-74,34,4.1),7),5),smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(-42),y-(0),z-(205),21,23,26),sd_capsule(x,y,z,-42,0,204,-65,-13,184,14),6),sd_ellipsoid(x-(-67),y-(-15),z-(185),15,15,16),6),sd_capsule(x,y,z,-67,-15,187,-73,-40,216,11),6),sd_ellipsoid(x-(-73),y-(-47),z-(228),14,11,17),6),sd_ellipsoid(x-(42),y-(0),z-(205),21,23,26),6),sd_capsule(x,y,z,42,0,204,61,-7,174,14),6),sd_ellipsoid(x-(62),y-(-9),z-(172),15,15,16),6),sd_capsule(x,y,z,62,-10,170,70,-31,141,10.5),6),sd_ellipsoid(x-(70),y-(-40),z-(132),13,11,16),6),sd_capsule(x,y,z,-77.95,-49,232,-84,-53.05,243.2,4.3),6),sd_capsule(x,y,z,-84,-53.05,243.2,-87.85,-56,251,3.2),6),sd_capsule(x,y,z,-74.8,-49,232,-77,-54.8,245.3,4.3),6),sd_capsule(x,y,z,-77,-54.8,245.3,-78.4,-61,257,3.2),6),sd_capsule(x,y,z,-71.2,-49,232,-69,-54.8,244.95,4.3),6),sd_capsule(x,y,z,-69,-54.8,244.95,-67.6,-61,256,3.2),6),sd_capsule(x,y,z,-68.05,-49,232,-62,-53.05,242.5,4.3),6),sd_capsule(x,y,z,-62,-53.05,242.5,-58.15,-56,249,3.2),6),sd_capsule(x,y,z,66,-42,130,60,-46.9,120.5,4.1),6),sd_capsule(x,y,z,60,-46.9,120.5,57,-50,113,3),6),sd_capsule(x,y,z,68.8,-42,130,67,-48.4,118.4,4.1),6),sd_capsule(x,y,z,67,-48.4,118.4,66.1,-55,107,3),6),sd_capsule(x,y,z,71.6,-42,130,74,-48.4,118.75,4.1),6),sd_capsule(x,y,z,74,-48.4,118.75,75.2,-55,108,3),6),sd_capsule(x,y,z,74,-42,130,80,-46.6,121.2,4.1),6),sd_capsule(x,y,z,80,-46.6,121.2,83,-49,115,3),6),5)" bounds=[-102,-108,20,102,82,326] resolution=2.05 color=#87928f rough=0.72
-tail_core = from_sdf expression="smin(smin(smin(smin(smin(smin(sd_capsule(x,y,z,0,35,115,15,65,91,21),sd_capsule(x,y,z,15,65,91,35,103,65,17),7),sd_capsule(x,y,z,35,103,65,65,137,49,13.5),7),sd_capsule(x,y,z,65,137,49,99,154,55,10.5),7),sd_capsule(x,y,z,99,154,55,126,151,81,8),7),sd_capsule(x,y,z,126,151,81,130,135,112,5.7),7),sd_capsule(x,y,z,130,135,112,128,128,132,4),7)" bounds=[-27,12,25,153,181,151] resolution=1.65 color=#87928f rough=0.72
+scene source=dragon_sovereign_references_34_38_39
+# Ядро v2: четыре опоры, касательные round-cone цепочки, открытая пасть.
+body_bed = from_sdf expression="smin(smin(smin(sd_ellipsoid(x-(0),y-(25),z-(118),37,33,44),sd_ellipsoid(x-(0),y-(8),z-(157),36,29,52),10),sd_ellipsoid(x-(0),y-(-4),z-(194),42,31,43),10),min(min(sd_round_cone(x,y,z,0,-5,202,0,6,229,22,19),sd_round_cone(x,y,z,0,6,229,0,5,253,19,17)),sd_round_cone(x,y,z,0,5,253,0,-15,276,17,18)),5)" bounds=[-52,-48,65,52,52,298] resolution=1.7 color=#87928f rough=0.72
+skull_bed = from_sdf expression="sd_ellipsoid(x-(0),y-(-28),z-(290),27,28,25)" bounds=[-32,-61,260,32,5,320] resolution=1.25 color=#87928f rough=0.72
+body_core = from_sdf expression="smin(smin(smin(smin(smin(smin(smin(min((sd_round_cone(x,y,z/0.55,0,-28,525.45455,0,-54,520,20,16)*0.55),(sd_round_cone(x,y,z/0.55,0,-54,520,0,-82,512.72727,16,10)*0.55)),min((sd_round_cone(x,y,z/0.45,0,-25,568.88889,0,-52,562.22222,16,12)*0.45),(sd_round_cone(x,y,z/0.45,0,-52,562.22222,0,-78,568.88889,12,8)*0.45)),5),sd_ellipsoid(x-(0),y-(-18),z-(264),22,14,20),5),sd_ellipsoid(x-(0),y-(-54),z-(260),8,20,2.2),5),min(min(min(sd_round_cone(x,y,z,-16,-30,281,-15,-45,278,1.4,1.8),sd_round_cone(x,y,z,-15,-45,278,-12,-60,278,1.8,1.8)),sd_round_cone(x,y,z,-12,-60,278,-8,-77,278,1.8,1.4)),sd_round_cone(x,y,z,-8,-77,278,-4,-87,281,1.4,0.8)),5),min(min(min(sd_round_cone(x,y,z,-13,-28,261,-12,-45,260,1.3,1.6),sd_round_cone(x,y,z,-12,-45,260,-10,-60,259,1.6,1.6)),sd_round_cone(x,y,z,-10,-60,259,-7,-72,258.5,1.6,1.2)),sd_round_cone(x,y,z,-7,-72,258.5,-3,-83,258,1.2,0.7)),5),min(min(min(sd_round_cone(x,y,z,16,-30,281,15,-45,278,1.4,1.8),sd_round_cone(x,y,z,15,-45,278,12,-60,278,1.8,1.8)),sd_round_cone(x,y,z,12,-60,278,8,-77,278,1.8,1.4)),sd_round_cone(x,y,z,8,-77,278,4,-87,281,1.4,0.8)),5),min(min(min(sd_round_cone(x,y,z,13,-28,261,12,-45,260,1.3,1.6),sd_round_cone(x,y,z,12,-45,260,10,-60,259,1.6,1.6)),sd_round_cone(x,y,z,10,-60,259,7,-72,258.5,1.6,1.2)),sd_round_cone(x,y,z,7,-72,258.5,3,-83,258,1.2,0.7)),5)" bounds=[-31,-101,238,31,5,305] resolution=1.3 color=#87928f rough=0.72
+front_limb_R = from_sdf expression="smin(smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(40),y-(-8),z-(201),15,17,20),sd_ellipsoid(x-(55),y-(-25),z-(154),11,12,17),4),min(min(sd_round_cone(x,y,z,40,-8,204,57,-25,153,12,10),sd_round_cone(x,y,z,57,-25,153,63,-52,91,10,7)),sd_round_cone(x,y,z,63,-52,91,63,-61,69,7,7.5)),4),sd_ellipsoid(x-(63),y-(-64),z-(64),11,13,10),4),min(sd_round_cone(x,y,z,57.5,-60,62,53,-70,41,3.8,3.1),sd_round_cone(x,y,z,53,-70,41,51.5,-81,24,3.1,2.35)),4),min(sd_round_cone(x,y,z,61.35,-60,62,60,-72,41,3.8,3.1),sd_round_cone(x,y,z,60,-72,41,59.55,-84,24,3.1,2.35)),4),min(sd_round_cone(x,y,z,65.2,-60,62,67,-70,41,3.8,3.1),sd_round_cone(x,y,z,67,-70,41,67.6,-81,24,3.1,2.35)),4),min(sd_round_cone(x,y,z,69.05,-60,62,74,-70,41,3.8,3.1),sd_round_cone(x,y,z,74,-70,41,75.65,-81,24,3.1,2.35)),4)" bounds=[24,-104,20,84,16,227] resolution=1.2 color=#87928f rough=0.72
+hind_limb_R = from_sdf expression="smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(32),y-(24),z-(123),22,25,31),sd_ellipsoid(x-(49),y-(3),z-(84),15,17,18),4.5),min(sd_round_cone(x,y,z,34,24,124,50,4,84,16,12),sd_round_cone(x,y,z,50,4,84,45,-22,51,12,8)),4.5),sd_ellipsoid(x-(45),y-(-30),z-(40),16,23,9),4.5),min(sd_round_cone(x,y,z,39.15,-40,39,36,-54,35,4.5,3.6),sd_round_cone(x,y,z,36,-54,35,34.65,-66,33,3.6,2.7)),4.5),min(sd_round_cone(x,y,z,45,-40,39,45,-56,35,4.5,3.6),sd_round_cone(x,y,z,45,-56,35,45,-69,33,3.6,2.7)),4.5),min(sd_round_cone(x,y,z,50.85,-40,39,54,-54,35,4.5,3.6),sd_round_cone(x,y,z,54,-54,35,55.35,-66,33,3.6,2.7)),4.5)" bounds=[18,-86,20,76,58,158] resolution=1.4 color=#87928f rough=0.72
+front_limb_L = from_sdf expression="smin(smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(-40),y-(-8),z-(201),15,17,20),sd_ellipsoid(x-(-55),y-(-25),z-(154),11,12,17),4),min(min(sd_round_cone(x,y,z,-40,-8,204,-57,-25,153,12,10),sd_round_cone(x,y,z,-57,-25,153,-63,-52,91,10,7)),sd_round_cone(x,y,z,-63,-52,91,-63,-61,69,7,7.5)),4),sd_ellipsoid(x-(-63),y-(-64),z-(64),11,13,10),4),min(sd_round_cone(x,y,z,-68.5,-60,62,-73,-70,41,3.8,3.1),sd_round_cone(x,y,z,-73,-70,41,-74.5,-81,24,3.1,2.35)),4),min(sd_round_cone(x,y,z,-64.65,-60,62,-66,-72,41,3.8,3.1),sd_round_cone(x,y,z,-66,-72,41,-66.45,-84,24,3.1,2.35)),4),min(sd_round_cone(x,y,z,-60.8,-60,62,-59,-70,41,3.8,3.1),sd_round_cone(x,y,z,-59,-70,41,-58.4,-81,24,3.1,2.35)),4),min(sd_round_cone(x,y,z,-56.95,-60,62,-52,-70,41,3.8,3.1),sd_round_cone(x,y,z,-52,-70,41,-50.35,-81,24,3.1,2.35)),4)" bounds=[-84,-104,20,-24,16,227] resolution=1.2 color=#87928f rough=0.72
+hind_limb_L = from_sdf expression="smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(-32),y-(24),z-(123),22,25,31),sd_ellipsoid(x-(-49),y-(3),z-(84),15,17,18),4.5),min(sd_round_cone(x,y,z,-34,24,124,-50,4,84,16,12),sd_round_cone(x,y,z,-50,4,84,-45,-22,51,12,8)),4.5),sd_ellipsoid(x-(-45),y-(-30),z-(40),16,23,9),4.5),min(sd_round_cone(x,y,z,-50.85,-40,39,-54,-54,35,4.5,3.6),sd_round_cone(x,y,z,-54,-54,35,-55.35,-66,33,3.6,2.7)),4.5),min(sd_round_cone(x,y,z,-45,-40,39,-45,-56,35,4.5,3.6),sd_round_cone(x,y,z,-45,-56,35,-45,-69,33,3.6,2.7)),4.5),min(sd_round_cone(x,y,z,-39.15,-40,39,-36,-54,35,4.5,3.6),sd_round_cone(x,y,z,-36,-54,35,-34.65,-66,33,3.6,2.7)),4.5)" bounds=[-76,-86,20,-18,58,158] resolution=1.4 color=#87928f rough=0.72
+tail_core = from_sdf expression="min(min(min(min(min(min(sd_round_cone(x,y,z,0,68,120,15,65,94,22,19),sd_round_cone(x,y,z,15,65,94,40,105,67,19,15)),sd_round_cone(x,y,z,40,105,67,75,140,52,15,11)),sd_round_cone(x,y,z,75,140,52,108,151,68,11,8)),sd_round_cone(x,y,z,108,151,68,128,143,96,8,6)),sd_round_cone(x,y,z,128,143,96,127,127,122,6,4.2)),sd_round_cone(x,y,z,127,127,122,118,118,133,4.2,3))" bounds=[-27,5,25,153,176,158] resolution=1.3 color=#87928f rough=0.72
 
-# Крыло: собственный анатомический контур, пять неравных пальцев,
-# вогнутая мембрана толщиной 0,9 мм и объёмное плечо.
-wing_membrane_R = extrude profile=[[0,-20],[20,-5],[45,0],[96,48],[150,85],[146.87983,75.09699],[144.18536,66.28971],[142.62941,58.86479],[142.81557,52.88593],[145.15566,48.20576],[149.80804,44.50752],[156.64583,41.36877],[165.26021,38.33622],[175,35],[164.19072,27.22891],[154.7083,20.51068],[147.53343,14.84036],[143.35298,10.00937],[142.4826,5.65747],[144.83518,1.34912],[149.93838,-3.33895],[156.99817,-8.7338],[165,-15],[152.88815,-17.98136],[142.3065,-20.51068],[134.04219,-22.93511],[128.55651,-25.67622],[125.94537,-29.15774],[125.94744,-33.7281],[127.99672,-39.59039],[131.31052,-46.75153],[135,-55],[124.11798,-52.91657],[114.64092,-51.03821],[107.0597,-49.91759],[101.57472,-50.04687],[98.0932,-51.78763],[96.26671,-55.31408],[95.56122,-60.57806],[95.3478,-67.30166],[95,-75],[82.85027,-66.2119],[72.11848,-58.46194],[62.72642,-52.05378],[54.32433,-47.0787],[46.37122,-43.4221],[38.24708,-40.79891],[29.3774,-38.81087],[19.34941,-37.0161],[8,-35]] height=0.9 color=#87928f rough=0.78
-wing_arm_R = sweep path=[[0,-15,0.45],[20,-5,0.45],[45,0,0.45]] radius=8.5 sides=24 smooth=5 scale_curve=[1.3,1.05,0.82] round_caps=0.08 color=#87928f rough=0.72
-wing_finger_R_0 = sweep path=[[45,0,0.45],[97.71241,46.53173,0.45],[153.10898,87.51679,0.45]] radius=4.6 sides=20 smooth=5 scale_curve=[1.18,0.82,0.16] round_caps=0.12 color=#87928f rough=0.72
-wing_finger_R_1 = sweep path=[[45,0,0.45],[111.82008,21.09685,0.45],[178.86246,36.03989,0.45]] radius=3.1 sides=20 smooth=5 scale_curve=[1.18,0.82,0.16] round_caps=0.12 color=#87928f rough=0.72
-wing_finger_R_2 = sweep path=[[45,0,0.45],[107.15193,-9.78456,0.45],[168.96911,-15.49614,0.45]] radius=3.1 sides=20 smooth=5 scale_curve=[1.18,0.82,0.16] round_caps=0.12 color=#87928f rough=0.72
-wing_finger_R_3 = sweep path=[[45,0,0.45],[90.7571,-30.30656,0.45],[138.41313,-57.0858,0.45]] radius=3.1 sides=20 smooth=5 scale_curve=[1.18,0.82,0.16] round_caps=0.12 color=#87928f rough=0.72
-wing_finger_R_4 = sweep path=[[45,0,0.45],[69.3359,-40.1094,0.45],[97.2188,-78.3282,0.45]] radius=3.1 sides=20 smooth=5 scale_curve=[1.18,0.82,0.16] round_caps=0.12 color=#87928f rough=0.72
-wing_R = union [wing_membrane_R, wing_arm_R, wing_finger_R_0, wing_finger_R_1, wing_finger_R_2, wing_finger_R_3, wing_finger_R_4]
+# Крыло v2: парашютный camber=24 мм и пять интегральных рёбер.
+# Рёбра — рельеф самой замкнутой мембраны, не вторые тела поверх неё.
+wing_R = membrane root=[38,-3] outline=[[0,-20],[20,-5],[45,0],[96,48],[150,85],[146.87983,75.09699],[144.18536,66.28971],[142.62941,58.86479],[142.81557,52.88593],[145.15566,48.20576],[149.80804,44.50752],[156.64583,41.36877],[165.26021,38.33622],[175,35],[164.19072,27.22891],[154.7083,20.51068],[147.53343,14.84036],[143.35298,10.00937],[142.4826,5.65747],[144.83518,1.34912],[149.93838,-3.33895],[156.99817,-8.7338],[165,-15],[152.88815,-17.98136],[142.3065,-20.51068],[134.04219,-22.93511],[128.55651,-25.67622],[125.94537,-29.15774],[125.94744,-33.7281],[127.99672,-39.59039],[131.31052,-46.75153],[135,-55],[124.11798,-52.91657],[114.64092,-51.03821],[107.0597,-49.91759],[101.57472,-50.04687],[98.0932,-51.78763],[96.26671,-55.31408],[95.56122,-60.57806],[95.3478,-67.30166],[95,-75],[82.85027,-66.2119],[72.11848,-58.46194],[62.72642,-52.05378],[54.32433,-47.0787],[46.37122,-43.4221],[38.24708,-40.79891],[29.3774,-38.81087],[19.34941,-37.0161],[8,-35]] camber=24 thick=0.9 rings=14 rib_angles=[38.15723,15.50254,-5.39775,-28.19498,-51.63251] rib_height=3.2 rib_width=5 color=#87928f rough=0.78
 wing_R = twist [wing_R] angle=-10 axis=x
 rotate [wing_R] angle=62 axis=x
 rotate [wing_R] angle=-32 axis=y
@@ -25,1196 +24,125 @@ translate [wing_R] offset=[32,15,198]
 wings = mirror [wing_R] plane=x keep=да
 
 # Большие рога задают силуэт уже на первой стадии.
-horn_main_R = sweep path=[[18,0,307],[25,12,327],[30,29,346],[26,43,360]] radius=8.2 sides=24 smooth=5 scale_curve=[1.22,0.60597,0.30437,0.035] round_caps=0.12 color=#87928f rough=0.72
-horn_main_L = sweep path=[[-18,0,307],[-25,12,327],[-30,29,346],[-26,43,360]] radius=8.2 sides=24 smooth=5 scale_curve=[1.22,0.60597,0.30437,0.035] round_caps=0.12 color=#87928f rough=0.72
-body_core = union [body_core, horn_main_R, horn_main_L]
+horn_main_R = sweep path=[[15,-13,306],[22,2,326],[28,23,347],[23,39,360]] radius=8.2 sides=24 smooth=5 scale_curve=[1.22,0.60597,0.30437,0.035] round_caps=0.12 color=#87928f rough=0.72
+horn_main_L = sweep path=[[-15,-13,306],[-22,2,326],[-28,23,347],[-23,39,360]] radius=8.2 sides=24 smooth=5 scale_curve=[1.22,0.60597,0.30437,0.035] round_caps=0.12 color=#87928f rough=0.72
+skull_bed = union [skull_bed, horn_main_R, horn_main_L]
 
-# Брови, cheek-рога, ноздри и глубокие глазницы.
-horn_brow_R = sweep path=[[19,-24,302],[28,-18,315],[34,-5,329],[35,7,337]] radius=5 sides=24 smooth=5 scale_curve=[1.22,0.60597,0.30437,0.035] round_caps=0.12 color=#87928f rough=0.72
-horn_cheek_R = sweep path=[[24,-1,278],[37,5,280],[48,17,290]] radius=4.3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-socket_R = ellipsoid x=6.5 y=5.5 z=4.6 center=да at=[24,-28,296] detail=4 color=#87928f rough=0.7
-nostril_R = ellipsoid x=3.2 y=4.5 z=2.6 center=да at=[10,-87,294] detail=4 color=#87928f rough=0.7
-horn_brow_L = sweep path=[[-19,-24,302],[-28,-18,315],[-34,-5,329],[-35,7,337]] radius=5 sides=24 smooth=5 scale_curve=[1.22,0.60597,0.30437,0.035] round_caps=0.12 color=#87928f rough=0.72
-horn_cheek_L = sweep path=[[-24,-1,278],[-37,5,280],[-48,17,290]] radius=4.3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-socket_L = ellipsoid x=6.5 y=5.5 z=4.6 center=да at=[-24,-28,296] detail=4 color=#87928f rough=0.7
-nostril_L = ellipsoid x=3.2 y=4.5 z=2.6 center=да at=[-10,-87,294] detail=4 color=#87928f rough=0.7
-body_core = union [body_core, horn_brow_R, horn_brow_L, horn_cheek_R, horn_cheek_L]
-body_core = difference [body_core, socket_R, socket_L, nostril_R, nostril_L]
-eye_R = ellipsoid x=3.7 y=3 z=3 center=да at=[24.8,-29.5,296] detail=4 color=#101817 rough=0.7
+# Лицо v2: губные валики, язык, брови, венец рогов и глубокие глазницы.
+horn_brow_R = sweep path=[[18,-42,303],[26,-32,313],[32,-15,324],[31,2,333]] radius=4.6 sides=24 smooth=5 scale_curve=[1.22,0.60597,0.30437,0.035] round_caps=0.12 color=#87928f rough=0.72
+horn_cheek_R = sweep path=[[22,-20,278],[34,-10,280],[45,5,290]] radius=4 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+horn_crown_a_R = sweep path=[[16,-30,300],[31,-20,308],[45,-8,319]] radius=3.4 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+horn_crown_b_R = sweep path=[[13,-26,296],[28,-18,301],[43,2,309]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+socket_R = ellipsoid x=5.8 y=6 z=4.2 center=да at=[23,-42,298] detail=4 color=#87928f rough=0.7
+nostril_R = ellipsoid x=2.5 y=3.5 z=2 center=да at=[6,-84,286] detail=4 color=#87928f rough=0.7
+horn_brow_L = sweep path=[[-18,-42,303],[-26,-32,313],[-32,-15,324],[-31,2,333]] radius=4.6 sides=24 smooth=5 scale_curve=[1.22,0.60597,0.30437,0.035] round_caps=0.12 color=#87928f rough=0.72
+horn_cheek_L = sweep path=[[-22,-20,278],[-34,-10,280],[-45,5,290]] radius=4 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+horn_crown_a_L = sweep path=[[-16,-30,300],[-31,-20,308],[-45,-8,319]] radius=3.4 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+horn_crown_b_L = sweep path=[[-13,-26,296],[-28,-18,301],[-43,2,309]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+socket_L = ellipsoid x=5.8 y=6 z=4.2 center=да at=[-23,-42,298] detail=4 color=#87928f rough=0.7
+nostril_L = ellipsoid x=2.5 y=3.5 z=2 center=да at=[-6,-84,286] detail=4 color=#87928f rough=0.7
+horn_nose = sweep path=[[0,-58,294],[0,-50,306],[0,-40,314]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+skull_bed = union [skull_bed, horn_brow_R, horn_brow_L, horn_cheek_R, horn_cheek_L, horn_crown_a_R, horn_crown_a_L, horn_crown_b_R, horn_crown_b_L]
+body_core = union [body_core, horn_nose]
+skull_bed = difference [skull_bed, socket_R, socket_L]
+body_core = difference [body_core, nostril_R, nostril_L]
+eye_R = ellipsoid x=3.3 y=3.1 z=2.8 center=да at=[23.8,-43.5,298] detail=4 color=#101817 rough=0.7
 color eye_R #101817 rough=0.22
-eye_L = ellipsoid x=3.7 y=3 z=3 center=да at=[-24.8,-29.5,296] detail=4 color=#101817 rough=0.7
+eye_L = ellipsoid x=3.3 y=3.1 z=2.8 center=да at=[-23.8,-43.5,298] detail=4 color=#101817 rough=0.7
 color eye_L #101817 rough=0.22
 
-# Индивидуальные зубы: верхние и нижние ряды не сливаются в гребёнку.
-tooth_U_R_0 = sweep path=[[14.6033,-78,282.5179],[14.74934,-78.8,273.25895],[15.0414,-79.5,264]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_U_R_1 = sweep path=[[16.69099,-67,284.72003],[16.8579,-67.8,271.86002],[17.19172,-68.5,259]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_U_R_2 = sweep path=[[17.84957,-56,279.26902],[18.02806,-56.8,271.63451],[18.38505,-57.5,264]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_U_R_3 = sweep path=[[17.84957,-45,278.97866],[18.02806,-45.8,271.48933],[18.38505,-46.5,264]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_U_R_4 = sweep path=[[16.69099,-34,279.22674],[16.8579,-34.8,269.11337],[17.19172,-35.5,259]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_U_R_5 = sweep path=[[14.6033,-23,280.39475],[14.74934,-23.8,272.19737],[15.0414,-24.5,264]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_D_R_0 = sweep path=[[13.43893,-72,246.28831],[13.43893,-72.5,254.64415],[13.17015,-73,263]] radius=1.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_D_R_1 = sweep path=[[15.25528,-59,249.20695],[15.25528,-59.5,257.60348],[14.95018,-60,266]] radius=1.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_D_R_2 = sweep path=[[15.25528,-46,250.252],[15.25528,-46.5,256.626],[14.95018,-47,263]] radius=1.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_D_R_3 = sweep path=[[13.43893,-33,250.70974],[13.43893,-33.5,256.85487],[13.17015,-34,263]] radius=1.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_U_L_0 = sweep path=[[-14.6033,-78,282.5179],[-14.74934,-78.8,273.25895],[-15.0414,-79.5,264]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_U_L_1 = sweep path=[[-16.69099,-67,284.72003],[-16.8579,-67.8,271.86002],[-17.19172,-68.5,259]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_U_L_2 = sweep path=[[-17.84957,-56,279.26902],[-18.02806,-56.8,271.63451],[-18.38505,-57.5,264]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_U_L_3 = sweep path=[[-17.84957,-45,278.97866],[-18.02806,-45.8,271.48933],[-18.38505,-46.5,264]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_U_L_4 = sweep path=[[-16.69099,-34,279.22674],[-16.8579,-34.8,269.11337],[-17.19172,-35.5,259]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_U_L_5 = sweep path=[[-14.6033,-23,280.39475],[-14.74934,-23.8,272.19737],[-15.0414,-24.5,264]] radius=2.15 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_D_L_0 = sweep path=[[-13.43893,-72,246.28831],[-13.43893,-72.5,254.64415],[-13.17015,-73,263]] radius=1.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_D_L_1 = sweep path=[[-15.25528,-59,249.20695],[-15.25528,-59.5,257.60348],[-14.95018,-60,266]] radius=1.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_D_L_2 = sweep path=[[-15.25528,-46,250.252],[-15.25528,-46.5,256.626],[-14.95018,-47,263]] radius=1.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_D_L_3 = sweep path=[[-13.43893,-33,250.70974],[-13.43893,-33.5,256.85487],[-13.17015,-34,263]] radius=1.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_front_0 = sweep path=[[-8,-86,282.74236],[-8.08,-86.8,270.87118],[-8.24,-87.5,259]] radius=2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_front_1 = sweep path=[[-3,-86,281.10635],[-3.03,-86.8,270.05317],[-3.09,-87.5,259]] radius=2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_front_2 = sweep path=[[3,-86,281.10635],[3.03,-86.8,270.05317],[3.09,-87.5,259]] radius=2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-tooth_front_3 = sweep path=[[8,-86,282.74236],[8.08,-86.8,270.87118],[8.24,-87.5,259]] radius=2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-body_core = union [body_core, tooth_U_R_0, tooth_U_R_1, tooth_U_R_2, tooth_U_R_3, tooth_U_R_4, tooth_U_R_5, tooth_D_R_0, tooth_D_R_1, tooth_D_R_2, tooth_D_R_3, tooth_U_L_0, tooth_U_L_1, tooth_U_L_2, tooth_U_L_3, tooth_U_L_4, tooth_U_L_5, tooth_D_L_0, tooth_D_L_1, tooth_D_L_2, tooth_D_L_3, tooth_front_0, tooth_front_1, tooth_front_2, tooth_front_3]
-
-# Когти на всех лапах; корни заглублены в пальцы.
-claw_H_R_0 = sweep path=[[30.5,-72,35],[29.3,-81,33],[28.5,-87,27]] radius=3.3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_H_R_1 = sweep path=[[45,-75,35],[45,-84,33],[45,-90,27]] radius=3.3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_H_R_2 = sweep path=[[59.5,-72,35],[60.7,-81,33],[61.5,-87,27]] radius=3.3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_H_L_0 = sweep path=[[-59.5,-72,35],[-58.3,-81,33],[-57.5,-87,27]] radius=3.3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_H_L_1 = sweep path=[[-45,-75,35],[-45,-84,33],[-45,-90,27]] radius=3.3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_H_L_2 = sweep path=[[-30.5,-72,35],[-31.7,-81,33],[-32.5,-87,27]] radius=3.3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_L_0 = sweep path=[[-87.578,-52,247],[-87.8,-58,252],[-88.678,-62,249]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_L_1 = sweep path=[[-78.319,-57,253],[-78.4,-63,258],[-79.184,-67,255]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_L_2 = sweep path=[[-67.681,-57,252],[-67.6,-63,257],[-68.276,-67,254]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_L_3 = sweep path=[[-58.422,-52,245],[-58.2,-58,250],[-58.782,-62,247]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_R_0 = sweep path=[[57,-51,118],[57,-56,113],[57,-60,110]] radius=2.7 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_R_1 = sweep path=[[66,-51,112],[66,-56,107],[66,-60,104]] radius=2.7 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_R_2 = sweep path=[[75,-51,113],[75,-56,108],[75,-60,105]] radius=2.7 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_R_3 = sweep path=[[83,-47,120],[83,-52,115],[83,-56,112]] radius=2.7 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-body_core = union [body_core, claw_H_R_0, claw_H_R_1, claw_H_R_2, claw_H_L_0, claw_H_L_1, claw_H_L_2, claw_F_L_0, claw_F_L_1, claw_F_L_2, claw_F_L_3, claw_F_R_0, claw_F_R_1, claw_F_R_2, claw_F_R_3]
-
 # Спинной гребень и листовидный наконечник хвоста.
-spine_neck_0 = sweep path=[[0,19,210],[0,36,219],[0,46,235]] radius=5.5 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-spine_neck_1 = sweep path=[[0,23,232],[0,40,241],[0,50,257]] radius=5.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-spine_neck_2 = sweep path=[[0,21,254],[0,38,263],[0,48,279]] radius=4.7 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-spine_neck_3 = sweep path=[[0,15,276],[0,32,285],[0,42,301]] radius=4 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-spine_tail_0 = sweep path=[[17,69,97],[19,77,109],[21,82,120]] radius=5 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-spine_tail_1 = sweep path=[[38,107,75],[40,115,87],[42,120,98]] radius=4.5 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-spine_tail_2 = sweep path=[[68,139,60],[70,147,72],[72,152,83]] radius=4 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-spine_tail_3 = sweep path=[[99,154,65],[101,162,77],[103,167,88]] radius=3.4 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-spine_tail_4 = sweep path=[[126,148,89],[128,156,101],[130,161,112]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_neck_0 = sweep path=[[0,13,210],[0,30,219],[0,40,235]] radius=5 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_neck_1 = sweep path=[[0,20,232],[0,37,241],[0,47,257]] radius=4.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_neck_2 = sweep path=[[0,15,254],[0,32,263],[0,42,279]] radius=4.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_neck_3 = sweep path=[[0,-5,278],[0,12,287],[0,22,303]] radius=3.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_tail_0 = sweep path=[[15,62,103],[17,70,115],[19,75,126]] radius=4.5 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_tail_1 = sweep path=[[40,102,75],[42,110,87],[44,115,98]] radius=4 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_tail_2 = sweep path=[[75,137,57],[77,145,69],[79,150,80]] radius=3.4 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_tail_3 = sweep path=[[108,148,72],[110,156,84],[112,161,95]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_tail_4 = sweep path=[[128,140,100],[130,148,112],[132,153,123]] radius=2.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
 body_core = union [body_core, spine_neck_0, spine_neck_1, spine_neck_2, spine_neck_3, spine_tail_0, spine_tail_1, spine_tail_2, spine_tail_3, spine_tail_4]
-tail_fin = leaf length=54 width=34 thickness=3.2 edge=0.65 kind=заостренный curl=0.14 plane=фронт at=[153,128,115] color=#87928f rough=0.75
-rotate [tail_fin] angle=-62 axis=y pivot=[128,128,132]
-body_core = union [body_core, tail_fin]
+tail_fin = membrane root=[0,12] outline=[[-5,0],[-16,14],[-12,28],[-5,24],[0,48],[5,24],[12,28],[16,14],[5,0]] camber=2 thick=2.2 rings=8 color=#87928f rough=0.75
+rotate [tail_fin] angle=90 axis=x
+rotate [tail_fin] angle=-20 axis=z
+translate [tail_fin] offset=[118,118,132]
+tail_spear = sweep path=[[118,118,136],[113,114,155],[107,110,178]] radius=3.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+body_core = union [body_core, tail_fin, tail_spear]
 
-# Грудные пластины: широкие, низкие, со стреловидным центральным ритмом.
-breast_0 = sweep path=[[-30.91342,-25.25256,208],[-16.07498,-33.25256,205],[0,-36.25256,201],[16.07498,-33.25256,205],[30.91342,-25.25256,208]] width=5.5 height=10.5 sides=20 smooth=4 scale_curve=[0.18,0.9,1,0.9,0.18] round_caps=0.05 color=#87928f rough=0.72
-breast_1 = sweep path=[[-32.53553,-27.73486,195],[-16.91848,-35.73486,192],[0,-38.73486,188],[16.91848,-35.73486,192],[32.53553,-27.73486,195]] width=5.5 height=10.5 sides=20 smooth=4 scale_curve=[0.18,0.9,1,0.9,0.18] round_caps=0.05 color=#87928f rough=0.72
-breast_2 = sweep path=[[-33.6194,-28.1089,182],[-17.48209,-36.1089,179],[0,-39.1089,175],[17.48209,-36.1089,179],[33.6194,-28.1089,182]] width=5.5 height=10.5 sides=20 smooth=4 scale_curve=[0.18,0.9,1,0.9,0.18] round_caps=0.05 color=#87928f rough=0.72
-breast_3 = sweep path=[[-34,-26.49162,169],[-17.68,-34.49162,166],[0,-37.49162,162],[17.68,-34.49162,166],[34,-26.49162,169]] width=5.5 height=10.5 sides=20 smooth=4 scale_curve=[0.18,0.9,1,0.9,0.18] round_caps=0.05 color=#87928f rough=0.72
-breast_4 = sweep path=[[-33.6194,-22.29348,156],[-17.48209,-30.29348,153],[0,-33.29348,149],[17.48209,-30.29348,153],[33.6194,-22.29348,156]] width=5.5 height=10.5 sides=20 smooth=4 scale_curve=[0.18,0.9,1,0.9,0.18] round_caps=0.05 color=#87928f rough=0.72
-breast_5 = sweep path=[[-32.53553,-13.63737,143],[-16.91848,-21.63737,140],[0,-24.63737,136],[16.91848,-21.63737,140],[32.53553,-13.63737,143]] width=5.5 height=10.5 sides=20 smooth=4 scale_curve=[0.18,0.9,1,0.9,0.18] round_caps=0.05 color=#87928f rough=0.72
-breast_6 = sweep path=[[-30.91342,-11.4215,130],[-16.07498,-19.4215,127],[0,-22.4215,123],[16.07498,-19.4215,127],[30.91342,-11.4215,130]] width=5.5 height=10.5 sides=20 smooth=4 scale_curve=[0.18,0.9,1,0.9,0.18] round_caps=0.05 color=#87928f rough=0.72
+# Грудь v2: крупные выпуклые chevron-щитки, не трубчатые складки.
+breast_0 = membrane root=[0,0] outline=[[-31.91342,4],[-17.55238,5],[0,1.5],[17.55238,5],[31.91342,4],[20.74372,-4],[0,-8],[-20.74372,-4]] camber=3.2 thick=1.8 rings=6 color=#87928f rough=0.75
+rotate [breast_0] angle=90 axis=x
+translate [breast_0] offset=[0,-30.311,208]
+breast_1 = membrane root=[0,0] outline=[[-33.53553,4],[-18.44454,5],[0,1.5],[18.44454,5],[33.53553,4],[21.7981,-4],[0,-8],[-21.7981,-4]] camber=3.2 thick=1.8 rings=6 color=#87928f rough=0.75
+rotate [breast_1] angle=90 axis=x
+translate [breast_1] offset=[0,-32.000,194]
+breast_2 = membrane root=[0,0] outline=[[-34.6194,4],[-19.04067,5],[0,1.5],[19.04067,5],[34.6194,4],[22.50261,-4],[0,-8],[-22.50261,-4]] camber=3.2 thick=1.8 rings=6 color=#87928f rough=0.75
+rotate [breast_2] angle=90 axis=x
+translate [breast_2] offset=[0,-30.311,180]
+breast_3 = membrane root=[0,0] outline=[[-35,4],[-19.25,5],[0,1.5],[19.25,5],[35,4],[22.75,-4],[0,-8],[-22.75,-4]] camber=3.2 thick=1.8 rings=6 color=#87928f rough=0.75
+rotate [breast_3] angle=90 axis=x
+translate [breast_3] offset=[0,-23.727,166]
+breast_4 = membrane root=[0,0] outline=[[-34.6194,4],[-19.04067,5],[0,1.5],[19.04067,5],[34.6194,4],[22.50261,-4],[0,-8],[-22.50261,-4]] camber=3.2 thick=1.8 rings=6 color=#87928f rough=0.75
+rotate [breast_4] angle=90 axis=x
+translate [breast_4] offset=[0,-17.866,152]
+breast_5 = membrane root=[0,0] outline=[[-33.53553,4],[-18.44454,5],[0,1.5],[18.44454,5],[33.53553,4],[21.7981,-4],[0,-8],[-21.7981,-4]] camber=3.2 thick=1.8 rings=6 color=#87928f rough=0.75
+rotate [breast_5] angle=90 axis=x
+translate [breast_5] offset=[0,-15.995,138]
+breast_6 = membrane root=[0,0] outline=[[-31.91342,4],[-17.55238,5],[0,1.5],[17.55238,5],[31.91342,4],[20.74372,-4],[0,-8],[-20.74372,-4]] camber=3.2 thick=1.8 rings=6 color=#87928f rough=0.75
+rotate [breast_6] angle=90 axis=x
+translate [breast_6] offset=[0,-11.412,124]
 body_core = union [body_core, breast_0, breast_1, breast_2, breast_3, breast_4, breast_5, breast_6]
 
-# Чешуя: ray-cast по реальному торсу, отдельные плоские листы.
-# Между пластинами оставлены микрозазоры: нет сцепленных микрополостей.
-scale_bed = from_sdf expression="smin(smin(smin(sd_ellipsoid(x-(0),y-(15),z-(105),42,33,46),sd_ellipsoid(x-(0),y-(5),z-(151),38,31,58),11),sd_ellipsoid(x-(0),y-(0),z-(194),48,35,48),11),sd_ellipsoid(x-(0),y-(-18),z-(183),34,22,44),11)" bounds=[-57,-46,52,57,55,247] resolution=1.55 color=#87928f rough=0.72
-scale_00_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_00] angle=133.22175 axis=[0.91321,0.36827,0.17442]
-translate [scale_00_00] offset=[18.33752,4.55351,66.81551]
-scale_00_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_01] angle=138.7211 axis=[0.8299,0.50804,0.23058]
-translate [scale_00_01] offset=[21.61113,9.64136,66.82347]
-scale_00_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_02] angle=147.99816 axis=[0.64499,0.69828,0.31046]
-translate [scale_00_02] offset=[22.63909,15.75903,66.82713]
-scale_00_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_03] angle=155.18891 axis=[0.47101,0.79927,0.37327]
-translate [scale_00_03] offset=[20.95651,21.79523,66.8182]
-scale_00_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_04] angle=164.46974 axis=[0.30109,0.86866,0.39342]
-translate [scale_00_04] offset=[16.98152,26.72514,66.82386]
-scale_00_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_05] angle=168.51386 axis=[0.20445,0.87836,0.43207]
-translate [scale_00_05] offset=[11.56638,30.26187,66.80796]
-scale_00_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_06] angle=175.94077 axis=[0.06903,0.88749,0.45563]
-translate [scale_00_06] offset=[5.38859,32.21827,66.79889]
-scale_00_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_07] angle=181.40834 axis=[-0.02378,0.88813,0.45898]
-translate [scale_00_07] offset=[-1.10318,32.68105,66.79744]
-scale_00_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_08] angle=186.99214 axis=[-0.13002,0.89738,0.42167]
-translate [scale_00_08] offset=[-7.53088,31.71282,66.81703]
-scale_00_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_09] angle=194.80353 axis=[-0.2635,0.86522,0.42657]
-translate [scale_00_09] offset=[-13.51016,29.24098,66.80749]
-scale_00_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_10] angle=200.53469 axis=[-0.38068,0.835,0.39732]
-translate [scale_00_10] offset=[-18.5437,25.2378,66.8146]
-scale_00_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_11] angle=205.88296 axis=[-0.51,0.78424,0.35336]
-translate [scale_00_11] offset=[-21.81761,19.80765,66.82478]
-scale_00_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_12] angle=144.35259 axis=[0.7226,-0.63157,-0.28102]
-translate [scale_00_12] offset=[-22.58215,13.63216,66.82699]
-scale_00_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_13] angle=138.19724 axis=[0.82784,-0.50938,-0.23498]
-translate [scale_00_13] offset=[-20.66336,7.71146,66.8205]
-scale_00_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_14] angle=135.11076 axis=[0.92886,-0.33848,-0.15053]
-translate [scale_00_14] offset=[-16.96851,3.19332,66.82708]
-scale_00_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_15] angle=130.26763 axis=[0.95705,-0.26093,-0.12636]
-translate [scale_00_15] offset=[-12.76921,0.42041,66.81113]
-scale_00_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_16] angle=131.03296 axis=[0.97803,-0.18898,-0.08799]
-translate [scale_00_16] offset=[-9.41636,-1.13908,66.81876]
-scale_00_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_17] angle=126.86695 axis=[0.98898,-0.13215,-0.06681]
-translate [scale_00_17] offset=[-6.71013,-1.92002,66.8022]
-scale_00_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_18] angle=125.15325 axis=[0.99817,-0.05369,-0.02791]
-translate [scale_00_18] offset=[-4.59259,-2.33435,66.79614]
-scale_00_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_19] angle=125.15325 axis=[0.99817,-0.05369,-0.02791]
-translate [scale_00_19] offset=[-2.78535,-2.52646,66.79614]
-scale_00_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_20] angle=125.15325 axis=[0.99817,-0.05369,-0.02791]
-translate [scale_00_20] offset=[-1.22072,-2.69552,66.79614]
-scale_00_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_21] angle=125.28235 axis=[1,0,0]
-translate [scale_00_21] offset=[0.25515,-2.74688,66.79716]
-scale_00_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_22] angle=125.19542 axis=[0.99841,0.04997,0.02595]
-translate [scale_00_22] offset=[1.74037,-2.63913,66.79639]
-scale_00_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_23] angle=125.19542 axis=[0.99841,0.04997,0.02595]
-translate [scale_00_23] offset=[3.36241,-2.46405,66.79639]
-scale_00_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_24] angle=125.19542 axis=[0.99841,0.04997,0.02595]
-translate [scale_00_24] offset=[5.31691,-2.2628,66.79639]
-scale_00_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_25] angle=126.7741 axis=[0.98776,0.1391,0.07056]
-translate [scale_00_25] offset=[7.56165,-1.70313,66.8015]
-scale_00_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_26] angle=127.11824 axis=[0.97771,0.18713,0.09518]
-translate [scale_00_26] offset=[10.45836,-0.68132,66.80092]
-scale_00_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_00_27] angle=128.862 axis=[0.95906,0.2534,0.12642]
-translate [scale_00_27] offset=[14.2112,1.19289,66.80504]
-scale_01_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_00] angle=125.78951 axis=[0.7145,0.56876,0.40744]
-translate [scale_01_00] offset=[34.28578,8.98873,80.7079]
-scale_01_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_01] angle=135.01555 axis=[0.58285,0.66244,0.47059]
-translate [scale_01_01] offset=[35.01804,17.53064,80.71061]
-scale_01_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_02] angle=145.94992 axis=[0.43766,0.73673,0.51545]
-translate [scale_01_02] offset=[32.36069,25.80672,80.7155]
-scale_01_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_03] angle=154.89687 axis=[0.29601,0.76336,0.57415]
-translate [scale_01_03] offset=[26.90639,32.7048,80.6917]
-scale_01_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_04] angle=164.24942 axis=[0.17785,0.77677,0.60415]
-translate [scale_01_04] offset=[19.69458,37.78575,80.6802]
-scale_01_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_05] angle=170.08555 axis=[0.10621,0.77017,0.62894]
-translate [scale_01_05] offset=[11.48744,40.97702,80.66296]
-scale_01_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_06] angle=177.5794 axis=[0.02576,0.77301,0.63387]
-translate [scale_01_06] offset=[2.87566,42.39212,80.66147]
-scale_01_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_07] angle=185.04607 axis=[-0.05597,0.78451,0.61758]
-translate [scale_01_07] offset=[-5.83573,42.16996,80.67598]
-scale_01_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_08] angle=191.61056 axis=[-0.12978,0.78055,0.61148]
-translate [scale_01_08] offset=[-14.35221,40.11105,80.67768]
-scale_01_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_09] angle=200.45613 axis=[-0.22326,0.75813,0.6127]
-translate [scale_01_09] offset=[-22.27801,36.27326,80.66668]
-scale_01_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_10] angle=209.65052 axis=[-0.34187,0.74307,0.5753]
-translate [scale_01_10] offset=[-28.97465,30.53014,80.68178]
-scale_01_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_11] angle=220.78399 axis=[-0.49386,0.69473,0.52294]
-translate [scale_01_11] offset=[-33.58544,23.10017,80.69144]
-scale_01_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_12] angle=129.39144 axis=[0.63177,-0.62061,-0.46444]
-translate [scale_01_12] offset=[-35.11539,14.58436,80.69341]
-scale_01_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_13] angle=120.52948 axis=[0.7587,-0.52044,-0.39182]
-translate [scale_01_13] offset=[-33.30817,6.28952,80.69137]
-scale_01_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_14] angle=112.48642 axis=[0.86873,-0.39256,-0.30201]
-translate [scale_01_14] offset=[-29.00072,-0.53115,80.68397]
-scale_01_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_15] angle=108.52707 axis=[0.93365,-0.2837,-0.21864]
-translate [scale_01_15] offset=[-23.57371,-5.38681,80.68337]
-scale_01_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_16] angle=104.40505 axis=[0.96165,-0.21349,-0.17218]
-translate [scale_01_16] offset=[-18.20137,-8.53741,80.66741]
-scale_01_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_17] angle=103.01253 axis=[0.97526,-0.17134,-0.13971]
-translate [scale_01_17] offset=[-13.29177,-10.46998,80.66348]
-scale_01_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_18] angle=104.41974 axis=[0.98722,-0.12531,-0.09842]
-translate [scale_01_18] offset=[-8.92414,-11.62413,80.67677]
-scale_01_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_19] angle=103.25196 axis=[0.99905,-0.03411,-0.02703]
-translate [scale_01_19] offset=[-4.97798,-12.2334,80.67358]
-scale_01_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_20] angle=103.12804 axis=[1,-0,-0]
-translate [scale_01_20] offset=[-1.22558,-12.49112,80.67313]
-scale_01_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_21] angle=103.25046 axis=[0.99911,0.03308,0.02622]
-translate [scale_01_21] offset=[2.46669,-12.41271,80.67359]
-scale_01_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_22] angle=101.61032 axis=[0.99589,0.07004,0.05735]
-translate [scale_01_22] offset=[6.26805,-12.03584,80.662]
-scale_01_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_23] angle=104.41917 axis=[0.98707,0.12607,0.09903]
-translate [scale_01_23] offset=[10.37144,-11.30455,80.67671]
-scale_01_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_24] angle=103.05166 axis=[0.97918,0.15761,0.12792]
-translate [scale_01_24] offset=[14.90929,-9.90516,80.66517]
-scale_01_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_25] angle=105.14177 axis=[0.94474,0.25472,0.20636]
-translate [scale_01_25] offset=[19.97909,-7.63802,80.66582]
-scale_01_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_26] angle=108.49881 axis=[0.91465,0.31766,0.25003]
-translate [scale_01_26] offset=[25.48273,-3.95827,80.67603]
-scale_01_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_01_27] angle=117.74244 axis=[0.8228,0.45816,0.33628]
-translate [scale_01_27] offset=[30.67676,1.55258,80.69991]
-scale_02_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_00] angle=106.40308 axis=[0.71403,0.48341,0.50644]
-translate [scale_02_00] offset=[38.49785,5.29684,94.56815]
-scale_02_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_01] angle=120.02865 axis=[0.58661,0.57737,0.56793]
-translate [scale_02_01] offset=[40.44335,14.64707,94.59288]
-scale_02_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_02] angle=132.02644 axis=[0.43818,0.63072,0.64046]
-translate [scale_02_02] offset=[38.7022,24.21648,94.58043]
-scale_02_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_03] angle=146.18826 axis=[0.31052,0.67932,0.66491]
-translate [scale_02_03] offset=[33.63253,32.65287,94.59481]
-scale_02_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_04] angle=158.05065 axis=[0.19093,0.68868,0.69947]
-translate [scale_02_04] offset=[26.19106,39.14795,94.58035]
-scale_02_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_05] angle=164.28524 axis=[0.13532,0.69369,0.70744]
-translate [scale_02_05] offset=[17.39541,43.5942,94.57875]
-scale_02_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_06] angle=172.51113 axis=[0.06364,0.69572,0.71548]
-translate [scale_02_06] offset=[7.99072,46.06439,94.57545]
-scale_02_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_07] angle=182.46494 axis=[-0.02082,0.69521,0.71851]
-translate [scale_02_07] offset=[-1.63236,46.66097,94.5735]
-scale_02_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_08] angle=187.40786 axis=[-0.06295,0.69579,0.71548]
-translate [scale_02_08] offset=[-11.26703,45.46635,94.57549]
-scale_02_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_09] angle=198.75488 axis=[-0.1629,0.69288,0.70241]
-translate [scale_02_09] offset=[-20.49159,42.34778,94.58109]
-scale_02_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_10] angle=205.97926 axis=[-0.22049,0.67396,0.70509]
-translate [scale_02_10] offset=[-28.91273,37.16566,94.5687]
-scale_02_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_11] angle=219.0319 axis=[-0.34244,0.65282,0.67569]
-translate [scale_02_11] offset=[-35.65051,29.95193,94.57293]
-scale_02_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_12] angle=233.45692 axis=[-0.47932,0.60509,0.6357]
-translate [scale_02_12] offset=[-39.7315,21.04324,94.56705]
-scale_02_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_13] angle=112.99135 axis=[0.65046,-0.53234,-0.54178]
-translate [scale_02_13] offset=[-40.16464,11.38556,94.57955]
-scale_02_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_14] angle=106.89777 axis=[0.751,-0.46991,-0.46387]
-translate [scale_02_14] offset=[-37.12587,2.40718,94.5915]
-scale_02_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_15] angle=98.31414 axis=[0.8624,-0.35752,-0.35838]
-translate [scale_02_15] offset=[-31.70173,-4.65074,94.5855]
-scale_02_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_16] angle=95.27329 axis=[0.92231,-0.27481,-0.27172]
-translate [scale_02_16] offset=[-25.51427,-9.62864,94.59085]
-scale_02_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_17] angle=91.63771 axis=[0.95635,-0.20496,-0.20827]
-translate [scale_02_17] offset=[-19.36812,-12.8065,94.58016]
-scale_02_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_18] angle=90.08248 axis=[0.97916,-0.14219,-0.14501]
-translate [scale_02_18] offset=[-13.78568,-14.81632,94.57875]
-scale_02_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_19] angle=91.06365 axis=[0.99163,-0.09175,-0.09082]
-translate [scale_02_19] offset=[-8.66118,-16.00604,94.59041]
-scale_02_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_20] angle=91.69284 axis=[0.99642,-0.06053,-0.05897]
-translate [scale_02_20] offset=[-3.86251,-16.69462,94.59657]
-scale_02_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_21] angle=90.73414 axis=[1,-0,-0]
-translate [scale_02_21] offset=[0.79613,-16.80226,94.59145]
-scale_02_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_22] angle=91.69124 axis=[0.99632,0.06142,0.05985]
-translate [scale_02_22] offset=[5.47776,-16.50707,94.59652]
-scale_02_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_23] angle=91.06236 axis=[0.99157,0.09209,0.09117]
-translate [scale_02_23] offset=[10.38276,-15.69474,94.59038]
-scale_02_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_24] angle=90.83863 axis=[0.96989,0.17083,0.17357]
-translate [scale_02_24] offset=[15.63416,-14.25952,94.5802]
-scale_02_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_25] angle=91.7265 axis=[0.95645,0.20491,0.20788]
-translate [scale_02_25] offset=[21.43407,-11.88787,94.5808]
-scale_02_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_26] angle=93.80538 axis=[0.91774,0.27812,0.28356]
-translate [scale_02_26] offset=[27.64438,-8.1378,94.57885]
-scale_02_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_02_27] angle=99.69408 axis=[0.82252,0.39702,0.40722]
-translate [scale_02_27] offset=[33.7092,-2.49847,94.57649]
-scale_03_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_00] angle=104.37089 axis=[0.5946,0.48899,0.63824]
-translate [scale_03_00] offset=[40.93127,10.00414,108.48175]
-scale_03_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_01] angle=117.19332 axis=[0.44821,0.52904,0.72057]
-translate [scale_03_01] offset=[40.98986,19.87873,108.46544]
-scale_03_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_02] angle=133.26233 axis=[0.32085,0.56464,0.76042]
-translate [scale_03_02] offset=[37.25769,29.13945,108.46975]
-scale_03_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_03] angle=147.72348 axis=[0.21666,0.58512,0.78147]
-translate [scale_03_03] offset=[30.69029,36.77056,108.47293]
-scale_03_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_04] angle=159.97127 axis=[0.13319,0.59681,0.79125]
-translate [scale_03_04] offset=[22.31841,42.32359,108.47574]
-scale_03_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_05] angle=167.78814 axis=[0.08311,0.6114,0.78694]
-translate [scale_03_05] offset=[12.97595,45.80751,108.48715]
-scale_03_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_06] angle=178.67734 axis=[0.00873,0.603,0.79769]
-translate [scale_03_06] offset=[3.26092,47.37871,108.47659]
-scale_03_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_07] angle=184.1354 axis=[-0.02655,0.59216,0.80538]
-translate [scale_03_07] offset=[-6.60002,47.07267,108.46598]
-scale_03_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_08] angle=195.02106 axis=[-0.10231,0.60986,0.78588]
-translate [scale_03_08] offset=[-16.20808,44.82761,108.4867]
-scale_03_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_09] angle=206.28368 axis=[-0.17499,0.59049,0.78784]
-translate [scale_03_09] offset=[-25.3096,40.71349,108.47331]
-scale_03_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_10] angle=215.07503 axis=[-0.23682,0.58263,0.77747]
-translate [scale_03_10] offset=[-33.21418,34.41105,108.47326]
-scale_03_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_11] angle=232.2224 axis=[-0.36438,0.5556,0.74736]
-translate [scale_03_11] offset=[-38.89455,26.13581,108.47019]
-scale_03_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_12] angle=112.5713 axis=[0.49506,-0.5177,-0.69779]
-translate [scale_03_12] offset=[-41.38005,16.50179,108.46942]
-scale_03_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_13] angle=99.17159 axis=[0.63783,-0.46174,-0.61642]
-translate [scale_03_13] offset=[-40.05236,6.79098,108.47309]
-scale_03_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_14] angle=91.78091 axis=[0.75571,-0.40265,-0.51651]
-translate [scale_03_14] offset=[-35.74916,-1.57605,108.48846]
-scale_03_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_15] angle=90.09671 axis=[0.88073,-0.31332,-0.35515]
-translate [scale_03_15] offset=[-30.15732,-7.98498,108.53702]
-scale_03_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_16] angle=89.39419 axis=[0.90796,-0.28006,-0.31173]
-translate [scale_03_16] offset=[-24.08356,-12.60367,108.54421]
-scale_03_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_17] angle=89.14275 axis=[0.94458,-0.22364,-0.24033]
-translate [scale_03_17] offset=[-18.17567,-15.7888,108.55811]
-scale_03_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_18] angle=88.57093 axis=[0.97996,-0.13763,-0.14399]
-translate [scale_03_18] offset=[-12.50115,-17.83241,108.56869]
-scale_03_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_19] angle=88.10337 axis=[0.99214,-0.08663,-0.09026]
-translate [scale_03_19] offset=[-7.0393,-19.04849,108.57034]
-scale_03_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_20] angle=88.8901 axis=[0.99972,-0.01652,-0.01685]
-translate [scale_03_20] offset=[-1.74266,-19.60544,108.57874]
-scale_03_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_21] angle=88.58187 axis=[0.99888,0.03309,0.03396]
-translate [scale_03_21] offset=[3.53604,-19.45403,108.57629]
-scale_03_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_22] angle=88.10249 axis=[0.99208,0.08696,0.09061]
-translate [scale_03_22] offset=[8.89069,-18.72251,108.57031]
-scale_03_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_23] angle=88.96764 axis=[0.97218,0.16174,0.1694]
-translate [scale_03_23] offset=[14.34202,-17.14889,108.56828]
-scale_03_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_24] angle=88.68521 axis=[0.94411,0.22352,0.24225]
-translate [scale_03_24] offset=[20.14316,-14.80538,108.55476]
-scale_03_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_25] angle=89.73292 axis=[0.89383,0.29805,0.335]
-translate [scale_03_25] offset=[26.11958,-11.20637,108.54035]
-scale_03_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_26] angle=91.6888 axis=[0.8192,0.36983,0.43834]
-translate [scale_03_26] offset=[32.05733,-6.02307,108.51939]
-scale_03_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_03_27] angle=93.70782 axis=[0.73305,0.41903,0.53577]
-translate [scale_03_27] offset=[37.37023,1.07183,108.48972]
-scale_04_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_00] angle=97.77702 axis=[0.62935,0.45455,0.63032]
-translate [scale_04_00] offset=[37.88204,5.25211,122.45865]
-scale_04_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_01] angle=109.22083 axis=[0.43857,0.4721,0.76471]
-translate [scale_04_01] offset=[38.87964,14.19115,122.40231]
-scale_04_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_02] angle=122.1761 axis=[0.32538,0.47998,0.81471]
-translate [scale_04_02] offset=[36.98612,23.29658,122.38638]
-scale_04_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_03] angle=133.51391 axis=[0.24508,0.4805,0.84205]
-translate [scale_04_03] offset=[32.18666,31.44965,122.37583]
-scale_04_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_04] angle=152.04815 axis=[0.1461,0.50082,0.85313]
-translate [scale_04_04] offset=[25.14646,37.74921,122.38519]
-scale_04_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_05] angle=160.11666 axis=[0.10196,0.50019,0.85989]
-translate [scale_04_05] offset=[16.7267,42.07519,122.38214]
-scale_04_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_06] angle=170.79431 axis=[0.04841,0.5147,0.856]
-translate [scale_04_06] offset=[7.68549,44.45539,122.39326]
-scale_04_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_07] angle=181.60236 axis=[-0.00871,0.52887,0.84866]
-translate [scale_04_07] offset=[-1.58234,45.07333,122.40556]
-scale_04_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_08] angle=189.41429 axis=[-0.0482,0.50459,0.86201]
-translate [scale_04_08] offset=[-10.83459,43.87557,122.38423]
-scale_04_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_09] angle=201.13556 axis=[-0.11196,0.51134,0.85205]
-translate [scale_04_09] offset=[-19.67584,40.7823,122.39261]
-scale_04_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_10] angle=212.53937 axis=[-0.17558,0.5075,0.84357]
-translate [scale_04_10] offset=[-27.7294,35.81376,122.39344]
-scale_04_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_11] angle=231.20998 axis=[-0.27241,0.47548,0.83649]
-translate [scale_04_11] offset=[-34.12264,28.86038,122.37457]
-scale_04_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_12] angle=119.51878 axis=[0.33932,-0.47321,-0.81298]
-translate [scale_04_12] offset=[-38.00387,20.24893,122.38236]
-scale_04_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_13] angle=103.90162 axis=[0.51367,-0.47077,-0.7173]
-translate [scale_04_13] offset=[-38.83275,11.09211,122.4239]
-scale_04_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_14] angle=95.4712 axis=[0.67765,-0.43959,-0.58953]
-translate [scale_04_14] offset=[-36.93569,2.40587,122.47134]
-scale_04_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_15] angle=94.77692 axis=[0.76722,-0.4108,-0.49256]
-translate [scale_04_15] offset=[-33.19662,-5.12247,122.51484]
-scale_04_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_16] angle=90.09671 axis=[0.88073,-0.31332,-0.35515]
-translate [scale_04_16] offset=[-28.22443,-11.1014,122.53702]
-scale_04_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_17] angle=90.35092 axis=[0.92753,-0.255,-0.27324]
-translate [scale_04_17] offset=[-22.58556,-15.63304,122.55925]
-scale_04_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_18] angle=89.14275 axis=[0.94458,-0.22364,-0.24033]
-translate [scale_04_18] offset=[-16.62793,-18.78536,122.55811]
-scale_04_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_19] angle=88.57093 axis=[0.97996,-0.13763,-0.14399]
-translate [scale_04_19] offset=[-10.69838,-20.77445,122.56869]
-scale_04_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_20] angle=88.28229 axis=[0.9971,-0.0529,-0.05467]
-translate [scale_04_20] offset=[-4.85112,-21.90681,122.57353]
-scale_04_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_21] angle=88.02404 axis=[0.99968,0.01757,0.0182]
-translate [scale_04_21] offset=[0.98581,-22.13132,122.57278]
-scale_04_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_22] angle=88.10249 axis=[0.99208,0.08696,0.09061]
-translate [scale_04_22] offset=[6.82292,-21.58751,122.57031]
-scale_04_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_23] angle=88.96764 axis=[0.97218,0.16174,0.1694]
-translate [scale_04_23] offset=[12.68305,-20.15511,122.56828]
-scale_04_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_24] angle=90.33753 axis=[0.93902,0.23613,0.24998]
-translate [scale_04_24] offset=[18.63379,-17.82183,122.56402]
-scale_04_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_25] angle=89.78827 axis=[0.91303,0.27447,0.30172]
-translate [scale_04_25] offset=[24.51678,-14.22892,122.54914]
-scale_04_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_26] angle=92.65164 axis=[0.83403,0.36297,0.41551]
-translate [scale_04_26] offset=[30.01044,-9.25502,122.53311]
-scale_04_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_04_27] angle=94.75342 axis=[0.71691,0.42844,0.54999]
-translate [scale_04_27] offset=[34.609,-2.73163,122.48818]
-scale_05_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_00] angle=117.10881 axis=[0.48411,0.54312,0.68605]
-translate [scale_05_00] offset=[36.81123,9.25787,136.49445]
-scale_05_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_01] angle=120.6493 axis=[0.37219,0.50757,0.77708]
-translate [scale_05_01] offset=[35.06982,17.49028,136.42218]
-scale_05_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_02] angle=133.64607 axis=[0.25776,0.49836,0.82777]
-translate [scale_05_02] offset=[31.18549,24.95509,136.3937]
-scale_05_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_03] angle=148.54225 axis=[0.15425,0.47462,0.86657]
-translate [scale_05_03] offset=[25.46904,31.09193,136.36266]
-scale_05_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_04] angle=157.16091 axis=[0.11074,0.47777,0.87148]
-translate [scale_05_04] offset=[18.45817,35.64224,136.36297]
-scale_05_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_05] angle=165.44461 axis=[0.06926,0.47559,0.87693]
-translate [scale_05_05] offset=[10.75986,38.63067,136.35957]
-scale_05_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_06] angle=176.39912 axis=[0.01722,0.4803,0.87693]
-translate [scale_05_06] offset=[2.68079,39.79013,136.36267]
-scale_05_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_08] angle=196.57972 axis=[-0.07983,0.47899,0.87418]
-translate [scale_05_08] offset=[-13.43133,37.76884,136.36279]
-scale_05_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_09] angle=205.46667 axis=[-0.12905,0.49178,0.8611]
-translate [scale_05_09] offset=[-20.97812,34.32911,136.3761]
-scale_05_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_10] angle=219.65944 axis=[-0.21404,0.49859,0.84]
-translate [scale_05_10] offset=[-27.54472,29.17984,136.38889]
-scale_05_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_11] angle=230.40586 axis=[-0.29126,0.50344,0.81346]
-translate [scale_05_11] offset=[-32.71876,22.52497,136.40316]
-scale_05_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_12] angle=239.4191 axis=[-0.43955,0.54814,0.71157]
-translate [scale_05_12] offset=[-35.92793,14.75298,136.48384]
-scale_05_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_13] angle=113.21539 axis=[0.51681,-0.52821,-0.67372]
-translate [scale_05_13] offset=[-36.94452,6.42869,136.49067]
-scale_05_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_14] angle=105.35091 axis=[0.67671,-0.48872,-0.55065]
-translate [scale_05_14] offset=[-35.6645,-1.66794,136.53939]
-scale_05_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_15] angle=97.78227 axis=[0.79909,-0.40602,-0.44339]
-translate [scale_05_15] offset=[-32.06707,-8.83819,136.55177]
-scale_05_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_16] angle=93.75497 axis=[0.88825,-0.31611,-0.33329]
-translate [scale_05_16] offset=[-27.11693,-14.71499,136.56564]
-scale_05_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_17] angle=91.99312 axis=[0.92957,-0.25565,-0.26562]
-translate [scale_05_17] offset=[-21.23873,-19.13618,136.57142]
-scale_05_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_18] angle=98.7532 axis=[0.96556,-0.19452,-0.17281]
-translate [scale_05_18] offset=[-15.12748,-22.48521,136.63194]
-scale_05_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_19] angle=102.41547 axis=[0.98499,-0.13374,-0.10914]
-translate [scale_05_19] offset=[-8.76465,-24.78744,136.66321]
-scale_05_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_20] angle=103.78535 axis=[0.99958,-0.02286,-0.01794]
-translate [scale_05_20] offset=[-2.2107,-25.99407,136.67713]
-scale_05_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_21] angle=104.63434 axis=[0.99309,0.09262,0.07204]
-translate [scale_05_21] offset=[4.43647,-25.70376,136.68019]
-scale_05_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_22] angle=102.41825 axis=[0.98512,0.13316,0.10865]
-translate [scale_05_22] offset=[10.9822,-24.14783,136.66328]
-scale_05_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_23] angle=95.85717 axis=[0.94975,0.22688,0.21563]
-translate [scale_05_23] offset=[17.19997,-21.43132,136.60621]
-scale_05_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_24] angle=91.30785 axis=[0.92815,0.25629,0.2699]
-translate [scale_05_24] offset=[23.30239,-17.77085,136.56611]
-scale_05_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_25] angle=96.47172 axis=[0.82902,0.38047,0.40983]
-translate [scale_05_25] offset=[28.90891,-12.90958,136.55719]
-scale_05_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_26] angle=102.94491 axis=[0.72723,0.4629,0.50682]
-translate [scale_05_26] offset=[33.53296,-6.59172,136.55073]
-scale_05_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_05_27] angle=107.54652 axis=[0.63233,0.50619,0.58646]
-translate [scale_05_27] offset=[36.3498,1.02872,136.52837]
-scale_06_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_00] angle=118.08229 axis=[0.51335,0.55797,0.65202]
-translate [scale_06_00] offset=[37.58434,5.08337,150.52498]
-scale_06_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_01] angle=126.45951 axis=[0.42537,0.58339,0.69189]
-translate [scale_06_01] offset=[36.11913,13.35403,150.51915]
-scale_06_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_02] angle=137.80145 axis=[0.31228,0.59764,0.73844]
-translate [scale_06_02] offset=[32.25834,20.69228,150.50306]
-scale_06_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_03] angle=150.93057 axis=[0.20243,0.60268,0.77188]
-translate [scale_06_03] offset=[26.71263,26.57909,150.48907]
-scale_06_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_04] angle=159.17991 axis=[0.13301,0.58124,0.80279]
-translate [scale_06_04] offset=[20.19415,30.94853,150.46015]
-scale_06_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_05] angle=162.52484 axis=[0.11883,0.60733,0.78551]
-translate [scale_06_05] offset=[13.18274,33.91961,150.48527]
-scale_06_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_06] angle=171.70247 axis=[0.04981,0.5654,0.82331]
-translate [scale_06_06] offset=[6.01464,35.56334,150.44041]
-scale_06_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_07] angle=181.69104 axis=[-0.00971,0.54946,0.83546]
-translate [scale_06_07] offset=[-1.23212,35.92098,150.42465]
-scale_06_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_08] angle=188.39668 axis=[-0.05042,0.56548,0.82322]
-translate [scale_06_08] offset=[-8.49016,35.12938,150.44051]
-scale_06_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_09] angle=197.55278 axis=[-0.1049,0.5589,0.82258]
-translate [scale_06_09] offset=[-15.60693,33.04585,150.43649]
-scale_06_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_10] angle=205.89666 axis=[-0.17737,0.60114,0.77921]
-translate [scale_06_10] offset=[-22.49641,29.68484,150.48442]
-scale_06_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_11] angle=217.48728 axis=[-0.26449,0.59286,0.76063]
-translate [scale_06_11] offset=[-28.70835,24.77367,150.4884]
-scale_06_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_12] angle=226.50385 axis=[-0.35392,0.59463,0.72191]
-translate [scale_06_12] offset=[-33.7735,18.33446,150.50995]
-scale_06_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_13] angle=237.51561 axis=[-0.46143,0.57094,0.67905]
-translate [scale_06_13] offset=[-36.9377,10.61709,150.51803]
-scale_06_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_14] angle=110.98484 axis=[0.61542,-0.52571,-0.58726]
-translate [scale_06_14] offset=[-37.47441,2.28386,150.54279]
-scale_06_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_15] angle=103.29973 axis=[0.67959,-0.478,-0.55649]
-translate [scale_06_15] offset=[-35.34761,-5.79879,150.52646]
-scale_06_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_16] angle=104.31727 axis=[0.77876,-0.44413,-0.44303]
-translate [scale_06_16] offset=[-31.29499,-12.88201,150.58741]
-scale_06_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_17] angle=111.82687 axis=[0.82542,-0.43656,-0.35791]
-translate [scale_06_17] offset=[-26.98765,-19.64793,150.66154]
-scale_06_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_18] angle=109.75819 axis=[0.90242,-0.33982,-0.26486]
-translate [scale_06_18] offset=[-21.57352,-25.66151,150.67946]
-scale_06_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_19] angle=104.08375 axis=[0.97039,-0.18827,-0.15135]
-translate [scale_06_19] offset=[-14.6902,-30.04721,150.66856]
-scale_06_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_20] angle=103.28755 axis=[0.99723,-0.05827,-0.04624]
-translate [scale_06_20] offset=[-6.83019,-32.44408,150.67316]
-scale_06_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_21] angle=100.7736 axis=[0.99971,0.01851,0.01532]
-translate [scale_06_21] offset=[1.4011,-33.03235,150.65801]
-scale_06_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_22] angle=102.86995 axis=[0.98829,0.11875,0.0958]
-translate [scale_06_22] offset=[9.54045,-31.7994,150.66732]
-scale_06_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_23] angle=105.92996 axis=[0.9527,0.23823,0.18867]
-translate [scale_06_23] offset=[17.18006,-28.78296,150.67386]
-scale_06_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_24] angle=110.37495 axis=[0.88397,0.36747,0.28906]
-translate [scale_06_24] offset=[23.56962,-23.72233,150.67625]
-scale_06_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_25] angle=109.52005 axis=[0.79603,0.45269,0.40175]
-translate [scale_06_25] offset=[28.47394,-17.36111,150.63233]
-scale_06_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_26] angle=104.92673 axis=[0.75199,0.46107,0.4711]
-translate [scale_06_26] offset=[32.68125,-10.53692,150.578]
-scale_06_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_06_27] angle=103.71411 axis=[0.68161,0.47963,0.5526]
-translate [scale_06_27] offset=[36.4063,-3.12935,150.53057]
-scale_07_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_00] angle=128.4196 axis=[0.492,0.62113,0.61003]
-translate [scale_07_00] offset=[38.91868,9.53101,164.59348]
-scale_07_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_01] angle=139.56577 axis=[0.34803,0.64391,0.68136]
-translate [scale_07_01] offset=[35.28775,17.46033,164.56422]
-scale_07_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_02] angle=149.54622 axis=[0.24179,0.6444,0.72545]
-translate [scale_07_02] offset=[29.88797,23.95588,164.53972]
-scale_07_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_03] angle=156.86667 axis=[0.17297,0.63575,0.75227]
-translate [scale_07_03] offset=[23.40943,28.80815,164.52005]
-scale_07_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_04] angle=162.93256 axis=[0.11968,0.61905,0.77618]
-translate [scale_07_04] offset=[16.49218,32.16912,164.49733]
-scale_07_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_05] angle=168.07685 axis=[0.08662,0.63602,0.7668]
-translate [scale_07_05] offset=[9.41085,34.21964,164.51269]
-scale_07_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_06] angle=177.10815 axis=[0.02003,0.62146,0.78319]
-translate [scale_07_06] offset=[2.33992,35.15545,164.49534]
-scale_07_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_07] angle=184.34318 axis=[-0.03013,0.62187,0.78254]
-translate [scale_07_07] offset=[-4.76104,34.95206,164.49592]
-scale_07_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_08] angle=191.957 axis=[-0.08637,0.6339,0.76858]
-translate [scale_07_08] offset=[-11.81523,33.59225,164.51047]
-scale_07_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_09] angle=196.8971 axis=[-0.11907,0.62102,0.7747]
-translate [scale_07_09] offset=[-18.90006,31.18876,164.49932]
-scale_07_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_10] angle=206.09179 axis=[-0.19759,0.63607,0.7459]
-translate [scale_07_10] offset=[-25.69871,27.35665,164.5236]
-scale_07_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_11] angle=212.9422 axis=[-0.26685,0.64571,0.71543]
-translate [scale_07_11] offset=[-31.87382,21.91766,164.54603]
-scale_07_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_12] angle=219.80772 axis=[-0.35165,0.65221,0.67154]
-translate [scale_07_12] offset=[-36.78844,14.86942,164.57498]
-scale_07_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_13] angle=231.97415 axis=[-0.49713,0.61954,0.60748]
-translate [scale_07_13] offset=[-39.59131,6.54793,164.59412]
-scale_07_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_14] angle=119.81845 axis=[0.66206,-0.56395,-0.4936]
-translate [scale_07_14] offset=[-39.59397,-2.32763,164.63754]
-scale_07_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_15] angle=115.73691 axis=[0.72902,-0.51858,-0.44677]
-translate [scale_07_15] offset=[-37.01163,-10.90734,164.64342]
-scale_07_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_16] angle=110.70651 axis=[0.76465,-0.47812,-0.43211]
-translate [scale_07_16] offset=[-33.46188,-19.25076,164.62547]
-scale_07_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_17] angle=103.0143 axis=[0.86163,-0.37297,-0.34423]
-translate [scale_07_17] offset=[-28.38569,-27.01083,164.61748]
-scale_07_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_18] angle=97.36981 axis=[0.93963,-0.2499,-0.23377]
-translate [scale_07_18] offset=[-20.94811,-32.67673,164.61232]
-scale_07_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_19] angle=94.44735 axis=[0.98347,-0.13189,-0.12408]
-translate [scale_07_19] offset=[-12.27258,-36.18402,164.61014]
-scale_07_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_20] angle=89.87523 axis=[0.99975,-0.01587,-0.01591]
-translate [scale_07_20] offset=[-3.08214,-37.65463,164.58549]
-scale_07_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_21] angle=91.20674 axis=[0.99376,0.07942,0.07825]
-translate [scale_07_21] offset=[6.21018,-37.35063,164.59223]
-scale_07_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_22] angle=91.86195 axis=[0.9687,0.17558,0.17545]
-translate [scale_07_22] offset=[15.30934,-35.23774,164.58672]
-scale_07_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_23] angle=99.64263 axis=[0.92427,0.28183,0.25748]
-translate [scale_07_23] offset=[23.70141,-31.03594,164.62136]
-scale_07_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_24] angle=106.24267 axis=[0.83721,0.40727,0.36496]
-translate [scale_07_24] offset=[30.42188,-24.56052,164.62869]
-scale_07_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_25] angle=112.89558 axis=[0.77177,0.48229,0.41444]
-translate [scale_07_25] offset=[34.78346,-16.41047,164.64437]
-scale_07_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_26] angle=113.37149 axis=[0.72439,0.51056,0.46323]
-translate [scale_07_26] offset=[37.98591,-8.00133,164.624]
-scale_07_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_07_27] angle=123.16751 axis=[0.61402,0.59218,0.52182]
-translate [scale_07_27] offset=[39.93338,0.69004,164.63501]
-scale_08_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_00] angle=131.18003 axis=[0.50438,0.64189,0.57756]
-translate [scale_08_00] offset=[44.40492,5.28585,178.62714]
-scale_08_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_01] angle=140.49755 axis=[0.37131,0.66747,0.64545]
-translate [scale_08_01] offset=[40.55948,14.45125,178.59952]
-scale_08_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_02] angle=149.41375 axis=[0.25571,0.66032,0.70611]
-translate [scale_08_02] offset=[34.54151,21.80423,178.56006]
-scale_08_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_03] angle=155.94167 axis=[0.18688,0.64774,0.73859]
-translate [scale_08_03] offset=[27.56922,27.27367,178.53467]
-scale_08_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_04] angle=161.13289 axis=[0.14206,0.64327,0.75234]
-translate [scale_08_04] offset=[20.31029,31.09553,178.52464]
-scale_08_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_05] angle=168.07685 axis=[0.08662,0.63602,0.7668]
-translate [scale_08_05] offset=[13.04534,33.48854,178.51269]
-scale_08_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_06] angle=174.34927 axis=[0.03992,0.6284,0.77686]
-translate [scale_08_06] offset=[5.88359,34.76207,178.50285]
-scale_08_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_07] angle=182.71289 axis=[-0.01925,0.63064,0.77584]
-translate [scale_08_07] offset=[-1.19235,35.14778,178.50476]
-scale_08_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_08] angle=189.86212 axis=[-0.07035,0.63036,0.77311]
-translate [scale_08_08] offset=[-8.3032,34.5004,178.50597]
-scale_08_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_09] angle=191.957 axis=[-0.08637,0.6339,0.76858]
-translate [scale_08_09] offset=[-15.50836,32.77387,178.51047]
-scale_08_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_10] angle=198.22384 axis=[-0.13556,0.63955,0.7567]
-translate [scale_08_10] offset=[-22.78718,29.92893,178.52008]
-scale_08_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_11] angle=205.69433 axis=[-0.20169,0.64886,0.73369]
-translate [scale_08_11] offset=[-30.00904,25.61816,178.53799]
-scale_08_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_12] angle=216.60629 axis=[-0.32378,0.66182,0.67613]
-translate [scale_08_12] offset=[-36.74656,19.56048,178.57805]
-scale_08_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_13] angle=222.16989 axis=[-0.3992,0.65949,0.63696]
-translate [scale_08_13] offset=[-42.22809,11.50903,178.59998]
-scale_08_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_14] angle=233.62506 axis=[-0.57981,0.61417,0.53536]
-translate [scale_08_14] offset=[-44.90821,1.91697,178.63906]
-scale_08_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_15] angle=113.20523 axis=[0.72911,-0.50763,-0.45903]
-translate [scale_08_15] offset=[-43.63373,-8.02349,178.62526]
-scale_08_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_16] angle=108.20499 axis=[0.76054,-0.47034,-0.44762]
-translate [scale_08_16] offset=[-39.37524,-17.19163,178.60569]
-scale_08_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_17] angle=99.93702 axis=[0.81888,-0.40065,-0.411]
-translate [scale_08_17] offset=[-33.93739,-25.60903,178.57643]
-scale_08_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_18] angle=89.91347 axis=[0.91109,-0.27738,-0.30491]
-translate [scale_08_18] offset=[-26.56635,-32.35616,178.54916]
-scale_08_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_19] angle=84.6213 axis=[0.97046,-0.15973,-0.18081]
-translate [scale_08_19] offset=[-17.68215,-36.8597,178.53754]
-scale_08_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_20] angle=83.8365 axis=[0.99191,-0.08444,-0.09482]
-translate [scale_08_20] offset=[-8.09738,-39.26943,178.54074]
-scale_08_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_21] angle=84.1663 axis=[0.99978,0.01407,0.01558]
-translate [scale_08_21] offset=[1.6664,-39.8901,178.54616]
-scale_08_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_22] angle=82.48374 axis=[0.98894,0.09715,0.11205]
-translate [scale_08_22] offset=[11.40247,-38.6582,178.53015]
-scale_08_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_23] angle=86.4709 axis=[0.94786,0.21203,0.23791]
-translate [scale_08_23] offset=[20.79863,-35.57501,178.54103]
-scale_08_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_24] angle=91.72201 axis=[0.89005,0.30813,0.33595]
-translate [scale_08_24] offset=[29.29742,-30.29861,178.55241]
-scale_08_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_25] angle=102.78717 axis=[0.78531,0.43412,0.4414]
-translate [scale_08_25] offset=[35.97341,-22.87728,178.57993]
-scale_08_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_26] angle=108.69675 axis=[0.76225,0.47139,0.44358]
-translate [scale_08_26] offset=[40.92767,-14.13115,178.61004]
-scale_08_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_08_27] angle=115.67863 axis=[0.67791,0.53899,0.49993]
-translate [scale_08_27] offset=[44.53978,-4.70991,178.61559]
-scale_09_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_00] angle=131.34533 axis=[0.37484,0.59173,0.71369]
-translate [scale_09_00] offset=[45.27757,10.40997,192.51253]
-scale_09_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_01] angle=142.67144 axis=[0.28852,0.62185,0.72805]
-translate [scale_09_01] offset=[39.59856,19.10444,192.52424]
-scale_09_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_02] angle=152.66365 axis=[0.20647,0.63328,0.74587]
-translate [scale_09_02] offset=[32.13232,25.44765,192.52188]
-scale_09_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_03] angle=160.04977 axis=[0.14104,0.61936,0.77233]
-translate [scale_09_03] offset=[24.29192,29.71308,192.49947]
-scale_09_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_04] angle=167.38699 axis=[0.08635,0.6134,0.78503]
-translate [scale_09_04] offset=[16.69998,32.44944,192.48936]
-scale_09_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_05] angle=173.09187 axis=[0.04684,0.6124,0.78916]
-translate [scale_09_05] offset=[9.41487,34.07299,192.48669]
-scale_09_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_06] angle=177.7526 axis=[0.01474,0.60062,0.7994]
-translate [scale_09_06] offset=[2.32194,34.83046,192.47424]
-scale_09_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_07] angle=184.6784 axis=[-0.03169,0.6126,0.78976]
-translate [scale_09_07] offset=[-4.71157,34.64299,192.48652]
-scale_09_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_08] angle=190.3837 axis=[-0.07077,0.61292,0.78697]
-translate [scale_09_08] offset=[-11.86415,33.67232,192.4881]
-scale_09_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_09] angle=194.50968 axis=[-0.10295,0.62546,0.77343]
-translate [scale_09_09] offset=[-19.27476,31.70127,192.50275]
-scale_09_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_10] angle=200.18086 axis=[-0.14822,0.63292,0.7599]
-translate [scale_09_10] offset=[-26.95345,28.44481,192.51432]
-scale_09_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_11] angle=207.64158 axis=[-0.20343,0.62394,0.75453]
-translate [scale_09_11] offset=[-34.80567,23.54009,192.51149]
-scale_09_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_12] angle=220.99847 axis=[-0.30993,0.60678,0.73195]
-translate [scale_09_12] offset=[-41.84656,16.40588,192.51247]
-scale_09_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_13] angle=235.66576 axis=[-0.43807,0.57401,0.69182]
-translate [scale_09_13] offset=[-46.54327,7.04295,192.51281]
-scale_09_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_14] angle=110.80519 axis=[0.57257,-0.52364,-0.63084]
-translate [scale_09_14] offset=[-47.3077,-3.52447,192.51298]
-scale_09_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_15] angle=96.24261 axis=[0.74115,-0.42774,-0.51744]
-translate [scale_09_15] offset=[-43.77798,-13.48859,192.51135]
-scale_09_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_16] angle=88.51344 axis=[0.77082,-0.38258,-0.50938]
-translate [scale_09_16] offset=[-37.90575,-22.19407,192.47411]
-scale_09_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_17] angle=82.17128 axis=[0.84999,-0.31367,-0.42323]
-translate [scale_09_17] offset=[-30.86714,-29.62632,192.46901]
-scale_09_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_18] angle=76.92361 axis=[0.94111,-0.20245,-0.27081]
-translate [scale_09_18] offset=[-22.3925,-35.10611,192.47232]
-scale_09_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_19] angle=74.13571 axis=[0.97721,-0.12608,-0.1708]
-translate [scale_09_19] offset=[-12.97683,-38.45827,192.4675]
-scale_09_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_20] angle=71.58502 axis=[0.99891,-0.02733,-0.03794]
-translate [scale_09_20] offset=[-3.24274,-39.93922,192.45817]
-scale_09_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_21] angle=73.8701 axis=[0.99572,0.05541,0.07403]
-translate [scale_09_21] offset=[6.56931,-39.59317,192.47283]
-scale_09_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_22] angle=74.67315 axis=[0.96533,0.15478,0.2102]
-translate [scale_09_22] offset=[16.23166,-37.5381,192.46656]
-scale_09_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_23] angle=78.28811 axis=[0.91731,0.23822,0.31905]
-translate [scale_09_23] offset=[25.40774,-33.4753,192.47185]
-scale_09_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_24] angle=87.36816 axis=[0.81859,0.35378,0.4525]
-translate [scale_09_24] offset=[33.4457,-27.31543,192.48959]
-scale_09_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_25] angle=92.85538 axis=[0.77545,0.39893,0.48942]
-translate [scale_09_25] offset=[39.98762,-19.33504,192.50583]
-scale_09_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_26] angle=101.39797 axis=[0.70264,0.46347,0.5399]
-translate [scale_09_26] offset=[45.37088,-10.2467,192.52622]
-scale_09_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_09_27] angle=116.01532 axis=[0.53624,0.54978,0.64045]
-translate [scale_09_27] offset=[47.497,0.10368,192.52621]
-scale_10_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_00] angle=118.03552 axis=[0.36713,0.48522,0.79358]
-translate [scale_10_00] offset=[45.29966,5.30505,206.39898]
-scale_10_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_01] angle=132.69905 axis=[0.28816,0.52636,0.79995]
-translate [scale_10_01] offset=[41.27845,14.63803,206.42482]
-scale_10_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_02] angle=148.20609 axis=[0.18742,0.53998,0.82054]
-translate [scale_10_02] offset=[34.66103,21.83977,206.42487]
-scale_10_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_03] angle=157.84812 axis=[0.1293,0.54652,0.8274]
-translate [scale_10_03] offset=[27.16069,26.87667,206.42621]
-scale_10_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_04] angle=165.09841 axis=[0.08564,0.54581,0.83352]
-translate [scale_10_04] offset=[19.65743,30.13336,206.42309]
-scale_10_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_05] angle=171.66685 axis=[0.0478,0.54795,0.83515]
-translate [scale_10_05] offset=[12.48082,32.10153,206.42379]
-scale_10_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_06] angle=175.41545 axis=[0.027,0.55893,0.82877]
-translate [scale_10_06] offset=[5.58461,33.11302,206.43377]
-scale_10_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_07] angle=182.43545 axis=[-0.01393,0.54817,0.83625]
-translate [scale_10_07] offset=[-1.12714,33.3295,206.42347]
-scale_10_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_08] angle=187.1124 axis=[-0.04073,0.54768,0.83569]
-translate [scale_10_08] offset=[-7.88827,32.84662,206.42339]
-scale_10_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_09] angle=192.41418 axis=[-0.06892,0.53399,0.84268]
-translate [scale_10_09] offset=[-14.87653,31.57395,206.41141]
-scale_10_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_10] angle=198.93122 axis=[-0.11079,0.55004,0.82776]
-translate [scale_10_10] offset=[-22.16458,29.19792,206.42838]
-scale_10_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_11] angle=205.41626 axis=[-0.14897,0.54505,0.82506]
-translate [scale_10_11] offset=[-29.74358,25.39352,206.42626]
-scale_10_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_12] angle=217.67226 axis=[-0.20737,0.50815,0.83593]
-translate [scale_10_12] offset=[-37.08801,19.65721,206.39699]
-scale_10_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_13] angle=236.06851 axis=[-0.32553,0.49319,0.80672]
-translate [scale_10_13] offset=[-43.02394,11.68929,206.39894]
-scale_10_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_14] angle=107.6285 axis=[0.46059,-0.47294,-0.75112]
-translate [scale_10_14] offset=[-45.83063,1.89262,206.40917]
-scale_10_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_15] angle=93.00563 axis=[0.58217,-0.4252,-0.69303]
-translate [scale_10_15] offset=[-44.50698,-8.27572,206.40016]
-scale_10_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_16] angle=82.6524 axis=[0.73281,-0.36857,-0.57197]
-translate [scale_10_16] offset=[-39.41194,-17.13376,206.41734]
-scale_10_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_17] angle=76.09808 axis=[0.78557,-0.32409,-0.52711]
-translate [scale_10_17] offset=[-32.83462,-24.59312,206.40089]
-scale_10_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_18] angle=70.90994 axis=[0.8691,-0.26031,-0.4206]
-translate [scale_10_18] offset=[-25.37154,-30.72956,206.40317]
-scale_10_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_19] angle=65.4944 axis=[0.93438,-0.18351,-0.30537]
-translate [scale_10_19] offset=[-16.81152,-34.9223,206.39307]
-scale_10_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_20] angle=63.59128 axis=[0.98563,-0.08807,-0.14414]
-translate [scale_10_20] offset=[-7.70104,-37.18468,206.39874]
-scale_10_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_21] angle=65.80219 axis=[0.99965,0.01436,0.02221]
-translate [scale_10_21] offset=[1.58542,-37.77595,206.41864]
-scale_10_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_22] angle=63.63589 axis=[0.98505,0.08983,0.14698]
-translate [scale_10_22] offset=[10.85969,-36.62116,206.39884]
-scale_10_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_23] angle=65.54724 axis=[0.93445,0.18357,0.30514]
-translate [scale_10_23] offset=[19.82623,-33.69705,206.39344]
-scale_10_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_24] angle=70.54858 axis=[0.84703,0.2732,0.45596]
-translate [scale_10_24] offset=[28.07345,-28.85436,206.39206]
-scale_10_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_25] angle=75.17896 axis=[0.75707,0.32897,0.56447]
-translate [scale_10_25] offset=[35.17702,-22.19947,206.38278]
-scale_10_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_26] angle=84.78626 axis=[0.70524,0.38379,0.59611]
-translate [scale_10_26] offset=[41.43639,-14.3054,206.41703]
-scale_10_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_10_27] angle=97.31744 axis=[0.51329,0.43248,0.74128]
-translate [scale_10_27] offset=[45.39323,-4.89289,206.38313]
-scale_11_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_00] angle=117.99405 axis=[0.26134,0.38495,0.88517]
-translate [scale_11_00] offset=[37.52356,9.27315,220.2973]
-scale_11_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_01] angle=137.50726 axis=[0.17379,0.40186,0.89906]
-translate [scale_11_01] offset=[32.61525,16.35743,220.30429]
-scale_11_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_02] angle=149.01729 axis=[0.12994,0.42089,0.89776]
-translate [scale_11_02] offset=[26.34588,21.50203,220.31695]
-scale_11_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_03] angle=160.09878 axis=[0.07943,0.41113,0.90811]
-translate [scale_11_03] offset=[19.85867,24.9181,220.30762]
-scale_11_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_04] angle=168.2561 axis=[0.04967,0.43437,0.89937]
-translate [scale_11_04] offset=[13.57561,27.01262,220.32516]
-scale_11_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_05] angle=173.03998 axis=[0.03085,0.45216,0.8914]
-translate [scale_11_05] offset=[7.61278,28.21225,220.33926]
-scale_11_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_06] angle=178.5797 axis=[0.00608,0.44031,0.89783]
-translate [scale_11_06] offset=[1.87826,28.75855,220.32949]
-scale_11_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_07] angle=184.28693 axis=[-0.01892,0.45102,0.89231]
-translate [scale_11_07] offset=[-3.80668,28.63343,220.33822]
-scale_11_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_08] angle=187.51846 axis=[-0.03052,0.42104,0.90653]
-translate [scale_11_08] offset=[-9.63027,27.93095,220.31442]
-scale_11_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_09] angle=195.7083 axis=[-0.06332,0.41633,0.90701]
-translate [scale_11_09] offset=[-15.66381,26.42238,220.31126]
-scale_11_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_10] angle=202.53059 axis=[-0.09378,0.42409,0.90075]
-translate [scale_11_10] offset=[-22.01649,23.88164,220.31811]
-scale_11_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_11] angle=215.62237 axis=[-0.15162,0.42185,0.8939]
-translate [scale_11_11] offset=[-28.52523,19.96406,220.31874]
-scale_11_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_12] angle=227.62399 axis=[-0.20063,0.40546,0.89182]
-translate [scale_11_12] offset=[-34.48419,14.14912,220.30872]
-scale_11_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_13] angle=114.73856 axis=[0.27486,-0.37927,-0.88352]
-translate [scale_11_13] offset=[-38.61748,6.44976,220.29407]
-scale_11_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_14] angle=91.93366 axis=[0.38648,-0.34235,-0.8564]
-translate [scale_11_14] offset=[-39.49218,-2.32558,220.27717]
-scale_11_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_15] angle=74.86358 axis=[0.53216,-0.31939,-0.78409]
-translate [scale_11_15] offset=[-36.77778,-10.75801,220.28149]
-scale_11_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_16] angle=65.25167 axis=[0.70988,-0.29139,-0.64122]
-translate [scale_11_16] offset=[-31.32962,-17.64658,220.30861]
-scale_11_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_17] angle=60.38926 axis=[0.72992,-0.26721,-0.62913]
-translate [scale_11_17] offset=[-25.03799,-23.33548,220.29146]
-scale_11_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_18] angle=53.7133 axis=[0.84754,-0.20932,-0.48772]
-translate [scale_11_18] offset=[-18.19062,-27.8683,220.29401]
-scale_11_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_19] angle=51.60824 axis=[0.93647,-0.14467,-0.31951]
-translate [scale_11_19] offset=[-10.60414,-30.81198,220.30765]
-scale_11_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_20] angle=49.64021 axis=[0.99133,-0.05477,-0.11946]
-translate [scale_11_20] offset=[-2.64364,-32.13997,220.31095]
-scale_11_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_21] angle=50.47977 axis=[0.97789,0.08754,0.1899]
-translate [scale_11_21] offset=[5.37534,-31.88216,220.31241]
-scale_11_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_22] angle=52.29326 axis=[0.92461,0.15743,0.34685]
-translate [scale_11_22] offset=[13.2397,-29.95748,220.30829]
-scale_11_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_23] angle=55.62188 axis=[0.79659,0.23418,0.55732]
-translate [scale_11_23] offset=[20.57913,-26.4523,220.28885]
-scale_11_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_24] angle=61.22809 axis=[0.71732,0.27223,0.64136]
-translate [scale_11_24] offset=[27.2001,-21.48794,220.2913]
-scale_11_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_25] angle=68.03853 axis=[0.64288,0.30491,0.70267]
-translate [scale_11_25] offset=[33.34326,-15.48672,220.29676]
-scale_11_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_26] angle=80.4896 axis=[0.51649,0.343,0.78459]
-translate [scale_11_26] offset=[38.06737,-8.00825,220.29862]
-scale_11_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_11_27] angle=100.35062 axis=[0.35754,0.36801,0.85833]
-translate [scale_11_27] offset=[39.61581,0.69283,220.29377]
-scale_12_00 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_00] angle=107.14019 axis=[0.14335,0.18869,0.97152]
-translate [scale_12_00] offset=[24.69572,4.55776,234.1716]
-scale_12_01 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_01] angle=133.44136 axis=[0.0817,0.18593,0.97916]
-translate [scale_12_01] offset=[21.88531,9.443,234.16974]
-scale_12_02 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_02] angle=147.40863 axis=[0.06049,0.20226,0.97746]
-translate [scale_12_02] offset=[18.04069,13.09273,234.17715]
-scale_12_03 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_03] angle=154.81983 axis=[0.04924,0.21502,0.97537]
-translate [scale_12_03] offset=[13.86891,15.4941,234.18325]
-scale_12_04 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_04] angle=164.33838 axis=[0.03185,0.22553,0.97372]
-translate [scale_12_04] offset=[9.9267,16.99387,234.18842]
-scale_12_05 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_05] angle=171.77942 axis=[0.01679,0.22747,0.97364]
-translate [scale_12_05] offset=[6.26233,17.88804,234.18937]
-scale_12_06 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_06] angle=177.34339 axis=[0.0055,0.23059,0.97303]
-translate [scale_12_06] offset=[2.80376,18.35958,234.19095]
-scale_12_07 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_07] angle=177.34339 axis=[0.0055,0.23059,0.97303]
-translate [scale_12_07] offset=[-0.5873,18.49339,234.19095]
-scale_12_08 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_08] angle=187.68509 axis=[-0.01565,0.22694,0.97378]
-translate [scale_12_08] offset=[-3.94147,18.2141,234.1891]
-scale_12_09 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_09] angle=196.67698 axis=[-0.03421,0.22719,0.97325]
-translate [scale_12_09] offset=[-7.47033,17.67696,234.18927]
-scale_12_10 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_10] angle=196.67698 axis=[-0.03421,0.22719,0.97325]
-translate [scale_12_10] offset=[-11.26286,16.5827,234.18927]
-scale_12_11 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_11] angle=209.04169 axis=[-0.05658,0.21306,0.9754]
-translate [scale_12_11] offset=[-15.25044,14.78465,234.18233]
-scale_12_12 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_12] angle=219.70483 axis=[-0.07267,0.19678,0.97775]
-translate [scale_12_12] offset=[-19.38244,11.99737,234.17465]
-scale_12_13 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_13] angle=236.06801 axis=[-0.11549,0.21055,0.97074]
-translate [scale_12_13] offset=[-22.91649,7.8952,234.18163]
-scale_12_14 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_14] angle=100.78521 axis=[0.13758,-0.16245,-0.97708]
-translate [scale_12_14] offset=[-25.23382,2.66231,234.15998]
-scale_12_15 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_15] angle=82.17695 axis=[0.22126,-0.18475,-0.95755]
-translate [scale_12_15] offset=[-25.11918,-3.10304,234.17104]
-scale_12_16 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_16] angle=56.67858 axis=[0.40507,-0.19514,-0.89322]
-translate [scale_12_16] offset=[-22.77023,-8.33933,234.18235]
-scale_12_17 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_17] angle=45.23095 axis=[0.56218,-0.18858,-0.80523]
-translate [scale_12_17] offset=[-18.80354,-12.47031,234.18963]
-scale_12_18 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_18] angle=37.2594 axis=[0.70374,-0.164,-0.69127]
-translate [scale_12_18] offset=[-14.07482,-15.35939,234.19107]
-scale_12_19 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_19] angle=29.8661 axis=[0.79278,-0.12608,-0.59632]
-translate [scale_12_19] offset=[-9.19479,-17.39502,234.17917]
-scale_12_20 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_20] angle=23.48148 axis=[0.96009,-0.05473,-0.27428]
-translate [scale_12_20] offset=[-4.23031,-18.69411,234.1739]
-scale_12_21 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_21] angle=25.02172 axis=[0.96704,0.05342,0.24897]
-translate [scale_12_21] offset=[0.84834,-19.00758,234.18058]
-scale_12_22 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_22] angle=26.26687 axis=[0.87864,0.09589,0.46775]
-translate [scale_12_22] offset=[5.92701,-18.34691,234.1763]
-scale_12_23 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_23] angle=29.69806 axis=[0.7893,0.12577,0.60099]
-translate [scale_12_23] offset=[10.89437,-16.82422,234.17819]
-scale_12_24 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_24] angle=36.36562 axis=[0.66345,0.15931,0.73106]
-translate [scale_12_24] offset=[15.75993,-14.53193,234.18209]
-scale_12_25 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_25] angle=45.61055 axis=[0.48427,0.17457,0.85733]
-translate [scale_12_25] offset=[20.25638,-11.19074,234.17569]
-scale_12_26 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_26] angle=61.00769 axis=[0.29204,0.16217,0.94256]
-translate [scale_12_26] offset=[23.79149,-6.65875,234.16231]
-scale_12_27 = extrude profile=[[-1.672,6],[1.672,6],[3.8,1.2],[2.584,-2.4],[0,-6],[-2.584,-2.4],[-3.8,1.2]] height=1.1 color=#87928f rough=0.76
-rotate [scale_12_27] angle=88.19261 axis=[0.1987,0.18529,0.96238]
-translate [scale_12_27] offset=[25.41099,-1.1477,234.17087]
-scale_bed = union [scale_bed, scale_00_00, scale_00_01, scale_00_02, scale_00_03, scale_00_04, scale_00_05, scale_00_06, scale_00_07, scale_00_08, scale_00_09, scale_00_10, scale_00_11, scale_00_12, scale_00_13, scale_00_14, scale_00_15, scale_00_16, scale_00_17, scale_00_18, scale_00_19, scale_00_20, scale_00_21, scale_00_22, scale_00_23, scale_00_24, scale_00_25, scale_00_26, scale_00_27, scale_01_00, scale_01_01, scale_01_02, scale_01_03, scale_01_04, scale_01_05, scale_01_06, scale_01_07, scale_01_08, scale_01_09, scale_01_10, scale_01_11, scale_01_12, scale_01_13, scale_01_14, scale_01_15, scale_01_16, scale_01_17, scale_01_18, scale_01_19, scale_01_20, scale_01_21, scale_01_22, scale_01_23, scale_01_24, scale_01_25, scale_01_26, scale_01_27, scale_02_00, scale_02_01, scale_02_02, scale_02_03, scale_02_04, scale_02_05, scale_02_06, scale_02_07, scale_02_08, scale_02_09, scale_02_10, scale_02_11, scale_02_12, scale_02_13, scale_02_14, scale_02_15, scale_02_16, scale_02_17, scale_02_18, scale_02_19, scale_02_20, scale_02_21, scale_02_22, scale_02_23, scale_02_24, scale_02_25, scale_02_26, scale_02_27, scale_03_00, scale_03_01, scale_03_02, scale_03_03, scale_03_04, scale_03_05, scale_03_06, scale_03_07, scale_03_08, scale_03_09, scale_03_10, scale_03_11, scale_03_12, scale_03_13, scale_03_14, scale_03_15, scale_03_16, scale_03_17, scale_03_18, scale_03_19, scale_03_20, scale_03_21, scale_03_22, scale_03_23, scale_03_24, scale_03_25, scale_03_26, scale_03_27, scale_04_00, scale_04_01, scale_04_02, scale_04_03, scale_04_04, scale_04_05, scale_04_06, scale_04_07, scale_04_08, scale_04_09, scale_04_10, scale_04_11, scale_04_12, scale_04_13, scale_04_14, scale_04_15, scale_04_16, scale_04_17, scale_04_18, scale_04_19, scale_04_20, scale_04_21, scale_04_22, scale_04_23, scale_04_24, scale_04_25, scale_04_26, scale_04_27, scale_05_00, scale_05_01, scale_05_02, scale_05_03, scale_05_04, scale_05_05, scale_05_06, scale_05_08, scale_05_09, scale_05_10, scale_05_11, scale_05_12, scale_05_13, scale_05_14, scale_05_15, scale_05_16, scale_05_17, scale_05_18, scale_05_19, scale_05_20, scale_05_21, scale_05_22, scale_05_23, scale_05_24, scale_05_25, scale_05_26, scale_05_27, scale_06_00, scale_06_01, scale_06_02, scale_06_03, scale_06_04, scale_06_05, scale_06_06, scale_06_07, scale_06_08, scale_06_09, scale_06_10, scale_06_11, scale_06_12, scale_06_13, scale_06_14, scale_06_15, scale_06_16, scale_06_17, scale_06_18, scale_06_19, scale_06_20, scale_06_21, scale_06_22, scale_06_23, scale_06_24, scale_06_25, scale_06_26, scale_06_27, scale_07_00, scale_07_01, scale_07_02, scale_07_03, scale_07_04, scale_07_05, scale_07_06, scale_07_07, scale_07_08, scale_07_09, scale_07_10, scale_07_11, scale_07_12, scale_07_13, scale_07_14, scale_07_15, scale_07_16, scale_07_17, scale_07_18, scale_07_19, scale_07_20, scale_07_21, scale_07_22, scale_07_23, scale_07_24, scale_07_25, scale_07_26, scale_07_27, scale_08_00, scale_08_01, scale_08_02, scale_08_03, scale_08_04, scale_08_05, scale_08_06, scale_08_07, scale_08_08, scale_08_09, scale_08_10, scale_08_11, scale_08_12, scale_08_13, scale_08_14, scale_08_15, scale_08_16, scale_08_17, scale_08_18, scale_08_19, scale_08_20, scale_08_21, scale_08_22, scale_08_23, scale_08_24, scale_08_25, scale_08_26, scale_08_27, scale_09_00, scale_09_01, scale_09_02, scale_09_03, scale_09_04, scale_09_05, scale_09_06, scale_09_07, scale_09_08, scale_09_09, scale_09_10, scale_09_11, scale_09_12, scale_09_13, scale_09_14, scale_09_15, scale_09_16, scale_09_17, scale_09_18, scale_09_19, scale_09_20, scale_09_21, scale_09_22, scale_09_23, scale_09_24, scale_09_25, scale_09_26, scale_09_27, scale_10_00, scale_10_01, scale_10_02, scale_10_03, scale_10_04, scale_10_05, scale_10_06, scale_10_07, scale_10_08, scale_10_09, scale_10_10, scale_10_11, scale_10_12, scale_10_13, scale_10_14, scale_10_15, scale_10_16, scale_10_17, scale_10_18, scale_10_19, scale_10_20, scale_10_21, scale_10_22, scale_10_23, scale_10_24, scale_10_25, scale_10_26, scale_10_27, scale_11_00, scale_11_01, scale_11_02, scale_11_03, scale_11_04, scale_11_05, scale_11_06, scale_11_07, scale_11_08, scale_11_09, scale_11_10, scale_11_11, scale_11_12, scale_11_13, scale_11_14, scale_11_15, scale_11_16, scale_11_17, scale_11_18, scale_11_19, scale_11_20, scale_11_21, scale_11_22, scale_11_23, scale_11_24, scale_11_25, scale_11_26, scale_11_27, scale_12_00, scale_12_01, scale_12_02, scale_12_03, scale_12_04, scale_12_05, scale_12_06, scale_12_07, scale_12_08, scale_12_09, scale_12_10, scale_12_11, scale_12_12, scale_12_13, scale_12_14, scale_12_15, scale_12_16, scale_12_17, scale_12_18, scale_12_19, scale_12_20, scale_12_21, scale_12_22, scale_12_23, scale_12_24, scale_12_25, scale_12_26, scale_12_27]
-body_core = union [body_core, scale_bed]
+# Зубы v2: корни по настоящей десне, кончики внутри скруглённого контура.
+skin_origin = union [body_bed, front_limb_R, front_limb_L, hind_limb_R, hind_limb_L, tail_core]
+tooth_U_R_0 = sweep path=[[6.5,-77,278.78485],[6.5325,-77.4,272.89242],[6.565,-77.8,267]] radius=1.65 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_U_R_1 = sweep path=[[9.5,-66,280.06097],[9.5475,-66.4,270.53048],[9.595,-66.8,261]] radius=2.25 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_U_R_2 = sweep path=[[11,-55,280.62542],[11.055,-55.4,273.81271],[11.11,-55.8,267]] radius=1.65 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_U_R_3 = sweep path=[[10,-44,280.22733],[10.05,-44.4,273.61367],[10.1,-44.8,267]] radius=1.65 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_U_R_4 = sweep path=[[8,-36,279.73124],[8.04,-36.4,273.36562],[8.08,-36.8,267]] radius=1.65 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_D_R_0 = sweep path=[[5.5,-72,257.47534],[5.5,-72.3,263.73767],[5.445,-72.6,270]] radius=1.45 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_D_R_1 = sweep path=[[7.5,-61,256.42154],[7.5,-61.3,263.21077],[7.425,-61.6,270]] radius=1.45 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_D_R_2 = sweep path=[[8.5,-50,256.63793],[8.5,-50.3,263.31896],[8.415,-50.6,270]] radius=1.45 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_U_L_0 = sweep path=[[-6.5,-77,278.78485],[-6.5325,-77.4,272.89242],[-6.565,-77.8,267]] radius=1.65 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_U_L_1 = sweep path=[[-9.5,-66,280.06097],[-9.5475,-66.4,270.53048],[-9.595,-66.8,261]] radius=2.25 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_U_L_2 = sweep path=[[-11,-55,280.62542],[-11.055,-55.4,273.81271],[-11.11,-55.8,267]] radius=1.65 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_U_L_3 = sweep path=[[-10,-44,280.22733],[-10.05,-44.4,273.61367],[-10.1,-44.8,267]] radius=1.65 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_U_L_4 = sweep path=[[-8,-36,279.73124],[-8.04,-36.4,273.36562],[-8.08,-36.8,267]] radius=1.65 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_D_L_0 = sweep path=[[-5.5,-72,257.47534],[-5.5,-72.3,263.73767],[-5.445,-72.6,270]] radius=1.45 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_D_L_1 = sweep path=[[-7.5,-61,256.42154],[-7.5,-61.3,263.21077],[-7.425,-61.6,270]] radius=1.45 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_D_L_2 = sweep path=[[-8.5,-50,256.63793],[-8.5,-50.3,263.31896],[-8.415,-50.6,270]] radius=1.45 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_front_0 = sweep path=[[-4,-80,277.98669],[-4.02,-80.4,272.99335],[-4.04,-80.8,268]] radius=1.55 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_front_1 = sweep path=[[4,-80,277.98669],[4.02,-80.4,272.99335],[4.04,-80.8,268]] radius=1.55 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+body_core = union [body_core, tooth_U_R_0, tooth_U_R_1, tooth_U_R_2, tooth_U_R_3, tooth_U_R_4, tooth_D_R_0, tooth_D_R_1, tooth_D_R_2, tooth_U_L_0, tooth_U_L_1, tooth_U_L_2, tooth_U_L_3, tooth_U_L_4, tooth_D_L_0, tooth_D_L_1, tooth_D_L_2, tooth_front_0, tooth_front_1]
+
+# Четыре опоры: по три когтя сзади и по четыре на передних лапах.
+claw_F_R_0 = sweep path=[[51.5,-79,25],[51,-86,19],[50.5,-90,11.5]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_R_1 = sweep path=[[59.55,-82,25],[59.4,-89,19],[59.25,-93,11.5]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_R_2 = sweep path=[[67.6,-79,25],[67.8,-86,19],[68,-90,11.5]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_R_3 = sweep path=[[75.65,-79,25],[76.2,-86,19],[76.75,-90,11.5]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_R_0 = sweep path=[[34.65,-64,34],[33.75,-71,31],[33.03,-77,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_R_1 = sweep path=[[45,-67,34],[45,-74,31],[45,-80,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_R_2 = sweep path=[[55.35,-64,34],[56.25,-71,31],[56.97,-77,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_L_0 = sweep path=[[-74.5,-79,25],[-74,-86,19],[-73.5,-90,11.5]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_L_1 = sweep path=[[-66.45,-82,25],[-66.3,-89,19],[-66.15,-93,11.5]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_L_2 = sweep path=[[-58.4,-79,25],[-58.6,-86,19],[-58.8,-90,11.5]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_L_3 = sweep path=[[-50.35,-79,25],[-50.9,-86,19],[-51.45,-90,11.5]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_L_0 = sweep path=[[-55.35,-64,34],[-54.45,-71,31],[-53.73,-77,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_L_1 = sweep path=[[-45,-67,34],[-45,-74,31],[-45,-80,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_L_2 = sweep path=[[-34.65,-64,34],[-35.55,-71,31],[-36.27,-77,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+skin_origin = union [skin_origin, claw_F_R_0, claw_F_R_1, claw_F_R_2, claw_F_R_3, claw_H_R_0, claw_H_R_1, claw_H_R_2, claw_F_L_0, claw_F_L_1, claw_F_L_2, claw_F_L_3, claw_H_L_0, claw_H_L_1, claw_H_L_2]
+
+# Финальная чешуя: ray-cast по skin_origin, safe по всему dragon.
+# После этой операции в dragon уже не добавляются детали с неучтёнными контактами.
+skull_bed = spikes [skull_bed] surface=вся density=32 height=3.2 base_d=3.4 tip_d=0.35 sides=12 seed=9 safe=да
+dragon = union [body_core, skull_bed, skin_origin, wings]
+scales dragon on=skin_origin kind=дракон paths=[[[0,25,82],[0,8,150],[0,-4,194],[0,6,229],[0,5,253],[0,-15,276]],[[40,-8,204],[57,-25,153],[63,-52,91],[63,-61,69]],[[-40,-8,204],[-57,-25,153],[-63,-52,91],[-63,-61,69]],[[34,24,124],[50,4,84],[45,-22,51]],[[-34,24,124],[-50,4,84],[-45,-22,51]],[[0,68,120],[15,65,94],[40,105,67],[75,140,52],[108,151,68],[128,143,96],[127,127,122],[118,118,133]]] pitch=9 per_row=18 length=8 thick=0.75 tilt=22 safe=да seed=2
 
 # Финальная сварка основных органических переходов.
-dragon = union [body_core, tail_core, wings]
 
 # Круглое основание и связанный каменный рельеф.
-plinth = cylinder radius=110 height=12 segments=160 round=2 at=[0,20,0] color=#505856 rough=0.86
-rock_main = rock size=[190,150,22] seed=33 rough=0.42 points=72 at=[0,20,10] color=#505856
+plinth = cylinder radius=122 height=12 segments=160 round=2 at=[0,0,0] color=#505856 rough=0.86
+rock_main = rock size=[200,180,22] seed=33 rough=0.42 points=72 at=[0,5,10] color=#505856
 color rock_main #505856 rough=0.9
 rock_0 = rock size=[45,42,18] seed=41 rough=0.48 points=40 at=[-72,-18,16] color=#505856
 color rock_0 #505856 rough=0.9
@@ -1226,7 +154,11 @@ rock_3 = rock size=[48,50,19] seed=44 rough=0.48 points=40 at=[57,76,16] color=#
 color rock_3 #505856 rough=0.9
 rock_4 = rock size=[65,38,15] seed=45 rough=0.48 points=40 at=[0,-48,16] color=#505856
 color rock_4 #505856 rough=0.9
-base = union [plinth, rock_main, rock_0, rock_1, rock_2, rock_3, rock_4]
+hind_rest_R = rock size=[64,62,12] seed=55 rough=0.5 points=40 at=[45,-66,18] color=#505856
+color hind_rest_R #505856 rough=0.9
+hind_rest_L = rock size=[64,62,12] seed=56 rough=0.5 points=40 at=[-45,-66,18] color=#505856
+color hind_rest_L #505856 rough=0.9
+base = union [plinth, rock_main, rock_0, rock_1, rock_2, rock_3, rock_4, hind_rest_R, hind_rest_L]
 check dragon watertight
 check dragon parts 1
 check base watertight

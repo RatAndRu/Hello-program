@@ -480,9 +480,8 @@ def _segment_distance(p0, p1, q0, q1) -> float:
 
 @op("spikes", aliases=("шипы", "шип", "spike", "spike_array", "нарастить_шипы"),
     category="Форма и деформации",
-    summary="Наращивает шипы на выбранной поверхности существующего тела, "
-            "без собственной площадки или головы. Центры разводятся без "
-            "перекрытий, корни входят в объект и образуют с ним одно тело. "
+    summary="Наращивает шипы на выбранной поверхности существующего тела. "
+            "safe=да отклоняет шипы, создающие новые компоненты или петли; "
             "surface выбирает сторону, count или cols×rows — число шипов.",
     example="панель = box size=[120,80,12]\n"
             "панель = spikes [панель] surface=верх cols=4 rows=3 height=28 base_d=12 tip_d=.8\n"
@@ -501,6 +500,7 @@ def _segment_distance(p0, p1, q0, q1) -> float:
             "sides": "граней шипа 3…64 (24)",
             "lean": "наклон всех шипов от нормали −45…45° (0)",
             "direction": "азимут наклона, градусы (0 — +X)",
+            "safe": "да — не допускать новых оболочек/полостей/петель с уже существующими деталями (нет)",
             "seed": "повторяемая раскладка (1)"},
     positional=["objects"])
 def spikes(a, name):
@@ -532,6 +532,7 @@ def spikes(a, name):
     lean = float(a.num("lean", 0.0, minv=-45.0, maxv=45.0) or 0.0)
     direction = float(a.num("direction", 0.0, minv=-360.0, maxv=360.0) or 0.0)
     seed = int(a.num("seed", 1, minv=0, maxv=1_000_000))
+    safe = a.boolean("safe", False)
     if tip_d > base_d + 1e-9:
         raise GeometryError("tip_d не может быть больше base_d.")
     rng = np.random.default_rng(seed)
@@ -629,17 +630,56 @@ def spikes(a, name):
         frame = _frame(grow)
         frame[:, 3] = point - normal * root
         pieces.append(spike.transform(frame))
-    solid = mf.Manifold.batch_boolean([base.manifold] + pieces, mf.OpType.Add)
+    attempted = len(pieces)
+    skipped = 0
+    if not safe:
+        solid = mf.Manifold.batch_boolean([base.manifold] + pieces, mf.OpType.Add)
+        accepted = attempted
+    else:
+        reference_parts = base.manifold.decompose()
+        shell_count = len(reference_parts)
+        positive_count = sum(p.volume() > 1e-8 for p in reference_parts)
+        reference_genus = base.manifold.genus()
+
+        def acceptable(candidate, previous):
+            if candidate.is_empty() or candidate.status().name != "NoError":
+                return False
+            parts = candidate.decompose()
+            return (len(parts) == shell_count
+                    and sum(p.volume() > 1e-8 for p in parts) == positive_count
+                    and candidate.genus() == reference_genus
+                    and candidate.volume() > previous.volume() + 1e-7)
+
+        solid = base.manifold
+        candidate = mf.Manifold.batch_boolean([solid] + pieces, mf.OpType.Add)
+        if acceptable(candidate, solid):
+            solid = candidate
+            accepted = attempted
+        else:
+            accepted = 0
+            for piece in pieces:
+                candidate = solid + piece
+                if acceptable(candidate, solid):
+                    solid = candidate
+                    accepted += 1
+                else:
+                    skipped += 1
+        if accepted == 0 and attempted:
+            raise GeometryError("spikes safe: ни один шип не дал корректного объединения.")
     solid = ensure_volume(solid, "шипов на поверхности")
     if len(solid.decompose()) != 1:
         raise GeometryError("Шипы не сварились с исходным объектом.")
     out = _derived(a, name, solid, base, "spikes")
-    out.meta["spikes"] = count
+    out.meta["spikes"] = accepted
+    out.meta["spikes_attempted"] = attempted
+    out.meta["spikes_skipped"] = skipped
+    out.meta["safe"] = safe
     if density_mode:
         out.meta["density_requested"] = float(density)
         out.meta["packing_capacity"] = packing_capacity
         out.meta["available_area"] = available_area
-        out.meta["density_actual"] = 100.0 * count / max(packing_capacity, 1)
-    out.notes.append(f"шипов на исходной поверхности {count}, surface={surface}, seed={seed}"
-                     + (f", заполнение запрошено {density:g}%" if density_mode else ""))
+        out.meta["density_actual"] = 100.0 * accepted / max(packing_capacity, 1)
+    out.notes.append(f"шипов на исходной поверхности {accepted}, surface={surface}, seed={seed}"
+                     + (f", заполнение запрошено {density:g}%" if density_mode else "")
+                     + (f", safe отклонил {skipped}" if skipped else ""))
     return out

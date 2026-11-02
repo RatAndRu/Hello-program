@@ -8,7 +8,7 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import circle_profile, sweep_solid
+from .geometry import circle_profile, manifold_from_arrays, sweep_solid
 from .ops import anchor, make_solid, op, stand_flat_sign
 from .ops_shapes import _profile
 
@@ -54,6 +54,123 @@ def _ray_polygon_distance(center: np.ndarray, direction: np.ndarray,
     if not math.isfinite(best):
         raise GeometryError("Паутина: луч не пересёк контур.")
     return best
+
+
+@op("membrane", aliases=("мембрана", "перепонка", "парашют"), category="Примитивы",
+    summary="Тонкое замкнутое полотнище по произвольному звездообразному контуру. "
+            "camber даёт настоящий прогиб парашюта между корнем и кромкой, "
+            "rings управляет разбиением; обе стороны и торец образуют одно тело.",
+    example="крыло = membrane root=[40,-5] outline=[[0,-20],[20,-5],[45,0],[100,50],[140,0],[100,-50],[0,-30]] "
+            "camber=12 thick=0.8 rings=12 rib_angles=[25,85] rib_height=2 rib_width=6",
+    params={"root": "внутренняя опорная точка [x,y] (0,0)",
+            "outline": "замкнутый контур [[x,y],...] без повторяющейся последней точки",
+            "camber": "максимальный прогиб по Z до поворота, мм (8)",
+            "thick": "толщина двух сторон по Z, мм (0.8)",
+            "rib_angles": "направления интегральных рёбер в градусах от +X, []",
+            "rib_height": "высота рёбер в самой сетке мембраны, мм (0)",
+            "rib_width": "угловая ширина каждого ребра, градусы (6)",
+            "rings": "радиальных колец разбиения 2…40 (12)",
+            "at": "смещение [x,y,z]", "center": "центрировать по Z (нет)"},
+    positional=[])
+def membrane(a, name):
+    root = np.asarray(a.vec("root", 2, default=(0.0, 0.0)), dtype=np.float64)
+    raw = a.value("outline", []) or []
+    try:
+        outline = np.asarray(raw, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise GeometryError("membrane: outline должен быть списком точек [x,y].") from exc
+    if outline.ndim != 2 or outline.shape[1:] != (2,) or len(outline) < 3 \
+            or not np.all(np.isfinite(outline)):
+        raise GeometryError("membrane: нужен конечный outline минимум из трёх точек [x,y].")
+    if np.linalg.norm(outline[0] - outline[-1]) < 1e-9:
+        outline = outline[:-1]
+    if len(outline) < 3 or np.any(np.linalg.norm(np.diff(outline, axis=0), axis=1) < 1e-9):
+        raise GeometryError("membrane: совпадающие соседние точки контура недопустимы.")
+    signed_area = 0.5 * float(np.sum(outline[:, 0] * np.roll(outline[:, 1], -1)
+                                     - outline[:, 1] * np.roll(outline[:, 0], -1)))
+    if abs(signed_area) < 1e-9:
+        raise GeometryError("membrane: контур вырожден в линию.")
+    if signed_area < 0:
+        outline = outline[::-1].copy()
+
+    # Корень обязан лежать внутри: веерные кольца тогда не образуют скрытого
+    # второго лоскута снаружи контура. Контур крыла также должен быть
+    # звездообразным относительно выбранного root.
+    inside = False
+    for i, p0 in enumerate(outline):
+        p1 = outline[(i + 1) % len(outline)]
+        if ((p0[1] > root[1]) != (p1[1] > root[1])):
+            x_cross = (p1[0] - p0[0]) * (root[1] - p0[1]) / (p1[1] - p0[1]) + p0[0]
+            if root[0] < x_cross:
+                inside = not inside
+    if not inside:
+        raise GeometryError("membrane: root должен быть строго внутри outline.")
+
+    camber = float(a.num("camber", 8.0) or 0.0)
+    thick = float(a.num("thick", 0.8, minv=0.02))
+    rib_height = float(a.num("rib_height", 0.0, minv=0.0) or 0.0)
+    rib_width = float(a.num("rib_width", 6.0, minv=0.5, maxv=60.0))
+    rib_angles_raw = a.value("rib_angles", []) or []
+    try:
+        rib_angles = np.radians(np.asarray(rib_angles_raw, dtype=np.float64))
+    except (TypeError, ValueError) as exc:
+        raise GeometryError("membrane: rib_angles должен быть списком углов в градусах.") from exc
+    if rib_angles.ndim != 1 or not np.all(np.isfinite(rib_angles)):
+        raise GeometryError("membrane: rib_angles должен быть списком конечных углов.")
+    if rib_height > 0 and not len(rib_angles):
+        raise GeometryError("membrane: для rib_height задайте хотя бы один rib_angles.")
+    rings = int(a.int("rings", 12, minv=2, maxv=40) or 12)
+    count = len(outline)
+    mid = [np.array([root[0], root[1], 0.0])]
+    angles = np.arctan2(outline[:, 1] - root[1], outline[:, 0] - root[0])
+    rib_weight = np.zeros(count, dtype=np.float64)
+    if rib_height > 0:
+        sigma = math.radians(rib_width)
+        for rib_angle in rib_angles:
+            delta = (angles - rib_angle + math.pi) % (2.0 * math.pi) - math.pi
+            rib_weight = np.maximum(rib_weight, np.exp(-0.5 * (delta / sigma) ** 2))
+    for ring in range(1, rings + 1):
+        t = ring / rings
+        xy = root + (outline - root) * t
+        dome = max(0.0, 4.0 * t * (1.0 - t)) ** 1.15
+        modulation = 0.84 + 0.16 * np.cos(3.0 * angles)
+        z = camber * dome * modulation + rib_height * dome * rib_weight
+        mid.extend(np.column_stack((xy, z)))
+    mid = np.asarray(mid, dtype=np.float64)
+    faces_mid: list[tuple[int, int, int]] = []
+    for i in range(count):
+        faces_mid.append((0, 1 + i, 1 + (i + 1) % count))
+    for ring in range(1, rings):
+        inner = 1 + (ring - 1) * count
+        outer = 1 + ring * count
+        for i in range(count):
+            j = (i + 1) % count
+            faces_mid.append((inner + i, outer + i, outer + j))
+            faces_mid.append((inner + i, outer + j, inner + j))
+    n = len(mid)
+    vertices = np.vstack((mid + np.array([0.0, 0.0, thick * 0.5]),
+                          mid - np.array([0.0, 0.0, thick * 0.5])))
+    faces = list(faces_mid)
+    faces += [tuple(n + i for i in reversed(face)) for face in faces_mid]
+    outer = 1 + (rings - 1) * count
+    for i in range(count):
+        j = (i + 1) % count
+        faces.append((outer + i, n + outer + i, n + outer + j))
+        faces.append((outer + i, n + outer + j, outer + j))
+    solid = manifold_from_arrays(vertices, np.asarray(faces, dtype=np.int64), "мембраны")
+    if solid.is_empty() or len(solid.decompose()) != 1 or solid.genus() != 0:
+        raise GeometryError("membrane: самопересечение контура или root вне его звёздного ядра.",
+                            hint="Упростите глубокие вырезы, переместите root или уменьшите camber.")
+    # Как и sweep/extrude, произвольный контур по умолчанию сохраняет свои
+    # координаты; незаданный at не должен молча центрировать анатомический контур.
+    if a.has("at") or a.has("center"):
+        solid = anchor(solid, a.vec("at", 3, default=(0.0, 0.0, 0.0)),
+                       a.boolean("center", False))
+    out = make_solid(a.scene, name, solid, a, kind="membrane")
+    out.meta.update(camber=camber, thick=thick, rings=rings, outline_points=count,
+                    rib_angles=[float(v) for v in rib_angles_raw], rib_height=rib_height,
+                    rib_width=rib_width)
+    return out
 
 
 @op("web", aliases=("паутина", "паутинка", "spider_web", "webbing",

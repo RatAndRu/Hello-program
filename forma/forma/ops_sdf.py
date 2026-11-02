@@ -15,6 +15,7 @@ import numpy as np
 
 from .errors import DslError, GeometryError
 from .ops import make_solid, op
+from .sdf import round_cone_distance
 from .values import parse_value
 
 MAX_GRID_POINTS = 2_200_000
@@ -43,6 +44,10 @@ def _sd_capsule(x, y, z, ax, ay, az, bx, by, bz, r):
     t = np.clip((px * ex + py * ey + pz * ez) / denom, 0.0, 1.0) if denom > 1e-12 else 0.0
     dx, dy, dz = px - ex * t, py - ey * t, pz - ez * t
     return np.sqrt(dx * dx + dy * dy + dz * dz) - r
+
+
+def _sd_round_cone(x, y, z, ax, ay, az, bx, by, bz, ra, rb):
+    return round_cone_distance(x, y, z, (ax, ay, az), (bx, by, bz), ra, rb)
 
 
 def _sd_cylinder(x, y, z, r, h):
@@ -95,6 +100,7 @@ SDF_NAMESPACE: dict[str, Any] = {
     "clamp": _clamp, "smoothstep": _smoothstep,
     "smin": _smin, "smax": _smax,
     "sd_sphere": _sd_sphere, "sd_box": _sd_box, "sd_capsule": _sd_capsule,
+    "sd_round_cone": _sd_round_cone,
     "sd_cylinder": _sd_cylinder, "sd_torus": _sd_torus, "sd_ellipsoid": _sd_ellipsoid,
     "len": lambda x, y, z: np.sqrt(x * x + y * y + z * z),
 }
@@ -125,7 +131,7 @@ def _compile_expression(expression: str):
         if isinstance(node, ast.Name) and node.id not in SDF_NAMESPACE and node.id not in "xyz":
             raise DslError(f"Неизвестное имя «{node.id}» в SDF-выражении.",
                            hint="Доступно: x, y, z, sd_sphere, sd_box, sd_capsule, "
-                                "sd_cylinder, sd_torus, sd_ellipsoid, smin, smax, "
+                                "sd_round_cone, sd_cylinder, sd_torus, sd_ellipsoid, smin, smax, "
                                 "len, clamp, sin, cos, sqrt, pi.")
         if isinstance(node, ast.Call):
             if not isinstance(node.func, ast.Name) or node.func.id not in SDF_NAMESPACE:
@@ -432,11 +438,15 @@ def from_sdf(a, name):
 
 
 @op("blob", aliases=("метаболы", "органика", "слепить", "капля"), category="Математические поверхности",
-    summary="Органическая форма из сфер и капсул, плавно слитых между собой (метаболы).",
-    example="""тело = blob spheres=[[0,0,80,35],[0,0,130,28]] capsules=[[0,0,60,0,0,20,14]] blend=12""",
-    params={"spheres": "сферы [[x,y,z,r], ...]",
+    summary="Органическая форма из сфер и капсул. mode=smin сохраняет плавное "
+            "метабольное слияние; mode=диаметры соединяет последовательные сферы "
+            "их точной общей касательной конической поверхностью без бугра у шва.",
+    example="""тело = blob spheres=[[0,0,80,35],[0,0,130,28]] capsules=[[0,0,60,0,0,20,14]] blend=12
+хвост = blob spheres=[[0,0,20,12],[0,0,55,8],[10,0,80,4]] mode=диаметры""",
+    params={"spheres": "сферы [[x,y,z,r], ...]; в режиме диаметры порядок задаёт цепочку",
             "capsules": "капсулы [[x1,y1,z1,x2,y2,z2,r], ...]",
-            "blend": "радиус плавного слияния, мм (авто)",
+            "mode": "smin — прежнее плавное слияние; диаметры — касательные round-cone сегменты (smin)",
+            "blend": "радиус слияния для mode=smin, мм (авто; в режиме диаметры не применяется)",
             "resolution": "шаг сетки (авто)",
             "bounds": "границы области (авто, если не заданы)"},
     positional=[])
@@ -468,25 +478,38 @@ def blob(a, name):
     if not spheres and not capsules:
         raise GeometryError("Для blob нужны spheres или capsules.",
                             hint="Например: blob spheres=[[0,0,50,30],[0,0,100,20]] blend=10")
+    mode = str(a.value("mode", "smin") or "smin").strip().lower()
+    mode = {"tangent": "диаметры", "diameter": "диаметры", "diameters": "диаметры",
+            "касательные": "диаметры", "касательная": "диаметры", "smooth": "smin"}.get(mode, mode)
+    if mode not in ("smin", "диаметры"):
+        raise GeometryError("blob: mode должен быть smin или диаметры.")
     radii = [s[3] for s in spheres] + [c[6] for c in capsules]
     blend = a.num("blend", max(1.0, min(radii) * 0.5), minv=0.0)
     if blend is None:
         blend = max(1.0, min(radii) * 0.5)
     terms: list[str] = []
     xs, ys, zs = [], [], []
-    for (cx, cy, cz, r) in spheres:
-        terms.append(f"sd_sphere(x-({cx}),y-({cy}),z-({cz}),{r})")
+    for i, (cx, cy, cz, r) in enumerate(spheres):
         xs += [cx - r, cx + r]
         ys += [cy - r, cy + r]
         zs += [cz - r, cz + r]
+        if mode == "диаметры" and len(spheres) > 1:
+            if i == 0:
+                continue  # каждый round-cone уже содержит оба своих шара
+            px, py, pz, pr = spheres[i - 1]
+            terms.append(f"sd_round_cone(x,y,z,{px},{py},{pz},{cx},{cy},{cz},{pr},{r})")
+        else:
+            terms.append(f"sd_sphere(x-({cx}),y-({cy}),z-({cz}),{r})")
     for (x1, y1, z1, x2, y2, z2, r) in capsules:
-        terms.append(f"sd_capsule(x,y,z,{x1},{y1},{z1},{x2},{y2},{z2},{r})")
+        function = "sd_round_cone" if mode == "диаметры" else "sd_capsule"
+        radii_text = f"{r},{r}" if mode == "диаметры" else f"{r}"
+        terms.append(f"{function}(x,y,z,{x1},{y1},{z1},{x2},{y2},{z2},{radii_text})")
         xs += [min(x1, x2) - r, max(x1, x2) + r]
         ys += [min(y1, y2) - r, max(y1, y2) + r]
         zs += [min(z1, z2) - r, max(z1, z2) + r]
     expr = terms[0]
     for term in terms[1:]:
-        expr = f"smin({expr},{term},{blend})"
+        expr = f"min({expr},{term})" if mode == "диаметры" else f"smin({expr},{term},{blend})"
     fn = compile_field(expr)
     margin = max(1.0, blend) + 2.0
     bounds = [min(xs) - margin, min(ys) - margin, min(zs) - margin,
@@ -504,6 +527,7 @@ def blob(a, name):
     solid = finalize_sdf(verts, faces, step, "капля", report=meshing)
     a.scene.log("info", f"blob: сетка {step:g} мм, {solid.num_tri()} треугольников", a.cmd.line)
     result = make_solid(a.scene, name, solid, a, kind="blob")
+    result.meta["blob_mode"] = mode
     result.meta["meshing"] = meshing
     if meshing.get("adaptive"):
         a.scene.log(

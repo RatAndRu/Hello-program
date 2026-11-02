@@ -1,0 +1,71 @@
+{
+  "glb": "exports/dragon_sovereign/dragon_sovereign.glb",
+  "bytes": 7460768,
+  "sha256": "0dfff4b8b50344f8c55a5dcb58d76b6de053575cdad988896652c1261864a437",
+  "small_scene": {
+    "passed": 1,
+    "total": 1,
+    "result": {
+      "name": "eye_R",
+      "point": [
+        23.800000190734863,
+        298,
+        46.59999838588949
+      ],
+      "faceIndex": 267,
+      "highlighted": true
+    }
+  },
+  "full_scene": {
+    "passed": 4,
+    "total": 4,
+    "results": [
+      {
+        "name": "eye_R",
+        "point": [
+          23.8,
+          298,
+          46.599998403535835
+        ],
+        "faceIndex": 267,
+        "highlighted": true
+      },
+      {
+        "name": "eye_L",
+        "point": [
+          -23.8,
+          298,
+          46.599998403535835
+        ],
+        "faceIndex": 51,
+        "highlighted": true
+      },
+      {
+        "name": "dragon",
+        "point": [
+          0,
+          282,
+          91.93844083210661
+        ],
+        "faceIndex": 28581,
+        "highlighted": true
+      },
+      {
+        "name": "base",
+        "point": [
+          0,
+          11.999999999999943,
+          110
+        ],
+        "faceIndex": 1307,
+        "highlighted": true
+      }
+    ]
+  },
+  "names": [
+    "base",
+    "dragon",
+    "eye_L",
+    "eye_R"
+  ]
+}

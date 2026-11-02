@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import math
 import unittest
 
 import numpy as np
 
 from forma.ops_extra import _edge_map, _sharp_edge_count
 from forma.run import build
-from forma.sdf import Field, RoundedCylinder, Tube
+from forma.sdf import Field, RoundedCylinder, Tube, round_cone_distance
 
 
 def build_one(script: str, name: str = "о"):
@@ -47,6 +48,50 @@ class SDFPrimitiveTest(unittest.TestCase):
         self.assertGreater(bb[4] - bb[1], 13.4)  # радиус Y не сжат
         self.assertLess(bb[5] - bb[2], 8.8)      # эллипс по Z, а не круг
         self.assertGreater(solid.volume(), 1_800.0)
+
+    def test_round_cone_has_true_tangent_diametral_sections(self):
+        # Равные радиусы: касание проходит через центры, а бок — точно цилиндр.
+        equal = lambda p: round_cone_distance(p[0], p[1], p[2],
+                                              (0, 0, 0), (20, 0, 0), 5, 5)
+        for p in ((0, 5, 0), (10, 5, 0), (20, 5, 0), (10, 4, 0)):
+            self.assertAlmostEqual(float(equal(p)), 0.0 if p[1] == 5 else -1.0, places=7)
+
+        # Разные радиусы: аналитические касательные окружности и одна нормаль
+        # у сферических колпачков и конуса. smin такого свойства не даёт.
+        ra, rb, d = 10.0, 5.0, 30.0
+        k = (ra - rb) / d
+        n = np.array([k, math.sqrt(1.0 - k * k), 0.0])
+        pa = np.array([0.0, 0.0, 0.0]) + ra * n
+        pb = np.array([d, 0.0, 0.0]) + rb * n
+        field = lambda p: round_cone_distance(p[0], p[1], p[2],
+                                              (0, 0, 0), (d, 0, 0), ra, rb)
+        h = 1e-4
+        for p in (pa, pb, (pa + pb) * 0.5):
+            self.assertAlmostEqual(float(field(p)), 0.0, places=7)
+            gradient = np.array([
+                (float(field(p + h * np.eye(3)[axis]))
+                 - float(field(p - h * np.eye(3)[axis]))) / (2 * h)
+                for axis in range(3)
+            ])
+            np.testing.assert_allclose(gradient, n, atol=2e-5)
+
+    def test_tube_diametral_mode_preserves_old_default_and_has_no_smin_bulge(self):
+        points = [(0.0, 0.0, 20.0), (30.0, 0.0, 20.0), (60.0, 0.0, 20.0)]
+        radii = [10.0, 5.0, 2.5]
+        legacy = Tube(points, radii)
+        tangent = Tube(points, radii, mode="диаметры")
+        self.assertEqual(legacy.mode, "smin")
+        p = np.array([15.0, 8.0, 20.0])
+        actual = float(tangent.sdf(p[0], p[1], p[2]))
+        expected = float(round_cone_distance(p[0], p[1], p[2], points[0], points[1],
+                                             radii[0], radii[1]))
+        self.assertAlmostEqual(actual, expected, places=8)
+        self.assertNotAlmostEqual(actual, float(legacy.sdf(p[0], p[1], p[2])), places=3)
+        field = Field([-12, -12, 8, 70, 12, 32], 0.65)
+        field.add(tangent)
+        solid = field.mesh(smooth_iters=1, simplify=0.01, what="test tangent tube")
+        self.assertEqual(len(solid.decompose()), 1)
+        self.assertEqual(solid.genus(), 0)
 
 
 class DoorHandleTransitionTest(unittest.TestCase):

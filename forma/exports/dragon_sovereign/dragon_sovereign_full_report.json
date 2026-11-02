@@ -1,10 +1,10 @@
 {
   "stage": "full",
   "script": "examples/dragon_sovereign.forma",
-  "script_sha256": "ec551ce4ecb471e4c6c08583e1dfa92dd2507ed37d2ce43e143305f97b85dd1b",
+  "script_sha256": "1d4a3e5775eaaf2219c92b7474d051e61da9754874f911bed2791fb7755c1247",
   "glb": "exports/dragon_sovereign/dragon_sovereign.glb",
-  "glb_bytes": 5116544,
-  "glb_sha256": "22295198ac2663c921bbd5b2d1e88535e205676bdaa56ae41e288d71cd55a698",
+  "glb_bytes": 7460768,
+  "glb_sha256": "0dfff4b8b50344f8c55a5dcb58d76b6de053575cdad988896652c1261864a437",
   "scale_assumption_mm": 360,
   "reference_measurements": "проектные пропорции, не фотограмметрия",
   "objects": [
@@ -13,80 +13,92 @@
       "triangles": 512,
       "components": 1,
       "genus": 0,
-      "volume_mm3": 136.3708293562509,
+      "volume_mm3": 117.3034845669802,
       "bbox_mm": [
-        21.1,
-        -32.5,
-        293.0,
-        28.5,
-        -26.5,
-        299.0
+        20.5,
+        -46.6,
+        295.2,
+        27.1,
+        -40.4,
+        300.8
       ],
       "status": "Error.NoError",
       "boundary_edges": 0,
       "non_manifold_edges": 0,
       "degenerate_index": 0,
-      "degenerate_area": 0
+      "degenerate_area": 0,
+      "exact_boundary_edges": 0,
+      "exact_non_manifold_edges": 0,
+      "exact_degenerate_index": 0
     },
     {
       "name": "eye_L",
       "triangles": 512,
       "components": 1,
       "genus": 0,
-      "volume_mm3": 136.3708293562509,
+      "volume_mm3": 117.30348456698019,
       "bbox_mm": [
-        -28.5,
-        -32.5,
-        293.0,
-        -21.1,
-        -26.5,
-        299.0
+        -27.1,
+        -46.6,
+        295.2,
+        -20.5,
+        -40.4,
+        300.8
       ],
       "status": "Error.NoError",
       "boundary_edges": 0,
       "non_manifold_edges": 0,
       "degenerate_index": 0,
-      "degenerate_area": 0
+      "degenerate_area": 0,
+      "exact_boundary_edges": 0,
+      "exact_non_manifold_edges": 0,
+      "exact_degenerate_index": 0
     },
     {
       "name": "dragon",
-      "triangles": 156476,
+      "triangles": 198552,
       "components": 1,
       "genus": 0,
-      "volume_mm3": 1664577.1139477848,
+      "volume_mm3": 1199553.6298049502,
       "bbox_mm": [
-        -180.67637269083568,
-        -96.10505676269531,
-        26.928098678588867,
-        180.67637269083568,
-        167.1103515625,
-        360.2130126953125
+        -177.007373747304,
+        -93.08991241455078,
+        11.459632873535156,
+        177.007373747304,
+        161.0904083251953,
+        362.991603189379
       ],
       "status": "Error.NoError",
       "boundary_edges": 0,
       "non_manifold_edges": 0,
-      "degenerate_index": 6,
-      "degenerate_area": 0
+      "degenerate_index": 60,
+      "degenerate_area": 0,
+      "exact_boundary_edges": 0,
+      "exact_non_manifold_edges": 0,
+      "exact_degenerate_index": 0
     },
     {
       "name": "base",
-      "triangles": 2798,
+      "triangles": 3128,
       "components": 1,
       "genus": 0,
-      "volume_mm3": 712289.9020061711,
+      "volume_mm3": 879129.0283566843,
       "bbox_mm": [
-        -110.0,
-        -90.0,
+        -122.0,
+        -122.0,
         0.0,
-        110.0,
-        130.0,
+        122.0,
+        122.0,
         38.340739166804326
       ],
       "status": "Error.NoError",
       "boundary_edges": 0,
       "non_manifold_edges": 0,
       "degenerate_index": 0,
-      "degenerate_area": 0
+      "degenerate_area": 0,
+      "exact_boundary_edges": 0,
+      "exact_non_manifold_edges": 0,
+      "exact_degenerate_index": 0
     }
   ],
   "glb_roundtrip": [
@@ -116,7 +128,7 @@
     },
     {
       "name": "dragon",
-      "triangles": 156470,
+      "triangles": 198492,
       "components": 1,
       "genus": 0,
       "status": "Error.NoError",
@@ -128,7 +140,7 @@
     },
     {
       "name": "base",
-      "triangles": 2798,
+      "triangles": 3128,
       "components": 1,
       "genus": 0,
       "status": "Error.NoError",
@@ -152,12 +164,7 @@
     },
     {
       "level": "info",
-      "message": "from_sdf: сетка 2.05 мм, 36722 треугольников",
-      "line": 7
-    },
-    {
-      "level": "info",
-      "message": "from_sdf: адаптивная очистка 0.164 мм; non-manifold 2 → 0, объём -0.095%",
+      "message": "from_sdf: сетка 1.7 мм, 13350 треугольников",
       "line": 7
     },
     {
@@ -167,7 +174,7 @@
     },
     {
       "level": "info",
-      "message": "from_sdf: сетка 1.65 мм, 13284 треугольников",
+      "message": "from_sdf: сетка 1.25 мм, 6312 треугольников",
       "line": 8
     },
     {
@@ -177,67 +184,77 @@
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "from_sdf: сетка 1.3 мм, 10268 треугольников",
+      "line": 9
+    },
+    {
+      "level": "info",
+      "message": "from_sdf: готово",
+      "line": 9
+    },
+    {
+      "level": "info",
+      "message": "from_sdf: сетка 1.2 мм, 14880 треугольников",
+      "line": 10
+    },
+    {
+      "level": "info",
+      "message": "from_sdf: готово",
+      "line": 10
+    },
+    {
+      "level": "info",
+      "message": "from_sdf: сетка 1.4 мм, 12022 треугольников",
+      "line": 11
+    },
+    {
+      "level": "info",
+      "message": "from_sdf: готово",
+      "line": 11
+    },
+    {
+      "level": "info",
+      "message": "from_sdf: сетка 1.2 мм, 14894 треугольников",
       "line": 12
     },
     {
       "level": "info",
-      "message": "sweep: готово",
+      "message": "from_sdf: готово",
+      "line": 12
+    },
+    {
+      "level": "info",
+      "message": "from_sdf: сетка 1.4 мм, 12126 треугольников",
       "line": 13
     },
     {
       "level": "info",
-      "message": "sweep: готово",
+      "message": "from_sdf: готово",
+      "line": 13
+    },
+    {
+      "level": "info",
+      "message": "from_sdf: сетка 1.3 мм, 14242 треугольников",
       "line": 14
     },
     {
       "level": "info",
-      "message": "развёртка: 20 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 15
+      "message": "from_sdf: готово",
+      "line": 14
     },
     {
       "level": "info",
-      "message": "sweep: готово",
-      "line": 15
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 20 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 16
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 16
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 20 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 17
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 17
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 20 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "membrane: готово",
       "line": 18
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 18
-    },
-    {
-      "level": "info",
-      "message": "union: готово",
-      "line": 19
     },
     {
       "level": "info",
       "message": "twist: готово",
+      "line": 19
+    },
+    {
+      "level": "info",
+      "message": "rotate: готово",
       "line": 20
     },
     {
@@ -252,18 +269,18 @@
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "translate: готово",
       "line": 23
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "mirror: готово",
       "line": 24
     },
     {
       "level": "info",
-      "message": "mirror: готово",
-      "line": 25
+      "message": "sweep: готово",
+      "line": 27
     },
     {
       "level": "info",
@@ -272,13 +289,23 @@
     },
     {
       "level": "info",
-      "message": "sweep: готово",
+      "message": "union: готово",
       "line": 29
     },
     {
       "level": "info",
-      "message": "union: готово",
-      "line": 30
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 32
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 32
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 33
     },
     {
       "level": "info",
@@ -297,7 +324,12 @@
     },
     {
       "level": "info",
-      "message": "ellipsoid: готово",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 35
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
       "line": 35
     },
     {
@@ -307,7 +339,7 @@
     },
     {
       "level": "info",
-      "message": "sweep: готово",
+      "message": "ellipsoid: готово",
       "line": 37
     },
     {
@@ -322,22 +354,37 @@
     },
     {
       "level": "info",
-      "message": "ellipsoid: готово",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 39
     },
     {
       "level": "info",
-      "message": "ellipsoid: готово",
+      "message": "sweep: готово",
+      "line": 39
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 40
     },
     {
       "level": "info",
-      "message": "union: готово",
+      "message": "sweep: готово",
+      "line": 40
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 41
     },
     {
       "level": "info",
-      "message": "difference: готово",
+      "message": "sweep: готово",
+      "line": 41
+    },
+    {
+      "level": "info",
+      "message": "ellipsoid: готово",
       "line": 42
     },
     {
@@ -347,93 +394,63 @@
     },
     {
       "level": "info",
-      "message": "Материал применён: eye_R",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 44
     },
     {
       "level": "info",
-      "message": "color: готово",
+      "message": "sweep: готово",
       "line": 44
     },
     {
       "level": "info",
-      "message": "ellipsoid: готово",
+      "message": "union: готово",
       "line": 45
     },
     {
       "level": "info",
-      "message": "Материал применён: eye_L",
+      "message": "union: готово",
       "line": 46
+    },
+    {
+      "level": "info",
+      "message": "difference: готово",
+      "line": 47
+    },
+    {
+      "level": "info",
+      "message": "difference: готово",
+      "line": 48
+    },
+    {
+      "level": "info",
+      "message": "ellipsoid: готово",
+      "line": 49
+    },
+    {
+      "level": "info",
+      "message": "Материал применён: eye_R",
+      "line": 50
     },
     {
       "level": "info",
       "message": "color: готово",
-      "line": 46
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 49
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 49
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 50
     },
     {
       "level": "info",
-      "message": "sweep: готово",
-      "line": 50
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "ellipsoid: готово",
       "line": 51
     },
     {
       "level": "info",
-      "message": "sweep: готово",
-      "line": 51
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "Материал применён: eye_L",
       "line": 52
     },
     {
       "level": "info",
-      "message": "sweep: готово",
+      "message": "color: готово",
       "line": 52
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 53
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 53
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 54
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 54
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 55
     },
     {
       "level": "info",
@@ -442,7 +459,7 @@
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 56
     },
     {
@@ -452,7 +469,7 @@
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 57
     },
     {
@@ -462,7 +479,7 @@
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 58
     },
     {
@@ -472,7 +489,7 @@
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 59
     },
     {
@@ -482,7 +499,7 @@
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 60
     },
     {
@@ -492,7 +509,7 @@
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 61
     },
     {
@@ -522,338 +539,263 @@
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "union: готово",
       "line": 64
     },
     {
       "level": "info",
-      "message": "sweep: готово",
-      "line": 64
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "membrane: готово",
       "line": 65
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 65
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 66
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 66
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 67
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 67
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 68
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 68
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 69
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 69
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 70
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 70
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 71
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 71
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 72
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 72
-    },
-    {
-      "level": "info",
-      "message": "union: готово",
-      "line": 73
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 76
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 76
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 77
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 77
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 78
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 78
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 79
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 79
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 80
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 80
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 81
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 81
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 82
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 82
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 83
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 83
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 84
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 84
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 85
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 85
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 86
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 86
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 87
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 87
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 88
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 88
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 89
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 89
-    },
-    {
-      "level": "info",
-      "message": "union: готово",
-      "line": 90
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 93
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 94
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 95
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 95
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 96
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 96
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 97
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 98
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 98
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 99
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 99
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 100
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 100
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 101
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 101
-    },
-    {
-      "level": "info",
-      "message": "union: готово",
-      "line": 102
-    },
-    {
-      "level": "info",
-      "message": "leaf: готово",
-      "line": 103
     },
     {
       "level": "info",
       "message": "rotate: готово",
-      "line": 104
+      "line": 66
+    },
+    {
+      "level": "info",
+      "message": "rotate: готово",
+      "line": 67
+    },
+    {
+      "level": "info",
+      "message": "translate: готово",
+      "line": 68
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 69
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 69
     },
     {
       "level": "info",
       "message": "union: готово",
+      "line": 70
+    },
+    {
+      "level": "info",
+      "message": "membrane: готово",
+      "line": 73
+    },
+    {
+      "level": "info",
+      "message": "rotate: готово",
+      "line": 74
+    },
+    {
+      "level": "info",
+      "message": "translate: готово",
+      "line": 75
+    },
+    {
+      "level": "info",
+      "message": "membrane: готово",
+      "line": 76
+    },
+    {
+      "level": "info",
+      "message": "rotate: готово",
+      "line": 77
+    },
+    {
+      "level": "info",
+      "message": "translate: готово",
+      "line": 78
+    },
+    {
+      "level": "info",
+      "message": "membrane: готово",
+      "line": 79
+    },
+    {
+      "level": "info",
+      "message": "rotate: готово",
+      "line": 80
+    },
+    {
+      "level": "info",
+      "message": "translate: готово",
+      "line": 81
+    },
+    {
+      "level": "info",
+      "message": "membrane: готово",
+      "line": 82
+    },
+    {
+      "level": "info",
+      "message": "rotate: готово",
+      "line": 83
+    },
+    {
+      "level": "info",
+      "message": "translate: готово",
+      "line": 84
+    },
+    {
+      "level": "info",
+      "message": "membrane: готово",
+      "line": 85
+    },
+    {
+      "level": "info",
+      "message": "rotate: готово",
+      "line": 86
+    },
+    {
+      "level": "info",
+      "message": "translate: готово",
+      "line": 87
+    },
+    {
+      "level": "info",
+      "message": "membrane: готово",
+      "line": 88
+    },
+    {
+      "level": "info",
+      "message": "rotate: готово",
+      "line": 89
+    },
+    {
+      "level": "info",
+      "message": "translate: готово",
+      "line": 90
+    },
+    {
+      "level": "info",
+      "message": "membrane: готово",
+      "line": 91
+    },
+    {
+      "level": "info",
+      "message": "rotate: готово",
+      "line": 92
+    },
+    {
+      "level": "info",
+      "message": "translate: готово",
+      "line": 93
+    },
+    {
+      "level": "info",
+      "message": "union: готово",
+      "line": 94
+    },
+    {
+      "level": "info",
+      "message": "union: готово",
+      "line": 97
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 98
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 98
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 99
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 99
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 100
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 100
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 101
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 101
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 102
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 102
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 103
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 103
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 104
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 104
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 105
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 105
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 106
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 106
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 107
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 107
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 108
     },
     {
       "level": "info",
@@ -862,8 +804,18 @@
     },
     {
       "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 109
+    },
+    {
+      "level": "info",
       "message": "sweep: готово",
       "line": 109
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 110
     },
     {
       "level": "info",
@@ -872,8 +824,18 @@
     },
     {
       "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 111
+    },
+    {
+      "level": "info",
       "message": "sweep: готово",
       "line": 111
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 112
     },
     {
       "level": "info",
@@ -882,8 +844,18 @@
     },
     {
       "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 113
+    },
+    {
+      "level": "info",
       "message": "sweep: готово",
       "line": 113
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 114
     },
     {
       "level": "info",
@@ -892,5605 +864,411 @@
     },
     {
       "level": "info",
-      "message": "union: готово",
+      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 115
     },
     {
       "level": "info",
-      "message": "from_sdf: сетка 1.55 мм, 13680 треугольников",
+      "message": "sweep: готово",
+      "line": 115
+    },
+    {
+      "level": "info",
+      "message": "union: готово",
+      "line": 116
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 119
     },
     {
       "level": "info",
-      "message": "from_sdf: готово",
+      "message": "sweep: готово",
       "line": 119
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 120
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "sweep: готово",
+      "line": 120
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 121
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "sweep: готово",
+      "line": 121
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 122
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "sweep: готово",
+      "line": 122
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 123
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "sweep: готово",
+      "line": 123
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 124
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "sweep: готово",
+      "line": 124
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 125
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "sweep: готово",
+      "line": 125
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 126
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "sweep: готово",
+      "line": 126
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 127
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "sweep: готово",
+      "line": 127
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 128
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "sweep: готово",
+      "line": 128
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 129
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "sweep: готово",
+      "line": 129
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 130
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "sweep: готово",
+      "line": 130
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 131
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "sweep: готово",
+      "line": 131
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 132
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "sweep: готово",
+      "line": 132
+    },
+    {
+      "level": "info",
+      "message": "union: готово",
       "line": 133
     },
     {
       "level": "info",
-      "message": "translate: готово",
-      "line": 134
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 135
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 136
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
+      "message": "spikes: готово",
       "line": 137
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "union: готово",
       "line": 138
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "чешуя (дракон): 1037/1980 плоских пластинок, шаг 8.87 мм, safe=да, пропущено 943",
+      "line": 139
+    },
+    {
+      "level": "warn",
+      "message": "чешуя: safe отклонил 943 пластин, создававших новую оболочку, полость, петлю или нулевой прирост объёма",
       "line": 139
     },
     {
       "level": "info",
-      "message": "translate: готово",
-      "line": 140
+      "message": "scales: готово",
+      "line": 139
     },
     {
       "level": "info",
-      "message": "extrude: готово",
-      "line": 141
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 142
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 143
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
+      "message": "гладкость 160 → 104 сегментов (отклонение ≤ 0.06 мм)",
       "line": 144
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "cylinder: готово",
+      "line": 144
+    },
+    {
+      "level": "info",
+      "message": "rock: готово",
       "line": 145
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "Материал применён: rock_main",
       "line": 146
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "color: готово",
+      "line": 146
+    },
+    {
+      "level": "info",
+      "message": "rock: готово",
       "line": 147
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "Материал применён: rock_0",
       "line": 148
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "color: готово",
+      "line": 148
+    },
+    {
+      "level": "info",
+      "message": "rock: готово",
       "line": 149
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "Материал применён: rock_1",
       "line": 150
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "color: готово",
+      "line": 150
+    },
+    {
+      "level": "info",
+      "message": "rock: готово",
       "line": 151
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "Материал применён: rock_2",
       "line": 152
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "color: готово",
+      "line": 152
+    },
+    {
+      "level": "info",
+      "message": "rock: готово",
       "line": 153
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "Материал применён: rock_3",
       "line": 154
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "color: готово",
+      "line": 154
+    },
+    {
+      "level": "info",
+      "message": "rock: готово",
       "line": 155
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "Материал применён: rock_4",
       "line": 156
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "color: готово",
+      "line": 156
+    },
+    {
+      "level": "info",
+      "message": "rock: готово",
       "line": 157
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "Материал применён: hind_rest_R",
       "line": 158
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "color: готово",
+      "line": 158
+    },
+    {
+      "level": "info",
+      "message": "rock: готово",
       "line": 159
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "Материал применён: hind_rest_L",
       "line": 160
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "color: готово",
+      "line": 160
+    },
+    {
+      "level": "info",
+      "message": "union: готово",
       "line": 161
     },
     {
       "level": "info",
-      "message": "extrude: готово",
+      "message": "проверка: dragon watertight",
       "line": 162
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "проверка: dragon parts",
       "line": 163
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "проверка: base watertight",
       "line": 164
     },
     {
       "level": "info",
-      "message": "extrude: готово",
-      "line": 165
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 166
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 167
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 168
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 169
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 170
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 171
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 172
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 173
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 174
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 175
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 176
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 177
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 178
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 179
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 180
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 181
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 182
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 183
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 184
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 185
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 186
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 187
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 188
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 189
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 190
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 191
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 192
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 193
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 194
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 195
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 196
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 197
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 198
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 199
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 200
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 201
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 202
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 203
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 204
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 205
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 206
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 207
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 208
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 209
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 210
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 211
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 212
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 213
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 214
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 215
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 216
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 217
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 218
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 219
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 220
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 221
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 222
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 223
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 224
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 225
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 226
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 227
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 228
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 229
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 230
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 231
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 232
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 233
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 234
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 235
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 236
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 237
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 238
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 239
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 240
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 241
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 242
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 243
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 244
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 245
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 246
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 247
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 248
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 249
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 250
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 251
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 252
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 253
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 254
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 255
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 256
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 257
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 258
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 259
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 260
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 261
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 262
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 263
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 264
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 265
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 266
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 267
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 268
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 269
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 270
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 271
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 272
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 273
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 274
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 275
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 276
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 277
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 278
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 279
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 280
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 281
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 282
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 283
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 284
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 285
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 286
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 287
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 288
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 289
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 290
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 291
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 292
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 293
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 294
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 295
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 296
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 297
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 298
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 299
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 300
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 301
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 302
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 303
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 304
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 305
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 306
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 307
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 308
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 309
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 310
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 311
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 312
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 313
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 314
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 315
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 316
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 317
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 318
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 319
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 320
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 321
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 322
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 323
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 324
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 325
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 326
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 327
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 328
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 329
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 330
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 331
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 332
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 333
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 334
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 335
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 336
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 337
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 338
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 339
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 340
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 341
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 342
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 343
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 344
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 345
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 346
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 347
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 348
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 349
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 350
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 351
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 352
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 353
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 354
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 355
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 356
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 357
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 358
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 359
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 360
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 361
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 362
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 363
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 364
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 365
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 366
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 367
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 368
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 369
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 370
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 371
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 372
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 373
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 374
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 375
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 376
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 377
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 378
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 379
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 380
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 381
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 382
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 383
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 384
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 385
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 386
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 387
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 388
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 389
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 390
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 391
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 392
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 393
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 394
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 395
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 396
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 397
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 398
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 399
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 400
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 401
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 402
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 403
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 404
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 405
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 406
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 407
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 408
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 409
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 410
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 411
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 412
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 413
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 414
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 415
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 416
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 417
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 418
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 419
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 420
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 421
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 422
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 423
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 424
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 425
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 426
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 427
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 428
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 429
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 430
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 431
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 432
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 433
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 434
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 435
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 436
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 437
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 438
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 439
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 440
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 441
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 442
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 443
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 444
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 445
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 446
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 447
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 448
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 449
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 450
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 451
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 452
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 453
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 454
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 455
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 456
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 457
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 458
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 459
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 460
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 461
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 462
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 463
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 464
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 465
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 466
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 467
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 468
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 469
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 470
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 471
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 472
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 473
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 474
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 475
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 476
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 477
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 478
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 479
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 480
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 481
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 482
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 483
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 484
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 485
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 486
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 487
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 488
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 489
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 490
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 491
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 492
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 493
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 494
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 495
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 496
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 497
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 498
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 499
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 500
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 501
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 502
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 503
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 504
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 505
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 506
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 507
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 508
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 509
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 510
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 511
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 512
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 513
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 514
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 515
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 516
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 517
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 518
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 519
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 520
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 521
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 522
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 523
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 524
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 525
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 526
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 527
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 528
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 529
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 530
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 531
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 532
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 533
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 534
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 535
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 536
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 537
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 538
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 539
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 540
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 541
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 542
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 543
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 544
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 545
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 546
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 547
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 548
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 549
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 550
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 551
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 552
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 553
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 554
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 555
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 556
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 557
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 558
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 559
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 560
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 561
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 562
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 563
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 564
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 565
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 566
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 567
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 568
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 569
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 570
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 571
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 572
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 573
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 574
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 575
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 576
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 577
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 578
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 579
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 580
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 581
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 582
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 583
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 584
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 585
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 586
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 587
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 588
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 589
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 590
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 591
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 592
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 593
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 594
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 595
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 596
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 597
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 598
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 599
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 600
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 601
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 602
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 603
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 604
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 605
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 606
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 607
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 608
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 609
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 610
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 611
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 612
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 613
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 614
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 615
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 616
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 617
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 618
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 619
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 620
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 621
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 622
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 623
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 624
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 625
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 626
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 627
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 628
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 629
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 630
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 631
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 632
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 633
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 634
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 635
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 636
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 637
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 638
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 639
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 640
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 641
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 642
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 643
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 644
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 645
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 646
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 647
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 648
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 649
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 650
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 651
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 652
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 653
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 654
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 655
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 656
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 657
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 658
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 659
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 660
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 661
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 662
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 663
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 664
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 665
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 666
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 667
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 668
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 669
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 670
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 671
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 672
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 673
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 674
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 675
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 676
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 677
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 678
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 679
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 680
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 681
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 682
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 683
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 684
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 685
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 686
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 687
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 688
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 689
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 690
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 691
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 692
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 693
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 694
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 695
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 696
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 697
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 698
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 699
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 700
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 701
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 702
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 703
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 704
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 705
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 706
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 707
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 708
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 709
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 710
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 711
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 712
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 713
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 714
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 715
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 716
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 717
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 718
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 719
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 720
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 721
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 722
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 723
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 724
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 725
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 726
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 727
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 728
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 729
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 730
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 731
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 732
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 733
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 734
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 735
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 736
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 737
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 738
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 739
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 740
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 741
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 742
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 743
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 744
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 745
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 746
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 747
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 748
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 749
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 750
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 751
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 752
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 753
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 754
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 755
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 756
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 757
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 758
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 759
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 760
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 761
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 762
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 763
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 764
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 765
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 766
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 767
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 768
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 769
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 770
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 771
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 772
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 773
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 774
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 775
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 776
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 777
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 778
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 779
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 780
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 781
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 782
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 783
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 784
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 785
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 786
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 787
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 788
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 789
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 790
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 791
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 792
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 793
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 794
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 795
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 796
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 797
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 798
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 799
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 800
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 801
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 802
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 803
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 804
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 805
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 806
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 807
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 808
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 809
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 810
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 811
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 812
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 813
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 814
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 815
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 816
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 817
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 818
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 819
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 820
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 821
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 822
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 823
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 824
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 825
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 826
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 827
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 828
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 829
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 830
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 831
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 832
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 833
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 834
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 835
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 836
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 837
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 838
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 839
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 840
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 841
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 842
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 843
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 844
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 845
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 846
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 847
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 848
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 849
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 850
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 851
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 852
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 853
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 854
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 855
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 856
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 857
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 858
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 859
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 860
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 861
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 862
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 863
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 864
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 865
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 866
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 867
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 868
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 869
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 870
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 871
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 872
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 873
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 874
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 875
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 876
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 877
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 878
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 879
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 880
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 881
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 882
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 883
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 884
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 885
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 886
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 887
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 888
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 889
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 890
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 891
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 892
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 893
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 894
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 895
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 896
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 897
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 898
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 899
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 900
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 901
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 902
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 903
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 904
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 905
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 906
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 907
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 908
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 909
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 910
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 911
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 912
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 913
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 914
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 915
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 916
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 917
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 918
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 919
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 920
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 921
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 922
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 923
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 924
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 925
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 926
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 927
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 928
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 929
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 930
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 931
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 932
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 933
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 934
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 935
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 936
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 937
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 938
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 939
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 940
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 941
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 942
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 943
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 944
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 945
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 946
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 947
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 948
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 949
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 950
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 951
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 952
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 953
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 954
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 955
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 956
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 957
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 958
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 959
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 960
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 961
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 962
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 963
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 964
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 965
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 966
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 967
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 968
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 969
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 970
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 971
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 972
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 973
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 974
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 975
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 976
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 977
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 978
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 979
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 980
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 981
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 982
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 983
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 984
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 985
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 986
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 987
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 988
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 989
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 990
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 991
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 992
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 993
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 994
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 995
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 996
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 997
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 998
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 999
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1000
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1001
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1002
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1003
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1004
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1005
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1006
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1007
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1008
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1009
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1010
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1011
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1012
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1013
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1014
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1015
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1016
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1017
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1018
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1019
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1020
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1021
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1022
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1023
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1024
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1025
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1026
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1027
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1028
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1029
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1030
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1031
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1032
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1033
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1034
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1035
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1036
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1037
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1038
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1039
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1040
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1041
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1042
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1043
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1044
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1045
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1046
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1047
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1048
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1049
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1050
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1051
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1052
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1053
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1054
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1055
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1056
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1057
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1058
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1059
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1060
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1061
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1062
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1063
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1064
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1065
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1066
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1067
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1068
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1069
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1070
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1071
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1072
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1073
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1074
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1075
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1076
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1077
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1078
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1079
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1080
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1081
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1082
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1083
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1084
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1085
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1086
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1087
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1088
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1089
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1090
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1091
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1092
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1093
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1094
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1095
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1096
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1097
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1098
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1099
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1100
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1101
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1102
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1103
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1104
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1105
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1106
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1107
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1108
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1109
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1110
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1111
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1112
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1113
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1114
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1115
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1116
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1117
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1118
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1119
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1120
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1121
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1122
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1123
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1124
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1125
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1126
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1127
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1128
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1129
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1130
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1131
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1132
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1133
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1134
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1135
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1136
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1137
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1138
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1139
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1140
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1141
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1142
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1143
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1144
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1145
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1146
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1147
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1148
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1149
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1150
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1151
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1152
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1153
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1154
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1155
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1156
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1157
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1158
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1159
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1160
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1161
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1162
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1163
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1164
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1165
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1166
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1167
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1168
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1169
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1170
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1171
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1172
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1173
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1174
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1175
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1176
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1177
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1178
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1179
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1180
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1181
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1182
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1183
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1184
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1185
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1186
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1187
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1188
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1189
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1190
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1191
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1192
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1193
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1194
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1195
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1196
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1197
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1198
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1199
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1200
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1201
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1202
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1203
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1204
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1205
-    },
-    {
-      "level": "info",
-      "message": "extrude: готово",
-      "line": 1206
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 1207
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 1208
-    },
-    {
-      "level": "info",
-      "message": "union: готово",
-      "line": 1209
-    },
-    {
-      "level": "info",
-      "message": "union: готово",
-      "line": 1210
-    },
-    {
-      "level": "info",
-      "message": "union: готово",
-      "line": 1213
-    },
-    {
-      "level": "info",
-      "message": "гладкость 160 → 96 сегментов (отклонение ≤ 0.06 мм)",
-      "line": 1216
-    },
-    {
-      "level": "info",
-      "message": "cylinder: готово",
-      "line": 1216
-    },
-    {
-      "level": "info",
-      "message": "rock: готово",
-      "line": 1217
-    },
-    {
-      "level": "info",
-      "message": "Материал применён: rock_main",
-      "line": 1218
-    },
-    {
-      "level": "info",
-      "message": "color: готово",
-      "line": 1218
-    },
-    {
-      "level": "info",
-      "message": "rock: готово",
-      "line": 1219
-    },
-    {
-      "level": "info",
-      "message": "Материал применён: rock_0",
-      "line": 1220
-    },
-    {
-      "level": "info",
-      "message": "color: готово",
-      "line": 1220
-    },
-    {
-      "level": "info",
-      "message": "rock: готово",
-      "line": 1221
-    },
-    {
-      "level": "info",
-      "message": "Материал применён: rock_1",
-      "line": 1222
-    },
-    {
-      "level": "info",
-      "message": "color: готово",
-      "line": 1222
-    },
-    {
-      "level": "info",
-      "message": "rock: готово",
-      "line": 1223
-    },
-    {
-      "level": "info",
-      "message": "Материал применён: rock_2",
-      "line": 1224
-    },
-    {
-      "level": "info",
-      "message": "color: готово",
-      "line": 1224
-    },
-    {
-      "level": "info",
-      "message": "rock: готово",
-      "line": 1225
-    },
-    {
-      "level": "info",
-      "message": "Материал применён: rock_3",
-      "line": 1226
-    },
-    {
-      "level": "info",
-      "message": "color: готово",
-      "line": 1226
-    },
-    {
-      "level": "info",
-      "message": "rock: готово",
-      "line": 1227
-    },
-    {
-      "level": "info",
-      "message": "Материал применён: rock_4",
-      "line": 1228
-    },
-    {
-      "level": "info",
-      "message": "color: готово",
-      "line": 1228
-    },
-    {
-      "level": "info",
-      "message": "union: готово",
-      "line": 1229
-    },
-    {
-      "level": "info",
-      "message": "проверка: dragon watertight",
-      "line": 1230
-    },
-    {
-      "level": "info",
-      "message": "проверка: dragon parts",
-      "line": 1231
-    },
-    {
-      "level": "info",
-      "message": "проверка: base watertight",
-      "line": 1232
-    },
-    {
-      "level": "info",
       "message": "проверка: base parts",
-      "line": 1233
+      "line": 165
     }
   ],
+  "support_checks": [
+    {
+      "name": "claw_F_L_0",
+      "contact_mm3": 0.07627821037380922
+    },
+    {
+      "name": "claw_F_L_1",
+      "contact_mm3": 0.07611592209127213
+    },
+    {
+      "name": "claw_F_L_2",
+      "contact_mm3": 76.49269274777198
+    },
+    {
+      "name": "claw_F_L_3",
+      "contact_mm3": 129.9922210462224
+    },
+    {
+      "name": "claw_F_R_0",
+      "contact_mm3": 137.7156623133782
+    },
+    {
+      "name": "claw_F_R_1",
+      "contact_mm3": 35.83329470153375
+    },
+    {
+      "name": "claw_F_R_2",
+      "contact_mm3": 0.07685932102698631
+    },
+    {
+      "name": "claw_F_R_3",
+      "contact_mm3": 0.07631516236115565
+    },
+    {
+      "name": "claw_H_L_0",
+      "contact_mm3": 3.1709819499116754
+    },
+    {
+      "name": "claw_H_L_1",
+      "contact_mm3": 2.398733442495205
+    },
+    {
+      "name": "claw_H_L_2",
+      "contact_mm3": 2.968466204480405
+    },
+    {
+      "name": "claw_H_R_0",
+      "contact_mm3": 3.36367587791412
+    },
+    {
+      "name": "claw_H_R_1",
+      "contact_mm3": 3.1224166259686257
+    },
+    {
+      "name": "claw_H_R_2",
+      "contact_mm3": 2.869886787687499
+    }
+  ],
+  "design_checks": {
+    "supports": "4 опоры; объёмный контакт всех 8 передних и 6 задних когтей",
+    "wing_camber_mm": 24.0,
+    "wing_relief": "5 интегральных рёбер в замкнутой мембране на каждое крыло",
+    "front_sdf_resolution_mm": 1.2,
+    "scales": "scales.on по skin_origin; safe по полному dragon после всех деталей",
+    "breast_plates": "7 выпуклых chevron-щитков; не трубчатые sweep-валики"
+  },
   "renders": {
     "files": [
       {
@@ -6520,67 +1298,88 @@
       }
     ],
     "bbox": [
-      -180.67637634277344,
-      -96.10505676269531,
+      -177.0073699951172,
+      -122.0,
       0.0,
-      180.67637634277344,
-      167.1103515625,
-      360.2130126953125
+      177.0073699951172,
+      161.0904083251953,
+      362.9916076660156
     ],
     "combined": "/home/user/Hello-program/forma/renders/dragon_sovereign/dragon_full_all.png"
   },
-  "raycast_picking": {
-    "coordinate_note": "GLB Y-up; лучи заданы из канонических Forma-координат",
+  "head_renders": [
+    "renders/dragon_sovereign/dragon_head_iso.png",
+    "renders/dragon_sovereign/dragon_head_right.png"
+  ],
+  "picking": {
+    "glb": "exports/dragon_sovereign/dragon_sovereign.glb",
+    "bytes": 7460768,
+    "sha256": "0dfff4b8b50344f8c55a5dcb58d76b6de053575cdad988896652c1261864a437",
     "small_scene": {
-      "target": "eye_R",
-      "hit": "eye_R",
-      "distance_mm": 496.93951824024197,
-      "passed": true,
-      "candidates": [
-        "eye_R",
-        "dragon"
+      "passed": 1,
+      "total": 1,
+      "result": {
+        "name": "eye_R",
+        "point": [
+          23.800000190734863,
+          298,
+          46.59999838588949
+        ],
+        "faceIndex": 267,
+        "highlighted": true
+      }
+    },
+    "full_scene": {
+      "passed": 4,
+      "total": 4,
+      "results": [
+        {
+          "name": "eye_R",
+          "point": [
+            23.8,
+            298,
+            46.599998403535835
+          ],
+          "faceIndex": 267,
+          "highlighted": true
+        },
+        {
+          "name": "eye_L",
+          "point": [
+            -23.8,
+            298,
+            46.599998403535835
+          ],
+          "faceIndex": 51,
+          "highlighted": true
+        },
+        {
+          "name": "dragon",
+          "point": [
+            0,
+            282,
+            91.93844083210661
+          ],
+          "faceIndex": 28581,
+          "highlighted": true
+        },
+        {
+          "name": "base",
+          "point": [
+            0,
+            11.999999999999943,
+            110
+          ],
+          "faceIndex": 1307,
+          "highlighted": true
+        }
       ]
     },
-    "full_scene": [
-      {
-        "target": "eye_R",
-        "hit": "eye_R",
-        "distance_mm": 496.93951824024197,
-        "passed": true,
-        "candidates": [
-          "eye_R",
-          "dragon"
-        ]
-      },
-      {
-        "target": "eye_L",
-        "hit": "eye_L",
-        "distance_mm": 496.93951824024197,
-        "passed": true,
-        "candidates": [
-          "eye_L",
-          "dragon"
-        ]
-      },
-      {
-        "target": "dragon",
-        "hit": "dragon",
-        "distance_mm": 556.3418012052233,
-        "passed": true,
-        "candidates": [
-          "dragon"
-        ]
-      },
-      {
-        "target": "base",
-        "hit": "base",
-        "distance_mm": 88.0,
-        "passed": true,
-        "candidates": [
-          "base"
-        ]
-      }
-    ],
-    "passed": true
+    "names": [
+      "base",
+      "dragon",
+      "eye_L",
+      "eye_R"
+    ]
   }
 }

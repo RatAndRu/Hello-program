@@ -126,6 +126,24 @@ class TestEyeballAndWeb048(unittest.TestCase):
                 self.assertLess(curved.manifold.volume(), flat.manifold.volume() * 0.94)
                 self.assertTrue(curved.meta["membrane"])
 
+    def test_custom_membrane_is_closed_and_camber_changes_surface(self):
+        base = ("м = membrane root=[40,-5] outline=[[0,-20],[20,-5],[45,0],"
+                "[100,50],[140,0],[100,-50],[0,-30]] thick=.8 rings=12 camber=")
+        flat = last(ok(base + "0"))
+        domed = last(ok(base + "12"))
+        ribbed = last(ok(base + "12 rib_angles=[20,80] rib_height=3 rib_width=8"))
+        for obj in (flat, domed, ribbed):
+            self.assertEqual(parts(obj.manifold), 1)
+            self.assertEqual(obj.manifold.genus(), 0)
+            self.assertEqual(obj.manifold.status().name, "NoError")
+        self.assertAlmostEqual(flat.manifold.bounding_box()[5] -
+                               flat.manifold.bounding_box()[2], 0.8, delta=1e-6)
+        self.assertGreater(domed.manifold.bounding_box()[5], 12.0)
+        self.assertGreater(ribbed.manifold.bounding_box()[5], domed.manifold.bounding_box()[5])
+        self.assertEqual(ribbed.meta["rib_height"], 3.0)
+        self.assertEqual(ribbed.meta["rib_angles"], [20.0, 80.0])
+        self.assertEqual(domed.meta["rings"], 12)
+
 
 class TestShrinkwrap048(unittest.TestCase):
     script = ("цель = sphere radius=20\n"
@@ -179,6 +197,62 @@ class TestFlatScales048(unittest.TestCase):
                 self.assertEqual(obj.meta["tiles"], 96)
                 self.assertAlmostEqual(obj.meta["row_step"], 3.3)
                 self.assertAlmostEqual(obj.meta["row_step"] / 6.0, 0.55)
+
+    def test_pitch_and_safe_path_preserve_topology(self):
+        pitched = last(ok("ш = sphere radius=30\nscales ш kind=дракон rows=6 "
+                          "per_row=12 length=6 pitch=4 safe=да"))
+        self.assertAlmostEqual(pitched.meta["row_step"], 4.0)
+        self.assertEqual(pitched.manifold.genus(), 0)
+
+        script = ("т = cylinder radius=15 height=40 at=[0,0,20]\n"
+                  "scales т kind=дракон path=[[0,0,0],[0,0,40]] rows=6 "
+                  "per_row=12 length=7 tilt=20 safe=да")
+        obj = last(ok(script))
+        self.assertEqual(parts(obj.manifold), 1)
+        self.assertEqual(obj.manifold.genus(), 0)
+        self.assertEqual(obj.meta["path"], [[0.0, 0.0, 0.0], [0.0, 0.0, 40.0]])
+        self.assertTrue(obj.meta["safe"])
+        self.assertGreater(obj.meta["tiles"], 0)
+        self.assertEqual(obj.meta["tiles"] + obj.meta["tiles_skipped"],
+                         obj.meta["tiles_attempted"])
+
+    def test_multiple_paths_are_checked_on_one_shared_body(self):
+        obj = last(ok("т = blob spheres=[[0,0,20,15],[0,0,50,12]] blend=8 resolution=1\n"
+                      "scales т kind=дракон paths=[[[0,0,10],[0,0,30]],[[0,0,40],[0,0,60]]] "
+                      "pitch=6 per_row=10 length=5 tilt=20 safe=да"))
+        self.assertEqual(parts(obj.manifold), 1)
+        self.assertEqual(obj.manifold.genus(), 0)
+        self.assertEqual(len(obj.meta["paths"]), 2)
+        self.assertEqual(len(obj.meta["row_step"]), 2)
+        self.assertGreater(obj.meta["tiles"], 0)
+
+    def test_separate_placement_surface_and_topology_guard_base(self):
+        obj = last(ok(
+            "кожа = sphere radius=20 segments=48 at=[0,0,20]\n"
+            "коготь = ellipsoid x=5 y=4 z=6 segments=32 at=[17,0,25]\n"
+            "кожа = union [кожа,коготь]\n"
+            "крыло = box size=[28,3,22] at=[0,18,20]\n"
+            "дракон = union [кожа,крыло]\n"
+            "scales дракон on=кожа kind=дракон path=[[0,0,2],[0,0,38]] "
+            "rows=6 per_row=10 length=5 tilt=20 safe=да"))
+        self.assertEqual(parts(obj.manifold), 1)
+        self.assertEqual(obj.manifold.genus(), 0)
+        self.assertEqual(obj.meta["on"], "кожа")
+        self.assertTrue(obj.meta["safe"])
+        self.assertGreater(obj.meta["tiles"], 0)
+        self.assertEqual(obj.meta["tiles"] + obj.meta["tiles_skipped"],
+                         obj.meta["tiles_attempted"])
+
+    def test_safe_spikes_report_rejections_and_preserve_topology(self):
+        obj = last(ok("ш = sphere radius=20 segments=48 at=[0,0,20]\n"
+                      "spikes ш surface=вся count=32 height=5 base_d=3 "
+                      "tip_d=.2 sides=12 safe=да seed=9"))
+        self.assertEqual(parts(obj.manifold), 1)
+        self.assertEqual(obj.manifold.genus(), 0)
+        self.assertTrue(obj.meta["safe"])
+        self.assertGreater(obj.meta["spikes"], 0)
+        self.assertEqual(obj.meta["spikes"] + obj.meta["spikes_skipped"],
+                         obj.meta["spikes_attempted"])
 
 
 if __name__ == "__main__":

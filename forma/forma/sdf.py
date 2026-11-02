@@ -437,6 +437,76 @@ class EllipseCylinder(Prim):
         return outside + inside - self.edge
 
 
+def round_cone_distance(x, y, z, a, b, ra: float, rb: float):
+    """Точное SDF выпуклой оболочки двух шаров (round cone).
+
+    Боковая коническая поверхность касается обоих сферических колпачков.
+    При равных радиусах касательные окружности — диаметральные сечения через
+    центры шаров; при разных радиусах они вычисляются аналитически. В отличие
+    от ``smin(capsule, sphere)`` здесь нет добавочного объёма у шва.
+    """
+    a = np.asarray(a, dtype=np.float64).reshape(3)
+    b = np.asarray(b, dtype=np.float64).reshape(3)
+    ra, rb = float(ra), float(rb)
+    if ra <= 0 or rb <= 0:
+        raise GeometryError("round_cone: радиусы должны быть положительными")
+    px, py, pz = (np.asarray(v, dtype=np.float64) for v in (x, y, z))
+    ba = b - a
+    l2 = float(np.dot(ba, ba))
+    rr = ra - rb
+    if l2 <= 1e-20 or l2 <= rr * rr + 1e-16:
+        # Вырожденная цепочка не должна давать NaN: выпуклая оболочка
+        # содержащегося шара — просто больший шар.
+        if rb > ra:
+            a, ra = b, rb
+        qx, qy, qz = px - a[0], py - a[1], pz - a[2]
+        return np.sqrt(qx * qx + qy * qy + qz * qz) - ra
+
+    pa = np.stack(np.broadcast_arrays(px - a[0], py - a[1], pz - a[2]), axis=0)
+    y0 = pa[0] * ba[0] + pa[1] * ba[1] + pa[2] * ba[2]
+    z0 = y0 - l2
+    # |pa*l2-ba*y|^2: квадрат удвоенной площади без sqrt в ветвлениях.
+    cx = pa[0] * l2 - ba[0] * y0
+    cy = pa[1] * l2 - ba[1] * y0
+    cz = pa[2] * l2 - ba[2] * y0
+    x2 = np.maximum(cx * cx + cy * cy + cz * cz, 0.0)
+    y2 = y0 * y0 * l2
+    z2 = z0 * z0 * l2
+    a2 = l2 - rr * rr
+    il2 = 1.0 / l2
+    k = float(np.sign(rr)) * rr * rr * x2
+    use_b = np.sign(z0) * a2 * z2 > k
+    use_a = np.sign(y0) * a2 * y2 < k
+    da = np.sqrt(x2 + y2) * il2 - ra
+    db = np.sqrt(x2 + z2) * il2 - rb
+    side = (np.sqrt(x2 * a2 * il2) + y0 * rr) * il2 - ra
+    return np.where(use_b, db, np.where(use_a, da, side))
+
+
+@dataclass
+class RoundCone(Prim):
+    """Два шара и их общая касательная коническая поверхность."""
+
+    a: tuple
+    b: tuple
+    ra: float
+    rb: float
+
+    def __post_init__(self):
+        self.a = tuple(float(v) for v in np.asarray(self.a, dtype=np.float64).reshape(3))
+        self.b = tuple(float(v) for v in np.asarray(self.b, dtype=np.float64).reshape(3))
+        self.ra, self.rb = float(self.ra), float(self.rb)
+        if self.ra <= 0 or self.rb <= 0:
+            raise GeometryError("RoundCone: радиусы должны быть положительными")
+        points = np.asarray((self.a, self.b), dtype=np.float64)
+        radii = np.asarray((self.ra, self.rb), dtype=np.float64)
+        self.lo = np.min(points - radii[:, None], axis=0)
+        self.hi = np.max(points + radii[:, None], axis=0)
+
+    def sdf(self, x, y, z):
+        return round_cone_distance(x, y, z, self.a, self.b, self.ra, self.rb)
+
+
 @dataclass
 class Tube(Prim):
     """Скруглённая переменная трубка по polyline как единый SDF-примитив.
@@ -450,6 +520,7 @@ class Tube(Prim):
     radii: object
     z_scale: float = 1.0
     joint: float = 0.12
+    mode: str = "smin"
 
     def __post_init__(self):
         points = np.asarray(self.points, dtype=np.float64).reshape(-1, 3)
@@ -467,6 +538,12 @@ class Tube(Prim):
         if self.z_scale <= 0:
             raise GeometryError("Tube: z_scale должен быть положительным")
         self.joint = float(np.clip(self.joint, 0.0, 0.5))
+        self.mode = str(self.mode).strip().lower()
+        aliases = {"tangent": "диаметры", "diameter": "диаметры", "diameters": "диаметры",
+                   "касательные": "диаметры", "касательная": "диаметры", "smooth": "smin"}
+        self.mode = aliases.get(self.mode, self.mode)
+        if self.mode not in ("smin", "диаметры"):
+            raise GeometryError("Tube: mode должен быть smin или диаметры")
         pad = np.column_stack((radii, radii, radii * self.z_scale)) * (1.0 + self.joint * 0.25)
         self.lo = np.min(points - pad, axis=0)
         self.hi = np.max(points + pad, axis=0)
@@ -477,6 +554,20 @@ class Tube(Prim):
         pz = np.asarray(z, dtype=np.float64) / self.z_scale
         best = np.full_like(px, BIG, dtype=np.float64)
         points = self.points
+        if self.mode == "диаметры":
+            if len(points) == 1:
+                qx, qy, qz = px - points[0, 0], py - points[0, 1], pz - points[0, 2]
+                return (np.sqrt(qx * qx + qy * qy + qz * qz) - self.radii[0]) * self.z_scale
+            for i in range(len(points) - 1):
+                a = points[i].copy()
+                b = points[i + 1].copy()
+                a[2] /= self.z_scale
+                b[2] /= self.z_scale
+                distance = round_cone_distance(px, py, pz, a, b, self.radii[i], self.radii[i + 1])
+                best = distance if i == 0 else np.minimum(best, distance)
+            # Hard union касательных сегментов: их общие сферические пояса
+            # уже дают C1, дополнительный smin здесь только раздул бы стык.
+            return best * self.z_scale
         for i in range(max(1, len(points) - 1)):
             a = points[min(i, len(points) - 1)]
             b = points[min(i + 1, len(points) - 1)]
@@ -563,8 +654,12 @@ def rounded_cylinder(c, radius, length, edge=0.0, axis="z"):
     return RoundedCylinder(c, radius, length, edge, axis)
 
 
-def tube(points, radii, z_scale=1.0, joint=0.12):
-    return Tube(points, radii, z_scale, joint)
+def tube(points, radii, z_scale=1.0, joint=0.12, mode="smin"):
+    return Tube(points, radii, z_scale, joint, mode)
+
+
+def round_cone(a, b, ra, rb) -> RoundCone:
+    return RoundCone(a, b, ra, rb)
 
 
 def lerp(a, b, t):

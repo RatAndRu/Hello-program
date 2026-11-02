@@ -1046,7 +1046,9 @@ def _scale_tile(w: float, l: float, t: float, kind: str = "рыба",
             "варианты tile=плоская, волна, ромб или испанская. Каждая пластинка "
             "наклонена от погружённого корня к приподнятому концу; верхний "
             "конечный сектор на overlap перекрывает корень следующей нижней. "
-            "Шаг рядов равен length·(1−overlap), поэтому перекрытие реальное.",
+            "Шаг рядов равен length·(1−overlap), поэтому перекрытие реальное; "
+            "pitch задаёт его независимо. path ведёт раскладку вдоль кривой "
+            "центральной линии, а safe=да не допускает новых полостей и петель.",
     example="рыба = lathe points=[[0,0],[10,0],[26,30],[22,90],[8,120],[0,120]]\n"
             "scales рыба kind=рыба rows=9 per_row=16 length=16 tilt=18 overlap=.45\n"
             "дракон = sphere radius=50\n"
@@ -1063,6 +1065,11 @@ def _scale_tile(w: float, l: float, t: float, kind: str = "рыба",
             "thick": "толщина плоской пластинки, мм (0.08 length)",
             "tilt": "наклон плоскости от корня к концу, ° 0…45 (18; дракон 28)",
             "overlap": "перекрытие корня следующей чешуйки 0.05…0.85 (0.45)",
+            "pitch": "независимый шаг рядов, мм; 0/не задан = length·(1−overlap), для path — вся длина",
+            "path": "центральная линия [[x,y,z],...] для шеи, хвоста и конечностей",
+            "paths": "несколько линий [[[x,y,z],...],...] на ОБЩЕМ теле; pitch≈9 задаёт шаг каждой",
+            "on": "отдельный объект для ray-cast посадки; base остаётся целью объединения и safe-проверки",
+            "safe": "да — проверять компоненты/оболочки/genus и пропускать только бракованные пластины (нет)",
             "seed": "сдвиг раскладки (0)"},
     positional=["objects"])
 def scales(a, name):
@@ -1085,54 +1092,199 @@ def scales(a, name):
     rows = int(a.num("rows", 8, minv=1, maxv=60))
     per_row = int(a.num("per_row", 14, minv=3, maxv=120))
     length = float(a.num("length", 14.0, minv=0.3))
-    width = float(a.num("width", length * (0.65 if kind == "дракон" else 0.9), minv=0.2))
+    path_raw = a.value("path", []) or []
+    paths_raw = a.value("paths", []) or []
+    use_multi = bool(paths_raw)
+    if use_multi and path_raw:
+        raise GeometryError("scales: задайте либо path, либо paths, не оба одновременно.")
+    use_path = bool(path_raw) or use_multi
+    width_default = length * (0.65 if kind == "дракон" else 0.9)
+    width = a.num("width", None if use_path else width_default, minv=0.2)
+    width = None if width is None else float(width)
     thick = float(a.num("thick", length * 0.08, minv=0.03))
     tilt = float(a.num("tilt", 28.0 if kind == "дракон" else (12.0 if kind == "черепица" else 18.0),
                        minv=0.0, maxv=45.0) or 0.0)
     overlap = float(a.num("overlap", 0.45, minv=0.05, maxv=0.85))
+    pitch = a.num("pitch", 9.0 if use_multi else None, minv=0.05)
+    pitch = None if pitch is None else float(pitch)
+    safe = a.boolean("safe", False)
     seed = int(a.num("seed", 0) or 0)
-    m = base.manifold
+    on_name = (a.text("on") or "").strip()
+    placement = a.scene.resolve(on_name) if on_name else base
+    if placement is base and on_name:
+        raise GeometryError("scales: on должен ссылаться на другой объект или быть опущен.")
+    m = placement.manifold
+    union_base = base.manifold
     bb = m.bounding_box()
     cx, cy, cz = (bb[0] + bb[3]) / 2.0, (bb[1] + bb[4]) / 2.0, (bb[2] + bb[5]) / 2.0
     z0, z1 = bb[2], bb[5]
     reach = max(bb[3] - bb[0], bb[4] - bb[1], z1 - z0) * 2.0 + 10.0
-    step_z = length * (1.0 - overlap)
-    centre_span = (rows - 1) * step_z
-    if centre_span > (z1 - z0) + 1e-7:
-        raise GeometryError("scales: ряды с такой length/overlap не помещаются по высоте тела.",
-                            hint="Уменьшите rows/length или увеличьте overlap; не растягивайте перекрытие.")
-    bottom = cz - centre_span / 2.0
-    tiles: list[mf.Manifold] = []
-    tile = _scale_tile(width, length, thick, kind, tilt, tile_variant)
-    for r in range(rows):
-        z = bottom + r * step_z
-        offset = 0.5 * (r % 2)
-        for j in range(per_row):
-            ang = 2.0 * math.pi * (j + offset + 0.13 * seed) / per_row
-            d = np.array([math.cos(ang), math.sin(ang), 0.0])
-            origin = np.array([cx, cy, z])
-            end = origin + d * reach
-            hits = m.ray_cast([float(v) for v in origin], [float(v) for v in end])
-            if not hits:
+    step_z = pitch if pitch is not None else length * (1.0 - overlap)
+    row_tiles: list[list[mf.Manifold]] = []
+    fixed_tile = None if width is None else _scale_tile(width, length, thick, kind, tilt, tile_variant)
+    row_steps: list[float] = []
+    path_metas: list = []
+    region_rows = rows
+    path_jobs = paths_raw if use_multi else [path_raw]
+    for path_raw in path_jobs:
+        rows = region_rows
+        step_z = pitch if pitch is not None else length * (1.0 - overlap)
+        distances = None
+        path = None
+        if use_path:
+            try:
+                path = np.asarray(path_raw, dtype=np.float64)
+            except (TypeError, ValueError) as exc:
+                raise GeometryError("scales: path должен быть списком точек [x,y,z].") from exc
+            if path.ndim != 2 or path.shape[1:] != (3,) or len(path) < 2 or not np.all(np.isfinite(path)):
+                raise GeometryError("scales: path должен содержать минимум две конечные точки [x,y,z].")
+            segments = np.diff(path, axis=0)
+            lengths = np.linalg.norm(segments, axis=1)
+            if np.any(lengths <= 1e-9):
+                raise GeometryError("scales: совпадающие соседние точки path недопустимы.")
+            cumulative = np.concatenate(([0.0], np.cumsum(lengths)))
+            total = float(cumulative[-1])
+            if use_multi:
+                rows = max(2, min(60, int(round(total / step_z)) + 1))
+                step_z = total / (rows - 1)
+                distances = np.linspace(0.0, total, rows)
+            elif pitch is None:
+                step_z = total / max(rows - 1, 1)
+                distances = np.linspace(0.0, total, rows) if rows > 1 else np.array([total * 0.5])
+            else:
+                distances = np.arange(rows, dtype=np.float64) * step_z
+            if float(np.max(distances)) > total + 1e-7:
+                raise GeometryError("scales: ряды с таким rows/pitch не помещаются вдоль path.",
+                                    hint="Уменьшите rows или pitch; пластины не растягиваются скрытно.")
+
+            def path_sample(distance):
+                i = min(int(np.searchsorted(cumulative, distance, side="right") - 1), len(segments) - 1)
+                i = max(i, 0)
+                t = float(np.clip((distance - cumulative[i]) / lengths[i], 0.0, 1.0))
+                origin = path[i] + segments[i] * t
+                tangent = segments[i] / lengths[i]
+                # На вершине ломаной усредняем направления, чтобы ориентация
+                # корня не делала мгновенный разворот на соседних рядах.
+                if t < 1e-8 and i > 0:
+                    tangent = tangent + segments[i - 1] / lengths[i - 1]
+                    tangent /= max(float(np.linalg.norm(tangent)), 1e-12)
+                return origin, tangent
+        else:
+            centre_span = (rows - 1) * step_z
+            if centre_span > (z1 - z0) + 1e-7:
+                raise GeometryError("scales: ряды с такой length/overlap/pitch не помещаются по высоте тела.",
+                                    hint="Уменьшите rows/length/pitch или увеличьте overlap.")
+            bottom = cz - centre_span / 2.0
+
+        for r in range(rows):
+            if use_path:
+                origin, tangent = path_sample(float(distances[r]))
+                reference = np.array([0.0, 0.0, 1.0]) if abs(tangent[2]) < 0.94 else np.array([1.0, 0.0, 0.0])
+                u = np.cross(tangent, reference)
+                u /= max(float(np.linalg.norm(u)), 1e-12)
+                v = np.cross(tangent, u)
+                hint = -tangent  # корень +Y смотрит к началу path, конец — к его продолжению
+            else:
+                origin = np.array([cx, cy, bottom + r * step_z])
+                hint = (0.0, 0.0, 1.0)
+            offset = 0.5 * (r % 2)
+            records = []
+            for j in range(per_row):
+                ang = 2.0 * math.pi * (j + offset + 0.13 * seed) / per_row
+                if use_path:
+                    d = u * math.cos(ang) + v * math.sin(ang)
+                else:
+                    d = np.array([math.cos(ang), math.sin(ang), 0.0])
+                end = origin + d * reach
+                hits = m.ray_cast([float(v0) for v0 in origin], [float(v0) for v0 in end])
+                if not hits:
+                    continue
+                hit = max(hits, key=lambda h: float(np.linalg.norm(np.asarray(h.position) - origin)))
+                p = np.asarray(hit.position, dtype=np.float64)
+                n = np.asarray(hit.normal, dtype=np.float64)
+                if np.linalg.norm(n) < 1e-9:
+                    n = d
+                records.append((p, n, float(np.linalg.norm(p - origin))))
+            if not records:
+                row_tiles.append([])
                 continue
-            hit = max(hits, key=lambda h: float(np.linalg.norm(np.asarray(h.position) - origin)))
-            p = np.asarray(hit.position, dtype=np.float64)
-            n = np.asarray(hit.normal, dtype=np.float64)
-            if np.linalg.norm(n) < 1e-9:
-                n = d
-            mat = _frame(n)
-            mat[:, 3] = p
-            tiles.append(tile.transform(mat.tolist()))
+            if fixed_tile is None:
+                local_radius = float(np.median([record[2] for record in records]))
+                local_width = max(0.2, 2.0 * math.pi * local_radius / per_row * 1.08)
+                tile = _scale_tile(local_width, length, thick, kind, tilt, tile_variant)
+            else:
+                tile = fixed_tile
+            current_row = []
+            for p, n, _ in records:
+                mat = _frame(n, hint)
+                mat[:, 3] = p
+                current_row.append(tile.transform(mat.tolist()))
+            row_tiles.append(current_row)
+        row_steps.append(float(step_z))
+        path_metas.append(path.tolist() if path is not None else None)
+    tiles = [tile for row in row_tiles for tile in row]
     if not tiles:
         raise GeometryError("Чешуя не нашла поверхность: деталь слишком тонкая или "
                             "луч идёт мимо.", hint="Уменьшите rows и per_row.")
-    solid = mf.Manifold.batch_boolean([m] + tiles, mf.OpType.Add)
+    attempted = len(tiles)
+    skipped = 0
+    if not safe:
+        solid = mf.Manifold.batch_boolean([union_base] + tiles, mf.OpType.Add)
+    else:
+        # Сначала проверяем целый ряд одним булевым проходом. Только бракованный
+        # ряд разбирается по пластинам — это сохраняет быстрый общий случай и
+        # позволяет не выбрасывать соседние исправные чешуйки.
+        reference_parts = union_base.decompose()
+        shell_count = len(reference_parts)
+        positive_count = sum(p.volume() > 1e-8 for p in reference_parts)
+        reference_genus = union_base.genus()
+
+        def acceptable(candidate, previous):
+            if candidate.is_empty() or candidate.status().name != "NoError":
+                return False
+            parts = candidate.decompose()
+            return (len(parts) == shell_count
+                    and sum(p.volume() > 1e-8 for p in parts) == positive_count
+                    and candidate.genus() == reference_genus
+                    and candidate.volume() > previous.volume() + 1e-7)
+
+        solid = union_base
+        accepted = 0
+        for row in row_tiles:
+            if not row:
+                continue
+            candidate = mf.Manifold.batch_boolean([solid] + row, mf.OpType.Add)
+            if acceptable(candidate, solid):
+                solid = candidate
+                accepted += len(row)
+                continue
+            for tile in row:
+                candidate = solid + tile
+                if acceptable(candidate, solid):
+                    solid = candidate
+                    accepted += 1
+                else:
+                    skipped += 1
+        if accepted == 0:
+            raise GeometryError("scales safe: ни одна пластина не дала корректного объединения.",
+                                hint="Уменьшите length/tilt или проверьте path внутри тела.")
+        out_tiles = accepted
+    if not safe:
+        out_tiles = attempted
     out = _derived(a, name, solid, base, "scales")
     out.meta.update(scale_kind=kind, tile_variant=tile_variant if kind == "черепица" else None,
-                    tiles=len(tiles), row_step=step_z,
-                    overlap=overlap, tilt=tilt, flat=True, root_direction="+Y / верх")
-    a.scene.log("info", f"чешуя ({kind}): {len(tiles)} плоских пластинок, "
-                        f"перекрытие {overlap * 100:g}%, шаг {step_z:.2f} мм", a.cmd.line)
+                    tiles=out_tiles, tiles_attempted=attempted, tiles_skipped=skipped,
+                    row_step=row_steps[0] if len(row_steps) == 1 else row_steps,
+                    pitch=pitch, path=path_metas[0] if len(path_metas) == 1 else None,
+                    paths=path_metas if use_multi else None, on=on_name or None,
+                    safe=safe, overlap=overlap, tilt=tilt, flat=True,
+                    root_direction="+Y / начало path" if use_path else "+Y / верх")
+    a.scene.log("info", f"чешуя ({kind}): {out_tiles}/{attempted} плоских пластинок, "
+                        f"шаг {step_z:.2f} мм, safe={'да' if safe else 'нет'}, "
+                        f"пропущено {skipped}", a.cmd.line)
+    if skipped:
+        a.scene.log("warn", f"чешуя: safe отклонил {skipped} пластин, создававших "
+                            "новую оболочку, полость, петлю или нулевой прирост объёма", a.cmd.line)
     return out
 
 
