@@ -176,28 +176,50 @@ def cmd_export(args) -> int:
     solids = b.visible_solids()
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    if args.format == "glb":
+    fmt = args.format or _format_from_suffix(out)
+    if fmt == "glb":
         out.write_bytes(export_glb(solids))
-    elif args.format == "stl":
+    elif fmt == "stl":
         out.write_bytes(export_stl(solids))
-    elif args.format == "obj":
+    elif fmt == "obj":
         out.write_bytes(export_obj(solids))
-    elif args.format == "ply":
+    elif fmt == "ply":
         from .geometry import export_ply
         out.write_bytes(export_ply(solids))
-    elif args.format == "3mf":
+    elif fmt == "3mf":
         from .geometry import export_3mf
         out.write_bytes(export_3mf(solids))
-    elif args.format == "forma":
+    elif fmt == "forma":
         out.write_text(script, encoding="utf-8")
-    elif args.format == "report":
+    elif fmt == "report":
         out.write_text(b.analysis["text"], encoding="utf-8")
-    elif args.format == "prompt":
+    elif fmt == "prompt":
         out.write_text(build_prompt(b, args.goal or ""), encoding="utf-8")
     else:
         print("Неизвестный формат", file=sys.stderr)
         return 2
     print(out)
+    return 0
+
+
+def _format_from_suffix(path: Path) -> str:
+    """`.stl` → `stl`; незнакомое расширение — GLB, самый общий формат."""
+    fmt = path.suffix.lower().lstrip(".")
+    known = {"glb", "stl", "obj", "ply", "3mf", "forma", "report", "prompt"}
+    return fmt if fmt in known else "glb"
+
+
+def cmd_scad(args) -> int:
+    """Выгрузка сцены в OpenSCAD: мост к его библиотекам и редактору."""
+    from .scad import export_scad
+
+    script = _read(args.script)
+    b = build(script, analyze_model=args.mode == "script")
+    if not b.ok:
+        print("ОШИБКА:", b.error.get("message"), file=sys.stderr)
+        return 2
+    info = export_scad(b, args.out, mode=args.mode, source=script)
+    print(json.dumps(info, ensure_ascii=False))
     return 0
 
 
@@ -292,11 +314,20 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("export", help="экспортировать модель")
     p.add_argument("script")
-    p.add_argument("--format", default="glb",
+    # формат не задан — берём из расширения файла, иначе GLB: так `--out дом.stl`
+    # не запишет в файл .stl содержимое GLB
+    p.add_argument("--format", default=None,
                    choices=["glb", "stl", "obj", "ply", "3mf", "forma", "report", "prompt"])
     p.add_argument("--out", required=True)
     p.add_argument("--goal", default="")
     p.set_defaults(func=cmd_export)
+
+    p = sub.add_parser("scad", help="экспортировать сцену в OpenSCAD (.scad)")
+    p.add_argument("script")
+    p.add_argument("--out", required=True)
+    p.add_argument("--mode", choices=("solid", "script"), default="solid",
+                   help="solid — геометрия как есть; script — перевод по командам")
+    p.set_defaults(func=cmd_scad)
 
     p = sub.add_parser("prompt", help="сформировать запрос к нейросети")
     p.add_argument("script", nargs="?", default="-")

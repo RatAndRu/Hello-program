@@ -1,0 +1,9 @@
+# Тот же кронштейн, что в bracket.scad, но на языке ФОРМЫ.
+# Сравнение честное: здесь БЕЗ скругления углов, потому что «round=3» у нас
+# скругляет все 12 рёбер, а offset-трюк OpenSCAD — только вертикальные.
+плита0 = box size=[80,60,6] center=да
+h1 = cylinder radius=2.5 height=20 at=[-28,0,-6]
+h2 = cylinder radius=2.5 height=20 at=[28,0,-6]
+плита = difference [плита0] [h1] [h2]
+check плита watertight
+check плита collision

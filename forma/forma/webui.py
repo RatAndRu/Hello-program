@@ -499,6 +499,10 @@ class AppState:
             elif fmt == "forma":
                 data = self.last_script.encode("utf-8")
                 name = f"{base}.forma"
+            elif fmt == "scad":
+                from .scad import scad_script
+                data = scad_script(self.last_build, self.last_script).encode("utf-8")
+                name = f"{base}.scad"
             elif fmt == "prompt":
                 text = build_prompt(self.last_build, "")
                 data = text.encode("utf-8")

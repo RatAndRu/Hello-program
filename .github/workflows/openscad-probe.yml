@@ -58,12 +58,29 @@ jobs:
             --camera=0,0,60,60,0,25,420 --render --autocenter vase.scad || echo "PNG вазы не удался"
           ls -lh ../../../out
 
+      - name: Экспорт ФОРМЫ в .scad и рендер его же OpenSCAD
+        env:
+          PYTHONPATH: forma
+        run: |
+          set -euo pipefail
+          # 1) ФОРМА пишет .scad из своего сценария bracket.f3d
+          python3 -m forma scad forma/docs/openscad/bracket.f3d \
+            --out out/bracket_from_forma.scad --mode script | tee out/scad_export.txt
+          head -30 out/bracket_from_forma.scad
+          # 2) тот же .scad рендерит OpenSCAD — независимая проверка синтаксиса
+          /usr/bin/time -f "from_forma.stl: OpenSCAD %e с" -a -o out/timing.txt \
+            openscad -o out/from_forma.stl out/bracket_from_forma.scad
+          # 3) обратный разбор: из .scad назад в DSL, объём должен сойтись
+          python3 forma/docs/openscad/roundtrip.py out/bracket_from_forma.scad \
+            | tee out/roundtrip.txt
+
       - name: Сравнить с ФОРМОЙ (одна деталь, два инструмента)
         env:
           PYTHONPATH: forma
         run: |
           set -euo pipefail
-          python3 forma/docs/openscad/compare.py out/bracket.stl | tee out/compare.txt
+          python3 forma/docs/openscad/compare.py out/bracket.stl out/from_forma.stl \
+            | tee out/compare.txt
 
       - name: Метрики вазы (OpenSCAD сам их не считает)
         run: |
@@ -91,6 +108,7 @@ jobs:
             openscad --version 2>&1 | head -2
             cat out/compare.txt
             cat out/vase.txt
+            cat out/roundtrip.txt 2>/dev/null || true
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -102,6 +120,8 @@ jobs:
           dest=forma/docs/openscad/result
           mkdir -p "$dest"
           cp out/compare.txt out/vase.txt out/timing.txt "$dest/"
+          cp out/bracket_from_forma.scad out/roundtrip.txt out/scad_export.txt "$dest/" 2>/dev/null || true
+          cp out/from_forma.stl "$dest/from_forma.stl" 2>/dev/null || true
           cp out/bracket.png "$dest/" 2>/dev/null || true
           cp out/vase.png "$dest/" 2>/dev/null || true
           cp out/bracket.stl "$dest/bracket.stl" 2>/dev/null || true
@@ -114,6 +134,7 @@ jobs:
             openscad --version 2>&1 | head -2
             cat out/compare.txt
             cat out/vase.txt
+            cat out/roundtrip.txt 2>/dev/null || true
             cat out/timing.txt 2>/dev/null || true
             echo '```'
           } > "$dest/summary.md"
