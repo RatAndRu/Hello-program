@@ -5,6 +5,8 @@
     check кружка wall 3..5
     check кружка symmetric y
     check ручка gap корпус 0.5..2
+    check нож collision
+    check лезвие ход axis=z до=90 step=5
 
 Результат — набор понятных вердиктов с фактическими значениями.
 """
@@ -35,6 +37,11 @@ RULE_ALIASES = {
     "отклонение": "deviation", "похожесть": "deviation", "эталон": "deviation",
     "hausdorff": "deviation", "гаусдорф": "deviation", "сравнение": "deviation",
     "связь": "связь", "сопряжение": "связь", "петля": "связь", "mate": "связь",
+    # пересечения и кинематика: то, чего раньше нельзя было проверить вообще
+    "пересечение": "collision", "пересечения": "collision", "коллизия": "collision",
+    "столкновение": "collision", "collision": "collision",
+    "ход": "motion", "проворот": "motion", "кинематика": "motion",
+    "свободный_ход": "motion", "motion": "motion",
     # абсолютное положение и кубический бюджет объёма
     "положение": "position", "место": "position", "позиция": "position",
     "position": "position", "где": "position", "угол": "position",
@@ -44,6 +51,8 @@ RULE_ALIASES = {
 }
 
 RULE_LABELS = {
+    "collision": "пересечения деталей",
+    "motion": "свободный ход",
     "watertight": "герметичность",
     "genus": "сквозные отверстия",
     "parts": "число частей",
@@ -178,7 +187,7 @@ def _load_reference(path):
 RULES = {"watertight", "genus", "parts", "size", "height", "width", "depth", "volume",
          "mass", "wall", "wall_min", "flat_bottom", "overhang", "symmetric", "gap",
          "clearance", "inside", "tris", "sharp_edge", "tri_quality", "deviation",
-         "связь", "position", "center", "grid"}
+         "связь", "position", "center", "grid", "collision", "motion"}
 
 
 def evaluate_checks(scene, cache) -> list[dict]:
@@ -390,6 +399,12 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache,
                                  f"({'в норме' if ok else 'не в норме'}, нужно {_fmt_range(rng, 'мм')})",
                        name, line, gap, _fmt_range(rng, "мм"), label)
 
+    if rule == "collision":
+        return _check_collision(solid, args, line, cache, kwargs)
+
+    if rule == "motion":
+        return _check_motion(solid, args, line, cache, kwargs)
+
     if rule in ("position", "center"):
         # Абсолютное место: раньше его нельзя было проверить вообще — только
         # связи и зазоры. Теперь `check деталь положение 10 20 30` требует,
@@ -548,6 +563,164 @@ def _check_grid(solid, line: int, scene, cache) -> dict:
                f" — вне бюджета {fmt(over / 1000)} см³ (кубов на {fmt(allowed / 1000)} см³)"))
     result = _result(ok, "grid", text, solid.name, line, over, "0", "в пределах сетки")
     result["overflow_mm3"] = round(over, 3)
+    return result
+
+
+def _kw_num(kwargs: dict, names: tuple[str, ...], default: float) -> float:
+    """Число из именованного уточнения проверки (`tolerance=0.01`, `до=90`)."""
+    for name in names:
+        if name in kwargs:
+            raw = kwargs[name]
+            value = raw if isinstance(raw, (int, float)) else _parse_value(str(raw), {})
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                return float(value)
+    return float(default)
+
+
+def _kw_str(kwargs: dict, names: tuple[str, ...], default: str = "") -> str:
+    for name in names:
+        if name in kwargs:
+            return str(kwargs[name]).strip().strip('"\'')
+    return default
+
+
+def _check_collision(solid, args, line, cache, kwargs) -> dict:
+    """Пересечения детали с остальными телами сцены: точный объём, а не AABB.
+
+        check нож collision                 # допуск 0.01 мм³
+        check нож collision 1              # шум до 1 мм³ прощаем
+        check нож collision allow="втулка:вал"
+
+    Отвечает на вопрос, который автоматические предупреждения не задают:
+    «эта конкретная деталь во что-то влезла?». Считается по manifold3d, поэтому
+    вердикт точный, а не «коробки пересеклись».
+    """
+    from .collide import overlap_pairs
+
+    scene = _scene(cache)
+    if scene is None:
+        raise FormaError("Проверка пересечений работает только внутри сцены.")
+    tol = 0.01
+    if args:
+        value = _parse_value(args[0], cache_scene(cache))
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            tol = float(value)
+    tol = _kw_num(kwargs, ("tolerance", "допуск"), tol)
+    allow = _kw_str(kwargs, ("allow", "разрешено"))
+    share = _kw_num(kwargs, ("share", "доля"), 0.0)
+    skip_parts = _kw_str(kwargs, ("parts", "части"), "нет").lower() not in ("да", "true", "1", "yes")
+
+    others = [s for s in scene.visible_solids() if s.name != solid.name]
+    if not others:
+        return _result(True, "collision", "пересечения: других деталей нет",
+                       solid.name, line, 0.0, f"≤ {fmt(tol)} мм³", RULE_LABELS["collision"])
+    pairs = overlap_pairs([solid] + others, tolerance=tol, allow=allow,
+                          skip_parts=skip_parts, share=share, limit=5)
+    pairs = [p for p in pairs if solid.name in (p["a"], p["b"])]
+    worst = pairs[0] if pairs else None
+    volume = worst["volume_mm3"] if worst else 0.0
+    result = _result(not pairs, "collision",
+                     ("пересечения: нет" if not pairs else
+                      f"пересечение с «{worst['b'] if worst['a'] == solid.name else worst['a']}»: "
+                      f"{fmt(worst['volume_mm3'], 2)} мм³"
+                      + (f" (ещё пар: {len(pairs) - 1})" if len(pairs) > 1 else ""))
+                     + f" — при допуске {fmt(tol)} мм³",
+                     solid.name, line, volume, f"≤ {fmt(tol)} мм³",
+                     RULE_LABELS["collision"])
+    result["pairs"] = pairs
+    return result
+
+
+def _check_motion(solid, args, line, cache, kwargs) -> dict:
+    """Свободный ход: крутим деталь вокруг оси и ищем первое столкновение.
+
+        check лезвие ход axis=z до=90 step=5
+        check дверца ход ось=z центр=[0,0,0] до=110 допуск=1
+
+    Каждое положение — поворот (manifold3d), затем точный объём пересечения с
+    остальными телами. Это ответ на «заклинит или нет», которого не даёт ни
+    одна статическая проверка: в покое всё может быть чисто, а на 15° — удар.
+    """
+    import manifold3d as mf
+
+    scene = _scene(cache)
+    if scene is None:
+        raise FormaError("Проверка хода работает только внутри сцены.")
+
+    axis_raw = _kw_str(kwargs, ("axis", "ось"), (args[0] if args else "z")).lower()
+    vector = {"x": [1.0, 0.0, 0.0], "y": [0.0, 1.0, 0.0], "z": [0.0, 0.0, 1.0]}.get(axis_raw)
+    if vector is None:
+        try:
+            vector = [float(v) for v in axis_raw.replace("(", "[").replace(")", "]")
+                      .strip("[] ").split(",")]
+            if len(vector) != 3:
+                raise ValueError
+        except Exception:
+            raise FormaError(f"Ось хода «{axis_raw}» не понята: нужна x, y, z или вектор 0,0,1.")
+
+    pivot_raw = _kw_str(kwargs, ("pivot", "центр", "точка"), "0,0,0")
+    try:
+        pivot = [float(v) for v in pivot_raw.strip("[]() ").split(",")]
+        if len(pivot) != 3:
+            raise ValueError
+    except Exception:
+        raise FormaError(f"Центр поворота «{pivot_raw}» не понят: нужен [x,y,z].")
+
+    upto = _kw_num(kwargs, ("до", "upto", "angle", "угол"), 90.0)
+    step = _kw_num(kwargs, ("step", "шаг"), 5.0)
+    tol = _kw_num(kwargs, ("tolerance", "допуск"), 0.5)
+    if step <= 0:
+        raise FormaError("Шаг хода должен быть больше нуля.")
+    if upto <= 0:
+        raise FormaError("Угол хода должен быть больше нуля.")
+    steps = int(round(abs(upto) / abs(step)))
+    if steps > 72:
+        raise FormaError("Слишком мелкий шаг хода: не больше 72 положений.",
+                         hint="Увеличьте step или уменьшите до=.")
+
+    others = [s for s in scene.visible_solids() if s.name != solid.name]
+    if not others:
+        return _result(True, "motion", "ход: других деталей нет — двигать не во что",
+                       solid.name, line, 0.0, f"до {fmt(upto, 0)}°", RULE_LABELS["motion"])
+    if len(others) > 12:
+        raise FormaError("Слишком много деталей для проверки хода (больше 12).",
+                         hint="Проверяйте ход в сборке из 2–12 деталей.")
+
+    base = solid.manifold
+    if any(abs(v) > 1e-9 for v in pivot):
+        base = mf.Manifold.translate(base, [-pivot[0], -pivot[1], -pivot[2]])
+
+    checked = 0
+    blocked = None
+    for k in range(1, steps + 1):
+        deg = k * step
+        pose = mf.Manifold.rotate(base, [vector[0] * deg, vector[1] * deg, vector[2] * deg])
+        if any(abs(v) > 1e-9 for v in pivot):
+            pose = mf.Manifold.translate(pose, pivot)
+        for other in others:
+            inter = pose ^ other.manifold
+            volume = 0.0 if inter.is_empty() else abs(float(inter.volume()))
+            if volume > tol:
+                blocked = (deg, other.name, volume)
+                break
+        checked += 1
+        if blocked:
+            break
+
+    if blocked is None:
+        text = (f"ход: свободно до {fmt(checked * step, 0)}° "
+                f"(ось {axis_raw}, {checked} положений, шаг {fmt(step, 0)}°)")
+        return _result(True, "motion", text, solid.name, line,
+                       checked * step, f"до {fmt(upto, 0)}°", RULE_LABELS["motion"])
+
+    deg, other, volume = blocked
+    text = (f"ход: заклинивает на {fmt(deg, 0)}° — «{other}», "
+            f"пересечение {fmt(volume, 1)} мм³ (допуск {fmt(tol, 1)})")
+    result = _result(False, "motion", text, solid.name, line, deg,
+                     f"до {fmt(upto, 0)}°", RULE_LABELS["motion"])
+    result["blocked_at"] = deg
+    result["blocked_by"] = other
+    result["blocked_mm3"] = round(volume, 3)
     return result
 
 

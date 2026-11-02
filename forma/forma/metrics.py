@@ -489,6 +489,26 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
         warnings.append("Модель больше 5 метров — проверьте единицы измерения (в сценарии миллиметры).")
     if ggenus > 0:
         warnings.append(f"В модели есть сквозные отверстия: род {ggenus}.")
+    # ---- пересечения отдельных деталей (точный объём, не AABB) --------------
+    # Раньше это ловилось только командой `interference`, то есть по просьбе.
+    # Сборка из подвижных деталей (ножницы, петля, дверца) в покое может быть
+    # «чистой» и при этом не двигаться — теперь это видно без просьбы.
+    # условие по числу объектов, а не по числу частей: две отдельные детали,
+    # слипшиеся в одно тело, дают parts=1 — но дефект от этого не исчезает
+    if 1 < len(visible) <= 24:
+        try:
+            from .collide import overlap_pairs
+            pairs = overlap_pairs(visible, tolerance=1.0, share=0.005, limit=3)
+            for pair in pairs:
+                warnings.append(
+                    f"Детали пересекаются: «{pair['a']}» ↔ «{pair['b']}» — "
+                    f"{fmt(pair['volume_mm3'], 1)} мм³. Объедините (`union`) или "
+                    f"разрешите пару (`interference allow=\"{pair['a']}:{pair['b']}\"`).")
+            if len(pairs) > 1:
+                advice.append("Пересечения деталей видны в отчёте `interference` — "
+                              "там все пары с точными объёмами.")
+        except Exception:
+            pass
     # ---- кубическая сетка: бюджет объёма -------------------------------
     grid = getattr(scene, "grid", None)
     if grid:
