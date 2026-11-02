@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="812" viewBox="0 0 1000 812" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif">
+<title>Соединения без крепежа</title>
+<rect width="1000" height="812" fill="#ffffff"/>
+<text x="28.0" y="42.0" font-size="22" fill="#1f2933" text-anchor="start" font-weight="bold">Соединения без клея и верёвки: геометрия, которую надо уметь считать</text>
+<text x="28.0" y="68.0" font-size="13" fill="#6b7785" text-anchor="start" font-weight="normal">шесть механизмов; под каждым — параметры и проверка, которая ловит ошибку</text>
+<line x1="28" y1="86" x2="972" y2="86" stroke="#d5dbe1"/>
+<rect x="28" y="104" width="304" height="294" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="104" width="4" height="294" rx="2" fill="#1e8449"/>
+<text x="44.0" y="130.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">Клапан в карман</text>
+<text x="44.0" y="148.0" font-size="10.5" fill="#6b7785" text-anchor="start" font-weight="normal">tab-and-pocket</text>
+<g transform="translate(180.0,222.0) scale(1.22) translate(-180.0,-222.0)">
+<path d="M 120.0,204.0 L 186.0,204.0 L 186.0,218.0 L 214.0,218.0" fill="rgba(43,108,176,.10)" stroke="#2b6cb0" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 120.0,238.0 L 210.0,238.0 L 210.0,220.0 L 176.0,220.0" fill="none" stroke="#6b7785" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+<line x1="224.0" y1="196.0" x2="204.8" y2="210.4" stroke="#c0392b" stroke-width="1.5"/><polygon points="200.0,214.0 203.0,208.0 206.6,212.8" fill="#c0392b"/>
+</g>
+<text x="44.0" y="290.0" font-size="10.6" fill="#1f2933" text-anchor="start" font-weight="normal">ухо w входит в карман глубиной d ≥ w + 2t</text>
+<text x="44.0" y="314.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· w = 8…12 мм</text>
+<text x="44.0" y="331.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· d ≥ w + 2t</text>
+<text x="44.0" y="348.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· зазор 0.1…0.3 мм</text>
+<rect x="44.0" y="360.0" width="245.6" height="18" rx="9" fill="#2b6cb0" opacity="0.12"/><rect x="44.0" y="360.0" width="245.6" height="18" rx="9" fill="none" stroke="#2b6cb0" stroke-width="0.9"/><text x="166.8" y="373.5" font-size="10.5" fill="#2b6cb0" text-anchor="middle" font-weight="bold">проверка: inside + clearance</text>
+<text x="44.0" y="391.0" font-size="9.8" fill="#6b7785" text-anchor="start" font-weight="normal">Sonobe, модульные шары</text>
+<rect x="346" y="104" width="304" height="294" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="346" y="104" width="4" height="294" rx="2" fill="#1e8449"/>
+<text x="362.0" y="130.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">Замок коробки</text>
+<text x="362.0" y="148.0" font-size="10.5" fill="#6b7785" text-anchor="start" font-weight="normal">tuck lock</text>
+<g transform="translate(498.0,222.0) scale(1.22) translate(-498.0,-222.0)">
+<path d="M 438.0,196.0 L 518.0,196.0 L 518.0,226.0 L 550.0,226.0 L 550.0,240.0 L 518.0,240.0 L 518.0,248.0 L 438.0,248.0" fill="none" stroke="#2b6cb0" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 518.0,214.0 L 542.0,214.0" fill="none" stroke="#c0392b" stroke-width="2.0" stroke-dasharray="4 3" stroke-linejoin="round" stroke-linecap="round"/>
+</g>
+<text x="362.0" y="290.0" font-size="10.6" fill="#1f2933" text-anchor="start" font-weight="normal">клапан подсовывается под поясок и зажимается</text>
+<text x="362.0" y="314.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· вылет ≥ b + 2t</text>
+<text x="362.0" y="331.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· натяг 0.1 мм</text>
+<text x="362.0" y="348.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· заход 6…8 мм</text>
+<rect x="362.0" y="360.0" width="171.8" height="18" rx="9" fill="#2b6cb0" opacity="0.12"/><rect x="362.0" y="360.0" width="171.8" height="18" rx="9" fill="none" stroke="#2b6cb0" stroke-width="0.9"/><text x="447.9" y="373.5" font-size="10.5" fill="#2b6cb0" text-anchor="middle" font-weight="bold">проверка: clearance</text>
+<text x="362.0" y="391.0" font-size="9.8" fill="#6b7785" text-anchor="start" font-weight="normal">масу-коробка, конверт</text>
+<rect x="664" y="104" width="304" height="294" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="664" y="104" width="4" height="294" rx="2" fill="#b7791f"/>
+<text x="680.0" y="130.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">Складка-замок</text>
+<text x="680.0" y="148.0" font-size="10.5" fill="#6b7785" text-anchor="start" font-weight="normal">pleat lock</text>
+<g transform="translate(816.0,222.0) scale(1.22) translate(-816.0,-222.0)">
+<path d="M 756.0,202.0 L 796.0,202.0 L 796.0,226.0 L 836.0,226.0 L 836.0,202.0 L 876.0,202.0" fill="none" stroke="#2b6cb0" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 756.0,238.0 L 804.0,238.0 L 804.0,214.0 L 844.0,214.0" fill="none" stroke="#6b7785" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+</g>
+<text x="680.0" y="290.0" font-size="10.6" fill="#1f2933" text-anchor="start" font-weight="normal">две встречные складки цепляются друг за друга</text>
+<text x="680.0" y="314.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· шаг p = 2t…3t</text>
+<text x="680.0" y="331.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· сдвиг p/2</text>
+<text x="680.0" y="348.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· угол 90°</text>
+<rect x="680.0" y="360.0" width="122.6" height="18" rx="9" fill="#2b6cb0" opacity="0.12"/><rect x="680.0" y="360.0" width="122.6" height="18" rx="9" fill="none" stroke="#2b6cb0" stroke-width="0.9"/><text x="741.3" y="373.5" font-size="10.5" fill="#2b6cb0" text-anchor="middle" font-weight="bold">проверка: gap</text>
+<text x="680.0" y="391.0" font-size="9.8" fill="#6b7785" text-anchor="start" font-weight="normal">лотки, крышки</text>
+<rect x="28" y="412" width="304" height="294" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="412" width="4" height="294" rx="2" fill="#1e8449"/>
+<text x="44.0" y="438.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">Клин / ласточкин хвост</text>
+<text x="44.0" y="456.0" font-size="10.5" fill="#6b7785" text-anchor="start" font-weight="normal">dovetail</text>
+<g transform="translate(180.0,530.0) scale(1.22) translate(-180.0,-530.0)">
+<path d="M 118.0,508.0 L 184.0,508.0 L 184.0,520.0 L 210.0,520.0 L 210.0,540.0 L 184.0,540.0 L 184.0,552.0 L 118.0,552.0" fill="rgba(43,108,176,.10)" stroke="#2b6cb0" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 210.0,514.0 L 240.0,514.0 L 240.0,546.0 L 210.0,546.0" fill="none" stroke="#6b7785" stroke-width="2.2" stroke-dasharray="4 3" stroke-linejoin="round" stroke-linecap="round"/>
+</g>
+<text x="44.0" y="598.0" font-size="10.6" fill="#1f2933" text-anchor="start" font-weight="normal">трапеция входит в паз и не выходит назад</text>
+<text x="44.0" y="622.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· скос 5…15°</text>
+<text x="44.0" y="639.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· зазор 0.15 мм</text>
+<text x="44.0" y="656.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· уклон по толщине</text>
+<rect x="44.0" y="668.0" width="237.4" height="18" rx="9" fill="#2b6cb0" opacity="0.12"/><rect x="44.0" y="668.0" width="237.4" height="18" rx="9" fill="none" stroke="#2b6cb0" stroke-width="0.9"/><text x="162.7" y="681.5" font-size="10.5" fill="#2b6cb0" text-anchor="middle" font-weight="bold">проверка: clearance + draft</text>
+<text x="44.0" y="699.0" font-size="9.8" fill="#6b7785" text-anchor="start" font-weight="normal">картон, фанера</text>
+<rect x="346" y="412" width="304" height="294" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="346" y="412" width="4" height="294" rx="2" fill="#b7791f"/>
+<text x="362.0" y="438.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">Фрикционная посадка</text>
+<text x="362.0" y="456.0" font-size="10.5" fill="#6b7785" text-anchor="start" font-weight="normal">friction fit</text>
+<g transform="translate(498.0,530.0) scale(1.22) translate(-498.0,-530.0)">
+<rect x="444.0" y="508" width="58" height="44" rx="3" fill="none" stroke="#2b6cb0" stroke-width="2.4"/>
+<rect x="502.0" y="515" width="56" height="30" rx="3" fill="rgba(183,121,31,.16)" stroke="#b7791f" stroke-width="2.2"/>
+<text x="500.0" y="570.0" font-size="10" fill="#b7791f" text-anchor="middle" font-weight="normal">натяг</text>
+</g>
+<text x="362.0" y="598.0" font-size="10.6" fill="#1f2933" text-anchor="start" font-weight="normal">деталь держится на натяге, без замка</text>
+<text x="362.0" y="622.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· натяг 0.05…0.15 мм</text>
+<text x="362.0" y="639.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· длина ≥ 3·t</text>
+<text x="362.0" y="656.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· материал — картон</text>
+<rect x="362.0" y="668.0" width="196.4" height="18" rx="9" fill="#2b6cb0" opacity="0.12"/><rect x="362.0" y="668.0" width="196.4" height="18" rx="9" fill="none" stroke="#2b6cb0" stroke-width="0.9"/><text x="460.2" y="681.5" font-size="10.5" fill="#2b6cb0" text-anchor="middle" font-weight="bold">проверка: interference</text>
+<text x="362.0" y="699.0" font-size="9.8" fill="#6b7785" text-anchor="start" font-weight="normal">МДФ, картон</text>
+<rect x="664" y="412" width="304" height="294" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="664" y="412" width="4" height="294" rx="2" fill="#b7791f"/>
+<text x="680.0" y="438.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">Скрутка / бумажная заклёпка</text>
+<text x="680.0" y="456.0" font-size="10.5" fill="#6b7785" text-anchor="start" font-weight="normal">roll rivet</text>
+<g transform="translate(816.0,530.0) scale(1.22) translate(-816.0,-530.0)">
+<circle cx="786.0" cy="530" r="20" fill="none" stroke="#2b6cb0" stroke-width="1.8"/>
+<circle cx="790.0" cy="530" r="18" fill="none" stroke="#2b6cb0" stroke-width="1.8"/>
+<circle cx="794.0" cy="530" r="16" fill="none" stroke="#2b6cb0" stroke-width="1.8"/>
+<circle cx="798.0" cy="530" r="14" fill="none" stroke="#2b6cb0" stroke-width="1.8"/>
+<path d="M 828.0,510.0 L 872.0,510.0" fill="none" stroke="#6b7785" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 828.0,550.0 L 872.0,550.0" fill="none" stroke="#6b7785" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+</g>
+<text x="680.0" y="598.0" font-size="10.6" fill="#1f2933" text-anchor="start" font-weight="normal">трубка из скрученной бумаги стягивает пакет</text>
+<text x="680.0" y="622.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· D = 3…5 мм</text>
+<text x="680.0" y="639.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· витков ≥ 3</text>
+<text x="680.0" y="656.0" font-size="10.4" fill="#6b7785" text-anchor="start" font-weight="normal">· выступ 2 мм</text>
+<rect x="680.0" y="668.0" width="180.0" height="18" rx="9" fill="#2b6cb0" opacity="0.12"/><rect x="680.0" y="668.0" width="180.0" height="18" rx="9" fill="none" stroke="#2b6cb0" stroke-width="0.9"/><text x="770.0" y="681.5" font-size="10.5" fill="#2b6cb0" text-anchor="middle" font-weight="bold">проверка: wall + gap</text>
+<text x="680.0" y="699.0" font-size="9.8" fill="#6b7785" text-anchor="start" font-weight="normal">переплёт</text>
+<text x="28.0" y="732.0" font-size="12.4" fill="#1f2933" text-anchor="start" font-weight="normal">Общее правило: держит не форма, а зазор. Все шесть механизмов сводятся к трём числам — натяг, заход и зазор, — и все три у нас уже</text>
+<text x="28.0" y="749.4" font-size="12.4" fill="#1f2933" text-anchor="start" font-weight="normal">есть в проверках.</text>
+</svg>

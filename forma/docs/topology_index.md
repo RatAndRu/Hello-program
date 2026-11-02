@@ -29,6 +29,7 @@
 | 10 | [photo_to_model.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/photo_to_model.md) | воспроизведение объекта по фотографии: паспорт кадра, ракурс рендером, число вместо «похоже» | 12 |
 | 11 | [primitives_gap_analysis.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/primitives_gap_analysis.md) | аудит базы примитивов: 227 команд, 122 примитива, пробелы по 20 областям, критерий «делать примитивом», приоритеты P0–P2 | 13 |
 | 12 | [sketch_and_families.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/sketch_and_families.md) | разбор вопросов к аудиту: контур и кривые, виды пружин, семейства и цена команды в промпте, «зачем математика», шпонка, орнамент; исправления отчёта | 9 |
+| 13 | [origami_analysis.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/origami_analysis.md) | оригами: двенадцать складок и семь баз с литературой, замеры сгибания (угол, слои, второй сгиб), чего нет в DSL и приоритеты P0–P2, шаг «сложить ради кромки», соединения без клея, просить ИИ придумать модель, малоизвестные приёмы | 10 |
 
 Схемы (SVG, встраиваются в документы):
 
@@ -37,7 +38,12 @@
 * [img/topology_bad_good.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/topology_bad_good.svg) — пять дефектов и лечение;
 * [img/sketch_curve_why.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/sketch_curve_why.svg) — почему контуру нужны кривые;
 * [img/families_vs_count.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/families_vs_count.svg) — пять видов пружин, цена команды, вариант против команды;
-* генератор схем: [make_topology_svg.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/make_topology_svg.py).
+* [img/origami_folds.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/origami_folds.svg) — двенадцать складок с торца и их статус в движке;
+* [img/origami_fold_unfold.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/origami_fold_unfold.svg) — «сложить, загладить, разогнуть» как отдельный шаг;
+* [img/origami_joints.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/origami_joints.svg) — шесть соединений без клея и их проверки;
+* [img/origami_ai_pipeline.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/origami_ai_pipeline.svg) — семь шагов «ИИ + алгоритм»;
+* [img/origami_bad_cases.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/origami_bad_cases.svg) — шесть провалов и лечение;
+* генераторы схем: [make_topology_svg.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/make_topology_svg.py), [make_origami_svg.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/make_origami_svg.py) (оба с `--check`), замеры — [origami_probe.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/origami_probe.py).
 
 ---
 

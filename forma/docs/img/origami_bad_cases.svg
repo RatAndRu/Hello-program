@@ -1,0 +1,100 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1010" viewBox="0 0 1000 1010" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif">
+<title>Плохо и лечение</title>
+<rect width="1000" height="1010" fill="#ffffff"/>
+<text x="28.0" y="42.0" font-size="22" fill="#1f2933" text-anchor="start" font-weight="bold">Шесть типичных провалов и их лечение</text>
+<text x="28.0" y="68.0" font-size="13" fill="#6b7785" text-anchor="start" font-weight="normal">слева — что происходит на самом деле (с числами из замеров), справа — что делать сегодня</text>
+<line x1="28" y1="86" x2="972" y2="86" stroke="#d5dbe1"/>
+<rect x="28" y="104" width="944" height="140" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="44.0" y="130.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">1. Второй сгиб на объёмной детали</text>
+<rect x="44" y="140" width="448" height="94" rx="6" fill="#fdf3f2" stroke="#c0392b" stroke-width="0.9"/>
+<rect x="56.0" y="146.0" width="57.0" height="18" rx="9" fill="#c0392b" opacity="0.12"/><rect x="56.0" y="146.0" width="57.0" height="18" rx="9" fill="none" stroke="#c0392b" stroke-width="0.9"/><text x="84.5" y="159.5" font-size="10.5" fill="#c0392b" text-anchor="middle" font-weight="bold">плохо</text>
+<text x="120.0" y="162.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">после сгиба на 120° не построился ни один из 20 вариантов:</text>
+<text x="120.0" y="176.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">«На плоскую часть листа остаётся 0.0 мм, а сгиб занимает</text>
+<text x="120.0" y="190.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">91.7 мм»</text>
+<path d="M 402.0,182.0 L 434.0,182.0 L 434.0,210.0 L 462.0,210.0" fill="none" stroke="#c0392b" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="432.0" y="222.0" font-size="9.5" fill="#c0392b" text-anchor="middle" font-weight="normal">0.0 мм</text>
+<rect x="508" y="140" width="448" height="94" rx="6" fill="#f2f9f3" stroke="#1e8449" stroke-width="0.9"/>
+<rect x="520.0" y="146.0" width="73.4" height="18" rx="9" fill="#1e8449" opacity="0.12"/><rect x="520.0" y="146.0" width="73.4" height="18" rx="9" fill="none" stroke="#1e8449" stroke-width="0.9"/><text x="556.7" y="159.5" font-size="10.5" fill="#1e8449" text-anchor="middle" font-weight="bold">лечение</text>
+<text x="596.0" y="162.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">панели + петля: 4 панели, 3 сопряжения type=петля, все</text>
+<text x="596.0" y="176.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">проверки связи — остаток 0 мм</text>
+<path d="M 864.0,212.0 L 896.0,212.0" fill="none" stroke="#1e8449" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 896.0,212.0 L 926.0,188.0" fill="none" stroke="#1e8449" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="896" cy="212" r="3.4" fill="none" stroke="#1e8449" stroke-width="1.6"/>
+<text x="896.0" y="222.0" font-size="9.5" fill="#1e8449" text-anchor="middle" font-weight="normal">петля</text>
+<rect x="28" y="252" width="944" height="140" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="44.0" y="278.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">2. Четыре слоя бумаги</text>
+<rect x="44" y="288" width="448" height="94" rx="6" fill="#fdf3f2" stroke="#c0392b" stroke-width="0.9"/>
+<rect x="56.0" y="294.0" width="57.0" height="18" rx="9" fill="#c0392b" opacity="0.12"/><rect x="56.0" y="294.0" width="57.0" height="18" rx="9" fill="none" stroke="#c0392b" stroke-width="0.9"/><text x="84.5" y="307.5" font-size="10.5" fill="#c0392b" text-anchor="middle" font-weight="bold">плохо</text>
+<text x="120.0" y="310.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">лист 0.5 мм после одного сгиба занимает 1.93 мм вместо 1.0;</text>
+<text x="120.0" y="324.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">второй сгиб не ставится</text>
+<rect x="406" y="328" width="60" height="4" fill="#c0392b" opacity="0.55"/>
+<rect x="406" y="334" width="60" height="4" fill="#c0392b" opacity="0.55"/>
+<rect x="406" y="340" width="60" height="4" fill="#c0392b" opacity="0.55"/>
+<rect x="406" y="346" width="60" height="4" fill="#c0392b" opacity="0.55"/>
+<text x="436.0" y="368.0" font-size="9.5" fill="#c0392b" text-anchor="middle" font-weight="normal">2.0 мм</text>
+<rect x="508" y="288" width="448" height="94" rx="6" fill="#f2f9f3" stroke="#1e8449" stroke-width="0.9"/>
+<rect x="520.0" y="294.0" width="73.4" height="18" rx="9" fill="#1e8449" opacity="0.12"/><rect x="520.0" y="294.0" width="73.4" height="18" rx="9" fill="none" stroke="#1e8449" stroke-width="0.9"/><text x="556.7" y="307.5" font-size="10.5" fill="#1e8449" text-anchor="middle" font-weight="bold">лечение</text>
+<text x="596.0" y="310.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">считать толщину заранее: 4 слоя 0.5 мм — это 2.0 мм;</text>
+<text x="596.0" y="324.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">печатать развёртку и складывать руками</text>
+<rect x="870" y="342" width="60" height="4" fill="#1e8449"/>
+<text x="900.0" y="364.0" font-size="9.5" fill="#1e8449" text-anchor="middle" font-weight="normal">руками</text>
+<rect x="28" y="400" width="944" height="140" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="44.0" y="426.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">3. Разогнуть после сгиба</text>
+<rect x="44" y="436" width="448" height="94" rx="6" fill="#fdf3f2" stroke="#c0392b" stroke-width="0.9"/>
+<rect x="56.0" y="442.0" width="57.0" height="18" rx="9" fill="#c0392b" opacity="0.12"/><rect x="56.0" y="442.0" width="57.0" height="18" rx="9" fill="none" stroke="#c0392b" stroke-width="0.9"/><text x="84.5" y="455.5" font-size="10.5" fill="#c0392b" text-anchor="middle" font-weight="bold">плохо</text>
+<text x="120.0" y="458.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">три попытки вернуть лист в плоскость: «Линия сгиба не</text>
+<text x="120.0" y="472.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">пересекает деталь»</text>
+<path d="M 402.0,492.0 L 434.0,492.0 L 434.0,470.0 L 462.0,470.0" fill="none" stroke="#c0392b" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 462.0,462.0 L 440.0,484.0" fill="none" stroke="#c0392b" stroke-width="1.4" stroke-dasharray="3 3" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="508" y="436" width="448" height="94" rx="6" fill="#f2f9f3" stroke="#1e8449" stroke-width="0.9"/>
+<rect x="520.0" y="442.0" width="73.4" height="18" rx="9" fill="#1e8449" opacity="0.12"/><rect x="520.0" y="442.0" width="73.4" height="18" rx="9" fill="none" stroke="#1e8449" stroke-width="0.9"/><text x="556.7" y="455.5" font-size="10.5" fill="#1e8449" text-anchor="middle" font-weight="bold">лечение</text>
+<text x="596.0" y="458.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">биг канавкой до сгиба: складка depth=0.15 даёт 2.17 мм</text>
+<text x="596.0" y="472.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">против 1.93 мм у чистого сгиба</text>
+<path d="M 866.0,488.0 L 894.0,496.0 L 922.0,488.0" fill="none" stroke="#1e8449" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="896.0" y="514.0" font-size="9.5" fill="#1e8449" text-anchor="middle" font-weight="normal">биг</text>
+<rect x="28" y="548" width="944" height="140" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="44.0" y="574.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">4. Деталь «спекается» при складывании</text>
+<rect x="44" y="584" width="448" height="94" rx="6" fill="#fdf3f2" stroke="#c0392b" stroke-width="0.9"/>
+<rect x="56.0" y="590.0" width="57.0" height="18" rx="9" fill="#c0392b" opacity="0.12"/><rect x="56.0" y="590.0" width="57.0" height="18" rx="9" fill="none" stroke="#c0392b" stroke-width="0.9"/><text x="84.5" y="603.5" font-size="10.5" fill="#c0392b" text-anchor="middle" font-weight="bold">плохо</text>
+<text x="120.0" y="606.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">сгиб 179° с gap=0 дал род −1 — поверхности вошли друг в</text>
+<text x="120.0" y="620.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">друга</text>
+<path d="M 404.0,640.0 L 432.0,622.0 L 460.0,640.0" fill="none" stroke="#c0392b" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 404.0,640.0 L 432.0,658.0 L 460.0,640.0" fill="none" stroke="#c0392b" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="508" y="584" width="448" height="94" rx="6" fill="#f2f9f3" stroke="#1e8449" stroke-width="0.9"/>
+<rect x="520.0" y="590.0" width="73.4" height="18" rx="9" fill="#1e8449" opacity="0.12"/><rect x="520.0" y="590.0" width="73.4" height="18" rx="9" fill="none" stroke="#1e8449" stroke-width="0.9"/><text x="556.7" y="603.5" font-size="10.5" fill="#1e8449" text-anchor="middle" font-weight="bold">лечение</text>
+<text x="596.0" y="606.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">gap = 0.2·толщины: при gap 0.5…2 мм по Z выходит 2.2…3.7</text>
+<text x="596.0" y="620.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">мм, род 0</text>
+<path d="M 868.0,632.0 L 896.0,632.0" fill="none" stroke="#1e8449" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 868.0,648.0 L 896.0,648.0" fill="none" stroke="#1e8449" stroke-width="2.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="922.0" y="644.0" font-size="9.5" fill="#1e8449" text-anchor="middle" font-weight="normal">gap</text>
+<rect x="28" y="696" width="944" height="140" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="44.0" y="722.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">5. Соединение без клея болтается</text>
+<rect x="44" y="732" width="448" height="94" rx="6" fill="#fdf3f2" stroke="#c0392b" stroke-width="0.9"/>
+<rect x="56.0" y="738.0" width="57.0" height="18" rx="9" fill="#c0392b" opacity="0.12"/><rect x="56.0" y="738.0" width="57.0" height="18" rx="9" fill="none" stroke="#c0392b" stroke-width="0.9"/><text x="84.5" y="751.5" font-size="10.5" fill="#c0392b" text-anchor="middle" font-weight="bold">плохо</text>
+<text x="120.0" y="754.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">шип 20×4 в пазу 20.6×4.6: зазор 0.3 мм — держится только за</text>
+<text x="120.0" y="768.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">счёт трения, проверки нет</text>
+<rect x="402" y="776" width="30" height="24" fill="none" stroke="#c0392b" stroke-width="1.6"/>
+<rect x="434" y="780" width="26" height="16" fill="none" stroke="#c0392b" stroke-width="1.6" stroke-dasharray="3 3"/>
+<rect x="508" y="732" width="448" height="94" rx="6" fill="#f2f9f3" stroke="#1e8449" stroke-width="0.9"/>
+<rect x="520.0" y="738.0" width="73.4" height="18" rx="9" fill="#1e8449" opacity="0.12"/><rect x="520.0" y="738.0" width="73.4" height="18" rx="9" fill="none" stroke="#1e8449" stroke-width="0.9"/><text x="556.7" y="751.5" font-size="10.5" fill="#1e8449" text-anchor="middle" font-weight="bold">лечение</text>
+<text x="596.0" y="754.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">проверка gap 0.1..0.5 мм и сопряжение type=паз: остаток 0</text>
+<text x="596.0" y="768.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">мм, «держится»</text>
+<rect x="866" y="774" width="30" height="28" fill="none" stroke="#1e8449" stroke-width="1.8"/>
+<rect x="898" y="778" width="26" height="20" fill="#1e8449" opacity="0.25" stroke="#1e8449" stroke-width="1.6"/>
+<rect x="28" y="844" width="944" height="140" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="44.0" y="870.0" font-size="13.5" fill="#1f2933" text-anchor="start" font-weight="bold">6. «Развёртка» — не то слово</text>
+<rect x="44" y="880" width="448" height="94" rx="6" fill="#fdf3f2" stroke="#c0392b" stroke-width="0.9"/>
+<rect x="56.0" y="886.0" width="57.0" height="18" rx="9" fill="#c0392b" opacity="0.12"/><rect x="56.0" y="886.0" width="57.0" height="18" rx="9" fill="none" stroke="#c0392b" stroke-width="0.9"/><text x="84.5" y="899.5" font-size="10.5" fill="#c0392b" text-anchor="middle" font-weight="bold">плохо</text>
+<text x="120.0" y="902.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">команда развёртка — это sweep: профиль по 3D-пути, а не</text>
+<text x="120.0" y="916.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">развёртка листа</text>
+<path d="M 400.0,948.0 L 424.0,924.0 L 448.0,950.0 L 466.0,924.0" fill="none" stroke="#c0392b" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="434.0" y="962.0" font-size="9.5" fill="#c0392b" text-anchor="middle" font-weight="normal">sweep</text>
+<rect x="508" y="880" width="448" height="94" rx="6" fill="#f2f9f3" stroke="#1e8449" stroke-width="0.9"/>
+<rect x="520.0" y="886.0" width="73.4" height="18" rx="9" fill="#1e8449" opacity="0.12"/><rect x="520.0" y="886.0" width="73.4" height="18" rx="9" fill="none" stroke="#1e8449" stroke-width="0.9"/><text x="556.7" y="899.5" font-size="10.5" fill="#1e8449" text-anchor="middle" font-weight="bold">лечение</text>
+<text x="596.0" y="902.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">развёртку даёт сечение (section → DXF и SVG) или ручная</text>
+<text x="596.0" y="916.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">раскладка панелей</text>
+<rect x="868" y="920" width="24" height="32" fill="none" stroke="#1e8449" stroke-width="1.5"/>
+<rect x="892" y="920" width="24" height="16" fill="none" stroke="#1e8449" stroke-width="1.5"/>
+<rect x="892" y="936" width="24" height="16" fill="none" stroke="#1e8449" stroke-width="1.5"/>
+<text x="896.0" y="962.0" font-size="9.5" fill="#1e8449" text-anchor="middle" font-weight="normal">DXF</text>
+</svg>

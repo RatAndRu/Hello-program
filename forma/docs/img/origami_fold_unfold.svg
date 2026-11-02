@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="800" viewBox="0 0 1000 800" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif">
+<title>Сложить и разогнуть</title>
+<rect width="1000" height="800" fill="#ffffff"/>
+<text x="28.0" y="42.0" font-size="22" fill="#1f2933" text-anchor="start" font-weight="bold">«Сложить, загладить, разогнуть»: как передать кромку, а не складку</text>
+<text x="28.0" y="68.0" font-size="13" fill="#6b7785" text-anchor="start" font-weight="normal">слева — физика шага, справа — что из этого сегодня можно записать в сценарий</text>
+<line x1="28" y1="86" x2="972" y2="86" stroke="#d5dbe1"/>
+<rect x="28" y="118" width="176" height="210" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="40.0" y="142.0" font-size="13" fill="#1f2933" text-anchor="start" font-weight="bold">1. Лист</text>
+<text x="40.0" y="162.0" font-size="11" fill="#2b6cb0" text-anchor="start" font-weight="normal">угол 0°</text>
+<text x="40.0" y="180.0" font-size="10.2" fill="#6b7785" text-anchor="start" font-weight="normal">плоский, без памяти</text>
+<path d="M 54.0,250.0 L 178.0,250.0" fill="none" stroke="#2b6cb0" stroke-width="4" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="116.0" y="274.0" font-size="10" fill="#6b7785" text-anchor="middle" font-weight="normal">t = 0.5 мм</text>
+<line x1="206.0" y1="250.0" x2="208.0" y2="250.0" stroke="#6b7785" stroke-width="1.5"/><polygon points="214.0,250.0 208.0,253.0 208.0,247.0" fill="#6b7785"/>
+<rect x="216" y="118" width="176" height="210" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="228.0" y="142.0" font-size="13" fill="#1f2933" text-anchor="start" font-weight="bold">2. Сложить</text>
+<text x="228.0" y="162.0" font-size="11" fill="#2b6cb0" text-anchor="start" font-weight="normal">угол 179°</text>
+<text x="228.0" y="180.0" font-size="10.2" fill="#6b7785" text-anchor="start" font-weight="normal">слои легли, ребро</text>
+<text x="228.0" y="194.3" font-size="10.2" fill="#6b7785" text-anchor="start" font-weight="normal">сформировано</text>
+<path d="M 242.0,220.0 L 298.0,220.0 L 298.0,276.0 L 350.0,276.0 L 350.0,272.0 L 302.0,272.0 L 302.0,216.0" fill="none" stroke="#2b6cb0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="304.0" y="298.0" font-size="10" fill="#6b7785" text-anchor="middle" font-weight="normal">слои легли</text>
+<line x1="394.0" y1="250.0" x2="396.0" y2="250.0" stroke="#6b7785" stroke-width="1.5"/><polygon points="402.0,250.0 396.0,253.0 396.0,247.0" fill="#6b7785"/>
+<rect x="404" y="118" width="176" height="210" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="416.0" y="142.0" font-size="13" fill="#1f2933" text-anchor="start" font-weight="bold">3. Загладить</text>
+<text x="416.0" y="162.0" font-size="11" fill="#2b6cb0" text-anchor="start" font-weight="normal">угол 179° + давление</text>
+<text x="416.0" y="180.0" font-size="10.2" fill="#6b7785" text-anchor="start" font-weight="normal">волокна смяты по линии</text>
+<path d="M 430.0,220.0 L 486.0,220.0 L 486.0,276.0 L 538.0,276.0" fill="none" stroke="#2b6cb0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="486.0" cy="248" r="17" fill="none" stroke="#b7791f" stroke-width="1.4" stroke-dasharray="3 3"/>
+<text x="492.0" y="298.0" font-size="10" fill="#b7791f" text-anchor="middle" font-weight="normal">давление</text>
+<line x1="582.0" y1="250.0" x2="584.0" y2="250.0" stroke="#6b7785" stroke-width="1.5"/><polygon points="590.0,250.0 584.0,253.0 584.0,247.0" fill="#6b7785"/>
+<rect x="592" y="118" width="176" height="210" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="604.0" y="142.0" font-size="13" fill="#1f2933" text-anchor="start" font-weight="bold">4. Разогнуть</text>
+<text x="604.0" y="162.0" font-size="11" fill="#2b6cb0" text-anchor="start" font-weight="normal">угол 2…5°</text>
+<text x="604.0" y="180.0" font-size="10.2" fill="#6b7785" text-anchor="start" font-weight="normal">остаточный угол «память»</text>
+<path d="M 618.0,248.0 L 630.0,238.0 L 674.0,238.0 L 718.0,248.0" fill="none" stroke="#2b6cb0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<circle cx="674.0" cy="240" r="13" fill="none" stroke="#1e8449" stroke-width="1.3"/>
+<text x="680.0" y="280.0" font-size="10" fill="#1e8449" text-anchor="middle" font-weight="normal">угол 3°</text>
+<line x1="770.0" y1="250.0" x2="772.0" y2="250.0" stroke="#6b7785" stroke-width="1.5"/><polygon points="778.0,250.0 772.0,253.0 772.0,247.0" fill="#6b7785"/>
+<rect x="780" y="118" width="176" height="210" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="792.0" y="142.0" font-size="13" fill="#1f2933" text-anchor="start" font-weight="bold">5. Кромка</text>
+<text x="792.0" y="162.0" font-size="11" fill="#2b6cb0" text-anchor="start" font-weight="normal">угол 0°, канавка</text>
+<text x="792.0" y="180.0" font-size="10.2" fill="#6b7785" text-anchor="start" font-weight="normal">линия видна, деталь</text>
+<text x="792.0" y="194.3" font-size="10.2" fill="#6b7785" text-anchor="start" font-weight="normal">плоская</text>
+<path d="M 806.0,250.0 L 858.0,250.0 L 878.0,250.0 L 930.0,250.0" fill="none" stroke="#2b6cb0" stroke-width="3" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 858.0,250.0 L 866.0,255.0 L 878.0,250.0" fill="none" stroke="#c0392b" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="868.0" y="280.0" font-size="10" fill="#c0392b" text-anchor="middle" font-weight="normal">канавка 0.25 мм</text>
+<rect x="28" y="380" width="470" height="210" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="44.0" y="406.0" font-size="13" fill="#1f2933" text-anchor="start" font-weight="bold">Угол сгиба во времени</text>
+<line x1="82" y1="550" x2="478" y2="550" stroke="#6b7785" stroke-width="1"/>
+<line x1="82" y1="434" x2="82" y2="550" stroke="#6b7785" stroke-width="1"/>
+<line x1="78" y1="550.0" x2="478" y2="550.0" stroke="#d5dbe1" stroke-dasharray="3 4"/>
+<text x="74.0" y="554.0" font-size="10" fill="#6b7785" text-anchor="end" font-weight="normal">0°</text>
+<line x1="78" y1="492.0" x2="478" y2="492.0" stroke="#d5dbe1" stroke-dasharray="3 4"/>
+<text x="74.0" y="496.0" font-size="10" fill="#6b7785" text-anchor="end" font-weight="normal">90°</text>
+<line x1="78" y1="434.6" x2="478" y2="434.6" stroke="#d5dbe1" stroke-dasharray="3 4"/>
+<text x="74.0" y="438.6" font-size="10" fill="#6b7785" text-anchor="end" font-weight="normal">179°</text>
+<path d="M 82.0,550.0 L 214.0,434.6 L 280.0,434.6 L 379.0,548.1 L 478.0,548.1" fill="none" stroke="#2b6cb0" stroke-width="2.4" stroke-linejoin="round" stroke-linecap="round"/>
+<text x="138.0" y="466.0" font-size="10" fill="#6b7785" text-anchor="end" font-weight="normal">сложить 2 с</text>
+<text x="359.2" y="496.0" font-size="10" fill="#6b7785" text-anchor="start" font-weight="normal">разогнуть 1,5 с</text>
+<text x="248.3" y="426.0" font-size="10" fill="#6b7785" text-anchor="middle" font-weight="normal">держим 1 с</text>
+<text x="82.0" y="570.0" font-size="10" fill="#6b7785" text-anchor="middle" font-weight="normal">0 с</text>
+<text x="478.0" y="570.0" font-size="10" fill="#6b7785" text-anchor="middle" font-weight="normal">6 с</text>
+<rect x="520" y="380" width="452" height="210" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<text x="536.0" y="406.0" font-size="13" fill="#1f2933" text-anchor="start" font-weight="bold">Что для этого нужно в DSL</text>
+<rect x="536" y="420" width="228" height="22" rx="4" fill="#eef3f9" stroke="#d5dbe1"/>
+<text x="544.0" y="436.0" font-size="11.2" fill="#2b6cb0" text-anchor="start" font-weight="normal">сгиб … angle=179 unfold=да</text>
+<text x="776.0" y="436.0" font-size="10.6" fill="#6b7785" text-anchor="start" font-weight="normal">сложить и вернуть</text>
+<rect x="536" y="450" width="228" height="22" rx="4" fill="#eef3f9" stroke="#d5dbe1"/>
+<text x="544.0" y="466.0" font-size="11.2" fill="#2b6cb0" text-anchor="start" font-weight="normal">rest=3</text>
+<text x="776.0" y="466.0" font-size="10.6" fill="#6b7785" text-anchor="start" font-weight="normal">остаточный угол после разгиба</text>
+<rect x="536" y="480" width="228" height="22" rx="4" fill="#eef3f9" stroke="#d5dbe1"/>
+<text x="544.0" y="496.0" font-size="11.2" fill="#2b6cb0" text-anchor="start" font-weight="normal">crease=0.4</text>
+<text x="776.0" y="496.0" font-size="10.6" fill="#6b7785" text-anchor="start" font-weight="normal">полуширина канавки, мм</text>
+<rect x="536" y="510" width="228" height="22" rx="4" fill="#eef3f9" stroke="#d5dbe1"/>
+<text x="544.0" y="526.0" font-size="11.2" fill="#2b6cb0" text-anchor="start" font-weight="normal">memory=0.25</text>
+<text x="776.0" y="526.0" font-size="10.6" fill="#6b7785" text-anchor="start" font-weight="normal">глубина канавки, мм</text>
+<rect x="536" y="540" width="228" height="22" rx="4" fill="#eef3f9" stroke="#d5dbe1"/>
+<text x="544.0" y="556.0" font-size="11.2" fill="#2b6cb0" text-anchor="start" font-weight="normal">passes=2</text>
+<text x="776.0" y="556.0" font-size="10.6" fill="#6b7785" text-anchor="start" font-weight="normal">сколько раз прогладили</text>
+<text x="28.0" y="606.0" font-size="13" fill="#1f2933" text-anchor="start" font-weight="bold">Что работает сегодня (замеры):</text>
+<circle cx="34" cy="628" r="3.2" fill="#1e8449"/>
+<text x="46.0" y="632.0" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">сгиб на 179° строится, объём сохраняется: 3.18 см³ против 3.20 см³ у листа</text>
+<circle cx="34" cy="652" r="3.2" fill="#c0392b"/>
+<text x="46.0" y="656.0" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">разогнуть нельзя: все три попытки вернуть лист дали «Линия сгиба не пересекает деталь»</text>
+<circle cx="34" cy="676" r="3.2" fill="#c0392b"/>
+<text x="46.0" y="680.0" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">лист 0.5 мм после одного сгиба занимает по Z 1.93 мм вместо 1.0 мм — перерасход 1.93×</text>
+<circle cx="34" cy="700" r="3.2" fill="#c0392b"/>
+<text x="46.0" y="704.0" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">после сгиба на 120° второй сгиб не построился ни в 20 из 20 сочетаний</text>
+<circle cx="34" cy="724" r="3.2" fill="#b7791f"/>
+<text x="46.0" y="728.0" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">линия-биг есть: складка r=0.5 depth=0.1 даёт канавку, но это не память после сгиба</text>
+<circle cx="34" cy="748" r="3.2" fill="#1e8449"/>
+<text x="46.0" y="752.0" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">память бумаги — это остаточный угол: 3° в модели дают видимую кромку на плоской детали</text>
+<text x="28.0" y="782.0" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">Отсюда правило: «сложить и разогнуть» — отдельный шаг сценария, а не побочный эффект сгиба.</text>
+</svg>
