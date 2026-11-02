@@ -1,0 +1,2 @@
+bracket.stl: OpenSCAD 0.23 с
+vase.stl: OpenSCAD 0.02 с
