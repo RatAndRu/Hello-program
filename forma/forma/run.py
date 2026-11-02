@@ -645,8 +645,9 @@ def build(script: str, previous_analysis: dict | None = None,
                 if scene.contours and not scene.had_solids:
                     # Исходная сцена только из аналитических контуров валидна.
                     result.empty = True
-                elif upto is not None:
-                    # Кадр до первого тела — нормальный пустой предпросмотр.
+                elif upto is not None or not analyze_model:
+                    # Кадр до первого тела и служебная сцена без анализа —
+                    # нормальный пустой предпросмотр (сетка, стиль, параметры).
                     result.empty = True
                 else:
                     # Сохраняем прежний контракт: «удалить all» — ошибка сборки.
