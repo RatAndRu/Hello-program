@@ -108,6 +108,9 @@ class Scene:
         self.checks: list[dict] = []
         # пакетные отчёты точных пересечений, выполненные по требованию
         self.interferences: list[dict] = []
+        # Явно разрешённые пары для автоматического анализа и check-правил.
+        # Заполняется командой interference allow="a:b"; в GLB не попадает.
+        self.collision_allow: list[str] = []
         # Этап 3: только ограниченная история складок и кинематические отчёты.
         # Геометрические снимки приватны и никогда не попадают в JSON/GLB.
         self.fold_history: list[dict] = []

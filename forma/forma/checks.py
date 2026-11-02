@@ -5,11 +5,15 @@
     check кружка wall 3..5
     check кружка symmetric y
     check ручка gap корпус 0.5..2
+    check нож collision
+    check лезвие ход axis=z до=90 step=5
 
 Результат — набор понятных вердиктов с фактическими значениями.
 """
 
 from __future__ import annotations
+
+import math
 
 from .errors import FormaError
 from .values import Range, fmt, parse_value
@@ -36,6 +40,10 @@ RULE_ALIASES = {
     "отклонение": "deviation", "похожесть": "deviation", "эталон": "deviation",
     "hausdorff": "deviation", "гаусдорф": "deviation", "сравнение": "deviation",
     "связь": "связь", "сопряжение": "связь", "петля": "связь", "mate": "связь",
+    "пересечение": "collision", "пересечения": "collision", "коллизия": "collision",
+    "столкновение": "collision", "collision": "collision",
+    "ход": "motion", "проворот": "motion", "кинематика": "motion",
+    "свободный_ход": "motion", "motion": "motion",
     # абсолютное положение и кубический бюджет объёма
     "положение": "position", "место": "position", "позиция": "position",
     "position": "position", "где": "position", "угол": "position",
@@ -45,6 +53,8 @@ RULE_ALIASES = {
 }
 
 RULE_LABELS = {
+    "collision": "пересечения деталей",
+    "motion": "свободный ход",
     "watertight": "герметичность",
     "genus": "сквозные отверстия",
     "parts": "число частей",
@@ -80,6 +90,7 @@ UNITS = {
     "wall_min": "мм", "sharp_edge": "°", "tri_quality": "%",
     "deviation": "мм", "связь": "мм",
     "position": "мм", "center": "мм", "grid": "%",
+    "collision": "мм³", "motion": "°",
 }
 
 AXES = {"x": 0, "y": 1, "z": 2, "ширина": 0, "глубина": 1, "высота": 2,
@@ -180,7 +191,7 @@ def _load_reference(path):
 RULES = {"watertight", "genus", "parts", "size", "height", "width", "depth", "volume",
          "mass", "wall", "wall_min", "flat_bottom", "overhang", "symmetric", "gap",
          "clearance", "inside", "tris", "sharp_edge", "tri_quality", "topology", "deviation",
-         "связь", "position", "center", "grid"}
+         "связь", "position", "center", "grid", "collision", "motion"}
 
 
 def evaluate_checks(scene, cache) -> list[dict]:
@@ -392,6 +403,12 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache,
                                  f"({'в норме' if ok else 'не в норме'}, нужно {_fmt_range(rng, 'мм')})",
                        name, line, gap, _fmt_range(rng, "мм"), label)
 
+    if rule == "collision":
+        return _check_collision(solid, args, line, cache, kwargs)
+
+    if rule == "motion":
+        return _check_motion(solid, args, line, cache, kwargs)
+
     if rule in ("position", "center"):
         # Абсолютное место: раньше его нельзя было проверить вообще — только
         # связи и зазоры. Теперь `check деталь положение 10 20 30` требует,
@@ -568,6 +585,248 @@ def _check_grid(solid, line: int, scene, cache) -> dict:
                f" — вне бюджета {fmt(over / 1000)} см³ (кубов на {fmt(allowed / 1000)} см³)"))
     result = _result(ok, "grid", text, solid.name, line, over, "0", "в пределах сетки")
     result["overflow_mm3"] = round(over, 3)
+    return result
+
+
+def _kw_num(kwargs: dict, names: tuple[str, ...], default: float, scope=None) -> float:
+    """Число из именованного уточнения проверки, включая параметры сцены."""
+    for name in names:
+        if name not in kwargs:
+            continue
+        raw = kwargs[name]
+        value = raw if isinstance(raw, (int, float)) and not isinstance(raw, bool) else \
+            _parse_value(str(raw), scope or {})
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise FormaError(f"Параметр проверки «{name}» должен быть числом.")
+        value = float(value)
+        if not math.isfinite(value):
+            raise FormaError(f"Параметр проверки «{name}» должен быть конечным числом.")
+        return value
+    return float(default)
+
+
+def _kw_str(kwargs: dict, names: tuple[str, ...], default: str = "") -> str:
+    for name in names:
+        if name in kwargs:
+            return str(kwargs[name]).strip().strip('"\'')
+    return default
+
+
+def _kw_value(kwargs: dict, names: tuple[str, ...], default=None, scope=None):
+    for name in names:
+        if name in kwargs:
+            raw = kwargs[name]
+            return _parse_value(raw, scope or {}) if isinstance(raw, str) else raw
+    return default
+
+
+def _vector(value, scope, what: str) -> list[float]:
+    """Прочитать x/y/z или трёхкомпонентный вектор из DSL-значения."""
+    if isinstance(value, str):
+        text = value.strip().strip('"\'')
+        if what == "ось" and text.lower() in {"x", "y", "z"}:
+            return [float(text.lower() == axis) for axis in "xyz"]
+        candidate = text
+        if "," in text and not text.startswith(("[", "(")):
+            candidate = "[" + text + "]"
+        value = _parse_value(candidate, scope or {})
+        if isinstance(value, str) and candidate != text:
+            value = _parse_value("[" + text.strip("[]() ") + "]", scope or {})
+    if not isinstance(value, (list, tuple)) or len(value) != 3:
+        raise FormaError(f"{what.capitalize()} должна быть x, y, z или вектором [x,y,z]."
+                         if what == "ось" else
+                         f"{what.capitalize()} должна быть вектором [x,y,z].")
+    try:
+        vector = [float(component) for component in value]
+    except (TypeError, ValueError):
+        raise FormaError(f"{what.capitalize()} содержит нечисловые компоненты.")
+    if not all(math.isfinite(component) for component in vector):
+        raise FormaError(f"{what.capitalize()} должна содержать конечные числа.")
+    if what == "ось" and math.sqrt(sum(component * component for component in vector)) < 1e-12:
+        raise FormaError("Ось хода не может быть нулевой.")
+    return vector
+
+
+def _scene_allow(scene, explicit: str = "") -> str:
+    from .collide import merge_allow
+    return merge_allow(getattr(scene, "collision_allow", []), explicit)
+
+
+def _collision_obstacles(scene, solid, raw, scope):
+    """Список неподвижных тел; ``against`` сужает его до сборки или группы."""
+    if raw is None or raw == "":
+        values = None
+    else:
+        values = _parse_value(raw, scope or {}) if isinstance(raw, str) else raw
+    if values is None:
+        candidates = scene.visible_solids()
+    else:
+        if isinstance(values, str):
+            text = values.strip().strip('"\'')
+            values = ([part.strip() for part in text.split(",") if part.strip()]
+                      if "," in text and text not in scene.groups and text not in scene.objects
+                      else [text])
+        elif not isinstance(values, (list, tuple)):
+            values = [values]
+        candidates = []
+        for value in values:
+            candidates.extend(scene.expand(str(value)))
+    result = []
+    seen = set()
+    for other in candidates:
+        if other.name == solid.name or not other.visible or other.name in seen:
+            continue
+        seen.add(other.name)
+        result.append(other)
+    return result
+
+
+def _motion_hits(manifold, name: str, others, tolerance: float, allow: str,
+                 skip_parts: bool, share: float, limit: int = 12):
+    """Все значимые пары одной позы через общий broad/narrow phase."""
+    from types import SimpleNamespace
+    from .collide import overlap_pairs
+    moving = SimpleNamespace(name=name, manifold=manifold)
+    return overlap_pairs([moving] + list(others), tolerance=tolerance, allow=allow,
+                         skip_parts=skip_parts, share=share, target=name, limit=limit)
+
+
+def _check_collision(solid, args, line, cache, kwargs) -> dict:
+    """``check деталь collision [допуск] [allow=…] [share=…]``."""
+    from .collide import overlap_pairs
+
+    scene = _scene(cache)
+    if scene is None:
+        raise FormaError("Проверка пересечений работает только внутри сцены.")
+    scope = cache_scene(cache)
+    tol = 0.01
+    if args:
+        value = _parse_value(args[0], scope)
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise FormaError("Допуск collision должен быть числом в мм³.")
+        tol = float(value)
+    tol = _kw_num(kwargs, ("tolerance", "допуск"), tol, scope)
+    if tol < 0:
+        raise FormaError("Допуск collision не может быть отрицательным.")
+    allow = _scene_allow(scene, _kw_str(kwargs, ("allow", "разрешено")))
+    share = _kw_num(kwargs, ("share", "доля"), 0.0, scope)
+    skip_parts = _kw_str(kwargs, ("parts", "части"), "нет").lower() not in (
+        "да", "true", "1", "yes", "on")
+    against = _kw_value(kwargs, ("against", "препятствия"), None, scope)
+    others = _collision_obstacles(scene, solid, against, scope)
+    if not others:
+        result = _result(True, "collision", "пересечения: других деталей нет",
+                         solid.name, line, 0.0, f"≤ {fmt(tol)} мм³", RULE_LABELS["collision"])
+        result["pairs"] = []
+        return result
+    pairs = overlap_pairs([solid] + others, tolerance=tol, allow=allow,
+                          skip_parts=skip_parts, share=share, target=solid.name, limit=5)
+    if pairs:
+        descriptions = []
+        for pair in pairs:
+            other = pair["b"] if pair["a"] == solid.name else pair["a"]
+            descriptions.append(f"«{other}» {fmt(pair['volume_mm3'], 2)} мм³")
+        text = "пересечения: " + "; ".join(descriptions)
+    else:
+        text = "пересечения: нет"
+    result = _result(not pairs, "collision", text + f" — при допуске {fmt(tol)} мм³",
+                     solid.name, line, 0.0, f"≤ {fmt(tol)} мм³", RULE_LABELS["collision"])
+    result["pairs"] = pairs
+    return result
+
+
+def _check_motion(solid, args, line, cache, kwargs) -> dict:
+    """Дискретная проверка поворота с машинными полями столкновений.
+
+    Проверяются исходная поза и каждое sampled-положение, включая точный
+    конечный угол. Это не доказательство отсутствия столкновения между шагами.
+    """
+    from .ops import rotate as rotate_manifold
+
+    scene = _scene(cache)
+    if scene is None:
+        raise FormaError("Проверка хода работает только внутри сцены.")
+    scope = cache_scene(cache)
+    axis_raw = _kw_value(kwargs, ("axis", "ось"), args[0] if args else "z", scope)
+    vector = _vector(axis_raw, scope, "ось")
+    pivot_raw = _kw_value(kwargs, ("pivot", "центр", "точка"), "0,0,0", scope)
+    pivot = _vector(pivot_raw, scope, "точка")
+    upto = _kw_num(kwargs, ("до", "upto", "angle", "угол"), 90.0, scope)
+    step = _kw_num(kwargs, ("step", "шаг"), 5.0, scope)
+    tol = _kw_num(kwargs, ("tolerance", "допуск"), 0.5, scope)
+    share = _kw_num(kwargs, ("share", "доля"), 0.0, scope)
+    if upto == 0:
+        raise FormaError("Угол хода должен быть отличен от нуля.")
+    if step <= 0:
+        raise FormaError("Шаг хода должен быть больше нуля.")
+    if tol < 0:
+        raise FormaError("Допуск хода не может быть отрицательным.")
+    count = max(1, int(math.ceil(abs(upto) / step - 1e-12)))
+    if count > 72:
+        raise FormaError("Слишком мелкий шаг хода: не больше 72 положений.",
+                         hint="Увеличьте step или уменьшите до=.")
+    allow = _scene_allow(scene, _kw_str(kwargs, ("allow", "разрешено")))
+    skip_parts = _kw_str(kwargs, ("parts", "части"), "нет").lower() not in (
+        "да", "true", "1", "yes", "on")
+    against = _kw_value(kwargs, ("against", "препятствия"), None, scope)
+    others = _collision_obstacles(scene, solid, against, scope)
+    expected = f"до {fmt(upto, 0)}°"
+    if not others:
+        result = _result(True, "motion", "ход: других деталей нет — двигать не во что",
+                         solid.name, line, upto, expected, RULE_LABELS["motion"])
+        result.update({"blocked_at": None, "blocked_by": None, "blocked_mm3": None,
+                       "blocked_pairs": [], "blocked_pair": None, "positions_checked": 0})
+        return result
+    if len(others) > 12:
+        raise FormaError("Слишком много деталей для проверки хода (больше 12).",
+                         hint="Задайте against=[…] для сборки из 2–12 деталей.")
+
+    angles = [math.copysign(min(index * step, abs(upto)), upto)
+              for index in range(1, count + 1)]
+    checked = 0
+    blocked_pairs = []
+    blocked_angle = 0.0
+    # Исходная поза обязательна: иначе уже врезавшаяся деталь могла бы
+    # получить ложный «свободный ход», если на первом шаге вышла из контакта.
+    hits = _motion_hits(solid.manifold, solid.name, others, tol, allow, skip_parts, share)
+    if hits:
+        blocked_pairs = hits
+    else:
+        for angle in angles:
+            pose = rotate_manifold(solid.manifold, angle, vector, pivot)
+            checked += 1
+            hits = _motion_hits(pose, solid.name, others, tol, allow, skip_parts, share)
+            if hits:
+                blocked_pairs = hits
+                blocked_angle = angle
+                break
+
+    if not blocked_pairs:
+        text = (f"ход: свободно в проверенных положениях до {fmt(upto, 0)}° "
+                f"(поз {checked + 1}, шаг {fmt(step, 0)}°)")
+        result = _result(True, "motion", text, solid.name, line, upto, expected,
+                         RULE_LABELS["motion"])
+        result.update({"blocked_at": None, "blocked_by": None, "blocked_mm3": None,
+                       "blocked_pairs": [], "blocked_pair": None,
+                       "positions_checked": checked + 1})
+        return result
+
+    blocked = blocked_pairs[0]
+    blocked_by = [pair["b"] if pair["a"] == solid.name else pair["a"]
+                  for pair in blocked_pairs]
+    blocked_mm3 = [round(pair["volume_mm3"], 3) for pair in blocked_pairs]
+    if blocked_angle == 0.0:
+        text = "ход: уже в исходном положении пересекается: "
+    else:
+        text = f"ход: заклинивает на {fmt(blocked_angle, 0)}°: "
+    text += "; ".join(f"«{other}» {fmt(volume, 1)} мм³"
+                       for other, volume in zip(blocked_by, blocked_mm3))
+    text += f" (допуск {fmt(tol, 1)})"
+    result = _result(False, "motion", text, solid.name, line, blocked_angle, expected,
+                     RULE_LABELS["motion"])
+    result.update({"blocked_at": blocked_angle, "blocked_by": blocked_by,
+                   "blocked_mm3": blocked_mm3, "positions_checked": checked + 1,
+                   "blocked_pairs": blocked_pairs, "blocked_pair": blocked})
     return result
 
 

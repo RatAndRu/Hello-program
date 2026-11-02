@@ -499,6 +499,29 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
             f"Топологическая сварка нашла структурные ошибки: {names}{more}. "
             "Экспорт будет остановлен до исправления исходной сетки."
         )
+    # ---- пересечения отдельных деталей (не AABB-вердикт) -----------------
+    # Число connected components здесь не используем: два пересекающихся
+    # объекта могут образовывать одно connected тело после объединения, но
+    # для подвижной сборки это всё равно дефект. AABB лишь отбирает кандидатов.
+    if 1 < len(visible) <= 24:
+        try:
+            from .collide import merge_allow, overlap_pairs
+            pairs = overlap_pairs(
+                visible, tolerance=1.0, share=0.005, limit=3,
+                allow=merge_allow(getattr(scene, "collision_allow", [])),
+            )
+            for pair in pairs:
+                warnings.append(
+                    f"Детали пересекаются: «{pair['a']}» ↔ «{pair['b']}» — "
+                    f"{fmt(pair['volume_mm3'], 1)} мм³. Объедините (`union`) или "
+                    f"разрешите пару (`interference allow=\"{pair['a']}:{pair['b']}\"`).")
+            if len(pairs) > 1:
+                advice.append("Пересечения деталей видны в отчёте `interference` — "
+                              "там все пары с точными объёмами.")
+        except Exception as exc:
+            # Анализ не должен падать из-за дополнительной диагностики, но и
+            # скрывать её отказ нельзя: иначе пользователь видит ложное «чисто».
+            warnings.append(f"Проверка пересечений не выполнена: {exc}")
     # ---- кубическая сетка: бюджет объёма -------------------------------
     grid = getattr(scene, "grid", None)
     if grid:

@@ -7,9 +7,7 @@
 """
 from __future__ import annotations
 
-import fnmatch
 import math
-from itertools import combinations
 
 import manifold3d as mf
 import numpy as np
@@ -160,23 +158,6 @@ def _targets(a):
     return out
 
 
-def _allowed(spec, left, right):
-    if not spec:
-        return False
-    for raw in spec.replace(";", ",").split(","):
-        pair = raw.strip()
-        if not pair:
-            continue
-        parts = pair.split(":") if ":" in pair else pair.split("|")
-        if len(parts) != 2:
-            raise GeometryError("interference: allow задаётся парами a:b,c:d.")
-        a, b = [v.strip() for v in parts]
-        if ((fnmatch.fnmatchcase(left, a) and fnmatch.fnmatchcase(right, b)) or
-                (fnmatch.fnmatchcase(left, b) and fnmatch.fnmatchcase(right, a))):
-            return True
-    return False
-
-
 @op("interference", aliases=("пересечения", "коллизии", "collision_report"),
     category="Проверка",
     summary="Пакетный отчёт пересечений: AABB-отбор, точный объём Manifold, "
@@ -189,55 +170,39 @@ def _allowed(spec, left, right):
             "limit": "максимум пар в отчёте (100)"},
     positional=["objects"])
 def interference(a, name):
+    from .collide import merge_allow, scan_pairs
+
     solids = [s for s in _targets(a) if s.visible]
     tolerance = float(a.num("tolerance", 0.01, minv=0.0) or 0.0)
     allow = a.text("allow", "") or ""
     skip_parts = not a.boolean("parts", False)
     limit = int(a.num("limit", 100, minv=1, maxv=10000) or 100)
-    pairs = []
-    allowed = 0
-    candidates = 0
-    skipped_parts = 0
-    for left, right in combinations(solids, 2):
-        if skip_parts and left.name.split(".")[0] == right.name.split(".")[0]:
-            skipped_parts += 1
-            continue
-        if _allowed(allow, left.name, right.name):
-            allowed += 1
-            continue
-        lb, rb = left.manifold.bounding_box(), right.manifold.bounding_box()
-        overlap = np.minimum(np.asarray(lb[3:]), np.asarray(rb[3:])) - \
-            np.maximum(np.asarray(lb[:3]), np.asarray(rb[:3]))
-        if not np.all(overlap > 1e-7):
-            continue
-        candidates += 1
-        intersection = left.manifold ^ right.manifold
-        volume = abs(float(intersection.volume()))
-        if volume <= tolerance:
-            continue
-        bb = intersection.bounding_box() if not intersection.is_empty() else [*overlap]
-        pairs.append({"a": left.name, "b": right.name,
-                      "volume_mm3": round(volume, 6),
-                      "bbox": [round(float(v), 4) for v in bb]})
-    pairs.sort(key=lambda item: item["volume_mm3"], reverse=True)
-    truncated = max(0, len(pairs) - limit)
-    pairs = pairs[:limit]
-    report = {"objects": len(solids), "candidates": candidates,
-              "pairs": pairs, "count": len(pairs) + truncated,
-              "allowed": allowed, "skipped_parts": skipped_parts,
-              "truncated": truncated, "tolerance": tolerance,
+    pairs, stats = scan_pairs(solids, tolerance=tolerance, allow=allow,
+                              skip_parts=skip_parts, limit=limit)
+    report = {"objects": stats["objects"], "candidates": stats["candidates"],
+              "pairs": pairs, "count": stats["matched"],
+              "allowed": stats["allowed"], "skipped_parts": stats["skipped_parts"],
+              "truncated": stats["truncated"], "tolerance": tolerance,
               "line": a.cmd.line, "ok": not pairs}
     reports = list(getattr(a.scene, "interferences", []) or [])
     reports.append(report)
     a.scene.interferences = reports
+    if allow:
+        # Разрешение — не только фильтр этого отчёта, но и явно записанное
+        # исключение для автоматического анализа и последующих check-правил.
+        # Сам отчёт выше по-прежнему зависит только от своих аргументов.
+        combined_allow = merge_allow(getattr(a.scene, "collision_allow", []), allow)
+        a.scene.collision_allow = combined_allow.split(",") if combined_allow else []
     level = "warn" if pairs else "info"
-    a.scene.log(level, f"interference: объектов {len(solids)}, кандидатов {candidates}, "
-                       f"пересечений {report['count']}, разрешено {allowed}", a.cmd.line)
+    a.scene.log(level, f"interference: объектов {report['objects']}, "
+                       f"кандидатов {report['candidates']}, "
+                       f"пересечений {report['count']}, разрешено {report['allowed']}",
+                a.cmd.line)
     for pair in pairs[:10]:
         a.scene.log("warn", f"  {pair['a']} ↔ {pair['b']}: "
                             f"{pair['volume_mm3']:g} мм³", a.cmd.line)
-    if truncated:
-        a.scene.log("warn", f"  ещё {truncated} пар скрыто limit={limit}", a.cmd.line)
+    if stats["truncated"]:
+        a.scene.log("warn", f"  ещё {stats['truncated']} пар скрыто limit={limit}", a.cmd.line)
     return None
 
 

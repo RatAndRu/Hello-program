@@ -46,7 +46,7 @@ hiddenimports += [
     "forma.ops_basic", "forma.ops_contour", "forma.ops_curves", "forma.ops_shape", "forma.ops_scene",
     "forma.contour", "forma.semantic_diff",
     "forma.ops_sdf", "forma.render", "forma.webui", "forma.cli", "forma.checks",
-    "forma.metrics", "forma.agent", "forma.geometry", "forma.values",
+    "forma.collide", "forma.metrics", "forma.agent", "forma.geometry", "forma.values",
     "forma.eval", "forma.fuzz",
     "forma.mesher", "forma.sdf", "forma.anatomy", "forma.skeleton_original", "forma.ops_skeleton", "forma.ops_organic", "forma.textures",
     "forma.blender", "forma.paths", "forma.ops_human", "forma.ops_studio",
