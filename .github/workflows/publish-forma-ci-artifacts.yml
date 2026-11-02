@@ -57,6 +57,47 @@ jobs:
                   out.write(f'{key.upper()}={value}\n')
           PY
 
+      - name: Извлечь дракона из SHA проверенного Windows-прогона
+        run: |
+          python - <<'PY'
+          import hashlib, json, os, re, subprocess
+          from pathlib import Path
+          version = os.environ['VERSION']
+          if not re.fullmatch(r'[0-9]+[A-Za-z0-9._-]*', version):
+              raise SystemExit('Некорректная версия')
+          run = json.loads(subprocess.check_output([
+              'gh', 'run', 'view', os.environ['SOURCE_RUN'], '--json', 'headSha']))
+          source_sha = run['headSha']
+          subprocess.run(['git', 'fetch', '--depth=1', 'origin', source_sha], check=True)
+          target = Path('dragon')
+          target.mkdir()
+          names = {
+              'glb': f'Forma3D-{version}-dragon-sovereign.glb',
+              'forma': f'Forma3D-{version}-dragon-sovereign.forma',
+              'report': f'Forma3D-{version}-dragon-sovereign-report.json',
+              'picking': f'Forma3D-{version}-dragon-sovereign-picking.json',
+              'preview': f'Forma3D-{version}-dragon-sovereign-preview.png',
+          }
+          sources = {
+              'glb': 'forma/exports/dragon_sovereign/dragon_sovereign.glb',
+              'forma': 'forma/examples/dragon_sovereign.forma',
+              'report': 'forma/exports/dragon_sovereign/dragon_sovereign_full_report.json',
+              'picking': 'forma/exports/dragon_sovereign/dragon_sovereign_picking_report.json',
+              'preview': 'forma/docs/dragon_sovereign_preview.png',
+          }
+          for key, source in sources.items():
+              data = subprocess.check_output(['git', 'show', f'{source_sha}:{source}'])
+              (target / names[key]).write_bytes(data)
+          digest = lambda path: hashlib.sha256(path.read_bytes()).hexdigest()
+          report = json.loads((target / names['report']).read_text(encoding='utf-8'))
+          picking = json.loads((target / names['picking']).read_text(encoding='utf-8'))
+          assert digest(target / names['glb']) == report['glb_sha256'] == picking['sha256']
+          assert digest(target / names['forma']) == report['script_sha256']
+          assert picking['small_scene']['passed'] == 1
+          assert picking['full_scene']['passed'] == 4
+          print(f'Дракон подтверждён для исходного SHA {source_sha}')
+          PY
+
       - name: Скачать готовый CI-артефакт без пересборки
         uses: actions/download-artifact@v4
         with:
@@ -82,6 +123,9 @@ jobs:
                       or name in {'human_skeleton.LICENSE.txt',
                                   'human_skeleton_original.audit.json'})
           files = [p for p in source.rglob('*') if p.is_file() and wanted(p)]
+          # Эти пять файлов извлечены и проверены по SHA исходного CI-прогона,
+          # а не взяты из более нового checkout запроса публикации.
+          files += [p for p in Path('dragon').rglob('*') if p.is_file()]
           for path in files:
               destination = target / path.name
               if destination.exists():
