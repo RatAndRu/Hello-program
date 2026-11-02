@@ -15,6 +15,16 @@ check блок parts 1
 """,
     },
     {
+        "name": "Этап 1: контур, стенка и уклон",
+        "script": """профиль = contour2d kind=ellipse rx=20 ry=10 tolerance=.08
+деталь = extrude profile=профиль height=10 thickness=1 draft=2 open=top
+check деталь watertight
+check деталь parts 1
+check деталь height 10..10
+check деталь genus 0
+""",
+    },
+    {
         "name": "Кружка с ручкой",
         "script": """стенка = 4
 высота = 95

@@ -21,6 +21,7 @@ from .values import numeric_issue, parse_value
 # регистрируем команды
 from . import ops_basic  # noqa: F401,E402
 from . import ops_cavity  # noqa: F401,E402
+from . import ops_contour  # noqa: F401,E402
 from . import ops_curves  # noqa: F401,E402
 from . import ops_shape  # noqa: F401,E402
 from . import ops_scene  # noqa: F401,E402
@@ -255,6 +256,7 @@ class Build:
             "script_hash": self.script_hash,
             "objects": [] if light else self.objects_payload(),
             "params": dict(scene.params) if scene else {},
+            "contours": [item.to_dict() for item in scene.contours.values()] if scene else [],
             "analysis": self.analysis,
             "timings": self.timings,
             "log": self.log,
@@ -322,6 +324,8 @@ MEASURES = {
     "length": lambda bb, st: max(st["size"]),
     "длина": lambda bb, st: max(st["size"]),
     "volume": lambda bb, st: st["volume"] / 1000.0,
+    "area": lambda bb, st: st["area"] / 100.0,  # см², как volume в см³
+    "tris": None, "parts": None, "genus": None,
     "top": lambda bb, st: bb[5],
     "bottom": lambda bb, st: bb[2],
     "left": lambda bb, st: bb[0],
@@ -339,6 +343,8 @@ MEASURES = {
     "центр_масс_z": None,
     # русские имена мерок: писать проще, чем вспоминать английские
     "ширина": None, "высота": None, "глубина": None, "толщина": None,
+    "площадь": None, "треугольники": None, "части": None,
+    "род": None, "отверстия": None,
 }
 
 
@@ -349,13 +355,30 @@ def _measure(name: str, obj: str, scene: Scene) -> float:
                "право": "right", "ширина": "width", "высота": "height",
                "глубина": "depth", "толщина": "depth",
                "центр_масс_x": "mx", "центр_масс_y": "my", "центр_масс_z": "mz",
-               "mass_x": "mx", "mass_y": "my", "mass_z": "mz"}
+               "mass_x": "mx", "mass_y": "my", "mass_z": "mz",
+               "площадь": "area", "треугольники": "tris", "части": "parts",
+               "род": "genus", "отверстия": "genus"}
     name = aliases.get(name, name)
     target = (obj or "").strip().strip("\"'")
     if not target:
         raise DslError(f"Функции {name}() нужно имя объекта: {name}(кружка)",
                        line=scene.line, command=scene.command)
+    if target in scene.contours:
+        contour = scene.contours[target]
+        measured = contour.measurements()
+        if name in ("length", "длина"):
+            return float(measured["length"])
+        if name == "area":
+            return float(measured["area"]) / 100.0
+        raise DslError(f"Для Contour2D доступны length({target}) и area({target}).",
+                       line=scene.line)
     solid = scene.resolve(target)
+    if name == "tris":
+        return float(solid.manifold.num_tri())
+    if name == "parts":
+        return float(len(solid.manifold.decompose()))
+    if name == "genus":
+        return float(solid.manifold.genus())
     if name in ("mx", "my", "mz"):
         from . import orient
         center = orient.mass_center(solid.manifold)
@@ -514,6 +537,18 @@ def _execute(scene: Scene, cmd) -> None:
         if exc.command is None:
             exc.command = cmd.text
         raise
+    from .contour import Contour2D
+    if isinstance(result, Contour2D):
+        contour_name = cmd.target or result.name
+        if contour_name in scene.objects or contour_name in scene.contours:
+            raise DslError(f"Имя контура «{contour_name}» уже занято.",
+                           line=cmd.line, command=cmd.text)
+        result.name = contour_name
+        scene.contours[contour_name] = result
+        scene.op_count += 1
+        scene.log("info", f"Contour2D: {len(result.segments)} сегмента, "
+                          f"допуск {result.tolerance:g} мм", cmd.line)
+        return
     if result is not None and cmd.target and result.name != cmd.target:
         # страховка: переименование к целевому имени
         scene.remove(result.name)
@@ -648,6 +683,17 @@ def build(script: str, previous_analysis: dict | None = None,
         result.log = scene.logs
         result.timings = {"parse": round(parse_time * 1000, 1),
                           "build": round(build_time * 1000, 1),
+                          "total": round((time.perf_counter() - started) * 1000, 1)}
+        return result
+    if result.empty:
+        result.analysis = empty_analysis()
+        if scene.contours:
+            result.analysis["text"] = (
+                f"АНАЛИТИЧЕСКИЕ КОНТУРЫ: {len(scene.contours)}\n\n"
+                "Твёрдых объектов пока нет. Используйте контур в extrude, lathe, loft или sweep.")
+        result.log = scene.logs
+        result.timings = {"parse": round(parse_time * 1000, 1),
+                          "build": round(build_time * 1000, 1), "analysis": 0.0,
                           "total": round((time.perf_counter() - started) * 1000, 1)}
         return result
     analysis_start = time.perf_counter()

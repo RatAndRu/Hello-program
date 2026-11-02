@@ -43,7 +43,8 @@ except Exception as exc:
 hiddenimports += ["webview", "webview.platforms.winforms", "webview.platforms.edgechromium"]
 
 hiddenimports += [
-    "forma.ops_basic", "forma.ops_curves", "forma.ops_shape", "forma.ops_scene",
+    "forma.ops_basic", "forma.ops_contour", "forma.ops_curves", "forma.ops_shape", "forma.ops_scene",
+    "forma.contour", "forma.semantic_diff",
     "forma.ops_sdf", "forma.render", "forma.webui", "forma.cli", "forma.checks",
     "forma.metrics", "forma.agent", "forma.geometry", "forma.values",
     "forma.eval", "forma.fuzz",

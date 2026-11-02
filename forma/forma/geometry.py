@@ -349,7 +349,8 @@ def triangulate_2d(points2d: np.ndarray) -> np.ndarray:
 
 
 def _rings_to_arrays(rings: list[np.ndarray], profile2d: np.ndarray,
-                     cap_start: bool = True, cap_end: bool = True) -> tuple[np.ndarray, np.ndarray]:
+                     cap_start: bool = True, cap_end: bool = True,
+                     end_profile2d: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
     n = len(rings[0])
     verts = np.concatenate(rings, axis=0)
     faces: list[tuple[int, int, int]] = []
@@ -367,7 +368,8 @@ def _rings_to_arrays(rings: list[np.ndarray], profile2d: np.ndarray,
             faces.append((base + int(t[2]), base + int(t[1]), base + int(t[0])))
     if cap_end:
         base = (len(rings) - 1) * n
-        for t in tris:
+        end_tris = (tris if end_profile2d is None else triangulate_2d(end_profile2d))
+        for t in end_tris:
             faces.append((base + int(t[0]), base + int(t[1]), base + int(t[2])))
     return verts, np.asarray(faces, dtype=np.int64)
 
@@ -480,7 +482,8 @@ def sweep_solid(path: np.ndarray, profile: np.ndarray, closed_path: bool = False
 
 
 def loft_solid(sections: list[np.ndarray], positions: Sequence[float],
-               axis: str = "z", caps: bool = True, what: str = "лофт") -> mf.Manifold:
+               axis: str = "z", caps: bool = True, what: str = "лофт",
+               cap_end_profile: np.ndarray | None = None) -> mf.Manifold:
     """Соединяет 2D-сечения, расставленные вдоль оси."""
     if len(sections) < 2:
         raise GeometryError("Лофт требует минимум 2 сечения.")
@@ -520,7 +523,13 @@ def loft_solid(sections: list[np.ndarray], positions: Sequence[float],
             raise GeometryError("Ось лофта должна быть x, y или z.")
         rings.append(ring)
 
-    verts, faces = _rings_to_arrays(rings, prof, cap_start=caps, cap_end=caps)
+    end_profile = None
+    if cap_end_profile is not None:
+        end_profile = np.asarray(cap_end_profile, dtype=np.float64)
+        if flip:
+            end_profile = end_profile[::-1].copy()
+    verts, faces = _rings_to_arrays(rings, prof, cap_start=caps, cap_end=caps,
+                                    end_profile2d=end_profile)
     return manifold_from_arrays(verts, faces, what)
 
 
@@ -544,10 +553,11 @@ def rings_from_sections(sections: list[np.ndarray], positions: Sequence[float],
 
 def loft_solid_smooth(sections: list[np.ndarray], positions: Sequence[float],
                       axis: str = "z", caps: bool = True, smooth: int = 4,
-                      what: str = "лофт") -> mf.Manifold:
+                      what: str = "лофт", cap_end_profile: np.ndarray | None = None) -> mf.Manifold:
     """Лофт со сглаживанием вдоль оси (полезно для кузовов, бутылок, туш)."""
     if smooth <= 1:
-        return loft_solid(sections, positions, axis=axis, caps=caps, what=what)
+        return loft_solid(sections, positions, axis=axis, caps=caps, what=what,
+                          cap_end_profile=cap_end_profile)
     first = dedupe_points(np.asarray(sections[0], dtype=np.float64))
     flip = polygon_area(first) < 0
     secs = [np.asarray(s, dtype=np.float64)[::-1].copy() if flip else np.asarray(s, dtype=np.float64)
@@ -563,7 +573,13 @@ def loft_solid_smooth(sections: list[np.ndarray], positions: Sequence[float],
     # out[j] имеет длину ((S-1)*smooth + 1)
     rings = [np.stack([out[j][i] for j in range(N)], axis=0) for i in range(len(out[0]))]
     prof = secs[0]
-    verts, faces = _rings_to_arrays(rings, prof, cap_start=caps, cap_end=caps)
+    end_profile = None
+    if cap_end_profile is not None:
+        end_profile = np.asarray(cap_end_profile, dtype=np.float64)
+        if flip:
+            end_profile = end_profile[::-1].copy()
+    verts, faces = _rings_to_arrays(rings, prof, cap_start=caps, cap_end=caps,
+                                    end_profile2d=end_profile)
     return manifold_from_arrays(verts, faces, what)
 
 

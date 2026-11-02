@@ -95,6 +95,9 @@ class Scene:
         # ключевые кадры по объектам: {имя: [{t, pos, rot, scale, line}, ...]}
         self.keys: dict[str, list[dict]] = {}
         self.objects: dict[str, Solid] = {}
+        # Аналитические 2D-контуры: не твёрдые тела и не самостоятельный GLB,
+        # но переиспользуются extrude/lathe/loft/sweep и входят в semantic diff.
+        self.contours: dict[str, Any] = {}
         # группы объектов: двигаются и вращаются целиком, детали внутри — сами
         self.groups: dict[str, list[str]] = {}
         self.params: dict[str, float] = {}
@@ -127,12 +130,16 @@ class Scene:
         self.last_replaced = self.objects.get(solid.name)
         if solid.name in self.objects:
             self.objects.pop(solid.name)
+        # Имя — единое пространство: создание тела с именем контура заменяет
+        # его, чтобы последующие profile/name не были неоднозначными.
+        self.contours.pop(solid.name, None)
         self.objects[solid.name] = solid
         self.op_count += 1
         return solid
 
     def remove(self, name: str) -> None:
         self.objects.pop(name, None)
+        self.contours.pop(name, None)
         self.groups.pop(name, None)
         for members in self.groups.values():
             while name in members:
@@ -157,6 +164,9 @@ class Scene:
             name = value.strip()
             if name in self.objects:
                 return self.objects[name]
+            if name in self.contours:
+                raise DslError(f"«{name}» — Contour2D, а не твёрдый объект.",
+                               hint="Используйте контур в extrude, lathe, loft или sweep.")
             names = [n for n in self.objects]
             close = difflib.get_close_matches(name, names, n=3, cutoff=0.5)
             hint = None
@@ -274,16 +284,16 @@ class Scene:
     def auto_name(self, base: str = "obj") -> str:
         self._auto_idx += 1
         name = f"{base}{self._auto_idx}"
-        while name in self.objects:
+        while name in self.objects or name in self.contours:
             self._auto_idx += 1
             name = f"{base}{self._auto_idx}"
         return name
 
     def unique_name(self, base: str) -> str:
-        if base not in self.objects:
+        if base not in self.objects and base not in self.contours:
             return base
         i = 2
-        while f"{base}_{i}" in self.objects:
+        while f"{base}_{i}" in self.objects or f"{base}_{i}" in self.contours:
             i += 1
         return f"{base}_{i}"
 

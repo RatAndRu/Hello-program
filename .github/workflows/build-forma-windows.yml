@@ -90,7 +90,7 @@ jobs:
         run: |
           python tools/build_skeleton_original.py
 
-      - name: Экспортировать модели 0.53–0.63 в GLB и Forma
+      - name: Экспортировать модели 0.53–0.64 в GLB и Forma
         working-directory: forma
         run: |
           python - <<'PY'

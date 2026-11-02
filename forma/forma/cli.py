@@ -95,12 +95,32 @@ def cmd_build(args) -> int:
 
 
 def cmd_diff(args) -> int:
+    from .semantic_diff import semantic_diff
+
     a = build(_read(args.a))
     c = build(_read(args.b))
     for label, item in (("было", a), ("стало", c)):
         if not item.ok:
             print(f"{label}: ОШИБКА — {item.error.get('message')}")
             return 2
+    try:
+        report = semantic_diff(a, c, linear_tol=args.linear_tol,
+                               area_tol=args.area_tol, volume_tol=args.volume_tol)
+    except ValueError as exc:
+        print(f"diff: ОШИБКА — {exc}")
+        return 2
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
+    print(f"Объекты: +{len(report['added'])} −{len(report['removed'])} "
+          f"изменено {len(report['changed'])}; "
+          f"контуры изменены: {len(report['contours']['changed'])}")
+    for name in report["added"]:
+        print(f"  + {name}")
+    for name in report["removed"]:
+        print(f"  − {name}")
+    for item in report["changed"]:
+        print(f"  ~ {item['name']}: {', '.join(item['reasons'])}")
     print(f"{'показатель':<22}{'было':>14}{'стало':>14}{'разница':>14}")
     rows = [("объём, см³", "volume_cm3", 2), ("площадь, см²", "area_cm2", 2),
             ("треугольников", "tris", 0), ("отверстий (genus)", "genus", 0),
@@ -304,9 +324,13 @@ def main(argv=None) -> int:
                    help="короткая сводка (хеш сценария и ключевые метрики) в JSON")
     p.set_defaults(func=cmd_build)
 
-    p = sub.add_parser("diff", help="сравнить две сборки по метрикам")
+    p = sub.add_parser("diff", help="семантически сравнить две сборки")
     p.add_argument("a")
     p.add_argument("b")
+    p.add_argument("--json", action="store_true", help="объектный diff в JSON")
+    p.add_argument("--linear-tol", type=float, default=1e-3, help="допуск размеров, мм")
+    p.add_argument("--area-tol", type=float, default=None, help="допуск площади, мм²")
+    p.add_argument("--volume-tol", type=float, default=None, help="допуск объёма, мм³")
     p.set_defaults(func=cmd_diff)
 
     p = sub.add_parser("doctor", help="проверить окружение и папки")

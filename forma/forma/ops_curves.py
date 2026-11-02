@@ -7,6 +7,7 @@ import math
 import manifold3d as mf
 import numpy as np
 
+from .contour import resolve_contour, unify_closed_profiles
 from .errors import GeometryError
 from .geometry import (FINENESS_MM, as_points, auto_segments, catmull_rom, circle_profile,
                        ellipse_profile, ensure_ccw, fillet_polyline, limit_segments,
@@ -26,6 +27,23 @@ def _clean_profile(pts: np.ndarray, what: str = "профиль") -> np.ndarray:
     return pts
 
 
+def _operation_tolerance(a) -> float | None:
+    return (float(a.num("tolerance", None, minv=1e-6, maxv=10.0))
+            if a.has("tolerance") else None)
+
+
+def _points_value(a, value, dims: int, what: str) -> np.ndarray:
+    """Список точек либо именованный Contour2D → координаты для операции."""
+    contour = resolve_contour(a.scene, value)
+    if contour is None:
+        return as_points(value, dims, what)
+    if dims == 3:
+        # tolerance операции относится к 2D-профилю; 3D-путь уже имеет свой
+        # допуск в contour2d и не должен конфликтовать с profile=... .
+        return contour.points3d()
+    return contour.sample(tolerance=_operation_tolerance(a))
+
+
 @op("lathe", aliases=("точить", "вращение", "тело_вращения", "revolve", "vrashenie"),
     category="Тела вращения и развёртки",
     summary="Вращает замкнутый профиль (радиус, высота) вокруг оси Z. Основа для посуды, ваз, бутылок.",
@@ -36,10 +54,11 @@ def _clean_profile(pts: np.ndarray, what: str = "профиль") -> np.ndarray:
             "smooth": "сгладить профиль: число подсегментов на участок",
             "fillet": "скруглить углы профиля радиусом, мм",
             "thickness": "сделать стенку заданной толщины (пустотелое тело)",
-            "open": "где открыть полость: top, bottom, both"},
+            "open": "где открыть полость: top, bottom, both",
+            "tolerance": "хордовый допуск Contour2D, мм (иначе допуск контура)"},
     positional=["points"])
 def lathe(a, name):
-    pts = a.points("points", 2)
+    pts = _points_value(a, a.value("points"), 2, "профиль")
     pts = _clean_profile(np.asarray(pts, dtype=np.float64))
     pts = pts.copy()
     if np.any(pts[:, 0] < -1e-6):
@@ -125,41 +144,164 @@ def _lathe_shell(solid, pts: np.ndarray, t: float, segments: int, open_mode: str
     return result
 
 
+def _extrude_cavity(cs: mf.CrossSection, height: float, thickness: float,
+                    open_mode: str) -> mf.Manifold:
+    """Полость по истинному 2D-offset всего сечения, включая отверстия."""
+    inner = cs.offset(-float(thickness))
+    if inner.num_contour() == 0 or inner.area() <= 1e-9:
+        raise GeometryError("Полость пустая: уменьшите толщину стенки.")
+    margin = max(1.0, thickness, height * 0.01)
+    if open_mode == "top":
+        z0, cavity_height = thickness, height - thickness + margin
+    elif open_mode == "bottom":
+        z0, cavity_height = -margin, height - thickness + margin
+    elif open_mode == "both":
+        z0, cavity_height = -margin, height + 2 * margin
+    else:
+        if height <= 2 * thickness:
+            raise GeometryError("Закрытая полость требует height > 2·thickness.")
+        z0, cavity_height = thickness, height - 2 * thickness
+    return inner.extrude(float(cavity_height)).translate([0.0, 0.0, float(z0)])
+
+
+def _offset_loft(profile: np.ndarray, z0: float, z1: float,
+                 offset0: float, offset1: float, what: str = "Литейный уклон") -> mf.Manifold:
+    """Лофт двух точных 2D-offset'ов одного контура на разных высотах."""
+    if z1 <= z0:
+        raise GeometryError(f"{what}: верх сечения должен быть выше низа.")
+    base = ensure_ccw(np.asarray(profile, dtype=np.float64))
+    cs = mf.CrossSection([base])
+    cs0 = cs if abs(offset0) < 1e-12 else cs.offset(float(offset0))
+    cs1 = cs if abs(offset1) < 1e-12 else cs.offset(float(offset1))
+    if (cs0.num_contour() != 1 or cs1.num_contour() != 1
+            or cs0.area() <= 1e-9 or cs1.area() <= 1e-9):
+        raise GeometryError(f"{what}: сечение выродилось; уменьшите уклон, толщину или height.")
+    p0 = np.asarray(cs0.to_polygons()[0], dtype=np.float64)
+    p1 = np.asarray(cs1.to_polygons()[0], dtype=np.float64)
+    rings = unify_closed_profiles([p0, p1])
+    return loft_solid(rings, [z0, z1], axis="z", caps=True, what=what,
+                      cap_end_profile=rings[-1])
+
+
+def _draft_ring(profile: np.ndarray, height: float, offset: float) -> mf.Manifold:
+    """Прямая двухсекционная вытяжка с точным offset верхнего сечения."""
+    return _offset_loft(profile, 0.0, height, 0.0, offset)
+
+
+def _draft_cavity(profile: np.ndarray, holes: list[np.ndarray], height: float,
+                  draft: float, thickness: float, open_mode: str) -> mf.Manifold:
+    """Полость с тем же уклоном, что и наружное тело, без mesh-Minkowski.
+
+    Смещение стенки по нормали учитывает наклон: горизонтальный offset равен
+    t·sqrt(1+tan(draft)²). Для отверстий знак offset противоположный.
+    """
+    slope = math.tan(math.radians(draft))
+    normal_offset = thickness * math.sqrt(1.0 + slope * slope)
+    margin = max(1e-4, min(0.1, height * 0.01))
+    if open_mode == "top":
+        z0, z1 = thickness, height + margin
+    elif open_mode == "bottom":
+        z0, z1 = -margin, height - thickness
+    elif open_mode == "both":
+        z0, z1 = -margin, height + margin
+    else:
+        if height <= 2 * thickness:
+            raise GeometryError("Закрытая полость требует height > 2·thickness.")
+        z0, z1 = thickness, height - thickness
+    cavity = _offset_loft(profile, z0, z1,
+                          -slope * z0 - normal_offset,
+                          -slope * z1 - normal_offset, "Полость с уклоном")
+    for hole in holes:
+        cutter = _offset_loft(hole, z0, z1,
+                              slope * z0 + normal_offset,
+                              slope * z1 + normal_offset, "Полость отверстия")
+        cavity = cavity - cutter
+    if cavity.is_empty() or cavity.volume() <= 1e-9:
+        raise GeometryError("Полость с уклоном пуста: уменьшите толщину стенки.")
+    return cavity
+
+
+def _draft_extrude(profile: np.ndarray, holes: list[np.ndarray], height: float,
+                   draft: float) -> mf.Manifold:
+    delta = height * math.tan(math.radians(draft))
+    solid = _draft_ring(profile, height, -delta)
+    for hole in holes:
+        solid = solid - _draft_ring(hole, height, delta)
+    return solid
+
+
 @op("extrude", aliases=("выдавить", "вытянуть", "extrusion"),
     category="Тела вращения и развёртки",
-    summary="Выдавливает 2D-профиль вверх по Z; можно закручивать и сужать верх.",
+    summary="Выдавливает 2D-профиль вверх по Z; стенка и уклон строятся точным offset.",
     example="""планка = extrude profile=[[-50,-10],[50,-10],[50,10],[-50,10]] height=8 fillet=2""",
-    params={"profile": "контур [[x,y],...] (обязательно)",
-            "holes": "отверстия: [[[x,y],...], ...]",
+    params={"profile": "контур [[x,y],...] или имя Contour2D (обязательно)",
+            "holes": "отверстия: списки точек или имена Contour2D",
             "height": "высота, мм (обязательно)",
             "twist": "закрутка верха, градусы",
             "scale_top": "масштаб верхнего сечения (число или [sx,sy])",
             "fillet": "скруглить углы профиля, мм",
-            "divisions": "промежуточных сечений (для закрутки)"},
+            "divisions": "промежуточных сечений (для закрутки)",
+            "thickness": "толщина стенки, мм; 0 — сплошное тело",
+            "open": "открытая сторона при thickness: top, bottom, both, none",
+            "draft": "литейный уклон, градусы; положительный сужает наружный контур",
+            "tolerance": "хордовый допуск Contour2D, мм"},
     positional=["profile"])
 def extrude(a, name):
-    prof = _clean_profile(as_points(a.value("profile"), 2, "profile"))
+    prof = _clean_profile(_points_value(a, a.value("profile"), 2, "profile"))
     prof = ensure_ccw(prof)
     fillet = a.num("fillet", 0.0, minv=0.0)
     if fillet and fillet > 0:
         prof = fillet_polyline(prof, float(fillet), closed=True)
     contours = [prof]
+    holes: list[np.ndarray] = []
     if a.has("holes"):
         holes_val = a.value("holes")
+        if isinstance(holes_val, str) or resolve_contour(a.scene, holes_val) is not None:
+            holes_val = [holes_val]
+        elif (isinstance(holes_val, list) and holes_val
+              and all(isinstance(p, (list, tuple)) and len(p) == 2
+                      and all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in p)
+                      for p in holes_val)):
+            # Удобная короткая форма: holes=[[x,y], ...] — один контур.
+            holes_val = [holes_val]
         if not isinstance(holes_val, list):
             raise GeometryError("Параметр holes должен быть списком контуров.")
         for i, hole in enumerate(holes_val):
-            hp = _clean_profile(as_points(hole, 2, f"holes[{i}]"))
-            contours.append(ensure_ccw(hp)[::-1])
-    height = a.num("height", required=True, minv=1e-3)
+            hp = _clean_profile(_points_value(a, hole, 2, f"holes[{i}]"))
+            hp = ensure_ccw(hp)
+            holes.append(hp)
+            contours.append(hp[::-1])
+    height = float(a.num("height", required=True, minv=1e-3))
     twist = a.num("twist", 0.0)
     scale_top = a.vec("scale_top", 2, default=(1.0, 1.0))
     divisions = a.int("divisions", 0, minv=0, maxv=256) or 0
+    thickness = float(a.num("thickness", 0.0, minv=0.0))
+    open_mode = a.text("open", "top", ["top", "bottom", "both", "none"]) or "top"
+    draft = float(a.num("draft", 0.0, minv=-45.0, maxv=45.0))
+    if a.has("open") and thickness <= 0:
+        raise GeometryError("open задаёт открытую сторону только при thickness>0.")
     if abs(twist) > 1e-6 and divisions == 0:
         divisions = max(1, int(abs(twist) / 10))
-    solid = mf.CrossSection(contours).extrude(float(height), int(divisions),
-                                              float(twist), scale_top)
-    return make_solid(a.scene, name, solid, a, kind="extrude")
+    if abs(draft) > 1e-9:
+        if abs(twist) > 1e-9 or np.linalg.norm(scale_top - np.ones(2)) > 1e-9:
+            raise GeometryError("draft нельзя совмещать с twist или scale_top.",
+                                hint="Литейный уклон уже задаёт точное верхнее сечение.")
+        solid = _draft_extrude(prof, holes, height, draft)
+    else:
+        solid = mf.CrossSection(contours).extrude(height, int(divisions),
+                                                  float(twist), scale_top)
+    if thickness > 0:
+        if abs(draft) > 1e-9:
+            solid = solid - _draft_cavity(prof, holes, height, draft, thickness, open_mode)
+        else:
+            solid = solid - _extrude_cavity(mf.CrossSection(contours), height,
+                                            thickness, open_mode)
+    if solid.is_empty() or solid.volume() <= 1e-9:
+        raise GeometryError("После построения стенки/уклона ничего не осталось.")
+    out = make_solid(a.scene, name, solid, a, kind="extrude")
+    out.meta.update({"wall_thickness": thickness, "draft_angle": draft,
+                     "contour_tolerance": _operation_tolerance(a)})
+    return out
 
 
 @op("sweep", aliases=("развёртка", "протяжка", "труба_по_пути", "ручка"),
@@ -179,10 +321,12 @@ def extrude(a, name):
             "scale_curve": "толщина по длине пути: [0.4, 1.0, 0.5] — банан, луковица",
             "round_caps": "скруглить торцы: 0..1 (0 — плоские, 0.6 — заметная полусфера)",
             "up": "вектор «вверх» для ориентации профиля [x,y,z]",
-            "caps": "закрывать торцы (true)"},
+            "caps": "закрывать торцы (true)",
+            "tolerance": "хордовый допуск 2D Contour2D, мм"},
     positional=["path", "profile"])
 def sweep(a, name):
-    path = a.points("path", 3)
+    path_contour = resolve_contour(a.scene, a.value("path"))
+    path = _points_value(a, a.value("path"), 3, "path")
     path = np.asarray(path, dtype=np.float64)
     if len(path) < 2:
         raise GeometryError("Путь развёртки должен содержать минимум 2 точки.")
@@ -195,7 +339,7 @@ def sweep(a, name):
         return max(3, got)
 
     if a.has("profile"):
-        prof = _clean_profile(as_points(a.value("profile"), 2, "profile"))
+        prof = _clean_profile(_points_value(a, a.value("profile"), 2, "profile"))
     elif a.has("radius"):
         radius = a.num("radius", required=True, minv=0.01)
         prof = circle_profile(radius, _sides(radius))
@@ -208,7 +352,7 @@ def sweep(a, name):
                             hint="Например: sweep path=[[40,0,20],[60,0,45],[40,0,70]] radius=5")
     prof = ensure_ccw(prof)
     smooth = a.int("smooth", 0, minv=0, maxv=32) or 0
-    closed_path = a.boolean("closed_path", False)
+    closed_path = a.boolean("closed_path", bool(path_contour is not None and path_contour.is_closed))
     if smooth > 1:
         path = catmull_rom(path, closed=closed_path, samples=smooth)
     up = a.vec("up", 3, default=(0.0, 0.0, 1.0))
@@ -230,19 +374,24 @@ def sweep(a, name):
     return make_solid(a.scene, name, solid, a, kind="sweep")
 
 
-def _parse_sections(raw) -> list[np.ndarray]:
+def _parse_sections(raw, scene, tolerance: float | None) -> tuple[list[np.ndarray], bool]:
     if not isinstance(raw, list) or not raw:
         raise GeometryError("Сечения задаются списком контуров: sections=[[[x,y],...], ...].")
     sections: list[np.ndarray] = []
+    used_contour = False
     for i, sec in enumerate(raw):
-        if isinstance(sec, (list, tuple)):
+        contour = resolve_contour(scene, sec)
+        if contour is not None:
+            arr = contour.sample(tolerance=tolerance)
+            used_contour = True
+        elif isinstance(sec, (list, tuple)):
             arr = as_points(sec, 2, f"sections[{i}]")
         else:
-            raise GeometryError(f"sections[{i}] должен быть списком точек.")
+            raise GeometryError(f"sections[{i}] должен быть списком точек или именем Contour2D.")
         if len(arr) < 3:
             raise GeometryError(f"В сечении {i + 1} меньше 3 точек.")
         sections.append(arr)
-    return sections
+    return sections, used_contour
 
 
 @op("loft", aliases=("лофт", "сечения", "переход", "кузов"),
@@ -256,11 +405,14 @@ def _parse_sections(raw) -> list[np.ndarray]:
             "axis": "ось: z (по умолчанию), x или y",
             "smooth": "сглаживание вдоль оси (1 = выключено)",
             "profile_smooth": "сглаживание самого контура сечения (1 = выключено)",
-            "caps": "закрывать торцы (true)"},
+            "caps": "закрывать торцы (true)",
+            "tolerance": "хордовый допуск Contour2D, мм"},
     positional=["sections"])
 def loft(a, name):
     raw = a.value("sections")
-    sections = _parse_sections(raw)
+    sections, used_contour = _parse_sections(raw, a.scene, _operation_tolerance(a))
+    if used_contour:
+        sections = unify_closed_profiles(sections)
     counts = {len(s) for s in sections}
     if len(counts) > 1:
         raise GeometryError(
@@ -287,8 +439,11 @@ def loft(a, name):
         sections = [smooth_closed_profile(sec, samples=int(profile_smooth), keep_count=True)
                     for sec in sections]
     caps = a.boolean("caps", True)
+    end_profile = sections[-1] if used_contour else None
     if smooth > 1:
-        solid = loft_solid_smooth(sections, positions, axis=axis, caps=caps, smooth=int(smooth))
+        solid = loft_solid_smooth(sections, positions, axis=axis, caps=caps, smooth=int(smooth),
+                                  cap_end_profile=end_profile)
     else:
-        solid = loft_solid(sections, positions, axis=axis, caps=caps)
+        solid = loft_solid(sections, positions, axis=axis, caps=caps,
+                           cap_end_profile=end_profile)
     return make_solid(a.scene, name, solid, a, kind="loft")
