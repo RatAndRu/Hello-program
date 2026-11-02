@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="760" viewBox="0 0 1000 760" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif">
+<title>Файлы нейросети</title>
+<rect width="1000" height="760" fill="#ffffff"/>
+<text x="28.0" y="42.0" font-size="22" fill="#1f2933" text-anchor="start" font-weight="bold">Нейросеть — это четыре файла, и ни один из них не exe</text>
+<text x="28.0" y="68.0" font-size="13" fill="#6b7785" text-anchor="start" font-weight="normal">веса — просто числа подряд; архитектура — двадцать строк кода, который эти числа умножает</text>
+<line x1="28" y1="86" x2="972" y2="86" stroke="#d5dbe1"/>
+<rect x="28" y="104" width="470" height="66" rx="7" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="104" width="3.5" height="66" fill="#1e8449"/>
+<text x="44.0" y="126.0" font-size="12.6" fill="#1f2933" text-anchor="start" font-weight="bold">head.safetensors</text>
+<text x="232.0" y="126.0" font-size="11.4" fill="#1e8449" text-anchor="start" font-weight="bold">563 КБ</text>
+<rect x="320.0" y="110.0" width="51.5" height="18" rx="9" fill="#1e8449" opacity="0.12"/><rect x="320.0" y="110.0" width="51.5" height="18" rx="9" fill="none" stroke="#1e8449" stroke-width="0.9"/><text x="345.8" y="123.5" font-size="10.5" fill="#1e8449" text-anchor="middle" font-weight="bold">числа</text>
+<text x="44.0" y="144.0" font-size="9.9" fill="#6b7785" text-anchor="start" font-weight="normal">8 байт длины заголовка + JSON с формой матриц + сырые float32</text>
+<rect x="28" y="178" width="470" height="66" rx="7" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="178" width="3.5" height="66" fill="#2b6cb0"/>
+<text x="44.0" y="200.0" font-size="12.6" fill="#1f2933" text-anchor="start" font-weight="bold">head.json</text>
+<text x="232.0" y="200.0" font-size="11.4" fill="#2b6cb0" text-anchor="start" font-weight="bold">0,7 КБ</text>
+<rect x="320.0" y="184.0" width="61.0" height="18" rx="9" fill="#2b6cb0" opacity="0.12"/><rect x="320.0" y="184.0" width="61.0" height="18" rx="9" fill="none" stroke="#2b6cb0" stroke-width="0.9"/><text x="350.5" y="197.5" font-size="10.5" fill="#2b6cb0" text-anchor="middle" font-weight="bold">конфиг</text>
+<text x="44.0" y="218.0" font-size="9.9" fill="#6b7785" text-anchor="start" font-weight="normal">n_in=555, n_hidden=256, n_out=7, средние и разбросы меток</text>
+<rect x="28" y="252" width="470" height="66" rx="7" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="252" width="3.5" height="66" fill="#2b6cb0"/>
+<text x="44.0" y="274.0" font-size="12.6" fill="#1f2933" text-anchor="start" font-weight="bold">vocab.json</text>
+<text x="232.0" y="274.0" font-size="11.4" fill="#2b6cb0" text-anchor="start" font-weight="bold">0,5 КБ</text>
+<rect x="320.0" y="258.0" width="65.2" height="18" rx="9" fill="#2b6cb0" opacity="0.12"/><rect x="320.0" y="258.0" width="65.2" height="18" rx="9" fill="none" stroke="#2b6cb0" stroke-width="0.9"/><text x="352.6" y="271.5" font-size="10.5" fill="#2b6cb0" text-anchor="middle" font-weight="bold">словарь</text>
+<text x="44.0" y="292.0" font-size="9.9" fill="#6b7785" text-anchor="start" font-weight="normal">43 токена: имена команд, поля, &lt;num&gt;, цифры</text>
+<rect x="28" y="326" width="470" height="66" rx="7" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="326" width="3.5" height="66" fill="#b7791f"/>
+<text x="44.0" y="348.0" font-size="12.6" fill="#1f2933" text-anchor="start" font-weight="bold">ml/mlp.py</text>
+<text x="232.0" y="348.0" font-size="11.4" fill="#b7791f" text-anchor="start" font-weight="bold">6,8 КБ</text>
+<rect x="320.0" y="332.0" width="39.0" height="18" rx="9" fill="#b7791f" opacity="0.12"/><rect x="320.0" y="332.0" width="39.0" height="18" rx="9" fill="none" stroke="#b7791f" stroke-width="0.9"/><text x="339.5" y="345.5" font-size="10.5" fill="#b7791f" text-anchor="middle" font-weight="bold">код</text>
+<text x="44.0" y="366.0" font-size="9.9" fill="#6b7785" text-anchor="start" font-weight="normal">два умножения матриц, tanh, разворот меток — и всё</text>
+<text x="28.0" y="424.0" font-size="11.8" fill="#1f2933" text-anchor="start" font-weight="normal">Ни один не исполняется сам по себе: числа лежат отдельно от кода.</text>
+<rect x="520" y="104" width="452" height="330" rx="9" fill="#f7fafc" stroke="#2b6cb0"/>
+<text x="538.0" y="130.0" font-size="12.4" fill="#2b6cb0" text-anchor="start" font-weight="bold">head.safetensors, первые 48 байт</text>
+<text x="538.0" y="160.0" font-size="11.2" fill="#1e8449" text-anchor="start" font-weight="bold">08 01 00 00 00 00 00 00</text>
+<text x="538.0" y="176.0" font-size="9.6" fill="#6b7785" text-anchor="start" font-weight="normal">длина заголовка: 264 байта</text>
+<text x="538.0" y="203.0" font-size="11.2" fill="#1f2933" text-anchor="start" font-weight="bold">{"W1":{"dtype":"F32",</text>
+<text x="538.0" y="219.0" font-size="9.6" fill="#6b7785" text-anchor="start" font-weight="normal">JSON: имя тензора, тип</text>
+<text x="538.0" y="246.0" font-size="11.2" fill="#1f2933" text-anchor="start" font-weight="bold"> "shape":[555,256],</text>
+<text x="538.0" y="262.0" font-size="9.6" fill="#6b7785" text-anchor="start" font-weight="normal">форма: 555 входов, 256 нейронов</text>
+<text x="538.0" y="289.0" font-size="11.2" fill="#1f2933" text-anchor="start" font-weight="bold"> "data_offsets":[0,</text>
+<text x="538.0" y="305.0" font-size="9.6" fill="#6b7785" text-anchor="start" font-weight="normal">где в файле начинаются числа</text>
+<text x="538.0" y="332.0" font-size="11.2" fill="#1f2933" text-anchor="start" font-weight="bold">  568320]},</text>
+<text x="538.0" y="348.0" font-size="9.6" fill="#6b7785" text-anchor="start" font-weight="normal">конец: 555·256·4 = 568 320 байт</text>
+<text x="538.0" y="375.0" font-size="11.2" fill="#6b7785" text-anchor="start" font-weight="bold">...</text>
+<text x="538.0" y="391.0" font-size="9.6" fill="#6b7785" text-anchor="start" font-weight="normal">дальше — сами float32 подряд</text>
+<text x="538.0" y="418.0" font-size="10.4" fill="#1f2933" text-anchor="start" font-weight="normal">Итого 144 135 чисел × 4 байта ≈ 563 КБ.</text>
+<text x="28.0" y="474.0" font-size="12.6" fill="#1f2933" text-anchor="start" font-weight="bold">Те же числа в других обёртках</text>
+<rect x="28" y="494" width="300" height="54" rx="6" fill="#ffffff" stroke="#c0392b"/>
+<text x="42.0" y="515.0" font-size="11.6" fill="#c0392b" text-anchor="start" font-weight="bold">.pt / .pth</text>
+<text x="42.0" y="533.0" font-size="9.5" fill="#6b7785" text-anchor="start" font-weight="normal">zip с pickle: код исполняется при загрузке</text>
+<rect x="344" y="494" width="300" height="54" rx="6" fill="#ffffff" stroke="#b7791f"/>
+<text x="358.0" y="515.0" font-size="11.6" fill="#b7791f" text-anchor="start" font-weight="bold">.ckpt</text>
+<text x="358.0" y="533.0" font-size="9.5" fill="#6b7785" text-anchor="start" font-weight="normal">то же, формат TensorFlow/PyTorch Lightning</text>
+<rect x="660" y="494" width="300" height="54" rx="6" fill="#ffffff" stroke="#1e8449"/>
+<text x="674.0" y="515.0" font-size="11.6" fill="#1e8449" text-anchor="start" font-weight="bold">.onnx</text>
+<text x="674.0" y="533.0" font-size="9.5" fill="#6b7785" text-anchor="start" font-weight="normal">граф + веса в protobuf, считается без Python</text>
+<rect x="28" y="556" width="300" height="54" rx="6" fill="#ffffff" stroke="#2b6cb0"/>
+<text x="42.0" y="577.0" font-size="11.6" fill="#2b6cb0" text-anchor="start" font-weight="bold">.gguf</text>
+<text x="42.0" y="595.0" font-size="9.5" fill="#6b7785" text-anchor="start" font-weight="normal">квантованные веса LLM: 4 бита вместо 32</text>
+<rect x="344" y="556" width="300" height="54" rx="6" fill="#ffffff" stroke="#1e8449"/>
+<text x="358.0" y="577.0" font-size="11.6" fill="#1e8449" text-anchor="start" font-weight="bold">.safetensors</text>
+<text x="358.0" y="595.0" font-size="9.5" fill="#6b7785" text-anchor="start" font-weight="normal">только числа, ничего не исполняется</text>
+<text x="28.0" y="640.0" font-size="11.2" fill="#1f2933" text-anchor="start" font-weight="normal">exe нужен ровно в одном случае: когда веса вшивают в бинарник, чтобы получатель не мог их заменить. Тогда к 563 КБ чисел добавляется интерпретатор</text>
+<text x="28.0" y="655.7" font-size="11.2" fill="#1f2933" text-anchor="start" font-weight="normal">— 20 строк превращаются в 10–50 МБ рантайма. Для нас это лишнее: файл весов читается за 3 мс.</text>
+<text x="28.0" y="690.0" font-size="11.2" fill="#6b7785" text-anchor="start" font-weight="normal">И наоборот: 4,4 M параметров — это 17 МБ в float32 и 4,4 МБ в int8. Такой файл пересылается почтой, лежит в репозитории и не требует ни GPU, ни</text>
+<text x="28.0" y="705.7" font-size="11.2" fill="#6b7785" text-anchor="start" font-weight="normal">установки.</text>
+</svg>
