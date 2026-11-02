@@ -59,7 +59,9 @@ def _ray_polygon_distance(center: np.ndarray, direction: np.ndarray,
 @op("membrane", aliases=("мембрана", "перепонка", "парашют"), category="Примитивы",
     summary="Тонкое замкнутое полотнище по произвольному звездообразному контуру. "
             "camber даёт настоящий прогиб парашюта между корнем и кромкой, "
-            "rings управляет разбиением; обе стороны и торец образуют одно тело.",
+            "rings управляет разбиением; обе стороны и торец образуют одно тело. "
+            "edge_indices/edge_thick/edge_height интегрально усиливают выбранные "
+            "стороны контура без отдельных прутьев и новых петель.",
     example="крыло = membrane root=[40,-5] outline=[[0,-20],[20,-5],[45,0],[100,50],[140,0],[100,-50],[0,-30]] "
             "camber=12 thick=0.8 rings=12 rib_angles=[25,85] rib_height=2 rib_width=6",
     params={"root": "внутренняя опорная точка [x,y] (0,0)",
@@ -69,6 +71,9 @@ def _ray_polygon_distance(center: np.ndarray, direction: np.ndarray,
             "rib_angles": "направления интегральных рёбер в градусах от +X, []",
             "rib_height": "высота рёбер в самой сетке мембраны, мм (0)",
             "rib_width": "угловая ширина каждого ребра, градусы (6)",
+            "edge_indices": "индексы вершин outline для интегрального усиления кромки, []",
+            "edge_thick": "дополнительная полутолщина у выбранной кромки, мм (0)",
+            "edge_height": "подъём середины выбранной кромки, мм (0)",
             "rings": "радиальных колец разбиения 2…40 (12)",
             "at": "смещение [x,y,z]", "center": "центрировать по Z (нет)"},
     positional=[])
@@ -90,7 +95,8 @@ def membrane(a, name):
                                      - outline[:, 1] * np.roll(outline[:, 0], -1)))
     if abs(signed_area) < 1e-9:
         raise GeometryError("membrane: контур вырожден в линию.")
-    if signed_area < 0:
+    outline_reversed = signed_area < 0
+    if outline_reversed:
         outline = outline[::-1].copy()
 
     # Корень обязан лежать внутри: веерные кольца тогда не образуют скрытого
@@ -121,7 +127,27 @@ def membrane(a, name):
         raise GeometryError("membrane: для rib_height задайте хотя бы один rib_angles.")
     rings = int(a.int("rings", 12, minv=2, maxv=40) or 12)
     count = len(outline)
+    edge_height = float(a.num("edge_height", 0.0, minv=0.0) or 0.0)
+    edge_thick = float(a.num("edge_thick", 0.0, minv=0.0) or 0.0)
+    edge_indices_raw = a.value("edge_indices", []) or []
+    try:
+        edge_values = np.asarray(edge_indices_raw, dtype=np.float64)
+    except (TypeError, ValueError) as exc:
+        raise GeometryError("membrane: edge_indices должен быть списком индексов outline.") from exc
+    if edge_values.ndim != 1 or not np.all(np.isfinite(edge_values)) \
+            or np.any(edge_values != np.round(edge_values)):
+        raise GeometryError("membrane: edge_indices должен содержать целые конечные индексы.")
+    edge_indices = [int(v) for v in edge_values]
+    if any(i < 0 or i >= count for i in edge_indices):
+        raise GeometryError(f"membrane: edge_indices допускает индексы 0…{count - 1}.")
+    if (edge_height > 0 or edge_thick > 0) and not edge_indices:
+        raise GeometryError("membrane: для edge_height/edge_thick задайте edge_indices.")
+    edge_weight = np.zeros(count, dtype=np.float64)
+    weight_indices = ([count - 1 - i for i in edge_indices] if outline_reversed
+                      else edge_indices)
+    edge_weight[weight_indices] = 1.0
     mid = [np.array([root[0], root[1], 0.0])]
+    half_thick = [thick * 0.5]
     angles = np.arctan2(outline[:, 1] - root[1], outline[:, 0] - root[0])
     rib_weight = np.zeros(count, dtype=np.float64)
     if rib_height > 0:
@@ -134,9 +160,13 @@ def membrane(a, name):
         xy = root + (outline - root) * t
         dome = max(0.0, 4.0 * t * (1.0 - t)) ** 1.15
         modulation = 0.84 + 0.16 * np.cos(3.0 * angles)
-        z = camber * dome * modulation + rib_height * dome * rib_weight
+        edge = (t ** 8) * edge_weight
+        z = (camber * dome * modulation + rib_height * dome * rib_weight
+             + edge_height * edge)
         mid.extend(np.column_stack((xy, z)))
+        half_thick.extend(thick * 0.5 + edge_thick * edge)
     mid = np.asarray(mid, dtype=np.float64)
+    half_thick = np.asarray(half_thick, dtype=np.float64)
     faces_mid: list[tuple[int, int, int]] = []
     for i in range(count):
         faces_mid.append((0, 1 + i, 1 + (i + 1) % count))
@@ -148,8 +178,9 @@ def membrane(a, name):
             faces_mid.append((inner + i, outer + i, outer + j))
             faces_mid.append((inner + i, outer + j, inner + j))
     n = len(mid)
-    vertices = np.vstack((mid + np.array([0.0, 0.0, thick * 0.5]),
-                          mid - np.array([0.0, 0.0, thick * 0.5])))
+    dz = np.zeros((len(mid), 3), dtype=np.float64)
+    dz[:, 2] = half_thick
+    vertices = np.vstack((mid + dz, mid - dz))
     faces = list(faces_mid)
     faces += [tuple(n + i for i in reversed(face)) for face in faces_mid]
     outer = 1 + (rings - 1) * count
@@ -169,7 +200,8 @@ def membrane(a, name):
     out = make_solid(a.scene, name, solid, a, kind="membrane")
     out.meta.update(camber=camber, thick=thick, rings=rings, outline_points=count,
                     rib_angles=[float(v) for v in rib_angles_raw], rib_height=rib_height,
-                    rib_width=rib_width)
+                    rib_width=rib_width, edge_indices=edge_indices,
+                    edge_height=edge_height, edge_thick=edge_thick)
     return out
 
 

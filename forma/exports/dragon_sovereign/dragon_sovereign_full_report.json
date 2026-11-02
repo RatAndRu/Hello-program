@@ -1,10 +1,10 @@
 {
   "stage": "full",
   "script": "examples/dragon_sovereign.forma",
-  "script_sha256": "1d4a3e5775eaaf2219c92b7474d051e61da9754874f911bed2791fb7755c1247",
+  "script_sha256": "1225df40f9487a226063bd6ee442ff97ca825185aa6bd76a15ffc446699db083",
   "glb": "exports/dragon_sovereign/dragon_sovereign.glb",
-  "glb_bytes": 7460768,
-  "glb_sha256": "0dfff4b8b50344f8c55a5dcb58d76b6de053575cdad988896652c1261864a437",
+  "glb_bytes": 6984968,
+  "glb_sha256": "e93e8e790ac3ede51af6efad3931a414b7e8ab484b06f43d9e6bf68dc6ef176b",
   "scale_assumption_mm": 360,
   "reference_measurements": "проектные пропорции, не фотограмметрия",
   "objects": [
@@ -13,14 +13,14 @@
       "triangles": 512,
       "components": 1,
       "genus": 0,
-      "volume_mm3": 117.3034845669802,
+      "volume_mm3": 29.100634036201892,
       "bbox_mm": [
-        20.5,
-        -46.6,
-        295.2,
-        27.1,
-        -40.4,
-        300.8
+        19.1,
+        -47.6,
+        298.05,
+        23.5,
+        -40.800000000000004,
+        299.95
       ],
       "status": "Error.NoError",
       "boundary_edges": 0,
@@ -36,14 +36,14 @@
       "triangles": 512,
       "components": 1,
       "genus": 0,
-      "volume_mm3": 117.30348456698019,
+      "volume_mm3": 29.1006340362019,
       "bbox_mm": [
-        -27.1,
-        -46.6,
-        295.2,
-        -20.5,
-        -40.4,
-        300.8
+        -23.5,
+        -47.6,
+        298.05,
+        -19.1,
+        -40.800000000000004,
+        299.95
       ],
       "status": "Error.NoError",
       "boundary_edges": 0,
@@ -56,22 +56,22 @@
     },
     {
       "name": "dragon",
-      "triangles": 198552,
+      "triangles": 189300,
       "components": 1,
       "genus": 0,
-      "volume_mm3": 1199553.6298049502,
+      "volume_mm3": 1466892.000454467,
       "bbox_mm": [
-        -177.007373747304,
-        -93.08991241455078,
-        11.459632873535156,
-        177.007373747304,
-        161.0904083251953,
-        362.991603189379
+        -180.02986279459677,
+        -100.86344146728516,
+        10.961337089538574,
+        180.02986279459677,
+        163.39877421086572,
+        360.2355651855469
       ],
       "status": "Error.NoError",
       "boundary_edges": 0,
       "non_manifold_edges": 0,
-      "degenerate_index": 60,
+      "degenerate_index": 44,
       "degenerate_area": 0,
       "exact_boundary_edges": 0,
       "exact_non_manifold_edges": 0,
@@ -128,7 +128,7 @@
     },
     {
       "name": "dragon",
-      "triangles": 198492,
+      "triangles": 189256,
       "components": 1,
       "genus": 0,
       "status": "Error.NoError",
@@ -164,7 +164,7 @@
     },
     {
       "level": "info",
-      "message": "from_sdf: сетка 1.7 мм, 13350 треугольников",
+      "message": "from_sdf: сетка 1.65 мм, 13696 треугольников",
       "line": 7
     },
     {
@@ -174,7 +174,7 @@
     },
     {
       "level": "info",
-      "message": "from_sdf: сетка 1.25 мм, 6312 треугольников",
+      "message": "from_sdf: сетка 1.15 мм, 7624 треугольников",
       "line": 8
     },
     {
@@ -184,82 +184,82 @@
     },
     {
       "level": "info",
-      "message": "from_sdf: сетка 1.3 мм, 10268 треугольников",
+      "message": "translate: готово",
       "line": 9
     },
     {
       "level": "info",
-      "message": "from_sdf: готово",
-      "line": 9
-    },
-    {
-      "level": "info",
-      "message": "from_sdf: сетка 1.2 мм, 14880 треугольников",
+      "message": "hide: готово",
       "line": 10
     },
     {
       "level": "info",
+      "message": "from_sdf: сетка 1.3 мм, 12826 треугольников",
+      "line": 11
+    },
+    {
+      "level": "info",
       "message": "from_sdf: готово",
-      "line": 10
+      "line": 11
+    },
+    {
+      "level": "info",
+      "message": "from_sdf: сетка 1.18 мм, 16328 треугольников",
+      "line": 12
+    },
+    {
+      "level": "info",
+      "message": "from_sdf: готово",
+      "line": 12
     },
     {
       "level": "info",
       "message": "from_sdf: сетка 1.4 мм, 12022 треугольников",
-      "line": 11
+      "line": 13
     },
     {
       "level": "info",
       "message": "from_sdf: готово",
-      "line": 11
+      "line": 13
     },
     {
       "level": "info",
-      "message": "from_sdf: сетка 1.2 мм, 14894 треугольников",
-      "line": 12
+      "message": "from_sdf: сетка 1.18 мм, 16246 треугольников",
+      "line": 14
     },
     {
       "level": "info",
       "message": "from_sdf: готово",
-      "line": 12
+      "line": 14
     },
     {
       "level": "info",
       "message": "from_sdf: сетка 1.4 мм, 12126 треугольников",
-      "line": 13
+      "line": 15
     },
     {
       "level": "info",
       "message": "from_sdf: готово",
-      "line": 13
+      "line": 15
     },
     {
       "level": "info",
-      "message": "from_sdf: сетка 1.3 мм, 14242 треугольников",
-      "line": 14
+      "message": "from_sdf: сетка 1.25 мм, 15552 треугольников",
+      "line": 16
     },
     {
       "level": "info",
       "message": "from_sdf: готово",
-      "line": 14
+      "line": 16
     },
     {
       "level": "info",
       "message": "membrane: готово",
-      "line": 18
-    },
-    {
-      "level": "info",
-      "message": "twist: готово",
-      "line": 19
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
       "line": 20
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "twist: готово",
       "line": 21
     },
     {
@@ -269,52 +269,42 @@
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "rotate: готово",
       "line": 23
     },
     {
       "level": "info",
-      "message": "mirror: готово",
+      "message": "rotate: готово",
       "line": 24
     },
     {
       "level": "info",
-      "message": "sweep: готово",
-      "line": 27
+      "message": "translate: готово",
+      "line": 25
+    },
+    {
+      "level": "info",
+      "message": "mirror: готово",
+      "line": 26
     },
     {
       "level": "info",
       "message": "sweep: готово",
-      "line": 28
-    },
-    {
-      "level": "info",
-      "message": "union: готово",
       "line": 29
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 32
-    },
-    {
-      "level": "info",
       "message": "sweep: готово",
-      "line": 32
+      "line": 30
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 33
+      "message": "union: готово",
+      "line": 31
     },
     {
       "level": "info",
-      "message": "sweep: готово",
-      "line": 33
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "развёртка: 28 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 34
     },
     {
@@ -324,7 +314,7 @@
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 35
     },
     {
@@ -334,107 +324,112 @@
     },
     {
       "level": "info",
-      "message": "ellipsoid: готово",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 36
     },
     {
       "level": "info",
-      "message": "ellipsoid: готово",
+      "message": "sweep: готово",
+      "line": 36
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 37
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 38
-    },
-    {
-      "level": "info",
       "message": "sweep: готово",
-      "line": 38
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 39
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 39
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 40
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 40
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 41
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 41
+      "line": 37
     },
     {
       "level": "info",
       "message": "ellipsoid: готово",
+      "line": 38
+    },
+    {
+      "level": "info",
+      "message": "ellipsoid: готово",
+      "line": 39
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 28 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 40
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 40
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 41
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 41
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 42
     },
     {
       "level": "info",
-      "message": "ellipsoid: готово",
-      "line": 43
+      "message": "sweep: готово",
+      "line": 42
     },
     {
       "level": "info",
       "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 44
+      "line": 43
     },
     {
       "level": "info",
       "message": "sweep: готово",
-      "line": 44
-    },
-    {
-      "level": "info",
-      "message": "union: готово",
-      "line": 45
-    },
-    {
-      "level": "info",
-      "message": "union: готово",
-      "line": 46
-    },
-    {
-      "level": "info",
-      "message": "difference: готово",
-      "line": 47
-    },
-    {
-      "level": "info",
-      "message": "difference: готово",
-      "line": 48
+      "line": 43
     },
     {
       "level": "info",
       "message": "ellipsoid: готово",
+      "line": 44
+    },
+    {
+      "level": "info",
+      "message": "ellipsoid: готово",
+      "line": 45
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 46
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 46
+    },
+    {
+      "level": "info",
+      "message": "union: готово",
+      "line": 47
+    },
+    {
+      "level": "info",
+      "message": "union: готово",
+      "line": 48
+    },
+    {
+      "level": "info",
+      "message": "difference: готово",
       "line": 49
     },
     {
       "level": "info",
-      "message": "Материал применён: eye_R",
-      "line": 50
-    },
-    {
-      "level": "info",
-      "message": "color: готово",
+      "message": "difference: готово",
       "line": 50
     },
     {
@@ -444,7 +439,7 @@
     },
     {
       "level": "info",
-      "message": "Материал применён: eye_L",
+      "message": "Материал применён: eye_R",
       "line": 52
     },
     {
@@ -454,53 +449,33 @@
     },
     {
       "level": "info",
-      "message": "sweep: готово",
-      "line": 55
+      "message": "ellipsoid: готово",
+      "line": 53
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 56
+      "message": "Материал применён: eye_L",
+      "line": 54
     },
     {
       "level": "info",
-      "message": "sweep: готово",
-      "line": 56
+      "message": "color: готово",
+      "line": 54
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "чешуя (дракон): 119/120 плоских пластинок, шаг 4.00 мм, safe=да, пропущено 1",
+      "line": 57
+    },
+    {
+      "level": "warn",
+      "message": "чешуя: safe отклонил 1 пластин, создававших новую оболочку, полость, петлю или нулевой прирост объёма",
       "line": 57
     },
     {
       "level": "info",
-      "message": "sweep: готово",
+      "message": "scales: готово",
       "line": 57
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 58
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 58
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 59
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 59
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 60
     },
     {
       "level": "info",
@@ -519,7 +494,7 @@
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 62
     },
     {
@@ -529,7 +504,7 @@
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 63
     },
     {
@@ -539,72 +514,102 @@
     },
     {
       "level": "info",
-      "message": "union: готово",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 64
     },
     {
       "level": "info",
-      "message": "membrane: готово",
-      "line": 65
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 66
-    },
-    {
-      "level": "info",
-      "message": "rotate: готово",
-      "line": 67
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
-      "line": 68
+      "message": "sweep: готово",
+      "line": 64
     },
     {
       "level": "info",
       "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 69
+      "line": 65
     },
     {
       "level": "info",
       "message": "sweep: готово",
-      "line": 69
+      "line": 65
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 66
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 66
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 67
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 67
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 68
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 68
     },
     {
       "level": "info",
       "message": "union: готово",
+      "line": 69
+    },
+    {
+      "level": "info",
+      "message": "membrane: готово",
       "line": 70
     },
     {
       "level": "info",
-      "message": "membrane: готово",
+      "message": "rotate: готово",
+      "line": 71
+    },
+    {
+      "level": "info",
+      "message": "rotate: готово",
+      "line": 72
+    },
+    {
+      "level": "info",
+      "message": "translate: готово",
       "line": 73
     },
     {
       "level": "info",
-      "message": "rotate: готово",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 74
     },
     {
       "level": "info",
-      "message": "translate: готово",
+      "message": "sweep: готово",
+      "line": 74
+    },
+    {
+      "level": "info",
+      "message": "union: готово",
       "line": 75
     },
     {
       "level": "info",
-      "message": "membrane: готово",
-      "line": 76
+      "message": "чешуя (дракон): 4/4 плоских пластинок, шаг 13.00 мм, safe=да, пропущено 0",
+      "line": 78
     },
     {
       "level": "info",
-      "message": "rotate: готово",
-      "line": 77
-    },
-    {
-      "level": "info",
-      "message": "translate: готово",
+      "message": "scales: готово",
       "line": 78
     },
     {
@@ -684,8 +689,18 @@
     },
     {
       "level": "info",
-      "message": "union: готово",
+      "message": "membrane: готово",
       "line": 94
+    },
+    {
+      "level": "info",
+      "message": "rotate: готово",
+      "line": 95
+    },
+    {
+      "level": "info",
+      "message": "translate: готово",
+      "line": 96
     },
     {
       "level": "info",
@@ -694,427 +709,397 @@
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 98
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 98
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 99
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 99
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 100
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 100
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 101
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 101
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 102
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 102
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 103
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 103
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 104
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 104
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 105
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 105
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 106
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 106
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 107
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 107
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 108
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 108
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 109
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 109
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 110
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 110
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 111
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 111
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 112
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 112
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 113
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 113
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 114
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 114
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 12 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 115
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 115
-    },
-    {
-      "level": "info",
       "message": "union: готово",
+      "line": 100
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 101
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 101
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 102
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 102
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 103
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 103
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 104
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 104
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 105
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 105
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 106
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 106
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 107
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 107
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 108
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 108
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 109
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 109
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 110
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 110
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 111
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 111
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 112
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 112
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 113
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 113
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 114
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 114
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 115
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 115
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 116
     },
     {
       "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 119
-    },
-    {
-      "level": "info",
       "message": "sweep: готово",
-      "line": 119
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 120
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 120
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 121
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 121
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 122
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 122
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 123
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 123
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 124
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 124
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 125
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 125
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 126
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 126
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 127
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 127
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 128
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 128
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 129
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 129
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 130
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 130
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 131
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 131
-    },
-    {
-      "level": "info",
-      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
-      "line": 132
-    },
-    {
-      "level": "info",
-      "message": "sweep: готово",
-      "line": 132
+      "line": 116
     },
     {
       "level": "info",
       "message": "union: готово",
+      "line": 117
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 120
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 120
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 121
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 121
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 122
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 122
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 123
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 123
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 124
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 124
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 125
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 125
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 126
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 126
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 127
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 127
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 128
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 128
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 129
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 129
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 20 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 130
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 130
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 131
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 131
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
+      "line": 132
+    },
+    {
+      "level": "info",
+      "message": "sweep: готово",
+      "line": 132
+    },
+    {
+      "level": "info",
+      "message": "развёртка: 24 → 16 сторон профиля (отклонение ≤ 0.06 мм)",
       "line": 133
     },
     {
       "level": "info",
-      "message": "spikes: готово",
-      "line": 137
+      "message": "sweep: готово",
+      "line": 133
     },
     {
       "level": "info",
       "message": "union: готово",
-      "line": 138
+      "line": 134
     },
     {
       "level": "info",
-      "message": "чешуя (дракон): 1037/1980 плоских пластинок, шаг 8.87 мм, safe=да, пропущено 943",
+      "message": "union: готово",
+      "line": 135
+    },
+    {
+      "level": "info",
+      "message": "union: готово",
       "line": 139
     },
     {
+      "level": "info",
+      "message": "чешуя (дракон): 232/384 плоских пластинок, шаг 8.97 мм, safe=да, пропущено 152",
+      "line": 141
+    },
+    {
       "level": "warn",
-      "message": "чешуя: safe отклонил 943 пластин, создававших новую оболочку, полость, петлю или нулевой прирост объёма",
-      "line": 139
+      "message": "чешуя: safe отклонил 152 пластин, создававших новую оболочку, полость, петлю или нулевой прирост объёма",
+      "line": 141
     },
     {
       "level": "info",
       "message": "scales: готово",
-      "line": 139
+      "line": 141
     },
     {
       "level": "info",
-      "message": "гладкость 160 → 104 сегментов (отклонение ≤ 0.06 мм)",
-      "line": 144
+      "message": "чешуя (дракон): 260/500 плоских пластинок, шаг 6.59 мм, safe=да, пропущено 240",
+      "line": 143
+    },
+    {
+      "level": "warn",
+      "message": "чешуя: safe отклонил 240 пластин, создававших новую оболочку, полость, петлю или нулевой прирост объёма",
+      "line": 143
     },
     {
       "level": "info",
-      "message": "cylinder: готово",
-      "line": 144
+      "message": "scales: готово",
+      "line": 143
     },
     {
       "level": "info",
-      "message": "rock: готово",
+      "message": "чешуя (дракон): 119/288 плоских пластинок, шаг 8.16 мм, safe=да, пропущено 169",
+      "line": 145
+    },
+    {
+      "level": "warn",
+      "message": "чешуя: safe отклонил 169 пластин, создававших новую оболочку, полость, петлю или нулевой прирост объёма",
       "line": 145
     },
     {
       "level": "info",
-      "message": "Материал применён: rock_main",
-      "line": 146
+      "message": "scales: готово",
+      "line": 145
     },
     {
       "level": "info",
-      "message": "color: готово",
-      "line": 146
+      "message": "чешуя (дракон): 133/324 плоских пластинок, шаг 9.89 мм, safe=да, пропущено 191",
+      "line": 147
     },
     {
-      "level": "info",
-      "message": "rock: готово",
+      "level": "warn",
+      "message": "чешуя: safe отклонил 191 пластин, создававших новую оболочку, полость, петлю или нулевой прирост объёма",
       "line": 147
     },
     {
       "level": "info",
-      "message": "Материал применён: rock_0",
-      "line": 148
+      "message": "scales: готово",
+      "line": 147
     },
     {
       "level": "info",
-      "message": "color: готово",
-      "line": 148
-    },
-    {
-      "level": "info",
-      "message": "rock: готово",
-      "line": 149
-    },
-    {
-      "level": "info",
-      "message": "Материал применён: rock_1",
-      "line": 150
-    },
-    {
-      "level": "info",
-      "message": "color: готово",
-      "line": 150
-    },
-    {
-      "level": "info",
-      "message": "rock: готово",
-      "line": 151
-    },
-    {
-      "level": "info",
-      "message": "Материал применён: rock_2",
+      "message": "гладкость 160 → 104 сегментов (отклонение ≤ 0.06 мм)",
       "line": 152
     },
     {
       "level": "info",
-      "message": "color: готово",
+      "message": "cylinder: готово",
       "line": 152
     },
     {
@@ -1124,7 +1109,7 @@
     },
     {
       "level": "info",
-      "message": "Материал применён: rock_3",
+      "message": "Материал применён: rock_main",
       "line": 154
     },
     {
@@ -1139,7 +1124,7 @@
     },
     {
       "level": "info",
-      "message": "Материал применён: rock_4",
+      "message": "Материал применён: rock_0",
       "line": 156
     },
     {
@@ -1154,7 +1139,7 @@
     },
     {
       "level": "info",
-      "message": "Материал применён: hind_rest_R",
+      "message": "Материал применён: rock_1",
       "line": 158
     },
     {
@@ -1169,7 +1154,7 @@
     },
     {
       "level": "info",
-      "message": "Материал применён: hind_rest_L",
+      "message": "Материал применён: rock_2",
       "line": 160
     },
     {
@@ -1179,62 +1164,122 @@
     },
     {
       "level": "info",
-      "message": "union: готово",
+      "message": "rock: готово",
       "line": 161
     },
     {
       "level": "info",
-      "message": "проверка: dragon watertight",
+      "message": "Материал применён: rock_3",
       "line": 162
     },
     {
       "level": "info",
-      "message": "проверка: dragon parts",
+      "message": "color: готово",
+      "line": 162
+    },
+    {
+      "level": "info",
+      "message": "rock: готово",
       "line": 163
     },
     {
       "level": "info",
-      "message": "проверка: base watertight",
+      "message": "Материал применён: rock_4",
       "line": 164
     },
     {
       "level": "info",
-      "message": "проверка: base parts",
+      "message": "color: готово",
+      "line": 164
+    },
+    {
+      "level": "info",
+      "message": "rock: готово",
       "line": 165
+    },
+    {
+      "level": "info",
+      "message": "Материал применён: hind_rest_R",
+      "line": 166
+    },
+    {
+      "level": "info",
+      "message": "color: готово",
+      "line": 166
+    },
+    {
+      "level": "info",
+      "message": "rock: готово",
+      "line": 167
+    },
+    {
+      "level": "info",
+      "message": "Материал применён: hind_rest_L",
+      "line": 168
+    },
+    {
+      "level": "info",
+      "message": "color: готово",
+      "line": 168
+    },
+    {
+      "level": "info",
+      "message": "union: готово",
+      "line": 169
+    },
+    {
+      "level": "info",
+      "message": "проверка: dragon watertight",
+      "line": 170
+    },
+    {
+      "level": "info",
+      "message": "проверка: dragon parts",
+      "line": 171
+    },
+    {
+      "level": "info",
+      "message": "проверка: base watertight",
+      "line": 172
+    },
+    {
+      "level": "info",
+      "message": "проверка: base parts",
+      "line": 173
     }
   ],
   "support_checks": [
     {
       "name": "claw_F_L_0",
-      "contact_mm3": 0.07627821037380922
+      "contact_mm3": 0.2391351365922569
     },
     {
       "name": "claw_F_L_1",
-      "contact_mm3": 0.07611592209127213
+      "contact_mm3": 0.23891627077140326
     },
     {
       "name": "claw_F_L_2",
-      "contact_mm3": 76.49269274777198
+      "contact_mm3": 15.358161529105779
     },
     {
       "name": "claw_F_L_3",
-      "contact_mm3": 129.9922210462224
+      "contact_mm3": 90.96145200142642
     },
     {
       "name": "claw_F_R_0",
-      "contact_mm3": 137.7156623133782
+      "contact_mm3": 109.91278277026781
     },
     {
       "name": "claw_F_R_1",
-      "contact_mm3": 35.83329470153375
+      "contact_mm3": 0.7006859641481809
     },
     {
       "name": "claw_F_R_2",
-      "contact_mm3": 0.07685932102698631
+      "contact_mm3": 0.23893277307755845
     },
     {
       "name": "claw_F_R_3",
-      "contact_mm3": 0.07631516236115565
+      "contact_mm3": 0.23918360865031627
     },
     {
       "name": "claw_H_L_0",
@@ -1265,121 +1310,86 @@
     "supports": "4 опоры; объёмный контакт всех 8 передних и 6 задних когтей",
     "wing_camber_mm": 24.0,
     "wing_relief": "5 интегральных рёбер в замкнутой мембране на каждое крыло",
-    "front_sdf_resolution_mm": 1.2,
-    "scales": "scales.on по skin_origin; safe по полному dragon после всех деталей",
-    "breast_plates": "7 выпуклых chevron-щитков; не трубчатые sweep-валики"
+    "front_sdf_resolution_mm": 1.18,
+    "scales": "scales.on по цельному дракону + чешуя черепа после рогов + финальный GLB gate",
+    "breast_plates": "4 центральных scales-щитка горла + 6 chevron-пластин груди; не sweep-валики"
   },
   "renders": {
     "files": [
       {
         "view": "iso",
         "label": "изометрия",
-        "path": "/home/user/Hello-program/forma/renders/dragon_sovereign/dragon_full_iso.png"
+        "path": "renders/dragon_sovereign/dragon_full_iso.png"
       },
       {
         "view": "front",
         "label": "спереди",
-        "path": "/home/user/Hello-program/forma/renders/dragon_sovereign/dragon_full_front.png"
+        "path": "renders/dragon_sovereign/dragon_full_front.png"
       },
       {
         "view": "right",
         "label": "справа",
-        "path": "/home/user/Hello-program/forma/renders/dragon_sovereign/dragon_full_right.png"
+        "path": "renders/dragon_sovereign/dragon_full_right.png"
       },
       {
         "view": "back",
         "label": "сзади",
-        "path": "/home/user/Hello-program/forma/renders/dragon_sovereign/dragon_full_back.png"
+        "path": "renders/dragon_sovereign/dragon_full_back.png"
       },
       {
         "view": "top",
         "label": "сверху",
-        "path": "/home/user/Hello-program/forma/renders/dragon_sovereign/dragon_full_top.png"
+        "path": "renders/dragon_sovereign/dragon_full_top.png"
       }
     ],
     "bbox": [
-      -177.0073699951172,
+      -180.0298614501953,
       -122.0,
       0.0,
-      177.0073699951172,
-      161.0904083251953,
-      362.9916076660156
+      180.0298614501953,
+      163.39877319335938,
+      360.2355651855469
     ],
-    "combined": "/home/user/Hello-program/forma/renders/dragon_sovereign/dragon_full_all.png"
+    "combined": "renders/dragon_sovereign/dragon_full_all.png"
   },
   "head_renders": [
     "renders/dragon_sovereign/dragon_head_iso.png",
     "renders/dragon_sovereign/dragon_head_right.png"
   ],
-  "picking": {
-    "glb": "exports/dragon_sovereign/dragon_sovereign.glb",
-    "bytes": 7460768,
-    "sha256": "0dfff4b8b50344f8c55a5dcb58d76b6de053575cdad988896652c1261864a437",
-    "small_scene": {
-      "passed": 1,
-      "total": 1,
-      "result": {
-        "name": "eye_R",
-        "point": [
-          23.800000190734863,
-          298,
-          46.59999838588949
-        ],
-        "faceIndex": 267,
-        "highlighted": true
+  "scale_layout": {
+    "regions": [
+      {
+        "line": 57,
+        "accepted": 119,
+        "attempted": 120
+      },
+      {
+        "line": 78,
+        "accepted": 4,
+        "attempted": 4
+      },
+      {
+        "line": 141,
+        "accepted": 232,
+        "attempted": 384
+      },
+      {
+        "line": 143,
+        "accepted": 260,
+        "attempted": 500
+      },
+      {
+        "line": 145,
+        "accepted": 119,
+        "attempted": 288
+      },
+      {
+        "line": 147,
+        "accepted": 133,
+        "attempted": 324
       }
-    },
-    "full_scene": {
-      "passed": 4,
-      "total": 4,
-      "results": [
-        {
-          "name": "eye_R",
-          "point": [
-            23.8,
-            298,
-            46.599998403535835
-          ],
-          "faceIndex": 267,
-          "highlighted": true
-        },
-        {
-          "name": "eye_L",
-          "point": [
-            -23.8,
-            298,
-            46.599998403535835
-          ],
-          "faceIndex": 51,
-          "highlighted": true
-        },
-        {
-          "name": "dragon",
-          "point": [
-            0,
-            282,
-            91.93844083210661
-          ],
-          "faceIndex": 28581,
-          "highlighted": true
-        },
-        {
-          "name": "base",
-          "point": [
-            0,
-            11.999999999999943,
-            110
-          ],
-          "faceIndex": 1307,
-          "highlighted": true
-        }
-      ]
-    },
-    "names": [
-      "base",
-      "dragon",
-      "eye_L",
-      "eye_R"
-    ]
+    ],
+    "accepted": 867,
+    "attempted": 1620
   }
 }

@@ -125,10 +125,14 @@ async function main() {
   for (const mesh of meshes.values()) full.add(mesh);
   full.updateMatrixWorld(true);
   const fullViewer = viewerFor(full, expectedNames);
+  function eyeCase(name) {
+    const center = meshes.get(name).geometry.boundingBox.getCenter(new THREE.Vector3());
+    return [name, [center.x, center.y, center.z + 250], center.toArray()];
+  }
   const cases = [
     // glTF: X право, Y вверх, Z = −Y Forma; передняя камера смотрит по −Z.
-    ['eye_R', [23.8, 298, 250], [23.8, 298, 43.5]],
-    ['eye_L', [-23.8, 298, 250], [-23.8, 298, 43.5]],
+    // Центры глаз берём из текущего GLB, а не из координат старой ревизии.
+    eyeCase('eye_R'), eyeCase('eye_L'),
     ['dragon', [0, 282, 400], [0, 282, 82]],
     ['base', [0, 500, 110], [0, 12, 110]],
   ];

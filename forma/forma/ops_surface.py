@@ -1059,7 +1059,7 @@ def _scale_tile(w: float, l: float, t: float, kind: str = "рыба",
             "tile_style": "синоним tile",
             "variant": "синоним tile",
             "rows": "рядов по высоте (8)",
-            "per_row": "чешуек в ряду (14); чётные ряды сдвинуты на полшага",
+            "per_row": "чешуек в ряду (14); для path допустима 1 центральная, иначе минимум 3",
             "length": "длина от корня до конца, мм (14)",
             "width": "ширина; рыба 0.9 length, дракон 0.65 length",
             "thick": "толщина плоской пластинки, мм (0.08 length)",
@@ -1090,7 +1090,7 @@ def scales(a, name):
     if tile_variant is None:
         raise GeometryError("scales: tile=плоская, волна, ромб или испанская.")
     rows = int(a.num("rows", 8, minv=1, maxv=60))
-    per_row = int(a.num("per_row", 14, minv=3, maxv=120))
+    per_row = int(a.num("per_row", 14, minv=1, maxv=120))
     length = float(a.num("length", 14.0, minv=0.3))
     path_raw = a.value("path", []) or []
     paths_raw = a.value("paths", []) or []
@@ -1098,6 +1098,9 @@ def scales(a, name):
     if use_multi and path_raw:
         raise GeometryError("scales: задайте либо path, либо paths, не оба одновременно.")
     use_path = bool(path_raw) or use_multi
+    if not use_path and per_row < 3:
+        raise GeometryError("scales: для круговой раскладки per_row≥3; "
+                            "одна центральная чешуйка допустима только с path.")
     width_default = length * (0.65 if kind == "дракон" else 0.9)
     width = a.num("width", None if use_path else width_default, minv=0.2)
     width = None if width is None else float(width)
@@ -1187,7 +1190,8 @@ def scales(a, name):
             else:
                 origin = np.array([cx, cy, bottom + r * step_z])
                 hint = (0.0, 0.0, 1.0)
-            offset = 0.5 * (r % 2)
+            # Одиночная path-колонка не чередуется с противоположной стороной.
+            offset = 0.0 if per_row == 1 else 0.5 * (r % 2)
             records = []
             for j in range(per_row):
                 ang = 2.0 * math.pi * (j + offset + 0.13 * seed) / per_row

@@ -132,7 +132,8 @@ class TestEyeballAndWeb048(unittest.TestCase):
         flat = last(ok(base + "0"))
         domed = last(ok(base + "12"))
         ribbed = last(ok(base + "12 rib_angles=[20,80] rib_height=3 rib_width=8"))
-        for obj in (flat, domed, ribbed):
+        edged = last(ok(base + "12 edge_indices=[0,1,2,3] edge_thick=3 edge_height=2"))
+        for obj in (flat, domed, ribbed, edged):
             self.assertEqual(parts(obj.manifold), 1)
             self.assertEqual(obj.manifold.genus(), 0)
             self.assertEqual(obj.manifold.status().name, "NoError")
@@ -142,6 +143,13 @@ class TestEyeballAndWeb048(unittest.TestCase):
         self.assertGreater(ribbed.manifold.bounding_box()[5], domed.manifold.bounding_box()[5])
         self.assertEqual(ribbed.meta["rib_height"], 3.0)
         self.assertEqual(ribbed.meta["rib_angles"], [20.0, 80.0])
+        self.assertGreater(edged.manifold.volume(), domed.manifold.volume())
+        edge_hits = vertical_hits(edged.manifold, 0, -20)
+        self.assertEqual(len(edge_hits), 2)
+        self.assertAlmostEqual(edge_hits[0].position[2] - edge_hits[1].position[2], 6.8,
+                               delta=0.02)
+        self.assertEqual(edged.meta["edge_indices"], [0, 1, 2, 3])
+        self.assertEqual(edged.meta["edge_thick"], 3.0)
         self.assertEqual(domed.meta["rings"], 12)
 
 
@@ -215,6 +223,20 @@ class TestFlatScales048(unittest.TestCase):
         self.assertGreater(obj.meta["tiles"], 0)
         self.assertEqual(obj.meta["tiles"] + obj.meta["tiles_skipped"],
                          obj.meta["tiles_attempted"])
+
+    def test_single_path_column_has_no_alternating_back_scale(self):
+        obj = last(ok(
+            "т = cylinder radius=15 height=40 at=[0,0,20]\n"
+            "scales т kind=дракон path=[[0,0,58],[0,0,22]] rows=4 pitch=9 "
+            "per_row=1 length=7 width=8 thick=1 tilt=15 safe=да"))
+        self.assertEqual(obj.meta["tiles_attempted"], 4)
+        self.assertGreater(obj.meta["tiles"], 0)
+        self.assertEqual(parts(obj.manifold), 1)
+        self.assertEqual(obj.manifold.genus(), 0)
+        bbox = obj.manifold.bounding_box()
+        self.assertLess(bbox[1], -15.0)  # все пластины на передней стороне −Y
+        self.assertAlmostEqual(bbox[4], 15.0, delta=1e-6)  # ни одной сзади
+        self.assertIn("per_row≥3", fails("ш = sphere radius=20\nscales ш per_row=1"))
 
     def test_multiple_paths_are_checked_on_one_shared_body(self):
         obj = last(ok("т = blob spheres=[[0,0,20,15],[0,0,50,12]] blend=8 resolution=1\n"
