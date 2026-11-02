@@ -8,16 +8,16 @@ body_bed = from_sdf expression="smin(smin(smin(sd_ellipsoid(x-(0),y-(28),z-(122)
 skull_bed = from_sdf expression="smin(smin(sd_ellipsoid(x-(0),y-(-24),z-(292),29,27,25),sd_ellipsoid(x-(0),y-(-39),z-(289),25,24,20),5),sd_ellipsoid(x-(0),y-(-48),z-(294),18,24,15),5)" bounds=[-36,-78,260,36,8,323] resolution=1.15 color=#87928f rough=0.72
 skull_surface = translate [skull_bed] offset=[0,0,0]
 hide skull_surface
-body_core = from_sdf expression="smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(smin(min(min((sd_round_cone(x,y,z/0.62,0,-30,467.74194,0,-54,462.90323,21,18)*0.62),(sd_round_cone(x,y,z/0.62,0,-54,462.90323,0,-80,458.06452,18,13)*0.62)),(sd_round_cone(x,y,z/0.62,0,-80,458.06452,0,-91,456.45161,13,10)*0.62)),min(min((sd_round_cone(x,y,z/0.55,0,-26,465.45455,0,-52,454.54545,17,14)*0.55),(sd_round_cone(x,y,z/0.55,0,-52,454.54545,0,-79,460,14,10)*0.55)),(sd_round_cone(x,y,z/0.55,0,-79,460,0,-87,467.27273,10,6)*0.55)),5),sd_ellipsoid(x-(0),y-(-18),z-(264),22,14,20),5),sd_ellipsoid(x-(0),y-(-54),z-(260),8,20,2.2),5),sd_ellipsoid(x-(0),y-(-55),z-(296),9,26,8),5),sd_ellipsoid(x-(0),y-(-85),z-(286),11,9,6),5),sd_ellipsoid(x-(-17),y-(-30),z-(269),10,18,16),5),sd_ellipsoid(x-(17),y-(-30),z-(269),10,18,16),5),min(min(min(sd_round_cone(x,y,z,-16,-30,281,-15,-45,278,1.4,1.8),sd_round_cone(x,y,z,-15,-45,278,-12,-60,278,1.8,1.8)),sd_round_cone(x,y,z,-12,-60,278,-8,-77,278,1.8,1.4)),sd_round_cone(x,y,z,-8,-77,278,-4,-87,281,1.4,0.8)),5),min(min(min(sd_round_cone(x,y,z,-13,-28,261,-12,-45,260,1.3,1.6),sd_round_cone(x,y,z,-12,-45,260,-10,-60,259,1.6,1.6)),sd_round_cone(x,y,z,-10,-60,259,-7,-72,258.5,1.6,1.2)),sd_round_cone(x,y,z,-7,-72,258.5,-3,-83,258,1.2,0.7)),5),min(min(min(sd_round_cone(x,y,z,16,-30,281,15,-45,278,1.4,1.8),sd_round_cone(x,y,z,15,-45,278,12,-60,278,1.8,1.8)),sd_round_cone(x,y,z,12,-60,278,8,-77,278,1.8,1.4)),sd_round_cone(x,y,z,8,-77,278,4,-87,281,1.4,0.8)),5),min(min(min(sd_round_cone(x,y,z,13,-28,261,12,-45,260,1.3,1.6),sd_round_cone(x,y,z,12,-45,260,10,-60,259,1.6,1.6)),sd_round_cone(x,y,z,10,-60,259,7,-72,258.5,1.6,1.2)),sd_round_cone(x,y,z,7,-72,258.5,3,-83,258,1.2,0.7)),5)" bounds=[-31,-101,238,31,5,305] resolution=1.3 color=#87928f rough=0.72
-front_limb_R = from_sdf expression="smin(smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(42),y-(-4),z-(199),18,20,24),sd_ellipsoid(x-(58),y-(2),z-(151),15,16,21),4),min(min(sd_round_cone(x,y,z,42,-4,202,60,4,145,15,13),sd_round_cone(x,y,z,60,4,145,66,-38,103,13,10)),sd_round_cone(x,y,z,66,-38,103,63,-60,72,10,8)),4),sd_ellipsoid(x-(63),y-(-63),z-(61),12,14,10),4),min(sd_round_cone(x,y,z,57.5,-60,59,53,-69,44,4.3,3.6),sd_round_cone(x,y,z,53,-69,44,51.5,-79,30,3.6,2.7)),4),min(sd_round_cone(x,y,z,61.35,-60,59,60,-71,44,4.3,3.6),sd_round_cone(x,y,z,60,-71,44,59.55,-82,30,3.6,2.7)),4),min(sd_round_cone(x,y,z,65.2,-60,59,67,-69,44,4.3,3.6),sd_round_cone(x,y,z,67,-69,44,67.6,-79,30,3.6,2.7)),4),min(sd_round_cone(x,y,z,69.05,-60,59,74,-69,44,4.3,3.6),sd_round_cone(x,y,z,74,-69,44,75.65,-79,30,3.6,2.7)),4)" bounds=[24,-104,20,84,24,227] resolution=1.18 color=#87928f rough=0.72
-hind_limb_R = from_sdf expression="smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(32),y-(24),z-(123),22,25,31),sd_ellipsoid(x-(49),y-(3),z-(84),15,17,18),4.5),min(sd_round_cone(x,y,z,34,24,124,50,4,84,16,12),sd_round_cone(x,y,z,50,4,84,45,-22,51,12,8)),4.5),sd_ellipsoid(x-(45),y-(-30),z-(40),16,23,9),4.5),min(sd_round_cone(x,y,z,39.15,-40,39,36,-54,35,4.5,3.6),sd_round_cone(x,y,z,36,-54,35,34.65,-66,33,3.6,2.7)),4.5),min(sd_round_cone(x,y,z,45,-40,39,45,-56,35,4.5,3.6),sd_round_cone(x,y,z,45,-56,35,45,-69,33,3.6,2.7)),4.5),min(sd_round_cone(x,y,z,50.85,-40,39,54,-54,35,4.5,3.6),sd_round_cone(x,y,z,54,-54,35,55.35,-66,33,3.6,2.7)),4.5)" bounds=[18,-86,20,76,58,158] resolution=1.4 color=#87928f rough=0.72
-front_limb_L = from_sdf expression="smin(smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(-42),y-(-4),z-(199),18,20,24),sd_ellipsoid(x-(-58),y-(2),z-(151),15,16,21),4),min(min(sd_round_cone(x,y,z,-42,-4,202,-60,4,145,15,13),sd_round_cone(x,y,z,-60,4,145,-66,-38,103,13,10)),sd_round_cone(x,y,z,-66,-38,103,-63,-60,72,10,8)),4),sd_ellipsoid(x-(-63),y-(-63),z-(61),12,14,10),4),min(sd_round_cone(x,y,z,-68.5,-60,59,-73,-69,44,4.3,3.6),sd_round_cone(x,y,z,-73,-69,44,-74.5,-79,30,3.6,2.7)),4),min(sd_round_cone(x,y,z,-64.65,-60,59,-66,-71,44,4.3,3.6),sd_round_cone(x,y,z,-66,-71,44,-66.45,-82,30,3.6,2.7)),4),min(sd_round_cone(x,y,z,-60.8,-60,59,-59,-69,44,4.3,3.6),sd_round_cone(x,y,z,-59,-69,44,-58.4,-79,30,3.6,2.7)),4),min(sd_round_cone(x,y,z,-56.95,-60,59,-52,-69,44,4.3,3.6),sd_round_cone(x,y,z,-52,-69,44,-50.35,-79,30,3.6,2.7)),4)" bounds=[-84,-104,20,-24,24,227] resolution=1.18 color=#87928f rough=0.72
-hind_limb_L = from_sdf expression="smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(-32),y-(24),z-(123),22,25,31),sd_ellipsoid(x-(-49),y-(3),z-(84),15,17,18),4.5),min(sd_round_cone(x,y,z,-34,24,124,-50,4,84,16,12),sd_round_cone(x,y,z,-50,4,84,-45,-22,51,12,8)),4.5),sd_ellipsoid(x-(-45),y-(-30),z-(40),16,23,9),4.5),min(sd_round_cone(x,y,z,-50.85,-40,39,-54,-54,35,4.5,3.6),sd_round_cone(x,y,z,-54,-54,35,-55.35,-66,33,3.6,2.7)),4.5),min(sd_round_cone(x,y,z,-45,-40,39,-45,-56,35,4.5,3.6),sd_round_cone(x,y,z,-45,-56,35,-45,-69,33,3.6,2.7)),4.5),min(sd_round_cone(x,y,z,-39.15,-40,39,-36,-54,35,4.5,3.6),sd_round_cone(x,y,z,-36,-54,35,-34.65,-66,33,3.6,2.7)),4.5)" bounds=[-76,-86,20,-18,58,158] resolution=1.4 color=#87928f rough=0.72
+body_core = from_sdf expression="smin(smin(smin(min(min((sd_round_cone(x,y,z/0.62,0,-30,467.74194,0,-54,462.90323,21,18)*0.62),(sd_round_cone(x,y,z/0.62,0,-54,462.90323,0,-80,458.06452,18,13)*0.62)),(sd_round_cone(x,y,z/0.62,0,-80,458.06452,0,-91,456.45161,13,10)*0.62)),min(min((sd_round_cone(x,y,z/0.55,0,-26,465.45455,0,-52,454.54545,17,14)*0.55),(sd_round_cone(x,y,z/0.55,0,-52,454.54545,0,-79,460,14,10)*0.55)),(sd_round_cone(x,y,z/0.55,0,-79,460,0,-87,467.27273,10,6)*0.55)),5),sd_ellipsoid(x-(0),y-(-54),z-(260),7,18,1.8),5),sd_ellipsoid(x-(0),y-(-55),z-(296),9,26,7),5)" bounds=[-31,-101,238,31,5,305] resolution=1.3 color=#87928f rough=0.72
+front_limb_R = from_sdf expression="smin(smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(39),y-(-3),z-(199),14,17,21),sd_ellipsoid(x-(57),y-(1),z-(151),12,14,18),4),min(min(sd_round_cone(x,y,z,42,-4,202,60,4,145,14,11.5),sd_round_cone(x,y,z,60,4,145,66,-38,103,11.5,8.8)),sd_round_cone(x,y,z,66,-38,103,63,-60,72,8.8,7.2)),4),sd_ellipsoid(x-(63),y-(-63),z-(61),9.5,12,7.5),4),min(sd_round_cone(x,y,z,57.5,-60,59,53,-69,44,3.7,3.1),sd_round_cone(x,y,z,53,-69,44,51.5,-79,30,3.1,2.5)),4),min(sd_round_cone(x,y,z,61.35,-60,59,60,-71,44,3.7,3.1),sd_round_cone(x,y,z,60,-71,44,59.55,-82,30,3.1,2.5)),4),min(sd_round_cone(x,y,z,65.2,-60,59,67,-69,44,3.7,3.1),sd_round_cone(x,y,z,67,-69,44,67.6,-79,30,3.1,2.5)),4),min(sd_round_cone(x,y,z,69.05,-60,59,74,-69,44,3.7,3.1),sd_round_cone(x,y,z,74,-69,44,75.65,-79,30,3.1,2.5)),4)" bounds=[24,-104,20,84,24,227] resolution=1.18 color=#87928f rough=0.72
+hind_limb_R = from_sdf expression="smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(31),y-(24),z-(123),19,23,28),sd_ellipsoid(x-(48),y-(3),z-(84),12.5,15,16),4.5),min(sd_round_cone(x,y,z,34,24,124,50,4,84,15,11),sd_round_cone(x,y,z,50,4,84,45,-22,51,11,7.5)),4.5),sd_ellipsoid(x-(45),y-(-30),z-(40),13,20,7.5),4.5),min(sd_round_cone(x,y,z,39.15,-40,39,36,-54,35,3.9,3.2),sd_round_cone(x,y,z,36,-54,35,34.65,-66,33,3.2,2.5)),4.5),min(sd_round_cone(x,y,z,45,-40,39,45,-56,35,3.9,3.2),sd_round_cone(x,y,z,45,-56,35,45,-69,33,3.2,2.5)),4.5),min(sd_round_cone(x,y,z,50.85,-40,39,54,-54,35,3.9,3.2),sd_round_cone(x,y,z,54,-54,35,55.35,-66,33,3.2,2.5)),4.5)" bounds=[18,-86,20,76,58,158] resolution=1.4 color=#87928f rough=0.72
+front_limb_L = from_sdf expression="smin(smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(-39),y-(-3),z-(199),14,17,21),sd_ellipsoid(x-(-57),y-(1),z-(151),12,14,18),4),min(min(sd_round_cone(x,y,z,-42,-4,202,-60,4,145,14,11.5),sd_round_cone(x,y,z,-60,4,145,-66,-38,103,11.5,8.8)),sd_round_cone(x,y,z,-66,-38,103,-63,-60,72,8.8,7.2)),4),sd_ellipsoid(x-(-63),y-(-63),z-(61),9.5,12,7.5),4),min(sd_round_cone(x,y,z,-68.5,-60,59,-73,-69,44,3.7,3.1),sd_round_cone(x,y,z,-73,-69,44,-74.5,-79,30,3.1,2.5)),4),min(sd_round_cone(x,y,z,-64.65,-60,59,-66,-71,44,3.7,3.1),sd_round_cone(x,y,z,-66,-71,44,-66.45,-82,30,3.1,2.5)),4),min(sd_round_cone(x,y,z,-60.8,-60,59,-59,-69,44,3.7,3.1),sd_round_cone(x,y,z,-59,-69,44,-58.4,-79,30,3.1,2.5)),4),min(sd_round_cone(x,y,z,-56.95,-60,59,-52,-69,44,3.7,3.1),sd_round_cone(x,y,z,-52,-69,44,-50.35,-79,30,3.1,2.5)),4)" bounds=[-84,-104,20,-24,24,227] resolution=1.18 color=#87928f rough=0.72
+hind_limb_L = from_sdf expression="smin(smin(smin(smin(smin(smin(sd_ellipsoid(x-(-31),y-(24),z-(123),19,23,28),sd_ellipsoid(x-(-48),y-(3),z-(84),12.5,15,16),4.5),min(sd_round_cone(x,y,z,-34,24,124,-50,4,84,15,11),sd_round_cone(x,y,z,-50,4,84,-45,-22,51,11,7.5)),4.5),sd_ellipsoid(x-(-45),y-(-30),z-(40),13,20,7.5),4.5),min(sd_round_cone(x,y,z,-50.85,-40,39,-54,-54,35,3.9,3.2),sd_round_cone(x,y,z,-54,-54,35,-55.35,-66,33,3.2,2.5)),4.5),min(sd_round_cone(x,y,z,-45,-40,39,-45,-56,35,3.9,3.2),sd_round_cone(x,y,z,-45,-56,35,-45,-69,33,3.2,2.5)),4.5),min(sd_round_cone(x,y,z,-39.15,-40,39,-36,-54,35,3.9,3.2),sd_round_cone(x,y,z,-36,-54,35,-34.65,-66,33,3.2,2.5)),4.5)" bounds=[-76,-86,20,-18,58,158] resolution=1.4 color=#87928f rough=0.72
 tail_core = from_sdf expression="min(min(min(min(min(min(sd_round_cone(x,y,z,0,68,120,15,65,94,26,22),sd_round_cone(x,y,z,15,65,94,40,105,67,22,18)),sd_round_cone(x,y,z,40,105,67,75,140,52,18,14)),sd_round_cone(x,y,z,75,140,52,108,151,68,14,10.5)),sd_round_cone(x,y,z,108,151,68,128,143,96,10.5,8)),sd_round_cone(x,y,z,128,143,96,127,127,122,8,6)),sd_round_cone(x,y,z,127,127,122,118,118,133,6,4.5))" bounds=[-30,5,25,155,178,160] resolution=1.25 color=#87928f rough=0.72
 
-# Крыло v3: camber, пять рёбер и объёмный передний край в одной сетке.
+# Крыло v4: усиленный camber, глубокие scallop-провисы и цельный передний край.
 # Все усиления интегральны; отдельные sweep-рёбра запрещены.
-wing_R = membrane root=[38,-3] outline=[[0,-20],[20,-5],[45,0],[96,48],[150,85],[146.87983,75.09699],[144.18536,66.28971],[142.62941,58.86479],[142.81557,52.88593],[145.15566,48.20576],[149.80804,44.50752],[156.64583,41.36877],[165.26021,38.33622],[175,35],[164.19072,27.22891],[154.7083,20.51068],[147.53343,14.84036],[143.35298,10.00937],[142.4826,5.65747],[144.83518,1.34912],[149.93838,-3.33895],[156.99817,-8.7338],[165,-15],[152.88815,-17.98136],[142.3065,-20.51068],[134.04219,-22.93511],[128.55651,-25.67622],[125.94537,-29.15774],[125.94744,-33.7281],[127.99672,-39.59039],[131.31052,-46.75153],[135,-55],[124.11798,-52.91657],[114.64092,-51.03821],[107.0597,-49.91759],[101.57472,-50.04687],[98.0932,-51.78763],[96.26671,-55.31408],[95.56122,-60.57806],[95.3478,-67.30166],[95,-75],[82.85027,-66.2119],[72.11848,-58.46194],[62.72642,-52.05378],[54.32433,-47.0787],[46.37122,-43.4221],[38.24708,-40.79891],[29.3774,-38.81087],[19.34941,-37.0161],[8,-35]] camber=24 thick=1.2 rings=16 rib_angles=[38.15723,15.50254,-5.39775,-28.19498,-51.63251] rib_height=7.0 rib_width=4.0 edge_indices=[0,1,2,3] edge_thick=3.8 edge_height=1.5 color=#87928f rough=0.78
+wing_R = membrane root=[38,-3] outline=[[0,-20],[20,-5],[45,0],[96,48],[150,85],[143.93086,72.92326],[138.50026,62.49012],[134.77744,54.13052],[133.6678,47.94001],[135.78904,43.69753],[141.37872,40.92795],[150.24652,38.99759],[161.77921,37.22656],[175,35],[160.22328,26.32256],[147.31625,19.12869],[137.66074,13.41142],[132.22465,8.87684],[131.45275,5.01735],[135.2223,1.21922],[142.86771,-3.11397],[153.27015,-8.44309],[165,-15],[149.29694,-17.38282],[135.75006,-19.12869],[125.46853,-20.72674],[119.10236,-22.77104],[116.78666,-25.85863],[118.15321,-30.48051],[122.40446,-36.92282],[128.43755,-45.19534],[135,-55],[121.48442,-51.15516],[109.94857,-47.5993],[101.08413,-45.11115],[95.17347,-44.38422],[92.08587,-45.92802],[91.33037,-49.98803],[92.15444,-56.49636],[93.6719,-65.06142],[95,-75],[82.85027,-66.2119],[72.11848,-58.46194],[62.72642,-52.05378],[54.32433,-47.0787],[46.37122,-43.4221],[38.24708,-40.79891],[29.3774,-38.81087],[19.34941,-37.0161],[8,-35]] camber=32 thick=1.2 rings=20 rib_angles=[38.15723,15.50254,-5.39775,-28.19498,-51.63251] rib_height=9.0 rib_width=4.5 edge_indices=[0,1,2,3] edge_thick=4.4 edge_height=2.0 color=#87928f rough=0.78
 wing_R = twist [wing_R] angle=-10 axis=x
 rotate [wing_R] angle=62 axis=x
 rotate [wing_R] angle=-32 axis=y
@@ -35,28 +35,32 @@ horn_brow_R = sweep path=[[17,-43,304],[24,-32,312],[30,-18,320],[30,-5,325]] ra
 horn_cheek_R = sweep path=[[21,-20,278],[31,-8,283],[39,7,294]] radius=4.5 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
 horn_crown_a_R = sweep path=[[15,-28,302],[26,-16,309],[36,0,320]] radius=3.5 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
 horn_crown_b_R = sweep path=[[13,-24,298],[24,-12,303],[35,5,312]] radius=2.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-socket_R = ellipsoid x=4.6 y=4.8 z=2.2 center=да at=[22.2,-43,299] detail=4 color=#87928f rough=0.7
+socket_R = ellipsoid x=4.8 y=6 z=2.7 center=да at=[22,-43.5,299.5] detail=4 color=#87928f rough=0.7
 nostril_R = ellipsoid x=2.8 y=3.8 z=2.2 center=да at=[6.5,-88,291] detail=4 color=#87928f rough=0.7
 horn_brow_L = sweep path=[[-17,-43,304],[-24,-32,312],[-30,-18,320],[-30,-5,325]] radius=4.8 sides=28 smooth=5 scale_curve=[1.3298,0.56961,0.33177,0.0329] round_caps=0.12 color=#87928f rough=0.72
 horn_cheek_L = sweep path=[[-21,-20,278],[-31,-8,283],[-39,7,294]] radius=4.5 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
 horn_crown_a_L = sweep path=[[-15,-28,302],[-26,-16,309],[-36,0,320]] radius=3.5 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
 horn_crown_b_L = sweep path=[[-13,-24,298],[-24,-12,303],[-35,5,312]] radius=2.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-socket_L = ellipsoid x=4.6 y=4.8 z=2.2 center=да at=[-22.2,-43,299] detail=4 color=#87928f rough=0.7
+socket_L = ellipsoid x=4.8 y=6 z=2.7 center=да at=[-22,-43.5,299.5] detail=4 color=#87928f rough=0.7
 nostril_L = ellipsoid x=2.8 y=3.8 z=2.2 center=да at=[-6.5,-88,291] detail=4 color=#87928f rough=0.7
 horn_nose = sweep path=[[0,-58,299],[0,-48,310],[0,-36,317]] radius=3.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
 skull_bed = union [skull_bed, horn_brow_R, horn_brow_L, horn_cheek_R, horn_cheek_L, horn_crown_a_R, horn_crown_a_L, horn_crown_b_R, horn_crown_b_L]
 body_core = union [body_core, horn_nose]
 skull_bed = difference [skull_bed, socket_R, socket_L]
 body_core = difference [body_core, nostril_R, nostril_L]
-eye_R = ellipsoid x=2.2 y=3.4 z=0.95 center=да at=[21.3,-44.2,299] detail=4 color=#101817 rough=0.7
+eye_R = ellipsoid x=1.8 y=4.6 z=1.25 center=да at=[22.4,-44.5,299.4] detail=4 color=#101817 rough=0.7
 color eye_R #101817 rough=0.22
-eye_L = ellipsoid x=2.2 y=3.4 z=0.95 center=да at=[-21.3,-44.2,299] detail=4 color=#101817 rough=0.7
+eye_L = ellipsoid x=1.8 y=4.6 z=1.25 center=да at=[-22.4,-44.5,299.4] detail=4 color=#101817 rough=0.7
 color eye_L #101817 rough=0.22
 
 # Чешуя черепа после рогов/глазниц: ray-cast по исходной коже, safe по всей голове.
-scales skull_bed on=skull_surface kind=дракон path=[[0,-24,286],[0,-24,306]] rows=6 per_row=20 length=5 width=4.6 thick=0.55 tilt=8 safe=да seed=5
+scales skull_bed on=skull_surface kind=дракон path=[[0,-24,286],[0,-24,306]] rows=6 per_row=20 length=5.8 width=5.0 thick=0.8 tilt=18 safe=да seed=5
 
 # Спинной гребень и листовидный наконечник хвоста.
+spine_dorsal_0 = sweep path=[[0,56,127],[0,69,139],[0,81,153]] radius=5.5 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_dorsal_1 = sweep path=[[0,53,151],[0,67,164],[0,78,179]] radius=5.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_dorsal_2 = sweep path=[[0,35,176],[0,49,190],[0,60,205]] radius=4.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
+spine_dorsal_3 = sweep path=[[0,25,198],[0,38,213],[0,47,228]] radius=4.4 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
 spine_neck_0 = sweep path=[[0,13,210],[0,30,219],[0,40,235]] radius=5 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
 spine_neck_1 = sweep path=[[0,20,232],[0,37,241],[0,47,257]] radius=4.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
 spine_neck_2 = sweep path=[[0,15,254],[0,32,263],[0,42,279]] radius=4.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
@@ -66,7 +70,7 @@ spine_tail_1 = sweep path=[[40,102,75],[42,110,87],[44,115,98]] radius=4 sides=2
 spine_tail_2 = sweep path=[[75,137,57],[77,145,69],[79,150,80]] radius=3.4 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
 spine_tail_3 = sweep path=[[108,148,72],[110,156,84],[112,161,95]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
 spine_tail_4 = sweep path=[[128,140,100],[130,148,112],[132,153,123]] radius=2.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#87928f rough=0.72
-body_core = union [body_core, spine_neck_0, spine_neck_1, spine_neck_2, spine_neck_3, spine_tail_0, spine_tail_1, spine_tail_2, spine_tail_3, spine_tail_4]
+body_core = union [body_core, spine_dorsal_0, spine_dorsal_1, spine_dorsal_2, spine_dorsal_3, spine_neck_0, spine_neck_1, spine_neck_2, spine_neck_3, spine_tail_0, spine_tail_1, spine_tail_2, spine_tail_3, spine_tail_4]
 tail_fin = membrane root=[0,14] outline=[[-6,0],[-22,14],[-18,32],[-8,28],[0,66],[8,28],[18,32],[22,14],[6,0]] camber=3 thick=2.8 rings=10 rib_angles=[62,90,118] rib_height=2 rib_width=5 color=#87928f rough=0.75
 rotate [tail_fin] angle=90 axis=x
 rotate [tail_fin] angle=-20 axis=z
@@ -75,25 +79,25 @@ tail_spear = sweep path=[[118,118,136],[114,114,158],[108,110,184]] radius=4 sid
 body_core = union [body_core, tail_fin, tail_spear]
 
 # Горло: одна центральная колонка штатной чешуи; грудь: крупные chevron-щитки.
-throat_bed = scales body_bed kind=дракон path=[[0,0,254],[0,0,228],[0,0,202]] rows=4 pitch=13 per_row=1 length=24 width=30 thick=2.2 tilt=6 safe=да
-breast_0 = membrane root=[0,0] outline=[[-24.13509,4],[-13.2743,5],[0,1.5],[13.2743,5],[24.13509,4],[15.68781,-4],[0,-8],[-15.68781,-4]] camber=4.2 thick=2.2 rings=7 color=#87928f rough=0.75
+throat_bed = scales body_bed kind=дракон path=[[0,0,242],[0,0,228],[0,0,202]] rows=4 pitch=13 per_row=1 length=20 width=22 thick=1.6 tilt=5 safe=да
+breast_0 = membrane root=[0,0] outline=[[-24.13509,6],[-13.2743,7],[0,2.5],[13.2743,7],[24.13509,6],[15.68781,-5],[0,-10],[-15.68781,-5]] camber=2.4 thick=2.0 rings=8 color=#87928f rough=0.75
 rotate [breast_0] angle=90 axis=x
-translate [breast_0] offset=[0,-30.869,190]
-breast_1 = membrane root=[0,0] outline=[[-26.807,4],[-14.74385,5],[0,1.5],[14.74385,5],[26.807,4],[17.42455,-4],[0,-8],[-17.42455,-4]] camber=4.2 thick=2.2 rings=7 color=#87928f rough=0.75
+translate [breast_0] offset=[0,-32.869,190]
+breast_1 = membrane root=[0,0] outline=[[-26.807,6],[-14.74385,7],[0,2.5],[14.74385,7],[26.807,6],[17.42455,-5],[0,-10],[-17.42455,-5]] camber=2.4 thick=2.0 rings=8 color=#87928f rough=0.75
 rotate [breast_1] angle=90 axis=x
-translate [breast_1] offset=[0,-28.245,176]
-breast_2 = membrane root=[0,0] outline=[[-29.09271,4],[-16.00099,5],[0,1.5],[16.00099,5],[29.09271,4],[18.91026,-4],[0,-8],[-18.91026,-4]] camber=4.2 thick=2.2 rings=7 color=#87928f rough=0.75
+translate [breast_1] offset=[0,-30.245,176]
+breast_2 = membrane root=[0,0] outline=[[-29.09271,6],[-16.00099,7],[0,2.5],[16.00099,7],[29.09271,6],[18.91026,-5],[0,-10],[-18.91026,-5]] camber=2.4 thick=2.0 rings=8 color=#87928f rough=0.75
 rotate [breast_2] angle=90 axis=x
-translate [breast_2] offset=[0,-20.202,162]
-breast_3 = membrane root=[0,0] outline=[[-30.99223,4],[-17.04573,5],[0,1.5],[17.04573,5],[30.99223,4],[20.14495,-4],[0,-8],[-20.14495,-4]] camber=4.2 thick=2.2 rings=7 color=#87928f rough=0.75
+translate [breast_2] offset=[0,-23.002,162]
+breast_3 = membrane root=[0,0] outline=[[-30.99223,6],[-17.04573,7],[0,2.5],[17.04573,7],[30.99223,6],[20.14495,-5],[0,-10],[-20.14495,-5]] camber=2.4 thick=2.0 rings=8 color=#87928f rough=0.75
 rotate [breast_3] angle=90 axis=x
-translate [breast_3] offset=[0,-16.425,148]
-breast_4 = membrane root=[0,0] outline=[[-32.58205,4],[-17.92013,5],[0,1.5],[17.92013,5],[32.58205,4],[21.17833,-4],[0,-8],[-21.17833,-4]] camber=4.2 thick=2.2 rings=7 color=#87928f rough=0.75
+translate [breast_3] offset=[0,-19.225,148]
+breast_4 = membrane root=[0,0] outline=[[-32.58205,6],[-17.92013,7],[0,2.5],[17.92013,7],[32.58205,6],[21.17833,-5],[0,-10],[-21.17833,-5]] camber=2.4 thick=2.0 rings=8 color=#87928f rough=0.75
 rotate [breast_4] angle=90 axis=x
-translate [breast_4] offset=[0,-14.531,134]
-breast_5 = membrane root=[0,0] outline=[[-34,4],[-18.7,5],[0,1.5],[18.7,5],[34,4],[22.1,-4],[0,-8],[-22.1,-4]] camber=4.2 thick=2.2 rings=7 color=#87928f rough=0.75
+translate [breast_4] offset=[0,-16.531,134]
+breast_5 = membrane root=[0,0] outline=[[-34,6],[-18.7,7],[0,2.5],[18.7,7],[34,6],[22.1,-5],[0,-10],[-22.1,-5]] camber=2.4 thick=2.0 rings=8 color=#87928f rough=0.75
 rotate [breast_5] angle=90 axis=x
-translate [breast_5] offset=[0,-8.307,120]
+translate [breast_5] offset=[0,-10.307,120]
 body_core = union [body_core, throat_bed, breast_0, breast_1, breast_2, breast_3, breast_4, breast_5]
 
 # Зубы v2: корни по настоящей десне, кончики внутри скруглённого контура.
@@ -102,49 +106,61 @@ tooth_U_R_0 = sweep path=[[5,-82,277.66307],[5.025,-82.4,273.33153],[5.05,-82.8,
 tooth_U_R_1 = sweep path=[[9,-70,278.76249],[9.045,-70.4,270.38124],[9.09,-70.8,262]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_U_R_2 = sweep path=[[12,-57,279.79791],[12.06,-57.4,274.39895],[12.12,-57.8,269]] radius=2.1 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_U_R_3 = sweep path=[[14,-44,281.05691],[14.07,-44.4,275.02845],[14.14,-44.8,269]] radius=2.1 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_US_R_0 = sweep path=[[7,-76,278.10505],[7.035,-76.4,275.05252],[7.07,-76.8,272]] radius=1.25 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_US_R_1 = sweep path=[[10.5,-63,279.24018],[10.5525,-63.4,275.62009],[10.605,-63.8,272]] radius=1.25 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_US_R_2 = sweep path=[[13,-50,280.33659],[13.065,-50.4,276.1683],[13.13,-50.8,272]] radius=1.25 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_D_R_0 = sweep path=[[5,-76,256.71285],[5,-76.3,261.85643],[4.95,-76.6,267]] radius=1.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_D_R_1 = sweep path=[[8,-63,255.41183],[8,-63.3,261.20591],[7.92,-63.6,267]] radius=1.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_D_R_2 = sweep path=[[10,-50,255.97076],[10,-50.3,261.48538],[9.9,-50.6,267]] radius=1.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_DS_R_0 = sweep path=[[3.5,-82,257.97851],[3.5,-82.3,260.98925],[3.465,-82.6,264]] radius=1.1 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_U_L_0 = sweep path=[[-5,-82,277.66307],[-5.025,-82.4,273.33153],[-5.05,-82.8,269]] radius=2.1 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_U_L_1 = sweep path=[[-9,-70,278.76249],[-9.045,-70.4,270.38124],[-9.09,-70.8,262]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_U_L_2 = sweep path=[[-12,-57,279.79791],[-12.06,-57.4,274.39895],[-12.12,-57.8,269]] radius=2.1 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_U_L_3 = sweep path=[[-14,-44,281.05691],[-14.07,-44.4,275.02845],[-14.14,-44.8,269]] radius=2.1 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_US_L_0 = sweep path=[[-7,-76,278.10505],[-7.035,-76.4,275.05252],[-7.07,-76.8,272]] radius=1.25 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_US_L_1 = sweep path=[[-10.5,-63,279.24018],[-10.5525,-63.4,275.62009],[-10.605,-63.8,272]] radius=1.25 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_US_L_2 = sweep path=[[-13,-50,280.33659],[-13.065,-50.4,276.1683],[-13.13,-50.8,272]] radius=1.25 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_D_L_0 = sweep path=[[-5,-76,256.71285],[-5,-76.3,261.85643],[-4.95,-76.6,267]] radius=1.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_D_L_1 = sweep path=[[-8,-63,255.41183],[-8,-63.3,261.20591],[-7.92,-63.6,267]] radius=1.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_D_L_2 = sweep path=[[-10,-50,255.97076],[-10,-50.3,261.48538],[-9.9,-50.6,267]] radius=1.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+tooth_DS_L_0 = sweep path=[[-3.5,-82,257.97851],[-3.5,-82.3,260.98925],[-3.465,-82.6,264]] radius=1.1 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_front_0 = sweep path=[[-4,-84,277.60867],[-4.02,-84.4,273.30434],[-4.04,-84.8,269]] radius=1.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 tooth_front_1 = sweep path=[[4,-84,277.60867],[4.02,-84.4,273.30434],[4.04,-84.8,269]] radius=1.9 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-body_core = union [body_core, tooth_U_R_0, tooth_U_R_1, tooth_U_R_2, tooth_U_R_3, tooth_D_R_0, tooth_D_R_1, tooth_D_R_2, tooth_U_L_0, tooth_U_L_1, tooth_U_L_2, tooth_U_L_3, tooth_D_L_0, tooth_D_L_1, tooth_D_L_2, tooth_front_0, tooth_front_1]
+body_core = union [body_core, tooth_U_R_0, tooth_U_R_1, tooth_U_R_2, tooth_U_R_3, tooth_US_R_0, tooth_US_R_1, tooth_US_R_2, tooth_D_R_0, tooth_D_R_1, tooth_D_R_2, tooth_DS_R_0, tooth_U_L_0, tooth_U_L_1, tooth_U_L_2, tooth_U_L_3, tooth_US_L_0, tooth_US_L_1, tooth_US_L_2, tooth_D_L_0, tooth_D_L_1, tooth_D_L_2, tooth_DS_L_0, tooth_front_0, tooth_front_1]
 
 # Четыре опоры: по три когтя сзади и по четыре на передних лапах.
-claw_F_R_0 = sweep path=[[51.5,-77,31],[50.9,-84,23],[50.3,-89,11]] radius=3.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_R_1 = sweep path=[[59.55,-80,31],[59.37,-87,23],[59.19,-92,11]] radius=3.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_R_2 = sweep path=[[67.6,-77,31],[67.84,-84,23],[68.08,-89,11]] radius=3.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_R_3 = sweep path=[[75.65,-77,31],[76.31,-84,23],[76.97,-89,11]] radius=3.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_H_R_0 = sweep path=[[34.65,-64,34],[33.75,-71,31],[33.03,-77,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_H_R_1 = sweep path=[[45,-67,34],[45,-74,31],[45,-80,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_H_R_2 = sweep path=[[55.35,-64,34],[56.25,-71,31],[56.97,-77,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_L_0 = sweep path=[[-74.5,-77,31],[-73.9,-84,23],[-73.3,-89,11]] radius=3.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_L_1 = sweep path=[[-66.45,-80,31],[-66.27,-87,23],[-66.09,-92,11]] radius=3.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_L_2 = sweep path=[[-58.4,-77,31],[-58.64,-84,23],[-58.88,-89,11]] radius=3.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_F_L_3 = sweep path=[[-50.35,-77,31],[-51.01,-84,23],[-51.67,-89,11]] radius=3.2 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_H_L_0 = sweep path=[[-55.35,-64,34],[-54.45,-71,31],[-53.73,-77,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_H_L_1 = sweep path=[[-45,-67,34],[-45,-74,31],[-45,-80,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
-claw_H_L_2 = sweep path=[[-34.65,-64,34],[-35.55,-71,31],[-36.27,-77,26]] radius=3 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_R_0 = sweep path=[[51.5,-77,31],[50.9,-84,23],[50.3,-89,11]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_R_1 = sweep path=[[59.55,-80,31],[59.37,-87,23],[59.19,-92,11]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_R_2 = sweep path=[[67.6,-77,31],[67.84,-84,23],[68.08,-89,11]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_R_3 = sweep path=[[75.65,-77,31],[76.31,-84,23],[76.97,-89,11]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_R_0 = sweep path=[[34.65,-64,34],[33.75,-71,31],[33.03,-77,26]] radius=2.6 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_R_1 = sweep path=[[45,-67,34],[45,-74,31],[45,-80,26]] radius=2.6 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_R_2 = sweep path=[[55.35,-64,34],[56.25,-71,31],[56.97,-77,26]] radius=2.6 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_L_0 = sweep path=[[-74.5,-77,31],[-73.9,-84,23],[-73.3,-89,11]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_L_1 = sweep path=[[-66.45,-80,31],[-66.27,-87,23],[-66.09,-92,11]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_L_2 = sweep path=[[-58.4,-77,31],[-58.64,-84,23],[-58.88,-89,11]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_F_L_3 = sweep path=[[-50.35,-77,31],[-51.01,-84,23],[-51.67,-89,11]] radius=2.8 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_L_0 = sweep path=[[-55.35,-64,34],[-54.45,-71,31],[-53.73,-77,26]] radius=2.6 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_L_1 = sweep path=[[-45,-67,34],[-45,-74,31],[-45,-80,26]] radius=2.6 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
+claw_H_L_2 = sweep path=[[-34.65,-64,34],[-35.55,-71,31],[-36.27,-77,26]] radius=2.6 sides=24 smooth=5 scale_curve=[1.22,0.45055,0.035] round_caps=0.12 color=#9aa39e rough=0.72
 claws = union [claw_F_R_0, claw_F_R_1, claw_F_R_2, claw_F_R_3, claw_H_R_0, claw_H_R_1, claw_H_R_2, claw_F_L_0, claw_F_L_1, claw_F_L_2, claw_F_L_3, claw_H_L_0, claw_H_L_1, claw_H_L_2]
 skin_origin = union [skin_origin, claws]
 
 # Финальная чешуя на цельном драконе: safe учитывает все сочленения и экспорт.
 # Ray-cast по неизменной skin_origin; никаких ручных мелких пластин.
 dragon = union [body_core, skull_bed, skin_origin, wings]
-# Торс и шея
-scales dragon on=skin_origin kind=дракон paths=[[[0,28,82],[0,10,150],[0,-2,194],[0,6,229],[0,5,253],[0,-15,276]]] pitch=9 per_row=16 length=11 thick=0.7 tilt=10 safe=да seed=2
+# Торс и шея: приподнятые перекрывающиеся листы, не борозды
+scales dragon on=skin_origin kind=дракон paths=[[[0,28,82],[0,10,150],[0,-2,194],[0,6,229],[0,5,253],[0,-15,276]]] pitch=9 per_row=16 length=11 thick=0.9 tilt=18 safe=да seed=2
 # Передние конечности: мелкие пластины без бахромы
-scales dragon on=skin_origin kind=дракон paths=[[[42,-4,202],[60,4,145],[66,-38,103],[63,-60,72]],[[-42,-4,202],[-60,4,145],[-66,-38,103],[-63,-60,72]]] pitch=6.5 per_row=10 length=7.5 thick=0.6 tilt=8 safe=да seed=4
+scales dragon on=skin_origin kind=дракон paths=[[[42,-4,202],[60,4,145],[66,-38,103],[63,-60,72]],[[-42,-4,202],[-60,4,145],[-66,-38,103],[-63,-60,72]]] pitch=6.5 per_row=10 length=7.5 thick=0.75 tilt=16 safe=да seed=4
 # Задние конечности
-scales dragon on=skin_origin kind=дракон paths=[[[34,24,124],[50,4,84],[45,-22,51]],[[-34,24,124],[-50,4,84],[-45,-22,51]]] pitch=8.5 per_row=12 length=10 thick=0.7 tilt=10 safe=да seed=6
-# Хвост: более крупные ряды у основания
-scales dragon on=skin_origin kind=дракон paths=[[[0,68,120],[15,65,94],[40,105,67],[75,140,52],[108,151,68],[128,143,96],[127,127,122],[118,118,133]]] pitch=10 per_row=12 length=12 thick=0.75 tilt=12 safe=да seed=8
+scales dragon on=skin_origin kind=дракон paths=[[[34,24,124],[50,4,84],[45,-22,51]],[[-34,24,124],[-50,4,84],[-45,-22,51]]] pitch=8.5 per_row=12 length=10 thick=0.85 tilt=18 safe=да seed=6
+# Хвост: крупные листы у основания
+scales dragon on=skin_origin kind=дракон paths=[[[0,68,120],[15,65,94],[40,105,67],[75,140,52]]] pitch=10 per_row=12 length=12 thick=0.85 tilt=16 safe=да seed=8
+# Хвост: средний диаметр
+scales dragon on=skin_origin kind=дракон paths=[[[75,140,52],[108,151,68],[128,143,96]]] pitch=8 per_row=10 length=9 thick=0.7 tilt=14 safe=да seed=9
+# Хвост: мелкие пластины на тонком изгибе, без бахромы
+scales dragon on=skin_origin kind=дракон paths=[[[128,143,96],[127,127,122],[118,118,133]]] pitch=5 per_row=8 length=6 thick=0.55 tilt=9 safe=да seed=10
 
 # Финальная сварка основных органических переходов.
 

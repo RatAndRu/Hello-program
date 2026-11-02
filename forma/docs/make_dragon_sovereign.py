@@ -36,7 +36,7 @@ BODY = "#87928f"
 BASE = "#505856"
 BONE = "#9aa39e"
 EYE = "#101817"
-WING_CAMBER = 24.0
+WING_CAMBER = 32.0
 FRONT_RESOLUTION = 1.18
 
 UPPER_JAW_PATH = [(0, -30, 290), (0, -54, 287), (0, -80, 284), (0, -91, 283)]
@@ -176,20 +176,13 @@ def build_core(stage: str) -> None:
     jaws = [
         sdf_chain(UPPER_JAW_PATH, UPPER_JAW_RADII, UPPER_JAW_Z_SCALE),
         sdf_chain(LOWER_JAW_PATH, LOWER_JAW_RADII, LOWER_JAW_Z_SCALE),
-        sdf_ellipsoid((0, -18, 264), (22, 14, 20)),
-        sdf_ellipsoid((0, -54, 260), (8, 20, 2.2)),
-        sdf_ellipsoid((0, -55, 296), (9, 26, 8)),
-        sdf_ellipsoid((0, -85, 286), (11, 9, 6)),
+        # Язык и нёбо остаются внутри пасти. Прежние шарообразные мышцы
+        # удалены: корень нижней челюсти непосредственно входит в шею.
+        sdf_ellipsoid((0, -54, 260), (7, 18, 1.8)),
+        sdf_ellipsoid((0, -55, 296), (9, 26, 7)),
     ]
-    for s in (-1, 1):
-        jaws.append(sdf_ellipsoid((s * 17, -30, 269), (10, 18, 16)))
-    for s in (-1, 1):
-        jaws.append(sdf_chain([(s * 16, -30, 281), (s * 15, -45, 278),
-                               (s * 12, -60, 278), (s * 8, -77, 278), (s * 4, -87, 281)],
-                              [1.4, 1.8, 1.8, 1.4, 0.8]))
-        jaws.append(sdf_chain([(s * 13, -28, 261), (s * 12, -45, 260),
-                               (s * 10, -60, 259), (s * 7, -72, 258.5), (s * 3, -83, 258)],
-                              [1.3, 1.6, 1.6, 1.2, 0.7]))
+    # Дополнительные тонкие губные цепочки не нужны: на скруглённой челюсти
+    # они давали четырёхгранное ребро и визуально дублировали контур.
     emit_sdf("body_core", [(jaws, 5.0)], [-31, -101, 238, 31, 5, 305], 1.3)
 
     # Обе передние лапы опущены. Пальцы входят в то же SDF-поле, но их
@@ -198,32 +191,32 @@ def build_core(stage: str) -> None:
         front_path = [(s * 42, -4, 202), (s * 60, 4, 145),
                       (s * 66, -38, 103), (s * 63, -60, 72)]
         front = [
-            sdf_ellipsoid((s * 42, -4, 199), (18, 20, 24)),
-            sdf_ellipsoid((s * 58, 2, 151), (15, 16, 21)),
-            sdf_chain(front_path, [15, 13, 10, 8.0]),
-            sdf_ellipsoid((s * 63, -63, 61), (12, 14, 10)),
+            sdf_ellipsoid((s * 39, -3, 199), (14, 17, 21)),
+            sdf_ellipsoid((s * 57, 1, 151), (12, 14, 18)),
+            sdf_chain(front_path, [14, 11.5, 8.8, 7.2]),
+            sdf_ellipsoid((s * 63, -63, 61), (9.5, 12, 7.5)),
         ]
         for j, dx in enumerate((-10.0, -3.0, 4.0, 11.0)):
             finger = [(s * 63 + dx * 0.55, -60, 59),
                       (s * 63 + dx, -69 - (2 if j == 1 else 0), 44),
                       (s * 63 + dx * 1.15, -79 - (3 if j == 1 else 0), 30)]
-            front.append(sdf_chain(finger, [4.3, 3.6, 2.7]))
+            front.append(sdf_chain(finger, [3.7, 3.1, 2.5]))
         xb = (24, 84) if s > 0 else (-84, -24)
         emit_sdf(f"front_limb_{side}", [(front, 4.0)],
                  [xb[0], -104, 20, xb[1], 24, 227], FRONT_RESOLUTION)
 
         hind_path = [(s * 34, 24, 124), (s * 50, 4, 84), (s * 45, -22, 51)]
         hind = [
-            sdf_ellipsoid((s * 32, 24, 123), (22, 25, 31)),
-            sdf_ellipsoid((s * 49, 3, 84), (15, 17, 18)),
-            sdf_chain(hind_path, [16, 12, 8]),
-            sdf_ellipsoid((s * 45, -30, 40), (16, 23, 9)),
+            sdf_ellipsoid((s * 31, 24, 123), (19, 23, 28)),
+            sdf_ellipsoid((s * 48, 3, 84), (12.5, 15, 16)),
+            sdf_chain(hind_path, [15, 11, 7.5]),
+            sdf_ellipsoid((s * 45, -30, 40), (13, 20, 7.5)),
         ]
         for j, dx in enumerate((-9.0, 0.0, 9.0)):
             toe = [(s * 45 + dx * 0.65, -40, 39),
                    (s * 45 + dx, -54 - (2 if j == 1 else 0), 35),
                    (s * 45 + dx * 1.15, -66 - (3 if j == 1 else 0), 33)]
-            hind.append(sdf_chain(toe, [4.5, 3.6, 2.7]))
+            hind.append(sdf_chain(toe, [3.9, 3.2, 2.5]))
         xb = (18, 76) if s > 0 else (-76, -18)
         emit_sdf(f"hind_limb_{side}", [(hind, 4.5)],
                  [xb[0], -86, 20, xb[1], 58, 158], 1.4)
@@ -235,7 +228,7 @@ def build_core(stage: str) -> None:
 
 
 def build_wings() -> None:
-    add("\n# Крыло v3: camber, пять рёбер и объёмный передний край в одной сетке.")
+    add("\n# Крыло v4: усиленный camber, глубокие scallop-провисы и цельный передний край.")
     add("# Все усиления интегральны; отдельные sweep-рёбра запрещены.")
     wrist = np.array([45.0, 0.0])
     tips = [np.array(p, dtype=float) for p in
@@ -252,16 +245,16 @@ def build_wings() -> None:
         return result
 
     for i in range(len(tips) - 1):
-        outline += scalloped(tips[i], tips[i + 1], 0.22 if i else 0.16)
+        outline += scalloped(tips[i], tips[i + 1], 0.31 if i else 0.24)
     trailing = np.array([8.0, -35.0])
     outline += scalloped(tips[-1], trailing, 0.18)
     membrane_root = np.array([38.0, -3.0])
     rib_angles = [math.degrees(math.atan2(tip[1] - membrane_root[1],
                                          tip[0] - membrane_root[0])) for tip in tips]
     add(f"wing_R = membrane root=[38,-3] outline={points(outline)} "
-        f"camber={fmt(WING_CAMBER)} thick=1.2 rings=16 "
-        f"rib_angles={numbers(rib_angles)} rib_height=7.0 rib_width=4.0 "
-        f"edge_indices=[0,1,2,3] edge_thick=3.8 edge_height=1.5 "
+        f"camber={fmt(WING_CAMBER)} thick=1.2 rings=20 "
+        f"rib_angles={numbers(rib_angles)} rib_height=9.0 rib_width=4.5 "
+        f"edge_indices=[0,1,2,3] edge_thick=4.4 edge_height=2.0 "
         f"color={BODY} rough=0.78")
     add("wing_R = twist [wing_R] angle=-10 axis=x")
     add("rotate [wing_R] angle=62 axis=x")
@@ -273,7 +266,7 @@ def build_wings() -> None:
 def build_head_scales() -> None:
     add("\n# Чешуя черепа после рогов/глазниц: ray-cast по исходной коже, safe по всей голове.")
     add("scales skull_bed on=skull_surface kind=дракон path=[[0,-24,286],[0,-24,306]] "
-        "rows=6 per_row=20 length=5 width=4.6 thick=0.55 tilt=8 safe=да seed=5")
+        "rows=6 per_row=20 length=5.8 width=5.0 thick=0.8 tilt=18 safe=да seed=5")
 
 
 def build_main_horns() -> None:
@@ -296,7 +289,7 @@ def build_head_details() -> None:
         horn(f"horn_cheek_{side}", mirrored_path(cheek, s), 4.5)
         horn(f"horn_crown_a_{side}", mirrored_path(crown_a, s), 3.5)
         horn(f"horn_crown_b_{side}", mirrored_path(crown_b, s), 2.9)
-        emit_ellipsoid(f"socket_{side}", (s * 22.2, -43, 299), (4.6, 4.8, 2.2), BODY)
+        emit_ellipsoid(f"socket_{side}", (s * 22.0, -43.5, 299.5), (4.8, 6.0, 2.7), BODY)
         emit_ellipsoid(f"nostril_{side}", (s * 6.5, -88, 291), (2.8, 3.8, 2.2), BODY)
     horn("horn_nose", [(0, -58, 299), (0, -48, 310), (0, -36, 317)], 3.2)
     add("skull_bed = union [skull_bed, horn_brow_R, horn_brow_L, horn_cheek_R, "
@@ -305,7 +298,7 @@ def build_head_details() -> None:
     add("skull_bed = difference [skull_bed, socket_R, socket_L]")
     add("body_core = difference [body_core, nostril_R, nostril_L]")
     for s, side in ((1, "R"), (-1, "L")):
-        emit_ellipsoid(f"eye_{side}", (s * 21.3, -44.2, 299), (2.2, 3.4, 0.95), EYE)
+        emit_ellipsoid(f"eye_{side}", (s * 22.4, -44.5, 299.4), (1.8, 4.6, 1.25), EYE)
         add(f"color eye_{side} {EYE} rough=0.22")
 
 
@@ -357,6 +350,12 @@ def build_teeth_and_claws() -> None:
         horn(name, [(x, y, root_z), (x * 1.005, y - 0.4, (root_z + tip_z) * 0.5),
                     (x * 1.01, y - 0.8, tip_z)], radius, BONE)
 
+    def lower_tooth(name, x, y, tip_z, radius):
+        root_z = gum_boundary(x, y, LOWER_JAW_PATH, LOWER_JAW_RADII,
+                              LOWER_JAW_Z_SCALE, False) - 1.0
+        horn(name, [(x, y, root_z), (x, y - 0.3, (root_z + tip_z) * 0.5),
+                    (x * 0.99, y - 0.6, tip_z)], radius, BONE)
+
     for s, side in ((1, "R"), (-1, "L")):
         for i, (y, width) in enumerate(zip((-82, -70, -57, -44),
                                            (5.0, 9.0, 12.0, 14.0))):
@@ -365,15 +364,20 @@ def build_teeth_and_claws() -> None:
             upper_tooth(name, x, y, 262.0 if i == 1 else 269.0,
                         2.8 if i == 1 else 2.1)
             teeth.append(name)
+        # Мелкие верхние зубы чередуются с нижними, а не выстроены забором
+        # из одинаковых клыков. Корни по-прежнему вычисляются из десны.
+        for i, (y, width) in enumerate(zip((-76, -63, -50), (7.0, 10.5, 13.0))):
+            name = f"tooth_US_{side}_{i}"
+            upper_tooth(name, s * width, y, 272.0, 1.25)
+            teeth.append(name)
         for i, (y, width) in enumerate(zip((-76, -63, -50),
                                            (5.0, 8.0, 10.0))):
-            x = s * width
-            root_z = gum_boundary(x, y, LOWER_JAW_PATH, LOWER_JAW_RADII,
-                                  LOWER_JAW_Z_SCALE, False) - 1.0
             name = f"tooth_D_{side}_{i}"
-            horn(name, [(x, y, root_z), (x, y - 0.3, (root_z + 267.0) * 0.5),
-                        (x * 0.99, y - 0.6, 267.0)], 1.8, BONE)
+            lower_tooth(name, s * width, y, 267.0, 1.8)
             teeth.append(name)
+        name = f"tooth_DS_{side}_0"
+        lower_tooth(name, s * 3.5, -82, 264.0, 1.1)
+        teeth.append(name)
     for i, x in enumerate((-4.0, 4.0)):
         name = f"tooth_front_{i}"
         upper_tooth(name, x, -84, 269.0, 1.9)
@@ -389,7 +393,7 @@ def build_teeth_and_claws() -> None:
             y = -79 - (3 if j == 1 else 0)
             name = f"claw_F_{side}_{j}"
             horn(name, [(x, y + 2, 31), (x + s * dx * 0.06, y - 5, 23),
-                        (x + s * dx * 0.12, y - 10, 11)], 3.2, BONE)
+                        (x + s * dx * 0.12, y - 10, 11)], 2.8, BONE)
             front_claws.append(name)
         all_claws.extend(front_claws)
         hind_claws = []
@@ -398,7 +402,7 @@ def build_teeth_and_claws() -> None:
             y = -66 - (3 if j == 1 else 0)
             name = f"claw_H_{side}_{j}"
             horn(name, [(x, y + 2, 34), (x + s * dx * 0.10, y - 5, 31),
-                        (x + s * dx * 0.18, y - 11, 26)], 3.0, BONE)
+                        (x + s * dx * 0.18, y - 11, 26)], 2.6, BONE)
             hind_claws.append(name)
         all_claws.extend(hind_claws)
     add("claws = union [" + ", ".join(all_claws) + "]")
@@ -408,6 +412,16 @@ def build_teeth_and_claws() -> None:
 def build_spines_and_tail_fin() -> None:
     add("\n# Спинной гребень и листовидный наконечник хвоста.")
     spines = []
+    # Непрерывный dorsal-ряд закрывает широкую голую полосу на спине.
+    # Это крупные наросты, а не обход штатной чешуи отдельными пластинами.
+    for i, (root, mid, tip, r) in enumerate((
+            ((0, 56, 127), (0, 69, 139), (0, 81, 153), 5.5),
+            ((0, 53, 151), (0, 67, 164), (0, 78, 179), 5.2),
+            ((0, 35, 176), (0, 49, 190), (0, 60, 205), 4.8),
+            ((0, 25, 198), (0, 38, 213), (0, 47, 228), 4.4))):
+        name = f"spine_dorsal_{i}"
+        horn(name, [root, mid, tip], r)
+        spines.append(name)
     for i, (y, z, r) in enumerate(((20, 213, 5.0), (27, 235, 4.8),
                                    (22, 257, 4.2), (2, 281, 3.8))):
         name = f"spine_neck_{i}"
@@ -437,8 +451,8 @@ def build_spines_and_tail_fin() -> None:
 def build_breast_plates() -> None:
     add("\n# Горло: одна центральная колонка штатной чешуи; грудь: крупные chevron-щитки.")
     add("throat_bed = scales body_bed kind=дракон "
-        "path=[[0,0,254],[0,0,228],[0,0,202]] rows=4 pitch=13 per_row=1 "
-        "length=24 width=30 thick=2.2 tilt=6 safe=да")
+        "path=[[0,0,242],[0,0,228],[0,0,202]] rows=4 pitch=13 per_row=1 "
+        "length=20 width=22 thick=1.6 tilt=5 safe=да")
     plates = []
     torso_sections = ((28, 36, 122, 45), (10, 32, 158, 53), (-2, 33, 194, 45))
     neck_path = [(0, -5, 202), (0, 6, 229), (0, 5, 253), (0, -15, 276)]
@@ -462,19 +476,19 @@ def build_breast_plates() -> None:
         return min(candidates)
 
     levels = (190, 176, 162, 148, 134, 120)
-    offsets = (4.0, 4.0, 5.0, 5.0, 4.0, 4.0)
+    offsets = (2.0, 2.0, 2.2, 2.2, 2.0, 2.0)
     for i, z in enumerate(levels):
         t = (i + 2) / 7.0  # прежние проверенные ширины шести грудных рядов
         half = 18 + 16 * t + 2 * math.sin(math.pi * t)
         front = front_at(z)
         # Погружённая задняя зона даёт сплошной контакт без кольца и видимых корней.
         y = front + offsets[i]
-        outline = [(-half, 4), (-half * .55, 5), (0, 1.5),
-                   (half * .55, 5), (half, 4), (half * .65, -4),
-                   (0, -8), (-half * .65, -4)]
+        outline = [(-half, 6), (-half * .55, 7), (0, 2.5),
+                   (half * .55, 7), (half, 6), (half * .65, -5),
+                   (0, -10), (-half * .65, -5)]
         name = f"breast_{i}"
         add(f"{name} = membrane root=[0,0] outline={points(outline)} "
-            f"camber=4.2 thick=2.2 rings=7 color={BODY} rough=0.75")
+            f"camber=2.4 thick=2.0 rings=8 color={BODY} rough=0.75")
         add(f"rotate [{name}] angle=90 axis=x")
         add(f"translate [{name}] offset=[0,{y:.3f},{z}]")
         plates.append(name)
@@ -499,12 +513,17 @@ def build_scales() -> None:
             f"pitch={fmt(pitch)} per_row={per_row} length={fmt(length)} "
             f"thick={fmt(thick)} tilt={fmt(tilt)} safe=да seed={seed}")
 
-    emit_paths("Торс и шея", [body_path], 9.0, 16, 11.0, 0.7, 10.0, 2)
+    emit_paths("Торс и шея: приподнятые перекрывающиеся листы, не борозды",
+               [body_path], 9.0, 16, 11.0, 0.9, 18.0, 2)
     emit_paths("Передние конечности: мелкие пластины без бахромы",
-               [front_r, front_l], 6.5, 10, 7.5, 0.6, 8.0, 4)
-    emit_paths("Задние конечности", [hind_r, hind_l], 8.5, 12, 10.0, 0.7, 10.0, 6)
-    emit_paths("Хвост: более крупные ряды у основания",
-               [TAIL_PATH], 10.0, 12, 12.0, 0.75, 12.0, 8)
+               [front_r, front_l], 6.5, 10, 7.5, 0.75, 16.0, 4)
+    emit_paths("Задние конечности", [hind_r, hind_l], 8.5, 12, 10.0, 0.85, 18.0, 6)
+    emit_paths("Хвост: крупные листы у основания",
+               [TAIL_PATH[:4]], 10.0, 12, 12.0, 0.85, 16.0, 8)
+    emit_paths("Хвост: средний диаметр",
+               [TAIL_PATH[3:6]], 8.0, 10, 9.0, 0.7, 14.0, 9)
+    emit_paths("Хвост: мелкие пластины на тонком изгибе, без бахромы",
+               [TAIL_PATH[5:]], 5.0, 8, 6.0, 0.55, 9.0, 10)
 
 
 def build_base() -> None:
