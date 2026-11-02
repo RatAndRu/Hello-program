@@ -119,6 +119,7 @@ jobs:
               name = path.name
               return (name == 'Forma3D.exe'
                       or (name.startswith('Forma3D-') and name.endswith('-windows.zip'))
+                      or (name.startswith('Forma3D-') and name.endswith('-exe.zip'))
                       or name.endswith(('.glb', '.forma'))
                       or name in {'human_skeleton.LICENSE.txt',
                                   'human_skeleton_original.audit.json'})
@@ -139,6 +140,9 @@ jobs:
           windows = list(target.glob('Forma3D-*-windows.zip'))
           if len(windows) != 1:
               missing.append('ровно один Forma3D-*-windows.zip')
+          exe_only = list(target.glob('Forma3D-*-exe.zip'))
+          if len(exe_only) != 1:
+              missing.append('ровно один Forma3D-*-exe.zip')
           if missing:
               raise SystemExit('В CI-артефакте отсутствует: ' + ', '.join(missing))
           print(f'Подготовлено {len(files)} файлов из проверенного CI-артефакта')
