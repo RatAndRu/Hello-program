@@ -30,6 +30,7 @@
 | 11 | [primitives_gap_analysis.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/primitives_gap_analysis.md) | аудит базы примитивов: 227 команд, 122 примитива, пробелы по 20 областям, критерий «делать примитивом», приоритеты P0–P2 | 13 |
 | 12 | [sketch_and_families.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/sketch_and_families.md) | разбор вопросов к аудиту: контур и кривые, виды пружин, семейства и цена команды в промпте, «зачем математика», шпонка, орнамент; исправления отчёта | 9 |
 | 13 | [origami_analysis.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/origami_analysis.md) | оригами: двенадцать складок и семь баз с литературой, замеры сгибания (угол, слои, второй сгиб), чего нет в DSL и приоритеты P0–P2, шаг «сложить ради кромки», соединения без клея, просить ИИ придумать модель, малоизвестные приёмы | 10 |
+| 14 | [own_engine_and_model.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/own_engine_and_model.md) | свой движок против готового рантайма: двенадцать слоёв и их объём, «управление нейросетью» как MCP + DSL, своя сеть на 1,7–4,4 M, лимиты и правила GitHub Actions, бюджет обучения по замерам, план на 6 недель с числовыми воротами | 9 |
 
 Схемы (SVG, встраиваются в документы):
 
@@ -43,7 +44,9 @@
 * [img/origami_joints.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/origami_joints.svg) — шесть соединений без клея и их проверки;
 * [img/origami_ai_pipeline.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/origami_ai_pipeline.svg) — семь шагов «ИИ + алгоритм»;
 * [img/origami_bad_cases.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/origami_bad_cases.svg) — шесть провалов и лечение;
-* генераторы схем: [make_topology_svg.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/make_topology_svg.py), [make_origami_svg.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/make_origami_svg.py) (оба с `--check`), замеры — [origami_probe.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/origami_probe.py).
+* [img/engine_layers.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/engine_layers.svg) — двенадцать слоёв движка и статус в ФОРМЕ;
+* [img/nn_where.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/nn_where.svg) — где живёт нейросеть: данные, обучение, запуск;
+* генераторы схем: [make_topology_svg.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/make_topology_svg.py), [make_origami_svg.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/make_origami_svg.py) (оба с `--check`), замеры — [origami_probe.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/origami_probe.py)., [make_engine_svg.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/make_engine_svg.py) (все с `--check`), бюджет обучения — [train_budget.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/train_budget.py).
 
 ---
 
