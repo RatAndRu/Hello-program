@@ -1,0 +1,1 @@
+{"path": "out/bracket_from_forma.scad", "mode": "script", "objects": 1, "bytes": 745, "has_polyhedron": false, "lines": 28}

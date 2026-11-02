@@ -1,0 +1,8 @@
+— разобрали bracket_from_forma.scad: 4 строк DSL
+
+plita0 = box size=[80,60,6] center=да at=[0,0,-3]
+h1 = cylinder radius=2.5 height=20 at=[-28,0,-6]
+h2 = cylinder radius=2.5 height=20 at=[28,0,-6]
+plita = difference [plita0] [h1] [h2]
+
+— объём из .scad: 28.570 см³, треугольников 148, замкнуто True
