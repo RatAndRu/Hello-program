@@ -642,16 +642,20 @@ def build(script: str, previous_analysis: dict | None = None,
         visible = scene.visible_solids()
         if not visible:
             if not scene.objects:
-                # все объекты удалены — честная пустая сцена
-                result.empty = True
+                if scene.contours and not scene.had_solids:
+                    # Исходная сцена только из аналитических контуров валидна.
+                    result.empty = True
+                elif upto is not None:
+                    # Кадр до первого тела — нормальный пустой предпросмотр.
+                    result.empty = True
+                else:
+                    # Сохраняем прежний контракт: «удалить all» — ошибка сборки.
+                    raise DslError("В сцене нет видимых объектов.")
             elif upto is not None:
-                # кадр сборки до первого объекта — это нормально, покажем пустую сцену
                 result.empty = True
-            elif scene.objects:
+            else:
                 raise DslError("Все объекты скрыты — покажите нужный командой show.",
                                hint="Например: show корпус")
-            else:
-                raise DslError("В сцене нет видимых объектов.")
     except FormaError as exc:
         if exc.line is None:
             exc.line = scene.line

@@ -95,6 +95,9 @@ class Scene:
         # ключевые кадры по объектам: {имя: [{t, pos, rot, scale, line}, ...]}
         self.keys: dict[str, list[dict]] = {}
         self.objects: dict[str, Solid] = {}
+        # Отличает исходную contour-only сцену от удаления всех тел: второе
+        # по прежнему контракту остаётся ошибкой «нет видимых объектов».
+        self.had_solids = False
         # Аналитические 2D-контуры: не твёрдые тела и не самостоятельный GLB,
         # но переиспользуются extrude/lathe/loft/sweep и входят в semantic diff.
         self.contours: dict[str, Any] = {}
@@ -127,6 +130,7 @@ class Scene:
                           "line": self.line if line is None else line})
 
     def add(self, solid: Solid) -> Solid:
+        self.had_solids = True
         self.last_replaced = self.objects.get(solid.name)
         if solid.name in self.objects:
             self.objects.pop(solid.name)
