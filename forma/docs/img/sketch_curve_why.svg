@@ -1,0 +1,146 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1030" viewBox="0 0 1000 1030" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif">
+<title>Зачем контуру кривые</title>
+<rect width="1000" height="1030" fill="#ffffff"/>
+<text x="28" y="42" font-size="22" fill="#1f2933" text-anchor="start" font-weight="bold">Зачем контуру кривые: где заканчивается список точек</text>
+<text x="28" y="68" font-size="13" fill="#6b7785" text-anchor="start" font-weight="normal">Все числа посчитаны по файлам репозитория; это не иллюстрации «на глаз».</text>
+<line x1="28" y1="86" x2="972" y2="86" stroke="#d5dbe1"/>
+<rect x="28" y="104" width="944" height="268" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="104" width="5" height="268" rx="2" fill="#c0392b"/>
+<text x="48" y="136" font-size="15.5" fill="#1f2933" text-anchor="start" font-weight="bold">1. Один и тот же овал: 140 чисел или два</text>
+<text x="48" y="159" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">в examples/anime_face.forma контур века набран 70 точками с шагом 5.67 мм</text>
+<polygon points="286.00,254.00 285.65,259.56 284.59,265.07 282.83,270.49 280.39,275.79 277.29,280.90 273.54,285.80 269.19,290.44 264.27,294.79 258.81,298.81 252.87,302.47 246.48,305.74 239.70,308.60 232.59,311.01 225.19,312.97 217.58,314.45 209.81,315.44 201.95,315.94 194.05,315.94 186.19,315.44 178.42,314.45 170.81,312.97 163.41,311.01 156.30,308.60 149.52,305.74 143.13,302.47 137.19,298.81 131.73,294.79 126.81,290.44 122.46,285.80 118.71,280.90 115.61,275.79 113.17,270.49 111.41,265.07 110.35,259.56 110.00,254.00 110.35,248.44 111.41,242.93 113.17,237.51 115.61,232.21 118.71,227.10 122.46,222.20 126.81,217.56 131.73,213.21 137.19,209.19 143.13,205.53 149.52,202.26 156.30,199.40 163.41,196.99 170.81,195.03 178.42,193.55 186.19,192.56 194.05,192.06 201.95,192.06 209.81,192.56 217.58,193.55 225.19,195.03 232.59,196.99 239.70,199.40 246.48,202.26 252.87,205.53 258.81,209.19 264.27,213.21 269.19,217.56 273.54,222.20 277.29,227.10 280.39,232.21 282.83,237.51 284.59,242.93 285.65,248.44" fill="rgba(192,57,43,.06)" stroke="#c0392b" stroke-width="1.2"/>
+<circle cx="286.00" cy="254.00" r="1.7" fill="#c0392b"/>
+<circle cx="285.65" cy="259.56" r="1.7" fill="#c0392b"/>
+<circle cx="284.59" cy="265.07" r="1.7" fill="#c0392b"/>
+<circle cx="282.83" cy="270.49" r="1.7" fill="#c0392b"/>
+<circle cx="280.39" cy="275.79" r="1.7" fill="#c0392b"/>
+<circle cx="277.29" cy="280.90" r="1.7" fill="#c0392b"/>
+<circle cx="273.54" cy="285.80" r="1.7" fill="#c0392b"/>
+<circle cx="269.19" cy="290.44" r="1.7" fill="#c0392b"/>
+<circle cx="264.27" cy="294.79" r="1.7" fill="#c0392b"/>
+<circle cx="258.81" cy="298.81" r="1.7" fill="#c0392b"/>
+<circle cx="252.87" cy="302.47" r="1.7" fill="#c0392b"/>
+<circle cx="246.48" cy="305.74" r="1.7" fill="#c0392b"/>
+<circle cx="239.70" cy="308.60" r="1.7" fill="#c0392b"/>
+<circle cx="232.59" cy="311.01" r="1.7" fill="#c0392b"/>
+<circle cx="225.19" cy="312.97" r="1.7" fill="#c0392b"/>
+<circle cx="217.58" cy="314.45" r="1.7" fill="#c0392b"/>
+<circle cx="209.81" cy="315.44" r="1.7" fill="#c0392b"/>
+<circle cx="201.95" cy="315.94" r="1.7" fill="#c0392b"/>
+<circle cx="194.05" cy="315.94" r="1.7" fill="#c0392b"/>
+<circle cx="186.19" cy="315.44" r="1.7" fill="#c0392b"/>
+<circle cx="178.42" cy="314.45" r="1.7" fill="#c0392b"/>
+<circle cx="170.81" cy="312.97" r="1.7" fill="#c0392b"/>
+<circle cx="163.41" cy="311.01" r="1.7" fill="#c0392b"/>
+<circle cx="156.30" cy="308.60" r="1.7" fill="#c0392b"/>
+<circle cx="149.52" cy="305.74" r="1.7" fill="#c0392b"/>
+<circle cx="143.13" cy="302.47" r="1.7" fill="#c0392b"/>
+<circle cx="137.19" cy="298.81" r="1.7" fill="#c0392b"/>
+<circle cx="131.73" cy="294.79" r="1.7" fill="#c0392b"/>
+<circle cx="126.81" cy="290.44" r="1.7" fill="#c0392b"/>
+<circle cx="122.46" cy="285.80" r="1.7" fill="#c0392b"/>
+<circle cx="118.71" cy="280.90" r="1.7" fill="#c0392b"/>
+<circle cx="115.61" cy="275.79" r="1.7" fill="#c0392b"/>
+<circle cx="113.17" cy="270.49" r="1.7" fill="#c0392b"/>
+<circle cx="111.41" cy="265.07" r="1.7" fill="#c0392b"/>
+<circle cx="110.35" cy="259.56" r="1.7" fill="#c0392b"/>
+<circle cx="110.00" cy="254.00" r="1.7" fill="#c0392b"/>
+<circle cx="110.35" cy="248.44" r="1.7" fill="#c0392b"/>
+<circle cx="111.41" cy="242.93" r="1.7" fill="#c0392b"/>
+<circle cx="113.17" cy="237.51" r="1.7" fill="#c0392b"/>
+<circle cx="115.61" cy="232.21" r="1.7" fill="#c0392b"/>
+<circle cx="118.71" cy="227.10" r="1.7" fill="#c0392b"/>
+<circle cx="122.46" cy="222.20" r="1.7" fill="#c0392b"/>
+<circle cx="126.81" cy="217.56" r="1.7" fill="#c0392b"/>
+<circle cx="131.73" cy="213.21" r="1.7" fill="#c0392b"/>
+<circle cx="137.19" cy="209.19" r="1.7" fill="#c0392b"/>
+<circle cx="143.13" cy="205.53" r="1.7" fill="#c0392b"/>
+<circle cx="149.52" cy="202.26" r="1.7" fill="#c0392b"/>
+<circle cx="156.30" cy="199.40" r="1.7" fill="#c0392b"/>
+<circle cx="163.41" cy="196.99" r="1.7" fill="#c0392b"/>
+<circle cx="170.81" cy="195.03" r="1.7" fill="#c0392b"/>
+<circle cx="178.42" cy="193.55" r="1.7" fill="#c0392b"/>
+<circle cx="186.19" cy="192.56" r="1.7" fill="#c0392b"/>
+<circle cx="194.05" cy="192.06" r="1.7" fill="#c0392b"/>
+<circle cx="201.95" cy="192.06" r="1.7" fill="#c0392b"/>
+<circle cx="209.81" cy="192.56" r="1.7" fill="#c0392b"/>
+<circle cx="217.58" cy="193.55" r="1.7" fill="#c0392b"/>
+<circle cx="225.19" cy="195.03" r="1.7" fill="#c0392b"/>
+<circle cx="232.59" cy="196.99" r="1.7" fill="#c0392b"/>
+<circle cx="239.70" cy="199.40" r="1.7" fill="#c0392b"/>
+<circle cx="246.48" cy="202.26" r="1.7" fill="#c0392b"/>
+<circle cx="252.87" cy="205.53" r="1.7" fill="#c0392b"/>
+<circle cx="258.81" cy="209.19" r="1.7" fill="#c0392b"/>
+<circle cx="264.27" cy="213.21" r="1.7" fill="#c0392b"/>
+<circle cx="269.19" cy="217.56" r="1.7" fill="#c0392b"/>
+<circle cx="273.54" cy="222.20" r="1.7" fill="#c0392b"/>
+<circle cx="277.29" cy="227.10" r="1.7" fill="#c0392b"/>
+<circle cx="280.39" cy="232.21" r="1.7" fill="#c0392b"/>
+<circle cx="282.83" cy="237.51" r="1.7" fill="#c0392b"/>
+<circle cx="284.59" cy="242.93" r="1.7" fill="#c0392b"/>
+<circle cx="285.65" cy="248.44" r="1.7" fill="#c0392b"/>
+<text x="198" y="344" font-size="12" fill="#c0392b" text-anchor="middle" font-weight="bold">70 точек · 140 чисел</text>
+<text x="198" y="364" font-size="11" fill="#6b7785" text-anchor="middle" font-weight="normal">шаг 5.67 мм, связь с радиусом потеряна</text>
+<ellipse cx="458" cy="254" rx="88" ry="62" fill="rgba(30,132,73,.06)" stroke="#1e8449" stroke-width="1.8"/>
+<line x1="370" y1="254" x2="546" y2="254" stroke="#1e8449" stroke-width="0.9" stroke-dasharray="4 4"/>
+<line x1="458" y1="192" x2="458" y2="316" stroke="#1e8449" stroke-width="0.9" stroke-dasharray="4 4"/>
+<text x="458" y="344" font-size="12" fill="#1e8449" text-anchor="middle" font-weight="bold">2 числа · дуга остаётся дугой</text>
+<text x="458" y="364" font-size="11" fill="#6b7785" text-anchor="middle" font-weight="normal">отклонение от идеального эллипса 0.27 мм</text>
+<text x="648" y="200" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">Что видно: контур «почти эллипс»</text>
+<text x="648" y="222" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">(0.27 мм), но записан как данные.</text>
+<text x="648" y="244" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal"></text>
+<text x="648" y="266" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">Профиль в DSL принимает только</text>
+<text x="648" y="288" font-size="12" fill="#c0392b" text-anchor="start" font-weight="normal">[[x, y], …] — подать кривую нечем,</text>
+<text x="648" y="310" font-size="12" fill="#c0392b" text-anchor="start" font-weight="normal">поэтому её копируют точками.</text>
+<text x="648" y="332" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal"></text>
+<text x="648" y="354" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">При правке радиуса список надо</text>
+<text x="648" y="376" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">пересчитывать целиком.</text>
+<rect x="28" y="392" width="944" height="268" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="392" width="5" height="268" rx="2" fill="#1e8449"/>
+<text x="48" y="424" font-size="15.5" fill="#1f2933" text-anchor="start" font-weight="bold">2. У линии нет толщины — толщину даёт операция</text>
+<text x="48" y="447" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">контур задаёт сечение; тело появляется на выдавливании, вращении или протяжке</text>
+<polygon points="256.0,542.0 255.7,545.0 254.8,547.9 253.3,550.8 251.3,553.6 248.7,556.4 245.5,559.0 241.9,561.5 237.8,563.9 233.2,566.0 228.1,568.0 222.7,569.9 217.0,571.4 211.0,572.8 204.7,573.9 198.2,574.8 191.5,575.5 184.8,575.9 178.0,576.0 171.2,575.9 164.5,575.5 157.8,574.8 151.3,573.9 145.0,572.8 139.0,571.4 133.3,569.9 127.9,568.0 122.8,566.0 118.2,563.9 114.1,561.5 110.5,559.0 107.3,556.4 104.7,553.6 102.7,550.8 101.2,547.9 100.3,545.0 100.0,542.0 100.3,539.0 101.2,536.1 102.7,533.2 104.7,530.4 107.3,527.6 110.5,525.0 114.1,522.5 118.2,520.1 122.8,518.0 127.9,516.0 133.3,514.1 139.0,512.6 145.0,511.2 151.3,510.1 157.8,509.2 164.5,508.5 171.2,508.1 178.0,508.0 184.8,508.1 191.5,508.5 198.2,509.2 204.7,510.1 211.0,511.2 217.0,512.6 222.7,514.1 228.1,516.0 233.2,518.0 237.8,520.1 241.9,522.5 245.5,525.0 248.7,527.6 251.3,530.4 253.3,533.2 254.8,536.1 255.7,539.0" fill="none" stroke="#2b6cb0" stroke-width="2.6"/>
+<text x="178" y="610" font-size="12" fill="#2b6cb0" text-anchor="middle" font-weight="bold">контур: замкнутая кривая</text>
+<text x="178" y="630" font-size="11" fill="#6b7785" text-anchor="middle" font-weight="normal">толщина 0</text>
+<line x1="282" y1="536" x2="340" y2="536" stroke="#1f2933" stroke-width="1.6"/>
+<polygon points="352,536 339,530 339,542" fill="#1f2933"/>
+<text x="317.0" y="522" font-size="12" fill="#1f2933" text-anchor="middle" font-weight="bold">extrude</text>
+<text x="317.0" y="558" font-size="11" fill="#6b7785" text-anchor="middle" font-weight="normal">height = h</text>
+<polygon points="400.0,496.0 400.2,493.8 400.7,491.6 401.5,489.4 402.7,487.2 404.1,485.1 405.9,483.0 408.0,481.0 410.5,479.0 413.1,477.1 416.1,475.3 419.4,473.6 422.8,472.0 426.6,470.4 430.5,469.0 434.7,467.7 439.0,466.6 443.5,465.5 448.2,464.6 452.9,463.8 457.8,463.2 462.8,462.7 467.8,462.3 472.9,462.1 478.0,462.0 483.1,462.1 488.2,462.3 493.2,462.7 498.2,463.2 503.1,463.8 507.8,464.6 512.5,465.5 517.0,466.6 521.3,467.7 525.5,469.0 529.4,470.4 533.2,472.0 536.6,473.6 539.9,475.3 542.9,477.1 545.5,479.0 548.0,481.0 550.1,483.0 551.9,485.1 553.3,487.2 554.5,489.4 555.3,491.6 555.8,493.8 556.0,496.0 556.0,576.0 556.0,576.0 555.8,578.2 555.3,580.4 554.5,582.6 553.3,584.8 551.9,586.9 550.1,589.0 548.0,591.0 545.5,593.0 542.9,594.9 539.9,596.7 536.6,598.4 533.2,600.0 529.4,601.6 525.5,603.0 521.3,604.3 517.0,605.4 512.5,606.5 507.8,607.4 503.1,608.2 498.2,608.8 493.2,609.3 488.2,609.7 483.1,609.9 478.0,610.0 472.9,609.9 467.8,609.7 462.8,609.3 457.8,608.8 452.9,608.2 448.2,607.4 443.5,606.5 439.0,605.4 434.7,604.3 430.5,603.0 426.6,601.6 422.8,600.0 419.4,598.4 416.1,596.7 413.1,594.9 410.5,593.0 408.0,591.0 405.9,589.0 404.1,586.9 402.7,584.8 401.5,582.6 400.7,580.4 400.2,578.2 400.0,576.0 400.0,496.0" fill="rgba(43,108,176,.12)" stroke="#2b6cb0" stroke-width="1.8"/>
+<ellipse cx="478.0" cy="496.0" rx="78.0" ry="34.0" fill="rgba(43,108,176,.20)" stroke="#2b6cb0" stroke-width="1.4"/>
+<text x="478" y="644" font-size="12" fill="#2b6cb0" text-anchor="middle" font-weight="bold">тело с толщиной h</text>
+<text x="648" y="488" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">Те же правила у lathe (вращение)</text>
+<text x="648" y="510" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">и sweep (протяжка по пути).</text>
+<text x="648" y="532" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal"></text>
+<text x="648" y="554" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">Дуга не «тоньше» линии: она задаёт</text>
+<text x="648" y="576" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">форму, а размер детали задаёт</text>
+<text x="648" y="598" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">операция над контуром.</text>
+<text x="648" y="620" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal"></text>
+<text x="648" y="642" font-size="12" fill="#1e8449" text-anchor="start" font-weight="normal">Нужен график кривой в DSL, а не её</text>
+<text x="648" y="664" font-size="12" fill="#1e8449" text-anchor="start" font-weight="normal">копия из точек.</text>
+<rect x="28" y="680" width="944" height="310" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="680" width="5" height="310" rx="2" fill="#c0392b"/>
+<text x="48" y="712" font-size="15.5" fill="#1f2933" text-anchor="start" font-weight="bold">3. Зуб шестерни: трапеция не входит в зацепление</text>
+<text x="48" y="735" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">gear teeth=20 module=2 — в коде профиль зуба задан четырьмя точками (ops_shapes.py)</text>
+<line x1="122" y1="916" x2="314" y2="916" stroke="#d5dbe1" stroke-width="1"/>
+<line x1="122" y1="856.0" x2="314" y2="856.0" stroke="#d5dbe1" stroke-width="1" stroke-dasharray="4 4"/>
+<text x="274" y="920" font-size="10.5" fill="#6b7785" text-anchor="start" font-weight="normal">r 17.5 · основание</text>
+<text x="274" y="860.0" font-size="10.5" fill="#6b7785" text-anchor="start" font-weight="normal">r 20 · делительная</text>
+<polygon points="260.9,916.0 255.1,862.0 246.8,808.0 189.2,808.0 180.9,862.0 175.1,916.0" fill="rgba(192,57,43,.08)" stroke="#c0392b" stroke-width="2" stroke-dasharray="6 3"/>
+<polygon points="260.5,916.0 260.7,913.8 261.0,911.5 261.2,909.2 261.4,907.0 261.7,904.8 261.9,902.5 262.1,900.2 262.3,898.0 262.6,895.8 262.8,893.5 263.0,891.2 263.3,889.0 263.5,886.8 263.7,884.5 263.7,882.2 263.6,880.0 263.5,877.8 263.2,875.5 262.9,873.2 262.5,871.0 262.1,868.8 261.6,866.5 261.1,864.2 260.6,862.0 259.9,859.8 259.3,857.5 258.6,855.2 257.9,853.0 257.1,850.8 256.3,848.5 255.5,846.2 254.6,844.0 253.7,841.8 252.7,839.5 251.7,837.2 250.7,835.0 249.7,832.8 248.6,830.5 247.5,828.2 246.3,826.0 245.2,823.8 244.0,821.5 242.7,819.2 241.5,817.0 240.2,814.8 238.8,812.5 237.5,810.2 236.1,808.0 199.9,808.0 198.5,810.2 197.2,812.5 195.8,814.8 194.5,817.0 193.3,819.2 192.0,821.5 190.8,823.8 189.7,826.0 188.5,828.2 187.4,830.5 186.3,832.8 185.3,835.0 184.3,837.2 183.3,839.5 182.3,841.8 181.4,844.0 180.5,846.2 179.7,848.5 178.9,850.8 178.1,853.0 177.4,855.2 176.7,857.5 176.1,859.8 175.4,862.0 174.9,864.2 174.4,866.5 173.9,868.8 173.5,871.0 173.1,873.2 172.8,875.5 172.5,877.8 172.4,880.0 172.3,882.2 172.3,884.5 172.5,886.8 172.7,889.0 173.0,891.2 173.2,893.5 173.4,895.8 173.7,898.0 173.9,900.2 174.1,902.5 174.3,904.8 174.6,907.0 174.8,909.2 175.0,911.5 175.3,913.8 175.5,916.0" fill="none" stroke="#1e8449" stroke-width="2.4"/>
+<line x1="199.9" y1="808.0" x2="189.2" y2="808.0" stroke="#1f2933" stroke-width="1.2" stroke-dasharray="2 2"/>
+<text x="200.59063221774693" y="800.0" font-size="11" fill="#1f2933" text-anchor="start" font-weight="bold">0.41 мм</text>
+<text x="48" y="946" font-size="11.5" fill="#6b7785" text-anchor="start" font-weight="normal">профиль зуба, развёрнутый по радиусу</text>
+<line x1="408" y1="780" x2="434" y2="780" stroke="#1e8449" stroke-width="2.4"/>
+<text x="444" y="784" font-size="12" fill="#1e8449" text-anchor="start" font-weight="bold">эвольвента — нужна кривая (40+ точек)</text>
+<line x1="408" y1="810" x2="434" y2="810" stroke="#c0392b" stroke-width="2.4" stroke-dasharray="6 3"/>
+<text x="444" y="814" font-size="12" fill="#c0392b" text-anchor="start" font-weight="bold">трапеция из 4 точек — как сейчас</text>
+<text x="408" y="848" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">Модуль 2 мм, 20 зубьев: профили</text>
+<text x="408" y="870" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">расходятся на 0.41 мм.</text>
+<text x="408" y="892" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal"></text>
+<text x="408" y="914" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">Толщина зуба на вершине:</text>
+<text x="408" y="936" font-size="12" fill="#c0392b" text-anchor="start" font-weight="normal">2.21 мм у трапеции против 1.39 мм</text>
+<text x="408" y="958" font-size="12" fill="#c0392b" text-anchor="start" font-weight="normal">у эвольвенты — на 59 % толще.</text>
+<text x="408" y="980" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">Такой зуб не сядет в паз настоящей</text>
+<text x="408" y="1002" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">шестерни: заклинивание или люфт.</text>
+</svg>

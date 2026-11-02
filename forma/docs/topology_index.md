@@ -28,12 +28,15 @@
 | 9 | [modeling_prompt_ru.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/modeling_prompt_ru.md) | действующий промпт ИИ-моделировщика | — |
 | 10 | [photo_to_model.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/photo_to_model.md) | воспроизведение объекта по фотографии: паспорт кадра, ракурс рендером, число вместо «похоже» | 12 |
 | 11 | [primitives_gap_analysis.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/primitives_gap_analysis.md) | аудит базы примитивов: 227 команд, 122 примитива, пробелы по 20 областям, критерий «делать примитивом», приоритеты P0–P2 | 13 |
+| 12 | [sketch_and_families.md](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/sketch_and_families.md) | разбор вопросов к аудиту: контур и кривые, виды пружин, семейства и цена команды в промпте, «зачем математика», шпонка, орнамент; исправления отчёта | 9 |
 
 Схемы (SVG, встраиваются в документы):
 
 * [img/mesh_chord_error.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/mesh_chord_error.svg) — хорда и число сегментов;
 * [img/face_loops.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/face_loops.svg) — карта петель лица, правильно/неправильно;
 * [img/topology_bad_good.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/topology_bad_good.svg) — пять дефектов и лечение;
+* [img/sketch_curve_why.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/sketch_curve_why.svg) — почему контуру нужны кривые;
+* [img/families_vs_count.svg](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/img/families_vs_count.svg) — пять видов пружин, цена команды, вариант против команды;
 * генератор схем: [make_topology_svg.py](https://github.com/RatAndRu/Hello-program/blob/arena/4e8fdd4f-hello-program/forma/docs/make_topology_svg.py).
 
 ---

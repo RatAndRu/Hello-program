@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="995" viewBox="0 0 1000 995" font-family="DejaVu Sans, Segoe UI, Arial, sans-serif">
+<title>Семейства вместо количества</title>
+<rect width="1000" height="995" fill="#ffffff"/>
+<text x="28" y="42" font-size="22" fill="#1f2933" text-anchor="start" font-weight="bold">Семейства вместо количества: цена команды и цена варианта</text>
+<text x="28" y="68" font-size="13" fill="#6b7785" text-anchor="start" font-weight="normal">Числа посчитаны по реестру команд репозитория; внешние замеры по выбору инструментов — в тексте со ссылками.</text>
+<line x1="28" y1="86" x2="972" y2="86" stroke="#d5dbe1"/>
+<rect x="28" y="104" width="944" height="252" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="104" width="5" height="252" rx="2" fill="#1e8449"/>
+<text x="48" y="136" font-size="15.5" fill="#1f2933" text-anchor="start" font-weight="bold">A. Пять видов пружин — одна основа, разные концы и профиль</text>
+<text x="48" y="159" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">сжатия, растяжения, кручения, тарельчатая (Belleville), волновая</text>
+<ellipse cx="118" cy="212.0" rx="30" ry="10" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<ellipse cx="130" cy="219.0" rx="30" ry="10" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<ellipse cx="118" cy="226.0" rx="30" ry="10" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<ellipse cx="130" cy="233.0" rx="30" ry="10" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<ellipse cx="118" cy="240.0" rx="30" ry="10" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<line x1="94" y1="200" x2="154" y2="200" stroke="#2b6cb0" stroke-width="2.4"/>
+<line x1="94" y1="252" x2="154" y2="252" stroke="#2b6cb0" stroke-width="2.4"/>
+<text x="124" y="304" font-size="12" fill="#1f2933" text-anchor="middle" font-weight="bold">сжатия</text>
+<text x="124" y="322" font-size="11" fill="#6b7785" text-anchor="middle" font-weight="normal">торцы поджаты</text>
+<ellipse cx="304" cy="212.0" rx="30" ry="10" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<ellipse cx="316" cy="219.0" rx="30" ry="10" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<ellipse cx="304" cy="226.0" rx="30" ry="10" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<ellipse cx="316" cy="233.0" rx="30" ry="10" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<ellipse cx="304" cy="240.0" rx="30" ry="10" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<path d="M 280,198 L 268,184 L 306,176" fill="none" stroke="#2b6cb0" stroke-width="2.4"/>
+<path d="M 340,254 L 352,268 L 314,276" fill="none" stroke="#2b6cb0" stroke-width="2.4"/>
+<text x="310" y="304" font-size="12" fill="#1f2933" text-anchor="middle" font-weight="bold">растяжения</text>
+<text x="310" y="322" font-size="11" fill="#6b7785" text-anchor="middle" font-weight="normal">концы — крючки</text>
+<ellipse cx="476.5" cy="226" rx="7" ry="30" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<ellipse cx="489.5" cy="226" rx="7" ry="30" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<ellipse cx="502.5" cy="226" rx="7" ry="30" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<ellipse cx="515.5" cy="226" rx="7" ry="30" fill="none" stroke="#2b6cb0" stroke-width="1.9"/>
+<line x1="478" y1="196" x2="462" y2="186" stroke="#2b6cb0" stroke-width="2.4"/>
+<line x1="514" y1="256" x2="530" y2="266" stroke="#2b6cb0" stroke-width="2.4"/>
+<text x="496" y="304" font-size="12" fill="#1f2933" text-anchor="middle" font-weight="bold">кручения</text>
+<text x="496" y="322" font-size="11" fill="#6b7785" text-anchor="middle" font-weight="normal">ось поперёк, рычаги</text>
+<path d="M 642,222 L 672,204 L 692,222 L 722,204" fill="none" stroke="#2b6cb0" stroke-width="2.4"/>
+<path d="M 642,244 L 672,226 L 692,244 L 722,226" fill="none" stroke="#2b6cb0" stroke-width="2.4"/>
+<line x1="636" y1="250" x2="728" y2="250" stroke="#6b7785" stroke-width="0.9" stroke-dasharray="3 3"/>
+<text x="682" y="304" font-size="12" fill="#1f2933" text-anchor="middle" font-weight="bold">тарельчатая</text>
+<text x="682" y="322" font-size="11" fill="#6b7785" text-anchor="middle" font-weight="normal">профиль — конус</text>
+<polygon points="908.0,218.0 907.8,219.7 907.4,221.2 906.6,222.3 905.6,222.9 904.3,222.9 902.6,222.3 900.8,221.2 898.6,219.7 896.3,218.0 893.7,216.3 890.9,214.8 888.0,213.7 884.9,213.1 881.7,213.1 878.4,213.7 874.9,214.8 871.5,216.3 868.0,218.0 864.5,219.7 861.1,221.2 857.6,222.3 854.3,222.9 851.1,222.9 848.0,222.3 845.1,221.2 842.3,219.7 839.7,218.0 837.4,216.3 835.2,214.8 833.4,213.7 831.7,213.1 830.4,213.1 829.4,213.7 828.6,214.8 828.2,216.3 828.0,218.0 828.2,219.7 828.6,221.2 829.4,222.3 830.4,222.9 831.7,222.9 833.4,222.3 835.2,221.2 837.4,219.7 839.7,218.0 842.3,216.3 845.1,214.8 848.0,213.7 851.1,213.1 854.3,213.1 857.6,213.7 861.1,214.8 864.5,216.3 868.0,218.0 871.5,219.7 874.9,221.2 878.4,222.3 881.7,222.9 884.9,222.9 888.0,222.3 890.9,221.2 893.7,219.7 896.3,218.0 898.6,216.3 900.8,214.8 902.6,213.7 904.3,213.1 905.6,213.1 906.6,213.7 907.4,214.8 907.8,216.3 908.0,218.0 908.0,236.0 907.8,234.3 907.4,232.8 906.6,231.7 905.6,231.1 904.3,231.1 902.6,231.7 900.8,232.8 898.6,234.3 896.3,236.0 893.7,237.7 890.9,239.2 888.0,240.3 884.9,240.9 881.7,240.9 878.4,240.3 874.9,239.2 871.5,237.7 868.0,236.0 864.5,234.3 861.1,232.8 857.6,231.7 854.3,231.1 851.1,231.1 848.0,231.7 845.1,232.8 842.3,234.3 839.7,236.0 837.4,237.7 835.2,239.2 833.4,240.3 831.7,240.9 830.4,240.9 829.4,240.3 828.6,239.2 828.2,237.7 828.0,236.0 828.2,234.3 828.6,232.8 829.4,231.7 830.4,231.1 831.7,231.1 833.4,231.7 835.2,232.8 837.4,234.3 839.7,236.0 842.3,237.7 845.1,239.2 848.0,240.3 851.1,240.9 854.3,240.9 857.6,240.3 861.1,239.2 864.5,237.7 868.0,236.0 871.5,234.3 874.9,232.8 878.4,231.7 881.7,231.1 884.9,231.1 888.0,231.7 890.9,232.8 893.7,234.3 896.3,236.0 898.6,237.7 900.8,239.2 902.6,240.3 904.3,240.9 905.6,240.9 906.6,240.3 907.4,239.2 907.8,237.7 908.0,236.0" fill="rgba(43,108,176,.10)" stroke="#2b6cb0" stroke-width="2"/>
+<text x="868" y="304" font-size="12" fill="#1f2933" text-anchor="middle" font-weight="bold">волновая</text>
+<text x="868" y="322" font-size="11" fill="#6b7785" text-anchor="middle" font-weight="normal">торец — волна</text>
+<text x="48" y="344" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">Основа одна: винтовая линия или тело вращения. Отличаются концы, профиль витка и число витков.</text>
+<rect x="28" y="372" width="944" height="250" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="372" width="5" height="250" rx="2" fill="#b7791f"/>
+<text x="48" y="404" font-size="15.5" fill="#1f2933" text-anchor="start" font-weight="bold">B. Сколько стоит одна команда в промпте агента</text>
+<text x="48" y="427" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">посчитано по forma/instruction.py: 227 команд, знаки в UTF-8</text>
+<text x="361" y="461" font-size="11.5" fill="#6b7785" text-anchor="end" font-weight="normal">описание команды в реестре</text>
+<rect x="373" y="447" width="82.2" height="18" rx="3" fill="#1f2933" opacity="0.85"/>
+<text x="463.2015859030837" y="461" font-size="11.5" fill="#1f2933" text-anchor="start" font-weight="bold">343 зн. ≈ 107 токенов</text>
+<text x="361" y="493" font-size="11.5" fill="#6b7785" text-anchor="end" font-weight="normal">строка команды в полном каталоге</text>
+<rect x="373" y="479" width="281.5" height="18" rx="3" fill="#2b6cb0" opacity="0.85"/>
+<text x="662.4777092511013" y="493" font-size="11.5" fill="#2b6cb0" text-anchor="start" font-weight="bold">1173 зн. ≈ 367 токенов</text>
+<text x="361" y="525" font-size="11.5" fill="#6b7785" text-anchor="end" font-weight="normal">одно значение variant</text>
+<rect x="373" y="511" width="15.6" height="18" rx="3" fill="#1e8449" opacity="0.85"/>
+<text x="396.6" y="525" font-size="11.5" fill="#1e8449" text-anchor="start" font-weight="bold">65 зн. ≈ 20 токенов</text>
+<text x="48" y="556" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">Реестр 227 команд: 77749 знаков ≈ 24297 токенов. Каталог «все команды»: 83 тыс. токенов.</text>
+<text x="48" y="578" font-size="12" fill="#c0392b" text-anchor="start" font-weight="normal">Инструкция целиком: 283500 знаков ≈ 88594 тыс. токенов — это уже почти всё окно модели.</text>
+<text x="48" y="600" font-size="12" fill="#1e8449" text-anchor="start" font-weight="normal">+26 команд × 367 токенов ≈ 9.5 тыс. токенов; +60 значений variant × 20 ≈ 1.2 тыс.</text>
+<rect x="28" y="638" width="944" height="320" rx="8" fill="#fcfdfe" stroke="#d5dbe1"/>
+<rect x="28" y="638" width="5" height="320" rx="2" fill="#1e8449"/>
+<text x="48" y="670" font-size="15.5" fill="#1f2933" text-anchor="start" font-weight="bold">C. Вариант внутри команды против новой команды</text>
+<text x="48" y="693" font-size="12" fill="#6b7785" text-anchor="start" font-weight="normal">одинаковое покрытие — разная цена в выборе и в промпте</text>
+<text x="68" y="730" font-size="13" fill="#c0392b" text-anchor="start" font-weight="bold">ПЯТЬ КОМАНД</text>
+<text x="528" y="730" font-size="13" fill="#1e8449" text-anchor="start" font-weight="bold">ОДНА КОМАНДА С ВАРИАНТОМ</text>
+<rect x="68" y="742" width="330" height="24" rx="4" fill="#fdeceb" stroke="#c0392b" stroke-width="0.8"/>
+<text x="78" y="760" font-size="12.5" fill="#c0392b" text-anchor="start" font-weight="normal">spring_compression</text>
+<rect x="68" y="768" width="330" height="24" rx="4" fill="#fdeceb" stroke="#c0392b" stroke-width="0.8"/>
+<text x="78" y="786" font-size="12.5" fill="#c0392b" text-anchor="start" font-weight="normal">spring_extension</text>
+<rect x="68" y="794" width="330" height="24" rx="4" fill="#fdeceb" stroke="#c0392b" stroke-width="0.8"/>
+<text x="78" y="812" font-size="12.5" fill="#c0392b" text-anchor="start" font-weight="normal">spring_torsion</text>
+<rect x="68" y="820" width="330" height="24" rx="4" fill="#fdeceb" stroke="#c0392b" stroke-width="0.8"/>
+<text x="78" y="838" font-size="12.5" fill="#c0392b" text-anchor="start" font-weight="normal">spring_disc</text>
+<rect x="68" y="846" width="330" height="24" rx="4" fill="#fdeceb" stroke="#c0392b" stroke-width="0.8"/>
+<text x="78" y="864" font-size="12.5" fill="#c0392b" text-anchor="start" font-weight="normal">spring_wave</text>
+<text x="68" y="890" font-size="11.5" fill="#6b7785" text-anchor="start" font-weight="normal">пять описаний, пять примеров, пять мест, где можно ошибиться</text>
+<rect x="528" y="740" width="330" height="192" rx="6" fill="#eaf5ee" stroke="#1e8449" stroke-width="1.2"/>
+<text x="540" y="764" font-size="13" fill="#1e8449" text-anchor="start" font-weight="bold">spring variant=…</text>
+<text x="554" y="784" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">· сжатия</text>
+<text x="554" y="803" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">· растяжения</text>
+<text x="554" y="822" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">· кручения</text>
+<text x="554" y="841" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">· тарельчатая</text>
+<text x="554" y="860" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">· волновая</text>
+<text x="540" y="916" font-size="11.5" fill="#6b7785" text-anchor="start" font-weight="normal">одно описание, общая физика, проверка одна</text>
+<text x="48" y="936" font-size="12" fill="#1f2933" text-anchor="start" font-weight="normal">Правило: новый примитив — только если у формы другая геометрия, а не другой режим работы той же геометрии.</text>
+</svg>
