@@ -44,8 +44,13 @@ jobs:
           mkdir -p out
           cd forma/docs/openscad
           # STL — то, что можно открыть в любом слайсере или в ФОРМЕ
-          openscad -o ../../../out/bracket.stl bracket.scad
-          openscad -o ../../../out/vase.stl vase.scad
+          # время рендера меряем отдельно: это главное отличие от ФОРМЫ,
+          # где та же деталь строится за десятки миллисекунд
+          /usr/bin/time -f "bracket.stl: OpenSCAD %e с" -o ../../../out/timing.txt \
+            openscad -o ../../../out/bracket.stl bracket.scad
+          /usr/bin/time -f "vase.stl: OpenSCAD %e с" -a -o ../../../out/timing.txt \
+            openscad -o ../../../out/vase.stl vase.scad
+          cat ../../../out/timing.txt
           # PNG — доказательство, что модель собралась, без установки программы
           xvfb-run -a openscad -o ../../../out/bracket.png --imgsize=900,700 \
             --camera=0,0,0,55,0,25,240 --render --autocenter bracket.scad || echo "PNG кронштейна не удался"
@@ -96,7 +101,7 @@ jobs:
           set -euo pipefail
           dest=forma/docs/openscad/result
           mkdir -p "$dest"
-          cp out/compare.txt out/vase.txt "$dest/"
+          cp out/compare.txt out/vase.txt out/timing.txt "$dest/"
           cp out/bracket.png "$dest/" 2>/dev/null || true
           cp out/vase.png "$dest/" 2>/dev/null || true
           cp out/bracket.stl "$dest/bracket.stl" 2>/dev/null || true
@@ -109,6 +114,7 @@ jobs:
             openscad --version 2>&1 | head -2
             cat out/compare.txt
             cat out/vase.txt
+            cat out/timing.txt 2>/dev/null || true
             echo '```'
           } > "$dest/summary.md"
           git config user.name "github-actions[bot]"
