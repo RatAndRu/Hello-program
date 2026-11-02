@@ -247,7 +247,7 @@ class TestExamplesAndTools(unittest.TestCase):
             "apple", "human_studio", "human_skeleton", "human_skeleton_original",
             "animation_tracks", "wardrobe", "thinkpad_x1",
             "mechanics", "motorcycle", "clock", "clock_led", "anime_face",
-            "living_room_diorama", "train_carriage",
+            "living_room_diorama", "train_carriage", "arte_lamp_banker_a2492lt_1ab",
         ])
 
     def test_removed_examples_are_gone(self):

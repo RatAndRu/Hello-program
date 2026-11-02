@@ -233,7 +233,7 @@ class FirstBatchRegressionTest(unittest.TestCase):
 class HelpExamplesTest(unittest.TestCase):
     def test_every_primitive_help_example_builds(self):
         specs = [c for c in commands_help() if c["category"] == "Примитивы"]
-        self.assertEqual(len(specs), 123)
+        self.assertEqual(len(specs), 123)  # файловый fold_pattern не является примитивом
         for spec in specs:
             with self.subTest(command=spec["name"]):
                 result = build(spec["example"], analyze_model=False)

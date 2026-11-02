@@ -198,7 +198,7 @@ def unfold(a, name):
 
 @op("fold_pattern", aliases=("crease_pattern", "fold_import", "cp_import", "развертка",
                              "развёртка", "оригами_схема"),
-    category="Примитивы",
+    category="Сцена и материал",
     summary="Импортирует FOLD JSON или ORIPA .cp как лист постоянной толщины "
             "и редактируемую схему Mountain/Valley. Не притворяется общим "
             "решателем одновременного rigid-origami складывания.",
