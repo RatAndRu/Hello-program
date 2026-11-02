@@ -1,0 +1,90 @@
+name: Проверка OpenSCAD на раннере GitHub
+
+# Зачем: посмотреть, как OpenSCAD работает, не устанавливая его на свой
+# компьютер. Раннер собирает две модели из текстовых .scad файлов, считает их
+# объём/массу/треугольники, строит ту же деталь на DSL ФОРМЫ и печатает
+# сравнение в лог. Готовые STL/PNG лежат в артефактах прогона.
+#
+# Запуск: Actions → «Проверка OpenSCAD на раннере GitHub» → Run workflow,
+# либо автоматически при изменении файлов в forma/docs/openscad/.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'forma/docs/openscad/**'
+      - '.github/workflows/openscad-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Установить OpenSCAD
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq openscad xvfb >/dev/null
+          openscad --version 2>&1 | head -2
+          openscad --info 2>&1 | head -8 || true
+
+      - name: Python-окружение для расчёта метрик
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet --disable-pip-version-check numpy trimesh manifold3d
+
+      - name: Собрать модели (STL) и снимки (PNG)
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cd forma/docs/openscad
+          # STL — то, что можно открыть в любом слайсере или в ФОРМЕ
+          openscad -o ../../../out/bracket.stl bracket.scad
+          openscad -o ../../../out/vase.stl vase.scad
+          # PNG — доказательство, что модель собралась, без установки программы
+          xvfb-run -a openscad -o ../../../out/bracket.png --imgsize=900,700 \
+            --camera=0,0,0,55,0,25,240 --render --autocenter bracket.scad || echo "PNG кронштейна не удался"
+          xvfb-run -a openscad -o ../../../out/vase.png --imgsize=700,800 \
+            --camera=0,0,60,60,0,25,420 --render --autocenter vase.scad || echo "PNG вазы не удался"
+          ls -lh ../../../out
+
+      - name: Сравнить с ФОРМОЙ (одна деталь, два инструмента)
+        env:
+          PYTHONPATH: forma
+        run: |
+          set -euo pipefail
+          python3 forma/docs/openscad/compare.py out/bracket.stl | tee out/compare.txt
+
+      - name: Метрики вазы (OpenSCAD сам их не считает)
+        run: |
+          python3 - <<'PY' | tee out/vase.txt
+          import trimesh
+          m = trimesh.load('out/vase.stl', force='mesh')
+          v = abs(float(m.volume)) / 1000
+          print(f"ваза: объём {v:.2f} см³, масса PLA {v*1.24:.1f} г, "
+                f"треугольников {len(m.faces)}, замкнута {m.is_watertight}, "
+                f"габарит {[round(float(x),1) for x in m.extents]}")
+          PY
+
+      - name: Отдать артефакты
+        uses: actions/upload-artifact@v4
+        with:
+          name: openscad-probe
+          path: out/
+          if-no-files-found: warn
+
+      - name: Итог в сводку прогона
+        run: |
+          {
+            echo "## OpenSCAD на раннере GitHub"
+            echo '```'
+            openscad --version 2>&1 | head -2
+            cat out/compare.txt
+            cat out/vase.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
