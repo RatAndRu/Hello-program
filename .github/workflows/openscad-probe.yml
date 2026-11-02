@@ -16,7 +16,7 @@ on:
       - '.github/workflows/openscad-probe.yml'
 
 permissions:
-  contents: read
+  contents: write   # результат коммитится в ветку, чтобы его было видно без скачивания
 
 jobs:
   probe:
@@ -88,3 +88,35 @@ jobs:
             cat out/vase.txt
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
+
+      # Артефакты и логи скачиваются не из любой сети, а файл в ветке виден
+      # всегда: раннер сам кладёт снимки и отчёт в репозиторий.
+      - name: Опубликовать результат в ветку
+        run: |
+          set -euo pipefail
+          dest=forma/docs/openscad/result
+          mkdir -p "$dest"
+          cp out/compare.txt out/vase.txt "$dest/"
+          cp out/bracket.png "$dest/" 2>/dev/null || true
+          cp out/vase.png "$dest/" 2>/dev/null || true
+          cp out/bracket.stl "$dest/bracket.stl" 2>/dev/null || true
+          {
+            echo "# OpenSCAD, прогон на раннере GitHub"
+            echo
+            echo "Дата: $(date -u '+%Y-%m-%d %H:%M UTC')"
+            echo
+            echo '```'
+            openscad --version 2>&1 | head -2
+            cat out/compare.txt
+            cat out/vase.txt
+            echo '```'
+          } > "$dest/summary.md"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$dest"
+          if git diff --cached --quiet; then
+            echo "изменений нет"
+          else
+            git commit -q -m "OpenSCAD: результат прогона CI (снимки и сравнение) [skip ci]"
+            git push
+          fi
