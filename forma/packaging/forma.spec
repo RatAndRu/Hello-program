@@ -46,6 +46,7 @@ hiddenimports += [
     "forma.ops_basic", "forma.ops_curves", "forma.ops_shape", "forma.ops_scene",
     "forma.ops_sdf", "forma.render", "forma.webui", "forma.cli", "forma.checks",
     "forma.metrics", "forma.agent", "forma.geometry", "forma.values",
+    "forma.eval", "forma.fuzz",
     "forma.mesher", "forma.sdf", "forma.anatomy", "forma.skeleton_original", "forma.ops_skeleton", "forma.ops_organic", "forma.textures",
     "forma.blender", "forma.paths", "forma.ops_human", "forma.ops_studio",
     "forma.ops_io", "forma.ops_extra",
@@ -58,6 +59,7 @@ hiddenimports += [
 
 # интерфейс, примеры и встроенная карта рельефа кладём внутрь exe
 datas += [(str(ROOT / "web"), "web"), (str(ROOT / "examples"), "examples"),
+          (str(ROOT / "benchmarks"), "benchmarks"),
           (str(ROOT / "docs" / "pattern.png"), "docs")]
 icon_png = ROOT / "packaging" / "icon_256.png"
 if icon_png.exists():

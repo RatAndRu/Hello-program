@@ -1,0 +1,4445 @@
+{
+  "schema": "forma-eval-report-v1",
+  "mode": "reference",
+  "label": "reference",
+  "suite": {
+    "name": "foundation-geometry-and-agent",
+    "version": 1,
+    "sha256": "8720439ebe7676717e002e9c27bb6364c0307221692f087d6b11f22fff17db64"
+  },
+  "environment": {
+    "forma": "0.63",
+    "python": "3.11.2",
+    "manifold3d": "3.5.4",
+    "numpy": "2.4.6"
+  },
+  "ok": true,
+  "summary": {
+    "tasks": 20,
+    "passed": 20,
+    "success_rate": 1.0,
+    "first_attempt_passed": 20,
+    "first_attempt_success_rate": 1.0,
+    "repaired": 0,
+    "checks_passed": 80,
+    "checks_total": 80,
+    "check_pass_rate": 1.0,
+    "total_iterations": 20,
+    "total_elapsed_ms": 4029.446,
+    "median_task_ms": 25.082,
+    "total_tris": 28152,
+    "failed": [],
+    "by_category": {
+      "primitives": {
+        "tasks": 2,
+        "passed": 2,
+        "first_attempt_passed": 2
+      },
+      "profiles": {
+        "tasks": 3,
+        "passed": 3,
+        "first_attempt_passed": 3
+      },
+      "booleans": {
+        "tasks": 3,
+        "passed": 3,
+        "first_attempt_passed": 3
+      },
+      "origami": {
+        "tasks": 3,
+        "passed": 3,
+        "first_attempt_passed": 3
+      },
+      "mechanics": {
+        "tasks": 4,
+        "passed": 4,
+        "first_attempt_passed": 4
+      },
+      "organic": {
+        "tasks": 1,
+        "passed": 1,
+        "first_attempt_passed": 1
+      },
+      "transforms": {
+        "tasks": 2,
+        "passed": 2,
+        "first_attempt_passed": 2
+      },
+      "cavities": {
+        "tasks": 1,
+        "passed": 1,
+        "first_attempt_passed": 1
+      },
+      "text": {
+        "tasks": 1,
+        "passed": 1,
+        "first_attempt_passed": 1
+      }
+    }
+  },
+  "tasks": [
+    {
+      "id": "primitive_box",
+      "category": "primitives",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          40.0,
+          30.0,
+          20.0
+        ],
+        "bbox": [
+          -20.0,
+          -15.0,
+          0.0,
+          20.0,
+          15.0,
+          20.0
+        ],
+        "volume_cm3": 24.0,
+        "area_cm2": 52.0,
+        "tris": 12,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "size",
+          "label": "габариты",
+          "text": "габариты: 40 × 30 × 20 мм — в норме (= 40 мм × = 30 мм × = 20 мм)",
+          "target": "блок",
+          "line": 4,
+          "actual": [
+            40.0,
+            30.0,
+            20.0
+          ],
+          "expected": "= 40 мм × = 30 мм × = 20 мм"
+        },
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 24 см³ — в норме (= 24 см³)",
+          "target": "блок",
+          "line": 5,
+          "actual": 24.0,
+          "expected": "= 24 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "блок",
+          "line": 6,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "блок",
+          "line": 7,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "448f237f9be5c09ba169d4ad5a8e8f24671268be20d2e96bc7c4f2ae673ef63b",
+          "commands": 1,
+          "verbs": [
+            "box"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "size",
+              "label": "габариты",
+              "text": "габариты: 40 × 30 × 20 мм — в норме (= 40 мм × = 30 мм × = 20 мм)",
+              "target": "блок",
+              "line": 4,
+              "actual": [
+                40.0,
+                30.0,
+                20.0
+              ],
+              "expected": "= 40 мм × = 30 мм × = 20 мм"
+            },
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 24 см³ — в норме (= 24 см³)",
+              "target": "блок",
+              "line": 5,
+              "actual": 24.0,
+              "expected": "= 24 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "блок",
+              "line": 6,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "блок",
+              "line": 7,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              40.0,
+              30.0,
+              20.0
+            ],
+            "bbox": [
+              -20.0,
+              -15.0,
+              0.0,
+              20.0,
+              15.0,
+              20.0
+            ],
+            "volume_cm3": 24.0,
+            "area_cm2": 52.0,
+            "tris": 12,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 1.0,
+            "analysis": 10.7,
+            "total": 11.9
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "box",
+              "raw_verb": "box",
+              "target": "блок",
+              "status": "ok",
+              "ms": 0.755
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.011
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.008
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.006
+            }
+          ],
+          "elapsed_ms": 11.953,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 11.953
+    },
+    {
+      "id": "primitive_cylinder",
+      "category": "primitives",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          20.0,
+          20.0,
+          30.0
+        ],
+        "bbox": [
+          -10.0,
+          -10.0,
+          0.0,
+          10.0,
+          10.0,
+          30.0
+        ],
+        "volume_cm3": 9.364335456774157,
+        "area_cm2": 25.06218124779174,
+        "tris": 124,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "size",
+          "label": "габариты",
+          "text": "габариты: 20 × 20 × 30 мм — в норме (= 20 мм × = 20 мм × = 30 мм)",
+          "target": "цилиндр",
+          "line": 4,
+          "actual": [
+            20.0,
+            20.0,
+            30.0
+          ],
+          "expected": "= 20 мм × = 20 мм × = 30 мм"
+        },
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 9.36 см³ — в норме (от 9 до 9.5 см³)",
+          "target": "цилиндр",
+          "line": 5,
+          "actual": 9.364335456774157,
+          "expected": "от 9 до 9.5 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "цилиндр",
+          "line": 6,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "цилиндр",
+          "line": 7,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "00b23779a1a22551100a51c64f341acd6d2cd2621465487b1e4e159aac25f6e7",
+          "commands": 1,
+          "verbs": [
+            "cylinder"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "size",
+              "label": "габариты",
+              "text": "габариты: 20 × 20 × 30 мм — в норме (= 20 мм × = 20 мм × = 30 мм)",
+              "target": "цилиндр",
+              "line": 4,
+              "actual": [
+                20.0,
+                20.0,
+                30.0
+              ],
+              "expected": "= 20 мм × = 20 мм × = 30 мм"
+            },
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 9.36 см³ — в норме (от 9 до 9.5 см³)",
+              "target": "цилиндр",
+              "line": 5,
+              "actual": 9.364335456774157,
+              "expected": "от 9 до 9.5 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "цилиндр",
+              "line": 6,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "цилиндр",
+              "line": 7,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              20.0,
+              20.0,
+              30.0
+            ],
+            "bbox": [
+              -10.0,
+              -10.0,
+              0.0,
+              10.0,
+              10.0,
+              30.0
+            ],
+            "volume_cm3": 9.364335456774157,
+            "area_cm2": 25.06218124779174,
+            "tris": 124,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 0.5,
+            "analysis": 9.8,
+            "total": 10.4
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "cylinder",
+              "raw_verb": "cylinder",
+              "target": "цилиндр",
+              "status": "ok",
+              "ms": 0.313
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.008
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.01
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.053
+            }
+          ],
+          "elapsed_ms": 10.424,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 10.424
+    },
+    {
+      "id": "extrude_rectangle",
+      "category": "profiles",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          40.0,
+          30.0,
+          12.0
+        ],
+        "bbox": [
+          -20.0,
+          -15.0,
+          0.0,
+          20.0,
+          15.0,
+          12.0
+        ],
+        "volume_cm3": 14.4,
+        "area_cm2": 40.8,
+        "tris": 12,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "size",
+          "label": "габариты",
+          "text": "габариты: 40 × 30 × 12 мм — в норме (= 40 мм × = 30 мм × = 12 мм)",
+          "target": "пластина",
+          "line": 4,
+          "actual": [
+            40.0,
+            30.0,
+            12.0
+          ],
+          "expected": "= 40 мм × = 30 мм × = 12 мм"
+        },
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 14.4 см³ — в норме (от 14 до 14.5 см³)",
+          "target": "пластина",
+          "line": 5,
+          "actual": 14.4,
+          "expected": "от 14 до 14.5 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "пластина",
+          "line": 6,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "пластина",
+          "line": 7,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "f721331f7a078be8e81393d62f13a38247bdb2d7142fadb0383a038f585bf7c6",
+          "commands": 1,
+          "verbs": [
+            "extrude"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "size",
+              "label": "габариты",
+              "text": "габариты: 40 × 30 × 12 мм — в норме (= 40 мм × = 30 мм × = 12 мм)",
+              "target": "пластина",
+              "line": 4,
+              "actual": [
+                40.0,
+                30.0,
+                12.0
+              ],
+              "expected": "= 40 мм × = 30 мм × = 12 мм"
+            },
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 14.4 см³ — в норме (от 14 до 14.5 см³)",
+              "target": "пластина",
+              "line": 5,
+              "actual": 14.4,
+              "expected": "от 14 до 14.5 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "пластина",
+              "line": 6,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "пластина",
+              "line": 7,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              40.0,
+              30.0,
+              12.0
+            ],
+            "bbox": [
+              -20.0,
+              -15.0,
+              0.0,
+              20.0,
+              15.0,
+              12.0
+            ],
+            "volume_cm3": 14.4,
+            "area_cm2": 40.8,
+            "tris": 12,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 0.4,
+            "analysis": 2.6,
+            "total": 3.1
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "extrude",
+              "raw_verb": "extrude",
+              "target": "пластина",
+              "status": "ok",
+              "ms": 0.315
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.006
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            }
+          ],
+          "elapsed_ms": 3.166,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 3.166
+    },
+    {
+      "id": "lathe_cup",
+      "category": "profiles",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          60.0,
+          60.0,
+          50.0
+        ],
+        "bbox": [
+          -30.0,
+          -30.0,
+          0.0,
+          30.0,
+          30.0,
+          50.0
+        ],
+        "volume_cm3": 52.88546846202299,
+        "area_cm2": 221.24446432233213,
+        "tris": 416,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "height",
+          "label": "высота",
+          "text": "высота: 50 мм — в норме (= 50 мм)",
+          "target": "кружка",
+          "line": 4,
+          "actual": 50.0,
+          "expected": "= 50 мм"
+        },
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 52.89 см³ — в норме (от 45 до 60 см³)",
+          "target": "кружка",
+          "line": 5,
+          "actual": 52.88546846202299,
+          "expected": "от 45 до 60 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "кружка",
+          "line": 6,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "кружка",
+          "line": 7,
+          "actual": 1,
+          "expected": "= 1"
+        },
+        {
+          "ok": true,
+          "rule": "genus",
+          "label": "сквозные отверстия",
+          "text": "сквозные отверстия: 0 — в норме (= 0)",
+          "target": "кружка",
+          "line": 8,
+          "actual": 0,
+          "expected": "= 0"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "e87c2d8344cfb2da7fd84b067f67943359a0d1439bc0c052602c9fa132d02ff7",
+          "commands": 1,
+          "verbs": [
+            "lathe"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "height",
+              "label": "высота",
+              "text": "высота: 50 мм — в норме (= 50 мм)",
+              "target": "кружка",
+              "line": 4,
+              "actual": 50.0,
+              "expected": "= 50 мм"
+            },
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 52.89 см³ — в норме (от 45 до 60 см³)",
+              "target": "кружка",
+              "line": 5,
+              "actual": 52.88546846202299,
+              "expected": "от 45 до 60 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "кружка",
+              "line": 6,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "кружка",
+              "line": 7,
+              "actual": 1,
+              "expected": "= 1"
+            },
+            {
+              "ok": true,
+              "rule": "genus",
+              "label": "сквозные отверстия",
+              "text": "сквозные отверстия: 0 — в норме (= 0)",
+              "target": "кружка",
+              "line": 8,
+              "actual": 0,
+              "expected": "= 0"
+            }
+          ],
+          "checks_passed": 5,
+          "checks_total": 5,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              60.0,
+              60.0,
+              50.0
+            ],
+            "bbox": [
+              -30.0,
+              -30.0,
+              0.0,
+              30.0,
+              30.0,
+              50.0
+            ],
+            "volume_cm3": 52.88546846202299,
+            "area_cm2": 221.24446432233213,
+            "tris": 416,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 0.7,
+            "analysis": 31.5,
+            "total": 32.3
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "lathe",
+              "raw_verb": "lathe",
+              "target": "кружка",
+              "status": "ok",
+              "ms": 0.538
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.007
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 6,
+              "line": 8,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            }
+          ],
+          "elapsed_ms": 32.344,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 32.344
+    },
+    {
+      "id": "sweep_hook",
+      "category": "profiles",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          34.99145066738129,
+          6.0,
+          47.803205728530884
+        ],
+        "bbox": [
+          -0.37646806240081787,
+          -3.0,
+          -3.901602029800415,
+          34.61498260498047,
+          3.0,
+          43.90160369873047
+        ],
+        "volume_cm3": 2.4557969824189394,
+        "area_cm2": 17.280593539077575,
+        "tris": 668,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 2.46 см³ — в норме (от 1 до 5 см³)",
+          "target": "крюк",
+          "line": 4,
+          "actual": 2.4557969824189394,
+          "expected": "от 1 до 5 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "крюк",
+          "line": 5,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "крюк",
+          "line": 6,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "c2f3be082cecbceeee6526d55c08d6c82ce451e9b147165c6c145f80034451e3",
+          "commands": 1,
+          "verbs": [
+            "sweep"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 2.46 см³ — в норме (от 1 до 5 см³)",
+              "target": "крюк",
+              "line": 4,
+              "actual": 2.4557969824189394,
+              "expected": "от 1 до 5 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "крюк",
+              "line": 5,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "крюк",
+              "line": 6,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 3,
+          "checks_total": 3,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              34.99145066738129,
+              6.0,
+              47.803205728530884
+            ],
+            "bbox": [
+              -0.37646806240081787,
+              -3.0,
+              -3.901602029800415,
+              34.61498260498047,
+              3.0,
+              43.90160369873047
+            ],
+            "volume_cm3": 2.4557969824189394,
+            "area_cm2": 17.280593539077575,
+            "tris": 668,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 2.7,
+            "analysis": 26.9,
+            "total": 29.7
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "sweep",
+              "raw_verb": "sweep",
+              "target": "крюк",
+              "status": "ok",
+              "ms": 2.635
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.009
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            }
+          ],
+          "elapsed_ms": 29.822,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 29.822
+    },
+    {
+      "id": "boolean_through_hole",
+      "category": "booleans",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 3,
+      "metrics": {
+        "size": [
+          60.0,
+          60.0,
+          20.0
+        ],
+        "bbox": [
+          -30.0,
+          -30.0,
+          0.0,
+          30.0,
+          30.0,
+          20.0
+        ],
+        "volume_cm3": 65.75710969548389,
+        "area_cm2": 126.30330365766764,
+        "tris": 144,
+        "parts": 1,
+        "genus": 1,
+        "visible_count": 1,
+        "total_count": 3
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "size",
+          "label": "габариты",
+          "text": "габариты: 60 × 60 × 20 мм — в норме (= 60 мм × = 60 мм × = 20 мм)",
+          "target": "деталь",
+          "line": 6,
+          "actual": [
+            60.0,
+            60.0,
+            20.0
+          ],
+          "expected": "= 60 мм × = 60 мм × = 20 мм"
+        },
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 65.76 см³ — в норме (от 65 до 72 см³)",
+          "target": "деталь",
+          "line": 7,
+          "actual": 65.75710969548389,
+          "expected": "от 65 до 72 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "деталь",
+          "line": 8,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "деталь",
+          "line": 9,
+          "actual": 1,
+          "expected": "= 1"
+        },
+        {
+          "ok": true,
+          "rule": "genus",
+          "label": "сквозные отверстия",
+          "text": "сквозные отверстия: 1 — в норме (= 1)",
+          "target": "деталь",
+          "line": 10,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "ed411ac1e8b6305e01c03a564d5c9744f7fe5db56abf4d3590443f2da5295d9f",
+          "commands": 3,
+          "verbs": [
+            "box",
+            "cylinder",
+            "difference"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "size",
+              "label": "габариты",
+              "text": "габариты: 60 × 60 × 20 мм — в норме (= 60 мм × = 60 мм × = 20 мм)",
+              "target": "деталь",
+              "line": 6,
+              "actual": [
+                60.0,
+                60.0,
+                20.0
+              ],
+              "expected": "= 60 мм × = 60 мм × = 20 мм"
+            },
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 65.76 см³ — в норме (от 65 до 72 см³)",
+              "target": "деталь",
+              "line": 7,
+              "actual": 65.75710969548389,
+              "expected": "от 65 до 72 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "деталь",
+              "line": 8,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "деталь",
+              "line": 9,
+              "actual": 1,
+              "expected": "= 1"
+            },
+            {
+              "ok": true,
+              "rule": "genus",
+              "label": "сквозные отверстия",
+              "text": "сквозные отверстия: 1 — в норме (= 1)",
+              "target": "деталь",
+              "line": 10,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 5,
+          "checks_total": 5,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              60.0,
+              60.0,
+              20.0
+            ],
+            "bbox": [
+              -30.0,
+              -30.0,
+              0.0,
+              30.0,
+              30.0,
+              20.0
+            ],
+            "volume_cm3": 65.75710969548389,
+            "area_cm2": 126.30330365766764,
+            "tris": 144,
+            "parts": 1,
+            "genus": 1,
+            "visible_count": 1,
+            "total_count": 3
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 1.4,
+            "analysis": 12.7,
+            "total": 14.2
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "box",
+              "raw_verb": "box",
+              "target": "заготовка",
+              "status": "ok",
+              "ms": 0.231
+            },
+            {
+              "n": 2,
+              "line": 2,
+              "verb": "cylinder",
+              "raw_verb": "cylinder",
+              "target": "сверло",
+              "status": "ok",
+              "ms": 0.243
+            },
+            {
+              "n": 3,
+              "line": 3,
+              "verb": "difference",
+              "raw_verb": "difference",
+              "target": "деталь",
+              "status": "ok",
+              "ms": 0.724
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.007
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 6,
+              "line": 8,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.008
+            },
+            {
+              "n": 7,
+              "line": 9,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 8,
+              "line": 10,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.002
+            }
+          ],
+          "elapsed_ms": 14.262,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 14.262
+    },
+    {
+      "id": "boolean_overlap_union",
+      "category": "booleans",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 3,
+      "metrics": {
+        "size": [
+          45.0,
+          30.0,
+          30.0
+        ],
+        "bbox": [
+          -15.0,
+          -15.0,
+          0.0,
+          30.0,
+          15.0,
+          30.0
+        ],
+        "volume_cm3": 40.5,
+        "area_cm2": 72.0,
+        "tris": 28,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 3
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "size",
+          "label": "габариты",
+          "text": "габариты: 45 × 30 × 30 мм — в норме (= 45 мм × = 30 мм × = 30 мм)",
+          "target": "деталь",
+          "line": 6,
+          "actual": [
+            45.0,
+            30.0,
+            30.0
+          ],
+          "expected": "= 45 мм × = 30 мм × = 30 мм"
+        },
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 40.5 см³ — в норме (от 40 до 41 см³)",
+          "target": "деталь",
+          "line": 7,
+          "actual": 40.5,
+          "expected": "от 40 до 41 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "деталь",
+          "line": 8,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "деталь",
+          "line": 9,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "a3a9a7356e4a1398669d0a45b697448960c68336cd53fd88847b339fdf68a7ee",
+          "commands": 3,
+          "verbs": [
+            "box",
+            "union"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "size",
+              "label": "габариты",
+              "text": "габариты: 45 × 30 × 30 мм — в норме (= 45 мм × = 30 мм × = 30 мм)",
+              "target": "деталь",
+              "line": 6,
+              "actual": [
+                45.0,
+                30.0,
+                30.0
+              ],
+              "expected": "= 45 мм × = 30 мм × = 30 мм"
+            },
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 40.5 см³ — в норме (от 40 до 41 см³)",
+              "target": "деталь",
+              "line": 7,
+              "actual": 40.5,
+              "expected": "от 40 до 41 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "деталь",
+              "line": 8,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "деталь",
+              "line": 9,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              45.0,
+              30.0,
+              30.0
+            ],
+            "bbox": [
+              -15.0,
+              -15.0,
+              0.0,
+              30.0,
+              15.0,
+              30.0
+            ],
+            "volume_cm3": 40.5,
+            "area_cm2": 72.0,
+            "tris": 28,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 3
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 0.9,
+            "analysis": 3.8,
+            "total": 4.8
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "box",
+              "raw_verb": "box",
+              "target": "а",
+              "status": "ok",
+              "ms": 0.186
+            },
+            {
+              "n": 2,
+              "line": 2,
+              "verb": "box",
+              "raw_verb": "box",
+              "target": "б",
+              "status": "ok",
+              "ms": 0.124
+            },
+            {
+              "n": 3,
+              "line": 3,
+              "verb": "union",
+              "raw_verb": "union",
+              "target": "деталь",
+              "status": "ok",
+              "ms": 0.414
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.006
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 6,
+              "line": 8,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 7,
+              "line": 9,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            }
+          ],
+          "elapsed_ms": 4.868,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 4.868
+    },
+    {
+      "id": "fold_sheet_single",
+      "category": "origami",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          80.61159294843674,
+          80.0,
+          80.6115951538086
+        ],
+        "bbox": [
+          -40.30579647421837,
+          -40.0,
+          0.0,
+          40.30579647421837,
+          40.0,
+          80.6115951538086
+        ],
+        "volume_cm3": 12.835570796107614,
+        "area_cm2": 260.79702837532494,
+        "tris": 140,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 12.84 см³ — в норме (от 11 до 13 см³)",
+          "target": "сгиб",
+          "line": 4,
+          "actual": 12.835570796107614,
+          "expected": "от 11 до 13 см³"
+        },
+        {
+          "ok": true,
+          "rule": "height",
+          "label": "высота",
+          "text": "высота: 80.61 мм — в норме (от 60 до 90 мм)",
+          "target": "сгиб",
+          "line": 5,
+          "actual": 80.6115951538086,
+          "expected": "от 60 до 90 мм"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "сгиб",
+          "line": 6,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "сгиб",
+          "line": 7,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "5d9d179f25df001a1665deaa4bd98f85953b769f99e1759b5cc4622d72179fdb",
+          "commands": 1,
+          "verbs": [
+            "fold_sheet"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 12.84 см³ — в норме (от 11 до 13 см³)",
+              "target": "сгиб",
+              "line": 4,
+              "actual": 12.835570796107614,
+              "expected": "от 11 до 13 см³"
+            },
+            {
+              "ok": true,
+              "rule": "height",
+              "label": "высота",
+              "text": "высота: 80.61 мм — в норме (от 60 до 90 мм)",
+              "target": "сгиб",
+              "line": 5,
+              "actual": 80.6115951538086,
+              "expected": "от 60 до 90 мм"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "сгиб",
+              "line": 6,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "сгиб",
+              "line": 7,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              80.61159294843674,
+              80.0,
+              80.6115951538086
+            ],
+            "bbox": [
+              -40.30579647421837,
+              -40.0,
+              0.0,
+              40.30579647421837,
+              40.0,
+              80.6115951538086
+            ],
+            "volume_cm3": 12.835570796107614,
+            "area_cm2": 260.79702837532494,
+            "tris": 140,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 2095.9,
+            "analysis": 12.1,
+            "total": 2108.1
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "fold_sheet",
+              "raw_verb": "fold_sheet",
+              "target": "сгиб",
+              "status": "ok",
+              "ms": 2095.671
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.016
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.005
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            }
+          ],
+          "elapsed_ms": 2108.168,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 2108.168
+    },
+    {
+      "id": "fold_sheet_accordion",
+      "category": "origami",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          61.06280326843262,
+          80.0,
+          72.70098114013672
+        ],
+        "bbox": [
+          -30.53140163421631,
+          -40.0,
+          0.0,
+          30.53140163421631,
+          40.0,
+          72.70098114013672
+        ],
+        "volume_cm3": 12.734990924510024,
+        "area_cm2": 260.69042919048314,
+        "tris": 374,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 12.73 см³ — в норме (от 11 до 14 см³)",
+          "target": "гармошка",
+          "line": 4,
+          "actual": 12.734990924510024,
+          "expected": "от 11 до 14 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "гармошка",
+          "line": 5,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "гармошка",
+          "line": 6,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "2b160fe422ed5a176363cc38f3fe707a4b711444e00e0e4b84bba64d435bde1b",
+          "commands": 1,
+          "verbs": [
+            "fold_sheet"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 12.73 см³ — в норме (от 11 до 14 см³)",
+              "target": "гармошка",
+              "line": 4,
+              "actual": 12.734990924510024,
+              "expected": "от 11 до 14 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "гармошка",
+              "line": 5,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "гармошка",
+              "line": 6,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 3,
+          "checks_total": 3,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              61.06280326843262,
+              80.0,
+              72.70098114013672
+            ],
+            "bbox": [
+              -30.53140163421631,
+              -40.0,
+              0.0,
+              30.53140163421631,
+              40.0,
+              72.70098114013672
+            ],
+            "volume_cm3": 12.734990924510024,
+            "area_cm2": 260.69042919048314,
+            "tris": 374,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 193.6,
+            "analysis": 24.0,
+            "total": 217.7
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "fold_sheet",
+              "raw_verb": "fold_sheet",
+              "target": "гармошка",
+              "status": "ok",
+              "ms": 193.418
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.014
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.005
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            }
+          ],
+          "elapsed_ms": 217.839,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 217.839
+    },
+    {
+      "id": "origami_groove",
+      "category": "origami",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 2,
+      "metrics": {
+        "size": [
+          80.0,
+          80.0,
+          1.49764683842659
+        ],
+        "bbox": [
+          -40.0,
+          -40.0,
+          -0.49764683842658997,
+          40.0,
+          40.0,
+          1.0
+        ],
+        "volume_cm3": 6.402649606359232,
+        "area_cm2": 131.28319522977915,
+        "tris": 1636,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 2
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 6.4 см³ — в норме (от 6.3 до 6.5 см³)",
+          "target": "деталь",
+          "line": 5,
+          "actual": 6.402649606359232,
+          "expected": "от 6.3 до 6.5 см³"
+        },
+        {
+          "ok": true,
+          "rule": "size",
+          "label": "габариты",
+          "text": "габариты: 80 × 80 × 1.5 мм — в норме (= 80 мм × = 80 мм × от 1.4 до 1.6 мм)",
+          "target": "деталь",
+          "line": 6,
+          "actual": [
+            80.0,
+            80.0,
+            1.49764683842659
+          ],
+          "expected": "= 80 мм × = 80 мм × от 1.4 до 1.6 мм"
+        },
+        {
+          "ok": true,
+          "rule": "position",
+          "label": "угол габарита",
+          "text": "угол габарита: (-40, -40, −0.5) мм — в норме (допуск 0.5 мм)",
+          "target": "деталь",
+          "line": 7,
+          "actual": [
+            -40.0,
+            -40.0,
+            -0.49764683842658997
+          ],
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "деталь",
+          "line": 8,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "деталь",
+          "line": 9,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "6d46c9709e31bec4cb5c9756008f8935f493841891066eb26a9343616410523b",
+          "commands": 2,
+          "verbs": [
+            "sheet",
+            "складка"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 6.4 см³ — в норме (от 6.3 до 6.5 см³)",
+              "target": "деталь",
+              "line": 5,
+              "actual": 6.402649606359232,
+              "expected": "от 6.3 до 6.5 см³"
+            },
+            {
+              "ok": true,
+              "rule": "size",
+              "label": "габариты",
+              "text": "габариты: 80 × 80 × 1.5 мм — в норме (= 80 мм × = 80 мм × от 1.4 до 1.6 мм)",
+              "target": "деталь",
+              "line": 6,
+              "actual": [
+                80.0,
+                80.0,
+                1.49764683842659
+              ],
+              "expected": "= 80 мм × = 80 мм × от 1.4 до 1.6 мм"
+            },
+            {
+              "ok": true,
+              "rule": "position",
+              "label": "угол габарита",
+              "text": "угол габарита: (-40, -40, −0.5) мм — в норме (допуск 0.5 мм)",
+              "target": "деталь",
+              "line": 7,
+              "actual": [
+                -40.0,
+                -40.0,
+                -0.49764683842658997
+              ],
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "деталь",
+              "line": 8,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "деталь",
+              "line": 9,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 5,
+          "checks_total": 5,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              80.0,
+              80.0,
+              1.49764683842659
+            ],
+            "bbox": [
+              -40.0,
+              -40.0,
+              -0.49764683842658997,
+              40.0,
+              40.0,
+              1.0
+            ],
+            "volume_cm3": 6.402649606359232,
+            "area_cm2": 131.28319522977915,
+            "tris": 1636,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 2
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 49.5,
+            "analysis": 174.2,
+            "total": 223.9
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "sheet",
+              "raw_verb": "sheet",
+              "target": "лист",
+              "status": "ok",
+              "ms": 1.03
+            },
+            {
+              "n": 2,
+              "line": 2,
+              "verb": "складка",
+              "raw_verb": "складка",
+              "target": "деталь",
+              "status": "ok",
+              "ms": 48.35
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.008
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 6,
+              "line": 8,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 7,
+              "line": 9,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.002
+            }
+          ],
+          "elapsed_ms": 224.039,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 224.039
+    },
+    {
+      "id": "boolean_blind_cup",
+      "category": "booleans",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 3,
+      "metrics": {
+        "size": [
+          60.0,
+          60.0,
+          50.0
+        ],
+        "bbox": [
+          -30.0,
+          -30.0,
+          0.0,
+          30.0,
+          30.0,
+          50.0
+        ],
+        "volume_cm3": 45.73335348271271,
+        "area_cm2": 224.06241708955412,
+        "tris": 396,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 3
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "height",
+          "label": "высота",
+          "text": "высота: 50 мм — в норме (= 50 мм)",
+          "target": "кружка",
+          "line": 6,
+          "actual": 50.0,
+          "expected": "= 50 мм"
+        },
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 45.73 см³ — в норме (от 40 до 50 см³)",
+          "target": "кружка",
+          "line": 7,
+          "actual": 45.73335348271271,
+          "expected": "от 40 до 50 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "кружка",
+          "line": 8,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "кружка",
+          "line": 9,
+          "actual": 1,
+          "expected": "= 1"
+        },
+        {
+          "ok": true,
+          "rule": "genus",
+          "label": "сквозные отверстия",
+          "text": "сквозные отверстия: 0 — в норме (= 0)",
+          "target": "кружка",
+          "line": 10,
+          "actual": 0,
+          "expected": "= 0"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "af51cfa59db300e2d5e38fc11b53768ea58c33d8d78aefe5a633526941728090",
+          "commands": 3,
+          "verbs": [
+            "cylinder",
+            "difference"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "height",
+              "label": "высота",
+              "text": "высота: 50 мм — в норме (= 50 мм)",
+              "target": "кружка",
+              "line": 6,
+              "actual": 50.0,
+              "expected": "= 50 мм"
+            },
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 45.73 см³ — в норме (от 40 до 50 см³)",
+              "target": "кружка",
+              "line": 7,
+              "actual": 45.73335348271271,
+              "expected": "от 40 до 50 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "кружка",
+              "line": 8,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "кружка",
+              "line": 9,
+              "actual": 1,
+              "expected": "= 1"
+            },
+            {
+              "ok": true,
+              "rule": "genus",
+              "label": "сквозные отверстия",
+              "text": "сквозные отверстия: 0 — в норме (= 0)",
+              "target": "кружка",
+              "line": 10,
+              "actual": 0,
+              "expected": "= 0"
+            }
+          ],
+          "checks_passed": 5,
+          "checks_total": 5,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              60.0,
+              60.0,
+              50.0
+            ],
+            "bbox": [
+              -30.0,
+              -30.0,
+              0.0,
+              30.0,
+              30.0,
+              50.0
+            ],
+            "volume_cm3": 45.73335348271271,
+            "area_cm2": 224.06241708955412,
+            "tris": 396,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 3
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 1.9,
+            "analysis": 27.8,
+            "total": 29.7
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "cylinder",
+              "raw_verb": "cylinder",
+              "target": "корпус",
+              "status": "ok",
+              "ms": 0.323
+            },
+            {
+              "n": 2,
+              "line": 2,
+              "verb": "cylinder",
+              "raw_verb": "cylinder",
+              "target": "полость",
+              "status": "ok",
+              "ms": 0.228
+            },
+            {
+              "n": 3,
+              "line": 3,
+              "verb": "difference",
+              "raw_verb": "difference",
+              "target": "кружка",
+              "status": "ok",
+              "ms": 1.09
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.008
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 6,
+              "line": 8,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 7,
+              "line": 9,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.002
+            },
+            {
+              "n": 8,
+              "line": 10,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.032
+            }
+          ],
+          "elapsed_ms": 29.903,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 29.903
+    },
+    {
+      "id": "mechanical_spur_gear",
+      "category": "mechanics",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          43.94442608952522,
+          43.94442608952522,
+          8.0
+        ],
+        "bbox": [
+          -21.97221304476261,
+          -21.97221304476261,
+          0.0,
+          21.97221304476261,
+          21.97221304476261,
+          8.0
+        ],
+        "volume_cm3": 9.66510590976209,
+        "area_cm2": 45.87860464271904,
+        "tris": 316,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "size",
+          "label": "габариты",
+          "text": "габариты: 43.94 × 43.94 × 8 мм — в норме (от 43 до 44 мм × от 43 до 44 мм × = 8 мм)",
+          "target": "шестерня",
+          "line": 4,
+          "actual": [
+            43.94442608952522,
+            43.94442608952522,
+            8.0
+          ],
+          "expected": "от 43 до 44 мм × от 43 до 44 мм × = 8 мм"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "шестерня",
+          "line": 5,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "шестерня",
+          "line": 6,
+          "actual": 1,
+          "expected": "= 1"
+        },
+        {
+          "ok": true,
+          "rule": "genus",
+          "label": "сквозные отверстия",
+          "text": "сквозные отверстия: 0 — в норме (= 0)",
+          "target": "шестерня",
+          "line": 7,
+          "actual": 0,
+          "expected": "= 0"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "05c7133574409a46fb2f2396de1ecaeeec9e29cc01ef5f5396a979d8f52586f7",
+          "commands": 1,
+          "verbs": [
+            "gear"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "size",
+              "label": "габариты",
+              "text": "габариты: 43.94 × 43.94 × 8 мм — в норме (от 43 до 44 мм × от 43 до 44 мм × = 8 мм)",
+              "target": "шестерня",
+              "line": 4,
+              "actual": [
+                43.94442608952522,
+                43.94442608952522,
+                8.0
+              ],
+              "expected": "от 43 до 44 мм × от 43 до 44 мм × = 8 мм"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "шестерня",
+              "line": 5,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "шестерня",
+              "line": 6,
+              "actual": 1,
+              "expected": "= 1"
+            },
+            {
+              "ok": true,
+              "rule": "genus",
+              "label": "сквозные отверстия",
+              "text": "сквозные отверстия: 0 — в норме (= 0)",
+              "target": "шестерня",
+              "line": 7,
+              "actual": 0,
+              "expected": "= 0"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              43.94442608952522,
+              43.94442608952522,
+              8.0
+            ],
+            "bbox": [
+              -21.97221304476261,
+              -21.97221304476261,
+              0.0,
+              21.97221304476261,
+              21.97221304476261,
+              8.0
+            ],
+            "volume_cm3": 9.66510590976209,
+            "area_cm2": 45.87860464271904,
+            "tris": 316,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 0.6,
+            "analysis": 19.5,
+            "total": 20.3
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "gear",
+              "raw_verb": "gear",
+              "target": "шестерня",
+              "status": "ok",
+              "ms": 0.505
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.007
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.002
+            }
+          ],
+          "elapsed_ms": 20.343,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 20.343
+    },
+    {
+      "id": "mechanical_spring",
+      "category": "mechanics",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          24.999272346496582,
+          24.999531745910645,
+          72.97043192386627
+        ],
+        "bbox": [
+          -12.499636173248291,
+          -12.499765872955322,
+          0.0,
+          12.499636173248291,
+          12.499765872955322,
+          72.97043192386627
+        ],
+        "volume_cm3": 4.753773082960245,
+        "area_cm2": 64.93294799873048,
+        "tris": 10272,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 4.75 см³ — в норме (от 4 до 12 см³)",
+          "target": "пружина",
+          "line": 4,
+          "actual": 4.753773082960245,
+          "expected": "от 4 до 12 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "пружина",
+          "line": 5,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "пружина",
+          "line": 6,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "da0abf8f0fdfe73b63f6d7e91a0b348d5e021dbc121cbec2d9c2a24594fe7dd9",
+          "commands": 1,
+          "verbs": [
+            "spring"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 4.75 см³ — в норме (от 4 до 12 см³)",
+              "target": "пружина",
+              "line": 4,
+              "actual": 4.753773082960245,
+              "expected": "от 4 до 12 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "пружина",
+              "line": 5,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "пружина",
+              "line": 6,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 3,
+          "checks_total": 3,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              24.999272346496582,
+              24.999531745910645,
+              72.97043192386627
+            ],
+            "bbox": [
+              -12.499636173248291,
+              -12.499765872955322,
+              0.0,
+              12.499636173248291,
+              12.499765872955322,
+              72.97043192386627
+            ],
+            "volume_cm3": 4.753773082960245,
+            "area_cm2": 64.93294799873048,
+            "tris": 10272,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 31.6,
+            "analysis": 336.7,
+            "total": 368.4
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "spring",
+              "raw_verb": "spring",
+              "target": "пружина",
+              "status": "ok",
+              "ms": 31.443
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.01
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            }
+          ],
+          "elapsed_ms": 368.468,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 368.468
+    },
+    {
+      "id": "mechanical_screw",
+      "category": "mechanics",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          8.2,
+          8.2,
+          25.0
+        ],
+        "bbox": [
+          -4.1,
+          -4.1,
+          0.0,
+          4.1,
+          4.1,
+          25.0
+        ],
+        "volume_cm3": 0.21460207604066722,
+        "area_cm2": 4.042612923777266,
+        "tris": 7278,
+        "parts": 1,
+        "genus": 1,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "height",
+          "label": "высота",
+          "text": "высота: 25 мм — в норме (от 20 до 35 мм)",
+          "target": "винт",
+          "line": 4,
+          "actual": 25.0,
+          "expected": "от 20 до 35 мм"
+        },
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 0.21 см³ — в норме (от 0.1 до 2 см³)",
+          "target": "винт",
+          "line": 5,
+          "actual": 0.21460207604066722,
+          "expected": "от 0.1 до 2 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "винт",
+          "line": 6,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "винт",
+          "line": 7,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "c3be0b7403382bc9b68ebe1b65d3d69d7252ddd7efcf5408b47374185d1f4584",
+          "commands": 1,
+          "verbs": [
+            "screw"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "height",
+              "label": "высота",
+              "text": "высота: 25 мм — в норме (от 20 до 35 мм)",
+              "target": "винт",
+              "line": 4,
+              "actual": 25.0,
+              "expected": "от 20 до 35 мм"
+            },
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 0.21 см³ — в норме (от 0.1 до 2 см³)",
+              "target": "винт",
+              "line": 5,
+              "actual": 0.21460207604066722,
+              "expected": "от 0.1 до 2 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "винт",
+              "line": 6,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "винт",
+              "line": 7,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              8.2,
+              8.2,
+              25.0
+            ],
+            "bbox": [
+              -4.1,
+              -4.1,
+              0.0,
+              4.1,
+              4.1,
+              25.0
+            ],
+            "volume_cm3": 0.21460207604066722,
+            "area_cm2": 4.042612923777266,
+            "tris": 7278,
+            "parts": 1,
+            "genus": 1,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 35.1,
+            "analysis": 467.2,
+            "total": 502.4
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "screw",
+              "raw_verb": "screw",
+              "target": "винт",
+              "status": "ok",
+              "ms": 34.903
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.016
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.005
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            }
+          ],
+          "elapsed_ms": 502.474,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 502.474
+    },
+    {
+      "id": "hollow_pipe_elbow",
+      "category": "mechanics",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          78.58407592773438,
+          20.0,
+          78.58407592773438
+        ],
+        "bbox": [
+          -39.29203796386719,
+          -10.0,
+          0.0,
+          39.29203796386719,
+          10.0,
+          78.58407592773438
+        ],
+        "volume_cm3": 13.411735204380836,
+        "area_cm2": 137.53141440881834,
+        "tris": 2496,
+        "parts": 1,
+        "genus": 1,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 13.41 см³ — в норме (от 10 до 15 см³)",
+          "target": "труба",
+          "line": 4,
+          "actual": 13.411735204380836,
+          "expected": "от 10 до 15 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "труба",
+          "line": 5,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "труба",
+          "line": 6,
+          "actual": 1,
+          "expected": "= 1"
+        },
+        {
+          "ok": true,
+          "rule": "genus",
+          "label": "сквозные отверстия",
+          "text": "сквозные отверстия: 1 — в норме (= 1)",
+          "target": "труба",
+          "line": 7,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "8e8d3aab1629f635e9e4a33931915bfd5ae18c7fde3e545f91e0479471da6112",
+          "commands": 1,
+          "verbs": [
+            "pipe"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 13.41 см³ — в норме (от 10 до 15 см³)",
+              "target": "труба",
+              "line": 4,
+              "actual": 13.411735204380836,
+              "expected": "от 10 до 15 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "труба",
+              "line": 5,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "труба",
+              "line": 6,
+              "actual": 1,
+              "expected": "= 1"
+            },
+            {
+              "ok": true,
+              "rule": "genus",
+              "label": "сквозные отверстия",
+              "text": "сквозные отверстия: 1 — в норме (= 1)",
+              "target": "труба",
+              "line": 7,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              78.58407592773438,
+              20.0,
+              78.58407592773438
+            ],
+            "bbox": [
+              -39.29203796386719,
+              -10.0,
+              0.0,
+              39.29203796386719,
+              10.0,
+              78.58407592773438
+            ],
+            "volume_cm3": 13.411735204380836,
+            "area_cm2": 137.53141440881834,
+            "tris": 2496,
+            "parts": 1,
+            "genus": 1,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 8.4,
+            "analysis": 106.7,
+            "total": 115.2
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "pipe",
+              "raw_verb": "pipe",
+              "target": "труба",
+              "status": "ok",
+              "ms": 8.258
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.012
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.005
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            }
+          ],
+          "elapsed_ms": 115.316,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 115.316
+    },
+    {
+      "id": "organic_blob",
+      "category": "organic",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          39.799095153808594,
+          39.799095153808594,
+          69.76507091522217
+        ],
+        "bbox": [
+          -19.899547576904297,
+          -19.899547576904297,
+          10.10045337677002,
+          19.899547576904297,
+          19.899547576904297,
+          79.86552429199219
+        ],
+        "volume_cm3": 48.10177472363088,
+        "area_cm2": 74.75306638590237,
+        "tris": 3552,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "height",
+          "label": "высота",
+          "text": "высота: 69.77 мм — в норме (от 65 до 75 мм)",
+          "target": "тело",
+          "line": 4,
+          "actual": 69.76507091522217,
+          "expected": "от 65 до 75 мм"
+        },
+        {
+          "ok": true,
+          "rule": "volume",
+          "label": "объём",
+          "text": "объём: 48.1 см³ — в норме (от 35 до 60 см³)",
+          "target": "тело",
+          "line": 5,
+          "actual": 48.10177472363088,
+          "expected": "от 35 до 60 см³"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "тело",
+          "line": 6,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "тело",
+          "line": 7,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "9b0d188a059d3e49a5d3aa483f1a1378af8037c92b87e5ba68ee343122f21cb8",
+          "commands": 1,
+          "verbs": [
+            "blob"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "height",
+              "label": "высота",
+              "text": "высота: 69.77 мм — в норме (от 65 до 75 мм)",
+              "target": "тело",
+              "line": 4,
+              "actual": 69.76507091522217,
+              "expected": "от 65 до 75 мм"
+            },
+            {
+              "ok": true,
+              "rule": "volume",
+              "label": "объём",
+              "text": "объём: 48.1 см³ — в норме (от 35 до 60 см³)",
+              "target": "тело",
+              "line": 5,
+              "actual": 48.10177472363088,
+              "expected": "от 35 до 60 см³"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "тело",
+              "line": 6,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "тело",
+              "line": 7,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              39.799095153808594,
+              39.799095153808594,
+              69.76507091522217
+            ],
+            "bbox": [
+              -19.899547576904297,
+              -19.899547576904297,
+              10.10045337677002,
+              19.899547576904297,
+              19.899547576904297,
+              79.86552429199219
+            ],
+            "volume_cm3": 48.10177472363088,
+            "area_cm2": 74.75306638590237,
+            "tris": 3552,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 27.1,
+            "analysis": 277.4,
+            "total": 304.6
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "blob",
+              "raw_verb": "blob",
+              "target": "тело",
+              "status": "ok",
+              "ms": 26.947
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.011
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.004
+            }
+          ],
+          "elapsed_ms": 304.721,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 304.721
+    },
+    {
+      "id": "transform_translate",
+      "category": "transforms",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 2,
+      "metrics": {
+        "size": [
+          20.0,
+          20.0,
+          10.0
+        ],
+        "bbox": [
+          -5.0,
+          -10.0,
+          15.0,
+          15.0,
+          10.0,
+          25.0
+        ],
+        "volume_cm3": 4.0,
+        "area_cm2": 16.0,
+        "tris": 12,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 2
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "position",
+          "label": "угол габарита",
+          "text": "угол габарита: (-5, -10, 15) мм — в норме (допуск 0.5 мм)",
+          "target": "деталь",
+          "line": 5,
+          "actual": [
+            -5.0,
+            -10.0,
+            15.0
+          ],
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "size",
+          "label": "габариты",
+          "text": "габариты: 20 × 20 × 10 мм — в норме (= 20 мм × = 20 мм × = 10 мм)",
+          "target": "деталь",
+          "line": 6,
+          "actual": [
+            20.0,
+            20.0,
+            10.0
+          ],
+          "expected": "= 20 мм × = 20 мм × = 10 мм"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "деталь",
+          "line": 7,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "деталь",
+          "line": 8,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "c8dc1a4ea413323fe42873046419b3a5f704099c77d36752b5806acf63ebd5a6",
+          "commands": 2,
+          "verbs": [
+            "box",
+            "translate"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "position",
+              "label": "угол габарита",
+              "text": "угол габарита: (-5, -10, 15) мм — в норме (допуск 0.5 мм)",
+              "target": "деталь",
+              "line": 5,
+              "actual": [
+                -5.0,
+                -10.0,
+                15.0
+              ],
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "size",
+              "label": "габариты",
+              "text": "габариты: 20 × 20 × 10 мм — в норме (= 20 мм × = 20 мм × = 10 мм)",
+              "target": "деталь",
+              "line": 6,
+              "actual": [
+                20.0,
+                20.0,
+                10.0
+              ],
+              "expected": "= 20 мм × = 20 мм × = 10 мм"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "деталь",
+              "line": 7,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "деталь",
+              "line": 8,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              20.0,
+              20.0,
+              10.0
+            ],
+            "bbox": [
+              -5.0,
+              -10.0,
+              15.0,
+              15.0,
+              10.0,
+              25.0
+            ],
+            "volume_cm3": 4.0,
+            "area_cm2": 16.0,
+            "tris": 12,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 2
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 0.7,
+            "analysis": 2.8,
+            "total": 3.5
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "box",
+              "raw_verb": "box",
+              "target": "основа",
+              "status": "ok",
+              "ms": 0.442
+            },
+            {
+              "n": 2,
+              "line": 2,
+              "verb": "translate",
+              "raw_verb": "translate",
+              "target": "деталь",
+              "status": "ok",
+              "ms": 0.165
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.006
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 6,
+              "line": 8,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.002
+            }
+          ],
+          "elapsed_ms": 3.641,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 3.641
+    },
+    {
+      "id": "measure_top_placement",
+      "category": "transforms",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 2,
+      "metrics": {
+        "size": [
+          30.0,
+          30.0,
+          25.0
+        ],
+        "bbox": [
+          -15.0,
+          -15.0,
+          0.0,
+          15.0,
+          15.0,
+          25.0
+        ],
+        "volume_cm3": 22.5,
+        "area_cm2": 48.0,
+        "tris": 20,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 2,
+        "total_count": 2
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "position",
+          "label": "угол габарита",
+          "text": "угол габарита: (-15, -15, 20) мм — в норме (допуск 0.5 мм)",
+          "target": "крышка",
+          "line": 5,
+          "actual": [
+            -15.0,
+            -15.0,
+            20.0
+          ],
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "size",
+          "label": "габариты",
+          "text": "габариты: 30 × 30 × 5 мм — в норме (= 30 мм × = 30 мм × = 5 мм)",
+          "target": "крышка",
+          "line": 6,
+          "actual": [
+            30.0,
+            30.0,
+            5.0
+          ],
+          "expected": "= 30 мм × = 30 мм × = 5 мм"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "крышка",
+          "line": 7,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "крышка",
+          "line": 8,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "cf032339d7e760942fca0c89db8afea4c3428a0a0258c9b18a395d988c55c08a",
+          "commands": 2,
+          "verbs": [
+            "box"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "position",
+              "label": "угол габарита",
+              "text": "угол габарита: (-15, -15, 20) мм — в норме (допуск 0.5 мм)",
+              "target": "крышка",
+              "line": 5,
+              "actual": [
+                -15.0,
+                -15.0,
+                20.0
+              ],
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "size",
+              "label": "габариты",
+              "text": "габариты: 30 × 30 × 5 мм — в норме (= 30 мм × = 30 мм × = 5 мм)",
+              "target": "крышка",
+              "line": 6,
+              "actual": [
+                30.0,
+                30.0,
+                5.0
+              ],
+              "expected": "= 30 мм × = 30 мм × = 5 мм"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "крышка",
+              "line": 7,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "крышка",
+              "line": 8,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              30.0,
+              30.0,
+              25.0
+            ],
+            "bbox": [
+              -15.0,
+              -15.0,
+              0.0,
+              15.0,
+              15.0,
+              25.0
+            ],
+            "volume_cm3": 22.5,
+            "area_cm2": 48.0,
+            "tris": 20,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 2,
+            "total_count": 2
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 1.0,
+            "analysis": 3.7,
+            "total": 4.8
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "box",
+              "raw_verb": "box",
+              "target": "основание",
+              "status": "ok",
+              "ms": 0.157
+            },
+            {
+              "n": 2,
+              "line": 2,
+              "verb": "box",
+              "raw_verb": "box",
+              "target": "крышка",
+              "status": "ok",
+              "ms": 0.703
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.006
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 6,
+              "line": 8,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.002
+            }
+          ],
+          "elapsed_ms": 5.126,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 5.126
+    },
+    {
+      "id": "hollow_prism",
+      "category": "cavities",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          60.0,
+          51.96152423322201,
+          50.0
+        ],
+        "bbox": [
+          -30.0,
+          -25.980762116611004,
+          0.0,
+          30.0,
+          25.980762116611004,
+          50.0
+        ],
+        "volume_cm3": 43.735609327396716,
+        "area_cm2": 200.4515279420262,
+        "tris": 44,
+        "parts": 1,
+        "genus": 0,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "height",
+          "label": "высота",
+          "text": "высота: 50 мм — в норме (= 50 мм)",
+          "target": "деталь",
+          "line": 4,
+          "actual": 50.0,
+          "expected": "= 50 мм"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "деталь",
+          "line": 5,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "деталь",
+          "line": 6,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "6e75b621c5e5a69f65bb820f9261e075185339b820b3d6091b5af6c9a5e65e80",
+          "commands": 1,
+          "verbs": [
+            "prism"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "height",
+              "label": "высота",
+              "text": "высота: 50 мм — в норме (= 50 мм)",
+              "target": "деталь",
+              "line": 4,
+              "actual": 50.0,
+              "expected": "= 50 мм"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "деталь",
+              "line": 5,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "деталь",
+              "line": 6,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 3,
+          "checks_total": 3,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              60.0,
+              51.96152423322201,
+              50.0
+            ],
+            "bbox": [
+              -30.0,
+              -25.980762116611004,
+              0.0,
+              30.0,
+              25.980762116611004,
+              50.0
+            ],
+            "volume_cm3": 43.735609327396716,
+            "area_cm2": 200.4515279420262,
+            "tris": 44,
+            "parts": 1,
+            "genus": 0,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.1,
+            "build": 0.6,
+            "analysis": 6.9,
+            "total": 7.6
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "prism",
+              "raw_verb": "prism",
+              "target": "деталь",
+              "status": "ok",
+              "ms": 0.549
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.005
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.002
+            }
+          ],
+          "elapsed_ms": 7.64,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 7.64
+    },
+    {
+      "id": "text_glyph_r",
+      "category": "text",
+      "ok": true,
+      "first_attempt_ok": true,
+      "iterations": 1,
+      "commands": 1,
+      "metrics": {
+        "size": [
+          15.233333309491476,
+          2.0,
+          21.899999976158142
+        ],
+        "bbox": [
+          -7.616666654745738,
+          -1.0,
+          0.0,
+          7.616666654745738,
+          1.0,
+          21.899999976158142
+        ],
+        "volume_cm3": 0.23596467382650865,
+        "area_cm2": 4.8200431310132466,
+        "tris": 212,
+        "parts": 1,
+        "genus": 1,
+        "visible_count": 1,
+        "total_count": 1
+      },
+      "checks": [
+        {
+          "ok": true,
+          "rule": "height",
+          "label": "высота",
+          "text": "высота: 21.9 мм — в норме (от 16 до 24 мм)",
+          "target": "знак",
+          "line": 4,
+          "actual": 21.899999976158142,
+          "expected": "от 16 до 24 мм"
+        },
+        {
+          "ok": true,
+          "rule": "watertight",
+          "label": "герметичность",
+          "text": "оболочка замкнута (герметична)",
+          "target": "знак",
+          "line": 5,
+          "actual": true,
+          "expected": ""
+        },
+        {
+          "ok": true,
+          "rule": "parts",
+          "label": "число частей",
+          "text": "число частей: 1 — в норме (= 1)",
+          "target": "знак",
+          "line": 6,
+          "actual": 1,
+          "expected": "= 1"
+        },
+        {
+          "ok": true,
+          "rule": "genus",
+          "label": "сквозные отверстия",
+          "text": "сквозные отверстия: 1 — в норме (= 1)",
+          "target": "знак",
+          "line": 7,
+          "actual": 1,
+          "expected": "= 1"
+        }
+      ],
+      "error": null,
+      "violations": [],
+      "attempts": [
+        {
+          "ok": true,
+          "script_sha256": "7914fbf6a4253a0316779625f39ffde1092292a1a67be1cf75845666700cf7f3",
+          "commands": 1,
+          "verbs": [
+            "text"
+          ],
+          "violations": [],
+          "error": null,
+          "checks": [
+            {
+              "ok": true,
+              "rule": "height",
+              "label": "высота",
+              "text": "высота: 21.9 мм — в норме (от 16 до 24 мм)",
+              "target": "знак",
+              "line": 4,
+              "actual": 21.899999976158142,
+              "expected": "от 16 до 24 мм"
+            },
+            {
+              "ok": true,
+              "rule": "watertight",
+              "label": "герметичность",
+              "text": "оболочка замкнута (герметична)",
+              "target": "знак",
+              "line": 5,
+              "actual": true,
+              "expected": ""
+            },
+            {
+              "ok": true,
+              "rule": "parts",
+              "label": "число частей",
+              "text": "число частей: 1 — в норме (= 1)",
+              "target": "знак",
+              "line": 6,
+              "actual": 1,
+              "expected": "= 1"
+            },
+            {
+              "ok": true,
+              "rule": "genus",
+              "label": "сквозные отверстия",
+              "text": "сквозные отверстия: 1 — в норме (= 1)",
+              "target": "знак",
+              "line": 7,
+              "actual": 1,
+              "expected": "= 1"
+            }
+          ],
+          "checks_passed": 4,
+          "checks_total": 4,
+          "own_checks_failed": 0,
+          "metrics": {
+            "size": [
+              15.233333309491476,
+              2.0,
+              21.899999976158142
+            ],
+            "bbox": [
+              -7.616666654745738,
+              -1.0,
+              0.0,
+              7.616666654745738,
+              1.0,
+              21.899999976158142
+            ],
+            "volume_cm3": 0.23596467382650865,
+            "area_cm2": 4.8200431310132466,
+            "tris": 212,
+            "parts": 1,
+            "genus": 1,
+            "visible_count": 1,
+            "total_count": 1
+          },
+          "timings": {
+            "parse": 0.0,
+            "build": 0.7,
+            "analysis": 14.1,
+            "total": 14.9
+          },
+          "command_timings": [
+            {
+              "n": 1,
+              "line": 1,
+              "verb": "text",
+              "raw_verb": "text",
+              "target": "знак",
+              "status": "ok",
+              "ms": 0.653
+            },
+            {
+              "n": 2,
+              "line": 4,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.006
+            },
+            {
+              "n": 3,
+              "line": 5,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 4,
+              "line": 6,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.003
+            },
+            {
+              "n": 5,
+              "line": 7,
+              "verb": "check",
+              "raw_verb": "check",
+              "target": "",
+              "status": "ok",
+              "ms": 0.002
+            }
+          ],
+          "elapsed_ms": 14.929,
+          "attempt": 1
+        }
+      ],
+      "elapsed_ms": 14.929
+    }
+  ]
+}

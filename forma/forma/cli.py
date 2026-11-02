@@ -26,9 +26,32 @@ def _checks_failed(b) -> int:
     return sum(1 for c in b.analysis.get("checks", []) if not c.get("ok"))
 
 
+def _print_profile(b, limit: int = 10) -> None:
+    """Печатает короткий профиль без изменения машинного JSON-вывода."""
+    print("ПРОФИЛЬ КОМАНД (мс):")
+    rows = sorted(b.command_timings, key=lambda item: item.get("ms", 0.0), reverse=True)
+    if not rows:
+        print("  команд нет")
+    for item in rows[:limit]:
+        target = f" → {item['target']}" if item.get("target") else ""
+        status = "" if item.get("status") == "ok" else " [ошибка]"
+        print(f"  {item.get('ms', 0.0):>10.3f}  строка {item.get('line', 0):>3}  "
+              f"{item.get('verb') or 'параметр'}{target}{status}")
+    if len(rows) > limit:
+        print(f"  … ещё команд: {len(rows) - limit}")
+    summary = "  итого: " + ", ".join(
+        f"{key}={value} мс" for key, value in b.timings.items()
+        if isinstance(value, (int, float)))
+    if b.timings:
+        print(summary)
+
+
 def cmd_build(args) -> int:
     script = _read(args.script)
     b = build(script)
+    if getattr(args, "profile", False) and not args.json and not getattr(args, "digest", False):
+        _print_profile(b)
+        print()
     if getattr(args, "digest", False):
         digest = {
             "ok": b.ok,
@@ -213,6 +236,16 @@ def cmd_prompt(args) -> int:
     return 0
 
 
+def cmd_eval(args) -> int:
+    from .eval import run_cli as run_eval_cli
+    return run_eval_cli(args)
+
+
+def cmd_fuzz(args) -> int:
+    from .fuzz import run_cli as run_fuzz_cli
+    return run_fuzz_cli(args)
+
+
 def cmd_selftest(args) -> int:
     result = selftest()
     for case in result["cases"]:
@@ -265,6 +298,8 @@ def main(argv=None) -> int:
     p.add_argument("--strict", action="store_true",
                    help="вернуть код 3, если какая-то проверка check не выполнена")
     p.add_argument("--trace", help="записать журнал построения в JSONL")
+    p.add_argument("--profile", action="store_true",
+                   help="показать время каждой команды и этапов сборки")
     p.add_argument("--digest", action="store_true",
                    help="короткая сводка (хеш сценария и ключевые метрики) в JSON")
     p.set_defaults(func=cmd_build)
@@ -303,6 +338,16 @@ def main(argv=None) -> int:
     p.add_argument("--goal", default="")
     p.add_argument("--out")
     p.set_defaults(func=cmd_prompt)
+
+    p = sub.add_parser("eval", help="benchmark сценариев и оценка ответов нейросети")
+    from .eval import configure_parser as configure_eval_parser
+    configure_eval_parser(p)
+    p.set_defaults(func=cmd_eval)
+
+    p = sub.add_parser("fuzz", help="детерминированный fuzz DSL и GLB")
+    from .fuzz import configure_parser as configure_fuzz_parser
+    configure_fuzz_parser(p)
+    p.set_defaults(func=cmd_fuzz)
 
     p = sub.add_parser("selftest", help="проверить геометрическое ядро")
     p.set_defaults(func=cmd_selftest)

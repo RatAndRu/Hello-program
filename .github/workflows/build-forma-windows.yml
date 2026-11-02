@@ -64,6 +64,14 @@ jobs:
           fi
           exit "$rc"
 
+      - name: Прогнать foundation golden/eval
+        working-directory: forma
+        run: python -m forma.eval --out foundation-eval.json --compare docs/foundation_baseline.json
+
+      - name: Прогнать детерминированный foundation fuzz
+        working-directory: forma
+        run: python -m forma.fuzz --cases 24 --seed 20261102 --timeout 30 --output fuzz-report.json
+
       - name: Проверить JS-регрессии редактора
         working-directory: forma
         run: |
@@ -82,7 +90,7 @@ jobs:
         run: |
           python tools/build_skeleton_original.py
 
-      - name: Экспортировать модели 0.53–0.62 в GLB и Forma
+      - name: Экспортировать модели 0.53–0.63 в GLB и Forma
         working-directory: forma
         run: |
           python - <<'PY'
@@ -291,6 +299,8 @@ jobs:
             forma/release/models/*.forma
             forma/selftest.txt
             forma/uitest.txt
+            forma/foundation-eval.json
+            forma/fuzz-report.json
           if-no-files-found: error
           retention-days: 60
 

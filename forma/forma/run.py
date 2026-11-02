@@ -126,6 +126,10 @@ class Build:
     log: list = field(default_factory=list)
     script_hash: str = ""
     steps: list = field(default_factory=list)
+    # Независимый от кадров сборки профиль: одна запись на каждую исполненную
+    # DSL-команду, включая команду, завершившуюся ошибкой. В отличие от steps
+    # сюда попадают также проверки, параметры и служебные операции.
+    command_timings: list = field(default_factory=list)
     upto: int | None = None
     empty: bool = False
     _glb: bytes | None = None
@@ -267,6 +271,7 @@ class Build:
             "mates": list(getattr(scene, "mates", []) or []) if scene else [],
             "grid": getattr(scene, "grid", None) if scene else None,
             "steps": self.steps,
+            "command_timings": self.command_timings,
             "frames": frames,
             "upto": self.upto,
             "empty": self.empty,
@@ -550,7 +555,10 @@ def build(script: str, previous_analysis: dict | None = None,
         result.error = exc.to_dict()
         result.scene = None
         result.log = []
-        result.timings = {"parse": time.perf_counter() - t_parse}
+        result.timings = {
+            "parse": round((time.perf_counter() - t_parse) * 1000, 1),
+            "total": round((time.perf_counter() - started) * 1000, 1),
+        }
         return result
     parse_time = time.perf_counter() - t_parse
     if not commands:
@@ -569,7 +577,24 @@ def build(script: str, previous_analysis: dict | None = None,
         for index, cmd in enumerate(commands):
             if index >= limit:
                 break
-            _execute(scene, cmd)
+            command_started = time.perf_counter()
+            spec = lookup(cmd.verb or "")
+            status = "ok"
+            try:
+                _execute(scene, cmd)
+            except Exception:
+                status = "error"
+                raise
+            finally:
+                result.command_timings.append({
+                    "n": index + 1,
+                    "line": cmd.line,
+                    "verb": spec.name if spec else (cmd.verb or ""),
+                    "raw_verb": cmd.verb or "",
+                    "target": cmd.target or "",
+                    "status": status,
+                    "ms": round((time.perf_counter() - command_started) * 1000, 3),
+                })
             try:
                 names = [solid.name for solid in scene.visible_solids()]
             except Exception:

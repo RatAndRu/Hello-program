@@ -1,0 +1,269 @@
+{
+  "schema": "forma-eval-suite-v1",
+  "name": "foundation-geometry-and-agent",
+  "version": 1,
+  "description": "Независимый golden/eval: имя результата входит в задание, проверки не входят в эталонный сценарий и не могут быть удалены кандидатом.",
+  "tasks": [
+    {
+      "id": "primitive_box",
+      "category": "primitives",
+      "prompt": "Создай объект блок размером 40×30×20 мм командой box.",
+      "script": "блок = box size=[40,30,20]\n",
+      "required_verbs": ["box"],
+      "forbidden_verbs": ["from_sdf"],
+      "checks": [
+        "check блок size 40..40 30..30 20..20",
+        "check блок volume 24..24",
+        "check блок watertight",
+        "check блок parts 1"
+      ]
+    },
+    {
+      "id": "primitive_cylinder",
+      "category": "primitives",
+      "prompt": "Создай объект цилиндр радиусом 10 мм и высотой 30 мм.",
+      "script": "цилиндр = cylinder radius=10 height=30\n",
+      "required_verbs": ["cylinder"],
+      "checks": [
+        "check цилиндр size 20..20 20..20 30..30",
+        "check цилиндр volume 9..9.5",
+        "check цилиндр watertight",
+        "check цилиндр parts 1"
+      ]
+    },
+    {
+      "id": "extrude_rectangle",
+      "category": "profiles",
+      "prompt": "Создай объект пластина вытягиванием прямоугольного профиля 40×30 мм на высоту 12 мм.",
+      "script": "пластина = extrude profile=[[-20,-15],[20,-15],[20,15],[-20,15]] height=12\n",
+      "required_verbs": ["extrude"],
+      "checks": [
+        "check пластина size 40..40 30..30 12..12",
+        "check пластина volume 14..14.5",
+        "check пластина watertight",
+        "check пластина parts 1"
+      ]
+    },
+    {
+      "id": "lathe_cup",
+      "category": "profiles",
+      "prompt": "Создай объект кружка вращением профиля: высота 50 мм, наружный радиус 30 мм, внутренний 25 мм, дно 5 мм.",
+      "script": "кружка = lathe points=[[0,0],[30,0],[30,50],[25,50],[25,5],[0,5]] segments=64\n",
+      "required_verbs": ["lathe"],
+      "checks": [
+        "check кружка height 50..50",
+        "check кружка volume 45..60",
+        "check кружка watertight",
+        "check кружка parts 1",
+        "check кружка genus 0"
+      ]
+    },
+    {
+      "id": "sweep_hook",
+      "category": "profiles",
+      "prompt": "Создай объект крюк круглым sweep радиусом 3 мм по заданному открытому пути в плоскости XZ.",
+      "script": "крюк = sweep path=[[0,0,0],[20,0,0],[30,0,10],[30,0,30],[20,0,40],[0,0,40]] radius=3 smooth=4\n",
+      "required_verbs": ["sweep"],
+      "checks": [
+        "check крюк volume 1..5",
+        "check крюк watertight",
+        "check крюк parts 1"
+      ]
+    },
+    {
+      "id": "boolean_through_hole",
+      "category": "booleans",
+      "prompt": "В блоке 60×60×20 мм вырежи сквозное центральное отверстие диаметром 20 мм. Результат назови деталь и используй difference.",
+      "script": "заготовка = box size=[60,60,20]\nсверло = cylinder radius=10 height=30 at=[0,0,-5]\nдеталь = difference [заготовка, сверло]\n",
+      "required_verbs": ["difference"],
+      "checks": [
+        "check деталь size 60..60 60..60 20..20",
+        "check деталь volume 65..72",
+        "check деталь watertight",
+        "check деталь parts 1",
+        "check деталь genus 1"
+      ]
+    },
+    {
+      "id": "boolean_overlap_union",
+      "category": "booleans",
+      "prompt": "Объедини два пересекающихся блока 30×30×30 мм со сдвигом второго на 15 мм по X. Результат назови деталь.",
+      "script": "а = box size=[30,30,30]\nб = box size=[30,30,30] at=[15,0,0]\nдеталь = union [а, б]\n",
+      "required_verbs": ["union"],
+      "checks": [
+        "check деталь size 45..45 30..30 30..30",
+        "check деталь volume 40..41",
+        "check деталь watertight",
+        "check деталь parts 1"
+      ]
+    },
+    {
+      "id": "fold_sheet_single",
+      "category": "origami",
+      "prompt": "Создай объект сгиб: лист 160×80×1 мм, один сгиб на 90°, gap=1, sharp=1. Используй fold_sheet.",
+      "script": "сгиб = fold_sheet width=80 length=160 thickness=1 parts=2 angle=90 gap=1 sharp=1\n",
+      "required_verbs": ["fold_sheet"],
+      "checks": [
+        "check сгиб volume 11..13",
+        "check сгиб height 60..90",
+        "check сгиб watertight",
+        "check сгиб parts 1"
+      ]
+    },
+    {
+      "id": "fold_sheet_accordion",
+      "category": "origami",
+      "prompt": "Создай объект гармошка из листа 160×80×1 мм: четыре полотнища, угол 120°, gap=1.",
+      "script": "гармошка = fold_sheet width=80 length=160 thickness=1 parts=4 angle=120 gap=1\n",
+      "required_verbs": ["fold_sheet"],
+      "checks": [
+        "check гармошка volume 11..14",
+        "check гармошка watertight",
+        "check гармошка parts 1"
+      ]
+    },
+    {
+      "id": "origami_groove",
+      "category": "origami",
+      "prompt": "На листе 80×80×1 мм сделай объект деталь с канавкой глубиной 0.5 мм и полушириной 4 мм по линии X через центр.",
+      "script": "лист = sheet width=80 length=80 thickness=1\nдеталь = складка лист from=[-40,0,1] to=[40,0,1] r=4 depth=0.5 mode=канавка\n",
+      "required_verbs": ["складка"],
+      "checks": [
+        "check деталь volume 6.3..6.5",
+        "check деталь size 80..80 80..80 1.4..1.6",
+        "check деталь position x=-40 y=-40 z=-0.6..-0.4",
+        "check деталь watertight",
+        "check деталь parts 1"
+      ]
+    },
+    {
+      "id": "boolean_blind_cup",
+      "category": "booleans",
+      "prompt": "Создай объект кружка вычитанием внутреннего цилиндра радиусом 26 мм из внешнего радиусом 30 мм. Высота 50 мм, дно 5 мм.",
+      "script": "корпус = cylinder radius=30 height=50\nполость = cylinder radius=26 height=50 at=[0,0,5]\nкружка = difference [корпус, полость]\n",
+      "required_verbs": ["difference"],
+      "checks": [
+        "check кружка height 50..50",
+        "check кружка volume 40..50",
+        "check кружка watertight",
+        "check кружка parts 1",
+        "check кружка genus 0"
+      ]
+    },
+    {
+      "id": "mechanical_spur_gear",
+      "category": "mechanics",
+      "prompt": "Создай объект шестерня: 20 зубьев, модуль 2, толщина 8 мм, без ступицы и отверстия.",
+      "script": "шестерня = gear teeth=20 module=2 thickness=8\n",
+      "required_verbs": ["gear"],
+      "checks": [
+        "check шестерня size 43..44 43..44 8..8",
+        "check шестерня watertight",
+        "check шестерня parts 1",
+        "check шестерня genus 0"
+      ]
+    },
+    {
+      "id": "mechanical_spring",
+      "category": "mechanics",
+      "prompt": "Создай объект пружина со средним диаметром 22 мм, проволокой 3 мм, 10 витками и шагом 7 мм.",
+      "script": "пружина = spring diameter=22 wire=3 turns=10 pitch=7\n",
+      "required_verbs": ["spring"],
+      "checks": [
+        "check пружина volume 4..12",
+        "check пружина watertight",
+        "check пружина parts 1"
+      ]
+    },
+    {
+      "id": "mechanical_screw",
+      "category": "mechanics",
+      "prompt": "Создай объект винт d=4, length=25 с потайной головкой и крестовым шлицем.",
+      "script": "винт = screw d=4 length=25 head=потай drive=крест\n",
+      "required_verbs": ["screw"],
+      "checks": [
+        "check винт height 20..35",
+        "check винт volume 0.1..2",
+        "check винт watertight",
+        "check винт parts 1"
+      ]
+    },
+    {
+      "id": "hollow_pipe_elbow",
+      "category": "mechanics",
+      "prompt": "Создай объект труба длиной 120 мм, наружным диаметром 20 мм, стенкой 2 мм и плавным сгибом 90° радиусом 40 мм.",
+      "script": "труба = pipe length=120 diameter=20 wall=2 angle=90 radius=40\n",
+      "required_verbs": ["pipe"],
+      "checks": [
+        "check труба volume 10..15",
+        "check труба watertight",
+        "check труба parts 1",
+        "check труба genus 1"
+      ]
+    },
+    {
+      "id": "organic_blob",
+      "category": "organic",
+      "prompt": "Создай объект тело из двух сфер blob с центрами Z=30 и Z=65 и радиусами 20 и 15 мм.",
+      "script": "тело = blob spheres=[[0,0,30,20],[0,0,65,15]] blend=10 resolution=2\n",
+      "required_verbs": ["blob"],
+      "checks": [
+        "check тело height 65..75",
+        "check тело volume 35..60",
+        "check тело watertight",
+        "check тело parts 1"
+      ]
+    },
+    {
+      "id": "transform_translate",
+      "category": "transforms",
+      "prompt": "Сдвинь блок 20×20×10 мм на [5,0,15]. Результат назови деталь и используй translate.",
+      "script": "основа = box size=[20,20,10]\nдеталь = translate [основа] offset=[5,0,15]\n",
+      "required_verbs": ["translate"],
+      "checks": [
+        "check деталь position x=-5 y=-10 z=15",
+        "check деталь size 20..20 20..20 10..10",
+        "check деталь watertight",
+        "check деталь parts 1"
+      ]
+    },
+    {
+      "id": "measure_top_placement",
+      "category": "transforms",
+      "prompt": "Поставь крышку 30×30×5 мм на верх основания 30×30×20 мм, используя меру top(основания), а не числовую высоту в at.",
+      "script": "основание = box size=[30,30,20]\nкрышка = box size=[30,30,5] at=[0,0,top(основание)]\n",
+      "required_verbs": ["box"],
+      "checks": [
+        "check крышка position x=-15 y=-15 z=20",
+        "check крышка size 30..30 30..30 5..5",
+        "check крышка watertight",
+        "check крышка parts 1"
+      ]
+    },
+    {
+      "id": "hollow_prism",
+      "category": "cavities",
+      "prompt": "Создай объект деталь: шестигранная призма радиусом 30 мм, высотой 50 мм, слепой полостью сверху глубиной 40 мм и стенкой 3 мм.",
+      "script": "деталь = prism sides=6 radius=30 height=50 wall=3 cavity=верх cavity_depth=40\n",
+      "required_verbs": ["prism"],
+      "checks": [
+        "check деталь height 50..50",
+        "check деталь watertight",
+        "check деталь parts 1"
+      ]
+    },
+    {
+      "id": "text_glyph_r",
+      "category": "text",
+      "prompt": "Создай объект знак — объёмную заглавную букву R высотой 20 мм и толщиной 2 мм.",
+      "script": "знак = text \"R\" size=20 depth=2\n",
+      "required_verbs": ["text"],
+      "checks": [
+        "check знак height 16..24",
+        "check знак watertight",
+        "check знак parts 1",
+        "check знак genus 1"
+      ]
+    }
+  ]
+}

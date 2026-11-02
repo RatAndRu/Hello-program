@@ -25,6 +25,9 @@ forma/release/
 forma/*.spec.bak
 forma/renders/
 forma/selftest.txt
+forma/foundation-eval.json
+forma/fuzz-report.json
+forma/*-repros/
 forma/packaging/version_info.txt
 **/__pycache__/
 

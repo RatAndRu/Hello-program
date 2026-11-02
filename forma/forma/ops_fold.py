@@ -154,7 +154,16 @@ def fold_along(a, name):
              + (side * new_q)[:, None] * nrm[None, :]
              + new_up[:, None] * up_vec[None, :])
     solid = manifold_from_arrays(moved, faces, "сгибаемый лист")
-    solid = solid.simplify(max(0.005, min(radius, max(panel, radius)) * 0.015))
+    simplify_tolerance = max(0.005, min(radius, max(panel, radius)) * 0.015)
+    if angle <= 22.0:
+        # На малом угле прежний допуск simplify был больше стрелки дуги:
+        # полмиллиона исходных треугольников схлопывались в 20–28, и сгиб
+        # превращался в грубую ломаную. Сохраняем минимум десять шагов дуги,
+        # но по-прежнему удаляем компланарные треугольники плоских полотнищ.
+        turn = math.radians(angle)
+        arc_sagitta = radius * (1.0 - math.cos(turn / 20.0))
+        simplify_tolerance = min(simplify_tolerance, max(1e-6, arc_sagitta * 0.2))
+    solid = solid.simplify(simplify_tolerance)
 
     before, after = float(fine.volume()), float(solid.volume())
     tolerance = min(0.25, 0.02 + (parts - 1) * math.radians(angle) * thin
