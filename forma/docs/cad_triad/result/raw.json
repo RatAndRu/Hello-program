@@ -1,7 +1,7 @@
 [
  {
   "tool": "OpenSCAD",
-  "build_ms": 210,
+  "build_ms": 200,
   "tool_volume_cm3": null,
   "valid": null,
   "notes": "своих метрик нет: объём знает только trimesh по STL",
@@ -40,8 +40,8 @@
   "volume_cm3": 10.0,
   "tris": 33,
   "watertight": false,
-  "build_ms": 150,
-  "regenerate_ms": 440,
+  "build_ms": 440,
+  "regenerate_ms": 430,
   "step_bytes": 49440,
   "size": [
    30.0,
@@ -53,7 +53,7 @@
  },
  {
   "tool": "ФОРМА 3D",
-  "build_ms": 31.0,
+  "build_ms": 21.9,
   "tool_volume_cm3": 28.570389940580945,
   "valid": true,
   "tris": 148,
