@@ -1,0 +1,116 @@
+name: Deploy Origami Studio
+
+on:
+  push:
+    branches:
+      - arena/46b67314-hello-program
+    paths:
+      - 'origami-studio/**'
+      - '.github/workflows/deploy-origami-studio.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: origami-studio-production
+  cancel-in-progress: false
+
+env:
+  FLY_APP_NAME: origami-studio-ratandru
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Tests and syntax
+        working-directory: origami-studio
+        run: |
+          npm test
+          npm run check
+      - name: Package downloadable application
+        working-directory: origami-studio
+        run: |
+          mkdir -p downloads
+          zip -qr downloads/origami-studio.zip . \
+            -x 'downloads/*' 'node_modules/*' '.DS_Store' 'fly.toml' 'Dockerfile'
+          unzip -t downloads/origami-studio.zip
+      - name: Build production image
+        run: docker build --build-arg "ORIGAMI_REVISION=$GITHUB_SHA" -t "origami-studio:$GITHUB_SHA" origami-studio
+      - name: Verify production container and downloads
+        run: |
+          set -euo pipefail
+          docker run -d --name origami-studio -p 8080:8080 "origami-studio:$GITHUB_SHA"
+          trap 'docker rm -f origami-studio >/dev/null 2>&1 || true' EXIT
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz > /tmp/origami-health.json && grep -q "$GITHUB_SHA" /tmp/origami-health.json; then break; fi
+            sleep 2
+          done
+          grep -q "$GITHUB_SHA" /tmp/origami-health.json
+          curl -fsS http://127.0.0.1:8080/ | grep -q 'Origami Studio'
+          curl -fsS http://127.0.0.1:8080/downloads/origami-studio.zip -o /tmp/origami-download.zip
+          unzip -t /tmp/origami-download.zip
+          curl -fsS http://127.0.0.1:8080/examples/crane-instructions.png -o /tmp/origami-crane.png
+          curl -fsS http://127.0.0.1:8080/examples/crane-animation.webm -o /tmp/origami-crane.webm
+          test -s /tmp/origami-crane.png
+          test -s /tmp/origami-crane.webm
+      - name: Container logs on failure
+        if: failure()
+        run: docker logs origami-studio || true
+
+  deploy:
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check deployment credentials
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo '::error::FLY_API_TOKEN is missing in repository Actions secrets.'
+            exit 1
+          fi
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Package application
+        working-directory: origami-studio
+        run: |
+          mkdir -p downloads
+          zip -qr downloads/origami-studio.zip . -x 'downloads/*' 'node_modules/*' '.DS_Store' 'fly.toml' 'Dockerfile'
+      - name: Ensure Fly application
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ vars.FLY_ORG }}
+        run: |
+          set -euo pipefail
+          flyctl apps list 2>&1 | tee /tmp/origami-fly-app.log
+          if ! awk 'NR > 1 {print $1}' /tmp/origami-fly-app.log | grep -Fxq "$FLY_APP_NAME"; then
+            flyctl apps create "$FLY_APP_NAME" --org "${FLY_ORG:-personal}" 2>&1 | tee -a /tmp/origami-fly-app.log
+          fi
+      - name: Deploy
+        working-directory: origami-studio
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl deploy --app "$FLY_APP_NAME" --local-only --build-arg "ORIGAMI_REVISION=$GITHUB_SHA"
+      - name: Keep exactly one machine
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: flyctl scale count 1 --app "$FLY_APP_NAME" --yes
+      - name: Verify public application and all download links
+        run: |
+          set -euo pipefail
+          base="https://$FLY_APP_NAME.fly.dev"
+          for attempt in $(seq 1 24); do
+            if curl -fsS "$base/healthz" > /tmp/origami-public-health.json && grep -q "$GITHUB_SHA" /tmp/origami-public-health.json; then break; fi
+            sleep 10
+          done
+          grep -q "$GITHUB_SHA" /tmp/origami-public-health.json
+          curl -fsS "$base/" | grep -q 'Origami Studio'
+          curl -fsS "$base/downloads/origami-studio.zip" -o /tmp/origami-public.zip
+          unzip -t /tmp/origami-public.zip
+          curl -fsSI "$base/examples/crane-instructions.png" | grep -Ei 'HTTP/|content-type|content-length'
+          curl -fsSI "$base/examples/crane-animation.webm" | grep -Ei 'HTTP/|content-type|content-length'

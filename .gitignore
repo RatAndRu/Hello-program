@@ -39,6 +39,10 @@ forma/prompts/
 forma/textures/
 forma/imports/
 
+# Origami Studio: архивы для публичной раздачи создаются в CI
+origami-studio/downloads/
+/origami-studio.zip
+
 # Python
 __pycache__/
 *.pyc
