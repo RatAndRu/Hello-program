@@ -260,8 +260,13 @@ class UiPolishTest(unittest.TestCase):
         self.assertIn('id="btn-focus-sel"', self.html)
 
     def test_no_autoplay(self):
-        self.assertIn("Не запускаем анимацию сами", self.app)
+        # Первый показ по-прежнему не запускается сам. Но если пользователь
+        # уже запустил playback, rebuild обязан восстановить именно этот
+        # транспорт, а не молча нажать паузу.
+        self.assertIn("Первый показ остаётся на паузе", self.app)
         self.assertIn("анимация готова", self.app)
+        self.assertIn("state.viewer.playAnimation(Boolean(resumePlayback))", self.app)
+        self.assertIn("if (!resumePlayback)", self.app)
         self.assertNotIn("state.viewer.playAnimation(true);\n      state.anim.playing", self.app)
 
     def test_space_cell_covers_model(self):
