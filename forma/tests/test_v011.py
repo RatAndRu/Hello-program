@@ -112,7 +112,7 @@ class TestWebConsole(unittest.TestCase):
 
     def test_animation_is_ready_before_styling(self):
         """Анимация настраивается до setShading: падение оформления не убивает клип."""
-        body = self.viewer.split("async load(url, animation = null) {", 1)[1].split("\n  }", 1)[0]
+        body = self.viewer.split("async load(url, animation = null, expectedVariant = null) {", 1)[1].split("\n  }", 1)[0]
         self.assertIn("_setupAnimation(gltf)", body)
         self.assertLess(body.index("_setupAnimation(gltf)"), body.index("this.setShading("))
         self.assertLess(body.index("setTimeline("), body.index("this.setShading("))
