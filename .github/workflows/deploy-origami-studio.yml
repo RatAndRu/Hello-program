@@ -113,7 +113,8 @@ jobs:
           echo "Expected revision: $GITHUB_SHA"
           cat /tmp/origami-public-health.json
           grep -q "$GITHUB_SHA" /tmp/origami-public-health.json
-          curl -fsS "$base/" | grep -q 'Origami Studio'
+          curl -fsS "$base/" -o /tmp/origami-public-index.html
+          grep -q 'Origami Studio' /tmp/origami-public-index.html
           curl -fsS "$base/downloads/origami-studio.zip" -o /tmp/origami-public.zip
           unzip -t /tmp/origami-public.zip
           curl -fsSI "$base/examples/crane-instructions.png" | grep -Ei 'HTTP/|content-type|content-length'
