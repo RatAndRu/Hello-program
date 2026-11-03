@@ -1,7 +1,7 @@
 [
  {
   "tool": "OpenSCAD",
-  "build_ms": 200,
+  "build_ms": 220,
   "tool_volume_cm3": null,
   "valid": null,
   "notes": "своих метрик нет: объём знает только trimesh по STL",
@@ -20,6 +20,14 @@
  },
  {
   "json_error": true,
+  "volume_cm3": 28.5644,
+  "tris": 1852,
+  "watertight": true,
+  "size": [
+   80.0,
+   60.0,
+   6.0
+  ],
   "lines": 60,
   "bytes": 2573,
   "label": "FreeCAD Part (Python, CSG)",
@@ -40,8 +48,8 @@
   "volume_cm3": 10.0,
   "tris": 33,
   "watertight": false,
-  "build_ms": 440,
-  "regenerate_ms": 430,
+  "build_ms": 20,
+  "regenerate_ms": 20,
   "step_bytes": 49440,
   "size": [
    30.0,
@@ -53,7 +61,7 @@
  },
  {
   "tool": "ФОРМА 3D",
-  "build_ms": 21.9,
+  "build_ms": 21.7,
   "tool_volume_cm3": 28.570389940580945,
   "valid": true,
   "tris": 148,
