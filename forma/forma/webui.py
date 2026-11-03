@@ -211,7 +211,7 @@ class AppState:
             if command.verb.strip().lower() in {
                     "import", "импорт", "open", "открыть", "include", "включить", "подключить",
                     "openscad", "scad", "open_scad", "опенскад"}:
-                raise FormaError("Публичное демо: внешние файлы, include и OpenSCAD отключены. "
+                raise FormaError("Публичное демо: импорт внешних файлов, include и OpenSCAD отключены. "
                                  "Используйте готовые проекты и команды Forma.")
         warning = resource_warning(script, overrides=overrides, upto=upto)
         if warning is not None:

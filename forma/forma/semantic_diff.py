@@ -79,13 +79,19 @@ def _json_value(value):
 
 
 def _object_attributes(solid) -> dict:
+    # Provenance — аудит происхождения, а не геометрический/визуальный атрибут.
+    # В нём намеренно хранится исходная строка, поэтому даже изменение внутри
+    # допуска не должно создавать ложный semantic diff. Остальные meta поля
+    # сравниваются как раньше.
+    meta = dict(solid.meta or {})
+    meta.pop("provenance", None)
     return _json_value({
         "op": solid.op, "color": solid.color, "metal": solid.metal,
         "rough": solid.rough, "density": solid.density, "visible": solid.visible,
         "emissive": solid.emissive, "emissive_strength": solid.emissive_strength,
         "mirror": solid.mirror, "transmission": solid.transmission,
         "tex": solid.tex, "paint": solid.paint, "brush": solid.brush,
-        "notes": solid.notes, "meta": solid.meta,
+        "notes": solid.notes, "meta": meta,
     })
 
 
