@@ -48,10 +48,6 @@ jobs:
             [ -z "$FC" ] && FC=$(find /tmp/squashfs-root -maxdepth 4 -name "freecadcmd" -type f | head -1)
             [ -z "$FC" ] && echo "FreeCADCmd внутри AppImage не найден"
           fi
-          if [ -n "$FC" ] && [ -d /tmp/squashfs-root ]; then
-            # AppImage распакован и не умеет сам выставить пути — делаем это руками
-            echo "LD_LIBRARY_PATH=/tmp/squashfs-root/usr/lib:${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
-          fi
           echo "FC=$FC" >> "$GITHUB_ENV"
           echo "FreeCAD: $FC"
           "$FC" --version 2>&1 | head -3 || true
@@ -109,20 +105,30 @@ jobs:
 
       - name: FreeCAD Part (CSG, Python)
         continue-on-error: true
+        env:
+          LD_LIBRARY_PATH: /tmp/squashfs-root/usr/lib
         run: |
           set +e
-          [ -z "$FC" ] && { echo "FreeCAD нет — шаг пропущен"; exit 0; }
           mkdir -p out
-          "$FC" forma/docs/cad_triad/plate_part.py 2>&1 | tee out/freecad_part.log
+          { echo "FC=$FC"; "$FC" --version; } > out/freecad_part.log 2>&1
+          if [ -z "$FC" ]; then
+            echo "FreeCAD нет — шаг пропущен" >> out/freecad_part.log; exit 0
+          fi
+          "$FC" forma/docs/cad_triad/plate_part.py >> out/freecad_part.log 2>&1
           grep -h "^RESULT " out/freecad_part.log | sed 's/^RESULT //' > out/freecad_part.json
           ls -l out/plate_freecad.* 2>&1
 
       - name: FreeCAD Sketcher (ограничения и параметрическая правка)
         continue-on-error: true
+        env:
+          LD_LIBRARY_PATH: /tmp/squashfs-root/usr/lib
         run: |
           set +e
-          [ -z "$FC" ] && { echo "FreeCAD нет — шаг пропущен"; exit 0; }
-          "$FC" forma/docs/cad_triad/plate_sketch.py 2>&1 | tee out/freecad_sketch.log
+          { echo "FC=$FC"; "$FC" --version; } > out/freecad_sketch.log 2>&1
+          if [ -z "$FC" ]; then
+            echo "FreeCAD нет — шаг пропущен" >> out/freecad_sketch.log; exit 0
+          fi
+          "$FC" forma/docs/cad_triad/plate_sketch.py >> out/freecad_sketch.log 2>&1
           grep -h "^RESULT " out/freecad_sketch.log | sed 's/^RESULT //' > out/freecad_sketch.json
           python3 - <<'PY'
           import json, os, trimesh
@@ -238,7 +244,7 @@ jobs:
           dest=forma/docs/cad_triad/result
           mkdir -p "$dest"
           cp out/table.txt out/versions.txt out/solvespace_caps.txt "$dest/" 2>/dev/null || true
-          cp out/*.log "$dest/" 2>/dev/null || true
+          cp out/*.log out/*.txt "$dest/" 2>/dev/null || true
           cp out/raw.json "$dest/" 2>/dev/null || true
           cp out/plate_openscad.png "$dest/" 2>/dev/null || true
           cp out/solvespace.png "$dest/" 2>/dev/null || true
