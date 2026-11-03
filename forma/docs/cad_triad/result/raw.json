@@ -1,7 +1,7 @@
 [
  {
   "tool": "OpenSCAD",
-  "build_ms": 120,
+  "build_ms": 210,
   "tool_volume_cm3": null,
   "valid": null,
   "notes": "своих метрик нет: объём знает только trimesh по STL",
@@ -37,16 +37,23 @@
   "tool_volume_cm3": null,
   "valid": null,
   "notes": "CLI: экспорт меша и точных поверхностей (STEP); своих метрик нет",
-  "stl_error": "string is not a file: `out/plate_solvespace.stl`",
-  "build_ms": 0,
-  "regenerate_ms": 0,
-  "time_error": "[Errno 2] No such file or directory: 'out/solvespace.step'",
+  "volume_cm3": 10.0,
+  "tris": 33,
+  "watertight": false,
+  "build_ms": 150,
+  "regenerate_ms": 440,
+  "step_bytes": 49440,
+  "size": [
+   30.0,
+   25.0,
+   30.0
+  ],
   "label": "SolveSpace (CLI, чужой тест)",
   "same_part": false
  },
  {
   "tool": "ФОРМА 3D",
-  "build_ms": 14.5,
+  "build_ms": 31.0,
   "tool_volume_cm3": 28.570389940580945,
   "valid": true,
   "tris": 148,
