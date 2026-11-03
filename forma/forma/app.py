@@ -976,12 +976,12 @@ def _run_uistest(report_path: str | None) -> int:
                 check("0.43: ручка, завиток, лестница, ступени, рычаг, косынка и клинок",
                       reworked.get("ok") is True and reworked.get("objects") == 7,
                       f"{reworked.get('tris', 0)} трис, {reworked.get('objects', 0)} объектов")
-                removed = post("/api/preview", {"script": "н = rack length=400"})
+                removed = post("/api/preview", {"script": "н = coupling"})
                 check("0.43: остальные удалённые предметы не строятся и исчезли из карточек",
                       removed.get("ok") is False
                       and all(f"op: '{op}'".encode("utf-8") not in js_app
-                              for op in ("rack", "coupling", "heatsink",
-                                         "bearing", "caster", "leg")))
+                              for op in ("coupling", "heatsink",
+                                         "caster", "leg")))
 
                 # 0.44: полосы, решётки, шипы, колонна, дуговая призма, профиль
                 formed = post("/api/preview", {"script": (

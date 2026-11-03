@@ -69,6 +69,12 @@ from . import ops_orient  # noqa: F401,E402
 from . import ops_eye  # noqa: F401,E402
 from . import ops_web  # noqa: F401,E402
 from . import ops_organic  # noqa: F401,E402
+from . import ops_mechparts  # noqa: F401,E402
+
+# Новые механические примитивы приносят свои памятки ориентации вместе с
+# геометрией — так модуль переносится одним файлом, без правки orient_notes.
+from .orient_notes import PRIMITIVE_ORIENTATIONS as _PRIMITIVE_ORIENTATIONS  # noqa: E402
+_PRIMITIVE_ORIENTATIONS.update(ops_mechparts.ORIENTATION_NOTES)
 
 
 # Команды, которые не меняют ни форму, ни видимость: в анимации сборки

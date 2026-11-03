@@ -5584,6 +5584,143 @@ const TOOL_SHAPES = [
     ],
   },
   {
+    op: 'bearing', name: 'подшипник', title: 'Подшипник', group: 'Готовые детали',
+    desc: 'Кольца с фасками, тела качения и сепаратор; тип задаёт шарики, ролики, иглы, конусы или упорные шайбы.',
+    params: [
+      { k: 'd', label: 'внутренний', v: 15, step: 1, min: 1, max: 2000 },
+      { k: 'D', label: 'наружный', v: 35, step: 1, min: 2, max: 3000 },
+      { k: 'B', label: 'ширина', v: 11, step: 0.5, min: 0.5, max: 600 },
+      { k: 'type', label: 'тип', v: 'шариковый', kind: 'raw', choices: ['шариковый', 'роликовый', 'игольчатый', 'конический', 'упорный', 'сферический'] },
+      { k: 'shield', label: 'закрытый', v: false, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'din_rail', name: 'рейка_din', title: 'DIN-рейка', group: 'Готовые детали',
+    desc: 'Профиль TS35/TS15/TS45 по DIN 60715 с загнутыми полками и просечками через 25 мм.',
+    params: [
+      { k: 'length', label: 'длина', v: 500, step: 10, min: 20, max: 6000 },
+      { k: 'size', label: 'профиль', v: 35, step: 1, min: 10, max: 60 },
+      { k: 'thickness', label: 'сталь', v: 1, step: 0.1, min: 0.3, max: 4 },
+      { k: 'slots', label: 'просечки', v: true, kind: 'bool' },
+    ],
+  },
+  {
+    op: 'crate', name: 'ящик_тарный', title: 'Дощатый ящик', group: 'Готовые детали',
+    desc: 'Дно на балках, стенки из досок с зазорами, четыре угловые стойки, крышка и полозья по желанию.',
+    params: [
+      { k: 'length', label: 'длина', v: 880, step: 10, min: 120, max: 4000 },
+      { k: 'width', label: 'ширина', v: 600, step: 10, min: 120, max: 4000 },
+      { k: 'height', label: 'высота', v: 790, step: 10, min: 80, max: 4000 },
+      { k: 'plank', label: 'доска', v: 20, step: 1, min: 4, max: 80 },
+      { k: 'lid', label: 'крышка', v: false, kind: 'bool' },
+      { k: 'skids', label: 'полозья h (0 — нет)', v: 0, step: 5, min: 0, max: 200 },
+    ],
+  },
+  {
+    op: 'lug', name: 'проушина', title: 'Проушина', group: 'Готовые детали',
+    desc: 'Площадка с отверстием под палец и отогнутая полка с крепёжными отверстиями.',
+    params: [
+      { k: 'inner', label: 'отверстие', v: 32, step: 1, min: 2, max: 600 },
+      { k: 'outer', label: 'головка', v: 64, step: 1, min: 6, max: 800 },
+      { k: 'length', label: 'длина', v: 90, step: 5, min: 10, max: 2000 },
+      { k: 'thickness', label: 'сталь', v: 4, step: 0.5, min: 0.8, max: 40 },
+      { k: 'bend', label: 'полка h', v: 30, step: 5, min: 0, max: 800 },
+      { k: 'holes', label: 'отверстий на полке', v: 2, step: 1, min: 0, max: 8 },
+    ],
+  },
+  {
+    op: 'corner_bracket', name: 'кронштейн', title: 'Кронштейн с косынкой', group: 'Готовые детали',
+    desc: 'Две полки с треугольной косынкой между ними; отверстия в обеих полках двумя рядами.',
+    params: [
+      { k: 'size', label: 'полки X,Z', v: '80,80', kind: 'vec' },
+      { k: 'width', label: 'ширина', v: 60, step: 5, min: 10, max: 600 },
+      { k: 'thickness', label: 'сталь', v: 5, step: 0.5, min: 1, max: 40 },
+      { k: 'gusset', label: 'косынка', v: 5, step: 0.5, min: 0, max: 40 },
+      { k: 'holes', label: 'отверстий в ряд', v: 2, step: 1, min: 0, max: 6 },
+    ],
+  },
+  {
+    op: 'buckle', name: 'застёжка', title: 'Фастекс', group: 'Готовые детали',
+    desc: 'Две половины side-release: рамка с перекладиной и ответная часть с пружинными усиками.',
+    params: [
+      { k: 'width', label: 'стропа', v: 25, step: 1, min: 5, max: 80 },
+      { k: 'length', label: 'длина', v: 60, step: 5, min: 20, max: 220 },
+      { k: 'thickness', label: 'толщина', v: 7, step: 0.5, min: 2, max: 25 },
+    ],
+  },
+  {
+    op: 'rack', name: 'рейка_зубчатая', title: 'Зубчатая рейка', group: 'Готовые детали',
+    desc: 'Рейка под шестерню того же модуля: трапецеидальные зубья сверху, основание с отверстиями.',
+    params: [
+      { k: 'length', label: 'длина', v: 300, step: 10, min: 20, max: 4000 },
+      { k: 'module', label: 'модуль', v: 2, step: 0.5, min: 0.2, max: 20 },
+      { k: 'width', label: 'ширина', v: 20, step: 2, min: 2, max: 400 },
+      { k: 'height', label: 'высота', v: 18, step: 1, min: 3, max: 400 },
+      { k: 'holes', label: 'отверстий', v: 0, step: 1, min: 0, max: 40 },
+    ],
+  },
+  {
+    op: 'gear_internal', name: 'венец', title: 'Колесо с внутр. зубьями', group: 'Готовые детали',
+    desc: 'Зубчатый венец, смотрящий внутрь; снаружи гладкий обод.',
+    params: [
+      { k: 'teeth', label: 'зубьев', v: 40, step: 1, min: 10, max: 300 },
+      { k: 'module', label: 'модуль', v: 2, step: 0.5, min: 0.2, max: 20 },
+      { k: 'thickness', label: 'толщина', v: 10, step: 1, min: 1, max: 200 },
+      { k: 'rim', label: 'обод', v: 6, step: 1, min: 1, max: 200 },
+    ],
+  },
+  {
+    op: 'gear_helical', name: 'косозубая', title: 'Косозубая шестерня', group: 'Готовые детали',
+    desc: 'Венец с наклоном зуба: профиль тот же, что у gear, но закручен винтом.',
+    params: [
+      { k: 'teeth', label: 'зубьев', v: 24, step: 1, min: 6, max: 200 },
+      { k: 'module', label: 'модуль', v: 2, step: 0.5, min: 0.2, max: 20 },
+      { k: 'thickness', label: 'толщина', v: 12, step: 1, min: 1, max: 200 },
+      { k: 'angle', label: 'наклон°', v: 20, step: 5, min: -45, max: 45 },
+      { k: 'bore', label: 'вал (0 — нет)', v: 10, step: 1, min: 0, max: 500 },
+    ],
+  },
+  {
+    op: 'gear_bevel', name: 'коническая', title: 'Коническая шестерня', group: 'Готовые детали',
+    desc: 'Зубья сбегают к малому торцу: венец сужается от основания к вершине.',
+    params: [
+      { k: 'teeth', label: 'зубьев', v: 20, step: 1, min: 8, max: 200 },
+      { k: 'module', label: 'модуль', v: 2, step: 0.5, min: 0.2, max: 20 },
+      { k: 'thickness', label: 'венец', v: 12, step: 1, min: 1, max: 200 },
+      { k: 'taper', label: 'сужение', v: 0.6, step: 0.05, min: 0.3, max: 0.85 },
+      { k: 'bore', label: 'вал (0 — нет)', v: 10, step: 1, min: 0, max: 500 },
+    ],
+  },
+  {
+    op: 'screw_head', name: 'головка', title: 'Головка винта', group: 'Готовые детали',
+    desc: 'Головка как отдельная деталь: семь профилей и шесть шлицов, включая Torx и комбинированный.',
+    params: [
+      { k: 'd', label: 'резьба', v: 6, step: 1, min: 0.5, max: 100 },
+      { k: 'head', label: 'профиль', v: 'цилиндр', kind: 'raw', choices: ['потай', 'полукруг', 'цилиндр', 'шестигранник', 'фланец', 'шайба', 'шестилопастная'] },
+      { k: 'drive', label: 'шлиц', v: 'шестигранник', kind: 'raw', choices: ['крест', 'шлиц', 'звезда', 'шестигранник', 'torx_plus', 'комбинированный', 'нет'] },
+      { k: 'head_d', label: 'Ø головки', v: 12, step: 1, min: 2, max: 400 },
+    ],
+  },
+  {
+    op: 'wing_nut', name: 'барашек', title: 'Барашек', group: 'Готовые детали',
+    desc: 'Гайка с двумя лепестками-крыльями и резьбой в ступице.',
+    params: [
+      { k: 'd', label: 'резьба', v: 8, step: 1, min: 2, max: 100 },
+      { k: 'height', label: 'высота', v: 18, step: 1, min: 4, max: 200 },
+      { k: 'wing', label: 'вылет крыла', v: 26, step: 1, min: 5, max: 400 },
+      { k: 'wing_t', label: 'толщина крыла', v: 5, step: 0.5, min: 1, max: 60 },
+    ],
+  },
+  {
+    op: 'special_nut', name: 'гайка_особая', title: 'Особые гайки', group: 'Готовые детали',
+    desc: 'Колпачковая, с фланцем, самоконтрящаяся Nyloc, квадратная, T-гайка и закладная.',
+    params: [
+      { k: 'd', label: 'резьба', v: 8, step: 1, min: 1.5, max: 200 },
+      { k: 'type', label: 'тип', v: 'колпачковая', kind: 'raw', choices: ['колпачковая', 'фланец', 'nyloc', 'квадратная', 't', 'закладная'] },
+      { k: 's', label: 'под ключ', v: 13, step: 1, min: 3, max: 600 },
+    ],
+  },
+  {
     op: 'turbine_blade', name: 'лопасть', title: 'Лопасть турбины', group: 'Готовые детали',
     desc: 'Одна аэродинамическая лопасть: несимметричное сечение, рост хорды, крутка, стреловидность и изгиб; ротор собирается массивом.',
     params: [

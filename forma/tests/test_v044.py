@@ -42,9 +42,11 @@ class RegistryTest(unittest.TestCase):
         for op in ("strip", "grating", "spikes", "column", "arc_prism", "profile2020"):
             with self.subTest(op=op):
                 self.assertIsNotNone(lookup(op))
-        # rail и hinge возвращены новыми конструкторами в 0.53.
-        for op in ("bearing", "caster", "rack", "coupling",
-                   "heatsink", "leg", "форма_п", "форма_у"):
+        # rail и hinge возвращены новыми конструкторами в 0.53,
+        # bearing и rack — новыми конструкторами вместе с механическими
+        # примитивами.
+        for op in ("caster", "coupling", "heatsink", "leg",
+                   "форма_п", "форма_у"):
             with self.subTest(removed=op):
                 self.assertIsNone(lookup(op))
 

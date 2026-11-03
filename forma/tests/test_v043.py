@@ -41,8 +41,10 @@ def inside(m, point) -> bool:
 
 class RemovedObjectsTest(unittest.TestCase):
     # rail и hinge возвращены в 0.53 как новые, геометрически проверенные
-    # конструкторы; остальные шесть старых команд по-прежнему удалены.
-    REMOVED = ("bearing", "caster", "rack", "coupling", "heatsink", "leg")
+    # конструкторы; bearing и rack — так же возвращены новыми конструкторами
+    # (кольца с телами качения и зубчатая рейка по модулю), остальные четыре
+    # старых команды по-прежнему удалены.
+    REMOVED = ("caster", "coupling", "heatsink", "leg")
 
     def test_registry_rejects_all_six(self):
         for op in self.REMOVED:
@@ -233,7 +235,7 @@ class FirstBatchRegressionTest(unittest.TestCase):
 class HelpExamplesTest(unittest.TestCase):
     def test_every_primitive_help_example_builds(self):
         specs = [c for c in commands_help() if c["category"] == "Примитивы"]
-        self.assertEqual(len(specs), 122)
+        self.assertEqual(len(specs), 135)
         for spec in specs:
             with self.subTest(command=spec["name"]):
                 result = build(spec["example"], analyze_model=False)
