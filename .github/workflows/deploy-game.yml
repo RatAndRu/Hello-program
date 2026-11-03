@@ -1,0 +1,59 @@
+name: Deploy adventure workshop to Fly.io
+
+on:
+  push:
+    branches: [arena/d4de7eb7-hello-program]
+    paths: ['game/**', '.github/workflows/deploy-game.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fly-adventure-workshop
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      APP: hello-iskra-ratandru
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: game/package-lock.json
+      - name: Test and build
+        working-directory: game
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
+          npx playwright install --with-deps chromium
+          npm run test:e2e
+          npm run build
+      - name: Check deployment credential
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo '::error::Repository secret FLY_API_TOKEN is missing or unavailable. Add it in GitHub → Settings → Secrets and variables → Actions. Never put the token in source code.'
+            exit 1
+          fi
+      - uses: superfly/flyctl-actions/setup-flyctl@98172f70657cb3e15db199af139be99bd3e61200
+      - name: Create app if needed and deploy one machine
+        working-directory: game
+        run: |
+          if ! flyctl status --app "$APP" >/dev/null 2>&1; then
+            flyctl apps create "$APP" --org personal
+          fi
+          flyctl deploy --remote-only --ha=false --yes
+          flyctl scale count 1 --yes
+      - name: Verify public application
+        run: |
+          URL="https://${APP}.fly.dev"
+          curl --fail --silent --show-error --location --retry 8 --retry-delay 10 --retry-all-errors "$URL" | grep -q 'Мастерская приключений'
+          echo "### Приложение опубликовано" >> "$GITHUB_STEP_SUMMARY"
+          echo "[$URL]($URL)" >> "$GITHUB_STEP_SUMMARY"
+          echo "PUBLIC_URL=$URL" >> "$GITHUB_ENV"

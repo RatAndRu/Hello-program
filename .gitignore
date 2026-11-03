@@ -3,14 +3,15 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
-venv/
 .pytest_cache/
-.mypy_cache/
 
 # Сборки и мусор
 dist/
 build/
 *.log
+node_modules/
+game/test-results/
+game/playwright-report/
 
 # Редакторы и системы
 .vscode/
