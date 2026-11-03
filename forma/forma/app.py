@@ -302,7 +302,8 @@ def _run_uistest(report_path: str | None) -> int:
                       and all(c.get("ok") for c in budget_checks),
                       f"кубов {len((budget.get('grid') or {}).get('cells') or [])}, "
                       f"проверок {len(budget_checks)}")
-                check("переключатель повтора анимации", b'id="anim-loop"' in html)
+                check("непрерывный playback без скрытого стопа",
+                      b'id="anim-loop-note"' in html and b'id="anim-loop"' not in html)
                 wardrobe = get("/api/example?key=wardrobe")
                 cabinet = post("/api/build", {"script": wardrobe.get("script") or ""})
                 cabinet_plan = cabinet.get("timeline") or {}

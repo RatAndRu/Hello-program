@@ -267,6 +267,8 @@ class UiPolishTest(unittest.TestCase):
         self.assertIn("анимация готова", self.app)
         self.assertIn("state.viewer.playAnimation(Boolean(resumePlayback))", self.app)
         self.assertIn("if (!resumePlayback)", self.app)
+        self.assertIn('id="anim-loop-note"', self.html)
+        self.assertNotIn('id="anim-loop"', self.html)
         self.assertNotIn("state.viewer.playAnimation(true);\n      state.anim.playing", self.app)
 
     def test_space_cell_covers_model(self):
