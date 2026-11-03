@@ -25,13 +25,13 @@ R = 2.5
 def measure(shape) -> dict:
     box = shape.BoundBox
     return {
-        "volume_cm3": round(float(shape.Volume) / 1000.0, 4),
+        "tool_volume_cm3": round(float(shape.Volume) / 1000.0, 4),
         "area_cm2": round(float(shape.Area) / 100.0, 3),
         "solids": len(shape.Solids),
         "faces": len(shape.Faces),
         "edges": len(shape.Edges),
         "valid": bool(shape.isValid()),
-        "watertight": bool(len(shape.Solids) == 1 and shape.isValid()),
+        "tool_watertight": bool(len(shape.Solids) == 1 and shape.isValid()),
         "size": [round(box.XLength, 2), round(box.YLength, 2), round(box.ZLength, 2)],
         "tris_est": None,
     }

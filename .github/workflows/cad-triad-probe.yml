@@ -1,11 +1,11 @@
 name: Сравнение трёх CAD на раннере
 
 # Зачем: поставить OpenSCAD, FreeCAD и SolveSpace рядом и решить одну и ту же
-# задачу — плита 80×60×6 с двумя отверстиями ø5. Меряем то, что можно измерить:
+# задачу — плита 80×60×6 с двумя отверстиями ø5. Меряем то, что измеримо:
 # строки исходника, время сборки, объём, треугольники, что инструмент умеет
 # сообщить сам, есть ли точный экспорт (STEP) и параметрическая правка.
 #
-# Всё считается одним и тем же trimesh по STL, поэтому столбцы сравнúмы.
+# Всё считается одним и тем же trimesh по STL, поэтому столбцы сравнимы.
 # Результат печатается в лог и коммитится в forma/docs/cad_triad/result/.
 
 on:
@@ -32,12 +32,25 @@ jobs:
           sudo apt-get install -y -qq openscad xvfb >/dev/null
           openscad --version 2>&1 | head -2
 
-      - name: FreeCAD (может быть большим)
+      - name: FreeCAD — сначала из репозитория, если нет, то AppImage
         continue-on-error: true
-        timeout-minutes: 20
+        timeout-minutes: 25
         run: |
           sudo apt-get install -y -qq freecad >/dev/null 2>&1 || true
-          command -v freecadcmd || command -v FreeCADCmd || command -v freecad || echo "FreeCAD не установился"
+          FC=$(command -v freecadcmd || command -v FreeCADCmd || true)
+          if [ -z "$FC" ]; then
+            echo "в репозитории FreeCAD нет — берём официальный AppImage 1.1.4"
+            curl -sL -o /tmp/FreeCAD.AppImage \
+              https://github.com/FreeCAD/FreeCAD/releases/download/1.1.4/FreeCAD_1.1.4-Linux-x86_64-py311.AppImage
+            chmod +x /tmp/FreeCAD.AppImage
+            (cd /tmp && /tmp/FreeCAD.AppImage --appimage-extract >/dev/null)
+            FC=$(find /tmp/squashfs-root -maxdepth 4 -name "FreeCADCmd" -type f | head -1)
+            [ -z "$FC" ] && FC=$(find /tmp/squashfs-root -maxdepth 4 -name "freecadcmd" -type f | head -1)
+            [ -z "$FC" ] && echo "FreeCADCmd внутри AppImage не найден"
+          fi
+          echo "FC=$FC" >> "$GITHUB_ENV"
+          echo "FreeCAD: $FC"
+          "$FC" --version 2>&1 | head -3 || true
 
       - name: SolveSpace
         continue-on-error: true
@@ -49,22 +62,23 @@ jobs:
         run: |
           python3 -m pip install --quiet --disable-pip-version-check numpy trimesh manifold3d
 
-      - name: Версии, размеры, лицензии
+      - name: Версии, размеры, состав пакетов
         run: |
           set +e
           mkdir -p out
           {
-            echo "OpenSCAD: $(openscad --version 2>&1 | tr '\n' ' ')"
-            echo "FreeCAD:  $($(command -v freecadcmd || command -v FreeCADCmd || echo true) --version 2>&1 | tr '\n' ' ')"
+            echo "OpenSCAD:   $(openscad --version 2>&1 | tr '\n' ' ')"
+            echo "FreeCAD:    $(${FC:-true} --version 2>&1 | tr '\n' ' ')"
             echo "SolveSpace: $($(command -v solvespace-cli || echo true) version 2>&1 | tr '\n' ' ')"
             echo
-            echo "Пакеты (установленный размер, КБ):"
-            dpkg-query -W -f='  ${Package} ${Version} ${Installed-Size} КБ\n' openscad freecad solvespace 2>&1
+            echo "Пакеты (установленный размер):"
+            dpkg-query -W -f='  ${Package} ${Version} ${Installed-Size} КБ\n' openscad solvespace 2>&1
             echo
             echo "Бинарники:"
-            for b in openscad freecadcmd FreeCADCmd solvespace-cli solvespace; do
+            for b in openscad solvespace-cli solvespace; do
               p=$(command -v "$b" 2>/dev/null) && echo "  $p $(stat -c%s "$p") байт"
             done
+            [ -n "$FC" ] && echo "  $FC $(stat -c%s "$FC") байт"
           } | tee out/versions.txt
 
       - name: OpenSCAD — сборка, STL, снимок
@@ -82,7 +96,7 @@ jobs:
           text = pathlib.Path('out/openscad_time.txt').read_text()
           sec = float(re.search(r"([0-9.,]+)\s*с", text).group(1).replace(',', '.'))
           print(json.dumps({"tool": "OpenSCAD", "build_ms": round(sec * 1000),
-                            "tool_volume_cm3": None,
+                            "tool_volume_cm3": None, "valid": None,
                             "notes": "своих метрик нет: объём знает только trimesh по STL"},
                            ensure_ascii=False))
           PY
@@ -91,17 +105,16 @@ jobs:
         continue-on-error: true
         run: |
           set +e
-          FC=$(command -v freecadcmd || command -v FreeCADCmd)
           [ -z "$FC" ] && { echo "FreeCAD нет — шаг пропущен"; exit 0; }
           mkdir -p out
           "$FC" forma/docs/cad_triad/plate_part.py 2>&1 | tee out/freecad_part.log
           grep -h "^RESULT " out/freecad_part.log | sed 's/^RESULT //' > out/freecad_part.json
+          ls -l out/plate_freecad.* 2>&1
 
       - name: FreeCAD Sketcher (ограничения и параметрическая правка)
         continue-on-error: true
         run: |
           set +e
-          FC=$(command -v freecadcmd || command -v FreeCADCmd)
           [ -z "$FC" ] && { echo "FreeCAD нет — шаг пропущен"; exit 0; }
           "$FC" forma/docs/cad_triad/plate_sketch.py 2>&1 | tee out/freecad_sketch.log
           grep -h "^RESULT " out/freecad_sketch.log | sed 's/^RESULT //' > out/freecad_sketch.json
@@ -110,16 +123,19 @@ jobs:
           if not os.path.exists('out/freecad_sketch.json'):
               raise SystemExit('нет результата Sketcher')
           d = json.load(open('out/freecad_sketch.json'))
-          try:
-              m = trimesh.load('/tmp/_sk80.stl', force='mesh')
-              d['volume_cm3'] = round(abs(float(m.volume)) / 1000, 4)
-              d['tris'] = int(len(m.faces)); d['watertight'] = bool(m.is_watertight)
-          except Exception as exc:
-              d['stl_error'] = str(exc)
+          for src, tag in (('/tmp/_sk80.stl', ''), ('/tmp/_sk120.stl', '_120')):
+              try:
+                  m = trimesh.load(src, force='mesh')
+                  d['volume_cm3' + tag] = round(abs(float(m.volume)) / 1000, 4)
+                  if not tag:
+                      d['tris'] = int(len(m.faces)); d['watertight'] = bool(m.is_watertight)
+              except Exception as exc:
+                  d['stl_error' + tag] = str(exc)
           json.dump(d, open('out/freecad_sketch.json', 'w'), ensure_ascii=False)
+          print(json.dumps(d, ensure_ascii=False))
           PY
 
-      - name: SolveSpace — возможности CLI и обмен через STL/STEP
+      - name: SolveSpace — что умеет CLI и как отдаёт геометрию
         continue-on-error: true
         run: |
           set +e
@@ -129,22 +145,26 @@ jobs:
             echo "=== версия"; "$CLI" version
             echo "=== возможности"; "$CLI" --help 2>&1 | head -30
           } | tee out/solvespace_caps.txt
-          # Готовой модели у нас для SolveSpace нет (формат .slvs пишется GUI),
-          # поэтому берём эталонный файл из его же набора тестов.
+          # Своей модели в .slvs у нас нет: этот формат проектируется в GUI.
+          # Берём эталонный файл из набора тестов SolveSpace — он нужен только
+          # чтобы проверить CLI, а не для сравнения деталей.
           URL="https://github.com/solvespace/solvespace/raw/master/test/group/boolean_coplanar_union/normal.slvs"
           curl -sL "$URL" -o out/ss_test.slvs && ls -l out/ss_test.slvs
-          /usr/bin/time -f "SolveSpace export-mesh: %e с" -o out/solvespace_time.txt \
+          /usr/bin/time -f "export-mesh: %e с" -o out/solvespace_time.txt \
             "$CLI" export-mesh -o out/plate_solvespace.stl out/ss_test.slvs
           "$CLI" thumbnail --size 900x700 --view isometric -o out/solvespace.png out/ss_test.slvs \
             || echo "снимок SolveSpace не удался"
+          /usr/bin/time -f "export-surfaces: %e с" -a -o out/solvespace_time.txt \
+            "$CLI" export-surfaces -o out/solvespace.step out/ss_test.slvs
+          head -c 120 out/solvespace.step 2>/dev/null; echo
           cp out/ss_test.slvs out/ss_copy.slvs
-          /usr/bin/time -f "SolveSpace regenerate: %e с" -a -o out/solvespace_time.txt \
+          /usr/bin/time -f "regenerate: %e с" -a -o out/solvespace_time.txt \
             "$CLI" regenerate out/ss_copy.slvs
           cat out/solvespace_time.txt
           python3 - <<'PY' > out/solvespace.json
-          import json, os, pathlib, trimesh
-          d = {"tool": "SolveSpace", "tool_volume_cm3": None,
-               "notes": "своих метрик в CLI нет: экспорт меша, точные поверхности отдельной командой"}
+          import json, os, pathlib, re, trimesh
+          d = {"tool": "SolveSpace", "tool_volume_cm3": None, "valid": None,
+               "notes": "CLI: экспорт меша и точных поверхностей (STEP); своих метрик нет"}
           try:
               m = trimesh.load('out/plate_solvespace.stl', force='mesh')
               d.update({"volume_cm3": round(abs(float(m.volume)) / 1000, 3),
@@ -152,14 +172,12 @@ jobs:
           except Exception as exc:
               d["stl_error"] = str(exc)
           try:
-              import re
               t = pathlib.Path('out/solvespace_time.txt').read_text()
-              d["build_ms"] = round(float(re.search(r"export-mesh:[^0-9]*([0-9.,]+)", t)
-                                          .group(1).replace(',', '.')) * 1000)
-              d["regenerate_ms"] = round(float(re.search(r"regenerate:[^0-9]*([0-9.,]+)", t)
-                                               .group(1).replace(',', '.')) * 1000)
-          except Exception:
-              pass
+              d["build_ms"] = round(float(re.search(r"export-mesh:[^0-9]*([0-9.,]+)", t).group(1).replace(',', '.')) * 1000)
+              d["regenerate_ms"] = round(float(re.search(r"regenerate:[^0-9]*([0-9.,]+)", t).group(1).replace(',', '.')) * 1000)
+              d["step_bytes"] = os.path.getsize('out/solvespace.step')
+          except Exception as exc:
+              d["time_error"] = str(exc)
           print(json.dumps(d, ensure_ascii=False))
           PY
 
@@ -168,7 +186,7 @@ jobs:
           PYTHONPATH: forma
         run: |
           set -euo pipefail
-          python3 - <<'PY' > out/forma_raw.json
+          python3 - <<'PY' > out/forma.json
           import json, time
           from forma.run import build
           from forma.geometry import export_stl
@@ -178,12 +196,12 @@ jobs:
           open('out/plate_forma.stl', 'wb').write(export_stl(r.visible_solids()))
           m = r.analysis['metrics']; checks = r.analysis.get('checks', [])
           print(json.dumps({"tool": "ФОРМА 3D", "build_ms": round(ms, 1),
-                            "tool_volume_cm3": m['volume_cm3'], "tris": m['tris'],
-                            "watertight": all(c['ok'] for c in checks if c['rule'] == 'watertight'),
-                            "notes": f"проверок {len(checks)}, предупреждений {len(r.analysis.get('warnings', []))}",
-                            }, ensure_ascii=False))
+                            "tool_volume_cm3": m['volume_cm3'], "valid": r.ok,
+                            "tris": m['tris'], "watertight": all(c['ok'] for c in checks if c['rule'] == 'watertight'),
+                            "notes": f"проверок {len(checks)}, предупреждений {len(r.analysis.get('warnings', []))}, "
+                                     f"свой отчёт: объём/масса/род/части"},
+                           ensure_ascii=False))
           PY
-          cp out/forma_raw.json out/forma.json
 
       - name: Собрать таблицу
         run: |
@@ -213,7 +231,7 @@ jobs:
           set -euo pipefail
           dest=forma/docs/cad_triad/result
           mkdir -p "$dest"
-          cp out/table.txt out/versions.txt "$dest/" 2>/dev/null || true
+          cp out/table.txt out/versions.txt out/solvespace_caps.txt "$dest/" 2>/dev/null || true
           cp out/raw.json "$dest/" 2>/dev/null || true
           cp out/plate_openscad.png "$dest/" 2>/dev/null || true
           cp out/solvespace.png "$dest/" 2>/dev/null || true

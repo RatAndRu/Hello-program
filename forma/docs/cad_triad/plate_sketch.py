@@ -86,7 +86,7 @@ def main() -> None:
 
     data = {
         "tool": "FreeCAD Sketcher (ограничения)",
-        "volume_cm3": round(float(shape80.Volume) / 1000.0, 4),
+        "tool_volume_cm3": round(float(shape80.Volume) / 1000.0, 4),
         "solids": len(shape80.Solids),
         "valid": bool(shape80.isValid()),
         "build_ms": round(build_ms, 1),
@@ -100,7 +100,7 @@ def main() -> None:
     doc.recompute()
     shape120 = solid_from(sk)
     data["edit_ms"] = round((time.perf_counter() - t1) * 1000.0, 1)
-    data["volume_after_edit_cm3"] = round(float(shape120.Volume) / 1000.0, 4)
+    data["volume_after_edit_tool_cm3"] = round(float(shape120.Volume) / 1000.0, 4)
     # ожидание считаем в Python, независимо от CAD
     expected = (120.0 * D - 2.0 * 3.141592653589793 * R * R) * T / 1000.0
     data["expected_after_edit_cm3"] = round(expected, 4)
