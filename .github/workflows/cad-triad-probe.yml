@@ -134,7 +134,10 @@ jobs:
           if [ -z "$FC" ]; then
             echo "FreeCAD нет — шаг пропущен" >> out/freecad_part_log.txt; exit 0
           fi
-          "$FC" forma/docs/cad_triad/plate_part.py >> out/freecad_part_log.txt 2>&1
+          # ВАЖНО: FreeCADCmd 1.1.x игнорирует аргумент-файл (запускается и молча
+          # выходит с кодом 0), поэтому скрипт передаётся через -c exec(...)
+          "$FC" -c "exec(open('forma/docs/cad_triad/plate_part.py').read())" \
+            >> out/freecad_part_log.txt 2>&1
           grep -h "^RESULT " out/freecad_part_log.txt | sed 's/^RESULT //' > out/freecad_part.json
           ls -l out/plate_freecad.* 2>&1
 
@@ -148,7 +151,8 @@ jobs:
           if [ -z "$FC" ]; then
             echo "FreeCAD нет — шаг пропущен" >> out/freecad_sketch_log.txt; exit 0
           fi
-          "$FC" forma/docs/cad_triad/plate_sketch.py >> out/freecad_sketch_log.txt 2>&1
+          "$FC" -c "exec(open('forma/docs/cad_triad/plate_sketch.py').read())" \
+            >> out/freecad_sketch_log.txt 2>&1
           grep -h "^RESULT " out/freecad_sketch_log.txt | sed 's/^RESULT //' > out/freecad_sketch.json
           python3 - <<'PY'
           import json, os, trimesh
