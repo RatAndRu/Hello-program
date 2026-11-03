@@ -262,7 +262,8 @@ def _arc(center: Vec3, radius: float, a0: float, a1: float, steps: int) -> np.nd
 def fillet_polyline(points2d: np.ndarray, radius: float, closed: bool = True,
                     arc_steps: int = 8, skip_axis: bool = False,
                     min_turn: float | None = None,
-                    tolerance: float | None = None) -> np.ndarray:
+                    tolerance: float | None = None,
+                    adaptive: bool = True) -> np.ndarray:
     """Скругляет углы профиля настоящими дугами с ограниченным бюджетом.
 
     Старая реализация ставила минимум восемь отрезков на *каждой* вершине,
@@ -274,8 +275,10 @@ def fillet_polyline(points2d: np.ndarray, radius: float, closed: bool = True,
     ``min_turn`` задаёт минимальный перелом в радианах. Если он не задан,
     порог выводится из допуска: микрофаска, отклонение которой меньше
     ``tolerance``, не дробит исходную вершину. Для обязательного скругления
-    всех углов передайте ``min_turn=0``. Сама геометрия остаётся дуговой —
-    никакого Loop/vertex smoothing здесь нет.
+    всех углов передайте ``min_turn=0``. ``adaptive=False`` сохраняет
+    прежнюю дискретизацию для профиля, который затем будет сглажен: иначе
+    изменение числа точек меняет сам downstream-silhouette. Сама геометрия
+    остаётся дуговой — никакого Loop/vertex smoothing здесь нет.
     """
     pts = np.asarray(points2d, dtype=np.float64)
     n = len(pts)
@@ -285,7 +288,9 @@ def fillet_polyline(points2d: np.ndarray, radius: float, closed: bool = True,
     budget = max(2, min(48, int(arc_steps)))
     tol = (min(0.08, max(0.01, radius * 0.15)) if tolerance is None
            else max(1e-6, float(tolerance)))
-    if min_turn is None:
+    if not adaptive:
+        turn_limit = 0.0
+    elif min_turn is None:
         # Сагитта дуги при малом переломе; для микрофасок это отсекает
         # почти коллинеарные samples, но сохраняет настоящие углы.
         ratio = min(0.999999, tol / max(2.0 * radius, 1e-9))
@@ -336,12 +341,18 @@ def fillet_polyline(points2d: np.ndarray, radius: float, closed: bool = True,
         aa = math.atan2(a_pt[1] - center[1], a_pt[0] - center[0])
         bb = math.atan2(b_pt[1] - center[1], b_pt[0] - center[0])
         delta = (bb - aa + math.pi) % (2 * math.pi) - math.pi
-        if r_eff <= tol:
-            needed = 2
+        if not adaptive:
+            # Совместимость с профилями, которые далее проходят через
+            # smooth_closed_profile: прежнее число и распределение точек.
+            steps = max(2, int(abs(delta) / (math.pi / 24)) + 1)
+            steps = min(max(steps, int(arc_steps)), 48)
         else:
-            max_angle = 2.0 * math.acos(max(-1.0, min(1.0, 1.0 - tol / r_eff)))
-            needed = int(math.ceil(abs(delta) / max(max_angle, 1e-6)))
-        steps = min(budget, max(2, needed))
+            if r_eff <= tol:
+                needed = 2
+            else:
+                max_angle = 2.0 * math.acos(max(-1.0, min(1.0, 1.0 - tol / r_eff)))
+                needed = int(math.ceil(abs(delta) / max(max_angle, 1e-6)))
+            steps = min(budget, max(2, needed))
         arc = _arc(center, r_eff, aa, aa + delta, steps)
         out.extend(arc)
     arr = np.asarray(out, dtype=np.float64)

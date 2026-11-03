@@ -72,11 +72,14 @@ def lathe(a, name):
     fillet_angle = (a.num("fillet_angle", None, minv=0.0, maxv=180.0)
                     if a.has("fillet_angle") else None)
     smooth = a.int("smooth", 0, minv=0, maxv=32)
+    legacy_smooth_profile = (smooth > 1 and not a.has("fillet_steps")
+                             and not a.has("fillet_angle"))
     if fillet and fillet > 0:
         pts = fillet_polyline(pts, float(fillet), closed=True, skip_axis=True,
                               arc_steps=int(fillet_steps),
                               min_turn=(None if fillet_angle is None
-                                        else math.radians(float(fillet_angle))))
+                                        else math.radians(float(fillet_angle))),
+                              adaptive=not legacy_smooth_profile)
     if smooth and smooth > 1:
         pts = smooth_closed_profile(pts, samples=int(smooth))
     radius_max = float(np.max(np.abs(pts[:, 0]))) if len(pts) else 50.0
