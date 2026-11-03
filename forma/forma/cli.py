@@ -310,6 +310,67 @@ def cmd_mesh(args) -> int:
     return 0 if report["ok"] else 1
 
 
+def cmd_lib(args) -> int:
+    """`forma lib` — библиотеки-шаблоны: что есть и какой сценарий из них выходит.
+
+    Смысл команды: чужие процедурные библиотеки (Gridfinity и подобные) у нас
+    превращаются в обычный сценарий ФОРМЫ. Здесь их можно перечислить, собрать
+    по параметрам и сразу проверить.
+    """
+    from .lib import LIBRARIES
+
+    if not args.name:
+        print("БИБЛИОТЕКИ-ШАБЛОНЫ")
+        for key in sorted(LIBRARIES):
+            item = LIBRARIES[key]
+            print(f"• {key} — {item['title']}")
+            print(f"  источник: {item['source']}")
+            print(f"  {item['note']}")
+        print()
+        print("Собрать: forma lib gridfinity kind=bin size=2x3 height=6 --save ящик.forma")
+        print("Проверить: forma lib gridfinity size=2x2 kind=baseplate --check")
+        return 0
+
+    name = args.name.strip().lower()
+    if name not in LIBRARIES:
+        print(f"Нет библиотеки «{args.name}». Есть: {', '.join(sorted(LIBRARIES))}")
+        return 2
+    options = {}
+    for item in args.options or []:
+        if "=" not in item:
+            print(f"Параметр «{item}» без значения. Пишите так: size=2x3")
+            return 2
+        key, value = item.split("=", 1)
+        options[key.strip().lower()] = value.strip()
+    try:
+        script = LIBRARIES[name]["build"](**options)
+    except (TypeError, ValueError) as exc:
+        print(f"ОШИБКА: {exc}")
+        if name == "gridfinity":
+            from .lib.gridfinity import params_help
+            print("Параметры:")
+            for key, text in params_help():
+                print(f"  {key} — {text}")
+        return 2
+
+    if args.save:
+        path = Path(args.save).expanduser()
+        path.write_text(script, encoding="utf-8")
+        print(f"Сценарий сохранён: {path}")
+    if args.check:
+        b = build(script, base_dir=Path(args.save).expanduser().parent if args.save else Path.cwd())
+        if not b.ok:
+            print("ОШИБКА ПОСТРОЕНИЯ:", b.error.get("message"))
+            if b.error.get("hint"):
+                print("Подсказка:", b.error["hint"])
+            return 2
+        print(b.analysis["text"])
+        return 0 if not _checks_failed(b) else 1
+    if not args.save:
+        print(script, end="")
+    return 0
+
+
 def cmd_serve(args) -> int:
     from .app import main as app_main
     return app_main(["--host", args.host, "--port", str(args.port)] +
@@ -393,6 +454,13 @@ def main(argv=None) -> int:
     p.add_argument("--sliver", type=float, default=None,
                    help="порог площади под иглами на кривизне, %% (1)")
     p.set_defaults(func=cmd_mesh)
+
+    p = sub.add_parser("lib", help="библиотеки-шаблоны: список и сборка сценария")
+    p.add_argument("name", nargs="?", help="имя библиотеки; без него — список")
+    p.add_argument("options", nargs="*", help="параметры вида size=2x3 height=6")
+    p.add_argument("--save", help="записать сценарий в файл")
+    p.add_argument("--check", action="store_true", help="сразу построить и показать отчёт")
+    p.set_defaults(func=cmd_lib)
 
     p = sub.add_parser("reference", help="справочник команд в markdown")
     p.add_argument("--out")
