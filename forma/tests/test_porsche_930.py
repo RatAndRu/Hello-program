@@ -74,8 +74,28 @@ class DrawingTest(unittest.TestCase):
         # решётка сделана массивом: 15 ламелей в одном теле
         self.assertGreater(len(scene.objects["решётка"].manifold.decompose()), 5)
 
+    def test_params_variant_is_consistent_with_the_plain_one(self):
+        """Второй файл — тот же кузов, записанный выражениями от шести param."""
+        from pathlib import Path
+
+        path = Path(__file__).resolve().parents[1] / "examples" / "porsche_930_params.forma"
+        text = path.read_text(encoding="utf-8")
+        for marker in ("param L=", "param W=", "param H=", "param WB=",
+                       "param KF=", "param KR=", "preset сток"):
+            self.assertIn(marker, text)
+        # сечения в параметрическом варианте — выражения, а не готовые числа
+        self.assertIn("H-150", text)
+        self.assertIn("W/2*", text)
+
     def test_listed_in_the_app(self):
         self.assertIn("porsche_930", [key for _, key in EXAMPLES])
+
+    def test_body_rises_exactly_to_the_drawing_height(self):
+        """1320 мм на листе — это высота кузова вместе с колёсами: пол на Z=0
+        держат колёса, кузов начинается с просвета 150 мм."""
+        body = self.build.scene.objects["кузов"].manifold.bounding_box()
+        self.assertAlmostEqual(body[2], 150.0, delta=2.0)   # низ кузова = просвет
+        self.assertAlmostEqual(body[5], H, delta=2.0)       # верх = высота листа
 
     def test_script_is_readable_text(self):
         """Сценарий остаётся текстом, который можно править руками."""

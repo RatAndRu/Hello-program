@@ -295,8 +295,15 @@ class TestErrors(unittest.TestCase):
 
 
 class TestExamples(unittest.TestCase):
+    #: Примеры, которым нужны команды 0.66/0.67 (`param`, `preset`, `collision`).
+    #: Эта ветка — 0.58, она их не знает, поэтому такой файл проверяется
+    #: отдельно: tests/test_porsche_930.py убеждается, что это вариант для 0.67.
+    NEWER_ONLY = {"porsche_930_params.forma"}
+
     def test_all_examples_build(self):
         for path in sorted((ROOT / "examples").glob("*.forma")):
+            if path.name in self.NEWER_ONLY:
+                continue
             with self.subTest(example=path.name):
                 b = build(path.read_text(encoding="utf-8"))
                 self.assertTrue(b.ok, f"{path.name}: {b.error}")
