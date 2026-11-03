@@ -21,6 +21,7 @@ from .library import (bind_module_values, clone_functions, evaluate_call_text,
                       expand_includes, parse_program, register_definitions)
 from .provenance import record_execution, record as record_provenance
 from .geometry import export_glb
+from .face_visibility import roles_payload
 from .metrics import analyze
 from .values import numeric_issue, parse_value
 
@@ -39,6 +40,7 @@ from . import ops_io  # noqa: F401,E402
 from . import ops_scad  # noqa: F401,E402
 from . import ops_extra  # noqa: F401,E402
 from . import ops_inspect  # noqa: F401,E402
+from . import ops_face_roles  # noqa: F401,E402
 from . import ops_text  # noqa: F401,E402
 from . import ops_tech  # noqa: F401,E402
 from . import ops_shapes  # noqa: F401,E402
@@ -86,6 +88,7 @@ FRAME_SKIP_VERBS = {
     "check", "gap", "clearance", "probe", "passport", "note", "param", "help",
     "version", "save", "load", "light", "color", "scene", "comment", "info",
     "сетка", "interference", "пересечения", "коллизии", "collision_report",
+    "faces", "полигоны", "грани", "разметка_граней", "разметка_полигонов",
     "preset", "пресет", "набор", "precision", "точность", "quality", "качество",
     "derive", "link", "связать", "связь", "зависимость",
     "__forma_definition", "module", "модуль", "function", "функция",
@@ -236,6 +239,7 @@ class Build:
                 "uv": getattr(solid, "uv", "cylinder"),
                 "paint": list(getattr(solid, "paint", None) or []) or None,
                 "brush": list(getattr(solid, "brush", None) or []) or None,
+                "face_roles": roles_payload(solid),
             })
         return out
 

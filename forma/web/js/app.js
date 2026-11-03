@@ -33,6 +33,9 @@ const state = {
   selected: null,
   selection: null,
   selectMode: false,
+  faceMode: false,
+  faceRoles: {},
+  faceSelection: { name: '', indices: new Set() },
   spaceMode: false,
   space: null,
   loopMode: 'auto',
@@ -439,6 +442,7 @@ document.addEventListener('keydown', (e) => {
     const mat = $('material-panel');
     if (mat && !mat.hidden) selectObject('');
     if (state.selectMode) setSelectMode(false);
+    if (state.faceMode) setFaceMode(false);
     if (state.spaceMode) setSpaceMode(false);
   }
 });
@@ -502,6 +506,9 @@ async function buildNow(silent = false) {
 /** Чистая сцена: убираем модель, подсветку, кисть и надпись «пусто». */
 function clearSceneView() {
   const v = state.viewer;
+  if (state.faceMode) setFaceMode(false);
+  state.faceRoles = {};
+  state.faceSelection = { name: '', indices: new Set() };
   state.anim.epoch += 1;
   state.anim.next = undefined;
   state.anim.framePending.clear();
@@ -569,6 +576,8 @@ function applyBuild(payload, elapsed) {
   renderChecks(payload);
   if ($('page-links')?.classList.contains('active')) renderLinks();
   renderObjects(payload);
+  syncFaceRoles(payload);
+  renderFacePanel();
   renderParameters(payload);
   renderDimensions(metrics);
   if (state.selected?.name) {
@@ -1587,6 +1596,13 @@ async function loadModel(url, animation = null) {
     (state.payload?.objects || []).forEach((o) => {
       if (o.tex && o.tex.kind) applyTextureToViewer(o.name, o.tex.kind, o.tex.scale);
     });
+    state.viewer.setFaceRoles(state.faceRoles);
+    if (state.faceMode) {
+      state.viewer.setFaceMode(true, state.faceRoles);
+      state.viewer.setFaceXray($('face-xray')?.checked !== false);
+      state.viewer.setFaceSelection(state.faceSelection.name,
+        [...state.faceSelection.indices]);
+    }
     // Диагностика: если GLB загрузился, но деталей нет, честно говорим об этом,
     // а не оставляем пустое окно после «сборка готова».
     const shown = state.viewer.getStats?.();
@@ -1601,7 +1617,7 @@ async function loadModel(url, animation = null) {
     } else if (shown) {
       $('viewer-badge').textContent = `${fmtInt(shown.tris)} треугольников`;
     }
-    if (state.selected?.name && !state.hidden.has(state.selected.name)) {
+    if (!state.faceMode && state.selected?.name && !state.hidden.has(state.selected.name)) {
       state.viewer?.setHighlight(state.selected.name);
     }
     state.anim.frames = state.payload?.frames || [];
@@ -2729,6 +2745,7 @@ function initViewer() {
   try {
     state.viewer = new Viewer($('viewer'));
     state.viewer.onSelect = (name) => selectObject(name);
+    state.viewer.onFaceSelect = (hit, modifiers) => handleFaceSelect(hit, modifiers);
     state.viewer.onSelection = (stats) => showSelection(stats);
     state.viewer.onTextureError = () => toast('Не удалось загрузить текстуру: проверьте соединение с окном приложения', 'bad');
     let lastClock = 0;
@@ -3394,6 +3411,11 @@ refreshAnimSelectors();
 document.addEventListener('keydown', (e) => {
   if (/^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement?.tagName || '')) return;
   if ((e.key === 'Delete' || e.key === 'Backspace') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    if (state.faceMode) {
+      e.preventDefault();
+      if (state.faceSelection.indices.size) applyFaceRole('neutral');
+      return;
+    }
     if (state.selected?.name) {
       e.preventDefault();
       const name = state.selected.name;
@@ -3419,6 +3441,241 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+
+/* ------------------------------------------------------------------ */
+/*  Наружность / внутренность отдельных граней                         */
+/* ------------------------------------------------------------------ */
+function syncFaceRoles(payload) {
+  const roles = {};
+  (payload?.objects || []).forEach((obj) => {
+    if (obj.face_roles) roles[obj.name] = {
+      outside: [...(obj.face_roles.outside || [])],
+      inside: [...(obj.face_roles.inside || [])],
+    };
+  });
+  state.faceRoles = roles;
+  const visible = new Set((payload?.objects || [])
+    .filter((obj) => obj.visible).map((obj) => obj.name));
+  if (state.faceSelection.name && !visible.has(state.faceSelection.name)) {
+    state.faceSelection = { name: '', indices: new Set() };
+  }
+  if (state.faceMode) {
+    // Rebuild может удалить или скрыть цель. Не оставляем устаревший
+    // faceTarget, из-за которого следующий клик проверял бы несуществующее тело.
+    populateFaceObjects(state.faceSelection.name || $('face-object')?.value || '');
+    const target = $('face-object')?.value || '';
+    if (state.viewer && state.viewer.faceTarget !== target) {
+      state.viewer.setFaceTarget(target);
+      state.viewer.setFaceSelection(state.faceSelection.name,
+        state.faceSelection.name === target ? [...state.faceSelection.indices] : []);
+    }
+  }
+}
+
+function faceCommandBelongs(line, name) {
+  const t = line.trim();
+  const ops = '(?:faces|полигоны|грани|разметка_граней|разметка_полигонов)';
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const quoted = JSON.stringify(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^${ops}\\s+(?:${quoted}|${escaped}|\\[${escaped}\\])(?=\\s|$)`, 'i').test(t)
+    || new RegExp(`^${escaped}\\s*=\\s*${ops}(?=\\s|$)`, 'i').test(t);
+}
+
+function writeFaceRolesScript(name) {
+  const lines = currentScript().split('\n').filter((line) => !faceCommandBelongs(line, name));
+  const roles = state.faceRoles[name] || {};
+  const outside = [...new Set(roles.outside || [])].sort((a, b) => a - b);
+  const inside = [...new Set(roles.inside || [])].sort((a, b) => a - b);
+  if (outside.length || inside.length) {
+    let command = `полигоны ${JSON.stringify(name)}`;
+    if (outside.length) command += ` outside=[${outside.join(',')}]`;
+    if (inside.length) command += ` inside=[${inside.join(',')}]`;
+    lines.push(command);
+  }
+  setScript(lines.join('\n').trimEnd(), { label: `разметка граней: ${name}` });
+}
+
+function populateFaceObjects(preferred = '') {
+  const select = $('face-object');
+  if (!select) return;
+  const old = preferred || select.value || state.faceSelection.name || state.selected?.name || '';
+  select.innerHTML = '<option value="">— выбрать кликом —</option>';
+  (state.payload?.objects || []).filter((obj) => obj.visible).forEach((obj) => {
+    const option = document.createElement('option');
+    option.value = obj.name;
+    option.textContent = obj.name;
+    select.appendChild(option);
+  });
+  select.value = [...select.options].some((option) => option.value === old) ? old : '';
+}
+
+function renderFacePanel() {
+  const info = $('face-selection-info');
+  if (!info) return;
+  const selection = state.faceSelection;
+  const target = selection.name || $('face-object')?.value || '';
+  const ids = [...selection.indices].sort((a, b) => a - b);
+  if (ids.length) {
+    const shown = ids.slice(0, 18).join(', ');
+    info.innerHTML = `<b>${escapeHtml(selection.name)}</b> · выбрано ${ids.length}`
+      + `<br>грани: ${escapeHtml(shown)}${ids.length > 18 ? ' …' : ''}`;
+  } else if (target) {
+    info.innerHTML = `<b>${escapeHtml(target)}</b> · выберите грани на модели`;
+  } else {
+    info.textContent = 'Выберите один или несколько полигонов на модели.';
+  }
+  ['face-outside', 'face-inside', 'face-neutral'].forEach((id) => {
+    if ($(id)) $(id).disabled = !ids.length;
+  });
+  const roles = state.faceRoles[target] || {};
+  const out = (roles.outside || []).length;
+  const inside = (roles.inside || []).length;
+  const obj = (state.payload?.objects || []).find((item) => item.name === target);
+  const neutral = Math.max(0, Number(obj?.tris || 0) - out - inside);
+  const reportEl = $('face-report');
+  if (!reportEl) return;
+  reportEl.className = 'face-report';
+  reportEl.innerHTML = '';
+  if (target) {
+    const counts = document.createElement('div');
+    counts.className = 'face-counts';
+    counts.textContent = `синих ${out} · красных ${inside} · серых ${neutral}`;
+    reportEl.appendChild(counts);
+  }
+  const report = state.payload?.analysis?.face_visibility;
+  const entry = (report?.objects || []).find((item) => item.object === target);
+  const violations = (report?.violation_list || []).filter((item) => !target || item.object === target);
+  if (violations.length) {
+    reportEl.classList.add('bad');
+    const summary = document.createElement('div');
+    summary.textContent = `Нарушений: ${target ? entry?.violations || violations.length : report.violations}. Нажмите на грань ниже, чтобы увидеть её.`;
+    reportEl.appendChild(summary);
+    violations.slice(0, 4).forEach((item) => {
+      const button = document.createElement('button');
+      button.className = 'face-violation';
+      button.textContent = `${item.object} · ${item.message}`;
+      button.addEventListener('click', () => {
+        setFaceTarget(item.object);
+        state.faceSelection = { name: item.object, indices: new Set([item.face]) };
+        state.viewer?.setFaceSelection(item.object, [item.face]);
+        renderFacePanel();
+      });
+      reportEl.appendChild(button);
+    });
+  } else if (entry && (entry.outside || entry.inside)) {
+    reportEl.classList.add('ok');
+    const ok = document.createElement('div');
+    ok.textContent = `Проверено ${entry.checked}: требования к граням выполняются.`;
+    reportEl.appendChild(ok);
+  } else {
+    const note = document.createElement('div');
+    note.textContent = target
+      ? 'У объекта нет разметки: все грани серые и не проверяются.'
+      : 'Серые грани не проверяются. Выберите объект и назначьте требование.';
+    reportEl.appendChild(note);
+  }
+}
+
+function setFaceTarget(name) {
+  const target = name || '';
+  if ($('face-object')) $('face-object').value = target;
+  if (state.faceSelection.name !== target) state.faceSelection = { name: target, indices: new Set() };
+  else state.faceSelection.indices.clear();
+  state.viewer?.setFaceTarget(target);
+  state.viewer?.setFaceSelection(target, []);
+  renderFacePanel();
+}
+
+function setFaceMode(on) {
+  const want = Boolean(on);
+  if (want) {
+    if (state.selectMode) setSelectMode(false);
+    if (state.spaceMode) setSpaceMode(false);
+    state.viewer?.setPaintMode(false, null, '', false);
+    syncPaintMode();
+  }
+  state.faceMode = want;
+  $('btn-face-mode')?.classList.toggle('active', want);
+  if ($('face-card')) $('face-card').hidden = !want;
+  if (want) {
+    $('material-panel').hidden = true;
+    populateFaceObjects(state.faceSelection.name || state.selected?.name || '');
+    const target = state.faceSelection.name || $('face-object')?.value || '';
+    state.viewer?.setFaceMode(true, state.faceRoles);
+    state.viewer?.setFaceXray($('face-xray')?.checked !== false);
+    state.viewer?.setFaceTarget(target);
+    state.viewer?.setFaceSelection(state.faceSelection.name, [...state.faceSelection.indices]);
+    toast('Грани: клик — выбрать, Shift — добавить, Ctrl — убрать; затем назначьте цвет');
+  } else {
+    state.viewer?.setFaceMode(false);
+    state.faceSelection = { name: '', indices: new Set() };
+    if (state.selected?.name && !state.hidden.has(state.selected.name)) {
+      state.viewer?.setHighlight(state.selected.name);
+      $('material-panel').hidden = false;
+    }
+  }
+  renderFacePanel();
+  updateViewerHint();
+}
+
+function handleFaceSelect(hit, { additive = false, subtract = false } = {}) {
+  if (!hit || !Number.isInteger(hit.faceIndex)) {
+    if (!additive && !subtract) setFaceTarget(state.faceSelection.name || '');
+    return;
+  }
+  let ids;
+  if (state.faceSelection.name !== hit.name || (!additive && !subtract)) ids = new Set();
+  else ids = new Set(state.faceSelection.indices);
+  if (subtract) ids.delete(hit.faceIndex);
+  else ids.add(hit.faceIndex);
+  state.faceSelection = { name: hit.name, indices: ids };
+  if ($('face-object')) $('face-object').value = hit.name;
+  state.viewer?.setFaceSelection(hit.name, [...ids]);
+  renderFacePanel();
+}
+
+function applyFaceRole(role) {
+  const selection = state.faceSelection;
+  const ids = [...selection.indices];
+  if (!selection.name || !ids.length) {
+    toast('Сначала выберите грани на модели', 'bad');
+    return;
+  }
+  const old = state.faceRoles[selection.name] || {};
+  const selected = new Set(ids);
+  const outside = new Set((old.outside || []).filter((id) => !selected.has(id)));
+  const inside = new Set((old.inside || []).filter((id) => !selected.has(id)));
+  if (role === 'outside') ids.forEach((id) => outside.add(id));
+  if (role === 'inside') ids.forEach((id) => inside.add(id));
+  const next = {};
+  if (outside.size) next.outside = [...outside].sort((a, b) => a - b);
+  if (inside.size) next.inside = [...inside].sort((a, b) => a - b);
+  if (Object.keys(next).length) state.faceRoles[selection.name] = next;
+  else delete state.faceRoles[selection.name];
+  state.viewer?.setFaceRoles(state.faceRoles);
+  state.viewer?.setFaceSelection(selection.name, ids);
+  writeFaceRolesScript(selection.name);
+  if ($('face-report')) {
+    $('face-report').className = 'face-report';
+    $('face-report').textContent = 'Разметка записана в сценарий. Пересобираем и проверяем…';
+  }
+}
+
+$('btn-face-mode')?.addEventListener('click', () => setFaceMode(!state.faceMode));
+$('face-close')?.addEventListener('click', () => setFaceMode(false));
+$('face-object')?.addEventListener('change', (event) => setFaceTarget(event.target.value));
+$('face-xray')?.addEventListener('change', (event) => state.viewer?.setFaceXray(event.target.checked));
+$('face-outside')?.addEventListener('click', () => applyFaceRole('outside'));
+$('face-inside')?.addEventListener('click', () => applyFaceRole('inside'));
+$('face-neutral')?.addEventListener('click', () => applyFaceRole('neutral'));
+$('face-clear')?.addEventListener('click', () => setFaceTarget(state.faceSelection.name || ''));
+$('face-check')?.addEventListener('click', async () => {
+  await buildNow();
+  renderFacePanel();
+  const bad = state.payload?.analysis?.face_visibility?.violations || 0;
+  toast(bad ? `Проверка граней: нарушений ${bad}` : 'Проверка граней завершена',
+    bad ? 'bad' : 'ok');
+});
 
 /* ------------------------------------------------------------------ */
 /*  Кисть по граням                                                   */
@@ -3463,6 +3720,7 @@ function addStroke(stroke) {
 }
 
 function toggleBrush(erase) {
+  if (state.faceMode) setFaceMode(false);
   const name = paintTargetName();
   if (!name) {
     toast('Сначала выделите предмет: кисть красит только выбранное', 'bad');
@@ -3541,6 +3799,7 @@ function selectObject(name) {
     syncPaintMode();
     if (state.orbitSelection) state.viewer?.setOrbitTarget('');
     if (state.spaceMode) state.viewer?.rebuildSpace?.();
+    if (state.faceMode) setFaceTarget('');
     renderSceneStats();
     return;
   }
@@ -3550,11 +3809,12 @@ function selectObject(name) {
   document.querySelectorAll('.obj-item').forEach((el) => {
     el.classList.toggle('selected', el.dataset.name === name);
   });
+  if (state.faceMode) setFaceTarget(name);
   // Подсветка прямо в окне: выбранный в списке объект видно на модели.
   // Заодно прозрачным каркасом показываются детали, которые его закрывают.
   state.occludersNow = [];
   if (state.viewer) state.viewer.objectAxes[name] = obj.axes || null;
-  if (!state.hidden.has(name)) state.viewer?.setHighlight(name);
+  if (!state.faceMode && !state.hidden.has(name)) state.viewer?.setHighlight(name);
   if (state.viewer?.paintMode) {
     state.viewer.setPaintMode(true, null, name, state.viewer.eraseMode);
   }
@@ -3562,7 +3822,7 @@ function selectObject(name) {
   if (state.orbitSelection) state.viewer?.setOrbitTarget(name);
   renderObjectStats(obj);
   if (state.spaceMode) state.viewer?.rebuildSpace?.();
-  $('material-panel').hidden = false;
+  $('material-panel').hidden = state.faceMode;
   $('mat-name').textContent = obj.name;
   state.material = { color: obj.color || '#c9d1e3', metal: obj.metal || 0,
                      rough: obj.rough ?? 0.5, emissive: obj.emissive || '',
@@ -3783,6 +4043,7 @@ $('mat-tex')?.addEventListener('change', (e) => {
 /*  Выделение области и замечания                                     */
 /* ------------------------------------------------------------------ */
 function setSelectMode(on) {
+  if (on && state.faceMode) setFaceMode(false);
   state.selectMode = on;
   $('btn-select')?.classList.toggle('active', on);
   state.viewer?.setSelectMode(on);
@@ -3798,6 +4059,10 @@ function setSelectMode(on) {
 function updateViewerHint() {
   const hint = $('viewer-hint');
   if (!hint) return;
+  if (state.faceMode) {
+    hint.textContent = 'грани: клик — выбрать · Shift — добавить · Ctrl — убрать · перетаскивание — вращать';
+    return;
+  }
   if (state.spaceMode) {
     hint.textContent = 'кубы: ЛКМ — выбрать сектор · Shift — добавить · Ctrl — убрать · рамка — много · СКМ — вращать';
     return;
@@ -3812,6 +4077,7 @@ function updateViewerHint() {
 /*  0.15: выделение пустого пространства кубическими секторами         */
 /* ------------------------------------------------------------------ */
 function setSpaceMode(on) {
+  if (on && state.faceMode) setFaceMode(false);
   state.spaceMode = Boolean(on);
   if (state.spaceMode) setSelectMode(false);
   state.viewer?.setSpaceMode(state.spaceMode);

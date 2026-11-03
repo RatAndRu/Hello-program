@@ -1136,6 +1136,93 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
 }
 #space-note:focus { border-color: #3c6f60; }
 
+/* 0.72: разметка наружности/внутренности отдельных граней. */
+.face-card {
+  left: 12px;
+  right: auto;
+  width: min(280px, calc(100% - 24px));
+  max-height: min(300px, calc(100% - 52px));
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  overflow: auto;
+  border-color: #2d4667;
+  background: rgba(14, 21, 31, .96);
+}
+.face-card .sel-head strong { color: #a9cfff; }
+.face-help { font-size: 11px; line-height: 1.45; color: var(--text-dim); }
+.face-object-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 9px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.face-object-row select { min-width: 0; width: 100%; }
+.face-xray { display: flex; align-items: center; gap: 7px; font-size: 11px; color: #b7c7d9; }
+.face-role-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.face-role-actions button {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  padding-left: 5px;
+  padding-right: 5px;
+  white-space: nowrap;
+}
+.face-swatch { width: 10px; height: 10px; border-radius: 2px; flex: none; }
+.face-role-outside .face-swatch { background: #2384ff; }
+.face-role-inside .face-swatch { background: #ef4444; }
+.face-role-neutral .face-swatch { background: #8b939e; }
+.face-role-outside { border-color: #2867ae; color: #b9d9ff; }
+.face-role-inside { border-color: #99434a; color: #ffc2c2; }
+.face-role-neutral { grid-column: 1 / -1; border-color: #59616c; color: #d1d6dc; }
+.face-secondary-actions { display: flex; gap: 6px; }
+.face-secondary-actions button { flex: 1; }
+.face-report {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
+  gap: 4px;
+  border-top: 1px solid #29394e;
+  padding-top: 7px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+.face-report.ok { color: var(--good); }
+.face-report.bad { color: #ffaaaa; }
+.face-violation {
+  min-width: 0;
+  padding: 4px 6px;
+  border: 1px solid #673a43;
+  border-radius: 5px;
+  background: #25181e;
+  color: #ffc0c0;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.face-counts { color: #b9c8d9; font-family: var(--mono); font-size: 10.5px; }
+@media (max-width: 600px) {
+  /* На телефоне viewer — невысокий отдельный ряд. Не позволяем его
+     абсолютной системе координат уводить панель за правый край экрана. */
+  .face-card {
+    position: fixed;
+    left: 6px;
+    right: 6px;
+    bottom: 36px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - 100px);
+    overscroll-behavior: contain;
+    z-index: 40;
+  }
+}
+
 .anim-loop {
   height: 22px;
   padding: 0 4px;

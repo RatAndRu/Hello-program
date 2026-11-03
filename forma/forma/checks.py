@@ -54,6 +54,10 @@ RULE_ALIASES = {
     # переназначаем: в 0.70 оно означает старое правило tri_quality.
     "сетка": "mesh", "mesh": "mesh", "стяжки": "mesh", "стяжка": "mesh",
     "веера": "mesh", "полюса": "mesh", "плотность_сетки": "mesh",
+    # Пользовательская разметка отдельных граней: снаружи / строго внутри.
+    "наружность": "face_visibility", "внутренность": "face_visibility",
+    "полигоны": "face_visibility", "разметка_граней": "face_visibility",
+    "face_visibility": "face_visibility",
 }
 
 RULE_LABELS = {
@@ -85,6 +89,7 @@ RULE_LABELS = {
     "center": "центр",
     "grid": "в пределах кубической сетки",
     "mesh": "качество сетки",
+    "face_visibility": "наружность / внутренность граней",
 }
 
 UNITS = {
@@ -196,7 +201,8 @@ def _load_reference(path):
 RULES = {"watertight", "genus", "parts", "size", "height", "width", "depth", "volume",
          "mass", "wall", "wall_min", "flat_bottom", "overhang", "symmetric", "gap",
          "clearance", "inside", "tris", "sharp_edge", "tri_quality", "topology", "deviation",
-         "связь", "position", "center", "grid", "collision", "motion", "mesh"}
+         "связь", "position", "center", "grid", "collision", "motion", "mesh",
+         "face_visibility"}
 
 
 def evaluate_checks(scene, cache) -> list[dict]:
@@ -512,6 +518,32 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache,
         )
         return _result(bool(mq["ok"]), rule, text, name, line,
                        mq["needle_curved_area_pct"], f"≤ {fmt(limit)}%", label)
+
+    if rule == "face_visibility":
+        from .face_visibility import object_face_report
+        report = object_face_report(_scene(cache), name)
+        marked = (report or {}).get("outside", 0) + (report or {}).get("inside", 0)
+        if not marked:
+            return _result(False, rule,
+                           f"{label}: у «{name}» нет разметки. Выделите грани в режиме "
+                           "«грани» или добавьте `объект = полигоны outside=[…] inside=[…]`.",
+                           name, line, 0, "размеченные грани", label)
+        if not solid.visible:
+            return _result(False, rule,
+                           f"{label}: объект «{name}» скрыт; наружность видимой сцены не проверяется.",
+                           name, line, marked, "видимый объект", label)
+        bad = int((report or {}).get("violations", 0))
+        faces = [item for item in (report or {}).get("faces", []) if not item.get("ok")]
+        detail = "; ".join(item.get("message", "") for item in faces[:3])
+        if len(faces) > 3:
+            detail += f"; ещё {bad - 3}"
+        text = (f"{label}: размечено {marked}, нарушений {bad} — "
+                + ("в норме" if not bad else "требуется исправить"))
+        if detail:
+            text += ". " + detail
+        result = _result(not bad, rule, text, name, line, bad, "0 нарушений", label)
+        result["face_violations"] = faces[:100]
+        return result
 
     if rule == "topology":
         from .topology import STRUCTURAL_KEYS, manifold_topology, structural_summary

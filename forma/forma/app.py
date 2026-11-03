@@ -1310,6 +1310,38 @@ def _run_uistest(report_path: str | None) -> int:
                     check(f"0.58: готовый проект {key} строится в EXE",
                           built.get("ok") is True and len(built.get("objects", [])) > minimum,
                           f"{len(built.get('objects', []))} объектов")
+
+                # 0.72: пользовательская наружность/внутренность граней.
+                face_bad = post("/api/build", {"script": (
+                    "голова = box size=[20,20,20]\n"
+                    "корень = box size=[4,4,4] at=[0,0,-2]\n"
+                    "корень = полигоны inside=[0,1,2,3,4,5,6,7,8,9,10,11]\n"
+                    "check корень наружность")})
+                face_metrics = (face_bad.get("analysis", {}).get("metrics", {})
+                                .get("face_visibility", {}))
+                check("0.72: частично торчащая грань не проходит strict inside",
+                      face_bad.get("ok") is True and face_metrics.get("violations") == 10
+                      and face_bad.get("analysis", {}).get("checks", [{}])[0].get("ok") is False,
+                      f"нарушений {face_metrics.get('violations')}")
+                face_good = post("/api/build", {"script": (
+                    "голова = box size=[20,20,20]\n"
+                    "корень = box size=[4,4,4] at=[0,0,4]\n"
+                    "корень = полигоны inside=[0,1,2,3]\n"
+                    "check корень наружность")})
+                good_metrics = (face_good.get("analysis", {}).get("metrics", {})
+                                .get("face_visibility", {}))
+                check("0.72: скрытый корень, JSON-разметка и проверка",
+                      face_good.get("ok") is True and good_metrics.get("ok") is True
+                      and good_metrics.get("checked") == 4
+                      and any((o.get("face_roles") or {}).get("inside") == [0, 1, 2, 3]
+                              for o in face_good.get("objects", [])),
+                      f"проверено {good_metrics.get('checked')}")
+                js_viewer72 = get("/js/viewer.js", raw=True)
+                check("0.72: режим выделения граней внутри EXE",
+                      b'id="btn-face-mode"' in html and b'id="face-card"' in html
+                      and b'id="face-outside"' in html and b'id="face-inside"' in html
+                      and b'id="face-neutral"' in html and b"pickFaceAt" in js_viewer72
+                      and b"setFaceMode" in js_viewer72 and b"faceCommandBelongs" in js_app)
             except Exception as exc:
                 check("новые возможности", False, str(exc))
         except Exception as exc:

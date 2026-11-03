@@ -97,7 +97,7 @@ jobs:
         run: |
           python tools/build_skeleton_original.py
 
-      - name: Экспортировать модели 0.53–0.71 в GLB и Forma
+      - name: Экспортировать модели 0.53–0.72 в GLB и Forma
         working-directory: forma
         run: |
           python - <<'PY'
@@ -226,6 +226,7 @@ jobs:
           cp examples/assets/human_skeleton.LICENSE.txt release/ЛИЦЕНЗИЯ_СКЕЛЕТ.txt
           cp docs/human_skeleton_original.md release/ОРИГИНАЛЬНЫЙ_СКЕЛЕТ.md
           cp docs/mesh_quality.md release/КАЧЕСТВО_СЕТКИ.md
+          cp docs/face_visibility.md release/НАРУЖНОСТЬ_ГРАНЕЙ.md
           cp examples/assets/human_skeleton_original.audit.json release/АУДИТ_ОРИГИНАЛЬНОГО_СКЕЛЕТА.json
           python - <<'PY'
           from pathlib import Path

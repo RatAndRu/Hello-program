@@ -159,6 +159,7 @@
           </div>
           <span class="tool-sep"></span>
           <button class="mini" id="btn-select" title="Выделять области и оставлять замечания">выбор</button>
+          <button class="mini" id="btn-face-mode" title="Проверка граней: синие должны быть снаружи, красные — строго внутри другого тела">грани</button>
           <button class="mini" id="btn-space" title="Выделять пустое пространство кубическими секторами">кубы</button>
           <span class="tool-sep"></span>
           <button class="mini" id="btn-studio" title="Свет, фон, показ, анимация">вид ▾</button>
@@ -457,6 +458,28 @@
             <button class="small" id="space-save">Прикрепить приписку</button>
             <button class="small" id="space-clear">Снять секторы</button>
           </div>
+        </div>
+        <div class="sel-card face-card" id="face-card" hidden>
+          <div class="sel-head">
+            <strong>наружность / внутренность</strong>
+            <button class="mini" id="face-close" title="Выйти из режима граней">✕</button>
+          </div>
+          <div class="face-help">ЛКМ — грань · Shift — добавить · Ctrl — убрать. Цвет задаёт требование, вердикт показан ниже.</div>
+          <label class="face-object-row">объект
+            <select id="face-object" title="Какой объект редактировать; остальные можно сделать прозрачными"></select>
+          </label>
+          <label class="face-xray"><input type="checkbox" id="face-xray" checked /> соседние тела прозрачные</label>
+          <div class="sel-info" id="face-selection-info">Выберите один или несколько полигонов на модели.</div>
+          <div class="face-role-actions">
+            <button class="small face-role-outside" id="face-outside" title="Синие: каждая выбранная грань должна целиком быть снаружи других тел"><span class="face-swatch"></span>снаружи</button>
+            <button class="small face-role-inside" id="face-inside" title="Красные: каждая выбранная грань должна целиком и строго находиться внутри другого тела"><span class="face-swatch"></span>строго внутри</button>
+            <button class="small face-role-neutral" id="face-neutral" title="Серые: снять требование с выбранных граней"><span class="face-swatch"></span>обычные</button>
+          </div>
+          <div class="face-secondary-actions">
+            <button class="small" id="face-check">проверить</button>
+            <button class="small" id="face-clear">снять выбор</button>
+          </div>
+          <div class="face-report" id="face-report">Серые грани не проверяются.</div>
         </div>
       </div>
       <div class="render-strip" id="render-strip" hidden></div>

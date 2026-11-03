@@ -101,6 +101,16 @@ export class Viewer {
     this.strokePoints = [];    // мазок: точки в координатах сценария
     this.strokeRadius = 4;     // радиус текущего мазка в мм
     this.lastPaintPoint = null;
+    // Диагностика наружности/внутренности отдельных экспортных треугольников.
+    // Цвет — требование пользователя, вердикт приходит из Python-анализа.
+    this.faceMode = false;
+    this.faceRoles = {};
+    this.faceTarget = '';
+    this.faceXray = true;
+    this.faceSelectionName = '';
+    this.faceSelectionIds = new Set();
+    this._faceSelectionLines = [];
+    this.onFaceSelect = null;       // (hit|null, {additive, subtract}) => void
     this._polyNames = new Set();
     this.time = 0;
     this.duration = 0;
@@ -579,6 +589,14 @@ export class Viewer {
         if (this.onSelection) this.onSelection(this.selections);
         return;
       }
+      if (this.faceMode) {
+        const hit = this.pickFaceAt(e.clientX, e.clientY);
+        this.onFaceSelect?.(hit, {
+          additive: e.shiftKey,
+          subtract: e.ctrlKey || e.metaKey,
+        });
+        return;
+      }
       // Обычный клик использует тот же конвейер, что кисть и контекстное
       // меню: instanced-копии, заслонки и составные GLB-узлы нельзя
       // разрешать через первый попавшийся mesh.name. Иначе клик по
@@ -702,6 +720,9 @@ export class Viewer {
     this.loadedVariant = null;
     this.clearHighlight();
     this._disposeMirrors();
+    // Сначала возвращаем исходные материалы/геометрию: diagnostic-копии
+    // освобождаются отдельно, а общий путь ниже корректно disposing GLB.
+    this._restoreFaceDiagnostics();
     if (this.model) {
       this.scene.remove(this.model);
       this.model.traverse((o) => {
@@ -852,7 +873,7 @@ export class Viewer {
       // В статической сцене одинаковые геометрия+материал уходят в один
       // instanced draw call. Анимированные сцены не трогаем: там важны
       // независимые исходные узлы и дорожки.
-      this._instanceRepeatedMeshes();
+      if (!this.faceMode) this._instanceRepeatedMeshes();
       // Скрытые объекты остаются скрытыми и после пересборки: состояние живёт
       // в вьюере, а не только в списке объектов.
       this.hidden.forEach((name) => this.setObjectVisible(name, false));
@@ -1177,11 +1198,16 @@ export class Viewer {
     this._detachInstances(name);
     const meshes = this.objectMeshes(name);
     meshes.forEach((o) => {
-      const mats = Array.isArray(o.material) ? o.material : [o.material];
-      mats.forEach((m) => {
-        if (!m) return;
-        m.wireframe = Boolean(on);
-        m.needsUpdate = true;
+      // В face-режиме меняем и diagnostic-вид, и отложенный исходный
+      // материал: после выхода переключатель не должен откатываться.
+      const sources = [o.material, o.userData.faceDiagnostic?.material];
+      sources.forEach((source) => {
+        const mats = Array.isArray(source) ? source : [source];
+        mats.forEach((m) => {
+          if (!m) return;
+          m.wireframe = Boolean(on);
+          m.needsUpdate = true;
+        });
       });
     });
     if (on) this._polyNames.add(name);
@@ -1347,6 +1373,213 @@ export class Viewer {
       n += 1;
     });
     return n;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /*  Разметка граней: синие снаружи, красные строго внутри, серые обычные */
+  /* ------------------------------------------------------------------ */
+
+  _faceColor(role) {
+    // Тон и постобработка отключены в diagnostic-материале: пользователь видит
+    // именно синий/красный/серый, а не металлик или anime-версию этих цветов.
+    return new THREE.Color(role === 'outside' ? 0x2384ff
+      : role === 'inside' ? 0xef4444 : 0x8b939e);
+  }
+
+  _ensureFaceDiagnostic(mesh) {
+    if (!mesh?.isMesh || mesh.userData.faceSelectionOverlay) return null;
+    let info = mesh.userData.faceDiagnostic;
+    if (!info) {
+      const sourceGeometry = mesh.geometry;
+      const sourceMaterial = mesh.material;
+      const geometry = sourceGeometry.index ? sourceGeometry.toNonIndexed() : sourceGeometry.clone();
+      const count = geometry.attributes.position?.count || 0;
+      geometry.setAttribute('color', new THREE.BufferAttribute(new Float32Array(count * 3), 3));
+      const material = new THREE.MeshBasicMaterial({
+        vertexColors: true, side: THREE.DoubleSide, toneMapped: false,
+        wireframe: this._polyNames.has(this._objectName(mesh)),
+      });
+      info = {
+        geometry: sourceGeometry, material: sourceMaterial,
+        castShadow: mesh.castShadow, receiveShadow: mesh.receiveShadow,
+      };
+      mesh.userData.faceDiagnostic = info;
+      mesh.geometry = geometry;
+      mesh.material = material;
+      mesh.castShadow = false;
+      mesh.receiveShadow = false;
+    }
+    return mesh.geometry;
+  }
+
+  _refreshFaceDiagnostic(mesh) {
+    const geometry = this._ensureFaceDiagnostic(mesh);
+    if (!geometry) return;
+    const name = this._objectName(mesh);
+    const roles = this.faceRoles?.[name] || {};
+    const outside = new Set(roles.outside || []);
+    const inside = new Set(roles.inside || []);
+    const colors = {
+      outside: this._faceColor('outside'),
+      inside: this._faceColor('inside'),
+      neutral: this._faceColor('neutral'),
+    };
+    const attr = geometry.attributes.color;
+    const faces = Math.floor((geometry.attributes.position?.count || 0) / 3);
+    for (let fi = 0; fi < faces; fi += 1) {
+      const role = inside.has(fi) ? 'inside' : outside.has(fi) ? 'outside' : 'neutral';
+      const color = colors[role];
+      for (let k = 0; k < 3; k += 1) attr.setXYZ(fi * 3 + k, color.r, color.g, color.b);
+    }
+    attr.needsUpdate = true;
+    const material = mesh.material;
+    const ghost = Boolean(this.faceXray && this.faceTarget && name !== this.faceTarget);
+    material.transparent = ghost;
+    material.opacity = ghost ? 0.16 : 1;
+    material.depthWrite = !ghost;
+    material.needsUpdate = true;
+  }
+
+  _refreshFaceDiagnostics() {
+    if (!this.model) return;
+    this.model.traverse((mesh) => {
+      if (mesh.isMesh && !mesh.userData.faceSelectionOverlay) this._refreshFaceDiagnostic(mesh);
+    });
+    this._refreshFaceSelection();
+  }
+
+  _clearFaceSelectionLines() {
+    this._faceSelectionLines.forEach((line) => {
+      line.parent?.remove(line);
+      line.geometry?.dispose();
+      line.material?.dispose();
+    });
+    this._faceSelectionLines = [];
+  }
+
+  _refreshFaceSelection() {
+    this._clearFaceSelectionLines();
+    if (!this.faceMode || !this.faceSelectionName || !this.faceSelectionIds.size || !this.model) return;
+    const selected = this.faceSelectionIds;
+    this.objectMeshes(this.faceSelectionName).forEach((mesh) => {
+      const geometry = this._ensureFaceDiagnostic(mesh);
+      if (!geometry) return;
+      const position = geometry.attributes.position;
+      const points = [];
+      selected.forEach((fi) => {
+        const start = fi * 3;
+        if (start < 0 || start + 2 >= position.count) return;
+        const a = new THREE.Vector3().fromBufferAttribute(position, start);
+        const b = new THREE.Vector3().fromBufferAttribute(position, start + 1);
+        const c = new THREE.Vector3().fromBufferAttribute(position, start + 2);
+        points.push(a, b, b.clone(), c, c.clone(), a.clone());
+      });
+      if (!points.length) return;
+      const lineGeometry = new THREE.BufferGeometry().setFromPoints(points);
+      const line = new THREE.LineSegments(lineGeometry, new THREE.LineBasicMaterial({
+        color: 0xffffff, transparent: true, opacity: 0.96,
+        depthTest: false, depthWrite: false, toneMapped: false,
+      }));
+      line.renderOrder = 1200;
+      line.userData.faceSelectionOverlay = true;
+      line.raycast = () => {};
+      mesh.add(line);
+      this._faceSelectionLines.push(line);
+    });
+  }
+
+  _restoreFaceDiagnostics() {
+    this._clearFaceSelectionLines();
+    if (!this.model) return;
+    this.model.traverse((mesh) => {
+      const info = mesh.userData?.faceDiagnostic;
+      if (!info) return;
+      const diagnosticGeometry = mesh.geometry;
+      const diagnosticMaterial = mesh.material;
+      mesh.geometry = info.geometry;
+      mesh.material = info.material;
+      mesh.castShadow = info.castShadow;
+      mesh.receiveShadow = info.receiveShadow;
+      diagnosticGeometry?.dispose();
+      if (Array.isArray(diagnosticMaterial)) diagnosticMaterial.forEach((m) => m?.dispose());
+      else diagnosticMaterial?.dispose();
+      delete mesh.userData.faceDiagnostic;
+    });
+  }
+
+  setFaceMode(on, roles) {
+    if (roles !== undefined) this.faceRoles = roles || {};
+    this.faceMode = Boolean(on);
+    if (this.faceMode) {
+      this._detachAllInstances();
+      this.setPaintMode(false, null, '', false);
+      this.clearHighlight();
+      this._refreshFaceDiagnostics();
+    } else {
+      this._restoreFaceDiagnostics();
+      this.faceSelectionName = '';
+      this.faceSelectionIds.clear();
+    }
+    const el = this.renderer?.domElement;
+    if (el) el.style.cursor = this.faceMode ? 'crosshair' : '';
+    return this.faceMode;
+  }
+
+  setFaceRoles(roles) {
+    this.faceRoles = roles || {};
+    if (this.faceMode) this._refreshFaceDiagnostics();
+  }
+
+  setFaceTarget(name) {
+    const next = name || '';
+    if (next !== this.faceTarget) {
+      this.faceTarget = next;
+      if (this.faceSelectionName && this.faceSelectionName !== next) {
+        this.faceSelectionName = '';
+        this.faceSelectionIds.clear();
+      }
+    }
+    if (this.faceMode) this._refreshFaceDiagnostics();
+  }
+
+  setFaceXray(on) {
+    this.faceXray = Boolean(on);
+    if (this.faceMode) this._refreshFaceDiagnostics();
+  }
+
+  setFaceSelection(name, indices) {
+    this.faceSelectionName = name || '';
+    this.faceSelectionIds = new Set((indices || []).map((v) => Number(v))
+      .filter((v) => Number.isInteger(v) && v >= 0));
+    if (name) this.faceTarget = name;
+    if (this.faceMode) this._refreshFaceDiagnostics();
+  }
+
+  faceSelection() {
+    return { name: this.faceSelectionName, indices: [...this.faceSelectionIds].sort((a, b) => a - b) };
+  }
+
+  /** Picking только нужного тела: так корень выбирается сквозь ghost-голову. */
+  pickFaceAt(clientX, clientY) {
+    if (!this.model || !this.renderer || !this.faceMode) return null;
+    const el = this.renderer.domElement;
+    const rect = el.getBoundingClientRect();
+    const pointer = new THREE.Vector2(
+      ((clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1,
+      -((clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1
+    );
+    const ray = new THREE.Raycaster();
+    ray.setFromCamera(pointer, this.camera);
+    const targets = this.faceTarget ? this.objectMeshes(this.faceTarget) : [this.model];
+    const hits = ray.intersectObjects(targets, true);
+    for (const hit of hits) {
+      const mesh = hit.object;
+      if (!mesh?.isMesh || !effectivelyVisible(mesh) || mesh.userData.faceSelectionOverlay) continue;
+      const name = this._objectName(mesh);
+      if (!name || (this.faceTarget && name !== this.faceTarget)) continue;
+      return { name, mesh, point: hit.point, faceIndex: hit.faceIndex, face: hit.face };
+    }
+    return null;
   }
 
   /** Кубы пространства, в которых находится предмет. */
@@ -2868,6 +3101,11 @@ export class Viewer {
   /** Подсветка выбранного объекта: свечение + рамка + его локальные оси. */
   setHighlight(name, options = {}) {
     this.clearHighlight();
+    if (this.faceMode) {
+      // В diagnostic-режиме синий — не подсветка объекта, а требование «снаружи».
+      // Playback не должен менять выбранный для разметки объект.
+      return Boolean(name);
+    }
     if (name) this._detachInstances(name);
     if (!name || (!this.model && !this.frameRoot)) return false;
     const meshes = this.objectMeshes(name).filter((o) => effectivelyVisible(o));
@@ -3070,7 +3308,11 @@ export class Viewer {
     if (!this.model) return;
     this.model.traverse((o) => {
       if (!o.isMesh) return;
-      const mats = (Array.isArray(o.material) ? o.material : [o.material]).map((m) => this._pbrOf(m));
+      // Diagnostic BasicMaterial должен сохранить точные цвета ролей. Studio
+      // при этом редактирует исходный материал, который вернётся при выходе.
+      const source = this.faceMode && o.userData.faceDiagnostic
+        ? o.userData.faceDiagnostic.material : o.material;
+      const mats = (Array.isArray(source) ? source : [source]).map((m) => this._pbrOf(m));
       mats.forEach((m) => {
         if (!m) return;
         if (!m.userData.base) {
@@ -3413,7 +3655,7 @@ export class Viewer {
     this._updateCameraClip();
     this._refreshMirrors();
     const animeOn = this._animeOn();
-    if ((this._bloomOn || animeOn) && this.composer) {
+    if (!this.faceMode && (this._bloomOn || animeOn) && this.composer) {
       // буфер нормалей и глубины для контуров — до отрисовки красоты
       if (animeOn) {
         this._renderNormalPass();

@@ -506,6 +506,24 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
         except Exception as exc:
             metrics["mesh_quality"] = {"error": str(exc)}
             warnings.append(f"Не удалось провести диагностику качества сетки: {exc}")
+    # Пользовательская разметка граней проверяет не качество треугольников,
+    # а их смысл: синяя должна быть снаружи, красная — целиком внутри другого
+    # тела. Считаем только отмеченные грани, обычные сцены не замедляются.
+    from .face_visibility import analyze_face_visibility, summary_metrics
+    face_visibility = analyze_face_visibility(scene)
+    metrics["face_visibility"] = summary_metrics(face_visibility)
+    for entry in face_visibility["objects"]:
+        if entry["violations"]:
+            warnings.append(
+                f"Разметка граней «{entry['object']}»: нарушений {entry['violations']} "
+                f"из {entry['checked']}. Откройте режим «грани» — торчащие/скрытые "
+                "полигоны указаны в проверке наружности."
+            )
+    if face_visibility["skipped_hidden"]:
+        warnings.append(
+            f"Разметка граней скрытых объектов не проверялась: "
+            f"{face_visibility['skipped_hidden']} граней. Покажите объект для проверки."
+        )
     bad_topology = [o for o in objects if not o["topology"]["ok"]]
     if bad_topology:
         names = ", ".join(o["name"] for o in bad_topology[:4])
@@ -586,6 +604,7 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
 
     return {
         "metrics": metrics,
+        "face_visibility": face_visibility,
         "checks": checks,
         "checks_passed": passed,
         "checks_total": len(checks),
