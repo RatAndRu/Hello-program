@@ -8,6 +8,10 @@
     "dev": "node server.mjs",
     "start": "node server.mjs",
     "test": "node --test tests/*.test.mjs",
-    "check": "node --check js/app.js && node --check js/data.js && node --check js/diagrams.js && node --check js/scene.js && node --check server.mjs"
+    "check": "node --check js/app.js && node --check js/data.js && node --check js/diagrams.js && node --check js/scene.js && node --check server.mjs",
+    "generate:crane": "tsx tools/export-crane.ts"
+  },
+  "devDependencies": {
+    "tsx": "^4.23.15"
   }
 }

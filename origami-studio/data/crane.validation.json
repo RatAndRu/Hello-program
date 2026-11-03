@@ -1,0 +1,118 @@
+{
+  "model": "traditional-crane",
+  "engineSteps": 12,
+  "connectedSingleSheet": true,
+  "originalAreaConserved": true,
+  "allStepsHaveZeroTornFacetPairs": true,
+  "worstRelativeEdgeError": 0.0022071782313765223,
+  "steps": [
+    {
+      "engineStep": 1,
+      "label": "Pre-crease",
+      "tornFacetPairs": 0,
+      "facets": 2,
+      "maxLayers": 1,
+      "originalArea": 1,
+      "maxRelativeEdgeError": 1.570092458683775e-16
+    },
+    {
+      "engineStep": 2,
+      "label": "Pre-crease",
+      "tornFacetPairs": 0,
+      "facets": 4,
+      "maxLayers": 1,
+      "originalArea": 1,
+      "maxRelativeEdgeError": 3.14018491736755e-16
+    },
+    {
+      "engineStep": 3,
+      "label": "Square base",
+      "tornFacetPairs": 0,
+      "facets": 8,
+      "maxLayers": 4,
+      "originalArea": 1,
+      "maxRelativeEdgeError": 0.00020511564475000901
+    },
+    {
+      "engineStep": 4,
+      "label": "Petal fold front",
+      "tornFacetPairs": 0,
+      "facets": 14,
+      "maxLayers": 6,
+      "originalArea": 1,
+      "maxRelativeEdgeError": 0.00023771934950946548
+    },
+    {
+      "engineStep": 5,
+      "label": "Petal fold back",
+      "tornFacetPairs": 0,
+      "facets": 20,
+      "maxLayers": 8,
+      "originalArea": 1,
+      "maxRelativeEdgeError": 0.0004544860864167531
+    },
+    {
+      "engineStep": 6,
+      "label": "Narrow front point",
+      "tornFacetPairs": 0,
+      "facets": 30,
+      "maxLayers": 12,
+      "originalArea": 1.0000000000000002,
+      "maxRelativeEdgeError": 0.0005448223038935125
+    },
+    {
+      "engineStep": 7,
+      "label": "Narrow back point",
+      "tornFacetPairs": 0,
+      "facets": 40,
+      "maxLayers": 16,
+      "originalArea": 1,
+      "maxRelativeEdgeError": 0.0001828310055075451
+    },
+    {
+      "engineStep": 8,
+      "label": "Close along centre",
+      "tornFacetPairs": 0,
+      "facets": 40,
+      "maxLayers": 32,
+      "originalArea": 1,
+      "maxRelativeEdgeError": 0.00012990090063015903
+    },
+    {
+      "engineStep": 9,
+      "label": "Reverse fold neck",
+      "tornFacetPairs": 0,
+      "facets": 64,
+      "maxLayers": 56,
+      "originalArea": 1.0000000000000002,
+      "maxRelativeEdgeError": 0.00015503003761235272
+    },
+    {
+      "engineStep": 10,
+      "label": "Reverse fold tail",
+      "tornFacetPairs": 0,
+      "facets": 72,
+      "maxLayers": 64,
+      "originalArea": 1.0000000000000002,
+      "maxRelativeEdgeError": 0.0002780007795519433
+    },
+    {
+      "engineStep": 11,
+      "label": "Reverse fold head",
+      "tornFacetPairs": 0,
+      "facets": 80,
+      "maxLayers": 64,
+      "originalArea": 1.0000000000000002,
+      "maxRelativeEdgeError": 0.00024487714330133587
+    },
+    {
+      "engineStep": 12,
+      "label": "Spread wings",
+      "tornFacetPairs": 0,
+      "facets": 144,
+      "maxLayers": 128,
+      "originalArea": 1.0000000000000002,
+      "maxRelativeEdgeError": 0.0022071782313765223
+    }
+  ]
+}

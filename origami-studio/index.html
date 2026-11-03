@@ -7,6 +7,7 @@
   <meta name="description" content="Origami Studio — пошаговые 3D-инструкции, схемы складок и библиотека модулей оригами.">
   <title>Origami Studio — журавлик</title>
   <link rel="stylesheet" href="./styles.css">
+  <link rel="stylesheet" href="./planner.css">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%234b6e5e'/%3E%3Cpath d='M9 34 31 20 55 34 39 30 33 52 28 30Z M31 20 37 8 45 13 38 16' fill='none' stroke='%23fff8ec' stroke-width='3' stroke-linejoin='round'/%3E%3C/svg%3E">
   <script type="importmap">{"imports":{"three":"./vendor/three.module.js"}}</script>
 </head>
@@ -106,7 +107,7 @@
           <div class="diagram-container" id="diagram-container" hidden></div>
           <div class="pattern-container" id="pattern-container" hidden></div>
           <div class="paper-size-tag"><svg><use href="#i-paper"/></svg><span>15 × 15 см</span><small>двусторонняя бумага</small></div>
-          <div class="model-badge"><span class="status-dot"></span><span id="model-badge-text">Готовая модель</span></div>
+          <div class="model-badge"><span class="status-dot"></span><span id="model-badge-text">Один лист · 144 грани</span></div>
           <div class="playback-status" id="playback-status" hidden><span></span>Воспроизведение</div>
         </div>
         <div class="playback-bar">
@@ -131,7 +132,7 @@
 
     <aside class="instruction-panel">
       <div class="instruction-topline"><span id="instruction-number">ШАГ 10</span><span class="operation-badge" id="operation-badge">Раскрытие</span></div>
-      <h2 id="instruction-title">Придай телу объём</h2>
+      <h2 id="instruction-title">Проверь форму журавлика</h2>
       <p class="instruction-description" id="instruction-description"></p>
       <div class="instruction-diagram" id="instruction-diagram"></div>
       <div class="tip-card"><span class="tip-icon">✦</span><div><strong>Обрати внимание</strong><p id="instruction-tip"></p></div></div>
@@ -144,15 +145,35 @@
         <span><svg><use href="#i-clock"/></svg><b id="time-left">Готово</b></span>
         <span><svg><use href="#i-paper"/></svg>1 лист</span>
       </div>
-      <div class="accuracy-note"><svg><use href="#i-info"/></svg><p>3D-показ помогает понять порядок работы. Точное положение слоёв смотри на схеме шага.</p></div>
+      <div class="accuracy-note"><svg><use href="#i-info"/></svg><p>Одна связанная поверхность: площадь листа сохраняется, разрывов граней нет на всех 12 операциях.</p></div>
     </aside>
   </div>
 
   <dialog class="modal library-modal" id="library-dialog">
-    <div class="modal-header"><div><span class="eyebrow">ОТПРАВНАЯ ТОЧКА</span><h2>Библиотека модулей и техник</h2><p>Готовые правила соединений — основа будущих проектов.</p></div><button class="icon-button modal-close" data-close="library-dialog"><svg><use href="#i-close"/></svg></button></div>
+    <div class="modal-header"><div><span class="eyebrow">ОТПРАВНАЯ ТОЧКА</span><h2>Библиотека модулей и техник</h2><p>Не каталог картинок: тип соединения определяет детали, связи и расчёт сборки.</p></div><button class="icon-button modal-close" data-close="library-dialog"><svg><use href="#i-close"/></svg></button></div>
     <div class="library-intro"><span>5</span><p><strong>семейств в библиотеке</strong>У каждой системы свои выступы, карманы и правила сборки. Их нельзя смешивать без адаптера.</p></div>
     <div class="module-grid" id="module-grid"></div>
-    <div class="modal-footer-note"><svg><use href="#i-info"/></svg>В прототипе это справочные заготовки. Полностью интерактивен проект журавлика; модульные конструкторы — следующий этап.</div>
+    <div class="modal-footer-note"><svg><use href="#i-info"/></svg>Golden Venture можно открыть в планировщике сборки. Остальные семейства пока только справочные и не выдаются за готовые конструкторы.</div>
+  </dialog>
+
+  <dialog class="modal module-planner-modal" id="module-dialog">
+    <div class="modal-header"><div><span class="eyebrow">МОДУЛЬНАЯ МАСТЕРСКАЯ</span><h2>Планировщик Golden Venture</h2><p>Тип соединения → количество деталей → ряды → порядок сборки.</p></div><button class="icon-button modal-close" data-close="module-dialog"><svg><use href="#i-close"/></svg></button></div>
+    <div class="planner-warning"><svg><use href="#i-info"/></svg><p><strong>Что здесь рассчитывается:</strong> компоновка, список деталей и связи. Это не подтверждение складки модуля, вставки выступов или прочности бумажной конструкции.</p></div>
+    <div class="planner-layout">
+      <section class="planner-controls">
+        <label>Тип модуля<select id="planner-type"><option>Golden Venture · 2 выступа / 2 кармана</option></select></label>
+        <div class="planner-field-row"><label>Модулей в ряду<input id="planner-count" type="number" min="6" max="48" value="12"></label><label>Количество рядов<input id="planner-rows" type="number" min="1" max="8" value="1"></label></div>
+        <div class="planner-field-row"><label>Ширина бумаги, мм<input id="planner-paper-width" type="number" min="20" max="100" value="40"></label><label>Высота бумаги, мм<input id="planner-paper-height" type="number" min="30" max="150" value="60"></label></div>
+        <label>Шаг модулей по кольцу, мм<input id="planner-pitch" type="number" min="8" max="50" step="0.5" value="18"></label>
+        <div class="planner-check"><input id="planner-stagger" type="checkbox" checked disabled><label for="planner-stagger">Смещение следующего ряда на ½ модуля</label></div>
+        <button class="button button-primary" id="planner-export">Скачать план JSON</button>
+      </section>
+      <section class="planner-preview-wrap">
+        <div class="planner-preview" id="planner-preview"></div>
+        <div class="planner-stats" id="planner-stats"></div>
+      </section>
+    </div>
+    <section class="planner-bom"><h3>План сборки</h3><div id="planner-bom"></div></section>
   </dialog>
 
   <dialog class="modal notation-modal" id="notation-dialog">
@@ -173,7 +194,7 @@
 
   <dialog class="modal info-modal" id="info-dialog">
     <div class="modal-header"><div><span class="eyebrow">О МОДЕЛИ</span><h2>Что показывает прототип</h2></div><button class="icon-button modal-close" data-close="info-dialog"><svg><use href="#i-close"/></svg></button></div>
-    <div class="info-content"><p><strong>Журавлик:</strong> последовательность из 10 шагов, отдельные схемы и узнаваемая низкополигональная 3D-модель.</p><p>Анимация — это <strong>учебная интерполяция ключевых состояний</strong>, а не физическая симуляция бумаги. Она не доказывает отсутствие столкновений слоёв между ключевыми кадрами.</p><p>Для производственной версии нужен редактор слоёв и развёртки, rigid-origami solver, проверка self-collision и экспорт проверенных диаграмм.</p></div>
+    <div class="info-content"><p><strong>Журавлик:</strong> 10 учебных шагов интерфейса содержат 12 точных операций движка. Все 144 финальные грани принадлежат одному листу и хранят координаты на его развёртке.</p><p>Геометрия рассчитана rigid-panel solver <strong>Origamio · Hannes Gao · MIT</strong>. Во всех ключевых состояниях сохраняется площадь листа, нет разорванных соседних граней; максимальная погрешность длины ребра — 0,221%.</p><p>Это не универсальная симуляция любой бумаги: между рассчитанными кадрами показана интерполяция, а трение и прочность реального листа не моделируются. <a href="https://github.com/hannesgao/Origamio" target="_blank" rel="noopener">Исходный проект движка</a>.</p></div>
   </dialog>
 
   <div class="toast" id="toast" role="status" hidden><span id="toast-icon">✓</span><p id="toast-text"></p></div>

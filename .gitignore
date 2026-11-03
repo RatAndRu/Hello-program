@@ -47,3 +47,7 @@ origami-studio/downloads/
 __pycache__/
 *.pyc
 .venv/
+
+# Node / generated local files
+node_modules/
+origami-studio/node_modules/

@@ -1,6 +1,7 @@
 import { craneSteps, projects, moduleTemplates, notation } from './data.js';
 import { stepDiagram, creasePattern, projectIcon, operationIcon } from './diagrams.js';
 import { OrigamiScene } from './scene.js';
+import { buildModulePlan, modulePlanSvg, moduleBomHtml } from './modular.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -47,8 +48,7 @@ function renderProjects() {
       selectStep(9);
       showToast('Журавлик открыт · 10 интерактивных шагов');
     } else if (id === 'ring') {
-      openDialog('library-dialog');
-      showToast('Golden Venture: справочный шаблон уже в библиотеке');
+      openModulePlanner();
     } else showToast('Эта заготовка показана в дорожной карте прототипа', '○');
   }));
 }
@@ -73,7 +73,7 @@ function updateStepUI() {
   $('#instruction-diagram').innerHTML = stepDiagram(step.diagram);
   $('#step-current').textContent = state.step + 1;
   $('#time-left').textContent = state.step === 9 ? 'Готово' : `≈ ${Math.max(1, Math.ceil((9 - state.step) * .65))} мин`;
-  $('#model-badge-text').textContent = state.step === 9 ? 'Готовая модель' : `Состояние после шага ${state.step + 1}`;
+  $('#model-badge-text').textContent = state.step === 9 ? 'Один лист · 144 грани' : `Лист после шага ${state.step + 1}`;
   $('#progress-label').textContent = `${state.viewed.size} из 10 просмотрено`;
   $('#instruction-prev').disabled = state.step === 0;
   $('#prev-step').disabled = state.step === 0;
@@ -98,13 +98,11 @@ function updateTimeline(pose) {
 function selectStep(index, options = {}) {
   if (!options.keepPlaying) stopPlayback();
   const next = Math.max(0, Math.min(9, Math.round(index)));
-  const changed = next !== state.step;
   state.step = next;
   state.viewed.add(next);
   updateTimeline(next);
   if (scene && !options.noPose) {
-    scene.setPose(next);
-    if (changed && state.view === '3d') scene.cameraPreset(craneSteps[next].camera);
+    scene.showStep(next);
   }
   updateStepUI();
 }
@@ -117,9 +115,9 @@ function switchView(view) {
   $('#pattern-container').hidden = view !== 'pattern';
   $('#view-hint').hidden = view !== '3d';
   $('#reset-camera').hidden = view !== '3d';
-  $('#model-badge-text').textContent = view === 'pattern' ? 'Основные складки' : state.step === 9 ? 'Готовая модель' : `Состояние после шага ${state.step + 1}`;
+  $('#model-badge-text').textContent = view === 'pattern' ? 'Основные складки' : state.step === 9 ? 'Один лист · 144 грани' : `Лист после шага ${state.step + 1}`;
   if (view === 'diagram') $('#diagram-container').innerHTML = stepDiagram(craneSteps[state.step].diagram);
-  if (view === 'pattern') $('#pattern-container').innerHTML = creasePattern();
+  if (view === 'pattern') $('#pattern-container').innerHTML = creasePattern(scene?.data);
   if (view === '3d' && scene) scene.cameraPreset(craneSteps[state.step].camera);
 }
 
@@ -174,6 +172,36 @@ function showToast(message, symbol = '✓') {
 
 function openDialog(id) { const dialog = document.getElementById(id); if (dialog && !dialog.open) dialog.showModal(); }
 
+function currentModulePlan() {
+  return buildModulePlan({
+    count: $('#planner-count').value,
+    rows: $('#planner-rows').value,
+    paperWidth: $('#planner-paper-width').value,
+    paperHeight: $('#planner-paper-height').value,
+    pitch: $('#planner-pitch').value,
+  });
+}
+
+function renderModulePlanner() {
+  try {
+    const plan = currentModulePlan();
+    $('#planner-preview').innerHTML = modulePlanSvg(plan);
+    $('#planner-bom').innerHTML = moduleBomHtml(plan);
+    $('#planner-stats').innerHTML = [
+      [plan.totals.units, 'бумажных деталей'],
+      [`Ø ${plan.totals.baseDiameterMm.toFixed(1)}`, 'мм · первый ряд'],
+      [plan.totals.paperAreaCm2.toFixed(0), 'см² бумаги всего'],
+    ].map(([value,label]) => `<div class="planner-stat"><b>${value}</b><span>${label}</span></div>`).join('');
+  } catch (error) {
+    $('#planner-preview').innerHTML = `<p style="color:#a56850;font-size:11px">${error.message}</p>`;
+  }
+}
+
+function openModulePlanner() {
+  renderModulePlanner();
+  openDialog('module-dialog');
+}
+
 function renderLibraries() {
   $('#module-grid').innerHTML = moduleTemplates.map(module => `
     <article class="module-card" style="--module-color:${module.color}">
@@ -181,7 +209,12 @@ function renderLibraries() {
       <p class="module-description">${module.description}</p>
       <div class="module-joints">${module.joints.map(joint => `<span>${joint}</span>`).join('')}</div>
       <div class="module-meta"><div><small>ПОДХОДИТ ДЛЯ</small><b>${module.best}</b></div><div><small>КОЛИЧЕСТВО</small><b>${module.units}</b></div></div>
+      <button class="module-use" data-use-module="${module.id}" ${module.id === 'golden-venture' ? '' : 'disabled'}>${module.id === 'golden-venture' ? 'Открыть планировщик →' : 'Только справка · не реализовано'}</button>
     </article>`).join('');
+  $('[data-use-module="golden-venture"]').addEventListener('click', () => {
+    $('#library-dialog').close();
+    openModulePlanner();
+  });
   $('#notation-grid').innerHTML = notation.map(item => `
     <article class="notation-item" style="--notation-color:${item.color}">
       <span class="notation-icon" style="color:${item.color}">${operationIcon(item.id)}</span>
@@ -384,6 +417,14 @@ function bindEvents() {
   $('#open-library').addEventListener('click', () => openDialog('library-dialog'));
   $('#open-modules').addEventListener('click', () => openDialog('library-dialog'));
   $('#open-notation').addEventListener('click', () => openDialog('notation-dialog'));
+  ['#planner-count','#planner-rows','#planner-paper-width','#planner-paper-height','#planner-pitch'].forEach(id => $(id).addEventListener('input', renderModulePlanner));
+  $('#planner-export').addEventListener('click', () => {
+    try {
+      const plan = currentModulePlan();
+      downloadBlob(new Blob([JSON.stringify(plan,null,2)],{type:'application/json'}),'golden-venture-layout.json');
+      showToast('План компоновки сохранён · это не сертификат собираемости');
+    } catch (error) { showToast(error.message,'!'); }
+  });
   $('#new-project').addEventListener('click', () => openDialog('new-dialog'));
   $('#sidebar-add').addEventListener('click', () => openDialog('new-dialog'));
   $$('.modal-close').forEach(button => button.addEventListener('click', () => document.getElementById(button.dataset.close).close()));
@@ -395,7 +436,7 @@ function bindEvents() {
     const route = button.dataset.route;
     $('#new-dialog').close();
     if (route === 'template') { selectStep(0); showToast('Начни с первого шага журавлика'); }
-    else if (route === 'module') openDialog('library-dialog');
+    else if (route === 'module') openModulePlanner();
     else showToast('Маршрут заложен в концепцию; редактор появится на следующем этапе', '○');
   }));
   $('#project-search').addEventListener('input', renderProjects);
@@ -445,7 +486,7 @@ renderLibraries();
 bindEvents();
 $('#timeline-ticks').innerHTML = craneSteps.map((_,i) => `<button data-tick="${i}" aria-label="Шаг ${i+1}">${i+1}</button>`).join('');
 $$('[data-tick]').forEach(button => button.addEventListener('click',() => selectStep(Number(button.dataset.tick))));
-$('#pattern-container').innerHTML = creasePattern();
+$('#pattern-container').innerHTML = creasePattern(scene?.data);
 selectStep(9);
 buildPrintSheet();
 

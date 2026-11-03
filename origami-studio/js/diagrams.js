@@ -128,7 +128,16 @@ export function stepDiagram(id) {
   return (diagrams[id] || diagonals)();
 }
 
-export function creasePattern() {
+export function creasePattern(connectedData = null) {
+  if (connectedData?.creasePattern) {
+    const at = n => 45 + n * 310;
+    const lines = connectedData.creasePattern.map(crease => line(
+      at(crease.a[0]), at(1 - crease.a[1]), at(crease.b[0]), at(1 - crease.b[1]),
+      Math.abs(crease.angle) < 1 ? 'old-crease' : crease.angle > 0 ? 'valley' : 'mountain'
+    ));
+    return svg(`<rect x="45" y="45" width="310" height="310" class="paper" filter="url(#paper-shadow)"/>${lines.join('')}
+      ${label(200,389,'Фактические грани и складки связанной модели · 12 операций','diagram-note')}`, '0 0 400 410');
+  }
   const lines = [];
   const at = n => 45 + n * 310;
   lines.push(line(at(0),at(0),at(1),at(1),'valley'), line(at(1),at(0),at(0),at(1),'valley'));
