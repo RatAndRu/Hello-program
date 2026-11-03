@@ -141,8 +141,9 @@ Apache-2.0 — единственная из «мягких» лицензий, 
   `blend_to_glb`), обратный путь — `glb_to_blend`; то есть CC0-сцену из
   Blender можно взять как обстановку, а свою деталь — отдать обратно в Blender.
   Параметров у такой сцены нет: это меш с материалами, а не генератор.
-* `forma/lib/objects.py` — четыре объекта, собранные по CC0-референсам:
-  меч, кастрюльный шлем, стул, фонарный столб (`forma lib sword|helmet|chair|lamp`).
+* `forma/lib/objects.py` — девять объектов, собранных по CC0-референсам:
+  меч, кинжал, топор, щит, кастрюльный шлем, стул, стол, колонна, фонарный столб
+  (`forma lib sword|dagger|axe|shield|helmet|chair|table|column|lamp`).
   Список референсов и чисел — [`cc0_reference_objects.md`](cc0_reference_objects.md).
 * Отчёт по переносу и его честные границы: [`gridfinity_port.md`](gridfinity_port.md).
 

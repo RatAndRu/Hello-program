@@ -471,6 +471,20 @@ def sweep_solid(path: np.ndarray, profile: np.ndarray, closed_path: bool = False
     return manifold_from_arrays(verts, faces, what)
 
 
+def _fix_axis_winding(verts: np.ndarray, faces: np.ndarray,
+                      axis: str) -> tuple[np.ndarray, np.ndarray]:
+    """Переставляет обход треугольников для осей с обратной ориентацией.
+
+    Раскладка сечения ``(u, v)`` вдоль осей даёт отображение (u, v, w) → (x, y, z):
+    для ``z`` и ``x`` это циклическая перестановка (det = +1), а для ``y`` —
+    транспозиция (det = −1). Без разворота обхода ядро считает тело вывернутым
+    наизнанку и лофт получается пустым.
+    """
+    if axis == "y":
+        return verts, faces[:, ::-1]
+    return verts, faces
+
+
 def loft_solid(sections: list[np.ndarray], positions: Sequence[float],
                axis: str = "z", caps: bool = True, what: str = "лофт") -> mf.Manifold:
     """Соединяет 2D-сечения, расставленные вдоль оси."""
@@ -513,7 +527,7 @@ def loft_solid(sections: list[np.ndarray], positions: Sequence[float],
         rings.append(ring)
 
     verts, faces = _rings_to_arrays(rings, prof, cap_start=caps, cap_end=caps)
-    return manifold_from_arrays(verts, faces, what)
+    return manifold_from_arrays(*_fix_axis_winding(verts, faces, axis), what)
 
 
 def rings_from_sections(sections: list[np.ndarray], positions: Sequence[float],
@@ -556,7 +570,7 @@ def loft_solid_smooth(sections: list[np.ndarray], positions: Sequence[float],
     rings = [np.stack([out[j][i] for j in range(N)], axis=0) for i in range(len(out[0]))]
     prof = secs[0]
     verts, faces = _rings_to_arrays(rings, prof, cap_start=caps, cap_end=caps)
-    return manifold_from_arrays(verts, faces, what)
+    return manifold_from_arrays(*_fix_axis_winding(verts, faces, axis), what)
 
 
 def hull_of_manifolds(solids: Iterable[mf.Manifold]) -> mf.Manifold:

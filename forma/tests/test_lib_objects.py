@@ -5,6 +5,7 @@
 """
 from __future__ import annotations
 
+import re
 import unittest
 
 from forma.lib import objects
@@ -136,9 +137,28 @@ class LampTest(unittest.TestCase):
 class RegistryTest(unittest.TestCase):
     def test_every_object_is_registered_for_cli(self):
         from forma.lib import LIBRARIES
-        for kind in ("sword", "helmet", "chair", "lamp"):
+        kinds = ("sword", "dagger", "axe", "shield", "helmet",
+                 "chair", "table", "lamp", "column")
+        for kind in kinds:
             self.assertIn(kind, LIBRARIES)
             self.assertEqual(LIBRARIES[kind]["build"].__name__, "build")
+
+    def test_params_help_covers_every_object(self):
+        from forma.lib import objects as lib_objects
+        helped = {name for name, _ in lib_objects.params_help()}
+        self.assertEqual(helped, set(lib_objects.BUILDERS))
+
+    def test_cli_builds_a_column_with_flutes(self):
+        import io
+        from contextlib import redirect_stdout
+
+        from forma.cli import main
+
+        buffer = io.StringIO()
+        with redirect_stdout(buffer):
+            code = main(["lib", "column", "height=2400", "flutes=16", "--check"])
+        self.assertEqual(code, 0, buffer.getvalue())
+        self.assertIn("2 400", buffer.getvalue())
 
     def test_cli_builds_a_sword(self):
         import io
@@ -155,3 +175,133 @@ class RegistryTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class DaggerTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.build = make("dagger")
+
+    def test_length_is_grip_guard_blade_pommel(self):
+        """95 рукоять + 8 гарда + 280 клинок + 14 навершие = 397 мм."""
+        self.assertAlmostEqual(size_of(self.build)[2], 397.0, delta=0.6)
+
+    def test_guard_disc_is_the_widest_part(self):
+        width, depth, _ = size_of(self.build)
+        self.assertAlmostEqual(width, 64.0, delta=0.6)      # гарда Ø64
+        self.assertAlmostEqual(depth, 64.0, delta=0.6)
+
+    def test_blade_parameter_shortens_the_dagger(self):
+        short = make("dagger", blade=200)
+        self.assertAlmostEqual(size_of(short)[2], 317.0, delta=0.6)
+
+    def test_too_short_blade_is_rejected(self):
+        with self.assertRaises(ValueError):
+            objects.build_script("dagger", blade=90)
+
+
+class AxeTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.build = make("axe")
+
+    def test_haft_sets_the_height(self):
+        """Рукоять 700 мм, но она выходит над головой на 6 %."""
+        self.assertAlmostEqual(size_of(self.build)[2], 742.0, delta=0.6)
+
+    def test_blade_reach_sets_the_width(self):
+        """24.05 проушина + 6 перемычка + 140 вылет + 24.05 = 194.1 мм."""
+        self.assertAlmostEqual(size_of(self.build)[0], 194.1, delta=1.0)
+
+    def test_head_is_one_body_with_the_haft(self):
+        self.assertEqual(self.build.analysis["metrics"]["parts"], 1)
+
+    def test_edge_is_thinner_than_the_eye(self):
+        """Спуски: тот же клин с более толстым лезвием весит больше."""
+        thin = make("axe", edge=3)
+        thick = make("axe", edge=12)
+        self.assertLess(thin.analysis["metrics"]["volume_cm3"],
+                        thick.analysis["metrics"]["volume_cm3"])
+
+    def test_nonsense_edge_is_rejected(self):
+        with self.assertRaises(ValueError):
+            objects.build_script("axe", thickness=26, edge=20)
+
+
+class ShieldTest(unittest.TestCase):
+    def test_gabarit_and_boss_depth(self):
+        """520 × (22 корпус + 60 умбон + 12 рукоять) × 700."""
+        b = make("shield")
+        width, depth, height = size_of(b)
+        self.assertAlmostEqual(width, 520.0, delta=1.0)
+        self.assertAlmostEqual(depth, 94.0, delta=2.0)
+        self.assertAlmostEqual(height, 700.0, delta=1.0)
+
+    def test_shield_without_boss_and_straps_is_a_plate(self):
+        b = make("shield", boss=0, straps=0)
+        self.assertAlmostEqual(size_of(b)[1], 22.0, delta=1.0)
+        self.assertEqual(b.analysis["metrics"]["parts"], 1)
+
+    def test_too_small_shield_is_rejected(self):
+        with self.assertRaises(ValueError):
+            objects.build_script("shield", height=200)
+
+
+class TableTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.build = make("table")
+
+    def test_gabarit(self):
+        self.assertEqual([round(v, 1) for v in size_of(self.build)], [1200.0, 700.0, 750.0])
+
+    def test_top_overhangs_the_legs(self):
+        """Столешница нависает над ножками — иначе стол выглядит «на ходулях»."""
+        script = objects.build_script("table")
+        spacing = [float(v) for v in re.findall(r"spacing=\[([\d.]+),([\d.]+),0\]",
+                                                script)[0]]
+        # шаг между ножками меньше габарита: столешница выступает с каждого края
+        self.assertLessEqual(spacing[0], 1200.0 - 2 * 36)
+        self.assertLessEqual(spacing[1], 700.0 - 2 * 36)
+
+    def test_stretcher_makes_one_body(self):
+        b = make("table", length=900, width=900, height=740, stretcher=300)
+        self.assertEqual(b.analysis["metrics"]["parts"], 1)
+
+    def test_taller_legs_add_material(self):
+        low = make("table", height=600)
+        high = make("table", height=900)
+        self.assertLess(low.analysis["metrics"]["volume_cm3"],
+                        high.analysis["metrics"]["volume_cm3"])
+
+    def test_tiny_table_is_rejected(self):
+        with self.assertRaises(ValueError):
+            objects.build_script("table", length=300)
+
+
+class ColumnTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.build = make("column")
+
+    def test_gabarit_is_plinth_and_height(self):
+        """Плита 1.36 диаметра в стороне, высота ровно заданная."""
+        width, depth, height = size_of(self.build)
+        self.assertAlmostEqual(width, 408.0, delta=1.0)
+        self.assertAlmostEqual(depth, 408.0, delta=1.0)
+        self.assertAlmostEqual(height, 3000.0, delta=1.0)
+
+    def test_flutes_remove_material(self):
+        plain = make("column")
+        fluted = make("column", flutes=20)
+        self.assertLess(fluted.analysis["metrics"]["volume_cm3"],
+                        plain.analysis["metrics"]["volume_cm3"])
+
+    def test_shaft_taper_is_visible(self):
+        """Сужение 0.14: наверху ствол тоньше, чем внизу."""
+        b = make("column")
+        self.assertEqual(b.analysis["metrics"]["parts"], 1)
+
+    def test_bad_taper_is_rejected(self):
+        with self.assertRaises(ValueError):
+            objects.build_script("column", taper=0.9)

@@ -52,6 +52,16 @@ _REFERENCE_NOTES = {
               "нормы мебели; референсы Kenney Furniture Kit (CC0)"),
     "lamp": ("Фонарный столб (цоколь, столб, кронштейн, фонарь)",
              "масштаб сверен с Poly Haven Street Lamp 02 (CC0)"),
+    "dagger": ("Кинжал-рондель (клинок-ромб, дисковая гарда)",
+               "типология ронделя XIV–XV вв.; Quaternius S_Dagger (CC0)"),
+    "axe": ("Топор бородатый (рукоять, проушина, клин со спусками)",
+            "пропорции X–XIV вв.; Quaternius S_Axe, S_AxeDouble (CC0)"),
+    "shield": ("Щит-утюг (корпус, умбон, ремни)",
+               "щит XIII–XV вв.; Quaternius S_ShieldHeater (CC0)"),
+    "table": ("Стол обеденный (столешница, ножки, царги)",
+              "нормы мебели; Kenney Furniture Kit Table (CC0)"),
+    "column": ("Колонна классическая (плита, база, ствол, капитель)",
+               "античный ордер; Kenney Column, Quaternius S_ColumnRound (CC0)"),
 }
 for _kind, (_title, _source) in _REFERENCE_NOTES.items():
     LIBRARIES[_kind] = {
