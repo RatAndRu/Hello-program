@@ -60,7 +60,7 @@ exit=0
 [32;1m******        Transferring Shape, ShapeType = 0                      ******[0m
 [32;1m** WorkSession : Sending all data[0m
 [32;1m Step File Name : /home/runner/work/Hello-program/Hello-program/out/plate_freecad.step(248 ents)  Write  Done[0m
-RESULT {"tool_volume_cm3": 28.5644, "area_cm2": 113.9, "solids": 1, "faces": 8, "edges": 18, "valid": true, "tool_watertight": true, "size": [80.0, 60.0, 6.0], "tris_est": null, "tool": "FreeCAD Part (CSG)", "build_ms": 7.1, "notes": "B-rep: объём и площадь считает ядро OpenCASCADE", "step_bytes": 9919, "step_roundtrip_cm3": 28.5644}
+RESULT {"tool_volume_cm3": 28.5644, "area_cm2": 113.9, "solids": 1, "faces": 8, "edges": 18, "valid": true, "tool_watertight": true, "size": [80.0, 60.0, 6.0], "tris_est": null, "tool": "FreeCAD Part (CSG)", "build_ms": 7.6, "notes": "B-rep: объём и площадь считает ядро OpenCASCADE", "step_bytes": 9919, "step_roundtrip_cm3": 28.5644}
 exit=0
 
 == вариант 4: AppRun

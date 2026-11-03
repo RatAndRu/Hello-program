@@ -1,1 +1,1 @@
-OpenSCAD: 0.22 с
+OpenSCAD: 0.20 с
