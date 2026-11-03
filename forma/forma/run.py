@@ -6,7 +6,9 @@ import hashlib
 import re
 import time
 import traceback
+from copy import deepcopy
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from . import ops as _ops_pkg  # noqa: F401  (реестр команд)
 from .checks import evaluate_checks
@@ -14,6 +16,9 @@ from .errors import DslError, FormaError, GeometryError
 from .model import Scene
 from .ops import OPS, help_list, lookup, suggest
 from .dsl import Args, command_value, parse_script
+from .library import (bind_module_values, clone_functions, evaluate_call_text,
+                      expand_includes, parse_program, register_definitions)
+from .provenance import record_execution, record as record_provenance
 from .geometry import export_glb
 from .metrics import analyze
 from .values import numeric_issue, parse_value
@@ -30,6 +35,7 @@ from . import ops_skeleton  # noqa: F401,E402
 from . import ops_human  # noqa: F401,E402
 from . import ops_studio  # noqa: F401,E402
 from . import ops_io  # noqa: F401,E402
+from . import ops_scad  # noqa: F401,E402
 from . import ops_extra  # noqa: F401,E402
 from . import ops_inspect  # noqa: F401,E402
 from . import ops_text  # noqa: F401,E402
@@ -69,6 +75,8 @@ from . import ops_orient  # noqa: F401,E402
 from . import ops_eye  # noqa: F401,E402
 from . import ops_web  # noqa: F401,E402
 from . import ops_organic  # noqa: F401,E402
+from . import ops_params  # noqa: F401,E402
+from .ops_params import handle_special
 
 
 # Команды, которые не меняют ни форму, ни видимость: в анимации сборки
@@ -77,6 +85,8 @@ FRAME_SKIP_VERBS = {
     "check", "gap", "clearance", "probe", "passport", "note", "param", "help",
     "version", "save", "load", "light", "color", "scene", "comment", "info",
     "сетка", "interference", "пересечения", "коллизии", "collision_report",
+    "preset", "пресет", "набор", "precision", "точность", "quality", "качество",
+    "__forma_definition", "module", "модуль", "function", "функция",
 }
 
 # Эти команды могут менять группу in-place, не увеличивая Scene.op_count.
@@ -134,12 +144,20 @@ class Build:
     command_timings: list = field(default_factory=list)
     upto: int | None = None
     empty: bool = False
+    overrides: dict = field(default_factory=dict)
     _glb: bytes | None = None
     _glb_error: str | None = None
 
     @property
     def ok(self) -> bool:
         return self.scene is not None and self.error is None
+
+    @property
+    def variant_hash(self) -> str:
+        if not self.overrides:
+            return self.script_hash
+        raw = self.script + "\\n" + repr(sorted(self.overrides.items()))
+        return _hash(raw)
 
     def visible_solids(self):
         return self.scene.visible_solids() if self.scene else []
@@ -182,6 +200,8 @@ class Build:
                 "kind": solid.kind,
                 "op": solid.op,
                 "line": solid.line,
+                "provenance": (getattr(solid, "meta", None) or {}).get("provenance"),
+                "module": (getattr(solid, "meta", None) or {}).get("module"),
                 "tris": st["tris"],
                 "verts": st["verts"],
                 "volume_cm3": round(st["volume"] / 1000.0, 3),
@@ -255,8 +275,13 @@ class Build:
             "ok": self.ok,
             "error": self.error,
             "script_hash": self.script_hash,
+            "variant_hash": self.variant_hash,
+            "overrides": dict(self.overrides),
             "objects": [] if light else self.objects_payload(),
             "params": dict(scene.params) if scene else {},
+            "parameter_schema": scene.parameter_schema() if scene else [],
+            "presets": {key: dict(value) for key, value in (scene.presets if scene else {}).items()},
+            "provenance": list(getattr(scene, "provenance", []) or []) if scene else [],
             "contours": [item.to_dict() for item in scene.contours.values()] if scene else [],
             "analysis": self.analysis,
             "timings": self.timings,
@@ -431,18 +456,18 @@ def _handle_let(scene: Scene, cmd) -> None:
         raise DslError("Формат: let имя = значение", line=cmd.line, command=cmd.text)
     if not name.isidentifier():
         raise DslError(f"Недопустимое имя параметра «{name}».", line=cmd.line, command=cmd.text)
-    if name in getattr(scene, "overrides", {}):
-        value = float(scene.overrides[name])
-        scene.params[name] = value
-        scene.log("info", f"параметр {name} = {value:g} (морфинг)", cmd.line)
-        return
     raw = _substitute_measures(raw, scene)
-    value = parse_value(raw, scene.params)
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise DslError(f"Параметр «{name}» должен быть числом, получено «{value}».",
+    parsed = parse_value(raw, scene.params, scene.vars, scene.functions)
+    if isinstance(parsed, bool) or not isinstance(parsed, (int, float)):
+        raise DslError(f"Параметр «{name}» должен быть числом, получено «{parsed}».",
                        line=cmd.line, command=cmd.text)
-    scene.params[name] = float(value)
-    scene.log("info", f"параметр {name} = {value:g}", cmd.line)
+    default = float(parsed)
+    overridden = name in getattr(scene, "overrides", {})
+    value = float(scene.overrides[name]) if overridden else default
+    scene.params[name] = value
+    meta = scene.param_meta.setdefault(name, {"label": name, "default": default, "step": 0.1})
+    meta.setdefault("default", default)
+    scene.log("info", f"параметр {name} = {value:g}" + (" (морфинг)" if overridden else ""), cmd.line)
 
 
 def _handle_check(scene: Scene, cmd) -> None:
@@ -465,38 +490,182 @@ def _handle_check(scene: Scene, cmd) -> None:
     scene.log("info", f"проверка: {target} {rule}", cmd.line)
 
 
+def _safe_value(value):
+    if isinstance(value, dict):
+        return {str(k): _safe_value(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_safe_value(v) for v in value]
+    if isinstance(value, (str, int, float, bool)) or value is None:
+        return value
+    try:
+        return float(value)
+    except Exception:
+        return str(value)
+
+
+def _invoke_module(scene: Scene, definition, cmd, positional, named) -> None:
+    """Исполняет модуль в локальном Scene и переносит его обычные детали."""
+    if scene.module_depth >= 32:
+        raise DslError("Превышена глубина вызовов модулей (32); проверьте рекурсию.",
+                       line=cmd.line, command=cmd.text)
+    local_params, local_vars, values = bind_module_values(definition, positional, named, scene)
+    child = Scene()
+    child.base_dir = getattr(scene, "base_dir", None)
+    child.settings = deepcopy(scene.settings)
+    child.params = local_params
+    child.vars = local_vars
+    child.functions = clone_functions(scene.functions, child)
+    child.modules = dict(scene.modules)
+    child.definitions = dict(scene.definitions)
+    child.overrides = dict(getattr(scene, "overrides", {}) or {})
+    child.module_depth = scene.module_depth + 1
+    child.vars["__forma_functions__"] = child.functions
+    register_definitions(child, definition.definitions)
+    try:
+        for child_cmd in definition.commands:
+            _execute(child, child_cmd)
+    except FormaError as exc:
+        suffix = f"модуль «{definition.name}», вызов на строке {cmd.line}"
+        exc.hint = (str(exc.hint) + "; " if exc.hint else "") + suffix
+        if exc.line is None:
+            exc.line = cmd.line
+        raise
+    if not child.objects and not child.contours:
+        raise DslError(f"Модуль «{definition.name}» не создал ни одного объекта.",
+                       line=cmd.line, command=cmd.text)
+    visible = child.visible_solids()
+    base = (cmd.target or scene.unique_name(definition.name)).strip()
+    if cmd.target and (base in scene.objects or base in scene.contours or base in scene.groups):
+        raise DslError(f"Имя «{base}» уже занято.", line=cmd.line, command=cmd.text)
+    root = visible[0] if len(visible) == 1 else None
+    name_map: dict[str, str] = {}
+    for solid in child.objects.values():
+        candidate = base if solid is root else f"{base}__{solid.name}"
+        if candidate in scene.objects or candidate in scene.contours or candidate in scene.groups:
+            raise DslError(f"Модуль «{definition.name}»: имя «{candidate}» уже занято.",
+                           line=cmd.line)
+        name_map[solid.name] = candidate
+    for contour_name in child.contours:
+        candidate = f"{base}__{contour_name}"
+        if candidate in scene.objects or candidate in scene.contours:
+            raise DslError(f"Модуль «{definition.name}»: имя контура «{candidate}» уже занято.",
+                           line=cmd.line)
+        name_map[contour_name] = candidate
+    # Переносим и скрытые исходники: они нужны picking/provenance так же, как
+    # скрытые plate0/h1 в обычном сценарии. Это не геометрическое CAD-дерево.
+    old_provenance = deepcopy(child.provenance)
+    for old_name, new_name in name_map.items():
+        solid = child.objects.get(old_name)
+        if solid is None:
+            continue
+        solid.name = new_name
+        solid.meta["module"] = definition.name
+        solid.meta["module_args"] = _safe_value(values)
+        passport = solid.meta.get("provenance")
+        if passport:
+            passport["parents"] = [name_map.get(p, p) for p in passport.get("parents", [])]
+            passport["object"] = new_name
+            passport["module"] = definition.name
+        scene.add(solid)
+    for old_name, contour in child.contours.items():
+        contour.name = name_map[old_name]
+        scene.contours[contour.name] = contour
+    for group, members in child.groups.items():
+        mapped = [name_map.get(member, member) for member in members if member in name_map]
+        if mapped:
+            group_name = f"{base}__{group}"
+            scene.groups[group_name] = mapped
+    if len(visible) > 1:
+        scene.groups[base] = [name_map[solid.name] for solid in visible]
+    for row in old_provenance:
+        copied = dict(row)
+        copied["object"] = name_map.get(row.get("object"), row.get("object"))
+        copied["parents"] = [name_map.get(p, p) for p in row.get("parents", [])]
+        copied["module"] = definition.name
+        copied["call_line"] = cmd.line
+        scene.provenance.append(copied)
+    del scene.provenance[:-int(getattr(scene, "provenance_limit", 512))]
+    # Вызов модуля виден отдельной строкой, но не заменяет паспорт последней
+    # внутренней операции у одиночного результата.
+    root_passport = deepcopy(root.meta.get("provenance")) if root is not None else None
+    record_provenance(scene, base, "module", cmd.line, [], command=cmd.text,
+                      extra={"module": definition.name, "arguments": _safe_value(values)})
+    if root is not None and root_passport is not None:
+        root.meta["provenance"] = root_passport
+    scene.log("info", f"модуль {definition.name}: объектов {len(child.objects)}, "
+              f"видимых {len(visible)}", cmd.line)
+
+
+def _try_module(scene: Scene, cmd) -> bool:
+    raw_verb = (cmd.verb or "").strip()
+    name = ""
+    positional: list = []
+    named: dict = {}
+    if "(" in raw_verb and raw_verb.endswith(")"):
+        try:
+            candidate, positional, named = evaluate_call_text(raw_verb, scene)
+        except DslError:
+            return False
+        if candidate not in scene.modules:
+            return False
+        name = candidate
+    elif raw_verb in scene.modules:
+        name = raw_verb
+        positional = [parse_value(raw, scene.params, scene.vars, scene.functions)
+                      for raw in (cmd.args or [])]
+        named = {key: parse_value(raw, scene.params, scene.vars, scene.functions)
+                 for key, raw in (cmd.kwargs or {}).items()}
+    if not name:
+        return False
+    _invoke_module(scene, scene.modules[name], cmd, positional, named)
+    return True
+
+
 def _execute(scene: Scene, cmd) -> None:
     scene.line = cmd.line
     scene.command = cmd.text
     verb_raw = cmd.verb or ""
     verb = verb_raw.lower()
+    before_ids = {name: id(solid.manifold) for name, solid in scene.objects.items()}
     # меры (top, height, volume…) — до разбора параметров, в любой команде
     _apply_measures(cmd, scene)
 
+    if verb == "__forma_definition":
+        return
     if verb == "let":
         _handle_let(scene, cmd)
+        return
+    if handle_special(scene, cmd):
+        return
+    if _try_module(scene, cmd):
         return
 
     spec = lookup(verb)
     if spec is None and cmd.target:
-        # морфинг: значение параметра подменяется при сборке кадра
+        # Сначала читаем исходный default, затем применяем morph. Иначе reset
+        # после overrides ошибочно считал текущее значение заводским default.
+        raw = (cmd.rest or "").strip()
+        raw = _substitute_measures(raw, scene)
+        value = parse_value(raw, scene.params, scene.vars, scene.functions)
+        is_number = isinstance(value, (int, float)) and not isinstance(value, bool)
         if cmd.target in getattr(scene, "overrides", {}):
+            default = float(value) if is_number else float(scene.overrides[cmd.target])
             value = float(scene.overrides[cmd.target])
             scene.params[cmd.target] = value
+            meta = scene.param_meta.setdefault(
+                cmd.target, {"label": cmd.target, "default": default, "step": 0.1})
+            meta.setdefault("default", default)
             scene.log("info", f"параметр {cmd.target} = {value:g} (морфинг)", cmd.line)
             return
         # строка вида  height = 95  или  точки = [[0,0],[40,0]]  или  имя = "Кружка"
-        raw = (cmd.rest or "").strip()
-        raw = _substitute_measures(raw, scene)
-        value = parse_value(raw, scene.params, scene.vars)
-        is_number = isinstance(value, (int, float)) and not isinstance(value, bool)
         parsed_ok = not (isinstance(value, str) and value == raw)
         if is_number:
             scene.params[cmd.target] = float(value)
+            scene.param_meta.setdefault(cmd.target, {"label": cmd.target, "default": float(value), "step": 0.1})
             scene.log("info", f"параметр {cmd.target} = {value:g}", cmd.line)
             return
         if not parsed_ok:
-            reason = numeric_issue(raw, scene.params)
+            reason = numeric_issue(raw, scene.params, scene.functions)
             if reason:
                 raise DslError(
                     f"Не удалось вычислить «{raw}»: {reason}.",
@@ -562,12 +731,13 @@ def _execute(scene: Scene, cmd) -> None:
             f"Имя «{cmd.target}» уже занято другим объектом.",
             hint=f"Придумайте новое имя или удалите прежний объект: remove {cmd.target}",
             line=cmd.line, command=cmd.text)
+    record_execution(scene, cmd, result, before_ids)
     scene.log("info", f"{spec.name}: готово", cmd.line)
 
 
 def build(script: str, previous_analysis: dict | None = None,
           upto: int | None = None, analyze_model: bool = True,
-          overrides: dict | None = None) -> Build:
+          overrides: dict | None = None, base_dir: str | Path | None = None) -> Build:
     """Собирает сцену. ``upto`` — остановиться после N-й команды (кадр сборки).
 
     ``overrides`` подменяет числовые параметры сценария (R = 42) — так строится
@@ -575,8 +745,10 @@ def build(script: str, previous_analysis: dict | None = None,
     """
     started = time.perf_counter()
     script = script or ""
-    result = Build(script=script, script_hash=_hash(script), upto=upto)
+    result = Build(script=script, script_hash=_hash(script), upto=upto,
+                   overrides=dict(overrides or {}))
     scene = Scene()
+    scene.base_dir = Path(base_dir).expanduser().resolve() if base_dir else None
     scene.overrides = dict(overrides or {})
     for key, value in (overrides or {}).items():
         try:
@@ -586,7 +758,11 @@ def build(script: str, previous_analysis: dict | None = None,
     result.scene = scene
     t_parse = time.perf_counter()
     try:
-        commands = parse_script(script)
+        expanded = expand_includes(script, base_dir=base_dir)
+        program = parse_program(expanded)
+        commands = program.commands
+        scene.definitions = program.definitions
+        register_definitions(scene, program.definitions)
     except FormaError as exc:
         result.error = exc.to_dict()
         result.scene = None
@@ -751,7 +927,25 @@ def empty_analysis() -> dict:
 
 
 def commands_help() -> list[dict]:
-    return help_list()
+    rows = help_list()
+    # include/definitions обрабатываются до обычного op-dispatch, но должны
+    # присутствовать в той же встроенной справке, а не только в docs.
+    rows.extend([
+        {"name": "include", "aliases": ["включить", "подключить"],
+         "category": "Библиотеки Forma",
+         "summary": "Подключает .forma/.f3d с защитой от циклов; .scad передаётся openscad.",
+         "params": [{"name": "file", "desc": "путь к библиотеке относительно сценария"}],
+         "example": "include file=\"lib/plates.forma\""},
+        {"name": "function", "aliases": ["функция"], "category": "Библиотеки Forma",
+         "summary": "Объявляет чистую числовую функцию с defaults и локальными аргументами.",
+         "params": [{"name": "x, y=…", "desc": "позиционные и именованные аргументы"}],
+         "example": "function plus(x, y=2) = x + y"},
+        {"name": "module", "aliases": ["модуль"], "category": "Библиотеки Forma",
+         "summary": "Объявляет переиспользуемый блок обычных команд Forma в локальном scope.",
+         "params": [{"name": "width=…", "desc": "параметры и значения по умолчанию"}],
+         "example": "module plate(width=40) {\n  body = box size=[width,20,3]\n}"},
+    ])
+    return rows
 
 
 def selftest() -> dict:

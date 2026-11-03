@@ -182,13 +182,13 @@ def parse_script(text: str) -> list[Command]:
     return commands
 
 
-def command_value(cmd: Command, params: dict[str, float]) -> Any:
+def command_value(cmd: Command, params: dict[str, float], functions: dict | None = None) -> Any:
     """Для строк вида `height = 95` — значение параметра."""
     raw = (cmd.rest or "").strip()
     if not raw:
         raise DslError(f"Не задано значение параметра «{cmd.target}».", line=cmd.line,
                        command=cmd.text)
-    value = parse_value(raw, params)
+    value = parse_value(raw, params, functions=functions)
     if isinstance(value, Range):
         raise DslError("Параметр не может быть диапазоном.", line=cmd.line)
     if not isinstance(value, (int, float)):
@@ -206,6 +206,7 @@ class Args:
         self.spec = spec
         self.params = scene.params
         self.vars = scene.vars
+        self.functions = getattr(scene, "functions", {})
         self.extra: list[str] = []
         self.kwargs: dict[str, str] = {}
         for key, raw in cmd.kwargs.items():
@@ -254,7 +255,7 @@ class Args:
     def value(self, key: str, default: Any = None) -> Any:
         if key not in self.kwargs:
             return default
-        return parse_value(self.kwargs[key], self.params, self.vars)
+        return parse_value(self.kwargs[key], self.params, self.vars, self.functions)
 
     def num(self, key: str, default: float | None = None, required: bool = False,
             minv: float | None = None, maxv: float | None = None) -> float | None:
@@ -264,7 +265,7 @@ class Args:
                                hint=self._params_hint(), line=self.cmd.line, command=self.cmd.text)
             return default
         raw = self.kwargs[key]
-        v = parse_value(raw, self.params)
+        v = parse_value(raw, self.params, self.vars, self.functions)
         if isinstance(v, bool) or not isinstance(v, (int, float)):
             raise DslError(f"Параметр «{key}» должен быть числом, получено «{raw}»",
                            hint=self._params_hint(), line=self.cmd.line,

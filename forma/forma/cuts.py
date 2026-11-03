@@ -116,6 +116,7 @@ def make_section_solid(cs: mf.CrossSection, plane: str, at: float,
 def export_dxf(sections: list[dict], path: Path) -> Path:
     """Минимальный DXF R12: контуры линиями, миллиметры, слой на сечение."""
     path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     lines: list[str] = ["0", "SECTION", "2", "HEADER",
                         "9", "$ACADVER", "1", "AC1009",
                         "9", "$INSUNITS", "70", "4",
@@ -133,6 +134,114 @@ def export_dxf(sections: list[dict], path: Path) -> Path:
     lines += ["0", "ENDSEC", "0", "EOF"]
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return path
+
+
+def _dxf_line(layer: str, a, b) -> list[str]:
+    return ["0", "LINE", "8", layer,
+            "10", f"{float(a[0]):.4f}", "20", f"{float(a[1]):.4f}", "30", "0.0",
+            "11", f"{float(b[0]):.4f}", "21", f"{float(b[1]):.4f}", "31", "0.0"]
+
+
+def _dxf_text(layer: str, at, text: str, rotation: float = 0.0) -> list[str]:
+    # TEXT в R12 не требует шрифтового пакета и читается CAD/просмотрщиками.
+    safe = str(text).replace("\\n", " ").replace("\r", " ").replace("\n", " ")
+    return ["0", "TEXT", "8", layer,
+            "10", f"{float(at[0]):.4f}", "20", f"{float(at[1]):.4f}", "30", "0.0",
+            "40", "2.5000", "1", safe, "50", f"{float(rotation):.4f}"]
+
+
+def _dimension_block(index: int, p1, p2, offset: float, text: str | None = None) -> tuple[list[str], list[str]]:
+    """Один линейный размер: block с видимой геометрией + DIMENSION reference."""
+    a = np.asarray(p1, dtype=float)
+    b = np.asarray(p2, dtype=float)
+    direction = b - a
+    length = float(np.linalg.norm(direction))
+    if length <= 1e-9:
+        return [], []
+    unit = direction / length
+    normal = np.array([-unit[1], unit[0]])
+    shift = normal * float(offset)
+    da, db = a + shift, b + shift
+    midpoint = (da + db) / 2.0
+    value = f"{length:.2f}" if text is None else str(text)
+    layer = "DIMENSIONS"
+    entities: list[str] = []
+    # Выноски и сама размерная линия.
+    entities += _dxf_line(layer, a, da)
+    entities += _dxf_line(layer, b, db)
+    entities += _dxf_line(layer, da, db)
+    arrow = min(2.5, max(0.8, length * 0.08))
+    for point, sign in ((da, 1.0), (db, -1.0)):
+        tip = point + unit * (sign * arrow)
+        left = point + unit * (sign * arrow * 0.35) + normal * (arrow * 0.45)
+        right = point + unit * (sign * arrow * 0.35) - normal * (arrow * 0.45)
+        entities += _dxf_line(layer, point, left)
+        entities += _dxf_line(layer, point, right)
+        entities += _dxf_line(layer, point, tip)
+    rotation = float(np.degrees(np.arctan2(unit[1], unit[0])))
+    entities += _dxf_text(layer, midpoint + normal * 2.0, value, rotation)
+    name = f"*D{index}"
+    block = ["0", "BLOCK", "8", layer, "2", name, "70", "1",
+             "10", "0.0", "20", "0.0", "30", "0.0", "3", name, "1", ""]
+    block += entities + ["0", "ENDBLK", "8", layer]
+    text_point = midpoint + normal * 2.0
+    dimension = ["0", "DIMENSION", "8", layer, "2", name,
+                 "10", f"{midpoint[0]:.4f}", "20", f"{midpoint[1]:.4f}", "30", "0.0",
+                 "11", f"{text_point[0]:.4f}", "21", f"{text_point[1]:.4f}", "31", "0.0",
+                 "13", f"{a[0]:.4f}", "23", f"{a[1]:.4f}", "33", "0.0",
+                 "14", f"{b[0]:.4f}", "24", f"{b[1]:.4f}", "34", "0.0",
+                 "70", "0", "1", value]
+    return block, dimension
+
+
+def export_dimensioned_dxf(sections: list[dict], path: Path,
+                           dimensions: list[dict] | None = None) -> Path:
+    """DXF R12 с контуром и размерами в миллиметрах.
+
+    При ``dimensions=None`` для каждого сечения автоматически ставятся его
+    фактические ширина и высота. Пользовательские размеры имеют вид
+    ``{p1:[x,y], p2:[x,y], offset:10, text:"…"}``.
+    """
+    path = Path(path)
+    export_dxf(sections, path)
+    blocks: list[str] = []
+    refs: list[str] = []
+    specs: list[dict] = []
+    if dimensions is not None:
+        specs.extend(dimensions)
+    else:
+        for sec in sections:
+            contours = [np.asarray(c, dtype=float) for c in (sec.get("contours") or []) if len(c) >= 3]
+            if not contours:
+                continue
+            points = np.vstack(contours)
+            lo, hi = points.min(axis=0), points.max(axis=0)
+            width, height = hi - lo
+            offset = max(5.0, float(max(width, height)) * 0.12)
+            # p1/p2 остаются на контуре: offset выносит размерную линию,
+            # а witness lines соединяют её с реальными углами детали.
+            specs.append({"p1": [lo[0], lo[1]], "p2": [hi[0], lo[1]],
+                          "offset": -offset, "text": f"{width:.2f}"})
+            specs.append({"p1": [hi[0], lo[1]], "p2": [hi[0], hi[1]],
+                          "offset": -offset, "text": f"{height:.2f}"})
+    for index, spec in enumerate(specs, start=1):
+        block, reference = _dimension_block(index, spec.get("p1"), spec.get("p2"),
+                                             spec.get("offset", 0.0), spec.get("text"))
+        blocks += block
+        refs += reference
+    if blocks:
+        text = path.read_text(encoding="utf-8")
+        block_section = ["0", "SECTION", "2", "BLOCKS"] + blocks + ["0", "ENDSEC"]
+        marker = "0\nSECTION\n2\nENTITIES"
+        text = text.replace(marker, "\n".join(block_section) + "\n" + marker, 1)
+        end_marker = "0\nENDSEC\n0\nEOF"
+        text = text.replace(end_marker, "\n".join(refs) + "\n" + end_marker, 1)
+        path.write_text(text, encoding="utf-8")
+    return path
+
+
+# Более явное имя для внешних адаптеров.
+drawing_dxf = export_dimensioned_dxf
 
 
 def export_svg(sections: list[dict], path: Path, size: float = 1000.0) -> Path:

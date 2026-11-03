@@ -163,8 +163,15 @@ def detail_level(a, default: int = 3) -> int:
 
 
 def detail_factor(a, default: int = 3) -> float:
-    """Во сколько раз подробнее обычной сетки строить примитив."""
-    return DETAIL_FACTORS[detail_level(a, default)]
+    """Во сколько раз подробнее обычной сетки строить примитив.
+
+    Явные ``detail``/``segments`` имеют приоритет. Глобальная precision не
+    меняет старый проект, пока пользователь сам не выбрал fine/другой профиль.
+    """
+    factor = DETAIL_FACTORS[detail_level(a, default)]
+    if not a.has("detail") and not a.has("segments"):
+        factor *= float(getattr(a.scene, "precision_factor", 1.0))
+    return factor
 
 
 def anchor(m: mf.Manifold, at=None, center: bool = False) -> mf.Manifold:

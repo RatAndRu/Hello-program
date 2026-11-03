@@ -30,7 +30,7 @@ _UNARY_OPS = {ast.UAdd: operator.pos, ast.USub: operator.neg}
 _ALLOWED_NODES = (
     ast.Expression, ast.BinOp, ast.UnaryOp, ast.Constant, ast.Name, ast.Load,
     ast.Call, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.Pow, ast.Mod,
-    ast.FloorDiv, ast.UAdd, ast.USub,
+    ast.FloorDiv, ast.UAdd, ast.USub, ast.keyword,
 )
 
 
@@ -195,9 +195,10 @@ def strip_comment(line: str) -> str:
     return line
 
 
-def _eval_node(node: ast.AST, names: dict[str, float]) -> float:
+def _eval_node(node: ast.AST, names: dict[str, float], functions: dict | None = None) -> float:
+    functions = functions or {}
     if isinstance(node, ast.Expression):
-        return _eval_node(node.body, names)
+        return _eval_node(node.body, names, functions)
     if isinstance(node, ast.Constant):
         if isinstance(node.value, (int, float)) and not isinstance(node.value, bool):
             return float(node.value)
@@ -207,27 +208,32 @@ def _eval_node(node: ast.AST, names: dict[str, float]) -> float:
             return float(names[node.id])
         raise ValueError(f"неизвестное имя «{node.id}»")
     if isinstance(node, ast.BinOp) and type(node.op) in _BIN_OPS:
-        left = _eval_node(node.left, names)
-        right = _eval_node(node.right, names)
+        left = _eval_node(node.left, names, functions)
+        right = _eval_node(node.right, names, functions)
         try:
             return float(_BIN_OPS[type(node.op)](left, right))
         except ZeroDivisionError as exc:
             raise ValueError("деление на ноль") from exc
     if isinstance(node, ast.UnaryOp) and type(node.op) in _UNARY_OPS:
-        return float(_UNARY_OPS[type(node.op)](_eval_node(node.operand, names)))
+        return float(_UNARY_OPS[type(node.op)](_eval_node(node.operand, names, functions)))
     if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-        fn = names.get(node.func.id)
-        if fn is None or node.func.id not in _MATH_NAMES:
+        is_math = node.func.id in _MATH_NAMES
+        fn = _MATH_NAMES.get(node.func.id) if is_math else functions.get(node.func.id)
+        if fn is None:
             raise ValueError(f"неизвестная функция «{node.func.id}»")
-        args = [_eval_node(a, names) for a in node.args]
+        args = [_eval_node(a, names, functions) for a in node.args]
+        kwargs = {item.arg: _eval_node(item.value, names, functions)
+                  for item in node.keywords if item.arg}
+        if is_math and kwargs:
+            raise ValueError(f"{node.func.id}: именованные аргументы не поддерживаются")
         try:
-            return float(fn(*args))
+            return float(fn(*args, **kwargs))
         except Exception as exc:
             raise ValueError(str(exc)) from exc
     raise ValueError("недопустимое выражение")
 
 
-def parse_number(text: str, params: dict[str, float]) -> float | None:
+def parse_number(text: str, params: dict[str, float], functions: dict | None = None) -> float | None:
     """Пытается вычислить числовое выражение. Возвращает None, если это не число."""
     raw = text.strip()
     if not raw:
@@ -242,7 +248,7 @@ def parse_number(text: str, params: dict[str, float]) -> float | None:
     names = dict(_MATH_NAMES)
     names.update({k: v for k, v in params.items() if isinstance(v, (int, float))})
     try:
-        value = _eval_node(tree, names)
+        value = _eval_node(tree, names, functions)
     except Exception:
         return None
     if not math.isfinite(value):
@@ -257,8 +263,17 @@ def _unquote(raw: str) -> str:
     return raw
 
 
-def parse_value(raw: str, params: dict[str, float], variables: dict | None = None) -> Any:
-    """Разбирает одно значение сценария."""
+def parse_value(raw: str, params: dict[str, float], variables: dict | None = None,
+                functions: dict | None = None) -> Any:
+    """Разбирает одно значение сценария.
+
+    ``functions`` — необязательный реестр пользовательских числовых функций.
+    Для старых вызовов сохранён прежний контракт; Scene также кладёт реестр в
+    зарезервированное поле vars, чтобы существующие операции получили функции
+    без десятков несовместимых изменений сигнатур.
+    """
+    if functions is None and variables:
+        functions = variables.get("__forma_functions__")
     if raw is None:
         return None
     text = raw.strip()
@@ -275,26 +290,26 @@ def parse_value(raw: str, params: dict[str, float], variables: dict | None = Non
         inner = text[1:-1].strip()
         if not inner:
             return []
-        return [parse_value(part, params, variables) for part in split_items(inner)]
+        return [parse_value(part, params, variables, functions) for part in split_items(inner)]
     if text.startswith("(") and text.endswith(")"):
         inner = text[1:-1].strip()
         if not inner:
             return ()
-        return tuple(parse_value(part, params, variables) for part in split_items(inner))
+        return tuple(parse_value(part, params, variables, functions) for part in split_items(inner))
     if ".." in text and not text.startswith("."):
         parts = re.split(r"\.\.+", text, maxsplit=1)
         if len(parts) == 2:
-            lo = parse_number(parts[0], params) if parts[0].strip() else None
-            hi = parse_number(parts[1], params) if parts[1].strip() else None
+            lo = parse_number(parts[0], params, functions) if parts[0].strip() else None
+            hi = parse_number(parts[1], params, functions) if parts[1].strip() else None
             if (lo is not None or hi is not None) and not (parts[0].strip() and lo is None) \
                     and not (parts[1].strip() and hi is None):
                 return Range(lo, hi)
     if text.startswith(".."):
         tail = text[2:].strip()
-        hi = parse_number(tail, params) if tail else None
+        hi = parse_number(tail, params, functions) if tail else None
         if hi is not None:
             return Range(None, hi)
-    num = parse_number(text, params)
+    num = parse_number(text, params, functions)
     if num is not None:
         return num
     if variables and text in variables:
@@ -302,7 +317,8 @@ def parse_value(raw: str, params: dict[str, float], variables: dict | None = Non
     return _unquote(text)
 
 
-def numeric_issue(text: str, params: dict[str, float] | None = None) -> str | None:
+def numeric_issue(text: str, params: dict[str, float] | None = None,
+                  functions: dict | None = None) -> str | None:
     """Если строка — арифметика, но вычислить не вышло, объясняет причину."""
     raw = (text or "").strip()
     if not raw or not any(c.isdigit() for c in raw):
@@ -317,7 +333,7 @@ def numeric_issue(text: str, params: dict[str, float] | None = None) -> str | No
     names = dict(_MATH_NAMES)
     names.update({k: v for k, v in (params or {}).items() if isinstance(v, (int, float))})
     try:
-        _eval_node(tree, names)
+        _eval_node(tree, names, functions)
     except ZeroDivisionError:
         return "деление на ноль"
     except ValueError as exc:

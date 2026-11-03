@@ -522,6 +522,7 @@ function applyBuild(payload, elapsed) {
   renderChecks(payload);
   if ($('page-links')?.classList.contains('active')) renderLinks();
   renderObjects(payload);
+  renderParameters(payload);
   renderDimensions(metrics);
   if (state.selected?.name) {
     const fresh = (payload.objects || []).find((o) => o.name === state.selected.name);
@@ -970,6 +971,232 @@ function renderObjects(payload) {
     : 'Пока нет объектов.';
 }
 
+/* ------------------------------------------------------------------ */
+/*  Параметры, presets, фото-подгонка и headless OpenSCAD             */
+/* ------------------------------------------------------------------ */
+function parameterValues() {
+  const values = {};
+  document.querySelectorAll('#params-list [data-param]').forEach((input) => {
+    const value = Number(input.value);
+    if (Number.isFinite(value)) values[input.dataset.param] = value;
+  });
+  return values;
+}
+
+async function acceptCadPayload(payload) {
+  if (payload.script && payload.script !== currentScript()) {
+    setScript(payload.script, { build: false, label: 'параметры/CAD' });
+  }
+  state.payload = payload;
+  if (payload.ok) state.builtScript = currentScript();
+  applyBuild(payload, 0);
+  if (payload.ok && (payload.empty || !payload.glb_url)) {
+    clearSceneView();
+  } else if (payload.ok && payload.glb_url) {
+    await loadModel(payload.glb_url, payload.timeline || payload.animation);
+  }
+}
+
+async function requestParameters(body = {}) {
+  const status = $('params-status');
+  if (status) status.textContent = 'Пересобираем модель…';
+  try {
+    const request = { script: currentScript(), ...body };
+    if (!request.preset && !request.action?.match(/save|delete|reset/)) {
+      request.values = request.values || parameterValues();
+    }
+    const payload = await apiWithResourcePause(
+      '/api/parameters', request,
+      `params:${currentScript()}:${JSON.stringify(request.values || request.preset || {})}`,
+      'изменение параметров');
+    await acceptCadPayload(payload);
+    if (status) status.textContent = payload.ok
+      ? 'Готово: параметры применены через общий rebuild/morph.'
+      : (payload.error?.message || 'Модель не пересобрана.');
+    return payload;
+  } catch (err) {
+    if (status) status.textContent = err.message || 'Ошибка параметров';
+    showError(err);
+    return null;
+  }
+}
+
+function renderParameters(payload) {
+  const list = $('params-list');
+  if (!list) return;
+  const schema = payload.parameter_schema || [];
+  list.innerHTML = '';
+  if (!schema.length) {
+    list.innerHTML = '<div class="hint-box">Добавьте числовое присваивание или <code>param height=95 min=20 max=200</code>.</div>';
+  }
+  schema.forEach((param) => {
+    const row = document.createElement('div');
+    row.className = 'param-row';
+    const label = document.createElement('label');
+    label.textContent = param.label || param.name;
+    label.title = param.description || param.name;
+    const control = document.createElement('div');
+    const number = document.createElement('input');
+    number.type = 'number';
+    number.dataset.param = param.name;
+    number.value = String(param.value);
+    number.step = String(param.step || 0.1);
+    if (param.min !== undefined) number.min = String(param.min);
+    if (param.max !== undefined) number.max = String(param.max);
+    let slider = null;
+    if (param.min !== undefined && param.max !== undefined && Number(param.max) > Number(param.min)) {
+      slider = document.createElement('input');
+      slider.type = 'range';
+      slider.min = String(param.min);
+      slider.max = String(param.max);
+      slider.step = String(param.step || 0.1);
+      slider.value = String(param.value);
+      slider.title = `${param.name}: ${param.min}…${param.max}`;
+      control.appendChild(slider);
+    } else {
+      control.appendChild(document.createElement('span'));
+    }
+    const valueWrap = document.createElement('div');
+    valueWrap.className = 'param-value';
+    valueWrap.appendChild(number);
+    if (param.unit) {
+      const unit = document.createElement('span');
+      unit.className = 'param-unit';
+      unit.textContent = param.unit;
+      valueWrap.appendChild(unit);
+    }
+    row.append(label, control, valueWrap);
+    list.appendChild(row);
+    if (slider) {
+      slider.addEventListener('input', () => { number.value = slider.value; });
+      slider.addEventListener('change', () => requestParameters({ values: parameterValues() }));
+    }
+    number.addEventListener('change', () => {
+      if (slider) slider.value = number.value;
+      requestParameters({ values: parameterValues() });
+    });
+  });
+  const select = $('preset-select');
+  if (select) {
+    const previous = select.value;
+    const names = Object.keys(payload.presets || {});
+    select.innerHTML = '<option value="">— preset —</option>' + names.map((name) =>
+      `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+    if (names.includes(previous)) select.value = previous;
+  }
+}
+
+function renderProvenance(obj) {
+  const panel = $('provenance-panel');
+  if (!panel) return;
+  const passport = obj?.provenance;
+  if (!passport) { panel.hidden = true; panel.innerHTML = ''; return; }
+  const parents = passport.parents || [];
+  panel.innerHTML = `<b>Происхождение</b><br>операция: <code>${escapeHtml(passport.operation || obj.op || '—')}</code>`
+    + ` · строка ${passport.line || obj.line || '—'}`
+    + (obj.module ? `<br>модуль: <code>${escapeHtml(obj.module)}</code>` : '')
+    + (parents.length ? '<br>исходные объекты: ' + parents.map((name) =>
+      `<button class="provenance-parent" data-prov-object="${escapeHtml(name)}">${escapeHtml(name)}</button>`).join(', ') : '')
+    + '<br><span class="dim">Только прямые связи; полного дерева FreeCAD здесь нет.</span>';
+  panel.hidden = false;
+}
+
+$('provenance-panel')?.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-prov-object]');
+  if (button) selectObject(button.dataset.provObject);
+});
+
+$('params-reset')?.addEventListener('click', () => requestParameters({ action: 'reset' }));
+$('preset-apply')?.addEventListener('click', () => {
+  const name = $('preset-select')?.value;
+  if (!name) { toast('Выберите preset', 'warn'); return; }
+  requestParameters({ preset: name, action: 'apply' });
+});
+$('preset-save')?.addEventListener('click', () => requestParameters({
+  action: 'save', name: $('preset-name')?.value || '', values: parameterValues(),
+}));
+$('preset-delete')?.addEventListener('click', () => {
+  const name = $('preset-select')?.value;
+  if (!name) { toast('Выберите preset для удаления', 'warn'); return; }
+  requestParameters({ action: 'delete', name });
+});
+
+function photoReportText(report) {
+  if (!report) return 'Отчёт не получен.';
+  const residual = report.residual || {};
+  return `масштаб: ${report.scale === null || report.scale === undefined ? 'неизвестен' : fmt(report.scale, 6)}`
+    + `\nIoU: ${fmt(residual.iou, 4)} · ошибка строк: ${fmt(residual.row_err_px, 3)} px`
+    + `\nзначения: ${JSON.stringify(report.values || {})}`
+    + `\nнеоднозначность: ${report.ambiguous ? 'да' : 'нет'}`
+    + `\n${(report.diagnostics || []).join('\n')}`;
+}
+
+async function photoAsPng(file) {
+  // Canvas в браузере читает обычные JPEG/PNG; на сервер уходит один
+  // predictable PNG, поэтому desktop EXE не нуждается в Pillow.
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await new Promise((resolve, reject) => {
+      const element = new Image();
+      element.onload = () => resolve(element);
+      element.onerror = () => reject(new Error('Браузер не смог прочитать фотографию.'));
+      element.src = url;
+    });
+    const canvas = document.createElement('canvas');
+    canvas.width = image.naturalWidth || image.width;
+    canvas.height = image.naturalHeight || image.height;
+    if (!canvas.width || !canvas.height) throw new Error('У фотографии нулевой размер.');
+    const context = canvas.getContext('2d');
+    context.drawImage(image, 0, 0);
+    return canvas.toDataURL('image/png');
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+$('photo-fit')?.addEventListener('click', async () => {
+  const file = $('photo-file')?.files?.[0];
+  if (!file) { toast('Выберите PNG с силуэтом', 'warn'); return; }
+  const output = $('photo-result');
+  if (output) output.textContent = 'Измеряем силуэт и подбираем камеру…';
+  try {
+    const image = await photoAsPng(file);
+    const names = ($('photo-params')?.value || '').split(',').map((v) => v.trim()).filter(Boolean);
+    const parameters = names.length ? Object.fromEntries(names.map((name) => [name, {}])) : null;
+    const apply = Boolean($('photo-apply')?.checked);
+    const payload = await api('/api/photo/fit', {
+      script: currentScript(), image, parameters,
+      reference_length_px: Number($('photo-px')?.value || 0),
+      reference_length_mm: Number($('photo-mm')?.value || 0),
+      reference_axis: $('photo-axis')?.value || 'height', apply, size: 128, max_iter: 24,
+    });
+    const report = payload.photo_fit || payload;
+    if (apply && payload.objects) await acceptCadPayload(payload);
+    if (output) output.textContent = photoReportText(report);
+  } catch (err) {
+    if (output) output.textContent = err.message || 'Ошибка фото-подгонки';
+  }
+});
+
+$('openscad-run')?.addEventListener('click', async () => {
+  const output = $('openscad-result');
+  if (output) output.textContent = 'OpenSCAD работает в фоне; GUI не открывается…';
+  try {
+    const payload = await api('/api/openscad', {
+      script: currentScript(), code: $('openscad-code')?.value || '',
+      libraries: $('openscad-libraries')?.value || '', add: true,
+    });
+    const report = payload.openscad || payload;
+    if (payload.objects) await acceptCadPayload(payload);
+    if (output) output.textContent = JSON.stringify({
+      ok: report.ok, error: report.error, vertices: report.vertices, faces: report.faces,
+      duration_ms: report.duration_ms, warnings: report.warnings,
+    }, null, 2);
+  } catch (err) {
+    if (output) output.textContent = err.message || 'Ошибка OpenSCAD';
+  }
+});
+
 /** Удаление объекта: дописывает команду «удалить» и чистит его строки материала. */
 function deleteObject(name) {
   if (!name) return;
@@ -1026,6 +1253,7 @@ function renderDimensions(metrics) {
 function renderObjectStats(obj) {
   if (!obj) { renderSceneStats(); return; }
   state.selected = obj;
+  renderProvenance(obj);
   const size = obj.size || [0, 0, 0];
   const box = $('dim-overlay');
   if (box) {
@@ -3167,6 +3395,7 @@ function selectObject(name) {
     state.occludersNow = [];
     document.querySelectorAll('.obj-item').forEach((el) => el.classList.remove('selected'));
     $('material-panel').hidden = true;
+    renderProvenance(null);
     state.viewer?.clearHighlight();
     // без выделения кисть не должна срабатывать: выключаем её вместе с выбором
     state.viewer?.setPaintMode(false, null, '', false);

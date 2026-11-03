@@ -42,7 +42,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
-          python -m pip install pyinstaller
+          python -m pip install pyinstaller pytest
 
       - name: Прогнать тесты ядра
         working-directory: forma
@@ -63,6 +63,10 @@ jobs:
             tail -60 tests.log
           fi
           exit "$rc"
+
+      - name: Прогнать targeted-acceptance этапа 3
+        working-directory: forma
+        run: python -m pytest -q tests/test_stage3_features.py
 
       - name: Прогнать foundation golden/eval
         working-directory: forma
@@ -90,7 +94,7 @@ jobs:
         run: |
           python tools/build_skeleton_original.py
 
-      - name: Экспортировать модели 0.53–0.66 в GLB и Forma
+      - name: Экспортировать модели 0.53–0.67 в GLB и Forma
         working-directory: forma
         run: |
           python - <<'PY'
@@ -127,7 +131,7 @@ jobs:
                   'arte_lamp_banker_a2492lt_1ab') else Path('showcase/sources')
               source = source_dir / f'{stem}.forma'
               script = source.read_text(encoding='utf-8')
-              result = build(script, analyze_model=False)
+              result = build(script, analyze_model=False, base_dir=source.parent)
               if not result.ok:
                   raise SystemExit(f'{stem}: {result.error}')
               base = output / f'Forma3D-{__version__}-{suffix}'

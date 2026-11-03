@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import mimetypes
 import os
 import secrets
@@ -33,7 +34,7 @@ DEMO_MAX_SCRIPT_CHARS = 1_000_000
 DEMO_MAX_COMMANDS = 4000
 DEMO_DISABLED_POSTS = {
     "/api/save-file", "/api/upload", "/api/save", "/api/reveal",
-    "/api/import", "/api/prompt",
+    "/api/import", "/api/prompt", "/api/openscad", "/api/photo/fit",
 }
 
 
@@ -64,6 +65,29 @@ def slugify(name: str) -> str:
 
 def file_url(kind: str, name: str) -> str:
     return f"/files/{kind}/{urllib.parse.quote(name)}"
+
+
+def _drawing_sections(scene) -> list[dict]:
+    """Сечения для размерного чертежа; при их отсутствии делаем средний срез."""
+    from . import cuts
+    existing = [dict(item) for item in (getattr(scene, "sections", []) or [])
+                if item.get("contours")]
+    if existing:
+        return existing
+    solids = scene.visible_solids() if scene else []
+    if not solids:
+        raise FormaError("Нет видимых объектов для чертежа.")
+    solid = max(solids, key=lambda item: item.volume_cm3)
+    bb = solid.manifold.bounding_box()
+    at = (float(bb[2]) + float(bb[5])) / 2.0
+    cs = cuts.slice_section(solid.manifold, "z", at)
+    contours = cuts.section_polygons(cs)
+    if not contours:
+        raise FormaError("Среднее сечение пусто; добавьте section в сценарий.")
+    return [{"object": solid.name, "plane": "z", "at": at, "layer": f"{solid.name}_drawing",
+             "contours": [item["points"].tolist() for item in contours],
+             "areas": [float(item["area"]) for item in contours],
+             "area": float(cs.area()), "bbox": list(cs.bounds()), "auto": True}]
 
 
 def resource_path(rel: str) -> Path:
@@ -184,8 +208,10 @@ class AppState:
         if len(commands) > DEMO_MAX_COMMANDS:
             raise FormaError("Публичное демо: не больше 4000 команд в одном сценарии.")
         for command in commands:
-            if command.verb.strip().lower() in {"import", "импорт", "open", "открыть"}:
-                raise FormaError("Публичное демо: импорт внешних файлов отключён. "
+            if command.verb.strip().lower() in {
+                    "import", "импорт", "open", "открыть", "include", "включить", "подключить",
+                    "openscad", "scad", "open_scad", "опенскад"}:
+                raise FormaError("Публичное демо: внешние файлы, include и OpenSCAD отключены. "
                                  "Используйте готовые проекты и команды Forma.")
         warning = resource_warning(script, overrides=overrides, upto=upto)
         if warning is not None:
@@ -194,13 +220,14 @@ class AppState:
             raise FormaError(f"Публичное демо: оценка {estimate:,} трис превышает "
                              f"общий лимит {limit:,}. Уменьшите сцену.".replace(",", " "))
 
-    def build(self, script: str, auto: bool = False, allow_heavy: bool = False) -> dict:
-        self.demo_policy(script)
+    def build(self, script: str, auto: bool = False, allow_heavy: bool = False,
+              overrides: dict | None = None, base_dir: str | Path | None = None) -> dict:
+        self.demo_policy(script, overrides=overrides)
         # Предупреждение делается ДО run_build: ни одна тяжёлая команда ещё
         # не создала сетку и не заняла процессор. Старая сцена остаётся на
         # экране, поэтому «отменить» действительно отменяет последнее действие.
         if not allow_heavy:
-            warning = resource_warning(script)
+            warning = resource_warning(script, overrides=overrides)
             if warning is not None:
                 warning.update({
                     "version": __version__, "server": {"token": self.token},
@@ -211,7 +238,8 @@ class AppState:
                 return warning
         with self.lock:
             previous = self.last_build.analysis if self.last_build and self.last_build.ok else None
-            b = run_build(script, previous_analysis=previous)
+            b = run_build(script, previous_analysis=previous, overrides=overrides,
+                          base_dir=base_dir or self.data_dir)
             self.last_build = b
             self.last_script = script
             self.last_render = None
@@ -220,7 +248,7 @@ class AppState:
             payload["version"] = __version__
             payload["server"] = {"token": self.token}
             if b.ok:
-                payload["glb_url"] = f"/api/model.glb?v={b.script_hash}"
+                payload["glb_url"] = f"/api/model.glb?v={b.variant_hash}"
             if b.ok:
                 a = b.analysis or {}
                 checks = a.get("checks") or []
@@ -245,6 +273,147 @@ class AppState:
             payload["notes"] = list(self.notes)
             return payload
 
+    def apply_parameters(self, script: str, values: dict | None = None,
+                         allow_heavy: bool = False) -> dict:
+        """Единый rebuild панели параметров/presets через старые overrides."""
+        clean: dict[str, float] = {}
+        for key, value in (values or {}).items():
+            name = str(key).strip()
+            if not name:
+                continue
+            try:
+                number = float(value)
+            except (TypeError, ValueError) as exc:
+                raise FormaError(f"Параметр {name} должен быть числом.") from exc
+            if not math.isfinite(number):
+                raise FormaError(f"Параметр {name} не должен быть NaN/Inf.")
+            clean[name] = number
+        payload = self.build(script, overrides=clean, allow_heavy=allow_heavy)
+        payload["parameter_action"] = "apply"
+        return payload
+
+    def save_parameter_preset(self, script: str, name: str, values: dict,
+                              allow_heavy: bool = False) -> dict:
+        import json
+        import re
+        clean_name = str(name or "").strip()
+        if not clean_name or any(ch in clean_name for ch in "\r\n"):
+            raise FormaError("Имя preset не должно быть пустым или многострочным.")
+        clean = {str(key): float(value) for key, value in (values or {}).items()}
+        if not clean:
+            raise FormaError("Preset пуст: измените хотя бы один параметр.")
+        # Удаляем прежнюю одноимённую однострочную декларацию, не трогая тела
+        # модулей и другие presets. Повторное сохранение не раздувает проект.
+        pattern = re.compile(r"^\s*preset\s+(?:name=)?[\"']?" + re.escape(clean_name)
+                             + r"[\"']?[^\n]*$", re.IGNORECASE | re.MULTILINE)
+        script = pattern.sub("", script or "")
+        values_text = " ".join(f"{key}={value:.15g}" for key, value in sorted(clean.items()))
+        line = f"preset {json.dumps(clean_name, ensure_ascii=False)} {values_text}"
+        new_script = (script.rstrip() + "\n" + line + "\n").lstrip("\n")
+        payload = self.build(new_script, allow_heavy=allow_heavy)
+        payload["script"] = new_script
+        payload["parameter_action"] = "save"
+        return payload
+
+    def delete_parameter_preset(self, script: str, name: str,
+                                allow_heavy: bool = False) -> dict:
+        import re
+        clean_name = str(name or "").strip()
+        pattern = re.compile(r"^\s*preset\s+(?:name=)?[\"']?" + re.escape(clean_name)
+                             + r"[\"']?[^\n]*$", re.IGNORECASE | re.MULTILINE)
+        new_script = pattern.sub("", script or "")
+        payload = self.build(new_script, allow_heavy=allow_heavy)
+        payload["script"] = new_script
+        payload["parameter_action"] = "delete"
+        return payload
+
+    def run_openscad(self, body: dict) -> dict:
+        """Выполняет SCAD и по желанию добавляет проверенный mesh в текущую сцену."""
+        from .openscad import OpenSCADRunner
+        source = body.get("code") or body.get("source") or body.get("file") or ""
+        if not source:
+            raise FormaError("OpenSCAD: передайте code=… или file=…. ")
+        if body.get("file") and not body.get("code") and not body.get("source"):
+            from .ops_io import resolve_file
+            source = str(resolve_file(str(source), base_dir=self.data_dir))
+        libraries = body.get("libraries") or body.get("library_paths") or []
+        if isinstance(libraries, str):
+            libraries = [item.strip() for item in libraries.split(";") if item.strip()]
+        runner = OpenSCADRunner(executable=body.get("executable"), library_paths=libraries,
+                                timeout=float(body.get("timeout") or 120.0))
+        result = runner.run(source, output_format=body.get("format") or "stl",
+                            defines=body.get("defines") or {})
+        report = result.payload()
+        if not result.ok or not body.get("add", True):
+            return {"ok": result.ok, "openscad": report, "error": result.error}
+        mesh_name = f"openscad_{int(time.time() * 1000)}.{result.output_format}"
+        target = self.data_dir / "imports" / mesh_name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(result.mesh_path, target)
+        object_name = slugify(str(body.get("name") or "openscad_result"))
+        line = f'{object_name} = import file="{mesh_name}" repair=да'
+        script = str(body.get("script") if body.get("script") is not None else self.last_script)
+        if body.get("replace", False):
+            script = ""
+        script = (script.rstrip() + "\n" + line + "\n").lstrip("\n")
+        payload = self.build(script)
+        payload["openscad"] = report
+        payload["script"] = script
+        return payload
+
+    def fit_photo(self, body: dict) -> dict:
+        """JSON-вход для подгонки; report не содержит Solid/Build объектов."""
+        import base64
+        import numpy as np
+        from .vision.dimension_fit import fit_dimensions
+        script = str(body.get("script") if body.get("script") is not None else self.last_script)
+        if body.get("mask") is not None:
+            reference = np.asarray(body["mask"], dtype=bool)
+        else:
+            encoded = body.get("image") or body.get("png")
+            if not encoded:
+                raise FormaError("Фото-подгонка: передайте mask или PNG image (base64).")
+            if isinstance(encoded, str) and "," in encoded and encoded.startswith("data:"):
+                encoded = encoded.split(",", 1)[1]
+            try:
+                raw = base64.b64decode(encoded)
+            except Exception as exc:
+                raise FormaError("Не удалось декодировать base64 фотографии.") from exc
+            from .geometry import read_png
+            temporary = self.data_dir / "imports" / f"photo_{int(time.time() * 1000)}.png"
+            temporary.parent.mkdir(parents=True, exist_ok=True)
+            temporary.write_bytes(raw)
+            reference = read_png(temporary)
+            if reference is None:
+                raise FormaError("Поддерживается PNG с RGB/RGBA или готовая mask.")
+        report = fit_dimensions(
+            reference, script, body.get("parameters"),
+            reference_length_px=body.get("reference_length_px"),
+            reference_length_mm=body.get("reference_length_mm"),
+            reference_axis=body.get("reference_axis") or "height",
+            camera=body.get("camera"), size=int(body.get("size") or 160),
+            max_iter=int(body.get("max_iter") or 32), base_dir=self.data_dir,
+        )
+        fit_build = report.pop("build", None)
+        report.pop("solids", None)
+        if body.get("apply", False):
+            fitted_script = script
+            factor = float(report.get("scale") or 1.0)
+            if not math.isfinite(factor) or factor <= 0:
+                raise FormaError("Фото-подгонка вернула некорректный масштаб.")
+            if abs(factor - 1.0) > 1e-9:
+                names = [solid.name for solid in fit_build.visible_solids()] if fit_build else []
+                if not names:
+                    raise FormaError("Не найдены объекты, к которым применять масштаб по фото.")
+                fitted_script = (script.rstrip() + "\n# масштаб по реперу фотографии\n"
+                                 + "\n".join(f"scale [{name}] factor={factor:.15g}" for name in names)
+                                 + "\n")
+            payload = self.build(fitted_script, overrides=report.get("values") or {})
+            payload["script"] = fitted_script
+            payload["photo_fit"] = report
+            return payload
+        return {"ok": report.get("ok", False), "photo_fit": report}
+
     def frame(self, script: str, upto: int, light: bool = True,
               allow_heavy: bool = False) -> dict:
         """Кадр сборки: сцена после первых ``upto`` команд сценария."""
@@ -260,7 +429,7 @@ class AppState:
         cached = self.frame_cache.get(key)
         if cached is None:
             with self.lock:
-                b = run_build(script, upto=upto, analyze_model=False)
+                b = run_build(script, upto=upto, analyze_model=False, base_dir=self.data_dir)
                 payload = b.payload(light=light)
                 glb = None
                 if b.ok and not b.empty:
@@ -307,7 +476,8 @@ class AppState:
         cached = self.frame_cache.get(key)
         if cached is None:
             with self.lock:
-                b = run_build(script, analyze_model=False, overrides={param: value})
+                b = run_build(script, analyze_model=False, overrides={param: value},
+                              base_dir=self.data_dir)
                 payload = b.payload(light=False)
                 glb = None
                 if b.ok and not b.empty:
@@ -331,8 +501,8 @@ class AppState:
         with self.lock:
             if not self.last_build or not self.last_build.ok:
                 raise FormaError("Сначала постройте модель.")
-            if self.gl_cache is None or self.gl_cache[0] != self.last_build.script_hash:
-                self.gl_cache = (self.last_build.script_hash, self.last_build.glb())
+            if self.gl_cache is None or self.gl_cache[0] != self.last_build.variant_hash:
+                self.gl_cache = (self.last_build.variant_hash, self.last_build.glb())
             return self.gl_cache[1]
 
     def preview(self, script: str, allow_heavy: bool = False) -> dict:
@@ -441,6 +611,7 @@ class AppState:
                 raise FormaError("Сначала постройте модель.")
             solids = self.last_build.visible_solids()
             out_dir = self.data_dir / "exports"
+            out_dir.mkdir(parents=True, exist_ok=True)
             base = slugify(self.project_name or "model")
             fmt = fmt.lower()
             scene = self.last_build.scene
@@ -450,6 +621,10 @@ class AppState:
                 data = export_glb(solids, animation=animation, animations=animations,
                                   groups=dict(scene.groups) if scene else None)
                 name = f"{base}.glb"
+            elif fmt == "scad":
+                from .scad import export_scad_bytes
+                data = export_scad_bytes(solids, source=self.last_script)
+                name = f"{base}.scad"
             elif fmt == "stl":
                 data = export_stl(solids)
                 name = f"{base}.stl"
@@ -482,6 +657,14 @@ class AppState:
                                       groups=(scene.groups if scene else None))
                 name = Path(result.get("combined") or result["files"][0]["path"]).name
                 data = Path(out_dir / name).read_bytes()
+            elif fmt in ("drawing", "dxf_dimensions", "чертёж", "чертеж"):
+                from . import cuts
+                sections = _drawing_sections(scene)
+                name = f"{base}_drawing.dxf"
+                target = out_dir / name
+                cuts.export_dimensioned_dxf(sections, target)
+                return {"path": str(self._to_downloads(target)),
+                        "url": file_url("exports", name), "name": name}
             elif fmt in ("dxf", "svg"):
                 from . import cuts
                 sections = [s for s in (getattr(scene, "sections", []) or [])
@@ -517,6 +700,8 @@ class AppState:
                         solids, animation=animation,
                         groups=dict(scene.groups) if scene else None))
                     zf.writestr(f"{base}.stl", export_stl(solids))
+                    from .scad import export_scad_bytes
+                    zf.writestr(f"{base}.scad", export_scad_bytes(solids, source=self.last_script))
                     zf.writestr(f"{base}.obj", export_obj(solids))
                     zf.writestr(f"{base}.ply", export_ply(solids))
                     zf.writestr("OTCHET.txt", (self.last_build.analysis or {}).get("text", ""))
@@ -541,10 +726,18 @@ class AppState:
         from .blender import available
         return available()
 
+    def openscad_info(self) -> dict:
+        from .openscad import OpenSCADRunner
+        return OpenSCADRunner().info()
+
     def import_script(self, name: str, script: str) -> dict:
         """Готовит строку импорта для сценария (файл уже сохранён в imports)."""
         safe = slugify(name)
-        line = f"{safe} = import file={Path(name).name} repair=да"
+        suffix = Path(name).suffix.lower()
+        if suffix == ".scad":
+            line = f'{safe} = openscad file="{Path(name).name}"'
+        else:
+            line = f"{safe} = import file={Path(name).name} repair=да"
         return {"script": script, "name": safe, "line": line, "file": str(self.data_dir / "imports" / Path(name).name)}
 
     def save_upload(self, data: bytes, filename: str) -> dict:
@@ -553,11 +746,20 @@ class AppState:
         if not Path(clean).suffix:
             clean += ".glb"
         target = self.data_dir / "imports" / clean
+        target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
         stem = slugify(Path(clean).stem)
         ext = Path(clean).suffix.lower()
-        line = f"{stem} = import file={clean} unit=auto repair=да"
+        if ext == ".scad":
+            line = f'{stem} = openscad file="{clean}"'
+        else:
+            line = f"{stem} = import file={clean} unit=auto repair=да"
         note = ""
+        if ext == ".scad":
+            from .openscad import OpenSCADRunner
+            note = ("" if OpenSCADRunner().available() else
+                    "OpenSCAD не найден: установите его или задайте FORMA_OPENSCAD; "
+                    "Forma вызовет его в фоне без открытия GUI.")
         if ext == ".blend":
             info = self.blender_info()
             note = ("" if info["found"] else
@@ -892,6 +1094,7 @@ class Handler(BaseHTTPRequestHandler):
                 "actions": list(st.actions),
                 "notes": list(st.notes),
                 "blender": st.blender_info(),
+                "openscad": st.openscad_info(),
             })
             return
         if path == "/api/model.glb":
@@ -932,6 +1135,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/commands":
             from .run import commands_help
             self._send_json({"commands": commands_help()})
+            return
+        if path == "/api/parameters":
+            b = st.last_build
+            self._send_json({"params": dict(b.scene.params) if b and b.ok else {},
+                             "parameter_schema": b.scene.parameter_schema() if b and b.ok else [],
+                             "presets": {key: dict(value) for key, value in b.scene.presets.items()}
+                             if b and b.ok else {}})
+            return
+        if path == "/api/provenance":
+            b = st.last_build
+            self._send_json({"provenance": list(b.scene.provenance) if b and b.ok else []})
             return
         if path == "/api/links":
             b = st.last_build
@@ -1043,6 +1257,48 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/render":
             self._send_json(st.render())
+            return
+        if path == "/api/parameters":
+            action = str(body.get("action") or "apply").lower()
+            script = str(body.get("script") if body.get("script") is not None else st.last_script)
+            if action == "save":
+                values = body.get("values") or body.get("params")
+                if not values and st.last_build and st.last_build.ok:
+                    values = dict(st.last_build.scene.params)
+                self._send_json(st.save_parameter_preset(
+                    script, body.get("name", ""), values or {},
+                    allow_heavy=bool(body.get("allow_heavy"))))
+                return
+            if action == "delete":
+                self._send_json(st.delete_parameter_preset(
+                    script, body.get("name", ""), allow_heavy=bool(body.get("allow_heavy"))))
+                return
+            values = body.get("values") or body.get("params") or {}
+            if body.get("preset"):
+                b = st.last_build if st.last_build and st.last_script == script else run_build(
+                    script, analyze_model=False, base_dir=st.data_dir)
+                if not b.ok:
+                    raise FormaError((b.error or {}).get("message", "Сценарий не собран."))
+                preset_name = str(body["preset"])
+                if preset_name not in b.scene.presets:
+                    raise FormaError(f"Preset «{preset_name}» не найден.")
+                values = b.scene.presets[preset_name]
+            if action == "reset":
+                b = st.last_build if st.last_build and st.last_script == script else run_build(
+                    script, analyze_model=False, base_dir=st.data_dir)
+                if not b.ok:
+                    raise FormaError((b.error or {}).get("message", "Сценарий не собран."))
+                values = {name: meta.get("default", value)
+                          for name, value in b.scene.params.items()
+                          for meta in [b.scene.param_meta.get(name, {})]}
+            self._send_json(st.apply_parameters(
+                script, values, allow_heavy=bool(body.get("allow_heavy"))))
+            return
+        if path == "/api/openscad":
+            self._send_json(st.run_openscad(body))
+            return
+        if path == "/api/photo/fit":
+            self._send_json(st.fit_photo(body))
             return
         if path == "/api/export":
             fmt = body.get("format", "glb")

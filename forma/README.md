@@ -1,4 +1,4 @@
-# ФОРМА 3D 0.66 — 3D-редактор, которым управляют словами
+# ФОРМА 3D 0.67 — 3D-редактор, которым управляют словами
 
 Параметрический редактор твёрдых тел для Windows. Модель описывается текстовым
 сценарием: одна команда на строку. Приложение строит замкнутую геометрию,
@@ -29,7 +29,30 @@ Blender. Состав, источники, лицензии, воспроизв�
 
 ---
 
-## 1. Что нового в 0.66
+## 1. Что нового в 0.67
+
+Добавлены собственные include/module/function с локальными scope и диагностикой
+циклов, панель параметров и presets на общем rebuild/morph, нативный SCAD
+`polyhedron` export, фоновый OpenSCAD/BOSL2 runner, плоский provenance,
+реперная подгонка размеров по фотографии, DXF с размерами и opt-in глобальная
+точность. Подробности и ограничения: [docs/stage3_features.md](docs/stage3_features.md).
+
+```forma
+param height=95 min=20 max=200 label="Высота"
+preset tall height=140
+body = cylinder radius=35 height=height
+```
+
+```bash
+python -m forma export model.forma --format scad --out model.scad
+python -m forma export model.forma --format drawing --out model-drawing.dxf
+```
+
+SCAD export — это построенная mesh-геометрия, а не параметрический round-trip.
+Произвольный SCAD/BOSL2 исполняется только настоящим OpenSCAD в фоне; его
+отсутствие показывается диагностикой, а не фиктивным успешным результатом.
+
+## История: 0.66
 
 Добавлены точные проверки пересечений и дискретного свободного хода. Общий
 модуль `forma/collide.py` использует AABB только как фильтр и вычисляет объём

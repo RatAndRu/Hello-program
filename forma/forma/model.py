@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -77,6 +78,8 @@ class Solid:
 DEFAULT_SETTINGS = {
     "bg": "#0b0e13", "env": "studio", "exposure": 1.05, "key": 2.5,
     "fill": 0.75, "rim": 0.5, "shadows": True, "grid": True, "ground": True,
+    # Точность opt-in: legacy побитово сохраняет прежние default/detail/segments.
+    "precision": {"mode": "legacy", "factor": 1.0},
     # аниме/манга-подача: пусто — обычный реалистичный вид
     "anime": {},
 }
@@ -86,7 +89,9 @@ class Scene:
     """Сцена скрипта. Хранит объекты по именам, параметры и проверки."""
 
     def __init__(self):
-        self.settings: dict = dict(DEFAULT_SETTINGS)
+        self.settings: dict = deepcopy(DEFAULT_SETTINGS)
+        # Корень исходного .forma: относительные include/import не зависят от cwd.
+        self.base_dir = None
         self.animation: dict | None = None
         self.animations: list[dict] = []
         # именованные анимации сцены: «открыть дверь», «выезд ящика», …
@@ -105,6 +110,18 @@ class Scene:
         self.groups: dict[str, list[str]] = {}
         self.params: dict[str, float] = {}
         self.vars: dict[str, Any] = {}
+        # Пользовательские библиотеки и метаданные панели параметров.
+        self.functions: dict[str, Any] = {}
+        self.modules: dict[str, Any] = {}
+        self.definitions: dict[str, Any] = {}
+        self.param_meta: dict[str, dict] = {}
+        self.presets: dict[str, dict[str, float]] = {}
+        self.vars["__forma_functions__"] = self.functions
+        self._function_depth = 0
+        self.module_depth = 0
+        # Плоская история происхождения: только прямые родители, без CAD-дерева.
+        self.provenance: list[dict] = []
+        self.provenance_limit = 512
         self.checks: list[dict] = []
         # пакетные отчёты точных пересечений, выполненные по требованию
         self.interferences: list[dict] = []
@@ -135,6 +152,33 @@ class Scene:
         self._color_idx = 0
 
     # ------------------------------------------------------------------ #
+    @property
+    def precision_factor(self) -> float:
+        """Множитель только для неявной детализации; legacy = ровно 1."""
+        try:
+            value = float((self.settings.get("precision") or {}).get("factor", 1.0))
+            return value if value > 0 and value == value else 1.0
+        except (TypeError, ValueError, AttributeError):
+            return 1.0
+
+    def precision_tolerance(self, default: float) -> float:
+        """Допуск по умолчанию в fine-режиме; явный tolerance не проходит сюда."""
+        factor = self.precision_factor
+        return float(default) / factor if factor != 1.0 else float(default)
+
+    def parameter_schema(self) -> list[dict]:
+        out = []
+        for name, value in self.params.items():
+            if not isinstance(value, (int, float)) or isinstance(value, bool):
+                continue
+            meta = dict(self.param_meta.get(name) or {})
+            meta.update({"name": name, "value": float(value)})
+            meta.setdefault("label", name)
+            meta.setdefault("default", float(value))
+            meta.setdefault("step", 0.1)
+            out.append(meta)
+        return out
+
     def log(self, level: str, message: str, line: int | None = None) -> None:
         self.logs.append({"level": level, "message": message,
                           "line": self.line if line is None else line})

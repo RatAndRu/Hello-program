@@ -40,11 +40,11 @@
       <button id="btn-undo" class="mini icon-btn" title="Отменить последнее действие (Ctrl+Z)" disabled>↶</button>
       <button id="btn-redo" class="mini icon-btn" title="Вернуть отменённое (Ctrl+Shift+Z)" disabled>↷</button>
       <button id="btn-history" class="mini icon-btn" title="История действий: откат к любому шагу">🕘</button>
-      <button id="btn-open-file" title="Открыть GLB, OBJ, STL, PLY, 3MF или .blend">
+      <button id="btn-open-file" title="Открыть GLB, OBJ, STL, PLY, 3MF, SCAD или .blend">
         <span class="icon">⇧</span> Открыть файл
       </button>
       <input type="file" id="file-input" hidden
-             accept=".glb,.gltf,.obj,.stl,.ply,.3mf,.dae,.blend" />
+             accept=".glb,.gltf,.obj,.stl,.ply,.3mf,.dae,.scad,.blend" />
       <button id="btn-render" title="Сделать PNG-снимки четырёх видов для проверки">
         <span class="icon">◉</span> Снимки
       </button>
@@ -54,6 +54,7 @@
         </button>
         <div class="menu" id="export-menu">
           <button data-format="glb">GLB — для Blender и 3D-программ</button>
+          <button data-format="scad">SCAD — сетка polyhedron (мм)</button>
           <button data-format="blend">BLEND — файл Blender (нужен Blender)</button>
           <button data-format="obj">OBJ — обмен геометрией</button>
           <button data-format="stl">STL — для 3D-печати</button>
@@ -61,6 +62,7 @@
           <button data-format="3mf">3MF — для слайсеров и 3D-печати</button>
           <button data-format="png">PNG — снимки видов</button>
           <button data-format="dxf">DXF — сечение контуром (2D)</button>
+          <button data-format="drawing">DXF — чертёж с размерами (2D)</button>
           <button data-format="svg">SVG — сечение для проверки формы</button>
           <button data-format="forma">.forma — сценарий</button>
           <button data-format="fold">FOLD — развёртка оригами (JSON)</button>
@@ -461,6 +463,7 @@
         <button class="tab active" data-tab="report">Отчёт</button>
         <button class="tab" data-tab="checks">Проверки</button>
         <button class="tab" data-tab="objects">Объекты</button>
+        <button class="tab" data-tab="params">Параметры</button>
         <button class="tab" data-tab="links">Связи</button>
         <button class="tab" data-tab="assist">Помощник</button>
         <button class="mini panel-max tab-max" data-panel="report"
@@ -597,6 +600,48 @@
           </div>
           <div id="objects-list" class="objects-list"></div>
           <div class="hint-box" id="objects-summary"></div>
+          <div class="hint-box provenance-panel" id="provenance-panel" hidden></div>
+        </div>
+        <div class="tab-page" id="page-params">
+          <div class="objects-tools">
+            <span>Параметры и presets используют обычную пересборку модели</span>
+            <button class="mini" id="params-reset" title="Вернуть default из сценария">по умолчанию</button>
+          </div>
+          <div id="params-list" class="params-list"></div>
+          <div class="preset-box">
+            <div class="row">
+              <select id="preset-select" title="Сохранённые в сценарии наборы"></select>
+              <button class="small" id="preset-apply">Применить</button>
+              <button class="small" id="preset-delete" title="Удалить выбранный preset из сценария">Удалить</button>
+            </div>
+            <div class="row">
+              <input id="preset-name" placeholder="имя нового preset" />
+              <button class="small primary" id="preset-save">Сохранить preset</button>
+            </div>
+          </div>
+          <div id="params-status" class="hint-box">Значения меняют геометрию через существующие overrides; явные detail/segments не затрагиваются.</div>
+          <details class="advanced-cad">
+            <summary>Подгонка размеров по фотографии</summary>
+            <p class="assist-intro">PNG и репер: одна видимая длина в пикселях и миллиметрах. Без репера абсолютный масштаб не угадывается.</p>
+            <input type="file" id="photo-file" accept="image/png,image/jpeg" />
+            <div class="row">
+              <label>Репер, px <input type="number" id="photo-px" min="0.001" step="1" value="100" /></label>
+              <label>Репер, мм <input type="number" id="photo-mm" min="0.001" step="1" value="50" /></label>
+              <select id="photo-axis"><option value="height">высота</option><option value="width">ширина</option><option value="depth">глубина</option></select>
+            </div>
+            <input id="photo-params" placeholder="параметры через запятую (необязательно)" />
+            <label class="assist-opt"><input type="checkbox" id="photo-apply" /> применить найденные значения к модели</label>
+            <button class="small primary" id="photo-fit">Подобрать размеры</button>
+            <pre id="photo-result" class="prompt-out"></pre>
+          </details>
+          <details class="advanced-cad">
+            <summary>OpenSCAD / BOSL2 в фоне</summary>
+            <p class="assist-intro">Forma вызывает настоящий OpenSCAD без GUI, проверяет mesh и добавляет его в текущую сцену. Библиотека задаётся pinned-каталогом.</p>
+            <textarea id="openscad-code" rows="5">cube(10);</textarea>
+            <input id="openscad-libraries" placeholder="каталоги библиотек через ; (например, BOSL2)" />
+            <button class="small primary" id="openscad-run">Построить в Forma</button>
+            <pre id="openscad-result" class="prompt-out"></pre>
+          </details>
         </div>
         <div class="tab-page" id="page-links">
           <div class="links-head">

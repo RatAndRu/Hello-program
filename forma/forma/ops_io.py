@@ -18,11 +18,17 @@ from .paths import user_data_dir
 SUPPORTED = (".glb", ".gltf", ".obj", ".stl", ".ply", ".3mf", ".off", ".dae")
 
 
-def resolve_file(raw: str) -> Path:
+def resolve_file(raw: str, base_dir: str | Path | None = None) -> Path:
     raw = (raw or "").strip().strip('"\'')
     if not raw:
         raise DslError("Укажите файл: import скульптура file=модель.glb")
-    candidates = [Path(raw).expanduser()]
+    raw_path = Path(raw).expanduser()
+    candidates = []
+    if base_dir is not None and not raw_path.is_absolute():
+        root = Path(base_dir).expanduser()
+        candidates.extend((root / raw_path, root / "imports" / raw_path,
+                           root / "exports" / raw_path))
+    candidates.append(raw_path)
     candidates.append(user_data_dir() / "imports" / raw)
     candidates.append(user_data_dir() / "imports" / Path(raw).name)
     candidates.append(user_data_dir() / "exports" / Path(raw).name)
@@ -201,7 +207,7 @@ def import_mesh(a, name):
     if not raw:
         raise DslError("Укажите файл.", hint="import скульптура file=модель.glb",
                        line=a.cmd.line, command=a.cmd.text)
-    path = resolve_file(raw)
+    path = resolve_file(raw, base_dir=getattr(a.scene, "base_dir", None))
     unit = (a.text("unit") or "auto").strip().lower()
     factors = {"mm": 1.0, "мм": 1.0, "cm": 10.0, "см": 10.0, "m": 1000.0, "м": 1000.0,
                "inch": 25.4, "in": 25.4, "auto": 1.0, "авто": 1.0}
@@ -216,6 +222,13 @@ def import_mesh(a, name):
     repair = a.boolean("repair", False)
     LIMITS.clear()
     node = (a.text("node") or "").strip() or None
+    if path.suffix.lower() == ".scad":
+        if node:
+            raise DslError("node не применим к SCAD; выберите объект в исходном сценарии.",
+                           line=a.cmd.line)
+        from .ops_scad import scad_solid
+        target = (a.text("target") or name or a.scene.auto_name("openscad")).strip()
+        return scad_solid(a, target, str(path), scale=base_scale * extra)
     verts, faces = load_any(path, scale=base_scale * extra, repair=repair, node=node)
     for note in LIMITS:
         a.scene.log("warn", f"импорт: {note}; проверьте объём и стенки", a.cmd.line)

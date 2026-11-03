@@ -9,6 +9,7 @@ from pathlib import Path
 
 from .agent import build_prompt, command_reference_md
 from .geometry import export_glb, export_obj, export_stl
+from .scad import export_scad_bytes
 from .render import render_views
 from .run import build, selftest
 from .version import APP_NAME, __version__
@@ -18,6 +19,10 @@ def _read(path: str) -> str:
     if path == "-":
         return sys.stdin.read()
     return Path(path).read_text(encoding="utf-8")
+
+
+def _base_dir(path: str) -> Path | None:
+    return None if path == "-" else Path(path).expanduser().resolve().parent
 
 
 def _checks_failed(b) -> int:
@@ -48,7 +53,7 @@ def _print_profile(b, limit: int = 10) -> None:
 
 def cmd_build(args) -> int:
     script = _read(args.script)
-    b = build(script)
+    b = build(script, base_dir=_base_dir(args.script))
     if getattr(args, "profile", False) and not args.json and not getattr(args, "digest", False):
         _print_profile(b)
         print()
@@ -97,8 +102,8 @@ def cmd_build(args) -> int:
 def cmd_diff(args) -> int:
     from .semantic_diff import semantic_diff
 
-    a = build(_read(args.a))
-    c = build(_read(args.b))
+    a = build(_read(args.a), base_dir=_base_dir(args.a))
+    c = build(_read(args.b), base_dir=_base_dir(args.b))
     for label, item in (("было", a), ("стало", c)):
         if not item.ok:
             print(f"{label}: ОШИБКА — {item.error.get('message')}")
@@ -159,6 +164,10 @@ def cmd_doctor(args) -> int:
     for name in ("projects", "exports", "renders", "prompts", "textures", "imports"):
         print(f"  {name}: {folders[name]}")
     print(f"Загрузки: {downloads_dir()}")
+    from .openscad import OpenSCADRunner
+    openscad = OpenSCADRunner().info()
+    print("OpenSCAD: " + (f"найден ({openscad['executable']})" if openscad["found"]
+                         else "не найден (FORMA_OPENSCAD или PATH; GUI не нужен)"))
     try:
         probe = user_data_dir() / ".write_test"
         probe.write_text("ok", encoding="utf-8")
@@ -184,7 +193,7 @@ def cmd_doctor(args) -> int:
 
 def cmd_render(args) -> int:
     script = _read(args.script)
-    b = build(script)
+    b = build(script, base_dir=_base_dir(args.script))
     if not b.ok:
         print("ОШИБКА:", b.error.get("message"))
         return 2
@@ -212,7 +221,7 @@ def cmd_render(args) -> int:
 
 def cmd_export(args) -> int:
     script = _read(args.script)
-    b = build(script)
+    b = build(script, base_dir=_base_dir(args.script))
     if not b.ok:
         print("ОШИБКА:", b.error.get("message"), file=sys.stderr)
         return 2
@@ -221,6 +230,12 @@ def cmd_export(args) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     if args.format == "glb":
         out.write_bytes(export_glb(solids))
+    elif args.format == "scad":
+        out.write_bytes(export_scad_bytes(solids, source=script))
+    elif args.format == "drawing":
+        from . import cuts
+        from .webui import _drawing_sections
+        cuts.export_dimensioned_dxf(_drawing_sections(b.scene), out)
     elif args.format == "stl":
         out.write_bytes(export_stl(solids))
     elif args.format == "obj":
@@ -357,7 +372,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("export", help="экспортировать модель")
     p.add_argument("script")
     p.add_argument("--format", default="glb",
-                   choices=["glb", "stl", "obj", "ply", "3mf", "forma", "fold", "cp", "report", "prompt"])
+                   choices=["glb", "scad", "drawing", "stl", "obj", "ply", "3mf", "forma", "fold", "cp", "report", "prompt"])
     p.add_argument("--out", required=True)
     p.add_argument("--goal", default="")
     p.set_defaults(func=cmd_export)

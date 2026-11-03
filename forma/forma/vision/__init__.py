@@ -14,7 +14,9 @@
 from .silhouette import (Silhouette, measure, mask_by_background, mask_from_alpha,
                          camera_elevation, compare, iou)
 from .fit import render_mask, fit_camera, compare_model, report
+from .dimension_fit import fit_dimensions, fit_by_photo, fit_photo
 
 __all__ = ["Silhouette", "measure", "mask_by_background", "mask_from_alpha",
            "camera_elevation", "compare", "iou",
-           "render_mask", "fit_camera", "compare_model", "report"]
+           "render_mask", "fit_camera", "compare_model", "report",
+           "fit_dimensions", "fit_by_photo", "fit_photo"]

@@ -333,7 +333,7 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache,
                 tol = float(value)
         from .cuts import hausdorff
         from .ops_io import resolve_file
-        path = resolve_file(raw)
+        path = resolve_file(raw, base_dir=getattr(cache_scene(cache), "base_dir", None))
         ref = _load_reference(path)
         a_bb = solid.manifold.bounding_box()
         r_bb = ref.bounding_box()
