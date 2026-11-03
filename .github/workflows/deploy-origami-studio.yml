@@ -110,6 +110,8 @@ jobs:
             if curl -fsS "$base/healthz" > /tmp/origami-public-health.json && grep -q "$GITHUB_SHA" /tmp/origami-public-health.json; then break; fi
             sleep 10
           done
+          echo "Expected revision: $GITHUB_SHA"
+          cat /tmp/origami-public-health.json
           grep -q "$GITHUB_SHA" /tmp/origami-public-health.json
           curl -fsS "$base/" | grep -q 'Origami Studio'
           curl -fsS "$base/downloads/origami-studio.zip" -o /tmp/origami-public.zip
