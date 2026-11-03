@@ -7,6 +7,7 @@ import re
 import time
 import traceback
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from . import ops as _ops_pkg  # noqa: F401  (реестр команд)
 from .checks import evaluate_checks
@@ -14,6 +15,7 @@ from .errors import DslError, FormaError, GeometryError
 from .model import Scene
 from .ops import OPS, help_list, lookup, suggest
 from .dsl import Args, command_value, parse_script
+from .values import strip_comment
 from .geometry import export_glb
 from .metrics import analyze
 from .values import numeric_issue, parse_value
@@ -524,9 +526,53 @@ def _execute(scene: Scene, cmd) -> None:
     scene.log("info", f"{spec.name}: готово", cmd.line)
 
 
+#: Директива включения файла-библиотеки: `включить файл=крепёж.f3d`.
+#: Идея взята у OpenSCAD (`include`/`use`) — см. `docs/cad_triad.md`, §7.2.
+INCLUDE_RE = re.compile(r"^\s*(?:включить|подключить|include|use)\s+(?:файл|file)\s*=\s*(.+?)\s*$",
+                        re.IGNORECASE)
+MAX_INCLUDE_DEPTH = 8
+
+
+def expand_includes(text: str, base: Path | str | None = None,
+                    depth: int = 0, stack: tuple[Path, ...] = ()) -> str:
+    """Подставляет содержимое файлов вместо строк `включить файл=…`.
+
+    Своя команда в отдельном файле — то, чего не хватало: одна библиотека
+    крепежа на все проекты. Пути считаются от `base` (обычно — папка сценария),
+    вложенность ограничена, циклы ловятся по абсолютному пути.
+    """
+    if depth > MAX_INCLUDE_DEPTH:
+        raise FormaError(f"Слишком глубокая вложенность включений (больше {MAX_INCLUDE_DEPTH}).",
+                         hint="Разбейте библиотеку на части поменьше или включите файл напрямую.")
+    root = Path(base) if base else Path.cwd()
+    out: list[str] = []
+    for raw in (text or "").splitlines():
+        line = strip_comment(raw).strip()
+        match = INCLUDE_RE.match(line)
+        if not match:
+            out.append(raw)
+            continue
+        name = match.group(1).strip().strip("\"'")
+        path = (root / name).expanduser()
+        if not path.is_file():
+            raise FormaError(f"Файл для включения не найден: «{name}».",
+                             hint=f"Искали здесь: {path}. Укажите путь от папки сценария.")
+        resolved = path.resolve()
+        if resolved in stack:
+            chain = " → ".join(p.name for p in (*stack, resolved))
+            raise FormaError(f"Циклическое включение файлов: {chain}.",
+                             hint=f"Цепочка: {chain}. Файл не может включать сам себя "
+                                  "прямо или через другие файлы.")
+        inner = expand_includes(path.read_text(encoding="utf-8"), path.parent,
+                                depth + 1, (*stack, resolved))
+        out.append(f"# ← включено из {path.name}")
+        out.extend(inner.splitlines())
+    return "\n".join(out)
+
+
 def build(script: str, previous_analysis: dict | None = None,
           upto: int | None = None, analyze_model: bool = True,
-          overrides: dict | None = None) -> Build:
+          overrides: dict | None = None, base_dir: Path | str | None = None) -> Build:
     """Собирает сцену. ``upto`` — остановиться после N-й команды (кадр сборки).
 
     ``overrides`` подменяет числовые параметры сценария (R = 42) — так строится
@@ -535,6 +581,15 @@ def build(script: str, previous_analysis: dict | None = None,
     started = time.perf_counter()
     script = script or ""
     result = Build(script=script, script_hash=_hash(script), upto=upto)
+    try:
+        expanded = expand_includes(script, base_dir)
+    except FormaError as exc:
+        result.error = exc.to_dict()
+        result.scene = None
+        result.log = []
+        result.timings = {"parse": 0.0, "build": 0.0,
+                          "total": round((time.perf_counter() - started) * 1000, 1)}
+        return result
     scene = Scene()
     scene.overrides = dict(overrides or {})
     for key, value in (overrides or {}).items():
@@ -545,7 +600,7 @@ def build(script: str, previous_analysis: dict | None = None,
     result.scene = scene
     t_parse = time.perf_counter()
     try:
-        commands = parse_script(script)
+        commands = parse_script(expanded)
     except FormaError as exc:
         result.error = exc.to_dict()
         result.scene = None

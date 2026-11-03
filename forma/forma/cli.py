@@ -26,9 +26,16 @@ def _checks_failed(b) -> int:
     return sum(1 for c in b.analysis.get("checks", []) if not c.get("ok"))
 
 
+def _base(script_arg: str) -> Path:
+    """Папка сценария — от неё считаются `включить файл=…`."""
+    if not script_arg or script_arg == "-":
+        return Path.cwd()
+    return Path(script_arg).expanduser().resolve().parent
+
+
 def cmd_build(args) -> int:
     script = _read(args.script)
-    b = build(script)
+    b = build(script, base_dir=_base(args.script))
     if getattr(args, "digest", False):
         digest = {
             "ok": b.ok,
@@ -141,7 +148,7 @@ def cmd_doctor(args) -> int:
 
 def cmd_render(args) -> int:
     script = _read(args.script)
-    b = build(script)
+    b = build(script, base_dir=_base(args.script))
     if not b.ok:
         print("ОШИБКА:", b.error.get("message"))
         return 2
@@ -169,7 +176,7 @@ def cmd_render(args) -> int:
 
 def cmd_export(args) -> int:
     script = _read(args.script)
-    b = build(script)
+    b = build(script, base_dir=_base(args.script))
     if not b.ok:
         print("ОШИБКА:", b.error.get("message"), file=sys.stderr)
         return 2
@@ -214,7 +221,7 @@ def cmd_scad(args) -> int:
     from .scad import export_scad
 
     script = _read(args.script)
-    b = build(script, analyze_model=args.mode == "script")
+    b = build(script, analyze_model=args.mode == "script", base_dir=_base(args.script))
     if not b.ok:
         print("ОШИБКА:", b.error.get("message"), file=sys.stderr)
         return 2
@@ -225,7 +232,7 @@ def cmd_scad(args) -> int:
 
 def cmd_prompt(args) -> int:
     script = _read(args.script) if args.script != "-" else sys.stdin.read()
-    b = build(script)
+    b = build(script, base_dir=_base(args.script))
     text = build_prompt(b, args.goal or "")
     if args.out:
         Path(args.out).write_text(text, encoding="utf-8")
