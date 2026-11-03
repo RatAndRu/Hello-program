@@ -1,0 +1,32 @@
+=== версия
+=== возможности
+Usage: /usr/bin/solvespace-cli <command> <options> <filename> [filename...]
+    When run, performs an action specified by <command> on every <filename>.
+
+Common options:
+    -o, --output <pattern>
+        For an input file <name>.slvs, replaces the '%' symbol in <pattern>
+        with <name> and uses it as output file. For example, when using
+        --output %-2d.png for input files f/a.slvs and f/b.slvs, output files
+        f/a-2d.png and f/b-2d.png will be written.
+    -v, --view <direction>
+        Selects the camera direction. <direction> can be one of "top", "bottom",
+        "left", "right", "front", "back", or "isometric".
+    -t, --chord-tol <tolerance>
+        Selects the chord tolerance, used for converting exact curves to
+        piecewise linear, and exact surfaces into triangle meshes.
+        For export commands, the unit is mm, and the default is 1.0 mm.
+        For non-export commands, the unit is %, and the default is 1.0 %.
+    -b, --bg-color <on|off>
+        Whether to export the background colour in vector formats. Defaults to off.
+
+Commands:
+    version
+        Prints the current solvespace version.
+    thumbnail --output <pattern> --size <size> --view <direction>
+              [--chord-tol <tolerance>]
+        Outputs a rendered view of the sketch, like the SolveSpace GUI would.
+        <size> is <width>x<height>, in pixels. Graphics acceleration is
+        not used, and the output may look slightly different from the GUI.
+    export-view --output <pattern> --view <direction> [--chord-tol <tolerance>]
+                [--bg-color <on|off>]

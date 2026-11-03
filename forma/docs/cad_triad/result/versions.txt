@@ -1,9 +1,8 @@
-OpenSCAD: OpenSCAD version 2021.01 
-FreeCAD:  
+OpenSCAD:   OpenSCAD version 2021.01 
+FreeCAD:    FreeCAD 1.1.4 Revision: 20260928 (Git shallow) 
 SolveSpace: SolveSpace version 3.1 (Debian package version 3.1+ds1-3.1build2)   
 
-Пакеты (установленный размер, КБ):
-dpkg-query: no packages found matching freecad
+Пакеты (установленный размер):
   openscad 2021.01-6build4 9838 КБ
   solvespace 3.1+ds1-3.1build2 7388 КБ
 
@@ -11,3 +10,4 @@ dpkg-query: no packages found matching freecad
   /usr/bin/openscad 8387456 байт
   /usr/bin/solvespace-cli 3041360 байт
   /usr/bin/solvespace 3283024 байт
+  /tmp/squashfs-root/usr/bin/freecadcmd 138976 байт

@@ -1,8 +1,9 @@
 [
  {
   "tool": "OpenSCAD",
-  "build_ms": 210,
+  "build_ms": 170,
   "tool_volume_cm3": null,
+  "valid": null,
   "notes": "своих метрик нет: объём знает только trimesh по STL",
   "volume_cm3": 28.5645,
   "tris": 788,
@@ -14,41 +15,50 @@
   ],
   "lines": 7,
   "bytes": 470,
-  "label": "OpenSCAD (текст, CSG)"
+  "label": "OpenSCAD (текст, CSG)",
+  "same_part": true
  },
  {
+  "json_error": true,
   "lines": 60,
-  "bytes": 2563,
-  "label": "FreeCAD Part (Python, CSG)"
+  "bytes": 2573,
+  "label": "FreeCAD Part (Python, CSG)",
+  "same_part": true
  },
  {
+  "json_error": true,
   "lines": 93,
-  "bytes": 5141,
-  "label": "FreeCAD Sketcher (ограничения)"
+  "bytes": 5151,
+  "label": "FreeCAD Sketcher (ограничения)",
+  "same_part": true
  },
  {
   "tool": "SolveSpace",
   "tool_volume_cm3": null,
-  "notes": "своих метрик в CLI нет: экспорт меша, точные поверхности отдельной командой",
+  "valid": null,
+  "notes": "CLI: экспорт меша и точных поверхностей (STEP); своих метрик нет",
   "volume_cm3": 10.0,
   "tris": 33,
   "watertight": false,
-  "build_ms": 70,
-  "regenerate_ms": 20,
+  "build_ms": 20,
+  "regenerate_ms": 10,
+  "step_bytes": 49440,
   "size": [
    30.0,
    25.0,
    30.0
   ],
-  "label": "SolveSpace (CLI, чужой тест)"
+  "label": "SolveSpace (CLI, чужой тест)",
+  "same_part": false
  },
  {
   "tool": "ФОРМА 3D",
-  "build_ms": 21.5,
+  "build_ms": 17.6,
   "tool_volume_cm3": 28.570389940580945,
+  "valid": true,
   "tris": 148,
   "watertight": true,
-  "notes": "проверок 1, предупреждений 2",
+  "notes": "проверок 1, предупреждений 2, свой отчёт: объём/масса/род/части",
   "volume_cm3": 28.5704,
   "size": [
    80.0,
@@ -57,6 +67,7 @@
   ],
   "lines": 5,
   "bytes": 470,
-  "label": "ФОРМА 3D (наш DSL)"
+  "label": "ФОРМА 3D (наш DSL)",
+  "same_part": true
  }
 ]
