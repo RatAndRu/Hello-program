@@ -346,7 +346,10 @@ def cmd_lib(args) -> int:
         script = LIBRARIES[name]["build"](**options)
     except (TypeError, ValueError) as exc:
         print(f"ОШИБКА: {exc}")
-        if name == "gridfinity":
+        library_params = LIBRARIES[name].get("params")
+        if library_params:
+            print(f"Параметры: {library_params}")
+        elif name == "gridfinity":
             from .lib.gridfinity import params_help
             print("Параметры:")
             for key, text in params_help():

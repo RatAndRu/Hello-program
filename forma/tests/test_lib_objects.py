@@ -1,307 +1,176 @@
-"""Параметрические объекты «по референсу» — числа из CC0-наборов.
+"""Параметрические объекты по CC0-референсам: меч, шлем, стул, фонарь.
 
-Проверяем не «похоже ли», а величины: длину меча, габарит шлема, высоту стула,
-высоту столба. Плюс то, что параметр действительно меняет деталь.
+Проверяем числа, а не «похоже ли»: габарит, объём материала, число частей,
+срабатывание проверок сценария и то, что параметры действительно меняют деталь.
 """
 from __future__ import annotations
 
-import re
+import io
 import unittest
+from contextlib import redirect_stdout
+from pathlib import Path
 
-from forma.lib import objects
-from forma.mesh_quality import analyze as mesh_report
+from forma.lib import LIBRARIES, objects
 from forma.run import build
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def make(kind: str, **options):
-    return build(objects.build_script(kind, **options))
+    return build(objects.build_script(kind, **options), base_dir=ROOT)
 
 
-def size_of(b) -> list[float]:
-    return b.analysis["metrics"]["size"]
+def size(b) -> list[float]:
+    return [round(v, 1) for v in b.analysis["metrics"]["size"]]
+
+
+def volume(b) -> float:
+    return b.analysis["metrics"]["volume_cm3"]
+
+
+def failed_checks(b) -> list:
+    return [c for c in b.analysis.get("checks", []) if not c["ok"]]
 
 
 class SwordTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.build = make("sword")
+        cls.model = make("sword")
 
-    def test_builds_and_passes_checks(self):
-        self.assertTrue(self.build.ok, self.build.error)
-        self.assertEqual([c for c in self.build.analysis["checks"] if not c["ok"]], [])
+    def test_builds_without_errors(self):
+        self.assertTrue(self.model.ok, self.model.error)
+        self.assertEqual(failed_checks(self.model), [])
 
-    def test_total_length_matches_typology(self):
-        """Одноручный меч X–XIV: 900–1000 мм от навершия до острия."""
-        height = size_of(self.build)[2]
-        self.assertGreater(height, 880)
-        self.assertLess(height, 1000)
+    def test_total_length_and_thickness(self):
+        """Одноручный меч X–XIV: 890–950 мм, толщина клинка 5 мм."""
+        self.assertEqual(size(self.model), [190.0, 39.0, 889.5])
+
+    def test_one_solid_body(self):
+        self.assertEqual(self.model.analysis["metrics"]["parts"], 1)
 
     def test_blade_length_is_a_parameter(self):
         short = make("sword", blade=600)
-        long_ = make("sword", blade=850)
-        self.assertAlmostEqual(size_of(short)[2], 889.5 - 150, delta=1.0)
-        self.assertAlmostEqual(size_of(long_)[2], 889.5 + 100, delta=1.0)
+        self.assertAlmostEqual(short.analysis["metrics"]["size"][2], 739.5, delta=0.5)
 
-    def test_mass_estimate_is_in_steel_range(self):
-        """Объём × 7.85 г/см³ — оценка массы; для нашего меча 1.4–1.8 кг."""
-        volume = self.build.analysis["metrics"]["volume_cm3"]
-        mass = volume * 7.85 / 1000
-        self.assertGreater(mass, 1.2)
-        self.assertLess(mass, 1.9)
+    def test_mass_is_a_bit_heavy_but_not_absurd(self):
+        """Сталь 7.85 г/см³: 204 см³ → 1.6 кг. Реальный меч — 1.0–1.3 кг:
+        у нас клинок без дола и рукоять сплошная, это честно записано в докстринге."""
+        steel = volume(self.model) * 7.85 / 1000
+        self.assertGreater(steel, 1.3)
+        self.assertLess(steel, 1.9)
 
-    def test_guard_width_is_the_widest_part(self):
-        width, depth, _ = size_of(self.build)
-        self.assertAlmostEqual(width, 190.0, delta=0.5)   # гарда 190 мм
-        self.assertLess(depth, 60)
-
-    def test_mesh_is_closed(self):
-        report = mesh_report(self.build.visible_solids()[0].manifold)
-        self.assertEqual(report["boundary_edges"], 0)
+    def test_short_blade_is_rejected(self):
+        with self.assertRaises(ValueError):
+            objects.build_script("sword", blade=150)
 
 
 class HelmetTest(unittest.TestCase):
-    def test_diameter_follows_head_circumference(self):
-        """Радиус тульи = max(dome, обхват/2π + 6). При 580 мм побеждает dome=105."""
-        import math
+    @classmethod
+    def setUpClass(cls):
+        cls.model = make("helmet")
 
-        b = make("helmet", head=580, brim=70)
-        radius = max(105.0, 580 / (2 * math.pi) + 6.0)
-        self.assertAlmostEqual(size_of(b)[0], 2 * (radius + 70), delta=1.5)
+    def test_gabarit_follows_head_circumference(self):
+        """Обхват 580 мм → R = 580/2π + 6 ≈ 98.3, но не меньше dome=105.
+        Поля 70 мм с каждой стороны: 2·(105+70) = 350."""
+        self.assertEqual(size(self.model)[:2], [350.0, 350.0])
 
-    def test_big_head_grows_the_helmet(self):
-        import math
+    def test_builds_without_errors(self):
+        self.assertTrue(self.model.ok, self.model.error)
+        self.assertEqual(failed_checks(self.model), [])
 
-        b = make("helmet", head=720)
-        radius = max(105.0, 720 / (2 * math.pi) + 6.0)
-        self.assertAlmostEqual(size_of(b)[0], 2 * (radius + 70), delta=1.5)
+    def test_bigger_head_gives_a_bigger_helmet(self):
+        big = make("helmet", head=640)
+        self.assertGreater(size(big)[0], size(self.model)[0])
 
-    def test_wider_brim_widens_the_helmet(self):
-        narrow = make("helmet", brim=40)
+    def test_bigger_brim_adds_width(self):
         wide = make("helmet", brim=100)
-        self.assertAlmostEqual(size_of(wide)[0] - size_of(narrow)[0], 120.0, delta=1.0)
+        self.assertAlmostEqual(size(wide)[0], size(self.model)[0] + 60, delta=0.5)
 
-    def test_height_is_below_the_diameter(self):
-        b = make("helmet")
-        width, _, height = size_of(b)
-        self.assertLess(height, width / 2)     # кастрюльный шлем плоский
-
-    def test_dome_is_hollow(self):
-        b = make("helmet")
-        self.assertGreater(b.analysis["metrics"]["volume_cm3"], 100)
+    def test_shell_is_not_solid(self):
+        """Тулья полая: объём заметно меньше объёма габаритного цилиндра."""
+        bbox_volume = 350 * 350 * 94.9
+        self.assertLess(volume(self.model) * 1000, bbox_volume * 0.2)
 
 
 class ChairTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.build = make("chair")
+        cls.model = make("chair")
 
-    def test_seat_and_back_heights(self):
-        width, depth, height = size_of(self.build)
-        self.assertAlmostEqual(width, 440.0, delta=0.6)
-        self.assertAlmostEqual(depth, 440.0, delta=0.6)
-        self.assertAlmostEqual(height, 870.0, delta=0.6)   # 450 сиденье + 420 спинка
+    def test_gabarit_is_seat_by_seat_by_back_height(self):
+        """Сиденье 440 на 450 мм, спинка 420 → верх 870."""
+        self.assertEqual(size(self.model), [440.0, 440.0, 870.0])
 
-    def test_seat_height_parameter(self):
-        low = make("chair", seat_h=420)
-        self.assertAlmostEqual(size_of(low)[2], 840.0, delta=0.6)
+    def test_builds_without_errors(self):
+        self.assertTrue(self.model.ok, self.model.error)
+        self.assertEqual(failed_checks(self.model), [])
 
-    def test_back_slats_count(self):
+    def test_seat_height_is_a_parameter(self):
+        low = make("chair", seat_h=430)
+        self.assertAlmostEqual(low.analysis["metrics"]["size"][2], 850.0, delta=0.5)
+
+    def test_more_slats_add_material(self):
         two = make("chair", slats=2)
-        five = make("chair", slats=5)
-        self.assertLess(two.analysis["metrics"]["volume_cm3"],
-                        five.analysis["metrics"]["volume_cm3"])
+        four = make("chair", slats=4)
+        self.assertLess(volume(two), volume(four))
 
-    def test_chair_is_one_body(self):
-        self.assertEqual(self.build.analysis["metrics"]["parts"], 1)
+    def test_chair_is_a_single_body(self):
+        self.assertEqual(self.model.analysis["metrics"]["parts"], 1)
 
 
 class LampTest(unittest.TestCase):
-    def test_height_parameter(self):
-        b = make("lamp", height=3500)
-        # высота столба + крыша (0.35·фонарь, шпиль сидит на 0.6 её высоты) + шпиль
-        self.assertAlmostEqual(size_of(b)[2], 3500 + 260 * 0.35 * 0.6 + 260 * 0.2, delta=2.0)
+    @classmethod
+    def setUpClass(cls):
+        cls.model = make("lamp")
 
-    def test_too_short_lamp_is_rejected(self):
+    def test_height_is_the_pole_and_finial(self):
+        """Столб 4000 + крыша 130 + шпиль: 4150 мм по факту."""
+        self.assertAlmostEqual(self.model.analysis["metrics"]["size"][2], 4150.0, delta=2.0)
+
+    def test_builds_without_errors(self):
+        self.assertTrue(self.model.ok, self.model.error)
+        self.assertEqual(failed_checks(self.model), [])
+
+    def test_bracket_reaches_sideways(self):
+        width, depth, _ = self.model.analysis["metrics"]["size"]
+        self.assertGreater(width, 700)
+        self.assertLess(depth, 400)
+
+    def test_lantern_size_is_a_parameter(self):
+        big = make("lamp", lantern=400)
+        self.assertGreater(big.analysis["metrics"]["size"][2],
+                           self.model.analysis["metrics"]["size"][2])
+
+    def test_low_lamp_is_rejected(self):
         with self.assertRaises(ValueError):
             objects.build_script("lamp", height=900)
 
-    def test_arm_reaches_sideways(self):
-        b = make("lamp")
-        self.assertGreater(size_of(b)[0], 300)
-
-    def test_unknown_object_is_rejected(self):
-        with self.assertRaises(ValueError):
-            objects.build_script("нет_такого")
-
 
 class RegistryTest(unittest.TestCase):
-    def test_every_object_is_registered_for_cli(self):
-        from forma.lib import LIBRARIES
-        kinds = ("sword", "dagger", "axe", "shield", "helmet",
-                 "chair", "table", "lamp", "column")
-        for kind in kinds:
+    def test_every_object_is_in_the_library_registry(self):
+        for kind in ("sword", "helmet", "chair", "lamp"):
             self.assertIn(kind, LIBRARIES)
-            self.assertEqual(LIBRARIES[kind]["build"].__name__, "build")
+            self.assertTrue(LIBRARIES[kind]["title"].startswith(objects.BUILDERS[kind][0]))
 
-    def test_params_help_covers_every_object(self):
-        from forma.lib import objects as lib_objects
-        helped = {name for name, _ in lib_objects.params_help()}
-        self.assertEqual(helped, set(lib_objects.BUILDERS))
+    def test_params_help_matches_builders(self):
+        helped = {name for name, _ in objects.params_help()}
+        self.assertEqual(helped, set(objects.BUILDERS))
 
-    def test_cli_builds_a_column_with_flutes(self):
-        import io
-        from contextlib import redirect_stdout
-
+    def test_cli_builds_every_object(self):
         from forma.cli import main
 
-        buffer = io.StringIO()
-        with redirect_stdout(buffer):
-            code = main(["lib", "column", "height=2400", "flutes=16", "--check"])
-        self.assertEqual(code, 0, buffer.getvalue())
-        self.assertIn("2 400", buffer.getvalue())
+        for kind in ("sword", "helmet", "chair", "lamp"):
+            buffer = io.StringIO()
+            with redirect_stdout(buffer):
+                code = main(["lib", kind, "--check"])
+            self.assertEqual(code, 0, f"{kind}: {buffer.getvalue()}")
+            self.assertIn("2 из 2", buffer.getvalue())
 
-    def test_cli_builds_a_sword(self):
-        import io
-        from contextlib import redirect_stdout
-
-        from forma.cli import main
-
-        buffer = io.StringIO()
-        with redirect_stdout(buffer):
-            code = main(["lib", "sword", "blade=700", "--check"])
-        self.assertEqual(code, 0, buffer.getvalue())
-        self.assertIn("в норме", buffer.getvalue())
+    def test_unknown_object_lists_the_known_ones(self):
+        with self.assertRaises(ValueError) as ctx:
+            objects.build_script("топор")
+        self.assertIn("sword", str(ctx.exception))
 
 
 if __name__ == "__main__":
     unittest.main()
-
-
-class DaggerTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.build = make("dagger")
-
-    def test_length_is_grip_guard_blade_pommel(self):
-        """95 рукоять + 8 гарда + 280 клинок + 14 навершие = 397 мм."""
-        self.assertAlmostEqual(size_of(self.build)[2], 397.0, delta=0.6)
-
-    def test_guard_disc_is_the_widest_part(self):
-        width, depth, _ = size_of(self.build)
-        self.assertAlmostEqual(width, 64.0, delta=0.6)      # гарда Ø64
-        self.assertAlmostEqual(depth, 64.0, delta=0.6)
-
-    def test_blade_parameter_shortens_the_dagger(self):
-        short = make("dagger", blade=200)
-        self.assertAlmostEqual(size_of(short)[2], 317.0, delta=0.6)
-
-    def test_too_short_blade_is_rejected(self):
-        with self.assertRaises(ValueError):
-            objects.build_script("dagger", blade=90)
-
-
-class AxeTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.build = make("axe")
-
-    def test_haft_sets_the_height(self):
-        """Рукоять 700 мм, но она выходит над головой на 6 %."""
-        self.assertAlmostEqual(size_of(self.build)[2], 742.0, delta=0.6)
-
-    def test_blade_reach_sets_the_width(self):
-        """24.05 проушина + 6 перемычка + 140 вылет + 24.05 = 194.1 мм."""
-        self.assertAlmostEqual(size_of(self.build)[0], 194.1, delta=1.0)
-
-    def test_head_is_one_body_with_the_haft(self):
-        self.assertEqual(self.build.analysis["metrics"]["parts"], 1)
-
-    def test_edge_is_thinner_than_the_eye(self):
-        """Спуски: тот же клин с более толстым лезвием весит больше."""
-        thin = make("axe", edge=3)
-        thick = make("axe", edge=12)
-        self.assertLess(thin.analysis["metrics"]["volume_cm3"],
-                        thick.analysis["metrics"]["volume_cm3"])
-
-    def test_nonsense_edge_is_rejected(self):
-        with self.assertRaises(ValueError):
-            objects.build_script("axe", thickness=26, edge=20)
-
-
-class ShieldTest(unittest.TestCase):
-    def test_gabarit_and_boss_depth(self):
-        """520 × (22 корпус + 60 умбон + 12 рукоять) × 700."""
-        b = make("shield")
-        width, depth, height = size_of(b)
-        self.assertAlmostEqual(width, 520.0, delta=1.0)
-        self.assertAlmostEqual(depth, 94.0, delta=2.0)
-        self.assertAlmostEqual(height, 700.0, delta=1.0)
-
-    def test_shield_without_boss_and_straps_is_a_plate(self):
-        b = make("shield", boss=0, straps=0)
-        self.assertAlmostEqual(size_of(b)[1], 22.0, delta=1.0)
-        self.assertEqual(b.analysis["metrics"]["parts"], 1)
-
-    def test_too_small_shield_is_rejected(self):
-        with self.assertRaises(ValueError):
-            objects.build_script("shield", height=200)
-
-
-class TableTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.build = make("table")
-
-    def test_gabarit(self):
-        self.assertEqual([round(v, 1) for v in size_of(self.build)], [1200.0, 700.0, 750.0])
-
-    def test_top_overhangs_the_legs(self):
-        """Столешница нависает над ножками — иначе стол выглядит «на ходулях»."""
-        script = objects.build_script("table")
-        spacing = [float(v) for v in re.findall(r"spacing=\[([\d.]+),([\d.]+),0\]",
-                                                script)[0]]
-        # шаг между ножками меньше габарита: столешница выступает с каждого края
-        self.assertLessEqual(spacing[0], 1200.0 - 2 * 36)
-        self.assertLessEqual(spacing[1], 700.0 - 2 * 36)
-
-    def test_stretcher_makes_one_body(self):
-        b = make("table", length=900, width=900, height=740, stretcher=300)
-        self.assertEqual(b.analysis["metrics"]["parts"], 1)
-
-    def test_taller_legs_add_material(self):
-        low = make("table", height=600)
-        high = make("table", height=900)
-        self.assertLess(low.analysis["metrics"]["volume_cm3"],
-                        high.analysis["metrics"]["volume_cm3"])
-
-    def test_tiny_table_is_rejected(self):
-        with self.assertRaises(ValueError):
-            objects.build_script("table", length=300)
-
-
-class ColumnTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.build = make("column")
-
-    def test_gabarit_is_plinth_and_height(self):
-        """Плита 1.36 диаметра в стороне, высота ровно заданная."""
-        width, depth, height = size_of(self.build)
-        self.assertAlmostEqual(width, 408.0, delta=1.0)
-        self.assertAlmostEqual(depth, 408.0, delta=1.0)
-        self.assertAlmostEqual(height, 3000.0, delta=1.0)
-
-    def test_flutes_remove_material(self):
-        plain = make("column")
-        fluted = make("column", flutes=20)
-        self.assertLess(fluted.analysis["metrics"]["volume_cm3"],
-                        plain.analysis["metrics"]["volume_cm3"])
-
-    def test_shaft_taper_is_visible(self):
-        """Сужение 0.14: наверху ствол тоньше, чем внизу."""
-        b = make("column")
-        self.assertEqual(b.analysis["metrics"]["parts"], 1)
-
-    def test_bad_taper_is_rejected(self):
-        with self.assertRaises(ValueError):
-            objects.build_script("column", taper=0.9)

@@ -69,6 +69,7 @@ for _kind, (_title, _source) in _REFERENCE_NOTES.items():
         "build": _reference_builder(_kind),
         "source": _source,
         "note": "наши примитивы; каждый размер — параметр",
+        "params": objects.PARAMS.get(_kind, ""),
     }
 
 

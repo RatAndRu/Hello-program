@@ -71,9 +71,17 @@ def sword_script(blade: float = 750.0, width: float = 50.0, thickness: float = 5
     ``blade`` — длина клинка от гарды до острия, мм. Остальные размеры тоже в мм.
     """
     blade = float(blade)
-    if blade < 200:
-        raise ValueError("Клинок короче 200 мм — это уже кинжал, а не меч.")
+    if not 200 <= blade <= 1100:
+        raise ValueError("Длина клинка меча — от 200 до 1100 мм "
+                         "(короче — кинжал, длиннее — двуручник другого профиля).")
     grip, guard, pommel = float(grip), float(guard), float(pommel)
+    for name, value, low, high in (("ширина клинка", float(width), 20, 80),
+                                   ("толщина клинка", float(thickness), 2, 12),
+                                   ("рукоять", grip, 70, 260),
+                                   ("гарда", guard, 60, 350),
+                                   ("навершие", pommel, 20, 90)):
+        if not low <= value <= high:
+            raise ValueError(f"{name[0].upper()}{name[1:]} вне {low}…{high} мм: {value:g}.")
     guard_h = 12.0                       # толщина гарды
     z_guard = grip                       # гарда стоит на рукояти
     z_blade = z_guard + guard_h          # пята клинка
@@ -137,6 +145,12 @@ def helmet_script(head: float = 580.0, dome: float = 105.0, brim: float = 70.0,
     кастрюльного шлема это 0.7–0.9, у полусферы было бы 1.0.
     """
     head, brim, wall = float(head), float(brim), float(wall)
+    if not 480 <= head <= 660:
+        raise ValueError("Обхват головы вне 480…660 мм — это не человек.")
+    if not 10 <= brim <= 200:
+        raise ValueError("Поля шлема — от 10 до 200 мм.")
+    if not 1 <= wall <= 8:
+        raise ValueError("Стенка шлема — от 1 до 8 мм.")
     radius = max(float(dome), head / (2 * math.pi) + 6.0)
     thick = float(brim_thickness)
     hh = radius * float(height_k)
@@ -190,6 +204,14 @@ def chair_script(seat_h: float = 450.0, seat: float = 440.0, seat_t: float = 25.
     """Обеденный стул: четыре ножки, сиденье, две стойки и перекладины спинки."""
     seat_h, seat, seat_t = float(seat_h), float(seat), float(seat_t)
     back, leg = float(back), float(leg)
+    if not 350 <= seat_h <= 560:
+        raise ValueError("Высота сиденья вне 350…560 мм.")
+    if not 300 <= seat <= 600:
+        raise ValueError("Сиденье вне 300…600 мм.")
+    if not 250 <= back <= 600:
+        raise ValueError("Спинка вне 250…600 мм над сиденьем.")
+    if not 25 <= leg <= 80:
+        raise ValueError("Ножка вне 25…80 мм.")
     slats = max(1, int(slats))
     top = seat_h + back
     # Ножки стоят под кромкой сиденья: центр ножки — на `seat/2 - leg/2` от оси.
@@ -212,6 +234,7 @@ def chair_script(seat_h: float = 450.0, seat: float = 440.0, seat_t: float = 25.
         "",
         "# 3. Спинка: две стойки по краям сиденья.",
         # `place` не сдвигает, а переносит в точку, поэтому высоту задаём сразу.
+        # Высоту задаём сразу: `place` не сдвигает, а переносит объект в точку.
         f"стойка = box size=[{_num(leg)},{_num(leg)},{_num(back)}] round=3 "
         f"at=[{_num(-half)},{_num(half - leg / 2)},{_num(seat_h)}]",
         f"стойки = array [стойка] mode=grid counts=[2,1,1] spacing=[{_num(spread)},0,0]",
@@ -247,17 +270,25 @@ def lamp_script(height: float = 4000.0, base_d: float = 300.0, pole_d: float = 1
     height, base_d = float(height), float(base_d)
     pole_d, top_d = float(pole_d), float(top_d)
     arm, lantern = float(arm), float(lantern)
-    if height < 1500:
-        raise ValueError("Столб ниже 1500 мм — это садовый светильник, а не фонарь.")
+    if not 1500 <= height <= 12000:
+        raise ValueError("Высота столба вне 1500…12000 мм.")
+    if not 50 <= pole_d <= 400 or not 20 <= top_d <= 300:
+        raise ValueError("Диаметр столба 50…400 мм, верха — 20…300 мм.")
+    if not 150 <= base_d <= 800:
+        raise ValueError("Цоколь вне 150…800 мм.")
+    if not 200 <= arm <= 2500:
+        raise ValueError("Вылет кронштейна вне 200…2500 мм.")
+    if not 80 <= lantern <= 800:
+        raise ValueError("Фонарь вне 80…800 мм.")
     base_h = 140.0
     bracket_h = top_d * 0.8              # высота кронштейна
     bracket_top = height - 6.0           # верх кронштейна чуть ниже верха столба
     bracket_z = bracket_top - bracket_h
     pole_top = height - 10.0             # столб входит в кронштейн, торец внутри
     lantern_h = lantern * 1.35
-    roof_h = lantern * 0.35
+    roof_h = lantern * 0.5
     fin_h = lantern * 0.2                # шпиль на крыше
-    fin_z = height + roof_h * 0.6        # низ шпиля — внутри крыши
+    fin_z = height + roof_h * 0.75       # низ шпиля — внутри крыши
     width = base_d
 
     lines = [
@@ -283,7 +314,7 @@ def lamp_script(height: float = 4000.0, base_d: float = 300.0, pole_d: float = 1
         f"at=[{_num(arm - lantern / 2)},0,{_num(height - lantern_h)}]",
         # Крыша — усечённая пирамидка со скруглением: у конуса вершина на оси
         # даёт полюс с веером игл, у `box top_size` его нет.
-        f"крыша = box size=[{_num(lantern * 1.06)},{_num(lantern * 1.06)},{_num(roof_h)}] round=6 "
+        f"крыша = box size=[{_num(lantern * 1.3)},{_num(lantern * 1.3)},{_num(roof_h)}] round=6 "
         f"top_size=[{_num(lantern * 0.1)},{_num(lantern * 0.1)}] "
         f"at=[{_num(arm - lantern / 2)},0,{_num(height - 1)}]",
         f"шпиль = cylinder radius={_num(lantern * 0.05)} height={_num(fin_h)} segments=24 "
@@ -774,6 +805,10 @@ def build_script(kind: str, **options) -> str:
     return builder(**clean)
 
 
+#: текстовка параметров по имени объекта (её показывает `forma lib`)
+PARAMS: dict[str, str] = {}
+
+
 def params_help() -> list[tuple[str, str]]:
     return [
         ("sword", "blade=750 width=50 thickness=5 grip=110 guard=190 pommel=50"),
@@ -786,3 +821,6 @@ def params_help() -> list[tuple[str, str]]:
         ("chair", "seat_h=450 seat=440 back=420 leg=40 slats=3"),
         ("lamp", "height=4000 base_d=300 pole_d=120 top_d=60 arm=700 lantern=260"),
     ]
+
+
+PARAMS.update(dict(params_help()))

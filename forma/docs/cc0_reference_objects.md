@@ -138,7 +138,7 @@ CC0 по метаданным каждого объекта.
 | **Стул** | Kenney Furniture Kit `Chair`; Quaternius `S_Chair`, `S_Stool` | `seat_h=450 seat=440 seat_t=25 back=420 leg=40 slats=3` | 440 × 440 × 870 мм, 1 880 трис |
 | **Стол** | Kenney `Table`, `Desk`; Quaternius `S_Table` | `length=1200 width=700 height=750 top_t=32 leg=60 apron=90 stretcher=0` | 1 200 × 700 × 750 мм, 1 356 трис: царги, необязательные проножки |
 | **Колонна** | Kenney `Column`, `Column Thin`; Quaternius `S_ColumnRound1…3` | `height=3000 diameter=300 taper=0.14 flutes=0` | 408 × 408 × 3 000 мм, 3 100 трис: плита, база, энтазис, эхин, абака |
-| **Фонарный столб** | Poly Haven `Street Lamp 01/02` (1.7 м, 20k трис) | `height=4000 base_d=300 pole_d=120 top_d=60 arm=700 lantern=260` | 850 × 300 × 4 106.6 мм, 1 746 трис |
+| **Фонарный столб** | Poly Haven `Street Lamp 01/02` (1.7 м, 20k трис) | `height=4000 base_d=300 pole_d=120 top_d=60 arm=700 lantern=260` | 878 × 317 × 4 150 мм, 1 746 трис |
 
 ![Меч](reference/sword_iso.png)
 ![Кинжал](reference/dagger_iso.png)
@@ -164,7 +164,13 @@ forma lib table  length=1400 width=800 stretcher=250 --check
 forma lib column height=3600 diameter=320 flutes=20 --check
 forma lib lamp   height=4500 arm=900 --check
 forma lib                          # полный список библиотек
+forma lib sword blade=99999        # ошибка + подсказка с параметрами
 ```
+
+Диапазоны проверяются до построения: клинок меча 200…1100 мм, обхват головы
+480…660, высота сиденья 350…560, высота столба 1500…12000. Значение вне
+диапазона — не «страшная цифра в отчёте», а отказ с объяснением и списком
+допустимых параметров.
 
 ### Как эти объекты устроены
 
