@@ -86,6 +86,7 @@ FRAME_SKIP_VERBS = {
     "version", "save", "load", "light", "color", "scene", "comment", "info",
     "сетка", "interference", "пересечения", "коллизии", "collision_report",
     "preset", "пресет", "набор", "precision", "точность", "quality", "качество",
+    "derive", "link", "связать", "связь", "зависимость",
     "__forma_definition", "module", "модуль", "function", "функция",
 }
 
@@ -297,6 +298,7 @@ class Build:
             "passports": list(getattr(scene, "passports", []) or []) if scene else [],
             "interferences": list(getattr(scene, "interferences", []) or []) if scene else [],
             "mates": list(getattr(scene, "mates", []) or []) if scene else [],
+            "dimension_links": list(getattr(scene, "dimension_links", []) or []) if scene else [],
             "grid": getattr(scene, "grid", None) if scene else None,
             "steps": self.steps,
             "command_timings": self.command_timings,

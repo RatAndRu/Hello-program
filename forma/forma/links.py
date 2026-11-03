@@ -109,4 +109,5 @@ def scene_links(scene) -> dict:
     solids = [s for s in scene.objects.values() if s.visible]
     data = analyse(solids)
     data["mates"] = list(getattr(scene, "mates", []) or [])
+    data["dimension_links"] = list(getattr(scene, "dimension_links", []) or [])
     return data

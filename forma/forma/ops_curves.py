@@ -53,6 +53,8 @@ def _points_value(a, value, dims: int, what: str) -> np.ndarray:
             "arc": "угол вращения в градусах (360)",
             "smooth": "сгладить профиль: число подсегментов на участок",
             "fillet": "скруглить углы профиля радиусом, мм",
+            "fillet_steps": "максимум отрезков на дугу фаски (8)",
+            "fillet_angle": "минимальный перелом для фаски, градусы; 0 — все углы",
             "thickness": "сделать стенку заданной толщины (пустотелое тело)",
             "open": "где открыть полость: top, bottom, both",
             "tolerance": "хордовый допуск Contour2D, мм (иначе допуск контура)"},
@@ -66,9 +68,15 @@ def lathe(a, name):
                             hint="Первая координата точки — расстояние от оси вращения (≥ 0).")
     pts[:, 0] = np.clip(pts[:, 0], 0.0, None)
     fillet = a.num("fillet", 0.0, minv=0.0)
+    fillet_steps = a.int("fillet_steps", 8, minv=2, maxv=48)
+    fillet_angle = (a.num("fillet_angle", None, minv=0.0, maxv=180.0)
+                    if a.has("fillet_angle") else None)
     smooth = a.int("smooth", 0, minv=0, maxv=32)
     if fillet and fillet > 0:
-        pts = fillet_polyline(pts, float(fillet), closed=True, skip_axis=True)
+        pts = fillet_polyline(pts, float(fillet), closed=True, skip_axis=True,
+                              arc_steps=int(fillet_steps),
+                              min_turn=(None if fillet_angle is None
+                                        else math.radians(float(fillet_angle))))
     if smooth and smooth > 1:
         pts = smooth_closed_profile(pts, samples=int(smooth))
     radius_max = float(np.max(np.abs(pts[:, 0]))) if len(pts) else 50.0
@@ -244,6 +252,8 @@ def _draft_extrude(profile: np.ndarray, holes: list[np.ndarray], height: float,
             "twist": "закрутка верха, градусы",
             "scale_top": "масштаб верхнего сечения (число или [sx,sy])",
             "fillet": "скруглить углы профиля, мм",
+            "fillet_steps": "максимум отрезков на дугу фаски (8)",
+            "fillet_angle": "минимальный перелом для фаски, градусы; 0 — все углы",
             "divisions": "промежуточных сечений (для закрутки)",
             "thickness": "толщина стенки, мм; 0 — сплошное тело",
             "open": "открытая сторона при thickness: top, bottom, both, none",
@@ -254,8 +264,14 @@ def extrude(a, name):
     prof = _clean_profile(_points_value(a, a.value("profile"), 2, "profile"))
     prof = ensure_ccw(prof)
     fillet = a.num("fillet", 0.0, minv=0.0)
+    fillet_steps = a.int("fillet_steps", 8, minv=2, maxv=48)
+    fillet_angle = (a.num("fillet_angle", None, minv=0.0, maxv=180.0)
+                    if a.has("fillet_angle") else None)
     if fillet and fillet > 0:
-        prof = fillet_polyline(prof, float(fillet), closed=True)
+        prof = fillet_polyline(prof, float(fillet), closed=True,
+                               arc_steps=int(fillet_steps),
+                               min_turn=(None if fillet_angle is None
+                                         else math.radians(float(fillet_angle))))
     contours = [prof]
     holes: list[np.ndarray] = []
     if a.has("holes"):

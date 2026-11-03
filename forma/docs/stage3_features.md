@@ -59,6 +59,29 @@ Explicit `overrides` имеют приоритет над preset и default. `de
 тот же rebuild, но не превращает вариант в автоматически активный при следующем
 открытии.
 
+### Размерные зависимости без дерева FreeCAD
+
+Для связанных размеров используется `derive` (синоним `link`). Источник должен
+быть объявлен раньше: выражение вычисляется в месте команды, а при rebuild
+выполняется снова в том же порядке.
+
+```forma
+param base_h=68 min=45 max=100
+column_ratio = 1.25
+column_h = derive base_h * column_ratio
+column_top = derive base_h + column_h
+joint_z = derive column_top + 12
+колонна = cylinder radius=12 height=column_h at=[0,0,base_h]
+шарнир = sphere radius=10 at=[0,0,joint_z]
+```
+
+Зависимые значения доступны в `params`, `parameter_schema` и плоском
+`dimension_links`, но в панели они read-only: выражение и рассчитанное значение
+видны, редактируется источник. Если старый клиент всё же передал override для
+зависимого имени, `derive` игнорирует его и вычисляет значение из источника.
+Это намеренно не constraint-solver и не история FreeCAD: циклы и forward
+references не разрешаются автоматически, а связи остаются короткими и явными.
+
 HTTP:
 
 * `GET /api/parameters` — схема, значения и presets текущей сборки;
@@ -171,10 +194,29 @@ precision factor=1.25
 Явные `detail=…` и `segments=…` имеют приоритет и не пересчитываются глобальным
 множителем. Старый проект без команды `precision` не меняется.
 
+## 9. Бюджет настоящих микрофасок
+
+`lathe` и `extrude` по-прежнему строят дуговые фаски через
+`fillet_polyline`; Loop/subdivision smoothing для этого не используется.
+`fillet_steps` задаёт верхний бюджет отрезков одной дуги (по умолчанию 8; для компактной лампы выбран 4),
+а фактическое число выбирается по хордовому отклонению. Почти коллинеарные
+samples плавной исходной дуги не превращаются каждый в отдельную микрофаску.
+Для особого случая `fillet_angle=0` принудительно обрабатывает все переломы;
+это может закономерно увеличить сетку.
+
+```forma
+основание = lathe points=[[0,0],[30,0],[30,20],[0,20]] \\
+    segments=32 fillet=2 fillet_steps=4
+```
+
+Проверять нужно не только `NoError`: сравниваются triangles по деталям,
+габарит и объём, а для сборки — все пары пересечений и фактические зазоры.
+
 ## Проверки
 
 ```bash
 python -m pytest -q tests/test_stage3_features.py
+python -m pytest -q tests/test_lamp_rework.py tests/test_banker_lamp.py
 python -m pytest -q tests/test_rules_upgrade.py
 node --check web/js/app.js
 ```

@@ -9,7 +9,8 @@ from .ops import op
 from .values import parse_value
 
 _SPECIAL = {"param", "parameter", "параметр", "preset", "пресет", "набор",
-            "precision", "точность", "quality", "качество"}
+            "precision", "точность", "quality", "качество",
+            "derive", "link", "связать", "связь", "зависимость"}
 _META = {"name", "default", "value", "min", "max", "step", "label", "group", "unit",
          "description", "choices", "мин", "макс", "шаг", "имя", "название"}
 
@@ -82,6 +83,70 @@ def _param(scene, cmd) -> None:
     scene.params[name] = effective
     scene.param_meta[name] = meta
     scene.log("info", f"параметр {name} = {value:g}; доступен в панели и presets", cmd.line)
+
+
+def _derive(scene, cmd) -> None:
+    """Связывает размер с выражением и пересчитывает его на каждом rebuild.
+
+    Короткая форма ``column_h = derive base_h * 1.25`` намеренно похожа на
+    обычное присваивание, но не принимает override самого результата: панель
+    отправляет все значения сразу, и старое значение зависимого параметра не
+    должно побеждать новое значение его источника.
+    """
+    kwargs = dict(cmd.kwargs or {})
+    args = list(cmd.args or [])
+    name = str(cmd.target or kwargs.pop("name", "") or kwargs.pop("target", "")
+               or kwargs.pop("имя", "") or "").strip()
+    if not name and args:
+        name = str(args.pop(0)).strip().strip("\"'")
+    raw = kwargs.pop("expr", kwargs.pop("expression", kwargs.pop("from", kwargs.pop("source", None))))
+    if raw is None and args:
+        raw = " ".join(str(item) for item in args)
+    if raw is None:
+        raw = kwargs.pop("value", None)
+    if not name or not name.isidentifier():
+        raise DslError("derive: укажите имя зависимого размера, например "
+                       "column_h = derive base_h * 1.25.", line=cmd.line, command=cmd.text)
+    if raw is None or not str(raw).strip():
+        raise DslError(f"derive {name}: нужно выражение, например base_h * 1.25.",
+                       line=cmd.line, command=cmd.text)
+    expression = str(raw).strip()
+    if expression.startswith("="):
+        expression = expression[1:].strip()
+    if kwargs:
+        unknown = next(iter(kwargs))
+        raise DslError(f"derive {name}: неизвестный параметр «{unknown}».", line=cmd.line)
+    try:
+        value = parse_value(expression, scene.params, scene.vars, scene.functions)
+    except Exception as exc:
+        raise DslError(f"derive {name}: не удалось вычислить «{expression}»: {exc}",
+                       line=cmd.line, command=cmd.text) from exc
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(float(value)):
+        raise DslError(f"derive {name}: выражение должно давать конечное число, получено «{value}».",
+                       line=cmd.line, command=cmd.text)
+
+    # Для reset сохраняем заводское значение, а не вариант с override источника.
+    default_params = dict(scene.params)
+    for key in getattr(scene, "overrides", {}) or {}:
+        meta = scene.param_meta.get(key) or {}
+        if "default" in meta:
+            default_params[key] = meta["default"]
+    try:
+        default = parse_value(expression, default_params, scene.vars, scene.functions)
+        default = float(default) if isinstance(default, (int, float)) and not isinstance(default, bool) else float(value)
+        if not math.isfinite(default):
+            default = float(value)
+    except Exception:
+        default = float(value)
+    meta = dict(scene.param_meta.get(name) or {})
+    meta.update({"label": meta.get("label", name), "default": default,
+                 "derived": True, "read_only": True, "expression": expression})
+    scene.params[name] = float(value)
+    scene.param_meta[name] = meta
+    record = {"name": name, "expression": expression, "value": float(value),
+              "default": default, "line": int(cmd.line)}
+    scene.dimension_links.append(record)
+    scene.log("info", f"связанный размер {name} = {float(value):g} ({expression})", cmd.line)
 
 
 def _preset(scene, cmd) -> None:
@@ -186,6 +251,8 @@ def handle_special(scene, cmd) -> bool:
         _param(scene, cmd)
     elif verb in {"preset", "пресет", "набор"}:
         _preset(scene, cmd)
+    elif verb in {"derive", "link", "связать", "связь", "зависимость"}:
+        _derive(scene, cmd)
     else:
         _precision(scene, cmd)
     return True
@@ -199,6 +266,16 @@ def handle_special(scene, cmd) -> bool:
     params={"default": "начальное значение", "min": "минимум", "max": "максимум",
             "step": "шаг", "label": "подпись"}, positional="*")
 def param_command(a, name):  # pragma: no cover - dispatch выполняет handle_special
+    return None
+
+
+@op("derive", aliases=("link", "связать", "связь", "зависимость"), category="Сцена и материал",
+    summary="Связывает размер с выражением; зависимое значение пересчитывается при rebuild.",
+    example="base_h = 68\ncolumn_h = derive base_h * 1.25\n"
+            "column_top = derive base_h + column_h",
+    params={"expr": "выражение от других размеров или height(деталь)",
+            "from": "синоним expr"}, positional="*")
+def derive_command(a, name):  # pragma: no cover - dispatch выполняет handle_special
     return None
 
 

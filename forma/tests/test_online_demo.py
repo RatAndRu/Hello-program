@@ -117,8 +117,9 @@ class OnlineDemoTest(unittest.TestCase):
         script = (ROOT / "examples" / "train_carriage.forma").read_text(encoding="utf-8")
         result = self.server.forma_state.build(script, allow_heavy=True)
         self.assertTrue(result["ok"], result.get("error"))
-        # 0.57: обновлённая ступенчатая клавиша service_switch добавляет 252 треугольника.
-        self.assertEqual(result["analysis"]["metrics"]["tris"], 336788)
+        # 0.69: адаптивные микрофаски убрали лишние дуги только у шести
+        # toilet_* деталей: 336 788 -> 324 644 triangles; форма и каталог не менялись.
+        self.assertEqual(result["analysis"]["metrics"]["tris"], 324644)
 
     def test_normal_mode_keeps_heavy_confirmation(self):
         with tempfile.TemporaryDirectory() as directory, \

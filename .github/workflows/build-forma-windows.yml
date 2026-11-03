@@ -64,9 +64,9 @@ jobs:
           fi
           exit "$rc"
 
-      - name: Прогнать targeted-acceptance этапа 3
+      - name: Прогнать targeted-acceptance этапа 3 и лампы
         working-directory: forma
-        run: python -m pytest -q tests/test_stage3_features.py
+        run: python -m pytest -q tests/test_stage3_features.py tests/test_lamp_rework.py tests/test_banker_lamp.py
 
       - name: Прогнать foundation golden/eval
         working-directory: forma
@@ -94,7 +94,7 @@ jobs:
         run: |
           python tools/build_skeleton_original.py
 
-      - name: Экспортировать модели 0.53–0.68 в GLB и Forma
+      - name: Экспортировать модели 0.53–0.69 в GLB и Forma
         working-directory: forma
         run: |
           python - <<'PY'

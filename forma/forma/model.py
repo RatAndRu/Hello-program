@@ -144,6 +144,9 @@ class Scene:
         self.passports: list[dict] = []
         # сопряжения: деталь ставится отношением (плоскость, ось, паз, петля…)
         self.mates: list[dict] = []
+        # Размерные зависимости: выражение пересчитывается при каждом rebuild.
+        # Это плоский список, а не дерево истории всей модели.
+        self.dimension_links: list[dict] = []
         self.logs: list[dict] = []
         self.line = 0
         self.command = ""

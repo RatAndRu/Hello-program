@@ -977,6 +977,9 @@ function renderObjects(payload) {
 function parameterValues() {
   const values = {};
   document.querySelectorAll('#params-list [data-param]').forEach((input) => {
+    // Зависимые размеры вычисляет derive на сервере. Не отправляем их старые
+    // значения вместе с изменённым источником — иначе override победит связь.
+    if (input.dataset.derived === 'true') return;
     const value = Number(input.value);
     if (Number.isFinite(value)) values[input.dataset.param] = value;
   });
@@ -1039,8 +1042,15 @@ function renderParameters(payload) {
     const number = document.createElement('input');
     number.type = 'number';
     number.dataset.param = param.name;
+    number.dataset.derived = param.derived ? 'true' : 'false';
     number.value = String(param.value);
     number.step = String(param.step || 0.1);
+    number.disabled = Boolean(param.derived);
+    if (param.derived) {
+      row.classList.add('is-derived');
+      label.title = `Связано: ${param.expression || param.name}`;
+      number.title = label.title;
+    }
     if (param.min !== undefined) number.min = String(param.min);
     if (param.max !== undefined) number.max = String(param.max);
     let slider = null;
@@ -1052,6 +1062,7 @@ function renderParameters(payload) {
       slider.step = String(param.step || 0.1);
       slider.value = String(param.value);
       slider.title = `${param.name}: ${param.min}…${param.max}`;
+      slider.disabled = Boolean(param.derived);
       control.appendChild(slider);
     } else {
       control.appendChild(document.createElement('span'));
