@@ -203,13 +203,15 @@ jobs:
           rm -f uitest.txt
           ./dist/Forma3D.exe --uistest --report uitest.txt &
           exe_pid=$!
-          for i in $(seq 1 240); do
+          # Полный smoke на Windows занимает около четырёх минут; прежние
+          # 240 с уже были на границе и обрывали отчёт перед самой записью.
+          for i in $(seq 1 480); do
             if [ -s uitest.txt ]; then break; fi
             if ! kill -0 "$exe_pid" 2>/dev/null; then break; fi
             sleep 1
           done
           if [ ! -s uitest.txt ]; then
-            echo "EXE не отчитался о проверке интерфейса за 240 с"
+            echo "EXE не отчитался о проверке интерфейса за 480 с"
             taskkill //F //IM Forma3D.exe || true
             exit 1
           fi
