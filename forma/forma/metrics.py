@@ -498,7 +498,8 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
     if 1 < len(visible) <= 24:
         try:
             from .collide import overlap_pairs
-            pairs = overlap_pairs(visible, tolerance=1.0, share=0.005, limit=3)
+            pairs = overlap_pairs(visible, tolerance=1.0, share=0.005, limit=3,
+                                  allow=getattr(scene, "allow_pairs", "") or None)
             for pair in pairs:
                 warnings.append(
                     f"Детали пересекаются: «{pair['a']}» ↔ «{pair['b']}» — "

@@ -189,7 +189,7 @@ class ReadyProjects058Test(unittest.TestCase):
             "train_carriage": "Поезд: плацкартный вагон 61-4194",
         }
         catalog = dict((key, title) for title, key in EXAMPLES)
-        self.assertEqual(len(EXAMPLES), 20)
+        self.assertEqual(len(EXAMPLES), 21)
         for key, title in expected.items():
             with self.subTest(project=key):
                 self.assertEqual(catalog.get(key), title)

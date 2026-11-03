@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="560" viewBox="0 0 1000 560" font-family="Segoe UI, Arial, sans-serif">
+  <rect width="1000" height="560" fill="#12151c"/>
+  <text x="500" y="34" fill="#e8ecf4" font-size="19" text-anchor="middle">Три вида задают силуэт, но не сечение: два разных тела — одна и та же пара проекций</text>
+
+  <!-- ВИД СБОКУ -->
+  <g>
+    <text x="180" y="76" fill="#9fb0c8" font-size="15" text-anchor="middle">вид сбоку (XZ)</text>
+    <path d="M40 200 L40 150 Q60 128 120 122 L250 118 Q275 100 310 96 L320 96 L330 118 L360 124 Q375 132 378 150 L378 200 Z"
+          fill="#2b3446" stroke="#7f93b3" stroke-width="2"/>
+    <line x1="40" y1="200" x2="378" y2="200" stroke="#4c5a72" stroke-dasharray="6 5"/>
+    <text x="209" y="222" fill="#9fb0c8" font-size="13" text-anchor="middle">верх и низ известны при каждом X</text>
+  </g>
+
+  <!-- ВИД СВЕРХУ -->
+  <g>
+    <text x="700" y="76" fill="#9fb0c8" font-size="15" text-anchor="middle">вид сверху (XY)</text>
+    <path d="M540 110 Q560 100 600 100 L820 100 Q850 108 856 140 Q858 170 856 200 Q850 232 820 240 L600 240 Q560 240 540 230 Q532 170 540 110 Z"
+          fill="#2b3446" stroke="#7f93b3" stroke-width="2"/>
+    <text x="700" y="264" fill="#9fb0c8" font-size="13" text-anchor="middle">полуширина известна при каждом X</text>
+  </g>
+
+  <!-- СЕЧЕНИЕ: две формы, дающие одинаковый силуэт -->
+  <g>
+    <text x="270" y="322" fill="#9fb0c8" font-size="15" text-anchor="middle">разрез А–А: какой из двух?</text>
+
+    <!-- вариант 1: трапеция -->
+    <g>
+      <path d="M90 480 L90 400 L150 380 L390 380 L450 400 L450 480 Z" fill="#2b3446" stroke="#8fc7ff" stroke-width="2"/>
+      <line x1="60" y1="480" x2="480" y2="480" stroke="#4c5a72" stroke-dasharray="6 5"/>
+      <text x="270" y="506" fill="#8fc7ff" font-size="13" text-anchor="middle">вариант 1: трапеция (скол борта)</text>
+      <text x="270" y="524" fill="#8fc7ff" font-size="13" text-anchor="middle">ширина 1 775 · высота 480</text>
+    </g>
+  </g>
+
+  <g>
+    <text x="760" y="322" fill="#9fb0c8" font-size="15" text-anchor="middle">те же размеры, другая поверхность</text>
+    <g>
+      <path d="M580 480 L580 430 Q580 380 640 380 L830 380 Q920 380 940 430 L940 480 Z" fill="#2b3446" stroke="#8fe3a8" stroke-width="2"/>
+      <line x1="550" y1="480" x2="970" y2="480" stroke="#4c5a72" stroke-dasharray="6 5"/>
+      <text x="760" y="506" fill="#8fe3a8" font-size="13" text-anchor="middle">вариант 2: яйцо (плавный борт)</text>
+      <text x="760" y="524" fill="#8fe3a8" font-size="13" text-anchor="middle">ширина 1 775 · высота 480</text>
+    </g>
+  </g>
+
+  <!-- разделители -->
+  <line x1="500" y1="60" x2="500" y2="540" stroke="#232b3a"/>
+  <line x1="40" y1="286" x2="960" y2="286" stroke="#232b3a"/>
+
+  <g>
+    <text x="500" y="552" fill="#7d8ba1" font-size="12" text-anchor="middle">Оба варианта дают одинаковые вид сбоку, вид сверху и вид спереди. Различие видно только в сечениях — их и задаёт команда loft.</text>
+  </g>
+</svg>

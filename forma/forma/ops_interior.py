@@ -175,6 +175,10 @@ def interference(a, name):
     solids = [s for s in _targets(a) if s.visible]
     tolerance = float(a.num("tolerance", 0.01, minv=0.0) or 0.0)
     allow = a.text("allow", "") or ""
+    if allow:
+        # один раз указали — и автоматические предупреждения о пересечениях
+        # больше не ругаются на эти пары
+        a.scene.allow_pairs = ", ".join(filter(None, [getattr(a.scene, "allow_pairs", ""), allow]))
     skip_parts = not a.boolean("parts", False)
     limit = int(a.num("limit", 100, minv=1, maxv=10000) or 100)
     pairs, stats = scan_pairs(solids, tolerance=tolerance, allow=allow,
