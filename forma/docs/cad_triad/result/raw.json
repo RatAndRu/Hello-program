@@ -1,0 +1,62 @@
+[
+ {
+  "tool": "OpenSCAD",
+  "build_ms": 210,
+  "tool_volume_cm3": null,
+  "notes": "своих метрик нет: объём знает только trimesh по STL",
+  "volume_cm3": 28.5645,
+  "tris": 788,
+  "watertight": true,
+  "size": [
+   80.0,
+   60.0,
+   6.0
+  ],
+  "lines": 7,
+  "bytes": 470,
+  "label": "OpenSCAD (текст, CSG)"
+ },
+ {
+  "lines": 60,
+  "bytes": 2563,
+  "label": "FreeCAD Part (Python, CSG)"
+ },
+ {
+  "lines": 93,
+  "bytes": 5141,
+  "label": "FreeCAD Sketcher (ограничения)"
+ },
+ {
+  "tool": "SolveSpace",
+  "tool_volume_cm3": null,
+  "notes": "своих метрик в CLI нет: экспорт меша, точные поверхности отдельной командой",
+  "volume_cm3": 10.0,
+  "tris": 33,
+  "watertight": false,
+  "build_ms": 70,
+  "regenerate_ms": 20,
+  "size": [
+   30.0,
+   25.0,
+   30.0
+  ],
+  "label": "SolveSpace (CLI, чужой тест)"
+ },
+ {
+  "tool": "ФОРМА 3D",
+  "build_ms": 21.5,
+  "tool_volume_cm3": 28.570389940580945,
+  "tris": 148,
+  "watertight": true,
+  "notes": "проверок 1, предупреждений 2",
+  "volume_cm3": 28.5704,
+  "size": [
+   80.0,
+   60.0,
+   6.0
+  ],
+  "lines": 5,
+  "bytes": 470,
+  "label": "ФОРМА 3D (наш DSL)"
+ }
+]
