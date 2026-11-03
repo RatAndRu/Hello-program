@@ -468,7 +468,7 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
         grid = False
         if st.get("paper"):
             bg = tuple(color_to_float_rgb(st["paper"]))
-        if st["mode"] in ("манга", "линия"):
+        if st["mode"] == "линия":
             shadow = False
     W = size * ss
     cam = _camera(center, radius, view, W, W)
@@ -481,6 +481,8 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
     mirror_ids = _mirror_ids(meshes)
     geom = anime or bool(mirror_ids)
     nbuf = np.zeros((cam["h"], cam["w"], 3), dtype=np.float32) if geom else None
+    # Цвет материала до света/specular: NPR не должен угадывать его по beauty.
+    abuf = np.zeros((cam["h"], cam["w"], 3), dtype=np.float32) if anime else None
     idbuf = np.zeros((cam["h"], cam["w"]), dtype=np.int32) if geom else None
     pbuf = (np.zeros((cam["h"], cam["w"], 3), dtype=np.float64)
             if mirror_ids else None)
@@ -609,6 +611,8 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
                     nbuf[miny:maxy + 1, minx:maxx + 1][front] = nn.astype(np.float32)
                 if idbuf is not None:
                     idbuf[miny:maxy + 1, minx:maxx + 1][front] = mesh_index + 1
+                if abuf is not None:
+                    abuf[miny:maxy + 1, minx:maxx + 1][front] = colors
                 if gbuf_id is not None:
                     gbuf_id[miny:maxy + 1, minx:maxx + 1][front] = int(mesh.get("gid", 0))
                 if mbuf_id is not None:
@@ -644,7 +648,7 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
     if anime:
         from .anime import apply_style
         img = apply_style(img, zbuf, nbuf, idbuf, ebuf, st, ss,
-                          groups=gbuf_id, mats=mbuf_id)
+                          groups=gbuf_id, mats=mbuf_id, albedo=abuf)
 
     # контурное затемнение по глубине (обычный вид)
     finite = np.isfinite(zbuf)

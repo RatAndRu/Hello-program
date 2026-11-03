@@ -88,13 +88,15 @@ jobs:
           node tests/interior_tools_test.js
           node tests/primitive_cards_test.js
           node tests/line_render_test.js
+          node tests/npr_rework_test.js
+          node tests/asset_fingerprint_test.js
 
       - name: Проверить и экспортировать оригинальный параметрический скелет
         working-directory: forma
         run: |
           python tools/build_skeleton_original.py
 
-      - name: Экспортировать модели 0.53–0.69 в GLB и Forma
+      - name: Экспортировать модели 0.53–0.70 в GLB и Forma
         working-directory: forma
         run: |
           python - <<'PY'

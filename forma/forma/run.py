@@ -10,6 +10,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from . import __version__ as _FORMA_VERSION
 from . import ops as _ops_pkg  # noqa: F401  (реестр команд)
 from .checks import evaluate_checks
 from .errors import DslError, FormaError, GeometryError
@@ -155,9 +156,11 @@ class Build:
 
     @property
     def variant_hash(self) -> str:
-        if not self.overrides:
-            return self.script_hash
-        raw = self.script + "\\n" + repr(sorted(self.overrides.items()))
+        # GLB зависит не только от текста и overrides, но и от geometry/exporter
+        # версии. Иначе обновление программы оставляет прежний URL и старый
+        # кэш может выглядеть как свежая сборка того же сценария.
+        raw = (self.script + "\n" + repr(sorted(self.overrides.items()))
+               + "\nengine=" + str(_FORMA_VERSION))
         return _hash(raw)
 
     def visible_solids(self):
@@ -176,9 +179,13 @@ class Build:
                                    animations=list(scene.animations) if scene else None,
                                    keys=dict(scene.keys) if scene else None,
                                    groups=dict(scene.groups) if scene else None,
-                                   metadata={key: scene.settings.get(key)
-                                             for key in ("copyright", "license", "source")
-                                             if scene and scene.settings.get(key)})
+                                   metadata={
+                                       "forma_variant": self.variant_hash,
+                                       "forma_script": self.script_hash,
+                                       **({key: scene.settings.get(key)
+                                           for key in ("copyright", "license", "source")
+                                           if scene and scene.settings.get(key)}),
+                                   })
         return self._glb
 
     def objects_payload(self) -> list[dict]:

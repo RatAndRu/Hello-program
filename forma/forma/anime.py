@@ -32,7 +32,7 @@ MODE_ALIASES = {
     "аниме": "аниме", "anime": "аниме", "мультик": "аниме", "мультяшный": "аниме",
     "cel": "аниме", "toon": "аниме", "тун": "аниме",
     "манга": "манга", "manga": "манга", "чб": "манга", "чёрно-белый": "манга",
-    "черно-белый": "манга", "скетч": "манга", "карандаш": "манга",
+    "черно-белый": "манга",
     "комикс": "комикс", "comic": "комикс", "комиксы": "комикс", "комиксный": "комикс",
     "скетч": "скетч", "sketch": "скетч", "карандаш": "скетч", "набросок": "скетч",
     "штриховка": "скетч", "hatch": "скетч", "рисунок": "скетч",
@@ -340,7 +340,11 @@ def _soften(mask: np.ndarray) -> np.ndarray:
                       (1, 1, 0.7), (1, -1, 0.7), (-1, 1, 0.7), (-1, -1, 0.7)):
         acc += _shift(m, dy, dx) * k
         weight += k
-    return np.clip(acc / weight, 0.0, 1.0)
+    coverage = np.clip(acc / weight, 0.0, 1.0)
+    # Тот же coverage→ink, что и в WebGL: один subpixel не превращается в
+    # серый пунктир, а центр непрерывной линии остаётся действительно тёмным.
+    t = np.clip((coverage - 0.025) / 0.425, 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
 
 
 def _halftone(shape: tuple[int, int], cell: float, darkness: np.ndarray) -> np.ndarray:
@@ -359,7 +363,7 @@ def _halftone(shape: tuple[int, int], cell: float, darkness: np.ndarray) -> np.n
     fv = np.mod(v, 1.0) - 0.5
     r = np.hypot(fu, fv)
     rad = 0.60 * np.sqrt(np.clip(darkness, 0.0, 1.0))
-    dots = (r <= rad).astype(np.float32)
+    dots = ((r <= rad) & (darkness > 0.005)).astype(np.float32)
     # чуть «подмешиваем» тон, чтобы растр не рябил на мелких деталях
     return np.clip(dots * 0.92 + np.clip(darkness, 0, 1) * 0.08, 0.0, 1.0)
 
@@ -429,7 +433,7 @@ def _luma(img: np.ndarray) -> np.ndarray:
     return img[..., 0] * 0.299 + img[..., 1] * 0.587 + img[..., 2] * 0.114
 
 
-def apply_style(img: np.ndarray, z: np.ndarray | None = None,
+def _apply_style_legacy(img: np.ndarray, z: np.ndarray | None = None,
                 normals: np.ndarray | None = None, ids: np.ndarray | None = None,
                 emissive: np.ndarray | None = None, style: dict | None = None,
                 ss: int = 1, groups: np.ndarray | None = None,
@@ -595,4 +599,194 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
     if grain is not None:
         out = out * grain[..., None]
 
+    return np.clip(out, 0.0, 1.0)
+
+
+# ---------------------------------------------------------------------------
+# Material-aware NPR (the path used by new renders).
+# ---------------------------------------------------------------------------
+
+def _smooth01(value: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    t = np.clip((value - lo) / max(hi - lo, 1e-6), 0.0, 1.0)
+    return t * t * (3.0 - 2.0 * t)
+
+
+def apply_style(img: np.ndarray, z: np.ndarray | None = None,
+                normals: np.ndarray | None = None, ids: np.ndarray | None = None,
+                emissive: np.ndarray | None = None, style: dict | None = None,
+                ss: int = 1, groups: np.ndarray | None = None,
+                mats: np.ndarray | None = None,
+                albedo: np.ndarray | None = None) -> np.ndarray:
+    """Рисует стиль, разделяя альбедо, освещение, тень и геометрический контур.
+
+    Старые вызовы без ``albedo`` обслуживаются прежней реализацией ради
+    совместимости сторонних скриптов. Рендерер Forma всегда передаёт albedo:
+    иначе блик на зелёном стекле и чёрный пластик в тени неотличимы по одному
+    beauty-кадру. ``albedo`` имеет тот же размер, что и ``img`` и содержит
+    цвет материала до света, металличности и specular.
+    """
+    if albedo is None:
+        return _apply_style_legacy(img, z, normals, ids, emissive, style, ss,
+                                   groups=groups, mats=mats)
+    st = normalize_style(style)
+    if st["mode"] == "выкл":
+        return img
+    raw = np.asarray(img, dtype=np.float32)
+    out = raw.copy()
+    h, w = out.shape[:2]
+    if z is None:
+        z = np.full((h, w), np.nan)
+    valid = np.isfinite(z)
+    if normals is None:
+        normals = np.zeros((h, w, 3), dtype=np.float32)
+    if ids is None:
+        ids = np.zeros((h, w), dtype=np.int32)
+    emissive = (np.zeros((h, w), dtype=bool) if emissive is None
+                else np.asarray(emissive, dtype=bool))
+    alb = np.clip(np.asarray(albedo, dtype=np.float32), 0.0, 1.0)
+    if alb.shape != out.shape:
+        raise ValueError("albedo должен иметь тот же H×W×3, что и beauty-кадр")
+    body = valid & ~emissive
+
+    paper = None
+    shadow = np.zeros((h, w), dtype=np.float32)
+    if st.get("paper"):
+        paper = np.array(color_to_float_rgb(st["paper"]), dtype=np.float32)
+        paper_l = float(_luma(paper))
+        # _draw_shadow и WebGL-пол уже записали тень в beauty. Сохраняем её
+        # до замены фона бумагой: тень — отдельный тон, а не лишний объект.
+        shadow = np.clip((paper_l - _luma(raw)) / max(paper_l, 0.12), 0.0, 1.0)
+        shadow *= ~valid
+        # Внешняя часть эллиптического contact-shadow не должна заполнять
+        # весь лист случайными точками: растр нужен только у его ядра.
+        shadow_core = _smooth01(shadow, 0.045, 0.30)
+        out[~valid] = paper
+    ink = np.array(color_to_float_rgb(st["color"]), dtype=np.float32)
+    sheet = paper if paper is not None else np.array([1.0, 1.0, 1.0], dtype=np.float32)
+
+    # Нормализованная освещённость: beauty / albedo. У белой детали в тени
+    # ratio мал, у чёрной детали на свету он может быть высоким — это разные
+    # каналы, которые нельзя сводить к одному luma-порогу.
+    beauty_l = np.clip(_luma(raw), 0.0, 1.0)
+    albedo_l = np.clip(_luma(alb), 0.0, 1.0)
+    chroma = alb.max(axis=2) - alb.min(axis=2)
+    ratio = beauty_l / np.maximum(albedo_l, 0.055)
+    light = np.clip((ratio - 0.45) / 0.65, 0.0, 1.0)
+    darkness = 1.0 - light
+    material_value = np.maximum(albedo_l, chroma * 0.65)
+    material_black = ((1.0 - _smooth01(albedo_l, 0.10, 0.24))
+                      * (1.0 - _smooth01(chroma, 0.08, 0.22)))
+
+    if not st["shade"]:
+        if paper is not None:
+            out[body] = paper
+        else:
+            out[body] = (_luma(raw)[body, None] * 0.92 + 0.04)
+
+    mode = st["mode"]
+    if st["shade"] and mode == "аниме":
+        # Cel-тон строится из цвета материала, а не из specular-блика.
+        # Небольшой cool→warm сдвиг следует практике технической иллюстрации
+        # Gooch: форма читается даже без фотореалистичных белых бликов.
+        steps = int(st["toon"])
+        if steps >= 2:
+            q = np.floor(np.clip(light, 0, 1) * (steps - 1) + 0.35) / (steps - 1)
+            q = np.clip(q, 0.0, 1.0)
+        else:
+            q = light
+        tone = 0.48 + 0.62 * q
+        cool = alb * np.array([0.78, 0.86, 1.05], dtype=np.float32)
+        warm = alb * np.array([1.10, 1.03, 0.94], dtype=np.float32)
+        cel = (cool * (1.0 - q[..., None]) + warm * q[..., None])
+        cel = np.clip(cel * tone[..., None] * 1.12, 0.0, 1.0)
+        out[body] = cel[body]
+
+    if st["shade"] and mode == "комикс":
+        steps = max(2, int(st["toon"]))
+        q = np.floor(np.clip(light, 0, 1) * (steps - 1) + 0.35) / (steps - 1)
+        q = np.clip(q, 0.0, 1.0)
+        color = np.clip(alb * (0.58 + 0.62 * q[..., None]) * 1.06, 0.0, 1.0)
+        out[body] = color[body]
+        if float(st["tone"]) > 0:
+            dots = _halftone((h, w), 6.0 * max(1, ss), darkness)
+            amount = dots * darkness * float(st["tone"]) * 0.52
+            out[body] = (out * (1.0 - amount[..., None])
+                         + ink[None, None, :] * amount[..., None])[body]
+
+    if st["shade"] and mode == "манга":
+        # Четыре читаемых значения: бумага, лёгкий/плотный растр и spot black.
+        # Насыщенный цвет получает value от chroma, поэтому зелёный плафон не
+        # становится «чёрным объектом» только из-за низкого luma.
+        density = np.maximum((1.0 - material_value) * 0.45, darkness * 0.52)
+        density = np.maximum(density, material_black * 0.97)
+        levels = np.select(
+            [density < 0.22, density < 0.48, density < 0.75, density < 0.92],
+            [0.0, 0.18, 0.42, 0.68], default=1.0).astype(np.float32)
+        tone = float(st["tone"])
+        if tone > 0.001:
+            dots = _halftone((h, w), 7.2 * max(1, ss), levels)
+            screen = sheet[None, None, :] * (1.0 - dots[..., None]) + ink * dots[..., None]
+        else:
+            amount = levels * 0.92
+            screen = sheet[None, None, :] * (1.0 - amount[..., None]) + ink * amount[..., None]
+        # Solid black reserved for an actually black material or a near-zero
+        # illumination cavity — never for an arbitrary dark green/blue colour.
+        deep = (material_black > 0.80) | ((darkness > 0.96) & (beauty_l < 0.07))
+        screen[deep] = ink
+        out[body] = screen[body]
+
+    if st["shade"] and mode == "скетч":
+        # Подмалёвок остаётся цветным, но спокойнее cel-стиля. Графит и штрих
+        # идут поверх него только там, где есть формообразующая тень.
+        gray = _luma(alb)[..., None]
+        under = alb * 0.78 + gray * 0.22
+        tone = 0.74 + 0.26 * light
+        out[body] = np.clip(under * tone[..., None] * 1.05, 0.0, 1.0)[body]
+
+    # Штриховка — не равномерная диагональная текстура по всему объекту.
+    if float(st.get("hatch") or 0) > 0.001 and st["shade"]:
+        hatch_dark = np.clip((darkness - 0.18) / 0.72, 0.0, 1.0)
+        lines = _hatch_mask((h, w), hatch_dark, float(st.get("hatch_angle") or 45.0),
+                            float(st.get("hatch_step") or 8.0),
+                            float(st.get("hatch") or 0.0))
+        lines = np.where(body, lines, 0.0)
+        out = out * (1.0 - lines[..., None]) + ink[None, None, :] * lines[..., None]
+
+    # Тень на бумаге остаётся в рисунке. Для manga это растр, для sketch —
+    # карандашный штрих; для anime/comic — спокойный графичный тон.
+    if paper is not None and mode != "линия":
+        if mode == "манга":
+            dots = _halftone((h, w), 8.0 * max(1, ss), np.clip(shadow_core * 0.28, 0, 1))
+            bg = sheet[None, None, :] * (1.0 - dots[..., None]) + ink * dots[..., None]
+        elif mode == "скетч":
+            bg = sheet[None, None, :] * (1.0 - 0.12 * shadow[..., None])
+            hm = _hatch_mask((h, w), np.clip(shadow_core * 1.2, 0, 1),
+                             float(st.get("hatch_angle") or 45),
+                             float(st.get("hatch_step") or 8),
+                             float(st.get("hatch") or 0) * 0.7)
+            bg = bg * (1.0 - hm[..., None] * 0.55) + ink * hm[..., None] * 0.55
+        else:
+            bg = sheet[None, None, :] * (1.0 - 0.25 * shadow[..., None]) + ink * (0.25 * shadow[..., None])
+        out[~valid] = bg[~valid]
+
+    if st["line"] > 0:
+        seam_ids = ids
+        mode_lines = st.get("lines") or "все"
+        if mode_lines == "группы" and groups is not None:
+            seam_ids = np.asarray(groups, dtype=np.int32)
+        elif mode_lines == "материалы" and mats is not None:
+            seam_ids = np.asarray(mats, dtype=np.int32)
+        edge = _edge_mask(z, valid, normals, ids, st, seam_ids)
+        radius = float(st["line"]) * max(1, ss) * 0.5
+        if radius > 0.2:
+            edge = _dilate(edge, radius)
+        mask = _soften(edge)
+        mask = np.where(emissive, mask * 0.35, mask)
+        out = out * (1.0 - mask[..., None]) + ink[None, None, :] * mask[..., None]
+
+    if float(st.get("paper_tex") or 0) > 0.001:
+        grain = _paper_grain((h, w), float(st["paper_tex"]))
+        out *= grain[..., None]
+    if emissive.any():
+        out[emissive] = raw[emissive]
     return np.clip(out, 0.0, 1.0)

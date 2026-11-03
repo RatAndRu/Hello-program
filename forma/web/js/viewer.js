@@ -78,6 +78,7 @@ export class Viewer {
     this.gridVisible = true;
     this.ready = false;
     this.lastUrl = null;
+    this.loadedVariant = null;
     this.bbox = null;
     this.settings = {};
     this.shading = 'realistic';
@@ -159,6 +160,10 @@ export class Viewer {
     this._idMat = null;
     this._idCache = null;
     this._normalRT = null;
+    this._albedoRT = null;
+    this._albedoCache = new Map();
+    this._styleWireframe = null;
+    this._styleGroundColor = null;
     // Для поиска изломов нужны геометрические нормали граней, а не smooth
     // normals: на плоской стенке вершины общие с откосами окна, и интерполяция
     // иначе рисует ложные пятна/пунктир там, где излома вообще нет.
@@ -192,7 +197,7 @@ export class Viewer {
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMappingExposure = 1.0;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.localClippingEnabled = true;
     renderer.domElement.style.width = '100%';
@@ -671,6 +676,8 @@ export class Viewer {
       this._normalRT = null;
       this._edgeRT?.dispose();
       this._edgeRT = null;
+      this._albedoRT?.dispose();
+      this._albedoRT = null;
       this._ensureNormalTarget();
     }
     if (this._animePass) this._animePass.uniforms.uResolution.value.set(buf.x, buf.y);
@@ -679,6 +686,12 @@ export class Viewer {
   disposeModel() {
     this._loadSerial += 1;
     this._frameSerial += 1;
+    // PBR-материалы и их albedo-копии принадлежат старой сцене. Не переносим
+    // сохранённый wireframe/кэш на новый GLB после rebuild.
+    this._styleWireframe = null;
+    this._albedoCache.forEach((material) => material.dispose());
+    this._albedoCache.clear();
+    this.loadedVariant = null;
     this.clearHighlight();
     this._disposeMirrors();
     if (this.model) {
@@ -750,12 +763,25 @@ export class Viewer {
     this._overlays = [];
   }
 
-  async load(url, animation = null) {
+  async load(url, animation = null, expectedVariant = null) {
     const serial = ++this._loadSerial;
     this.lastUrl = url;
     const loader = new GLTFLoader();
     const gltf = await loadGlb(loader, url);
     const root = gltf.scene;
+    const actualVariant = gltf.parser?.json?.asset?.extras?.forma_variant || null;
+    if (expectedVariant && actualVariant !== expectedVariant) {
+      root.traverse((o) => {
+        if (!o.isMesh) return;
+        o.geometry?.dispose();
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => m?.dispose?.());
+      });
+      throw new Error('GLB не совпадает с текущей сборкой: '
+        + `ожидался ${String(expectedVariant).slice(0, 12)}, получен ${String(actualVariant || 'без fingerprint').slice(0, 12)}. `
+        + 'Обновите EXE/страницу и повторите сборку.');
+    }
+    this.loadedVariant = actualVariant;
     if (serial !== this._loadSerial) {
       root.traverse((o) => {
         if (!o.isMesh) return;
@@ -773,7 +799,7 @@ export class Viewer {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
         mats.forEach((m) => {
           if (!m) return;
-          m.envMapIntensity = 1.15;
+          m.envMapIntensity = 0.55;
           m.side = THREE.FrontSide;
           m.needsUpdate = true;
         });
@@ -1702,7 +1728,7 @@ export class Viewer {
       o.castShadow = true;
       o.receiveShadow = true;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
-      mats.forEach((m) => { if (m) { m.envMapIntensity = 1.15; m.side = THREE.FrontSide; } });
+      mats.forEach((m) => { if (m) { m.envMapIntensity = 0.55; m.side = THREE.FrontSide; } });
     });
     // Пользователь мог уже перейти к другому кадру или вернуться к финальной
     // модели. Старый GLB не должен внезапно появиться поверх нового состояния.
@@ -1745,7 +1771,7 @@ export class Viewer {
       o.castShadow = true;
       o.receiveShadow = true;
       const mats = Array.isArray(o.material) ? o.material : [o.material];
-      mats.forEach((m) => { if (m) { m.envMapIntensity = 1.15; m.side = THREE.FrontSide; } });
+      mats.forEach((m) => { if (m) { m.envMapIntensity = 0.55; m.side = THREE.FrontSide; } });
     });
     this._frameCache.set(key, root);
     while (this._frameCache.size > 20) {
@@ -1909,10 +1935,18 @@ export class Viewer {
   setWireframe(on) {
     this.wireframe = on;
     if (!this.model) return;
+    const styleOn = this._animeOn();
     this.model.traverse((o) => {
       if (o.isMesh) {
         const mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach((m) => { if (m) m.wireframe = on; });
+        mats.forEach((m) => {
+          if (!m) return;
+          m.wireframe = styleOn ? false : on;
+          if (styleOn && this._styleWireframe) {
+            const saved = this._styleWireframe.find((entry) => entry[0] === m);
+            if (saved) saved[1] = on;
+          }
+        });
       }
     });
   }
@@ -1924,6 +1958,7 @@ export class Viewer {
     this._clearOverlays();
     if (!on) {
       this.setWireframe(false);
+      this._applyAnimeLook();
       return;
     }
     if (!this.model) return;
@@ -1931,6 +1966,7 @@ export class Viewer {
     const heavy = triangles > 150000;
     if (heavy) {
       this.setWireframe(true);
+      this._applyAnimeLook();
       return;
     }
     const mat = new THREE.LineBasicMaterial({
@@ -1944,6 +1980,7 @@ export class Viewer {
       o.add(lines);
       this._overlays.push(lines);
     });
+    this._applyAnimeLook();
   }
 
   /** Режим выделения областей: клик по модели выбирает треугольники вокруг точки. */
@@ -3085,11 +3122,11 @@ export class Viewer {
     this.keyLight.color.set(env.key);
     this.fillLight.color.set(env.fill);
     this.rimLight.color.set(env.rim);
-    this.keyLight.intensity = Number(s.key ?? 2.5);
+    this.keyLight.intensity = Number(s.key ?? 2.0);
     this.fillLight.intensity = Number(s.fill ?? 0.75);
     this.rimLight.intensity = Number(s.rim ?? 0.5);
-    this.bounceLight.intensity = Number(s.bounce ?? 1.15);
-    this.renderer.toneMappingExposure = Number(s.exposure ?? 1.05);
+    this.bounceLight.intensity = Number(s.bounce ?? 0.65);
+    this.renderer.toneMappingExposure = Number(s.exposure ?? 1.0);
     if (s.axes !== undefined) this.setAxes(s.axes !== false);
     if (s.poly !== undefined) this.setPolygons(s.poly === true);
     if (s.bloom !== undefined) {
@@ -3107,7 +3144,7 @@ export class Viewer {
       this.model.traverse((o) => {
         if (!o.isMesh) return;
         const mats = Array.isArray(o.material) ? o.material : [o.material];
-        mats.forEach((m) => { if (m) m.envMapIntensity = s.env === 'void' ? 0.4 : 1.15; });
+        mats.forEach((m) => { if (m) m.envMapIntensity = s.env === 'void' ? 0.25 : 0.55; });
       });
     }
     // сетку и пол включают строки выше — в аниме-стиле их снова прячем
@@ -3318,11 +3355,13 @@ export class Viewer {
       if (animeOn) {
         this._renderNormalPass();
         if (this._idNeeded()) this._renderIdPass();
+        this._renderAlbedoPass();
       }
       if (animeOn && this._animePass && this._normalRT) {
         const u = this._animePass.uniforms;
         u.tNormal.value = this._normalRT.texture;
         u.tDepth.value = this._normalRT.depthTexture;
+        u.tAlbedo.value = this._albedoRT ? this._albedoRT.texture : null;
         u.uNear.value = this.camera.near;
         u.uFar.value = this.camera.far;
         const size = new THREE.Vector2();
@@ -3432,6 +3471,101 @@ export class Viewer {
     return this._idMat;
   }
 
+  /** В G-buffer попадает только геометрия модели, не пол и не overlays. */
+  _hideForGBuffer() {
+    const helpers = [this.ground, this.grid, this.axes, this._localAxes,
+      this._highlightBox, ...this._overlays, ...this._selOverlays];
+    const hidden = [];
+    helpers.forEach((object) => {
+      if (!object) return;
+      hidden.push([object, object.visible]);
+      object.visible = false;
+    });
+    return hidden;
+  }
+
+  _restoreGBufferVisibility(hidden) {
+    hidden.forEach(([object, visible]) => { object.visible = visible; });
+  }
+
+  /** Материал без света и specular для отдельного albedo-прохода. */
+  _albedoMaterial(source) {
+    const pbr = this._pbrOf(source) || source;
+    if (!pbr) return source;
+    const glowing = !!(pbr.emissive && pbr.emissive.getHex?.() !== 0
+      && (pbr.emissiveIntensity ?? 1) > 0);
+    let mat = this._albedoCache.get(pbr);
+    if (mat && mat.userData.formaEmissive !== glowing) {
+      mat.dispose();
+      this._albedoCache.delete(pbr);
+      mat = null;
+    }
+    if (!mat) {
+      mat = new THREE.MeshBasicMaterial({
+        color: pbr.color?.clone?.() || new THREE.Color(0xffffff),
+        map: pbr.map || null,
+        vertexColors: !!pbr.vertexColors,
+        side: THREE.FrontSide,
+        toneMapped: false,
+        fog: false,
+      });
+      mat.name = `forma_albedo_${pbr.name || 'material'}`;
+      mat.userData.formaEmissive = glowing;
+      if (glowing) {
+        // Альфа albedo — маска настоящего emissive, а не догадка по яркости.
+        mat.onBeforeCompile = (shader) => {
+          shader.fragmentShader = shader.fragmentShader.replace(
+            '#include <opaque_fragment>',
+            '#include <opaque_fragment>\n gl_FragColor.a = 0.0;',
+          );
+        };
+        mat.customProgramCacheKey = () => 'forma-albedo-emissive';
+      }
+      this._albedoCache.set(pbr, mat);
+    }
+    if (pbr.color && mat.color) mat.color.copy(pbr.color);
+    if (mat.map !== (pbr.map || null)) {
+      mat.map = pbr.map || null;
+      mat.needsUpdate = true;
+    }
+    mat.vertexColors = !!pbr.vertexColors;
+    return mat;
+  }
+
+  /** Рисует цвет материала до illumination в отдельный буфер. */
+  _renderAlbedoPass() {
+    if (!this._albedoRT || !this.model) return;
+    const restore = [];
+    this.model.traverse((o) => {
+      if (!o.isMesh) return;
+      restore.push([o, o.material]);
+      o.material = Array.isArray(o.material)
+        ? o.material.map((m) => this._albedoMaterial(m))
+        : this._albedoMaterial(o.material);
+    });
+    const prevBg = this.scene.background;
+    const prevFog = this.scene.fog;
+    const prevOverride = this.scene.overrideMaterial;
+    const prevClear = this.renderer.getClearAlpha();
+    const prevColor = this.renderer.getClearColor(new THREE.Color());
+    const hidden = this._hideForGBuffer();
+    this.scene.overrideMaterial = null;
+    this.scene.background = null;
+    this.scene.fog = null;
+    this.renderer.setRenderTarget(this._albedoRT);
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.clear(true, true, true);
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.setRenderTarget(null);
+    this.renderer.setClearColor(prevColor, prevClear);
+    this.scene.overrideMaterial = prevOverride;
+    this.scene.background = prevBg;
+    this.scene.fog = prevFog;
+    this._restoreGBufferVisibility(hidden);
+    restore.forEach(([o, material]) => { o.material = material; });
+    if (this._animePass) this._animePass.uniforms.tAlbedo.value = this._albedoRT.texture;
+  }
+
   /** Рисует номер объекта/группы/материала в отдельный буфер. */
   _renderIdPass() {
     this._ensureIdTarget();
@@ -3444,6 +3578,7 @@ export class Viewer {
     const prevFog = this.scene.fog;
     const prevClear = this.renderer.getClearAlpha();
     const prevColor = this.renderer.getClearColor(new THREE.Color());
+    const hidden = this._hideForGBuffer();
     const restore = [];
     this.model.traverse((o) => {
       if (!o.isMesh) return;
@@ -3471,6 +3606,7 @@ export class Viewer {
     this.scene.overrideMaterial = prevOverride;
     this.scene.background = prevBg;
     this.scene.fog = prevFog;
+    this._restoreGBufferVisibility(hidden);
     restore.forEach(([o, cb]) => { o.onBeforeRender = cb; });
     if (this._animePass) this._animePass.uniforms.tIds.value = this._idRT.texture;
   }
@@ -3489,6 +3625,7 @@ export class Viewer {
     const prevFog = this.scene.fog;
     const prevClear = this.renderer.getClearAlpha();
     const prevColor = this.renderer.getClearColor(new THREE.Color());
+    const hidden = this._hideForGBuffer();
     this.scene.overrideMaterial = this._normalMat;
     this.scene.background = null;
     this.scene.fog = null;
@@ -3501,6 +3638,7 @@ export class Viewer {
     this.scene.overrideMaterial = prevOverride;
     this.scene.background = prevBg;
     this.scene.fog = prevFog;
+    this._restoreGBufferVisibility(hidden);
   }
 
   /** Отдельный fullscreen-pass: бинарное ребро в плотном разрешении. */
@@ -3673,13 +3811,23 @@ export class Viewer {
     u.uPaperTex.value = Math.max(0, Math.min(1, Number(a.paper_tex ?? 0)));
     u.uLines.value = { 'все': 1, 'группы': 1, 'материалы': 2 }[a.lines || 'все'] ?? 1;
     u.tIds.value = this._idRT ? this._idRT.texture : null;
+    u.tAlbedo.value = this._albedoRT ? this._albedoRT.texture : null;
   }
 
-  /** Фон-«бумага», пол и сетка прячутся: рисунок не должен пестрить. */
+  /** Бумага и настоящая тень остаются; диагностические линии — нет. */
   _applyAnimeLook() {
     const a = this.anime;
     const on = this._animeOn();
     if (!on) {
+      if (this._styleWireframe) {
+        this._styleWireframe.forEach(([material, wire]) => { material.wireframe = wire; });
+        this._styleWireframe = null;
+      }
+      if (this._styleGroundColor && this.ground?.material?.color) {
+        this.ground.material.color.copy(this._styleGroundColor);
+        this._styleGroundColor = null;
+      }
+      this._overlays.forEach((overlay) => { overlay.visible = this.polygons; });
       if (this.grid) this.grid.visible = this.settings.grid !== false && this.gridVisible;
       if (this.ground) this.ground.visible = this.settings.ground !== false;
       if (this.axes) this.axes.visible = this.axesVisible;
@@ -3690,10 +3838,27 @@ export class Viewer {
       }
       return;
     }
-    if (this.grid) this.grid.visible = false;
-    if (this.ground) this.ground.visible = false;
-    if (this.axes) this.axes.visible = false;
     const paper = a.paper === null || a.paper === undefined ? '#ffffff' : a.paper;
+    if (this.model && !this._styleWireframe) {
+      this._styleWireframe = [];
+      this.model.traverse((o) => {
+        if (!o.isMesh) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => { if (m) this._styleWireframe.push([m, m.wireframe]); });
+      });
+    }
+    this._styleWireframe?.forEach(([material]) => { material.wireframe = false; });
+    // WireframeGeometry — диагностика сетки, не Line Art и не часть G-buffer.
+    this._overlays.forEach((overlay) => { overlay.visible = false; });
+    if (this.grid) this.grid.visible = false;
+    if (this.ground) {
+      this.ground.visible = this.settings.ground !== false;
+      if (this.ground.material?.color) {
+        if (!this._styleGroundColor) this._styleGroundColor = this.ground.material.color.clone();
+        this.ground.material.color.set(paper);
+      }
+    }
+    if (this.axes) this.axes.visible = false;
     this.scene.background = new THREE.Color(paper);
     this.scene.fog.color.set(paper);
   }
@@ -3795,9 +3960,11 @@ export class Viewer {
     const h = Math.max(2, Math.floor(size.y * scale));
     if (this._normalRT && this._edgeRT
         && this._normalRT.width === w && this._normalRT.height === h
-        && this._edgeRT.width === w && this._edgeRT.height === h) return;
+        && this._edgeRT.width === w && this._edgeRT.height === h
+        && this._albedoRT && this._albedoRT.width === w && this._albedoRT.height === h) return;
     this._normalRT?.dispose();
     this._edgeRT?.dispose();
+    this._albedoRT?.dispose();
     const depth = new THREE.DepthTexture(w, h);
     depth.type = THREE.UnsignedIntType;
     this._normalRT = new THREE.WebGLRenderTarget(w, h, {
@@ -3814,6 +3981,13 @@ export class Viewer {
       stencilBuffer: false,
     });
     this._edgeRT.texture.generateMipmaps = false;
+    this._albedoRT = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+    this._albedoRT.texture.generateMipmaps = false;
   }
 
   /** Контур формы и границ объектов в плотном буфере; цвет сюда не входит. */
@@ -3856,30 +4030,46 @@ export class Viewer {
           float radius = max(uLine * 0.5 * uPixelRatio, 0.6);
           vec3 idC = floor(texture2D(tIds, vUv).rgb * 255.0 + 0.5);
           float edge = 0.0;
-          for (int i = 0; i < 8; i++) {
-            float ang = float(i) * 0.785398;
+          float silhouette = 0.0;
+          float feature = 0.0;
+          // Несколько направлений и непрерывные пороги: не рисуем каждый
+          // mesh edge, а ищем видимые silhouette/crease/seam, как Line Art.
+          for (int i = 0; i < 16; i++) {
+            float ang = float(i) * 0.3926990817;
             vec2 off = vec2(cos(ang), sin(ang)) * radius * px;
             vec4 nN = texture2D(tNormal, vUv + off);
             float aN = nN.a;
-            if (aC > 0.5 && aN < 0.5) edge = 1.0;
+            if (aC > 0.5 && aN < 0.5) {
+              edge = 1.0;
+              silhouette = 1.0;
+            }
             if (aC > 0.5 && aN > 0.5) {
               float dN = linearDepth(texture2D(tDepth, vUv + off).x);
               float rel = abs(dN - dC) / max(uWorld * 2.0, 1e-3);
-              if (uSeams > 0.5 && rel > uDepthTh) edge = 1.0;
+              if (uSeams > 0.5) {
+                float jump = smoothstep(uDepthTh, uDepthTh * 1.8 + 1e-5, rel);
+                edge = max(edge, jump);
+                feature = max(feature, jump);
+              }
               if (uInner > 0.5) {
                 vec3 nv = normalize(nN.rgb * 2.0 - 1.0);
-                if (dot(nv, nvC) < uCrease) edge = 1.0;
+                float nd = dot(nv, nvC);
+                float crease = 1.0 - smoothstep(uCrease - 0.035, uCrease + 0.035, nd);
+                edge = max(edge, crease);
+                feature = max(feature, crease);
               }
               if (uLines > 0.5 && uInner > 0.5 && uSeams > 0.5) {
                 vec3 idN = floor(texture2D(tIds, vUv + off).rgb * 255.0 + 0.5);
                 float different = uLines > 1.5 ? step(0.5, abs(idN.g - idC.g))
                     : max(step(0.5, abs(idN.r - idC.r)),
                           step(0.5, abs(idN.b - idC.b)));
-                if (different > 0.5) edge = 1.0;
+                edge = max(edge, different);
+                feature = max(feature, different);
               }
             }
           }
-          gl_FragColor = vec4(vec3(edge * step(0.5, aC)), 1.0);
+          float visible = step(0.5, aC);
+          gl_FragColor = vec4(edge * visible, silhouette * visible, feature * visible, 1.0);
         }`,
     };
   }
@@ -3893,6 +4083,7 @@ export class Viewer {
         tNormal: { value: null },
         tDepth: { value: null },
         tIds: { value: null },
+        tAlbedo: { value: null },
         tEdge: { value: null },
         uResolution: { value: new THREE.Vector2(1, 1) },
         uLine: { value: 1.6 },
@@ -3928,6 +4119,7 @@ export class Viewer {
         uniform sampler2D tNormal;
         uniform sampler2D tDepth;
         uniform sampler2D tIds;
+        uniform sampler2D tAlbedo;
         uniform sampler2D tEdge;
         uniform vec2 uResolution;
         uniform float uLine, uInner, uCrease, uDepthTh, uSeams;
@@ -3945,6 +4137,12 @@ export class Viewer {
         ${EDGE_COVERAGE_TO_INK_GLSL}
 
         float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+
+        vec3 linearToSrgb(vec3 value) {
+          vec3 lo = value * 12.92;
+          vec3 hi = 1.055 * pow(max(value, vec3(0.0)), vec3(1.0 / 2.4)) - 0.055;
+          return mix(lo, hi, step(vec3(0.0031308), value));
+        }
 
         float hash21(vec2 p) {
           p = fract(p * vec2(123.34, 456.21));
@@ -3975,85 +4173,120 @@ export class Viewer {
         }
 
         float halftone(vec2 uv, float cell, float dark) {
+          if (dark < 0.005) return 0.0;
           float ang = 0.5236;                       // 30° — классический растр
           mat2 rot = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
           vec2 p = rot * (uv * uResolution / max(cell, 1.0));
           vec2 f = fract(p) - 0.5;
           float r = length(f);
           float rad = 0.62 * sqrt(clamp(dark, 0.0, 1.0));
-          return smoothstep(rad + 0.08, rad - 0.08, r);
+          return 1.0 - smoothstep(rad - 0.08, rad + 0.08, r);
         }
 
         void main() {
           vec4 base = texture2D(tDiffuse, vUv);
-          vec3 col = base.rgb;
+          vec3 original = base.rgb;
+          vec3 col = original;
           vec4 nC = texture2D(tNormal, vUv);
           float aC = nC.a;
-          // Тонкий subpixel-контур уже найден в плотном G-buffer. После
-          // даунсэмпла даже один покрытый образец обязан дать видимый штрих:
-          // линейное 0.25 на белой бумаге выглядело серым пунктиром.
           float edge = edgeCoverageToInk(texture2D(tEdge, vUv).r);
+          float silhouette = edgeCoverageToInk(texture2D(tEdge, vUv).g);
+          float detail = max(edge - silhouette, 0.0);
+          if (uMode > 3.5) edge = max(silhouette, detail * 0.72);
+          else if (uMode > 0.5 && uMode < 1.5) edge = max(silhouette, detail * 0.86);
+          vec4 albedoSample = texture2D(tAlbedo, vUv);
+          // OutputPass уже дал display/sRGB; albedo target ещё linear.
+          vec3 alb = linearToSrgb(clamp(albedoSample.rgb, 0.0, 1.0));
+          // Alpha albedo — настоящий emissive, а не яркий specular.
+          float emitMask = step(0.5, aC) * (1.0 - step(0.5, albedoSample.a));
+          float bodyMask = step(0.5, aC) * step(0.5, albedoSample.a);
+          float bgMask = 1.0 - step(0.5, aC);
+          float beautyL = clamp(luma(original), 0.0, 1.0);
+          float albedoL = clamp(luma(alb), 0.0, 1.0);
+          float chroma = max(alb.r, max(alb.g, alb.b)) - min(alb.r, min(alb.g, alb.b));
+          float ratio = beautyL / max(albedoL, 0.055);
+          float light = clamp((ratio - 0.45) / 0.65, 0.0, 1.0);
+          float darkness = 1.0 - light;
+          float materialValue = max(albedoL, chroma * 0.65);
+          float materialBlack = (1.0 - smoothstep(0.10, 0.24, albedoL))
+            * (1.0 - smoothstep(0.08, 0.22, chroma));
+          float paperL = max(luma(uPaper), 0.12);
+          float bgShadow = clamp((paperL - luma(original)) / paperL, 0.0, 1.0) * bgMask;
+          float bgShadowCore = smoothstep(0.045, 0.30, bgShadow);
+          edge *= 1.0 - emitMask * 0.65;
 
-          // светящееся не тонируем: это блики и экраны
-          float bright = step(0.97, max(col.r, max(col.g, col.b))) * step(0.5, aC);
-          float bodyMask = step(0.5, aC) * (1.0 - bright);
+          if (uCel < 0.5 && uMode < 2.5) col = mix(col, uPaper, bodyMask);
 
-          if (uMode > 0.5 && uMode < 1.5) {
-            // манга: бумага, серый тон точками, чёрная заливка в глубокой тени
-            float l = clamp(luma(col), 0.0, 1.0);
-            // четыре ступени: бумага → лёгкий тон → плотный тон → заливка
-            float lvl = 0.90;
-            if (l > 0.58) lvl = 0.0;
-            else if (l > 0.44) lvl = 0.35;
-            else if (l > 0.32) lvl = 0.70;
+          if (uMode > 0.5 && uMode < 1.5 && uCel > 0.5) {
+            // Манга: материал задаёт spot black, освещение — отдельный растр.
+            float density = max((1.0 - materialValue) * 0.45, darkness * 0.52);
+            density = max(density, materialBlack * 0.97);
+            float lvl = 1.0;
+            if (density < 0.22) lvl = 0.0;
+            else if (density < 0.48) lvl = 0.18;
+            else if (density < 0.75) lvl = 0.42;
+            else if (density < 0.92) lvl = 0.68;
             float dots = halftone(vUv, 7.0 * uPixelRatio, lvl);
             vec3 sheet = mix(uPaper, uInk, dots);
-            if (l < 0.14) sheet = uInk;                      // настоящая чернота
-            if (uTone < 0.01) sheet = mix(uPaper, uInk, lvl * 0.9);
+            if (uTone < 0.01) sheet = mix(uPaper, uInk, lvl * 0.92);
+            if (materialBlack > 0.80 || (darkness > 0.96 && beautyL < 0.07)) sheet = uInk;
             col = mix(col, sheet, bodyMask);
-          } else if (uMode > 1.5 && uMode < 2.5) {
-            // комикс: цвет + точки в тенях
-            float l = clamp(luma(col), 0.0, 1.0);
-            float dark = clamp((0.62 - l) / 0.62, 0.0, 1.0) * bodyMask;
-            float dots = halftone(vUv, 7.0 * uPixelRatio, dark);
-            col = mix(col, uInk, dark * (1.0 - dots) * uTone * 0.8);
+          } else if (uMode > 1.5 && uMode < 2.5 && uCel > 0.5) {
+            // Комикс: более широкие цветовые массы и точки только в тени.
+            float steps = max(uToon, 2.0);
+            float q = clamp(floor(light * (steps - 1.0) + 0.35) / (steps - 1.0), 0.0, 1.0);
+            vec3 comic = clamp(alb * (0.58 + 0.62 * q) * 1.06, 0.0, 1.0);
+            float dots = halftone(vUv, 6.0 * uPixelRatio, darkness);
+            float amount = dots * darkness * uTone * 0.52;
+            comic = mix(comic, uInk, amount);
+            col = mix(col, comic, bodyMask);
           } else if (uMode > 2.5 && uMode < 3.5) {
-            // линия: только контуры на бумаге
-            col = mix(col, uPaper, bodyMask);
-          } else if (uMode > 3.5) {
-            // скетч: карандашный тон — цвет почти уходит, остаётся графит
-            float l = clamp(luma(col), 0.0, 1.0);
-            vec3 pencil = mix(vec3(l), col, 0.32);
+            // Чистый line art: никакого фотореалистичного пола или заливки.
+            col = mix(col, uPaper, max(bodyMask, bgMask));
+          } else if (uMode > 3.5 && uCel > 0.5) {
+            // Sketch: спокойный цветной подмалёвок, не серый фильтр поверх PBR.
+            vec3 under = alb * 0.78 + vec3(albedoL) * 0.22;
+            vec3 pencil = clamp(under * (0.74 + 0.26 * light) * 1.05, 0.0, 1.0);
             col = mix(col, pencil, bodyMask);
-          } else {
-            // аниме: ступени тона, блики остаются белыми
-            if (uCel > 0.5 && bodyMask > 0.5) {
-              float l = clamp(luma(col), 0.0, 1.0);
-              float steps = max(uToon, 2.0);
-              float q = floor(l * steps + 0.25) / steps;
-              float k = clamp(q / max(l, 1e-3), 0.62, 1.5);
-              col = clamp(col * k, 0.0, 1.0);
-              col = mix(col, vec3(1.0), smoothstep(0.93, 1.0, l) * 0.35);
-            }
+          } else if (uCel > 0.5) {
+            // Anime: cel-ступени по illumination, белый specular не нужен.
+            float steps = max(uToon, 2.0);
+            float q = clamp(floor(light * (steps - 1.0) + 0.35) / (steps - 1.0), 0.0, 1.0);
+            float tone = 0.48 + 0.62 * q;
+            vec3 cool = alb * vec3(0.78, 0.86, 1.05);
+            vec3 warm = alb * vec3(1.10, 1.03, 0.94);
+            vec3 cel = clamp(mix(cool, warm, q) * tone * 1.12, 0.0, 1.0);
+            col = mix(col, cel, bodyMask);
           }
 
-          // карандашная штриховка: слой поверх тона, только по телу детали
-          if (uHatch > 0.001 && bodyMask > 0.5) {
-            float l = clamp(luma(col), 0.0, 1.0);
-            float dark = clamp((0.80 - l) / 0.66, 0.0, 1.0);
+          // Штрих — след формы и тени, а не равномерная диагональ по объекту.
+          if (uHatch > 0.001 && uCel > 0.5) {
+            float dark = clamp((darkness - 0.18) / 0.72, 0.0, 1.0);
             float h = hatchLayer(vUv, uHatchAngle, dark, uHatch);
-            // в плотной тени — второй слой поперёк («перекрёстная штриховка»)
             if (uHatch > 0.55 && dark > 0.55) {
               float h2 = hatchLayer(vUv, uHatchAngle + 1.15, (dark - 0.55) / 0.45,
                                     (uHatch - 0.55) / 0.45);
               h = max(h, h2 * 0.9);
             }
-            col = mix(col, uInk, h);
+            col = mix(col, uInk, h * bodyMask);
           }
 
-          // Контур поверх всего. Не умножаем его на nearest-маску тела:
-          // на границе output pixel и dense sample могут относиться к разным
-          // сторонам силуэта, а найденная линия не должна при этом исчезать.
+          // Тень на полу/бумаге не исчезает при смене стиля.
+          if (uMode > 0.5 && uMode < 1.5 && uCel > 0.5) {
+            float dots = halftone(vUv, 8.0 * uPixelRatio, bgShadowCore * 0.28);
+            vec3 bg = mix(uPaper, uInk, dots);
+            col = mix(col, bg, bgMask);
+          } else if (uMode > 3.5 && uCel > 0.5) {
+            vec3 bg = uPaper * (1.0 - 0.12 * bgShadow);
+            float h = hatchLayer(vUv, uHatchAngle, clamp(bgShadowCore * 1.2, 0.0, 1.0), uHatch * 0.7);
+            bg = mix(bg, uInk, h * 0.55);
+            col = mix(col, bg, bgMask);
+          } else if (uMode < 2.5) {
+            vec3 bg = mix(uPaper, uInk, bgShadow * 0.25);
+            col = mix(col, bg, bgMask);
+          }
+
+          if (emitMask > 0.5) col = original;
           col = mix(col, uInk, edge);
           col *= paperGrain(vUv);
           gl_FragColor = vec4(col, base.a);

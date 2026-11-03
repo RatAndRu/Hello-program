@@ -40,6 +40,20 @@ class BankerLampTests(unittest.TestCase):
         self.assertAlmostEqual(shade[5], 400.0, places=3)
         self.assertAlmostEqual(shade[2], 310.0, places=3)
 
+    def test_crown_and_large_turned_parts_are_real_geometry(self):
+        shade = self.scene.objects["абажур"].manifold
+        center_hits = shade.ray_cast([0, 0, 250], [0, 0, 500])
+        end_hits = shade.ray_cast([119, 0, 250], [119, 0, 500])
+        self.assertTrue(center_hits and end_hits)
+        center_top = max(hit.position[2] for hit in center_hits)
+        end_top = max(hit.position[2] for hit in end_hits)
+        # Продольный свод виден в силуэте, а не только в счётчике треугольников.
+        self.assertAlmostEqual(center_top, 400.0, places=2)
+        self.assertLess(end_top, center_top - 10.0)
+        base = self.scene.objects["основание"].manifold.num_tri()
+        column = self.scene.objects["колонна"].manifold.num_tri()
+        self.assertLess(base + column, 6_000)
+
     def test_major_parts_are_separate_and_selectable(self):
         names = ["абажур", "вкладыш", "лампочка", "основание", "колонна",
                  "шарнир", "стойка", "крепление_л", "крепление_п", "держатель_л",
@@ -175,7 +189,7 @@ class BankerLampTests(unittest.TestCase):
         self.assertTrue(any(link["name"] == "column_h" for link in scene.dimension_links))
 
     def test_arm_links_remain_ordered_at_parameter_extreme(self):
-        result = build(self.path.read_text(encoding="utf-8"), analyze_model=False,
+        result = build(self.path.read_text(encoding="utf-8"), analyze_model=True,
                        overrides={"base_h": 100, "column_ratio": 1.8})
         self.assertTrue(result.ok, result.error)
         params = result.scene.params
@@ -183,6 +197,8 @@ class BankerLampTests(unittest.TestCase):
         self.assertLess(params["arm_z1"], params["arm_z2"])
         self.assertLess(params["arm_z2"], params["arm_z3"])
         self.assertLess(params["arm_z3"], 340.0)
+        self.assertFalse([c for c in result.analysis.get("checks", []) if not c.get("ok")])
+        self.assertEqual(analyse(result.visible_solids())["groups"], 1)
 
     def test_glb_contains_editable_parts(self):
         data = export_glb(self.scene.visible_solids(), groups=dict(self.scene.groups))

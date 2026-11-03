@@ -1529,7 +1529,8 @@ async function loadModel(url, animation = null) {
       .map((o) => [o.name, o.axes || null]));
   }
   try {
-    await state.viewer.load(url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN), animation);
+    await state.viewer.load(url + (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN),
+      animation, state.payload?.variant_hash || null);
     if (epoch !== state.anim.epoch) return;
     // мгновенная проверка видимости и текстур (не зависит от того, что попало в GLB)
     applyLoopMode();

@@ -77,7 +77,7 @@ class Solid:
 
 
 DEFAULT_SETTINGS = {
-    "bg": "#0b0e13", "env": "studio", "exposure": 1.05, "key": 2.5,
+    "bg": "#0b0e13", "env": "studio", "exposure": 1.0, "key": 2.0,
     "fill": 0.75, "rim": 0.5, "shadows": True, "grid": True, "ground": True,
     # Точность opt-in: legacy побитово сохраняет прежние default/detail/segments.
     "precision": {"mode": "legacy", "factor": 1.0},
