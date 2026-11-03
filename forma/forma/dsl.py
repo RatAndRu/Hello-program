@@ -22,8 +22,8 @@ from typing import Any
 from .errors import DslError
 from .geometry import as_points
 from .model import Scene, Solid
-from .values import (Range, bracket_balance, parse_number, parse_value,
-                     split_top_level, strip_comment)
+from .values import (Range, bracket_balance, numeric_issue, parse_number, parse_value,
+                     split_items, split_top_level, strip_comment)
 
 ASSIGN_RE = re.compile(r"^([^\W\d]\w*)\s*=\s*(?!=)(.*)$", re.UNICODE)
 LET_RE = re.compile(r"^let\s+([^\W\d]\w*)\s*=\s*(.*)$", re.UNICODE | re.IGNORECASE)
@@ -267,7 +267,9 @@ class Args:
         raw = self.kwargs[key]
         v = parse_value(raw, self.params, self.vars, self.functions)
         if isinstance(v, bool) or not isinstance(v, (int, float)):
-            raise DslError(f"Параметр «{key}» должен быть числом, получено «{raw}»",
+            reason = numeric_issue(raw, self.params, self.functions)
+            detail = f": {reason}" if reason else ""
+            raise DslError(f"Параметр «{key}» должен быть числом, получено «{raw}»{detail}",
                            hint=self._params_hint(), line=self.cmd.line,
                            command=self.cmd.text, param=key, value=raw)
         v = float(v)
@@ -328,17 +330,24 @@ class Args:
                 raise DslError(f"Не задан обязательный параметр «{key}» ({dims} числа).",
                                hint=self._params_hint(), line=self.cmd.line, command=self.cmd.text)
             return list(default) if default is not None else None
-        v = parse_value(self.kwargs[key], self.params, self.vars)
+        raw = self.kwargs[key]
+        v = parse_value(raw, self.params, self.vars, self.functions)
         if isinstance(v, bool):
             raise DslError(f"Параметр «{key}» не может быть логическим.", line=self.cmd.line)
         if isinstance(v, (int, float)):
             return [float(v)] * dims if fill_scalar else [float(v)]
         if isinstance(v, (list, tuple)):
             nums = []
-            for item in v:
+            raw_text = str(raw).strip()
+            raw_items = (split_items(raw_text[1:-1])
+                         if raw_text.startswith("[") and raw_text.endswith("]") else [])
+            for index, item in enumerate(v):
                 if isinstance(item, bool) or not isinstance(item, (int, float)):
-                    raise DslError(f"Параметр «{key}»: все элементы должны быть числами.",
-                                   line=self.cmd.line, command=self.cmd.text)
+                    raw_item = raw_items[index] if index < len(raw_items) else str(item)
+                    reason = numeric_issue(raw_item, self.params, self.functions)
+                    message = (f"Параметр «{key}»: {reason}" if reason else
+                               f"Параметр «{key}»: все элементы должны быть числами.")
+                    raise DslError(message, line=self.cmd.line, command=self.cmd.text)
                 nums.append(float(item))
             if len(nums) == 1 and fill_scalar:
                 return nums * dims

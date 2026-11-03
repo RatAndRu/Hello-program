@@ -233,8 +233,14 @@ def _eval_node(node: ast.AST, names: dict[str, float], functions: dict | None = 
     raise ValueError("недопустимое выражение")
 
 
-def parse_number(text: str, params: dict[str, float], functions: dict | None = None) -> float | None:
-    """Пытается вычислить числовое выражение. Возвращает None, если это не число."""
+def parse_number(text: str, params: dict[str, float], functions: dict | None = None,
+                 strict: bool = False) -> float | None:
+    """Вычисляет числовое выражение.
+
+    В обычном режиме нечисловая строка возвращает None (это нужно DSL для
+    строковых значений). ``strict`` используется внутри числовых функций,
+    чтобы причина ошибки рекурсии/аргумента не маскировалась общим «не число».
+    """
     raw = text.strip()
     if not raw:
         return None
@@ -250,6 +256,8 @@ def parse_number(text: str, params: dict[str, float], functions: dict | None = N
     try:
         value = _eval_node(tree, names, functions)
     except Exception:
+        if strict:
+            raise
         return None
     if not math.isfinite(value):
         return None
@@ -264,7 +272,7 @@ def _unquote(raw: str) -> str:
 
 
 def parse_value(raw: str, params: dict[str, float], variables: dict | None = None,
-                functions: dict | None = None) -> Any:
+                functions: dict | None = None, strict: bool = False) -> Any:
     """Разбирает одно значение сценария.
 
     ``functions`` — необязательный реестр пользовательских числовых функций.
@@ -309,7 +317,7 @@ def parse_value(raw: str, params: dict[str, float], variables: dict | None = Non
         hi = parse_number(tail, params, functions) if tail else None
         if hi is not None:
             return Range(None, hi)
-    num = parse_number(text, params, functions)
+    num = parse_number(text, params, functions, strict=strict)
     if num is not None:
         return num
     if variables and text in variables:
@@ -321,7 +329,8 @@ def numeric_issue(text: str, params: dict[str, float] | None = None,
                   functions: dict | None = None) -> str | None:
     """Если строка — арифметика, но вычислить не вышло, объясняет причину."""
     raw = (text or "").strip()
-    if not raw or not any(c.isdigit() for c in raw):
+    if not raw or (not any(c.isdigit() for c in raw)
+                   and not re.search(r"\b[^\W\d]\w*\s*\(", raw, re.UNICODE)):
         return None
     try:
         tree = ast.parse(raw, mode="eval")

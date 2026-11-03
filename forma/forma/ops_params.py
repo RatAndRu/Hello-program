@@ -1,6 +1,7 @@
 """Параметры, presets и глобальная точность — команды без отдельного движка."""
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from .errors import DslError
@@ -118,7 +119,12 @@ def _preset(scene, cmd) -> None:
     if not name:
         raise DslError("preset: укажите имя, например preset tall height=120.", line=cmd.line)
     if values:
+        # Декларация — только вариант для панели. Иначе несколько presets
+        # подряд неявно применялись бы все, а последняя молча побеждала.
         scene.presets[name] = dict(values)
+        scene.log("info", f"preset {name}: объявлен набор ({len(values)} значений)", cmd.line)
+        if apply is None:
+            return
     elif name not in scene.presets:
         raise DslError(f"Preset «{name}» не найден и не содержит значений.", line=cmd.line)
     selected = scene.presets[name]
@@ -157,8 +163,8 @@ def _precision(scene, cmd) -> None:
     if "factor" in kwargs:
         factor = _number(scene, kwargs["factor"], "precision.factor")
         mode = "custom"
-    if factor <= 0 or factor > 16:
-        raise DslError("precision.factor должен быть в диапазоне 0…16.", line=cmd.line)
+    if not math.isfinite(factor) or factor <= 0 or factor > 16:
+        raise DslError("precision.factor должен быть конечным числом в диапазоне 0…16.", line=cmd.line)
     settings = dict(scene.settings.get("precision") or {})
     settings.update({"mode": mode or settings.get("mode", "legacy"), "factor": float(factor)})
     if "tolerance" in kwargs:
@@ -197,7 +203,7 @@ def param_command(a, name):  # pragma: no cover - dispatch выполняет ha
 
 
 @op("preset", aliases=("пресет", "набор"), category="Сцена и материал",
-    summary="Сохраняет и применяет набор значений существующих параметров.",
+    summary="Объявляет набор значений; preset имя или apply явно выбирает его.",
     example="preset tall height=140 width=60\npreset tall",
     params={"name": "имя набора", "save": "сохранить текущие", "apply": "применить"},
     positional="*")

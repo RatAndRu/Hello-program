@@ -144,7 +144,8 @@ def _parse_segments(raw, start) -> list[dict]:
             "at": "смещение 3D-пути sweep [x,y,z]"},
     positional=[])
 def contour2d(a, name):
-    tolerance = float(a.num("tolerance", FINENESS_MM, minv=1e-6, maxv=10.0))
+    default_tolerance = a.scene.precision_tolerance(FINENESS_MM)
+    tolerance = float(a.num("tolerance", default_tolerance, minv=1e-6, maxv=10.0))
     join_tolerance = float(a.num("join_tolerance", 1e-5, minv=0.0, maxv=10.0))
     max_points = int(a.num("max_points", 4096, minv=4, maxv=16384))
     start = a.vec("start", 2, default=None)

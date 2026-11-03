@@ -355,8 +355,12 @@ def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
     """
     factor = detail_factor(a)
     if requested is None:
+        # detail_factor уже применяет глобальный множитель. Допуск берём без
+        # второго деления на factor; явный precision tolerance всё же работает.
+        tolerance = a.scene.precision_tolerance(tolerance, scale=False)
         return int(limit_segments(None, radius, tolerance=tolerance, max_n=max_n,
                                   factor=factor))
+    # Явные segments сохраняют прежний cap и не зависят от глобального режима.
     got = limit_segments(requested, radius, tolerance=tolerance, max_n=max_n,
                          factor=factor)
     if got < int(requested):

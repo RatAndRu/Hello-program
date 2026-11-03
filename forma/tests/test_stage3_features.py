@@ -55,6 +55,14 @@ second = plate()
     assert "local_width" not in result.scene.params
 
 
+def test_recursive_function_diagnostic_is_not_hidden_by_vector_error():
+    result = build("function f(x)=f(x)\nbody = box size=[f(1),2,3]\n", analyze_model=False)
+    assert not result.ok
+    message = (result.error or {}).get("message", "")
+    assert "глубина" in message or "рекурс" in message
+    assert "все элементы должны быть числами" not in message
+
+
 def test_include_cycle_is_a_diagnostic_not_recursion(tmp_path: Path):
     (tmp_path / "a.forma").write_text('include file="b.forma"\n', encoding="utf-8")
     (tmp_path / "b.forma").write_text('include file="a.forma"\n', encoding="utf-8")
@@ -72,16 +80,50 @@ body = box size=[10,10,height]
 """
     result = ok_build(script)
     payload = result.payload()
-    assert payload["params"]["height"] == 30
+    # Декларация не выбирает вариант молча: это важно, когда presets несколько.
+    assert payload["params"]["height"] == 20
+    assert result.visible_solids()[0].stats()["size"][2] == pytest.approx(20)
     assert payload["parameter_schema"][0]["name"] == "height"
     assert payload["parameter_schema"][0]["label"] == "Высота"
     assert payload["presets"]["tall"]["height"] == 30
+    chosen = ok_build("""param height=20 min=10 max=40 step=1 label="Высота"
+preset tall height=30
+preset tall
+body = box size=[10,10,height]
+""")
+    assert chosen.scene.params["height"] == 30
+    assert chosen.visible_solids()[0].stats()["size"][2] == pytest.approx(30)
     changed = ok_build(script, overrides={"height": 35})
     assert changed.scene.params["height"] == 35
     assert changed.scene.param_meta["height"]["default"] == pytest.approx(20)
     assert changed.visible_solids()[0].stats()["size"][2] == pytest.approx(35)
     out_of_range = build(script, overrides={"height": 100}, analyze_model=False)
     assert not out_of_range.ok and "override" in out_of_range.error["message"]
+
+
+def test_appstate_saved_preset_rebuilds_current_mesh_and_validates_input(tmp_path: Path):
+    from forma.errors import FormaError
+    from forma.webui import AppState
+
+    state = AppState()
+    state.data_dir = tmp_path
+    script = "param height=20 min=10 max=40\nbody = box size=[10,10,height]\n"
+    saved = state.save_parameter_preset(script, "tall", {"height": 30})
+    assert saved["ok"], saved.get("error")
+    assert saved["params"]["height"] == 30
+    assert saved["objects"][0]["size"][2] == pytest.approx(30)
+    assert saved["presets"]["tall"]["height"] == 30
+    # При повторном открытии декларация остаётся вариантом, а не скрытым
+    # автоматическим применением; явный apply снова даёт ту же сетку.
+    reopened = state.build(saved["script"])
+    assert reopened["params"]["height"] == 20
+    assert reopened["objects"][0]["size"][2] == pytest.approx(20)
+    applied = state.apply_parameters(saved["script"], saved["presets"]["tall"])
+    assert applied["objects"][0]["size"][2] == pytest.approx(30)
+    with pytest.raises(FormaError, match="NaN|числом"):
+        state.save_parameter_preset(script, "bad", {"height": "nan"})
+    with pytest.raises(FormaError, match="не найден"):
+        state.delete_parameter_preset(script, "missing")
 
 
 def test_scad_export_is_real_polyhedron_and_keeps_precision():
@@ -198,6 +240,21 @@ def test_global_precision_is_opt_in_and_explicit_segments_win():
     assert legacy.visible_solids()[0].manifold.num_tri() == legacy2.visible_solids()[0].manifold.num_tri()
     assert fine.visible_solids()[0].manifold.num_tri() > legacy.visible_solids()[0].manifold.num_tri()
     assert explicit.visible_solids()[0].manifold.num_tri() == explicit_legacy.visible_solids()[0].manifold.num_tri()
+
+
+def test_precision_tolerance_reaches_implicit_lathe_and_contour_tessellation():
+    legacy = ok_build("s = lathe points=[[0,0],[10,0],[10,20],[0,20]]\n")
+    fine = ok_build("precision mode=fine\ns = lathe points=[[0,0],[10,0],[10,20],[0,20]]\n")
+    assert fine.visible_solids()[0].manifold.num_tri() > legacy.visible_solids()[0].manifold.num_tri()
+    custom = ok_build("precision factor=1 tolerance=0.01\ns = cylinder radius=10 height=20\n")
+    ordinary = ok_build("s = cylinder radius=10 height=20\n")
+    assert custom.visible_solids()[0].manifold.num_tri() > ordinary.visible_solids()[0].manifold.num_tri()
+    explicit = ok_build("precision tolerance=0.0001\ns = cylinder radius=10 height=20 segments=32\n")
+    explicit_legacy = ok_build("s = cylinder radius=10 height=20 segments=32\n")
+    assert explicit.visible_solids()[0].manifold.num_tri() == explicit_legacy.visible_solids()[0].manifold.num_tri()
+    contour_legacy = ok_build("c = contour2d kind=ellipse rx=10 ry=5\n")
+    contour_fine = ok_build("precision mode=fine\nc = contour2d kind=ellipse rx=10 ry=5\n")
+    assert len(contour_fine.scene.contours["c"].sample()) > len(contour_legacy.scene.contours["c"].sample())
 
 
 def _fake_cli(tmp_path: Path, monkeypatch):

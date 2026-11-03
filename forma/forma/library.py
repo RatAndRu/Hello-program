@@ -354,7 +354,8 @@ class UserFunction:
             raise ValueError(f"{definition.name}: превышена глубина рекурсии (64)")
         self.scene._function_depth = depth + 1
         try:
-            value = parse_value(definition.expression, local_params, local_vars, self.scene.functions)
+            value = parse_value(definition.expression, local_params, local_vars,
+                                self.scene.functions, strict=True)
         finally:
             self.scene._function_depth = depth
         if isinstance(value, bool) or not isinstance(value, (int, float)):

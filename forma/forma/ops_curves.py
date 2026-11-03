@@ -73,7 +73,11 @@ def lathe(a, name):
         pts = smooth_closed_profile(pts, samples=int(smooth))
     radius_max = float(np.max(np.abs(pts[:, 0]))) if len(pts) else 50.0
     asked = a.int("segments", None, minv=8, maxv=1024)
-    segments = int(limit_segments(asked, radius_max, tolerance=FINENESS_MM, max_n=1024))
+    tolerance = (a.scene.precision_tolerance(FINENESS_MM, scale=False)
+                 if asked is None else FINENESS_MM)
+    factor = a.scene.precision_factor if asked is None else 1.0
+    segments = int(limit_segments(asked, radius_max, tolerance=tolerance,
+                                  max_n=1024, factor=factor))
     if asked and segments < asked:
         a.scene.log("info", f"точение: {asked} → {segments} сегментов "
                             f"(отклонение ≤ {FINENESS_MM:g} мм)", a.cmd.line)

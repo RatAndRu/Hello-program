@@ -299,7 +299,18 @@ class AppState:
         clean_name = str(name or "").strip()
         if not clean_name or any(ch in clean_name for ch in "\r\n"):
             raise FormaError("Имя preset не должно быть пустым или многострочным.")
-        clean = {str(key): float(value) for key, value in (values or {}).items()}
+        clean: dict[str, float] = {}
+        for key, value in (values or {}).items():
+            parameter = str(key).strip()
+            if not parameter or not parameter.isidentifier():
+                raise FormaError(f"Некорректное имя параметра preset: «{parameter}».")
+            try:
+                number = float(value)
+            except (TypeError, ValueError) as exc:
+                raise FormaError(f"Параметр {parameter} должен быть числом.") from exc
+            if not math.isfinite(number):
+                raise FormaError(f"Параметр {parameter} не должен быть NaN/Inf.")
+            clean[parameter] = number
         if not clean:
             raise FormaError("Preset пуст: измените хотя бы один параметр.")
         # Удаляем прежнюю одноимённую однострочную декларацию, не трогая тела
@@ -310,7 +321,10 @@ class AppState:
         values_text = " ".join(f"{key}={value:.15g}" for key, value in sorted(clean.items()))
         line = f"preset {json.dumps(clean_name, ensure_ascii=False)} {values_text}"
         new_script = (script.rstrip() + "\n" + line + "\n").lstrip("\n")
-        payload = self.build(new_script, allow_heavy=allow_heavy)
+        # Сохранение показывает именно текущий вариант, а не сетку со старым
+        # default. Декларация сама по себе не активирует preset при следующем
+        # открытии; для выбора служит apply и тот же overrides-rebuild.
+        payload = self.build(new_script, overrides=clean, allow_heavy=allow_heavy)
         payload["script"] = new_script
         payload["parameter_action"] = "save"
         return payload
@@ -319,8 +333,12 @@ class AppState:
                                 allow_heavy: bool = False) -> dict:
         import re
         clean_name = str(name or "").strip()
+        if not clean_name or any(ch in clean_name for ch in "\r\n"):
+            raise FormaError("Имя preset не должно быть пустым или многострочным.")
         pattern = re.compile(r"^\s*preset\s+(?:name=)?[\"']?" + re.escape(clean_name)
                              + r"[\"']?[^\n]*$", re.IGNORECASE | re.MULTILINE)
+        if not pattern.search(script or ""):
+            raise FormaError(f"Preset «{clean_name}» не найден.")
         new_script = pattern.sub("", script or "")
         payload = self.build(new_script, allow_heavy=allow_heavy)
         payload["script"] = new_script

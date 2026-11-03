@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import difflib
+import math
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import Any
@@ -157,13 +158,26 @@ class Scene:
         """Множитель только для неявной детализации; legacy = ровно 1."""
         try:
             value = float((self.settings.get("precision") or {}).get("factor", 1.0))
-            return value if value > 0 and value == value else 1.0
+            return value if value > 0 and math.isfinite(value) else 1.0
         except (TypeError, ValueError, AttributeError):
             return 1.0
 
-    def precision_tolerance(self, default: float) -> float:
-        """Допуск по умолчанию в fine-режиме; явный tolerance не проходит сюда."""
-        factor = self.precision_factor
+    def precision_tolerance(self, default: float, scale: bool = True) -> float:
+        """Допуск для неявной tessellation.
+
+        Явный ``precision tolerance=…`` имеет приоритет. ``scale=False``
+        используют операции, которые уже отдельно умножают число сегментов на
+        ``precision_factor``: так множитель не применяется дважды.
+        """
+        settings = self.settings.get("precision") or {}
+        if settings.get("tolerance") is not None:
+            try:
+                value = float(settings["tolerance"])
+                if value > 0 and math.isfinite(value):
+                    return value
+            except (TypeError, ValueError):
+                pass
+        factor = self.precision_factor if scale else 1.0
         return float(default) / factor if factor != 1.0 else float(default)
 
     def parameter_schema(self) -> list[dict]:
