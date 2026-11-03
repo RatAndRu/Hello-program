@@ -1,0 +1,1971 @@
+diff --git a/forma/README.md b/forma/README.md
+index 740ecc2..02b582e 100644
+--- a/forma/README.md
++++ b/forma/README.md
+@@ -17,7 +17,7 @@ check кружка wall 3..5
+ check кружка symmetric y
+ ```
+ 
+-Текущий реестр: **227 команд, из них 122 примитива**. Полное описание каждой
++Текущий реестр: **240 команд, из них 135 примитивов**. Полное описание каждой
+ команды, всех параметров, псевдонимов, ориентации и пример формируются из того
+ же реестра, которым пользуется геометрическое ядро.
+ 
+@@ -29,6 +29,29 @@ Blender. Состав, источники, лицензии, воспроизв
+ 
+ ---
+ 
++## Механические примитивы: подшипники, рейки, шестерни, крепёж, тара
++
++Тринадцать новых примитивов собраны по фото и чертежам: подшипник с кольцами,
++телами качения и сепаратором (шесть типов), монтажная рейка DIN 60715, дощатый
++ящик на стойках, проушина, угловой кронштейн с косынкой, фастекс, зубчатая
++рейка, внутреннее, косозубое и коническое колесо, конструктор головок винтов,
++барашек и шесть особых гаек.
++
++![Шесть типов подшипников](docs/reference/mech/group_bearings.png)
++
++```forma
++шариковый = bearing d=15 D=35 B=11
++рейка = din_rail length=500
++кронштейн = corner_bracket size=[80,80] width=60 thickness=5 gusset=5
++головка = screw_head d=6 head=цилиндр drive=шестигранник
++```
++
++Семейства целиком, фото-референсы рядом с рендерами, числа, границы автоматики
++и порядок переноса в другую ветку:
++[docs/mech_primitives.md](docs/mech_primitives.md).
++
++---
++
+ ## 1. Что нового в 0.58
+ 
+ В основной список из **20 готовых проектов** по прямому запросу добавлены
+diff --git a/forma/docs/mech_primitives.md b/forma/docs/mech_primitives.md
+new file mode 100644
+index 0000000..cc7cb2f
+--- /dev/null
++++ b/forma/docs/mech_primitives.md
+@@ -0,0 +1,159 @@
++# Механические примитивы: 13 новых деталей
++
++Раунд 19. Набор собран так, чтобы его можно было перенести в другую ветку
++одним файлом: вся геометрия живёт в `forma/forma/ops_mechparts.py`, снаружи
++нужны только импорт и две строки слияния памяток ориентации.
++
++Все детали — настоящие замкнутые тела с числами из реальных изделий:
++подшипники по ГОСТ 8338/3478 и ISO 15, рейка по DIN 60715, тара по чертежу
++880×790×600, крепёж по DIN 912/7991/6921/985/1587.
++
++## 1. Что появилось в реестре
++
++| Примитив | Что строит | Варианты | Модель |
++|---|---|---|---|
++| `bearing` | подшипник качения: два кольца с фасками, тела качения, сепаратор | шариковый, роликовый, игольчатый, конический, упорный, сферический | ![](reference/mech/bearing_ball.png) |
++| `din_rail` | монтажная рейка с загнутыми полками и просечками | TS35 / TS15 / TS45 | ![](reference/mech/din_rail.png) |
++| `crate` | дощатый ящик: балки дна, настил, доски стенок, 4 стойки, крышка, полозья | с крышкой и без | ![](reference/mech/crate.png) |
++| `lug` | проушина: площадка с отверстием под палец и отогнутая полка | гнутая и плоская | ![](reference/mech/lug.png) |
++| `corner_bracket` | угловой кронштейн с треугольной косынкой | косынка 0…40 мм, отверстия двумя рядами | ![](reference/mech/corner_bracket.png) |
++| `buckle` | фастекс side-release: рамка с перекладиной и ответная часть с усиками | две половины в одной детали | ![](reference/mech/buckle.png) |
++| `rack` | зубчатая рейка под шестерню того же модуля | отверстия в основании | ![](reference/mech/rack.png) |
++| `gear_internal` | колесо с внутренними зубьями | гладкий обод снаружи | ![](reference/mech/gear_internal.png) |
++| `gear_helical` | косозубая шестерня (тот же профиль, венец закручен) | угол −45…45° | ![](reference/mech/gear_helical.png) |
++| `gear_bevel` | коническая шестерня: зубья сбегают к малому торцу | сужение 30…85 % | ![](reference/mech/gear_bevel.png) |
++| `screw_head` | головка винта как отдельная деталь | 7 профилей × 6 шлицов | ![](reference/mech/screw_head_socket.png) |
++| `wing_nut` | барашек: ступица с резьбой и два крыла | резьба нарезается | ![](reference/mech/wing_nut.png) |
++| `special_nut` | особые гайки | колпачковая, фланцевая, Nyloc, квадратная, T, закладная | ![](reference/mech/nut_cap.png) |
++
++Семейства целиком:
++
++| Подшипники, шесть типов | Зубчатые передачи | Головки, барашек, гайки |
++|---|---|---|
++| ![](reference/mech/group_bearings.png) | ![](reference/mech/group_gears.png) | ![](reference/mech/group_fasteners.png) |
++
++## 2. Фото-референсы → модель
++
++| Референс | Модель | Что взято из фото |
++|---|---|---|
++| ![](reference/mech/bearing_types_table.jpg) | ![](reference/mech/bearing_sphere.png) | номенклатура: цилиндрические, конические, двухрядные сферические, игольчатые, упорные; кольца и сепаратор как отдельные тела |
++| ![](reference/mech/bearing_types_fig.jpg) | ![](reference/mech/bearing_thrust.png) | упорный узел — два плоских кольца и шары между ними; радиально-упорные с двумя рядами |
++| ![](reference/mech/gear_types.jpg) | ![](reference/mech/gear_bevel.png) | прямозубое, косозубое, коническое и внутреннее зацепление — четыре разных тела, а не повороты одной шестерни |
++| ![](reference/mech/crate_drawing.jpg) | ![](reference/mech/crate.png) | чертёж 08.720.000 СБ: внутренние 880×790×600, доски по 20 мм, четыре угловые стойки, дно на балках |
++| ![](reference/mech/din_rail.jpg) | ![](reference/mech/din_rail.png) | профиль TS35: загнутые полки, просвет 27 мм, овальные просечки через 25 мм |
++| ![](reference/mech/corner_bracket_1.jpg) | ![](reference/mech/corner_bracket.png) | чёрный кронштейн с косынкой по центру и отверстиями по краям полок |
++| ![](reference/mech/corner_bracket_2.jpg) | ![](reference/mech/corner_bracket.png) | сварной треугольник: катеты 80 и 80, полка 60 мм, косынка 5 мм |
++| ![](reference/mech/lug_angle.jpg) | ![](reference/mech/lug.png) | L-уголок с круглой проушиной под палец и тремя отверстиями на полке |
++| ![](reference/mech/lug_flat_ref.jpg) | ![](reference/mech/lug_flat.png) | плоская проушина: четыре отверстия по площадке, полка не отогнута |
++| ![](reference/mech/buckle_ref.jpg) | ![](reference/mech/buckle.png) | две половины: рамка с перекладиной и ответная часть с двумя пружинными усиками |
++
++Головки винтов, барашек и особые гайки на фото не приходили — они сделаны по
++стандартам (DIN 912, 7991, 6921, 1587, 985, 315, 928) и продолжают уже
++существующие `screw` и `nut`, а не заменяют их.
++
++## 3. Числа (значения по умолчанию)
++
++| Деталь | Габарит, мм | Объём, см³ | Частей |
++|---|---|---|---|
++| подшипник 15×35×11, шариковый | 35 × 35 × 11 | 5.72 | 1 |
++| подшипник 25×52×15, роликовый | 52 × 52 × 15 | 20.95 | 1 |
++| подшипник 30×47×11, упорный | 47 × 47 × 11 | 7.80 | 1 |
++| подшипник 30×62×20, сферический | 62 × 62 × 20 | 30.41 | 1 |
++| рейка DIN TS35, 500 мм | 500 × 35 × 7.5 | 26.10 | 1 |
++| ящик 880×600×790 | 880 × 600 × 790 | 51 317.6 | 1 |
++| ящик 600×400×300 с крышкой и полозьями | 600 × 400 × 395 | 27 348 | 1 |
++| проушина Ø32 в головке Ø64 | 64 × 122 × 30 | 22.43 | 1 |
++| кронштейн 80×80 с косынкой | 80 × 60 × 80 | 47.14 | 1 |
++| фастекс под стропу 25 мм | 60 × 38.9 × 7 | 7.62 | 2 (две половины) |
++| рейка зубчатая m2, 300 мм | 300 × 20 × 18 | 88.47 | 1 |
++| колесо с внутренними зубьями z40 m2 | 96 × 96 × 10 | 28.36 | 1 |
++| косозубая z24 m2, 20° | 52 × 52 × 12 | 20.11 | 1 |
++| коническая z20 m2, 60 % | 43.9 × 43.9 × 12 | 8.86 | 1 |
++| головка цилиндр M6, шестигранник | 12 × 12 × 3.7 | 0.33 | 1 |
++| головка потай M4, крест | 8.4 × 8.4 × 2.2 | 0.06 | 1 |
++| барашек M8 | 52 × 15.1 × 18 | 5.10 | 1 |
++| гайка колпачковая M8 | 14.8 × 14.8 × 12.8 | 1.26 | 1 |
++| гайка Nyloc M10 | 21.8 × 21.8 × 8 | 1.54 | 1 |
++
++Проверки в `tests/test_mechparts.py`: 40 тестов, среди них — сборка всех шести
++типов подшипников одним телом, все 7 профилей и 6 шлицов головки, все шесть
++гаек, отказы с подсказкой на неверных размерах.
++
++## 4. Как перенести в другую ветку
++
++1. Скопировать `forma/forma/ops_mechparts.py` — модуль ни от чего не зависит,
++   кроме `errors`, `ops`, `ops_hardware._thread_bore`.
++2. В `forma/forma/run.py` после последнего `from . import ops_*` добавить:
++
++   ```python
++   from . import ops_mechparts  # noqa: F401,E402
++
++   from .orient_notes import PRIMITIVE_ORIENTATIONS as _PRIMITIVE_ORIENTATIONS  # noqa: E402
++   _PRIMITIVE_ORIENTATIONS.update(ops_mechparts.ORIENTATION_NOTES)
++   ```
++
++   Памятки ориентации приходят вместе с геометрией, править `orient_notes.py`
++   не нужно.
++3. Если в целевой ветке есть `tests/test_v041.py` и `tests/test_v043.py` —
++   там зашито число примитивов (было 122, стало 135) и список когда-то
++   удалённых команд. `bearing` и `rack` возвращаются новыми конструкторами —
++   так же, как в 0.53 вернулись `rail` и `hinge`; из списков `REMOVED` они
++   убираются.
++4. Тесты: `forma/tests/test_mechparts.py`.
++5. Карточки для панели инструментов: 13 блоков `op: '…'` в
++   `forma/web/js/app.js`, группа «Готовые детали».
++6. Готовый патч текстовых правок: `forma/docs/mech_primitives.patch`
++   (`git apply` из корня репозитория; картинки копируются отдельно, они в
++   `forma/docs/reference/mech/`).
++
++## 5. Границы автоматики — честно
++
++* **Коническая шестерня** — усечённое прямозубое колесо: зубья сбегают к
++  малому торцу пропорционально, высота зуба при этом уменьшается. Настоящее
++  коническое зацепление с постоянной высотой зуба и образующей по конусу
++  программа не строит; для кинематики такой модели достаточно, для расчёта
++  пятна контакта — нет.
++* **Сепаратор** — корончатый: сплошной обод снизу и рёбра между телами
++  качения. Штампованный сепаратор с карманами-окнами не строится: вычитание
++  карманов из кольца распадалось на отдельные дуги.
++* **Упорный подшипник** — два плоских кольца и шары; отверстия под смазку и
++  конусные подкладные шайбы не делаются.
++* **Шлицы** — геометрия для вида и посадки биты, а не для прочностного
++  расчёта: допусков, поднутрений и скруглений входа нет.
++* **Резьба** — винтовая поверхность с шагом из параметра, но без допуска и
++  без сбега; гайка Nyloc получает нейлоновое кольцо только как канавку, без
++  отдельного материала.
++* **Фастекс** — две половины лежат рядом; щелчок, упругий ход усиков и
++  сопряжение «в защёлкнутом виде» не моделируются. Толщина усиков задана
++  долей от толщины корпуса.
++* **Ящик** — доски параллельны, сучков, фасок и гвоздей нет; крышка — плоский
++  щит с двумя обвязками.
++* **Проверки диапазонов** срабатывают до построения: `bearing d=30 D=20`,
++  `crate length=200 post=90`, `buckle width=40 length=45` дают ошибку с
++  подсказкой, а не молча кривую деталь.
++
++## 6. Примеры
++
++```forma
++шариковый = bearing d=15 D=35 B=11
++игольчатый = bearing d=20 D=26 B=16 type=игольчатый
++упорный = bearing d=30 D=47 B=11 type=упорный
++
++рейка = din_rail length=500
++ящик = crate length=880 width=600 height=790
++проушина = lug inner=32 outer=64 length=90 thickness=4 bend=30
++кронштейн = corner_bracket size=[80,80] width=60 thickness=5 gusset=5
++застёжка = buckle width=25 length=60
++
++зубчатая = rack length=300 module=2 width=20 height=18 holes=3
++венец = gear_internal teeth=40 module=2 thickness=10 rim=6
++косозубая = gear_helical teeth=24 module=2 thickness=12 angle=20 bore=10
++коническая = gear_bevel teeth=20 module=2 thickness=12 taper=0.6 bore=10
++
++головка = screw_head d=6 head=цилиндр drive=шестигранник
++потай = screw_head d=4 head=потай drive=крест
++барашек = wing_nut d=8
++nyloc = special_nut d=10 type=nyloc
++```
++
++Имя слева от знака равенства — имя объекта в сцене, команда — справа.
+diff --git a/forma/forma/app.py b/forma/forma/app.py
+index f14f1b0..2a42172 100644
+--- a/forma/forma/app.py
++++ b/forma/forma/app.py
+@@ -976,12 +976,12 @@ def _run_uistest(report_path: str | None) -> int:
+                 check("0.43: ручка, завиток, лестница, ступени, рычаг, косынка и клинок",
+                       reworked.get("ok") is True and reworked.get("objects") == 7,
+                       f"{reworked.get('tris', 0)} трис, {reworked.get('objects', 0)} объектов")
+-                removed = post("/api/preview", {"script": "н = rack length=400"})
++                removed = post("/api/preview", {"script": "н = coupling"})
+                 check("0.43: остальные удалённые предметы не строятся и исчезли из карточек",
+                       removed.get("ok") is False
+                       and all(f"op: '{op}'".encode("utf-8") not in js_app
+-                              for op in ("rack", "coupling", "heatsink",
+-                                         "bearing", "caster", "leg")))
++                              for op in ("coupling", "heatsink",
++                                         "caster", "leg")))
+ 
+                 # 0.44: полосы, решётки, шипы, колонна, дуговая призма, профиль
+                 formed = post("/api/preview", {"script": (
+diff --git a/forma/forma/ops_mechparts.py b/forma/forma/ops_mechparts.py
+new file mode 100644
+index 0000000..3104f85
+--- /dev/null
++++ b/forma/forma/ops_mechparts.py
+@@ -0,0 +1,1179 @@
++"""Механика и тара: подшипники, рейки, шестерни, проушины, ящик, фастекс.
++
++Модуль самодостаточен: чтобы подключить его, достаточно одной строки импорта в
++``run.py`` рядом с остальными ``ops_*``. Все детали — настоящие замкнутые тела,
++размеры по умолчанию взяты у реальных изделий (подшипники ГОСТ 8338/3478,
++рейка DIN 60715, тара 880×790×600 мм), а не «на глаз».
++
++Что внутри:
++
++* ``bearing`` — подшипник с кольцами, телами качения и сепаратором; шесть типов:
++  шариковый, роликовый, игольчатый, конический, упорный, сферический;
++* ``din_rail`` — монтажная рейка TS35/TS15/TS45 по DIN 60715 с просечками;
++* ``crate`` — дощатый ящик на угловых стойках;
++* ``lug`` — проушина: площадка с отверстием под палец и отогнутая полка;
++* ``buckle`` — фастекс (side-release): рамка и ответная часть с усиками;
++* ``corner_bracket`` — угловой кронштейн с косынкой (по фото сварного узла);
++* ``rack`` — зубчатая рейка в паре с шестернёй ``gear``;
++* ``gear_internal`` — колесо с внутренними зубьями; ``gear_helical`` —
++  косозубое; ``gear_bevel`` — коническое;
++* ``screw_head`` — конструктор головок винтов: семь профилей и шесть шлицов;
++* ``wing_nut`` — барашек; ``special_nut`` — колпачковая, с фланцем, Nyloc,
++  квадратная, T-гайка и закладная.
++"""
++
++from __future__ import annotations
++
++import math
++
++import manifold3d as mf
++import numpy as np
++
++from .errors import GeometryError
++from .ops import anchor, make_solid, op
++from .ops_hardware import _thread_bore
++
++
++# --------------------------------------------------------------------------- #
++#  Помощники
++# --------------------------------------------------------------------------- #
++def _cyl(h: float, r: float, seg: int = 72) -> mf.Manifold:
++    return mf.Manifold.cylinder(float(h), float(r), float(r), int(seg))
++
++
++def _cone(h: float, r1: float, r2: float, seg: int = 72) -> mf.Manifold:
++    return mf.Manifold.cylinder(float(h), float(r1), float(r2), int(seg))
++
++
++def _box(sx: float, sy: float, sz: float, center: bool = True) -> mf.Manifold:
++    return mf.Manifold.cube([float(sx), float(sy), float(sz)], bool(center))
++
++
++def _ring(outer_r: float, inner_r: float, h: float, seg: int = 96) -> mf.Manifold:
++    if outer_r <= inner_r + 1e-6:
++        raise GeometryError("Кольцо: наружный радиус должен быть больше внутреннего.")
++    return _cyl(h, outer_r, seg) - _cyl(h + 0.4, inner_r, seg).translate((0, 0, -0.2))
++
++
++def _plus_shape(size: float, width: float):
++    """Контур крестового шлица: два пересекающихся паза одним полигоном.
++
++    Две отдельные коробки давали вывернутую оболочку внутри головки, поэтому
++    крест строится как один замкнутый контур.
++    """
++    h = size / 2.0
++    w = max(0.2, width / 2.0)
++    return [(h, w), (w, w), (w, h), (-w, h), (-w, w), (-h, w),
++            (-h, -w), (-w, -w), (-w, -h), (w, -h), (w, -w), (h, -w)]
++
++
++def _circle(r: float, seg: int = 72, cx: float = 0.0, cy: float = 0.0):
++    return [(cx + r * math.cos(2 * math.pi * i / seg),
++             cy + r * math.sin(2 * math.pi * i / seg)) for i in range(seg)]
++
++
++def _clean(points):
++    """Убирает дубли и приводит контур к обходу против часовой стрелки."""
++    pts = []
++    for p in points:
++        q = (float(p[0]), float(p[1]))
++        if not pts or abs(q[0] - pts[-1][0]) > 1e-7 or abs(q[1] - pts[-1][1]) > 1e-7:
++            pts.append(q)
++    if len(pts) > 2 and abs(pts[0][0] - pts[-1][0]) < 1e-7 and abs(pts[0][1] - pts[-1][1]) < 1e-7:
++        pts.pop()
++    area = sum(pts[i][0] * pts[(i + 1) % len(pts)][1]
++               - pts[(i + 1) % len(pts)][0] * pts[i][1] for i in range(len(pts)))
++    return pts if area > 0 else pts[::-1]
++
++
++def _cross(points, holes=None) -> mf.CrossSection:
++    if len(points) < 3:
++        raise GeometryError("Контур сечения вырожден: меньше трёх точек.")
++    cs = mf.CrossSection([_clean(points)])
++    for hole in holes or []:
++        if len(hole) < 3:
++            continue
++        cs = cs - mf.CrossSection([_clean(hole)])
++    return cs
++
++
++def _chamfer_ring(r_od: float, r_id: float, h: float, c: float) -> mf.Manifold:
++    """Фаска 45° по наружным кромкам обоймы: снимает острые углы колец."""
++    if c <= 0.05:
++        return mf.Manifold()
++    cuts = mf.Manifold()
++    for z, up in ((0.0, False), (h, True)):
++        for r, outward in ((r_od, True), (r_id, False)):
++            s = 1.0 if outward else -1.0
++            pts = [(r, z), (r + s * (c + 0.4), z if up else z - c),
++                   (r + s * (c + 0.4), z + c if up else z - c - 0.4)]
++            if not up:
++                pts = [(r, z), (r + s * (c + 0.4), z + c),
++                       (r + s * (c + 0.4), z - 0.4)]
++            try:
++                wedge = mf.Manifold.revolve(mf.CrossSection([_clean(pts)]), 96)
++            except Exception:      # ядро не смогло — фаска не критична
++                continue
++            cuts = cuts + wedge
++    return cuts
++
++
++def _finish(a, name: str, solid: mf.Manifold, kind: str, note: str):
++    if solid.is_empty() or solid.volume() <= 1e-6:
++        raise GeometryError("Деталь получилась пустой — проверьте размеры.")
++    placed = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
++    out = make_solid(a.scene, name, placed, a, kind=kind)
++    out.notes.append(note)
++    a.scene.log("info", note, a.cmd.line)
++    return out
++
++
++def _part_count(solid: mf.Manifold) -> int:
++    try:
++        return len(solid.decompose())
++    except Exception:      # pragma: no cover — ядро может не уметь decompose
++        return 1
++
++
++# --------------------------------------------------------------------------- #
++#  Подшипник
++# --------------------------------------------------------------------------- #
++_BEARING_KINDS = {
++    "шариковый": "ball", "шарик": "ball", "ball": "ball",
++    "роликовый": "roller", "цилиндрический": "roller", "roller": "roller",
++    "игольчатый": "needle", "игла": "needle", "needle": "needle",
++    "конический": "taper", "конический_роликовый": "taper", "taper": "taper",
++    "упорный": "thrust", "thrust": "thrust",
++    "сферический": "spherical", "самоустанавливающийся": "spherical",
++    "spherical": "spherical",
++}
++
++
++@op("bearing", aliases=("подшипник", "bearing_ball", "bearing_roller"),
++    category="Примитивы",
++    summary="Подшипник качения: наружное и внутреннее кольца с фасками, тела "
++            "качения и штампованный сепаратор. Тип задаёт форму тел качения и "
++            "схему колец.",
++    example="шариковый = bearing d=15 D=35 B=11\n"
++            "роликовый = bearing d=25 D=52 B=15 type=роликовый\n"
++            "игольчатый = bearing d=20 D=26 B=16 type=игольчатый\n"
++            "упорный = bearing d=30 D=47 B=11 type=упорный",
++    params={"d": "внутренний (посадочный) диаметр, мм (8)",
++            "D": "наружный диаметр, мм (22)",
++            "B": "ширина, мм (7)",
++            "type": "шариковый, роликовый, игольчатый, конический, упорный "
++                    "или сферический (шариковый)",
++            "balls": "число тел качения (0 — подобрать по шагу)",
++            "cage": "строить сепаратор (да)",
++            "shield": "закрыть кольца шайбами с двух сторон (нет)",
++            "at": "положение [x,y,z]", "center": "центрировать в at"})
++def bearing(a, name):
++    d = float(a.num("d", 8.0, minv=1.0, maxv=2000.0))
++    D = float(a.num("D", 22.0, minv=d + 1.0, maxv=3000.0))
++    B = float(a.num("B", 7.0, minv=0.5, maxv=600.0))
++    kind_raw = (a.text("type") or "шариковый").strip().lower()
++    if kind_raw not in _BEARING_KINDS:
++        raise GeometryError(
++            f"bearing: неизвестный тип «{kind_raw}».",
++            hint="Есть: шариковый, роликовый, игольчатый, конический, "
++                 "упорный, сферический.")
++    kind = _BEARING_KINDS[kind_raw]
++    cage = a.boolean("cage", True)
++    shield = a.boolean("shield", False)
++
++    r_in, r_out = d / 2.0, D / 2.0
++    r_pitch = (r_in + r_out) / 2.0
++    space = (r_out - r_in) / 2.0
++    if space < 0.8:
++        raise GeometryError("bearing: кольца почти касаются — увеличьте D "
++                            "или уменьшите d.")
++
++    if kind == "needle":
++        r_elem, elem_h = space * 0.24, B * 0.92
++    elif kind == "roller":
++        r_elem, elem_h = space * 0.34, B * 0.74
++    elif kind == "taper":
++        r_elem, elem_h = space * 0.36, B * 0.72
++    elif kind == "thrust":
++        r_elem, elem_h = space * 0.30, B * 0.30
++    elif kind == "spherical":
++        r_elem, elem_h = space * 0.52, B * 0.30
++    else:
++        r_elem, elem_h = space * 0.54, B * 0.58
++
++    inner_outer = r_pitch - r_elem * 0.95
++    outer_inner = r_pitch + r_elem * 0.95
++    if inner_outer <= r_in + 0.3:
++        raise GeometryError("bearing: внутреннее кольцо вырождается — "
++                            "увеличьте D/d.")
++    if outer_inner >= r_out - 0.3:
++        raise GeometryError("bearing: наружное кольцо вырождается — "
++                            "увеличьте D/d.")
++
++    count = int(a.num("balls", 0, minv=0, maxv=400) or 0)
++    if count <= 0:
++        pitch_len = 2.0 * math.pi * r_pitch
++        step = r_elem * (2.9 if kind == "needle" else 2.4)
++        count = max(3, int(pitch_len / max(step, 1e-3)))
++    count = max(3, min(count, 400))
++
++    # ---- упорный: два плоских кольца и шары между ними --------------------
++    if kind == "thrust":
++        h_ring = max(0.6, B * 0.26)
++        gap = max(0.6, B - 2.0 * h_ring)
++        r_ball = max(0.35, min((r_out - r_in) * 0.42, gap * 0.58))
++        count = max(3, min(count, int(2 * math.pi * r_pitch / (r_ball * 2.3))))
++        lower = _ring(r_out, r_in, h_ring)
++        upper = _ring(r_out, r_in, h_ring).translate((0, 0, h_ring + gap))
++        balls = mf.Manifold()
++        for i in range(count):
++            ang = 2 * math.pi * i / count
++            balls = balls + mf.Manifold.sphere(r_ball, 24).translate(
++                (r_pitch * math.cos(ang), r_pitch * math.sin(ang),
++                 h_ring + gap / 2.0))
++        solid = lower + balls + upper
++        return _finish(a, name, solid, "bearing",
++                       f"подшипник упорный {d:g}×{D:g}×{B:g} · шаров {count} "
++                       f"Ø{2 * r_ball:.2f} мм")
++
++    # ---- кольца -----------------------------------------------------------
++    chamfer = min(space * 0.16, B * 0.14, 1.2)
++    inner_ring = _chamfer_safe(_ring(inner_outer, r_in, B), r_in, B, chamfer)
++    outer_ring = _chamfer_safe(_ring(r_out, outer_inner, B), r_out, B, chamfer)
++    # Дорожка качения: поясок-канавка по среднему радиусу. Без неё шарик
++    # касался бы колец по линии и сборка распалась бы на отдельные тела.
++    if kind in ("ball", "spherical"):
++        try:
++            race = _torus(r_pitch, B / 2.0 if kind == "ball" else None,
++                          r_elem * 0.90, B, rings=(inner_ring, outer_ring))
++            inner_ring, outer_ring = race
++        except Exception:
++            pass
++
++    # ---- тела качения -----------------------------------------------------
++    elems = mf.Manifold()
++    for i in range(count):
++        ang = 2 * math.pi * i / count
++        ca, sa = math.cos(ang), math.sin(ang)
++        cx, cy = r_pitch * ca, r_pitch * sa
++        if kind == "ball":
++            elems = elems + mf.Manifold.sphere(r_elem, 28).translate(
++                (cx, cy, B / 2.0))
++        elif kind == "spherical":
++            # два ряда бочкообразных роликов — признак самоустанавливающейся опоры
++            barrel = (mf.Manifold.sphere(r_elem, 28)
++                      ^ _cyl(elem_h * 1.5, r_elem * 0.62, 28).translate(
++                          (0, 0, -elem_h * 0.75)))
++            for zf in (0.33, 0.67):
++                elems = elems + barrel.translate((cx, cy, B * zf))
++        elif kind in ("roller", "needle"):
++            piece = _cyl(elem_h, r_elem, 32).translate((0, 0, (B - elem_h) / 2.0))
++            elems = elems + piece.translate((cx, cy, 0.0))
++        else:      # taper: конус-ролик, ось радиальная, узкий конец внутрь
++            piece = _cone(elem_h, r_elem * 0.60, r_elem * 1.04, 32)
++            piece = piece.translate((0, 0, -elem_h / 2.0)).rotate((0, 90, 0))
++            piece = piece.translate((0, 0, B / 2.0)).rotate((0, 0, math.degrees(ang)))
++            elems = elems + piece.translate((r_pitch * ca, r_pitch * sa, 0.0))
++
++    parts = [inner_ring + outer_ring, elems]
++
++    # ---- сепаратор --------------------------------------------------------
++    if cage and kind != "needle":
++        # Корончатый сепаратор: сплошной обод снизу и рёбра-перемычки между
++        # телами качения. Карманы открыты сверху — шарики видны, обод цел.
++        band_z = B * 0.24
++        band_h = B * 0.30
++        rim_h = max(0.5, band_h * 0.38)
++        band = _ring(outer_inner + 0.15, max(inner_outer - 0.15, r_in + 0.2),
++                     band_h, 128).translate((0, 0, band_z))
++        for i in range(count):
++            ang = 2 * math.pi * i / count
++            pocket = _cyl(band_h + 1.0, r_elem * 1.03, 40).translate(
++                (r_pitch * math.cos(ang), r_pitch * math.sin(ang),
++                 band_z + rim_h - 0.15))
++            band = band - pocket
++        if _part_count(band) > 1:      # страховка: обод не должен распасться
++            band = _ring(outer_inner + 0.15, max(inner_outer - 0.15, r_in + 0.2),
++                         rim_h, 128).translate((0, 0, band_z))
++        parts.append(band)
++
++    if shield:
++        # Защитная шайба сидит в наружном кольце с лабиринтным зазором у
++        # внутреннего: герметичное кольцо запирало бы воздух внутри и давало
++        # вывернутую оболочку полости.
++        sh = _ring(r_out - 0.4, inner_outer + max(0.25, r_elem * 0.12), 0.6, 96)
++        parts.append(sh.translate((0, 0, 0.2)))
++        parts.append(sh.translate((0, 0, B - 0.8)))
++
++    solid = parts[0]
++    for extra in parts[1:]:
++        solid = solid + extra
++
++    kind_names = {"ball": "шариковый", "roller": "роликовый",
++                  "needle": "игольчатый", "taper": "конический",
++                  "spherical": "сферический"}
++    note = (f"подшипник {kind_names.get(kind, kind)} {d:g}×{D:g}×{B:g} · "
++            f"тел качения {count}")
++    if shield:
++        note += " · закрытый"
++    if _part_count(solid) > 1:
++        note += f" · сборка из {_part_count(solid)} частей"
++    return _finish(a, name, solid, "bearing", note)
++
++
++def _torus(r_pitch: float, z_mid, r_minor: float, B: float, rings=(None, None)):
++    """Кольцевая канавка под тела качения: тело вращения окружности вокруг Z."""
++    if z_mid is None:
++        z_mid = B / 2.0
++    prof = [(r_pitch + r_minor * math.cos(2 * math.pi * i / 48),
++             z_mid + r_minor * math.sin(2 * math.pi * i / 48)) for i in range(48)]
++    groove = mf.Manifold.revolve(mf.CrossSection([_clean(prof)]), 96)
++    return tuple(r - groove for r in rings)
++
++
++def _chamfer_safe(ring: mf.Manifold, r_od: float, h: float, c: float) -> mf.Manifold:
++    """Снимает фаску с наружной кромки обоймы, не ломаясь на мелких размерах."""
++    if c <= 0.08:
++        return ring
++    try:
++        cut = _chamfer_ring(r_od, r_od - 1.0, h, c)
++        return ring - cut if not cut.is_empty() else ring
++    except Exception:
++        return ring
++
++
++# --------------------------------------------------------------------------- #
++#  Монтажная рейка DIN
++# --------------------------------------------------------------------------- #
++@op("din_rail", aliases=("рейка_din", "монтажная_рейка", "ts35", "din"),
++    category="Примитивы",
++    summary="Монтажная рейка по DIN 60715 (TS35, TS15, TS45): гнутый профиль "
++            "с загнутыми полками и просечками через 25 мм.",
++    example="рейка = din_rail length=500 size=35 slots=да",
++    params={"length": "длина, мм (500)", "size": "35, 15 или 45 — ширина профиля (35)",
++            "thickness": "толщина стали, мм (1)",
++            "slots": "просечки под крепёж (да)",
++            "slot_pitch": "шаг просечек, мм (25)", "slot_len": "длина просечки (15)",
++            "slot_w": "ширина просечки (6.5)",
++            "at": "положение [x,y,z]", "center": "центрировать в at"})
++def din_rail(a, name):
++    length = float(a.num("length", 500.0, minv=20.0, maxv=6000.0))
++    size = float(a.num("size", 35.0, minv=10.0, maxv=60.0))
++    t = float(a.num("thickness", 1.0, minv=0.3, maxv=4.0))
++    slots = a.boolean("slots", True)
++    pitch = float(a.num("slot_pitch", 25.0, minv=5.0, maxv=200.0))
++    slot_len = float(a.num("slot_len", 15.0, minv=1.0, maxv=60.0))
++    slot_w = float(a.num("slot_w", 6.5, minv=1.0, maxv=30.0))
++
++    h = 7.5 if size <= 40 else 9.0
++    if size <= 20:
++        h = 5.0
++    half = size / 2.0
++    flange = max(1.5, size * 0.11)      # загнутая полка
++    opening = half - flange
++    side = t + 0.2
++    if opening <= t:
++        raise GeometryError("Рейка: полки съели весь просвет — уменьшите толщину.")
++    prof = [(-half, 0.0), (half, 0.0), (half, h), (opening, h),
++            (opening, h - t), (half - side, h - t), (half - side, t),
++            (-(half - side), t), (-(half - side), h - t), (-opening, h - t),
++            (-opening, h), (-half, h)]
++    body = _cross(prof).extrude(length).rotate((90, 0, 0)).rotate((0, 0, -90))
++    body = body.translate((length / 2.0, 0, 0))
++    count = 0
++    if slots:
++        count = max(1, int((length - pitch * 0.5) // pitch))
++        start = -pitch * (count - 1) / 2.0
++        for i in range(count):
++            x = start + i * pitch
++            cutter = _box(slot_len, slot_w, t * 4.0).translate((x, 0, t / 2.0))
++            ends = (_cyl(t * 4.0, slot_w / 2.0, 24).translate(
++                (x - slot_len / 2.0 + slot_w / 2.0, 0, -t))
++                + _cyl(t * 4.0, slot_w / 2.0, 24).translate(
++                    (x + slot_len / 2.0 - slot_w / 2.0, 0, -t)))
++            body = body - (cutter + ends)
++    return _finish(a, name, body, "din_rail",
++                   f"рейка DIN TS{size:g} · {length:g} мм · сталь {t:g} мм"
++                   + (f" · просечек {count}" if slots else " · без просечек"))
++
++
++# --------------------------------------------------------------------------- #
++#  Ящик
++# --------------------------------------------------------------------------- #
++@op("crate", aliases=("тарный_ящик", "дощатый_ящик", "деревянный_ящик",
++                       "box_crate"), category="Примитивы",
++    summary="Дощатый ящик на четырёх угловых стойках: дно, стенки из досок с "
++            "зазорами, необязательные крышка и полозья.",
++    example="ящик = crate length=880 width=600 height=790",
++    params={"length": "наружная длина по X, мм (880)",
++            "width": "наружная ширина по Y, мм (600)",
++            "height": "высота стенки, мм (790)",
++            "plank": "толщина доски, мм (20)", "post": "сечение стойки, мм (60)",
++            "gap": "зазор между досками, мм (4)",
++            "lid": "крышка с обвязкой (нет)",
++            "skids": "высота полозьев, мм (0 — без них)",
++            "at": "положение [x,y,z]", "center": "центрировать в at"})
++def crate(a, name):
++    length = float(a.num("length", 880.0, minv=120.0, maxv=4000.0))
++    width = float(a.num("width", 600.0, minv=120.0, maxv=4000.0))
++    height = float(a.num("height", 790.0, minv=80.0, maxv=4000.0))
++    plank = float(a.num("plank", 20.0, minv=4.0, maxv=80.0))
++    post = float(a.num("post", 60.0, minv=15.0, maxv=200.0))
++    gap = float(a.num("gap", 4.0, minv=0.0, maxv=40.0))
++    lid = a.boolean("lid", False)
++    skids = float(a.num("skids", 0.0, minv=0.0, maxv=200.0) or 0.0)
++    if min(length, width) < 2 * post + 2 * plank:
++        raise GeometryError("Ящик слишком мал для стоек такого сечения.")
++
++    z0 = skids
++    parts = []
++    lap = 1.0            # перехлёст, чтобы доски гарантированно срослись со стойками
++    for sx in (-1, 1):
++        for sy in (-1, 1):
++            parts.append(_box(post, post, height, center=False).translate(
++                (sx * (length / 2.0 - post) if sx > 0 else -length / 2.0,
++                 sy * (width / 2.0 - post) if sy > 0 else -width / 2.0, z0)))
++    floor = z0 + 2.0 * plank - 1.0
++    rows = max(2, int((height - floor) / (plank + gap)))
++    used = rows * plank + (rows - 1) * gap
++    z_first = floor + max(0.0, (height - floor - used) / 2.0)
++    long_span = length - 2 * post + 2 * lap
++    short_span = width - 2 * post + 2 * lap
++    for i in range(rows):
++        zz = z_first + i * (plank + gap)
++        for sy in (-1, 1):
++            parts.append(_box(long_span, plank, plank, center=False).translate(
++                (-long_span / 2.0, sy * (width / 2.0 - plank) if sy > 0
++                 else -width / 2.0, zz)))
++        for sx in (-1, 1):
++            parts.append(_box(plank, short_span, plank, center=False).translate(
++                (sx * (length / 2.0 - plank) if sx > 0 else -length / 2.0,
++                 -short_span / 2.0, zz)))
++    # дно: две продольные балки в стойках и настил из досок поперёк
++    for sy in (-1, 1):
++        parts.append(_box(long_span, post, plank, center=False).translate(
++            (-long_span / 2.0,
++             sy * (width / 2.0 - post) if sy > 0 else -width / 2.0, z0)))
++    planks = max(1, int(long_span // (plank + gap)))
++    step_x = long_span / planks
++    for i in range(planks):
++        x = -long_span / 2.0 + i * step_x
++        parts.append(_box(min(plank, step_x - gap), width, plank,
++                          center=False).translate(
++            (x + gap / 2.0, -width / 2.0, z0 + plank - 1.0)))
++    if lid:
++        top = z0 + height
++        parts.append(_box(length, width, plank, center=False).translate(
++            (-length / 2.0, -width / 2.0, top)))
++        for sx in (-1, 1):
++            parts.append(_box(length, post * 0.7, plank * 0.8, center=False).translate(
++                (-length / 2.0,
++                 sx * (width / 2.0 - post * 0.7) if sx > 0 else -width / 2.0,
++                 top + plank - 1.0)))
++    if skids > 0:
++        rail_w = min(width * 0.16, 100.0)
++        for y in (-width / 2.0 + rail_w / 2.0, 0.0, width / 2.0 - rail_w / 2.0):
++            parts.append(_box(length, rail_w, skids + 2.0 * plank, center=False).translate(
++                (-length / 2.0, y - rail_w / 2.0, 0.0)))
++    solid = parts[0]
++    for extra in parts[1:]:
++        solid = solid + extra
++    return _finish(a, name, solid, "crate",
++                   f"ящик {length:g}×{width:g}×{height:g} · доска {plank:g} мм · "
++                   f"стоек 4 · досок стенок {rows * 4}, дна {planks}")
++
++
++# --------------------------------------------------------------------------- #
++#  Проушина
++# --------------------------------------------------------------------------- #
++@op("lug", aliases=("проушина", "ушкo", "ушко", "eye_lug"), category="Примитивы",
++    summary="Проушина: площадка с отверстием под палец, отогнутая полка и "
++            "крепёжные отверстия на полке и на площадке.",
++    example="проушина = lug inner=32 outer=64 length=90 thickness=4 bend=30",
++    params={"inner": "диаметр отверстия под палец, мм (32)",
++            "outer": "наружный диаметр головки, мм (64)",
++            "length": "длина площадки от центра отверстия, мм (90)",
++            "width": "ширина площадки, мм (40)", "thickness": "толщина, мм (4)",
++            "bend": "высота отогнутой полки, мм (30)",
++            "holes": "отверстий на отогнутой полке (2)",
++            "hole_d": "диаметр крепёжных отверстий, мм (7)",
++            "plate_holes": "отверстий на площадке (0)",
++            "at": "положение [x,y,z]", "center": "центрировать в at"})
++def lug(a, name):
++    inner = float(a.num("inner", 32.0, minv=2.0, maxv=600.0))
++    outer = float(a.num("outer", 64.0, minv=inner + 4.0, maxv=800.0))
++    length = float(a.num("length", 90.0, minv=outer / 2.0 + 5.0, maxv=2000.0))
++    width = float(a.num("width", 40.0, minv=5.0, maxv=600.0))
++    t = float(a.num("thickness", 4.0, minv=0.8, maxv=40.0))
++    bend = float(a.num("bend", 30.0, minv=0.0, maxv=800.0))
++    holes = int(a.num("holes", 2, minv=0, maxv=8) or 0)
++    plate_holes = int(a.num("plate_holes", 0, minv=0, maxv=8) or 0)
++    hole_d = float(a.num("hole_d", 7.0, minv=0.5, maxv=inner))
++    r_head = outer / 2.0
++    if width > outer:
++        raise GeometryError("Ширина площадки больше головки: площадка торчала бы "
++                            "за полукруг. Уменьшите width или увеличьте outer.")
++
++    hull = max(1.0, min(width, length) * 0.12)
++    pts = [(-width / 2.0, 0.0)]
++    for i in range(41):                       # дуга головки: слева через верх
++        ang = math.pi * (1.0 - i / 40.0)
++        pts.append((r_head * math.cos(ang), r_head * math.sin(ang)))
++    pts += [(width / 2.0, 0.0),
++            (width / 2.0, -length + hull), (width / 2.0 - hull, -length),
++            (-width / 2.0 + hull, -length), (-width / 2.0, -length + hull)]
++    plate = _cross(pts).extrude(t)
++    plate = plate - _cyl(t + 2.0, inner / 2.0, 72).translate((0, 0, -1.0))
++    solid = plate
++    if plate_holes:
++        gap_y = (length - r_head) / (plate_holes + 1)
++        for i in range(plate_holes):
++            y = -(r_head + gap_y * (i + 1))
++            solid = solid - _cyl(t + 2.0, hole_d / 2.0, 32).translate(
++                (0, y, -1.0))
++    if bend > 0:
++        flange = _box(width, t + 1.0, bend, center=False).translate(
++            (-width / 2.0, -length, 0.0))
++        flange = flange + _box(width, t, t, center=False).translate(
++            (-width / 2.0, -length, 0.0))
++        solid = solid + flange
++        for i in range(holes):
++            z = bend * (i + 1) / (holes + 1)
++            x = -width / 2.0 + width * (i + 1) / (holes + 1)
++            cutter = _cyl(t + 3.0, hole_d / 2.0, 32).rotate((90, 0, 0)).translate(
++                (x, -length + t + 1.0, z))
++            solid = solid - cutter
++    return _finish(a, name, solid, "lug",
++                   f"проушина Ø{inner:g} в головке Ø{outer:g} · полка {bend:g} мм · "
++                   f"сталь {t:g} мм · отверстий {holes + plate_holes}")
++
++
++# --------------------------------------------------------------------------- #
++#  Угловой кронштейн с косынкой
++# --------------------------------------------------------------------------- #
++@op("corner_bracket", aliases=("угловой_кронштейн", "кронштейн_с_косынкой",
++                               "уголок_с_косынкой", "corner_brace"),
++    category="Примитивы",
++    summary="Угловой кронштейн из двух полок с треугольной косынкой между ними "
++            "(сварной узел по фото). Отверстия в обеих полках.",
++    example="кронштейн = corner_bracket size=[80,80] width=60 thickness=5 gusset=3",
++    params={"size": "длины полок [по X, по Z], мм ([80,80])",
++            "width": "ширина полки по Y, мм (60)", "thickness": "толщина, мм (5)",
++            "gusset": "толщина косынки, мм (5)", "gusset_depth": "катет косынки, мм (35)",
++            "holes": "отверстий в каждой полке (2)", "hole_d": "диаметр (7)",
++            "at": "положение [x,y,z]", "center": "центрировать в at"})
++def corner_bracket(a, name):
++    size = a.vec("size", 2, default=(80.0, 80.0))
++    arm_x, arm_z = float(size[0]), float(size[1])
++    width = float(a.num("width", 60.0, minv=10.0, maxv=600.0))
++    t = float(a.num("thickness", 5.0, minv=1.0, maxv=40.0))
++    gus = float(a.num("gusset", 5.0, minv=0.0, maxv=40.0) or 0.0)
++    gus_d = float(a.num("gusset_depth", 35.0, minv=5.0, maxv=600.0))
++    holes = int(a.num("holes", 2, minv=0, maxv=6) or 0)
++    hole_d = float(a.num("hole_d", 7.0, minv=0.5, maxv=40.0))
++    arm_x = max(arm_x, t * 3.0)
++    arm_z = max(arm_z, t * 3.0)
++    gus_d = min(gus_d, arm_x * 0.8, arm_z * 0.8)
++
++    base = _box(arm_x, width, t, center=False).translate((-arm_x / 2.0, -width / 2.0, 0.0))
++    upright = _box(t, width, arm_z, center=False).translate(
++        (-arm_x / 2.0, -width / 2.0, 0.0))
++    solid = base + upright
++    if gus > 0:
++        tri = [(-arm_x / 2.0 + t - 1.0, 0.0), (-arm_x / 2.0 + t + gus_d, 0.0),
++               (-arm_x / 2.0 + t - 1.0, gus_d)]
++        wedge = _cross(tri).extrude(gus).rotate((90, 0, 0)).translate(
++            (0, gus / 2.0, 0.0))
++        solid = solid + wedge
++    # Отверстия стоят двумя рядами по краям полки: по центру проходит косынка.
++    row = width * (0.34 if gus > 0 else 0.0)
++    for i in range(holes):
++        x = -arm_x / 2.0 + arm_x * (i + 1) / (holes + 1) * 0.82
++        z = arm_z * (i + 1) / (holes + 1) * 0.82
++        for sy in ((-1, 1) if row > 0 else (0,)):
++            y = sy * row
++            solid = solid - _cyl(t + 2.0, hole_d / 2.0, 32).translate((x, y, -1.0))
++            solid = solid - _cyl(t + 2.0, hole_d / 2.0, 32).rotate((0, 90, 0)).translate(
++                (-arm_x / 2.0 - 1.0, y, z))
++    return _finish(a, name, solid, "corner_bracket",
++                   f"угловой кронштейн {arm_x:g}×{arm_z:g} · полка {width:g} мм · "
++                   f"сталь {t:g} мм · косынка {gus:g} мм"
++                   + (f" · отверстий {holes * 2}" if holes else ""))
++
++
++# --------------------------------------------------------------------------- #
++#  Фастекс
++# --------------------------------------------------------------------------- #
++@op("buckle", aliases=("фастекс", "застёжка", "пряжка", "side_release"),
++    category="Примитивы",
++    summary="Фастекс (side-release): рамка с гнёздами и ответная часть с двумя "
++            "пружинными усиками. Обе половины лежат рядом, как в разобранном виде.",
++    example="застёжка = buckle width=25 length=60",
++    params={"width": "ширина под стропу, мм (25)", "length": "полная длина, мм (60)",
++            "thickness": "толщина, мм (7)", "gap": "зазор между половинами, мм (2)",
++            "at": "положение [x,y,z]", "center": "центрировать в at"})
++def buckle(a, name):
++    strap = float(a.num("width", 25.0, minv=5.0, maxv=80.0))
++    length = float(a.num("length", 60.0, minv=20.0, maxv=220.0))
++    t = float(a.num("thickness", 7.0, minv=2.0, maxv=25.0))
++    gap = float(a.num("gap", 2.0, minv=0.5, maxv=20.0))
++    body_w = strap + t * 1.7
++    wall = max(1.6, t * 0.58)
++
++    # Раскладка: рамка слева −X, ответная часть справа +X, между ними зазор.
++    f_len = length * 0.40
++    m_len = length * 0.26
++    prong = length - f_len - m_len - gap
++    if prong < body_w * 0.35:
++        raise GeometryError("Фастекс: усики короче корпуса — увеличьте length.")
++    left = -length / 2.0
++    right = length / 2.0
++
++    # --- женская половина: замкнутая рамка и перекладина под стропу --------
++    frame = _box(f_len, body_w, t).translate((left + f_len / 2.0, 0, 0))
++    frame = frame - _box(f_len - 2.0 * wall, body_w - 2.0 * wall, t + 2.0).translate(
++        (left + f_len / 2.0, 0, 0))
++    bar_x = left + wall + strap * 0.22
++    frame = frame + _box(wall * 0.9, body_w - 2.0 * wall, t).translate(
++        (bar_x, 0, 0))
++
++    # --- мужская половина: площадка с окном под стропу и два усика ---------
++    plate = _box(m_len, body_w, t).translate((right - m_len / 2.0, 0, 0))
++    plate = plate - _box(m_len * 0.34, strap, t + 2.0).translate(
++        (right - m_len * 0.62, 0, 0))
++    male = plate
++    for sy in (-1, 1):
++        y = sy * (body_w / 2.0 - wall * 0.55)
++        arm = _box(prong + 1.0, wall * 1.1, t * 0.55).translate(
++            (right - m_len - prong / 2.0 + 0.5, y, -t * 0.12))
++        hook = _box(wall * 1.0, wall * 1.6, t * 0.55).translate(
++            (right - m_len - prong + wall * 0.6, y, -t * 0.12))
++        male = male + arm + hook
++    guide_w = prong * 0.55
++    guide = _box(guide_w, wall * 0.6, t * 0.55).translate(
++        (right - m_len - guide_w / 2.0 + 0.5, 0, -t * 0.12))
++    male = male + guide
++    solid = frame + male
++    parts = _part_count(solid)
++    return _finish(a, name, solid, "buckle",
++                   f"фастекс под стропу {strap:g} мм · {length:g}×{body_w:.0f}×{t:g} мм"
++                   + (f" · половин: {parts}" if parts > 1 else ""))
++
++
++# --------------------------------------------------------------------------- #
++#  Зубчатые передачи: профиль зуба
++# --------------------------------------------------------------------------- #
++def _gear_profile(teeth: int, module: float, add: float = 1.0, ded: float = 1.25):
++    pitch_r = module * teeth / 2.0
++    r_tip = pitch_r + module * add
++    r_root = pitch_r - module * ded
++    if r_root <= 0.4:
++        raise GeometryError(f"Модуль {module:g} мал для {teeth} зубьев.")
++    step = 2.0 * math.pi / teeth
++    pts = []
++    for i in range(teeth):
++        a0 = i * step
++        for rf, share in ((r_root, -0.30), (r_tip, -0.16), (r_tip, 0.16),
++                          (r_root, 0.30)):
++            pts.append((rf * math.cos(a0 + share * step),
++                        rf * math.sin(a0 + share * step)))
++    return pts, r_tip, r_root, pitch_r
++
++
++def _bore_hole(bore: float, r_limit: float, seg: int = 48):
++    if bore <= 0:
++        return None
++    if bore / 2.0 >= r_limit - 0.5:
++        raise GeometryError(f"Отверстие Ø{bore:g} мм больше тела колеса.")
++    return _circle(bore / 2.0, seg)
++
++
++# --------------------------------------------------------------------------- #
++#  Зубчатая рейка
++# --------------------------------------------------------------------------- #
++@op("rack", aliases=("зубчатая_рейка", "рейка_зубчатая", "gear_rack"),
++    category="Примитивы",
++    summary="Зубчатая рейка под шестерню того же модуля: трапецеидальные зубья "
++            "сверху, основание с крепёжными отверстиями.",
++    example="рейка = rack length=300 module=2 width=20 height=18",
++    params={"length": "длина, мм (300)", "module": "модуль, мм (2)",
++            "width": "ширина, мм (20)", "height": "высота с зубьями, мм (18)",
++            "teeth": "число зубьев (0 — по длине)",
++            "holes": "отверстий в основании (0)", "hole_d": "диаметр отверстий (5)",
++            "at": "положение [x,y,z]", "center": "центрировать в at"})
++def rack(a, name):
++    length = float(a.num("length", 300.0, minv=20.0, maxv=4000.0))
++    module = float(a.num("module", 2.0, minv=0.2, maxv=20.0))
++    width = float(a.num("width", 20.0, minv=2.0, maxv=400.0))
++    height = float(a.num("height", 18.0, minv=3.0, maxv=400.0))
++    holes = int(a.num("holes", 0, minv=0, maxv=40) or 0)
++    hole_d = float(a.num("hole_d", 5.0, minv=0.5, maxv=40.0))
++    pitch = math.pi * module
++    teeth = int(a.num("teeth", 0, minv=0, maxv=400) or 0) or max(3, int(length / pitch))
++    teeth = max(3, teeth)
++    tooth_h = module * 2.25
++    if height <= tooth_h * 1.1:
++        raise GeometryError(f"Высота рейки мала: на зубья нужно {tooth_h * 2.2:.1f} мм.")
++    base_h = height - tooth_h
++    step = length / teeth
++
++    pts = [(-length / 2.0, 0.0)]
++    for i in range(teeth):
++        x0 = -length / 2.0 + i * step
++        pts += [(x0 + step * 0.30, base_h),
++                (x0 + step * 0.36, base_h + tooth_h * 0.45),
++                (x0 + step * 0.38, base_h + tooth_h),
++                (x0 + step * 0.62, base_h + tooth_h),
++                (x0 + step * 0.64, base_h + tooth_h * 0.45),
++                (x0 + step * 0.70, base_h)]
++    pts += [(length / 2.0, 0.0)]
++    solid = _cross(pts).extrude(width).rotate((90, 0, 0)).translate(
++        (0, width / 2.0, 0))
++    for i in range(holes):
++        x = -length / 2.0 + length * (i + 1) / (holes + 1)
++        solid = solid - _cyl(base_h + 2.0, hole_d / 2.0, 32).translate((x, 0, -1.0))
++    return _finish(a, name, solid, "rack",
++                   f"рейка m{module:g} · {teeth} зубьев · "
++                   f"{length:g}×{width:g}×{height:g} мм")
++
++
++# --------------------------------------------------------------------------- #
++#  Колесо с внутренними зубьями
++# --------------------------------------------------------------------------- #
++@op("gear_internal", aliases=("внутренняя_шестерня", "кольцевая_шестерня",
++                              "internal_gear"), category="Примитивы",
++    summary="Колесо с внутренними зубьями: зубчатый венец смотрит внутрь, "
++            "снаружи гладкий обод.",
++    example="кольцо = gear_internal teeth=40 module=2 thickness=10 rim=6",
++    params={"teeth": "число зубьев (40)", "module": "модуль, мм (2)",
++            "thickness": "толщина, мм (10)", "rim": "толщина обода, мм (6)",
++            "at": "положение [x,y,z]", "center": "центрировать в at"})
++def gear_internal(a, name):
++    teeth = int(a.num("teeth", 40, minv=10, maxv=300))
++    module = float(a.num("module", 2.0, minv=0.2, maxv=20.0))
++    thickness = float(a.num("thickness", 10.0, minv=1.0, maxv=200.0))
++    rim = float(a.num("rim", 6.0, minv=1.0, maxv=200.0))
++    pitch_r = module * teeth / 2.0
++    r_tip = pitch_r + module          # зубья направлены внутрь
++    r_root = pitch_r - module * 1.25
++    r_od = r_tip + rim
++    if r_root <= module * 2.0:
++        raise GeometryError("Слишком мало зубьев для внутреннего зацепления — "
++                            "увеличьте teeth.")
++    solid = _ring(r_od, r_root + 0.5, thickness)
++    step = 2.0 * math.pi / teeth
++    for i in range(teeth):
++        a0 = i * step
++        quad = [(r_root - 0.5, a0 - 0.30 * step), (r_tip, a0 - 0.17 * step),
++                (r_tip, a0 + 0.17 * step), (r_root - 0.5, a0 + 0.30 * step)]
++        pts2 = [(r * math.cos(a_), r * math.sin(a_)) for r, a_ in quad]
++        solid = solid + _cross(pts2).extrude(thickness)
++    return _finish(a, name, solid, "gear_internal",
++                   f"колесо с внутренними зубьями z={teeth} m{module:g} · "
++                   f"Ø{2 * r_od:.1f}×{thickness:g} мм")
++
++
++# --------------------------------------------------------------------------- #
++#  Косозубое колесо
++# --------------------------------------------------------------------------- #
++@op("gear_helical", aliases=("косозубая_шестерня", "шестерня_косозубая",
++                             "helical_gear"), category="Примитивы",
++    summary="Косозубая шестерня: тот же профиль зуба, что у gear, но венец "
++            "закручен по винтовой линии на угол наклона зуба.",
++    example="косозубая = gear_helical teeth=24 module=2 thickness=12 angle=20",
++    params={"teeth": "число зубьев (24)", "module": "модуль, мм (2)",
++            "thickness": "толщина венца, мм (12)",
++            "angle": "угол наклона зуба, градусы (20)",
++            "bore": "отверстие, мм (0)", "at": "положение [x,y,z]",
++            "center": "центрировать в at"})
++def gear_helical(a, name):
++    teeth = int(a.num("teeth", 24, minv=6, maxv=200))
++    module = float(a.num("module", 2.0, minv=0.2, maxv=20.0))
++    thickness = float(a.num("thickness", 12.0, minv=1.0, maxv=200.0))
++    angle = float(a.num("angle", 20.0, minv=-45.0, maxv=45.0))
++    bore = float(a.num("bore", 0.0, minv=0.0) or 0.0)
++    pts, r_tip, r_root, _ = _gear_profile(teeth, module)
++    hole = _bore_hole(bore, r_root)
++    cs = _cross(pts, [hole] if hole else None)
++    div = max(4, int(abs(angle) / 2.5))
++    solid = cs.extrude(thickness, div, twist_degrees=angle)
++    return _finish(a, name, solid, "gear_helical",
++                   f"косозубая z={teeth} m{module:g} · наклон {angle:g}° · "
++                   f"Ø{2 * r_tip:.1f}×{thickness:g} мм")
++
++
++# --------------------------------------------------------------------------- #
++#  Коническое колесо
++# --------------------------------------------------------------------------- #
++@op("gear_bevel", aliases=("коническая_шестерня", "шестерня_коническая",
++                           "bevel_gear"), category="Примитивы",
++    summary="Коническая шестерня: зубья сбегают к малому торцу, венец сужается.",
++    example="коническая = gear_bevel teeth=20 module=2 thickness=12 taper=0.6",
++    params={"teeth": "число зубьев (20)", "module": "модуль по большому торцу (2)",
++            "thickness": "ширина венца, мм (12)",
++            "taper": "доля большого торца, остающаяся у малого, 0.3…0.85 (0.6)",
++            "bore": "отверстие, мм (0)", "at": "положение [x,y,z]",
++            "center": "центрировать в at"})
++def gear_bevel(a, name):
++    teeth = int(a.num("teeth", 20, minv=8, maxv=200))
++    module = float(a.num("module", 2.0, minv=0.2, maxv=20.0))
++    thickness = float(a.num("thickness", 12.0, minv=1.0, maxv=200.0))
++    taper = float(a.num("taper", 0.6, minv=0.3, maxv=0.85))
++    bore = float(a.num("bore", 0.0, minv=0.0) or 0.0)
++    pts, r_tip, r_root, _ = _gear_profile(teeth, module)
++    cs = _cross(pts)
++    solid = cs.extrude(thickness, max(4, int(thickness / 1.5)),
++                       twist_degrees=0.0, scale_top=(taper, taper))
++    if bore:
++        solid = solid - _cone(thickness + 2.0, bore / 2.0,
++                              max(0.4, bore / 2.0 * taper), 48).translate(
++            (0, 0, -1.0))
++    return _finish(a, name, solid, "gear_bevel",
++                   f"коническая z={teeth} m{module:g} · венец {thickness:g} мм · "
++                   f"сужение до {taper * 100:.0f}%")
++
++
++# --------------------------------------------------------------------------- #
++#  Головки винтов
++# --------------------------------------------------------------------------- #
++_HEAD_TYPES = {
++    "потай": "csk", "потайная": "csk", "csk": "csk", "зенкованная": "csk",
++    "полукруг": "pan", "полукруглая": "pan", "pan": "pan",
++    "цилиндр": "socket", "цилиндрическая": "socket", "socket": "socket",
++    "шестигранник": "hex", "шестигранная": "hex", "hex": "hex",
++    "фланец": "flange_hex", "с_фланцем": "flange_hex", "flange": "flange_hex",
++    "шайба": "flange_pan", "с_шайбой": "flange_pan", "flanged_pan": "flange_pan",
++    "шестилопастная": "lobe", "лобастая": "lobe", "lobe": "lobe",
++}
++_DRIVES = {
++    "крест": "cross", "phillips": "cross", "ph": "cross",
++    "шлиц": "slot", "плоский": "slot", "slot": "slot",
++    "звезда": "torx", "torx": "torx",
++    "шестигранник": "hex", "hex": "hex", "имбус": "hex",
++    "torx_plus": "torx_plus", "торкс_плюс": "torx_plus",
++    "комбинированный": "combo", "combo": "combo",
++    "нет": "none", "none": "none", "без": "none",
++}
++
++
++@op("screw_head", aliases=("головка_винта", "винтовая_головка", "screwhead"),
++    category="Примитивы",
++    summary="Головка винта как отдельная деталь: семь профилей (потай, "
++            "полукруг, цилиндр, шестигранник, с фланцем, «шайба», "
++            "шестилопастная) и шесть шлицов.",
++    example="головка = screw_head d=6 head=цилиндр drive=шестигранник\n"
++            "потай = screw_head d=4 head=потай drive=крест\n"
++            "торкс = screw_head d=5 head=полукруг drive=torx_plus",
++    params={"d": "диаметр резьбы под головкой, мм (6)",
++            "head_d": "диаметр головки (2 × d)",
++            "head_h": "высота головки (у потайной — по углу 90°)",
++            "head": "потай, полукруг, цилиндр, шестигранник, фланец, шайба "
++                    "или шестилопастная (цилиндр)",
++            "drive": "крест, шлиц, звезда, шестигранник, torx_plus, "
++                     "комбинированный или нет (шестигранник)",
++            "drive_size": "размер шлица, мм (0.5 × head_d)",
++            "drive_depth": "глубина шлица, мм (0.5 × высоты головки)",
++            "at": "положение [x,y,z]", "center": "центрировать в at"})
++def screw_head(a, name):
++    d = float(a.num("d", 6.0, minv=0.5, maxv=100.0))
++    head_raw = (a.text("head") or "цилиндр").strip().lower()
++    if head_raw not in _HEAD_TYPES:
++        raise GeometryError(
++            f"screw_head: неизвестная головка «{head_raw}».",
++            hint="Есть: потай, полукруг, цилиндр, шестигранник, фланец, "
++                 "шайба, шестилопастная.")
++    head = _HEAD_TYPES[head_raw]
++    drive_raw = (a.text("drive") or "шестигранник").strip().lower()
++    if drive_raw not in _DRIVES:
++        raise GeometryError(
++            f"screw_head: неизвестный шлиц «{drive_raw}».",
++            hint="Есть: крест, шлиц, звезда, шестигранник, torx_plus, "
++                 "комбинированный, нет.")
++    drive = _DRIVES[drive_raw]
++    default_d = 2.0 * d if head not in ("csk", "flange_hex", "flange_pan") else 2.1 * d
++    head_d = float(a.num("head_d", default_d, minv=1.2 * d, maxv=20.0 * d))
++    if head == "csk":
++        head_h = float(a.num("head_h", (head_d - d) / 2.0, minv=0.4, maxv=5.0 * d))
++    else:
++        head_h = float(a.num("head_h", 0.62 * d, minv=0.4, maxv=10.0 * d))
++    top = head_h
++
++    if head == "csk":
++        solid = _cone(head_h, d / 2.0, head_d / 2.0, 56)
++        solid = solid + _cyl(0.3, head_d / 2.0, 56).translate((0, 0, head_h - 0.3))
++        top = head_h
++    elif head == "pan":
++        body_h = head_h * 0.55
++        rr = head_d / 2.0
++        solid = _cyl(body_h, rr, 56)
++        dome = mf.Manifold.sphere(rr, 48).translate((0, 0, body_h))
++        dome = dome - _box(rr * 3, rr * 3, rr * 3).translate(
++            (0, 0, body_h - rr * 1.5))          # оставляем верхнюю полусферу
++        solid = solid + dome
++        top = body_h + rr
++    elif head == "socket":
++        solid = _cyl(head_h, head_d / 2.0, 56)
++        ch = min(head_h * 0.35, head_d * 0.12, 0.9)
++        cutter = (_cyl(ch, head_d / 2.0 + 0.3, 56)
++                  - _cyl(ch + 1.0, head_d / 2.0 - ch, 56))
++        solid = solid - cutter.translate((0, 0, head_h - ch))
++        top = head_h
++    elif head == "hex":
++        r = head_d / math.sqrt(3.0)
++        solid = mf.Manifold.cylinder(head_h, r, r, 6)
++        top = head_h
++    elif head == "flange_hex":
++        flange_h = max(0.6, head_h * 0.18)
++        flange_r = head_d / 2.0
++        r = (head_d * 0.845) / math.sqrt(3.0)
++        solid = _cyl(flange_h, flange_r, 56)
++        solid = solid + mf.Manifold.cylinder(head_h + flange_h * 0.5, r, r, 6)
++        top = head_h + flange_h * 0.5
++    elif head == "flange_pan":
++        flange_h = max(0.6, head_h * 0.2)
++        solid = _cyl(flange_h, head_d / 2.0, 56)
++        solid = solid + _cyl(head_h, head_d * 0.36, 56).translate((0, 0, flange_h))
++        top = head_h + flange_h
++    else:      # шестилопастная: наружный контур с шестью плавными лопастями
++        lobes = []
++        for i in range(120):
++            ang = 2 * math.pi * i / 120
++            r = head_d / 2.0 * (0.86 + 0.14 * math.cos(6 * ang))
++            lobes.append((r * math.cos(ang), r * math.sin(ang)))
++        solid = _cross(lobes).extrude(head_h)
++        top = head_h
++
++    if drive != "none":
++        size = float(a.num("drive_size", 0.5 * head_d, minv=0.3,
++                           maxv=head_d * 0.8))
++        want = float(a.num("drive_depth", max(0.5, head_h * 0.5), minv=0.1))
++        deep = min(want, max(0.3, (top - 0.0) * 0.6))
++        if drive == "cross":
++            tool = _cross(_plus_shape(size, size * 0.28)).extrude(deep + 1.0)
++            solid = solid - tool.translate((0, 0, top - deep))
++        elif drive == "slot":
++            solid = solid - _box(head_d * 1.05, max(0.4, size * 0.26), deep + 1.0).translate(
++                (0, 0, top - deep))
++        elif drive in ("torx", "torx_plus"):
++            # Torx — шесть круглых лопастей вокруг одного кармана: союз
++            # цилиндров даёт честный контур, модулированный радиус — нет.
++            lobe_ring = size * 0.30
++            lobe_r = size * 0.20 if drive == "torx" else size * 0.22
++            core_r = size * 0.28 if drive == "torx" else size * 0.30
++            cs = _cross(_circle(core_r, 48))
++            for i in range(6):
++                ang = 2 * math.pi * i / 6
++                cs = cs + _cross(_circle(lobe_r, 32,
++                                         lobe_ring * math.cos(ang),
++                                         lobe_ring * math.sin(ang)))
++            solid = solid - cs.extrude(deep + 1.0).translate((0, 0, top - deep))
++        elif drive == "hex":
++            r = size / math.sqrt(3.0)
++            solid = solid - mf.Manifold.cylinder(deep + 1.0, r, r, 6).translate(
++                (0, 0, top - deep))
++        else:      # комбинированный: крест и поверх него прямой шлиц
++            tool = _cross(_plus_shape(size, size * 0.26)).extrude(deep + 1.0)
++            solid = solid - tool.translate((0, 0, top - deep))
++            slot = _box(min(head_d * 0.92, size * 1.25), max(0.4, size * 0.20),
++                        deep * 0.75 + 1.0)
++            solid = solid - slot.translate((0, 0, top - deep * 0.75))
++    return _finish(a, name, solid, "screw_head",
++                   f"головка {head_raw} Ø{head_d:g}×{top:.2f} мм · шлиц {drive_raw}"
++                   f" · под резьбу M{d:g}")
++
++
++# --------------------------------------------------------------------------- #
++#  Барашек
++# --------------------------------------------------------------------------- #
++@op("wing_nut", aliases=("барашек", "гайка_барашек", "wingnut"), category="Примитивы",
++    summary="Гайка-барашек: ступица с резьбой и два лепестка-крыла, которые "
++            "отливаются вместе со ступицей.",
++    example="барашек = wing_nut d=8 wing=26 height=18",
++    params={"d": "диаметр резьбы, мм (8)", "pitch": "шаг резьбы (1.25)",
++            "height": "высота ступицы, мм (18)",
++            "wing": "вылет крыла от оси, мм (26)",
++            "wing_t": "толщина крыла, мм (5)",
++            "thread": "нарезать резьбу (да)",
++            "at": "положение [x,y,z]", "center": "центрировать в at"})
++def wing_nut(a, name):
++    d = float(a.num("d", 8.0, minv=2.0, maxv=100.0))
++    pitch = float(a.num("pitch", max(0.35, 0.15 * d), minv=0.1, maxv=10.0))
++    h = float(a.num("height", 18.0, minv=4.0, maxv=200.0))
++    wing = float(a.num("wing", 26.0, minv=d * 1.2, maxv=400.0))
++    wt = float(a.num("wing_t", 5.0, minv=1.0, maxv=60.0))
++    thread = a.boolean("thread", True)
++    boss_r = max(d * 0.82, h * 0.42)
++    if wing <= boss_r:
++        raise GeometryError("Крыло короче ступицы — барашек не получится: "
++                            "увеличьте wing.")
++
++    # контур крыла в плоскости XZ (x — вылет, z — высота), симметрично
++    right = [(0.0, h * 0.62), (wing * 0.22, h * 0.96), (wing * 0.55, h * 1.0),
++             (wing * 0.84, h * 0.80), (wing, h * 0.42), (wing * 0.78, h * 0.10),
++             (wing * 0.40, 0.0), (0.0, 0.0)]
++    left = [(-x, z) for (x, z) in reversed(right[1:-1])]
++    poly = right + left          # x>0 сверху вниз, затем x<0 снизу вверх
++    body = _cross(poly).extrude(wt).rotate((90, 0, 0)).translate((0, wt / 2.0, 0))
++    boss = _cyl(h, boss_r, 72)
++    solid = body + boss
++    if thread:
++        solid = solid - _thread_bore(d, pitch, h)
++    else:
++        solid = solid - _cyl(h + 0.4, d * 0.42, 48).translate((0, 0, -0.2))
++    return _finish(a, name, solid, "wing_nut",
++                   f"барашек M{d:g} · высота {h:g} мм · вылет {wing:g} мм"
++                   + (" · резьба" if thread else ""))
++
++
++# --------------------------------------------------------------------------- #
++#  Особые гайки
++# --------------------------------------------------------------------------- #
++_NUT_KINDS = {
++    "колпачковая": "cap", "колпак": "cap", "cap": "cap",
++    "фланец": "flange", "с_фланцем": "flange", "flange": "flange",
++    "nyloc": "nyloc", "самоконтрящаяся": "nyloc", "нейлоновая": "nyloc",
++    "квадратная": "square", "square": "square",
++    "t": "t", "т": "t", "t_гайка": "t",
++    "закладная": "weld", "weld": "weld", "приварная": "weld",
++}
++
++
++@op("special_nut", aliases=("гайка_колпачковая", "гайка_с_фланцем",
++                            "гайка_nyloc", "гайка_квадратная", "гайка_t",
++                            "гайка_закладная", "special_nut"),
++    category="Примитивы",
++    summary="Гайки, которых нет у nut: колпачковая, с фланцем, самоконтрящаяся "
++            "Nyloc, квадратная, T-гайка и закладная (приварная).",
++    example="колпак = special_nut d=8 type=колпачковая\n"
++            "фланец = special_nut d=6 type=фланец\n"
++            "nyloc = special_nut d=10 type=nyloc",
++    params={"d": "диаметр резьбы, мм (8)", "pitch": "шаг резьбы (1.25)",
++            "h": "высота гайки, мм (0.8 × d)",
++            "s": "размер под ключ, мм (1.6 × d)",
++            "type": "колпачковая, фланец, nyloc, квадратная, t или закладная "
++                    "(колпачковая)",
++            "thread": "нарезать резьбу (да)",
++            "at": "положение [x,y,z]", "center": "центрировать в at"})
++def special_nut(a, name):
++    d = float(a.num("d", 8.0, minv=1.5, maxv=200.0))
++    pitch = float(a.num("pitch", max(0.35, 0.15 * d), minv=0.1, maxv=20.0))
++    h = float(a.num("h", 0.8 * d, minv=0.6, maxv=200.0))
++    s = float(a.num("s", max(d + 2.0, 1.6 * d), minv=d * 0.9, maxv=600.0))
++    kind_raw = (a.text("type") or "колпачковая").strip().lower()
++    if kind_raw not in _NUT_KINDS:
++        raise GeometryError(
++            f"special_nut: неизвестный тип «{kind_raw}».",
++            hint="Есть: колпачковая, фланец, nyloc, квадратная, t, закладная.")
++    kind = _NUT_KINDS[kind_raw]
++    thread = a.boolean("thread", True)
++    hex_r = s / math.sqrt(3.0)
++
++    if kind == "cap":
++        dome_h = min(s * 0.55, h * 1.1)
++        cap_r = s * 0.58
++        cap = mf.Manifold.sphere(cap_r, 48).translate((0, 0, h - 1.0))
++        cap = cap - _box(cap_r * 3, cap_r * 3, cap_r * 3).translate(
++            (0, 0, h - 1.0 - cap_r * 1.5))
++        solid = _hex_prism(s, h) + cap
++        depth = h - 1.0 + dome_h * 0.55
++    elif kind == "flange":
++        flange_h = max(0.8, h * 0.18)
++        flange_r = s * 0.72
++        solid = _cyl(flange_h, flange_r, 72)
++        solid = solid + _hex_prism(max(0.5, s * 0.88), h).translate((0, 0, flange_h))
++        h = h + flange_h
++        depth = h
++    elif kind == "nyloc":
++        h_hex = max(0.8, h * 0.72)
++        collar_h = h - h_hex
++        collar_r = s * 0.68
++        solid = _hex_prism(s, h_hex)
++        solid = solid + _cyl(collar_h + 1.0, collar_r, 64).translate((0, 0, h_hex - 1.0))
++        # нейлоновое кольцо: кольцевой паз сверху
++        solid = solid - _ring(collar_r - 0.8, d * 0.30, collar_h * 0.42 + 0.5).translate(
++            (0, 0, h - collar_h * 0.42))
++        depth = h
++    elif kind == "square":
++        side = s * 0.92
++        solid = _box(side, side, h, center=False).translate((-side / 2.0, -side / 2.0, 0.0))
++        depth = h
++    elif kind == "t":
++        flange_h = max(0.6, h * 0.22)
++        flange_r = s * 0.78
++        solid = _cyl(flange_h, flange_r, 72)
++        solid = solid + _cyl(h - flange_h, min(s * 0.48, flange_r * 0.7), 64).translate(
++            (0, 0, flange_h))
++        h = h + flange_h
++        depth = h
++    else:      # закладная / приварная: квадратная площадка с четырьмя бобышками
++        plate = s * 1.12
++        plate_h = max(0.8, h * 0.3)
++        solid = _box(plate, plate, plate_h, center=False).translate(
++            (-plate / 2.0, -plate / 2.0, 0.0))
++        boss_h = h - plate_h
++        solid = solid + _cyl(boss_h, s * 0.42, 64).translate((0, 0, plate_h))
++        for i in range(4):
++            ang = math.pi / 4.0 + i * math.pi / 2.0
++            px = plate * 0.36 * math.cos(ang)
++            py = plate * 0.36 * math.sin(ang)
++            solid = solid - _cyl(plate_h + 1.0, s * 0.10, 24).translate(
++                (px, py, -0.5))
++        h = h + 0.0
++        depth = h
++
++    if thread:
++        solid = solid - _thread_bore(d, pitch, depth)
++    else:
++        solid = solid - _cyl(depth + 0.4, d * 0.42, 48).translate((0, 0, -0.2))
++    return _finish(a, name, solid, "special_nut",
++                   f"гайка {kind_raw} M{d:g} · под ключ {s:g} мм · высота {h:g} мм"
++                   + (" · резьба" if thread else ""))
++
++
++def _hex_prism(across_flats: float, height: float) -> mf.Manifold:
++    r = float(across_flats) / math.sqrt(3.0)
++    return mf.Manifold.cylinder(float(height), r, r, 6)
++
++
++# --------------------------------------------------------------------------- #
++#  Исходная ориентация (дополняет forma/orient_notes.py при импорте модуля)
++# --------------------------------------------------------------------------- #
++ORIENTATION_NOTES = {
++    "bearing": "Ось и посадочное отверстие по Z: торцы колец в плоскостях XY, "
++               "тела качения и сепаратор между ними. d — внутренний, D — "
++               "наружный диаметр, B — ширина вдоль Z. Упорный тип даёт два "
++               "плоских кольца с шарами между ними.",
++    "din_rail": "Длина по X, ширина профиля (35/15/45) по Y, высота 7.5 мм по "
++                "+Z; загнутые полки и просвет смотрят вверх +Z, просечки "
++                "проходят по Z через заднюю стенку. Низ рейки на z=0.",
++    "crate": "Длина по X, ширина по Y, высота по +Z; дно на z=0 (или на "
++             "полозьях), стойки в четырёх вертикальных углах, доски стенок "
++             "горизонтальны. Крышка при lid=да добавляется сверху +Z.",
++    "lug": "Площадка лежит в XY, отверстие под палец в начале координат, "
++           "площадка уходит в −Y; отогнутая полка поднимается +Z на дальнем "
++           "конце −Y. Крепёжные отверстия полки проходят по Y.",
++    "corner_bracket": "Угол в начале координат: горизонтальная полка идёт +X, "
++                      "вертикальная поднимается +Z, ширина полки по Y "
++                      "симметрична. Косынка стоит в плоскости XY? нет — в XZ, "
++                      "по центру ширины.",
++    "buckle": "Обе половины лежат в XY толщиной по Z: рамка слева −X, "
++              "ответная часть справа +X, усики смотрят в −X. Окна под стропу "
++              "сквозные по Z.",
++    "rack": "Длина и зубья идут по X, ширина по Y, высота по +Z; зубья "
++            "смотрят вверх +Z, основание снизу на z=0.",
++    "gear_internal": "Венец лежит в XY, ось и толщина по Z; зубья направлены "
++                     "внутрь к оси, наружная поверхность гладкая.",
++    "gear_helical": "Венец лежит в XY, ось по Z; зубья закручены винтом вдоль "
++                    "Z на angle. Положительный угол закручивает верх "
++                    "относительно низа.",
++    "gear_bevel": "Большой торец снизу на z=0, малый сверху +Z; зубья сбегают "
++                  "к верхнему торцу, ось по Z.",
++    "screw_head": "Головка стоит на плоском основании z=0 и растёт вверх +Z; "
++                  "шлиц открыт сверху. У потайной основание — узкий торец "
++                  "диаметром d, расширение идёт вверх.",
++    "wing_nut": "Ось резьбы и ступицы по Z, крылья разведены по ±X и лежат "
++                "плашмя: толщина крыла по Y. Низ гайки на z=0.",
++    "special_nut": "Ось резьбы по Z, низ гайки на z=0; колпачок и поясок "
++                   "Nyloc направлены +Z, фланец у фланцевой и T-гайки — вниз, "
++                   "бобышки закладной — снизу −Z.",
++}
+diff --git a/forma/forma/run.py b/forma/forma/run.py
+index d2699dc..389a53a 100644
+--- a/forma/forma/run.py
++++ b/forma/forma/run.py
+@@ -69,6 +69,12 @@ from . import ops_orient  # noqa: F401,E402
+ from . import ops_eye  # noqa: F401,E402
+ from . import ops_web  # noqa: F401,E402
+ from . import ops_organic  # noqa: F401,E402
++from . import ops_mechparts  # noqa: F401,E402
++
++# Новые механические примитивы приносят свои памятки ориентации вместе с
++# геометрией — так модуль переносится одним файлом, без правки orient_notes.
++from .orient_notes import PRIMITIVE_ORIENTATIONS as _PRIMITIVE_ORIENTATIONS  # noqa: E402
++_PRIMITIVE_ORIENTATIONS.update(ops_mechparts.ORIENTATION_NOTES)
+ 
+ 
+ # Команды, которые не меняют ни форму, ни видимость: в анимации сборки
+diff --git a/forma/tests/test_mechparts.py b/forma/tests/test_mechparts.py
+new file mode 100644
+index 0000000..036af3a
+--- /dev/null
++++ b/forma/tests/test_mechparts.py
+@@ -0,0 +1,329 @@
++"""Механические примитивы: подшипники, рейки, шестерни, крепёж, тара.
++
++Проверяем числа, а не «похоже ли»: габарит, объём, число тел в детали и то,
++что параметры действительно меняют геометрию. Отдельно проверяем реестр:
++новые команды обязаны попасть в категорию «Примитивы» вместе с памяткой
++исходной ориентации — иначе тест test_v041 упадёт на полноте реестра.
++"""
++from __future__ import annotations
++
++import unittest
++
++from forma.ops import OPS, lookup
++
++from forma.run import build
++
++MODULE_OPS = ("bearing", "din_rail", "crate", "lug", "corner_bracket", "buckle",
++              "rack", "gear_internal", "gear_helical", "gear_bevel",
++              "screw_head", "wing_nut", "special_nut")
++
++
++def make(script: str):
++    return build(script)
++
++
++def size(b) -> list[float]:
++    return [round(v, 1) for v in b.analysis["metrics"]["size"]]
++
++
++def volume(b) -> float:
++    return b.analysis["metrics"]["volume_cm3"]
++
++
++def parts(b) -> int:
++    return len(b.visible_solids()[0].manifold.decompose())
++
++
++class RegistryTest(unittest.TestCase):
++    def test_new_ops_are_primitives(self):
++        for name in MODULE_OPS:
++            spec = OPS.get(name)
++            self.assertIsNotNone(spec, name)
++            self.assertEqual(spec.category, "Примитивы", name)
++            self.assertTrue(spec.summary and spec.example and spec.params, name)
++
++    def test_russian_aliases_resolve(self):
++        pairs = {
++            "подшипник": "bearing",
++            "монтажная_рейка": "din_rail",
++            "дощатый_ящик": "crate",
++            "проушина": "lug",
++            "угловой_кронштейн": "corner_bracket",
++            "фастекс": "buckle",
++            "зубчатая_рейка": "rack",
++            "внутренняя_шестерня": "gear_internal",
++            "косозубая_шестерня": "gear_helical",
++            "коническая_шестерня": "gear_bevel",
++            "головка_винта": "screw_head",
++            "барашек": "wing_nut",
++            "гайка_nyloc": "special_nut",
++        }
++        for alias, expected in pairs.items():
++            spec = lookup(alias)
++            self.assertIsNotNone(spec, alias)
++            self.assertEqual(spec.name, expected, alias)
++
++    def test_orientation_notes_merged(self):
++        from forma.orient_notes import PRIMITIVE_ORIENTATIONS
++        for name in MODULE_OPS:
++            self.assertIn(name, PRIMITIVE_ORIENTATIONS, name)
++            self.assertTrue(PRIMITIVE_ORIENTATIONS[name].strip(), name)
++
++    def test_alias_does_not_steal_old_command(self):
++        # «ящик» исторически принадлежит box_body; тара живёт под своим именем.
++        self.assertEqual(lookup("ящик").name, "box_body")
++        self.assertEqual(lookup("crate").name, "crate")
++
++
++class BearingTest(unittest.TestCase):
++    def test_ball_bearing_sizes(self):
++        b = make("b = bearing d=15 D=35 B=11")
++        self.assertTrue(b.ok, b.error)
++        self.assertEqual(size(b), [35.0, 35.0, 11.0])
++        self.assertEqual(parts(b), 1)
++        self.assertGreater(volume(b), 3.0)
++
++    def test_all_kinds_build_single_body(self):
++        scripts = {
++            "шариковый": "d=15 D=35 B=11",
++            "роликовый": "d=25 D=52 B=15 type=роликовый",
++            "игольчатый": "d=20 D=26 B=16 type=игольчатый",
++            "конический": "d=25 D=47 B=15 type=конический",
++            "упорный": "d=30 D=47 B=11 type=упорный",
++            "сферический": "d=30 D=62 B=20 type=сферический",
++        }
++        for name, args in scripts.items():
++            b = make(f"b = bearing {args}")
++            self.assertTrue(b.ok, f"{name}: {b.error}")
++            self.assertEqual(parts(b), 1, name)
++
++    def test_type_changes_geometry(self):
++        ball = make("b = bearing d=25 D=52 B=15").analysis["metrics"]["volume_cm3"]
++        roller = make("b = bearing d=25 D=52 B=15 type=роликовый") \
++            .analysis["metrics"]["volume_cm3"]
++        self.assertGreater(abs(roller - ball), 1.0)
++
++    def test_thrust_is_two_washers(self):
++        b = make("b = bearing d=30 D=47 B=11 type=упорный")
++        self.assertEqual(size(b), [47.0, 47.0, 11.0])
++        self.assertEqual(parts(b), 1)
++        radial = make("b = bearing d=30 D=47 B=11")
++        # у упорного два плоских кольца, у радиального ещё и сепаратор с телами
++        self.assertGreater(volume(b), volume(radial) * 0.5)
++
++    def test_shield_adds_material(self):
++        open_b = make("b = bearing d=8 D=22 B=7").analysis["metrics"]["volume_cm3"]
++        shut = make("b = bearing d=8 D=22 B=7 shield=да").analysis["metrics"]["volume_cm3"]
++        self.assertGreater(shut, open_b)
++
++    def test_bad_rings_rejected(self):
++        b = make("b = bearing d=30 D=20")
++        self.assertFalse(b.ok)
++        self.assertIn("допустимо", b.error["message"])
++
++    def test_unknown_type_has_hint(self):
++        b = make("b = bearing type=космический")
++        self.assertFalse(b.ok)
++        self.assertIn("Есть:", b.error.get("hint", ""))
++
++
++class DinRailTest(unittest.TestCase):
++    def test_ts35_profile(self):
++        b = make("r = din_rail length=500")
++        self.assertTrue(b.ok, b.error)
++        self.assertEqual(size(b), [500.0, 35.0, 7.5])
++        self.assertEqual(parts(b), 1)
++
++    def test_ts15_profile(self):
++        b = make("r = din_rail length=300 size=15 thickness=0.8")
++        self.assertEqual(size(b), [300.0, 15.0, 5.0])
++
++    def test_slots_cut_material(self):
++        solid = make("r = din_rail length=500 slots=нет").analysis["metrics"]["volume_cm3"]
++        holed = make("r = din_rail length=500").analysis["metrics"]["volume_cm3"]
++        self.assertLess(holed, solid)
++        # просечки через 25 мм: на 500 мм их 20
++        self.assertAlmostEqual((solid - holed) / 1.0, 20 * 15 * 6.5 / 1000,
++                               delta=2.5)
++
++
++class CrateTest(unittest.TestCase):
++    def test_default_crate_is_drawing_size(self):
++        b = make("c = crate length=880 width=600 height=790")
++        self.assertTrue(b.ok, b.error)
++        self.assertEqual(size(b), [880.0, 600.0, 790.0])
++        self.assertEqual(parts(b), 1)
++
++    def test_lid_and_skids_grow_height(self):
++        plain = make("c = crate length=600 width=400 height=300")
++        packed = make("c = crate length=600 width=400 height=300 lid=да skids=60")
++        self.assertEqual(size(plain)[2], 300.0)
++        self.assertGreater(size(packed)[2], 300.0)
++        self.assertLess(volume(plain), volume(packed))
++
++    def test_too_small_for_posts(self):
++        b = make("c = crate length=200 width=200 post=90")
++        self.assertFalse(b.ok)
++        self.assertIn("стоек", b.error["message"].lower())
++
++
++class LugTest(unittest.TestCase):
++    def test_bent_lug(self):
++        b = make("l = lug inner=32 outer=64 length=90 thickness=4 bend=30")
++        self.assertTrue(b.ok, b.error)
++        self.assertEqual(size(b), [64.0, 122.0, 30.0])
++        self.assertEqual(parts(b), 1)
++
++    def test_flat_lug_with_plate_holes(self):
++        b = make("l = lug inner=20 outer=44 length=70 thickness=5 bend=0 plate_holes=4")
++        self.assertEqual(size(b)[2], 5.0)
++        self.assertLess(volume(b), volume(
++            make("l = lug inner=20 outer=44 length=70 thickness=5 bend=0")))
++
++    def test_wide_plate_rejected(self):
++        b = make("l = lug inner=10 outer=40 width=60")
++        self.assertFalse(b.ok)
++        self.assertIn("головк", b.error["message"].lower())
++
++
++class CornerBracketTest(unittest.TestCase):
++    def test_bracket_with_gusset(self):
++        b = make("k = corner_bracket size=[80,80] width=60 thickness=5 gusset=5")
++        self.assertTrue(b.ok, b.error)
++        self.assertEqual(size(b), [80.0, 60.0, 80.0])
++        self.assertEqual(parts(b), 1)
++
++    def test_gusset_adds_material(self):
++        thin = make("k = corner_bracket size=[80,80] width=60 thickness=5 gusset=0")
++        thick = make("k = corner_bracket size=[80,80] width=60 thickness=5 gusset=8")
++        self.assertGreater(volume(thick), volume(thin))
++
++
++class BuckleTest(unittest.TestCase):
++    def test_two_halves(self):
++        b = make("f = buckle width=25 length=60")
++        self.assertTrue(b.ok, b.error)
++        self.assertEqual(parts(b), 2)
++        self.assertEqual(size(b)[2], 7.0)
++
++    def test_too_short_for_prongs(self):
++        b = make("f = buckle width=40 length=45")
++        self.assertFalse(b.ok)
++        self.assertIn("усики", b.error["message"])
++
++
++class GearSetTest(unittest.TestCase):
++    def test_rack_matches_module(self):
++        b = make("z = rack length=300 module=2 width=20 height=18")
++        self.assertTrue(b.ok, b.error)
++        self.assertAlmostEqual(size(b)[0], 300.0, delta=0.1)
++        self.assertAlmostEqual(size(b)[2], 18.0, delta=0.1)
++        # шаг зуба π·m: на 300 мм при m=2 получается 47 зубьев
++        self.assertEqual(parts(b), 1)
++
++    def test_rack_holes_cut_material(self):
++        solid = make("z = rack length=300 module=2 width=20 height=18")
++        drilled = make("z = rack length=300 module=2 width=20 height=18 holes=3")
++        self.assertLess(volume(drilled), volume(solid))
++
++    def test_internal_gear_ring(self):
++        b = make("g = gear_internal teeth=40 module=2 thickness=10 rim=6")
++        self.assertTrue(b.ok, b.error)
++        self.assertAlmostEqual(size(b)[0], 96.0, delta=0.2)
++        self.assertEqual(parts(b), 1)
++        # сквозное отверстие венца: внутренний контур не сплошной
++        self.assertLess(volume(b), 3.5 * 3.5 * 3.14 * 1.0 * 10)
++
++    def test_helical_gear_twists(self):
++        straight = make("g = gear_helical teeth=24 module=2 thickness=12 angle=0")
++        twisted = make("g = gear_helical teeth=24 module=2 thickness=12 angle=25")
++        self.assertTrue(twisted.ok, twisted.error)
++        self.assertEqual(size(straight)[:2], size(twisted)[:2])
++        self.assertAlmostEqual(volume(straight), volume(twisted), delta=0.4)
++
++    def test_bevel_gear_tapers(self):
++        b = make("g = gear_bevel teeth=20 module=2 thickness=12 taper=0.6")
++        self.assertTrue(b.ok, b.error)
++        self.assertEqual(size(b)[2], 12.0)
++        self.assertLess(size(b)[0], 44.0)
++        self.assertEqual(parts(b), 1)
++
++    def test_bevel_taper_changes_material(self):
++        wide = make("g = gear_bevel teeth=20 module=2 thickness=12 taper=0.85")
++        narrow = make("g = gear_bevel teeth=20 module=2 thickness=12 taper=0.35")
++        self.assertGreater(volume(wide), volume(narrow) * 1.3)
++
++
++class ScrewHeadTest(unittest.TestCase):
++    HEADS = ("потай", "полукруг", "цилиндр", "шестигранник", "фланец",
++             "шайба", "шестилопастная")
++    DRIVES = ("крест", "шлиц", "звезда", "шестигранник", "torx_plus",
++              "комбинированный", "нет")
++
++    def test_every_head_builds(self):
++        for head in self.HEADS:
++            b = make(f"h = screw_head d=6 head={head} drive=крест")
++            self.assertTrue(b.ok, f"{head}: {b.error}")
++            self.assertEqual(parts(b), 1, head)
++            self.assertGreater(volume(b), 0.01, head)
++
++    def test_every_drive_builds(self):
++        for drive in self.DRIVES:
++            b = make(f"h = screw_head d=6 head=цилиндр drive={drive}")
++            self.assertTrue(b.ok, f"{drive}: {b.error}")
++            self.assertEqual(parts(b), 1, drive)
++
++    def test_drive_removes_material(self):
++        plain = make("h = screw_head d=6 head=цилиндр drive=нет")
++        socket = make("h = screw_head d=6 head=цилиндр drive=шестигранник")
++        self.assertLess(volume(socket), volume(plain))
++
++    def test_countersunk_is_flat_and_wide(self):
++        b = make("h = screw_head d=4 head=потай drive=крест")
++        self.assertAlmostEqual(size(b)[0], 8.4, delta=0.2)
++        self.assertLess(size(b)[2], 3.0)
++
++    def test_unknown_head_message(self):
++        b = make("h = screw_head head=круглая")
++        self.assertFalse(b.ok)
++        self.assertIn("Есть:", b.error.get("hint", ""))
++
++
++class WingNutTest(unittest.TestCase):
++    def test_wing_span(self):
++        b = make("w = wing_nut d=8")
++        self.assertTrue(b.ok, b.error)
++        self.assertEqual(size(b)[0], 52.0)
++        self.assertEqual(size(b)[2], 18.0)
++        self.assertEqual(parts(b), 1)
++
++    def test_thread_carved(self):
++        cut = make("w = wing_nut d=8 thread=нет")
++        threaded = make("w = wing_nut d=8")
++        self.assertGreater(volume(cut), volume(threaded))
++
++
++class SpecialNutTest(unittest.TestCase):
++    KINDS = ("колпачковая", "фланец", "nyloc", "квадратная", "t", "закладная")
++
++    def test_every_kind_builds(self):
++        for kind in self.KINDS:
++            b = make(f"n = special_nut d=8 type={kind}")
++            self.assertTrue(b.ok, f"{kind}: {b.error}")
++            self.assertEqual(parts(b), 1, kind)
++            self.assertGreater(volume(b), 0.1, kind)
++
++    def test_kinds_differ(self):
++        sizes = {kind: size(make(f"n = special_nut d=8 type={kind}"))
++                 for kind in self.KINDS}
++        self.assertNotEqual(sizes["колпачковая"], sizes["квадратная"])
++        self.assertNotEqual(sizes["t"], sizes["закладная"])
++
++    def test_cap_is_taller_than_flat_nut(self):
++        cap = make("n = special_nut d=8 type=колпачковая")
++        plain = make("n = special_nut d=8 type=квадратная")
++        self.assertGreater(size(cap)[2], size(plain)[2])
++
++
++if __name__ == "__main__":
++    unittest.main()
+diff --git a/forma/tests/test_v041.py b/forma/tests/test_v041.py
+index 7a915ac..3f16fef 100644
+--- a/forma/tests/test_v041.py
++++ b/forma/tests/test_v041.py
+@@ -49,7 +49,7 @@ class OrientationNotesTest(unittest.TestCase):
+     def test_every_primitive_has_own_orientation_note(self):
+         primitives = {c["name"] for c in commands_help()
+                       if c["category"] == "Примитивы"}
+-        self.assertEqual(len(primitives), 122)
++        self.assertEqual(len(primitives), 135)
+         self.assertEqual(primitives, set(PRIMITIVE_ORIENTATIONS))
+         for command in commands_help():
+             if command["name"] in primitives:
+diff --git a/forma/tests/test_v043.py b/forma/tests/test_v043.py
+index 62067e4..967396b 100644
+--- a/forma/tests/test_v043.py
++++ b/forma/tests/test_v043.py
+@@ -41,8 +41,10 @@ def inside(m, point) -> bool:
+ 
+ class RemovedObjectsTest(unittest.TestCase):
+     # rail и hinge возвращены в 0.53 как новые, геометрически проверенные
+-    # конструкторы; остальные шесть старых команд по-прежнему удалены.
+-    REMOVED = ("bearing", "caster", "rack", "coupling", "heatsink", "leg")
++    # конструкторы; bearing и rack — так же возвращены новыми конструкторами
++    # (кольца с телами качения и зубчатая рейка по модулю), остальные четыре
++    # старых команды по-прежнему удалены.
++    REMOVED = ("caster", "coupling", "heatsink", "leg")
+ 
+     def test_registry_rejects_all_six(self):
+         for op in self.REMOVED:
+@@ -233,7 +235,7 @@ class FirstBatchRegressionTest(unittest.TestCase):
+ class HelpExamplesTest(unittest.TestCase):
+     def test_every_primitive_help_example_builds(self):
+         specs = [c for c in commands_help() if c["category"] == "Примитивы"]
+-        self.assertEqual(len(specs), 122)
++        self.assertEqual(len(specs), 135)
+         for spec in specs:
+             with self.subTest(command=spec["name"]):
+                 result = build(spec["example"], analyze_model=False)
+diff --git a/forma/tests/test_v044.py b/forma/tests/test_v044.py
+index 29a4ed2..60fb6cc 100644
+--- a/forma/tests/test_v044.py
++++ b/forma/tests/test_v044.py
+@@ -42,9 +42,11 @@ class RegistryTest(unittest.TestCase):
+         for op in ("strip", "grating", "spikes", "column", "arc_prism", "profile2020"):
+             with self.subTest(op=op):
+                 self.assertIsNotNone(lookup(op))
+-        # rail и hinge возвращены новыми конструкторами в 0.53.
+-        for op in ("bearing", "caster", "rack", "coupling",
+-                   "heatsink", "leg", "форма_п", "форма_у"):
++        # rail и hinge возвращены новыми конструкторами в 0.53,
++        # bearing и rack — новыми конструкторами вместе с механическими
++        # примитивами.
++        for op in ("caster", "coupling", "heatsink", "leg",
++                   "форма_п", "форма_у"):
+             with self.subTest(removed=op):
+                 self.assertIsNone(lookup(op))
+ 
+diff --git a/forma/web/js/app.js b/forma/web/js/app.js
+index 51c96e0..8890955 100644
+--- a/forma/web/js/app.js
++++ b/forma/web/js/app.js
+@@ -5583,6 +5583,143 @@ const TOOL_SHAPES = [
+       { k: 'kissaki', label: 'зона острия', v: 0.06, step: 0.01, min: 0.01, max: 0.35 },
+     ],
+   },
++  {
++    op: 'bearing', name: 'подшипник', title: 'Подшипник', group: 'Готовые детали',
++    desc: 'Кольца с фасками, тела качения и сепаратор; тип задаёт шарики, ролики, иглы, конусы или упорные шайбы.',
++    params: [
++      { k: 'd', label: 'внутренний', v: 15, step: 1, min: 1, max: 2000 },
++      { k: 'D', label: 'наружный', v: 35, step: 1, min: 2, max: 3000 },
++      { k: 'B', label: 'ширина', v: 11, step: 0.5, min: 0.5, max: 600 },
++      { k: 'type', label: 'тип', v: 'шариковый', kind: 'raw', choices: ['шариковый', 'роликовый', 'игольчатый', 'конический', 'упорный', 'сферический'] },
++      { k: 'shield', label: 'закрытый', v: false, kind: 'bool' },
++    ],
++  },
++  {
++    op: 'din_rail', name: 'рейка_din', title: 'DIN-рейка', group: 'Готовые детали',
++    desc: 'Профиль TS35/TS15/TS45 по DIN 60715 с загнутыми полками и просечками через 25 мм.',
++    params: [
++      { k: 'length', label: 'длина', v: 500, step: 10, min: 20, max: 6000 },
++      { k: 'size', label: 'профиль', v: 35, step: 1, min: 10, max: 60 },
++      { k: 'thickness', label: 'сталь', v: 1, step: 0.1, min: 0.3, max: 4 },
++      { k: 'slots', label: 'просечки', v: true, kind: 'bool' },
++    ],
++  },
++  {
++    op: 'crate', name: 'ящик_тарный', title: 'Дощатый ящик', group: 'Готовые детали',
++    desc: 'Дно на балках, стенки из досок с зазорами, четыре угловые стойки, крышка и полозья по желанию.',
++    params: [
++      { k: 'length', label: 'длина', v: 880, step: 10, min: 120, max: 4000 },
++      { k: 'width', label: 'ширина', v: 600, step: 10, min: 120, max: 4000 },
++      { k: 'height', label: 'высота', v: 790, step: 10, min: 80, max: 4000 },
++      { k: 'plank', label: 'доска', v: 20, step: 1, min: 4, max: 80 },
++      { k: 'lid', label: 'крышка', v: false, kind: 'bool' },
++      { k: 'skids', label: 'полозья h (0 — нет)', v: 0, step: 5, min: 0, max: 200 },
++    ],
++  },
++  {
++    op: 'lug', name: 'проушина', title: 'Проушина', group: 'Готовые детали',
++    desc: 'Площадка с отверстием под палец и отогнутая полка с крепёжными отверстиями.',
++    params: [
++      { k: 'inner', label: 'отверстие', v: 32, step: 1, min: 2, max: 600 },
++      { k: 'outer', label: 'головка', v: 64, step: 1, min: 6, max: 800 },
++      { k: 'length', label: 'длина', v: 90, step: 5, min: 10, max: 2000 },
++      { k: 'thickness', label: 'сталь', v: 4, step: 0.5, min: 0.8, max: 40 },
++      { k: 'bend', label: 'полка h', v: 30, step: 5, min: 0, max: 800 },
++      { k: 'holes', label: 'отверстий на полке', v: 2, step: 1, min: 0, max: 8 },
++    ],
++  },
++  {
++    op: 'corner_bracket', name: 'кронштейн', title: 'Кронштейн с косынкой', group: 'Готовые детали',
++    desc: 'Две полки с треугольной косынкой между ними; отверстия в обеих полках двумя рядами.',
++    params: [
++      { k: 'size', label: 'полки X,Z', v: '80,80', kind: 'vec' },
++      { k: 'width', label: 'ширина', v: 60, step: 5, min: 10, max: 600 },
++      { k: 'thickness', label: 'сталь', v: 5, step: 0.5, min: 1, max: 40 },
++      { k: 'gusset', label: 'косынка', v: 5, step: 0.5, min: 0, max: 40 },
++      { k: 'holes', label: 'отверстий в ряд', v: 2, step: 1, min: 0, max: 6 },
++    ],
++  },
++  {
++    op: 'buckle', name: 'застёжка', title: 'Фастекс', group: 'Готовые детали',
++    desc: 'Две половины side-release: рамка с перекладиной и ответная часть с пружинными усиками.',
++    params: [
++      { k: 'width', label: 'стропа', v: 25, step: 1, min: 5, max: 80 },
++      { k: 'length', label: 'длина', v: 60, step: 5, min: 20, max: 220 },
++      { k: 'thickness', label: 'толщина', v: 7, step: 0.5, min: 2, max: 25 },
++    ],
++  },
++  {
++    op: 'rack', name: 'рейка_зубчатая', title: 'Зубчатая рейка', group: 'Готовые детали',
++    desc: 'Рейка под шестерню того же модуля: трапецеидальные зубья сверху, основание с отверстиями.',
++    params: [
++      { k: 'length', label: 'длина', v: 300, step: 10, min: 20, max: 4000 },
++      { k: 'module', label: 'модуль', v: 2, step: 0.5, min: 0.2, max: 20 },
++      { k: 'width', label: 'ширина', v: 20, step: 2, min: 2, max: 400 },
++      { k: 'height', label: 'высота', v: 18, step: 1, min: 3, max: 400 },
++      { k: 'holes', label: 'отверстий', v: 0, step: 1, min: 0, max: 40 },
++    ],
++  },
++  {
++    op: 'gear_internal', name: 'венец', title: 'Колесо с внутр. зубьями', group: 'Готовые детали',
++    desc: 'Зубчатый венец, смотрящий внутрь; снаружи гладкий обод.',
++    params: [
++      { k: 'teeth', label: 'зубьев', v: 40, step: 1, min: 10, max: 300 },
++      { k: 'module', label: 'модуль', v: 2, step: 0.5, min: 0.2, max: 20 },
++      { k: 'thickness', label: 'толщина', v: 10, step: 1, min: 1, max: 200 },
++      { k: 'rim', label: 'обод', v: 6, step: 1, min: 1, max: 200 },
++    ],
++  },
++  {
++    op: 'gear_helical', name: 'косозубая', title: 'Косозубая шестерня', group: 'Готовые детали',
++    desc: 'Венец с наклоном зуба: профиль тот же, что у gear, но закручен винтом.',
++    params: [
++      { k: 'teeth', label: 'зубьев', v: 24, step: 1, min: 6, max: 200 },
++      { k: 'module', label: 'модуль', v: 2, step: 0.5, min: 0.2, max: 20 },
++      { k: 'thickness', label: 'толщина', v: 12, step: 1, min: 1, max: 200 },
++      { k: 'angle', label: 'наклон°', v: 20, step: 5, min: -45, max: 45 },
++      { k: 'bore', label: 'вал (0 — нет)', v: 10, step: 1, min: 0, max: 500 },
++    ],
++  },
++  {
++    op: 'gear_bevel', name: 'коническая', title: 'Коническая шестерня', group: 'Готовые детали',
++    desc: 'Зубья сбегают к малому торцу: венец сужается от основания к вершине.',
++    params: [
++      { k: 'teeth', label: 'зубьев', v: 20, step: 1, min: 8, max: 200 },
++      { k: 'module', label: 'модуль', v: 2, step: 0.5, min: 0.2, max: 20 },
++      { k: 'thickness', label: 'венец', v: 12, step: 1, min: 1, max: 200 },
++      { k: 'taper', label: 'сужение', v: 0.6, step: 0.05, min: 0.3, max: 0.85 },
++      { k: 'bore', label: 'вал (0 — нет)', v: 10, step: 1, min: 0, max: 500 },
++    ],
++  },
++  {
++    op: 'screw_head', name: 'головка', title: 'Головка винта', group: 'Готовые детали',
++    desc: 'Головка как отдельная деталь: семь профилей и шесть шлицов, включая Torx и комбинированный.',
++    params: [
++      { k: 'd', label: 'резьба', v: 6, step: 1, min: 0.5, max: 100 },
++      { k: 'head', label: 'профиль', v: 'цилиндр', kind: 'raw', choices: ['потай', 'полукруг', 'цилиндр', 'шестигранник', 'фланец', 'шайба', 'шестилопастная'] },
++      { k: 'drive', label: 'шлиц', v: 'шестигранник', kind: 'raw', choices: ['крест', 'шлиц', 'звезда', 'шестигранник', 'torx_plus', 'комбинированный', 'нет'] },
++      { k: 'head_d', label: 'Ø головки', v: 12, step: 1, min: 2, max: 400 },
++    ],
++  },
++  {
++    op: 'wing_nut', name: 'барашек', title: 'Барашек', group: 'Готовые детали',
++    desc: 'Гайка с двумя лепестками-крыльями и резьбой в ступице.',
++    params: [
++      { k: 'd', label: 'резьба', v: 8, step: 1, min: 2, max: 100 },
++      { k: 'height', label: 'высота', v: 18, step: 1, min: 4, max: 200 },
++      { k: 'wing', label: 'вылет крыла', v: 26, step: 1, min: 5, max: 400 },
++      { k: 'wing_t', label: 'толщина крыла', v: 5, step: 0.5, min: 1, max: 60 },
++    ],
++  },
++  {
++    op: 'special_nut', name: 'гайка_особая', title: 'Особые гайки', group: 'Готовые детали',
++    desc: 'Колпачковая, с фланцем, самоконтрящаяся Nyloc, квадратная, T-гайка и закладная.',
++    params: [
++      { k: 'd', label: 'резьба', v: 8, step: 1, min: 1.5, max: 200 },
++      { k: 'type', label: 'тип', v: 'колпачковая', kind: 'raw', choices: ['колпачковая', 'фланец', 'nyloc', 'квадратная', 't', 'закладная'] },
++      { k: 's', label: 'под ключ', v: 13, step: 1, min: 3, max: 600 },
++    ],
++  },
+   {
+     op: 'turbine_blade', name: 'лопасть', title: 'Лопасть турбины', group: 'Готовые детали',
+     desc: 'Одна аэродинамическая лопасть: несимметричное сечение, рост хорды, крутка, стреловидность и изгиб; ротор собирается массивом.',
