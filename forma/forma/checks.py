@@ -50,6 +50,10 @@ RULE_ALIASES = {
     "центр": "center", "середина": "center", "center": "center",
     "в_сетке": "grid", "в_кубах": "grid", "в_бюджете": "grid",
     "внутри_сетки": "grid", "бюджет": "grid", "grid": "grid",
+    # Качество укладки треугольников. Существующее «качество_сетки» не
+    # переназначаем: в 0.70 оно означает старое правило tri_quality.
+    "сетка": "mesh", "mesh": "mesh", "стяжки": "mesh", "стяжка": "mesh",
+    "веера": "mesh", "полюса": "mesh", "плотность_сетки": "mesh",
 }
 
 RULE_LABELS = {
@@ -80,6 +84,7 @@ RULE_LABELS = {
     "position": "положение",
     "center": "центр",
     "grid": "в пределах кубической сетки",
+    "mesh": "качество сетки",
 }
 
 UNITS = {
@@ -90,7 +95,7 @@ UNITS = {
     "wall_min": "мм", "sharp_edge": "°", "tri_quality": "%",
     "deviation": "мм", "связь": "мм",
     "position": "мм", "center": "мм", "grid": "%",
-    "collision": "мм³", "motion": "°",
+    "collision": "мм³", "motion": "°", "mesh": "% площади",
 }
 
 AXES = {"x": 0, "y": 1, "z": 2, "ширина": 0, "глубина": 1, "высота": 2,
@@ -191,7 +196,7 @@ def _load_reference(path):
 RULES = {"watertight", "genus", "parts", "size", "height", "width", "depth", "volume",
          "mass", "wall", "wall_min", "flat_bottom", "overhang", "symmetric", "gap",
          "clearance", "inside", "tris", "sharp_edge", "tri_quality", "topology", "deviation",
-         "связь", "position", "center", "grid", "collision", "motion"}
+         "связь", "position", "center", "grid", "collision", "motion", "mesh"}
 
 
 def evaluate_checks(scene, cache) -> list[dict]:
@@ -483,6 +488,30 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache,
                        f"({q['bad']} из {q['total']}), самый острый угол "
                        f"{fmt(q['min_angle'], 1)}° ({'в норме' if ok else 'нарушено'})",
                        name, line, q["bad_pct"], f"≤ {fmt(limit)}%", label)
+
+    if rule == "mesh":
+        from .mesh_quality import Rules, analyze
+        limit = 1.0
+        if args:
+            value = _parse_value(args[0], cache_scene(cache))
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                limit = max(0.0, float(value))
+        mq = analyze(solid.manifold, Rules(sliver_area_pct=limit))
+        if not mq["faces"]:
+            return _result(False, rule, f"{label}: сетка пуста", name, line,
+                           0.0, "непустая сетка", label)
+        text = (
+            f"{label}: структурных ошибок "
+            f"{mq['boundary_edges'] + mq['nonmanifold_edges'] + mq['nonmanifold_vertices']}, "
+            f"дублей {mq['duplicate_faces']}, вырожденных {mq['degenerate_count']}; "
+            f"стяжек {mq['strut_count']}, полюсов {mq['hub_count']}; "
+            f"игл на кривизне {mq['needle_curved_area_pct']:g}% "
+            f"({mq['needle_curved_count']} шт., плоских игл {mq['needle_flat_count']}), "
+            f"сгустков {mq['density_hotspot_count']}, швов {mq['seam_count']} — "
+            f"{'в норме' if mq['ok'] else 'нарушено'}"
+        )
+        return _result(bool(mq["ok"]), rule, text, name, line,
+                       mq["needle_curved_area_pct"], f"≤ {fmt(limit)}%", label)
 
     if rule == "topology":
         from .topology import STRUCTURAL_KEYS, manifold_topology, structural_summary

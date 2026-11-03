@@ -82,6 +82,7 @@ jobs:
           node --check web/js/app.js
           node --check web/js/viewer.js
           node tests/editor_regression_test.js
+          node tests/playback_regression_test.js
           node tests/dragon_picking_test.js
           node tests/occluders_test.js
           node tests/ui_bounds_test.js
@@ -96,7 +97,7 @@ jobs:
         run: |
           python tools/build_skeleton_original.py
 
-      - name: Экспортировать модели 0.53–0.70 в GLB и Forma
+      - name: Экспортировать модели 0.53–0.71 в GLB и Forma
         working-directory: forma
         run: |
           python - <<'PY'
@@ -224,6 +225,7 @@ jobs:
           cp packaging/icon_256.png release/icon.png
           cp examples/assets/human_skeleton.LICENSE.txt release/ЛИЦЕНЗИЯ_СКЕЛЕТ.txt
           cp docs/human_skeleton_original.md release/ОРИГИНАЛЬНЫЙ_СКЕЛЕТ.md
+          cp docs/mesh_quality.md release/КАЧЕСТВО_СЕТКИ.md
           cp examples/assets/human_skeleton_original.audit.json release/АУДИТ_ОРИГИНАЛЬНОГО_СКЕЛЕТА.json
           python - <<'PY'
           from pathlib import Path

@@ -286,6 +286,56 @@ def cmd_fuzz(args) -> int:
     return run_fuzz_cli(args)
 
 
+def cmd_mesh(args) -> int:
+    """Диагностирует укладку сетки без изменения исходного файла.
+
+    Для .forma анализируются все видимые тела, а не только первое: иначе
+    дефект во втором объекте сцены давал бы ложно зелёный результат CI.
+    """
+    from .mesh_quality import Rules, analyze, format_report, mesh_of
+
+    if args.sliver is not None and args.sliver < 0:
+        print("ОШИБКА: --sliver не может быть отрицательным", file=sys.stderr)
+        return 2
+    path = Path(args.file)
+    try:
+        if path.suffix.lower() == ".forma":
+            b = build(_read(str(path)), base_dir=_base_dir(str(path)), analyze_model=False)
+            if not b.ok:
+                print("ОШИБКА:", (b.error or {}).get("message", "сценарий не построен"),
+                      file=sys.stderr)
+                return 2
+            solids = b.visible_solids()
+            if not solids:
+                print("В сценарии нет видимых твёрдых тел", file=sys.stderr)
+                return 2
+            if len(solids) == 1:
+                source = solids[0].manifold
+            else:
+                import numpy as np
+                vertices, faces = [], []
+                offset = 0
+                for solid in solids:
+                    v, f = mesh_of(solid.manifold)
+                    vertices.append(v)
+                    faces.append(f + offset)
+                    offset += len(v)
+                source = (np.vstack(vertices), np.vstack(faces))
+        else:
+            from .ops_io import load_any
+            source = load_any(path)
+        rules = Rules(sliver_area_pct=args.sliver) if args.sliver is not None else Rules()
+        report = analyze(source, rules)
+    except Exception as exc:
+        print(f"ОШИБКА анализа сетки: {exc}", file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+    else:
+        print(format_report(report))
+    return 0 if report["ok"] else 1
+
+
 def cmd_selftest(args) -> int:
     result = selftest()
     for case in result["cases"]:
@@ -395,6 +445,13 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("selftest", help="проверить геометрическое ядро")
     p.set_defaults(func=cmd_selftest)
+
+    p = sub.add_parser("mesh", help="диагностика качества треугольной сетки")
+    p.add_argument("file", help=".forma, .glb/.gltf, .stl, .obj, .ply, .3mf и другие поддерживаемые форматы")
+    p.add_argument("--json", action="store_true", help="машинный JSON для CI")
+    p.add_argument("--sliver", type=float, default=None,
+                   help="допустимая доля площади игл на кривизне, %% (по умолчанию 1)")
+    p.set_defaults(func=cmd_mesh)
 
     p = sub.add_parser("reference", help="справочник команд в markdown")
     p.add_argument("--out")

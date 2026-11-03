@@ -38,6 +38,12 @@ const state = {
   loopMode: 'auto',
   orbitSelection: false,
   occluders: false,
+  spin: false,
+  shading: 'realistic',
+  focusObject: '',
+  viewSettings: null,
+  viewInitialized: false,
+  animeDirty: false,
   runLine: 0,
   runSoft: [],
   notes: [],
@@ -76,6 +82,47 @@ function readLoopMode() {
   try { return localStorage.getItem('forma_loop_mode') || 'auto'; } catch (e) { return 'auto'; }
 }
 state.loopMode = readLoopMode();
+
+const VIEW_PREFS_KEY = 'forma3d.view.v1';
+const VIEW_KEYS = ['bg', 'env', 'exposure', 'shadows', 'grid', 'ground', 'axes', 'poly', 'bloom'];
+function readViewPrefs() {
+  try {
+    const raw = localStorage.getItem(VIEW_PREFS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) { return null; }
+}
+const savedViewPrefs = readViewPrefs();
+if (savedViewPrefs && typeof savedViewPrefs === 'object') {
+  const source = savedViewPrefs.settings || savedViewPrefs;
+  const settings = {};
+  VIEW_KEYS.forEach((key) => { if (source[key] !== undefined) settings[key] = source[key]; });
+  if (Object.keys(settings).length) {
+    state.viewSettings = settings;
+    state.viewInitialized = true;
+  }
+  state.orbitSelection = savedViewPrefs.orbitSelection === true;
+  state.occluders = savedViewPrefs.occluders === true;
+  state.spin = savedViewPrefs.spin === true;
+  state.shading = savedViewPrefs.shading || state.shading;
+  state.focusObject = savedViewPrefs.focusObject || '';
+  if (savedViewPrefs.anime) {
+    state.anime = savedViewPrefs.anime;
+    state.animeDirty = true;
+  }
+}
+function persistViewSettings() {
+  try {
+    localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify({
+      settings: state.viewSettings || {},
+      orbitSelection: state.orbitSelection,
+      occluders: state.occluders,
+      spin: state.spin,
+      shading: state.shading,
+      focusObject: state.focusObject,
+      anime: state.anime || { mode: 'выкл' },
+    }));
+  } catch (e) { /* приватный режим — настройки живут до перезагрузки */ }
+}
 
 function toast(message, kind = '') {
   const el = $('toast');
@@ -1345,25 +1392,6 @@ function focusLine(line) {
   updateCursor();
 }
 
-/** Плавная прокрутка текстового поля к нужной высоте (без рывков). */
-let scrollTween = null;
-function smoothScrollTo(el, target) {
-  const from = el.scrollTop;
-  const to = Math.max(0, target);
-  if (Math.abs(to - from) < 2) { el.scrollTop = to; return; }
-  if (scrollTween) cancelAnimationFrame(scrollTween.raf);
-  const t0 = performance.now();
-  const dur = 240;
-  const step = (now) => {
-    const k = Math.min(1, (now - t0) / dur);
-    const e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
-    el.scrollTop = from + (to - from) * e;
-    if (k < 1) scrollTween.raf = requestAnimationFrame(step);
-    else scrollTween = null;
-  };
-  scrollTween = { raf: requestAnimationFrame(step) };
-}
-
 /** Подсветка строки сценария, которая сейчас играет. */
 function placeRunHighlight(follow = false) {
   const el = $('code-run');
@@ -1374,20 +1402,27 @@ function placeRunHighlight(follow = false) {
   const pad = parseFloat(cs.paddingTop) || 12;
   if (!state.runLine) { el.hidden = true; return; }
   const lineTop = (state.runLine - 1) * lh;
-  const viewTop = ta.scrollTop;
-  const viewBottom = viewTop + (ta.clientHeight || 0) - lh;
   if (follow) {
-    // Держим играющую строку на виду, но подкручиваем плавно: мгновенный
-    // скачок на каждом кадре и был той самой «телепортацией».
-    const target = Math.max(0, lineTop - Math.max(0, (ta.clientHeight || 0)) * 0.35);
-    smoothScrollTo(ta, target);
-    const gutter = $('gutter');
-    if (gutter) smoothScrollTo(gutter, target);
+    // Во время playback нельзя откладывать видимость на tween: следующий
+    // кадр может отменить его, а строка уже будет далеко за экраном. Делаем
+    // одну прокрутку только при выходе из безопасной зоны и сразу используем
+    // новый scrollTop для позиции полосы.
+    const height = ta.clientHeight || 0;
+    const margin = Math.min(lh * 1.5, Math.max(0, height * 0.2));
+    const viewTop = ta.scrollTop;
+    const viewBottom = viewTop + height - lh;
+    if (lineTop < viewTop + margin || lineTop > viewBottom - margin) {
+      const target = Math.max(0, lineTop - Math.max(0, height) * 0.38);
+      const max = Math.max(0, ta.scrollHeight - ta.clientHeight);
+      ta.scrollTop = Math.min(max, target);
+    }
   }
+  const gutter = $('gutter');
+  if (gutter) gutter.scrollTop = ta.scrollTop;
   const offset = pad + lineTop - ta.scrollTop;
   el.style.top = offset + 'px';
   el.style.height = lh + 'px';
-  // если пользователь сам прокрутил текст, полосу не навязываем
+  el.dataset.line = String(state.runLine);
   el.hidden = offset < -lh || offset > ta.clientHeight;
 }
 
@@ -1515,6 +1550,12 @@ function escapeHtml(s) {
 /*  Просмотр                                                          */
 /* ------------------------------------------------------------------ */
 async function loadModel(url, animation = null) {
+  const resumePlayback = state.anim.playing;
+  // После полной перезагрузки новый Viewer ещё не имеет пользовательского
+  // ракурса: сохранённое «к предмету» нужно применить к загруженному GLB.
+  // При обычной пересборке _userMoved уже истинен — не дёргаем камеру, если
+  // пользователь после фокуса продолжил вращать её вручную.
+  const restoreSavedFocus = Boolean(state.focusObject && !state.viewer?._userMoved);
   const epoch = ++state.anim.epoch;
   state.anim.next = undefined;
   state.anim.framePending.clear();
@@ -1534,10 +1575,15 @@ async function loadModel(url, animation = null) {
     if (epoch !== state.anim.epoch) return;
     // мгновенная проверка видимости и текстур (не зависит от того, что попало в GLB)
     applyLoopMode();
+    restoreViewControls();
+    if (restoreSavedFocus) state.viewer.focusObject(state.focusObject);
     state.viewer.setAxes($('opt-axes')?.checked !== false);
     // Сбрасываем прежние скрытия: набор объектов мог смениться целиком.
     if (state.viewer.hidden) state.viewer.hidden.clear();
-    state.hidden.forEach((name) => state.viewer.setObjectVisible(name, false));
+    // В GLB финальной сцены уже нет script-hidden объектов. В кадрах сборки
+    // они, наоборот, должны появиться на своём шаге: отдельно переносим только
+    // ручные «глазки», а не итоговую видимость всего сценария.
+    state.userHidden.forEach((name) => state.viewer.setObjectVisible(name, false));
     (state.payload?.objects || []).forEach((o) => {
       if (o.tex && o.tex.kind) applyTextureToViewer(o.name, o.tex.kind, o.tex.scale);
     });
@@ -1572,20 +1618,28 @@ async function loadModel(url, animation = null) {
     if ($('anim-mode')) $('anim-mode').value = state.anim.mode;
     updateAnimState();
     if (state.anim.mode === 'frames') {
+      state.viewer.manualAdvance = true;
+      state.viewer.playing = Boolean(resumePlayback && state.anim.frames.length);
+      state.anim.playing = state.viewer.playing;
       if (state.anim.frames.length) showFrame(0);
     } else if (animClips().length || animKeys().length) {
-      // Не запускаем анимацию сами: сначала показываем готовую модель.
-      // Пользователь нажмёт «играть», когда захочет смотреть движение.
-      state.viewer.playAnimation(false);
-      state.anim.playing = false;
-      state.viewer.setTime(0);
-      state.anim.time = 0;
-      highlightScriptLine(0);
+      state.viewer.manualAdvance = false;
+      // Первый показ остаётся на паузе, но пересборка во время просмотра
+      // восстанавливает запущенный транспорт, а не выключает его незаметно.
+      state.viewer.playAnimation(Boolean(resumePlayback));
+      state.anim.playing = state.viewer.playing;
+      if (!resumePlayback) {
+        state.viewer.setTime(0);
+        state.anim.time = 0;
+        highlightScriptLine(0);
+      }
       syncAnimUI();
-      // подпись ставим последней: syncAnimUI её не перетирает, но порядок надёжнее
-      if ($('anim-focus')) {
+      if ($('anim-focus') && !resumePlayback) {
         $('anim-focus').textContent = `анимация готова (${animClips().length} движений) — нажмите ▶`;
       }
+    } else {
+      state.anim.playing = false;
+      state.viewer.playAnimation(false);
     }
   } catch (e) {
     if (epoch !== state.anim.epoch) return;
@@ -1853,10 +1907,19 @@ function renderAnimTracks() {
       b.className = 'anim-step' + (i === a.frameIndex ? ' cur' : '');
       b.textContent = String(f.frame || i + 1);
       b.title = `строка ${f.line}: ${f.text}`;
-      b.onclick = () => { pauseAnim(); seekFrame(i); };
+      b.onclick = () => { seekFrame(i); };
       row.appendChild(b);
     });
     box.appendChild(row);
+    const current = row.querySelector('.cur');
+    if (current && row.clientWidth) {
+      const rowRect = row.getBoundingClientRect();
+      const currentRect = current.getBoundingClientRect();
+      const left = currentRect.left - rowRect.left + row.scrollLeft;
+      const right = left + currentRect.width;
+      if (left < row.scrollLeft) row.scrollLeft = left;
+      else if (right > row.scrollLeft + row.clientWidth) row.scrollLeft = right - row.clientWidth;
+    }
     return;
   }
   const clips = animClips();
@@ -1890,7 +1953,7 @@ function renderAnimTracks() {
         + (c.object ? ` · ${c.object}` : '') + (c.line ? ` · строка ${c.line}` : '');
       seg.innerHTML = `<span>${(st === 0 || len / Math.max(total, 0.001) > 0.12)
         ? (ANIM_KINDS[c.kind] || c.kind) : ''}</span>`;
-      seg.onclick = () => { pauseAnim(); seekTime(st); };
+      seg.onclick = () => { seekTime(st); };
       lane.appendChild(seg);
     });
     row.appendChild(lane);
@@ -1926,7 +1989,7 @@ function renderAnimTracks() {
         + (k.pos ? ` · Δ(${k.pos.join(', ')})` : '')
         + (k.rot ? ` · ∠(${k.rot.join(', ')})` : '')
         + (k.scale !== undefined ? ` · ×${k.scale}` : '');
-      d.onclick = () => { pauseAnim(); seekTime(Number(k.t) || 0); };
+      d.onclick = () => { seekTime(Number(k.t) || 0); };
       lane.appendChild(d);
     });
     row.appendChild(lane);
@@ -2210,8 +2273,9 @@ function updateSequence(t) {
       a.seqKey = 'a' + idx;
       a.frameIndex = idx;
       const frame = animFrames()[idx];
-      // Видимый кадр и строка сценария меняются атомарно с точки зрения UI.
-      highlightScriptLine(frame.line, { scroll: false });
+      // Видимый кадр, сама строка и её положение в редакторе меняются
+      // атомарно с точки зрения UI; playback всегда держит строку на экране.
+      highlightScriptLine(frame.line, { scroll: true });
       showFrame(idx);
       prefetchFrame(idx + 1);
     }
@@ -2266,8 +2330,7 @@ function showMorph(clip, value) {
     .catch((err) => {
       if (!err.resourceCancelled) return;
       if (state.anim.morphPending === pending) state.anim.morphPending = null;
-      state.anim.seqKey = null;
-      pauseAnim();
+      // Отмена тяжёлого кадра не является скрытой остановкой транспорта.
       state.viewer?.showFinalModel();
       toast('Тяжёлый морфинг отменён; сцена не изменена.', 'warn');
     });
@@ -2328,12 +2391,14 @@ function prefetchFrame(index) {
   const promise = apiWithResourcePause('/api/frame', { script, upto: frame.n },
     `frame:${script}`, 'кадр сборки', false)
     .then(async (res) => {
-      if (a.epoch !== epoch || !res.glb) return;
-      const entry = { key: res.key, url: frameUrl(res.key) };
+      if (a.epoch !== epoch) return;
+      const entry = { key: res.key || key, url: res.glb ? frameUrl(res.key) : '', empty: !res.glb };
       a.cache.set(key, entry);
-      // Ждём именно viewer-кеш: иначе showFrame мог бы повторно скачать GLB,
-      // хотя prefetch уже получил его.
-      await state.viewer?.preloadFrame(res.key, entry.url);
+      if (res.glb) {
+        // Ждём именно viewer-кеш: иначе showFrame мог бы повторно скачать GLB,
+        // хотя prefetch уже получил его.
+        await state.viewer?.preloadFrame(res.key, entry.url);
+      }
     })
     .catch(() => { if (a.epoch === epoch) a.cache.delete(key); });
   a.framePending.set(key, { epoch, promise });
@@ -2354,19 +2419,17 @@ function seekTime(t) {
   const a = state.anim;
   a.time = Math.max(0, Math.min(Number(t) || 0, a.duration || 0));
   state.viewer?.setTime(a.time);
-  if (a.mode === 'frames') highlightFromTime(a.time);
+  highlightFromTime(a.time, { scroll: true });
   syncAnimUI();
 }
 
 function stepByFrames(dir) {
   const a = state.anim;
   if (a.mode === 'frames') {
-    pauseAnim();
     seekFrame(a.frameIndex + dir);
     return;
   }
   const fps = animFps();
-  pauseAnim();
   seekTime((a.time || 0) + dir / fps);
 }
 
@@ -2376,8 +2439,7 @@ function seekFrame(index) {
   if (!frames.length) return;
   a.frameIndex = Math.max(0, Math.min(index, frames.length - 1));
   syncAnimUI();
-  // Ручной переход к кадру — явное действие пользователя, поэтому строку
-  // можно показать; автоматическое проигрывание использует scroll=false.
+  // И ручной переход, и непрерывный playback держат текущую строку видимой.
   highlightScriptLine(frames[a.frameIndex].line, { scroll: true });
   showFrame(a.frameIndex);
 }
@@ -2398,8 +2460,9 @@ async function showFrame(index) {
     if (pending?.epoch === epoch) await pending.promise;
     if (!current()) return;
     const cached = a.cache.get(key);
-    if (cached?.key && cached.url) {
-      await state.viewer.loadFrame(cached.key, cached.url);
+    if (cached?.key) {
+      if (cached.empty) state.viewer.showEmptyFrame(cached.key);
+      else await state.viewer.loadFrame(cached.key, cached.url);
       if (current()) focusFrameObject(frame);
       return;
     }
@@ -2407,18 +2470,16 @@ async function showFrame(index) {
     const res = await apiWithResourcePause('/api/frame', { script, upto: frame.n },
       `frame:${script}`, 'кадр сборки');
     if (!current()) return;
-    if (!res.glb) { toast('Этот шаг не даёт геометрии — выберите другой', 'bad'); return; }
-    const entry = { key: res.key, url: frameUrl(res.key) };
+    const entry = { key: res.key || key, url: res.glb ? frameUrl(res.key) : '', empty: !res.glb };
     a.cache.set(key, entry);
     while (a.cache.size > 24) a.cache.delete(a.cache.keys().next().value);
-    await state.viewer.loadFrame(res.key, entry.url);
+    if (res.glb) await state.viewer.loadFrame(res.key, entry.url);
+    else state.viewer.showEmptyFrame(entry.key);
     if (current()) focusFrameObject(frame);
   } catch (e) {
     if (!current()) return;
     if (e.resourceCancelled) {
-      a.seqKey = null;
       invalidateFrameQueue();
-      pauseAnim();
       state.viewer?.showFinalModel();
       toast('Тяжёлый кадр отменён; сцена не изменена.', 'warn');
     } else {
@@ -2432,42 +2493,50 @@ async function showFrame(index) {
   }
 }
 
-/** Во время сборки подсвечиваем деталь, которая появилась на этом шаге. */
+/** Во время сборки подсвечиваем деталь, которая появилась или изменилась. */
 function focusFrameObject(frame) {
-  const objects = new Set((state.payload?.objects || []).map((o) => o.name));
-  const added = (frame?.added || []).filter((n) => !state.hidden.has(n));
-  const affected = (frame?.affected || []).filter((n) => objects.has(n) && !state.hidden.has(n));
-  const changed = frame?.target && objects.has(frame.target)
-    && !state.hidden.has(frame.target) ? frame.target : '';
+  const visible = new Set(frame?.objects || []);
+  const allowed = (n) => visible.has(n) && !state.userHidden.has(n);
+  const added = (frame?.added || []).filter(allowed);
+  const affected = (frame?.affected || []).filter(allowed);
+  const changed = frame?.target && allowed(frame.target) ? frame.target : '';
   const name = added[0] || changed || affected[0];
   const label = $('anim-focus');
   if (name) {
     state.viewer?.setHighlight(name);
     const changing = affected.length > 1 ? affected.join(', ') : name;
     if (label) label.textContent = (added.length ? 'появился: ' : 'меняется: ') + changing;
-  } else if (state.selected?.name && !state.hidden.has(state.selected.name)) {
-    state.viewer?.setHighlight(state.selected.name);
-    if (label) label.textContent = '';
-  } else {
-    if (label) label.textContent = '';
+    return;
   }
+  // После hide/delete объекта нет в кадре — не оставляем рамку на старом GLB.
+  state.viewer?.clearHighlight();
+  const gone = (frame?.affected || []).concat(frame?.removed || [])
+    .filter((n, i, all) => all.indexOf(n) === i);
+  if (label) label.textContent = gone.length ? 'скрыт/удалён: ' + gone.join(', ') : '';
 }
 
 function setAnimMode(mode) {
   const a = state.anim;
+  const wasPlaying = a.playing;
   invalidateFrameQueue();
   a.mode = mode;
   a.seqKey = null;
-  a.playing = false;
   a.time = 0;
   a.frameTimer = 0;
-  state.viewer?.playAnimation(false);
+  // Смена представления — seek, а не скрытая кнопка «стоп».
+  a.playing = wasPlaying;
   if (mode === 'frames') {
-    if (state.viewer) state.viewer.manualAdvance = true;
+    if (state.viewer) {
+      state.viewer.manualAdvance = true;
+      state.viewer.playing = wasPlaying;
+    }
     a.frameIndex = 0;
     if (animFrames().length) showFrame(0);
-  } else {
-    if (state.viewer) { state.viewer.manualAdvance = false; state.viewer.showFinalModel(); state.viewer.setTime(0); }
+  } else if (state.viewer) {
+    state.viewer.manualAdvance = false;
+    state.viewer.showFinalModel();
+    state.viewer.setTime(0);
+    state.viewer.playAnimation(wasPlaying);
   }
   updateAnimState();
 }
@@ -2478,7 +2547,8 @@ function togglePlayAnim() {
     if (!startPreviewAnimation()) explainNoAnimation();
     return;
   }
-  a.playing = !a.playing;
+  if (a.playing) { pauseAnim(); return; }
+  a.playing = true;
   if (a.mode === 'frames') {
     if (state.viewer) { state.viewer.manualAdvance = true; state.viewer.playing = a.playing; }
     a.frameTimer = 0;
@@ -2609,9 +2679,11 @@ function openContextMenu(x, y, name) {
   menu.appendChild(item('приблизить и вращать вокруг', () => {
     selectObject(name);
     state.orbitSelection = true;
+    state.focusObject = name;
     $('btn-orbit-sel')?.classList.add('active');
     state.viewer?.setOrbitTarget(name);
     state.viewer?.focusObject(name);
+    persistViewSettings();
     setTimeout(() => state.viewer?.refreshOccluders?.(), 420);
   }));
   menu.appendChild(item('выделить кубы этого предмета', () => {
@@ -2670,25 +2742,24 @@ function initViewer() {
       if (now - lastClock > 60) {
         lastClock = now;
         syncAnimClock();
-        // Обычные клипы не дёргают редактор. Для покадровой сборки и
-        // assembly-клипа подсвечиваем именно строку текущего кадра.
-        const assembly = state.anim.mode === 'frames'
-          || animClips().some((c) => c.kind === 'assembly');
-        if (assembly && now - lastLine > 90) {
+        // Подсвечиваем строку любого активного клипа, а не только номер
+        // кадра. Во время playback редактор сам следует за ней.
+        if (state.anim.playing && now - lastLine > 90) {
           lastLine = now;
-          highlightFromTime(t, { scroll: false });
+          highlightFromTime(t, { scroll: true });
         }
       }
     };
     state.viewer.onFocus = (name, names) => {
-      if (state.anim.mode !== 'clips') return;
-      // В обычной анимации ничего не выделяем: подсветка и слежение за
-      // сценарием — только у сборки по шагам.
+      if (state.anim.mode !== 'clips' || !state.anim.playing) return;
       const all = (names && names.length ? names : (name ? [name] : []))
-        .filter((n) => !state.hidden.has(n));
-      if ($('anim-focus') && all.length) $('anim-focus').textContent = 'движется: ' + all.join(', ');
+        .filter((n) => !state.userHidden.has(n));
+      if (all.length) {
+        const current = all[all.length - 1];
+        state.viewer?.setHighlight(current);
+        if ($('anim-focus')) $('anim-focus').textContent = 'движется: ' + all.join(', ');
+      }
     };
-    state.viewer.onEnd = () => { state.anim.playing = false; syncAnimUI(); };
     state.viewer.onSpace = (sel) => updateSpaceUI(sel);
     state.viewer.onSpaceCell = (mm, asked) => {
       // ползунок остаётся там, куда его поставил пользователь, а в подписи
@@ -2728,12 +2799,8 @@ function initViewer() {
       if (a.frameTimer < hold) return;
       a.frameTimer = 0;
       const last = animFrames().length - 1;
-      if (a.frameIndex >= last) {
-        if (state.viewer.loop) seekFrame(0);
-        else { a.playing = false; state.viewer.playing = false; syncAnimUI(); }
-      } else {
-        seekFrame(a.frameIndex + 1);
-      }
+      if (a.frameIndex >= last) seekFrame(0);
+      else seekFrame(a.frameIndex + 1);
     };
   } catch (e) {
     $('viewer-empty').innerHTML = '<p>WebGL недоступен в этом окне.<br>Модель можно посмотреть через PNG-снимки кнопкой «Снимки».</p>';
@@ -2753,6 +2820,8 @@ $('btn-focus-sel')?.addEventListener('click', () => {
   const name = state.selected?.name;
   if (!name) { toast('Сначала выделите предмет в списке или кликом', 'bad'); return; }
   if (state.viewer?.focusObject(name)) {
+    state.focusObject = name;
+    persistViewSettings();
     toast(`Камера наведена: ${name}`);
     setTimeout(() => state.viewer?.refreshOccluders?.(), 420);
   }
@@ -2761,6 +2830,7 @@ $('btn-orbit-sel')?.addEventListener('click', (e) => {
   state.orbitSelection = !state.orbitSelection;
   e.currentTarget.classList.toggle('active', state.orbitSelection);
   state.viewer?.setOrbitTarget(state.orbitSelection ? (state.selected?.name || '') : '');
+  persistViewSettings();
   toast(state.orbitSelection
     ? 'Вращение и приближение — вокруг выделенного предмета'
     : 'Вращение — вокруг центра сцены');
@@ -2770,14 +2840,17 @@ $('btn-occl')?.addEventListener('click', (e) => {
   state.occluders = !state.occluders;
   e.currentTarget.classList.toggle('active', state.occluders);
   state.viewer?.setOccluders(state.occluders);
+  persistViewSettings();
   toast(state.occluders
     ? 'Предметы перед выделенным показываются прозрачным каркасом'
     : 'Заслоняющие предметы снова сплошные');
 });
 $('btn-spin')?.addEventListener('click', (e) => {
   const on = !e.currentTarget.classList.contains('active');
+  state.spin = on;
   e.currentTarget.classList.toggle('active', on);
   state.viewer?.setSpin(on);
+  persistViewSettings();
 });
 $('btn-shot').addEventListener('click', async () => {
   if (!state.viewer) return;
@@ -2846,6 +2919,7 @@ function writeViewScript() {
   });
   const body = lines.join('\n').replace(/\s+$/, '');
   const text = (body ? body + '\n' : '') + sceneCommand(v);
+  persistViewSettings();
   if (text === currentScript()) return;
   // в историю эти правки не пишем: вид не должен забивать отмену
   setScript(text, { build: false, record: false, label: 'вид сцены' });
@@ -2893,44 +2967,74 @@ function clearSceneNow() {
 
 function applyViewSettings(payload) {
   const s = payload.settings || {};
-  // Пустой объект = в сценарии стиля нет: выбор пользователя в окне не трогаем,
-  // иначе стиль сбрасывался бы при каждой пересборке модели.
-  if (s.anime !== undefined && s.anime && Object.keys(s.anime).length) {
+  const incoming = {
+    bg: s.bg || '#0b0e13', env: s.env || 'studio',
+    exposure: Number(s.exposure ?? 1.05), shadows: s.shadows !== false,
+    grid: s.grid !== false, ground: s.ground !== false, axes: s.axes !== false,
+    poly: s.poly === true, bloom: Number(s.bloom ?? 0.6),
+  };
+  // После первого показа живой выбор пользователя важнее значений из нового
+  // примера: пересборка и смена сцены не должны молча возвращать тени/сетку/
+  // полигонаж или параметры света к заводским значениям.
+  const previous = {};
+  if (state.viewInitialized && state.viewSettings) {
+    VIEW_KEYS.forEach((key) => {
+      if (state.viewSettings[key] !== undefined) previous[key] = state.viewSettings[key];
+    });
+  }
+  const v = Object.assign(incoming, previous);
+  state.viewSettings = v;
+  state.viewInitialized = true;
+
+  if (!state.animeDirty && s.anime !== undefined && s.anime && Object.keys(s.anime).length) {
     state.anime = (s.anime.mode && s.anime.mode !== 'выкл')
       ? Object.assign({}, s.anime) : { mode: 'выкл' };
     syncAnimeControls();
   }
-  state.viewSettings = Object.assign({}, state.viewSettings, {
-    bg: s.bg, env: s.env, exposure: s.exposure, shadows: s.shadows, grid: s.grid,
-    ground: s.ground, axes: s.axes, poly: s.poly, bloom: s.bloom,
-  });
-  state.viewer?.applySettings(s);
+  const anime = state.anime || { mode: 'выкл' };
+  state.viewer?.applySettings(Object.assign({}, v, {
+    anime: anime.mode === 'выкл' ? null : anime,
+  }));
   const chips = $('env-chips');
   if (chips) {
     chips.querySelectorAll('.chip').forEach((c) => {
-      c.classList.toggle('active', c.dataset.env === (s.env || 'studio'));
+      c.classList.toggle('active', c.dataset.env === v.env);
     });
   }
   if ($('exposure')) {
-    const v = Number(s.exposure ?? 1.05);
-    $('exposure').value = v;
-    $('exposure-val').textContent = v.toFixed(2);
+    $('exposure').value = v.exposure;
+    $('exposure-val').textContent = Number(v.exposure).toFixed(2);
   }
   ['shadows', 'grid', 'ground', 'axes'].forEach((k) => {
     const el = $('opt-' + k);
-    if (el) el.checked = s[k] !== false;
+    if (el) el.checked = v[k] !== false;
   });
-  if ($('opt-poly')) $('opt-poly').checked = s.poly === true;
+  if ($('opt-poly')) $('opt-poly').checked = v.poly === true;
   if ($('bloom')) {
-    const b = Number(s.bloom ?? 0.6);
-    $('bloom').value = String(b);
-    $('bloom-val').textContent = b.toFixed(2);
+    $('bloom').value = String(v.bloom);
+    $('bloom-val').textContent = Number(v.bloom).toFixed(2);
   }
-  if ($('bg-color') && s.bg) $('bg-color').value = s.bg;
+  if ($('bg-color')) $('bg-color').value = v.bg;
   document.querySelectorAll('#bg-swatches .swatch').forEach((sw) => {
-    sw.classList.toggle('active', (sw.dataset.bg || '').toLowerCase() === (s.bg || '').toLowerCase());
+    sw.classList.toggle('active', (sw.dataset.bg || '').toLowerCase() === (v.bg || '').toLowerCase());
   });
+  restoreViewControls();
+  persistViewSettings();
   updateStatsOverlay();
+}
+
+function restoreViewControls() {
+  const v = state.viewer;
+  $('btn-spin')?.classList.toggle('active', state.spin);
+  $('btn-occl')?.classList.toggle('active', state.occluders);
+  $('btn-orbit-sel')?.classList.toggle('active', state.orbitSelection);
+  if ($('shading') && state.shading) $('shading').value = state.shading;
+  v?.setSpin(state.spin);
+  v?.setOccluders(state.occluders);
+  if (state.shading) v?.setShading(state.shading);
+  if (state.orbitSelection) {
+    v?.setOrbitTarget(state.selected?.name || state.focusObject || '');
+  }
 }
 
 function updateStatsOverlay() {
@@ -2962,6 +3066,24 @@ function updateStatsOverlay() {
       : `${fmtInt(st.tris)} треугольников`;
   }
 }
+function updateCameraHUD() {
+  const hud = $('camera-hud');
+  if (!hud) return;
+  const pose = state.viewer?.getCameraPose?.();
+  if (!pose) {
+    $('camera-position').textContent = 'X — · Y — · Z —';
+    $('camera-angles').textContent = 'азимут — · наклон — · крен —';
+    return;
+  }
+  const num = (v) => Number.isFinite(v) ? v.toFixed(1) : '—';
+  const angle = (v) => Number.isFinite(v) ? `${v.toFixed(1)}°` : '—';
+  $('camera-position').textContent = `X ${num(pose.position[0])} · Y ${num(pose.position[1])} · Z ${num(pose.position[2])}`;
+  $('camera-angles').textContent = `азимут ${angle(pose.azimuth)} · наклон ${angle(pose.elevation)} · крен ${angle(pose.roll)}`;
+  hud.dataset.azimuth = String(pose.azimuth);
+  hud.dataset.elevation = String(pose.elevation);
+  hud.dataset.roll = String(pose.roll);
+}
+setInterval(updateCameraHUD, 120);
 setInterval(updateStatsOverlay, 700);
 
 function toggleStudio(force) {
@@ -2978,7 +3100,11 @@ $('btn-studio')?.addEventListener('click', (e) => {
 document.addEventListener('click', (e) => {
   const panel = $('studio-panel');
   if (!panel || panel.hidden) return;
-  if (panel.contains(e.target) || e.target.closest('#btn-studio')) return;
+  // seekFrame/syncAnimUI перерисовывает дорожку прямо во время click. Цель
+  // события уже может быть удалена из DOM, но её исходный composedPath всё
+  // ещё внутри панели — такой клик не является кликом «снаружи».
+  const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+  if (path.includes(panel) || panel.contains(e.target) || e.target.closest?.('#btn-studio')) return;
   toggleStudio(false);
 });
 
@@ -3092,10 +3218,12 @@ function applyAnime(patch) {
   } else {
     state.anime = next;
   }
+  state.animeDirty = true;
   if (state.viewer) {
     state.viewer.setAnime(state.anime.mode === 'выкл' ? null : state.anime);
   }
   syncAnimeControls();
+  persistViewSettings();
 }
 
 document.querySelectorAll('#anime-chips .chip').forEach((chip) => {
@@ -3114,9 +3242,7 @@ document.querySelectorAll('#anime-chips .chip').forEach((chip) => {
     }
     // смена режима начинается с его пресета: «линия» не должна оставлять
     // после себя выключенное затенение у «аниме»
-    state.anime = preset;
-    state.viewer?.setAnime(state.anime);
-    syncAnimeControls();
+    applyAnime(preset);
     toast(`Стиль «${mode}»`);
   });
 });
@@ -3213,7 +3339,11 @@ $('bloom')?.addEventListener('change', writeViewScript);
 });
 $('btn-clear-script')?.addEventListener('click', clearScriptNow);
 $('btn-clear-scene')?.addEventListener('click', clearSceneNow);
-$('shading')?.addEventListener('change', (e) => state.viewer?.setShading(e.target.value));
+$('shading')?.addEventListener('change', (e) => {
+  state.shading = e.target.value;
+  state.viewer?.setShading(state.shading);
+  persistViewSettings();
+});
 $('opt-shadows')?.addEventListener('change', (e) => state.viewer?.applySettings({ shadows: e.target.checked }));
 $('opt-grid')?.addEventListener('change', (e) => state.viewer?.setGrid(e.target.checked));
 $('opt-ground')?.addEventListener('change', (e) => state.viewer?.setGround(e.target.checked));
@@ -3224,12 +3354,10 @@ $('opt-poly')?.addEventListener('change', (e) => {
 $('anim-play')?.addEventListener('click', () => togglePlayAnim());
 $('anim-restart')?.addEventListener('click', () => {
   const a = state.anim;
-  a.playing = false;
   if (a.mode === 'frames') { seekFrame(0); return; }
   seekTime(0);
 });
 $('anim-first')?.addEventListener('click', () => {
-  pauseAnim();
   if (state.anim.mode === 'frames') seekFrame(0); else seekTime(0);
 });
 $('anim-back')?.addEventListener('click', () => stepByFrames(-1));
@@ -3241,8 +3369,7 @@ $('anim-speed')?.addEventListener('input', (e) => {
 });
 $('anim-scrub')?.addEventListener('input', (e) => {
   const a = state.anim;
-  const value = Number(e.target.value);   // читаем до паузы: она перерисовывает ползунок
-  pauseAnim();
+  const value = Number(e.target.value);
   if (a.mode === 'frames') {
     seekFrame(value);
   } else {

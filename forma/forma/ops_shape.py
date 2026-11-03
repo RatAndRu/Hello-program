@@ -1176,6 +1176,24 @@ def simplify(a, name):
                     f"simplify: {'допуск' if dev_param is None else 'отклонение'} "
                     f"{limit:g} мм, фактическое отклонение ≤ {worst:.3f} мм",
                     a.cmd.line)
+    # Упрощение должно убирать видимые иглы, а не только уменьшать число
+    # треугольников. Сравниваем площадь игл на кривизне до и после операции;
+    # отдельная статистика по всем иглам скрывает полезный эффект на кривизне.
+    if base.manifold.num_tri() <= 120_000 and result.num_tri() <= 120_000:
+        try:
+            from .mesh_quality import analyze
+            q0, q1 = analyze(base.manifold), analyze(result)
+            a.scene.log(
+                "info",
+                f"simplify {base.name}: иглы на кривизне "
+                f"{q0['needle_curved_count']} → {q1['needle_curved_count']} шт. "
+                f"({q0['needle_curved_area_pct']:g}% → "
+                f"{q1['needle_curved_area_pct']:g}% площади), "
+                f"стяжек {q0['strut_count']} → {q1['strut_count']}",
+                a.cmd.line,
+            )
+        except Exception as exc:
+            a.scene.log("warn", f"simplify: статистика сетки недоступна: {exc}", a.cmd.line)
     return _derived(a, name, result, base, "simplify")
 
 

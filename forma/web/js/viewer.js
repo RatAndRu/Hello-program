@@ -76,6 +76,7 @@ export class Viewer {
     this.wireframe = false;
     this.polygons = false;
     this.gridVisible = true;
+    this.groundVisible = true;
     this.ready = false;
     this.lastUrl = null;
     this.loadedVariant = null;
@@ -311,16 +312,23 @@ export class Viewer {
     const loop = () => {
       requestAnimationFrame(loop);
       const dt = clock.getDelta();
-      // RAF нужен для быстрого пробуждения, но скрытая панелью сцена не
-      // проходит ни animation/mixer, ни shadow/normal/bloom, ни WebGL-render.
-      if (this._sceneSuspended || (typeof document !== 'undefined' && document.hidden)) {
+      // Скрытая модальным окном сцена не рисуется, но её часы не останавливаются:
+      // закрытие/открытие панели не должно менять ни кадр, ни фазу анимации.
+      if (typeof document !== 'undefined' && document.hidden) {
         this._frames = 0;
         this._fpsTime = 0;
         return;
       }
-      this.controls.update();
+      // Сначала интерполируем переход камеры, затем синхронизируем её
+      // quaternion: HUD и снимок не должны показывать позу прошлого RAF.
       this._animateTiming(dt);
+      this.controls.update();
       this._tickAnimation(dt);
+      if (this._sceneSuspended) {
+        this._frames = 0;
+        this._fpsTime = 0;
+        return;
+      }
       this._frames += 1;
       this._fpsTime += dt;
       if (this._fpsTime > 0.5) {
@@ -1673,19 +1681,20 @@ export class Viewer {
     }
     if (!this.hasAnimation()) return;
     if (!this.playing) return;
-    const total = this.duration;
+    const total = Number(this.duration) || 0;
+    if (total <= 0) { this.applyTime(0); return; }
     let t = this.time + dt * this.speed;
-    if (t > total) {
-      if (this.loop) t = ((t - total) % Math.max(total, 0.001));
-      else { t = total; this.playing = false; this.onEnd?.(); }
-    }
+    // Транспорт не имеет скрытого «стопа в конце»: повторное нажатие ▶ —
+    // единственная обычная остановка. loop остаётся в API для старых клипов,
+    // но не может неожиданно выключить уже запущенный просмотр.
+    if (t >= total || t < 0) t = ((t % total) + total) % total;
     this.applyTime(t);
   }
 
   playAnimation(playing = true) {
     if (playing && !this.hasAnimation()) return false;
     this.playing = Boolean(playing);
-    if (this.playing && !this.loop && this.time >= this.duration - 1e-6) this.applyTime(0);
+    if (this.playing && this.duration > 0 && this.time >= this.duration - 1e-6) this.applyTime(0);
     return true;
   }
 
@@ -1787,7 +1796,20 @@ export class Viewer {
     this.frameKey = key;
     if (this.model) this.model.visible = false;
     if (this._animWrap) this._animWrap.visible = false;
+    // Пользовательские глазки действуют и на промежуточные GLB, а не только
+    // на финальную модель. Иначе скрытая деталь «возвращается» во время сборки.
+    this.hidden.forEach((name) => {
+      root.traverse((o) => { if (meshMatches(o, name)) o.visible = false; });
+    });
     this.scene.add(root);
+  }
+
+  /** Кадр hide/delete последнего объекта: пустая сцена — валидный кадр. */
+  showEmptyFrame(key = 'empty') {
+    const root = new THREE.Group();
+    root.name = 'FormaEmptyFrame';
+    this._showFrameObject(key, root);
+    return true;
   }
 
   showFinalModel() {
@@ -1834,6 +1856,7 @@ export class Viewer {
     const groundRadius = gridSize * 0.62;
     this.ground.geometry.dispose();
     this.ground.geometry = new THREE.CircleGeometry(groundRadius, 96);
+    this.ground.visible = this.groundVisible;
 
     const shadowSpan = Math.max(size.x, size.y, size.z, 50) * 1.6;
     this.keyLight.shadow.camera.left = -shadowSpan;
@@ -1876,6 +1899,9 @@ export class Viewer {
 
   setView(name, animate = true) {
     if (!this._home) return;
+    // Предустановленный ракурс — тоже выбор пользователя. Пересборка не
+    // должна молча возвращать изометрию после «спереди»/«сверху».
+    this._userMoved = true;
     const dir = (VIEW_DIRS[name] || VIEW_DIRS.iso).clone().normalize();
     const center = this.bbox ? this.bbox.center : new THREE.Vector3();
     const target = center.clone();
@@ -1902,14 +1928,48 @@ export class Viewer {
     this.controls.update();
   }
 
+  /**
+   * Камера в координатах сценария: +Z вверх, −Y перёд, +X право.
+   * Азимут отсчитывается от переда к правой стороне, наклон — от горизонта.
+   */
+  getCameraPose() {
+    if (!this.camera || !this.controls) return null;
+    const toScript = (v) => new THREE.Vector3(v.x, -v.z, v.y);
+    const position = toScript(this.camera.position);
+    const target = toScript(this.controls.target);
+    const offset = position.clone().sub(target);
+    const distance = Math.max(offset.length(), 1e-9);
+    const horizontal = Math.hypot(offset.x, offset.y);
+    const azimuth = Math.atan2(offset.x, -offset.y) * 180 / Math.PI;
+    const elevation = Math.atan2(offset.z, horizontal) * 180 / Math.PI;
+    const forward = target.clone().sub(position).normalize();
+    const worldUp = new THREE.Vector3(0, 0, 1);
+    const referenceUp = worldUp.clone().addScaledVector(forward, -worldUp.dot(forward));
+    const cameraUp = toScript(new THREE.Vector3(0, 1, 0).applyQuaternion(this.camera.quaternion));
+    const projectedUp = cameraUp.addScaledVector(forward, -cameraUp.dot(forward));
+    let roll = 0;
+    if (referenceUp.lengthSq() > 1e-10 && projectedUp.lengthSq() > 1e-10) {
+      referenceUp.normalize(); projectedUp.normalize();
+      const cross = new THREE.Vector3().crossVectors(referenceUp, projectedUp);
+      roll = Math.atan2(cross.dot(forward), referenceUp.dot(projectedUp)) * 180 / Math.PI;
+    }
+    return {
+      position: position.toArray(), target: target.toArray(), distance,
+      azimuth: ((azimuth + 180) % 360 + 360) % 360 - 180,
+      elevation, roll,
+    };
+  }
+
   setGrid(visible) {
-    this.gridVisible = visible;
-    this.grid.visible = visible;
-    this.ground.visible = visible && this.settings.ground !== false;
+    this.gridVisible = Boolean(visible);
+    this.settings.grid = this.gridVisible;
+    if (this.grid) this.grid.visible = this.gridVisible;
   }
 
   setGround(visible) {
-    this.ground.visible = visible;
+    this.groundVisible = Boolean(visible);
+    this.settings.ground = this.groundVisible;
+    if (this.ground) this.ground.visible = this.groundVisible;
   }
 
   setAxes(visible) {
@@ -2002,12 +2062,11 @@ export class Viewer {
     this.selRadius = Math.max(1, Number(mm) || 14);
   }
 
-  /** Повтор в конце: auto — как записано в клипах, on/off — принудительно. */
+  /** Старый API повтора сохранён, но запущенный транспорт всегда непрерывен. */
   setLoopMode(mode) {
     this.loopMode = ['auto', 'on', 'off'].includes(mode) ? mode : 'auto';
-    this.loop = this.loopMode === 'on' ? true
-      : this.loopMode === 'off' ? false : Boolean(this._loopBase);
-    return this.loop;
+    this.loop = true;
+    return true;
   }
 
   /* ------------------------------------------------------------------ */
@@ -2586,14 +2645,15 @@ export class Viewer {
     this._detachInstances(name);
     if (visible) this.hidden.delete(name);
     else this.hidden.add(name);
-    if (!this.model) return;
     let found = 0;
-    this.model.traverse((o) => {
-      if (!meshMatches(o, name)) return;
-      o.visible = Boolean(visible);
-      found += 1;
+    [this.model, this.frameRoot].filter(Boolean).forEach((root) => {
+      root.traverse((o) => {
+        if (!meshMatches(o, name)) return;
+        o.visible = Boolean(visible);
+        found += 1;
+      });
+      if (visible) root.updateMatrixWorld(true);
     });
-    if (found && visible) this.model.updateMatrixWorld(true);
     if (found) this._shadowDirty = true;
     return found;
   }
@@ -2809,8 +2869,8 @@ export class Viewer {
   setHighlight(name, options = {}) {
     this.clearHighlight();
     if (name) this._detachInstances(name);
-    if (!name || !this.model) return false;
-    const meshes = this.objectMeshes(name);
+    if (!name || (!this.model && !this.frameRoot)) return false;
+    const meshes = this.objectMeshes(name).filter((o) => effectivelyVisible(o));
     if (!meshes.length) return false;
     this.highlightName = name;
     this._highlight = [];
@@ -2912,7 +2972,7 @@ export class Viewer {
 
   /** Наводит камеру на объект — удобно, когда деталь выбрана в списке. */
   focusObject(name) {
-    const meshes = this.objectMeshes(name);
+    const meshes = this.objectMeshes(name).filter((o) => effectivelyVisible(o));
     if (!meshes.length) return false;
     const box = new THREE.Box3();
     meshes.forEach((o) => box.expandByObject(o));
@@ -2924,6 +2984,7 @@ export class Viewer {
     const radius = Math.max(size.length() * 0.5, 5);
     const dist = radius / Math.tan((this.camera.fov * Math.PI) / 360) * 1.8;
     const dir = VIEW_DIRS.iso.clone().normalize();
+    this._userMoved = true;
     this._from = this.camera.position.clone();
     this._to = center.clone().add(dir.multiplyScalar(dist));
     this._fromTarget = this.controls.target.clone();
@@ -3135,8 +3196,10 @@ export class Viewer {
     }
     this.renderer.shadowMap.enabled = s.shadows !== false;
     this.keyLight.castShadow = s.shadows !== false;
-    this.grid.visible = (s.grid !== false) && this.gridVisible;
-    this.ground.visible = s.ground !== false;
+    // Сетка и пол — независимые переключатели. Пустые поля в payload не
+    // сбрасывают живой выбор пользователя при пересборке или смене примера.
+    this.setGrid(s.grid !== undefined ? s.grid !== false : this.gridVisible);
+    this.setGround(s.ground !== undefined ? s.ground !== false : this.groundVisible);
     // пустой объект = в сценарии стиля нет, живой выбор в окне не сбрасываем
     if (s.anime && Object.keys(s.anime).length) this.setAnime(s.anime);
     else if (s.anime === null) this.setAnime(null);
@@ -3828,8 +3891,8 @@ export class Viewer {
         this._styleGroundColor = null;
       }
       this._overlays.forEach((overlay) => { overlay.visible = this.polygons; });
-      if (this.grid) this.grid.visible = this.settings.grid !== false && this.gridVisible;
-      if (this.ground) this.ground.visible = this.settings.ground !== false;
+      if (this.grid) this.grid.visible = this.gridVisible;
+      if (this.ground) this.ground.visible = this.groundVisible;
       if (this.axes) this.axes.visible = this.axesVisible;
       if (this.scene) {
         const bg = this.settings.bg || '#0b0e13';
@@ -3852,7 +3915,7 @@ export class Viewer {
     this._overlays.forEach((overlay) => { overlay.visible = false; });
     if (this.grid) this.grid.visible = false;
     if (this.ground) {
-      this.ground.visible = this.settings.ground !== false;
+      this.ground.visible = this.groundVisible;
       if (this.ground.material?.color) {
         if (!this._styleGroundColor) this._styleGroundColor = this.ground.material.color.clone();
         this.ground.material.color.set(paper);

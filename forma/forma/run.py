@@ -244,6 +244,8 @@ class Build:
 
         Служебные команды (проверки, цвет, свет, параметры, заметки) форму не
         меняют — в кадры они не попадают, иначе анимация «стоит» на проверках.
+        Команды hide/show/delete, наоборот, сохраняются: видимость — часть
+        собираемой сцены, включая переход к полностью пустому кадру.
         """
         out = []
         prev = None
@@ -263,7 +265,15 @@ class Build:
             in_place = verb in FRAME_IN_PLACE_VERBS and bool(affected.intersection(names))
             # Для остальных команд сравниваем только базовую сигнатуру. Иначе
             # специальная метка преобразования ошибочно делала animate кадром.
-            if not names or (sig == prev and not in_place):
+            # Пустой список тоже является состоянием сцены: hide/delete последнего
+            # объекта должен получить кадр, иначе следующий show сливается со
+            # старым кадром и зритель вообще не видит изменения видимости.
+            changed = sig != prev
+            if not changed and not in_place:
+                continue
+            if not names and prev is None and not in_place:
+                # Не начинаем сборку с пустого служебного состояния. Пустой кадр
+                # принимаем только после уже показанной геометрии (prev != None).
                 continue
             prev = sig
             added = [n for n in names if n not in prev_names]

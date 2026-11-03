@@ -491,6 +491,21 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
         warnings.append("Модель больше 5 метров — проверьте единицы измерения (в сценарии миллиметры).")
     if ggenus > 0:
         warnings.append(f"В модели есть сквозные отверстия: род {ggenus}.")
+    # Структурная герметичность не описывает качество укладки треугольников.
+    # Для обычных сцен сразу показываем стяжки, иглы на кривизне и сгустки;
+    # тяжёлые сцены не замедляем — их можно проверить отдельной командой mesh.
+    if union is not None and 0 < gtris <= 120_000:
+        try:
+            from .mesh_quality import analyze, short_warnings
+            mq = analyze(union)
+            metrics["mesh_quality"] = {
+                k: v for k, v in mq.items()
+                if k not in {"artifacts", "hubs", "rules", "problems"}
+            }
+            warnings.extend(short_warnings(mq))
+        except Exception as exc:
+            metrics["mesh_quality"] = {"error": str(exc)}
+            warnings.append(f"Не удалось провести диагностику качества сетки: {exc}")
     bad_topology = [o for o in objects if not o["topology"]["ok"]]
     if bad_topology:
         names = ", ".join(o["name"] for o in bad_topology[:4])
