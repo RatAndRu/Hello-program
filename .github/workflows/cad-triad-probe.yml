@@ -103,6 +103,26 @@ jobs:
                            ensure_ascii=False))
           PY
 
+      - name: FreeCAD — диагностика запуска скрипта
+        continue-on-error: true
+        env:
+          LD_LIBRARY_PATH: /tmp/squashfs-root/usr/lib
+        run: |
+          set +e
+          {
+            echo "== что лежит в usr/bin"; ls /tmp/squashfs-root/usr/bin 2>&1 | head -15
+            echo; echo "== AppRun"; head -25 /tmp/squashfs-root/AppRun 2>&1
+            echo; echo "== вариант 1: прямой запуск"
+            "$FC" forma/docs/cad_triad/plate_part.py; echo "exit=$?"
+            echo; echo "== вариант 2: + PYTHONPATH"
+            PYTHONPATH=/tmp/squashfs-root/usr/lib "$FC" forma/docs/cad_triad/plate_part.py; echo "exit=$?"
+            echo; echo "== вариант 3: -c exec"
+            "$FC" -c "exec(open('forma/docs/cad_triad/plate_part.py').read())"; echo "exit=$?"
+            echo; echo "== вариант 4: AppRun"
+            /tmp/squashfs-root/AppRun --console forma/docs/cad_triad/plate_part.py; echo "exit=$?"
+          } > out/freecad_diag.txt 2>&1
+          tail -40 out/freecad_diag.txt
+
       - name: FreeCAD Part (CSG, Python)
         continue-on-error: true
         env:
