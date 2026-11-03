@@ -268,6 +268,48 @@ def cmd_reference(args) -> int:
     return 0
 
 
+def cmd_mesh(args) -> int:
+    """`forma mesh файл` — то же, что `check … сетка`, но без сценария."""
+    import json
+
+    from .mesh_quality import Rules, analyze, format_report, mesh_of, short_warnings
+
+    path = Path(args.file)
+    if not path.exists():
+        print(f"Файл не найден: {path}")
+        return 2
+    suffix = path.suffix.lower()
+    if suffix == ".forma":
+        b = build(_read(str(path)), base_dir=_base(str(path)))
+        if not b.ok:
+            print("ОШИБКА:", b.error.get("message"))
+            return 2
+        solids = b.visible_solids()
+        if not solids:
+            print("В сцене нет видимых объектов.")
+            return 2
+        source = solids[0].manifold
+    else:
+        from .ops_io import load_any
+
+        verts, faces = load_any(path)
+        source = (verts, faces)
+    rules = Rules() if args.sliver is None else Rules(sliver_area_pct=args.sliver)
+    report = analyze(source, rules)
+    if args.json:
+        report.pop("_artifacts_obj", None)
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0 if report["ok"] else 1
+    print(format_report(report))
+    warnings = short_warnings(report)
+    if warnings:
+        print()
+        print("КОРОТКО")
+        for w in warnings:
+            print(f"• {w}")
+    return 0 if report["ok"] else 1
+
+
 def cmd_serve(args) -> int:
     from .app import main as app_main
     return app_main(["--host", args.host, "--port", str(args.port)] +
@@ -344,6 +386,13 @@ def main(argv=None) -> int:
 
     p = sub.add_parser("selftest", help="проверить геометрическое ядро")
     p.set_defaults(func=cmd_selftest)
+
+    p = sub.add_parser("mesh", help="диагностика сетки: стяжки, иглы, плотность")
+    p.add_argument("file", help="сценарий .forma, сетка .stl/.obj/.ply или .glb")
+    p.add_argument("--json", action="store_true", help="выдать отчёт словарём")
+    p.add_argument("--sliver", type=float, default=None,
+                   help="порог площади под иглами на кривизне, %% (1)")
+    p.set_defaults(func=cmd_mesh)
 
     p = sub.add_parser("reference", help="справочник команд в markdown")
     p.add_argument("--out")

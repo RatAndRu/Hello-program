@@ -48,6 +48,10 @@ RULE_ALIASES = {
     "центр": "center", "середина": "center", "center": "center",
     "в_сетке": "grid", "в_кубах": "grid", "в_бюджете": "grid",
     "внутри_сетки": "grid", "бюджет": "grid", "grid": "grid",
+    # качество треугольной сетки: стяжки, полюса, иглы, плотность
+    "сетка": "mesh", "качество_сетки": "mesh", "mesh": "mesh",
+    "стяжки": "mesh", "стяжка": "mesh", "веера": "mesh", "полюса": "mesh",
+    "плотность_сетки": "mesh", "плотность": "mesh",
 }
 
 RULE_LABELS = {
@@ -77,6 +81,7 @@ RULE_LABELS = {
     "position": "положение",
     "center": "центр",
     "grid": "в пределах кубической сетки",
+    "mesh": "качество сетки",
 }
 
 UNITS = {
@@ -86,7 +91,7 @@ UNITS = {
     "tris": "трис", "genus": "шт", "parts": "шт",
     "wall_min": "мм", "sharp_edge": "°", "tri_quality": "%",
     "deviation": "мм", "связь": "мм",
-    "position": "мм", "center": "мм", "grid": "%",
+    "position": "мм", "center": "мм", "grid": "%", "mesh": "%",
 }
 
 AXES = {"x": 0, "y": 1, "z": 2, "ширина": 0, "глубина": 1, "высота": 2,
@@ -187,7 +192,7 @@ def _load_reference(path):
 RULES = {"watertight", "genus", "parts", "size", "height", "width", "depth", "volume",
          "mass", "wall", "wall_min", "flat_bottom", "overhang", "symmetric", "gap",
          "clearance", "inside", "tris", "sharp_edge", "tri_quality", "deviation",
-         "связь", "position", "center", "grid", "collision", "motion"}
+         "связь", "position", "center", "grid", "collision", "motion", "mesh"}
 
 
 def evaluate_checks(scene, cache) -> list[dict]:
@@ -479,6 +484,27 @@ def _evaluate_one(solid, rule: str, args: list[str], line: int, cache,
                        f"({q['bad']} из {q['total']}), самый острый угол "
                        f"{fmt(q['min_angle'], 1)}° ({'в норме' if ok else 'нарушено'})",
                        name, line, q["bad_pct"], f"≤ {fmt(limit)}%", label)
+
+    if rule == "mesh":
+        from .mesh_quality import Rules, analyze as _mq
+        limit = 1.0
+        if args:
+            value = _parse_value(args[0], cache_scene(cache))
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                limit = float(value)
+        mq = _mq(solid.manifold, Rules(sliver_area_pct=limit))
+        structural = (mq["boundary_edges"] or mq["nonmanifold_edges"]
+                      or mq["duplicate_faces"] or mq["degenerate_count"]
+                      or mq["nonmanifold_vertices"])
+        ok = bool(not structural and mq["strut_count"] == 0
+                  and mq["needle_curved_area_pct"] <= limit)
+        text = (f"{label}: {mq['strut_count']} стяжек, {mq['hub_count']} полюсов "
+                f"(макс. валентность {mq['valence_max']}), игл на кривизне "
+                f"{mq['needle_curved_count']} ({fmt(mq['needle_curved_area_pct'])} % "
+                f"площади), сгустков плотности {mq['density_hotspot_count']} — "
+                f"{'в норме' if ok else 'нарушено'}")
+        return _result(ok, rule, text, name, line,
+                       mq["needle_curved_area_pct"], f"≤ {fmt(limit)}%", label)
 
     raise FormaError(f"Правило «{rule}» не поддерживается.")
 

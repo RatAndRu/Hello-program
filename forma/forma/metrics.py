@@ -489,6 +489,24 @@ def analyze(scene, previous: dict | None = None, check_results: list[dict] | Non
         warnings.append("Модель больше 5 метров — проверьте единицы измерения (в сценарии миллиметры).")
     if ggenus > 0:
         warnings.append(f"В модели есть сквозные отверстия: род {ggenus}.")
+    # ---- качество сетки (стяжки, полюса, иглы, плотность) -------------------
+    # Глазом эти дефекты видны только в режиме каркаса или на скруглениях,
+    # поэтому считаем их сразу: см. forma/mesh_quality.py.
+    if union is not None and gtris <= 120000:
+        try:
+            from .mesh_quality import analyze as _mq, short_warnings as _mqw
+            mq = _mq(union)
+            metrics["mesh_quality"] = {k: mq[k] for k in
+                                       ("faces", "vertices", "min_angle_deg",
+                                        "needle_count", "needle_area_pct",
+                                        "needle_curved_count", "needle_curved_area_pct",
+                                        "cap_count", "hub_count", "valence_max",
+                                        "strut_count", "density_hotspot_count",
+                                        "seam_count", "quality_median",
+                                        "edge_median_mm", "ok", "problems")}
+            warnings.extend(_mqw(mq))
+        except Exception:            # диагностика не должна ломать сборку
+            pass
     # ---- пересечения отдельных деталей (точный объём, не AABB) --------------
     # Раньше это ловилось только командой `interference`, то есть по просьбе.
     # Сборка из подвижных деталей (ножницы, петля, дверца) в покое может быть

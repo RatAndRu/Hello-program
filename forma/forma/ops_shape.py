@@ -1172,6 +1172,21 @@ def simplify(a, name):
                     f"simplify: {'допуск' if dev_param is None else 'отклонение'} "
                     f"{limit:g} мм, фактическое отклонение ≤ {worst:.3f} мм",
                     a.cmd.line)
+    # Упрощение — штатное лекарство от плохих полюсов и сгустков после
+    # булевых операций, поэтому полезно видеть, что оно дало по сетке.
+    if base.manifold.num_tri() <= 120_000 and result.num_tri() <= 120_000:
+        try:
+            from .mesh_quality import analyze as _mq
+            q0 = _mq(base.manifold)
+            q1 = _mq(result)
+            if q0["hub_count"] or q0["density_hotspot_count"]:
+                a.scene.log("info",
+                            f"сетка: полюсов {q0['hub_count']} → {q1['hub_count']}, "
+                            f"стяжек {q0['strut_count']} → {q1['strut_count']}, "
+                            f"сгустков {q0['density_hotspot_count']} → "
+                            f"{q1['density_hotspot_count']}", a.cmd.line)
+        except Exception:
+            pass
     return _derived(a, name, result, base, "simplify")
 
 
