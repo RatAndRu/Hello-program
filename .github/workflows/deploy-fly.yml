@@ -35,24 +35,12 @@ jobs:
           echo "api_token = \"$FLY_API_TOKEN\"" > "$HOME/.fly/config.yml"
           cat "$HOME/.fly/config.yml"
 
-      - name: List existing apps
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          export PATH="$HOME/.fly/bin:$PATH"
-          fly apps list
-
       - name: Create app if not exists
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           export PATH="$HOME/.fly/bin:$PATH"
-          if ! fly apps list --json 2>/dev/null | python3 -c "import sys,json; apps=json.load(sys.stdin); exit(0 if any(a['name']=='bliny-kefir-ratandru' for a in apps) else 1)"; then
-            echo "Creating app bliny-kefir-ratandru..."
-            fly apps create bliny-kefir-ratandru --org personal
-          else
-            echo "App bliny-kefir-ratandru already exists"
-          fi
+          fly apps create bliny-kefir-ratandru 2>&1 || true
 
       - name: Deploy to fly.io
         env:
@@ -61,10 +49,3 @@ jobs:
           export PATH="$HOME/.fly/bin:$PATH"
           cd recipe
           flyctl deploy --app bliny-kefir-ratandru --verbose
-
-      - name: Check app status
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-        run: |
-          export PATH="$HOME/.fly/bin:$PATH"
-          fly info --app bliny-kefir-ratandru
