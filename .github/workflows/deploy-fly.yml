@@ -16,36 +16,49 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check if FLY_API_TOKEN is set
+      - name: Check FLY_API_TOKEN
         run: |
           if [ -z "${{ secrets.FLY_API_TOKEN }}" ]; then
             echo "SECRET_MISSING"
             exit 1
-          else
-            echo "SECRET_SET"
           fi
+          echo "SECRET_SET"
 
-      - name: Install flyctl and configure token
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      - name: Install flyctl
         run: |
           curl -L https://fly.io/install.sh | sh -s -- -y
           export PATH="$HOME/.fly/bin:$PATH"
           fly version
+
+      - name: Configure flyctl token
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          export PATH="$HOME/.fly/bin:$PATH"
           mkdir -p "$HOME/.fly"
           echo "api_token = \"$FLY_API_TOKEN\"" > "$HOME/.fly/config.yml"
+          cat "$HOME/.fly/config.yml"
 
-      - name: Create fly.io app if not exists
+      - name: Show app config
+        run: |
+          export PATH="$HOME/.fly/bin:$PATH"
+          echo "=== fly.toml ==="
+          cat recipe/fly.toml
+          echo "=== Dockerfile ==="
+          cat recipe/Dockerfile
+
+      - name: Create app
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           export PATH="$HOME/.fly/bin:$PATH"
-          fly apps create bliny-kefir-ratandru --org personal 2>&1 || echo "App may already exist"
+          fly apps create bliny-kefir-ratandru --org personal
 
-      - name: Deploy to fly.io
+      - name: Deploy
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           export PATH="$HOME/.fly/bin:$PATH"
-          cd ./recipe
-          flyctl deploy --remote-only --app bliny-kefir-ratandru --verbose 2>&1
+          cd recipe
+          set -x
+          flyctl deploy --app bliny-kefir-ratandru --verbose --local-only
