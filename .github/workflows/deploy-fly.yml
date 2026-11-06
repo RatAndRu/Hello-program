@@ -16,6 +16,7 @@ jobs:
         run: |
           curl -L https://fly.io/install.sh | sh -s -- -y
           export PATH="$HOME/.fly/bin:$PATH"
+          fly version
 
       - name: Login and deploy
         env:
@@ -23,5 +24,6 @@ jobs:
         run: |
           export PATH="$HOME/.fly/bin:$PATH"
           cd recipe
-          echo "$FLY_API_TOKEN" | fly auth login --stdin 2>&1 || fly auth login --access-token "$FLY_API_TOKEN" 2>&1
-          flyctl deploy --remote-only --app bliny-kefir-ratandru --verbose 2>&1
+          echo "$FLY_API_TOKEN" | fly auth login --stdin
+          fly apps create bliny-kefir-ratandru 2>&1 || true
+          flyctl deploy --remote-only --app bliny-kefir-ratandru --verbose
