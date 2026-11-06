@@ -40,7 +40,9 @@ class AssetFingerprintTests(unittest.TestCase):
             self.assertTrue(payload["ok"], payload.get("error"))
             visible = [item for item in payload["objects"] if item["visible"]]
             self.assertEqual(len(visible), 54)
-            self.assertEqual(sum(item["tris"] for item in visible), 10_724)
+            # 0.72: плоские крышки lathe триангулируются без веера —
+            # та же форма, на 12 треугольников меньше (10 724 -> 10 712).
+            self.assertEqual(sum(item["tris"] for item in visible), 10_712)
             doc = glb_json(state.glb())
             self.assertEqual(doc["asset"]["extras"]["forma_variant"],
                              payload["variant_hash"])

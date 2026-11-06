@@ -119,7 +119,9 @@ class OnlineDemoTest(unittest.TestCase):
         self.assertTrue(result["ok"], result.get("error"))
         # 0.69: адаптивные микрофаски убрали лишние дуги только у шести
         # toilet_* деталей: 336 788 -> 324 644 triangles; форма и каталог не менялись.
-        self.assertEqual(result["analysis"]["metrics"]["tris"], 324644)
+        # 0.72: плоские крышки lathe без веера дали -8 треугольников при той же
+        # геометрии (объём и bbox совпадают с прежним revolve).
+        self.assertEqual(result["analysis"]["metrics"]["tris"], 324636)
 
     def test_normal_mode_keeps_heavy_confirmation(self):
         with tempfile.TemporaryDirectory() as directory, \
