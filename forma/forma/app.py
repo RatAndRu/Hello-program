@@ -1253,7 +1253,10 @@ def _run_uistest(report_path: str | None) -> int:
                           b"mat.uniformsNeedUpdate = true",
                           b"mod(uGid, 256.0) / 255.0",
                           b"floor(uGid / 256.0) / 255.0",
-                          b"edgeCoverageToInk(texture2D(tEdge, vUv).r)",
+                          # 0.72: покрытие края читается из нескольких проб
+                          # (bridgedEdge), иначе на масштабе линия рвётся.
+                          b"vec3 edgeSample = bridgedEdge(vUv);",
+                          b"edgeCoverageToInk(edgeSample.r)",
                           b"col = mix(col, uInk, edge);",
                           "'все': 1".encode("utf-8"),
                       )) and b"edgeCoverageToInk" in js_coverage56
