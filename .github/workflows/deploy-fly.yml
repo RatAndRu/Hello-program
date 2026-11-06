@@ -1,0 +1,51 @@
+name: Deploy to fly.io
+
+on:
+  push:
+    branches: [arena/805d166e-hello-program]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    services:
+      docker:
+        image: docker:24.0.5
+        options: --privileged
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check if FLY_API_TOKEN is set
+        run: |
+          if [ -z "${{ secrets.FLY_API_TOKEN }}" ]; then
+            echo "SECRET_MISSING"
+            exit 1
+          else
+            echo "SECRET_SET"
+          fi
+
+      - name: Install flyctl and configure token
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          curl -L https://fly.io/install.sh | sh -s -- -y
+          export PATH="$HOME/.fly/bin:$PATH"
+          fly version
+          mkdir -p "$HOME/.fly"
+          echo "api_token = \"$FLY_API_TOKEN\"" > "$HOME/.fly/config.yml"
+
+      - name: Create fly.io app if not exists
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          export PATH="$HOME/.fly/bin:$PATH"
+          fly apps create bliny-kefir-ratandru --org personal 2>&1 || echo "App may already exist"
+
+      - name: Deploy to fly.io
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          export PATH="$HOME/.fly/bin:$PATH"
+          cd ./recipe
+          flyctl deploy --remote-only --app bliny-kefir-ratandru --verbose 2>&1
