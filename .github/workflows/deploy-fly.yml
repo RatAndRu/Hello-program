@@ -47,12 +47,12 @@ jobs:
           echo "=== Dockerfile ==="
           cat recipe/Dockerfile
 
-      - name: Create app
+      - name: Create app (ignore if exists)
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
           export PATH="$HOME/.fly/bin:$PATH"
-          fly apps create bliny-kefir-ratandru --org personal
+          fly apps create bliny-kefir-ratandru 2>&1 || true
 
       - name: Deploy
         env:
@@ -60,5 +60,4 @@ jobs:
         run: |
           export PATH="$HOME/.fly/bin:$PATH"
           cd recipe
-          set -x
-          flyctl deploy --app bliny-kefir-ratandru --verbose --local-only
+          flyctl deploy --app bliny-kefir-ratandru --verbose
