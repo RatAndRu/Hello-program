@@ -96,9 +96,16 @@ export class PanelLayout {
     PANELS.forEach((name) => {
       const el = this.panels[name];
       if (!el) return;
-      const collapsed = Boolean(this.state.collapsed[name]) || (max && max !== name);
+      // При maximize раньше соседи сворачивались, а активная панель
+      // сохраняла base width: освободившееся место просто пропадало.
+      // Цель всегда видима и занимает всё место между двумя полосками.
+      const collapsed = max === name ? false
+        : Boolean(this.state.collapsed[name]) || (max && max !== name);
       el.classList.toggle('is-collapsed', collapsed);
-      const w = collapsed ? COLLAPSED : Math.max(MIN[name], base[name]);
+      const fullWidth = Math.max(MIN[name],
+        this.layout.clientWidth - SPLITTER * 2 - COLLAPSED * 2);
+      const w = max === name ? fullWidth
+        : collapsed ? COLLAPSED : Math.max(MIN[name], base[name]);
       this.layout.style.setProperty(`--w-${name}`, `${Math.round(w)}px`);
     });
     // границы у свёрнутых панелей уже не нужны, но пусть остаются: они малы

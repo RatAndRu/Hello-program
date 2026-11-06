@@ -5,6 +5,12 @@
  * Единицы — те же, что у сцены Forma (обычно мм). Сфера вокруг AABB даёт
  * консервативный запас: движение/панорамирование не обрезает углы модели.
  */
+/** Убирает знаковый ноль и субпиксельный численный шум угла из HUD/API. */
+export function stableAngle(value) {
+  const angle = Number(value);
+  return Number.isFinite(angle) && Math.abs(angle) < 0.0005 ? 0 : angle;
+}
+
 export function cameraClipRange(position, bbox) {
   if (!position || !bbox?.min || !bbox?.max) return null;
   const dx = Number(bbox.max.x) - Number(bbox.min.x);

@@ -38,7 +38,9 @@ html, body {
 
 body {
   display: grid;
-  grid-template-rows: 58px 1fr 42px 30px;
+  /* Toolbar может перенести действия на вторую строку. Его высота следует
+     за содержимым, а рабочая область не перекрывает кнопки. */
+  grid-template-rows: auto minmax(0, 1fr) 42px 30px;
   height: 100vh;
 }
 
@@ -47,8 +49,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  padding: 0 16px;
+  flex-wrap: nowrap;
+  min-height: 58px;
+  padding: 6px 16px;
   background: linear-gradient(180deg, #171d26, #11151c);
   border-bottom: 1px solid var(--line);
   gap: 16px;
@@ -80,7 +83,15 @@ body {
 }
 .brand-text .demo-badge[hidden] { display: none; }
 
-.actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
 
 button {
   flex: 0 0 auto;
@@ -605,7 +616,8 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
   .brand-text span { display: none; }
 }
 @media (max-width: 900px) {
-  body { grid-template-rows: 52px 1fr 28px; }
+  body { grid-template-rows: auto minmax(0, 1fr) 28px 28px; }
+  .topbar { min-height: 52px; }
   .layout { grid-template-columns: 1fr; grid-template-rows: 40% 1fr 45%; overflow: auto; }
   .panel { border-bottom: 1px solid var(--line); }
   .splitter { display: none; }

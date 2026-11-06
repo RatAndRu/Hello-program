@@ -9,8 +9,13 @@ import { EmissiveBloomPass } from './selectivebloom.js';
 import { PlanarMirror } from './planarmirror.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { cameraClipRange } from './camera_clip.js';
+import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
+import { cameraClipRange, stableAngle } from './camera_clip.js';
 import { edgeCoverageScale, EDGE_COVERAGE_TO_INK_GLSL } from './edge_coverage.js';
+import { topologyLineMaterialWidth, uniqueTopologyPositions } from './topology_lines.js';
+import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
+import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
+import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
 
 /** Цвет из #rrggbb в вектор 0…1 — без менеджера цвета three. */
 function hexVec(hex) {
@@ -166,12 +171,19 @@ export class Viewer {
     // кадр как доля покрытия пикселя, а не как мигающий бинарный пунктир.
     this._edgePass = null;
     this._edgeRT = null;
+    // Финальный FXAA работает уже после NPR и после OutputPass: сглаживает
+    // ступеньки контура/LineSegments2, но не меняет ступени cel-цвета.
+    this._fxaaPass = null;
     // буфер «чей пиксель»: линии между объектами, группами и материалами
     this._idRT = null;
     this._idMat = null;
     this._idCache = null;
     this._normalRT = null;
     this._albedoRT = null;
+    // Маска падающей тени: пол рисуется отдельным ShadowMaterial-проходом.
+    // Цвет «бумажного» пола не участвует, поэтому тень читается и на белом.
+    this._shadowRT = null;
+    this._shadowMat = new THREE.ShadowMaterial({ color: 0x000000, opacity: 1 });
     this._albedoCache = new Map();
     this._styleWireframe = null;
     this._styleGroundColor = null;
@@ -704,9 +716,12 @@ export class Viewer {
       this._edgeRT = null;
       this._albedoRT?.dispose();
       this._albedoRT = null;
+      this._shadowRT?.dispose();
+      this._shadowRT = null;
       this._ensureNormalTarget();
     }
     if (this._animePass) this._animePass.uniforms.uResolution.value.set(buf.x, buf.y);
+    this._syncTopologyOverlays();
   }
 
   disposeModel() {
@@ -2188,8 +2203,8 @@ export class Viewer {
     }
     return {
       position: position.toArray(), target: target.toArray(), distance,
-      azimuth: ((azimuth + 180) % 360 + 360) % 360 - 180,
-      elevation, roll,
+      azimuth: stableAngle(((azimuth + 180) % 360 + 360) % 360 - 180),
+      elevation: stableAngle(elevation), roll: stableAngle(roll),
     };
   }
 
@@ -2255,25 +2270,66 @@ export class Viewer {
       return;
     }
     if (!this.model) return;
-    const triangles = this.getStats().tris;
-    const heavy = triangles > 150000;
-    if (heavy) {
-      this.setWireframe(true);
-      this._applyAnimeLook();
-      return;
-    }
-    const mat = new THREE.LineBasicMaterial({
-      color: 0x7fd4ff, transparent: true, opacity: 0.30, depthWrite: false,
-    });
+    const size = new THREE.Vector2();
+    this.renderer.getDrawingBufferSize(size);
     this.model.traverse((o) => {
       if (!o.isMesh) return;
-      const geo = new THREE.WireframeGeometry(o.geometry);
-      const lines = new THREE.LineSegments(geo, mat.clone());
+      const wire = new THREE.WireframeGeometry(o.geometry);
+      const geo = new LineSegmentsGeometry();
+      geo.setPositions(uniqueTopologyPositions(wire.attributes.position.array));
+      wire.dispose();
+      // Обычные GL_LINES имеют аппаратную ширину 1 px и распадаются на
+      // ступени/тире. LineSegments2 строит экранные полосы с торцами;
+      // непрозрачный цвет и уникальные пары вершин не накапливают повторный
+      // overdraw там, где радиальные рёбра сходятся в центре диска.
+      // Полоса рисуется экранным quad'ом. alphaToCoverage работает только на
+      // multisampled-цели: буфер композера теперь создаётся с samples=4,
+      // поэтому тонкая полоса получает ровное покрытие и мягкие края.
+      const mat = new LineMaterial({
+        color: 0x78aebe, linewidth: topologyLineMaterialWidth(this.renderer.getPixelRatio()),
+        transparent: false, opacity: 1.0, depthTest: true, depthWrite: false,
+        alphaToCoverage: true, toneMapped: false, fog: false,
+      });
+      mat.resolution.copy(size);
+      mat.polygonOffset = true;
+      mat.polygonOffsetFactor = -4;
+      mat.polygonOffsetUnits = -8;
+      // Маленький bias только против coplanar z-fighting с собственной
+      // поверхностью. Скрытые задние рёбра по-прежнему отсекаются depth test.
+      mat.onBeforeCompile = (shader) => {
+        shader.vertexShader = shader.vertexShader.replace(
+          'gl_Position = clip;',
+          'gl_Position = clip;\n gl_Position.z -= 0.00008 * gl_Position.w;',
+        );
+      };
+      mat.customProgramCacheKey = () => 'forma-topology-screen-line-v1';
+      const lines = new LineSegments2(geo, mat);
       lines.renderOrder = 3;
-      o.add(lines);
+      lines.matrixAutoUpdate = false;
+      lines.userData.formaTopologySource = o;
+      // Overlay живёт рядом с моделью, а не внутри неё: LineSegments2 —
+      // Mesh, поэтому вложение исказило бы picking, G-buffer и счётчики.
+      this.scene.add(lines);
       this._overlays.push(lines);
     });
+    this._syncTopologyOverlays();
     this._applyAnimeLook();
+  }
+
+  _syncTopologyOverlays() {
+    if (!this._overlays.length) return;
+    this.model?.updateMatrixWorld(true);
+    const size = new THREE.Vector2();
+    this.renderer.getDrawingBufferSize(size);
+    this._overlays.forEach((lines) => {
+      const source = lines.userData.formaTopologySource;
+      if (!source) return;
+      lines.matrix.copy(source.matrixWorld);
+      lines.matrixWorldNeedsUpdate = true;
+      lines.material.resolution.copy(size);
+      lines.material.linewidth = topologyLineMaterialWidth(this.renderer.getPixelRatio());
+      if (!this._animeOn()) lines.visible = this.polygons && effectivelyVisible(source);
+    });
   }
 
   /** Режим выделения областей: клик по модели выбирает треугольники вокруг точки. */
@@ -3653,7 +3709,13 @@ export class Viewer {
     // отдалённом вагоне делал стенку тоньше кванта depth-буфера: цвет и
     // нормали z-fight'ились, а контур распадался на пунктир.
     this._updateCameraClip();
+    this._syncTopologyOverlays();
     this._refreshMirrors();
+    if (this._fxaaPass) {
+      const outputSize = new THREE.Vector2();
+      this.renderer.getDrawingBufferSize(outputSize);
+      this._fxaaPass.uniforms.resolution.value.set(1 / outputSize.x, 1 / outputSize.y);
+    }
     const animeOn = this._animeOn();
     if (!this.faceMode && (this._bloomOn || animeOn) && this.composer) {
       // буфер нормалей и глубины для контуров — до отрисовки красоты
@@ -3661,12 +3723,14 @@ export class Viewer {
         this._renderNormalPass();
         if (this._idNeeded()) this._renderIdPass();
         this._renderAlbedoPass();
+        this._renderShadowPass();
       }
       if (animeOn && this._animePass && this._normalRT) {
         const u = this._animePass.uniforms;
         u.tNormal.value = this._normalRT.texture;
         u.tDepth.value = this._normalRT.depthTexture;
         u.tAlbedo.value = this._albedoRT ? this._albedoRT.texture : null;
+        u.tShadow.value = this._shadowRT ? this._shadowRT.texture : null;
         u.uNear.value = this.camera.near;
         u.uFar.value = this.camera.far;
         const size = new THREE.Vector2();
@@ -3676,6 +3740,14 @@ export class Viewer {
         u.uResolution.value.set(size.x, size.y);
         u.uPixelRatio.value = this.renderer.getPixelRatio() || 1;
         u.uWorld.value = this._sceneRadius();
+        if (this.keyLight) {
+          this.camera.updateMatrixWorld();
+          const lightPosition = this.keyLight.getWorldPosition(new THREE.Vector3());
+          const targetPosition = this.keyLight.target.getWorldPosition(new THREE.Vector3());
+          const lightDirection = lightPosition.sub(targetPosition).normalize()
+            .transformDirection(this.camera.matrixWorldInverse);
+          u.uLightDir.value.copy(lightDirection);
+        }
         if (this._edgePass && this._edgeRT) {
           const eu = this._edgePass.uniforms;
           eu.uResolution.value.set(this._normalRT.width, this._normalRT.height);
@@ -4177,8 +4249,8 @@ export class Viewer {
 
   /**
    * Собирает композер: красота → свечение (если есть светящееся) → вывод →
-   * аниме-контуры. Аниме-проход идёт последним и работает уже в цвете экрана,
-   * поэтому линии получаются ровными и одинаковыми в окне и в PNG.
+   * аниме-контуры → FXAA. NPR работает уже в цвете экрана; последний проход
+   * лишь сглаживает края, поэтому линии одинаковы в окне и в PNG.
    */
   _ensureComposer() {
     const need = this._bloomOn || this._animeOn() || !!this.anime;
@@ -4187,13 +4259,22 @@ export class Viewer {
       this._animePass = null;
       this._edgePass?.dispose();
       this._edgePass = null;
+      this._fxaaPass = null;
       return;
     }
     if (!this.composer) {
       try {
         const size = new THREE.Vector2();
         this.renderer.getSize(size);
-        const composer = new EffectComposer(this.renderer);
+        // MSAA в буфере композера: без него сглаживание теряется у всех
+        // проходов, а тонкие экранные полосы выглядят ступеньками.
+        const buffer = new THREE.Vector2();
+        this.renderer.getDrawingBufferSize(buffer);
+        const target = new THREE.WebGLRenderTarget(
+          Math.max(2, Math.floor(buffer.x)), Math.max(2, Math.floor(buffer.y)),
+          { type: THREE.HalfFloatType, samples: 4 },
+        );
+        const composer = new EffectComposer(this.renderer, target);
         composer.addPass(new RenderPass(this.scene, this.camera));
         this.composer = composer;
         this._basePassCount = 1;
@@ -4219,6 +4300,7 @@ export class Viewer {
     this._animePass = null;
     this._edgePass?.dispose();
     this._edgePass = null;
+    this._fxaaPass = null;
     const size = new THREE.Vector2();
     this.renderer.getSize(size);
     if (this._bloomOn) {
@@ -4249,6 +4331,14 @@ export class Viewer {
       this._animePass.uniforms.uResolution.value.set(buf.x, buf.y);
       this._ensureNormalTarget();
     }
+    // Обязательно после NPR: иначе cel-квантование и скринтон были бы
+    // интерполированы следующим цветовым проходом. FXAA видит готовые линии.
+    const fxaa = new ShaderPass(FXAAShader);
+    const outputSize = new THREE.Vector2();
+    this.renderer.getDrawingBufferSize(outputSize);
+    fxaa.uniforms.resolution.value.set(1 / outputSize.x, 1 / outputSize.y);
+    composer.addPass(fxaa);
+    this._fxaaPass = fxaa;
   }
 
   _animeBufferScale(size) {
@@ -4293,6 +4383,60 @@ export class Viewer {
       stencilBuffer: false,
     });
     this._albedoRT.texture.generateMipmaps = false;
+  }
+
+  /**
+   * Маска падающей тени на полу.
+   *
+   * Пол — не часть G-buffer, а его цвет в NPR заменяется бумагой. Из-за этого
+   * падающая тень в beauty-проходе почти не темнеет и любой порог по яркости
+   * либо ловит градиент пола, либо не видит тень вовсе. Отдельный проход с
+   * ShadowMaterial даёт чистую маску: 1 — в тени, 0 — на свету.
+   */
+  _ensureShadowTarget() {
+    const size = new THREE.Vector2();
+    this.renderer.getDrawingBufferSize(size);
+    const w = Math.max(2, Math.floor(size.x * 0.5));
+    const h = Math.max(2, Math.floor(size.y * 0.5));
+    if (this._shadowRT && this._shadowRT.width === w && this._shadowRT.height === h) return;
+    this._shadowRT?.dispose();
+    this._shadowRT = new THREE.WebGLRenderTarget(w, h, {
+      minFilter: THREE.LinearFilter,
+      magFilter: THREE.LinearFilter,
+      depthBuffer: true,
+      stencilBuffer: false,
+    });
+    this._shadowRT.texture.generateMipmaps = false;
+  }
+
+  _renderShadowPass() {
+    if (!this.ground || !this.ground.visible) return;
+    if (!this._shadowRT) this._ensureShadowTarget();
+    if (!this._shadowRT) return;
+    const prevOverride = this.scene.overrideMaterial;
+    const prevBg = this.scene.background;
+    const prevFog = this.scene.fog;
+    const prevClear = this.renderer.getClearAlpha();
+    const prevColor = this.renderer.getClearColor(new THREE.Color());
+    // В маску тени не должны попасть ни модель, ни служебные линии: нужен
+    // только пол, принимающий тень.
+    const hidden = this._hideForGBuffer();
+    const groundWasVisible = this.ground.visible;
+    this.ground.visible = true;
+    this.scene.overrideMaterial = this._shadowMat;
+    this.scene.background = null;
+    this.scene.fog = null;
+    this.renderer.setRenderTarget(this._shadowRT);
+    this.renderer.setClearColor(0x000000, 0);
+    this.renderer.clear(true, true, true);
+    this.renderer.render(this.scene, this.camera);
+    this.renderer.setRenderTarget(null);
+    this.renderer.setClearColor(prevColor, prevClear);
+    this.scene.overrideMaterial = prevOverride;
+    this.scene.background = prevBg;
+    this.scene.fog = prevFog;
+    this._restoreGBufferVisibility(hidden);
+    this.ground.visible = groundWasVisible;
   }
 
   /** Контур формы и границ объектов в плотном буфере; цвет сюда не входит. */
@@ -4344,7 +4488,7 @@ export class Viewer {
             vec2 off = vec2(cos(ang), sin(ang)) * radius * px;
             vec4 nN = texture2D(tNormal, vUv + off);
             float aN = nN.a;
-            if (aC > 0.5 && aN < 0.5) {
+            if ((aC > 0.5 && aN < 0.5) || (aC < 0.5 && aN > 0.5)) {
               edge = 1.0;
               silhouette = 1.0;
             }
@@ -4373,7 +4517,9 @@ export class Viewer {
               }
             }
           }
-          float visible = step(0.5, aC);
+          // Силуэт центрируется на границе: внутренняя и внешняя половины
+          // дают coverage и не превращают край в одностороннюю лесенку.
+          float visible = max(step(0.5, aC), silhouette);
           gl_FragColor = vec4(edge * visible, silhouette * visible, feature * visible, 1.0);
         }`,
     };
@@ -4405,8 +4551,10 @@ export class Viewer {
         uNear: { value: 1 },
         uFar: { value: 40000 },
         uPixelRatio: { value: 1 },
+        tShadow: { value: null },
         uWorld: { value: 100 },
         uLines: { value: 0 },
+        uLightDir: { value: new THREE.Vector3(0.42, 0.62, 0.75).normalize() },
         uHatch: { value: 0 },
         uHatchAngle: { value: 0.785 },
         uHatchStep: { value: 8 },
@@ -4425,11 +4573,12 @@ export class Viewer {
         uniform sampler2D tDepth;
         uniform sampler2D tIds;
         uniform sampler2D tAlbedo;
+        uniform sampler2D tShadow;
         uniform sampler2D tEdge;
         uniform vec2 uResolution;
         uniform float uLine, uInner, uCrease, uDepthTh, uSeams;
         uniform float uToon, uTone, uCel, uMode, uNear, uFar, uPixelRatio, uWorld;
-        uniform vec3 uInk, uPaper;
+        uniform vec3 uInk, uPaper, uLightDir;
         uniform float uLines, uHatch, uHatchAngle, uHatchStep, uPaperTex;
         varying vec2 vUv;
 
@@ -4440,6 +4589,40 @@ export class Viewer {
         }
 
         ${EDGE_COVERAGE_TO_INK_GLSL}
+
+        vec3 bridgedEdge(vec2 uv) {
+          // Маска контура приходит из буфера двойной плотности. Полупиксельное
+          // усреднение убирает ступеньки и «пунктирную» бахрому вокруг силуэта.
+          vec2 softening = 0.5 / uResolution;
+          vec3 center = texture2D(tEdge, uv).rgb * 2.0;
+          center += texture2D(tEdge, uv + vec2(softening.x, softening.y)).rgb;
+          center += texture2D(tEdge, uv + vec2(-softening.x, softening.y)).rgb;
+          center += texture2D(tEdge, uv + vec2(softening.x, -softening.y)).rgb;
+          center += texture2D(tEdge, uv + vec2(-softening.x, -softening.y)).rgb;
+          center /= 6.0;
+          vec3 bridge = vec3(0.0);
+          vec3 wideBridge = vec3(0.0);
+          vec2 px = 0.85 / uResolution;
+          // Closing, а не размытие: заполняем пустой пиксель только если
+          // противоположные соседи принадлежат одной линии. Второе кольцо
+          // чинит короткий пропуск силуэта, но не соединяет соседние штрихи.
+          for (int i = 0; i < 4; i++) {
+            float ang = float(i) * 0.7853981634;
+            vec2 off = vec2(cos(ang), sin(ang)) * px;
+            vec3 a = texture2D(tEdge, uv - off).rgb;
+            vec3 b = texture2D(tEdge, uv + off).rgb;
+            bridge = max(bridge, min(a, b));
+            vec2 wideOff = off * 1.85;
+            vec3 c = texture2D(tEdge, uv - wideOff).rgb;
+            vec3 d = texture2D(tEdge, uv + wideOff).rgb;
+            wideBridge = max(wideBridge, min(c, d));
+          }
+          vec3 joined = max(center, bridge * 0.90);
+          joined.r = max(joined.r, wideBridge.r * 0.68);
+          joined.g = max(joined.g, wideBridge.g * 0.86);
+          joined.b = max(joined.b, wideBridge.b * 0.68);
+          return joined;
+        }
 
         float luma(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 
@@ -4465,27 +4648,121 @@ export class Viewer {
           return clamp(1.0 + relief * 0.11 * uPaperTex, 0.90, 1.06);
         }
 
-        // карандашная штриховка: тонкие линии с шагом, плотность — от тени
-        float hatchLayer(vec2 uv, float ang, float dark, float strength) {
-          float ca = cos(ang), sa = sin(ang);
-          vec2 p = uv * uResolution;
-          float u = (p.x * ca + p.y * sa) / max(uHatchStep * uPixelRatio, 2.0);
-          float f = abs(fract(u) - 0.5);
-          float w = 0.10 + 0.09 * strength;
-          float line = smoothstep(w, w * 0.30, f);
-          float gate = clamp((dark - 0.16) / 0.58, 0.0, 1.0);
-          return line * gate * strength;
+        vec3 formNormal(vec2 uv) {
+          // Нормаль формы для штриха читается широким кольцом: на ребре
+          // куба узкий фильтр давал скачок и «пружинки» вместо штриховки.
+          vec2 px = 7.0 / uResolution;
+          vec4 center = texture2D(tNormal, uv);
+          vec3 sum = (center.rgb * 2.0 - 1.0) * 2.0 * step(0.5, center.a);
+          for (int i = 0; i < 8; i++) {
+            float ang = float(i) * 0.7853981634;
+            vec4 sampleN = texture2D(tNormal, uv + vec2(cos(ang), sin(ang)) * px);
+            sum += (sampleN.rgb * 2.0 - 1.0) * step(0.5, sampleN.a);
+          }
+          return normalize(sum + vec3(1e-5));
+        }
+
+        // Согласованность нормалей в окрестности: на изломе штриховка
+        // поворачивается скачком и даёт двойную плотность. Там штрих гаснет.
+        float normalCoherence(vec2 uv) {
+          vec2 px = 7.0 / uResolution;
+          vec4 center = texture2D(tNormal, uv);
+          vec3 c = normalize(center.rgb * 2.0 - 1.0);
+          float sum = 0.0;
+          float count = 0.0;
+          for (int i = 0; i < 8; i++) {
+            float ang = float(i) * 0.7853981634;
+            vec4 sampleN = texture2D(tNormal, uv + vec2(cos(ang), sin(ang)) * px);
+            float ok = step(0.5, sampleN.a);
+            sum += dot(c, normalize(sampleN.rgb * 2.0 - 1.0)) * ok;
+            count += ok;
+          }
+          return count > 0.5 ? clamp(sum / count, 0.0, 1.0) : 1.0;
+        }
+
+        // Карандашный мазок в CSS-координатах. Штрих — короткий сегмент
+        // с собственной длиной, толщиной и нажимом; форма задаёт только
+        // направление и лёгкий изгиб, поэтому ровной «линейки» не выходит.
+        float hatchLayer(vec2 uv, float ang, float dark, float strength, vec3 formN) {
+          vec2 p = uv * uResolution / max(uPixelRatio, 0.5);
+          float bend = clamp(formN.x * 0.55 + formN.y * 0.22, -1.0, 1.0);
+          float a = ang + bend * 0.42;
+          float ca = cos(a), sa = sin(a);
+          float along = -p.x * sa + p.y * ca;
+          float across = p.x * ca + p.y * sa;
+          float stepPx = max(uHatchStep, 2.0) * (1.0 + 0.12 * sin(along * 0.006 + formN.y * 1.7));
+          float band = floor(across / max(stepPx, 1.0));
+          float bandSeed = hash21(vec2(band, 11.3));
+          across += (bandSeed - 0.5) * stepPx * 0.42;   // живой, неровный шаг
+          float f = abs(fract(across / max(stepPx, 1.0)) - 0.5) * stepPx;
+          float segLen = 26.0 + 58.0 * bandSeed;
+          float seg = floor(along / segLen);
+          float segSeed = hash21(vec2(band * 1.7 + 0.3, seg));
+          float phase = fract(along / segLen + segSeed * 2.3);
+          // Концы сходят на нет: карандаш не обрубает штрих по линейке.
+          float taper = smoothstep(0.0, 0.18, phase) * smoothstep(1.0, 0.82, phase);
+          float press = 0.42 + 0.58 * segSeed;
+          float halfWidth = (0.30 + 0.62 * strength) / (0.80 + 0.45 * segSeed);
+          float line = 1.0 - smoothstep(halfWidth * 0.55, halfWidth * 1.25, f);
+          float gate = clamp((dark - 0.02) / 0.40, 0.0, 1.0);
+          return line * taper * gate * strength * press * (0.55 + 0.45 * dark);
         }
 
         float halftone(vec2 uv, float cell, float dark) {
-          if (dark < 0.005) return 0.0;
+          if (dark < 0.004) return 0.0;
           float ang = 0.5236;                       // 30° — классический растр
           mat2 rot = mat2(cos(ang), -sin(ang), sin(ang), cos(ang));
           vec2 p = rot * (uv * uResolution / max(cell, 1.0));
           vec2 f = fract(p) - 0.5;
           float r = length(f);
-          float rad = 0.62 * sqrt(clamp(dark, 0.0, 1.0));
-          return 1.0 - smoothstep(rad - 0.08, rad + 0.08, r);
+          // Круглая точка с мягкой кромкой: квадратный растр читался
+          // как «пиксели», а не как скринтон.
+          float rad = 0.56 * sqrt(clamp(dark, 0.0, 1.0));
+          return 1.0 - smoothstep(rad - 0.11, rad + 0.11, r);
+        }
+
+        float lineTone(vec2 uv, float cell, float dark) {
+          if (dark < 0.005) return 0.0;
+          float ang = 2.3561944902;                 // 135°, та же частота
+          vec2 p = uv * uResolution / max(cell, 1.0);
+          float u = p.x * cos(ang) + p.y * sin(ang);
+          float distanceToLine = abs(fract(u) - 0.5);
+          float width = clamp(dark * 0.90, 0.0, 0.96);
+          float line = 1.0 - smoothstep(width * 0.5 - 0.045,
+                                       width * 0.5 + 0.045, distanceToLine);
+          return clamp(line * 0.94 + dark * 0.06, 0.0, 1.0);
+        }
+
+        float localBackgroundShadow(vec2 uv, float paperL) {
+          // Тень на полу — это фон (пол не попадает в G-buffer). Прежний
+          // узкий круг ловил только кромку: в середине большой падающей
+          // тени локальный контраст был нулевым, и тень исчезала.
+          if (step(0.5, texture2D(tNormal, uv).a) > 0.5) return 0.0;
+          float value = luma(texture2D(tDiffuse, uv).rgb);
+          vec2 nearPx = 9.0 * uPixelRatio / uResolution;
+          vec2 widePx = 42.0 * uPixelRatio / uResolution;
+          float nearSum = 0.0;
+          float nearW = 0.0;
+          float wideRef = value;
+          for (int i = 0; i < 12; i++) {
+            float ang = float(i) * 0.5235987756;
+            vec2 dir = vec2(cos(ang), sin(ang));
+            vec4 sNear = texture2D(tDiffuse, uv + dir * nearPx);
+            float bgN = 1.0 - step(0.5, texture2D(tNormal, uv + dir * nearPx).a);
+            nearSum += luma(sNear.rgb) * bgN;
+            nearW += bgN;
+            vec4 sWide = texture2D(tDiffuse, uv + dir * widePx);
+            float bgW = 1.0 - step(0.5, texture2D(tNormal, uv + dir * widePx).a);
+            wideRef = max(wideRef, luma(sWide.rgb) * bgW);
+          }
+          float local = nearW > 0.5 ? nearSum / nearW : value;
+          // Опорой служит самая светлая проба вокруг: только она может быть
+          // неосвещённой частью пола, а не самой тенью.
+          float reference = max(max(local, wideRef), value);
+          float drop = clamp((reference - value) / max(reference, 0.05), 0.0, 1.0);
+          float contrast = smoothstep(0.05, 0.30, drop);
+          float absolute = clamp((paperL - value) / max(paperL, 0.05), 0.0, 1.0);
+          return min(contrast, max(absolute, contrast * 0.55));
         }
 
         void main() {
@@ -4493,9 +4770,13 @@ export class Viewer {
           vec3 original = base.rgb;
           vec3 col = original;
           vec4 nC = texture2D(tNormal, vUv);
+          vec3 nvC = normalize(nC.rgb * 2.0 - 1.0);
           float aC = nC.a;
-          float edge = edgeCoverageToInk(texture2D(tEdge, vUv).r);
-          float silhouette = edgeCoverageToInk(texture2D(tEdge, vUv).g);
+          vec3 edgeSample = bridgedEdge(vUv);
+          float edge = edgeCoverageToInk(edgeSample.r);
+          float silhouette = edgeCoverageToInk(edgeSample.g);
+          edge *= step(0.001, uLine);
+          silhouette *= step(0.001, uLine);
           float detail = max(edge - silhouette, 0.0);
           if (uMode > 3.5) edge = max(silhouette, detail * 0.72);
           else if (uMode > 0.5 && uMode < 1.5) edge = max(silhouette, detail * 0.86);
@@ -4515,26 +4796,59 @@ export class Viewer {
           float materialValue = max(albedoL, chroma * 0.65);
           float materialBlack = (1.0 - smoothstep(0.10, 0.24, albedoL))
             * (1.0 - smoothstep(0.08, 0.22, chroma));
+          float ndl = max(dot(nvC, normalize(uLightDir)), 0.0);
+          float formLight = 0.22 + 0.78 * ndl;
+          float occlusion = (1.0 - smoothstep(0.18, 0.50, ratio)) * (1.0 - materialBlack);
+          float celLight = clamp(formLight * (1.0 - 0.65 * occlusion), 0.0, 1.0);
+          // Тень рисунка задаётся формой (N·L + AO), а не яркостью beauty:
+          // иначе освещённая грань получала остаточный тон и растр.
+          float celShade = clamp(1.0 - celLight, 0.0, 1.0);
+          // Форма и фактическая освещённость — два разных сигнала тени:
+          // одинаковые нормали при разном свете должны давать разный тон.
+          float shadeSignal = max(celShade, darkness * 0.95);
           float paperL = max(luma(uPaper), 0.12);
-          float bgShadow = clamp((paperL - luma(original)) / paperL, 0.0, 1.0) * bgMask;
-          float bgShadowCore = smoothstep(0.045, 0.30, bgShadow);
+          // Маска ShadowMaterial точна, а локальный контраст остаётся
+          // запасным источником для мягкой полутени на кромке.
+          float castMask = texture2D(tShadow, vUv).a;
+          float bgShadow = bgMask
+            * max(localBackgroundShadow(vUv, paperL), smoothstep(0.04, 0.55, castMask));
+          float bgShadowCore = smoothstep(0.035, 0.26, bgShadow);
           edge *= 1.0 - emitMask * 0.65;
 
           if (uCel < 0.5 && uMode < 2.5) col = mix(col, uPaper, bodyMask);
 
           if (uMode > 0.5 && uMode < 1.5 && uCel > 0.5) {
-            // Манга: материал задаёт spot black, освещение — отдельный растр.
-            float density = max((1.0 - materialValue) * 0.45, darkness * 0.52);
-            density = max(density, materialBlack * 0.97);
-            float lvl = 1.0;
-            if (density < 0.22) lvl = 0.0;
-            else if (density < 0.48) lvl = 0.18;
-            else if (density < 0.75) lvl = 0.42;
-            else if (density < 0.92) lvl = 0.68;
-            float dots = halftone(vUv, 7.0 * uPixelRatio, lvl);
-            vec3 sheet = mix(uPaper, uInk, dots);
+            // Тон — плотность одной сетки, но у материала и тени разные
+            // растры: собственный тон материалов идёт линиями, тень —
+            // точками. Чёрный предмет на свету остаётся полосатым, а в
+            // тени уходит в заливку: это разные вещи, их нельзя сливать.
+            float materialDensity = (1.0 - materialValue) * 0.55;
+            float shadowDensity = smoothstep(0.26, 0.60, shadeSignal) * 0.30;
+            float density = materialDensity + shadowDensity;
+            float blackLit = materialBlack * (1.0 - smoothstep(0.30, 0.62, shadeSignal));
+            float blackDeep = materialBlack * smoothstep(0.44, 0.80, shadeSignal);
+            density = clamp(max(density, blackLit * 0.50), 0.0, 1.0);
+            float lvl = 0.0;
+            if (density < 0.11) lvl = 0.0;
+            else if (density < 0.26) lvl = 0.15;
+            else if (density < 0.44) lvl = 0.33;
+            else if (density < 0.62) lvl = 0.55;
+            else if (density < 0.80) lvl = 0.76;
+            else lvl = 0.92;
+            float cellPx = 4.4 * uPixelRatio;        // мелкий растр, а не «горох»
+            float dots = halftone(vUv, cellPx, lvl);
+            float lines = lineTone(vUv, cellPx * 1.08, lvl);
+            // Тень предпочитает точки, собственный тёмный тон — линии.
+            // Выбор растра строго бинарный: плавное смешивание двух сеток
+            // давало муар и «верёвку» вдоль ребра.
+            float shadowScreen = step(0.92, shadowDensity / max(materialDensity, 0.035));
+            float ink = shadowScreen > 0.5 ? dots : lines;
+            ink *= step(0.004, lvl);
+            vec3 sheet = mix(uPaper, uInk, ink);
             if (uTone < 0.01) sheet = mix(uPaper, uInk, lvl * 0.92);
-            if (materialBlack > 0.80 || (darkness > 0.96 && beautyL < 0.07)) sheet = uInk;
+            bool deep = (materialBlack > 0.80 && shadeSignal > 0.88 && beautyL < 0.10)
+              || (shadeSignal > 0.93 && darkness > 0.985 && beautyL < 0.025);
+            if (deep || blackDeep > 0.62) sheet = uInk;
             col = mix(col, sheet, bodyMask);
           } else if (uMode > 1.5 && uMode < 2.5 && uCel > 0.5) {
             // Комикс: более широкие цветовые массы и точки только в тени.
@@ -4554,40 +4868,57 @@ export class Viewer {
             vec3 pencil = clamp(under * (0.74 + 0.26 * light) * 1.05, 0.0, 1.0);
             col = mix(col, pencil, bodyMask);
           } else if (uCel > 0.5) {
-            // Anime: cel-ступени по illumination, белый specular не нужен.
+            // Anime: две-три плоские массы собственного цвета материала.
+            // Нормаль для селе сглаживается по экрану: геометрическая
+            // (flat) нормаль низкополигональной сферы давала звёздчатое
+            // белое пятно вместо чистого серпа тени.
             float steps = max(uToon, 2.0);
-            float q = clamp(floor(light * (steps - 1.0) + 0.35) / (steps - 1.0), 0.0, 1.0);
-            float tone = 0.48 + 0.62 * q;
-            vec3 cool = alb * vec3(0.78, 0.86, 1.05);
-            vec3 warm = alb * vec3(1.10, 1.03, 0.94);
-            vec3 cel = clamp(mix(cool, warm, q) * tone * 1.12, 0.0, 1.0);
-            col = mix(col, cel, bodyMask);
+            float q = clamp(floor(celLight * (steps - 1.0) + 0.20) / (steps - 1.0), 0.0, 1.0);
+            vec3 celN = formNormal(vUv);
+            float celNdl = max(dot(celN, normalize(uLightDir)), 0.0);
+            float litMass = smoothstep(0.44, 0.52, celNdl);
+            vec3 celShadow = alb * vec3(0.56, 0.61, 0.78);
+            vec3 celDeep = alb * vec3(0.41, 0.46, 0.63);
+            vec3 cel = mix(celShadow, alb, litMass);
+            cel = mix(cel, celDeep, (1.0 - q) * (1.0 - litMass) * 0.85);
+            col = mix(col, clamp(cel, 0.0, 1.0), bodyMask);
           }
 
           // Штрих — след формы и тени, а не равномерная диагональ по объекту.
           if (uHatch > 0.001 && uCel > 0.5) {
-            float dark = clamp((darkness - 0.18) / 0.72, 0.0, 1.0);
-            float h = hatchLayer(vUv, uHatchAngle, dark, uHatch);
+            float dark = clamp((shadeSignal - 0.22) / 0.60, 0.0, 1.0);
+            vec3 formN = formNormal(vUv);
+            float h = hatchLayer(vUv, uHatchAngle, dark, uHatch, formN);
+            // На изломе и у контура карандаш останавливается.
+            h *= smoothstep(0.58, 0.86, normalCoherence(vUv));
             if (uHatch > 0.55 && dark > 0.55) {
-              float h2 = hatchLayer(vUv, uHatchAngle + 1.15, (dark - 0.55) / 0.45,
-                                    (uHatch - 0.55) / 0.45);
-              h = max(h, h2 * 0.9);
+              float h2 = hatchLayer(vUv, uHatchAngle + 1.12, dark, uHatch, formN);
+              float crossGate = clamp((dark - 0.52) / 0.42, 0.0, 1.0);
+              h = max(h, h2 * crossGate * 0.90);
             }
+            // Контур остаётся контуром: штрих останавливается до линии.
+            h *= 1.0 - smoothstep(0.20, 0.80, edge);
             col = mix(col, uInk, h * bodyMask);
           }
 
           // Тень на полу/бумаге не исчезает при смене стиля.
           if (uMode > 0.5 && uMode < 1.5 && uCel > 0.5) {
-            float dots = halftone(vUv, 8.0 * uPixelRatio, bgShadowCore * 0.28);
+            // Бумага остаётся бумагой: тон ложится только в падающую тень,
+            // и то мелкой сеткой, чтобы лист не превращался в серое поле.
+            float dots = halftone(vUv, 5.2 * uPixelRatio, bgShadowCore * 0.30);
             vec3 bg = mix(uPaper, uInk, dots);
             col = mix(col, bg, bgMask);
           } else if (uMode > 3.5 && uCel > 0.5) {
-            vec3 bg = uPaper * (1.0 - 0.12 * bgShadow);
-            float h = hatchLayer(vUv, uHatchAngle, clamp(bgShadowCore * 1.2, 0.0, 1.0), uHatch * 0.7);
-            bg = mix(bg, uInk, h * 0.55);
+            vec3 bg = uPaper * (1.0 - 0.10 * bgShadow);
+            float h = hatchLayer(vUv, uHatchAngle + 0.22,
+              clamp(bgShadowCore * 1.35, 0.0, 1.0), uHatch * 0.8, vec3(0.15, 0.0, 1.0));
+            bg = mix(bg, uInk, h * 0.62);
             col = mix(col, bg, bgMask);
           } else if (uMode < 2.5) {
-            vec3 bg = mix(uPaper, uInk, bgShadow * 0.25);
+            // Anime/comic: плоская тень двумя ступенями, без градиента.
+            float level = step(0.055, bgShadowCore) * 0.10
+              + step(0.14, bgShadowCore) * 0.13;
+            vec3 bg = mix(uPaper, uInk, level);
             col = mix(col, bg, bgMask);
           }
 

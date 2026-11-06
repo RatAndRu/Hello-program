@@ -647,8 +647,12 @@ def _render_view(meshes, center, radius, view, size, ss, bbox, grid=True,
 
     if anime:
         from .anime import apply_style
+        # То же направление key light, что и в _shade: cel-ступени идут по
+        # нормали/свету, а не по случайной яркости specular в beauty-кадре.
+        key_light = _normalize(0.42 * cam["right"] - 0.62 * cam["up"] - 0.75 * cam["f"])
         img = apply_style(img, zbuf, nbuf, idbuf, ebuf, st, ss,
-                          groups=gbuf_id, mats=mbuf_id, albedo=abuf)
+                          groups=gbuf_id, mats=mbuf_id, albedo=abuf,
+                          light_dir=key_light)
 
     # контурное затемнение по глубине (обычный вид)
     finite = np.isfinite(zbuf)

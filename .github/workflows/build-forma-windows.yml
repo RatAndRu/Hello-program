@@ -83,6 +83,7 @@ jobs:
           node --check web/js/viewer.js
           node tests/editor_regression_test.js
           node tests/playback_regression_test.js
+          node tests/panels_regression_test.js
           node tests/dragon_picking_test.js
           node tests/occluders_test.js
           node tests/ui_bounds_test.js

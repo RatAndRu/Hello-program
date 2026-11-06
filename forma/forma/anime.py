@@ -331,6 +331,15 @@ def _dilate(mask: np.ndarray, radius: float) -> np.ndarray:
     return out
 
 
+def _bridge_line_gaps(mask: np.ndarray) -> np.ndarray:
+    """Заполняет только однопиксельные разрывы между двумя частями линии."""
+    out = np.asarray(mask, dtype=bool).copy()
+    for dy, dx in _DIRS:
+        opposite = _shift(mask, dy, dx, False) & _shift(mask, -dy, -dx, False)
+        out |= opposite
+    return out
+
+
 def _soften(mask: np.ndarray) -> np.ndarray:
     """Сглаживает маску контура: линия перестаёт быть «лесенкой»."""
     m = mask.astype(np.float32)
@@ -368,6 +377,20 @@ def _halftone(shape: tuple[int, int], cell: float, darkness: np.ndarray) -> np.n
     return np.clip(dots * 0.92 + np.clip(darkness, 0, 1) * 0.08, 0.0, 1.0)
 
 
+def _line_tone(shape: tuple[int, int], cell: float,
+               darkness: np.ndarray) -> np.ndarray:
+    """Линейный скринтон той же частоты, что и точечный; без наложения решёток."""
+    h, w = shape
+    yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
+    ang = math.radians(135.0)
+    u = (xx * math.cos(ang) + yy * math.sin(ang)) / max(float(cell), 1.0)
+    distance = np.abs(np.mod(u, 1.0) - 0.5)
+    density = np.clip(darkness, 0.0, 1.0)
+    width = np.clip(density * 0.90, 0.0, 0.96)
+    lines = ((distance <= width * 0.5) & (density > 0.005)).astype(np.float32)
+    return np.clip(lines * 0.94 + density * 0.06, 0.0, 1.0)
+
+
 def _paper_grain(shape: tuple[int, int], strength: float, seed: int = 7) -> np.ndarray:
     """Зерно бумаги: мелкий шум + редкие волокна. 1 — чистая бумага."""
     if strength <= 0.001:
@@ -398,35 +421,56 @@ def _paper_grain(shape: tuple[int, int], strength: float, seed: int = 7) -> np.n
 
 
 def _hatch_mask(shape: tuple[int, int], darkness: np.ndarray, angle_deg: float,
-                step: float, strength: float) -> np.ndarray:
-    """Карандашная штриховка: тонкие линии под углом, плотность — от тени.
+                step: float, strength: float,
+                normals: np.ndarray | None = None) -> np.ndarray:
+    """Карандаш по форме: изогнутый штрих, разные нажим и длина мазка.
 
-    Возвращает долю краски 0…1 на пиксель (линии мягкие, «карандашом»).
+    Нормали непрерывно искривляют координату поперёк штриха. Поэтому на
+    цилиндре линии огибают объём, а на плоскости остаются спокойнее. Зерно
+    меняет давление только между длинными мазками, не разрывая контур модели.
     """
     if strength <= 0.001:
         return np.zeros(shape, dtype=np.float32)
     h, w = shape
     yy, xx = np.mgrid[0:h, 0:w].astype(np.float32)
-    ang = math.radians(float(angle_deg))
-    ca, sa = math.cos(ang), math.sin(ang)
-    # координата поперёк штрихов
-    u = (xx * ca + yy * sa) / max(step, 2.0)
-    frac = np.mod(u, 1.0)
-    # линия — узкая полоска в середине периода, мягкий карандашный край
-    line_w = 0.34
-    line = np.clip(1.0 - np.abs(frac - 0.5) / (line_w * 0.5), 0.0, 1.0)
-    line = line ** 0.55
-    # плотность: в тени штрихи есть, на свету — почти нет
+    base_angle = math.radians(float(angle_deg))
     dark = np.clip(darkness, 0.0, 1.0)
-    gate = np.clip((dark - 0.06) / 0.42, 0.0, 1.0)
-    # «двойная штриховка» в глубокой тени: второй слой поперёк
-    cross = np.zeros_like(line)
+    if normals is not None and normals.shape == (h, w, 3):
+        nx = np.asarray(normals[:, :, 0], dtype=np.float32)
+        ny = np.asarray(normals[:, :, 1], dtype=np.float32)
+        form_warp = 12.0 * nx + 4.0 * np.sin(yy * 0.035 + ny * 2.5)
+    else:
+        form_warp = np.zeros((h, w), dtype=np.float32)
+
+    def layer(angle: float, spacing: float, warp_scale: float,
+              pressure_scale: float) -> tuple[np.ndarray, np.ndarray]:
+        ca, sa = math.cos(angle), math.sin(angle)
+        along = -xx * sa + yy * ca
+        u = (xx * ca + yy * sa + form_warp * warp_scale) / max(spacing, 2.0)
+        cell = np.floor(u)
+        frac = np.mod(u, 1.0)
+        segment = np.floor(along / 86.0)
+        # Стабильный хэш на длинный мазок, а не белый шум на каждый пиксель.
+        seed = np.mod(np.sin(cell * 127.1 + segment * 311.7) * 43758.5453, 1.0)
+        pressure = (0.58 + 0.42 * seed) * pressure_scale
+        width = (0.26 + 0.12 * strength) * (0.82 + 0.36 * seed)
+        line = np.clip(1.0 - np.abs(frac - 0.5) / np.maximum(width * 0.5, 0.03),
+                       0.0, 1.0) ** 0.62
+        phase = np.mod(along / (72.0 + 48.0 * seed) + seed, 1.0)
+        taper = (np.clip(phase / 0.12, 0.0, 1.0)
+                 * np.clip((1.0 - phase) / 0.16, 0.0, 1.0))
+        # Карандаш не печатает одинаковые штрихи: меняются нажим и концы,
+        # но длинный мазок не превращается в регулярный пунктир.
+        return line * (0.48 + 0.52 * pressure) * (0.58 + 0.42 * taper), seed
+
+    line, _seed = layer(base_angle, float(step), 1.0, 1.0)
+    gate = np.clip((dark - 0.08) / 0.48, 0.0, 1.0)
+    result = line * gate * strength
     if strength > 0.55:
-        u2 = (xx * math.cos(ang + 1.15) + yy * math.sin(ang + 1.15)) / max(step * 1.35, 2.0)
-        f2 = np.mod(u2, 1.0)
-        cross_line = np.clip(1.0 - np.abs(f2 - 0.5) / (line_w * 0.5), 0.0, 1.0) ** 0.7
-        cross = cross_line * np.clip((dark - 0.50) / 0.45, 0.0, 1.0) * (strength - 0.55) / 0.45
-    return np.clip(np.maximum(line * gate, cross) * strength, 0.0, 1.0).astype(np.float32)
+        cross, _ = layer(base_angle + 1.12, float(step) * 1.32, 0.62, 0.86)
+        cross_gate = np.clip((dark - 0.52) / 0.42, 0.0, 1.0)
+        result = np.maximum(result, cross * cross_gate * (strength - 0.55) / 0.45)
+    return np.clip(result, 0.0, 1.0).astype(np.float32)
 
 
 def _luma(img: np.ndarray) -> np.ndarray:
@@ -590,7 +634,7 @@ def _apply_style_legacy(img: np.ndarray, z: np.ndarray | None = None,
         radius = float(st["line"]) * max(1, ss) * 0.5
         if radius > 0.2:
             edge = _dilate(edge, radius)
-        mask = _soften(edge)
+        mask = _soften(_bridge_line_gaps(edge))
         # контур не должен закрывать светодиоды целиком
         mask = np.where(emissive, mask * 0.35, mask)
         out = out * (1.0 - mask[..., None]) + ink[None, None, :] * mask[..., None]
@@ -611,12 +655,31 @@ def _smooth01(value: np.ndarray, lo: float, hi: float) -> np.ndarray:
     return t * t * (3.0 - 2.0 * t)
 
 
+def _masked_local_mean(values: np.ndarray, mask: np.ndarray,
+                       radius: int) -> np.ndarray:
+    """Среднее только по фоновым соседям за O(H·W), через integral image."""
+    r = max(1, int(radius))
+    weights = np.asarray(mask, dtype=np.float32)
+    samples = np.asarray(values, dtype=np.float32) * weights
+    size = 2 * r + 1
+
+    def window_sum(array: np.ndarray) -> np.ndarray:
+        padded = np.pad(array, ((r, r), (r, r)), mode="edge")
+        integral = np.pad(padded, ((1, 0), (1, 0)), mode="constant").cumsum(0).cumsum(1)
+        return (integral[size:, size:] - integral[:-size, size:]
+                - integral[size:, :-size] + integral[:-size, :-size])
+
+    count = window_sum(weights)
+    return window_sum(samples) / np.maximum(count, 1.0)
+
+
 def apply_style(img: np.ndarray, z: np.ndarray | None = None,
                 normals: np.ndarray | None = None, ids: np.ndarray | None = None,
                 emissive: np.ndarray | None = None, style: dict | None = None,
                 ss: int = 1, groups: np.ndarray | None = None,
                 mats: np.ndarray | None = None,
-                albedo: np.ndarray | None = None) -> np.ndarray:
+                albedo: np.ndarray | None = None,
+                light_dir: np.ndarray | None = None) -> np.ndarray:
     """Рисует стиль, разделяя альбедо, освещение, тень и геометрический контур.
 
     Старые вызовы без ``albedo`` обслуживаются прежней реализацией ради
@@ -650,16 +713,23 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
 
     paper = None
     shadow = np.zeros((h, w), dtype=np.float32)
+    shadow_core = shadow.copy()
     if st.get("paper"):
         paper = np.array(color_to_float_rgb(st["paper"]), dtype=np.float32)
-        paper_l = float(_luma(paper))
-        # _draw_shadow и WebGL-пол уже записали тень в beauty. Сохраняем её
-        # до замены фона бумагой: тень — отдельный тон, а не лишний объект.
-        shadow = np.clip((paper_l - _luma(raw)) / max(paper_l, 0.12), 0.0, 1.0)
-        shadow *= ~valid
-        # Внешняя часть эллиптического contact-shadow не должна заполнять
-        # весь лист случайными точками: растр нужен только у его ядра.
-        shadow_core = _smooth01(shadow, 0.045, 0.30)
+        paper_l = max(float(_luma(paper)), 0.12)
+        # Равномерно освещённый пол не является тенью, даже если он темнее
+        # бумаги. Ищем локальный провал яркости относительно соседнего фона,
+        # а не глобальную разницу paper − beauty по всему кадру.
+        raw_l = _luma(raw)
+        background = ~valid
+        local_near = _masked_local_mean(raw_l, background, max(9, int(round(14 * ss))))
+        local_wide = _masked_local_mean(raw_l, background, max(20, int(round(36 * ss))))
+        reference = np.maximum(np.maximum(local_near, local_wide), raw_l)
+        drop = np.clip((reference - raw_l) / np.maximum(reference, 0.05), 0.0, 1.0)
+        contrast = _smooth01(drop, 0.05, 0.30)
+        absolute = np.clip((paper_l - raw_l) / paper_l, 0.0, 1.0)
+        shadow = np.minimum(contrast, np.maximum(absolute, contrast * 0.55)) * background
+        shadow_core = _smooth01(shadow, 0.035, 0.26)
         out[~valid] = paper
     ink = np.array(color_to_float_rgb(st["color"]), dtype=np.float32)
     sheet = paper if paper is not None else np.array([1.0, 1.0, 1.0], dtype=np.float32)
@@ -676,6 +746,16 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
     material_value = np.maximum(albedo_l, chroma * 0.65)
     material_black = ((1.0 - _smooth01(albedo_l, 0.10, 0.24))
                       * (1.0 - _smooth01(chroma, 0.08, 0.22)))
+    # Для 2D anime форма задаётся направлением света и нормалью, а не
+    # яркостью готового PBR-кадра: белый specular не создаёт лишнюю ступень.
+    if light_dir is None:
+        light_dir = np.array([0.0, 0.0, 1.0], dtype=np.float32)
+    light_vec = np.asarray(light_dir, dtype=np.float32).reshape(3)
+    light_vec /= max(float(np.linalg.norm(light_vec)), 1e-9)
+    ndl = np.clip(np.einsum("ijk,k->ij", normals, light_vec), 0.0, 1.0)
+    form_light = 0.22 + 0.78 * ndl
+    occlusion = (1.0 - _smooth01(ratio, 0.18, 0.50)) * (1.0 - material_black)
+    cel_light = np.clip(form_light * (1.0 - 0.65 * occlusion), 0.0, 1.0)
 
     if not st["shade"]:
         if paper is not None:
@@ -685,21 +765,24 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
 
     mode = st["mode"]
     if st["shade"] and mode == "аниме":
-        # Cel-тон строится из цвета материала, а не из specular-блика.
-        # Небольшой cool→warm сдвиг следует практике технической иллюстрации
-        # Gooch: форма читается даже без фотореалистичных белых бликов.
+        # Плоские цветовые массы: 2–3 явных тона, никаких белых PBR-бликов
+        # и непрерывных cool→warm градиентов внутри одной cel-ступени.
         steps = int(st["toon"])
         if steps >= 2:
-            q = np.floor(np.clip(light, 0, 1) * (steps - 1) + 0.35) / (steps - 1)
+            q = np.floor(np.clip(cel_light, 0, 1) * (steps - 1) + 0.20) / (steps - 1)
             q = np.clip(q, 0.0, 1.0)
         else:
-            q = light
-        tone = 0.48 + 0.62 * q
-        cool = alb * np.array([0.78, 0.86, 1.05], dtype=np.float32)
-        warm = alb * np.array([1.10, 1.03, 0.94], dtype=np.float32)
-        cel = (cool * (1.0 - q[..., None]) + warm * q[..., None])
-        cel = np.clip(cel * tone[..., None] * 1.12, 0.0, 1.0)
-        out[body] = cel[body]
+            q = cel_light
+        # Две-три плоские массы собственного цвета материала: свет — сам
+        # albedo, тень — его затемнённая холодная версия. Никакого общего
+        # cool→warm тона, который снова делал картинку «3D-градиентом».
+        lit_mass = _smooth01(ndl, 0.44, 0.52)[..., None]
+        cel_shadow = alb * np.array([0.56, 0.61, 0.78], dtype=np.float32)
+        cel_deep = alb * np.array([0.41, 0.46, 0.63], dtype=np.float32)
+        cel = cel_shadow * (1.0 - lit_mass) + alb * lit_mass
+        deep_w = (1.0 - q[..., None]) * (1.0 - lit_mass) * 0.85
+        cel = cel * (1.0 - deep_w) + cel_deep * deep_w
+        out[body] = np.clip(cel, 0.0, 1.0)[body]
 
     if st["shade"] and mode == "комикс":
         steps = max(2, int(st["toon"]))
@@ -714,24 +797,42 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
                          + ink[None, None, :] * amount[..., None])[body]
 
     if st["shade"] and mode == "манга":
-        # Четыре читаемых значения: бумага, лёгкий/плотный растр и spot black.
-        # Насыщенный цвет получает value от chroma, поэтому зелёный плафон не
-        # становится «чёрным объектом» только из-за низкого luma.
-        density = np.maximum((1.0 - material_value) * 0.45, darkness * 0.52)
-        density = np.maximum(density, material_black * 0.97)
+        # Материал и освещение складываются, а не выбираются через max:
+        # тёмный на свету остаётся плотным тоном, тёмный в тени темнее,
+        # светлый в тени получает собственный более лёгкий тон.
+        # Тень рисунка — по форме (N·L и AO), а не по яркости готового кадра:
+        # иначе освещённая грань получала остаточный тон.
+        cel_shade = np.clip(1.0 - cel_light, 0.0, 1.0)
+        shade_signal = np.maximum(cel_shade, darkness * 0.95)
+        material_density = (1.0 - material_value) * 0.55
+        shadow_density = _smooth01(shade_signal, 0.26, 0.60) * 0.30
+        density = material_density + shadow_density
+        black_lit = material_black * (1.0 - _smooth01(shade_signal, 0.30, 0.62))
+        black_deep = material_black * _smooth01(shade_signal, 0.44, 0.80)
+        density = np.clip(np.maximum(density, black_lit * 0.50), 0.0, 1.0)
         levels = np.select(
-            [density < 0.22, density < 0.48, density < 0.75, density < 0.92],
-            [0.0, 0.18, 0.42, 0.68], default=1.0).astype(np.float32)
+            [density < 0.11, density < 0.26, density < 0.44,
+             density < 0.62, density < 0.80],
+            [0.0, 0.15, 0.33, 0.55, 0.76], default=0.92).astype(np.float32)
         tone = float(st["tone"])
         if tone > 0.001:
-            dots = _halftone((h, w), 7.2 * max(1, ss), levels)
+            # Тень и собственный тон материала — разные растры одной частоты.
+            # Выбор строго бинарный: смешивание двух сеток давало муар.
+            cell = 4.4 * max(1, ss)
+            dots = _halftone((h, w), cell, levels)
+            lines = _line_tone((h, w), cell * 1.08, levels)
+            shadow_screen = shadow_density > 0.92 * material_density + 0.032
+            dots = np.where(shadow_screen, dots, lines)
+            dots = np.where(levels > 0.004, dots, 0.0)
             screen = sheet[None, None, :] * (1.0 - dots[..., None]) + ink * dots[..., None]
         else:
             amount = levels * 0.92
             screen = sheet[None, None, :] * (1.0 - amount[..., None]) + ink * amount[..., None]
-        # Solid black reserved for an actually black material or a near-zero
-        # illumination cavity — never for an arbitrary dark green/blue colour.
-        deep = (material_black > 0.80) | ((darkness > 0.96) & (beauty_l < 0.07))
+        # Сплошная заливка — чёрный материал в глубокой тени; на свету он
+        # остаётся плотным тоном и не превращается в чёрное пятно.
+        deep = (((material_black > 0.80) & (shade_signal > 0.88) & (beauty_l < 0.10))
+                | ((shade_signal > 0.93) & (darkness > 0.985) & (beauty_l < 0.025))
+                | (black_deep > 0.62))
         screen[deep] = ink
         out[body] = screen[body]
 
@@ -745,10 +846,11 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
 
     # Штриховка — не равномерная диагональная текстура по всему объекту.
     if float(st.get("hatch") or 0) > 0.001 and st["shade"]:
-        hatch_dark = np.clip((darkness - 0.18) / 0.72, 0.0, 1.0)
+        hatch_dark = np.clip((np.maximum(np.clip(1.0 - cel_light, 0.0, 1.0),
+                                         darkness * 0.95) - 0.22) / 0.60, 0.0, 1.0)
         lines = _hatch_mask((h, w), hatch_dark, float(st.get("hatch_angle") or 45.0),
                             float(st.get("hatch_step") or 8.0),
-                            float(st.get("hatch") or 0.0))
+                            float(st.get("hatch") or 0.0), normals=normals)
         lines = np.where(body, lines, 0.0)
         out = out * (1.0 - lines[..., None]) + ink[None, None, :] * lines[..., None]
 
@@ -756,7 +858,7 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
     # карандашный штрих; для anime/comic — спокойный графичный тон.
     if paper is not None and mode != "линия":
         if mode == "манга":
-            dots = _halftone((h, w), 8.0 * max(1, ss), np.clip(shadow_core * 0.28, 0, 1))
+            dots = _halftone((h, w), 5.2 * max(1, ss), np.clip(shadow_core * 0.30, 0, 1))
             bg = sheet[None, None, :] * (1.0 - dots[..., None]) + ink * dots[..., None]
         elif mode == "скетч":
             bg = sheet[None, None, :] * (1.0 - 0.12 * shadow[..., None])
@@ -766,7 +868,11 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
                              float(st.get("hatch") or 0) * 0.7)
             bg = bg * (1.0 - hm[..., None] * 0.55) + ink * hm[..., None] * 0.55
         else:
-            bg = sheet[None, None, :] * (1.0 - 0.25 * shadow[..., None]) + ink * (0.25 * shadow[..., None])
+            # Anime: одно плоское пятно контактной тени вместо фотореалистичного
+            # градиента пола. Остальной фон остаётся чистой бумагой.
+            level = ((shadow_core > 0.055).astype(np.float32) * 0.10
+                     + (shadow_core > 0.14).astype(np.float32) * 0.13)
+            bg = sheet[None, None, :] * (1.0 - level[..., None]) + ink * level[..., None]
         out[~valid] = bg[~valid]
 
     if st["line"] > 0:
@@ -780,7 +886,7 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
         radius = float(st["line"]) * max(1, ss) * 0.5
         if radius > 0.2:
             edge = _dilate(edge, radius)
-        mask = _soften(edge)
+        mask = _soften(_bridge_line_gaps(edge))
         mask = np.where(emissive, mask * 0.35, mask)
         out = out * (1.0 - mask[..., None]) + ink[None, None, :] * mask[..., None]
 

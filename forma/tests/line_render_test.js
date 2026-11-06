@@ -9,9 +9,53 @@ const { pathToFileURL } = require('url');
 const root = path.resolve(__dirname, '..');
 
 async function main() {
-  const { cameraClipRange } = await import(pathToFileURL(path.join(root, 'web/js/camera_clip.js')));
+  const { cameraClipRange, stableAngle } = await import(pathToFileURL(path.join(root, 'web/js/camera_clip.js')));
   const { edgeCoverageScale, edgeCoverageToInk, EDGE_COVERAGE_TO_INK_GLSL } = await import(
     pathToFileURL(path.join(root, 'web/js/edge_coverage.js')));
+  const { TOPOLOGY_STROKE_PX, topologyLineMaterialWidth, uniqueTopologyPositions } = await import(
+    pathToFileURL(path.join(root, 'web/js/topology_lines.js')));
+  for (const ratio of [1, 2, 1.5]) {
+    const actualCssWidth = 2 * topologyLineMaterialWidth(ratio) / ratio;
+    assert(Math.abs(actualCssWidth - TOPOLOGY_STROKE_PX) < 1e-12,
+      '±linewidth в LineMaterial не должен удваивать заказанную CSS-толщину');
+  }
+
+  // Два треугольника квадрата содержат шесть входных рёбер, но общая
+  // диагональ должна попасть в экранный буфер один раз: четыре стороны + диагональ.
+  const square = Float32Array.from([
+    0, 0, 0, 1, 0, 0,
+    1, 0, 0, 1, 1, 0,
+    1, 1, 0, 0, 0, 0,
+    1, 1, 0, 0, 0, 0, // reversed duplicate общей диагонали
+    0, 0, 0, 0, 1, 0,
+    0, 1, 0, 1, 1, 0,
+    0, 0, 0, 0, 0, 0, // degenerate
+  ]);
+  const squareBefore = Array.from(square);
+  const uniqueSquare = uniqueTopologyPositions(square);
+  assert.strictEqual(uniqueSquare.length / 6, 5, 'общая диагональ не дублируется');
+  assert.deepStrictEqual(Array.from(square), squareBefore, 'исходная геометрия не мутируется');
+  assert.strictEqual(uniqueTopologyPositions([0, 0, 0, 0, 0, 0]).length, 0);
+  assert.strictEqual(uniqueTopologyPositions([0, 0, 0, NaN, 1, 0]).length, 0);
+
+  // Минимальный repro центра лампы: N треугольников веера дают 3N входных
+  // рёбер, но только N спиц + N сегментов обода после точной deduplication.
+  const fan = [];
+  const spokes = 64;
+  const ring = [];
+  for (let i = 0; i < spokes; i += 1) {
+    const angle = (i / spokes) * Math.PI * 2;
+    ring.push([Math.fround(Math.cos(angle)), Math.fround(Math.sin(angle)), 0]);
+  }
+  for (let i = 0; i < spokes; i += 1) {
+    const [x1, y1] = ring[i];
+    const [x2, y2] = ring[(i + 1) % spokes];
+    fan.push(0, 0, 0, x1, y1, 0, x1, y1, 0, x2, y2, 0, x2, y2, 0, 0, 0, 0);
+  }
+  const uniqueFan = uniqueTopologyPositions(Float32Array.from(fan));
+  assert.strictEqual(fan.length / 6, spokes * 3);
+  assert.strictEqual(uniqueFan.length / 6, spokes * 2,
+    'повторные спицы не должны создавать центральное пятно overdraw');
 
   const bbox = { min: { x: -50, y: -20, z: -10 }, max: { x: 50, y: 20, z: 10 } };
   const center = { x: 0, y: 0, z: 0 };
@@ -53,6 +97,18 @@ async function main() {
   );
   assert(point.near > 0 && point.far > point.near, 'вырожденный AABB не должен ломать камеру');
 
+  // Крен — настоящий угол вокруг направления взгляда, а ±0 в HUD — только
+  // численный шум. Ноль нормализуется и по значению, и по знаку Object.is.
+  for (const value of [-0, -1e-12, -0.00049, 0, 0.00049]) {
+    const clean = stableAngle(value);
+    assert.strictEqual(clean, 0);
+    assert(!Object.is(clean, -0), 'HUD не должен получать отрицательный ноль');
+    assert.strictEqual(clean.toFixed(1), '0.0');
+  }
+  assert.strictEqual(stableAngle(-0.01), -0.01);
+  assert.strictEqual(stableAngle(12.345), 12.345);
+  assert(Number.isNaN(stableAngle(NaN)));
+
   assert.strictEqual(edgeCoverageScale(1100, 700, 1), 2, 'DPR=1: 2×2 coverage samples');
   assert.strictEqual(edgeCoverageScale(1100, 700, 2), 1, 'DPR=2 уже содержит 2×2 samples');
   assert(Math.abs(edgeCoverageScale(1100, 700, 1.5) - 4 / 3) < 1e-12);
@@ -82,13 +138,14 @@ async function main() {
   // неиспользуемым эталонным кодом.
   const viewer = fs.readFileSync(path.join(root, 'web/js/viewer.js'), 'utf8');
   for (const token of [
-    "import { cameraClipRange } from './camera_clip.js'",
+    "import { cameraClipRange, stableAngle } from './camera_clip.js'",
     "import { edgeCoverageScale, EDGE_COVERAGE_TO_INK_GLSL } from './edge_coverage.js'",
     'this._edgePass = new ShaderPass',
     'this._renderEdgePass();',
     'u.tEdge.value = this._edgeRT.texture',
     '${EDGE_COVERAGE_TO_INK_GLSL}',
-    'float edge = edgeCoverageToInk(texture2D(tEdge, vUv).r)',
+    'vec3 edgeSample = bridgedEdge(vUv);',
+    'float edge = edgeCoverageToInk(edgeSample.r);',
     'col = mix(col, uInk, edge);',
     'mat.uniformsNeedUpdate = true;',
     "mat.uniforms.uGid.value = mode === 'материалы' ? 0 : (info.gid || 0);",
@@ -103,7 +160,32 @@ async function main() {
   assert(!viewer.includes('col = mix(col, uInk, edge * step(0.5, aC))'),
     'nearest-маска тела не должна занулять найденный контур');
 
-  console.log('Линейный render: clip, DPR, subpixel-чернила и ID-границы всех объектов проверены.');
+  const polygons = viewer.slice(viewer.indexOf('  setPolygons(on) {'),
+    viewer.indexOf('  /** Режим выделения областей', viewer.indexOf('  setPolygons(on) {')));
+  for (const token of [
+    'new THREE.WireframeGeometry(o.geometry)',
+    'geo.setPositions(uniqueTopologyPositions(wire.attributes.position.array))',
+    'new LineSegmentsGeometry()',
+    'new LineMaterial({',
+    'linewidth: topologyLineMaterialWidth(this.renderer.getPixelRatio())',
+    'transparent: false',
+    'alphaToCoverage: true',
+    'mat.polygonOffset = true',
+    'gl_Position.z -= 0.00008 * gl_Position.w',
+    'new LineSegments2(geo, mat)',
+    'this.scene.add(lines)',
+    'this._syncTopologyOverlays();',
+  ]) assert(polygons.includes(token), `Экранный полигонаж не подключён: ${token}`);
+  assert(!polygons.includes('new THREE.LineBasicMaterial') && !polygons.includes('heavy'),
+    'Полигонаж не должен возвращаться к однопиксельным GL_LINES на тяжёлой сцене');
+  assert(viewer.includes('{ type: THREE.HalfFloatType, samples: 4 }'),
+    'Буфер композера обязан быть multisampled: иначе полосы идут ступеньками');
+  for (const file of ['LineSegments2.js', 'LineSegmentsGeometry.js', 'LineMaterial.js']) {
+    assert(fs.statSync(path.join(root, 'web/vendor/lines', file)).size > 4000,
+      `Отсутствует vendor-модуль экранных линий: ${file}`);
+  }
+
+  console.log('Линейный render: clip, DPR, subpixel, camera ±0, ID и экранный полигонаж проверены.');
 }
 
 main().catch((error) => {

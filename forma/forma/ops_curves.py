@@ -9,10 +9,10 @@ import numpy as np
 
 from .contour import resolve_contour, unify_closed_profiles
 from .errors import GeometryError
-from .geometry import (FINENESS_MM, as_points, auto_segments, catmull_rom, circle_profile,
-                       ellipse_profile, ensure_ccw, fillet_polyline, limit_segments,
-                       loft_solid, loft_solid_smooth, polygon_area,
-                       smooth_closed_profile, sweep_solid)
+from .geometry import (FINENESS_MM, _rings_to_arrays, as_points, auto_segments,
+                       catmull_rom, circle_profile, ellipse_profile, ensure_ccw,
+                       fillet_polyline, limit_segments, loft_solid, loft_solid_smooth,
+                       manifold_from_arrays, polygon_area, smooth_closed_profile, sweep_solid)
 from .ops import ensure_solid, make_solid, op
 from .values import parse_value
 
@@ -42,6 +42,45 @@ def _points_value(a, value, dims: int, what: str) -> np.ndarray:
         # допуск в contour2d и не должен конфликтовать с profile=... .
         return contour.points3d()
     return contour.sample(tolerance=_operation_tolerance(a))
+
+
+def _revolve_with_flat_ring_caps(pts: np.ndarray, segments: int) -> mf.Manifold | None:
+    """Полное вращение с плоскими caps без искусственной pole-вершины.
+
+    ``Manifold.revolve`` превращает горизонтальный участок «ось → кольцо» в
+    веер треугольников. В полигонаже 64–128 спиц перекрываются у центра.
+    Для плоского дна/верха это не единственная корректная триангуляция:
+    существующий earcut кольца даёт ту же поверхность без центральной точки.
+    Конусы, частичные дуги и сложные профили с другой осью сюда не попадают.
+    """
+    pts = np.asarray(pts, dtype=np.float64)
+    if len(pts) < 4:
+        return None
+    axis = np.abs(pts[:, 0]) <= 1e-9
+    if int(np.count_nonzero(axis)) != 2 or not axis[0] or not axis[-1]:
+        return None
+    # Только горизонтальные участки являются плоскими крышками. Если z
+    # отличается, центральная точка — настоящая вершина конической поверхности.
+    if (abs(float(pts[0, 1] - pts[1, 1])) > 1e-9
+            or abs(float(pts[-1, 1] - pts[-2, 1])) > 1e-9):
+        return None
+    angle = np.arange(int(segments), dtype=np.float64) * (2.0 * math.pi / int(segments))
+    cos, sin = np.cos(angle), np.sin(angle)
+    rings = []
+    for radius, z in pts[1:-1]:
+        rings.append(np.stack([float(radius) * cos, float(radius) * sin,
+                               np.full(int(segments), float(z))], axis=1))
+    verts, faces = _rings_to_arrays(
+        rings, rings[0][:, :2], cap_start=True, cap_end=True,
+        end_profile2d=rings[-1][:, :2],
+    )
+    # Профиль может идти снизу вверх или сверху вниз. Сохраняем исходную
+    # ориентацию тела, не требуя от пользователя разворачивать точки вручную.
+    p0, p1, p2 = verts[faces[:, 0]], verts[faces[:, 1]], verts[faces[:, 2]]
+    signed_volume = float(np.einsum("ij,ij->i", p0, np.cross(p1, p2)).sum())
+    if signed_volume < 0.0:
+        faces = faces[:, ::-1]
+    return manifold_from_arrays(verts, faces, "тело вращения")
 
 
 @op("lathe", aliases=("точить", "вращение", "тело_вращения", "revolve", "vrashenie"),
@@ -94,7 +133,9 @@ def lathe(a, name):
                             f"(отклонение ≤ {FINENESS_MM:g} мм)", a.cmd.line)
     arc = a.num("arc", 360.0, minv=0.1, maxv=360.0)
     if abs(arc - 360.0) < 1e-9:
-        solid = mf.Manifold.revolve(mf.CrossSection([pts]), int(segments))
+        solid = _revolve_with_flat_ring_caps(pts, int(segments))
+        if solid is None:
+            solid = mf.Manifold.revolve(mf.CrossSection([pts]), int(segments))
     else:
         solid = mf.Manifold.revolve(mf.CrossSection([pts]), int(segments), float(arc))
     thickness = a.num("thickness", 0.0, minv=0.0)
