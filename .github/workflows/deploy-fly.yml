@@ -8,10 +8,6 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    services:
-      docker:
-        image: docker:24.0.5
-        options: --privileged
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -45,6 +41,7 @@ jobs:
         run: |
           export PATH="$HOME/.fly/bin:$PATH"
           fly apps create bliny-kefir-ratandru 2>&1 || true
+          fly scale count 1 --app bliny-kefir-ratandru 2>&1 || true
 
       - name: Deploy to fly.io
         env:
@@ -54,7 +51,7 @@ jobs:
           cd recipe
           flyctl deploy --app bliny-kefir-ratandru --verbose
 
-      - name: Check app status
+      - name: Check status
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
         run: |
