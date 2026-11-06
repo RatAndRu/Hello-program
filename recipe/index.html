@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#c8751f">
+<title>Блины на кефире — шаги с картинками и калькулятор порций</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="hero">
+  <div class="wrap">
+    <h1>Блины на кефире <span class="badge">заварные, в дырочку</span></h1>
+    <p class="lead">Нежные, мягкие блинчики, которые не рвутся. Пошаговый рецепт с картинками и калькулятор ингредиентов под любое количество порций.</p>
+    <div class="hero-img-box">
+      <img src="images/hero.jpg" alt="Готовые блины на кефире" class="hero-img" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+      <div class="hero-fallback">🥞</div>
+    </div>
+    <div class="calc">
+      <label>Порций <span class="hint">(1 порция ≈ 8–10 блинов)</span></label>
+      <input type="number" id="servings" min="1" max="50" value="1">
+    </div>
+  </div>
+</header>
+
+<section class="wrap" id="ingredients">
+  <h2>🛒 Ингредиенты</h2>
+  <p class="note">Количество пересчитается автоматически, когда вы измените число порций.</p>
+  <ul class="ing-list" id="ing-list"></ul>
+</section>
+
+<section class="wrap" id="steps">
+  <h2>👨‍🍳 Приготовление по шагам</h2>
+  <p class="note">Отмечайте выполненные шаги — прогресс сохранится, даже если закроете страницу.</p>
+  <div class="step-grid" id="step-grid"></div>
+</section>
+
+<section class="wrap" id="frying">
+  <h2>🍳 Как жарить</h2>
+  <div class="fry-grid" id="fry-grid"></div>
+</section>
+
+<section class="wrap" id="oladi">
+  <h2>🥞 Вариант: оладьи (если не хочется крутить сковороду)</h2>
+  <div class="card oladi-card">
+    <p><strong>Суть та же, просто не добавляйте кипяток и масло в тесто.</strong> Смешайте яйца, кефир, сахар, соль, муку и соду — получится густое тесто. Наливайте масло прямо на сковородку и выкладывайте тесто столовой ложкой (по 3–4 штучки за раз). Жарьте на среднем огне под крышкой по паре минут с каждой стороны.</p>
+  </div>
+</section>
+
+<section class="wrap" id="sgushyonka">
+  <h2>🥫 Домашняя сгущёнка и какао-сгущёнка</h2>
+  <div class="card sgush-card">
+    <img src="images/sgushyonka.jpg" alt="Домашняя сгущёнка" onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+    <div class="hero-fallback" style="height:200px; font-size:56px;">🥫</div>
+    <h3>Обычная сгущёнка</h3>
+    <p><strong>Ингредиенты:</strong> 1 литр молока (жирность 2.5–3.2 %) и 200–250 г сахара.</p>
+    <p><strong>Как готовить:</strong> вылейте молоко в кастрюлю с толстым дном, добавьте сахар. Доведите до кипения на среднем огне, помешивая, чтобы сахар растворился. Уменьшите огонь и варите без крышки примерно 1,5–2 часа, время от времени помешивая, пока объём не уменьшится в 2 раза и масса не загустеет до сиропа. Охладите — ещё загустеет.</p>
+    <div class="warning">⚠️ Не варите закрытую банку магазинной сгущёнки в кастрюле — она может взорваться от давления. Варите только открытую смесь в кастрюле.</div>
+    <h3>Какао-сгущёнка</h3>
+    <p>В готовую остывшую сгущёнку добавьте 2–3 ст. ложки просеянного какао-порошка и хорошо перемешайте. Или варите молоко с сахаром и какао вместе — цвет будет равномерным.</p>
+    <p>Идеально к блинам, тостам и выпечке!</p>
+  </div>
+</section>
+
+<section class="wrap" id="tips">
+  <h2>⚠️ Если что-то пошло не так</h2>
+  <div class="tips-grid" id="tips-grid"></div>
+</section>
+
+<footer class="wrap">
+  <p>Сделано для удобного приготовления с телефона · откройте ссылку в браузере и положите телефон рядом со сковородкой.</p>
+</footer>
+<script src="app.js"></script>
+</body>
+</html>
