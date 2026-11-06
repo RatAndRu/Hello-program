@@ -35,8 +35,10 @@ assert(source.includes('vec3 under = alb * 0.78 + vec3(albedoL) * 0.22;'),
 // Штриховка ведёт форму, а не рисует ровную диагональ по всему предмету.
 assert(!source.includes('float warp = 12.0 * formN.x + 4.0 * sin(p.y * 0.035'),
   'Скачок warp на ребре давал «пружинки» и пунктир вместо штриховки');
-assert(source.includes('float bend = clamp(formN.x * 0.55 + formN.y * 0.22'),
-  'Направление штриха должно следовать форме плавно и ограниченно');
+assert(source.includes('vec2 grad = vec2(dFdx(dark), dFdy(dark));'),
+  'Направление штриха должно идти по изофоте тона, иначе на форме вихрь');
+assert(source.includes('float mixW = clamp(gradLen * 220.0, 0.0, 1.0);'),
+  'На плоской грани штрих обязан возвращаться к спокойному углу');
 assert(source.includes('across += (bandSeed - 0.5) * stepPx * 0.42;'),
   'Шаг штриховки должен дышать, а не быть линейкой');
 assert(source.includes('float segLen = 26.0 + 58.0 * bandSeed;'),
@@ -53,7 +55,7 @@ assert(source.includes('float cellPx = 4.4 * uPixelRatio;'),
   'Скринтон манги должен быть мелким, а не «горохом» 7 px');
 assert(source.includes('float ink = shadowScreen > 0.5 ? dots : lines;'),
   'Две сетки нельзя смешивать: на границе получается муар и «верёвка»');
-assert(source.includes('h *= smoothstep(0.58, 0.86, normalCoherence(vUv));'),
+assert(source.includes('h *= smoothstep(0.44, 0.78, normalCoherence(vUv));'),
   'На изломе нормалей штриховка должна гаснуть, а не двоиться');
 assert(source.includes('float shadowScreen = step(0.92, shadowDensity / max(materialDensity, 0.035));'),
   'Тень и собственный тон материала должны различаться растром');

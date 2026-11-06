@@ -4685,12 +4685,26 @@ export class Viewer {
         // направление и лёгкий изгиб, поэтому ровной «линейки» не выходит.
         float hatchLayer(vec2 uv, float ang, float dark, float strength, vec3 formN) {
           vec2 p = uv * uResolution / max(uPixelRatio, 0.5);
-          float bend = clamp(formN.x * 0.55 + formN.y * 0.22, -1.0, 1.0);
-          float a = ang + bend * 0.42;
+          // Направление штриха — изофота тона: линии равной освещённости
+          // огибают форму так же, как карандаш обводит цилиндр. Попиксельный
+          // поворот нормали давал вихрь в месте, где форма поворачивается.
+          vec2 grad = vec2(dFdx(dark), dFdy(dark));
+          float gradLen = length(grad);
+          float baseA = ang;
+          float isoA = gradLen > 0.00035
+            ? atan(-grad.x, grad.y) + 1.5707963
+            : baseA;
+          // Смешиваем с базовым углом: на плоской грани градиента нет и
+          // штриховка остаётся спокойной диагональю.
+          float mixW = clamp(gradLen * 220.0, 0.0, 1.0);
+          float a = mix(baseA, isoA, mixW * 0.85);
+          vec2 blockUv = (floor(uv * uResolution / 14.0) + 0.5) * 14.0 / uResolution;
+          vec3 blockN = formNormal(blockUv);
+          a += (hash21(blockUv * uResolution) - 0.5) * 0.10;
           float ca = cos(a), sa = sin(a);
           float along = -p.x * sa + p.y * ca;
           float across = p.x * ca + p.y * sa;
-          float stepPx = max(uHatchStep, 2.0) * (1.0 + 0.12 * sin(along * 0.006 + formN.y * 1.7));
+          float stepPx = max(uHatchStep, 2.0) * (1.0 + 0.12 * sin(along * 0.006 + blockN.y * 1.7));
           float band = floor(across / max(stepPx, 1.0));
           float bandSeed = hash21(vec2(band, 11.3));
           across += (bandSeed - 0.5) * stepPx * 0.42;   // живой, неровный шаг
@@ -4700,12 +4714,15 @@ export class Viewer {
           float segSeed = hash21(vec2(band * 1.7 + 0.3, seg));
           float phase = fract(along / segLen + segSeed * 2.3);
           // Концы сходят на нет: карандаш не обрубает штрих по линейке.
-          float taper = smoothstep(0.0, 0.18, phase) * smoothstep(1.0, 0.82, phase);
+          float taper = smoothstep(0.0, 0.10, phase) * smoothstep(1.0, 0.90, phase);
           float press = 0.42 + 0.58 * segSeed;
           float halfWidth = (0.30 + 0.62 * strength) / (0.80 + 0.45 * segSeed);
           float line = 1.0 - smoothstep(halfWidth * 0.55, halfWidth * 1.25, f);
           float gate = clamp((dark - 0.02) / 0.40, 0.0, 1.0);
-          return line * taper * gate * strength * press * (0.55 + 0.45 * dark);
+          // Нажим: графит не растворяется в бумаге, штрих должен читаться
+          // и на светлой, и на цветной подложке.
+          return min(1.0, line * taper * gate * strength * press
+            * (0.55 + 0.45 * dark) * 1.75);
         }
 
         float halftone(vec2 uv, float cell, float dark) {
@@ -4890,7 +4907,7 @@ export class Viewer {
             vec3 formN = formNormal(vUv);
             float h = hatchLayer(vUv, uHatchAngle, dark, uHatch, formN);
             // На изломе и у контура карандаш останавливается.
-            h *= smoothstep(0.58, 0.86, normalCoherence(vUv));
+            h *= smoothstep(0.44, 0.78, normalCoherence(vUv));
             if (uHatch > 0.55 && dark > 0.55) {
               float h2 = hatchLayer(vUv, uHatchAngle + 1.12, dark, uHatch, formN);
               float crossGate = clamp((dark - 0.52) / 0.42, 0.0, 1.0);
