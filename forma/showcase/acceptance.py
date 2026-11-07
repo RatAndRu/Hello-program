@@ -20,8 +20,10 @@ EXPECTED = {
     "jar_styles_058": {"objects": 3, "triangles": 82650, "preview_nodes": 3},
     # 0.69: adaptive micro-fillets only simplify cup_body/plant_pot and
     # toilet_*; GLB totals below are measured after guarded export cleanup.
-    "living_room_058": {"objects": 238, "triangles": 134296, "preview_nodes": 238},
-    "train_carriage_058": {"objects": 1186, "triangles": 324640, "preview_nodes": 140},
+    # 0.72: плоские крышки lathe без веера дали −20 треугольников салону
+    # (134296 → 134276) и −8 вагону (324640 → 324632) при той же геометрии.
+    "living_room_058": {"objects": 238, "triangles": 134276, "preview_nodes": 238},
+    "train_carriage_058": {"objects": 1186, "triangles": 324632, "preview_nodes": 140},
     "track_holes_057": {"objects": 1, "triangles": 1236, "preview_nodes": 1},
     "lightning_057": {"objects": 1, "triangles": 7232, "preview_nodes": 1},
     "bicycle_chain_057": {"objects": 58, "triangles": 28840, "preview_nodes": 4},
@@ -29,7 +31,7 @@ EXPECTED = {
     "bottle_057": {"objects": 4, "triangles": 63820, "preview_nodes": 4},
     "lids_057": {"objects": 8, "triangles": 14076, "preview_nodes": 5},
     "switch_057": {"objects": 9, "triangles": 3158, "preview_nodes": 3},
-    "train_carriage": {"objects": 1186, "triangles": 324640, "preview_nodes": 140},
+    "train_carriage": {"objects": 1186, "triangles": 324632, "preview_nodes": 140},
     "thinkpad_x1_056": {"objects": 66, "triangles": 76418, "preview_nodes": 38, "full_nodes": 73},
     "architecture_selectable_055": {"objects": 88, "triangles": 49424, "preview_nodes": 4,
                                      "preview_triangles": 17988},
@@ -39,7 +41,7 @@ EXPECTED = {
     "smooth_transitions_054": {"objects": 3, "triangles": 109280, "preview_nodes": 1,
                                 "preview_triangles": 26104},
     "glyphs_expansion_053": {"objects": 7, "triangles": 56950, "preview_nodes": 5},
-    "living_room_diorama": {"objects": 238, "triangles": 134296, "preview_nodes": 238},
+    "living_room_diorama": {"objects": 238, "triangles": 134276, "preview_nodes": 238},
 }
 
 
