@@ -103,7 +103,7 @@ jobs:
           set -o pipefail
           for attempt in 1 2 3; do
             echo "Deploy attempt ${attempt}/3"
-            if flyctl deploy --app "$FLY_APP_NAME" --config piksel/fly.toml --local-only --build-arg "PIKSEL_REVISION=$GITHUB_SHA" 2>&1 | tee -a /tmp/piksel-fly-deploy.log; then
+            if flyctl deploy --app "$FLY_APP_NAME" --config fly.piksel.toml --local-only --build-arg "PIKSEL_REVISION=$GITHUB_SHA" 2>&1 | tee -a /tmp/piksel-fly-deploy.log; then
               exit 0
             fi
             if [ "$attempt" -lt 3 ]; then sleep 15; fi
