@@ -1,0 +1,153 @@
+name: Deploy Piksel online
+
+on:
+  push:
+    branches:
+      - arena/f40b84ed-hello-program
+    paths:
+      - 'piksel/**'
+      - 'fly.toml'
+      - 'piksel/fly.toml'
+      - '.dockerignore'
+      - '.github/workflows/deploy-piksel-online.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: piksel-online-production
+  cancel-in-progress: false
+
+env:
+  FLY_APP_NAME: piksel-ratandru
+
+jobs:
+  verify:
+    name: Tests and static production container
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build static production image
+        run: docker build --build-arg "PIKSEL_REVISION=$GITHUB_SHA" -t "piksel-showcase:$GITHUB_SHA" -f piksel/Dockerfile .
+
+      - name: Start production container
+        run: docker run -d --name piksel-showcase -p 8000:8000 "piksel-showcase:$GITHUB_SHA"
+
+      - name: Wait for production health
+        run: |
+          set -e
+          for attempt in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8000/healthz > /tmp/piksel-health.json; then
+              cat /tmp/piksel-health.json
+              exit 0
+            fi
+            sleep 2
+          done
+          echo '::error::Static production container did not become healthy.'
+          cat /tmp/piksel-health.json 2>/dev/null || true
+          docker logs piksel-showcase || true
+          exit 1
+
+      - name: Verify static assets
+        run: |
+          set -e
+          curl -fsS http://127.0.0.1:8000/ | grep -q "ПИКСЕЛЬ"
+          curl -fsS http://127.0.0.1:8000/css/app.css | head -c 10
+          curl -fsS http://127.0.0.1:8000/js/app.js | head -c 10
+          echo "Static assets OK"
+
+      - name: Stop container
+        if: always()
+        run: docker rm -f piksel-showcase || true
+
+  deploy:
+    name: Fly.io always-on static showcase
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check deployment credentials
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          if [ -z "$FLY_API_TOKEN" ]; then
+            echo '::error::Добавьте FLY_API_TOKEN в Settings → Secrets and variables → Actions.'
+            exit 1
+          fi
+
+      - name: Install flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Ensure Fly application
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_ORG: ${{ vars.FLY_ORG }}
+        run: |
+          set -euo pipefail
+          flyctl apps list 2>&1 | tee /tmp/piksel-fly-app.log
+          if ! awk 'NR > 1 {print $1}' /tmp/piksel-fly-app.log | grep -Fxq "$FLY_APP_NAME"; then
+            flyctl apps create "$FLY_APP_NAME" --org "${FLY_ORG:-personal}" 2>&1 | tee -a /tmp/piksel-fly-app.log
+            flyctl apps list 2>&1 | tee -a /tmp/piksel-fly-app.log
+          fi
+          awk 'NR > 1 {print $1}' /tmp/piksel-fly-app.log | grep -Fxq "$FLY_APP_NAME"
+
+      - name: Deploy
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -o pipefail
+          for attempt in 1 2 3; do
+            echo "Deploy attempt ${attempt}/3"
+            if flyctl deploy --app "$FLY_APP_NAME" --config piksel/fly.toml --local-only --build-arg "PIKSEL_REVISION=$GITHUB_SHA" 2>&1 | tee -a /tmp/piksel-fly-deploy.log; then
+              exit 0
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 15; fi
+          done
+          exit 1
+
+      - name: Keep exactly one showcase machine
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          set -o pipefail
+          flyctl scale count 1 --app "$FLY_APP_NAME" --yes 2>&1 | tee -a /tmp/piksel-fly-deploy.log
+
+      - name: Verify public revision
+        run: |
+          set -e
+          for attempt in $(seq 1 18); do
+            if curl -fsS "https://$FLY_APP_NAME.fly.dev/healthz" > /tmp/piksel-public-health.json; then
+              cat /tmp/piksel-public-health.json
+              exit 0
+            fi
+            sleep 10
+          done
+          echo '::error::Публичный health-check не подтвердил.'
+          cat /tmp/piksel-public-health.json 2>/dev/null || true
+          exit 1
+
+      - name: External public acceptance
+        run: |
+          set -e
+          curl -fsS "https://$FLY_APP_NAME.fly.dev/" | grep -q "ПИКСЕЛЬ"
+          echo "Public site OK"
+
+      - name: Report sanitized deployment error
+        if: failure()
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          paths = [Path('/tmp/piksel-fly-app.log'), Path('/tmp/piksel-fly-deploy.log')]
+          text = '\n'.join(p.read_text(encoding='utf-8', errors='replace') for p in paths if p.exists()) or 'Нет журнала.'
+          text = re.sub(r'FlyV1\s+\S+', '[REDACTED]', text)
+          text = re.sub(r'fm2_[A-Za-z0-9_.-]+', '[REDACTED]', text)
+          tail = '\n'.join(text.splitlines()[-40:])
+          message = tail.replace('%','%25').replace('\r','%0D').replace('\n','%0A')
+          print('::error::Deployment: ' + message)
+          PY
