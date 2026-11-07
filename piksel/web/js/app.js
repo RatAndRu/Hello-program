@@ -6,8 +6,16 @@ let S={ size:32, pal:PAL.pico8.slice(), palN:'pico8', pix:[], col:4, tool:'brush
 
 function init(){
   S.pix=Array(S.size*S.size).fill(null);
-  buildPal(); syncCode(`размер 32\nпалитра pico8\n# воин — только непустые строки\n4: 12. 4 4 4 4\n5: 11. 4 4 4 4 4 4\n6: 10. 4 15 15 15 15 4\n7: 10. 4 15 1 1 15 4\n8: 10. 4 15 1 1 15 4\n11: 10. 1 6 6 1 1 6 6 1\n12: 9. 1 6 9 6 6 9 6 1\n13: 9. 1 6 6 6 6 6 6 1\n15: 2. 8 8 8 8\n3: 22. 1 7 1\n4: 22. 1 6 1\n10: 22. 1 9 1\n11: 20. 9 9 1 9 1 9 9\ncheck палитра ≤16\n`);
-  bind(); parse(true);
+  buildPal();
+  // грузим настоящего воина из файла, если есть
+  fetch('examples/warrior.piksel').then(r=>r.text()).then(t=>{
+    if(t && t.includes('размер')){ syncCode(t); parse(true); }
+    else throw 0;
+  }).catch(()=>{
+    syncCode(`размер 32\nпалитра pico8\n# воин — только непустые строки\n4: 12. 4 4 4 4\n5: 11. 4 4 4 4 4 4\n6: 10. 0 4 4 4 4 4 0\n7: 10. 0 4 15 15 15 4 0\n11: 9. 0 6 6 6 6 6 6 6 0\n12: 8. 8 8 0 6 9 6 6 9 6 0\n13: 7. 8 8 8 0 6 6 6 6 6 0\ncheck палитра ≤16\n`);
+    parse(true);
+  });
+  bind();
 }
 function syncCode(v){ code.value=v; updateGutter(); }
 function updateGutter(){
@@ -57,31 +65,46 @@ function parse(showOk=false){
   // gutter error line highlight could be added
 }
 function render(){
-  const N=S.size, base= Math.round(300*S.zoom/ (N/32)); // адаптивный размер
-  const disp = Math.max(2, Math.floor(base));
-  const W=N*disp, H=N*disp;
-  [pc,hc].forEach(c=>{c.width=W; c.height=H; c.style.width=W+'px'; c.style.height=H+'px'});
-  // pixel
+  const N=S.size;
+  // НОРМАЛИЗОВАННЫЙ КВАДРАТ: один px = одинаков по X и Y, без растягивания
+  const basePx = 10; // базовый размер пикселя для 32x32 → 320px квадрат
+  const px = Math.max(6, Math.min(18, Math.round(basePx * S.zoom)));
+  const W=N*px, H=N*px; // строго квадрат!
+  [pc,hc].forEach(c=>{
+    c.width=W; c.height=H;
+    // CSS размер — тоже квадрат, вписан в контейнер 380px
+    c.style.width=W+'px';
+    c.style.height=H+'px';
+    c.style.imageRendering='pixelated';
+  });
+  // пиксель — чёткий
+  pctx.imageSmoothingEnabled=false;
   pctx.fillStyle='#0B0E13'; pctx.fillRect(0,0,W,H);
-  for(let y=0;y<N;y++)for(let x=0;x<N;x++){ const col=S.pix[y*N+x]; if(col){ pctx.fillStyle=col; pctx.fillRect(x*disp,y*disp,disp,disp);} }
-  if(S.grid && N<=64){ pctx.strokeStyle='rgba(255,255,255,.06)'; pctx.lineWidth=1; for(let i=0;i<=N;i++){ pctx.beginPath(); pctx.moveTo(i*disp,0); pctx.lineTo(i*disp,H); pctx.stroke(); pctx.beginPath(); pctx.moveTo(0,i*disp); pctx.lineTo(W,i*disp); pctx.stroke(); } }
-  // HD mock
+  for(let y=0;y<N;y++)for(let x=0;x<N;x++){ const col=S.pix[y*N+x]; if(col){ pctx.fillStyle=col; pctx.fillRect(x*px,y*px,px,px);} }
+  if(S.grid && N<=64){
+    pctx.strokeStyle='rgba(255,255,255,.055)'; pctx.lineWidth=1;
+    for(let i=0;i<=N;i++){
+      const p=i*px+0.5;
+      pctx.beginPath(); pctx.moveTo(p,0); pctx.lineTo(p,H); pctx.stroke();
+      pctx.beginPath(); pctx.moveTo(0,p); pctx.lineTo(W,p); pctx.stroke();
+    }
+  }
+  // HD — тот же квадрат, nearest
   const scale=4, HD=N*scale;
-  const hdS=Math.max(1, Math.floor(disp/2));
+  // для HD тот же px/2 чтобы влез в тот же W,H (визуально крупнее, но квадрат)
+  const hdPx = Math.max(2, Math.floor(px/2));
   const tmp=document.createElement('canvas'); tmp.width=N; tmp.height=N; const tc=tmp.getContext('2d');
+  tc.imageSmoothingEnabled=false;
   for(let y=0;y<N;y++)for(let x=0;x<N;x++){ const c=S.pix[y*N+x]; if(c){ tc.fillStyle=c; tc.fillRect(x,y,1,1);} }
   hctx.imageSmoothingEnabled=false;
   hctx.clearRect(0,0,W,H);
-  // center HD
-  hctx.drawImage(tmp,0,0,HD*hdS,HD*hdS);
-  if(S.mode!=='pixel'){
-    // split не делаем — просто показываем HD с лёгким blur для демо
-    hctx.globalAlpha=.18; hctx.filter='blur(2px)'; hctx.drawImage(hc,1,1); hctx.filter='none'; hctx.globalAlpha=1;
-  }
-  // visibility
+  // рисуем HD ровно в центр квадрата, без растягивания
+  const HDW=HD*hdPx, HDH=HD*hdPx;
+  const ox=Math.floor((W-HDW)/2), oy=Math.floor((H-HDH)/2);
+  if(HDW<=W) hctx.drawImage(tmp,0,0,N,N, ox,oy,HDW,HDH);
+  else hctx.drawImage(tmp,0,0,W,H);
   const isHD=S.mode==='hd'||S.mode==='split';
   pc.hidden=isHD; hc.hidden=!isHD;
-  // если split — показываем оба рядом (упрощённо: HD)
 }
 
 function toast(s){ const t=document.createElement('div'); t.textContent=s; t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--surface);border:1px solid var(--line);padding:10px 14px;border-radius:999px;box-shadow:var(--shadow);font-size:12.5px'; document.body.appendChild(t); setTimeout(()=>t.remove(),1600); }
@@ -102,10 +125,17 @@ function bind(){
   $('exBtn').onclick=()=> $('exMenu').classList.toggle('open');
   $('exMenu').querySelectorAll('button').forEach(b=> b.onclick=()=>{
     $('exMenu').classList.remove('open');
-    if(b.dataset.ex==='warrior') fetch('../examples/warrior.piksel').then(r=>r.text()).then(t=>{ syncCode(t); parse(true); });
+    if(b.dataset.ex==='warrior') fetch('examples/warrior.piksel').then(r=>{
+      if(!r.ok) throw new Error(r.status);
+      return r.text();
+    }).then(t=>{
+      if(t.trim().startsWith('<!DOCTYPE')) throw new Error('got html');
+      syncCode(t); parse(true); toast('Воин загружен');
+    }).catch(()=>{ toast('Пример не найден — вставлен локальный'); syncCode(warriorFallback()); parse(true); });
     else if(b.dataset.ex==='blank') { syncCode(`размер 32\nпалитра pico8\n`); parse(true); }
     else toast('Скоро');
   });
+function warriorFallback(){ return `размер 32\nпалитра pico8\n# воин — fallback\n4: 12. 4 4 4 4\n5: 11. 4 4 4 4 4 4\n6: 10. 0 4 4 4 4 4 0\n7: 10. 0 4 15 15 15 4 0\n11: 9. 0 6 6 6 6 6 6 6 0\n12: 8. 8 8 0 6 9 6 6 9 6 0\n`; }
   $('plus').onclick=()=>{ S.zoom=Math.min(2.8,S.zoom*1.15); render(); };
   $('minus').onclick=()=>{ S.zoom=Math.max(.8,S.zoom/1.15); render(); };
   // ручной

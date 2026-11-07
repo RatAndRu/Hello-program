@@ -2,6 +2,7 @@
 FROM python:3.11-slim-bookworm AS site
 WORKDIR /site
 COPY piksel/web /site/
+COPY piksel/examples /site/examples
 # статический Nginx — как forma/showcase/Dockerfile
 FROM nginxinc/nginx-unprivileged:1.27-alpine
 COPY piksel/nginx.conf /etc/nginx/nginx.conf
