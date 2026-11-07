@@ -1,240 +1,101 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <meta name="piksel-token" content="__PIKSEL_TOKEN__" />
-  <title>ПИКСЕЛЬ — от пикселя к картине</title>
-  <link rel="stylesheet" href="css/app.css" />
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ПИКСЕЛЬ — сценарий → картинка</title>
+<link rel="stylesheet" href="css/app.css">
+<style>
+/* упрощённый поверх forma — только нужное */
+.topbar { min-height: 48px; padding: 6px 12px; }
+.topbar .brand span { font-size: 10px; }
+.actions { gap: 6px; }
+.layout-simple {
+  display: grid;
+  grid-template-columns: 1fr 420px;
+  grid-template-rows: minmax(0,1fr) 140px;
+  height: calc(100vh - 48px - 28px);
+  background: var(--line-soft);
+  gap: 1px;
+}
+.editor-pane { background: var(--bg-soft); display:flex; flex-direction:column; min-height:0; }
+.pane-head { padding: 6px 10px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-faint); border-bottom:1px solid var(--line-soft); display:flex; justify-content:space-between; align-items:center; }
+.pane-head strong { color: var(--text); letter-spacing:.08em; }
+#code { flex:1; width:100%; resize:none; background:#0e1117; color:#d6e0ee; border:0; padding:10px 12px; font-family:var(--mono); font-size:12.5px; line-height:1.55; outline:none; }
+#code::placeholder { color:#4a5668; }
+.canvas-pane { background:#0a0d12; display:flex; flex-direction:column; min-height:0; min-width:0; }
+.canvas-box { flex:1; display:grid; place-items:center; padding:12px; overflow:auto; background: repeating-conic-gradient(#1a2230 0 25%, #121821 0 50%) 0 0/18px 18px; }
+#pixelCanvas, #hdCanvas { image-rendering: pixelated; image-rendering: crisp-edges; border:1px solid var(--line); border-radius:8px; background:#0000; box-shadow:0 6px 24px rgba(0,0,0,.45); }
+.cmdbar { display:flex; gap:6px; padding:6px 8px; background:var(--panel); border-top:1px solid var(--line-soft); }
+.cmdbar input { flex:1; background:#0e141c; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:7px 10px; font-family:var(--mono); font-size:12px; }
+.manual { display:flex; gap:6px; padding:6px 8px; background:var(--panel); border-top:1px solid var(--line-soft); align-items:center; flex-wrap:wrap; }
+.manual .sw { width:18px; height:18px; border-radius:4px; border:1px solid var(--line); cursor:pointer; }
+.manual .sw.active { outline:2px solid var(--accent); outline-offset:1px; }
+.checks { padding:8px 10px; overflow:auto; font-size:11px; line-height:1.5; }
+.check { display:flex; gap:8px; padding:5px 8px; border:1px solid var(--line); border-radius:7px; margin-bottom:6px; background:var(--panel-2); }
+.check.ok { border-color:#2d4a3a; background:#132018; }
+.check.bad { border-color:#4a2d2d; background:#221313; }
+.footer { height:28px; display:flex; align-items:center; justify-content:space-between; padding:0 10px; background:#0e141c; border-top:1px solid var(--line); color:var(--text-faint); font-size:10.5px; }
+@media (max-width:900px){ .layout-simple{ grid-template-columns:1fr; grid-template-rows: 1fr auto 140px; } }
+</style>
 </head>
 <body>
-  <!-- history-panel — 1-в-1 ФОРМА -->
-  <div id="history-panel" class="modal" hidden>
-    <div class="modal-card">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <strong>История действий</strong>
-        <button class="mini" id="history-close">✕</button>
-      </div>
-      <p style="color:var(--text-faint);font-size:11px">Щёлкните шаг, чтобы вернуться к нему.</p>
-      <div id="history-list"></div>
-    </div>
+<header class="topbar">
+  <div class="brand"><div class="logo" style="background:linear-gradient(145deg,#ff7a59,#ffb86b)">П</div><div class="brand-text"><strong>ПИКСЕЛЬ</strong><span>сценарий → картинка · row-RLE</span></div></div>
+  <div class="actions">
+    <select id="sizeSel" title="размер" style="background:#121820;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:12px">
+      <option value="16">16×16</option><option value="24">24×24</option><option value="32" selected>32×32</option><option value="48">48×48</option><option value="64">64×64</option>
+    </select>
+    <select id="palSel" style="background:#121820;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:12px">
+      <option value="pico8">pico8 16</option><option value="gameboy">gameboy 4</option><option value="sweet16">sweet16</option><option value="custom">своя</option>
+    </select>
+    <button id="btnBuild" class="primary">▶ Собрать</button>
+    <button id="btnHD" title="Детализировать ×4">⬢ HD ×4</button>
+    <button id="btnSave" class="mini">💾</button>
+    <button id="btnWarrior" class="mini" title="Вставить воина">⚔️ воин</button>
+    <button id="btnClear" class="mini">очистить</button>
+    <div class="menu-wrap"><button id="btnExport" class="mini">⇩</button><div class="menu" id="expMenu"><button data-f="png">PNG пиксель</button><button data-f="hd">PNG HD</button><button data-f="copy">Копировать сценарий</button></div></div>
   </div>
+</header>
 
-  <header class="topbar">
-    <div class="brand">
-      <div class="logo">П</div>
-      <div class="brand-text">
-        <strong>ПИКСЕЛЬ</strong>
-        <span>от пикселя к картине — пиксель-арт → HD с нейросетью</span>
-        <span id="demo-badge" class="demo-badge" hidden>ОНЛАЙН-ДЕМО</span>
-      </div>
+<div class="layout-simple">
+  <!-- ЛЕВО: редактор сценария -->
+  <section class="editor-pane">
+    <div class="pane-head"><strong>Сценарий (row-RLE)</strong><span id="tokInfo" style="color:var(--text-faint)">строк 0 • токенов ~0</span><span style="font-size:10px;color:var(--accent)">Ctrl+Enter — Собрать</span></div>
+    <textarea id="code" spellcheck="false" placeholder="# вставь сценарий от нейросети — пример ниже скопируется по ⚔️
+размер 32
+палитра pico8
+4: 12. 4 4 4 4
+# прозрачные строки не пишем — это и есть фон
+# 10x - = 10 прозрачных, 5x 2 = пять пикселей цвета 2
+"></textarea>
+    <div class="cmdbar">
+      <input id="cmd" placeholder="Командная строка: 4: 3. 0 1 10- 2  или  пиксель 14,14 2">
+      <button id="btnCmd" class="mini">▶</button>
+      <button id="btnManual" class="mini" title="Ручной режим — клик по канвасу ставит пиксель">🖌 ручной</button>
     </div>
-    <div class="actions">
-      <button id="btn-pixel" class="primary" title="Сгенерировать крупную сетку (Ctrl+Enter)">▶ Пиксель</button>
-      <button id="btn-detail" class="primary" title="Детализировать крупную сетку">⬢ Детализировать</button>
-      <div class="menu-wrap">
-        <button id="btn-export" title="Экспорт">⇩ Экспорт</button>
-        <div class="menu" id="export-menu">
-          <button data-format="png">PNG — картинка</button>
-          <button data-format="png-hd">PNG HD — детализированная</button>
-          <button data-format="gif">GIF — анимация</button>
-          <button data-format="webm">WebM — видео</button>
-          <button data-format="apng">APNG — прозрачная анимация</button>
-          <button data-format="ase">ASE — для Aseprite</button>
-          <button data-format="zip">ZIP — всё сразу</button>
-        </div>
-      </div>
-      <button id="btn-undo" class="mini icon-btn" title="Отменить (Ctrl+Z)" disabled>↶</button>
-      <button id="btn-redo" class="mini icon-btn" title="Вернуть (Ctrl+Shift+Z)" disabled>↷</button>
-      <button id="btn-history" class="mini icon-btn" title="История">🕘</button>
-      <button id="btn-open" title="Открыть PNG/GIF/APNG/ASE">⇧ Открыть</button>
-      <input type="file" id="file-input" hidden accept=".png,.gif,.apng,.webp,.jpeg,.jpg,.ase,.aseprite" />
-      <button id="btn-projects" title="Проекты и примеры">☰ Проекты</button>
-      <button id="btn-save" title="Сохранить (Ctrl+S)">✎ Сохранить</button>
-      <button id="btn-tools" title="Инструменты и палитры">✦ Инструменты</button>
-      <button id="btn-help" title="Справка">?</button>
-    </div>
-  </header>
+    <div id="err" hidden style="padding:6px 10px;background:#2a1a1a;color:#ffb3b3;font-size:11px;border-top:1px solid #4a2a2a"></div>
+  </section>
 
-  <main class="layout" id="layout">
-    <!-- ЛЕВАЯ: пиксельный редактор — аналог editor-panel ФОРМЫ -->
-    <section class="panel editor-panel" id="panel-editor">
-      <div class="panel-head">
-        <div class="panel-title">Пиксель-редактор <span id="res-badge" style="margin-left:8px;color:var(--accent);font-size:11px;letter-spacing:.05em"></span></div>
-        <div class="panel-tools">
-          <select id="grid-size" title="Размер крупной сетки">
-            <option value="16">16×16</option>
-            <option value="32" selected>32×32</option>
-            <option value="48">48×48</option>
-            <option value="64">64×64</option>
-            <option value="96">96×96</option>
-            <option value="128">128×128</option>
-          </select>
-          <label class="switch"><input type="checkbox" id="show-grid" checked /> сетка</label>
-          <button class="mini panel-max" data-panel="editor" title="Развернуть">⤢</button>
-        </div>
-      </div>
+  <!-- ПРАВО: канвасы -->
+  <section class="canvas-pane">
+    <div class="pane-head"><strong>Пиксель</strong><span id="pixInfo">32×32</span><label class="switch"><input type="checkbox" id="chkGrid" checked> сетка</label></div>
+    <div class="canvas-box"><canvas id="pixelCanvas" width="256" height="256"></canvas></div>
+    <div class="pane-head"><strong>HD ×4</strong><span id="hdInfo">128×128</span><label class="switch"><input type="range" id="hdPow" min="0" max="100" value="45" style="width:70px"> <span id="hdPct">45%</span></label></div>
+    <div class="canvas-box" style="flex:0.9"><canvas id="hdCanvas" width="256" height="256"></canvas></div>
+    <div class="manual" id="palBar"></div>
+    <div class="checks" id="checks"></div>
+  </section>
 
-      <div class="editor-wrap">
-        <div class="canvas-toolbar">
-          <div class="tool-seg" id="tool-seg">
-            <button class="mini active" data-tool="brush" title="Кисть (B)">🖌</button>
-            <button class="mini" data-tool="eraser" title="Ластик (E)">⌫</button>
-            <button class="mini" data-tool="fill" title="Заливка (G)">🪣</button>
-            <button class="mini" data-tool="pick" title="Пипетка (I)">👁</button>
-            <button class="mini" data-tool="rect" title="Прямоугольник (R)">▭</button>
-            <button class="mini" data-tool="line" title="Линия (L)">╱</button>
-          </div>
-          <div class="tool-sep"></div>
-          <label>Цвет <input type="color" id="color-pick" value="#ff7a59" style="width:34px;height:28px;padding:2px;border-radius:6px" /></label>
-          <label>Коорд <input type="text" id="coord-input" placeholder="x=4 y=9 #ff4d4d  или  линия 2..10,5" style="min-width:140px" /></label>
-          <button class="mini" id="btn-coord">▶</button>
-          <button class="mini" id="btn-clear-pixels" title="Очистить холст">очистить</button>
-        </div>
+  <!-- НИЗ: растянут на 2 колонки — отчёт для нейросети -->
+  <section class="editor-pane" style="grid-column:1 / -1; min-height:120px;">
+    <div class="pane-head"><strong>Отчёт для нейросети (как в ФОРМЕ)</strong><button class="mini" id="btnCopyReport">копировать</button></div>
+    <div id="report" style="flex:1;overflow:auto;padding:8px 10px;font-family:var(--mono);font-size:11px;white-space:pre-wrap;background:#0e141c;color:#a8b8cc">Собери — здесь появится краткий отчёт и ошибки, которые можно отдать нейросети для правки.</div>
+  </section>
+</div>
 
-        <div class="pixel-stage" id="pixel-stage">
-          <canvas id="pixelCanvas" width="512" height="512"></canvas>
-        </div>
+<footer class="footer"><span>ПИКСЕЛЬ v0.2 · row-RLE · прозрачность = не пишем</span><span>клик по пикселю в ручном режиме ставит цвет</span></footer>
 
-        <div class="palette" id="palette">
-          <!-- заполняется JS -->
-        </div>
-
-        <div class="prompt-bar">
-          <input id="prompt" type="text" placeholder='Промпт: "девочка с катаной, закат, аниме"  или  координаты: пиксель x=4 y=9 #ff0000' />
-          <select id="style-preset">
-            <option value="pixel">пиксель-арт</option>
-            <option value="anime">аниме</option>
-            <option value="paint">живопись</option>
-            <option value="manga">манга</option>
-            <option value="voxel">воксель</option>
-            <option value="8bit">8-bit NES</option>
-          </select>
-          <button id="btn-prompt-run" class="primary">▶</button>
-        </div>
-
-        <div class="error-bar" id="error-bar" hidden>
-          <span>!</span><div><div id="error-msg"></div><div id="error-hint" style="opacity:.7"></div></div>
-        </div>
-      </div>
-
-      <div class="editor-foot">
-        <span id="cursor-pos">x:0 y:0</span>
-        <span id="script-stats">32×32 • 7 цветов</span>
-        <span><button class="mini" id="btn-quantize" title="Ужать палитру до 16 цветов">квантовать 16</button></span>
-      </div>
-      <button class="panel-fold" data-panel="editor"><span>Редактор</span></button>
-    </section>
-
-    <div class="splitter" data-split="editor"><span class="splitter-grip"></span><button class="splitter-fold" data-fold="editor">‹</button></div>
-
-    <!-- ЦЕНТР: HD превью — аналог viewer-panel ФОРМЫ -->
-    <section class="panel viewer-panel" id="panel-viewer">
-      <div class="panel-head">
-        <div class="panel-title">HD-превью <span id="hd-badge" style="margin-left:8px;color:var(--accent-2);font-size:11px;letter-spacing:.05em"></span></div>
-        <div class="view-tools">
-          <div class="tool-seg">
-            <button class="mini" data-scale="1">×1</button>
-            <button class="mini active" data-scale="2">×2</button>
-            <button class="mini" data-scale="4">×4</button>
-            <button class="mini" data-scale="8">×8</button>
-          </div>
-          <div class="tool-sep"></div>
-          <label class="switch"><input type="range" id="detail-strength" min="0" max="100" value="45" style="width:70px" /> <span id="detail-label">деталь 45%</span></label>
-          <button class="mini" id="btn-compare" title="Сравнить пиксель/HD">⇔</button>
-          <button class="mini panel-max" data-panel="viewer">⤢</button>
-        </div>
-      </div>
-      <div class="viewer-wrap">
-        <div class="viewer-stage" id="viewer-stage">
-          <canvas id="hdCanvas" width="512" height="512"></canvas>
-        </div>
-        <div class="viewer-compare">
-          <span style="font-size:11px;color:var(--text-faint)">Детализация:</span>
-          <input type="range" id="compare-slider" class="compare-slider" min="0" max="100" value="100" />
-          <span id="compare-label" style="font-size:11px;color:var(--text-faint)">HD 100%</span>
-          <button class="mini" id="btn-animate-hd" title="Превью анимации">▶ Анимация</button>
-        </div>
-      </div>
-      <button class="panel-fold" data-panel="viewer"><span>Превью</span></button>
-    </section>
-
-    <div class="splitter" data-split="viewer"><span class="splitter-grip"></span><button class="splitter-fold" data-fold="viewer">›</button></div>
-
-    <!-- ПРАВАЯ: отчёт + таймлайн — аналог report-panel ФОРМЫ -->
-    <section class="panel report-panel" id="panel-report">
-      <div class="panel-head">
-        <div class="panel-title">Отчёт и анимация</div>
-        <div class="panel-tools">
-          <button class="mini panel-max" data-panel="report">⤢</button>
-        </div>
-      </div>
-      <div class="report-wrap">
-        <div class="report-tabs">
-          <button class="active" data-tab="checks">Проверки</button>
-          <button data-tab="timeline">Кадры</button>
-          <button data-tab="log">Журнал</button>
-          <button data-tab="prompt">Отчёт для AI</button>
-        </div>
-        <div class="report-body" id="report-checks">
-          <div id="checks-list"></div>
-          <pre id="prompt-out" hidden></pre>
-          <div id="timeline" hidden class="timeline"></div>
-          <div id="log-list" hidden></div>
-        </div>
-      </div>
-      <button class="panel-fold" data-panel="report"><span>Отчёт</span></button>
-    </section>
-  </main>
-
-  <footer class="statusbar">
-    <span id="status-left">Готов • Пиксель 32×32 • HD ×2</span>
-    <span id="status-right">Пробел — кисть/ластик • [ ] — размер • I — пипетка</span>
-  </footer>
-  <footer class="bottombar">
-    <span>ПИКСЕЛЬ v0.1 • форк ФОРМА 3D v0.72 • <a href="#" id="link-help">Справка</a> • <a href="https://github.com/RatAndRu/Hello-program" target="_blank">GitHub</a></span>
-    <span id="revision" style="margin-left:auto">revision local</span>
-  </footer>
-
-  <!-- MODAL: Инструменты — аналог tools-modal ФОРМЫ -->
-  <div id="tools-modal" class="modal" hidden>
-    <div class="modal-card">
-      <div style="display:flex;justify-content:space-between;align-items:center">
-        <strong>Инструменты и палитры</strong>
-        <button class="mini" onclick="document.getElementById('tools-modal').hidden=true">✕</button>
-      </div>
-      <p style="color:var(--text-faint)">Как в ФОРМЕ: готовые формы с параметрами. Здесь — палитры, кисти, шаблоны.</p>
-      <div id="tools-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:12px"></div>
-    </div>
-  </div>
-
-  <div id="help-modal" class="modal" hidden>
-    <div class="modal-card">
-      <div style="display:flex;justify-content:space-between;align-items:center"><strong>Справка — язык ПИКСЕЛЬ</strong><button class="mini" onclick="document.getElementById('help-modal').hidden=true">✕</button></div>
-      <pre style="white-space:pre-wrap;font-family:var(--mono);font-size:11px;line-height:1.6"># Координаты (как .forma, но для пикселей)
-пиксель x=4 y=9 цвет=#ff4d4d
-линия x=2..10 y=5 цвет=#3a86ff
-прямоугольник x=1..8 y=1..8 цвет=#ffd166 заливка
-заливка x=0 y=0 цвет=#0a0e13
-палитра NES  # ограничить до 54 цветов NES
-палитра 16   # квантовать до 16 цветов
-
-# Промпт → пиксель
-промпт "кот в космосе, пиксель-арт" палитра=16 размер=32
-
-# Детализация
-детализация x2 стиль=аниме сила=0.45  # 0 — точный апскейл, 1 — фантазия
-детализация x4 стиль=живопись
-
-# Проверки (как check в ФОРМЕ)
-check размер 32x32
-check палитра <=16
-check кадр fps 12
-
-# Экспорт уже в меню ⇩</pre>
-    </div>
-  </div>
-
-  <script src="js/app.js" type="module"></script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

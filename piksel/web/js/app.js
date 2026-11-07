@@ -1,416 +1,240 @@
-// ПИКСЕЛЬ — логика пиксельного редактора, форк forma/web/js/app.js
-// Упрощённая версия: холст, палитра, детализация (mock), таймлайн
-
+// ПИКСЕЛЬ v0.2 — парсер row-RLE + ручной режим + HD mock
 const $ = id => document.getElementById(id);
-const pixelCanvas = $('pixelCanvas');
-const pctx = pixelCanvas.getContext('2d');
-const hdCanvas = $('hdCanvas');
-const hctx = hdCanvas.getContext('2d');
-
-const state = {
-  size: 32,
-  scale: 2,
-  tool: 'brush',
-  color: '#ff7a59',
-  showGrid: true,
-  pixels: null, // Uint32 или массив цветов
-  history: [],
-  future: [],
-  frames: [], // для анимации
+const code = $('code'), pc = $('pixelCanvas'), pctx = pc.getContext('2d'), hc = $('hdCanvas'), hctx = hc.getContext('2d');
+const PAL = {
+  pico8: ['#000000','#1D2B53','#7E2553','#008751','#AB5236','#5F574F','#C2C3C5','#FFF1E8','#FF004D','#FFA300','#FFEC27','#00E436','#29ADFF','#83769C','#FF77A8','#FFCCAA'],
+  gameboy: ['#0f380f','#306230','#8bac0f','#9bbc0f'],
+  sweet16: ['#1a1c2c','#5d275d','#b13e53','#ef7d57','#ffcd75','#a7f070','#38b764','#257179','#29366f','#3b5dc9','#41a6f6','#73eff7','#f4f4f4','#94b0c2','#566c86','#333c57'],
 };
+let state = { size:32, pal:PAL.pico8.slice(), palName:'pico8', grid:32, pixels:[] , color:4, manual:false, scale:4 };
 
-const PALETTES = {
-  'NES': ['#000000','#FCFCFC','#BCBEC4','#7C7C7C','#F8B800','#E45C10','#B83000','#6A0800','#009600','#006400','#004E00','#002600','#0058F8','#0000BC','#000078','#2C0078'],
-  'GameBoy': ['#0f380f','#306230','#8bac0f','#9bbc0f'],
-  'Sweet16': ['#1a1c2c','#5d275d','#b13e53','#ef7d57','#ffcd75','#a7f070','#38b764','#257179','#29366f','#3b5dc9','#41a6f6','#73eff7','#f4f4f4','#94b0c2','#566c86','#333c57'],
-  'Pico8': ['#000000','#1D2B53','#7E2553','#008751','#AB5236','#5F574F','#C2C3C5','#FFF1E8','#FF004D','#FFA300','#FFEC27','#00E436','#29ADFF','#83769C','#FF77A8','#FFCCAA'],
-  'Pastel': ['#fec8c8','#fec8e3','#e3c8fe','#c8e3fe','#c8fee3','#e3fec8','#feebc8','#fff4c8'],
-};
+function init(){
+  state.pixels = Array(state.size*state.size).fill(null);
+  buildPalBar();
+  // стартовый воин — короткий пример в новом формате
+  code.value = `размер 32
+палитра pico8
+# воин — row-RLE: только непустые строки
+4: 12. 4 4 4 4
+5: 11. 4 4 4 4 4 4
+6: 10. 4 15 15 15 15 4
+7: 10. 4 15 1 1 15 4
+8: 10. 4 15 1 1 15 4
+11: 10. 1 6 6 1 1 6 6 1
+12: 9. 1 6 9 6 6 9 6 1
+13: 9. 1 6 6 6 6 6 6 1
+15: 2. 8 8 8 8
+18: 9. 6 6 1 1 6 6
+3: 22. 1 7 1
+4: 22. 1 6 1
+10: 22. 1 9 1
+11: 20. 9 9 1 9 1 9 9
+check палитра <=16
+`;
+  parseAndRender();
+}
+function buildPalBar(){
+  const bar=$('palBar'); bar.innerHTML='';
+  state.pal.forEach((c,i)=>{
+    const d=document.createElement('div'); d.className='sw'; d.style.background=c;
+    if(i===state.color) d.classList.add('active');
+    d.title=i+': '+c; d.onclick=()=>{ state.color=i; buildPalBar(); };
+    bar.appendChild(d);
+  });
+  const lab=document.createElement('span'); lab.style.cssText='margin-left:8px;color:var(--text-faint);font-size:11px'; lab.textContent='цвет '+state.color;
+  bar.appendChild(lab);
+  const br=document.createElement('button'); br.className='mini'; br.textContent='🧹 квантовать';
+  br.onclick=()=> alert('Квантование — позже');
+  bar.appendChild(br);
+}
 
-function initPixels() {
-  state.pixels = new Array(state.size * state.size).fill(null).map(() => null); // прозрачный
-  // демо-рисунок: котик
-  const demo = [
-    [14,14,'#ff7a59'],[15,14,'#ff7a59'],[16,14,'#ffb86b'],[17,14,'#ff7a59'],
-    [13,15,'#ff7a59'],[14,15,'#e7ecf3'],[15,15,'#1a1c2c'],[16,15,'#1a1c2c'],[17,15,'#e7ecf3'],[18,15,'#ff7a59'],
-    [13,16,'#ff7a59'],[14,16,'#e7ecf3'],[15,16,'#ff7a59'],[16,16,'#ff7a59'],[17,16,'#e7ecf3'],[18,16,'#ff7a59'],
-    [14,17,'#ff7a59'],[15,17,'#ff7a59'],[16,17,'#5d275d'],[17,17,'#ff7a59'],
-    [10,20,'#73eff7'],[11,20,'#73eff7'],[20,20,'#73eff7'],[21,20,'#73eff7'],
-  ];
-  demo.forEach(([x,y,c]) => { if (x<state.size && y<state.size) state.pixels[y*state.size + x]=c; });
-  pushHistory();
-  renderPixel();
+function parseAndRender(){
+  const err=$('err'); err.hidden=true; err.textContent='';
+  const txt=code.value;
+  // размер
+  const mSize = txt.match(/размер\s+(\d+)(?:x(\d+))?/i);
+  if(mSize){ state.size = parseInt(mSize[1],10); if(state.size<8) state.size=8; if(state.size>64) state.size=64; }
+  // палитра
+  const mPal = txt.match(/палитра\s+(\w+)/i);
+  if(mPal && PAL[mPal[1]]){ state.pal = PAL[mPal[1]].slice(); state.palName=mPal[1]; buildPalBar(); }
+  // hex палитра вида 0=#...
+  const hexes = [...txt.matchAll(/(\d+)\s*=\s*(\#[0-9a-fA-F]{3,8})/g)];
+  if(hexes.length){ hexes.forEach(x=> state.pal[parseInt(x[1])]=x[2]); buildPalBar(); }
+
+  state.pixels = Array(state.size*state.size).fill(null);
+  const lines = txt.split('\n');
+  let errs=[];
+  for(let li=0; li<lines.length; li++){
+    let l=lines[li].trim();
+    if(!l || l.startsWith('#') || l.startsWith('размер') || l.startsWith('палитра') || l.startsWith('check') || l.startsWith('промпт') || l.startsWith('детализация')) continue;
+    // row-RLE: 4: 12. 4 4 4 4   или 4 12: 4 4 4 4
+    let m = l.match(/^(\d+)\s*:\s*(\d+)\s*\.\s*(.+)$/) || l.match(/^(\d+)\s+(\d+)\s*:\s*(.+)$/);
+    if(!m) continue;
+    let row=parseInt(m[1],10), col=parseInt(m[2],10), rest=m[3].trim();
+    if(row<0 || row>=state.size){ errs.push(`стр ${li+1}: строка ${row} вне 0..${state.size-1}`); continue; }
+    if(col<0 || col>=state.size){ errs.push(`стр ${li+1}: столбец ${col} вне`); continue; }
+    // токены: "10x -" "10-" "5x 2" "-" "2"
+    const toks = rest.split(/\s+/).filter(Boolean);
+    let c=col;
+    for(let t of toks){
+      if(c>=state.size) break;
+      let rep=1, val=null;
+      // 10x -  или 10-  или 10x2
+      let mm = t.match(/^(\d+)[x\-]?$/); // не точно
+      // разбор: [число][x][-]
+      let mx = t.match(/^(\d+)x(.+)$/); // 10x2  10x-
+      if(mx){ rep=parseInt(mx[1],10); t=mx[2]; }
+      else {
+        let md = t.match(/^(\d+)-$/); // 10-
+        if(md){ rep=parseInt(md[1],10); t='-'; }
+      }
+      if(t==='-' || t==='—'){ // прозрачный
+        c+=rep; continue;
+      }
+      // цвет: 0..15 или #hex
+      let colorIdx=null;
+      if(t.startsWith('#')){ colorIdx=t; }
+      else if(/^\d+$/.test(t)){ colorIdx=parseInt(t,10); }
+      else continue;
+      for(let k=0;k<rep;k++){
+        if(c>=state.size) break;
+        if(colorIdx!==null){
+          let colVal = (typeof colorIdx==='number') ? (state.pal[colorIdx]||'#fff') : colorIdx;
+          state.pixels[row*state.size + c] = colVal;
+        }
+        c++;
+      }
+    }
+  }
+  if(errs.length){ err.hidden=false; err.textContent=errs.join(' · '); }
+  renderPix();
   renderHD();
-  updateStats();
-  buildPalette();
-  buildTools();
   updateChecks();
-  buildTimeline();
+  updateReport(txt);
 }
 
-function pushHistory(){
-  state.history.push(state.pixels.slice());
-  if(state.history.length>80) state.history.shift();
-  state.future=[];
-  updateUndo();
-}
-function updateUndo(){
-  $('btn-undo').disabled = state.history.length<=1;
-  $('btn-redo').disabled = state.future.length===0;
-}
-
-function renderPixel(){
-  const N = state.size;
-  const S = Math.floor(512 / N);
-  pixelCanvas.width = N*S;
-  pixelCanvas.height = N*S;
-  pctx.clearRect(0,0,pixelCanvas.width,pixelCanvas.height);
-  // фон шахматка
-  pctx.fillStyle = '#0b0e13';
-  pctx.fillRect(0,0,pixelCanvas.width,pixelCanvas.height);
+function renderPix(){
+  const N=state.size, S=Math.max(2, Math.floor(420/N));
+  const show = $('chkGrid').checked;
+  pc.width=N*S; pc.height=N*S;
+  const dim=S;
+  pctx.clearRect(0,0,pc.width,pc.height);
+  pctx.fillStyle='#0b0e13'; pctx.fillRect(0,0,pc.width,pc.height);
   for(let y=0;y<N;y++) for(let x=0;x<N;x++){
-    const c = state.pixels[y*N+x];
+    const c=state.pixels[y*N+x];
     if(c){ pctx.fillStyle=c; pctx.fillRect(x*S,y*S,S,S); }
   }
-  if(state.showGrid && N<=64){
-    pctx.strokeStyle='rgba(255,255,255,.08)';
-    pctx.lineWidth=1;
-    for(let i=0;i<=N;i++){
-      pctx.beginPath(); pctx.moveTo(i*S,0); pctx.lineTo(i*S,N*S); pctx.stroke();
-      pctx.beginPath(); pctx.moveTo(0,i*S); pctx.lineTo(N*S,i*S); pctx.stroke();
-    }
+  if(show && N<=64){
+    pctx.strokeStyle='rgba(255,255,255,.07)'; pctx.lineWidth=1;
+    for(let i=0;i<=N;i++){ pctx.beginPath(); pctx.moveTo(i*S,0); pctx.lineTo(i*S,N*S); pctx.stroke(); pctx.beginPath(); pctx.moveTo(0,i*S); pctx.lineTo(N*S,i*S); pctx.stroke(); }
   }
-  $('res-badge').textContent = `${N}×${N}`;
+  $('pixInfo').textContent = `${N}×${N} • ${new Set(state.pixels.filter(Boolean)).size} цветов`;
 }
 function renderHD(){
-  const N = state.size;
-  const scale = state.scale;
-  const detail = parseInt($('detail-strength').value);
-  const S = Math.max(1, 8);
-  // 1. nearest-neighbor upscale (детерминирован, как в ФОРМЕ exports)
-  const tmp = document.createElement('canvas');
-  tmp.width = N; tmp.height = N;
-  const tctx = tmp.getContext('2d');
-  tctx.clearRect(0,0,N,N);
-  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
-    const c = state.pixels[y*N+x];
-    if(c){ tctx.fillStyle=c; tctx.fillRect(x,y,1,1); }
+  const N=state.size, scale=4;
+  const pow=parseInt($('hdPow').value,10);
+  $('hdPct').textContent=pow+'%';
+  // nearest upscale to N*scale
+  const tmp=document.createElement('canvas'); tmp.width=N; tmp.height=N;
+  const tc=tmp.getContext('2d');
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){ const c=state.pixels[y*N+x]; if(c){ tc.fillStyle=c; tc.fillRect(x,y,1,1); } }
+  const HD=N*scale; const S=Math.max(2, Math.floor(420/HD));
+  hc.width=HD*S; hc.height=HD*S;
+  hctx.imageSmoothingEnabled=false;
+  hctx.clearRect(0,0,hc.width,hc.height);
+  hctx.drawImage(tmp,0,0,HD*S,HD*S);
+  if(pow>10){
+    hctx.globalAlpha=0.18*(pow/100);
+    hctx.filter=`blur(${0.7*scale}px) saturate(${1+pow/180})`;
+    hctx.drawImage(hc, 0.8*scale,0.8*scale,HD*S,HD*S);
+    hctx.filter='none'; hctx.globalAlpha=1;
   }
-  // HD canvas: N*scale*S
-  const HD = N*scale;
-  hdCanvas.width = HD*S;
-  hdCanvas.height = HD*S;
-  hctx.imageSmoothingEnabled = false;
-  hctx.clearRect(0,0,hdCanvas.width,hdCanvas.height);
-  hctx.drawImage(tmp, 0,0, HD*S, HD*S);
-  // 2. mock-детализация: если detail>0, делаем лёгкий blur + контраст (имитация нейросети)
-  if(detail>8){
-    hctx.globalAlpha = 0.18 * (detail/100);
-    hctx.filter = `blur(${0.6*scale}px) saturate(${1+detail/200})`;
-    hctx.drawImage(hdCanvas, 1,1, HD*S, HD*S);
-    hctx.filter='none';
-    hctx.globalAlpha=1;
-  }
-  // рамка
-  hctx.strokeStyle='rgba(255,122,89,.25)';
-  hctx.lineWidth=2;
-  hctx.strokeRect(0,0,hdCanvas.width,hdCanvas.height);
-  $('hd-badge').textContent = `×${scale} → ${HD}×${HD} • деталь ${detail}%`;
-  $('status-left').textContent = `Готов • Пиксель ${N}×${N} • HD ×${scale} • деталь ${detail}%`;
+  hctx.strokeStyle='rgba(255,122,89,.22)'; hctx.lineWidth=2; hctx.strokeRect(0,0,hc.width,hc.height);
+  $('hdInfo').textContent=`${HD}×${HD}`;
 }
 
-function buildPalette(){
-  const pal = $('palette');
-  pal.innerHTML='';
-  const colors = ['#000000','#1a1c2c','#5d275d','#b13e53','#ef7d57','#ffcd75','#ff7a59','#ffb86b','#a7f070','#38b764','#41a6f6','#73eff7','#f4f4f4','#94b0c2','#c2c3c5','#ffffff'];
-  colors.forEach(c=>{
-    const d=document.createElement('div');
-    d.className='swatch'; d.style.background=c;
-    if(c.toLowerCase()===state.color.toLowerCase()) d.classList.add('active');
-    d.onclick=()=>{ state.color=c; $('color-pick').value=c; buildPalette(); };
-    pal.appendChild(d);
-  });
-  const add = document.createElement('div');
-  add.className='add'; add.textContent='+'; add.title='Добавить цвет';
-  add.onclick=()=>{ const cc=prompt('HEX цвет, например #ff004d'); if(cc) {state.color=cc; buildPalette();}};
-  pal.appendChild(add);
-  // палитры-пресеты
-  Object.keys(PALETTES).forEach(name=>{
-    const b=document.createElement('button');
-    b.className='mini'; b.textContent=name; b.title='Применить палитру '+name;
-    b.onclick=()=>{ applyPalette(PALETTES[name]); };
-    pal.appendChild(b);
-  });
-}
-function applyPalette(pal){
-  // квантовать текущие пиксели к ближайшему из палитры
-  for(let i=0;i<state.pixels.length;i++){
-    const c=state.pixels[i];
-    if(!c) continue;
-    let best=pal[0], bd=1e9;
-    for(const pc of pal){
-      const d=colorDist(c,pc);
-      if(d<bd){ bd=d; best=pc; }
-    }
-    state.pixels[i]=best;
-  }
-  pushHistory(); renderPixel(); renderHD(); updateStats(); updateChecks();
-}
-function colorDist(a,b){
-  const ah=hex2rgb(a), bh=hex2rgb(b);
-  return (ah[0]-bh[0])**2+(ah[1]-bh[1])**2+(ah[2]-bh[2])**2;
-}
-function hex2rgb(hex){
-  const h=hex.replace('#',''); const n=parseInt(h,16);
-  return [(n>>16)&255,(n>>8)&255,n&255];
-}
-function buildTools(){
-  const grid=$('tools-grid');
-  if(!grid) return;
-  grid.innerHTML='';
-  const items=[
-    {name:'Линия',desc:'прямая по 2 точкам'},
-    {name:'Заливка',desc:'flood fill'},
-    {name:'Градиент',desc:'гориз./верт.'},
-    {name:'NES 54',desc:'палитра NES'},
-    {name:'PICO-8 16',desc:'ограничить 16'},
-    {name:'Шум 5%',desc:'добавить текстуру'},
-    {name:'Контур',desc:'обводка 1px'},
-    {name:'Тень',desc:'автотень 45°'},
-  ];
-  items.forEach(it=>{
-    const d=document.createElement('div');
-    d.style.cssText='padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--panel-2)';
-    d.innerHTML=`<strong>${it.name}</strong><br><span style="color:var(--text-faint);font-size:11px">${it.desc}</span>`;
-    grid.appendChild(d);
-  });
-}
-function updateStats(){
-  const used = new Set(state.pixels.filter(Boolean)).size;
-  $('script-stats').textContent = `${state.size}×${state.size} • ${used} цветов • кадр 1/1`;
-}
 function updateChecks(){
-  const list=$('checks-list');
-  const used = new Set(state.pixels.filter(Boolean));
+  const box=$('checks');
+  const used=new Set(state.pixels.filter(Boolean));
+  const fillPct = (state.pixels.filter(Boolean).length / state.pixels.length *100)|0;
   const checks=[
-    {ok: (state.size>=16 && state.size<=128), text:`Размер ${state.size}×${state.size}`, hint: used.size?`OK, ${used.size} цветов`:'пусто'},
-    {ok: used.size<=16, text:`Палитра ≤16 (${used.size})`, hint: used.size<=16?'в стиле пиксель-арт':'многовато — нажми «квантовать 16»'},
-    {ok: used.size>0, text:'Холст не пуст', hint: used.size?'есть пиксели':'нарисуй или сгенерируй'},
-    {ok: state.scale>=2, text:`HD ×${state.scale}`, hint:`${state.size*state.scale}×${state.size*state.scale} на выходе`},
+    {ok: used.size<=16, text:`Палитра ${used.size}/16`, hint: used.size<=16?'в норме (PICO-8)':'много — квантуй'},
+    {ok: fillPct>=5 && fillPct<=92, text:`Заполнение ${fillPct}%`, hint: fillPct<5?'почти пусто': fillPct>92?'фон переполнен':'ок — фон пропускаем, как ты просил'},
+    {ok: hasNoOrphans(), text:'Кластеры', hint: hasNoOrphans()?'нет одиночек-шума':'есть孤立 пиксели — проверь'},
+    {ok: state.size>=16 && state.size<=64, text:`Размер ${state.size}×${state.size}`, hint:'сильуэт читается? сделай скрин в 1×'},
   ];
-  list.innerHTML = checks.map(c=>`<div class="check ${c.ok?'ok':'bad'}"><span>${c.ok?'✓':'⚠'}</span><div><strong>${c.text}</strong><div style="color:var(--text-faint);font-size:11px">${c.hint}</div></div></div>`).join('');
-  // лог
-  const log=$('log-list');
-  if(log) log.innerHTML = state.history.slice(-10).reverse().map((_,i)=>`<div style="padding:4px 0;border-bottom:1px solid var(--line-soft);color:var(--text-dim)">Шаг ${state.history.length-i}: ${state.history.length-i===state.history.length?'текущий':''} </div>`).join('') || '<div style="color:var(--text-faint)">Журнал пуст — нарисуй что-нибудь</div>';
-  // отчёт для нейросети — как в ФОРМЕ build_prompt
-  const promptOut=$('prompt-out');
-  if(promptOut){
-    promptOut.textContent = `# ПИКСЕЛЬ — отчёт для нейросети\nПромпт: ${$('prompt').value||'(пусто)'}\nСтиль: ${$('style-preset').value}\nРазмер: ${state.size}×${state.size}, HD ×${state.scale}, деталь ${$('detail-strength').value}%\nПалитра: ${[...used].join(', ')||'прозрачно'}\nКоординаты заполненных: ${state.pixels.map((c,i)=>c?`(${i%state.size},${(i/state.size)|0},${c})`:'').filter(Boolean).slice(0,20).join(' ')}\n`;
-  }
+  box.innerHTML=checks.map(c=>`<div class="check ${c.ok?'ok':'bad'}"><span>${c.ok?'✓':'⚠'}</span><div><strong>${c.text}</strong><div style="color:var(--text-faint)">${c.hint}</div></div></div>`).join('');
 }
-function buildTimeline(){
-  const tl=$('timeline');
-  if(!tl) return;
-  // пока 1 кадр + кнопка добавить
-  tl.innerHTML=`<div class="frame active"><canvas width="32" height="32" style="background:#0b0e13"></canvas><div><strong>Кадр 1</strong><div style="color:var(--text-faint);font-size:10px">32×32 • 0.0s</div></div></div><button class="mini" id="btn-add-frame">＋ Кадр</button><button class="mini">▶ Предпросмотр</button>`;
+function hasNoOrphans(){
+  const N=state.size;
+  for(let y=0;y<N;y++) for(let x=0;x<N;x++){
+    const c=state.pixels[y*N+x];
+    if(!c) continue;
+    let neigh=0;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      if(!dx&&!dy) continue;
+      let nx=x+dx, ny=y+dy;
+      if(nx<0||ny<0||nx>=N||ny>=N) continue;
+      if(state.pixels[ny*N+nx]===c) neigh++;
+    }
+    if(neigh===0) return false;
+  }
+  return true;
+}
+function updateReport(txt){
+  const used=[...new Set(state.pixels.filter(Boolean))];
+  const fill = state.pixels.map((c,i)=> c ? `(${i%state.size},${(i/state.size)|0}:${c})` : '').filter(Boolean).slice(0,12).join(' ');
+  $('report').textContent = `# Отчёт для нейросети (скопируй → вставь в чат)\nПалитра: ${state.palName} (${used.join(', ')||'прозрачно'})\nРазмер: ${state.size}×${state.size}, заполнено ${used.length? ((state.pixels.filter(Boolean).length/state.pixels.length*100)|0)+'%':''}\nЗанятых строк: ${linesUsed()}\nПример координат: ${fill||'пусто'}\nОшибок: ${$('err').hidden? 'нет' : $('err').textContent}\n---\nИсходник:\n${txt.slice(0,700)}\n`;
+  const tok=txt.split(/\s+/).filter(Boolean).length;
+  const rows=(txt.match(/^\d+\s*:/gm)||[]).length;
+  $('tokInfo').textContent=`строк ${rows} • токенов ~${tok}`;
+}
+function linesUsed(){
+  const s=new Set();
+  for(let i=0;i<state.pixels.length;i++) if(state.pixels[i]) s.add((i/state.size)|0);
+  return s.size;
 }
 
-function posToXY(e){
-  const rect=pixelCanvas.getBoundingClientRect();
-  const N=state.size;
-  const S=pixelCanvas.width/N;
+// события
+$('btnBuild').onclick=parseAndRender;
+code.addEventListener('keydown', e=>{ if((e.ctrlKey||e.metaKey) && e.key==='Enter'){ e.preventDefault(); parseAndRender(); } });
+$('sizeSel').onchange=e=>{ const v=parseInt(e.target.value); state.size=v; code.value=code.value.replace(/размер\s+\d+/,`размер ${v}`); parseAndRender(); };
+$('palSel').onchange=e=>{ const v=e.target.value; if(PAL[v]){ state.pal=PAL[v].slice(); state.palName=v; code.value=code.value.replace(/палитра\s+\w+.*/,`палитра ${v}`); parseAndRender(); } };
+$('chkGrid').onchange=renderPix;
+$('hdPow').oninput=renderHD;
+$('btnSave').onclick=()=>{ localStorage.setItem('piksel_code', code.value); alert('Сохранено локально'); };
+$('btnClear').onclick=()=>{ code.value=`размер ${state.size}\nпалитра ${state.palName}\n`; parseAndRender(); };
+$('btnWarrior').onclick=async()=>{
+  try{ const txt=await (await fetch('../examples/warrior.piksel')).text(); code.value=txt; parseAndRender(); }catch{ alert('warrior.piksel не найден'); }
+};
+$('btnManual').onclick=()=>{ state.manual=!state.manual; $('btnManual').classList.toggle('active', state.manual); $('btnManual').textContent = state.manual? '✎ ручной ВКЛ' : '🖌 ручной'; pc.style.cursor = state.manual? 'crosshair':'default'; };
+pc.addEventListener('click', e=>{
+  if(!state.manual) return;
+  const rect=pc.getBoundingClientRect(), N=state.size;
+  const S=pc.width/N;
   const x=Math.floor((e.clientX-rect.left)/rect.width * N);
   const y=Math.floor((e.clientY-rect.top)/rect.height * N);
-  return {x:Math.max(0,Math.min(N-1,x)), y:Math.max(0,Math.min(N-1,y))};
-}
-let drawing=false;
-pixelCanvas.addEventListener('pointerdown', e=>{
-  drawing=true;
-  pixelCanvas.setPointerCapture(e.pointerId);
-  paint(posToXY(e));
-});
-pixelCanvas.addEventListener('pointermove', e=>{
-  const {x,y}=posToXY(e);
-  $('cursor-pos').textContent=`x:${x} y:${y}`;
-  if(drawing) paint(posToXY(e));
-});
-pixelCanvas.addEventListener('pointerup', ()=>{ if(drawing){ drawing=false; pushHistory(); updateStats(); updateChecks(); }});
-pixelCanvas.addEventListener('pointerleave', ()=> drawing=false);
-
-function paint({x,y}){
-  const N=state.size;
-  const idx=y*N+x;
-  if(state.tool==='brush') state.pixels[idx]=state.color;
-  else if(state.tool==='eraser') state.pixels[idx]=null;
-  else if(state.tool==='pick') { const c=state.pixels[idx]; if(c){ state.color=c; $('color-pick').value=c; buildPalette(); } return; }
-  else if(state.tool==='fill') { flood(idx, state.pixels[idx], state.color); }
-  renderPixel(); renderHD();
-}
-function flood(start, target, repl){
-  if(target===repl) return;
-  const N=state.size;
-  const stack=[start];
-  const seen=new Set();
-  while(stack.length){
-    const i=stack.pop();
-    if(seen.has(i)) continue;
-    seen.add(i);
-    if(state.pixels[i]!==target) continue;
-    state.pixels[i]=repl;
-    const x=i%N, y=(i/N)|0;
-    if(x>0) stack.push(i-1);
-    if(x<N-1) stack.push(i+1);
-    if(y>0) stack.push(i-N);
-    if(y<N-1) stack.push(i+N);
+  const col=state.pal[state.color]||'#fff';
+  state.pixels[y*N+x]=col;
+  // дописать в код
+  const rowLine = findRowLine(y);
+  if(rowLine>=0){
+    // просто обновить рендер, код не трогаем в MVP — позже синхронизация
   }
-}
+  renderPix(); renderHD(); updateChecks();
+});
+function findRowLine(row){ const ls=code.value.split('\n'); for(let i=0;i<ls.length;i++) if(ls[i].match(new RegExp(`^${row}\\s*:`))) return i; return -1; }
+$('btnCmd').onclick=()=>{ const v=$('cmd').value.trim(); if(!v) return; if(v.match(/^\d+\s*:/)){ code.value+='\n'+v; parseAndRender(); $('cmd').value=''; } else code.value+='\n'+v, parseAndRender(); };
+$('cmd').onkeydown=e=>{ if(e.key==='Enter') $('btnCmd').click(); };
+$('btnHD').onclick=()=>{ $('hdPow').value=55; renderHD(); alert('HD детализация: пока mock (blur), реальная — через Replicate Tile на Fly.io'); };
+$('btnCopyReport').onclick=()=>{ navigator.clipboard.writeText($('report').textContent); alert('Отчёт скопирован — отдай нейросети'); };
+$('btnExport').onclick=()=> $('expMenu').classList.toggle('open');
+$('expMenu').querySelectorAll('button').forEach(b=> b.onclick=()=>{
+  $('expMenu').classList.remove('open');
+  if(b.dataset.f==='png'){ const a=document.createElement('a'); a.download='piksel.png'; a.href=pc.toDataURL('image/png'); a.click(); }
+  if(b.dataset.f==='hd'){ const a=document.createElement('a'); a.download='piksel-hd.png'; a.href=hc.toDataURL('image/png'); a.click(); }
+  if(b.dataset.f==='copy'){ navigator.clipboard.writeText(code.value); alert('Сценарий скопирован'); }
+});
 
-// координатный ввод
-$('btn-coord').onclick=()=>{
-  const v=$('coord-input').value.trim();
-  if(!v) return;
-  // парсим "x=4 y=9 #ff0000" или "линия 2..10,5"
-  const m=v.match(/x\s*=\s*(\d+).*?y\s*=\s*(\d+).*?(#\w{3,8})?/i);
-  if(m){
-    const x=parseInt(m[1]), y=parseInt(m[2]);
-    const c=m[3]||state.color;
-    if(x<state.size && y<state.size){ state.pixels[y*state.size+x]=c; pushHistory(); renderPixel(); renderHD(); updateStats(); updateChecks(); }
-  } else {
-    // заливка
-    if(v.includes('заливка')||v.includes('fill')){
-      const col=v.match(/#\w{3,8}/);
-      if(col) { state.pixels=state.pixels.map(()=>col[0]); pushHistory(); renderPixel(); renderHD(); }
-    }
-  }
-};
-$('color-pick').oninput=e=>{ state.color=e.target.value; buildPalette(); };
-$('grid-size').onchange=e=>{ state.size=parseInt(e.target.value); state.pixels=new Array(state.size*state.size).fill(null); pushHistory(); renderPixel(); renderHD(); updateStats(); updateChecks(); };
-$('show-grid').onchange=e=>{ state.showGrid=e.target.checked; renderPixel(); };
-document.querySelectorAll('#tool-seg [data-tool]').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('#tool-seg [data-tool]').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active'); state.tool=b.dataset.tool;
-});
-document.querySelectorAll('[data-scale]').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('[data-scale]').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active'); state.scale=parseInt(b.dataset.scale); renderHD(); updateChecks();
-});
-$('detail-strength').oninput=e=>{ $('detail-label').textContent=`деталь ${e.target.value}%`; renderHD(); updateChecks(); };
-$('compare-slider').oninput=e=>{ $('compare-label').textContent=`HD ${e.target.value}%`; hctx.globalAlpha= e.target.value/100; renderHD(); };
-$('btn-clear-pixels').onclick=()=>{ state.pixels.fill(null); pushHistory(); renderPixel(); renderHD(); updateStats(); updateChecks(); };
-$('btn-quantize').onclick=()=> applyPalette(PALETTES['Pico8']);
-
-$('btn-pixel').onclick=()=> doPrompt();
-$('btn-prompt-run').onclick=()=> doPrompt();
-$('btn-detail').onclick=()=>{ state.scale = state.scale>=8?2: state.scale*2; document.querySelectorAll('[data-scale]').forEach(b=> b.classList.toggle('active', parseInt(b.dataset.scale)===state.scale)); renderHD(); updateChecks(); showToast(`HD ×${state.scale}`); };
-$('prompt').onkeydown=e=>{ if(e.key==='Enter') doPrompt(); };
-
-function doPrompt(){
-  const p=$('prompt').value.trim();
-  if(!p) { showToast('Введи промпт или координаты'); return; }
-  // mock-генерация: заполняем пиксели случайными цветами по хешу промпта
-  let h=0; for(let i=0;i<p.length;i++) h=(h*31+p.charCodeAt(i))>>>0;
-  const rng = mulberry(h);
-  for(let y=0;y<state.size;y++) for(let x=0;x<state.size;x++){
-    if(rng()<0.12) state.pixels[y*state.size+x]= PALETTES['Sweet16'][Math.floor(rng()*16)];
-  }
-  pushHistory(); renderPixel(); renderHD(); updateStats(); updateChecks();
-  showToast(`Пиксель сгенерирован: "${p.slice(0,24)}"`);
-}
-function mulberry(a){
-  return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }
-}
-function showToast(s){
-  let t=document.getElementById('toast');
-  if(!t){ t=document.createElement('div'); t.id='toast'; t.style.cssText='position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:#1a2029;border:1px solid var(--line);padding:8px 14px;border-radius:8px;z-index:50'; document.body.appendChild(t); }
-  t.textContent=s; t.hidden=false; setTimeout(()=>t.hidden=true,2200);
-}
-
-// панели — копия forma/web/js/panels.js упрощённая
-document.querySelectorAll('.splitter').forEach(s=>{
-  let drag=false, startX, startW;
-  s.addEventListener('pointerdown', e=>{
-    drag=true; startX=e.clientX;
-    const panel = s.dataset.split==='editor' ? $('panel-editor') : $('panel-viewer');
-    startW=panel.getBoundingClientRect().width;
-    s.setPointerCapture(e.pointerId);
-    s.classList.add('dragging');
-  });
-  s.addEventListener('pointermove', e=>{
-    if(!drag) return;
-    const dx=e.clientX-startX;
-    // просто визуально — не меняем grid, как в ФОРМЕ, но показываем drag
-  });
-  s.addEventListener('pointerup', ()=>{ drag=false; s.classList.remove('dragging'); });
-});
-document.querySelectorAll('.panel-max').forEach(b=>b.onclick=()=> {
-  const p=document.getElementById('panel-'+b.dataset.panel);
-  p.classList.toggle('is-collapsed');
-});
-document.querySelectorAll('[data-fold]').forEach(b=>b.onclick=()=>{
-  document.getElementById('panel-'+b.dataset.fold).classList.toggle('is-collapsed');
-});
-document.querySelectorAll('.report-tabs [data-tab]').forEach(b=>b.onclick=()=>{
-  document.querySelectorAll('.report-tabs [data-tab]').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');
-  const t=b.dataset.tab;
-  if(t==='checks'){ $('checks-list').hidden=false; $('timeline').hidden=true; $('log-list').hidden=true; $('prompt-out').hidden=true; }
-  if(t==='timeline'){ $('checks-list').hidden=true; $('timeline').hidden=false; $('log-list').hidden=true; $('prompt-out').hidden=true; buildTimeline(); }
-  if(t==='log'){ $('checks-list').hidden=true; $('timeline').hidden=true; $('log-list').hidden=false; $('prompt-out').hidden=true; }
-  if(t==='prompt'){ $('checks-list').hidden=true; $('timeline').hidden=true; $('log-list').hidden=true; $('prompt-out').hidden=false; }
-});
-$('btn-tools').onclick=()=> $('tools-modal').hidden=false;
-$('btn-help').onclick=()=> $('help-modal').hidden=false;
-$('link-help').onclick=e=>{ e.preventDefault(); $('help-modal').hidden=false; };
-$('btn-history').onclick=()=> $('history-panel').hidden=false;
-$('history-close').onclick=()=> $('history-panel').hidden=true;
-$('btn-undo').onclick=()=>{
-  if(state.history.length>1){
-    state.future.push(state.history.pop());
-    state.pixels = state.history[state.history.length-1].slice();
-    renderPixel(); renderHD(); updateStats(); updateChecks(); updateUndo();
-  }
-};
-$('btn-redo').onclick=()=>{
-  if(state.future.length){
-    const nxt=state.future.pop();
-    state.history.push(nxt);
-    state.pixels=nxt.slice();
-    renderPixel(); renderHD(); updateStats(); updateChecks(); updateUndo();
-  }
-};
-$('btn-export').onclick=()=> $('export-menu').classList.toggle('open');
-$('export-menu').querySelectorAll('button').forEach(b=>b.onclick=()=>{
-  $('export-menu').classList.remove('open');
-  const fmt=b.dataset.format;
-  if(fmt==='png' || fmt==='png-hd'){
-    const a=document.createElement('a');
-    a.download=`piksel-${Date.now()}.png`;
-    a.href=(fmt==='png'?pixelCanvas:hdCanvas).toDataURL('image/png');
-    a.click(); showToast('PNG сохранён');
-  } else showToast(fmt+' — скоро');
-});
-$('btn-save').onclick=()=>{
-  localStorage.setItem('piksel_pixels', JSON.stringify(state.pixels));
-  localStorage.setItem('piksel_size', state.size);
-  showToast('Сохранено локально');
-};
-$('btn-open').onclick=()=> $('file-input').click();
-$('file-input').onchange= e=>{
-  const f=e.target.files[0]; if(!f) return;
-  const img=new Image();
-  img.onload=()=>{
-    const c=document.createElement('canvas'); c.width=state.size; c.height=state.size;
-    const ctx=c.getContext('2d'); ctx.drawImage(img,0,0,state.size,state.size);
-    const data=ctx.getImageData(0,0,state.size,state.size).data;
-    for(let i=0;i<state.size*state.size;i++){
-      const r=data[i*4],g=data[i*4+1],b=data[i*4+2],a=data[i*4+3];
-      state.pixels[i]= a<16?null: `#${r.toString(16).padStart(2,'0')}${g.toString(16).padStart(2,'0')}${b.toString(16).padStart(2,'0')}`;
-    }
-    pushHistory(); renderPixel(); renderHD(); updateStats(); updateChecks(); showToast('Файл загружен');
-  };
-  img.src=URL.createObjectURL(f);
-};
-$('btn-projects').onclick=()=> showToast('Проекты — скоро (как в ФОРМЕ: примеры + мои)');
-
-// init
-initPixels();
+init();
+window.addEventListener('resize', ()=>{ renderPix(); renderHD(); });
