@@ -65,17 +65,18 @@ button{font:inherit}
 .btn-ghost{padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:12.5px;cursor:pointer}
 .btn-ghost:hover{background:var(--surface);color:var(--text)}
 
-/* LAYOUT — 12 колонок, max 1480 */
+/* LAYOUT — 12 колонок, max 1480 · фикс: не растягивать карточки друг под друга */
 .layout{
   max-width:1480px;margin:0 auto;
-  padding:20px;
+  padding:16px;
   display:grid;
   grid-template-columns:1.15fr .95fr;
-  gap:20px;
-  min-height:calc(100vh - 56px - 36px);
+  gap:16px;
+  align-items:start; /* КРИТИЧНО: карточки не тянутся на всю высоту */
+  min-height:auto;
 }
 @media(max-width:960px){
-  .layout{grid-template-columns:1fr; padding:14px}
+  .layout{grid-template-columns:1fr; padding:12px}
 }
 /* CARDS — единая система */
 .card{
@@ -132,16 +133,17 @@ button{font:inherit}
 .dot.warn{background:var(--warn)}
 .dot.bad{background:var(--bad)}
 
-/* PREVIEW */
+/* PREVIEW — СТАБИЛИЗИРОВАНО: фиксированная высота, не flex */
 .preview-stage{
-  flex:1;
+  flex:none;
+  height:380px; /* фиксируем: не тянется за соседней карточкой */
   background:
     radial-gradient(circle at 30% 20%, rgba(255,122,69,.08), transparent 40%),
     var(--bg);
   display:grid;place-items:center;
-  padding:18px;
+  padding:16px;
   position:relative;
-  min-height:340px;
+  overflow:hidden;
 }
 .canvas-wrap{
   position:relative;
@@ -149,6 +151,9 @@ button{font:inherit}
   overflow:hidden;
   box-shadow:0 12px 40px rgba(0,0,0,.45), 0 0 0 1px var(--line);
   background:#000;
+  max-width:92%;
+  max-height:340px;
+  display:grid;place-items:center;
 }
 #pixelCanvas, #hdCanvas{
   display:block;
@@ -231,7 +236,7 @@ kbd{font-family:var(--mono);font-size:10px;background:var(--surface-3);border:1p
 
 <main class="layout">
   <!-- LEFT: редактор — главное -->
-  <section class="card" style="min-height:520px">
+  <section class="card" style="min-height:460px">
     <div class="card-head">
       <h2>Сценарий</h2>
       <div class="tools">
