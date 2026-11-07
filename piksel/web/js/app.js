@@ -103,8 +103,14 @@ function render(){
   const ox=Math.floor((W-HDW)/2), oy=Math.floor((H-HDH)/2);
   if(HDW<=W) hctx.drawImage(tmp,0,0,N,N, ox,oy,HDW,HDH);
   else hctx.drawImage(tmp,0,0,W,H);
-  const isHD=S.mode==='hd'||S.mode==='split';
-  pc.hidden=isHD; hc.hidden=!isHD;
+  // сравнение: пиксель / HD / рядом
+  const wrapPixel=document.getElementById('wrapPixel');
+  const wrapHD=document.getElementById('wrapHD');
+  if(S.mode==='pixel'){ wrapPixel.hidden=false; wrapHD.hidden=true; }
+  else if(S.mode==='hd'){ wrapPixel.hidden=true; wrapHD.hidden=false; }
+  else { // Сравн. — показываем оба рядом
+    wrapPixel.hidden=false; wrapHD.hidden=false;
+  }
 }
 
 function toast(s){ const t=document.createElement('div'); t.textContent=s; t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--surface);border:1px solid var(--line);padding:10px 14px;border-radius:999px;box-shadow:var(--shadow);font-size:12.5px'; document.body.appendChild(t); setTimeout(()=>t.remove(),1600); }
@@ -132,12 +138,14 @@ function bind(){
       if(t.trim().startsWith('<!DOCTYPE')) throw new Error('got html');
       syncCode(t); parse(true); toast('Воин загружен');
     }).catch(()=>{ toast('Пример не найден — вставлен локальный'); syncCode(warriorFallback()); parse(true); });
+    else if(b.dataset.ex==='warrior48') fetch('examples/warrior48.piksel').then(r=>r.text()).then(t=>{ syncCode(t); parse(true); toast('Воин 48 загружен'); }).catch(()=>toast('нет файла'));
     else if(b.dataset.ex==='blank') { syncCode(`размер 32\nпалитра pico8\n`); parse(true); }
     else toast('Скоро');
   });
 function warriorFallback(){ return `размер 32\nпалитра pico8\n# воин — fallback\n4: 12. 4 4 4 4\n5: 11. 4 4 4 4 4 4\n6: 10. 0 4 4 4 4 4 0\n7: 10. 0 4 15 15 15 4 0\n11: 9. 0 6 6 6 6 6 6 6 0\n12: 8. 8 8 0 6 9 6 6 9 6 0\n`; }
-  $('plus').onclick=()=>{ S.zoom=Math.min(2.8,S.zoom*1.15); render(); };
-  $('minus').onclick=()=>{ S.zoom=Math.max(.8,S.zoom/1.15); render(); };
+  const updZoom=()=>{ const el=document.getElementById('zoomVal'); if(el) el.textContent=Math.round(S.zoom*100)+'%'; };
+  $('plus').onclick=()=>{ S.zoom=Math.min(2.4,S.zoom*1.15); updZoom(); render(); };
+  $('minus').onclick=()=>{ S.zoom=Math.max(.7,S.zoom/1.15); updZoom(); render(); }; updZoom();
   // ручной
   pc.addEventListener('click', e=>{
     if(S.tool==='pick') return;

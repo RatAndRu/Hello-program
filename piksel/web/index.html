@@ -133,49 +133,60 @@ button{font:inherit}
 .dot.warn{background:var(--warn)}
 .dot.bad{background:var(--bad)}
 
-/* PREVIEW — СТАБИЛИЗИРОВАНО: фиксированная высота, не flex */
-.preview-stage{
-  flex:none;
-  height:380px; /* фиксируем: не тянется за соседней карточкой */
+/* PREVIEW — ИСПРАВЛЕНО: квадрат, скролл, без наложений */
+.preview-viewport{
+  height:460px; /* фикс высота + скролл если не влезает */
+  min-height:380px;
+  max-height:560px;
   background:
-    radial-gradient(circle at 30% 20%, rgba(255,122,69,.08), transparent 40%),
+    radial-gradient(circle at 30% 20%, rgba(255,122,69,.06), transparent 45%),
     var(--bg);
   display:grid;place-items:center;
-  padding:16px;
+  padding:20px;
+  overflow:auto; /* скролл если зум большой */
   position:relative;
-  overflow:hidden;
+  border-bottom:1px solid var(--line);
+}
+.canvas-stack{
+  display:flex;gap:16px;align-items:center;justify-content:center;
+  flex-wrap:wrap;
 }
 .canvas-wrap{
   position:relative;
-  border-radius:12px;
+  border-radius:10px;
   overflow:hidden;
-  box-shadow:0 12px 40px rgba(0,0,0,.45), 0 0 0 1px var(--line);
-  background:#000;
-  max-width:92%;
-  max-height:340px;
+  box-shadow:0 10px 30px rgba(0,0,0,.45), 0 0 0 1px var(--line);
+  background:#0B0E13;
+  flex:0 0 auto;
   display:grid;place-items:center;
+  padding:6px;
+}
+.canvas-wrap label{
+  position:absolute;top:6px;left:8px;
+  background:rgba(0,0,0,.65);color:#fff;
+  font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  padding:3px 7px;border-radius:999px;
+  pointer-events:none;
 }
 #pixelCanvas, #hdCanvas{
   display:block;
   image-rendering:pixelated; image-rendering: crisp-edges;
-  max-width:100%;
 }
-.preview-toolbar{
-  position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
-  display:flex;align-items:center;gap:8px;
-  background:rgba(23,25,30,.92);
-  border:1px solid var(--line-strong);
-  border-radius:999px;
-  padding:6px;
-  backdrop-filter:blur(8px);
-  box-shadow:0 6px 20px rgba(0,0,0,.35);
+.preview-bar{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 12px;
+  background:var(--surface);
+  border-bottom:1px solid var(--line);
+  gap:12px;
 }
-.tool{width:32px;height:32px;border-radius:999px;border:1px solid transparent;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;font-size:14px}
+.preview-tools{display:flex;align-items:center;gap:6px}
+.tool{width:30px;height:30px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted);display:grid;place-items:center;cursor:pointer;font-size:13px}
 .tool.active{background:var(--text);color:#0E0F12;border-color:var(--text)}
-.tool:hover{background:var(--surface-3);color:var(--text)}
-.zoom{position:absolute;right:12px;top:12px;display:flex;gap:6px}
-.zoom button{width:30px;height:30px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);cursor:pointer}
+.tool:hover{background:var(--surface-3);color:var(--text);border-color:var(--line-strong)}
+.zoom{display:flex;gap:6px;align-items:center}
+.zoom button{width:30px;height:30px;border-radius:999px;border:1px solid var(--line);background:var(--surface-2);color:var(--muted);cursor:pointer;font-size:14px}
 .zoom button:hover{color:var(--text);border-color:var(--line-strong)}
+.zoom span{font-size:11px;color:var(--muted);min-width:36px;text-align:center}
 .palette-dock{
   display:flex;align-items:center;gap:6px;
   padding:8px 12px;
@@ -222,7 +233,8 @@ kbd{font-family:var(--mono);font-size:10px;background:var(--surface-3);border:1p
     <div class="examples">
       <button class="pill" id="exBtn">Примеры ▾</button>
       <div class="menu" id="exMenu">
-        <button data-ex="warrior">⚔️ Воин <small>32×32 · row-RLE</small></button>
+        <button data-ex="warrior">⚔️ Воин 32 <small>row-RLE</small></button>
+        <button data-ex="warrior48">⚔️ Воин 48 HD <small>плотная сетка</small></button>
         <button data-ex="slime">🟢 Слайм <small>16×16</small></button>
         <button data-ex="tree">🌳 Дерево <small>24×24</small></button>
         <button data-ex="blank">∅ Пусто</button>
@@ -236,7 +248,7 @@ kbd{font-family:var(--mono);font-size:10px;background:var(--surface-3);border:1p
 
 <main class="layout">
   <!-- LEFT: редактор — главное -->
-  <section class="card" style="min-height:460px">
+  <section class="card" style="min-height:480px">
     <div class="card-head">
       <h2>Сценарий</h2>
       <div class="tools">
@@ -277,22 +289,22 @@ kbd{font-family:var(--mono);font-size:10px;background:var(--surface-3);border:1p
         </div>
       </div>
     </div>
-    <div class="preview-stage" id="stage">
-      <div class="canvas-wrap" id="wrap">
-        <canvas id="pixelCanvas" width="384" height="384"></canvas>
-        <canvas id="hdCanvas" width="384" height="384" hidden></canvas>
+    <div class="preview-viewport" id="stage">
+      <div class="canvas-stack" id="stack">
+        <div class="canvas-wrap" id="wrapPixel"><label>пиксель</label><canvas id="pixelCanvas" width="384" height="384"></canvas></div>
+        <div class="canvas-wrap" id="wrapHD" hidden><label>HD ×4</label><canvas id="hdCanvas" width="384" height="384"></canvas></div>
       </div>
-      <!-- флоатинг инструменты — близко к холсту (Гештальт) -->
-      <div class="preview-toolbar" id="tools">
-        <button class="tool active" data-t="brush" title="Кисть">🖌</button>
+    </div>
+    <div class="preview-bar">
+      <div class="preview-tools" id="tools">
+        <button class="tool active" data-t="brush" title="Кисть — клик ставит пиксель">🖌</button>
         <button class="tool" data-t="eraser" title="Ластик">⌫</button>
         <button class="tool" data-t="pick" title="Пипетка">👁</button>
-        <span style="width:1px;height:18px;background:var(--line);margin:0 2px"></span>
         <button class="tool" id="gridBtn" title="Сетка">▦</button>
         <button class="tool" id="clearBtn" title="Очистить">✕</button>
       </div>
       <div class="zoom">
-        <button id="minus">−</button><button id="plus">+</button>
+        <button id="minus" title="Уменьшить">−</button><span id="zoomVal">100%</span><button id="plus" title="Увеличить">+</button>
       </div>
     </div>
     <div class="palette-dock" id="palDock"></div>
