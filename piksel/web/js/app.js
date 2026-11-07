@@ -208,7 +208,6 @@ function bind(){
       if(t.trim().startsWith('<!DOCTYPE')) throw new Error('got html');
       syncCode(t); parse(true); toast('Воин загружен');
     }).catch(()=>{ toast('Пример не найден — вставлен локальный'); syncCode(warriorFallback()); parse(true); });
-    else if(b.dataset.ex==='warrior48') fetch('examples/warrior48.piksel').then(r=>r.text()).then(t=>{ syncCode(t); parse(true); toast('Воин 48 загружен'); }).catch(()=>toast('нет файла'));
     else if(b.dataset.ex==='blank') { syncCode(`размер 32\nпалитра pico8\n`); parse(true); }
     else toast('Скоро');
   });
@@ -218,10 +217,28 @@ function warriorFallback(){ return `размер 32\nпалитра pico8\n# в�
   $('minus').onclick=()=>{ S.zoom=Math.max(.7,S.zoom/1.15); updZoom(); render(); }; updZoom();
   // ручной
   pc.addEventListener('click', e=>{
-    if(S.tool==='pick') return;
-    const rect=pc.getBoundingClientRect(), N=S.size, d=pc.width/N;
+    const rect=pc.getBoundingClientRect(), N=S.size;
     const x=Math.floor((e.clientX-rect.left)/rect.width*N), y=Math.floor((e.clientY-rect.top)/rect.height*N);
-    const c=S.pix[y*N+x];
+    if(S.tool==='pick'){
+      const c=S.pix[y*N+x];
+      if(c){
+        // ставим пипетку: найти ближайший цвет в палитре или запомнить как custom
+        S.customColor=c;
+        // попробовать найти индекс в палитре
+        let idx=S.pal ? S.pal.indexOf(c) : -1;
+        if(idx>=0) S.col=idx;
+        else { S.col=0; }
+        buildPal();
+        // переключаем на кисть
+        S.tool='brush';
+        document.querySelectorAll('#tools .tool').forEach(x=>x.classList.remove('active'));
+        const br=document.querySelector('[data-t=brush]'); if(br) br.classList.add('active');
+        toast('Пипетка: '+c);
+        const inp=document.getElementById('rgbPick'); if(inp) inp.value=c;
+      } else toast('Прозрачно');
+      return;
+    }
+
     if(S.tool==='eraser'){ S.pix[y*N+x]=null; } else { const col = S.palN==='rgb' ? (S.customColor||'#ff7a45') : (S.pal?.[S.col]||'#fff'); S.pix[y*N+x]=col; }
     // обратно в код — добавляем/обновляем строку row-RLE (упрощённо: перегенерим все строки)
     // для MVP — не трогаем код, только холст + счётчик

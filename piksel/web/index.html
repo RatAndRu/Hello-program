@@ -135,9 +135,9 @@ button{font:inherit}
 
 /* PREVIEW — ИСПРАВЛЕНО: квадрат, скролл, без наложений */
 .preview-viewport{
-  height:460px; /* фикс высота + скролл если не влезает */
-  min-height:380px;
+  min-height:420px;
   max-height:560px;
+  height:auto;
   background:
     radial-gradient(circle at 30% 20%, rgba(255,122,69,.06), transparent 45%),
     var(--bg);
@@ -233,8 +233,7 @@ kbd{font-family:var(--mono);font-size:10px;background:var(--surface-3);border:1p
     <div class="examples">
       <button class="pill" id="exBtn">Примеры ▾</button>
       <div class="menu" id="exMenu">
-        <button data-ex="warrior">⚔️ Воин 32 <small>row-RLE</small></button>
-        <button data-ex="warrior48">⚔️ Воин 48 HD <small>плотная сетка</small></button>
+        <button data-ex="warrior">⚔️ Рыцарь <small>48 · наш DSL</small></button>
         <button data-ex="slime">🟢 Слайм <small>16×16</small></button>
         <button data-ex="tree">🌳 Дерево <small>24×24</small></button>
         <button data-ex="blank">∅ Пусто</button>
