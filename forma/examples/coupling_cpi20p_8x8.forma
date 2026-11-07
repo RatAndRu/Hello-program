@@ -10,19 +10,22 @@
 #   D1 = D2 = 8 — отверстия под валы, сквозные
 # Средний упругий пояс: L − 2·L1 = 11 мм.
 #
-# Конструкция:
+# Конструкция (сверено с фото реальной детали):
 #   • 6 боковых надрезов в поясе, плоскости ⊥ оси; надрез идёт по дуге
 #     (угол — параметр), снаружи внутрь, но НЕ доходит насквозь до осевого
-#     отверстия: остаётся стенка. Концы скруглены самим профилем резака —
-#     отдельных тел-«торцов» нет, поэтому внутри канавки никаких кружков;
+#     отверстия: остаётся стенка. Каждый конец надреза заканчивается РУНДОМ —
+#     круглым сверлением ⊥ стенке (на фото видно круглое окончание реза);
 #   • на каждом торце — диаметральный пропил через весь диаметр; глубина
 #     с двух сторон РАЗНАЯ: одна половина прорезана до осевого канала,
-#     вторая — только верхнее углубление на глубину slit_notch;
-#   • два боковых отверстия M2.5, оси идут ХОРДОЙ: параллельны друг другу и
-#     смещены от оси муфты на hole_chord, в центре не сходятся; отверстие
-#     проходит стенку и выходит в осевой канал под вал, резьба — настоящая;
-#   • в каждое отверстие ввёрнута отдельная деталь — ВТУЛКА-цилиндр с наружной
-#     резьбой и шестигранным углублением ВДОЛЬ своей оси (как в оригинале);
+#     вторая — только верхнее углубление на поверхности;
+#   • два боковых отверстия ХОРДОЙ (ось смещена от оси муфты, в центр не
+#     идёт), сквозные по хорде. КОНЦЫ РАЗНОГО РАЗМЕРА: у входа гнездо Ø5
+#     (головка винта), дальше канал Ø2,5 с настоящей резьбой — он и выходит
+#     с противоположной стороны маленьким отверстием. Осевого канала Ø8
+#     отверстия не касаются;
+#   • в гнездо ввёрнута отдельная деталь — ВТУЛКА-винт: цилиндр с наружной
+#     резьбой и шестигранным углублением ВДОЛЬ своей оси, ниже — резьбовой
+#     хвостовик M2.5 через пропил;
 #   • третье отверстие — осевое Ø8 под вал.
 #
 # Канон: верх +Z, низ −Z, перед −Y, право +X.
@@ -36,13 +39,15 @@ param d_bore=8 min=4 max=16 step=0.5 label="Отверстие под вал"
 param cut_arc=270 min=90 max=350 step=5 label="Угол боковых надрезов, °"
 param cut_depth=4.5 min=0.5 max=5.5 step=0.25 label="Глубина надреза"
 param cut_w=0.8 min=0.4 max=2 step=0.05 label="Ширина надреза"
-param cut_round=0.35 min=0 max=1 step=0.05 label="Скругление концов надреза"
+param cut_end_k=1.2 min=0.5 max=2.5 step=0.05 label="Радиус круглого окончания, доля полуширины"
 
-param hole_chord=4 min=1 max=7 step=0.1 label="Смещение оси винта от оси муфты"
-param thr_d=2.5 min=1.5 max=4 step=0.25 label="Резьба M2.5, Ø"
-param thr_pitch=0.9 min=0.3 max=2 step=0.05 label="Шаг резьбы"
-param hex_sock=0.8 min=0.4 max=1.2 step=0.05 label="Шестигранное углубление, радиус"
-param hex_sock_h=1.2 min=0.3 max=3 step=0.1 label="Глубина шестигранного углубления"
+param hole_chord=6.1 min=2 max=8 step=0.1 label="Смещение оси винта от оси муфты"
+param cb_d=3 min=2 max=6 step=0.1 label="Большой конец (гнездо), Ø"
+param cb_depth=1.7 min=0.6 max=4 step=0.1 label="Глубина гнезда"
+param thr_d=2.5 min=1.5 max=4 step=0.25 label="Малый конец (резьба M2.5), Ø"
+param thr_pitch=0.9 min=0.3 max=2 step=0.05 label="Шаг резьбы отверстия"
+param hex_sock=0.8 min=0.3 max=1.6 step=0.05 label="Шестигранное углубление, радиус"
+param hex_sock_h=1 min=0.3 max=3 step=0.1 label="Глубина шестигранного углубления"
 
 param slit_w=0.8 min=0.4 max=2 step=0.05 label="Ширина диаметрального пропила"
 param slit_notch=2 min=0.5 max=5 step=0.25 label="Верхнее углубление пропила"
@@ -80,17 +85,26 @@ r_ch = derive r + 0.5
 корпус = difference [заготовка, отверстие]
 
 # ------------------------------------------------- боковые надрезы ----------
-# Надрез — фреза, протянутая по дуге cut_arc: профиль cut_len × cut_w,
-# снаружи внутрь, глубина cut_depth, до осевого отверстия не доходит
-# (остаётся стенка). Концы скруглены САМИМ телом фрезы (round_caps), поэтому
-# внутри канавки нет ни кружков, ни отдельных вставных тел.
+# Надрез — фреза постоянного профиля, протянутая по дуге cut_arc: снаружи
+# внутрь на глубину cut_depth, до осевого отверстия не доходит. Концы не
+# «вытянутые»: на конце — цилиндрический рунд радиусом cut_end_r = cut_w/2,
+# как фреза Ø cut_w: торец канавки получается правильным полукругом.
 cut_in = derive R - cut_depth
 cut_len = derive cut_depth + 2
 cut_mid = derive cut_in + cut_len / 2
 cut_r = derive cut_w / 2
+cut_end_r = derive cut_w * cut_end_k / 2
 profile_cut = [[-cut_len / 2, 0], [cut_len / 2, 0], [cut_len / 2, cut_w], [-cut_len / 2, cut_w]]
 path_cut = [[cut_mid * cos(0), cut_mid * sin(0), 0], [cut_mid * cos(pi / 4), cut_mid * sin(pi / 4), 0], [cut_mid * cos(pi / 2), cut_mid * sin(pi / 2), 0], [cut_mid * cos(3 * pi / 4), cut_mid * sin(3 * pi / 4), 0], [cut_mid * cos(pi), cut_mid * sin(pi), 0], [cut_mid * cos(5 * pi / 4), cut_mid * sin(5 * pi / 4), 0], [cut_mid * cos(3 * pi / 2), cut_mid * sin(3 * pi / 2), 0]]
-Надрез = sweep path=path_cut profile=profile_cut smooth=6 round_caps=1
+Надрез = sweep path=path_cut profile=profile_cut smooth=6
+
+# Рунд на конце: полукруг В ПЛАНЕ радиусом cut_end_r — канавка заканчивается
+# круглым скруглением (не вытянутым клином): снаружи виден именно круг.
+рунд = cylinder radius=cut_end_r height=cut_len
+рунд = rotate [рунд] angle=90 axis=y
+рунд = translate [рунд] offset=[cut_in, 0, cut_r]
+рунд_2 = rotate [рунд] angle=cut_arc axis=z
+Надрез = union [Надрез, рунд, рунд_2]
 
 резак_1 = rotate [Надрез] angle=90 axis=z
 резак_1 = translate [резак_1] offset=[0, 0, 8.1417]
@@ -122,46 +136,67 @@ notch_h = derive slit_notch + 1
 
 корпус = difference [корпус, пропил_A_мелк, пропил_A_глуб, пропил_B_мелк, пропил_B_глуб]
 
-# ------------------------------------------- резьба M2.5 в стенке ----------
-# Малое отверстие — с настоящей винтовой резьбой и СКВОЗНОЕ по хорде: входит
-# в стенку с одной стороны и выходит с другой, проходя мимо осевого канала.
+# -------------------------------------------- боковые отверстия ХОРДОЙ -----
+# Ось смещена от оси муфты на hole_chord: в центр не идёт, осевого канала Ø8
+# не касается (surf − thr_d/2 > r). Концы разного размера: у входа гнездо
+# Ø5 под головку, дальше — Ø2,5 с резьбой, которая и выходит с другой стороны.
+cb_r = derive cb_d / 2
+гнездо_A = cylinder radius=cb_r height=cb_depth
+гнездо_A = rotate [гнездо_A] angle=-90 axis=x
+гнездо_A = translate [гнездо_A] offset=[hole_chord, -surf, L2]
+гнездо_B = cylinder radius=cb_r height=cb_depth
+гнездо_B = rotate [гнездо_B] angle=90 axis=y
+гнездо_B = translate [гнездо_B] offset=[surf - cb_depth, hole_chord, L - L2]
+
 ход = derive 2 * surf + 2
-винт = thread diameter=thr_d length=ход depth=0.3 pitch=thr_pitch
+# Резьба не доходит до наружных поверхностей на 1,2 — иначе на выходе
+# остаётся тонкая заусеница от витка. Сквозной канал даёт гладкий круг.
+thr_len = derive 2 * surf - 2.4
+thr_r = derive thr_d / 2
+кан_r = derive thr_r - 0.06
+кан = cylinder radius=кан_r height=ход
+кан_Y = rotate [кан] angle=-90 axis=x
+кан_A = translate [кан_Y] offset=[hole_chord, -surf - 1, L2]
+кан_X = rotate [кан] angle=-90 axis=y
+кан_B = translate [кан_X] offset=[surf + 1 - ход, hole_chord, L - L2]
+винт = thread diameter=thr_d length=thr_len depth=0.3 pitch=thr_pitch
 винт_Y = rotate [винт] angle=-90 axis=x
-винт_A = translate [винт_Y] offset=[hole_chord, -surf - 1, L2]
+винт_A = translate [винт_Y] offset=[hole_chord, -thr_len / 2, L2]
 винт_X = rotate [винт] angle=-90 axis=y
-винт_B = translate [винт_X] offset=[surf + 1 - ход, hole_chord, L - L2]
-корпус = difference [корпус, винт_A, винт_B]
+винт_B = translate [винт_X] offset=[thr_len / 2, hole_chord, L - L2]
+корпус = difference [корпус, гнездо_A, гнездо_B, кан_A, кан_B, винт_A, винт_B]
 
 # ------------------------------- втулки-винты — отдельные детали -----------
-# Не гайка: наружная форма — ЦИЛИНДР с НАРÚЖНОЙ резьбой, вкрученный в отверстие,
-# шестигранное углубление идёт ВДОЛЬ его оси (под шестигранный ключ). Торец
-# ложится почти заподлицо с наружной поверхностью; то, что из-за хорды чуть
-# выходит за Ø, подрезано по наружному радиусу.
-bush_out = derive surf - 0.35
-bush_d = derive thr_d - 0.1
-set_l = derive bush_out - r - 0.9
+# Не гайка: наружная форма — ЦИЛИНДР с НАРУЖНОЙ резьбой, ввёрнутый в гнездо;
+# шестигранное углубление идёт ВДОЛЬ его оси. Ниже головки — резьбовой
+# хвостовик M2.5, который через пропил входит в резьбу второго конца.
+head_d = derive cb_d - 0.2
+head_face = derive surf - cb_depth + 0.3
+head_l = derive 1.3
+shank_d = derive thr_d - 0.1
+shank_l = derive surf + 1.6
 sock_h = derive hex_sock_h + 1
-R_trim = derive R - 0.05
-R_out = derive R + 4
-срез_наружи = lathe points=[[R_trim, -1], [R_out, -1], [R_out, z_top_full], [R_trim, z_top_full]]
 гекс_угл = prism sides=6 radius=hex_sock height=sock_h
 гекс_угл = translate [гекс_угл] offset=[0, 0, -hex_sock_h]
 
-втулка_A = thread diameter=bush_d length=set_l depth=0.3 pitch=0.8
-втулка_A = translate [втулка_A] offset=[0, 0, -set_l - 0.25]
+втулка_A = thread diameter=head_d length=head_l depth=0.3 pitch=0.8
+хвост_A = thread diameter=shank_d length=shank_l depth=0.22 pitch=0.5
+хвост_A = translate [хвост_A] offset=[0, 0, -shank_l - 0.3]
+втулка_A = union [втулка_A, хвост_A]
+втулка_A = translate [втулка_A] offset=[0, 0, -head_l - 0.25]
 втулка_A = difference [втулка_A, гекс_угл]
 втулка_A = rotate [втулка_A] angle=90 axis=x
-втулка_A = translate [втулка_A] offset=[hole_chord, -bush_out, L2]
-втулка_A = difference [втулка_A, срез_наружи]
+втулка_A = translate [втулка_A] offset=[hole_chord, -head_face, L2]
 color втулка_A #3c3c40 material=plastic rough=0.25
 
-втулка_B = thread diameter=bush_d length=set_l depth=0.3 pitch=0.8
-втулка_B = translate [втулка_B] offset=[0, 0, -set_l - 0.25]
+втулка_B = thread diameter=head_d length=head_l depth=0.3 pitch=0.8
+хвост_B = thread diameter=shank_d length=shank_l depth=0.22 pitch=0.5
+хвост_B = translate [хвост_B] offset=[0, 0, -shank_l - 0.3]
+втулка_B = union [втулка_B, хвост_B]
+втулка_B = translate [втулка_B] offset=[0, 0, -head_l - 0.25]
 втулка_B = difference [втулка_B, гекс_угл]
 втулка_B = rotate [втулка_B] angle=90 axis=y
-втулка_B = translate [втулка_B] offset=[bush_out, hole_chord, L - L2]
-втулка_B = difference [втулка_B, срез_наружи]
+втулка_B = translate [втулка_B] offset=[head_face, hole_chord, L - L2]
 color втулка_B #3c3c40 material=plastic rough=0.25
 
 # ------------------------------------------------------------- материалы ---
