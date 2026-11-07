@@ -234,7 +234,8 @@ kbd{font-family:var(--mono);font-size:10px;background:var(--surface-3);border:1p
       <button class="pill" id="exBtn">Примеры ▾</button>
       <div class="menu" id="exMenu">
         <button data-ex="warrior">⚔️ Рыцарь <small>48</small></button>
-        <button data-ex="landscape">🌄 Пейзаж <small>80×60 · наш DSL</small></button>
+        <button data-ex="landscape">🌄 Пейзаж <small>80×60</small></button>
+        <button data-ex="rem">🎀 Рем <small>48×64</small></button>
         <button data-ex="slime">🟢 Слайм <small>16×16</small></button>
         <button data-ex="tree">🌳 Дерево <small>24×24</small></button>
         <button data-ex="blank">∅ Пусто</button>
@@ -251,14 +252,22 @@ kbd{font-family:var(--mono);font-size:10px;background:var(--surface-3);border:1p
   <section class="card" style="min-height:480px">
     <div class="card-head">
       <h2>Сценарий</h2>
-      <div class="tools">
-        <select id="sizeSel" class="pill" style="padding:6px 10px">
-          <option value="16">16</option><option value="32" selected>32</option><option value="48">48</option><option value="64">64</option><option value="64x48">64×48 шир.</option><option value="80x60">80×60 шир.</option><option value="96x64">96×64 HD</option>
+      <div class="tools" style="flex-wrap:wrap">
+        <span class="pill" style="display:flex;align-items:center;gap:4px;padding:4px 8px">
+          W <input id="sizeW" type="number" min="8" max="256" value="32" style="width:52px;background:transparent;border:0;color:var(--text);outline:0;text-align:center">
+          × H <input id="sizeH" type="number" min="8" max="256" value="32" style="width:52px;background:transparent;border:0;color:var(--text);outline:0;text-align:center">
+          <button class="pill" id="applySize" style="padding:3px 8px;margin-left:4px">ОК</button>
+        </span>
+        <select id="sizePreset" class="pill" style="padding:6px 10px">
+          <option value="">пресет…</option>
+          <option value="16x16">16×16</option><option value="32x32">32×32</option><option value="48x48">48×48</option><option value="64x64">64×64</option>
+          <option value="64x48">64×48 шир.</option><option value="80x60">80×60 шир.</option><option value="96x64">96×64 HD</option><option value="128x96">128×96</option>
         </select>
         <select id="palSel" class="pill" style="padding:6px 10px">
           <option value="pico8">PICO-8 · 16</option><option value="gameboy">Game Boy · 4</option><option value="sweet16">Sweet 16</option><option value="endesga32">Endesga 32</option><option value="lospec32">Lospec 32</option><option value="n64">N64 · 64</option><option value="rgb">RGB · ∞ градиенты</option>
         </select>
         <label class="pill" style="padding:5px 8px;display:flex;align-items:center;gap:6px">фон <input type="color" id="bgTop" value="#0B0E13" style="width:18px;height:18px;padding:0;border:0;border-radius:4px;background:transparent"></label>
+        <button class="pill" id="asciiBtn" title="ASCII → пиксели">ASCII</button>
         <span class="muted" id="status">готово</span>
       </div>
     </div>
@@ -274,7 +283,19 @@ kbd{font-family:var(--mono);font-size:10px;background:var(--surface-3);border:1p
     </div>
     <div class="editor-foot">
       <span><span class="dot ok" id="dot"></span><span id="msg">Собери чтобы увидеть</span></span>
-      <span class="muted">прозрачность = не пишем · <kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+      <span class="muted">прозрачность = не пишем · <kbd>Ctrl</kbd>+<kbd>Enter</kbd> · любой W×H до 256</span>
+    </div>
+    <div id="asciiPanel" style="display:none;border-top:1px solid var(--line);background:var(--surface-2);padding:12px;gap:10px;flex-direction:column">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <b style="font-size:11px;letter-spacing:.08em;color:var(--muted)">ASCII → ПИКСЕЛИ</b>
+        <span class="muted" style="font-size:11px">макс. символ 5×5 (█=25px, ▓≈18, ▒≈12, ░≈5) — остальные в той же сетке</span>
+        <select id="glyphSize" class="pill" style="padding:4px 8px"><option value="5">5×5</option><option value="3">3×3 компакт</option></select>
+        <button class="btn-primary" id="asciiConvert" style="padding:6px 12px;font-size:12px">Преобразовать</button>
+        <button class="pill" id="asciiClose">× закрыть</button>
+      </div>
+      <textarea id="asciiInput" spellcheck="false" placeholder="Вставь ASCII арт, например:&#10;  /\_/\&#10; ( o.o )&#10;  > ^ <&#10;Легенда цвета появится снизу — каждому символу свой цвет" style="width:100%;min-height:90px;background:#0F1216;color:#D6DEEB;border:1px solid var(--line);border-radius:8px;padding:8px;font-family:var(--mono);font-size:12px;line-height:16px"></textarea>
+      <div id="asciiLegend" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center"></div>
+      <div class="muted" style="font-size:11px">Подсказка: используй █▓▒░ для плотности одним цветом, буквы для контуров. Пустой пробел = прозрачно. Размер полотна станет = (ширина ASCII × 5) × (высота × 5). Поддерживаются любые не-квадратные.</div>
     </div>
   </section>
 

@@ -1,4 +1,4 @@
-// ПИКСЕЛЬ v3 — живой парсер row-RLE + адаптивное превью + прямоугольные размеры
+// ПИКСЕЛЬ v3.4 — любые размеры + ASCII 5×5 + адаптив
 const $=id=>document.getElementById(id);
 const code=$('code'), gutter=$('gutter'), pc=$('pixelCanvas'), hc=$('hdCanvas'), pctx=pc.getContext('2d'), hctx=hc.getContext('2d');
 const PAL={
@@ -11,6 +11,102 @@ const PAL={
   rgb: null
 };
 let S={ w:32, h:32, size:32, pal:PAL.pico8.slice(), palN:'pico8', pix:[], col:4, tool:'brush', grid:true, mode:'pixel', zoom:1, bg:null };
+
+// ===== ASCII 5×5 глифы =====
+// макс 5×5 — █ = 25 пикселей, остальные пропорционально в той же сетке
+const GLYPH5={
+  '█': ["11111","11111","11111","11111","11111"],
+  '▓': ["11011","10101","11011","10101","11011"],
+  '▒': ["10101","01010","10101","01010","10101"],
+  '░': ["10001","00000","00100","00000","10001"],
+  '▆': ["00000","00000","11111","11111","11111"],
+  '▄': ["00000","00000","00000","11111","11111"],
+  '▀': ["11111","11111","00000","00000","00000"],
+  ' ': ["00000","00000","00000","00000","00000"],
+  'A': ["01110","10001","11111","10001","10001"],
+  'B': ["11110","10001","11110","10001","11110"],
+  'C': ["01111","10000","10000","10000","01111"],
+  'D': ["11100","10010","10001","10010","11100"],
+  'E': ["11111","10000","11110","10000","11111"],
+  'F': ["11111","10000","11110","10000","10000"],
+  'G': ["01111","10000","10111","10001","01110"],
+  'H': ["10001","10001","11111","10001","10001"],
+  'I': ["01110","00100","00100","00100","01110"],
+  'J': ["00111","00010","00010","10010","01100"],
+  'K': ["10001","10010","11100","10010","10001"],
+  'L': ["10000","10000","10000","10000","11111"],
+  'M': ["10001","11011","10101","10001","10001"],
+  'N': ["10001","11001","10101","10011","10001"],
+  'O': ["01110","10001","10001","10001","01110"],
+  'P': ["11110","10001","11110","10000","10000"],
+  'Q': ["01110","10001","10001","10011","01111"],
+  'R': ["11110","10001","11110","10100","10010"],
+  'S': ["01111","10000","01110","00001","11110"],
+  'T': ["11111","00100","00100","00100","00100"],
+  'U': ["10001","10001","10001","10001","01110"],
+  'V': ["10001","10001","10001","01010","00100"],
+  'W': ["10001","10001","10101","11011","10001"],
+  'X': ["10001","01010","00100","01010","10001"],
+  'Y': ["10001","01010","00100","00100","00100"],
+  'Z': ["11111","00010","00100","01000","11111"],
+  '0': ["01110","10011","10101","11001","01110"],
+  '1': ["00100","01100","00100","00100","01110"],
+  '2': ["01110","10001","00110","01000","11111"],
+  '3': ["11111","00010","01100","00001","11110"],
+  '4': ["10001","10001","11111","00001","00001"],
+  '5': ["11111","10000","11110","00001","11110"],
+  '6': ["01110","10000","11110","10001","01110"],
+  '7': ["11111","00001","00010","00100","01000"],
+  '8': ["01110","10001","01110","10001","01110"],
+  '9': ["01110","10001","01111","00001","01110"],
+  '.': ["00000","00000","00000","00000","00100"],
+  ',': ["00000","00000","00000","00100","01000"],
+  ':': ["00000","00100","00000","00100","00000"],
+  ';': ["00000","00100","00000","00100","01000"],
+  '!': ["00100","00100","00100","00000","00100"],
+  '?': ["01110","10001","00110","00000","00100"],
+  '/': ["00001","00010","00100","01000","10000"],
+  '\\':["10000","01000","00100","00010","00001"],
+  '|': ["00100","00100","00100","00100","00100"],
+  '-': ["00000","00000","11111","00000","00000"],
+  '_': ["00000","00000","00000","00000","11111"],
+  '=': ["00000","11111","00000","11111","00000"],
+  '+': ["00000","00100","01110","00100","00000"],
+  '*': ["00100","10101","01110","10101","00100"],
+  '#': ["01010","11111","01010","11111","01010"],
+  '@': ["01110","10001","10111","10101","01110"],
+  '(': ["00100","01000","01000","01000","00100"],
+  ')': ["00100","00010","00010","00010","00100"],
+  '[': ["01110","01000","01000","01000","01110"],
+  ']': ["01110","00010","00010","00010","01110"],
+  '<': ["00010","00100","01000","00100","00010"],
+  '>': ["01000","00100","00010","00100","01000"],
+  '^': ["00100","01010","10001","00000","00000"],
+  'v': ["00000","00000","10001","01010","00100"],
+  'o': ["00000","01110","10001","01110","00000"],
+  'x': ["00000","10001","01110","10001","00000"],
+};
+const GLYPH3={
+  '█': ["111","111","111"],
+  '▓': ["110","101","011"],
+  '▒': ["101","010","101"],
+  '░': ["100","000","001"],
+  ' ': ["000","000","000"],
+  'A': ["010","101","111"],
+  'B': ["110","101","110"],
+  'o': ["010","101","010"],
+};
+// генерик: если нет глифа — делаем заполненный 80% блок
+function getGlyph(ch, sz){
+  const g = sz===3 ? GLYPH3 : GLYPH5;
+  if(g[ch]) return g[ch];
+  if(g[ch.toUpperCase()]) return g[ch.toUpperCase()];
+  // fallback: плотность по коду символа
+  const code=ch.charCodeAt(0)%5;
+  if(code===0) return sz===3?["111","111","111"]:["11111","11111","11111","11111","11111"];
+  if(code===1) return sz===3?["101","010","101"]:["10101","01010","10101","01010","10101"];
+  return sz===3?["010","111","010"]:["00100","01110","11111","01110","00100"];
+}
 
 function init(){
   S.pix=Array(S.w*S.h).fill(null);
@@ -80,13 +176,12 @@ function syncBgToCode(){
   if(txt!==code.value){ code.value=txt; updateGutter(); }
 }
 function parseSize(txt){
-  // поддерживает: размер 32 | размер 64x48 | размер 64 48 | размер 80×60
   let m=txt.match(/размер\s+(\d+)\s*[x×]\s*(\d+)/i);
-  if(m){ S.w = Math.min(128,Math.max(8,parseInt(m[1]))); S.h = Math.min(128,Math.max(8,parseInt(m[2]))); S.size=Math.max(S.w,S.h); return; }
+  if(m){ S.w = Math.min(256,Math.max(3,parseInt(m[1]))); S.h = Math.min(256,Math.max(3,parseInt(m[2]))); S.size=Math.max(S.w,S.h); return; }
   m=txt.match(/размер\s+(\d+)\s+(\d+)/i);
-  if(m){ S.w = Math.min(128,Math.max(8,parseInt(m[1]))); S.h = Math.min(128,Math.max(8,parseInt(m[2]))); S.size=Math.max(S.w,S.h); return; }
+  if(m){ S.w = Math.min(256,Math.max(3,parseInt(m[1]))); S.h = Math.min(256,Math.max(3,parseInt(m[2]))); S.size=Math.max(S.w,S.h); return; }
   m=txt.match(/размер\s+(\d+)/i);
-  if(m){ S.w=S.h=Math.min(128,Math.max(8,parseInt(m[1]))); S.size=S.w; }
+  if(m){ S.w=S.h=Math.min(256,Math.max(3,parseInt(m[1]))); S.size=S.w; }
 }
 function parse(showOk=false){
   const txt=code.value;
@@ -125,27 +220,24 @@ function parse(showOk=false){
   $('dot').className='dot '+(ok? (used.size===0?'warn':'ok'):'bad');
   $('msg').textContent = errs.length? errs[0] : (used.size? `${used.size} цветов · ${S.w}×${S.h} · готово` : `пусто — вставь сценарий · ${S.w}×${S.h}`);
   $('msg').style.color = ok? 'var(--muted)' : 'var(--bad)';
-  updateSizeSel();
+  updateSizeInputs();
   render();
   if(showOk && ok) toast('Собрано');
 }
 function render(){
   const Nw=S.w, Nh=S.h;
-  // АДАПТИВНЫЙ МАСШТАБ: всегда влезает в вьюпорт при 100%
   const stage=document.getElementById('stage');
   const availW = Math.max(280, (stage?.clientWidth||520) - 40);
-  const availH = 420; // базовая доступная высота превью (без скролла при 100%)
-  // фит-база: чтобы весь холст влез в avail, с запасом
+  const availH = 420;
   const fitPxW = Math.floor(availW / Nw);
   const fitPxH = Math.floor(availH / Nh);
   let basePx = Math.min(fitPxW, fitPxH);
-  // если сравнение — два холста рядом, каждому половина ширины
   if(S.mode==='split'){
     const fitSplitW = Math.floor((availW-16) / 2 / Math.max(Nw,1));
     basePx = Math.min(fitPxW, fitPxH, fitSplitW);
   }
-  basePx = Math.max(3, Math.min(20, basePx));
-  const px = Math.max(2, Math.min(32, Math.round(basePx * S.zoom)));
+  basePx = Math.max(2, Math.min(24, basePx));
+  const px = Math.max(1, Math.min(32, Math.round(basePx * S.zoom)));
   const W=Nw*px, H=Nh*px;
   [pc,hc].forEach(c=>{
     c.width=W; c.height=H;
@@ -153,28 +245,23 @@ function render(){
     c.style.height=H+'px';
     c.style.imageRendering='pixelated';
   });
-  // пиксель
   pctx.imageSmoothingEnabled=false;
   if(S.bg){ pctx.fillStyle=S.bg; pctx.fillRect(0,0,W,H); }
   else { pctx.fillStyle='#0B0E13'; pctx.fillRect(0,0,W,H); }
   for(let y=0;y<Nh;y++)for(let x=0;x<Nw;x++){ const col=S.pix[y*Nw+x]; if(col){ pctx.fillStyle=col; pctx.fillRect(x*px,y*px,px,px);} }
-  if(S.grid && Math.max(Nw,Nh)<=80){
+  if(S.grid && Math.max(Nw,Nh)<=96){
     pctx.strokeStyle='rgba(255,255,255,.055)'; pctx.lineWidth=1;
     for(let i=0;i<=Nw;i++){ const p=i*px+0.5; pctx.beginPath(); pctx.moveTo(p,0); pctx.lineTo(p,H); pctx.stroke(); }
     for(let i=0;i<=Nh;i++){ const p=i*px+0.5; pctx.beginPath(); pctx.moveTo(0,p); pctx.lineTo(W,p); pctx.stroke(); }
   }
-  // HD — nearest, в тот же размер
   const hdPx = Math.max(1, Math.floor(px/2));
-  // рисуем через временный Nw×Nh
   const tmp=document.createElement('canvas'); tmp.width=Nw; tmp.height=Nh; const tc=tmp.getContext('2d');
   tc.imageSmoothingEnabled=false;
   for(let y=0;y<Nh;y++)for(let x=0;x<Nw;x++){ const c=S.pix[y*Nw+x]; if(c){ tc.fillStyle=c; tc.fillRect(x,y,1,1);} }
   hctx.imageSmoothingEnabled=false;
   hctx.clearRect(0,0,W,H);
   if(S.bg){ hctx.fillStyle=S.bg; hctx.fillRect(0,0,W,H); } else { hctx.fillStyle='#0B0E13'; hctx.fillRect(0,0,W,H); }
-  // HD рисуем увеличенным в центр
   const HDW=Nw*2*hdPx, HDH=Nh*2*hdPx;
-  // Если HD больше холста — масштабируем под холст, иначе по центру
   if(HDW<=W && HDH<=H){
     const ox=Math.floor((W-HDW)/2), oy=Math.floor((H-HDH)/2);
     hctx.drawImage(tmp,0,0,Nw,Nh, ox,oy,HDW,HDH);
@@ -190,31 +277,150 @@ function render(){
 
 function toast(s){ const t=document.createElement('div'); t.textContent=s; t.style.cssText='position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:var(--surface);border:1px solid var(--line);padding:10px 14px;border-radius:999px;box-shadow:var(--shadow);font-size:12.5px'; document.body.appendChild(t); setTimeout(()=>t.remove(),1600); }
 
-function updateSizeSel(){
-  const sel=$('sizeSel');
-  const cur = S.w===S.h ? String(S.w) : `${S.w}x${S.h}`;
-  let found=false;
-  for(let o of sel.options) if(o.value===cur) { o.selected=true; found=true; }
-  if(!found){
-    // добавить кастом опцию
-    let opt=document.createElement('option'); opt.value=cur; opt.textContent=cur; opt.selected=true;
-    sel.appendChild(opt);
+function updateSizeInputs(){
+  const w=$('sizeW'), h=$('sizeH');
+  if(w) w.value=S.w;
+  if(h) h.value=S.h;
+  const sel=$('sizePreset');
+  if(sel){
+    const cur=`${S.w}x${S.h}`;
+    let found=false;
+    for(let o of sel.options) if(o.value===cur){ sel.value=cur; found=true; break; }
+    if(!found) sel.value="";
   }
 }
 function updateZoomLabel(){ const el=document.getElementById('zoomVal'); if(el) el.textContent=Math.round(S.zoom*100)+'%'; }
+
+// ===== ASCII → пиксели =====
+function buildAsciiLegend(){
+  const txt=$('asciiInput').value;
+  if(!txt.trim()){ $('asciiLegend').innerHTML='<span class="muted" style="font-size:11px">вставь ASCII — тут появятся цвета</span>'; return; }
+  const uniq=[...new Set([...txt].filter(ch=>ch!=='\n' && ch!=='\r'))].sort();
+  const legend=$('asciiLegend'); legend.innerHTML='';
+  // палитра по умолчанию — берем из S.pal или rgbHistory
+  const defaults = S.pal ? S.pal : (S.rgbHistory||['#ff7a45','#ffb347','#7ec8a0','#6b8cff','#ff4a4a','#ffffff']);
+  uniq.forEach((ch,i)=>{
+    const wrap=document.createElement('span'); wrap.style.cssText='display:flex;align-items:center;gap:4px;background:var(--surface-3);padding:4px 8px;border-radius:999px;border:1px solid var(--line)';
+    const col = defaults[i % defaults.length];
+    wrap.innerHTML=`<span style="font-family:var(--mono);font-size:12px;min-width:14px;text-align:center">${ch===' ' ? '␣' : ch}</span><input type="color" data-ch="${ch}" value="${col}" style="width:22px;height:18px;padding:0;border:0;border-radius:4px">`;
+    legend.appendChild(wrap);
+  });
+  legend.querySelectorAll('input[type=color]').forEach(inp=> inp.oninput=e=>{
+    // live preview optional
+  });
+}
+function asciiToPiksel(){
+  const txt=$('asciiInput').value;
+  if(!txt.trim()){ toast('Вставь ASCII'); return; }
+  const sz=parseInt($('glyphSize').value)||5;
+  const lines=txt.split('\n');
+  // убрать пустые строки в конце/начале но сохранить внутренние
+  while(lines.length && lines[0].trim()==='') lines.shift();
+  while(lines.length && lines[lines.length-1].trim()==='') lines.pop();
+  const H = lines.length;
+  const Wchars = Math.max(...lines.map(l=>[...l].length));
+  const W = Wchars*sz, Hpx = H*sz;
+  if(W>256||Hpx>256){ toast(`Слишком большой ${W}×${Hpx} — макс 256, укороти ASCII или выбери 3×3`); return; }
+  // цвета из легенды
+  const colMap={};
+  document.querySelectorAll('#asciiLegend input[type=color]').forEach(inp=> colMap[inp.dataset.ch]=inp.value);
+  const defaults = S.pal ? S.pal : (S.rgbHistory||['#ff7a45']);
+  // fallback для неизвестных
+  // строим пиксели
+  const pix=Array(W*Hpx).fill(null);
+  lines.forEach((line, ay)=>{
+    [...line].forEach((ch, ax)=>{
+      if(ch===' '||ch==='\r') return;
+      const col = colMap[ch] || defaults[ (ch.charCodeAt(0)%defaults.length) ];
+      const glyph=getGlyph(ch, sz);
+      for(let dy=0; dy<sz; dy++){
+        for(let dx=0; dx<sz; dx++){
+          if(glyph[dy][dx]==='1'){
+            const px = ax*sz + dx;
+            const py = ay*sz + dy;
+            if(px<W && py<Hpx) pix[py*W+px]=col;
+          }
+        }
+      }
+    });
+  });
+  // генерируем DSL
+  let out=[];
+  out.push(`# ASCII ${Wchars}×${H} → ${W}×${Hpx} glyph ${sz}×${sz}`);
+  out.push(`размер ${W}x${Hpx}`);
+  out.push(`палитра ${S.palN}`);
+  out.push(S.bg? `фон ${S.bg}`: `фон прозрачно`);
+  for(let y=0;y<Hpx;y++){
+    // собрать runs
+    let runs=[]; let x=0;
+    while(x<W){
+      if(!pix[y*W+x]){ // прозрачные скипаем, но нужно через N- или смещать c.
+        // считаем пропуск
+        let j=x;
+        while(j<W && !pix[y*W+j]) j++;
+        // пропускаем — не пишем, следующий c будет j
+        // но для сохранения позиции нужно начать новую запись? нет, Row-RLE: c — начальный столбец, дальше идут цвета подряд
+        // поэтому если есть пропуск в середине, используем N- 
+        if(runs.length===0){
+          // ведущий пропуск — просто смещаем начальный c
+          x=j; continue;
+        } else {
+          // внутренний пропуск — кодируем как N-
+          runs.push(`${j-x}-`);
+          x=j;
+          continue;
+        }
+      }
+      // цветной run
+      let col=pix[y*W+x];
+      let j=x;
+      while(j<W && pix[y*W+j]===col) j++;
+      const cnt=j-x;
+      runs.push(cnt===1? col : `${cnt}x${col}`);
+      x=j;
+    }
+    if(runs.length){
+      // найти первый цветной x
+      let firstX=0;
+      // находим первый не-прозрачный
+      for(let xi=0; xi<W; xi++) if(pix[y*W+xi]){ firstX=xi; break; }
+      out.push(`${y}: ${firstX}. `+runs.join(' '));
+    }
+  }
+  out.push(`check размер ${W}x${Hpx}`);
+  const dsl=out.join('\n');
+  syncCode(dsl); parse(true);
+  // обновить размер инпуты
+  S.w=W; S.h=Hpx;
+  toast(`ASCII → ${W}×${Hpx} готово`);
+}
 
 function bind(){
   let tid=null;
   code.addEventListener('input', ()=>{ updateGutter(); clearTimeout(tid); tid=setTimeout(()=>parse(false),400); });
   code.addEventListener('keydown', e=>{ if((e.ctrlKey||e.metaKey)&&e.key==='Enter'){ e.preventDefault(); parse(true);} });
   $('buildBtn').onclick=()=>parse(true);
-  $('sizeSel').onchange=e=>{ const v=e.target.value; let txt=v.includes('x')? `размер ${v}` : `размер ${v}`; code.value=code.value.replace(/размер\s+[^\n]+/,txt); parse(true); };
+  const sizeW=$('sizeW'), sizeH=$('sizeH'), applySize=$('applySize');
+  if(applySize) applySize.onclick=()=>{
+    const w=Math.min(256,Math.max(3,parseInt(sizeW.value)||32));
+    const h=Math.min(256,Math.max(3,parseInt(sizeH.value)||32));
+    code.value=code.value.replace(/размер\s+[^\n]+/,`размер ${w}x${h}`);
+    parse(true);
+  };
+  if(sizeW) sizeW.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); applySize.click(); }});
+  if(sizeH) sizeH.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); applySize.click(); }});
+  const preset=$('sizePreset');
+  if(preset) preset.onchange=e=>{
+    const v=e.target.value; if(!v) return;
+    code.value=code.value.replace(/размер\s+[^\n]+/,`размер ${v}`);
+    parse(true);
+  };
   $('palSel').onchange=e=>{ const v=e.target.value; code.value=code.value.replace(/палитра\s+\w+.*/,`палитра ${v}`); parse(true); };
   const bgTop=$('bgTop'); if(bgTop) bgTop.oninput=e=>{ S.bg=e.target.value; render(); syncBgToCode(); };
   document.querySelectorAll('#modeSeg button').forEach(b=> b.onclick=()=>{ document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); S.mode=b.dataset.m; render(); });
   document.querySelectorAll('#tools .tool').forEach(b=> b.onclick=()=>{ if(b.dataset.t){ document.querySelectorAll('#tools .tool').forEach(x=>x.classList.remove('active')); b.classList.add('active'); S.tool=b.dataset.t; pc.style.cursor=S.tool==='brush'?'crosshair': S.tool==='pick'?'copy':'default'; } });
   $('gridBtn').onclick=()=>{ S.grid=!S.grid; $('gridBtn').classList.toggle('active',S.grid); render(); };
-  $('clearBtn').onclick=()=>{ code.value=`размер ${S.w}×${S.h}\nпалитра ${S.palN}\n`; parse(true); };
+  $('clearBtn').onclick=()=>{ code.value=`размер ${S.w}x${S.h}\nпалитра ${S.palN}\n`; parse(true); };
   $('copyBtn').onclick=()=>{ navigator.clipboard.writeText(code.value); toast('Сценарий скопирован'); };
   $('exportBtn').onclick=()=>{ const a=document.createElement('a'); a.download='piksel.png'; a.href=pc.toDataURL('image/png'); a.click(); toast('PNG сохранён'); };
   $('exBtn').onclick=()=> $('exMenu').classList.toggle('open');
@@ -222,14 +428,22 @@ function bind(){
     $('exMenu').classList.remove('open');
     if(b.dataset.ex==='warrior') fetch('examples/warrior.piksel').then(r=>{ if(!r.ok) throw new Error(r.status); return r.text(); }).then(t=>{ if(t.trim().startsWith('<!DOCTYPE')) throw new Error('got html'); syncCode(t); parse(true); toast('Рыцарь загружен'); }).catch(()=>{ toast('Пример не найден'); });
     else if(b.dataset.ex==='landscape') fetch('examples/landscape.piksel').then(r=>{ if(!r.ok) throw new Error(r.status); return r.text(); }).then(t=>{ syncCode(t); parse(true); toast('Пейзаж загружен'); }).catch(()=>toast('нет файла'));
-    else if(b.dataset.ex==='slime') toast('Скоро');
-    else if(b.dataset.ex==='tree') toast('Скоро');
-    else if(b.dataset.ex==='blank') { syncCode(`размер 32\nпалитра pico8\n`); parse(true); }
+    else if(b.dataset.ex==='rem') fetch('examples/rem.piksel').then(r=>{ if(!r.ok) throw new Error(r.status); return r.text(); }).then(t=>{ syncCode(t); parse(true); toast('Рем загружена'); }).catch(()=>toast('нет файла'));
+    else if(b.dataset.ex==='blank') { syncCode(`размер 32x32\nпалитра pico8\n`); parse(true); }
     else toast('Скоро');
   });
   $('plus').onclick=()=>{ S.zoom=Math.min(2.4,S.zoom*1.15); updateZoomLabel(); render(); };
   $('minus').onclick=()=>{ S.zoom=Math.max(.5,S.zoom/1.15); updateZoomLabel(); render(); };
-  // клик по пикселю
+  // ASCII panel
+  const asciiBtn=$('asciiBtn'), asciiPanel=$('asciiPanel'), asciiClose=$('asciiClose');
+  if(asciiBtn) asciiBtn.onclick=()=>{ asciiPanel.style.display = asciiPanel.style.display==='none'||!asciiPanel.style.display ? 'flex':'none'; buildAsciiLegend(); };
+  if(asciiClose) asciiClose.onclick=()=> asciiPanel.style.display='none';
+  const ai=$('asciiInput');
+  if(ai) ai.addEventListener('input', ()=>{ clearTimeout(ai._tid); ai._tid=setTimeout(buildAsciiLegend, 400); });
+  const conv=$('asciiConvert');
+  if(conv) conv.onclick=asciiToPiksel;
+  const gs=$('glyphSize');
+  if(gs) gs.onchange=buildAsciiLegend;
   pc.addEventListener('click', e=>{
     const rect=pc.getBoundingClientRect(), Nw=S.w, Nh=S.h;
     const x=Math.floor((e.clientX-rect.left)/rect.width*Nw), y=Math.floor((e.clientY-rect.top)/rect.height*Nh);
