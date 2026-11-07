@@ -85,52 +85,73 @@ slit_len = derive L1 + 1
 корпус = difference [корпус, пропил_A, пропил_B]
 
 # ------------------------------------------- сквозные ступенчатые отверстия -
-# Ступица A: ось +Y (винт пережимает пропил), z = L2.
-# Ступица B: ось +X, z = L − L2. Плоскости отверстий перпендикулярны.
-hex_af = 5.5
+# Отверстий всего два (третье — осевое Ø8). Каждое идёт ХОРДОЙ: ось смещена
+# от оси детали на chord, поэтому сверло проходит мимо вала, а не через
+# центр. Снаружи — круглая дырка, внутри неё шестигранник под ключ, глубже
+# узкая часть с винтовой резьбой и совсем узкий выход на другой стороне.
+# Плоскости двух отверстий перпендикулярны: A вдоль Y, B вдоль X.
+chord = 6.6
+round_r = 2.5          # круглая дырка Ø5
+hex_af = 3.2
 hex_r = derive hex_af / 2 / 0.8660254
-hex_h = 4.6
-thread_d = 2.5
-thread_r = derive thread_d / 2
-narrow_d = 2.2
-narrow_r = derive narrow_d / 2
-groove_d = 3.1
-groove_r = derive groove_d / 2
-groove_h = 0.32
+hole_in = derive R - 1.8       # насколько глубоко начинается отверстие
+hole_len = 16.4
+thread_r = 1.25
+narrow_r = 1.1
 
-# --- гнездо: шестигранник, стенки ровные
-гнездо = prism sides=6 radius=hex_r height=hex_h at=[0, 0, 0]
-гнездо_Y = rotate [гнездо] angle=90 axis=x
-гнездо_A = translate [гнездо_Y] offset=[0, R + 0.4, L2]
+d_round = 3.8
+d_hex = 3.2
+d_thread = 4.4
+d_narrow = 6.0
+
+# Порядок по глубине: круглая дырка → шестигранник → резьба → узкий выход.
+# Оба входа смотрят на переднюю сторону (−Y), чтобы их было видно на виде.
+# --- круглая дырка (гнездо снаружи)
+круглое = cylinder radius=round_r height=d_round at=[0, 0, 0]
+круглое_Y = rotate [круглое] angle=-90 axis=x
+круглое_A = translate [круглое_Y] offset=[chord, -hole_in, L2]
+круглое_X = rotate [круглое] angle=-90 axis=y
+круглое_B = translate [круглое_X] offset=[hole_in, -chord, L - L2]
+корпус = difference [корпус, круглое_A, круглое_B]
+
+# --- фаска входа (мягкая кромка, как на фото)
+фаска = cylinder radius=2.75 height=0.45 at=[0, 0, 0]
+фаска_Y = rotate [фаска] angle=-90 axis=x
+фаска_A = translate [фаска_Y] offset=[chord, -hole_in - 0.25, L2]
+фаска_X = rotate [фаска] angle=-90 axis=y
+фаска_B = translate [фаска_X] offset=[hole_in + 0.25, -chord, L - L2]
+корпус = difference [корпус, фаска_A, фаска_B]
+
+# --- шестигранник внутри круглой дырки
+гнездо = prism sides=6 radius=hex_r height=d_hex at=[0, 0, 0]
+гнездо_Y = rotate [гнездо] angle=-90 axis=x
+гнездо_A = translate [гнездо_Y] offset=[chord, -hole_in + d_round, L2]
 гнездо_X = rotate [гнездо] angle=-90 axis=y
-гнездо_B = translate [гнездо_X] offset=[R + 0.4, 0, L - L2]
+гнездо_B = translate [гнездо_X] offset=[hole_in - d_round, -chord, L - L2]
 корпус = difference [корпус, гнездо_A, гнездо_B]
 
-# --- резьба: отверстие Ø2,5 и кольцевые канавки Ø3,1 ближе к узкой части
-резьба = cylinder radius=thread_r height=2.0 at=[0, 0, 0]
-резьба_Y = rotate [резьба] angle=90 axis=x
-резьба_A = translate [резьба_Y] offset=[0, R - 4.4, L2]
+# --- узкая часть с винтовой резьбой
+резьба = cylinder radius=thread_r height=d_thread at=[0, 0, 0]
+резьба_Y = rotate [резьба] angle=-90 axis=x
+резьба_A = translate [резьба_Y] offset=[chord, -hole_in + d_round + d_hex, L2]
 резьба_X = rotate [резьба] angle=-90 axis=y
-резьба_B = translate [резьба_X] offset=[R - 4.4, 0, L - L2]
+резьба_B = translate [резьба_X] offset=[hole_in - d_round - d_hex, -chord, L - L2]
 корпус = difference [корпус, резьба_A, резьба_B]
 
-канавка = cylinder radius=groove_r height=groove_h at=[0, 0, 0]
-кан_Y = rotate [канавка] angle=90 axis=x
-кан_X = rotate [канавка] angle=-90 axis=y
-к1 = translate [кан_Y] offset=[0, R - 3.2, L2]
-к2 = translate [кан_Y] offset=[0, R - 3.6, L2]
-к3 = translate [кан_Y] offset=[0, R - 4.0, L2]
-к4 = translate [кан_X] offset=[R - 3.2, 0, L - L2]
-к5 = translate [кан_X] offset=[R - 3.6, 0, L - L2]
-к6 = translate [кан_X] offset=[R - 4.0, 0, L - L2]
-корпус = difference [корпус, к1, к2, к3, к4, к5, к6]
+# винтовая канавка резьбы — спираль, а не кольца
+виток = spring diameter=2.7 wire=0.5 turns=5 pitch=0.88
+виток_Y = rotate [виток] angle=-90 axis=x
+виток_A = translate [виток_Y] offset=[chord, -hole_in + d_round + d_hex, L2]
+виток_X = rotate [виток] angle=-90 axis=y
+виток_B = translate [виток_X] offset=[hole_in - d_round - d_hex, -chord, L - L2]
+корпус = difference [корпус, виток_A, виток_B]
 
-# --- узкий проход Ø2,2 насквозь: выходит маленьким отверстием с другой стороны
-узкий = cylinder radius=narrow_r height=24 at=[0, 0, 0]
-узкий_Y = rotate [узкий] angle=90 axis=x
-узкий_A = translate [узкий_Y] offset=[0, big, L2]
+# --- узкий выход на другой стороне
+узкий = cylinder radius=narrow_r height=d_narrow at=[0, 0, 0]
+узкий_Y = rotate [узкий] angle=-90 axis=x
+узкий_A = translate [узкий_Y] offset=[chord, -hole_in + d_round + d_hex + d_thread, L2]
 узкий_X = rotate [узкий] angle=-90 axis=y
-узкий_B = translate [узкий_X] offset=[big, 0, L - L2]
+узкий_B = translate [узкий_X] offset=[hole_in - d_round - d_hex - d_thread, -chord, L - L2]
 корпус = difference [корпус, узкий_A, узкий_B]
 
 # ------------------------------------------------------------- материалы ---
