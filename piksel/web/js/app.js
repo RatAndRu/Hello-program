@@ -429,6 +429,7 @@ function bind(){
     if(b.dataset.ex==='warrior') fetch('examples/warrior.piksel').then(r=>{ if(!r.ok) throw new Error(r.status); return r.text(); }).then(t=>{ if(t.trim().startsWith('<!DOCTYPE')) throw new Error('got html'); syncCode(t); parse(true); toast('Рыцарь загружен'); }).catch(()=>{ toast('Пример не найден'); });
     else if(b.dataset.ex==='landscape') fetch('examples/landscape.piksel').then(r=>{ if(!r.ok) throw new Error(r.status); return r.text(); }).then(t=>{ syncCode(t); parse(true); toast('Пейзаж загружен'); }).catch(()=>toast('нет файла'));
     else if(b.dataset.ex==='rem') fetch('examples/rem.piksel').then(r=>{ if(!r.ok) throw new Error(r.status); return r.text(); }).then(t=>{ syncCode(t); parse(true); toast('Рем загружена'); }).catch(()=>toast('нет файла'));
+    else if(b.dataset.ex==='rem_face') fetch('examples/rem_face.piksel').then(r=>{ if(!r.ok) throw new Error(r.status); return r.text(); }).then(t=>{ syncCode(t); parse(true); toast('Рем лицо 120 загружено'); }).catch(()=>toast('нет файла'));
     else if(b.dataset.ex==='blank') { syncCode(`размер 32x32\nпалитра pico8\n`); parse(true); }
     else toast('Скоро');
   });
