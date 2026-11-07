@@ -26,7 +26,9 @@ describe("safe world schema", () => {
     const w = createWorld(),
       s = createState(w);
     expect(validateWorld(w)).toEqual([]);
-    for (const e of w.entities.filter((e) => e.kind === "item"))
+    for (const e of w.entities.filter(
+      (e) => e.kind === "item" && (e.theme ?? w.theme) === s.theme,
+    ))
       expect(findPath(w, s, e.x, e.y).length).toBeGreaterThan(0);
     expect(findPath(w, s, 15, 5)).toEqual([]);
   });
@@ -68,6 +70,80 @@ describe("safe world schema", () => {
     ).toThrow();
   });
 });
+describe("castle location", () => {
+  it("castle objects belong to the castle and are validated there", () => {
+    const w = createWorld();
+    const castle = w.entities.filter((e) => e.theme === "castle");
+    expect(castle.length).toBeGreaterThan(8);
+    for (const e of castle) expect(validateWorld(w)).toEqual([]);
+    const s = createState(w);
+    for (const e of castle.filter((v) => v.kind !== "item"))
+      expect(interact(w, { ...s, x: e.x, y: e.y + 1 }, e).effects).toEqual([
+        { message: "Этот объект находится в другой локации." },
+      ]);
+    expect(findPath(w, s, 15, 5)).toEqual([]);
+  });
+  it("entering the castle switches location, portal works both ways", () => {
+    const w = createWorld();
+    const gate = w.entities.find((e) => e.id === "castle-gate")!;
+    const exit = w.entities.find((e) => e.id === "castle-exit")!;
+    let s = createState(w);
+    s.x = gate.x + 1;
+    s.y = gate.y;
+    s = interact(w, s, gate).state;
+    expect(s.theme).toBe("castle");
+    expect([s.x, s.y]).toEqual([9, 8]);
+    expect(canStand(w, s, 0, 1)).toBe(false);
+    expect(canStand(w, s, 9, 7)).toBe(true);
+    expect(canStand(w, createState(w), 12, 3)).toBe(false);
+    expect(canStand(w, s, 12, 3)).toBe(true);
+    const ember = w.entities.find((e) => e.id === "ember-1")!;
+    const collected = interact(
+      w,
+      { ...s, x: ember.x - 1, y: ember.y },
+      ember,
+    ).state;
+    expect(collected.inventory.ember).toBe(1);
+    s = interact(w, { ...collected, x: exit.x + 1, y: exit.y }, exit).state;
+    expect(s.theme).toBe("forest");
+    expect([s.x, s.y]).toEqual([5, 4]);
+  });
+  it("lighting the lanterns needs three embers and pays once", () => {
+    const w = createWorld();
+    const lantern = w.entities.find((e) => e.id === "lantern-1")!;
+    let s = createState(w);
+    s.theme = "castle";
+    s.x = lantern.x + 1;
+    s.y = lantern.y;
+    s = interact(w, s, lantern).state;
+    expect(s.flags["lanterns-lit"]).toBeFalsy();
+    s.inventory.ember = 3;
+    const result = interact(w, s, lantern);
+    expect(result.state.flags["lanterns-lit"]).toBe(true);
+    expect(result.state.stats.xp).toBe(15);
+    expect(result.effects.some((e) => e.openWindow === "castle-notes")).toBe(
+      true,
+    );
+    const again = interact(w, result.state, lantern);
+    expect(again.state.stats.xp).toBe(15);
+    expect(again.effects).toEqual([]);
+  });
+  it("teleport accepts a location and rejects walls in the target location", () => {
+    const w = createWorld();
+    const s = createState(w);
+    const moved = applyActions(w, s, [
+      { type: "teleport", x: 9, y: 5, theme: "castle" },
+    ]);
+    expect(moved.state.theme).toBe("castle");
+    expect([moved.state.x, moved.state.y]).toEqual([9, 5]);
+    const wall = applyActions(w, s, [
+      { type: "teleport", x: 0, y: 0, theme: "castle" },
+    ]);
+    expect(wall.state.theme).toBe("forest");
+    expect(wall.effects.length).toBe(1);
+  });
+});
+
 describe("game mechanics", () => {
   it("movement cannot cross water, trees or solid entities and never mutates input", () => {
     const w = createWorld(),

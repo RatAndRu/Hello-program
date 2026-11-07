@@ -48,6 +48,13 @@ import {
   clone,
   reconcileState,
   uid,
+  START,
+  CASTLE_START,
+  COLS,
+  ROWS,
+  themes,
+  locationNames,
+  type Theme,
   type SaveData,
   type World,
   type GameState,
@@ -247,7 +254,10 @@ export default function App() {
     if (!world || !stateRef.current) return;
     const result = interact(world, stateRef.current, e);
     apply(result);
+    const changedLocation =
+      result.state.theme !== (stateRef.current?.theme ?? world.theme);
     if (
+      !changedLocation &&
       !result.effects.some((effect) => effect.openWindow) &&
       (["npc", "enemy", "decoration"].includes(e.kind) ||
         (e.kind === "gate" && !result.state.opened.includes(e.id)))
@@ -308,6 +318,36 @@ export default function App() {
     const e = nearestInteraction(world, state);
     if (e) openEntity(e);
     else notify("Подойди к персонажу или предмету и нажми E.");
+  }
+  function travel(t: Theme) {
+    if (!world || !state || t === state.theme) return;
+    const preferred =
+      t === "castle"
+        ? CASTLE_START
+        : t === world.theme
+          ? START
+          : { x: 9, y: 6 };
+    let spot: { x: number; y: number } | null = null;
+    if (canStand(world, state, preferred.x, preferred.y, t)) spot = preferred;
+    else {
+      let best = Infinity;
+      for (let y = 1; y < ROWS - 1; y++)
+        for (let x = 1; x < COLS - 1; x++) {
+          if (!canStand(world, state, x, y, t)) continue;
+          const d = Math.abs(x - preferred.x) + Math.abs(y - preferred.y);
+          if (d < best) {
+            best = d;
+            spot = { x, y };
+          }
+        }
+    }
+    if (!spot) {
+      notify("В этой локации пока нет свободного места для героя.");
+      return;
+    }
+    walkToken.current++;
+    setGame({ ...state, theme: t, x: spot.x, y: spot.y });
+    notify(`Ты перешёл: ${locationNames[t]}.`);
   }
   useEffect(() => {
     const keydown = (e: KeyboardEvent) => {
@@ -858,6 +898,27 @@ export default function App() {
                   <div className="quick-actions-label">
                     <Sparkles size={15} />
                     <span>ТВОИ ДЕЙСТВИЯ</span>
+                    <div className="travel-tabs">
+                      <span className="travel-caption">
+                        <MapPin size={12} /> Локация
+                      </span>
+                      {themes
+                        .filter((t) =>
+                          world.entities.some(
+                            (e) => (e.theme ?? world.theme) === t,
+                          ),
+                        )
+                        .map((t) => (
+                          <button
+                            key={t}
+                            className={state.theme === t ? "active" : ""}
+                            onClick={() => travel(t)}
+                            title={`Перейти: ${locationNames[t]}`}
+                          >
+                            {locationNames[t]}
+                          </button>
+                        ))}
+                    </div>
                   </div>
                   <div className="quick-buttons">
                     <button
@@ -1601,6 +1662,14 @@ export default function App() {
                   <p>
                     В мастерской есть персонажи, предметы, характеристики,
                     задания, правила, кнопки, окна и загрузка графики.
+                  </p>
+                </article>
+                <article>
+                  <MapPin size={23} />
+                  <h3>Загляни в замок</h3>
+                  <p>
+                    Над картой есть переключатель локаций. В Замке фонарей ждут
+                    рыцари, фонарщик Тео и три тёплых огонька.
                   </p>
                 </article>
                 <article>

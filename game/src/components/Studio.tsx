@@ -46,6 +46,9 @@ import {
   spriteLabels,
   kindLabels,
   createState,
+  themes,
+  themeLabels,
+  locationNames,
 } from "../model";
 import { validateWorld } from "../engine";
 import { downloadWorld, readImage } from "../storage";
@@ -113,6 +116,8 @@ export function Studio(props: Props) {
     "buttons",
   );
   const [uploading, setUploading] = useState(false);
+  const [previewTheme, setPreviewTheme] = useState<World["theme"] | null>(null);
+  const [mapAction, setMapAction] = useState<"select" | "art">("select");
   const fileRef = useRef<HTMLInputElement>(null);
   const backgroundRef = useRef<HTMLInputElement>(null);
   const errors = validateWorld(world);
@@ -374,6 +379,7 @@ export function Studio(props: Props) {
     </div>
   );
   const entity = world.entities.find((e) => e.id === selected.entities);
+  const selectedArt = world.entities.find((e) => e.id === selected.world);
   const item = world.items.find((e) => e.id === selected.items);
   const stat = world.stats.find((e) => e.id === selected.stats);
   const quest = world.quests.find((e) => e.id === selected.quests);
@@ -508,27 +514,78 @@ export function Studio(props: Props) {
                     onChange={(e) => update({ name: e.target.value })}
                   />
                 </Field>
-                <Field label="Цветовая атмосфера">
+                <Field label="Основная локация мира">
                   <select
                     value={world.theme}
                     onChange={(e) =>
                       update({ theme: e.target.value as World["theme"] })
                     }
                   >
-                    <option value="forest">Лесное утро</option>
-                    <option value="sunset">Золотой закат</option>
-                    <option value="ocean">Прохладный берег</option>
+                    {themes.map((t) => (
+                      <option key={t} value={t}>
+                        {themeLabels[t]}
+                      </option>
+                    ))}
                   </select>
                 </Field>
               </div>
+              <div className="location-bar">
+                <span className="location-caption">
+                  <Layers size={15} /> Локации мира
+                </span>
+                <div className="location-tabs">
+                  <button
+                    className={!previewTheme ? "active" : ""}
+                    onClick={() => {
+                      setPreviewTheme(null);
+                      setMapAction("select");
+                    }}
+                  >
+                    <MapPin size={14} /> Основная · {themeLabels[world.theme]}
+                  </button>
+                  {themes
+                    .filter((t) => t !== world.theme)
+                    .map((t) => {
+                      const count = world.entities.filter(
+                        (e) => (e.theme ?? world.theme) === t,
+                      ).length;
+                      return (
+                        <button
+                          key={t}
+                          className={previewTheme === t ? "active" : ""}
+                          onClick={() => {
+                            setPreviewTheme(t);
+                            setMapAction("select");
+                          }}
+                        >
+                          {themeLabels[t]}
+                          {count ? <small>{count}</small> : null}
+                        </button>
+                      );
+                    })}
+                </div>
+              </div>
               <GameMap
                 world={world}
-                state={createState(world)}
+                state={{
+                  ...createState(world),
+                  theme: previewTheme ?? world.theme,
+                }}
                 editor
+                theme={previewTheme ?? world.theme}
+                paintMode={mapAction === "art"}
                 onTile={(x, y) => {
-                  const s = createState(world);
-                  s.x = x;
-                  s.y = y;
+                  if (mapAction === "art" && selectedArt) {
+                    update({
+                      entities: world.entities.map((e) =>
+                        e.id === selectedArt.id ? { ...e, x, y } : e,
+                      ),
+                    });
+                    setMapAction("select");
+                    setSelected((s) => ({ ...s, world: "" }));
+                    props.notify(`Клетка оформления перенесена на ${x}, ${y}.`);
+                    return;
+                  }
                   downloadPosition(x, y);
                 }}
                 onEntity={(id) => {
@@ -540,9 +597,146 @@ export function Studio(props: Props) {
               <div className="info-strip">
                 <MousePointer2 size={17} />
                 <span>
-                  Чтобы изменить карту, выбери объект в разделе «Персонажи и
-                  объекты» и нажми на новую клетку.
+                  Карта показывает выбранную локацию. Создай объект в разделе
+                  «Персонажи и объекты», укажи ему локацию и нажми на клетку,
+                  чтобы разместить.
                 </span>
+              </div>
+              <div className="art-panel">
+                <div className="subsection-title">
+                  <ImagePlus size={17} /> Клетка с картинкой
+                </div>
+                <p className="muted small">
+                  Загрузи картинку в разделе «Графика» и назначь её клетке — так
+                  появляются свои полы, ковры, сцены и куски мира больше одного
+                  тайла.
+                </p>
+                <div className="art-picker">
+                  {world.entities
+                    .filter(
+                      (e) =>
+                        (e.theme ?? world.theme) ===
+                        (previewTheme ?? world.theme),
+                    )
+                    .map((e) => (
+                      <button
+                        key={e.id}
+                        className={`art-chip ${selectedArt?.id === e.id ? "active" : ""}`}
+                        onClick={() => {
+                          setSelected((s) => ({ ...s, world: e.id }));
+                          setMapAction("art");
+                          props.notify(
+                            "Теперь нажми на клетку карты, куда поставить картинку.",
+                          );
+                        }}
+                      >
+                        {e.backgroundId && asset(e.backgroundId) ? (
+                          <img src={asset(e.backgroundId)} alt="" />
+                        ) : (
+                          <Sprite name={e.sprite} src={asset(e.assetId)} />
+                        )}
+                        <span>{e.name}</span>
+                        <small>
+                          {e.backgroundId ? "картинка" : "нет картинки"}
+                        </small>
+                      </button>
+                    ))}
+                  <button
+                    className="art-chip add"
+                    onClick={() => {
+                      const id = uid("art");
+                      update({
+                        entities: [
+                          ...world.entities,
+                          {
+                            id,
+                            name: "Оформление клетки",
+                            kind: "decoration",
+                            x: 9,
+                            y: 5,
+                            sprite: "flower",
+                            solid: false,
+                            dialogue: "",
+                            stats: {},
+                            theme: previewTheme ?? world.theme,
+                          },
+                        ],
+                      });
+                      setSelected((s) => ({ ...s, world: id }));
+                      props.notify(
+                        "Клетка создания добавлена ниже. Выбери ей картинку.",
+                      );
+                    }}
+                  >
+                    <Plus size={18} /> Новая клетка
+                  </button>
+                </div>
+                {selectedArt && (
+                  <div className="form-grid">
+                    <Field label="Название клетки">
+                      <input
+                        value={selectedArt.name}
+                        maxLength={80}
+                        onChange={(e) =>
+                          update({
+                            entities: world.entities.map((v) =>
+                              v.id === selectedArt.id
+                                ? { ...v, name: e.target.value }
+                                : v,
+                            ),
+                          })
+                        }
+                      />
+                    </Field>
+                    <AssetSelect
+                      world={world}
+                      label="Картинка клетки"
+                      value={selectedArt.backgroundId}
+                      onChange={(backgroundId) =>
+                        update({
+                          entities: world.entities.map((v) =>
+                            v.id === selectedArt.id
+                              ? { ...v, backgroundId }
+                              : v,
+                          ),
+                        })
+                      }
+                    />
+                    <Field label="Локация клетки">
+                      <select
+                        value={selectedArt.theme ?? world.theme}
+                        onChange={(e) =>
+                          update({
+                            entities: world.entities.map((v) =>
+                              v.id === selectedArt.id
+                                ? {
+                                    ...v,
+                                    theme: e.target.value as World["theme"],
+                                  }
+                                : v,
+                            ),
+                          })
+                        }
+                      >
+                        {themes.map((t) => (
+                          <option key={t} value={t}>
+                            {themeLabels[t]}
+                          </option>
+                        ))}
+                      </select>
+                    </Field>
+                    <button
+                      className="button small secondary"
+                      onClick={() => {
+                        setMapAction("art");
+                        props.notify("Нажми на клетку карты.");
+                      }}
+                    >
+                      <MapPin size={15} /> Поставить на карту · {selectedArt.x},{" "}
+                      {selectedArt.y}
+                    </button>
+                  </div>
+                )}
               </div>
               <div className="subsection-title">
                 <Palette size={17} /> Оформление героя
@@ -691,6 +885,30 @@ export function Studio(props: Props) {
                           world={world}
                           value={entity.assetId}
                           onChange={(assetId) => patchEntity({ assetId })}
+                        />
+                        <Field label="Локация объекта">
+                          <select
+                            value={entity.theme ?? world.theme}
+                            onChange={(e) =>
+                              patchEntity({
+                                theme: e.target.value as World["theme"],
+                              })
+                            }
+                          >
+                            {themes.map((t) => (
+                              <option key={t} value={t}>
+                                {themeLabels[t]}
+                              </option>
+                            ))}
+                          </select>
+                        </Field>
+                        <AssetSelect
+                          world={world}
+                          label="Картинка клетки под объектом"
+                          value={entity.backgroundId}
+                          onChange={(backgroundId) =>
+                            patchEntity({ backgroundId })
+                          }
                         />
                       </div>
                       <button

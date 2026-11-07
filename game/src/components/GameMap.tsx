@@ -1,6 +1,7 @@
 import { useState, type CSSProperties } from "react";
 import {
   Sun,
+  Moon,
   MousePointer2,
   Move,
   Maximize2,
@@ -9,7 +10,17 @@ import {
   MessageCircle,
   LockKeyhole,
 } from "lucide-react";
-import { COLS, ROWS, tileAt, type World, type GameState } from "../model";
+import {
+  COLS,
+  ROWS,
+  tileAt,
+  BLOCKED_TILES,
+  locationNames,
+  themes,
+  type World,
+  type GameState,
+  type Theme,
+} from "../model";
 import { Sprite } from "./Sprite";
 
 interface Props {
@@ -20,6 +31,9 @@ interface Props {
   editor?: boolean;
   selectedId?: string;
   placing?: boolean;
+  theme?: Theme;
+  /** While painting a tile picture, objects must not swallow map clicks. */
+  paintMode?: boolean;
 }
 export function GameMap({
   world,
@@ -29,8 +43,18 @@ export function GameMap({
   editor = false,
   selectedId,
   placing = false,
+  theme: themeProp,
+  paintMode = false,
 }: Props) {
   const [expanded, setExpanded] = useState(false);
+  const theme: Theme = themeProp ?? state.theme ?? world.theme ?? "forest";
+  const inLocation = (id: string) => {
+    const e = world.entities.find((v) => v.id === id);
+    return (e?.theme ?? world.theme) === theme;
+  };
+  const artTiles = world.entities.filter(
+    (e) => e.backgroundId && (e.theme ?? world.theme) === theme,
+  );
   const asset = (id?: string) => world.assets.find((a) => a.id === id)?.data;
   const style = {
     "--cols": COLS,
@@ -47,14 +71,24 @@ export function GameMap({
       <div className="map-heading">
         <div className="map-location">
           <span className="live-dot" />
-          <span>{editor ? "Редактор карты" : "Тихая роща"}</span>
+          <span>{editor ? "Редактор карты" : locationNames[theme]}</span>
           <span className="map-chapter">
             {editor ? "Выбери объект и клетку" : "Остров искр · Глава I"}
           </span>
         </div>
         <div className="map-weather">
-          <Sun size={15} />
-          <span>Дневное время</span>
+          {theme === "night" || theme === "castle" ? (
+            <Moon size={15} />
+          ) : (
+            <Sun size={15} />
+          )}
+          <span>
+            {theme === "night"
+              ? "Ночная тишина"
+              : theme === "castle"
+                ? "Свет фонарей"
+                : "Дневное время"}
+          </span>
           <button
             className="icon-button"
             onClick={() => setExpanded(!expanded)}
@@ -65,7 +99,7 @@ export function GameMap({
         </div>
       </div>
       <div
-        className={`map-viewport theme-${world.theme} ${world.backgroundId ? "has-background" : ""} ${placing ? "placing" : ""}`}
+        className={`map-viewport theme-${theme} ${world.backgroundId ? "has-background" : ""} ${placing ? "placing" : ""} ${paintMode ? "paint-mode" : ""}`}
         style={style}
       >
         <div
@@ -78,18 +112,19 @@ export function GameMap({
           {Array.from({ length: COLS * ROWS }, (_, i) => {
             const x = i % COLS,
               y = Math.floor(i / COLS),
-              tile = tileAt(x, y);
+              tile = tileAt(x, y, theme);
             return (
               <button
                 key={i}
                 className={`tile tile-${tile} ${(x + y) % 3 === 0 ? "tile-variant" : ""}`}
                 tabIndex={editor && !placing ? -1 : 0}
-                aria-label={`Клетка ${x}, ${y}${tile === "tree" ? ": дерево" : tile === "water" ? ": река" : ""}`}
+                aria-label={`Клетка ${x}, ${y}${tile === "wall" ? ": стена" : tile === "tree" ? ": дерево" : tile === "water" ? ": река" : tile === "stone" ? ": камень" : ""}`}
                 onClick={() => onTile(x, y)}
               >
                 {tile === "tree" && (
                   <Sprite name="tree" className="terrain-tree" />
                 )}
+                {tile === "wall" && <span className="castle-wall" />}
                 {tile === "grass" && (x * 3 + y) % 4 === 0 && (
                   <span className="grass-tuft" />
                 )}
@@ -102,18 +137,46 @@ export function GameMap({
                 )}
                 {tile === "water" && <span className="water-ripple" />}
                 {tile === "bridge" && <span className="bridge-planks" />}
+                {tile === "stone" && <span className="stone-seams" />}
               </button>
             );
           })}
         </div>
         <div className="scenery-layer" aria-hidden="true">
-          <div className="pond-stones stones-one" />
-          <div className="pond-stones stones-two" />
-          <div className="map-butterfly butterfly-one">✦</div>
-          <div className="map-butterfly butterfly-two">✦</div>
+          {theme === "castle" || theme === "night" ? (
+            <>
+              <div className="castle-haze" />
+              <div className="lantern-bloom bloom-one" />
+              <div className="lantern-bloom bloom-two" />
+              <div className="lantern-bloom bloom-three" />
+            </>
+          ) : (
+            <>
+              <div className="pond-stones stones-one" />
+              <div className="pond-stones stones-two" />
+              <div className="map-butterfly butterfly-one">✦</div>
+              <div className="map-butterfly butterfly-two">✦</div>
+            </>
+          )}
         </div>
+        {artTiles.map((e) => {
+          const art = asset(e.backgroundId);
+          return art ? (
+            <div
+              key={`art-${e.id}`}
+              className="map-art-tile"
+              style={{
+                left: `${(e.x / COLS) * 100}%`,
+                top: `${(e.y / ROWS) * 100}%`,
+                width: `${100 / COLS}%`,
+                height: `${100 / ROWS}%`,
+                backgroundImage: `url("${art}")`,
+              }}
+            />
+          ) : null;
+        })}
         {world.entities
-          .filter((e) => !state.removed.includes(e.id))
+          .filter((e) => !state.removed.includes(e.id) && inLocation(e.id))
           .map((e) => (
             <button
               key={e.id}
@@ -172,7 +235,13 @@ export function GameMap({
         </div>
         <div className="map-corner-label">
           <Sparkles size={13} />
-          <span>{editor ? "Мир возможностей" : "Твоё приключение"}</span>
+          <span>
+            {editor
+              ? "Мир возможностей"
+              : themes.includes(theme)
+                ? `Локация: ${locationNames[theme]}`
+                : "Твоё приключение"}
+          </span>
         </div>
         {placing && (
           <div className="placement-banner">

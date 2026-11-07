@@ -293,3 +293,99 @@ test("invalid import is rejected without changing the game", async ({
     page.locator('.map-entity[aria-label="Садовник Мир"]'),
   ).toBeVisible();
 });
+
+test("castle location has lanterns, knights and works through the map tab", async ({
+  page,
+}) => {
+  await page
+    .locator(".travel-tabs")
+    .getByRole("button", { name: "Замок фонарей", exact: true })
+    .click();
+  await expect(page.locator(".map-location")).toContainText("Замок фонарей");
+  await expect(page.locator(".map-viewport")).toHaveClass(/theme-castle/);
+  await expect(
+    page.locator('.map-entity[aria-label="Рыцарь Ивар"]'),
+  ).toBeVisible();
+  await expect(
+    page.locator('.map-entity[aria-label="Фонарь у ворот"]'),
+  ).toBeVisible();
+  await expect(
+    page.locator('.map-entity[aria-label="Садовник Мир"]'),
+  ).toHaveCount(0);
+  await page.locator('.map-entity[aria-label="Тёплый огонёк"]').first().click();
+  await page
+    .locator(".travel-tabs")
+    .getByRole("button", { name: "Тихая роща", exact: true })
+    .click();
+  await expect(page.locator(".map-location")).toContainText("Тихая роща");
+  await expect(
+    page.locator('.map-entity[aria-label="Садовник Мир"]'),
+  ).toBeVisible();
+  await page
+    .locator(".travel-tabs")
+    .getByRole("button", { name: "Замок фонарей", exact: true })
+    .click();
+  await page
+    .locator(".quick-buttons")
+    .getByRole("button", { name: "Замок фонарей", exact: true })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText("Фонарщик Тео");
+  await page.getByRole("button", { name: "Закрыть окно", exact: true }).click();
+  await expect(page.locator(".save-status")).toHaveText("Сохранено в браузере");
+  await page.reload();
+  await expect(page.locator(".map-location")).toContainText("Замок фонарей");
+  await expect(
+    page.locator('.map-entity[aria-label="Рыцарь Ивар"]'),
+  ).toBeVisible();
+});
+
+test("studio switches locations and paints a picture on a map tile", async ({
+  page,
+}) => {
+  await page.getByRole("button", { name: "Открыть мастерскую" }).click();
+  await page
+    .locator(".studio-nav")
+    .getByRole("button", { name: "Графика", exact: true })
+    .click();
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl2nzsAAAAASUVORK5CYII=",
+    "base64",
+  );
+  await page.locator("input[type=file][multiple]").setInputFiles({
+    name: "castle-floor.png",
+    mimeType: "image/png",
+    buffer: png,
+  });
+  await expect(page.locator(".asset-card")).toHaveCount(1);
+  await page
+    .locator(".studio-nav")
+    .getByRole("button", { name: "Мир и карта", exact: true })
+    .click();
+  await expect(page.locator(".location-tabs")).toBeVisible();
+  await page
+    .locator(".location-tabs button", { hasText: "Каменный двор" })
+    .click();
+  await expect(
+    page.locator('.map-entity[aria-label="Рыцарь Вела"]'),
+  ).toBeVisible();
+  await expect(
+    page.locator('.map-entity[aria-label="Садовник Мир"]'),
+  ).toHaveCount(0);
+  await page.getByRole("button", { name: "Новая клетка", exact: true }).click();
+  await page.getByLabel("Название клетки").fill("Каменная сцена");
+  await page
+    .locator(".art-picker")
+    .getByRole("button", { name: /Каменная сцена/ })
+    .click();
+  await page
+    .getByLabel("Картинка клетки", { exact: true })
+    .selectOption({ label: "castle-floor.png" });
+  await page.getByRole("button", { name: /^Клетка 8, 6/ }).click();
+  await expect(page.locator(".map-art-tile")).toHaveCount(1);
+  await expect(page.locator(".map-art-tile")).toHaveCSS(
+    "background-image",
+    /^url\("data:image\/webp/,
+  );
+  await page.getByRole("button", { name: "Опубликовать в мире" }).click();
+  await expect(page.locator(".world-version")).toHaveText("v2");
+});

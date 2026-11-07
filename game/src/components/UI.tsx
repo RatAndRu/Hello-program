@@ -25,7 +25,7 @@ import {
   Gift,
 } from "lucide-react";
 import type { World, Action, Condition, StatDef, CustomButton } from "../model";
-import { uid } from "../model";
+import { uid, themes, themeLabels } from "../model";
 
 export const statIcons = {
   heart: Heart,
@@ -314,7 +314,9 @@ export function ActionEditor({
                               }
                             : type === "teleport"
                               ? { type, x: 4, y: 7 }
-                              : { type: "message", text: "" };
+                              : type === "location"
+                                ? { type, theme: world.theme }
+                                : { type: "message", text: "" };
                 update(i, next);
               }}
             >
@@ -325,6 +327,7 @@ export function ActionEditor({
               <option value="quest">Изменить задание</option>
               <option value="flag">Запомнить событие</option>
               <option value="teleport">Переместить героя</option>
+              <option value="location">Сменить локацию</option>
             </select>
             {a.type === "message" && (
               <input
@@ -458,6 +461,26 @@ export function ActionEditor({
             )}
             {a.type === "teleport" && (
               <div className="inline-fields">
+                <Field label="Локация">
+                  <select
+                    aria-label="Локация перемещения"
+                    value={a.theme ?? ""}
+                    onChange={(e) =>
+                      update(i, {
+                        ...a,
+                        theme: (e.target.value || undefined) as
+                          World["theme"] | undefined,
+                      })
+                    }
+                  >
+                    <option value="">Текущая локация</option>
+                    {themes.map((t) => (
+                      <option key={t} value={t}>
+                        {themeLabels[t]}
+                      </option>
+                    ))}
+                  </select>
+                </Field>
                 <Field label="X">
                   <NumberInput
                     value={a.x}
@@ -473,6 +496,28 @@ export function ActionEditor({
                     max={10}
                     onChange={(y) => update(i, { ...a, y })}
                   />
+                </Field>
+              </div>
+            )}
+            {a.type === "location" && (
+              <div className="inline-fields">
+                <Field label="Новая локация">
+                  <select
+                    aria-label="Новая локация"
+                    value={a.theme}
+                    onChange={(e) =>
+                      update(i, {
+                        ...a,
+                        theme: e.target.value as World["theme"],
+                      })
+                    }
+                  >
+                    {themes.map((t) => (
+                      <option key={t} value={t}>
+                        {themeLabels[t]}
+                      </option>
+                    ))}
+                  </select>
                 </Field>
               </div>
             )}

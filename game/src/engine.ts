@@ -4,12 +4,15 @@ import {
   COLS,
   ROWS,
   tileAt,
+  themes,
+  BLOCKED_TILES,
   type World,
   type GameState,
   type Action,
   type Condition,
   type Entity,
   type Quest,
+  type Theme,
 } from "./model";
 
 export interface Effect {
@@ -96,19 +99,24 @@ export function applyActions(
       case "flag":
         s.flags[a.flag] = a.value;
         break;
+      case "location":
+        s.theme = a.theme;
+        break;
       case "quest":
         if (world.quests.some((q) => q.id === a.quest))
           s.quests[a.quest] = a.status;
         break;
       case "teleport": {
         const x = Math.round(a.x),
-          y = Math.round(a.y);
+          y = Math.round(a.y),
+          targetTheme = a.theme ?? s.theme;
         const blocked = world.entities.some(
           (e) =>
             e.id !== "hero" &&
             e.solid &&
             e.x === x &&
             e.y === y &&
+            (e.theme ?? world.theme) === targetTheme &&
             !s.removed.includes(e.id) &&
             !s.opened.includes(e.id),
         );
@@ -117,11 +125,12 @@ export function applyActions(
           x < COLS - 1 &&
           y >= 1 &&
           y < ROWS - 1 &&
-          !["water", "tree"].includes(tileAt(x, y)) &&
+          !BLOCKED_TILES.includes(tileAt(x, y, targetTheme)) &&
           !blocked
         ) {
           s.x = x;
           s.y = y;
+          s.theme = targetTheme;
         } else
           effects.push({
             message: "Точка перемещения недоступна. Выбери свободную клетку.",
@@ -160,23 +169,36 @@ export function runRules(
   }
   return { state: s, effects, changed };
 }
+export function entityTheme(world: World, e: Entity): Theme {
+  return e.theme ?? world.theme;
+}
+export function entitiesAt(world: World, s: GameState, theme: Theme): Entity[] {
+  return world.entities.filter(
+    (e) =>
+      entityTheme(world, e) === theme &&
+      !s.removed.includes(e.id) &&
+      !s.opened.includes(e.id),
+  );
+}
 export function canStand(
   world: World,
   s: GameState,
   x: number,
   y: number,
+  theme: Theme = s.theme ?? world.theme,
 ): boolean {
   if (
     x < 1 ||
     y < 1 ||
     x >= COLS - 1 ||
     y >= ROWS - 1 ||
-    ["water", "tree"].includes(tileAt(x, y))
+    BLOCKED_TILES.includes(tileAt(x, y, theme))
   )
     return false;
   return !world.entities.some(
     (e) =>
       e.solid &&
+      entityTheme(world, e) === theme &&
       e.x === x &&
       e.y === y &&
       !s.removed.includes(e.id) &&
@@ -219,9 +241,14 @@ export function move(
   s.x = x;
   s.y = y;
   s.steps++;
+  const theme = s.theme ?? world.theme;
   const item = world.entities.find(
     (e) =>
-      e.kind === "item" && e.x === x && e.y === y && !s.removed.includes(e.id),
+      e.kind === "item" &&
+      entityTheme(world, e) === theme &&
+      e.x === x &&
+      e.y === y &&
+      !s.removed.includes(e.id),
   );
   if (item) return collect(world, s, item);
   return { state: s, effects: [], changed: true };
@@ -259,10 +286,12 @@ export function nearestInteraction(
   world: World,
   s: GameState,
 ): Entity | undefined {
+  const theme = s.theme ?? world.theme;
   return world.entities
     .filter(
       (e) =>
         !s.removed.includes(e.id) &&
+        entityTheme(world, e) === theme &&
         Math.abs(e.x - s.x) + Math.abs(e.y - s.y) <= 1,
     )
     .sort(
@@ -298,6 +327,12 @@ export function interact(world: World, state: GameState, e: Entity): Result {
   let s = clone(state);
   const effects: Effect[] = [];
   if (s.removed.includes(e.id)) return { state, effects, changed: false };
+  if (entityTheme(world, e) !== (s.theme ?? world.theme))
+    return {
+      state,
+      effects: [{ message: "Этот объект находится в другой локации." }],
+      changed: false,
+    };
   if (Math.abs(e.x - s.x) + Math.abs(e.y - s.y) > 1)
     return {
       state,
@@ -446,7 +481,7 @@ function validateWorldDetails(w: World): string[] {
   if (
     !Number.isInteger(w.revision) ||
     w.revision < 1 ||
-    !["forest", "sunset", "ocean"].includes(w.theme) ||
+    !themes.includes(w.theme) ||
     !spriteNames.includes(w.heroSprite)
   )
     errors.push("Некорректные версия, тема или графика героя.");
@@ -504,11 +539,15 @@ function validateWorldDetails(w: World): string[] {
       !Number.isInteger(e.y) ||
       !num(e.x, 1, COLS - 2) ||
       !num(e.y, 1, ROWS - 2) ||
-      ["water", "tree"].includes(tileAt(e.x, e.y))
+      BLOCKED_TILES.includes(tileAt(e.x, e.y, e.theme || w.theme))
     )
       errors.push(`Объект «${e.name}»: неверное имя или позиция.`);
     if (e.assetId && !has(w.assets, e.assetId))
       errors.push(`Изображение объекта «${e.name}» не найдено.`);
+    if (e.theme && !themes.includes(e.theme))
+      errors.push(`Неизвестная локация у объекта «${e.name}».`);
+    if (e.backgroundId && !has(w.assets, e.backgroundId))
+      errors.push(`Фон клетки объекта «${e.name}» не найден.`);
     if (e.kind === "item" && !has(w.items, e.itemId))
       errors.push(`У объекта «${e.name}» не выбран предмет.`);
     if (e.kind === "npc" && e.questId && !has(w.quests, e.questId))
@@ -606,9 +645,14 @@ function validateWorldDetails(w: World): string[] {
           !Number.isInteger(a.x) ||
           !Number.isInteger(a.y) ||
           !num(a.x, 1, COLS - 2) ||
-          !num(a.y, 1, ROWS - 2)
+          !num(a.y, 1, ROWS - 2) ||
+          (a.theme !== undefined && !themes.includes(a.theme))
         )
           errors.push("Некорректная точка перемещения.");
+        break;
+      case "location":
+        if (!themes.includes(a.theme))
+          errors.push("Неизвестная локация в действии.");
         break;
       default:
         errors.push("Неизвестный тип действия.");

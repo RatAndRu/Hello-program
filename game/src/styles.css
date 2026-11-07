@@ -727,6 +727,134 @@ kbd {
 .theme-ocean .tile-layer {
   filter: hue-rotate(22deg) saturate(0.8);
 }
+.map-viewport.theme-castle {
+  --grass: #a9a79a;
+  --grass2: #b0aea1;
+  background: #9d9a8b;
+}
+.map-viewport.theme-night {
+  --grass: #6f7f6c;
+  --grass2: #73836f;
+  background: #5d6f63;
+}
+.theme-castle .tile-layer {
+  filter: saturate(0.65) contrast(0.96);
+}
+.theme-night .tile-layer {
+  filter: brightness(0.62) saturate(0.7) hue-rotate(-12deg);
+}
+.theme-night:after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 60%, #ffe9a51f, transparent 45%),
+    linear-gradient(#1d3a4a55, #122b2a66);
+}
+.castle-haze {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse at 50% 40%, #f7e3ab24, transparent 62%);
+}
+.lantern-bloom {
+  position: absolute;
+  width: 30%;
+  height: 30%;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffd98a45, #ffd98a00 70%);
+  animation: lantern-glow 5s ease-in-out infinite alternate;
+}
+.bloom-one {
+  left: 22%;
+  top: 12%;
+}
+.bloom-two {
+  left: 48%;
+  top: 38%;
+  animation-delay: 1.4s;
+}
+.bloom-three {
+  left: 58%;
+  top: 66%;
+  animation-delay: 2.6s;
+}
+@keyframes lantern-glow {
+  from {
+    opacity: 0.5;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1.06);
+  }
+}
+.tile-wall {
+  background: #7f838c;
+  box-shadow:
+    inset 0 -2px #5d616b,
+    inset 0 2px #9aa0a9;
+}
+.tile-wall.tile-variant {
+  background: #7a7e87;
+}
+.castle-wall {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(#9aa0a9 2px, transparent 2px) 0 0 / 50% 50% no-repeat,
+    repeating-linear-gradient(
+      90deg,
+      #6d717b 0 6px,
+      #878c95 6px 12px,
+      #6d717b 12px 18px
+    );
+  box-shadow:
+    inset 0 3px #a5abb2,
+    inset 0 -4px #5b5f68;
+}
+.tile-wall:after {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 22%;
+  background: repeating-linear-gradient(
+    90deg,
+    #9aa0a9 0 60%,
+    transparent 60% 100%
+  );
+  background-size: 25% 100%;
+  box-shadow: 0 2px 0 #5b5f6844;
+}
+.tile-stone {
+  background: #b3b0a2;
+  box-shadow:
+    inset 1px 1px #c2bfb0,
+    inset -1px -1px #9d9a8b;
+}
+.tile-stone.tile-variant {
+  background: #aca99b;
+}
+.stone-seams {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(#8f8c7e22 1px, transparent 1px) 0 46% / 100% 100% no-repeat,
+    linear-gradient(90deg, #8f8c7e22 1px, transparent 1px) 42% 0 / 100% 100%
+      no-repeat;
+}
+.map-art-tile {
+  position: absolute;
+  z-index: 3;
+  background-size: 100% 100%;
+  background-repeat: no-repeat;
+  pointer-events: none;
+  image-rendering: pixelated;
+}
 .tile-layer {
   position: absolute;
   inset: 0;
@@ -912,6 +1040,10 @@ kbd {
 .entity-chest > .sprite {
   width: 100%;
   height: 105%;
+}
+.entity-decoration:has(svg[data-sprite="castle"]) > .sprite {
+  width: 118%;
+  height: 140%;
 }
 .entity-gate > .sprite {
   width: 124%;
@@ -1138,6 +1270,145 @@ kbd {
 }
 .quick-actions-label svg {
   color: #a7ad91;
+}
+.quick-actions-label {
+  flex-wrap: wrap;
+}
+.travel-tabs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+  flex-wrap: wrap;
+}
+.travel-caption {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: #a8af9b;
+  letter-spacing: 0.4px;
+}
+.travel-tabs button {
+  font-size: 8px;
+  letter-spacing: 0;
+  text-transform: none;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid #e0e5d6;
+  background: #fffefa;
+  color: #7c8770;
+  font-weight: 600;
+}
+.travel-tabs button:hover {
+  background: #eef3e6;
+  border-color: #c3d2b4;
+}
+.travel-tabs button.active {
+  background: #6f8a5c;
+  border-color: #6f8a5c;
+  color: #fdfcee;
+}
+.location-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 4px 0 12px;
+}
+.location-caption {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  color: #8d987d;
+  text-transform: uppercase;
+}
+.location-tabs {
+  display: flex;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+.location-tabs button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 11px;
+  border-radius: 7px;
+  border: 1px solid #e1e6d7;
+  background: #fffefa;
+  font-size: 10px;
+  color: #6f7b63;
+  font-weight: 500;
+}
+.location-tabs button:hover {
+  background: #eff4e7;
+  border-color: #c8d5ba;
+}
+.location-tabs button.active {
+  border-color: #93a982;
+  background: #ecf2e2;
+  color: #55663f;
+  box-shadow: inset 0 0 0 1px #93a98255;
+}
+.location-tabs small {
+  background: #dde7cf;
+  color: #6d7f55;
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 8px;
+}
+.art-panel {
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #e4e8da;
+  border-radius: 9px;
+  background: #fbfcf6;
+}
+.art-picker {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 10px 0 12px;
+}
+.art-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 96px;
+  padding: 8px 6px;
+  border-radius: 8px;
+  border: 1px solid #e3e8d9;
+  background: #fffefa;
+  color: #6f7b63;
+  font-size: 9px;
+}
+.art-chip img,
+.art-chip .sprite {
+  width: 40px;
+  height: 40px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+.art-chip span {
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+}
+.art-chip small {
+  font-size: 7px;
+  color: #9aa38c;
+}
+.art-chip.active {
+  border-color: #8ea27c;
+  box-shadow: inset 0 0 0 1px #8ea27c66;
+  background: #eff4e7;
+}
+.art-chip.add {
+  border-style: dashed;
+  justify-content: center;
+  color: #96a086;
 }
 .quick-buttons {
   display: flex;
@@ -2122,6 +2393,14 @@ kbd {
 }
 .placing .tile {
   cursor: crosshair;
+}
+.paint-mode .map-entity,
+.paint-mode .map-art-tile {
+  pointer-events: none;
+}
+.paint-mode .tile {
+  cursor: copy;
+  box-shadow: inset 0 0 0 1px #fff3bd66;
 }
 .placing .tile:hover {
   box-shadow: inset 0 0 0 2px #fff6b5;

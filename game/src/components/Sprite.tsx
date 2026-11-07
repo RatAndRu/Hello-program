@@ -21,6 +21,7 @@ export function Sprite({
   return (
     <svg
       className={`sprite ${className}`}
+      data-sprite={name}
       viewBox="0 0 64 64"
       fill="none"
       aria-hidden="true"
@@ -188,6 +189,173 @@ export function Sprite({
           <path d="M9 14h43v23H9z" fill="#bd955d" />
           <path d="M12 17h37v4H12z" fill="#d9b779" />
           <path d="M18 25h25v3H18zm19-4h6v11h-6z" fill="#806847" />
+        </>
+      )}
+      {name === "knight" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="57"
+            rx="17"
+            ry="5"
+            fill="#173c32"
+            opacity=".22"
+          />
+          <path d="M21 44h9v12H19v-4h2zm13 0h9v8h2v4H34z" fill="#4b4f5c" />
+          <path d="M19 26h26v20H19z" fill="#7b8797" />
+          <path d="M23 28h18v6H23z" fill="#a9b5c2" />
+          <path d="M15 29h7v15h-7zm27 0h7v15h-7z" fill="#9aa6b3" />
+          <path d="M22 12h20v16H22z" fill="#b9c3cc" />
+          <path d="M25 6h14v7H25z" fill="#8f9caa" />
+          <path d="M27 17h3v4h-3zm8 0h3v4h-3z" fill="#2d3a44" />
+          <path d="M22 22h20v4H22z" fill="#5d6a76" />
+          <path d="M30 24h4v14h-4z" fill="#c9d3d8" />
+          <path d="M22 38h20v5H22z" fill="#6f7c88" />
+          <path d="M48 22h3v26h-3z" fill="#8a6a4a" />
+          <path d="M46 18h7v6h-7z" fill="#aeb8c2" />
+        </>
+      )}
+      {name === "knight-gold" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="57"
+            rx="17"
+            ry="5"
+            fill="#173c32"
+            opacity=".22"
+          />
+          <path d="M21 44h9v12H19v-4h2zm13 0h9v8h2v4H34z" fill="#5b4a2f" />
+          <path d="M19 26h26v20H19z" fill="#c8a05a" />
+          <path d="M23 28h18v6H23z" fill="#ecd28b" />
+          <path d="M15 29h7v15h-7zm27 0h7v15h-7z" fill="#d8b56f" />
+          <path d="M22 12h20v16H22z" fill="#e8cf92" />
+          <path d="M25 6h14v7H25z" fill="#c09c55" />
+          <path d="M27 17h3v4h-3zm8 0h3v4h-3z" fill="#4a3a24" />
+          <path d="M22 22h20v4H22z" fill="#a9843f" />
+          <path d="M30 24h4v14h-4z" fill="#f4e6b8" />
+          <path d="M22 38h20v5H22z" fill="#96743a" />
+          <path d="M16 8h32v5H16z" fill="#d6b166" />
+          <path d="M20 4h5v6h-5zm19 0h5v6h-5z" fill="#b08f4c" />
+        </>
+      )}
+      {name === "knight-dark" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="57"
+            rx="18"
+            ry="5"
+            fill="#1d2a2c"
+            opacity=".28"
+          />
+          <path d="M20 44h10v12H18v-4h2zm14 0h10v8h2v4H34z" fill="#2b2a33" />
+          <path d="M18 25h28v21H18z" fill="#3f414f" />
+          <path d="M22 27h20v6H22z" fill="#5b5f70" />
+          <path d="M14 28h7v16h-7zm29 0h7v16h-7z" fill="#4a4c5b" />
+          <path d="M21 11h22v17H21z" fill="#4d5060" />
+          <path d="M23 5h18v8H23z" fill="#33353f" />
+          <path d="M18 8h10v4H18zm22 0h10v4H40z" fill="#6b5a8c" />
+          <path d="M26 17h4v4h-4zm9 0h4v4h-4z" fill="#c4789a" />
+          <path d="M30 24h4v15h-4z" fill="#6f6f86" />
+          <path d="M21 38h22v5H21z" fill="#2d2d38" />
+          <path d="M48 20h3v28h-3z" fill="#3a3547" />
+          <path d="M45 16h9v6h-9z" fill="#6f5d93" />
+        </>
+      )}
+      {name === "lantern" && (
+        <>
+          <ellipse cx="32" cy="57" rx="12" ry="4" fill="#234939" opacity=".2" />
+          <path d="M29 40h6v18h-6z" fill="#5b5148" />
+          <path d="M22 46h20v4H22z" fill="#6f6255" />
+          <path d="M21 18h22v21H21z" fill="#f0c968" opacity=".22" />
+          <path d="M23 14h18v4H23z" fill="#6f6255" />
+          <path d="M25 18h14v19H25z" fill="#f7dd9a" />
+          <path d="M28 21h8v13h-8z" fill="#fff6cf" />
+          <path d="M30 24h4v7h-4z" fill="#f6b95f" />
+          <path d="M23 37h18v4H23z" fill="#5b5148" />
+          <path d="M30 4h4v10h-4z" fill="#6f6255" />
+          <path d="M25 8h14v3H25z" fill="#877565" />
+          <path d="M18 30h3v6h-3zm25 0h3v6h-3z" fill="#f3cd7c" opacity=".55" />
+        </>
+      )}
+      {name === "castle" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="58"
+            rx="27"
+            ry="5"
+            fill="#1d2a2c"
+            opacity=".22"
+          />
+          <path d="M6 56h52v6H6z" fill="#5e6068" />
+          <path d="M10 26h44v30H10z" fill="#7d8089" />
+          <path d="M10 26h44v5H10z" fill="#9a9da6" />
+          <path
+            d="M14 14h8v12h-8zm18-6h8v18h-8zm18 6h8v12h-8z"
+            fill="#8d9099"
+          />
+          <path d="M14 10h8v5h-8zm18-6h8v5h-8zm18 6h8v5h-8z" fill="#a7aab2" />
+          <path d="M6 20h10v34H6zm42 0h10v34H52z" fill="#6f727b" />
+          <path
+            d="M6 16h3v6H6zm4 0h3v6H10zm42 0h3v6h-3zm4 0h3v6h-3z"
+            fill="#9a9da6"
+          />
+          <path d="M28 40h9v16h-9z" fill="#4e4a48" />
+          <path d="M30 43h5v13h-5z" fill="#f0c968" />
+          <path d="M18 33h6v7h-6zm20 0h6v7h-6z" fill="#f7dd9a" />
+          <path d="M19 34h4v5h-4zm20 0h4v5h-4z" fill="#fff4c9" />
+          <path d="M30 4h4v12h-4z" fill="#8a6a4a" />
+          <path d="M34 5h13v5H34z" fill="#b8564e" />
+        </>
+      )}
+      {name === "banner" && (
+        <>
+          <path d="M28 10h4v44h-4z" fill="#7a5c40" />
+          <path d="M32 12h22v20l-11 6-11-6z" fill="#b8564e" />
+          <path d="M35 16h16v4H35zm0 8h16v4H35z" fill="#d9796a" />
+          <path d="M40 24h6v6h-6z" fill="#f3e2a8" />
+          <path d="M30 8h26v5H30z" fill="#8a6a4a" />
+        </>
+      )}
+      {name === "fountain" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="57"
+            rx="25"
+            ry="5"
+            fill="#234939"
+            opacity=".18"
+          />
+          <path d="M9 40h46v12H9z" fill="#9097a2" />
+          <path d="M12 36h40v6H12z" fill="#b3bac4" />
+          <path d="M14 44h36v5H14z" fill="#7f9fb0" />
+          <path d="M26 26h12v12H26z" fill="#9aa3ad" />
+          <path d="M24 22h16v5H24z" fill="#bcc3cb" />
+          <path d="M30 12h4v12h-4z" fill="#cfe6ea" />
+          <path d="M22 14h4v8h-4zm16 0h4v8h-4z" fill="#bfe0e6" />
+          <path d="M18 30h3v6h-3zm25 0h3v6h-3z" fill="#e3f4f4" opacity=".8" />
+        </>
+      )}
+      {name === "ember" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="54"
+            rx="16"
+            ry="4"
+            fill="#234939"
+            opacity=".16"
+          />
+          <path
+            d="M30 12h6v10h5v6h5v14h-5v6H24v-6h-5V30h5v-6h6z"
+            fill="#f2a94e"
+          />
+          <path d="M27 26h5v-6h5v10h4v12H27z" fill="#ffd98a" />
+          <path d="M30 31h5v9h-5z" fill="#fff6cf" />
+          <path d="M20 22h3v3h-3zm22 5h3v3h-3z" fill="#f7cd7a" opacity=".8" />
         </>
       )}
       {name === "tree" && (

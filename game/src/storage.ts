@@ -5,6 +5,7 @@ import {
   type SaveData,
   type World,
   type GameState,
+  themes,
 } from "./model";
 import { validateWorld } from "./engine";
 const DB_NAME = "adventure-workshop-v1";
@@ -108,7 +109,8 @@ function validateState(w: World, s: GameState) {
     !s.entityStats ||
     !Array.isArray(s.removed) ||
     !Array.isArray(s.opened) ||
-    !Array.isArray(s.log)
+    !Array.isArray(s.log) ||
+    (s.theme !== undefined && !themes.includes(s.theme))
   )
     throw new Error("Сохранение персонажа повреждено.");
   if (
