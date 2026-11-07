@@ -1,0 +1,105 @@
+# Эмилия 100×100 — по референсу, грустная, наклон головы, каждое пятно руками
+размер 100x100
+палитра rgb
+фон #1e1430
+0: 0. 100x#1e1430
+1: 0. 100x#1e1430
+2: 0. 34x#1e1430 11x#f0e8ff 11x#ffffff 11x#f0e8ff 33x#1e1430
+3: 0. 30x#1e1430 15x#f0e8ff 11x#ffffff 15x#f0e8ff 29x#1e1430
+4: 0. 26x#1e1430 19x#f0e8ff 11x#ffffff 19x#f0e8ff 25x#1e1430
+5: 0. 22x#1e1430 23x#f0e8ff 11x#ffffff 22x#f0e8ff 22x#1e1430
+6: 0. 18x#1e1430 27x#f0e8ff 11x#ffffff 25x#f0e8ff 19x#1e1430
+7: 0. 16x#1e1430 29x#f0e8ff 11x#ffffff 27x#f0e8ff 17x#1e1430
+8: 0. 14x#1e1430 71x#f0e8ff 15x#1e1430
+9: 0. 12x#1e1430 75x#f0e8ff 13x#1e1430
+10: 0. 10x#1e1430 79x#f0e8ff 11x#1e1430
+11: 0. 8x#1e1430 83x#f0e8ff 9x#1e1430
+12: 0. 8x#1e1430 84x#f0e8ff 8x#1e1430
+13: 0. 8x#1e1430 85x#f0e8ff 7x#1e1430
+14: 0. 8x#1e1430 85x#d8c8e8 7x#1e1430
+15: 0. 8x#1e1430 85x#d8c8e8 7x#1e1430
+16: 0. 9x#1e1430 83x#d8c8e8 8x#1e1430
+17: 0. 10x#1e1430 81x#d8c8e8 9x#1e1430
+18: 0. 12x#1e1430 77x#d8c8e8 11x#1e1430
+19: 0. 14x#1e1430 73x#d8c8e8 13x#1e1430
+20: 0. 16x#1e1430 5x#a090c8 59x#b8a8d0 5x#a090c8 15x#1e1430
+21: 0. 18x#1e1430 3x#a090c8 59x#b8a8d0 3x#a090c8 17x#1e1430
+22: 0. 20x#1e1430 #a090c8 59x#b8a8d0 #a090c8 19x#1e1430
+23: 0. 21x#1e1430 #d4a080 57x#b8a8d0 21x#1e1430
+24: 0. 20x#1e1430 6x#d4a080 49x#b8a8d0 25x#1e1430
+25: 0. 19x#1e1430 11x#d4a080 41x#b8a8d0 29x#1e1430
+26: 0. 18x#1e1430 11x#d4a080 2x#d8c8e8 #d4a080 2x#d8c8e8 #b8a8d0 2x#d8c8e8 #b8a8d0 2x#d8c8e8 #b8a8d0 2x#d8c8e8 #b8a8d0 2x#d8c8e8 #b8a8d0 #d8c8e8 5x#b8a8d0 2x#d8c8e8 #b8a8d0 2x#d8c8e8 #b8a8d0 2x#d8c8e8 #b8a8d0 2x#d8c8e8 #b8a8d0 2x#d8c8e8 #d4a080 32x#1e1430
+27: 0. 17x#1e1430 12x#d4a080 #f0e8ff #d8c8e8 #d4a080 #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff 5x#ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #d4a080 #f0e8ff 31x#1e1430
+28: 0. 17x#1e1430 11x#d4a080 2x#d8c8e8 #d4a080 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 5x#ffe8cc #d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #d4a080 2x#d8c8e8 #d4a080 12x#1e1430 11x#a090c8 7x#1e1430
+29: 0. 17x#1e1430 11x#d4a080 #f0e8ff #d8c8e8 #d4a080 #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 5x#ffe8cc #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #d4a080 #f0e8ff #d8c8e8 #d4a080 #f0e8ff 11x#1e1430 12x#a090c8 6x#1e1430
+30: 0. 16x#1e1430 12x#d4a080 #d8c8e8 #d4a080 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 7x#ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #ffe8cc 2x#d8c8e8 #d4a080 2x#d8c8e8 #d4a080 2x#d8c8e8 10x#1e1430 13x#a090c8 6x#1e1430
+31: 0. 16x#1e1430 12x#d4a080 #d8c8e8 #d4a080 #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 7x#ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #ffe8cc #f0e8ff #d8c8e8 #d4a080 #f0e8ff #d8c8e8 #d4a080 #f0e8ff #d8c8e8 #d4a080 8x#1e1430 13x#a090c8 7x#1e1430
+32: 0. 15x#1e1430 9x#d4a080 4x#ffddb5 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffddb5 #b8a8d0 5x#ffddb5 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffddb5 #b8a8d0 7x#1e1430 14x#a090c8 7x#1e1430
+33: 0. 16x#1e1430 8x#d4a080 4x#ffddb5 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffddb5 #f0e8ff 5x#ffddb5 #f0e8ff #b8a8d0 #ffddb5 #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffddb5 #f0e8ff #b8a8d0 #ffddb5 #f0e8ff #ffddb5 #d4a080 4x#1e1430 14x#a090c8 8x#1e1430
+34: 0. 16x#1e1430 8x#d4a080 4x#ffddb5 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffddb5 2x#b8a8d0 5x#ffddb5 #b8a8d0 #ffddb5 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffddb5 #d4a080 3x#1e1430 15x#a090c8 8x#1e1430
+35: 0. 16x#1e1430 8x#d4a080 4x#ffddb5 #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffddb5 #f0e8ff #b8a8d0 5x#ffddb5 #b8a8d0 #ffddb5 #f0e8ff #b8a8d0 #ffddb5 #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffe8cc #f0e8ff #b8a8d0 #ffddb5 #f0e8ff #b8a8d0 #ffddb5 #d4a080 2x#1e1430 15x#8a78b0 9x#1e1430
+36: 0. 17x#1e1430 7x#d4a080 4x#ffddb5 #b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffddb5 2x#b8a8d0 2x#ffddb5 #d4a080 #1e1430 16x#8a78b0 9x#1e1430
+37: 0. 18x#1e1430 6x#d4a080 4x#ffddb5 #b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffddb5 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffe8cc 2x#b8a8d0 #ffddb5 2x#b8a8d0 2x#ffddb5 #d4a080 16x#8a78b0 10x#1e1430
+38: 0. 19x#1e1430 5x#d4a080 4x#ffddb5 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 #a090c8 #ffddb5 17x#8a78b0 10x#1e1430
+39: 0. 19x#1e1430 5x#d4a080 4x#ffddb5 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 #a090c8 17x#8a78b0 11x#1e1430
+40: 0. 20x#1e1430 4x#d4a080 4x#ffddb5 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffddb5 2x#a090c8 17x#8a78b0 11x#1e1430
+41: 0. 20x#1e1430 4x#d4a080 4x#ffddb5 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffddb5 2x#a090c8 16x#8a78b0 12x#1e1430
+42: 0. 22x#1e1430 2x#d4a080 4x#ffddb5 #a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffddb5 2x#a090c8 16x#8a78b0 13x#1e1430
+43: 0. 22x#1e1430 2x#d4a080 4x#ffddb5 #a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffddb5 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #ffe8cc 2x#a090c8 #8a78b0 2x#a090c8 15x#8a78b0 14x#1e1430
+44: 0. 23x#1e1430 44x#ffddb5 18x#8a78b0 15x#1e1430
+45: 0. 23x#1e1430 43x#ffddb5 17x#8a78b0 17x#1e1430
+46: 0. 25x#1e1430 40x#ffddb5 17x#8a78b0 18x#1e1430
+47: 0. 25x#1e1430 39x#ffddb5 17x#8a78b0 19x#1e1430
+48: 0. 26x#1e1430 54x#ffddb5 20x#1e1430
+49: 0. 26x#1e1430 54x#ffddb5 20x#1e1430
+50: 0. 27x#1e1430 3x#ffddb5 12x#8a78b0 38x#ffddb5 20x#1e1430
+51: 0. 28x#1e1430 5x#ffddb5 7x#8a78b0 2x#ffddb5 #8a78b0 38x#ffddb5 19x#1e1430
+52: 0. 29x#1e1430 25x#ffddb5 12x#8a78b0 15x#ffddb5 19x#1e1430
+53: 0. 29x#1e1430 3x#ffddb5 #1a0a2a 3x#ffddb5 #1a0a2a 20x#ffddb5 7x#8a78b0 2x#ffddb5 #8a78b0 14x#ffddb5 19x#1e1430
+54: 0. 28x#1e1430 6x#1a0a2a 2x#ffddb5 #1a0a2a 3x#ffddb5 #1a0a2a 40x#ffddb5 19x#1e1430
+55: 0. 28x#1e1430 #1a0a2a #1e1430 4x#ffddb5 4x#1a0a2a 2x#ffddb5 #1a0a2a 15x#ffddb5 #1a0a2a 3x#ffddb5 #1a0a2a 20x#ffddb5 19x#1e1430
+56: 0. 31x#1e1430 3x#ffddb5 3x#ffffff #c8a0ff 2x#1a0a2a 2x#ffffff 10x#ffddb5 6x#1a0a2a 2x#ffddb5 #1a0a2a 3x#ffddb5 #1a0a2a 15x#ffddb5 20x#1e1430
+57: 0. 31x#1e1430 #ffddb5 2x#ffffff 7x#c8a0ff 2x#ffffff 9x#ffddb5 #1a0a2a 5x#ffddb5 4x#1a0a2a 2x#ffddb5 #1a0a2a 15x#ffddb5 20x#1e1430
+58: 0. 31x#1e1430 2x#ffffff #c8a0ff 3x#ffffff 3x#8a5ad0 2x#c8a0ff #ffffff 15x#ffddb5 3x#ffffff #c8a0ff 2x#1a0a2a 2x#ffffff 14x#ffddb5 20x#1e1430
+59: 0. 30x#1e1430 3x#ffffff #c8a0ff 3x#ffffff 2x#4a2a80 #8a5ad0 2x#c8a0ff #1a0a2a 13x#ffddb5 2x#ffffff 7x#c8a0ff 2x#ffffff 12x#ffddb5 21x#1e1430
+60: 0. 30x#1e1430 3x#ffffff #c8a0ff 3x#ffffff 2x#1a0830 #4a2a80 #8a5ad0 #c8a0ff #ffffff 12x#ffe8cc 2x#ffffff #c8a0ff 3x#ffffff 3x#8a5ad0 2x#c8a0ff #ffffff 13x#e8c4a0 20x#1e1430
+61: 0. 30x#1e1430 2x#ffffff 2x#c8a0ff #8a5ad0 #4a2a80 3x#1a0830 #4a2a80 #8a5ad0 2x#c8a0ff 11x#ffe8cc 3x#ffffff #c8a0ff 3x#ffffff 2x#4a2a80 #8a5ad0 2x#c8a0ff #1a0a2a 12x#e8c4a0 21x#1e1430
+62: 0. 31x#1e1430 2x#ffffff #c8a0ff #8a5ad0 #4a2a80 3x#1a0830 #4a2a80 #8a5ad0 #c8a0ff 12x#ffe8cc 3x#ffffff #c8a0ff 3x#ffffff 2x#1a0830 #4a2a80 #8a5ad0 #c8a0ff #ffffff 12x#e8c4a0 21x#1e1430
+63: 0. 32x#1e1430 #ffd8e0 2x#c8a0ff #8a5ad0 3x#4a2a80 #ffffff #d8e8ff #c8a0ff 12x#ffe8cc 2x#ffffff 2x#c8a0ff #8a5ad0 #4a2a80 3x#1a0830 #4a2a80 #8a5ad0 2x#c8a0ff 11x#e8c4a0 22x#1e1430
+64: 0. 29x#1e1430 #1a0a2a 3x#1e1430 3x#c8a0ff 3x#8a5ad0 3x#c8a0ff 13x#ffe8cc 2x#ffffff #c8a0ff #8a5ad0 #4a2a80 3x#1a0830 #4a2a80 #8a5ad0 #c8a0ff 12x#e8c4a0 22x#1e1430
+65: 0. 30x#1e1430 2x#1a0a2a 2x#1e1430 7x#c8a0ff #e8c4a0 14x#ffe8cc #ffd8e0 2x#c8a0ff #8a5ad0 3x#4a2a80 #ffffff #d8e8ff #c8a0ff 12x#e8c4a0 22x#1e1430
+66: 0. 30x#1e1430 #ffffff #1e1430 3x#1a0a2a 2x#1e1430 #c8a0ff 4x#e8c4a0 11x#ffe8cc #1a0a2a 3x#ffe8cc 3x#c8a0ff 2x#8a5ad0 #ffb8c0 3x#c8a0ff 12x#e8c4a0 22x#1e1430
+67: 0. 31x#1e1430 #ffffff 6x#1e1430 4x#e8c4a0 12x#ffe8cc 2x#1a0a2a 2x#ffe8cc 3x#c8a0ff #ffb8c0 3x#c8a0ff #ffb8c0 11x#e8c4a0 23x#1e1430
+68: 0. 32x#1e1430 #ffffff 6x#1e1430 3x#e8c4a0 14x#ffe8cc 3x#1a0a2a 2x#ffb8c0 #c8a0ff #ffb8c0 #e8c4a0 2x#ffb8c0 2x#e8c4a0 #a0d0ff 8x#e8c4a0 23x#1e1430
+69: 0. 40x#1e1430 2x#e8c4a0 17x#ffe8cc 2x#ffb8c0 #ff9aa0 #e8c4a0 #ff9aa0 2x#e8c4a0 2x#ffb8c0 #e8c4a0 #a0d0ff 7x#e8c4a0 23x#1e1430
+70: 0. 33x#1e1430 #a0d0ff 7x#1e1430 #e8c4a0 8x#ffe8cc #d4a080 #b07860 6x#ffe8cc #ffb8c0 #e8c4a0 #ff9aa0 #ffb8c0 #ff9aa0 #e8c4a0 #ff9aa0 #e8c4a0 #ffb8c0 3x#e8c4a0 #a0d0ff 6x#e8c4a0 23x#1e1430
+71: 0. 41x#1e1430 #e8c4a0 8x#ffe8cc #e8b8a0 6x#ffe8cc #ffb8c0 #ffe8cc #ffb8c0 #e8c4a0 #ff9aa0 #ffb8c0 #ff9aa0 #e8c4a0 #ffb8c0 10x#e8c4a0 24x#1e1430
+72: 0. 34x#1e1430 #a0d0ff 7x#1e1430 2x#d4a080 15x#e8c4a0 #d4a080 #ffb8c0 2x#d4a080 2x#ffb8c0 11x#d4a080 24x#1e1430
+73: 0. 42x#1e1430 2x#d4a080 15x#e8c4a0 #ffb8c0 #d4a080 #ffb8c0 #d4a080 #ffb8c0 11x#d4a080 25x#1e1430
+74: 0. 44x#1e1430 15x#e8c4a0 3x#d4a080 #ffb8c0 13x#d4a080 24x#1e1430
+75: 0. 44x#1e1430 15x#e8c4a0 16x#d4a080 25x#1e1430
+76: 0. 45x#1e1430 14x#e8c4a0 16x#d4a080 25x#1e1430
+77: 0. 45x#1e1430 14x#e8c4a0 15x#d4a080 26x#1e1430
+78: 0. 47x#1e1430 12x#e8c4a0 15x#d4a080 26x#1e1430
+79: 0. 48x#1e1430 11x#e8c4a0 15x#d4a080 26x#1e1430
+80: 0. 48x#1e1430 11x#e8c4a0 14x#d4a080 27x#1e1430
+81: 0. 49x#1e1430 10x#e8c4a0 14x#d4a080 27x#1e1430
+82: 0. 47x#1e1430 2x#c06060 3x#d47a7a 2x#c06060 5x#e8c4a0 13x#d4a080 28x#1e1430
+83: 0. 47x#1e1430 #b05060 2x#ff9aa0 #ffb0b0 2x#d88290 #b05060 5x#e8c4a0 13x#d4a080 28x#1e1430
+84: 0. 44x#1e1430 4x#d4a080 4x#e8c4a0 #c5a690 5x#e8c4a0 14x#d4a080 28x#1e1430
+85: 0. 44x#1e1430 4x#d4a080 10x#e8c4a0 13x#d4a080 29x#1e1430
+86: 0. 44x#1e1430 4x#d4a080 10x#e8c4a0 13x#d4a080 29x#1e1430
+87: 0. 44x#1e1430 4x#d4a080 10x#e8c4a0 13x#d4a080 29x#1e1430
+88: 0. 44x#1e1430 4x#d4a080 10x#e8c4a0 12x#d4a080 30x#1e1430
+89: 0. 44x#1e1430 4x#d4a080 10x#e8c4a0 42x#1e1430
+90: 0. 44x#1e1430 4x#d4a080 10x#e8c4a0 42x#1e1430
+91: 0. 44x#1e1430 4x#d4a080 10x#e8c4a0 42x#1e1430
+92: 0. 47x#1e1430 7x#d4a080 46x#1e1430
+93: 0. 100x#1e1430
+94: 0. 100x#1e1430
+95: 0. 100x#1e1430
+96: 0. 100x#1e1430
+97: 0. 100x#1e1430
+98: 0. 100x#1e1430
+99: 0. 100x#1e1430
+check размер 100x100
