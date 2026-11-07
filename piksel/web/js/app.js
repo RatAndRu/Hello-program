@@ -8,7 +8,9 @@ const PAL={
   // пошире — 32 и 48 цветов (популярные Lospec)
   endesga32:['#000000','#1b1a17','#5a3921','#8a5a44','#a06d3f','#d9a066','#e5c07b','#f2e8b5','#6b8cff','#a0c0ff','#4a9c6d','#7ec8a0','#c94a4a','#ff6b6b','#ff9e9e','#9c4a9c','#d06bff','#e8a0ff','#4a4a6a','#6a6a8a','#8a8aaa','#b0b0c0','#e0e0e0','#ffffff','#2a3a5a','#3a5a8a','#5a8a5a','#8ac68a','#c6a05a','#e8c68a','#ffcc66','#ff9966'],
   n64:['#212121','#424242','#616161','#757575','#9e9e9e','#bdbdbd','#e0e0e0','#fafafa','#b71c1c','#d32f2f','#f44336','#ff5252','#ff8a80','#880e4f','#c2185b','#e91e63','#f48fb1','#4a148c','#7b1fa2','#9c27b0','#e040fb','#ce93d8','#311b92','#512da8','#303f9f','#3f51b5','#7986cb','#0d47a1','#1976d2','#2196f3','#64b5f6','#01579b','#0288d1','#03a9f4','#4fc3f7','#006064','#0097a7','#00bcd4','#4dd0e1','#004d40','#00796b','#009688','#80cbc4','#1b5e20','#388e3c','#4caf50','#a5d6a7','#33691e','#689f38','#8bc34a','#c5e1a5','#827717','#afb42b','#cddc39','#e6ee9c','#f57f17','#ffa000','#ffc107','#ffecb3','#e65100','#ff6f00','#ff9800','#ffe0b2','#bf360c','#ff3d00','#ff5722','#ffab91'],
-  lospec32:['#000000','#1b1a17','#5c3a21','#8b5e3c','#c28a46','#e0b07a','#f0d9b5','#ffffff','#3a3a5a','#5a5a8a','#8a8ac0','#a0c0ff','#2a5a3a','#4a8a4a','#7ac07a','#c0ffcc','#8a1a1a','#c72e2e','#ff4a4a','#ff8a8a','#7a1a4a','#c72e6a','#ff6aaa','#ffb0cc','#4a1a8a','#7a2ac7','#a04aff','#d0a0ff','#5a3a0a','#8a5a0a','#c28a0a','#ffd700']
+  lospec32:['#000000','#1b1a17','#5c3a21','#8b5e3c','#c28a46','#e0b07a','#f0d9b5','#ffffff','#3a3a5a','#5a5a8a','#8a8ac0','#a0c0ff','#2a5a3a','#4a8a4a','#7ac07a','#c0ffcc','#8a1a1a','#c72e2e','#ff4a4a','#ff8a8a','#7a1a4a','#c72e6a','#ff6aaa','#ffb0cc','#4a1a8a','#7a2ac7','#a04aff','#d0a0ff','#5a3a0a','#8a5a0a','#c28a0a','#ffd700'],
+  // полный RGB — без ограничений, для градиентов
+  rgb: null
 };
 let S={ size:32, pal:PAL.pico8.slice(), palN:'pico8', pix:[], col:4, tool:'brush', grid:true, mode:'pixel', zoom:1.6, bg:null };
 
@@ -32,15 +34,39 @@ function updateGutter(){
 }
 function buildPal(){
   const d=$('palDock'); d.innerHTML='';
-  S.pal.forEach((c,i)=>{
-    const b=document.createElement('div'); b.className='sw'; b.style.background=c;
-    if(i===S.col) b.classList.add('active');
-    b.title=i+': '+c; b.onclick=()=>{ S.col=i; buildPal(); };
-    d.appendChild(b);
-  });
-  const lbl=document.createElement('span'); lbl.className='pal-label'; lbl.textContent=`цвет ${S.col} · клик по палитре меняет кисть`;
-  d.appendChild(lbl);
-  // фон
+  if(S.palN==='rgb'){
+    // полный RGB — палитра без лимита + пипетка
+    const wrap=document.createElement('div'); wrap.style.cssText='display:flex;align-items:center;gap:8px;flex-wrap:wrap';
+    wrap.innerHTML=`<input type="color" id="rgbPick" value="${S.pal?.[S.col]||'#ff7a45'}" style="width:28px;height:28px;padding:0;border:1px solid var(--line);border-radius:999px;overflow:hidden"> <span style="font-size:11px;color:var(--muted)">любой RGB · градиенты</span> <button class="pill" id="addRgb" style="padding:4px 10px;font-size:11px">+ добавить</button>`;
+    d.appendChild(wrap);
+    // недавние цвета
+    if(!S.rgbHistory) S.rgbHistory=['#ff7a45','#ffb347','#7ec8a0','#6b8cff','#ff4a4a','#ffffff'];
+    S.rgbHistory.forEach((c,i)=>{
+      const b=document.createElement('div'); b.className='sw'; b.style.background=c;
+      b.title=c; b.onclick=()=>{ S.customColor=c; S.col=i; buildPal(); };
+      d.appendChild(b);
+    });
+    setTimeout(()=>{
+      const pk=document.getElementById('rgbPick');
+      if(pk) pk.oninput=e=>{ S.customColor=e.target.value; };
+      const ad=document.getElementById('addRgb');
+      if(ad) ad.onclick=()=>{
+        const v=document.getElementById('rgbPick')?.value || '#ff0000';
+        S.rgbHistory.unshift(v); S.rgbHistory=S.rgbHistory.slice(0,16);
+        S.customColor=v; buildPal();
+      };
+    },0);
+  } else {
+    S.pal.forEach((c,i)=>{
+      const b=document.createElement('div'); b.className='sw'; b.style.background=c;
+      if(i===S.col) b.classList.add('active');
+      b.title=i+': '+c; b.onclick=()=>{ S.col=i; buildPal(); };
+      d.appendChild(b);
+    });
+    const lbl=document.createElement('span'); lbl.className='pal-label'; lbl.textContent=`цвет ${S.col} · клик по палитре меняет кисть`;
+    d.appendChild(lbl);
+  }
+  // фон всегда
   const bgWrap=document.createElement('span'); bgWrap.style.cssText='margin-left:12px;display:flex;align-items:center;gap:6px;border-left:1px solid var(--line);padding-left:10px';
   bgWrap.innerHTML=`фон <input type="color" id="bgInput" value="${S.bg||'#0B0E13'}" style="width:26px;height:22px;padding:0;border:1px solid var(--line);border-radius:6px;background:transparent"> <button class="pill" id="bgClear" style="padding:4px 8px;font-size:11px">прозрачно</button>`;
   d.appendChild(bgWrap);
@@ -61,7 +87,11 @@ function syncBgToCode(){
 function parse(showOk=false){
   const txt=code.value;
   let m=txt.match(/размер\s+(\d+)/i); if(m){ S.size=Math.min(64,Math.max(8,parseInt(m[1]))); S.pix=Array(S.size*S.size).fill(null); }
-  let mp=txt.match(/палитра\s+(\w+)/i); if(mp&&PAL[mp[1]]){ S.pal=PAL[mp[1]].slice(); S.palN=mp[1]; buildPal(); }
+  let mp=txt.match(/палитра\s+(\w+)/i); if(mp){
+    const name=mp[1].toLowerCase();
+    if(name==='rgb'){ S.pal=null; S.palN='rgb'; buildPal(); }
+    else if(PAL[name]){ S.pal=PAL[name].slice(); S.palN=name; buildPal(); }
+  }
   // фон: фон #RRGGBB или фон 3 (индекс) или фон прозрачно
   let mb=txt.match(/фон\s+([^\n#]+#[0-9a-fA-F]{3,8}|фон\s+\d+|фон\s+прозрачно)/i);
   // более просто: ищем строку фон ...
@@ -192,7 +222,7 @@ function warriorFallback(){ return `размер 32\nпалитра pico8\n# в�
     const rect=pc.getBoundingClientRect(), N=S.size, d=pc.width/N;
     const x=Math.floor((e.clientX-rect.left)/rect.width*N), y=Math.floor((e.clientY-rect.top)/rect.height*N);
     const c=S.pix[y*N+x];
-    if(S.tool==='eraser'){ S.pix[y*N+x]=null; } else { S.pix[y*N+x]=S.pal[S.col]||'#fff'; }
+    if(S.tool==='eraser'){ S.pix[y*N+x]=null; } else { const col = S.palN==='rgb' ? (S.customColor||'#ff7a45') : (S.pal?.[S.col]||'#fff'); S.pix[y*N+x]=col; }
     // обратно в код — добавляем/обновляем строку row-RLE (упрощённо: перегенерим все строки)
     // для MVP — не трогаем код, только холст + счётчик
     render(); updateMsgPicked(x,y,c);
