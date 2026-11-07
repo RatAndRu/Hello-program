@@ -1,8 +1,16 @@
 // ПИКСЕЛЬ v3 — живой парсер row-RLE + один канвас + HD таб
 const $=id=>document.getElementById(id);
 const code=$('code'), gutter=$('gutter'), pc=$('pixelCanvas'), hc=$('hdCanvas'), pctx=pc.getContext('2d'), hctx=hc.getContext('2d');
-const PAL={ pico8:['#000','#1D2B53','#7E2553','#008751','#AB5236','#5F574F','#C2C3C5','#FFF1E8','#FF004D','#FFA300','#FFEC27','#00E436','#29ADFF','#83769C','#FF77A8','#FFCCAA'], gameboy:['#0f380f','#306230','#8bac0f','#9bbc0f'], sweet16:['#1a1c2c','#5d275d','#b13e53','#ef7d57','#ffcd75','#a7f070','#38b764','#257179','#29366f','#3b5dc9','#41a6f6','#73eff7','#f4f4f4','#94b0c2','#566c86','#333c57'] };
-let S={ size:32, pal:PAL.pico8.slice(), palN:'pico8', pix:[], col:4, tool:'brush', grid:true, mode:'pixel', zoom:1.6 };
+const PAL={
+  pico8:['#000000','#1D2B53','#7E2553','#008751','#AB5236','#5F574F','#C2C3C5','#FFF1E8','#FF004D','#FFA300','#FFEC27','#00E436','#29ADFF','#83769C','#FF77A8','#FFCCAA'],
+  gameboy:['#0f380f','#306230','#8bac0f','#9bbc0f'],
+  sweet16:['#1a1c2c','#5d275d','#b13e53','#ef7d57','#ffcd75','#a7f070','#38b764','#257179','#29366f','#3b5dc9','#41a6f6','#73eff7','#f4f4f4','#94b0c2','#566c86','#333c57'],
+  // пошире — 32 и 48 цветов (популярные Lospec)
+  endesga32:['#000000','#1b1a17','#5a3921','#8a5a44','#a06d3f','#d9a066','#e5c07b','#f2e8b5','#6b8cff','#a0c0ff','#4a9c6d','#7ec8a0','#c94a4a','#ff6b6b','#ff9e9e','#9c4a9c','#d06bff','#e8a0ff','#4a4a6a','#6a6a8a','#8a8aaa','#b0b0c0','#e0e0e0','#ffffff','#2a3a5a','#3a5a8a','#5a8a5a','#8ac68a','#c6a05a','#e8c68a','#ffcc66','#ff9966'],
+  n64:['#212121','#424242','#616161','#757575','#9e9e9e','#bdbdbd','#e0e0e0','#fafafa','#b71c1c','#d32f2f','#f44336','#ff5252','#ff8a80','#880e4f','#c2185b','#e91e63','#f48fb1','#4a148c','#7b1fa2','#9c27b0','#e040fb','#ce93d8','#311b92','#512da8','#303f9f','#3f51b5','#7986cb','#0d47a1','#1976d2','#2196f3','#64b5f6','#01579b','#0288d1','#03a9f4','#4fc3f7','#006064','#0097a7','#00bcd4','#4dd0e1','#004d40','#00796b','#009688','#80cbc4','#1b5e20','#388e3c','#4caf50','#a5d6a7','#33691e','#689f38','#8bc34a','#c5e1a5','#827717','#afb42b','#cddc39','#e6ee9c','#f57f17','#ffa000','#ffc107','#ffecb3','#e65100','#ff6f00','#ff9800','#ffe0b2','#bf360c','#ff3d00','#ff5722','#ffab91'],
+  lospec32:['#000000','#1b1a17','#5c3a21','#8b5e3c','#c28a46','#e0b07a','#f0d9b5','#ffffff','#3a3a5a','#5a5a8a','#8a8ac0','#a0c0ff','#2a5a3a','#4a8a4a','#7ac07a','#c0ffcc','#8a1a1a','#c72e2e','#ff4a4a','#ff8a8a','#7a1a4a','#c72e6a','#ff6aaa','#ffb0cc','#4a1a8a','#7a2ac7','#a04aff','#d0a0ff','#5a3a0a','#8a5a0a','#c28a0a','#ffd700']
+};
+let S={ size:32, pal:PAL.pico8.slice(), palN:'pico8', pix:[], col:4, tool:'brush', grid:true, mode:'pixel', zoom:1.6, bg:null };
 
 function init(){
   S.pix=Array(S.size*S.size).fill(null);
@@ -32,11 +40,39 @@ function buildPal(){
   });
   const lbl=document.createElement('span'); lbl.className='pal-label'; lbl.textContent=`цвет ${S.col} · клик по палитре меняет кисть`;
   d.appendChild(lbl);
+  // фон
+  const bgWrap=document.createElement('span'); bgWrap.style.cssText='margin-left:12px;display:flex;align-items:center;gap:6px;border-left:1px solid var(--line);padding-left:10px';
+  bgWrap.innerHTML=`фон <input type="color" id="bgInput" value="${S.bg||'#0B0E13'}" style="width:26px;height:22px;padding:0;border:1px solid var(--line);border-radius:6px;background:transparent"> <button class="pill" id="bgClear" style="padding:4px 8px;font-size:11px">прозрачно</button>`;
+  d.appendChild(bgWrap);
+  setTimeout(()=>{
+    const inp=document.getElementById('bgInput');
+    if(inp){ inp.oninput=e=>{ S.bg=e.target.value; render(); syncBgToCode(); }; inp.value=S.bg||'#0B0E13'; }
+    const clr=document.getElementById('bgClear');
+    if(clr) clr.onclick=()=>{ S.bg=null; render(); syncBgToCode(); };
+  },0);
+}
+function syncBgToCode(){
+  let txt=code.value;
+  const bgLine = S.bg ? `фон ${S.bg}` : `фон прозрачно`;
+  if(/фон\s+/.test(txt)) txt=txt.replace(/фон\s+[^\n]+/, bgLine);
+  else txt=txt.replace(/палитра[^\n]+/, m=>m+'\n'+bgLine);
+  if(txt!==code.value){ code.value=txt; updateGutter(); }
 }
 function parse(showOk=false){
   const txt=code.value;
   let m=txt.match(/размер\s+(\d+)/i); if(m){ S.size=Math.min(64,Math.max(8,parseInt(m[1]))); S.pix=Array(S.size*S.size).fill(null); }
   let mp=txt.match(/палитра\s+(\w+)/i); if(mp&&PAL[mp[1]]){ S.pal=PAL[mp[1]].slice(); S.palN=mp[1]; buildPal(); }
+  // фон: фон #RRGGBB или фон 3 (индекс) или фон прозрачно
+  let mb=txt.match(/фон\s+([^\n#]+#[0-9a-fA-F]{3,8}|фон\s+\d+|фон\s+прозрачно)/i);
+  // более просто: ищем строку фон ...
+  let bgLine = txt.split('\n').find(l=>l.trim().startsWith('фон'));
+  if(bgLine){
+    let v=bgLine.trim().split(/\s+/)[1]||'';
+    if(/прозрачн/i.test(v)) S.bg=null;
+    else if(v.startsWith('#')) S.bg=v;
+    else if(/^\d+$/.test(v)) S.bg=PAL[S.palN]?.[parseInt(v)]||v;
+    else if(v.startsWith('#')) S.bg=v;
+  }
   S.pix=Array(S.size*S.size).fill(null);
   let errs=[];
   txt.split('\n').forEach((raw,idx)=>{
@@ -77,9 +113,12 @@ function render(){
     c.style.height=H+'px';
     c.style.imageRendering='pixelated';
   });
-  // пиксель — чёткий
+  // пиксель — чёткий (фон любой)
   pctx.imageSmoothingEnabled=false;
-  pctx.fillStyle='#0B0E13'; pctx.fillRect(0,0,W,H);
+  if(S.bg){ pctx.fillStyle=S.bg; pctx.fillRect(0,0,W,H); }
+  else { // прозрачно — тёмный
+    pctx.fillStyle='#0B0E13'; pctx.fillRect(0,0,W,H);
+  }
   for(let y=0;y<N;y++)for(let x=0;x<N;x++){ const col=S.pix[y*N+x]; if(col){ pctx.fillStyle=col; pctx.fillRect(x*px,y*px,px,px);} }
   if(S.grid && N<=64){
     pctx.strokeStyle='rgba(255,255,255,.055)'; pctx.lineWidth=1;
@@ -122,6 +161,7 @@ function bind(){
   $('buildBtn').onclick=()=>parse(true);
   $('sizeSel').onchange=e=>{ const v=parseInt(e.target.value); code.value=code.value.replace(/размер\s+\d+/,`размер ${v}`); parse(true); };
   $('palSel').onchange=e=>{ const v=e.target.value; code.value=code.value.replace(/палитра\s+\w+.*/,`палитра ${v}`); parse(true); };
+  const bgTop=$('bgTop'); if(bgTop) bgTop.oninput=e=>{ S.bg=e.target.value; render(); syncBgToCode(); };
   document.querySelectorAll('#modeSeg button').forEach(b=> b.onclick=()=>{ document.querySelectorAll('#modeSeg button').forEach(x=>x.classList.remove('active')); b.classList.add('active'); S.mode=b.dataset.m; render(); });
   document.querySelectorAll('#tools .tool').forEach(b=> b.onclick=()=>{ if(b.dataset.t){ document.querySelectorAll('#tools .tool').forEach(x=>x.classList.remove('active')); b.classList.add('active'); S.tool=b.dataset.t; pc.style.cursor=S.tool==='brush'?'crosshair':'default'; } });
   $('gridBtn').onclick=()=>{ S.grid=!S.grid; $('gridBtn').classList.toggle('active',S.grid); render(); };
