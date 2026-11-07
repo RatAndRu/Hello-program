@@ -3,98 +3,301 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ПИКСЕЛЬ — сценарий → картинка</title>
-<link rel="stylesheet" href="css/app.css">
+<title>ПИКСЕЛЬ — сценарий в картинку</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-/* упрощённый поверх forma — только нужное */
-.topbar { min-height: 48px; padding: 6px 12px; }
-.topbar .brand span { font-size: 10px; }
-.actions { gap: 6px; }
-.layout-simple {
-  display: grid;
-  grid-template-columns: 1fr 420px;
-  grid-template-rows: minmax(0,1fr) 140px;
-  height: calc(100vh - 48px - 28px);
-  background: var(--line-soft);
-  gap: 1px;
+:root{
+  --bg:#0E0F12;
+  --surface:#17191E;
+  --surface-2:#1E2128;
+  --surface-3:#252A33;
+  --line:#252A33;
+  --line-strong:#303642;
+  --text:#E6E8EE;
+  --muted:#8B91A1;
+  --faint:#5A6172;
+  --accent:#FF7A45;
+  --accent-hover:#FF8C5E;
+  --ok:#2ECC71;
+  --warn:#F5A623;
+  --bad:#FF5A5A;
+  --radius:14px;
+  --radius-sm:8px;
+  --shadow:0 8px 32px rgba(0,0,0,.38);
+  --sans: 'Inter', system-ui, -apple-system, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
 }
-.editor-pane { background: var(--bg-soft); display:flex; flex-direction:column; min-height:0; }
-.pane-head { padding: 6px 10px; font-size:10px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-faint); border-bottom:1px solid var(--line-soft); display:flex; justify-content:space-between; align-items:center; }
-.pane-head strong { color: var(--text); letter-spacing:.08em; }
-#code { flex:1; width:100%; resize:none; background:#0e1117; color:#d6e0ee; border:0; padding:10px 12px; font-family:var(--mono); font-size:12.5px; line-height:1.55; outline:none; }
-#code::placeholder { color:#4a5668; }
-.canvas-pane { background:#0a0d12; display:flex; flex-direction:column; min-height:0; min-width:0; }
-.canvas-box { flex:1; display:grid; place-items:center; padding:12px; overflow:auto; background: repeating-conic-gradient(#1a2230 0 25%, #121821 0 50%) 0 0/18px 18px; }
-#pixelCanvas, #hdCanvas { image-rendering: pixelated; image-rendering: crisp-edges; border:1px solid var(--line); border-radius:8px; background:#0000; box-shadow:0 6px 24px rgba(0,0,0,.45); }
-.cmdbar { display:flex; gap:6px; padding:6px 8px; background:var(--panel); border-top:1px solid var(--line-soft); }
-.cmdbar input { flex:1; background:#0e141c; color:var(--text); border:1px solid var(--line); border-radius:7px; padding:7px 10px; font-family:var(--mono); font-size:12px; }
-.manual { display:flex; gap:6px; padding:6px 8px; background:var(--panel); border-top:1px solid var(--line-soft); align-items:center; flex-wrap:wrap; }
-.manual .sw { width:18px; height:18px; border-radius:4px; border:1px solid var(--line); cursor:pointer; }
-.manual .sw.active { outline:2px solid var(--accent); outline-offset:1px; }
-.checks { padding:8px 10px; overflow:auto; font-size:11px; line-height:1.5; }
-.check { display:flex; gap:8px; padding:5px 8px; border:1px solid var(--line); border-radius:7px; margin-bottom:6px; background:var(--panel-2); }
-.check.ok { border-color:#2d4a3a; background:#132018; }
-.check.bad { border-color:#4a2d2d; background:#221313; }
-.footer { height:28px; display:flex; align-items:center; justify-content:space-between; padding:0 10px; background:#0e141c; border-top:1px solid var(--line); color:var(--text-faint); font-size:10.5px; }
-@media (max-width:900px){ .layout-simple{ grid-template-columns:1fr; grid-template-rows: 1fr auto 140px; } }
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+button{font:inherit}
+
+/* HEADER — 56px, один ряд, много воздуха */
+.header{
+  height:56px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 20px;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+  position:sticky;top:0;z-index:10;
+}
+.brand{display:flex;align-items:center;gap:12px}
+.mark{
+  width:32px;height:32px;border-radius:10px;
+  background:linear-gradient(135deg,#FF7A45,#FFB347);
+  display:grid;place-items:center;
+  font-weight:800;font-size:15px;color:#1A0F0A;
+  letter-spacing:-.02em;
+}
+.brand b{font-size:13.5px;letter-spacing:.10em;font-weight:700}
+.brand small{display:block;color:var(--muted);font-size:10px;letter-spacing:.06em;margin-top:1px;font-weight:500}
+.nav{display:flex;align-items:center;gap:8px}
+.pill{padding:7px 12px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);font-size:12.5px;cursor:pointer;transition:.15s}
+.pill:hover{border-color:var(--line-strong);color:var(--text)}
+.pill.active{background:var(--text);border-color:var(--text);color:#0E0F12;font-weight:600}
+.btn-primary{
+  padding:9px 16px;border-radius:999px;border:0;
+  background:var(--accent);color:#fff;font-weight:600;font-size:12.5px;
+  cursor:pointer;box-shadow:0 4px 14px rgba(255,122,69,.32);transition:.15s
+}
+.btn-primary:hover{background:var(--accent-hover);transform:translateY(-1px)}
+.btn-ghost{padding:8px 12px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted);font-size:12.5px;cursor:pointer}
+.btn-ghost:hover{background:var(--surface);color:var(--text)}
+
+/* LAYOUT — 12 колонок, max 1480 */
+.layout{
+  max-width:1480px;margin:0 auto;
+  padding:20px;
+  display:grid;
+  grid-template-columns:1.15fr .95fr;
+  gap:20px;
+  min-height:calc(100vh - 56px - 36px);
+}
+@media(max-width:960px){
+  .layout{grid-template-columns:1fr; padding:14px}
+}
+/* CARDS — единая система */
+.card{
+  background:var(--surface);
+  border:1px solid var(--line);
+  border-radius:var(--radius);
+  box-shadow:var(--shadow);
+  overflow:hidden;
+  display:flex;flex-direction:column;
+  min-height:0;
+}
+.card-head{
+  height:44px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 14px;
+  border-bottom:1px solid var(--line);
+  background:var(--surface);
+}
+.card-head h2{margin:0;font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.card-head .tools{display:flex;align-items:center;gap:8px}
+.seg{display:flex;border:1px solid var(--line);border-radius:999px;overflow:hidden;background:var(--bg)}
+.seg button{padding:6px 12px;border:0;background:transparent;color:var(--muted);font-size:12px;cursor:pointer}
+.seg button.active{background:var(--surface-3);color:var(--text);font-weight:600}
+
+/* EDITOR */
+.editor{flex:1;display:flex;min-height:420px}
+.gutter{
+  width:44px;background:var(--surface-2);
+  border-right:1px solid var(--line);
+  padding:10px 0;
+  color:var(--faint);font-family:var(--mono);font-size:12px;line-height:20px;
+  text-align:right;padding-right:8px;user-select:none;
+}
+#code{
+  flex:1;
+  background:#0F1216;
+  color:#D6DEEB;
+  border:0;outline:0;
+  padding:10px 14px;
+  font-family:var(--mono);font-size:12.8px;line-height:20px;
+  resize:none;
+}
+#code::placeholder{color:#424957}
+.editor-foot{
+  height:36px;
+  display:flex;align-items:center;justify-content:space-between;
+  padding:0 12px;
+  border-top:1px solid var(--line);
+  background:var(--surface-2);
+  font-size:11.5px;color:var(--muted);
+}
+.dot{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:6px;vertical-align:middle}
+.dot.ok{background:var(--ok)}
+.dot.warn{background:var(--warn)}
+.dot.bad{background:var(--bad)}
+
+/* PREVIEW */
+.preview-stage{
+  flex:1;
+  background:
+    radial-gradient(circle at 30% 20%, rgba(255,122,69,.08), transparent 40%),
+    var(--bg);
+  display:grid;place-items:center;
+  padding:18px;
+  position:relative;
+  min-height:340px;
+}
+.canvas-wrap{
+  position:relative;
+  border-radius:12px;
+  overflow:hidden;
+  box-shadow:0 12px 40px rgba(0,0,0,.45), 0 0 0 1px var(--line);
+  background:#000;
+}
+#pixelCanvas, #hdCanvas{
+  display:block;
+  image-rendering:pixelated; image-rendering: crisp-edges;
+  max-width:100%;
+}
+.preview-toolbar{
+  position:absolute;left:50%;bottom:14px;transform:translateX(-50%);
+  display:flex;align-items:center;gap:8px;
+  background:rgba(23,25,30,.92);
+  border:1px solid var(--line-strong);
+  border-radius:999px;
+  padding:6px;
+  backdrop-filter:blur(8px);
+  box-shadow:0 6px 20px rgba(0,0,0,.35);
+}
+.tool{width:32px;height:32px;border-radius:999px;border:1px solid transparent;background:transparent;color:var(--muted);display:grid;place-items:center;cursor:pointer;font-size:14px}
+.tool.active{background:var(--text);color:#0E0F12;border-color:var(--text)}
+.tool:hover{background:var(--surface-3);color:var(--text)}
+.zoom{position:absolute;right:12px;top:12px;display:flex;gap:6px}
+.zoom button{width:30px;height:30px;border-radius:999px;border:1px solid var(--line);background:var(--surface);color:var(--muted);cursor:pointer}
+.zoom button:hover{color:var(--text);border-color:var(--line-strong)}
+.palette-dock{
+  display:flex;align-items:center;gap:6px;
+  padding:8px 12px;
+  border-top:1px solid var(--line);
+  background:var(--surface);
+  overflow:auto;
+}
+.sw{width:22px;height:22px;border-radius:999px;border:2px solid transparent;cursor:pointer;flex:0 0 auto;box-shadow:0 0 0 1px var(--line)}
+.sw.active{border-color:var(--text);box-shadow:0 0 0 3px rgba(255,255,255,.12)}
+.pal-label{margin-left:auto;font-size:11px;color:var(--faint)}
+
+/* FOOTER */
+.footer{
+  height:36px;
+  max-width:1480px;margin:0 auto;padding:0 20px;
+  display:flex;align-items:center;justify-content:space-between;
+  border-top:1px solid var(--line);
+  color:var(--faint);font-size:11px;
+}
+/* MISC */
+kbd{font-family:var(--mono);font-size:10px;background:var(--surface-3);border:1px solid var(--line);border-bottom-color:#2a303c;border-radius:5px;padding:2px 5px;color:var(--muted)}
+.muted{color:var(--muted);font-size:11px}
+.examples{position:relative}
+.menu{
+  position:absolute;top:calc(100% + 8px);right:0;
+  min-width:220px;
+  background:var(--surface);border:1px solid var(--line);border-radius:12px;
+  box-shadow:var(--shadow);padding:6px;display:none;z-index:20
+}
+.menu.open{display:block}
+.menu button{width:100%;text-align:left;padding:9px 12px;border-radius:8px;border:0;background:transparent;color:var(--text);font-size:13px;cursor:pointer}
+.menu button:hover{background:var(--surface-2)}
+.menu small{color:var(--muted);font-size:11px}
 </style>
 </head>
 <body>
-<header class="topbar">
-  <div class="brand"><div class="logo" style="background:linear-gradient(145deg,#ff7a59,#ffb86b)">П</div><div class="brand-text"><strong>ПИКСЕЛЬ</strong><span>сценарий → картинка · row-RLE</span></div></div>
-  <div class="actions">
-    <select id="sizeSel" title="размер" style="background:#121820;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:12px">
-      <option value="16">16×16</option><option value="24">24×24</option><option value="32" selected>32×32</option><option value="48">48×48</option><option value="64">64×64</option>
-    </select>
-    <select id="palSel" style="background:#121820;color:var(--text);border:1px solid var(--line);border-radius:7px;padding:6px 8px;font-size:12px">
-      <option value="pico8">pico8 16</option><option value="gameboy">gameboy 4</option><option value="sweet16">sweet16</option><option value="custom">своя</option>
-    </select>
-    <button id="btnBuild" class="primary">▶ Собрать</button>
-    <button id="btnHD" title="Детализировать ×4">⬢ HD ×4</button>
-    <button id="btnSave" class="mini">💾</button>
-    <button id="btnWarrior" class="mini" title="Вставить воина">⚔️ воин</button>
-    <button id="btnClear" class="mini">очистить</button>
-    <div class="menu-wrap"><button id="btnExport" class="mini">⇩</button><div class="menu" id="expMenu"><button data-f="png">PNG пиксель</button><button data-f="hd">PNG HD</button><button data-f="copy">Копировать сценарий</button></div></div>
+
+<header class="header">
+  <div class="brand">
+    <div class="mark">П</div>
+    <div><b>ПИКСЕЛЬ</b><small>сценарий → картинка</small></div>
+  </div>
+  <div class="nav">
+    <div class="examples">
+      <button class="pill" id="exBtn">Примеры ▾</button>
+      <div class="menu" id="exMenu">
+        <button data-ex="warrior">⚔️ Воин <small>32×32 · row-RLE</small></button>
+        <button data-ex="slime">🟢 Слайм <small>16×16</small></button>
+        <button data-ex="tree">🌳 Дерево <small>24×24</small></button>
+        <button data-ex="blank">∅ Пусто</button>
+      </div>
+    </div>
+    <button class="btn-ghost" id="copyBtn">Копировать</button>
+    <button class="btn-ghost" id="exportBtn">Экспорт</button>
+    <button class="btn-primary" id="buildBtn">Собрать <span style="opacity:.7;margin-left:6px"><kbd>⌘</kbd><kbd>↵</kbd></span></button>
   </div>
 </header>
 
-<div class="layout-simple">
-  <!-- ЛЕВО: редактор сценария -->
-  <section class="editor-pane">
-    <div class="pane-head"><strong>Сценарий (row-RLE)</strong><span id="tokInfo" style="color:var(--text-faint)">строк 0 • токенов ~0</span><span style="font-size:10px;color:var(--accent)">Ctrl+Enter — Собрать</span></div>
-    <textarea id="code" spellcheck="false" placeholder="# вставь сценарий от нейросети — пример ниже скопируется по ⚔️
-размер 32
-палитра pico8
-4: 12. 4 4 4 4
-# прозрачные строки не пишем — это и есть фон
-# 10x - = 10 прозрачных, 5x 2 = пять пикселей цвета 2
-"></textarea>
-    <div class="cmdbar">
-      <input id="cmd" placeholder="Командная строка: 4: 3. 0 1 10- 2  или  пиксель 14,14 2">
-      <button id="btnCmd" class="mini">▶</button>
-      <button id="btnManual" class="mini" title="Ручной режим — клик по канвасу ставит пиксель">🖌 ручной</button>
+<main class="layout">
+  <!-- LEFT: редактор — главное -->
+  <section class="card" style="min-height:520px">
+    <div class="card-head">
+      <h2>Сценарий</h2>
+      <div class="tools">
+        <select id="sizeSel" class="pill" style="padding:6px 10px">
+          <option value="16">16</option><option value="32" selected>32</option><option value="48">48</option><option value="64">64</option>
+        </select>
+        <select id="palSel" class="pill" style="padding:6px 10px">
+          <option value="pico8">PICO-8</option><option value="gameboy">Game Boy</option><option value="sweet16">Sweet 16</option>
+        </select>
+        <span class="muted" id="status">готово</span>
+      </div>
     </div>
-    <div id="err" hidden style="padding:6px 10px;background:#2a1a1a;color:#ffb3b3;font-size:11px;border-top:1px solid #4a2a2a"></div>
+    <div class="editor">
+      <div class="gutter" id="gutter">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10</div>
+      <textarea id="code" spellcheck="false" placeholder="размер 32
+палитра pico8
+# строка: номер строки: столбец. цвета
+# пример — воин:
+4: 12. 4 4 4 4
+# пустые строки — не пишем, это фон
+"></textarea>
+    </div>
+    <div class="editor-foot">
+      <span><span class="dot ok" id="dot"></span><span id="msg">Собери чтобы увидеть</span></span>
+      <span class="muted">прозрачность = не пишем · <kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+    </div>
   </section>
 
-  <!-- ПРАВО: канвасы -->
-  <section class="canvas-pane">
-    <div class="pane-head"><strong>Пиксель</strong><span id="pixInfo">32×32</span><label class="switch"><input type="checkbox" id="chkGrid" checked> сетка</label></div>
-    <div class="canvas-box"><canvas id="pixelCanvas" width="256" height="256"></canvas></div>
-    <div class="pane-head"><strong>HD ×4</strong><span id="hdInfo">128×128</span><label class="switch"><input type="range" id="hdPow" min="0" max="100" value="45" style="width:70px"> <span id="hdPct">45%</span></label></div>
-    <div class="canvas-box" style="flex:0.9"><canvas id="hdCanvas" width="256" height="256"></canvas></div>
-    <div class="manual" id="palBar"></div>
-    <div class="checks" id="checks"></div>
+  <!-- RIGHT: предпросмотр — второстепенно, но красиво -->
+  <section class="card">
+    <div class="card-head">
+      <h2>Предпросмотр</h2>
+      <div class="tools">
+        <div class="seg" id="modeSeg">
+          <button class="active" data-m="pixel">Пиксель</button>
+          <button data-m="hd">HD ×4</button>
+          <button data-m="split">Сравн.</button>
+        </div>
+      </div>
+    </div>
+    <div class="preview-stage" id="stage">
+      <div class="canvas-wrap" id="wrap">
+        <canvas id="pixelCanvas" width="384" height="384"></canvas>
+        <canvas id="hdCanvas" width="384" height="384" hidden></canvas>
+      </div>
+      <!-- флоатинг инструменты — близко к холсту (Гештальт) -->
+      <div class="preview-toolbar" id="tools">
+        <button class="tool active" data-t="brush" title="Кисть">🖌</button>
+        <button class="tool" data-t="eraser" title="Ластик">⌫</button>
+        <button class="tool" data-t="pick" title="Пипетка">👁</button>
+        <span style="width:1px;height:18px;background:var(--line);margin:0 2px"></span>
+        <button class="tool" id="gridBtn" title="Сетка">▦</button>
+        <button class="tool" id="clearBtn" title="Очистить">✕</button>
+      </div>
+      <div class="zoom">
+        <button id="minus">−</button><button id="plus">+</button>
+      </div>
+    </div>
+    <div class="palette-dock" id="palDock"></div>
   </section>
+</main>
 
-  <!-- НИЗ: растянут на 2 колонки — отчёт для нейросети -->
-  <section class="editor-pane" style="grid-column:1 / -1; min-height:120px;">
-    <div class="pane-head"><strong>Отчёт для нейросети (как в ФОРМЕ)</strong><button class="mini" id="btnCopyReport">копировать</button></div>
-    <div id="report" style="flex:1;overflow:auto;padding:8px 10px;font-family:var(--mono);font-size:11px;white-space:pre-wrap;background:#0e141c;color:#a8b8cc">Собери — здесь появится краткий отчёт и ошибки, которые можно отдать нейросети для правки.</div>
-  </section>
-</div>
-
-<footer class="footer"><span>ПИКСЕЛЬ v0.2 · row-RLE · прозрачность = не пишем</span><span>клик по пикселю в ручном режиме ставит цвет</span></footer>
+<footer class="footer">
+  <span>ПИКСЕЛЬ v3 · row-RLE · <a href="https://github.com/RatAndRu/Hello-program" target="_blank" style="color:var(--muted);text-decoration:underline">GitHub</a></span>
+  <span class="muted">клик по пикселю в режиме кисти — ставит цвет</span>
+</footer>
 
 <script type="module" src="js/app.js"></script>
 </body>
