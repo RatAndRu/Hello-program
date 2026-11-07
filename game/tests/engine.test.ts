@@ -144,6 +144,63 @@ describe("castle location", () => {
   });
 });
 
+describe("manor garden with Rem, Ram, Emilia and Puck", () => {
+  it("places every guest in the garden and keeps them off the island", () => {
+    const w = createWorld();
+    expect(validateWorld(w)).toEqual([]);
+    for (const id of ["rem", "ram", "emilia", "puck", "roswaal"]) {
+      const npc = w.entities.find((e) => e.id === id)!;
+      expect(npc.theme).toBe("garden");
+      expect(["npc"]).toContain(npc.kind);
+      expect(tileAt(npc.x, npc.y, "garden")).not.toBe("hedge");
+    }
+    expect(
+      w.entities.filter((e) => e.theme === "garden").length,
+    ).toBeGreaterThanOrEqual(14);
+  });
+  it("garden portal works both ways and keeps the hero inside the walls", () => {
+    const w = createWorld();
+    const gate = w.entities.find((e) => e.id === "garden-gate")!;
+    const exit = w.entities.find((e) => e.id === "garden-exit")!;
+    let s = createState(w);
+    s.x = gate.x - 1;
+    s.y = gate.y;
+    s = interact(w, s, gate).state;
+    expect(s.theme).toBe("garden");
+    expect([s.x, s.y]).toEqual([9, 9]);
+    expect(canStand(w, s, 2, 2, "garden")).toBe(false);
+    const rose = w.entities.find((e) => e.id === "rose-1")!;
+    s = interact(w, { ...s, x: rose.x + 1, y: rose.y }, rose).state;
+    expect(s.inventory.rose).toBe(1);
+    s = interact(w, { ...s, x: exit.x + 1, y: exit.y }, exit).state;
+    expect(s.theme).toBe("forest");
+  });
+  it("rose quest pays once and the spirit contract is reusable equipment", () => {
+    const w = createWorld();
+    const rem = w.entities.find((e) => e.id === "rem")!;
+    const quest = w.quests.find((q) => q.id === "roses")!;
+    let s = createState(w);
+    s.theme = "garden";
+    s.x = rem.x + 1;
+    s.y = rem.y;
+    s.quests.roses = "active";
+    s.inventory.rose = 4;
+    s = interact(w, s, rem).state;
+    expect(s.quests.roses).toBe("completed");
+    expect(s.stats.coins).toBe(20);
+    expect(s.inventory["ice-crystal"]).toBe(1);
+    const contract = useItem(
+      w,
+      { ...s, inventory: { ...s.inventory, "spirit-contract": 1 } },
+      "spirit-contract",
+    ).state;
+    expect(contract.stats.attack).toBe(15);
+    expect(contract.stats.defense).toBe(3);
+    expect(contract.inventory["spirit-contract"]).toBe(1);
+    expect(quest.count).toBe(4);
+  });
+});
+
 describe("game mechanics", () => {
   it("movement cannot cross water, trees or solid entities and never mutates input", () => {
     const w = createWorld(),

@@ -358,6 +358,194 @@ export function Sprite({
           <path d="M20 22h3v3h-3zm22 5h3v3h-3z" fill="#f7cd7a" opacity=".8" />
         </>
       )}
+      {name === "rem" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="57"
+            rx="17"
+            ry="5"
+            fill="#173c32"
+            opacity=".22"
+          />
+          <path d="M21 45h10v12H19v-4h2zm14 0h10v7h2v5H35z" fill="#3e3a48" />
+          <path d="M19 28h26v19H19z" fill="#2f2c3a" />
+          <path d="M25 26h14v22H25z" fill="#f4f2f6" />
+          <path d="M22 28h5v10h-5zm18 0h5v10h-5z" fill="#fffafa" />
+          <path d="M14 30h7v14h-7zm29 0h7v14h-7z" fill="#f7dccd" />
+          <path d="M23 14h18v16H23z" fill="#fbe6d8" />
+          <path d="M21 12h22v6H21z" fill="#bcd9ee" />
+          <path d="M18 16h8v15h-8z" fill="#a9cbe4" />
+          <path d="M40 16h6v13h-6z" fill="#a9cbe4" />
+          <path d="M25 20h4v4h-4zm7 0h4v4h-4z" fill="#4b6f8f" />
+          <path d="M28 29h6v2h-6z" fill="#d99c92" />
+          <path d="M25 22h12v3H25z" fill="#d6e8f4" />
+          <path d="M38 8h6v10h-6z" fill="#c3dcee" />
+          <path d="M22 30h20v4H22z" fill="#f6f4f8" />
+          <path d="M30 34h5v9h-5z" fill="#dcd6e6" />
+        </>
+      )}
+      {name === "ram" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="57"
+            rx="17"
+            ry="5"
+            fill="#173c32"
+            opacity=".22"
+          />
+          <path d="M21 45h10v12H19v-4h2zm14 0h10v7h2v5H35z" fill="#3e3a48" />
+          <path d="M19 28h26v19H19z" fill="#312d3b" />
+          <path d="M25 26h14v22H25z" fill="#f6f3f7" />
+          <path d="M22 28h5v10h-5zm18 0h5v10h-5z" fill="#fffafa" />
+          <path d="M14 30h7v14h-7zm29 0h7v14h-7z" fill="#f7dccd" />
+          <path d="M23 14h18v16H23z" fill="#fbe6d8" />
+          <path d="M21 12h22v6H21z" fill="#f2bccb" />
+          <path d="M14 17h7v16h-7z" fill="#eab0c3" />
+          <path d="M41 17h6v14h-6z" fill="#eab0c3" />
+          <path d="M25 20h4v4h-4zm7 0h4v4h-4z" fill="#c2607a" />
+          <path d="M28 29h6v2h-6z" fill="#d99c92" />
+          <path d="M25 22h12v3H25z" fill="#fbe4ea" />
+          <path d="M30 8h5v11h-5z" fill="#eea9bd" />
+          <path d="M22 30h20v4H22z" fill="#fbf6f8" />
+          <path d="M30 34h5v9h-5z" fill="#e6c9d6" />
+          <path d="M24 38h8v4h-8z" fill="#d95f78" opacity=".8" />
+        </>
+      )}
+      {name === "emilia" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="57"
+            rx="18"
+            ry="5"
+            fill="#173c32"
+            opacity=".22"
+          />
+          <path d="M21 46h10v11H19v-4h2zm14 0h10v7h2v4H35z" fill="#44496b" />
+          <path d="M19 28h26v20H19z" fill="#5d6494" />
+          <path d="M24 27h16v22H24z" fill="#f2f5fb" />
+          <path d="M14 31h7v13h-7zm29 0h7v13h-7z" fill="#f9e2d4" />
+          <path d="M23 13h18v16H23z" fill="#fdeade" />
+          <path d="M20 11h24v7H20z" fill="#e9eefb" />
+          <path d="M15 16h8v20h-8z" fill="#dde5f8" />
+          <path d="M41 16h8v20h-8z" fill="#dde5f8" />
+          <path d="M24 20h5v4h-5zm7 0h5v4h-5z" fill="#7c5fa8" />
+          <path d="M28 29h7v2h-7z" fill="#e0a193" />
+          <path d="M26 24h13v2H26z" fill="#f6f9ff" />
+          <path d="M30 34h5v10h-5z" fill="#e6eaf8" />
+          <path d="M13 6h3v10h-3zm36 4h3v10h-3z" fill="#bcdcf0" />
+          <path d="M22 39h20v4H22z" fill="#4b5077" />
+        </>
+      )}
+      {name === "puck" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="55"
+            rx="16"
+            ry="4"
+            fill="#234939"
+            opacity=".18"
+          />
+          <path d="M18 44h4v6h-4zm24 0h4v6h-4z" fill="#cfd8dd" />
+          <path d="M17 28h30v18H17z" fill="#e3e9ec" />
+          <path d="M21 22h22v10H21z" fill="#eef3f5" />
+          <path d="M17 25h9V15h6v10h6V13h7v12h7v9H17z" fill="#dbe3e7" />
+          <path d="M24 26h5v5h-5zm11 0h5v5h-5z" fill="#5c7f9c" />
+          <path d="M31 33h3v3h-3z" fill="#c08a97" />
+          <path d="M26 38h12v3H26z" fill="#cdd7dc" />
+          <path d="M45 40h10v4H45z" fill="#dbe3e7" />
+          <path d="M52 36h3v12h-3z" fill="#cdd7dc" />
+          <path d="M36 6h3v6h-3z" fill="#9fb6c4" />
+          <path d="M41 4h2v3h-2z" fill="#bcd6e2" />
+        </>
+      )}
+      {name === "roswaal" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="57"
+            rx="17"
+            ry="5"
+            fill="#173c32"
+            opacity=".22"
+          />
+          <path d="M22 45h8v12H20v-4h2zm12 0h9v7h2v5H34z" fill="#3b2f45" />
+          <path d="M19 27h26v20H19z" fill="#584a6e" />
+          <path d="M25 26h14v22H25z" fill="#f0e7cf" />
+          <path d="M14 30h7v14h-7zm29 0h7v14h-7z" fill="#f2d6c4" />
+          <path d="M23 12h18v16H23z" fill="#f8e2d2" />
+          <path d="M20 10h24v6H20z" fill="#7f4b8e" />
+          <path d="M15 14h7v16h-7z" fill="#a44f6d" />
+          <path d="M42 14h7v16h-7z" fill="#a44f6d" />
+          <path d="M25 19h4v4h-4zm7 0h4v4h-4z" fill="#5d6f8c" />
+          <path d="M28 28h7v2h-7z" fill="#c99083" />
+          <path d="M31 6h5v7h-5z" fill="#c86a8e" />
+          <path d="M22 39h20v4H22z" fill="#4a3d5c" />
+          <path d="M35 30h9v9h-9z" fill="#f2f5f7" opacity=".7" />
+        </>
+      )}
+      {name === "rose" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="55"
+            rx="13"
+            ry="4"
+            fill="#234939"
+            opacity=".16"
+          />
+          <path d="M30 30h4v24h-4z" fill="#4f7a4a" />
+          <path d="M22 42h10v4H22zm12-6h10v4H34z" fill="#628f56" />
+          <path
+            d="M33 26h3v-2h4v2h4v4h2v8h-2v4H25v-4h-2v-8h2v-4h4v-2h4z"
+            fill="#c2455c"
+          />
+          <path d="M28 26h9v5h5v8H28z" fill="#dd6a7b" />
+          <path d="M30 28h6v6h-6z" fill="#f0a3ae" />
+          <path d="M31 36h6v5h-6z" fill="#b84057" />
+          <path d="M39 14h4v6h-4z" fill="#4f7a4a" />
+        </>
+      )}
+      {name === "ice" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="55"
+            rx="14"
+            ry="4"
+            fill="#234939"
+            opacity=".16"
+          />
+          <path d="m32 7 14 20-14 26-14-26z" fill="#9fd4ec" />
+          <path d="m32 7 14 20-14 8z" fill="#d8f1fa" />
+          <path d="M32 27 46 27l-14 26z" fill="#6fb4d4" />
+          <path d="m32 7-14 20 14 8z" fill="#bfe6f4" />
+          <path d="M30 18h3v9h-3z" fill="#ffffff" opacity=".7" />
+          <path d="M18 40h4v4h-4zm24 4h3v3h-3z" fill="#e6f7fc" opacity=".8" />
+        </>
+      )}
+      {name === "contract" && (
+        <>
+          <ellipse
+            cx="32"
+            cy="54"
+            rx="15"
+            ry="4"
+            fill="#234939"
+            opacity=".16"
+          />
+          <path d="M22 12h20v34H22z" fill="#f6efd8" />
+          <path d="M22 12h20v5H22z" fill="#e3d7b4" />
+          <path d="M27 22h10v2H27zm0 5h10v2H27zm0 5h7v2h-7z" fill="#b5a883" />
+          <path d="M34 40h8v8h-8z" fill="#8aa8c9" />
+          <path d="M35 41h6v6h-6z" fill="#dfeffb" />
+          <path d="M16 16h4v4h-4zm24 0h4v4h-4z" fill="#f0c968" />
+          <path d="M20 46h6v4h-6zm18 4h6v4h-6z" fill="#e6dcbd" />
+        </>
+      )}
       {name === "tree" && (
         <>
           <ellipse

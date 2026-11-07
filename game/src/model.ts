@@ -19,7 +19,15 @@ export type SpriteName =
   | "castle"
   | "banner"
   | "fountain"
-  | "ember";
+  | "ember"
+  | "rem"
+  | "ram"
+  | "emilia"
+  | "puck"
+  | "roswaal"
+  | "rose"
+  | "ice"
+  | "contract";
 export type EntityKind =
   "npc" | "item" | "chest" | "enemy" | "gate" | "decoration";
 export type Action =
@@ -202,6 +210,21 @@ export const COURTYARD_ROWS = [
   "WSSSSSSSSSSSSSSSSW",
   "WWWWWWWWWWWWWWWWWW",
 ] as const;
+/** Roswaal manor garden: gravel paths, rose beds and clipped hedges. */
+export const GARDEN_ROWS = [
+  "TTTTTTTTTTTTTTTTTT",
+  "T,,,..######..,,,T",
+  "T,gg,..####..,gg,T",
+  "T,gg,...##...,gg,T",
+  "T,,,...####...,,,T",
+  "T..###.####.###..T",
+  "T..###.####.###..T",
+  "T,,,...####...,,,T",
+  "T,gg,...##...,gg,T",
+  "T,gg,..####..,gg,T",
+  "T,,,..######..,,,T",
+  "TTTTTTTTTTTTTTTTTT",
+] as const;
 const TILE_BY_CHAR: Record<string, Tile> = {
   ".": "grass",
   "#": "path",
@@ -212,16 +235,26 @@ const TILE_BY_CHAR: Record<string, Tile> = {
   S: "stone",
   f: "flowers",
   W: "wall",
+  g: "hedge",
 };
 /** Ground themes. A world uses one, single objects may use another. */
-export type Theme = "forest" | "sunset" | "ocean" | "castle" | "night";
-export const themes: Theme[] = ["forest", "sunset", "ocean", "castle", "night"];
+export type Theme =
+  "forest" | "sunset" | "ocean" | "castle" | "night" | "garden";
+export const themes: Theme[] = [
+  "forest",
+  "sunset",
+  "ocean",
+  "castle",
+  "night",
+  "garden",
+];
 export const themeLabels: Record<Theme, string> = {
   forest: "Лесное утро",
   sunset: "Золотой закат",
   ocean: "Прохладный берег",
   castle: "Каменный двор",
   night: "Ночь фонарей",
+  garden: "Розовый сад",
 };
 /**
  * Shared tile lookup. The theme decides which ground a location uses, so the
@@ -229,7 +262,12 @@ export const themeLabels: Record<Theme, string> = {
  */
 export function tileAt(x: number, y: number, theme: Theme = "forest"): Tile {
   if (x < 0 || y < 0 || x >= COLS || y >= ROWS) return "tree";
-  const rows = theme === "castle" ? COURTYARD_ROWS : ISLAND_ROWS;
+  const rows =
+    theme === "castle"
+      ? COURTYARD_ROWS
+      : theme === "garden"
+        ? GARDEN_ROWS
+        : ISLAND_ROWS;
   const char = (rows[y] ?? "")[x] ?? ".";
   return TILE_BY_CHAR[char] ?? "grass";
 }
@@ -239,6 +277,7 @@ export const locationNames: Record<Theme, string> = {
   ocean: "Прохладный берег",
   castle: "Замок фонарей",
   night: "Ночной двор",
+  garden: "Розовый сад Розвааля",
 };
 
 export function createWorld(): World {
@@ -374,6 +413,47 @@ export function createWorld(): World {
         sprite: "key",
         kind: "key",
         actions: [],
+      },
+      {
+        id: "rose",
+        name: "Алая роза",
+        description:
+          "Роза из сада поместья. Рем и Рам считают, что она приносит удачу.",
+        sprite: "rose",
+        kind: "material",
+        actions: [],
+      },
+      {
+        id: "ice-crystal",
+        name: "Ледяной кристалл",
+        description:
+          "Осколок льда Эмилии. Восстанавливает 25 здоровья и 10 энергии.",
+        sprite: "ice",
+        kind: "consumable",
+        actions: [
+          { type: "stat", stat: "hp", op: "add", value: 25 },
+          { type: "stat", stat: "energy", op: "add", value: 10 },
+          {
+            type: "message",
+            text: "Ледяная свежесть: здоровье +25, энергия +10.",
+          },
+        ],
+      },
+      {
+        id: "spirit-contract",
+        name: "Контракт духа",
+        description:
+          "Тёплый огонёк Пака. Постоянный эффект: сила атаки +3, защита +1.",
+        sprite: "contract",
+        kind: "equipment",
+        actions: [
+          { type: "stat", stat: "attack", op: "add", value: 3 },
+          { type: "stat", stat: "defense", op: "add", value: 1 },
+          {
+            type: "message",
+            text: "Пак довольно кивает. Сила атаки +3, защита +1.",
+          },
+        ],
       },
       {
         id: "lantern-charm",
@@ -705,6 +785,215 @@ export function createWorld(): World {
         stats: {},
       },
       {
+        id: "garden-gate",
+        name: "Калитка в поместье",
+        kind: "decoration",
+        x: 15,
+        y: 8,
+        sprite: "gate",
+        solid: true,
+        dialogue:
+          "За калиткой цветут розы, а на скамье у фонтана сидит девушка с длинными серебристыми волосами.",
+        stats: {},
+      },
+      {
+        id: "garden-exit",
+        theme: "garden",
+        name: "Выход из сада",
+        kind: "decoration",
+        x: 1,
+        y: 9,
+        sprite: "gate",
+        solid: true,
+        dialogue: "Тропинка ведёт обратно на остров.",
+        stats: {},
+      },
+      {
+        id: "rem",
+        theme: "garden",
+        name: "Рем",
+        kind: "npc",
+        x: 5,
+        y: 3,
+        sprite: "rem",
+        solid: true,
+        dialogue:
+          "Добро пожаловать в поместье! Я Рем. Мы с сестрой следим за садом. Не хочешь собрать алые розы? Они нужны для чая госпожи Эмилии.",
+        questId: "roses",
+        stats: {},
+      },
+      {
+        id: "ram",
+        theme: "garden",
+        name: "Рам",
+        kind: "npc",
+        x: 12,
+        y: 3,
+        sprite: "ram",
+        solid: true,
+        dialogue:
+          "Рам. Да, мы близнецы. Собери мне два ледяных кристалла — и чай получится по-настоящему холодным.",
+        questId: "tea",
+        stats: {},
+      },
+      {
+        id: "roswaal",
+        theme: "garden",
+        name: "Розвааль",
+        kind: "npc",
+        x: 9,
+        y: 2,
+        sprite: "roswaal",
+        solid: true,
+        dialogue:
+          "Ах, новый гость! Поместье всегда открыто для тех, кто не боится роз. Мои служанки проводят тебя.",
+        stats: {},
+      },
+      {
+        id: "emilia",
+        theme: "garden",
+        name: "Эмилия",
+        kind: "npc",
+        x: 9,
+        y: 8,
+        sprite: "emilia",
+        solid: true,
+        dialogue:
+          "Я Эмилия. Пак говорит, что в саду завёлся дух, который ворует ледяные кристаллы. Поможешь разобраться?",
+        questId: "ice",
+        stats: {},
+      },
+      {
+        id: "puck",
+        theme: "garden",
+        name: "Пак",
+        kind: "npc",
+        x: 8,
+        y: 5,
+        sprite: "puck",
+        solid: false,
+        dialogue:
+          "Я не кот! Я дух. Хотя гладить можно. Липп-липп! Если поможешь Эмилии, я заключу с тобой контракт.",
+        stats: {},
+      },
+      {
+        id: "ice-1",
+        theme: "garden",
+        name: "Ледяной кристалл",
+        kind: "item",
+        x: 3,
+        y: 6,
+        sprite: "ice",
+        solid: false,
+        dialogue: "",
+        itemId: "ice-crystal",
+        stats: {},
+      },
+      {
+        id: "ice-2",
+        theme: "garden",
+        name: "Ледяной кристалл",
+        kind: "item",
+        x: 14,
+        y: 6,
+        sprite: "ice",
+        solid: false,
+        dialogue: "",
+        itemId: "ice-crystal",
+        stats: {},
+      },
+      {
+        id: "rose-1",
+        theme: "garden",
+        name: "Алая роза",
+        kind: "item",
+        x: 2,
+        y: 4,
+        sprite: "rose",
+        solid: false,
+        dialogue: "",
+        itemId: "rose",
+        stats: {},
+      },
+      {
+        id: "rose-2",
+        theme: "garden",
+        name: "Алая роза",
+        kind: "item",
+        x: 5,
+        y: 8,
+        sprite: "rose",
+        solid: false,
+        dialogue: "",
+        itemId: "rose",
+        stats: {},
+      },
+      {
+        id: "rose-3",
+        theme: "garden",
+        name: "Алая роза",
+        kind: "item",
+        x: 12,
+        y: 8,
+        sprite: "rose",
+        solid: false,
+        dialogue: "",
+        itemId: "rose",
+        stats: {},
+      },
+      {
+        id: "rose-4",
+        theme: "garden",
+        name: "Алая роза",
+        kind: "item",
+        x: 15,
+        y: 4,
+        sprite: "rose",
+        solid: false,
+        dialogue: "",
+        itemId: "rose",
+        stats: {},
+      },
+      {
+        id: "garden-sign",
+        theme: "garden",
+        name: "Табличка у входа",
+        kind: "decoration",
+        x: 4,
+        y: 9,
+        sprite: "sign",
+        solid: false,
+        dialogue:
+          "«Поместье Розвааля. Рем и Рам — близняшки-служанки, Эмилия — дух-полуэльфийка, Пак — маленький дух, который не кот». Кто-то приписал снизу: «Пак точно кот».",
+        stats: {},
+      },
+      {
+        id: "garden-fountain",
+        theme: "garden",
+        name: "Фонтан поместья",
+        kind: "decoration",
+        x: 9,
+        y: 6,
+        sprite: "fountain",
+        solid: true,
+        dialogue:
+          "В воде плавают лепестки роз. Пак утверждает, что фонтан шепчет.",
+        stats: {},
+      },
+      {
+        id: "garden-manor",
+        theme: "garden",
+        name: "Поместье Розвааля",
+        kind: "decoration",
+        x: 9,
+        y: 3,
+        sprite: "castle",
+        solid: true,
+        dialogue:
+          "Особняк с башнями и витражами. Отсюда Розвааль управляет округой.",
+        stats: {},
+      },
+      {
         id: "sign",
         name: "Указатель",
         kind: "decoration",
@@ -738,6 +1027,38 @@ export function createWorld(): World {
         coins: 30,
         xp: 25,
         rewardItemId: "castle-key",
+      },
+      {
+        id: "roses",
+        name: "Чай для госпожи",
+        description:
+          "Рем и Рам просят собрать четыре алые розы для чая Эмилии.",
+        itemId: "rose",
+        count: 4,
+        coins: 20,
+        xp: 20,
+        rewardItemId: "ice-crystal",
+      },
+      {
+        id: "tea",
+        name: "Чай по-рамски",
+        description:
+          "Рам считает, что чай должен быть с розой и льдом. Принеси два ледяных кристалла.",
+        itemId: "ice-crystal",
+        count: 2,
+        coins: 18,
+        xp: 15,
+      },
+      {
+        id: "ice",
+        name: "Дух и лёд",
+        description:
+          "Эмилия просит принести два ледяных кристалла, пока Пак не растащил их все.",
+        itemId: "ice-crystal",
+        count: 2,
+        coins: 25,
+        xp: 30,
+        rewardItemId: "spirit-contract",
       },
       {
         id: "banner",
@@ -777,6 +1098,33 @@ export function createWorld(): World {
           { type: "location", theme: "forest" },
           { type: "teleport", x: 5, y: 4 },
           { type: "message", text: "Ты снова на Острове искр." },
+        ],
+      },
+      {
+        id: "enter-garden",
+        name: "Войти в сад поместья",
+        enabled: true,
+        trigger: { type: "interact", target: "garden-gate" },
+        conditions: [],
+        actions: [
+          { type: "location", theme: "garden" },
+          { type: "teleport", x: 9, y: 9 },
+          {
+            type: "message",
+            text: "Ты вошёл в Розовый сад поместья. Пахнет чаем и алыми розами.",
+          },
+        ],
+      },
+      {
+        id: "leave-garden",
+        name: "Выйти из сада",
+        enabled: true,
+        trigger: { type: "interact", target: "garden-exit" },
+        conditions: [],
+        actions: [
+          { type: "location", theme: "forest" },
+          { type: "teleport", x: 14, y: 7 },
+          { type: "message", text: "Ты вернулся на Остров искр." },
         ],
       },
       {
@@ -830,6 +1178,12 @@ export function createWorld(): World {
         icon: "gift",
         actions: [{ type: "window", window: "castle-notes" }],
       },
+      {
+        id: "manor-notes",
+        label: "Поместье Розвааля",
+        icon: "heart",
+        actions: [{ type: "window", window: "garden-notes" }],
+      },
     ],
     windows: [
       {
@@ -845,6 +1199,13 @@ export function createWorld(): World {
         title: "Заметки о замке",
         text: "Замок фонарей стоит на другом берегу. Фонарщик Тео ждёт у калитки, рыцари Ивар и Вела охраняют двор, а где-то в глубине притаился Тёмный Мор. Собери огоньки — и фонари снова загорятся.",
         stats: ["energy", "coins"],
+        buttons: [],
+      },
+      {
+        id: "garden-notes",
+        title: "Гости поместья",
+        text: "В саду живут Рем и Рам — близнецы-служанки, Эмилия — полуэльфийка с ледяной магией, и Пак, маленький дух, который очень похож на кота, но настаивает, что он не кот. Рем и Рам собирают алые розы, Эмилия ищет ледяные кристаллы, а Пак обещает контракт духа тому, кто поможет.",
+        stats: ["hp", "energy"],
         buttons: [],
       },
     ],
@@ -888,9 +1249,17 @@ export function reconcileState(world: World, old: GameState): GameState {
 }
 
 export type Tile =
-  "grass" | "path" | "water" | "bridge" | "stone" | "wall" | "tree" | "flowers";
+  | "grass"
+  | "path"
+  | "water"
+  | "bridge"
+  | "stone"
+  | "wall"
+  | "hedge"
+  | "tree"
+  | "flowers";
 /** Tiles the hero can never enter. */
-export const BLOCKED_TILES: Tile[] = ["water", "tree", "wall"];
+export const BLOCKED_TILES: Tile[] = ["water", "tree", "wall", "hedge"];
 export const spriteNames: SpriteName[] = [
   "hero",
   "gardener",
@@ -913,6 +1282,14 @@ export const spriteNames: SpriteName[] = [
   "banner",
   "fountain",
   "ember",
+  "rem",
+  "ram",
+  "emilia",
+  "puck",
+  "roswaal",
+  "rose",
+  "ice",
+  "contract",
 ];
 export const spriteLabels: Record<SpriteName, string> = {
   hero: "Хранитель",
@@ -936,6 +1313,14 @@ export const spriteLabels: Record<SpriteName, string> = {
   banner: "Знамя",
   fountain: "Фонтан",
   ember: "Огонёк",
+  rem: "Рем",
+  ram: "Рам",
+  emilia: "Эмилия",
+  puck: "Пак",
+  roswaal: "Розвааль",
+  rose: "Роза",
+  ice: "Ледяной кристалл",
+  contract: "Контракт духа",
 };
 export const kindLabels: Record<EntityKind, string> = {
   npc: "Персонаж",

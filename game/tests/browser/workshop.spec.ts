@@ -389,3 +389,35 @@ test("studio switches locations and paints a picture on a map tile", async ({
   await page.getByRole("button", { name: "Опубликовать в мире" }).click();
   await expect(page.locator(".world-version")).toHaveText("v2");
 });
+
+test("manor garden shows Rem, Ram, Emilia and Puck with their quests", async ({
+  page,
+}) => {
+  await page
+    .locator(".travel-tabs")
+    .getByRole("button", { name: "Розовый сад Розвааля", exact: true })
+    .click();
+  await expect(page.locator(".map-location")).toContainText("Розовый сад");
+  await expect(page.locator(".map-viewport")).toHaveClass(/theme-garden/);
+  for (const name of ["Рем", "Рам", "Эмилия", "Пак"]) {
+    await expect(
+      page.locator(`.map-entity[aria-label="${name}"]`),
+    ).toBeVisible();
+  }
+  await page.locator('.map-entity[aria-label="Рем"]').click();
+  await expect(page.getByRole("dialog")).toContainText("Рем");
+  await page.getByRole("button", { name: "Взяться за дело" }).click();
+  await expect(page.locator(".toast")).toContainText("Чай для госпожи");
+  await page.locator('.map-entity[aria-label="Пак"]').click();
+  await expect(page.getByRole("dialog")).toContainText("Я не кот");
+  await page.getByRole("button", { name: "Закрыть окно", exact: true }).click();
+  await page
+    .locator(".quick-buttons")
+    .getByRole("button", { name: "Поместье Розвааля" })
+    .click();
+  await expect(page.getByRole("dialog")).toContainText("Рем и Рам");
+  await page.getByRole("button", { name: "Закрыть окно", exact: true }).click();
+  await expect(page.locator(".save-status")).toHaveText("Сохранено в браузере");
+  await page.reload();
+  await expect(page.locator(".map-location")).toContainText("Розовый сад");
+});

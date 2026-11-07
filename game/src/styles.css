@@ -790,6 +790,33 @@ kbd {
     transform: scale(1.06);
   }
 }
+.map-viewport.theme-garden {
+  --grass: #a9c793;
+  --grass2: #aecb98;
+  background: #a3c08d;
+}
+.theme-garden .tile-flowers {
+  background: #b6cba0;
+}
+.tile-hedge {
+  background: #7f9c68;
+  box-shadow:
+    inset 0 2px #9cb883,
+    inset 0 -3px #5f7b4e;
+}
+.tile-hedge.tile-variant {
+  background: #7a9663;
+}
+.tile-hedge:after {
+  content: "";
+  position: absolute;
+  inset: 12% 6%;
+  border-radius: 45%;
+  background:
+    radial-gradient(circle at 30% 35%, #b3cc97 18%, transparent 19%),
+    radial-gradient(circle at 68% 60%, #93b078 20%, transparent 21%), #85a26d;
+  box-shadow: inset 0 -2px #5f7b4e55;
+}
 .tile-wall {
   background: #7f838c;
   box-shadow:

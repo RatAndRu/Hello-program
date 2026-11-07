@@ -187,6 +187,7 @@ export function canStand(
   y: number,
   theme: Theme = s.theme ?? world.theme,
 ): boolean {
+  const location = theme;
   if (
     x < 1 ||
     y < 1 ||
@@ -198,7 +199,7 @@ export function canStand(
   return !world.entities.some(
     (e) =>
       e.solid &&
-      entityTheme(world, e) === theme &&
+      entityTheme(world, e) === location &&
       e.x === x &&
       e.y === y &&
       !s.removed.includes(e.id) &&
@@ -560,12 +561,11 @@ function validateWorldDetails(w: World): string[] {
       errors.push(`Некорректные числа у объекта «${e.name}».`);
     if (!text(e.dialogue)) errors.push(`Слишком длинный диалог: ${e.name}`);
   }
+  // Two solid objects may share coordinates when they live in different
+  // locations, because the player only ever sees one of them at a time.
+  const solidKey = (e: Entity) => `${e.theme ?? w.theme}:${e.x},${e.y}`;
   const solids = w.entities.filter((e) => e.solid);
-  if (
-    solids.some((e, i) =>
-      solids.slice(i + 1).some((o) => o.x === e.x && o.y === e.y),
-    )
-  )
+  if (new Set(solids.map(solidKey)).size !== solids.length)
     errors.push("Два твёрдых объекта стоят на одной клетке.");
   for (const i of w.items)
     if (
