@@ -2,9 +2,9 @@
 
 Запуск из каталога forma/:
 
-    PYTHONPATH=. python docs/make_whatsnew_027.py
+    PYTHONPATH=. python docs/whatsnew/make_whatsnew_027.py
 
-Результат — docs/whatsnew_027.png (сетка 3 × 2, подписи по-русски).
+Результат — docs/whatsnew/whatsnew_027.png (сетка 3 × 2, подписи по-русски).
 """
 
 from __future__ import annotations

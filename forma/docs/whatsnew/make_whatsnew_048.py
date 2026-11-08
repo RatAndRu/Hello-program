@@ -1,7 +1,7 @@
 """Визуальная приёмка 0.48: девять сцен из исполняемых текстовых сценариев.
 
-Запуск из forma/: PYTHONPATH=. python docs/make_whatsnew_048.py
-Результат: docs/whatsnew_048.png и отдельные виды в /tmp/forma048_acceptance.
+Запуск из forma/: PYTHONPATH=. python docs/whatsnew/make_whatsnew_048.py
+Результат: docs/whatsnew/whatsnew_048.png и отдельные виды в /tmp/forma048_acceptance.
 """
 
 from __future__ import annotations

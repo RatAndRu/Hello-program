@@ -2,9 +2,9 @@
 
 Запуск из каталога forma/:
 
-    PYTHONPATH=. python docs/make_whatsnew_034.py
+    PYTHONPATH=. python docs/whatsnew/make_whatsnew_034.py
 
-Результат — docs/whatsnew_034.png: сетка 3 × 2, подписи по-русски. Каждая
+Результат — docs/whatsnew/whatsnew_034.png: сетка 3 × 2, подписи по-русски. Каждая
 плитка — настоящая сцена, построенная текстовым сценарием, а не рисунок.
 """
 

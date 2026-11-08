@@ -1,7 +1,7 @@
 """Плакат 0.42: девять настоящих сцен, построенных текстовым DSL.
 
-Запуск из forma/: PYTHONPATH=. python docs/make_whatsnew_042.py
-Результат: docs/whatsnew_042.png (3 × 3, русские подписи).
+Запуск из forma/: PYTHONPATH=. python docs/whatsnew/make_whatsnew_042.py
+Результат: docs/whatsnew/whatsnew_042.png (3 × 3, русские подписи).
 """
 
 from __future__ import annotations

@@ -1,0 +1,25 @@
+# Бинарные форматы: без построчных диффов и слияний
+*.glb   binary
+*.gltf  binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.webp  binary
+*.zip   binary
+*.exe   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.blend binary
+
+# Сценарии, модели и справка — обычный текст в UTF-8
+*.forma   text eol=lf
+*.yml     text eol=lf
+*.md      text eol=lf
+
+# Документация не влияет на статистику языков
+README.md          linguist-documentation
+forma/docs/**      linguist-documentation
+forma/examples/**  linguist-documentation
+forma/web/vendor/** linguist-vendored
