@@ -188,8 +188,8 @@ class BoxCavity073Test(unittest.TestCase):
         """Полость режется после посадки половин: пояс не перекрывает её."""
         solid = solid_of("к = box size=[100,80,60] wall=4 expand=0.2")
         self.assertEqual(solid_parts(solid.manifold), 1)
-        self.assertTrue(contains(solid, (0, 0, 5)) or contains(solid, (0, 0, 10)))
-        self.assertFalse(contains(solid, (0, 0, 50)))
+        self.assertTrue(contains(solid, (0, 0, 2)))     # дно толщиной wall
+        self.assertFalse(contains(solid, (0, 0, 50)))    # внутри полости
         # expand — единственная команда, которая намеренно выходит за size.
         self.assertAlmostEqual(bbox(solid)[0], 120.0, places=2)
 
