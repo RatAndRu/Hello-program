@@ -248,6 +248,7 @@ class TestExamplesAndTools(unittest.TestCase):
             "animation_tracks", "wardrobe", "thinkpad_x1",
             "mechanics", "motorcycle", "clock", "clock_led", "anime_face",
             "living_room_diorama", "train_carriage", "arte_lamp_banker_a2492lt_1ab",
+            "rpg_sword_01", "street_kit_01", "constructive_elements_01",
         ])
 
     def test_removed_examples_are_gone(self):
