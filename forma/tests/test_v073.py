@@ -259,6 +259,24 @@ class Docs073Test(unittest.TestCase):
         self.assertIn("NAMING.md", (ROOT / "README.md").read_text(encoding="utf-8"))
         self.assertIn("ATLAS.md", (ROOT / "README.md").read_text(encoding="utf-8"))
 
+    #: Понятия из отчёта помощника: атлас обязан дать каждому определение.
+    ATLAS_TERMS = (
+        "Стенка", "Полость", "Перегородка", "Днище", "Юбка", "Привалочная плоскость",
+        "Разъём", "Ниша", "Козырёк",
+        "Плоскость", "Тор", "Канавка", "Канавка под уплотнение", "Винтовая",
+        "Седло", "Бочка", "Гребень",
+        "Ласточкин хвост", "Продолговатое отверстие", "Наружный шестигранник",
+        "Защёлка", "Шарнир", "Цапфа", "Установочное отверстие", "Косынка",
+        "Рельеф", "Перфорация", "Рифление", "Борт", "Галтель переменного радиуса",
+        "База", "Ось симметрии", "Плоскость симметрии", "Сопряжение", "Стандартизованность",
+    )
+
+    def test_atlas_defines_every_requested_concept(self):
+        atlas = (ROOT / "docs" / "ATLAS.md").read_text(encoding="utf-8")
+        for term in self.ATLAS_TERMS:
+            with self.subTest(term=term):
+                self.assertIn(f"**{term}", atlas, f"в атласе нет понятия «{term}»")
+
 
 if __name__ == "__main__":
     unittest.main()
