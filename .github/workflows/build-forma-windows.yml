@@ -129,10 +129,14 @@ jobs:
                                ('058/jar_styles', 'jar-styles'),
                                ('living_room_diorama', 'living-room'),
                                ('train_carriage', 'train-carriage'),
-                               ('arte_lamp_banker_a2492lt_1ab', 'arte-lamp-banker-a2492lt-1ab')):
+                               ('arte_lamp_banker_a2492lt_1ab', 'arte-lamp-banker-a2492lt-1ab'),
+                               ('rpg_sword_01', 'rpg-sword'),
+                               ('street_kit_01', 'street-kit'),
+                               ('constructive_elements_01', 'constructive-elements')):
               source_dir = Path('examples') if stem in (
                   'thinkpad_x1', 'alien', 'living_room_diorama', 'train_carriage',
-                  'arte_lamp_banker_a2492lt_1ab') else Path('showcase/sources')
+                  'arte_lamp_banker_a2492lt_1ab', 'rpg_sword_01', 'street_kit_01',
+                  'constructive_elements_01') else Path('showcase/sources')
               source = source_dir / f'{stem}.forma'
               script = source.read_text(encoding='utf-8')
               result = build(script, analyze_model=False, base_dir=source.parent)
