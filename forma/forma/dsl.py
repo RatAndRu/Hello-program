@@ -31,7 +31,7 @@ IDENT_RE = re.compile(r"^[^\W\d]\w*$", re.UNICODE)
 
 PARAM_ALIASES = {
     "радиус": "radius", "диаметр": "diameter", "радиус2": "r2", "радиус_2": "r2", "высота": "height",
-    "размер": "size", "размеры": "size", "сегменты": "segments", "сегмент": "segments",
+    "размер": "size", "размеры": "size", "габарит": "size", "габариты": "size", "сегменты": "segments", "сегмент": "segments",
     "толщина": "thickness", "цвет": "color", "материал": "material",
     "точки": "points", "путь": "path", "профиль": "profile", "сечения": "sections",
     "количество": "count", "угол": "angle", "ось": "axis", "центр": "center",
@@ -213,8 +213,11 @@ class Args:
         self.functions = getattr(scene, "functions", {})
         self.extra: list[str] = []
         self.kwargs: dict[str, str] = {}
+        local_aliases = dict(getattr(spec, "param_aliases", {}) or {})
         for key, raw in cmd.kwargs.items():
-            k = PARAM_ALIASES.get(key.lower(), key)
+            # Сначала местное слово операции, потом общий словарь: так
+            # «глубина» у face_box означает рельеф, а у сверла — глубину.
+            k = local_aliases.get(key.lower()) or PARAM_ALIASES.get(key.lower(), key)
             if k in self.kwargs:
                 raise DslError(f"Параметр «{k}» задан дважды.", line=cmd.line, command=cmd.text)
             self.kwargs[k] = raw

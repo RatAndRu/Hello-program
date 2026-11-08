@@ -23,6 +23,10 @@ class OpSpec:
     example: str = ""
     params: dict[str, str] = field(default_factory=dict)
     positional: list[str] | str | None = None
+    # Местные синонимы параметров: слово → канонический ключ. Нужны там, где
+    # общее слово в разных операциях значит разное («выступ» у face_box и
+    # «припуск» у box_body — это один relief, но называть их одинаково нельзя).
+    param_aliases: dict[str, str] = field(default_factory=dict)
 
     def help_dict(self) -> dict:
         data = {
@@ -47,10 +51,12 @@ ALIASES: dict[str, str] = {}
 
 def op(name: str, aliases: tuple[str, ...] = (), category: str = "Прочее",
        summary: str = "", example: str = "", params: dict[str, str] | None = None,
-       positional: list[str] | str | None = None):
+       positional: list[str] | str | None = None,
+       param_aliases: dict[str, str] | None = None):
     def deco(fn: Callable):
         spec = OpSpec(name=name, fn=fn, aliases=aliases, category=category, summary=summary,
-                      example=example, params=dict(params or {}), positional=positional)
+                      example=example, params=dict(params or {}), positional=positional,
+                      param_aliases={k.lower(): v for k, v in (param_aliases or {}).items()})
         OPS[name] = spec
         ALIASES[name] = name
         for al in aliases:
