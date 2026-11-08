@@ -1,4 +1,7 @@
-/* Picking самого экспортированного Dragon Sovereign GLB через viewer.pickAt. */
+/* Picking самого экспортированного Dragon Sovereign GLB через viewer.pickAt.
+
+   GLB лежит в рабочей папке приложения (forma/exports/…) и в git не хранится:
+   перед тестом его собирает python tools/export_dragon_glb.py. */
 'use strict';
 
 const fs = require('fs');
@@ -40,6 +43,10 @@ async function main() {
   const meshMatches = new Function(`${matchSource}\nreturn meshMatches;`)();
   const holder = new Function('THREE', `${visibleSource}\nreturn { ${objectName},\n${pickAt} };`)(THREE);
 
+  if (!fs.existsSync(glbPath)) {
+    throw new Error(`Нет GLB дракона: ${glbPath}\n` +
+      'Соберите его: python tools/export_dragon_glb.py (из каталога forma/)');
+  }
   const bytes = fs.readFileSync(glbPath);
   const { document, bin } = parseGlb(bytes);
   const componentTypes = {

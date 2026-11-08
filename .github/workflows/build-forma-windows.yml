@@ -76,6 +76,11 @@ jobs:
         working-directory: forma
         run: python -m forma.fuzz --cases 24 --seed 20261102 --timeout 30 --output fuzz-report.json
 
+      - name: Собрать GLB дракона для JS-проверки picking
+        working-directory: forma
+        run: |
+          python tools/export_dragon_glb.py
+
       - name: Проверить JS-регрессии редактора
         working-directory: forma
         run: |
