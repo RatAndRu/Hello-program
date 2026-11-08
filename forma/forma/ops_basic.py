@@ -371,7 +371,10 @@ def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
 
 @op("box", aliases=("куб", "коробка", "cube", "параллелепипед", "брусок", "блок"),
     category="Примитивы",
-    summary="Параллелепипед с независимой верхней плоскостью и посадкой половин. "
+    summary="Параллелепипед с независимой верхней плоскостью, полостью со стенкой "
+            "и посадкой половин. wall>0 вычитает полость, повторяющую форму "
+            "основания: cavity выбирает открытую сторону (верх/низ), cavity_depth — "
+            "глубину, дно остаётся не тоньше wall. "
             "top_size меняет верх, expand увеличивает выбранную половину по X/Y; "
             "expand_joint=посадка добавляет скрытый пояс колпачка, стык соединяет "
             "без нахлёста, expand_smooth сглаживает внешний переход. "
@@ -390,11 +393,22 @@ def _segments(a, requested, radius: float, tolerance: float = FINENESS_MM,
             "expand_seat": "скрытый заход пояса на меньшую половину, мм (авто: 12% полувысоты)",
             "expand_smooth": "плавный внешний переход 0…1; 0 — чёткая кромка (0)",
             "base_angle": "угол между сторонами основания 15…165° (90 — прямоугольник)",
+            "wall": "толщина стенки и дна полости, мм; 0 — сплошной блок (0)",
+            "cavity": "открытая сторона полости при wall>0: верх, низ или нет (верх)",
+            "cavity_depth": "глубина полости от открытой стороны, мм "
+                            "(высота − wall); дно не пробивается",
             "round": "радиус рёбер; у квадратной коробки около половины стороны — "
                      "овальная/круглая форма",
             "detail": "детализация скругления 0…5 (3): больше — глаже и тяжелее",
             "center": "центрировать в точке at (по умолчанию — низ на at)",
             "at": "положение [x,y,z]"},
+    param_aliases={"стенка": "wall", "полость": "cavity", "открыть": "cavity",
+                   "глубина_полости": "cavity_depth", "радиус_рёбер": "round",
+                   "угол_между_сторонами": "base_angle", "скос_осей": "base_angle",
+                   "разница_половин": "expand", "расширение": "expand",
+                   "большая_половина": "expand_side", "тип_стыка": "expand_joint",
+                   "глубина_нахлёста": "expand_seat", "сглаживание_перехода": "expand_smooth",
+                   "верх": "top_size", "сдвиг_верха": "top_offset"},
     positional=[])
 def box(a, name):
     size = a.vec("size", 3, required=True)
@@ -438,11 +452,17 @@ def box(a, name):
         raise GeometryError("У обычного box отверстий больше нет.",
                             hint="Используйте cube_hole: отверстия остаются по центру, "
                                  "поддерживаются hole_x/hole_y/hole_z и их формы.")
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    cavity_note = None
+    if wall > 1e-6:
+        solid, cavity_note = _box_cavity(solid, a, wall, x, y, height)
     expand, expand_side, expand_smooth, expand_joint, expand_seat = _expansion_options(a)
     solid, expand_info = _expand_half(solid, expand, expand_side, expand_smooth, "блока",
                                       expand_joint, expand_seat)
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="box")
+    if cavity_note:
+        out.notes.append(cavity_note)
     if custom:
         out.notes.append(f"верх {tx:g}×{ty:g}, сдвиг {offset.tolist()}, угол основания {angle:g}°")
     if expand > 1e-9:
@@ -452,6 +472,59 @@ def box(a, name):
                          f"{expand_joint}, пояс {expand_info['expand_seat']:g} мм, "
                          f"переход {expand_info['expand_transition_mm']:g} мм")
     return out
+
+
+def _box_cavity(solid: mf.Manifold, a, wall: float, x: float, y: float,
+                height: float):
+    """Полость со стенкой внутри box.
+
+    Контур полости — пересечение двух срезов самого блока (внизу и вверху),
+    сжатых внутрь на wall. Поэтому полость повторяет форму основания и
+    остаётся внутри даже у сужающегося или параллелограммного блока: стенка
+    нигде не тоньше wall, хотя у сильного конуса дно выходит толще.
+    """
+    if wall * 2.0 >= min(x, y) - 0.5:
+        raise GeometryError("Стенка не оставляет полости.",
+                            hint="wall должен быть меньше половины меньшей стороны.")
+    side = (a.text("cavity", "верх") or "верх").strip().lower()
+    side = {"верх": "верх", "сверху": "верх", "top": "верх",
+            "низ": "низ", "снизу": "низ", "bottom": "низ", "нет": "нет"}.get(side)
+    if side is None:
+        raise GeometryError("cavity: верх или низ — открытая сторона полости.")
+    if side == "нет":
+        return solid, None
+    z0, z1 = float(solid.bounding_box()[2]), float(solid.bounding_box()[5])
+    span = z1 - z0
+    depth = a.num("cavity_depth", None, minv=0.1)
+    depth = float(depth) if depth is not None else span - wall
+    if depth > span - wall + 1e-9:
+        raise GeometryError(
+            f"Глубина полости {depth:g} мм не оставляет дна {wall:g} мм.",
+            hint=f"cavity_depth не больше {span - wall:g} мм при высоте {span:g} мм.")
+
+    def slice_contour(z: float) -> mf.CrossSection:
+        slab = mf.Manifold.cube((x * 4.0 + 40.0, y * 4.0 + 40.0, 0.5), True).translate(
+            (0.0, 0.0, z))
+        piece = solid ^ slab
+        return piece.project() if not piece.is_empty() else solid.project()
+
+    contour = slice_contour(z0 + 0.25).offset(-wall, mf.JoinType.Round, 2.0, 16)
+    top = slice_contour(z1 - 0.25).offset(-wall, mf.JoinType.Round, 2.0, 16)
+    contour = contour ^ top
+    if contour.is_empty() or contour.area() <= 1.0:
+        raise GeometryError("Стенка съела всё сечение: полость пустая.",
+                            hint="Уменьшите wall.")
+    if side == "верх":
+        start, length = z1 - depth, depth + 1.0
+    else:
+        start, length = z0 - 1.0, depth + 1.0
+    tool = mf.Manifold.extrude(contour, length).translate((0.0, 0.0, start))
+    tool = tool ^ solid
+    result = solid - tool
+    if result.is_empty() or result.volume() <= 1e-6:
+        raise GeometryError("Полость удалила всё тело — уменьшите wall.")
+    return result, (f"полость со стенкой {wall:g} мм, глубина {depth:g} мм, "
+                    f"открыта {side}")
 
 
 @op("sphere", aliases=("сфера", "шар", "ball"),

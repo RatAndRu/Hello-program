@@ -834,15 +834,16 @@ def washer(a, name):
 # --------------------------------------------------------------------------- #
 @op("cube_hole", aliases=("кубик_с_отверстием", "блок_с_отверстием", "брусок_с_отверстием"),
     category="Примитивы",
-    summary="Брусок с центральными сквозными отверстиями. hole/axis/hole_shape "
-            "задают одно отверстие; hole_x/hole_y/hole_z и независимые формы "
-            "работают одновременно по всем осям. Поддерживаются круг, квадрат, "
-            "треугольник, шестигранник и прямой овал. Все резцы проходят строго "
-            "через центр блока.",
+    summary="Брусок с отверстиями. hole/axis/hole_shape задают одно отверстие; "
+            "hole_x/hole_y/hole_z и независимые формы работают одновременно по "
+            "всем осям. Поддерживаются круг, квадрат, треугольник, шестигранник "
+            "и прямой овал. offset смещает отверстия от центра в их плоскости, "
+            "depth делает их глухими (режется от стороны +оси).",
     example="кубик = cube_hole size=[40,40,40] hole=16 hole_shape=круг\n"
+            "фланец = cube_hole size=[60,60,12] hole_z=6 offset=[20,20]\n""гнездо = cube_hole size=[40,40,30] hole=14 depth=12\n"
             "квадратный = cube_hole size=[45,45,35] hole=15 hole_shape=квадрат\n"
             "треугольный = cube_hole size=[50,45,40] hole=18 hole_shape=треугольник axis=y",
-    params={"size": "размер [x,y,z], мм (40,40,40)",
+    params={"size": "габарит бруска [x,y,z], мм (40,40,40)",
             "hole": "размер одиночного отверстия, мм (40% размера)",
             "hole_all": "один диаметр сразу для X, Y и Z, мм",
             "all_axes": "да — применить hole/hole_shape одновременно ко всем осям",
@@ -855,8 +856,14 @@ def washer(a, name):
             "hole_y_shape": "форма Y: круг, квадрат, треугольник, шестигранник или овал",
             "hole_z_shape": "форма Z: круг, квадрат, треугольник, шестигранник или овал",
             "oval_aspect": "отношение длины прямого овала к ширине 1…8 (1.8)",
-            "round": "скругление рёбер, мм",
-            "at": "положение [x,y,z]", "center": "центрировать по высоте"})
+            "offset": "смещение отверстий от центра в плоскости их грани [u,v], мм (0,0)",
+            "depth": "глубина глухого отверстия от стороны +оси, мм; не задана — сквозное",
+            "round": "радиус рёбер, мм",
+            "at": "положение [x,y,z]", "center": "центрировать по высоте"},
+    param_aliases={"глубина": "depth", "смещение_отверстий": "offset",
+                   "форма_отверстия": "hole_shape", "вытянутость": "oval_aspect",
+                   "ось_отверстия": "axis", "отверстия": "hole",
+                   "радиус_рёбер": "round"})
 def cube_hole(a, name):
     size = a.vec("size", 3, default=(40.0, 40.0, 40.0))
     if any(v <= 0 for v in size):
@@ -875,9 +882,35 @@ def cube_hole(a, name):
         inner = [max(s - 2 * rnd, 1e-3) for s in size]
         box = mf.Manifold.cube(inner, True).minkowski_sum(mf.Manifold.sphere(rnd, 24))
     length = max(size) * 3.0 + 20.0
+    shift = a.vec("offset", 2, default=(0.0, 0.0))
+    blind = a.num("depth", None, minv=0.01, maxv=10000.0)
+    plane_axes = {"x": (1, 2), "y": (0, 2), "z": (0, 1)}
     cutters = []
     labels = []
     shapes = []
+
+    def place(cutter, axis, axis_index, diameter):
+        """Смещение от центра и, если задана depth, глухое отверстие."""
+        du, dv = float(shift[0]), float(shift[1])
+        u_axis, v_axis = plane_axes[axis]
+        room_u = float(size[u_axis])
+        room_v = float(size[v_axis])
+        reach = max(abs(du), abs(dv)) + diameter / 2.0
+        if reach > min(room_u, room_v) / 2.0 - 1.0:
+            raise GeometryError(
+                f"Отверстие ⌀{diameter:g} со смещением [{du:g},{dv:g}] выходит за брусок.",
+                hint="Уменьшите offset или hole либо увеличьте size.")
+        vector = [0.0, 0.0, 0.0]
+        vector[u_axis] = du
+        vector[v_axis] = dv
+        cutter = cutter.translate(tuple(vector))
+        room = float(size[axis_index])
+        if blind is not None and blind < room - 1.0:
+            # Глухое: режем от стороны +оси вглубь на depth.
+            vector = [0.0, 0.0, 0.0]
+            vector[axis_index] = room / 2.0 - float(blind) + length / 2.0
+            cutter = cutter.translate(tuple(vector))
+        return cutter
     if axis_specific:
         oval_aspect = float(a.num("oval_aspect", 1.8, minv=1.0, maxv=8.0) or 1.0)
         for axis_index, axis in enumerate(("x", "y", "z")):
@@ -891,7 +924,8 @@ def cube_hole(a, name):
             room = min(v for i, v in enumerate(size) if i != axis_index)
             if diameter >= room - 1.0:
                 raise GeometryError(f"Отверстие {diameter:g} мм по {axis.upper()} не оставляет стенки.")
-            cutters.append(axis_hole_cutter(axis, shape, diameter, oval_aspect, length))
+            cutters.append(place(axis_hole_cutter(axis, shape, diameter, oval_aspect, length),
+                                 axis, axis_index, diameter))
             labels.append(f"{axis.upper()}:{shape} {diameter:g}")
             shapes.append(shape)
         if not cutters:
@@ -916,7 +950,7 @@ def cube_hole(a, name):
             raise GeometryError("hole_shape=круг, квадрат, треугольник, шестигранник или овал.")
         oval_aspect = float(a.num("oval_aspect", 1.8, minv=1.0, maxv=8.0) or 1.0)
         cutter = axis_hole_cutter(axis, shape, hole, oval_aspect, length)
-        cutters.append(cutter)
+        cutters.append(place(cutter, axis, axis_index, hole))
         labels.append(f"{axis.upper()}:{shape} {hole:g}")
         shapes.append(shape)
     tool = cutters[0] if len(cutters) == 1 else mf.Manifold.batch_boolean(cutters, mf.OpType.Add)
@@ -924,7 +958,13 @@ def cube_hole(a, name):
     out = make_solid(a.scene, name, _placed(a, solid), a, kind="cube_hole")
     out.meta["hole_shape"] = shapes[0] if len(shapes) == 1 else shapes
     out.meta["centered_holes"] = labels
-    out.notes.append("центральные сквозные отверстия: " + ", ".join(labels))
+    kind = "глухие" if blind is not None and blind < min(
+        float(v) for v in size) - 1.0 else "сквозные"
+    where = "по центру" if abs(float(shift[0])) < 1e-9 and abs(float(shift[1])) < 1e-9 \
+        else f"со смещением [{float(shift[0]):g},{float(shift[1]):g}]"
+    out.meta["hole_depth"] = None if blind is None else float(blind)
+    out.meta["hole_offset"] = [float(shift[0]), float(shift[1])]
+    out.notes.append(f"{kind} отверстия {where}: " + ", ".join(labels))
     return out
 
 

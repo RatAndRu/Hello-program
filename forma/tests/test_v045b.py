@@ -94,15 +94,22 @@ class CavityFrameTest(unittest.TestCase):
 
 class FaceBoxTest(unittest.TestCase):
     def test_convex_and_concave_faces_change_volume_in_opposite_directions(self):
+        """0.73: габарит — изделие. Выступ растёт внутрь ядра, а не наружу.
+
+        Раньше выпуклый рельеф увеличивал габарит (68×58×48 вместо 60×50×40) и
+        деталь не влезала в посадочное место. Теперь ядро сжимается на relief,
+        капы возвращают габарит к size: объём меньше сплошного куба, потому что
+        углы срезаны, но габарит ровно тот, что заказан.
+        """
         plain = solid(ok("о = face_box size=[60,50,40]"))
         convex = solid(ok("о = face_box size=[60,50,40] mode=выпуклый relief=4"))
         concave = solid(ok("о = face_box size=[60,50,40] mode=вогнутый relief=4"))
         for m in (plain, convex, concave):
             one(m)
         self.assertAlmostEqual(plain.volume(), 60 * 50 * 40, delta=1e-5)
-        self.assertGreater(convex.volume(), plain.volume())
+        self.assertLess(convex.volume(), plain.volume())
         self.assertLess(concave.volume(), plain.volume())
-        np.testing.assert_allclose(size_from_manifold(convex), [68, 58, 48], atol=1e-6)
+        np.testing.assert_allclose(size_from_manifold(convex), [60, 50, 40], atol=1e-6)
         np.testing.assert_allclose(size_from_manifold(concave), [60, 50, 40], atol=1e-6)
 
     def test_lens_trapezoid_and_square_profiles_are_distinct(self):
@@ -113,20 +120,25 @@ class FaceBoxTest(unittest.TestCase):
                              f"profile={profile} relief=5 margin=6"))
                 one(m)
                 volumes.append(m.volume())
-        self.assertGreater(min(volumes), 60 * 50 * 40)
+        # Формы рельефа различаются объёмом, но габарит у всех одинаковый.
         self.assertEqual(len({round(v, 3) for v in volumes}), 3)
+        for profile in ("линза", "трапеция", "квадрат"):
+            m = solid(ok(f"о = face_box size=[60,50,40] mode=выпуклый "
+                         f"profile={profile} relief=5 margin=6"))
+            np.testing.assert_allclose(size_from_manifold(m), [60, 50, 40], atol=1e-6)
 
     def test_faces_can_select_only_top_and_lists(self):
         m = solid(ok("о = face_box size=[60,50,40] mode=выпуклый faces=верх relief=4"))
         one(m)
         bb = m.bounding_box()
-        np.testing.assert_allclose(size_from_manifold(m), [60, 50, 44], atol=1e-6)
+        # 0.73: выступ сверху не добавляет высоту, а съедает её у ядра.
+        np.testing.assert_allclose(size_from_manifold(m), [60, 50, 40], atol=1e-6)
         self.assertAlmostEqual(bb[2], 0.0, delta=1e-6)
-        self.assertAlmostEqual(bb[5], 44.0, delta=1e-6)
+        self.assertAlmostEqual(bb[5], 40.0, delta=1e-6)
         multi = solid(ok("о = face_box size=[60,50,40] mode=выпуклый "
                          "faces=[верх,перед] relief=4"))
         one(multi)
-        np.testing.assert_allclose(size_from_manifold(multi), [60, 54, 44], atol=1e-6)
+        np.testing.assert_allclose(size_from_manifold(multi), [60, 50, 40], atol=1e-6)
 
     def test_single_corner_is_exact_tetrahedron_at_requested_corner(self):
         cut = 12.0

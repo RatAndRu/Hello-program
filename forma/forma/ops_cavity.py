@@ -237,27 +237,40 @@ def _face_feature(width: float, height: float, relief: float, profile: str,
 
 @op("face_box", aliases=("куб_граней", "формкуб", "куб_с_гранями", "face_cube"),
     category="Примитивы",
-    summary="Куб с ровными, выпуклыми или вогнутыми гранями. profile=линза "
-            "делает эллиптическую сферическую капу, трапеция — наклонные стенки, "
-            "квадрат — прямой выступ/врез. faces=все/бока или список граней. "
+    summary="Куб с рельефом на гранях. size — габарит готовой детали: "
+            "выпуклый рельеф выступает наружу, вогнутый уходит внутрь, и в обоих "
+            "случаях деталь остаётся ровно size. profile=линза — сферическая "
+            "капа, трапеция — скос, квадрат — прямой выступ/врез. faces=все/бока "
+            "или список граней, offset сдвигает рельеф по плоскости грани. "
             "corner_cut срезает один, верхние/нижние или все углы плоскостью "
-            "через три ребра, образуя треугольные грани.",
+            "через три ребра, образуя треугольные грани. Если углубления "
+            "сомкнутся (деталь распадётся или получит закрытые полости), "
+            "операция останавливается и называет безопасную глубину.",
     example="купола = face_box size=[80,80,80] mode=выпуклый profile=линза faces=все relief=7 margin=8\n"
             "пазы = face_box size=[80,80,80] mode=вогнутый profile=квадрат faces=верх,перёд relief=6\n"
+            "лунка = face_box size=[60,60,20] mode=вогнутый profile=линза faces=верх relief=4 offset=[10,0]\n"
             "срез = face_box size=[80,80,80] corners=один corner=перед_право_верх corner_cut=22",
-    params={"size": "стороны куба [x,y,z], мм (80,80,80)",
-            "mode": "ровный, выпуклый или вогнутый",
-            "profile": "линза, трапеция или квадрат",
+    params={"size": "габарит изделия [x,y,z], мм (80,80,80): стороны готовой "
+                    "детали, а не ядра",
+            "mode": "направление рельефа: ровный, выпуклый (наружу) или вогнутый (внутрь)",
+            "profile": "форма рельефа: линза (сферическая), трапеция (скос) или "
+                       "квадрат (прямой)",
             "faces": "все, бока или список: верх,низ,перёд,зад,право,лево",
-            "relief": "высота выпуклости или глубина вогнутости, мм (7)",
+            "relief": "величина рельефа: высота выступа или глубина углубления, мм (7)",
             "margin": "поле от края грани до рельефа, мм (8)",
+            "offset": "смещение центра рельефа по плоскости грани [u,v], мм (0,0)",
             "taper": "сужение вершины трапеции 0…0.9 (0.35)",
             "detail": "детализация линзовых граней 0…5 (3): радиальные кольца и окружность",
             "segments": "явное число сегментов линзы по окружности (по detail)",
             "corner_cut": "срез вдоль каждого из трёх рёбер, мм; 0 — нет",
             "corners": "один, верх, низ, все или нет",
             "corner": "какой один угол: перед_право_верх и т. п.",
-            "at": "положение [x,y,z]", "center": "центрировать в at"})
+            "at": "положение [x,y,z]", "center": "центрировать в at"},
+    param_aliases={"направление": "mode", "форма_рельефа": "profile",
+                   "выступ": "relief", "глубина": "relief", "глубина_рельефа": "relief",
+                   "величина": "relief", "поле_до_края": "margin",
+                   "поле": "margin", "сужение": "taper", "детализация": "detail",
+                   "срез_угла": "corner_cut", "углы": "corners", "угол": "corner"})
 def face_box(a, name):
     size = a.vec("size", 3, default=(80.0, 80.0, 80.0))
     dims = np.asarray([float(v) for v in size], dtype=np.float64)
@@ -282,6 +295,7 @@ def face_box(a, name):
     lens_segments = int(a.int("segments", 48 + 16 * detail,
                               minv=24, maxv=256) or 96)
     lens_rings = 8 + 4 * detail
+    shift = a.vec("offset", 2, default=(0.0, 0.0))
     raw_faces = (a.text("faces", "все") or "все").strip().lower()
     if raw_faces.startswith("[") and raw_faces.endswith("]"):
         raw_faces = raw_faces[1:-1].strip()
@@ -299,7 +313,73 @@ def face_box(a, name):
             if token:
                 faces.append(_FACE_ALIASES[token])
         faces = list(dict.fromkeys(faces))
-    solid = mf.Manifold.cube(tuple(dims), True)
+    face_dims = {
+        "верх": (dims[0], dims[1], 2), "низ": (dims[0], dims[1], 2),
+        "перёд": (dims[0], dims[2], 1), "зад": (dims[0], dims[2], 1),
+        "право": (dims[1], dims[2], 0), "лево": (dims[1], dims[2], 0),
+    }
+    rel = mode != "ровный" and bool(faces)
+
+    def profile_ok(value: float, face: str) -> bool:
+        """Рельеф не шире самой грани."""
+        u, v, _axis = face_dims[face]
+        fu, fv = u - 2.0 * margin, v - 2.0 * margin
+        return min(fu, fv) > 0.2 and value <= min(fu, fv) * (
+            0.9 if profile == "линза" else 1.5)
+
+    def with_relief(body: mf.Manifold, value: float, check: bool = True) -> mf.Manifold:
+        """Наложить рельеф высотой/глубиной value на выбранные грани.
+
+        Для выпуклого режима капа стоит на ядре и выступает наружу ровно на
+        value, поэтому габарит готовой детали остаётся равен size.
+        """
+        for face in faces:
+            u, v, axis = face_dims[face]
+            fu, fv = u - 2.0 * margin, v - 2.0 * margin
+            if check and not profile_ok(value, face):
+                if min(fu, fv) <= 0.2:
+                    raise GeometryError(f"margin не оставляет рельефа на грани {face}.")
+                raise GeometryError(f"relief слишком велик для грани {face}.")
+            feature = _face_feature(fu, fv, value, profile, taper,
+                                    lens_segments, lens_rings)
+            if mode == "вогнутый":
+                # Разворот идёт до смещения: иначе на вогнутой грани offset
+                # зеркалился по второй оси грани.
+                feature = feature.rotate((180, 0, 0))
+            if abs(shift[0]) > 1e-9 or abs(shift[1]) > 1e-9:
+                feature = feature.translate((float(shift[0]), float(shift[1]), 0.0))
+            if mode == "вогнутый":
+                body = body - _on_face(feature, face, dims[axis] / 2.0)
+            else:
+                body = body + _on_face(feature, face, dims[axis] / 2.0 - value)
+        return body
+
+    # Ядро выпуклого режима сжимается только с той стороны, где стоит выступ:
+    # капа добавляет ровно relief, поэтому габарит детали остаётся равен size.
+    lo_inset = np.zeros(3)
+    hi_inset = np.zeros(3)
+    if mode == "выпуклый" and faces:
+        for face in faces:
+            axis = face_dims[face][2]
+            if face in ("верх", "зад", "право"):
+                hi_inset[axis] = relief
+            else:
+                lo_inset[axis] = relief
+        core_size = dims - lo_inset - hi_inset
+        if np.any(core_size < 2.0):
+            raise GeometryError(
+                f"face_box: relief={relief:g} мм не оставляет ядра по стороне "
+                f"{min(dims):g} мм.",
+                hint="Для выпуклого рельефа relief должен быть меньше половины "
+                     "наименьшей стороны — иначе выступы съедают тело.")
+    core_size = dims - lo_inset - hi_inset
+    core_shift = (lo_inset - hi_inset) / 2.0
+
+    def make_core() -> mf.Manifold:
+        return mf.Manifold.cube(tuple(float(v) for v in core_size), True).translate(
+            tuple(float(v) for v in core_shift))
+
+    solid = make_core()
 
     corner_cut = float(a.num("corner_cut", 0.0, minv=0.0, maxv=10000.0) or 0.0)
     corners_mode = (a.text("corners", "один") or "один").strip().lower()
@@ -308,6 +388,7 @@ def face_box(a, name):
         raise GeometryError("face_box: неизвестный corner.", hint="Например, перед_право_верх.")
     if corners_mode not in ("один", "верх", "низ", "все", "нет"):
         raise GeometryError("face_box: corners=один, верх, низ, все или нет.")
+
     def cut_corners(body):
         """Срез выполняется последним: выпуклая капа тоже обрезается.
 
@@ -357,37 +438,73 @@ def face_box(a, name):
                 body = body - cutter
         return body
 
-    if mode != "ровный" and faces:
-        face_dims = {
-            "верх": (dims[0], dims[1], 2), "низ": (dims[0], dims[1], 2),
-            "перёд": (dims[0], dims[2], 1), "зад": (dims[0], dims[2], 1),
-            "право": (dims[1], dims[2], 0), "лево": (dims[1], dims[2], 0),
-        }
-        for face in faces:
-            u, v, axis = face_dims[face]
-            fu, fv = u - 2.0 * margin, v - 2.0 * margin
-            if min(fu, fv) <= 0.2:
-                raise GeometryError(f"margin не оставляет рельефа на грани {face}.")
-            if relief > min(fu, fv) * (0.9 if profile == "линза" else 1.5):
-                raise GeometryError(f"relief слишком велик для грани {face}.")
-            feature = _face_feature(fu, fv, relief, profile, taper,
-                                    lens_segments, lens_rings)
-            if mode == "вогнутый":
-                feature = feature.rotate((180, 0, 0))
-                solid = solid - _on_face(feature, face, dims[axis] / 2.0)
-            else:
-                solid = solid + _on_face(feature, face, dims[axis] / 2.0)
+    def render(value: float) -> mf.Manifold:
+        """Собрать тело с рельефом заданной глубины (без проверок структуры)."""
+        body = make_core()
+        if rel:
+            body = with_relief(body, value, check=False)
+        return cut_corners(body)
+
+    if rel:
+        solid = with_relief(solid, relief)
     solid = cut_corners(solid)
+
+    parts = solid.decompose()
+    genus = int(solid.genus())
+    if len(parts) > 1 or genus > 0:
+        safe = _largest_whole_relief(render, relief) if (rel and mode == "вогнутый") else None
+        if len(parts) > 1:
+            message = (f"face_box: углубление глубже поля грани — тело распадается "
+                       f"на {len(parts)} части")
+        else:
+            message = (f"face_box: углубления сомкнулись внутри — в теле "
+                       f"{genus} закрытых полостей")
+        if safe is not None and safe > 0.5:
+            hint = (f"relief не больше {safe:g} мм: уменьшите relief с {relief:g} "
+                    f"или увеличьте margin с {margin:g}.")
+        else:
+            hint = ("Уменьшите relief или увеличьте margin: поле грани должно "
+                    "оставаться толще углубления.")
+        raise GeometryError(message, hint=hint)
+
     if solid.is_empty() or solid.volume() <= 1e-6:
         raise GeometryError("face_box: операции удалили всё тело.")
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="face_box")
     out.meta["faces"] = faces
+    out.meta["relief"] = {"value": relief, "mode": mode, "profile": profile,
+                          "margin": margin, "offset": [float(shift[0]), float(shift[1])]}
+    if mode == "выпуклый" and margin < relief:
+        out.notes.append("кромка рельефа нависает: margin меньше relief")
     out.notes.append(f"грани {mode}/{profile}: {', '.join(faces)}; "
                      f"срез {corner_cut:g} мм, corners={corners_mode}")
     return out
 
 
+def _largest_whole_relief(render, relief: float) -> float | None:
+    """Наибольшая глубина рельефа, при которой тело остаётся одним целым.
+
+    Ошибка «распалось» должна называть конкретное число, а не отправлять
+    пользователя подбирать его вручную. Дорогая сборка случается только на
+    пути ошибки, поэтому восемь делений пополам здесь ничего не стоят.
+    """
+    def intact(value: float) -> bool:
+        try:
+            body = render(value)
+        except Exception:  # noqa: BLE001 — любая неудача значит «не проходит»
+            return False
+        return len(body.decompose()) == 1 and int(body.genus()) == 0
+
+    low, high = 0.1, float(relief)
+    if intact(high):
+        return high
+    for _ in range(8):
+        middle = (low + high) / 2.0
+        if intact(middle):
+            low = middle
+        else:
+            high = middle
+    return round(low, 1)
 def _on_face(feature: mf.Manifold, face: str, offset: float) -> mf.Manifold:
     rotation = _FACE_ROTATIONS[face]
     matrix3 = np.eye(3, 4)
