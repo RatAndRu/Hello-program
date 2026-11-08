@@ -1,11 +1,9 @@
 name: Опубликовать ZIP изменённых файлов Forma
 
 # Ручной режим для перевыпуска дельты между любыми ревизиями без сборки EXE.
+# Запускается только вручную: параметры задаются в форме workflow_dispatch,
+# файл-запрос в репозитории больше не нужен.
 on:
-  # Push-запрос работает и тогда, когда workflow ещё существует только ветке.
-  push:
-    paths:
-      - '.github/delta-request.json'
   workflow_dispatch:
     inputs:
       base:
@@ -42,21 +40,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Прочитать push-запрос
-        if: github.event_name == 'push'
-        run: |
-          python - <<'PY'
-          import json, os
-          from pathlib import Path
-          request = json.loads(Path('.github/delta-request.json').read_text(encoding='utf-8'))
-          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as out:
-              for key in ('BASE', 'HEAD', 'RELEASE_TAG', 'ARCHIVE_NAME'):
-                  value = str(request.get(key, '')).strip()
-                  if not value or '\n' in value or '\r' in value:
-                      raise SystemExit(f'Некорректное поле {key}')
-                  out.write(f'{key}={value}\n')
-          PY
 
       - name: Проверить имя и собрать дельту
         run: |
