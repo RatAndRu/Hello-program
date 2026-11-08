@@ -27,7 +27,7 @@ OUT = ROOT / "docs" / "elements"
 SCENE = ROOT / "examples" / "constructive_elements_01.forma"
 
 PX, PY = 220.0, 210.0          # шаг клеток
-COLS, ROWS = 6, 5
+COLS, ROWS = 6, 6
 
 
 # ---------------------------------------------------------------------------
@@ -59,8 +59,8 @@ ELEMENTS = [
     ("э05", "ПРОТОЧКА",
      "Кольцевая канавка на валу: выход резьбонарезного и шлифовального круга.",
      ["г5а = cylinder radius=30 height=78 at=[{x},{y},0]",
-      "г5б = cylinder radius=33 height=8 at=[{x},{y},50]",
-      "г5в = cylinder radius=24 height=8 at=[{x},{y},50]",
+      "г5б = cylinder radius=33 height=10 at=[{x},{y},49]",
+      "г5в = cylinder radius=21 height=10 at=[{x},{y},49]",
       "г5кан = difference [г5б, г5в]",
       "э05 = difference [г5а, г5кан]"]),
     ("э06", "ВЫТОЧКА",
@@ -68,7 +68,7 @@ ELEMENTS = [
      ["г6а = cylinder radius=38 height=66 at=[{x},{y},0]",
       "г6б = cylinder radius=24 height=66 at=[{x},{y},0]",
       "г6тр = difference [г6а, г6б]",
-      "г6в = cylinder radius=31 height=9 at=[{x},{y},38]",
+      "г6в = cylinder radius=31 height=11 at=[{x},{y},37]",
       "г6г = cylinder radius=24 height=9 at=[{x},{y},38]",
       "г6выт = difference [г6в, г6г]",
       "э06 = difference [г6тр, г6выт]"]),
@@ -229,11 +229,11 @@ ELEMENTS = [
       "г26б = cylinder radius=12 height=12",
       "г26б = rotate [г26б] angle=90 axis=y",
       "г26б = translate [г26б] offset=[{x},{y},34]",
-      "г26б = translate [г26б] offset=[-52,0,0]",
+      "г26б = translate [г26б] offset=[-44,0,0]",
       "г26в = cylinder radius=12 height=12",
       "г26в = rotate [г26в] angle=90 axis=y",
       "г26в = translate [г26в] offset=[{x},{y},34]",
-      "г26в = translate [г26в] offset=[52,0,0]",
+      "г26в = translate [г26в] offset=[44,0,0]",
       "э26 = union [г26а, г26б, г26в]"]),
     ("э27", "СТУПИЦА",
      "Центральная часть колеса: садится на вал и несёт спицы.",
@@ -258,7 +258,47 @@ ELEMENTS = [
       "г30в = cone radius=9 height=12 at=[{x},{y},40]",
       "г30т = union [г30а, г30б, г30в]",
       "э30 = chamfer [г30т] width=1.5 edges=convex"]),
+    ("э31", "ТОРЕЦ",
+     "Торцевая плоскость, перпендикулярная оси: база установки и отсчёта размеров.",
+     ["г31а = box size=[58,58,84] center=true at=[{x},{y},42]",
+      "э31 = chamfer [г31а] width=3 edges=convex"]),
+    ("э32", "ГРАНЬ · РЕБРО · ВЕРШИНА",
+     "Плоская грань, линия пересечения двух граней и точка стыка трёх рёбер.",
+     ["э32 = prism sides=6 radius=30 height=64 at=[{x},{y},0]",
+      "э32 = chamfer [э32] width=1.2 edges=convex"]),
+    ("э33", "КРИВАЯ ПОВЕРХНОСТЬ",
+     "Поверхность вращения или литейная поверхность — не плоскость, задаётся профилем.",
+     ["э33 = sphere radius=34 at=[{x},{y},0]",
+      "э33 = fillet [э33] radius=1 edges=concave segments=8"]),
+    ("э34", "ПОДШИПНИК",
+     "Наружное и внутреннее кольца и тела качения между ними: момент не передаёт, держит вал.",
+     ["г34а = cylinder radius=45 height=20 at=[{x},{y},0]",
+      "г34б = cylinder radius=35 height=20 at=[{x},{y},0]",
+      "г34н = difference [г34а, г34б]",
+      "г34в = cylinder radius=25 height=20 at=[{x},{y},0]",
+      "г34г = cylinder radius=15 height=20 at=[{x},{y},0]",
+      "г34вн = difference [г34в, г34г]",
+      "{balls}",
+      "э34 = union [г34н, г34вн, {ball_names}]"]),
+    ("э35", "СТОЙКА",
+     "Вертикальная опора: держит ось или корпус на заданной высоте.",
+     ["г35а = box size=[78,56,14] center=true at=[{x},{y},7] round=2",
+      "г35б = box size=[26,50,86] center=true at=[{x},{y},50] round=2",
+      "г35в = box size=[44,50,12] center=true at=[{x},{y},92] round=2",
+      "э35 = union [г35а, г35б, г35в]"]),
+    ("э36", "ОСНОВАНИЕ",
+     "Опорная плита с крепёжными отверстиями и приливом под стойку или корпус.",
+     ["г36а = box size=[112,92,16] center=true at=[{x},{y},8] round=3",
+      "г36б = cylinder radius=26 height=14 at=[{x},{y},0]",
+      "г36т = union [г36а, г36б]",
+      "{bolts}",
+      "э36 = difference [г36т, {bolt_names}]"]),
 ]
+
+
+# на сцене подпись должна влезать в клетку — длинные термины сокращаются,
+# полное название остаётся на листе
+SHORT = {"э32": "ГРАНЬ · РЕБРО", "э33": "КРИВАЯ ПОВЕРХН."}
 
 
 def cell_xy(row: int, col: int) -> tuple[float, float]:
@@ -292,6 +332,20 @@ def build_scene() -> str:
             holes.append(f"{nm} = cylinder radius=6 height=20")
             holes.append(f"{nm} = translate [{nm}] offset="
                          f"[{x + 34 * math.cos(ang):.1f},{y + 34 * math.sin(ang):.1f},4]")
+        balls, ball_names = [], []
+        for k in range(8):
+            ang = math.radians(k * 45)
+            nm = f"г{code[1:]}ш{k}"
+            ball_names.append(nm)
+            balls.append(f"{nm} = sphere radius=9")
+            balls.append(f"{nm} = translate [{nm}] offset="
+                         f"[{x + 30 * math.cos(ang):.1f},{y + 30 * math.sin(ang):.1f},10]")
+        bolts, bolt_names = [], []
+        for k, (bx, by) in enumerate([(-42, -32), (42, -32), (-42, 32), (42, 32)]):
+            nm = f"г{code[1:]}б{k}"
+            bolt_names.append(nm)
+            bolts.append(f"{nm} = cylinder radius=6 height=26")
+            bolts.append(f"{nm} = translate [{nm}] offset=[{x + bx:.1f},{y + by:.1f},-5]")
         teeth, names = [], []
         for k in range(8):
             nm = f"г{code[1:]}зуб{k}"
@@ -307,12 +361,22 @@ def build_scene() -> str:
             if t == "{holes}":
                 lines.extend(holes)
                 continue
+            if t == "{balls}":
+                lines.extend(balls)
+                continue
+            if t == "{bolts}":
+                lines.extend(bolts)
+                continue
             lines.append(t.format(x=f"{x:.1f}", y=f"{y:.1f}",
                                   tooth_names=", ".join(names),
-                                  hole_names=", ".join(hole_names)))
+                                  hole_names=", ".join(hole_names),
+                                  ball_names=", ".join(ball_names),
+                                  bolt_names=", ".join(bolt_names)))
         lines.append(f"color {code} #b9c6d2 material=metal rough=0.45")
+        label = SHORT.get(code, term)
+        lsize = max(10.0, min(15.0, 196.0 / (len(label) * 0.66)))
         lines.append(
-            f'подпись_{code[1:]} = text "{term}" size=15 depth=1.4 align=center '
+            f'подпись_{code[1:]} = text "{label}" size={lsize:.1f} depth=1.4 align=center '
             f'at=[{x:.1f},{y - 84:.1f},0]')
         lines.append(f"color подпись_{code[1:]} #22303c material=plastic rough=0.6")
         lines.append("")
@@ -403,7 +467,7 @@ def main() -> int:
     dr = ImageDraw.Draw(sheet)
     dr.text((pad_x, 40), "КОНСТРУКТИВНЫЕ ЭЛЕМЕНТЫ ДЕТАЛЕЙ МАШИН", font=F_TITLE, fill=INK)
     dr.text((pad_x, 98),
-            "30 терминов · каждый собран из простейших примитивов и булевых операций · "
+            "36 терминов · каждый собран из простейших примитивов и булевых операций · "
             "изометрия, масштаб условный",
             font=F_SUB, fill=SOFT)
 

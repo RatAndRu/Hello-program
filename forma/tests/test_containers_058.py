@@ -189,7 +189,7 @@ class ReadyProjects058Test(unittest.TestCase):
             "train_carriage": "Поезд: плацкартный вагон 61-4194",
             "arte_lamp_banker_a2492lt_1ab": "Arte Lamp Banker A2492LT-1AB",
             "rpg_sword_01": "Магический меч «Изумрудная жила»",
-            "constructive_elements_01": "Конструктивные элементы: 30 терминов",
+            "constructive_elements_01": "Конструктивные элементы: 36 терминов",
         }
         catalog = dict((key, title) for title, key in EXAMPLES)
         self.assertEqual(len(EXAMPLES), 24)
