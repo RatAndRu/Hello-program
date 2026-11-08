@@ -47,6 +47,9 @@ python run_forma.py
 
 Требуется Python 3.10+. Полная справка — [forma/README.md](forma/README.md),
 рецепты и синтаксис — [forma/docs/RECIPES.md](forma/docs/RECIPES.md).
+Правила именования параметров — [forma/docs/NAMING.md](forma/docs/NAMING.md),
+атлас понятий (поверхность → элемент → структура корпуса) —
+[forma/docs/ATLAS.md](forma/docs/ATLAS.md).
 
 ## Структура репозитория
 
