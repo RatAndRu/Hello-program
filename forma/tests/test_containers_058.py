@@ -188,9 +188,11 @@ class ReadyProjects058Test(unittest.TestCase):
             "living_room_diorama": "Комната: гостиная 1:20",
             "train_carriage": "Поезд: плацкартный вагон 61-4194",
             "arte_lamp_banker_a2492lt_1ab": "Arte Lamp Banker A2492LT-1AB",
+            "rpg_sword_01": "Магический меч «Изумрудная жила»",
+            "constructive_elements_01": "Конструктивные элементы: 30 терминов",
         }
         catalog = dict((key, title) for title, key in EXAMPLES)
-        self.assertEqual(len(EXAMPLES), 21)
+        self.assertEqual(len(EXAMPLES), 24)
         for key, title in expected.items():
             with self.subTest(project=key):
                 self.assertEqual(catalog.get(key), title)

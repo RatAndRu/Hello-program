@@ -905,6 +905,9 @@ EXAMPLES = [
     ("Комната: гостиная 1:20", "living_room_diorama"),
     ("Поезд: плацкартный вагон 61-4194", "train_carriage"),
     ("Arte Lamp Banker A2492LT-1AB", "arte_lamp_banker_a2492lt_1ab"),
+    ("Магический меч «Изумрудная жила»", "rpg_sword_01"),
+    ("Квартал 01: городская инфраструктура", "street_kit_01"),
+    ("Конструктивные элементы: 30 терминов", "constructive_elements_01"),
 ]
 
 

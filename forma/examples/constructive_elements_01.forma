@@ -1,0 +1,361 @@
+# Конструктивные элементы деталей машин — каталог из 30 терминов.
+# Каждый элемент собран из простейших примитивов (cylinder, box, cone,
+# prism, sphere, tri_prism, thread) и булевых операций union/difference/
+# intersect; где термин требует скругления или фаски — chamfer/fillet.
+# Подписи — объёмные надписи (text) перед каждой клеткой: +X вправо,
+# −Y на зрителя, +Z вверх. Шаг клетки 220 × 210 мм.
+
+precision mode=fine tolerance=0.15
+scene bg=#eef0f2 shadows=да ground=да
+light preset=студия strength=1.05
+
+# ---------------------------------------------------------------- ФАСКА --
+э01 = cylinder radius=32 height=46 at=[-550.0,0.0,0]
+э01 = chamfer [э01] width=7 edges=convex
+color э01 #b9c6d2 material=metal rough=0.45
+подпись_01 = text "ФАСКА" size=15 depth=1.4 align=center at=[-550.0,-84.0,0]
+color подпись_01 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ГАЛТЕЛЬ --
+г2а = cylinder radius=40 height=18 at=[-330.0,0.0,0]
+г2б = cylinder radius=22 height=42 at=[-330.0,0.0,18]
+э02 = union [г2а, г2б]
+э02 = fillet [э02] radius=11 edges=concave segments=18
+color э02 #b9c6d2 material=metal rough=0.45
+подпись_02 = text "ГАЛТЕЛЬ" size=15 depth=1.4 align=center at=[-330.0,-84.0,0]
+color подпись_02 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- БУРТИК --
+г3а = cylinder radius=18 height=84 at=[-110.0,0.0,0]
+г3б = cylinder radius=36 height=16 at=[-110.0,0.0,34]
+э03 = union [г3а, г3б]
+э03 = chamfer [э03] width=2.2 edges=convex
+color э03 #b9c6d2 material=metal rough=0.45
+подпись_03 = text "БУРТИК" size=15 depth=1.4 align=center at=[-110.0,-84.0,0]
+color подпись_03 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ЗАПЛЕЧИК --
+г4а = cylinder radius=36 height=28 at=[110.0,0.0,0]
+г4б = cylinder radius=19 height=46 at=[110.0,0.0,28]
+э04 = union [г4а, г4б]
+color э04 #b9c6d2 material=metal rough=0.45
+подпись_04 = text "ЗАПЛЕЧИК" size=15 depth=1.4 align=center at=[110.0,-84.0,0]
+color подпись_04 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ПРОТОЧКА --
+г5а = cylinder radius=30 height=78 at=[330.0,0.0,0]
+г5б = cylinder radius=33 height=8 at=[330.0,0.0,50]
+г5в = cylinder radius=24 height=8 at=[330.0,0.0,50]
+г5кан = difference [г5б, г5в]
+э05 = difference [г5а, г5кан]
+color э05 #b9c6d2 material=metal rough=0.45
+подпись_05 = text "ПРОТОЧКА" size=15 depth=1.4 align=center at=[330.0,-84.0,0]
+color подпись_05 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ВЫТОЧКА --
+г6а = cylinder radius=38 height=66 at=[550.0,0.0,0]
+г6б = cylinder radius=24 height=66 at=[550.0,0.0,0]
+г6тр = difference [г6а, г6б]
+г6в = cylinder radius=31 height=9 at=[550.0,0.0,38]
+г6г = cylinder radius=24 height=9 at=[550.0,0.0,38]
+г6выт = difference [г6в, г6г]
+э06 = difference [г6тр, г6выт]
+color э06 #b9c6d2 material=metal rough=0.45
+подпись_06 = text "ВЫТОЧКА" size=15 depth=1.4 align=center at=[550.0,-84.0,0]
+color подпись_06 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ЛЫСКА --
+г7а = cylinder radius=34 height=68 at=[-550.0,-210.0,0]
+г7рез = box size=[96,40,74] center=true at=[-550.0,-210.0,34]
+г7рез = translate [г7рез] offset=[0,-44,0]
+э07 = difference [г7а, г7рез]
+color э07 #b9c6d2 material=metal rough=0.45
+подпись_07 = text "ЛЫСКА" size=15 depth=1.4 align=center at=[-550.0,-294.0,0]
+color подпись_07 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ШПОНОЧНЫЙ ПАЗ --
+г8а = cylinder radius=34 height=72 at=[-330.0,-210.0,0]
+г8б = box size=[20,24,52] center=true at=[-330.0,-210.0,30]
+г8б = translate [г8б] offset=[0,-38,0]
+г8в = cylinder radius=10 height=26
+г8в = rotate [г8в] angle=90 axis=x
+г8в = translate [г8в] offset=[-330.0,-210.0,56]
+г8в = translate [г8в] offset=[0,-38,0]
+г8рез = union [г8б, г8в]
+э08 = difference [г8а, г8рез]
+color э08 #b9c6d2 material=metal rough=0.45
+подпись_08 = text "ШПОНОЧНЫЙ ПАЗ" size=15 depth=1.4 align=center at=[-330.0,-294.0,0]
+color подпись_08 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ШЛИЦ (ПРОРЕЗЬ) --
+г9а = cylinder radius=32 height=20 at=[-110.0,-210.0,0]
+г9б = cylinder radius=14 height=34 at=[-110.0,-210.0,0]
+г9тело = union [г9а, г9б]
+г9рез = box size=[70,8,10] center=true at=[-110.0,-210.0,20]
+э09 = difference [г9тело, г9рез]
+color э09 #b9c6d2 material=metal rough=0.45
+подпись_09 = text "ШЛИЦ (ПРОРЕЗЬ)" size=15 depth=1.4 align=center at=[-110.0,-294.0,0]
+color подпись_09 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ШЛИЦЫ --
+г10а = cylinder radius=28 height=80 at=[110.0,-210.0,0]
+г10зуб0 = box size=[11,26,74] center=true
+г10зуб0 = translate [г10зуб0] offset=[0,30,40]
+г10зуб0 = rotate [г10зуб0] angle=0 axis=z
+г10зуб0 = translate [г10зуб0] offset=[110.0,-210.0,0]
+г10зуб1 = box size=[11,26,74] center=true
+г10зуб1 = translate [г10зуб1] offset=[0,30,40]
+г10зуб1 = rotate [г10зуб1] angle=45 axis=z
+г10зуб1 = translate [г10зуб1] offset=[110.0,-210.0,0]
+г10зуб2 = box size=[11,26,74] center=true
+г10зуб2 = translate [г10зуб2] offset=[0,30,40]
+г10зуб2 = rotate [г10зуб2] angle=90 axis=z
+г10зуб2 = translate [г10зуб2] offset=[110.0,-210.0,0]
+г10зуб3 = box size=[11,26,74] center=true
+г10зуб3 = translate [г10зуб3] offset=[0,30,40]
+г10зуб3 = rotate [г10зуб3] angle=135 axis=z
+г10зуб3 = translate [г10зуб3] offset=[110.0,-210.0,0]
+г10зуб4 = box size=[11,26,74] center=true
+г10зуб4 = translate [г10зуб4] offset=[0,30,40]
+г10зуб4 = rotate [г10зуб4] angle=180 axis=z
+г10зуб4 = translate [г10зуб4] offset=[110.0,-210.0,0]
+г10зуб5 = box size=[11,26,74] center=true
+г10зуб5 = translate [г10зуб5] offset=[0,30,40]
+г10зуб5 = rotate [г10зуб5] angle=225 axis=z
+г10зуб5 = translate [г10зуб5] offset=[110.0,-210.0,0]
+г10зуб6 = box size=[11,26,74] center=true
+г10зуб6 = translate [г10зуб6] offset=[0,30,40]
+г10зуб6 = rotate [г10зуб6] angle=270 axis=z
+г10зуб6 = translate [г10зуб6] offset=[110.0,-210.0,0]
+г10зуб7 = box size=[11,26,74] center=true
+г10зуб7 = translate [г10зуб7] offset=[0,30,40]
+г10зуб7 = rotate [г10зуб7] angle=315 axis=z
+г10зуб7 = translate [г10зуб7] offset=[110.0,-210.0,0]
+э10 = union [г10а, г10зуб0, г10зуб1, г10зуб2, г10зуб3, г10зуб4, г10зуб5, г10зуб6, г10зуб7]
+color э10 #b9c6d2 material=metal rough=0.45
+подпись_10 = text "ШЛИЦЫ" size=15 depth=1.4 align=center at=[110.0,-294.0,0]
+color подпись_10 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- КВАДРАТ --
+г11а = cylinder radius=34 height=26 at=[330.0,-210.0,0]
+г11б = cylinder radius=26 height=38 at=[330.0,-210.0,26]
+г11к = box size=[37.8,37.8,40] center=true at=[330.0,-210.0,45]
+г11кв = intersect [г11б, г11к]
+э11 = union [г11а, г11кв]
+color э11 #b9c6d2 material=metal rough=0.45
+подпись_11 = text "КВАДРАТ" size=15 depth=1.4 align=center at=[330.0,-294.0,0]
+color подпись_11 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ЦЕНТРОВОЕ ОТВ. --
+г12а = cylinder radius=34 height=44 at=[550.0,-210.0,0]
+г12б = cone radius=14 height=12
+г12б = rotate [г12б] angle=180 axis=x
+г12б = translate [г12б] offset=[550.0,-210.0,44]
+г12в = cylinder radius=5 height=26 at=[550.0,-210.0,8]
+г12рез = union [г12б, г12в]
+э12 = difference [г12а, г12рез]
+color э12 #b9c6d2 material=metal rough=0.45
+подпись_12 = text "ЦЕНТРОВОЕ ОТВ." size=15 depth=1.4 align=center at=[550.0,-294.0,0]
+color подпись_12 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- СКВОЗНОЕ ОТВ. --
+г13а = box size=[76,76,30] center=true at=[-550.0,-420.0,15] round=4
+г13б = cylinder radius=15 height=44 at=[-550.0,-420.0,-7]
+э13 = difference [г13а, г13б]
+э13 = chamfer [э13] width=2 edges=convex
+color э13 #b9c6d2 material=metal rough=0.45
+подпись_13 = text "СКВОЗНОЕ ОТВ." size=15 depth=1.4 align=center at=[-550.0,-504.0,0]
+color подпись_13 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ГНЕЗДО (ГЛУХОЕ) --
+г14а = box size=[76,76,30] center=true at=[-330.0,-420.0,15] round=4
+г14б = cylinder radius=17 height=20 at=[-330.0,-420.0,12]
+г14в = cone radius=10 height=9
+г14в = rotate [г14в] angle=180 axis=x
+г14в = translate [г14в] offset=[-330.0,-420.0,12]
+г14рез = union [г14б, г14в]
+э14 = difference [г14а, г14рез]
+color э14 #b9c6d2 material=metal rough=0.45
+подпись_14 = text "ГНЕЗДО (ГЛУХОЕ)" size=15 depth=1.4 align=center at=[-330.0,-504.0,0]
+color подпись_14 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- РЕЗЬБОВОЕ ГНЕЗДО --
+г15а = box size=[76,76,34] center=true at=[-110.0,-420.0,17] round=4
+г15р = cylinder radius=9.05 height=24
+г15т = thread diameter=18 length=24 pitch=2.5 depth=1.2 internal=true
+г15рез = difference [г15р, г15т]
+г15рез = translate [г15рез] offset=[-110.0,-420.0,8]
+г15ф = cylinder radius=10 height=4 at=[-110.0,-420.0,30]
+э15 = difference [г15а, г15рез, г15ф]
+color э15 #b9c6d2 material=metal rough=0.45
+подпись_15 = text "РЕЗЬБОВОЕ ГНЕЗДО" size=15 depth=1.4 align=center at=[-110.0,-504.0,0]
+color подпись_15 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ОКНО --
+г16а = box size=[96,16,74] center=true at=[110.0,-420.0,37]
+г16б = box size=[38,26,32] center=true at=[110.0,-420.0,40] round=3
+э16 = difference [г16а, г16б]
+color э16 #b9c6d2 material=metal rough=0.45
+подпись_16 = text "ОКНО" size=15 depth=1.4 align=center at=[110.0,-504.0,0]
+color подпись_16 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ФАСКА НА ГАЙКЕ --
+г17а = prism sides=6 radius=27 height=20 at=[330.0,-420.0,0]
+г17б = cylinder radius=9 height=28 at=[330.0,-420.0,-2]
+г17о = cylinder radius=40 height=5 at=[330.0,-420.0,16]
+г17к = cone radius=27 height=15.6 at=[330.0,-420.0,16]
+г17рез = difference [г17о, г17к]
+э17 = difference [г17а, г17б, г17рез]
+color э17 #b9c6d2 material=metal rough=0.45
+подпись_17 = text "ФАСКА НА ГАЙКЕ" size=15 depth=1.4 align=center at=[330.0,-504.0,0]
+color подпись_17 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- НАКАТКА --
+г18а = cylinder radius=32 height=58 at=[550.0,-420.0,0]
+э18 = knurl [г18а] count=32 depth=1.6 width=1.1
+color э18 #b9c6d2 material=metal rough=0.45
+подпись_18 = text "НАКАТКА" size=15 depth=1.4 align=center at=[550.0,-504.0,0]
+color подпись_18 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- БОБЫШКА --
+г19а = box size=[84,84,14] center=true at=[-550.0,-630.0,7] round=3
+г19б = cylinder radius=24 height=24 at=[-550.0,-630.0,0]
+г19т = union [г19а, г19б]
+г19в = cylinder radius=8.5 height=30 at=[-550.0,-630.0,4]
+э19 = difference [г19т, г19в]
+color э19 #b9c6d2 material=metal rough=0.45
+подпись_19 = text "БОБЫШКА" size=15 depth=1.4 align=center at=[-550.0,-714.0,0]
+color подпись_19 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ПРИЛИВ --
+г20а = box size=[84,84,14] center=true at=[-330.0,-630.0,7] round=3
+г20б = cylinder radius=24 height=80
+г20б = rotate [г20б] angle=90 axis=x
+г20б = translate [г20б] offset=[-330.0,-630.0,14]
+г20т = union [г20а, г20б]
+э20 = fillet [г20т] radius=4 edges=concave segments=10
+color э20 #b9c6d2 material=metal rough=0.45
+подпись_20 = text "ПРИЛИВ" size=15 depth=1.4 align=center at=[-330.0,-714.0,0]
+color подпись_20 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- РЕБРО ЖЁСТКОСТИ --
+г21а = box size=[92,60,10] center=true at=[-110.0,-630.0,5]
+г21к = contour2d start=[0,0] segments=[["line",[54,0]],["line",[0,54]],["line",[0,0]]] closed=да
+г21б = extrude profile=г21к height=14
+г21б = rotate [г21б] angle=90 axis=x
+г21б = rotate [г21б] angle=90 axis=z
+г21б = translate [г21б] offset=[-7,-27,10]
+г21б = translate [г21б] offset=[-110.0,-630.0,0]
+э21 = union [г21а, г21б]
+color э21 #b9c6d2 material=metal rough=0.45
+подпись_21 = text "РЕБРО ЖЁСТКОСТИ" size=15 depth=1.4 align=center at=[-110.0,-714.0,0]
+color подпись_21 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ЛАПКА --
+г22а = box size=[30,80,22] center=true at=[110.0,-630.0,11] round=2
+г22б = cylinder radius=30 height=26 at=[110.0,-630.0,0]
+г22т = union [г22б, г22а]
+г22в = cylinder radius=7.5 height=40 at=[110.0,-630.0,0]
+г22в = translate [г22в] offset=[0,30,0]
+э22 = difference [г22т, г22в]
+color э22 #b9c6d2 material=metal rough=0.45
+подпись_22 = text "ЛАПКА" size=15 depth=1.4 align=center at=[110.0,-714.0,0]
+color подпись_22 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- УШКО --
+г23б = box size=[26,18,34] center=true at=[330.0,-630.0,18]
+г23а = cylinder radius=22 height=18
+г23а = rotate [г23а] angle=90 axis=x
+г23а = translate [г23а] offset=[330.0,-630.0,34]
+г23т = union [г23б, г23а]
+г23в = cylinder radius=9 height=30
+г23в = rotate [г23в] angle=90 axis=x
+г23в = translate [г23в] offset=[330.0,-630.0,34]
+э23 = difference [г23т, г23в]
+color э23 #b9c6d2 material=metal rough=0.45
+подпись_23 = text "УШКО" size=15 depth=1.4 align=center at=[330.0,-714.0,0]
+color подпись_23 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ФЛАНЕЦ --
+г24а = cylinder radius=46 height=12 at=[550.0,-630.0,0]
+г24б = cylinder radius=22 height=22 at=[550.0,-630.0,0]
+г24т = union [г24а, г24б]
+г24в = cylinder radius=13 height=40 at=[550.0,-630.0,-4]
+г24отв0 = cylinder radius=6 height=20
+г24отв0 = translate [г24отв0] offset=[584.0,-630.0,4]
+г24отв1 = cylinder radius=6 height=20
+г24отв1 = translate [г24отв1] offset=[567.0,-600.6,4]
+г24отв2 = cylinder radius=6 height=20
+г24отв2 = translate [г24отв2] offset=[533.0,-600.6,4]
+г24отв3 = cylinder radius=6 height=20
+г24отв3 = translate [г24отв3] offset=[516.0,-630.0,4]
+г24отв4 = cylinder radius=6 height=20
+г24отв4 = translate [г24отв4] offset=[533.0,-659.4,4]
+г24отв5 = cylinder radius=6 height=20
+г24отв5 = translate [г24отв5] offset=[567.0,-659.4,4]
+э24 = difference [г24т, г24в, г24отв0, г24отв1, г24отв2, г24отв3, г24отв4, г24отв5]
+color э24 #b9c6d2 material=metal rough=0.45
+подпись_24 = text "ФЛАНЕЦ" size=15 depth=1.4 align=center at=[550.0,-714.0,0]
+color подпись_24 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ОБОД --
+г25а = cylinder radius=48 height=18 at=[-550.0,-840.0,0]
+г25б = cylinder radius=35 height=18 at=[-550.0,-840.0,0]
+э25 = difference [г25а, г25б]
+э25 = chamfer [э25] width=2 edges=convex
+color э25 #b9c6d2 material=metal rough=0.45
+подпись_25 = text "ОБОД" size=15 depth=1.4 align=center at=[-550.0,-924.0,0]
+color подпись_25 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- СПИЦА --
+г26а = cylinder radius=7 height=100
+г26а = rotate [г26а] angle=90 axis=y
+г26а = translate [г26а] offset=[-330.0,-840.0,34]
+г26б = cylinder radius=12 height=12
+г26б = rotate [г26б] angle=90 axis=y
+г26б = translate [г26б] offset=[-330.0,-840.0,34]
+г26б = translate [г26б] offset=[-52,0,0]
+г26в = cylinder radius=12 height=12
+г26в = rotate [г26в] angle=90 axis=y
+г26в = translate [г26в] offset=[-330.0,-840.0,34]
+г26в = translate [г26в] offset=[52,0,0]
+э26 = union [г26а, г26б, г26в]
+color э26 #b9c6d2 material=metal rough=0.45
+подпись_26 = text "СПИЦА" size=15 depth=1.4 align=center at=[-330.0,-924.0,0]
+color подпись_26 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- СТУПИЦА --
+г27а = cylinder radius=26 height=36 at=[-110.0,-840.0,0]
+г27б = cylinder radius=31 height=10 at=[-110.0,-840.0,26]
+г27т = union [г27а, г27б]
+г27в = cylinder radius=12 height=50 at=[-110.0,-840.0,-4]
+э27 = difference [г27т, г27в]
+color э27 #b9c6d2 material=metal rough=0.45
+подпись_27 = text "СТУПИЦА" size=15 depth=1.4 align=center at=[-110.0,-924.0,0]
+color подпись_27 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ВТУЛКА --
+г28а = cylinder radius=30 height=54 at=[110.0,-840.0,0]
+г28б = cylinder radius=20 height=54 at=[110.0,-840.0,0]
+э28 = difference [г28а, г28б]
+э28 = chamfer [э28] width=2 edges=convex
+color э28 #b9c6d2 material=metal rough=0.45
+подпись_28 = text "ВТУЛКА" size=15 depth=1.4 align=center at=[110.0,-924.0,0]
+color подпись_28 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- РЕЗЬБА --
+э29 = thread diameter=36 length=64 pitch=3.5 depth=1.6
+color э29 #b9c6d2 material=metal rough=0.45
+подпись_29 = text "РЕЗЬБА" size=15 depth=1.4 align=center at=[330.0,-924.0,0]
+color подпись_29 #22303c material=plastic rough=0.6
+
+# ---------------------------------------------------------------- ШИП --
+г30а = box size=[64,64,16] center=true at=[550.0,-840.0,8] round=3
+г30б = cylinder radius=13 height=40 at=[550.0,-840.0,0]
+г30в = cone radius=9 height=12 at=[550.0,-840.0,40]
+г30т = union [г30а, г30б, г30в]
+э30 = chamfer [г30т] width=1.5 edges=convex
+color э30 #b9c6d2 material=metal rough=0.45
+подпись_30 = text "ШИП" size=15 depth=1.4 align=center at=[550.0,-924.0,0]
+color подпись_30 #22303c material=plastic rough=0.6
+
