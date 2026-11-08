@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import math
 import sys
+import time
 from pathlib import Path
 
 import numpy as np
@@ -41,10 +42,8 @@ ELEMENTS = [
       "э01 = chamfer [э01] width=7 edges=convex"]),
     ("э02", "ГАЛТЕЛЬ",
      "Плавный переход по радиусу в месте ступени: снимает концентратор напряжений.",
-     ["г2а = cylinder radius=40 height=18 at=[{x},{y},0]",
-      "г2б = cylinder radius=22 height=42 at=[{x},{y},18]",
-      "э02 = union [г2а, г2б]",
-      "э02 = fillet [э02] radius=11 edges=concave segments=18"]),
+     ["г2 = lathe points=[[0,0],[40,0],[40,18],[33,18],[30.15,18.37],[27.5,19.47],[25.22,21.22],[23.47,23.5],[22.37,26.15],[22,29],[22,60],[0,60]] segments=96",
+      "э02 = translate [г2] offset=[{x},{y},0]"]),
     ("э03", "БУРТИК",
      "Кольцевое утолщение вала: упор для подшипника, фиксация от осевого сдвига.",
      ["г3а = cylinder radius=18 height=84 at=[{x},{y},0]",
@@ -169,13 +168,12 @@ ELEMENTS = [
       "г19в = cylinder radius=8.5 height=30 at=[{x},{y},4]",
       "э19 = difference [г19т, г19в]"]),
     ("э20", "ПРИЛИВ",
-     "Местное утолщение отливки: подвод металла и усиление под нагрузку.",
+     "Местное утолщение отливки: подвод металла и усиление под нагрузкой.",
      ["г20а = box size=[84,84,14] center=true at=[{x},{y},7] round=3",
-      "г20б = cylinder radius=24 height=80",
+      "г20б = cylinder radius=14 height=76",
       "г20б = rotate [г20б] angle=90 axis=x",
-      "г20б = translate [г20б] offset=[{x},{y},14]",
-      "г20т = union [г20а, г20б]",
-      "э20 = fillet [г20т] radius=4 edges=concave segments=10"]),
+      "г20б = translate [г20б] offset=[{x},{y},12]",
+      "э20 = union [г20а, г20б]"]),
     ("э21", "РЕБРО ЖЁСТКОСТИ",
      "Треугольная стенка: поднимает жёсткость при минимальной массе.",
      ["г21а = box size=[92,60,10] center=true at=[{x},{y},5]",
@@ -244,10 +242,8 @@ ELEMENTS = [
       "э27 = difference [г27т, г27в]"]),
     ("э28", "ВТУЛКА",
      "Гильза с осевым отверстием: подшипник скольжения, проставка, распорка.",
-     ["г28а = cylinder radius=30 height=54 at=[{x},{y},0]",
-      "г28б = cylinder radius=20 height=54 at=[{x},{y},0]",
-      "э28 = difference [г28а, г28б]",
-      "э28 = chamfer [э28] width=2 edges=convex"]),
+     ["г28 = lathe points=[[20,0],[26,0],[30,4],[30,46],[26,50],[20,50]] segments=72",
+      "э28 = translate [г28] offset=[{x},{y},0]"]),
     ("э29", "РЕЗЬБА",
      "Винтовая канавка на стержне: шаг, профиль витка и направление захода.",
      ["э29 = thread diameter=36 length=64 pitch=3.5 depth=1.6"]),
@@ -315,7 +311,10 @@ def build_scene() -> str:
         "# Подписи — объёмные надписи (text) перед каждой клеткой: +X вправо,",
         "# −Y на зрителя, +Z вверх. Шаг клетки 220 × 210 мм.",
         "",
-        "precision mode=fine tolerance=0.15",
+        "# Детализация — draft: сцена из 36 простых деталей собирается за ~2 с,",
+        "# а не за 6 с, и грузится в приложении без паузы «тяжёлая сцена».",
+        "# Лист-каталог печатается отдельным проходом с fine (см. SHEET_PRECISION).",
+        "precision mode=draft tolerance=0.3",
         "scene bg=#eef0f2 shadows=да ground=да",
         "light preset=студия strength=1.05",
         "",
@@ -383,6 +382,10 @@ def build_scene() -> str:
     return "\n".join(lines) + "\n"
 
 
+# лист печатается с более мелкой сеткой, чем отдаётся в сцене
+SHEET_PRECISION = ("precision mode=draft tolerance=0.3", "precision mode=fine tolerance=0.12")
+
+
 LINE_STYLE = {
     "mode": "линия", "line": 1.5, "color": "#141a26", "paper": "#ffffff",
     "inner": True, "crease": 32, "depth": 0.035, "seams": True,
@@ -403,9 +406,9 @@ PAPER = (255, 255, 255)
 
 def recipe(tpl) -> str:
     """Короткая запись того, из чего собран элемент: примитивы и операции."""
-    order = ["cylinder", "box", "cone", "sphere", "prism", "tri_prism", "thread",
-             "knurl", "union", "difference", "intersect", "fillet", "chamfer",
-             "rotate", "translate", "array"]
+    order = ["cylinder", "box", "cone", "sphere", "prism", "tri_prism", "contour2d",
+             "extrude", "lathe", "thread", "knurl", "union", "difference", "intersect",
+             "fillet", "chamfer", "rotate", "translate", "array"]
     used = set()
     for t in tpl:
         if t == "{teeth}":
@@ -436,10 +439,16 @@ def wrap(dr, text, font, width):
 def main() -> int:
     SCENE.write_text(build_scene(), encoding="utf-8")
     print("сцена:", SCENE, len(SCENE.read_text(encoding="utf-8")), "символов")
-    r = build(SCENE.read_text(encoding="utf-8"))
-    print("сборка:", r.ok, r.error if not r.ok else "")
+    src = SCENE.read_text(encoding="utf-8")
+    t0 = time.perf_counter()
+    r = build(src)
+    print("сборка:", r.ok, "%.1f c" % (time.perf_counter() - t0), r.error if not r.ok else "")
     if not r.ok:
         return 1
+    vis = [o for o in r.scene.objects.values() if o.visible]
+    print("трис:", sum(len(o.manifold.to_mesh().tri_verts) // 3 for o in vis), "объектов:", len(vis))
+    # чертежи — на мелкой сетке, в файл это не попадает
+    r = build(src.replace(*SHEET_PRECISION))
     acts = {k: v for k, v in r.scene.objects.items() if v.visible}
     OUT.mkdir(parents=True, exist_ok=True)
 
