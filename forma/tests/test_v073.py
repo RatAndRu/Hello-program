@@ -184,6 +184,15 @@ class BoxCavity073Test(unittest.TestCase):
         self.assertTrue(contains(solid, (0, 0, 30)))
         self.assertFalse(contains(solid, (0, 0, 50)))
 
+    def test_cavity_works_with_expanded_halves(self):
+        """Полость режется после посадки половин: пояс не перекрывает её."""
+        solid = solid_of("к = box size=[100,80,60] wall=4 expand=0.2")
+        self.assertEqual(solid_parts(solid.manifold), 1)
+        self.assertTrue(contains(solid, (0, 0, 5)) or contains(solid, (0, 0, 10)))
+        self.assertFalse(contains(solid, (0, 0, 50)))
+        # expand — единственная команда, которая намеренно выходит за size.
+        self.assertAlmostEqual(bbox(solid)[0], 120.0, places=2)
+
     def test_too_deep_cavity_is_reported(self):
         result = build("к = box size=[100,100,60] wall=4 cavity_depth=59",
                        analyze_model=False)

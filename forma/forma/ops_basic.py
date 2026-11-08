@@ -452,13 +452,16 @@ def box(a, name):
         raise GeometryError("У обычного box отверстий больше нет.",
                             hint="Используйте cube_hole: отверстия остаются по центру, "
                                  "поддерживаются hole_x/hole_y/hole_z и их формы.")
-    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
-    cavity_note = None
-    if wall > 1e-6:
-        solid, cavity_note = _box_cavity(solid, a, wall, x, y, height)
     expand, expand_side, expand_smooth, expand_joint, expand_seat = _expansion_options(a)
     solid, expand_info = _expand_half(solid, expand, expand_side, expand_smooth, "блока",
                                       expand_joint, expand_seat)
+    wall = float(a.num("wall", 0.0, minv=0.0) or 0.0)
+    cavity_note = None
+    if wall > 1e-6:
+        # Полость режется после посадки: пояс колпачка остаётся снаружи, а
+        # внутри обе половины получают общий объём. Если резать до посадки,
+        # сплошной пояс перекрывает полость и сборка половин не сходится.
+        solid, cavity_note = _box_cavity(solid, a, wall, x, y, height)
     solid = anchor(solid, a.vec("at", 3, default=(0, 0, 0)), a.boolean("center", False))
     out = make_solid(a.scene, name, solid, a, kind="box")
     if cavity_note:
