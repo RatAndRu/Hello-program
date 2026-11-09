@@ -82,6 +82,9 @@ KIND_NAMES_ANIM = {"spin": "вращение", "formation": "формирова�
             "ground": "показывать пол да/нет",
             "axes": "оси координат да/нет",
             "poly": "полигонаж (каркас) да/нет",
+            "poly_fill": "грани полигонажа: непрозрачные или сквозные",
+            "poly_edges": "рёбра полигонажа: сетка (все) или структурные (только изломы)",
+            "poly_angle": "порог излома для структурных рёбер, ° (32)",
             "bloom": "сила свечения светодиодов 0…3 (0 — выключено)",
             "copyright": "строка авторства для метаданных GLB",
             "license": "лицензия модели для метаданных GLB",
@@ -102,6 +105,29 @@ def scene(a, name):
     for key in ("shadows", "grid", "ground", "axes", "poly"):
         if a.has(key):
             s[key] = a.boolean(key, True)
+    if a.has("poly_fill"):
+        raw = (a.text("poly_fill") or "").strip().lower()
+        fill = {"непрозрачный": "непрозрачный", "непрозрачные": "непрозрачный",
+                "solid": "непрозрачный", "opaque": "непрозрачный",
+                "сквозной": "сквозной", "сквозные": "сквозной", "прозрачный": "сквозной",
+                "through": "сквозной", "x-ray": "сквозной", "рентген": "сквозной"}
+        if raw not in fill:
+            raise DslError(f"Неизвестный режим граней полигонажа «{raw}».",
+                           hint="Доступно: непрозрачный, сквозной.",
+                           line=a.cmd.line, command=a.cmd.text)
+        s["poly_fill"] = fill[raw]
+    if a.has("poly_edges"):
+        raw = (a.text("poly_edges") or "").strip().lower()
+        edges = {"сетка": "сетка", "все": "сетка", "все рёбра": "сетка", "mesh": "сетка",
+                 "структурные": "структурные", "изломы": "структурные",
+                 "structural": "структурные", "crease": "структурные"}
+        if raw not in edges:
+            raise DslError(f"Неизвестный набор рёбер полигонажа «{raw}».",
+                           hint="Доступно: сетка, структурные.",
+                           line=a.cmd.line, command=a.cmd.text)
+        s["poly_edges"] = edges[raw]
+    if a.has("poly_angle"):
+        s["poly_angle"] = max(0.5, min(179.0, float(a.num("poly_angle") or 32.0)))
     if a.has("bloom"):
         s["bloom"] = max(0.0, min(3.0, float(a.num("bloom") or 0.0)))
     for key in ("copyright", "license", "source"):

@@ -223,7 +223,7 @@
         </div>
         <div class="studio-row anime-row" id="anime-row" hidden>
           <span class="studio-label">Контур</span>
-          <input type="range" id="anime-line" min="0" max="6" step="0.1" value="1.6" title="Толщина контура в пикселях" />
+          <input type="range" id="anime-line" min="0.1" max="6" step="0.05" value="1.6" title="Толщина контура в пикселях: 0.1 — волосяная линия без чёрных заливок" />
           <span class="studio-value" id="anime-line-val">1.6 px</span>
           <label class="anime-check" title="Рисовать рёбра и складки внутри силуэта"><input type="checkbox" id="anime-inner" checked /> внутри</label>
           <input type="range" id="anime-crease" min="5" max="80" step="1" value="32" title="Угол излома: меньше — больше внутренних линий" />
@@ -278,6 +278,22 @@
           <label><input type="checkbox" id="opt-ground" checked /> пол</label>
           <label><input type="checkbox" id="opt-axes" checked /> оси</label>
           <label><input type="checkbox" id="opt-poly" /> полигонаж</label>
+          <label title="Каждая грань освещается своей нормалью: видно, что полигонаж и поверхность совпадают"><input type="checkbox" id="opt-flat" /> плоские грани</label>
+        </div>
+        <div class="studio-row toggles">
+          <span class="studio-label">грани</span>
+          <select id="poly-fill" title="Непрозрачные грани — обычная сетка поверх детали; сквозные — рентген: деталь полупрозрачна и видны все рёбра, включая задние">
+            <option value="непрозрачный">непрозрачные</option>
+            <option value="сквозной">сквозные</option>
+          </select>
+          <span class="studio-label">рёбра</span>
+          <select id="poly-edges" title="Все рёбра сетки или только изломы: структурные рёбра берутся из самой геометрии и не пропадают при повороте">
+            <option value="сетка">всей сетки</option>
+            <option value="структурные">структурные</option>
+          </select>
+          <input type="range" id="poly-angle" min="5" max="89" step="1" value="32"
+                 title="Порог излома для структурных рёбер, градусы" />
+          <span class="studio-value" id="poly-angle-val">32°</span>
         </div>
         <div class="studio-row studio-show">
           <span class="studio-label">Показ</span>

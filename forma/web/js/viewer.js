@@ -12,7 +12,7 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { FXAAShader } from 'three/addons/shaders/FXAAShader.js';
 import { cameraClipRange, stableAngle } from './camera_clip.js';
 import { edgeCoverageScale, EDGE_COVERAGE_TO_INK_GLSL } from './edge_coverage.js';
-import { topologyLineMaterialWidth, uniqueTopologyPositions } from './topology_lines.js';
+import { creaseEdgePositions, topologyLineMaterialWidth, uniqueTopologyPositions } from './topology_lines.js';
 import { LineSegments2 } from 'three/addons/lines/LineSegments2.js';
 import { LineSegmentsGeometry } from 'three/addons/lines/LineSegmentsGeometry.js';
 import { LineMaterial } from 'three/addons/lines/LineMaterial.js';
@@ -185,6 +185,13 @@ export class Viewer {
     this._shadowRT = null;
     this._shadowMat = new THREE.ShadowMaterial({ color: 0x000000, opacity: 1 });
     this._albedoCache = new Map();
+    // Полигонаж — не «ещё один wireframe», а диагностический слой с явными
+    // настройками: какие рёбра (вся сетка или только изломы) и что делать с
+    // гранями (оставить непрозрачными или сделать сквозными).
+    this.polygonFill = 'непрозрачный';
+    this.polygonEdges = 'сетка';
+    this.polygonAngle = 32;
+    this._polygonFillSaved = new Map();
     this._styleWireframe = null;
     this._styleGroundColor = null;
     // Для поиска изломов нужны геометрические нормали граней, а не smooth
@@ -204,6 +211,7 @@ export class Viewer {
     this.quality = 3;
     this._fpsHistory = [];
     this._shadowDirty = true;
+    this._shadowMaskReady = false;
     this._fpsTime = 0;
     this._sceneSuspended = false; // полноэкранная панель или скрытая вкладка
     this._init();
@@ -392,6 +400,7 @@ export class Viewer {
       } else {
         this.renderer.setPixelRatio(1);
         this._shadowDirty = true;
+        this._shadowMaskReady = false;
       }
       this.resize();
       this.onQuality?.(this.quality);
@@ -419,8 +428,10 @@ export class Viewer {
     };
     Object.entries(dirs).forEach(([key, dir]) => {
       const color = colors[key];
+      // Стрелка оси — часть сцены: она должна скрываться за деталью, а не
+      // протыкать её насквозь. Подпись остаётся поверх (см. _axisLabel).
       const mat = new THREE.MeshBasicMaterial({
-        color, depthTest: false, depthWrite: false, transparent: true, opacity: 0.98,
+        color, depthTest: true, depthWrite: false, transparent: true, opacity: 0.98,
       });
       const shaft = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 16), mat);
       shaft.name = 'axis-' + key;
@@ -883,6 +894,9 @@ export class Viewer {
                          scene_durations: animation?.scene_durations || {} });
       this.setAxes(this.axesVisible);
       this.setShading(this.shading);
+      // Материалы новые после перезагрузки модели: плоские нормали и настройки
+      // полигонажа живут в состоянии окна и должны вернуться на новую сцену.
+      this.setFlatShading(this.flatShading === true);
       this.applySettings(this.settings);
       this.setPolygons(this.polygons);
       // В статической сцене одинаковые геометрия+материал уходят в один
@@ -2069,6 +2083,48 @@ export class Viewer {
     if (this._animWrap) this._animWrap.visible = true;
   }
 
+  /** Цвета сетки: тёмный экран или светлая бумага художественного стиля. */
+  _gridPalette(paper) {
+    return paper
+      ? { center: 0xb9c2cf, lines: 0xd7dde6 }
+      : { center: 0x33465e, lines: 0x1d2733 };
+  }
+
+  /**
+   * Число сегментов круга пола по стрелке прогиба 0.3 мм.
+   *
+   * Хорда = 2R·sin(π/n), прогиб = R(1 − cos(π/n)). Держим прогиб ниже
+   * половины пикселя на типичной дистанции, а предел 2048 защищает от сцены
+   * в сотни метров.
+   */
+  _groundSegments(radius) {
+    const sagitta = 0.3;
+    const r = Math.max(Number(radius) || 1, sagitta * 2);
+    const step = 2 * Math.acos(Math.max(-1, Math.min(1, 1 - sagitta / r)));
+    const count = Math.ceil((Math.PI * 2) / Math.max(step, 1e-6));
+    return Math.max(96, Math.min(2048, count));
+  }
+
+  /** Перекрашивает сетку под текущий фон, не меняя её размер и видимость. */
+  _repaintGrid() {
+    if (!this.grid || !this._gridSize) return;
+    const paper = Boolean(this.anime && this.anime.mode && this.anime.mode !== 'выкл');
+    if (this._gridPaper === paper) return;
+    this._gridPaper = paper;
+    const palette = this._gridPalette(paper);
+    const visible = this.grid.visible;
+    this.scene.remove(this.grid);
+    this.grid.geometry.dispose();
+    this.grid.material.dispose();
+    this.grid = new THREE.GridHelper(this._gridSize, 20, palette.center, palette.lines);
+    this.grid.material.transparent = true;
+    this.grid.material.opacity = paper ? 0.55 : 0.9;
+    this.grid.material.depthWrite = false;
+    this.grid.position.y = 0;
+    this.grid.visible = visible;
+    this.scene.add(this.grid);
+  }
+
   _fit(root) {
     let box = new THREE.Box3().setFromObject(root);
     if (box.isEmpty()) {
@@ -2093,7 +2149,10 @@ export class Viewer {
     this.scene.remove(this.grid);
     this.grid.geometry.dispose();
     this.grid.material.dispose();
-    this.grid = new THREE.GridHelper(gridSize, 20, 0x33465e, 0x1d2733);
+    this._gridSize = gridSize;
+    this._gridPaper = Boolean(this.anime && this.anime.mode && this.anime.mode !== 'выкл');
+    const gridPalette = this._gridPalette(this._gridPaper);
+    this.grid = new THREE.GridHelper(gridSize, 20, gridPalette.center, gridPalette.lines);
     this.grid.material.transparent = true;
     this.grid.material.opacity = 0.9;
     this.grid.material.depthWrite = false;
@@ -2103,7 +2162,12 @@ export class Viewer {
 
     const groundRadius = gridSize * 0.62;
     this.ground.geometry.dispose();
-    this.ground.geometry = new THREE.CircleGeometry(groundRadius, 96);
+    // 96 сегментов на круг радиусом 2 м давали хорду 134 мм: на видах
+    // «спереди»/«справа» пол обрезался заметной прямой. Считаем число
+    // сегментов от стрелки прогиба (0.3 мм) — это дёшево и не зависит от
+    // масштаба сцены.
+    this.ground.geometry = new THREE.CircleGeometry(groundRadius,
+      this._groundSegments(groundRadius));
     this.ground.visible = this.groundVisible;
 
     const shadowSpan = Math.max(size.x, size.y, size.z, 50) * 1.6;
@@ -2131,6 +2195,9 @@ export class Viewer {
       || Math.abs(size.z - prev.z) > Math.max(prev.z, 1) * 0.6);
     this._lastSize = { x: size.x, y: size.y, z: size.z };
     if (grew || resized) this.setView('iso', true);
+    // Оси считаются от габарита: после смены модели они должны быть длиной
+    // новой детали, а не прошлой сцены.
+    this.setAxes(this.axesVisible);
   }
 
   /** Пауза основного viewport, пока его целиком закрывает модальная панель. */
@@ -2218,6 +2285,10 @@ export class Viewer {
     this.groundVisible = Boolean(visible);
     this.settings.ground = this.groundVisible;
     if (this.ground) this.ground.visible = this.groundVisible;
+    // Маска тени — это пол. Без пола она недействительна, с полом её надо
+    // перерисовать, иначе тень держится от прошлого состояния сцены.
+    this._shadowDirty = Boolean(this.groundVisible);
+    if (!this.groundVisible) this._shadowMaskReady = false;
   }
 
   setAxes(visible) {
@@ -2240,6 +2311,28 @@ export class Viewer {
     });
   }
 
+  /**
+   * Плоские нормали: каждая грань освещается своей нормалью.
+   *
+   * Единственный способ увидеть, что полигонаж и поверхность — одно и то же:
+   * на сглаженных нормалях длинный треугольник скругления даёт «складку»,
+   * которой нет в сетке. С плоскими нормалями каждая линия полигонажа
+   * обводит ровно свою грань.
+   */
+  setFlatShading(on) {
+    this.flatShading = Boolean(on);
+    if (!this.model) return;
+    this.model.traverse((o) => {
+      if (!o.isMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => {
+        if (!m || !('flatShading' in m)) return;
+        m.flatShading = this.flatShading;
+        m.needsUpdate = true;
+      });
+    });
+  }
+
   setWireframe(on) {
     this.wireframe = on;
     if (!this.model) return;
@@ -2250,10 +2343,9 @@ export class Viewer {
         mats.forEach((m) => {
           if (!m) return;
           m.wireframe = styleOn ? false : on;
-          if (styleOn && this._styleWireframe) {
-            const saved = this._styleWireframe.find((entry) => entry[0] === m);
-            if (saved) saved[1] = on;
-          }
+          // Сохранённое «до стиля» значение не перезаписываем: иначе после
+          // выхода из рисунка у материала оставался каркас, включённый в
+          // стиле, и штриховка «прилипала» к обычному виду.
         });
       }
     });
@@ -2265,55 +2357,152 @@ export class Viewer {
     if (on) this._detachAllInstances();
     this._clearOverlays();
     if (!on) {
-      this.setWireframe(false);
+      this._polygonFillSaved.forEach((saved, material) => {
+        material.transparent = saved.transparent;
+        material.opacity = saved.opacity;
+        material.depthWrite = saved.depthWrite;
+        material.polygonOffset = saved.polygonOffset;
+        material.polygonOffsetFactor = saved.factor;
+        material.polygonOffsetUnits = saved.units;
+        material.needsUpdate = true;
+      });
+      this._polygonFillSaved.clear();
       this._applyAnimeLook();
       return;
     }
     if (!this.model) return;
-    const size = new THREE.Vector2();
-    this.renderer.getDrawingBufferSize(size);
     this.model.traverse((o) => {
       if (!o.isMesh) return;
-      const wire = new THREE.WireframeGeometry(o.geometry);
+      const positions = this._polygonPositions(o.geometry);
+      // У детали без изломов (гладкая сфера) структурных рёбер может не быть:
+      // пустой буфер не создаём, иначе LineSegments2 получит нулевую длину.
+      if (positions.length < 6) return;
       const geo = new LineSegmentsGeometry();
-      geo.setPositions(uniqueTopologyPositions(wire.attributes.position.array));
-      wire.dispose();
-      // Обычные GL_LINES имеют аппаратную ширину 1 px и распадаются на
-      // ступени/тире. LineSegments2 строит экранные полосы с торцами;
-      // непрозрачный цвет и уникальные пары вершин не накапливают повторный
-      // overdraw там, где радиальные рёбра сходятся в центре диска.
-      // Полоса рисуется экранным quad'ом. alphaToCoverage работает только на
-      // multisampled-цели: буфер композера теперь создаётся с samples=4,
-      // поэтому тонкая полоса получает ровное покрытие и мягкие края.
-      const mat = new LineMaterial({
-        color: 0x78aebe, linewidth: topologyLineMaterialWidth(this.renderer.getPixelRatio()),
-        transparent: false, opacity: 1.0, depthTest: true, depthWrite: false,
-        alphaToCoverage: true, toneMapped: false, fog: false,
-      });
-      mat.resolution.copy(size);
-      mat.polygonOffset = true;
-      mat.polygonOffsetFactor = -4;
-      mat.polygonOffsetUnits = -8;
-      // Маленький bias только против coplanar z-fighting с собственной
-      // поверхностью. Скрытые задние рёбра по-прежнему отсекаются depth test.
-      mat.onBeforeCompile = (shader) => {
-        shader.vertexShader = shader.vertexShader.replace(
-          'gl_Position = clip;',
-          'gl_Position = clip;\n gl_Position.z -= 0.00008 * gl_Position.w;',
-        );
-      };
-      mat.customProgramCacheKey = () => 'forma-topology-screen-line-v1';
-      const lines = new LineSegments2(geo, mat);
+      geo.setPositions(positions);
+      const lines = new LineSegments2(geo, this._polygonMaterial());
       lines.renderOrder = 3;
       lines.matrixAutoUpdate = false;
       lines.userData.formaTopologySource = o;
-      // Overlay живёт рядом с моделью, а не внутри неё: LineSegments2 —
-      // Mesh, поэтому вложение исказило бы picking, G-buffer и счётчики.
+      // Overlay живёт рядом с моделью, а не внутри неё: LineSegments2 — Mesh,
+      // поэтому вложение исказило бы picking, G-buffer и счётчики.
       this.scene.add(lines);
       this._overlays.push(lines);
     });
+    this._applyPolygonFill();
     this._syncTopologyOverlays();
     this._applyAnimeLook();
+  }
+
+  /**
+   * Настройки полигонажа: `fill` — «непрозрачный»/«сквозной»,
+   * `edges` — «сетка»/«структурные», `angle` — порог излома в градусах.
+   *
+   * Меняется либо только заливка (быстро), либо набор рёбер (пересборка
+   * буферов). Раньше прозрачность зависела от глубины и удачи z-fighting —
+   * теперь это явный режим, и он одинаков на любом масштабе.
+   */
+  setPolygonOptions(options = {}) {
+    const fill = options.fill ?? this.polygonFill;
+    const edges = options.edges ?? this.polygonEdges;
+    const angle = Math.max(0.5, Math.min(179, Number(options.angle ?? this.polygonAngle) || 32));
+    const fillChanged = fill !== this.polygonFill;
+    const edgesChanged = edges !== this.polygonEdges;
+    const angleChanged = Math.abs(angle - this.polygonAngle) > 1e-6;
+    this.polygonFill = fill;
+    this.polygonEdges = edges;
+    this.polygonAngle = angle;
+    if (!this.polygons) return;
+    if (edgesChanged || angleChanged) {
+      this.setPolygons(true);
+      return;
+    }
+    if (fillChanged) {
+      this._applyPolygonFill();
+      this._syncTopologyOverlays();
+      this._renderFrame();
+    }
+  }
+
+  /** Позиции рёбер полигонажа: вся сетка или только изломы. */
+  _polygonPositions(geometry) {
+    if (!geometry?.attributes?.position) return new Float32Array(0);
+    if (this.polygonEdges === 'структурные') {
+      return creaseEdgePositions(geometry, this.polygonAngle);
+    }
+    const wire = new THREE.WireframeGeometry(geometry);
+    const positions = uniqueTopologyPositions(wire.attributes.position.array);
+    wire.dispose();
+    return positions;
+  }
+
+  /** Цвет линий полигонажа: на бумаге художественного стиля — тушь. */
+  _polygonLineColor() {
+    return this._animeOn() ? 0x1b1f27 : 0x78aebe;
+  }
+
+  /** Материал экранных полос для полигонажа. */
+  _polygonMaterial() {
+    const size = new THREE.Vector2();
+    this.renderer.getDrawingBufferSize(size);
+    const width = topologyLineMaterialWidth(this.renderer.getPixelRatio());
+    const through = this.polygonFill === 'сквозной';
+    const mat = new LineMaterial({
+      color: this._polygonLineColor(), linewidth: width,
+      transparent: false, opacity: 1.0,
+      depthTest: !through, depthWrite: false,
+      alphaToCoverage: true, toneMapped: false, fog: false,
+    });
+    mat.resolution.copy(size);
+    // Обычные GL_LINES имеют аппаратную ширину 1 px и распадаются на
+    // ступени/тире. LineSegments2 строит экранные полосы с торцами и не
+    // зависит от угла ребра к экрану.
+    mat.customProgramCacheKey = () => 'forma-topology-screen-line-v2';
+    return mat;
+  }
+
+  /**
+   * Грани полигонажа: непрозрачные или сквозные.
+   *
+   * В непрозрачном режиме грани сдвигаются назад по глубине (polygonOffset),
+   * поэтому линия всегда выигрывает у своей же поверхности — ровно и на
+   * детали 5 мм, и на вагоне 1300 мм, без мирового сдвига, который врал на
+   * разных дальностях. В сквозном грани становятся полупрозрачными и не
+   * пишут глубину, а линии рисуются все — это настоящий рентген сетки.
+   */
+  _applyPolygonFill() {
+    if (!this.model) return;
+    const through = this.polygons && this.polygonFill === 'сквозной';
+    const seen = new Set();
+    this.model.traverse((o) => {
+      if (!o.isMesh) return;
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      mats.forEach((m) => {
+        if (!m || seen.has(m)) return;
+        seen.add(m);
+        if (!this._polygonFillSaved.has(m)) {
+          this._polygonFillSaved.set(m, {
+            transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite,
+            polygonOffset: m.polygonOffset, factor: m.polygonOffsetFactor,
+            units: m.polygonOffsetUnits,
+          });
+        }
+        const saved = this._polygonFillSaved.get(m);
+        if (through) {
+          m.transparent = true;
+          m.opacity = Math.min(saved.opacity, 0.16);
+          m.depthWrite = false;
+          m.polygonOffset = false;
+        } else {
+          m.transparent = saved.transparent;
+          m.opacity = saved.opacity;
+          m.depthWrite = saved.depthWrite;
+          m.polygonOffset = true;
+          m.polygonOffsetFactor = 1;
+          m.polygonOffsetUnits = 1;
+        }
+        m.needsUpdate = true;
+      });
+    });
   }
 
   _syncTopologyOverlays() {
@@ -2321,14 +2510,21 @@ export class Viewer {
     this.model?.updateMatrixWorld(true);
     const size = new THREE.Vector2();
     this.renderer.getDrawingBufferSize(size);
+    const through = this.polygonFill === 'сквозной';
+    const color = this._polygonLineColor();
     this._overlays.forEach((lines) => {
       const source = lines.userData.formaTopologySource;
       if (!source) return;
       lines.matrix.copy(source.matrixWorld);
       lines.matrixWorldNeedsUpdate = true;
-      lines.material.resolution.copy(size);
-      lines.material.linewidth = topologyLineMaterialWidth(this.renderer.getPixelRatio());
-      if (!this._animeOn()) lines.visible = this.polygons && effectivelyVisible(source);
+      const mat = lines.material;
+      mat.resolution.copy(size);
+      mat.linewidth = topologyLineMaterialWidth(this.renderer.getPixelRatio());
+      // В художественном стиле полигонаж не прячется: это диагностика, и
+      // раньше он молча исчезал при включении «аниме»/«скетча».
+      mat.depthTest = !through;
+      mat.color.setHex(color);
+      lines.visible = this.polygons && effectivelyVisible(source);
     });
   }
 
@@ -3487,6 +3683,13 @@ export class Viewer {
     this.bounceLight.intensity = Number(s.bounce ?? 0.65);
     this.renderer.toneMappingExposure = Number(s.exposure ?? 1.0);
     if (s.axes !== undefined) this.setAxes(s.axes !== false);
+    if (s.poly_fill !== undefined || s.poly_edges !== undefined || s.poly_angle !== undefined) {
+      this.setPolygonOptions({
+        fill: s.poly_fill ?? this.polygonFill,
+        edges: s.poly_edges ?? this.polygonEdges,
+        angle: s.poly_angle ?? this.polygonAngle,
+      });
+    }
     if (s.poly !== undefined) this.setPolygons(s.poly === true);
     if (s.bloom !== undefined) {
       this.bloomStrength = Math.max(0, Math.min(3, Number(s.bloom) || 0));
@@ -3717,6 +3920,10 @@ export class Viewer {
       this._fxaaPass.uniforms.resolution.value.set(1 / outputSize.x, 1 / outputSize.y);
     }
     const animeOn = this._animeOn();
+    // Юниформы стиля выставляются перед каждым кадром: после resize и смены
+    // настроек проходы пересоздаются, и старые значения «залипали», из-за
+    // чего на экране смешивались два стиля.
+    if (animeOn) this._applyAnimeUniforms();
     if (!this.faceMode && (this._bloomOn || animeOn) && this.composer) {
       // буфер нормалей и глубины для контуров — до отрисовки красоты
       if (animeOn) {
@@ -3731,6 +3938,8 @@ export class Viewer {
         u.tDepth.value = this._normalRT.depthTexture;
         u.tAlbedo.value = this._albedoRT ? this._albedoRT.texture : null;
         u.tShadow.value = this._shadowRT ? this._shadowRT.texture : null;
+        // 1 — есть настоящая маска пола, 0 — остаётся только эвристика.
+        u.uShadowMask.value = (this._shadowMaskReady && this.ground?.visible) ? 1 : 0;
         u.uNear.value = this.camera.near;
         u.uFar.value = this.camera.far;
         const size = new THREE.Vector2();
@@ -4208,6 +4417,22 @@ export class Viewer {
       if (this.grid) this.grid.visible = this.gridVisible;
       if (this.ground) this.ground.visible = this.groundVisible;
       if (this.axes) this.axes.visible = this.axesVisible;
+      // Полигонаж выключен — возвращаем граням их собственные настройки.
+      // Пока он включён, сдвиг глубины граней принадлежит ему: здесь его
+      // трогать нельзя, иначе линии снова начнут спорить с поверхностью.
+      if (!this.polygons && this._polygonFillSaved.size) {
+        this._polygonFillSaved.forEach((saved, material) => {
+          material.transparent = saved.transparent;
+          material.opacity = saved.opacity;
+          material.depthWrite = saved.depthWrite;
+          material.polygonOffset = saved.polygonOffset;
+          material.polygonOffsetFactor = saved.factor;
+          material.polygonOffsetUnits = saved.units;
+          material.needsUpdate = true;
+        });
+        this._polygonFillSaved.clear();
+      }
+      this._repaintGrid();
       if (this.scene) {
         const bg = this.settings.bg || '#0b0e13';
         this.scene.background = new THREE.Color(bg);
@@ -4225,9 +4450,13 @@ export class Viewer {
       });
     }
     this._styleWireframe?.forEach(([material]) => { material.wireframe = false; });
-    // WireframeGeometry — диагностика сетки, не Line Art и не часть G-buffer.
-    this._overlays.forEach((overlay) => { overlay.visible = false; });
-    if (this.grid) this.grid.visible = false;
+    // Полигонаж — диагностика, а не Line Art: он остаётся видимым и в
+    // художественном стиле, но получает цвет туши. Раньше он молча исчезал.
+    this._overlays.forEach((overlay) => { overlay.visible = this.polygons; });
+    if (this.grid) {
+      this._repaintGrid();
+      this.grid.visible = this.gridVisible;
+    }
     if (this.ground) {
       this.ground.visible = this.groundVisible;
       if (this.ground.material?.color) {
@@ -4235,7 +4464,9 @@ export class Viewer {
         this.ground.material.color.set(paper);
       }
     }
-    if (this.axes) this.axes.visible = false;
+    // Оси — такой же переключатель, как сетка и пол: в стиле они больше не
+    // исчезают сами, иначе «покажи оси» работало только вне рисунка.
+    if (this.axes) this.axes.visible = this.axesVisible;
     this.scene.background = new THREE.Color(paper);
     this.scene.fog.color.set(paper);
   }
@@ -4287,6 +4518,9 @@ export class Viewer {
     // Состав проходов меняется только при включении/выключении свечения и
     // смене режима рисунка. Если ничего не поменялось — не трогаем цепочку:
     // каждое удаление прохода освобождает буферы и подвешивает кадр.
+    // Состав проходов зависит только от режима: параметры (толщина, штраф,
+    // бумага) живут в юниформах и обновляются каждый кадр, поэтому
+    // пересобирать цепочку на каждом движении ползунка не нужно.
     const key = `${this._bloomOn ? 1 : 0}:${this.anime ? (this.anime.mode || '') : ''}`;
     if (this._composerKey === key && composer.passes.length > 1) {
       if (this.bloomPass) {
@@ -4423,6 +4657,11 @@ export class Viewer {
     const hidden = this._hideForGBuffer();
     const groundWasVisible = this.ground.visible;
     this.ground.visible = true;
+    // Модель в маску не входит. Раньше она рисовалась туда ShadowMaterial'ом,
+    // и её же затенённые грани давали «двойника» — серое пятно в форме детали
+    // рядом с настоящей тенью.
+    const modelWasVisible = this.model ? this.model.visible : false;
+    if (this.model) this.model.visible = false;
     this.scene.overrideMaterial = this._shadowMat;
     this.scene.background = null;
     this.scene.fog = null;
@@ -4437,6 +4676,8 @@ export class Viewer {
     this.scene.fog = prevFog;
     this._restoreGBufferVisibility(hidden);
     this.ground.visible = groundWasVisible;
+    if (this.model) this.model.visible = modelWasVisible;
+    this._shadowMaskReady = true;
   }
 
   /** Контур формы и границ объектов в плотном буфере; цвет сюда не входит. */
@@ -4476,7 +4717,7 @@ export class Viewer {
           vec3 nvC = normalize(nC.rgb * 2.0 - 1.0);
           float dC = linearDepth(texture2D(tDepth, vUv).x);
           vec2 px = 1.0 / uResolution;
-          float radius = max(uLine * 0.5 * uPixelRatio, 0.6);
+          float radius = max(uLine * 0.5 * uPixelRatio, 0.28);
           vec3 idC = floor(texture2D(tIds, vUv).rgb * 255.0 + 0.5);
           float edge = 0.0;
           float silhouette = 0.0;
@@ -4552,6 +4793,7 @@ export class Viewer {
         uFar: { value: 40000 },
         uPixelRatio: { value: 1 },
         tShadow: { value: null },
+        uShadowMask: { value: 0 },
         uWorld: { value: 100 },
         uLines: { value: 0 },
         uLightDir: { value: new THREE.Vector3(0.42, 0.62, 0.75).normalize() },
@@ -4574,6 +4816,7 @@ export class Viewer {
         uniform sampler2D tIds;
         uniform sampler2D tAlbedo;
         uniform sampler2D tShadow;
+        uniform float uShadowMask;
         uniform sampler2D tEdge;
         uniform vec2 uResolution;
         uniform float uLine, uInner, uCrease, uDepthTh, uSeams;
@@ -4826,9 +5069,12 @@ export class Viewer {
           float paperL = max(luma(uPaper), 0.12);
           // Маска ShadowMaterial точна, а локальный контраст остаётся
           // запасным источником для мягкой полутени на кромке.
-          float castMask = texture2D(tShadow, vUv).a;
-          float bgShadow = bgMask
-            * max(localBackgroundShadow(vUv, paperL), smoothstep(0.04, 0.55, castMask));
+          // Точная маска ShadowMaterial главнее догадка по яркости: раньше
+          // max() с локальным контрастом добавлял пятна там, где тени нет, и
+          // тень выглядела «запечённой» ещё до отрисовки.
+          float castMask = smoothstep(0.04, 0.55, texture2D(tShadow, vUv).a);
+          float guessShadow = localBackgroundShadow(vUv, paperL);
+          float bgShadow = bgMask * mix(guessShadow, max(guessShadow * 0.35, castMask), uShadowMask);
           float bgShadowCore = smoothstep(0.035, 0.26, bgShadow);
           edge *= 1.0 - emitMask * 0.65;
 

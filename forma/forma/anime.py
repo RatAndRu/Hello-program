@@ -148,9 +148,12 @@ def normalize_style(data: dict | None) -> dict:
         out["mode"] = mode
     if "line" in src and src["line"] is not None:
         line = float(src["line"])
-        if not (0.0 <= line <= 12.0):
-            raise GeometryError("Толщина контура должна быть от 0 до 12 px.",
-                                hint="Обычно 1…3 px.")
+        # 0 — контур выключен (так его и задают старые сценарии), а всё, что
+        # больше нуля, начинается с 0.05 px: волосяная линия лучше, чем чёрная
+        # заливка там, где контуры идут плотно.
+        if not (line == 0.0 or 0.05 <= line <= 12.0):
+            raise GeometryError("Толщина контура: 0 (выключен) или 0.05…12 px.",
+                                hint="Обычно 1…3 px, волосяная линия — 0.1…0.4 px.")
         out["line"] = line
     if src.get("color"):
         out["color"] = normalize_color(str(src["color"]))
@@ -634,7 +637,12 @@ def _apply_style_legacy(img: np.ndarray, z: np.ndarray | None = None,
         radius = float(st["line"]) * max(1, ss) * 0.5
         if radius > 0.2:
             edge = _dilate(edge, radius)
-        mask = _soften(_bridge_line_gaps(edge))
+            coverage = 1.0
+        else:
+            # Слишком тонкая линия не исчезает: остаётся один пиксель маски с
+            # ослабленной плотностью, иначе контур пропадал целиком.
+            coverage = max(0.25, radius / 0.2)
+        mask = _soften(_bridge_line_gaps(edge)) * coverage
         # контур не должен закрывать светодиоды целиком
         mask = np.where(emissive, mask * 0.35, mask)
         out = out * (1.0 - mask[..., None]) + ink[None, None, :] * mask[..., None]
@@ -886,7 +894,12 @@ def apply_style(img: np.ndarray, z: np.ndarray | None = None,
         radius = float(st["line"]) * max(1, ss) * 0.5
         if radius > 0.2:
             edge = _dilate(edge, radius)
-        mask = _soften(_bridge_line_gaps(edge))
+            coverage = 1.0
+        else:
+            # Слишком тонкая линия не исчезает: остаётся один пиксель маски с
+            # ослабленной плотностью, иначе контур пропадал целиком.
+            coverage = max(0.25, radius / 0.2)
+        mask = _soften(_bridge_line_gaps(edge)) * coverage
         mask = np.where(emissive, mask * 0.35, mask)
         out = out * (1.0 - mask[..., None]) + ink[None, None, :] * mask[..., None]
 

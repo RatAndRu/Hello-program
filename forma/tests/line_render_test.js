@@ -12,7 +12,8 @@ async function main() {
   const { cameraClipRange, stableAngle } = await import(pathToFileURL(path.join(root, 'web/js/camera_clip.js')));
   const { edgeCoverageScale, edgeCoverageToInk, EDGE_COVERAGE_TO_INK_GLSL } = await import(
     pathToFileURL(path.join(root, 'web/js/edge_coverage.js')));
-  const { TOPOLOGY_STROKE_PX, topologyLineMaterialWidth, uniqueTopologyPositions } = await import(
+  const { TOPOLOGY_STROKE_PX, topologyLineMaterialWidth, uniqueTopologyPositions,
+    creaseEdgePositions } = await import(
     pathToFileURL(path.join(root, 'web/js/topology_lines.js')));
   for (const ratio of [1, 2, 1.5]) {
     const actualCssWidth = 2 * topologyLineMaterialWidth(ratio) / ratio;
@@ -163,16 +164,15 @@ async function main() {
   const polygons = viewer.slice(viewer.indexOf('  setPolygons(on) {'),
     viewer.indexOf('  /** Режим выделения областей', viewer.indexOf('  setPolygons(on) {')));
   for (const token of [
-    'new THREE.WireframeGeometry(o.geometry)',
-    'geo.setPositions(uniqueTopologyPositions(wire.attributes.position.array))',
+    'new THREE.WireframeGeometry(geometry)',
+    'uniqueTopologyPositions(wire.attributes.position.array)',
+    'creaseEdgePositions(geometry, this.polygonAngle)',
     'new LineSegmentsGeometry()',
     'new LineMaterial({',
-    'linewidth: topologyLineMaterialWidth(this.renderer.getPixelRatio())',
-    'transparent: false',
+    'const width = topologyLineMaterialWidth(this.renderer.getPixelRatio());',
     'alphaToCoverage: true',
-    'mat.polygonOffset = true',
-    'gl_Position.z -= 0.00008 * gl_Position.w',
-    'new LineSegments2(geo, mat)',
+    'this._applyPolygonFill();',
+    'new LineSegments2(geo, this._polygonMaterial())',
     'this.scene.add(lines)',
     'this._syncTopologyOverlays();',
   ]) assert(polygons.includes(token), `Экранный полигонаж не подключён: ${token}`);
@@ -185,7 +185,29 @@ async function main() {
       `Отсутствует vendor-модуль экранных линий: ${file}`);
   }
 
-  console.log('Линейный render: clip, DPR, subpixel, camera ±0, ID и экранный полигонаж проверены.');
+  // Структурные рёбра: куб даёт 12 настоящих рёбер и ни одной диагонали
+  // треугольников, цилиндр — только два обода при пороге больше шага граней.
+  const cube = [];
+  const corners = [[-1, -1, -1], [1, -1, -1], [1, 1, -1], [-1, 1, -1],
+    [-1, -1, 1], [1, -1, 1], [1, 1, 1], [-1, 1, 1]];
+  [[0, 1, 2], [0, 2, 3], [4, 6, 5], [4, 7, 6], [0, 4, 5], [0, 5, 1],
+    [1, 5, 6], [1, 6, 2], [2, 6, 7], [2, 7, 3], [3, 7, 4], [3, 4, 0]]
+    .forEach((tri) => tri.forEach((i) => cube.push(...corners[i])));
+  assert.strictEqual(creaseEdgePositions({ positions: cube }, 30).length / 6, 12,
+    'Куб обязан дать 12 структурных рёбер: диагонали плоских граней — не рёбра');
+  const round = [];
+  const seg = 16;
+  for (let i = 0; i < seg; i += 1) {
+    const a0 = (i / seg) * Math.PI * 2, a1 = ((i + 1) / seg) * Math.PI * 2;
+    const p0 = [Math.cos(a0), 0, Math.sin(a0)], p1 = [Math.cos(a1), 0, Math.sin(a1)];
+    const p2 = [Math.cos(a1), 1, Math.sin(a1)], p3 = [Math.cos(a0), 1, Math.sin(a0)];
+    round.push(...p0, ...p1, ...p2, ...p0, ...p2, ...p3);
+  }
+  assert.strictEqual(creaseEdgePositions({ positions: round }, 30).length / 6, 32,
+    'Гранёный цилиндр (22.5°) при пороге 30° даёт только два обода');
+
+  console.log('Линейный render: clip, DPR, subpixel, camera ±0, ID, экранный полигонаж '
+    + 'и структурные рёбра проверены.');
 }
 
 main().catch((error) => {

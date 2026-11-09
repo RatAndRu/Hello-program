@@ -3,6 +3,7 @@ import { encodeGif, downloadBlob } from './gif.js';
 import { Preview3D } from './preview3d.js';
 import { installPanelLayout } from './panels.js';
 import { ToolThumbs } from './toolpreview.js';
+import { ANIME_MODES, mergeAnimeStyle, resolveAnimeStyle } from './style_presets.js';
 
 const $ = (id) => document.getElementById(id);
 // Токен берём из адреса, а если его нет (обновили страницу, открыли голый
@@ -112,6 +113,11 @@ if (savedViewPrefs && typeof savedViewPrefs === 'object') {
     state.anime = savedViewPrefs.anime;
     state.animeDirty = true;
   }
+  if (savedViewPrefs.polyFill) state.polyFill = savedViewPrefs.polyFill;
+  if (savedViewPrefs.polyEdges) state.polyEdges = savedViewPrefs.polyEdges;
+  if (Number.isFinite(Number(savedViewPrefs.polyAngle))) {
+    state.polyAngle = Number(savedViewPrefs.polyAngle);
+  }
 }
 function persistViewSettings() {
   try {
@@ -123,6 +129,9 @@ function persistViewSettings() {
       shading: state.shading,
       focusObject: state.focusObject,
       anime: state.anime || { mode: 'выкл' },
+      polyFill: state.polyFill || 'непрозрачный',
+      polyEdges: state.polyEdges || 'сетка',
+      polyAngle: state.polyAngle ?? 32,
     }));
   } catch (e) { /* приватный режим — настройки живут до перезагрузки */ }
 }
@@ -3042,6 +3051,11 @@ function applyViewSettings(payload) {
 
 function restoreViewControls() {
   const v = state.viewer;
+  if ($('poly-fill')) $('poly-fill').value = state.polyFill || 'непрозрачный';
+  if ($('poly-edges')) $('poly-edges').value = state.polyEdges || 'сетка';
+  if ($('poly-angle')) $('poly-angle').value = String(state.polyAngle ?? 32);
+  if ($('poly-angle-val')) $('poly-angle-val').textContent = `${state.polyAngle ?? 32}°`;
+  v?.setPolygonOptions(polygonOptions());
   $('btn-spin')?.classList.toggle('active', state.spin);
   $('btn-occl')?.classList.toggle('active', state.occluders);
   $('btn-orbit-sel')?.classList.toggle('active', state.orbitSelection);
@@ -3163,32 +3177,26 @@ $('bg-color')?.addEventListener('input', (e) => {
 });
 $('bg-color')?.addEventListener('change', writeViewScript);
 /* ---------------- аниме/манга-стиль: живая настройка в окне ---------------- */
-const ANIME_MODES = {
-  'выкл': { mode: 'выкл' },
-  'аниме': { mode: 'аниме', line: 1.6, crease: 32, toon: 3, tone: 0, paper: '#f4f6fa' },
-  'манга': { mode: 'манга', line: 1.8, crease: 30, toon: 3, tone: 0.75, paper: '#fbfbf7' },
-  'комикс': { mode: 'комикс', line: 2.6, crease: 38, toon: 2, tone: 0.6, paper: '#fdf4e3' },
-  'скетч': { mode: 'скетч', line: 1.5, crease: 26, toon: 0, tone: 0, paper: '#f6f1e6',
-             hatch: 0.85, 'hatch_angle': 52, 'hatch_step': 7, paper_tex: 0.6 },
-  'линия': { mode: 'линия', line: 1.4, crease: 28, toon: 0, tone: 0, paper: '#ffffff', shade: false },
-};
 state.anime = state.anime || { mode: 'выкл' };
 
 function animeUiValues() {
-  const a = state.anime || {};
+  // Умолчания берутся из пресета текущего режима через общий resolveAnimeStyle:
+  // раньше окно показывало 1.6/32/3 из хардкода, а рисовал шейдер другое.
+  const a = resolveAnimeStyle(state.anime);
+  const pick = (key, fallback) => Number(a[key] ?? fallback);
   return {
-    line: Number(a.line ?? 1.6),
-    crease: Number(a.crease ?? 32),
-    toon: Number(a.toon ?? 3),
-    tone: Number(a.tone ?? 0),
+    line: pick('line', 1.6),
+    crease: pick('crease', 32),
+    toon: pick('toon', 3),
+    tone: pick('tone', 0),
     inner: a.inner !== false,
     seams: a.seams !== false,
     paper: a.paper === null ? '#ffffff' : (a.paper || '#f4f6fa'),
     paperScene: a.paper === null,
-    hatch: Number(a.hatch ?? 0),
-    hatchAngle: Number(a.hatch_angle ?? 45),
-    hatchStep: Number(a.hatch_step ?? 8),
-    paperTex: Number(a.paper_tex ?? 0),
+    hatch: pick('hatch', 0),
+    hatchAngle: pick('hatch_angle', 45),
+    hatchStep: pick('hatch_step', 8),
+    paperTex: pick('paper_tex', 0),
     lines: a.lines || 'все',
   };
 }
@@ -3228,13 +3236,9 @@ function syncAnimeControls() {
 }
 
 function applyAnime(patch) {
-  const base = Object.assign({}, state.anime || {});
-  const next = Object.assign(base, patch || {});
-  if (!next.mode || next.mode === 'выкл') {
-    state.anime = { mode: 'выкл' };
-  } else {
-    state.anime = next;
-  }
+  // Смена режима — с чистого пресета, правка ползунка — поверх текущего.
+  // Правило живёт в style_presets.js и проверяется тестом.
+  state.anime = mergeAnimeStyle(state.anime, patch || {});
   state.animeDirty = true;
   if (state.viewer) {
     state.viewer.setAnime(state.anime.mode === 'выкл' ? null : state.anime);
@@ -3365,8 +3369,38 @@ $('opt-shadows')?.addEventListener('change', (e) => state.viewer?.applySettings(
 $('opt-grid')?.addEventListener('change', (e) => state.viewer?.setGrid(e.target.checked));
 $('opt-ground')?.addEventListener('change', (e) => state.viewer?.setGround(e.target.checked));
 $('opt-axes')?.addEventListener('change', (e) => state.viewer?.setAxes(e.target.checked));
+$('opt-flat')?.addEventListener('change', (e) => {
+  state.viewer?.setFlatShading(e.target.checked);
+});
 $('opt-poly')?.addEventListener('change', (e) => {
   state.viewer?.setPolygons(e.target.checked);
+  if (e.target.checked) state.viewer?.setPolygonOptions(polygonOptions());
+  persistViewSettings();
+});
+function polygonOptions() {
+  return {
+    fill: $('poly-fill')?.value || 'непрозрачный',
+    edges: $('poly-edges')?.value || 'сетка',
+    angle: Number($('poly-angle')?.value ?? 32),
+  };
+}
+$('poly-fill')?.addEventListener('change', () => {
+  state.polyFill = $('poly-fill').value;
+  state.viewer?.setPolygonOptions(polygonOptions());
+  persistViewSettings();
+});
+$('poly-edges')?.addEventListener('change', () => {
+  state.polyEdges = $('poly-edges').value;
+  state.viewer?.setPolygonOptions(polygonOptions());
+  persistViewSettings();
+});
+$('poly-angle')?.addEventListener('input', (e) => {
+  state.polyAngle = Number(e.target.value);
+  if ($('poly-angle-val')) $('poly-angle-val').textContent = `${state.polyAngle}°`;
+  state.viewer?.setPolygonOptions(polygonOptions());
+});
+$('poly-angle')?.addEventListener('change', () => {
+  if (state.polyEdges === 'структурные') persistViewSettings();
 });
 $('anim-play')?.addEventListener('click', () => togglePlayAnim());
 $('anim-restart')?.addEventListener('click', () => {

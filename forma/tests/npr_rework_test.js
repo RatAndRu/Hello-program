@@ -28,8 +28,14 @@ for (const token of [
 
 assert(!source.includes('float bright = step(0.97'),
   'Обычный specular больше не должен определяться как emissive по белому порогу');
-assert(source.includes('this._overlays.forEach((overlay) => { overlay.visible = false; });'),
-  'Полигонаж должен отключаться в художественном режиме');
+// Полигонаж — диагностика: в художественном стиле он остаётся видимым, но
+// получает цвет туши. Раньше он молча пропадал, и включение ничего не давало.
+assert(source.includes('this._overlays.forEach((overlay) => { overlay.visible = this.polygons; });'),
+  'Полигонаж должен оставаться видимым в художественном режиме');
+assert(!source.includes('this._overlays.forEach((overlay) => { overlay.visible = false; });'),
+  'Полигонаж не должен исчезать при смене стиля');
+assert(source.includes('return this._animeOn() ? 0x1b1f27 : 0x78aebe;'),
+  'На бумаге линии полигонажа должны быть тушью, а не цветом экрана');
 assert(source.includes('vec3 under = alb * 0.78 + vec3(albedoL) * 0.22;'),
   'Sketch должен сохранять цветной подмалёвок');
 // Штриховка ведёт форму, а не рисует ровную диагональ по всему предмету.
@@ -111,4 +117,4 @@ assert(fragment.includes('for (int i = 0; i < 16; i++)'),
 assert(fragment.includes('float linearDepth(float d)'),
   'edge fragment должен объявлять linearDepth');
 
-console.log('NPR: albedo/emissive, тень, классы линий и скрытие полигонажа подключены.');
+console.log('NPR: albedo/emissive, точная тень, классы линий и полигонаж поверх рисунка подключены.');
