@@ -68,6 +68,10 @@ jobs:
         working-directory: forma
         run: python -m pytest -q tests/test_stage3_features.py tests/test_lamp_rework.py tests/test_banker_lamp.py
 
+      - name: Проверить плитки и кэш операций
+        working-directory: forma
+        run: python -m pytest -q tests/test_v077.py
+
       - name: Прогнать foundation golden/eval
         working-directory: forma
         run: python -m forma.eval --out foundation-eval.json --compare docs/foundation_baseline.json
@@ -94,6 +98,7 @@ jobs:
           node tests/ui_bounds_test.js
           node tests/interior_tools_test.js
           node tests/primitive_cards_test.js
+          node tests/tiles_test.js
           node tests/line_render_test.js
           node tests/npr_rework_test.js
           node tests/asset_fingerprint_test.js
