@@ -160,6 +160,26 @@ def _run_uistest(report_path: str | None) -> int:
                 check("снимки видов (PNG)", False, str(exc))
             # новые возможности 0.2: текстуры, свет, анимация, импорт, форматы
             check("панель вида в интерфейсе", b"studio-panel" in html and b"material-panel" in html)
+            # 0.75: правка сценария из панели. Проверки ниже падают, если в
+            # собранный exe не попали новые файлы интерфейса или маршрут правки.
+            check("панель объекта в интерфейсе",
+                  b'id="object-params-list"' in html and b'id="object-params-name"' in html)
+            controls = get("/js/param_controls.js", raw=True)
+            check("типизированные контролы (param_controls.js)", len(controls) > 5000,
+                  f"{len(controls)} байт")
+            help_data = get("/api/commands")
+            commands = help_data.get("commands", [])
+            cylinder = next((item for item in commands if item.get("name") == "cylinder"), {})
+            check("типы параметров в справке", bool(cylinder.get("param_spec")),
+                  f"{len(cylinder.get('param_spec', {}))} параметров у cylinder")
+            edit_source_text = "тело = cylinder radius=20 height=30\n"
+            edited = post("/api/edit", {
+                "script": edit_source_text,
+                "edit": {"action": "set_param", "line": 1, "param": "height", "value": 45},
+            })
+            check("правка строки сценария (/api/edit)",
+                  edited.get("ok") is True and "height=45" in (edited.get("script") or ""),
+                  (edited.get("script") or "").strip())
             # 0.9: редактор анимации, дорожка кадров, папки рядом с exe
             check("редактор анимации в интерфейсе",
                   b'id="anim-editor"' in html and b'id="anim-scrub"' in html

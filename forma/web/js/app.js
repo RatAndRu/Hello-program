@@ -1337,7 +1337,19 @@ function renderObjectParams(payload) {
   if (!panel || !list) return;
   const name = state.selected?.name;
   list.innerHTML = '';
-  if (!name) { panel.hidden = true; return; }
+  panel.hidden = false;
+  if (!name) {
+    $('object-params-name').textContent = '—';
+    $('object-params-line').textContent = '—';
+    $('object-params-hint').textContent =
+      'Выберите деталь в списке «Объекты» (или щёлкните по ней в окне) — '
+      + 'здесь появятся параметры её строки в сценарии.';
+    const empty = document.createElement('div');
+    empty.className = 'hint-box';
+    empty.textContent = 'Правка меняет ровно одну строку .forma и пересобирает модель.';
+    list.appendChild(empty);
+    return;
+  }
   const stack = objectStack(payload, name);
   const provenance = (payload.provenance || []).find((item) =>
     (item.object || item.name) === name);
@@ -1589,7 +1601,20 @@ function renderObjectStats(obj) {
       + (obj.genus !== undefined ? ` · род ${obj.genus}` : '')
       + (obj.areas_mm2 || obj.area_mm2 ? ` · площадь ${fmt(obj.area_mm2)} мм²` : '')
       + (obj.tex ? ` · текстура: ${escapeHtml(obj.tex.label || obj.tex.kind)}` : '')
-      + (ghosts ? `<br><span class="dim">заслонок прозрачных: ${ghosts}</span>` : '')
+      + (ghosts ? `<br><span class="dim">заслонок прозрачных: ${ghosts}</span>` : '');
+    // Из карточки объекта — сразу к его строке сценария: иначе новая панель
+    // параметров остаётся незамеченной на другой вкладке.
+    const jump = document.createElement('button');
+    jump.className = 'mini';
+    jump.id = 'object-params-jump';
+    jump.textContent = 'параметры объекта →';
+    jump.title = 'Открыть строку этого объекта в сценарии с типизированными полями';
+    jump.addEventListener('click', () => {
+      document.querySelector('.tab[data-tab="params"]')?.click();
+      $('object-params')?.scrollIntoView({ block: 'nearest' });
+    });
+    sum.appendChild(document.createElement('br'));
+    sum.appendChild(jump);
       + '<br><span class="dim">двойной клик в списке — камера; Delete — удалить; ⌖ — приблизить</span>';
   }
 }
@@ -4068,11 +4093,15 @@ function selectObject(name) {
     if (state.spaceMode) state.viewer?.rebuildSpace?.();
     if (state.faceMode) setFaceTarget('');
     renderSceneStats();
+    renderObjectParams(state.payload || {});
     return;
   }
   const obj = (state.payload?.objects || []).find((o) => o.name === name);
   if (!obj) return;
   state.selected = obj;
+  // Панель параметров принадлежит выбранному объекту: показываем её сразу,
+  // не дожидаясь следующей пересборки.
+  renderObjectParams(state.payload || {});
   document.querySelectorAll('.obj-item').forEach((el) => {
     el.classList.toggle('selected', el.dataset.name === name);
   });

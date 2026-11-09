@@ -336,6 +336,13 @@ class UiWiringTest(unittest.TestCase):
     def test_free_input_only_for_strings(self):
         self.assertIn("FREE_TYPES = new Set(['str'])", self.controls)
 
+    def test_panel_is_visible_and_follows_selection(self):
+        """Панель не должна прятаться: иначе её просто не находят."""
+        self.assertIn("renderObjectParams(state.payload || {});", self.app)
+        self.assertIn("panel.hidden = false;", self.app)
+        self.assertIn("Выберите деталь в списке", self.app)
+        self.assertIn("object-params-jump", self.app)
+
     def test_panel_markup_exists(self):
         html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
         self.assertIn('id="object-params-list"', html)
