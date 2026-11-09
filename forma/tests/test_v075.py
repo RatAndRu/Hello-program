@@ -59,6 +59,36 @@ class SpansTest(unittest.TestCase):
                          "[200,100,60]")
 
 
+    def test_spans_agree_on_every_example(self):
+        """Срезы по смещениям обязаны совпадать с текстом токенов."""
+        files = sorted((ROOT / "examples").glob("*.forma"))
+        self.assertTrue(files)
+        checked = 0
+        for path in files:
+            text = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+            for cmd in parse_script(text):
+                # Логическая строка склеена из физических: переводы строк внутри
+                # вектора становятся пробелами, смещения при этом настоящие.
+                def flat(chunk: str) -> str:
+                    return " ".join(chunk.split())
+
+                begin, end = cmd.spans["line"]
+                self.assertEqual(flat(text[begin:end]), flat(cmd.text), path.name)
+                for key, span in cmd.spans.get("kwargs", {}).items():
+                    value_begin, value_end = span["value"]
+                    self.assertEqual(flat(text[value_begin:value_end]),
+                                     flat(cmd.kwargs[key]),
+                                     f"{path.name}:{cmd.line} {key}")
+                    key_begin, key_end = span["key"]
+                    self.assertEqual(text[key_begin:key_end].strip(), key,
+                                     f"{path.name}:{cmd.line}")
+                    checked += 1
+                for token, span in zip(cmd.args, cmd.spans.get("args", [])):
+                    self.assertEqual(flat(text[span[0]:span[1]]), flat(token),
+                                     f"{path.name}:{cmd.line}")
+        self.assertGreater(checked, 50)
+
+
 class EditTest(unittest.TestCase):
     def test_set_existing_param_changes_one_line(self):
         result = edit_source(SAMPLE, {"action": "set_param", "line": 2, "param": "h",
