@@ -1160,6 +1160,12 @@ class Handler(BaseHTTPRequestHandler):
             from .run import commands_help
             self._send_json({"commands": commands_help()})
             return
+        if path == "/api/steps":
+            # Каталог шагов объекта: сервер объявляет операции и поля, клиент
+            # по ним рисует форму. Одна строка сценария — один шаг.
+            from .steps import catalog as steps_catalog
+            self._send_json({"steps": steps_catalog()})
+            return
         if path == "/api/thumbs":
             # Плитки инструментов: готовые изометрические картинки. Генерирует
             # их скрипт tools/render_thumbs.py вместе с манифестом tiles.json:
@@ -1371,6 +1377,32 @@ class Handler(BaseHTTPRequestHandler):
                 payload["edit"] = result.get("edit")
                 payload["script"] = new_script
                 payload["warnings"] = result.get("warnings") or []
+            self._send_json(payload)
+            return
+        if path == "/api/step":
+            from .steps import append_step
+            script = str(body.get("script") if body.get("script") is not None else st.last_script)
+            try:
+                added = append_step(script, str(body.get("object") or ""),
+                                    str(body.get("op") or ""), body.get("values") or {},
+                                    body.get("after_line"))
+            except FormaError as exc:
+                self._send_json({"ok": False, "script": script, "error": exc.to_dict()}, 400)
+                return
+            new_script = added["script"]
+            built = st.build(new_script, auto=True,
+                             allow_heavy=bool(body.get("allow_heavy")),
+                             analyze_model=bool(body.get("analyze", False)))
+            if not built.get("ok"):
+                # Откат: шаг не принят, редактор остаётся с прежним текстом.
+                self._send_json({"ok": False, "script": script, "line": added["line"],
+                                 "error": built.get("error") or
+                                 {"message": "Сценарий с этим шагом не собрался."}}, 400)
+                return
+            payload = dict(built)
+            payload.update({"script": new_script, "line": added["line"],
+                            "line_number": added["line_number"],
+                            "object": added["object"], "op": added["op"]})
             self._send_json(payload)
             return
         if path == "/api/openscad":

@@ -1351,6 +1351,176 @@ function commandBlock(payload, command, options = {}) {
  * Поэтому сначала идут блоки источников из провенанса, затем — собственные
  * строки объекта: порядок, выключение и удаление шагов.
  */
+/* ---------------- шаг в стек объекта ---------------- */
+
+/**
+ * Шаг — одна строка операции поверх готовой детали: объединить, вычесть,
+ * повернуть, покрасить. Каталог шагов приходит с сервера (там же складывается
+ * строка), здесь только поля и кнопка. Сборку проверяет сервер: не собралось —
+ * текст остаётся прежним, шаг не появляется в сценарии.
+ */
+const stepCatalog = [];
+let stepCatalogLoaded = false;
+
+async function loadSteps() {
+  if (stepCatalogLoaded) return;
+  try {
+    const res = await api('/api/steps');
+    (res.steps || []).forEach((entry) => stepCatalog.push(entry));
+    stepCatalogLoaded = true;
+  } catch (err) { /* без каталога остаются правки существующих строк */ }
+}
+
+function stepObjectNames(payload) {
+  const names = new Set();
+  (payload.objects || []).forEach((item) => { if (item?.name) names.add(item.name); });
+  (payload.provenance || []).forEach((item) => {
+    const name = item.object || item.name;
+    if (name) names.add(name);
+  });
+  return [...names].sort((a, b) => a.localeCompare(b, 'ru'));
+}
+
+function stepField(payload, field) {
+  const label = document.createElement('label');
+  label.className = 'step-field';
+  const caption = document.createElement('span');
+  caption.className = 'step-cap';
+  caption.textContent = field.label || field.k;
+  let input;
+  if (field.kind === 'object') {
+    input = document.createElement('select');
+    const empty = document.createElement('option');
+    empty.value = '';
+    empty.textContent = '— деталь —';
+    input.appendChild(empty);
+    stepObjectNames(payload).forEach((name) => {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = name;
+      input.appendChild(option);
+    });
+  } else if (field.kind === 'axis' || field.kind === 'keep') {
+    input = document.createElement('select');
+    const choices = field.kind === 'axis' ? ['x', 'y', 'z'] : ['top', 'bottom'];
+    choices.forEach((value) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = field.kind === 'axis' ? value : (value === 'top' ? 'верх' : 'низ');
+      if (value === field.default) option.selected = true;
+      input.appendChild(option);
+    });
+  } else {
+    input = document.createElement('input');
+    if (field.kind === 'color') {
+      input.type = 'color';
+      input.value = field.default || '#c9d1e3';
+    } else if (field.kind === 'vec3') {
+      input.type = 'text';
+      input.value = (field.default || [0, 0, 0]).join(', ');
+    } else if (field.kind === 'number') {
+      input.type = 'number';
+      input.step = 'any';
+      input.value = field.default ?? 0;
+    } else {
+      input.type = 'text';
+      input.value = field.default ?? '';
+    }
+  }
+  input.dataset.step = field.k;
+  label.append(caption, input);
+  return label;
+}
+
+function stepValues(entry, card) {
+  const values = {};
+  (entry.fields || []).forEach((field) => {
+    const input = card.querySelector(`[data-step="${field.k}"]`);
+    if (input) values[field.k] = input.value;
+  });
+  return values;
+}
+
+async function applyStep(name, entry, values, afterLine) {
+  const status = $('object-params-hint');
+  const before = currentScript();
+  if (status) status.textContent = `Шаг «${entry.title}»: проверяем сборку…`;
+  try {
+    const payload = await api('/api/step', {
+      script: before, object: name, op: entry.op, values, after_line: afterLine,
+      allow_heavy: state.heavyApproved.has(`step:${before}:${entry.op}`),
+    });
+    // Источник истины — текст: сначала он, потом сборка. setScript без
+    // build, потому что сервер уже построил сцену и вернул её payload.
+    if (payload?.script !== undefined && payload.script !== before) {
+      setScript(payload.script, { build: false, label: `шаг: ${entry.title}` });
+    }
+    applyBuild(payload, payload?.timings?.total);
+    if (status) status.textContent = `Строка ${payload.line_number}: ${payload.line}`;
+    toast(`Шаг добавлен: ${entry.title}`);
+    return payload;
+  } catch (err) {
+    // Откат: шаг не принят — редактор и модель остаются прежними.
+    setScript(before, { build: false, record: false, label: 'шаг отклонён' });
+    if (status) status.textContent = err?.message || 'Шаг не добавлен.';
+    showError(err);
+    return null;
+  }
+}
+
+/** Блок «добавить шаг» под стеком выбранного объекта. */
+function stepAdder(payload, name, stack) {
+  const wrap = document.createElement('div');
+  wrap.className = 'cmd-block step-adder';
+  if (!stepCatalog.length) return wrap;
+  const head = document.createElement('div');
+  head.className = 'cmd-head';
+  const title = document.createElement('span');
+  title.className = 'cmd-verb';
+  title.textContent = 'Добавить шаг';
+  head.appendChild(title);
+  wrap.appendChild(head);
+
+  const select = document.createElement('select');
+  select.className = 'step-pick';
+  stepCatalog.forEach((entry) => {
+    const option = document.createElement('option');
+    option.value = entry.op;
+    option.textContent = entry.title;
+    select.appendChild(option);
+  });
+  wrap.appendChild(select);
+
+  const fields = document.createElement('div');
+  fields.className = 'params-list typed-params step-fields';
+  const hint = document.createElement('div');
+  hint.className = 'step-hint';
+  const fill = () => {
+    const entry = stepCatalog.find((item) => item.op === select.value) || stepCatalog[0];
+    fields.innerHTML = '';
+    (entry.fields || []).forEach((field) => fields.appendChild(stepField(payload, field)));
+    hint.textContent = entry.hint || '';
+  };
+  select.addEventListener('change', fill);
+  fill();
+  wrap.append(fields, hint);
+
+  const add = document.createElement('button');
+  add.type = 'button';
+  add.className = 'mini step-add';
+  add.textContent = 'Добавить строкой';
+  add.title = 'Вставит одну строку в стек объекта и проверит сборку';
+  add.addEventListener('click', (event) => {
+    event.preventDefault();
+    const entry = stepCatalog.find((item) => item.op === select.value) || stepCatalog[0];
+    const last = stack[stack.length - 1];
+    const afterLine = last ? Number(last.last_line || last.line) : null;
+    applyStep(name, entry, stepValues(entry, fields), afterLine);
+  });
+  wrap.appendChild(add);
+  return wrap;
+}
+
 function renderObjectParams(payload) {
   const panel = $('object-params');
   const list = $('object-params-list');
@@ -1416,6 +1586,7 @@ function renderObjectParams(payload) {
       downTo: next ? next.last_line || next.line : null,
     }));
   });
+  blocks.appendChild(stepAdder(payload, name, stack));
   list.appendChild(blocks);
   const locate = $('object-params-locate');
   if (locate && !locate.dataset.bound) {
@@ -8653,6 +8824,7 @@ function openTools() {
   renderTools();
   loadOpSpecs();
   loadTileThumbs();
+  loadSteps();
   syncViewportSuspension();
 }
 $('btn-tools')?.addEventListener('click', openTools);

@@ -1652,6 +1652,26 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
 /* 0.76: пользовательский пресет формы из сценария — со звёздочкой и рамкой. */
 .cmd-presets .preset-user { border-color: rgba(255, 196, 92, 0.55); color: #ffd48a; }
 
+/* 0.77: шаг в стек объекта — выбор операции и её поля. */
+.step-adder { margin-top: 10px; }
+.step-pick {
+  width: 100%; padding: 6px 8px; border-radius: 8px; font: inherit; font-size: 13px;
+  color: inherit; background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.step-fields { margin: 8px 0 6px; }
+.step-field {
+  display: flex; align-items: center; gap: 8px; margin: 4px 0;
+  font-size: 12px;
+}
+.step-cap { min-width: 96px; opacity: 0.75; }
+.step-field input, .step-field select {
+  flex: 1; min-width: 0; padding: 5px 8px; border-radius: 7px; font: inherit;
+  font-size: 13px; color: inherit; background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.step-hint { font-size: 12px; opacity: 0.6; margin-bottom: 6px; }
+
 /* 0.76: плитки инструментов — плотная сетка, только картинка и название. */
 /* 0.77: поиск по плиткам — примитивов в реестре больше сотни. */
 .tiles-search {
