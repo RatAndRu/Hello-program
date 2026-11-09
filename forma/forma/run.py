@@ -535,6 +535,23 @@ def _handle_let(scene: Scene, cmd) -> None:
     scene.log("info", f"параметр {name} = {value:g}" + (" (морфинг)" if overridden else ""), cmd.line)
 
 
+def _plain_solid(solid) -> bool:
+    """Можно ли доверить кэшу только геометрию этой детали.
+
+    Кэш возвращает сетку, а операция может оставить на объекте сведения о
+    сборке (``meta``), покраску, мазки кисти, роли граней или разметку UV.
+    Такие детали не кэшируются: повтор потерял бы не геометрию, а смысл.
+    """
+    for field in ("paint", "brush", "face_roles", "notes", "tex"):
+        if getattr(solid, field, None):
+            return False
+    # axes и provenance вычисляются из строки сценария заново — их можно
+    # потерять. Всё остальное в meta ставит сама операция (например «turn»
+    # у повёрнутой лестницы) — такую деталь кэшировать нельзя.
+    extra = set(getattr(solid, "meta", None) or {}) - {"axes", "provenance"}
+    return not extra
+
+
 def _handle_check(scene: Scene, cmd) -> None:
     if len(cmd.args) < 2:
         raise DslError("Формат проверки: check объект правило параметры",
@@ -778,7 +795,10 @@ def _execute(scene: Scene, cmd) -> None:
         # геометрию, посчитанную для другой входной фигуры.
         values = list(args.kwargs.values()) + list(args.extra or []) \
             + list(cmd.args or [])
-        if not references_object(values, scene.objects):
+        # Контуры и группы — тоже входная геометрия: extrude profile=э зависит
+        # от допуска, с которым построен контур «э», а не от его имени.
+        inputs = set(scene.objects) | set(scene.contours) | set(scene.groups)
+        if not references_object(values, inputs):
             cache_key = cache.make_key(spec.name, args.kwargs, scene_digest(scene))
             cached_manifold = cache.get(cache_key)
     try:
@@ -796,7 +816,8 @@ def _execute(scene: Scene, cmd) -> None:
             # только главной детали потерял бы остальные.
             added = set(scene.objects) - before_names
             if (cache_key is not None and result is not None and len(added) == 1
-                    and getattr(result, "manifold", None) is not None):
+                    and getattr(result, "manifold", None) is not None
+                    and _plain_solid(result)):
                 cache.put(cache_key, getattr(result, "manifold", None))
     except FormaError as exc:
         if exc.line is None:

@@ -127,6 +127,26 @@ class CacheTest(unittest.TestCase):
         self.assertGreater(len(without.scene.objects), 4)
         self.assertEqual(sorted(with_cache.scene.objects), sorted(without.scene.objects))
 
+    def test_contour_tolerance_is_part_of_the_key(self):
+        """extrude берёт контур, а контур зависит от допуска, не от имени."""
+        coarse = build("э = contour2d kind=ellipse rx=20 ry=8 tolerance=.2\n"
+                       "д = extrude profile=э height=2\n", analyze_model=False)
+        fine = build("э = contour2d kind=ellipse rx=20 ry=8 tolerance=.03\n"
+                     "д = extrude profile=э height=2\n", analyze_model=False)
+        self.assertTrue(coarse.ok and fine.ok)
+        self.assertGreater(fine.scene.objects["д"].stats()["tris"],
+                           coarse.scene.objects["д"].stats()["tris"])
+
+    def test_operation_metadata_survives_rebuild(self):
+        """Деталь с собственными сведениями (поворот лестницы) не теряет их."""
+        script = "stairs steps=5 rise=18 run=28 width=120 turn=30\n"
+        for _ in range(2):
+            result = build(script, analyze_model=False)
+            self.assertTrue(result.ok, (result.error or {}).get("message"))
+            self.assertTrue(result.scene.objects)
+            for solid in result.scene.objects.values():
+                self.assertEqual(solid.meta.get("turn"), 30.0)
+
     def test_operation_on_existing_object_is_not_cached(self):
         script = ("hole = box size=[10, 10, 80] at=[0, 0, 0]\n"
                   "wall = box size=[60, 60, 80]\n"
