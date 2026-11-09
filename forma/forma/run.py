@@ -179,6 +179,17 @@ class Build:
             self._commands_cache = commands_payload(self.script)
         return self._commands_cache
 
+    def command_presets(self) -> dict:
+        """Пресеты формы для строк сценария: ``{строка: [{name, label, changes}]}``."""
+        from .param_spec import presets_for
+
+        out: dict[str, list] = {}
+        for command in self.commands():
+            items = presets_for(command.get("verb") or "", command.get("kwargs") or {})
+            if items:
+                out[str(command["line"])] = items
+        return out
+
     def op_specs(self) -> dict:
         """Типы параметров для операций, которые реально есть в сценарии."""
         from .param_spec import payload as _spec_payload
@@ -348,6 +359,7 @@ class Build:
             "steps": self.steps,
             "commands": self.commands(),
             "op_specs": self.op_specs(),
+            "command_presets": self.command_presets(),
             "command_timings": self.command_timings,
             "frames": frames,
             "upto": self.upto,

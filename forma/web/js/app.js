@@ -1283,6 +1283,28 @@ function commandBlock(payload, command, options = {}) {
   }
   head.appendChild(actions);
   wrap.appendChild(head);
+  // Пресеты формы: одна правка — одна строка. Они меняют пропорции и режим,
+  // а не абсолютный размер, поэтому годятся для любой модели.
+  const presets = (payload.command_presets || {})[String(command.line)] || [];
+  if (presets.length && command.editable) {
+    const bar = document.createElement('div');
+    bar.className = 'cmd-presets';
+    presets.forEach((preset) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mini';
+      b.textContent = preset.label || preset.name;
+      b.title = `Пресет формы: ${Object.entries(preset.changes || {})
+        .map(([k, v]) => `${k}=${formatValue(v)}`).join(', ')}`;
+      b.addEventListener('click', (event) => {
+        event.preventDefault();
+        applySourceEdit({ action: 'set_params', line: command.line,
+                          values: preset.changes }, { label: 'пресет формы' });
+      });
+      bar.appendChild(b);
+    });
+    wrap.appendChild(bar);
+  }
   const params = document.createElement('div');
   params.className = 'params-list typed-params';
   if (disabled) wrap.classList.add('is-off');

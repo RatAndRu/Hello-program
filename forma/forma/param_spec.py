@@ -303,7 +303,120 @@ def auto_mode(spec: dict) -> str | None:
     return spec.get("auto")
 
 
+def presets_payload(op: str, kwargs: dict | None = None) -> list[dict]:
+    """Пресеты формы вместе со значениями, которые они запишут."""
+    return presets_for(op, kwargs)
+
+
 def payload(op: str) -> dict:
     """Готовый словарь для интерфейса: типы, диапазоны, режимы «авто»."""
     specs = spec_for(op)
     return {key: dict(value) for key, value in specs.items()}
+
+
+# --------------------------------------------------------------------------
+# Пресеты формы
+# --------------------------------------------------------------------------
+#
+# Пресет меняет **пропорции и режим**, а не абсолютный размер: «плита» — это
+# та же деталь, сплющенная по Z, а не «плита 200×100×6». Так пресет осмыслен
+# для любой модели и остаётся одной правкой строки.
+
+def _num(raw, fallback: float = 0.0) -> float:
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        return fallback
+
+
+def _vec(raw, size: int, fallback=None):
+    """Вектор из значения строки: ``[100, 80, 60]`` или уже список."""
+    values = raw
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text.startswith("[") and text.endswith("]"):
+            text = text[1:-1]
+        values = [part.strip() for part in text.split(",")] if text else []
+    if isinstance(values, (list, tuple)) and len(values) >= size:
+        try:
+            return [float(v) for v in values[:size]]
+        except (TypeError, ValueError):
+            return list(fallback or [0.0] * size)
+    return list(fallback or [0.0] * size)
+
+
+def _preset(name: str, label: str, changes: dict) -> dict:
+    clean = {key: value for key, value in changes.items() if value is not None}
+    return {"name": name, "label": label, "changes": clean}
+
+
+def presets_for(op: str, kwargs: dict | None = None) -> list[dict]:
+    """Пресеты формы для операции с учётом текущих значений строки."""
+    values = {key: v for key, v in (kwargs or {}).items()}
+    op = str(op or "").lower()
+    out: list[dict] = []
+    if op == "box":
+        size = _vec(values.get("size"), 3, [100, 80, 60])
+        x, y, z = size
+        side = min(x, y, z)
+        out.append(_preset("куб", "куб", {"size": [side, side, side]}))
+        out.append(_preset("плита", "плита", {"size": [x, y, max(1.0, min(x, y) / 8.0)]}))
+        out.append(_preset("брусок", "брусок", {"size": [x, y, z], "base_angle": 90,
+                                                "top_size": [x, y]}))
+        out.append(_preset("ромб", "ромб", {"size": [x, y, z], "base_angle": 60,
+                                            "top_size": [x, y]}))
+    elif op == "cylinder":
+        radius = _num(values.get("radius"), 40.0)
+        height = _num(values.get("height"), 80.0)
+        wall = max(0.8, min(radius * 0.08, height * 0.08))
+        out.append(_preset("цилиндр", "цилиндр", {"r2": radius, "wall": 0}))
+        out.append(_preset("конус", "конус", {"r2": 0}))
+        out.append(_preset("стакан", "стакан", {"wall": wall, "cavity": "верх",
+                                                "cavity_depth": height - wall}))
+        out.append(_preset("колпак", "колпак", {"wall": wall, "cavity": "низ",
+                                                "cavity_depth": height * 0.85}))
+    elif op == "sphere":
+        radius = _num(values.get("radius"), 40.0)
+        out.append(_preset("шар", "шар", {"slice": 0}))
+        out.append(_preset("полусфера", "полусфера", {"slice": 1}))
+        # slice и cut взаимоисключающие: пресет задаёт только один из них,
+        # а второй, если он был в строке, убирается отдельной правкой.
+        out.append(_preset("срез", "срез", {"cut": round(radius * 0.3, 3)}))
+    elif op == "cone":
+        radius = _num(values.get("radius"), 40.0)
+        height = _num(values.get("height"), 60.0)
+        out.append(_preset("прямой", "прямой", {"form": "прямой"}))
+        out.append(_preset("горка", "горка", {"form": "парабола"}))
+        out.append(_preset("холм", "холм", {"form": "холмик", "smooth": 1}))
+        out.append(_preset("купол", "купол", {"form": "холмик", "wall": max(
+            0.8, min(radius * 0.06, height * 0.06))}))
+    elif op == "prism":
+        out.append(_preset("гайка", "гайка", {"sides": 6, "base_angle": 90}))
+        out.append(_preset("квадрат", "квадрат", {"sides": 4, "base_angle": 90}))
+        out.append(_preset("ромб", "ромб", {"sides": 4, "base_angle": 60}))
+        out.append(_preset("пластина", "пластина", {"sides": 6, "base_angle": 90}))
+    elif op == "torus":
+        major = _num(values.get("major"), 30.0)
+        if "outer" in values or "inner" in values:
+            major = max(0.1, (_num(values.get("outer"), 40.0)
+                              + _num(values.get("inner"), 24.0)) / 2.0)
+        out.append(_preset("кольцо", "кольцо", {"minor": max(0.5, major * 0.18)}))
+        out.append(_preset("тонкое", "тонкое кольцо", {"minor": max(0.3, major * 0.08)}))
+        out.append(_preset("толстое", "толстое кольцо", {"minor": max(1.0, major * 0.35)}))
+    elif op == "gear":
+        thickness = _num(values.get("thickness"), 8.0)
+        out.append(_preset("диск", "диск", {"spokes": 0}))
+        out.append(_preset("спицы", "спицы", {"spokes": 5, "web": max(0.4, thickness * 0.5)}))
+        out.append(_preset("ступица", "со ступицей", {"hub": max(1.0, thickness * 1.5)}))
+    elif op == "icosphere":
+        out.append(_preset("сфера", "треугольники", {"mode": "triangle"}))
+        out.append(_preset("сота", "сота", {"mode": "honeycomb"}))
+    elif op == "pipe":
+        out.append(_preset("прямая", "прямая", {"angle": 0}))
+        out.append(_preset("колено", "колено 90°", {"angle": 90}))
+        out.append(_preset("отвод", "отвод 45°", {"angle": 45}))
+    elif op == "shaft":
+        diameter = _num(values.get("diameter"), 20.0)
+        out.append(_preset("вал", "гладкий вал", {"chamfer": max(0.2, diameter * 0.05)}))
+        out.append(_preset("фланец", "с фланцем", {"flange": max(1.0, diameter * 0.4)}))
+    return out

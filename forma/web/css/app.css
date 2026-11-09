@@ -1644,3 +1644,7 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
 .cmd-actions { margin-left: auto; display: inline-flex; gap: 3px; }
 .cmd-actions .mini { min-width: 20px; padding: 0 4px; }
 .cmd-note { font-size: 11px; opacity: 0.6; }
+
+/* 0.75: пресеты формы — плотный ряд кнопок над параметрами строки. */
+.cmd-presets { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0 2px; }
+.cmd-presets .mini { font-size: 11px; padding: 1px 6px; }

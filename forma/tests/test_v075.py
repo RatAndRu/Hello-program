@@ -216,6 +216,71 @@ class ParamSpecTest(unittest.TestCase):
             self.assertEqual(missing, [], f"{op}: без типа остались {missing}")
 
 
+class PresetTest(unittest.TestCase):
+    """Пресет формы — это значения параметров, а не второй набор геометрии."""
+
+    BASE = {
+        "box": "деталь = box size=[100,80,60]",
+        "cylinder": "деталь = cylinder radius=40 height=90",
+        "cone": "деталь = cone radius=40 height=60",
+        "sphere": "деталь = sphere radius=40",
+        "prism": "деталь = prism sides=6 radius=30 height=50",
+        "torus": "деталь = torus major=30 minor=6",
+        "gear": "деталь = gear teeth=20 module=2 thickness=8",
+        "icosphere": "деталь = icosphere radius=30",
+        "pipe": "деталь = pipe diameter=32 wall=2 length=200",
+        "shaft": "деталь = shaft length=100 diameter=20",
+    }
+
+    def test_every_preset_uses_declared_params_and_builds(self):
+        from forma.ops import lookup
+        from forma.param_spec import presets_for
+
+        for op, line in self.BASE.items():
+            verb_kwargs = {}
+            for token in line.split()[2:]:
+                if "=" in token:
+                    key, value = token.split("=", 1)
+                    verb_kwargs[key] = value
+            presets = presets_for(op, verb_kwargs)
+            self.assertTrue(presets, f"нет пресетов у {op}")
+            allowed = set(lookup(op).params)
+            for preset in presets:
+                self.assertTrue(set(preset["changes"]) <= allowed,
+                                f"{op}/{preset['name']}: {set(preset['changes']) - allowed}")
+                result = edit_source(line + "\n", {"action": "set_params", "line": 1,
+                                                    "values": preset["changes"]})
+                self.assertTrue(result["ok"], preset["name"])
+                built = build(result["script"], analyze_model=False)
+                self.assertTrue(built.ok, f"{op}/{preset['name']}: "
+                                          f"{built.error and built.error.get('message')}")
+
+    def test_preset_is_one_line(self):
+        from forma.param_spec import presets_for
+
+        line = "деталь = box size=[100,80,60]"
+        preset = [p for p in presets_for("box", {"size": "[100,80,60]"})
+                  if p["name"] == "плита"][0]
+        result = edit_source(line + "\n", {"action": "set_params", "line": 1,
+                                            "values": preset["changes"]})
+        self.assertEqual(len(result["script"].split("\n")), 2)
+        self.assertNotIn("\n\n", result["script"])
+
+    def test_scene_presets_untouched(self):
+        """Пресет формы не пишет в presets сцены и не читает их."""
+        from forma.param_spec import presets_for
+
+        names = {p["name"] for p in presets_for("box", {"size": "[10,10,10]"})}
+        self.assertNotIn("preset", names)
+        script = "R = 10\nb = box size=[10,10,10]\n"
+        built = build(script, analyze_model=False)
+        before = dict(built.scene.presets)
+        edit_source(script, {"action": "set_params", "line": 2,
+                             "values": {"size": [20, 20, 20]}})
+        after = build(script, analyze_model=False).scene.presets
+        self.assertEqual(before, after)
+
+
 class UiWiringTest(unittest.TestCase):
     """Интерфейс обязан пользоваться серверными типами, а не своим списком."""
 
