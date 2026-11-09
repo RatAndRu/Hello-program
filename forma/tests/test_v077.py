@@ -67,6 +67,35 @@ class CacheTest(unittest.TestCase):
         self.assertEqual(volumes(with_cache), volumes(without))
         self.assertGreater(with_cache.scene.op_cache.stats()["hits"], 0)
 
+    def test_warm_rebuild_reuses_geometry(self):
+        """Правка одной строки не пересобирает сцену с нуля."""
+        script = (ROOT / "examples" / "clock.forma").read_text(encoding="utf-8")
+        cold = build(script, analyze_model=False)
+        self.assertTrue(cold.ok)
+        warm = build(script, analyze_model=False)
+        self.assertTrue(warm.ok)
+        stats = warm.scene.op_cache.stats()
+        self.assertGreater(stats["hits"], 10)
+        self.assertEqual(volumes(warm), volumes(cold))
+        # Общий кэш переживает сборку: следующий вызов идёт уже по готовым деталям.
+        self.assertGreater(stats["size"], 0)
+
+    def test_cache_respects_triangle_budget(self):
+        cache = OpCache(limit=100, max_tris=10_000)
+
+        class Heavy:
+            def num_tri(self):
+                return 50_000
+
+        class Light:
+            def num_tri(self):
+                return 100
+
+        cache.put(("box", 1), Heavy())
+        self.assertEqual(len(cache.items), 0, "слишком тяжёлая геометрия не кэшируется")
+        cache.put(("box", 2), Light())
+        self.assertEqual(cache.stats()["tris"], Light().num_tri())
+
     def test_env_switches_cache_off(self):
         import os
 
@@ -114,6 +143,7 @@ class CacheTest(unittest.TestCase):
         self.assertIn("cache", payload)
         self.assertGreaterEqual(payload["cache"]["hits"], 1)
         self.assertEqual(payload["cache"]["limit"], OpCache().limit)
+        self.assertIn("tris", payload["cache"])
 
     def test_lru_drops_oldest(self):
         cache = OpCache(limit=4)

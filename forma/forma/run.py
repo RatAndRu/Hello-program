@@ -845,9 +845,9 @@ def build(script: str, previous_analysis: dict | None = None,
     result = Build(script=script, script_hash=_hash(script), upto=upto,
                    overrides=dict(overrides or {}))
     scene = Scene()
-    from .cache import OpCache
+    from .cache import for_build
 
-    scene.op_cache = OpCache()
+    scene.op_cache = for_build()
     scene.base_dir = Path(base_dir).expanduser().resolve() if base_dir else None
     scene.overrides = dict(overrides or {})
     for key, value in (overrides or {}).items():

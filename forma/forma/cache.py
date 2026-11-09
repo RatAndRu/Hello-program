@@ -17,7 +17,9 @@ import hashlib
 import os
 from collections import OrderedDict
 
-DEFAULT_LIMIT = 512
+DEFAULT_LIMIT = 1500
+# Потолок по треугольникам: геометрия тяжёлых сцен не должна оседать в памяти.
+DEFAULT_TRIS = 1_500_000
 
 
 def enabled() -> bool:
@@ -25,14 +27,23 @@ def enabled() -> bool:
     return value not in {"0", "off", "false", "no", "нет", "выкл"}
 
 
+def _numbers(mapping) -> tuple:
+    return tuple(sorted((str(key), round(float(value), 6))
+                        for key, value in (mapping or {}).items()
+                        if isinstance(value, (int, float)) and not isinstance(value, bool)))
+
+
 def scene_digest(scene) -> str:
-    """Отпечаток того, что влияет на геометрию помимо текста команды."""
-    params = sorted((str(key), round(float(value), 6))
-                    for key, value in (getattr(scene, "params", {}) or {}).items()
-                    if isinstance(value, (int, float)) and not isinstance(value, bool))
-    precision = (getattr(scene, "settings", {}) or {}).get("precision") or {}
-    settings = sorted((str(key), repr(value)) for key, value in precision.items())
-    raw = repr((params, settings))
+    """Отпечаток того, что влияет на геометрию помимо текста команды.
+
+    Параметры и переменные сценария, вся таблица настроек (шаг сетки, точность,
+    допуски) — всё, что операция читает через Args, кроме собственных
+    параметров команды.
+    """
+    settings = sorted((str(key), repr(value))
+                      for key, value in (getattr(scene, "settings", {}) or {}).items())
+    raw = repr((_numbers(getattr(scene, "params", {})),
+                _numbers(getattr(scene, "vars", {})), settings))
     return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
 
 
@@ -58,9 +69,11 @@ def references_object(values, objects) -> bool:
 class OpCache:
     """LRU-кэш геометрии по ключу команды."""
 
-    def __init__(self, limit: int = DEFAULT_LIMIT):
+    def __init__(self, limit: int = DEFAULT_LIMIT, max_tris: int = DEFAULT_TRIS):
         self.limit = max(4, int(limit))
+        self.max_tris = max(10_000, int(max_tris))
         self.items: OrderedDict[tuple, object] = OrderedDict()
+        self.tris: dict[tuple, int] = {}
         self.hits = 0
         self.misses = 0
         self.disabled = not enabled()
@@ -82,15 +95,53 @@ class OpCache:
     def put(self, key, manifold) -> None:
         if self.disabled or manifold is None:
             return
+        try:
+            count = int(manifold.num_tri())
+        except (AttributeError, TypeError, ValueError):
+            count = 0
+        if count > self.max_tris:
+            return
+        if key in self.items:
+            self.items.move_to_end(key)
+            return
         self.items[key] = manifold
-        self.items.move_to_end(key)
-        while len(self.items) > self.limit:
-            self.items.popitem(last=False)
+        self.tris[key] = count
+        while self.items and (len(self.items) > self.limit
+                              or sum(self.tris.values()) > self.max_tris):
+            old, _value = self.items.popitem(last=False)
+            self.tris.pop(old, None)
+
+    def reset_stats(self) -> None:
+        """Счётчики — на одну сборку, хранилище живёт дольше."""
+        self.hits = 0
+        self.misses = 0
 
     def clear(self) -> None:
         self.items.clear()
+        self.tris.clear()
 
     def stats(self) -> dict:
         return {"hits": self.hits, "misses": self.misses,
                 "size": len(self.items), "limit": self.limit,
+                "tris": sum(self.tris.values()),
                 "enabled": not self.disabled}
+
+
+_SHARED: OpCache | None = None
+
+
+def for_build() -> OpCache:
+    """Кэш на процесс, счётчики — на сборку.
+
+    Хранилище общее намеренно: при правке одной строки в интерфейсе заново
+    строится весь сценарий, и без общего кэша от него не было бы толку. Ключ
+    содержит параметры сцены и настройки, поэтому чужая геометрия не
+    подставится.
+    """
+    global _SHARED
+    if not enabled():
+        return OpCache()
+    if _SHARED is None:
+        _SHARED = OpCache()
+    _SHARED.reset_stats()
+    return _SHARED
