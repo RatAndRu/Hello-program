@@ -342,6 +342,7 @@ class Build:
             "contours": [item.to_dict() for item in scene.contours.values()] if scene else [],
             "analysis": self.analysis,
             "timings": self.timings,
+            "cache": scene.op_cache.stats() if scene and getattr(scene, "op_cache", None) else {},
             "log": self.log,
             "settings": dict(scene.settings) if scene else {},
             "animation": scene.animation if scene else None,
@@ -763,8 +764,40 @@ def _execute(scene: Scene, cmd) -> None:
     args = Args(cmd, scene, spec, spec.positional)
     previous = scene.objects.get(cmd.target) if cmd.target else None
     scene.last_replaced = None
+    # Кэш операций: ключ — слово, параметры как записаны, отпечаток параметров
+    # сцены и точности. Команды, ссылающиеся на готовый объект, не кэшируются:
+    # их результат зависит от входной геометрии (провенанс родителей).
+    cache = getattr(scene, "op_cache", None)
+    cache_key = None
+    cached_manifold = None
+    if cache is not None:
+        from .cache import references_object, scene_digest
+
+        # Позиционные аргументы тоже могут быть именами объектов
+        # (difference [a, b]) — их обязательно проверять, иначе кэш вернёт
+        # геометрию, посчитанную для другой входной фигуры.
+        values = list(args.kwargs.values()) + list(args.extra or []) \
+            + list(cmd.args or [])
+        if not references_object(values, scene.objects):
+            cache_key = cache.make_key(spec.name, args.kwargs, scene_digest(scene))
+            cached_manifold = cache.get(cache_key)
     try:
-        result = spec.fn(args, cmd.target)
+        before_names = set(scene.objects)
+        if cached_manifold is not None:
+            # Регистрация — та же, что у операции: имя, цвет, ориентация.
+            from .ops import make_solid
+
+            result = make_solid(scene, cmd.target, cached_manifold, args)
+            scene.log("debug", f"{spec.name}: геометрия из кэша", cmd.line)
+        else:
+            result = spec.fn(args, cmd.target)
+            # Кэшируем только команды «одна фигура — один объект». Составные
+            # операции (разъём, крепёж) создают ещё и подсборку, и повтор
+            # только главной детали потерял бы остальные.
+            added = set(scene.objects) - before_names
+            if (cache_key is not None and result is not None and len(added) == 1
+                    and getattr(result, "manifold", None) is not None):
+                cache.put(cache_key, getattr(result, "manifold", None))
     except FormaError as exc:
         if exc.line is None:
             exc.line = cmd.line
@@ -812,6 +845,9 @@ def build(script: str, previous_analysis: dict | None = None,
     result = Build(script=script, script_hash=_hash(script), upto=upto,
                    overrides=dict(overrides or {}))
     scene = Scene()
+    from .cache import OpCache
+
+    scene.op_cache = OpCache()
     scene.base_dir = Path(base_dir).expanduser().resolve() if base_dir else None
     scene.overrides = dict(overrides or {})
     for key, value in (overrides or {}).items():

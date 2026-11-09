@@ -1,0 +1,772 @@
+{
+ "tiles": [
+  {
+   "op": "arc_prism",
+   "title": "Дугообразная призма",
+   "params": "",
+   "bytes": 2750
+  },
+  {
+   "op": "arch",
+   "title": "Арка",
+   "params": "",
+   "bytes": 3917
+  },
+  {
+   "op": "arrow",
+   "title": "Стрелка остриём +X",
+   "params": "",
+   "bytes": 3114
+  },
+  {
+   "op": "banana",
+   "title": "Банан",
+   "params": "",
+   "bytes": 6137
+  },
+  {
+   "op": "bark",
+   "title": "Ствол",
+   "params": "",
+   "bytes": 6899
+  },
+  {
+   "op": "barrel",
+   "title": "Бочка",
+   "params": "",
+   "bytes": 7142
+  },
+  {
+   "op": "bead",
+   "title": "Бусина",
+   "params": "diameter=40 height=40 hole=8",
+   "bytes": 7202
+  },
+  {
+   "op": "bicycle_chain",
+   "title": "Велоцепь",
+   "params": "",
+   "bytes": 4807
+  },
+  {
+   "op": "blade",
+   "title": "Клинок",
+   "params": "",
+   "bytes": 3524
+  },
+  {
+   "op": "blob",
+   "title": "Метабол",
+   "params": "spheres=[[0,0,80,35],[0,0,130,28]] capsules=[[0,0,60,0,0,20,14]] blend=12",
+   "bytes": 8041
+  },
+  {
+   "op": "blot",
+   "title": "Объёмная клякса",
+   "params": "radius=45 thickness=4 dome=1.4 lobes=9 irregularity=.85 droplets=7 seed=12",
+   "bytes": 4212
+  },
+  {
+   "op": "bolt",
+   "title": "Болт",
+   "params": "",
+   "bytes": 4985
+  },
+  {
+   "op": "bottle",
+   "title": "Бутылка",
+   "params": "",
+   "bytes": 5437
+  },
+  {
+   "op": "box",
+   "title": "Куб",
+   "params": "size=[120, 80, 60]",
+   "bytes": 2769
+  },
+  {
+   "op": "box_body",
+   "title": "Корпус",
+   "params": "",
+   "bytes": 3211
+  },
+  {
+   "op": "bracket",
+   "title": "Крепёжный уголок",
+   "params": "",
+   "bytes": 2883
+  },
+  {
+   "op": "bricks",
+   "title": "Кирпичная кладка",
+   "params": "",
+   "bytes": 3575
+  },
+  {
+   "op": "bulb",
+   "title": "Лампочка",
+   "params": "",
+   "bytes": 5799
+  },
+  {
+   "op": "button",
+   "title": "Кнопка",
+   "params": "",
+   "bytes": 5136
+  },
+  {
+   "op": "capsule",
+   "title": "Капсула",
+   "params": "radius=20 height=80",
+   "bytes": 6532
+  },
+  {
+   "op": "cardboard",
+   "title": "Гофрированный картон",
+   "params": "",
+   "bytes": 3147
+  },
+  {
+   "op": "cavity_frame",
+   "title": "Рамка-полость",
+   "params": "",
+   "bytes": 2917
+  },
+  {
+   "op": "cloud",
+   "title": "Облако-вата",
+   "params": "",
+   "bytes": 8024
+  },
+  {
+   "op": "column",
+   "title": "Колонна",
+   "params": "",
+   "bytes": 4055
+  },
+  {
+   "op": "cone",
+   "title": "Конус",
+   "params": "radius=40 height=70",
+   "bytes": 7817
+  },
+  {
+   "op": "crescent",
+   "title": "Полумесяц",
+   "params": "",
+   "bytes": 4514
+  },
+  {
+   "op": "crown",
+   "title": "Корона",
+   "params": "",
+   "bytes": 4717
+  },
+  {
+   "op": "cube_hole",
+   "title": "Брусок",
+   "params": "",
+   "bytes": 2948
+  },
+  {
+   "op": "curtain",
+   "title": "Штора",
+   "params": "",
+   "bytes": 4030
+  },
+  {
+   "op": "cylinder",
+   "title": "Цилиндр",
+   "params": "radius=40 height=90",
+   "bytes": 3435
+  },
+  {
+   "op": "diamond",
+   "title": "Алмаз",
+   "params": "",
+   "bytes": 5774
+  },
+  {
+   "op": "disc",
+   "title": "Диск",
+   "params": "diameter=100 thickness=10",
+   "bytes": 3476
+  },
+  {
+   "op": "door",
+   "title": "Дверь",
+   "params": "",
+   "bytes": 3265
+  },
+  {
+   "op": "door_handle",
+   "title": "Ручка двери",
+   "params": "",
+   "bytes": 5931
+  },
+  {
+   "op": "drop",
+   "title": "Капля",
+   "params": "",
+   "bytes": 6478
+  },
+  {
+   "op": "egg",
+   "title": "Настоящее яйцо",
+   "params": "",
+   "bytes": 7537
+  },
+  {
+   "op": "ellipsoid",
+   "title": "Эллипсоид",
+   "params": "x=60 y=40 z=30",
+   "bytes": 7239
+  },
+  {
+   "op": "extrude",
+   "title": "Выдавливание",
+   "params": "profile=[[-40,-25],[40,-25],[40,25],[-40,25]] height=40 fillet=4",
+   "bytes": 2980
+  },
+  {
+   "op": "eyeball",
+   "title": "Глазное яблоко",
+   "params": "",
+   "bytes": 7012
+  },
+  {
+   "op": "face_box",
+   "title": "Куб с рельефом",
+   "params": "",
+   "bytes": 2708
+  },
+  {
+   "op": "fold_sheet",
+   "title": "Сгибаемый лист",
+   "params": "",
+   "bytes": 3291
+  },
+  {
+   "op": "gear",
+   "title": "Шестерня",
+   "params": "teeth=20 module=2 thickness=10",
+   "bytes": 3986
+  },
+  {
+   "op": "grating",
+   "title": "Панель-решётка",
+   "params": "",
+   "bytes": 4043
+  },
+  {
+   "op": "grommet",
+   "title": "Люверс",
+   "params": "",
+   "bytes": 4557
+  },
+  {
+   "op": "gusset",
+   "title": "Косынка",
+   "params": "",
+   "bytes": 3104
+  },
+  {
+   "op": "handle",
+   "title": "Мебельная ручка-скоба",
+   "params": "",
+   "bytes": 4104
+  },
+  {
+   "op": "heart",
+   "title": "Сердце настоящей формы",
+   "params": "",
+   "bytes": 4616
+  },
+  {
+   "op": "hemisphere",
+   "title": "Полусфера",
+   "params": "",
+   "bytes": 7162
+  },
+  {
+   "op": "hinge",
+   "title": "Дверная петля",
+   "params": "",
+   "bytes": 3966
+  },
+  {
+   "op": "horn",
+   "title": "Рог",
+   "params": "",
+   "bytes": 4760
+  },
+  {
+   "op": "hull",
+   "title": "Оболочка",
+   "params": "points=[[0,0,0],[90,0,0],[0,90,0],[0,0,70]]",
+   "bytes": 3128
+  },
+  {
+   "op": "hyperboloid",
+   "title": "Гиперболоид вращения",
+   "params": "",
+   "bytes": 4092
+  },
+  {
+   "op": "icosphere",
+   "title": "Икосфера",
+   "params": "radius=45",
+   "bytes": 8029
+  },
+  {
+   "op": "ingot",
+   "title": "Слиток",
+   "params": "",
+   "bytes": 3037
+  },
+  {
+   "op": "jar",
+   "title": "Стеклянная банка",
+   "params": "",
+   "bytes": 6725
+  },
+  {
+   "op": "knot",
+   "title": "Узел",
+   "params": "",
+   "bytes": 6230
+  },
+  {
+   "op": "ladder",
+   "title": "Приставная лестница",
+   "params": "",
+   "bytes": 4923
+  },
+  {
+   "op": "lathe",
+   "title": "Точение",
+   "params": "points=[[0,0],[40,0],[42,4],[42,60],[30,70],[0,72]] fillet=2",
+   "bytes": 5514
+  },
+  {
+   "op": "leaf",
+   "title": "Лист растения",
+   "params": "",
+   "bytes": 3382
+  },
+  {
+   "op": "lens",
+   "title": "Оптическая линза",
+   "params": "",
+   "bytes": 5490
+  },
+  {
+   "op": "lever",
+   "title": "Рычаг",
+   "params": "",
+   "bytes": 4602
+  },
+  {
+   "op": "lid",
+   "title": "Отдельная крышка",
+   "params": "",
+   "bytes": 4683
+  },
+  {
+   "op": "lightning",
+   "title": "Молния",
+   "params": "",
+   "bytes": 3687
+  },
+  {
+   "op": "loft",
+   "title": "Лофт",
+   "params": "sections=[[[-30,10],[30,10],[32,30],[0,38],[-32,30]],[[-40,8],[40,8],[42,28],[0,40],[-42,28]]] positions=[0,400] axis=x",
+   "bytes": 3105
+  },
+  {
+   "op": "membrane",
+   "title": "Мембрана",
+   "params": "root=[40,-5] outline=[[0,-20],[20,-5],[45,0],[100,50],[140,0],[100,-50],[0,-30]]",
+   "bytes": 4314
+  },
+  {
+   "op": "mirror_plate",
+   "title": "Зеркало целиком",
+   "params": "",
+   "bytes": 2774
+  },
+  {
+   "op": "nail",
+   "title": "Строительный гвоздь",
+   "params": "",
+   "bytes": 3918
+  },
+  {
+   "op": "nut",
+   "title": "Шестигранная гайка",
+   "params": "",
+   "bytes": 3505
+  },
+  {
+   "op": "octa",
+   "title": "Октаэдр",
+   "params": "radius=45",
+   "bytes": 3541
+  },
+  {
+   "op": "oval",
+   "title": "Овальная плита",
+   "params": "",
+   "bytes": 3382
+  },
+  {
+   "op": "paraboloid",
+   "title": "Параболоид",
+   "params": "diameter=80 height=60",
+   "bytes": 7530
+  },
+  {
+   "op": "pie",
+   "title": "Сектор круга",
+   "params": "",
+   "bytes": 3107
+  },
+  {
+   "op": "pipe",
+   "title": "Труба",
+   "params": "diameter=32 wall=3 length=160",
+   "bytes": 4098
+  },
+  {
+   "op": "plate",
+   "title": "Тарелка",
+   "params": "",
+   "bytes": 4448
+  },
+  {
+   "op": "plus",
+   "title": "Знак «плюс»",
+   "params": "",
+   "bytes": 3207
+  },
+  {
+   "op": "prism",
+   "title": "Призма",
+   "params": "sides=6 radius=40 height=60",
+   "bytes": 2746
+  },
+  {
+   "op": "profile2020",
+   "title": "Профиль 2020",
+   "params": "",
+   "bytes": 3056
+  },
+  {
+   "op": "pulley",
+   "title": "Шкив",
+   "params": "",
+   "bytes": 4706
+  },
+  {
+   "op": "pyramid",
+   "title": "Пирамида",
+   "params": "sides=4 radius=45 height=70",
+   "bytes": 3512
+  },
+  {
+   "op": "ring",
+   "title": "Кольцо",
+   "params": "diameter=100 thickness=8 width=12",
+   "bytes": 5662
+  },
+  {
+   "op": "rock",
+   "title": "Камень",
+   "params": "",
+   "bytes": 6294
+  },
+  {
+   "op": "rope",
+   "title": "Кручёная верёвка",
+   "params": "",
+   "bytes": 6084
+  },
+  {
+   "op": "rug",
+   "title": "Ковёр",
+   "params": "",
+   "bytes": 3785
+  },
+  {
+   "op": "saddle",
+   "title": "Седло",
+   "params": "",
+   "bytes": 3823
+  },
+  {
+   "op": "saw",
+   "title": "Дисковая пила",
+   "params": "",
+   "bytes": 3538
+  },
+  {
+   "op": "screw",
+   "title": "Саморез",
+   "params": "",
+   "bytes": 5014
+  },
+  {
+   "op": "sector",
+   "title": "Сектор шара",
+   "params": "",
+   "bytes": 5638
+  },
+  {
+   "op": "seven_seg",
+   "title": "Индикатор",
+   "params": "",
+   "bytes": 3593
+  },
+  {
+   "op": "sewing_button",
+   "title": "Швейная пуговица",
+   "params": "",
+   "bytes": 4545
+  },
+  {
+   "op": "shaft",
+   "title": "Вал",
+   "params": "length=100 diameter=20 chamfer=1",
+   "bytes": 3395
+  },
+  {
+   "op": "sheet",
+   "title": "Лист",
+   "params": "width=120 length=160 thickness=4",
+   "bytes": 2829
+  },
+  {
+   "op": "socket",
+   "title": "Розетка",
+   "params": "",
+   "bytes": 4915
+  },
+  {
+   "op": "sphere",
+   "title": "Сфера",
+   "params": "radius=45",
+   "bytes": 8321
+  },
+  {
+   "op": "spiral",
+   "title": "Плоская спираль-улитка",
+   "params": "",
+   "bytes": 6144
+  },
+  {
+   "op": "spring",
+   "title": "Пружина",
+   "params": "diameter=40 wire=3 turns=8",
+   "bytes": 10382
+  },
+  {
+   "op": "stairs",
+   "title": "Ступени",
+   "params": "steps=5 rise=18 run=26 width=100",
+   "bytes": 2904
+  },
+  {
+   "op": "star",
+   "title": "Звезда",
+   "params": "",
+   "bytes": 3536
+  },
+  {
+   "op": "strip",
+   "title": "Полоса",
+   "params": "",
+   "bytes": 2914
+  },
+  {
+   "op": "sweep",
+   "title": "Протяжка",
+   "params": "path=[[0,0,0],[40,0,30],[0,0,60]] radius=12",
+   "bytes": 6842
+  },
+  {
+   "op": "swirl",
+   "title": "Непрерывный завиток",
+   "params": "",
+   "bytes": 8085
+  },
+  {
+   "op": "switch",
+   "title": "Выключатель",
+   "params": "",
+   "bytes": 4497
+  },
+  {
+   "op": "table",
+   "title": "Редактируемый стол",
+   "params": "",
+   "bytes": 4198
+  },
+  {
+   "op": "tee",
+   "title": "Буква т / тавровая",
+   "params": "",
+   "bytes": 3085
+  },
+  {
+   "op": "text",
+   "title": "Текст",
+   "params": "\"Ф3\" size=40 depth=8",
+   "bytes": 5361
+  },
+  {
+   "op": "torus",
+   "title": "Тор",
+   "params": "major=40 minor=10",
+   "bytes": 7537
+  },
+  {
+   "op": "torus_sector",
+   "title": "Сектор тора",
+   "params": "",
+   "bytes": 6126
+  },
+  {
+   "op": "track",
+   "title": "Железнодорожный путь",
+   "params": "",
+   "bytes": 5174
+  },
+  {
+   "op": "tri_prism",
+   "title": "Треугольная призма",
+   "params": "",
+   "bytes": 2712
+  },
+  {
+   "op": "turbine_blade",
+   "title": "Лопасть",
+   "params": "",
+   "bytes": 6880
+  },
+  {
+   "op": "washer",
+   "title": "Шайба",
+   "params": "outer=40 inner=16 thickness=6",
+   "bytes": 4617
+  },
+  {
+   "op": "web",
+   "title": "Плоская паутина",
+   "params": "",
+   "bytes": 5252
+  },
+  {
+   "op": "wheel",
+   "title": "Колесо целиком",
+   "params": "",
+   "bytes": 6323
+  },
+  {
+   "op": "window",
+   "title": "Настраиваемое окно",
+   "params": "",
+   "bytes": 4155
+  },
+  {
+   "op": "worm_shaft",
+   "title": "Червячный вал",
+   "params": "",
+   "bytes": 9153
+  },
+  {
+   "op": "yin_yang",
+   "title": "Инь-ян",
+   "params": "",
+   "bytes": 6433
+  },
+  {
+   "op": "yoke",
+   "title": "Буква y / рогатка",
+   "params": "",
+   "bytes": 6173
+  },
+  {
+   "op": "бровь",
+   "title": "Бровь-дуга",
+   "params": "",
+   "bytes": 3507
+  },
+  {
+   "op": "волосинки",
+   "title": "Волоски",
+   "params": "from=[-40,0,20] to=[40,0,20] count=40 length=20 thick=1.5",
+   "bytes": 6293
+  },
+  {
+   "op": "воронка",
+   "title": "Воронка",
+   "params": "",
+   "bytes": 6005
+  },
+  {
+   "op": "глаз",
+   "title": "Аниме-глаз",
+   "params": "",
+   "bytes": 6108
+  },
+  {
+   "op": "губы",
+   "title": "Рот аниме",
+   "params": "",
+   "bytes": 3242
+  },
+  {
+   "op": "крюк",
+   "title": "Крюк",
+   "params": "",
+   "bytes": 4689
+  },
+  {
+   "op": "локон",
+   "title": "Один локон-пружинка",
+   "params": "",
+   "bytes": 5098
+  },
+  {
+   "op": "полукапсула",
+   "title": "Полукапсула",
+   "params": "",
+   "bytes": 4609
+  },
+  {
+   "op": "полуовал",
+   "title": "Пластина-полуовал",
+   "params": "",
+   "bytes": 3560
+  },
+  {
+   "op": "скоба",
+   "title": "Единая скоба",
+   "params": "",
+   "bytes": 3192
+  },
+  {
+   "op": "цепь",
+   "title": "Цепь",
+   "params": "",
+   "bytes": 5597
+  },
+  {
+   "op": "чёлка",
+   "title": "Чёлка",
+   "params": "",
+   "bytes": 7153
+  }
+ ]
+}

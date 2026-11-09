@@ -1653,6 +1653,15 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
 .cmd-presets .preset-user { border-color: rgba(255, 196, 92, 0.55); color: #ffd48a; }
 
 /* 0.76: плитки инструментов — плотная сетка, только картинка и название. */
+/* 0.77: поиск по плиткам — примитивов в реестре больше сотни. */
+.tiles-search {
+  width: 100%; margin: 4px 0 10px; padding: 7px 10px;
+  border-radius: 8px; font: inherit; font-size: 13px;
+  color: inherit; background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+.tiles-search:focus { outline: none; border-color: rgba(120, 190, 255, 0.55); }
+
 .tiles-group { margin: 14px 0 6px; font-size: 12px; opacity: 0.7; text-transform: uppercase; letter-spacing: 0.05em; }
 .tiles-grid {
   display: grid;
