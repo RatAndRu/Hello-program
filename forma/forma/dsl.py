@@ -252,11 +252,27 @@ def parse_script(text: str) -> list[Command]:
     for line_no, raw, offsets in _logical_lines(text or ""):
         m_let = LET_RE.match(raw)
         if m_let:
-            rest_local = m_let.start(2)
-            spans, _args, _keys, kwargs = _spans(raw, offsets, rest_local)
-            spans["target"] = spans.get("line")
+            # У `let` имя и значение заданы самой формой строки, а не токенами:
+            # справка и обработчик ждут ровно одну пару kwargs.
+            name = m_let.group(1)
+            value = m_let.group(2).strip()
+            value_local = m_let.start(2) + (len(m_let.group(2)) - len(m_let.group(2).lstrip()))
+            begin = offsets[value_local] if value_local < len(offsets) else offsets[-1] + 1
+            end = begin + len(value)
+            spans = {
+                "line": [offsets[0], offsets[-1] + 1] if offsets else [0, 0],
+                "verb": [offsets[m_let.start():m_let.start() + 3], offsets[m_let.start() + 3]
+                         if m_let.start() + 3 < len(offsets) else offsets[-1] + 1],
+                "args": [],
+                "kwargs": {name: {"key": [offsets[m_let.start(1)],
+                                          offsets[m_let.start(1)] + len(name)],
+                                  "value": [begin, end],
+                                  "whole": [offsets[m_let.start(1)], end]}},
+                "target": [offsets[0], offsets[-1] + 1] if offsets else [0, 0],
+                "rest": [begin, end],
+            }
             commands.append(Command(line=line_no, text=raw, target=None, verb="let",
-                                    kwargs=kwargs, rest=raw, spans=spans))
+                                    kwargs={name: value}, rest=raw, spans=spans))
             continue
         target = None
         rest_local = 0
