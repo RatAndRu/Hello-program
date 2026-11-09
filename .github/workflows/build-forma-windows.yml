@@ -99,6 +99,7 @@ jobs:
           node tests/interior_tools_test.js
           node tests/primitive_cards_test.js
           node tests/tiles_test.js
+          node tests/tiles_dom_test.js
           node tests/line_render_test.js
           node tests/npr_rework_test.js
           node tests/asset_fingerprint_test.js
