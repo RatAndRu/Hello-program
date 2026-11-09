@@ -1285,17 +1285,26 @@ function commandBlock(payload, command, options = {}) {
   wrap.appendChild(head);
   // Пресеты формы: одна правка — одна строка. Они меняют пропорции и режим,
   // а не абсолютный размер, поэтому годятся для любой модели.
-  const presets = (payload.command_presets || {})[String(command.line)] || [];
+  const verb = String(command.verb || '').toLowerCase();
+  const builtin = (payload.command_presets || {})[String(command.line)] || [];
+  // Пользовательские пресеты объявлены в самом сценарии (пресет_формы) и живут
+  // рядом с заводскими: их значения — строки, ровно как записаны в файле.
+  const declared = (payload.form_presets || {})[verb] || [];
+  const presets = builtin.concat(declared.map((item) => ({
+    label: `★ ${item.name}`, name: item.name, changes: item.changes, user: true,
+  })));
   if (presets.length && command.editable) {
     const bar = document.createElement('div');
     bar.className = 'cmd-presets';
     presets.forEach((preset) => {
       const b = document.createElement('button');
       b.type = 'button';
-      b.className = 'mini';
+      b.className = 'mini' + (preset.user ? ' preset-user' : '');
       b.textContent = preset.label || preset.name;
-      b.title = `Пресет формы: ${Object.entries(preset.changes || {})
-        .map(([k, v]) => `${k}=${formatValue(v)}`).join(', ')}`;
+      b.title = `${preset.user ? 'Пресет из сценария' : 'Пресет формы'}: `
+        + Object.entries(preset.changes || {})
+          .map(([k, v]) => `${k}=${typeof v === 'string' ? v : formatValue(v)}`)
+          .join(', ');
       b.addEventListener('click', (event) => {
         event.preventDefault();
         applySourceEdit({ action: 'set_params', line: command.line,
@@ -7667,6 +7676,8 @@ function buildToolField(p) {
   if (wide) row.style.gridColumn = 'span 2';
   if (p.auto) input.placeholder = 'авто';
   const tips = [`параметр «${p.k}»`];
+  if (p.specType) tips.push(`тип: ${p.specType}`);
+  if (p.unit) tips.push(`единица: ${p.unit}`);
   if (p.choices && p.choices.length) {
     tips.push('варианты: ' + p.choices.join(' · ') + ' (стрелки листают)');
   }
@@ -8191,10 +8202,151 @@ function commandCard(c) {
   return card;
 }
 
+/**
+ * Типы полей карточек инструментов — из серверной спецификации операций.
+ *
+ * Карточка описывает инструмент руками (191 «сырое» поле), а какие у параметра
+ * диапазон, шаг, единица и варианты — знает сервер. Здесь недостающее берётся
+ * из `param_spec`: карточка не выдумывает границы, но и не теряет свои
+ * подписи и подсказки. Заполняются только пустые места.
+ */
+const OP_SPECS = new Map();
+
+function applyServerSpec(tool) {
+  const specs = OP_SPECS.get(String(tool.op || '').toLowerCase());
+  if (!specs) return false;
+  let changed = false;
+  (tool.params || []).forEach((p) => {
+    const spec = specs[p.k];
+    if (!spec) return;
+    if (spec.type === 'enum' && !p.choices && Array.isArray(spec.items)) {
+      p.choices = spec.items.map((item) => item.value);
+      changed = true;
+    }
+    if ((spec.type === 'num' || spec.type === 'int') && p.step === undefined
+        && spec.step !== null && spec.step !== undefined) {
+      p.step = spec.step;
+      changed = true;
+    }
+    if (spec.type === 'vec' && p.kind === undefined) {
+      p.kind = 'vec';
+      changed = true;
+    }
+    if (spec.type === 'flag' && p.kind === undefined) {
+      p.kind = 'bool';
+      changed = true;
+    }
+    if (spec.auto && p.auto === undefined) {
+      p.auto = true;
+      changed = true;
+    }
+    if (spec.unit && !p.unit) {
+      p.unit = spec.unit;
+      changed = true;
+    }
+    p.specType = spec.type;
+  });
+  return changed;
+}
+
+async function loadOpSpecs() {
+  try {
+    const res = await api('/api/commands');
+    (res.commands || []).forEach((command) => {
+      if (command.param_spec) OP_SPECS.set(command.name, command.param_spec);
+    });
+    if (!OP_SPECS.size) return;
+    let changed = false;
+    ALL_TOOL_SHAPES.forEach((tool) => { changed = applyServerSpec(tool) || changed; });
+    if (changed && $('tools-body')?.childElementCount) renderTools();
+  } catch (err) {
+    // Спецификации — улучшение подсказок, а не условие работы: без них
+    // карточки показывают то, что написано в них самих.
+  }
+}
+
+/**
+ * Режим плиток: плотная сетка миниатюр.
+ *
+ * Правило простое: на плитке только картинка и название. Никаких пресетов,
+ * полей и подсказок — клик вставляет операцию с заводскими параметрами.
+ * Картинки готовит `tools/render_thumbs.py` (изометрия, без пола, сетки и тени).
+ */
+state.tilesMode = state.tilesMode === true;
+const tileThumbs = new Map();   // op → url
+let tileThumbsLoaded = false;
+
+async function loadTileThumbs() {
+  if (tileThumbsLoaded) return;
+  try {
+    const res = await api('/api/thumbs');
+    (res.thumbs || []).forEach((item) => tileThumbs.set(item.op, item.url));
+    tileThumbsLoaded = true;
+  } catch (err) { /* без плиток остаются карточки */ }
+}
+
+/** Карточка-пустышка с полями: значения берутся из заводских p.v. */
+function detachedToolCard(tool) {
+  const card = document.createElement('div');
+  (tool.params || []).forEach((p) => card.appendChild(buildToolField(p)));
+  return card;
+}
+
+function renderTiles(body) {
+  const groups = new Map();
+  ALL_TOOL_SHAPES.forEach((tool) => {
+    const op = String(tool.op || '').toLowerCase();
+    if (!tileThumbs.has(op)) return;
+    const key = tool.group || 'Прочее';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(tool);
+  });
+  if (!groups.size) {
+    const hint = document.createElement('div');
+    hint.className = 'hint-box';
+    hint.textContent = 'Плитки ещё не готовы: запустите tools/render_thumbs.py.';
+    body.appendChild(hint);
+    return;
+  }
+  groups.forEach((tools, title) => {
+    const head = document.createElement('h4');
+    head.className = 'tiles-group';
+    head.textContent = title;
+    body.appendChild(head);
+    const grid = document.createElement('div');
+    grid.className = 'tiles-grid';
+    tools.forEach((tool) => {
+      const op = String(tool.op || '').toLowerCase();
+      const tile = document.createElement('button');
+      tile.type = 'button';
+      tile.className = 'tile';
+      tile.dataset.op = op;
+      tile.title = `${tool.title}: ${tool.desc}`;
+      const img = document.createElement('img');
+      img.src = tileThumbs.get(op);
+      img.alt = tool.title;
+      img.loading = 'lazy';
+      const cap = document.createElement('span');
+      cap.className = 'tile-cap';
+      cap.textContent = tool.title;
+      tile.append(img, cap);
+      tile.addEventListener('click', () => {
+        addShapeTool(tool, detachedToolCard(tool));
+      });
+      grid.appendChild(tile);
+    });
+    body.appendChild(grid);
+  });
+}
+
 function renderTools() {
   const body = $('tools-body');
   if (!body) return;
   body.innerHTML = '';
+  if (state.tilesMode) {
+    renderTiles(body);
+    return;
+  }
   const groups = new Map();
   ALL_TOOL_SHAPES.forEach((tool) => {
     const key = tool.group || 'Готовые детали';
@@ -8403,10 +8555,22 @@ $('tools-thumbs')?.addEventListener('change', (e) => {
   if (state.thumbsOn) observeThumbs($('tools-body'));
 });
 
+$('tools-tiles')?.addEventListener('change', async (e) => {
+  state.tilesMode = e.target.checked;
+  if (state.tilesMode) await loadTileThumbs();
+  renderTools();
+  const count = $('tools-count');
+  if (count) count.textContent = state.tilesMode ? 'плитки' : '';
+});
+
 function openTools() {
   $('tools-modal').hidden = false;
   toolThumbs.enabled = state.thumbsOn;
+  const tiles = $('tools-tiles');
+  if (tiles) tiles.checked = state.tilesMode;
   renderTools();
+  loadOpSpecs();
+  loadTileThumbs();
   syncViewportSuspension();
 }
 $('btn-tools')?.addEventListener('click', openTools);

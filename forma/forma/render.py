@@ -794,7 +794,10 @@ def render_views(solids, out_dir, prefix="model", size=640, ss=2,
 
 
 def render_single(solids, out_dir, filename="preview.png", size=720, ss=2,
-                  view="iso", style=None, groups=None) -> str:
+                  view="iso", style=None, groups=None, shadow=True,
+                  grid=True) -> str:
+    """Один вид в PNG. ``shadow``/``grid`` нужны плиткам: пол и сетка мешают
+    маленькой миниатюре, а в отчётах они полезны."""
     meshes = _prepare(solids, groups)
     if not meshes:
         raise ValueError("Нет объектов для рендера.")
@@ -804,7 +807,8 @@ def render_single(solids, out_dir, filename="preview.png", size=720, ss=2,
     bbox = [float(lo[0]), float(lo[1]), float(lo[2]), float(hi[0]), float(hi[1]), float(hi[2])]
     center = (lo + hi) / 2
     radius = float(np.linalg.norm(hi - lo)) / 2
-    img, _ = _render_view(meshes, center, radius, view, size, ss, bbox, style=style)
+    img, _ = _render_view(meshes, center, radius, view, size, ss, bbox,
+                          style=style, shadow=shadow, grid=grid)
     os.makedirs(out_dir, exist_ok=True)
     # Имя без расширения — дописываем .png: иначе файл «есть», а открыть его
     # просмотрщиком нельзя.

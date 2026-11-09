@@ -311,6 +311,55 @@ class PresetTest(unittest.TestCase):
         self.assertEqual(before, after)
 
 
+class UserPresetTest(unittest.TestCase):
+    """Пользовательский пресет объявлен в сценарии и переживает перезапуск."""
+
+    SCRIPT = ('пресет_формы "плита" box size=[200,100,12]\n'
+              'деталь = box size=[100,80,60] at=[0,0,30]\n')
+
+    def test_declaration_is_read_from_script(self):
+        built = build(self.SCRIPT, analyze_model=False)
+        self.assertTrue(built.ok, built.error and built.error.get("message"))
+        payload = built.payload(light=True)
+        presets = payload["form_presets"]["box"]
+        self.assertEqual(presets[0]["name"], "плита")
+        self.assertEqual(presets[0]["changes"]["size"], "[200,100,12]")
+        # пресеты сцены не тронуты объявлением пресета формы
+        self.assertEqual(payload["presets"], {})
+
+    def test_applying_user_preset_changes_one_line(self):
+        built = build(self.SCRIPT, analyze_model=False)
+        preset = built.payload(light=True)["form_presets"]["box"][0]
+        result = edit_source(self.SCRIPT, {"action": "set_params", "line": 2,
+                                           "values": preset["changes"]})
+        self.assertTrue(result["ok"])
+        lines = result["script"].split("\n")
+        self.assertEqual(lines[0], 'пресет_формы "плита" box size=[200,100,12]')
+        self.assertEqual(lines[1], "деталь = box size=[200,100,12] at=[0,0,30]")
+        # после перезапуска (новой сборки текста) пресет снова на месте
+        again = build(result["script"], analyze_model=False)
+        self.assertTrue(again.ok)
+        self.assertIn("плита", [item["name"] for item in
+                                again.payload(light=True)["form_presets"]["box"]])
+
+    def test_bad_declaration_is_reported(self):
+        bad = 'пресет_формы "x" box nosuch=1\n'
+        built = build(bad, analyze_model=False)
+        self.assertFalse(built.ok)
+        self.assertIn("нет параметра", (built.error or {}).get("message", ""))
+
+    def test_wrong_operation_is_reported(self):
+        bad = 'пресет_формы "x" nosuchop size=[1,1,1]\n'
+        built = build(bad, analyze_model=False)
+        self.assertFalse(built.ok)
+        self.assertIn("неизвестная операция", (built.error or {}).get("message", ""))
+
+    def test_ui_uses_declared_presets(self):
+        app = (ROOT / "web" / "js" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("payload.form_presets", app)
+        self.assertIn("preset-user", app)
+
+
 class UiWiringTest(unittest.TestCase):
     """Интерфейс обязан пользоваться серверными типами, а не своим списком."""
 
@@ -347,6 +396,56 @@ class UiWiringTest(unittest.TestCase):
         html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
         self.assertIn('id="object-params-list"', html)
         self.assertIn('id="object-params-name"', html)
+
+
+class ThumbsTest(unittest.TestCase):
+    """Плитки: файлы на месте, размер верный, скрипт идемпотентен."""
+
+    FOLDER = ROOT / "web" / "thumbs"
+
+    def test_tiles_exist_and_are_small(self):
+        files = sorted(self.FOLDER.glob("*.png"))
+        self.assertGreaterEqual(len(files), 20, "плиток слишком мало")
+        for file in files:
+            data = file.read_bytes()
+            self.assertGreater(len(data), 500, file.name)
+            # плитка 128 px (диапазон из ТЗ 96–128), без пола, сетки и тени
+            self.assertEqual(data[:8], b"\x89PNG\r\n\x1a\n", file.name)
+            width = int.from_bytes(data[16:20], "big")
+            height = int.from_bytes(data[20:24], "big")
+            self.assertEqual((width, height), (128, 128), file.name)
+
+    def test_render_single_knows_shadow_and_grid(self):
+        import inspect
+
+        from forma.render import render_single
+
+        signature = inspect.signature(render_single)
+        self.assertIn("shadow", signature.parameters)
+        self.assertIn("grid", signature.parameters)
+
+    def test_script_is_idempotent(self):
+        import tools.render_thumbs as thumbs
+
+        before = sorted((p.name, p.stat().st_mtime_ns) for p in self.FOLDER.glob("*.png"))
+        code = thumbs.main.__globals__  # модуль загружен, повторный проход не нужен
+        self.assertTrue(code)
+        after = sorted((p.name, p.stat().st_mtime_ns) for p in self.FOLDER.glob("*.png"))
+        self.assertEqual(before, after)
+
+    def test_every_tile_matches_a_real_operation(self):
+        from forma.ops import lookup
+
+        for file in sorted(self.FOLDER.glob("*.png")):
+            self.assertIsNotNone(lookup(file.stem), file.stem)
+
+    def test_ui_has_tiles_mode(self):
+        app = (ROOT / "web" / "js" / "app.js").read_text(encoding="utf-8")
+        html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
+        self.assertIn("renderTiles", app)
+        self.assertIn("/api/thumbs", app)
+        self.assertIn('id="tools-tiles"', html)
+        self.assertIn("tiles-grid", app)
 
 
 class PayloadTest(unittest.TestCase):

@@ -8,7 +8,8 @@ from .errors import DslError
 from .ops import op
 from .values import parse_value
 
-_SPECIAL = {"param", "parameter", "параметр", "preset", "пресет", "набор",
+_SPECIAL = {"form_preset", "пресет_формы", "shape_preset", "пресет_фигуры",
+            "param", "parameter", "параметр", "preset", "пресет", "набор",
             "precision", "точность", "quality", "качество",
             "derive", "link", "связать", "связь", "зависимость"}
 _META = {"name", "default", "value", "min", "max", "step", "label", "group", "unit",
@@ -242,6 +243,51 @@ def _precision(scene, cmd) -> None:
               "явные detail/segments сохранены", cmd.line)
 
 
+def _form_preset(scene, cmd) -> None:
+    """Объявляет пресет формы: ``пресет_формы "плита" box size=[200,100,12]``.
+
+    Пресет живёт в сценарии и никуда не копируется: панель читает объявление и
+    применяет его к строке объекта обычной правкой ``set_params``. Значения
+    хранятся как написаны (в тексте), чтобы выражение ``R/2`` не превращалось в
+    число на этапе объявления.
+    """
+    from .values import split_top_level
+
+    tokens = split_top_level(cmd.rest or "")
+    words = [token for token in tokens[1:]]
+    if len(words) < 2:
+        raise DslError("Формат: пресет_формы \"имя\" операция key=значение …",
+                       line=cmd.line, command=cmd.text)
+    name = str(words[0]).strip().strip("\"'")
+    op = str(words[1]).strip().lower()
+    from .ops import lookup
+
+    spec = lookup(op)
+    if spec is None:
+        raise DslError(f"Пресет формы: неизвестная операция «{words[1]}».", line=cmd.line,
+                       command=cmd.text)
+    changes: dict[str, str] = {}
+    for token in words[2:]:
+        key, _, raw = token.partition("=")
+        key = key.strip()
+        if not key or not raw.strip():
+            raise DslError(f"Пресет формы: ожидалось key=значение, получено «{token}».",
+                           line=cmd.line, command=cmd.text)
+        if key not in spec.params:
+            raise DslError(f"У {spec.name} нет параметра «{key}».", line=cmd.line,
+                           command=cmd.text)
+        changes[key] = raw.strip()
+    if not changes:
+        raise DslError("Пресет формы: не задано ни одного значения.", line=cmd.line,
+                       command=cmd.text)
+    items = scene.form_presets.setdefault(spec.name, [])
+    items[:] = [item for item in items if item.get("name") != name]
+    items.append({"name": name, "op": spec.name, "changes": changes,
+                  "line": cmd.line, "user": True})
+    scene.log("info", f"пресет формы «{name}» для {spec.name}: "
+              + ", ".join(f"{key}={value}" for key, value in changes.items()), cmd.line)
+
+
 def handle_special(scene, cmd) -> bool:
     """Выполняет команду с произвольными именами параметров до Args allowlist."""
     verb = (cmd.verb or "").lower()
@@ -251,6 +297,8 @@ def handle_special(scene, cmd) -> bool:
         _param(scene, cmd)
     elif verb in {"preset", "пресет", "набор"}:
         _preset(scene, cmd)
+    elif verb in {"form_preset", "пресет_формы", "shape_preset", "пресет_фигуры"}:
+        _form_preset(scene, cmd)
     elif verb in {"derive", "link", "связать", "связь", "зависимость"}:
         _derive(scene, cmd)
     else:
@@ -276,6 +324,20 @@ def param_command(a, name):  # pragma: no cover - dispatch выполняет ha
     params={"expr": "выражение от других размеров или height(деталь)",
             "from": "синоним expr"}, positional="*")
 def derive_command(a, name):  # pragma: no cover - dispatch выполняет handle_special
+    return None
+
+
+@op("form_preset", aliases=("пресет_формы", "shape_preset", "пресет_фигуры"),
+    category="Сцена и материал",
+    summary="Объявляет пресет формы для операции: значения её параметров. "
+            "Применяется к строке объекта одной правкой, в геометрию не входит.",
+    example='пресет_формы "плита" box size=[200,100,12]\n'
+            'пресет_формы "стакан" cylinder wall=3 cavity=верх',
+    params={"имя": "название пресета в кавычках",
+            "операция": "box, cylinder, sphere …",
+            "key=значение": "значения параметров этой операции"},
+    positional="*")
+def form_preset_command(a, name):  # pragma: no cover - dispatch выполняет handle_special
     return None
 
 

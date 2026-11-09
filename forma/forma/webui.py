@@ -1160,6 +1160,17 @@ class Handler(BaseHTTPRequestHandler):
             from .run import commands_help
             self._send_json({"commands": commands_help()})
             return
+        if path == "/api/thumbs":
+            # Плитки инструментов: готовые изометрические картинки. Генерирует
+            # их скрипт tools/render_thumbs.py, здесь только список файлов.
+            folder = Path(__file__).resolve().parent.parent / "web" / "thumbs"
+            items = []
+            if folder.is_dir():
+                for file in sorted(folder.glob("*.png")):
+                    items.append({"op": file.stem, "bytes": file.stat().st_size,
+                                  "url": f"/thumbs/{file.name}"})
+            self._send_json({"thumbs": items})
+            return
         if path == "/api/parameters":
             b = st.last_build
             self._send_json({"params": dict(b.scene.params) if b and b.ok else {},

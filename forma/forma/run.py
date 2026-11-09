@@ -360,6 +360,9 @@ class Build:
             "commands": self.commands(),
             "op_specs": self.op_specs(),
             "command_presets": self.command_presets(),
+            "form_presets": {op: [dict(item) for item in items]
+                             for op, items in (getattr(scene, "form_presets", {}) or {}).items()}
+            if scene else {},
             "command_timings": self.command_timings,
             "frames": frames,
             "upto": self.upto,

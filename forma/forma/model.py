@@ -120,6 +120,9 @@ class Scene:
         self.definitions: dict[str, Any] = {}
         self.param_meta: dict[str, dict] = {}
         self.presets: dict[str, dict[str, float]] = {}
+        # Пресеты формы, объявленные в сценарии: {операция: [ {name, changes} ]}.
+        # Это не параметры сцены: они применяются к строке объекта одной правкой.
+        self.form_presets: dict[str, list[dict]] = {}
         self.vars["__forma_functions__"] = self.functions
         self._function_depth = 0
         self.module_depth = 0
