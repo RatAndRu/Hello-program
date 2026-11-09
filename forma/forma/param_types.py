@@ -196,12 +196,64 @@ TYPES: dict[str, dict] = {
     "outline": {"type": "str", "label": "контур"},
     "spheres": {"type": "str", "label": "сферы"},
     "hole_shape": {"type": "str", "label": "форма отверстия"},
+    "edge": {"type": "num", "label": "толщина кромки", "unit": "мм", "min": 0.0, "step": 0.1},
+    "edge_band": {"type": "num", "label": "ширина перехода кромки", "unit": "мм",
+                  "min": 0.0, "step": 0.1},
+    "spread": {"type": "num", "label": "разброс", "unit": "мм", "min": 0.0, "step": 0.5},
+    "tail": {"type": "num", "label": "длина хвоста", "unit": "мм", "min": 0.0, "step": 0.5},
+    "ribs": {"type": "int", "label": "число рёбер", "unit": "", "min": 0},
+    "solid": {"type": "flag", "label": "объёмный вариант"},
     "min": {"type": "num", "label": "минимум", "unit": "", "step": 0.5},
     "max": {"type": "num", "label": "максимум", "unit": "", "step": 0.5},
 }
 
 
+# Хвост имени говорит о смысле параметра: ``head_height`` — высота, ``eye_d`` —
+# диаметр, ``plate_color`` — цвет. Правила применяются только к составным
+# именам (с подчёркиванием) и только к однозначным окончаниям.
+SUFFIXES: tuple[tuple[str, dict], ...] = (
+    ("_diameter", {"type": "num", "unit": "мм", "min": 0.0, "step": 0.5, "word": "диаметр"}),
+    ("_radius", {"type": "num", "unit": "мм", "min": 0.0, "step": 0.5, "word": "радиус"}),
+    ("_height", {"type": "num", "unit": "мм", "step": 0.5, "word": "высота"}),
+    ("_width", {"type": "num", "unit": "мм", "step": 0.5, "word": "ширина"}),
+    ("_depth", {"type": "num", "unit": "мм", "step": 0.5, "word": "глубина"}),
+    ("_length", {"type": "num", "unit": "мм", "step": 0.5, "word": "длина"}),
+    ("_thickness", {"type": "num", "unit": "мм", "min": 0.0, "step": 0.1, "word": "толщина"}),
+    ("_wall", {"type": "num", "unit": "мм", "min": 0.0, "step": 0.1, "word": "стенка"}),
+    ("_angle", {"type": "num", "unit": "°", "step": 1.0, "word": "угол"}),
+    ("_gap", {"type": "num", "unit": "мм", "min": 0.0, "step": 0.1, "word": "зазор"}),
+    ("_pitch", {"type": "num", "unit": "мм", "min": 0.05, "step": 0.05, "word": "шаг"}),
+    ("_step", {"type": "num", "unit": "мм", "min": 0.0, "step": 0.1, "word": "шаг"}),
+    ("_offset", {"type": "num", "unit": "мм", "step": 0.1, "word": "смещение"}),
+    ("_inset", {"type": "num", "unit": "мм", "min": 0.0, "step": 0.1, "word": "отступ"}),
+    ("_margin", {"type": "num", "unit": "мм", "step": 0.5, "word": "припуск"}),
+    ("_spacing", {"type": "num", "unit": "мм", "min": 0.0, "step": 0.5, "word": "расстояние"}),
+    ("_overlap", {"type": "num", "unit": "мм", "min": 0.0, "step": 0.1, "word": "перекрытие"}),
+    ("_count", {"type": "int", "unit": "", "min": 0, "word": "количество"}),
+    ("_segments", {"type": "int", "unit": "", "min": 3, "word": "сегментов"}),
+    ("_d", {"type": "num", "unit": "мм", "min": 0.0, "step": 0.5, "word": "диаметр"}),
+    ("_color", {"type": "str", "word": "цвет"}),
+    ("_material", {"type": "str", "word": "материал"}),
+)
+
+
+def _suffix_spec(name: str) -> dict | None:
+    for suffix, entry in SUFFIXES:
+        if name.endswith(suffix) and len(name) > len(suffix):
+            prefix = name[: -len(suffix)].replace("_", " ")
+            found = {key: value for key, value in entry.items() if key != "word"}
+            found["label"] = f"{entry['word']} ({prefix})"
+            return found
+    return None
+
+
 def generic_spec(name: str) -> dict | None:
-    """Описание параметра по имени — без привязки к операции."""
-    entry = TYPES.get(str(name or "").strip().lower())
-    return dict(entry) if entry else None
+    """Описание параметра по имени — без привязки к операции.
+
+    Сначала точное имя из ``TYPES``, затем правило по окончанию имени.
+    """
+    key = str(name or "").strip().lower()
+    entry = TYPES.get(key)
+    if entry:
+        return dict(entry)
+    return _suffix_spec(key)
