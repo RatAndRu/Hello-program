@@ -655,8 +655,16 @@
           <div class="hint-box provenance-panel" id="provenance-panel" hidden></div>
         </div>
         <div class="tab-page" id="page-params">
+          <div class="params-section" id="object-params" hidden>
+            <div class="objects-tools">
+              <span>Объект: <b id="object-params-name">—</b> · строка <b id="object-params-line">—</b></span>
+              <button class="mini" id="object-params-locate" title="Показать эту строку в сценарии">строка</button>
+            </div>
+            <div class="hint-box" id="object-params-hint"></div>
+            <div id="object-params-list" class="params-list typed-params"></div>
+          </div>
           <div class="objects-tools">
-            <span>Параметры и presets используют обычную пересборку модели</span>
+            <span>Сцена: именованные параметры и их presets (общая пересборка)</span>
             <button class="mini" id="params-reset" title="Вернуть default из сценария">по умолчанию</button>
           </div>
           <div id="params-list" class="params-list"></div>

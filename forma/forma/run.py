@@ -166,6 +166,30 @@ class Build:
                + "\nengine=" + str(_FORMA_VERSION))
         return _hash(raw)
 
+    def commands(self) -> list[dict]:
+        """Команды исходного текста со строками и смещениями токенов.
+
+        Считается по ``self.script``, а не по развёрнутому сценарию: правится
+        всегда тот файл, который пользователь открыл. Команды из include в этот
+        список не попадают — их строки в исходнике нет.
+        """
+        from .edit import commands_payload
+
+        if not hasattr(self, "_commands_cache"):
+            self._commands_cache = commands_payload(self.script)
+        return self._commands_cache
+
+    def op_specs(self) -> dict:
+        """Типы параметров для операций, которые реально есть в сценарии."""
+        from .param_spec import payload as _spec_payload
+
+        verbs: list[str] = []
+        for command in self.commands():
+            verb = (command.get("verb") or "").lower()
+            if verb and verb not in verbs:
+                verbs.append(verb)
+        return {verb: _spec_payload(verb) for verb in verbs if _spec_payload(verb)}
+
     def visible_solids(self):
         return self.scene.visible_solids() if self.scene else []
 
@@ -322,6 +346,8 @@ class Build:
             "dimension_links": list(getattr(scene, "dimension_links", []) or []) if scene else [],
             "grid": getattr(scene, "grid", None) if scene else None,
             "steps": self.steps,
+            "commands": self.commands(),
+            "op_specs": self.op_specs(),
             "command_timings": self.command_timings,
             "frames": frames,
             "upto": self.upto,

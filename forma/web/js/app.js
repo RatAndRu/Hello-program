@@ -4,6 +4,7 @@ import { Preview3D } from './preview3d.js';
 import { installPanelLayout } from './panels.js';
 import { ToolThumbs } from './toolpreview.js';
 import { ANIME_MODES, mergeAnimeStyle, resolveAnimeStyle } from './style_presets.js';
+import { AUTO, formatValue, renderCommandParams } from './param_controls.js';
 
 const $ = (id) => document.getElementById(id);
 // Токен берём из адреса, а если его нет (обновили страницу, открыли голый
@@ -588,6 +589,7 @@ function applyBuild(payload, elapsed) {
   syncFaceRoles(payload);
   renderFacePanel();
   renderParameters(payload);
+  renderObjectParams(payload);
   renderDimensions(metrics);
   if (state.selected?.name) {
     const fresh = (payload.objects || []).find((o) => o.name === state.selected.name);
@@ -1159,6 +1161,215 @@ function renderParameters(payload) {
     select.innerHTML = '<option value="">— preset —</option>' + names.map((name) =>
       `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
     if (names.includes(previous)) select.value = previous;
+  }
+}
+
+/**
+ * Параметры выбранного объекта: значения читаются из его строки в сценарии.
+ *
+ * Второго хранилища нет — контрол знает только ключ параметра и номер строки.
+ * Любое изменение уходит на сервер как правка текста (`set_param` либо
+ * `unset_param` для «авто») и возвращается уже собранной моделью.
+ */
+function objectStack(payload, name) {
+  return (payload.commands || []).filter((command) => command.target === name);
+}
+
+/**
+ * Правка строки сценария с откатом.
+ *
+ * Если после правки модель не собралась (например, перестановка шагов сделала
+ * вызов бессмысленным), текст возвращается к прежнему виду: невалидное
+ * состояние не остаётся в редакторе.
+ */
+async function applySourceEdit(edit, { label = 'правка параметра' } = {}) {
+  const status = $('object-params-hint');
+  const before = currentScript();
+  if (status) status.textContent = 'Правим строку сценария…';
+  try {
+    const payload = await api('/api/edit', { script: before, edit });
+    if (payload?.script !== undefined && payload.script !== before) {
+      setScript(payload.script, { build: false, label });
+    }
+    if (payload && payload.ok === false) {
+      setScript(before, { build: false, record: false, label });
+      if (status) status.textContent = payload.error?.message || 'Строка не изменена.';
+      showError(payload.error || { message: 'Модель не собралась' });
+      return null;
+    }
+    applyBuild(payload, payload?.timings?.total);
+    if (status) {
+      const line = payload?.edit?.line;
+      const param = payload?.edit?.param;
+      const action = payload?.edit?.action;
+      if (action === 'unset') status.textContent = `Строка ${line}: «${param}» убран — работает авто.`;
+      else if (action === 'set_enabled') status.textContent = `Строка ${line}: ${payload.edit.enabled ? 'включена' : 'выключена'}.`;
+      else if (action === 'delete_line') status.textContent = `Строка ${line} удалена.`;
+      else if (action === 'move_line') status.textContent = `Строка ${line} переставлена.`;
+      else status.textContent = `Строка ${line}: ${param} = ${payload?.edit?.value}.`;
+    }
+    return payload;
+  } catch (err) {
+    if (err?.reason === 'linked') {
+      // Связанное значение не перезаписываем молча: связь рвётся только с
+      // подтверждением пользователя.
+      if (window.confirm(`${err.message}\n\nРазорвать связь и записать число?`)) {
+        return applySourceEdit({ ...edit, break_link: true }, { label });
+      }
+      if (status) status.textContent = 'Связь сохранена, значение не изменено.';
+      return null;
+    }
+    if (status) status.textContent = err?.message || 'Строка не изменена.';
+    showError(err);
+    return null;
+  }
+}
+
+function commandKeys(payload, command) {
+  const verb = String(command?.verb || '').toLowerCase();
+  const declared = (payload.op_specs || {})[verb] || {};
+  const keys = Object.keys(declared);
+  Object.keys(command?.kwargs || {}).forEach((key) => {
+    if (!keys.includes(key)) keys.push(key);
+  });
+  return keys;
+}
+
+/** Строка стека инструментов: номер, команда и её типизированные параметры. */
+function commandBlock(payload, command, options = {}) {
+  const wrap = document.createElement('div');
+  wrap.className = 'cmd-block';
+  const head = document.createElement('div');
+  head.className = 'cmd-head';
+  const badge = document.createElement('span');
+  badge.className = 'cmd-line';
+  badge.textContent = `стр. ${command.line}`;
+  const verb = document.createElement('span');
+  verb.className = 'cmd-verb';
+  verb.textContent = command.verb;
+  head.append(badge, verb);
+  const actions = document.createElement('span');
+  actions.className = 'cmd-actions';
+  const disabled = command.enabled === false;
+  if (!command.editable) {
+    const note = document.createElement('span');
+    note.className = 'cmd-note';
+    note.textContent = 'в объявлении';
+    actions.appendChild(note);
+  } else {
+    const button = (text, title, handler) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mini';
+      b.textContent = text;
+      b.title = title;
+      b.addEventListener('click', (event) => { event.preventDefault(); handler(); });
+      actions.appendChild(b);
+      return b;
+    };
+    if (options.canUp) {
+      button('▲', 'Выполнять раньше', () => applySourceEdit(
+        { action: 'move_line', line: command.line, to: options.upTo }, { label: 'порядок шагов' }));
+    }
+    if (options.canDown) {
+      button('▼', 'Выполнять позже', () => applySourceEdit(
+        { action: 'move_line', line: command.line, to: options.downTo }, { label: 'порядок шагов' }));
+    }
+    button(disabled ? '◻' : '◼', disabled ? 'Включить команду' : 'Временно выключить команду',
+      () => applySourceEdit({ action: 'set_enabled', line: command.line, enabled: disabled },
+        { label: 'выключение шага' }));
+    button('✕', 'Удалить строку из сценария', () => applySourceEdit(
+      { action: 'delete_line', line: command.line }, { label: 'удаление шага' }));
+  }
+  head.appendChild(actions);
+  wrap.appendChild(head);
+  const params = document.createElement('div');
+  params.className = 'params-list typed-params';
+  if (disabled) wrap.classList.add('is-off');
+  renderCommandParams(params, {
+    command,
+    specs: payload.op_specs || {},
+    keys: commandKeys(payload, command),
+    onChange: (key, value) => {
+      if (!command.editable) { toast('Строка объявления правится в редакторе'); return; }
+      const edit = value === AUTO
+        ? { action: 'unset_param', line: command.line, param: key }
+        : { action: 'set_param', line: command.line, param: key, value: formatValue(value) };
+      applySourceEdit(edit);
+    },
+  });
+  wrap.appendChild(params);
+  return wrap;
+}
+
+/**
+ * Панель объекта: параметры каждой строки-источника.
+ *
+ * У union/difference параметры принадлежат фигурам-источникам, а не результату.
+ * Поэтому сначала идут блоки источников из провенанса, затем — собственные
+ * строки объекта: порядок, выключение и удаление шагов.
+ */
+function renderObjectParams(payload) {
+  const panel = $('object-params');
+  const list = $('object-params-list');
+  if (!panel || !list) return;
+  const name = state.selected?.name;
+  list.innerHTML = '';
+  if (!name) { panel.hidden = true; return; }
+  const stack = objectStack(payload, name);
+  const provenance = (payload.provenance || []).find((item) =>
+    (item.object || item.name) === name);
+  const parents = provenance?.parents || [];
+  if (!stack.length && !parents.length) { panel.hidden = true; return; }
+  panel.hidden = false;
+  $('object-params-name').textContent = name;
+  $('object-params-line').textContent = stack.length ? String(stack[0].line) : '—';
+  const hint = $('object-params-hint');
+  hint.textContent = provenance
+    ? `операция: ${provenance.op || '—'}${parents.length ? ` · источники: ${parents.join(', ')}` : ''}`
+    : 'строка сценария';
+
+  const blocks = document.createElement('div');
+  blocks.className = 'cmd-stack';
+  parents.forEach((parent) => {
+    const parentStack = objectStack(payload, parent);
+    const title = document.createElement('div');
+    title.className = 'cmd-group';
+    title.textContent = `Источник: ${parent}`;
+    blocks.appendChild(title);
+    if (!parentStack.length) {
+      const note = document.createElement('div');
+      note.className = 'hint-box';
+      note.textContent = 'Строка этого источника не найдена в тексте (создан внутри блока или include).';
+      blocks.appendChild(note);
+      return;
+    }
+    parentStack.forEach((command) => blocks.appendChild(commandBlock(payload, command)));
+  });
+  if (parents.length) {
+    const title = document.createElement('div');
+    title.className = 'cmd-group';
+    title.textContent = `Собственные шаги: ${name}`;
+    blocks.appendChild(title);
+  }
+  stack.forEach((command, index) => {
+    const prev = stack[index - 1];
+    const next = stack[index + 1];
+    blocks.appendChild(commandBlock(payload, command, {
+      canUp: Boolean(prev),
+      canDown: Boolean(next),
+      upTo: prev ? prev.line - 1 : null,
+      downTo: next ? next.last_line || next.line : null,
+    }));
+  });
+  list.appendChild(blocks);
+  const locate = $('object-params-locate');
+  if (locate && !locate.dataset.bound) {
+    locate.dataset.bound = '1';
+    locate.addEventListener('click', () => {
+      const line = Number($('object-params-line')?.textContent || 0);
+      if (line) focusLine(line);
+    });
   }
 }
 

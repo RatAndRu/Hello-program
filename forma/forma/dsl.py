@@ -94,6 +94,11 @@ class Command:
     args: list[str] = field(default_factory=list)
     kwargs: dict[str, str] = field(default_factory=dict)
     rest: str = ""
+    # Смещения токенов в тексте сценария: начало и конец логической строки,
+    # аргументов и значений. Нужны правке «заменить ровно значение», не трогая
+    # порядок аргументов, пробелы и комментарии. Регулярные выражения здесь
+    # непригодны: значения бывают векторами [200, 100, 60] и выражениями R/2.
+    spans: dict = field(default_factory=dict)
 
     def describe(self) -> str:
         head = f"{self.target} = " if self.target else ""
@@ -101,30 +106,58 @@ class Command:
 
 
 def _logical_lines(text: str):
-    """Склеивает физические строки в логические, сохраняя номер первой."""
-    physical = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    """Склеивает физические строки в логические, сохраняя номер первой.
+
+    Вместе с текстом отдаётся карта смещений: для каждого символа логической
+    строки — его позиция в нормализованном сценарии. Без неё правка не может
+    сказать, где именно в файле стоит значение параметра.
+    """
+    normal = (text or "").replace("\r\n", "\n").replace("\r", "\n")
+    physical = normal.split("\n")
+    starts: list[int] = []
+    shifted = 0
+    for line in physical:
+        starts.append(shifted)
+        shifted += len(line) + 1
     i = 0
     while i < len(physical):
         start = i + 1
-        raw = strip_comment(physical[i]).rstrip()
+        base = starts[i]
+        code = strip_comment(physical[i])
+        raw = code.rstrip()
         buf = raw
+        offsets = list(range(base, base + len(raw)))
         while True:
             stripped = buf.rstrip()
+            if len(stripped) != len(buf):
+                offsets = offsets[:len(stripped)]
+                buf = stripped
             cont = stripped.endswith("\\")
             if cont:
-                buf = stripped[:-1] + " "
+                stripped = stripped[:-1]
+                offsets = offsets[:len(stripped)]
+                buf = stripped + " "
+                offsets = offsets + [(offsets[-1] + 1) if offsets else base]
             depth = bracket_balance(buf)
             if (cont or depth > 0) and i + 1 < len(physical):
                 i += 1
-                buf += " " + strip_comment(physical[i]).strip()
+                nxt_code = strip_comment(physical[i])
+                nxt = nxt_code.strip()
+                lead = len(nxt_code) - len(nxt_code.lstrip())
+                nxt_off = starts[i] + lead
+                buf += " " + nxt
+                offsets = offsets + [nxt_off - 1] + list(range(nxt_off, nxt_off + len(nxt)))
                 continue
             break
-        if buf.strip():
-            yield start, buf.strip()
+        lead = len(buf) - len(buf.lstrip())
+        body = buf.strip()
+        if body:
+            yield start, body, offsets[lead:lead + len(body)]
         i += 1
 
 
-def _split_kwarg(token: str) -> tuple[str | None, str]:
+def _split_kwarg_offset(token: str) -> tuple[str | None, str, int | None]:
+    """То же, что ``_split_kwarg``, но с индексом знака «=» в токене."""
     depth = 0
     quote = ""
     i = 0
@@ -145,44 +178,104 @@ def _split_kwarg(token: str) -> tuple[str | None, str]:
         elif ch == "=" and depth == 0:
             key = token[:i].strip()
             if IDENT_RE.match(key):
-                return key, token[i + 1:].strip()
-            return None, token
+                return key, token[i + 1:].strip(), i
+            return None, token, None
         i += 1
-    return None, token
+    return None, token, None
+
+
+def _split_kwarg(token: str) -> tuple[str | None, str]:
+    key, value, _eq = _split_kwarg_offset(token)
+    return key, value
+
+
+def _spans(raw: str, offsets: list[int], rest_local: int) -> tuple[dict, list[str], list[str], dict[str, str]]:
+    """Считает смещения токенов логической строки.
+
+    ``raw`` — очищенная от комментария строка, ``offsets[i]`` — позиция её i-го
+    символа в сценарии, ``rest_local`` — где в ``raw`` начинается команда (после
+    ``имя =``). Токены ищутся последовательным поиском, а не регулярным
+    выражением: ``=`` внутри вектора или строки не должен сбивать разбор.
+    """
+    tokens = split_top_level(raw[rest_local:])
+    cursor = rest_local
+    placed: list[tuple[str, int, int]] = []
+    for token in tokens:
+        start = raw.find(token, cursor)
+        if start < 0:  # поиск не нашёл — считаем позицию приблизительной
+            start = cursor
+        cursor = start + len(token)
+        placed.append((token, start, start + len(token)))
+
+    def absolute(begin: int, end: int) -> list[int]:
+        if end <= begin:
+            point = offsets[begin] if begin < len(offsets) else (offsets[-1] + 1 if offsets else 0)
+            return [point, point]
+        return [offsets[begin], offsets[end - 1] + 1]
+
+    spans: dict = {
+        "line": absolute(0, len(raw)),
+        "verb": [],
+        "args": [],
+        "kwargs": {},
+        "target": None,
+        "rest": absolute(rest_local, len(raw)),
+    }
+    if not placed:
+        return spans, [], [], {}
+    verb_token, verb_start, verb_end = placed[0]
+    spans["verb"] = absolute(verb_start, verb_end)
+    args: list[str] = []
+    kwargs: dict[str, str] = {}
+    for token, start, end in placed[1:]:
+        key, value, eq = _split_kwarg_offset(token)
+        if key is None:
+            args.append(value)
+            spans["args"].append(absolute(start, end))
+            continue
+        lead = len(token) - len(token.lstrip())
+        key_begin = start + lead
+        value_begin = start + eq + 1
+        while value_begin < end and token[value_begin - start].isspace():
+            value_begin += 1
+        kwargs[key] = value
+        spans["kwargs"][key] = {
+            "key": absolute(key_begin, start + eq),
+            "value": absolute(value_begin, end),
+            "whole": absolute(start, end),
+        }
+    return spans, args, list(kwargs), kwargs
 
 
 def parse_script(text: str) -> list[Command]:
     commands: list[Command] = []
-    for line_no, raw in _logical_lines(text or ""):
+    for line_no, raw, offsets in _logical_lines(text or ""):
         m_let = LET_RE.match(raw)
         if m_let:
+            rest_local = m_let.start(2)
+            spans, _args, _keys, kwargs = _spans(raw, offsets, rest_local)
+            spans["target"] = spans.get("line")
             commands.append(Command(line=line_no, text=raw, target=None, verb="let",
-                                    kwargs={m_let.group(1): m_let.group(2).strip()}, rest=raw))
+                                    kwargs=kwargs, rest=raw, spans=spans))
             continue
         target = None
-        rest = raw
+        rest_local = 0
         m = ASSIGN_RE.match(raw)
         if m and not raw.lower().startswith("check "):
             target = m.group(1)
-            rest = m.group(2).strip()
-        tokens = split_top_level(rest)
+            rest_local = m.start(2)
+            while rest_local < len(raw) and raw[rest_local].isspace():
+                rest_local += 1
+        tokens = split_top_level(raw[rest_local:])
         if not tokens:
             raise DslError("Пустая команда после знака «=».", line=line_no, command=raw)
+        spans, args, _keys, kwargs = _spans(raw, offsets, rest_local)
         verb = tokens[0]
-        args: list[str] = []
-        kwargs: dict[str, str] = {}
-        for tok in tokens[1:]:
-            key, value = _split_kwarg(tok)
-            if key is None:
-                args.append(value)
-            else:
-                if key in kwargs:
-                    raise DslError(f"Параметр «{key}» задан дважды.", line=line_no, command=raw)
-                kwargs[key] = value
         if target and verb.startswith("="):
             verb = ""
         commands.append(Command(line=line_no, text=raw, target=target, verb=verb,
-                                args=args, kwargs=kwargs, rest=rest))
+                                args=args, kwargs=kwargs, rest=raw[rest_local:],
+                                spans=spans))
     return commands
 
 

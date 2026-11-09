@@ -1593,3 +1593,54 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
 .provenance-parent { border: 0; background: none; color: #8fbaff; padding: 0; cursor: pointer; font: inherit; }
 .provenance-parent:hover { text-decoration: underline; }
 @media (max-width: 560px) { .param-row { grid-template-columns: 1fr 1fr 58px; } }
+
+/* 0.75: типизированные параметры объекта. Слайдер, стрелки и поле — один
+   элемент; «авто» рядом со значением, сброс — отдельной кнопкой. */
+.params-section { margin-bottom: 14px; }
+.params-list.typed-params .pc-row {
+  display: grid;
+  grid-template-columns: minmax(96px, 1.1fr) minmax(120px, 2fr) auto auto;
+  gap: 6px;
+  align-items: center;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.pc-label { font-size: 12px; opacity: 0.92; }
+.pc-body { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.pc-body .pc-num { width: 64px; }
+.pc-body .pc-slider { flex: 1 1 60px; min-width: 40px; }
+.pc-step {
+  width: 18px; height: 20px; padding: 0; line-height: 1;
+  background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 4px; color: inherit; cursor: pointer;
+}
+.pc-step:hover { background: rgba(255, 255, 255, 0.14); }
+.pc-enum-value { min-width: 76px; text-align: center; font-size: 12px; }
+.pc-unit { font-size: 11px; opacity: 0.65; }
+.pc-auto { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; opacity: 0.9; }
+.pc-reset {
+  width: 20px; height: 20px; padding: 0; line-height: 1;
+  background: transparent; border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 4px; color: inherit; cursor: pointer;
+}
+.pc-reset:hover { background: rgba(255, 255, 255, 0.12); }
+@media (max-width: 560px) {
+  .params-list.typed-params .pc-row { grid-template-columns: 1fr auto auto; }
+  .params-list.typed-params .pc-label { grid-column: 1 / -1; }
+}
+
+/* 0.75: стек инструментов объекта — каждая строка со своими параметрами. */
+.cmd-stack { display: flex; flex-direction: column; gap: 8px; }
+.cmd-group { font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; opacity: 0.6; margin-top: 4px; }
+.cmd-block {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  padding: 4px 6px 6px;
+}
+.cmd-block.is-off { opacity: 0.55; }
+.cmd-head { display: flex; align-items: center; gap: 8px; }
+.cmd-line { font-size: 11px; opacity: 0.6; }
+.cmd-verb { font-size: 12px; font-weight: 600; }
+.cmd-actions { margin-left: auto; display: inline-flex; gap: 3px; }
+.cmd-actions .mini { min-width: 20px; padding: 0 4px; }
+.cmd-note { font-size: 11px; opacity: 0.6; }

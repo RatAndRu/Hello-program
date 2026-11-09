@@ -221,7 +221,8 @@ class AppState:
                              f"общий лимит {limit:,}. Уменьшите сцену.".replace(",", " "))
 
     def build(self, script: str, auto: bool = False, allow_heavy: bool = False,
-              overrides: dict | None = None, base_dir: str | Path | None = None) -> dict:
+              overrides: dict | None = None, base_dir: str | Path | None = None,
+              analyze_model: bool = True) -> dict:
         self.demo_policy(script, overrides=overrides)
         # Предупреждение делается ДО run_build: ни одна тяжёлая команда ещё
         # не создала сетку и не заняла процессор. Старая сцена остаётся на
@@ -239,7 +240,8 @@ class AppState:
         with self.lock:
             previous = self.last_build.analysis if self.last_build and self.last_build.ok else None
             b = run_build(script, previous_analysis=previous, overrides=overrides,
-                          base_dir=base_dir or self.data_dir)
+                          base_dir=base_dir or self.data_dir,
+                          analyze_model=analyze_model)
             self.last_build = b
             self.last_script = script
             self.last_render = None
@@ -274,7 +276,7 @@ class AppState:
             return payload
 
     def apply_parameters(self, script: str, values: dict | None = None,
-                         allow_heavy: bool = False) -> dict:
+                         allow_heavy: bool = False, analyze_model: bool = True) -> dict:
         """Единый rebuild панели параметров/presets через старые overrides."""
         clean: dict[str, float] = {}
         for key, value in (values or {}).items():
@@ -288,7 +290,8 @@ class AppState:
             if not math.isfinite(number):
                 raise FormaError(f"Параметр {name} не должен быть NaN/Inf.")
             clean[name] = number
-        payload = self.build(script, overrides=clean, allow_heavy=allow_heavy)
+        payload = self.build(script, overrides=clean, allow_heavy=allow_heavy,
+                             analyze_model=analyze_model)
         payload["parameter_action"] = "apply"
         return payload
 
@@ -1314,6 +1317,30 @@ class Handler(BaseHTTPRequestHandler):
                           for meta in [b.scene.param_meta.get(name, {})]}
             self._send_json(st.apply_parameters(
                 script, values, allow_heavy=bool(body.get("allow_heavy"))))
+            return
+        if path == "/api/edit":
+            from .edit import edit_source
+            script = str(body.get("script") if body.get("script") is not None else st.last_script)
+            edit = body.get("edit") if isinstance(body.get("edit"), dict) else body
+            result = edit_source(script, edit)
+            if not result.get("ok"):
+                self._send_json({"ok": False, "edit": result.get("edit"),
+                                 "script": result.get("script", script),
+                                 "error": result.get("edit") or {}}, 400)
+                return
+            new_script = result["script"]
+            payload = {"ok": True, "script": new_script, "edit": result.get("edit"),
+                       "warnings": result.get("warnings") or [],
+                       "changed": result.get("changed")}
+            if body.get("build", True):
+                built = st.build(new_script, auto=True,
+                                 allow_heavy=bool(body.get("allow_heavy")),
+                                 analyze_model=bool(body.get("analyze", False)))
+                payload.update(built)
+                payload["edit"] = result.get("edit")
+                payload["script"] = new_script
+                payload["warnings"] = result.get("warnings") or []
+            self._send_json(payload)
             return
         if path == "/api/openscad":
             self._send_json(st.run_openscad(body))
