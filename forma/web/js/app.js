@@ -1285,11 +1285,13 @@ function commandBlock(payload, command, options = {}) {
   wrap.appendChild(head);
   // Пресеты формы: одна правка — одна строка. Они меняют пропорции и режим,
   // а не абсолютный размер, поэтому годятся для любой модели.
-  const verb = String(command.verb || '').toLowerCase();
+  // имя не `verb`: выше в этой же функции уже есть `verb` — DOM-элемент слова
+  // операции. Повторное объявление роняло весь модуль.
+  const commandVerb = String(command.verb || '').toLowerCase();
   const builtin = (payload.command_presets || {})[String(command.line)] || [];
   // Пользовательские пресеты объявлены в самом сценарии (пресет_формы) и живут
   // рядом с заводскими: их значения — строки, ровно как записаны в файле.
-  const declared = (payload.form_presets || {})[verb] || [];
+  const declared = (payload.form_presets || {})[commandVerb] || [];
   const presets = builtin.concat(declared.map((item) => ({
     label: `★ ${item.name}`, name: item.name, changes: item.changes, user: true,
   })));
