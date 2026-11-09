@@ -202,8 +202,8 @@ def unfold(a, name):
     summary="Импортирует FOLD JSON или ORIPA .cp как лист постоянной толщины "
             "и редактируемую схему Mountain/Valley. Не притворяется общим "
             "решателем одновременного rigid-origami складывания.",
-    example="деталь = fold_pattern file=crane.fold thickness=0.6\n"
-            "схема = fold_pattern file=pattern.cp width=160 length=160",
+    example="деталь = fold_pattern file=examples/assets/crease_square.fold thickness=0.6\n"
+            "схема = fold_pattern file=examples/assets/crease_square.cp width=160 length=160",
     params={"file": "путь к .fold/.json или .cp",
             "width": "ширина по Y, мм; по умолчанию из файла, для .cp сохраняется пропорция",
             "length": "длина по X, мм; по умолчанию из файла, для .cp сохраняется пропорция",
@@ -374,7 +374,10 @@ def _kinematic(a, name, mode):
     category="Массивы и преобразования",
     summary="Управляемый поворот детали вокруг петли с проверкой промежуточных "
             "столкновений. Это кинематика и геометрические пересечения, не FEA.",
-    example="створка = hinge_move дверь angle=90 axis=z pivot=[0,0,0] against=[стена] steps=16",
+    example="стена = box size=[200, 8, 200] at=[0, 14, 0]\n"
+            "дверь = box size=[90, 4, 190] at=[45, 8, 0]\n"
+            "створка = hinge_move дверь angle=-90 axis=z pivot=[0, 8, 0] "
+            "against=[стена] steps=16",
     params={"objects": "одна движущаяся деталь", "angle": "итоговый угол, градусы",
             "axis": "x/y/z или вектор оси", "pivot": "точка оси [x,y,z]",
             "against": "неподвижные объекты или группа для collision-check",
@@ -390,7 +393,11 @@ def hinge_move(a, name):
     category="Массивы и преобразования",
     summary="Управляемое линейное перемещение детали с проверкой всего пути "
             "на геометрические столкновения.",
-    example="ящик = slider ящик distance=120 direction=[0,-1,0] against=[корпус] steps=12",
+    example="рельс_л = box size=[10, 300, 10] at=[-95, 0, 5]\n"
+            "рельс_п = box size=[10, 300, 10] at=[95, 0, 5]\n"
+            "ящик = box size=[180, 280, 120] at=[0, 0, 70]\n"
+            "ход = slider ящик distance=120 direction=[0,-1,0] "
+            "against=[рельс_л, рельс_п] steps=12",
     params={"objects": "одна движущаяся деталь", "distance": "ход, мм; знак задаёт направление",
             "direction": "x/y/z или вектор направления", "against": "неподвижные объекты",
             "steps": "число проверяемых положений (8)", "tolerance": "допуск, мм³ (0.001)",
@@ -404,7 +411,8 @@ def slider(a, name):
     category="Булевы операции",
     summary="Прямой рез или неглубокий надрез с настоящей шириной kerf. "
             "Вычитает объём, поэтому после сквозного реза остаётся физический зазор.",
-    example="рез = kerf_cut лист from=[0,-100,0.5] to=[0,100,0.5] kerf=0.6\n"
+    example="лист = sheet width=200 length=200 thickness=2\n"
+            "рез = kerf_cut лист from=[0,-100,0.5] to=[0,100,0.5] kerf=0.6\n"
             "биг = kerf_cut лист from=[0,-100,1] to=[0,100,1] kerf=0.5 depth=0.2 side=top",
     params={"objects": "одна деталь", "from": "начало линии [x,y,z]", "to": "конец линии [x,y,z]",
             "kerf": "ПОЛНАЯ ширина реза, мм", "depth": "глубина; без неё — сквозной рез",

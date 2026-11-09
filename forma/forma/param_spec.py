@@ -274,12 +274,63 @@ SPECS: dict[str, dict[str, dict]] = {
         "at": vec("положение [x, y, z]", 3, default=[0, 0, 0]),
         "center": flag("центрировать по высоте", default=False),
     },
+    # Проверка материала в точке: три координаты — это числа, а не текст.
+    "probe": {
+        "x": num("координата X", default=0.0),
+        "y": num("координата Y", default=0.0),
+        "z": num("координата Z", default=0.0),
+    },
 }
 
 
-def spec_for(op: str) -> dict[str, dict]:
-    """Спецификация параметров операции (пустая — если ещё не объявлена)."""
-    return SPECS.get(str(op or "").lower(), {})
+def generic_entry(name: str) -> dict | None:
+    """Тип параметра по его имени: общая таблица ``param_types``.
+
+    Имя повторяется у десятков операций (``radius``, ``wall``, ``at``), поэтому
+    тип объявлен один раз. Возвращает готовое описание управления или None,
+    если имя спорное — тогда параметр остаётся свободным вводом.
+    """
+    from .param_types import generic_spec
+
+    entry = generic_spec(name)
+    if not entry:
+        return None
+    kind = entry.pop("type")
+    label = entry.get("label") or name
+    if kind == "num":
+        return num(label, minv=entry.get("min"), maxv=entry.get("max"),
+                   step=entry.get("step"), unit=entry.get("unit", "мм"))
+    if kind == "int":
+        return integer(label, minv=entry.get("min"), maxv=entry.get("max"),
+                       unit=entry.get("unit", ""))
+    if kind == "vec":
+        return vec(label, int(entry.get("size") or 3), unit=entry.get("unit", "мм"),
+                   minv=entry.get("min"), maxv=entry.get("max"))
+    if kind == "flag":
+        return flag(label)
+    return string(label)
+
+
+def spec_for(op: str, params: list[str] | None = None) -> dict[str, dict]:
+    """Спецификация параметров операции.
+
+    Без ``params`` — только явные объявления ``SPECS``. С именами параметров —
+    ещё и общие типы из ``param_types``: явное объявление всегда важнее общего.
+    """
+    base = SPECS.get(str(op or "").lower(), {})
+    if not params:
+        return base
+    merged: dict[str, dict] = {}
+    for name in params:
+        if name in base:
+            merged[name] = base[name]
+            continue
+        generic = generic_entry(name)
+        if generic:
+            merged[name] = generic
+    for key, value in base.items():
+        merged.setdefault(key, value)
+    return merged
 
 
 def control_kind(spec: dict) -> str:
@@ -308,9 +359,9 @@ def presets_payload(op: str, kwargs: dict | None = None) -> list[dict]:
     return presets_for(op, kwargs)
 
 
-def payload(op: str) -> dict:
+def payload(op: str, params: list[str] | None = None) -> dict:
     """Готовый словарь для интерфейса: типы, диапазоны, режимы «авто»."""
-    specs = spec_for(op)
+    specs = spec_for(op, params)
     return {key: dict(value) for key, value in specs.items()}
 
 

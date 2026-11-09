@@ -70,7 +70,11 @@ jobs:
 
       - name: Проверить плитки и кэш операций
         working-directory: forma
-        run: python -m pytest -q tests/test_v077.py tests/test_v078.py
+        run: python -m pytest -q tests/test_v077.py tests/test_v078.py tests/test_v079.py
+
+      - name: Ревизия примеров всех команд
+        working-directory: forma
+        run: python tools/audit_commands.py
 
       - name: Прогнать foundation golden/eval
         working-directory: forma
@@ -101,6 +105,7 @@ jobs:
           node tests/tiles_test.js
           node tests/tiles_dom_test.js
           node tests/step_ui_test.js
+          node tests/param_linked_test.mjs
           node tests/line_render_test.js
           node tests/npr_rework_test.js
           node tests/asset_fingerprint_test.js

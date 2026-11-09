@@ -38,7 +38,7 @@ class OpSpec:
             "params": [{"name": k, "desc": v} for k, v in self.params.items()],
         }
         from .param_spec import payload as _spec_payload
-        spec = _spec_payload(self.name)
+        spec = _spec_payload(self.name, list(self.params))
         if spec:
             data["param_spec"] = spec
             for item in data["params"]:
@@ -48,7 +48,9 @@ class OpSpec:
                                  "label": extra.get("label"),
                                  "auto": extra.get("auto"),
                                  "control": extra.get("type")})
-        data["declared"] = bool(spec)
+        from .param_spec import SPECS as _explicit
+        data["declared"] = bool(_explicit.get(self.name))
+        data["typed"] = len(spec)
         if self.category == "Примитивы":
             from .orient_notes import orientation_for
             note = orientation_for(self.name)

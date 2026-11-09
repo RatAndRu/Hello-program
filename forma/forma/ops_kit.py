@@ -1252,7 +1252,7 @@ def flower_center(a, name):
     summary="Детерминированный разброс прототипов по площади или на хозяине: "
             "seed, масштаб, поворот, gap без пересечений и отдельные копии as=objects.",
     example='камень = rock size=[80,60,40]\n'
-            'камни = scatter [камень] count=24 area=[400,300] seed=5 gap=0.5 as=objects',
+            'камни = scatter [камень] count=24 area=[600,500] seed=5 gap=0.5 as=objects',
     params={"objects": "один или несколько прототипов",
             "count": "сколько копий (20)", "area": "площадь [x,y], мм (300,300)",
             "on": "хозяин: area берётся из его XY-габарита, z — из верха",

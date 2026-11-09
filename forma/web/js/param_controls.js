@@ -87,6 +87,20 @@ export function controlModel(spec, state = {}) {
     }));
   }
   if (model.kind === 'flag') model.value = Boolean(value);
+  // Значение из сценария может быть формулой (``round=R/2``, ``at=[R, 0, 0]``).
+  // Типизированный контрол такое число не покажет: помечаем и отдаём как есть,
+  // чтобы поле осталось читаемым, а не пустым.
+  if (model.kind === 'num' || model.kind === 'int') {
+    if (typeof value === 'string' && value.trim() && !Number.isFinite(Number(value))) {
+      model.linked = true;
+      model.raw = String(value).trim();
+    }
+  }
+  if (model.kind === 'vec') {
+    const source = Array.isArray(value) ? value : [];
+    const linked = source.filter((item) => typeof item !== 'number');
+    if (linked.length) { model.linked = true; model.raw = formatLinked(source); }
+  }
   if (model.kind === 'enum') {
     const values = model.items.map((item) => item.value);
     if (value !== undefined && value !== null && !values.includes(value)) {
@@ -164,6 +178,14 @@ export function factoryValue(model) {
 // Сборка элементов
 // --------------------------------------------------------------------------
 
+function formatLinked(parts) {
+  return `[${parts.map((item) => (typeof item === 'number' ? formatNumber(item) : item)).join(', ')}]`;
+}
+
+function formatNumber(value) {
+  return Number.isInteger(value) ? String(value) : String(Math.round(value * 1e4) / 1e4);
+}
+
 function el(tag, className, text) {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -224,6 +246,16 @@ export function renderControl(model, onChange) {
       onChange(item.value);
     };
     body.append(stepButton(-1, apply), label, stepButton(1, apply));
+  } else if (model.linked) {
+    // Формула из сценария: показываем как есть и не даём «поправить» её
+    // числом — иначе связь ``R/2`` молча превратится в константу.
+    const input = el('input', 'pc-num pc-linked');
+    input.type = 'text';
+    input.value = model.raw || '';
+    input.readOnly = true;
+    input.dataset.linked = '1';
+    input.title = 'Значение задано формулой в сценарии. Правьте строку в тексте.';
+    body.appendChild(input);
   } else if (model.kind === 'vec') {
     model.value.forEach((component, i) => {
       const input = el('input', 'pc-num');

@@ -193,13 +193,20 @@ class Build:
     def op_specs(self) -> dict:
         """Типы параметров для операций, которые реально есть в сценарии."""
         from .param_spec import payload as _spec_payload
+        from .ops import lookup
 
         verbs: list[str] = []
         for command in self.commands():
             verb = (command.get("verb") or "").lower()
             if verb and verb not in verbs:
                 verbs.append(verb)
-        return {verb: _spec_payload(verb) for verb in verbs if _spec_payload(verb)}
+        specs: dict[str, dict] = {}
+        for verb in verbs:
+            spec = lookup(verb)
+            found = _spec_payload(verb, list(spec.params) if spec else None)
+            if found:
+                specs[verb] = found
+        return specs
 
     def visible_solids(self):
         return self.scene.visible_solids() if self.scene else []

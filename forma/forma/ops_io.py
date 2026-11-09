@@ -194,7 +194,7 @@ LIMITS: list[str] = []
 @op("import", aliases=("импорт", "открыть", "open"), category="Сцена и материал",
     summary="Открывает чужой файл (GLB, OBJ, STL, PLY, 3MF и .blend при установленном Blender) "
             "и добавляет его объектом сцены.",
-    example="скульптура = import file=модель.glb unit=auto",
+    example="скульптура = import file=examples/assets/rpg_sword_01.glb unit=mm",
     params={"target": "имя будущего объекта",
             "file": "путь к файлу (можно перетащить в окно)",
             "unit": "mm, cm, m, inch или auto (= мм, без догадок)",

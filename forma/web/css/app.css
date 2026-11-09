@@ -1652,6 +1652,13 @@ button.icon-only { padding: 4px 7px; font-size: 13px; }
 /* 0.76: пользовательский пресет формы из сценария — со звёздочкой и рамкой. */
 .cmd-presets .preset-user { border-color: rgba(255, 196, 92, 0.55); color: #ffd48a; }
 
+/* 0.79: значение-формула из сценария — только чтение, с пометкой. */
+.pc-num.pc-linked {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: #ffd48a; background: rgba(255, 196, 92, 0.08);
+  border-color: rgba(255, 196, 92, 0.35); cursor: default;
+}
+
 /* 0.77: шаг в стек объекта — выбор операции и её поля. */
 .step-adder { margin-top: 10px; }
 .step-pick {

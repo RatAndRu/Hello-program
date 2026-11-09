@@ -81,8 +81,7 @@ def _defines(a) -> dict:
 
 @op("openscad", aliases=("scad", "open_scad", "опенскад"), category="Сцена и материал",
     summary="Исполняет произвольный SCAD/BOSL2 настоящим OpenSCAD в фоне и возвращает mesh.",
-    example="detail = openscad file=\"detail.scad\"\n"
-            "bosl = openscad code=\"include <BOSL2/std.scad>\\ncube(10);\" libraries=\"/path/BOSL2\"",
+    example="detail = openscad code=\"cube([20, 20, 20]);\"",
     params={"target": "имя объекта", "file": "SCAD-файл", "code": "SCAD-текст",
             "libraries": "pinned-каталоги библиотек (OPENSCADPATH)",
             "define": "name=value через запятую", "format": "stl, 3mf, off или obj",
