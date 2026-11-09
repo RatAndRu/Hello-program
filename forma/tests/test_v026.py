@@ -99,7 +99,10 @@ class AnimeStyleTests(unittest.TestCase):
         self.assertIsNone(off.scene.settings["anime"]["paper"])
 
     def test_command_bad_value(self):
-        self.assertIn("0 до 12", fails("ш = sphere radius=10\nanime line=40"))
+        # 0.74: нижняя граница опустилась до 0.05 px (волосяная линия),
+        # 0 остался отдельным значением «контур выключен».
+        self.assertIn("0.05…12", fails("ш = sphere radius=10\nanime line=40"))
+        self.assertIn("0 (выключен)", fails("ш = sphere radius=10\nanime line=40"))
 
     def test_style_from_args_keeps_mode(self):
         class Args:
