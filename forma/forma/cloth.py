@@ -653,6 +653,37 @@ def place(vertices: np.ndarray, supports: np.ndarray, gravity: np.ndarray,
     return vertices + axis * shift
 
 
+def _shell_pairs_by_component(vertices: np.ndarray, faces: np.ndarray,
+                              components: np.ndarray, weights: np.ndarray,
+                              thickness: float):
+    """Связи стенки ищутся внутри каждого гибкого куска, не между слоями.
+
+    Два полотнища могут изначально стоять ближе собственной толщины. Общий
+    поиск тогда выбрал бы ближайшие вершины разных листов и потерял бы связи
+    между сторонами самого материала.
+    """
+    all_pairs, all_rest = [], []
+    for slot, key in enumerate(np.unique(components)):
+        if weights[slot] >= 0.7:
+            continue
+        ids = np.nonzero(components == key)[0]
+        mine = faces[components[faces[:, 0]] == key]
+        if not len(ids) or not len(mine):
+            continue
+        remap = np.full(len(vertices), -1, dtype=np.int64)
+        remap[ids] = np.arange(len(ids))
+        local_faces = remap[mine]
+        local_vertices = vertices[ids]
+        natural = _thickness_of(local_vertices, local_faces) or thickness
+        pairs, rest = shell_pairs(local_vertices, local_faces, max(thickness, natural))
+        if len(pairs):
+            all_pairs.append(ids[pairs])
+            all_rest.append(rest)
+    if not all_pairs:
+        return np.zeros((0, 2), dtype=np.int64), np.zeros(0)
+    return np.concatenate(all_pairs), np.concatenate(all_rest)
+
+
 def _volume_data(vertices: np.ndarray, faces: np.ndarray):
     """Знаковый объём замкнутой поверхности и его градиент по вершинам."""
     tri = vertices[faces]
@@ -734,16 +765,13 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
     # У стенки сохраняем не только расстояние между сторонами, но и их
     # направление по нормали: иначе обе поверхности могут соскользнуть друг
     # относительно друга и сплющиться на опоре.
-    natural = _thickness_of(vertices, faces) or thickness
-    shell, shell_rest = shell_pairs(vertices, faces, max(thickness, natural),
-                                    opposing_only=not rigid_only)
-    if not rigid_only and len(shell):
-        flexible = np.zeros(count, dtype=bool)
-        for slot, ids in enumerate(comp_ids):
-            flexible[ids] = rigid_weights[slot] < 0.7
-        keep = (flexible[shell[:, 0]] & flexible[shell[:, 1]]
-                & (components[shell[:, 0]] == components[shell[:, 1]]))
-        shell, shell_rest = shell[keep], shell_rest[keep]
+    if rigid_only:
+        natural = _thickness_of(vertices, faces) or thickness
+        shell, shell_rest = shell_pairs(vertices, faces, max(thickness, natural),
+                                        opposing_only=False)
+    else:
+        shell, shell_rest = _shell_pairs_by_component(vertices, faces, components,
+                                                       rigid_weights, thickness)
     shell_sign = np.ones(len(shell))
     if len(shell) and not rigid_only:
         n0 = vertex_normals(vertices, faces)

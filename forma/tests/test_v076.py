@@ -126,6 +126,27 @@ class ActualLayersTest(unittest.TestCase):
         self.assertEqual(scene.objects["слои"].meta["cloth"]["self_method"], "off")
         self.assertFalse(scene.objects["слои"].meta["cloth"]["parts_overlap_checked"])
 
+    def test_close_initial_layers_preserve_both_material_shells(self):
+        # Зазор 0.2 мм меньше толщины стенки. Попарный поиск по всей сцене
+        # раньше связывал противоположные листы и терял их собственную толщину.
+        result = build_ok("""
+пол = box size=[100,100,10] at=[0,0,-10]
+низ = box size=[30,30,0.6] at=[0,0,20]
+верх = box size=[30,30,0.6] at=[0,0,20.8]
+слои = drape [низ,верх] on=пол mesh=6 particles=800 steps=40
+""")
+        scene = result.scene
+        first = scene.objects["слои"].manifold
+        second = scene.objects["слои.02"].manifold
+        self.assertGreater(first.volume() / scene.objects["низ"].manifold.volume(), .9)
+        self.assertGreater(second.volume() / scene.objects["верх"].manifold.volume(), .9)
+        self.assertLess(abs((first ^ second).volume()), .02)
+        meta = scene.objects["слои"].meta["cloth"]
+        self.assertTrue(meta["parts_overlap_complete"])
+        if meta["parts_overlap_volume"] > 1e-4:
+            self.assertTrue(any(log["level"] == "warn" and "пересечение" in log["message"]
+                                for log in scene.logs))
+
     def test_sideways_gravity_and_explicit_clearance(self):
         result = build_ok("""
 стена = box size=[8,100,100] at=[0,0,0]
