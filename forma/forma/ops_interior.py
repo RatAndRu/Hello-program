@@ -12,6 +12,7 @@ import math
 import manifold3d as mf
 import numpy as np
 
+from . import cloth
 from .errors import GeometryError
 from .geometry import (manifold_from_arrays, manifold_mesh, normalize_color,
                        pattern_shape)
@@ -892,298 +893,244 @@ def curtain(a, name):
                                   "wave": wave, "billow": billow, "detail": per_fold})
 
 
-def _top_surface(manifold):
-    vertices, faces = manifold_mesh(manifold)
-    tri = vertices[faces]
-    normals = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
-    lengths = np.linalg.norm(normals, axis=1)
-    selected = faces[(lengths > 1e-9) & (normals[:, 2] / np.maximum(lengths, 1e-12) > 0.25)]
-    if not len(selected):
-        raise GeometryError("drape: у исходной ткани нет обращённой вверх поверхности.")
-    return vertices, selected
+def _support_triangles(solids) -> np.ndarray:
+    """Треугольники опор одним массивом: контакт считается по ним, а не по сетке."""
+    chunks = []
+    for solid in solids:
+        vertices, faces = manifold_mesh(solid.manifold)
+        if len(faces):
+            chunks.append(vertices[faces])
+    if not chunks:
+        return np.zeros((0, 3, 3))
+    return np.concatenate(chunks, axis=0)
 
 
-def _subdivide_surface(vertices, faces, detail):
-    n = max(1, min(32, int(detail) // 2))
-    if n == 1:
-        used, inverse = np.unique(faces.reshape(-1), return_inverse=True)
-        return vertices[used].copy(), inverse.reshape(-1, 3)
-    lookup = {}
-    points = []
-
-    def index(point):
-        key = tuple(np.round(point, 8))
-        if key not in lookup:
-            lookup[key] = len(points)
-            points.append(np.asarray(point, dtype=float))
-        return lookup[key]
-
-    output = []
-    for face in faces:
-        v0, v1, v2 = vertices[face]
-        ids = {}
-        for i in range(n + 1):
-            for j in range(n + 1 - i):
-                ids[i, j] = index(v0 + (v1 - v0) * (i / n) + (v2 - v0) * (j / n))
-        for i in range(n):
-            for j in range(n - i):
-                output.append((ids[i, j], ids[i + 1, j], ids[i, j + 1]))
-                if j < n - i - 1:
-                    output.append((ids[i + 1, j], ids[i + 1, j + 1], ids[i, j + 1]))
-    return np.asarray(points), np.asarray(output, dtype=np.int64)
+def _floor_plane(level: float, extent: float = 600.0) -> np.ndarray:
+    """Пол бесконечной площади не нужен: берём плиту под размер сцены."""
+    extent = max(float(extent), 200.0)
+    x = extent * 0.5
+    down = extent * 0.25
+    corners = np.array([[-x, -x, level], [x, -x, level], [x, x, level], [-x, x, level],
+                        [-x, -x, level - down], [x, -x, level - down],
+                        [x, x, level - down], [-x, x, level - down]])
+    quads = [(0, 1, 2), (0, 2, 3), (4, 6, 5), (4, 7, 6), (0, 4, 5), (0, 5, 1),
+             (1, 5, 6), (1, 6, 2), (2, 6, 7), (2, 7, 3), (3, 7, 4), (3, 4, 0)]
+    return corners[np.asarray(quads)]
 
 
-class _HeightMap:
-    """Пространственно отобранные треугольники для вертикальных запросов."""
-    def __init__(self, solids, floor):
-        self.floor = float(floor)
-        all_vertices, all_faces = [], []
-        offset = 0
-        for solid in solids:
-            vertices, faces = manifold_mesh(solid.manifold)
-            all_vertices.append(vertices)
-            all_faces.append(faces + offset)
-            offset += len(vertices)
-        if all_vertices:
-            self.vertices = np.vstack(all_vertices)
-            self.faces = np.vstack(all_faces)
-            self.tri = self.vertices[self.faces]
-            lo = self.vertices.min(axis=0)
-            hi = self.vertices.max(axis=0)
-            span = np.maximum(hi[:2] - lo[:2], 1e-6)
-            self.origin = lo[:2] - 1e-6
-            self.cell = span / 40 + 1e-9
-            self.bins = {}
-            for index, tri in enumerate(self.tri):
-                mn, mx = tri[:, :2].min(axis=0), tri[:, :2].max(axis=0)
-                i0 = np.floor((mn - self.origin) / self.cell).astype(int)
-                i1 = np.floor((mx - self.origin) / self.cell).astype(int)
-                for ix in range(i0[0], i1[0] + 1):
-                    for iy in range(i0[1], i1[1] + 1):
-                        self.bins.setdefault((ix, iy), []).append(index)
-            self.bins = {key: np.asarray(value, dtype=int) for key, value in self.bins.items()}
-            self.ray_z = float(hi[2]) + max(1.0, float(hi[2] - lo[2]))
-        else:
-            self.tri = np.zeros((0, 3, 3))
-            self.bins = {}
-            self.origin = np.zeros(2)
-            self.cell = np.ones(2)
-            self.ray_z = self.floor + 1
+def _draped_solid(vertices, faces):
+    """Замкнутая деталь после драпировки.
 
-    def query(self, points):
-        result = np.full(len(points), self.floor, dtype=float)
-        if not len(self.tri):
-            return result
-        for index, point in enumerate(points):
-            cell = np.floor((point[:2] - self.origin) / self.cell).astype(int)
-            candidates = self.bins.get((int(cell[0]), int(cell[1])))
-            if candidates is None or not len(candidates):
-                continue
-            tri = self.tri[candidates]
-            e1, e2 = tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]
-            pvec = np.stack((e2[:, 1], -e2[:, 0], np.zeros(len(e2))), axis=1)
-            det = np.einsum("ij,ij->i", e1, pvec)
-            valid = np.abs(det) > 1e-10
-            if not np.any(valid):
-                continue
-            inv = np.zeros_like(det)
-            inv[valid] = 1.0 / det[valid]
-            origin = np.asarray([point[0], point[1], self.ray_z])
-            tvec = origin - tri[:, 0]
-            u = np.einsum("ij,ij->i", tvec, pvec) * inv
-            qvec = np.cross(tvec, e1)
-            # dot((0,0,-1), qvec) = -qvec_z
-            v = -qvec[:, 2] * inv
-            t = np.einsum("ij,ij->i", e2, qvec) * inv
-            hit = valid & (u >= -1e-8) & (v >= -1e-8) & (u + v <= 1 + 1e-8) & (t >= 0)
-            if np.any(hit):
-                result[index] = max(self.floor, float(np.max(self.ray_z - t[hit])))
-        return result
+    У смятой оболочки направление обхода может «вывернуться»: тело получается
+    с отрицательным объёмом. Тогда те же грани перечисляются в обратном
+    порядке — форма та же, ориентация правильная.
+    """
+    try:
+        return manifold_from_arrays(vertices, faces, "драпировка")
+    except GeometryError:
+        return manifold_from_arrays(vertices, faces[:, ::-1], "драпировка")
 
 
-def _edge_graph(faces):
-    edges = np.concatenate((faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]), axis=0)
-    ordered = np.sort(edges, axis=1)
-    unique, counts = np.unique(ordered, axis=0, return_counts=True)
-    boundary = unique[counts == 1]
-    return unique, np.unique(boundary.reshape(-1))
-
-
-def _edge_colors(edges):
-    """Группы независимых рёбер: обновление Гаусса—Зейделя без гонок вершин."""
-    vertex_colors = {}
-    groups = []
-    for index, (u, v) in enumerate(np.asarray(edges, dtype=np.int64)):
-        used = vertex_colors.get(int(u), set()) | vertex_colors.get(int(v), set())
-        color = 0
-        while color in used:
-            color += 1
-        while len(groups) <= color:
-            groups.append([])
-        groups[color].append(index)
-        vertex_colors.setdefault(int(u), set()).add(color)
-        vertex_colors.setdefault(int(v), set()).add(color)
-    return [np.asarray(group, dtype=np.int64) for group in groups]
-
-
-@op("drape", aliases=("драпировка", "ткань_на", "cloth_relax"),
-    category="Поверхности и деформации",
-    summary="Первый уровень ткани: деформация реальной сетки гравитацией, "
-            "ограничения длин рёбер, закрепления и контакт с высотной картой опоры. "
-            "Это не shrinkwrap и не полноценный решатель самопересечений/поднутрений.",
-    example='ткань = box size=[140,110,0.4] at=[0,0,35]\n'
-            'опора = box size=[90,70,20] at=[0,0,0]\n'
-            'скатерть = drape [ткань] on=опора iterations=100 pin=none thickness=0.25',
-    params={"objects": "одна тонкая исходная деталь; верхняя сетка будет деформирована",
-            "on": "одна опора или список опор; контакт по верхней высотной карте",
-            "z": "уровень пола/нижней опоры (0)", "gap": "зазор ткани над опорой (0.05)",
-            "pin": "none, corners, edges, front, back, left или right",
-            "pins": "дополнительные точки [[x,y,z],…]: закрепляются ближайшие узлы",
-            "pin_radius": "радиус выбора узлов около pins (2)",
-            "iterations": "шагов интегрирования (60)", "constraints": "итераций длин на шаг (8)",
-            "stiffness": "жёсткость длин 0…1 (0.9)", "bend": "сопротивление изгибу 0…1 (0.12)",
-            "damping": "сохранение скорости (0.86)",
-            "gravity": "ускорение вниз, мм/шаг² (0.25)",
-            "detail": "подразбиение поверхности, 2…64 (24)",
-            "thickness": "толщина готовой ткани; по умолчанию из исходной детали",
-            "at": "сдвиг результата после расчёта"},
-    positional=["objects"])
-def drape(a, name):
-    sheets = a.solids()
-    if len(sheets) != 1:
-        raise GeometryError("drape работает с одной исходной тканью.")
-    sheet = sheets[0]
-    vertices, faces = _top_surface(sheet.manifold)
-    detail = int(a.num("detail", 24, minv=2, maxv=64) or 24)
-    vertices, faces = _subdivide_surface(vertices, faces, detail)
-    if len(vertices) > 6000:
-        raise GeometryError("drape: слишком плотная сетка; уменьшите detail.")
-    edges, boundary = _edge_graph(faces)
-    rest = np.linalg.norm(vertices[edges[:, 1]] - vertices[edges[:, 0]], axis=1)
-    if np.any(rest < 1e-8):
-        raise GeometryError("drape: в сетке есть нулевые рёбра.")
-    edge_opposites = {}
-    for face in faces:
-        for u, v, opposite in ((face[0], face[1], face[2]),
-                               (face[1], face[2], face[0]), (face[2], face[0], face[1])):
-            edge_opposites.setdefault(tuple(sorted((int(u), int(v)))), []).append(int(opposite))
-    bend_pairs = np.asarray([value for value in edge_opposites.values()
-                             if len(value) == 2 and value[0] != value[1]], dtype=np.int64)
-    if not len(bend_pairs):
-        bend_pairs = np.zeros((0, 2), dtype=np.int64)
-    bend_rest = (np.linalg.norm(vertices[bend_pairs[:, 1]] - vertices[bend_pairs[:, 0]], axis=1)
-                 if len(bend_pairs) else np.zeros(0))
-    edge_colors = _edge_colors(edges)
-    bend_colors = _edge_colors(bend_pairs) if len(bend_pairs) else []
-    pin_mode = (a.text("pin", "none",
-                       ["none", "corners", "edges", "front", "back", "left", "right"]) or "none")
+def _pin_mask(vertices, mode, points, radius) -> np.ndarray:
+    """Какие узлы держать на месте. Кромки замкнутой детали — по габариту."""
     pinned = np.zeros(len(vertices), dtype=bool)
-    if pin_mode == "edges":
-        pinned[boundary] = True
-    elif pin_mode == "corners":
-        xmin, ymin = vertices[:, :2].min(axis=0)
-        xmax, ymax = vertices[:, :2].max(axis=0)
-        eps = max(xmax - xmin, ymax - ymin) * 1e-5
-        pinned = (((np.abs(vertices[:, 0] - xmin) < eps) | (np.abs(vertices[:, 0] - xmax) < eps)) &
-                  ((np.abs(vertices[:, 1] - ymin) < eps) | (np.abs(vertices[:, 1] - ymax) < eps)))
-    elif pin_mode in ("front", "back", "left", "right"):
-        axis = 1 if pin_mode in ("front", "back") else 0
-        extreme = (vertices[:, axis].min() if pin_mode in ("front", "left")
-                   else vertices[:, axis].max())
-        pinned[np.abs(vertices[:, axis] - extreme) < 1e-5] = True
-    pins_value = a.value("pins")
-    if pins_value:
-        pin_points = np.asarray(pins_value, dtype=float).reshape(-1, 3)
-        pin_radius = float(a.num("pin_radius", 2.0, minv=0.001))
+    if not len(vertices):
+        return pinned
+    lo = vertices.min(axis=0)
+    hi = vertices.max(axis=0)
+    span = np.maximum(hi - lo, 1e-9)
+    eps = float(span.max()) * 1e-5
+    if mode == "corners":
+        on_x = (np.abs(vertices[:, 0] - lo[0]) < eps) | (np.abs(vertices[:, 0] - hi[0]) < eps)
+        on_y = (np.abs(vertices[:, 1] - lo[1]) < eps) | (np.abs(vertices[:, 1] - hi[1]) < eps)
+        pinned = on_x & on_y
+    elif mode == "edges":
+        pinned = (np.abs(vertices[:, 0] - lo[0]) < eps) | (np.abs(vertices[:, 0] - hi[0]) < eps) \
+            | (np.abs(vertices[:, 1] - lo[1]) < eps) | (np.abs(vertices[:, 1] - hi[1]) < eps)
+    elif mode in ("front", "back", "left", "right"):
+        axis = 1 if mode in ("front", "back") else 0
+        value = lo[axis] if mode in ("front", "left") else hi[axis]
+        pinned = np.abs(vertices[:, axis] - value) < eps
+    if points is not None and len(points):
+        pin_points = np.asarray(points, dtype=float).reshape(-1, 3)
         for point in pin_points:
             distances = np.linalg.norm(vertices - point, axis=1)
-            nearest = int(np.argmin(distances))
-            pinned[distances <= pin_radius] = True
-            pinned[nearest] = True
-    fixed_positions = vertices.copy()
-    host_value = a.value("on")
-    host_values = list(host_value) if isinstance(host_value, (list, tuple)) else \
-        ([host_value] if host_value else [])
-    hosts = [a.scene.resolve(host) for host in host_values]
-    height_map = _HeightMap(hosts, float(a.num("z", 0.0) or 0.0))
-    gap = float(a.num("gap", 0.05, minv=0.0) or 0.0)
-    iterations = int(a.num("iterations", 60, minv=1, maxv=500) or 60)
-    constraint_count = int(a.num("constraints", 8, minv=1, maxv=30) or 8)
-    stiffness = float(a.num("stiffness", 0.9, minv=0.01, maxv=1.0))
-    bend_stiffness = float(a.num("bend", 0.12, minv=0.0, maxv=1.0))
-    damping = float(a.num("damping", 0.86, minv=0.0, maxv=1.0))
-    gravity = float(a.num("gravity", 0.25, minv=0.0, maxv=20.0) or 0.0)
-    position = vertices.copy()
-    previous = position.copy()
-    ia, ib = edges[:, 0], edges[:, 1]
-    wa = np.where(pinned[ia], 0.0, np.where(pinned[ib], 1.0, 0.5))
-    wb = np.where(pinned[ib], 0.0, np.where(pinned[ia], 1.0, 0.5))
-    ba = bend_pairs[:, 0] if len(bend_pairs) else np.zeros(0, dtype=np.int64)
-    bb = bend_pairs[:, 1] if len(bend_pairs) else np.zeros(0, dtype=np.int64)
-    bwa = np.where(pinned[ba], 0.0, np.where(pinned[bb], 1.0, 0.5))
-    bwb = np.where(pinned[bb], 0.0, np.where(pinned[ba], 1.0, 0.5))
-    free = ~pinned
-    for _ in range(iterations):
-        velocity = (position - previous) * damping
-        speed = np.linalg.norm(velocity, axis=1)
-        velocity *= np.minimum(1.0, 3.0 / np.maximum(speed, 1e-12))[:, None]
-        previous = position.copy()
-        position[free] += velocity[free]
-        position[free, 2] -= gravity
-        position[pinned] = fixed_positions[pinned]
-        for _ in range(constraint_count):
-            for color_ids in edge_colors:
-                ea, eb = ia[color_ids], ib[color_ids]
-                delta = position[eb] - position[ea]
-                distance = np.linalg.norm(delta, axis=1)
-                correction = ((distance - rest[color_ids]) /
-                              np.maximum(distance, 1e-10) * stiffness)
-                adjust = delta * correction[:, None]
-                position[ea] += adjust * wa[color_ids, None]
-                position[eb] -= adjust * wb[color_ids, None]
-            if len(bend_pairs) and bend_stiffness > 0:
-                for color_ids in bend_colors:
-                    ca, cb = ba[color_ids], bb[color_ids]
-                    bend_delta = position[cb] - position[ca]
-                    bend_distance = np.linalg.norm(bend_delta, axis=1)
-                    bend_correction = ((bend_distance - bend_rest[color_ids]) /
-                                       np.maximum(bend_distance, 1e-10) * bend_stiffness)
-                    bend_adjust = bend_delta * bend_correction[:, None]
-                    position[ca] += bend_adjust * bwa[color_ids, None]
-                    position[cb] -= bend_adjust * bwb[color_ids, None]
-            position[pinned] = fixed_positions[pinned]
-            support = height_map.query(position) + gap
-            contact = free & (position[:, 2] < support)
-            position[contact, 2] = support[contact]
-        previous[contact] = position[contact]
-        if not np.all(np.isfinite(position)) or float(np.max(np.abs(position))) > 1e7:
-            raise GeometryError("drape: расчёт потерял устойчивость.",
-                                hint="Уменьшите gravity, увеличьте constraints или уменьшите detail.")
-    support = height_map.query(position) + gap
-    position[free, 2] = np.maximum(position[free, 2], support[free])
-    final_lengths = np.linalg.norm(position[ib] - position[ia], axis=1)
-    strain = float(np.max(np.abs(final_lengths - rest) / np.maximum(rest, 1e-9)))
-    contacts = int(np.count_nonzero(np.abs(position[:, 2] - support) <= max(0.02, gap + 0.02)))
-    bb = sheet.manifold.bounding_box()
-    default_thickness = max(0.02, min(0.4, bb[5] - bb[2]))
-    thickness = float(a.num("thickness", default_thickness, minv=0.005))
-    solid = _thicken_open(position, faces, thickness, "драпировка")
-    color = sheet.color
-    a.scene.consume(sheet)
-    root = _emit(a, name, [("", solid, color, "drape", {"rough": 0.9})],
-                 {"iterations": iterations, "constraints": constraint_count,
-                  "stiffness": stiffness, "bend": bend_stiffness,
-                  "damping": damping, "gravity": gravity,
-                  "pin": pin_mode, "gap": gap, "thickness": thickness,
-                  "vertices": len(vertices), "contacts": contacts, "max_strain": strain})
-    root.notes.append(f"ткань: {len(vertices)} узлов, закреплено {int(pinned.sum())}, "
-                      f"контактов {contacts}, ошибка длин {strain:.3%}")
-    root.meta["cloth"] = {"vertices": len(vertices), "pinned": int(pinned.sum()),
-                          "free": int(free.sum()), "contacts": contacts,
-                          "max_strain": strain, "height_map": True,
-                          "self_collision": False}
-    a.scene.log("info", root.notes[-1] + "; самопересечения и поднутрения не моделируются",
-                a.cmd.line)
+            pinned[distances <= float(radius)] = True
+            pinned[int(np.argmin(distances))] = True
+    return pinned
+
+
+@op("drape", aliases=("драпировка", "ткань_на", "cloth_relax", "постелить"),
+    category="Поверхности и деформации",
+    summary="Драпировка равновесием: деталь падает на выбранные опоры и ложится "
+            "под гравитацией. Контакт считается по треугольникам опор (опор может "
+            "быть сколько угодно), длины рёбер сохраняются, изгиб и трение "
+            "настраиваются, целые куски (кубики, звенья цепей) держат форму. "
+            "Анимации нет: получается сразу окончательная поза.",
+    example='лист = box size=[150,150,0.4] at=[0,0,70]\n'
+            'стол = box size=[80,80,40] at=[0,0,0]\n'
+            'пол = box size=[400,400,20] at=[0,0,-20]\n'
+            'скатерть = drape лист on=[стол, пол] gravity=z- mesh=4 friction=0.6',
+    params={"objects": "деталь или список деталей: лист, корпус, цепь, несколько тел",
+            "on": "опора или список опор; контакт по треугольникам всех опор",
+            "gravity": "направление: z-, z+, x±, y± или [x,y,z]; число — это g вниз",
+            "g": "ускорение за шаг, мм (0.2)", "steps": "шагов релаксации (55)",
+            "iterations": "шагов релаксации — прежнее имя steps (55)",
+            "constraints": "итераций ограничений на шаг (14)",
+            "mesh": "шаг сетки расчёта, мм (3.5): меньше — точнее и медленнее",
+            "particles": "бюджет узлов на деталь (4000)",
+            "detail": "прежнее имя плотности: бюджет = 6·detail²",
+            "friction": "трение о опоры 0…1 (0.6)", "bend": "сопротивление изгибу 0…1 (0.25)",
+            "damping": "сохранение скорости 0…1 (0.88)", "stiffness": "жёсткость длин 0…1 (1.0)",
+            "rigid": "auto, 0…1 или список: 1 — кусок держит форму, 0 — ткань (auto)",
+            "self": "да — слои не проходят друг сквозь друга (да)",
+            "thickness": "толщина для открытого листа; у замкнутой детали берётся из габарита",
+            "pin": "none, corners, edges, front, back, left или right",
+            "pins": "точки [[x,y,z],…]: закрепляются ближайшие узлы",
+            "pin_radius": "радиус выбора узлов около pins (2)",
+            "gap": "зазор до опоры, мм (0.02)", "z": "уровень пола, если опоры не заданы"},
+    positional=["objects"])
+def drape(a, name):
+    parts = a.solids()
+    if not parts:
+        raise GeometryError("drape: не задана деталь.",
+                            hint="Например: скатерть = drape лист on=[стол, пол]")
+    g_amount = float(a.num("g", 0.2, minv=0.0, maxv=20.0) or 0.0)
+    gravity_value = a.value("gravity")
+    if gravity_value is None:
+        direction = cloth.parse_gravity("z-")
+    elif isinstance(gravity_value, (int, float)) and not isinstance(gravity_value, bool):
+        # старая запись: gravity=0.2 — это ускорение вниз, а не направление
+        g_amount = float(gravity_value)
+        direction = cloth.parse_gravity("z-")
+    elif isinstance(gravity_value, (list, tuple)):
+        vector = np.asarray(gravity_value, dtype=float).reshape(-1)
+        if vector.size != 3:
+            raise GeometryError("drape: в gravity должно быть три числа.",
+                                hint="Например: gravity=[0,0,-1].")
+        length = float(np.linalg.norm(vector))
+        direction = vector / length if length > 1e-12 else np.zeros(3)
+    else:
+        direction = cloth.parse_gravity(str(gravity_value))
+
+    steps = int(a.num("steps", None) or a.num("iterations", 55, minv=1, maxv=1000) or 55)
+    constraints = int(a.num("constraints", 14, minv=1, maxv=64) or 14)
+    mesh_step = float(a.num("mesh", 3.5, minv=0.05, maxv=200.0) or 3.5)
+    budget = int(a.num("particles", 4000, minv=200, maxv=30000) or 4000)
+    detail = a.num("detail", None, minv=2, maxv=64)
+    if detail:
+        budget = int(min(30000, max(200, 6.0 * float(detail) ** 2)))
+    friction = float(a.num("friction", 0.6, minv=0.0, maxv=1.0) or 0.0)
+    bend = float(a.num("bend", 0.25, minv=0.0, maxv=1.0) or 0.0)
+    damping = float(a.num("damping", 0.88, minv=0.0, maxv=1.0) or 0.0)
+    stiffness = float(a.num("stiffness", 1.0, minv=0.01, maxv=1.0) or 1.0)
+    gap = float(a.num("gap", 0.02, minv=0.0, maxv=20.0) or 0.0)
+    use_self = a.boolean("self", True)
+    pin_mode = (a.text("pin", "none",
+                       ["none", "corners", "edges", "front", "back", "left", "right"]) or "none")
+    pin_points = a.value("pins")
+    pin_radius = float(a.num("pin_radius", 2.0, minv=0.001) or 2.0)
+
+    hosts_value = a.value("on")
+    host_values = list(hosts_value) if isinstance(hosts_value, (list, tuple)) else \
+        ([hosts_value] if hosts_value else [])
+    hosts = [a.scene.resolve(item) for item in host_values]
+    supports = _support_triangles(hosts) if hosts else np.zeros((0, 3, 3))
+    if not len(supports):
+        floor = a.num("z", None)
+        if floor is None:
+            raise GeometryError("drape: не заданы опоры.",
+                                hint="Укажите on=[стол, пол] или уровень пола z=0.")
+        sizes = [np.ptp(manifold_mesh(part.manifold)[0], axis=0) for part in parts]
+        supports = _floor_plane(float(floor),
+                                3.0 * float(max(np.max(size) for size in sizes)) + 100.0)
+
+    rigid_text = (a.text("rigid", "auto") or "auto").strip().lower()
+    if rigid_text in ("auto", "авто"):
+        rigid_value = "auto"
+    else:
+        rigid_value = float(a.num("rigid", 1.0, minv=0.0, maxv=1.0) or 0.0)
+
+    merged_vertices, merged_faces, spans, colors, closed_flags = [], [], [], [], []
+    offset = 0
+    for part in parts:
+        vertices, faces = manifold_mesh(part.manifold)
+        if len(vertices) == 0 or len(faces) == 0:
+            raise GeometryError("drape: у детали нет сетки.")
+        vertices, faces = cloth.subdivide_to(vertices, faces, mesh_step, budget)
+        merged_vertices.append(vertices)
+        merged_faces.append(faces + offset)
+        spans.append((offset, offset + len(vertices)))
+        colors.append(part.color)
+        closed_flags.append(cloth.is_closed(faces))
+        offset += len(vertices)
+    vertices = np.vstack(merged_vertices)
+    faces = np.concatenate(merged_faces, axis=0)
+
+    pinned = np.zeros(len(vertices), dtype=bool)
+    for begin, finish in spans:
+        pinned[begin:finish] = _pin_mask(vertices[begin:finish], pin_mode, pin_points,
+                                         pin_radius)
+
+    if rigid_value == "auto":
+        rigid_input = cloth.auto_rigid_parts(vertices, faces)
+    else:
+        rigid_input = np.asarray([rigid_value], dtype=float)
+
+    part_closed = all(closed_flags)
+    if a.has("thickness"):
+        thickness = float(a.num("thickness", 0.5, minv=0.005, maxv=50.0) or 0.5)
+    else:
+        sizes = [np.ptp(vertices[begin:finish], axis=0) for begin, finish in spans]
+        thinnest = min(float(np.min(size)) for size in sizes)
+        thickness = float(min(5.0, max(0.05, thinnest)))
+
+    report = cloth.simulate(vertices, faces, supports, gravity=direction, g=g_amount,
+                            steps=steps, iterations=constraints, stiffness=stiffness,
+                            bend=bend, damping=damping, friction=friction,
+                            rigid=rigid_input, thickness=thickness,
+                            self_collision=use_self, pinned=pinned, gap=gap)
+    position = report["vertices"]
+    if not np.all(np.isfinite(position)):
+        raise GeometryError("drape: расчёт потерял устойчивость.")
+    if float(report["stretch"]) > 0.25 * max(mesh_step, 1e-3) * 8:
+        a.scene.log("warn", f"drape: сильное растяжение {report['stretch']:.2f} мм — "
+                            "увеличьте constraints или уменьшите g", a.cmd.line)
+
+    emitted = []
+    for index, (begin, finish) in enumerate(spans):
+        local_faces = faces[(faces[:, 0] >= begin) & (faces[:, 0] < finish)] - begin
+        local = position[begin:finish]
+        if closed_flags[index]:
+            body = _draped_solid(local, local_faces)
+        else:
+            body = _thicken_open(local, local_faces, thickness, "драпировка")
+        suffix = "" if index == 0 else f".{index + 1:02d}"
+        emitted.append((suffix, body, colors[index], "drape", {"rough": 0.9}))
+    for part in parts:
+        a.scene.consume(part)
+
+    meta = {"vertices": int(report["vertices_count"]), "pinned": int(pinned.sum()),
+            "free": int(len(pinned) - pinned.sum()), "contacts": int(report["contacts"]),
+            "max_strain": float(report["strain"]), "strain_p90": float(report["strain_p90"]),
+            "stretch": float(report["stretch"]),
+            "self_collision": bool(use_self), "steps": int(report["steps"]),
+            "constraints": constraints, "mesh": mesh_step, "budget": budget,
+            "thickness": thickness, "friction": friction, "bend": bend,
+            "gravity": [round(float(v), 4) for v in direction], "g": g_amount,
+            "rigid": (float(np.max(rigid_input)) if len(rigid_input) else 0.0),
+            "parts": len(parts), "seconds": report["seconds"],
+            "penetration": float(report["penetration"]), "closed": bool(part_closed),
+            "supports": len(hosts), "cell": float(report["cell"])}
+    root = _emit(a, name, emitted,
+                 {"steps": steps, "constraints": constraints, "mesh": mesh_step,
+                  "thickness": thickness, "friction": friction, "bend": bend,
+                  "rigid": rigid_text, "self": use_self, "pin": pin_mode})
+    root.notes.append(f"драпировка: {meta['vertices']} узлов, опор {len(hosts)}, "
+                      f"контактов {meta['contacts']}, растяжение {meta['stretch']:.2f} мм "
+                      f"({meta['max_strain']:.1%}), {meta['seconds']:.2f} с")
+    root.meta["cloth"] = meta
+    a.scene.log("info", root.notes[-1], a.cmd.line)
     return root
 
 

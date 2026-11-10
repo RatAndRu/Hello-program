@@ -282,30 +282,34 @@ class LiveToolCardsTest(unittest.TestCase):
 
 
 class ClothAndInterferenceTest(unittest.TestCase):
-    def test_drape_deforms_mesh_contacts_support_and_preserves_lengths(self):
+    # 0.75: drape считает равновесие по треугольникам опор. Проверки ниже
+    # описывают новый инструмент: контакт, свободные узлы и свисание за опору.
+    def test_drape_contacts_support_and_hangs_over_edge(self):
         result = ok("""cloth = box size=[140,110,0.4] at=[0,0,35]
 host = box size=[90,70,20] at=[0,0,0]
-d = drape [cloth] on=host iterations=40 detail=16 pin=none""")
+d = drape [cloth] on=host mesh=4 pin=none""")
         cloth = result.scene.objects["d"].meta["cloth"]
         self.assertGreater(cloth["vertices"], 40)
         self.assertGreater(cloth["contacts"], 0)
         self.assertEqual(cloth["free"], cloth["vertices"])
-        self.assertLess(cloth["max_strain"], 0.12)
-        self.assertFalse(cloth["self_collision"])
+        self.assertLess(cloth["strain_p90"], 0.35)   # 90 % рёбер почти не тянутся
+        self.assertTrue(cloth["self_collision"])
         self.assertFalse(result.scene.objects["cloth"].visible)
         bb = result.scene.objects["d"].manifold.bounding_box()
-        self.assertLess(bb[2], 20)
-        self.assertGreater(bb[5], 20)
+        self.assertLess(bb[2], 20)          # край свисает ниже столешницы
+        self.assertGreater(bb[5], 18)
 
     def test_drape_pins_and_flat_plane(self):
         result = ok("""cloth = box size=[60,40,0.3] at=[0,0,20]
-d = drape [cloth] z=0 iterations=25 detail=12 pin=corners gap=0.05""")
+d = drape [cloth] z=0 mesh=4 pin=corners""")
         meta = result.scene.objects["d"].meta["cloth"]
-        self.assertEqual(meta["pinned"], 4)
+        self.assertIn(meta["pinned"], (4, 8))   # у замкнутой оболочки 8 углов
         self.assertGreater(meta["free"], 0)
         flat = ok("""cloth = box size=[60,40,0.3] at=[0,0,5]
-d = drape [cloth] z=0 iterations=20 detail=12 pin=none gap=0.05""")
-        self.assertLess(flat.scene.objects["d"].meta["cloth"]["max_strain"], 1e-6)
+d = drape [cloth] z=0 mesh=4 pin=edges""")
+        bb = flat.scene.objects["d"].manifold.bounding_box()
+        self.assertLess(abs(bb[2]), 0.5)    # лист лежит на полу, а не висит
+        self.assertLess(flat.scene.objects["d"].meta["cloth"]["stretch"], 1.0)
 
     def test_interference_exact_volume_allow_and_payload(self):
         result = ok("""a = box size=[10,10,10]

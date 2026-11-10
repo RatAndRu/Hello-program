@@ -72,6 +72,10 @@ jobs:
         working-directory: forma
         run: python -m pytest -q tests/test_v0741.py tests/test_v0742.py
 
+      - name: Проверить драпировку равновесием
+        working-directory: forma
+        run: python -m pytest -q tests/test_v075.py
+
       - name: Прогнать foundation golden/eval
         working-directory: forma
         run: python -m forma.eval --out foundation-eval.json --compare docs/foundation_baseline.json
