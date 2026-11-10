@@ -544,6 +544,15 @@ function applyBuild(payload, elapsed) {
   const a = payload.analysis || {};
   const metrics = a.metrics || {};
   $('status-time').textContent = `${payload.timings?.total ?? elapsed} мс`;
+  // Кэш операций: видно, сколько деталей пришло готовыми, а сколько построено.
+  const cache = payload.cache || {};
+  const timeCell = $('status-time');
+  if (timeCell) {
+    timeCell.title = cache.enabled === false
+      ? 'Кэш операций выключен (FORMA_CACHE=0)'
+      : `Кэш операций: ${fmtInt(cache.hits || 0)} из ${fmtInt((cache.hits || 0) + (cache.misses || 0))}`
+        + ` деталей из кэша, хранится ${fmtInt(cache.size || 0)}`;
+  }
   $('status-tris').textContent = metrics.tris ? `${fmtInt(metrics.tris)} трис` : '';
   $('status-size').textContent = metrics.size
     ? `${fmt(metrics.size[0])} × ${fmt(metrics.size[1])} × ${fmt(metrics.size[2])} мм` : '';
