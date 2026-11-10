@@ -22,7 +22,9 @@ EXPECTED = {
     # toilet_*; GLB totals below are measured after guarded export cleanup.
     # 0.72: плоские крышки lathe без веера дали −20 треугольников салону
     # (134296 → 134276) и −8 вагону (324640 → 324632) при той же геометрии.
-    "living_room_058": {"objects": 238, "triangles": 134276, "preview_nodes": 238},
+    # 0.75: новая драпировка пледа в гостиной дала +596 треугольников
+    # (134276 → 134872) при тех же 238 объектах.
+    "living_room_058": {"objects": 238, "triangles": 134872, "preview_nodes": 238},
     "train_carriage_058": {"objects": 1186, "triangles": 324632, "preview_nodes": 140},
     "track_holes_057": {"objects": 1, "triangles": 1236, "preview_nodes": 1},
     "lightning_057": {"objects": 1, "triangles": 7232, "preview_nodes": 1},
@@ -41,7 +43,7 @@ EXPECTED = {
     "smooth_transitions_054": {"objects": 3, "triangles": 109280, "preview_nodes": 1,
                                 "preview_triangles": 26104},
     "glyphs_expansion_053": {"objects": 7, "triangles": 56950, "preview_nodes": 5},
-    "living_room_diorama": {"objects": 238, "triangles": 134276, "preview_nodes": 238},
+    "living_room_diorama": {"objects": 238, "triangles": 134872, "preview_nodes": 238},
 }
 
 
