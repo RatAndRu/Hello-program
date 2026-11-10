@@ -27,6 +27,17 @@ def _cyl(h: float, r: float, seg: int = 64) -> mf.Manifold:
     return mf.Manifold.cylinder(float(h), float(r), float(r), int(seg))
 
 
+def _revolve(profile, segments: int = 64) -> mf.Manifold:
+    """Тело вращения по профилю (радиус, высота) вокруг оси Z.
+
+    Профиль передаётся массивом: список списков nanobind принимает, но при
+    вложенном вызове из функции это заканчивается аварийным завершением
+    процесса, а не исключением.
+    """
+    contour = np.asarray(profile, dtype=np.float64)
+    return mf.Manifold.revolve(mf.CrossSection([contour]), int(segments))
+
+
 def _box(size) -> mf.Manifold:
     return mf.Manifold.cube([float(v) for v in size], True)
 
@@ -273,11 +284,14 @@ def screw(a, name):
         body = shank + tip
     # --- головка ------------------------------------------------------------
     if head == "потай":
-        cap = mf.Manifold.cylinder(float(head_h), float(d / 2.0), float(head_d / 2.0), 56)
-        cap = cap.translate((0, 0, body_len))
-        rim = _cyl(0.35, head_d / 2.0, 56).translate(
-            (0, 0, (head_h if head_only else length) - 0.35))
-        cap = cap + rim
+        # Потайная головка — один профиль вращения: конус 90° плюс плоский
+        # поясок 0.35 мм. Собранная из конуса и цилиндра, она давала совпавшие
+        # торцы: объединение оставляло две части и дубли граней, и такой
+        # саморез не проходил экспорт.
+        top = (body_len + head_h) if head_only else length
+        cap = _revolve([[0.0, body_len], [d / 2.0, body_len],
+                        [head_d / 2.0, top - 0.35], [head_d / 2.0, top],
+                        [0.0, top]], 56)
     elif head == "полукруг":
         cap = _cyl(head_h, head_d / 2.0, 56).translate((0, 0, body_len))
         dome = mf.Manifold.sphere(head_d / 2.0, 40).translate((0, 0, body_len))

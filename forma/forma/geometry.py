@@ -1068,7 +1068,7 @@ def _glb_valid_faces(verts: np.ndarray, faces: np.ndarray) -> np.ndarray:
     return faces[np.isfinite(area2) & (area2 > 1e-12)]
 
 
-def _clean_manifold_arrays(m: mf.Manifold) -> tuple[np.ndarray, np.ndarray]:
+def _clean_export_exact(m: mf.Manifold) -> tuple[np.ndarray, np.ndarray]:
     """Безопасная экспортная копия: точная очистка + guarded weld при нужде.
 
     Диагностическая сварка сама по себе не является разрешением удалить грань.
@@ -1164,6 +1164,134 @@ def _clean_manifold_arrays(m: mf.Manifold) -> tuple[np.ndarray, np.ndarray]:
     except Exception:
         pass
     return base_verts, base_faces
+
+
+def snap_manifold(m: mf.Manifold, quantum: float = 1e-3) -> mf.Manifold | None:
+    """Сажает вершины на сетку ``quantum`` мм и пересобирает тело.
+
+    После Minkowski и offset в сетке остаются вершины на расстоянии десятых
+    микрометра: при экспорте они схлопываются в нулевые грани и non-manifold
+    рёбра, хотя форма цела. Посадка на сетку 0.001 мм убирает такую «пыль»,
+    не меняя ни одного размера, который видно или можно измерить штангенциркулем.
+
+    Возвращает исправленное тело или None, если посадка небезопасна.
+    """
+    if m.is_empty():
+        return None
+    step = float(quantum)
+    if step <= 0:
+        return None
+    try:
+        verts, faces = manifold_mesh(m)
+    except Exception:
+        return None
+    if not len(faces):
+        return None
+    grid = np.rint(np.asarray(verts, dtype=np.float64) / step).astype(np.int64)
+    unique, inverse = np.unique(grid, axis=0, return_inverse=True)
+    snapped = unique.astype(np.float64) * step
+    try:
+        candidate = mf.Manifold(mf.Mesh(
+            vert_properties=np.ascontiguousarray(snapped, dtype=np.float32),
+            tri_verts=np.ascontiguousarray(inverse[faces], dtype=np.uint32),
+        ))
+    except Exception:
+        return None
+    if candidate.status() != mf.Error.NoError or candidate.is_empty() or candidate.volume() <= 0:
+        return None
+    try:
+        if int(solid_parts(candidate)) != int(solid_parts(m)):
+            return None
+        volume_delta = abs(float(candidate.volume() / m.volume() - 1.0) * 100.0)
+        area_delta = abs(float(candidate.surface_area() / m.surface_area() - 1.0) * 100.0)
+        bbox_delta = float(np.max(np.abs(
+            np.asarray(candidate.bounding_box(), dtype=np.float64)
+            - np.asarray(m.bounding_box(), dtype=np.float64)
+        )))
+    except Exception:
+        return None
+    # Допуски посадки: 0.02 % объёма, 0.05 % площади и один шаг сетки по габариту.
+    if volume_delta > 0.02 or area_delta > 0.05 or bbox_delta > step * 1.5:
+        return None
+    if candidate.num_tri() >= m.num_tri() and candidate.num_vert() >= m.num_vert():
+        # Сетка и так на месте: сажать нечего, лишняя работа не нужна.
+        return None
+    return candidate
+
+
+def rebuild_manifold(m: mf.Manifold, *, passes: int = 3) -> mf.Manifold | None:
+    """Пересобирает тело из его же сетки — без микрокромок и нулевых граней.
+
+    Триангуляция после offset/Minkowski оставляет вершины на расстоянии сотых
+    микрометра: при сварке в экспорте такие рёбра схлопываются и дают
+    «схлопнувшиеся грани» и non-manifold рёбра. Пересборка через ``to_mesh`` →
+    ``Manifold`` убирает эти вершины, сохраняя форму: объём, площадь, род,
+    число частей и габариты остаются прежними (допуск — 0.0001 % объёма).
+
+    Возвращает исправленное тело или None, если пересборка небезопасна или
+    ничего не улучшила.
+    """
+    if m.is_empty():
+        return None
+    best: mf.Manifold | None = None
+    source = m
+    for _ in range(max(1, int(passes))):
+        try:
+            rebuilt = mf.Manifold(source.to_mesh())
+        except Exception:
+            break
+        if rebuilt.status() != mf.Error.NoError or rebuilt.is_empty() or rebuilt.volume() <= 0:
+            break
+        try:
+            if (int(rebuilt.genus()) != int(m.genus())
+                    or int(solid_parts(rebuilt)) != int(solid_parts(m))):
+                break
+            volume_delta = abs(float(rebuilt.volume() / m.volume() - 1.0) * 100.0)
+            area_delta = abs(float(rebuilt.surface_area() / m.surface_area() - 1.0) * 100.0)
+            bbox_delta = float(np.max(np.abs(
+                np.asarray(rebuilt.bounding_box(), dtype=np.float64)
+                - np.asarray(m.bounding_box(), dtype=np.float64)
+            )))
+        except Exception:
+            break
+        if volume_delta > 0.0001 or area_delta > 0.001 or bbox_delta > 1e-6:
+            break
+        if rebuilt.num_tri() >= source.num_tri():
+            break
+        best = rebuilt
+        source = rebuilt
+    return best
+
+
+def _clean_manifold_arrays(m: mf.Manifold) -> tuple[np.ndarray, np.ndarray]:
+    """Экспортная копия сетки: сначала точная очистка, потом ремонт микрокромок.
+
+    Точная очистка не меняет форму: она только сваривает совпавшие вершины и
+    убирает нулевые грани с guard-проверками. Если после неё сетка всё ещё не
+    проходит контроль (микрокромки после offset/Minkowski), пробуем пересборку
+    и посадку на сетку 0.001 мм — и только если результат проходит тот же
+    контроль. Для здоровых тел этот путь не включается вовсе.
+    """
+    verts, faces = _clean_export_exact(m)
+    report = analyze_topology(verts, faces, include_quality=False)
+    if report["ok"] and not report["loose_vertices"]:
+        return verts, faces
+    # Шаг посадки перебирается по возрастанию: 0.001 мм хватает большинству
+    # тел, но у Minkowski-сумм с малым радиусом «пыль» бывает на 0.002 мм.
+    def attempts():
+        yield rebuild_manifold(m)
+        for quantum in (1e-3, 2e-3, 3e-3, 5e-3):
+            yield snap_manifold(m, quantum)
+
+    for repaired in attempts():
+        if repaired is None:
+            continue
+        repaired_verts, repaired_faces = clean_export_arrays(*manifold_mesh(repaired))
+        repaired_report = analyze_topology(repaired_verts, repaired_faces,
+                                           include_quality=False)
+        if repaired_report["ok"] and not repaired_report["loose_vertices"]:
+            return repaired_verts, repaired_faces
+    return verts, faces
 
 
 def _validate_export_arrays(verts: np.ndarray, faces: np.ndarray, what: str) -> None:

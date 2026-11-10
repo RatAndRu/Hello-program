@@ -15,7 +15,7 @@ import manifold3d as mf
 import numpy as np
 
 from .errors import GeometryError
-from .geometry import manifold_from_arrays
+from .geometry import manifold_from_arrays, manifold_mesh
 
 BIG = 1.0e5
 
@@ -159,7 +159,40 @@ class Field:
                 pass
         if solid.is_empty():
             raise GeometryError(f"Не удалось построить {what}.")
+        # Седловая точка поля даёт касание поверхности самой себя. Лечим
+        # упрощением в долю ячейки: форма меняется на сотые доли процента,
+        # зато экспорт не останавливается.
+        step = max(float(self.h), 1e-6)
+        for factor in (0.1, 0.25):
+            if _nonmanifold_edges(solid, step * 0.02) == 0:
+                break
+            candidate = solid.simplify(step * factor)
+            if (candidate.status() != mf.Error.NoError or candidate.is_empty()
+                    or abs(candidate.volume() / solid.volume() - 1.0) > 0.01):
+                continue
+            solid = candidate
         return solid
+
+
+def _nonmanifold_edges(m: mf.Manifold, tolerance: float) -> int:
+    """Сколько рёбер сетки сходится больше чем в двух гранях.
+
+    Марширующие кубы на седловой точке дают «касание» поверхности самой себя:
+    тело остаётся замкнутым, но при сварке вершин ребро становится общим для
+    четырёх граней, и такой файл уже нельзя считать корректной сеткой.
+    """
+    verts, faces = manifold_mesh(m)
+    if not len(faces):
+        return 0
+    step = max(float(tolerance), 1e-9)
+    grid = np.rint(np.asarray(verts, dtype=np.float64) / step).astype(np.int64)
+    _unique, inverse = np.unique(grid, axis=0, return_inverse=True)
+    welded = inverse[faces]
+    edges = np.concatenate([welded[:, [0, 1]], welded[:, [1, 2]], welded[:, [2, 0]]])
+    edges = np.sort(edges, axis=1)
+    edges = edges[edges[:, 0] != edges[:, 1]]
+    _pairs, counts = np.unique(edges, axis=0, return_counts=True)
+    return int((counts > 2).sum())
 
 
 def _drop_specks(m: mf.Manifold, keep_ratio: float = 0.01) -> mf.Manifold:
