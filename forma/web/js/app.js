@@ -7938,10 +7938,159 @@ function commandCard(c) {
   return card;
 }
 
+/**
+ * Режим плиток: плотная сетка миниатюр.
+ *
+ * Правило простое: на плитке только картинка и название. Никаких пресетов,
+ * полей и подсказок — клик вставляет операцию с заводскими параметрами.
+ * Картинки готовит `tools/render_thumbs.py` (изометрия, без пола, сетки и тени).
+ */
+state.tilesMode = state.tilesMode === true;
+const tileThumbs = new Map();   // op → url
+const tileList = [];            // манифест: {op, title, params, url}
+let tileThumbsLoaded = false;
+let tileQuery = '';
+
+async function loadTileThumbs() {
+  if (tileThumbsLoaded) return;
+  try {
+    const res = await api('/api/thumbs');
+    (res.thumbs || []).forEach((item) => {
+      tileThumbs.set(item.op, item.url);
+      // Плитка из манифеста знает свою строку параметров — по ней и клик.
+      if (item.listed) tileList.push({ op: item.op, title: item.title || item.op,
+        params: item.params || '', url: item.url });
+    });
+    tileList.sort((a, b) => a.op.localeCompare(b.op, 'ru'));
+    tileThumbsLoaded = true;
+  } catch (err) { /* без плиток остаются карточки */ }
+}
+
+/** Плитка без карточки: одна строка операции с заводскими параметрами. */
+function insertTileOp(item) {
+  const name = uniqueObjectName(item.op, currentScript());
+  const tail = item.params ? ' ' + item.params : '';
+  insertTool(`${name} = ${item.op}${tail}`, item.title || item.op);
+}
+
+/** Карточка-пустышка с полями: значения берутся из заводских p.v. */
+function detachedToolCard(tool) {
+  const card = document.createElement('div');
+  (tool.params || []).forEach((p) => card.appendChild(buildToolField(p)));
+  return card;
+}
+
+function tileMatches(item) {
+  const q = tileQuery.trim().toLowerCase();
+  if (!q) return true;
+  return `${item.title} ${item.op}`.toLowerCase().includes(q);
+}
+
+/** Сетка плиток: картинка + подпись, клик вставляет строку операции. */
+function tileGrid(items, onclick) {
+  const grid = document.createElement('div');
+  grid.className = 'tiles-grid';
+  items.forEach((item) => {
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'tile';
+    tile.dataset.op = item.op;
+    tile.title = item.params ? `${item.title} — ${item.op} ${item.params}` : item.title;
+    const img = document.createElement('img');
+    img.src = item.url;
+    img.alt = item.title;
+    img.loading = 'lazy';
+    const cap = document.createElement('span');
+    cap.className = 'tile-cap';
+    cap.textContent = item.title;
+    tile.append(img, cap);
+    tile.addEventListener('click', () => onclick(item));
+    grid.appendChild(tile);
+  });
+  return grid;
+}
+
+function renderTiles(body) {
+  // Каталог инструментов (у него есть карточки с полями) идёт первым, уже
+  // знакомыми группами; остальные примитивы реестра — одной общей сеткой из
+  // манифеста. Так на плитках видны все операции, а не только избранные.
+  const catalog = new Set();
+  ALL_TOOL_SHAPES.forEach((tool) => catalog.add(String(tool.op || '').toLowerCase()));
+
+  if (tileList.length) {
+    const search = document.createElement('input');
+    search.type = 'search';
+    search.className = 'tiles-search';
+    search.placeholder = 'Поиск примитива: куб, арка, шестерня…';
+    search.value = tileQuery;
+    search.addEventListener('input', () => {
+      tileQuery = search.value;
+      renderTools();
+      const again = document.querySelector('.tiles-search');
+      if (again) { again.focus(); again.setSelectionRange(again.value.length, again.value.length); }
+    });
+    body.appendChild(search);
+  }
+
+  const groups = new Map();
+  ALL_TOOL_SHAPES.forEach((tool) => {
+    const op = String(tool.op || '').toLowerCase();
+    if (!tileThumbs.has(op)) return;
+    const key = tool.group || 'Прочее';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(tool);
+  });
+  let shown = 0;
+  groups.forEach((tools, title) => {
+    const visible = tools.filter((tool) => tileMatches({
+      op: String(tool.op || '').toLowerCase(), title: tool.title || '', params: '',
+    }));
+    if (!visible.length) return;
+    const head = document.createElement('h4');
+    head.className = 'tiles-group';
+    head.textContent = title;
+    body.appendChild(head);
+    body.appendChild(tileGrid(visible.map((tool) => ({
+      op: String(tool.op || '').toLowerCase(),
+      title: tool.title,
+      params: '',
+      url: tileThumbs.get(String(tool.op || '').toLowerCase()),
+    })), (item) => {
+      const tool = ALL_TOOL_SHAPES.find((t) => String(t.op || '').toLowerCase() === item.op);
+      if (tool) addShapeTool(tool, detachedToolCard(tool));
+      else insertTileOp(item);
+    }));
+    shown += visible.length;
+  });
+
+  const rest = tileList.filter((item) => !catalog.has(item.op) && tileMatches(item));
+  if (rest.length) {
+    const head = document.createElement('h4');
+    head.className = 'tiles-group';
+    head.textContent = `Все примитивы реестра — ${rest.length}`;
+    body.appendChild(head);
+    body.appendChild(tileGrid(rest, insertTileOp));
+    shown += rest.length;
+  }
+
+  if (!shown) {
+    const hint = document.createElement('div');
+    hint.className = 'hint-box';
+    hint.textContent = tileQuery
+      ? `Ничего не нашлось по запросу «${tileQuery}».`
+      : 'Плитки ещё не готовы: запустите tools/render_thumbs.py.';
+    body.appendChild(hint);
+  }
+}
+
 function renderTools() {
   const body = $('tools-body');
   if (!body) return;
   body.innerHTML = '';
+  if (state.tilesMode) {
+    renderTiles(body);
+    return;
+  }
   const groups = new Map();
   ALL_TOOL_SHAPES.forEach((tool) => {
     const key = tool.group || 'Готовые детали';
@@ -8140,6 +8289,14 @@ function scheduleThumbsReobserve() {
     observeThumbs($('tools-body'));
   }, 260);
 }
+$('tools-tiles')?.addEventListener('change', async (e) => {
+  state.tilesMode = e.target.checked;
+  if (state.tilesMode) await loadTileThumbs();
+  renderTools();
+  const count = $('tools-count');
+  if (count) count.textContent = state.tilesMode ? 'плитки' : '';
+});
+
 $('tools-thumbs')?.addEventListener('change', (e) => {
   state.thumbsOn = e.target.checked;
   toolThumbs.enabled = state.thumbsOn;
@@ -8153,7 +8310,10 @@ $('tools-thumbs')?.addEventListener('change', (e) => {
 function openTools() {
   $('tools-modal').hidden = false;
   toolThumbs.enabled = state.thumbsOn;
+  const tiles = $('tools-tiles');
+  if (tiles) tiles.checked = state.tilesMode;
   renderTools();
+  loadTileThumbs();
   syncViewportSuspension();
 }
 $('btn-tools')?.addEventListener('click', openTools);
