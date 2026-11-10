@@ -1052,17 +1052,23 @@ def drape(a, name):
         rigid_value = float(a.num("rigid", 1.0, minv=0.0, maxv=1.0) or 0.0)
 
     merged_vertices, merged_faces, spans, colors, closed_flags = [], [], [], [], []
+    naturals = []
     offset = 0
     for part in parts:
         vertices, faces = manifold_mesh(part.manifold)
         if len(vertices) == 0 or len(faces) == 0:
             raise GeometryError("drape: у детали нет сетки.")
-        vertices, faces = cloth.subdivide_to(vertices, faces, mesh_step, budget)
+        # Мельче толщины дробить бессмысленно: у проволоки звена цепи это
+        # даёт узлы «в одну линию» и разваливает форму.
+        natural = cloth._thickness_of(vertices, faces)
+        step = max(mesh_step, 0.7 * natural)
+        vertices, faces = cloth.subdivide_to(vertices, faces, step, budget)
         merged_vertices.append(vertices)
         merged_faces.append(faces + offset)
         spans.append((offset, offset + len(vertices)))
         colors.append(part.color)
         closed_flags.append(cloth.is_closed(faces))
+        naturals.append(natural)
         offset += len(vertices)
     vertices = np.vstack(merged_vertices)
     faces = np.concatenate(merged_faces, axis=0)
@@ -1083,7 +1089,11 @@ def drape(a, name):
     else:
         sizes = [np.ptp(vertices[begin:finish], axis=0) for begin, finish in spans]
         thinnest = min(float(np.min(size)) for size in sizes)
-        thickness = float(min(5.0, max(0.05, thinnest)))
+        # тела меряем по настоящей толщине «2V/A»: у звена цепи габарит по
+        # высоте — это вся цепь, и такая толщина раздувала самоколлизию
+        natural_min = min([t for t in naturals if t > 0.0], default=0.0)
+        thickness = float(min(5.0, max(0.05, natural_min if part_closed and natural_min > 0.0
+                                      else thinnest)))
 
     report = cloth.simulate(vertices, faces, supports, gravity=direction, g=g_amount,
                             steps=steps, iterations=constraints, stiffness=stiffness,

@@ -245,6 +245,44 @@ d = drape [ткань] on=опора detail=12 iterations=20 constraints=8
         self.assertAlmostEqual(first.volume(), second.volume(), places=6)
 
 
+class WireAndChainTest(unittest.TestCase):
+    """Тонкая проволока — не ткань: толщина считается ещё и относительно размера."""
+
+    def test_relative_thickness_separates_wire_from_sheet(self):
+        sheet = box((200, 200, 0.4))
+        self.assertLess(cloth.auto_rigid(*sheet), 0.1)          # скатерть гнётся
+        cube = box((30, 30, 30))
+        self.assertGreater(cloth.auto_rigid(*cube), 0.9)        # кубик держит форму
+
+    def test_chain_lies_on_table_and_keeps_its_links(self):
+        result = build_ok("""
+стол = box size=[120,120,10]
+звенья = цепь links=4 size=26 wire=3.2 at=[0,0,60]
+лежит = drape [звенья] on=[стол]
+""")
+        before = result.scene.objects["звенья"].manifold.bounding_box()
+        solid = result.scene.objects["лежит"]
+        meta = solid.meta["cloth"]
+        bounds = solid.manifold.bounding_box()
+        length_before = float(before[3] - before[0])
+        self.assertGreater(meta["rigid"], 0.8)                  # звено — тело
+        self.assertLess(meta["strain_p90"], 0.2)                # проволока не растянута
+        self.assertAlmostEqual(bounds[2], 10.0, delta=0.6)      # лежит на столе
+        self.assertGreater(float(bounds[3] - bounds[0]), 0.8 * length_before)
+        self.assertLess(float(bounds[5] - bounds[2]), 0.5 * length_before)
+
+    def test_thin_wire_is_not_squashed_by_self_collision(self):
+        """Толщина самоколлизии — «2V/A», а не габарит: иначе цепь раздувает."""
+        result = build_ok("""
+стол = box size=[120,120,10]
+звенья = цепь links=3 size=20 wire=2.5 at=[0,0,50]
+лежит = drape [звенья] on=[стол] mesh=2.5
+""")
+        meta = result.scene.objects["лежит"].meta["cloth"]
+        self.assertLess(meta["penetration"], 1.0)
+        self.assertLess(meta["strain_p90"], 0.25)
+
+
 class HeightMapRemovedTest(unittest.TestCase):
     def test_old_height_map_helpers_are_gone(self):
         for name in ("_HeightMap", "_top_surface", "_subdivide_surface",

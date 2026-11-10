@@ -576,13 +576,31 @@ def _thickness_of(vertices: np.ndarray, faces: np.ndarray) -> float:
     return 2.0 * abs(volume) / area              # оценка толщины оболочки
 
 
-def auto_rigid(vertices: np.ndarray, faces: np.ndarray) -> float:
-    """Тонкое гнётся, толстое держит форму: оценка по «2V/A»."""
+def _rigid_weight(vertices: np.ndarray, faces: np.ndarray,
+                  nodes: np.ndarray | None = None) -> float:
+    """Насколько кусок держит форму.
+
+    Два признака сразу, иначе тонкая проволока звена цепи считалась бы тканью:
+
+    * абсолютная толщина ``2V/A`` — тонкий лист гнётся, толстая плита нет;
+    * толщина относительно собственного размера — у звена цепи проволока
+      3 мм при звене 26 мм, и это уже тело, а не ткань; у скатерти 0.4 мм
+      при 200 мм — наоборот.
+    """
     thickness = _thickness_of(vertices, faces)
     if thickness <= 0.0:
         return 0.0
-    weight = (thickness - 1.5) / 4.5             # тоньше 1.5 мм — ткань, толще 6 — тело
-    return float(min(1.0, max(0.0, weight)))
+    absolute = (thickness - 1.5) / 4.5           # 1.5 мм — ткань, 6 мм — тело
+    if nodes is None:
+        nodes = np.unique(faces)
+    size = float(np.max(np.ptp(vertices[nodes], axis=0))) if len(nodes) else 0.0
+    relative = (thickness / size - 0.02) / 0.04 if size > 1e-9 else 1.0
+    return float(min(1.0, max(0.0, absolute, relative)))
+
+
+def auto_rigid(vertices: np.ndarray, faces: np.ndarray) -> float:
+    """Тонкое гнётся, толстое держит форму."""
+    return _rigid_weight(vertices, faces)
 
 
 def auto_rigid_parts(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
@@ -599,8 +617,7 @@ def auto_rigid_parts(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
         if len(mine) < 4:
             weights[slot] = 1.0
             continue
-        thickness = _thickness_of(vertices, mine)
-        weights[slot] = min(1.0, max(0.0, (thickness - 1.5) / 4.5))
+        weights[slot] = _rigid_weight(vertices, mine)
     return weights
 
 
