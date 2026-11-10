@@ -931,6 +931,41 @@ def _draped_solid(vertices, faces):
         return manifold_from_arrays(vertices, faces[:, ::-1], "драпировка")
 
 
+def _drape_intersections(bodies, max_checks=32):
+    """Измеряет общий объём пересечений разных выданных деталей.
+
+    Не является тестом самопересечения внутри одной оболочки. Если пар слишком
+    много или boolean не удался, незавершённость сообщается отдельно.
+    """
+    checked = 0
+    volume = 0.0
+    complete = True
+    bounds = [body.bounding_box() for body in bodies]
+    for i, first in enumerate(bodies):
+        for j in range(i + 1, len(bodies)):
+            b0, b1 = bounds[i], bounds[j]
+            if any(b0[k + 3] <= b1[k] or b1[k + 3] <= b0[k] for k in range(3)):
+                continue
+            if checked >= max_checks:
+                return volume, checked, False
+            checked += 1
+            try:
+                common = first ^ bodies[j]
+                if common.status() != mf.Error.NoError:
+                    complete = False
+                    continue
+                measured = float(common.volume())
+                # Отрицательный/NaN объём не означает «пересечения нет»: это
+                # признак ненадёжного boolean у самопересекающейся оболочки.
+                if not np.isfinite(measured) or measured < -1e-6:
+                    complete = False
+                    continue
+                volume += max(0.0, measured)
+            except Exception:
+                complete = False
+    return volume, checked, complete
+
+
 def _pin_mask(vertices, mode, points, radius) -> np.ndarray:
     """Какие узлы держать на месте. Кромки замкнутой детали — по габариту."""
     pinned = np.zeros(len(vertices), dtype=bool)
@@ -964,9 +999,10 @@ def _pin_mask(vertices, mode, points, radius) -> np.ndarray:
     category="Поверхности и деформации",
     summary="Драпировка равновесием: деталь падает на выбранные опоры и ложится "
             "под гравитацией. Контакт считается по треугольникам опор (опор может "
-            "быть сколько угодно), длины рёбер сохраняются, изгиб и трение "
+            "быть сколько угодно), растяжение сдерживается связями, изгиб и трение "
             "настраиваются, целые куски (кубики, звенья цепей) держат форму. "
-            "Анимации нет: получается сразу окончательная поза.",
+            "Гибкие слои и стенки учитывают самоконтакт. Анимации нет: "
+            "получается сразу итоговая поза.",
     example='лист = box size=[150,150,0.4] at=[0,0,70]\n'
             'стол = box size=[80,80,40] at=[0,0,0]\n'
             'пол = box size=[400,400,20] at=[0,0,-20]\n'
@@ -983,8 +1019,9 @@ def _pin_mask(vertices, mode, points, radius) -> np.ndarray:
             "friction": "трение о опоры 0…1 (0.6)", "bend": "сопротивление изгибу 0…1 (0.25)",
             "damping": "сохранение скорости 0…1 (0.88)", "stiffness": "жёсткость длин 0…1 (1.0)",
             "rigid": "auto, 0…1 или список: 1 — кусок держит форму, 0 — ткань (auto)",
-            "self": "да — слои не проходят друг сквозь друга (да)",
-            "thickness": "толщина для открытого листа; у замкнутой детали берётся из габарита",
+            "self": "да — учитывать самоконтакт слоёв (да)",
+            "self_gap": "зазор между поверхностями, мм (авто по толщине)",
+            "thickness": "толщина открытого листа; для замкнутой детали — оценка по объёму и площади",
             "pin": "none, corners, edges, front, back, left или right",
             "pins": "точки [[x,y,z],…]: закрепляются ближайшие узлы",
             "pin_radius": "радиус выбора узлов около pins (2)",
@@ -1026,6 +1063,7 @@ def drape(a, name):
     stiffness = float(a.num("stiffness", 1.0, minv=0.01, maxv=1.0) or 1.0)
     gap = float(a.num("gap", 0.02, minv=0.0, maxv=20.0) or 0.0)
     use_self = a.boolean("self", True)
+    self_gap = a.num("self_gap", None, minv=0.005, maxv=100.0)
     pin_mode = (a.text("pin", "none",
                        ["none", "corners", "edges", "front", "back", "left", "right"]) or "none")
     pin_points = a.value("pins")
@@ -1099,13 +1137,17 @@ def drape(a, name):
                             steps=steps, iterations=constraints, stiffness=stiffness,
                             bend=bend, damping=damping, friction=friction,
                             rigid=rigid_input, thickness=thickness,
-                            self_collision=use_self, pinned=pinned, gap=gap)
+                            self_collision=use_self, self_gap=self_gap, pinned=pinned, gap=gap)
     position = report["vertices"]
     if not np.all(np.isfinite(position)):
         raise GeometryError("drape: расчёт потерял устойчивость.")
     if float(report["stretch"]) > 0.25 * max(mesh_step, 1e-3) * 8:
         a.scene.log("warn", f"drape: сильное растяжение {report['stretch']:.2f} мм — "
                             "увеличьте constraints или уменьшите g", a.cmd.line)
+    if not report["converged"]:
+        a.scene.log("warn", f"drape: достигнут предел {steps} шагов, равновесие не подтверждено "
+                            f"(последнее смещение до {report['last_motion']:.3f} мм); "
+                            "при необходимости увеличьте steps.", a.cmd.line)
 
     emitted = []
     for index, (begin, finish) in enumerate(spans):
@@ -1117,6 +1159,15 @@ def drape(a, name):
             body = _thicken_open(local, local_faces, thickness, "драпировка")
         suffix = "" if index == 0 else f".{index + 1:02d}"
         emitted.append((suffix, body, colors[index], "drape", {"rough": 0.9}))
+    overlap, overlap_checks, overlap_complete = (0.0, 0, True)
+    if use_self and len(emitted) > 1:
+        overlap, overlap_checks, overlap_complete = _drape_intersections([item[1] for item in emitted])
+        if overlap > 1e-4:
+            a.scene.log("warn", f"drape: в результате осталось пересечение разных деталей "
+                               f"объёмом {overlap:.4f} мм³; попробуйте уменьшить mesh "
+                               "или увеличить self_gap/steps.", a.cmd.line)
+        if not overlap_complete:
+            a.scene.log("warn", "drape: проверка пересечений разных деталей не завершена.", a.cmd.line)
     for part in parts:
         a.scene.consume(part)
 
@@ -1124,8 +1175,13 @@ def drape(a, name):
             "free": int(len(pinned) - pinned.sum()), "contacts": int(report["contacts"]),
             "max_strain": float(report["strain"]), "strain_p90": float(report["strain_p90"]),
             "stretch": float(report["stretch"]),
-            "self_collision": bool(use_self), "steps": int(report["steps"]),
-            "constraints": constraints, "mesh": mesh_step, "budget": budget,
+            "self_collision": bool(use_self), "self_gap": float(report["self_gap"]),
+            "self_pairs": int(report["self_pairs"]), "self_method": report["self_method"],
+            "parts_overlap_volume": float(overlap), "parts_overlap_checks": overlap_checks,
+            "parts_overlap_checked": bool(use_self and len(emitted) > 1),
+            "parts_overlap_complete": overlap_complete,
+            "steps": int(report["steps"]), "converged": bool(report["converged"]),
+            "last_motion": float(report["last_motion"]), "constraints": constraints, "mesh": mesh_step, "budget": budget,
             "thickness": thickness, "friction": friction, "bend": bend,
             "gravity": [round(float(v), 4) for v in direction], "g": g_amount,
             "rigid": (float(np.max(rigid_input)) if len(rigid_input) else 0.0),
@@ -1135,7 +1191,8 @@ def drape(a, name):
     root = _emit(a, name, emitted,
                  {"steps": steps, "constraints": constraints, "mesh": mesh_step,
                   "thickness": thickness, "friction": friction, "bend": bend,
-                  "rigid": rigid_text, "self": use_self, "pin": pin_mode})
+                  "rigid": rigid_text, "self": use_self, "self_gap": self_gap,
+                  "pin": pin_mode})
     root.notes.append(f"драпировка: {meta['vertices']} узлов, опор {len(hosts)}, "
                       f"контактов {meta['contacts']}, растяжение {meta['stretch']:.2f} мм "
                       f"({meta['max_strain']:.1%}), {meta['seconds']:.2f} с")

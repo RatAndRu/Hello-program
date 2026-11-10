@@ -18,9 +18,9 @@ const marker = 'const TOOL_SHAPES = ';
 const start = source.indexOf(marker) + marker.length;
 const end = source.indexOf('\n];', start) + 2;
 const tools = eval(`(${source.slice(start, end)})`);
-const { shapeScript } = new Function(
-  ['shapeParams', 'shapeScript'].map(functionSource).join('\n') + '\nreturn { shapeScript };'
-)();
+const { shapeScript } = new Function('currentScript',
+  ['uniqueObjectName', 'shapeParams', 'shapeScript'].map(functionSource).join('\n') + '\nreturn { shapeScript };'
+)(() => 'драпировка = box size=[1,1,1]');
 const wanted = ['table', 'door', 'window', 'curtain', 'drape', 'rug', 'socket', 'switch', 'bulb'];
 const output = {};
 for (const op of wanted) {
@@ -42,6 +42,33 @@ for (const op of wanted) {
 if ((output.drape.match(/\n/g) || []).length !== 2) {
   throw new Error('drape: карточка должна построить опору, ткань и выполнить drape');
 }
+// Драпировка находится среди инструментов, а не примитивов. Пустые поля
+// дают готовую демонстрацию, заполненные — имена уже существующих деталей.
+const drapeTool = tools.find((item) => item.op === 'drape');
+if (drapeTool.group !== 'Поверхность') throw new Error('drape: карточка не среди инструментов');
+if (output.drape.includes('self_gap=') || output.drape.includes('thickness=')) {
+  throw new Error('drape: автоматическая толщина/зазор стали явными');
+}
+const drapeOverrides = { objects: 'нижний, верхний', on: 'стол, пол', self_gap: '0.25' };
+const customCard = {
+  querySelector(selector) {
+    const key = selector.split('"')[1];
+    const param = drapeTool.params.find((item) => item.k === key);
+    if (!param) return null;
+    const value = drapeOverrides[param.k] ?? param.v;
+    return { value: String(value ?? ''), checked: value !== false };
+  },
+};
+const customDrape = shapeScript(drapeTool, customCard, { unique: true });
+if (!customDrape.startsWith('драпировка_2 = drape [нижний, верхний] on=[стол, пол]')
+    || !customDrape.includes('self_gap=0.25') || customDrape.includes('objects=')) {
+  throw new Error('drape: имена деталей, опор или явный зазор потеряны: ' + customDrape);
+}
+if (customDrape.includes(' = box ')) throw new Error('drape: свои детали заменены примером');
+if (!shapeScript(drapeTool, customCard).includes('опора = box')) {
+  throw new Error('drape: миниатюра должна собирать автономный пример');
+}
+
 // Авто-поля окна не должны перекрывать defaults выбранного типа. Иначе карточка
 // панорамы молча отправляла opening=все casing=да sill=да вместо неподвижного
 // панорамного блока. Явные пользовательские значения по-прежнему сохраняются.
@@ -63,5 +90,6 @@ const explicit = shapeScript(explicitTool, explicitCard);
 for (const part of ['type=панорамное', 'sections=4', 'opening=все', 'casing=да', 'sill=нет']) {
   if (!explicit.includes(part)) throw new Error(`window: потерян явный параметр ${part}`);
 }
-if (process.argv.includes('--json')) console.log(JSON.stringify(output));
+if (process.argv.includes('--drape-custom')) console.log(customDrape);
+else if (process.argv.includes('--json')) console.log(JSON.stringify(output));
 else console.log(`Сценарии ${wanted.length} интерьерных карточек сформированы без подмен параметров.`);

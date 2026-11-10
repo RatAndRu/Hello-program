@@ -7,8 +7,8 @@
 * результат детерминирован — та же строка ``.forma`` всегда даёт ту же сетку
   (порядок обхода фиксирован, критерий остановки — по смещению, а не по часам);
 * состояние не хранится между сборками: в сцене только геометрия;
-* геометрия не растягивается: длины рёбер удерживаются ограничениями, поэтому
-  «свисание» получается изгибом, а не масштабированием.
+* длины рёбер удерживаются ограничениями: деформация ограничена, но конечное
+  число шагов не гарантирует абсолютно нерастяжимую геометрию.
 
 Из чего состоит расчёт:
 
@@ -28,14 +28,13 @@
    своей геометрией, открытому листу толщина «достраивается» параметром.
 6. **Толщина оболочки** — связи между противоположными сторонами тонкой
    детали: без них лист сминается в фольгу и теряет толщину.
-7. **Самоколлизия** — частицы не ближе 0.75 толщины друг к другу, кроме
-   соседей по сетке. Первое приближение: не даёт слоям проходить насквозь,
-   но не разрешает сложные петли.
+7. **Самоколлизия** гибких частей — кандидаты вершина—треугольник за шаг,
+   с исключением соседей и противоположных сторон одной стенки. Для полностью
+   жёстких частей сохранён быстрый контакт частиц, чтобы звенья держали форму.
 
-Устойчивость без непрерывной проверки столкновений держится на двух правилах:
-объект заранее ставится вплотную к сцене, а смещение за шаг ограничено
-половиной ячейки контактной сетки — тогда ни одна частица не может проскочить
-опору между шагами.
+Шаг ограничен, но это приближённый решатель: быстрые столкновения рёбер,
+очень тонкие опоры и сложные начальные самопересечения могут остаться. Итог
+нескольких деталей дополнительно проверяется по их объёмному пересечению.
 """
 
 from __future__ import annotations
@@ -45,6 +44,7 @@ import time
 import numpy as np
 
 from .errors import GeometryError
+from .cloth_collision import SurfaceContacts
 
 # Слова направления гравитации: как удобно писать в сцене.
 GRAVITY_WORDS = {
@@ -507,7 +507,8 @@ def vertex_normals(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
     return normal
 
 
-def shell_pairs(vertices: np.ndarray, faces: np.ndarray, thickness: float):
+def shell_pairs(vertices: np.ndarray, faces: np.ndarray, thickness: float,
+                opposing_only: bool = True):
     """Пары вершин «сквозь толщину» и их исходные расстояния.
 
     У тонкой оболочки обе стороны — отдельные частицы, и ничто не мешает им
@@ -534,7 +535,8 @@ def shell_pairs(vertices: np.ndarray, faces: np.ndarray, thickness: float):
     # у противоположных сторон нормали смотрят в разные стороны, поэтому
     # важна не сторона, а совпадение линии пары с нормалью
     facing = np.abs(np.einsum("ij,ij->i", direction, normal[pairs[:, 0]]))
-    aligned = facing > 0.7
+    opposite = np.einsum("ij,ij->i", normal[pairs[:, 0]], normal[pairs[:, 1]])
+    aligned = (facing > (0.3 if opposing_only else 0.7)) & ((opposite < -0.2) if opposing_only else True)
     if not np.any(aligned):
         return np.zeros((0, 2), dtype=np.int64), np.zeros(0)
     pairs, distance = pairs[aligned], distance[aligned]
@@ -543,6 +545,19 @@ def shell_pairs(vertices: np.ndarray, faces: np.ndarray, thickness: float):
     first = np.ones(len(pairs), dtype=bool)
     first[1:] = pairs[1:, 0] != pairs[:-1, 0]
     pairs, distance = pairs[first], distance[first]
+    if opposing_only:
+        # У оболочки каждой вершине отвечает одна вершина с другой стороны.
+        # Иначе цепочка пересекающихся пар связывает целую область и рвёт
+        # рукав при столкновении.
+        order = np.argsort(distance, kind="stable")
+        occupied = np.zeros(len(vertices), dtype=bool)
+        chosen = []
+        for slot in order:
+            a, b = pairs[slot]
+            if not occupied[a] and not occupied[b]:
+                occupied[a] = occupied[b] = True
+                chosen.append(slot)
+        pairs, distance = pairs[chosen], distance[chosen]
     return pairs.astype(np.int64), distance
 
 
@@ -638,13 +653,28 @@ def place(vertices: np.ndarray, supports: np.ndarray, gravity: np.ndarray,
     return vertices + axis * shift
 
 
+def _volume_data(vertices: np.ndarray, faces: np.ndarray):
+    """Знаковый объём замкнутой поверхности и его градиент по вершинам."""
+    tri = vertices[faces]
+    cross_bc = np.cross(tri[:, 1], tri[:, 2])
+    volume = float(np.einsum("ij,ij->i", tri[:, 0], cross_bc).sum() / 6.0)
+    cross_ca = np.cross(tri[:, 2], tri[:, 0])
+    cross_ab = np.cross(tri[:, 0], tri[:, 1])
+    grad = np.zeros_like(vertices)
+    for axis in range(3):
+        grad[:, axis] = (np.bincount(faces[:, 0], weights=cross_bc[:, axis], minlength=len(vertices))
+                         + np.bincount(faces[:, 1], weights=cross_ca[:, axis], minlength=len(vertices))
+                         + np.bincount(faces[:, 2], weights=cross_ab[:, axis], minlength=len(vertices))) / 6.0
+    return volume, grad
+
+
 def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
              gravity: np.ndarray, g: float = 0.2, steps: int = 55,
              iterations: int = 14, stiffness: float = 1.0, bend: float = 0.25,
              damping: float = 0.88, friction: float = 0.6, rigid: float = 0.0,
              thickness: float = 0.5, self_collision: bool = True,
-             pinned: np.ndarray | None = None, tolerance: float = 0.01,
-             stable_steps: int = 10, relax: float = 1.4, gap: float = 0.0) -> dict:
+             self_gap: float | None = None, pinned: np.ndarray | None = None,
+             tolerance: float = 0.01, stable_steps: int = 10, relax: float = 1.4, gap: float = 0.0) -> dict:
     """Релаксация к равновесию. Возвращает новые вершины и измерения."""
     started = time.perf_counter()
     vertices = np.asarray(vertices, dtype=np.float64)
@@ -675,12 +705,6 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
     edges = _edge_arrays(faces)
     rest = np.linalg.norm(vertices[edges[:, 1]] - vertices[edges[:, 0]], axis=1)
     bend_pairs, bend_rest = _bend_arrays(faces, vertices)
-    excluded = _excluded_codes(faces, count)
-    self_distance = thickness * 0.75 if self_collision else 0.0
-    # толщину оболочки для связей «сквозь» берём из геометрии, а не из
-    # параметра: иначе thickness=0.15 у листа 0.4 мм отключил бы связи вовсе
-    natural = _thickness_of(vertices, faces) or thickness
-    shell, shell_rest = shell_pairs(vertices, faces, max(thickness, natural))
     components = _components(faces, count)
     comp_ids = [np.nonzero(components == key)[0] for key in np.unique(components)]
     rest_local = [vertices[ids] - vertices[ids].mean(axis=0) for ids in comp_ids]
@@ -695,6 +719,46 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
         else:
             raise GeometryError("drape: rigid задан не по числу частей детали.",
                                 hint=f"Частей {len(comp_ids)}, значений {given.size}.")
+    rigid_only = bool(len(rigid_weights) and np.all(rigid_weights >= 0.7))
+    volume_constraints = []
+    if not rigid_only:
+        for slot, ids in enumerate(comp_ids):
+            if rigid_weights[slot] >= 0.7:
+                continue
+            local_faces = faces[components[faces[:, 0]] == components[ids[0]]]
+            if len(local_faces) and is_closed(local_faces):
+                volume, _ = _volume_data(vertices, local_faces)
+                if abs(volume) > 1e-9:
+                    volume_constraints.append((local_faces, volume))
+
+    # У стенки сохраняем не только расстояние между сторонами, но и их
+    # направление по нормали: иначе обе поверхности могут соскользнуть друг
+    # относительно друга и сплющиться на опоре.
+    natural = _thickness_of(vertices, faces) or thickness
+    shell, shell_rest = shell_pairs(vertices, faces, max(thickness, natural),
+                                    opposing_only=not rigid_only)
+    if not rigid_only and len(shell):
+        flexible = np.zeros(count, dtype=bool)
+        for slot, ids in enumerate(comp_ids):
+            flexible[ids] = rigid_weights[slot] < 0.7
+        keep = (flexible[shell[:, 0]] & flexible[shell[:, 1]]
+                & (components[shell[:, 0]] == components[shell[:, 1]]))
+        shell, shell_rest = shell[keep], shell_rest[keep]
+    shell_sign = np.ones(len(shell))
+    if len(shell) and not rigid_only:
+        n0 = vertex_normals(vertices, faces)
+        signs = np.einsum("ij,ij->i", vertices[shell[:, 1]] - vertices[shell[:, 0]],
+                          n0[shell[:, 0]] - n0[shell[:, 1]])
+        shell_sign = np.where(signs < 0, -1.0, 1.0)
+    self_distance = ((max(0.02, min(0.8, 1.5 * thickness)) if closed
+                      else 0.5 * thickness) if self_collision else 0.0)
+    if rigid_only and self_collision:
+        self_distance = thickness * 0.75
+    if self_collision and self_gap is not None:
+        self_distance = max(float(self_gap), 1e-4)
+    self_contacts = (SurfaceContacts(vertices, faces, shell, self_distance, components, -gravity)
+                     if self_collision and not rigid_only else None)
+    rigid_excluded = _excluded_codes(faces, count) if self_collision and rigid_only else None
 
     # --- степени частиц и индексы для общей поправки (метод Якоби) ---
     # рёбра и изгиб складываются в один проход: две «разбросанные» суммы на
@@ -702,10 +766,10 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
     edge_a, edge_b = edges[:, 0], edges[:, 1]
     pair_a = np.concatenate((edge_a, bend_pairs[:, 0] if len(bend_pairs)
                              else np.zeros(0, dtype=np.int64),
-                             shell[:, 0] if len(shell) else np.zeros(0, dtype=np.int64)))
+                             shell[:, 0] if rigid_only and len(shell) else np.zeros(0, dtype=np.int64)))
     pair_b = np.concatenate((edge_b, bend_pairs[:, 1] if len(bend_pairs)
                              else np.zeros(0, dtype=np.int64),
-                             shell[:, 1] if len(shell) else np.zeros(0, dtype=np.int64)))
+                             shell[:, 1] if rigid_only and len(shell) else np.zeros(0, dtype=np.int64)))
     degree = np.bincount(pair_a, minlength=count) + np.bincount(pair_b, minlength=count)
     degree = np.maximum(degree, 1).astype(np.float64)
     axis_of = np.arange(3, dtype=np.int64)
@@ -724,8 +788,12 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
     self_pairs = 0
     still = 0
     converged_at = int(steps)
+    converged = False
+    movement = 0.0
     total_contacts = 0
 
+    support_contact = np.zeros(count, dtype=bool)
+    support_normal = np.zeros((count, 3), dtype=np.float64)
     for step in range(int(steps)):
         velocity = (position - previous) * float(damping)
         speed = np.linalg.norm(velocity, axis=1)
@@ -733,6 +801,10 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
         previous = position.copy()
         position[free] += velocity[free] + gravity * float(g)
         position[pinned] = fixed
+        if self_contacts is not None:
+            found, _overlap = self_contacts.project(previous, position, free,
+                                                     support_contact, rounds=12)
+            self_pairs = max(self_pairs, found)
 
         for it in range(int(iterations)):
             # --- длины рёбер и изгиб: одна общая поправка (метод Якоби) ---
@@ -741,7 +813,7 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
             share = ((length - rest) * float(stiffness)
                      / np.maximum(length, 1e-12) * 0.5)[:, None]
             push_edge = delta * share
-            if len(bend_pairs) and bend > 0:
+            if len(bend_pairs):
                 a, b = bend_pairs[:, 0], bend_pairs[:, 1]
                 delta = position[b] - position[a]
                 length = np.linalg.norm(delta, axis=1)
@@ -750,7 +822,7 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
                 push = np.concatenate((push_edge, delta * share), axis=0)
             else:
                 push = push_edge
-            if len(shell):
+            if rigid_only and len(shell):
                 delta = position[shell[:, 1]] - position[shell[:, 0]]
                 length = np.linalg.norm(delta, axis=1)
                 share = ((length - shell_rest) / np.maximum(length, 1e-12) * 0.5)[:, None]
@@ -781,10 +853,49 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
             if field is not None and (it % 2 == 0 or it == iterations - 1):
                 distance, _point, normal = field.closest(position)
                 near = np.isfinite(distance) & (distance < offset)
+                support_contact = np.isfinite(distance) & (distance < offset + 0.01)
+                support_normal = normal
                 if np.any(near):
                     ids = np.nonzero(near)[0]
                     position[ids] += normal[ids] * (offset - distance[ids])[:, None]
                     contacts = max(contacts, int(len(ids)))
+            if len(shell) and not rigid_only:
+                a, b = shell[:, 0], shell[:, 1]
+                delta = position[b] - position[a]
+                normal = vertex_normals(position, faces)
+                direction = normal[a] - normal[b]
+                norm = np.linalg.norm(direction, axis=1)
+                direction /= np.maximum(norm, 1e-12)[:, None]
+                target = direction * (shell_sign * shell_rest)[:, None]
+                correction = delta - target
+                wa = (free[a] & ~support_contact[a]).astype(float)
+                wb = (free[b] & ~support_contact[b]).astype(float)
+                # Обе стороны могут быть прижаты к одной опоре после большого
+                # шага. Тогда освобождаем ту сторону, которая должна смотреть
+                # от опоры наружу; иначе толщина уже никогда не восстановится.
+                both = support_contact[a] & support_contact[b]
+                toward = np.einsum("ij,ij->i", target, support_normal[a])
+                wa[both] = (free[a] & (toward <= 0.05 * shell_rest))[both]
+                wb[both] = (free[b] & (toward >= -0.05 * shell_rest))[both]
+                total = np.maximum(wa + wb, 1e-9)
+                shell_degree = (np.bincount(a, weights=wa, minlength=count)
+                                + np.bincount(b, weights=wb, minlength=count))
+                for axis in range(3):
+                    acc = (np.bincount(a, weights=correction[:, axis] * wa / total, minlength=count)
+                           - np.bincount(b, weights=correction[:, axis] * wb / total, minlength=count))
+                    position[:, axis] += acc * 0.8 / np.maximum(shell_degree, 1.0)
+            # Приближённо удерживаем объём материала каждой замкнутой гибкой
+            # части, не объём её полости. Это не гарантия локальной толщины.
+            if volume_constraints:
+                for local_faces, target_volume in volume_constraints:
+                    volume, grad = _volume_data(position, local_faces)
+                    grad[~free | support_contact] = 0.0
+                    denom = float(np.einsum("ij,ij->", grad, grad))
+                    if denom > 1e-12:
+                        adjustment = (target_volume - volume) / denom * grad
+                        magnitudes = np.linalg.norm(adjustment, axis=1)
+                        adjustment *= np.minimum(1.0, 0.2 / np.maximum(magnitudes, 1e-12))[:, None]
+                        position += adjustment
             position[pinned] = fixed
 
         if friction > 0 and field is not None:       # трение — один раз за шаг
@@ -798,26 +909,28 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
                 position[ids] -= moved * float(friction)
                 position[pinned] = fixed
 
-        if self_distance > 0:                        # самоколлизия
+        if rigid_excluded is not None:
             grid = ParticleHash(position, max(self_distance, 1e-3))
-            pairs = grid.pairs(position, self_distance, excluded)
+            pairs = grid.pairs(position, self_distance, rigid_excluded)
             if len(pairs):
-                self_pairs = max(self_pairs, int(len(pairs)))
+                self_pairs = max(self_pairs, len(pairs))
                 delta = position[pairs[:, 1]] - position[pairs[:, 0]]
-                distance = np.linalg.norm(delta, axis=1)
-                short = distance < self_distance
-                if np.any(short):
-                    pairs = pairs[short]
-                    delta = delta[short]
-                    distance = np.maximum(distance[short], 1e-9)
-                    normal = delta / distance[:, None]
-                    push = self_distance - distance
-                    wa = free[pairs[:, 0]].astype(float)
-                    wb = free[pairs[:, 1]].astype(float)
-                    total = np.maximum(wa + wb, 1e-9)
-                    correction = normal * (push / total)[:, None]
-                    position[pairs[:, 0]] -= correction * wa[:, None]
-                    position[pairs[:, 1]] += correction * wb[:, None]
+                length = np.maximum(np.linalg.norm(delta, axis=1), 1e-9)
+                normal = delta / length[:, None]
+                wa = free[pairs[:, 0]].astype(float)
+                wb = free[pairs[:, 1]].astype(float)
+                correction = normal * ((self_distance - length) / np.maximum(wa + wb, 1e-9))[:, None]
+                position[pairs[:, 0]] -= correction * wa[:, None]
+                position[pairs[:, 1]] += correction * wb[:, None]
+            position[pinned] = fixed
+        if self_contacts is not None:
+            found, _overlap = self_contacts.project(previous, position, free,
+                                                     support_contact, rounds=12)
+            self_pairs = max(self_pairs, found)
+            if field is not None:
+                distance, _point, normal = field.closest(position)
+                near = np.isfinite(distance) & (distance < offset)
+                position[near] += normal[near] * (offset - distance[near])[:, None]
             position[pinned] = fixed
 
         if not np.all(np.isfinite(position)) or float(np.max(np.abs(position))) > 1e7:
@@ -829,6 +942,7 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
             still += 1
             if still >= int(stable_steps):
                 converged_at = step + 2 - still
+                converged = True
                 break
         else:
             still = 0
@@ -854,12 +968,17 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
     return {
         "vertices": position,
         "steps": int(converged_at),
+        "converged": bool(converged),
+        "last_motion": float(movement),
         "strain": strain,
         "stretch": stretch,
         "strain_p90": strain_p90,
         "contacts": contacts_final,
         "contacts_max": int(total_contacts),
         "self_pairs": int(self_pairs),
+        "self_gap": float(self_distance),
+        "self_method": "particles" if rigid_only and self_collision else
+                       ("surfaces" if self_collision else "off"),
         "vertices_count": count,
         "edges": int(len(edges)),
         "bend": int(len(bend_pairs)),

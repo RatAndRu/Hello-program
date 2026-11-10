@@ -5721,20 +5721,24 @@ const TOOL_SHAPES = [
     ],
   },
   {
-    op: 'drape', name: 'драпировка', title: 'Драпировка — равновесие на опорах', group: 'Готовые детали',
-    desc: 'Деталь сразу ложится в окончательную позу: контакт по треугольникам всех опор, длины рёбер сохраняются, изгиб и трение настраиваются, толстые куски держат форму. Анимации нет.',
+    op: 'drape', name: 'драпировка', title: 'Драпировка — слои и опоры', group: 'Поверхность',
+    desc: 'Заполните оба поля имён, чтобы уложить свои детали на одну или несколько опор (имена через запятую). Оставьте пустыми — добавится готовый пример; миниатюра показывает его. Это итоговая поза, не анимация.',
     baseScript: '{target} = box size=[90,70,20]\n{source} = box size=[140,110,0.4] at=[0,0,35]',
     baseName: 'ткань', targetName: 'опора',
     template: '{source} = drape [{source}] on={target}{params}',
     params: [
-      { k: 'mesh', label: 'сетка', v: 3.5, step: 0.5, min: 0.5, max: 40 },
+      { k: 'objects', label: 'детали в сцене', v: '', kind: 'raw', auto: true },
+      { k: 'on', label: 'опоры в сцене', v: '', kind: 'raw', auto: true },
+      { k: 'mesh', label: 'сетка, мм', v: 3.5, step: 0.5, min: 0.5, max: 40 },
       { k: 'gravity', label: 'гравитация', v: 'z-', kind: 'raw', choices: ['z-', 'z+', 'x+', 'x-', 'y+', 'y-'] },
       { k: 'friction', label: 'трение', v: 0.6, step: 0.05, min: 0, max: 1 },
       { k: 'bend', label: 'изгиб', v: 0.25, step: 0.05, min: 0, max: 1 },
       { k: 'rigid', label: 'форма', v: 'auto', kind: 'raw', choices: ['auto', '1', '0.5', '0'] },
-      { k: 'self', label: 'слои', v: true, kind: 'bool' },
+      { k: 'self', label: 'самоконтакт слоёв', v: true, kind: 'bool' },
+      { k: 'self_gap', label: 'зазор слоёв, мм (авто)', v: '', auto: true, step: 0.1, min: 0.005, max: 100 },
+      { k: 'steps', label: 'шаги (авто)', v: '', auto: true, step: 5, min: 1, max: 1000 },
       { k: 'pin', label: 'закрепить', v: 'none', kind: 'raw', choices: ['none', 'corners', 'edges', 'front', 'back', 'left', 'right'] },
-      { k: 'thickness', label: 'толщина', v: 0.25, step: 0.05, min: 0.005, max: 5 },
+      { k: 'thickness', label: 'толщина (авто)', v: '', auto: true, step: 0.05, min: 0.005, max: 50 },
     ],
   },
   {
@@ -7512,6 +7516,8 @@ function insertTool(lines, label) {
 function shapeParams(tool, card) {
   const parts = [];
   tool.params.forEach((p) => {
+    // Имена — поля выбора сцены, не дополнительные параметры команды.
+    if (tool.op === 'drape' && (p.k === 'objects' || p.k === 'on')) return;
     const input = card.querySelector(`[data-key="${p.k}"]`);
     if (!input) return;
     if (p.kind === 'bool') {
@@ -7568,6 +7574,19 @@ function shapeScript(tool, card, { unique = false } = {}) {
   const parts = shapeParams(tool, card);
   const tail = parts.length ? ' ' + parts.join(' ') : '';
   const script = unique ? currentScript() : '';
+  if (tool.op === 'drape' && unique) {
+    const objects = card.querySelector('[data-key="objects"]')?.value.trim() || '';
+    const supports = card.querySelector('[data-key="on"]')?.value.trim() || '';
+    if (objects && supports) {
+      const names = (value) => {
+        if (value.startsWith('[') && value.endsWith(']')) return value;
+        const items = value.split(',').map((part) => part.trim()).filter(Boolean);
+        return items.length === 1 ? items[0] : `[${items.join(', ')}]`;
+      };
+      const name = uniqueObjectName('драпировка', script);
+      return `${name} = drape ${names(objects)} on=${names(supports)}${tail}`;
+    }
+  }
   if (tool.baseScript) {
     const sourceName = unique
       ? uniqueObjectName(tool.baseName || 'плёнка', script)
@@ -7600,6 +7619,22 @@ function shapeScript(tool, card, { unique = false } = {}) {
 }
 
 function addShapeTool(tool, card) {
+  if (tool.op === 'drape') {
+    const objects = card.querySelector('[data-key="objects"]')?.value.trim() || '';
+    const supports = card.querySelector('[data-key="on"]')?.value.trim() || '';
+    if (Boolean(objects) !== Boolean(supports)) {
+      toast('Для драпировки укажите и детали, и опоры — или оставьте оба поля пустыми.');
+      return;
+    }
+    const hasNames = (value) => {
+      const body = value.startsWith('[') && value.endsWith(']') ? value.slice(1, -1) : value;
+      return body.split(',').some((name) => name.trim());
+    };
+    if (objects && (!hasNames(objects) || !hasNames(supports))) {
+      toast('Для драпировки нужны непустые имена деталей и опор.');
+      return;
+    }
+  }
   insertTool(shapeScript(tool, card, { unique: true }), tool.title);
 }
 
