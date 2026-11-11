@@ -679,18 +679,33 @@ def auto_rigid_parts(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
 
 def place(vertices: np.ndarray, supports: np.ndarray, gravity: np.ndarray,
           gap: float) -> np.ndarray:
-    """Ставит деталь вплотную к сцене: её крайняя точка — над верхом опор.
+    """Консервативно пропускает свободный полёт до возможной первой опоры.
 
-    Без этого падение занимало бы все шаги: расчёт интересен не полётом, а тем,
-    как деталь ложится.
+    Треугольники отбираются по габаритам поперёк гравитации; опоры сбоку или
+    позади тела не поднимают его. Пересекающиеся габариты не доказывают
+    столкновения, поэтому при них перенос отключён. Это ускорение, не CCD.
     """
     if not len(supports) or not np.any(gravity):
         return vertices.copy()
     axis = gravity / np.linalg.norm(gravity)
-    # «самая нижняя» точка детали и «самая верхняя» точка сцены: по оси гравитации
-    lowest = float((vertices @ axis).max())
-    scene_top = float((np.asarray(supports).reshape(-1, 3) @ axis).min())
-    shift = (scene_top - float(gap)) - lowest
+    helper = np.eye(3)[int(np.argmin(np.abs(axis)))]
+    u = np.cross(axis, helper)
+    u /= np.linalg.norm(u)
+    v = np.cross(axis, u)
+    basis = np.column_stack((u, v, axis))
+    body = np.asarray(vertices, dtype=np.float64) @ basis
+    triangles = np.asarray(supports, dtype=np.float64).reshape(-1, 3, 3) @ basis
+    body_lo, body_hi = body.min(axis=0), body.max(axis=0)
+    tri_lo, tri_hi = triangles.min(axis=1), triangles.max(axis=1)
+    clearance = max(float(gap), 0.0)
+    overlap = np.all((tri_hi[:, :2] >= body_lo[:2] - clearance) &
+                     (tri_lo[:, :2] <= body_hi[:2] + clearance), axis=1)
+    relevant = overlap & (tri_hi[:, 2] >= body_lo[2] - clearance)
+    if not np.any(relevant):
+        return vertices.copy()
+    if np.any(relevant & (tri_lo[:, 2] <= body_hi[2] + clearance)):
+        return vertices.copy()
+    shift = max(0.0, float(np.min(tri_lo[relevant, 2]) - clearance - body_hi[2]))
     return vertices + axis * shift
 
 
