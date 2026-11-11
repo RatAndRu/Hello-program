@@ -1,0 +1,52 @@
+name: Форма 3D — короткая проверка IPC
+
+# Исследовательская проверка Python-библиотеки; EXE и релизы не создаются.
+# Автозапуск только при изменении этого workflow, чтобы не запускать длинные
+# проверки и сборки при каждом промежуточном эксперименте.
+on:
+  push:
+    paths:
+      - '.github/workflows/forma-drape-ipc-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+
+jobs:
+  short-windows-audit:
+    name: Windows — IPC и два сценария с таймаутом
+    runs-on: windows-latest
+    timeout-minutes: 6
+    defaults:
+      run:
+        shell: bash
+        working-directory: forma
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Установить зависимости только для диагностики
+        run: |
+          python -m pip install numpy==2.4.6 scipy==1.17.1 manifold3d==3.5.4 trimesh==5.2.0 pytest python-fcl==0.7.0.11 ipctk==1.6.1
+          python -c "import numpy, scipy, fcl, ipctk; print('IPC и проверочные библиотеки импортируются')"
+      - name: Проверить контакт и принудительный таймаут
+        run: python -m pytest -q tests/test_drape_ipc_bounded_probe.py
+      - name: Коротко проверить плоский лист и лист на шаре
+        run: >-
+          python tools/drape_bounded_probe.py --mode ipc
+          --cases 02_sheet_over_sheet 01_sheet_over_ball
+          --budget 90 --case-limit 45 --rounds 2 --output ipc-windows-smoke.json
+      - name: Сохранить диагностический отчёт, не EXE
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Forma3D-IPC-windows-diagnostic
+          path: forma/ipc-windows-smoke.json
+          if-no-files-found: warn
