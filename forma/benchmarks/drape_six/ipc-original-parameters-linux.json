@@ -1,0 +1,974 @@
+{
+  "mode": "ipc",
+  "budget_seconds": 280.0,
+  "case_limit_seconds": 105.0,
+  "environment": {
+    "python": "3.11.2",
+    "platform": "Linux-6.1.158+-x86_64-with-glibc2.36",
+    "dependencies": {
+      "numpy": "2.4.6",
+      "scipy": "1.17.1",
+      "ipctk": "1.6.1",
+      "manifold3d": "3.5.4",
+      "trimesh": "5.2.0",
+      "python-fcl": "0.7.0.11"
+    },
+    "source_sha256": {
+      "forma/cloth.py": "8a46d1042990dec9e2a78bd76d0591f5ee6399be4c8a3515e4e6bbb2ba3d454e",
+      "forma/cloth_collision.py": "e85be962b9d8fbb69f5c5f6fbe2df95ecd0ae8b3e1ff56b6077f71fb56e696d3",
+      "forma/cloth_check.py": "593ff63126abf579ff028ff967b9d1c497c88d3f83baae722d795c3a9d63cb0b",
+      "forma/cloth_remesh.py": "82ebd62f0707258c29f10a4c8552726286dddfff0d9e96f3bc3f8faa9502a982",
+      "forma/ops_interior.py": "94ca5d7c96f3de31fa046a6c0909b4a5bb45cebec4e41d778a40db792d0b4ec8",
+      "tools/drape_bounded_probe.py": "ba1420df502a76e6468a40782317a3dac55e39a636ba9950240fab40ce2b8efa",
+      "tools/drape_ipc_contact_probe.py": "fc8883e12b8e1c55ae710f9209d9aa721e2ab4a7dd718dfbaa5481fd6d09e2be",
+      "tools/drape_six_probe.py": "426bf33152b05bf7bc3c4c70e9fea39b345e6c7474804958b33664c8ed7a49bd",
+      "tools/drape_triangle_probe.py": "1755563129902ed5c3532f6fc635fddee10f70a7743d40eb6cb0e19b4d27a2f4",
+      "tools/drape_support_probe.py": "2aa2021f2e612a6e001f28078c35b1288eb1f9fb8eb2d59b772b0caad5bc26de",
+      "tools/drape_mujoco_probe.py": "cad17070bf8f478cd1cf310f3adf4c078842d2dc0bb779658acf7e12914f54d1",
+      "tools/audit_drape_sleeve.py": "f98c132c8e70d61d59b7e219b910221680655907d611a45808996ac795d6661d"
+    }
+  },
+  "parameters": {
+    "gravity_scale": 1.0,
+    "iterations_scale": 1.0,
+    "rounds": 2
+  },
+  "cases": [
+    {
+      "name": "04_tablecloth",
+      "status": "completed",
+      "timeout_seconds": 105.0,
+      "result": {
+        "name": "04_tablecloth",
+        "scenario": "examples/drape_tablecloth_fast_076.forma",
+        "source_sha256": "f3839c5f9025bd63ca5434c0802149e17542ec605eee8daf20b2de9ce75a8a25",
+        "mode": "current",
+        "elapsed_seconds": 24.623,
+        "visible_triangles": 2520,
+        "body_triangles": 2112,
+        "bbox_initial": [
+          -60.0,
+          -60.0,
+          70.0,
+          60.0,
+          60.0,
+          70.6
+        ],
+        "bbox_final": [
+          -58.81732177734375,
+          -58.96842575073242,
+          25.897842407226562,
+          58.83246994018555,
+          58.70183181762695,
+          41.80519104003906
+        ],
+        "watertight": true,
+        "euler_number": 2,
+        "height_initial_mm": 0.5999999999999943,
+        "height_final_mm": 15.9073486328125,
+        "volume_ratio": 0.9962098297638005,
+        "edges": {
+          "count": 3168,
+          "complete": true,
+          "max_compression_percent": 4.126777964848316,
+          "max_extension_percent": 7.74077298680893,
+          "max_abs_percent": 7.74077298680893,
+          "p90_abs_percent": 1.9864446228277595
+        },
+        "shell_pair_lengths": {
+          "count": 529,
+          "complete": true,
+          "max_compression_percent": 1.2545520178264269e-12,
+          "max_extension_percent": 1.3766765505351941e-12,
+          "max_abs_percent": 1.3766765505351941e-12,
+          "p90_abs_percent": 6.106226635438361e-13
+        },
+        "shell_normal_projections": {
+          "count": 529,
+          "measured": 529,
+          "complete": true,
+          "min_ratio": 0.9999999997782242,
+          "max_ratio": 1.0000000004166794,
+          "p05_ratio": 0.9999999999999936,
+          "p95_ratio": 1.0000000000000062
+        },
+        "tetra_probe": {
+          "available": true,
+          "count": 2904,
+          "inverted": 0,
+          "min_jacobian": 0.8140296276787994,
+          "max_jacobian": 1.1176769778139062,
+          "retriangulated_boundary_faces": 88
+        },
+        "boolean_by_support": {
+          "столешница": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          },
+          "ножка_левая_передняя": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          },
+          "ножка_правая_передняя": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          },
+          "ножка_левая_задняя": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          },
+          "ножка_правая_задняя": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          },
+          "пол": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          }
+        },
+        "boolean_reliable": true,
+        "metadata": {
+          "supports": 6,
+          "rigid": 0.0,
+          "steps": 70,
+          "converged": false,
+          "last_motion": 0.2577765312837237,
+          "movement_tolerance": 0.0075,
+          "max_strain_all": 0.07740772986808928,
+          "strain_all_p90": 0.019864446228277585,
+          "penetration": 4.9960036108132044e-15,
+          "support_surface_pairs": 0,
+          "support_overlap_volume": 0.0,
+          "support_overlap_complete": true,
+          "self_intersections": 0,
+          "self_intersections_adjacent": 0,
+          "self_intersections_complete": true,
+          "equilibrium_verified": false,
+          "geometry_checks_passed": true
+        },
+        "warnings": [
+          "drape: достигнут предел 70 шагов, равновесие не подтверждено (последнее смещение до 0.258 мм); большее число шагов не гарантирует устойчивость."
+        ],
+        "fcl": {
+          "available": true,
+          "nonadjacent_pairs": 0,
+          "nonadjacent_complete": true,
+          "adjacent_pairs_after_inset": 0,
+          "adjacent_complete": true,
+          "support_surface_contact_or_crossing": false
+        },
+        "fcl_by_support": {
+          "столешница": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          },
+          "ножка_левая_передняя": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          },
+          "ножка_правая_передняя": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          },
+          "ножка_левая_задняя": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          },
+          "ножка_правая_задняя": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          },
+          "пол": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          }
+        },
+        "ccd": {
+          "initial_error": null,
+          "checked_segments": 70,
+          "first_unsafe_segment": null,
+          "total_frames": 70,
+          "minimum_distance_mm": 0.0,
+          "completed": true,
+          "after_placement_only": true
+        },
+        "glb": {
+          "bytes": 85124,
+          "triangles": 2520
+        },
+        "material_edges": [
+          {
+            "axis": "+x",
+            "hem_from_center_mm": 56.429929878995225,
+            "drop_from_center_mm": 13.47825161945056,
+            "angle_from_vertical_deg": 78.53077589939254
+          },
+          {
+            "axis": "-x",
+            "hem_from_center_mm": 56.02912128819428,
+            "drop_from_center_mm": 14.052076231599692,
+            "angle_from_vertical_deg": 76.15251561728995
+          },
+          {
+            "axis": "+y",
+            "hem_from_center_mm": 56.0011085119076,
+            "drop_from_center_mm": 14.810345247374627,
+            "angle_from_vertical_deg": 71.43204198383039
+          },
+          {
+            "axis": "-y",
+            "hem_from_center_mm": 56.47295837658298,
+            "drop_from_center_mm": 12.676513809551402,
+            "angle_from_vertical_deg": 82.90660137767219
+          }
+        ],
+        "ipc_contact_experiment": {
+          "gravity_scale": 1.0,
+          "iterations_scale": 1.0,
+          "steps_scale": 1.0,
+          "rounds": 2,
+          "stats": {
+            "calls": 70,
+            "local_hits": 0,
+            "fallbacks": 0,
+            "blocked": 0,
+            "minimum_fallback_alpha": 1.0
+          },
+          "note": "Исследовательский контакт: не приложение, не гарантия толщины и равновесия."
+        }
+      },
+      "elapsed_seconds": 26.085
+    },
+    {
+      "name": "01_sheet_over_ball",
+      "status": "completed",
+      "timeout_seconds": 105.0,
+      "result": {
+        "name": "01_sheet_over_ball",
+        "scenario": "benchmarks/drape_six/01_sheet_over_ball.forma",
+        "source_sha256": "28be258d2b3fd6a5a1cf3271d143f7dbe2945c7800bfb6257208544dc8395f3e",
+        "mode": "current",
+        "elapsed_seconds": 7.228,
+        "visible_triangles": 1032,
+        "body_triangles": 892,
+        "bbox_initial": [
+          -36.0,
+          -30.0,
+          40.0,
+          36.0,
+          30.0,
+          40.599999999999994
+        ],
+        "bbox_final": [
+          -35.30616760253906,
+          -30.035541534423828,
+          0.019999999552965164,
+          35.34428787231445,
+          29.808429718017578,
+          9.108207702636719
+        ],
+        "watertight": true,
+        "euler_number": 2,
+        "height_initial_mm": 0.5999999999999943,
+        "height_final_mm": 9.088207703083754,
+        "volume_ratio": 0.9827904196913052,
+        "edges": {
+          "count": 1338,
+          "complete": true,
+          "max_compression_percent": 6.387019992337084,
+          "max_extension_percent": 15.449599116277813,
+          "max_abs_percent": 15.449599116277813,
+          "p90_abs_percent": 1.8682047257137842
+        },
+        "shell_pair_lengths": {
+          "count": 224,
+          "complete": true,
+          "max_compression_percent": 1.4432899320127035e-13,
+          "max_extension_percent": 2.220446049250313e-13,
+          "max_abs_percent": 2.220446049250313e-13,
+          "p90_abs_percent": 8.548717289613724e-14
+        },
+        "shell_normal_projections": {
+          "count": 224,
+          "measured": 224,
+          "complete": true,
+          "min_ratio": 0.9999999972527093,
+          "max_ratio": 1.0000000069136388,
+          "p05_ratio": 0.9999999999999942,
+          "p95_ratio": 1.0000000000000009
+        },
+        "tetra_probe": {
+          "available": true,
+          "count": 1170,
+          "inverted": 0,
+          "min_jacobian": 0.7163219412078464,
+          "max_jacobian": 1.227816187589876,
+          "retriangulated_boundary_faces": 52
+        },
+        "boolean_by_support": {
+          "площадка": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          },
+          "шар": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          }
+        },
+        "boolean_reliable": true,
+        "metadata": {
+          "supports": 2,
+          "rigid": 0.0,
+          "steps": 55,
+          "converged": false,
+          "last_motion": 0.4268288128874336,
+          "movement_tolerance": 0.005000000000000001,
+          "max_strain_all": 0.15449599116277807,
+          "strain_all_p90": 0.01868204725713785,
+          "penetration": 0.0,
+          "support_surface_pairs": 0,
+          "support_overlap_volume": 0.0,
+          "support_overlap_complete": true,
+          "self_intersections": 0,
+          "self_intersections_adjacent": 0,
+          "self_intersections_complete": true,
+          "equilibrium_verified": false,
+          "geometry_checks_passed": true
+        },
+        "warnings": [
+          "drape: максимальное изменение длины ребра 15.4% (включая короткие рёбра стенки); нерастяжимость не подтверждена. Попробуйте увеличить constraints или уменьшить g.",
+          "drape: достигнут предел 55 шагов, равновесие не подтверждено (последнее смещение до 0.427 мм); большее число шагов не гарантирует устойчивость."
+        ],
+        "fcl": {
+          "available": true,
+          "nonadjacent_pairs": 0,
+          "nonadjacent_complete": true,
+          "adjacent_pairs_after_inset": 0,
+          "adjacent_complete": true,
+          "support_surface_contact_or_crossing": false
+        },
+        "fcl_by_support": {
+          "площадка": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          },
+          "шар": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          }
+        },
+        "ccd": {
+          "initial_error": null,
+          "checked_segments": 55,
+          "first_unsafe_segment": null,
+          "total_frames": 55,
+          "minimum_distance_mm": 0.0,
+          "completed": true,
+          "after_placement_only": true
+        },
+        "glb": {
+          "bytes": 38464,
+          "triangles": 1032
+        },
+        "ipc_contact_experiment": {
+          "gravity_scale": 1.0,
+          "iterations_scale": 1.0,
+          "steps_scale": 1.0,
+          "rounds": 2,
+          "stats": {
+            "calls": 55,
+            "local_hits": 0,
+            "fallbacks": 0,
+            "blocked": 0,
+            "minimum_fallback_alpha": 1.0
+          },
+          "note": "Исследовательский контакт: не приложение, не гарантия толщины и равновесия."
+        }
+      },
+      "elapsed_seconds": 8.277
+    },
+    {
+      "name": "02_sheet_over_sheet",
+      "status": "completed",
+      "timeout_seconds": 105.0,
+      "result": {
+        "name": "02_sheet_over_sheet",
+        "scenario": "benchmarks/drape_six/02_sheet_over_sheet.forma",
+        "source_sha256": "24285e00f4703a035c7ceb61094a835c3fa62f1dde76e34dd2c7d0077e7f3493",
+        "mode": "current",
+        "elapsed_seconds": 1.254,
+        "visible_triangles": 904,
+        "body_triangles": 892,
+        "bbox_initial": [
+          -36.0,
+          -30.0,
+          40.0,
+          36.0,
+          30.0,
+          40.599999999999994
+        ],
+        "bbox_final": [
+          -36.000221252441406,
+          -30.000791549682617,
+          0.019999999552965164,
+          36.00114059448242,
+          30.000642776489258,
+          0.6200118660926819
+        ],
+        "watertight": true,
+        "euler_number": 2,
+        "height_initial_mm": 0.5999999999999943,
+        "height_final_mm": 0.6000118665397167,
+        "volume_ratio": 1.00000975010125,
+        "edges": {
+          "count": 1338,
+          "complete": true,
+          "max_compression_percent": 0.0014544657166881692,
+          "max_extension_percent": 0.0028529364606288965,
+          "max_abs_percent": 0.0028529364606288965,
+          "p90_abs_percent": 0.001291985712301713
+        },
+        "shell_pair_lengths": {
+          "count": 224,
+          "complete": true,
+          "max_compression_percent": 2.220446049250313e-14,
+          "max_extension_percent": 2.220446049250313e-14,
+          "max_abs_percent": 2.220446049250313e-14,
+          "p90_abs_percent": 2.220446049250313e-14
+        },
+        "shell_normal_projections": {
+          "count": 224,
+          "measured": 224,
+          "complete": true,
+          "min_ratio": 0.9999999999972149,
+          "max_ratio": 1.0000000000039027,
+          "p05_ratio": 0.9999999999999998,
+          "p95_ratio": 1.0000000000000002
+        },
+        "tetra_probe": {
+          "available": true,
+          "count": 1170,
+          "inverted": 0,
+          "min_jacobian": 0.999994056045671,
+          "max_jacobian": 1.0000431480914194,
+          "retriangulated_boundary_faces": 52
+        },
+        "boolean_by_support": {
+          "площадка": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          }
+        },
+        "boolean_reliable": true,
+        "metadata": {
+          "supports": 1,
+          "rigid": 0.0,
+          "steps": 11,
+          "converged": true,
+          "last_motion": 8.269690863349498e-05,
+          "movement_tolerance": 0.005000000000000001,
+          "max_strain_all": 2.8529364606303747e-05,
+          "strain_all_p90": 1.2919857123002637e-05,
+          "penetration": 0.0,
+          "support_surface_pairs": 0,
+          "support_overlap_volume": 0.0,
+          "support_overlap_complete": true,
+          "self_intersections": 0,
+          "self_intersections_adjacent": 0,
+          "self_intersections_complete": true,
+          "equilibrium_verified": false,
+          "geometry_checks_passed": true
+        },
+        "warnings": [],
+        "fcl": {
+          "available": true,
+          "nonadjacent_pairs": 0,
+          "nonadjacent_complete": true,
+          "adjacent_pairs_after_inset": 0,
+          "adjacent_complete": true,
+          "support_surface_contact_or_crossing": false
+        },
+        "fcl_by_support": {
+          "площадка": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          }
+        },
+        "ccd": {
+          "initial_error": null,
+          "checked_segments": 11,
+          "first_unsafe_segment": null,
+          "total_frames": 11,
+          "minimum_distance_mm": 0.0,
+          "completed": true,
+          "after_placement_only": true
+        },
+        "glb": {
+          "bytes": 32436,
+          "triangles": 904
+        },
+        "ipc_contact_experiment": {
+          "gravity_scale": 1.0,
+          "iterations_scale": 1.0,
+          "steps_scale": 1.0,
+          "rounds": 2,
+          "stats": {
+            "calls": 11,
+            "local_hits": 0,
+            "fallbacks": 0,
+            "blocked": 0,
+            "minimum_fallback_alpha": 1.0
+          },
+          "note": "Исследовательский контакт: не приложение, не гарантия толщины и равновесия."
+        }
+      },
+      "elapsed_seconds": 2.538
+    },
+    {
+      "name": "03_soft_sphere",
+      "status": "completed",
+      "timeout_seconds": 105.0,
+      "result": {
+        "name": "03_soft_sphere",
+        "scenario": "benchmarks/drape_six/03_soft_sphere.forma",
+        "source_sha256": "1378d94b015a91aa88e27c82e94461c50e064f98a6e39fd8c3b9f83743033574",
+        "mode": "current",
+        "elapsed_seconds": 5.246,
+        "visible_triangles": 524,
+        "body_triangles": 512,
+        "bbox_initial": [
+          -14.0,
+          -14.0,
+          26.0,
+          14.0,
+          14.0,
+          54.0
+        ],
+        "bbox_final": [
+          -14.698768615722656,
+          -14.602596282958984,
+          0.10000000149011612,
+          14.616653442382812,
+          14.650263786315918,
+          24.196887969970703
+        ],
+        "watertight": true,
+        "euler_number": 2,
+        "height_initial_mm": 28.0,
+        "height_final_mm": 24.096887968480587,
+        "volume_ratio": 0.9999925794604496,
+        "edges": {
+          "count": 768,
+          "complete": true,
+          "max_compression_percent": 9.250420782558733,
+          "max_extension_percent": 11.93581680229543,
+          "max_abs_percent": 11.93581680229543,
+          "p90_abs_percent": 4.460898186331186
+        },
+        "shell_pair_lengths": null,
+        "shell_normal_projections": null,
+        "tetra_probe": {
+          "available": false,
+          "reason": "для сплошного шара нет этой призменной модели"
+        },
+        "boolean_by_support": {
+          "площадка": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          }
+        },
+        "boolean_reliable": true,
+        "metadata": {
+          "supports": 1,
+          "rigid": 0.0,
+          "steps": 100,
+          "converged": false,
+          "last_motion": 0.005273137398425499,
+          "movement_tolerance": 0.005000000000000001,
+          "max_strain_all": 0.1193581680229544,
+          "strain_all_p90": 0.044608981863311845,
+          "penetration": 0.0,
+          "support_surface_pairs": 0,
+          "support_overlap_volume": 0.0,
+          "support_overlap_complete": true,
+          "self_intersections": 0,
+          "self_intersections_adjacent": 0,
+          "self_intersections_complete": true,
+          "equilibrium_verified": false,
+          "geometry_checks_passed": true
+        },
+        "warnings": [
+          "drape: максимальное изменение длины ребра 11.9% (включая короткие рёбра стенки); нерастяжимость не подтверждена. Попробуйте увеличить constraints или уменьшить g.",
+          "drape: достигнут предел 100 шагов, равновесие не подтверждено (последнее смещение до 0.005 мм); большее число шагов не гарантирует устойчивость."
+        ],
+        "fcl": {
+          "available": true,
+          "nonadjacent_pairs": 0,
+          "nonadjacent_complete": true,
+          "adjacent_pairs_after_inset": 0,
+          "adjacent_complete": true,
+          "support_surface_contact_or_crossing": false
+        },
+        "fcl_by_support": {
+          "площадка": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          }
+        },
+        "ccd": {
+          "initial_error": null,
+          "checked_segments": 100,
+          "first_unsafe_segment": null,
+          "total_frames": 100,
+          "minimum_distance_mm": 0.0,
+          "completed": true,
+          "after_placement_only": true
+        },
+        "glb": {
+          "bytes": 18032,
+          "triangles": 524
+        },
+        "ipc_contact_experiment": {
+          "gravity_scale": 1.0,
+          "iterations_scale": 1.0,
+          "steps_scale": 1.0,
+          "rounds": 2,
+          "stats": {
+            "calls": 100,
+            "local_hits": 0,
+            "fallbacks": 0,
+            "blocked": 0,
+            "minimum_fallback_alpha": 1.0
+          },
+          "note": "Исследовательский контакт: не приложение, не гарантия толщины и равновесия."
+        }
+      },
+      "elapsed_seconds": 6.137
+    },
+    {
+      "name": "05_sleeve",
+      "status": "completed",
+      "timeout_seconds": 105.0,
+      "result": {
+        "name": "05_sleeve",
+        "scenario": "benchmarks/drape_six/05_sleeve.forma",
+        "source_sha256": "562a1dbcfc6de37bec7c491389c947a408203b48b58bfc93814db5de076266fc",
+        "mode": "current",
+        "elapsed_seconds": 12.565,
+        "visible_triangles": 1548,
+        "body_triangles": 1536,
+        "bbox_initial": [
+          -35.0,
+          -11.0,
+          40.0,
+          35.0,
+          11.0,
+          62.0
+        ],
+        "bbox_final": [
+          -35.127593994140625,
+          -15.024974822998047,
+          0.019999999552965164,
+          35.33351516723633,
+          15.055876731872559,
+          12.802935600280762
+        ],
+        "watertight": true,
+        "euler_number": 0,
+        "height_initial_mm": 22.0,
+        "height_final_mm": 12.782935600727797,
+        "volume_ratio": 0.9807658251971625,
+        "edges": {
+          "count": 2304,
+          "complete": true,
+          "max_compression_percent": 10.4883035537361,
+          "max_extension_percent": 9.901070290305046,
+          "max_abs_percent": 10.4883035537361,
+          "p90_abs_percent": 4.1354172236070355
+        },
+        "shell_pair_lengths": {
+          "count": 384,
+          "complete": true,
+          "max_compression_percent": 2.9976021664879227e-13,
+          "max_extension_percent": 3.1086244689504383e-13,
+          "max_abs_percent": 3.1086244689504383e-13,
+          "p90_abs_percent": 2.220446049250313e-13
+        },
+        "shell_normal_projections": {
+          "count": 384,
+          "measured": 384,
+          "complete": true,
+          "min_ratio": 0.9999999921083678,
+          "max_ratio": 1.0000000119213925,
+          "p05_ratio": 0.9999999999999745,
+          "p95_ratio": 1.0000000002097396
+        },
+        "tetra_probe": {
+          "available": true,
+          "count": 2160,
+          "inverted": 0,
+          "min_jacobian": 0.4074300108716451,
+          "max_jacobian": 1.1056504830528737,
+          "retriangulated_boundary_faces": 52
+        },
+        "boolean_by_support": {
+          "площадка": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          }
+        },
+        "boolean_reliable": true,
+        "metadata": {
+          "supports": 1,
+          "rigid": 0.0,
+          "steps": 80,
+          "converged": false,
+          "last_motion": 0.17432438594360888,
+          "movement_tolerance": 0.005000000000000001,
+          "max_strain_all": 0.10488303553736097,
+          "strain_all_p90": 0.04135417223607029,
+          "penetration": 0.0,
+          "support_surface_pairs": 0,
+          "support_overlap_volume": 0.0,
+          "support_overlap_complete": true,
+          "self_intersections": 0,
+          "self_intersections_adjacent": 0,
+          "self_intersections_complete": true,
+          "equilibrium_verified": false,
+          "geometry_checks_passed": true
+        },
+        "warnings": [
+          "drape: максимальное изменение длины ребра 10.5% (включая короткие рёбра стенки); нерастяжимость не подтверждена. Попробуйте увеличить constraints или уменьшить g.",
+          "drape: достигнут предел 80 шагов, равновесие не подтверждено (последнее смещение до 0.174 мм); большее число шагов не гарантирует устойчивость."
+        ],
+        "fcl": {
+          "available": true,
+          "nonadjacent_pairs": 0,
+          "nonadjacent_complete": true,
+          "adjacent_pairs_after_inset": 0,
+          "adjacent_complete": true,
+          "support_surface_contact_or_crossing": false
+        },
+        "fcl_by_support": {
+          "площадка": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          }
+        },
+        "ccd": {
+          "initial_error": null,
+          "checked_segments": 80,
+          "first_unsafe_segment": null,
+          "total_frames": 80,
+          "minimum_distance_mm": 0.0,
+          "completed": true,
+          "after_placement_only": true
+        },
+        "glb": {
+          "bytes": 51748,
+          "triangles": 1548
+        },
+        "ipc_contact_experiment": {
+          "gravity_scale": 1.0,
+          "iterations_scale": 1.0,
+          "steps_scale": 1.0,
+          "rounds": 2,
+          "stats": {
+            "calls": 80,
+            "local_hits": 0,
+            "fallbacks": 0,
+            "blocked": 0,
+            "minimum_fallback_alpha": 1.0
+          },
+          "note": "Исследовательский контакт: не приложение, не гарантия толщины и равновесия."
+        }
+      },
+      "elapsed_seconds": 13.872
+    },
+    {
+      "name": "06_sleeve_around_rod",
+      "status": "completed",
+      "timeout_seconds": 105.0,
+      "result": {
+        "name": "06_sleeve_around_rod",
+        "scenario": "benchmarks/drape_six/06_sleeve_around_rod.forma",
+        "source_sha256": "f22493a73de76d3a6dd56b7590f56a5e133ee78c1e50e4ad0386754ff4152f23",
+        "mode": "current",
+        "elapsed_seconds": 67.383,
+        "visible_triangles": 1884,
+        "body_triangles": 1536,
+        "bbox_initial": [
+          -35.0,
+          -11.0,
+          40.0,
+          35.0,
+          11.0,
+          62.0
+        ],
+        "bbox_final": [
+          -35.350894927978516,
+          -8.960221290588379,
+          29.77950668334961,
+          35.19757080078125,
+          8.977089881896973,
+          58.08524703979492
+        ],
+        "watertight": true,
+        "euler_number": 0,
+        "height_initial_mm": 22.0,
+        "height_final_mm": 28.305740356445312,
+        "volume_ratio": 1.0204944182257991,
+        "edges": {
+          "count": 2304,
+          "complete": true,
+          "max_compression_percent": 5.471681944277574,
+          "max_extension_percent": 21.576809892589942,
+          "max_abs_percent": 21.576809892589942,
+          "p90_abs_percent": 4.643953322789051
+        },
+        "shell_pair_lengths": {
+          "count": 384,
+          "complete": true,
+          "max_compression_percent": 9.992007221626409e-13,
+          "max_extension_percent": 1.1102230246251565e-12,
+          "max_abs_percent": 1.1102230246251565e-12,
+          "p90_abs_percent": 4.662936703425657e-13
+        },
+        "shell_normal_projections": {
+          "count": 384,
+          "measured": 384,
+          "complete": true,
+          "min_ratio": 0.9999999970745611,
+          "max_ratio": 1.0000000100804989,
+          "p05_ratio": 0.9999999999373705,
+          "p95_ratio": 1.0000000000656137
+        },
+        "tetra_probe": {
+          "available": true,
+          "count": 2160,
+          "inverted": 0,
+          "min_jacobian": 0.805755270307971,
+          "max_jacobian": 1.2352957722600169,
+          "retriangulated_boundary_faces": 52
+        },
+        "boolean_by_support": {
+          "площадка": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          },
+          "стержень": {
+            "volume_mm3": 0.0,
+            "status": "Error.NoError"
+          }
+        },
+        "boolean_reliable": true,
+        "metadata": {
+          "supports": 2,
+          "rigid": 0.0,
+          "steps": 100,
+          "converged": false,
+          "last_motion": 0.24130724549369112,
+          "movement_tolerance": 0.005000000000000001,
+          "max_strain_all": 0.21576809892589938,
+          "strain_all_p90": 0.04643953322789055,
+          "penetration": 0.0,
+          "support_surface_pairs": 0,
+          "support_overlap_volume": 0.0,
+          "support_overlap_complete": true,
+          "self_intersections": 0,
+          "self_intersections_adjacent": 0,
+          "self_intersections_complete": true,
+          "equilibrium_verified": false,
+          "geometry_checks_passed": true
+        },
+        "warnings": [
+          "drape: максимальное изменение длины ребра 21.6% (включая короткие рёбра стенки); нерастяжимость не подтверждена. Попробуйте увеличить constraints или уменьшить g.",
+          "drape: достигнут предел 100 шагов, равновесие не подтверждено (последнее смещение до 0.241 мм); большее число шагов не гарантирует устойчивость."
+        ],
+        "fcl": {
+          "available": true,
+          "nonadjacent_pairs": 0,
+          "nonadjacent_complete": true,
+          "adjacent_pairs_after_inset": 0,
+          "adjacent_complete": true,
+          "support_surface_contact_or_crossing": false
+        },
+        "fcl_by_support": {
+          "площадка": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          },
+          "стержень": {
+            "contact_or_crossing": false,
+            "pairs": 0,
+            "complete": true
+          }
+        },
+        "ccd": {
+          "initial_error": null,
+          "checked_segments": 100,
+          "first_unsafe_segment": null,
+          "total_frames": 100,
+          "minimum_distance_mm": 0.0,
+          "completed": true,
+          "after_placement_only": true
+        },
+        "glb": {
+          "bytes": 60372,
+          "triangles": 1884
+        },
+        "initial_setup": {
+          "sleeve_bbox": [
+            -35.0,
+            -11.0,
+            40.0,
+            35.0,
+            11.0,
+            62.0
+          ],
+          "rod_bbox": [
+            -30.0,
+            -6.0,
+            45.0,
+            30.0,
+            6.0,
+            57.00000000000001
+          ],
+          "intersection_volume_mm3": 0.0,
+          "fcl_contact_or_crossing": false,
+          "fcl_distance_mm": 4.362356529684716
+        },
+        "ipc_contact_experiment": {
+          "gravity_scale": 1.0,
+          "iterations_scale": 1.0,
+          "steps_scale": 1.0,
+          "rounds": 2,
+          "stats": {
+            "calls": 100,
+            "local_hits": 0,
+            "fallbacks": 0,
+            "blocked": 0,
+            "minimum_fallback_alpha": 1.0
+          },
+          "note": "Исследовательский контакт: не приложение, не гарантия толщины и равновесия."
+        }
+      },
+      "elapsed_seconds": 68.638
+    }
+  ],
+  "note": "completed означает только завершение расчёта, не прохождение критериев. IPC-опыт не является частью приложения; CCD не проверяет внутренние проекции.",
+  "elapsed_seconds": 125.557,
+  "all_completed": true
+}
