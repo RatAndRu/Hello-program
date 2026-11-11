@@ -127,6 +127,7 @@ class TrajectoryAudit:
         if not ipctk.is_step_collision_free(self.mesh, initial, initial, self.min_distance):
             raise RuntimeError('CCD: исходный зазор после размещения не выдержан')
         self.previous = initial
+        self.failed_segment = None
         self.steps = 0
         self.seconds = 0.
 
@@ -139,6 +140,8 @@ class TrajectoryAudit:
         safe = self.ipctk.is_step_collision_free(self.mesh, self.previous, current, self.min_distance)
         self.seconds += time.perf_counter() - start
         self.steps += 1
+        if not safe:
+            self.failed_segment = (self.previous.copy(), current.copy())
         self.previous = current
         return bool(safe)
 
@@ -566,8 +569,15 @@ def main():
             mujoco.mj_kinematics(model, data)
             current = np.asarray(data.xpos[body_ids]).copy() / args.scale
             if not ccd.check(current):
+                saved = ''
+                if args.output:
+                    failure = args.output.with_name(args.output.stem + '.ccd-failure.npz')
+                    np.savez_compressed(failure, start=ccd.failed_segment[0], end=ccd.failed_segment[1],
+                                        edges=ccd.mesh.edges, faces=ccd.mesh.faces,
+                                        dynamic_vertices=len(ccd.boundary), min_distance=ccd.min_distance)
+                    saved = f'; отрезок сохранён в {failure}'
                 raise RuntimeError(f'CCD: пересечение или нарушение заданного зазора '
-                                   f'на линейном отрезке шага {step + 1}')
+                                   f'на линейном отрезке шага {step + 1}{saved}')
         velocity = float(np.max(np.linalg.norm(data.qvel.reshape(-1, 3), axis=1))) / args.scale
         acceleration = float(np.max(np.linalg.norm(data.qacc.reshape(-1, 3), axis=1))) / args.scale
         recent_velocity.append(velocity)

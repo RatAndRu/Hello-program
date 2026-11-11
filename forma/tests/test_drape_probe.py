@@ -12,9 +12,11 @@ import numpy as np
 TOOLS = Path(__file__).resolve().parent.parent / 'tools'
 sys.path.insert(0, str(TOOLS))
 import audit_drape_sleeve as audit  # noqa: E402
+from audit_drape_evolution import _signed_tetra_volumes, capture  # noqa: E402
 from drape_mujoco_probe import (TrajectoryAudit, changed_surface_distances, input_mesh, make_xml,
                                 restart_from_rest, sampled_surface_distance, surface_samples,
                                 tet_boundary, tetrahedral_shell)  # noqa: E402
+from drape_tet_pbd_probe import VolumeProjector  # noqa: E402
 from forma import cloth  # noqa: E402
 
 try:
@@ -29,6 +31,41 @@ except ImportError:
 
 
 class DrapeProbeConstructionTest(unittest.TestCase):
+    def test_signed_tetra_volumes_distinguish_inversion(self):
+        vertices = np.array([[0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [0., 0., 1.]])
+        tets = np.array([[0, 1, 2, 3], [1, 0, 2, 3]])
+        np.testing.assert_allclose(_signed_tetra_volumes(vertices, tets), [1 / 6, -1 / 6])
+        np.testing.assert_allclose(_signed_tetra_volumes(vertices + [20, -5, 7], tets), [1 / 6, -1 / 6])
+
+    def test_experimental_volume_projection_leaves_rest_and_pins_unchanged(self):
+        reference = np.array([[0., 0., 0.], [1., 0., 0.], [0., 1., 0.], [0., 0., 1.]])
+        tets = np.array([[0, 1, 2, 3]])
+        free = np.array([False, True, True, True])
+        supports = np.zeros(4, dtype=bool)
+        for mode in ('lower', 'equal'):
+            with self.subTest(mode=mode):
+                projector = VolumeProjector(reference, tets, mode=mode)
+                rest = reference.copy()
+                projector.project(rest, free, supports)
+                np.testing.assert_allclose(rest, reference)
+                collapsed = reference.copy()
+                collapsed[3, 2] = .05
+                before = projector.measure(collapsed)['min_jacobian']
+                projector.project(collapsed, free, supports)
+                self.assertGreater(projector.measure(collapsed)['min_jacobian'], before)
+                np.testing.assert_allclose(collapsed[0], reference[0])
+
+    def test_capture_records_actual_steps_without_changing_the_solver(self):
+        source = '''пол = box size=[80,80,8] at=[0,0,-8]
+корпус = box size=[10,10,10] at=[0,0,20]
+итог = drape корпус on=пол g=0 rigid=1 steps=3
+'''
+        vertices, faces, history = capture(source, TOOLS.parent)
+        self.assertEqual(len(history), 3)
+        self.assertGreater(len(faces), 0)
+        for frame in history:
+            np.testing.assert_allclose(frame, vertices, atol=1e-9)
+
     def test_fcl_pair_count_is_independent_of_contact_order(self):
         faces = np.asarray([[0, 1, 2], [3, 4, 5], [6, 7, 8], [6, 9, 10]])
         vertices = np.zeros((11, 3))
@@ -81,8 +118,11 @@ class DrapeProbeConstructionTest(unittest.TestCase):
         faces = np.array([[0, 1, 2]])
         check = TrajectoryAudit(moving, faces, {'опора': (fixed, faces)})
         self.assertTrue(check.check(moving.copy()))
+        self.assertIsNone(check.failed_segment)
         self.assertFalse(check.check(moving - [0., 0., 2.]))
         self.assertEqual(check.steps, 2)
+        np.testing.assert_allclose(check.failed_segment[0][:3], moving)
+        np.testing.assert_allclose(check.failed_segment[1][:3], moving - [0., 0., 2.])
 
     def test_volume_layer_is_manifold_and_rest_volume_preserved(self):
         for case in ('sleeve', 'table'):
