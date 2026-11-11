@@ -548,6 +548,40 @@ def vertex_normals(vertices: np.ndarray, faces: np.ndarray) -> np.ndarray:
     return normal
 
 
+def wall_normal_projections(reference: np.ndarray, current: np.ndarray,
+                            faces: np.ndarray, shell: np.ndarray):
+    """Относительные проекции найденных пар стенки на нормаль обеих сторон.
+
+    Длина пары сама по себе не измеряет толщину: пара может наклониться и
+    сохранить длину при сплющивании. Эта оценка относится только к найденным
+    парам и сглаженным вершинным нормалям; полной проверкой толщины она не
+    является. Вырожденные направления отмечаются как неполное измерение.
+    """
+    if not len(shell):
+        return None
+    a, b = shell[:, 0], shell[:, 1]
+    initial_normal = vertex_normals(reference, faces)
+    final_normal = vertex_normals(current, faces)
+    initial_direction = initial_normal[a] - initial_normal[b]
+    final_direction = final_normal[a] - final_normal[b]
+    initial_norm = np.linalg.norm(initial_direction, axis=1)
+    final_norm = np.linalg.norm(final_direction, axis=1)
+    initial_direction /= np.maximum(initial_norm, 1e-12)[:, None]
+    final_direction /= np.maximum(final_norm, 1e-12)[:, None]
+    initial = np.einsum("ij,ij->i", reference[b] - reference[a], initial_direction)
+    final = np.einsum("ij,ij->i", current[b] - current[a], final_direction)
+    good = ((initial_norm > 1e-12) & (final_norm > 1e-12) &
+            (np.abs(initial) > 1e-9) & np.isfinite(initial) & np.isfinite(final))
+    answer = {"count": int(len(shell)), "measured": int(np.count_nonzero(good)),
+              "complete": bool(np.all(good))}
+    if np.any(good):
+        ratio = final[good] / initial[good]
+        answer.update(min_ratio=float(np.min(ratio)), max_ratio=float(np.max(ratio)),
+                      p05_ratio=float(np.percentile(ratio, 5)),
+                      p95_ratio=float(np.percentile(ratio, 95)))
+    return answer
+
+
 def shell_pairs(vertices: np.ndarray, faces: np.ndarray, thickness: float,
                 opposing_only: bool = True):
     """Пары вершин «сквозь толщину» и их исходные расстояния.
@@ -912,7 +946,11 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
         for it in range(int(iterations)):
             # Рёбра одного цвета не делят узлы; следующие цвета видят уже
             # исправленные координаты (векторный Гаусс—Зейдель).
-            for group in (edge_colors if (it + step) % 2 == 0 else reversed(edge_colors)):
+            # Начинаем каждый временной шаг в одном порядке. При смене
+            # порядка между шагами несовместимые приближённые ограничения
+            # могут образовать искусственный двухшаговый цикл у опоры.
+            # Внутри шага направления по-прежнему чередуются.
+            for group in (edge_colors if it % 2 == 0 else reversed(edge_colors)):
                 a, b = edge_a[group], edge_b[group]
                 delta = position[b] - position[a]
                 length = np.maximum(np.linalg.norm(delta, axis=1), 1e-12)
@@ -1119,6 +1157,10 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
         "edges": int(len(edges)),
         "bend": int(len(bend_pairs)),
         "shell": int(len(shell)),
+        # У жёстких деталей shell включает дополнительные связи, не пары
+        # противоположных сторон; измерять по ним толщину нельзя.
+        "shell_normal_projections": (wall_normal_projections(vertices, position, faces, shell)
+                                     if len(shell) and not rigid_only else None),
         "seconds": round(time.perf_counter() - started, 3),
         "thickness": float(thickness),
         "rigid": float(np.max(rigid_weights)) if len(rigid_weights) else 0.0,

@@ -1246,6 +1246,18 @@ def drape(a, name):
                             "(включая короткие рёбра стенки); "
                             "нерастяжимость не подтверждена. Попробуйте увеличить constraints "
                             "или уменьшить g.", a.cmd.line)
+    wall_projection = report.get("shell_normal_projections")
+    if wall_projection is not None:
+        if not wall_projection["complete"]:
+            a.scene.log("warn", "drape: не удалось измерить нормальную проекцию части "
+                                "сопоставленных пар стенки; сохранение толщины не подтверждено.",
+                        a.cmd.line)
+        if (wall_projection.get("min_ratio", 1.0) < 0.98 or
+                wall_projection.get("max_ratio", 1.0) > 1.02):
+            a.scene.log("warn", "drape: нормальная проекция сопоставленных пар стенки "
+                                f"изменилась до {wall_projection['min_ratio']:.1%}…"
+                                f"{wall_projection['max_ratio']:.1%} исходной; "
+                                "сохранение толщины не подтверждено.", a.cmd.line)
     if not report["converged"]:
         a.scene.log("warn", f"drape: достигнут предел {steps} шагов, равновесие не подтверждено "
                             f"(последнее смещение до {report['last_motion']:.3f} мм); "
@@ -1393,6 +1405,9 @@ def drape(a, name):
             "mesh": mesh_step, "mesh_max_edge": max(maximum_edges),
             "mesh_complete": bool(mesh_complete), "budget": budget,
             "thickness": thickness, "friction": friction, "bend": bend,
+            "shell_normal_projections": wall_projection,
+            # Оценены только найденные пары, а не вся толщина изделия.
+            "wall_thickness_verified": False,
             "gravity": [round(float(v), 4) for v in direction], "g": g_amount,
             "rigid": (float(np.max(rigid_input)) if len(rigid_input) else 0.0),
             "parts": len(parts), "seconds": report["seconds"],

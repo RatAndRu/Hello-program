@@ -161,6 +161,38 @@ class SixScenarioProbeTest(unittest.TestCase):
         self.assertEqual(str(caught.exception), "test")
         self.assertIs(cloth.simulate, original)
 
+    def test_wall_pair_length_can_hide_a_loss_of_normal_thickness(self):
+        reference = np.array([[0., 0., 0.], [1., 0., 0.], [0., 1., 0.],
+                              [0., 0., .6], [1., 0., .6], [0., 1., .6]])
+        faces = np.array([[0, 2, 1], [3, 4, 5]])
+        shell = np.array([[0, 3], [1, 4], [2, 5]])
+        current = reference.copy()
+        current[3:, 0] += .3
+        current[3:, 2] = np.sqrt(.6 ** 2 - .3 ** 2)
+        lengths = probe._ratios(reference, current, shell)
+        normal = probe._wall_normal_projections(reference, current, faces, shell)
+        self.assertLess(lengths["max_abs_percent"], 1e-10)
+        self.assertTrue(normal["complete"])
+        self.assertAlmostEqual(normal["min_ratio"], np.sqrt(.75), places=10)
+
+    def test_tetra_probe_detects_a_flipped_cell_and_reports_changed_boundary(self):
+        from forma.geometry import manifold_mesh
+        scene = build("лист = box size=[8,8,0.6]", analyze_model=False)
+        self.assertTrue(scene.ok, str(scene.error))
+        vertices, faces = manifold_mesh(scene.scene.objects["лист"].manifold)
+        vertices, faces = cloth.subdivide_to(vertices, faces, 4., 800)
+        rest = probe._tetra_probe("04_tablecloth", vertices, vertices, faces)
+        self.assertTrue(rest["available"])
+        self.assertEqual(rest["inverted"], 0)
+        self.assertGreater(rest["retriangulated_boundary_faces"], 0)
+        changed = vertices.copy()
+        top = np.flatnonzero(vertices[:, 2] > np.mean(vertices[:, 2]))
+        changed[top[0], 2] = vertices[:, 2].min() - 1.
+        flipped = probe._tetra_probe("04_tablecloth", vertices, changed, faces)
+        self.assertGreater(flipped["inverted"], 0)
+        self.assertLess(flipped["min_jacobian"], 0.)
+        self.assertFalse(probe._tetra_probe("03_soft_sphere", vertices, vertices, faces)["available"])
+
     def test_triangle_probe_moves_only_free_vertices_outward(self):
         support = np.array([[[-5., -5., 0.], [5., -5., 0.], [0., 5., 0.]]])
         field = cloth.SupportField(support, 4.)

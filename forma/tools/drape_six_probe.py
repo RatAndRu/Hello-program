@@ -32,7 +32,7 @@ from forma import cloth  # noqa: E402
 from forma.geometry import manifold_mesh  # noqa: E402
 from forma.run import build  # noqa: E402
 from audit_drape_sleeve import _fcl_audit, _fcl_object  # noqa: E402
-from drape_mujoco_probe import TrajectoryAudit  # noqa: E402
+from drape_mujoco_probe import TrajectoryAudit, tetrahedral_shell  # noqa: E402
 from drape_triangle_probe import TriangleSupportProbe  # noqa: E402
 
 CASES = {
@@ -218,6 +218,35 @@ def _ratios(reference, current, pairs):
             "p90_abs_percent": float(np.percentile(np.abs(change), 90) * 100.0)}
 
 
+def _wall_normal_projections(reference, current, faces, shell):
+    """Проекция найденных пар стенки; не полная карта толщины."""
+    return cloth.wall_normal_projections(reference, current, faces, shell)
+
+
+def _tetra_probe(name, reference, current, faces):
+    """Диагностическая призменная сетка; часть торцевых граней заменена."""
+    if name == "03_soft_sphere":
+        return {"available": False, "reason": "для сплошного шара нет этой призменной модели"}
+    kind = "sleeve" if name in ("05_sleeve", "06_sleeve_around_rod") else "table"
+    try:
+        _surface, tets, changed = tetrahedral_shell(kind, reference, faces)
+    except (ValueError, KeyError) as exc:
+        return {"available": False, "reason": str(exc)}
+
+    def signed(position):
+        points = position[tets]
+        return np.einsum("ij,ij->i", points[:, 1] - points[:, 0],
+                         np.cross(points[:, 2] - points[:, 0], points[:, 3] - points[:, 0])) / 6.0
+
+    initial, final = signed(reference), signed(current)
+    if np.any(initial <= 1e-12):
+        return {"available": False, "reason": "вырожденные исходные призмы"}
+    ratio = final / initial
+    return {"available": True, "count": int(len(tets)), "inverted": int(np.count_nonzero(ratio <= 0)),
+            "min_jacobian": float(np.min(ratio)), "max_jacobian": float(np.max(ratio)),
+            "retriangulated_boundary_faces": int(changed)}
+
+
 def _table_edges(reference, current):
     center = np.median(current[(np.abs(reference[:, 0]) < 10) & (np.abs(reference[:, 1]) < 10), 2])
     result = []
@@ -326,6 +355,9 @@ def run_case(name, *, mode="current", with_fcl=False, with_ccd=False, check_glb=
         "volume_ratio": float(body.manifold.volume() / original_body.volume()),
         "edges": _ratios(reference, current, cloth._edge_arrays(original_faces)),
         "shell_pair_lengths": _ratios(reference, current, state["shell"]),
+        "shell_normal_projections": _wall_normal_projections(reference, current, original_faces,
+                                                               state["shell"]),
+        "tetra_probe": _tetra_probe(name, reference, current, original_faces),
         "boolean_by_support": boolean,
         "boolean_reliable": bool(metadata["self_intersections_complete"]
                                  and not metadata["self_intersections"]
