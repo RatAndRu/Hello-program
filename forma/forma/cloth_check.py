@@ -3,9 +3,11 @@
 Решатель работает по ограничениям точек и не обнаруживает все столкновения
 рёбер. Здесь используются другие примитивы: AABB пар треугольников и затем
 пересечение их рёбер с гранями (включая компланарный двумерный случай).
-Соседние грани с общей вершиной не считаются пересечением. Результат — не
-доказательство корректности для вырожденных граней или при исчерпании бюджета:
-флаг complete в этих случаях равен False.
+Пары с общей вершиной проверяются отдельно, с конечным разрешением: обе
+грани немного уменьшаются к центру, чтобы исключить общую границу. Очень
+малые пересечения рядом с этой границей могут остаться незамеченными. Это не
+непрерывная проверка движения; вырожденные грани, недостаток точности и
+исчерпание бюджета отмечаются флагом complete=False.
 """
 from __future__ import annotations
 
@@ -26,9 +28,10 @@ def _coplanar_hits(a, b, normal):
             continue
         keep = [k for k in range(3) if k != axis]
         x, y = a[ids][:, :, keep], b[ids][:, :, keep]
-        scale = np.maximum(1.0, np.maximum(np.ptp(x, axis=1).max(axis=1),
-                                           np.ptp(y, axis=1).max(axis=1)))
-        tol = 1e-9 * scale
+        scale = np.maximum(1e-12, np.maximum(np.ptp(x, axis=1).max(axis=1),
+                                              np.ptp(y, axis=1).max(axis=1)))
+        magnitude = np.maximum(np.abs(x).max(axis=(1, 2)), np.abs(y).max(axis=(1, 2)))
+        tol = 1e-9 * scale + 16.0 * np.finfo(np.float64).eps * magnitude
         area_tol = tol * scale
         overlap = np.zeros(len(ids), dtype=bool)
         for i in range(3):
@@ -98,18 +101,58 @@ def triangle_intersections(first, second):
     return hit
 
 
-def self_intersections(vertices, faces, *, max_candidates=2_000_000, max_scan=20_000_000):
-    """Число пересекающихся пар несоседних граней и полнота проверки.
+# У соседних граней общая граница допустима. Уменьшение к центру её исключает,
+# но пропускает пересечения внутри этой конечной полосы.
+_ADJACENT_INSET = 1e-5
 
-    Сначала работает sweep-and-prune по наиболее выгодной оси, затем точный
-    тест геометрии. Проверка имеет явные лимиты памяти/времени. При достижении
-    любого лимита или вырожденной грани complete=False, даже если пересечений
-    пока не найдено. Отдельные компоненты одной сетки проверяются вместе.
+
+def _adjacent_intersections(first, second):
+    """Пересечения за общей границей и маска недостаточной точности."""
+    a = np.asarray(first, dtype=np.float64).reshape(-1, 3, 3)
+    b = np.asarray(second, dtype=np.float64).reshape(-1, 3, 3)
+    if len(a) != len(b):
+        raise ValueError("число пар треугольников не совпадает")
+    if not len(a):
+        return np.zeros(0, dtype=bool), np.zeros(0, dtype=bool)
+
+    def min_height(tri):
+        lengths = np.stack([np.linalg.norm(tri[:, (i + 1) % 3] - tri[:, i], axis=1)
+                            for i in range(3)], axis=1)
+        area2 = np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0],
+                                        tri[:, 2] - tri[:, 0]), axis=1)
+        return area2 / np.maximum(lengths.max(axis=1), 1e-30)
+
+    scale = np.maximum(1e-12, np.maximum(np.ptp(a, axis=1).max(axis=1),
+                                         np.ptp(b, axis=1).max(axis=1)))
+    magnitude = np.maximum(np.abs(a).max(axis=(1, 2)), np.abs(b).max(axis=(1, 2)))
+    tolerance = 1e-9 * scale + 16.0 * np.finfo(np.float64).eps * magnitude
+    inset = np.minimum(min_height(a), min_height(b)) * (_ADJACENT_INSET / 3.0)
+    uncertain = inset <= 4.0 * tolerance
+    inner_a = a + (a.mean(axis=1)[:, None, :] - a) * _ADJACENT_INSET
+    inner_b = b + (b.mean(axis=1)[:, None, :] - b) * _ADJACENT_INSET
+    bounds = np.all((inner_a.max(axis=1) >= inner_b.min(axis=1)) &
+                    (inner_b.max(axis=1) >= inner_a.min(axis=1)), axis=1)
+    test = bounds & ~uncertain
+    hit = np.zeros(len(a), dtype=bool)
+    if np.any(test):
+        hit[test] = triangle_intersections(inner_a[test], inner_b[test])
+    return hit, uncertain
+
+
+def self_intersections(vertices, faces, *, max_candidates=2_000_000, max_scan=20_000_000):
+    """Проверка несоседних и соседних граней с признаком полноты.
+
+    Используются sweep-and-prune и геометрический тест с конечной точностью.
+    Соседние грани проверяются за пределами общей вершины или ребра; узкая
+    полоса вокруг этой границы не проверяется. При достижении лимита,
+    вырожденной грани или нехватке точности complete=False.
     """
     vertices = np.asarray(vertices, dtype=np.float64).reshape(-1, 3)
     faces = np.asarray(faces, dtype=np.int64).reshape(-1, 3)
     if not len(faces):
-        return {"pairs": 0, "candidates": 0, "degenerate": 0, "complete": True}
+        return {"pairs": 0, "candidates": 0, "adjacent_pairs": 0,
+                "adjacent_candidates": 0, "adjacent_uncertain": 0,
+                "adjacent_complete": True, "degenerate": 0, "complete": True}
     tri = vertices[faces]
     normal = np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0])
     area2 = np.linalg.norm(normal, axis=1)
@@ -127,7 +170,9 @@ def self_intersections(vertices, faces, *, max_candidates=2_000_000, max_scan=20
             best = (total, axis, order, size)
     _total, axis, order, sizes = best
     candidates, scanned, pairs = 0, 0, 0
+    adjacent_candidates, adjacent_pairs, adjacent_uncertain = 0, 0, 0
     complete = degenerate == 0
+    adjacent_complete = degenerate == 0
     other_axes = [k for k in range(3) if k != axis]
     for start in range(0, len(faces), 32):
         stop = min(start + 32, len(faces))
@@ -137,6 +182,7 @@ def self_intersections(vertices, faces, *, max_candidates=2_000_000, max_scan=20
             continue
         if scanned + amount > max_scan:
             complete = False
+            adjacent_complete = False
             break
         scanned += amount
         owners = np.repeat(np.arange(start, stop), counts)
@@ -148,13 +194,24 @@ def self_intersections(vertices, faces, *, max_candidates=2_000_000, max_scan=20
         ids1, ids2 = ids1[overlap], ids2[overlap]
         if not len(ids1):
             continue
-        same_vertex = np.any(faces[ids1, :, None] == faces[ids2, None, :], axis=(1, 2))
-        ids1, ids2 = ids1[~same_vertex], ids2[~same_vertex]
-        if candidates + len(ids1) > max_candidates:
+        if candidates + adjacent_candidates + len(ids1) > max_candidates:
             complete = False
+            adjacent_complete = False
             break
+        same_vertex = np.any(faces[ids1, :, None] == faces[ids2, None, :], axis=(1, 2))
+        adjacent_candidates += int(np.count_nonzero(same_vertex))
+        if np.any(same_vertex):
+            hit, uncertain = _adjacent_intersections(tri[ids1[same_vertex]], tri[ids2[same_vertex]])
+            adjacent_pairs += int(np.count_nonzero(hit))
+            adjacent_uncertain += int(np.count_nonzero(uncertain))
+        ids1, ids2 = ids1[~same_vertex], ids2[~same_vertex]
         candidates += len(ids1)
         if len(ids1):
             pairs += int(np.count_nonzero(triangle_intersections(tri[ids1], tri[ids2])))
-    return {"pairs": pairs, "candidates": candidates, "degenerate": degenerate,
+    if adjacent_uncertain:
+        adjacent_complete = False
+        complete = False
+    return {"pairs": pairs, "candidates": candidates, "adjacent_pairs": adjacent_pairs,
+            "adjacent_candidates": adjacent_candidates, "adjacent_uncertain": adjacent_uncertain,
+            "adjacent_complete": bool(adjacent_complete), "degenerate": degenerate,
             "complete": bool(complete)}

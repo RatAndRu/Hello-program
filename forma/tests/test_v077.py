@@ -274,12 +274,17 @@ class IndependentChecksTest(unittest.TestCase):
 лист = box size=[20,20,0.6] at=[0,0,10]
 итог = drape лист on=пол mesh=8 steps=2
 """
-        found = {"pairs": 2, "candidates": 9, "degenerate": 0, "complete": True}
+        found = {"pairs": 2, "candidates": 9, "adjacent_pairs": 3, "adjacent_candidates": 10,
+                 "adjacent_uncertain": 0, "adjacent_complete": True, "degenerate": 0, "complete": True}
         with patch("forma.ops_interior.self_intersections", return_value=found):
             result = build_ok(script)
         meta = result.scene.objects["итог"].meta["cloth"]
         self.assertEqual(meta["self_intersections"], 2)
+        self.assertEqual(meta["self_intersections_adjacent"], 3)
+        self.assertFalse(meta["geometry_checks_passed"])
         self.assertTrue(any(log["level"] == "warn" and "несоседних граней" in log["message"]
+                            for log in result.scene.logs))
+        self.assertTrue(any(log["level"] == "warn" and "соседних граней за" in log["message"]
                             for log in result.scene.logs))
 
 
