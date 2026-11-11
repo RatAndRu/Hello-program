@@ -17,7 +17,7 @@ import numpy as np
 from forma import cloth
 from forma.cloth_collision import SurfaceContacts
 from forma.geometry import manifold_mesh
-from forma.ops_interior import _drape_intersections
+from forma.ops_interior import _drape_intersections, _drape_support_intersections
 from forma.run import build
 
 
@@ -189,22 +189,34 @@ class ActualLayersTest(unittest.TestCase):
 
     def test_negative_boolean_volume_is_not_reported_as_clear(self):
         class BadCommon:
+            def __init__(self, value):
+                self.value = value
+
             def status(self):
                 return mf.Error.NoError
 
             def volume(self):
-                return -1.0
+                return self.value
 
         class BadBody:
+            def __init__(self, value):
+                self.value = value
+
             def bounding_box(self):
                 return (0, 0, 0, 1, 1, 1)
 
             def __xor__(self, other):
-                return BadCommon()
+                return BadCommon(self.value)
 
-        _volume, checked, complete = _drape_intersections([BadBody(), BadBody()])
-        self.assertEqual(checked, 1)
-        self.assertFalse(complete)
+        for negative in (-1.0, -1e-12, float('nan')):
+            with self.subTest(volume=negative):
+                _volume, checked, complete = _drape_intersections([BadBody(negative), BadBody(negative)])
+                self.assertEqual(checked, 1)
+                self.assertFalse(complete)
+                _volume, checked, complete = _drape_support_intersections([BadBody(negative)],
+                                                                         [BadBody(negative)])
+                self.assertEqual(checked, 1)
+                self.assertFalse(complete)
 
     def test_zero_bend_and_invalid_clearance(self):
         source = ("пол = box size=[80,80,10] at=[0,0,-10]\n"

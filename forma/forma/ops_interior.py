@@ -13,7 +13,7 @@ import manifold3d as mf
 import numpy as np
 
 from . import cloth
-from .cloth_check import self_intersections
+from .cloth_check import self_intersections, surface_intersections
 from .errors import GeometryError
 from .geometry import (manifold_from_arrays, manifold_mesh, normalize_color,
                        pattern_shape)
@@ -958,10 +958,10 @@ def _drape_intersections(bodies, max_checks=32):
                 measured = float(common.volume())
                 # Отрицательный/NaN объём не означает «пересечения нет»: это
                 # признак ненадёжного boolean у самопересекающейся оболочки.
-                if not np.isfinite(measured) or measured < -1e-6:
+                if not np.isfinite(measured) or measured < 0.0:
                     complete = False
                     continue
-                volume += max(0.0, measured)
+                volume += measured
             except Exception:
                 complete = False
     return volume, checked, complete
@@ -984,13 +984,71 @@ def _drape_support_intersections(bodies, hosts, max_checks=32):
             try:
                 common = first ^ host
                 measured = float(common.volume())
-                if common.status() != mf.Error.NoError or not np.isfinite(measured) or measured < -1e-6:
+                if common.status() != mf.Error.NoError or not np.isfinite(measured) or measured < 0.0:
                     complete = False
                 else:
-                    volume += max(0.0, measured)
+                    volume += measured
             except Exception:
                 complete = False
     return volume, checked, complete
+
+
+def _drape_surface_contacts(bodies, supports=None, *, max_checks=32,
+                            max_candidates=2_000_000, max_scan=20_000_000):
+    """Ограниченная проверка поверхностей разных тел или тела и опор.
+
+    ``bodies`` и ``supports`` содержат массивы треугольников. При supports=None
+    проверяются пары разных тел, иначе — каждое тело с каждым набором опор.
+    Касание и проникновение этой проверкой не различаются. Полное вложение
+    контролируется отдельно через булевы операции над замкнутыми телами.
+    """
+    first = [np.asarray(tri, dtype=np.float64).reshape(-1, 3, 3) for tri in bodies]
+    second = None if supports is None else [np.asarray(tri, dtype=np.float64).reshape(-1, 3, 3)
+                                             for tri in supports]
+    result = {"pairs": 0, "checks": 0, "candidates": 0, "scanned": 0,
+              "degenerate": 0, "uncertain": 0, "complete": True}
+    if max_checks < 0 or max_candidates < 0 or max_scan < 0:
+        raise ValueError("Бюджеты проверки поверхностей не могут быть отрицательными")
+
+    def bounds(tri):
+        if not len(tri) or not np.all(np.isfinite(tri)):
+            return None
+        return tri.min(axis=(0, 1)), tri.max(axis=(0, 1))
+
+    first_bounds = [bounds(tri) for tri in first]
+    second_bounds = None if second is None else [bounds(tri) for tri in second]
+    if any(b is None for b in first_bounds) or (second_bounds is not None and
+                                                 any(b is None for b in second_bounds)):
+        result["complete"] = False
+        result["uncertain"] = 1
+        return result
+    for i, a in enumerate(first):
+        items = ((j, first[j], first_bounds[j]) for j in range(i + 1, len(first))) if second is None \
+            else ((j, tri, second_bounds[j]) for j, tri in enumerate(second))
+        alo, ahi = first_bounds[i]
+        for _j, b, (blo, bhi) in items:
+            with np.errstate(over="ignore", invalid="ignore"):
+                scale = max(1.0, float(np.max(ahi - alo)), float(np.max(bhi - blo)))
+                magnitude = max(float(np.max(np.abs([alo, ahi]))), float(np.max(np.abs([blo, bhi]))))
+                tol = 1e-9 * scale + 16.0 * np.finfo(np.float64).eps * magnitude
+            if not np.isfinite(tol):
+                result["complete"] = False
+                result["uncertain"] += 1
+                return result
+            if np.any(ahi + tol < blo) or np.any(bhi + tol < alo):
+                continue
+            if result["checks"] >= max_checks:
+                result["complete"] = False
+                return result
+            check = surface_intersections(a, b, max_candidates=max_candidates - result["candidates"],
+                                          max_scan=max_scan - result["scanned"])
+            result["checks"] += 1
+            for field in ("pairs", "candidates", "scanned", "degenerate", "uncertain"):
+                result[field] += check[field]
+            if not check["complete"]:
+                result["complete"] = False
+                return result
+    return result
 
 
 def _pin_mask(vertices, mode, points, radius) -> np.ndarray:
@@ -1207,10 +1265,11 @@ def drape(a, name):
         suffix = "" if index == 0 else f".{index + 1:02d}"
         emitted.append((suffix, body, colors[index], "drape", {"rough": 0.9}))
     # Отдельная геометрическая проверка, а не счётчик контактов решателя.
-    surface_checks = []
+    surface_checks, emitted_triangles = [], []
     for _suffix, body, _color, _kind, _material in emitted:
         check_vertices, check_faces = manifold_mesh(body)
         surface_checks.append(self_intersections(check_vertices, check_faces))
+        emitted_triangles.append(check_vertices[check_faces])
     self_crossings = sum(check["pairs"] for check in surface_checks)
     adjacent_crossings = sum(check["adjacent_pairs"] for check in surface_checks)
     adjacent_uncertain = sum(check["adjacent_uncertain"] for check in surface_checks)
@@ -1229,16 +1288,40 @@ def drape(a, name):
                             "грани или не хватает численной точности; отсутствие дефектов "
                             "не подтверждено.", a.cmd.line)
 
+    # Независимо от частиц проверяем и грани разных поверхностей: проникновение
+    # может пройти через середины граней, не затронув ни одной вершины. Контакт
+    # учитывается консервативно, поскольку такой тест не отличает его от входа.
+    parts_surface = {"pairs": 0, "checks": 0, "candidates": 0, "scanned": 0,
+                     "degenerate": 0, "uncertain": 0, "complete": True}
+    if use_self and len(emitted) > 1:
+        parts_surface = _drape_surface_contacts(emitted_triangles)
+    support_surface = _drape_surface_contacts(emitted_triangles, [supports])
+    if parts_surface["pairs"]:
+        a.scene.log("warn", f"drape: найдено касание или пересечение {parts_surface['pairs']} пар "
+                            "граней разных деталей; проверка не отличает допустимое касание "
+                            "от проникновения.", a.cmd.line)
+    if not parts_surface["complete"]:
+        a.scene.log("warn", "drape: проверка граней разных деталей не завершена или не хватает "
+                            "численной точности.", a.cmd.line)
+    if support_surface["pairs"]:
+        a.scene.log("warn", f"drape: найдено касание или пересечение {support_surface['pairs']} пар "
+                            "граней детали с опорами; проверка не отличает допустимое касание "
+                            "от проникновения.", a.cmd.line)
+    if not support_surface["complete"]:
+        a.scene.log("warn", "drape: проверка граней детали и опор не завершена или не хватает "
+                            "численной точности.", a.cmd.line)
+
     overlap, overlap_checks, overlap_complete = (0.0, 0, True)
     bodies = [item[1] for item in emitted]
     if use_self and len(emitted) > 1:
         overlap, overlap_checks, overlap_complete = _drape_intersections(bodies)
         if overlap_checks and (self_crossings or adjacent_crossings or not self_check_complete):
             overlap_complete = False  # boolean с самопересечениями ненадёжен
-        if overlap > 1e-4:
-            a.scene.log("warn", f"drape: в результате осталось пересечение разных деталей "
-                               f"объёмом {overlap:.4f} мм³; попробуйте уменьшить mesh "
-                               "или увеличить self_gap/steps.", a.cmd.line)
+        if overlap > 0.0:
+            a.scene.log("warn", f"drape: измерен положительный объём пересечения разных деталей "
+                               f"{overlap:.6g} мм³; очень малое значение может зависеть от "
+                               "численной точности. Попробуйте уменьшить mesh или увеличить "
+                               "self_gap/steps.", a.cmd.line)
         if not overlap_complete:
             a.scene.log("warn", "drape: проверка пересечений разных деталей не завершена "
                                 "или геометрия ненадёжна.", a.cmd.line)
@@ -1248,19 +1331,23 @@ def drape(a, name):
             bodies, [host.manifold for host in hosts])
         if support_checks and (self_crossings or adjacent_crossings or not self_check_complete):
             support_complete = False
-        if support_overlap > 1e-4:
-            a.scene.log("warn", f"drape: обнаружено пересечение с опорами объёмом "
-                                f"{support_overlap:.4f} мм³.", a.cmd.line)
+        if support_overlap > 0.0:
+            a.scene.log("warn", f"drape: измерен положительный объём пересечения с опорами "
+                                f"{support_overlap:.6g} мм³; очень малое значение может "
+                                "зависеть от численной точности.", a.cmd.line)
         if not support_complete:
             a.scene.log("warn", "drape: проверка пересечений с опорами не завершена "
                                 "или геометрия ненадёжна.", a.cmd.line)
-    # Лишь ограниченные геометрические проверки, не гарантия отсутствия
-    # малых пересечений и не проверка физического равновесия. Для z-пола без
-    # твёрдотельной опоры объёмная проверка не выполняется.
+    # Лишь ограниченные проверки, не доказательство и не проверка равновесия.
+    # Касание граней без проникновения допустимо, но эта диагностика не умеет
+    # его надёжно отличать: в таком случае она консервативно не заявляет успех.
+    # Для z-пола без твёрдотельной опоры объёмная проверка не выполняется.
     geometry_checks_passed = (self_check_complete and not self_crossings and not adjacent_crossings
-                              and (len(bodies) <= 1 or (use_self and overlap_complete
-                                                         and overlap <= 1e-4))
-                              and bool(hosts) and support_complete and support_overlap <= 1e-4
+                              and (len(bodies) <= 1 or (use_self and overlap_complete and not overlap
+                                                         and parts_surface["complete"]
+                                                         and not parts_surface["pairs"]))
+                              and bool(hosts) and support_complete and not support_overlap
+                              and support_surface["complete"] and not support_surface["pairs"]
                               and report["penetration"] <= 1e-4)
     for part in parts:
         a.scene.consume(part)
@@ -1283,6 +1370,15 @@ def drape(a, name):
             "self_intersection_adjacent_candidates": sum(
                 check["adjacent_candidates"] for check in surface_checks),
             "degenerate_faces": sum(check["degenerate"] for check in surface_checks),
+            "parts_surface_pairs": int(parts_surface["pairs"]),
+            "parts_surface_checks": int(parts_surface["checks"]),
+            "parts_surface_checked": bool(use_self and len(emitted) > 1),
+            "parts_surface_complete": bool(parts_surface["complete"]),
+            "parts_surface_uncertain": int(parts_surface["uncertain"]),
+            "support_surface_pairs": int(support_surface["pairs"]),
+            "support_surface_checks": int(support_surface["checks"]),
+            "support_surface_complete": bool(support_surface["complete"]),
+            "support_surface_uncertain": int(support_surface["uncertain"]),
             "parts_overlap_volume": float(overlap), "parts_overlap_checks": overlap_checks,
             "parts_overlap_checked": bool(use_self and len(emitted) > 1),
             "parts_overlap_complete": overlap_complete,

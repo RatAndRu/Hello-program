@@ -139,6 +139,103 @@ def _adjacent_intersections(first, second):
     return hit, uncertain
 
 
+def surface_intersections(first, second, *, max_candidates=2_000_000, max_scan=20_000_000):
+    """Касания или пересечения двух наборов треугольников с ограничением бюджета.
+
+    Общая граница у разных тел может быть допустимым касанием: этот тест не
+    отличает его от проникновения и не проверяет полное вложение одного тела в
+    другое. Вычисления независимы от контактных частиц решателя. При нехватке
+    точности или бюджета ``complete`` равен False, а число найденных пар может
+    относиться только к проверенной части кандидатов.
+    """
+    a = np.asarray(first, dtype=np.float64).reshape(-1, 3, 3)
+    b = np.asarray(second, dtype=np.float64).reshape(-1, 3, 3)
+    if max_candidates < 0 or max_scan < 0:
+        raise ValueError("Бюджеты проверки поверхностей не могут быть отрицательными")
+    empty = {"pairs": 0, "candidates": 0, "scanned": 0, "degenerate": 0,
+             "uncertain": 0, "complete": True}
+    if not len(a) or not len(b):
+        return empty
+    if not np.all(np.isfinite(a)) or not np.all(np.isfinite(b)):
+        return {**empty, "uncertain": 1, "complete": False}
+
+    def quality(tri):
+        with np.errstate(over="ignore", invalid="ignore", divide="ignore"):
+            extent = np.maximum(np.ptp(tri, axis=1).max(axis=1), 1e-12)
+            area2 = np.linalg.norm(np.cross(tri[:, 1] - tri[:, 0], tri[:, 2] - tri[:, 0]), axis=1)
+            edge = np.stack([np.linalg.norm(tri[:, (i + 1) % 3] - tri[:, i], axis=1)
+                             for i in range(3)], axis=1).max(axis=1)
+            magnitude = np.abs(tri).max(axis=(1, 2))
+            tolerance = 1e-9 * np.maximum(extent, 1.0) + 16.0 * np.finfo(np.float64).eps * magnitude
+            area_limit = 1e-12 * extent * extent
+            height = area2 / np.maximum(edge, 1e-30)
+        finite = (np.isfinite(extent) & np.isfinite(area2) & np.isfinite(edge) &
+                  np.isfinite(tolerance) & np.isfinite(area_limit) & np.isfinite(height))
+        degenerate = area2 <= area_limit
+        uncertain = ~finite | (height <= 8.0 * tolerance)
+        return degenerate, uncertain, float(tolerance.max()), bool(np.all(finite))
+
+    da, ua, ta, fa = quality(a)
+    db, ub, tb, fb = quality(b)
+    degenerate = int(np.count_nonzero(da) + np.count_nonzero(db))
+    uncertain = int(np.count_nonzero(ua | da) + np.count_nonzero(ub | db))
+    complete = not degenerate and not uncertain
+    if not fa or not fb:
+        return {**empty, "degenerate": degenerate, "uncertain": uncertain, "complete": False}
+    # Консервативная надбавка согласована с допустимой погрешностью при
+    # проверке компланарных и близких к границе треугольников.
+    tol = max(ta, tb, 1e-10)
+    lo_a, hi_a = a.min(axis=1), a.max(axis=1)
+    lo_b, hi_b = b.min(axis=1), b.max(axis=1)
+
+    # Для каждого треугольника A выбираем меньший из двух диапазонов B:
+    # начало отсортированных минимумов или конец отсортированных максимумов.
+    # Ось с наименьшим суммарным диапазоном ограничивает число сканирований.
+    best = None
+    for axis in range(3):
+        by_lo = np.argsort(lo_b[:, axis], kind="stable")
+        by_hi = np.argsort(hi_b[:, axis], kind="stable")
+        before = np.searchsorted(lo_b[by_lo, axis], hi_a[:, axis] + tol, side="right")
+        after = np.searchsorted(hi_b[by_hi, axis], lo_a[:, axis] - tol, side="left")
+        prefix = before <= len(b) - after
+        sizes = np.minimum(before, len(b) - after).astype(np.int64)
+        estimate = int(sizes.sum())
+        if best is None or estimate < best[0]:
+            best = estimate, by_lo, by_hi, after, prefix, sizes
+    total, by_lo, by_hi, after, prefix, sizes = best
+    ends = np.cumsum(sizes, dtype=np.int64)
+    scan_limit = min(total, int(max_scan))
+    if total > scan_limit:
+        complete = False
+    pairs = candidates = scanned = 0
+    # В отличие от одной огромной матрицы A×B расход памяти ограничен
+    # размером блока, даже когда сетки полностью перекрывают габариты.
+    for start in range(0, scan_limit, 50_000):
+        slots = np.arange(start, min(start + 50_000, scan_limit), dtype=np.int64)
+        owner = np.searchsorted(ends, slots, side="right")
+        local = slots - (ends[owner] - sizes[owner])
+        ids_b = np.empty(len(slots), dtype=np.int64)
+        select = prefix[owner]
+        ids_b[select] = by_lo[local[select]]
+        ids_b[~select] = by_hi[after[owner[~select]] + local[~select]]
+        scanned += len(slots)
+        overlap = np.all((hi_a[owner] + tol >= lo_b[ids_b]) &
+                         (hi_b[ids_b] + tol >= lo_a[owner]), axis=1)
+        ids_a, ids_b = owner[overlap], ids_b[overlap]
+        remaining = int(max_candidates) - candidates
+        exceeded = len(ids_a) > remaining
+        if exceeded:
+            ids_a, ids_b = ids_a[:remaining], ids_b[:remaining]
+            complete = False
+        candidates += len(ids_a)
+        if len(ids_a):
+            pairs += int(np.count_nonzero(triangle_intersections(a[ids_a], b[ids_b])))
+        if exceeded:
+            break
+    return {"pairs": pairs, "candidates": candidates, "scanned": scanned,
+            "degenerate": degenerate, "uncertain": uncertain, "complete": bool(complete)}
+
+
 def self_intersections(vertices, faces, *, max_candidates=2_000_000, max_scan=20_000_000):
     """Проверка несоседних и соседних граней с признаком полноты.
 
