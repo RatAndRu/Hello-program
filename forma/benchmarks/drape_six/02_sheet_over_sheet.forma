@@ -1,0 +1,4 @@
+# ДИАГНОСТИКА: свободный лист падает на большую горизонтальную плоскость.
+площадка = box size=[150,120,6] at=[0,0,-6] color=#d8d8d0
+лист = box size=[72,60,0.6] at=[0,0,40] color=#75a8bd
+результат = drape лист on=площадка gravity=z- mesh=7 particles=1200 steps=55 constraints=14 bend=0.15 damping=0.4 friction=0.3 g=0.1 self=да gap=0.02

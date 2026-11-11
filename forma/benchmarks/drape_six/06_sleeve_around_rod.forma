@@ -1,0 +1,7 @@
+# ДИАГНОСТИКА: полый рукав падает вокруг неподвижной капсулы-стержня.
+# Стержень расположен соосно рукаву внутри просвета, не пересекает стенку.
+площадка = box size=[150,120,6] at=[0,0,-6] color=#d8d8d0
+рукав = pipe length=70 diameter=22 wall=0.6 sides=24 at=[0,0,40] color=#ad6e83
+стержень = capsule radius=6 height=60 segments=24 center=да at=[0,0,51] color=#b9855e
+стержень = rotate стержень angle=90 axis=y pivot=[0,0,51]
+результат = drape рукав on=[площадка,стержень] gravity=z- mesh=7 particles=1800 steps=100 constraints=18 bend=0.2 damping=0.2 friction=0.6 g=0.1 self=да self_gap=0.25 gap=0.05

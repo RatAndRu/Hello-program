@@ -1,0 +1,4 @@
+# ДИАГНОСТИКА: полый рукав свободно падает на плоскость.
+площадка = box size=[150,120,6] at=[0,0,-6] color=#d8d8d0
+рукав = pipe length=70 diameter=22 wall=0.6 sides=24 at=[0,0,40] color=#ad6e83
+результат = drape рукав on=площадка gravity=z- mesh=7 particles=1800 steps=80 constraints=18 bend=0.25 damping=0.2 friction=0.9 g=0.1 self=да self_gap=0.25 gap=0.02

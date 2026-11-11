@@ -1,0 +1,4 @@
+# ДИАГНОСТИКА: мягкий шар падает на плоскость, rigid=0 не делает его жёстким.
+площадка = box size=[150,120,6] at=[0,0,-6] color=#d8d8d0
+шар = sphere radius=14 segments=32 at=[0,0,40] color=#d77d48
+результат = drape шар on=площадка gravity=z- rigid=0 mesh=6 particles=1800 steps=100 constraints=20 bend=0.1 damping=0.4 friction=0.3 g=0.1 self=да gap=0.1
