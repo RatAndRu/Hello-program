@@ -14,9 +14,9 @@
 
 1. **Частицы** — все вершины сетки детали (после подразбиения до шага ``mesh``).
    Для листа это обе стороны и торец: толщина уже есть в геометрии.
-2. **Длины рёбер** — жёсткие связи. Поправки копятся по всем связям сразу и
-   делятся на число связей узла (метод Якоби): это даёт векторный расчёт на
-   numpy без циклов по цветам и без гонок за вершины.
+2. **Длины рёбер** удерживаются последовательными группами несмежных рёбер
+   (цветной Гаусс—Зейдель) и дополнительным усреднённым проходом Якоби.
+   Это приближённые ограничения: бесконечную жёсткость они не гарантируют.
 3. **Изгиб** — связи «через ребро» (пара вершин напротив общего ребра): так
    изгибная жёсткость работает без углов и сингулярностей.
 4. **Форма** (shape matching) — каждая связная часть тянется к своей исходной
@@ -30,7 +30,8 @@
    детали: без них лист сминается в фольгу и теряет толщину.
 7. **Самоколлизия** гибких частей — кандидаты вершина—треугольник за шаг,
    с исключением соседей и противоположных сторон одной стенки. Для полностью
-   жёстких частей сохранён быстрый контакт частиц, чтобы звенья держали форму.
+   жёстких частей используется быстрый контакт частиц между разными связными
+   телами; частицы одного жёсткого тела не расталкивают друг друга.
 
 Шаг ограничен, но это приближённый решатель: быстрые столкновения рёбер,
 очень тонкие опоры и сложные начальные самопересечения могут остаться. Итог
@@ -45,6 +46,7 @@ import numpy as np
 
 from .errors import GeometryError
 from .cloth_collision import SurfaceContacts
+from .cloth_remesh import refine_quads
 
 # Слова направления гравитации: как удобно писать в сцене.
 GRAVITY_WORDS = {
@@ -88,6 +90,24 @@ def _edge_arrays(faces: np.ndarray):
     """Рёбра сетки без повторов: ``(E, 2)``."""
     edges = np.concatenate((faces[:, [0, 1]], faces[:, [1, 2]], faces[:, [2, 0]]), axis=0)
     return np.unique(np.sort(edges, axis=1), axis=0).astype(np.int64)
+
+
+def _edge_colors(edges: np.ndarray, count: int):
+    """Группы рёбер без общих вершин для последовательных PBD-проходов."""
+    masks = [0] * count
+    groups = []
+    for index, (aa, bb) in enumerate(edges):
+        a, b = int(aa), int(bb)
+        unavailable = masks[a] | masks[b]
+        color = 0
+        while unavailable & (1 << color):
+            color += 1
+        masks[a] |= 1 << color
+        masks[b] |= 1 << color
+        while len(groups) <= color:
+            groups.append([])
+        groups[color].append(index)
+    return [np.asarray(group, dtype=np.int64) for group in groups]
 
 
 def _bend_arrays(faces: np.ndarray, vertices: np.ndarray):
@@ -140,21 +160,22 @@ def subdivide_to(vertices: np.ndarray, faces: np.ndarray, max_edge: float,
                  max_vertices: int = 12_000):
     """Дробит сетку до шага ``max_edge``, не выходя за бюджет частиц.
 
-    Шаг выбирается так, чтобы число вершин уложилось в ``max_vertices``: один
-    проход деления учетверяет сетку, поэтому уровень подбирается заранее.
-    Делятся только длинные рёбра (схема «красное—зелёное»), короткие остаются
-    как есть: у тонкого листа торец заведомо короче шага, и равномерное деление
-    1→4 превратило бы его в микроскопические рёбра, на которых релаксация
-    разваливается.
+    Если сетка целиком состоит из плоских выпуклых четырёхугольников,
+    их разбиваем согласованными ячейками: общие рёбра и обе стороны стенки
+    получают совместимую сетку. Иначе используется «красное—зелёное» деление
+    длинных рёбер. Неполный бюджет может не позволить достичь заданного шага;
+    вызывающая команда измеряет фактическое ребро и предупреждает об этом.
 
-    Возвращает готовую к расчёту сетку: без «висячих» вершин и с сохранённой
-    замкнутостью.
+    Возвращает сетку без лишних вершин, с сохранением исходной замкнутости.
     """
     vertices = np.asarray(vertices, dtype=np.float64)
     faces = np.asarray(faces, dtype=np.int64)
     step = max(float(max_edge), 1e-3)
     if len(faces) == 0 or len(vertices) == 0:
         return vertices, faces
+    regular = refine_quads(vertices, faces, step, max_vertices)
+    if regular is not None:
+        return regular
     tri = vertices[faces]
     lengths = np.concatenate((
         np.linalg.norm(tri[:, 1] - tri[:, 0], axis=1),
@@ -249,21 +270,38 @@ def _refine_long(vertices: np.ndarray, faces: np.ndarray, target: float):
     if np.any(only):
         pieces.append(np.stack((c[only], ca[only], b[only]), axis=1))
         pieces.append(np.stack((ca[only], a[only], b[only]), axis=1))
-    only = long_ab & long_bc & ~long_ca
-    if np.any(only):
-        pieces.append(np.stack((a[only], ab[only], c[only]), axis=1))
-        pieces.append(np.stack((ab[only], b[only], bc[only]), axis=1))
-        pieces.append(np.stack((ab[only], bc[only], c[only]), axis=1))
-    only = ~long_ab & long_bc & long_ca
-    if np.any(only):
-        pieces.append(np.stack((b[only], bc[only], a[only]), axis=1))
-        pieces.append(np.stack((bc[only], c[only], ca[only]), axis=1))
-        pieces.append(np.stack((bc[only], ca[only], a[only]), axis=1))
-    only = long_ab & ~long_bc & long_ca
-    if np.any(only):
-        pieces.append(np.stack((c[only], ca[only], b[only]), axis=1))
-        pieces.append(np.stack((ca[only], a[only], ab[only]), axis=1))
-        pieces.append(np.stack((ca[only], ab[only], b[only]), axis=1))
+    # Два разделённых ребра оставляют четырёхугольник. Его диагональ не
+    # должна зависеть от обхода: стороны тонкой стенки обходятся наоборот.
+    all_vertices = np.vstack((vertices, midpoints))
+
+    def split_two(mask, aa, bb, cc, mid_ab, mid_bc):
+        if not np.any(mask):
+            return
+        aa, bb, cc = aa[mask], bb[mask], cc[mask]
+        mid_ab, mid_bc = mid_ab[mask], mid_bc[mask]
+        pieces.append(np.stack((mid_ab, bb, mid_bc), axis=1))
+        d_ac = np.sum((all_vertices[aa] - all_vertices[mid_bc]) ** 2, axis=1)
+        d_mc = np.sum((all_vertices[mid_ab] - all_vertices[cc]) ** 2, axis=1)
+        va, vc = all_vertices[aa], all_vertices[cc]
+        smaller = np.zeros(len(aa), dtype=bool)
+        undecided = np.ones(len(aa), dtype=bool)
+        for axis in range(3):
+            smaller |= undecided & (va[:, axis] < vc[:, axis] - 1e-9)
+            undecided &= np.abs(va[:, axis] - vc[:, axis]) <= 1e-9
+        eps = 1e-10 * np.maximum(1.0, np.maximum(d_ac, d_mc))
+        diagonal_ac = (d_ac < d_mc - eps) | ((np.abs(d_ac - d_mc) <= eps) & smaller)
+        if np.any(diagonal_ac):
+            q = diagonal_ac
+            pieces.append(np.stack((aa[q], mid_ab[q], mid_bc[q]), axis=1))
+            pieces.append(np.stack((aa[q], mid_bc[q], cc[q]), axis=1))
+        if np.any(~diagonal_ac):
+            q = ~diagonal_ac
+            pieces.append(np.stack((aa[q], mid_ab[q], cc[q]), axis=1))
+            pieces.append(np.stack((mid_ab[q], mid_bc[q], cc[q]), axis=1))
+
+    split_two(long_ab & long_bc & ~long_ca, a, b, c, ab, bc)
+    split_two(~long_ab & long_bc & long_ca, b, c, a, bc, ca)
+    split_two(long_ab & ~long_bc & long_ca, c, a, b, ca, ab)
     all_three = long_ab & long_bc & long_ca
     if np.any(all_three):
         pieces.append(np.stack((a[all_three], ab[all_three], ca[all_three]), axis=1))
@@ -386,12 +424,12 @@ class SupportField:
         return owners, self.sorted_tri[starts + inner]
 
     def closest(self, points: np.ndarray):
-        """``(distance, point, normal)`` — по нормали: снаружи > 0, внутри < 0.
+        """``(distance, point, normal)`` — расстояние до ближайшей грани со знаком.
 
-        Треугольник выбирается по **обычному** расстоянию до него, а знак берётся
-        из нормали этого же треугольника. Если выбирать по знаковой величине,
-        боковые грани «выигрывают» у верхней и деталь проваливается мимо опоры:
-        точка над столом оказывается «внутри» по всем четырём боковым плоскостям.
+        Треугольник выбирается по обычному расстоянию; знак определяется его
+        ориентацией. За ребром учитывается реальное расстояние до этого ребра,
+        а не расстояние до продолжения плоскости грани. Для сложных вогнутых
+        опор и пересекающихся опор этот локальный знак остаётся приближением.
         """
         count = len(points)
         distance = np.full(count, np.inf)
@@ -408,13 +446,16 @@ class SupportField:
             normal[good] /= norm[good, None]
             delta = points[owners] - closest
             flat = np.linalg.norm(delta, axis=1)
-            signed = np.einsum("ij,ij->i", delta, normal)
-            # нормаль обошла плоскость треугольника: считаем точку снаружи
-            beyond = ~good | (np.abs(signed) < 1e-9)
-            if np.any(beyond):
-                signed[beyond] = flat[beyond]
-                normal[beyond] = delta[beyond] / np.maximum(flat[beyond], 1e-12)[:, None]
-                normal[beyond & ~good] = np.array([0.0, 0.0, 1.0])
+            plane = np.einsum("ij,ij->i", delta, normal)
+            # Знак берём у ориентированной грани, но расстояние — до самого
+            # треугольника, не до его бесконечной плоскости.
+            outside = (plane >= -1e-9) | ~good
+            signed = np.where(outside, flat, -flat)
+            nonzero = flat > 1e-12
+            sign = np.where(outside, 1.0, -1.0)
+            normal[nonzero] = (delta[nonzero] / flat[nonzero, None]
+                               * sign[nonzero, None])
+            normal[~good & ~nonzero] = np.array([0.0, 0.0, 1.0])
             # по каждой частице — самый близкий треугольник; дубликаты в
             # fancy-индексации перезаписывают друг друга, поэтому берём первые
             order = np.lexsort((flat, owners))
@@ -786,7 +827,8 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
         self_distance = max(float(self_gap), 1e-4)
     self_contacts = (SurfaceContacts(vertices, faces, shell, self_distance, components, -gravity)
                      if self_collision and not rigid_only else None)
-    rigid_excluded = _excluded_codes(faces, count) if self_collision and rigid_only else None
+    rigid_excluded = (_excluded_codes(faces, count)
+                      if self_collision and rigid_only and len(comp_ids) > 1 else None)
 
     # --- степени частиц и индексы для общей поправки (метод Якоби) ---
     # рёбра и изгиб складываются в один проход: две «разбросанные» суммы на
@@ -803,10 +845,12 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
     axis_of = np.arange(3, dtype=np.int64)
     index_a = (pair_a[:, None] * 3 + axis_of).ravel()
     index_b = (pair_b[:, None] * 3 + axis_of).ravel()
+    edge_colors = _edge_colors(edges, count) if not rigid_only else []
 
     supports = np.asarray(supports, dtype=np.float64) if supports is not None else None
     field = SupportField(supports, cell) if supports is not None and len(supports) else None
-    position = (place(vertices, supports, gravity, gap=cell * 0.02)
+    # Начальная постановка учитывает и явно заданный зазор.
+    position = (place(vertices, supports, gravity, gap=max(cell * 0.02, offset + 1e-3))
                 if field is not None else vertices.copy())
     # закрепления берутся уже после постановки на сцену: иначе закреплённые узлы
     # остаются там, где деталь была до расчёта, и ткань растягивается к ним
@@ -819,6 +863,12 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
     converged = False
     movement = 0.0
     total_contacts = 0
+    # При малой гравитации свободное падение может быть медленнее 0.01 мм
+    # за шаг: это ещё не неподвижность. Критерий остаётся приближённым.
+    movement_tolerance = max(float(tolerance), 0.0)
+    gravity_step = abs(float(g)) * float(np.linalg.norm(gravity))
+    if gravity_step > 0.0:
+        movement_tolerance = min(movement_tolerance, 0.05 * gravity_step)
 
     support_contact = np.zeros(count, dtype=bool)
     support_normal = np.zeros((count, 3), dtype=np.float64)
@@ -835,6 +885,18 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
             self_pairs = max(self_pairs, found)
 
         for it in range(int(iterations)):
+            # Рёбра одного цвета не делят узлы; следующие цвета видят уже
+            # исправленные координаты (векторный Гаусс—Зейдель).
+            for group in (edge_colors if (it + step) % 2 == 0 else reversed(edge_colors)):
+                a, b = edge_a[group], edge_b[group]
+                delta = position[b] - position[a]
+                length = np.maximum(np.linalg.norm(delta, axis=1), 1e-12)
+                wa, wb = free[a].astype(float), free[b].astype(float)
+                share = ((length - rest[group]) * float(stiffness) /
+                         (length * np.maximum(wa + wb, 1.0)))[:, None]
+                correction = delta * share
+                position[a] += correction * wa[:, None]
+                position[b] -= correction * wb[:, None]
             # --- длины рёбер и изгиб: одна общая поправка (метод Якоби) ---
             delta = position[edge_b] - position[edge_a]
             length = np.linalg.norm(delta, axis=1)
@@ -941,6 +1003,9 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
             grid = ParticleHash(position, max(self_distance, 1e-3))
             pairs = grid.pairs(position, self_distance, rigid_excluded)
             if len(pairs):
+                # Частицы одного жёсткого тела не должны раздвигать друг друга.
+                pairs = pairs[components[pairs[:, 0]] != components[pairs[:, 1]]]
+            if len(pairs):
                 self_pairs = max(self_pairs, len(pairs))
                 delta = position[pairs[:, 1]] - position[pairs[:, 0]]
                 length = np.maximum(np.linalg.norm(delta, axis=1), 1e-9)
@@ -966,10 +1031,11 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
                                 hint="Уменьшите g, увеличьте iterations или шаг сетки mesh.")
         total_contacts = max(total_contacts, contacts)
         movement = float(np.max(np.linalg.norm(position - previous, axis=1)))
-        if movement < tolerance:
+        if movement < movement_tolerance:
             still += 1
             if still >= int(stable_steps):
-                converged_at = step + 2 - still
+                # Учитываем все шаги, включая серию проверки неподвижности.
+                converged_at = step + 1
                 converged = True
                 break
         else:
@@ -981,9 +1047,12 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
     typical = rest >= 0.5 * float(np.median(rest))
     if not np.any(typical):
         typical = np.ones(len(rest), dtype=bool)
-    relative = np.abs(final_lengths[typical] - rest[typical]) / rest[typical]
+    relative_all = np.abs(final_lengths - rest) / np.maximum(rest, 1e-12)
+    relative = relative_all[typical]
     strain = float(np.max(relative))
     strain_p90 = float(np.percentile(relative, 90))
+    strain_all = float(np.max(relative_all))
+    strain_all_p90 = float(np.percentile(relative_all, 90))
     stretch = float(np.max(np.abs(final_lengths[typical] - rest[typical])))
     contacts_final = 0
     penetration = 0.0
@@ -998,9 +1067,13 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
         "steps": int(converged_at),
         "converged": bool(converged),
         "last_motion": float(movement),
+        "movement_tolerance": float(movement_tolerance),
         "strain": strain,
         "stretch": stretch,
         "strain_p90": strain_p90,
+        "strain_all": strain_all,
+        "strain_all_p90": strain_all_p90,
+        "shortest_rest_edge": float(np.min(rest)),
         "contacts": contacts_final,
         "contacts_max": int(total_contacts),
         "self_pairs": int(self_pairs),

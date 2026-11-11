@@ -13,6 +13,7 @@ import manifold3d as mf
 import numpy as np
 
 from . import cloth
+from .cloth_check import self_intersections
 from .errors import GeometryError
 from .geometry import (manifold_from_arrays, manifold_mesh, normalize_color,
                        pattern_shape)
@@ -966,6 +967,32 @@ def _drape_intersections(bodies, max_checks=32):
     return volume, checked, complete
 
 
+def _drape_support_intersections(bodies, hosts, max_checks=32):
+    """Проверяет результат с опорами, не проверяя опоры между собой."""
+    checked = 0
+    volume = 0.0
+    complete = True
+    bounds = [body.bounding_box() for body in bodies]
+    hosts_bounds = [host.bounding_box() for host in hosts]
+    for first, b0 in zip(bodies, bounds):
+        for host, b1 in zip(hosts, hosts_bounds):
+            if any(b0[k + 3] <= b1[k] or b1[k + 3] <= b0[k] for k in range(3)):
+                continue
+            if checked >= max_checks:
+                return volume, checked, False
+            checked += 1
+            try:
+                common = first ^ host
+                measured = float(common.volume())
+                if common.status() != mf.Error.NoError or not np.isfinite(measured) or measured < -1e-6:
+                    complete = False
+                else:
+                    volume += max(0.0, measured)
+            except Exception:
+                complete = False
+    return volume, checked, complete
+
+
 def _pin_mask(vertices, mode, points, radius) -> np.ndarray:
     """Какие узлы держать на месте. Кромки замкнутой детали — по габариту."""
     pinned = np.zeros(len(vertices), dtype=bool)
@@ -1050,7 +1077,7 @@ def drape(a, name):
     else:
         direction = cloth.parse_gravity(str(gravity_value))
 
-    steps = int(a.num("steps", None) or a.num("iterations", 55, minv=1, maxv=1000) or 55)
+    steps = int(a.num("steps", None, minv=1, maxv=1000) or a.num("iterations", 55, minv=1, maxv=1000) or 55)
     constraints = int(a.num("constraints", 14, minv=1, maxv=64) or 14)
     mesh_step = float(a.num("mesh", 3.5, minv=0.05, maxv=200.0) or 3.5)
     budget = int(a.num("particles", 4000, minv=200, maxv=30000) or 4000)
@@ -1091,6 +1118,8 @@ def drape(a, name):
 
     merged_vertices, merged_faces, spans, colors, closed_flags = [], [], [], [], []
     naturals = []
+    maximum_edges = []
+    mesh_complete = True
     offset = 0
     for part in parts:
         vertices, faces = manifold_mesh(part.manifold)
@@ -1101,6 +1130,11 @@ def drape(a, name):
         natural = cloth._thickness_of(vertices, faces)
         step = max(mesh_step, 0.7 * natural)
         vertices, faces = cloth.subdivide_to(vertices, faces, step, budget)
+        edges = cloth._edge_arrays(faces)
+        longest = float(np.max(np.linalg.norm(vertices[edges[:, 1]] - vertices[edges[:, 0]], axis=1)))
+        maximum_edges.append(longest)
+        if longest > step * 1.01:
+            mesh_complete = False
         merged_vertices.append(vertices)
         merged_faces.append(faces + offset)
         spans.append((offset, offset + len(vertices)))
@@ -1141,9 +1175,15 @@ def drape(a, name):
     position = report["vertices"]
     if not np.all(np.isfinite(position)):
         raise GeometryError("drape: расчёт потерял устойчивость.")
-    if float(report["stretch"]) > 0.25 * max(mesh_step, 1e-3) * 8:
-        a.scene.log("warn", f"drape: сильное растяжение {report['stretch']:.2f} мм — "
-                            "увеличьте constraints или уменьшите g", a.cmd.line)
+    if not mesh_complete:
+        a.scene.log("warn", f"drape: бюджет сетки не позволил достичь запрошенного шага: "
+                            f"самое длинное ребро {max(maximum_edges):.2f} мм; "
+                            "увеличьте particles или mesh.", a.cmd.line)
+    if report["strain_all"] > 0.10:
+        a.scene.log("warn", f"drape: максимальное изменение длины ребра {report['strain_all']:.1%} "
+                            "(включая короткие рёбра стенки); "
+                            "нерастяжимость не подтверждена. Попробуйте увеличить constraints "
+                            "или уменьшить g.", a.cmd.line)
     if not report["converged"]:
         a.scene.log("warn", f"drape: достигнут предел {steps} шагов, равновесие не подтверждено "
                             f"(последнее смещение до {report['last_motion']:.3f} мм); "
@@ -1159,29 +1199,72 @@ def drape(a, name):
             body = _thicken_open(local, local_faces, thickness, "драпировка")
         suffix = "" if index == 0 else f".{index + 1:02d}"
         emitted.append((suffix, body, colors[index], "drape", {"rough": 0.9}))
+    # Отдельная геометрическая проверка, а не счётчик контактов решателя.
+    surface_checks = []
+    for _suffix, body, _color, _kind, _material in emitted:
+        check_vertices, check_faces = manifold_mesh(body)
+        surface_checks.append(self_intersections(check_vertices, check_faces))
+    self_crossings = sum(check["pairs"] for check in surface_checks)
+    self_check_complete = all(check["complete"] for check in surface_checks)
+    if self_crossings:
+        a.scene.log("warn", f"drape: найдены пересечения или касания {self_crossings} пар "
+                            "несоседних граней внутри детали; геометрия небезопасна для экспорта.",
+                    a.cmd.line)
+    if not self_check_complete:
+        a.scene.log("warn", "drape: проверка самопересечений не завершена или есть вырожденные "
+                            "грани; отсутствие дефектов не подтверждено.", a.cmd.line)
+
     overlap, overlap_checks, overlap_complete = (0.0, 0, True)
+    bodies = [item[1] for item in emitted]
     if use_self and len(emitted) > 1:
-        overlap, overlap_checks, overlap_complete = _drape_intersections([item[1] for item in emitted])
+        overlap, overlap_checks, overlap_complete = _drape_intersections(bodies)
+        if overlap_checks and (self_crossings or not self_check_complete):
+            overlap_complete = False  # boolean с самопересечениями ненадёжен
         if overlap > 1e-4:
             a.scene.log("warn", f"drape: в результате осталось пересечение разных деталей "
                                f"объёмом {overlap:.4f} мм³; попробуйте уменьшить mesh "
                                "или увеличить self_gap/steps.", a.cmd.line)
         if not overlap_complete:
-            a.scene.log("warn", "drape: проверка пересечений разных деталей не завершена.", a.cmd.line)
+            a.scene.log("warn", "drape: проверка пересечений разных деталей не завершена "
+                                "или геометрия ненадёжна.", a.cmd.line)
+    support_overlap, support_checks, support_complete = (0.0, 0, bool(hosts))
+    if hosts:
+        support_overlap, support_checks, support_complete = _drape_support_intersections(
+            bodies, [host.manifold for host in hosts])
+        if support_checks and (self_crossings or not self_check_complete):
+            support_complete = False
+        if support_overlap > 1e-4:
+            a.scene.log("warn", f"drape: обнаружено пересечение с опорами объёмом "
+                                f"{support_overlap:.4f} мм³.", a.cmd.line)
+        if not support_complete:
+            a.scene.log("warn", "drape: проверка пересечений с опорами не завершена "
+                                "или геометрия ненадёжна.", a.cmd.line)
     for part in parts:
         a.scene.consume(part)
 
     meta = {"vertices": int(report["vertices_count"]), "pinned": int(pinned.sum()),
             "free": int(len(pinned) - pinned.sum()), "contacts": int(report["contacts"]),
             "max_strain": float(report["strain"]), "strain_p90": float(report["strain_p90"]),
+            "max_strain_all": float(report["strain_all"]),
+            "strain_all_p90": float(report["strain_all_p90"]),
+            "shortest_rest_edge": float(report["shortest_rest_edge"]),
             "stretch": float(report["stretch"]),
             "self_collision": bool(use_self), "self_gap": float(report["self_gap"]),
             "self_pairs": int(report["self_pairs"]), "self_method": report["self_method"],
+            "self_intersections": int(self_crossings),
+            "self_intersections_complete": bool(self_check_complete),
+            "self_intersection_candidates": sum(check["candidates"] for check in surface_checks),
+            "degenerate_faces": sum(check["degenerate"] for check in surface_checks),
             "parts_overlap_volume": float(overlap), "parts_overlap_checks": overlap_checks,
             "parts_overlap_checked": bool(use_self and len(emitted) > 1),
             "parts_overlap_complete": overlap_complete,
+            "support_overlap_volume": float(support_overlap), "support_overlap_checks": support_checks,
+            "support_overlap_checked": bool(hosts), "support_overlap_complete": bool(support_complete),
             "steps": int(report["steps"]), "converged": bool(report["converged"]),
-            "last_motion": float(report["last_motion"]), "constraints": constraints, "mesh": mesh_step, "budget": budget,
+            "last_motion": float(report["last_motion"]),
+            "movement_tolerance": float(report["movement_tolerance"]), "constraints": constraints,
+            "mesh": mesh_step, "mesh_max_edge": max(maximum_edges),
+            "mesh_complete": bool(mesh_complete), "budget": budget,
             "thickness": thickness, "friction": friction, "bend": bend,
             "gravity": [round(float(v), 4) for v in direction], "g": g_amount,
             "rigid": (float(np.max(rigid_input)) if len(rigid_input) else 0.0),
@@ -1194,8 +1277,11 @@ def drape(a, name):
                   "rigid": rigid_text, "self": use_self, "self_gap": self_gap,
                   "pin": pin_mode})
     root.notes.append(f"драпировка: {meta['vertices']} узлов, опор {len(hosts)}, "
-                      f"контактов {meta['contacts']}, растяжение {meta['stretch']:.2f} мм "
-                      f"({meta['max_strain']:.1%}), {meta['seconds']:.2f} с")
+                      f"контактов {meta['contacts']}; изменение длины всех рёбер: "
+                      f"p90 {meta['strain_all_p90']:.1%}, максимум {meta['max_strain_all']:.1%}; "
+                      f"несоседних пересечений/касаний {meta['self_intersections']}"
+                      f"{'' if meta['self_intersections_complete'] else ' (проверка неполная)'}, "
+                      f"{meta['seconds']:.2f} с")
     root.meta["cloth"] = meta
     a.scene.log("info", root.notes[-1], a.cmd.line)
     return root
