@@ -17,6 +17,7 @@ from drape_mujoco_probe import (TrajectoryAudit, changed_surface_distances, inpu
                                 restart_from_rest, sampled_surface_distance, surface_samples,
                                 tet_boundary, tetrahedral_shell)  # noqa: E402
 from drape_tet_pbd_probe import VolumeProjector  # noqa: E402
+from drape_shear_probe import ShearProjector, build_shear_links  # noqa: E402
 from forma import cloth  # noqa: E402
 
 try:
@@ -54,6 +55,32 @@ class DrapeProbeConstructionTest(unittest.TestCase):
                 projector.project(collapsed, free, supports)
                 self.assertGreater(projector.measure(collapsed)['min_jacobian'], before)
                 np.testing.assert_allclose(collapsed[0], reference[0])
+
+    def test_shear_links_are_unique_pin_safe_and_rest_free(self):
+        vertices = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0],
+                             [0, 0, .1], [1, 0, .1], [0, 1, .1]], dtype=float)
+        faces = np.array([[0, 1, 2], [5, 4, 3]], dtype=np.int64)
+        shell = np.array([[0, 3], [1, 4], [2, 5]], dtype=np.int64)
+        links = build_shear_links(vertices, faces, shell)
+        self.assertEqual(len(links), 6)
+        self.assertEqual(len({tuple(link) for link in links}), len(links))
+        projector = ShearProjector(vertices, links)
+        free = np.ones(len(vertices), dtype=bool)
+        free[0] = False
+        rest = vertices.copy()
+        projector.project(rest, free)
+        np.testing.assert_allclose(rest, vertices)
+        moved = vertices.copy()
+        moved[4, 0] += .2
+        before = np.sum(np.abs(np.linalg.norm(moved[links[:, 1]] - moved[links[:, 0]], axis=1)
+                               - projector.rest))
+        projector.project(moved, free)
+        after = np.sum(np.abs(np.linalg.norm(moved[links[:, 1]] - moved[links[:, 0]], axis=1)
+                              - projector.rest))
+        self.assertLess(after, before)
+        np.testing.assert_array_equal(moved[0], vertices[0])
+        with self.assertRaises(ValueError):
+            build_shear_links(vertices, faces, np.array([[0, 3], [0, 4]]))
 
     def test_capture_records_actual_steps_without_changing_the_solver(self):
         source = '''пол = box size=[80,80,8] at=[0,0,-8]
