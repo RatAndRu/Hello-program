@@ -226,12 +226,11 @@ d = drape [ткань] on=опора detail=12 iterations=20 constraints=8
                                 steps=25, iterations=10, pinned=pinned,
                                 self_collision=False)
         moved = report["vertices"]
-        # постановка на сцену сдвигает всю деталь; закреплённые узлы едут вместе
-        # с ней, но не расходятся между собой и не провисают
-        self.assertAlmostEqual(float(np.ptp(moved[pinned][:, 0])),
-                               float(np.ptp(vertices[pinned][:, 0])), delta=1e-6)
-        self.assertLessEqual(float(moved[pinned][:, 2].max() - moved[pinned][:, 2].min()),
-                             0.5)
+        # Закрепление относится к исходным координатам, а не к искусственной
+        # постановке детали у опоры. Свободные узлы при этом должны опускаться.
+        np.testing.assert_array_equal(moved[pinned], vertices[pinned])
+        self.assertLess(float(moved[~pinned][:, 2].min()),
+                        float(vertices[~pinned][:, 2].min()) - 0.1)
         self.assertGreater(float(moved[~pinned][:, 2].min()),
                            float(moved[pinned][:, 2].min()) - 30.0)
 

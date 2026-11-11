@@ -1147,8 +1147,12 @@ def drape(a, name):
 
     pinned = np.zeros(len(vertices), dtype=bool)
     for begin, finish in spans:
-        pinned[begin:finish] = _pin_mask(vertices[begin:finish], pin_mode, pin_points,
-                                         pin_radius)
+        # Именованные кромки определяются по габариту каждой детали отдельно.
+        pinned[begin:finish] = _pin_mask(vertices[begin:finish], pin_mode, None, pin_radius)
+    if pin_points is not None:
+        # Явные точки заданы в координатах сцены: ближайший узел выбирается
+        # среди всей группы, а не принудительно на каждой удалённой детали.
+        pinned |= _pin_mask(vertices, "none", pin_points, pin_radius)
 
     if rigid_value == "auto":
         rigid_input = cloth.auto_rigid_parts(vertices, faces)

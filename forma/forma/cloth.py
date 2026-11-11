@@ -813,12 +813,19 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
     else:
         shell, shell_rest = _shell_pairs_by_component(vertices, faces, components,
                                                        rigid_weights, thickness)
-    shell_sign = np.ones(len(shell))
+    shell_normal_rest = np.zeros(len(shell))
+    shell_tangent_rest = np.zeros(len(shell))
     if len(shell) and not rigid_only:
+        # У краёв связь не обязана быть строго перпендикулярна усреднённым
+        # нормалям. Сохраняем обе исходные составляющие, чтобы ненагруженная
+        # стенка не начинала деформироваться сама по себе.
         n0 = vertex_normals(vertices, faces)
-        signs = np.einsum("ij,ij->i", vertices[shell[:, 1]] - vertices[shell[:, 0]],
-                          n0[shell[:, 0]] - n0[shell[:, 1]])
-        shell_sign = np.where(signs < 0, -1.0, 1.0)
+        delta0 = vertices[shell[:, 1]] - vertices[shell[:, 0]]
+        n0 = n0[shell[:, 0]] - n0[shell[:, 1]]
+        n0 /= np.maximum(np.linalg.norm(n0, axis=1), 1e-12)[:, None]
+        shell_normal_rest = np.einsum("ij,ij->i", delta0, n0)
+        tang0 = delta0 - shell_normal_rest[:, None] * n0
+        shell_tangent_rest = np.linalg.norm(tang0, axis=1)
     self_distance = ((max(0.02, min(0.8, 1.5 * thickness)) if closed
                       else 0.5 * thickness) if self_collision else 0.0)
     if rigid_only and self_collision:
@@ -849,12 +856,15 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
 
     supports = np.asarray(supports, dtype=np.float64) if supports is not None else None
     field = SupportField(supports, cell) if supports is not None and len(supports) else None
-    # Начальная постановка учитывает и явно заданный зазор.
+    # Без закреплений и при ненулевой гравитации можно пропустить свободный
+    # полёт и поставить всю группу ближе к опорам. При наличии закрепления
+    # такой перенос менял бы его координаты и начальную форму; при g=0 он
+    # также не имеет физического смысла. В этих случаях начинаем с исходной
+    # позиции всей группы.
     position = (place(vertices, supports, gravity, gap=max(cell * 0.02, offset + 1e-3))
-                if field is not None else vertices.copy())
-    # закрепления берутся уже после постановки на сцену: иначе закреплённые узлы
-    # остаются там, где деталь была до расчёта, и ткань растягивается к ним
-    fixed = position[pinned].copy()
+                if field is not None and not np.any(pinned) and float(g) != 0.0
+                else vertices.copy())
+    fixed = vertices[pinned].copy()
     previous = position.copy()
     contacts = 0
     self_pairs = 0
@@ -956,8 +966,18 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
                 direction = normal[a] - normal[b]
                 norm = np.linalg.norm(direction, axis=1)
                 direction /= np.maximum(norm, 1e-12)[:, None]
-                target = direction * (shell_sign * shell_rest)[:, None]
+                projection = np.einsum("ij,ij->i", delta, direction)
+                tangent = delta - projection[:, None] * direction
+                tangent_length = np.linalg.norm(tangent, axis=1)
+                target = (direction * shell_normal_rest[:, None]
+                          + tangent * (shell_tangent_rest / np.maximum(tangent_length, 1e-12))[:, None])
                 correction = delta - target
+                correction[norm < 1e-12] = 0.0
+                # Если касательное направление вырождено, его нельзя выбрать
+                # однозначно; исправляем только нормальную составляющую.
+                ambiguous = (tangent_length < 1e-12) & (shell_tangent_rest > 1e-12)
+                correction[ambiguous] = ((projection[ambiguous] - shell_normal_rest[ambiguous])[:, None]
+                                         * direction[ambiguous])
                 wa = (free[a] & ~support_contact[a]).astype(float)
                 wb = (free[b] & ~support_contact[b]).astype(float)
                 # Обе стороны могут быть прижаты к одной опоре после большого

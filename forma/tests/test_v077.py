@@ -157,6 +157,64 @@ class SupportAndConvergenceTest(unittest.TestCase):
         self.assertTrue(report["converged"])
         self.assertEqual(report["steps"], 4)
 
+    def test_zero_gravity_does_not_teleport_body_to_support(self):
+        body_vertices, body_faces = manifold_mesh(
+            mf.Manifold.cube((20, 20, 20), True).translate((0, 0, 35)))
+        support_vertices, support_faces = manifold_mesh(
+            mf.Manifold.cube((150, 150, 10), True).translate((0, 0, -5)))
+        report = cloth.simulate(body_vertices, body_faces, support_vertices[support_faces],
+                                gravity=np.array([0, 0, -1.]), g=0, steps=20,
+                                iterations=5, rigid=1, self_collision=False)
+        np.testing.assert_allclose(report["vertices"], body_vertices, atol=1e-10)
+
+    def test_explicit_pin_selects_group_nearest_not_each_part(self):
+        result = build_ok("""
+пол = box size=[200,100,10] at=[0,0,-10]
+левый = box size=[10,10,10] at=[-30,0,30]
+правый = box size=[10,10,10] at=[30,0,30]
+итог = drape [левый,правый] on=пол pins=[[-35,-5,30]] pin_radius=0.01 rigid=1 mesh=12 particles=200 steps=8 constraints=4 g=0.1 self=нет
+""")
+        meta = result.scene.objects["итог"].meta["cloth"]
+        self.assertEqual(meta["pinned"], 1)
+        vertices, _faces = manifold_mesh(result.scene.objects["итог"].manifold)
+        self.assertLess(np.min(np.linalg.norm(vertices - [-35, -5, 30], axis=1)), 1e-6)
+        right_before = result.scene.objects["правый"].manifold.bounding_box()
+        right_after = result.scene.objects["итог.02"].manifold.bounding_box()
+        self.assertLess(right_after[5], right_before[5] - 0.1)
+
+    def test_pins_keep_world_coordinates_for_different_gravity_axes(self):
+        body, faces = manifold_mesh(mf.Manifold.cube((30, 30, .6), True).translate((0, 0, 30)))
+        body, faces = cloth.subdivide_to(body, faces, 8, 400)
+        support, support_faces = manifold_mesh(
+            mf.Manifold.cube((150, 150, 10), True).translate((0, 0, -5)))
+        pinned = np.isclose(body[:, 0], body[:, 0].min())
+        for direction in ([0, 0, -1.], [1., 0, 0], [0, 1., 0]):
+            with self.subTest(direction=direction):
+                report = cloth.simulate(body, faces, support[support_faces],
+                                        gravity=np.asarray(direction), g=.1, steps=8,
+                                        iterations=6, thickness=.6, pinned=pinned,
+                                        rigid=0, self_collision=False)
+                np.testing.assert_array_equal(report["vertices"][pinned], body[pinned])
+                self.assertGreater(np.max(np.linalg.norm(
+                    report["vertices"][~pinned] - body[~pinned], axis=1)), .01)
+
+    def test_stress_free_wall_remains_at_rest_without_external_forces(self):
+        tube = build_ok("рукав = pipe length=24 diameter=12 wall=0.6 sides=16")
+        shapes = [mf.Manifold.cube((40, 40, .6), True).translate((0, 0, 30)),
+                  mf.Manifold.cube((40, 40, .6), True).rotate((29, 37, 13)).translate((3, -8, 30)),
+                  tube.scene.objects["рукав"].manifold]
+        for shape in shapes:
+            vertices, faces = manifold_mesh(shape)
+            vertices, faces = cloth.subdivide_to(vertices, faces, 8, 800)
+            for self_collision in (False, True):
+                with self.subTest(shape=shape.bounding_box(), self_collision=self_collision):
+                    report = cloth.simulate(vertices, faces, None, gravity=np.zeros(3),
+                                            g=0, steps=5, iterations=8, rigid=0,
+                                            thickness=.6, self_collision=self_collision)
+                    self.assertGreater(report["shell"], 0)
+                    np.testing.assert_allclose(report["vertices"], vertices, rtol=0, atol=1e-10)
+                    self.assertLess(report["strain_all"], 1e-10)
+
 
 class IndependentChecksTest(unittest.TestCase):
     def test_triangle_cross_coplanar_and_miss(self):
