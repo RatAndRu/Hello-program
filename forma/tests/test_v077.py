@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
@@ -50,8 +51,11 @@ def fcl_self_pairs(vertices, faces, limit=300_000):
     fcl.collide(obj, obj, fcl.CollisionRequest(num_max_contacts=limit, enable_contact=True), result)
     if len(result.contacts) >= limit:
         raise AssertionError("FCL: исчерпан лимит контактов, проверка не завершена")
-    return {(int(c.b1), int(c.b2)) for c in result.contacts
-            if 0 <= c.b1 < c.b2 and not set(faces[c.b1]).intersection(faces[c.b2])}
+    # FCL не гарантирует порядок номеров граней; обратная единственная
+    # перестановка пары не должна пропадать из независимого теста.
+    return {tuple(sorted((int(c.b1), int(c.b2)))) for c in result.contacts
+            if 0 <= c.b1 < len(faces) and 0 <= c.b2 < len(faces) and c.b1 != c.b2
+            and not set(faces[c.b1]).intersection(faces[c.b2])}
 
 
 class QuadMeshingTest(unittest.TestCase):
@@ -217,6 +221,16 @@ class SupportAndConvergenceTest(unittest.TestCase):
 
 
 class IndependentChecksTest(unittest.TestCase):
+    def test_fcl_pair_in_reverse_order_is_not_lost(self):
+        vertices = np.zeros((6, 3))
+        faces = np.array([[0, 1, 2], [3, 4, 5]])
+        contacts = [SimpleNamespace(b1=1, b2=0), SimpleNamespace(b1=1, b2=0)]
+        fake_fcl = SimpleNamespace(CollisionResult=lambda: SimpleNamespace(contacts=contacts),
+                                   CollisionRequest=lambda **_kwargs: object(),
+                                   collide=lambda *_args: None)
+        with patch(f"{__name__}.fcl", fake_fcl), patch(f"{__name__}.fcl_object"):
+            self.assertEqual(fcl_self_pairs(vertices, faces), {(0, 1)})
+
     def test_triangle_cross_coplanar_and_miss(self):
         first = np.array([[[0, 0, 0], [2, 0, 0], [0, 2, 0]]] * 3, dtype=float)
         other = np.array([[[.4, .4, -1], [.4, .4, 1], [1.2, .4, 0]],
