@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
+import subprocess
 import sys
+import tempfile
 import types
 import unittest
 from unittest import mock
@@ -17,7 +20,8 @@ from drape_mujoco_probe import (TrajectoryAudit, changed_surface_distances, inpu
                                 restart_from_rest, sampled_surface_distance, surface_samples,
                                 tet_boundary, tetrahedral_shell)  # noqa: E402
 from drape_tet_pbd_probe import VolumeProjector  # noqa: E402
-from drape_shear_probe import ShearProjector, build_shear_links  # noqa: E402
+from drape_shear_probe import ShearProjector, _check_ccd, build_shear_links  # noqa: E402
+from drape_support_probe import SupportContactProbe  # noqa: E402
 from forma import cloth  # noqa: E402
 
 try:
@@ -150,6 +154,73 @@ class DrapeProbeConstructionTest(unittest.TestCase):
         self.assertEqual(check.steps, 2)
         np.testing.assert_allclose(check.failed_segment[0][:3], moving)
         np.testing.assert_allclose(check.failed_segment[1][:3], moving - [0., 0., 2.])
+
+    def test_support_probe_moves_face_for_static_vertices_and_respects_pins(self):
+        vertices = np.array([[-2., -2., 1.], [2., -2., 1.], [0., 2., 1.]])
+        faces = np.array([[0, 2, 1]], dtype=np.int64)  # нормаль смотрит к опоре
+        support = np.array([[[0., 0., 0.], [.2, 0., 0.], [0., .2, 0.]]])
+        probe = SupportContactProbe(vertices, faces, np.empty((0, 2), dtype=np.int64),
+                                    np.zeros(3, dtype=np.int64), [0, 0, -1], support, .02)
+        old = np.vstack((vertices, probe.static))
+        moved = vertices - [0., 0., 1.2]
+        current = np.vstack((moved, probe.static))
+        owners, tids = probe.collider.candidates(old, current)
+        self.assertTrue(np.any(owners >= len(vertices)))  # вершина опоры против грани
+        self.assertTrue(np.all((owners < len(vertices)) !=
+                               (probe.collider.faces[tids, 0] < len(vertices))))
+        static_before = probe.static.copy()
+        initial = moved.copy()
+        found, _depth = probe.project(vertices, moved, np.ones(3, dtype=bool),
+                                      np.zeros(3, dtype=bool), rounds=12)
+        self.assertGreater(found, 0)
+        self.assertGreater(float(moved[:, 2].mean()), float(initial[:, 2].mean()))
+        np.testing.assert_array_equal(probe.static, static_before)
+        pinned = initial.copy()
+        probe.project(vertices, pinned, np.zeros(3, dtype=bool), np.zeros(3, dtype=bool), rounds=12)
+        np.testing.assert_array_equal(pinned, initial)
+
+    @unittest.skipIf(ipctk is None, 'ipctk — необязательный исследовательский инструмент')
+    def test_support_probe_ccd_is_wired_to_each_step(self):
+        command = [sys.executable, str(TOOLS / 'drape_support_probe.py'), '--steps', '1', '--ccd']
+        run = subprocess.run(command, cwd=TOOLS.parent, text=True, encoding='utf-8',
+                             capture_output=True, timeout=45)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        report = json.loads(run.stdout)
+        self.assertEqual(report['trajectory_ccd']['steps'], 1)
+        self.assertEqual(report['trajectory_ccd']['min_distance_mm'], .005)
+        self.assertEqual(report['passes'], 3)
+        self.assertFalse(report['metadata']['equilibrium_verified'])
+
+    @unittest.skipIf(ipctk is None, 'ipctk — необязательный исследовательский инструмент')
+    def test_shear_ccd_saves_only_failing_segment(self):
+        moving = np.array([[.1, .1, 1.], [.8, .1, 1.], [.1, .8, 1.]])
+        fixed = np.array([[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]])
+        faces = np.array([[0, 1, 2]])
+        audit = TrajectoryAudit(moving, faces, {'опора': (fixed, faces)}, min_distance=.05)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / 'failed.npz'
+            _check_ccd(audit, moving.copy(), path)
+            self.assertFalse(path.exists())
+            with self.assertRaisesRegex(RuntimeError, 'шага 2'):
+                _check_ccd(audit, moving - [0., 0., 2.], path)
+            self.assertTrue(path.is_file())
+            with np.load(path) as saved:
+                np.testing.assert_allclose(saved['start'][:3], moving)
+                np.testing.assert_allclose(saved['end'][:3], moving - [0., 0., 2.])
+                self.assertEqual(int(saved['dynamic_vertices']), 3)
+                self.assertAlmostEqual(float(saved['min_distance']), .05)
+
+    @unittest.skipIf(ipctk is None, 'ipctk — необязательный исследовательский инструмент')
+    def test_shear_probe_ccd_is_wired_to_each_step(self):
+        command = [sys.executable, str(TOOLS / 'drape_shear_probe.py'), '--steps', '1',
+                   '--ccd', '--ccd-min-distance', '.005']
+        run = subprocess.run(command, cwd=TOOLS.parent, text=True, encoding='utf-8',
+                             capture_output=True, timeout=45)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        report = json.loads(run.stdout)
+        self.assertEqual(report['trajectory_ccd']['steps'], 1)
+        self.assertEqual(report['trajectory_ccd']['min_distance_mm'], .005)
+        self.assertFalse(report['metadata']['equilibrium_verified'])
 
     def test_volume_layer_is_manifold_and_rest_volume_preserved(self):
         for case in ('sleeve', 'table'):

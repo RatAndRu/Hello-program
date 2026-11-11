@@ -25,7 +25,7 @@ from forma.geometry import manifold_mesh  # noqa: E402
 from forma.run import build  # noqa: E402
 from audit_drape_evolution import _signed_tetra_volumes  # noqa: E402
 from audit_drape_sleeve import _fcl_audit  # noqa: E402
-from drape_mujoco_probe import tetrahedral_shell  # noqa: E402
+from drape_mujoco_probe import TrajectoryAudit, tetrahedral_shell  # noqa: E402
 
 
 def build_shear_links(vertices, faces, shell):
@@ -76,6 +76,20 @@ class ShearProjector:
         return position
 
 
+def _check_ccd(audit, position, failure_path=None):
+    """Проверить линейный шаг; при отказе сохранить отрезок, а не позу."""
+    if audit.check(position):
+        return
+    saved = ''
+    if failure_path:
+        np.savez_compressed(failure_path, start=audit.failed_segment[0], end=audit.failed_segment[1],
+                            edges=audit.mesh.edges, faces=audit.mesh.faces,
+                            dynamic_vertices=len(audit.boundary), min_distance=audit.min_distance)
+        saved = f'; отрезок сохранён в {failure_path}'
+    raise RuntimeError(f'CCD: пересечение или нарушение заданного зазора '
+                       f'на линейном отрезке шага {audit.steps}{saved}')
+
+
 def _replace_once(text, old, new):
     if text.count(old) != 1:
         raise RuntimeError(f'Контрольная точка в решателе не найдена однозначно: {old}')
@@ -88,9 +102,17 @@ def main():
     parser.add_argument('--strength', type=float, default=1.)
     parser.add_argument('--rounds', type=int, default=1)
     parser.add_argument('--g', type=float, default=.04)
+    parser.add_argument('--ccd', action='store_true', help='проверять линейные отрезки через ipctk')
+    parser.add_argument('--ccd-min-distance', type=float, default=0., help='проверяемый зазор, мм')
+    parser.add_argument('--ccd-failure', help='сохранить нарушенный отрезок в NPZ при отказе CCD')
     args = parser.parse_args()
     if not 1 <= args.steps <= 1000:
         raise SystemExit('Число шагов должно быть от 1 до 1000')
+    if (not np.isfinite(args.ccd_min_distance) or args.ccd_min_distance < 0 or
+            (not args.ccd and (args.ccd_min_distance or args.ccd_failure))):
+        raise SystemExit('Зазор и файл отказа CCD требуют --ccd; зазор должен быть конечным и неотрицательным')
+    if args.ccd_failure and not args.ccd_failure.endswith('.npz'):
+        raise SystemExit('Файл отказа CCD должен оканчиваться на .npz')
     state = {}
 
     def setup(vertices, faces, shell):
@@ -107,6 +129,17 @@ def main():
         state['tetra'] = {'count': len(ratio), 'inverted': int(np.count_nonzero(ratio <= 0)),
                           'min_jacobian': float(ratio.min()), 'max_jacobian': float(ratio.max())}
 
+    def ccd_init(position, faces, supports):
+        # Треугольники неподвижных опор уже собраны штатной командой. Их
+        # вершины здесь независимы; фильтр исключает пары внутри самих опор.
+        vertices = np.asarray(supports, dtype=float).reshape(-1, 3)
+        static_faces = np.arange(len(vertices), dtype=np.int32).reshape(-1, 3)
+        state['ccd'] = TrajectoryAudit(position, faces, {'опоры': (vertices, static_faces)},
+                                       min_distance=args.ccd_min_distance)
+
+    def ccd_step(position):
+        _check_ccd(state['ccd'], position, args.ccd_failure)
+
     code = inspect.getsource(cloth.simulate)
     code = _replace_once(code, '    # --- степени частиц и индексы для общей поправки (метод Якоби) ---',
                          '    _probe_setup(vertices, faces, shell)\n'
@@ -116,8 +149,16 @@ def main():
                          '            position[pinned] = fixed\n\n        if friction > 0')
     code = _replace_once(code, '    final_lengths = np.linalg.norm',
                          '    _probe_record(position)\n    final_lengths = np.linalg.norm')
+    if args.ccd:
+        code = _replace_once(code, '    previous = position.copy()\n    contacts = 0',
+                             '    _probe_ccd_init(position, faces, supports)\n'
+                             '    previous = position.copy()\n    contacts = 0')
+        code = _replace_once(code, '        if not np.all(np.isfinite(position)) or',
+                             '        _probe_ccd_step(position)\n'
+                             '        if not np.all(np.isfinite(position)) or')
     original = cloth.simulate
     cloth._probe_setup, cloth._probe_project, cloth._probe_record = setup, project, record
+    cloth._probe_ccd_init, cloth._probe_ccd_step = ccd_init, ccd_step
     try:
         exec(compile(code, '<drape shear probe>', 'exec'), cloth.__dict__)
         path = ROOT / 'benchmarks' / 'drape_sleeve_stress_077.forma'
@@ -128,6 +169,7 @@ def main():
     finally:
         cloth.simulate = original
         del cloth._probe_setup, cloth._probe_project, cloth._probe_record
+        del cloth._probe_ccd_init, cloth._probe_ccd_step
     if not result.ok:
         raise RuntimeError(f'Стресс-сцена не собралась: {result.error}')
     body, initial = result.scene.objects['проверка'], result.scene.objects['рукав']
@@ -138,6 +180,12 @@ def main():
               'retriangulated_boundary_faces': state['changed_faces'],
               'bbox': list(body.manifold.bounding_box()),
               'volume_ratio': body.manifold.volume() / initial.manifold.volume(),
+              'trajectory_ccd': ({'steps': state['ccd'].steps,
+                                  'min_distance_mm': state['ccd'].min_distance,
+                                  'seconds': round(state['ccd'].seconds, 3),
+                                  'note': 'Линейные отрезки между шагами после размещения; '
+                                          'внутренние проекции и соседние примитивы не проверяются.'}
+                                 if args.ccd else None),
               'metadata': body.meta['cloth'], 'fcl': _fcl_audit(vertices, faces, support),
               'note': 'Эксперимент, не проверенное равновесие и не готовая деталь.'}
     print(json.dumps(report, ensure_ascii=False, indent=2), flush=True)

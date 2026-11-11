@@ -182,6 +182,31 @@ class SurfaceAuditTest(unittest.TestCase):
                     self.assertTrue(any("не отличает допустимое касание" in item["message"]
                                         for item in result.scene.logs))
 
+    def test_curved_support_crosses_face_without_touching_vertices(self):
+        # Жёстко закреплённая пластина намеренно проходит через сферу. Все её
+        # восемь вершин снаружи: контакт вершин не должен объявлять это успехом.
+        source = """
+опора = sphere radius=5 segments=32 at=[0,0,0]
+пластина = box size=[16,16,0.5] at=[0,0,3]
+итог = drape пластина on=опора g=0 rigid=1 mesh=100 particles=200 steps=1 pin=edges gap=0 self=нет
+"""
+        result = build(source, analyze_model=False)
+        self.assertTrue(result.ok, str(result.error))
+        scene = result.scene
+        meta = scene.objects["итог"].meta["cloth"]
+        self.assertEqual(meta["pinned"], 8)
+        self.assertEqual(meta["penetration"], 0.)
+        self.assertTrue(meta["support_surface_complete"])
+        self.assertGreater(meta["support_surface_pairs"], 0)
+        self.assertGreater(meta["support_overlap_volume"], 1.)
+        self.assertFalse(meta["geometry_checks_passed"])
+        if fcl is not None:
+            body = manifold_mesh(scene.objects["итог"].manifold)
+            support = manifold_mesh(scene.objects["опора"].manifold)
+            contacts = fcl.CollisionResult()
+            self.assertGreater(fcl.collide(fcl_mesh(*body), fcl_mesh(*support),
+                                          fcl.CollisionRequest(num_max_contacts=1), contacts), 0)
+
     def test_fully_contained_small_part_is_not_missed_by_volume_threshold(self):
         source = """
 опора = box size=[20,20,20] at=[0,0,0]
