@@ -1,0 +1,349 @@
+name: Форма 3D — проверенная Windows-сборка по запросу
+
+# Отдельная ускоренная сборка EXE по запросу; обычный полный Windows CI не меняется.
+# Тесты драпировки и самопроверки готового EXE обязательны для публикации.
+on:
+  push:
+    paths:
+      - '.github/workflows/build-forma-request.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  acceptance:
+    name: Проверить драпировку и совместимость (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: forma
+    steps:
+      - name: Получить исходники
+        uses: actions/checkout@v4
+      - name: Установить Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: forma/requirements.txt
+      - name: Установить зависимости
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pytest
+      - name: Проверить драпировку, опоры и сцены
+        run: >-
+          python -m pytest -q tests/test_v075.py tests/test_v076.py tests/test_v077.py
+          tests/test_drape_surface_audit.py tests/test_drape_placement.py tests/test_drape_probe.py
+      - name: Проверить совместимость экспорта и этапа 3
+        run: >-
+          python -m pytest -q tests/test_v0741.py tests/test_v0742.py
+          tests/test_stage3_features.py tests/test_lamp_rework.py tests/test_banker_lamp.py
+      - name: Проверить инструменты и редактор
+        run: |
+          node --check web/js/app.js
+          node --check web/js/viewer.js
+          node tests/editor_regression_test.js
+          node tests/playback_regression_test.js
+          node tests/panels_regression_test.js
+          node tests/occluders_test.js
+          node tests/ui_bounds_test.js
+          node tests/interior_tools_test.js
+          node tests/primitive_cards_test.js
+          node tests/line_render_test.js
+          node tests/npr_rework_test.js
+          node tests/tiles_test.js
+          node tests/asset_fingerprint_test.js
+      - name: Проверить foundation и fuzz
+        run: |
+          python -m forma.eval --out foundation-eval.json --compare docs/foundation_baseline.json
+          python -m forma.fuzz --cases 24 --seed 20261102 --timeout 30 --output fuzz-report.json
+
+  package:
+    name: Собрать и проверить EXE и ZIP (Windows)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Получить исходники
+        uses: actions/checkout@v4
+      - name: Установить Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: forma/requirements.txt
+      - name: Установить зависимости
+        working-directory: forma
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+      - name: Проверить и экспортировать оригинальный параметрический скелет
+        working-directory: forma
+        run: |
+          python tools/build_skeleton_original.py
+
+      - name: Экспортировать модели 0.53–0.72 в GLB и Forma
+        working-directory: forma
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          from forma.run import build
+          from forma.version import __version__
+          output = Path('release/models')
+          output.mkdir(parents=True, exist_ok=True)
+          for stem, suffix in (('thinkpad_x1', 'thinkpad-x1'),
+                               ('alien', 'alien-topology'),
+                               ('architecture_selectable_055', 'architecture'),
+                               ('architecture_selectable_055_preview', 'architecture-preview'),
+                               ('handle_rosettes_055', 'handles-rosettes'),
+                               ('selection_details_055', 'selection-details'),
+                               ('fittings_053', 'fittings'),
+                               ('glyphs_expansion_053', 'glyphs-expansion'),
+                               ('smooth_transitions_054', 'smooth-transitions'),
+                               ('smooth_transitions_054_preview', 'smooth-transitions-preview'),
+                               ('057/track_holes', 'track-holes'),
+                               ('057/lightning', 'lightning'),
+                               ('057/bicycle_chain', 'bicycle-chain'),
+                               ('057/jar', 'jar'),
+                               ('057/bottle', 'bottle'),
+                               ('057/lids', 'lids'),
+                               ('057/switch', 'switch'),
+                               ('058/bottle_styles', 'bottle-styles'),
+                               ('058/petaloid_bottom', 'petaloid-bottom'),
+                               ('058/jar_styles', 'jar-styles'),
+                               ('living_room_diorama', 'living-room'),
+                               ('train_carriage', 'train-carriage'),
+                               ('arte_lamp_banker_a2492lt_1ab', 'arte-lamp-banker-a2492lt-1ab'),
+                               ('rpg_sword_01', 'rpg-sword'),
+                               ('street_kit_01', 'street-kit'),
+                               ('constructive_elements_01', 'constructive-elements')):
+              source_dir = Path('examples') if stem in (
+                  'thinkpad_x1', 'alien', 'living_room_diorama', 'train_carriage',
+                  'arte_lamp_banker_a2492lt_1ab', 'rpg_sword_01', 'street_kit_01',
+                  'constructive_elements_01') else Path('showcase/sources')
+              source = source_dir / f'{stem}.forma'
+              script = source.read_text(encoding='utf-8')
+              result = build(script, analyze_model=False, base_dir=source.parent)
+              if not result.ok:
+                  raise SystemExit(f'{stem}: {result.error}')
+              base = output / f'Forma3D-{__version__}-{suffix}'
+              Path(str(base) + '.glb').write_bytes(result.glb())
+              Path(str(base) + '.forma').write_text(script, encoding='utf-8')
+              print(base, len(result.visible_solids()), 'objects')
+          PY
+
+      - name: Подготовить иконку и версию
+        working-directory: forma
+        run: |
+          python tools/make_icon.py
+          python tools/write_version_info.py
+
+      - name: Собрать EXE
+        working-directory: forma
+        run: |
+          pyinstaller packaging/forma.spec --noconfirm --clean --distpath dist --workpath build/pyi
+          ls -la dist
+          python - <<'PY'
+          from pathlib import Path
+          exe = Path('dist/Forma3D.exe')
+          print(f"EXE: {exe.stat().st_size / 1024 / 1024:.1f} МБ")
+          PY
+
+      - name: Проверить, что EXE не распух
+        working-directory: forma
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          size = Path('dist/Forma3D.exe').stat().st_size / 1024 / 1024
+          print(f"EXE: {size:.1f} МБ")
+          if size > 60:
+              raise SystemExit(
+                  f"EXE вырос до {size:.0f} МБ — похоже, в сборку попала лишняя "
+                  "библиотека (scipy/skimage/Pillow/networkx). Проверьте "
+                  "packaging/forma.spec и requirements.txt."
+              )
+          PY
+
+      - name: Проверить собранный EXE (самопроверка моделей)
+        working-directory: forma
+        run: |
+          rm -f selftest.txt
+          ./dist/Forma3D.exe --selftest --report selftest.txt &
+          exe_pid=$!
+          for i in $(seq 1 180); do
+            if [ -s selftest.txt ]; then break; fi
+            if ! kill -0 "$exe_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [ ! -s selftest.txt ]; then
+            echo "EXE не отчитался о самопроверке за 180 с"
+            taskkill //F //IM Forma3D.exe || true
+            echo "=== диагностическая сборка с консолью (чтобы видеть ошибку) ==="
+            FORMA_CONSOLE=1 pyinstaller packaging/forma.spec --noconfirm --clean \
+              --distpath distc --workpath build/pyic 2>&1 | tail -3
+            ./distc/Forma3D.exe --selftest 2>&1 | tail -40 || true
+            exit 1
+          fi
+          if ! wait "$exe_pid"; then
+            cat selftest.txt
+            exit 1
+          fi
+          cat selftest.txt
+          grep -Fq "ИТОГ: всё в порядке" selftest.txt
+
+      - name: Проверить интерфейс внутри EXE (API, 3D-ресурсы, снимки)
+        working-directory: forma
+        run: |
+          rm -f uitest.txt
+          ./dist/Forma3D.exe --uistest --report uitest.txt &
+          exe_pid=$!
+          # Полный smoke на Windows занимает около четырёх минут; прежние
+          # 240 с уже были на границе и обрывали отчёт перед самой записью.
+          for i in $(seq 1 480); do
+            if [ -s uitest.txt ]; then break; fi
+            if ! kill -0 "$exe_pid" 2>/dev/null; then break; fi
+            sleep 1
+          done
+          if [ ! -s uitest.txt ]; then
+            echo "EXE не отчитался о проверке интерфейса за 480 с"
+            taskkill //F //IM Forma3D.exe || true
+            exit 1
+          fi
+          if ! wait "$exe_pid"; then
+            cat uitest.txt
+            exit 1
+          fi
+          cat uitest.txt
+          grep -Fq "ИТОГ: всё в порядке" uitest.txt
+
+      - name: Подготовить ZIP с понятным именем
+        working-directory: forma
+        run: |
+          mkdir -p release
+          cp dist/Forma3D.exe release/
+          cp packaging/README_FIRST.txt release/ЧИТАЙ_МЕНЯ.txt
+          cp packaging/icon_256.png release/icon.png
+          cp examples/assets/human_skeleton.LICENSE.txt release/ЛИЦЕНЗИЯ_СКЕЛЕТ.txt
+          cp docs/human_skeleton_original.md release/ОРИГИНАЛЬНЫЙ_СКЕЛЕТ.md
+          cp docs/mesh_quality.md release/КАЧЕСТВО_СЕТКИ.md
+          cp docs/face_visibility.md release/НАРУЖНОСТЬ_ГРАНЕЙ.md
+          cp examples/assets/human_skeleton_original.audit.json release/АУДИТ_ОРИГИНАЛЬНОГО_СКЕЛЕТА.json
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile, sys
+          sys.path.insert(0, '.')
+          from forma.agent import command_reference_md
+          from forma.instruction import full_instruction, commands_catalog
+          from forma.version import __version__
+          root = Path('release')
+          (root / 'СПРАВКА_КОМАНДЫ.md').write_text(command_reference_md(), encoding='utf-8')
+          (root / 'ИНСТРУКЦИЯ_ДЛЯ_НЕЙРОСЕТИ.md').write_text(full_instruction(), encoding='utf-8')
+          (root / 'ВСЕ_КОМАНДЫ.md').write_text(commands_catalog(), encoding='utf-8')
+          recipes = Path('docs/RECIPES.md')
+          if recipes.exists():
+              (root / 'РЕЦЕПТЫ.md').write_text(recipes.read_text(encoding='utf-8'), encoding='utf-8')
+          examples = Path('release/examples')
+          examples.mkdir(exist_ok=True)
+          for p in Path('examples').glob('*.forma'):
+              (examples / p.name).write_text(p.read_text(encoding='utf-8'), encoding='utf-8')
+          zip_path = Path(f'Forma3D-{__version__}-windows.zip')
+          with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+              for p in sorted(root.rglob('*')):
+                  if p.is_file():
+                      zf.write(p, p.relative_to(root))
+          print('ZIP:', zip_path, zip_path.stat().st_size, 'байт')
+          exe_path = Path('dist/Forma3D.exe')
+          exe_zip = Path(f'Forma3D-{__version__}-exe.zip')
+          with zipfile.ZipFile(exe_zip, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
+              zf.write(exe_path, 'Forma3D.exe')
+          with zipfile.ZipFile(exe_zip) as zf:
+              assert zf.namelist() == ['Forma3D.exe'], zf.namelist()
+              assert zf.testzip() is None
+              assert zf.read('Forma3D.exe') == exe_path.read_bytes()
+          print('EXE-only ZIP:', exe_zip, exe_zip.stat().st_size, 'байт; только Forma3D.exe')
+          PY
+
+      - name: Загрузить проверенные файлы
+        uses: actions/upload-artifact@v4
+        with:
+          name: Forma3D-request-windows
+          path: |
+            forma/dist/Forma3D.exe
+            forma/Forma3D-*-windows.zip
+            forma/Forma3D-*-exe.zip
+            forma/selftest.txt
+            forma/uitest.txt
+          if-no-files-found: error
+          retention-days: 60
+
+  publish:
+    name: Опубликовать проверенную сборку
+    needs: [acceptance, package]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Получить исходники
+        uses: actions/checkout@v4
+      - name: Скачать проверенные файлы
+        uses: actions/download-artifact@v4
+        with:
+          name: Forma3D-request-windows
+          path: artifact
+      - name: Проверить содержимое ZIP
+        run: |
+          python - <<'PYVERIFY'
+          import hashlib
+          import runpy
+          import shutil
+          import zipfile
+          from pathlib import Path
+          version = runpy.run_path('forma/forma/version.py')['__version__']
+          root = Path('artifact')
+          names = ['Forma3D.exe', f'Forma3D-{version}-windows.zip', f'Forma3D-{version}-exe.zip']
+          out = Path('release')
+          out.mkdir()
+          for name in names:
+              found = list(root.rglob(name))
+              if len(found) != 1:
+                  raise SystemExit(f'Не найден единственный {name}: {found}')
+              shutil.copy2(found[0], out / name)
+          exe = (out / names[0]).read_bytes()
+          if exe[:2] != b'MZ' or len(exe) < 1_000_000:
+              raise SystemExit('Не получен исполняемый Windows-файл')
+          with zipfile.ZipFile(out / names[2]) as zf:
+              if zf.namelist() != ['Forma3D.exe'] or zf.testzip() is not None or zf.read('Forma3D.exe') != exe:
+                  raise SystemExit('Архив EXE не совпадает с проверенным исполняемым файлом')
+          with zipfile.ZipFile(out / names[1]) as zf:
+              if zf.testzip() is not None or zf.read('Forma3D.exe') != exe:
+                  raise SystemExit('EXE в полном ZIP не совпадает с проверенным файлом')
+              for expected in ('ЧИТАЙ_МЕНЯ.txt', 'examples/drape_layers_076.forma',
+                               'examples/drape_atelier_077.forma', 'examples/drape_atelier_dense_077.forma'):
+                  if expected not in zf.namelist():
+                      raise SystemExit(f'В полном ZIP нет {expected}')
+          print('EXE SHA-256:', hashlib.sha256(exe).hexdigest())
+          print('Файлы:', [(p.name, p.stat().st_size) for p in out.iterdir()])
+          notes = Path('.github/forma-release-notes.md').read_text(encoding='utf-8').splitlines()
+          notes = [line for line in notes if 'update-from-' not in line]
+          notes.append('\nПроверены целевые регрессии Windows и самопроверки собранного EXE; полный CI выполняется отдельно.')
+          Path('release-notes.txt').write_text('\n'.join(notes) + '\n', encoding='utf-8')
+          PYVERIFY
+      - name: Опубликовать EXE и ZIP для этого коммита
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: forma3d-exe-request-${{ github.run_id }}-${{ github.run_attempt }}
+          target_commitish: ${{ github.sha }}
+          name: Форма 3D — проверенная Windows-сборка ${{ github.run_id }}
+          body_path: release-notes.txt
+          prerelease: true
+          fail_on_unmatched_files: true
+          files: release/*
