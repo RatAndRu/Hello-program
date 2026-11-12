@@ -43,6 +43,20 @@ jobs:
           cp dist/forma-ipc-package-test.exe "$RUNNER_TEMP/forma-ipc-isolated/"
           cd "$RUNNER_TEMP/forma-ipc-isolated"
           unset PYTHONPATH
-          ./forma-ipc-package-test.exe
+          set +e
+          ./forma-ipc-package-test.exe > ipc-test.log 2>&1
+          result=$?
+          set -e
+          cat ipc-test.log
           python -c "from pathlib import Path; import hashlib; p=Path('forma-ipc-package-test.exe'); print('Размер пробника:',p.stat().st_size,'байт; SHA-256:',hashlib.sha256(p.read_bytes()).hexdigest())"
+          # Аннотации позволяют прочитать причину сбоя через GitHub API, даже
+          # если отдельный сервер хранения логов недоступен из песочницы.
+          if [ "$result" -ne 0 ]; then
+            while IFS= read -r line; do
+              line=${line//'%'/'%25'}
+              line=${line//$'\r'/'%0D'}
+              printf '::error title=Пробник IPC::%s\n' "$line"
+            done < ipc-test.log
+          fi
+          exit "$result"
       # Артефакт и релиз намеренно не создаются: это не приложение.
