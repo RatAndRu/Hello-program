@@ -3489,12 +3489,16 @@ export class Viewer {
     this._detachInstances(name);
     new THREE.TextureLoader().load(url, (tex) => {
       tex.colorSpace = THREE.SRGBColorSpace;
+      // GLB использует тот же UV с flipY=false; не переворачиваем узор при
+      // временном наложении через редактор текстур.
+      tex.flipY = false;
       tex.wrapS = THREE.RepeatWrapping;
       tex.wrapT = THREE.RepeatWrapping;
       tex.anisotropy = Math.min(8, this.renderer.capabilities.getMaxAnisotropy());
       tex.needsUpdate = true;
       if (normalUrl) {
         new THREE.TextureLoader().load(normalUrl, (nt) => {
+          nt.flipY = false;
           nt.wrapS = THREE.RepeatWrapping;
           nt.wrapT = THREE.RepeatWrapping;
           nt.needsUpdate = true;
@@ -3504,7 +3508,9 @@ export class Viewer {
             mats.forEach((m) => {
               if (!m) return;
               m.normalMap = nt;
-              m.normalScale = new THREE.Vector2(0.8, 0.8);
+              // Сила уже в пикселях; как GLTFLoader, обращаем Y только
+              // при производных тангентах, когда явного TANGENT нет.
+              m.normalScale = new THREE.Vector2(1, o.geometry?.attributes?.tangent ? 1 : -1);
               m.needsUpdate = true;
             });
           });

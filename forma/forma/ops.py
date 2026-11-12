@@ -310,7 +310,7 @@ def make_solid(scene: Scene, name: str | None, manifold: mf.Manifold, args,
     solid = Solid(name=solid_name, manifold=manifold, color=color, metal=float(metal),
                   rough=float(rough), density=float(density), visible=bool(visible),
                   emissive=emissive, emissive_strength=glow, transmission=transmission,
-                  mirror=mirror,
+                  mirror=mirror, two_sided=style.get("two_sided", base.two_sided if base else None),
                   kind=kind or args.spec.name, op=args.spec.name, line=args.cmd.line)
     # Памятка об ориентации: куда смотрят локальные верх/перёд/право после
     # поворотов. Наследуется от основы, `rotate` и `mirror` её обновляют.

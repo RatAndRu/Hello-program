@@ -550,7 +550,7 @@ class AppState:
         solids = b.visible_solids()
         if not solids:
             return {"ok": False, "message": "В сценарии нет видимых деталей."}
-        data = export_glb(solids)
+        data = export_glb(solids, preview=True)
         self.preview_dir.mkdir(parents=True, exist_ok=True)
         target = self.preview_dir / f"{key}.glb"
         target.write_bytes(data)
@@ -633,12 +633,9 @@ class AppState:
             base = slugify(self.project_name or "model")
             fmt = fmt.lower()
             scene = self.last_build.scene
-            animation = scene.animation if scene else None
-            animations = list(scene.animations) if scene else None
-            if fmt == "glb":
-                data = export_glb(solids, animation=animation, animations=animations,
-                                  groups=dict(scene.groups) if scene else None)
-                name = f"{base}.glb"
+            if fmt in ("glb", "glb-alpha"):
+                data = self.last_build.export_glb(glass_fallback=fmt == "glb-alpha")
+                name = f"{base}{'_alpha' if fmt == 'glb-alpha' else ''}.glb"
             elif fmt == "scad":
                 from .scad import export_scad_bytes
                 data = export_scad_bytes(solids, source=self.last_script)
@@ -659,9 +656,7 @@ class AppState:
                 else:
                     from .blender import glb_to_blend
                     tmp = out_dir / f"_tmp_{base}.glb"
-                    tmp.write_bytes(export_glb(solids, animation=animation,
-                                               groups=dict(scene.groups) if scene else None,
-                                               animations=animations))
+                    tmp.write_bytes(self.last_build.export_glb())
                     name = f"{base}.blend"
                     try:
                         glb_to_blend(str(tmp), str(out_dir / name))
@@ -714,9 +709,7 @@ class AppState:
                 target = out_dir / name
                 with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
                     zf.writestr(f"{base}.forma", self.last_script)
-                    zf.writestr(f"{base}.glb", export_glb(
-                        solids, animation=animation,
-                        groups=dict(scene.groups) if scene else None))
+                    zf.writestr(f"{base}.glb", self.last_build.export_glb())
                     zf.writestr(f"{base}.stl", export_stl(solids))
                     from .scad import export_scad_bytes
                     zf.writestr(f"{base}.scad", export_scad_bytes(solids, source=self.last_script))

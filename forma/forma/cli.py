@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from .agent import build_prompt, command_reference_md
-from .geometry import export_glb, export_obj, export_stl
+from .geometry import export_obj, export_stl
 from .scad import export_scad_bytes
 from .render import render_views
 from .run import build, selftest
@@ -228,8 +228,8 @@ def cmd_export(args) -> int:
     solids = b.visible_solids()
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
-    if args.format == "glb":
-        out.write_bytes(export_glb(solids))
+    if args.format in ("glb", "glb-alpha"):
+        out.write_bytes(b.export_glb(glass_fallback=args.format == "glb-alpha"))
     elif args.format == "scad":
         out.write_bytes(export_scad_bytes(solids, source=script))
     elif args.format == "drawing":
@@ -422,7 +422,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("export", help="экспортировать модель")
     p.add_argument("script")
     p.add_argument("--format", default="glb",
-                   choices=["glb", "scad", "drawing", "stl", "obj", "ply", "3mf", "forma", "fold", "cp", "report", "prompt"])
+                   choices=["glb", "glb-alpha", "scad", "drawing", "stl", "obj", "ply", "3mf", "forma", "fold", "cp", "report", "prompt"])
     p.add_argument("--out", required=True)
     p.add_argument("--goal", default="")
     p.set_defaults(func=cmd_export)

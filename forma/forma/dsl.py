@@ -42,7 +42,7 @@ PARAM_ALIASES = {
     "шероховатость": "rough", "видимость": "visible", "режим": "mode",
     "свечение": "emissive", "светится": "emissive", "glow": "emissive",
     "яркость": "emissive_strength", "сила_света": "emissive_strength",
-    "прозрачность": "transmission",
+    "прозрачность": "transmission", "двусторонний": "two_sided",
     "точность": "tolerance", "уровень": "level", "уровни": "levels",
     "положение": "at", "позиция": "at", "от": "from", "до": "to",
     "открыто": "open", "выражение": "expression", "границы": "bounds",
@@ -82,7 +82,7 @@ PARAM_ALIASES = {
 }
 
 STYLE_KEYS = {"color", "metal", "rough", "density", "material", "visible",
-              "emissive", "emissive_strength", "transmission"}
+              "emissive", "emissive_strength", "transmission", "two_sided"}
 
 
 @dataclass
@@ -480,6 +480,8 @@ class Args:
                 raise DslError("Зеркальность должна быть от 0 до 1.",
                                line=self.cmd.line, command=self.cmd.text)
             data["mirror"] = value
+        if "two_sided" in self.kwargs:
+            data["two_sided"] = self.boolean("two_sided", True)
         if "visible" in self.kwargs:
             data["visible"] = self.boolean("visible", True)
         return data

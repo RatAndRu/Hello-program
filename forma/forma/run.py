@@ -169,27 +169,35 @@ class Build:
     def visible_solids(self):
         return self.scene.visible_solids() if self.scene else []
 
+    def _make_glb(self, *, preview: bool, glass_fallback: bool = False) -> bytes:
+        if not self.ok:
+            raise GeometryError("Модель не построена.")
+        solids = self.visible_solids()
+        if not solids:
+            raise GeometryError("Нет видимых объектов для экспорта.")
+        scene = self.scene
+        return export_glb(solids,
+                          animation=scene.animation if scene else None,
+                          animations=list(scene.animations) if scene else None,
+                          keys=dict(scene.keys) if scene else None,
+                          groups=dict(scene.groups) if scene else None,
+                          metadata={
+                              "forma_variant": self.variant_hash,
+                              "forma_script": self.script_hash,
+                              **({key: scene.settings.get(key)
+                                  for key in ("copyright", "license", "source")
+                                  if scene and scene.settings.get(key)}),
+                          }, preview=preview, glass_fallback=glass_fallback)
+
     def glb(self) -> bytes:
+        """Внутренний GLB для окна и кадров: координаты в мм."""
         if self._glb is None:
-            if not self.ok:
-                raise GeometryError("Модель не построена.")
-            solids = self.visible_solids()
-            if not solids:
-                raise GeometryError("Нет видимых объектов для экспорта.")
-            scene = self.scene
-            self._glb = export_glb(solids,
-                                   animation=scene.animation if scene else None,
-                                   animations=list(scene.animations) if scene else None,
-                                   keys=dict(scene.keys) if scene else None,
-                                   groups=dict(scene.groups) if scene else None,
-                                   metadata={
-                                       "forma_variant": self.variant_hash,
-                                       "forma_script": self.script_hash,
-                                       **({key: scene.settings.get(key)
-                                           for key in ("copyright", "license", "source")
-                                           if scene and scene.settings.get(key)}),
-                                   })
+            self._glb = self._make_glb(preview=True)
         return self._glb
+
+    def export_glb(self, *, glass_fallback: bool = False) -> bytes:
+        """Внешний GLB по стандарту: мировые координаты в метрах."""
+        return self._make_glb(preview=False, glass_fallback=glass_fallback)
 
     def objects_payload(self) -> list[dict]:
         out = []

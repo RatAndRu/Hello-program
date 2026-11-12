@@ -1316,13 +1316,83 @@ def _glb_geometry(m: mf.Manifold, max_tris: int = 4_000_000, crease_angle: float
     return nv_y, nrm_y, nf
 
 
+def _gltf_tangents(verts: np.ndarray, normals: np.ndarray | None,
+                   faces: np.ndarray, uv: np.ndarray | None) -> np.ndarray | None:
+    """Взвешенные тангенты по совпадающим UV/нормалям углам треугольников.
+
+    Это приближение, не полная реализация MikkTSpace. При вырожденной UV
+    возвращаем None и оставляем вычисление стандартному glTF-потребителю.
+    Важно: trimesh при записи инвертирует V; расчёт ведётся уже в glTF UV.
+    """
+    if (normals is None or uv is None or len(verts) != len(faces) * 3
+            or len(uv) != len(verts) or not np.array_equal(faces.reshape(-1), np.arange(len(verts)))):
+        return None
+    p = np.asarray(verts, dtype=np.float64)[faces]
+    tex = np.asarray(uv, dtype=np.float64).copy()
+    tex[:, 1] = 1.0 - tex[:, 1]
+    tex = tex[faces]
+    e1, e2 = p[:, 1] - p[:, 0], p[:, 2] - p[:, 0]
+    d1, d2 = tex[:, 1] - tex[:, 0], tex[:, 2] - tex[:, 0]
+    det = d1[:, 0] * d2[:, 1] - d1[:, 1] * d2[:, 0]
+    if np.any(np.abs(det) < 1e-12) or not np.all(np.isfinite(det)):
+        return None
+    tangent = (e1 * d2[:, 1, None] - e2 * d1[:, 1, None]) / det[:, None]
+    bitangent = (e2 * d1[:, 0, None] - e1 * d2[:, 0, None]) / det[:, None]
+    tn = np.linalg.norm(tangent, axis=1)
+    if np.any(tn < 1e-12) or not np.all(np.isfinite(tangent)):
+        return None
+    tangent /= tn[:, None]
+    face_n = np.cross(e1, e2)
+    handed = np.where(np.einsum("ij,ij->i", np.cross(face_n, tangent), bitangent) < 0, -1., 1.)
+    sign = np.repeat(handed, 3)
+    # В каждом UV-острове объединяются только полностью совпадающие вершины,
+    # нормали и знак ориентации. Грани-разрывы и зеркальные UV не смешиваются.
+    n = np.asarray(normals, dtype=np.float64)
+    uv_flat = tex.reshape(-1, 2)
+    key = np.column_stack((np.asarray(verts, dtype=np.float64), n, uv_flat, sign))
+    _unique, inverse = np.unique(key, axis=0, return_inverse=True)
+    nxt = p[:, [1, 2, 0]] - p
+    prev = p[:, [2, 0, 1]] - p
+    angles = np.arctan2(np.linalg.norm(np.cross(nxt, prev), axis=2),
+                        np.einsum("ijk,ijk->ij", nxt, prev)).reshape(-1)
+    weighted = np.repeat(tangent, 3, axis=0) * angles[:, None]
+    summed = np.column_stack([np.bincount(inverse, weights=weighted[:, i]) for i in range(3)])[inverse]
+    nlen = np.linalg.norm(n, axis=1)
+    if np.any(nlen < 1e-12):
+        return None
+    n = n / nlen[:, None]
+    summed -= n * np.einsum("ij,ij->i", summed, n)[:, None]
+    length = np.linalg.norm(summed, axis=1)
+    if np.any(length < 1e-12) or not np.all(np.isfinite(length)):
+        return None
+    return np.column_stack((summed / length[:, None], sign)).astype("<f4")
+
+
+def _gltf_double_sided(obj) -> bool:
+    """Явный режим либо оценка средней толщины замкнутой оболочки в мм.
+
+    2V/A не зависит от поворота и приблизительно равно толщине тонкой
+    пластинки/полой стенки. Это эвристика, не измерение минимальной толщины.
+    """
+    explicit = getattr(obj, "two_sided", None)
+    if explicit is not None:
+        return bool(explicit)
+    try:
+        volume = float(obj.manifold.volume())
+        area = float(obj.manifold.surface_area())
+        return area > 0 and volume > 0 and 2.0 * volume / area < 1.0
+    except (AttributeError, TypeError, ValueError):
+        return False
+
+
 def export_glb(objects, with_normals: bool = True, animation: dict | None = None,
                animations: list[dict] | None = None, keys: dict | None = None,
-               groups: dict | None = None, metadata: dict | None = None) -> bytes:
-    """Собирает GLB с отдельным материалом на каждый объект.
+               groups: dict | None = None, metadata: dict | None = None, *,
+               preview: bool = False, glass_fallback: bool = False) -> bytes:
+    """GLB: экспорт в метрах; внутреннее превью явно остаётся в миллиметрах.
 
-    Поддерживает текстуры (UV-развёртка + baseColorTexture) и анимацию
-    (вращение / формирование / разлёт) прямо в файле — Blender её увидит.
+    Значения вершин и анимаций не меняются: для внешнего файла общая шкала
+    0.001 добавляется на корневой узел после построения всех анимаций.
     """
     import trimesh
     from trimesh.visual.material import PBRMaterial
@@ -1367,7 +1437,7 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             baseColorFactor=rgba,
             metallicFactor=metal,
             roughnessFactor=rough,
-            doubleSided=False,
+            doubleSided=_gltf_double_sided(obj),
         )
         emissive = getattr(obj, "emissive", "") or ""
         if emissive:
@@ -1376,6 +1446,7 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
             e_rgb = color_to_gltf(emissive)[:3]
             material.emissiveFactor = [round(c, 4) for c in e_rgb]
         uv = uv_for(verts, uv_mode)
+        has_normal_map = False
         if getattr(obj, "tex", None):
             image = load_texture_image(obj.tex.get("path", ""))
             if image is not None and len(faces):
@@ -1386,6 +1457,7 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
                 normal_image = load_texture_image(obj.tex.get("normal_path", ""))
                 if normal_image is not None:
                     material.normalTexture = normal_image
+                    has_normal_map = True
                 # разворачиваем геометрию по треугольникам: шов текстуры не виден
                 flat_faces = faces.reshape(-1)
                 # verts уже в Y-up glTF, поэтому bbox считаем по ним же
@@ -1435,6 +1507,12 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
                 pass
         mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals,
                                process=False, visual=visual)
+        if has_normal_map:
+            tangents = _gltf_tangents(verts, normals, faces, uv)
+            if tangents is not None:
+                # trimesh сохраняет пользовательские атрибуты с подчёркиванием;
+                # после сериализации переименуем его в стандартный TANGENT.
+                mesh.vertex_attributes["_FORMA_TANGENT"] = tangents
         mesh.metadata["name"] = obj.name
         scene.add_geometry(mesh, node_name=obj.name, geom_name=obj.name)
         centers[obj.name] = verts.mean(axis=0)
@@ -1457,10 +1535,7 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
               for obj in objects}
     if any(st["emissive"] and abs(st["emissive_strength"] - 1.0) > 0.001
            or st["transmission"] > 0.01 for st in styles.values()):
-        try:
-            data = _glb_patch_materials(bytes(data), styles)
-        except Exception:
-            pass
+        data = _glb_patch_materials(bytes(data), styles, glass_fallback=glass_fallback)
     if metadata:
         # Авторство и лицензия не должны исчезать при экспорте адаптированной
         # модели в Blender или другую программу.
@@ -1481,7 +1556,15 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
     # Это общий инвариант для ВСЕХ составных примитивов, а не частный обход
     # для петли или железнодорожного пути.
     doc, binary = _glb_read(bytes(data))
-    names_changed = False
+    for mesh in doc.get("meshes", []) or []:
+        for primitive in mesh.get("primitives", []) or []:
+            attributes = primitive.get("attributes", {})
+            if "_FORMA_TANGENT" in attributes:
+                attributes["TANGENT"] = attributes.pop("_FORMA_TANGENT")
+    for material in doc.get("materials", []) or []:
+        if "normalTexture" in material:
+            # Рельеф уже зашит в пиксели normal map, повторно его не умножаем.
+            material["normalTexture"]["scale"] = 1.0
     for node in doc.get("nodes", []) or []:
         canonical = str(node.get("name") or "")
         if not canonical:
@@ -1489,13 +1572,28 @@ def export_glb(objects, with_normals: bool = True, animation: dict | None = None
         extras = node.setdefault("extras", {})
         if extras.get("formaName") != canonical:
             extras["formaName"] = canonical
-            names_changed = True
-    if names_changed:
-        data = _glb_write(doc, binary)
-    return bytes(data)
+    # glTF использует метры и Y-up. Внутренний viewer работает в мм и уже
+    # ожидает преобразование Z-up -> Y-up в вершинах; не масштабируем его.
+    asset = doc.setdefault("asset", {})
+    asset.setdefault("extras", {})["formaUnits"] = {
+        "source": "millimeter", "sourceUp": "Z", "gltfUp": "Y",
+        "world": "millimeter" if preview else "meter",
+        "sourceToWorld": 1.0 if preview else 0.001,
+        "previewOnly": bool(preview),
+    }
+    if not preview:
+        nodes = doc.setdefault("nodes", [])
+        for gltf_scene in doc.get("scenes", []) or []:
+            children = list(gltf_scene.get("nodes") or [])
+            if children:
+                root_index = len(nodes)
+                nodes.append({"name": "FormaUnitsRoot", "scale": [0.001, 0.001, 0.001],
+                              "children": children})
+                gltf_scene["nodes"] = [root_index]
+    return _glb_write(doc, binary)
 
 
-def _glb_patch_materials(data: bytes, styles: dict) -> bytes:
+def _glb_patch_materials(data: bytes, styles: dict, *, glass_fallback: bool = False) -> bytes:
     """Дописывает в материалы GLB свечение и прозрачность.
 
     trimesh умеет только emissiveFactor (0…1) и не знает KHR-расширений,
@@ -1524,17 +1622,29 @@ def _glb_patch_materials(data: bytes, styles: dict) -> bytes:
             changed = True
         t = float(st.get("transmission") or 0.0)
         if t > 0.01:
-            ext["KHR_materials_transmission"] = {"transmissionFactor": round(t, 4)}
-            ext.setdefault("KHR_materials_ior", {"ior": 1.45})
-            for key in ("KHR_materials_transmission", "KHR_materials_ior"):
-                if key not in used:
-                    used.append(key)
+            if glass_fallback:
+                # Отдельный совместимый вариант: alpha — покрытие, не стекло.
+                # Не складываем его с transmission: это двойное ослабление.
+                pbr = mat.setdefault("pbrMetallicRoughness", {})
+                color = list(pbr.get("baseColorFactor") or [1.0, 1.0, 1.0, 1.0])
+                color[3] = max(0.12, 1.0 - 0.8 * min(t, 1.0))
+                pbr["baseColorFactor"] = color
+                mat["alphaMode"] = "BLEND"
+            else:
+                ext["KHR_materials_transmission"] = {"transmissionFactor": round(t, 4)}
+                ext.setdefault("KHR_materials_ior", {"ior": 1.45})
+                for key in ("KHR_materials_transmission", "KHR_materials_ior"):
+                    if key not in used:
+                        used.append(key)
             changed = True
         if not ext:
             mat.pop("extensions", None)
     if not changed:
         return data
-    doc["extensionsUsed"] = used
+    if used:
+        doc["extensionsUsed"] = used
+    else:
+        doc.pop("extensionsUsed", None)
     return _glb_write(doc, binary)
 
 

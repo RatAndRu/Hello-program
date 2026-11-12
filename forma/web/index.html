@@ -53,10 +53,11 @@
           <span class="icon">⇩</span> Экспорт
         </button>
         <div class="menu" id="export-menu">
-          <button data-format="glb">GLB — для Blender и 3D-программ</button>
+          <button data-format="glb" title="Размеры в метрах, PBR и стекло через KHR_materials_transmission">GLB — модель с PBR и стеклом</button>
+          <button data-format="glb-alpha" title="Упрощённая прозрачность без преломления для программ без поддержки стекла glTF">GLB — совместимая прозрачность</button>
           <button data-format="scad">SCAD — сетка polyhedron (мм)</button>
           <button data-format="blend">BLEND — файл Blender (нужен Blender)</button>
-          <button data-format="obj">OBJ — обмен геометрией</button>
+          <button data-format="obj" title="Только геометрия: без материалов и текстур">OBJ — только геометрия (мм)</button>
           <button data-format="stl">STL — для 3D-печати</button>
           <button data-format="ply">PLY — облака и сканы</button>
           <button data-format="3mf">3MF — для слайсеров и 3D-печати</button>

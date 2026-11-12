@@ -59,6 +59,8 @@ class Solid:
     # чтобы сборка «ввернуть» ставила крепёж правильно, а не по габариту.
     meta: dict = field(default_factory=dict)
     uv: str = "cylinder"
+    # None — автоматическое определение тонкой оболочки при экспорте.
+    two_sided: bool | None = None
     _stats: dict | None = field(default=None, repr=False)
 
     def stats(self) -> dict:

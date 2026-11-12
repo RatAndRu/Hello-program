@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import struct
 import tempfile
 import sys
 from functools import lru_cache
@@ -16,6 +18,33 @@ from .ops import op
 from .paths import user_data_dir
 
 SUPPORTED = (".glb", ".gltf", ".obj", ".stl", ".ply", ".3mf", ".off", ".dae")
+
+
+def _forma_meter_gltf(path: Path) -> bool:
+    """Только явно помеченный экспорт Forma переводим обратно в миллиметры.
+
+    Чужие и старые GLB сохраняют прежний контракт unit=auto (=мм): размеры
+    нельзя надёжно угадать по числам или сторонним метаданным.
+    """
+    try:
+        if path.suffix.lower() == ".glb":
+            with path.open("rb") as stream:
+                header = stream.read(20)
+                if len(header) != 20:
+                    return False
+                magic, version, _total, size, kind = struct.unpack("<4sIII4s", header)
+                if magic != b"glTF" or version != 2 or kind != b"JSON" or size > 16_000_000:
+                    return False
+                doc = json.loads(stream.read(size).decode("utf-8").rstrip(" \t\r\n\x00"))
+        elif path.suffix.lower() == ".gltf":
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        else:
+            return False
+        units = doc.get("asset", {}).get("extras", {}).get("formaUnits", {})
+        return (units.get("source") == "millimeter" and units.get("world") == "meter"
+                and units.get("sourceToWorld") == 0.001 and units.get("previewOnly") is False)
+    except (OSError, ValueError, TypeError, AttributeError, struct.error):
+        return False
 
 
 def resolve_file(raw: str, base_dir: str | Path | None = None) -> Path:
@@ -217,8 +246,12 @@ def import_mesh(a, name):
     extra = float(a.num("scale", 1.0) or 1.0)
     base_scale = factors[unit]
     if unit in ("auto", "авто"):
-        a.scene.log("info", "unit=auto: файл прочитан как миллиметровый "
-                            "(уточните unit=cm|m|inch, если это не так)", a.cmd.line)
+        if _forma_meter_gltf(path):
+            base_scale = 1000.0
+            a.scene.log("info", "unit=auto: экспорт Forma в метрах переведён обратно в миллиметры", a.cmd.line)
+        else:
+            a.scene.log("info", "unit=auto: файл прочитан как миллиметровый "
+                                "(для чужого GLB в метрах укажите unit=m)", a.cmd.line)
     repair = a.boolean("repair", False)
     LIMITS.clear()
     node = (a.text("node") or "").strip() or None

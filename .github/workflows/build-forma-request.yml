@@ -48,6 +48,7 @@ jobs:
         run: >-
           python -m pytest -q tests/test_v0741.py tests/test_v0742.py
           tests/test_stage3_features.py tests/test_lamp_rework.py tests/test_banker_lamp.py
+          tests/test_export_interop_0763.py tests/test_v010.py tests/test_v018.py tests/test_v023.py tests/test_studio.py
       - name: Проверить инструменты и редактор
         run: |
           node --check web/js/app.js
@@ -205,10 +206,12 @@ jobs:
       - name: Проверить интерфейс внутри EXE (API, 3D-ресурсы, снимки)
         working-directory: forma
         run: |
-          rm -f uitest.txt six-exe.json six-exe.log
-          # Обе проверки идут параллельно, но выпуск возможен только при успехе обеих.
+          rm -f uitest.txt six-exe.json six-exe.log export-exe.json export-exe.log
+          # Независимые проверки EXE идут параллельно; все обязательны для выпуска.
           python tools/check_drape_exe.py --exe dist/Forma3D.exe --output six-exe.json >six-exe.log 2>&1 &
           six_pid=$!
+          python tools/check_export_exe.py --exe dist/Forma3D.exe --output export-exe.json >export-exe.log 2>&1 &
+          export_pid=$!
           ./dist/Forma3D.exe --uistest --report uitest.txt &
           exe_pid=$!
           # Полный smoke на Windows занимает около четырёх минут; прежние
@@ -235,6 +238,12 @@ jobs:
           fi
           cat six-exe.log
           test -s six-exe.json
+          if ! wait "$export_pid"; then
+            cat export-exe.log
+            exit 1
+          fi
+          cat export-exe.log
+          test -s export-exe.json
 
       - name: Подготовить ZIP с понятным именем
         working-directory: forma
@@ -247,6 +256,7 @@ jobs:
           cp docs/human_skeleton_original.md release/ОРИГИНАЛЬНЫЙ_СКЕЛЕТ.md
           cp docs/mesh_quality.md release/КАЧЕСТВО_СЕТКИ.md
           cp docs/face_visibility.md release/НАРУЖНОСТЬ_ГРАНЕЙ.md
+          cp docs/export_interop_0763.md release/ЭКСПОРТ_МАТЕРИАЛЫ.md
           cp examples/assets/human_skeleton_original.audit.json release/АУДИТ_ОРИГИНАЛЬНОГО_СКЕЛЕТА.json
           python - <<'PY'
           from pathlib import Path
@@ -309,6 +319,8 @@ jobs:
             forma/uitest.txt
             forma/six-exe.json
             forma/six-exe.log
+            forma/export-exe.json
+            forma/export-exe.log
           if-no-files-found: error
           retention-days: 60
 
@@ -358,7 +370,8 @@ jobs:
                   raise SystemExit('EXE в полном ZIP не совпадает с проверенным файлом')
               for expected in ('ЧИТАЙ_МЕНЯ.txt', 'ПРОЧТИ_МЕНЯ_ДРАПИРОВКА.txt',
                                'examples/drape_layers_076.forma', 'examples/drape_atelier_077.forma',
-                               'examples/drape_atelier_dense_077.forma', 'ИЗМЕРЕНИЯ_ДРАПИРОВКИ.json'):
+                               'examples/drape_atelier_dense_077.forma', 'ИЗМЕРЕНИЯ_ДРАПИРОВКИ.json',
+                               'ЭКСПОРТ_МАТЕРИАЛЫ.md'):
                   if expected not in zf.namelist():
                       raise SystemExit(f'В полном ZIP нет {expected}')
               source = Path('forma/benchmarks/drape_six')
@@ -382,6 +395,14 @@ jobs:
           if len(audit) != 6 or {row['name'] for row in audit} != set(paths) or any(not 0 < row['triangles'] <= 100000 for row in audit):
               raise SystemExit('Проверка шести проектов через EXE не прошла')
           shutil.copy2(audit_paths[0], out / f'Forma3D-{version}-six-exe-check.json')
+          export_paths = list(root.rglob('export-exe.json'))
+          if len(export_paths) != 1:
+              raise SystemExit(f'Не найден результат проверки экспорта EXE: {export_paths}')
+          export_audit = json.loads(export_paths[0].read_text(encoding='utf-8'))
+          if export_audit.get('version') != version or not all(export_audit.get(k) is True for k in
+              ('thin_double_sided', 'physical_glass', 'alpha_fallback', 'emissive', 'normal_map_tangent', 'obj_geometry_only')):
+              raise SystemExit('Проверка экспорта через EXE не прошла')
+          shutil.copy2(export_paths[0], out / f'Forma3D-{version}-export-exe-check.json')
           print('EXE SHA-256:', hashlib.sha256(exe).hexdigest())
           print('Файлы:', [(p.name, p.stat().st_size) for p in out.iterdir()])
           notes = Path('.github/forma-release-notes.md').read_text(encoding='utf-8').splitlines()
