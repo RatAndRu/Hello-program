@@ -1,0 +1,48 @@
+name: Форма 3D — техническая проверка упаковки IPC
+
+# Только однофайловый технический пробник, не сборка Формы и не публикация EXE.
+on:
+  push:
+    paths:
+      - '.github/workflows/forma-ipc-packaging-check.yml'
+      - '.github/forma-ipc-packaging-check.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
+
+jobs:
+  windows-onefile:
+    name: Windows — IPC, SciPy и NumPy внутри пробника
+    runs-on: windows-latest
+    timeout-minutes: 12
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Установить библиотеки и PyInstaller для пробы
+        run: python -m pip install numpy==2.4.6 scipy==1.17.1 ipctk==1.6.1 pyinstaller==6.16.0
+      - name: Собрать однофайловый технический пробник
+        run: >-
+          python -m PyInstaller --noconfirm --clean --onefile --console
+          --name forma-ipc-package-test --collect-all ipctk --collect-all scipy
+          .github/forma-ipc-packaging-check.py
+      - name: Запустить за пределами исходного каталога
+        run: |
+          mkdir -p "$RUNNER_TEMP/forma-ipc-isolated"
+          cp dist/forma-ipc-package-test.exe "$RUNNER_TEMP/forma-ipc-isolated/"
+          cd "$RUNNER_TEMP/forma-ipc-isolated"
+          unset PYTHONPATH
+          ./forma-ipc-package-test.exe
+          python -c "from pathlib import Path; import hashlib; p=Path('forma-ipc-package-test.exe'); print('Размер пробника:',p.stat().st_size,'байт; SHA-256:',hashlib.sha256(p.read_bytes()).hexdigest())"
+      # Артефакт и релиз намеренно не создаются: это не приложение.
