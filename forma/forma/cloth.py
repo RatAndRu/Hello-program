@@ -774,6 +774,45 @@ def _shell_pairs_by_component(vertices: np.ndarray, faces: np.ndarray,
     return np.concatenate(all_pairs), np.concatenate(all_rest)
 
 
+def _project_paired_support(position: np.ndarray, free: np.ndarray, field: SupportField,
+                            offset: float, shell: np.ndarray, rounds: int = 3):
+    """Поправка опоры без раздельного сдвига свободных сторон стенки.
+
+    Для непересекающихся пар выбирается самая глубокая точка и обе стороны
+    переводятся одинаково. Если по полю опор худшее нарушение в паре не
+    уменьшается, общий сдвиг отменяется: например, между двумя слишком близкими
+    опорами сохраняется прежняя толщина, а нарушение остаётся в диагностике.
+    У закреплённой пары свободная сторона исправляется отдельно, иначе её
+    нельзя вывести из опоры, не сдвинув закрепление. Конечное число проходов
+    и локальное поле не гарантируют разрешения всех контактов или сохранения
+    всей толщины.
+    """
+    a, b = shell[:, 0], shell[:, 1]
+    paired_free = free[a] & free[b]
+    for _ in range(rounds):
+        distance, _point, normal = field.closest(position)
+        depth = np.where(free & np.isfinite(distance), np.maximum(offset - distance, 0.0), 0.0)
+        if not np.any(depth > 1e-9):
+            break
+        move = normal * depth[:, None]
+        deepest = np.where(depth[a] >= depth[b], a, b)
+        move[a[paired_free]] = move[deepest[paired_free]]
+        move[b[paired_free]] = move[deepest[paired_free]]
+        candidate = position + move
+        if np.any(paired_free):
+            next_distance, _point, _normal = field.closest(candidate)
+            next_depth = np.where(np.isfinite(next_distance),
+                                  np.maximum(offset - next_distance, 0.0), 0.0)
+            before = np.maximum(depth[a], depth[b])
+            after = np.maximum(next_depth[a], next_depth[b])
+            rejected = paired_free & (before > 1e-9) & (after >= before - 1e-10)
+            move[a[rejected]] = 0.0
+            move[b[rejected]] = 0.0
+        if not np.any(move[free]):
+            break
+        position[free] += move[free]
+
+
 def _volume_data(vertices: np.ndarray, faces: np.ndarray):
     """Знаковый объём замкнутой поверхности и его градиент по вершинам."""
     tri = vertices[faces]
@@ -1094,9 +1133,12 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
                                                      support_contact, rounds=12)
             self_pairs = max(self_pairs, found)
             if field is not None:
-                distance, _point, normal = field.closest(position)
-                near = np.isfinite(distance) & (distance < offset)
-                position[near] += normal[near] * (offset - distance[near])[:, None]
+                if len(shell):
+                    _project_paired_support(position, free, field, offset, shell)
+                else:
+                    distance, _point, normal = field.closest(position)
+                    near = np.isfinite(distance) & (distance < offset)
+                    position[near] += normal[near] * (offset - distance[near])[:, None]
             position[pinned] = fixed
 
         if not np.all(np.isfinite(position)) or float(np.max(np.abs(position))) > 1e7:
