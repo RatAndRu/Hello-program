@@ -813,6 +813,53 @@ def _project_paired_support(position: np.ndarray, free: np.ndarray, field: Suppo
         position[free] += move[free]
 
 
+def _relax_shell_with_support(position: np.ndarray, free: np.ndarray, faces: np.ndarray,
+                              edges: np.ndarray, edge_colors: list[np.ndarray],
+                              edge_rest: np.ndarray, shell: np.ndarray,
+                              shell_normal_rest: np.ndarray, shell_tangent_rest: np.ndarray,
+                              field: SupportField, offset: float, stiffness: float):
+    """Дополнительное приближённое восстановление рёбер и пар тонкой оболочки.
+
+    Проекции чередуются с поправкой опоры. Они не заменяют непрерывный контакт
+    граней, не гарантируют толщину между найденными парами и не доказывают
+    равновесия. Для групп тел и частично сопоставленных стенок не применяются.
+    """
+    a, b = shell[:, 0], shell[:, 1]
+    for _ in range(4):
+        for sweep in range(6):
+            groups = edge_colors if sweep % 2 == 0 else reversed(edge_colors)
+            for group in groups:
+                x, y = edges[group, 0], edges[group, 1]
+                delta = position[y] - position[x]
+                length = np.maximum(np.linalg.norm(delta, axis=1), 1e-12)
+                wa, wb = free[x].astype(float), free[y].astype(float)
+                amount = ((length - edge_rest[group]) * float(stiffness) /
+                          (length * np.maximum(wa + wb, 1.0)))[:, None]
+                correction = delta * amount
+                position[x] += correction * wa[:, None]
+                position[y] -= correction * wb[:, None]
+        normals = vertex_normals(position, faces)
+        direction = normals[a] - normals[b]
+        norm = np.linalg.norm(direction, axis=1)
+        direction /= np.maximum(norm, 1e-12)[:, None]
+        delta = position[b] - position[a]
+        height = np.einsum("ij,ij->i", delta, direction)
+        tangent = delta - height[:, None] * direction
+        tangent_length = np.linalg.norm(tangent, axis=1)
+        target = (direction * shell_normal_rest[:, None]
+                  + tangent * (shell_tangent_rest / np.maximum(tangent_length, 1e-12))[:, None])
+        correction = delta - target
+        correction[norm < 1e-12] = 0.0
+        ambiguous = (tangent_length < 1e-12) & (shell_tangent_rest > 1e-12)
+        correction[ambiguous] = ((height[ambiguous] - shell_normal_rest[ambiguous])[:, None]
+                                 * direction[ambiguous])
+        wa, wb = free[a].astype(float), free[b].astype(float)
+        total = np.maximum(wa + wb, 1.0)
+        position[a] += correction * (wa / total)[:, None]
+        position[b] -= correction * (wb / total)[:, None]
+        _project_paired_support(position, free, field, offset, shell)
+
+
 def _volume_data(vertices: np.ndarray, faces: np.ndarray):
     """Знаковый объём замкнутой поверхности и его градиент по вершинам."""
     tri = vertices[faces]
@@ -970,6 +1017,10 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
 
     support_contact = np.zeros(count, dtype=bool)
     support_normal = np.zeros((count, 3), dtype=np.float64)
+    # Дополнительное восстановление рассчитано на одиночную тонкую оболочку
+    # с почти полным сопоставлением сторон; не меняем им группы и твёрдые тела.
+    polish_shell = bool(field is not None and self_contacts is not None and len(comp_ids) == 1
+                        and rigid_weights[0] < 0.7 and len(shell) * 2 >= count * 0.9)
     for step in range(int(steps)):
         velocity = (position - previous) * float(damping)
         speed = np.linalg.norm(velocity, axis=1)
@@ -1135,6 +1186,10 @@ def simulate(vertices: np.ndarray, faces: np.ndarray, supports: np.ndarray, *,
             if field is not None:
                 if len(shell):
                     _project_paired_support(position, free, field, offset, shell)
+                    if polish_shell:
+                        _relax_shell_with_support(position, free, faces, edges, edge_colors, rest,
+                                                  shell, shell_normal_rest, shell_tangent_rest,
+                                                  field, offset, stiffness)
                 else:
                     distance, _point, normal = field.closest(position)
                     near = np.isfinite(distance) & (distance < offset)

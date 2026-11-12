@@ -15,6 +15,8 @@ permissions:
 env:
   PYTHONUTF8: '1'
   PYTHONIOENCODING: utf-8
+  OPENBLAS_NUM_THREADS: '1'
+  OMP_NUM_THREADS: '1'
 
 jobs:
   acceptance:
@@ -41,6 +43,7 @@ jobs:
         run: >-
           python -m pytest -q tests/test_v075.py tests/test_v076.py tests/test_v077.py
           tests/test_drape_surface_audit.py tests/test_drape_placement.py tests/test_drape_probe.py
+          tests/test_drape_paired_support.py tests/test_drape_shell_release.py
       - name: Проверить совместимость экспорта и этапа 3
         run: >-
           python -m pytest -q tests/test_v0741.py tests/test_v0742.py
@@ -202,7 +205,10 @@ jobs:
       - name: Проверить интерфейс внутри EXE (API, 3D-ресурсы, снимки)
         working-directory: forma
         run: |
-          rm -f uitest.txt
+          rm -f uitest.txt six-exe.json six-exe.log
+          # Обе проверки идут параллельно, но выпуск возможен только при успехе обеих.
+          python tools/check_drape_exe.py --exe dist/Forma3D.exe --output six-exe.json >six-exe.log 2>&1 &
+          six_pid=$!
           ./dist/Forma3D.exe --uistest --report uitest.txt &
           exe_pid=$!
           # Полный smoke на Windows занимает около четырёх минут; прежние
@@ -223,6 +229,12 @@ jobs:
           fi
           cat uitest.txt
           grep -Fq "ИТОГ: всё в порядке" uitest.txt
+          if ! wait "$six_pid"; then
+            cat six-exe.log
+            exit 1
+          fi
+          cat six-exe.log
+          test -s six-exe.json
 
       - name: Подготовить ZIP с понятным именем
         working-directory: forma
@@ -238,6 +250,7 @@ jobs:
           cp examples/assets/human_skeleton_original.audit.json release/АУДИТ_ОРИГИНАЛЬНОГО_СКЕЛЕТА.json
           python - <<'PY'
           from pathlib import Path
+          import shutil
           import zipfile, sys
           sys.path.insert(0, '.')
           from forma.agent import command_reference_md
@@ -254,6 +267,18 @@ jobs:
           examples.mkdir(exist_ok=True)
           for p in Path('examples').glob('*.forma'):
               (examples / p.name).write_text(p.read_text(encoding='utf-8'), encoding='utf-8')
+          projects = root / 'projects'
+          projects.mkdir(exist_ok=True)
+          for p in Path('benchmarks/drape_six').glob('*.forma'):
+              shutil.copyfile(p, projects / p.name)
+          shutil.copyfile('examples/drape_tablecloth_fast_076.forma', projects / '04_tablecloth.forma')
+          shutil.copyfile('packaging/DRAPE_SIX_README.txt', root / 'ПРОЧТИ_МЕНЯ_ДРАПИРОВКА.txt')
+          shutil.copyfile('benchmarks/drape_six/preview-0762-linux.json', root / 'ИЗМЕРЕНИЯ_ДРАПИРОВКИ.json')
+          scenario_zip = Path(f'Forma3D-{__version__}-drape-scenarios.zip')
+          with zipfile.ZipFile(scenario_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
+              for p in sorted(projects.glob('*.forma')):
+                  zf.write(p, p.relative_to(root))
+              zf.write(root / 'ПРОЧТИ_МЕНЯ_ДРАПИРОВКА.txt', 'ПРОЧТИ_МЕНЯ_ДРАПИРОВКА.txt')
           zip_path = Path(f'Forma3D-{__version__}-windows.zip')
           with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
               for p in sorted(root.rglob('*')):
@@ -279,8 +304,11 @@ jobs:
             forma/dist/Forma3D.exe
             forma/Forma3D-*-windows.zip
             forma/Forma3D-*-exe.zip
+            forma/Forma3D-*-drape-scenarios.zip
             forma/selftest.txt
             forma/uitest.txt
+            forma/six-exe.json
+            forma/six-exe.log
           if-no-files-found: error
           retention-days: 60
 
@@ -303,13 +331,15 @@ jobs:
         run: |
           python - <<'PYVERIFY'
           import hashlib
+          import json
           import runpy
           import shutil
           import zipfile
           from pathlib import Path
           version = runpy.run_path('forma/forma/version.py')['__version__']
           root = Path('artifact')
-          names = ['Forma3D.exe', f'Forma3D-{version}-windows.zip', f'Forma3D-{version}-exe.zip']
+          names = ['Forma3D.exe', f'Forma3D-{version}-windows.zip', f'Forma3D-{version}-exe.zip',
+                   f'Forma3D-{version}-drape-scenarios.zip']
           out = Path('release')
           out.mkdir()
           for name in names:
@@ -326,10 +356,32 @@ jobs:
           with zipfile.ZipFile(out / names[1]) as zf:
               if zf.testzip() is not None or zf.read('Forma3D.exe') != exe:
                   raise SystemExit('EXE в полном ZIP не совпадает с проверенным файлом')
-              for expected in ('ЧИТАЙ_МЕНЯ.txt', 'examples/drape_layers_076.forma',
-                               'examples/drape_atelier_077.forma', 'examples/drape_atelier_dense_077.forma'):
+              for expected in ('ЧИТАЙ_МЕНЯ.txt', 'ПРОЧТИ_МЕНЯ_ДРАПИРОВКА.txt',
+                               'examples/drape_layers_076.forma', 'examples/drape_atelier_077.forma',
+                               'examples/drape_atelier_dense_077.forma', 'ИЗМЕРЕНИЯ_ДРАПИРОВКИ.json'):
                   if expected not in zf.namelist():
                       raise SystemExit(f'В полном ZIP нет {expected}')
+              source = Path('forma/benchmarks/drape_six')
+              paths = {p.stem: p for p in source.glob('*.forma')}
+              paths['04_tablecloth'] = Path('forma/examples/drape_tablecloth_fast_076.forma')
+              if len(paths) != 6:
+                  raise SystemExit(f'Найдено не шесть проектов: {paths}')
+              for name, path in paths.items():
+                  if zf.read(f'projects/{name}.forma') != path.read_bytes():
+                      raise SystemExit(f'Проект {name} в ZIP отличается от исходника')
+          with zipfile.ZipFile(out / names[3]) as zf:
+              if zf.testzip() is not None:
+                  raise SystemExit('ZIP сценариев повреждён')
+              for name, path in paths.items():
+                  if zf.read(f'projects/{name}.forma') != path.read_bytes():
+                      raise SystemExit(f'Проект {name} в отдельном ZIP отличается от исходника')
+          audit_paths = list(root.rglob('six-exe.json'))
+          if len(audit_paths) != 1:
+              raise SystemExit(f'Не найден единственный результат проверки EXE: {audit_paths}')
+          audit = json.loads(audit_paths[0].read_text(encoding='utf-8'))
+          if len(audit) != 6 or {row['name'] for row in audit} != set(paths) or any(not 0 < row['triangles'] <= 100000 for row in audit):
+              raise SystemExit('Проверка шести проектов через EXE не прошла')
+          shutil.copy2(audit_paths[0], out / f'Forma3D-{version}-six-exe-check.json')
           print('EXE SHA-256:', hashlib.sha256(exe).hexdigest())
           print('Файлы:', [(p.name, p.stat().st_size) for p in out.iterdir()])
           notes = Path('.github/forma-release-notes.md').read_text(encoding='utf-8').splitlines()
