@@ -1,0 +1,237 @@
+{
+  "name": "04_tablecloth",
+  "scenario": "examples/drape_tablecloth_fast_076.forma",
+  "source_sha256": "f3839c5f9025bd63ca5434c0802149e17542ec605eee8daf20b2de9ce75a8a25",
+  "mode": "current",
+  "elapsed_seconds": 211.195,
+  "visible_triangles": 2520,
+  "body_triangles": 2112,
+  "bbox_initial": [
+    -60.0,
+    -60.0,
+    70.0,
+    60.0,
+    60.0,
+    70.6
+  ],
+  "bbox_final": [
+    -55.62757873535156,
+    -56.717613220214844,
+    7.323113441467285,
+    55.179508209228516,
+    55.28888702392578,
+    41.30812072753906
+  ],
+  "watertight": true,
+  "euler_number": 2,
+  "height_initial_mm": 0.5999999999999943,
+  "height_final_mm": 33.98500728607178,
+  "volume_ratio": 0.9763599089606604,
+  "edges": {
+    "count": 3168,
+    "complete": true,
+    "max_compression_percent": 9.76413652774859,
+    "max_extension_percent": 9.448422910267219,
+    "max_abs_percent": 9.76413652774859,
+    "p90_abs_percent": 2.5294639439664928
+  },
+  "shell_pair_lengths": {
+    "count": 529,
+    "complete": true,
+    "max_compression_percent": 1.4654943925052066e-12,
+    "max_extension_percent": 1.6209256159527285e-12,
+    "max_abs_percent": 1.6209256159527285e-12,
+    "p90_abs_percent": 9.992007221626409e-13
+  },
+  "shell_normal_projections": {
+    "count": 529,
+    "measured": 529,
+    "complete": true,
+    "min_ratio": 0.9993784952209992,
+    "max_ratio": 1.00003699789648,
+    "p05_ratio": 0.9999198940303466,
+    "p95_ratio": 0.999999999999998
+  },
+  "tetra_probe": {
+    "available": true,
+    "count": 2904,
+    "inverted": 0,
+    "min_jacobian": 0.08699471631713308,
+    "max_jacobian": 1.0901196318395079,
+    "retriangulated_boundary_faces": 88
+  },
+  "boolean_by_support": {
+    "столешница": {
+      "volume_mm3": 0.0,
+      "status": "Error.NoError"
+    },
+    "ножка_левая_передняя": {
+      "volume_mm3": 0.0,
+      "status": "Error.NoError"
+    },
+    "ножка_правая_передняя": {
+      "volume_mm3": 0.0,
+      "status": "Error.NoError"
+    },
+    "ножка_левая_задняя": {
+      "volume_mm3": 0.0,
+      "status": "Error.NoError"
+    },
+    "ножка_правая_задняя": {
+      "volume_mm3": 0.0,
+      "status": "Error.NoError"
+    },
+    "пол": {
+      "volume_mm3": 0.0,
+      "status": "Error.NoError"
+    }
+  },
+  "boolean_reliable": true,
+  "metadata": {
+    "supports": 6,
+    "rigid": 0.0,
+    "steps": 140,
+    "converged": false,
+    "last_motion": 0.21324441334679756,
+    "movement_tolerance": 0.0075,
+    "max_strain_all": 0.09764136527748588,
+    "strain_all_p90": 0.025294639439664864,
+    "penetration": 0.28150556679924915,
+    "support_surface_pairs": 0,
+    "support_overlap_volume": 0.0,
+    "support_overlap_complete": true,
+    "self_intersections": 0,
+    "self_intersections_adjacent": 0,
+    "self_intersections_complete": true,
+    "equilibrium_verified": false,
+    "geometry_checks_passed": false
+  },
+  "warnings": [
+    "drape: достигнут предел 70 шагов, равновесие не подтверждено (последнее смещение до 0.213 мм); большее число шагов не гарантирует устойчивость."
+  ],
+  "fcl": {
+    "available": true,
+    "nonadjacent_pairs": 0,
+    "nonadjacent_complete": true,
+    "adjacent_pairs_after_inset": 0,
+    "adjacent_complete": true,
+    "support_surface_contact_or_crossing": false
+  },
+  "fcl_by_support": {
+    "столешница": {
+      "contact_or_crossing": false,
+      "pairs": 0,
+      "complete": true
+    },
+    "ножка_левая_передняя": {
+      "contact_or_crossing": false,
+      "pairs": 0,
+      "complete": true
+    },
+    "ножка_правая_передняя": {
+      "contact_or_crossing": false,
+      "pairs": 0,
+      "complete": true
+    },
+    "ножка_левая_задняя": {
+      "contact_or_crossing": false,
+      "pairs": 0,
+      "complete": true
+    },
+    "ножка_правая_задняя": {
+      "contact_or_crossing": false,
+      "pairs": 0,
+      "complete": true
+    },
+    "пол": {
+      "contact_or_crossing": false,
+      "pairs": 0,
+      "complete": true
+    }
+  },
+  "ccd": {
+    "initial_error": null,
+    "checked_segments": 140,
+    "first_unsafe_segment": null,
+    "total_frames": 140,
+    "minimum_distance_mm": 0.0,
+    "completed": true,
+    "after_placement_only": true
+  },
+  "glb": {
+    "bytes": 88900,
+    "triangles": 2520
+  },
+  "material_edges": [
+    {
+      "axis": "+x",
+      "hem_from_center_mm": 49.244347065964185,
+      "drop_from_center_mm": 22.704703717876818,
+      "angle_from_vertical_deg": 37.55844228464642
+    },
+    {
+      "axis": "-x",
+      "hem_from_center_mm": 48.14993536319044,
+      "drop_from_center_mm": 23.076633672478216,
+      "angle_from_vertical_deg": 31.31837137364383
+    },
+    {
+      "axis": "+y",
+      "hem_from_center_mm": 48.10974987563577,
+      "drop_from_center_mm": 22.929310302510878,
+      "angle_from_vertical_deg": 32.34051154713426
+    },
+    {
+      "axis": "-y",
+      "hem_from_center_mm": 49.1221448584691,
+      "drop_from_center_mm": 23.129205222850732,
+      "angle_from_vertical_deg": 36.53574651576393
+    }
+  ],
+  "alternating_experiment": {
+    "bend_scale": 0.1,
+    "steps_scale": 2.0,
+    "stats": {
+      "rounds": 4,
+      "passes": 1,
+      "sweeps": 6,
+      "shape_passes": 140,
+      "extra_ipc_friction": 0.0,
+      "ipc": {
+        "calls": 280,
+        "local_hits": 633,
+        "fallbacks": 9,
+        "blocked": 0,
+        "minimum_fallback_alpha": 0.5564823150634766
+      }
+    },
+    "note": "Исследование, не приложение. Дополнительное IPC-трение выключено; штатное трение сцены остаётся. CCD не проверяет внутренние проекции."
+  },
+  "environment": {
+    "python": "3.11.2",
+    "platform": "Linux-6.1.158+-x86_64-with-glibc2.36",
+    "dependencies": {
+      "numpy": "2.4.6",
+      "scipy": "1.17.1",
+      "ipctk": "1.6.1",
+      "manifold3d": "3.5.4",
+      "trimesh": "5.2.0",
+      "python-fcl": "0.7.0.11"
+    },
+    "source_sha256": {
+      "forma/cloth.py": "8a46d1042990dec9e2a78bd76d0591f5ee6399be4c8a3515e4e6bbb2ba3d454e",
+      "forma/cloth_collision.py": "e85be962b9d8fbb69f5c5f6fbe2df95ecd0ae8b3e1ff56b6077f71fb56e696d3",
+      "forma/cloth_check.py": "593ff63126abf579ff028ff967b9d1c497c88d3f83baae722d795c3a9d63cb0b",
+      "forma/cloth_remesh.py": "82ebd62f0707258c29f10a4c8552726286dddfff0d9e96f3bc3f8faa9502a982",
+      "forma/ops_interior.py": "94ca5d7c96f3de31fa046a6c0909b4a5bb45cebec4e41d778a40db792d0b4ec8",
+      "tools/drape_bounded_probe.py": "ba1420df502a76e6468a40782317a3dac55e39a636ba9950240fab40ce2b8efa",
+      "tools/drape_ipc_contact_probe.py": "fc8883e12b8e1c55ae710f9209d9aa721e2ab4a7dd718dfbaa5481fd6d09e2be",
+      "tools/drape_six_probe.py": "426bf33152b05bf7bc3c4c70e9fea39b345e6c7474804958b33664c8ed7a49bd",
+      "tools/drape_triangle_probe.py": "1755563129902ed5c3532f6fc635fddee10f70a7743d40eb6cb0e19b4d27a2f4",
+      "tools/drape_support_probe.py": "2aa2021f2e612a6e001f28078c35b1288eb1f9fb8eb2d59b772b0caad5bc26de",
+      "tools/drape_mujoco_probe.py": "cad17070bf8f478cd1cf310f3adf4c078842d2dc0bb779658acf7e12914f54d1",
+      "tools/audit_drape_sleeve.py": "f98c132c8e70d61d59b7e219b910221680655907d611a45808996ac795d6661d",
+      "tools/drape_ipc_relaxation_probe.py": "ae65abd37d0330a6bf5242828da439ec9012126c808e48b14b9dcb77f8be609c"
+    }
+  }
+}

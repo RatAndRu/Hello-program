@@ -1,0 +1,175 @@
+{
+  "name": "01_sheet_over_ball",
+  "scenario": "benchmarks/drape_six/01_sheet_over_ball.forma",
+  "source_sha256": "28be258d2b3fd6a5a1cf3271d143f7dbe2945c7800bfb6257208544dc8395f3e",
+  "mode": "current",
+  "elapsed_seconds": 173.883,
+  "visible_triangles": 1032,
+  "body_triangles": 892,
+  "bbox_initial": [
+    -36.0,
+    -30.0,
+    40.0,
+    36.0,
+    30.0,
+    40.599999999999994
+  ],
+  "bbox_final": [
+    -35.2726936340332,
+    -29.866849899291992,
+    6.971684342715889e-05,
+    35.32538604736328,
+    29.94224739074707,
+    8.730599403381348
+  ],
+  "watertight": true,
+  "euler_number": 2,
+  "height_initial_mm": 0.5999999999999943,
+  "height_final_mm": 8.73052968653792,
+  "volume_ratio": 0.977351623641913,
+  "edges": {
+    "count": 1338,
+    "complete": true,
+    "max_compression_percent": 6.911595023010875,
+    "max_extension_percent": 7.503832196638616,
+    "max_abs_percent": 7.503832196638616,
+    "p90_abs_percent": 1.4906249683198933
+  },
+  "shell_pair_lengths": {
+    "count": 224,
+    "complete": true,
+    "max_compression_percent": 0.00406486364719072,
+    "max_extension_percent": 0.0,
+    "max_abs_percent": 0.00406486364719072,
+    "p90_abs_percent": 0.0009258869730954801
+  },
+  "shell_normal_projections": {
+    "count": 224,
+    "measured": 224,
+    "complete": true,
+    "min_ratio": 0.9964340708943384,
+    "max_ratio": 1.000285395836505,
+    "p05_ratio": 0.9998686169855716,
+    "p95_ratio": 0.9999997815450007
+  },
+  "tetra_probe": {
+    "available": true,
+    "count": 1170,
+    "inverted": 0,
+    "min_jacobian": 0.6732756760625941,
+    "max_jacobian": 1.120775387197726,
+    "retriangulated_boundary_faces": 52
+  },
+  "boolean_by_support": {
+    "площадка": {
+      "volume_mm3": 0.0,
+      "status": "Error.NoError"
+    },
+    "шар": {
+      "volume_mm3": 0.0,
+      "status": "Error.NoError"
+    }
+  },
+  "boolean_reliable": true,
+  "metadata": {
+    "supports": 2,
+    "rigid": 0.0,
+    "steps": 55,
+    "converged": false,
+    "last_motion": 0.09217117028375216,
+    "movement_tolerance": 0.005000000000000001,
+    "max_strain_all": 0.07503832196638606,
+    "strain_all_p90": 0.014906249683198905,
+    "penetration": 0.019930283158881745,
+    "support_surface_pairs": 0,
+    "support_overlap_volume": 0.0,
+    "support_overlap_complete": true,
+    "self_intersections": 0,
+    "self_intersections_adjacent": 0,
+    "self_intersections_complete": true,
+    "equilibrium_verified": false,
+    "geometry_checks_passed": false
+  },
+  "warnings": [
+    "drape: достигнут предел 55 шагов, равновесие не подтверждено (последнее смещение до 0.092 мм); большее число шагов не гарантирует устойчивость."
+  ],
+  "fcl": {
+    "available": true,
+    "nonadjacent_pairs": 0,
+    "nonadjacent_complete": true,
+    "adjacent_pairs_after_inset": 0,
+    "adjacent_complete": true,
+    "support_surface_contact_or_crossing": false
+  },
+  "fcl_by_support": {
+    "площадка": {
+      "contact_or_crossing": false,
+      "pairs": 0,
+      "complete": true
+    },
+    "шар": {
+      "contact_or_crossing": false,
+      "pairs": 0,
+      "complete": true
+    }
+  },
+  "ccd": {
+    "initial_error": null,
+    "checked_segments": 55,
+    "first_unsafe_segment": null,
+    "total_frames": 55,
+    "minimum_distance_mm": 0.0,
+    "completed": true,
+    "after_placement_only": true
+  },
+  "glb": {
+    "bytes": 38364,
+    "triangles": 1032
+  },
+  "alternating_experiment": {
+    "bend_scale": 1.0,
+    "steps_scale": 1.0,
+    "stats": {
+      "rounds": 4,
+      "passes": 2,
+      "sweeps": 12,
+      "shape_passes": 110,
+      "extra_ipc_friction": 0.0,
+      "ipc": {
+        "calls": 165,
+        "local_hits": 713,
+        "fallbacks": 23,
+        "blocked": 0,
+        "minimum_fallback_alpha": 0.352264404296875
+      }
+    },
+    "note": "Исследование, не приложение. Дополнительное IPC-трение выключено; штатное трение сцены остаётся. CCD не проверяет внутренние проекции."
+  },
+  "environment": {
+    "python": "3.11.2",
+    "platform": "Linux-6.1.158+-x86_64-with-glibc2.36",
+    "dependencies": {
+      "numpy": "2.4.6",
+      "scipy": "1.17.1",
+      "ipctk": "1.6.1",
+      "manifold3d": "3.5.4",
+      "trimesh": "5.2.0",
+      "python-fcl": "0.7.0.11"
+    },
+    "source_sha256": {
+      "forma/cloth.py": "8a46d1042990dec9e2a78bd76d0591f5ee6399be4c8a3515e4e6bbb2ba3d454e",
+      "forma/cloth_collision.py": "e85be962b9d8fbb69f5c5f6fbe2df95ecd0ae8b3e1ff56b6077f71fb56e696d3",
+      "forma/cloth_check.py": "593ff63126abf579ff028ff967b9d1c497c88d3f83baae722d795c3a9d63cb0b",
+      "forma/cloth_remesh.py": "82ebd62f0707258c29f10a4c8552726286dddfff0d9e96f3bc3f8faa9502a982",
+      "forma/ops_interior.py": "94ca5d7c96f3de31fa046a6c0909b4a5bb45cebec4e41d778a40db792d0b4ec8",
+      "tools/drape_bounded_probe.py": "ba1420df502a76e6468a40782317a3dac55e39a636ba9950240fab40ce2b8efa",
+      "tools/drape_ipc_contact_probe.py": "fc8883e12b8e1c55ae710f9209d9aa721e2ab4a7dd718dfbaa5481fd6d09e2be",
+      "tools/drape_six_probe.py": "426bf33152b05bf7bc3c4c70e9fea39b345e6c7474804958b33664c8ed7a49bd",
+      "tools/drape_triangle_probe.py": "1755563129902ed5c3532f6fc635fddee10f70a7743d40eb6cb0e19b4d27a2f4",
+      "tools/drape_support_probe.py": "2aa2021f2e612a6e001f28078c35b1288eb1f9fb8eb2d59b772b0caad5bc26de",
+      "tools/drape_mujoco_probe.py": "cad17070bf8f478cd1cf310f3adf4c078842d2dc0bb779658acf7e12914f54d1",
+      "tools/audit_drape_sleeve.py": "f98c132c8e70d61d59b7e219b910221680655907d611a45808996ac795d6661d",
+      "tools/drape_ipc_relaxation_probe.py": "ae65abd37d0330a6bf5242828da439ec9012126c808e48b14b9dcb77f8be609c"
+    }
+  }
+}

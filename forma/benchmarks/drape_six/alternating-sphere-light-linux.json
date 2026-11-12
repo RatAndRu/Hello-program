@@ -1,0 +1,147 @@
+{
+  "name": "03_soft_sphere",
+  "scenario": "benchmarks/drape_six/03_soft_sphere.forma",
+  "source_sha256": "1378d94b015a91aa88e27c82e94461c50e064f98a6e39fd8c3b9f83743033574",
+  "mode": "current",
+  "elapsed_seconds": 20.762,
+  "visible_triangles": 524,
+  "body_triangles": 512,
+  "bbox_initial": [
+    -14.0,
+    -14.0,
+    26.0,
+    14.0,
+    14.0,
+    54.0
+  ],
+  "bbox_final": [
+    -14.573593139648438,
+    -14.50399112701416,
+    1.4896399989083875e-05,
+    14.528552055358887,
+    14.54213809967041,
+    24.48477554321289
+  ],
+  "watertight": true,
+  "euler_number": 2,
+  "height_initial_mm": 28.0,
+  "height_final_mm": 24.4847606468129,
+  "volume_ratio": 0.9937041523968316,
+  "edges": {
+    "count": 768,
+    "complete": true,
+    "max_compression_percent": 10.339422763681693,
+    "max_extension_percent": 13.383623867401484,
+    "max_abs_percent": 13.383623867401484,
+    "p90_abs_percent": 4.8155821451471645
+  },
+  "shell_pair_lengths": null,
+  "shell_normal_projections": null,
+  "tetra_probe": {
+    "available": false,
+    "reason": "для сплошного шара нет этой призменной модели"
+  },
+  "boolean_by_support": {
+    "площадка": {
+      "volume_mm3": 0.0,
+      "status": "Error.NoError"
+    }
+  },
+  "boolean_reliable": true,
+  "metadata": {
+    "supports": 1,
+    "rigid": 0.0,
+    "steps": 87,
+    "converged": true,
+    "last_motion": 0.003162764238791383,
+    "movement_tolerance": 0.005000000000000001,
+    "max_strain_all": 0.1338362386740149,
+    "strain_all_p90": 0.04815582145147159,
+    "penetration": 0.09998510359985917,
+    "support_surface_pairs": 0,
+    "support_overlap_volume": 0.0,
+    "support_overlap_complete": true,
+    "self_intersections": 0,
+    "self_intersections_adjacent": 0,
+    "self_intersections_complete": true,
+    "equilibrium_verified": false,
+    "geometry_checks_passed": false
+  },
+  "warnings": [
+    "drape: максимальное изменение длины ребра 13.4% (включая короткие рёбра стенки); нерастяжимость не подтверждена. Попробуйте увеличить constraints или уменьшить g."
+  ],
+  "fcl": {
+    "available": true,
+    "nonadjacent_pairs": 0,
+    "nonadjacent_complete": true,
+    "adjacent_pairs_after_inset": 0,
+    "adjacent_complete": true,
+    "support_surface_contact_or_crossing": false
+  },
+  "fcl_by_support": {
+    "площадка": {
+      "contact_or_crossing": false,
+      "pairs": 0,
+      "complete": true
+    }
+  },
+  "ccd": {
+    "initial_error": null,
+    "checked_segments": 87,
+    "first_unsafe_segment": null,
+    "total_frames": 87,
+    "minimum_distance_mm": 0.0,
+    "completed": true,
+    "after_placement_only": true
+  },
+  "glb": {
+    "bytes": 18032,
+    "triangles": 524
+  },
+  "alternating_experiment": {
+    "bend_scale": 1.0,
+    "steps_scale": 1.0,
+    "stats": {
+      "rounds": 3,
+      "passes": 1,
+      "sweeps": 3,
+      "shape_passes": 87,
+      "extra_ipc_friction": 0.0,
+      "ipc": {
+        "calls": 174,
+        "local_hits": 177,
+        "fallbacks": 0,
+        "blocked": 0,
+        "minimum_fallback_alpha": 1.0
+      }
+    },
+    "note": "Исследование, не приложение. Дополнительное IPC-трение выключено; штатное трение сцены остаётся. CCD не проверяет внутренние проекции."
+  },
+  "environment": {
+    "python": "3.11.2",
+    "platform": "Linux-6.1.158+-x86_64-with-glibc2.36",
+    "dependencies": {
+      "numpy": "2.4.6",
+      "scipy": "1.17.1",
+      "ipctk": "1.6.1",
+      "manifold3d": "3.5.4",
+      "trimesh": "5.2.0",
+      "python-fcl": "0.7.0.11"
+    },
+    "source_sha256": {
+      "forma/cloth.py": "8a46d1042990dec9e2a78bd76d0591f5ee6399be4c8a3515e4e6bbb2ba3d454e",
+      "forma/cloth_collision.py": "e85be962b9d8fbb69f5c5f6fbe2df95ecd0ae8b3e1ff56b6077f71fb56e696d3",
+      "forma/cloth_check.py": "593ff63126abf579ff028ff967b9d1c497c88d3f83baae722d795c3a9d63cb0b",
+      "forma/cloth_remesh.py": "82ebd62f0707258c29f10a4c8552726286dddfff0d9e96f3bc3f8faa9502a982",
+      "forma/ops_interior.py": "94ca5d7c96f3de31fa046a6c0909b4a5bb45cebec4e41d778a40db792d0b4ec8",
+      "tools/drape_bounded_probe.py": "ba1420df502a76e6468a40782317a3dac55e39a636ba9950240fab40ce2b8efa",
+      "tools/drape_ipc_contact_probe.py": "fc8883e12b8e1c55ae710f9209d9aa721e2ab4a7dd718dfbaa5481fd6d09e2be",
+      "tools/drape_six_probe.py": "426bf33152b05bf7bc3c4c70e9fea39b345e6c7474804958b33664c8ed7a49bd",
+      "tools/drape_triangle_probe.py": "1755563129902ed5c3532f6fc635fddee10f70a7743d40eb6cb0e19b4d27a2f4",
+      "tools/drape_support_probe.py": "2aa2021f2e612a6e001f28078c35b1288eb1f9fb8eb2d59b772b0caad5bc26de",
+      "tools/drape_mujoco_probe.py": "cad17070bf8f478cd1cf310f3adf4c078842d2dc0bb779658acf7e12914f54d1",
+      "tools/audit_drape_sleeve.py": "f98c132c8e70d61d59b7e219b910221680655907d611a45808996ac795d6661d",
+      "tools/drape_ipc_relaxation_probe.py": "ae65abd37d0330a6bf5242828da439ec9012126c808e48b14b9dcb77f8be609c"
+    }
+  }
+}
