@@ -100,6 +100,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           from forma.run import build
+          from forma.geometry import _glb_read
           from forma.version import __version__
           output = Path('release/models')
           output.mkdir(parents=True, exist_ok=True)
@@ -139,7 +140,14 @@ jobs:
               if not result.ok:
                   raise SystemExit(f'{stem}: {result.error}')
               base = output / f'Forma3D-{__version__}-{suffix}'
-              Path(str(base) + '.glb').write_bytes(result.glb())
+              # Файлы в комплекте доступны вне редактора: им нужен масштаб glTF.
+              glb = result.export_glb()
+              doc, _ = _glb_read(glb)
+              unit = doc['asset']['extras']['formaUnits']['world']
+              root = doc['nodes'][doc['scenes'][0]['nodes'][0]]
+              if unit != 'meter' or root.get('scale') != [0.001, 0.001, 0.001]:
+                  raise SystemExit(f'{stem}: неверный масштаб внешнего GLB')
+              Path(str(base) + '.glb').write_bytes(glb)
               Path(str(base) + '.forma').write_text(script, encoding='utf-8')
               print(base, len(result.visible_solids()), 'objects')
           PY

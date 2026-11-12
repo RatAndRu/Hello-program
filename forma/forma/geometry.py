@@ -1344,7 +1344,11 @@ def _gltf_tangents(verts: np.ndarray, normals: np.ndarray | None,
     tangent /= tn[:, None]
     face_n = np.cross(e1, e2)
     handed = np.where(np.einsum("ij,ij->i", np.cross(face_n, tangent), bitangent) < 0, -1., 1.)
-    sign = np.repeat(handed, 3)
+    # glTF normal maps use +Y up; the serialized UV has its origin at the
+    # top left. Convert the bitangent sign from the UV derivative convention
+    # to the glTF/Mikk normal-map convention (as GLTFLoader does when there
+    # is no TANGENT). The generated normal image uses the same convention.
+    sign = np.repeat(-handed, 3)
     # В каждом UV-острове объединяются только полностью совпадающие вершины,
     # нормали и знак ориентации. Грани-разрывы и зеркальные UV не смешиваются.
     n = np.asarray(normals, dtype=np.float64)

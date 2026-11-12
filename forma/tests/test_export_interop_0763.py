@@ -134,11 +134,27 @@ class ExportInteropTest(unittest.TestCase):
         faces = np.array([[0,1,2]])
         uv = np.array([[0.,1.],[1.,1.],[0.,0.]])
         tang = _gltf_tangents(verts, norms, faces, uv)
-        np.testing.assert_allclose(tang, np.tile([1.,0.,0.,1.], (3,1)), atol=1e-7)
+        np.testing.assert_allclose(tang, np.tile([1.,0.,0.,-1.], (3,1)), atol=1e-7)
         uv[:,0] *= -1
         mirrored = _gltf_tangents(verts, norms, faces, uv)
-        np.testing.assert_allclose(mirrored, np.tile([-1.,0.,0.,-1.], (3,1)), atol=1e-7)
+        np.testing.assert_allclose(mirrored, np.tile([-1.,0.,0.,1.], (3,1)), atol=1e-7)
         self.assertIsNone(_gltf_tangents(verts, norms, faces, np.zeros((3,2))))
+
+    def test_normal_map_green_and_gltf_loader_fallback_agree(self):
+        from forma.textures import make_normal
+        height = np.tile(np.array([0., .25, .5, .75, 1.])[:, None], (1, 5))
+        with patch('forma.textures.custom_height', return_value=height):
+            image = make_normal(size=5, relief=.5)
+        # Rows grow down; positive green is the OpenGL/glTF upward component.
+        self.assertGreater(int(image[2, 2, 1]), 127)
+        verts = np.array([[0., 0., 0.], [1., 0., 0.], [0., 1., 0.]])
+        normals = np.tile([0., 0., 1.], (3, 1))
+        uv = np.array([[0., 1.], [1., 1.], [0., 0.]])
+        tangent = _gltf_tangents(verts, normals, np.array([[0, 1, 2]]), uv)[0]
+        explicit_bitangent = np.cross(normals[0], tangent[:3]) * tangent[3]
+        # GLTFLoader flips normalScale.y when using derivative tangents.
+        derivative_bitangent = np.array([0., 1., 0.]) * -1.
+        np.testing.assert_allclose(explicit_bitangent, derivative_bitangent, atol=1e-7)
 
     def test_animation_stays_under_unit_root(self):
         b = built('a = box size=[40,20,10]\nb = sphere radius=10 at=[60,0,0]\n'

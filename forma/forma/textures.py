@@ -342,7 +342,9 @@ def make_normal(pattern: str = "полосы", scale: float = 1.0, seed: int | s
     r = float(max(0.02, min(1.0, relief))) * 4.0
     gy, gx = np.gradient(t)
     nx = (-gx * r)
-    ny = (-gy * r)
+    # Image rows grow downward, whereas glTF/OpenGL tangent-space +Y points
+    # upward. Keep the green channel consistent with glTF tangent handedness.
+    ny = gy * r
     nz = np.ones_like(nx)
     length = np.sqrt(nx * nx + ny * ny + nz * nz)
     rgb = np.stack([nx / length, ny / length, nz / length], axis=-1)
