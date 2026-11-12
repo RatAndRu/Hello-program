@@ -13,6 +13,11 @@ import ipctk
 
 
 def main():
+    # PyInstaller's bootloader may ignore PYTHONUTF8 on Windows (cp1252).
+    # Keep failures and Cyrillic diagnostics readable when stdout is redirected.
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="backslashreplace")
     if not getattr(sys, "frozen", False) or not hasattr(sys, "_MEIPASS"):
         raise RuntimeError("Тест предназначен для однофайлового PyInstaller-пробника")
     unpacked = Path(sys._MEIPASS).resolve()
