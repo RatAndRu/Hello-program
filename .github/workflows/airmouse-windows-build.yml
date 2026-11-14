@@ -1,16 +1,20 @@
 name: AirMouse — сборка Windows EXE
 
-# Ручной запуск (Actions -> "AirMouse — сборка Windows EXE") или по тегу v*.
-# На выходе — готовый к переносу архив dist/AirMouse (Python на целевой машине
-# не нужен): AirMouse.exe, модели, README.
+# Сборка готового приложения на серверах GitHub (Windows).
+# Запуск: тег airmouse-v* (создаёт Release с zip) или вручную из вкладки Actions
+# (ручной запуск работает, когда файл воркфлоу есть и в ветке по умолчанию).
 on:
   workflow_dispatch:
   push:
     tags:
-      - 'v*'
+      - 'airmouse-v*'
 
 permissions:
   contents: write
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
 
 jobs:
   build:
@@ -52,16 +56,17 @@ jobs:
         run: |
           mkdir -p dist/AirMouse/models
           cp models/*.task dist/AirMouse/models/
-          cp README.md dist/AirMouse/
-          cp "КАК-ЗАПУСТИТЬ.txt" dist/AirMouse/
+          cp README.md dist/AirMouse/ || true
+          cp ./*.txt dist/AirMouse/ 2>/dev/null || true
           python -c "open(r'dist/AirMouse/run.bat','wb').write(b'@echo off\r\ncd /d \"%~dp0\"\r\nstart \"\" AirMouse.exe\r\n')"
-          ls -la dist/AirMouse
+          du -sh dist/AirMouse
+          ls -la dist/AirMouse | head -20
 
       - name: Архив
         run: |
           cd dist
           powershell -Command "Compress-Archive -Path 'AirMouse' -DestinationPath 'AirMouse-windows.zip' -Force"
-          ls -la
+          ls -la AirMouse-windows.zip
 
       - uses: actions/upload-artifact@v4
         with:
@@ -69,8 +74,12 @@ jobs:
           path: dist/AirMouse-windows.zip
           retention-days: 30
 
-      - name: Release (для тега v*)
-        if: startsWith(github.ref, 'refs/tags/v')
+      - name: Release (для тега airmouse-v*)
+        if: startsWith(github.ref, 'refs/tags/airmouse-v')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/AirMouse-windows.zip
+          name: AirMouse ${{ github.ref_name }}
+          body: |
+            Готовое приложение для Windows: распакуйте архив и запустите `AirMouse.exe`.
+            Модели MediaPipe уже внутри, Python устанавливать не нужно.
