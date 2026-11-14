@@ -1,7 +1,7 @@
 // Отрисовка развёртки: SVG в миллиметрах, 1:1, с линиями реза и сгиба.
 
 import { Part, Face, foldList, pointInPoly } from '../core/model'
-import { V2, polyArea, polyBBox, round } from '../core/vec'
+import { V2, polyArea, polyBBox, polyCentroid, round } from '../core/vec'
 
 export interface NetOpts {
   showDims: boolean
@@ -54,40 +54,49 @@ export function netExtent(part: Part): { min: V2; max: V2; w: number; h: number 
 export function renderNet(part: Part, opts: NetOpts): string {
   const ext = netExtent(part)
   const dim = Math.max(ext.w, ext.h)
-  const pad = opts.forExport ? Math.max(12, dim * 0.05) : Math.max(14, dim * 0.085)
+  const pad = opts.forExport ? Math.max(10, dim * 0.045) : Math.max(9, dim * 0.05)
+  // Поля несимметричные: слева и снизу живут размерные линии.
+  const padL = pad * 1.55
+  const padB = pad * 1.45
+  const padR = pad * 0.8
+  const padT = pad * 0.7
   const vb = {
-    x: ext.min[0] - pad,
-    y: -ext.max[1] - pad,
-    w: ext.w + pad * 2,
-    h: ext.h + pad * 2,
+    x: ext.min[0] - padL,
+    y: -ext.max[1] - padB,
+    w: ext.w + padL + padR,
+    h: ext.h + padB + padT,
   }
-  const fs = Math.max(3, dim / 62)
-  const fsSmall = fs * 0.82
+  const fs = Math.max(3.5, dim / 48)
+  const fsSmall = fs * 0.8
   // Для файла — толщина в мм (лазеру важен контур), на экране — в пикселях при вписанном масштабе.
   const stroke = opts.forExport ? 0.25 : Math.max(0.6, dim / 380)
   const dash = opts.forExport ? `${fs * 0.9} ${fs * 0.7}` : `${dim / 95} ${dim / 150}`
 
   const paper = opts.forExport ? '#ffffff' : '#f2ecdf'
   const cutColor = opts.forExport ? '#e2001a' : '#2b2419'
-  const foldColor = opts.forExport ? '#0057ff' : '#bb7b1f'
+  const foldColor = opts.forExport ? '#0057ff' : '#c07d1e'
 
   const parts: string[] = []
 
+  const hatch = Math.max(3.5, dim / 90)
   parts.push(`<defs>
-    <pattern id="hatch" width="3" height="3" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
-      <line x1="0" y1="0" x2="0" y2="3" stroke="${cutColor}" stroke-width="0.35" opacity="0.5"/>
+    <pattern id="hatch" width="${hatch}" height="${hatch}" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">
+      <rect width="${hatch}" height="${hatch}" fill="${paper}"/>
+      <line x1="0" y1="0" x2="0" y2="${hatch}" stroke="${cutColor}" stroke-width="${hatch * 0.11}" opacity="0.5"/>
     </pattern>
+    <filter id="paperShadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="${fs * 0.25}" stdDeviation="${fs * 0.3}" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
     <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
       <path d="M0 0 L10 5 L0 10 z" fill="${opts.forExport ? '#555' : '#8c7b5f'}"/>
     </marker>
   </defs>`)
 
-  if (!opts.forExport) {
-    parts.push(
-      `<rect x="${vb.x}" y="${vb.y}" width="${vb.w}" height="${vb.h}" rx="${fs}" fill="${paper}"/>`,
-    )
-  } else {
+  // На экране лист — это силуэт выкройки; для файла печатаем во всю страницу.
+  if (opts.forExport) {
     parts.push(`<rect x="${vb.x}" y="${vb.y}" width="${vb.w}" height="${vb.h}" fill="${paper}"/>`)
+  } else {
+    parts.push(`<g filter="url(#paperShadow)">`)
   }
 
   // Панели
@@ -96,9 +105,10 @@ export function renderNet(part: Part, opts: NetOpts): string {
     if (f.kind === 'tab') {
       parts.push(`<polygon points="${pts}" fill="url(#hatch)" stroke="${cutColor}" stroke-width="${stroke}"/>`)
     } else {
-      parts.push(`<polygon points="${pts}" fill="${paper}" stroke="none"/>`)
+      parts.push(`<polygon points="${pts}" fill="${paper}" stroke="${paper}" stroke-width="${stroke * 0.6}"/>`)
     }
   }
+  if (!opts.forExport) parts.push('</g>')
 
   // Тени от линий сгиба — тонкая светлая подложка под бумагой не нужна, но
   // панели обводим резами.
@@ -135,18 +145,27 @@ export function renderNet(part: Part, opts: NetOpts): string {
   }
 
   // Подписи панелей
-  if (opts.showNames && !opts.forExport) {
-    for (const f of part.faces) {
-      if (f.kind === 'tab') continue
+  const panels = part.faces.filter((f) => f.kind !== 'tab')
+  if (opts.showNames && !opts.forExport && panels.length <= 14) {
+    for (const f of panels) {
       const b = polyBBox(f.poly)
       const w = b.max[0] - b.min[0]
       const h = b.max[1] - b.min[1]
-      if (w < fs * 5 || h < fs * 3) continue
-      const cx = (b.min[0] + b.max[0]) / 2
-      const cy = -(b.min[1] + b.max[1]) / 2
+      if (w < fs * 4.8 || h < fs * 3.2) continue
+      // центр подписи — центроид полигона, а не центр габарита:
+      // у секторов конуса это заметно.
+      const c = polyCentroid(f.poly)
+      const cx = c[0]
+      const cy = -c[1]
+      // подпись не должна вылезать за панель
+      const perChar = fsSmall * 0.6
+      const fit = Math.floor((w * 0.78 - fs) / perChar)
+      if (fit < 4) continue
+      const label =
+        f.name.length > fit ? `${f.name.slice(0, Math.max(2, fit - 1))}…` : f.name
       parts.push(
-        `<text x="${round(cx, 2)}" y="${round(cy, 2)}" font-family="-apple-system,Segoe UI,sans-serif" font-size="${fsSmall}" fill="#8a7b62" text-anchor="middle">${escapeXml(f.name)}</text>` +
-          `<text x="${round(cx, 2)}" y="${round(cy + fsSmall * 1.15, 2)}" font-family="ui-monospace,monospace" font-size="${fsSmall * 0.85}" fill="#a8987a" text-anchor="middle" opacity="0.8">${fmt(w)} × ${fmt(h)}</text>`,
+        `<text x="${round(cx, 2)}" y="${round(cy, 2)}" font-family="-apple-system,Segoe UI,sans-serif" font-size="${fsSmall}" fill="#6d5f49" text-anchor="middle">${escapeXml(label)}</text>` +
+          `<text x="${round(cx, 2)}" y="${round(cy + fsSmall * 1.2, 2)}" font-family="ui-monospace,monospace" font-size="${fsSmall * 0.82}" fill="#8d7f68" text-anchor="middle">${fmt(w)} × ${fmt(h)}</text>`,
       )
     }
   }
@@ -154,7 +173,7 @@ export function renderNet(part: Part, opts: NetOpts): string {
   // Габаритные размеры
   if (opts.showDims) {
     const dimColor = opts.forExport ? '#666' : '#8c7b5f'
-    const y = -ext.min[1] + pad * 0.45
+    const y = -ext.min[1] + padB * 0.42
     const x0 = ext.min[0]
     const x1 = ext.max[0]
     parts.push(
@@ -163,14 +182,14 @@ export function renderNet(part: Part, opts: NetOpts): string {
     parts.push(
       `<text x="${round((x0 + x1) / 2, 2)}" y="${round(y + fs * 1.35, 2)}" font-family="ui-monospace,monospace" font-size="${fsSmall}" fill="${dimColor}" text-anchor="middle">${fmt(ext.w)} мм</text>`,
     )
-    const x = ext.min[0] - pad * 0.45
+    const x = ext.min[0] - padL * 0.55
     const y0 = -ext.max[1]
     const y1 = -ext.min[1]
     parts.push(
       `<line x1="${round(x, 2)}" y1="${round(y0, 2)}" x2="${round(x, 2)}" y2="${round(y1, 2)}" stroke="${dimColor}" stroke-width="${stroke * 0.6}" marker-start="url(#arr)" marker-end="url(#arr)"/>`,
     )
     parts.push(
-      `<text x="${round(x - fs * 0.5, 2)}" y="${round((y0 + y1) / 2, 2)}" font-family="ui-monospace,monospace" font-size="${fsSmall}" fill="${dimColor}" text-anchor="middle" transform="rotate(-90 ${round(x - fs * 0.5, 2)} ${round((y0 + y1) / 2, 2)})">${fmt(ext.h)} мм</text>`,
+      `<text x="${round(x - fs * 0.42, 2)}" y="${round((y0 + y1) / 2, 2)}" font-family="ui-monospace,monospace" font-size="${fsSmall}" fill="${dimColor}" text-anchor="middle" transform="rotate(-90 ${round(x - fs * 0.42, 2)} ${round((y0 + y1) / 2, 2)})">${fmt(ext.h)} мм</text>`,
     )
   }
 
@@ -180,7 +199,7 @@ export function renderNet(part: Part, opts: NetOpts): string {
       .filter((f) => f.kind === 'panel')
       .reduce((s, f) => s + Math.abs(polyArea(f.poly)), 0)
     const x = ext.min[0]
-    const y = -ext.min[1] + pad * 0.5
+    const y = -ext.min[1] + padB * 0.5
     parts.push(
       `<text x="${round(x, 2)}" y="${round(y + fs * 3, 2)}" font-family="ui-monospace,monospace" font-size="${fsSmall}" fill="#444">${escapeXml(part.name)} · ${fmt(ext.w)} × ${fmt(ext.h)} мм · ${(area / 100).toFixed(0)} см² · 1:1</text>`,
     )

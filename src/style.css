@@ -242,6 +242,7 @@ input[type="checkbox"] { accent-color: var(--amber); width: 15px; height: 15px; 
 
 .canvas { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
 #threeHost { background: radial-gradient(circle at 50% 40%, #1a202a, #0c0e13 70%); }
+#threeHost canvas { display: block; width: 100% !important; height: 100% !important; }
 #netHost {
   background: #0b0d11;
   background-image: radial-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px);
@@ -264,14 +265,20 @@ input[type="checkbox"] { accent-color: var(--amber); width: 15px; height: 15px; 
 #netBadge { left: 10px; bottom: 10px; }
 #viewBadge { right: 10px; bottom: 10px; }
 .legend {
-  position: absolute; left: 10px; top: 10px;
-  display: flex; gap: 10px; pointer-events: none;
-  font-size: 10.5px; color: var(--muted);
+  position: absolute; left: 10px; top: 10px; z-index: 2;
+  display: flex; gap: 6px; pointer-events: none;
+  font-size: 10.5px;
 }
-.legend i { display: inline-block; width: 14px; height: 0; border-top-width: 2px; border-top-style: solid; vertical-align: middle; margin-right: 4px; }
-.legend .cut i { border-color: #3b2f22; border-top-style: solid; }
-.legend .fold i { border-color: var(--amber); border-top-style: dashed; }
-.legend .tab i { border-color: #b07d3a; border-top-style: dotted; }
+.legend span {
+  display: inline-flex; align-items: center;
+  background: var(--paper); color: #55483a;
+  padding: 2px 7px 2px 5px; border-radius: 5px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+.legend i { display: inline-block; width: 13px; height: 0; border-top-width: 1.6px; border-top-style: solid; vertical-align: middle; margin-right: 4px; }
+.legend .cut i { border-color: #2b2419; border-top-style: solid; }
+.legend .fold i { border-color: #c07d1e; border-top-style: dashed; }
+.legend .tab i { border-color: #a8825a; border-top-style: dotted; }
 
 /* ---------- right ---------- */
 .card {

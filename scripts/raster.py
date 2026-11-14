@@ -38,7 +38,7 @@ for i, part in enumerate(data):
     ns = part['netSize']
     lines = [p for p in part['net'] if 'color' in p]
     polys = [p for p in part['net'] if 'fill' in p]
-    draw(f'tmp/net-{i}.png', polys, '#0b0d11', (ns['w'], ns['h']), lines)
+    draw(f'tmp/net-{i}.png', polys, '#f4efe4', (ns['w'], ns['h']), lines)
     draw(f'tmp/sol-{i}.png', part['solid'], '#101318', (700, 700))
     print(i, part['name'], part['stats'])
 
@@ -51,6 +51,13 @@ for idx, slug in pairs:
     if idx >= len(data):
         continue
     a = Image.open(f'tmp/net-{idx}.png').convert('RGB')
+    # лист на рисунке обрезаем полями, чтобы он читался как бумага на подложке
+    from PIL import ImageDraw as _D
+    card = Image.new('RGB', (a.width + 24, a.height + 24), '#0d0f13')
+    card.paste(a, (12, 12))
+    d = _D.Draw(card)
+    d.rectangle([12, 12, 12 + a.width - 1, 12 + a.height - 1], outline='#22262e')
+    a = card
     b = Image.open(f'tmp/sol-{idx}.png').convert('RGB')
     h = max(a.height, b.height)
     W = a.width + b.width + 60

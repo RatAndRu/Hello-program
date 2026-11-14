@@ -9,11 +9,17 @@
 запрос  →  развёртка 1:1  →  3D-сборка  →  проверка  →  файлы для резки и 3D-печати
 ```
 
-![Коробка: развёртка и сборка](docs/images/box.png)
+![Интерфейс: запрос, развёртка с линиями реза и сгиба, 3D-сборка](docs/images/app.png)
 
-| Воронка | Стакан | Пирамида |
+Выкройки и сборки, которые строит приложение:
+
+| Коробка | Воронка | Стакан |
 |---|---|---|
-| ![Воронка](docs/images/funnel.png) | ![Стакан](docs/images/glass.png) | ![Пирамида](docs/images/pyramid.png) |
+| ![Коробка](docs/images/box.png) | ![Воронка](docs/images/funnel.png) | ![Стакан](docs/images/glass.png) |
+
+| Пирамида |
+|---|
+| ![Пирамида](docs/images/pyramid.png) |
 
 ## Идея
 
@@ -77,15 +83,16 @@
 npm install
 npm run dev        # http://localhost:5173
 npm run build      # статичная сборка в dist/
-npm run selftest   # проверка геометрии без браузера
+npm run selftest   # 57 проверок геометрии без браузера
+npm run smoke      # прогон сценариев в headless-браузере (puppeteer)
 ```
 
 Приложение для ПК (Electron, тот же код):
 
 ```bash
-npm i -D electron electron-builder
-npm run desktop         # запуск окна
+npm run desktop         # окно Electron поверх dist/
 npm run dist:win        # portable .exe + установщик в release/
+npm run dist:linux      # AppImage в release/
 ```
 
 Готовые сборки Windows собираются в CI: `.github/workflows/build.yml` →
@@ -103,6 +110,8 @@ src/core/export.ts    SVG, DXF, STL, OBJ, JSON
 src/render/net.ts     чертёж развёртки (SVG, мм, 1:1)
 src/render/scene.ts   3D-вид (three.js)
 src/main.ts           интерфейс
+scripts/selftest.ts   проверки геометрии
+scripts/smoke.mjs     прогон интерфейса в headless-браузере
 ```
 
 Коротко о математике: каждый сгиб — поворот поддерева панелей вокруг общего

@@ -182,8 +182,8 @@ export function makeBox(w: number, d: number, h: number, closed: boolean, opts: 
   if (closed) {
     const lid = net.add(rect(0, d + h, w, d + h + d), 'крышка')
     net.fold(north, lid, 90)
-    const flapW = net.add(rect(-h, d + h, 0, d + h + d), 'клапан крышки левый')
-    const flapE = net.add(rect(w, d + h, w + h, d + h + d), 'клапан крышки правый')
+    const flapW = net.add(rect(-h, d + h, 0, d + h + d), 'клапан левый')
+    const flapE = net.add(rect(w, d + h, w + h, d + h + d), 'клапан правый')
     net.fold(lid, flapW, 90)
     net.fold(lid, flapE, 90)
     addTabs(net, opts)

@@ -358,6 +358,7 @@ function init(): void {
 
   netView = new NetView($('#netHost'))
   scene = new Scene3D($('#threeHost'))
+  ;(window as unknown as Record<string, unknown>).__sgib = { scene, netView }
 
   ;($('#prompt') as HTMLTextAreaElement).value = state.prompt
   writeOpts(state.opts)

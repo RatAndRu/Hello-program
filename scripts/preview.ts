@@ -62,8 +62,8 @@ for (const prompt of prompts) {
       )
       net.push({
         pts: [tx(a as [number, number]), tx(b as [number, number])],
-        color: hinge ? '#c07d1e' : '#2b2419',
-        w: hinge ? 1.6 : 2.2,
+        color: hinge ? '#c07d1e' : '#3a2f22',
+        w: hinge ? 1.8 : 2.4,
         dash: hinge ? [6, 4] : undefined,
       })
     }

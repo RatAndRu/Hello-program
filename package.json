@@ -12,19 +12,22 @@
     "assets": "tsx scripts/preview.ts && python3 scripts/raster.py",
     "desktop": "npm run build && electron .",
     "dist:win": "npm run build && electron-builder --win",
-    "dist:linux": "npm run build && electron-builder --linux"
+    "dist:linux": "npm run build && electron-builder --linux",
+    "smoke": "node scripts/smoke.mjs"
   },
   "dependencies": {
     "three": "^0.169.0"
   },
   "devDependencies": {
+    "@sparticuz/chromium": "^153.0.0",
     "@types/node": "^26.6.6",
     "@types/three": "^0.169.0",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8",
+    "puppeteer-core": "^25.17.0",
     "tsx": "^4.19.1",
     "typescript": "^5.6.3",
-    "vite": "^5.4.10",
-    "electron": "^33.2.0",
-    "electron-builder": "^25.1.8"
+    "vite": "^5.4.10"
   },
   "main": "desktop/main.cjs",
   "build": {

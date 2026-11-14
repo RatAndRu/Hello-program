@@ -40,6 +40,7 @@ export class Scene3D {
   private ro: ResizeObserver
   private raf = 0
   private fitted = false
+  private fitState: { center: THREE.Vector3; radius: number; dir: THREE.Vector3 } | null = null
 
   constructor(host: HTMLElement) {
     this.host = host
@@ -121,9 +122,12 @@ export class Scene3D {
   private resize(): void {
     const w = this.host.clientWidth || 1
     const h = this.host.clientHeight || 1
-    this.renderer.setSize(w, h, false)
+    // updateStyle=true обязателен: иначе на экранах с devicePixelRatio > 1
+    // буфер больше CSS-размера и вид «уезжает».
+    this.renderer.setSize(w, h, true)
     this.camera.aspect = w / h
     this.camera.updateProjectionMatrix()
+    if (this.fitState) this.applyFit()
     this.needsRender = true
   }
 
@@ -242,20 +246,34 @@ export class Scene3D {
     const center = box.getCenter(new THREE.Vector3())
     const size = box.getSize(new THREE.Vector3())
     const radius = Math.max(20, size.length() / 2)
-    const dist = radius / Math.sin((this.camera.fov * Math.PI) / 360) * 1.15
 
-    this.controls.target.copy(center)
-    this.camera.position.copy(
-      center.clone().add(new THREE.Vector3(0.62, -0.72, 0.42).normalize().multiplyScalar(dist)),
-    )
-    this.camera.near = Math.max(0.5, radius / 200)
-    this.camera.far = dist * 12
-    this.camera.updateProjectionMatrix()
-    this.camera.lookAt(center)
-    this.controls.update()
+    this.fitState = {
+      center,
+      radius,
+      dir: new THREE.Vector3(0.62, -0.72, 0.42).normalize(),
+    }
+    this.applyFit()
     this.grid.position.z = box.min.z - Math.max(1, size.z * 0.03)
     this.grid.scale.setScalar(Math.max(0.4, radius / 260))
     this.fitted = true
+    this.needsRender = true
+  }
+
+  /** Дистанция под текущее соотношение сторон: в узком окне кадр должен влезать по ширине. */
+  private applyFit(): void {
+    const f = this.fitState
+    if (!f) return
+    const vFov = (this.camera.fov * Math.PI) / 180
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * Math.max(0.2, this.camera.aspect))
+    const fov = Math.min(vFov, hFov)
+    const dist = (f.radius / Math.sin(fov / 2)) * 1.12
+    this.controls.target.copy(f.center)
+    this.camera.position.copy(f.center.clone().add(f.dir.clone().multiplyScalar(dist)))
+    this.camera.near = Math.max(0.5, f.radius / 200)
+    this.camera.far = dist * 12
+    this.camera.updateProjectionMatrix()
+    this.camera.lookAt(f.center)
+    this.controls.update()
     this.needsRender = true
   }
 
