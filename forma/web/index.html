@@ -66,6 +66,8 @@
           <button data-format="drawing">DXF — чертёж с размерами (2D)</button>
           <button data-format="svg">SVG — сечение для проверки формы</button>
           <button data-format="forma">.forma — сценарий</button>
+          <button data-format="passport-fast" title="Габариты, отношения коробок и ограниченные сечения для нейросети">Паспорт для нейросети — быстро (ZIP)</button>
+          <button data-format="passport-detail" title="Больше сечений и пар; на сложных сценах может занять больше времени">Паспорт для нейросети — подробно (ZIP)</button>
           <button data-format="fold">FOLD — развёртка оригами (JSON)</button>
           <button data-format="cp">.cp — схема складок ORIPA</button>
           <button data-format="gif">GIF — анимация (делится в чатах)</button>
@@ -828,6 +830,7 @@
     <div class="modal-card">
       <div class="modal-head">
         <strong>Справочник команд</strong>
+        <button class="mini" id="btn-licenses" title="Сохранить комплект сторонних лицензий">Лицензии</button>
         <button class="mini" id="help-close">✕</button>
       </div>
       <input type="search" id="help-search" placeholder="Поиск команды или параметра…" />

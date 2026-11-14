@@ -621,6 +621,25 @@ class AppState:
         except OSError:
             return path
 
+    def license_bundle(self) -> dict:
+        """Сохранить включённые уведомления без необходимости строить сцену."""
+        bundle = resource_path("third-party-licenses")
+        if not bundle.is_dir() and not getattr(sys, "frozen", False):
+            bundle = resource_path("build/third-party-licenses")
+        if not bundle.is_dir() or not (bundle / "manifest.json").is_file():
+            raise FormaError("Комплект лицензий не найден; в исходниках выполните tools/collect_licenses.py.")
+        with self.lock:
+            out = self.data_dir / "exports"
+            out.mkdir(parents=True, exist_ok=True)
+            name = f"Forma3D-{__version__}-licenses.zip"
+            target = out / name
+            with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
+                for path in sorted(bundle.rglob("*")):
+                    if path.is_file():
+                        zf.write(path, path.relative_to(bundle).as_posix())
+            return {"path": str(self._to_downloads(target)),
+                    "url": file_url("exports", name), "name": name}
+
     def export(self, fmt: str, script: str | None = None) -> dict:
         if script is not None and script != self.last_script:
             self.build(script)
@@ -690,6 +709,18 @@ class AppState:
                     cuts.export_dxf(sections, target)
                 else:
                     cuts.export_svg(sections, target)
+                return {"path": str(self._to_downloads(target)),
+                        "url": file_url("exports", name), "name": name}
+            elif fmt in ("passport-fast", "passport-detail"):
+                from .spatial_passport import create_passport, passport_markdown
+                mode = "detail" if fmt == "passport-detail" else "fast"
+                passport = create_passport(scene, self.last_script, mode=mode)
+                name = f"{base}_spatial_passport_{mode}.zip"
+                target = out_dir / name
+                with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
+                    zf.writestr("passport.json", json.dumps(passport, ensure_ascii=False, indent=2, allow_nan=False) + "\n")
+                    zf.writestr("ПАСПОРТ.md", passport_markdown(passport))
+                    zf.writestr("source.forma", self.last_script)
                 return {"path": str(self._to_downloads(target)),
                         "url": file_url("exports", name), "name": name}
             elif fmt == "forma":
@@ -1344,6 +1375,9 @@ class Handler(BaseHTTPRequestHandler):
             return
         if path == "/api/photo/fit":
             self._send_json(st.fit_photo(body))
+            return
+        if path == "/api/licenses":
+            self._send_json(st.license_bundle())
             return
         if path == "/api/export":
             fmt = body.get("format", "glb")

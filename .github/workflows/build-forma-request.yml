@@ -48,7 +48,7 @@ jobs:
         run: >-
           python -m pytest -q tests/test_v0741.py tests/test_v0742.py
           tests/test_stage3_features.py tests/test_lamp_rework.py tests/test_banker_lamp.py
-          tests/test_export_interop_0763.py tests/test_libraries_0764.py tests/test_v010.py tests/test_v018.py tests/test_v023.py tests/test_studio.py
+          tests/test_export_interop_0763.py tests/test_libraries_0764.py tests/test_spatial_passport_0765.py tests/test_v010.py tests/test_v018.py tests/test_v023.py tests/test_studio.py
       - name: Проверить инструменты и редактор
         run: |
           node --check web/js/app.js
@@ -89,6 +89,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller
+          python tools/collect_licenses.py
       - name: Проверить и экспортировать оригинальный параметрический скелет
         working-directory: forma
         run: |
@@ -266,6 +267,7 @@ jobs:
           cp docs/face_visibility.md release/НАРУЖНОСТЬ_ГРАНЕЙ.md
           cp docs/export_interop_0763.md release/ЭКСПОРТ_МАТЕРИАЛЫ.md
           cp docs/library_research_0764.md release/БИБЛИОТЕКИ_И_ИЗМЕРЕНИЯ.md
+          cp docs/spatial_passport_0765.md release/ПРОСТРАНСТВЕННЫЙ_ПАСПОРТ.md
           mkdir -p release/ЛИЦЕНЗИИ
           cp docs/licenses/FastNoiseLite-MIT.txt release/ЛИЦЕНЗИИ/
           cp docs/licenses/PyFastNoiseLite-0.0.7-MIT.txt release/ЛИЦЕНЗИИ/
@@ -279,6 +281,7 @@ jobs:
           from forma.instruction import full_instruction, commands_catalog
           from forma.version import __version__
           root = Path('release')
+          shutil.copytree('build/third-party-licenses', root / 'ЛИЦЕНЗИИ', dirs_exist_ok=True)
           (root / 'СПРАВКА_КОМАНДЫ.md').write_text(command_reference_md(), encoding='utf-8')
           (root / 'ИНСТРУКЦИЯ_ДЛЯ_НЕЙРОСЕТИ.md').write_text(full_instruction(), encoding='utf-8')
           (root / 'ВСЕ_КОМАНДЫ.md').write_text(commands_catalog(), encoding='utf-8')
@@ -311,11 +314,15 @@ jobs:
           exe_zip = Path(f'Forma3D-{__version__}-exe.zip')
           with zipfile.ZipFile(exe_zip, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
               zf.write(exe_path, 'Forma3D.exe')
+              zf.write(root / 'ЧИТАЙ_МЕНЯ.txt', 'ЧИТАЙ_МЕНЯ.txt')
+              for path in sorted((root / 'ЛИЦЕНЗИИ').rglob('*')):
+                  if path.is_file():
+                      zf.write(path, path.relative_to(root))
           with zipfile.ZipFile(exe_zip) as zf:
-              assert zf.namelist() == ['Forma3D.exe'], zf.namelist()
+              assert 'ЛИЦЕНЗИИ/manifest.json' in zf.namelist(), zf.namelist()
               assert zf.testzip() is None
               assert zf.read('Forma3D.exe') == exe_path.read_bytes()
-          print('EXE-only ZIP:', exe_zip, exe_zip.stat().st_size, 'байт; только Forma3D.exe')
+          print('EXE ZIP:', exe_zip, exe_zip.stat().st_size, 'байт; EXE и лицензионные уведомления')
           PY
 
       - name: Загрузить проверенные файлы
@@ -375,8 +382,14 @@ jobs:
           if exe[:2] != b'MZ' or len(exe) < 1_000_000:
               raise SystemExit('Не получен исполняемый Windows-файл')
           with zipfile.ZipFile(out / names[2]) as zf:
-              if zf.namelist() != ['Forma3D.exe'] or zf.testzip() is not None or zf.read('Forma3D.exe') != exe:
+              if zf.testzip() is not None or zf.read('Forma3D.exe') != exe:
                   raise SystemExit('Архив EXE не совпадает с проверенным исполняемым файлом')
+              for item in ('ЧИТАЙ_МЕНЯ.txt', 'ЛИЦЕНЗИИ/manifest.json',
+                           'ЛИЦЕНЗИИ/vendor/THREE_LICENSE.txt', 'ЛИЦЕНЗИИ/vendor/NVIDIA-FXAA-BSD.txt',
+                           'ЛИЦЕНЗИИ/vendor/human_skeleton.LICENSE.txt',
+                           'ЛИЦЕНЗИИ/vendor/Microsoft-WebView2-SDK.txt'):
+                  if item not in zf.namelist():
+                      raise SystemExit(f'В ZIP EXE нет {item}')
           with zipfile.ZipFile(out / names[1]) as zf:
               if zf.testzip() is not None or zf.read('Forma3D.exe') != exe:
                   raise SystemExit('EXE в полном ZIP не совпадает с проверенным файлом')
@@ -384,8 +397,11 @@ jobs:
                                'examples/drape_layers_076.forma', 'examples/drape_atelier_077.forma',
                                'examples/drape_atelier_dense_077.forma', 'ИЗМЕРЕНИЯ_ДРАПИРОВКИ.json',
                                'ЭКСПОРТ_МАТЕРИАЛЫ.md', 'БИБЛИОТЕКИ_И_ИЗМЕРЕНИЯ.md',
+                               'ПРОСТРАНСТВЕННЫЙ_ПАСПОРТ.md', 'examples/spatial_passport_0765.forma',
                                'examples/noise_scatter_0764.forma',
-                               'ЛИЦЕНЗИИ/FastNoiseLite-MIT.txt', 'ЛИЦЕНЗИИ/PyFastNoiseLite-0.0.7-MIT.txt'):
+                               'ЛИЦЕНЗИИ/FastNoiseLite-MIT.txt', 'ЛИЦЕНЗИИ/PyFastNoiseLite-0.0.7-MIT.txt',
+                               'ЛИЦЕНЗИИ/manifest.json', 'ЛИЦЕНЗИИ/vendor/THREE_LICENSE.txt',
+                               'ЛИЦЕНЗИИ/vendor/NVIDIA-FXAA-BSD.txt', 'ЛИЦЕНЗИИ/vendor/human_skeleton.LICENSE.txt'):
                   if expected not in zf.namelist():
                       raise SystemExit(f'В полном ZIP нет {expected}')
               source = Path('forma/benchmarks/drape_six')
@@ -414,7 +430,7 @@ jobs:
               raise SystemExit(f'Не найден результат проверки экспорта EXE: {export_paths}')
           export_audit = json.loads(export_paths[0].read_text(encoding='utf-8'))
           if export_audit.get('version') != version or not all(export_audit.get(k) is True for k in
-              ('thin_double_sided', 'physical_glass', 'alpha_fallback', 'emissive', 'normal_map_tangent', 'obj_geometry_only', 'fastnoise_and_poisson')):
+              ('thin_double_sided', 'physical_glass', 'alpha_fallback', 'emissive', 'normal_map_tangent', 'obj_geometry_only', 'fastnoise_and_poisson', 'spatial_passport_fast_and_detail', 'embedded_license_bundle')):
               raise SystemExit('Проверка экспорта и новых инструментов через EXE не прошла')
           shutil.copy2(export_paths[0], out / f'Forma3D-{version}-export-exe-check.json')
           for license_name in ('FastNoiseLite-MIT.txt', 'PyFastNoiseLite-0.0.7-MIT.txt'):

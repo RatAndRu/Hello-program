@@ -14,6 +14,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import zipfile
 from urllib.request import Request, urlopen
 
 import numpy as np
@@ -67,6 +68,22 @@ def run(exe: Path | None):
                     time.sleep(.5)
             if state.get('version') != __version__:
                 raise RuntimeError('Версия EXE не совпадает с исходниками')
+
+            licenses = post('/api/licenses', {})
+            with zipfile.ZipFile(Path(temp) / 'exports' / licenses['name']) as zf:
+                names = set(zf.namelist())
+                required = {'manifest.json', 'vendor/THREE_LICENSE.txt', 'vendor/NVIDIA-FXAA-BSD.txt',
+                            'vendor/Microsoft-WebView2-SDK.txt', 'vendor/human_skeleton.LICENSE.txt',
+                            'vendor/FastNoiseLite-MIT.txt', 'vendor/proxy-tools-BSD.txt'}
+                if not required <= names:
+                    raise RuntimeError(f'В EXE отсутствуют уведомления: {required - names}')
+                manifest = json.loads(zf.read('manifest.json'))
+                installed = {p['name'].lower().replace('_', '-'): p for p in manifest['packages']}
+                for package in ('numpy', 'manifold3d', 'trimesh', 'pywebview', 'pyinstaller', 'pyfastnoiselite'):
+                    if package not in installed or not installed[package]['license_files']:
+                        raise RuntimeError(f'В EXE нет файлов лицензии {package}')
+                if 'CC BY-SA 4.0' not in zf.read('vendor/human_skeleton.LICENSE.txt').decode('utf-8'):
+                    raise RuntimeError('Нет авторства и лицензии скелета в EXE')
 
             payload = post('/api/build', {'script': 'a = box size=[200,100,60]', 'auto': False})
             if not payload.get('ok'):
@@ -148,11 +165,35 @@ def run(exe: Path | None):
             mats = {m.get('name'): m for m in sample_doc['materials']}
             if mats.get('mat_пластина', {}).get('normalTexture', {}).get('scale') != 1.0:
                 raise RuntimeError('Клеточная карта нормалей не экспортирована')
+
+            passport_script = 'a = box size=[20,30,40] at=[0,0,0]\nb = box size=[20,30,40] at=[40,0,0]\n'
+            result = post('/api/build', {'script': passport_script, 'auto': False})
+            if not result.get('ok'):
+                raise RuntimeError(f"Сцена паспорта не построена: {result.get('error')}")
+            for mode, expected in (('fast', 6), ('detail', 18)):
+                exported = post('/api/export', {'format': 'passport-' + mode})
+                with zipfile.ZipFile(Path(temp) / 'exports' / exported['name']) as zf:
+                    data = json.loads(zf.read('passport.json'))
+                    if zf.read('source.forma').decode('utf-8') != passport_script:
+                        raise RuntimeError('Сценарий в паспорте отличается от построенного')
+                    if data['mode'] != mode or len(data['facts']['sections']) != expected:
+                        raise RuntimeError('Неверные режимы и количество сечений паспорта')
+                    a = data['facts']['objects'][0]
+                    if a['size_mm'] != [20, 30, 40] or a['bbox_center_mm'] != [0, 0, 20]:
+                        raise RuntimeError('Неверные габариты в паспорте')
+                    pair = data['facts']['bbox_relations']['pairs'][0]
+                    if pair['axes']['x']['bbox_gap_mm'] != 20 or data['hypotheses']:
+                        raise RuntimeError('Неверное отношение коробок или выдана недоказанная гипотеза')
+                    if any(s['status'] != 'ok' for s in data['facts']['sections']):
+                        raise RuntimeError('Ошибка контрольных сечений')
+                    if 'Ограничения' not in zf.read('ПАСПОРТ.md').decode('utf-8'):
+                        raise RuntimeError('Не указаны ограничения паспорта')
             return {'version': __version__, 'standard_extents_m': [.2, .06, .1],
                     'preview_extents_mm': [200, 60, 100], 'roundtrip_mm': [200, 100, 60],
                     'thin_double_sided': True, 'physical_glass': True,
                     'alpha_fallback': True, 'emissive': True, 'normal_map_tangent': True,
                     'obj_geometry_only': True, 'fastnoise_and_poisson': True,
+                    'spatial_passport_fast_and_detail': True, 'embedded_license_bundle': True,
                     'poisson_min_center_mm': float(distances.min()),
                     'note': 'Проверены данные EXE, не визуальная идентичность рендереров.'}
         finally:

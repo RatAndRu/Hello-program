@@ -46,7 +46,7 @@ hiddenimports += [
     "forma.ops_basic", "forma.ops_contour", "forma.ops_curves", "forma.ops_shape", "forma.ops_scene",
     "forma.contour", "forma.semantic_diff",
     "forma.ops_sdf", "forma.render", "forma.webui", "forma.cli", "forma.checks",
-    "forma.collide", "forma.metrics", "forma.agent", "forma.geometry", "forma.values",
+    "forma.collide", "forma.metrics", "forma.spatial_passport", "forma.agent", "forma.geometry", "forma.values",
     "forma.eval", "forma.fuzz",
     "forma.mesher", "forma.sdf", "forma.anatomy", "forma.skeleton_original", "forma.ops_skeleton", "forma.ops_organic", "forma.textures", "forma.noise",
     "pyfastnoiselite.pyfastnoiselite",
@@ -61,6 +61,11 @@ hiddenimports += [
 ]
 
 # интерфейс, примеры и встроенная карта рельефа кладём внутрь exe
+license_bundle = ROOT / "build" / "third-party-licenses"
+if not license_bundle.is_dir():
+    raise RuntimeError("Сначала выполните python tools/collect_licenses.py в среде сборки")
+datas += [(str(license_bundle), "third-party-licenses")]
+
 datas += [(str(ROOT / "web"), "web"), (str(ROOT / "examples"), "examples"),
           (str(ROOT / "benchmarks"), "benchmarks"),
           (str(ROOT / "docs" / "pattern.png"), "docs"),

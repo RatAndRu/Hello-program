@@ -8547,6 +8547,14 @@ function closeHelp() {
   syncViewportSuspension();
 }
 $('btn-help').addEventListener('click', openHelp);
+$('btn-licenses')?.addEventListener('click', async () => {
+  try {
+    const res = await api('/api/licenses', {});
+    exportSaved(res, 'Лицензии');
+  } catch (err) {
+    toast(err.message || 'Не удалось сохранить лицензии', 'bad');
+  }
+});
 $('help-close').addEventListener('click', closeHelp);
 // Закрываем только если и нажали, и отпустили на затемнении: иначе выделение
 // текста мышью с «вылетом» за карточку закрывало справочник.
