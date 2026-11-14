@@ -10,6 +10,14 @@ sys.setrecursionlimit(20000)  # mediapipe/hooks иногда уходят в г�
 
 from PyInstaller.utils.hooks import collect_all
 
+# Пути в .spec считаются от каталога самого spec-файла, поэтому все пути
+# к проекту строим явно от корня репозитория.
+try:
+    SPEC_DIR = os.path.abspath(SPECPATH)          # подставляет PyInstaller
+except NameError:                                 # pragma: no cover
+    SPEC_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(SPEC_DIR)
+
 datas, binaries, hiddenimports = [], [], []
 
 # MediaPipe тянет за собой бинарники, tflite-модули и data-файлы — только
@@ -25,15 +33,15 @@ for package in ("mediapipe", "pystray", "cv2"):
 
 # Модели .task можно положить внутрь сборки (тогда они всегда под рукой),
 # но по умолчанию не кладём: build-exe.bat копирует их рядом с EXE.
-models_dir = os.path.abspath("models")
+models_dir = os.path.join(ROOT, "models")
 if os.path.isdir(models_dir) and "--with-models" in sys.argv:
     for name in os.listdir(models_dir):
         if name.endswith(".task"):
             datas.append((os.path.join(models_dir, name), "models"))
 
 a = Analysis(
-    ["packaging/airmouse_entry.py"],
-    pathex=[os.path.abspath(".")],
+    [os.path.join(SPEC_DIR, "airmouse_entry.py")],
+    pathex=[ROOT],
     binaries=binaries,
     datas=datas,
     hiddenimports=hiddenimports,
