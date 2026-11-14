@@ -251,12 +251,15 @@ jobs:
           cp examples/assets/human_skeleton_original.audit.json release/АУДИТ_ОРИГИНАЛЬНОГО_СКЕЛЕТА.json
           python - <<'PY'
           from pathlib import Path
+          import shutil
           import zipfile, sys
           sys.path.insert(0, '.')
           from forma.agent import command_reference_md
           from forma.instruction import full_instruction, commands_catalog
           from forma.version import __version__
           root = Path('release')
+          shutil.copytree('build/third-party-licenses', root / 'ЛИЦЕНЗИИ', dirs_exist_ok=True)
+          shutil.copyfile('docs/spatial_passport_0765.md', root / 'ПРОСТРАНСТВЕННЫЙ_ПАСПОРТ.md')
           (root / 'СПРАВКА_КОМАНДЫ.md').write_text(command_reference_md(), encoding='utf-8')
           (root / 'ИНСТРУКЦИЯ_ДЛЯ_НЕЙРОСЕТИ.md').write_text(full_instruction(), encoding='utf-8')
           (root / 'ВСЕ_КОМАНДЫ.md').write_text(commands_catalog(), encoding='utf-8')
@@ -277,11 +280,15 @@ jobs:
           exe_zip = Path(f'Forma3D-{__version__}-exe.zip')
           with zipfile.ZipFile(exe_zip, 'w', zipfile.ZIP_DEFLATED, compresslevel=6) as zf:
               zf.write(exe_path, 'Forma3D.exe')
+              zf.write(root / 'ЧИТАЙ_МЕНЯ.txt', 'ЧИТАЙ_МЕНЯ.txt')
+              for path in sorted((root / 'ЛИЦЕНЗИИ').rglob('*')):
+                  if path.is_file():
+                      zf.write(path, path.relative_to(root))
           with zipfile.ZipFile(exe_zip) as zf:
-              assert zf.namelist() == ['Forma3D.exe'], zf.namelist()
+              assert 'ЛИЦЕНЗИИ/manifest.json' in zf.namelist(), zf.namelist()
               assert zf.testzip() is None
               assert zf.read('Forma3D.exe') == exe_path.read_bytes()
-          print('EXE-only ZIP:', exe_zip, exe_zip.stat().st_size, 'байт; только Forma3D.exe')
+          print('EXE ZIP:', exe_zip, exe_zip.stat().st_size, 'байт; EXE и лицензионные уведомления')
           PY
 
       - name: Подготовить ZIP только с изменёнными файлами

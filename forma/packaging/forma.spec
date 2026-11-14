@@ -61,9 +61,11 @@ hiddenimports += [
 ]
 
 # интерфейс, примеры и встроенная карта рельефа кладём внутрь exe
+# Собираем уведомления при каждом запуске spec в той же среде, даже когда
+# сборщик вызван напрямую или используется другой Windows workflow.
+import runpy
+runpy.run_path(str(ROOT / "tools" / "collect_licenses.py"), run_name="__main__")
 license_bundle = ROOT / "build" / "third-party-licenses"
-if not license_bundle.is_dir():
-    raise RuntimeError("Сначала выполните python tools/collect_licenses.py в среде сборки")
 datas += [(str(license_bundle), "third-party-licenses")]
 
 datas += [(str(ROOT / "web"), "web"), (str(ROOT / "examples"), "examples"),
