@@ -6,13 +6,15 @@
 import os
 import sys
 
+sys.setrecursionlimit(20000)  # mediapipe/hooks иногда уходят в глубокую рекурсию
+
 from PyInstaller.utils.hooks import collect_all
 
 datas, binaries, hiddenimports = [], [], []
 
 # MediaPipe тянет за собой бинарники, tflite-модули и data-файлы — только
 # collect_all собирает это корректно.
-for package in ("mediapipe", "pystray"):
+for package in ("mediapipe", "pystray", "cv2"):
     try:
         d, b, h = collect_all(package)
         datas += d

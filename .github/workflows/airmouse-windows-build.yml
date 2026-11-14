@@ -59,7 +59,16 @@ jobs:
           fi
 
       - name: Сборка EXE
-        run: python -m PyInstaller --noconfirm --clean packaging/airmouse.spec
+        run: |
+          set +e
+          python -m PyInstaller --noconfirm --clean packaging/airmouse.spec > build.log 2>&1
+          status=$?
+          tail -n 60 build.log
+          if [ $status -ne 0 ]; then
+            echo "::error::PyInstaller exit=$status"
+            tail -n 50 build.log | sed 's/^/::error::/'
+            exit $status
+          fi
 
       - name: Документация и модели рядом с EXE
         run: |
