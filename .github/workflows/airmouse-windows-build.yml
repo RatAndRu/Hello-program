@@ -33,7 +33,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pyinstaller
+          pip install pyinstaller pytest
 
       - name: Модели MediaPipe
         run: |
@@ -44,10 +44,19 @@ jobs:
             https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
           ls -la models
 
-      - name: Самопроверка логики
+      - name: Проверки логики (pytest + selftest)
         run: |
-          python -m pytest tests -q
-          python -m airmouse selftest
+          set +e
+          python -m pytest tests -q > checks.log 2>&1
+          py_status=$?
+          python -m airmouse selftest >> checks.log 2>&1
+          st_status=$?
+          cat checks.log
+          if [ $py_status -ne 0 ] || [ $st_status -ne 0 ]; then
+            echo "::error::pytest=$py_status selftest=$st_status"
+            tail -n 40 checks.log | sed 's/^/::error::/'
+            exit 1
+          fi
 
       - name: Сборка EXE
         run: python -m PyInstaller --noconfirm --clean packaging/airmouse.spec
