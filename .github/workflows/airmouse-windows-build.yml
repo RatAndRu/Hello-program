@@ -80,6 +80,32 @@ jobs:
           du -sh dist/AirMouse
           ls -la dist/AirMouse | head -20
 
+      - name: Дымовой тест собранного EXE
+        run: |
+          cd dist/AirMouse
+          echo "--- версия (оконная сборка, без консоли) ---"
+          ./AirMouse.exe --version
+          echo "оконный EXE exit=$?"
+          echo "--- встроенные проверки логики ---"
+          ./AirMouse-debug.exe selftest
+          echo "selftest exit=$?"
+          echo "--- демо без камеры (рендер cv2 + PIL) ---"
+          ./AirMouse-debug.exe demo --out smoke-out
+          echo "demo exit=$?"
+          echo "--- словарь губ ---"
+          ./AirMouse-debug.exe lip list
+          echo "--- что в сборке ---"
+          ls -la
+          du -sh .
+          for f in AirMouse.exe AirMouse-debug.exe models/hand_landmarker.task models/face_landmarker.task; do
+            if [ -f "$f" ]; then
+              echo "::notice::есть $f ($(stat -c%s "$f") байт)"
+            else
+              echo "::error::НЕТ $f"; exit 1
+            fi
+          done
+          echo "::notice::дымовой тест EXE пройден"
+
       - name: Архив
         run: |
           cd dist
