@@ -1,0 +1,280 @@
+"""Мимика: моргание, улыбка, брови, поворот головы.
+
+Всё считается из геометрии 468 точек лица — без нейросетей-классификаторов
+эмоций. Пороги относительные (в единицах межзрачкового расстояния), поэтому
+не зависят от размера лица в кадре.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from typing import List, Optional
+
+import numpy as np
+
+from .config import FaceConfig
+from .filters import Cooldown, HoldTimer, deadzone
+from .gestures import Event
+from .landmarks import F, Face, distance, safe_div
+
+
+@dataclass
+class FaceMetrics:
+    """Сырые измерения лица (без порогов и без сравнения с нейтралью)."""
+
+    ear_left: float = 0.3
+    ear_right: float = 0.3
+    mouth_width: float = 0.0       # в единицах межзрачкового расстояния
+    mouth_open: float = 0.0        # просвет между губами / ширина рта
+    corner_lift: float = 0.0
+    brow_height: float = 0.0
+    yaw: float = 0.0               # градусы, приблизительно
+    pitch: float = 0.0
+    roll: float = 0.0
+    interocular: float = 0.0
+    valid: bool = False
+
+    def as_vector(self) -> np.ndarray:
+        return np.array([
+            self.mouth_open,
+            self.mouth_width,
+            self.corner_lift,
+            self.brow_height,
+        ])
+
+
+def _ear(face: Face, idx) -> float:
+    p1, p2, p3, p4, p5, p6 = (face.xy(i) for i in idx)
+    horiz = distance(p1, p4)
+    if horiz < 1e-6:
+        return 0.0
+    return (distance(p2, p6) + distance(p3, p5)) / (2.0 * horiz)
+
+
+def measure_face(face: Face) -> FaceMetrics:
+    """Считает все метрики лица за один проход."""
+    io = face.scale
+    if io < 1e-5:
+        return FaceMetrics(valid=False)
+
+    ear_l = _ear(face, F.EYE_A)
+    ear_r = _ear(face, F.EYE_B)
+
+    m_left = face.xy(F.MOUTH_LEFT)
+    m_right = face.xy(F.MOUTH_RIGHT)
+    width = distance(m_left, m_right) / io
+
+    inner_gap = distance(face.xy(F.LIP_TOP_INNER), face.xy(F.LIP_BOTTOM_INNER))
+    inner_width = distance(face.xy(F.LIP_LEFT_INNER), face.xy(F.LIP_RIGHT_INNER))
+    mouth_open = safe_div(inner_gap, max(inner_width, 1e-6))
+
+    # Уголки губ вверх = улыбка. Меряем относительно середины линии рта.
+    corners_y = (m_left[1] + m_right[1]) / 2.0
+    lip_center_y = (face.xy(F.LIP_TOP_INNER)[1] + face.xy(F.LIP_BOTTOM_INNER)[1]) / 2.0
+    corner_lift = (lip_center_y - corners_y) / io
+
+    brow_h = (
+        (face.xy(F.EYE_A_TOP)[1] - face.xy(F.BROW_A)[1])
+        + (face.xy(F.EYE_B_TOP)[1] - face.xy(F.BROW_B)[1])
+    ) / 2.0 / io
+
+    eye_mid = (face.xy(F.EYE_A[0]) + face.xy(F.EYE_B[3])) / 2.0
+    nose = face.xy(F.NOSE_TIP)
+    yaw = math.degrees(math.atan2(nose[0] - eye_mid[0], io)) * 1.0
+    pitch = math.degrees(math.atan2(nose[1] - eye_mid[1], io)) * 1.0
+    eye_a = face.xy(F.EYE_A[0])
+    eye_b = face.xy(F.EYE_B[3])
+    roll = math.degrees(math.atan2(eye_b[1] - eye_a[1], eye_b[0] - eye_a[0]))
+
+    return FaceMetrics(
+        ear_left=ear_l,
+        ear_right=ear_r,
+        mouth_width=width,
+        mouth_open=mouth_open,
+        corner_lift=corner_lift,
+        brow_height=brow_h,
+        yaw=yaw,
+        pitch=pitch,
+        roll=roll,
+        interocular=io,
+        valid=True,
+    )
+
+
+class _BlinkTracker:
+    """Гистерезис по EAR: глаз считается закрытым, пока EAR ниже порога."""
+
+    def __init__(self, closed_below: float, open_above: float) -> None:
+        self.closed_below = closed_below
+        self.open_above = open_above
+        self.closed = False
+        self.since: Optional[float] = None
+
+    def update(self, ear: float, now: float) -> Optional[float]:
+        """Возвращает длительность закрытия, когда глаз снова открылся."""
+        if self.closed:
+            if ear > self.open_above:
+                self.closed = False
+                dur = 0.0 if self.since is None else now - self.since
+                self.since = None
+                return dur
+        else:
+            if ear < self.closed_below:
+                self.closed = True
+                self.since = now
+        return None
+
+
+@dataclass
+class FaceBaseline:
+    """Нейтральное выражение конкретного человека (калибруется на старте)."""
+
+    smile: float = 0.0
+    brow: float = 0.0
+    pitch: float = 0.0
+    yaw: float = 0.0
+    samples: int = 0
+
+    def update(self, m: FaceMetrics, alpha: float = 0.05) -> None:
+        if not m.valid:
+            return
+        if self.samples == 0:
+            self.smile = m.mouth_width
+            self.brow = m.brow_height
+            self.pitch = m.pitch
+            self.yaw = m.yaw
+        else:
+            self.smile = alpha * m.mouth_width + (1 - alpha) * self.smile
+            self.brow = alpha * m.brow_height + (1 - alpha) * self.brow
+            self.pitch = alpha * m.pitch + (1 - alpha) * self.pitch
+            self.yaw = alpha * m.yaw + (1 - alpha) * self.yaw
+        self.samples += 1
+
+    @property
+    def ready(self) -> bool:
+        return self.samples >= 10
+
+
+class FaceFSM:
+    """Мимические жесты: двойное моргание, подмигивание, улыбка, брови."""
+
+    def __init__(self, cfg: FaceConfig) -> None:
+        self.cfg = cfg
+        self.baseline = FaceBaseline()
+        self.left = _BlinkTracker(cfg.ear_blink, cfg.ear_open)
+        self.right = _BlinkTracker(cfg.ear_blink, cfg.ear_open)
+        self.cooldown = Cooldown(0.5)
+        self.smile_hold = HoldTimer(cfg.smile_hold_s)
+        self.brow_hold = HoldTimer(cfg.brow_hold_s)
+        self._last_blink_t: Optional[float] = None
+        self._closed_since: Optional[float] = None
+        self._both_closed_seen = False
+        self.smile_score = 0.0
+        self.brow_score = 0.0
+        self.rel_yaw = 0.0
+        self.rel_pitch = 0.0
+        self.mouth_open = 0.0
+        self.ear_value = 0.3
+
+    # ------------------------------------------------------------------ #
+    def calibrate(self, m: FaceMetrics) -> None:
+        self.baseline = FaceBaseline()
+        self.baseline.update(m)
+
+    def reset(self) -> None:
+        self.left = _BlinkTracker(self.cfg.ear_blink, self.cfg.ear_open)
+        self.right = _BlinkTracker(self.cfg.ear_blink, self.cfg.ear_open)
+        self.smile_hold.reset()
+        self.brow_hold.reset()
+        self.cooldown.reset()
+        self._last_blink_t = None
+        self._closed_since = None
+
+    # ------------------------------------------------------------------ #
+    def update(self, m: Optional[FaceMetrics], now: float) -> List[Event]:
+        events: List[Event] = []
+        if m is None or not m.valid:
+            self._closed_since = None
+            return events
+
+        self.ear_value = min(m.ear_left, m.ear_right)
+        self.mouth_open = m.mouth_open
+
+        # --- базовая линия: медленно подтягивается, когда лицо спокойно --- #
+        gesture_active = (m.mouth_width - self.baseline.smile) > self.cfg.smile_delta * 1.5
+        if self.baseline.samples == 0:
+            self.baseline.update(m)          # первый кадр — сразу нейтраль
+        elif not gesture_active:
+            self.baseline.update(m, alpha=0.02)
+
+        self.smile_score = m.mouth_width - self.baseline.smile
+        self.brow_score = m.brow_height - self.baseline.brow
+        self.rel_yaw = m.yaw - self.baseline.yaw
+        self.rel_pitch = m.pitch - self.baseline.pitch
+
+        # --- моргание и подмигивание ------------------------------------ #
+        dl = self.left.update(m.ear_left, now)
+        dr = self.right.update(m.ear_right, now)
+        both_open = not self.left.closed and not self.right.closed
+        both_closed = self.left.closed and self.right.closed
+
+        if both_closed:
+            if self._closed_since is None:
+                self._closed_since = now
+            self._both_closed_seen = True
+
+        # Оба глаза закрыты долго — «зажмурился», это не моргание.
+        long_close = (
+            self._closed_since is not None
+            and (now - self._closed_since) > self.cfg.blink_max_s
+        )
+        if long_close and self.cooldown.try_fire("eyes_closed", now):
+            events.append(Event("eyes_closed_hold", label="глаза закрыты"))
+
+        for side, dur, other_closed in (
+            ("left", dl, self.right.closed),
+            ("right", dr, self.left.closed),
+        ):
+            if dur is None or dur > 2.0:
+                continue
+            if self._both_closed_seen:
+                # моргание обоими глазами: короткое — кандидат в «двойное»
+                if self.cfg.blink_min_s <= dur <= self.cfg.blink_max_s:
+                    if self._last_blink_t is not None and (
+                        now - self._last_blink_t
+                    ) <= self.cfg.double_blink_window_s:
+                        if self.cooldown.try_fire("double_blink", now):
+                            events.append(Event("double_blink", label="двойное моргание"))
+                        self._last_blink_t = None
+                    else:
+                        self._last_blink_t = now
+            elif dur >= 0.20 and not other_closed:
+                # закрыт ровно один глаз — подмигивание
+                events.append(Event(f"wink_{side}", label=f"wink {side}"))
+
+        if both_open and not events:
+            self._closed_since = None
+            self._both_closed_seen = False
+
+        # --- улыбка ---------------------------------------------------- #
+        smile_now = self.smile_score > self.cfg.smile_delta
+        if self.smile_hold.update(smile_now, now):
+            if self.cooldown.try_fire("smile", now):
+                events.append(Event("smile_hold", label="улыбка"))
+
+        # --- брови ------------------------------------------------------ #
+        brow_now = self.brow_score > self.cfg.brow_delta
+        if self.brow_hold.update(brow_now, now):
+            if self.cooldown.try_fire("brow", now):
+                events.append(Event("brow_hold", label="брови"))
+
+        return events
+
+    # ------------------------------------------------------------------ #
+    def head_velocity(self, dt: float) -> tuple:
+        """Скорость курсора от поворота головы (градусы -> доли кадра)."""
+        dz = self.cfg.head_deadzone_deg
+        yaw = deadzone(self.rel_yaw, dz)
+        pitch = deadzone(self.rel_pitch, dz)
+        return (yaw * dt / 90.0 * 1.6, pitch * dt / 90.0 * 1.6)

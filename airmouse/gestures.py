@@ -1,0 +1,436 @@
+"""Распознавание жестов кисти и конечный автомат событий.
+
+Слой полностью независим от камеры: на вход — 21 точка кисти, на выход —
+список событий (движение указателя, щипок, прокрутка и т.д.).
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from enum import Enum
+from typing import Dict, List, Optional, Tuple
+
+import numpy as np
+
+from .config import HandConfig
+from .filters import Cooldown, HoldTimer, StabilityGate, clamp
+from .landmarks import (
+    FINGERS,
+    INDEX_MCP,
+    INDEX_TIP,
+    MIDDLE_TIP,
+    RING_TIP,
+    THUMB_MCP,
+    THUMB_TIP,
+    WRIST,
+    Hand,
+    angle_deg,
+    distance,
+    safe_div,
+)
+
+
+class Pose(str, Enum):
+    NONE = "none"
+    OPEN_PALM = "open_palm"
+    FIST = "fist"
+    PINCH = "pinch"
+    MIDDLE_PINCH = "middle_pinch"
+    RING_PINCH = "ring_pinch"
+    POINT = "point"
+    PEACE = "peace"
+    THREE = "three"
+    THUMB_UP = "thumb_up"
+    THUMB_DOWN = "thumb_down"
+
+
+POSE_TITLES_RU = {
+    Pose.NONE: "—",
+    Pose.OPEN_PALM: "ладонь",
+    Pose.FIST: "кулак",
+    Pose.PINCH: "щипок",
+    Pose.MIDDLE_PINCH: "щипок ср.",
+    Pose.RING_PINCH: "щипок без.",
+    Pose.POINT: "указательный",
+    Pose.PEACE: "два пальца",
+    Pose.THREE: "три пальца",
+    Pose.THUMB_UP: "большой палец",
+    Pose.THUMB_DOWN: "большой вниз",
+}
+
+
+@dataclass
+class Event:
+    """Событие распознавания. ``value`` — полезная нагрузка, ``label`` — для лога."""
+
+    kind: str
+    value: object = None
+    label: str = ""
+
+    def __repr__(self) -> str:  # для отладки и тестов
+        if self.value is None:
+            return f"Event({self.kind})"
+        return f"Event({self.kind}, {self.value})"
+
+
+@dataclass
+class HandFeatures:
+    """Числовые признаки кисти (всё нормировано на размер ладони)."""
+
+    palm_size: float
+    palm_center: np.ndarray
+    pointer: np.ndarray
+    extension: Dict[str, float]
+    pinch: float
+    pinch_middle: float
+    pinch_ring: float
+    thumb_dy: float = 0.0      # насколько кончик большого пальца выше основания
+    thumb_spread: float = 0.0  # насколько большой палец отставлен от ладони      # насколько кончик большого пальца выше основания
+    valid: bool = True
+    fast_motion: float = 0.0
+
+    @property
+    def extended(self) -> Dict[str, bool]:
+        return {name: val > 0.5 for name, val in self.extension.items()}
+
+    @property
+    def n_extended(self) -> int:
+        return sum(1 for v in self.extended.values() if v)
+
+
+def _finger_extension(hand: Hand, name: str) -> float:
+    """0 — палец сжат в кулак, 1 — выпрямлен.
+
+    Комбинация двух инвариантных к повороту признаков:
+    * «прямизна» — угол в проксимальном суставе (у согнутого он мал);
+    * «вытянутость» — во сколько раз кончик дальше от запястья, чем основание.
+    """
+    mcp, pip, dip, tip = FINGERS[name]
+    base = THUMB_MCP if name == "thumb" else mcp
+    straight = clamp((angle_deg(hand.xy(mcp), hand.xy(pip), hand.xy(tip)) - 55.0) / 95.0, 0.0, 1.0)
+    stretch = safe_div(distance(hand.xy(tip), hand.xy(WRIST)), distance(hand.xy(base), hand.xy(WRIST)), 1.0)
+    stretched = clamp((stretch - 0.95) / 0.50, 0.0, 1.0)
+    return 0.55 * straight + 0.45 * stretched
+
+
+def analyze_hand(hand: Hand, pointer_source: str = "auto") -> HandFeatures:
+    """Считает признаки кисти. Не бросает исключений — лучше отдать valid=False."""
+    palm = hand.palm_size
+    if palm < 1e-4:
+        return HandFeatures(0.0, np.zeros(2), np.zeros(2), {}, 1.0, 1.0, 1.0, valid=False)
+
+    ext = {name: _finger_extension(hand, name) for name in FINGERS}
+    thumb_tip = hand.xy(THUMB_TIP)
+
+    pinch = distance(thumb_tip, hand.xy(INDEX_TIP)) / palm
+    pinch_middle = distance(thumb_tip, hand.xy(MIDDLE_TIP)) / palm
+    pinch_ring = distance(thumb_tip, hand.xy(RING_TIP)) / palm
+
+    palm_center = hand.palm_center
+    index_tip = hand.xy(INDEX_TIP)
+    if pointer_source == "index_tip":
+        pointer = index_tip
+    elif pointer_source == "palm":
+        pointer = palm_center
+    else:  # auto: указываем кончиком указательного, раскрытой ладонью — центром
+        pointer = index_tip if ext["index"] > 0.5 else palm_center
+
+    thumb_dy = float((thumb_tip[1] - hand.xy(THUMB_MCP)[1]) / palm)
+    thumb_spread = distance(thumb_tip, hand.xy(INDEX_MCP)) / palm
+
+    return HandFeatures(
+        palm_size=palm,
+        palm_center=palm_center,
+        pointer=pointer,
+        extension=ext,
+        pinch=pinch,
+        pinch_middle=pinch_middle,
+        pinch_ring=pinch_ring,
+        thumb_dy=thumb_dy,
+        thumb_spread=thumb_spread,
+        valid=True,
+    )
+
+
+def classify_pose(f: HandFeatures, cfg: HandConfig) -> Pose:
+    """Статический жест по признакам кисти."""
+    if not f.valid:
+        return Pose.NONE
+    e = f.extended
+    n = f.n_extended
+
+    # 1. Щипки — раньше счёта пальцев, иначе щипок не отличить от «указательного».
+    if f.pinch < cfg.pinch_ratio and e["index"] and e["thumb"]:
+        return Pose.PINCH
+    if f.pinch_middle < cfg.pinch_ratio and e["middle"] and e["thumb"] and not e["index"]:
+        return Pose.MIDDLE_PINCH
+    if f.pinch_ring < cfg.pinch_ratio and e["ring"] and e["thumb"] and not e["index"] and not e["middle"]:
+        return Pose.RING_PINCH
+
+    # 2. Кулак / раскрытая ладонь.
+    if n == 0:
+        return Pose.FIST
+    if all(e[k] for k in ("index", "middle", "ring", "pinky")):
+        return Pose.OPEN_PALM
+
+    # 3. Счёт выпрямленных пальцев (большой не учитываем — он почти всегда «полусогнут»).
+    fingers = [e["index"], e["middle"], e["ring"], e["pinky"]]
+    count = sum(fingers)
+    if count == 1 and fingers[0]:
+        return Pose.POINT
+    if count == 2 and fingers[0] and fingers[1]:
+        return Pose.PEACE
+    if count == 3 and fingers[0] and fingers[1] and fingers[2]:
+        return Pose.THREE
+    if count == 0 and e["thumb"] and f.thumb_spread > 0.60:
+        # Большой палец вверх/вниз — по направлению от основания к кончику.
+        # ``thumb_spread`` отсекает кулак, в котором большой палец просто лежит
+        # вдоль указательного, а не выставлен в сторону.
+        return Pose.THUMB_UP if f.thumb_dy < -0.15 else Pose.THUMB_DOWN
+    return Pose.NONE
+
+
+def recognize_pose(hand: Optional[Hand], cfg: HandConfig) -> Pose:
+    """Удобная обёртка: точки -> жест, без автомата состояний."""
+    if hand is None:
+        return Pose.NONE
+    return classify_pose(analyze_hand(hand, cfg.pointer_source), cfg)
+
+
+def analyze_with_pose(hand: Hand, cfg: HandConfig):
+    feats = analyze_hand(hand, cfg.pointer_source)
+    return feats, classify_pose(feats, cfg)
+
+
+class HandFSM:
+    """Превращает поток признаков в поток событий (клик, драг, прокрутка, пауза)."""
+
+    def __init__(self, cfg: HandConfig) -> None:
+        self.cfg = cfg
+        self.pose_gate = StabilityGate(cfg.pose_stable_frames)
+        self.cooldown = Cooldown(cfg.click_cooldown_s)
+        self.open_palm_hold = HoldTimer(cfg.open_palm_hold_s)
+        self._pinching = False
+        self._pinch_since = 0.0
+        self._dragging = False
+        self._middle_pinching = False
+        self._middle_since = 0.0
+        self._fist_anchor_y: Optional[float] = None
+        self._scroll_accum = 0.0
+        self._prev_pointer: Optional[np.ndarray] = None
+        self._last_pose = Pose.NONE
+        self._thumb_fired = False
+
+    # ------------------------------------------------------------------ #
+    def reset(self) -> None:
+        self.pose_gate.reset()
+        self.open_palm_hold.reset()
+        self._pinching = False
+        self._dragging = False
+        self._middle_pinching = False
+        self._fist_anchor_y = None
+        self._scroll_accum = 0.0
+        self._prev_pointer = None
+        self._last_pose = Pose.NONE
+        self._thumb_fired = False
+
+    @property
+    def pinching(self) -> bool:
+        return self._pinching
+
+    @property
+    def dragging(self) -> bool:
+        return self._dragging
+
+    # ------------------------------------------------------------------ #
+    def update(self, hand: Optional[Hand], now: float) -> List[Event]:
+        events: List[Event] = []
+        if hand is None:
+            if self._dragging:
+                events.append(Event("drag_end", label="рука потеряна"))
+                self._dragging = False
+            self._pinching = False
+            self._middle_pinching = False
+            self._fist_anchor_y = None
+            self.pose_gate.update(None)
+            self.open_palm_hold.reset()
+            self._prev_pointer = None
+            return events
+
+        f = analyze_hand(hand, self.cfg.pointer_source)
+        if not f.valid:
+            return events
+
+        # Скорость указателя — для «рывков» и для индикатора в оверлее.
+        if self._prev_pointer is not None:
+            f.fast_motion = float(np.linalg.norm(f.pointer - self._prev_pointer))
+        self._prev_pointer = f.pointer
+
+        pose = classify_pose(f, self.cfg)
+        stable = self.pose_gate.update(pose.value)
+
+        # ---------------- щипок указательным: клик / перетаскивание -------- #
+        if self._pinching:
+            if f.pinch > self.cfg.pinch_release_ratio:
+                self._pinching = False
+                if self._dragging:
+                    self._dragging = False
+                    events.append(Event("drag_end", label="отпустил"))
+                elif self.cooldown.try_fire("pinch", now):
+                    events.append(Event("pinch_release", label="левый клик"))
+            else:
+                if not self._dragging and (now - self._pinch_since) >= self.cfg.drag_delay_s:
+                    self._dragging = True
+                    events.append(Event("drag_start", label="перетаскивание"))
+                if self._dragging:
+                    events.append(Event("pointer", value=tuple(f.pointer)))
+                else:
+                    events.append(Event("pointer_freeze", label="щипок"))
+        else:
+            started = pose == Pose.PINCH and f.pinch < self.cfg.pinch_ratio
+            if started:
+                self._pinching = True
+                self._pinch_since = now
+                events.append(Event("pointer_freeze", label="щипок начат"))
+
+        # ---------------- щипок средним: правый клик ---------------------- #
+        if not self._pinching:
+            if self._middle_pinching:
+                if f.pinch_middle > self.cfg.pinch_release_ratio:
+                    self._middle_pinching = False
+                    if self.cooldown.try_fire("middle", now):
+                        events.append(Event("middle_pinch_release", label="правый клик"))
+            elif pose == Pose.MIDDLE_PINCH:
+                self._middle_pinching = True
+                self._middle_since = now
+                events.append(Event("pointer_freeze", label="щипок средним"))
+
+        # ---------------- прокрутка кулаком ------------------------------- #
+        if pose == Pose.FIST and not self._pinching:
+            y = float(f.palm_center[1])
+            if self._fist_anchor_y is None:
+                self._fist_anchor_y = y
+            dy = self._fist_anchor_y - y
+            self._fist_anchor_y = y
+            if abs(dy) > self.cfg.fist_scroll_deadzone:
+                self._scroll_accum += dy * self.cfg.fist_scroll_gain
+                ticks = int(self._scroll_accum)
+                if ticks:
+                    self._scroll_accum -= ticks
+                    events.append(Event("scroll", value=ticks, label="прокрутка"))
+        else:
+            self._fist_anchor_y = None
+            self._scroll_accum = 0.0
+
+        # ---------------- раскрытая ладонь: пауза ------------------------- #
+        # Пауза срабатывает только на НЕПОДВИЖНОЙ ладони: если человек ведёт
+        # курсор, рука двигается и жест паузы не мешает работе.
+        still = f.fast_motion < self.cfg.pause_max_motion
+        fired = self.open_palm_hold.update(pose == Pose.OPEN_PALM and still, now)
+        if fired and self.cooldown.try_fire("open_palm", now):
+            events.append(Event("open_palm_hold", label="ладонь"))
+        if pose != Pose.OPEN_PALM:
+            self.open_palm_hold.reset()
+
+        # ---------------- большой палец вверх ----------------------------- #
+        if stable == Pose.THUMB_UP.value:
+            if not self._thumb_fired and self.cooldown.try_fire("thumb_up", now):
+                self._thumb_fired = True
+                events.append(Event("thumb_up", label="большой палец"))
+        else:
+            self._thumb_fired = False
+
+        # ---------------- перемещение указателя --------------------------- #
+        frozen = self._pinching and not self._dragging
+        if not frozen and not self._middle_pinching and pose != Pose.FIST:
+            events.append(Event("pointer", value=tuple(f.pointer)))
+        elif self._middle_pinching:
+            events.append(Event("pointer_freeze", label="щипок средним"))
+        elif pose == Pose.FIST:
+            events.append(Event("pointer_freeze", label="кулак"))
+
+        self._last_pose = pose
+        setattr(self, "last_features", f)
+        return events
+
+
+# --------------------------------------------------------------------------- #
+#  Синтетическая кисть — для тестов и демо-режима без камеры
+# --------------------------------------------------------------------------- #
+_CANON: Dict[str, Tuple[Tuple[float, float], ...]] = {
+    # (x, y) в единицах ладони, y вверх — отрицательный; запястье в (0, 0)
+    "thumb": ((0.30, -0.42), (0.44, -0.62), (0.55, -0.80), (0.62, -0.96)),
+    "index": ((-0.20, -0.95), (-0.25, -1.22), (-0.27, -1.36), (-0.29, -1.50)),
+    "middle": ((-0.01, -1.00), (-0.01, -1.30), (-0.01, -1.46), (-0.01, -1.62)),
+    "ring": ((0.17, -0.95), (0.21, -1.21), (0.23, -1.35), (0.24, -1.47)),
+    "pinky": ((0.32, -0.84), (0.37, -1.03), (0.39, -1.14), (0.40, -1.24)),
+}
+_MCP_WRIST = {"thumb": 1, "index": 5, "middle": 9, "ring": 13, "pinky": 17}
+
+
+def synthetic_hand(
+    center: Tuple[float, float] = (0.5, 0.55),
+    scale: float = 0.22,
+    rotation_deg: float = 0.0,
+    curl: Optional[Dict[str, float]] = None,
+    pinch_index: bool = False,
+    pinch_middle: bool = False,
+) -> Hand:
+    """Строит правдоподобные 21 точку кисти по «степени сжатия» каждого пальца.
+
+    ``curl`` — 0 (палец выпрямлен) .. 1 (полностью сжат). Полезно для тестов:
+    поза строится детерминированно, без камеры.
+    """
+    curl = curl or {}
+    pts = np.zeros((21, 2), dtype=np.float64)
+    rot = math.radians(rotation_deg)
+
+    def place(x: float, y: float) -> np.ndarray:
+        c, s = math.cos(rot), math.sin(rot)
+        v = np.array([x * c - y * s, x * s + y * c])
+        return np.array([center[0] + v[0] * scale, center[1] + v[1] * scale])
+
+    pts[0] = place(0.0, 0.0)
+    chain_ids = {
+        "thumb": (1, 2, 3, 4),
+        "index": (5, 6, 7, 8),
+        "middle": (9, 10, 11, 12),
+        "ring": (13, 14, 15, 16),
+        "pinky": (17, 18, 19, 20),
+    }
+    for name, ids in chain_ids.items():
+        base = np.array(_CANON[name][0])
+        c = float(np.clip(curl.get(name, 0.0), 0.0, 1.0))
+        if name == "thumb":
+            bend_per_joint = 1.05 * c
+            foreshorten = 1.0 - 0.45 * c
+        else:
+            bend_per_joint = 1.35 * c
+            foreshorten = 1.0 - 0.50 * c
+
+        # Первая точка — основание пальца (MCP), взятое из канона как есть.
+        pts[ids[0]] = place(base[0], base[1])
+        direction = base - np.array([0.0, 0.0])  # от запястья наружу
+        direction = direction / max(np.linalg.norm(direction), 1e-9)
+        pos = base.copy()
+        theta = 0.0
+        for k in range(3):
+            nxt = np.array(_CANON[name][k + 1])
+            seg_len = float(np.linalg.norm(nxt - np.array(_CANON[name][k])))
+            theta += bend_per_joint
+            angle = theta + math.radians(rotation_deg)
+            d = np.array([
+                direction[0] * math.cos(angle) - direction[1] * math.sin(angle),
+                direction[0] * math.sin(angle) + direction[1] * math.cos(angle),
+            ])
+            pos = pos + d * seg_len * foreshorten
+            pts[ids[k + 1]] = place(pos[0], pos[1])
+
+    if pinch_index:
+        pts[4] = pts[8] + np.array([0.0, -0.004])
+        pts[3] = pts[4] + (pts[3] - pts[4]) * 0.55
+    if pinch_middle:
+        pts[4] = pts[12] + np.array([0.0, -0.004])
+        pts[3] = pts[4] + (pts[3] - pts[4]) * 0.55
+    return Hand(np.hstack([pts, np.zeros((21, 1))]))

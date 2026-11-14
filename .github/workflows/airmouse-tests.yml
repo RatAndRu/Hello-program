@@ -1,0 +1,32 @@
+name: AirMouse — тесты логики
+
+# Проверяем только слой распознавания: ему не нужны ни камера, ни экран.
+on:
+  push:
+    paths:
+      - 'airmouse/**'
+      - 'tests/**'
+      - 'pyproject.toml'
+      - '.github/workflows/airmouse-tests.yml'
+  pull_request:
+    paths:
+      - 'airmouse/**'
+      - 'tests/**'
+  workflow_dispatch:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Зависимости для логики
+        run: |
+          python -m pip install --upgrade pip
+          pip install numpy opencv-python-headless pytest
+      - name: Тесты
+        run: python -m pytest tests -q
+      - name: Самопроверка (без pytest)
+        run: python -m airmouse selftest

@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "airmouse"
+version = "0.1.0"
+description = "Управление мышью жестами рук, мимикой и чтением по губам (локальное компьютерное зрение)"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy>=1.23",
+    "opencv-python>=4.8",
+    "mediapipe>=0.10.14",
+    "pyautogui>=0.9.54",
+    "pillow>=9.0",
+]
+
+[project.optional-dependencies]
+tray = ["pystray>=0.19"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+airmouse = "airmouse.cli:main"
+
+[tool.setuptools]
+packages = ["airmouse"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
