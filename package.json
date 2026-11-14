@@ -1,0 +1,85 @@
+{
+  "name": "sgib",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Сгиб — 3D-детали из плоской развёртки, собранные по текстовому описанию",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "selftest": "tsx scripts/selftest.ts",
+    "assets": "tsx scripts/preview.ts && python3 scripts/raster.py",
+    "desktop": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win",
+    "dist:linux": "npm run build && electron-builder --linux"
+  },
+  "dependencies": {
+    "three": "^0.169.0"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/three": "^0.169.0",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "main": "desktop/main.cjs",
+  "build": {
+    "appId": "ru.sgib.app",
+    "productName": "Сгиб",
+    "directories": {
+      "output": "release",
+      "buildResources": "desktop"
+    },
+    "files": [
+      "dist/**/*",
+      "desktop/main.cjs",
+      "package.json"
+    ],
+    "extraMetadata": {
+      "main": "desktop/main.cjs"
+    },
+    "win": {
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Sgib-${version}-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Sgib-setup-${version}.${ext}",
+      "shortcutName": "Сгиб"
+    },
+    "portable": {
+      "artifactName": "Sgib-portable-${version}.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "category": "Graphics",
+      "artifactName": "Sgib-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.graphics-design"
+    }
+  }
+}

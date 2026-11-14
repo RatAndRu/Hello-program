@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Сгиб — объёмные детали из плоской развёртки</title>
+    <meta name="description" content="Текстовый 3D-редактор, который начинает с развёртки: опишите деталь словами, получите выкройку и сборку." />
+    <meta name="theme-color" content="#0d0f13" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%230d0f13'/%3E%3Cpath d='M7 11.5 16 7l9 4.5v9L16 25 7 20.5z' fill='none' stroke='%23ffb454' stroke-width='1.6'/%3E%3Cpath d='M7 20.5 16 16l9 4.5M16 16v9' fill='none' stroke='%23ffb454' stroke-width='1.6'/%3E%3C/svg%3E" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="top">
+        <div class="brand">
+          <svg class="mark" viewBox="0 0 32 32" aria-hidden="true">
+            <path d="M3 9.5 16 3l13 6.5v13L16 29 3 22.5z" fill="none" stroke="currentColor" stroke-width="1.4" opacity=".35"/>
+            <path d="M3 22.5 16 16l13 6.5M16 16v13" fill="none" stroke="currentColor" stroke-width="1.6"/>
+            <path d="M3 9.5 16 16l13-6.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-dasharray="3 2.5"/>
+          </svg>
+          <div>
+            <h1>СГИБ</h1>
+            <p>объёмные детали из плоской развёртки</p>
+          </div>
+        </div>
+        <div class="top-actions">
+          <button class="ghost" id="btnImport" title="Открыть проект из JSON">Открыть</button>
+          <button class="ghost" id="btnSave" title="Сохранить проект в JSON">Сохранить</button>
+          <button class="ghost" id="btnHelp" title="Справка и синтаксис">Справка</button>
+        </div>
+      </header>
+
+      <main>
+        <aside id="left">
+          <div class="block">
+            <label class="label" for="prompt">Опишите деталь</label>
+            <textarea id="prompt" spellcheck="false" rows="3"
+              placeholder="коробка 200x150x100 с крышкой"></textarea>
+            <div class="row">
+              <button id="build" class="primary">Собрать</button>
+              <span class="hint">Ctrl + Enter</span>
+            </div>
+            <div id="verdict" class="verdict"></div>
+          </div>
+
+          <div class="block">
+            <div class="label-row"><span class="label">Примеры</span></div>
+            <div class="chips" id="chips"></div>
+          </div>
+
+          <div class="block">
+            <div class="label-row"><span class="label">Параметры</span></div>
+            <div class="params">
+              <label class="p-row"><span>Толщина материала</span>
+                <input id="thickness" type="number" min="0.2" max="25" step="0.2" value="2" /> мм</label>
+              <label class="p-row"><span>Клапаны для склейки</span>
+                <input id="tabs" type="checkbox" checked /></label>
+              <label class="p-row"><span>Высота клапана</span>
+                <input id="tabH" type="number" min="3" max="40" step="1" value="8" /> мм</label>
+              <label class="p-row"><span>Фасеток в круглых</span>
+                <input id="segments" type="number" min="3" max="72" step="1" value="24" /></label>
+            </div>
+          </div>
+
+          <div class="block grow">
+            <div class="label-row"><span class="label">История</span>
+              <button class="tiny" id="clearHistory">очистить</button></div>
+            <div id="history" class="history"></div>
+          </div>
+        </aside>
+
+        <section id="views">
+          <div class="view">
+            <header>
+              <h2>Развёртка</h2>
+              <div class="tools">
+                <button class="icon" data-net="zoomout" title="Мельче">−</button>
+                <button class="icon" data-net="zoomin" title="Крупнее">+</button>
+                <button class="icon" data-net="fit" title="Вписать">⤢</button>
+                <button class="icon toggle" data-net="dims" title="Размеры" aria-pressed="true">мм</button>
+                <button class="icon toggle" data-net="names" title="Подписи панелей" aria-pressed="true">Aa</button>
+              </div>
+            </header>
+            <div class="canvas" id="netHost"></div>
+          </div>
+          <div class="view">
+            <header>
+              <h2>Сборка</h2>
+              <div class="tools">
+                <button class="icon toggle" data-3d="edges" title="Рёбра" aria-pressed="true">◫</button>
+                <button class="icon toggle" data-3d="grid" title="Сетка" aria-pressed="true">▦</button>
+                <button class="icon" data-3d="fit" title="Вписать">⤢</button>
+              </div>
+            </header>
+            <div class="canvas" id="threeHost"></div>
+          </div>
+        </section>
+
+        <aside id="right">
+          <section class="card">
+            <h3>Проверка</h3>
+            <div id="report" class="report"></div>
+          </section>
+          <section class="card">
+            <h3>Сборка <span class="muted" id="foldCount"></span></h3>
+            <div id="folds" class="folds"></div>
+          </section>
+          <section class="card">
+            <h3>Файлы</h3>
+            <div class="exports" id="exports"></div>
+          </section>
+        </aside>
+      </main>
+
+      <footer id="bottom">
+        <button id="play" class="play" title="Развернуть / сложить">▶</button>
+        <div class="slider-wrap">
+          <input id="fold" type="range" min="0" max="1000" value="0" />
+          <div class="ticks"><span>лист</span><span>деталь</span></div>
+        </div>
+        <div class="readout"><b id="foldPct">0%</b><span id="foldLine"></span></div>
+        <div class="status" id="status"></div>
+      </footer>
+    </div>
+
+    <div id="modal" class="modal" hidden>
+      <div class="modal-body">
+        <button class="modal-close" id="modalClose">×</button>
+        <div id="modalContent"></div>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
