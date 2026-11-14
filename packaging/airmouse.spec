@@ -69,8 +69,24 @@ exe = EXE(
     icon=None,
 )
 
+# Вторая сборка — с консолью: если оконная версия почему-то не стартует,
+# AirMouse-debug.exe покажет traceback вместо тихого закрытия.
+exe_debug = EXE(
+    pyz,
+    a.scripts,
+    [],
+    exclude_binaries=True,
+    name="AirMouse-debug",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+)
+
 coll = COLLECT(
     exe,
+    exe_debug,
     a.binaries,
     a.datas,
     strip=False,

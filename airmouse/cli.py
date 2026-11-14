@@ -42,8 +42,10 @@ def setup_logging(cfg: AppConfig, debug: bool = False) -> None:
     log_path = resolve_path(cfg.log_file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     handlers: List[logging.Handler] = [logging.FileHandler(log_path, encoding="utf-8")]
-    if debug or sys.stderr.isatty():
-        handlers.append(logging.StreamHandler(sys.stderr))
+    # В оконной сборке PyInstaller sys.stderr = None — обращаться к нему нельзя.
+    stream = sys.stderr
+    if stream is not None and (debug or (hasattr(stream, "isatty") and stream.isatty())):
+        handlers.append(logging.StreamHandler(stream))
     logging.basicConfig(
         level=logging.DEBUG if debug else logging.INFO,
         format="%(asctime)s %(levelname)-7s %(message)s",
