@@ -24,7 +24,9 @@ from . import __version__
 from .config import (
     DEFAULT_CONFIG_PATH,
     AppConfig,
+    app_root,
     load_config,
+    resolve_path,
     save_config,
     set_value,
 )
@@ -37,7 +39,7 @@ log = logging.getLogger("airmouse")
 #  Логирование
 # --------------------------------------------------------------------------- #
 def setup_logging(cfg: AppConfig, debug: bool = False) -> None:
-    log_path = Path(cfg.log_file)
+    log_path = resolve_path(cfg.log_file)
     log_path.parent.mkdir(parents=True, exist_ok=True)
     handlers: List[logging.Handler] = [logging.FileHandler(log_path, encoding="utf-8")]
     if debug or sys.stderr.isatty():
@@ -66,6 +68,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         cfg.face.enabled = False
     if args.head_mouse:
         cfg.head_pointer = True
+    if args.warmup is not None:
+        cfg.warmup_s = args.warmup
     if args.lip:
         cfg.lip.enabled = True
     if args.no_window:
@@ -153,11 +157,11 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     cfg = load_config(args.config)
     print(f"  конфиг: {args.config or DEFAULT_CONFIG_PATH}")
-    models = Path(cfg.model_dir)
+    models = resolve_path(cfg.model_dir)
     for name in ("hand_landmarker", "face_landmarker"):
         path = models / f"{name}.task"
         print(f"  модель {name}: {'есть' if path.exists() else 'нет (скачается при первом запуске)'}")
-    store = TemplateStore(Path(cfg.lip.template_dir))
+    store = TemplateStore(resolve_path(cfg.lip.template_dir))
     print(f"  слова по губам: {store.summary() or 'словарь пуст'}")
     print("\nИтог:", "всё готово" if ok else "есть проблемы — см. выше")
     return 0 if ok else 1
@@ -187,7 +191,7 @@ def cmd_models(args: argparse.Namespace) -> int:
     from .models import download_all
 
     cfg = load_config(args.config)
-    paths = download_all(Path(cfg.model_dir), progress=print)
+    paths = download_all(resolve_path(cfg.model_dir), progress=print)
     for name, path in paths.items():
         print(f"{name}: {path} ({path.stat().st_size / 1e6:.1f} МБ)")
     return 0
@@ -225,7 +229,7 @@ def cmd_lip_record(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
     setup_logging(cfg, args.debug)
     cfg.lip.enabled = True
-    store = TemplateStore(Path(cfg.lip.template_dir))
+    store = TemplateStore(resolve_path(cfg.lip.template_dir))
     camera, tracker = _open_face_source(cfg)
     words = [w.strip() for w in args.word.split(",") if w.strip()]
     print(f"Запись слов: {', '.join(words)}")
@@ -292,7 +296,7 @@ def _record_one(camera, tracker, frames: int, timeout: float = 8.0):
 
 def cmd_lip_list(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
-    store = TemplateStore(Path(cfg.lip.template_dir))
+    store = TemplateStore(resolve_path(cfg.lip.template_dir))
     summary = store.summary()
     if not summary:
         print("Словарь пуст. Запишите слова: python -m airmouse lip record -w \"стоп\"")
@@ -306,7 +310,7 @@ def cmd_lip_list(args: argparse.Namespace) -> int:
 
 def cmd_lip_remove(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
-    store = TemplateStore(Path(cfg.lip.template_dir))
+    store = TemplateStore(resolve_path(cfg.lip.template_dir))
     removed = store.remove(args.word)
     cfg.lip.words.pop(args.word, None)
     save_config(cfg, args.config)
@@ -320,7 +324,7 @@ def cmd_lip_test(args: argparse.Namespace) -> int:
     cfg = load_config(args.config)
     setup_logging(cfg, args.debug)
     cfg.lip.enabled = True
-    store = TemplateStore(Path(cfg.lip.template_dir))
+    store = TemplateStore(resolve_path(cfg.lip.template_dir))
     reader = LipReader(
         store,
         window_frames=cfg.lip.window_frames,
@@ -390,7 +394,10 @@ def cmd_config(args: argparse.Namespace) -> int:
 
 
 def _autostart_command() -> str:
-    script = Path(__file__).resolve().parent.parent / "run_airmouse.py"
+    """Команда автозапуска: для EXE — сам EXE, для исходников — pythonw + скрипт."""
+    if getattr(sys, "frozen", False):
+        return f'"{Path(sys.executable)}" --no-window --tray'
+    script = app_root() / "run_airmouse.py"
     python = Path(sys.executable)
     pythonw = python.with_name("pythonw.exe")
     exe = pythonw if pythonw.exists() else python
@@ -454,6 +461,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--head-mouse", action="store_true", help="сразу включить «мышь головой»")
     run.add_argument("--lip", action="store_true", help="включить чтение по губам")
     run.add_argument("--output", type=str, default=None, help="сохранять последний кадр в файл")
+    run.add_argument("--warmup", type=float, default=None,
+                     help="секунды разминки без действий (по умолчанию 2)")
 
     demo = sub.add_parser("demo", help="синтетическая демонстрация без камеры")
     demo.add_argument("--out", type=str, default="output", help="каталог для гифки и раскадровки")
@@ -530,5 +539,38 @@ def main(argv: Optional[List[str]] = None) -> int:
     return 2
 
 
+def _fatal(exc: BaseException) -> None:
+    """Сообщить о фатальной ошибке так, чтобы её увидели и в EXE без консоли."""
+    try:
+        log.exception("Критическая ошибка: %s", exc)
+    except Exception:
+        pass
+    message = f"{type(exc).__name__}: {exc}"
+    if platform.system() == "Windows":
+        try:
+            import ctypes
+
+            ctypes.windll.user32.MessageBoxW(
+                None, message, "AirMouse — ошибка", 0x10
+            )
+            return
+        except Exception:
+            pass
+    print(message, file=sys.stderr)
+
+
+def run_main(argv: Optional[List[str]] = None) -> int:
+    """Точка входа для EXE и скриптов: ловит фатальные ошибки и показывает их."""
+    try:
+        return main(argv)
+    except SystemExit:
+        raise
+    except KeyboardInterrupt:
+        return 0
+    except BaseException as exc:  # noqa: BLE001 - на верхнем уровне ловим всё
+        _fatal(exc)
+        return 1
+
+
 if __name__ == "__main__":  # pragma: no cover
-    raise SystemExit(main())
+    raise SystemExit(run_main())

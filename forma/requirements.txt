@@ -1,5 +1,0 @@
-numpy>=1.24
-manifold3d>=3.0
-trimesh>=4.0
-pyfastnoiselite==0.0.7
-pywebview>=5.0

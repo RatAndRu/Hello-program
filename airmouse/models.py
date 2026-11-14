@@ -11,6 +11,7 @@ MediaPipe >= 1.0 больше не содержит встроенных мод�
 from __future__ import annotations
 
 import shutil
+import sys
 import urllib.request
 from pathlib import Path
 from typing import Callable, Optional
@@ -36,6 +37,30 @@ def model_path(model_dir: Path | str, name: str) -> Path:
     return Path(model_dir) / f"{name}.task"
 
 
+def bundled_model(name: str) -> Optional[Path]:
+    """Модель, вложенная в сборку (PyInstaller кладёт её в _MEIPASS/models)."""
+    base = getattr(sys, "_MEIPASS", None)
+    candidates = []
+    if base:
+        candidates.append(Path(base) / "models" / f"{name}.task")
+        candidates.append(Path(base) / f"{name}.task")
+    exe_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else None
+    if exe_dir:
+        candidates.append(exe_dir / "models" / f"{name}.task")
+    for path in candidates:
+        if path.exists() and path.stat().st_size > 100_000:
+            return path
+    return None
+
+
+def find_model(model_dir: Path | str, name: str) -> Optional[Path]:
+    """Ищет модель: сначала рядом с приложением, потом во вложенной сборке."""
+    path = model_path(model_dir, name)
+    if path.exists() and path.stat().st_size > 100_000:
+        return path
+    return bundled_model(name)
+
+
 def ensure_model(
     model_dir: Path | str,
     name: str,
@@ -44,10 +69,11 @@ def ensure_model(
     """Возвращает путь к модели, скачивая её при необходимости."""
     if name not in MODEL_URLS:
         raise ModelError(f"неизвестная модель: {name}")
-    path = model_path(model_dir, name)
-    if path.exists() and path.stat().st_size > 100_000:
-        return path
+    found = find_model(model_dir, name)
+    if found is not None:
+        return found
 
+    path = model_path(model_dir, name)
     path.parent.mkdir(parents=True, exist_ok=True)
     url = MODEL_URLS[name]
     if progress:

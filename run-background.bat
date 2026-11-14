@@ -1,4 +1,8 @@
 @echo off
-rem AirMouse: работа в фоне, иконка в системном трее (консоль не нужна)
+chcp 65001 >nul
 cd /d "%~dp0"
-start "" pythonw run_airmouse.py --no-window --tray
+if exist ".venv\Scripts\pythonw.exe" (
+    start "" ".venv\Scripts\pythonw.exe" run_airmouse.py --no-window --tray
+) else (
+    start "" pythonw run_airmouse.py --no-window --tray
+)

@@ -1,0 +1,76 @@
+name: AirMouse — сборка Windows EXE
+
+# Ручной запуск (Actions -> "AirMouse — сборка Windows EXE") или по тегу v*.
+# На выходе — готовый к переносу архив dist/AirMouse (Python на целевой машине
+# не нужен): AirMouse.exe, модели, README.
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Зависимости
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Модели MediaPipe
+        run: |
+          mkdir -p models
+          curl -fsSL -o models/hand_landmarker.task \
+            https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task
+          curl -fsSL -o models/face_landmarker.task \
+            https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+          ls -la models
+
+      - name: Самопроверка логики
+        run: |
+          python -m pytest tests -q
+          python -m airmouse selftest
+
+      - name: Сборка EXE
+        run: python -m PyInstaller --noconfirm --clean packaging/airmouse.spec
+
+      - name: Документация и модели рядом с EXE
+        run: |
+          mkdir -p dist/AirMouse/models
+          cp models/*.task dist/AirMouse/models/
+          cp README.md dist/AirMouse/
+          cp "КАК-ЗАПУСТИТЬ.txt" dist/AirMouse/
+          python -c "open(r'dist/AirMouse/run.bat','wb').write(b'@echo off\r\ncd /d \"%~dp0\"\r\nstart \"\" AirMouse.exe\r\n')"
+          ls -la dist/AirMouse
+
+      - name: Архив
+        run: |
+          cd dist
+          powershell -Command "Compress-Archive -Path 'AirMouse' -DestinationPath 'AirMouse-windows.zip' -Force"
+          ls -la
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AirMouse-windows
+          path: dist/AirMouse-windows.zip
+          retention-days: 30
+
+      - name: Release (для тега v*)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/AirMouse-windows.zip

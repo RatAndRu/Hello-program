@@ -28,6 +28,7 @@ class OverlayState:
     backend: str = ""
     pose: str = "—"
     paused: bool = False
+    warmup: bool = False
     head_pointer: bool = False
     hand_seen: bool = False
     face_seen: bool = False
@@ -132,8 +133,14 @@ def render(
         img, f"{state.fps:5.1f} fps  {state.backend}", (20, 56),
         cv2.FONT_HERSHEY_SIMPLEX, 0.42, DIM, 1, cv2.LINE_AA,
     )
-    status = "PAUSED" if state.paused else ("TRACKING" if state.hand_seen else "no hand")
-    color = BAD if state.paused else (ACCENT if state.hand_seen else WARN)
+    if state.paused:
+        status, color = "PAUSED", BAD
+    elif state.warmup:
+        status, color = "GET READY", WARN
+    elif state.hand_seen:
+        status, color = "TRACKING", ACCENT
+    else:
+        status, color = "no hand", WARN
     cv2.putText(img, status, (20, 82), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
     cv2.putText(
         img, f"pose: {state.pose}", (20, 106), cv2.FONT_HERSHEY_SIMPLEX, 0.5, FG, 1, cv2.LINE_AA
@@ -170,5 +177,10 @@ def render(
         cv2.putText(
             img, "PAUSED", (w // 2 - 90, h // 2),
             cv2.FONT_HERSHEY_SIMPLEX, 1.4, BAD, 3, cv2.LINE_AA,
+        )
+    elif state.warmup:
+        cv2.putText(
+            img, "GET READY", (w // 2 - 110, h // 2),
+            cv2.FONT_HERSHEY_SIMPLEX, 1.1, WARN, 2, cv2.LINE_AA,
         )
     return img

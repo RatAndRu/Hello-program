@@ -1,5 +1,10 @@
 @echo off
-rem AirMouse: запуск управления (окно предпросмотра)
+chcp 65001 >nul
 cd /d "%~dp0"
-python run_airmouse.py %*
+if exist ".venv\Scripts\python.exe" (
+    set "PY=.venv\Scripts\python.exe"
+) else (
+    set "PY=python"
+)
+%PY% run_airmouse.py %*
 if errorlevel 1 pause

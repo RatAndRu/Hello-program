@@ -13,7 +13,7 @@ import numpy as np
 
 from .actions import ActionRouter, DryRunBackend, PyAutoGuiBackend
 from .camera import ThreadedCamera
-from .config import AppConfig
+from .config import AppConfig, resolve_path
 from .face import FaceFSM, FaceMetrics, measure_face
 from .gestures import Event, HandFSM, POSE_TITLES_RU, analyze_hand, classify_pose
 from .lipreading import LipReader, TemplateStore, mouth_features
@@ -84,6 +84,7 @@ class AirMouseApp:
         self._last_seq = -1
         self._last_now = 0.0
         self._first_now: Optional[float] = None
+        self._armed_at = 0.0
         self._face_counter = 0
         self._metrics: Optional[FaceMetrics] = None
         self._face = None
@@ -104,12 +105,12 @@ class AirMouseApp:
             self.cfg.tracker,
             self.cfg.hand,
             self.cfg.face,
-            self.cfg.model_dir,
+            resolve_path(self.cfg.model_dir),
             progress=log.info,
         )
         log.info("Распознавание: %s", getattr(self.tracker, "name", "?"))
         if self.cfg.lip.enabled:
-            store = TemplateStore(Path(self.cfg.lip.template_dir))
+            store = TemplateStore(resolve_path(self.cfg.lip.template_dir))
             self.lip_reader = LipReader(
                 store,
                 window_frames=self.cfg.lip.window_frames,
@@ -168,6 +169,7 @@ class AirMouseApp:
     # ------------------------------------------------------------------ #
     def process_frame(self, frame: np.ndarray, now: float, ts_ms: int) -> List[Event]:
         events: List[Event] = []
+        warmup = now < self._armed_at
 
         if hasattr(self.tracker, "process_events"):
             events, shape = self.tracker.process_events(frame, ts_ms, now)
@@ -190,6 +192,16 @@ class AirMouseApp:
                 pt = self.pointer.delta(vel, now)
                 if pt is not None:
                     events.append(Event("pointer", pt))
+
+        self.stats.frames += 1
+        self.stats.hand_frames += 1 if self._hands or self._shape is not None else 0
+        self.stats.face_frames += 1 if self._face is not None else 0
+        self._last_now = now
+
+        if warmup:
+            # Разминка: распознавание уже работает, но ничего не нажимаем —
+            # человек успевает встать перед камерой.
+            return events
 
         for ev in events:
             before = len(self.router.log)
@@ -216,16 +228,13 @@ class AirMouseApp:
             if self.on_event is not None and ev.kind in HAND_EVENTS_RU:
                 self.on_event(ev)
 
-        self.stats.frames += 1
-        self.stats.hand_frames += 1 if self._hands or self._shape is not None else 0
-        self.stats.face_frames += 1 if self._face is not None else 0
-        self._last_now = now
         return events
 
     # ------------------------------------------------------------------ #
     def _update_state(self, events: List[Event], loop_fps: float) -> None:
         s = self.state
         s.fps = loop_fps
+        s.warmup = self._last_now < self._armed_at
         s.backend = getattr(self.tracker, "name", "?")
         s.paused = self.router.paused
         s.head_pointer = self.router.head_pointer
@@ -277,16 +286,26 @@ class AirMouseApp:
                 self._last_seq = seq
 
                 # В видеофайле время берём из самого видео, иначе — системное.
-                now = stamp if self.cfg.camera.video_file and stamp else time.monotonic()
+                now = stamp if (self.cfg.camera.video_file and stamp is not None) else time.monotonic()
                 if self._first_now is None:
                     self._first_now = now
                     last_loop = now - 1.0 / max(self.cfg.camera.fps, 1)
+                    self._armed_at = now + max(self.cfg.warmup_s, 0.0)
+                    if self.cfg.warmup_s > 0:
+                        log.info("Разминка %.1f с: распознавание идёт, действия отключены",
+                                 self.cfg.warmup_s)
                 dt = max(now - last_loop, 1e-3)
                 last_loop = now
                 fps = 0.9 * fps + 0.1 * (1.0 / dt) if fps else 1.0 / dt
                 ts_ms = int((now - self._first_now) * 1000)
 
-                events = self.process_frame(frame, now, ts_ms)
+                try:
+                    events = self.process_frame(frame, now, ts_ms)
+                except Exception as exc:  # приложение в фоне не должно падать молча
+                    log.exception("Сбой обработки кадра: %s", exc)
+                    self.router.paused = True
+                    self.router.release_all()
+                    events = []
                 self._update_state(events, fps)
 
                 if self.show_window or self.output is not None:

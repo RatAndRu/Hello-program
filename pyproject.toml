@@ -13,14 +13,14 @@ dependencies = [
     "mediapipe>=0.10.14",
     "pyautogui>=0.9.54",
     "pillow>=9.0",
+    "pystray>=0.19",
 ]
 
 [project.optional-dependencies]
-tray = ["pystray>=0.19"]
-dev = ["pytest>=7"]
+dev = ["pytest>=7", "pyinstaller>=6"]
 
 [project.scripts]
-airmouse = "airmouse.cli:main"
+airmouse = "airmouse.cli:run_main"
 
 [tool.setuptools]
 packages = ["airmouse"]

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import (
@@ -22,7 +23,25 @@ from typing import (
     get_type_hints,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+def app_root() -> Path:
+    """Папка, рядом с которой живут данные приложения.
+
+    В исходниках это корень репозитория, в собранном PyInstaller-EXE —
+    папка с самим EXE (иначе конфиг писался бы во временный каталог распаковки).
+    """
+    if getattr(sys, "frozen", False):
+        return Path(sys.executable).resolve().parent
+    return Path(__file__).resolve().parent.parent
+
+
+def resolve_path(value: "str | Path") -> Path:
+    """Относительные пути считаем от ``app_root()``, а не от текущего каталога."""
+    p = Path(value)
+    return p if p.is_absolute() else (app_root() / p)
+
+
+PROJECT_ROOT = app_root()
 DEFAULT_CONFIG_PATH = PROJECT_ROOT / "config" / "airmouse.json"
 
 
@@ -189,6 +208,7 @@ class AppConfig:
     log_file: str = "logs/airmouse.log"
     head_pointer: bool = False
     start_paused: bool = False
+    warmup_s: float = 2.0              # первые секунды не нажимаем: дайте встать в кадр
 
 
 # --------------------------------------------------------------------------- #

@@ -1,10 +1,3 @@
-# Android / Gradle
-.gradle/
-**/build/
-local.properties
-*.iml
-.cxx/
-
 # Редакторы и системы
 .vscode/
 .idea/
@@ -12,44 +5,17 @@ local.properties
 Thumbs.db
 desktop.ini
 
-# Служебные файлы
-*.log
-
-# Временные скриншоты тестов
-.cache/
-
-# Форма 3D: артефакты сборки и локальные результаты
-forma/build/
-forma/dist/
-forma/release/
-forma/*.spec.bak
-forma/renders/
-forma/selftest.txt
-forma/foundation-eval.json
-forma/fuzz-report.json
-forma/*-repros/
-forma/packaging/version_info.txt
-**/__pycache__/
-
-# Рабочие папки приложения при запуске из исходников (рядом с exe в релизе)
-forma/forma-data/
-forma/projects/
-forma/exports/
-forma/prompts/
-forma/textures/
-forma/imports/
-
 # Python
 __pycache__/
-*.pyc
+*.py[cod]
 .venv/
+venv/
+*.egg-info/
 
-# Черновые сканы и снимки в корне репозитория — рабочие материалы, не исходники
-/*.jpg
-/*.png
-
-# Выгрузки приложения (GLB-отчёты) — публикуются в Releases, а не в git
-/forma/exports/
+# Служебное
+*.log
+.pytest_cache/
+.cache/
 
 # ---------------------------------------------------------------------------
 # AirMouse: локальные данные и артефакты (создаются при работе приложения)
@@ -60,4 +26,3 @@ __pycache__/
 /profiles/
 /output/
 /logs/
-.pytest_cache/

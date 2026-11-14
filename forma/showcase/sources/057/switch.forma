@@ -1,3 +1,0 @@
-# Веб-стенд 0.57: двойная современная и одиночная старая выпуклая клавиши.
-двойной = switch rockers=2 style=современная state=off angle=6 screws=да
-старый = switch rockers=1 style=старая state=off angle=6 screws=да at=[125,0,0]
