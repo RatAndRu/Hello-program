@@ -6596,6 +6596,8 @@ const TOOL_SHAPES = [
       { k: 'amp', label: 'высота', v: 3, step: 0.5, min: 0, max: 1000 },
       { k: 'freq', label: 'частота', v: 10, step: 1, min: 0.5, max: 1000 },
       { k: 'mode', label: 'режим', v: 'радиус', kind: 'raw', choices: ['радиус', 'высота', 'шум', 'клетка', 'трещины'] },
+      { k: 'engine', label: 'движок шума', v: 'forma', kind: 'raw', choices: ['forma', 'fastnoise'] },
+      { k: 'noise_kind', label: 'вид FastNoise', v: 'simplex', kind: 'raw', choices: ['simplex', 'perlin', 'value', 'cellular'] },
       { k: 'axis', label: 'ось', v: 'z', kind: 'raw', choices: ['x', 'y', 'z'] },
       { k: 'surface', label: 'поверхность', v: 'наружная', kind: 'raw', choices: ['наружная', 'вся'] },
       { k: 'seed', label: 'seed', v: 3, step: 1, min: 0, max: 1000000 },
@@ -7105,17 +7107,20 @@ const TOOL_RECIPES = [
   },
   {
     title: 'Разброс деталей',
-    desc: 'scatter раскладывает копии по площади; seed повторяет раскладку.',
+    desc: 'scatter раскладывает копии по площади; seed повторяет раскладку. '
+      + 'Расстояние больше нуля включает Poisson-disk между центрами XY; размеры деталей не учитываются.',
     fields: [
       { k: 'count', label: 'штук', v: 24 },
       { k: 'area', label: 'площадь', v: '500,400', kind: 'vec' },
       { k: 'scale', label: 'масштаб', v: '0.7,1.3', kind: 'vec' },
+      { k: 'distance', label: 'между центрами (0 — случайно)', v: 0 },
       { k: 'seed', label: 'seed', v: 7 },
     ],
     build: (v) => `камень_разброс = rock size=[120,90,55] seed=3\n`
       + `камни = scatter [камень_разброс] count=${Math.max(2, Math.round(rnum(v.count, 24)))} `
       + `area=[${rvec(v.area, [500, 400]).join(', ')}] seed=${Math.round(rnum(v.seed, 7))} `
-      + `scale=[${rvec(v.scale, [0.7, 1.3]).join(', ')}]`,
+      + `scale=[${rvec(v.scale, [0.7, 1.3]).join(', ')}]`
+      + (rnum(v.distance, 0) > 0 ? ` distribution=poisson distance=${fnum(rnum(v.distance, 0))}` : ''),
   },
   {
     title: 'Выпуклая оболочка',

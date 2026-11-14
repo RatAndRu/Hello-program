@@ -48,7 +48,7 @@ jobs:
         run: >-
           python -m pytest -q tests/test_v0741.py tests/test_v0742.py
           tests/test_stage3_features.py tests/test_lamp_rework.py tests/test_banker_lamp.py
-          tests/test_export_interop_0763.py tests/test_v010.py tests/test_v018.py tests/test_v023.py tests/test_studio.py
+          tests/test_export_interop_0763.py tests/test_libraries_0764.py tests/test_v010.py tests/test_v018.py tests/test_v023.py tests/test_studio.py
       - name: Проверить инструменты и редактор
         run: |
           node --check web/js/app.js
@@ -265,6 +265,10 @@ jobs:
           cp docs/mesh_quality.md release/КАЧЕСТВО_СЕТКИ.md
           cp docs/face_visibility.md release/НАРУЖНОСТЬ_ГРАНЕЙ.md
           cp docs/export_interop_0763.md release/ЭКСПОРТ_МАТЕРИАЛЫ.md
+          cp docs/library_research_0764.md release/БИБЛИОТЕКИ_И_ИЗМЕРЕНИЯ.md
+          mkdir -p release/ЛИЦЕНЗИИ
+          cp docs/licenses/FastNoiseLite-MIT.txt release/ЛИЦЕНЗИИ/
+          cp docs/licenses/PyFastNoiseLite-0.0.7-MIT.txt release/ЛИЦЕНЗИИ/
           cp examples/assets/human_skeleton_original.audit.json release/АУДИТ_ОРИГИНАЛЬНОГО_СКЕЛЕТА.json
           python - <<'PY'
           from pathlib import Path
@@ -379,7 +383,9 @@ jobs:
               for expected in ('ЧИТАЙ_МЕНЯ.txt', 'ПРОЧТИ_МЕНЯ_ДРАПИРОВКА.txt',
                                'examples/drape_layers_076.forma', 'examples/drape_atelier_077.forma',
                                'examples/drape_atelier_dense_077.forma', 'ИЗМЕРЕНИЯ_ДРАПИРОВКИ.json',
-                               'ЭКСПОРТ_МАТЕРИАЛЫ.md'):
+                               'ЭКСПОРТ_МАТЕРИАЛЫ.md', 'БИБЛИОТЕКИ_И_ИЗМЕРЕНИЯ.md',
+                               'examples/noise_scatter_0764.forma',
+                               'ЛИЦЕНЗИИ/FastNoiseLite-MIT.txt', 'ЛИЦЕНЗИИ/PyFastNoiseLite-0.0.7-MIT.txt'):
                   if expected not in zf.namelist():
                       raise SystemExit(f'В полном ZIP нет {expected}')
               source = Path('forma/benchmarks/drape_six')
@@ -408,9 +414,11 @@ jobs:
               raise SystemExit(f'Не найден результат проверки экспорта EXE: {export_paths}')
           export_audit = json.loads(export_paths[0].read_text(encoding='utf-8'))
           if export_audit.get('version') != version or not all(export_audit.get(k) is True for k in
-              ('thin_double_sided', 'physical_glass', 'alpha_fallback', 'emissive', 'normal_map_tangent', 'obj_geometry_only')):
-              raise SystemExit('Проверка экспорта через EXE не прошла')
+              ('thin_double_sided', 'physical_glass', 'alpha_fallback', 'emissive', 'normal_map_tangent', 'obj_geometry_only', 'fastnoise_and_poisson')):
+              raise SystemExit('Проверка экспорта и новых инструментов через EXE не прошла')
           shutil.copy2(export_paths[0], out / f'Forma3D-{version}-export-exe-check.json')
+          for license_name in ('FastNoiseLite-MIT.txt', 'PyFastNoiseLite-0.0.7-MIT.txt'):
+              shutil.copy2(Path('forma/docs/licenses') / license_name, out / license_name)
           print('EXE SHA-256:', hashlib.sha256(exe).hexdigest())
           print('Файлы:', [(p.name, p.stat().st_size) for p in out.iterdir()])
           notes = Path('.github/forma-release-notes.md').read_text(encoding='utf-8').splitlines()

@@ -26,7 +26,7 @@ binaries = []
 hiddenimports = []
 
 # пакеты с бинарными модулями и данными
-for package in ("manifold3d", "trimesh", "clr_loader", "pythonnet"):
+for package in ("manifold3d", "trimesh", "pyfastnoiselite", "clr_loader", "pythonnet"):
     try:
         d, b, h = collect_all(package)
         datas += d
@@ -48,7 +48,8 @@ hiddenimports += [
     "forma.ops_sdf", "forma.render", "forma.webui", "forma.cli", "forma.checks",
     "forma.collide", "forma.metrics", "forma.agent", "forma.geometry", "forma.values",
     "forma.eval", "forma.fuzz",
-    "forma.mesher", "forma.sdf", "forma.anatomy", "forma.skeleton_original", "forma.ops_skeleton", "forma.ops_organic", "forma.textures",
+    "forma.mesher", "forma.sdf", "forma.anatomy", "forma.skeleton_original", "forma.ops_skeleton", "forma.ops_organic", "forma.textures", "forma.noise",
+    "pyfastnoiselite.pyfastnoiselite",
     "forma.blender", "forma.paths", "forma.ops_human", "forma.ops_studio",
     "forma.ops_io", "forma.ops_extra", "forma.ops_scad", "forma.ops_params",
     "forma.library", "forma.provenance", "forma.scad", "forma.openscad",
@@ -62,7 +63,9 @@ hiddenimports += [
 # интерфейс, примеры и встроенная карта рельефа кладём внутрь exe
 datas += [(str(ROOT / "web"), "web"), (str(ROOT / "examples"), "examples"),
           (str(ROOT / "benchmarks"), "benchmarks"),
-          (str(ROOT / "docs" / "pattern.png"), "docs")]
+          (str(ROOT / "docs" / "pattern.png"), "docs"),
+          (str(ROOT / "docs" / "licenses" / "FastNoiseLite-MIT.txt"), "licenses"),
+          (str(ROOT / "docs" / "licenses" / "PyFastNoiseLite-0.0.7-MIT.txt"), "licenses")]
 icon_png = ROOT / "packaging" / "icon_256.png"
 if icon_png.exists():
     datas += [(str(icon_png), ".")]

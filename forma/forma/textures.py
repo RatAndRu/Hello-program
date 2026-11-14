@@ -36,11 +36,14 @@ PATTERNS = {
     "камень": "stone", "stone": "stone", "гранит": "stone",
     "точки": "dots", "dots": "dots", "горошек": "dots",
     "сетка": "grid", "grid": "grid", "клеточки": "grid",
+    "fastnoise": "fastnoise", "fnl": "fastnoise",
+    "вороной": "cellular", "cellular": "cellular",
 }
 PATTERN_NAMES = {
     "stripes": "полосы", "checker": "клетка", "waves": "волны",
     "gradient": "градиент", "noise": "шум", "stone": "камень",
-    "dots": "точки", "grid": "сетка",
+    "dots": "точки", "grid": "сетка", "fastnoise": "FastNoiseLite",
+    "cellular": "ячейки Вороного",
 }
 NAMED_COLORS = {
     "белый": (245, 245, 242), "чёрный": (24, 24, 26), "черный": (24, 24, 26),
@@ -280,6 +283,11 @@ def custom_height(pattern: str = "полосы", scale: float = 1.0, seed: int |
     """Карта высот своего узора 0..1 — из неё делаются цвет и рельеф."""
     key = PATTERNS.get(str(pattern).strip().lower(), "stripes")
     n = int(max(64, min(1024, size)))
+    if key in ("fastnoise", "cellular"):
+        from .noise import tileable_noise
+        nseed = int(hashlib.sha1(seed.encode("utf-8")).hexdigest()[:8], 16) if isinstance(seed, str) else int(seed)
+        return tileable_noise(n, float(scale) * 6.0, nseed,
+                              "cellular" if key == "cellular" else "simplex")
     rng = _rng(seed)
     u, v = np.meshgrid(np.linspace(0, 1, n, endpoint=False),
                        np.linspace(0, 1, n, endpoint=False))

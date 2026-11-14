@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import heapq
 import math
 from pathlib import Path
 
@@ -432,43 +433,66 @@ def _brute_distance(points: np.ndarray, v: np.ndarray, f: np.ndarray) -> np.ndar
 
 def _distance_to_mesh(points: np.ndarray, v: np.ndarray, f: np.ndarray,
                       cell: float | None = None) -> np.ndarray:
-    """Расстояние от точек до поверхности: перебор для мелких, сетка для крупных."""
+    """Ближайший треугольник: перебор либо дерево ограничивающих объёмов.
+
+    Старый поиск по центрам граней мог пропустить длинный треугольник рядом с
+    точкой. Узлы BVH содержат полные AABB граней, поэтому ветвь отсекается
+    только когда её минимально возможное расстояние больше уже найденного.
+    ``cell`` оставлен для совместимости существующих вызовов.
+    """
+    _ = cell
     if len(f) == 0 or len(points) == 0:
         return np.full(len(points), float("inf"))
     if len(f) <= 3000:
         return _brute_distance(points, v, f)
-    tris = v[f]
-    diag = float(np.linalg.norm(v.max(axis=0) - v.min(axis=0)))
-    cell = float(cell or max(diag / 24.0, 1e-3))
-    centroids = tris.mean(axis=1)
-    keys = np.floor(centroids / cell).astype(np.int64)
-    buckets: dict[tuple[int, int, int], list[int]] = {}
-    for i, key in enumerate(map(tuple, keys)):
-        buckets.setdefault(key, []).append(i)
+    tris = np.asarray(v)[np.asarray(f)]
+    lower, upper = tris.min(axis=1), tris.max(axis=1)
+    centers = (lower + upper) * 0.5
+    nodes = []
+
+    def make_node(indices):
+        lo, hi = lower[indices].min(axis=0), upper[indices].max(axis=0)
+        index = len(nodes)
+        nodes.append(None)
+        if len(indices) <= 12:
+            nodes[index] = (lo, hi, None, None, indices)
+        else:
+            axis = int(np.argmax(np.ptp(centers[indices], axis=0)))
+            middle = len(indices) // 2
+            order = np.argpartition(centers[indices, axis], middle)
+            left = make_node(indices[order[:middle]])
+            right = make_node(indices[order[middle:]])
+            nodes[index] = (lo, hi, left, right, None)
+        return index
+
+    make_node(np.arange(len(tris)))
+
+    def box_dist2(point, node):
+        lo, hi = node[:2]
+        dx = max(float(lo[0] - point[0]), 0.0, float(point[0] - hi[0]))
+        dy = max(float(lo[1] - point[1]), 0.0, float(point[1] - hi[1]))
+        dz = max(float(lo[2] - point[2]), 0.0, float(point[2] - hi[2]))
+        return dx * dx + dy * dy + dz * dz
+
     out = np.empty(len(points), dtype=np.float64)
-    for i, point in enumerate(points):
-        key = tuple(np.floor(point / cell).astype(np.int64))
-        best = float("inf")
-        for ring in range(0, 6):
-            candidates: list[int] = []
-            kx, ky, kz = key
-            for dx in range(-ring, ring + 1):
-                for dy in range(-ring, ring + 1):
-                    for dz in range(-ring, ring + 1):
-                        if max(abs(dx), abs(dy), abs(dz)) != ring:
-                            continue
-                        candidates.extend(buckets.get((kx + dx, ky + dy, kz + dz), ()))
-            if candidates:
-                arr = tris[np.asarray(candidates)]
-                d = _point_triangle_distance(np.repeat(point[None, :], len(arr), axis=0), arr)
-                best = min(best, float(d.min()))
-            if best <= ring * cell:
+    for i, point in enumerate(np.asarray(points)):
+        best2 = float("inf")
+        queue = [(box_dist2(point, nodes[0]), 0)]
+        while queue:
+            bound, index = heapq.heappop(queue)
+            if bound >= best2:
                 break
-        out[i] = best
-    # страховка: точки, до которых не дотянулись кольца, считаем полным перебором
-    bad = ~np.isfinite(out) | (out > 5 * cell)
-    if np.any(bad):
-        out[bad] = _brute_distance(points[bad], v, f)
+            _lo, _hi, left, right, indices = nodes[index]
+            if indices is not None:
+                arr = tris[indices]
+                d = _point_triangle_distance(np.broadcast_to(point, (len(arr), 3)), arr)
+                best2 = min(best2, float(d.min()) ** 2)
+            else:
+                for child in (left, right):
+                    dist2 = box_dist2(point, nodes[child])
+                    if dist2 < best2:
+                        heapq.heappush(queue, (dist2, child))
+        out[i] = math.sqrt(best2)
     return out
 
 

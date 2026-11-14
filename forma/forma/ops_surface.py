@@ -179,6 +179,8 @@ def _frame(normal: np.ndarray, hint=(0.0, 0.0, 1.0)) -> np.ndarray:
             "axis": "ось рукава и колец: x, y или z (z)",
             "surface": "наружная — только внешняя стенка; вся — включая внутреннюю",
             "seed": "сдвиг узора, целое (0)",
+            "engine": "для mode=шум: forma (прежний) или fastnoise",
+            "noise_kind": "для fastnoise: simplex, perlin, value или cellular",
             "detail": "явная длина ребра, мм (авто: длина волны/10…12)",
             "twist": "закрутка волн вдоль оси, градусы на всю длину (0)"},
     positional=["objects"])
@@ -210,6 +212,15 @@ def wrinkle(a, name):
     if amp <= 1e-6:
         return _derived(a, name, base.manifold, base, "wrinkle")
     seed = int(a.num("seed", 0) or 0)
+    engine = (a.text("engine") or "forma").strip().lower()
+    engine = {"форма": "forma", "fast": "fastnoise", "fastnoiselite": "fastnoise"}.get(engine, engine)
+    noise_kind = (a.text("noise_kind") or "simplex").strip().lower()
+    noise_kind = {"шум": "simplex", "перлин": "perlin", "ячейки": "cellular",
+                  "вороной": "cellular"}.get(noise_kind, noise_kind)
+    if engine not in ("forma", "fastnoise"):
+        raise GeometryError("wrinkle: engine=forma или fastnoise.")
+    if noise_kind not in ("simplex", "perlin", "value", "cellular"):
+        raise GeometryError("wrinkle: noise_kind=simplex, perlin, value или cellular.")
     twist = math.radians(float(a.num("twist", 0.0) or 0.0))
     m = base.manifold
     bb = m.bounding_box()
@@ -251,7 +262,12 @@ def wrinkle(a, name):
         elif mode == "шум":
             scale = freq / max(float(ext.max()), 1.0)
             shift = np.asarray([0.37 * seed, -0.19 * seed, 0.23 * seed])
-            off = amp * _fbm(verts * scale + shift, 4, seed)
+            pts = verts * scale + shift
+            if engine == "fastnoise":
+                from .noise import fast_noise
+                off = amp * fast_noise(pts, seed=seed, kind=noise_kind, octaves=4)
+            else:
+                off = amp * _fbm(pts, 4, seed)
         elif mode == "клетка":
             k = 2.0 * math.pi * freq / radial_span
             off = amp * 0.5 * (np.cos(k * u + phase) * np.cos(k * v - 0.4 * phase)
@@ -283,7 +299,8 @@ def wrinkle(a, name):
         return off
 
     solid = _deform(m, offsets, "складки", refine=refine)
-    a.scene.log("info", f"складки: {mode}, axis={axis_raw}, surface={surface}, "
+    noise_desc = f", шум {engine}/{noise_kind}" if mode == "шум" else ""
+    a.scene.log("info", f"складки: {mode}, axis={axis_raw}, surface={surface}{noise_desc}, "
                         f"амплитуда {amp:g} мм, частота {freq:g}, ребро {refine:g} мм, "
                         f"{solid.num_tri():,} трис".replace(",", " "), a.cmd.line)
     return _derived(a, name, solid, base, "wrinkle")

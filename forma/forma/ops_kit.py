@@ -1263,6 +1263,8 @@ def flower_center(a, name):
             "gap": "если задан — минимальный зазор; 0 запрещает пересечения",
             "inset": "отступ от границ области (0)",
             "sequence": "loop — прототипы по кругу; random — случайный выбор",
+            "distribution": "random (прежний) или poisson — расстояние между центрами в XY",
+            "distance": "для poisson: минимальное расстояние между центрами, мм (авто)",
             "as": "merged — одно тело; objects — отдельные копии с материалами",
             "avoid": "не ставить в круг радиусом, мм (0)",
             "at": "сдвиг центра [x,y,z]", "center": "не используется"},
@@ -1297,7 +1299,21 @@ def scatter(a, name):
     gap = a.num("gap", None, minv=0.0)
     align = (a.text("align", "bottom", ["bottom", "center", "none"]) or "bottom")
     sequence = (a.text("sequence", "loop", ["loop", "random"]) or "loop")
+    distribution = (a.text("distribution") or "random").strip().lower()
+    distribution = {"случайно": "random", "пуассон": "poisson"}.get(distribution, distribution)
+    if distribution not in ("random", "poisson"):
+        raise GeometryError("scatter: distribution=random или poisson.")
     rng = np.random.default_rng(seed)
+    sampler = None
+    spacing = None
+    if distribution == "poisson":
+        from .sampling import PoissonDisk2D
+        spacing = float(a.num("distance", 0.65 * math.sqrt(ax * ay / count), minv=0.001))
+        if not math.isfinite(spacing):
+            raise GeometryError("scatter: distance должно быть конечным положительным числом.")
+        sampler = PoissonDisk2D((center_x - ax / 2, center_y - ay / 2,
+                                 center_x + ax / 2, center_y + ay / 2), spacing, rng,
+                                max_attempts=max(1000, count * 120))
     records = []
     circles = []
     tries = 0
@@ -1306,9 +1322,17 @@ def scatter(a, name):
         tries += 1
         source = sources[len(records) % len(sources)] if sequence == "loop" else \
             sources[int(rng.integers(0, len(sources)))]
-        x = float(rng.uniform(center_x - ax / 2, center_x + ax / 2))
-        y = float(rng.uniform(center_y - ay / 2, center_y + ay / 2))
+        if sampler is None:
+            x = float(rng.uniform(center_x - ax / 2, center_x + ax / 2))
+            y = float(rng.uniform(center_y - ay / 2, center_y + ay / 2))
+        else:
+            point = sampler.candidate()
+            if point is None:
+                break
+            x, y = point
         if avoid > 0 and math.hypot(x - center_x, y - center_y) < avoid:
+            if sampler is not None:
+                sampler.reject()
             continue
         k = float(rng.uniform(smin, smax))
         angle = float(rng.uniform(0.0, turn)) if turn > 0 else 0.0
@@ -1318,6 +1342,8 @@ def scatter(a, name):
         if gap is not None:
             if any(math.hypot(x - px, y - py) < radius + pr + float(gap)
                    for px, py, pr in circles):
+                if sampler is not None:
+                    sampler.reject()
                 continue
         delta = [x - (pb[0] + pb[3]) / 2.0,
                  y - (pb[1] + pb[4]) / 2.0, 0.0]
@@ -1330,10 +1356,15 @@ def scatter(a, name):
         piece = piece.translate(tuple(delta + at))
         records.append((piece, source))
         circles.append((x, y, radius))
+        if sampler is not None:
+            sampler.accept()
     if len(records) != count:
         raise GeometryError(
             f"scatter: удалось разместить только {len(records)} из {count} копий.",
-            hint="Увеличьте area, уменьшите scale/gap/avoid или уменьшите count.")
+            hint="Увеличьте area, уменьшите scale/gap/avoid/distance или уменьшите count.")
+    if sampler is not None:
+        a.scene.log("info", f"scatter: Poisson-disk в XY, центры не ближе {spacing:g} мм; "
+                            "для размеров деталей отдельно используется gap.", a.cmd.line)
     as_default = "objects" if len(sources) > 1 else "merged"
     as_mode = (a.text("as", as_default, ["merged", "objects"]) or as_default)
     if as_mode == "objects":

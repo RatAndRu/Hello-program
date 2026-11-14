@@ -126,11 +126,35 @@ def run(exe: Path | None):
             obj_data = (Path(temp) / 'exports' / obj['name']).read_bytes()
             if b'mtllib ' in obj_data or b'(mm, Z-up)' not in obj_data:
                 raise RuntimeError('OBJ неожиданно изменил формат')
+            example = (ROOT / 'examples' / 'noise_scatter_0764.forma').read_text(encoding='utf-8')
+            result = post('/api/build', {'script': example, 'auto': False})
+            if not result.get('ok'):
+                raise RuntimeError(f"Пример FastNoiseLite/Poisson не собран: {result.get('error')}")
+            exported = post('/api/export', {'format': 'glb'})
+            example_data = (Path(temp) / 'exports' / exported['name']).read_bytes()
+            sample_doc, _ = _glb_read(example_data)
+            meshes = [m for m in sample_doc['meshes'] if m.get('name', '').startswith('камешки_')]
+            if len(meshes) != 18:
+                raise RuntimeError(f'В примере ожидалось 18 камешков, получено {len(meshes)}')
+            centers = []
+            for mesh in meshes:
+                acc = sample_doc['accessors'][mesh['primitives'][0]['attributes']['POSITION']]
+                centers.append([(acc['min'][axis] + acc['max'][axis]) / 2 for axis in (0, 2)])
+            centers = np.asarray(centers)
+            distances = np.linalg.norm(centers[:, None] - centers[None, :], axis=2)
+            distances += np.eye(len(centers)) * 1e9
+            if float(distances.min()) < 11 - 1e-4:
+                raise RuntimeError('Poisson-disk нарушил минимальное расстояние между центрами')
+            mats = {m.get('name'): m for m in sample_doc['materials']}
+            if mats.get('mat_пластина', {}).get('normalTexture', {}).get('scale') != 1.0:
+                raise RuntimeError('Клеточная карта нормалей не экспортирована')
             return {'version': __version__, 'standard_extents_m': [.2, .06, .1],
                     'preview_extents_mm': [200, 60, 100], 'roundtrip_mm': [200, 100, 60],
                     'thin_double_sided': True, 'physical_glass': True,
                     'alpha_fallback': True, 'emissive': True, 'normal_map_tangent': True,
-                    'obj_geometry_only': True, 'note': 'Проверены данные EXE, не визуальная идентичность рендереров.'}
+                    'obj_geometry_only': True, 'fastnoise_and_poisson': True,
+                    'poisson_min_center_mm': float(distances.min()),
+                    'note': 'Проверены данные EXE, не визуальная идентичность рендереров.'}
         finally:
             if sys.platform == 'win32':
                 subprocess.run(['taskkill', '/PID', str(process.pid), '/T', '/F'], check=False,
