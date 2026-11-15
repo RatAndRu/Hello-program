@@ -33,6 +33,9 @@ def _installed_names() -> set[str]:
 
 
 def main() -> int:
+    # airmouse обязательно первым: он ставит заглушку matplotlib, без которой
+    # mediapipe.tasks.python.vision не импортируется (у него import matplotlib).
+    import airmouse  # noqa: F401
     import cv2
     import mediapipe
     import numpy
@@ -58,7 +61,6 @@ def main() -> int:
     # Тот же порядок импортов, что и в приложении: airmouse (ставит заглушку
     # matplotlib) -> mediapipe -> vision. Ловит поломки раньше PyInstaller.
     try:
-        import airmouse  # noqa: F401
         from mediapipe.tasks.python import vision
 
         if not (hasattr(vision, "HandLandmarker") and hasattr(vision, "FaceLandmarker")):
