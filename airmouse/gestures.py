@@ -19,7 +19,9 @@ from .landmarks import (
     FINGERS,
     INDEX_MCP,
     INDEX_TIP,
+    MIDDLE_MCP,
     MIDDLE_TIP,
+    PINKY_MCP,
     RING_TIP,
     THUMB_MCP,
     THUMB_TIP,
@@ -46,6 +48,20 @@ class Pose(str, Enum):
     OK = "ok"
     ROCK = "rock"
 
+
+class HandSide(str, Enum):
+    """Какая сторона кисти смотрит в камеру."""
+
+    PALM = "palm"      # ладонь
+    BACK = "back"      # тыльная сторона
+    UNKNOWN = "unknown"  # ещё не откалибровано или рука «ребром»
+
+
+SIDE_TITLES_RU = {
+    HandSide.PALM: "ладонь",
+    HandSide.BACK: "тыл",
+    HandSide.UNKNOWN: "не определена",
+}
 
 POSE_TITLES_RU = {
     Pose.NONE: "—",
@@ -116,6 +132,109 @@ def _finger_extension(hand: Hand, name: str) -> float:
     stretch = safe_div(distance(hand.xy(tip), hand.xy(WRIST)), distance(hand.xy(base), hand.xy(WRIST)), 1.0)
     stretched = clamp((stretch - 0.95) / 0.50, 0.0, 1.0)
     return 0.55 * straight + 0.45 * stretched
+
+
+def hand_normal_score(hand: Hand) -> float:
+    """Куда смотрит ладонь: +1 — в камеру, −1 — тыльной стороной.
+
+    Берём нормаль плоскости ладони (запястье, основания указательного, среднего
+    и мизинца) по трём координатам: MediaPipe отдаёт z, а он честно меняет знак,
+    когда кисть разворачивают. Знак нормали зависит ещё и от того, правая это
+    рука или левая, поэтому «ладонь» означает «сторона, которую пользователь
+    один раз показал при калибровке» (см. :class:`SideEstimator`).
+    """
+    pts = np.asarray(hand.points, dtype=np.float64)
+    if pts.ndim != 2 or pts.shape[0] < 21 or pts.shape[1] < 3:
+        return 0.0
+    wrist = pts[WRIST]
+    index = pts[INDEX_MCP]
+    middle = pts[MIDDLE_MCP]
+    pinky = pts[PINKY_MCP]
+    normal = np.cross(index - wrist, pinky - wrist) + np.cross(middle - index, pinky - index)
+    norm = float(np.linalg.norm(normal))
+    if norm < 1e-12:
+        return 0.0
+    return float(normal[2] / norm)
+
+
+class SideEstimator:
+    """Сглаженная и с гистерезисом оценка «ладонь или тыл».
+
+    Одна калибровка: пользователь один раз показывает ладонь (кнопка в
+    настройках или клавиша K) — запоминается знак нормали. Дальше всё, у чего
+    знак совпал, считается ладонью, а противоположный — тылом. Если рука
+    повёрнута ребром (нормаль почти нулевая), сторона не меняется — так жест не
+    «переобувается» на развороте.
+    """
+
+    def __init__(self, cfg: HandConfig) -> None:
+        self.cfg = cfg
+        self.side = HandSide.UNKNOWN
+        self._median = Median3()
+        self._candidate = HandSide.UNKNOWN
+        self._count = 0
+        self.last_score = 0.0
+
+    # ---------------------------------------------------------------- #
+    def reset(self) -> None:
+        self.side = HandSide.UNKNOWN
+        self._candidate = HandSide.UNKNOWN
+        self._count = 0
+        self._median.reset()
+        self.last_score = 0.0
+
+    @property
+    def calibrated(self) -> bool:
+        return abs(float(getattr(self.cfg, "side_reference", 0.0))) > 1e-6
+
+    def calibrate(self) -> bool:
+        """Запомнить текущую нормаль как «ладонь»."""
+        if abs(self.last_score) < float(getattr(self.cfg, "side_min_score", 0.35)):
+            return False
+        self.cfg.side_reference = 1.0 if self.last_score > 0 else -1.0
+        self.side = HandSide.PALM
+        return True
+
+    def flip(self) -> None:
+        ref = float(getattr(self.cfg, "side_reference", 0.0))
+        self.cfg.side_reference = -ref if abs(ref) > 1e-6 else ref
+        if self.side is HandSide.PALM:
+            self.side = HandSide.BACK
+        elif self.side is HandSide.BACK:
+            self.side = HandSide.PALM
+
+    # ---------------------------------------------------------------- #
+    def update(self, hand: Optional[Hand]) -> HandSide:
+        if hand is None:
+            self.reset()
+            return self.side
+
+        score = self._median.update(hand_normal_score(hand))
+        self.last_score = score
+        reference = float(getattr(self.cfg, "side_reference", 0.0))
+        min_score = float(getattr(self.cfg, "side_min_score", 0.35))
+
+        candidate = HandSide.UNKNOWN
+        if abs(reference) > 1e-6 and abs(score) >= min_score:
+            same = (score > 0) == (reference > 0)
+            candidate = HandSide.PALM if same else HandSide.BACK
+
+        if candidate is HandSide.UNKNOWN:
+            # рука «ребром» или калибровки нет — оставляем как было
+            self._candidate = HandSide.UNKNOWN
+            self._count = 0
+            return self.side
+
+        if candidate is self._candidate:
+            self._count += 1
+        else:
+            self._candidate = candidate
+            self._count = 1
+
+        need = max(int(getattr(self.cfg, "side_min_frames", 3)), 1)
+        if self._count >= need:
+            self.side = candidate
+        return self.side
 
 
 def analyze_hand(hand: Hand, pointer_source: str = "auto") -> HandFeatures:
@@ -295,6 +414,7 @@ class HandFSM:
         self.approaching = False   # пальцы идут на смыкание: курсор заморожен
         self._approach_count = 0
         self._pose_once: dict = {}
+        self.side_est = SideEstimator(cfg)
         self._med_pinch = Median3()
         self._med_middle = Median3()
         self._med_ring = Median3()
@@ -312,9 +432,15 @@ class HandFSM:
         self._prev_pointer = None
         self._last_pose = Pose.NONE
         self._thumb_fired = False
+        self.side_est.reset()
         self._med_pinch.reset()
         self._med_middle.reset()
         self._med_ring.reset()
+
+    @property
+    def side(self) -> HandSide:
+        """Какая сторона кисти смотрит в камеру (ладонь / тыл / не определена)."""
+        return self.side_est.side
 
     @property
     def pinching(self) -> bool:
@@ -347,6 +473,12 @@ class HandFSM:
         if self._prev_pointer is not None:
             f.fast_motion = float(np.linalg.norm(f.pointer - self._prev_pointer))
         self._prev_pointer = f.pointer
+
+        # Какая сторона кисти смотрит в камеру (ладонь / тыл) — с гистерезисом.
+        self.side_est.update(hand)
+        side_back = self.side is HandSide.BACK and bool(
+            getattr(self.cfg, "side_actions", True)
+        )
 
         # Антидребезг: медиана трёх кадров гасит одиночные «схлопывания» пальцев.
         f.pinch = self._med_pinch.update(f.pinch)
@@ -439,9 +571,14 @@ class HandFSM:
         }
         for pose_value, kind in STABLE_EVENTS.items():
             if stable == pose_value.value:
+                # тыльной стороной кисти те же позы дают другие команды
+                event_kind = f"{kind}_back" if side_back else kind
                 if not self._pose_once.get(kind) and self.cooldown.try_fire(kind, now):
                     self._pose_once[kind] = True
-                    events.append(Event(kind, label=pose_value.value))
+                    label = pose_value.value
+                    if side_back:
+                        label += " (тыл)"
+                    events.append(Event(event_kind, label=label))
             else:
                 self._pose_once[kind] = False
 
@@ -500,6 +637,7 @@ def synthetic_hand(
     curl: Optional[Dict[str, float]] = None,
     pinch_index: bool = False,
     pinch_middle: bool = False,
+    back: bool = False,
 ) -> Hand:
     """Строит правдоподобные 21 точку кисти по «степени сжатия» каждого пальца.
 
@@ -557,6 +695,10 @@ def synthetic_hand(
     if pinch_middle:
         pts[4] = pts[12] + np.array([0.0, -0.004])
         pts[3] = pts[4] + (pts[3] - pts[4]) * 0.55
+    if back:
+        # кисть развёрнута тыльной стороной: картинка зеркалится, нормаль
+        # ладони меняет знак — ровно то, что видит нейросеть в кадре
+        pts[:, 0] = 2.0 * center[0] - pts[:, 0]
     return Hand(np.hstack([pts, np.zeros((21, 1))]))
 
 

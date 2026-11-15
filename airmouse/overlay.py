@@ -90,13 +90,14 @@ HELP_FACE = (
 
 HELP_KEYS = (
     ("Q / Esc", "выход"),
-    ("P", "пауза (действия не выполняются)"),
-    ("H", "мышь головой вкл/выкл"),
-    ("M", "сменить движок (нейросеть ↔ классический CV)"),
-    ("C", "настройки: ползунки калибровки"),
-    ("V", "режим по кругу: рука → рука + лицо → две руки → только лицо"),
+    ("P", "пауза"),
+    ("H", "мышь головой"),
+    ("C", "настройки"),
+    ("V", "режим по кругу"),
+    ("K", "калибровка ладони"),
+    ("M", "движок: ИИ ↔ CV"),
     ("I / Tab", "эта справка"),
-    ("пробел", "статистика в журнал"),
+    ("пробел", "статистика в лог"),
 )
 
 HELP_TWO_HANDS = (
@@ -136,9 +137,10 @@ class OverlayState:
     roles_text: str = ""             # кто чем занят (режим hand.roles=split)
     settings_open: bool = False      # окно настроек с ползунками открыто
     modes_text: str = ""             # какие режимы включены: «режимы: рука + лицо»
+    side_text: str = ""              # «сторона кисти: ладонь / тыл»
     events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
-    hints: str = "Q выход  P пауза  H голова  C настройки  V режимы  M движок  I справка"
+    hints: str = "Q выход P пауза H голова C настройки V режимы K ладонь M движок I справка"
     show_help: bool = False
     show_names: bool = True
     pinch_threshold: float = 0.32
@@ -328,7 +330,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
              (actions, size_small))
     text_w = max([T.measure(t, size)[0] for t, size in lines] + [T.measure("AirMouse 0.2.0", size_title)[0]])
     panel_w = text_w + int(24 * k)
-    n_extra = int(bool(state.modes_text)) + int(bool(state.roles_text)) + int(state.settings_open)
+    n_extra = (int(bool(state.modes_text)) + int(bool(state.side_text))
+               + int(bool(state.roles_text)) + int(state.settings_open))
     panel_h = int((104 + 30 * n_extra) * k)
     _panel(img, x, y, panel_w, panel_h, 0.62)
 
@@ -424,9 +427,14 @@ def _draw_help(img, state: OverlayState, k: float) -> None:
     y = rows(HELP_TWO_HANDS, left_x, y)
     y += int(6 * k)
     y = header("Клавиши:", left_x, y)
-    for key, action in HELP_KEYS:
-        T.draw(img, f"{key:<10} {action}", (left_x, y), body, FG)
-        y += int(19 * k)
+    # две колонки: иначе список клавиш не влезает в окно
+    per_col = (len(HELP_KEYS) + 1) // 2
+    col_dx = int(200 * k)
+    for i, (key, action) in enumerate(HELP_KEYS):
+        cx = left_x + (col_dx if i >= per_col else 0)
+        cy = y + (i - per_col if i >= per_col else i) * int(19 * k)
+        T.draw(img, f"{key:<9} {action}", (cx, cy), int(12.5 * k), FG)
+    y += per_col * int(19 * k)
 
     # ---------------- правая колонка: мимика ----------------
     yy = pad + int(40 * k)
@@ -436,7 +444,12 @@ def _draw_help(img, state: OverlayState, k: float) -> None:
     T.draw(img, "жесты мимики только показываются в окне,", (right_x, yy), int(12 * k), DIM)
     yy += int(16 * k)
     T.draw(img, "действия включаются в config/airmouse.json", (right_x, yy), int(12 * k), DIM)
-    yy += int(34 * k)
+    yy += int(30 * k)
+    yy = header("Сторона кисти (клавиша K — калибровка):", right_x, yy)
+    T.draw(img, "ладонью: двойной клик / пауза / мышь головой", (right_x, yy), int(12 * k), FG)
+    yy += int(17 * k)
+    T.draw(img, "тылом: правый клик / двойной клик / пауза", (right_x, yy), int(12 * k), FG)
+    yy += int(24 * k)
     yy = header("Роли рук:", right_x, yy)
     T.draw(img, "одна ведёт курсор, вторая нажимает", (right_x, yy), body, FG)
     yy += int(19 * k)
@@ -508,8 +521,8 @@ def render(
                int(13 * k), (0, 255, 255), alpha=0.5)
 
     if state.two_hand_hint:      # подсказка двумя руками — под сводкой слева
-        n_extra = (int(bool(state.modes_text)) + int(bool(state.roles_text))
-                   + int(state.settings_open))
+        n_extra = (int(bool(state.modes_text)) + int(bool(state.side_text))
+                   + int(bool(state.roles_text)) + int(state.settings_open))
         hint_y = int((12 + 104 + 30 * n_extra + 8) * k)
         _label(img, state.two_hand_hint, (int(12 * k), hint_y),
                int(14 * k), ACCENT, alpha=0.55)

@@ -15,7 +15,14 @@ from .actions import ActionRouter, DryRunBackend
 from .config import AppConfig, FaceConfig, HandConfig, PointerConfig
 from .face import FaceFSM, FaceMetrics, measure_face
 from .filters import HysteresisGate, OneEuroFilter
-from .gestures import HandFSM, Pose, analyze_hand, classify_pose, synthetic_hand
+from .gestures import (
+    HandFSM,
+    HandSide,
+    Pose,
+    analyze_hand,
+    classify_pose,
+    synthetic_hand,
+)
 from .lipreading import LipReader, TemplateStore, dtw_distance, normalize_sequence
 from .pointer import PointerMapper
 from .settings_ui import DEFAULTS, SettingsPanel, apply_preset
@@ -105,6 +112,38 @@ def check_debounce() -> Check:
             clicks += ev.kind == "pinch_release"
         t += 0.033
     return Check("одиночный выброс щипка не кликает", clicks == 0, f"кликов: {clicks}")
+
+
+def check_hand_side() -> Check:
+    """Ладонь и тыл различаются, калибровка снимает неоднозначность, жесты расходятся."""
+    cfg = HandConfig()
+    fsm = HandFSM(cfg)
+    palm, back = synthetic_hand(), synthetic_hand(back=True)
+    for _ in range(4):
+        fsm.update(palm, 0.0)
+    calibrated = fsm.side_est.calibrate()
+    for i in range(6):
+        fsm.update(back, 0.1 + i * 0.04)
+    switched = fsm.side is HandSide.BACK
+
+    ok_back = synthetic_hand(pinch_index=True, back=True,
+                             curl={"index": 0.7, "middle": 0.0, "ring": 0.0, "pinky": 0.0})
+    back_fsm = HandFSM(HandConfig())
+    for _ in range(4):
+        back_fsm.update(palm, 0.0)
+    back_fsm.side_est.calibrate()
+    kinds = set()
+    t = 1.0
+    for i in range(14):
+        for ev in back_fsm.update(ok_back if i >= 6 else back, t):
+            kinds.add(ev.kind)
+        t += 0.04
+    mapping = AppConfig().actions.mapping
+    ok = bool(calibrated and switched and "ok_sign_back" in kinds
+              and mapping.get("ok_sign_back") != mapping.get("ok_sign"))
+    return Check("сторона кисти: ладонь / тыл", ok,
+                 f"калибровка={calibrated}, переключение={switched}, "
+                 f"жест тылом={'ok_sign_back' in kinds}")
 
 
 def check_settings_panel() -> Check:
@@ -511,6 +550,7 @@ CHECKS: List[Callable[[], Check]] = [
     check_debounce,
     check_head_pointer,
     check_modes,
+    check_hand_side,
     check_settings_panel,
     check_rotation,
     check_click_fsm,

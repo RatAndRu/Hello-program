@@ -123,6 +123,10 @@ class HandConfig:
     pinch_min_s: float = 0.08           # короче этого — не клик, а дребезг распознавания
     smooth_alpha: float = 0.45         # сглаживание точек: 1.0 — без сглаживания
     roles: str = "single"              # single | split: вторая рука нажимает, первая ведёт
+    side_actions: bool = True          # тыльной стороной кисти — другие команды
+    side_reference: float = 0.0        # знак нормали ладони из калибровки (0 — не калибровано)
+    side_min_score: float = 0.35       # ниже — сторона не определяется (рука ребром)
+    side_min_frames: int = 3           # сколько кадров держать сторону перед сменой
     drag_delay_s: float = 0.30         # удержание щипка -> перетаскивание
     click_cooldown_s: float = 0.35
     open_palm_hold_s: float = 1.30     # пауза по раскрытой ладони (дольше — меньше случайных)
@@ -208,6 +212,10 @@ class ActionConfig:
         "ok_sign": "double_click",          # ОК: двойной клик
         "rock_sign": "toggle_pause",        # «коза»: пауза
         "three_fingers": "toggle_head_pointer",  # три пальца: мышь головой
+        # те же позы, но тыльной стороной кисти — другая команда
+        "ok_sign_back": "right_click",
+        "rock_sign_back": "double_click",
+        "three_fingers_back": "toggle_pause",
     })
     scroll_mode: str = "fist"          # прокрутка кулаком (см. gestures)
     double_click_interval_s: float = 0.12

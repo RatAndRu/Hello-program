@@ -553,10 +553,12 @@ class SettingsPanel:
     def __init__(self, cfg: AppConfig, path: Optional[Path] = None,
                  sliders: Optional[Sequence[Slider]] = None,
                  runtime: Any = None,
-                 toggles: Optional[Sequence[Toggle]] = None) -> None:
+                 toggles: Optional[Sequence[Toggle]] = None,
+                 hooks: Optional[Dict[str, Any]] = None) -> None:
         self.cfg = cfg
         self.path = path
         self.runtime = runtime
+        self.hooks: Dict[str, Any] = dict(hooks or {})
         self.toggle_items: List[Toggle] = list(toggles if toggles is not None else TOGGLES)
         self.pages = build_pages(sliders if sliders is not None else SLIDERS,
                                  self.toggle_items)
@@ -642,6 +644,32 @@ class SettingsPanel:
             x += width + gap
         return out
 
+    def side_buttons(self, size: Tuple[int, int] = (960, 540)) -> List[Tuple[str, Tuple[int, int, int, int]]]:
+        """Кнопки калибровки стороны кисти (только на странице «Режимы»)."""
+        if not self.pages[self.page].presets:
+            return []
+        w, h = size
+        k = max(min(h / 540.0, w / 960.0), 0.5)
+        presets = self.preset_buttons(size)
+        y = (presets[0][1][1] + presets[0][1][3] + int(10 * k)) if presets else int(self.FIRST_Y * k)
+        names = ("КАЛИБРОВАТЬ ЛАДОНЬ (K)", "ИНВЕРТИРОВАТЬ",
+                 f"ТЫЛОМ: {'ВКЛ' if self.cfg.hand.side_actions else 'ВЫКЛ'}")
+        widths = (int(200 * k), int(150 * k), int(170 * k))
+        gap = int(12 * k)
+        x = int((w - (sum(widths) + gap * (len(widths) - 1))) / 2)
+        out = []
+        for name, width in zip(names, widths):
+            out.append((name, (x, y, width, int(28 * k))))
+            x += width + gap
+        return out
+
+    def side_state(self) -> str:
+        """Что сейчас видно: «ладонь», «тыл» или «не определена»."""
+        hook = self.hooks.get("side")
+        if callable(hook):
+            return str(hook())
+        return "не определена"
+
     def layout(self, size: Tuple[int, int] = (960, 540)) -> List[Row]:
         """Положение строк текущей страницы (в пикселях кадра)."""
         w, h = size
@@ -711,6 +739,27 @@ class SettingsPanel:
                     apply_preset(self.cfg, self.runtime, name)
                     self.dirty = True
                     self.status = f"режим: {name} — {self.modes_text()}"
+                    return "reset"
+            for name, (bx, by, bw, bh) in self.side_buttons(size):
+                if bx <= x <= bx + bw and by <= y <= by + bh:
+                    if name.startswith("КАЛИБРОВАТЬ"):
+                        hook = self.hooks.get("calibrate")
+                        ok = bool(hook()) if callable(hook) else False
+                        self.dirty = True
+                        self.status = ("ладонь запомнена" if ok
+                                       else "покажите ладонь в камеру и нажмите ещё раз")
+                        return "change"
+                    if name.startswith("ИНВЕРТИРОВАТЬ"):
+                        hook = self.hooks.get("flip")
+                        if callable(hook):
+                            hook()
+                        self.dirty = True
+                        self.status = f"сторона: {self.side_state()}"
+                        return "change"
+                    self.cfg.hand.side_actions = not self.cfg.hand.side_actions
+                    self.dirty = True
+                    self.status = ("команды тылом включены" if self.cfg.hand.side_actions
+                                   else "команды тылом выключены")
                     return "reset"
             for toggle, (tx, ty, tw, th) in self.toggle_rows(size):
                 if tx <= x <= tx + tw and ty <= y <= ty + th:
@@ -852,6 +901,14 @@ class SettingsPanel:
             tw, th_ = T.measure(name, int(12 * k))
             T.draw(img, name, (bx + (bw - tw) // 2, by + (bh - th_) // 2), int(12 * k), _WARN)
 
+        # калибровка стороны кисти
+        for name, (bx, by, bw, bh) in self.side_buttons((w, h)):
+            cv2.rectangle(img, (bx, by), (bx + bw, by + bh), _PANEL, -1)
+            color = _ACCENT if name.startswith("КАЛИБРОВАТЬ") else _DIM
+            cv2.rectangle(img, (bx, by), (bx + bw, by + bh), color, 1, cv2.LINE_AA)
+            tw, th_ = T.measure(name, int(11 * k))
+            T.draw(img, name, (bx + (bw - tw) // 2, by + (bh - th_) // 2), int(11 * k), color)
+
         # кнопки
         for name, (bx, by, bw, bh) in self.buttons((w, h)):
             cv2.rectangle(img, (bx, by), (bx + bw, by + bh), _PANEL, -1)
@@ -870,7 +927,7 @@ class SettingsPanel:
         left_x = int(self.MARGIN * k) + int(150 * k)
         right_edge = w - int(self.MARGIN * k)
         if self.pages[self.page].presets:
-            live = "сейчас: " + self.modes_text()
+            live = f"сейчас: {self.modes_text()} · сторона: {self.side_state()}"
         status = self.status[:70]
         status_w = T.measure(status, int(12 * k))[0] if status else 0
         if status:

@@ -18,8 +18,10 @@ from .camera import ThreadedCamera
 from .config import AppConfig, resolve_path
 from .face import FaceFSM, FaceMetrics, measure_face
 from .gestures import (
+    SIDE_TITLES_RU,
     Event,
     HandFSM,
+    HandSide,
     POSE_TITLES_RU,
     TwoHandFSM,
     analyze_hand,
@@ -347,6 +349,36 @@ class AirMouseApp:
         self.pointer.cfg = self.cfg.pointer
         self.state.pinch_threshold = self.cfg.hand.pinch_ratio
 
+    def _side_text_short(self) -> str:
+        return SIDE_TITLES_RU.get(self.hand_fsm.side, "—")
+
+    def calibrate_side(self) -> bool:
+        """Клавиша K: запомнить текущую ориентацию кисти как «ладонь».
+
+        Без этой калибровки сторона кисти не определяется: по 21 точке нельзя
+        отличить «моя правая рука ладонью» от «моя левая рука тылом» — это
+        зеркальные позы. Одно нажатие, пока ладонь смотрит в камеру, снимает
+        неоднозначность.
+        """
+        ok = self.hand_fsm.side_est.calibrate()
+        if ok:
+            self._events_log.append(
+                f"{time.strftime('%H:%M:%S')}  калибровка: ладонь запомнена"
+            )
+            log.info("Сторона кисти откалибрована: sign=%.0f",
+                     self.cfg.hand.side_reference)
+        else:
+            self._events_log.append(
+                f"{time.strftime('%H:%M:%S')}  калибровка: покажите ладонь в камеру"
+            )
+            log.info("Калибровка стороны не удалась: рука не в кадре или повёрнута ребром")
+        return ok
+
+    def flip_side(self) -> None:
+        """Инверсия «ладонь ↔ тыл», если калибровка была наоборот."""
+        self.hand_fsm.side_est.flip()
+        self._events_log.append(f"{time.strftime('%H:%M:%S')}  сторона кисти: инверсия")
+
     def cycle_modes(self) -> str:
         """Клавиша V: рука → рука + лицо → две руки → только лицо."""
         name = cycle_preset(self.cfg, self.router)
@@ -370,7 +402,11 @@ class AirMouseApp:
             log.info("Настройки открываются только с окном: уберите --no-window")
             return False
         if self.settings is None:
-            self.settings = SettingsPanel(self.cfg, runtime=self.router)
+            self.settings = SettingsPanel(self.cfg, runtime=self.router, hooks={
+                "calibrate": self.calibrate_side,
+                "flip": self.flip_side,
+                "side": self._side_text_short,
+            })
         if not self.settings.open():
             return False
         self._bind_mouse()
@@ -470,6 +506,11 @@ class AirMouseApp:
         s.roles_text = ("роли: 1 — курсор, 2 — клики" if s.split_roles else "")
         s.settings_open = self.settings_open()
         s.modes_text = "режимы: " + modes_summary(self.cfg, self.router)
+        side = self.hand_fsm.side
+        if side is HandSide.UNKNOWN:
+            s.side_text = "сторона кисти: не определена (K — показать ладонь)"
+        else:
+            s.side_text = f"сторона кисти: {SIDE_TITLES_RU.get(side, '—')}"
         s.paused = self.router.paused
         s.head_pointer = self.router.head_pointer
         s.hand_seen = bool(self._hands) or self._shape is not None
@@ -597,6 +638,8 @@ class AirMouseApp:
                         self.toggle_settings()
                     elif key in (ord("v"), ord("V"), ord("в"), ord("В")):
                         self.cycle_modes()
+                    elif key in (ord("k"), ord("K"), ord("л"), ord("Л")):
+                        self.calibrate_side()
                     elif key in (ord("i"), ord("I"), ord("ш"), ord("?")):
                         self.state.show_help = not self.state.show_help
                     elif key == 9:  # Tab — тот же переключатель, что и «I»
