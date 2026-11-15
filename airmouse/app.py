@@ -506,11 +506,16 @@ class AirMouseApp:
         fsm = self.face_fsm
         if not fsm.gaze_valid:
             return "взгляд: зрачков не видно (нужна нейросеть MediaPipe)"
+        cfg = self.cfg.face
         gx, gy = fsm.gaze_x - fsm.baseline.gaze_x, fsm.gaze_y - fsm.baseline.gaze_y
-        dz = self.cfg.face.gaze_deadzone
-        if abs(gx) <= dz and abs(gy) <= dz:
+        # сравниваем «насколько вышли за свою мёртвую зону», а не сырые числа:
+        # по вертикали ход зрачка меньше, и сырое сравнение всегда давало «прямо»
+        nx = gx / max(cfg.gaze_full_scale_x, 1e-3)
+        ny = gy / max(cfg.gaze_full_scale_y, 1e-3)
+        inside = (abs(gx) <= cfg.gaze_deadzone) and (abs(gy) <= cfg.gaze_deadzone_y)
+        if inside:
             where = "прямо"
-        elif abs(gx) >= abs(gy):
+        elif abs(nx) >= abs(ny):
             where = "вправо" if gx > 0 else "влево"
         else:
             where = "вниз" if gy > 0 else "вверх"

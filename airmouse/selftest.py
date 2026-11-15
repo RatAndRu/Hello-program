@@ -190,9 +190,24 @@ def check_gaze() -> Check:
     for _ in range(4):
         blind.update(measure_face(synthetic_face(iris=False)), t)
         t += 0.04
-    ok = bool(fsm.gaze_valid and centered and dx > 5 and abs(dy) < 1 and not blind.gaze_valid)
+
+    # вертикаль и «не затухает»: смотрим вниз три секунды подряд
+    down = FaceFSM(FaceConfig())
+    t2 = 0.0
+    for _ in range(30):
+        down.update(measure_face(synthetic_face()), t2)
+        t2 += 0.04
+    for _ in range(75):
+        down.update(measure_face(synthetic_face(gaze=(0.0, 0.12))), t2)
+        t2 += 0.04
+    down_step = down.gaze_step(0.04)
+
+    ok = bool(fsm.gaze_valid and centered and dx > 5 and abs(dy) < 1
+              and not blind.gaze_valid
+              and down_step[1] > 2.0 and abs(down_step[0]) < 1.0)
     return Check("зрачки и мышь глазами", ok,
-                 f"вправо={dx:.1f}px за 0.1с, без радужки — {blind.gaze_valid}")
+                 f"вправо={dx:.1f}px, вниз={down_step[1]:.1f}px за 0.04с, "
+                 f"без радужки — {blind.gaze_valid}")
 
 
 def check_blink_rules() -> Check:

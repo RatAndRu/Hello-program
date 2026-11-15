@@ -204,3 +204,66 @@ def test_overlay_shows_gaze_line():
                           overlay.OverlayState(gaze_text="взгляд: вправо", **base),
                           hands=[])
     assert not np.array_equal(quiet, loud)
+
+
+# --------------------------------------------------------------------------- #
+#  Скорость и вертикаль «мыши глазами»
+# --------------------------------------------------------------------------- #
+def _gaze_fsm(warm=(0.0, 0.0), look=(0.0, 0.0), frames=90, fps=25.0):
+    fsm = FaceFSM(FaceConfig())
+    t = 0.0
+    warm_face = measure_face(synthetic_face(gaze=warm))
+    for _ in range(30):
+        fsm.update(warm_face, t)
+        t += 1.0 / fps
+    look_face = measure_face(synthetic_face(gaze=look))
+    for _ in range(frames):
+        fsm.update(look_face, t)
+        t += 1.0 / fps
+    return fsm
+
+
+def _speed(fsm, fps=25.0):
+    dx, dy = fsm.gaze_step(1.0 / fps)
+    return dx * fps, dy * fps
+
+
+def test_sustained_gaze_does_not_fade():
+    """Смотрим в сторону 3+ секунды — курсор должен продолжать ехать."""
+    fsm = _gaze_fsm(look=(0.30, 0.0), frames=100)
+    vx, _vy = _speed(fsm)
+    assert vx > 300, vx                       # было: через пару секунд 0
+
+    fsm = _gaze_fsm(look=(-0.30, 0.0), frames=100)
+    assert _speed(fsm)[0] < -300
+
+
+def test_vertical_gaze_moves_cursor():
+    """Вверх-вниз тоже работает: ход зрачка по вертикали меньше, и порог ниже."""
+    down = _gaze_fsm(look=(0.0, 0.12), frames=100)
+    _vx, vy = _speed(down)
+    assert vy > 150, vy
+
+    up = _gaze_fsm(look=(0.0, -0.12), frames=100)
+    assert _speed(up)[1] < -150
+
+
+def test_small_glance_moves_cursor():
+    """Небольшой взгляд в сторону — заметная скорость, а не «миллиметр в час»."""
+    fsm = _gaze_fsm(look=(0.15, 0.0), frames=60)
+    vx, _vy = _speed(fsm)
+    assert vx > 150, vx
+
+
+def test_neutral_adapts_to_rest_pose():
+    """Свой «ноль» подстраивается, если взгляд в покое чуть смещён."""
+    fsm = _gaze_fsm(warm=(0.06, 0.04), look=(0.06, 0.04), frames=200)
+    vx, vy = _speed(fsm)
+    assert abs(vx) < 5 and abs(vy) < 5, (vx, vy)
+
+
+def test_baseline_has_separate_vertical_scale():
+    cfg = FaceConfig()
+    assert cfg.gaze_deadzone_y < cfg.gaze_deadzone
+    assert cfg.gaze_full_scale_y < cfg.gaze_full_scale_x
+    assert cfg.gaze_speed_px_s >= 600

@@ -306,13 +306,43 @@ def build_sliders() -> List[Slider]:
     ))
     items.append(Slider(
         key="face.gaze_deadzone",
-        label="мышь глазами: мёртвая зона",
+        label="мышь глазами: мёртвая зона, влево-вправо",
         group="Моргание и глаза",
-        lo=0.05, hi=0.60, step=0.01,
+        lo=0.02, hi=0.30, step=0.01,
         get=lambda cfg: cfg.face.gaze_deadzone,
         set=lambda cfg, v: setattr(cfg.face, "gaze_deadzone", float(v)),
         fmt="{:.2f}",
         hint="доля полуширины глаза: в этой зоне курсор стоит",
+    ))
+    items.append(Slider(
+        key="face.gaze_deadzone_y",
+        label="мышь глазами: мёртвая зона, вверх-вниз",
+        group="Моргание и глаза",
+        lo=0.01, hi=0.20, step=0.01,
+        get=lambda cfg: cfg.face.gaze_deadzone_y,
+        set=lambda cfg, v: setattr(cfg.face, "gaze_deadzone_y", float(v)),
+        fmt="{:.2f}",
+        hint="по вертикали зрачок ходит меньше, поэтому зона своя",
+    ))
+    items.append(Slider(
+        key="face.gaze_full_scale_x",
+        label="мышь глазами: размах, влево-вправо",
+        group="Моргание и глаза",
+        lo=0.10, hi=0.60, step=0.01,
+        get=lambda cfg: cfg.face.gaze_full_scale_x,
+        set=lambda cfg, v: setattr(cfg.face, "gaze_full_scale_x", float(v)),
+        fmt="{:.2f}",
+        hint="меньше — резче: отклонение зрачка, дающее полную скорость",
+    ))
+    items.append(Slider(
+        key="face.gaze_full_scale_y",
+        label="мышь глазами: размах, вверх-вниз",
+        group="Моргание и глаза",
+        lo=0.06, hi=0.45, step=0.01,
+        get=lambda cfg: cfg.face.gaze_full_scale_y,
+        set=lambda cfg, v: setattr(cfg.face, "gaze_full_scale_y", float(v)),
+        fmt="{:.2f}",
+        hint="меньше — резче по вертикали",
     ))
 
     # ---------------- надёжность руки ----------------

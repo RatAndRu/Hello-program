@@ -15,7 +15,7 @@
 import sys
 import types
 
-__version__ = "0.10.0"
+__version__ = "0.10.1"
 APP_NAME = "AirMouse"
 
 

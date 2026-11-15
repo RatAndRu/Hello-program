@@ -212,9 +212,9 @@ class FaceBaseline:
             self.corner = alpha * m.corner_lift + (1 - alpha) * self.corner
             self.pitch = alpha * m.pitch + (1 - alpha) * self.pitch
             self.yaw = alpha * m.yaw + (1 - alpha) * self.yaw
-            if m.gaze_valid:
-                self.gaze_x = alpha * m.gaze_x + (1 - alpha) * self.gaze_x
-                self.gaze_y = alpha * m.gaze_y + (1 - alpha) * self.gaze_y
+            # ВАЖНО: gaze здесь НЕ подтягивается. Иначе нейтраль «догоняет»
+            # взгляд, и относительное отклонение падает до нуля — курсор
+            # перестаёт ехать. Свою нейтраль взгляда ведёт FaceFSM.
         self.samples += 1
 
     @property
@@ -344,10 +344,6 @@ class FaceFSM:
 
         # --- базовая линия: медленно подтягивается, когда лицо спокойно --- #
         gesture_active = (m.mouth_width - self.baseline.smile) > self.cfg.smile_delta * 1.5
-        if m.gaze_valid:
-            if (abs(m.gaze_x - self.baseline.gaze_x) > self.cfg.gaze_deadzone * 1.5
-                    or abs(m.gaze_y - self.baseline.gaze_y) > self.cfg.gaze_deadzone * 1.5):
-                gesture_active = True      # смотрим в сторону — нейтраль не трогаем
         if self.baseline.samples == 0:
             self.baseline.update(m)          # первый кадр — сразу нейтраль
         elif not gesture_active:
@@ -375,6 +371,16 @@ class FaceFSM:
             a = max(0.05, min(1.0, self.cfg.gaze_smoothing))
             self.gaze_x = a * m.gaze_x + (1.0 - a) * self.gaze_x
             self.gaze_y = a * m.gaze_y + (1.0 - a) * self.gaze_y
+            # «ноль» взгляда подстраивается только когда зрачок рядом с ним:
+            # так уходит медленный дрейф, но намеренный взгляд в сторону не
+            # «съедается» (иначе курсор замирал через пару секунд).
+            dz_x = self.cfg.gaze_deadzone * 0.8
+            dz_y = self.cfg.gaze_deadzone_y * 0.8
+            if (abs(self.gaze_x - self.baseline.gaze_x) < dz_x
+                    and abs(self.gaze_y - self.baseline.gaze_y) < dz_y):
+                drift = max(0.001, min(0.2, self.cfg.gaze_neutral_drift))
+                self.baseline.gaze_x += drift * (self.gaze_x - self.baseline.gaze_x)
+                self.baseline.gaze_y += drift * (self.gaze_y - self.baseline.gaze_y)
 
         # --- моргание и подмигивание ------------------------------------ #
         # Считаем «эпизоды» закрытия, а не отдельные кадры:
@@ -471,25 +477,26 @@ class FaceFSM:
         """
         if not self.gaze_valid:
             return (0.0, 0.0)
-        dz = self.cfg.gaze_deadzone
-        ex = self.gaze_x - self.baseline.gaze_x
-        ey = self.gaze_y - self.baseline.gaze_y
-        if ex > dz:
-            ex -= dz
-        elif ex < -dz:
-            ex += dz
-        else:
-            ex = 0.0
-        if ey > dz:
-            ey -= dz
-        elif ey < -dz:
-            ey += dz
-        else:
-            ey = 0.0
+
+        def excess(value: float, dz: float) -> float:
+            if value > dz:
+                return value - dz
+            if value < -dz:
+                return value + dz
+            return 0.0
+
+        # по горизонтали зрачок ходит шире, по вертикали — уже, поэтому
+        # зона и «полный размах» у осей свои, иначе вверх-вниз не двигалось
+        ex = excess(self.gaze_x - self.baseline.gaze_x, self.cfg.gaze_deadzone)
+        ey = excess(self.gaze_y - self.baseline.gaze_y, self.cfg.gaze_deadzone_y)
         if not ex and not ey:
             return (0.0, 0.0)
+        fx = max(self.cfg.gaze_full_scale_x, 1e-3)
+        fy = max(self.cfg.gaze_full_scale_y, 1e-3)
+        nx = max(-1.5, min(1.5, ex / fx))
+        ny = max(-1.5, min(1.5, ey / fy))
         gain = self.cfg.gaze_speed_px_s
-        return (ex * gain * dt, ey * gain * dt)
+        return (nx * gain * dt, ny * gain * dt)
 
     # ------------------------------------------------------------------ #
     def head_step(self, dt: float) -> "tuple[float, float]":
