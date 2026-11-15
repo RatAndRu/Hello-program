@@ -120,6 +120,7 @@ class AirMouseApp:
         self.gaze_cursor = GazeCursor(getattr(cfg.face, "gaze_deadzone_px", 12),
                                       getattr(cfg.face, "gaze_cursor_alpha", 0.55))
         self._calib: Optional[dict] = None      # идёт мастер калибровки взгляда
+        self._palm_hint_at = -1e9               # когда последний раз подсказывали про ладонь
         # поворот головы: чтобы курсор не прыгал, когда человек вертит головой,
         # но продолжает смотреть в ту же точку экрана
         self.head_pose = HeadPoseEstimator()
@@ -482,6 +483,7 @@ class AirMouseApp:
             # в углы экрана, а не управляет мышью.
             return events
 
+        self._note_palm_hint(now)
         for ev in events:
             before = len(self.router.log)
             try:
@@ -716,6 +718,23 @@ class AirMouseApp:
         if abs(dx) < 1.0 and abs(dy) < 1.0:
             return []
         return [Event("pointer_rel", value=(dx, dy))]
+
+    def _note_palm_hint(self, now: float) -> None:
+        """Один раз в несколько секунд объяснить, почему ладонь не сработала.
+
+        Человек поднимает руку, ждёт паузу, и ничего не происходит: обычно кисть
+        стоит под углом или развёрнута тылом. Молчать в этот момент — худшее,
+        что можно сделать, поэтому причина пишется в журнал окна.
+        """
+        hint = getattr(self.hand_fsm, "palm_reject", "")
+        if not hint:
+            return
+        every = float(getattr(self.cfg.hand, "palm_hint_cooldown_s", 8.0))
+        if now - self._palm_hint_at < every:
+            return
+        self._palm_hint_at = now
+        self._events_log.appendleft(f"ладонь: {hint}")
+        log.info("Ладонь не распознана: %s", hint)
 
     # ------------------------------------------------------------------ #
     #  Калибровка взгляда: «посмотрите в угол и нажмите пробел»

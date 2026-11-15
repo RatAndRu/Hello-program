@@ -142,6 +142,10 @@ class HandConfig:
     pause_max_motion: float = 0.006    # ладонь должна почти стоять (доли кадра/кадр)
     pause_cooldown_s: float = 2.50     # не чаще одной паузы за это время
     pause_min_palm: float = 0.055      # ладонь должна быть достаточно крупной в кадре
+    palm_flat_max: float = 0.17        # «плоская ладонь»: вылет точек из плоскости
+    palm_facing_min: float = 0.75      # 1 — ладонь в камеру, 0 — ребром (0.75 ≈ 41°)
+    palm_need_side: bool = True        # ладонь — только ладонной стороной, не тылом
+    palm_hint_cooldown_s: float = 8.0  # как часто подсказывать «ладонь под углом»
     fist_scroll_gain: float = 22.0     # «тиков» прокрутки на единицу смещения
     fist_scroll_deadzone: float = 0.006
     pointer_source: str = "auto"       # auto | index_tip | palm

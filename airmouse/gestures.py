@@ -111,6 +111,10 @@ class HandFeatures:
     thumb_tip_out: float = 0.0 # кончик большого от своего основания
     valid: bool = True
     fast_motion: float = 0.0
+    # геометрия «плоской ладони» — см. hand_plane()
+    flatness: float = 0.0      # насколько кисть плоская (0 — идеальная плоскость)
+    facing: float = 1.0        # 1 — ладонь ровно в камеру, 0 — ребром
+    palm_side: float = 0.0     # +1 ладонь, −1 тыл (0 — не определить)
 
     @property
     def extended(self) -> Dict[str, bool]:
@@ -134,6 +138,42 @@ def _finger_extension(hand: Hand, name: str) -> float:
     stretch = safe_div(distance(hand.xy(tip), hand.xy(WRIST)), distance(hand.xy(base), hand.xy(WRIST)), 1.0)
     stretched = clamp((stretch - 0.95) / 0.50, 0.0, 1.0)
     return 0.55 * straight + 0.45 * stretched
+
+
+def hand_plane(hand: Hand) -> Tuple[np.ndarray, float, float]:
+    """Плоскость кисти: единичная нормаль, «плоскость» и «ровно в камеру».
+
+    Возвращает ``(normal, flatness, facing)``:
+
+    * ``normal`` — единичная нормаль плоскости ладони (по всем 21 точке, метод
+      наименьших квадратов), знак согласован с :func:`hand_normal_score`:
+      плюс — ладонной стороной в камеру;
+    * ``flatness`` — среднеквадратичный «вылет» точек из плоскости в долях
+      ладони. У настоящей открытой ладони это доли процента, у расслабленной
+      (пальцы поджаты к ладони) — уже проценты;
+    * ``facing`` — косинус угла между нормалью и осью взгляда камеры: 1 —
+      ладонь строго в камеру, 0 — кисть ребром к камере.
+    """
+    pts = np.asarray(hand.points, dtype=np.float64)
+    palm = hand.palm_size
+    if pts.ndim != 2 or pts.shape[0] < 21 or pts.shape[1] < 3 or palm < 1e-6:
+        return np.array([0.0, 0.0, 1.0]), 1.0, 0.0
+    centred = pts - pts.mean(axis=0)
+    # нормаль — направление наименьшего разброса
+    _u, _s, vt = np.linalg.svd(centred, full_matrices=False)
+    normal = np.asarray(vt[2], dtype=np.float64)
+    norm = float(np.linalg.norm(normal))
+    if norm < 1e-12:
+        return np.array([0.0, 0.0, 1.0]), 1.0, 0.0
+    normal = normal / norm
+    # знак — как у hand_normal_score: плюс значит «ладонью в камеру»
+    ref = np.cross(pts[INDEX_MCP] - pts[WRIST], pts[PINKY_MCP] - pts[WRIST])
+    if float(np.dot(normal, ref)) < 0.0:
+        normal = -normal
+    height = np.abs(centred @ normal)
+    flatness = float(np.sqrt((height ** 2).mean()) / palm)
+    facing = abs(float(normal[2]))
+    return normal, flatness, facing
 
 
 def hand_normal_score(hand: Hand) -> float:
@@ -265,6 +305,7 @@ def analyze_hand(hand: Hand, pointer_source: str = "auto") -> HandFeatures:
 
     thumb_dy = float((thumb_tip[1] - hand.xy(THUMB_MCP)[1]) / palm)
     thumb_spread = distance(thumb_tip, hand.xy(INDEX_MCP)) / palm
+    normal, flatness, facing = hand_plane(hand)
 
     return HandFeatures(
         palm_size=palm,
@@ -279,6 +320,9 @@ def analyze_hand(hand: Hand, pointer_source: str = "auto") -> HandFeatures:
         index_tip_out=index_tip_out,
         thumb_tip_out=thumb_tip_out,
         valid=True,
+        flatness=flatness,
+        facing=facing,
+        palm_side=float(normal[2]),
     )
 
 
@@ -291,6 +335,34 @@ POSE_FINGERS: Dict[Pose, Tuple[str, ...]] = {
     Pose.THREE: ("index", "middle", "ring"),
     Pose.ROCK: ("index", "pinky"),
 }
+
+
+def _palm_limits(cfg: HandConfig, relax: float = 0.0) -> Tuple[float, float]:
+    """Пороги «плоскости» и «ровно в камеру»; в режиме двух рук они мягче."""
+    flat_max = float(getattr(cfg, "palm_flat_max", 0.17)) + 0.28 * relax
+    facing_min = float(getattr(cfg, "palm_facing_min", 0.75)) - 0.45 * relax
+    return flat_max, facing_min
+
+
+def palm_is_flat(f: HandFeatures, cfg: HandConfig, relax: float = 0.0) -> bool:
+    """Плоская ли ладонь и смотрит ли она в камеру (а не ребром/наискосок)."""
+    flat_max, facing_min = _palm_limits(cfg, relax)
+    return f.flatness <= flat_max and f.facing >= facing_min
+
+
+def palm_hint(f: HandFeatures, cfg: HandConfig, side_back: bool = False,
+              relax: float = 0.0) -> str:
+    """Почему открытая кисть не считается ладонью — человеческим языком."""
+    if side_back:
+        return "это тыл кисти — разверните её ладонью"
+    flat_max, facing_min = _palm_limits(cfg, relax)
+    # сначала «мятая ладонь»: поджатые пальцы и сами заваливают плоскость
+    if f.flatness > flat_max:
+        return "пальцы поджаты — вытяните ладонь"
+    if f.facing < facing_min:
+        angle = int(round(math.degrees(math.acos(max(0.0, min(1.0, f.facing))))))
+        return f"ладонь под углом {angle}° — разверните её прямо в камеру"
+    return ""
 
 
 def _marginal(value: float, lo: float = 0.40, hi: float = 0.72) -> bool:
@@ -372,7 +444,12 @@ def _classify_raw(f: HandFeatures, cfg: HandConfig, relax: float = 0.0) -> Pose:
     if n == 0:
         return Pose.FIST
     if all(e[k] for k in ("index", "middle", "ring", "pinky")):
-        return Pose.OPEN_PALM
+        # «Ладонь» — это плоская вытянутая кисть, развёрнутая в камеру.
+        # Кисть под углом (ребром, «наискосок») и мятая ладонь с поджатыми
+        # пальцами — это НЕ жест ладони: раньше они срабатывали как пауза.
+        if palm_is_flat(f, cfg, relax):
+            return Pose.OPEN_PALM
+        return Pose.NONE
 
     # 3. Счёт выпрямленных пальцев (большой не учитываем — он почти всегда «полусогнут»).
     fingers = [e["index"], e["middle"], e["ring"], e["pinky"]]
@@ -439,6 +516,8 @@ class HandFSM:
         self.pose_gate = StabilityGate(self.stable_frames)
         self.cooldown = Cooldown(cfg.click_cooldown_s)
         self.open_palm_hold = HoldTimer(cfg.open_palm_hold_s)
+        # почему открытая кисть не стала «стопом» — для подсказки в окне
+        self.palm_reject = ""
         # отдельный «замок» на паузу: случайно мигнувшая ладонь не должна
         # переключать режим чаще, чем раз в pause_cooldown_s
         self.pause_cooldown = Cooldown(getattr(cfg, "pause_cooldown_s", 2.5))
@@ -542,9 +621,8 @@ class HandFSM:
 
         # Какая сторона кисти смотрит в камеру (ладонь / тыл) — с гистерезисом.
         self.side_est.update(hand)
-        side_back = self.side is HandSide.BACK and bool(
-            getattr(self.cfg, "side_actions", True)
-        )
+        is_back = self.side is HandSide.BACK
+        side_back = is_back and bool(getattr(self.cfg, "side_actions", True))
 
         # Антидребезг: медиана трёх кадров гасит одиночные «схлопывания» пальцев.
         f.pinch = self._med_pinch.update(f.pinch)
@@ -622,11 +700,15 @@ class HandFSM:
         # достаточно крупная в кадре (человек не махнул рукой вдалеке).
         still = f.fast_motion < self.cfg.pause_max_motion
         near = float(hand.palm_size) >= getattr(self.cfg, "pause_min_palm", 0.0)
+        # Тыл кисти — это НЕ «ладонь»: разверните её к камере (после калибровки
+        # стороны клавишей K сторона известна достоверно).
+        palm_side_ok = not (is_back and bool(getattr(self.cfg, "palm_need_side", True)))
         open_and_settled = (
             pose == Pose.OPEN_PALM
             and stable == Pose.OPEN_PALM.value
             and still
             and near
+            and palm_side_ok
             and self.pause_cooldown.ready("open_palm", now)   # не «тратим» жест впустую
         )
         fired = self.open_palm_hold.update(open_and_settled, now)
@@ -634,6 +716,15 @@ class HandFSM:
             events.append(Event("open_palm_hold", label="ладонь"))
         if pose != Pose.OPEN_PALM:
             self.open_palm_hold.reset()
+
+        # Подсказка «почему не сработало»: кисть раскрыта, а жест не считается.
+        raised = all(f.extended.get(k) for k in ("index", "middle", "ring", "pinky"))
+        if raised and (pose != Pose.OPEN_PALM or not palm_side_ok):
+            self.palm_reject = palm_hint(
+                f, self.cfg, side_back=is_back, relax=self.relax
+            )
+        else:
+            self.palm_reject = ""
 
         # ------------- стабильные позы-команды: ОК, коза, три пальца ------ #
         STABLE_EVENTS = {
@@ -710,11 +801,18 @@ def synthetic_hand(
     pinch_index: bool = False,
     pinch_middle: bool = False,
     back: bool = False,
+    yaw_deg: float = 0.0,
+    pitch_deg: float = 0.0,
 ) -> Hand:
     """Строит правдоподобные 21 точку кисти по «степени сжатия» каждого пальца.
 
     ``curl`` — 0 (палец выпрямлен) .. 1 (полностью сжат). Полезно для тестов:
     поза строится детерминированно, без камеры.
+
+    ``yaw_deg``/``pitch_deg`` — насколько кисть повёрнута из плоскости кадра
+    (0 — ладонь ровно в камеру, 90 — ребром). Поворот честный, в 3D: кадр
+    проецируется ортогонально, поэтому кисть «сжимается» по одной оси и у точек
+    появляется z — ровно то, что видит нейросеть.
     """
     curl = curl or {}
     pts = np.zeros((21, 2), dtype=np.float64)
@@ -767,11 +865,39 @@ def synthetic_hand(
     if pinch_middle:
         pts[4] = pts[12] + np.array([0.0, -0.004])
         pts[3] = pts[4] + (pts[3] - pts[4]) * 0.55
+    # Поджатые пальцы уходят к ладони — по нормали к плоскости кисти, то есть
+    # по z. Без этого «мятая ладонь» была бы такой же плоской, как раскрытая.
+    z = np.zeros(21, dtype=np.float64)
+    for name, ids in chain_ids.items():
+        c = float(np.clip(curl.get(name, 0.0), 0.0, 1.0))
+        if c <= 0.0:
+            continue
+        # палец сгибается в сторону ладони: чем больше сжатие, тем дальше
+        # кончик уходит по нормали к плоскости кисти (туда же, куда смотрит
+        # внутренняя сторона ладони, — в кадре это z)
+        cum = 0.0
+        for k, idx in enumerate(ids[1:], start=1):
+            seg = float(np.linalg.norm(np.array(_CANON[name][k]) - np.array(_CANON[name][k - 1])))
+            cum += seg
+            bend = 1.35 * c * k
+            z[idx] = -cum * math.sin(min(bend, math.pi / 2)) * c
+
     if back:
         # кисть развёрнута тыльной стороной: картинка зеркалится, нормаль
         # ладони меняет знак — ровно то, что видит нейросеть в кадре
         pts[:, 0] = 2.0 * center[0] - pts[:, 0]
-    return Hand(np.hstack([pts, np.zeros((21, 1))]))
+        z = -z
+
+    cloud = np.hstack([pts, z.reshape(-1, 1)])
+    if abs(yaw_deg) > 1e-9 or abs(pitch_deg) > 1e-9:
+        cy, sy = math.cos(math.radians(yaw_deg)), math.sin(math.radians(yaw_deg))
+        cp, sp = math.cos(math.radians(pitch_deg)), math.sin(math.radians(pitch_deg))
+        ry = np.array([[cy, 0.0, sy], [0.0, 1.0, 0.0], [-sy, 0.0, cy]])
+        rx = np.array([[1.0, 0.0, 0.0], [0.0, cp, -sp], [0.0, sp, cp]])
+        pivot = np.array([center[0], center[1], 0.0])
+        cloud = (cloud - pivot) @ (rx @ ry).T + pivot
+        # ортографическая проекция кадром оставляет x, y как есть
+    return Hand(cloud.astype(np.float32))
 
 
 # --------------------------------------------------------------------------- #

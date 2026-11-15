@@ -445,6 +445,23 @@ def check_pause_fsm() -> Check:
                  f"срабатываний: {len(fired)}")
 
 
+def check_open_palm_flat() -> Check:
+    """Ладонь — только плоская и в камеру: наискосок, ребром и тылом — нет."""
+    from .gestures import analyze_hand, classify_pose, palm_hint, synthetic_hand
+
+    cfg = HandConfig()
+    flat = classify_pose(analyze_hand(synthetic_hand()), cfg)
+    tilted = analyze_hand(synthetic_hand(yaw_deg=55))
+    tilted_pose = classify_pose(tilted, cfg)
+    hint = palm_hint(tilted, cfg)
+    back = analyze_hand(synthetic_hand(back=True))
+    ok = (flat == Pose.OPEN_PALM and tilted_pose != Pose.OPEN_PALM
+          and back.palm_side < -0.5 and "углом" in hint)
+    return Check("ладонь: только плоская и в камеру", ok,
+                 f"ровно={flat.value}, наискосок={tilted_pose.value} "
+                 f"({hint[:32]}), тыл={back.palm_side:+.2f}")
+
+
 def check_face_blink() -> Check:
     cfg = FaceConfig()
     fsm = FaceFSM(cfg)
@@ -719,6 +736,7 @@ CHECKS: List[Callable[[], Check]] = [
     check_drag_fsm,
     check_scroll_fsm,
     check_pause_fsm,
+    check_open_palm_flat,
     check_face_blink,
     check_face_smile,
     check_face_brow,
