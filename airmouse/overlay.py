@@ -466,8 +466,26 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
 
     lines = ((backend_line, size_main), (fps_line, size_small), (pose_line, size_small),
              (actions, size_small))
-    text_w = max([T.measure(t, size)[0] for t, size in lines] + [T.measure("AirMouse 0.2.0", size_title)[0]])
-    panel_w = text_w + int(24 * k)
+    extras = []
+    if state.modes_text:
+        extras.append((state.modes_text, INFO))
+    if state.side_text:             # какая стороной повёрнута кисть
+        extras.append((state.side_text, DIM))
+    if state.gaze_text:             # куда смотрит человек (и включена ли мышь глазами)
+        extras.append((state.gaze_text, ACCENT if state.gaze_pointer else DIM))
+    if state.body_text:             # поза тела и счёт упражнений
+        extras.append((state.body_text, INFO))
+    if state.roles_text:            # кто чем занят в режиме «две руки на роли»
+        extras.append((state.roles_text, ACCENT))
+    if state.settings_open:
+        extras.append(("настройки: ползунки, мышь на паузе", WARN))
+    # запас 12%: T.measure считает по bbox глифов и чуть занижает реальную
+    # ширину отрисовки — без запаса длинная строка обрезалась «на живом месте»
+    text_w = int(1.12 * max([T.measure(t, size)[0] for t, size in lines]
+                            + [T.measure(t, size_small)[0] for t, _c in extras]
+                            + [T.measure("AirMouse 0.2.0", size_title)[0]]))
+    # панель не должна занимать больше половины кадра: длинную строку обрежем
+    panel_w = min(text_w + int(24 * k), int(0.56 * img.shape[1]))
     n_extra = (int(bool(state.modes_text)) + int(bool(state.side_text))
                + int(bool(state.gaze_text)) + int(bool(state.roles_text))
                + int(bool(state.body_text)) + int(state.settings_open))
@@ -484,21 +502,9 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
     T.draw(img, fps_line, (x + 12, y + 56), size_small, color)
     T.draw(img, pose_line, (x + 12, y + 76), size_small, FG)
     T.draw(img, actions, (x + 12, y + 96), size_small, acolor)
-    extras = []
-    if state.modes_text:
-        extras.append((state.modes_text, INFO))
-    if state.side_text:             # какая стороной повёрнута кисть
-        extras.append((state.side_text, DIM))
-    if state.gaze_text:             # куда смотрит человек (и включена ли мышь глазами)
-        extras.append((state.gaze_text, ACCENT if state.gaze_pointer else DIM))
-    if state.body_text:             # поза тела и счёт упражнений
-        extras.append((state.body_text, INFO))
-    if state.roles_text:            # кто чем занят в режиме «две руки на роли»
-        extras.append((state.roles_text, ACCENT))
-    if state.settings_open:
-        extras.append(("настройки: ползунки, мышь на паузе", WARN))
     for i, (text, color) in enumerate(extras):
-        T.draw(img, text, (x + 12, y + 116 + i * 20), size_small, color)
+        T.draw(img, T.fit(text, size_small, panel_w - int(22 * k)),
+               (x + 12, y + 116 + i * 20), size_small, color)
 
     if state.backend_note:
         note_y = y + panel_h + int(8 * k)
@@ -512,7 +518,8 @@ def _draw_face_panel(img, state: OverlayState, k: float) -> None:
     w = img.shape[1]
     panel_w = int(250 * k)
     if state.gaze_text:                  # строка про взгляд может быть длиннее панели
-        panel_w = max(panel_w, T.measure(state.gaze_text, int(12 * k))[0] + int(24 * k))
+        panel_w = max(panel_w, int(T.measure(state.gaze_text, int(12 * k))[0] * 1.12) + int(24 * k))
+    panel_w = min(panel_w, int(0.45 * w))
     x = w - panel_w - int(12 * k)
     y = int(12 * k)
     _panel(img, x, y, panel_w,
@@ -524,7 +531,8 @@ def _draw_face_panel(img, state: OverlayState, k: float) -> None:
     _bar(img, bx, y + 98, bw, int(9 * k), max(0.0, state.brow), ACCENT, "брови", -0.05, 0.15, int(12 * k))
     _bar(img, bx, y + 118, bw, int(9 * k), max(0.0, state.sad), WARN, "грусть", 0.0, 0.08, int(12 * k))
     if state.gaze_text:
-        T.draw(img, state.gaze_text, (x + 12, y + int(140 * k)), int(12 * k),
+        T.draw(img, T.fit(state.gaze_text, int(12 * k), panel_w - int(24 * k)),
+               (x + 12, y + int(140 * k)), int(12 * k),
                ACCENT if state.gaze_pointer else DIM)
     if state.gaze_dwell > 0.0:
         # прогресс «удержание взгляда → клик»: видно, что вот-вот сработает

@@ -94,6 +94,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         show_window=cfg.show_window,
         output=Path(args.output) if args.output else None,
     )
+    # Всё, что человек настроил (режимы, ползунки, калибровки), должно пережить
+    # перезапуск: пишем в тот же файл, откуда читали.
+    app.config_path = Path(args.config) if args.config else None
+    app.autosave = True
     app.setup()
     if args.dry_run:
         log.info("Режим --dry-run: настоящие клики и движения мыши отключены")

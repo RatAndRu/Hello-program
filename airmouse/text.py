@@ -88,6 +88,30 @@ def measure(text: str, size: int = 16) -> Tuple[int, int]:
     return box[2] - box[0], box[3] - box[1]
 
 
+def fit(text: str, size: int, max_w: int) -> str:
+    """Обрезать строку так, чтобы она влезла в ``max_w`` пикселей (с «…»).
+
+    Нужно для живых строк вроде «взгляд: вниз · ошибка 1.2% · дрожание 0.6%»:
+    они меняются по длине каждый кадр, а панель — фиксированной ширины. Без
+    обрезки длинная строка выезжала за панель и накладывалась на соседнюю.
+    """
+    if not text or max_w <= 0:
+        return ""
+    # measure() считает по bbox глифов и немного занижает реальную ширину
+    # отрисовки, поэтому оставляем запас — иначе строка всё-таки выезжает
+    def width(t: str) -> int:
+        return int(measure(t, size)[0] * 1.12)
+
+    if width(text) <= max_w:
+        return text
+    ell = "…"
+    for cut in range(len(text) - 1, 0, -1):
+        candidate = text[:cut].rstrip() + ell
+        if width(candidate) <= max_w:
+            return candidate
+    return ell
+
+
 def draw(
     img: np.ndarray,
     text: str,

@@ -13,7 +13,7 @@ import numpy as np
 
 from .actions import ActionRouter, DryRunBackend
 from .config import AppConfig, BodyConfig, FaceConfig, HandConfig, PointerConfig
-from .face import FaceFSM, FaceMetrics, measure_face
+from .face import FaceFSM, FaceMetrics, measure_face, measure_gaze
 from .filters import HysteresisGate, OneEuroFilter
 from .gestures import (
     HandFSM,
@@ -897,6 +897,68 @@ def check_classical_fsm() -> Check:
                  f"кликов={len(clicks)}, тиков прокрутки={ticks}")
 
 
+def check_gaze_accuracy() -> Check:
+    """«Мышь глазами»: верх-низ не путается, моргание не сдвигает взгляд.
+
+    Проверяем две вещи, которые ломали направления:
+    вертикальная координата зрачка не зависит от положения век (прищуривание
+    больше не «уводит» взгляд вверх), а кадр с закрытыми глазами вообще не
+    считается взглядом.
+    """
+    from .landmarks import F
+
+    face = synthetic_face(gaze=(0.0, 0.6))
+    _dx, dy_before, ok_before = measure_gaze(face)
+    for group in (F.EYE_A, F.EYE_B):
+        cy = (face.xy(group[0])[1] + face.xy(group[3])[1]) / 2.0
+        for idx in group[1:3] + group[4:6]:
+            x, y = face.xy(idx)[:2]
+            face.points[idx, 1] = cy + (y - cy) * 0.35
+    _dx, dy_after, ok_after = measure_gaze(face)
+    blink = measure_face(synthetic_face(ear=(0.08, 0.08), gaze=(0.0, 0.9)))
+    still = abs(dy_after - dy_before) < 1e-6
+    ok = bool(ok_before and ok_after and still and not blink.gaze_valid)
+    return Check("взгляд: веки не двигают взгляд", ok,
+                 f"до={dy_before:+.2f}, после прищура={dy_after:+.2f}, "
+                 f"моргание={'не взгляд' if not blink.gaze_valid else 'взгляд'}")
+
+
+def check_gaze_direction() -> Check:
+    """Слова «вверх/вниз/влево/вправо» совпадают с точкой на экране.
+
+    Направление считается той же формулой, что и телепорт курсора, поэтому
+    подпись в окне и поведение мыши не могут разойтись.
+    """
+    from .gaze import CALIBRATION_TARGETS, GazeCalibration
+
+    def gaze_for(sx: float, sy: float):
+        return ((sx - 0.5) * 0.6, (sy - 0.5) * 0.3)
+
+    calib = GazeCalibration(feature="head2")
+    for sx, sy in CALIBRATION_TARGETS:
+        calib.add(*gaze_for(sx, sy), sx, sy)
+    if not calib.fit():
+        return Check("взгляд: направления по калибровке", False, "калибровка не сошлась")
+
+    cases = [((0.5, 0.92), "вниз"), ((0.5, 0.08), "вверх"),
+             ((0.92, 0.5), "вправо"), ((0.08, 0.5), "влево"),
+             ((0.5, 0.5), "прямо")]
+    words = []
+    ok = True
+    for (sx, sy), want in cases:
+        u, v = calib.apply(*gaze_for(sx, sy))
+        nx, ny = (u - 0.5) * 2.0, (v - 0.5) * 2.0
+        if abs(nx) < 0.16 and abs(ny) < 0.16:
+            got = "прямо"
+        elif abs(nx) >= abs(ny):
+            got = "вправо" if nx > 0 else "влево"
+        else:
+            got = "вниз" if ny > 0 else "вверх"
+        words.append(got)
+        ok = ok and got == want
+    return Check("взгляд: направления по калибровке", ok, " ".join(words))
+
+
 CHECKS: List[Callable[[], Check]] = [
     check_filters,
     check_hysteresis,
@@ -918,6 +980,8 @@ CHECKS: List[Callable[[], Check]] = [
     check_body_overlay,
     check_head_gain,
     check_gaze_dwell,
+    check_gaze_accuracy,
+    check_gaze_direction,
     check_settings_panel,
     check_rotation,
     check_click_fsm,

@@ -204,9 +204,9 @@ class FaceConfig:
     head_accel: float = 0.06           # нелинейность «мыши головой» (на градус)
     gaze_speed_px_s: float = 800.0     # скорость курсора при полном отклонении зрачка
     gaze_deadzone: float = 0.07        # мёртвая зона по горизонтали (доли полуширины)
-    gaze_deadzone_y: float = 0.04      # по вертикали ход зрачка меньше — и зона меньше
+    gaze_deadzone_y: float = 0.03      # по вертикали ход зрачка меньше — и зона меньше
     gaze_full_scale_x: float = 0.22    # отклонение зрачка = полная скорость (влево-вправо)
-    gaze_full_scale_y: float = 0.16    # то же вверх-вниз: ход зрачка там меньше
+    gaze_full_scale_y: float = 0.11    # то же вверх-вниз: ход зрачка там меньше
     gaze_neutral_drift: float = 0.01   # как быстро «ноль» подстраивается под посадку головы
     gaze_absolute: bool = True        # телепорт курсора по калибровке взгляда
     gaze_calibration: Dict[str, Any] = field(default_factory=dict)  # точки + коэффициенты
@@ -225,6 +225,9 @@ class FaceConfig:
     gaze_dwell_px: int = 60            # радиус «удержания» на экране
     gaze_dwell_cooldown_s: float = 1.0
     gaze_smoothing: float = 0.35       # сглаживание зрачка (0..1, больше — резче)
+    gaze_filter: bool = True           # фильтр 1€ вместо простого усреднения
+    gaze_filter_min_cutoff: float = 1.3  # меньше — плавнее в покое
+    gaze_filter_beta: float = 0.05     # больше — резче на быстрых переводах
     gaze_max_step_px: int = 60         # предел шага курсора за кадр
     calm_s: float = 0.35               # сколько нейтрали нужно для baseline
 

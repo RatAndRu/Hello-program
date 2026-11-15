@@ -14,7 +14,7 @@ from typing import Tuple, List, Optional
 import numpy as np
 
 from .config import FaceConfig
-from .filters import Cooldown, HoldTimer, deadzone
+from .filters import Cooldown, HoldTimer, OneEuroFilter, deadzone
 from .gestures import Event
 from .headpose import HeadPoseEstimator
 from .landmarks import F, Face, distance, safe_div
@@ -63,16 +63,26 @@ def _ear(face: Face, idx) -> float:
     return (distance(p2, p6) + distance(p3, p5)) / (2.0 * horiz)
 
 
+# Отношение высоты глазной щели к её ширине у человека ≈ 0.42. Нужно потому,
+# что веки подвижны: при моргании и прищуривании они «съедают» глазницу, и
+# нормировка по их расстоянию давала ложное движение зрачка вверх-вниз. Ширину
+# (уголки глаза) веки не меняют — от неё и считаем.
+EYE_ASPECT = 0.42
+
+
 def _eye_box(face: Face, ids) -> Tuple[float, float, float, float]:
-    """Прямоугольник глазницы: (cx, cy, полуширина, полувысота)."""
+    """Прямоугольник глазницы: (cx, cy, полуширина, «стабильная» полувысота).
+
+    Центр по вертикали берётся по линии уголков глаза, а не по середине век.
+    Уголки практически неподвижны, веки — нет; поэтому такая опора не «плывёт»
+    при моргании, прищуривании и от того, что верхнее веко касается радужки.
+    """
     outer = face.xy(ids[0])       # угол у виска
     inner = face.xy(ids[3])       # угол у носа
-    top = (face.xy(ids[1]) + face.xy(ids[2])) / 2.0
-    bottom = (face.xy(ids[4]) + face.xy(ids[5])) / 2.0
     cx = (outer[0] + inner[0]) / 2.0
-    cy = (top[1] + bottom[1]) / 2.0
+    cy = (outer[1] + inner[1]) / 2.0
     half_w = max(abs(inner[0] - outer[0]) / 2.0, 1e-6)
-    half_h = max((bottom[1] - top[1]) / 2.0, 1e-6)
+    half_h = max(half_w * EYE_ASPECT, 1e-6)
     return cx, cy, half_w, half_h
 
 
@@ -114,9 +124,11 @@ def measure_gaze(face: Face) -> Tuple[float, float, bool]:
     """Куда смотрит человек: положение зрачка внутри глазницы.
 
     Возвращает ``(dx, dy, ok)``, где ``dx``/``dy`` — смещение зрачка от центра
-    глаза в единицах полуширины/полувысоты глазницы: 0 — смотрит прямо,
-    ±1 — зрачок у самого края. Оба глаза должны давать согласованный знак,
-    поэтому берём среднее, а радужку привязываем к ближайшему глазу.
+    глаза в единицах полуширины глазницы (по вертикали — той же полуширины,
+    умноженной на :data:`EYE_ASPECT`): 0 — смотрит прямо, ±1 — зрачок у края.
+    Радужка привязывается к ближайшему глазу. Если видны оба глаза, они должны
+    давать согласованный ответ (иначе кадр битый); если один — работаем по
+    нему, иначе при повёрнутой голове управление взглядом просто замирало.
     """
     if not face.has_iris:
         return 0.0, 0.0, False
@@ -128,7 +140,7 @@ def measure_gaze(face: Face) -> Tuple[float, float, bool]:
 
     irises = [face.iris_center(F.IRIS_A), face.iris_center(F.IRIS_B)]
     irises = [p for p in irises if p is not None]
-    if len(irises) < 2:
+    if not irises:
         return 0.0, 0.0, False
 
     dxs, dys = [], []
@@ -139,9 +151,13 @@ def measure_gaze(face: Face) -> Tuple[float, float, bool]:
         dys.append((iy - cy) / half_h)
     if any(abs(d) > 1.6 or abs(v) > 1.6 for d, v in zip(dxs, dys)):
         return 0.0, 0.0, False       # точка «улетела» — кадр битый
+    # Глаза смотрят вместе: если один «уехал» относительно другого, значит его
+    # прикрыло веко или камера видит радужку частично — такому кадру не верим.
+    if len(dxs) == 2 and (abs(dxs[0] - dxs[1]) > 0.55 or abs(dys[0] - dys[1]) > 0.55):
+        return 0.0, 0.0, False
 
-    dx = max(-1.0, min(1.0, sum(dxs) / len(dxs)))
-    dy = max(-1.0, min(1.0, sum(dys) / len(dys)))
+    dx = max(-1.4, min(1.4, sum(dxs) / len(dxs)))
+    dy = max(-1.4, min(1.4, sum(dys) / len(dys)))
     return dx, dy, True
 
 
@@ -187,6 +203,12 @@ def measure_face(face: Face, head: "HeadPoseEstimator | None" = None) -> FaceMet
     roll = math.degrees(math.atan2(eye_b[1] - eye_a[1], eye_b[0] - eye_a[0]))
 
     gaze_x, gaze_y, gaze_ok = measure_gaze(face)
+    # При закрытых глазах радужка видна частично, и её центр «уезжает» вверх:
+    # именно из-за этого взгляд на моргании дёргался вверх-вниз. Пока глаза
+    # закрыты, взгляд не обновляем вовсе.
+    if gaze_ok and min(ear_l, ear_r) < 0.22:
+        gaze_ok = False
+        gaze_x = gaze_y = 0.0
 
     # поворот головы -> компенсированный взгляд (одинаковый при поворотах)
     pose = None
@@ -371,6 +393,28 @@ class FaceFSM:
         self.rel_pitch = 0.0
         self.gaze_x = 0.0          # сглаженное положение зрачка (0 — центр)
         self.gaze_y = 0.0
+        # Зрачок дрожит (микросаккады), поэтому фильтруем его 1€-фильтром:
+        # в покое он даёт плавную картинку, на быстром переводе взгляда —
+        # почти без запаздывания (Casiez et al., 2012).
+        self._gaze_filter_x = OneEuroFilter(
+            min_cutoff=float(getattr(cfg, "gaze_filter_min_cutoff", 1.3)),
+            beta=float(getattr(cfg, "gaze_filter_beta", 0.05)),
+        )
+        self._gaze_filter_y = OneEuroFilter(
+            min_cutoff=float(getattr(cfg, "gaze_filter_min_cutoff", 1.3)),
+            beta=float(getattr(cfg, "gaze_filter_beta", 0.05)),
+        )
+        # Компенсированный взгляд (gaze_u/v) идёт прямо в курсор — его тоже
+        # фильтруем 1€, а не простым усреднением: иначе на быстром переводе
+        # взгляда курсор отставал ровно настолько, насколько «плавно» настроено.
+        self._gaze_filter_u = OneEuroFilter(
+            min_cutoff=float(getattr(cfg, "gaze_filter_min_cutoff", 1.3)),
+            beta=float(getattr(cfg, "gaze_filter_beta", 0.05)),
+        )
+        self._gaze_filter_v = OneEuroFilter(
+            min_cutoff=float(getattr(cfg, "gaze_filter_min_cutoff", 1.3)),
+            beta=float(getattr(cfg, "gaze_filter_beta", 0.05)),
+        )
         self.gaze_u = 0.0          # то же, но с поправкой на поворот головы
         self.gaze_v = 0.0
         self.gaze_valid = False
@@ -401,11 +445,19 @@ class FaceFSM:
         self._closed_event_sent = False
         self._eye = {"left": {"start": None, "other_closed": False},
                      "right": {"start": None, "other_closed": False}}
+        for f in (self._gaze_filter_x, self._gaze_filter_y,
+                  self._gaze_filter_u, self._gaze_filter_v):
+            f.reset()
 
     # ------------------------------------------------------------------ #
     def update(self, m: Optional[FaceMetrics], now: float) -> List[Event]:
         events: List[Event] = []
         if m is None or not m.valid:
+            # лицо пропало — копить сглаженный взгляд нет смысла: вернувшись в
+            # кадр, человек не должен получить рывок из старого состояния
+            for f in (self._gaze_filter_x, self._gaze_filter_y,
+                      self._gaze_filter_u, self._gaze_filter_v):
+                f.reset()
             self._both_start = None
             self._eye = {"left": {"start": None, "other_closed": False},
                          "right": {"start": None, "other_closed": False}}
@@ -445,11 +497,19 @@ class FaceFSM:
         self.head_roll = float(getattr(m, "head_roll", 0.0))
         if m.gaze_valid:
             a = max(0.05, min(1.0, self.cfg.gaze_smoothing))
-            self.gaze_x = a * m.gaze_x + (1.0 - a) * self.gaze_x
-            self.gaze_y = a * m.gaze_y + (1.0 - a) * self.gaze_y
+            if bool(getattr(self.cfg, "gaze_filter", True)):
+                self.gaze_x = float(self._gaze_filter_x.filter(float(m.gaze_x), now))
+                self.gaze_y = float(self._gaze_filter_y.filter(float(m.gaze_y), now))
+            else:
+                self.gaze_x = a * m.gaze_x + (1.0 - a) * self.gaze_x
+                self.gaze_y = a * m.gaze_y + (1.0 - a) * self.gaze_y
             # компенсированный взгляд сглаживаем отдельно: он и идёт в мышку
-            self.gaze_u = a * m.gaze_u + (1.0 - a) * self.gaze_u
-            self.gaze_v = a * m.gaze_v + (1.0 - a) * self.gaze_v
+            if bool(getattr(self.cfg, "gaze_filter", True)):
+                self.gaze_u = float(self._gaze_filter_u.filter(float(m.gaze_u), now))
+                self.gaze_v = float(self._gaze_filter_v.filter(float(m.gaze_v), now))
+            else:
+                self.gaze_u = a * m.gaze_u + (1.0 - a) * self.gaze_u
+                self.gaze_v = a * m.gaze_v + (1.0 - a) * self.gaze_v
             # «ноль» взгляда подстраивается только когда зрачок рядом с ним:
             # так уходит медленный дрейф, но намеренный взгляд в сторону не
             # «съедается» (иначе курсор замирал через пару секунд).

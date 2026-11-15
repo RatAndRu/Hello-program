@@ -1,5 +1,7 @@
 """Калибровка взгляда идёт на весь монитор, а прицел — в самом углу экрана."""
 
+import time
+
 import cv2
 import numpy as np
 
@@ -357,3 +359,130 @@ def test_corner_arms_are_flush_with_screen_edges():
     # вдоль верхнего края — горизонтальная от угла влево
     assert mask[0, 1820:1919].sum() > 80
     assert mask[5, 1820:1919].sum() > 80
+
+
+# --------------------------------------------------------------------------- #
+#  Повторная полноэкранная калибровка: окно должно разворачиваться снова
+# --------------------------------------------------------------------------- #
+class FakeWindow:
+    """Окно, которое «не хочет» становиться полноэкранным.
+
+    Так ведут себя некоторые сборки OpenCV на Windows: полноэкранный режим
+    ставится, но картинка остаётся 960×540. Приложение обязано дожимать окно
+    до монитора — и каждый раз заново, а не только в первый запуск.
+    """
+
+    def __init__(self) -> None:
+        self.rect = (120, 90, 960, 540)
+        self.fullscreen_calls = 0
+        self.resize_calls: list = []
+        self.move_calls: list = []
+        self.mode = None
+
+    def setWindowProperty(self, name, prop, value):   # noqa: N802 (стиль OpenCV)
+        if prop == cv2.WND_PROP_FULLSCREEN and value == cv2.WINDOW_FULLSCREEN:
+            self.fullscreen_calls += 1
+        if prop == cv2.WND_PROP_FULLSCREEN:
+            self.mode = value
+
+    def resizeWindow(self, name, w, h):               # noqa: N802
+        self.resize_calls.append((int(w), int(h)))
+
+    def moveWindow(self, name, x, y):                 # noqa: N802
+        self.move_calls.append((int(x), int(y)))
+
+    def getWindowImageRect(self, name):               # noqa: N802
+        return self.rect
+
+
+def _window_app(monkeypatch):
+    app = AirMouseApp(AppConfig(), dry_run=True, show_window=True)
+    app._prepared = True
+    win = FakeWindow()
+    import airmouse.app as app_module
+
+    monkeypatch.setattr(app_module.cv2, "setWindowProperty", win.setWindowProperty)
+    monkeypatch.setattr(app_module.cv2, "resizeWindow", win.resizeWindow)
+    monkeypatch.setattr(app_module.cv2, "moveWindow", win.moveWindow)
+    monkeypatch.setattr(app_module.cv2, "getWindowImageRect", win.getWindowImageRect)
+    monkeypatch.setattr(app, "screen_size", lambda: (1920, 1080))
+    return app, win
+
+
+def _try_fit(app, ago: float = 1.5) -> None:
+    """Одна попытка «растянуть окно»; ``ago`` — сколько секунд прошло с прошлой."""
+    app._fit_last_try = time.monotonic() - ago
+    app._fit_window_to_screen()
+
+
+def test_calibration_asks_for_fullscreen_every_time(monkeypatch):
+    app, win = _window_app(monkeypatch)
+    app.start_gaze_calibration()
+    assert app._fullscreen_applied is None, "калибровка должна ставить режим заново"
+    app._apply_window_mode()
+    assert app._fullscreen_applied is True
+    assert win.fullscreen_calls >= 1
+    assert app._fit_tries == 0, "счётчик попыток обнуляется на входе"
+
+    # вышли из калибровки — окно вернулось в обычный вид
+    app.cancel_gaze_calibration()
+    app._apply_window_mode()
+    assert app._fullscreen_applied is False
+    assert win.resize_calls[-1] == (960, 540)
+
+    # и снова калибровка: полноэкранный режим и попытки растянуть — с чистого листа
+    before = len(win.resize_calls)
+    app.start_gaze_calibration()
+    app._apply_window_mode()
+    _try_fit(app)
+    assert len(win.resize_calls) > before
+    assert app._fit_tries == 1
+
+
+def test_fit_window_keeps_trying_after_exhausting_the_series(monkeypatch):
+    app, win = _window_app(monkeypatch)
+    app._fullscreen_applied = None
+    app._apply_window_mode()
+
+    for _ in range(app.FIT_TRIES_MAX):
+        _try_fit(app)
+    assert app._fit_tries == app.FIT_TRIES_MAX
+    attempts = len(win.resize_calls)
+
+    _try_fit(app)                       # серия кончилась — пауза, не мигаем
+    assert len(win.resize_calls) == attempts
+
+    _try_fit(app, ago=4.0)              # прошло больше трёх секунд
+    assert len(win.resize_calls) == attempts + 1
+    assert app._fit_tries == 1, "серия попыток начинается заново"
+
+
+def test_fit_window_does_not_touch_a_full_screen_window(monkeypatch):
+    app, win = _window_app(monkeypatch)
+    win.rect = (0, 0, 1920, 1080)
+    app._fullscreen_applied = None
+    app._apply_window_mode()
+    before = len(win.resize_calls)
+    _try_fit(app)
+    assert len(win.resize_calls) == before
+
+
+def test_fit_pause_grows_so_the_window_does_not_flicker(monkeypatch):
+    """Серия за серией — пауза растёт: неподатливое окно не мигает каждые 3 с."""
+    app, win = _window_app(monkeypatch)
+    app._fullscreen_applied = None
+    app._apply_window_mode()
+
+    for _ in range(app.FIT_TRIES_MAX):
+        _try_fit(app)
+    _try_fit(app, ago=4.0)                       # вторая серия (пауза 3 с прошла)
+    assert app._fit_series == 1
+    for _ in range(app.FIT_TRIES_MAX - 1):
+        _try_fit(app)
+    attempts = len(win.resize_calls)
+
+    _try_fit(app, ago=4.0)                       # теперь пауза 6 с — рано
+    assert len(win.resize_calls) == attempts
+    _try_fit(app, ago=7.0)
+    assert len(win.resize_calls) == attempts + 1
+    assert app._fit_series == 2

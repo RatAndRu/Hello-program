@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -16,7 +17,7 @@ from . import __version__
 from .actions import ActionRouter, DryRunBackend, PyAutoGuiBackend
 from .camera import ThreadedCamera
 from . import keys
-from .config import AppConfig, resolve_path
+from .config import AppConfig, resolve_path, save_config
 from .face import FaceFSM, FaceMetrics, measure_face
 from .profile import MotionProfile, MotionWizard
 from .gaze import (
@@ -103,6 +104,10 @@ class Stats:
 
 
 class AirMouseApp:
+    # Сколько раз подряд пробовать растянуть окно на весь экран, прежде чем
+    # сделать паузу (потом серия начинается заново — см. _fit_window_to_screen).
+    FIT_TRIES_MAX = 4
+
     def __init__(
         self,
         cfg: AppConfig,
@@ -125,6 +130,8 @@ class AirMouseApp:
         self.hand_gate = HandGate(cfg.hand)
         # «мышь глазами»: абсолютный режим по калибровке взгляда
         self.gaze_calib = GazeCalibration.from_dict(getattr(cfg.face, "gaze_calibration", {}))
+        self._gaze_error_cache = (self.gaze_calib.error()
+                                  if self.gaze_calib.ready else (0.0, 0.0))
         self.gaze_cursor = GazeCursor(getattr(cfg.face, "gaze_deadzone_px", 12),
                                       getattr(cfg.face, "gaze_cursor_alpha", 0.55))
         self.gaze_dwell = GazeDwell(
@@ -135,6 +142,7 @@ class AirMouseApp:
         self._calib: Optional[dict] = None      # идёт мастер калибровки взгляда
         self._palm_hint_at = -1e9               # когда последний раз подсказывали про ладонь
         self._gaze_drift_at = -1e9              # когда говорили «лицо уехало, калибруй»
+        self._gaze_track: deque = deque(maxlen=30)   # куда смотрели (для дрожания)
         self._body_points = None                # последние 33 точки тела (для скелета)
         self._body_want: Optional[bool] = None  # с каким «хочу тело» создан движок
         self.motion_wizard: Optional[MotionWizard] = None
@@ -191,6 +199,13 @@ class AirMouseApp:
         self._screen_size_cache: Optional[Tuple[int, int]] = None
         self._fit_last_try = 0.0
         self._fit_tries = 0
+        self._fit_series = 0                    # сколько серий попыток уже было
+        # Куда сохранять настройки. None — путь по умолчанию (~/.airmouse/config.json);
+        # autosave включается в командной строке, чтобы тесты и demo ничего не писали.
+        self.config_path: Optional[Path] = None
+        self.autosave: bool = False
+        self._saved_snapshot: str = ""
+        self._autosave_at = 0.0
 
     # ------------------------------------------------------------------ #
     def setup(self) -> None:
@@ -336,6 +351,7 @@ class AirMouseApp:
         self._fullscreen = not self._fullscreen
         self._fullscreen_applied = None
         self._fit_tries = 0
+        self._fit_series = 0
         log.info("Окно: %s", "на весь экран" if self._fullscreen else "в окне")
         return self._fullscreen
 
@@ -351,6 +367,13 @@ class AirMouseApp:
                 self._fit_window_to_screen()
             return
         self._fullscreen_applied = want
+        # Каждое новое включение полного экрана — с чистым листом: раньше счётчик
+        # попыток «растянуть окно» выбирался один раз за запуск, и после первой
+        # же калибровки окно больше не разворачивалось — помогала только
+        # перезагрузка приложения.
+        self._fit_tries = 0
+        self._fit_last_try = 0.0
+        self._fit_series = 0
         try:
             if want:
                 cv2.setWindowProperty(self._window_name, cv2.WND_PROP_FULLSCREEN,
@@ -386,7 +409,10 @@ class AirMouseApp:
 
         Проверяем реальный прямоугольник картинки. Если окно меньше монитора
         (панель задач, другой бэкенд, DPI), повторяем попытку — но не чаще
-        раза в секунду и не больше трёх раз, чтобы не мигать.
+        раза в секунду, чтобы не мигать. После серии из нескольких попыток
+        даём окну паузу и через несколько секунд пробуем снова: если человек
+        вышел из полного экрана и снова начал калибровку, окно обязано
+        развернуться, сколько бы раз это ни повторялось.
         """
         rect = self.window_rect()
         if rect is None:
@@ -396,8 +422,18 @@ class AirMouseApp:
         if x == 0 and y == 0 and w >= sw and h >= sh:
             return
         now = time.monotonic()
-        if now - self._fit_last_try < 1.0 or self._fit_tries >= 3:
+        if now - self._fit_last_try < 1.0:
             return
+        if self._fit_tries >= self.FIT_TRIES_MAX:
+            # серия попыток исчерпана — но не навсегда: ждём паузу и начинаем
+            # новую серию (например, окно «съежилось» после выхода из полного
+            # экрана, и его снова надо растянуть). Пауза растёт, чтобы на
+            # «неподатливом» бэкенде окно не мигало каждые три секунды.
+            pause = min(3.0 * (2 ** min(self._fit_series, 3)), 30.0)
+            if now - self._fit_last_try < pause:
+                return
+            self._fit_tries = 0
+            self._fit_series += 1
         self._fit_last_try = now
         self._fit_tries += 1
         try:
@@ -686,7 +722,8 @@ class AirMouseApp:
             log.info("Настройки открываются только с окном: уберите --no-window")
             return False
         if self.settings is None:
-            self.settings = SettingsPanel(self.cfg, runtime=self.router, hooks={
+            self.settings = SettingsPanel(self.cfg, path=self.config_path,
+                                          runtime=self.router, hooks={
                 "calibrate": self.calibrate_side,
                 "flip": self.flip_side,
                 "side": self._side_text_short,
@@ -703,6 +740,57 @@ class AirMouseApp:
         )
         return True
 
+    def save_settings(self, reason: str = "") -> Optional[Path]:
+        """Сохранить всё, что настроено, чтобы после перезапуска было так же.
+
+        Пишем **весь** конфиг, а не отдельные ключи: режимы, пороги, ползунки,
+        калибровку взгляда и профиль движений, раскладку ролей рук. Раньше
+        сохраняла только кнопка в панели настроек, поэтому всё, что включалось
+        клавишами (мышь глазами, тело, полный экран), после выхода пропадало.
+        """
+        if not self.autosave:
+            return None
+        # то, что переключается на ходу, лежит не только в cfg — переносим
+        self.cfg.fullscreen = bool(self._fullscreen)
+        self.cfg.gaze_pointer = bool(self.router.gaze_pointer)
+        self.cfg.head_pointer = bool(self.router.head_pointer)
+        # пустую калибровку не записываем как «есть»: иначе в файле остаётся
+        # восемь пустых полей и по нему не понять, калиброван человек или нет
+        self.cfg.face.gaze_calibration = (self.gaze_calib.to_dict()
+                                          if self.gaze_calib.ready else {})
+        try:
+            snapshot = json.dumps(asdict(self.cfg), ensure_ascii=False,
+                                  sort_keys=True, default=str)
+        except Exception as exc:        # страховка: не сохранить, но и не упасть
+            log.debug("Настройки не сериализуются: %s", exc)
+            return None
+        if snapshot == self._saved_snapshot:
+            return None                 # ничего не менялось — не трогаем диск
+        try:
+            path = save_config(self.cfg, self.config_path)
+        except Exception as exc:
+            log.warning("Не удалось сохранить настройки: %s", exc)
+            return None
+        self._saved_snapshot = snapshot
+        log.info("Настройки сохранены: %s%s", path,
+                 f" ({reason})" if reason else "")
+        return path
+
+    def _remember_snapshot(self) -> None:
+        """Запомнить текущее состояние конфига как уже сохранённое."""
+        try:
+            self._saved_snapshot = json.dumps(asdict(self.cfg), ensure_ascii=False,
+                                              sort_keys=True, default=str)
+        except Exception:
+            self._saved_snapshot = ""
+
+    def _maybe_autosave(self, now: float) -> None:
+        """Раз в несколько секунд проверяем, не изменились ли настройки."""
+        if not self.autosave or now - self._autosave_at < 5.0:
+            return
+        self._autosave_at = now
+        self.save_settings()
+
     def _close_settings(self) -> None:
         if self.settings is None:
             return
@@ -713,6 +801,10 @@ class AirMouseApp:
             f"{time.strftime('%H:%M:%S')}  "
             + ("настройки сохранены" if saved else "настройки закрыты без сохранения")
         )
+        if saved:
+            # панель уже записала файл — запоминаем снимок, чтобы автосохранение
+            # не писало его второй раз
+            self._remember_snapshot()
         self.router.paused = self._paused_for_settings
         self._paused_for_settings = False
 
@@ -774,6 +866,7 @@ class AirMouseApp:
             width, height = self.backend.screen_size()
             # 0 -> первый пиксель, 1 -> последний: край экрана достижим ровно
             px, py = screen_point(sx, sy, (width, height))
+            self._gaze_track.append((float(sx), float(sy)))
             point = self.gaze_cursor.update(px, py)
             events: List[Event] = []
             if point is not None:
@@ -940,6 +1033,12 @@ class AirMouseApp:
             "head_since": None,
         }
         self.gaze_cursor.reset()
+        # Полный экран ставим заново при каждой калибровке: окно могло «съежиться»
+        # после прошлого раза, а прицел обязан попадать в настоящие углы монитора.
+        self._fullscreen_applied = None
+        self._fit_tries = 0
+        self._fit_last_try = 0.0
+        self._fit_series = 0
         if not self.show_window:
             log.warning("Калибровка взгляда без окна: прицел на весь экран не "
                         "показать — запустите с окном (или нажмите F)")
@@ -1010,6 +1109,10 @@ class AirMouseApp:
     def cancel_gaze_calibration(self) -> str:
         self._calib = None
         self.gaze_cursor.reset()
+        self._fullscreen_applied = None      # вернуть окно в обычный вид
+        self._fit_tries = 0
+        self._fit_last_try = 0.0
+        self._fit_series = 0
         self._events_log.appendleft("калибровка взгляда отменена")
         return "калибровка взгляда отменена"
 
@@ -1071,10 +1174,14 @@ class AirMouseApp:
         else:
             points = list(data.get("points") or [])
         head_samples = list(data.get("head") or [])
-        calib = GazeCalibration(points=points, feature="head")
+        calib = GazeCalibration(points=points, feature="head2")
         fitted = calib.fit()
         self._calib = None
         self.gaze_cursor.reset()
+        self._fullscreen_applied = None      # калибровка кончилась — обычное окно
+        self._fit_tries = 0
+        self._fit_last_try = 0.0
+        self._fit_series = 0
         if not fitted:
             text = "калибровка взгляда не удалась: мало кадров — нажмите B ещё раз"
             self._events_log.appendleft(text)
@@ -1090,7 +1197,10 @@ class AirMouseApp:
         self.cfg.face.gaze_calibration = calib.to_dict()
         self.cfg.face.gaze_absolute = True
         worst, mean = calib.error()
+        self._gaze_error_cache = (worst, mean)
+        self._gaze_track.clear()
         tune = self._autotune_gaze(calib)
+        self.save_settings("калибровка взгляда")
         text = (f"калибровка взгляда готова: {len(calib.points)} проб, "
                 f"{calib.quality_text()}, "
                 f"задержка взгляда {calib.latency_ms:.0f} мс, "
@@ -1211,14 +1321,20 @@ class AirMouseApp:
     def reset_gaze_calibration(self) -> str:
         self.gaze_calib = GazeCalibration()
         self.gaze_cursor.reset()
+        self._gaze_error_cache = (0.0, 0.0)
+        self._gaze_track.clear()
         self.cfg.face.gaze_calibration = {}
+        self.save_settings("калибровка сброшена")
         self._events_log.appendleft("калибровка взгляда сброшена")
         return "калибровка взгляда сброшена"
 
     def reset_gaze_calibration(self) -> str:
         self.gaze_calib = GazeCalibration()
         self.gaze_cursor.reset()
+        self._gaze_error_cache = (0.0, 0.0)
+        self._gaze_track.clear()
         self.cfg.face.gaze_calibration = {}
+        self.save_settings("калибровка сброшена")
         self._events_log.appendleft("калибровка взгляда сброшена")
         return "калибровка взгляда сброшена"
 
@@ -1238,12 +1354,34 @@ class AirMouseApp:
         )
         return "gaze_pointer=" + ("on" if on else "off")
 
-    def gaze_text(self) -> str:
-        """Короткая строка про взгляд: куда смотрит и включено ли управление."""
+    def gaze_direction(self) -> Tuple[str, Optional[Tuple[float, float]]]:
+        """Куда смотрит человек: слово и (если есть калибровка) точка экрана.
+
+        Важно, что направление считается **тем же путём**, что и курсор: когда
+        есть калибровка, берётся точка экрана из гомографии, а не «сырое»
+        положение зрачка. Раньше подпись «взгляд: влево» строилась по сырым
+        числам, а курсор ехал по калиброванной карте — и они расходились,
+        особенно вверх-вниз.
+        """
         fsm = self.face_fsm
-        if not fsm.gaze_valid:
-            return "взгляд: зрачков не видно (нужна нейросеть MediaPipe)"
         cfg = self.cfg.face
+        calibrated = bool(cfg.gaze_absolute and self.gaze_calib.ready
+                          and not self.gaze_calib.stale)
+        if calibrated:
+            u, v = self.gaze_calib.head_correct(
+                fsm.gaze_u, fsm.gaze_v, fsm.head_yaw, fsm.head_pitch)
+            sx, sy = self.gaze_calib.apply(u, v)
+            # «прямо» — центральная восьмая часть экрана: иначе шум зрачка
+            # переключал бы слово по десять раз в секунду
+            nx, ny = (sx - 0.5) * 2.0, (sy - 0.5) * 2.0
+            if abs(nx) < 0.16 and abs(ny) < 0.16:
+                where = "прямо"
+            elif abs(nx) >= abs(ny):
+                where = "вправо" if nx > 0 else "влево"
+            else:
+                where = "вниз" if ny > 0 else "вверх"
+            return where, (sx, sy)
+
         gx, gy = fsm.gaze_x - fsm.baseline.gaze_x, fsm.gaze_y - fsm.baseline.gaze_y
         # сравниваем «насколько вышли за свою мёртвую зону», а не сырые числа:
         # по вертикали ход зрачка меньше, и сырое сравнение всегда давало «прямо»
@@ -1256,23 +1394,59 @@ class AirMouseApp:
             where = "вправо" if gx > 0 else "влево"
         else:
             where = "вниз" if gy > 0 else "вверх"
+        return where, None
+
+    def gaze_quality(self) -> str:
+        """Точность и дрожание взгляда словами: «ошибка 1.4%, дрожание 0.6%».
+
+        Ошибка — по промахам калибровки (насколько гомография не попала в точки,
+        по которым её строили). Дрожание — разброс уже калиброванной позиции за
+        последнюю секунду: видно, насколько «звенит» курсор, даже когда взгляд
+        стоит на месте.
+        """
+        parts = []
+        calib = self.gaze_calib
+        if calib.ready and not calib.stale:
+            worst, mean = self._gaze_error_cache
+            parts.append(f"ошибка {mean * 100:.1f}%")
+            if worst > 0.08:
+                parts.append("калибровка неточная")
+        track = list(self._gaze_track)[-30:]
+        if len(track) >= 8:
+            xs = [p[0] for p in track]
+            ys = [p[1] for p in track]
+            jitter = max(max(xs) - min(xs), max(ys) - min(ys))
+            parts.append(f"дрожание {jitter * 100:.1f}%")
+        return " · ".join(parts)
+
+    def gaze_text(self) -> str:
+        """Короткая строка про взгляд: куда смотрит и включено ли управление."""
+        fsm = self.face_fsm
+        if not fsm.gaze_valid:
+            return "взгляд: зрачков не видно (нужна нейросеть MediaPipe)"
+        where, point = self.gaze_direction()
+        quality = self.gaze_quality()
+        quality = f" · {quality}" if quality else ""
         head = ""
         if self.face_fsm.head_ok:
             yaw = self.face_fsm.head_yaw
             pitch = self.face_fsm.head_pitch
+            # про голову пишем только когда она реально повёрнута: при ровной
+            # голове строка и без того длинная
             if abs(yaw) > 5 or abs(pitch) > 5:
                 head = f" · голова {yaw:+.0f}°/{pitch:+.0f}°"
-            else:
-                head = " · голова ровно"
         if self.router.gaze_pointer:
-            mode = "телепорт" if (self.cfg.face.gaze_absolute and self.gaze_calib.ready) else "скоростной"
-            return f"взгляд: {where} · мышь глазами ВКЛ ({mode}){head}"
+            mode = ("телепорт" if (self.cfg.face.gaze_absolute
+                                   and self.gaze_calib.ready
+                                   and not self.gaze_calib.stale) else "скоростной")
+            return f"взгляд: {where} · мышь глазами ВКЛ ({mode}){quality}{head}"
+        if self.gaze_calib.stale:
+            return f"взгляд: {where} · калибровка старого образца — нажмите B{head}"
         if self.gaze_calib.ready:
-            worst, _mean = self.gaze_calib.error()
-            mark = "⚠ " if worst > 0.08 else ""
-            return (f"взгляд: {where} · {mark}калибровка есть "
-                    f"(промах {worst * 100:.0f}%, G — включить)")
-        return f"взгляд: {where} · B — калибровка взгляда"
+            mark = "⚠ " if self._gaze_error_cache[0] > 0.08 else ""
+            return (f"взгляд: {where} · {mark}калибровка есть{quality} "
+                    f"(G — включить){head}")
+        return f"взгляд: {where} · B — калибровка взгляда{head}"
 
     def _expression_text(self) -> str:
         """Текущее выражение лица словами — чтобы мимика была понятна без графиков."""
@@ -1437,6 +1611,7 @@ class AirMouseApp:
                     self.router.release_all()
                     events = []
                 self._update_state(events, fps)
+                self._maybe_autosave(now)
 
                 if self.show_window or self.output is not None:
                     if self.calibrating:
@@ -1700,6 +1875,9 @@ class AirMouseApp:
         """Переключить движок на лету (клавиша M) и вернуть новый."""
         current = getattr(self.tracker, "name", "none")
         target = "classical" if current == "mediapipe" else "mediapipe"
+        # тело — отдельная модель позы: раньше при переключении движка про неё
+        # забывали, и вместе с движком молча выключался скелет
+        want_body = bool(getattr(self.cfg.body, "enabled", False))
         try:
             new = create_tracker(
                 target,
@@ -1707,6 +1885,7 @@ class AirMouseApp:
                 self.cfg.face,
                 resolve_path(self.cfg.model_dir),
                 progress=log.info,
+                want_body=want_body,
             )
         except Exception as exc:
             note = f"не удалось включить {target}: {type(exc).__name__}: {exc}"
@@ -1731,13 +1910,24 @@ class AirMouseApp:
         self._armed_at = time.monotonic() + max(self.cfg.warmup_s, 0.0) * 0.5
         name = getattr(self.tracker, "name", "?")
         log.info("Движок переключён: %s", BACKEND_TITLES.get(name, name))
+        self._body_want = want_body
+        self._body_points = None
+        note = ""
+        if want_body and not getattr(self.tracker, "want_body", False):
+            note = " · тело недоступно на этом движке"
         self._events_log.append(
-            f"{time.strftime('%H:%M:%S')}  движок → {BACKEND_TITLES.get(name, name)}"
+            f"{time.strftime('%H:%M:%S')}  движок → {BACKEND_TITLES.get(name, name)}{note}"
         )
         return name
 
     def shutdown(self) -> None:
         self.running = False
+        # Сначала настройки, потом всё остальное: даже если камера не закроется
+        # красиво, человек не потеряет калибровку и включённые режимы.
+        try:
+            self.save_settings("выход")
+        except Exception as exc:
+            log.debug("Настройки при выходе не сохранены: %s", exc)
         self.router.release_all()
         if self.camera is not None:
             self.camera.stop()

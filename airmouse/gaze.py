@@ -383,7 +383,9 @@ class GazeCalibration:
             raw_h = data.get("H") or []
             if len(raw_h) == 9:
                 calib.H = [float(v) for v in raw_h]
-                calib.stale = calib.feature not in ("head",)
+                # "head2" — признак с устойчивой вертикалью (уголки глаза
+                # вместо подвижных век); всё, что старше, — перепройти B
+                calib.stale = calib.feature not in ("head2",)
                 return calib
             # старый формат: аффинные коэффициенты по осям
             coef_x = [float(v) for v in (data.get("coef_x") or [])]
