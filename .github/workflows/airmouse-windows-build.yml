@@ -83,27 +83,39 @@ jobs:
       - name: Дымовой тест собранного EXE
         run: |
           cd dist/AirMouse
-          echo "--- версия (оконная сборка, без консоли) ---"
-          ./AirMouse.exe --version
-          echo "оконный EXE exit=$?"
-          echo "--- встроенные проверки логики ---"
-          ./AirMouse-debug.exe selftest
-          echo "selftest exit=$?"
-          echo "--- демо без камеры (рендер cv2 + PIL) ---"
-          ./AirMouse-debug.exe demo --out smoke-out
-          echo "demo exit=$?"
-          echo "--- словарь губ ---"
-          ./AirMouse-debug.exe lip list
-          echo "--- что в сборке ---"
-          ls -la
-          du -sh .
+          fail=0
+          run_console() {
+            local out status
+            out=$("$@" 2>&1); status=$?
+            echo "$out" | tail -n 12 | sed 's/^/::notice::/'
+            echo "::notice::$* -> exit=$status"
+            [ $status -eq 0 ] || fail=1
+          }
+          run_console ./AirMouse-debug.exe --version
+          run_console ./AirMouse-debug.exe selftest
+          run_console ./AirMouse-debug.exe lip list
+          run_console ./AirMouse-debug.exe demo --out smoke-out
+
+          # Оконная сборка: запускаем с таймаутом, чтобы сборка не зависла на диалоге
+          powershell -NoProfile -Command '$p = Start-Process -FilePath ".\AirMouse.exe" -ArgumentList "--version" -PassThru; if (-not $p.WaitForExit(20000)) { $p.Kill(); exit 3 } else { exit $p.ExitCode }'
+          wstatus=$?
+          echo "::notice::AirMouse.exe (без консоли) --version -> exit=$wstatus"
+          [ $wstatus -eq 0 ] || fail=1
+
           for f in AirMouse.exe AirMouse-debug.exe models/hand_landmarker.task models/face_landmarker.task; do
             if [ -f "$f" ]; then
-              echo "::notice::есть $f ($(stat -c%s "$f") байт)"
+              echo "::notice::: есть $f ($(stat -c%s "$f") байт)"
             else
-              echo "::error::НЕТ $f"; exit 1
+              echo "::error::: нет $f"
+              fail=1
             fi
           done
+          ls -la
+          du -sh .
+          if [ $fail -ne 0 ]; then
+            echo "::error::дымовой тест EXE не пройден"
+            exit 1
+          fi
           echo "::notice::дымовой тест EXE пройден"
 
       - name: Архив

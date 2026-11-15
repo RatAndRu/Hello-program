@@ -11,8 +11,11 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import platform
 import sys
+import time
+import traceback
 import threading
 import time
 from pathlib import Path
@@ -547,8 +550,14 @@ def _fatal(exc: BaseException) -> None:
         log.exception("Критическая ошибка: %s", exc)
     except Exception:
         pass
+    crash = _write_crash_log(exc)
     message = f"{type(exc).__name__}: {exc}"
-    if platform.system() == "Windows":
+    if crash is not None:
+        message += f"\n\nПодробности: {crash}"
+    # MessageBox блокирует процесс до нажатия кнопки — в CI и на серверах
+    # так нельзя, иначе сборка «зависает».
+    headless = bool(os.environ.get("CI") or os.environ.get("GITHUB_ACTIONS"))
+    if platform.system() == "Windows" and not headless:
         try:
             import ctypes
 
@@ -561,8 +570,37 @@ def _fatal(exc: BaseException) -> None:
     print(message, file=sys.stderr)
 
 
+def _ensure_std_streams() -> None:
+    """В оконной сборке PyInstaller sys.stdout/sys.stderr = None.
+
+    Без этого любая печать (в том числе ``--version`` или ``--help`` от argparse)
+    падает с AttributeError — то есть EXE без консоли просто не работает.
+    """
+    devnull = None
+    for name in ("stdout", "stderr"):
+        if getattr(sys, name) is None:
+            if devnull is None:
+                devnull = open(os.devnull, "w", encoding="utf-8", errors="replace")
+            setattr(sys, name, devnull)
+
+
+def _write_crash_log(exc: BaseException) -> Optional[Path]:
+    """Складываем traceback рядом с приложением, чтобы было что прислать."""
+    try:
+        logs_dir = resolve_path("logs")
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        path = logs_dir / "crash.log"
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(f"\n=== {time.strftime('%Y-%m-%d %H:%M:%S')} ===\n")
+            traceback.print_exception(type(exc), exc, exc.__traceback__, file=fh)
+        return path
+    except Exception:
+        return None
+
+
 def run_main(argv: Optional[List[str]] = None) -> int:
     """Точка входа для EXE и скриптов: ловит фатальные ошибки и показывает их."""
+    _ensure_std_streams()
     try:
         return main(argv)
     except SystemExit:
