@@ -12,7 +12,7 @@ import numpy as np
 
 from .actions import ActionRouter, DryRunBackend
 from .config import AppConfig, FaceConfig, HandConfig, PointerConfig
-from .face import FaceFSM, measure_face
+from .face import FaceFSM, FaceMetrics, measure_face
 from .filters import HysteresisGate, OneEuroFilter
 from .gestures import HandFSM, Pose, analyze_hand, classify_pose, synthetic_hand
 from .lipreading import LipReader, TemplateStore, dtw_distance, normalize_sequence
@@ -71,6 +71,53 @@ def check_gestures() -> Check:
         if got != expected:
             bad.append(f"{name}: ожидалось {expected.value}, получено {got.value}")
     return Check("распознавание поз кисти", not bad, "; ".join(bad) or f"{len(cases)} поз")
+
+
+def check_builtin_gestures() -> Check:
+    """«ОК», «коза» и «три пальца» встроены — учатся не нужны."""
+    cfg = HandConfig()
+    cases = {
+        "ok": (dict(pinch_index=True,
+                    curl={"index": 0.7, "middle": 0.0, "ring": 0.0, "pinky": 0.0}), Pose.OK),
+        "rock": (dict(curl={"index": 0.0, "middle": 1.0, "ring": 1.0, "pinky": 0.0}), Pose.ROCK),
+        "three": (dict(curl={"pinky": 1.0}), Pose.THREE),
+    }
+    bad: List[str] = []
+    for name, (kwargs, expected) in cases.items():
+        got = classify_pose(analyze_hand(synthetic_hand(**kwargs), cfg.pointer_source), cfg)
+        if got != expected:
+            bad.append(f"{name}: ожидалось {expected.value}, получено {got.value}")
+    return Check("встроенные жесты ОК / коза / три", not bad,
+                 "; ".join(bad) or "ОК, коза, три пальца")
+
+
+def check_debounce() -> Check:
+    """Одиночный «моргнувший» кадр щипка не должен стать кликом."""
+    fsm = HandFSM(HandConfig())
+    opened = synthetic_hand()
+    pinched = synthetic_hand(pinch_index=True)
+    clicks = 0
+    t = 0.0
+    for i in range(9):
+        for ev in fsm.update(pinched if i == 4 else opened, t):
+            clicks += ev.kind == "pinch_release"
+        t += 0.033
+    return Check("одиночный выброс щипка не кликает", clicks == 0, f"кликов: {clicks}")
+
+
+def check_head_pointer() -> Check:
+    """Голова: движение заметное, возврат в нейтраль курсор не тянет назад."""
+    fsm = FaceFSM(FaceConfig())
+    fsm.baseline.samples = 20
+    fsm.update(FaceMetrics(ear_left=0.3, ear_right=0.3, mouth_width=0.4,
+                           brow_height=0.2, yaw=30.0, valid=True), 0.0)
+    dx, dy = fsm.head_step(1.0 / 30.0)
+    fsm.update(FaceMetrics(ear_left=0.3, ear_right=0.3, mouth_width=0.4,
+                           brow_height=0.2, yaw=0.0, valid=True), 0.05)
+    back = fsm.head_step(1.0 / 30.0)
+    ok = dx > 20.0 and abs(dy) < 1e-6 and back == (0.0, 0.0)
+    return Check("мышь головой: возврат не двигает курсор", ok,
+                 f"наклон 30° -> {dx:.0f} px/кадр, возврат -> {back[0]:.0f} px")
 
 
 def check_rotation() -> Check:
@@ -420,6 +467,9 @@ CHECKS: List[Callable[[], Check]] = [
     check_filters,
     check_hysteresis,
     check_gestures,
+    check_builtin_gestures,
+    check_debounce,
+    check_head_pointer,
     check_rotation,
     check_click_fsm,
     check_drag_fsm,

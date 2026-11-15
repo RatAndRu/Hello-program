@@ -169,6 +169,11 @@ class ActionRouter:
             x, y = event.value  # type: ignore[misc]
             self.backend.move_to(int(x), int(y))
             return
+        if kind == "pointer_rel":
+            dx, dy = event.value  # type: ignore[misc]
+            if dx or dy:
+                self.backend.move_rel(int(round(dx)), int(round(dy)))
+            return
         if kind == "pointer_freeze":
             return
         if kind == "zoom":

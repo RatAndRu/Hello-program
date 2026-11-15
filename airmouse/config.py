@@ -120,6 +120,9 @@ class HandConfig:
     pinch_ratio: float = 0.32          # «щипок» начинается
     pinch_release_ratio: float = 0.42  # и отпускается (гистерезис)
     pinch_approach_ratio: float = 0.50  # «прицел»: курсор замирает до смыкания пальцев
+    pinch_min_s: float = 0.08           # короче этого — не клик, а дребезг распознавания
+    smooth_alpha: float = 0.45         # сглаживание точек: 1.0 — без сглаживания
+    roles: str = "single"              # single | split: вторая рука нажимает, первая ведёт
     drag_delay_s: float = 0.30         # удержание щипка -> перетаскивание
     click_cooldown_s: float = 0.35
     open_palm_hold_s: float = 1.30     # пауза по раскрытой ладони (дольше — меньше случайных)
@@ -157,9 +160,9 @@ class FaceConfig:
     brow_hold_s: float = 0.85
     brow_cooldown_s: float = 5.0
     mouth_open_ratio: float = 0.55
-    head_pointer_gain_x: float = 9.0   # скорость мыши от поворота головы
-    head_pointer_gain_y: float = 7.0
-    head_deadzone_deg: float = 3.0
+    head_gain_x: float = 26.0          # пикселей в секунду на градус поворота головы
+    head_gain_y: float = 20.0
+    head_deadzone_deg: float = 2.5     # мёртвая зона: в ней курсор стоит
     calm_s: float = 0.35               # сколько нейтрали нужно для baseline
 
 
@@ -202,6 +205,9 @@ class ActionConfig:
         "double_blink": "left_click",
         "wink_left": "right_click",
         "wink_right": "right_click",
+        "ok_sign": "double_click",          # ОК: двойной клик
+        "rock_sign": "toggle_pause",        # «коза»: пауза
+        "three_fingers": "toggle_head_pointer",  # три пальца: мышь головой
     })
     scroll_mode: str = "fist"          # прокрутка кулаком (см. gestures)
     double_click_interval_s: float = 0.12

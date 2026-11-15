@@ -19,7 +19,9 @@ def test_pinch_freezes_pointer_before_fingers_touch():
     assert fsm.approaching is False
 
     pinching = synthetic_hand(pinch_index=True)
-    events = fsm.update(pinching, 0.1)
+    # медиана трёх кадров гасит выбросы, потом ещё гистерезис в 2 кадра
+    for t in (0.10, 0.13, 0.16, 0.19):
+        events = fsm.update(pinching, t)
     assert fsm.approaching is True
     assert fsm.aim_point is not None
     assert all(e.kind != "pointer" for e in events)  # курсор заморожен

@@ -100,6 +100,23 @@ def build_segments() -> List[Segment]:
         curl = {"index": 1.0, "middle": 1.0, "ring": 1.0, "pinky": 1.0}
         return _hand(center=(0.6, 0.72), curl=curl), _face()
 
+    def ok_sign(t):
+        curl = {"index": 0.7, "middle": 0.0, "ring": 0.0, "pinky": 0.0}
+        return _hand(center=(0.58, 0.72), curl=curl, pinch_index=True), _face()
+
+    def rock(t):
+        curl = {"index": 0.0, "middle": 1.0, "ring": 1.0, "pinky": 0.0}
+        return _hand(center=(0.52, 0.72), curl=curl), _face()
+
+    def three(t):
+        curl = {"index": 0.0, "middle": 0.0, "ring": 0.0, "pinky": 1.0}
+        return _hand(center=(0.52, 0.72), curl=curl), _face()
+
+    def aim(t):
+        # пальцы сходятся: курсор замирает на точке прицела
+        pinch = 0.25 < t < 0.55      # коротко: только «прицел», без перетаскивания
+        return _hand(center=(0.44, 0.72), curl=dict(OTHER_FINGERS), pinch_index=pinch), _face()
+
     def blink(t):
         closed = (0.40 <= t < 0.52) or (0.72 <= t < 0.84)
         ear = (0.08, 0.08) if closed else (0.30, 0.30)
@@ -125,9 +142,13 @@ def build_segments() -> List[Segment]:
         Segment("рука опущена", 0.4, no_hand),
         Segment("ладонь снова = продолжить", 1.3, resume),
         Segment("большой палец = двойной клик", 0.9, thumb),
+        Segment("прицел: пальцы сходятся", 0.9, aim),
+        Segment("жест ОК = двойной клик", 1.1, ok_sign),
+        Segment("три пальца = мышь головой", 1.2, three),
         Segment("двойное моргание = клик", 1.4, blink),
-        Segment("брови = мышь головой", 1.8, brows),
-        Segment("улыбка = пауза", 1.5, smile),
+        Segment("брови и поворот головы", 1.8, brows),
+        Segment("улыбка — индикатор в окне", 1.5, smile),
+        Segment("коза = пауза (в самом конце)", 1.3, rock),
     ]
 
 
@@ -214,13 +235,12 @@ def run_demo(cfg: AppConfig, out_dir: Path | str = "output") -> DemoResult:
             if metrics is not None:
                 events.extend(face_fsm.update(metrics, now))
                 if router.head_pointer:
-                    vel = face_fsm.head_velocity(1.0 / FPS)
-                    pt = pointer.delta(vel, now)
-                    if pt is not None:
-                        events.append(Event("pointer", pt))
+                    hdx, hdy = face_fsm.head_step(1.0 / FPS)
+                    if abs(hdx) >= 1.0 or abs(hdy) >= 1.0:
+                        events.append(Event("pointer_rel", value=(hdx, hdy)))
 
             for ev in events:
-                if ev.kind in ("pointer", "pointer_freeze"):
+                if ev.kind in ("pointer", "pointer_freeze", "pointer_rel"):
                     router.handle(ev, now)
                     continue
                 was_paused, was_head = router.paused, router.head_pointer

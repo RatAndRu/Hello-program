@@ -198,3 +198,11 @@ def unit(v: np.ndarray) -> np.ndarray:
 
 def safe_div(num: float, den: float, default: float = 0.0) -> float:
     return float(num) / float(den) if abs(den) > 1e-9 else default
+
+
+# Контур лица по 468 точкам FaceMesh (овал), чтобы «обвести» голову.
+FACE_OVAL = (
+    10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379,
+    378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127,
+    162, 21, 54, 103, 67, 109,
+)

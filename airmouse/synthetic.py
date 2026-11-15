@@ -13,7 +13,7 @@ from typing import Tuple
 
 import numpy as np
 
-from .landmarks import F, LIPS_INNER, LIPS_OUTER, Face
+from .landmarks import F, FACE_OVAL, LIPS_INNER, LIPS_OUTER, Face
 
 
 def synthetic_face(
@@ -46,6 +46,14 @@ def synthetic_face(
     def put(idx: int, x: float, y: float) -> None:
         pts[idx, 0] = cx + x
         pts[idx, 1] = cy + y
+
+    # ---------------- овал лица (контур головы) ----------------------- #
+    # Ставим первым: точки, которые дальше расставляются по анатомии,
+    # перекроют общие индексы. Нужен, чтобы AR-контур читался как голова.
+    n_oval = len(FACE_OVAL)
+    for k, idx in enumerate(FACE_OVAL):
+        angle = -math.pi / 2.0 + 2.0 * math.pi * k / n_oval
+        put(idx, 0.98 * FU * math.cos(angle), 0.06 * FU + 1.12 * FU * math.sin(angle))
 
     # ---------------- глаза ------------------------------------------- #
     def eye(ids, cx_eye: float, sign: float, ear_value: float) -> None:
@@ -81,10 +89,12 @@ def synthetic_face(
     # Сначала кольца губ (для площади контура), затем — ключевые точки,
     # потому что индексы пересекаются и «главные» точки должны победить.
     def ring(indices, half_w_: float, half_h_: float) -> None:
+        # Индексы губ идут по контуру: левый уголок -> верх -> правый -> низ.
+        # Ставим их в том же порядке, иначе контур рисуется «зигзагом».
         n = len(indices)
         for k, idx in enumerate(indices):
-            angle = -math.pi / 2.0 + 2.0 * math.pi * k / n
-            put(idx, half_w_ * math.cos(angle), my + half_h_ * math.sin(angle))
+            angle = math.pi - 2.0 * math.pi * k / n
+            put(idx, half_w_ * math.cos(angle), my - half_h_ * math.sin(angle))
 
     ring(LIPS_INNER, inner_half, max(gap / 2.0, 0.006 * FU))
     ring(LIPS_OUTER, half_w, gap / 2.0 + 0.04 * FU)

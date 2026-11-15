@@ -342,9 +342,24 @@ class FaceFSM:
         return events
 
     # ------------------------------------------------------------------ #
-    def head_velocity(self, dt: float) -> tuple:
-        """Скорость курсора от поворота головы (градусы -> доли кадра)."""
+    def head_step(self, dt: float) -> "tuple[float, float]":
+        """Смещение курсора в пикселях за ``dt`` секунд по наклону головы.
+
+        Скорость пропорциональна углу *сверх мёртвой зоны*: в нейтрали курсор
+        стоит, а когда голова возвращается обратно, он не едет назад — новое
+        движение начнётся только со следующего наклона за предел зоны.
+        """
         dz = self.cfg.head_deadzone_deg
-        yaw = deadzone(self.rel_yaw, dz)
-        pitch = deadzone(self.rel_pitch, dz)
-        return (yaw * dt / 90.0 * 1.6, pitch * dt / 90.0 * 1.6)
+
+        def excess(angle: float) -> float:
+            if angle > dz:
+                return angle - dz
+            if angle < -dz:
+                return angle + dz
+            return 0.0
+
+        ex = excess(self.rel_yaw)
+        ey = excess(self.rel_pitch)
+        if not ex and not ey:
+            return (0.0, 0.0)
+        return (ex * self.cfg.head_gain_x * dt, ey * self.cfg.head_gain_y * dt)

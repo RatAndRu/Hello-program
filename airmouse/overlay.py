@@ -20,6 +20,7 @@ import numpy as np
 
 from . import text as T
 from .landmarks import (
+    FACE_OVAL,
     F,
     FINGERS,
     THUMB_CMC,
@@ -60,30 +61,33 @@ FINGER_NAMES = {
     "pinky": "мизинец",
 }
 
-# Контур лица по 468 точкам FaceMesh (овал), чтобы «обвести» голову.
-FACE_OVAL = (
-    10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379,
-    378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127,
-    162, 21, 54, 103, 67, 109,
-)
 
 _EYE_A_POLY = (F.EYE_A[0], F.EYE_A[1], F.EYE_A[2], F.EYE_A[3], F.EYE_A[4], F.EYE_A[5])
 _EYE_B_POLY = (F.EYE_B[0], F.EYE_B[1], F.EYE_B[2], F.EYE_B[3], F.EYE_B[4], F.EYE_B[5])
 
+# жесты рукой (позы кисти)
 HELP_GESTURES = (
-    ("щипок", "большой + указательный (курсор замирает)", "левый клик"),
-    ("щипок ср.", "большой + средний палец", "правый клик"),
-    ("большой палец", "кулак с поднятым большим", "двойной клик"),
-    ("кулак", "сдвиг кулака влево/вправо/вверх/вниз", "прокрутка"),
-    ("ладонь", "открытая ладонь неподвижно 1.3 с", "пауза"),
-    ("улыбка", "улыбнуться — показывается в окне", "только индикатор"),
-    ("грусть", "опустить уголки губ", "только индикатор"),
-    ("удивление", "брови вверх + рот приоткрыт", "только индикатор"),
-    ("кивок", "качнуть головой вверх-вниз", "настраивается"),
-    ("поворот", "качнуть головой влево-вправо", "настраивается"),
+    ("щипок", "большой + указательный", "левый клик"),
+    ("щипок ср.", "большой + средний", "правый клик"),
+    ("большой", "кулак, большой вверх", "двойной клик"),
+    ("кулак", "двигать кулаком", "прокрутка"),
+    ("ладонь", "ладонь неподвижно 1.3 с", "пауза"),
+    ("ОК", "колечко + три пальца", "двойной клик"),
+    ("коза", "указат. + мизинец", "пауза"),
+    ("три пальца", "указ., средний, безым.", "мышь головой"),
+)
+
+# мимика и голова — только показываются в окне (действия включаются настройками)
+HELP_FACE = (
+    ("улыбка", "улыбнуться", "только индикатор"),
+    ("грусть", "уголки губ вниз", "только индикатор"),
+    ("удивление", "брови вверх, рот открыт", "только индикатор"),
+    ("кивок", "головой вверх-вниз", "настраивается"),
+    ("поворот", "головой влево-вправо", "настраивается"),
     ("моргание", "двойное моргание", "левый клик"),
     ("подмигивание", "один глаз", "правый клик"),
 )
+
 HELP_KEYS = (
     ("Q / Esc", "выход"),
     ("P", "пауза (действия не выполняются)"),
@@ -94,8 +98,8 @@ HELP_KEYS = (
 )
 
 HELP_TWO_HANDS = (
-    ("две ладони", "разведите или сведите руки", "масштаб (Ctrl + колесо)"),
-    ("два кулака", "двигайте руками вверх/вниз", "прокрутка"),
+    ("две ладони", "развести/свести руки", "масштаб"),
+    ("два кулака", "двигать вверх/вниз", "прокрутка"),
 )
 
 
@@ -126,6 +130,8 @@ class OverlayState:
     aiming: bool = False             # пальцы идут на смыкание, курсор заморожен
     aim: Optional[Sequence[float]] = None   # точка прицела (нормированные координаты)
     two_hand_hint: str = ""          # подсказка для жестов двумя руками
+    split_roles: bool = False        # «одна рука — курсор, вторая — нажатия»
+    roles_text: str = ""             # кто чем занят (режим hand.roles=split)
     events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
     hints: str = "Q выход   P пауза   H мышь головой   M движок   I справка"
@@ -318,7 +324,7 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
              (actions, size_small))
     text_w = max([T.measure(t, size)[0] for t, size in lines] + [T.measure("AirMouse 0.2.0", size_title)[0]])
     panel_w = text_w + int(24 * k)
-    panel_h = int(104 * k)
+    panel_h = int((134 if state.roles_text else 104) * k)
     _panel(img, x, y, panel_w, panel_h, 0.62)
 
     title = "AirMouse"
@@ -331,6 +337,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
     T.draw(img, fps_line, (x + 12, y + 56), size_small, color)
     T.draw(img, pose_line, (x + 12, y + 76), size_small, FG)
     T.draw(img, actions, (x + 12, y + 96), size_small, acolor)
+    if state.roles_text:            # кто чем занят в режиме «две руки на роли»
+        T.draw(img, state.roles_text, (x + 12, y + 116), size_small, ACCENT)
 
     if state.backend_note:
         note_y = y + panel_h + int(8 * k)
@@ -363,7 +371,7 @@ def _draw_events(img, state: OverlayState, k: float) -> None:
     width = max(T.measure(line, size)[0] for line in lines) + int(24 * k)
     left = int(12 * k)
     top = h - int(42 * k) - len(lines) * int(20 * k)
-    _panel(img, left, top, width, len(lines) * int(20 * k) + int(14 * k), 0.55)
+    _panel(img, left, top, width, len(lines) * int(20 * k) + int(22 * k), 0.55)
     T.draw(img, "что произошло:", (left + 10, top + 4), int(12 * k), DIM)
     for i, line in enumerate(lines):
         color = ACCENT if i == len(lines) - 1 else FG
@@ -371,49 +379,59 @@ def _draw_events(img, state: OverlayState, k: float) -> None:
 
 
 def _draw_help(img, state: OverlayState, k: float) -> None:
+    """Справка: слева жесты рукой и клавиши, справа мимика и две руки."""
     h, w = img.shape[:2]
-    _panel(img, 0, 0, w, h, 0.93)
-    pad = int(28 * k)
+    _panel(img, 0, 0, w, h, 0.94)
+    pad = int(26 * k)
     title_size = int(22 * k)
     body = int(14 * k)
+    row = int(21 * k)
+    head_gap = int(26 * k)
     T.draw(img, "Что умеет AirMouse", (pad, pad), title_size, FG)
 
-    y = pad + int(38 * k)
-    T.draw(img, "Жесты (рука):", (pad, y), body, ACCENT)
-    y += int(24 * k)
-    for name, how, action in HELP_GESTURES[:5]:
-        T.draw(img, f"{name:<14} {how}", (pad, y), body, FG)
-        T.draw(img, f"→ {action}", (pad + int(430 * k), y), body, INFO)
-        y += int(22 * k)
+    left_x = pad
+    right_x = int(w * 0.50)
+    action_dx = int(300 * k)          # где в колонке начинается «→ действие»
+    y = pad + int(40 * k)
 
-    T.draw(img, "Мимика (лицо):", (pad, y + int(6 * k)), body, ACCENT)
-    y += int(30 * k)
-    for name, how, action in HELP_GESTURES[5:]:
-        T.draw(img, f"{name:<14} {how}", (pad, y), body, FG)
-        T.draw(img, f"→ {action}", (pad + int(430 * k), y), body, INFO)
-        y += int(22 * k)
+    def header(text: str, x: int, yy: int) -> int:
+        T.draw(img, text, (x, yy), body, ACCENT)
+        return yy + int(24 * k)
 
-    T.draw(img, "улыбка, грусть, удивление, кивок — показываются в окне;"
-                " действия включаются в настройках",
-           (pad, y + int(2 * k)), int(12 * k), DIM)
-    y += int(26 * k)
+    def rows(items, x: int, yy: int, name_w: int = 13) -> int:
+        for name, how, action in items:
+            T.draw(img, f"{name:<{name_w}} {how}", (x, yy), body, FG)
+            T.draw(img, f"→ {action}", (x + action_dx, yy), body, INFO)
+            yy += row
+        return yy
 
-    T.draw(img, "Две руки одновременно:", (pad, y), body, ACCENT)
-    y += int(24 * k)
-    for name, how, action in HELP_TWO_HANDS:
-        T.draw(img, f"{name:<14} {how}", (pad, y), body, FG)
-        T.draw(img, f"→ {action}", (pad + int(430 * k), y), body, INFO)
-        y += int(22 * k)
-    T.draw(img, "H — «мышь головой»: наклон головы двигает курсор", (pad, y + int(4 * k)),
-           int(12 * k), DIM)
-    y += int(26 * k)
-    T.draw(img, "Клавиши:", (pad, y), body, ACCENT)
-    y += int(24 * k)
+    # ---------------- левая колонка: рука, две руки, клавиши ----------------
+    y = header("Жесты (рука):", left_x, y)
+    y = rows(HELP_GESTURES, left_x, y)
+    y += int(6 * k)
+    y = header("Две руки одновременно:", left_x, y)
+    y = rows(HELP_TWO_HANDS, left_x, y)
+    y += int(6 * k)
+    y = header("Клавиши:", left_x, y)
     for key, action in HELP_KEYS:
-        T.draw(img, f"{key:<10} {action}", (pad, y), body, FG)
-        y += int(20 * k)
+        T.draw(img, f"{key:<10} {action}", (left_x, y), body, FG)
+        y += int(19 * k)
 
-    T.draw(img, "I или Tab — закрыть справку", (pad, h - int(30 * k)), int(13 * k), DIM)
+    # ---------------- правая колонка: мимика ----------------
+    yy = pad + int(40 * k)
+    yy = header("Мимика и голова:", right_x, yy)
+    yy = rows(HELP_FACE, right_x, yy, name_w=12)
+    yy += int(4 * k)
+    T.draw(img, "жесты мимики только показываются в окне,", (right_x, yy), int(12 * k), DIM)
+    yy += int(16 * k)
+    T.draw(img, "действия включаются в config/airmouse.json", (right_x, yy), int(12 * k), DIM)
+    yy += int(34 * k)
+    yy = header("Роли рук:", right_x, yy)
+    T.draw(img, "одна ведёт курсор, вторая нажимает", (right_x, yy), body, FG)
+    yy += int(19 * k)
+    T.draw(img, "включается: config set hand.roles=split", (right_x, yy), int(12 * k), DIM)
+
+    T.draw(img, "I или Tab — закрыть справку", (pad, h - int(28 * k)), int(13 * k), DIM)
 
 
 # --------------------------------------------------------------------------- #
@@ -448,10 +466,11 @@ def render(
         draw_hand_ar(img, hand, dim=state.paused or secondary,
                      show_names=state.show_names and not secondary,
                      pinch_threshold=state.pinch_threshold)
-        if secondary:  # вторая рука — только для красоты, она не управляет
+        if secondary:  # вторая рука курсор не двигает — только нажатия
             pts = hand.to_pixels(w, h)
             anchor = pts[MIDDLE_MCP].astype(int)
-            text = "вторая рука (не управляет)"
+            text = ("вторая рука: нажатия и жесты" if state.split_roles
+                    else "вторая рука (не управляет)")
             width, height = T.measure(text, 12)
             _label(img, text, (int(anchor[0] - width // 2), int(anchor[1] - height - 16)),
                    12, DIM, alpha=0.5)
@@ -477,9 +496,9 @@ def render(
         _label(img, "прицел: курсор заморожен", (ax + int(22 * k), ay - int(10 * k)),
                int(13 * k), (0, 255, 255), alpha=0.5)
 
-    if state.two_hand_hint:
-        text_w, _ = T.measure(state.two_hand_hint, int(14 * k))
-        _label(img, state.two_hand_hint, (w // 2 - text_w // 2, int(96 * k)),
+    if state.two_hand_hint:      # подсказка двумя руками — под сводкой слева
+        hint_y = int((12 + (134 if state.roles_text else 104) + 8) * k)
+        _label(img, state.two_hand_hint, (int(12 * k), hint_y),
                int(14 * k), ACCENT, alpha=0.55)
 
     if state.lip_word:

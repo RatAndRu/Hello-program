@@ -41,6 +41,12 @@ BACKEND_TITLES = {
 }
 
 # События мимики, которые нельзя выпускать во время перетаскивания/щипка.
+# что вторая рука имеет право делать в режиме hand.roles=split
+SPLIT_CLICK_EVENTS = {
+    "pinch_release", "middle_pinch_release", "drag_start", "drag_end",
+    "scroll", "ok_sign", "rock_sign", "three_fingers",
+}
+
 FACE_SUPPRESSED = {"open_palm_hold", "smile_hold", "brow_hold", "eyes_closed_hold",
                    "head_nod", "head_shake"}
 
@@ -125,6 +131,7 @@ class AirMouseApp:
         self._shape = None
         self._lit = 0.0
         self._last_scroll_log = 0.0
+        self.click_fsm = HandFSM(cfg.hand)
         self._window_name = "AirMouse"
 
     # ------------------------------------------------------------------ #
@@ -221,7 +228,19 @@ class AirMouseApp:
             index = self._pick_primary(hands)
             self._primary_index = index or 0
             hand = hands[index] if index is not None else None
-            events = self._translate(self.hand_fsm.update(hand, now), now)
+            if getattr(self.cfg.hand, "roles", "single") == "split" and len(hands) >= 2:
+                # Режим «две руки»: одна ведёт курсор, вторая только нажимает.
+                # Курсор при щипке второй рукой вообще не сдвигается.
+                click_hand = hands[1 - self._primary_index]
+                moved = [e for e in self.hand_fsm.update(hand, now)
+                         if e.kind in ("pointer", "pointer_freeze")]
+                # вторая рука нажимает: курсор она не двигает и паузу не включает
+                clicking = [e for e in self.click_fsm.update(click_hand, now)
+                            if e.kind in SPLIT_CLICK_EVENTS]
+                events = self._translate(moved, now) + clicking
+            else:
+                self.click_fsm.update(None, now)
+                events = self._translate(self.hand_fsm.update(hand, now), now)
             face_events = self._handle_face(res.face, now)
             # Пока рука тащит объект или держит щипок, мимика не должна
             # вмешиваться: иначе улыбка/ладонь «отпускают» кнопку мыши.
@@ -230,14 +249,11 @@ class AirMouseApp:
             events += face_events
             events += self._handle_lip(res.face, now)
             # жесты двумя руками (масштаб/прокрутка) — только когда видно обе руки
-            if len(hands) >= 2:
+            # и вторая рука не занята нажатиями
+            if len(hands) >= 2 and getattr(self.cfg.hand, "roles", "single") != "split":
                 events += self.two_hand_fsm.update(hands, now)
             if self.router.head_pointer and self._metrics is not None:
-                dt = max(now - self._last_now, 1e-3) if self._last_now else 0.016
-                vel = self.face_fsm.head_velocity(dt)
-                pt = self.pointer.delta(vel, now)
-                if pt is not None:
-                    events.append(Event("pointer", pt))
+                events.extend(self._head_pointer_events(now))
 
         self.stats.frames += 1
         self.stats.hand_frames += 1 if self._hands or self._shape is not None else 0
@@ -281,6 +297,23 @@ class AirMouseApp:
         return events
 
     # ------------------------------------------------------------------ #
+    def _head_pointer_events(self, now: float) -> List[Event]:
+        """«Мышь головой»: курсор двигается наклоном головы.
+
+        В нейтрали курсор стоит; возврат головы в нормальное положение не тянет
+        его обратно — движение начинается только со следующего наклона за
+        мёртвой зоной. Чувствительность — ``face.head_gain_x/y`` (пикселей в
+        секунду на градус).
+        """
+        dt = max(now - self._last_now, 1e-3) if self._last_now else 1.0 / 30.0
+        dx, dy = self.face_fsm.head_step(dt)
+        limit = float(self.cfg.pointer.max_step_px)
+        dx = max(-limit, min(limit, dx))
+        dy = max(-limit, min(limit, dy))
+        if abs(dx) < 1.0 and abs(dy) < 1.0:
+            return []
+        return [Event("pointer_rel", value=(dx, dy))]
+
     def _expression_text(self) -> str:
         """Текущее выражение лица словами — чтобы мимика была понятна без графиков."""
         m = self._metrics
@@ -319,6 +352,9 @@ class AirMouseApp:
         s.aiming = bool(self.hand_fsm.approaching) and self.hand_fsm.aim_point is not None
         s.aim = self.hand_fsm.aim_point
         s.two_hand_hint = self.two_hand_fsm.hint if self.two_hand_fsm.active else ""
+        split = getattr(self.cfg.hand, "roles", "single") == "split"
+        s.split_roles = split and len(self._hands) >= 2
+        s.roles_text = ("роли: 1 — курсор, 2 — клики" if s.split_roles else "")
         s.paused = self.router.paused
         s.head_pointer = self.router.head_pointer
         s.hand_seen = bool(self._hands) or self._shape is not None

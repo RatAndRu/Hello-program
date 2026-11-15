@@ -43,6 +43,8 @@ class Pose(str, Enum):
     THREE = "three"
     THUMB_UP = "thumb_up"
     THUMB_DOWN = "thumb_down"
+    OK = "ok"
+    ROCK = "rock"
 
 
 POSE_TITLES_RU = {
@@ -57,6 +59,8 @@ POSE_TITLES_RU = {
     Pose.THREE: "три пальца",
     Pose.THUMB_UP: "большой палец",
     Pose.THUMB_DOWN: "большой вниз",
+    Pose.OK: "ОК",
+    Pose.ROCK: "коза",
 }
 
 
@@ -153,8 +157,44 @@ def analyze_hand(hand: Hand, pointer_source: str = "auto") -> HandFeatures:
     )
 
 
-def classify_pose(f: HandFeatures, cfg: HandConfig) -> Pose:
-    """Статический жест по признакам кисти."""
+# какие пальцы выпрямлены в каждой «счётной» позе — для гистерезиса
+POSE_FINGERS: Dict[Pose, Tuple[str, ...]] = {
+    Pose.FIST: (),
+    Pose.OPEN_PALM: ("index", "middle", "ring", "pinky"),
+    Pose.POINT: ("index",),
+    Pose.PEACE: ("index", "middle"),
+    Pose.THREE: ("index", "middle", "ring"),
+    Pose.ROCK: ("index", "pinky"),
+}
+
+
+def _marginal(value: float, lo: float = 0.40, hi: float = 0.72) -> bool:
+    """Палец «на границе» выпрямлен/согнут — по нему нельзя менять жест."""
+    return lo <= value <= hi
+
+
+class Median3:
+    """Медиана трёх последних значений: гасит одиночные выбросы нейросети.
+
+    Настоящее изменение проскакивает со второго кадра (задержка ~30 мс), а
+    «моргнувший» на один кадр щипок не превращается во второй щипок.
+    """
+
+    def __init__(self) -> None:
+        self.values: List[float] = []
+
+    def reset(self) -> None:
+        self.values.clear()
+
+    def update(self, value: float) -> float:
+        self.values.append(float(value))
+        if len(self.values) > 3:
+            del self.values[0]
+        return float(np.median(self.values))
+
+
+def _classify_raw(f: HandFeatures, cfg: HandConfig) -> Pose:
+    """Статический жест по признакам кисти, без учёта прошлого кадра."""
     if not f.valid:
         return Pose.NONE
     e = f.extended
@@ -167,6 +207,15 @@ def classify_pose(f: HandFeatures, cfg: HandConfig) -> Pose:
         return Pose.MIDDLE_PINCH
     if f.pinch_ring < cfg.pinch_ratio and e["ring"] and e["thumb"] and not e["index"] and not e["middle"]:
         return Pose.RING_PINCH
+
+    # 1б. «ОК»: колечко из большого и указательного, остальные три выпрямлены.
+    if (f.pinch < 0.40 and e["middle"] and e["ring"] and e["pinky"]
+            and not e["index"]):
+        return Pose.OK
+
+    # 1в. «Коза»: указательный и мизинец вверх, средний и безымянный сжаты.
+    if e["index"] and e["pinky"] and not e["middle"] and not e["ring"]:
+        return Pose.ROCK
 
     # 2. Кулак / раскрытая ладонь.
     if n == 0:
@@ -189,6 +238,25 @@ def classify_pose(f: HandFeatures, cfg: HandConfig) -> Pose:
         # вдоль указательного, а не выставлен в сторону.
         return Pose.THUMB_UP if f.thumb_dy < -0.15 else Pose.THUMB_DOWN
     return Pose.NONE
+
+
+def classify_pose(f: HandFeatures, cfg: HandConfig, prev: Optional[Pose] = None) -> Pose:
+    """Жест с гистерезисом: «моргание» одного пальца не меняет жест.
+
+    Если жест отличается от прошлого (``prev``) только состоянием пальца,
+    который сейчас «на границе» выпрямлен/согнут, остаётся прошлый жест.
+    """
+    pose = _classify_raw(f, cfg)
+    if prev is None or prev is pose or not f.valid:
+        return pose
+    a = POSE_FINGERS.get(prev)
+    b = POSE_FINGERS.get(pose)
+    if a is None or b is None:
+        return pose
+    for finger in set(a) ^ set(b):
+        if _marginal(float(f.extension.get(finger, 1.0))):
+            return prev
+    return pose
 
 
 def recognize_pose(hand: Optional[Hand], cfg: HandConfig) -> Pose:
@@ -225,6 +293,11 @@ class HandFSM:
         self._last_pose = Pose.NONE
         self._thumb_fired = False
         self.approaching = False   # пальцы идут на смыкание: курсор заморожен
+        self._approach_count = 0
+        self._pose_once: dict = {}
+        self._med_pinch = Median3()
+        self._med_middle = Median3()
+        self._med_ring = Median3()
         self.aim_point: Optional[Tuple[float, float]] = None
 
     # ------------------------------------------------------------------ #
@@ -239,6 +312,9 @@ class HandFSM:
         self._prev_pointer = None
         self._last_pose = Pose.NONE
         self._thumb_fired = False
+        self._med_pinch.reset()
+        self._med_middle.reset()
+        self._med_ring.reset()
 
     @property
     def pinching(self) -> bool:
@@ -272,7 +348,12 @@ class HandFSM:
             f.fast_motion = float(np.linalg.norm(f.pointer - self._prev_pointer))
         self._prev_pointer = f.pointer
 
-        pose = classify_pose(f, self.cfg)
+        # Антидребезг: медиана трёх кадров гасит одиночные «схлопывания» пальцев.
+        f.pinch = self._med_pinch.update(f.pinch)
+        f.pinch_middle = self._med_middle.update(f.pinch_middle)
+        f.pinch_ring = self._med_ring.update(f.pinch_ring)
+
+        pose = classify_pose(f, self.cfg, prev=self._last_pose)
         stable = self.pose_gate.update(pose.value)
 
         # ---------------- щипок указательным: клик / перетаскивание -------- #
@@ -282,6 +363,9 @@ class HandFSM:
                 if self._dragging:
                     self._dragging = False
                     events.append(Event("drag_end", label="отпустил"))
+                elif (now - self._pinch_since) < getattr(self.cfg, "pinch_min_s", 0.0):
+                    # щипок мигнул на 1–2 кадра — это дрожание точек, а не клик
+                    pass
                 elif self.cooldown.try_fire("pinch", now):
                     events.append(Event("pinch_release", label="левый клик"))
             else:
@@ -347,6 +431,20 @@ class HandFSM:
         if pose != Pose.OPEN_PALM:
             self.open_palm_hold.reset()
 
+        # ------------- стабильные позы-команды: ОК, коза, три пальца ------ #
+        STABLE_EVENTS = {
+            Pose.OK: "ok_sign",
+            Pose.ROCK: "rock_sign",
+            Pose.THREE: "three_fingers",
+        }
+        for pose_value, kind in STABLE_EVENTS.items():
+            if stable == pose_value.value:
+                if not self._pose_once.get(kind) and self.cooldown.try_fire(kind, now):
+                    self._pose_once[kind] = True
+                    events.append(Event(kind, label=pose_value.value))
+            else:
+                self._pose_once[kind] = False
+
         # ---------------- большой палец вверх ----------------------------- #
         if stable == Pose.THUMB_UP.value:
             if not self._thumb_fired and self.cooldown.try_fire("thumb_up", now):
@@ -359,7 +457,10 @@ class HandFSM:
         # «Прицел»: как только большой и указательный пошли навстречу друг
         # другу, курсор замирает на последней точке. Раньше он уезжал вместе
         # с пальцем, и клик приходился не туда, куда целились.
-        self.approaching = f.pinch < self.cfg.pinch_approach_ratio
+        approaching_now = f.pinch < self.cfg.pinch_approach_ratio
+        self._approach_count = self._approach_count + 1 if approaching_now else 0
+        # одного кадра мало: нейросеть иногда «моргает» на движении рукой
+        self.approaching = self._approach_count >= 2
         if self.approaching:
             self.aim_point = tuple(f.pointer)
         frozen = self._pinching and not self._dragging
