@@ -12,6 +12,7 @@
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Protocol
@@ -20,6 +21,8 @@ import numpy as np
 
 from .config import FaceConfig, HandConfig
 from .landmarks import Face, Hand
+
+log = logging.getLogger("airmouse")
 
 
 @dataclass
@@ -49,6 +52,7 @@ class MediaPipeTracker:
     """21 точка кисти + 468 точек лица из MediaPipe."""
 
     name = "mediapipe"
+    fallback_reason = ""
 
     def __init__(
         self,
@@ -193,12 +197,29 @@ class NullTracker:
     """Заглушка: точек нет (например, режим без камеры)."""
 
     name = "none"
+    fallback_reason = ""
 
     def process(self, frame_bgr: np.ndarray, ts_ms: int) -> FrameResult:
         return FrameResult(backend="none")
 
     def close(self) -> None:
         pass
+
+
+def explain_mediapipe_failure(exc: BaseException, model_dir: Path | str) -> str:
+    """Короткое объяснение, почему нейросеть не поднялась (показываем на экране)."""
+    from .models import ModelError
+
+    name = type(exc).__name__
+    if isinstance(exc, ModelError):
+        return ("нет файлов моделей рядом с программой — распакуйте архив "
+                "AirMouse целиком в папку и запустите EXE оттуда")
+    text = str(exc)
+    if isinstance(exc, ImportError) or "DLL" in text or "libEGL" in text or "shared" in text.lower():
+        return f"не загрузилась библиотека MediaPipe ({name}: {text[:110]})"
+    if "No module named" in text:
+        return f"нет пакета MediaPipe ({text[:110]})"
+    return f"{name}: {text[:140]}"
 
 
 def create_tracker(
@@ -211,14 +232,21 @@ def create_tracker(
     backend = (backend or "auto").lower()
     if backend in ("none", "off", "no"):
         return NullTracker()
+    reason = ""
     if backend in ("auto", "mediapipe"):
         try:
             return MediaPipeTracker(hand_cfg, face_cfg, model_dir, progress=progress)
         except Exception as exc:
             if backend == "mediapipe":
                 raise
+            # auto: нейросеть не поднялась — работаем на классическом CV,
+            # но запоминаем причину, чтобы показать её в окне и в журнале.
+            reason = explain_mediapipe_failure(exc, model_dir)
+            log.warning("MediaPipe недоступен: %s", reason)
             if progress:
-                progress(f"MediaPipe недоступен ({exc}); включаю классическое CV.")
+                progress(f"Нейросеть MediaPipe недоступна ({reason}) — включён классический режим.")
     from .classical import ClassicalTracker
 
-    return ClassicalTracker(hand_cfg=hand_cfg)
+    tracker = ClassicalTracker(hand_cfg=hand_cfg)
+    tracker.fallback_reason = reason or "включён вручную (--backend classical)"
+    return tracker

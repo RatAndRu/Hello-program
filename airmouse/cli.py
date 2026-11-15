@@ -91,6 +91,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     app.setup()
     if args.dry_run:
         log.info("Режим --dry-run: настоящие клики и движения мыши отключены")
+    note = getattr(app.tracker, "fallback_reason", "")
+    if note:
+        log.warning("Нейросеть не используется: %s", note)
+        log.warning("В окне это видно строкой «движок: классический CV»; "
+                    "клавиша M переключает движки на ходу")
 
     if not cfg.show_window:
         if args.tray and tray_available():
@@ -129,45 +134,78 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     ok = True
     print(f"AirMouse {__version__} | Python {platform.python_version()} | {platform.platform()}")
 
-    def check(title: str, fn) -> None:
+    def check(title: str, fn, fatal: bool = True) -> None:
         nonlocal ok
         try:
             result = fn()
             print(f"  [ok]   {title}: {result}")
         except Exception as exc:
-            ok = False
-            print(f"  [FAIL] {title}: {exc}")
+            if fatal:
+                ok = False
+                print(f"  [FAIL] {title}: {exc}")
+            else:
+                print(f"  [ -- ] {title}: {exc}")
 
     check("numpy", lambda: __import__("numpy").__version__)
     check("opencv", lambda: __import__("cv2").__version__)
     check("mediapipe", lambda: __import__("mediapipe").__version__)
     check("pyautogui", lambda: __import__("pyautogui").__version__)
 
-    def camera_probe():
-        import cv2
-
-        cap = cv2.VideoCapture(0)
-        if not cap.isOpened():
-            raise RuntimeError("камера 0 не открылась (занята или нет разрешения)")
-        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        cap.release()
-        if w <= 0 or h <= 0:
-            raise RuntimeError("камера вернула пустой размер кадра")
-        return f"камера 0: {w}x{h}"
-
-    check("камера", camera_probe)
-    check("экран", lambda: "%dx%d" % __import__("pyautogui").size())
-
     cfg = load_config(args.config)
-    print(f"  конфиг: {args.config or DEFAULT_CONFIG_PATH}")
     models = resolve_path(cfg.model_dir)
+
+    def mediapipe_engine():
+        """Главная проверка: нейросеть реально поднимается и обрабатывает кадр."""
+        import numpy as _np
+
+        from .tracker import MediaPipeTracker
+
+        tracker = MediaPipeTracker(cfg.hand, cfg.face, models)
+        try:
+            empty = _np.zeros((240, 320, 3), dtype=_np.uint8)
+            result = tracker.process(empty, 0)
+        finally:
+            tracker.close()
+        return f"загружена ({tracker.name}/{tracker.api}), рук в пустом кадре: {len(result.hands)}"
+
     for name in ("hand_landmarker", "face_landmarker"):
         path = models / f"{name}.task"
-        print(f"  модель {name}: {'есть' if path.exists() else 'нет (скачается при первом запуске)'}")
+        size = f"{path.stat().st_size / 1e6:.1f} МБ" if path.exists() else "нет файла"
+        print(f"  модель {name}: {size}  ({path})")
+    check("нейросеть MediaPipe (модели + движок)", mediapipe_engine)
+
+    if not args.no_camera:
+        def camera_probe():
+            import cv2
+
+            cap = cv2.VideoCapture(cfg.camera.index)
+            if not cap.isOpened():
+                raise RuntimeError("камера не открылась (занята, нет разрешения или её нет)")
+            w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+            h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+            cap.release()
+            if w <= 0 or h <= 0:
+                raise RuntimeError("камера вернула пустой размер кадра")
+            return f"камера {cfg.camera.index}: {w}x{h}"
+
+        check("камера", camera_probe)
+
+    def screen_probe():
+        import pyautogui
+
+        size = pyautogui.size()
+        return f"{size.width}x{size.height}"
+
+    check("экран", screen_probe, fatal=False)
+
+    print(f"  конфиг: {args.config or DEFAULT_CONFIG_PATH}")
+    print(f"  журнал: {resolve_path(cfg.log_file)}")
     store = TemplateStore(resolve_path(cfg.lip.template_dir))
     print(f"  слова по губам: {store.summary() or 'словарь пуст'}")
     print("\nИтог:", "всё готово" if ok else "есть проблемы — см. выше")
+    if not ok:
+        print("Подсказка: для классического режима без нейросети запустите")
+        print(f'  "{Path(sys.executable).name if getattr(sys, "frozen", False) else "python -m airmouse"}" --backend classical')
     return 0 if ok else 1
 
 
@@ -471,7 +509,8 @@ def build_parser() -> argparse.ArgumentParser:
     demo = sub.add_parser("demo", help="синтетическая демонстрация без камеры")
     demo.add_argument("--out", type=str, default="output", help="каталог для гифки и раскадровки")
 
-    sub.add_parser("doctor", help="проверить окружение")
+    doc = sub.add_parser("doctor", help="проверить окружение и нейросеть")
+    doc.add_argument("--no-camera", action="store_true", help="не трогать камеру (для CI)")
     sub.add_parser("models", help="скачать модели MediaPipe")
     sub.add_parser("selftest", help="прогнать самопроверку логики")
 

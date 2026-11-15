@@ -139,3 +139,38 @@ def test_pause_freezes_pointer():
     pos = app.backend.position()
     app.process_frame(EMPTY_FRAME, 600.0, 600000)
     assert app.backend.position() == pos
+
+
+def test_window_close_detected(monkeypatch):
+    """Крестик окна должен останавливать приложение, а не переоткрывать окно."""
+    import cv2
+
+    app = make_app([(None, None)])
+    app._window_name = "AirMouse-test"
+
+    monkeypatch.setattr(cv2, "getWindowProperty", lambda *a, **k: 1.0)
+    assert app._window_closed() is False
+
+    monkeypatch.setattr(cv2, "getWindowProperty", lambda *a, **k: 0.0)
+    assert app._window_closed() is True
+
+    def raise_error(*args, **kwargs):
+        raise cv2.error("окна нет")
+
+    monkeypatch.setattr(cv2, "getWindowProperty", raise_error)
+    assert app._window_closed() is True
+
+
+def test_switch_backend_reports_failure(monkeypatch):
+    """Если второй движок не поднимается — приложение продолжает работать."""
+    import airmouse.app as app_module
+
+    app = make_app([(None, None)])
+    original = app.tracker
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("нет моделей")
+
+    monkeypatch.setattr(app_module, "create_tracker", boom)
+    assert app.switch_backend() == getattr(original, "name", "fake")
+    assert "нет моделей" in app.state.backend_note

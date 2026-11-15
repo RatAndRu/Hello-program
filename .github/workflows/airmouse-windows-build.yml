@@ -144,6 +144,7 @@ jobs:
           }
           run_console version ./AirMouse-debug.exe --version
           run_console selftest ./AirMouse-debug.exe selftest
+          run_console doctor ./AirMouse-debug.exe doctor --no-camera
           run_console lip ./AirMouse-debug.exe lip list
           run_console demo ./AirMouse-debug.exe demo --out smoke-out
 

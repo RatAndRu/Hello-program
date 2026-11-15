@@ -1,48 +1,131 @@
-"""Отрисовка окна предпросмотра (OpenCV).
+"""Окно предпросмотра: AR-подсветка руки и лица и понятная сводка происходящего.
 
-Подписи намеренно латиницей: встроенные шрифты OpenCV не умеют кириллицу.
+Главные принципы оформления:
+
+* **рука** — цветные «полосы» вдоль каждого пальца (как в AR-примерах), контур
+  ладони и подсветка щипка: сразу видно, что нейросеть видит;
+* **лицо** — овал лица, глаза, брови и губы, рядом — текущее выражение словами;
+* **сводка** — каким движком работаем (нейросеть или классическое CV), сколько
+  кадров в секунду, какой жест, включены ли действия и что произошло только что;
+* все подписи — по-русски (см. :mod:`airmouse.text`).
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import List, Optional, Sequence
+from dataclasses import dataclass, field
+from typing import List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
 
-from .landmarks import F, HAND_CONNECTIONS, LIPS_INNER, LIPS_OUTER, Face, Hand
-from .filters import clamp
+from . import text as T
+from .landmarks import (
+    F,
+    FINGERS,
+    THUMB_CMC,
+    HAND_CONNECTIONS,
+    INDEX_TIP,
+    LIPS_INNER,
+    LIPS_OUTER,
+    PINKY_MCP,
+    MIDDLE_MCP,
+    RING_MCP,
+    THUMB_TIP,
+    INDEX_MCP,
+    WRIST,
+    Face,
+    Hand,
+)
 
-BG = (28, 28, 32)
-FG = (235, 235, 235)
+BG = (26, 28, 32)
+FG = (238, 238, 238)
 ACCENT = (120, 220, 120)
 WARN = (80, 170, 255)
 BAD = (70, 70, 230)
-DIM = (150, 150, 155)
+DIM = (160, 160, 165)
+INFO = (230, 200, 120)
+
+FINGER_COLORS = {
+    "thumb": (60, 160, 255),
+    "index": (110, 235, 120),
+    "middle": (240, 225, 90),
+    "ring": (235, 120, 200),
+    "pinky": (150, 150, 255),
+}
+FINGER_NAMES = {
+    "thumb": "большой",
+    "index": "указательный",
+    "middle": "средний",
+    "ring": "безымянный",
+    "pinky": "мизинец",
+}
+
+# Контур лица по 468 точкам FaceMesh (овал), чтобы «обвести» голову.
+FACE_OVAL = (
+    10, 338, 297, 332, 284, 251, 389, 356, 454, 323, 361, 288, 397, 365, 379,
+    378, 400, 377, 152, 148, 176, 149, 150, 136, 172, 58, 132, 93, 234, 127,
+    162, 21, 54, 103, 67, 109,
+)
+
+_EYE_A_POLY = (F.EYE_A[0], F.EYE_A[1], F.EYE_A[2], F.EYE_A[3], F.EYE_A[4], F.EYE_A[5])
+_EYE_B_POLY = (F.EYE_B[0], F.EYE_B[1], F.EYE_B[2], F.EYE_B[3], F.EYE_B[4], F.EYE_B[5])
+
+HELP_GESTURES = (
+    ("щипок", "большой + указательный палец", "левый клик"),
+    ("щипок ср.", "большой + средний палец", "правый клик"),
+    ("большой палец", "кулак с поднятым большим", "двойной клик"),
+    ("кулак", "сдвиг кулака влево/вправо/вверх/вниз", "прокрутка"),
+    ("ладонь", "открытая ладонь, подержать 1 с", "пауза"),
+    ("улыбка", "улыбнуться и держать 0.5 с", "пауза"),
+    ("брови", "поднять брови и держать 0.5 с", "мышь головой"),
+    ("моргание", "двойное моргание", "левый клик"),
+    ("подмигивание", "один глаз", "правый клик"),
+)
+HELP_KEYS = (
+    ("Q / Esc", "выход"),
+    ("P", "пауза (действия не выполняются)"),
+    ("H", "мышь головой вкл/выкл"),
+    ("M", "сменить движок (нейросеть ↔ классический CV)"),
+    ("I / Tab", "эта справка"),
+    ("пробел", "статистика в журнал"),
+)
 
 
 @dataclass
 class OverlayState:
+    """Всё, что окно должно знать о текущем кадре."""
+
     fps: float = 0.0
-    backend: str = ""
-    pose: str = "—"
+    backend: str = ""                # человекочитаемое имя движка
+    backend_note: str = ""           # почему включён запасной движок
+    pose: str = "—"                  # текущий жест словами
     paused: bool = False
     warmup: bool = False
     head_pointer: bool = False
     hand_seen: bool = False
     face_seen: bool = False
+    actions_on: bool = True          # выполняются ли реальные клики
+    dry_run: bool = False
     ear: float = 0.30
     smile: float = 0.0
     brow: float = 0.0
     mouth_open: float = 0.0
+    expression: str = ""             # «улыбка 78%», «глаза закрыты» …
     lip_word: str = ""
     last_event: str = ""
+    events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
-    hints: str = "Q quit   P pause   H head-mouse"
+    hints: str = "Q выход   P пауза   H мышь головой   M движок   I справка"
+    show_help: bool = False
+    show_names: bool = True
+    pinch_threshold: float = 0.32
+    version: str = ""
 
 
-def _panel(img: np.ndarray, x: int, y: int, w: int, h: int, alpha: float = 0.55) -> None:
+# --------------------------------------------------------------------------- #
+#  Мелкие помощники рисования
+# --------------------------------------------------------------------------- #
+def _panel(img: np.ndarray, x: int, y: int, w: int, h: int, alpha: float = 0.6) -> None:
     x2 = min(img.shape[1], x + w)
     y2 = min(img.shape[0], y + h)
     roi = img[max(y, 0):y2, max(x, 0):x2]
@@ -52,52 +135,261 @@ def _panel(img: np.ndarray, x: int, y: int, w: int, h: int, alpha: float = 0.55)
     cv2.addWeighted(rect, alpha, roi, 1 - alpha, 0, roi)
 
 
-def _bar(img, x, y, w, h, value, color, label, vmin=0.0, vmax=1.0) -> None:
-    cv2.rectangle(img, (x, y), (x + w, y + h), (70, 70, 75), 1)
-    frac = clamp((value - vmin) / max(vmax - vmin, 1e-6), 0.0, 1.0)
+def _dashed_rect(img, p1, p2, color, dash: int = 12, thickness: int = 1) -> None:
+    x1, y1 = p1
+    x2, y2 = p2
+    for x in range(x1, x2, dash * 2):
+        cv2.line(img, (x, y1), (min(x + dash, x2), y1), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x, y2), (min(x + dash, x2), y2), color, thickness, cv2.LINE_AA)
+    for y in range(y1, y2, dash * 2):
+        cv2.line(img, (x1, y), (x1, min(y + dash, y2)), color, thickness, cv2.LINE_AA)
+        cv2.line(img, (x2, y), (x2, min(y + dash, y2)), color, thickness, cv2.LINE_AA)
+
+
+def _bar(img, x, y, w, h, value, color, label, vmin=0.0, vmax=1.0, size=13) -> None:
+    cv2.rectangle(img, (x, y), (x + w, y + h), (80, 80, 88), 1)
+    span = max(vmax - vmin, 1e-6)
+    frac = float(np.clip((value - vmin) / span, 0.0, 1.0))
     if frac > 0:
         cv2.rectangle(img, (x + 1, y + 1), (x + 1 + int((w - 2) * frac), y + h - 1), color, -1)
-    cv2.putText(img, label, (x + w + 8, y + h - 2), cv2.FONT_HERSHEY_SIMPLEX, 0.42, DIM, 1, cv2.LINE_AA)
+    T.draw(img, label, (x + w + 8, y - 2), size, DIM)
 
 
-def draw_hand(img: np.ndarray, hand: Hand, color=ACCENT, thickness: int = 2) -> None:
+def _label(img, text: str, org: Tuple[int, int], size: int = 15,
+           color=FG, padding: int = 5, alpha: float = 0.55) -> Tuple[int, int]:
+    """Текст на полупрозрачной плашке — читается на любом фоне."""
+    w, h = T.measure(text, size)
+    x, y = int(org[0]), int(org[1])
+    _panel(img, x - padding, y - padding, w + padding * 2, h + padding * 2, alpha)
+    T.draw(img, text, (x, y), size, color)
+    return w, h
+
+
+# --------------------------------------------------------------------------- #
+#  Рука
+# --------------------------------------------------------------------------- #
+def draw_hand_ar(
+    img: np.ndarray,
+    hand: Hand,
+    dim: bool = False,
+    show_names: bool = True,
+    pinch_threshold: float = 0.32,
+) -> None:
+    """AR-«полосы» вдоль пальцев + контур ладони + индикатор щипка."""
     h, w = img.shape[:2]
     pts = hand.to_pixels(w, h).astype(np.int32)
-    for a, b in HAND_CONNECTIONS:
-        cv2.line(img, tuple(pts[a]), tuple(pts[b]), color, thickness, cv2.LINE_AA)
-    for i, (x, y) in enumerate(pts):
-        r = 4 if i in (4, 8, 12, 16, 20) else 3
-        cv2.circle(img, (int(x), int(y)), r, (255, 255, 255), -1, cv2.LINE_AA)
-        cv2.circle(img, (int(x), int(y)), r, color, 1, cv2.LINE_AA)
+    scale = max(float(hand.palm_size) * min(w, h), 20.0)
+    thick = int(np.clip(scale * 0.17, 4, 16))
+
+    for finger, chain in FINGERS.items():
+        color = DIM if dim else FINGER_COLORS[finger]
+        # у большого пальца цепочка начинается с CMC — иначе тянется лишняя
+        # диагональ через всю ладонь
+        joints = tuple(chain)
+        for a, b in zip(joints[:-1], joints[1:]):
+            cv2.line(img, tuple(pts[a]), tuple(pts[b]), color, thick, cv2.LINE_AA)
+            cv2.circle(img, tuple(pts[a]), max(thick // 2, 2), color, -1, cv2.LINE_AA)
+        tip = tuple(pts[chain[-1]])
+        cv2.circle(img, tip, max(thick // 2, 2), color, -1, cv2.LINE_AA)
+        cv2.circle(img, tip, max(thick // 2 + 3, 5), (255, 255, 255), 2, cv2.LINE_AA)
+        if show_names and not dim:
+            name = FINGER_NAMES[finger]
+            wname, hname = T.measure(name, 12)
+            T.draw(img, name, (tip[0] - wname // 2, tip[1] - hname - thick // 2 - 8), 12, color)
+
+    # ладонь: полупрозрачная заливка, чтобы рука читалась как одна фигура
+    palm = np.array([pts[i] for i in (WRIST, THUMB_CMC, INDEX_MCP, MIDDLE_MCP,
+                                      RING_MCP, PINKY_MCP)])
+    if not dim:
+        overlay = img.copy()
+        cv2.fillPoly(overlay, [palm], (210, 210, 215))
+        cv2.addWeighted(overlay, 0.22, img, 0.78, 0, img)
+    cv2.polylines(img, [palm], True, (215, 215, 220), 1, cv2.LINE_AA)
+
+    # щипок: расстояние большой–указательный в масштабе ладони
+    ratio = float(np.linalg.norm(pts[THUMB_TIP].astype(float) - pts[INDEX_TIP].astype(float))) / scale
+    pinching = ratio < pinch_threshold
+    a, b = tuple(pts[THUMB_TIP]), tuple(pts[INDEX_TIP])
+    mid = ((a[0] + b[0]) // 2, (a[1] + b[1]) // 2)
+    if pinching:
+        cv2.line(img, a, b, (90, 255, 90), 3, cv2.LINE_AA)
+        cv2.circle(img, mid, max(thick, 10), (90, 255, 90), 2, cv2.LINE_AA)
+        _label(img, "щипок", (mid[0] + 12, mid[1] - 10), 14, (150, 255, 150))
+    else:
+        cv2.line(img, a, b, (140, 140, 140), 1, cv2.LINE_AA)
+
+    if show_names and not dim:
+        side = "правая рука" if hand.handedness == "Right" else "левая рука"
+        width, height = T.measure(side, 13)
+        label_y = min(int(pts[WRIST][1]) + thick + 6, h - height - 34)
+        T.draw(img, side, (int(pts[WRIST][0]) - width // 2, label_y), 13, FG)
 
 
-_EYE_A_POLY = (F.EYE_A[0], F.EYE_A[1], F.EYE_A[2], F.EYE_A[3], F.EYE_A[4], F.EYE_A[5])
-_EYE_B_POLY = (F.EYE_B[0], F.EYE_B[1], F.EYE_B[2], F.EYE_B[3], F.EYE_B[4], F.EYE_B[5])
-
-
-def draw_face(img: np.ndarray, face: Face, metrics=None) -> None:
-    """Схематичное лицо: глаза, брови, губы, нос."""
+# --------------------------------------------------------------------------- #
+#  Лицо
+# --------------------------------------------------------------------------- #
+def draw_face_ar(img: np.ndarray, face: Face, expression: str = "") -> None:
+    """Овал лица, глаза, брови, губы + подпись выражения."""
     h, w = img.shape[:2]
     pts = face.to_pixels(w, h)
+    count = pts.shape[0]
 
-    def poly(indices, color=WARN, closed=True, thickness=1) -> None:
-        p = pts[list(indices)].astype(np.int32)
-        cv2.polylines(img, [p], closed, color, thickness, cv2.LINE_AA)
+    def poly(indices, color, closed=True, thickness=1) -> None:
+        idx = [i for i in indices if i < count]
+        if len(idx) < 2:
+            return
+        cv2.polylines(img, [pts[idx].astype(np.int32)], closed, color, thickness, cv2.LINE_AA)
 
-    poly(_EYE_A_POLY, WARN)
-    poly(_EYE_B_POLY, WARN)
-    poly(LIPS_OUTER, (200, 200, 120))
+    if count >= 468:
+        poly(FACE_OVAL, (200, 200, 205), thickness=1)
+    poly(_EYE_A_POLY, WARN, thickness=2)
+    poly(_EYE_B_POLY, WARN, thickness=2)
+    poly(LIPS_OUTER, (110, 190, 240))
     poly(LIPS_INNER, (120, 220, 220))
-    cv2.line(img, tuple(pts[F.BROW_A - 8].astype(int)), tuple(pts[F.BROW_A + 8].astype(int)),
-             ACCENT, 1, cv2.LINE_AA)
-    cv2.line(img, tuple(pts[F.BROW_B - 8].astype(int)), tuple(pts[F.BROW_B + 8].astype(int)),
-             ACCENT, 1, cv2.LINE_AA)
+    for brow, sign in ((F.BROW_A, -1), (F.BROW_B, 1)):
+        p = pts[brow].astype(np.int32)
+        cv2.line(img, (p[0] - 22, p[1]), (p[0] + 22, p[1]), ACCENT, 2, cv2.LINE_AA)
     cv2.line(img, tuple(pts[F.NOSE_BRIDGE].astype(int)), tuple(pts[F.NOSE_TIP].astype(int)),
              WARN, 1, cv2.LINE_AA)
-    for idx in (F.NOSE_TIP, F.CHIN):
-        cv2.circle(img, tuple(pts[idx].astype(int)), 2, WARN, -1, cv2.LINE_AA)
+
+    if expression:
+        anchor = pts[F.CHIN].astype(int)
+        width, _ = T.measure(expression, 14)
+        _label(img, expression, (anchor[0] - width // 2, anchor[1] + 10), 14, INFO)
 
 
+# --------------------------------------------------------------------------- #
+#  Классическое CV
+# --------------------------------------------------------------------------- #
+def draw_classical(img: np.ndarray, shape) -> None:
+    """Силуэт руки/объекта для запасного движка (без нейросети)."""
+    h, w = img.shape[:2]
+    if getattr(shape, "contour", None) is not None:
+        cv2.drawContours(img, [shape.contour], -1, (120, 220, 120), 2)
+    if getattr(shape, "hull", None) is not None:
+        cv2.drawContours(img, [shape.hull], -1, (80, 170, 255), 1)
+    px, py = getattr(shape, "pointer", (0.5, 0.5))
+    px, py = float(px) * w, float(py) * h
+    cv2.circle(img, (int(px), int(py)), 7, (0, 255, 255), 2, cv2.LINE_AA)
+    _label(img, "силуэт (классический движок)", (14, h - 92), 13, DIM, alpha=0.45)
+
+
+# --------------------------------------------------------------------------- #
+#  Сводка
+# --------------------------------------------------------------------------- #
+def _draw_status(img, state: OverlayState, k: float) -> None:
+    x, y = int(12 * k), int(12 * k)
+    size_title, size_main, size_small = int(20 * k), int(15 * k), int(14 * k)
+
+    if state.paused:
+        status, color = "ПАУЗА (действия выключены)", BAD
+    elif state.warmup:
+        status, color = "РАЗМИНКА: встаньте в кадр", WARN
+    elif state.hand_seen or state.face_seen:
+        status, color = "РАБОТАЕТ", ACCENT
+    else:
+        status, color = "не вижу руку/лицо", WARN
+    backend_line = f"движок: {state.backend or '—'}"
+    fps_line = f"{state.fps:4.1f} кадр/с   {status}"
+    pose_line = f"жест: {state.pose}"
+    if state.dry_run:
+        actions, acolor = "действия: ВЫКЛ (предпросмотр)", WARN
+    elif state.actions_on:
+        actions, acolor = "действия: ВКЛ", ACCENT
+    else:
+        actions, acolor = "действия: ВЫКЛ", WARN
+
+    lines = ((backend_line, size_main), (fps_line, size_small), (pose_line, size_small),
+             (actions, size_small))
+    text_w = max([T.measure(t, size)[0] for t, size in lines] + [T.measure("AirMouse 0.2.0", size_title)[0]])
+    panel_w = text_w + int(24 * k)
+    panel_h = int(104 * k)
+    _panel(img, x, y, panel_w, panel_h, 0.62)
+
+    title = "AirMouse"
+    if state.version:
+        title += f" {state.version}"
+    T.draw(img, title, (x + 12, y + 8), size_title, FG)
+
+    backend_color = ACCENT if "MediaPipe" in state.backend else WARN
+    T.draw(img, backend_line, (x + 12, y + 34), size_main, backend_color)
+    T.draw(img, fps_line, (x + 12, y + 56), size_small, color)
+    T.draw(img, pose_line, (x + 12, y + 76), size_small, FG)
+    T.draw(img, actions, (x + 12, y + 96), size_small, acolor)
+
+    if state.backend_note:
+        note_y = y + panel_h + int(8 * k)
+        _panel(img, x, note_y, int(430 * k), int(30 * k), 0.62)
+        T.draw(img, state.backend_note[:64], (x + 10, note_y + 6), int(13 * k), WARN)
+
+
+def _draw_face_panel(img, state: OverlayState, k: float) -> None:
+    if not state.face_seen:
+        return
+    w = img.shape[1]
+    panel_w = int(250 * k)
+    x = w - panel_w - int(12 * k)
+    y = int(12 * k)
+    _panel(img, x, y, panel_w, int(126 * k), 0.62)
+    T.draw(img, "мимика лица", (x + 12, y + 8), int(16 * k), FG)
+    bx, bw = x + 12, int(96 * k)
+    _bar(img, bx, y + 58, bw, int(9 * k), state.ear, WARN, "глаза", 0.0, 0.45, int(12 * k))
+    _bar(img, bx, y + 78, bw, int(9 * k), max(0.0, state.smile), ACCENT, "улыбка", -0.05, 0.15, int(12 * k))
+    _bar(img, bx, y + 98, bw, int(9 * k), max(0.0, state.brow), ACCENT, "брови", -0.05, 0.15, int(12 * k))
+
+
+def _draw_events(img, state: OverlayState, k: float) -> None:
+    lines = list(state.events)[-3:]
+    if not lines:
+        return
+    h = img.shape[0]
+    size = int(14 * k)
+    width = max(T.measure(line, size)[0] for line in lines) + int(24 * k)
+    left = int(12 * k)
+    top = h - int(42 * k) - len(lines) * int(20 * k)
+    _panel(img, left, top, width, len(lines) * int(20 * k) + int(14 * k), 0.55)
+    T.draw(img, "что произошло:", (left + 10, top + 4), int(12 * k), DIM)
+    for i, line in enumerate(lines):
+        color = ACCENT if i == len(lines) - 1 else FG
+        T.draw(img, line, (left + 12, top + int(20 * k) + i * int(19 * k)), size, color)
+
+
+def _draw_help(img, state: OverlayState, k: float) -> None:
+    h, w = img.shape[:2]
+    _panel(img, 0, 0, w, h, 0.93)
+    pad = int(28 * k)
+    title_size = int(22 * k)
+    body = int(14 * k)
+    T.draw(img, "Что умеет AirMouse", (pad, pad), title_size, FG)
+
+    y = pad + int(38 * k)
+    T.draw(img, "Жесты (рука):", (pad, y), body, ACCENT)
+    y += int(24 * k)
+    for name, how, action in HELP_GESTURES[:5]:
+        T.draw(img, f"{name:<14} {how}", (pad, y), body, FG)
+        T.draw(img, f"→ {action}", (pad + int(430 * k), y), body, INFO)
+        y += int(22 * k)
+
+    T.draw(img, "Мимика (лицо):", (pad, y + int(6 * k)), body, ACCENT)
+    y += int(30 * k)
+    for name, how, action in HELP_GESTURES[5:]:
+        T.draw(img, f"{name:<14} {how}", (pad, y), body, FG)
+        T.draw(img, f"→ {action}", (pad + int(430 * k), y), body, INFO)
+        y += int(22 * k)
+
+    y += int(10 * k)
+    T.draw(img, "Клавиши:", (pad, y), body, ACCENT)
+    y += int(24 * k)
+    for key, action in HELP_KEYS:
+        T.draw(img, f"{key:<10} {action}", (pad, y), body, FG)
+        y += int(20 * k)
+
+    T.draw(img, "I или Tab — закрыть справку", (pad, h - int(30 * k)), int(13 * k), DIM)
+
+
+# --------------------------------------------------------------------------- #
+#  Главная функция
+# --------------------------------------------------------------------------- #
 def render(
     frame: np.ndarray,
     state: OverlayState,
@@ -108,79 +400,57 @@ def render(
 ) -> np.ndarray:
     img = frame.copy()
     h, w = img.shape[:2]
+    k = max(min(h / 540.0, w / 960.0), 0.5)
 
-    # активная зона, в которой рука управляет курсором
-    x0, y0, x1, y1 = state.active_box
-    cv2.rectangle(
-        img, (int(x0 * w), int(y0 * h)), (int(x1 * w), int(y1 * h)), (90, 90, 95), 1
-    )
+    # зона, в которой рука управляет курсором
+    if not state.head_pointer and not state.paused:
+        x0, y0, x1, y1 = state.active_box
+        p1 = (int(x0 * w), int(y0 * h))
+        p2 = (int(x1 * w), int(y1 * h))
+        _dashed_rect(img, p1, p2, (95, 95, 100))
+        zone_text = "зона управления курсором"
+        zw, _ = T.measure(zone_text, int(12 * k))
+        _label(img, zone_text, (p2[0] - zw - int(8 * k), p1[1] + int(6 * k)),
+               int(12 * k), DIM, alpha=0.4)
 
     for hand in hands or []:
-        draw_hand(img, hand, ACCENT if not state.paused else DIM)
+        draw_hand_ar(img, hand, dim=state.paused, show_names=state.show_names,
+                     pinch_threshold=state.pinch_threshold)
     if face is not None:
-        draw_face(img, face, metrics)
-    if shape is not None and getattr(shape, "contour", None) is not None:
-        cv2.drawContours(img, [shape.contour], -1, ACCENT, 2)
-        if shape.hull is not None:
-            cv2.drawContours(img, [shape.hull], -1, WARN, 1)
-        px, py = shape.pointer
-        cv2.circle(img, (int(px * w), int(py * h)), 6, (0, 255, 255), 2)
+        draw_face_ar(img, face, state.expression)
+    if shape is not None:
+        draw_classical(img, shape)
 
-    # ---------------------------------------------------------------- HUD
-    _panel(img, 10, 10, 258, 134)
-    cv2.putText(img, "AirMouse", (20, 34), cv2.FONT_HERSHEY_SIMPLEX, 0.7, FG, 2, cv2.LINE_AA)
-    cv2.putText(
-        img, f"{state.fps:5.1f} fps  {state.backend}", (20, 56),
-        cv2.FONT_HERSHEY_SIMPLEX, 0.42, DIM, 1, cv2.LINE_AA,
-    )
-    if state.paused:
-        status, color = "PAUSED", BAD
-    elif state.warmup:
-        status, color = "GET READY", WARN
-    elif state.hand_seen:
-        status, color = "TRACKING", ACCENT
-    else:
-        status, color = "no hand", WARN
-    cv2.putText(img, status, (20, 82), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2, cv2.LINE_AA)
-    cv2.putText(
-        img, f"pose: {state.pose}", (20, 106), cv2.FONT_HERSHEY_SIMPLEX, 0.5, FG, 1, cv2.LINE_AA
-    )
-    mode = "head-mouse ON" if state.head_pointer else "hand-mouse"
-    cv2.putText(img, mode, (20, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.45, DIM, 1, cv2.LINE_AA)
+    if state.show_help:  # справка закрывает собой всю сводку, чтобы не мешала
+        _draw_help(img, state, k)
+        return img
 
-    # метрики лица
-    if state.face_seen:
-        _panel(img, w - 250, 10, 240, 116)
-        bx = w - 210
-        _bar(img, bx, 24, 110, 10, state.ear, WARN, "EAR", 0.0, 0.45)
-        _bar(img, bx, 48, 110, 10, max(0.0, state.smile), ACCENT, "smile", -0.05, 0.15)
-        _bar(img, bx, 72, 110, 10, max(0.0, state.brow), ACCENT, "brow", -0.05, 0.15)
-        _bar(img, bx, 96, 110, 10, state.mouth_open, WARN, "mouth", 0.0, 1.0)
+    _draw_status(img, state, k)
+    _draw_face_panel(img, state, k)
+    _draw_events(img, state, k)
 
     if state.lip_word:
-        _panel(img, w // 2 - 90, 10, 180, 34, 0.7)
-        cv2.putText(
-            img, f'lip: {state.lip_word}', (w // 2 - 80, 33),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.55, ACCENT, 2, cv2.LINE_AA,
-        )
+        label = f"по губам: {state.lip_word}"
+        width, height = T.measure(label, int(16 * k))
+        _label(img, label, (w // 2 - width // 2, int(12 * k)),
+               int(16 * k), ACCENT, alpha=0.7)
 
-    if state.last_event:
-        cv2.putText(
-            img, state.last_event, (18, h - 44),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 230, 255), 2, cv2.LINE_AA,
-        )
-    cv2.putText(
-        img, state.hints, (18, h - 18), cv2.FONT_HERSHEY_SIMPLEX, 0.45, DIM, 1, cv2.LINE_AA
-    )
+    hint_size = int(13 * k)
+    hint_w, _ = T.measure(state.hints, hint_size)
+    T.draw(img, state.hints, (w - hint_w - int(14 * k), h - int(24 * k)), hint_size, DIM)
 
     if state.paused:
-        cv2.putText(
-            img, "PAUSED", (w // 2 - 90, h // 2),
-            cv2.FONT_HERSHEY_SIMPLEX, 1.4, BAD, 3, cv2.LINE_AA,
-        )
+        label = "ПАУЗА"
+        size = int(38 * k)
+        width, height = T.measure(label, size)
+        _label(img, label, (w // 2 - width // 2, h // 2 - height // 2), size, BAD, alpha=0.35)
+        sub = "нажмите P, чтобы продолжить"
+        sub_w, _ = T.measure(sub, int(15 * k))
+        T.draw(img, sub, (w // 2 - sub_w // 2, h // 2 + int(26 * k)), int(15 * k), FG)
     elif state.warmup:
-        cv2.putText(
-            img, "GET READY", (w // 2 - 110, h // 2),
-            cv2.FONT_HERSHEY_SIMPLEX, 1.1, WARN, 2, cv2.LINE_AA,
-        )
+        label = "ПРИГОТОВЬТЕСЬ"
+        size = int(30 * k)
+        width, height = T.measure(label, size)
+        _label(img, label, (w // 2 - width // 2, h // 2 - height // 2), size, WARN, alpha=0.4)
+
     return img

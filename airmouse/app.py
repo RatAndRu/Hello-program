@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import List, Optional
@@ -11,6 +12,7 @@ from typing import List, Optional
 import cv2
 import numpy as np
 
+from . import __version__
 from .actions import ActionRouter, DryRunBackend, PyAutoGuiBackend
 from .camera import ThreadedCamera
 from .config import AppConfig, resolve_path
@@ -22,6 +24,13 @@ from .pointer import PointerMapper
 from .tracker import FrameResult, create_tracker
 
 log = logging.getLogger("airmouse")
+
+# Как называть движки в окне и в журнале.
+BACKEND_TITLES = {
+    "mediapipe": "ИИ MediaPipe (нейросеть)",
+    "classical": "классический CV (без ИИ)",
+    "none": "без распознавания",
+}
 
 HAND_EVENTS_RU = {
     "pinch_release": "клик",
@@ -78,7 +87,13 @@ class AirMouseApp:
             active_box=cfg.pointer.active_box,
             paused=self.router.paused,
             head_pointer=self.router.head_pointer,
+            dry_run=dry_run,
+            actions_on=not dry_run,
+            pinch_threshold=cfg.hand.pinch_ratio,
+            version=__version__,
         )
+        # что произошло за последние секунды — показываем прямо в окне
+        self._events_log: deque = deque(maxlen=3)
         self.running = False
         self._prepared = False
         self._last_seq = -1
@@ -219,8 +234,12 @@ class AirMouseApp:
                     log.info("прокрутка: %s тиков", ev.value)
                     self._last_scroll_log = now
             else:
-                log.info("жест %s -> %s", HAND_EVENTS_RU.get(ev.kind, ev.kind),
-                         ", ".join(a for a in applied if not a.startswith("unmapped")) or "—")
+                name = HAND_EVENTS_RU.get(ev.kind, ev.kind)
+                done = ", ".join(a for a in applied if not a.startswith("unmapped")) or "—"
+                log.info("жест %s -> %s", name, done)
+                self._events_log.append(
+                    f"{time.strftime('%H:%M:%S')}  {name} → {done}"
+                )
             if ev.kind == "pinch_release":
                 self.stats.clicks += 1
             elif ev.kind == "scroll":
@@ -231,11 +250,35 @@ class AirMouseApp:
         return events
 
     # ------------------------------------------------------------------ #
+    def _expression_text(self) -> str:
+        """Текущее выражение лица словами — чтобы мимика была понятна без графиков."""
+        m = self._metrics
+        if m is None or not m.valid:
+            return ""
+        fsm = self.face_fsm
+        ear = min(m.ear_left, m.ear_right)
+        if ear < self.cfg.face.ear_blink:
+            return "глаза закрыты"
+        if fsm.smile_score > self.cfg.face.smile_delta:
+            level = min(1.0, fsm.smile_score / max(self.cfg.face.smile_delta * 2.5, 1e-6))
+            return f"улыбка {level:.0%}"
+        if fsm.brow_score > self.cfg.face.brow_delta:
+            return "брови подняты"
+        if m.mouth_open > self.cfg.face.mouth_open_ratio:
+            return "рот открыт"
+        return "нейтрально"
+
     def _update_state(self, events: List[Event], loop_fps: float) -> None:
         s = self.state
         s.fps = loop_fps
         s.warmup = self._last_now < self._armed_at
-        s.backend = getattr(self.tracker, "name", "?")
+        raw_name = getattr(self.tracker, "name", "?")
+        s.backend = BACKEND_TITLES.get(raw_name, raw_name)
+        s.backend_note = getattr(self.tracker, "fallback_reason", "") or ""
+        s.events = list(self._events_log)
+        s.expression = self._expression_text()
+        s.actions_on = not self.dry_run
+        s.dry_run = self.dry_run
         s.paused = self.router.paused
         s.head_pointer = self.router.head_pointer
         s.hand_seen = bool(self._hands) or self._shape is not None
@@ -244,7 +287,7 @@ class AirMouseApp:
             feats = analyze_hand(self._hands[0], self.cfg.hand.pointer_source)
             s.pose = POSE_TITLES_RU.get(classify_pose(feats, self.cfg.hand), "—")
         elif self._shape is not None:
-            s.pose = f"silhouette, rays={self._shape.rays}"
+            s.pose = f"силуэт ({self._shape.rays} лучей)"
         else:
             s.pose = "—"
         m = self._metrics
@@ -327,12 +370,22 @@ class AirMouseApp:
                         log.warning("Окно предпросмотра недоступно (%s) — работаю в фоне", exc)
                         self.show_window = False
                         continue
-                    if key in (27, ord("q")):
+                    if self._window_closed():
+                        log.info("Окно закрыто крестиком — выходим")
                         self.running = False
-                    elif key == ord("p"):
+                        break
+                    if key in (27, ord("q"), ord("й")):
+                        self.running = False
+                    elif key in (ord("p"), ord("з")):
                         self.router.paused = not self.router.paused
-                    elif key == ord("h"):
+                    elif key in (ord("h"), ord("р")):
                         self.router.head_pointer = not self.router.head_pointer
+                    elif key in (ord("m"), ord("M"), ord("ь")):
+                        self.switch_backend()
+                    elif key in (ord("i"), ord("I"), ord("ш"), ord("?")):
+                        self.state.show_help = not self.state.show_help
+                    elif key == 9:  # Tab — тот же переключатель, что и «I»
+                        self.state.show_help = not self.state.show_help
                     elif key == ord(" "):
                         log.info("Статистика: кадров=%d, рука=%d, лицо=%d, кликов=%d, прокруток=%d",
                                  self.stats.frames, self.stats.hand_frames,
@@ -342,6 +395,53 @@ class AirMouseApp:
         finally:
             self.shutdown()
         return exit_code
+
+    # ------------------------------------------------------------------ #
+    def _window_closed(self) -> bool:
+        """Нажали крестик? OpenCV не сообщает об этом сам — спрашиваем свойство."""
+        try:
+            return cv2.getWindowProperty(self._window_name, cv2.WND_PROP_VISIBLE) < 1
+        except cv2.error:
+            return True
+        except Exception:
+            return False
+
+    def switch_backend(self) -> str:
+        """Переключить движок на лету (клавиша M) и вернуть новый."""
+        current = getattr(self.tracker, "name", "none")
+        target = "classical" if current == "mediapipe" else "mediapipe"
+        try:
+            new = create_tracker(
+                target,
+                self.cfg.hand,
+                self.cfg.face,
+                resolve_path(self.cfg.model_dir),
+                progress=log.info,
+            )
+        except Exception as exc:
+            note = f"не удалось включить {target}: {type(exc).__name__}: {exc}"
+            log.error("%s", note)
+            self.state.backend_note = note[:64]
+            return current
+
+        old, self.tracker = self.tracker, new
+        if old is not None:
+            try:
+                old.close()
+            except Exception:
+                pass
+        # сбрасываем автоматы: старые жесты не должны «дожиматься» на новом движке
+        self.hand_fsm = HandFSM(self.cfg.hand)
+        self.face_fsm = FaceFSM(self.cfg.face)
+        self._metrics = None
+        self._face_counter = 0
+        self._armed_at = time.monotonic() + max(self.cfg.warmup_s, 0.0) * 0.5
+        name = getattr(self.tracker, "name", "?")
+        log.info("Движок переключён: %s", BACKEND_TITLES.get(name, name))
+        self._events_log.append(
+            f"{time.strftime('%H:%M:%S')}  движок → {BACKEND_TITLES.get(name, name)}"
+        )
+        return name
 
     def shutdown(self) -> None:
         self.running = False
