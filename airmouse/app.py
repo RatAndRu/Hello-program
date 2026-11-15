@@ -36,7 +36,8 @@ from .gaze import (
     pursuit_metrics,
     pursuit_point,
 )
-from .body import BodyFSM, BodySmoother, arm_points, measure_body
+from .anchor import FaceBodyAnchor, HeadAnchor, face_box as anchor_face_box
+from .body import BodyFSM, BodySmoother, BodySport, arm_points, measure_body
 from .headpose import HeadPoseEstimator
 from .gestures import (
     SIDE_TITLES_RU,
@@ -159,6 +160,14 @@ class AirMouseApp:
         self.body_smoother = BodySmoother(
             min_visibility=float(getattr(cfg.body, "min_visibility", 0.5)),
         )
+        # Спорт по скелету: сгибания рук, T-поза, боксёрская стойка и удары
+        self.sport = BodySport(cfg.body)
+        # Взаимная подсказка «тело ↔ голова»: одна модель помогает другой
+        self.anchor = FaceBodyAnchor(
+            predict_frames=int(getattr(cfg.face, "predict_frames", 8)),
+            body_visibility=float(getattr(cfg.body, "min_visibility", 0.5)),
+        )
+        self._head_anchor = HeadAnchor()
         self._body_want: Optional[bool] = None  # с каким «хочу тело» создан движок
         self.motion_wizard: Optional[MotionWizard] = None
         self._motion_at = 0.0                   # время прошлого кадра профиля
@@ -374,6 +383,13 @@ class AirMouseApp:
             del self._physics[key]
         return result
 
+    def _face_center(self, face) -> Optional[np.ndarray]:
+        """Центр лица в координатах кадра — подсказка скелету тела."""
+        box = anchor_face_box(face)
+        if box is None:
+            return None
+        return np.array([0.5 * (box[0] + box[2]), 0.5 * (box[1] + box[3])], dtype=float)
+
     def _handle_body(self, points, now: float) -> List[Event]:
         """Тело целиком: считаем позу (и упражнения), если режим включён."""
         if not getattr(self.cfg.body, "enabled", False):
@@ -387,8 +403,17 @@ class AirMouseApp:
             return self.body_fsm.update(None, now)
         metrics = measure_body(points, float(getattr(self.cfg.body, "min_visibility", 0.5)))
         events = self.body_fsm.update(metrics, now)
-        if events:
+        # спорт по скелету: сгибания рук, T-поза, стойка и удары
+        sport_events = self.sport.update(points, self.body_fsm.metrics, now)
+        if events or sport_events:
             self.state.body_text = self.body_fsm.text
+        for ev in sport_events:
+            label = {"curl_rep": "сгибание рук", "tpose_hold": "T-поза",
+                     "boxing_guard": "боксёрская стойка", "punch": "удар"}.get(ev.kind)
+            if label:
+                value = f" №{ev.value}" if ev.value else ""
+                self._events_log.appendleft(f"{label}{value}")
+        events += sport_events
         # В очередь действий отдаём только то, что человек сам привязал к
         # команде (по умолчанию тело только считает и показывает).
         mapped = []
@@ -655,8 +680,16 @@ class AirMouseApp:
                         if bool(getattr(self.cfg.body, "enabled", False)) else None)
             # Тело сглаживаем и показываем только когда оно реально видно:
             # иначе скелет мигал по нескольку раз в секунду (в кадре только рука).
-            self._body_points = self.body_smoother.update(raw_body, now)
+            # Лицо подсказывает телу, где голова: если поза потеряла точки
+            # головы, скелет всё равно не остаётся обрубком на шее
+            self._body_points = self.body_smoother.update(
+                raw_body, now, face_center=self._face_center(res.face))
             self._reconcile_body()
+            # ...а тело подсказывает, где лицо: голова в позе видна даже когда
+            # лицо потерялось поворотом или пересветом
+            self._head_anchor = self.anchor.update(res.face, self._body_points, now)
+            if res.face is not None:
+                self._body_points = self.anchor.patch_body(self._body_points, res.face)
             hands = self.hand_gate.update(res.hands)
             if self.cfg.hand.second_hand == "ignore" and len(hands) > 1:
                 hands = hands[:1]
@@ -692,7 +725,14 @@ class AirMouseApp:
                 face_events = [e for e in face_events if e.kind not in FACE_SUPPRESSED]
             events += face_events
             events += self._handle_lip(res.face, now)
-            events += self._handle_body(getattr(res, "body", None), now)
+            # Позу считаем по сглаженным точкам (и с головой, достроенной по
+            # лицу), но не по «удержанной»: иначе упражнения считались бы по
+            # замороженному кадру, пока человека уже не видно.
+            body_for_metrics = (self._body_points
+                                if self._body_points is not None
+                                and not self.body_smoother.held
+                                else getattr(res, "body", None))
+            events += self._handle_body(body_for_metrics, now)
             # жесты двумя руками (масштаб/прокрутка) — только когда видно обе руки
             # и вторая рука не занята нажатиями
             if len(hands) >= 2 and getattr(self.cfg.hand, "roles", "single") != "split":
@@ -1597,8 +1637,15 @@ class AirMouseApp:
         ear = min(m.ear_left, m.ear_right)
         if ear < self.cfg.face.ear_blink:
             return "глаза закрыты"
-        # грусть проверяем раньше улыбки: опущенные уголки растягивают рот,
-        # и по одной ширине рта это выглядело бы как «улыбка N%»
+        # Открытый рот и удивление — ПЕРВЫМИ. Раньше их перекрывали улыбка и
+        # грусть: открытая челюсть растягивает губы в стороны, ширина рта
+        # растёт, и вместо «удивления» показывалось «улыбка 80%».
+        brows_up = fsm.brow_score > self.cfg.face.brow_delta
+        if (brows_up and m.mouth_open > self.cfg.face.surprise_mouth):
+            return "удивление"
+        if m.mouth_open > self.cfg.face.mouth_open_ratio:
+            return "рот открыт"
+        # грусть — раньше улыбки: опущенные уголки тоже растягивают рот
         sad = getattr(fsm, "sad_score", 0.0)
         if sad > self.cfg.face.sad_delta:
             level = min(1.0, sad / max(self.cfg.face.sad_delta * 2.5, 1e-6))
@@ -1606,13 +1653,10 @@ class AirMouseApp:
         if fsm.smile_score > self.cfg.face.smile_delta:
             level = min(1.0, fsm.smile_score / max(self.cfg.face.smile_delta * 2.5, 1e-6))
             return f"улыбка {level:.0%}"
-        if (fsm.brow_score > self.cfg.face.brow_delta * 1.2
-                and m.mouth_open > self.cfg.face.surprise_mouth):
-            return "удивление"
-        if fsm.brow_score > self.cfg.face.brow_delta:
+        if brows_up:
             return "брови подняты"
-        if m.mouth_open > self.cfg.face.mouth_open_ratio:
-            return "рот открыт"
+        if m.mouth_open > self.cfg.face.surprise_mouth:
+            return "рот приоткрыт"
         return "нейтрально"
 
     def _update_state(self, events: List[Event], loop_fps: float) -> None:
@@ -1649,6 +1693,8 @@ class AirMouseApp:
         s.hand_note = " · ".join(notes[:2])
         s.hand_predicted = bool(self._predicted_hands and any(self._predicted_hands))
         s.body_enabled = bool(getattr(self.cfg.body, "enabled", False))
+        s.sport_text = self.sport.text if s.body_enabled else ""
+        s.head_anchor = self._head_anchor
         metrics_body = self.body_fsm.metrics
         s.body_where = metrics_body.where if metrics_body.visible else ""
         if not s.body_enabled:
@@ -1687,6 +1733,13 @@ class AirMouseApp:
         s.hand_seen = bool(self._hands) or self._shape is not None
         s.hand_count = len(self._hands)
         s.face_seen = self._face is not None
+        anchor = self._head_anchor
+        if self._face is None and anchor.ok:
+            s.face_hint = anchor.box
+            s.face_hint_note = anchor.note()
+        else:
+            s.face_hint = None
+            s.face_hint_note = ""
         if self._hands:
             feats = analyze_hand(self._hands[0], self.cfg.hand.pointer_source)
             s.pose = POSE_TITLES_RU.get(classify_pose(feats, self.cfg.hand), "—")

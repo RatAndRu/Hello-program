@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from typing import List, Optional, Sequence, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -74,6 +74,9 @@ class B:
 
 # какие точки обязаны быть видны, чтобы вообще считать позу
 CORE = (B.L_SHOULDER, B.R_SHOULDER, B.L_HIP, B.R_HIP)
+
+# точки, которыми описывается голова в позе
+HEAD_POSE = (B.NOSE, B.L_EYE, B.R_EYE, B.L_EAR, B.R_EAR, B.MOUTH_L, B.MOUTH_R)
 
 # Точек кистей и стоп у Pose нет, поэтому «скелет» рисуется по этим связям —
 # ровно как в MediaPipe Pose (POSE_CONNECTIONS), только сгруппированным по
@@ -134,6 +137,7 @@ class BodyMetrics:
     legs_ok: bool = False          # колени и стопы
     arms_ok: bool = False          # локти и запястья
     head_ok: bool = False          # нос
+    upper_ok: bool = False         # плечи без таза: «по грудь»
     joints: int = 0                # сколько точек прошло порог видимости
 
     @property
@@ -142,13 +146,42 @@ class BodyMetrics:
         return bool(self.visible and self.torso_ok and not self.legs_ok)
 
     @property
+    def parts(self) -> str:
+        """Что именно попало в кадр: «голова, корпус, руки»."""
+        names = []
+        if self.head_ok:
+            names.append("голова")
+        if self.torso_ok:
+            names.append("корпус")
+        elif self.upper_ok:
+            names.append("плечи")
+        if self.arms_ok:
+            names.append("руки")
+        if self.legs_ok:
+            names.append("ноги")
+        return ", ".join(names)
+
+    @property
     def where(self) -> str:
-        """Словесный охват кадра — для окна и журнала."""
+        """Словесный охват кадра — для окна и журнала.
+
+        Раньше было три состояния: целиком, по пояс, «не вижу». Но человек
+        часто попадает в кадр **частично**: видно голову и руки, а корпуса с
+        тазом уже нет (сел близко к камере, лёг, наклонился к клавиатуре).
+        Это не «тела не видно» — скелет рисуется, руки работают.
+        """
         if not self.visible:
             return "тела не видно"
-        if self.partial:
+        if self.legs_ok:
+            return "видно целиком"
+        if self.torso_ok:
             return "видно по пояс"
-        return "видно целиком"
+        if self.upper_ok:
+            # «по грудь»: таза нет, но плечи, руки и голова — есть
+            if self.arms_ok and self.head_ok:
+                return "видно голову и руки"
+            return "видно по грудь"
+        return "тела не видно"
 
     @property
     def knee(self) -> float:
@@ -169,6 +202,28 @@ class BodyMetrics:
 
 def _angle(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
     return angle_deg(a, b, c)
+
+
+def _point_vis(points: np.ndarray, index: int) -> float:
+    return float(points[index, 3]) if points.shape[1] > 3 else 1.0
+
+
+def head_center(points: Optional[Sequence[Sequence[float]]],
+                min_visibility: float = 0.35) -> Optional[np.ndarray]:
+    """Центр головы по точкам позы. ``None`` — головы в кадре не видно.
+
+    Нужны минимум три точки из семи: по одной рамку не построить, по двум она
+    вытягивается в линию и «голова» уезжает вбок.
+    """
+    if points is None:
+        return None
+    pts = np.asarray(points, dtype=np.float64)
+    if pts.ndim != 2 or pts.shape[0] < 33:
+        return None
+    seen = [i for i in HEAD_POSE if _point_vis(pts, i) >= min_visibility]
+    if len(seen) < 3:
+        return None
+    return pts[seen, :2].mean(axis=0)
 
 
 def measure_body(points: Sequence[Sequence[float]],
@@ -198,26 +253,38 @@ def measure_body(points: Sequence[Sequence[float]],
     # Достаточно обоих плеч и хотя бы одного тазобедренного сустава: на кадре
     # «по пояс» второй бедренный сустав часто уже за краем.
     torso_ok = bool(shoulders_ok and hips_seen)
-    if not torso_ok:
-        # без плеч и таза не определить ни масштаб, ни наклон — это не «пояс»,
-        # а «человека нет в кадре»
-        return BodyMetrics(visible=False, joints=joints)
     legs_ok = bool(len(hips_seen) == 2 and seen(B.L_KNEE, B.R_KNEE, B.L_ANKLE, B.R_ANKLE))
     arms_ok = seen(B.L_ELBOW, B.R_ELBOW, B.L_WRIST, B.R_WRIST)
-    head_ok = seen(B.NOSE)
+    head_ok = bool(any(_point_vis(pts, i) >= min_visibility
+                       for i in (B.NOSE, B.L_EYE, B.R_EYE, B.L_EAR, B.R_EAR)))
+    # Плечи без таза («по грудь») и голова с руками — тоже человек в кадре.
+    # Масштаб тогда берём по ширине плеч: 0.2 роста — так же, как
+    # «плечи → таз» у полного корпуса.
+    upper_ok = bool(shoulders_ok and not torso_ok)
+    if not torso_ok and not upper_ok:
+        # плеч не видно — рисовать скелет не из чего: руки «висят в воздухе»,
+        # а голова без шеи. Это честное «человека нет в кадре».
+        return BodyMetrics(visible=False, joints=joints, head_ok=head_ok)
 
-    shoulder = 0.5 * (xy[B.L_SHOULDER] + xy[B.R_SHOULDER])
-    hip = np.mean([xy[i] for i in hips_seen], axis=0)
-    scale = float(np.linalg.norm(hip - shoulder))
+    if torso_ok:
+        shoulder = 0.5 * (xy[B.L_SHOULDER] + xy[B.R_SHOULDER])
+        hip = np.mean([xy[i] for i in hips_seen], axis=0)
+        scale = float(np.linalg.norm(hip - shoulder))
+    else:
+        # «по грудь»: таза нет — масштаб по ширине плеч
+        shoulder = 0.5 * (xy[B.L_SHOULDER] + xy[B.R_SHOULDER])
+        hip = shoulder + np.array([0.0, 0.2])
+        scale = float(np.linalg.norm(xy[B.L_SHOULDER] - xy[B.R_SHOULDER])) * 1.6
     if scale < 1e-4:
-        return BodyMetrics(visible=False, joints=joints, torso_ok=True)
+        return BodyMetrics(visible=False, joints=joints, torso_ok=torso_ok,
+                           upper_ok=upper_ok)
 
     tors = shoulder - hip
     lean = math.degrees(math.atan2(abs(float(tors[0])), max(1e-6, abs(float(tors[1])))))
 
     # Ноги: углы считаем, только если видно колени и стопы. Иначе оставляем
     # «разогнуто» — так поза не превращается в присед из-за невидимой ноги.
-    if legs_ok:
+    if legs_ok and torso_ok:
         ankle = 0.5 * (xy[B.L_ANKLE] + xy[B.R_ANKLE])
         knee_l = _angle(xy[B.L_HIP], xy[B.L_KNEE], xy[B.L_ANKLE])
         knee_r = _angle(xy[B.R_HIP], xy[B.R_KNEE], xy[B.R_ANKLE])
@@ -254,8 +321,8 @@ def measure_body(points: Sequence[Sequence[float]],
         knee_l=knee_l, knee_r=knee_r, hip_l=hip_l, hip_r=hip_r,
         lean=lean, depth=depth, arms_up=arms_up, scale=scale,
         center=hip.copy(), visible=True,
-        torso_ok=True, legs_ok=legs_ok, arms_ok=arms_ok, head_ok=head_ok,
-        joints=joints,
+        torso_ok=torso_ok, legs_ok=legs_ok, arms_ok=arms_ok, head_ok=head_ok,
+        upper_ok=upper_ok, joints=joints,
     )
 
 
@@ -299,15 +366,18 @@ class BodyFSM:
         if not self.metrics.visible:
             return ""
         parts = [f"тело: {POSTURE_TITLES.get(self.posture, self.posture)}"]
+        where = self.metrics.where
+        if where != "видно целиком":
+            # «по пояс», «по грудь», «голову и руки» — честно пишем, что попало
+            # в кадр: по этому человек сразу понимает, что считается, а что нет
+            parts.append(where)
         if self.metrics.legs_ok:
             parts.append(f"приседаний {self.reps}")
             if self.posture == "squat":
                 parts.append(f"глубина {self.metrics.depth * 100:.0f}%")
-        else:
-            parts.append("видно по пояс")
-            if self.metrics.arms_ok:
-                parts.append(f"руки {self.metrics.arms_up * 100:.0f}%")
-        if self.metrics.arms_ok:
+        elif self.metrics.arms_ok:
+            parts.append(f"руки {self.metrics.arms_up * 100:.0f}%")
+        if self.metrics.arms_ok and self.metrics.legs_ok:
             parts.append(f"наклон {self.metrics.lean:.0f}°")
         return " · ".join(parts)
 
@@ -382,6 +452,7 @@ def synthetic_body(
     lean: float = 0.0,
     sit: float = 0.0,
     visibility: float = 1.0,
+    arms: str = "auto",
 ) -> np.ndarray:
     """Синтетическое тело: 33 точки (x, y, z, visibility).
 
@@ -464,6 +535,33 @@ def synthetic_body(
         wr_y = sh_y + (1.0 - 2.0 * arms_up) * arm_len
         el_x = sh_x + side * 0.05 * height * (1.0 - arms_up)
         wr_x = sh_x + side * 0.08 * height * (1.0 - arms_up)
+
+        pose = arms
+        if pose == "tpose":
+            # руки в стороны: плечо, локоть и запястье на одной высоте
+            el_x, el_y = sh_x + side * 0.5 * arm_len, sh_y
+            wr_x, wr_y = sh_x + side * arm_len, sh_y
+        elif pose == "curl":
+            # «гантель у плеча»: локоть вниз у корпуса, запястье поднято к плечу
+            el_x, el_y = sh_x + side * 0.02 * height, sh_y + 0.13 * height
+            wr_x, wr_y = sh_x + side * 0.035 * height, sh_y + 0.005 * height
+        elif pose == "curl_down":
+            # сгибание только началось: локоть вниз, запястье ещё у бедра
+            el_x, el_y = sh_x + side * 0.02 * height, sh_y + 0.13 * height
+            wr_x, wr_y = sh_x + side * 0.03 * height, sh_y + 0.24 * height
+        elif pose == "guard":
+            # боксёрская стойка: локти у корпуса, кулаки у подбородка
+            el_x, el_y = sh_x + side * 0.025 * height, sh_y + 0.10 * height
+            wr_x, wr_y = sh_x - side * 0.005 * height, sh_y - 0.010 * height
+        elif pose in ("punch_left", "punch_right"):
+            # удар одной рукой: она вынесена вперёд и разогнута, вторая в стойке
+            side_name = "left" if side < 0 else "right"
+            if pose.endswith(side_name):
+                el_x, el_y = sh_x + side * 0.16 * height, sh_y + 0.02 * height
+                wr_x, wr_y = sh_x + side * 0.30 * height, sh_y + 0.01 * height
+            else:
+                el_x, el_y = sh_x + side * 0.025 * height, sh_y + 0.10 * height
+                wr_x, wr_y = sh_x - side * 0.005 * height, sh_y - 0.010 * height
         put(el_idx, el_x, el_y)
         put(wr_idx, wr_x, wr_y)
         # «пальцы» Pose ставит чуть дальше запястья — по ним рисуется кисть
@@ -519,7 +617,9 @@ class BodySmoother:
         self.metrics = BodyMetrics()
         self.held = 0
 
-    def update(self, body: Optional[np.ndarray], now: float) -> Optional[np.ndarray]:
+    def update(self, body: Optional[np.ndarray], now: float,
+               face_center: Optional[Sequence[float]] = None) -> Optional[np.ndarray]:
+        """``face_center`` — где сейчас лицо: по нему «доезжает» удержанный скелет."""
         ok = False
         if body is not None:
             metrics = measure_body(body, self.min_visibility)
@@ -543,14 +643,266 @@ class BodySmoother:
             return None
         if self._missing <= self.hold_frames and self._last is not None:
             # короткий провал: держим позу, но не двигаем её — и не считаем, что
-            # человек что-то делает (упражнения в это время не считаются)
+            # человек что-то делает (упражнения в это время не считаются).
+            # Исключение — лицо: если оно видно, скелет сдвигается вместе с
+            # головой, иначе «замороженная» моделька остаётся в стороне, пока
+            # человек уже сдвинулся.
             self.held = self._missing
             self.metrics.visible = False
-            return self._last
+            held = self._last
+            if face_center is not None:
+                center = head_center(held, self.min_visibility)
+                if center is not None:
+                    shift = np.asarray(face_center, dtype=float)[:2] - center
+                    if float(np.linalg.norm(shift)) <= 0.8:   # не телепортируем
+                        held = np.array(held, dtype=np.float64, copy=True)
+                        held[:, :2] += shift
+                        self._last = held
+            return held
         self.active = False
         self._last = None
         self.metrics = BodyMetrics()
         return None
+
+
+# --------------------------------------------------------------------------- #
+#  Спорт по телу: сгибания рук, T-поза, бокс
+# --------------------------------------------------------------------------- #
+SPORT_TITLES = {
+    "curl": "сгибание рук",
+    "tpose": "T-поза",
+    "guard": "бокс: стойка",
+    "punch": "удар",
+}
+
+
+@dataclass
+class ArmPose:
+    """Геометрия одной руки в одном кадре (в долях размера тела)."""
+
+    elbow: float = 180.0           # угол в локте: 180 — рука прямая
+    lateral: float = 0.0           # |запястье − плечо| по горизонтали
+    vertical: float = 0.0          # запястье ниже плеча (отрицательное — выше)
+    reach: float = 0.0             # расстояние плечо → запястье
+    speed: float = 0.0             # скорость запястья, размеров тела в секунду
+    above_elbow: bool = False      # запястье выше локтя (сгибание, а не мах)
+
+    @property
+    def straight(self) -> bool:
+        return self.elbow >= 145.0
+
+    @property
+    def bent(self) -> bool:
+        return self.elbow <= 110.0
+
+
+def arm_pose(body: Optional[np.ndarray], side: str, scale: float,
+             prev: Optional[np.ndarray] = None, dt: float = 0.0,
+             min_visibility: float = 0.35) -> Optional[ArmPose]:
+    """Считает геометрию руки по 33 точкам позы. ``None`` — руки не видно."""
+    if body is None or scale <= 1e-6:
+        return None
+    pts = np.asarray(body, dtype=np.float64)
+    if pts.ndim != 2 or pts.shape[0] < 33:
+        return None
+    sh_i, el_i, wr_i = ((B.L_SHOULDER, B.L_ELBOW, B.L_WRIST) if side == "left"
+                        else (B.R_SHOULDER, B.R_ELBOW, B.R_WRIST))
+    if min(_point_vis(pts, sh_i), _point_vis(pts, el_i), _point_vis(pts, wr_i)) < min_visibility:
+        return None
+    sh, el, wr = pts[sh_i, :2], pts[el_i, :2], pts[wr_i, :2]
+    speed = 0.0
+    if prev is not None and dt > 1e-4:
+        speed = float(np.linalg.norm(wr - prev) / dt / scale)
+    return ArmPose(
+        elbow=_angle(sh, el, wr),
+        lateral=float(abs(wr[0] - sh[0]) / scale),
+        vertical=float((wr[1] - sh[1]) / scale),
+        reach=float(np.linalg.norm(wr - sh) / scale),
+        speed=speed,
+        above_elbow=bool(wr[1] < el[1]),
+    )
+
+
+class BodySport:
+    """Упражнения и единоборства по скелету: сгибания рук, T-поза, бокс.
+
+    Всё считается по углу в локте и положению запястья относительно плеча —
+    то есть по тому, что видно с веб-камеры **спереди**, без 3D и без
+    специальных моделей. Счёт — с гистерезисом и минимальной длительностью,
+    иначе дребезг точек превращался бы в «сделал 80 сгибаний».
+
+    * **сгибание рук** (как с гантелями): локоть у корпуса, запястье идёт от
+      бедра к плечу. Повтор = угол в локте упал ниже ``curl_down`` и вернулся
+      выше ``curl_up``, и это заняло не меньше ``curl_min_s``;
+    * **T-поза**: обе руки выпрямлены и разведены в стороны — держится
+      ``tpose_hold_s``, чтобы случайный взмах не считался позой;
+    * **боксёрская стойка**: оба локтя согнуты, кулаки у подбородка;
+    * **удар**: рука из стойки резко выносится вперёд (локоть разогнулся,
+      запястье ушло в сторону со скоростью выше ``punch_speed``). Удар
+      засчитывается один раз, пока рука не вернётся в стойку.
+    """
+
+    def __init__(self, cfg: Optional[BodyConfig] = None) -> None:
+        self.cfg = cfg or BodyConfig()
+        self.curls = 0
+        self.tposes = 0
+        self.punches = 0
+        self.guard = False
+        self.tpose = False
+        self.poses: Dict[str, Optional[ArmPose]] = {"left": None, "right": None}
+        self._prev: Dict[str, Optional[np.ndarray]] = {"left": None, "right": None}
+        self._down = False
+        self._down_since = 0.0
+        self._t_downside = ""
+        self._tpose_hold = HoldTimer(float(getattr(self.cfg, "tpose_hold_s", 0.35)))
+        self._guard_hold = HoldTimer(float(getattr(self.cfg, "guard_hold_s", 0.30)))
+        self._extended = False
+        self._last_punch = -1e9
+        self._last_guard = -1e9        # когда стойка была в последний раз
+        self._t = 0.0
+
+    # ------------------------------------------------------------------ #
+    def reset(self) -> None:
+        self.poses = {"left": None, "right": None}
+        self._prev = {"left": None, "right": None}
+        self._down = False
+        self._down_since = 0.0
+        self._tpose_hold.reset()
+        self._guard_hold.reset()
+        self.guard = False
+        self.tpose = False
+        self._extended = False
+        self._t = 0.0
+
+    @property
+    def enabled(self) -> bool:
+        return bool(getattr(self.cfg, "sport", True))
+
+    @property
+    def text(self) -> str:
+        """Строка для окна: «спорт: сгибания рук 5 · T-поза · ударов 12»."""
+        if not self.enabled:
+            return ""
+        parts = []
+        if getattr(self.cfg, "curls", True) and self.curls:
+            parts.append(f"сгибания рук {self.curls}")
+        if getattr(self.cfg, "tpose", True) and self.tpose:
+            parts.append("T-поза")
+        if getattr(self.cfg, "boxing", True):
+            if self.guard:
+                parts.append("бокс: стойка")
+            if self.punches:
+                parts.append(f"ударов {self.punches}")
+        return "спорт: " + " · ".join(parts) if parts else ""
+
+    # ------------------------------------------------------------------ #
+    def update(self, body: Optional[np.ndarray], metrics: Optional[BodyMetrics],
+               now: float) -> List[Event]:
+        events: List[Event] = []
+        if not self.enabled or body is None or metrics is None or not metrics.visible:
+            self.poses = {"left": None, "right": None}
+            self._prev = {"left": None, "right": None}
+            self.guard = self.tpose = False
+            self._down = False
+            return events
+        dt = max(now - self._t, 1e-3)
+        self._t = now
+        scale = float(metrics.scale)
+        # сгибания и бокс считаем только когда руки видны целиком
+        if not metrics.arms_ok:
+            self.poses = {"left": None, "right": None}
+            self.guard = self.tpose = False
+            self._down = False
+            return events
+
+        poses: Dict[str, Optional[ArmPose]] = {}
+        for side in ("left", "right"):
+            pose = arm_pose(body, side, scale, self._prev[side], dt)
+            poses[side] = pose
+            if pose is not None:
+                idx = B.L_WRIST if side == "left" else B.R_WRIST
+                self._prev[side] = np.asarray(body, dtype=np.float64)[idx, :2].copy()
+            else:
+                self._prev[side] = None
+        self.poses = poses
+        if getattr(self.cfg, "curls", True):
+            events += self._curls(poses, now)
+        if getattr(self.cfg, "tpose", True):
+            events += self._tpose(poses, now)
+        if getattr(self.cfg, "boxing", True):
+            events += self._boxing(poses, now)
+        return events
+
+    # ------------------------------------------------------------------ #
+    def _curls(self, poses: Dict[str, Optional[ArmPose]], now: float) -> List[Event]:
+        down = up = False
+        for side, pose in poses.items():
+            if pose is None:
+                continue
+            if pose.elbow <= float(getattr(self.cfg, "curl_down", 72.0)) and pose.above_elbow:
+                down = True
+            if pose.elbow >= float(getattr(self.cfg, "curl_up", 148.0)):
+                up = True
+        if down:
+            if not self._down:
+                self._down = True
+                self._down_since = now
+            return []
+        if up and self._down:
+            self._down = False
+            if now - self._down_since >= float(getattr(self.cfg, "curl_min_s", 0.30)):
+                self.curls += 1
+                return [Event("curl_rep", value=self.curls, label="сгибание рук")]
+        return []
+
+    def _tpose(self, poses: Dict[str, Optional[ArmPose]], now: float) -> List[Event]:
+        def ok(pose: Optional[ArmPose]) -> bool:
+            return bool(pose is not None and pose.straight
+                        and pose.lateral >= 0.85 and abs(pose.vertical) <= 0.35)
+
+        both = ok(poses["left"]) and ok(poses["right"])
+        fired = self._tpose_hold.update(both, now)
+        self.tpose = both
+        if fired:
+            self.tposes += 1
+            return [Event("tpose_hold", value=self.tposes, label="T-поза")]
+        return []
+
+    def _boxing(self, poses: Dict[str, Optional[ArmPose]], now: float) -> List[Event]:
+        events: List[Event] = []
+
+        def guard_side(pose: Optional[ArmPose]) -> bool:
+            # кулаки у подбородка, то есть на уровне плеч или выше, прижаты к
+            # корпусу и **стоят**: сгибание рук — это движение, стойка — нет
+            return bool(pose is not None and pose.bent and pose.lateral <= 0.55
+                        and pose.vertical <= 0.10 and pose.speed <= 0.80)
+
+        both = guard_side(poses["left"]) and guard_side(poses["right"])
+        if self._guard_hold.update(both, now):
+            events.append(Event("boxing_guard", label="боксёрская стойка"))
+        self.guard = both
+        if both:
+            self._last_guard = now
+        # удар начинается ИЗ стойки: в самом кадре удара одна рука уже
+        # выпрямлена, поэтому «в стойке» проверяем по недавнему прошлому
+        from_guard = (now - self._last_guard) <= float(
+            getattr(self.cfg, "punch_guard_s", 0.7))
+
+        # удар: рука выпрямилась и ушла вперёд быстро — из стойки
+        for side, pose in poses.items():
+            if pose is None:
+                continue
+            thrown = (pose.straight and pose.lateral >= 0.75
+                      and pose.speed >= float(getattr(self.cfg, "punch_speed", 2.0)))
+            if thrown and not self._extended and from_guard:
+                if now - self._last_punch >= float(getattr(self.cfg, "punch_cooldown_s", 0.25)):
+                    self.punches += 1
+                    self._last_punch = now
+                    self._extended = True
+                    events.append(Event("punch", value=self.punches, label="удар"))
+            elif pose.bent and self._extended:
+                self._extended = False
+        return events
 
 
 def arm_points(body: Optional[np.ndarray], min_visibility: float = 0.5):

@@ -156,7 +156,10 @@ class OverlayState:
     hand_predicted: bool = False     # главная кисть нарисована предсказанием
     body_text: str = ""              # «тело: стоит · приседаний 3»
     body_enabled: bool = False       # режим тела включён (иначе «тело: выключено»)
-    body_where: str = ""             # «видно целиком» / «видно по пояс»
+    body_where: str = ""             # «видно целиком» / «видно по пояс» / «голову и руки»
+    sport_text: str = ""             # «спорт: сгибания рук 5 · T-поза · ударов 12»
+    face_hint: Optional[Sequence[float]] = None   # рамка головы, когда лица не видно
+    face_hint_note: str = ""         # «лицо не видно — показываю по телу»
     gaze_dwell: float = 0.0          # 0..1 — сколько ещё держать взгляд до клика
     gaze_absolute: bool = False      # курсор телепортируется по калибровке
     calib_active: bool = False       # идёт калибровка взгляда
@@ -415,6 +418,28 @@ def draw_hand_ar(
         T.draw(img, side, (int(pts[WRIST][0]) - width // 2, label_y), 13, FG)
 
 
+def _draw_head_hint(img: np.ndarray, box: Sequence[float], note: str, k: float) -> None:
+    """Пунктирная рамка головы: здесь лицо, хотя его самого не видно.
+
+    Рамку даёт либо скелет тела (голова в позе видна даже когда лицо потеряно
+    поворотом), либо предсказание по движению. Рисуем её намеренно скромно:
+    это подсказка, а не измерение.
+    """
+    h, w = img.shape[:2]
+    x0, y0 = int(float(box[0]) * w), int(float(box[1]) * h)
+    x1, y1 = int(float(box[2]) * w), int(float(box[3]) * h)
+    if x1 <= x0 or y1 <= y0:
+        return
+    _dashed_rect(img, (x0, y0), (x1, y1), (90, 150, 230), dash=max(int(8 * k), 4))
+    if note:
+        size = int(12 * k)
+        width, height = T.measure(note, size)
+        bx = max(int(6 * k), min(x0, w - width - int(12 * k)))
+        by = max(int(6 * k), y0 - height - int(8 * k))
+        _panel(img, bx, by, width + int(14 * k), height + int(10 * k), 0.55)
+        T.draw(img, note, (bx + int(7 * k), by + int(4 * k)), size, (110, 170, 235))
+
+
 # --------------------------------------------------------------------------- #
 #  Лицо
 # --------------------------------------------------------------------------- #
@@ -514,6 +539,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
         extras.append((state.gaze_text, ACCENT if state.gaze_pointer else DIM))
     if state.body_text:             # поза тела и счёт упражнений
         extras.append((state.body_text, INFO))
+    if state.sport_text:            # сгибания рук, T-поза, бокс
+        extras.append((state.sport_text, ACCENT))
     if state.hand_note:             # кисть: предсказание или поправка физики
         extras.append((state.hand_note, WARN if state.hand_predicted else INFO))
     if state.roles_text:            # кто чем занят в режиме «две руки на роли»
@@ -530,7 +557,7 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
     n_extra = (int(bool(state.modes_text)) + int(bool(state.side_text))
                + int(bool(state.gaze_text)) + int(bool(state.roles_text))
                + int(bool(state.body_text)) + int(bool(state.hand_note))
-               + int(state.settings_open))
+               + int(bool(state.sport_text)) + int(state.settings_open))
     panel_h = int((104 + 30 * n_extra) * k)
     _panel(img, x, y, panel_w, panel_h, 0.62)
 
@@ -565,20 +592,25 @@ def _draw_face_panel(img, state: OverlayState, k: float) -> None:
     x = w - panel_w - int(12 * k)
     y = int(12 * k)
     _panel(img, x, y, panel_w,
-           int((170 + 18 * int(state.gaze_dwell > 0)) * k if state.gaze_text else 146 * k), 0.62)
+           int((188 + 18 * int(state.gaze_dwell > 0)) * k if state.gaze_text else 164 * k), 0.62)
     T.draw(img, "мимика лица", (x + 12, y + 8), int(16 * k), FG)
     bx, bw = x + 12, int(96 * k)
+    # Порядок полос — от «что видно всегда» к «что видно редко». Рот отдельной
+    # полосой: раньше открытый рот проявлялся только через улыбку (ширина губ
+    # растёт и от улыбки, и от открытой челюсти) — и «удивление» не показывалось.
+    open_mouth = float(getattr(state, "mouth_open", 0.0) or 0.0)
     _bar(img, bx, y + 58, bw, int(9 * k), state.ear, WARN, "глаза", 0.0, 0.45, int(12 * k))
     _bar(img, bx, y + 78, bw, int(9 * k), max(0.0, state.smile), ACCENT, "улыбка", -0.05, 0.15, int(12 * k))
     _bar(img, bx, y + 98, bw, int(9 * k), max(0.0, state.brow), ACCENT, "брови", -0.05, 0.15, int(12 * k))
     _bar(img, bx, y + 118, bw, int(9 * k), max(0.0, state.sad), WARN, "грусть", 0.0, 0.08, int(12 * k))
+    _bar(img, bx, y + 138, bw, int(9 * k), open_mouth, INFO, "рот", 0.0, 0.55, int(12 * k))
     if state.gaze_text:
         T.draw(img, T.fit(state.gaze_text, int(12 * k), panel_w - int(24 * k)),
-               (x + 12, y + int(140 * k)), int(12 * k),
+               (x + 12, y + int(158 * k)), int(12 * k),
                ACCENT if state.gaze_pointer else DIM)
     if state.gaze_dwell > 0.0:
         # прогресс «удержание взгляда → клик»: видно, что вот-вот сработает
-        _bar(img, bx, y + int(158 * k), bw, int(9 * k), state.gaze_dwell,
+        _bar(img, bx, y + int(176 * k), bw, int(9 * k), state.gaze_dwell,
              ACCENT, "удержание", 0.0, 1.0, int(12 * k))
 
 
@@ -952,6 +984,9 @@ def render(
                    12, DIM, alpha=0.5)
     if face is not None:
         draw_face_ar(img, face, state.expression)
+    elif state.face_hint is not None:
+        # лица нет, но голова точно где-то здесь: по телу или по движению
+        _draw_head_hint(img, state.face_hint, state.face_hint_note, k)
     if shape is not None:
         draw_classical(img, shape)
 

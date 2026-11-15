@@ -43,7 +43,7 @@ def state(**kw) -> overlay.OverlayState:
         hand_seen=True,
         face_seen=True,
         active_box=AppConfig().pointer.active_box,
-        version="0.20.0",
+        version="0.21.0",
         events=["12:31:02  щипок → левый клик", "12:31:05  жест: ОК → двойной клик"],
         last_event="щипок → левый клик",
         modes_text="режимы: рука + лицо",
@@ -105,6 +105,26 @@ def main() -> int:
     save(overlay.render(background(), st, hands=[edge], face=None, predicted=[True]),
          "overlay-hand-predicted.png")
 
+    # 4в. Открытый рот и удивление: рот отдельной полосой, улыбка не перекрывает
+    surprised = synthetic_face(center=(0.30, 0.30), scale=0.6, mouth_open=0.55,
+                               brow=0.35, smile=0.0)
+    st = state(pose="ладонь", expression="удивление", mouth_open=0.55, brow=0.12,
+               smile=0.02, sad=0.0, hand_count=1)
+    save(overlay.render(background(), st, hands=[palm], face=surprised),
+         "overlay-face-mouth.png")
+
+    # 4г. Лицо потерялось — тело подсказало, где голова
+    from airmouse.body import B, synthetic_body
+
+    body_only = synthetic_body(center=(0.42, 0.62), height=0.70)
+    st = state(pose="—", expression="", face_seen=False, hand_count=0,
+               face_hint=(0.33, 0.16, 0.51, 0.40),
+               face_hint_note="лицо не видно — показываю по телу",
+               body_enabled=True, body_where="видно целиком",
+               body_text="тело: стоит · приседаний 0")
+    save(overlay.render(background(), st, hands=[], face=None, body=body_only),
+         "overlay-face-hint.png")
+
     # 5. Настройки с ползунками (клавиша C)
     from airmouse.settings_ui import SettingsPanel
 
@@ -156,7 +176,6 @@ def main() -> int:
          "overlay-motion-profile.png")
 
     # 7. Тело целиком: скелет поверх человека + строка про счётчик
-    from airmouse.body import B, synthetic_body
 
     standing = synthetic_body(center=(0.50, 0.47), height=0.74)
     st = state(pose="ладонь", expression="нейтрально", hand_count=0,
@@ -176,6 +195,35 @@ def main() -> int:
                body_text="тело: стоит · видно по пояс · наклон 4°")
     save(overlay.render(background(), st, hands=[], face=None, body=waist),
          "overlay-body-waist.png")
+
+    # 7в. Спорт по скелету: T-поза, сгибания рук, бокс
+    tpose = synthetic_body(center=(0.50, 0.46), height=0.74, arms="tpose")
+    st = state(pose="—", expression="нейтрально", hand_count=0,
+               body_enabled=True, body_where="видно целиком",
+               body_text="тело: стоит · приседаний 0",
+               sport_text="спорт: T-поза")
+    save(overlay.render(background(), st, hands=[], face=None, body=tpose),
+         "overlay-body-tpose.png")
+
+    guard = synthetic_body(center=(0.50, 0.46), height=0.74, arms="guard")
+    st = state(pose="—", expression="нейтрально", hand_count=0,
+               body_enabled=True, body_where="видно целиком",
+               body_text="тело: стоит",
+               sport_text="спорт: бокс: стойка · ударов 12")
+    save(overlay.render(background(), st, hands=[], face=None, body=guard),
+         "overlay-body-boxing.png")
+
+    # 7г. Видно только голову и руки — это уже тело
+    upper = synthetic_body(center=(0.50, 0.52), height=0.74)
+    for index in (B.L_HIP, B.R_HIP, B.L_KNEE, B.R_KNEE, B.L_ANKLE, B.R_ANKLE,
+                  B.L_HEEL, B.R_HEEL, B.L_FOOT, B.R_FOOT):
+        upper[index, 3] = 0.0
+    st = state(pose="—", expression="нейтрально", hand_count=0,
+               body_enabled=True, body_where="видно голову и руки",
+               body_text="тело: стоит · видно голову и руки · руки 0%",
+               sport_text="спорт: сгибания рук 5")
+    save(overlay.render(background(), st, hands=[], face=None, body=upper),
+         "overlay-body-head-arms.png")
 
     # 8. Справка по жестам
     st = state(pose="ладонь", expression="улыбка 62%", show_help=True, hand_count=1)

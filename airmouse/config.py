@@ -177,6 +177,19 @@ class BodyConfig:
     lean_deg: float = 25.0             # наклон корпуса, который считается наклоном
     arms_up_hold_s: float = 0.80       # сколько держать руки вверх
     squat_action: str = ""             # действие на повторение (пусто — только счёт)
+    # --- спорт по скелету: сгибания рук, T-поза, бокс ---------------------- #
+    sport: bool = True                 # общий выключатель (страница «Тело»)
+    curls: bool = True                 # сгибание рук, как с гантелями
+    curl_down: float = 72.0            # угол в локте «рука согнута»
+    curl_up: float = 148.0             # угол в локте «рука разогнулась»
+    curl_min_s: float = 0.30           # короче — дребезг, а не повторение
+    tpose: bool = True                 # T-поза: руки разведены в стороны
+    tpose_hold_s: float = 0.35         # сколько её держать
+    boxing: bool = True                # боксёрская стойка и удары
+    guard_hold_s: float = 0.30         # сколько стоять в стойке
+    punch_speed: float = 2.0           # скорость запястья на ударе (размеров тела/с)
+    punch_cooldown_s: float = 0.18     # два удара быстрее — это один дребезг
+    punch_guard_s: float = 0.7         # удар засчитывается из недавней стойки
 
 
 @dataclass
@@ -203,6 +216,7 @@ class FaceConfig:
     brow_hold_s: float = 0.85
     brow_cooldown_s: float = 5.0
     mouth_open_ratio: float = 0.55
+    predict_frames: int = 8            # сколько кадров вести голову по движению
     head_gain_x: float = 26.0          # пикселей в секунду на градус поворота головы
     head_gain_y: float = 20.0
     head_deadzone_deg: float = 2.5     # мёртвая зона: в ней курсор стоит

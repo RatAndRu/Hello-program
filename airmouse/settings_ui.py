@@ -655,6 +655,17 @@ HAND_TOGGLES: List[Toggle] = [
 ]
 
 
+BODY_TOGGLES: List[Toggle] = [
+    Toggle(
+        key="body.sport",
+        label="Спорт: сгибания, T-поза, бокс",
+        hint="считает повторы, стойку и удары по скелету тела",
+        get=lambda cfg, rt: bool(getattr(cfg.body, "sport", True)),
+        set=lambda cfg, rt, on: setattr(cfg.body, "sport", bool(on)),
+    ),
+]
+
+
 def _set_head_pointer(cfg: AppConfig, runtime: Any, on: bool) -> None:
     cfg.head_pointer = bool(on)
     if runtime is not None and hasattr(runtime, "head_pointer"):
@@ -701,7 +712,7 @@ def build_pages(sliders: Sequence[Slider] = SLIDERS,
         Page(PAGE_ORDER[2], pinch),
         Page(PAGE_ORDER[3], rest),
         Page(PAGE_ORDER[4], eyes),
-        Page(PAGE_ORDER[5], body),
+        Page(PAGE_ORDER[5], body, list(BODY_TOGGLES)),
         Page(PAGE_ORDER[6], window, list(HAND_TOGGLES), presets=False),
     ]
 

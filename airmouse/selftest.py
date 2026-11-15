@@ -1029,6 +1029,100 @@ def check_window_scale() -> Check:
                  f"экран 1920x1080 -> окно {w}x{h}")
 
 
+def check_face_body_anchors() -> Check:
+    """Тело и лицо помогают друг другу: голова не теряется ни в одну сторону."""
+    from .anchor import FaceBodyAnchor, patch_head
+    from .body import B, head_center, synthetic_body
+    from .synthetic import synthetic_face
+
+    face = synthetic_face(center=(0.5, 0.35), scale=0.6)
+    body = synthetic_body(center=(0.5, 0.55), height=0.8)
+    anchor = FaceBodyAnchor()
+    seen = anchor.update(face, body, 0.0)
+    lost = anchor.update(None, body, 0.033)
+
+    # лицо не видно — голова находится по телу
+    by_body = lost.source == "body" and lost.ok
+    # голова скелета не видна — достраивается по лицу
+    bare = np.array(body, copy=True)
+    for index in (B.NOSE, B.L_EYE, B.R_EYE, B.L_EAR, B.R_EAR):
+        bare[index, 3] = 0.0
+    filled = patch_head(bare, face)
+    head = head_center(filled) is not None and head_center(bare) is None
+    ok = bool(seen.source == "face" and by_body and head)
+    return Check("лицо и тело находят друг друга", ok,
+                 f"лицо={seen.source}, без лица={lost.source}, "
+                 f"голова скелета достроена={head}")
+
+
+def check_partial_body() -> Check:
+    """Тело показывается любой видимой частью: «по грудь», «голова и руки»."""
+    from .body import B, measure_body, synthetic_body
+
+    body = synthetic_body()
+    for index in (B.L_HIP, B.R_HIP, B.L_KNEE, B.R_KNEE, B.L_ANKLE, B.R_ANKLE,
+                  B.L_HEEL, B.R_HEEL, B.L_FOOT, B.R_FOOT):
+        body[index, 3] = 0.0
+    upper = measure_body(body)
+    chest = np.array(body, copy=True)
+    for index in (B.L_ELBOW, B.R_ELBOW, B.L_WRIST, B.R_WRIST):
+        chest[index, 3] = 0.0
+    no_arms = measure_body(chest)
+    ok = (upper.visible and upper.where == "видно голову и руки"
+          and no_arms.visible and no_arms.where == "видно по грудь")
+    return Check("тело: любая видимая часть", ok,
+                 f"без таза={upper.where!r}, без рук={no_arms.where!r}")
+
+
+def check_sport_curls() -> Check:
+    """Сгибания рук: повтор считается, дребезг — нет."""
+    from .body import BodySport, measure_body, synthetic_body
+
+    sport = BodySport()
+    t = 0.0
+    for pose in ("curl_down", "curl", "curl_down"):
+        t += 0.4
+        body = synthetic_body(arms=pose)
+        sport.update(body, measure_body(body), t)
+    counted = sport.curls == 1
+    sport_fast = BodySport()
+    t = 0.0
+    for pose in ("curl_down", "curl", "curl_down"):
+        t += 0.05
+        body = synthetic_body(arms=pose)
+        sport_fast.update(body, measure_body(body), t)
+    no_flicker = sport_fast.curls == 0
+    ok = bool(counted and no_flicker)
+    return Check("спорт: сгибания рук", ok,
+                 f"повторов={sport.curls}, быстрый дребезг={sport_fast.curls}")
+
+
+def check_sport_tpose_boxing() -> Check:
+    """T-поза, боксёрская стойка и удары — по скелету."""
+    from .body import BodySport, measure_body, synthetic_body
+
+    sport = BodySport()
+    t = 0.0
+    for _ in range(6):
+        t += 0.1
+        body = synthetic_body(arms="tpose")
+        sport.update(body, measure_body(body), t)
+    tpose = sport.tpose
+    sport2 = BodySport()
+    t = 0.0
+    for _ in range(4):
+        t += 0.1
+        body = synthetic_body(arms="guard")
+        sport2.update(body, measure_body(body), t)
+    for pose in ("punch_right", "guard", "punch_left"):
+        t += 0.1
+        body = synthetic_body(arms=pose)
+        sport2.update(body, measure_body(body), t)
+    ok = bool(tpose and sport2.punches == 2)
+    return Check("спорт: T-поза, стойка, удары", ok,
+                 f"T-поза={tpose}, стойка={sport2.guard}, ударов={sport2.punches}")
+
+
 CHECKS: List[Callable[[], Check]] = [
     check_filters,
     check_hysteresis,
@@ -1056,6 +1150,10 @@ CHECKS: List[Callable[[], Check]] = [
     check_hand_physics,
     check_body_stability,
     check_window_scale,
+    check_face_body_anchors,
+    check_partial_body,
+    check_sport_curls,
+    check_sport_tpose_boxing,
     check_settings_panel,
     check_rotation,
     check_click_fsm,

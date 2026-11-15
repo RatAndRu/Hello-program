@@ -387,6 +387,7 @@ class FaceFSM:
         self._eye = {"left": {"start": None, "other_closed": False},
                      "right": {"start": None, "other_closed": False}}
         self.smile_score = 0.0
+        self.mouth_wide = False
         self.brow_score = 0.0
         self.sad_score = 0.0
         self.rel_yaw = 0.0
@@ -478,10 +479,17 @@ class FaceFSM:
         # растягиваются), поэтому одна ширина улыбку не отличает от грусти.
         lift_gain = m.corner_lift - self.baseline.corner   # + вверх, − вниз
         width_gain = m.mouth_width - self.baseline.smile
+        # Рот широко открыт — это челюсть, а не улыбка: губы растягиваются в
+        # стороны, и по одной ширине получалось «улыбка 80%» вместо
+        # «удивления». Когда рот открыт, улыбку считаем только по подъёму
+        # уголков, а «ширину» не учитываем вовсе.
+        self.mouth_wide = m.mouth_open >= float(getattr(self.cfg, "surprise_mouth", 0.30))
         self.sad_score = max(0.0, -lift_gain)
         if lift_gain < -self.cfg.sad_delta * 0.5:
             # уголки вниз — это не улыбка, даже если рот стал шире
             self.smile_score = 0.0
+        elif self.mouth_wide:
+            self.smile_score = max(0.0, lift_gain * 2.0)
         else:
             self.smile_score = max(width_gain, lift_gain * 2.0)
         self.brow_score = m.brow_height - self.baseline.brow
