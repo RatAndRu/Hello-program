@@ -31,6 +31,7 @@ from .gaze import (
     PURSUIT_ROWS,
     GazeCalibration,
     GazeCursor,
+    lag_compensate,
     GazeDwell,
     average_gaze,
     pursuit_metrics,
@@ -70,17 +71,17 @@ BACKEND_TITLES = {
 # что вторая рука имеет право делать в режиме hand.roles=split
 SPLIT_CLICK_EVENTS = {
     "pinch_release", "middle_pinch_release", "drag_start", "drag_end",
-    "scroll", "ok_sign", "rock_sign", "three_fingers",
+    "scroll", "ok_sign", "rock_sign", "three_fingers", "thumb_up",
+    "ok_sign_back", "rock_sign_back", "three_fingers_back",
 }
 
-FACE_SUPPRESSED = {"open_palm_hold", "smile_hold", "brow_hold", "eyes_closed_hold",
+FACE_SUPPRESSED = {"smile_hold", "brow_hold", "eyes_closed_hold",
                    "head_nod", "head_shake"}
 
 HAND_EVENTS_RU = {
     "pinch_release": "клик",
     "middle_pinch_release": "правый клик",
     "thumb_up": "большой палец",
-    "open_palm_hold": "ладонь: пауза",
     "drag_start": "перетаскивание",
     "drag_end": "отпустил",
     "scroll": "прокрутка",
@@ -143,7 +144,6 @@ class AirMouseApp:
             float(getattr(cfg.face, "gaze_dwell_cooldown_s", 1.0)),
         )
         self._calib: Optional[dict] = None      # идёт мастер калибровки взгляда
-        self._palm_hint_at = -1e9               # когда последний раз подсказывали про ладонь
         self._gaze_drift_at = -1e9              # когда говорили «лицо уехало, калибруй»
         self._gaze_track: deque = deque(maxlen=30)   # куда смотрели (для дрожания)
         self._body_points = None                # последние 33 точки тела (для скелета)
@@ -225,6 +225,7 @@ class AirMouseApp:
         self._fit_tries = 0
         self._fit_series = 0                    # сколько серий попыток уже было
         self._window_sized = False              # окно уже получило стартовый размер
+        self._window_created = False            # namedWindow уже вызван
         self._preview_cache: Optional[Tuple[int, int]] = None
         self._preview_at = 0.0
         # Куда сохранять настройки. None — путь по умолчанию (~/.airmouse/config.json);
@@ -337,19 +338,23 @@ class AirMouseApp:
         if not hands and not bool(getattr(self.cfg.body, "enabled", False)):
             self.hand_tracker.reset()
             return []
-        # Кисть «ребром» (плоская линия) — это не измерение позы пальцев, а шум.
-        # Такую руку не отдаём детектором: трекер продолжит её движение по
-        # предыдущим кадрам, и на экране не будет дёргающейся ладони-полоски.
+        # Кисть «ребром» (плоская линия) — это не измерение позы пальцев, а
+        # шум. Но это всё ещё настоящая рука, и курсор она вести должна:
+        # раньше такую детекцию выбрасывали совсем, трекер шесть кадров ехал
+        # по инерции и терял руку — «рука стала хуже определяться». Теперь
+        # рука ребром **ведёт курсор, но не нажимает**: автомат жестов видит
+        # пометку ``edge_on`` и не выдаёт по ней ни кликов, ни прокрутки.
         measured = []
-        edge_on = 0
         for hand in hands:
-            if is_edge_on(hand):
-                edge_on += 1
-                continue
+            flagged = bool(is_edge_on(hand))
+            try:
+                setattr(hand, "edge_on", flagged)
+            except Exception:
+                pass
             measured.append(hand)
         tracked = self.hand_tracker.update(measured, now, body=body)
-        if edge_on and not self.hand_tracker.count:
-            self._hand_notes.append("кисть ребром: поза не измеряется")
+        if any(getattr(h, "edge_on", False) for h in measured):
+            self._hand_notes.append("кисть ребром: только курсор, без жестов")
         result = []            # для жестов: только измеренные руки
         draw = []              # для окна: с предсказаниями и поправками физики
         alive = set()
@@ -503,6 +508,24 @@ class AirMouseApp:
                     cv2.moveWindow(self._window_name, 0, 0)
                 except Exception:
                     pass
+
+    def _ensure_window(self) -> None:
+        """Создать окно **изменяемого** размера до первого ``imshow``.
+
+        Без явного ``namedWindow`` OpenCV создаёт окно ``WINDOW_AUTOSIZE``:
+        оно всегда размером с картинку, ``resizeWindow`` для него ничего не
+        делает, а «полный экран» показывает кадр 960×540 посреди чёрного
+        монитора. Именно поэтому окно упорно не растягивалось на весь экран.
+        ``WINDOW_NORMAL`` растягивает картинку до окна — а раз холст у нас
+        рисуется ровно в размере окна, ничего не «мылится».
+        """
+        if self._window_created:
+            return
+        self._window_created = True
+        try:
+            cv2.namedWindow(self._window_name, cv2.WINDOW_NORMAL)
+        except Exception as exc:      # бэкенд без оконных флагов
+            log.debug("namedWindow недоступен: %s", exc)
 
     def window_target_size(self) -> Tuple[int, int]:
         """Какого размера должно быть окно: доля экрана при сохранении пропорций.
@@ -705,10 +728,13 @@ class AirMouseApp:
             index = self._pick_primary(hands)
             self._primary_index = index or 0
             hand = hands[index] if index is not None else None
-            if getattr(self.cfg.hand, "roles", "single") == "split" and len(hands) >= 2:
+            if getattr(self.cfg.hand, "roles", "single") == "split":
                 # Режим «две руки»: одна ведёт курсор, вторая только нажимает.
-                # Курсор при щипке второй рукой вообще не сдвигается.
-                click_hand = hands[1 - self._primary_index]
+                # Главная рука НИКОГДА ничего не нажимает — даже когда вторая
+                # на секунду пропала из кадра. Раньше в этот момент она
+                # «становилась одиночной» и выдавала паузу, клики, прокрутку —
+                # то есть ровно то, чего от неё не ждали.
+                click_hand = hands[1 - self._primary_index] if len(hands) >= 2 else None
                 moved = [e for e in self.hand_fsm.update(hand, now)
                          if e.kind in ("pointer", "pointer_freeze")]
                 # вторая рука нажимает: курсор она не двигает и паузу не включает
@@ -721,7 +747,8 @@ class AirMouseApp:
             face_events = self._handle_face(res.face, now)
             # Пока рука тащит объект или держит щипок, мимика не должна
             # вмешиваться: иначе улыбка/ладонь «отпускают» кнопку мыши.
-            if self.hand_fsm.dragging or self.hand_fsm.pinching:
+            if (self.hand_fsm.dragging or self.hand_fsm.pinching
+                    or self.click_fsm.dragging or self.click_fsm.pinching):
                 face_events = [e for e in face_events if e.kind not in FACE_SUPPRESSED]
             events += face_events
             events += self._handle_lip(res.face, now)
@@ -769,7 +796,6 @@ class AirMouseApp:
             # нажимают: человек в это время выполняет упражнения, а не рулит.
             return events
 
-        self._note_palm_hint(now)
         for ev in events:
             before = len(self.router.log)
             try:
@@ -1071,23 +1097,6 @@ class AirMouseApp:
             return []
         return [Event("pointer_rel", value=(dx, dy))]
 
-    def _note_palm_hint(self, now: float) -> None:
-        """Один раз в несколько секунд объяснить, почему ладонь не сработала.
-
-        Человек поднимает руку, ждёт паузу, и ничего не происходит: обычно кисть
-        стоит под углом или развёрнута тылом. Молчать в этот момент — худшее,
-        что можно сделать, поэтому причина пишется в журнал окна.
-        """
-        hint = getattr(self.hand_fsm, "palm_reject", "")
-        if not hint:
-            return
-        every = float(getattr(self.cfg.hand, "palm_hint_cooldown_s", 8.0))
-        if now - self._palm_hint_at < every:
-            return
-        self._palm_hint_at = now
-        self._events_log.appendleft(f"ладонь: {hint}")
-        log.info("Ладонь не распознана: %s", hint)
-
     # ------------------------------------------------------------------ #
     #  Профиль движений: личный диапазон рук, мимики и тела (клавиша N)
     # ------------------------------------------------------------------ #
@@ -1349,8 +1358,19 @@ class AirMouseApp:
     def _finish_gaze_calibration(self) -> str:
         """Собрать калибровку: гомография + поправка на голову + динамика взгляда."""
         data = self._calib or {}
+        pursuit = list(data.get("pursuit") or [])
+        metrics = pursuit_metrics(pursuit)
         if data.get("mode") == "pursuit":
-            points = [(u, v, sx, sy) for (_t, u, v, sx, sy) in data.get("pursuit") or []]
+            # Зрачок отстаёт от точки: спариваем его с точкой на «задержку»
+            # раньше, иначе калибровка систематически промахивается по ходу
+            # движения точки.
+            lag_frames = 0
+            times = [row[0] for row in pursuit if len(row) >= 5]
+            if len(times) > 2:
+                dt = float(np.median(np.diff(times)))
+                if dt > 1e-6 and metrics["latency_ms"] > 0:
+                    lag_frames = int(round(metrics["latency_ms"] / 1000.0 / dt))
+            points = lag_compensate(pursuit, lag_frames)
         else:
             points = list(data.get("points") or [])
         head_samples = list(data.get("head") or [])
@@ -1367,7 +1387,6 @@ class AirMouseApp:
             self._events_log.appendleft(text)
             log.warning("%s", text)
             return text
-        metrics = pursuit_metrics(data.get("pursuit") or [])
         calib.latency_ms = metrics["latency_ms"]
         calib.responsiveness = metrics["responsiveness"]
         calib.pursuit_frames = int(metrics["frames"])
@@ -1410,8 +1429,12 @@ class AirMouseApp:
             return ""
         _worst, mean = calib.error()
         latency_s = max(0.0, calib.latency_ms) / 1000.0
-        alpha = min(0.90, max(0.35, 0.90 - latency_s * 1.5))
-        deadzone = int(round(min(30.0, max(6.0, 6.0 + mean * 300.0))))
+        # Пределы умеренные: раньше мёртвая зона доходила до 30 px, а
+        # сглаживание — до 0.35, и курсор «не замечал» небольших переводов
+        # взгляда, а потом догонял рывком. Это и ощущалось как «огромные
+        # допуски».
+        alpha = min(0.90, max(0.50, 0.90 - latency_s * 1.2))
+        deadzone = int(round(min(16.0, max(5.0, 5.0 + mean * 200.0))))
         self.cfg.face.gaze_cursor_alpha = round(alpha, 2)
         self.cfg.face.gaze_deadzone_px = deadzone
         self.gaze_cursor = GazeCursor(deadzone, self.cfg.face.gaze_cursor_alpha)
@@ -1840,6 +1863,7 @@ class AirMouseApp:
 
                 if self.show_window and canvas is not None:
                     try:
+                        self._ensure_window()
                         cv2.imshow(self._window_name, canvas)
                         if not self._window_sized and not self._fullscreen:
                             # первый показ: сразу нормальный размер, а не 960×540

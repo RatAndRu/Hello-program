@@ -250,3 +250,37 @@ def test_head_pointer_moves_cursor_relative():
     events = app._head_pointer_events(1.0 / 30.0)
     assert events and events[0].kind == "pointer_rel"
     assert events[0].value[0] > 10
+
+
+def test_split_roles_primary_hand_never_commands_alone():
+    """Split: вторая рука пропала — главная всё равно только ведёт курсор."""
+    rock = {"index": 0.0, "middle": 1.0, "ring": 1.0, "pinky": 0.0, "thumb": 1.0}
+    pointer_hand = synthetic_hand(center=(0.30, 0.55), scale=0.26)
+    click_hand = synthetic_hand(center=(0.70, 0.55), scale=0.17)
+    # сначала две руки, потом вторая уходит, а главная показывает «козу»
+    # и сжимает кулак с движением (прокрутка) — ни пауза, ни прокрутка
+    # не должны сработать
+    script = [[pointer_hand, click_hand]] * 5
+    script += [[synthetic_hand(center=(0.30, 0.55), scale=0.26, curl=rock)]] * 25
+    fist = {k: 1.0 for k in ("thumb", "index", "middle", "ring", "pinky")}
+    script += [[synthetic_hand(center=(0.30, 0.70 - 0.02 * i), scale=0.26, curl=fist)]
+               for i in range(15)]
+    app = _app(script, **{"hand.roles": "split"})
+    for i in range(len(script)):
+        app.process_frame(EMPTY, 100.0 + i * 0.033, i * 33)
+    log = app.backend.log
+    assert app.router.paused is False
+    assert not any(entry.startswith("scroll") for entry in log), log
+    assert not any(entry.startswith("click") for entry in log), log
+
+
+def test_split_roles_second_hand_rock_pauses():
+    """Split: пауза висит на второй руке («коза»)."""
+    rock = {"index": 0.0, "middle": 1.0, "ring": 1.0, "pinky": 0.0, "thumb": 1.0}
+    pointer_hand = synthetic_hand(center=(0.30, 0.55), scale=0.26)
+    script = [[pointer_hand, synthetic_hand(center=(0.70, 0.55), scale=0.17)]] * 5
+    script += [[pointer_hand, synthetic_hand(center=(0.70, 0.55), scale=0.17, curl=rock)]] * 25
+    app = _app(script, **{"hand.roles": "split"})
+    for i in range(len(script)):
+        app.process_frame(EMPTY, 100.0 + i * 0.033, i * 33)
+    assert app.router.paused is True

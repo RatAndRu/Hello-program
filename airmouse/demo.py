@@ -138,9 +138,9 @@ def build_segments() -> List[Segment]:
         Segment("щипок = левый клик", 0.9, click),
         Segment("щипок с удержанием = перетаскивание", 1.4, drag),
         Segment("кулак + движение = прокрутка", 1.2, scroll),
-        Segment("ладонь 1 с = пауза", 1.3, pause),
+        Segment("раскрытая ладонь = просто ведёт курсор", 1.0, pause),
         Segment("рука опущена", 0.4, no_hand),
-        Segment("ладонь снова = продолжить", 1.3, resume),
+        Segment("ладонь снова — ничего не нажимает", 1.0, resume),
         Segment("большой палец = двойной клик", 0.9, thumb),
         Segment("прицел: пальцы сходятся", 0.9, aim),
         Segment("жест ОК = двойной клик", 1.1, ok_sign),
@@ -290,7 +290,7 @@ def run_demo(cfg: AppConfig, out_dir: Path | str = "output") -> DemoResult:
                 state.pose = "—"
             for ev in events:
                 if ev.kind in ("pinch_release", "drag_start", "drag_end", "thumb_up",
-                               "open_palm_hold", "double_blink", "wink_left",
+                               "rock_sign", "double_blink", "wink_left",
                                "wink_right", "smile_hold", "brow_hold"):
                     state.last_event = ev.label or ev.kind
 
@@ -395,7 +395,7 @@ def _pick_storyboard(frames: List[np.ndarray]) -> List[Tuple[int, str]]:
         (int(2.6 * FPS) + 14, "щипок -> клик"),
         (int(3.5 * FPS) + 24, "удержание -> перетаскивание"),
         (int(4.9 * FPS) + 18, "кулак -> прокрутка"),
-        (int(7.5 * FPS) + 30, "ладонь 1 с -> пауза"),
+        (int(7.5 * FPS) + 30, "ладонь -> только курсор"),
     ]
     segments = build_segments()
     offsets = []

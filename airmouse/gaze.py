@@ -188,6 +188,7 @@ class GazeCalibration:
     responsiveness: float = 0.0      # согласованность движения с целью (0..1)
     pursuit_frames: int = 0          # сколько кадров снято «ведением»
     face_scale: float = 0.0          # межзрачковое расстояние при калибровке
+    model: str = "axis"              # axis — по осям (без «диагоналей») | homography
 
     # ------------------------------------------------------------------ #
     @property
@@ -235,10 +236,29 @@ class GazeCalibration:
         data = np.asarray(self.points, dtype=np.float64)
         src = data[:, :2]
         dst = data[:, 2:]
-        # четыре точки — минимум для гомографии, меньше — только аффинно
+
+        # 1. Модель «по осям»: x экрана зависит только от горизонтали зрачка,
+        #    y — только от вертикали. Это главный лекарь «диагоналей»: полная
+        #    гомография на шумных данных веб-камеры подхватывает перекрёстные
+        #    члены (x экрана «чуть-чуть от вертикали зрачка» и наоборот), и
+        #    курсор при взгляде строго вправо уезжает ещё и вниз.
+        axis = _axis_model(data)
+        axis_err = _mean_error(axis, src, dst) if axis is not None else None
+
+        # 2. Гомография — только если она **заметно** точнее по тем же точкам.
+        #    Восемь параметров против четырёх всегда подгонятся лучше, поэтому
+        #    порог жёсткий: ошибка меньше в два раза и осевая модель реально
+        #    промахивается (больше 2% экрана). На честной перспективе (камера
+        #    сильно сбоку) это выполняется, на обычном шуме — нет.
         H = _homography(src, dst) if len(self.points) >= 4 else None
-        if H is not None:
-            self.H = [float(v) for v in H.reshape(9)]
+        if H is not None and axis is not None:
+            h_err = _mean_error(H, src, dst)
+            if not (axis_err > HOMOGRAPHY_MIN_GAIN_ERR and h_err < axis_err * HOMOGRAPHY_GAIN):
+                H = None
+        chosen = H if H is not None else axis
+        self.model = "homography" if H is not None else "axis"
+        if chosen is not None and np.all(np.isfinite(chosen)):
+            self.H = [float(v) for v in np.asarray(chosen).reshape(9)]
             self.stale = False
             return True
         # Точки легли на линию (или глаз двигался только по одной оси) —
@@ -246,6 +266,7 @@ class GazeCalibration:
         H = _affine_fallback(data)
         if H is None:
             return False
+        self.model = "axis"
         self.H = [float(v) for v in H.reshape(9)]
         self.stale = False
         return True
@@ -348,7 +369,8 @@ class GazeCalibration:
         if not self.ready:
             return "калибровки нет"
         text = (f"ошибка {mean * 100:.1f}% экрана "
-                f"(макс {worst * 100:.1f}%, точек {len(self.points)})")
+                f"(макс {worst * 100:.1f}%, точек {len(self.points)}, "
+                f"{'по осям' if self.model != 'homography' else 'перспектива'})")
         if self.stale:
             text += " — калибровка старого образца, нажмите B"
         return text
@@ -362,7 +384,8 @@ class GazeCalibration:
                 "latency_ms": round(self.latency_ms, 1),
                 "responsiveness": round(self.responsiveness, 3),
                 "pursuit_frames": int(self.pursuit_frames),
-                "face_scale": round(self.face_scale, 4)}
+                "face_scale": round(self.face_scale, 4),
+                "model": self.model or "axis"}
 
     @classmethod
     def from_dict(cls, data: Dict[str, object] | None) -> "GazeCalibration":
@@ -380,6 +403,7 @@ class GazeCalibration:
             calib.responsiveness = float(data.get("responsiveness") or 0.0)
             calib.pursuit_frames = int(data.get("pursuit_frames") or 0)
             calib.face_scale = float(data.get("face_scale") or 0.0)
+            calib.model = str(data.get("model") or "homography")
             raw_h = data.get("H") or []
             if len(raw_h) == 9:
                 calib.H = [float(v) for v in raw_h]
@@ -411,8 +435,64 @@ class GazeCalibration:
 
 
 # --------------------------------------------------------------------------- #
-#  Подгонка гомографии
+#  Подгонка: модель по осям и гомография
 # --------------------------------------------------------------------------- #
+# Гомографию берём вместо осевой модели только если она уменьшает среднюю
+# ошибку хотя бы в столько раз...
+HOMOGRAPHY_GAIN = 0.5
+# ...и осевая модель при этом промахивается заметно (доли экрана). Иначе
+# «выигрыш» гомографии — просто подгонка под шум, а на выходе — диагонали.
+HOMOGRAPHY_MIN_GAIN_ERR = 0.02
+
+
+def _axis_model(data: np.ndarray) -> "np.ndarray | None":
+    """x экрана = a·u + b, y экрана = c·v + d — независимо по осям.
+
+    Записывается той же матрицей 3×3, что и гомография (нули вне диагонали),
+    поэтому :meth:`GazeCalibration.apply` и сохранённый формат не меняются.
+    """
+    gx, gy = data[:, 0], data[:, 1]
+    if float(np.ptp(gx)) < 1e-6 or float(np.ptp(gy)) < 1e-6:
+        return None
+    a, b = np.polyfit(gx, data[:, 2], 1)
+    c, d = np.polyfit(gy, data[:, 3], 1)
+    H = np.array([[a, 0.0, b], [0.0, c, d], [0.0, 0.0, 1.0]], dtype=np.float64)
+    return H if np.all(np.isfinite(H)) else None
+
+
+def _mean_error(H: np.ndarray, src: np.ndarray, dst: np.ndarray) -> float:
+    """Средний промах преобразования на своих точках (доли экрана)."""
+    ones = np.ones((src.shape[0], 1))
+    p = np.hstack([src, ones]) @ np.asarray(H, dtype=np.float64).T
+    w = p[:, 2:3]
+    w = np.where(np.abs(w) < 1e-9, 1e-9, w)
+    xy = p[:, :2] / w
+    xy = np.clip(xy, 0.0, 1.0)
+    return float(np.abs(xy - dst).mean())
+
+
+def lag_compensate(samples: Sequence[Sequence[float]], lag_frames: int
+                   ) -> List[Tuple[float, float, float, float]]:
+    """Сдвинуть пары «зрачок ↔ точка» на задержку взгляда.
+
+    Глаз догоняет точку с опозданием (обычно 2–5 кадров). Если спарить зрачок
+    с точкой **того же** кадра, зрачок всегда «отстаёт» от цели: на проходе
+    слева направо он левее точки, на обратном — правее. Подгонка такие пары
+    усредняет в кашу, и калибровка получается с запасом по краям. Здесь зрачок
+    кадра ``i`` спаривается с точкой кадра ``i − lag``.
+    """
+    rows = [tuple(float(v) for v in s) for s in samples if len(s) >= 5]
+    lag = max(0, int(lag_frames))
+    if lag == 0 or len(rows) <= lag + 8:
+        return [(u, v, sx, sy) for (_t, u, v, sx, sy) in rows]
+    out = []
+    for i in range(lag, len(rows)):
+        _t, u, v, _sx, _sy = rows[i]
+        sx, sy = rows[i - lag][3], rows[i - lag][4]
+        out.append((u, v, sx, sy))
+    return out
+
+
 def _normalize(points: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Приведение координат к нулевому центру и среднему радиусу √2.
 

@@ -76,6 +76,9 @@ MAX_JOINT_SPEED = 1200.0          # градусов в секунду
 MAX_JUMP_PER_FRAME = 70.0
 # Насколько «уехавший» от соседей палец считается сбоем (в долях сгиба 0..1).
 NEIGHBOUR_JUMP = 0.45
+# Сколько кадров подряд можно придерживать палец на прошлой позе. Дольше —
+# значит, он на самом деле переехал, и мы ему верим.
+MAX_HOLD_FRAMES = 2
 
 SUSPECT_NAMES = {
     "thumb": "большой",
@@ -245,17 +248,32 @@ class HandPhysics:
     оверлее можно сравнить «до» и «после».
     """
 
-    def __init__(self, enabled: bool = True) -> None:
+    def __init__(self, enabled: bool = True, rebuild: bool = False) -> None:
+        """``rebuild`` — перерисовывать ли палец по «исправленным» углам.
+
+        По умолчанию выключено. Углы здесь считаются по **плоской** картинке,
+        а палец, направленный в камеру, на ней укорачивается и «ломается» —
+        анатомически он в порядке, но плоские углы говорят обратное. Пока
+        перерисовка была включена, такие пальцы рисовались неправильно даже
+        там, где нейросеть всё видела верно. Теперь нарушение только
+        **отмечается** (подпись в окне), а точки остаются такими, какими их
+        увидела нейросеть. Единственное вмешательство — придержать палец на
+        прошлом кадре при одиночном скачке, и то не дольше
+        :data:`MAX_HOLD_FRAMES` кадров подряд.
+        """
         self.enabled = bool(enabled)
+        self.rebuild = bool(rebuild)
         self._prev_poses: Dict[str, FingerPose] = {}
         self._prev_points: Optional[np.ndarray] = None
         self._prev_t: Optional[float] = None
+        self._hold_streak: Dict[str, int] = {}
         self.last_note = ""
 
     def reset(self) -> None:
         self._prev_poses = {}
         self._prev_points = None
         self._prev_t = None
+        self._hold_streak = {}
         self.last_note = ""
 
     def update(self, hand: Hand, now: float) -> PhysicsOut:
@@ -300,9 +318,14 @@ class HandPhysics:
                           if n2 != name and n2 in self._prev_poses]
                 alone = bool(others) and max(others) < NEIGHBOUR_JUMP * 10.0
 
-            if prev is not None and (jump > frame_limit or alone):
+            streak = self._hold_streak.get(name, 0)
+            if (prev is not None and (jump > frame_limit or alone)
+                    and streak < MAX_HOLD_FRAMES):
                 # Глитч: придерживаем палец на прошлом кадре, но двигаем его
                 # вместе с кистью (иначе палец «отклеится» от ладони).
+                # Держим не дольше MAX_HOLD_FRAMES подряд: если палец и правда
+                # переехал, на третьем кадре ему верим — раньше придержанный
+                # палец «залипал» навсегда, пока не сдвинется вся кисть.
                 if self._prev_points is not None:
                     mcp_id = FINGERS[name][0]
                     shift = _v(out_hand, mcp_id) - self._prev_points[mcp_id, :2]
@@ -310,13 +333,16 @@ class HandPhysics:
                         out_hand.points[idx, :2] = self._prev_points[idx, :2] + shift
                 held += 1
                 suspect.append(name)
+                self._hold_streak[name] = streak + 1
                 continue
+            self._hold_streak[name] = 0
 
             if violation:
-                rebuild_finger(out_hand, name, clamped, _bend_sign(out_hand, name))
-                rebuilt += 1
                 violations += bad
                 suspect.append(name)
+                if self.rebuild:
+                    rebuild_finger(out_hand, name, clamped, _bend_sign(out_hand, name))
+                    rebuilt += 1
 
         self._prev_poses = poses(out_hand)
         self._prev_points = out_hand.points.copy()

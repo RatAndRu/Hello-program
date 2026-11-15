@@ -105,8 +105,8 @@ def test_double_blink_clicks():
     assert "click(leftx1)" in app.backend.log
 
 
-def test_open_palm_pauses_and_resumes():
-    # держим ладонь дольше open_palm_hold_s и пережидаем pause_cooldown_s
+def test_open_palm_does_not_pause():
+    """Раскрытая ладонь сколько угодно долго — мышь не встаёт на паузу."""
     frames = [(synthetic_hand(), None)] * 60
     frames += [(None, None)] * 8
     frames += [(synthetic_hand(), None)] * 130
@@ -115,9 +115,19 @@ def test_open_palm_pauses_and_resumes():
     for _ in range(len(frames)):
         app.process_frame(EMPTY_FRAME, now, int(now * 1000))
         now += 1 / 30.0
-    assert app.router.paused is False  # пауза была включена и снята
-    assert any("paused=True" in entry for entry in app.router.log)
-    assert app.router.log.count("paused=False") >= 1
+    assert app.router.paused is False
+    assert not any("paused=True" in entry for entry in app.router.log)
+
+
+def test_rock_sign_still_toggles_pause():
+    rock = {"index": 0.0, "middle": 1.0, "ring": 1.0, "pinky": 0.0, "thumb": 1.0}
+    frames = [(synthetic_hand(curl=rock), None)] * 30
+    app = make_app(frames)
+    now = 400.0
+    for _ in range(len(frames)):
+        app.process_frame(EMPTY_FRAME, now, int(now * 1000))
+        now += 1 / 30.0
+    assert app.router.paused is True
 
 
 def test_head_pointer_moves_cursor():

@@ -212,15 +212,6 @@ def build_sliders() -> List[Slider]:
         hint="больше — строже к жестам, меньше ложных срабатываний",
     ))
     items.append(Slider(
-        key="hand.open_palm_hold_s",
-        label="пауза по ладони, с",
-        group="Щипок и клики",
-        lo=0.60, hi=3.00, step=0.05,
-        get=lambda cfg: cfg.hand.open_palm_hold_s,
-        set=lambda cfg, v: setattr(cfg.hand, "open_palm_hold_s", float(v)),
-        hint="сколько держать раскрытую ладонь неподвижно",
-    ))
-    items.append(Slider(
         key="hand.fist_scroll_gain",
         label="прокрутка кулаком: скорость",
         group="Щипок и клики",

@@ -53,6 +53,14 @@ MAX_POINT_SPEED = 10.0
 # это ≈0.5, при повороте на 60° уже 0.28, на 75° — 0.17.
 EDGE_ON_RATIO = 0.24
 
+# Штраф к расстоянию (в размерах ладони) за несовпадение подписи «левая/правая».
+# Подпись у MediaPipe ненадёжна (зависит от зеркала и ракурса), поэтому это
+# именно штраф, а не запрет: близкая кисть с «не той» подписью — всё та же рука.
+HANDEDNESS_PENALTY = 0.6
+# Предсказанная рука ближе этого (в размерах ладони) к настоящей — это она и
+# есть, второй ладони на экране не рисуем.
+GHOST_RADIUS = 1.5
+
 
 def edge_on_ratio(hand: Hand) -> float:
     """Насколько кисть «схлопнута» в линию: < EDGE_ON_RATIO — мерить нечего."""
@@ -114,11 +122,12 @@ def _palm_size(pts: np.ndarray) -> float:
 class HandTracker:
     """Непрерывный трек до двух кистей: измерение → предсказание → забывание."""
 
-    def __init__(self, predict_frames: int = 6, match_radius: float = 1.2,
-                 use_body: bool = True) -> None:
+    def __init__(self, predict_frames: int = 6, match_radius: float = 1.6,
+                 use_body: bool = True, max_tracks: int = 2) -> None:
         self.predict_frames = max(int(predict_frames), 0)
         self.match_radius = float(match_radius)
         self.use_body = bool(use_body)
+        self.max_tracks = max(int(max_tracks), 1)
         self._tracks: List[_Track] = []
         self.last_notes: List[str] = []
         self.predicted_count = 0
@@ -142,21 +151,53 @@ class HandTracker:
         order: List[int] = []          # порядок как у движка: он же порядок вывода
         dt_default = 1.0 / 30.0
 
-        # 1. детекции -> треки
-        for hand in detections:
+        # 1. детекции -> треки. Сопоставляем **глобально** по близости ладони:
+        # сначала самые близкие пары. Подпись «левая/правая» — только штраф, а
+        # не запрет: MediaPipe меняет её у одной и той же кисти от кадра к
+        # кадру, и раньше каждая такая смена рождала новый трек, а старый ещё
+        # шесть кадров ехал рядом «предсказанием» — на экране появлялась вторая
+        # ладонь поверх настоящей.
+        pairs = []
+        det_pts = []
+        for d_index, hand in enumerate(detections):
             pts = np.asarray(hand.points, dtype=np.float64).copy()
+            det_pts.append(pts)
             palm, size = _palm(pts), max(_palm_size(pts), 1e-6)
-            best, best_cost = None, self.match_radius
-            for index, track in enumerate(self._tracks):
-                if index in used:
-                    continue
-                if track.handedness and hand.handedness and track.handedness != hand.handedness:
-                    continue
+            for t_index, track in enumerate(self._tracks):
                 cost = float(np.linalg.norm(_palm(track.points) - palm)) / size
-                if cost < best_cost:
-                    best, best_cost = index, cost
-            dt = dt_default
-            if best is None:
+                if track.handedness and hand.handedness and track.handedness != hand.handedness:
+                    cost += HANDEDNESS_PENALTY
+                # потерянный трек мог уехать дальше: ему радиус шире
+                radius = self.match_radius * (1.0 + 0.5 * min(track.missed, 4))
+                if cost < radius:
+                    pairs.append((cost, d_index, t_index))
+        pairs.sort()
+        matched_det: dict = {}
+        adopted: set = set()           # детекции, «усыновившие» далёкий трек
+        for cost, d_index, t_index in pairs:
+            if d_index in matched_det or t_index in used:
+                continue
+            matched_det[d_index] = t_index
+            used.add(t_index)
+
+        # Детекция без пары, а трек без пары остался: кисть просто прыгнула
+        # дальше радиуса (резкий взмах) — это та же рука, а не новая. Иначе
+        # старый трек ещё полдесятка кадров ехал бы рядом второй ладонью.
+        for d_index in range(len(detections)):
+            if d_index in matched_det:
+                continue
+            orphans = [i for i in range(len(self._tracks)) if i not in used]
+            if not orphans:
+                continue
+            palm = _palm(det_pts[d_index])
+            best = min(orphans, key=lambda i: float(np.linalg.norm(_palm(self._tracks[i].points) - palm)))
+            matched_det[d_index] = best
+            used.add(best)
+            adopted.add(d_index)
+
+        for d_index, hand in enumerate(detections):
+            pts = det_pts[d_index]
+            if d_index not in matched_det:
                 self._tracks.append(_Track(points=pts, velocity=np.zeros((21, 2)),
                                            handedness=hand.handedness,
                                            score=float(getattr(hand, "score", 1.0)),
@@ -166,12 +207,15 @@ class HandTracker:
                 used.add(len(self._tracks) - 1)
                 order.append(len(self._tracks) - 1)
                 continue
+            best = matched_det[d_index]
             track = self._tracks[best]
-            used.add(best)
             order.append(best)
             dt = max(now - track.t, 1e-3) if track.t else dt_default
             track.velocity = self._smooth_velocity(track, pts, dt)
+            if d_index in adopted:
+                track.velocity = np.zeros((21, 2))   # после прыжка скорость не знаем
             track.points = pts
+            track.handedness = hand.handedness or track.handedness
             track.score = float(getattr(hand, "score", 1.0))
             track.source = hand            # та же рука, что дал движок
             track.missed = 0
@@ -180,6 +224,7 @@ class HandTracker:
             track.t = now
 
         # 2. пропавшие треки: продолжаем движение и, если видно тело, тянем к нему
+        ordered = [self._tracks[i] for i in order]   # измеренные, в порядке движка
         alive: List[_Track] = []
         self.last_notes = []
         for index, track in enumerate(self._tracks):
@@ -195,6 +240,11 @@ class HandTracker:
             track.score *= 0.85
             if track.missed > self.predict_frames:
                 continue                       # забываем: рука ушла по-настоящему
+            # Рядом с предсказанием есть **настоящая** рука — значит, это она
+            # и есть (детектор сдвинул её дальше, чем мы ждали, или сменил
+            # подпись). Второй, выдуманной, ладони на экране быть не должно.
+            if self._near_measured(track, used):
+                continue
             step = np.clip(track.velocity * dt, -MAX_POINT_SPEED, MAX_POINT_SPEED)
             track.points[:, :2] = track.points[:, :2] + step
             np.clip(track.points[:, :2], 0.0, 1.0, out=track.points[:, :2])
@@ -203,15 +253,23 @@ class HandTracker:
             self.last_notes.append(f"рука предсказана ({track.missed})")
             alive.append(track)
 
+        # Предсказанных рук не больше, чем «не хватает» до двух: если видны обе
+        # настоящие — выдуманных нет вовсе; если одна — не больше одной.
+        measured_n = len(order)
+        keep: List[_Track] = [t for t in alive if not t.predicted]
+        ghosts = sorted((t for t in alive if t.predicted), key=lambda t: t.missed)
+        keep.extend(ghosts[:max(0, self.max_tracks - measured_n)])
+        kept_ids = {id(t) for t in keep}
+        alive = [t for t in alive if id(t) in kept_ids]
+        self.last_notes = [f"рука предсказана ({t.missed})" for t in alive if t.predicted]
         self._tracks = alive
         self.predicted_count = sum(1 for t in alive if t.predicted)
         # Сначала измеренные руки в том порядке, в каком их отдал движок (по нему
         # выбирается главная рука и работают жесты двумя руками), потом
         # предсказанные: выдуманная рука не должна «перехватывать» управление.
         result = []
-        predicted_order = [i for i in range(len(self._tracks)) if i not in set(order)]
-        for i in order + predicted_order:
-            track = self._tracks[i]
+        predicted_tracks = [t for t in alive if t.predicted]
+        for track in ordered + predicted_tracks:
             hand = (track.source if track.source is not None
                     else Hand(track.points, track.handedness, track.score))
             result.append(TrackedHand(hand, predicted=track.predicted, missed=track.missed,
@@ -220,6 +278,19 @@ class HandTracker:
         return result
 
     # ------------------------------------------------------------------ #
+    def _near_measured(self, track: _Track, used: set) -> bool:
+        """Есть ли рядом с предсказанным треком настоящая (измеренная) рука."""
+        palm = _palm(track.points)
+        size = max(_palm_size(track.points), 1e-6)
+        for index in used:
+            other = self._tracks[index]
+            if other.predicted:
+                continue
+            dist = float(np.linalg.norm(_palm(other.points) - palm)) / size
+            if dist < GHOST_RADIUS:
+                return True
+        return False
+
     @staticmethod
     def _smooth_velocity(track: _Track, pts: np.ndarray, dt: float) -> np.ndarray:
         delta = (pts[:, :2] - track.points[:, :2]) / dt

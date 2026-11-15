@@ -139,10 +139,12 @@ class HandConfig:
     drag_delay_s: float = 0.30         # удержание щипка -> перетаскивание
     click_cooldown_s: float = 0.35
     settle_s: float = 0.25             # «затишье» после появления руки: без случайных кликов
-    open_palm_hold_s: float = 1.30     # пауза по раскрытой ладони (дольше — меньше случайных)
-    pause_max_motion: float = 0.006    # ладонь должна почти стоять (доли кадра/кадр)
-    pause_cooldown_s: float = 2.50     # не чаще одной паузы за это время
-    pause_min_palm: float = 0.055      # ладонь должна быть достаточно крупной в кадре
+    # Ладонь как команда («пауза») убрана: ниже — устаревшие ключи, читаются
+    # из старых конфигов и ни на что не влияют.
+    open_palm_hold_s: float = 1.30
+    pause_max_motion: float = 0.006
+    pause_cooldown_s: float = 2.50
+    pause_min_palm: float = 0.055
     palm_flat_max: float = 0.17        # «плоская ладонь»: вылет точек из плоскости
     palm_facing_min: float = 0.75      # 1 — ладонь в камеру, 0 — ребром (0.75 ≈ 41°)
     palm_need_side: bool = True        # ладонь — только ладонной стороной, не тылом
@@ -286,7 +288,8 @@ class ActionConfig:
         "pinch_release": "left_click",
         "middle_pinch_release": "right_click",
         "thumb_up": "double_click",
-        "open_palm_hold": "toggle_pause",
+        # раскрытая ладонь ничего не делает: это обычное положение кисти,
+        # и как команда она срабатывала случайно чаще всех остальных жестов
         "double_blink": "left_click",
         "wink_left": "right_click",
         "wink_right": "right_click",

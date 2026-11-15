@@ -617,14 +617,15 @@ def check_scroll_fsm() -> Check:
 
 
 def check_pause_fsm() -> Check:
+    """Раскрытая ладонь больше не команда: сколько ни держи — паузы нет."""
     cfg = HandConfig()
     fsm = HandFSM(cfg)
-    # держим ладонь дольше, чем требуется (open_palm_hold_s = 1.3 с)
-    frames = [synthetic_hand() for _ in range(int(cfg.open_palm_hold_s * 30) + 25)]
+    frames = [synthetic_hand() for _ in range(90)]
     events, _ = _play(fsm, frames)
     fired = [e for e in events if e.kind == "open_palm_hold"]
-    return Check(f"ладонь {cfg.open_palm_hold_s:.1f} с -> пауза", len(fired) == 1,
-                 f"срабатываний: {len(fired)}")
+    moved = [e for e in events if e.kind == "pointer"]
+    return Check("ладонь -> ничего (курсор едет)", not fired and moved,
+                 f"пауз: {len(fired)}, движений: {len(moved)}")
 
 
 def check_open_palm_flat() -> Check:
@@ -755,10 +756,10 @@ def check_actions() -> Check:
 
     for kind in ("pinch_release", "thumb_up", "middle_pinch_release"):
         router.handle(Event(kind), now=0.0)
-    router.handle(Event("open_palm_hold"), now=1.0)
+    router.handle(Event("rock_sign"), now=1.0)
     paused = router.paused
     router.handle(Event("pointer", (10, 20)), now=2.0)  # на паузе игнорируется
-    router.handle(Event("open_palm_hold"), now=3.0)
+    router.handle(Event("rock_sign"), now=3.0)
     ok = paused and not router.paused
     ok = ok and "click(leftx1)" in backend.log and "click(leftx2)" in backend.log
     ok = ok and "click(rightx1)" in backend.log and "move_to(10,20)" not in backend.log
@@ -988,14 +989,17 @@ def check_hand_physics() -> Check:
     clean = HandPhysics().update(natural, 0.0)
     broken = synthetic_hand(curl={name: 0.0 for name in FINGERS})
     rebuild_finger(broken, "index", FingerPose(mcp=6.0, pip=4.0, dip=58.0), sign=1.0)
-    fixed = HandPhysics().update(broken, 0.0)
+    flagged = HandPhysics().update(broken, 0.0)          # по умолчанию: только пометка
+    fixed = HandPhysics(rebuild=True).update(broken, 0.0)  # перерисовка — по желанию
     ok = (not clean.suspect and not clean.rebuilt
+          and "index" in flagged.suspect and flagged.rebuilt == 0
+          and bool(np.allclose(flagged.hand.points, broken.points))
           and "index" in fixed.suspect and fixed.rebuilt == 1
           and coupling_error(fixed.poses["index"]) < 20.0)
-    return Check("физика пальцев: невозможная поза", ok,
+    return Check("физика пальцев: помечает, но не перерисовывает", ok,
                  f"живая рука: правок={clean.rebuilt}, "
-                 f"невозможная: помечена={'index' in fixed.suspect}, "
-                 f"DIP после правки={fixed.poses['index'].dip:.0f}°")
+                 f"невозможная: помечена={'index' in flagged.suspect}, "
+                 f"точки не тронуты={bool(np.allclose(flagged.hand.points, broken.points))}")
 
 
 def check_body_stability() -> Check:

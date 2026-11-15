@@ -105,7 +105,7 @@ def test_hint_explains_why():
 
 
 # --------------------------------------------------------------------------- #
-#  Автомат: пауза по ладони
+#  Автомат: ладонь больше ничего не включает
 # --------------------------------------------------------------------------- #
 def _feed(fsm: HandFSM, hand, frames: int = 12, dt: float = 0.05, start: float = 0.0):
     events = []
@@ -116,36 +116,32 @@ def _feed(fsm: HandFSM, hand, frames: int = 12, dt: float = 0.05, start: float =
     return events, now
 
 
-def test_flat_palm_holds_to_pause():
+def test_open_palm_never_pauses_anymore():
+    """Ладонь — не команда: сколько ни держи, паузы нет, курсор едет."""
     fsm = HandFSM(CFG)
-    events, _ = _feed(fsm, synthetic_hand(), frames=40, dt=0.05)
-    assert any(e.kind == "open_palm_hold" for e in events)
-
-
-def test_tilted_palm_never_pauses():
-    fsm = HandFSM(CFG)
-    events, now = _feed(fsm, synthetic_hand(yaw_deg=55), frames=60, dt=0.05)
+    events, _ = _feed(fsm, synthetic_hand(), frames=80, dt=0.05)
     assert not any(e.kind == "open_palm_hold" for e in events)
-    # и человеку объяснили, почему
-    assert "углом" in fsm.palm_reject
+    assert any(e.kind == "pointer" for e in events)
+    assert fsm.palm_reject == ""
 
 
-def test_back_of_hand_never_pauses():
-    fsm = HandFSM(CFG)
-    fsm.side_est.side = HandSide.BACK   # как после калибровки стороны клавишей K
-    events, _ = _feed(fsm, synthetic_hand(back=True), frames=60, dt=0.05)
-    assert not any(e.kind == "open_palm_hold" for e in events)
-    assert "тыл" in fsm.palm_reject
+def test_tilted_and_back_palm_do_nothing_either():
+    for hand, side in ((synthetic_hand(yaw_deg=55), None),
+                       (synthetic_hand(back=True), HandSide.BACK)):
+        fsm = HandFSM(CFG)
+        if side is not None:
+            fsm.side_est.side = side
+        events, _ = _feed(fsm, hand, frames=60, dt=0.05)
+        assert not any(e.kind == "open_palm_hold" for e in events)
 
 
-def test_palm_side_can_be_ignored_by_config():
-    """Кому пауза тылом нужна — оставляет её одной настройкой."""
+def test_palm_need_side_flag_does_not_bring_pause_back():
     cfg = HandConfig()
     cfg.palm_need_side = False
     fsm = HandFSM(cfg)
     fsm.side_est.side = HandSide.BACK
     events, _ = _feed(fsm, synthetic_hand(back=True), frames=60, dt=0.05)
-    assert any(e.kind == "open_palm_hold" for e in events)
+    assert not any(e.kind == "open_palm_hold" for e in events)
 
 
 def test_two_hand_relax_is_more_forgiving():

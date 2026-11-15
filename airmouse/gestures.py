@@ -618,6 +618,20 @@ class HandFSM:
         if not f.valid:
             return events
 
+        # Кисть ребром к камере: пальцы слились в линию, позу по ним не
+        # прочесть. Курсор продолжает ехать (рука-то настоящая), а щипки,
+        # кулак и позы-команды по такой картинке не считаются — слишком легко
+        # ошибиться. Удерживаемый щипок/перетаскивание при этом не рвём.
+        if bool(getattr(hand, "edge_on", False)) and not self._pinching:
+            self._prev_pointer = f.pointer
+            self._fist_anchor_y = None
+            self._scroll_accum = 0.0
+            self.pose_gate.update(None)
+            self.aim_point = tuple(f.pointer)
+            events.append(Event("pointer", value=tuple(f.pointer)))
+            setattr(self, "last_features", f)
+            return events
+
         # «Затишье на входе». Человек только занёс руку в кадр — она летит,
         # пальцы ещё складываются, нейросеть на переходных кадрах видит то
         # щипок, то ладонь. Именно так появляются случайные клики и паузы,
@@ -714,38 +728,13 @@ class HandFSM:
             self._fist_anchor_y = None
             self._scroll_accum = 0.0
 
-        # ---------------- раскрытая ладонь: пауза ------------------------- #
-        # Три условия разом, иначе пауза срабатывала от любого движения:
-        # ладонь открыта и «устоялась», рука почти не двигается, ладонь
-        # достаточно крупная в кадре (человек не махнул рукой вдалеке).
-        still = f.fast_motion < self.cfg.pause_max_motion
-        near = float(hand.palm_size) >= getattr(self.cfg, "pause_min_palm", 0.0)
-        # Тыл кисти — это НЕ «ладонь»: разверните её к камере (после калибровки
-        # стороны клавишей K сторона известна достоверно).
-        palm_side_ok = not (is_back and bool(getattr(self.cfg, "palm_need_side", True)))
-        open_and_settled = (
-            pose == Pose.OPEN_PALM
-            and settled
-            and stable == Pose.OPEN_PALM.value
-            and still
-            and near
-            and palm_side_ok
-            and self.pause_cooldown.ready("open_palm", now)   # не «тратим» жест впустую
-        )
-        fired = self.open_palm_hold.update(open_and_settled, now)
-        if fired and self.pause_cooldown.try_fire("open_palm", now):
-            events.append(Event("open_palm_hold", label="ладонь"))
-        if pose != Pose.OPEN_PALM:
-            self.open_palm_hold.reset()
-
-        # Подсказка «почему не сработало»: кисть раскрыта, а жест не считается.
-        raised = all(f.extended.get(k) for k in ("index", "middle", "ring", "pinky"))
-        if raised and (pose != Pose.OPEN_PALM or not palm_side_ok):
-            self.palm_reject = palm_hint(
-                f, self.cfg, side_back=is_back, relax=self.relax
-            )
-        else:
-            self.palm_reject = ""
+        # Раскрытая ладонь — НЕ команда. Раньше по ней включалась пауза, и
+        # она срабатывала чаще всех остальных жестов вместе взятых: ладонь —
+        # естественное положение расслабленной кисти, человек просто ведёт
+        # курсор, а мышь встаёт на паузу. Жест убран целиком; пауза осталась
+        # на «козе» (и трёх пальцах тылом) — их случайно не покажешь.
+        self.open_palm_hold.reset()
+        self.palm_reject = ""
 
         # ------------- стабильные позы-команды: ОК, коза, три пальца ------ #
         STABLE_EVENTS = {

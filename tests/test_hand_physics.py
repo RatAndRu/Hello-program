@@ -60,7 +60,7 @@ def test_impossible_dip_is_flagged_and_fixed():
     rebuild_finger(hand, "index", FingerPose(mcp=8.0, pip=5.0, dip=60.0), sign=1.0)
     assert coupling_error(poses(hand)["index"]) > 30.0
 
-    out = HandPhysics().update(hand, 0.0)
+    out = HandPhysics(rebuild=True).update(hand, 0.0)
     assert "index" in out.suspect
     assert out.rebuilt == 1
     # после правки DIP снова согласован с PIP
@@ -110,3 +110,26 @@ def test_physics_can_be_switched_off():
     hand = _hand(0.0)
     out = physics.update(hand, 0.0)
     assert out.hand is hand and out.suspect == ()
+
+
+def test_flagged_finger_is_left_alone_by_default():
+    """Нарушение отмечается, но точки нейросети не переписываются."""
+    hand = _hand(0.0)
+    rebuild_finger(hand, "index", FingerPose(mcp=8.0, pip=5.0, dip=60.0), sign=1.0)
+    before = hand.points.copy()
+    out = HandPhysics().update(hand, 0.0)
+    assert "index" in out.suspect and out.rebuilt == 0
+    assert np.allclose(out.hand.points, before)
+
+
+def test_held_finger_is_released_after_two_frames():
+    """Палец, который и правда переехал, не «залипает» на старой позе."""
+    physics = HandPhysics()
+    base = {name: 0.15 for name in FINGERS}
+    physics.update(synthetic_hand(curl=base, center=(0.5, 0.55)), 0.0)
+    moved = dict(base, index=0.9)           # указательный резко согнулся один
+    outs = [physics.update(synthetic_hand(curl=moved, center=(0.5, 0.55)), i / 30)
+            for i in range(1, 5)]
+    assert outs[0].held >= 1
+    assert outs[-1].held == 0 and "index" not in outs[-1].suspect
+    assert outs[-1].poses["index"].pip > 60.0

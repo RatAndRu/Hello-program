@@ -115,3 +115,64 @@ def test_body_far_away_does_not_drag_the_hand():
     tracker.update([_hand(0.25, 0.60)], 0.0)
     out = tracker.update([], 1 / 30, body=_body(0.95, 0.10))
     assert abs(float(out[0].hand.points[WRIST, 0]) - 0.25) < 0.2
+
+
+# --------------------------------------------------------------------------- #
+#  Лишние ладони: одна рука не должна рисоваться дважды
+# --------------------------------------------------------------------------- #
+def test_handedness_flip_does_not_spawn_a_ghost():
+    """MediaPipe сменил подпись Left/Right у той же кисти — трек тот же."""
+    tracker = HandTracker(predict_frames=6)
+    a = _hand(0.40)
+    a.handedness = "Right"
+    first = tracker.update([a], 0.0)[0]
+    b = _hand(0.41)
+    b.handedness = "Left"
+    out = tracker.update([b], 1 / 30)
+    assert len(out) == 1 and not out[0].predicted
+    assert out[0].track_id == first.track_id
+
+
+def test_fast_jump_does_not_spawn_a_ghost():
+    """Резкий взмах дальше радиуса сопоставления — всё ещё одна рука."""
+    tracker = HandTracker(predict_frames=6)
+    tracker.update([_hand(0.20)], 0.0)
+    tracker.update([_hand(0.22)], 1 / 30)
+    out = tracker.update([_hand(0.75)], 2 / 30)      # прыжок на пол-кадра
+    assert len(out) == 1 and not out[0].predicted
+
+
+def test_predicted_hand_disappears_when_real_one_is_next_to_it():
+    tracker = HandTracker(predict_frames=6)
+    tracker.update([_hand(0.40), _hand(0.75)], 0.0)
+    tracker.update([_hand(0.40), _hand(0.75)], 1 / 30)
+    # левая рука «пропала», а новая детекция появилась почти там же
+    out = tracker.update([_hand(0.75), _hand(0.46)], 2 / 30)
+    assert len(out) == 2 and not any(item.predicted for item in out)
+
+
+def test_never_more_than_two_hands_on_screen():
+    tracker = HandTracker(predict_frames=6)
+    tracker.update([_hand(0.2), _hand(0.8)], 0.0)
+    tracker.update([_hand(0.2), _hand(0.8)], 1 / 30)
+    out = tracker.update([_hand(0.5, 0.2), _hand(0.5, 0.9)], 2 / 30)
+    assert len(out) <= 2
+
+
+def test_edge_on_hand_moves_cursor_but_does_not_click():
+    """Рука ребром — настоящая: курсор едет, а щипок по ней не считается."""
+    from airmouse.config import HandConfig
+    from airmouse.gestures import HandFSM
+
+    fsm = HandFSM(HandConfig())
+    now = 0.0
+    kinds = []
+    for i in range(30):
+        now += 1 / 30
+        hand = synthetic_hand(center=(0.4 + 0.004 * i, 0.6), scale=0.22,
+                              curl={"middle": 1.0, "ring": 1.0, "pinky": 1.0},
+                              pinch_index=(10 <= i < 20))
+        hand.edge_on = True
+        kinds += [e.kind for e in fsm.update(hand, now)]
+    assert "pointer" in kinds
+    assert "pinch_release" not in kinds and "pointer_freeze" not in kinds
