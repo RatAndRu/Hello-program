@@ -97,6 +97,7 @@ HELP_KEYS = (
     ("C", "настройки"),
     ("V", "режим по кругу"),
     ("K", "калибровка ладони"),
+    ("F", "окно на весь экран"),
     ("M", "движок: ИИ ↔ CV"),
     ("I / Tab", "эта справка"),
     ("пробел", "статистика в лог"),
@@ -146,9 +147,10 @@ class OverlayState:
     calib_active: bool = False       # идёт калибровка взгляда
     calib_target: Optional[Sequence[float]] = None   # куда просим посмотреть
     calib_text: str = ""             # «ВЗГЛЯД: левый верхний угол (1/5)…»
+    calib_done: int = 0              # сколько точек калибровки уже снято
     events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
-    hints: str = "Q выход P пауза H голова G глаза B взгляд C настройки V режимы K ладонь M движок I справка"
+    hints: str = "Q выход P пауза H голова G глаза B взгляд C настройки V режимы K ладонь F экран M движок I справка"
     show_help: bool = False
     show_names: bool = True
     pinch_threshold: float = 0.32
@@ -435,6 +437,93 @@ def _draw_gaze_calibration(img: np.ndarray, state: OverlayState, k: float) -> No
     T.draw(img, text, (bx + int(16 * k), by + int(8 * k)), size, FG)
 
 
+def render_gaze_calibration(size: Tuple[int, int],
+                            state: OverlayState) -> np.ndarray:
+    """Полноэкранный экран калибровки взгляда — на весь монитор, а не в окне.
+
+    Прицел рисуется в настоящих координатах экрана (``size`` — разрешение
+    монитора), поэтому крестик оказывается ровно в углу монитора, а не внутри
+    окошка предпросмотра. Фон чёрный: смотреть нужно в точку, а не на панели.
+    """
+    w, h = max(int(size[0]), 320), max(int(size[1]), 240)
+    img = np.full((h, w, 3), (16, 17, 20), dtype=np.uint8)
+    # еле заметная рамка — видно, что оверлей растянут на весь экран
+    cv2.rectangle(img, (0, 0), (w - 1, h - 1), (48, 50, 56), 2)
+
+    k = max(min(h / 1080.0, w / 1920.0), 0.55)
+    tx, ty = 0, 0
+    if state.calib_target is not None:
+        # именно пиксель экрана: 0 -> 0, 1 -> последний пиксель
+        tx = int(round(float(state.calib_target[0]) * (w - 1)))
+        ty = int(round(float(state.calib_target[1]) * (h - 1)))
+        _draw_calibration_target(img, tx, ty, k)
+
+    # подсказка сверху по центру
+    text = state.calib_text or "смотрите в точку и нажмите ПРОБЕЛ"
+    size_px = int(20 * k)
+    width, height = T.measure(text, size_px)
+    bx = max(8, w // 2 - width // 2 - int(22 * k))
+    by = int(16 * k)
+    _panel(img, bx, by, width + int(44 * k), height + int(48 * k), 0.82)
+    T.draw(img, text, (bx + int(22 * k), by + int(10 * k)), size_px, FG)
+    hint = "ПРОБЕЛ — зафиксировать · ESC — отмена · B — начать заново"
+    hint_size = int(13 * k)
+    hw, _ = T.measure(hint, hint_size)
+    T.draw(img, hint, (w // 2 - hw // 2, by + height + int(20 * k)), hint_size, DIM)
+
+    # прогресс: сколько точек уже снято
+    _draw_calibration_progress(img, state, k)
+    return img
+
+
+def _draw_calibration_target(img: np.ndarray, tx: int, ty: int, k: float) -> None:
+    """Прицел в точке экрана: уголки вдоль краёв монитора или кольцо в центре."""
+    h, w = img.shape[:2]
+    color = (90, 235, 130)
+    arm = int(min(max(min(w, h) * 0.10, 60.0), 160.0) * k)
+    thick = max(int(5 * k), 2)
+    pad = thick + int(2 * k)          # линии чуть внутри экрана, чтобы не обрезались
+
+    at_left, at_right = tx <= 4, tx >= w - 5
+    at_top, at_bottom = ty <= 4, ty >= h - 5
+    corner = (at_left or at_right) and (at_top or at_bottom)
+    if corner:
+        # «Г» точно в углу монитора: две линии вдоль самых краёв экрана
+        x_edge = pad if at_left else w - 1 - pad
+        y_edge = pad if at_top else h - 1 - pad
+        x_in = x_edge + arm if at_left else x_edge - arm
+        y_in = y_edge + arm if at_top else y_edge - arm
+        cv2.line(img, (x_edge, y_edge), (x_in, y_edge), color, thick, cv2.LINE_AA)
+        cv2.line(img, (x_edge, y_edge), (x_edge, y_in), color, thick, cv2.LINE_AA)
+        # точка ровно в пикселе-цели (у края она видна квадрантом)
+        cv2.circle(img, (tx, ty), max(int(5 * k), 3), color, -1, cv2.LINE_AA)
+        return
+
+    r = int(34 * k)
+    cv2.circle(img, (tx, ty), r, color, max(int(3 * k), 2), cv2.LINE_AA)
+    cv2.circle(img, (tx, ty), max(int(7 * k), 3), color, -1, cv2.LINE_AA)
+    for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        cv2.line(img, (tx + dx * r, ty + dy * r),
+                 (tx + dx * int(r * 1.7), ty + dy * int(r * 1.7)),
+                 color, max(int(2 * k), 1), cv2.LINE_AA)
+
+
+def _draw_calibration_progress(img: np.ndarray, state: OverlayState, k: float) -> None:
+    """Точки внизу: сколько шагов калибровки уже пройдено."""
+    from .gaze import CALIBRATION_TARGETS
+
+    total = len(CALIBRATION_TARGETS)
+    done = getattr(state, "calib_done", 0) or 0
+    r = max(int(7 * k), 4)
+    gap = int(26 * k)
+    h, w = img.shape[:2]
+    y = h - int(46 * k)
+    x = w // 2 - (total - 1) * gap // 2
+    for i in range(total):
+        color = (90, 235, 130) if i < done else (90, 92, 100)
+        cv2.circle(img, (x + i * gap, y), r, color, -1, cv2.LINE_AA)
+
+
 def _draw_events(img, state: OverlayState, k: float) -> None:
     lines = list(state.events)[-3:]
     if not lines:
@@ -519,7 +608,7 @@ def _draw_help(img, state: OverlayState, k: float) -> None:
     T.draw(img, "включается: config set hand.roles=split", (right_x, yy), int(12 * k), DIM)
     yy += int(24 * k)
     yy = header("Мышь глазами (клавиша G):", right_x, yy)
-    T.draw(img, "B — калибровка: смотрите в угол, курсор там", (right_x, yy), int(12 * k), FG)
+    T.draw(img, "B — калибровка на весь экран: смотрите в угол", (right_x, yy), int(12 * k), FG)
     yy += int(17 * k)
     T.draw(img, "без калибровки — скоростной режим (нужны зрачки)", (right_x, yy), int(12 * k), DIM)
 

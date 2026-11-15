@@ -43,7 +43,7 @@ def state(**kw) -> overlay.OverlayState:
         hand_seen=True,
         face_seen=True,
         active_box=AppConfig().pointer.active_box,
-        version="0.12.0",
+        version="0.13.0",
         events=["12:31:02  щипок → левый клик", "12:31:05  жест: ОК → двойной клик"],
         last_event="щипок → левый клик",
         modes_text="режимы: рука + лицо",
@@ -112,12 +112,14 @@ def main() -> int:
     save(panel.draw(np.zeros((H, W, 3), dtype=np.uint8)), "overlay-settings-eyes.png")
 
     # 6. Калибровка взгляда: «посмотрите в угол и нажмите пробел»
+    # калибровка идёт на весь монитор: прицел — в самом углу экрана
     st = state(pose="ладонь", expression="нейтрально", hand_count=1,
                gaze_text="взгляд: вправо", gaze_pointer=True,
-               calib_active=True, calib_target=(0.90, 0.10),
-               calib_text="ВЗГЛЯД: правый верхний угол  (2/5)"
-                          "   смотрите туда и нажмите ПРОБЕЛ    Esc — отмена")
-    save(overlay.render(background(), st, hands=[palm], face=face), "overlay-gaze-calib.png")
+               calib_active=True, calib_target=(1.0, 0.0), calib_done=1,
+               calib_text="ВЗГЛЯД: правый верхний угол экрана  (2/5)")
+    full = overlay.render_gaze_calibration((1920, 1080), st)
+    small = cv2.resize(full, (960, 540), interpolation=cv2.INTER_AREA)
+    save(small, "overlay-gaze-calib.png")
 
     # 7. Справка по жестам
     st = state(pose="ладонь", expression="улыбка 62%", show_help=True, hand_count=1)

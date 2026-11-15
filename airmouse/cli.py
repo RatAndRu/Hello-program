@@ -80,6 +80,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         cfg.lip.enabled = True
     if args.no_window:
         cfg.show_window = False
+    if getattr(args, "fullscreen", False):
+        cfg.fullscreen = True
     setup_logging(cfg, args.debug)
 
     from .app import AirMouseApp
@@ -498,6 +500,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--video", type=str, default=None, help="видеофайл вместо камеры")
     run.add_argument("--backend", choices=["auto", "mediapipe", "classical", "none"])
     run.add_argument("--no-window", action="store_true", help="работать в фоне без окна")
+    run.add_argument("--fullscreen", action="store_true",
+                     help="окно предпросмотра на весь экран (клавиша F переключает)")
     run.add_argument("--tray", action="store_true", default=True,
                      help="иконка в трее в фоновом режиме (по умолчанию включена)")
     run.add_argument("--dry-run", action="store_true", help="ничего не нажимать (для отладки)")

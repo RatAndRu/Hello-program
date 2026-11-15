@@ -265,9 +265,23 @@ def check_gaze_calibration() -> Check:
     for sx, sy in ((0.1, 0.1), (0.5, 0.5), (0.9, 0.9)):
         px, py = calib.apply(*gaze(sx, sy))
         worst = max(worst, abs(px - sx), abs(py - sy))
-    ok = bool(fitted and calib.ready and worst < 0.03)
+    # прицел рисуется на весь монитор, а не в окне: проверяем холст 1920x1080
+    from .overlay import OverlayState, render_gaze_calibration
+
+    canvas = render_gaze_calibration(
+        (1920, 1080),
+        OverlayState(calib_active=True, calib_target=CALIBRATION_TARGETS[1]),
+    )
+    full = canvas.shape[:2] == (1080, 1920)
+    import numpy as _np
+
+    green = _np.abs(canvas.astype("int16") - _np.array([90, 235, 130])).sum(axis=2) < 40
+    corner = bool(green[:120, 1780:].any())      # прицел в правом верхнем углу
+    ok = bool(fitted and calib.ready and worst < 0.03 and full and corner)
     return Check("калибровка взгляда в экран", ok,
-                 f"точек={len(calib.points)}, ошибка={worst * 100:.1f}% экрана")
+                 f"точек={len(calib.points)}, ошибка={worst * 100:.1f}% экрана, "
+                 f"холст {canvas.shape[1]}x{canvas.shape[0]}, "
+                 f"угол={'да' if corner else 'нет'}")
 
 
 def check_settings_panel() -> Check:

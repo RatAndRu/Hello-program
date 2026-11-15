@@ -37,7 +37,7 @@ from .gestures import (
     classify_pose,
 )
 from .lipreading import LipReader, TemplateStore, mouth_features
-from .overlay import OverlayState, render
+from .overlay import OverlayState, render, render_gaze_calibration
 from .landmarks import WRIST
 from .pointer import PointerMapper
 from .settings_ui import SettingsPanel, cycle_preset, modes_summary
@@ -158,6 +158,10 @@ class AirMouseApp:
         self._frame_size: Tuple[int, int] = (960, 540)
         self._paused_for_settings = False
         self._window_name = "AirMouse"
+        self._fullscreen = bool(getattr(cfg, "fullscreen", False))  # окно на весь экран
+        # что уже применено к окну; False — обычное окно при старте
+        self._fullscreen_applied: Optional[bool] = False
+        self._screen_size_cache: Optional[Tuple[int, int]] = None
 
     # ------------------------------------------------------------------ #
     def setup(self) -> None:
@@ -236,6 +240,67 @@ class AirMouseApp:
         action = self.cfg.lip.words.get(result.word)
         log.info("Губы: «%s» (d=%.3f) -> %s", result.word, result.distance, action)
         return [Event("lip_word", value=result)]
+
+    # ------------------------------------------------------------------ #
+    def screen_size(self) -> Tuple[int, int]:
+        """Разрешение монитора в пикселях — в нём и рисуется калибровка."""
+        if self._screen_size_cache is not None:
+            return self._screen_size_cache
+        size = (960, 540)
+        try:
+            w, h = self.backend.screen_size()
+            if w and h:
+                size = (int(w), int(h))
+        except Exception as exc:      # без GUI размер экрана может быть неизвестен
+            log.debug("Размер экрана неизвестен: %s", exc)
+        self._screen_size_cache = size
+        return size
+
+    @property
+    def fullscreen(self) -> bool:
+        return self._fullscreen
+
+    def toggle_fullscreen(self) -> bool:
+        """Окно предпросмотра на весь экран (клавиша F)."""
+        self._fullscreen = not self._fullscreen
+        self._fullscreen_applied = None
+        log.info("Окно: %s", "на весь экран" if self._fullscreen else "в окне")
+        return self._fullscreen
+
+    def _apply_window_mode(self) -> None:
+        """Переключает окно между обычным и полноэкранным — только при смене.
+
+        Калибровка взгляда всегда идёт на весь экран: иначе крестик оказывается
+        в углу окошка, а не в углу монитора, и калибровка получается сжатой.
+        """
+        want = bool(self._fullscreen or self.calibrating)
+        if want == self._fullscreen_applied:
+            return
+        self._fullscreen_applied = want
+        try:
+            if want:
+                cv2.setWindowProperty(self._window_name, cv2.WND_PROP_FULLSCREEN,
+                                      cv2.WINDOW_FULLSCREEN)
+                cv2.moveWindow(self._window_name, 0, 0)
+            else:
+                cv2.setWindowProperty(self._window_name, cv2.WND_PROP_FULLSCREEN,
+                                      cv2.WINDOW_NORMAL)
+                cv2.resizeWindow(self._window_name, 960, 540)
+        except Exception as exc:      # бэкенд без полноэкранного режима
+            log.debug("Полноэкранный режим недоступен: %s", exc)
+            if want:
+                # запасной путь: окно размером с экран в левом верхнем углу
+                try:
+                    w, h = self.screen_size()
+                    cv2.resizeWindow(self._window_name, w, h)
+                    cv2.moveWindow(self._window_name, 0, 0)
+                except Exception:
+                    pass
+
+    def calibration_canvas(self) -> np.ndarray:
+        """Чёрный экран на весь монитор с прицелом в настоящем углу экрана."""
+        size = self.screen_size()
+        return render_gaze_calibration(size, self.state)
 
     # ------------------------------------------------------------------ #
     def _two_hand_relax(self) -> float:
@@ -393,10 +458,27 @@ class AirMouseApp:
         except Exception as exc:
             log.warning("Не удалось включить мышь для настроек: %s", exc)
 
+    def _window_scale(self) -> Tuple[float, float]:
+        """Во сколько раз окно больше холста: клики мыши приходят в пикселях окна.
+
+        В полноэкранном режиме (клавиша F и калибровка взгляда) окно растянуто
+        на весь монитор, поэтому координаты мыши нужно пересчитать обратно.
+        """
+        fw, fh = self._frame_size
+        try:
+            _x, _y, ww, wh = cv2.getWindowImageRect(self._window_name)
+        except Exception:
+            return 1.0, 1.0
+        if ww > 0 and wh > 0 and (ww != fw or wh != fh):
+            return fw / float(ww), fh / float(wh)
+        return 1.0, 1.0
+
     def _on_mouse(self, event: int, x: int, y: int) -> None:
         if not self.settings_open():
             return
         size = self._frame_size
+        sx, sy = self._window_scale()
+        x, y = int(x * sx), int(y * sy)
         action = self.settings.on_mouse(event, x, y, size)
         if action in ("save", "close"):
             self._close_settings()
@@ -571,6 +653,9 @@ class AirMouseApp:
             "points": [],                   # (gx, gy, sx, sy)
         }
         self.gaze_cursor.reset()
+        if not self.show_window:
+            log.warning("Калибровка взгляда без окна: прицел на весь экран не "
+                        "показать — запустите с окном (или нажмите F)")
         text = f"калибровка взгляда: {TARGET_TITLES[0]} — смотрите и нажмите пробел"
         self._events_log.appendleft(text)
         return text
@@ -752,6 +837,7 @@ class AirMouseApp:
         s.calib_active = self.calibrating
         s.calib_target = self.calibration_target()
         s.calib_text = self.calibration_text()
+        s.calib_done = int(self._calib["index"]) if self._calib is not None else 0
         s.hand_seen = bool(self._hands) or self._shape is not None
         s.hand_count = len(self._hands)
         s.face_seen = self._face is not None
@@ -825,15 +911,20 @@ class AirMouseApp:
                 self._update_state(events, fps)
 
                 if self.show_window or self.output is not None:
-                    canvas = render(
-                        frame, self.state, self._hands, self._face,
-                        shape=self._shape, metrics=self._metrics,
-                        primary=self._primary_index,
-                    )
+                    if self.calibrating:
+                        # калибровка — на весь монитор, а не в окошке: прицел
+                        # должен стоять в настоящем углу экрана
+                        canvas = self.calibration_canvas()
+                    else:
+                        canvas = render(
+                            frame, self.state, self._hands, self._face,
+                            shape=self._shape, metrics=self._metrics,
+                            primary=self._primary_index,
+                        )
                 else:
                     canvas = None
 
-                if canvas is not None:
+                if canvas is not None and not self.calibrating:
                     self._frame_size = (canvas.shape[1], canvas.shape[0])
                 if canvas is not None and self.settings_open():
                     canvas = self.settings.draw(canvas, live=self._settings_live())
@@ -844,6 +935,7 @@ class AirMouseApp:
                 if self.show_window and canvas is not None:
                     try:
                         cv2.imshow(self._window_name, canvas)
+                        self._apply_window_mode()
                         # без & 0xFF: на русской раскладке нужен полный код
                         key = cv2.waitKey(1)
                     except cv2.error as exc:
@@ -901,6 +993,9 @@ class AirMouseApp:
             return True
         if self.calibrating and keys.matches(key, "space"):
             self.confirm_gaze_point()
+            return True
+        if keys.matches(key, "f"):
+            self.toggle_fullscreen()
             return True
         if keys.matches(key, "m"):
             self.switch_backend()

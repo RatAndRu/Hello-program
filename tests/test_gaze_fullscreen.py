@@ -1,0 +1,250 @@
+"""Калибровка взгляда идёт на весь монитор, а прицел — в самом углу экрана."""
+
+import cv2
+import numpy as np
+
+from airmouse.app import AirMouseApp
+from airmouse.config import AppConfig
+from airmouse.gaze import CALIBRATION_TARGETS, TARGET_TITLES
+from airmouse.overlay import OverlayState, render, render_gaze_calibration
+from airmouse.landmarks import Hand
+from airmouse.tracker import FrameResult
+
+EMPTY = np.zeros((360, 640, 3), dtype=np.uint8)
+GREEN = np.array([90, 235, 130])        # цвет прицела (BGR)
+
+
+def _state(target=(0.0, 0.0), done=0, text="ВЗГЛЯД: левый верхний угол экрана (1/5)"):
+    return OverlayState(calib_active=True, calib_target=target, calib_done=done,
+                        calib_text=text)
+
+
+def _green_mask(img):
+    return (np.abs(img.astype(np.int16) - GREEN).sum(axis=2) < 40)
+
+
+# --------------------------------------------------------------------------- #
+#  Геометрия: прицел в настоящих пикселях экрана
+# --------------------------------------------------------------------------- #
+def test_calibration_canvas_is_screen_sized():
+    img = render_gaze_calibration((1920, 1080), _state())
+    assert img.shape[:2] == (1080, 1920)
+    img = render_gaze_calibration((1280, 720), _state())
+    assert img.shape[:2] == (720, 1280)
+    assert img.shape[:2] != (540, 960), "не окно предпросмотра, а весь экран"
+
+
+def test_targets_are_exact_screen_corners():
+    assert CALIBRATION_TARGETS[0] == (0.0, 0.0)
+    assert CALIBRATION_TARGETS[1] == (1.0, 0.0)
+    assert CALIBRATION_TARGETS[2] == (1.0, 1.0)
+    assert CALIBRATION_TARGETS[3] == (0.0, 1.0)
+    assert CALIBRATION_TARGETS[4] == (0.5, 0.5)
+    assert len(TARGET_TITLES) == len(CALIBRATION_TARGETS)
+
+
+def test_corner_marker_is_in_the_far_corner():
+    """Уголок нарисован в углу монитора, а не где-то в середине."""
+    w, h = 1920, 1080
+    img = render_gaze_calibration((w, h), _state((1.0, 0.0)))
+    mask = _green_mask(img)
+    ys, xs = np.nonzero(mask)
+    assert xs.size and ys.size
+    # прицел прижат к правому верхнему углу
+    assert xs.max() >= w - 20 and xs.min() >= w // 2, (xs.min(), xs.max())
+    assert ys.min() <= 20 and ys.max() <= h // 4, (ys.min(), ys.max())
+
+    img = render_gaze_calibration((w, h), _state((0.0, 1.0)))
+    mask = _green_mask(img)
+    ys, xs = np.nonzero(mask)
+    assert xs.min() <= 20 and ys.max() >= h - 20
+
+
+def test_center_marker_is_in_the_middle():
+    img = render_gaze_calibration((1920, 1080), _state((0.5, 0.5)))
+    mask = _green_mask(img)
+    ys, xs = np.nonzero(mask)
+    cx, cy = xs.mean(), ys.mean()
+    assert abs(cx - 960) < 60 and abs(cy - 540) < 60, (cx, cy)
+
+
+def test_hint_and_progress_are_drawn():
+    img = render_gaze_calibration((1920, 1080), _state((0.5, 0.5), done=3))
+    assert img.mean() > 10, "фон не должен быть абсолютно чёрным"
+    # точки прогресса: три зелёных + две серых внизу по центру
+    bottom = img[1000:1080, :, :]
+    assert _green_mask(bottom).sum() > 50
+
+
+def test_all_five_targets_render_without_errors():
+    for target in CALIBRATION_TARGETS:
+        img = render_gaze_calibration((1366, 768), _state(target))
+        assert img.shape[:2] == (768, 1366)
+        assert _green_mask(img).sum() > 20, target
+
+
+def test_preview_render_still_draws_calibration_on_frame():
+    """Обычный кадр во время калибровки тоже показывает прицел (для скриншотов)."""
+    frame = np.full((540, 960, 3), 40, dtype=np.uint8)
+    img = render(frame, _state((0.0, 0.0)))
+    assert img.shape == frame.shape
+    assert img.mean() < frame.mean() + 60
+
+
+# --------------------------------------------------------------------------- #
+#  Приложение: полноэкранный режим и холст калибровки
+# --------------------------------------------------------------------------- #
+class ScriptedTracker:
+    name = "fake"
+
+    def __init__(self, hands):
+        self.hands = hands
+
+    def process(self, frame, ts_ms):
+        return FrameResult(hands=list(self.hands), face=None, backend="fake")
+
+    def close(self):
+        pass
+
+
+def _app(**overrides):
+    cfg = AppConfig()
+    for key, value in overrides.items():
+        node = cfg
+        parts = key.split(".")
+        for part in parts[:-1]:
+            node = getattr(node, part)
+        setattr(node, parts[-1], value)
+    app = AirMouseApp(cfg, dry_run=True, show_window=False)
+    app.tracker = ScriptedTracker([])
+    app._prepared = True
+    return app
+
+
+def test_screen_size_comes_from_backend():
+    app = _app()
+    app.backend.size = (1600, 900)
+    assert app.screen_size() == (1600, 900)
+
+
+def test_calibration_canvas_covers_whole_screen():
+    app = _app()
+    app.backend.size = (1920, 1080)
+    app.start_gaze_calibration()
+    canvas = app.calibration_canvas()
+    assert canvas.shape[:2] == (1080, 1920)
+    assert app.calibrating
+    assert app.calibration_target() == CALIBRATION_TARGETS[0]
+    app._update_state([], 30.0)
+    assert app.state.calib_active and app.state.calib_done == 0
+    assert app.state.calib_target == CALIBRATION_TARGETS[0]
+
+
+def test_window_goes_fullscreen_during_calibration(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cv2, "setWindowProperty",
+                        lambda name, prop, value: calls.append(("prop", value)))
+    monkeypatch.setattr(cv2, "moveWindow", lambda name, x, y: calls.append(("move", x, y)))
+    monkeypatch.setattr(cv2, "resizeWindow", lambda name, w, h: calls.append(("resize", w, h)))
+
+    app = _app()
+    app._apply_window_mode()                     # обычный режим — ничего не меняем
+    assert calls == []
+    app.start_gaze_calibration()
+    app._apply_window_mode()
+    assert ("prop", cv2.WINDOW_FULLSCREEN) in calls
+    assert ("move", 0, 0) in calls
+
+    calls.clear()
+    app.cancel_gaze_calibration()
+    app._apply_window_mode()
+    assert ("prop", cv2.WINDOW_NORMAL) in calls
+    assert ("resize", 960, 540) in calls
+
+
+def test_fullscreen_hotkey_toggles_window(monkeypatch):
+    calls = []
+    monkeypatch.setattr(cv2, "setWindowProperty",
+                        lambda name, prop, value: calls.append(value))
+    monkeypatch.setattr(cv2, "moveWindow", lambda *a: None)
+    monkeypatch.setattr(cv2, "resizeWindow", lambda *a: None)
+    app = _app()
+    assert app.fullscreen is False
+    app.handle_hotkey(ord("f"))                  # английская раскладка
+    assert app.fullscreen is True
+    app._apply_window_mode()
+    assert cv2.WINDOW_FULLSCREEN in calls
+    app.handle_hotkey(ord("а"))                  # та же клавиша по-русски
+    assert app.fullscreen is False
+
+
+def test_window_scale_maps_clicks_back_to_canvas(monkeypatch):
+    """В полноэкранном окне клик приходит в пикселях экрана — пересчитываем."""
+    monkeypatch.setattr(cv2, "getWindowImageRect", lambda name: (0, 0, 1920, 1080))
+    app = _app()
+    app._frame_size = (960, 540)
+    sx, sy = app._window_scale()
+    assert abs(sx - 0.5) < 1e-6 and abs(sy - 0.5) < 1e-6
+
+
+GAZE_RANGE_X = 0.6
+GAZE_RANGE_Y = 0.3
+
+
+def gaze_for(screen_x: float, screen_y: float):
+    return ((screen_x - 0.5) * GAZE_RANGE_X, (screen_y - 0.5) * GAZE_RANGE_Y)
+
+
+def _look(app, sx: float, sy: float) -> None:
+    gx, gy = gaze_for(sx, sy)
+    app.face_fsm.gaze_valid = True
+    app.face_fsm.gaze_x, app.face_fsm.gaze_y = gx, gy
+    for _ in range(5):
+        app._collect_gaze_sample()
+
+
+def test_calibration_on_screen_corners_covers_whole_screen():
+    """Пять точек по настоящим углам дают точное преобразование по всему экрану."""
+    from airmouse.gaze import GazeCalibration
+
+    app = _app()
+    app.backend.size = (1920, 1080)
+    app.start_gaze_calibration()
+
+    for index, (tx, ty) in enumerate(CALIBRATION_TARGETS):
+        _look(app, tx, ty)
+        app.confirm_gaze_point()
+        if index < len(CALIBRATION_TARGETS) - 1:
+            assert app.calibrating
+    assert app.calibrating is False
+    assert isinstance(app.gaze_calib, GazeCalibration)
+    assert app.gaze_calib.ready
+    # угол 0,0 и 1,1 отдаются как есть, без «сжатия» в окошко
+    x0, y0 = app.gaze_calib.apply(*gaze_for(0.0, 0.0))
+    x1, y1 = app.gaze_calib.apply(*gaze_for(1.0, 1.0))
+    assert abs(x0) < 0.02 and abs(y0) < 0.02
+    assert abs(x1 - 1.0) < 0.02 and abs(y1 - 1.0) < 0.02
+
+
+def test_fullscreen_flag_from_cli(monkeypatch):
+    """--fullscreen включает окно на весь экран."""
+    from airmouse import cli
+
+    captured = {}
+
+    class FakeApp:
+        tracker = None
+
+        def __init__(self, cfg, **kw):
+            captured["cfg"] = cfg
+
+        def setup(self):
+            pass
+
+        def run(self):
+            return 0
+
+    monkeypatch.setattr("airmouse.app.AirMouseApp", FakeApp)
+    monkeypatch.setattr(cli, "setup_logging", lambda *a, **k: None)
+    cli.main(["run", "--fullscreen", "--no-window"])
+    assert captured["cfg"].fullscreen is True

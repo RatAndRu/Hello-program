@@ -255,6 +255,7 @@ class AppConfig:
 
     show_window: bool = True
     show_skeleton: bool = True
+    fullscreen: bool = False           # окно предпросмотра на весь экран (клавиша F)
     tracker: str = "auto"              # auto | mediapipe | classical | none
     model_dir: str = "models"
     profile_dir: str = "profiles"
