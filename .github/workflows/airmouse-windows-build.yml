@@ -45,7 +45,15 @@ jobs:
           pip install --no-deps --force-reinstall opencv-python==4.12.0.88
           pip install pyinstaller pytest
           pip list | grep -iE "opencv|mediapipe|numpy|matplotlib" | sed 's/^/::notice:: /' || true
-          python packaging/check_deps.py
+          set +e
+          python packaging/check_deps.py > check-deps.log 2>&1
+          deps_status=$?
+          cat check-deps.log | sed 's/^/::notice:: /' | head -8
+          if [ $deps_status -ne 0 ]; then
+            echo "::error::проверка окружения сборки не пройдена (код $deps_status)"
+            tail -n 8 check-deps.log | sed 's/^/::error::  /'
+            exit 1
+          fi
 
       - name: Модели MediaPipe
         run: |

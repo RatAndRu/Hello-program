@@ -84,4 +84,13 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    import traceback
+
+    try:
+        raise SystemExit(main())
+    except SystemExit:
+        raise
+    except BaseException:  # noqa: BLE001 - падение должно быть видно в аннотациях CI
+        one_line = traceback.format_exc().strip().replace("\n", " | ")
+        print(f"::error::проверка окружения упала: {one_line[:900]}")
+        raise SystemExit(1)
