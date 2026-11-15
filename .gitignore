@@ -26,3 +26,4 @@ venv/
 /profiles/
 /output/
 /logs/
+release/*.zip
