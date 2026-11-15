@@ -475,49 +475,56 @@ def build_toggles() -> List[Toggle]:
         Toggle(
             key="mode.hand",
             label="Рука: курсор, клики, жесты",
-            hint="одна рука управляет мышью; выключите — останется только лицо",
+            hint="одна рука: курсор, клики, жесты",
             get=lambda cfg, rt: cfg.hand.enabled,
             set=lambda cfg, rt, on: setattr(cfg.hand, "enabled", bool(on)),
         ),
         Toggle(
             key="mode.second_hand",
             label="Вторая рука: только нажатия и жесты",
-            hint="первая рука ведёт курсор, вторая нажимает; курсор от неё не едет",
+            hint="первая ведёт курсор, вторая нажимает",
             get=lambda cfg, rt: cfg.hand.roles == "split",
             set=lambda cfg, rt, on: setattr(cfg.hand, "roles", "split" if on else "single"),
         ),
         Toggle(
+            key="mode.simple_two_hand",
+            label="Двумя руками: щипок проще",
+            hint="щипок ловится с меньшим запасом",
+            get=lambda cfg, rt: bool(getattr(cfg.hand, "simple_two_hand", True)),
+            set=lambda cfg, rt, on: setattr(cfg.hand, "simple_two_hand", bool(on)),
+        ),
+        Toggle(
             key="mode.two_zoom",
             label="Две руки: масштаб (Ctrl + колесо)",
-            hint="обе ладони — развести/свести; исключает режим нажатий второй рукой",
+            hint="обе ладони: развести или свести",
             get=lambda cfg, rt: cfg.hand.two_hand == "zoom",
             set=_set_two_hand("zoom"),
         ),
         Toggle(
             key="mode.two_scroll",
             label="Две руки: прокрутка двумя кулаками",
-            hint="два кулака вверх/вниз; исключает режим нажатий второй рукой",
+            hint="два кулака вверх или вниз",
             get=lambda cfg, rt: cfg.hand.two_hand == "scroll",
             set=_set_two_hand("scroll"),
         ),
         Toggle(
             key="mode.face",
             label="Лицо: мимика, кивок, поворот",
-            hint="моргание и мимика; работает одновременно с рукой",
+            hint="мимика, моргание, кивок — вместе с рукой",
             get=lambda cfg, rt: cfg.face.enabled,
             set=lambda cfg, rt, on: setattr(cfg.face, "enabled", bool(on)),
         ),
         Toggle(
             key="mode.head_pointer",
             label="Мышь головой",
-            hint="наклон головы двигает курсор; нужна включённая «Лицо»",
+            hint="наклон головы двигает курсор",
             get=lambda cfg, rt: bool(getattr(rt, "head_pointer", cfg.head_pointer)),
             set=_set_head_pointer,
         ),
         Toggle(
             key="mode.gaze_pointer",
             label="Мышь глазами: курсор от зрачков",
-            hint="отвели взгляд от центра — курсор едет; нужны точки зрачков",
+            hint="взгляд уводит курсор (нужна калибровка)",
             get=lambda cfg, rt: bool(getattr(rt, "gaze_pointer", cfg.gaze_pointer)),
             set=_set_gaze_pointer,
         ),
@@ -728,6 +735,11 @@ class SettingsPanel:
         self.page = max(0, min(len(self.pages) - 1, index))
 
     # ------------------------------------------------------------------ #
+    def toggles_in_columns(self) -> int:
+        """Сколько колонок у переключателей: на «Режимах» их много — в две."""
+        page = self.pages[self.page]
+        return 2 if len(page.toggles) > 6 else 1
+
     def toggle_rows(self, size: Tuple[int, int] = (960, 540)) -> List[Tuple[Toggle, Tuple[int, int, int, int]]]:
         """Строки-переключатели текущей страницы: (переключатель, прямоугольник)."""
         page = self.pages[self.page]
@@ -735,14 +747,17 @@ class SettingsPanel:
             return []
         w, h = size
         k = max(min(h / 540.0, w / 960.0), 0.5)
-        x = int(self.MARGIN * k)
-        width = int(w - 2 * self.MARGIN * k)
-        y = int(self.FIRST_Y * k)
-        row_h = int(self.ROW_H * k)
+        columns = self.toggles_in_columns()
+        gap = int(16 * k)
+        total = int(w - 2 * self.MARGIN * k)
+        width = int((total - gap * (columns - 1)) / columns) if columns > 1 else total
+        row_h = int((self.ROW_H + 6) * k) if columns > 1 else int(self.ROW_H * k)
         out = []
-        for toggle in page.toggles:
+        for i, toggle in enumerate(page.toggles):
+            row, col = divmod(i, columns)
+            x = int(self.MARGIN * k) + col * (width + gap)
+            y = int(self.FIRST_Y * k) + row * row_h
             out.append((toggle, (x, y, width, row_h)))
-            y += row_h
         return out
 
     def preset_buttons(self, size: Tuple[int, int] = (960, 540)) -> List[Tuple[str, Tuple[int, int, int, int]]]:
@@ -1014,10 +1029,13 @@ class SettingsPanel:
             x += width + int(26 * k)
 
         # строки-переключатели (страница «Режимы»)
+        columns = self.toggles_in_columns()
+        label_size = int((14 if columns > 1 else 15) * k)
+        hint_size = int((10 if columns > 1 else 11) * k)
         for toggle, (tx, ty, tw, th) in self.toggle_rows((w, h)):
             on = toggle.state(self.cfg, self.runtime)
-            T.draw(img, toggle.label, (tx, ty + int(4 * k)), int(15 * k), _FG)
-            pill_w, pill_h = int(74 * k), int(24 * k)
+            T.draw(img, toggle.label, (tx, ty + int(4 * k)), label_size, _FG)
+            pill_w, pill_h = int((64 if columns > 1 else 74) * k), int(24 * k)
             px = tx + tw - pill_w
             py = ty + int(4 * k)
             cv2.rectangle(img, (px, py), (px + pill_w, py + pill_h),
@@ -1026,7 +1044,12 @@ class SettingsPanel:
             ww, wh = T.measure(word, int(13 * k))
             T.draw(img, word, (px + (pill_w - ww) // 2, py + (pill_h - wh) // 2),
                    int(13 * k), _BG if on else _FG)
-            T.draw(img, toggle.hint, (tx, ty + int(26 * k)), int(11 * k), _DIM)
+            # подсказка не должна залезать под соседнюю колонку
+            hint = toggle.hint
+            room = tw - pill_w - int(8 * k)
+            while hint and T.measure(hint, hint_size)[0] > room:
+                hint = hint[:-1]
+            T.draw(img, hint, (tx, ty + int(26 * k)), hint_size, _DIM)
 
         # строки-ползунки
         for row in self.layout((w, h)):

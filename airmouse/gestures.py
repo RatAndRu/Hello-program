@@ -106,7 +106,9 @@ class HandFeatures:
     pinch_middle: float
     pinch_ring: float
     thumb_dy: float = 0.0      # насколько кончик большого пальца выше основания
-    thumb_spread: float = 0.0  # насколько большой палец отставлен от ладони      # насколько кончик большого пальца выше основания
+    thumb_spread: float = 0.0  # насколько большой палец отставлен от ладони
+    index_tip_out: float = 0.0 # кончик указательного от своего основания (в ладонях)
+    thumb_tip_out: float = 0.0 # кончик большого от своего основания
     valid: bool = True
     fast_motion: float = 0.0
 
@@ -247,6 +249,8 @@ def analyze_hand(hand: Hand, pointer_source: str = "auto") -> HandFeatures:
     thumb_tip = hand.xy(THUMB_TIP)
 
     pinch = distance(thumb_tip, hand.xy(INDEX_TIP)) / palm
+    index_tip_out = distance(hand.xy(INDEX_TIP), hand.xy(INDEX_MCP)) / palm
+    thumb_tip_out = distance(thumb_tip, hand.xy(THUMB_MCP)) / palm
     pinch_middle = distance(thumb_tip, hand.xy(MIDDLE_TIP)) / palm
     pinch_ring = distance(thumb_tip, hand.xy(RING_TIP)) / palm
 
@@ -272,6 +276,8 @@ def analyze_hand(hand: Hand, pointer_source: str = "auto") -> HandFeatures:
         pinch_ring=pinch_ring,
         thumb_dy=thumb_dy,
         thumb_spread=thumb_spread,
+        index_tip_out=index_tip_out,
+        thumb_tip_out=thumb_tip_out,
         valid=True,
     )
 
@@ -312,7 +318,33 @@ class Median3:
         return float(np.median(self.values))
 
 
-def _classify_raw(f: HandFeatures, cfg: HandConfig) -> Pose:
+def pinch_is_real(f: HandFeatures, cfg: HandConfig, relax: float = 0.0) -> bool:
+    """Настоящий ли это щипок: два пальца, а не кулак и не «ОК».
+
+    Одного расстояния «большой-указательный» мало: в кулаке и в «ОК» эти кончики
+    тоже рядом. Поэтому требуется ещё, чтобы указательный был **выпрямлен** и его
+    кончик ушёл от своего основания, а большой палец был отставлен от ладони.
+    В «ОК» указательный согнут в кольцо и его кончик остаётся у основания — такое
+    щипком не считается. В кулаке указательный тоже сжат, а кончики пальцев
+    просто лежат рядом с большим.
+    """
+    if not f.valid:
+        return False
+    e = f.extended
+    if not (e["index"] and e["thumb"]):
+        return False
+    if f.pinch >= cfg.pinch_ratio + 0.06 * relax:
+        return False
+    ext = f.extension.get("index", 0.0)
+    min_ext = cfg.pinch_min_index_ext - 0.06 * relax
+    min_tip = cfg.pinch_min_tip_out - 0.06 * relax
+    min_thumb = cfg.pinch_min_thumb_out - 0.05 * relax
+    if ext < min_ext or f.index_tip_out < min_tip or f.thumb_tip_out < min_thumb:
+        return False
+    return True
+
+
+def _classify_raw(f: HandFeatures, cfg: HandConfig, relax: float = 0.0) -> Pose:
     """Статический жест по признакам кисти, без учёта прошлого кадра."""
     if not f.valid:
         return Pose.NONE
@@ -320,7 +352,7 @@ def _classify_raw(f: HandFeatures, cfg: HandConfig) -> Pose:
     n = f.n_extended
 
     # 1. Щипки — раньше счёта пальцев, иначе щипок не отличить от «указательного».
-    if f.pinch < cfg.pinch_ratio and e["index"] and e["thumb"]:
+    if pinch_is_real(f, cfg, relax):
         return Pose.PINCH
     if f.pinch_middle < cfg.pinch_ratio and e["middle"] and e["thumb"] and not e["index"]:
         return Pose.MIDDLE_PINCH
@@ -359,13 +391,14 @@ def _classify_raw(f: HandFeatures, cfg: HandConfig) -> Pose:
     return Pose.NONE
 
 
-def classify_pose(f: HandFeatures, cfg: HandConfig, prev: Optional[Pose] = None) -> Pose:
+def classify_pose(f: HandFeatures, cfg: HandConfig, prev: Optional[Pose] = None,
+                  relax: float = 0.0) -> Pose:
     """Жест с гистерезисом: «моргание» одного пальца не меняет жест.
 
     Если жест отличается от прошлого (``prev``) только состоянием пальца,
     который сейчас «на границе» выпрямлен/согнут, остаётся прошлый жест.
     """
-    pose = _classify_raw(f, cfg)
+    pose = _classify_raw(f, cfg, relax)
     if prev is None or prev is pose or not f.valid:
         return pose
     a = POSE_FINGERS.get(prev)
@@ -393,9 +426,17 @@ def analyze_with_pose(hand: Hand, cfg: HandConfig):
 class HandFSM:
     """Превращает поток признаков в поток событий (клик, драг, прокрутка, пауза)."""
 
-    def __init__(self, cfg: HandConfig) -> None:
+    def __init__(self, cfg: HandConfig, relax: float = 0.0) -> None:
+        """``relax`` (0..1) — послабление порогов для второй руки.
+
+        В режиме двух рук вторая рука занята только нажатиями, поэтому ложных
+        срабатываний там меньше: щипок ловится чуть раньше и отпускается чуть
+        позже, жест стабилизируется на кадр быстрее. Основная рука (курсор)
+        всегда работает по строгим порогам.
+        """
+        self.relax = max(0.0, min(1.0, float(relax)))
         self.cfg = cfg
-        self.pose_gate = StabilityGate(cfg.pose_stable_frames)
+        self.pose_gate = StabilityGate(self.stable_frames)
         self.cooldown = Cooldown(cfg.click_cooldown_s)
         self.open_palm_hold = HoldTimer(cfg.open_palm_hold_s)
         # отдельный «замок» на паузу: случайно мигнувшая ладонь не должна
@@ -442,6 +483,31 @@ class HandFSM:
         """Какая сторона кисти смотрит в камеру (ладонь / тыл / не определена)."""
         return self.side_est.side
 
+    # --- пороги с учётом послабления (вторая рука в режиме двух рук) --- #
+    @property
+    def pinch_on(self) -> float:
+        return self.cfg.pinch_ratio + 0.05 * self.relax
+
+    @property
+    def pinch_off(self) -> float:
+        return self.cfg.pinch_release_ratio + 0.06 * self.relax
+
+    @property
+    def pinch_min_s(self) -> float:
+        return getattr(self.cfg, "pinch_min_s", 0.08) * (1.0 - 0.5 * self.relax)
+
+    @property
+    def stable_frames(self) -> int:
+        return max(2, int(self.cfg.pose_stable_frames) - int(round(self.relax)))
+
+    def set_relax(self, relax: float) -> None:
+        """Меняет послабление на ходу (пользователь переключил режим рук)."""
+        relax = max(0.0, min(1.0, float(relax)))
+        if abs(relax - self.relax) < 1e-9:
+            return
+        self.relax = relax
+        self.pose_gate.frames = self.stable_frames
+
     @property
     def pinching(self) -> bool:
         return self._pinching
@@ -485,21 +551,26 @@ class HandFSM:
         f.pinch_middle = self._med_middle.update(f.pinch_middle)
         f.pinch_ring = self._med_ring.update(f.pinch_ring)
 
-        pose = classify_pose(f, self.cfg, prev=self._last_pose)
+        pose = classify_pose(f, self.cfg, prev=self._last_pose, relax=self.relax)
         stable = self.pose_gate.update(pose.value)
 
         # ---------------- щипок указательным: клик / перетаскивание -------- #
         if self._pinching:
-            if f.pinch > self.cfg.pinch_release_ratio:
+            was_dragging = self._dragging
+            # Кулак или «ОК» посреди щипка — это уже не щипок: отменяем без клика.
+            cancelled = pose in (Pose.FIST, Pose.OK)
+            if f.pinch > self.pinch_off or cancelled:
                 self._pinching = False
-                if self._dragging:
-                    self._dragging = False
+                self._dragging = False
+                if was_dragging:
                     events.append(Event("drag_end", label="отпустил"))
-                elif (now - self._pinch_since) < getattr(self.cfg, "pinch_min_s", 0.0):
-                    # щипок мигнул на 1–2 кадра — это дрожание точек, а не клик
-                    pass
-                elif self.cooldown.try_fire("pinch", now):
-                    events.append(Event("pinch_release", label="левый клик"))
+                elif not cancelled:
+                    held = now - self._pinch_since
+                    if held < self.pinch_min_s:
+                        # щипок мигнул на 1–2 кадра — это дрожание точек, а не клик
+                        pass
+                    elif self.cooldown.try_fire("pinch", now):
+                        events.append(Event("pinch_release", label="левый клик"))
             else:
                 if not self._dragging and (now - self._pinch_since) >= self.cfg.drag_delay_s:
                     self._dragging = True
@@ -509,7 +580,8 @@ class HandFSM:
                 else:
                     events.append(Event("pointer_freeze", label="щипок"))
         else:
-            started = pose == Pose.PINCH and f.pinch < self.cfg.pinch_ratio
+            # Только настоящий щипок двумя пальцами: кулак и «ОК» не считаются.
+            started = pose == Pose.PINCH and pinch_is_real(f, self.cfg, self.relax)
             if started:
                 self._pinching = True
                 self._pinch_since = now
@@ -777,8 +849,9 @@ class TwoHandFSM:
                 одним кулаком, потому что случайно сжать один кулак легче).
     """
 
-    def __init__(self, cfg: HandConfig) -> None:
+    def __init__(self, cfg: HandConfig, relax: float = 0.0) -> None:
         self.cfg = cfg
+        self.relax = max(0.0, min(1.0, float(relax)))
         self.mode = (getattr(cfg, "two_hand", "off") or "off").lower()
         self.hint = ""
         self.active = False
@@ -820,7 +893,9 @@ class TwoHandFSM:
             self.active = True
             return []
         delta = value - self._anchor
-        if abs(delta) < self.cfg.two_hand_deadzone:
+        # в «простом» двуручном режиме мелкое дрожание рук не съедает движение
+        deadzone = self.cfg.two_hand_deadzone * (1.0 - 0.35 * self.relax)
+        if abs(delta) < deadzone:
             return []
         self._anchor = value
         self._accum += delta * gain

@@ -126,6 +126,10 @@ class HandConfig:
     pinch_release_ratio: float = 0.42  # и отпускается (гистерезис)
     pinch_approach_ratio: float = 0.50  # «прицел»: курсор замирает до смыкания пальцев
     pinch_min_s: float = 0.08           # короче этого — не клик, а дребезг распознавания
+    pinch_min_index_ext: float = 0.62   # указательный должен быть выпрямлен (не «ОК», не кулак)
+    pinch_min_tip_out: float = 0.42     # кончик указательного ушёл от своего основания
+    pinch_min_thumb_out: float = 0.40   # большой палец отставлен, а не прижат к ладони
+    simple_two_hand: bool = True        # в режиме двух рук жесты чуть проще
     smooth_alpha: float = 0.45         # сглаживание точек: 1.0 — без сглаживания
     roles: str = "single"              # single | split: вторая рука нажимает, первая ведёт
     side_actions: bool = True          # тыльной стороной кисти — другие команды

@@ -118,7 +118,7 @@ class AirMouseApp:
         self.gaze_cursor = GazeCursor(getattr(cfg.face, "gaze_deadzone_px", 12),
                                       getattr(cfg.face, "gaze_cursor_alpha", 0.55))
         self._calib: Optional[dict] = None      # идёт мастер калибровки взгляда
-        self.two_hand_fsm = TwoHandFSM(cfg.hand)
+        self.two_hand_fsm = TwoHandFSM(cfg.hand, self._two_hand_relax())
         self.face_fsm = FaceFSM(cfg.face)
         self.camera: Optional[ThreadedCamera] = None
         self.tracker = None
@@ -151,7 +151,8 @@ class AirMouseApp:
         self._shape = None
         self._lit = 0.0
         self._last_scroll_log = 0.0
-        self.click_fsm = HandFSM(cfg.hand)
+        # вторая рука в режиме «две руки» только нажимает — там щипок проще
+        self.click_fsm = HandFSM(cfg.hand, self._click_relax())
         self.settings: Optional[SettingsPanel] = None
         self._mouse_bound = False
         self._frame_size: Tuple[int, int] = (960, 540)
@@ -237,6 +238,34 @@ class AirMouseApp:
         return [Event("lip_word", value=result)]
 
     # ------------------------------------------------------------------ #
+    def _two_hand_relax(self) -> float:
+        """Насколько простить жесты в текущем двуручном режиме (0 — строго).
+
+        В «две руки» рука занята одной задачей, поэтому ложных срабатываний там
+        меньше: щипок ловится чуть раньше и отпускается чуть позже. Если
+        ``hand.simple_two_hand`` выключен, требования остаются строгими.
+        """
+        if not bool(getattr(self.cfg.hand, "simple_two_hand", True)):
+            return 0.0
+        roles = (getattr(self.cfg.hand, "roles", "single") or "single").lower()
+        mode = (getattr(self.cfg.hand, "two_hand", "off") or "off").lower()
+        if roles == "split":
+            return 1.0
+        if mode in ("zoom", "scroll"):
+            return 0.5
+        return 0.0
+
+    def _click_relax(self) -> float:
+        """Вторая рука нажимает — для неё послабление полное."""
+        roles = (getattr(self.cfg.hand, "roles", "single") or "single").lower()
+        return self._two_hand_relax() if roles == "split" else 0.0
+
+    def _sync_relax(self) -> None:
+        """Режим рук могли переключить на ходу — обновляем пороги автоматов."""
+        self.click_fsm.set_relax(self._click_relax())
+        self.hand_fsm.set_relax(self._two_hand_relax())
+        self.two_hand_fsm.relax = self._two_hand_relax()
+
     def process_frame(self, frame: np.ndarray, now: float, ts_ms: int) -> List[Event]:
         events: List[Event] = []
         # пока открыта панель настроек, мышь держим на паузе принудительно:
@@ -244,6 +273,7 @@ class AirMouseApp:
         if self.settings_open():
             self.router.paused = True
         warmup = now < self._armed_at
+        self._sync_relax()
 
         if hasattr(self.tracker, "process_events"):
             events, shape = self.tracker.process_events(frame, ts_ms, now)
@@ -954,8 +984,8 @@ class AirMouseApp:
             except Exception:
                 pass
         # сбрасываем автоматы: старые жесты не должны «дожиматься» на новом движке
-        self.hand_fsm = HandFSM(self.cfg.hand)
-        self.two_hand_fsm = TwoHandFSM(self.cfg.hand)
+        self.hand_fsm = HandFSM(self.cfg.hand, self._two_hand_relax())
+        self.two_hand_fsm = TwoHandFSM(self.cfg.hand, self._two_hand_relax())
         self.face_fsm = FaceFSM(self.cfg.face)
         self._metrics = None
         self._face_counter = 0
