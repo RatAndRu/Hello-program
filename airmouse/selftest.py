@@ -250,6 +250,26 @@ def check_hand_gate() -> Check:
                  f"слабая={weak.score:.2f}, крошечная={tiny.palm_size:.3f}")
 
 
+def check_gaze_calibration() -> Check:
+    """Калибровка взгляда: 5 точек → попадание в экран, курсор телепортируется."""
+    from .gaze import CALIBRATION_TARGETS, GazeCalibration
+
+    def gaze(sx, sy):
+        return ((sx - 0.5) * 0.6, (sy - 0.5) * 0.3)
+
+    calib = GazeCalibration()
+    for sx, sy in CALIBRATION_TARGETS:
+        calib.add(*gaze(sx, sy), sx, sy)
+    fitted = calib.fit()
+    worst = 0.0
+    for sx, sy in ((0.1, 0.1), (0.5, 0.5), (0.9, 0.9)):
+        px, py = calib.apply(*gaze(sx, sy))
+        worst = max(worst, abs(px - sx), abs(py - sy))
+    ok = bool(fitted and calib.ready and worst < 0.03)
+    return Check("калибровка взгляда в экран", ok,
+                 f"точек={len(calib.points)}, ошибка={worst * 100:.1f}% экрана")
+
+
 def check_settings_panel() -> Check:
     """Ползунки настроек реально меняют конфиг и сохраняются в файл."""
     cfg = AppConfig()
@@ -660,6 +680,7 @@ CHECKS: List[Callable[[], Check]] = [
     check_gaze,
     check_blink_rules,
     check_hand_gate,
+    check_gaze_calibration,
     check_settings_panel,
     check_rotation,
     check_click_fsm,

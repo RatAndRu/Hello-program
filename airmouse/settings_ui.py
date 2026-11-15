@@ -419,6 +419,7 @@ def changed_values(cfg: AppConfig, sliders: Sequence[Slider] = SLIDERS) -> List[
 # «кракозябрами»), а вид совпадает с остальным окном.
 PAGE_ORDER = ("Режимы", "Курсор", "Щипок и клики", "Голова и руки",
               "Моргание и глаза")
+PAGE_EYES = 4
 
 _BG = (26, 26, 30)
 _PANEL = (34, 34, 39)
@@ -781,6 +782,28 @@ class SettingsPanel:
             x += width + gap
         return out
 
+    def gaze_buttons(self, size: Tuple[int, int] = (960, 540)) -> List[Tuple[str, Tuple[int, int, int, int]]]:
+        """Кнопки калибровки взгляда (только на странице «Моргание и глаза»)."""
+        if self.page != PAGE_EYES:
+            return []
+        w, h = size
+        k = max(min(h / 540.0, w / 960.0), 0.5)
+        rows = self.layout(size)
+        if rows:
+            last = rows[-1]
+            y = last.rect[1] + last.rect[3] + int(10 * k)
+        else:
+            y = int(self.FIRST_Y * k)
+        names = ("КАЛИБРОВАТЬ ВЗГЛЯД (B)", "СБРОСИТЬ КАЛИБРОВКУ")
+        widths = (int(220 * k), int(190 * k))
+        gap = int(12 * k)
+        x = int((w - (sum(widths) + gap * (len(widths) - 1))) / 2)
+        out = []
+        for name, width in zip(names, widths):
+            out.append((name, (x, y, width, int(28 * k))))
+            x += width + gap
+        return out
+
     def side_state(self) -> str:
         """Что сейчас видно: «ладонь», «тыл» или «не определена»."""
         hook = self.hooks.get("side")
@@ -858,6 +881,18 @@ class SettingsPanel:
                     self.dirty = True
                     self.status = f"режим: {name} — {self.modes_text()}"
                     return "reset"
+            for name, (bx, by, bw, bh) in self.gaze_buttons(size):
+                if bx <= x <= bx + bw and by <= y <= by + bh:
+                    if name.startswith("КАЛИБРОВАТЬ"):
+                        hook = self.hooks.get("gaze_calibrate")
+                        text = hook() if callable(hook) else ""
+                        self.close(save=True)
+                        return "save"
+                    hook = self.hooks.get("gaze_reset")
+                    text = hook() if callable(hook) else ""
+                    self.dirty = True
+                    self.status = str(text)
+                    return "change"
             for name, (bx, by, bw, bh) in self.side_buttons(size):
                 if bx <= x <= bx + bw and by <= y <= by + bh:
                     if name.startswith("КАЛИБРОВАТЬ"):
@@ -1028,6 +1063,14 @@ class SettingsPanel:
             cv2.rectangle(img, (bx, by), (bx + bw, by + bh), color, 1, cv2.LINE_AA)
             tw, th_ = T.measure(name, int(11 * k))
             T.draw(img, name, (bx + (bw - tw) // 2, by + (bh - th_) // 2), int(11 * k), color)
+
+        # кнопки калибровки взгляда
+        for name, (bx, by, bw, bh) in self.gaze_buttons((w, h)):
+            cv2.rectangle(img, (bx, by), (bx + bw, by + bh), _PANEL, -1)
+            color = _ACCENT if name.startswith("КАЛИБРОВАТЬ") else _WARN
+            cv2.rectangle(img, (bx, by), (bx + bw, by + bh), color, 1, cv2.LINE_AA)
+            tw, th_ = T.measure(name, int(12 * k))
+            T.draw(img, name, (bx + (bw - tw) // 2, by + (bh - th_) // 2), int(12 * k), color)
 
         # кнопки
         for name, (bx, by, bw, bh) in self.buttons((w, h)):

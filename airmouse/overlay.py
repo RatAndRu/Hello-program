@@ -93,6 +93,7 @@ HELP_KEYS = (
     ("P", "пауза"),
     ("H", "мышь головой"),
     ("G", "мышь глазами"),
+    ("B", "калибровка взгляда"),
     ("C", "настройки"),
     ("V", "режим по кругу"),
     ("K", "калибровка ладони"),
@@ -141,9 +142,13 @@ class OverlayState:
     side_text: str = ""              # «сторона кисти: ладонь / тыл»
     gaze_pointer: bool = False       # курсор двигают глаза (зрачки)
     gaze_text: str = ""              # «взгляд: вправо · мышь глазами ВКЛ»
+    gaze_absolute: bool = False      # курсор телепортируется по калибровке
+    calib_active: bool = False       # идёт калибровка взгляда
+    calib_target: Optional[Sequence[float]] = None   # куда просим посмотреть
+    calib_text: str = ""             # «ВЗГЛЯД: левый верхний угол (1/5)…»
     events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
-    hints: str = "Q выход P пауза H голова G глаза C настройки V режимы K ладонь M движок I справка"
+    hints: str = "Q выход P пауза H голова G глаза B взгляд C настройки V режимы K ладонь M движок I справка"
     show_help: bool = False
     show_names: bool = True
     pinch_threshold: float = 0.32
@@ -402,6 +407,34 @@ def _draw_face_panel(img, state: OverlayState, k: float) -> None:
                ACCENT if state.gaze_pointer else DIM)
 
 
+def _draw_gaze_calibration(img: np.ndarray, state: OverlayState, k: float) -> None:
+    """Экран калибровки взгляда: затенение, прицел на точке и подсказка."""
+    if not state.calib_active or state.calib_target is None:
+        return
+    h, w = img.shape[:2]
+    shade = img.copy()
+    cv2.rectangle(shade, (0, 0), (w, h), (0, 0, 0), -1)
+    cv2.addWeighted(shade, 0.72, img, 0.28, 0, img)
+
+    tx = int(float(state.calib_target[0]) * w)
+    ty = int(float(state.calib_target[1]) * h)
+    r = int(28 * k)
+    cv2.circle(img, (tx, ty), r, (60, 220, 120), 3, cv2.LINE_AA)
+    cv2.circle(img, (tx, ty), int(6 * k), (60, 220, 120), -1, cv2.LINE_AA)
+    for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+        cv2.line(img, (tx + dx * r, ty + dy * r),
+                 (tx + dx * int(r * 1.8), ty + dy * int(r * 1.8)),
+                 (60, 220, 120), 2, cv2.LINE_AA)
+
+    text = state.calib_text or "смотрите на кружок и нажмите ПРОБЕЛ"
+    size = int(15 * k)
+    width, height = T.measure(text, size)
+    bx = max(int(10 * k), w // 2 - width // 2 - int(16 * k))
+    by = int(12 * k)
+    _panel(img, bx, by, width + int(32 * k), height + int(18 * k), 0.72)
+    T.draw(img, text, (bx + int(16 * k), by + int(8 * k)), size, FG)
+
+
 def _draw_events(img, state: OverlayState, k: float) -> None:
     lines = list(state.events)[-3:]
     if not lines:
@@ -486,9 +519,9 @@ def _draw_help(img, state: OverlayState, k: float) -> None:
     T.draw(img, "включается: config set hand.roles=split", (right_x, yy), int(12 * k), DIM)
     yy += int(24 * k)
     yy = header("Мышь глазами (клавиша G):", right_x, yy)
-    T.draw(img, "зрачок отведён от центра — курсор едет", (right_x, yy), int(12 * k), FG)
+    T.draw(img, "B — калибровка: смотрите в угол, курсор там", (right_x, yy), int(12 * k), FG)
     yy += int(17 * k)
-    T.draw(img, "нужна нейросеть MediaPipe (точки радужки)", (right_x, yy), int(12 * k), DIM)
+    T.draw(img, "без калибровки — скоростной режим (нужны зрачки)", (right_x, yy), int(12 * k), DIM)
 
     T.draw(img, "I или Tab — закрыть справку", (pad, h - int(28 * k)), int(13 * k), DIM)
 
@@ -508,6 +541,12 @@ def render(
     img = frame.copy()
     h, w = img.shape[:2]
     k = max(min(h / 540.0, w / 960.0), 0.5)
+
+    if state.calib_active:
+        # калибровка взгляда: на экране только прицел и подсказка, чтобы
+        # человек смотрел в точку, а не на панели с цифрами
+        _draw_gaze_calibration(img, state, k)
+        return img
 
     # зона, в которой рука управляет курсором
     if not state.head_pointer and not state.paused:

@@ -43,7 +43,7 @@ def state(**kw) -> overlay.OverlayState:
         hand_seen=True,
         face_seen=True,
         active_box=AppConfig().pointer.active_box,
-        version="0.10.1",
+        version="0.11.0",
         events=["12:31:02  щипок → левый клик", "12:31:05  жест: ОК → двойной клик"],
         last_event="щипок → левый клик",
         modes_text="режимы: рука + лицо",
@@ -111,7 +111,15 @@ def main() -> int:
     panel.goto_page(4)                     # страница «Моргание и глаза»
     save(panel.draw(np.zeros((H, W, 3), dtype=np.uint8)), "overlay-settings-eyes.png")
 
-    # 6. Справка по жестам
+    # 6. Калибровка взгляда: «посмотрите в угол и нажмите пробел»
+    st = state(pose="ладонь", expression="нейтрально", hand_count=1,
+               gaze_text="взгляд: вправо", gaze_pointer=True,
+               calib_active=True, calib_target=(0.90, 0.10),
+               calib_text="ВЗГЛЯД: правый верхний угол  (2/5)"
+                          "   смотрите туда и нажмите ПРОБЕЛ    Esc — отмена")
+    save(overlay.render(background(), st, hands=[palm], face=face), "overlay-gaze-calib.png")
+
+    # 7. Справка по жестам
     st = state(pose="ладонь", expression="улыбка 62%", show_help=True, hand_count=1)
     save(overlay.render(background(), st, hands=[palm], face=face), "overlay-help.png")
     return 0

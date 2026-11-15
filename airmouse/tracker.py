@@ -67,7 +67,9 @@ class MediaPipeTracker:
         self._mp = mp
         self.hand_cfg = hand_cfg
         self.face_cfg = face_cfg
-        self.want_face = want_face and face_cfg.enabled
+        # Точки лица и зрачки нужны не только «мимике»: по ним работает
+        # «мышь глазами», поэтому лицо распознаём всегда (кроме --no-face).
+        self.want_face = bool(want_face)
         self.api = "legacy" if hasattr(mp, "solutions") else "tasks"
         self._last_ts = 0
         if self.api == "legacy":

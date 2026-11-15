@@ -18,6 +18,13 @@ from .camera import ThreadedCamera
 from . import keys
 from .config import AppConfig, resolve_path
 from .face import FaceFSM, FaceMetrics, measure_face
+from .gaze import (
+    CALIBRATION_TARGETS,
+    TARGET_TITLES,
+    GazeCalibration,
+    GazeCursor,
+    average_gaze,
+)
 from .gestures import (
     SIDE_TITLES_RU,
     Event,
@@ -106,6 +113,11 @@ class AirMouseApp:
         self.hand_fsm = HandFSM(cfg.hand)
         # фильтр «это точно рука?»: фантомные детекции не должны управлять
         self.hand_gate = HandGate(cfg.hand)
+        # «мышь глазами»: абсолютный режим по калибровке взгляда
+        self.gaze_calib = GazeCalibration.from_dict(getattr(cfg.face, "gaze_calibration", {}))
+        self.gaze_cursor = GazeCursor(getattr(cfg.face, "gaze_deadzone_px", 12),
+                                      getattr(cfg.face, "gaze_cursor_alpha", 0.55))
+        self._calib: Optional[dict] = None      # идёт мастер калибровки взгляда
         self.two_hand_fsm = TwoHandFSM(cfg.hand)
         self.face_fsm = FaceFSM(cfg.face)
         self.camera: Optional[ThreadedCamera] = None
@@ -193,7 +205,9 @@ class AirMouseApp:
         return out
 
     def _handle_face(self, face, now: float) -> List[Event]:
-        if face is None or not self.cfg.face.enabled:
+        # Мимика может быть выключена, но метрики и зрачок нужны всё равно:
+        # без них не работают «мышь глазами» и калибровка взгляда.
+        if face is None:
             self._metrics = None
             return []
         self._face_counter += 1
@@ -205,7 +219,11 @@ class AirMouseApp:
             for _ in range(4):
                 self.face_fsm.baseline.update(self._metrics, alpha=0.4)
             return []
-        return self.face_fsm.update(self._metrics, now)
+        events = self.face_fsm.update(self._metrics, now)
+        if not self.cfg.face.enabled:
+            # «Лицо» выключено: жесты мимики не нажимают, но взгляд считается
+            return []
+        return events
 
     def _handle_lip(self, face, now: float) -> List[Event]:
         if self.lip_reader is None or face is None:
@@ -275,7 +293,10 @@ class AirMouseApp:
                 events += self.two_hand_fsm.update(hands, now)
             if self.router.head_pointer and self._metrics is not None:
                 events.extend(self._head_pointer_events(now))
-            if self.router.gaze_pointer and self._metrics is not None:
+            if self.calibrating:
+                # мастер калибровки: копим зрачок, ничего не нажимаем
+                self._collect_gaze_sample()
+            elif self.router.gaze_pointer and self._metrics is not None:
                 events.extend(self._gaze_pointer_events(now))
 
         self.stats.frames += 1
@@ -292,6 +313,11 @@ class AirMouseApp:
             # Панель настроек: распознавание идёт (видно живые цифры), но ни один
             # жест ничего не нажимает — иначе ладонь «снимала» бы паузу прямо
             # в момент перетаскивания ползунка.
+            return events
+
+        if self.calibrating:
+            # Пока идёт калибровка взгляда, жесты не нажимают: человек смотрит
+            # в углы экрана, а не управляет мышью.
             return events
 
         for ev in events:
@@ -413,6 +439,8 @@ class AirMouseApp:
                 "calibrate": self.calibrate_side,
                 "flip": self.flip_side,
                 "side": self._side_text_short,
+                "gaze_calibrate": self.start_gaze_calibration,
+                "gaze_reset": self.reset_gaze_calibration,
             })
         if not self.settings.open():
             return False
@@ -473,12 +501,25 @@ class AirMouseApp:
         return [Event("pointer_rel", value=(dx, dy))]
 
     def _gaze_pointer_events(self, now: float) -> List[Event]:
-        """«Мышь глазами»: курсор двигается положением зрачка в глазнице.
+        """«Мышь глазами».
 
-        Скорость пропорциональна отклонению зрачка сверх мёртвой зоны
-        (``face.gaze_deadzone``), чувствительность — ``face.gaze_speed_px_s``.
-        Глаза при этом не «залипают»: вернули взгляд в центр — курсор встал.
+        Если взгляд откалиброван (клавиша ``B``) — курсор **телепортируется**
+        туда, куда человек смотрит: положение зрачка переводится в точку экрана
+        через калибровочное преобразование, сглаживается и не дёргается на
+        дрожании (``face.gaze_deadzone_px``). Косить глазами не нужно.
+
+        Без калибровки — резервный «скоростной» режим: чем дальше зрачок от
+        нейтрали, тем быстрее едет курсор.
         """
+        if (self.cfg.face.gaze_absolute and self.gaze_calib.ready
+                and self.face_fsm.gaze_valid and self._metrics is not None):
+            sx, sy = self.gaze_calib.apply(self.face_fsm.gaze_x, self.face_fsm.gaze_y)
+            width, height = self.backend.screen_size()
+            point = self.gaze_cursor.update(sx * width, sy * height)
+            if point is None:
+                return []
+            x, y = point
+            return [Event("pointer", value=(int(round(x)), int(round(y))))]
         dt = max(now - self._last_now, 1e-3) if self._last_now else 1.0 / 30.0
         dx, dy = self.face_fsm.gaze_step(dt)
         limit = float(getattr(self.cfg.face, "gaze_max_step_px",
@@ -489,15 +530,110 @@ class AirMouseApp:
             return []
         return [Event("pointer_rel", value=(dx, dy))]
 
+    # ------------------------------------------------------------------ #
+    #  Калибровка взгляда: «посмотрите в угол и нажмите пробел»
+    # ------------------------------------------------------------------ #
+    def start_gaze_calibration(self) -> str:
+        """Начать калибровку взгляда: 4 угла + центр, по клавише на каждую точку."""
+        self._calib = {
+            "index": 0,
+            "samples": [],                  # накопленные положения зрачка
+            "points": [],                   # (gx, gy, sx, sy)
+        }
+        self.gaze_cursor.reset()
+        text = f"калибровка взгляда: {TARGET_TITLES[0]} — смотрите и нажмите пробел"
+        self._events_log.appendleft(text)
+        return text
+
+    @property
+    def calibrating(self) -> bool:
+        return self._calib is not None
+
+    def calibration_target(self) -> Optional[Tuple[float, float]]:
+        """Куда сейчас просим посмотреть (нормированные координаты экрана)."""
+        if self._calib is None:
+            return None
+        index = int(self._calib["index"])
+        if 0 <= index < len(CALIBRATION_TARGETS):
+            return CALIBRATION_TARGETS[index]
+        return None
+
+    def calibration_text(self) -> str:
+        if self._calib is None:
+            return ""
+        index = int(self._calib["index"])
+        if index < len(CALIBRATION_TARGETS):
+            title = TARGET_TITLES[index]
+            return (f"ВЗГЛЯД: {title}  ({index + 1}/{len(CALIBRATION_TARGETS)})"
+                    f"   смотрите туда и нажмите ПРОБЕЛ    Esc — отмена")
+        return "калибровка взгляда: сохраняю…"
+
+    def cancel_gaze_calibration(self) -> str:
+        self._calib = None
+        self.gaze_cursor.reset()
+        self._events_log.appendleft("калибровка взгляда отменена")
+        return "калибровка взгляда отменена"
+
+    def confirm_gaze_point(self) -> str:
+        """Запомнить текущую точку и перейти к следующей (или закончить)."""
+        if self._calib is None:
+            return ""
+        if not self.face_fsm.gaze_valid:
+            return "зрачков не видно — калибровка невозможна"
+        target = self.calibration_target()
+        if target is None:
+            return ""
+        samples = self._calib["samples"]
+        if len(samples) < 3:
+            return "подержите взгляд на точке ещё мгновение"
+        gx, gy = average_gaze(samples)
+        self._calib["points"].append((gx, gy, target[0], target[1]))
+        self._calib["samples"] = []
+        self._calib["index"] = int(self._calib["index"]) + 1
+        if int(self._calib["index"]) < len(CALIBRATION_TARGETS):
+            return self.calibration_text()
+
+        calib = GazeCalibration(points=list(self._calib["points"]))
+        calib.fit()
+        self._calib = None
+        self.gaze_calib = calib
+        self.gaze_cursor.reset()
+        self.cfg.face.gaze_calibration = calib.to_dict()
+        self.cfg.face.gaze_absolute = True
+        text = f"калибровка взгляда готова: {len(calib.points)} точек"
+        self._events_log.appendleft(text)
+        log.info("Калибровка взгляда: %d точек", len(calib.points))
+        return text
+
+    def reset_gaze_calibration(self) -> str:
+        self.gaze_calib = GazeCalibration()
+        self.gaze_cursor.reset()
+        self.cfg.face.gaze_calibration = {}
+        self._events_log.appendleft("калибровка взгляда сброшена")
+        return "калибровка взгляда сброшена"
+
+    def _collect_gaze_sample(self) -> None:
+        """Копим положения зрачка, пока человек смотрит в очередную точку."""
+        if self._calib is None or not self.face_fsm.gaze_valid:
+            return
+        samples = self._calib["samples"]
+        samples.append((self.face_fsm.gaze_x, self.face_fsm.gaze_y))
+        if len(samples) > 60:
+            del samples[:-60]
+
     def toggle_gaze_pointer(self) -> str:
         """Включить/выключить управление курсором глазами (клавиша G)."""
         on = not self.router.gaze_pointer
         self.router.gaze_pointer = on
         self.cfg.gaze_pointer = on
         self.state.gaze_pointer = on
+        hint = ""
+        if on and not (self.cfg.face.gaze_absolute and self.gaze_calib.ready):
+            hint = " (B — калибровка взгляда: курсор будет телепортироваться)"
         self._events_log.appendleft(
             "мышь глазами " + ("вкл" if on else "выкл")
             + ("" if self.face_fsm.gaze_valid else " (зрачков пока не видно)")
+            + hint
         )
         return "gaze_pointer=" + ("on" if on else "off")
 
@@ -519,7 +655,12 @@ class AirMouseApp:
             where = "вправо" if gx > 0 else "влево"
         else:
             where = "вниз" if gy > 0 else "вверх"
-        return f"взгляд: {where}" + (" · мышь глазами ВКЛ" if self.router.gaze_pointer else "")
+        if self.router.gaze_pointer:
+            mode = "телепорт" if (self.cfg.face.gaze_absolute and self.gaze_calib.ready) else "скоростной"
+            return f"взгляд: {where} · мышь глазами ВКЛ ({mode})"
+        if self.gaze_calib.ready:
+            return f"взгляд: {where} · калибровка есть (G — включить)"
+        return f"взгляд: {where} · B — калибровка взгляда"
 
     def _expression_text(self) -> str:
         """Текущее выражение лица словами — чтобы мимика была понятна без графиков."""
@@ -577,6 +718,10 @@ class AirMouseApp:
         s.head_pointer = self.router.head_pointer
         s.gaze_pointer = self.router.gaze_pointer
         s.gaze_text = self.gaze_text() if self._metrics is not None else ""
+        s.gaze_absolute = bool(self.cfg.face.gaze_absolute and self.gaze_calib.ready)
+        s.calib_active = self.calibrating
+        s.calib_target = self.calibration_target()
+        s.calib_text = self.calibration_text()
         s.hand_seen = bool(self._hands) or self._shape is not None
         s.hand_count = len(self._hands)
         s.face_seen = self._face is not None
@@ -703,6 +848,9 @@ class AirMouseApp:
         Возвращает ``True``, если клавиша что-то сделала.
         """
         if keys.matches(key, "esc") or keys.matches(key, "q"):
+            if self.calibrating:
+                self.cancel_gaze_calibration()
+                return True
             self.running = False
             return True
         if keys.matches(key, "p"):
@@ -714,6 +862,15 @@ class AirMouseApp:
             return True
         if keys.matches(key, "g"):
             self.toggle_gaze_pointer()
+            return True
+        if keys.matches(key, "b"):
+            if self.calibrating:
+                self.cancel_gaze_calibration()
+            else:
+                self.start_gaze_calibration()
+            return True
+        if self.calibrating and keys.matches(key, "space"):
+            self.confirm_gaze_point()
             return True
         if keys.matches(key, "m"):
             self.switch_backend()
