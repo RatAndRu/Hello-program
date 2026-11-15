@@ -26,6 +26,7 @@ from .gaze import (
     GazeCursor,
     average_gaze,
 )
+from .headpose import HeadPoseEstimator
 from .gestures import (
     SIDE_TITLES_RU,
     Event,
@@ -119,6 +120,9 @@ class AirMouseApp:
         self.gaze_cursor = GazeCursor(getattr(cfg.face, "gaze_deadzone_px", 12),
                                       getattr(cfg.face, "gaze_cursor_alpha", 0.55))
         self._calib: Optional[dict] = None      # идёт мастер калибровки взгляда
+        # поворот головы: чтобы курсор не прыгал, когда человек вертит головой,
+        # но продолжает смотреть в ту же точку экрана
+        self.head_pose = HeadPoseEstimator()
         self.two_hand_fsm = TwoHandFSM(cfg.hand, self._two_hand_relax())
         self.face_fsm = FaceFSM(cfg.face)
         self.camera: Optional[ThreadedCamera] = None
@@ -221,7 +225,7 @@ class AirMouseApp:
         self._face_counter += 1
         if self._face_counter % max(self.cfg.face.every_n_frames, 1) != 0 and self._metrics is not None:
             return []
-        self._metrics = measure_face(face)
+        self._metrics = measure_face(face, self.head_pose)
         if not self.face_fsm.baseline.ready:
             # первые ~1.5 секунды — калибровка нейтрального выражения
             for _ in range(4):
@@ -453,7 +457,7 @@ class AirMouseApp:
                 events.extend(self._head_pointer_events(now))
             if self.calibrating:
                 # мастер калибровки: копим зрачок, ничего не нажимаем
-                self._collect_gaze_sample()
+                self._tick_gaze_calibration(now)
             elif self.router.gaze_pointer and self._metrics is not None:
                 events.extend(self._gaze_pointer_events(now))
 
@@ -688,7 +692,13 @@ class AirMouseApp:
         """
         if (self.cfg.face.gaze_absolute and self.gaze_calib.ready
                 and self.face_fsm.gaze_valid and self._metrics is not None):
-            sx, sy = self.gaze_calib.apply(self.face_fsm.gaze_x, self.face_fsm.gaze_y)
+            # Поправка на поворот головы: человек вертит головой, но смотрит
+            # в ту же точку — зрачок «уезжает», калибровка это вычитает.
+            u, v = self.gaze_calib.head_correct(
+                self.face_fsm.gaze_u, self.face_fsm.gaze_v,
+                self.face_fsm.head_yaw, self.face_fsm.head_pitch,
+            )
+            sx, sy = self.gaze_calib.apply(u, v)
             width, height = self.backend.screen_size()
             # 0 -> первый пиксель, 1 -> последний: край экрана достижим ровно
             px, py = screen_point(sx, sy, (width, height))
@@ -711,11 +721,14 @@ class AirMouseApp:
     #  Калибровка взгляда: «посмотрите в угол и нажмите пробел»
     # ------------------------------------------------------------------ #
     def start_gaze_calibration(self) -> str:
-        """Начать калибровку взгляда: 4 угла + центр, по клавише на каждую точку."""
+        """Начать калибровку взгляда: 9 точек, затем проверка поворота головы."""
         self._calib = {
             "index": 0,
+            "phase": "points",              # points -> head (поворот головы)
             "samples": [],                  # накопленные положения зрачка
             "points": [],                   # (gx, gy, sx, sy)
+            "head": [],                     # (gx, gy, yaw, pitch) для компенсации
+            "head_since": None,             # когда началась фаза поворота головы
         }
         self.gaze_cursor.reset()
         if not self.show_window:
@@ -733,6 +746,9 @@ class AirMouseApp:
         """Куда сейчас просим посмотреть (нормированные координаты экрана)."""
         if self._calib is None:
             return None
+        if self._calib.get("phase") == "head":
+            # вторая фаза: смотрим в центр и вертим головой
+            return (0.5, 0.5)
         index = int(self._calib["index"])
         if 0 <= index < len(CALIBRATION_TARGETS):
             return CALIBRATION_TARGETS[index]
@@ -741,6 +757,10 @@ class AirMouseApp:
     def calibration_text(self) -> str:
         if self._calib is None:
             return ""
+        if self._calib.get("phase") == "head":
+            left = self._head_phase_left()
+            return ("ВЗГЛЯД: не отводя взгляда от центра, поверните голову "
+                    f"влево-вправо и вверх-вниз  ({left:.0f} с)    ПРОБЕЛ — сразу готово")
         index = int(self._calib["index"])
         if index < len(CALIBRATION_TARGETS):
             title = TARGET_TITLES[index]
@@ -758,6 +778,9 @@ class AirMouseApp:
         """Запомнить текущую точку и перейти к следующей (или закончить)."""
         if self._calib is None:
             return ""
+        if self._calib.get("phase") == "head":
+            # вторая фаза: пробел = «с поворотом головы всё, сохраняй»
+            return self._finish_gaze_calibration()
         if not self.face_fsm.gaze_valid:
             return "зрачков не видно — калибровка невозможна"
         target = self.calibration_target()
@@ -773,15 +796,43 @@ class AirMouseApp:
         if int(self._calib["index"]) < len(CALIBRATION_TARGETS):
             return self.calibration_text()
 
-        calib = GazeCalibration(points=list(self._calib["points"]))
+        # Все точки сняты. Теперь короткая проверка поворота головы: человек
+        # смотрит в центр и вертит головой — по этим кадрам подбирается поправка.
+        if self._calib.get("phase") != "head" and self._head_phase_s() > 0:
+            self._calib["phase"] = "head"
+            self._calib["head_since"] = None
+            self._calib["samples"] = []
+            text = self.calibration_text()
+            self._events_log.appendleft("калибровка: теперь посмотрите в центр и повертите головой")
+            return text
+
+        return self._finish_gaze_calibration()
+
+    def _head_phase_s(self) -> float:
+        return float(getattr(self.cfg.face, "gaze_head_check_s", 6.0))
+
+    def _head_phase_left(self) -> float:
+        if self._calib is None or self._calib.get("head_since") is None:
+            return self._head_phase_s()
+        left = self._head_phase_s() - (time.monotonic() - float(self._calib["head_since"]))
+        return max(0.0, left)
+
+    def _finish_gaze_calibration(self) -> str:
+        """Собрать калибровку: гомография по 9 точкам + поправка на поворот головы."""
+        head_samples = list(self._calib.get("head") or []) if self._calib else []
+        points = list(self._calib["points"]) if self._calib else []
+        calib = GazeCalibration(points=points, feature="head")
         calib.fit()
+        head_ok = calib.fit_head(head_samples)
         self._calib = None
         self.gaze_calib = calib
         self.gaze_cursor.reset()
         self.cfg.face.gaze_calibration = calib.to_dict()
         self.cfg.face.gaze_absolute = True
         worst, mean = calib.error()
-        text = f"калибровка взгляда готова: {len(calib.points)} точек, {calib.quality_text()}"
+        text = (f"калибровка взгляда готова: {len(calib.points)} точек, "
+                f"{calib.quality_text()}, "
+                f"{calib.head_gain_text() if head_ok else 'поворот головы: без компенсации'}")
         self._events_log.appendleft(text)
         log.info("Калибровка взгляда: %d точек, %s", len(calib.points), calib.quality_text())
         if worst > 0.08:
@@ -800,12 +851,33 @@ class AirMouseApp:
         self._events_log.appendleft("калибровка взгляда сброшена")
         return "калибровка взгляда сброшена"
 
+    def _tick_gaze_calibration(self, now: float) -> None:
+        """Один кадр мастера калибровки: копим сэмплы и следим за временем."""
+        if self._calib is None:
+            return
+        if self._calib.get("phase") == "head":
+            if self._calib.get("head_since") is None:
+                self._calib["head_since"] = time.monotonic()
+            elif self._head_phase_left() <= 0.0:
+                self._finish_gaze_calibration()
+                self._update_state([], 0.0)
+                return
+        self._collect_gaze_sample()
+
     def _collect_gaze_sample(self) -> None:
         """Копим положения зрачка, пока человек смотрит в очередную точку."""
         if self._calib is None or not self.face_fsm.gaze_valid:
             return
+        if self._calib.get("phase") == "head":
+            # фаза «поворот головы»: смотрим в центр, а голова ездит
+            head = self._calib["head"]
+            head.append((self.face_fsm.gaze_u, self.face_fsm.gaze_v,
+                         self.face_fsm.head_yaw, self.face_fsm.head_pitch))
+            if len(head) > 600:
+                del head[:-600]
+            return
         samples = self._calib["samples"]
-        samples.append((self.face_fsm.gaze_x, self.face_fsm.gaze_y))
+        samples.append((self.face_fsm.gaze_u, self.face_fsm.gaze_v))
         if len(samples) > 60:
             del samples[:-60]
 
@@ -843,9 +915,17 @@ class AirMouseApp:
             where = "вправо" if gx > 0 else "влево"
         else:
             where = "вниз" if gy > 0 else "вверх"
+        head = ""
+        if self.face_fsm.head_ok:
+            yaw = self.face_fsm.head_yaw
+            pitch = self.face_fsm.head_pitch
+            if abs(yaw) > 5 or abs(pitch) > 5:
+                head = f" · голова {yaw:+.0f}°/{pitch:+.0f}°"
+            else:
+                head = " · голова ровно"
         if self.router.gaze_pointer:
             mode = "телепорт" if (self.cfg.face.gaze_absolute and self.gaze_calib.ready) else "скоростной"
-            return f"взгляд: {where} · мышь глазами ВКЛ ({mode})"
+            return f"взгляд: {where} · мышь глазами ВКЛ ({mode}){head}"
         if self.gaze_calib.ready:
             worst, _mean = self.gaze_calib.error()
             mark = "⚠ " if worst > 0.08 else ""
@@ -913,7 +993,12 @@ class AirMouseApp:
         s.calib_active = self.calibrating
         s.calib_target = self.calibration_target()
         s.calib_text = self.calibration_text()
-        s.calib_done = int(self._calib["index"]) if self._calib is not None else 0
+        if self._calib is None:
+            s.calib_done = 0
+        elif self._calib.get("phase") == "head":
+            s.calib_done = len(CALIBRATION_TARGETS)
+        else:
+            s.calib_done = int(self._calib["index"])
         s.hand_seen = bool(self._hands) or self._shape is not None
         s.hand_count = len(self._hands)
         s.face_seen = self._face is not None
@@ -1156,6 +1241,7 @@ class AirMouseApp:
                 pass
         # сбрасываем автоматы: старые жесты не должны «дожиматься» на новом движке
         self.hand_fsm = HandFSM(self.cfg.hand, self._two_hand_relax())
+        self.head_pose.reset()
         self.two_hand_fsm = TwoHandFSM(self.cfg.hand, self._two_hand_relax())
         self.face_fsm = FaceFSM(self.cfg.face)
         self._metrics = None

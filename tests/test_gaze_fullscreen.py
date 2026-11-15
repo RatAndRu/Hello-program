@@ -35,12 +35,14 @@ def test_calibration_canvas_is_screen_sized():
 
 
 def test_targets_are_exact_screen_corners():
-    assert CALIBRATION_TARGETS[0] == (0.0, 0.0)
-    assert CALIBRATION_TARGETS[1] == (1.0, 0.0)
-    assert CALIBRATION_TARGETS[2] == (1.0, 1.0)
-    assert CALIBRATION_TARGETS[3] == (0.0, 1.0)
-    assert CALIBRATION_TARGETS[4] == (0.5, 0.5)
+    """Сетка 3×3: четыре самых угла, середины сторон и центр."""
+    assert CALIBRATION_TARGETS[:4] == ((0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0))
+    assert CALIBRATION_TARGETS[-1] == (0.5, 0.5)
+    assert len(CALIBRATION_TARGETS) == 9
     assert len(TARGET_TITLES) == len(CALIBRATION_TARGETS)
+    # каждая точка — на сетке {0, 0.5, 1} по обеим осям
+    for fx, fy in CALIBRATION_TARGETS:
+        assert fx in (0.0, 0.5, 1.0) and fy in (0.0, 0.5, 1.0)
 
 
 def test_corner_marker_is_in_the_far_corner():
@@ -115,6 +117,8 @@ def _app(**overrides):
         for part in parts[:-1]:
             node = getattr(node, part)
         setattr(node, parts[-1], value)
+    if "face.gaze_head_check_s" not in overrides:
+        cfg.face.gaze_head_check_s = 0.0     # вторая фаза не нужна
     app = AirMouseApp(cfg, dry_run=True, show_window=False)
     app.tracker = ScriptedTracker([])
     app._prepared = True
@@ -199,6 +203,7 @@ def _look(app, sx: float, sy: float) -> None:
     gx, gy = gaze_for(sx, sy)
     app.face_fsm.gaze_valid = True
     app.face_fsm.gaze_x, app.face_fsm.gaze_y = gx, gy
+    app.face_fsm.gaze_u, app.face_fsm.gaze_v = gx, gy
     for _ in range(5):
         app._collect_gaze_sample()
 
@@ -327,12 +332,14 @@ def test_gaze_pointer_can_reach_far_edge_but_not_failsafe_corner():
     app.face_fsm.gaze_valid = True
     app._metrics = object()
 
-    app.face_fsm.gaze_x, app.face_fsm.gaze_y = 1.0, 1.0
+    app.face_fsm.gaze_x = app.face_fsm.gaze_y = 1.0
+    app.face_fsm.gaze_u = app.face_fsm.gaze_v = 1.0
     events = app._gaze_pointer_events(1.0)
     point = events[-1].value
     assert point == (1918, 1078), point
 
-    app.face_fsm.gaze_x, app.face_fsm.gaze_y = 0.0, 0.0
+    app.face_fsm.gaze_x = app.face_fsm.gaze_y = 0.0
+    app.face_fsm.gaze_u = app.face_fsm.gaze_v = 0.0
     events = app._gaze_pointer_events(2.0)
     assert events[-1].value == (1, 1), events[-1].value
 

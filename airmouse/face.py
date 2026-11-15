@@ -16,6 +16,7 @@ import numpy as np
 from .config import FaceConfig
 from .filters import Cooldown, HoldTimer, deadzone
 from .gestures import Event
+from .headpose import HeadPoseEstimator
 from .landmarks import F, Face, distance, safe_div
 
 
@@ -35,7 +36,14 @@ class FaceMetrics:
     interocular: float = 0.0
     gaze_x: float = 0.0            # зрачок в глазнице: 0 — центр, + — вправо
     gaze_y: float = 0.0            # + — вниз
+    gaze_u: float = 0.0            # тот же взгляд, но с поправкой на поворот головы
+    gaze_v: float = 0.0
+    head_yaw: float = 0.0          # поворот головы относительно эталона, градусы
+    head_pitch: float = 0.0
+    head_roll: float = 0.0
+    head_ok: bool = False          # поворот головы удалось оценить
     gaze_valid: bool = False       # есть ли точки радужки в этом кадре
+    gaze_scale: float = 1.25       # зрачок -> угол (см. gaze_angle_scale)
     valid: bool = False
 
     def as_vector(self) -> np.ndarray:
@@ -66,6 +74,40 @@ def _eye_box(face: Face, ids) -> Tuple[float, float, float, float]:
     half_w = max(abs(inner[0] - outer[0]) / 2.0, 1e-6)
     half_h = max((bottom[1] - top[1]) / 2.0, 1e-6)
     return cx, cy, half_w, half_h
+
+
+# Отношение радиуса глазного яблока к радиусу радужки: у человека примерно
+# 12 мм / 5.85 мм. Нужно, чтобы перевести «зрачок в глазнице» в угол поворота
+# глаза, не подбирая коэффициенты под каждую камеру: масштаб считается по
+# размерам самого глаза в кадре.
+EYE_RADIUS_RATIO = 2.05
+
+
+def gaze_angle_scale(face: Face) -> float:
+    """Сколько «тангенсов» угла приходится на единицу смещения зрачка.
+
+    ``dx`` в :func:`measure_gaze` — это смещение радужки в единицах полуширины
+    глазницы. Поворот глаза φ даёт смещение ``r_eye * sin φ``, поэтому
+    ``tan φ ≈ dx * half_width / (ratio * r_iris)``. Всё это видно в кадре, так
+    что коэффициент получается сам, без калибровки и без «магических» чисел.
+    """
+    if not face.has_iris:
+        return 1.25
+    scales = []
+    for eye_ids, iris_ids in ((F.EYE_A, F.IRIS_A), (F.EYE_B, F.IRIS_B)):
+        _cx, _cy, half_w, _half_h = _eye_box(face, eye_ids)
+        centre = face.iris_center(iris_ids)
+        if centre is None or half_w < 1e-6:
+            continue
+        ring = face.points[list(iris_ids)[1:], :2].astype(np.float64)
+        radius = float(np.linalg.norm(ring - centre, axis=1).mean())
+        if radius < 1e-6:
+            continue
+        scales.append(half_w / (EYE_RADIUS_RATIO * radius))
+    if not scales:
+        return 1.25
+    value = float(np.mean(scales))
+    return float(min(max(value, 0.3), 5.0))
 
 
 def measure_gaze(face: Face) -> Tuple[float, float, bool]:
@@ -103,8 +145,14 @@ def measure_gaze(face: Face) -> Tuple[float, float, bool]:
     return dx, dy, True
 
 
-def measure_face(face: Face) -> FaceMetrics:
-    """Считает все метрики лица за один проход."""
+def measure_face(face: Face, head: "HeadPoseEstimator | None" = None) -> FaceMetrics:
+    """Считает все метрики лица за один проход.
+
+    ``head`` — оценщик поворота головы. Если он передан, взгляд пересчитывается
+    в систему координат эталонной позы (``gaze_u``/``gaze_v``): при повороте
+    головы с неподвижным взглядом такой признак не меняется, поэтому курсор не
+    прыгает. Без оценщика ``gaze_u``/``gaze_v`` равны ``gaze_x``/``gaze_y``.
+    """
     io = face.scale
     if io < 1e-5:
         return FaceMetrics(valid=False)
@@ -140,6 +188,17 @@ def measure_face(face: Face) -> FaceMetrics:
 
     gaze_x, gaze_y, gaze_ok = measure_gaze(face)
 
+    # поворот головы -> компенсированный взгляд (одинаковый при поворотах)
+    pose = None
+    if head is not None and face.has_iris:
+        head.update(face.points)
+        pose = head.smoothed_pose()
+    # Признак для мыши — тангенс угла поворота глаза (а не «попугаи» зрачка).
+    # Поворот головы сюда не подмешивается: его компенсирует калибровка,
+    # у которой есть коэффициенты, снятые на поворотах головы этого человека.
+    k = gaze_angle_scale(face)
+    gaze_u, gaze_v = (gaze_x * k, gaze_y * k) if gaze_ok else (gaze_x, gaze_y)
+
     return FaceMetrics(
         ear_left=ear_l,
         ear_right=ear_r,
@@ -153,6 +212,13 @@ def measure_face(face: Face) -> FaceMetrics:
         interocular=io,
         gaze_x=gaze_x,
         gaze_y=gaze_y,
+        gaze_u=gaze_u,
+        gaze_v=gaze_v,
+        head_yaw=pose.yaw if pose is not None else 0.0,
+        head_pitch=pose.pitch if pose is not None else 0.0,
+        head_roll=pose.roll if pose is not None else 0.0,
+        head_ok=bool(pose is not None and pose.ok),
+        gaze_scale=k,
         gaze_valid=gaze_ok,
         valid=True,
     )
@@ -305,7 +371,13 @@ class FaceFSM:
         self.rel_pitch = 0.0
         self.gaze_x = 0.0          # сглаженное положение зрачка (0 — центр)
         self.gaze_y = 0.0
+        self.gaze_u = 0.0          # то же, но с поправкой на поворот головы
+        self.gaze_v = 0.0
         self.gaze_valid = False
+        self.head_ok = False
+        self.head_yaw = 0.0
+        self.head_pitch = 0.0
+        self.head_roll = 0.0
         self.mouth_open = 0.0
         self.ear_value = 0.3
 
@@ -367,10 +439,17 @@ class FaceFSM:
 
         # --- зрачок: куда смотрит человек (нужны точки радужки) ----------- #
         self.gaze_valid = bool(m.gaze_valid)
+        self.head_ok = bool(getattr(m, "head_ok", False))
+        self.head_yaw = float(getattr(m, "head_yaw", 0.0))
+        self.head_pitch = float(getattr(m, "head_pitch", 0.0))
+        self.head_roll = float(getattr(m, "head_roll", 0.0))
         if m.gaze_valid:
             a = max(0.05, min(1.0, self.cfg.gaze_smoothing))
             self.gaze_x = a * m.gaze_x + (1.0 - a) * self.gaze_x
             self.gaze_y = a * m.gaze_y + (1.0 - a) * self.gaze_y
+            # компенсированный взгляд сглаживаем отдельно: он и идёт в мышку
+            self.gaze_u = a * m.gaze_u + (1.0 - a) * self.gaze_u
+            self.gaze_v = a * m.gaze_v + (1.0 - a) * self.gaze_v
             # «ноль» взгляда подстраивается только когда зрачок рядом с ним:
             # так уходит медленный дрейф, но намеренный взгляд в сторону не
             # «съедается» (иначе курсор замирал через пару секунд).

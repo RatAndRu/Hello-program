@@ -188,6 +188,7 @@ class FaceConfig:
     gaze_calibration: Dict[str, Any] = field(default_factory=dict)  # точки + коэффициенты
     gaze_deadzone_px: int = 12         # дрожание зрачка в пикселях: не двигаем
     gaze_cursor_alpha: float = 0.55    # сглаживание позиции курсора (1 — без)
+    gaze_head_check_s: float = 6.0     # сколько вертеть головой на калибровке
     gaze_smoothing: float = 0.35       # сглаживание зрачка (0..1, больше — резче)
     gaze_max_step_px: int = 60         # предел шага курсора за кадр
     calm_s: float = 0.35               # сколько нейтрали нужно для baseline

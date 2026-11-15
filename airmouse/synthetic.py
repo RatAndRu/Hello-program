@@ -29,6 +29,7 @@ def synthetic_face(
     gaze: Tuple[float, float] = (0.0, 0.0),
     iris: bool = True,
     seed: int = 7,
+    depth: float = 0.0,
 ) -> Face:
     """Лицо с заданными EAR, улыбкой (в единицах лица), бровями и поворотом.
 
@@ -36,6 +37,9 @@ def synthetic_face(
     EAR лежат примерно в 0.15..0.35). ``frown`` — опущенные уголки губ (грусть),
     ``gaze`` — куда смотрит зрачок: (0, 0) центр, (+0.6, 0) вправо.
     ``iris`` — добавлять ли 10 точек радужки (478 точек вместо 468).
+    ``depth`` — добавить объём лица по z (0 — плоское облако). Объём нужен,
+    чтобы можно было оценивать поворот головы: по плоским точкам поворот
+    вокруг нормали не определить.
     """
     FU = 0.44 * scale            # «единица лица»: ширина головы ~2 FU
     cx, cy = center
@@ -143,6 +147,31 @@ def synthetic_face(
     # клип в пределы кадра — как настоящие нормализованные координаты
     pts[:, 0] = np.clip(pts[:, 0], 0.0, 1.0)
     pts[:, 1] = np.clip(pts[:, 1], 0.0, 1.0)
+    # объём лица: нос ближе к камере, виски и подбородок — дальше
+    if depth:
+        half_w = max(0.98 * FU, 1e-6)
+        half_h = max(1.12 * FU, 1e-6)
+        u = np.clip((pts[:, 0] - cx) / half_w, -1.0, 1.0)
+        v = np.clip((pts[:, 1] - cy) / half_h, -1.0, 1.0)
+        shell = np.sqrt(np.clip(1.0 - u * u - 0.55 * v * v, 0.0, 1.0))
+        pts[:, 2] = -float(depth) * FU * shell
+        nose = np.linalg.norm(pts[:, :2] - np.array([cx + nose_x, cy + nose_y]), axis=1)
+        pts[:, 2] -= float(depth) * FU * 0.9 * np.exp(-(nose / (0.35 * FU)) ** 2)
+        # и «затылок» не должен быть ближе носа
+        pts[:, 2] = np.minimum(pts[:, 2], 0.0)
+        # глазное яблоко — плоско в своей плоскости: веки и радужка на одной
+        # глубине. Иначе поворот головы сдвигал бы зрачок относительно века
+        # чисто из-за разницы глубин, и измерение взгляда зависело бы от позы.
+        for ids, cx_eye in ((F.EYE_A, -0.14 * FU), (F.EYE_B, +0.14 * FU)):
+            u = float(np.clip(cx_eye / half_w, -1.0, 1.0))
+            v = 0.0
+            shell_eye = math.sqrt(max(0.0, 1.0 - u * u - 0.55 * v * v))
+            z_eye = -float(depth) * FU * shell_eye
+            eye_points = list(ids) + list(F.IRIS_A if cx_eye < 0 else F.IRIS_B)
+            pts[eye_points, 2] = z_eye
+        pts[F.EYE_A_TOP, 2] = pts[F.EYE_A[0], 2]
+        pts[F.EYE_B_TOP, 2] = pts[F.EYE_B[0], 2]
+
     # искажение поворотом: чем дальше от центра, тем сильнее смещение (грубо)
     if abs(yaw) > 1e-6 or abs(pitch) > 1e-6:
         pts[:, 0] += (pts[:, 0] - cx) * (math.cos(math.radians(yaw)) - 1.0)

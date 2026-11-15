@@ -251,7 +251,7 @@ def check_hand_gate() -> Check:
 
 
 def check_gaze_calibration() -> Check:
-    """Калибровка взгляда: 5 точек → попадание в экран, курсор телепортируется."""
+    """Калибровка взгляда: 9 точек по гомографии + поправка на поворот головы."""
     from .gaze import CALIBRATION_TARGETS, GazeCalibration
 
     def gaze(sx, sy):
@@ -277,11 +277,29 @@ def check_gaze_calibration() -> Check:
 
     green = _np.abs(canvas.astype("int16") - _np.array([90, 235, 130])).sum(axis=2) < 40
     corner = bool(green[:120, 1780:].any())      # прицел в правом верхнем углу
-    ok = bool(fitted and calib.ready and worst < 0.03 and full and corner)
+    # поворот головы: зрачок «уезжает», калибровка должна это вычитать
+    import math as _math
+
+    center = gaze(0.5, 0.5)
+    drift = (0.30, -0.15)
+    head = []
+    for yaw in range(-20, 21, 4):
+        for pitch in (-12, 0, 12):
+            head.append((center[0] + drift[0] * _math.tan(_math.radians(yaw)),
+                         center[1] + drift[1] * _math.tan(_math.radians(pitch)),
+                         float(yaw), float(pitch)))
+    head_learned = calib.fit_head(head)
+    points = [calib.apply(*calib.head_correct(gx, gy, yaw, pitch))
+              for gx, gy, yaw, pitch in head]
+    jump = max(max(p[0] for p in points) - min(p[0] for p in points),
+               max(p[1] for p in points) - min(p[1] for p in points))
+    ok = bool(fitted and calib.ready and worst < 0.03 and full and corner
+              and head_learned and jump < 0.02)
     return Check("калибровка взгляда в экран", ok,
                  f"точек={len(calib.points)}, ошибка={worst * 100:.1f}% экрана, "
                  f"холст {canvas.shape[1]}x{canvas.shape[0]}, "
-                 f"угол={'да' if corner else 'нет'}")
+                 f"угол={'да' if corner else 'нет'}, "
+                 f"поворот головы ±20°: сдвиг {jump * 100:.1f}% экрана")
 
 
 def check_settings_panel() -> Check:
