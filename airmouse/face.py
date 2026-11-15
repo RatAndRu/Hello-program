@@ -132,6 +132,7 @@ class FaceBaseline:
 
     smile: float = 0.0
     brow: float = 0.0
+    corner: float = 0.0      # уголки губ: плюс — вверх (улыбка), минус — вниз (грусть)
     pitch: float = 0.0
     yaw: float = 0.0
     samples: int = 0
@@ -142,11 +143,13 @@ class FaceBaseline:
         if self.samples == 0:
             self.smile = m.mouth_width
             self.brow = m.brow_height
+            self.corner = m.corner_lift
             self.pitch = m.pitch
             self.yaw = m.yaw
         else:
             self.smile = alpha * m.mouth_width + (1 - alpha) * self.smile
             self.brow = alpha * m.brow_height + (1 - alpha) * self.brow
+            self.corner = alpha * m.corner_lift + (1 - alpha) * self.corner
             self.pitch = alpha * m.pitch + (1 - alpha) * self.pitch
             self.yaw = alpha * m.yaw + (1 - alpha) * self.yaw
         self.samples += 1
@@ -154,6 +157,60 @@ class FaceBaseline:
     @property
     def ready(self) -> bool:
         return self.samples >= 10
+
+
+class HeadGestures:
+    """Кивок и поворот головы «нет» — по колебаниям углов, а не по одному кадру."""
+
+    def __init__(self, cfg: FaceConfig) -> None:
+        self.cfg = cfg
+        self.cooldown = Cooldown(cfg.head_gesture_cooldown_s)
+        self._yaw: List[Tuple[float, float]] = []
+        self._pitch: List[Tuple[float, float]] = []
+
+    def reset(self) -> None:
+        self._yaw.clear()
+        self._pitch.clear()
+        self.cooldown.reset()
+
+    @staticmethod
+    def _turns(samples: List[Tuple[float, float]], eps: float = 0.6) -> int:
+        """Сколько раз направление движения менялось (2 и больше — «качание»)."""
+        turns = 0
+        last_sign = 0
+        for (_, a), (_, b) in zip(samples[:-1], samples[1:]):
+            d = b - a
+            if abs(d) < eps:
+                continue
+            sign = 1 if d > 0 else -1
+            if last_sign and sign != last_sign:
+                turns += 1
+            last_sign = sign
+        return turns
+
+    @staticmethod
+    def _amplitude(samples: List[Tuple[float, float]]) -> float:
+        values = [v for _, v in samples]
+        return (max(values) - min(values)) if values else 0.0
+
+    def _trim(self, samples: List[Tuple[float, float]], now: float) -> List[Tuple[float, float]]:
+        return [item for item in samples if now - item[0] <= self.cfg.head_gesture_window_s]
+
+    def update(self, yaw: float, pitch: float, now: float) -> List[Event]:
+        self._yaw = self._trim(self._yaw, now) + [(now, yaw)]
+        self._pitch = self._trim(self._pitch, now) + [(now, pitch)]
+        events: List[Event] = []
+        if (self._turns(self._yaw) >= 2
+                and self._amplitude(self._yaw) >= self.cfg.head_shake_deg
+                and self.cooldown.try_fire("shake", now)):
+            events.append(Event("head_shake", label="поворот головой"))
+            self._yaw.clear()
+        if (self._turns(self._pitch) >= 2
+                and self._amplitude(self._pitch) >= self.cfg.head_nod_deg
+                and self.cooldown.try_fire("nod", now)):
+            events.append(Event("head_nod", label="кивок"))
+            self._pitch.clear()
+        return events
 
 
 class FaceFSM:
@@ -170,12 +227,14 @@ class FaceFSM:
         # улыбка и брови — «медленные» жесты, им нужен свой кулдаун, иначе
         # одно и то же выражение лица стреляет очередью событий
         self.smile_cooldown = Cooldown(cfg.smile_cooldown_s)
+        self.head = HeadGestures(cfg)
         self.brow_cooldown = Cooldown(cfg.brow_cooldown_s)
         self._last_blink_t: Optional[float] = None
         self._closed_since: Optional[float] = None
         self._both_closed_seen = False
         self.smile_score = 0.0
         self.brow_score = 0.0
+        self.sad_score = 0.0
         self.rel_yaw = 0.0
         self.rel_pitch = 0.0
         self.mouth_open = 0.0
@@ -193,6 +252,7 @@ class FaceFSM:
         self.brow_hold.reset()
         self.smile_cooldown.reset()
         self.brow_cooldown.reset()
+        self.head.reset()
         self.cooldown.reset()
         self._last_blink_t = None
         self._closed_since = None
@@ -216,8 +276,11 @@ class FaceFSM:
 
         self.smile_score = m.mouth_width - self.baseline.smile
         self.brow_score = m.brow_height - self.baseline.brow
+        # грусть: уголки губ ушли вниз относительно своей нейтрали
+        self.sad_score = self.baseline.corner - m.corner_lift
         self.rel_yaw = m.yaw - self.baseline.yaw
         self.rel_pitch = m.pitch - self.baseline.pitch
+        events.extend(self.head.update(self.rel_yaw, self.rel_pitch, now))
 
         # --- моргание и подмигивание ------------------------------------ #
         dl = self.left.update(m.ear_left, now)

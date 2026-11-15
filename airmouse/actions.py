@@ -24,6 +24,7 @@ class Backend(Protocol):  # pragma: no cover - протокол
     def mouse_down(self, button: str = "left") -> None: ...
     def mouse_up(self, button: str = "left") -> None: ...
     def scroll(self, ticks: int) -> None: ...
+    def zoom(self, ticks: int) -> None: ...
     def press(self, key: str) -> None: ...
     def hotkey(self, *keys: str) -> None: ...
 
@@ -64,6 +65,9 @@ class DryRunBackend:
 
     def scroll(self, ticks: int) -> None:
         self.log.append(f"scroll({ticks})")
+
+    def zoom(self, ticks: int) -> None:
+        self.log.append(f"zoom({ticks})")
 
     def press(self, key: str) -> None:
         self.log.append(f"press({key})")
@@ -107,6 +111,14 @@ class PyAutoGuiBackend:
 
     def scroll(self, ticks: int) -> None:
         self._pg.scroll(int(ticks))
+
+    def zoom(self, ticks: int) -> None:
+        """Масштаб: так же, как Ctrl + колесо мыши (браузер, карты, фото)."""
+        try:
+            self._pg.keyDown("ctrl")
+            self._pg.scroll(int(ticks))
+        finally:
+            self._pg.keyUp("ctrl")
 
     def press(self, key: str) -> None:
         self._pg.press(key)
@@ -158,6 +170,12 @@ class ActionRouter:
             self.backend.move_to(int(x), int(y))
             return
         if kind == "pointer_freeze":
+            return
+        if kind == "zoom":
+            ticks = int(event.value or 0)
+            if ticks:
+                self.backend.zoom(ticks)
+                self.log.append(f"zoom({ticks})")
             return
         if kind == "scroll":
             ticks = int(event.value or 0)

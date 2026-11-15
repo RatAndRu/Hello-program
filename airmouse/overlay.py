@@ -71,13 +71,16 @@ _EYE_A_POLY = (F.EYE_A[0], F.EYE_A[1], F.EYE_A[2], F.EYE_A[3], F.EYE_A[4], F.EYE
 _EYE_B_POLY = (F.EYE_B[0], F.EYE_B[1], F.EYE_B[2], F.EYE_B[3], F.EYE_B[4], F.EYE_B[5])
 
 HELP_GESTURES = (
-    ("щипок", "большой + указательный палец", "левый клик"),
+    ("щипок", "большой + указательный (курсор замирает)", "левый клик"),
     ("щипок ср.", "большой + средний палец", "правый клик"),
     ("большой палец", "кулак с поднятым большим", "двойной клик"),
     ("кулак", "сдвиг кулака влево/вправо/вверх/вниз", "прокрутка"),
     ("ладонь", "открытая ладонь неподвижно 1.3 с", "пауза"),
-    ("улыбка", "улыбнуться и держать 0.65 с", "только индикатор"),
-    ("брови", "поднять брови и держать 0.85 с", "только индикатор"),
+    ("улыбка", "улыбнуться — показывается в окне", "только индикатор"),
+    ("грусть", "опустить уголки губ", "только индикатор"),
+    ("удивление", "брови вверх + рот приоткрыт", "только индикатор"),
+    ("кивок", "качнуть головой вверх-вниз", "настраивается"),
+    ("поворот", "качнуть головой влево-вправо", "настраивается"),
     ("моргание", "двойное моргание", "левый клик"),
     ("подмигивание", "один глаз", "правый клик"),
 )
@@ -88,6 +91,11 @@ HELP_KEYS = (
     ("M", "сменить движок (нейросеть ↔ классический CV)"),
     ("I / Tab", "эта справка"),
     ("пробел", "статистика в журнал"),
+)
+
+HELP_TWO_HANDS = (
+    ("две ладони", "разведите или сведите руки", "масштаб (Ctrl + колесо)"),
+    ("два кулака", "двигайте руками вверх/вниз", "прокрутка"),
 )
 
 
@@ -110,10 +118,14 @@ class OverlayState:
     smile: float = 0.0
     brow: float = 0.0
     mouth_open: float = 0.0
-    expression: str = ""             # «улыбка 78%», «глаза закрыты» …
+    expression: str = ""             # «улыбка 78%», «грусть», «удивление» …
     lip_word: str = ""
     last_event: str = ""
     hand_count: int = 0              # сколько рук видит нейросеть
+    sad: float = 0.0                 # насколько опущены уголки губ
+    aiming: bool = False             # пальцы идут на смыкание, курсор заморожен
+    aim: Optional[Sequence[float]] = None   # точка прицела (нормированные координаты)
+    two_hand_hint: str = ""          # подсказка для жестов двумя руками
     events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
     hints: str = "Q выход   P пауза   H мышь головой   M движок   I справка"
@@ -333,12 +345,13 @@ def _draw_face_panel(img, state: OverlayState, k: float) -> None:
     panel_w = int(250 * k)
     x = w - panel_w - int(12 * k)
     y = int(12 * k)
-    _panel(img, x, y, panel_w, int(126 * k), 0.62)
+    _panel(img, x, y, panel_w, int(146 * k), 0.62)
     T.draw(img, "мимика лица", (x + 12, y + 8), int(16 * k), FG)
     bx, bw = x + 12, int(96 * k)
     _bar(img, bx, y + 58, bw, int(9 * k), state.ear, WARN, "глаза", 0.0, 0.45, int(12 * k))
     _bar(img, bx, y + 78, bw, int(9 * k), max(0.0, state.smile), ACCENT, "улыбка", -0.05, 0.15, int(12 * k))
     _bar(img, bx, y + 98, bw, int(9 * k), max(0.0, state.brow), ACCENT, "брови", -0.05, 0.15, int(12 * k))
+    _bar(img, bx, y + 118, bw, int(9 * k), max(0.0, state.sad), WARN, "грусть", 0.0, 0.08, int(12 * k))
 
 
 def _draw_events(img, state: OverlayState, k: float) -> None:
@@ -380,8 +393,19 @@ def _draw_help(img, state: OverlayState, k: float) -> None:
         T.draw(img, f"→ {action}", (pad + int(430 * k), y), body, INFO)
         y += int(22 * k)
 
-    T.draw(img, "улыбка и брови только показываются в окне; действия по ним",
+    T.draw(img, "улыбка, грусть, удивление, кивок — показываются в окне;"
+                " действия включаются в настройках",
            (pad, y + int(2 * k)), int(12 * k), DIM)
+    y += int(26 * k)
+
+    T.draw(img, "Две руки одновременно:", (pad, y), body, ACCENT)
+    y += int(24 * k)
+    for name, how, action in HELP_TWO_HANDS:
+        T.draw(img, f"{name:<14} {how}", (pad, y), body, FG)
+        T.draw(img, f"→ {action}", (pad + int(430 * k), y), body, INFO)
+        y += int(22 * k)
+    T.draw(img, "H — «мышь головой»: наклон головы двигает курсор", (pad, y + int(4 * k)),
+           int(12 * k), DIM)
     y += int(26 * k)
     T.draw(img, "Клавиши:", (pad, y), body, ACCENT)
     y += int(24 * k)
@@ -443,6 +467,20 @@ def render(
     _draw_status(img, state, k)
     _draw_face_panel(img, state, k)
     _draw_events(img, state, k)
+
+    # прицел: показываем, куда именно попадёт клик
+    if state.aiming and state.aim is not None:
+        ax, ay = int(float(state.aim[0]) * w), int(float(state.aim[1]) * h)
+        cv2.circle(img, (ax, ay), int(16 * k), (0, 255, 255), 2, cv2.LINE_AA)
+        cv2.line(img, (ax - int(22 * k), ay), (ax + int(22 * k), ay), (0, 255, 255), 1, cv2.LINE_AA)
+        cv2.line(img, (ax, ay - int(22 * k)), (ax, ay + int(22 * k)), (0, 255, 255), 1, cv2.LINE_AA)
+        _label(img, "прицел: курсор заморожен", (ax + int(22 * k), ay - int(10 * k)),
+               int(13 * k), (0, 255, 255), alpha=0.5)
+
+    if state.two_hand_hint:
+        text_w, _ = T.measure(state.two_hand_hint, int(14 * k))
+        _label(img, state.two_hand_hint, (w // 2 - text_w // 2, int(96 * k)),
+               int(14 * k), ACCENT, alpha=0.55)
 
     if state.lip_word:
         label = f"по губам: {state.lip_word}"

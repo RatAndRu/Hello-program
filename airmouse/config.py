@@ -119,6 +119,7 @@ class HandConfig:
     pose_stable_frames: int = 3        # сколько кадров жест должен держаться
     pinch_ratio: float = 0.32          # «щипок» начинается
     pinch_release_ratio: float = 0.42  # и отпускается (гистерезис)
+    pinch_approach_ratio: float = 0.50  # «прицел»: курсор замирает до смыкания пальцев
     drag_delay_s: float = 0.30         # удержание щипка -> перетаскивание
     click_cooldown_s: float = 0.35
     open_palm_hold_s: float = 1.30     # пауза по раскрытой ладони (дольше — меньше случайных)
@@ -128,6 +129,10 @@ class HandConfig:
     fist_scroll_gain: float = 22.0     # «тиков» прокрутки на единицу смещения
     fist_scroll_deadzone: float = 0.006
     pointer_source: str = "auto"       # auto | index_tip | palm
+    two_hand: str = "zoom"             # off | zoom | scroll — управление двумя руками
+    two_hand_deadzone: float = 0.004   # мёртвая зона изменения расстояния между руками
+    two_hand_zoom_gain: float = 30.0   # «тиков» масштаба на единицу расстояния
+    two_hand_scroll_gain: float = 22.0 # «тиков» прокрутки на единицу смещения
 
 
 @dataclass
@@ -143,6 +148,12 @@ class FaceConfig:
     smile_hold_s: float = 0.65
     smile_cooldown_s: float = 3.0
     brow_delta: float = 0.045          # подъём бровей к нейтрали
+    sad_delta: float = 0.030           # опущенные уголки губ (грусть)
+    surprise_mouth: float = 0.30       # рот приоткрыт — вместе с бровями это «удивление»
+    head_nod_deg: float = 7.0          # амплитуда кивка
+    head_shake_deg: float = 8.0        # амплитуда поворота головы «нет»
+    head_gesture_window_s: float = 1.6 # за сколько секунд считаем колебания
+    head_gesture_cooldown_s: float = 1.5
     brow_hold_s: float = 0.85
     brow_cooldown_s: float = 5.0
     mouth_open_ratio: float = 0.55

@@ -17,7 +17,14 @@ from .actions import ActionRouter, DryRunBackend, PyAutoGuiBackend
 from .camera import ThreadedCamera
 from .config import AppConfig, resolve_path
 from .face import FaceFSM, FaceMetrics, measure_face
-from .gestures import Event, HandFSM, POSE_TITLES_RU, analyze_hand, classify_pose
+from .gestures import (
+    Event,
+    HandFSM,
+    POSE_TITLES_RU,
+    TwoHandFSM,
+    analyze_hand,
+    classify_pose,
+)
 from .lipreading import LipReader, TemplateStore, mouth_features
 from .overlay import OverlayState, render
 from .landmarks import WRIST
@@ -34,7 +41,8 @@ BACKEND_TITLES = {
 }
 
 # События мимики, которые нельзя выпускать во время перетаскивания/щипка.
-FACE_SUPPRESSED = {"open_palm_hold", "smile_hold", "brow_hold", "eyes_closed_hold"}
+FACE_SUPPRESSED = {"open_palm_hold", "smile_hold", "brow_hold", "eyes_closed_hold",
+                   "head_nod", "head_shake"}
 
 HAND_EVENTS_RU = {
     "pinch_release": "клик",
@@ -51,6 +59,9 @@ HAND_EVENTS_RU = {
     "brow_hold": "брови",
     "eyes_closed_hold": "глаза закрыты",
     "lip_word": "по губам",
+    "head_nod": "кивок",
+    "head_shake": "поворот головой",
+    "zoom": "масштаб",
 }
 
 
@@ -82,6 +93,7 @@ class AirMouseApp:
         self.router = ActionRouter(self.backend, cfg)
         self.pointer = PointerMapper(cfg.pointer, self.backend.screen_size())
         self.hand_fsm = HandFSM(cfg.hand)
+        self.two_hand_fsm = TwoHandFSM(cfg.hand)
         self.face_fsm = FaceFSM(cfg.face)
         self.camera: Optional[ThreadedCamera] = None
         self.tracker = None
@@ -217,6 +229,9 @@ class AirMouseApp:
                 face_events = [e for e in face_events if e.kind not in FACE_SUPPRESSED]
             events += face_events
             events += self._handle_lip(res.face, now)
+            # жесты двумя руками (масштаб/прокрутка) — только когда видно обе руки
+            if len(hands) >= 2:
+                events += self.two_hand_fsm.update(hands, now)
             if self.router.head_pointer and self._metrics is not None:
                 dt = max(now - self._last_now, 1e-3) if self._last_now else 0.016
                 vel = self.face_fsm.head_velocity(dt)
@@ -245,9 +260,9 @@ class AirMouseApp:
             applied = self.router.log[before:]
             if ev.kind in ("pointer", "pointer_freeze"):
                 pass
-            elif ev.kind == "scroll":
+            elif ev.kind in ("scroll", "zoom"):
                 if now - self._last_scroll_log >= 1.0:
-                    log.info("прокрутка: %s тиков", ev.value)
+                    log.info("%s: %s", HAND_EVENTS_RU.get(ev.kind, ev.kind), ev.value)
                     self._last_scroll_log = now
             else:
                 name = HAND_EVENTS_RU.get(ev.kind, ev.kind)
@@ -278,6 +293,11 @@ class AirMouseApp:
         if fsm.smile_score > self.cfg.face.smile_delta:
             level = min(1.0, fsm.smile_score / max(self.cfg.face.smile_delta * 2.5, 1e-6))
             return f"улыбка {level:.0%}"
+        if getattr(fsm, "sad_score", 0.0) > self.cfg.face.sad_delta:
+            return "грусть"
+        if (fsm.brow_score > self.cfg.face.brow_delta * 1.2
+                and m.mouth_open > self.cfg.face.surprise_mouth):
+            return "удивление"
         if fsm.brow_score > self.cfg.face.brow_delta:
             return "брови подняты"
         if m.mouth_open > self.cfg.face.mouth_open_ratio:
@@ -295,6 +315,10 @@ class AirMouseApp:
         s.expression = self._expression_text()
         s.actions_on = not self.dry_run
         s.dry_run = self.dry_run
+        # «прицел»: курсор заморожен на точке, куда целятся щипком
+        s.aiming = bool(self.hand_fsm.approaching) and self.hand_fsm.aim_point is not None
+        s.aim = self.hand_fsm.aim_point
+        s.two_hand_hint = self.two_hand_fsm.hint if self.two_hand_fsm.active else ""
         s.paused = self.router.paused
         s.head_pointer = self.router.head_pointer
         s.hand_seen = bool(self._hands) or self._shape is not None
@@ -313,6 +337,7 @@ class AirMouseApp:
             s.smile = self.face_fsm.smile_score
             s.brow = self.face_fsm.brow_score
             s.mouth_open = m.mouth_open
+            s.sad = getattr(self.face_fsm, "sad_score", 0.0)
         for ev in events:
             if ev.kind in HAND_EVENTS_RU:
                 extra = ""
@@ -476,6 +501,7 @@ class AirMouseApp:
                 pass
         # сбрасываем автоматы: старые жесты не должны «дожиматься» на новом движке
         self.hand_fsm = HandFSM(self.cfg.hand)
+        self.two_hand_fsm = TwoHandFSM(self.cfg.hand)
         self.face_fsm = FaceFSM(self.cfg.face)
         self._metrics = None
         self._face_counter = 0

@@ -224,6 +224,8 @@ class HandFSM:
         self._prev_pointer: Optional[np.ndarray] = None
         self._last_pose = Pose.NONE
         self._thumb_fired = False
+        self.approaching = False   # пальцы идут на смыкание: курсор заморожен
+        self.aim_point: Optional[Tuple[float, float]] = None
 
     # ------------------------------------------------------------------ #
     def reset(self) -> None:
@@ -354,9 +356,18 @@ class HandFSM:
             self._thumb_fired = False
 
         # ---------------- перемещение указателя --------------------------- #
+        # «Прицел»: как только большой и указательный пошли навстречу друг
+        # другу, курсор замирает на последней точке. Раньше он уезжал вместе
+        # с пальцем, и клик приходился не туда, куда целились.
+        self.approaching = f.pinch < self.cfg.pinch_approach_ratio
+        if self.approaching:
+            self.aim_point = tuple(f.pointer)
         frozen = self._pinching and not self._dragging
-        if not frozen and not self._middle_pinching and pose != Pose.FIST:
+        if self.approaching:
+            events.append(Event("pointer_freeze", label="прицел"))
+        elif not frozen and not self._middle_pinching and pose != Pose.FIST:
             events.append(Event("pointer", value=tuple(f.pointer)))
+            self.aim_point = tuple(f.pointer)
         elif self._middle_pinching:
             events.append(Event("pointer_freeze", label="щипок средним"))
         elif pose == Pose.FIST:
@@ -446,3 +457,75 @@ def synthetic_hand(
         pts[4] = pts[12] + np.array([0.0, -0.004])
         pts[3] = pts[4] + (pts[3] - pts[4]) * 0.55
     return Hand(np.hstack([pts, np.zeros((21, 1))]))
+
+
+# --------------------------------------------------------------------------- #
+#  Управление двумя руками
+# --------------------------------------------------------------------------- #
+TWO_HAND_MODES = ("off", "zoom", "scroll")
+
+
+class TwoHandFSM:
+    """Жесты двумя руками одновременно.
+
+    ``zoom``  — обе ладони открыты: развели руки — приблизили (Ctrl+колесо),
+                свели — отдалили. Как «щипок» двумя пальцами на телефоне, но
+                без экрана.
+    ``scroll`` — оба кулака: двигаем руки вверх/вниз — прокрутка (точнее, чем
+                одним кулаком, потому что случайно сжать один кулак легче).
+    """
+
+    def __init__(self, cfg: HandConfig) -> None:
+        self.cfg = cfg
+        self.mode = (getattr(cfg, "two_hand", "off") or "off").lower()
+        self.hint = ""
+        self.active = False
+        self._anchor: Optional[float] = None
+        self._accum = 0.0
+
+    def reset(self) -> None:
+        self._anchor = None
+        self._accum = 0.0
+        self.active = False
+        self.hint = ""
+
+    def update(self, hands: List[Hand], now: float) -> List[Event]:
+        if self.mode not in ("zoom", "scroll") or len(hands) < 2:
+            self.reset()
+            return []
+        first, second = hands[0], hands[1]
+        fa = analyze_hand(first, self.cfg.pointer_source)
+        fb = analyze_hand(second, self.cfg.pointer_source)
+        if not (fa.valid and fb.valid):
+            self.reset()
+            return []
+        want = Pose.OPEN_PALM if self.mode == "zoom" else Pose.FIST
+        if classify_pose(fa, self.cfg) != want or classify_pose(fb, self.cfg) != want:
+            self.reset()
+            return []
+
+        if self.mode == "zoom":
+            value = float(np.linalg.norm(fa.palm_center - fb.palm_center))
+            gain = self.cfg.two_hand_zoom_gain
+            self.hint = "масштаб: разведите или сведите руки"
+        else:
+            value = float((fa.palm_center[1] + fb.palm_center[1]) / 2.0)
+            gain = self.cfg.two_hand_scroll_gain
+            self.hint = "прокрутка двумя кулаками"
+
+        if self._anchor is None:
+            self._anchor = value
+            self.active = True
+            return []
+        delta = value - self._anchor
+        if abs(delta) < self.cfg.two_hand_deadzone:
+            return []
+        self._anchor = value
+        self._accum += delta * gain
+        ticks = int(self._accum)
+        if not ticks:
+            return []
+        self._accum -= ticks
+        if self.mode == "scroll":
+            return [Event("scroll", value=-ticks, label="прокрутка двумя руками")]
+        return [Event("zoom", value=ticks, label="масштаб")]
