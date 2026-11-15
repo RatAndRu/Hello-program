@@ -9,6 +9,11 @@
 from __future__ import annotations
 
 import pathlib
+import sys
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:  # чтобы проверять и сам пакет airmouse
+    sys.path.insert(0, str(ROOT))
 
 
 def _installed_names() -> set[str]:
@@ -49,6 +54,19 @@ def main() -> int:
         problems.append(
             f"ядро OpenCV весит {pyd_mb:.1f} МБ — установлена contrib-сборка, нужна обычная opencv-python"
         )
+
+    # Тот же порядок импортов, что и в приложении: airmouse (ставит заглушку
+    # matplotlib) -> mediapipe -> vision. Ловит поломки раньше PyInstaller.
+    try:
+        import airmouse  # noqa: F401
+        from mediapipe.tasks.python import vision
+
+        if not (hasattr(vision, "HandLandmarker") and hasattr(vision, "FaceLandmarker")):
+            problems.append("в mediapipe.tasks.python.vision нет HandLandmarker/FaceLandmarker")
+        else:
+            print("::notice::mediapipe vision импортируется (заглушка matplotlib работает)")
+    except Exception as exc:  # noqa: BLE001
+        problems.append(f"импорт mediapipe vision упал: {type(exc).__name__}: {exc}")
 
     installed = _installed_names()
     if "opencv-contrib-python" in installed:
