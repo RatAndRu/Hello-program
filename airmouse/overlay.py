@@ -143,6 +143,8 @@ class OverlayState:
     side_text: str = ""              # «сторона кисти: ладонь / тыл»
     gaze_pointer: bool = False       # курсор двигают глаза (зрачки)
     gaze_text: str = ""              # «взгляд: вправо · мышь глазами ВКЛ»
+    body_text: str = ""              # «тело: стоит · приседаний 3»
+    gaze_dwell: float = 0.0          # 0..1 — сколько ещё держать взгляд до клика
     gaze_absolute: bool = False      # курсор телепортируется по калибровке
     calib_active: bool = False       # идёт калибровка взгляда
     calib_target: Optional[Sequence[float]] = None   # куда просим посмотреть
@@ -355,7 +357,7 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
     panel_w = text_w + int(24 * k)
     n_extra = (int(bool(state.modes_text)) + int(bool(state.side_text))
                + int(bool(state.gaze_text)) + int(bool(state.roles_text))
-               + int(state.settings_open))
+               + int(bool(state.body_text)) + int(state.settings_open))
     panel_h = int((104 + 30 * n_extra) * k)
     _panel(img, x, y, panel_w, panel_h, 0.62)
 
@@ -376,6 +378,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
         extras.append((state.side_text, DIM))
     if state.gaze_text:             # куда смотрит человек (и включена ли мышь глазами)
         extras.append((state.gaze_text, ACCENT if state.gaze_pointer else DIM))
+    if state.body_text:             # поза тела и счёт упражнений
+        extras.append((state.body_text, INFO))
     if state.roles_text:            # кто чем занят в режиме «две руки на роли»
         extras.append((state.roles_text, ACCENT))
     if state.settings_open:
@@ -398,7 +402,8 @@ def _draw_face_panel(img, state: OverlayState, k: float) -> None:
         panel_w = max(panel_w, T.measure(state.gaze_text, int(12 * k))[0] + int(24 * k))
     x = w - panel_w - int(12 * k)
     y = int(12 * k)
-    _panel(img, x, y, panel_w, int(170 * k if state.gaze_text else 146 * k), 0.62)
+    _panel(img, x, y, panel_w,
+           int((170 + 18 * int(state.gaze_dwell > 0)) * k if state.gaze_text else 146 * k), 0.62)
     T.draw(img, "мимика лица", (x + 12, y + 8), int(16 * k), FG)
     bx, bw = x + 12, int(96 * k)
     _bar(img, bx, y + 58, bw, int(9 * k), state.ear, WARN, "глаза", 0.0, 0.45, int(12 * k))
@@ -408,6 +413,10 @@ def _draw_face_panel(img, state: OverlayState, k: float) -> None:
     if state.gaze_text:
         T.draw(img, state.gaze_text, (x + 12, y + int(140 * k)), int(12 * k),
                ACCENT if state.gaze_pointer else DIM)
+    if state.gaze_dwell > 0.0:
+        # прогресс «удержание взгляда → клик»: видно, что вот-вот сработает
+        _bar(img, bx, y + int(158 * k), bw, int(9 * k), state.gaze_dwell,
+             ACCENT, "удержание", 0.0, 1.0, int(12 * k))
 
 
 def _draw_gaze_calibration(img: np.ndarray, state: OverlayState, k: float) -> None:

@@ -78,6 +78,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         cfg.warmup_s = args.warmup
     if args.lip:
         cfg.lip.enabled = True
+    if getattr(args, "body", False):
+        cfg.body.enabled = True
     if args.no_window:
         cfg.show_window = False
     if getattr(args, "fullscreen", False):
@@ -509,6 +511,8 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--head-mouse", action="store_true", help="сразу включить «мышь головой»")
     run.add_argument("--gaze-mouse", action="store_true",
                      help="сразу включить «мышь глазами» (курсор от зрачков)")
+    run.add_argument("--body", action="store_true",
+                     help="распознавать тело целиком: приседания, наклон, руки вверх")
     run.add_argument("--lip", action="store_true", help="включить чтение по губам")
     run.add_argument("--output", type=str, default=None, help="сохранять последний кадр в файл")
     run.add_argument("--warmup", type=float, default=None,

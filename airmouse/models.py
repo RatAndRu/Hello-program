@@ -25,8 +25,16 @@ MODEL_URLS = {
         "https://storage.googleapis.com/mediapipe-models/face_landmarker/"
         "face_landmarker/float16/1/face_landmarker.task"
     ),
+    "pose_landmarker": (
+        "https://storage.googleapis.com/mediapipe-models/pose_landmarker/"
+        "pose_landmarker_lite/float16/1/pose_landmarker_lite.task"
+    ),
 }
-MODEL_SIZES = {"hand_landmarker": 7_800_000, "face_landmarker": 3_700_000}
+MODEL_SIZES = {
+    "hand_landmarker": 7_800_000,
+    "face_landmarker": 3_700_000,
+    "pose_landmarker": 5_700_000,
+}
 
 
 class ModelError(RuntimeError):

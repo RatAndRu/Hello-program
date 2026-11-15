@@ -12,7 +12,7 @@ import cv2
 import numpy as np
 
 from .actions import ActionRouter, DryRunBackend
-from .config import AppConfig, FaceConfig, HandConfig, PointerConfig
+from .config import AppConfig, BodyConfig, FaceConfig, HandConfig, PointerConfig
 from .face import FaceFSM, FaceMetrics, measure_face
 from .filters import HysteresisGate, OneEuroFilter
 from .gestures import (
@@ -300,6 +300,66 @@ def check_gaze_calibration() -> Check:
                  f"холст {canvas.shape[1]}x{canvas.shape[0]}, "
                  f"угол={'да' if corner else 'нет'}, "
                  f"поворот головы ±20°: сдвиг {jump * 100:.1f}% экрана")
+
+
+def check_body_squats() -> Check:
+    """Тело: приседания считаются, наклон и руки вверх ловятся."""
+    from .body import BodyFSM, measure_body, synthetic_body
+
+    cfg = BodyConfig()
+    fsm = BodyFSM(cfg)
+    t = 0.0
+    events = []
+    for _ in range(3):
+        for squat in [0.0] * 12 + [0.9] * 16 + [0.0] * 16:
+            events.extend(fsm.update(measure_body(synthetic_body(squat=squat)), t))
+            t += 1 / 30.0
+    reps = [e for e in events if e.kind == "squat_rep"]
+    arms = measure_body(synthetic_body(arms_up=1.0)).posture == "arms_up"
+    lean = measure_body(synthetic_body(lean=40)).posture == "lean"
+    ok = len(reps) == 3 and arms and lean
+    return Check("тело: приседания и позы", ok,
+                 f"приседаний={len(reps)} (ждали 3), руки вверх={arms}, наклон={lean}")
+
+
+def check_head_gain() -> Check:
+    """Мышь головой: мёртвая зона стоит, большие углы разгоняются (HeadShift)."""
+    from .config import FaceConfig
+    from .face import FaceFSM
+
+    fsm = FaceFSM(FaceConfig())
+    fsm.rel_yaw = 1.0
+    inside = abs(fsm.head_step(0.1)[0])
+    fsm.rel_yaw = 6.0
+    small = fsm.head_step(0.1)[0]
+    fsm.rel_yaw = 20.0
+    big = fsm.head_step(0.1)[0]
+    ok = inside == 0.0 and big > (20.0 / 6.0) * small > 0.0
+    return Check("мышь головой: нелинейный разгон", ok,
+                 f"1°={inside:.0f}px, 6°={small:.0f}px, 20°={big:.0f}px")
+
+
+def check_gaze_dwell() -> Check:
+    """Клик удержанием взгляда: ~600 мс, сброс при переводе взгляда."""
+    from .gaze import GazeDwell
+
+    dwell = GazeDwell(dwell_s=0.6, radius_px=60)
+    fired_at = None
+    for i in range(40):
+        t = i * 0.05
+        _p, fired = dwell.update(500, 400, t)
+        if fired:
+            fired_at = t
+            break
+    fresh = GazeDwell(dwell_s=0.6, radius_px=60)
+    for i in range(8):
+        fresh.update(500, 400, i * 0.05)
+    progress = fresh.progress
+    _p, moved = fresh.update(900, 400, 0.45)
+    ok = fired_at is not None and 0.5 <= fired_at <= 0.9 and progress > 0.5 and not moved
+    return Check("клик удержанием взгляда", ok,
+                 f"сработал на {0 if fired_at is None else fired_at * 1000:.0f} мс, "
+                 f"сброс при переводе={not moved}")
 
 
 def check_settings_panel() -> Check:
@@ -730,6 +790,9 @@ CHECKS: List[Callable[[], Check]] = [
     check_blink_rules,
     check_hand_gate,
     check_gaze_calibration,
+    check_body_squats,
+    check_head_gain,
+    check_gaze_dwell,
     check_settings_panel,
     check_rotation,
     check_click_fsm,

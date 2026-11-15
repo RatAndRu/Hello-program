@@ -346,6 +346,57 @@ def screen_point(fx: float, fy: float, size: Sequence[int],
     return (min(max(x, step), w - 1 - step), min(max(y, step), h - 1 - step))
 
 
+class GazeDwell:
+    """Выбор «взглядом с удержанием»: посмотрел и подержал — клик.
+
+    Зачем, если клик и так делается щипком. По литературе «взгляд + щипок»
+    точнее, чем «взгляд + удержание», но у удержания есть своё место: руки
+    заняты, или щипок не берётся из-за перчатки/света. Классика жанра —
+    «Midas touch»: любое движение глаз активирует кнопку. Лечение одно и то же
+    с 1980-х: **пауза взгляда** (dwell time) плюс видимый прогресс, чтобы
+    человек понимал, что вот-вот сработает. Исследования дают 400–800 мс,
+    600 мс — самый удобный вариант (Majaranta et al.; usability study, Displays
+    2021), 200 мс — слишком мало: люди не успевают передумать.
+
+    Прогресс сбрасывается, если взгляд ушёл дальше ``radius_px`` — иначе
+    «удержание» засчитывалось бы дрожанию зрачка.
+    """
+
+    def __init__(self, dwell_s: float = 0.6, radius_px: float = 60.0,
+                 cooldown_s: float = 1.0) -> None:
+        self.dwell_s = max(0.05, float(dwell_s))
+        self.radius_px = max(1.0, float(radius_px))
+        self.cooldown_s = max(0.0, float(cooldown_s))
+        self.reset()
+
+    def reset(self) -> None:
+        self._anchor: Optional[Tuple[float, float]] = None
+        self._since = 0.0
+        self._last_fire = -1e9
+        self.progress = 0.0
+
+    def update(self, x: float, y: float, now: float, valid: bool = True) -> Tuple[float, bool]:
+        """Один кадр: ``(прогресс 0..1, сработал ли клик сейчас)``."""
+        if not valid:
+            self.reset()
+            return (0.0, False)
+        if self._anchor is None or math.hypot(x - self._anchor[0], y - self._anchor[1]) > self.radius_px:
+            self._anchor = (float(x), float(y))
+            self._since = now
+        elapsed = max(0.0, now - self._since)
+        self.progress = min(1.0, elapsed / self.dwell_s)
+        fired = False
+        if self.progress >= 1.0 and (now - self._last_fire) >= self.cooldown_s:
+            fired = True
+            self._last_fire = now
+            # после клика начинаем заново: чтобы не «долбить» каждые 0.6 с,
+            # человек должен сдвинуть взгляд или подождать cooldown
+            self._anchor = (float(x), float(y))
+            self._since = now
+            self.progress = 0.0
+        return (self.progress, fired)
+
+
 class GazeCursor:
     """Сглаживание абсолютной позиции курсора и мёртвая зона против дрожания.
 

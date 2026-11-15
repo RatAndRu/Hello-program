@@ -138,6 +138,7 @@ class HandConfig:
     side_min_frames: int = 3           # сколько кадров держать сторону перед сменой
     drag_delay_s: float = 0.30         # удержание щипка -> перетаскивание
     click_cooldown_s: float = 0.35
+    settle_s: float = 0.25             # «затишье» после появления руки: без случайных кликов
     open_palm_hold_s: float = 1.30     # пауза по раскрытой ладони (дольше — меньше случайных)
     pause_max_motion: float = 0.006    # ладонь должна почти стоять (доли кадра/кадр)
     pause_cooldown_s: float = 2.50     # не чаще одной паузы за это время
@@ -153,6 +154,22 @@ class HandConfig:
     two_hand_deadzone: float = 0.004   # мёртвая зона изменения расстояния между руками
     two_hand_zoom_gain: float = 30.0   # «тиков» масштаба на единицу расстояния
     two_hand_scroll_gain: float = 22.0 # «тиков» прокрутки на единицу смещения
+
+
+@dataclass
+class BodyConfig:
+    """Тело целиком (MediaPipe Pose, 33 точки): упражнения и крупные жесты."""
+
+    enabled: bool = False              # по умолчанию выкл: лишний CPU и модель
+    every_n_frames: int = 2            # считать позу раз в N кадров
+    min_visibility: float = 0.5        # точки тела должны быть реально видны
+    smooth: float = 0.85               # сила фильтра 1€ (больше — плавнее)
+    squat_down: float = 0.45           # глубина, при которой считаем «присел»
+    squat_up: float = 0.18             # и при которой «встал» (гистерезис)
+    squat_min_s: float = 0.35          # короче — дребезг, а не повторение
+    lean_deg: float = 25.0             # наклон корпуса, который считается наклоном
+    arms_up_hold_s: float = 0.80       # сколько держать руки вверх
+    squat_action: str = ""             # действие на повторение (пусто — только счёт)
 
 
 @dataclass
@@ -182,6 +199,7 @@ class FaceConfig:
     head_gain_x: float = 26.0          # пикселей в секунду на градус поворота головы
     head_gain_y: float = 20.0
     head_deadzone_deg: float = 2.5     # мёртвая зона: в ней курсор стоит
+    head_accel: float = 0.06           # нелинейность «мыши головой» (на градус)
     gaze_speed_px_s: float = 800.0     # скорость курсора при полном отклонении зрачка
     gaze_deadzone: float = 0.07        # мёртвая зона по горизонтали (доли полуширины)
     gaze_deadzone_y: float = 0.04      # по вертикали ход зрачка меньше — и зона меньше
@@ -193,6 +211,10 @@ class FaceConfig:
     gaze_deadzone_px: int = 12         # дрожание зрачка в пикселях: не двигаем
     gaze_cursor_alpha: float = 0.55    # сглаживание позиции курсора (1 — без)
     gaze_head_check_s: float = 6.0     # сколько вертеть головой на калибровке
+    gaze_dwell_click: bool = False     # клик удержанием взгляда (по умолчанию — щипком)
+    gaze_dwell_s: float = 0.6          # 400–800 мс по исследованиям, 600 — удобнее
+    gaze_dwell_px: int = 60            # радиус «удержания» на экране
+    gaze_dwell_cooldown_s: float = 1.0
     gaze_smoothing: float = 0.35       # сглаживание зрачка (0..1, больше — резче)
     gaze_max_step_px: int = 60         # предел шага курсора за кадр
     calm_s: float = 0.35               # сколько нейтрали нужно для baseline
@@ -244,6 +266,11 @@ class ActionConfig:
         "ok_sign_back": "right_click",
         "rock_sign_back": "double_click",
         "three_fingers_back": "toggle_pause",
+        # тело целиком: по умолчанию только считаем, действие — по желанию
+        # (python -m airmouse config set actions.mapping.squat_rep=toggle_pause)
+        "squat_rep": "",
+        "arms_up_hold": "",
+        "gaze_click": "left_click",       # клик удержанием взгляда (если включён)
     })
     scroll_mode: str = "fist"          # прокрутка кулаком (см. gestures)
     double_click_interval_s: float = 0.12
@@ -254,6 +281,7 @@ class AppConfig:
     camera: CameraConfig = field(default_factory=CameraConfig)
     hand: HandConfig = field(default_factory=HandConfig)
     face: FaceConfig = field(default_factory=FaceConfig)
+    body: BodyConfig = field(default_factory=BodyConfig)
     pointer: PointerConfig = field(default_factory=PointerConfig)
     lip: LipConfig = field(default_factory=LipConfig)
     actions: ActionConfig = field(default_factory=ActionConfig)

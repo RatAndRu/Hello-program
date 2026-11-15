@@ -598,4 +598,14 @@ class FaceFSM:
         ey = excess(self.rel_pitch)
         if not ex and not ey:
             return (0.0, 0.0)
-        return (ex * self.cfg.head_gain_x * dt, ey * self.cfg.head_gain_y * dt)
+        # Нелинейный «усилитель» (HeadShift, CHI 2024): маленький наклон за
+        # мёртвой зоной двигает курсор медленно — его удобно доводить точно,
+        # а большой наклон разгоняет курсор, чтобы перебросить через экран.
+        # Линейный gain в таких исследованиях даёт больше промахов на мелких
+        # целях и ощущается «вялым» на больших расстояниях.
+        accel = float(getattr(self.cfg, "head_accel", 0.06))
+
+        def speed(deg: float) -> float:
+            return deg * (1.0 + accel * abs(deg))
+
+        return (speed(ex) * self.cfg.head_gain_x * dt, speed(ey) * self.cfg.head_gain_y * dt)

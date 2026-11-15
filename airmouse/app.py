@@ -24,8 +24,10 @@ from .gaze import (
     TARGET_TITLES,
     GazeCalibration,
     GazeCursor,
+    GazeDwell,
     average_gaze,
 )
+from .body import BodyFSM, measure_body
 from .headpose import HeadPoseEstimator
 from .gestures import (
     SIDE_TITLES_RU,
@@ -119,13 +121,21 @@ class AirMouseApp:
         self.gaze_calib = GazeCalibration.from_dict(getattr(cfg.face, "gaze_calibration", {}))
         self.gaze_cursor = GazeCursor(getattr(cfg.face, "gaze_deadzone_px", 12),
                                       getattr(cfg.face, "gaze_cursor_alpha", 0.55))
+        self.gaze_dwell = GazeDwell(
+            float(getattr(cfg.face, "gaze_dwell_s", 0.6)),
+            float(getattr(cfg.face, "gaze_dwell_px", 60)),
+            float(getattr(cfg.face, "gaze_dwell_cooldown_s", 1.0)),
+        )
         self._calib: Optional[dict] = None      # идёт мастер калибровки взгляда
         self._palm_hint_at = -1e9               # когда последний раз подсказывали про ладонь
+        self._body_counter = 0                  # прореживание позы тела
         # поворот головы: чтобы курсор не прыгал, когда человек вертит головой,
         # но продолжает смотреть в ту же точку экрана
         self.head_pose = HeadPoseEstimator()
         self.two_hand_fsm = TwoHandFSM(cfg.hand, self._two_hand_relax())
         self.face_fsm = FaceFSM(cfg.face)
+        # тело целиком: приседания, наклон, руки вверх (по желанию)
+        self.body_fsm = BodyFSM(cfg.body)
         self.camera: Optional[ThreadedCamera] = None
         self.tracker = None
         self.lip_reader: Optional[LipReader] = None
@@ -184,6 +194,7 @@ class AirMouseApp:
             self.cfg.face,
             resolve_path(self.cfg.model_dir),
             progress=log.info,
+            want_body=bool(getattr(self.cfg.body, "enabled", False)),
         )
         log.info("Распознавание: %s", getattr(self.tracker, "name", "?"))
         if self.cfg.lip.enabled:
@@ -237,6 +248,31 @@ class AirMouseApp:
             # «Лицо» выключено: жесты мимики не нажимают, но взгляд считается
             return []
         return events
+
+    def _handle_body(self, points, now: float) -> List[Event]:
+        """Тело целиком: считаем позу (и упражнения), если режим включён."""
+        if not getattr(self.cfg.body, "enabled", False):
+            return []
+        self._body_counter += 1
+        every = max(1, int(getattr(self.cfg.body, "every_n_frames", 1)))
+        # прореживаем: поза тела не меняется за 30 мс, а CPU экономит заметно
+        if self._body_counter % every != 0 and self.body_fsm.metrics.visible:
+            return []
+        if points is None:
+            return self.body_fsm.update(None, now)
+        metrics = measure_body(points, float(getattr(self.cfg.body, "min_visibility", 0.5)))
+        events = self.body_fsm.update(metrics, now)
+        if events:
+            self.state.body_text = self.body_fsm.text
+        # В очередь действий отдаём только то, что человек сам привязал к
+        # команде (по умолчанию тело только считает и показывает).
+        mapped = []
+        for ev in events:
+            if ev.kind == "squat_rep":
+                self._events_log.appendleft(f"приседание №{ev.value}")
+            if self.cfg.actions.mapping.get(ev.kind):
+                mapped.append(ev)
+        return mapped
 
     def _handle_lip(self, face, now: float) -> List[Event]:
         if self.lip_reader is None or face is None:
@@ -450,6 +486,7 @@ class AirMouseApp:
                 face_events = [e for e in face_events if e.kind not in FACE_SUPPRESSED]
             events += face_events
             events += self._handle_lip(res.face, now)
+            events += self._handle_body(getattr(res, "body", None), now)
             # жесты двумя руками (масштаб/прокрутка) — только когда видно обе руки
             # и вторая рука не занята нажатиями
             if len(hands) >= 2 and getattr(self.cfg.hand, "roles", "single") != "split":
@@ -705,10 +742,19 @@ class AirMouseApp:
             # 0 -> первый пиксель, 1 -> последний: край экрана достижим ровно
             px, py = screen_point(sx, sy, (width, height))
             point = self.gaze_cursor.update(px, py)
-            if point is None:
-                return []
-            x, y = point
-            return [Event("pointer", value=(int(round(x)), int(round(y))))]
+            events: List[Event] = []
+            if point is not None:
+                x, y = point
+                events.append(Event("pointer", value=(int(round(x)), int(round(y)))))
+            if self.cfg.face.gaze_dwell_click:
+                # «взгляд + удержание»: клик не мгновенный, а через 600 мс,
+                # с видимым прогрессом — иначе это классическая проблема
+                # Midas touch (любое движение глаз что-то нажимает)
+                progress, fired = self.gaze_dwell.update(px, py, now)
+                self.state.gaze_dwell = progress
+                if fired:
+                    events.append(Event("gaze_click", label="удержание взгляда"))
+            return events
         dt = max(now - self._last_now, 1e-3) if self._last_now else 1.0 / 30.0
         dx, dy = self.face_fsm.gaze_step(dt)
         limit = float(getattr(self.cfg.face, "gaze_max_step_px",
@@ -1008,6 +1054,7 @@ class AirMouseApp:
         s.head_pointer = self.router.head_pointer
         s.gaze_pointer = self.router.gaze_pointer
         s.gaze_text = self.gaze_text() if self._metrics is not None else ""
+        s.body_text = self.body_fsm.text if self.body_fsm.metrics.visible else ""
         s.gaze_absolute = bool(self.cfg.face.gaze_absolute and self.gaze_calib.ready)
         s.calib_active = self.calibrating
         s.calib_target = self.calibration_target()
@@ -1263,6 +1310,7 @@ class AirMouseApp:
         self.head_pose.reset()
         self.two_hand_fsm = TwoHandFSM(self.cfg.hand, self._two_hand_relax())
         self.face_fsm = FaceFSM(self.cfg.face)
+        self.body_fsm = BodyFSM(self.cfg.body)
         self._metrics = None
         self._face_counter = 0
         self._armed_at = time.monotonic() + max(self.cfg.warmup_s, 0.0) * 0.5

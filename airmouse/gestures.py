@@ -518,6 +518,9 @@ class HandFSM:
         self.open_palm_hold = HoldTimer(cfg.open_palm_hold_s)
         # почему открытая кисть не стала «стопом» — для подсказки в окне
         self.palm_reject = ""
+        self._present_since: Optional[float] = None   # когда рука появилась в кадре
+        self._settle_until = -1e9                     # до этого времени команды не выдаём
+        self._ever_seen = False                       # рука уже была в кадре хоть раз
         # отдельный «замок» на паузу: случайно мигнувшая ладонь не должна
         # переключать режим чаще, чем раз в pause_cooldown_s
         self.pause_cooldown = Cooldown(getattr(cfg, "pause_cooldown_s", 2.5))
@@ -599,6 +602,7 @@ class HandFSM:
     def update(self, hand: Optional[Hand], now: float) -> List[Event]:
         events: List[Event] = []
         if hand is None:
+            self._present_since = None
             if self._dragging:
                 events.append(Event("drag_end", label="рука потеряна"))
                 self._dragging = False
@@ -613,6 +617,21 @@ class HandFSM:
         f = analyze_hand(hand, self.cfg.pointer_source)
         if not f.valid:
             return events
+
+        # «Затишье на входе». Человек только занёс руку в кадр — она летит,
+        # пальцы ещё складываются, нейросеть на переходных кадрах видит то
+        # щипок, то ладонь. Именно так появляются случайные клики и паузы,
+        # поэтому первые ``settle_s`` секунд после появления руки команды не
+        # выдаются (курсор при этом уже двигается). Это стандартная практика
+        # против ложных срабатываний в жестовых интерфейсах.
+        if self._present_since is None:
+            self._present_since = now
+            if self._ever_seen:
+                # рука вернулась в кадр после пропажи: ждём, пока уляжется.
+                # Самый первый показ не тормозим — за это отвечает разминка.
+                self._settle_until = now + float(getattr(self.cfg, "settle_s", 0.25))
+        self._ever_seen = True
+        settled = now >= self._settle_until
 
         # Скорость указателя — для «рывков» и для индикатора в оверлее.
         if self._prev_pointer is not None:
@@ -659,7 +678,8 @@ class HandFSM:
                     events.append(Event("pointer_freeze", label="щипок"))
         else:
             # Только настоящий щипок двумя пальцами: кулак и «ОК» не считаются.
-            started = pose == Pose.PINCH and pinch_is_real(f, self.cfg, self.relax)
+            started = (settled and pose == Pose.PINCH
+                       and pinch_is_real(f, self.cfg, self.relax))
             if started:
                 self._pinching = True
                 self._pinch_since = now
@@ -705,6 +725,7 @@ class HandFSM:
         palm_side_ok = not (is_back and bool(getattr(self.cfg, "palm_need_side", True)))
         open_and_settled = (
             pose == Pose.OPEN_PALM
+            and settled
             and stable == Pose.OPEN_PALM.value
             and still
             and near

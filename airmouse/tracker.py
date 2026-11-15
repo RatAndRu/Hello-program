@@ -29,6 +29,7 @@ log = logging.getLogger("airmouse")
 class FrameResult:
     hands: List[Hand] = field(default_factory=list)
     face: Optional[Face] = None
+    body: Optional[np.ndarray] = None      # (33, 4): x, y, z, visibility
     backend: str = ""
 
     @property
@@ -60,6 +61,7 @@ class MediaPipeTracker:
         face_cfg: FaceConfig,
         model_dir: Path | str = "models",
         want_face: bool = True,
+        want_body: bool = False,
         progress=None,
     ) -> None:
         import mediapipe as mp
@@ -70,6 +72,8 @@ class MediaPipeTracker:
         # Точки лица и зрачки нужны не только «мимике»: по ним работает
         # «мышь глазами», поэтому лицо распознаём всегда (кроме --no-face).
         self.want_face = bool(want_face)
+        # Тело целиком — по желанию: это ещё одна модель и ещё немного CPU.
+        self.want_body = bool(want_body)
         self.api = "legacy" if hasattr(mp, "solutions") else "tasks"
         self._last_ts = 0
         if self.api == "legacy":
@@ -80,6 +84,14 @@ class MediaPipeTracker:
     # ------------------------------------------------------------------ #
     def _init_legacy(self) -> None:
         mp = self._mp
+        self._pose = None
+        if getattr(self, "want_body", False) and hasattr(mp.solutions, "pose"):
+            self._pose = mp.solutions.pose.Pose(
+                static_image_mode=False,
+                model_complexity=0,
+                min_detection_confidence=0.5,
+                min_tracking_confidence=0.5,
+            )
         self._hands = mp.solutions.hands.Hands(
             static_image_mode=False,
             max_num_hands=self.hand_cfg.max_hands,
@@ -115,6 +127,16 @@ class MediaPipeTracker:
                 min_tracking_confidence=self.hand_cfg.min_tracking_confidence,
             )
         )
+        self._pose_landmarker = None
+        if self.want_body:
+            pose_model = ensure_model(model_dir, "pose_landmarker", progress)
+            self._pose_landmarker = vision.PoseLandmarker.create_from_options(
+                vision.PoseLandmarkerOptions(
+                    base_options=BaseOptions(model_asset_path=str(pose_model)),
+                    running_mode=vision.RunningMode.VIDEO,
+                    num_poses=1,
+                )
+            )
         self._face_landmarker = None
         if self.want_face:
             face_model = ensure_model(model_dir, "face_landmarker", progress)
@@ -155,6 +177,15 @@ class MediaPipeTracker:
                 except Exception:
                     pass
                 res.hands.append(_to_hand(hlm.landmark, label, score))
+        pose = getattr(self, "_pose", None)
+        if pose is not None:
+            pose_res = pose.process(rgb)
+            if pose_res.pose_landmarks:
+                res.body = np.array(
+                    [[lm.x, lm.y, lm.z, float(getattr(lm, "visibility", 1.0) or 0.0)]
+                     for lm in pose_res.pose_landmarks.landmark],
+                    dtype=np.float32,
+                )
         if self._face is not None:
             face_res = self._face.process(rgb)
             if face_res.multi_face_landmarks:
@@ -186,10 +217,22 @@ class MediaPipeTracker:
                     [[lm.x, lm.y, lm.z] for lm in face_res.face_landmarks[0]], dtype=np.float32
                 )
                 res.face = Face(pts)
+        if self._pose_landmarker is not None:
+            pose_res = self._pose_landmarker.detect_for_video(image, ts)
+            if pose_res.pose_landmarks:
+                # x, y, z и «видность» точки: по видности отсекаем кадры,
+                # где человек наполовину за столом
+                res.body = np.array(
+                    [[lm.x, lm.y, lm.z,
+                      float(getattr(lm, "visibility", 1.0) or 0.0)]
+                     for lm in pose_res.pose_landmarks[0]],
+                    dtype=np.float32,
+                )
         return res
 
     def close(self) -> None:
-        for name in ("_hands", "_face", "_hand_landmarker", "_face_landmarker"):
+        for name in ("_hands", "_face", "_hand_landmarker", "_face_landmarker",
+                     "_pose_landmarker"):
             obj = getattr(self, name, None)
             if obj is not None and hasattr(obj, "close"):
                 try:
@@ -233,6 +276,7 @@ def create_tracker(
     face_cfg: FaceConfig,
     model_dir: Path | str = "models",
     progress=None,
+    want_body: bool = False,
 ) -> Tracker:
     backend = (backend or "auto").lower()
     if backend in ("none", "off", "no"):
@@ -240,7 +284,8 @@ def create_tracker(
     reason = ""
     if backend in ("auto", "mediapipe"):
         try:
-            return MediaPipeTracker(hand_cfg, face_cfg, model_dir, progress=progress)
+            return MediaPipeTracker(hand_cfg, face_cfg, model_dir, progress=progress,
+                                    want_body=want_body)
         except Exception as exc:
             if backend == "mediapipe":
                 raise
