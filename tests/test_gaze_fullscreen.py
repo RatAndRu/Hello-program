@@ -244,7 +244,12 @@ def test_fullscreen_flag_from_cli(monkeypatch):
         def run(self):
             return 0
 
+        def stop(self):
+            pass
+
     monkeypatch.setattr("airmouse.app.AirMouseApp", FakeApp)
     monkeypatch.setattr(cli, "setup_logging", lambda *a, **k: None)
+    # в фоне без трея: не хотим поднимать настоящую иконку (в CI pystray есть)
+    monkeypatch.setattr(cli, "tray_available", lambda: False)
     cli.main(["run", "--fullscreen", "--no-window"])
     assert captured["cfg"].fullscreen is True
