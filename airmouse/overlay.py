@@ -92,6 +92,7 @@ HELP_KEYS = (
     ("Q / Esc", "выход"),
     ("P", "пауза"),
     ("H", "мышь головой"),
+    ("G", "мышь глазами"),
     ("C", "настройки"),
     ("V", "режим по кругу"),
     ("K", "калибровка ладони"),
@@ -138,9 +139,11 @@ class OverlayState:
     settings_open: bool = False      # окно настроек с ползунками открыто
     modes_text: str = ""             # какие режимы включены: «режимы: рука + лицо»
     side_text: str = ""              # «сторона кисти: ладонь / тыл»
+    gaze_pointer: bool = False       # курсор двигают глаза (зрачки)
+    gaze_text: str = ""              # «взгляд: вправо · мышь глазами ВКЛ»
     events: List[str] = field(default_factory=list)   # последние действия (готовые строки)
     active_box: Sequence[float] = (0.16, 0.14, 0.84, 0.86)
-    hints: str = "Q выход P пауза H голова C настройки V режимы K ладонь M движок I справка"
+    hints: str = "Q выход P пауза H голова G глаза C настройки V режимы K ладонь M движок I справка"
     show_help: bool = False
     show_names: bool = True
     pinch_threshold: float = 0.32
@@ -277,6 +280,18 @@ def draw_face_ar(img: np.ndarray, face: Face, expression: str = "") -> None:
     cv2.line(img, tuple(pts[F.NOSE_BRIDGE].astype(int)), tuple(pts[F.NOSE_TIP].astype(int)),
              WARN, 1, cv2.LINE_AA)
 
+    # зрачки: точки радужки есть только у нейросетевого движка (478 точек)
+    if face.has_iris:
+        for group in (F.IRIS_A, F.IRIS_B):
+            idx = [i for i in group if i < count]
+            if not idx:
+                continue
+            ring = pts[idx].astype(np.int32)
+            center = ring.mean(axis=0).astype(int)
+            radius = max(int(np.linalg.norm(ring - center, axis=1).max()), 2)
+            cv2.circle(img, tuple(center), radius, INFO, 1, cv2.LINE_AA)
+            cv2.circle(img, tuple(center), max(radius // 2, 1), INFO, -1, cv2.LINE_AA)
+
     if expression:
         anchor = pts[F.CHIN].astype(int)
         width, _ = T.measure(expression, 14)
@@ -331,7 +346,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
     text_w = max([T.measure(t, size)[0] for t, size in lines] + [T.measure("AirMouse 0.2.0", size_title)[0]])
     panel_w = text_w + int(24 * k)
     n_extra = (int(bool(state.modes_text)) + int(bool(state.side_text))
-               + int(bool(state.roles_text)) + int(state.settings_open))
+               + int(bool(state.gaze_text)) + int(bool(state.roles_text))
+               + int(state.settings_open))
     panel_h = int((104 + 30 * n_extra) * k)
     _panel(img, x, y, panel_w, panel_h, 0.62)
 
@@ -350,6 +366,8 @@ def _draw_status(img, state: OverlayState, k: float) -> None:
         extras.append((state.modes_text, INFO))
     if state.side_text:             # какая стороной повёрнута кисть
         extras.append((state.side_text, DIM))
+    if state.gaze_text:             # куда смотрит человек (и включена ли мышь глазами)
+        extras.append((state.gaze_text, ACCENT if state.gaze_pointer else DIM))
     if state.roles_text:            # кто чем занят в режиме «две руки на роли»
         extras.append((state.roles_text, ACCENT))
     if state.settings_open:
@@ -368,15 +386,20 @@ def _draw_face_panel(img, state: OverlayState, k: float) -> None:
         return
     w = img.shape[1]
     panel_w = int(250 * k)
+    if state.gaze_text:                  # строка про взгляд может быть длиннее панели
+        panel_w = max(panel_w, T.measure(state.gaze_text, int(12 * k))[0] + int(24 * k))
     x = w - panel_w - int(12 * k)
     y = int(12 * k)
-    _panel(img, x, y, panel_w, int(146 * k), 0.62)
+    _panel(img, x, y, panel_w, int(170 * k if state.gaze_text else 146 * k), 0.62)
     T.draw(img, "мимика лица", (x + 12, y + 8), int(16 * k), FG)
     bx, bw = x + 12, int(96 * k)
     _bar(img, bx, y + 58, bw, int(9 * k), state.ear, WARN, "глаза", 0.0, 0.45, int(12 * k))
     _bar(img, bx, y + 78, bw, int(9 * k), max(0.0, state.smile), ACCENT, "улыбка", -0.05, 0.15, int(12 * k))
     _bar(img, bx, y + 98, bw, int(9 * k), max(0.0, state.brow), ACCENT, "брови", -0.05, 0.15, int(12 * k))
     _bar(img, bx, y + 118, bw, int(9 * k), max(0.0, state.sad), WARN, "грусть", 0.0, 0.08, int(12 * k))
+    if state.gaze_text:
+        T.draw(img, state.gaze_text, (x + 12, y + int(140 * k)), int(12 * k),
+               ACCENT if state.gaze_pointer else DIM)
 
 
 def _draw_events(img, state: OverlayState, k: float) -> None:
@@ -456,6 +479,11 @@ def _draw_help(img, state: OverlayState, k: float) -> None:
     T.draw(img, "одна ведёт курсор, вторая нажимает", (right_x, yy), body, FG)
     yy += int(19 * k)
     T.draw(img, "включается: config set hand.roles=split", (right_x, yy), int(12 * k), DIM)
+    yy += int(24 * k)
+    yy = header("Мышь глазами (клавиша G):", right_x, yy)
+    T.draw(img, "зрачок отведён от центра — курсор едет", (right_x, yy), int(12 * k), FG)
+    yy += int(17 * k)
+    T.draw(img, "нужна нейросеть MediaPipe (точки радужки)", (right_x, yy), int(12 * k), DIM)
 
     T.draw(img, "I или Tab — закрыть справку", (pad, h - int(28 * k)), int(13 * k), DIM)
 
@@ -524,7 +552,8 @@ def render(
 
     if state.two_hand_hint:      # подсказка двумя руками — под сводкой слева
         n_extra = (int(bool(state.modes_text)) + int(bool(state.side_text))
-                   + int(bool(state.roles_text)) + int(state.settings_open))
+                   + int(bool(state.gaze_text)) + int(bool(state.roles_text))
+                   + int(state.settings_open))
         hint_y = int((12 + 104 + 30 * n_extra + 8) * k)
         _label(img, state.two_hand_hint, (int(12 * k), hint_y),
                int(14 * k), ACCENT, alpha=0.55)

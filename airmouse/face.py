@@ -33,6 +33,9 @@ class FaceMetrics:
     pitch: float = 0.0
     roll: float = 0.0
     interocular: float = 0.0
+    gaze_x: float = 0.0            # зрачок в глазнице: 0 — центр, + — вправо
+    gaze_y: float = 0.0            # + — вниз
+    gaze_valid: bool = False       # есть ли точки радужки в этом кадре
     valid: bool = False
 
     def as_vector(self) -> np.ndarray:
@@ -50,6 +53,54 @@ def _ear(face: Face, idx) -> float:
     if horiz < 1e-6:
         return 0.0
     return (distance(p2, p6) + distance(p3, p5)) / (2.0 * horiz)
+
+
+def _eye_box(face: Face, ids) -> Tuple[float, float, float, float]:
+    """Прямоугольник глазницы: (cx, cy, полуширина, полувысота)."""
+    outer = face.xy(ids[0])       # угол у виска
+    inner = face.xy(ids[3])       # угол у носа
+    top = (face.xy(ids[1]) + face.xy(ids[2])) / 2.0
+    bottom = (face.xy(ids[4]) + face.xy(ids[5])) / 2.0
+    cx = (outer[0] + inner[0]) / 2.0
+    cy = (top[1] + bottom[1]) / 2.0
+    half_w = max(abs(inner[0] - outer[0]) / 2.0, 1e-6)
+    half_h = max((bottom[1] - top[1]) / 2.0, 1e-6)
+    return cx, cy, half_w, half_h
+
+
+def measure_gaze(face: Face) -> Tuple[float, float, bool]:
+    """Куда смотрит человек: положение зрачка внутри глазницы.
+
+    Возвращает ``(dx, dy, ok)``, где ``dx``/``dy`` — смещение зрачка от центра
+    глаза в единицах полуширины/полувысоты глазницы: 0 — смотрит прямо,
+    ±1 — зрачок у самого края. Оба глаза должны давать согласованный знак,
+    поэтому берём среднее, а радужку привязываем к ближайшему глазу.
+    """
+    if not face.has_iris:
+        return 0.0, 0.0, False
+
+    eyes = []
+    for ids in (F.EYE_A, F.EYE_B):
+        cx, cy, half_w, half_h = _eye_box(face, ids)
+        eyes.append((cx, cy, half_w, half_h))
+
+    irises = [face.iris_center(F.IRIS_A), face.iris_center(F.IRIS_B)]
+    irises = [p for p in irises if p is not None]
+    if len(irises) < 2:
+        return 0.0, 0.0, False
+
+    dxs, dys = [], []
+    for ix, iy in ((float(p[0]), float(p[1])) for p in irises):
+        # радужка относится к тому глазу, чей центр по x ближе
+        cx, cy, half_w, half_h = min(eyes, key=lambda e: abs(e[0] - ix))
+        dxs.append((ix - cx) / half_w)
+        dys.append((iy - cy) / half_h)
+    if any(abs(d) > 1.6 or abs(v) > 1.6 for d, v in zip(dxs, dys)):
+        return 0.0, 0.0, False       # точка «улетела» — кадр битый
+
+    dx = max(-1.0, min(1.0, sum(dxs) / len(dxs)))
+    dy = max(-1.0, min(1.0, sum(dys) / len(dys)))
+    return dx, dy, True
 
 
 def measure_face(face: Face) -> FaceMetrics:
@@ -87,6 +138,8 @@ def measure_face(face: Face) -> FaceMetrics:
     eye_b = face.xy(F.EYE_B[3])
     roll = math.degrees(math.atan2(eye_b[1] - eye_a[1], eye_b[0] - eye_a[0]))
 
+    gaze_x, gaze_y, gaze_ok = measure_gaze(face)
+
     return FaceMetrics(
         ear_left=ear_l,
         ear_right=ear_r,
@@ -98,6 +151,9 @@ def measure_face(face: Face) -> FaceMetrics:
         pitch=pitch,
         roll=roll,
         interocular=io,
+        gaze_x=gaze_x,
+        gaze_y=gaze_y,
+        gaze_valid=gaze_ok,
         valid=True,
     )
 
@@ -135,6 +191,8 @@ class FaceBaseline:
     corner: float = 0.0      # уголки губ: плюс — вверх (улыбка), минус — вниз (грусть)
     pitch: float = 0.0
     yaw: float = 0.0
+    gaze_x: float = 0.0      # нейтральное положение зрачка (свой «ноль»)
+    gaze_y: float = 0.0
     samples: int = 0
 
     def update(self, m: FaceMetrics, alpha: float = 0.05) -> None:
@@ -146,12 +204,17 @@ class FaceBaseline:
             self.corner = m.corner_lift
             self.pitch = m.pitch
             self.yaw = m.yaw
+            self.gaze_x = m.gaze_x
+            self.gaze_y = m.gaze_y
         else:
             self.smile = alpha * m.mouth_width + (1 - alpha) * self.smile
             self.brow = alpha * m.brow_height + (1 - alpha) * self.brow
             self.corner = alpha * m.corner_lift + (1 - alpha) * self.corner
             self.pitch = alpha * m.pitch + (1 - alpha) * self.pitch
             self.yaw = alpha * m.yaw + (1 - alpha) * self.yaw
+            if m.gaze_valid:
+                self.gaze_x = alpha * m.gaze_x + (1 - alpha) * self.gaze_x
+                self.gaze_y = alpha * m.gaze_y + (1 - alpha) * self.gaze_y
         self.samples += 1
 
     @property
@@ -237,6 +300,9 @@ class FaceFSM:
         self.sad_score = 0.0
         self.rel_yaw = 0.0
         self.rel_pitch = 0.0
+        self.gaze_x = 0.0          # сглаженное положение зрачка (0 — центр)
+        self.gaze_y = 0.0
+        self.gaze_valid = False
         self.mouth_open = 0.0
         self.ear_value = 0.3
 
@@ -269,18 +335,37 @@ class FaceFSM:
 
         # --- базовая линия: медленно подтягивается, когда лицо спокойно --- #
         gesture_active = (m.mouth_width - self.baseline.smile) > self.cfg.smile_delta * 1.5
+        if m.gaze_valid:
+            if (abs(m.gaze_x - self.baseline.gaze_x) > self.cfg.gaze_deadzone * 1.5
+                    or abs(m.gaze_y - self.baseline.gaze_y) > self.cfg.gaze_deadzone * 1.5):
+                gesture_active = True      # смотрим в сторону — нейтраль не трогаем
         if self.baseline.samples == 0:
             self.baseline.update(m)          # первый кадр — сразу нейтраль
         elif not gesture_active:
             self.baseline.update(m, alpha=0.02)
 
-        self.smile_score = m.mouth_width - self.baseline.smile
+        # --- улыбка и грусть: их различает ЗНАК подъёма уголков губ ------- #
+        # Ширина рта растёт и от улыбки, и от опущенных уголков (губы
+        # растягиваются), поэтому одна ширина улыбку не отличает от грусти.
+        lift_gain = m.corner_lift - self.baseline.corner   # + вверх, − вниз
+        width_gain = m.mouth_width - self.baseline.smile
+        self.sad_score = max(0.0, -lift_gain)
+        if lift_gain < -self.cfg.sad_delta * 0.5:
+            # уголки вниз — это не улыбка, даже если рот стал шире
+            self.smile_score = 0.0
+        else:
+            self.smile_score = max(width_gain, lift_gain * 2.0)
         self.brow_score = m.brow_height - self.baseline.brow
-        # грусть: уголки губ ушли вниз относительно своей нейтрали
-        self.sad_score = self.baseline.corner - m.corner_lift
         self.rel_yaw = m.yaw - self.baseline.yaw
         self.rel_pitch = m.pitch - self.baseline.pitch
         events.extend(self.head.update(self.rel_yaw, self.rel_pitch, now))
+
+        # --- зрачок: куда смотрит человек (нужны точки радужки) ----------- #
+        self.gaze_valid = bool(m.gaze_valid)
+        if m.gaze_valid:
+            a = max(0.05, min(1.0, self.cfg.gaze_smoothing))
+            self.gaze_x = a * m.gaze_x + (1.0 - a) * self.gaze_x
+            self.gaze_y = a * m.gaze_y + (1.0 - a) * self.gaze_y
 
         # --- моргание и подмигивание ------------------------------------ #
         dl = self.left.update(m.ear_left, now)
@@ -340,6 +425,36 @@ class FaceFSM:
                 events.append(Event("brow_hold", label="брови"))
 
         return events
+
+    # ------------------------------------------------------------------ #
+    def gaze_step(self, dt: float) -> "tuple[float, float]":
+        """Смещение курсора за ``dt`` секунд по положению зрачка.
+
+        Как и у «мыши головой», это скорость, а не абсолютная позиция: пока
+        зрачок отведён от нейтрали дальше мёртвой зоны, курсор едет; вернулся
+        в центр — курсор встал. Так не нужно попадать зрачком в пиксель.
+        """
+        if not self.gaze_valid:
+            return (0.0, 0.0)
+        dz = self.cfg.gaze_deadzone
+        ex = self.gaze_x - self.baseline.gaze_x
+        ey = self.gaze_y - self.baseline.gaze_y
+        if ex > dz:
+            ex -= dz
+        elif ex < -dz:
+            ex += dz
+        else:
+            ex = 0.0
+        if ey > dz:
+            ey -= dz
+        elif ey < -dz:
+            ey += dz
+        else:
+            ey = 0.0
+        if not ex and not ey:
+            return (0.0, 0.0)
+        gain = self.cfg.gaze_speed_px_s
+        return (ex * gain * dt, ey * gain * dt)
 
     # ------------------------------------------------------------------ #
     def head_step(self, dt: float) -> "tuple[float, float]":

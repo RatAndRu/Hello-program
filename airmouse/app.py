@@ -15,6 +15,7 @@ import numpy as np
 from . import __version__
 from .actions import ActionRouter, DryRunBackend, PyAutoGuiBackend
 from .camera import ThreadedCamera
+from . import keys
 from .config import AppConfig, resolve_path
 from .face import FaceFSM, FaceMetrics, measure_face
 from .gestures import (
@@ -112,6 +113,7 @@ class AirMouseApp:
             active_box=cfg.pointer.active_box,
             paused=self.router.paused,
             head_pointer=self.router.head_pointer,
+            gaze_pointer=self.router.gaze_pointer,
             dry_run=dry_run,
             actions_on=not dry_run,
             pinch_threshold=cfg.hand.pinch_ratio,
@@ -270,6 +272,8 @@ class AirMouseApp:
                 events += self.two_hand_fsm.update(hands, now)
             if self.router.head_pointer and self._metrics is not None:
                 events.extend(self._head_pointer_events(now))
+            if self.router.gaze_pointer and self._metrics is not None:
+                events.extend(self._gaze_pointer_events(now))
 
         self.stats.frames += 1
         self.stats.hand_frames += 1 if self._hands or self._shape is not None else 0
@@ -443,6 +447,8 @@ class AirMouseApp:
             parts.append(f"курсор {int(pos[0])},{int(pos[1])}")
         if self.router.head_pointer:
             parts.append(f"голова {self.face_fsm.rel_yaw:+.0f}°/ {self.face_fsm.rel_pitch:+.0f}°")
+        if self.router.gaze_pointer:
+            parts.append(f"взгляд {self.face_fsm.gaze_x:+.2f}/{self.face_fsm.gaze_y:+.2f}")
         parts.append(f"{self.state.fps:.0f} кадр/с")
         return "сейчас: " + "   ".join(parts)
 
@@ -463,6 +469,50 @@ class AirMouseApp:
             return []
         return [Event("pointer_rel", value=(dx, dy))]
 
+    def _gaze_pointer_events(self, now: float) -> List[Event]:
+        """«Мышь глазами»: курсор двигается положением зрачка в глазнице.
+
+        Скорость пропорциональна отклонению зрачка сверх мёртвой зоны
+        (``face.gaze_deadzone``), чувствительность — ``face.gaze_speed_px_s``.
+        Глаза при этом не «залипают»: вернули взгляд в центр — курсор встал.
+        """
+        dt = max(now - self._last_now, 1e-3) if self._last_now else 1.0 / 30.0
+        dx, dy = self.face_fsm.gaze_step(dt)
+        limit = float(getattr(self.cfg.face, "gaze_max_step_px",
+                              self.cfg.pointer.max_step_px))
+        dx = max(-limit, min(limit, dx))
+        dy = max(-limit, min(limit, dy))
+        if abs(dx) < 1.0 and abs(dy) < 1.0:
+            return []
+        return [Event("pointer_rel", value=(dx, dy))]
+
+    def toggle_gaze_pointer(self) -> str:
+        """Включить/выключить управление курсором глазами (клавиша G)."""
+        on = not self.router.gaze_pointer
+        self.router.gaze_pointer = on
+        self.cfg.gaze_pointer = on
+        self.state.gaze_pointer = on
+        self._events_log.appendleft(
+            "мышь глазами " + ("вкл" if on else "выкл")
+            + ("" if self.face_fsm.gaze_valid else " (зрачков пока не видно)")
+        )
+        return "gaze_pointer=" + ("on" if on else "off")
+
+    def gaze_text(self) -> str:
+        """Короткая строка про взгляд: куда смотрит и включено ли управление."""
+        fsm = self.face_fsm
+        if not fsm.gaze_valid:
+            return "взгляд: зрачков не видно (нужна нейросеть MediaPipe)"
+        gx, gy = fsm.gaze_x - fsm.baseline.gaze_x, fsm.gaze_y - fsm.baseline.gaze_y
+        dz = self.cfg.face.gaze_deadzone
+        if abs(gx) <= dz and abs(gy) <= dz:
+            where = "прямо"
+        elif abs(gx) >= abs(gy):
+            where = "вправо" if gx > 0 else "влево"
+        else:
+            where = "вниз" if gy > 0 else "вверх"
+        return f"взгляд: {where}" + (" · мышь глазами ВКЛ" if self.router.gaze_pointer else "")
+
     def _expression_text(self) -> str:
         """Текущее выражение лица словами — чтобы мимика была понятна без графиков."""
         m = self._metrics
@@ -472,11 +522,15 @@ class AirMouseApp:
         ear = min(m.ear_left, m.ear_right)
         if ear < self.cfg.face.ear_blink:
             return "глаза закрыты"
+        # грусть проверяем раньше улыбки: опущенные уголки растягивают рот,
+        # и по одной ширине рта это выглядело бы как «улыбка N%»
+        sad = getattr(fsm, "sad_score", 0.0)
+        if sad > self.cfg.face.sad_delta:
+            level = min(1.0, sad / max(self.cfg.face.sad_delta * 2.5, 1e-6))
+            return f"грусть {level:.0%}"
         if fsm.smile_score > self.cfg.face.smile_delta:
             level = min(1.0, fsm.smile_score / max(self.cfg.face.smile_delta * 2.5, 1e-6))
             return f"улыбка {level:.0%}"
-        if getattr(fsm, "sad_score", 0.0) > self.cfg.face.sad_delta:
-            return "грусть"
         if (fsm.brow_score > self.cfg.face.brow_delta * 1.2
                 and m.mouth_open > self.cfg.face.surprise_mouth):
             return "удивление"
@@ -513,6 +567,8 @@ class AirMouseApp:
             s.side_text = f"сторона кисти: {SIDE_TITLES_RU.get(side, '—')}"
         s.paused = self.router.paused
         s.head_pointer = self.router.head_pointer
+        s.gaze_pointer = self.router.gaze_pointer
+        s.gaze_text = self.gaze_text() if self._metrics is not None else ""
         s.hand_seen = bool(self._hands) or self._shape is not None
         s.hand_count = len(self._hands)
         s.face_seen = self._face is not None
@@ -605,7 +661,8 @@ class AirMouseApp:
                 if self.show_window and canvas is not None:
                     try:
                         cv2.imshow(self._window_name, canvas)
-                        key = cv2.waitKey(1) & 0xFF
+                        # без & 0xFF: на русской раскладке нужен полный код
+                        key = cv2.waitKey(1)
                     except cv2.error as exc:
                         log.warning("Окно предпросмотра недоступно (%s) — работаю в фоне", exc)
                         self.show_window = False
@@ -623,31 +680,8 @@ class AirMouseApp:
                             self._update_state([], fps)
                         elif action in ("reset", "change"):
                             self._apply_settings_live()
-                    if handled:
-                        pass
-                    elif key in (27, ord("q"), ord("й")):
-                        self.running = False
-                    elif key in (ord("p"), ord("з")):
-                        self.router.paused = not self.router.paused
-                    elif key in (ord("h"), ord("р")):
-                        self.router.head_pointer = not self.router.head_pointer
-                        self.cfg.head_pointer = self.router.head_pointer
-                    elif key in (ord("m"), ord("M"), ord("ь")):
-                        self.switch_backend()
-                    elif key in (ord("c"), ord("C"), ord("с"), ord("С")):
-                        self.toggle_settings()
-                    elif key in (ord("v"), ord("V"), ord("в"), ord("В")):
-                        self.cycle_modes()
-                    elif key in (ord("k"), ord("K"), ord("л"), ord("Л")):
-                        self.calibrate_side()
-                    elif key in (ord("i"), ord("I"), ord("ш"), ord("?")):
-                        self.state.show_help = not self.state.show_help
-                    elif key == 9:  # Tab — тот же переключатель, что и «I»
-                        self.state.show_help = not self.state.show_help
-                    elif key == ord(" "):
-                        log.info("Статистика: кадров=%d, рука=%d, лицо=%d, кликов=%d, прокруток=%d",
-                                 self.stats.frames, self.stats.hand_frames,
-                                 self.stats.face_frames, self.stats.clicks, self.stats.scrolls)
+                    if not handled:
+                        self.handle_hotkey(key)
         except KeyboardInterrupt:
             log.info("Прервано пользователем")
         finally:
@@ -655,6 +689,46 @@ class AirMouseApp:
         return exit_code
 
     # ------------------------------------------------------------------ #
+    def handle_hotkey(self, key: int) -> bool:
+        """Горячие клавиши окна. Работают в любой раскладке (см. ``keys``).
+
+        Возвращает ``True``, если клавиша что-то сделала.
+        """
+        if keys.matches(key, "esc") or keys.matches(key, "q"):
+            self.running = False
+            return True
+        if keys.matches(key, "p"):
+            self.router.paused = not self.router.paused
+            return True
+        if keys.matches(key, "h"):
+            self.router.head_pointer = not self.router.head_pointer
+            self.cfg.head_pointer = self.router.head_pointer
+            return True
+        if keys.matches(key, "g"):
+            self.toggle_gaze_pointer()
+            return True
+        if keys.matches(key, "m"):
+            self.switch_backend()
+            return True
+        if keys.matches(key, "c"):
+            self.toggle_settings()
+            return True
+        if keys.matches(key, "v"):
+            self.cycle_modes()
+            return True
+        if keys.matches(key, "k"):
+            self.calibrate_side()
+            return True
+        if keys.matches(key, "i") or keys.matches(key, "tab"):
+            self.state.show_help = not self.state.show_help
+            return True
+        if keys.matches(key, "space"):
+            log.info("Статистика: кадров=%d, рука=%d, лицо=%d, кликов=%d, прокруток=%d",
+                     self.stats.frames, self.stats.hand_frames,
+                     self.stats.face_frames, self.stats.clicks, self.stats.scrolls)
+            return True
+        return False
+
     def _pick_primary(self, hands: List) -> Optional[int]:
         """Какая рука «главная»: та же, что и в прошлом кадре.
 

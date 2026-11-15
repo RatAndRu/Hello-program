@@ -90,7 +90,8 @@ class MediaPipeTracker:
             self._face = mp.solutions.face_mesh.FaceMesh(
                 static_image_mode=False,
                 max_num_faces=1,
-                refine_landmarks=False,
+                # refine_landmarks=True → 478 точек: 468 лица + 10 радужки
+                refine_landmarks=True,
                 min_detection_confidence=0.5,
                 min_tracking_confidence=0.5,
             )

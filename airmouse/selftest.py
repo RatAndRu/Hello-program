@@ -146,6 +146,55 @@ def check_hand_side() -> Check:
                  f"жест тылом={'ok_sign_back' in kinds}")
 
 
+def check_keys_any_layout() -> Check:
+    """Горячие клавиши понимаются в русской раскладке и в любом кодировании."""
+    from . import keys
+
+    variants = {
+        "латиница": ord("q"),
+        "кириллица (Unicode)": ord("й"),
+        "кириллица (cp1251)": 0xE9,       # столько отдаёт waitKey на Windows
+    }
+    ok = all(keys.matches(code, "q") for code in variants.values())
+    # стрелки в расширенных кодах не должны притворяться буквами
+    arrow = keys.matches(65361, "q") is False
+    return Check("клавиши в любой раскладке", ok and arrow,
+                 "q: " + ", ".join(f"{name}={code}" for name, code in variants.items()))
+
+
+def check_sad_not_smile() -> Check:
+    """Опущенные уголки губ — это грусть, а не «улыбка» по ширине рта."""
+    fsm = FaceFSM(FaceConfig())
+    for _ in range(6):
+        fsm.update(measure_face(synthetic_face()), 0.0)
+    for i in range(12):
+        fsm.update(measure_face(synthetic_face(frown=0.10)), 0.1 + i * 0.04)
+    ok = fsm.sad_score > 0.03 and fsm.smile_score <= 0.0
+    return Check("грусть не выдаётся за улыбку", ok,
+                 f"грусть={fsm.sad_score:.3f}, улыбка={fsm.smile_score:.3f}")
+
+
+def check_gaze() -> Check:
+    """Зрачок виден: смотрит вправо — курсор едет вправо, в центр — стоит."""
+    fsm = FaceFSM(FaceConfig())
+    t = 0.0
+    for _ in range(8):
+        fsm.update(measure_face(synthetic_face()), t)
+        t += 0.04
+    centered = fsm.gaze_step(0.1) == (0.0, 0.0)
+    for _ in range(12):
+        fsm.update(measure_face(synthetic_face(gaze=(0.6, 0.0))), t)
+        t += 0.04
+    dx, dy = fsm.gaze_step(0.1)
+    blind = FaceFSM(FaceConfig())
+    for _ in range(4):
+        blind.update(measure_face(synthetic_face(iris=False)), t)
+        t += 0.04
+    ok = bool(fsm.gaze_valid and centered and dx > 5 and abs(dy) < 1 and not blind.gaze_valid)
+    return Check("зрачки и мышь глазами", ok,
+                 f"вправо={dx:.1f}px за 0.1с, без радужки — {blind.gaze_valid}")
+
+
 def check_settings_panel() -> Check:
     """Ползунки настроек реально меняют конфиг и сохраняются в файл."""
     cfg = AppConfig()
@@ -551,6 +600,9 @@ CHECKS: List[Callable[[], Check]] = [
     check_head_pointer,
     check_modes,
     check_hand_side,
+    check_keys_any_layout,
+    check_sad_not_smile,
+    check_gaze,
     check_settings_panel,
     check_rotation,
     check_click_fsm,

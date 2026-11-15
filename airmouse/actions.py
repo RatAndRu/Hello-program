@@ -135,6 +135,7 @@ class ActionRouter:
     cfg: AppConfig
     paused: bool = False
     head_pointer: bool = False
+    gaze_pointer: bool = False
     overlay_visible: bool = True
     dragging: bool = False
     log: List[str] = field(default_factory=list)
@@ -143,6 +144,7 @@ class ActionRouter:
     def __post_init__(self) -> None:
         self.paused = bool(self.cfg.start_paused)
         self.head_pointer = bool(self.cfg.head_pointer)
+        self.gaze_pointer = bool(getattr(self.cfg, "gaze_pointer", False))
 
     # ------------------------------------------------------------------ #
     def handle(self, event: Event, now: Optional[float] = None) -> None:

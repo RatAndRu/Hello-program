@@ -109,6 +109,11 @@ class F:
     CHEEK_LEFT = 234
     CHEEK_RIGHT = 454
 
+    # радужка (зрачок) — эти точки FaceMesh отдаёт только с refine_landmarks,
+    # индексы 468..477, по 5 точек на глаз: центр + 4 по кругу
+    IRIS_A = (468, 469, 470, 471, 472)
+    IRIS_B = (473, 474, 475, 476, 477)
+
 
 LIPS_INNER: Tuple[int, ...] = (
     78, 191, 80, 81, 82, 13, 312, 311, 310, 415, 308,
@@ -149,6 +154,17 @@ class Face:
     @property
     def interocular(self) -> float:
         return self.scale
+
+    @property
+    def has_iris(self) -> bool:
+        """Есть ли точки радужки (FaceMesh с refine_landmarks)."""
+        return self.points.shape[0] >= 478
+
+    def iris_center(self, group) -> "np.ndarray | None":
+        """Центр зрачка: среднее пяти точек радужки (или ``None``)."""
+        if not self.has_iris:
+            return None
+        return self.points[list(group), :2].astype(np.float64).mean(axis=0)
 
     def to_pixels(self, width: int, height: int) -> np.ndarray:
         pts = self.points[:, :2].astype(np.float64).copy()

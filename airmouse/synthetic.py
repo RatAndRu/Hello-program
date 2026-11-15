@@ -25,21 +25,27 @@ def synthetic_face(
     yaw: float = 0.0,
     pitch: float = 0.0,
     mouth_open: float = 0.12,
+    frown: float = 0.0,
+    gaze: Tuple[float, float] = (0.0, 0.0),
+    iris: bool = True,
     seed: int = 7,
 ) -> Face:
     """Лицо с заданными EAR, улыбкой (в единицах лица), бровями и поворотом.
 
     ``ear`` — «высота глаза»: 0.30 открыт, 0.08 закрыт (реальные значения
-    EAR лежат примерно в 0.15..0.35).
+    EAR лежат примерно в 0.15..0.35). ``frown`` — опущенные уголки губ (грусть),
+    ``gaze`` — куда смотрит зрачок: (0, 0) центр, (+0.6, 0) вправо.
+    ``iris`` — добавлять ли 10 точек радужки (478 точек вместо 468).
     """
     FU = 0.44 * scale            # «единица лица»: ширина головы ~2 FU
     cx, cy = center
     io = 0.52 * FU               # межзрачковое расстояние (масштаб лица)
-    pts = np.zeros((468, 3), dtype=np.float32)
+    n_points = 478 if iris else 468
+    pts = np.zeros((n_points, 3), dtype=np.float32)
 
     # заглушка для остальных точек: компактное облако вокруг центра лица
     rng = np.random.default_rng(seed)
-    cloud = rng.normal(0.0, 0.09 * scale, size=(468, 2))
+    cloud = rng.normal(0.0, 0.09 * scale, size=(n_points, 2))
     pts[:, 0] = cx + cloud[:, 0]
     pts[:, 1] = cy + cloud[:, 1]
 
@@ -70,6 +76,22 @@ def synthetic_face(
     eye(F.EYE_A, -0.14 * FU, -1.0, ear[0])   # 33 — внешний угол, 133 — внутренний
     eye(F.EYE_B, +0.14 * FU, +1.0, ear[1])   # 362 ... 263
 
+    # ---------------- радужка (зрачок) -------------------------------- #
+    if iris:
+        gx, gy = gaze
+        for ids, cx_eye, ear_v in ((F.IRIS_A, -0.14 * FU, ear[0]),
+                                   (F.IRIS_B, +0.14 * FU, ear[1])):
+            ew = 0.12 * FU
+            half_h = max(ear_v * ew, 0.02 * FU)
+            px = cx_eye + float(gx) * ew * 0.9
+            py = float(gy) * half_h * 0.9
+            r = 0.028 * FU
+            put(ids[0], px, py)                      # центр зрачка
+            put(ids[1], px - r, py)
+            put(ids[2], px, py - r)
+            put(ids[3], px + r, py)
+            put(ids[4], px, py + r)
+
     # верхние веки (для отрисовки и для высоты бровей)
     put(F.EYE_A_TOP, -0.14 * FU, -ear[0] * 0.12 * FU)
     put(F.EYE_B_TOP, +0.14 * FU, -ear[1] * 0.12 * FU)
@@ -81,8 +103,8 @@ def synthetic_face(
 
     # ---------------- рот --------------------------------------------- #
     my = 0.62 * FU
-    half_w = (0.15 + smile) * FU
-    lift = 0.40 * smile * FU
+    half_w = (0.15 + smile + 0.5 * frown) * FU
+    lift = 0.40 * (smile - frown) * FU
     inner_half = 0.85 * half_w
     gap = max(mouth_open * 2.0 * inner_half, 0.006 * FU)
 

@@ -22,6 +22,7 @@ import cv2
 import numpy as np
 
 from . import text as T
+from . import keys
 from .config import AppConfig, save_config
 
 log = logging.getLogger(__name__)
@@ -417,6 +418,13 @@ def build_toggles() -> List[Toggle]:
             get=lambda cfg, rt: bool(getattr(rt, "head_pointer", cfg.head_pointer)),
             set=_set_head_pointer,
         ),
+        Toggle(
+            key="mode.gaze_pointer",
+            label="Мышь глазами: курсор от зрачков",
+            hint="отвели взгляд от центра — курсор едет; нужны точки зрачков",
+            get=lambda cfg, rt: bool(getattr(rt, "gaze_pointer", cfg.gaze_pointer)),
+            set=_set_gaze_pointer,
+        ),
     ]
 
 
@@ -424,6 +432,12 @@ def _set_head_pointer(cfg: AppConfig, runtime: Any, on: bool) -> None:
     cfg.head_pointer = bool(on)
     if runtime is not None and hasattr(runtime, "head_pointer"):
         runtime.head_pointer = bool(on)
+
+
+def _set_gaze_pointer(cfg: AppConfig, runtime: Any, on: bool) -> None:
+    cfg.gaze_pointer = bool(on)
+    if runtime is not None and hasattr(runtime, "gaze_pointer"):
+        runtime.gaze_pointer = bool(on)
 
 
 TOGGLES: List[Toggle] = build_toggles()
@@ -471,6 +485,8 @@ def modes_summary(cfg: AppConfig, runtime: Any = None) -> str:
         parts.append("лицо")
     if bool(getattr(runtime, "head_pointer", cfg.head_pointer)):
         parts.append("мышь головой")
+    if bool(getattr(runtime, "gaze_pointer", cfg.gaze_pointer)):
+        parts.append("мышь глазами")
     return " + ".join(parts) if parts else "всё выключено"
 
 
@@ -514,7 +530,7 @@ def apply_preset(cfg: AppConfig, runtime: Any, name: str) -> None:
         turn(["mode.two_zoom", "mode.two_scroll", "mode.second_hand"], False)
         turn(["mode.hand"], True)
         turn(["mode.face"], False)
-        turn(["mode.head_pointer"], False)
+        turn(["mode.head_pointer", "mode.gaze_pointer"], False)
     elif name == "РУКА + ЛИЦО":
         turn(["mode.two_zoom", "mode.two_scroll", "mode.second_hand"], False)
         turn(["mode.hand", "mode.face"], True)
@@ -546,7 +562,7 @@ class SettingsPanel:
     """
 
     MARGIN = 26
-    ROW_H = 38
+    ROW_H = 34
     FIRST_Y = 106
     KNOB_R = 8
 
@@ -814,20 +830,22 @@ class SettingsPanel:
         """Клавиши в окне настроек. Возвращает действие или None."""
         if not self.is_open:
             return None
-        if key in (27, ord("c"), ord("C"), ord("с"), ord("С")):
+        # раскладка не важна: клавиша понимается по физической позиции
+        if keys.matches(key, "esc") or keys.matches(key, "c"):
             self.close(save=self.dirty)
             return "close" if not self.saved else "save"
-        if key in (ord("s"), ord("S"), ord("ы"), ord("Ы")):
+        if keys.matches(key, "s"):
             self.close(save=True)
             return "save"
-        if key in (ord("r"), ord("R"), ord("к"), ord("К")):
+        if keys.matches(key, "r"):
             self.reset()
             return "reset"
-        if key in (9, ord(" ")):
+        if keys.matches(key, "tab") or keys.matches(key, "space"):
             self.next_page()
             return "page"
-        if ord("1") <= key <= ord("9"):
-            self.goto_page(key - ord("1"))
+        pressed = keys.to_latin(key)
+        if len(pressed) == 1 and "1" <= pressed <= "9":
+            self.goto_page(ord(pressed) - ord("1"))
             return "page"
         return None
 

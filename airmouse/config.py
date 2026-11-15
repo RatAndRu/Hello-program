@@ -167,6 +167,10 @@ class FaceConfig:
     head_gain_x: float = 26.0          # пикселей в секунду на градус поворота головы
     head_gain_y: float = 20.0
     head_deadzone_deg: float = 2.5     # мёртвая зона: в ней курсор стоит
+    gaze_speed_px_s: float = 640.0     # зрачок у края глаза = эта скорость курсора
+    gaze_deadzone: float = 0.20        # доля полуширины глазницы: в этой зоне стоим
+    gaze_smoothing: float = 0.35       # сглаживание зрачка (0..1, больше — резче)
+    gaze_max_step_px: int = 45         # предел шага курсора за кадр
     calm_s: float = 0.35               # сколько нейтрали нужно для baseline
 
 
@@ -237,6 +241,7 @@ class AppConfig:
     profile_dir: str = "profiles"
     log_file: str = "logs/airmouse.log"
     head_pointer: bool = False
+    gaze_pointer: bool = False         # курсор двигают глаза (зрачки)
     start_paused: bool = False
     warmup_s: float = 2.0              # первые секунды не нажимаем: дайте встать в кадр
 

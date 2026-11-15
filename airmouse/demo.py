@@ -238,6 +238,10 @@ def run_demo(cfg: AppConfig, out_dir: Path | str = "output") -> DemoResult:
                     hdx, hdy = face_fsm.head_step(1.0 / FPS)
                     if abs(hdx) >= 1.0 or abs(hdy) >= 1.0:
                         events.append(Event("pointer_rel", value=(hdx, hdy)))
+                if router.gaze_pointer:
+                    gdx, gdy = face_fsm.gaze_step(1.0 / FPS)
+                    if abs(gdx) >= 1.0 or abs(gdy) >= 1.0:
+                        events.append(Event("pointer_rel", value=(gdx, gdy)))
 
             for ev in events:
                 if ev.kind in ("pointer", "pointer_freeze", "pointer_rel"):
@@ -270,6 +274,10 @@ def run_demo(cfg: AppConfig, out_dir: Path | str = "output") -> DemoResult:
             state.head_pointer = router.head_pointer
             state.hand_seen = hand is not None
             state.face_seen = metrics is not None
+            state.gaze_pointer = router.gaze_pointer
+            state.gaze_text = ("взгляд: зрачков не видно" if metrics is None or not face_fsm.gaze_valid
+                               else "взгляд: рядом" if abs(face_fsm.gaze_x) < 0.2
+                               else "взгляд: вправо" if face_fsm.gaze_x > 0 else "взгляд: влево")
             if metrics is not None:
                 state.ear = min(metrics.ear_left, metrics.ear_right)
                 state.smile = face_fsm.smile_score

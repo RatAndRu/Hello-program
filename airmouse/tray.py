@@ -55,6 +55,11 @@ def run(app, blocking: bool = True) -> bool:
         app.router.head_pointer = not app.router.head_pointer
         refresh()
 
+    def toggle_gaze(icon_, item=None) -> None:
+        app.router.gaze_pointer = not app.router.gaze_pointer
+        app.cfg.gaze_pointer = app.router.gaze_pointer
+        refresh()
+
     def quit_app(icon_, item=None) -> None:
         app.stop()
         icon_.stop()
@@ -65,6 +70,9 @@ def run(app, blocking: bool = True) -> bool:
         ),
         pystray.MenuItem(
             "Мышь головой", toggle_head, checked=lambda item: app.router.head_pointer
+        ),
+        pystray.MenuItem(
+            "Мышь глазами", toggle_gaze, checked=lambda item: app.router.gaze_pointer
         ),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem("Выход", quit_app),

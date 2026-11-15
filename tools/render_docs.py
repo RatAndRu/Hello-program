@@ -43,7 +43,7 @@ def state(**kw) -> overlay.OverlayState:
         hand_seen=True,
         face_seen=True,
         active_box=AppConfig().pointer.active_box,
-        version="0.8.1",
+        version="0.9.0",
         events=["12:31:02  щипок → левый клик", "12:31:05  жест: ОК → двойной клик"],
         last_event="щипок → левый клик",
         modes_text="режимы: рука + лицо",
@@ -61,12 +61,13 @@ def save(img: np.ndarray, name: str) -> None:
 
 def main() -> int:
     print("рендерю картинки для README:")
-    face = synthetic_face(center=(0.30, 0.30), scale=0.6, smile=0.5, mouth_open=0.12)
+    face = synthetic_face(center=(0.30, 0.30), scale=0.6, smile=0.5, mouth_open=0.12,
+                          gaze=(0.25, 0.0))
     palm = synthetic_hand(center=(0.66, 0.66), scale=0.26)
 
     # 1. Общий вид: рука + лицо + сводка
     st = state(pose="ладонь", expression="улыбка 62%", ear=0.29, smile=0.62, hand_count=1,
-               side_text="сторона кисти: ладонь")
+               side_text="сторона кисти: ладонь", gaze_text="взгляд: прямо")
     save(overlay.render(background(), st, hands=[palm], face=face), "overlay-main.png")
 
     # 2. Крупный план кисти: 21 точка, подписи пальцев

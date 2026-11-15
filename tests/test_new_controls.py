@@ -86,7 +86,9 @@ def test_sad_expression_reported():
     app.face_fsm.sad_score = 0.05                  # сейчас уголки опущены
     app._metrics = FaceMetrics(valid=True, ear_left=0.3, ear_right=0.3,
                                corner_lift=0.01, mouth_open=0.1)
-    assert app._expression_text() == "грусть"
+    text = app._expression_text()
+    assert text.startswith("грусть"), text      # процент грусти — тоже полезен
+    assert "улыбка" not in text
 
 
 def test_surprise_expression_reported():
